@@ -4,12 +4,15 @@
 > się decyzje. Implementacja podąża za tym dokumentem — jeśli rzeczywistość
 > nie zgadza się z jakąś sekcją, najpierw aktualizujemy dokument.
 
-**Status:** szkic v0.2 (oczekuje na review)
-**Punkt odniesienia:** OG-E 4.9.3 (dojrzała, produkcyjna, stabilna — służy
-jako empiryczny punkt odniesienia, co działa / co boli). Nakładka zmian
-względem 4.9.0 obejmuje: `reserved` status + navigate-to-stale-system UX
-(4.9.2), soft-delete dla colonyHistory (4.9.1), overlay-buttons dla
-abandon popupów (4.9.3).
+**Status:** szkic v0.3 (oczekuje na review)
+**Punkt odniesienia:** OG-E 4.9.3 — **bardzo stabilna, używanie to czysta
+przyjemność, zero znanych błędów**. Jest empirycznym punktem odniesienia:
+wszystko, co 4.9.3 robi dobrze, v5 musi robić równie dobrze albo lepiej.
+Przepisujemy NIE dlatego, że coś nie działa — tylko dlatego, że chcemy
+architekturę, którą da się rozwijać kolejne dwa lata bez długu.
+Nakładka zmian względem 4.9.0 obejmuje: `reserved` status +
+navigate-to-stale-system UX (4.9.2), soft-delete dla colonyHistory (4.9.1),
+overlay-buttons dla abandon popupów (4.9.3).
 
 ---
 
@@ -207,6 +210,7 @@ v5.0.0/
 │   │                                staleRetry itp.)
 │   │
 │   ├── features/
+│   │   ├── blackBg.js               czarne tło podczas ładowania (anty-flicker)
 │   │   ├── sendExp.js               przycisk Send Exp + flow ekspedycji
 │   │   ├── sendCol.js               przycisk Send Col + scan/send/stale-retry
 │   │   ├── abandon.js               3-kliknięciowy abandon + injected buttons
@@ -712,6 +716,50 @@ upload():
     writeGistData(merged)                           [enkoduj gzip]
 ```
 
+### 9.6 Czarne tło podczas ładowania (anti-flicker)
+
+**Problem**: OGame przeładowuje całą stronę przy praktycznie każdej akcji
+(klik na planetę, klik na zakładkę, powrót z fleetdispatch, auto-refresh
+po misji itd.). Domyślnie większość przeglądarek między wyładowaniem
+starej strony a wyrenderowaniem nowej pokazuje białe tło. Dla OGame
+(ciemny motyw graficzny) daje to efekt migania białym — w trybie nocnym
+to nie jest irytacja, to jest horror.
+
+**Rozwiązanie** (dziedziczone z 4.x, tam działa świetnie — musi być
+zachowane identycznie):
+
+```
+content script (ISOLATED, run_at: document_start)
+  │
+  ▼ (pierwsza linia po entry)
+blackBg.install():
+  style = <style id="oge5-black-bg">
+            html, body { background: #000 !important; }
+          </style>
+  appendChild do (document.head || document.documentElement)
+  │
+  ▼ (tym momencie strona jest czarna od samego początku)
+window.addEventListener('load', () => {
+  setTimeout(() => style.remove(), 300)
+  // 300ms żeby rzeczywiście zdążyć zobaczyć renderowane assety
+  // zamiast tylko przeładować na biało — w praktyce bezpieczny bufor
+})
+```
+
+Kluczowe warunki poprawności:
+- `run_at: document_start` w manifeście dla content scripta (isolated
+  world), tak żeby `<style>` był wstrzyknięty **zanim** HTML zacznie się
+  renderować. `document_idle` byłby za późno.
+- `!important` w CSS — OGame ma własne style na html/body.
+- Cleanup po `window.load + 300ms` — zbyt szybki cleanup pokazuje biel
+  w trakcie renderowania assetów, zbyt późny daje widoczny ciemny flash
+  po załadowaniu.
+
+**Lokalizacja w v5**: `features/blackBg.js`, importowany jako **pierwsza**
+linia w `src/content.js` (przed czymkolwiek innym). Nie ma zależności
+— nie potrzebuje lib/ ani domain/, więc jeśli cokolwiek innego rzuci
+błędem podczas importu, czarne tło i tak zadziała.
+
 ---
 
 ## 10. Strategia storage
@@ -805,31 +853,62 @@ ręcznie.
 
 ## 12. Migracja z v4
 
-**Zasada: v5 jest niezależne.** Nie czyta storage'u v4 bezpośrednio. User
-sam wywołuje jednorazowy import, kiedy jest gotowy.
+**Zasada kluczowa: kod v5 nigdy nie zna schemy v4.** Żadnego
+`oge_*` w źródłach v5. Żadnych ścieżek importu, konwersji, adapterów
+"tylko na wszelki wypadek". v5 startuje pusty, żyje we własnych kluczach
+`oge5_*` i własnym giście. Koniec.
 
-**Fresh install**: v5 startuje pusty. Ustawienia mają wartości domyślne.
-Pusty histogram.
+**Dlaczego takie rygorystyczne stanowisko**: dodawanie w v5 kodu który
+rozumie v4 natychmiast generuje dług. Każda przyszła zmiana schematu v5
+będzie wymagała weryfikacji, czy import z v4 dalej działa. Użytkownik
+wyraźnie powiedział: "nie zaśmiecać kodu v5 importami z v4". Trzymamy
+się tego.
 
-**Import z v4**: nowy przycisk w ustawieniach v5:
-*"Importuj dane z OG-E 4.x (przez Gist)"*
+**Czyja odpowiedzialność to więc jest?** **Dodajemy do 4.x funkcję
+eksportu** — ostatni prezent dla odchodzącej wersji:
 
-Flow po kliknięciu:
-1. v5 czyta `oge_gistToken` z localStorage (ta sama origin → ten sam
-   localStorage → token jest widoczny). To JEDYNY odczyt klucza v4
-   wykonywany przez v5.
-2. v5 używa tokenu, żeby pobrać gist v4 (match po description).
-3. Dekompresja (format v3 z v4).
-4. Kopiuj do store'ów v5 (przekształcenie kształtu w razie potrzeby —
-   zachowamy identyczny, więc przekształcenie nie jest potrzebne).
-5. Pokaż userowi liczby: "Zaimportowano X skanów, Y kolonii."
+```
+OG-E 4.9.x (nowa minor, np. 4.10.0):
+  ustawienia → sekcja "Eksport do v5"
+  przycisk "Pobierz dane jako plik do v5"
+  │
+  ▼ onClick:
+    zbierz { galaxyScans, colonyHistory } z chrome.storage v4
+    zapisz do pliku `oge-v4-export-YYYY-MM-DD.json`
+    (bez kompresji — to jednorazowa akcja, czytelność wygrywa)
+```
 
-**Nigdy się nie dzieje automatycznie.** Żadnego skanowania danych v4
-w tle, żadnego cichego importu. User jest właścicielem decyzji.
+Wtedy w v5 jest osobny, pojedynczy przycisk **"Importuj z pliku"**:
 
-**Jeśli user chce porzucić v4**: po zweryfikowaniu, że v5 działa, usuwa
-v4 w about:addons. Opcjonalnie usuwa gisty v2/v3 w UI GitHuba. v5 żyje
-z własnym gistem.
+```
+OG-E v5:
+  ustawienia → Diagnostyka → "Wczytaj dane z pliku"
+  <input type="file" accept=".json">
+  │
+  ▼ onChange:
+    parse, waliduj kształt (schema v4 znaną wersją)
+    jeśli OK: do store'ów v5
+    feedback: "Wczytano X skanów, Y kolonii."
+```
+
+**Zalety tego podejścia:**
+- **v5 nie ma nigdzie stringa `oge_*`**. Nie wie, że v4 istniało.
+- **v5 czyta tylko dane w swoim własnym formacie (który akurat jest taki
+  sam jak v4).** Adapter formatu to po prostu walidacja pliku JSON — tak
+  samo jak obsługa każdego innego importu.
+- **Odpowiedzialność za eksport spoczywa na stronie, która ma dane**
+  (v4). v5 tylko je konsumuje.
+- **Gdy v4 zostanie wycofane**, razem z nim znika kod eksportu. Zero
+  rezydualnego długu po stronie v5.
+- **User decyduje kiedy**. Brak automatyki, brak cichych importów.
+
+**Ważne**: funkcja eksportu w v4 to dodanie do zamkniętej, stabilnej
+wersji. Minimalistyczny wpis — tylko zbierz dane, wyrzuć do pliku.
+Zero zależności, zero refactoru 4.x.
+
+**Jeśli user chce porzucić v4 całkowicie**: po zweryfikowaniu, że v5
+działa, usuwa v4 w about:addons. Opcjonalnie usuwa gisty v2/v3 w UI
+GitHuba. v5 żyje z własnym gistem, własnymi danymi.
 
 ---
 
@@ -890,32 +969,35 @@ Rzeczy, które zobowiązujemy się NIE robić:
 
 ---
 
-## 15. Pytania otwarte (do rozstrzygnięcia przed/podczas scaffoldingu)
+## 15. Pytania otwarte (rozstrzygnięte w v0.3)
 
 - [x] **P1**: CompressionStream w content script na FF Android 140 —
-      **ROZSTRZYGNIĘTE**: działa. v4 4.9.0 uruchomił to w produkcji, oba
-      desktop i mobile syncują bez problemu. Bezpiecznie polegać — bez
-      fallbacku do zewnętrznej biblioteki.
-- [ ] **P2**: Zestaw pluginów rollupa — czy potrzebujemy czegoś poza
-      zero-config? Prawdopodobnie tylko `@rollup/plugin-replace` do
-      wstrzykiwania stałych z buildu (np. wersja). Zweryfikować podczas
-      scaffoldingu.
-- [ ] **P3**: Integracja UI ustawień z AGR — czy trzymamy ten sam selektor
-      injection (`.ago_menu_content`)? Tak, chyba że AGR się zmieni.
-- [ ] **P4**: Generowanie `SCHEMAS.md` z JSDoc — ręcznie (copy/paste
-      z typedefs) czy automatycznie (tsc + typedoc lub jsdoc-to-markdown)?
-      Zacznij ręcznie, automatyzuj tylko jeśli zacznie się rozjeżdżać.
-- [ ] **P5**: Czy chcemy "przycisk paniki", który zrzuca pełne store'y do
-      schowka dla raportowania bugów? Mogłoby pomóc w debugowaniu. Koszt:
-      ~10 linii. Na razie odkładamy.
-- [ ] **P6**: Logger — persystować do localStorage czy tylko in-memory?
-      In-memory jest prostsze + bezpieczniejsze dla prywatności; user może
-      skopiować z DevTools.
-- [ ] **P7**: Testy dla `bridges/*` — mockować XHR przez happy-dom?
-      Prawdopodobnie nie warto — to cienkie adaptery.
-- [ ] **P8**: Czy oferujemy przycisk "zresetuj v5 do fabryki"? Tak, pod
-      ustawienia → Diagnostyka. Jedno kliknięcie usuwa wszystkie klucze
-      `oge5_*` + wpisy chrome.storage.
+      działa. v4 4.9.0 uruchomił to w produkcji, oba desktop i mobile
+      syncują bez problemu. Bezpiecznie polegać — bez fallbacku do
+      zewnętrznej biblioteki.
+- [x] **P2**: Zestaw pluginów rollupa — tylko `@rollup/plugin-replace`
+      do wstrzykiwania stałych z buildu (np. wersji z manifestu).
+      Poza tym zero-config.
+- [x] **P3**: Integracja UI ustawień z AGR — trzymamy ten sam selektor
+      injection co w v4 (`.ago_menu_content`). **OG-E działa wyłącznie
+      razem z AGR** (AntiGameReborn) — to hard dependency, nie opcja.
+      Sensowne założenie: AGR musi być obecny, inaczej OG-E się nie
+      uruchamia (albo gracefully pomija injection ustawień).
+- [x] **P4**: Generowanie `SCHEMAS.md` z JSDoc — **ręcznie**. Zacznij
+      ręcznie, automatyzacja tylko jeśli zacznie się rozjeżdżać
+      (w 4.x się nie rozjechało).
+- [x] **P5**: Przycisk paniki / zrzut store'ów — **NIE ROBIMY**.
+      Na histogramie mamy już Export/Import pełnych danych (JSON) + CSV
+      histogramu. Te opcje MUSZĄ być zachowane w v5. Użytkownik
+      raportujący bug eksportuje JSON i załącza.
+- [x] **P6**: Logger — **in-memory only** (ring buffer ~500 ostatnich
+      wpisów). User kopiuje z DevTools. Bezpieczniejsze dla prywatności,
+      prostsze w implementacji.
+- [x] **P7**: Testy dla `bridges/*` — **nie warto**. To cienkie adaptery,
+      testowane ręcznie podczas manualnej weryfikacji flow'ów.
+- [x] **P8**: Reset do fabryki — **NIE ROBIMY**. Eksport + manualne
+      usunięcie rozszerzenia + reinstall = czysty start. Przycisk reset
+      w UI = niebezpieczny (pomyłka = utrata danych).
 
 ---
 
@@ -923,29 +1005,81 @@ Rzeczy, które zobowiązujemy się NIE robić:
 
 1. **Scaffolding** (1 posiedzenie) — package.json, rollup config, tsconfig,
    manifest.json + manifest.firefox.json, puste entry files, pierwszy
-   smoke-test import działający w FF (ładuje się, nic nie robi).
-2. **lib/** — wszystkie pure helpery, w pełni przetestowane.
-3. **domain/** — cała pure logic, w pełni przetestowana.
-4. **state/** — store'y + persystencja + jednorazowa hydratacja.
-5. **bridges/** — XHR hooki w świecie MAIN, dispatchujące eventy (jeszcze
+   smoke-test import działający w FF (ładuje się, wstrzykuje czarne tło,
+   nic więcej nie robi).
+2. **features/blackBg.js** — pojedynczy moduł, piszemy od razu przy
+   scaffoldingu. Ma zero zależności, sprawdzamy że działa w FF Android.
+3. **lib/** — wszystkie pure helpery, w pełni przetestowane.
+4. **domain/** — cała pure logic, w pełni przetestowana.
+5. **state/** — store'y + persystencja + jednorazowa hydratacja.
+6. **bridges/** — XHR hooki w świecie MAIN, dispatchujące eventy (jeszcze
    bez feature'ów).
-6. **features/sendExp.js** — pierwszy widoczny feature, end-to-end.
-7. **features/sendCol.js** — pełny flow włącznie ze stale-retry.
-8. **features/abandon.js** — pełne 3 kliknięcia.
-9. **features/badges.js** + **features/colonyRecorder.js** — pasywne dane.
-10. **sync/** — pipeline gista.
-11. **features/settingsUi.js** — panel ustawień w AGR.
-12. **features/histogram** — strona histogramu.
-13. **Narzędzie migracji** — import z v4.
-14. **Polish** — edge case'y, ręczne testy integracyjne, finalny review.
-15. **Release** — package.zip, bump wersji, submit do AMO.
+7. **features/sendExp.js** — pierwszy widoczny feature, end-to-end.
+8. **features/sendCol.js** — pełny flow włącznie ze stale-retry.
+9. **features/abandon.js** — pełne 3 kliknięcia.
+10. **features/badges.js** + **features/colonyRecorder.js** — pasywne dane.
+11. **sync/** — pipeline gista.
+12. **features/settingsUi.js** — panel ustawień w AGR.
+13. **features/histogram** — strona histogramu (z Export/Import JSON + CSV).
+14. **Feature w v4: eksport do pliku .json** (osobny drobny patch do 4.x,
+    np. 4.10.0). Nie dotyczy kodu v5.
+15. **v5: import z pliku .json** w ustawieniach → Diagnostyka.
+16. **Polish** — edge case'y, ręczne testy integracyjne, finalny review.
+17. **Release** — package.zip, bump wersji, submit do AMO.
 
 Każda faza kończy się review userowym + sign-off przed kolejną. Żadnego
 big-bang dropa.
 
 ---
 
-## 17. Kryteria sukcesu
+## 17. Podejście do pracy (orkiestracja agentów)
+
+Rewrite tej skali wymaga dyscypliny — żaden agent (ani główna sesja, ani
+subagent) nie pamięta wszystkiego. Dlatego:
+
+**Główna sesja** (ta, która rozmawia z użytkownikiem) jest dyrygentem.
+Jej rola:
+- Decyzje architektoniczne i trade-offy (konsultuje z userem)
+- Pisanie briefów dla subagentów
+- Review wyniku każdego subagenta (trust-but-verify — sprawdzić pliki,
+  nie tylko czytać podsumowanie)
+- Koordynacja między fazami
+- Integracja — łączenie modułów w działający bundle
+- Komunikacja z userem po polsku
+
+**Subagenci** (Agent tool) są pracownikami wykonawczymi. Każdy dostaje
+ZAMKNIĘTY BRIEF — self-contained, zero założeń o kontekście rozmowy:
+- Ścieżki plików (absolutne)
+- Link do tego DESIGN.md (z numerem wersji, np. v0.3) i relevantnymi
+  sekcjami
+- Link do SCHEMAS.md (gdy będzie)
+- Konkretne zadanie (co napisać / co zweryfikować / co przetestować)
+- Kontrakt wyniku (co powinno powstać, jaki kształt)
+- Lista plików do NIE ruszania (żeby się nie rozleźli poza swój scope)
+
+**Typowe zastosowania subagentów:**
+- **general-purpose**: pisanie jednego modułu zgodnie z briefem (np.
+  "zaimplementuj `lib/createStore.js` i jego testy w `test/lib/`,
+  zgodnie z typedef w DESIGN.md §6, bez dotykania innych plików").
+- **general-purpose** (w trybie review): "przeczytaj `src/features/sendCol.js`
+  i zwaliduj, czy spełnia wymagania TOS z DESIGN.md §3 — zwróć listę
+  naruszeń lub potwierdzenie".
+- **Explore**: szybkie odpowiedzi na pytania typu "gdzie w 4.x jest
+  zaimplementowana obsługa X" — odpowiedź wraca jako brief dla głównej
+  sesji, która decyduje jak przenieść do v5.
+
+**Nie używamy subagentów do:**
+- Interakcji z userem (użytkownik rozmawia z główną sesją, kropka)
+- Decyzji architektonicznych (to jest dyrygentura)
+- Drobnych edytów (ceremonia nie warta overhead'u)
+
+**Po każdej fazie** — review user'owy.
+**Po każdym subagencie** — trust-but-verify: główna sesja otwiera pliki
+które subagent rzekomo zmienił, i patrzy na nie oczami user'a.
+
+---
+
+## 18. Kryteria sukcesu
 
 v5 jest gotowe do produkcji, gdy:
 
@@ -964,5 +1098,5 @@ v5 jest gotowe do produkcji, gdy:
 
 ---
 
-*Koniec DESIGN.md v0.1.*
-*Następny krok: review userowy → iteracja → scaffolding.*
+*Koniec DESIGN.md v0.3.*
+*Następny krok: sign-off użytkownika → Faza 1: scaffolding.*
