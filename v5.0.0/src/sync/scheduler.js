@@ -94,8 +94,25 @@ import {
   writeGistData,
   setStatus,
   getToken,
+  clearGistScans,
 } from './gist.js';
 import { debounce } from '../lib/debounce.js';
+import { chromeStore } from '../lib/storage.js';
+
+/**
+ * Tombstone keys the histogram page (extension origin) writes into
+ * `chrome.storage.local` to cross-origin-signal the game-origin sync
+ * scheduler. A direct `document.dispatchEvent` wouldn't work — the two
+ * pages live in separate JS realms and separate origins — so the
+ * shared storage area is the only reliable channel.
+ *
+ * Kept local (not exported) because the only writers are
+ * `features/histogram/io.js` (see `SYNC_REQUEST_KEY` / `CLEAR_REMOTE_KEY`
+ * there) and the only reader is this file. If a third participant ever
+ * needs these strings, promote them to a small shared constants module.
+ */
+const SYNC_REQUEST_TOMBSTONE = 'oge5_syncRequestAt';
+const CLEAR_REMOTE_TOMBSTONE = 'oge5_clearRemoteAt';
 
 /**
  * Quiet-period length (ms) for {@link scheduleUpload}. See file header
@@ -353,13 +370,43 @@ export const installSync = () => {
 
   const onForceSync = async () => {
     // Force-sync is an explicit user action (settings "Sync now" or
-    // histogram "Clear"). Run a full round-trip back-to-back,
+    // histogram "Refresh"). Run a full round-trip back-to-back,
     // bypassing the debounce entirely. Each operation has its own
     // in-flight guard; they serialise naturally via the shared lock.
     await downloadAndMerge();
     await upload();
   };
   document.addEventListener(FORCE_SYNC_EVENT, onForceSync);
+
+  /**
+   * Bridge from the extension-origin histogram page to this scheduler.
+   * The histogram writes `oge5_syncRequestAt = Date.now()` on "Refresh"
+   * and `oge5_clearRemoteAt = Date.now()` on "Clear observation data";
+   * chrome.storage.onChanged fires in THIS origin (game), so we can
+   * observe and act. Value changes — we don't care about the timestamp
+   * itself, only that the key was touched.
+   *
+   * @param {Record<string, unknown>} changes
+   */
+  const onStorageChange = (changes) => {
+    if (SYNC_REQUEST_TOMBSTONE in changes) {
+      void onForceSync();
+    }
+    if (CLEAR_REMOTE_TOMBSTONE in changes) {
+      // The histogram already wiped the local scans key before writing
+      // this tombstone; our job is the remote half. Swallow errors
+      // rather than letting them bubble out of the listener — setStatus
+      // surfaces them in the Settings panel instead.
+      (async () => {
+        try {
+          await clearGistScans();
+        } catch (err) {
+          setStatus('err', `clear-remote: ${/** @type {Error} */ (err).message}`);
+        }
+      })();
+    }
+  };
+  const unsubStorage = chromeStore.onChanged(onStorageChange);
 
   // Kick off the initial download fire-and-forget. We do not await —
   // the content-script bootstrap shouldn't block waiting for network.
@@ -373,6 +420,7 @@ export const installSync = () => {
       unsubScans();
       unsubHistory();
       document.removeEventListener(FORCE_SYNC_EVENT, onForceSync);
+      unsubStorage();
       installed = null;
     },
   };
