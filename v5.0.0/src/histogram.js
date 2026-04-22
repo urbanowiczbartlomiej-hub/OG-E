@@ -1,7 +1,10 @@
 // Entry — histogram page (extension origin).
 //
-// Placeholder. Full implementation in a later phase (DESIGN.md §16 step 13).
-// Kept as a separate bundle so histogram's code isn't shipped into the
-// game-page content script.
+// Single bootstrap call. Every piece of logic lives in
+// features/histogram/ so this entry stays shippable as its own bundle
+// without dragging in any content-script code. See
+// `features/histogram/index.js` for the wire-up.
 
-console.log('[OG-E v5] histogram page loaded (placeholder)');
+import { install } from './features/histogram/index.js';
+
+install();

@@ -1,26 +1,100 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>OG-E v5 — Local Data Viewer</title>
-  <style>
-    html, body {
-      margin: 0;
-      padding: 20px;
-      background: #000;
-      color: #ccc;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      line-height: 1.5;
-    }
-    h1 { color: #4a9eff; margin-top: 0; }
-    code { background: #111; padding: 2px 6px; border-radius: 3px; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OG-E v5 — Local Data Viewer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0d1117; color: #ccc; font-family: 'Segoe UI', Arial, sans-serif; padding: 20px; }
+  h1 { color: #4a9eff; margin-bottom: 16px; font-size: 22px; }
+
+  .controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 20px; }
+  .controls label { font-size: 14px; color: #888; }
+  .controls select, .controls button {
+    background: #1a2a3a; border: 1px solid #2a4a5a; color: #ccc;
+    padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer;
+  }
+  .controls button:hover { background: #2a4a6a; }
+  .controls button.danger { background: #4a2a2a; border-color: #6a3a3a; color: #ff8888; }
+  .controls button.danger:hover { background: #6a3a3a; }
+
+  .stats { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+  .stat-card {
+    background: #1a2a3a; border: 1px solid #2a4a5a; border-radius: 8px;
+    padding: 10px 16px; min-width: 100px; text-align: center;
+  }
+  .stat-card .stat-value { font-size: 22px; font-weight: bold; color: #4a9eff; }
+  .stat-card .stat-label { font-size: 11px; color: #888; margin-top: 2px; }
+
+  .chart-container { margin-bottom: 20px; }
+  /* align-items: stretch so bar-group takes full 300px height → bar's height:X% gets a real base */
+  .chart {
+    display: flex; align-items: stretch; gap: 2px; height: 300px;
+    border-left: 1px solid #2a4a5a; border-bottom: 1px solid #2a4a5a;
+    padding: 0 0 0 4px; position: relative;
+    overflow-x: auto; overflow-y: hidden;
+  }
+  /* justify-content: flex-end pushes count → bar → label stack to the bottom of the 300px group */
+  .bar-group {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: flex-end;
+    flex: 1 0 18px; min-width: 18px;
+    height: 100%;
+  }
+  .bar {
+    width: 100%; max-width: 40px; background: #4a9eff; border-radius: 3px 3px 0 0;
+    transition: height 0.3s; position: relative; cursor: pointer;
+    min-height: 2px;
+  }
+  .bar:hover { background: #6ab4ff; }
+  .bar-label { font-size: 10px; color: #888; margin-top: 4px; writing-mode: vertical-rl; text-orientation: mixed; height: 40px; flex-shrink: 0; }
+  .bar-count { font-size: 10px; color: #fff; margin-bottom: 2px; flex-shrink: 0; }
+
+  .empty { text-align: center; color: #666; padding: 60px; font-size: 16px; }
+</style>
 </head>
 <body>
-  <h1>OG-E v5 — Local Data Viewer</h1>
-  <p>Placeholder. The histogram page lands in a later phase (see DESIGN.md §16 step 13).</p>
-  <p>Until then, continue using OG-E 4.9.x.</p>
-  <script src="histogram.js"></script>
+
+<div class="controls" style="margin-bottom:20px;padding:10px;background:#111820;border:1px solid #2a4a5a;border-radius:8px;">
+  <span style="color:#4a9eff;font-weight:bold;font-size:14px;">Data</span>
+  <button id="exportBtn">Export JSON</button>
+  <button id="importBtn">Import JSON</button>
+  <input type="file" id="importFile" accept=".json" style="display:none;">
+  <span id="importStatus" style="color:#888;font-size:12px;"></span>
+</div>
+
+<h1>Colony Size Histogram</h1>
+<p style="color:#888;font-size:13px;margin-bottom:16px;">
+  Field sizes of planets you have personally visited (recorded the first time you opened each overview page).
+  No new data is requested — this is a read-only view of data already stored locally on this device.
+</p>
+
+<div class="controls">
+  <label>Position filter:</label>
+  <select id="posFilter"><option value="all">All positions</option></select>
+  <button id="refreshBtn">Refresh</button>
+  <button id="exportCsvBtn">Export CSV</button>
+  <span id="countInfo" style="color:#888;font-size:13px;margin-left:auto;"></span>
+</div>
+
+<div class="stats" id="statsContainer"></div>
+<div class="chart-container"><div class="chart" id="chart"></div></div>
+
+<hr style="border-color:#2a4a5a;margin:30px 0;">
+
+<h1>Galaxy Observations</h1>
+<p style="color:#888;font-size:13px;margin-bottom:16px;">
+  Per-system summary of positions you have navigated past in the in-game galaxy view.
+  Data was recorded only for galaxy pages you yourself opened. Filtered by the target
+  positions list from settings (only those positions count toward the stats below).
+</p>
+<div class="controls">
+  <button id="refreshScansBtn">Refresh</button>
+  <button id="clearScansBtn" class="danger">Clear observation data</button>
+</div>
+<div id="scansContainer"></div>
+
+<script src="histogram.js"></script>
 </body>
 </html>
