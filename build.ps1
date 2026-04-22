@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
-$files = @("content.js", "fleet-redirect.js", "colonize.js", "mobile.js", "settings.js", "sync.js", "histogram.html", "histogram.js", "README.txt", "icons/icon16.png", "icons/icon48.png")
+$files = @("content.js", "fleet-redirect.js", "colonize.js", "mobile.js", "settings.js", "sync.js", "histogram.html", "histogram.js", "README.txt", "icons/icon16.png", "icons/icon48.png", "icons/icon128.png")
 
 if (Test-Path dist) { Remove-Item dist -Recurse -Force }
 New-Item -ItemType Directory -Path dist | Out-Null

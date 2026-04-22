@@ -34,11 +34,10 @@
 //      needed (rollup can tree-shake the guarded branch in theory; in
 //      practice the early return is what keeps runtime simple).
 //
-// Open item carried forward: `features/abandon.js` exports
-// `abandonPlanet()` and `checkAbandonState()` but no `installAbandon`
-// yet. Nothing here mounts the floating "Abandon" button that would
-// invoke them. Flagged as a Phase 16 polish task; colonies can still
-// be abandoned manually through the game UI until then.
+// Note: the abandon flow has no separate `installAbandon` — the
+// `sendCol` feature integrates it directly via the scanHalf (v4
+// parity). When `checkAbandonState` matches, scanHalf flips to "Abandon"
+// and click delegates to `abandonPlanet()`. See `features/sendCol.js`.
 
 import { installBlackBackground } from './features/blackBg.js';
 

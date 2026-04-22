@@ -5,7 +5,8 @@
   "description": "OGame UI modification (requires AntiGameReborn): large mobile-friendly buttons that map each tap to one native game button (expedition / colonization missions), colony size histogram built from planets you visit, local database of galaxy positions recorded from systems you navigate to yourself, cross-device sync of your collected data via your own private GitHub Gist. Does not initiate game requests, does not automate gameplay.",
   "icons": {
     "16": "icons/icon16.png",
-    "48": "icons/icon48.png"
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   },
   "permissions": ["storage"],
   "host_permissions": [

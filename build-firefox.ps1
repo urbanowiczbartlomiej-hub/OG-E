@@ -30,12 +30,10 @@ $includeFiles = @(
     'histogram.js'
 )
 
-# Only icons referenced in manifest.firefox.json — icon128 is not declared
-# (browser only loads what's in the manifest "icons" map). AMO listing image
-# is uploaded separately during submission, doesn't need to be in the package.
 $includeIcons = @(
     'icons\icon16.png',
-    'icons\icon48.png'
+    'icons\icon48.png',
+    'icons\icon128.png'
 )
 
 # Sanity check
