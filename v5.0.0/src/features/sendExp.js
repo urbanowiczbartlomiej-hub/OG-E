@@ -68,6 +68,7 @@
 
 import { settingsStore } from '../state/settings.js';
 import { safeLS } from '../lib/storage.js';
+import { safeClick, waitFor } from '../lib/dom.js';
 import { MISSION_EXPEDITION } from '../domain/rules.js';
 
 /**
@@ -109,8 +110,22 @@ const MAX_LABEL_MS = 2000;
 /** Default button copy — what the user sees in the "idle" state. */
 const BUTTON_TEXT = 'Send Exp';
 
-/** Transient copy painted when the max-exp guard trips. */
+/** Transient copy painted when the max-exp guard trips on this planet. */
 const MAX_LABEL = 'Max!';
+
+/** Transient copy when every planet has hit `maxExpPerPlanet`. */
+const ALL_MAXED_LABEL = 'All maxed!';
+
+/**
+ * Timeout for waiting on AGR's routine element / fleet panel hydration.
+ * 15 s mirrors v4's `pollDOM` budget — long enough for a slow phone on
+ * a cold cache to receive the async fleet-panel assets, short enough
+ * that an obviously-broken page doesn't lock the button forever.
+ */
+const POLL_TIMEOUT_MS = 15_000;
+
+/** Poll interval for AGR-readiness checks. Matches v4 `pollDOM`. */
+const POLL_INTERVAL_MS = 300;
 
 /** Background color for the idle button (blue, translucent). */
 const BG_IDLE = 'rgba(0,150,255,0.7)';
@@ -127,23 +142,119 @@ const FOCUS_RESTORE_DELAY_MS = 50;
 // ── Pure helpers ──────────────────────────────────────────────────────
 
 /**
- * Count currently in-flight expedition fleets visible in
- * `#eventContent`. Used to enforce `settings.maxExpPerPlanet`.
+ * Strip the surrounding `[` and `]` from a coords string. OGame renders
+ * both `.planet-koords` (planet list) and `.coordsOrigin` (event row)
+ * with the brackets — stripping them once gives a consistent `g:s:p`
+ * key usable for equality comparison across the two lookups.
  *
- * TODO(v5): filter by origin coords matching the active planet so the
- * count reflects "how many expeditions this planet has out" rather
- * than "how many the whole account has out". For MVP the looser check
- * is close enough — the badges feature already surfaces the per-planet
- * count visually and the user can override by tapping through the
- * "Max!" warning (it clears after 2 s).
+ * @param {string | null | undefined} raw
+ * @returns {string}
+ */
+const stripBrackets = (raw) => (raw ?? '').trim().replace(/^\[|]$/g, '');
+
+/**
+ * Read the currently-active planet's coords from `#planetList`. Returns
+ * `null` when the highlight marker or its coords span is missing — the
+ * caller treats that as "can't filter, fall back to global count".
  *
+ * @returns {string | null}  `"g:s:p"` without brackets, or `null`.
+ */
+const getActivePlanetCoords = () => {
+  const planet = document.querySelector('#planetList .hightlightPlanet');
+  if (!planet) return null;
+  const coordsEl = planet.querySelector('.planet-koords');
+  const coords = stripBrackets(coordsEl?.textContent);
+  return coords || null;
+};
+
+/**
+ * Count currently in-flight expeditions, filtered to those whose origin
+ * matches the active planet (mirrors v4 `countExpDots` semantics, where
+ * the per-planet limit was enforced via the dots painted by the badges
+ * feature on each planet row).
+ *
+ * When the active planet's coords can't be read (`originCoords === null`)
+ * we fall back to counting every expedition in `#eventContent` — safer
+ * to over-report and show "Max!" than under-report and let the user
+ * blow past their configured cap.
+ *
+ * @param {string | null} originCoords
+ *   Active-planet coords in `g:s:p` form. Pass `null` to count globally.
  * @returns {number}
  */
-const countActiveExpeditions = () => {
+const countActiveExpeditions = (originCoords) => {
   const rows = document.querySelectorAll(
     '#eventContent tr.eventFleet[data-mission-type="15"]',
   );
-  return rows.length;
+  if (originCoords === null) return rows.length;
+  let count = 0;
+  for (const row of rows) {
+    const c = stripBrackets(row.querySelector('.coordsOrigin')?.textContent);
+    if (c === originCoords) count += 1;
+  }
+  return count;
+};
+
+/**
+ * Pick the right initial label for the floating button based on the
+ * page state at render time. Mirrors v4 `mobile.js:446`:
+ *
+ *   - On fleetdispatch with `#dispatchFleet` already in the DOM →
+ *     "Dispatch!" (user's next tap fires the send).
+ *   - On fleetdispatch with `#ago_routine_7` but no dispatch button →
+ *     "Prepare" (user's next tap kicks AGR's routine).
+ *   - Otherwise → the default `BUTTON_TEXT` ("Send Exp").
+ *
+ * Snapshot only — the button is recreated on every page reload anyway,
+ * so we don't need a live update path.
+ *
+ * @returns {string}
+ */
+const computeInitialLabel = () => {
+  if (!location.search.includes('component=fleetdispatch')) return BUTTON_TEXT;
+  if (document.getElementById('dispatchFleet')) return 'Dispatch!';
+  if (document.getElementById('ago_routine_7')) return 'Prepare';
+  return BUTTON_TEXT;
+};
+
+/**
+ * Walk `#planetList .smallplanet` starting from the active planet and
+ * return the `cp` of the first planet that has room for another
+ * expedition (`count < settings.maxExpPerPlanet`). Mirrors v4
+ * `findPlanetWithExpSlot` semantics.
+ *
+ * Wraps around the planet list, so a player whose active planet is the
+ * last in the list still finds room on earlier entries. `null` when
+ * every planet (save the active one, if `skipCurrent`) is maxed.
+ *
+ * @param {boolean} skipCurrent
+ *   When `true`, skip the active planet itself — used from the click
+ *   handler after the active planet is already known to be full.
+ * @returns {number | null} `cp` of the first planet with room, or `null`.
+ */
+const findPlanetWithExpSlot = (skipCurrent) => {
+  const max = settingsStore.get().maxExpPerPlanet;
+  const planets = Array.from(
+    document.querySelectorAll('#planetList .smallplanet'),
+  );
+  if (planets.length === 0) return null;
+  const activeIdx = planets.findIndex((p) =>
+    p.classList.contains('hightlightPlanet'),
+  );
+  const start = activeIdx < 0 ? 0 : activeIdx;
+  const startOffset = skipCurrent ? 1 : 0;
+  for (let i = startOffset; i < planets.length; i++) {
+    const idx = (start + i) % planets.length;
+    const p = planets[idx];
+    const coords = stripBrackets(p.querySelector('.planet-koords')?.textContent);
+    if (!coords) continue;
+    if (countActiveExpeditions(coords) >= max) continue;
+    const id = p.id;
+    if (!id || !id.startsWith('planet-')) continue;
+    const cp = parseInt(id.slice('planet-'.length), 10);
+    if (Number.isFinite(cp) && cp > 0) return cp;
+  }
+  return null;
 };
 
 /**
@@ -165,48 +276,23 @@ const getActiveCp = () => {
 };
 
 /**
- * Build a fleetdispatch URL pointing at the given `cp` with
- * `mission=15`. The base is derived from the current `location.href`
- * so we stay on the same origin / path the game served, and we drop
- * any existing query tail so stale params (old `position=`, stale
- * `mission=`) don't leak into the navigation.
+ * Build a fleetdispatch URL pointing at the given `cp`. No `mission`
+ * param — AGR's own expedition routine sets the mission when the user
+ * taps it on the fleetdispatch page, so baking `mission=15` into the
+ * URL here would be redundant and would miss the case where the user
+ * lands on fleetdispatch through our redirect and then changes AGR's
+ * selection.
+ *
+ * Base is derived from `location.href` so we stay on the origin/path
+ * the game served; the query tail is dropped to avoid leaking stale
+ * params (old `position=`, `mission=`) into the navigation.
  *
  * @param {number} cp
  * @returns {string}
  */
-const buildExpeditionUrl = (cp) => {
+const buildFleetdispatchUrl = (cp) => {
   const base = location.href.split('?')[0];
-  return `${base}?page=ingame&component=fleetdispatch&cp=${cp}&mission=${MISSION_EXPEDITION}`;
-};
-
-/**
- * Synthesize `Enter` keydown + keyup on `document.activeElement` (or
- * `document` as a fallback). OGame's fleetdispatch form listens for
- * Enter and calls its own `sendFleet` — so "press Enter for the user"
- * is how we dispatch without ever touching the game's internals.
- *
- * @returns {void}
- */
-const dispatchEnter = () => {
-  const target = document.activeElement || document;
-  target.dispatchEvent(
-    new KeyboardEvent('keydown', {
-      key: 'Enter',
-      code: 'Enter',
-      keyCode: 13,
-      which: 13,
-      bubbles: true,
-    }),
-  );
-  target.dispatchEvent(
-    new KeyboardEvent('keyup', {
-      key: 'Enter',
-      code: 'Enter',
-      keyCode: 13,
-      which: 13,
-      bubbles: true,
-    }),
-  );
+  return `${base}?page=ingame&component=fleetdispatch&cp=${cp}`;
 };
 
 // ── Install / dispose ────────────────────────────────────────────────
@@ -248,38 +334,203 @@ let installed = null;
 export const installSendExp = () => {
   if (installed) return installed.dispose;
 
+  // Re-entry guard: a user tapping twice during Phase 2 polling must
+  // NOT start a second poll loop (or double-click the routine element,
+  // which at best is wasted and at worst confuses AGR's state machine).
+  // Mirrors v4's module-scope `expBusy`. Dimmed opacity gives a visible
+  // cue that the button is working.
+  let busy = false;
+
+  /**
+   * Repaint the button text. Idempotent; no-op when the button was
+   * torn down between schedule and fire.
+   *
+   * @param {HTMLButtonElement} btn
+   * @param {string} text
+   */
+  const setLabel = (btn, text) => {
+    btn.textContent = text;
+  };
+
+  /**
+   * Lock the button for the duration of a Phase 2 run — greys it out
+   * and sets the re-entry flag so a second click is ignored.
+   *
+   * @param {HTMLButtonElement} btn
+   */
+  const lock = (btn) => {
+    busy = true;
+    btn.style.opacity = '0.5';
+  };
+
+  /**
+   * Release the Phase 2 lock and restore the opacity.
+   *
+   * @param {HTMLButtonElement} btn
+   */
+  const unlock = (btn) => {
+    busy = false;
+    btn.style.opacity = '1';
+  };
+
+  /**
+   * Transient "All maxed!" painted when every planet has hit the
+   * expedition cap. 2 s matches the original `MAX_LABEL` timing so
+   * users learn the cadence once.
+   *
+   * @param {HTMLButtonElement} btn
+   */
+  const paintAllMaxed = (btn) => {
+    const original = btn.textContent;
+    btn.textContent = ALL_MAXED_LABEL;
+    btn.style.background = BG_MAX;
+    setTimeout(() => {
+      btn.textContent = original;
+      btn.style.background = BG_IDLE;
+    }, MAX_LABEL_MS);
+  };
+
+  /**
+   * Phase 2 (fleetdispatch + mission=15, fleet panel NOT yet loaded):
+   * wait for AGR's `#ago_routine_7` to exist and inspect its
+   * `.ago_routine_check` child. Three outcomes:
+   *
+   *   - `ago_routine_check_3` (ready): click the routine element —
+   *     AGR renders `#ago_fleet2_main` + the native `#dispatchFleet`
+   *     button. Then wait for both and flip the label to "Dispatch!"
+   *     so the user's next tap issues the real send.
+   *   - `ago_routine_check_1` / `_check_2` (no ships): no expedition
+   *     is possible from here. Navigate to the next planet that still
+   *     has slots, else paint "All maxed!".
+   *   - Routine never appears within {@link POLL_TIMEOUT_MS}: give up
+   *     quietly and restore the idle label. The user can retry.
+   *
+   * Returns a promise so the click handler can await completion (only
+   * to then exit — the Phase 2 outcomes already repaint + unlock).
+   *
+   * @param {HTMLButtonElement} btn
+   * @returns {Promise<void>}
+   */
+  const runPhase2 = async (btn) => {
+    setLabel(btn, 'Loading...');
+
+    const routine = await waitFor(() => {
+      const el = document.getElementById('ago_routine_7');
+      return el?.querySelector('.ago_routine_check') ? el : null;
+    }, { timeoutMs: POLL_TIMEOUT_MS, intervalMs: POLL_INTERVAL_MS });
+
+    if (!routine) {
+      setLabel(btn, BUTTON_TEXT);
+      unlock(btn);
+      return;
+    }
+
+    const check = routine.querySelector('.ago_routine_check');
+    if (check?.classList.contains('ago_routine_check_3')) {
+      // Routine is ready — AGR prep+fire. Second click mirrors v4's
+      // `setTimeout(() => safeClick(routine), 50)` double-tap, which
+      // shakes loose cases where one click left AGR half-idled.
+      safeClick(routine);
+      setTimeout(() => safeClick(routine), 50);
+      setLabel(btn, 'Preparing...');
+
+      const ready = await waitFor(
+        () =>
+          document.getElementById('dispatchFleet')
+            && document.getElementById('ago_fleet2_main')
+            ? true
+            : null,
+        { timeoutMs: POLL_TIMEOUT_MS, intervalMs: POLL_INTERVAL_MS },
+      );
+
+      if (ready) {
+        setLabel(btn, 'Dispatch!');
+      } else {
+        setLabel(btn, BUTTON_TEXT);
+      }
+      unlock(btn);
+      return;
+    }
+
+    // `_check_1` or `_check_2` → no ships here. Look for a planet
+    // that CAN still send; navigate there. If none, paint "All maxed!"
+    // and let the user deal with it.
+    setLabel(btn, 'No ships');
+    const nextCp = findPlanetWithExpSlot(true);
+    if (nextCp !== null) {
+      location.href = buildFleetdispatchUrl(nextCp);
+      return;
+    }
+    paintAllMaxed(btn);
+    unlock(btn);
+  };
+
   /**
    * Handle the idle-state click. Not called when a drag just finished
    * (the click listener short-circuits on `hasMoved`).
+   *
+   * Flow mirrors v4 `tryExpedition`:
+   *   Phase 0 — current planet maxed → navigate to next free planet
+   *             (or paint "All maxed!" when nothing has room).
+   *   Phase 1 — fleetdispatch + mission=15 + fleet panel loaded →
+   *             click the native `#dispatchFleet` button (sends).
+   *   Phase 2 — fleetdispatch + mission=15 + fleet panel NOT loaded →
+   *             see {@link runPhase2}: poll the AGR routine element,
+   *             click it, wait for the fleet panel, flip the label.
+   *   Else  → navigate to fleetdispatch for the active planet.
    *
    * @param {HTMLButtonElement} btn
    * @returns {void}
    */
   const handleClick = (btn) => {
-    const max = settingsStore.get().maxExpPerPlanet;
-    const count = countActiveExpeditions();
-    if (count >= max) {
-      const original = btn.textContent;
-      btn.textContent = MAX_LABEL;
-      btn.style.background = BG_MAX;
-      setTimeout(() => {
-        btn.textContent = original;
-        btn.style.background = BG_IDLE;
-      }, MAX_LABEL_MS);
-      return;
-    }
+    if (busy) return;
 
     const isFleet = location.search.includes('component=fleetdispatch');
-    const isExp = location.search.includes(`mission=${MISSION_EXPEDITION}`);
 
-    if (isFleet && isExp) {
-      dispatchEnter();
+    if (!isFleet) {
+      // Not on fleetdispatch yet — hop to the first planet that has
+      // room (possibly the active one). v4 `onSendExpClick` matches:
+      // `findPlanetWithExpSlot(false)` — skipCurrent=false. No
+      // separate "current cap" check here; if the active planet is
+      // maxed the iteration just moves past it.
+      const cp = findPlanetWithExpSlot(false);
+      if (cp === null) {
+        paintAllMaxed(btn);
+        return;
+      }
+      location.href = buildFleetdispatchUrl(cp);
       return;
     }
 
-    const cp = getActiveCp();
-    if (cp === null) return;
-    location.href = buildExpeditionUrl(cp);
+    // Already on fleetdispatch. Phase 0 — current planet cap check.
+    // When the active planet is full, jump to the next free one so
+    // the user doesn't have to re-pick manually.
+    const max = settingsStore.get().maxExpPerPlanet;
+    const count = countActiveExpeditions(getActivePlanetCoords());
+    if (count >= max) {
+      const nextCp = findPlanetWithExpSlot(true);
+      if (nextCp !== null) {
+        location.href = buildFleetdispatchUrl(nextCp);
+        return;
+      }
+      paintAllMaxed(btn);
+      return;
+    }
+
+    // Phase 1 — fleet panel already loaded → just fire dispatch.
+    // Phase 2 — panel not loaded → click AGR routine, wait for it.
+    // Gate on `component=fleetdispatch` only: AGR assigns the mission
+    // itself when the user taps its expedition routine, so `mission=15`
+    // is not a reliable precondition for Phase 1/2 here.
+    const dispatch = document.getElementById('dispatchFleet');
+    const fleetPanel = document.getElementById('ago_fleet2_main');
+    if (dispatch && fleetPanel) {
+      safeClick(dispatch);
+      setLabel(btn, 'Sent!');
+      return;
+    }
+    lock(btn);
+    void runPhase2(btn);
   };
 
   /**
@@ -425,7 +676,11 @@ export const installSendExp = () => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.id = BUTTON_ID;
-    btn.textContent = BUTTON_TEXT;
+    // Context-aware initial label (v4 parity): on fleetdispatch the
+    // user's next tap meaning is different depending on AGR/OGame
+    // hydration state, so the button label tells them what's about
+    // to happen.
+    btn.textContent = computeInitialLabel();
     btn.tabIndex = 0;
     btn.setAttribute('aria-label', 'Send expedition');
 

@@ -95,6 +95,7 @@ import {
   setStatus,
   getToken,
   clearGistScans,
+  clearGistScansForGalaxy,
 } from './gist.js';
 import { debounce } from '../lib/debounce.js';
 import { chromeStore } from '../lib/storage.js';
@@ -113,6 +114,12 @@ import { chromeStore } from '../lib/storage.js';
  */
 const SYNC_REQUEST_TOMBSTONE = 'oge5_syncRequestAt';
 const CLEAR_REMOTE_TOMBSTONE = 'oge5_clearRemoteAt';
+/**
+ * Per-galaxy reset tombstone. Value is `"<galaxy>:<timestamp>"` so two
+ * resets of the same galaxy back-to-back register as distinct changes
+ * (chrome.storage.onChanged only fires when the value actually changes).
+ */
+const RESET_GALAXY_TOMBSTONE = 'oge5_resetGalaxyAt';
 
 /**
  * Quiet-period length (ms) for {@link scheduleUpload}. See file header
@@ -393,10 +400,13 @@ export const installSync = () => {
       void onForceSync();
     }
     if (CLEAR_REMOTE_TOMBSTONE in changes) {
-      // The histogram already wiped the local scans key before writing
-      // this tombstone; our job is the remote half. Swallow errors
-      // rather than letting them bubble out of the listener — setStatus
-      // surfaces them in the Settings panel instead.
+      // The histogram wiped `chrome.storage.local` before writing this
+      // tombstone — but scansStore IN MEMORY on the game tab still
+      // holds every scan. Without a symmetric in-memory wipe, the next
+      // scheduled upload would merge local-in-memory with the now-empty
+      // remote (union) and push everything back up. Do the in-memory
+      // wipe first, THEN clear the gist.
+      scansStore.set(/** @type {import('./merge.js').GalaxyScans} */ ({}));
       (async () => {
         try {
           await clearGistScans();
@@ -404,6 +414,44 @@ export const installSync = () => {
           setStatus('err', `clear-remote: ${/** @type {Error} */ (err).message}`);
         }
       })();
+    }
+    if (RESET_GALAXY_TOMBSTONE in changes) {
+      // Value shape is `"<galaxy>:<timestamp>"`; we only care about the
+      // galaxy id. Bad parses fall through silently — a corrupt
+      // tombstone shouldn't take down the listener for the next one.
+      const raw = /** @type {{ newValue?: unknown }} */ (
+        changes[RESET_GALAXY_TOMBSTONE]
+      ).newValue;
+      const str = typeof raw === 'string' ? raw : '';
+      const galaxy = parseInt(str.split(':')[0], 10);
+      if (Number.isFinite(galaxy) && galaxy > 0) {
+        // Drop the galaxy from scansStore IN MEMORY for the same
+        // merge-round-trip reason as CLEAR_REMOTE above — the
+        // histogram cleared chrome.storage but our in-memory copy
+        // would otherwise re-introduce the keys via union merge.
+        const current = scansStore.get();
+        const prefix = galaxy + ':';
+        /** @type {typeof current} */
+        const filtered = {};
+        for (const key of /** @type {(keyof typeof current)[]} */ (
+          Object.keys(current)
+        )) {
+          if (!key.startsWith(prefix)) filtered[key] = current[key];
+        }
+        if (Object.keys(filtered).length !== Object.keys(current).length) {
+          scansStore.set(filtered);
+        }
+        (async () => {
+          try {
+            await clearGistScansForGalaxy(galaxy);
+          } catch (err) {
+            setStatus(
+              'err',
+              `reset-galaxy: ${/** @type {Error} */ (err).message}`,
+            );
+          }
+        })();
+      }
     }
   };
   const unsubStorage = chromeStore.onChanged(onStorageChange);

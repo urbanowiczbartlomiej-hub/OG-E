@@ -3,9 +3,22 @@
   "name": "OG-E v5 (dev)",
   "version": "5.0.0",
   "description": "OGame UI modification (requires AntiGameReborn). Clean-slate rewrite of OG-E. Does not initiate game requests, does not automate gameplay.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "oge5@ogame-extensions",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    },
+    "gecko_android": {
+      "strict_min_version": "142.0"
+    }
+  },
   "icons": {
     "16": "icons/icon16.png",
-    "48": "icons/icon48.png"
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   },
   "permissions": ["storage"],
   "host_permissions": [

@@ -20,8 +20,12 @@ describe('RESCAN_AFTER', () => {
     expect(RESCAN_AFTER.empty_sent).toBe(4 * H);
   });
 
-  it('maps `abandoned` to 24 hours', () => {
-    expect(RESCAN_AFTER.abandoned).toBe(24 * H);
+  it('does NOT map `abandoned` (uses `abandonedCleanupDeadline` instead, 4.9.6 parity)', () => {
+    // `abandoned` is absent from RESCAN_AFTER by design — the game's
+    // cleanup sweep runs at 3 AM server time, so we compare against
+    // an absolute deadline (`abandonedCleanupDeadline`) rather than
+    // a flat age threshold. See `isSystemStale` for the branch.
+    expect(RESCAN_AFTER.abandoned).toBeUndefined();
   });
 
   it('maps `inactive` to 5 days', () => {
@@ -118,15 +122,17 @@ describe('isSystemStale', () => {
   });
 
   it('reports stale when ANY position is past its threshold, even alongside stable ones', () => {
-    // `empty` would read as fresh forever, but `abandoned`'s 24h window
-    // is blown out at 25h — that single slot forces a rescan.
+    // `empty` would read as fresh forever, but `inactive`'s 5d window
+    // is blown out at 6d — that single slot forces a rescan.
+    // (abandoned moved to a dynamic 3-AM deadline in 4.9.6; use
+    // `inactive` here for a flat-threshold mixed-slot test.)
     expect(
       isSystemStale(
         {
-          scannedAt: NOW - 25 * H,
+          scannedAt: NOW - 6 * 24 * H,
           positions: {
             8: { status: 'empty' },
-            9: { status: 'abandoned' },
+            9: { status: 'inactive' },
           },
         },
         NOW,

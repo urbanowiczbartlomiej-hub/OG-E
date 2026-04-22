@@ -37,6 +37,7 @@ import {
   exportColonyCsv,
   triggerSync,
   triggerClearRemote,
+  triggerResetGalaxy,
   HISTORY_KEY,
   SCANS_KEY,
 } from './io.js';
@@ -235,9 +236,11 @@ const renderAll = () => {
 
 /**
  * Delete every scan whose key starts with `"${g}:"`, then flag a
- * remote clear so the next sync cycle (Phase 10) wipes the gist too.
- * The follow-up chrome.storage.onChanged fires from the set/remove and
- * triggers our own listener → loadAll → renderAll.
+ * per-galaxy remote reset so the next sync cycle (Phase 10) wipes the
+ * gist's copy of this galaxy too. Without the remote-side wipe the
+ * union merge would reintroduce the just-deleted local entries on the
+ * next download. (Plain `triggerSync` is wrong here for the same
+ * reason — it merges, it doesn't subtract.)
  *
  * @param {number} g
  * @returns {Promise<void>}
@@ -253,7 +256,7 @@ const resetGalaxy = async (g) => {
     }
   }
   await chromeStore.set(SCANS_KEY, current);
-  await triggerSync();
+  await triggerResetGalaxy(g);
 };
 
 /**

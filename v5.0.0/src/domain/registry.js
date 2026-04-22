@@ -181,8 +181,17 @@ export const findConflict = (
 ) => {
   if (candidateArrivalAt === 0) return null;
   for (const r of reg) {
-    if (r.arrivalAt <= now) continue;
-    if (Math.abs(r.arrivalAt - candidateArrivalAt) < minGapMs) return r;
+    // Defensive coerce to `Number` — older registry payloads (hand-
+    // written import, pre-v5 leftovers, migration remnants) have been
+    // observed to carry `arrivalAt` as a string. v4 4.9.4 learned this
+    // the hard way: `string <= now` tricks one-sided coercion and
+    // `Math.abs('10000' - 10000)` gives 0, which would mask a real
+    // min-gap conflict. An explicit cast here makes every downstream
+    // comparison numeric and keeps the logic identical for
+    // well-formed data.
+    const arrivalAt = Number(r.arrivalAt) || 0;
+    if (arrivalAt <= now) continue;
+    if (Math.abs(arrivalAt - candidateArrivalAt) < minGapMs) return r;
   }
   return null;
 };

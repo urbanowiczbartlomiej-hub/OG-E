@@ -124,13 +124,23 @@ describe('installCheckTargetHook — happy path', () => {
 });
 
 describe('installCheckTargetHook — response gating', () => {
-  it('does NOT dispatch when response.status !== "success"', async () => {
+  it('DOES dispatch when response.status !== "success" (4.9.2 parity, exposes errorCodes)', async () => {
+    // v4 4.9.2 changed the hook to dispatch on both success AND
+    // failure responses so consumers can read `errors[]` for
+    // reserved-slot detection (140016) and other edge cases. v5
+    // inherits the same contract.
     installCheckTargetHook();
     await fakeCheckTargetXHR('galaxy=4&system=30&position=8&type=1', {
       status: 'error',
-      targetOk: true,
+      targetOk: false,
+      errors: [{ error: 140016, message: 'reserved' }],
     });
-    expect(captured).toBeNull();
+    expect(captured).not.toBeNull();
+    const detail = /** @type {any} */ (captured).detail;
+    expect(detail.success).toBe(false);
+    expect(detail.errorCodes).toEqual([140016]);
+    expect(detail.reserved).toBe(true);
+    expect(detail.colonizable).toBe(false);
   });
 
   it('does NOT dispatch when response is not valid JSON', async () => {

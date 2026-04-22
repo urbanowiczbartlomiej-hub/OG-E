@@ -37,12 +37,52 @@
 
 /** @ts-check */
 
-/* global Blob, Response, CompressionStream, DecompressionStream, btoa, atob */
+/* global Blob, CompressionStream, DecompressionStream, TextDecoder, btoa, atob */
 
 // 32 KiB per `String.fromCharCode.apply` call. Comfortably below the
 // per-call argument limit on every current engine while still amortizing
 // the per-call overhead. See file header for rationale.
 const CHUNK = 0x8000;
+
+/**
+ * Drain a `ReadableStream<Uint8Array>` into a single `Uint8Array`, without
+ * wrapping the stream in `new Response(stream)`.
+ *
+ * Why not `new Response(stream).arrayBuffer()`? Inside Firefox content
+ * scripts, a stream produced by `CompressionStream` / `DecompressionStream`
+ * is guarded by an Xray wrapper. Passing such a stream into a `Response`
+ * constructor occasionally raises
+ * `"Permission denied to access property 'constructor'"` — a
+ * wrapper-integrity error that's hard to diagnose and impossible to
+ * catch higher up. Walking the reader by hand bypasses the wrapper
+ * conversion entirely and works identically under Chrome / Firefox /
+ * Node tests.
+ *
+ * 4.9.4 shipped the same fix in v4's `sync.js`; this is a direct port.
+ *
+ * @param {ReadableStream<Uint8Array>} stream
+ * @returns {Promise<Uint8Array>}
+ */
+const readStreamToBytes = async (stream) => {
+  const reader = stream.getReader();
+  /** @type {Uint8Array[]} */
+  const chunks = [];
+  let total = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    total += value.length;
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.length;
+  }
+  return out;
+};
 
 /**
  * Convert a byte buffer to a base64 ASCII string without triggering the
@@ -100,8 +140,8 @@ export const gzipEncode = async (input) => {
   const compressed = new Blob([input])
     .stream()
     .pipeThrough(new CompressionStream('gzip'));
-  const buffer = await new Response(compressed).arrayBuffer();
-  return bytesToBase64(new Uint8Array(buffer));
+  const bytes = await readStreamToBytes(compressed);
+  return bytesToBase64(bytes);
 };
 
 /**
@@ -119,8 +159,11 @@ export const gzipEncode = async (input) => {
 export const gzipDecode = async (b64) => {
   const bytes = base64ToBytes(b64);
   // `Blob` accepts a Uint8Array directly; its `.stream()` replays the same
-  // bytes through the decompressor. `Response.text()` then UTF-8-decodes
-  // the inflated output and returns the original JS string.
+  // bytes through the decompressor. `TextDecoder` then UTF-8-decodes the
+  // inflated output into the original JS string.
+  //
+  // Stream → bytes → text rather than `new Response(stream).text()` for
+  // the same Xray-wrapper reason as `gzipEncode` — see `readStreamToBytes`.
   //
   // The `BlobPart` cast works around a TypeScript 5.7+ typing quirk: the
   // lib.d.ts now narrows `BlobPart` to require `ArrayBufferView<ArrayBuffer>`
@@ -131,5 +174,6 @@ export const gzipDecode = async (b64) => {
   const decompressed = new Blob([/** @type {BlobPart} */ (bytes)])
     .stream()
     .pipeThrough(new DecompressionStream('gzip'));
-  return new Response(decompressed).text();
+  const out = await readStreamToBytes(decompressed);
+  return new TextDecoder().decode(out);
 };

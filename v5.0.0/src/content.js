@@ -42,10 +42,14 @@
 
 import { installBlackBackground } from './features/blackBg.js';
 
+// TEMP debug — remove once smoke-test confirms the content script is
+// being injected. Diagnosing "no visible trace of v5" on the game page.
+console.log('[OG-E v5] content.js isolated world — top-level entry reached');
+
 installBlackBackground();
 
 import { initHistoryStore } from './state/history.js';
-import { initScansStore } from './state/scans.js';
+import { initScansStore, installScansListener } from './state/scans.js';
 import { initRegistryStore } from './state/registry.js';
 import { initSettingsStore } from './state/settings.js';
 import { installSettingsMirror } from './state/settingsMirror.js';
@@ -55,6 +59,7 @@ import { installBadges } from './features/badges.js';
 import { installSendExp } from './features/sendExp.js';
 import { installSendCol } from './features/sendCol.js';
 import { installSettingsUi } from './features/settingsUi.js';
+import { installFleetdispatchShortcut } from './features/fleetdispatchShortcut.js';
 
 import { installSync } from './sync/scheduler.js';
 
@@ -66,22 +71,54 @@ initScansStore();
 initRegistryStore();
 installSettingsMirror();
 
-// Passive observers (data capture).
-installColonyRecorder();
-installBadges();
-
-// User-facing buttons.
-installSendExp();
-installSendCol();
-
-// Settings panel — hooks into AGR's options menu. AGR is a hard
-// dependency per DESIGN.md §15 P3; if AGR isn't present the install
-// skips silently (no-op) and the panel simply doesn't appear.
-installSettingsUi();
+// Bridge from the MAIN-world galaxy XHR hook into scansStore. Without
+// this, `oge5:galaxyScanned` events fire into a void and the scan
+// database never grows from navigation alone — scans.js Phase 5 wired
+// persistence, but not this listener. Missed in Phase 10 wire-up.
+installScansListener();
 
 // Top-frame-only: sync scheduler. OGame embeds several iframes; running
 // the gist round-trip in each would multiply API traffic for no gain
-// (the data is identical across frames).
+// (the data is identical across frames). Sync doesn't touch the DOM
+// (only chrome.storage + HTTP + store subscriptions), so it's safe to
+// install before DOMContentLoaded.
 if (window.top === window.self) {
   installSync();
+}
+
+// Every feature below touches the DOM on install — at `document_start`
+// the HTML parser hasn't produced `<body>` yet, so e.g. badges.js's
+// `MutationObserver.observe(document.body)` throws "Argument 1 is not
+// an object" and aborts the whole bootstrap (every subsequent install
+// would be skipped). Defer the DOM-touching installs to
+// DOMContentLoaded so `document.body` exists and `getElementById` can
+// resolve live nodes.
+const installDomFeatures = () => {
+  // Passive observers (data capture).
+  installColonyRecorder();
+  installBadges();
+
+  // User-facing buttons.
+  installSendExp();
+  installSendCol();
+
+  // Keyboard shortcut on fleetdispatch — desktop users press
+  // ArrowRight to advance through AGR/OGame's send panels.
+  installFleetdispatchShortcut();
+
+  // Settings panel — hooks into AGR's options menu. AGR is a hard
+  // dependency per DESIGN.md §15 P3; if AGR isn't present the install
+  // skips silently (no-op) and the panel simply doesn't appear.
+  installSettingsUi();
+};
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    installDomFeatures();
+    // TEMP debug — remove with the other console.logs once smoke-test passes.
+    console.log('[OG-E v5] content.js bootstrap complete (post-DOM)');
+  }, { once: true });
+} else {
+  installDomFeatures();
+  console.log('[OG-E v5] content.js bootstrap complete (immediate)');
 }

@@ -102,25 +102,22 @@ import { safeClick, waitFor } from '../lib/dom.js';
  * @param {number} [desiredWidthPx]  Preferred width in px. Defaults 600.
  * @returns {void}
  */
-const expandEnclosingDialog = (el, desiredWidthPx = 600) => {
-  const dialog = /** @type {HTMLElement | null} */ (
-    el.closest?.('.ui-dialog') ?? null
-  );
-  if (!dialog) return;
-  const target = Math.min(desiredWidthPx, window.innerWidth - 20);
-  dialog.style.width = target + 'px';
-  const left = parseFloat(dialog.style.left) || 0;
-  const maxLeft = window.innerWidth - target - 10;
-  if (left > maxLeft) dialog.style.left = Math.max(10, maxLeft) + 'px';
-};
+// `expandEnclosingDialog` removed in favour of overlay buttons (v4 4.9.3
+// pattern). The overlay sits on top of whatever size the native dialog
+// is, so we no longer need to force a wider dialog + re-centre it.
 
 /**
- * Create one of our big proxy action buttons. Styled for thumb-tap
- * friendliness: 66px vertical padding, bold 20px label, 2px white
- * border, `touch-action: manipulation` (disables double-tap zoom).
- * The caller is responsible for appending it WEWNĄTRZ the game's
- * popup DOM — the styling does not include `position:absolute`; the
- * button sits as a block element below the native content.
+ * Create one of our big proxy action buttons — full-popup overlay
+ * style (v4 4.9.3). The button is `position: absolute; inset: 0` so
+ * it covers the WHOLE content area of its parent: the user sees only
+ * our orange/red action button, every native field/text the game
+ * rendered is hidden underneath. The caller is responsible for
+ * giving the parent `position: relative` and a sensible min-height
+ * (the game's content might collapse to zero otherwise) — see
+ * {@link makeInjectedButtonHost}.
+ *
+ * The native form fields stay in the DOM, so `safeClick(nativeSubmit)`
+ * still fires their click — visibility is not required for that.
  *
  * @param {string} text    Button label.
  * @param {string} bgColor CSS background colour.
@@ -134,14 +131,30 @@ const makeInjectedButton = (text, bgColor, id) => {
   btn.id = id;
   btn.textContent = text;
   btn.style.cssText = [
-    'display:block', 'width:100%', 'box-sizing:border-box',
-    'margin:14px 0', 'padding:66px 16px',
+    'position:absolute', 'inset:0',
+    'display:flex', 'align-items:center', 'justify-content:center',
+    'box-sizing:border-box', 'padding:16px',
     'background:' + bgColor, 'color:#fff',
-    'font-size:20px', 'font-weight:bold', 'text-align:center',
-    'border:2px solid #fff', 'border-radius:10px',
+    'font-size:24px', 'font-weight:bold', 'text-align:center',
+    'border:3px solid #fff', 'border-radius:10px',
     'cursor:pointer', 'touch-action:manipulation',
+    'z-index:9999',
   ].join(';');
   return btn;
+};
+
+/**
+ * Prepare a parent element to host an overlay-style injected button.
+ * Sets `position: relative` (so the button's `inset: 0` is anchored
+ * to it) and a min-height so the parent doesn't collapse and hide
+ * our overlay along with itself. v4 4.9.3 used the same trick.
+ *
+ * @param {HTMLElement} parent
+ * @returns {void}
+ */
+const makeInjectedButtonHost = (parent) => {
+  parent.style.position = 'relative';
+  if (!parent.style.minHeight) parent.style.minHeight = '200px';
 };
 
 /**
@@ -287,17 +300,22 @@ export const abandonPlanet = async () => {
     pwField.dispatchEvent(new Event('input', { bubbles: true }));
     pwField.dispatchEvent(new Event('change', { bubbles: true }));
 
-    // Inject the big "SUBMIT PASSWORD" button WEWNĄTRZ the popup so
-    // jQuery UI's focus manager doesn't close the dialog on tap.
+    // Overlay the big "SUBMIT PASSWORD" button on top of the WHOLE
+    // popup content (v4 4.9.3 UX). jQuery UI's focus manager keeps
+    // the dialog open as long as the click is inside the dialog
+    // scope; our absolutely-positioned button sits inside that
+    // scope so it qualifies. The native password field + submit
+    // button remain in the DOM beneath — `safeClick(nativeSubmit)`
+    // fires them programmatically, no visibility required.
     const abandonContent = document.getElementById('abandonplanet');
     if (!abandonContent) return false;
+    makeInjectedButtonHost(abandonContent);
     const proxySubmit = makeInjectedButton(
       'SUBMIT PASSWORD',
       '#c07020',
       'oge5-abandon-proxy-submit',
     );
     abandonContent.appendChild(proxySubmit);
-    expandEnclosingDialog(abandonContent);
 
     // ═══ Click 2: user taps our Submit proxy ════════════════════
     const submitOk = await new Promise(
@@ -340,13 +358,13 @@ export const abandonPlanet = async () => {
     );
     if (!confirmDialog) return false;
 
+    makeInjectedButtonHost(confirmDialog);
     const proxyConfirm = makeInjectedButton(
       '⚠ CONFIRM DELETE ⚠',
       '#a02020',
       'oge5-abandon-proxy-confirm',
     );
     confirmDialog.appendChild(proxyConfirm);
-    expandEnclosingDialog(confirmDialog);
 
     // ═══ Click 3: user taps our Confirm proxy ═══════════════════
     const confirmOk = await new Promise(

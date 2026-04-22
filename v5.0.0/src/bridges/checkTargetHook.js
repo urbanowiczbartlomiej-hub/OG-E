@@ -36,6 +36,10 @@ import { observeXHR } from './xhrObserver.js';
  *   request body (the game's own form field).
  * @property {number} system Target system coordinate, parsed from body.
  * @property {number} position Target position coordinate, parsed from body.
+ * @property {boolean} success From `response.status === 'success'`. Failure
+ *   responses (`status !== 'success'`) also fire this event — v4 4.9.2
+ *   onward — so consumers can differentiate "ok but not colonizable" from
+ *   "the server rejected the target outright".
  * @property {boolean} targetOk From `response.targetOk`. When `false`, the
  *   slot cannot be targeted for the chosen mission (e.g. empty slot +
  *   attack mission).
@@ -52,6 +56,22 @@ import { observeXHR } from './xhrObserver.js';
  *   from `response.orders`. Keys are mission IDs as strings:
  *   `orders['7']` is the colonization flag, `orders['15']` is expedition,
  *   etc. Empty object `{}` when the response omits the field.
+ * @property {number[]} errorCodes Flat list of `error` fields from
+ *   `response.errors`. Used by colonize logic to distinguish a
+ *   "reserved for planet-move" slot (error `140016`) from a generic
+ *   stale target.
+ * @property {boolean} colonizable Composite: `success && targetOk &&
+ *   !targetInhabited && orders['7'] === true`. The one flag the
+ *   colonize flow cares about.
+ * @property {boolean} reserved True iff `errorCodes.includes(140016)` —
+ *   the slot is reserved for a planet-move by another DM-paying player.
+ *   Surfaces as a separate badge colour in the histogram and a distinct
+ *   label on the Send button.
+ * @property {boolean} noShip True iff `errorCodes.includes(140035)` —
+ *   the game refused the send because the active planet has no
+ *   colonization ship. Surfaced as a "No ship!" label rather than
+ *   "Stale" — the target is fine, the user just needs to build a
+ *   colonizer. Do NOT arm stale-retry for this case.
  */
 
 /**
@@ -136,7 +156,13 @@ export const installCheckTargetHook = () => {
       } catch {
         return;
       }
-      if (!parsed || typeof parsed !== 'object' || parsed.status !== 'success') return;
+      if (!parsed || typeof parsed !== 'object') return;
+      // NOTE: we deliberately do NOT filter on `status === 'success'`
+      // here. v4 4.9.2 changed this to dispatch on BOTH success and
+      // failure responses — failure responses carry `errors[]` with
+      // the error code consumers need (e.g. 140016 for a slot
+      // reserved for planet-move). Filtering would hide those.
+      const success = parsed.status === 'success';
 
       const params = parseFormBody(body);
       const galaxy = parseInt(params.galaxy, 10);
@@ -148,20 +174,48 @@ export const installCheckTargetHook = () => {
       // same constraint the game enforces client-side.
       if (!galaxy || !system || !position) return;
 
+      const orders =
+        parsed.orders && typeof parsed.orders === 'object' && !Array.isArray(parsed.orders)
+          ? /** @type {Record<string, boolean>} */ (parsed.orders)
+          : {};
+      const targetOk = Boolean(parsed.targetOk);
+      const targetInhabited = Boolean(parsed.targetInhabited);
+
+      // Extract error codes from `response.errors[]`. The server ships
+      // entries as `{ error: <number>, message: <string> }`; we keep
+      // just the numeric code so consumers can do fast set-membership.
+      /** @type {number[]} */
+      const errorCodes = [];
+      if (Array.isArray(parsed.errors)) {
+        for (const err of parsed.errors) {
+          if (err && typeof err.error === 'number') errorCodes.push(err.error);
+        }
+      }
+
+      // Composite flags. The colonize flow asks "can I send a
+      // colonizer here right now?"; the reserved flag distinguishes
+      // planet-move reservations from every other kind of stale.
+      const colonizable =
+        success && targetOk && !targetInhabited && orders['7'] === true;
+      const reserved = errorCodes.includes(140016);
+      const noShip = errorCodes.includes(140035);
+
       /** @type {CheckTargetResultDetail} */
       const detail = {
         galaxy,
         system,
         position,
-        targetOk: Boolean(parsed.targetOk),
-        targetInhabited: Boolean(parsed.targetInhabited),
+        success,
+        targetOk,
+        targetInhabited,
         targetPlayerId: typeof parsed.targetPlayerId === 'number' ? parsed.targetPlayerId : 0,
         targetPlayerName:
           typeof parsed.targetPlayerName === 'string' ? parsed.targetPlayerName : '',
-        orders:
-          parsed.orders && typeof parsed.orders === 'object' && !Array.isArray(parsed.orders)
-            ? /** @type {Record<string, boolean>} */ (parsed.orders)
-            : {},
+        orders,
+        errorCodes,
+        colonizable,
+        reserved,
+        noShip,
       };
 
       document.dispatchEvent(new CustomEvent('oge5:checkTargetResult', { detail }));

@@ -32,7 +32,7 @@ bundle'owane skrypty i statyczne pliki strony histogramu.
 
 1. Otwórz `about:debugging#/runtime/this-firefox`
 2. Kliknij **"Wczytaj tymczasowy dodatek..."** (Load Temporary Add-on)
-3. Wskaż plik `dist/manifest.firefox.json`
+3. Wskaż plik `dist/manifest.json`
 4. Rozszerzenie instaluje się obok v4 (osobny gecko.id: `oge5@ogame-extensions`)
 
 Przy każdym `npm run build` trzeba ponownie kliknąć **"Przeładuj"**
@@ -84,8 +84,7 @@ v5.0.0/
 ├── rollup.config.mjs      config buildu (3 bundles)
 ├── tsconfig.json          JSDoc type-check config
 ├── .gitignore
-├── manifest.json          Chrome MV3
-├── manifest.firefox.json  Firefox MV3 (gecko.id: oge5@ogame-extensions)
+├── manifest.json          MV3 (one file for Chrome + Firefox; gecko.id: oge5@ogame-extensions)
 ├── scripts/
 │   └── copy-static.mjs    post-build: manifesty + histogram.html → dist/
 ├── src/                   ŹRÓDŁA
@@ -103,8 +102,7 @@ v5.0.0/
     ├── page.js
     ├── histogram.js
     ├── histogram.html
-    ├── manifest.json
-    └── manifest.firefox.json
+    └── manifest.json
 ```
 
 ---

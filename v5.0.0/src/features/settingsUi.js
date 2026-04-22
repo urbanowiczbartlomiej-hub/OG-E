@@ -65,7 +65,15 @@ import { settingsStore } from '../state/settings.js';
 import { safeLS } from '../lib/storage.js';
 import { waitFor } from '../lib/dom.js';
 
-/** DOM id of the settings header element. Stable so idempotency can check it. */
+/**
+ * DOM id of the whole AGR tab wrapper. AGR recognises `.ago_menu_tab`
+ * nodes and binds its toggle behaviour to the child `ago-data` attribute
+ * — our settings area must emit exactly this structure to participate
+ * in the rest of the AGR accordion UX.
+ */
+const TAB_ID = 'oge5-settings-tab';
+
+/** DOM id of the settings tab header (the clickable "▼ OG-E v5 Settings" strip). */
 const HEADER_ID = 'oge5-settings-header';
 
 /** DOM id of the settings table element. Stable for dispose + query by tests. */
@@ -76,11 +84,14 @@ const INPUT_ID_PREFIX = 'oge5-setting-';
 
 /**
  * CSS selector for the AGR menu container. AGR owns this node; we only
- * append into it. If this class name changes upstream this module breaks
- * — the breakage is loud (no settings tab visible) but not silent DOM
- * poisoning, which is the right failure mode.
+ * append into it. Matches v4 `settings.js` which uses `getElementById`
+ * on this same id — AGR renders `<div id="ago_menu_content">`, not a
+ * class-attributed node. Earlier Phase 7 used `.ago_menu_content`,
+ * which never matched and produced silent "no settings in AGR" breakage.
+ * If this id ever changes upstream this module breaks — loudly (no
+ * settings tab visible), which is the right failure mode.
  */
-const AGR_SELECTOR = '.ago_menu_content';
+const AGR_SELECTOR = '#ago_menu_content';
 
 /**
  * Maximum time we wait for AGR to hydrate its container. Ten seconds is
@@ -96,6 +107,23 @@ const AGR_TIMEOUT_MS = 10_000;
  * appears).
  */
 const AGR_POLL_MS = 200;
+
+/**
+ * URL of the histogram extension page, resolved once at module eval
+ * via `chrome.runtime.getURL` / `browser.runtime.getURL`. Empty string
+ * when the WebExtension runtime API isn't present (test environments);
+ * the onclick handler guards on this, so a missing URL just no-ops.
+ */
+const HISTOGRAM_URL = (() => {
+  try {
+    const g = /** @type {any} */ (/** @type {unknown} */ (globalThis));
+    const ns = g.browser ?? g.chrome;
+    const url = ns?.runtime?.getURL?.('histogram.html');
+    return typeof url === 'string' ? url : '';
+  } catch {
+    return '';
+  }
+})();
 
 /** localStorage keys used by the Status field. Written by sync code (v4 + v5). */
 const LS_LAST_SYNC_AT = 'oge5_lastSyncAt';
@@ -196,6 +224,7 @@ const SECTIONS = [
       { id: 'colBtnSize', label: 'Send Col button size', type: 'range', min: 40, max: 560, step: 10, unit: 'px' },
       { id: 'colPositions', label: 'Required target positions (only these will be colonized)', type: 'text', placeholder: 'e.g. 8,9,7,10,6' },
       { id: 'colPreferOtherGalaxies', label: 'Prefer neighbouring galaxies first (more predictable arrival times)', type: 'checkbox' },
+      { id: 'autoRedirectColonize',   label: 'After sending colonize, open the next target', type: 'checkbox' },
       { id: 'colMinGap', label: 'Min gap between arrivals (sec)', type: 'text', placeholder: 'e.g. 20' },
       { id: 'colMinFields', label: 'Min fields to keep colony', type: 'text', placeholder: 'e.g. 200' },
       { id: 'colPassword', label: 'Account password (for abandon)', type: 'password' },
@@ -214,6 +243,20 @@ const SECTIONS = [
         onclick: () => document.dispatchEvent(new CustomEvent('oge5:syncForce')),
       },
       { id: 'syncStatus', label: 'Status', type: 'static', getText: () => formatSyncStatus() },
+    ],
+  },
+  {
+    section: 'Data',
+    options: [
+      {
+        id: 'openHistogram',
+        label: 'Local data viewer (colony + galaxy)',
+        type: 'button',
+        buttonText: 'Open histogram',
+        onclick: () => {
+          if (HISTOGRAM_URL) window.open(HISTOGRAM_URL, '_blank');
+        },
+      },
     ],
   },
 ];
@@ -469,85 +512,232 @@ let installed = null;
  *
  * @returns {() => void} Dispose handle.
  */
+/**
+ * Apply the collapse/expand state to a tab by mutating the DOM in
+ * place. Pure w.r.t. its argument — writes nothing to closure state —
+ * so it works against whichever `tabEl` is currently in the document,
+ * even after AGR rebuilds the panel and we re-inject.
+ *
+ * @param {HTMLElement} tab
+ * @param {boolean} collapse
+ * @returns {void}
+ */
+const applyCollapse = (tab, collapse) => {
+  const headerChild = tab.querySelector('.ago_menu_tab_header');
+  const arrowClose = /** @type {HTMLElement | null} */ (
+    tab.querySelector('.ago_menu_tab_arrow_close')
+  );
+  const arrowOpen = /** @type {HTMLElement | null} */ (
+    tab.querySelector('.ago_menu_tab_arrow_open')
+  );
+  for (const child of Array.from(tab.children)) {
+    if (child === headerChild) continue;
+    const el = /** @type {HTMLElement} */ (child);
+    // `setProperty(..., 'important')` is the one hammer that works
+    // even against `!important` rules shipped by AGR's stylesheet.
+    el.style.setProperty('display', collapse ? 'none' : 'table', 'important');
+  }
+  if (arrowClose) arrowClose.style.display = collapse ? '' : 'none';
+  if (arrowOpen) arrowOpen.style.display = collapse ? 'none' : '';
+  tab.classList.toggle('ago_menu_tab_open', !collapse);
+};
+
+/**
+ * Build our OG-E tab `<div>` top-to-bottom: wrapper, clickable header
+ * with arrows + gold label, one `.ago_menu_section` table per section,
+ * all inputs wired via {@link buildRow}. The returned element is a
+ * detached node — the caller appends it into the AGR container.
+ *
+ * Accordion click is wired here: when the tab opens, we synthetically
+ * click every other `.ago_menu_tab_open` so AGR folds them up (its
+ * native menu allows only one tab open at a time). When anything else
+ * in the panel is clicked, the document-level listener installed once
+ * in {@link installSettingsUi} folds us up symmetrically.
+ *
+ * Default state is collapsed — matches the AGR UX of "all tabs closed
+ * on open" and keeps our long settings list out of the user's face.
+ *
+ * @returns {HTMLElement} The new tab wrapper (`#oge5-settings-tab`).
+ */
+const buildTab = () => {
+  const tab = document.createElement('div');
+  tab.id = TAB_ID;
+  tab.className = 'ago_menu_tab';
+
+  const header = document.createElement('div');
+  header.id = HEADER_ID;
+  // AGR's stylesheet handles typography/padding via this class — the
+  // inline `cursor`/`userSelect` just mark it as interactive because
+  // our own click handler (below) wires the toggle, not AGR's.
+  header.className = 'ago_menu_tab_header';
+  header.style.cursor = 'pointer';
+  header.style.userSelect = 'none';
+
+  const arrowClose = document.createElement('span');
+  arrowClose.className = 'ago_menu_tab_arrow_close';
+  arrowClose.textContent = '▼';
+  const arrowOpen = document.createElement('span');
+  arrowOpen.className = 'ago_menu_tab_arrow_open';
+  arrowOpen.textContent = '▲';
+
+  // Gold label is the single visual marker for "this row is the OG-E
+  // add-on". See file header for why we avoid borders/spacing hints.
+  const labelSpan = document.createElement('span');
+  labelSpan.textContent = 'OG-E v5 Settings';
+  labelSpan.style.color = '#d4af37';
+
+  header.appendChild(arrowClose);
+  header.appendChild(arrowOpen);
+  header.appendChild(labelSpan);
+  tab.appendChild(header);
+
+  let primaryTableSet = false;
+  for (const section of SECTIONS) {
+    const table = document.createElement('table');
+    table.className = 'ago_menu_section';
+    // Fixed layout + explicit 434/220 colgroup so inputs align between
+    // sections (without this, Expeditions labels pushed their inputs
+    // further right than Colonization).
+    table.style.tableLayout = 'fixed';
+    const colgroup = document.createElement('colgroup');
+    const col1 = document.createElement('col');
+    col1.style.width = '434px';
+    const col2 = document.createElement('col');
+    col2.style.width = '220px';
+    colgroup.appendChild(col1);
+    colgroup.appendChild(col2);
+    table.appendChild(colgroup);
+    if (!primaryTableSet) {
+      table.id = TABLE_ID;
+      primaryTableSet = true;
+    }
+
+    const sectionRow = document.createElement('tr');
+    sectionRow.className = 'ago_menu_section_header';
+    const sectionCell = document.createElement('th');
+    sectionCell.className = 'ago_menu_section_title';
+    sectionCell.colSpan = 2;
+    sectionCell.textContent = section.section;
+    sectionRow.appendChild(sectionCell);
+    table.appendChild(sectionRow);
+
+    for (const opt of section.options) {
+      table.appendChild(buildRow(opt));
+    }
+    tab.appendChild(table);
+  }
+
+  // Default collapsed. Apply BEFORE attaching the click listener so
+  // the very first click sees the "collapsed → open" transition.
+  applyCollapse(tab, true);
+
+  header.addEventListener('click', () => {
+    const isOpen = tab.classList.contains('ago_menu_tab_open');
+    if (!isOpen) {
+      // Opening — fold up every other open AGR tab by synthetically
+      // clicking its header, so AGR's own toggle handler does the
+      // right cleanup. Our document-level listener will see those
+      // synthetic clicks but no-op (our tab is still closed here).
+      const others = document.querySelectorAll(
+        '.ago_menu_tab.ago_menu_tab_open',
+      );
+      for (const t of others) {
+        if (t === tab) continue;
+        const otherHeader = t.querySelector('.ago_menu_tab_header');
+        if (otherHeader) /** @type {HTMLElement} */ (otherHeader).click();
+      }
+    }
+    applyCollapse(tab, isOpen);
+  });
+
+  return tab;
+};
+
+/**
+ * Install the OG-E settings panel. Injects into AGR's
+ * `#ago_menu_content` and keeps re-injecting whenever AGR rebuilds
+ * that container (which it does when the user closes and reopens the
+ * options menu) — without re-injection our tab disappears after the
+ * first close.
+ *
+ * Idempotent: a second call while already installed returns the same
+ * dispose handle. Dispose disconnects the observer, unbinds the
+ * document-level accordion listener, unsubscribes from settingsStore,
+ * and removes any live tab from the DOM.
+ *
+ * @returns {() => void}
+ */
 export const installSettingsUi = () => {
   if (installed) return installed.dispose;
 
-  // Closure flag tied to THIS install. Flipped by the dispose fn; the
-  // AGR-resolution callback checks it to decide whether to render.
-  // Using a closure (rather than re-checking `installed === sentinel`)
-  // means re-installs after dispose work cleanly: a brand-new install
-  // gets a brand-new `disposed` flag in a brand-new closure.
-  let disposed = false;
+  /**
+   * Build + append the tab inside AGR's container. No-op when (a) AGR
+   * hasn't rendered its container yet, or (b) our tab is already in
+   * the DOM. Called on initial install and on every body mutation
+   * via the MutationObserver below.
+   *
+   * @returns {void}
+   */
+  const inject = () => {
+    if (document.getElementById(TAB_ID)) return;
+    const container = document.querySelector(AGR_SELECTOR);
+    if (!container) return;
+    container.appendChild(buildTab());
+    // Sync the freshly-built inputs against the current store state.
+    // A re-injection after AGR rebuild needs this to carry over the
+    // user's edits — the DOM is brand new but the store is not.
+    syncInputsFromState();
+  };
+
+  // Initial attempt — synchronous when AGR is already hydrated,
+  // otherwise MutationObserver picks us up when it appears.
+  inject();
+
+  // Watch the whole body: AGR sometimes replaces the container node
+  // (not just its children), and a scoped observer attached to the
+  // old `#ago_menu_content` goes silent when that happens. Body
+  // observation is noisier but survives the swap.
+  const observer = new MutationObserver(inject);
+  observer.observe(document.body, { childList: true, subtree: true });
 
   /**
-   * Unsubscribe from `settingsStore`. Set inside the AGR-ready branch,
-   * so calling dispose BEFORE AGR appears is a no-op for this line —
-   * which is the correct behaviour (nothing to unsubscribe yet).
-   * @type {(() => void) | null}
+   * Document-level accordion listener. When the user clicks any
+   * `.ago_menu_tab_header` OTHER than ours, fold our tab up. Uses
+   * live DOM lookups because the tab element is recreated on every
+   * re-injection — we can't hold a closure reference to "the" tab.
+   *
+   * @param {Event} e
    */
-  let unsubSettings = null;
+  const externalToggleListener = (e) => {
+    const target = /** @type {HTMLElement | null} */ (e.target);
+    if (!target) return;
+    const clickedHeader = target.closest('.ago_menu_tab_header');
+    if (!clickedHeader) return;
+    const ourTab = document.getElementById(TAB_ID);
+    if (!ourTab) return;
+    if (ourTab.contains(clickedHeader)) return;
+    if (!ourTab.classList.contains('ago_menu_tab_open')) return;
+    applyCollapse(ourTab, true);
+  };
+  document.addEventListener('click', externalToggleListener, true);
 
-  /** @type {HTMLElement | null} */
-  let headerEl = null;
+  const unsubSettings = settingsStore.subscribe(() => {
+    // Idempotent DOM lookup — if the tab is currently absent (AGR
+    // panel closed), syncInputsFromState just finds no inputs and
+    // returns. When the panel reopens, inject() runs another sync.
+    syncInputsFromState();
+  });
 
-  /** @type {HTMLTableElement | null} */
-  let tableEl = null;
-
-  // Compose a dispose fn that handles both phases:
-  //   - Before AGR appears: flip the flag so the resolution no-ops.
-  //   - After AGR appears: remove DOM + unsubscribe.
-  // Assigning to `installed.dispose` before the wait resolves means
-  // the caller can dispose at any moment without caring which phase
-  // we are in.
   const dispose = () => {
-    if (disposed) return;
-    disposed = true;
-    if (unsubSettings) unsubSettings();
-    if (headerEl) headerEl.remove();
-    if (tableEl) tableEl.remove();
+    observer.disconnect();
+    document.removeEventListener('click', externalToggleListener, true);
+    unsubSettings();
+    const live = document.getElementById(TAB_ID);
+    if (live) live.remove();
     installed = null;
   };
 
   installed = { dispose };
-
-  waitFor(() => document.querySelector(AGR_SELECTOR), {
-    timeoutMs: AGR_TIMEOUT_MS,
-    intervalMs: AGR_POLL_MS,
-  }).then((container) => {
-    // Bail if dispose has been called, or AGR never appeared, or
-    // someone has already injected our header (test re-entrancy).
-    if (disposed) return;
-    if (!container) return;
-    if (document.getElementById(HEADER_ID)) return;
-
-    headerEl = document.createElement('div');
-    headerEl.id = HEADER_ID;
-    headerEl.textContent = 'OG-E v5 Settings';
-    headerEl.style.cssText = 'font-weight:bold;margin:8px 0;color:#4a9eff;';
-    container.appendChild(headerEl);
-
-    tableEl = document.createElement('table');
-    tableEl.id = TABLE_ID;
-    for (const section of SECTIONS) {
-      const sectionRow = document.createElement('tr');
-      const sectionCell = document.createElement('td');
-      sectionCell.colSpan = 2;
-      sectionCell.textContent = section.section;
-      sectionCell.style.cssText = 'font-weight:bold;padding:8px 0;color:#4a9eff;';
-      sectionRow.appendChild(sectionCell);
-      tableEl.appendChild(sectionRow);
-      for (const opt of section.options) {
-        tableEl.appendChild(buildRow(opt));
-      }
-    }
-    container.appendChild(tableEl);
-
-    unsubSettings = settingsStore.subscribe(() => {
-      if (disposed) return;
-      syncInputsFromState();
-    });
-  });
-
   return dispose;
 };
 

@@ -583,6 +583,57 @@ export const clearGistScans = async () => {
   setStatus('up', new Date().toISOString());
 };
 
+/**
+ * Drop every `${galaxy}:*` entry from the remote `galaxyScans` map
+ * while preserving `colonyHistory`, the other galaxies' scans, and any
+ * tombstones. Counterpart to the histogram's per-galaxy "Reset" button:
+ * without this, a local-only delete would be undone by the next sync
+ * round-trip (`mergeScans` is a UNION).
+ *
+ * Stamps {@link LAST_UP_KEY} on success.
+ *
+ * @param {number} galaxy
+ * @returns {Promise<void>}
+ */
+export const clearGistScansForGalaxy = async (galaxy) => {
+  const id = await ensureGistV3();
+  const gist = await gh(`/gists/${id}`);
+  const content = await readGistFile(gist, GIST_FILENAME);
+  /** @type {ColonyHistory} */
+  let colonyHistory = [];
+  /** @type {GalaxyScans} */
+  let galaxyScans = {};
+  if (content) {
+    try {
+      const parsed = JSON.parse(await gzipDecode(content));
+      if (parsed && Array.isArray(parsed.colonyHistory)) {
+        colonyHistory = parsed.colonyHistory;
+      }
+      if (parsed && parsed.galaxyScans && typeof parsed.galaxyScans === 'object') {
+        galaxyScans = parsed.galaxyScans;
+      }
+    } catch {
+      // Corrupt payload: fall through with empty defaults — the next
+      // legit upload will rebuild everything from local.
+    }
+  }
+  // Drop the requested galaxy's keys; everything else (other galaxies,
+  // history, deletedColonies if present at the top level) survives.
+  const prefix = galaxy + ':';
+  /** @type {GalaxyScans} */
+  const filtered = {};
+  for (const key of /** @type {(keyof GalaxyScans)[]} */ (Object.keys(galaxyScans))) {
+    if (!key.startsWith(prefix)) filtered[key] = galaxyScans[key];
+  }
+  await writeGistData({
+    version: SCHEMA_VERSION,
+    updatedAt: new Date().toISOString(),
+    galaxyScans: filtered,
+    colonyHistory,
+  });
+  setStatus('up', new Date().toISOString());
+};
+
 // ── Test affordances ────────────────────────────────────────────────
 
 /**

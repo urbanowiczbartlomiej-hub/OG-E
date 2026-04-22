@@ -74,6 +74,7 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
     // Pinned so adding/removing a preference is an obvious diff.
     expect(Object.keys(SETTINGS_SCHEMA).sort()).toEqual(
       [
+        'autoRedirectColonize',
         'autoRedirectExpedition',
         'cloudSync',
         'colBtnSize',

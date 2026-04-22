@@ -29,6 +29,8 @@
 import { createStore } from '../lib/createStore.js';
 import { persist } from '../lib/persist.js';
 import { chromeStore } from '../lib/storage.js';
+import { mergeScanResult } from '../domain/scans.js';
+import { registryStore } from './registry.js';
 
 /**
  * @typedef {import('../domain/scans.js').Position} Position
@@ -156,4 +158,106 @@ export const disposeScansStore = () => {
     disposeFn();
     disposeFn = null;
   }
+};
+
+/**
+ * Event name the MAIN-world galaxy bridge dispatches after classifying
+ * each `fetchGalaxyContent` response. Shared between bridge and
+ * listener — keep the string in sync with `bridges/galaxyHook.js`.
+ */
+const GALAXY_SCANNED_EVENT = 'oge5:galaxyScanned';
+
+/**
+ * Unsubscribe handle for the `oge5:galaxyScanned` listener, `null`
+ * when not installed. Kept at module scope for idempotency — the
+ * same convention as `disposeFn` above.
+ *
+ * @type {(() => void) | null}
+ */
+let disposeScansListenerFn = null;
+
+/**
+ * Install the bridge from `oge5:galaxyScanned` (fired by
+ * `bridges/galaxyHook.js` in the MAIN world) into `scansStore`. Every
+ * event received merges its fresh `{positions, canColonize}` payload
+ * with the existing per-system scan via {@link mergeScanResult},
+ * preserving our locally-stamped `empty_sent` markers when a pending
+ * colonize fleet from `registryStore` is still in flight.
+ *
+ * Without this wiring the v5 galaxy XHR hook fires into a void and
+ * scansStore never grows past whatever the store hydrated from
+ * chrome.storage at boot — exactly the "scan doesn't persist" bug
+ * that surfaced after Phase 10 wire-up.
+ *
+ * Idempotent: a second call returns the existing dispose fn without
+ * double-registering. Safe to call from any context that has
+ * `document` (the isolated-world content script).
+ *
+ * @returns {() => void} Dispose fn that removes the listener.
+ */
+export const installScansListener = () => {
+  if (disposeScansListenerFn) return disposeScansListenerFn;
+
+  /** @param {Event} e */
+  const handler = (e) => {
+    const detail = /** @type {CustomEvent<{
+      galaxy?: number,
+      system?: number,
+      positions?: Record<number, Position>,
+      canColonize?: boolean,
+    }>} */ (e).detail;
+    if (!detail || !detail.positions) return;
+    if (typeof detail.galaxy !== 'number' || typeof detail.system !== 'number') {
+      return;
+    }
+
+    const systemKey = /** @type {`${number}:${number}`} */ (
+      `${detail.galaxy}:${detail.system}`
+    );
+    const now = Date.now();
+
+    // Build the pending-fleet set from the colonization registry so
+    // `mergeScanResult` can preserve `empty_sent` markers on slots
+    // where our fleet hasn't landed yet.
+    const registry = registryStore.get();
+    const pendingCoordKeys = new Set(
+      registry
+        .filter((r) => (r.arrivalAt || 0) > now)
+        .map((r) => r.coords),
+    );
+
+    const current = scansStore.get();
+    const existingScan = current[systemKey];
+    const mergedPositions = mergeScanResult(
+      existingScan?.positions,
+      detail.positions,
+      pendingCoordKeys,
+      systemKey,
+    );
+
+    scansStore.set({
+      ...current,
+      [systemKey]: {
+        scannedAt: now,
+        positions: mergedPositions,
+      },
+    });
+  };
+
+  document.addEventListener(GALAXY_SCANNED_EVENT, handler);
+  disposeScansListenerFn = () => {
+    document.removeEventListener(GALAXY_SCANNED_EVENT, handler);
+    disposeScansListenerFn = null;
+  };
+  return disposeScansListenerFn;
+};
+
+/**
+ * Tear down the listener installed by {@link installScansListener}.
+ * Idempotent.
+ *
+ * @returns {void}
+ */
+export const disposeScansListener = () => {
+  if (disposeScansListenerFn) disposeScansListenerFn();
 };

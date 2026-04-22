@@ -1,12 +1,22 @@
 // Post-build step: copy non-JS artefacts into dist/ so the entire folder can
 // be loaded as a temporary add-on straight from disk.
 //
-//   manifest.json          → dist/manifest.json           (Chrome)
-//   manifest.firefox.json  → dist/manifest.firefox.json   (Firefox)
-//   src/histogram.html     → dist/histogram.html
-//   icons/*.png            → dist/icons/*.png             (if any)
+//   manifest.json       → dist/manifest.json       (shared Chrome + FF)
+//   src/histogram.html  → dist/histogram.html
+//   ../icons/*.png      → dist/icons/*.png         (shared with v4)
 //
-// During dev the user points FF at dist/manifest.firefox.json as a temporary
+// Icons live in the parent repo's `icons/` directory (next to the v4 source).
+// v5 doesn't ship its own icon set yet — see DESIGN.md §11. When v5 grows
+// its own brand the source path here moves to `icons/` (local to v5.0.0/).
+//
+// One unified manifest.json serves both Chrome and Firefox. Firefox reads
+// `browser_specific_settings.gecko` for its id + strict_min_version; Chrome
+// ignores unknown fields. This avoids Firefox's temporary-add-on loader
+// silently picking up `manifest.json` (which it always does, regardless of
+// which file the user selects in about:debugging) when we were trying to
+// use a separate `manifest.firefox.json`.
+//
+// During dev the user points FF at dist/manifest.json as a temporary
 // add-on and reloads after each `npm run build` (or `npm run dev` on watch).
 
 import { copyFileSync, mkdirSync, existsSync, readdirSync, statSync } from 'node:fs';
@@ -41,7 +51,6 @@ const copyDir = (srcDir, destDir) => {
 console.log('copy-static: populating dist/ ...');
 mkdirSync(resolve(ROOT, 'dist'), { recursive: true });
 copy('manifest.json', 'dist/manifest.json');
-copy('manifest.firefox.json', 'dist/manifest.firefox.json');
 copy('src/histogram.html', 'dist/histogram.html');
-copyDir('icons', 'dist/icons');
+copyDir('../icons', 'dist/icons');
 console.log('copy-static: done.');

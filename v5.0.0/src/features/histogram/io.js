@@ -64,6 +64,16 @@ export const SYNC_REQUEST_KEY = 'oge5_syncRequestAt';
  */
 export const CLEAR_REMOTE_KEY = 'oge5_clearRemoteAt';
 
+/**
+ * Tombstone for per-galaxy reset. Value shape `"<galaxy>:<timestamp>"`
+ * — including the timestamp ensures resetting the same galaxy twice
+ * still fires `chrome.storage.onChanged` (it only triggers when value
+ * actually changes). The scheduler parses out the galaxy id and runs
+ * the matching `clearGistScansForGalaxy(g)` so the union merge doesn't
+ * undo the local delete on the next sync round-trip.
+ */
+export const RESET_GALAXY_KEY = 'oge5_resetGalaxyAt';
+
 /** Schema version embedded in the exported JSON payload. */
 const EXPORT_VERSION = 1;
 
@@ -377,3 +387,17 @@ export const triggerSync = () => chromeStore.set(SYNC_REQUEST_KEY, Date.now());
  */
 export const triggerClearRemote = () =>
   chromeStore.set(CLEAR_REMOTE_KEY, Date.now());
+
+/**
+ * Request a remote-side reset for a single galaxy. Writes
+ * `"<galaxy>:<Date.now()>"` to {@link RESET_GALAXY_KEY} so back-to-back
+ * resets of the same galaxy each fire a fresh `onChanged` event. The
+ * scheduler reads the galaxy id and runs `clearGistScansForGalaxy`.
+ * Pair with the local `chromeStore.set(SCANS_KEY, ...)` that already
+ * dropped the galaxy's keys on this device.
+ *
+ * @param {number} galaxy
+ * @returns {Promise<void>}
+ */
+export const triggerResetGalaxy = (galaxy) =>
+  chromeStore.set(RESET_GALAXY_KEY, `${galaxy}:${Date.now()}`);

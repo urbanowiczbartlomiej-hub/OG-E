@@ -179,7 +179,11 @@ describe('makeInjectedButton (via abandonPlanet Click-1 work)', () => {
     document.body.appendChild(scaffold);
   };
 
-  it('injects a SUBMIT PASSWORD button with 66px padding and matching id', async () => {
+  it('injects an overlay-style SUBMIT PASSWORD button covering the popup content', async () => {
+    // v4 4.9.3 UX: the button sits on top of the whole popup
+    // content via `position: absolute; inset: 0`, so the user sees
+    // only our big action button and not the native password
+    // field / game-supplied text underneath.
     setupFullPopupScene();
     const promise = abandonPlanet();
     // Drive the two `waitFor` polls (giveupCoordinates is already
@@ -194,12 +198,20 @@ describe('makeInjectedButton (via abandonPlanet Click-1 work)', () => {
     expect(injected).not.toBeNull();
     if (!injected) return; // narrow for TS — expect above already failed.
     expect(injected.textContent).toBe('SUBMIT PASSWORD');
-    expect(injected.style.padding).toBe('66px 16px');
+    expect(injected.style.position).toBe('absolute');
+    // `inset: 0` in cssText — happy-dom doesn't always expose the
+    // shorthand via `style.inset`, so read the raw cssText instead.
+    expect(injected.style.cssText).toContain('inset');
     // happy-dom preserves the input colour token; in a real browser
     // this normalises to `rgb(192, 112, 32)`. Match either form.
     expect(injected.style.background.toLowerCase()).toMatch(
       /#c07020|rgb\(192,\s*112,\s*32\)/,
     );
+    // The host was prepared with `position:relative` + min-height so
+    // the overlay has a concrete bounding box to anchor to.
+    const host = document.getElementById('abandonplanet');
+    expect(host?.style.position).toBe('relative');
+    expect(host?.style.minHeight).toBe('200px');
 
     // Close the flow so the finally-block clears abandonInProgress.
     injected.remove();
@@ -209,111 +221,12 @@ describe('makeInjectedButton (via abandonPlanet Click-1 work)', () => {
 });
 
 // ──────────────────────────────────────────────────────────────────
-// expandEnclosingDialog — exercised via the same Click-1 integration
+// The old `expandEnclosingDialog` helper is gone (v4 4.9.3 overlay
+// pattern made it unnecessary — the overlay adapts to whatever size
+// the native dialog already is). Three tests for it were removed
+// with it.
 // ──────────────────────────────────────────────────────────────────
 
-describe('expandEnclosingDialog (via abandonPlanet Click-1 work)', () => {
-  /** @type {number} */
-  let originalInnerWidth;
-
-  beforeEach(() => {
-    vi.useFakeTimers();
-    originalInnerWidth = window.innerWidth;
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-    // `Object.defineProperty` in the cap-test replaces the
-    // accessor; restore it so sibling tests see happy-dom's default
-    // 1024 viewport.
-    Object.defineProperty(window, 'innerWidth', {
-      configurable: true,
-      value: originalInnerWidth,
-      writable: true,
-    });
-  });
-
-  /**
-   * Same as `setupFullPopupScene` above but wraps `#abandonplanet` in
-   * a `.ui-dialog` so expandEnclosingDialog has a target.
-   *
-   * @param {{ dialogWidthPx?: number, dialogLeftPx?: number }} [opts]
-   * @returns {void}
-   */
-  const setupDialogScene = ({
-    dialogWidthPx = 400,
-    dialogLeftPx = 100,
-  } = {}) => {
-    setupOverviewScene({ usedFields: 0, maxFields: 100 });
-    settingsStore.set({ ...settingsStore.get(), colPassword: 'secret' });
-    const dialog = document.createElement('div');
-    dialog.className = 'ui-dialog';
-    dialog.style.width = dialogWidthPx + 'px';
-    dialog.style.left = dialogLeftPx + 'px';
-    dialog.innerHTML = `
-      <a class="openPlanetRenameGiveupBox" href="#"></a>
-      <div id="abandonplanet">
-        <span id="giveupCoordinates">[4:30:8]</span>
-        <button id="block"></button>
-        <div id="validate">
-          <input type="password" />
-          <input type="submit" />
-        </div>
-      </div>
-    `;
-    document.body.appendChild(dialog);
-  };
-
-  it('extends a 400px dialog to 600px when viewport is wide enough', async () => {
-    // happy-dom's default innerWidth is 1024; 600 fits with margin.
-    setupDialogScene({ dialogWidthPx: 400, dialogLeftPx: 100 });
-    const promise = abandonPlanet();
-    await vi.advanceTimersByTimeAsync(200);
-
-    const dialog = document.querySelector('.ui-dialog');
-    expect(/** @type {HTMLElement} */ (dialog).style.width).toBe('600px');
-
-    // Clean up the flow.
-    document.getElementById('oge5-abandon-proxy-submit')?.remove();
-    await vi.advanceTimersByTimeAsync(800);
-    await promise;
-  });
-
-  it('caps width at viewport - 20 when desired exceeds the viewport', async () => {
-    // Shrink the viewport so 600px would overflow — the helper caps
-    // at `innerWidth - 20`.
-    Object.defineProperty(window, 'innerWidth', {
-      configurable: true,
-      value: 400,
-    });
-    setupDialogScene({ dialogWidthPx: 200, dialogLeftPx: 0 });
-    const promise = abandonPlanet();
-    await vi.advanceTimersByTimeAsync(200);
-
-    const dialog = document.querySelector('.ui-dialog');
-    expect(/** @type {HTMLElement} */ (dialog).style.width).toBe('380px');
-
-    document.getElementById('oge5-abandon-proxy-submit')?.remove();
-    await vi.advanceTimersByTimeAsync(800);
-    await promise;
-  });
-
-  it('re-positions when the dialog starts past the right edge', async () => {
-    // Dialog sits near the right edge of a 1024-wide viewport; after
-    // extending to 600px it would run off-screen, so expand moves it
-    // back to `innerWidth - target - 10` = 1024 - 600 - 10 = 414.
-    setupDialogScene({ dialogWidthPx: 400, dialogLeftPx: 900 });
-    const promise = abandonPlanet();
-    await vi.advanceTimersByTimeAsync(200);
-
-    const dialog = document.querySelector('.ui-dialog');
-    expect(/** @type {HTMLElement} */ (dialog).style.width).toBe('600px');
-    expect(/** @type {HTMLElement} */ (dialog).style.left).toBe('414px');
-
-    document.getElementById('oge5-abandon-proxy-submit')?.remove();
-    await vi.advanceTimersByTimeAsync(800);
-    await promise;
-  });
-});
 
 // ──────────────────────────────────────────────────────────────────
 // abandonPlanet — pre-flight safety gates (the easy-to-reach aborts)

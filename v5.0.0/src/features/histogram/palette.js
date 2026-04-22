@@ -43,6 +43,7 @@ export const STATUS_COLORS = {
   empty:         '#0c0',     // green: colonizable
   empty_sent:    '#4a9eff',  // blue: our fleet in flight
   abandoned:     '#fa0',     // orange: destroyed planet (incl. ours)
+  reserved:      '#a060c0',  // violet: reserved for planet-move (DM)
   inactive:      '#dd4',     // yellow: i (7-28d)
   long_inactive: '#a855f7',  // purple: I (28+d)
   vacation:      '#888',     // light gray
@@ -66,6 +67,7 @@ export const STATUS_LABELS = {
   empty:         'Empty',
   empty_sent:    'Sent',
   abandoned:     'Abandoned',
+  reserved:      'Reserved',
   inactive:      'Inactive (i)',
   long_inactive: 'Inactive (I)',
   vacation:      'Vacation',

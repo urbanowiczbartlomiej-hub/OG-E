@@ -27,6 +27,10 @@ import { installCheckTargetHook } from './bridges/checkTargetHook.js';
 import { installSendFleetHook } from './bridges/sendFleetHook.js';
 import { installExpeditionRedirect } from './bridges/expeditionRedirect.js';
 
+// TEMP debug — remove once smoke-test confirms the MAIN-world script is
+// being injected. Paired with the console.log in src/content.js.
+console.log('[OG-E v5] page.js MAIN world — top-level entry reached');
+
 installGalaxyHook();
 installCheckTargetHook();
 installSendFleetHook();

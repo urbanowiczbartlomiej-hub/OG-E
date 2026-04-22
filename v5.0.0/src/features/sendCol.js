@@ -323,11 +323,40 @@ const getColonizeWaitTime = () => {
   }
   if (!durSec) return 0;
 
-  const ourArrival = Date.now() + durSec * 1000;
+  const now = Date.now();
+  const ourArrival = now + durSec * 1000;
   const minGapMs = settingsStore.get().colMinGap * 1000;
-  const conflict = findConflict(registryStore.get(), ourArrival, minGapMs);
+  const registry = registryStore.get();
+  const conflict = findConflict(registry, ourArrival, minGapMs);
+
+  // Opt-in diagnostic (4.9.4 port). Flip `localStorage.oge5_debugMinGap
+  // = 'true'` in DevTools and the next Send click logs every input the
+  // calculation used. Useful when the user reports "min-gap didn't
+  // block even though arrivals coincided" — usually turns out to be a
+  // registry entry with a malformed arrivalAt, a stale entry that
+  // should have been pruned, or a durationOneWay that parsed to 0.
+  if (safeLS.bool('oge5_debugMinGap', false)) {
+    const pending = registry
+      .filter((r) => (Number(r.arrivalAt) || 0) > now)
+      .map((r) => ({ coords: r.coords, arrivalAt: r.arrivalAt }));
+    // eslint-disable-next-line no-console
+    console.debug('[OG-E min-gap]', {
+      durationSec: durSec,
+      ourArrival,
+      minGapMs,
+      pending,
+      conflict,
+      resultWaitSec: conflict
+        ? Math.max(
+          0,
+          Math.ceil((minGapMs - Math.abs(Number(conflict.arrivalAt) - ourArrival)) / 1000),
+        )
+        : 0,
+    });
+  }
+
   if (!conflict) return 0;
-  const gap = Math.abs(conflict.arrivalAt - ourArrival);
+  const gap = Math.abs((Number(conflict.arrivalAt) || 0) - ourArrival);
   const waitMs = minGapMs - gap;
   if (waitMs <= 0) return 0;
   return Math.ceil(waitMs / 1000);
@@ -359,6 +388,24 @@ const readHomePlanet = () => {
  */
 const parseCurrentGalaxyView = () => {
   if (!location.search.includes('component=galaxy')) return null;
+  // Prefer the live form inputs over location.search. After AGR's
+  // in-page submit (`navigateGalaxyInPage`) the URL stays at the
+  // initial-load coords, but the input values track every subsequent
+  // scan target. Reading the URL here meant the second + later scan
+  // clicks all picked up the same stale starting point and looped.
+  const galInput = /** @type {HTMLInputElement | null} */ (
+    document.getElementById('galaxy_input')
+  );
+  const sysInput = /** @type {HTMLInputElement | null} */ (
+    document.getElementById('system_input')
+  );
+  const inputG = galInput ? parseInt(galInput.value, 10) : NaN;
+  const inputS = sysInput ? parseInt(sysInput.value, 10) : NaN;
+  if (Number.isFinite(inputG) && Number.isFinite(inputS)) {
+    return { galaxy: inputG, system: inputS };
+  }
+  // Fallback to URL — covers the very first scan, before AGR has had
+  // a chance to render the form inputs.
   const params = new URLSearchParams(location.search);
   const g = parseInt(params.get('galaxy') ?? '', 10);
   const s = parseInt(params.get('system') ?? '', 10);
@@ -395,6 +442,84 @@ const setSendLabel = (text, bg) => {
   if (!send) return;
   send.textContent = text;
   if (bg) send.style.background = bg;
+};
+
+/**
+ * Two-line variant: small caption on top, big primary text underneath.
+ * Built with two `<div>`s inside a flex column so line wrap is
+ * deterministic regardless of the half's font-size and avoids the
+ * old "Stale [g:s:p] — click Send to check system" overflow on
+ * narrow buttons.
+ *
+ * The small line is sized at 0.5em of the half's base font and lightly
+ * faded — enough to read but visually subordinate to the coords. The
+ * big line keeps the half's full font-size.
+ *
+ * @param {string} small Top caption ("Send Colony", "Ready!", ...).
+ * @param {string} big   Bottom text, typically `"[g:s:p]"`.
+ * @param {string} [bg]  Optional background colour.
+ * @returns {void}
+ */
+const setSendLabelTwo = (small, big, bg) => {
+  const { send } = getHalves();
+  if (!send) return;
+  send.textContent = '';
+  const wrap = document.createElement('div');
+  wrap.style.cssText =
+    'display:flex;flex-direction:column;align-items:center;'
+    + 'justify-content:center;line-height:1.05;width:100%;';
+  if (small) {
+    const top = document.createElement('div');
+    top.textContent = small;
+    top.style.cssText = 'font-size:0.5em;opacity:0.85;letter-spacing:0.5px;';
+    wrap.appendChild(top);
+  }
+  if (big) {
+    const bottom = document.createElement('div');
+    bottom.textContent = big;
+    bottom.style.cssText = 'font-size:1em;margin-top:2px;';
+    wrap.appendChild(bottom);
+  }
+  send.appendChild(wrap);
+  if (bg) send.style.background = bg;
+};
+
+/**
+ * Re-entry guard for {@link handleScanClick}. Flipped `true` when we
+ * fire an in-page galaxy submit and wait for the `oge5:galaxyScanned`
+ * event (or the safety-net timeout) to release it. Prevents a user
+ * spamming the button from queueing multiple AGR form submits, which
+ * in the worst case could trip rate limits or leave the scansStore
+ * out of sync with the current view.
+ */
+let scanBusy = false;
+
+/**
+ * Safety-net timer for {@link scanBusy}. If `oge5:galaxyScanned` never
+ * fires (no network, AGR swapped out its submit handler, ...), the
+ * timer unlocks the button so the user isn't stuck staring at a greyed
+ * control. 10 s matches the AGR-readiness timeouts elsewhere.
+ *
+ * @type {ReturnType<typeof setTimeout> | null}
+ */
+let scanUnlockTimer = null;
+
+const SCAN_UNLOCK_TIMEOUT_MS = 10_000;
+
+const lockScanHalf = () => {
+  scanBusy = true;
+  const { scan } = getHalves();
+  if (scan) scan.style.opacity = '0.5';
+};
+
+const unlockScanHalf = () => {
+  scanBusy = false;
+  if (scanUnlockTimer) {
+    clearTimeout(scanUnlockTimer);
+    scanUnlockTimer = null;
+  }
+  const { scan } = getHalves();
+  if (scan) scan.style.opacity = '1';
 };
 
 /**
@@ -545,16 +670,118 @@ const createButton = (size) => {
 let colWaitInterval = null;
 
 /**
- * Stale-retry: swap three fleetdispatch form inputs to the next best
- * candidate. 1 user click → 1 DOM mutation → the game itself fires
- * its own checkTarget XHR in response, which comes back via
- * `oge5:checkTargetResult` and updates our label.
+ * Stuck-protection timer for `pendingColVerify`. Started when we paint
+ * the "Checking [coords]…" label on a fleetdispatch page; cancelled
+ * when the matching `oge5:checkTargetResult` arrives. If it fires the
+ * label flips to a recoverable "Timeout" state and we arm the
+ * navigation-to-galaxy stale retry so the user can press Send again
+ * to refresh reality.
  *
- * We disarm `staleRetryActive` immediately so a double-tap doesn't
- * swap twice before the game responds.
+ * @type {ReturnType<typeof setTimeout> | null}
+ */
+let checkTargetWatchdog = null;
+
+/** How long to wait for a matching checkTargetResult before giving up. */
+const CHECK_TARGET_TIMEOUT_MS = 15_000;
+
+/**
+ * Set when the last checkTarget came back with error 140035
+ * ("no colonization ship"). Locks the send half — clicking Send again
+ * would just fire another identical XHR with the same failure, so we
+ * no-op instead. Cleared on install (new content-script = fresh state)
+ * and on every successful Ready.
+ */
+let noShipBlocked = false;
+
+const clearCheckTargetWatchdog = () => {
+  if (checkTargetWatchdog) {
+    clearTimeout(checkTargetWatchdog);
+    checkTargetWatchdog = null;
+  }
+};
+
+/**
+ * Arm the stuck-protection timer. After {@link CHECK_TARGET_TIMEOUT_MS}
+ * with no matching `oge5:checkTargetResult`, paint a recoverable
+ * timeout label and arm navigation-to-galaxy stale retry so the user
+ * isn't trapped staring at "Checking…".
+ *
+ * @param {{ galaxy: number, system: number, position: number }} verify
+ */
+const armCheckTargetWatchdog = (verify) => {
+  clearCheckTargetWatchdog();
+  checkTargetWatchdog = setTimeout(() => {
+    checkTargetWatchdog = null;
+    // If the verify slot is still pending, the game never responded
+    // (rate-limited, network blip, AGR ate the XHR, …). Move the user
+    // out of the dead-end state and into stale-retry so the next
+    // Send click navigates to the system's galaxy view.
+    const ui = uiState.get();
+    if (!ui.pendingColVerify) return;
+    if (
+      ui.pendingColVerify.galaxy !== verify.galaxy ||
+      ui.pendingColVerify.system !== verify.system ||
+      ui.pendingColVerify.position !== verify.position
+    ) return;
+    setSendLabelTwo(
+      'Timeout',
+      `[${verify.galaxy}:${verify.system}:${verify.position}]`,
+      BG_SEND_STALE,
+    );
+    uiState.update((s) => ({
+      ...s,
+      pendingColVerify: null,
+      staleRetryActive: true,
+      staleTargetCoords: { galaxy: verify.galaxy, system: verify.system },
+    }));
+  }, CHECK_TARGET_TIMEOUT_MS);
+};
+
+/**
+ * DESIGN.md §9.2 stale-retry: take the user to the stale system's
+ * galaxy view via a single full-page navigation. The game then fires
+ * its own `fetchGalaxyContent` for that system, our `galaxyHook`
+ * captures the payload, and `scansStore` learns the real state of
+ * every slot (reserved / inactive / mine / occupied / …). The user
+ * sees the galaxy view and picks what to do next.
+ *
+ * Strict 1:1: user's Send click → our location.href assignment →
+ * game's own XHR. No automated chain, no form-swap gymnastics.
+ *
+ * `staleRetryActive` is disarmed here so a double-tap during the
+ * in-flight nav doesn't try to navigate twice.
  *
  * @returns {void}
  */
+const navigateToStaleSystem = () => {
+  const ui = uiState.get();
+  const coords = ui.staleTargetCoords;
+  uiState.update((s) => ({
+    ...s,
+    staleRetryActive: false,
+    staleTargetCoords: null,
+  }));
+  if (!coords) {
+    setSendLabel('No stale target', BG_SEND_ERROR);
+    return;
+  }
+  const base = location.href.split('?')[0];
+  location.href =
+    base +
+    `?page=ingame&component=galaxy&galaxy=${coords.galaxy}&system=${coords.system}`;
+};
+
+/**
+ * Legacy 4.7.x stale-retry path — kept as dead code for reference
+ * only. DO NOT call from production code. The form-swap approach has
+ * a documented "Checking... stuck" failure mode that
+ * {@link navigateToStaleSystem} replaces. Left here so future readers
+ * looking for "why did we change stale-retry" have the old code in
+ * one commit's blame.
+ *
+ * @returns {void}
+ */
+// eslint-disable-next-line no-unused-vars
 const retryWithNextCandidate = () => {
   uiState.update((s) => ({ ...s, staleRetryActive: false }));
   setSendLabel('Searching…', BG_SEND_STALE);
@@ -634,36 +861,29 @@ const handleSendClick = () => {
   );
 
   if (isFleet && isColMission) {
+    // Short-circuit on the no-ship lock (set by the checkTarget
+    // reactor when error 140035 came back). Clicking would fire
+    // another identical failing XHR — no-op instead.
+    if (noShipBlocked) return;
     if (ui.staleRetryActive) {
-      retryWithNextCandidate();
+      // DESIGN.md §9.2: stale retry navigates to the system's galaxy
+      // view. One visible user click → one location.href → one game
+      // fetchGalaxyContent → scansStore learns the real state (empty
+      // / reserved / inactive / …) and the user sees what happened.
+      // Mirror of v4 4.9.2. Replaced the form-swap retry, which had
+      // a "Checking... stuck" failure mode when two consecutive
+      // candidates were both stale.
+      navigateToStaleSystem();
       return;
     }
     dispatchColonizeWithGapCheck();
     return;
   }
 
-  // Pre-navigated state: we scanned and found; this click dispatches.
-  if (ui.pendingColLink) {
-    const link = ui.pendingColLink;
-    const m = link.match(/galaxy=(\d+)&system=(\d+)&position=(\d+)/);
-    if (m) {
-      uiState.update((s) => ({
-        ...s,
-        pendingColLink: null,
-        pendingColVerify: {
-          galaxy: parseInt(m[1], 10),
-          system: parseInt(m[2], 10),
-          position: parseInt(m[3], 10),
-        },
-      }));
-    } else {
-      uiState.update((s) => ({ ...s, pendingColLink: null }));
-    }
-    location.href = link;
-    return;
-  }
-
-  // No pending — search DB for next target.
+  // Outside fleetdispatch: search the DB, then GO — no intermediate
+  // "Found! Go" label + a second user click. If we find a candidate,
+  // stash `pendingColVerify` so the checkTarget listener on the
+  // destination page can flip us to Ready/Stale, and navigate.
   const home = readHomePlanet();
   if (!home) return;
   const targets = parsePositions(settings.colPositions);
@@ -675,15 +895,25 @@ const handleSendClick = () => {
     settings.colPreferOtherGalaxies,
   );
   if (target) {
-    uiState.update((s) => ({ ...s, pendingColLink: target.link }));
-    setSendLabel('Found! Go', BG_SEND_READY);
-    setScanLabel(LABEL_SCAN_SKIP);
-  } else {
-    setSendLabel('None available');
-    if (!location.search.includes('component=galaxy')) {
-      const base = location.href.split('?')[0];
-      location.href = base + '?page=ingame&component=galaxy';
-    }
+    uiState.update((s) => ({
+      ...s,
+      pendingColLink: null,
+      pendingColVerify: {
+        galaxy: target.galaxy,
+        system: target.system,
+        position: target.position,
+      },
+    }));
+    location.href = target.link;
+    return;
+  }
+  // No candidate in the local DB → user still needs to scan first.
+  // Hop onto galaxy view so the next Scan click has a live form to
+  // submit; if already on galaxy view, say so plainly.
+  setSendLabel('None available');
+  if (!location.search.includes('component=galaxy')) {
+    const base = location.href.split('?')[0];
+    location.href = base + '?page=ingame&component=galaxy';
   }
 };
 
@@ -698,6 +928,14 @@ const handleSendClick = () => {
  * @returns {void}
  */
 const handleScanClick = () => {
+  // Block re-entry while an in-page scan is still resolving. Without
+  // this, a user spamming the button queues several AGR submits and
+  // the scansStore ends up merging partial responses out of order.
+  if (scanBusy) return;
+  // Clear any no-ship lock — user is moving on to another candidate,
+  // so the "click Send" path should work again at the next stop.
+  noShipBlocked = false;
+
   const settings = settingsStore.get();
   if (checkAbandonState(settings)) {
     // Fire-and-forget; the abandon feature manages its own state.
@@ -714,9 +952,22 @@ const handleScanClick = () => {
     setScanLabel('All scanned!');
     return;
   }
+  // Try the in-page form submit first (no full reload — much faster
+  // and matches v4 UX). When the user IS on galaxy view, this runs
+  // AGR's own submit handler, which fires `fetchGalaxyContent` so our
+  // scansStore captures the new system. URL doesn't change, but
+  // `#galaxy_input` / `#system_input` do — `parseCurrentGalaxyView`
+  // reads from those first, so the next click sees fresh coords.
   if (currentView) {
-    if (navigateGalaxyInPage(next.galaxy, next.system)) return;
+    if (navigateGalaxyInPage(next.galaxy, next.system)) {
+      // Lock until the galaxy event lands (or the safety timer fires).
+      lockScanHalf();
+      scanUnlockTimer = setTimeout(unlockScanHalf, SCAN_UNLOCK_TIMEOUT_MS);
+      return;
+    }
   }
+  // Fallback: full nav. The page reload replaces this content script,
+  // so we don't lock — the new instance starts with scanBusy=false.
   const base = location.href.split('?')[0];
   location.href =
     base +
@@ -806,39 +1057,146 @@ const onGalaxyScanned = (e) => {
       /** @type {CustomEvent} */ (e).detail
     );
   if (!detail || !detail.positions) return;
-  if (typeof detail.galaxy !== 'number' || typeof detail.system !== 'number') {
-    return;
-  }
+  // A galaxy event means the in-page scan cycle resolved — release
+  // the scan lock even when we don't know whether it was ours.
+  unlockScanHalf();
+  // Narrow via locals so every use below is a concrete `number`.
+  // tsc doesn't propagate the optional-field guard through the
+  // CustomEvent<T> cast when we dereference `detail.galaxy` directly.
+  const { galaxy, system, canColonize, positions } = detail;
+  if (typeof galaxy !== 'number' || typeof system !== 'number') return;
   if (!document.getElementById(BUTTON_ID)) return;
 
   const targets = parsePositions(settingsStore.get().colPositions);
   /** @type {number | null} */
   let foundPos = null;
   for (const pos of targets) {
-    if (detail.positions[pos]?.status === 'empty') {
+    if (positions[pos]?.status === 'empty') {
       foundPos = pos;
       break;
     }
   }
 
-  if (foundPos !== null && detail.canColonize) {
+  if (foundPos !== null && canColonize) {
+    // Auto-navigate straight to fleetdispatch. The old "Found! Go"
+    // label + a second user click was a needless two-step — we
+    // already know the coords and the fleet is available, so just
+    // take them there. Stashing `pendingColVerify` here means the
+    // checkTarget listener can still paint Ready/Stale after the
+    // page reload without the old `pendingColLink` round-trip.
     const base = location.href.split('?')[0];
     const link =
       base +
       `?page=ingame&component=fleetdispatch` +
-      `&galaxy=${detail.galaxy}&system=${detail.system}` +
+      `&galaxy=${galaxy}&system=${system}` +
       `&position=${foundPos}&type=1&mission=${MISSION_COLONIZE}&am208=1`;
-    uiState.update((s) => ({ ...s, pendingColLink: link }));
-    setSendLabel('Found! Go', BG_SEND_READY);
-    setScanLabel(LABEL_SCAN_SKIP);
-  } else if (foundPos !== null && !detail.canColonize) {
+    uiState.update((s) => ({
+      ...s,
+      pendingColLink: null,
+      pendingColVerify: { galaxy, system, position: foundPos },
+    }));
+    location.href = link;
+    return;
+  }
+  // Empty target in THIS system but not auto-navigable (either
+  // `canColonize === false`, meaning the scanning planet has no
+  // colonizer right now, or the target picker rejected the pick
+  // for some other reason). Show the coords on the Send label
+  // anyway so the user sees what's queued — clicking Send takes
+  // them to fleetdispatch, where `onCheckTargetResult` paints
+  // "No ship!" / "Reserved" / "Stale" from the real checkTarget
+  // response. No "No ship!" label here: the galaxy XHR's
+  // `canColonize` reflects only the scanning planet's ship
+  // inventory, which is the wrong context.
+  if (foundPos !== null) {
     uiState.update((s) => ({ ...s, pendingColLink: null }));
-    setSendLabel('No ship!', BG_SEND_ERROR);
+    setSendLabelTwo(
+      'Send Colony',
+      `[${galaxy}:${system}:${foundPos}]`,
+      BG_SEND_READY,
+    );
     setScanLabel('Scan next');
-  } else {
-    uiState.update((s) => ({ ...s, pendingColLink: null }));
+    return;
+  }
+
+  // Nothing empty in this scan — fall back to whichever candidate
+  // the scansStore has queued from prior scans. `refreshSendPreview`
+  // handles the "nothing anywhere" case by painting plain idle.
+  uiState.update((s) => ({ ...s, pendingColLink: null }));
+  refreshSendPreview();
+  setScanLabel('Scan next');
+};
+
+/**
+ * Parse the `?galaxy=&system=&position=` triple out of the current
+ * fleetdispatch URL. Returns `null` when we're not on fleetdispatch
+ * or any coordinate is missing / non-numeric.
+ *
+ * Used by the install path to recover an implicit verify target when
+ * the user landed on fleetdispatch through some path other than our
+ * Send Col flow (manual URL, AGR menu, post-send game redirect, …).
+ *
+ * @returns {{ galaxy: number, system: number, position: number } | null}
+ */
+const parseFleetdispatchUrlCoords = () => {
+  if (!location.search.includes('component=fleetdispatch')) return null;
+  const params = new URLSearchParams(location.search);
+  const g = parseInt(params.get('galaxy') ?? '', 10);
+  const s = parseInt(params.get('system') ?? '', 10);
+  const p = parseInt(params.get('position') ?? '', 10);
+  if (!Number.isFinite(g) || !Number.isFinite(s) || !Number.isFinite(p)) {
+    return null;
+  }
+  return { galaxy: g, system: s, position: p };
+};
+
+/**
+ * Preview the next colonize candidate (from the scansStore + registry)
+ * on the Send half as `"Send [g:s:p]"`. When there's no eligible
+ * candidate at all the label falls back to the plain idle text.
+ *
+ * Called in three places:
+ *   - `mount()` after install so the button comes up already showing
+ *     the queued target.
+ *   - `onGalaxyScanned()` after a scan so the label updates when a
+ *     new empty slot appears in the DB.
+ *   - settings subscriber reacts to colPositions / preferOtherGalaxies
+ *     edits without a page reload.
+ *
+ * No-op on fleetdispatch — that page has its own label flow
+ * ("Checking…" / "Ready!" / "Stale…"). Also no-op in abandon state,
+ * which owns the "Too small!" label.
+ *
+ * @returns {void}
+ */
+const refreshSendPreview = () => {
+  const isFleetCol =
+    location.search.includes('component=fleetdispatch') &&
+    location.search.includes(`mission=${MISSION_COLONIZE}`);
+  if (isFleetCol) return;
+  const settings = settingsStore.get();
+  if (checkAbandonState(settings)) return;
+  const home = readHomePlanet();
+  if (!home) {
     setSendLabel(LABEL_SEND_IDLE, BG_SEND_IDLE);
-    setScanLabel('Scan next');
+    return;
+  }
+  const targets = parsePositions(settings.colPositions);
+  const next = findNextColonizeTarget(
+    scansStore.get(),
+    registryStore.get(),
+    home,
+    targets,
+    settings.colPreferOtherGalaxies,
+  );
+  if (next) {
+    setSendLabelTwo(
+      'Send Colony',
+      `[${next.galaxy}:${next.system}:${next.position}]`,
+      BG_SEND_READY,
+    );
+  } else {
+    setSendLabel(LABEL_SEND_IDLE, BG_SEND_IDLE);
   }
 };
 
@@ -876,6 +1234,36 @@ const markPositionAbandoned = (galaxy, system, position) => {
 };
 
 /**
+ * Mark a single slot as `'reserved'` (planet-move by another player,
+ * checkTarget error 140016). 4.9.2 semantics: distinct from abandoned
+ * — no `hasAbandonedPlanet` flag, 24h rescan window so the slot
+ * becomes available again after the DM cooldown.
+ *
+ * @param {number} galaxy
+ * @param {number} system
+ * @param {number} position
+ * @returns {void}
+ */
+const markPositionReserved = (galaxy, system, position) => {
+  const key = /** @type {`${number}:${number}`} */ (`${galaxy}:${system}`);
+  scansStore.update((prev) => {
+    const existing = prev[key] ?? {
+      scannedAt: Date.now(),
+      positions: {},
+    };
+    /** @type {Record<number, import('../domain/scans.js').Position>} */
+    const newPositions = {
+      ...existing.positions,
+      [position]: { status: 'reserved' },
+    };
+    return {
+      ...prev,
+      [key]: { scannedAt: Date.now(), positions: newPositions },
+    };
+  });
+};
+
+/**
  * React to `oge5:checkTargetResult`. The event is fired every time the
  * game runs its own `checkTarget` XHR on the fleetdispatch page. We
  * only care when the coords match our `pendingColVerify` (i.e. the
@@ -895,11 +1283,14 @@ const markPositionAbandoned = (galaxy, system, position) => {
  */
 const onCheckTargetResult = (e) => {
   const detail =
-    /** @type {{ galaxy?: number, system?: number, position?: number, colonizable?: boolean } | undefined} */ (
+    /** @type {{
+     *   galaxy?: number, system?: number, position?: number,
+     *   colonizable?: boolean, reserved?: boolean, noShip?: boolean,
+     * } | undefined} */ (
       /** @type {CustomEvent} */ (e).detail
     );
   if (!detail) return;
-  const { galaxy, system, position, colonizable } = detail;
+  const { galaxy, system, position, colonizable, reserved, noShip } = detail;
   if (
     typeof galaxy !== 'number' ||
     typeof system !== 'number' ||
@@ -918,8 +1309,16 @@ const onCheckTargetResult = (e) => {
     return;
   }
 
+  const coordLabel = `[${galaxy}:${system}:${position}]`;
+
+  // Whatever the verdict, the game answered — release the watchdog.
+  clearCheckTargetWatchdog();
+
   if (colonizable) {
-    setSendLabel(`Ready! [${galaxy}:${system}:${position}]`, BG_SEND_READY);
+    setSendLabelTwo('Ready!', coordLabel, BG_SEND_READY);
+    // Fresh green light → clear any prior no-ship block so Send
+    // works again for this new target.
+    noShipBlocked = false;
     uiState.update((s) => ({
       ...s,
       pendingColVerify: null,
@@ -928,15 +1327,143 @@ const onCheckTargetResult = (e) => {
     return;
   }
 
-  // Stale — mark the slot abandoned and arm the retry path. The next
-  // user click on sendHalf calls retryWithNextCandidate().
+  // "No ship!" — game refused the send with error 140035 ("no
+  // colonization ship"). Not a stale target (destination is fine);
+  // the fix is "build a colonizer". Paint the label and stop — no
+  // stale-retry nav, no abandoned mark, so the slot stays in the
+  // `empty` pool for when the user has ships again.
+  //
+  // Detected purely by error code so we don't depend on `orders`
+  // being populated: OGame's failure response omits `orders`
+  // entirely when it rejects on missing-ship grounds.
+  if (noShip) {
+    setSendLabelTwo('No ship!', coordLabel, BG_SEND_ERROR);
+    // Lock the Send half — retrying just fires another failing
+    // XHR, and the label would flicker every time. User should go
+    // build a colonizer (or click Scan for a different target).
+    noShipBlocked = true;
+    uiState.update((s) => ({
+      ...s,
+      pendingColVerify: null,
+      staleRetryActive: false,
+    }));
+    return;
+  }
+
+  // Reserved (planet-move, error 140016): the slot is held for ~22h
+  // and no amount of retry will help until it frees up. Mark distinct
+  // status + 24h rescan window; label calls it out so the user knows
+  // this isn't the usual "player moved in" stale.
+  if (reserved) {
+    markPositionReserved(galaxy, system, position);
+    setSendLabelTwo('Reserved', coordLabel, BG_SEND_STALE);
+    uiState.update((s) => ({
+      ...s,
+      pendingColVerify: null,
+      staleRetryActive: true,
+      staleTargetCoords: { galaxy, system },
+    }));
+    return;
+  }
+
+  // Generic stale (player moved in, mission not available, ...).
+  // Mark abandoned + arm navigation-to-galaxy retry so the user's
+  // next Send click refreshes the whole system from the game.
   markPositionAbandoned(galaxy, system, position);
-  setSendLabel('Stale — click Send', BG_SEND_STALE);
+  setSendLabelTwo('Stale', coordLabel, BG_SEND_STALE);
   uiState.update((s) => ({
     ...s,
     pendingColVerify: null,
     staleRetryActive: true,
+    staleTargetCoords: { galaxy, system },
   }));
+};
+
+/**
+ * React to `oge5:colonizeSent` (dispatched by `sendFleetHook` in the
+ * MAIN world after the game's own `sendFleet` XHR came back
+ * `success: true` for a colonize mission).
+ *
+ * Two things happen here:
+ *
+ *   1. Mark the just-sent slot `'empty_sent'` in scansStore so
+ *      `findNextColonizeTarget` won't re-pick it (matched against the
+ *      pending registry in `mergeScanResult` — the registry entry was
+ *      pre-written synchronously before the send by sendFleetHook).
+ *   2. If `settings.autoRedirectColonize` is on, hop straight to the
+ *      next colonize target. Mirrors the expedition-redirect UX:
+ *      after a successful send the user usually wants to send the
+ *      next one, not re-select it by hand. We wait one tick so the
+ *      game's own post-send navigation flushes before we overwrite
+ *      it (direct `location.href` during the response handler can
+ *      race the game's redirect).
+ *
+ * @param {Event} e
+ * @returns {void}
+ */
+const onColonizeSent = (e) => {
+  const detail =
+    /** @type {{ galaxy?: number, system?: number, position?: number } | undefined} */ (
+      /** @type {CustomEvent} */ (e).detail
+    );
+  if (!detail) return;
+  const { galaxy, system, position } = detail;
+  if (
+    typeof galaxy !== 'number' ||
+    typeof system !== 'number' ||
+    typeof position !== 'number'
+  ) {
+    return;
+  }
+
+  // Mark empty_sent so the slot filters out of the target picker
+  // until the fleet either lands (scan will show `mine`) or fails
+  // (auto-prune of the registry + re-scan will flip it back).
+  const key = /** @type {`${number}:${number}`} */ (`${galaxy}:${system}`);
+  scansStore.update((prev) => {
+    const existing = prev[key] ?? { scannedAt: Date.now(), positions: {} };
+    /** @type {Record<number, import('../domain/scans.js').Position>} */
+    const newPositions = {
+      ...existing.positions,
+      [position]: { status: 'empty_sent' },
+    };
+    return {
+      ...prev,
+      [key]: { scannedAt: existing.scannedAt, positions: newPositions },
+    };
+  });
+
+  if (!settingsStore.get().autoRedirectColonize) return;
+
+  const home = readHomePlanet();
+  if (!home) return;
+  const settings = settingsStore.get();
+  const targets = parsePositions(settings.colPositions);
+  const next = findNextColonizeTarget(
+    scansStore.get(),
+    registryStore.get(),
+    home,
+    targets,
+    settings.colPreferOtherGalaxies,
+  );
+  if (!next) return;
+
+  // Defer one tick: the game's post-send navigation (its own
+  // redirectUrl) happens a moment after our event fires. Setting
+  // location.href now would race that nav and could be preempted.
+  // A small setTimeout lets the game flush first; ours lands second
+  // and wins.
+  setTimeout(() => {
+    uiState.update((s) => ({
+      ...s,
+      pendingColVerify: {
+        galaxy: next.galaxy,
+        system: next.system,
+        position: next.position,
+      },
+    }));
+    location.href = next.link;
+  }, 100);
 };
 
 // ─── Install / dispose ──────────────────────────────────────────────────────
@@ -1159,8 +1686,50 @@ export const installSendCol = () => {
       scanHalf.textContent = 'Abandon';
       scanHalf.style.background = BG_SCAN_ABANDON;
     } else if (isFleetCol) {
-      sendHalf.textContent = LABEL_DISPATCH;
-      sendHalf.style.background = BG_SEND_READY;
+      // Show the coords we just redirected to so the user can see
+      // WHICH slot they're about to send to, not just "Dispatch".
+      // v4 parity — the per-slot label was in `mobile.js` too.
+      //
+      // Recover an implicit verify target from the URL when the user
+      // landed here without going through our Send flow (manual URL,
+      // AGR menu, page reload after send, …). The game itself fires
+      // checkTarget on initial fleetdispatch load if the URL carries
+      // coords — we simply hold the watchdog and listen for the
+      // result so the label transitions Checking → Ready/No ship/
+      // Stale/Reserved instead of staying on a generic "Dispatch!".
+      let verify = uiState.get().pendingColVerify;
+      if (!verify) {
+        const urlCoords = parseFleetdispatchUrlCoords();
+        if (urlCoords) {
+          verify = urlCoords;
+          uiState.update((s) => ({ ...s, pendingColVerify: urlCoords }));
+        }
+      }
+      if (verify) {
+        // Two-line: "Checking" / "[g:s:p]" so the coords don't get
+        // truncated even at the smallest button sizes.
+        sendHalf.textContent = '';
+        const wrap = document.createElement('div');
+        wrap.style.cssText =
+          'display:flex;flex-direction:column;align-items:center;'
+          + 'justify-content:center;line-height:1.05;width:100%;';
+        const top = document.createElement('div');
+        top.textContent = 'Checking…';
+        top.style.cssText = 'font-size:0.5em;opacity:0.85;letter-spacing:0.5px;';
+        const bottom = document.createElement('div');
+        bottom.textContent = `[${verify.galaxy}:${verify.system}:${verify.position}]`;
+        bottom.style.cssText = 'font-size:1em;margin-top:2px;';
+        wrap.appendChild(top);
+        wrap.appendChild(bottom);
+        sendHalf.appendChild(wrap);
+        sendHalf.style.background = BG_SEND_STALE;
+        // Arm the stuck-protection watchdog. If checkTarget never
+        // comes back (rate limit, AGR oddity, …) we still recover.
+        armCheckTargetWatchdog(verify);
+      } else {
+        sendHalf.textContent = LABEL_DISPATCH;
+        sendHalf.style.background = BG_SEND_READY;
+      }
       scanHalf.textContent = LABEL_SCAN_SKIP;
     }
   };
@@ -1176,6 +1745,11 @@ export const installSendCol = () => {
     const { wrap, sendHalf, scanHalf } = createButton(size);
     positionAndLabel(wrap, sendHalf, scanHalf, size);
     document.body.appendChild(wrap);
+    // After the button is in the DOM, preview the queued candidate
+    // on the Send label. `positionAndLabel` only handles the broad
+    // "fleet-dispatch" / "abandon" / "idle" branches — this one adds
+    // the per-candidate coordinate preview for the idle case.
+    refreshSendPreview();
     installDragAndClick(wrap, sendHalf, scanHalf, size);
     installFocusPersist(sendHalf, scanHalf);
   };
@@ -1230,6 +1804,7 @@ export const installSendCol = () => {
   // transitions and we want them live for the whole install span.
   document.addEventListener('oge5:galaxyScanned', onGalaxyScanned);
   document.addEventListener('oge5:checkTargetResult', onCheckTargetResult);
+  document.addEventListener('oge5:colonizeSent', onColonizeSent);
 
   installed = {
     dispose: () => {
@@ -1237,6 +1812,16 @@ export const installSendCol = () => {
         clearInterval(colWaitInterval);
         colWaitInterval = null;
       }
+      clearCheckTargetWatchdog();
+      // Also clear the scan-half lock so a fresh install (e.g. after
+      // a settings toggle removed and re-mounted us) doesn't inherit
+      // a busy=true that no event will ever release.
+      if (scanUnlockTimer) {
+        clearTimeout(scanUnlockTimer);
+        scanUnlockTimer = null;
+      }
+      scanBusy = false;
+      noShipBlocked = false;
       removeButton();
       unsubSettings();
       document.removeEventListener('oge5:galaxyScanned', onGalaxyScanned);
@@ -1244,6 +1829,7 @@ export const installSendCol = () => {
         'oge5:checkTargetResult',
         onCheckTargetResult,
       );
+      document.removeEventListener('oge5:colonizeSent', onColonizeSent);
       installed = null;
     },
   };

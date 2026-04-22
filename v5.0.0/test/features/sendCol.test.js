@@ -100,6 +100,7 @@ const resetUiState = () => {
     pendingColLink: null,
     pendingColVerify: null,
     staleRetryActive: false,
+    staleTargetCoords: null,
   });
 };
 
@@ -224,11 +225,13 @@ describe('findNextScanSystem', () => {
   });
 
   it('returns a stale scan position (does not skip it)', () => {
-    // `abandoned` has a 24h rescan window; put it 25h ago to make it stale.
+    // `abandoned` uses a dynamic "first 3 AM after scannedAt + 24h"
+    // deadline (4.9.6). 72h ago is past any day's 3 AM regardless of
+    // the current wall-clock, so it's always stale.
     /** @type {import('../../src/state/scans.js').GalaxyScans} */
     const scans = {
       '4:31': {
-        scannedAt: Date.now() - 25 * 3600_000,
+        scannedAt: Date.now() - 72 * 3600_000,
         positions: { 8: { status: 'abandoned' } },
       },
     };
@@ -609,7 +612,10 @@ describe('installSendCol — click dispatches', () => {
     expect(navTarget).toContain('component=galaxy');
   });
 
-  it('sendHalf click with an available target sets pendingColLink and paints Found! Go', () => {
+  it('sendHalf click with an available target navigates immediately + sets pendingColVerify', () => {
+    // v5 UX simplification: no intermediate "Found! Go" label.
+    // Single sendHalf click finds the target and goes there; the
+    // destination's checkTarget listener handles Ready/Stale.
     setupScene();
     settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
     scansStore.set({
@@ -620,25 +626,11 @@ describe('installSendCol — click dispatches', () => {
     });
     installSendCol();
     getSend()?.click();
-    expect(getSend()?.textContent).toBe('Found! Go');
-    expect(uiState.get().pendingColLink).not.toBeNull();
-    // No navigation yet — the next click does that.
-    expect(navTarget).toBeNull();
-  });
-
-  it('sendHalf click with pendingColLink navigates + sets pendingColVerify', () => {
-    setupScene();
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
-    uiState.update((s) => ({
-      ...s,
-      pendingColLink:
-        'https://example/ogame?page=ingame&component=fleetdispatch&galaxy=4&system=30&position=8&type=1&mission=7&am208=1',
-    }));
-    installSendCol();
-    getSend()?.click();
+    expect(navTarget).toContain('component=fleetdispatch');
     expect(navTarget).toContain('galaxy=4');
     expect(navTarget).toContain('system=30');
     expect(navTarget).toContain('position=8');
+    expect(navTarget).toContain('mission=7');
     expect(uiState.get().pendingColLink).toBeNull();
     expect(uiState.get().pendingColVerify).toEqual({
       galaxy: 4,
@@ -708,7 +700,7 @@ describe('installSendCol — click dispatches', () => {
 // ──────────────────────────────────────────────────────────────────
 
 describe('installSendCol — oge5:galaxyScanned reactor', () => {
-  it('empty target + canColonize → Found! Go + pendingColLink set', () => {
+  it('empty target + canColonize → auto-navigate to fleetdispatch + pendingColVerify set', () => {
     setupScene();
     settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
     installSendCol();
@@ -722,11 +714,26 @@ describe('installSendCol — oge5:galaxyScanned reactor', () => {
         },
       }),
     );
-    expect(getSend()?.textContent).toBe('Found! Go');
-    expect(uiState.get().pendingColLink).toMatch(/galaxy=4.*system=42.*position=8/);
+    // v5 UX: no intermediate "Found! Go" label — the reactor
+    // navigates straight to the fleetdispatch URL.
+    expect(navTarget).toContain('component=fleetdispatch');
+    expect(navTarget).toContain('galaxy=4');
+    expect(navTarget).toContain('system=42');
+    expect(navTarget).toContain('position=8');
+    expect(uiState.get().pendingColLink).toBeNull();
+    expect(uiState.get().pendingColVerify).toEqual({
+      galaxy: 4,
+      system: 42,
+      position: 8,
+    });
   });
 
-  it('empty target + NOT canColonize → No ship!', () => {
+  it('empty target + NOT canColonize → Send Colony with coords (defers no-ship check to checkTarget)', () => {
+    // Galaxy XHR's `canColonize` reflects the scanning planet's ship
+    // inventory — wrong context for "no ship" (user can colonize
+    // from another planet). So we show coords anyway; the real
+    // "No ship!" signal comes from the checkTarget reactor when
+    // fleetdispatch rejects with error 140035.
     setupScene();
     settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
     installSendCol();
@@ -740,7 +747,8 @@ describe('installSendCol — oge5:galaxyScanned reactor', () => {
         },
       }),
     );
-    expect(getSend()?.textContent).toBe('No ship!');
+    expect(getSend()?.textContent).toContain('Send Colony');
+    expect(getSend()?.textContent).toContain('[4:42:8]');
     expect(uiState.get().pendingColLink).toBeNull();
   });
 
@@ -783,7 +791,11 @@ describe('installSendCol — oge5:checkTargetResult reactor', () => {
         },
       }),
     );
-    expect(getSend()?.textContent).toBe('Ready! [4:30:8]');
+    // Two-line label now: "Ready!" caption + "[4:30:8]" coords. Use
+    // toContain rather than toBe — textContent concatenates child
+    // divs without spacing.
+    expect(getSend()?.textContent).toContain('Ready!');
+    expect(getSend()?.textContent).toContain('[4:30:8]');
     expect(uiState.get().pendingColVerify).toBeNull();
     expect(uiState.get().staleRetryActive).toBe(false);
   });
@@ -833,8 +845,12 @@ describe('installSendCol — oge5:checkTargetResult reactor', () => {
         },
       }),
     );
-    // Label unchanged — still the initial fleet-dispatch Dispatch! label.
-    expect(getSend()?.textContent).toBe('Dispatch!');
+    // Label unchanged — still the initial "Checking [coords]…" that
+    // installSendCol paints when pendingColVerify is set on a
+    // fleetdispatch page (v4 parity — show user which slot we're
+    // waiting on).
+    expect(getSend()?.textContent).toContain('Checking');
+    expect(getSend()?.textContent).toContain('[4:30:8]');
     // verify kept — we're still waiting on our real coords.
     expect(uiState.get().pendingColVerify).toEqual({
       galaxy: 4,
@@ -848,80 +864,41 @@ describe('installSendCol — oge5:checkTargetResult reactor', () => {
 // Stale retry — swap form inputs on next Send click
 // ──────────────────────────────────────────────────────────────────
 
-describe('installSendCol — stale retry', () => {
-  /**
-   * Paint the fleetdispatch form that retryWithNextCandidate swaps.
-   *
-   * @returns {void}
-   */
-  const setupFleetdispatchForm = () => {
-    const form = document.createElement('div');
-    form.innerHTML = `
-      <input id="galaxy" name="galaxy" type="text" value="4">
-      <input id="system" name="system" type="text" value="30">
-      <input id="position" name="position" type="text" value="8">
-    `;
-    document.body.appendChild(form);
-  };
-
-  it('click Send in staleRetry state swaps form inputs, disarms staleRetryActive', () => {
+describe('installSendCol — stale retry (navigation, DESIGN.md §9.2)', () => {
+  it('click Send in staleRetry navigates to the stale system galaxy view', () => {
     setupScene({ onFleetdispatch: true, mission: 7 });
     settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
-    // Seed scans with a fresh candidate at (4, 45, 8).
-    scansStore.set({
-      '4:45': {
-        scannedAt: Date.now(),
-        positions: { 8: { status: 'empty' } },
-      },
-    });
-    uiState.update((s) => ({ ...s, staleRetryActive: true }));
+    uiState.update((s) => ({
+      ...s,
+      staleRetryActive: true,
+      staleTargetCoords: { galaxy: 4, system: 30 },
+    }));
     installSendCol();
-    setupFleetdispatchForm();
-
-    const inputEvents = /** @type {string[]} */ ([]);
-    document.getElementById('galaxy')?.addEventListener('input', () => {
-      inputEvents.push('galaxy');
-    });
-    document.getElementById('system')?.addEventListener('change', () => {
-      inputEvents.push('system');
-    });
 
     getSend()?.click();
 
-    // Form inputs updated to the new candidate.
-    expect(
-      /** @type {HTMLInputElement} */ (document.getElementById('galaxy'))
-        .value,
-    ).toBe('4');
-    expect(
-      /** @type {HTMLInputElement} */ (document.getElementById('system'))
-        .value,
-    ).toBe('45');
-    expect(
-      /** @type {HTMLInputElement} */ (
-        document.getElementById('position')
-      ).value,
-    ).toBe('8');
-    // input + change events were dispatched on each input.
-    expect(inputEvents).toContain('galaxy');
-    expect(inputEvents).toContain('system');
-    // Retry disarmed; pendingColVerify armed for the new coords.
+    expect(navTarget).not.toBeNull();
+    expect(navTarget).toContain('component=galaxy');
+    expect(navTarget).toContain('galaxy=4');
+    expect(navTarget).toContain('system=30');
+    // Retry disarmed + coords consumed so a later accidental click
+    // doesn't re-nav.
     expect(uiState.get().staleRetryActive).toBe(false);
-    expect(uiState.get().pendingColVerify).toEqual({
-      galaxy: 4,
-      system: 45,
-      position: 8,
-    });
+    expect(uiState.get().staleTargetCoords).toBeNull();
   });
 
-  it('click Send in staleRetry with no candidates paints "No candidates"', () => {
+  it('click Send in staleRetry without coords paints error (should not happen, defensive)', () => {
     setupScene({ onFleetdispatch: true, mission: 7 });
     settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
-    uiState.update((s) => ({ ...s, staleRetryActive: true }));
+    uiState.update((s) => ({
+      ...s,
+      staleRetryActive: true,
+      staleTargetCoords: null,
+    }));
     installSendCol();
-    setupFleetdispatchForm();
     getSend()?.click();
-    expect(getSend()?.textContent).toBe('No candidates');
+    expect(getSend()?.textContent).toBe('No stale target');
+    expect(navTarget).toBeNull();
   });
 });
 

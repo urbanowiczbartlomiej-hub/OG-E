@@ -53,7 +53,7 @@
 /** @ts-check */
 
 import { settingsStore } from '../state/settings.js';
-import { injectStyle } from '../lib/dom.js';
+import { injectStyle, waitFor } from '../lib/dom.js';
 import { debounce } from '../lib/debounce.js';
 
 /**
@@ -296,9 +296,12 @@ const attachObserver = (observer) => {
     observer.observe(eventContent, { childList: true, subtree: true });
     observedScoped = true;
   }
-  if (!observedScoped) {
-    observer.observe(document.body, { childList: true, subtree: true });
-  }
+  // Always observe body in addition. OGame AJAX-swaps #planetList and
+  // especially #eventContent on mission refresh — the new instance
+  // replaces the old node, so a scoped observer attached to the old
+  // (now-detached) instance stops firing. Body-level observation is
+  // slightly noisier but survives the swap.
+  observer.observe(document.body, { childList: true, subtree: true });
   return { observedScoped };
 };
 
@@ -344,6 +347,22 @@ export const installBadges = () => {
       const hideEl = document.getElementById(HIDE_STYLE_ID);
       if (hideEl) hideEl.remove();
       renderBadges();
+      // Post-reload race: at DOMContentLoaded, #planetList and
+      // #eventContent are in the DOM but empty — OGame's inline
+      // scripts populate them moments later. If the observer
+      // attached during that empty window, later hydration happens
+      // before it starts listening and we miss the only DOM change
+      // that would have triggered a refresh. Poll until the planet
+      // list actually has rows, then render once more. 5 s timeout
+      // is well past any realistic load time and a no-op if the
+      // initial render already succeeded (renderBadges is idempotent
+      // and cheap).
+      void waitFor(
+        () => document.querySelectorAll('#planetList .smallplanet').length > 0,
+        { timeoutMs: 5000, intervalMs: 250 },
+      ).then(() => {
+        if (installed && settingsStore.get().expeditionBadges) renderBadges();
+      });
     } else {
       injectStyle(HIDE_STYLE_ID, HIDE_CSS);
     }
@@ -380,9 +399,21 @@ export const installBadges = () => {
   });
   attachObserver(observer);
 
+  // Safety-net poll. OGame refreshes #eventContent on a ~30s AJAX
+  // tick and has historically found ways to dodge every scoped
+  // observer we attach. 3s is tight enough that missions show up
+  // almost immediately after the AJAX lands and far wider than any
+  // user interaction cadence — the re-render is O(#planets) DOM
+  // ops, practically free. Gated on `expeditionBadges` so a disabled
+  // feature costs literally one settings read per interval.
+  const safetyPoll = setInterval(() => {
+    if (settingsStore.get().expeditionBadges) renderBadges();
+  }, 3000);
+
   installed = {
     dispose: () => {
       observer.disconnect();
+      clearInterval(safetyPoll);
       unsubSettings();
       clearBadges();
       const styleEl = document.getElementById(STYLE_ID);

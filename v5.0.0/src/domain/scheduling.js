@@ -25,14 +25,23 @@
 //       stayed `empty` (recalled / intercepted), or got stolen under us
 //       (`occupied`, `abandoned`, …).
 //
-//   - `abandoned` (24h)
-//       The "Porzucona planeta" debris marker persists 24-48h after
-//       abandonment; after ~24h the game's cleanup sweep can clear it,
-//       so we need a fresh look to know whether the slot is now truly
-//       `empty` and available for colonization. (4.x also had a dynamic
-//       "earliest 3 AM server time" deadline on top of this; v5 keeps
-//       just the flat 24h threshold for simplicity — any small over-wait
-//       is harmless, whereas under-waiting would double-rescan.)
+//   - `abandoned` (dynamic — 4.9.6 port)
+//       The "Porzucona planeta" debris marker is swept by the game at
+//       3 AM (server time) each day, and only if the planet has been
+//       abandoned for at least 24 hours. So our scan of an abandoned
+//       slot is only useful starting from the FIRST 3 AM after
+//       `scannedAt + 24h`. Before that, re-scanning would just show
+//       the same "abandoned" state and waste traffic.
+//
+//       `abandonedCleanupDeadline(scannedAt)` computes that absolute
+//       threshold; `isSystemStale` special-cases the `abandoned`
+//       branch to compare against it instead of a flat age delta.
+//
+//       Effective wait varies 25-47h depending on what time of day the
+//       scan was captured (scan right before 3 AM → ~25h wait; scan
+//       right after 3 AM → ~47h wait; average ~36h). Always exactly
+//       long enough to catch the next sweep, no more. Assumes browser
+//       TZ matches server TZ (true for PL user on PL server).
 //
 //   - `inactive` / `long_inactive` (5d)
 //       The game's `i` and `I` flags track dormancy windows (7-28 days
@@ -68,7 +77,9 @@
  * @type {Readonly<{ [K in PositionStatus]?: number }>}
  */
 export const RESCAN_AFTER = Object.freeze({
-  abandoned:     24 * 3600 * 1000,        // 24h  — debris marker can clear after ~24h
+  // `abandoned` intentionally NOT in this table — it uses
+  // {@link abandonedCleanupDeadline} in `isSystemStale` instead.
+  reserved:      24 * 3600 * 1000,        // 24h  — planet-move cooldown is ~22h; 24h covers it
   inactive:      5 * 24 * 3600 * 1000,    // 5d   — the `i` flag may flip
   long_inactive: 5 * 24 * 3600 * 1000,    // 5d   — the `I` flag may flip
   vacation:      30 * 24 * 3600 * 1000,   // 30d  — rarely changes
@@ -76,6 +87,48 @@ export const RESCAN_AFTER = Object.freeze({
   occupied:      30 * 24 * 3600 * 1000,   // 30d  — player might still leave
   empty_sent:    4 * 3600 * 1000,         // 4h   — our colonizer should have landed; verify
 });
+
+/**
+ * Compute the absolute time (ms since epoch) when a scan of an
+ * `abandoned` slot first becomes worth refreshing.
+ *
+ * OGame sweeps abandoned planets at **3 AM (server time)** each day,
+ * removing those that have been abandoned for 24h+. So the earliest
+ * any observable change can happen to an already-abandoned slot is
+ * the first 3 AM AFTER `scannedAt + 24h`. Rescanning before that is
+ * wasted — the game won't have touched it yet.
+ *
+ * The function assumes browser timezone matches server timezone. For
+ * a PL user on a PL server that's true. A few-hour TZ skew would
+ * only shift the deadline by that skew — still better than a flat
+ * 24/48h heuristic.
+ *
+ * @param {number} scannedAt ms timestamp of the original scan.
+ * @returns {number} ms timestamp of the first 3 AM at or after
+ *   `scannedAt + 24h`.
+ *
+ * @example
+ *   // Scan at 02:00 local → +24h lands at 02:00 next day → next
+ *   // 3 AM is ONE hour later (25h total wait).
+ *   abandonedCleanupDeadline(new Date('2026-01-01T02:00:00').getTime());
+ *
+ * @example
+ *   // Scan at 04:00 local → +24h lands at 04:00 next day → the
+ *   // 3 AM on THAT day has already passed → next 3 AM is the
+ *   // day after (47h total).
+ *   abandonedCleanupDeadline(new Date('2026-01-01T04:00:00').getTime());
+ */
+export const abandonedCleanupDeadline = (scannedAt) => {
+  const earliest = scannedAt + 24 * 3600 * 1000;
+  const d = new Date(earliest);
+  // Roll forward to 3 AM the same local day. If we're already past
+  // 3 AM on that day, the `deadline < earliest` branch below bumps
+  // us to 3 AM the next day.
+  d.setHours(3, 0, 0, 0);
+  let deadline = d.getTime();
+  if (deadline < earliest) deadline += 24 * 3600 * 1000;
+  return deadline;
+};
 
 /**
  * Minimal shape of a stored system scan as consumed by this module.
@@ -165,6 +218,13 @@ export const isSystemStale = (scan, now = Date.now()) => {
     anyPosition = true;
     const p = scan.positions[Number(key)];
     if (!p) continue;
+    // Special case: abandoned slots use an absolute deadline
+    // (first 3 AM after scannedAt + 24h) rather than a flat age
+    // threshold. See {@link abandonedCleanupDeadline}.
+    if (p.status === 'abandoned') {
+      if (now > abandonedCleanupDeadline(scan.scannedAt)) return true;
+      continue;
+    }
     const threshold = RESCAN_AFTER[p.status];
     if (threshold !== undefined && age > threshold) return true;
   }

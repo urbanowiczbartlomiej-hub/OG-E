@@ -160,21 +160,31 @@ const setupScene = ({
     location.search = `?page=ingame&component=overview&cp=${activeCp}`;
   }
 
+  // Fixture coords are shared between the planet row and every
+  // synthetic expedition row so `countActiveExpeditions` (which filters
+  // by `.coordsOrigin` matching the active planet) counts them.
+  const FIXTURE_COORDS = '1:1:8';
+
   const expRows = Array(activeExpeditions)
     .fill(0)
     .map(
       () => `
         <tr class="eventFleet" data-mission-type="15" data-return-flight="true">
           <td class="originFleet">X</td>
-          <td class="coordsOrigin">1:1:1</td>
+          <td class="coordsOrigin">[${FIXTURE_COORDS}]</td>
           <td class="detailsFleet"><span>1</span></td>
         </tr>
       `,
     )
     .join('');
 
+  // Include `.planet-koords` so `getActivePlanetCoords` and
+  // `findPlanetWithExpSlot` can read coords from the fixture —
+  // without it both helpers short-circuit on missing coords.
   const planetRow = activeCp !== null
-    ? `<div class="smallplanet hightlightPlanet" id="planet-${activeCp}"></div>`
+    ? `<div class="smallplanet hightlightPlanet" id="planet-${activeCp}">
+         <a class="planetlink"><span class="planet-koords">[${FIXTURE_COORDS}]</span></a>
+       </div>`
     : '';
 
   document.body.innerHTML = `
@@ -247,7 +257,7 @@ describe('installSendExp — size from settings', () => {
 // ──────────────────────────────────────────────────────────────────
 
 describe('installSendExp — click navigation', () => {
-  it('on overview → navigates to fleetdispatch?mission=15 with current cp', () => {
+  it('on overview → navigates to fleetdispatch (no mission param; AGR assigns it)', () => {
     setupScene({ onFleetdispatch: false, activeCp: 99 });
     installSendExp();
     getBtn()?.click();
@@ -255,41 +265,47 @@ describe('installSendExp — click navigation', () => {
     expect(navTarget).not.toBeNull();
     expect(navTarget).toContain('component=fleetdispatch');
     expect(navTarget).toContain('cp=99');
-    expect(navTarget).toContain('mission=15');
+    // `mission` is NOT in the URL — AGR sets it when the user taps
+    // its expedition routine on the fleetdispatch page.
+    expect(navTarget).not.toContain('mission=');
   });
 
-  it('on fleetdispatch with a different mission → navigates with mission=15', () => {
+  it('on fleetdispatch (any mission) with no fleet panel → enters Phase 2 and locks', () => {
+    // User lands on fleetdispatch with whatever mission. As long as
+    // `component=fleetdispatch`, the click enters Phase 1/2 — no
+    // navigation happens just because `mission` isn't 15.
     setupScene({ onFleetdispatch: true, mission: 7, activeCp: 42 });
     installSendExp();
-    getBtn()?.click();
+    const btn = getBtn();
+    btn?.click();
 
-    expect(navTarget).not.toBeNull();
-    expect(navTarget).toContain('component=fleetdispatch');
-    expect(navTarget).toContain('cp=42');
-    expect(navTarget).toContain('mission=15');
+    // No #dispatchFleet + #ago_fleet2_main in the fixture → Phase 2.
+    // Phase 2 locks the button (opacity 0.5) and starts polling.
+    expect(navTarget).toBeNull();
+    expect(btn?.style.opacity).toBe('0.5');
+    expect(btn?.textContent).toBe('Loading...');
   });
 
-  it('on fleetdispatch with mission=15 → synthesizes Enter keydown + keyup on activeElement, no navigation', () => {
+  it('Phase 1: fleetdispatch + mission=15 + fleet panel loaded → paint "Sent!", no navigation', () => {
     setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
     installSendExp();
-
-    // Track keyboard events at document level (bubbles=true).
-    const seen = /** @type {string[]} */ ([]);
-    /** @type {EventListener} */
-    const listener = (e) => {
-      if (e instanceof KeyboardEvent) seen.push(e.type);
-    };
-    document.addEventListener('keydown', listener);
-    document.addEventListener('keyup', listener);
+    // Simulate AGR having already hydrated the fleet panel + its
+    // native dispatch button. Phase 1 fires `safeClick(dispatch)`
+    // and flips the label to "Sent!". (We don't assert the click
+    // event itself — happy-dom sometimes swallows `.click()` on
+    // synthetic buttons without form context; the label flip is a
+    // sufficient witness that Phase 1 executed its branch.)
+    const panel = document.createElement('div');
+    panel.id = 'ago_fleet2_main';
+    document.body.appendChild(panel);
+    const dispatch = document.createElement('button');
+    dispatch.id = 'dispatchFleet';
+    document.body.appendChild(dispatch);
 
     getBtn()?.click();
 
-    document.removeEventListener('keydown', listener);
-    document.removeEventListener('keyup', listener);
-
-    expect(seen).toContain('keydown');
-    expect(seen).toContain('keyup');
     expect(navTarget).toBeNull();
+    expect(getBtn()?.textContent).toBe('Sent!');
   });
 });
 
@@ -298,7 +314,10 @@ describe('installSendExp — click navigation', () => {
 // ──────────────────────────────────────────────────────────────────
 
 describe('installSendExp — max expedition guard', () => {
-  it('paints "Max!" and does NOT navigate when active expeditions reach the limit', () => {
+  it('paints "All maxed!" and does NOT navigate when every planet is at the limit', () => {
+    // Single-planet fixture: that planet is maxed, no other planets
+    // to fall back to → `findPlanetWithExpSlot` returns null, we
+    // paint the transient "All maxed!" warning and stay put.
     vi.useFakeTimers();
     setupScene({ maxExpPerPlanet: 1, activeExpeditions: 1 });
     installSendExp();
@@ -307,7 +326,7 @@ describe('installSendExp — max expedition guard', () => {
 
     btn?.click();
 
-    expect(btn?.textContent).toBe('Max!');
+    expect(btn?.textContent).toBe('All maxed!');
     expect(navTarget).toBeNull();
 
     // After 2s the label reverts.
@@ -329,7 +348,9 @@ describe('installSendExp — max expedition guard', () => {
 
     expect(navTarget).not.toBeNull();
     expect(navTarget).toContain('cp=7');
-    expect(navTarget).toContain('mission=15');
+    // No `mission` param — AGR assigns it after the user taps its
+    // expedition routine on the fleetdispatch page.
+    expect(navTarget).not.toContain('mission=');
   });
 });
 

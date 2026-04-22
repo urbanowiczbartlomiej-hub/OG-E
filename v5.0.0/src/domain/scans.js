@@ -34,7 +34,7 @@
 // @ts-check
 
 /**
- * One of ten canonical states we assign to a galaxy slot.
+ * One of eleven canonical states we assign to a galaxy slot.
  *
  * - `empty`         — no planets, no pending fleet of ours
  * - `empty_sent`    — WE dispatched a colonizer here; game hasn't seen it yet
@@ -46,9 +46,14 @@
  * - `banned`        — owner is banned
  * - `admin`         — owner is an admin / GM account
  * - `abandoned`     — only destroyed-planet remnants remain
+ * - `reserved`      — slot reserved for planet-move by another DM-paying
+ *                     player. Looks empty in galaxy listings but
+ *                     colonize attempts fail with checkTarget
+ *                     `error 140016`. Port of v4 4.9.2 status.
  *
  * @typedef {'empty' | 'empty_sent' | 'mine' | 'occupied' | 'inactive'
- *   | 'long_inactive' | 'vacation' | 'banned' | 'admin' | 'abandoned'} PositionStatus
+ *   | 'long_inactive' | 'vacation' | 'banned' | 'admin' | 'abandoned'
+ *   | 'reserved'} PositionStatus
  */
 
 /**

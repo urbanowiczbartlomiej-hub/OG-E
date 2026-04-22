@@ -176,8 +176,7 @@ v5.0.0/
 ├── package.json                     rollup + vitest + tsc
 ├── rollup.config.mjs                dwa wyjścia: content.js, page.js
 ├── tsconfig.json                    allowJs + checkJs + noEmit
-├── manifest.json                    Chrome MV3
-├── manifest.firefox.json            Firefox MV3 (nowy gecko.id)
+├── manifest.json                    MV3 (Chrome + Firefox; browser_specific_settings.gecko daje id i min-version dla FF, Chrome ignoruje)
 ├── DESIGN.md                        ten dokument
 ├── SCHEMAS.md                       generowane z JSDoc + ręcznie
 ├── src/
@@ -845,7 +844,7 @@ ręcznie.
   Feature'y i bridges są testowane ręcznie (UI). ~40-60 testów łącznie.
 
 **Id w manifeście** (kluczowe dla równoległej instalacji z v4):
-- `manifest.firefox.json`: `gecko.id = "oge5@ogame-extensions"`
+- `manifest.json` → `browser_specific_settings.gecko.id = "oge5@ogame-extensions"` (Chrome ignoruje to pole)
 - `manifest.json`: nazwa `"OG-E v5 (dev)"` w trakcie developmentu,
   `"OG-E v5"` do release'u
 
@@ -1003,29 +1002,64 @@ Rzeczy, które zobowiązujemy się NIE robić:
 
 ## 16. Fazy implementacji
 
-1. **Scaffolding** (1 posiedzenie) — package.json, rollup config, tsconfig,
-   manifest.json + manifest.firefox.json, puste entry files, pierwszy
-   smoke-test import działający w FF (ładuje się, wstrzykuje czarne tło,
-   nic więcej nie robi).
-2. **features/blackBg.js** — pojedynczy moduł, piszemy od razu przy
-   scaffoldingu. Ma zero zależności, sprawdzamy że działa w FF Android.
-3. **lib/** — wszystkie pure helpery, w pełni przetestowane.
-4. **domain/** — cała pure logic, w pełni przetestowana.
-5. **state/** — store'y + persystencja + jednorazowa hydratacja.
-6. **bridges/** — XHR hooki w świecie MAIN, dispatchujące eventy (jeszcze
-   bez feature'ów).
-7. **features/sendExp.js** — pierwszy widoczny feature, end-to-end.
-8. **features/sendCol.js** — pełny flow włącznie ze stale-retry.
-9. **features/abandon.js** — pełne 3 kliknięcia.
-10. **features/badges.js** + **features/colonyRecorder.js** — pasywne dane.
-11. **sync/** — pipeline gista.
-12. **features/settingsUi.js** — panel ustawień w AGR.
-13. **features/histogram** — strona histogramu (z Export/Import JSON + CSV).
-14. **Feature w v4: eksport do pliku .json** (osobny drobny patch do 4.x,
-    np. 4.10.0). Nie dotyczy kodu v5.
-15. **v5: import z pliku .json** w ustawieniach → Diagnostyka.
-16. **Polish** — edge case'y, ręczne testy integracyjne, finalny review.
-17. **Release** — package.zip, bump wersji, submit do AMO.
+- [x] **1. Scaffolding** — package.json, rollup, tsconfig, jeden wspólny
+      manifest.json dla Chrome + FF (merged w Fazie 10 polish — FF zawsze
+      ładuje `manifest.json`, osobny `manifest.firefox.json` był ignorowany),
+      entry files, smoke-test czarnego tła.
+- [x] **2. features/blackBg.js** — anti-flicker style injection at
+      document_start.
+- [x] **3. lib/** — 6 modułów (createStore, storage, dom, gzip, debounce,
+      logger). 97 testów.
+- [x] **4. domain/** — 5 modułów (rules, positions, scans, registry,
+      scheduling). +93 testów.
+- [x] **5. state/** — 4 persisted stores + uiState + lib/persist. +80 testów.
+- [x] **6. bridges/** — 5 MAIN-world XHR hooków. +89 testów.
+- [x] **7. features/sendExp.js** — floating Send Exp + Phase 0/1/2 flow
+      (v4 port), per-planet count, context-aware label, ArrowRight shortcut.
+- [x] **8. features/sendCol.js** — pełny flow, navigation-to-galaxy
+      stale-retry (DESIGN.md §9.2), reserved/no-ship detection,
+      stuck-protection watchdog, auto-redirect po colonize.
+- [x] **9. features/abandon.js** — 3 kliknięcia + overlay injected buttons
+      (4.9.3 port; overlay pokrywa cały content popup'u, nie tylko
+      append-below).
+- [x] **10. features/badges.js** + **colonyRecorder.js** — pasywne dane,
+      badges z safety-net poll 3s (dla AJAX eventContent refresh).
+- [x] **11. sync/** — merge + gist (z gzip FF Xray fix 4.9.4) + scheduler
+      (z tombstone listener `oge5_syncRequestAt`/`_clearRemoteAt`/
+      `_resetGalaxyAt`).
+- [x] **12. features/settingsUi.js** — panel ustawień w AGR
+      (`#ago_menu_content` ID, MutationObserver re-injection gdy AGR
+      przebudowuje panel, złota etykieta "OG-E v5 Settings",
+      accordion toggle + akcja closing-others, sekcja "Data"
+      z przyciskiem "Open histogram").
+- [x] **13. features/histogram** — strona histogramu (Colony Size + Galaxy
+      Observations + Export/Import JSON + CSV + per-galaxy reset).
+- [x] **Wire-up (Faza 10 poprzedniej rozpiski)** — `src/content.js` +
+      `src/page.js` — init stores, install features, installSync
+      (top-frame only), installScansListener, installSettingsMirror,
+      installFleetdispatchShortcut. DOM features deferred do
+      DOMContentLoaded.
+- [x] **4.9.6 parity** — dynamic abandoned deadline
+      (`abandonedCleanupDeadline(scannedAt)` — pierwsze 3 AM po
+      scannedAt+24h). `abandoned` usunięty z `RESCAN_AFTER`.
+- [x] **4.9.4 parity** — gzip manual reader + TextDecoder (FF Xray fix),
+      defensive `Number(arrivalAt)` w findConflict, debug flag
+      `oge5_debugMinGap` dla diagnostyki min-gap.
+- [ ] **14. Patch v4.10.0: eksport do pliku .json** — osobny commit w głównym
+      repo (poza `v5.0.0/`). Przycisk w v4 settings panel zapisuje
+      `oge_galaxyScans` + `oge_colonyHistory` + opcjonalnie `oge_deletedColonies`
+      jako zwykły JSON. Schema v4 `{version:1, exportedAt, colonyHistory,
+      galaxyScans, deletedColonies?}` — v5 `features/histogram/io.js`
+      `importAllData` już to rozumie.
+- [ ] **15. v5: import z pliku .json** w ustawieniach → Diagnostyka. Większość
+      logiki już jest (`importAllData`), wymaga tylko UI button w settingsUi.
+- [ ] **16. Polish / known open items:**
+      - **Abandon floating button** — `features/abandon.js` eksportuje
+        `checkAbandonState()` i `abandonPlanet()`, ale nie ma
+        `installAbandonButton`. Floating UI pokazujące button gdy
+        warunki spełnione trzeba dopisać (overlay-style injected
+        buttons dla flow samego już działają).
+- [ ] **17. Release** — package.zip, bump wersji, submit do AMO.
 
 Każda faza kończy się review userowym + sign-off przed kolejną. Żadnego
 big-bang dropa.
@@ -1098,5 +1132,6 @@ v5 jest gotowe do produkcji, gdy:
 
 ---
 
-*Koniec DESIGN.md v0.3.*
-*Następny krok: sign-off użytkownika → Faza 1: scaffolding.*
+*Koniec DESIGN.md v0.4.*
+*Status: Fazy 1-13 + wire-up + extensive polish zakończone. 554 testy, typecheck clean, build OK.*
+*Następny krok: Faza 14 (patch v4.10.0 eksport do pliku) → Faza 15 (v5 import UI) → Faza 16 (polish: abandon button, etc.) → Faza 17 (release).*

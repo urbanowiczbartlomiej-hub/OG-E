@@ -46,12 +46,10 @@ import { parsePositions } from './positions.js';
  *     (don't re-send).
  *   - `abandoned` next — short-lived debris-slot state that is about to
  *     become `empty` (24-48h sweep). The user may want to revisit.
+ *   - `reserved` — slot held for planet-move by another player; clears
+ *     in ~22h, so worth checking back on.
  *   - long/short inactive, vacation, banned — interesting for scouting.
  *   - `mine` / `admin` / `occupied` last — least actionable.
- *
- * Port of 4.x `histogram.js:STATUS_PRIORITY`, minus `reserved` which v5
- * doesn't carry in its {@link PositionStatus} enum (see DESIGN.md note
- * on the Phase 7 sendCol simplification).
  *
  * @type {PositionStatus[]}
  */
@@ -59,6 +57,7 @@ export const STATUS_PRIORITY = [
   'empty',
   'empty_sent',
   'abandoned',
+  'reserved',
   'long_inactive',
   'inactive',
   'vacation',
@@ -198,6 +197,7 @@ export const buildFieldBuckets = (entries) => {
  *   empty: number,
  *   empty_sent: number,
  *   abandoned: number,
+ *   reserved: number,
  *   long_inactive: number,
  *   inactive: number,
  *   vacation: number,

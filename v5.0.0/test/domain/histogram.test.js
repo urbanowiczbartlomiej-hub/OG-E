@@ -18,10 +18,11 @@ import {
 
 describe('STATUS_PRIORITY', () => {
   it('lists every v5 PositionStatus exactly once', () => {
-    // 10-status enum from src/domain/scans.js (no `reserved` in v5).
+    // 11-status enum from src/domain/scans.js (`reserved` added with
+    // 4.9.2 parity port — slot reserved for planet-move).
     const expected = [
-      'empty', 'empty_sent', 'abandoned', 'long_inactive', 'inactive',
-      'vacation', 'banned', 'mine', 'admin', 'occupied',
+      'empty', 'empty_sent', 'abandoned', 'reserved', 'long_inactive',
+      'inactive', 'vacation', 'banned', 'mine', 'admin', 'occupied',
     ];
     expect([...STATUS_PRIORITY].sort()).toEqual([...expected].sort());
     expect(new Set(STATUS_PRIORITY).size).toBe(STATUS_PRIORITY.length);
@@ -100,9 +101,11 @@ describe('bestStatusInSystem', () => {
   });
 
   it('returns null when target positions hold only unknown statuses', () => {
-    // 'reserved' isn't in v5's STATUS_PRIORITY (10-status enum).
+    // Use a clearly-bogus status that is NOT in STATUS_PRIORITY.
+    // (`reserved` used to play this role but landed in the priority
+    // list with the 4.9.2 parity port.)
     const positions = {
-      8: { status: /** @type {any} */ ('reserved') },
+      8: { status: /** @type {any} */ ('totally_made_up') },
     };
     expect(bestStatusInSystem(positions, new Set([8]))).toBeNull();
   });
@@ -182,8 +185,8 @@ describe('collectGalaxyStats', () => {
   /**
    * Build a minimal SystemScan for tests. The positions parameter is
    * loose-typed (status as `string`) and cast through `unknown` to
-   * SystemScan so individual cases can include unknown statuses like
-   * 'reserved' (not in v5's PositionStatus enum) without per-test casts.
+   * SystemScan so individual cases can include unknown statuses
+   * (anything not in v5's PositionStatus enum) without per-test casts.
    *
    * @param {Record<number, { status: string }>} positions
    * @returns {import('../../src/state/scans.js').SystemScan}
@@ -243,7 +246,7 @@ describe('collectGalaxyStats', () => {
 
   it('counts unknown statuses toward total but not toward any bucket', () => {
     const scans = {
-      '1:1': sys({ 8: { status: /** @type {any} */ ('reserved') } }),
+      '1:1': sys({ 8: { status: /** @type {any} */ ('totally_made_up') } }),
     };
     const { global } = collectGalaxyStats(scans, new Set([8]));
     expect(global.total).toBe(1);

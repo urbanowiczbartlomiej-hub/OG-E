@@ -48,9 +48,15 @@ import { createStore } from '../lib/createStore.js';
  *   while we're waiting for the game's checkTarget XHR; cleared once
  *   the result arrives (whether Ready or Stale).
  * @property {boolean} staleRetryActive
- *   True when the most recent checkTarget came back Stale and we have
- *   armed a "next-click swaps form fields" path. Flipped false as soon
- *   as the swap fires.
+ *   True when the most recent checkTarget came back Stale (or
+ *   Reserved) and we have armed a "next Send click navigates to that
+ *   system's galaxy view so the game refreshes the DB with reality"
+ *   path. DESIGN.md §9.2 — navigation replaces the older 4.7.x
+ *   form-swap retry. Flipped false as soon as the nav fires.
+ * @property {{ galaxy: number, system: number } | null} staleTargetCoords
+ *   Coords of the stale-or-reserved slot we're about to navigate the
+ *   user to when `staleRetryActive` is true. Written by the stale
+ *   branch of `onCheckTargetResult`, consumed by `navigateToStaleSystem`.
  */
 
 /** @type {UIState} */
@@ -58,6 +64,7 @@ const initialState = {
   pendingColLink: null,
   pendingColVerify: null,
   staleRetryActive: false,
+  staleTargetCoords: null,
 };
 
 /**

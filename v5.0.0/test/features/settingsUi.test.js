@@ -38,8 +38,8 @@ import {
   SETTINGS_SCHEMA,
 } from '../../src/state/settings.js';
 
-/** AGR container class selector — mirrors the production constant. */
-const AGR_CLASS = 'ago_menu_content';
+/** AGR container id selector — mirrors the production constant. */
+const AGR_ID = 'ago_menu_content';
 
 /** Settings header id — mirrors the production constant. */
 const HEADER_ID = 'oge5-settings-header';
@@ -51,7 +51,7 @@ const TABLE_ID = 'oge5-settings-table';
 const INPUT_PREFIX = 'oge5-setting-';
 
 /**
- * Paint a fresh `.ago_menu_content` container into `document.body` so
+ * Paint a fresh `#ago_menu_content` container into `document.body` so
  * the AGR-wait resolves on its first poll. Idempotent — safe to call
  * even when the container is already present (the previous call's
  * node is replaced via innerHTML).
@@ -59,7 +59,7 @@ const INPUT_PREFIX = 'oge5-setting-';
  * @returns {void}
  */
 const setupAGR = () => {
-  document.body.innerHTML = `<div class="${AGR_CLASS}"></div>`;
+  document.body.innerHTML = `<div id="${AGR_ID}"></div>`;
 };
 
 /**
@@ -135,16 +135,21 @@ describe('installSettingsUi — AGR availability', () => {
     expect(document.getElementById(TABLE_ID)).toBeNull();
   });
 
-  it('inserts header into .ago_menu_content when AGR is present', async () => {
+  it('inserts header into #ago_menu_content when AGR is present', async () => {
     setupAGR();
     installSettingsUi();
     await flushWaitFor();
 
     const header = document.getElementById(HEADER_ID);
     expect(header).not.toBeNull();
-    expect(header?.textContent).toBe('OG-E v5 Settings');
-    // The header's parent must be the AGR container.
-    expect(header?.parentElement?.className).toBe(AGR_CLASS);
+    // Header contains the two arrow glyphs + the label text; use
+    // `toContain` rather than `toBe` so the check stays meaningful
+    // regardless of where AGR positions the arrows.
+    expect(header?.textContent).toContain('OG-E v5 Settings');
+    // The header sits inside the `.ago_menu_tab` wrapper, which sits
+    // inside the AGR container. Two levels up from the header.
+    expect(header?.parentElement?.className).toBe('ago_menu_tab');
+    expect(header?.parentElement?.parentElement?.id).toBe(AGR_ID);
   });
 
   it('inserts the settings table when AGR is present', async () => {
@@ -155,8 +160,10 @@ describe('installSettingsUi — AGR availability', () => {
     const table = document.getElementById(TABLE_ID);
     expect(table).not.toBeNull();
     expect(table?.tagName).toBe('TABLE');
-    // Table lives next to the header inside the AGR container.
-    expect(table?.parentElement?.className).toBe(AGR_CLASS);
+    // Table lives inside the `.ago_menu_tab` wrapper alongside the
+    // header; two parents up is the AGR container.
+    expect(table?.parentElement?.className).toBe('ago_menu_tab');
+    expect(table?.parentElement?.parentElement?.id).toBe(AGR_ID);
   });
 
   it('renders when AGR appears AFTER install (install races AGR hydration)', async () => {
