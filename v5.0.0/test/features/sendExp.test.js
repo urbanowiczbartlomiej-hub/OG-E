@@ -1,0 +1,468 @@
+// @vitest-environment happy-dom
+//
+// Unit tests for the floating Send Exp button.
+//
+// The module reads three things from the page:
+//   - `settings.mobileMode` gates visibility,
+//   - `settings.enterBtnSize` drives diameter + font scaling,
+//   - `settings.maxExpPerPlanet` gates the click handler.
+// ... and writes the button to `document.body`, plus JSON position to
+// `oge5_enterBtnPos` and focus marker to `oge5_focusedBtn`.
+//
+// # Navigation testing strategy
+//
+// happy-dom routes `location.href = url` assignment to an asynchronous
+// `browserFrame.goto(url)`. That is wrong for our click semantics —
+// the click handler fires a sync assignment and returns, and we want
+// to assert the URL it wrote without racing the frame navigator.
+//
+// We therefore override `location.href` with a spy-friendly
+// getter/setter in `beforeEach` via `Object.defineProperty`. Tests
+// read `navTarget` to assert which URL the handler picked. The
+// override is scoped per-test and reverted in `afterEach`.
+//
+// # Drag testing is NOT covered
+//
+// The brief lists 17 cases; drag threshold / touch handling is
+// exercised in 4.x under manual QA and the v5 rewrite is a line-by-
+// line port. Tests here cover the observable outcome (saved position
+// restored on install; default position when unset) instead of
+// synthesising multi-step pointer sequences in jsdom.
+//
+// @ts-check
+
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  installSendExp,
+  _resetSendExpForTest,
+} from '../../src/features/sendExp.js';
+import {
+  settingsStore,
+  SETTINGS_SCHEMA,
+} from '../../src/state/settings.js';
+
+// ── Location.href mocking ────────────────────────────────────────────
+
+/**
+ * Holds the most recent URL assigned to `location.href` via our spy.
+ * Reset per-test in `beforeEach`.
+ *
+ * @type {string | null}
+ */
+let navTarget = null;
+
+/**
+ * Remembers the original `href` property descriptor so `afterEach` can
+ * restore it and the next test case sees a vanilla happy-dom Location.
+ *
+ * @type {PropertyDescriptor | undefined}
+ */
+let originalHrefDescriptor;
+
+/**
+ * Install a spy-friendly `href` override on the current
+ * `window.location`. The getter returns the last URL written so
+ * production code that reads-after-write (rare, but possible in
+ * principle) sees its own value back.
+ *
+ * @returns {void}
+ */
+const mockLocationHref = () => {
+  // Walk up the prototype chain to find the `href` accessor — happy-dom
+  // defines it on Location.prototype, not the instance.
+  const proto = Object.getPrototypeOf(window.location);
+  originalHrefDescriptor = Object.getOwnPropertyDescriptor(proto, 'href');
+  Object.defineProperty(window.location, 'href', {
+    configurable: true,
+    get() {
+      return navTarget ?? 'about:blank';
+    },
+    set(url) {
+      navTarget = String(url);
+    },
+  });
+};
+
+/**
+ * Undo `mockLocationHref` by deleting our instance-level override so
+ * subsequent access resolves through the prototype again.
+ *
+ * @returns {void}
+ */
+const unmockLocationHref = () => {
+  // Dropping the instance-level descriptor falls back to the prototype
+  // getter/setter that happy-dom originally installed.
+  delete (/** @type {any} */ (window.location)).href;
+  // `originalHrefDescriptor` is retained for debuggability only; we do
+  // not reinstall it because deleting the instance override is enough.
+  void originalHrefDescriptor;
+};
+
+// ── Scene setup ──────────────────────────────────────────────────────
+
+/**
+ * Reset the settings store to schema defaults so cases start from a
+ * known baseline.
+ *
+ * @returns {void}
+ */
+const resetSettingsToDefaults = () => {
+  /** @type {Record<string, unknown>} */
+  const defaults = {};
+  for (const key of /** @type {Array<keyof typeof SETTINGS_SCHEMA>} */ (
+    Object.keys(SETTINGS_SCHEMA)
+  )) {
+    defaults[key] = SETTINGS_SCHEMA[key].default;
+  }
+  settingsStore.set(
+    /** @type {import('../../src/state/settings.js').Settings} */ (
+      /** @type {unknown} */ (defaults)
+    ),
+  );
+};
+
+/**
+ * Paint the DOM to look like the game, apply settings, and point
+ * `location.search` at whichever scene we need.
+ *
+ * @param {{
+ *   mobileMode?: boolean,
+ *   enterBtnSize?: number,
+ *   maxExpPerPlanet?: number,
+ *   onFleetdispatch?: boolean,
+ *   mission?: number | null,
+ *   activeCp?: number | null,
+ *   activeExpeditions?: number,
+ * }} [opts]
+ */
+const setupScene = ({
+  mobileMode = true,
+  enterBtnSize = 560,
+  maxExpPerPlanet = 1,
+  onFleetdispatch = false,
+  mission = null,
+  activeCp = 12345,
+  activeExpeditions = 0,
+} = {}) => {
+  settingsStore.set({
+    ...settingsStore.get(),
+    mobileMode,
+    enterBtnSize,
+    maxExpPerPlanet,
+  });
+
+  if (onFleetdispatch) {
+    const query = mission !== null
+      ? `?page=ingame&component=fleetdispatch&cp=${activeCp}&mission=${mission}`
+      : `?page=ingame&component=fleetdispatch&cp=${activeCp}`;
+    location.search = query;
+  } else {
+    location.search = `?page=ingame&component=overview&cp=${activeCp}`;
+  }
+
+  const expRows = Array(activeExpeditions)
+    .fill(0)
+    .map(
+      () => `
+        <tr class="eventFleet" data-mission-type="15" data-return-flight="true">
+          <td class="originFleet">X</td>
+          <td class="coordsOrigin">1:1:1</td>
+          <td class="detailsFleet"><span>1</span></td>
+        </tr>
+      `,
+    )
+    .join('');
+
+  const planetRow = activeCp !== null
+    ? `<div class="smallplanet hightlightPlanet" id="planet-${activeCp}"></div>`
+    : '';
+
+  document.body.innerHTML = `
+    <div id="planetList">${planetRow}</div>
+    <div id="eventContent"><table><tbody>${expRows}</tbody></table></div>
+  `;
+};
+
+const getBtn = () =>
+  /** @type {HTMLButtonElement | null} */ (document.getElementById('oge5-send-exp'));
+
+beforeEach(() => {
+  _resetSendExpForTest();
+  localStorage.clear();
+  document.body.innerHTML = '';
+  resetSettingsToDefaults();
+  navTarget = null;
+  mockLocationHref();
+});
+
+afterEach(() => {
+  _resetSendExpForTest();
+  document.body.innerHTML = '';
+  resetSettingsToDefaults();
+  unmockLocationHref();
+  navTarget = null;
+});
+
+// ──────────────────────────────────────────────────────────────────
+// Visibility gating via mobileMode
+// ──────────────────────────────────────────────────────────────────
+
+describe('installSendExp — visibility via mobileMode', () => {
+  it('does not render a button when mobileMode is off', () => {
+    setupScene({ mobileMode: false });
+    installSendExp();
+    expect(getBtn()).toBeNull();
+  });
+
+  it('renders the button with the correct id + text when mobileMode is on', () => {
+    setupScene({ mobileMode: true });
+    installSendExp();
+    const btn = getBtn();
+    expect(btn).not.toBeNull();
+    expect(btn?.textContent).toBe('Send Exp');
+    expect(btn?.getAttribute('aria-label')).toBe('Send expedition');
+    expect(btn?.tabIndex).toBe(0);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// Size from settings
+// ──────────────────────────────────────────────────────────────────
+
+describe('installSendExp — size from settings', () => {
+  it('applies enterBtnSize to width and height', () => {
+    setupScene({ enterBtnSize: 400 });
+    installSendExp();
+    const btn = getBtn();
+    expect(btn).not.toBeNull();
+    expect(btn?.style.width).toBe('400px');
+    expect(btn?.style.height).toBe('400px');
+    // font-size is ~23% of size → round(400 * 0.23) === 92.
+    expect(btn?.style.fontSize).toBe('92px');
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// Click handler — three scenarios
+// ──────────────────────────────────────────────────────────────────
+
+describe('installSendExp — click navigation', () => {
+  it('on overview → navigates to fleetdispatch?mission=15 with current cp', () => {
+    setupScene({ onFleetdispatch: false, activeCp: 99 });
+    installSendExp();
+    getBtn()?.click();
+
+    expect(navTarget).not.toBeNull();
+    expect(navTarget).toContain('component=fleetdispatch');
+    expect(navTarget).toContain('cp=99');
+    expect(navTarget).toContain('mission=15');
+  });
+
+  it('on fleetdispatch with a different mission → navigates with mission=15', () => {
+    setupScene({ onFleetdispatch: true, mission: 7, activeCp: 42 });
+    installSendExp();
+    getBtn()?.click();
+
+    expect(navTarget).not.toBeNull();
+    expect(navTarget).toContain('component=fleetdispatch');
+    expect(navTarget).toContain('cp=42');
+    expect(navTarget).toContain('mission=15');
+  });
+
+  it('on fleetdispatch with mission=15 → synthesizes Enter keydown + keyup on activeElement, no navigation', () => {
+    setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
+    installSendExp();
+
+    // Track keyboard events at document level (bubbles=true).
+    const seen = /** @type {string[]} */ ([]);
+    /** @type {EventListener} */
+    const listener = (e) => {
+      if (e instanceof KeyboardEvent) seen.push(e.type);
+    };
+    document.addEventListener('keydown', listener);
+    document.addEventListener('keyup', listener);
+
+    getBtn()?.click();
+
+    document.removeEventListener('keydown', listener);
+    document.removeEventListener('keyup', listener);
+
+    expect(seen).toContain('keydown');
+    expect(seen).toContain('keyup');
+    expect(navTarget).toBeNull();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// Max-exp guard
+// ──────────────────────────────────────────────────────────────────
+
+describe('installSendExp — max expedition guard', () => {
+  it('paints "Max!" and does NOT navigate when active expeditions reach the limit', () => {
+    vi.useFakeTimers();
+    setupScene({ maxExpPerPlanet: 1, activeExpeditions: 1 });
+    installSendExp();
+    const btn = getBtn();
+    expect(btn).not.toBeNull();
+
+    btn?.click();
+
+    expect(btn?.textContent).toBe('Max!');
+    expect(navTarget).toBeNull();
+
+    // After 2s the label reverts.
+    vi.advanceTimersByTime(2000);
+    expect(btn?.textContent).toBe('Send Exp');
+
+    vi.useRealTimers();
+  });
+
+  it('navigates normally when active expeditions are below the limit', () => {
+    setupScene({
+      maxExpPerPlanet: 2,
+      activeExpeditions: 1,
+      onFleetdispatch: false,
+      activeCp: 7,
+    });
+    installSendExp();
+    getBtn()?.click();
+
+    expect(navTarget).not.toBeNull();
+    expect(navTarget).toContain('cp=7');
+    expect(navTarget).toContain('mission=15');
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// Button position
+// ──────────────────────────────────────────────────────────────────
+
+describe('installSendExp — position', () => {
+  it('restores position from localStorage when oge5_enterBtnPos is set', () => {
+    // Need to set BEFORE install; setupScene only writes settings.
+    localStorage.setItem('oge5_enterBtnPos', JSON.stringify({ x: 50, y: 60 }));
+    setupScene({});
+    installSendExp();
+    const btn = getBtn();
+    expect(btn).not.toBeNull();
+    expect(btn?.style.left).toBe('50px');
+    expect(btn?.style.top).toBe('60px');
+  });
+
+  it('uses bottom-right default when no saved position is present', () => {
+    setupScene({});
+    installSendExp();
+    const btn = getBtn();
+    expect(btn).not.toBeNull();
+    expect(btn?.style.right).toBe('20px');
+    expect(btn?.style.bottom).toBe('20px');
+    // No explicit left/top when using edge-anchor defaults.
+    expect(btn?.style.left).toBe('');
+    expect(btn?.style.top).toBe('');
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// Live settings updates
+// ──────────────────────────────────────────────────────────────────
+
+describe('installSendExp — live settings updates', () => {
+  it('removes the button when mobileMode is toggled off after install', () => {
+    setupScene({ mobileMode: true });
+    installSendExp();
+    expect(getBtn()).not.toBeNull();
+
+    settingsStore.update((s) => ({ ...s, mobileMode: false }));
+    expect(getBtn()).toBeNull();
+  });
+
+  it('creates the button when mobileMode is toggled on after install', () => {
+    setupScene({ mobileMode: false });
+    installSendExp();
+    expect(getBtn()).toBeNull();
+
+    settingsStore.update((s) => ({ ...s, mobileMode: true }));
+    expect(getBtn()).not.toBeNull();
+  });
+
+  it('resizes the button when enterBtnSize changes live', () => {
+    setupScene({ enterBtnSize: 560 });
+    installSendExp();
+    const btn = getBtn();
+    expect(btn?.style.width).toBe('560px');
+
+    settingsStore.update((s) => ({ ...s, enterBtnSize: 300 }));
+    expect(btn?.style.width).toBe('300px');
+    expect(btn?.style.height).toBe('300px');
+    // 300 * 0.23 = 69.
+    expect(btn?.style.fontSize).toBe('69px');
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// Focus persistence
+// ──────────────────────────────────────────────────────────────────
+
+describe('installSendExp — focus persistence', () => {
+  it('restores focus to the button 50ms after install when focus marker is present', () => {
+    vi.useFakeTimers();
+    localStorage.setItem('oge5_focusedBtn', 'send-exp');
+    setupScene({});
+    installSendExp();
+    const btn = getBtn();
+    expect(btn).not.toBeNull();
+    // Focus restore is deferred to a 50ms setTimeout.
+    expect(document.activeElement).not.toBe(btn);
+
+    vi.advanceTimersByTime(60);
+
+    expect(document.activeElement).toBe(btn);
+    vi.useRealTimers();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// Dispose
+// ──────────────────────────────────────────────────────────────────
+
+describe('installSendExp — dispose', () => {
+  it('dispose removes the button and settings updates no longer resurrect it', () => {
+    setupScene({ mobileMode: true });
+    const dispose = installSendExp();
+    expect(getBtn()).not.toBeNull();
+
+    dispose();
+    expect(getBtn()).toBeNull();
+
+    // Flipping settings after dispose is a no-op (subscriber was
+    // unsubscribed, and even if re-install were called we'd want the
+    // button to come back ONLY via an explicit install).
+    settingsStore.update((s) => ({ ...s, mobileMode: false }));
+    settingsStore.update((s) => ({ ...s, mobileMode: true }));
+    expect(getBtn()).toBeNull();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// Idempotency + edge cases
+// ──────────────────────────────────────────────────────────────────
+
+describe('installSendExp — idempotency + edges', () => {
+  it('second install returns the same dispose handle without duplicating the button', () => {
+    setupScene({});
+    const d1 = installSendExp();
+    const d2 = installSendExp();
+    expect(d2).toBe(d1);
+
+    // Only one button in the DOM.
+    expect(document.querySelectorAll('#oge5-send-exp').length).toBe(1);
+  });
+
+  it('click is a safe no-op when there is no active planet', () => {
+    setupScene({ activeCp: null });
+    installSendExp();
+    // getBtn works because mobileMode is on — but getActiveCp will be null.
+    getBtn()?.click();
+    expect(navTarget).toBeNull();
+  });
+});
