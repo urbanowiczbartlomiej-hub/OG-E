@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"C:/Users/urban/Desktop/OG/OGame_extensions/OG-E\" log --oneline -20)",
+      "PowerShell(Set-Location v5.0.0; npm run test -- --run 2>&1 | Select-Object -Last 30)",
+      "PowerShell(npm run typecheck 2>&1)"
+    ]
+  }
+}
