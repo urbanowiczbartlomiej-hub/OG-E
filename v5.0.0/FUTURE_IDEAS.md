@@ -37,4 +37,30 @@ które ma inną semantykę niż globalny cap gry.
 
 ---
 
-## 2. (placeholder — dodawać nowe tutaj)
+## 2. AGR logo — poprawki wizualne
+
+- `#ago_menubutton_logo` musi być KWADRATEM (`height:27px; width:27px`
+  z `display:block`). Obecne aspect ratio pozwala się rozjeżdżać zgodnie
+  z CSS AGR.
+- Dodać hover state (np. `filter: brightness(1.2)` albo `opacity:1` z
+  domyślnym `0.85`).
+- PNG 500×500 (`icons/icon.png`) nie ma dobrego kształtu po przeskalowaniu
+  do 27×27. Lepiej użyć pliku `.ico` z wieloma rozmiarami albo wygenerować
+  dedykowany `icons/icon-27.png` / `icon-16.png`. Ewentualnie inline SVG.
+- Pozostało: w `src/features/agrLogoRewire.js` popraw `background-size`
+  + dodaj `background-position: center` (już jest). Dodać `:hover` rule
+  przez style'owany `<style>` tag (inline style nie obsługuje pseudo-klas).
+
+## 3. Readability boost — kolory + rozmiar
+
+- Tekst w `#eventboxFilled` stracił oryginalne kolory po naszej regule
+  `color: #fff !important`. Część tekstów powinna zachować kolor gry
+  (np. zasoby) — reguła jest zbyt agresywna. Trzeba precyzyjniej:
+  target na CONKRETNE tekstowe children, nie na wszystko z `*`.
+- `a.ago_movement.tooltip.ago_color_lightgreen` — po zmianie koloru
+  nadal za małe. Dodać `font-size: larger` / konkretny `font-size` +
+  ewentualnie `font-weight: bold`.
+- Plik: `src/features/readabilityBoost.js`. Zmienić reguły CSS +
+  być może dodać oddzielną regułę `font-size` niezależną od koloru.
+
+## 4. (placeholder — dodawać nowe tutaj)
