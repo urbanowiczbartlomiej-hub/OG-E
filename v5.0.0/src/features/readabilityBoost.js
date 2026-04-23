@@ -19,16 +19,34 @@
 // rendered into HTML that ships inline `style` / high-specificity CSS,
 // so the only reliable way to override them is a stylesheet with
 // `!important` declarations. The overrides here are deliberate and
-// minimal — white bold text for the event box, a brighter green for
-// the movement link — tuned to preserve AGR's palette semantics while
-// clearing the contrast floor.
+// minimal — white bold text for the event box, a brighter green and a
+// bump in size for the movement link — tuned to preserve AGR's palette
+// semantics while clearing the contrast floor.
 //
 // # What
 //
 // Inject a single `<style id="oge5-readability-boost">` node at
-// `document_start` with two rule blocks. The element is idempotent:
+// `document_start` with three rule blocks. The element is idempotent:
 // re-installs dedupe on the stable id and return the existing dispose
 // without rewriting the stylesheet.
+//
+// ## Event box (`#eventboxFilled`)
+//
+// Earlier revisions slammed `color: #fff !important` onto every
+// descendant (`#eventboxFilled *`). That flattened AGR's resource
+// colour coding (metal / crystal / deut tints) and ate the status
+// glyphs. The current rule applies the white only to the root; CSS
+// inheritance carries the lift to plain-text children while spans
+// with their own explicit `color` keep it. Bold is still forced on
+// every descendant (no cascade issue — it stacks additively with no
+// visual cost).
+//
+// ## Movement link (`.ago_movement.tooltip.ago_color_lightgreen`)
+//
+// Colour override stays but `font-size: larger` and `font-weight: bold`
+// are now applied only to the anchor itself, not `*`. `larger` is
+// relative to the parent — recursing through `*` would compound the
+// bump at every nesting level and blow up deeply nested tooltips.
 //
 // Mirrors the shape of {@link ../features/blackBg.js} — both are
 // CSS-only, run before the parser has produced `<body>`, and fall back
@@ -44,14 +62,24 @@ const STYLE_ID = 'oge5-readability-boost';
  * reaching into internals.
  */
 const CSS = `/* OG-E: contrast boost for low-visibility elements */
-#eventboxFilled,
-#eventboxFilled * {
+/* Event box — root-only colour so game-coloured spans keep their tint;
+   bold is forced on every descendant (inheritance alone skips bold on
+   anchors / table cells with lighter UA defaults). */
+#eventboxFilled {
   color: #fff !important;
+}
+#eventboxFilled * {
   font-weight: bold !important;
 }
+/* Movement link — colour on the whole subtree, size/weight only on the
+   anchor itself to avoid compounding "larger" through nested spans. */
 a.ago_movement.tooltip.ago_color_lightgreen,
 a.ago_movement.tooltip.ago_color_lightgreen * {
   color: #a0ff60 !important;
+}
+a.ago_movement.tooltip.ago_color_lightgreen {
+  font-size: larger !important;
+  font-weight: bold !important;
 }
 `;
 

@@ -37,30 +37,42 @@ które ma inną semantykę niż globalny cap gry.
 
 ---
 
-## 2. AGR logo — poprawki wizualne
+## 2. AGR logo — poprawki wizualne — DONE
 
-- `#ago_menubutton_logo` musi być KWADRATEM (`height:27px; width:27px`
-  z `display:block`). Obecne aspect ratio pozwala się rozjeżdżać zgodnie
-  z CSS AGR.
-- Dodać hover state (np. `filter: brightness(1.2)` albo `opacity:1` z
-  domyślnym `0.85`).
-- PNG 500×500 (`icons/icon.png`) nie ma dobrego kształtu po przeskalowaniu
-  do 27×27. Lepiej użyć pliku `.ico` z wieloma rozmiarami albo wygenerować
-  dedykowany `icons/icon-27.png` / `icon-16.png`. Ewentualnie inline SVG.
-- Pozostało: w `src/features/agrLogoRewire.js` popraw `background-size`
-  + dodaj `background-position: center` (już jest). Dodać `:hover` rule
-  przez style'owany `<style>` tag (inline style nie obsługuje pseudo-klas).
+Zmiany w `src/features/agrLogoRewire.js`:
 
-## 3. Readability boost — kolory + rozmiar
+- Kwadrat wymuszony inline stylem `width:27px; height:27px; display:block`
+  z `!important` — klik-target już się nie rozjeżdża niezależnie od
+  aktywnej klasy AGR.
+- Źródło obrazu przełączone z `icons/icon.png` (500×500, rozmyty po
+  skalowaniu do 27) na `icons/icon48.png` — ostre krawędzie przy
+  downscale 48→27. `.ico` nie był potrzebny skoro mamy dedykowany
+  PNG w rozmiarze bliskim docelowemu.
+- Hover state przez osobny `<style id="oge5-agr-logo-hover">`
+  (idempotentny, dispose usuwa) — inline style nie obsługuje
+  pseudo-klas. Reguła: `opacity 0.85 → 1` + `filter: brightness(1.2)`
+  z transition 120 ms.
+- Dispose restore'uje inline style verbatim + zdejmuje `<style>`.
 
-- Tekst w `#eventboxFilled` stracił oryginalne kolory po naszej regule
-  `color: #fff !important`. Część tekstów powinna zachować kolor gry
-  (np. zasoby) — reguła jest zbyt agresywna. Trzeba precyzyjniej:
-  target na CONKRETNE tekstowe children, nie na wszystko z `*`.
-- `a.ago_movement.tooltip.ago_color_lightgreen` — po zmianie koloru
-  nadal za małe. Dodać `font-size: larger` / konkretny `font-size` +
-  ewentualnie `font-weight: bold`.
-- Plik: `src/features/readabilityBoost.js`. Zmienić reguły CSS +
-  być może dodać oddzielną regułę `font-size` niezależną od koloru.
+Testy: 3 nowe w `test/features/agrLogoRewire.test.js` (square, hover
+CSS, dispose cleanup). STUB_ICON_URL zaktualizowany na `icon48.png`.
+
+## 3. Readability boost — kolory + rozmiar — DONE
+
+Zmiany w `src/features/readabilityBoost.js`:
+
+- `#eventboxFilled`: rozdzielone reguły — `color: #fff !important`
+  tylko na ROOT (elementy bez własnego koloru dziedziczą biały; spany
+  z grą-narzuconym kolorem jak `ago_color_*` zachowują tint). Bold
+  nadal na `*` (additywne, bez kolizji).
+- `a.ago_movement.tooltip.ago_color_lightgreen`: `color` na
+  root + `*` (subtree), ale `font-size: larger !important` i
+  `font-weight: bold !important` tylko na ROOT — `larger` jest
+  relatywne, pushowanie go przez `*` kompoundowałoby rozmiar na
+  każdym poziomie zagnieżdżenia.
+
+Testy: 1 nowy w `test/features/readabilityBoost.test.js` —
+regression guard regexem na `#eventboxFilled *` rule block (nie może
+zawierać `color:`). Plus sprawdzenie obecności `font-size: larger`.
 
 ## 4. (placeholder — dodawać nowe tutaj)

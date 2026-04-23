@@ -17,16 +17,30 @@
 // file header). If AGR never hydrates the logo button within 10 s the
 // install silently no-ops, same failure mode as settingsUi.
 //
+// # Visual contract
+//
+// Force a fixed 27×27 square on the anchor (AGR's CSS otherwise lets the
+// aspect ratio drift). Render our icon using the 48 px asset — browser
+// downscale from 48→27 stays crisp; downscale from the 500×500
+// `icons/icon.png` master softened the edges.
+//
+// Hover state (brightness pulse on pointer-over) is delivered via a
+// sibling `<style id="oge5-agr-logo-hover">` — inline style attributes
+// cannot express pseudo-classes so the `:hover` rule has to live in a
+// stylesheet.
+//
 // # Lifecycle
 //
 //   1. `waitFor(() => document.getElementById(LOGO_ID), 10s)`.
 //   2. Once found: swap the `background-image` inline style to our
 //      extension icon (resolved via `browser.runtime.getURL` with a
-//      `chrome.runtime.getURL` fallback), and attach a `click` listener
-//      that fires the AGR menu button and then schedules a click on our
-//      settings tab header.
+//      `chrome.runtime.getURL` fallback), force a 27×27 square, inject
+//      the hover stylesheet, and attach a `click` listener that fires
+//      the AGR menu button and then schedules a click on our settings
+//      tab header.
 //   3. Dispose reverts the inline `style` attribute to its original
-//      (captured at install time) and removes the click listener.
+//      (captured at install time), removes the hover stylesheet, and
+//      removes the click listener.
 //
 // # Why two clicks with an 80 ms gap
 //
@@ -59,6 +73,22 @@ const MENU_BUTTON_ID = 'ago_menubutton';
 const OGE_TAB_HEADER_ID = 'oge5-settings-header';
 
 /**
+ * Stable id for the hover-stylesheet we inject alongside the rewire.
+ * Inline style attributes can't express pseudo-classes (`:hover`), so the
+ * hover rule lives in a sibling `<style>` node. The id lets dispose find
+ * and remove it and lets a double-install collapse to a single element.
+ */
+const HOVER_STYLE_ID = 'oge5-agr-logo-hover';
+
+/**
+ * Fixed logical size of the AGR menu-logo square. AGR's own stylesheet
+ * lets the anchor drift to non-square aspect ratios depending on which
+ * class is active (`_inactive` vs active). We pin it to 27×27 so the
+ * icon renders consistently.
+ */
+const LOGO_SIZE_PX = 27;
+
+/**
  * Maximum time we wait for AGR to hydrate its logo anchor. Mirrors the
  * 10 s settingsUi uses for `#ago_menu_content` — same failure mode, same
  * generous timeout.
@@ -85,9 +115,11 @@ const TAB_EXPAND_DELAY_MS = 80;
 const resolveIconUrl = () => {
   try {
     const g = /** @type {any} */ (/** @type {unknown} */ (globalThis));
-    const b = g.browser?.runtime?.getURL?.('icons/icon.png');
+    // Prefer the 48 px asset — it downscales to the 27 px render box
+    // with sharp edges, unlike the 500×500 master which softens.
+    const b = g.browser?.runtime?.getURL?.('icons/icon48.png');
     if (typeof b === 'string' && b.length > 0) return b;
-    const c = g.chrome?.runtime?.getURL?.('icons/icon.png');
+    const c = g.chrome?.runtime?.getURL?.('icons/icon48.png');
     if (typeof c === 'string' && c.length > 0) return c;
     return '';
   } catch {
@@ -132,6 +164,8 @@ export const installAgrLogoRewire = () => {
   let clickListener = null;
   /** @type {ReturnType<typeof setTimeout> | null} */
   let pendingTabClick = null;
+  /** @type {HTMLStyleElement | null} */
+  let hoverStyleEl = null;
 
   waitFor(() => document.getElementById(LOGO_ID), {
     timeoutMs: AGR_TIMEOUT_MS,
@@ -147,22 +181,44 @@ export const installAgrLogoRewire = () => {
     // rather than setting an empty string.
     originalStyleAttr = logoEl.getAttribute('style');
 
-    // Image swap — only when the runtime gave us a URL. Empty string
-    // means we're in a test environment with no WebExtension runtime;
-    // skip the image (click rewire still works).
+    // Pin a 27×27 square regardless of runtime icon availability — AGR's
+    // own CSS lets the aspect ratio drift, and we want the click target
+    // to stay consistent even when the WebExtension runtime isn't there
+    // to give us a background image (test env, missing permissions).
+    const squareText =
+      ` width: ${LOGO_SIZE_PX}px !important;` +
+      ` height: ${LOGO_SIZE_PX}px !important;` +
+      ' display: block !important;';
+
     const iconUrl = resolveIconUrl();
-    if (iconUrl) {
-      const styleText =
-        `background-image: url(${iconUrl}) !important;` +
+    const imageText = iconUrl
+      ? `background-image: url(${iconUrl}) !important;` +
         ' background-size: contain;' +
         ' background-repeat: no-repeat;' +
-        ' background-position: center;';
-      // Preserve any existing inline style attributes by appending —
-      // AGR's own rules are in a stylesheet, so the inline attr is
-      // typically empty, but a user stylesheet or future AGR version
-      // might put something here.
-      const prefix = originalStyleAttr ? originalStyleAttr + ';' : '';
-      logoEl.setAttribute('style', prefix + ' ' + styleText);
+        ' background-position: center;'
+      : '';
+
+    // Preserve any existing inline style attributes by appending — AGR's
+    // own rules are in a stylesheet, so the inline attr is typically
+    // empty, but a user stylesheet or future AGR version might put
+    // something here.
+    const prefix = originalStyleAttr ? originalStyleAttr + ';' : '';
+    logoEl.setAttribute('style', prefix + imageText + squareText);
+
+    // Hover pulse via a sibling <style>. Inline attributes can't express
+    // pseudo-classes, so the :hover rule lives in a stylesheet. Reuse
+    // an existing node if a previous install left one behind (dev reload,
+    // double-install race).
+    const existingHover = document.getElementById(HOVER_STYLE_ID);
+    if (existingHover instanceof HTMLStyleElement) {
+      hoverStyleEl = existingHover;
+    } else {
+      hoverStyleEl = document.createElement('style');
+      hoverStyleEl.id = HOVER_STYLE_ID;
+      hoverStyleEl.textContent =
+        `#${LOGO_ID} { opacity: 0.85; transition: opacity 120ms ease, filter 120ms ease; }\n` +
+        `#${LOGO_ID}:hover { opacity: 1 !important; filter: brightness(1.2) !important; }`;
+      (document.head || document.documentElement).appendChild(hoverStyleEl);
     }
 
     // Click rewire. `capture: true` so we run before any bubbling
@@ -201,9 +257,13 @@ export const installAgrLogoRewire = () => {
         logoEl.setAttribute('style', originalStyleAttr);
       }
     }
+    if (hoverStyleEl && hoverStyleEl.parentNode) {
+      hoverStyleEl.parentNode.removeChild(hoverStyleEl);
+    }
     clickListener = null;
     logoEl = null;
     originalStyleAttr = null;
+    hoverStyleEl = null;
     installed = null;
   };
 

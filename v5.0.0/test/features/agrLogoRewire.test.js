@@ -43,7 +43,10 @@ const MENU_BUTTON_ID = 'ago_menubutton';
 const OGE_TAB_HEADER_ID = 'oge5-settings-header';
 
 /** Stub icon URL returned by the browser.runtime.getURL mock. */
-const STUB_ICON_URL = 'moz-extension://abc/icons/icon.png';
+const STUB_ICON_URL = 'moz-extension://abc/icons/icon48.png';
+
+/** Stable id for the hover-stylesheet — mirrors the module constant. */
+const HOVER_STYLE_ID = 'oge5-agr-logo-hover';
 
 /**
  * Paint the minimum AGR surface the module interacts with: the logo
@@ -211,5 +214,46 @@ describe('installAgrLogoRewire — wiring', () => {
     expect(style).toContain(STUB_ICON_URL);
     expect(style).toContain('background-image');
     expect(style).toContain('!important');
+  });
+
+  it('forces a 27×27 square on the logo anchor', async () => {
+    vi.useFakeTimers();
+    setupAgrDom();
+    installAgrLogoRewire();
+    await vi.advanceTimersByTimeAsync(0);
+
+    const logo = /** @type {HTMLElement} */ (document.getElementById(LOGO_ID));
+    const style = logo.getAttribute('style') ?? '';
+    expect(style).toContain('width: 27px');
+    expect(style).toContain('height: 27px');
+    // `display: block` keeps the anchor rendering as a square box rather
+    // than collapsing to its inline text-height dimensions.
+    expect(style).toContain('display: block');
+  });
+
+  it('injects a hover stylesheet with the :hover rule', async () => {
+    vi.useFakeTimers();
+    setupAgrDom();
+    installAgrLogoRewire();
+    await vi.advanceTimersByTimeAsync(0);
+
+    const styleEl = document.getElementById(HOVER_STYLE_ID);
+    expect(styleEl).not.toBeNull();
+    expect(styleEl?.tagName).toBe('STYLE');
+    const css = styleEl?.textContent ?? '';
+    expect(css).toContain(`#${LOGO_ID}:hover`);
+    // The brightness filter is the perceptual "pulse" on pointer-over.
+    expect(css).toContain('brightness');
+  });
+
+  it('dispose removes the hover stylesheet', async () => {
+    vi.useFakeTimers();
+    setupAgrDom();
+    const dispose = installAgrLogoRewire();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(document.getElementById(HOVER_STYLE_ID)).not.toBeNull();
+
+    dispose();
+    expect(document.getElementById(HOVER_STYLE_ID)).toBeNull();
   });
 });

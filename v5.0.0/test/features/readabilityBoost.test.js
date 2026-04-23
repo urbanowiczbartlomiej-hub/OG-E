@@ -78,5 +78,22 @@ describe('readabilityBoost', () => {
     // Guard against accidental deletion of the bold override that
     // carries most of the perceptual contrast lift for the event box.
     expect(css).toContain('font-weight: bold');
+    // Movement link bumped to `larger` — separate rule from the colour
+    // override so the size lift actually lands on the anchor text.
+    expect(css).toContain('font-size: larger');
+  });
+
+  it('#eventboxFilled descendant rule does NOT force a colour override', () => {
+    // Earlier revisions set `color: #fff` on `#eventboxFilled *`, which
+    // flattened the game's resource / status colour coding. The current
+    // contract is: colour only on the root, bold on descendants. A
+    // regression that re-adds `color:` into the `*` rule block would
+    // silently break in-game palette semantics.
+    installReadabilityBoost();
+
+    const css = document.getElementById(STYLE_ID)?.textContent ?? '';
+    const descendantRule = css.match(/#eventboxFilled\s+\*\s*\{([^}]*)\}/);
+    expect(descendantRule).not.toBeNull();
+    expect(descendantRule?.[1]).not.toContain('color:');
   });
 });
