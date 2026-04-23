@@ -15,16 +15,17 @@
 //     version: 1,
 //     exportedAt: <ISO>,
 //     colonyHistory: ColonyEntry[],
-//     galaxyScans:   GalaxyScans,
-//     deletedColonies: number[]
+//     galaxyScans:   GalaxyScans
 //   }
 //
 // Merge semantics (kept consistent with `sync/merge.js` for the same
 // data so Export → Import round-trip is idempotent and matches Gist
 // sync):
-//   - colonyHistory:   union by `cp`, local entry WINS on duplicate.
-//   - galaxyScans:     per key, newer `scannedAt` wins.
-//   - deletedColonies: set union of the tombstone arrays.
+//   - colonyHistory: union by `cp`, local entry WINS on duplicate.
+//   - galaxyScans:   per key, newer `scannedAt` wins.
+//
+// Old v4 export files may include a `deletedColonies` field; it is
+// silently ignored on import (only `version` is validated).
 
 import { chromeStore } from '../../lib/storage.js';
 
@@ -44,9 +45,6 @@ export const HISTORY_KEY = 'oge5_colonyHistory';
 
 /** chrome.storage.local key for the full galaxy-scan map. */
 export const SCANS_KEY = 'oge5_galaxyScans';
-
-/** chrome.storage.local key for the soft-delete tombstone list. */
-export const DELETED_KEY = 'oge5_deletedColonies';
 
 /**
  * Tombstone written when the user clicks "Sync now". The Phase-10 sync
@@ -135,10 +133,9 @@ const readFileAsText = (file) =>
  * @returns {Promise<void>}
  */
 export const exportAllData = async () => {
-  const [history, scans, deleted] = await Promise.all([
+  const [history, scans] = await Promise.all([
     chromeStore.get(HISTORY_KEY),
     chromeStore.get(SCANS_KEY),
-    chromeStore.get(DELETED_KEY),
   ]);
 
   // Defensive narrowing — corrupt or absent values fall back to empty.
@@ -148,16 +145,12 @@ export const exportAllData = async () => {
   const galaxyScans = /** @type {GalaxyScans} */ (
     scans && typeof scans === 'object' ? scans : {}
   );
-  const deletedColonies = /** @type {number[]} */ (
-    Array.isArray(deleted) ? deleted : []
-  );
 
   const payload = {
     version: EXPORT_VERSION,
     exportedAt: new Date().toISOString(),
     colonyHistory,
     galaxyScans,
-    deletedColonies,
   };
 
   // No DOM = no download target. Stay silent instead of throwing so
@@ -218,38 +211,18 @@ const mergeScans = (local, imported) => {
 };
 
 /**
- * Merge two tombstone arrays as a set union. Returns the merged list
- * plus the count of additions (so callers can report "+N deleted
- * tombstones" without confusion with the final size).
- *
- * @param {number[]} local
- * @param {number[]} imported
- * @returns {{ merged: number[], added: number }}
- */
-const mergeDeleted = (local, imported) => {
-  const set = new Set(local);
-  let added = 0;
-  for (const cp of imported) {
-    if (!set.has(cp)) {
-      set.add(cp);
-      added += 1;
-    }
-  }
-  return { merged: [...set], added };
-};
-
-/**
  * Parse a user-uploaded JSON file and merge it into
  * `chrome.storage.local`. Each field is independently optional — a file
- * may contain only `colonyHistory`, only `galaxyScans`, etc., and the
- * other fields are left untouched.
+ * may contain only `colonyHistory`, only `galaxyScans`, and the
+ * other field is left untouched. Unknown fields (e.g. v4 exports'
+ * `deletedColonies`) are silently ignored — only `version` is validated.
  *
  * On parse failure or unsupported version, returns a zero-count result
  * with a `warning` describing the reason. This is the one place we
  * wrap awaits in try/catch because the failure mode IS user-visible.
  *
  * @param {File} file
- * @returns {Promise<{ colonies: number, scans: number, deleted: number, warning?: string }>}
+ * @returns {Promise<{ colonies: number, scans: number, warning?: string }>}
  */
 export const importAllData = async (file) => {
   /** @type {unknown} */
@@ -258,21 +231,20 @@ export const importAllData = async (file) => {
     const text = await readFileAsText(file);
     parsed = JSON.parse(text);
   } catch {
-    return { colonies: 0, scans: 0, deleted: 0, warning: 'Invalid JSON' };
+    return { colonies: 0, scans: 0, warning: 'Invalid JSON' };
   }
 
   if (!parsed || typeof parsed !== 'object') {
-    return { colonies: 0, scans: 0, deleted: 0, warning: 'Invalid JSON' };
+    return { colonies: 0, scans: 0, warning: 'Invalid JSON' };
   }
 
   const imported = /** @type {Record<string, unknown>} */ (parsed);
   if (imported.version !== EXPORT_VERSION) {
-    return { colonies: 0, scans: 0, deleted: 0, warning: 'Unsupported version' };
+    return { colonies: 0, scans: 0, warning: 'Unsupported version' };
   }
 
   let colonies = 0;
   let scans = 0;
-  let deleted = 0;
 
   if (Array.isArray(imported.colonyHistory)) {
     const localRaw = await chromeStore.get(HISTORY_KEY);
@@ -300,24 +272,7 @@ export const importAllData = async (file) => {
     scans = changed;
   }
 
-  if (Array.isArray(imported.deletedColonies)) {
-    const localRaw = await chromeStore.get(DELETED_KEY);
-    const local = /** @type {number[]} */ (
-      Array.isArray(localRaw) ? localRaw : []
-    );
-    // Filter imported tombstones to numbers so a corrupt file doesn't
-    // poison the tombstone list with strings or null.
-    const importedClean = /** @type {unknown[]} */ (imported.deletedColonies)
-      .filter((v) => typeof v === 'number');
-    const { merged, added } = mergeDeleted(
-      local,
-      /** @type {number[]} */ (importedClean),
-    );
-    if (added > 0) await chromeStore.set(DELETED_KEY, merged);
-    deleted = added;
-  }
-
-  return { colonies, scans, deleted };
+  return { colonies, scans };
 };
 
 /**

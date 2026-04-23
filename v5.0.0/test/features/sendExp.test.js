@@ -35,11 +35,37 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   installSendExp,
   _resetSendExpForTest,
+  _resetFleetDispatcherSnapshotForSendExpTest,
 } from '../../src/features/sendExp.js';
 import {
   settingsStore,
   SETTINGS_SCHEMA,
 } from '../../src/state/settings.js';
+
+/**
+ * Publish a fleetDispatcher snapshot into the module's event listener
+ * AND assign to `window.fleetDispatcher` so the install-time bootstrap
+ * reads it regardless of whether the test dispatches before or after
+ * `installSendExp()`. Mirrors the helper in `sendCol.test.js`.
+ *
+ * @param {{
+ *   expeditionCount: number,
+ *   maxExpeditionCount: number,
+ * }} snap
+ */
+const setFleetDispatcher = (snap) => {
+  const full = {
+    currentPlanet: { galaxy: 1, system: 2, position: 3 },
+    targetPlanet: null,
+    orders: null,
+    shipsOnPlanet: [],
+    ...snap,
+  };
+  /** @type {any} */ (window).fleetDispatcher = full;
+  document.dispatchEvent(
+    new CustomEvent('oge5:fleetDispatcher', { detail: full }),
+  );
+};
 
 // ── Location.href mocking ────────────────────────────────────────────
 
@@ -198,17 +224,21 @@ const getBtn = () =>
 
 beforeEach(() => {
   _resetSendExpForTest();
+  _resetFleetDispatcherSnapshotForSendExpTest();
   localStorage.clear();
   document.body.innerHTML = '';
   resetSettingsToDefaults();
+  delete (/** @type {any} */ (window)).fleetDispatcher;
   navTarget = null;
   mockLocationHref();
 });
 
 afterEach(() => {
   _resetSendExpForTest();
+  _resetFleetDispatcherSnapshotForSendExpTest();
   document.body.innerHTML = '';
   resetSettingsToDefaults();
+  delete (/** @type {any} */ (window)).fleetDispatcher;
   unmockLocationHref();
   navTarget = null;
 });
@@ -485,5 +515,80 @@ describe('installSendExp — idempotency + edges', () => {
     // getBtn works because mobileMode is on — but getActiveCp will be null.
     getBtn()?.click();
     expect(navTarget).toBeNull();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// fleetDispatcher snapshot — global-cap short-circuits
+// ──────────────────────────────────────────────────────────────────
+
+describe('installSendExp — fleetDispatcher snapshot gates', () => {
+  it('snapshot at max (14/14) → "All maxed!" painted, no nav', () => {
+    // Global expedition cap already reached per the game — we should
+    // short-circuit the DOM walk entirely and paint the transient
+    // warning instead of navigating anywhere. Scene is a non-fleet
+    // page so without the snapshot the default flow would navigate.
+    vi.useFakeTimers();
+    setupScene({ onFleetdispatch: false, activeCp: 42, activeExpeditions: 0 });
+    installSendExp();
+    setFleetDispatcher({ expeditionCount: 14, maxExpeditionCount: 14 });
+
+    const btn = getBtn();
+    btn?.click();
+
+    expect(btn?.textContent).toBe('All maxed!');
+    expect(navTarget).toBeNull();
+
+    vi.advanceTimersByTime(2000);
+    expect(btn?.textContent).toBe('Send Exp');
+    vi.useRealTimers();
+  });
+
+  it('snapshot below cap (5/14) → normal navigation to next planet with slot', () => {
+    // Snapshot reports plenty of headroom. Behaviour should be
+    // identical to the no-snapshot case — navigate to the active
+    // planet's fleetdispatch URL.
+    setupScene({
+      maxExpPerPlanet: 2,
+      activeExpeditions: 0,
+      onFleetdispatch: false,
+      activeCp: 7,
+    });
+    installSendExp();
+    setFleetDispatcher({ expeditionCount: 5, maxExpeditionCount: 14 });
+
+    getBtn()?.click();
+
+    expect(navTarget).not.toBeNull();
+    expect(navTarget).toContain('component=fleetdispatch');
+    expect(navTarget).toContain('cp=7');
+  });
+
+  it('snapshot at 13/14 on fleetdispatch + current planet maxed → skip auto-redirect, paint All maxed!', () => {
+    // Post-send guard: the user is on fleetdispatch with the active
+    // planet at its per-planet cap AND one send away from the global
+    // 14/14 cap. Walking to another planet would waste a navigation
+    // only for the next planet to also report full seconds later, so
+    // we paint "All maxed!" and stay put.
+    vi.useFakeTimers();
+    setupScene({
+      onFleetdispatch: true,
+      mission: 15,
+      activeCp: 42,
+      maxExpPerPlanet: 1,
+      activeExpeditions: 1,
+    });
+    installSendExp();
+    setFleetDispatcher({ expeditionCount: 13, maxExpeditionCount: 14 });
+
+    const btn = getBtn();
+    btn?.click();
+
+    expect(btn?.textContent).toBe('All maxed!');
+    expect(navTarget).toBeNull();
+
+    vi.advanceTimersByTime(2000);
+    expect(btn?.textContent).toBe('Send Exp');
+    vi.useRealTimers();
   });
 });

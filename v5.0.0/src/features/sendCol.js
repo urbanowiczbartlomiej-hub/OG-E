@@ -1,424 +1,572 @@
-// Floating "Send Col" button — the mobile-first colonization state
-// machine. The single most complex feature in v5: it wires three stores
-// (settings / scans / registry / uiState), three DOM events
-// (`oge5:galaxyScanned`, `oge5:checkTargetResult`, and settings changes),
-// two button halves, and the {@link abandonPlanet} hand-off for small
-// fresh colonies — all while respecting the "1 user click = at most 1
-// HTTP request" TOS rule.
+// Floating "Send Col" button — the rewrite of the old `features/sendCol/`
+// split directory (6 files, 1901 LoC, 8 fields of state, 3 timers) into
+// a single orchestrator file driven by a pure `derive()` → `render()`
+// → `paint()` pipeline. See {@link ../../SENDCOL_DESIGN.md} for the
+// authoritative spec, especially §1 axioms, §2 ButtonContext, §3 state
+// fields, §4 derive pseudocode, §5 render pseudocode, §6 click handlers.
 //
-// # Two halves, one circle
+// # Role
 //
-// The button is a 336-px round container with a sendHalf on top and a
-// scanHalf below. Each half is a real `<button>` so focus / tab /
-// keyboard Enter work natively; the outer `<div>` is just the drag
-// handle and rounded chrome. They share drag + focus persistence with
-// sendExp (`oge5_focusedBtn` is common), so tapping between the two
-// big OG-E buttons never loses keyboard focus.
+// The colonize button. One ui widget, two halves: Send (top) picks the
+// next colony target + navigates or dispatches, Scan (bottom) walks the
+// galaxy DB to find systems that still need scanning.
 //
-// # State machine — five user-visible states
+// # Axioms (SENDCOL_DESIGN.md §1)
 //
-//   ┌──────────┐  scan DB → target        ┌────────┐
-//   │  Normal  │ ───────────────────────► │  Found │
-//   │ "Send"   │                          │ "Go"   │
-//   └────┬─────┘                          └───┬────┘
-//        │                                    │ click → navigate
-//        │                                    ▼
-//        │                             ┌──────────────┐
-//        │  ┌────────────────────────► │  Fleet-Ready │
-//        │  │  checkTargetResult: ok   │ "Dispatch!"  │
-//        │  │                          └──────┬───────┘
-//        │  │                                 │ click → Enter
-//        │  │                                 ▼
-//        │  │  checkTargetResult: stale   (game sendFleet)
-//        │  ▼
-//   ┌──────────┐  click → swap form      ┌────────┐
-//   │  Stale   │ ───────────────────────► (back to Fleet-Ready
-//   │ "Stale…" │                          after next result)
-//   └──────────┘
+//   1. Scan and Send are independent. Scan never navigates to
+//      fleetdispatch. Send never submits galaxy scan forms.
+//   2. `window.fleetDispatcher` is the source of truth on fleetdispatch.
+//   3. Abandon belongs to `abandonOverview.js` now — this file does NOT
+//      reference `checkAbandonState` / `abandonPlanet`.
+//   4. State machine is explicit: discriminated `ButtonContext` union
+//      worked out in `derive()`, not spread across 8 fields.
+//   5. Timestamps + a single 1 Hz repaint ticker replace timers.
+//   6. TOS: 1 user click → at most 1 originated HTTP request.
 //
-//   └──────────┐  checkAbandonState
-//   │ Abandon  │  ← orthogonal: this pin preempts the others whenever
-//   │ "Too     │    the overview page shows a fresh small colony.
-//   │  small!" │    sendHalf is read-only; scanHalf delegates to
-//   └──────────┘    {@link abandonPlanet}.
+// # Persistent state — five module `let`s (§3)
 //
-// # Store subscriptions
+// Kept as flat primitives rather than an accessor module because every
+// reader + writer lives in THIS file. A bag of helpers would just
+// indirection-tax the same five assignments.
 //
-//   - `settingsStore` — visibility (`colonizeMode`), size (`colBtnSize`),
-//     and the `colPositions` / `colPreferOtherGalaxies` inputs consumed
-//     by {@link findNextColonizeTarget} on every click.
-//   - `uiState`      — `pendingColLink`, `pendingColVerify`,
-//                      `staleRetryActive`. Read on every click; written
-//                      on successful scan / verify / stale handling.
-//   - `scansStore` / `registryStore` — read only in the pure algorithms
-//                                      below. We never write scans here
-//                                      except in the stale reactor, which
-//                                      mirrors 4.x's markPositionAbandoned.
+//   - `lastNavToFleetdispatchAt`  — when we last navigated to
+//     fleetdispatch. After 15 s without a matching checkTargetResult
+//     the `derive()` phase flips to `timeout`.
+//   - `lastScanSubmitAt` — when we last fired an in-page galaxy submit.
+//     Used only for the 1 s anti-spam cooldown on the Scan half.
+//   - `lastCheckTargetError` — error code from the most recent
+//     checkTarget response (or null). Used by `derive()` to pick the
+//     right sub-phase (reserved = 140016, noShip = 140035, else stale).
+//   - `waitStartAt` / `waitSeconds` — min-gap countdown start + total.
+//     Ticker reads these to derive the remaining `waitGap` phase.
 //
-// # Event reactors
+// # Tick policy (§7)
 //
-//   - `oge5:galaxyScanned`     — after the MAIN-world galaxy hook
-//     classifies a freshly scanned system, we look for a user-target
-//     position in the new scan and repaint the button accordingly
-//     ("Found! Go" / "No ship!" / "Scan next").
-//   - `oge5:checkTargetResult` — after the game fires its own checkTarget
-//     XHR on fleetdispatch the hook forwards the result. If it matches
-//     our pending verify we either paint "Ready!" or mark the slot
-//     abandoned + arm `staleRetryActive`.
+// Event-driven refresh calls happen on every relevant change
+// (settings / scans / registry / bridge events + user clicks). One 1 Hz
+// `setInterval` at mount feeds the waitGap countdown and the timeout
+// detection — zero other timers (no scanUnlock, no checkTargetWatchdog,
+// no countdown-setInterval).
 //
-// # Integration with abandon feature
+// # autoRedirectColonize — REMOVED (§8)
 //
-// `checkAbandonState` is consulted on every click; when it matches we
-// delegate to `abandonPlanet()` from `../features/abandon.js`. This
-// feature never writes the abandon flow itself — that is the abandon
-// module's job. We just surface the entry point on the scanHalf.
+// The setting stays in `state/settings.js` for backwards-compat-free
+// schema (we don't migrate it, we just ignore it). The `colonizeSent`
+// reactor only marks the sent slot as `empty_sent` in scansStore —
+// it does NOT auto-navigate anywhere. Fits axiom #1.
 //
-// # TOS contract
+// # Bridge event shape compat
 //
-// Every code path in this module obeys "1 user click → at most 1 HTTP
-// request originated by us". The normal flows are all
-// either `location.href = …` (a single navigation the browser performs)
-// or `dispatchEnter()` (which triggers the game's own `sendFleet` — not
-// ours). The stale-retry path swaps three fleetdispatch form inputs
-// synchronously; the game itself then fires one `checkTarget` XHR as a
-// reaction to the `change` event. Still exactly one HTTP request per
-// user click.
+// The `oge5:checkTargetResult` bridge still ships the full 13-field
+// detail shape. This module only needs `errorCode` (§9 of design). We
+// accept both: prefer `detail.errorCode` when present (future simplified
+// bridge), else pull `detail.errorCodes[0]` from the current shape.
+//
+// # Integration seams
+//
+//   - Pure helpers live in `./sendColLogic.js` — all target-picking
+//     algorithms plus URL builders + DOM coord readers are there.
+//   - Drag + focus reuse `lib/draggableButton.js` (same `oge5_focusedBtn`
+//     key as sendExp).
+//   - Abandon overlay is `features/abandonOverview.js` — orthogonal.
+//
+// @see ../../SENDCOL_DESIGN.md — the authoritative spec.
+// @see ./sendColLogic.js — pure helpers this orchestrator consumes.
+// @see ./abandonOverview.js — the abandon-on-overview feature.
+// @see ./sendExp.js — parallel mobile-button feature (reference pattern).
 
 /** @ts-check */
-
-// ─── Imports ────────────────────────────────────────────────────────────────
 
 import { settingsStore } from '../state/settings.js';
 import { scansStore } from '../state/scans.js';
 import { registryStore } from '../state/registry.js';
-import { uiState } from '../state/uiState.js';
 import { safeLS } from '../lib/storage.js';
+import { parsePositions } from '../domain/positions.js';
 import {
-  parsePositions,
-  sysDist,
-  buildGalaxyOrder,
-} from '../domain/positions.js';
-import { findConflict } from '../domain/registry.js';
-import { isSystemStale } from '../domain/scheduling.js';
+  installDrag,
+  installFocusPersist as installButtonFocusPersist,
+} from '../lib/draggableButton.js';
 import {
-  COL_MAX_SYSTEM,
-  COL_MAX_GALAXY,
-  MISSION_COLONIZE,
-} from '../domain/rules.js';
-import { checkAbandonState, abandonPlanet } from './abandon.js';
+  findNextScanSystem,
+  findNextColonizeTarget,
+  pickCandidateInView,
+  getColonizeWaitTime,
+  readHomePlanet,
+  parseCurrentGalaxyView,
+  buildFleetdispatchUrl,
+  buildGalaxyUrl,
+} from './sendColLogic.js';
 
 /**
  * @typedef {import('../state/scans.js').GalaxyScans} GalaxyScans
- * @typedef {import('../state/scans.js').SystemScan} SystemScan
  * @typedef {import('../domain/registry.js').RegistryEntry} RegistryEntry
- * @typedef {import('../state/settings.js').Settings} Settings
+ * @typedef {{ galaxy: number, system: number, position: number }} Coords
  */
 
-// ─── Constants ──────────────────────────────────────────────────────────────
+/**
+ * `nextScan` + `scanCooldown` apply everywhere (user can click Scan
+ * from idle / galaxy / fleetdispatch pages alike). `candidate` / `target`
+ * / `phase` are page-kind specific.
+ *
+ * @typedef {(
+ *   | {
+ *       kind: 'idle',
+ *       candidate: Coords | null,
+ *       nextScan: { galaxy: number, system: number } | null,
+ *       scanCooldown: boolean,
+ *     }
+ *   | {
+ *       kind: 'galaxy',
+ *       candidate: Coords | null,
+ *       nextScan: { galaxy: number, system: number } | null,
+ *       scanCooldown: boolean,
+ *     }
+ *   | {
+ *       kind: 'fleetdispatch',
+ *       target: Coords | null,
+ *       phase:
+ *         | { tag: 'noTarget' }
+ *         | { tag: 'ready' }
+ *         | { tag: 'noShip' }
+ *         | { tag: 'reserved' }
+ *         | { tag: 'stale' }
+ *         | { tag: 'timeout' }
+ *         | { tag: 'waitGap', remaining: number },
+ *       nextScan: { galaxy: number, system: number } | null,
+ *       scanCooldown: boolean,
+ *     }
+ * )} ButtonContext
+ */
 
-/** DOM id of the container div. */
+/**
+ * @typedef {{ text: string, bg: string, subtext?: string, dim?: boolean }} Paint
+ * @typedef {{ send: Paint, scan: Paint }} RenderResult
+ */
+
+// ─── DOM ids ───────────────────────────────────────────────────────────
+
+/** id of the wrap div that hosts both halves. */
 const BUTTON_ID = 'oge5-send-col';
-/** DOM id of the top (Send) half. */
+/** id of the Send (top) half. */
 const SEND_HALF_ID = 'oge5-col-send';
-/** DOM id of the bottom (Scan) half. */
+/** id of the Scan (bottom) half. */
 const SCAN_HALF_ID = 'oge5-col-scan';
 
-/** Shared focus-persist key with sendExp (see that module's header). */
+// ─── Storage keys ──────────────────────────────────────────────────────
+
+/** Shared focus-persist key with sendExp. */
 const FOCUS_KEY = 'oge5_focusedBtn';
 /** Focus-persist value written when the sendHalf holds focus. */
 const FOCUS_SEND = 'col-send';
 /** Focus-persist value written when the scanHalf holds focus. */
 const FOCUS_SCAN = 'col-scan';
-
-/** localStorage key for the dragged `(x, y)` position. */
+/** localStorage key for the dragged wrap `(x, y)` position. */
 const POS_KEY = 'oge5_colBtnPos';
 
-/** Drag-vs-tap threshold — matches sendExp + 4.x. */
-const DRAG_THRESHOLD = 8;
+// ─── Colors (inlined from the old labels.js — see SENDCOL_DESIGN.md §5) ──
 
-/** Delay before restoring focus on install. */
-const FOCUS_RESTORE_DELAY_MS = 50;
-
-/** Default bottom-right edge offset when no saved position. */
-const DEFAULT_EDGE_OFFSET_PX = 20;
-
-/** Background colour — idle Send half. */
+/** Green, translucent — idle "Send" with no candidate yet. */
 const BG_SEND_IDLE = 'rgba(0, 160, 0, 0.75)';
-/** Background colour — idle Scan half. */
+/** Darker blue — idle "Scan" / "Skip" half. */
 const BG_SCAN_IDLE = 'rgba(60, 100, 150, 0.75)';
-/** Green highlight — "Found! Go" / "Ready!" / "Dispatch!" */
+/** Bright green — active "Dispatch!" / "Send Colony [g:s:p]". */
 const BG_SEND_READY = 'rgba(0, 200, 0, 0.85)';
-/** Orange — stale / "Searching…" transient. */
+/** Amber — reserved / stale / timeout states (recoverable). */
 const BG_SEND_STALE = 'rgba(200, 150, 0, 0.85)';
-/** Red — "No ship!" and hard-abort states. */
+/** Red — "No ship!" (unrecoverable until user builds a colonizer). */
 const BG_SEND_ERROR = 'rgba(200, 0, 0, 0.85)';
-/** Amber — the mid-countdown "Wait Xs" label. */
+/** Yellow — mid-countdown "Wait Xs" label. */
 const BG_SEND_WAIT = 'rgba(200, 200, 0, 0.8)';
-/** Dark red — scanHalf in abandon mode. */
-const BG_SCAN_ABANDON = 'rgba(150, 0, 0, 0.75)';
 
-/** Idle Send label. */
-const LABEL_SEND_IDLE = 'Send';
-/** Idle Scan label. */
-const LABEL_SCAN_IDLE = 'Scan';
-/** Fleet-ready label — clicking fires Enter. */
-const LABEL_DISPATCH = 'Dispatch!';
-/** Scan half when we already have a target loaded. */
-const LABEL_SCAN_SKIP = 'Skip';
+// ─── Tunables ──────────────────────────────────────────────────────────
 
-// ─── Pure algorithms (testable in isolation) ────────────────────────────────
+/** Drag-vs-tap threshold in pixels (matches sendExp + 4.x). */
+const DRAG_THRESHOLD = 8;
+/** Default offset from the bottom-right corner when no saved pos. */
+const DEFAULT_EDGE_OFFSET_PX = 20;
+/** Delay before restoring focus on install (matches sendExp). */
+const FOCUS_RESTORE_DELAY_MS = 50;
+/** After this many ms without a checkTarget response on fleetdispatch,
+ *  derive() returns phase `timeout`. */
+const CHECK_TARGET_TIMEOUT_MS = 15_000;
+/** Safety cap — if `oge5:galaxyScanned` never arrives (AGR swallowed
+ *  the XHR, network died, …), the Scan half unlocks anyway after this
+ *  many ms. Under normal conditions the event arrives well under 1s
+ *  and the cooldown lifts event-driven; this is the escape hatch. */
+const SCAN_COOLDOWN_MS = 8000;
+/** Repaint ticker period in ms. */
+const REPAINT_TICK_MS = 1000;
+/** Mission id for colonize. Duplicated here from domain/rules.js so the
+ *  search-string check in derive() doesn't pay a module import. */
+const MISSION_COLONIZE = 7;
+
+// ─── Module-local state (§3) ───────────────────────────────────────────
+
+/** Timestamp of the last "nav to fleetdispatch with a target" action. */
+let lastNavToFleetdispatchAt = 0;
+/**
+ * Timestamp of the last `oge5:galaxyScanned` event we received. Used
+ * together with {@link lastScanSubmitAt} to derive `scanCooldown`:
+ * the Scan half is considered busy iff we submitted more recently than
+ * we received a response (plus a hard safety cap for silent failures).
+ *
+ * Event-driven (vs. the earlier fixed-timer design) so the UI unlocks
+ * the Scan button as soon as the game's response lands, not after some
+ * arbitrary wait.
+ */
+let lastScanEventAt = 0;
+/** Timestamp of the last in-page galaxy submit — anti-spam cooldown. */
+let lastScanSubmitAt = 0;
+/** Error code from the most recent matching checkTarget response. */
+let lastCheckTargetError = /** @type {number | null} */ (null);
+/** Epoch-ms when the current waitGap countdown started. */
+/**
+ * Cached snapshot of `window.fleetDispatcher` published by the MAIN-world
+ * bridge `bridges/fleetDispatcherSnapshot.js`. `null` until the first
+ * `oge5:fleetDispatcher` event arrives (initial publish deferred to
+ * DOMContentLoaded + microtask). On fleetdispatch, `derive()` reads
+ * targetPlanet/orders/shipsOnPlanet from here.
+ *
+ * @type {import('../bridges/fleetDispatcherSnapshot.js').FleetDispatcherSnapshot | null}
+ */
+let fleetDispatcherSnapshot = null;
+
+let waitStartAt = 0;
+/** Total seconds of the current waitGap countdown (0 = no countdown). */
+let waitSeconds = 0;
+
+// ─── Pure derive() ─────────────────────────────────────────────────────
 
 /**
- * Find the next galaxy/system we should scan. Pure: inputs in, next
- * coord out, no DOM / storage / clock.
- *
- * Starting point follows 4.x behaviour:
- *   - when we are on the galaxy view → continue from current + 1
- *   - elsewhere                       → home.galaxy, home.system + 1
- *
- * Galaxy progression rolls through `buildGalaxyOrder(home.galaxy,
- * COL_MAX_GALAXY)` — home first, then outward — and within each galaxy
- * sweeps 1..COL_MAX_SYSTEM modularly. A system counts as "needs scan"
- * when there is no entry in `scans` for it OR the entry is stale per
- * {@link isSystemStale}.
- *
- * Returns `null` when every galaxy/system combination is already
- * scanned and fresh.
- *
- * @param {GalaxyScans} scans
- * @param {{ galaxy: number, system: number }} home
- * @param {{ galaxy: number, system: number } | null} currentView
- *   Current galaxy-view coords (null when the user isn't on the galaxy
- *   page — we then start from the home planet instead).
- * @returns {{ galaxy: number, system: number } | null}
+ * @typedef {import('../bridges/fleetDispatcherSnapshot.js').FleetDispatcherSnapshot} FleetDispatcherSnapshot
+ * @typedef {{
+ *   search: string,
+ *   fleetDispatcher: FleetDispatcherSnapshot | null,
+ *   scans: GalaxyScans,
+ *   registry: RegistryEntry[],
+ *   targets: number[],
+ *   preferOther: boolean,
+ *   now: number,
+ * }} DeriveEnv
  */
-export const findNextScanSystem = (scans, home, currentView) => {
-  const startG = currentView ? currentView.galaxy : home.galaxy;
-  const startS = currentView ? currentView.system : home.system;
 
-  const galaxyOrder = buildGalaxyOrder(home.galaxy, COL_MAX_GALAXY);
-  const startGalaxyIdx = Math.max(0, galaxyOrder.indexOf(startG));
+/**
+ * Pure `env → ButtonContext` compute. Follows SENDCOL_DESIGN.md §4
+ * verbatim — fleetdispatch branch first (the richest), galaxy branch
+ * second (with current-view priority), idle branch last.
+ *
+ * @param {DeriveEnv} env
+ * @returns {ButtonContext}
+ */
+export const derive = (env) => {
+  // Universal scan state — user can Scan from any page (idle / galaxy /
+  // fleetdispatch). Cooldown is event-driven (unlocks on
+  // `oge5:galaxyScanned`) with a hard safety cap for silent failures.
+  const home = readHomePlanet();
+  const view = parseCurrentGalaxyView();
+  const nextScan = home ? findNextScanSystem(env.scans, home, view) : null;
+  const scanCooldown =
+    lastScanSubmitAt > lastScanEventAt &&
+    env.now - lastScanSubmitAt < SCAN_COOLDOWN_MS;
 
-  for (let gi = 0; gi < galaxyOrder.length; gi++) {
-    const g = galaxyOrder[(startGalaxyIdx + gi) % galaxyOrder.length];
-    // Current galaxy: start at startS+1 (and wrap). Others: start at 1.
-    const offset = gi === 0 ? startS : 0;
-    for (let i = 0; i < COL_MAX_SYSTEM; i++) {
-      const s = ((offset + i) % COL_MAX_SYSTEM) + 1;
-      const key = /** @type {`${number}:${number}`} */ (`${g}:${s}`);
-      const scan = scans[key];
-      if (!scan || isSystemStale(scan)) {
-        return { galaxy: g, system: s };
+  // Fleetdispatch branch — `fleetDispatcher` snapshot is the truth.
+  if (
+    env.search.includes('component=fleetdispatch') &&
+    env.search.includes(`mission=${MISSION_COLONIZE}`)
+  ) {
+    const fd = env.fleetDispatcher;
+    if (!fd) {
+      return {
+        kind: 'fleetdispatch', target: null, phase: { tag: 'noTarget' },
+        nextScan, scanCooldown,
+      };
+    }
+    const tp = fd.targetPlanet;
+    /** @type {Coords | null} */
+    const target =
+      tp && tp.galaxy && tp.system && tp.position
+        ? { galaxy: tp.galaxy, system: tp.system, position: tp.position }
+        : null;
+    if (!target) {
+      return {
+        kind: 'fleetdispatch', target: null, phase: { tag: 'noTarget' },
+        nextScan, scanCooldown,
+      };
+    }
+
+    const shipsOnPlanet = Array.isArray(fd.shipsOnPlanet) ? fd.shipsOnPlanet : [];
+    const hasColonizer = shipsOnPlanet.some(
+      (/** @type {any} */ s) => s && s.id === 208 && (s.number || 0) > 0,
+    );
+    const canColonize =
+      fd.orders && fd.orders['7'] === true;
+    const err = lastCheckTargetError;
+
+    // Priority (§4): timeout > waitGap > reserved > noShip > stale > ready.
+    /** @type {
+     *   | { tag: 'noTarget' }
+     *   | { tag: 'ready' }
+     *   | { tag: 'noShip' }
+     *   | { tag: 'reserved' }
+     *   | { tag: 'stale' }
+     *   | { tag: 'timeout' }
+     *   | { tag: 'waitGap', remaining: number }
+     * } */
+    let phase = { tag: 'ready' };
+    if (
+      env.now - lastNavToFleetdispatchAt > CHECK_TARGET_TIMEOUT_MS &&
+      lastNavToFleetdispatchAt > 0 &&
+      !canColonize &&
+      err === null
+    ) {
+      phase = { tag: 'timeout' };
+    } else if (waitSeconds > 0) {
+      const remaining = Math.max(
+        0,
+        waitSeconds - Math.floor((env.now - waitStartAt) / 1000),
+      );
+      // Countdown active → waitGap wins over everything else. When the
+      // remaining seconds hit zero, fall through to the next block so
+      // the underlying phase (usually `ready`) takes over.
+      if (remaining > 0) {
+        phase = { tag: 'waitGap', remaining };
       }
     }
-  }
-  return null;
-};
-
-/**
- * Find the next colonization target in the local scan DB, respecting
- * the user's `colPositions` priority, the in-flight registry, and the
- * "prefer other galaxies first" toggle.
- *
- * Two-stage guard (copied verbatim from 4.x):
- *   1. `scan.positions[pos].status === 'empty'` — the game observed
- *      the slot empty (so `empty_sent` from prior fleets is filtered).
- *   2. `inFlight.has("g:s:pos")` — any entry in `registry` with
- *      `arrivalAt > now` blocks the same coord key. This is the
- *      second line of defence after `mergeScanResult`'s empty_sent
- *      preservation.
- *
- * Galaxy-order policy:
- *   - `preferOther=false` (default): [home, home+1, home-1, …]
- *   - `preferOther=true`: move home to the end — trades fast home
- *     sends for predictable min-gap timing across galaxies.
- *
- * Within a galaxy, the home galaxy is searched farthest-first (better
- * arrival spread), other galaxies are linear 1..499.
- *
- * @param {GalaxyScans} scans
- * @param {RegistryEntry[]} registry
- * @param {{ galaxy: number, system: number }} home
- * @param {number[]} targets  user's parsed `colPositions` list
- * @param {boolean} preferOther  move home galaxy to end of order
- * @returns {{ galaxy: number, system: number, position: number, link: string } | null}
- */
-export const findNextColonizeTarget = (
-  scans,
-  registry,
-  home,
-  targets,
-  preferOther,
-) => {
-  if (targets.length === 0) return null;
-
-  const now = Date.now();
-  const inFlight = new Set(
-    registry.filter((r) => (r.arrivalAt || 0) > now).map((r) => r.coords),
-  );
-
-  let order = buildGalaxyOrder(home.galaxy, COL_MAX_GALAXY);
-  if (preferOther && order.length > 1) {
-    order = [...order.slice(1), order[0]];
-  }
-
-  for (const g of order) {
-    // Home galaxy — farthest first; others — sequential 1..N.
-    const systems =
-      g === home.galaxy
-        ? Array.from({ length: COL_MAX_SYSTEM }, (_, i) => i + 1).sort(
-            (a, b) => sysDist(b, home.system) - sysDist(a, home.system),
-          )
-        : Array.from({ length: COL_MAX_SYSTEM }, (_, i) => i + 1);
-
-    for (const s of systems) {
-      const key = /** @type {`${number}:${number}`} */ (`${g}:${s}`);
-      const scan = scans[key];
-      if (!scan || !scan.positions) continue;
-      for (const pos of targets) {
-        const p = scan.positions[pos];
-        if (!p || p.status !== 'empty') continue;
-        const coordKey =
-          /** @type {`${number}:${number}:${number}`} */ (`${g}:${s}:${pos}`);
-        if (inFlight.has(coordKey)) continue;
-        const base = location.href.split('?')[0];
-        const link =
-          base +
-          `?page=ingame&component=fleetdispatch` +
-          `&galaxy=${g}&system=${s}&position=${pos}` +
-          `&type=1&mission=${MISSION_COLONIZE}&am208=1`;
-        return { galaxy: g, system: s, position: pos, link };
+    if (phase.tag === 'ready') {
+      if (err === 140016) {
+        phase = { tag: 'reserved' };
+      } else if (err === 140035 || !hasColonizer) {
+        phase = { tag: 'noShip' };
+      } else if (!canColonize) {
+        phase = { tag: 'stale' };
       }
     }
+    return { kind: 'fleetdispatch', target, phase, nextScan, scanCooldown };
   }
-  return null;
+
+  // Galaxy branch — current-view priority (§4) so the coords the user
+  // just scanned win over the global DB pick.
+  if (env.search.includes('component=galaxy')) {
+    /** @type {Coords | null} */
+    let candidate = null;
+    if (home && view) {
+      candidate = pickCandidateInView(
+        env.scans,
+        env.registry,
+        env.targets,
+        view,
+        env.now,
+      );
+    }
+    if (!candidate && home) {
+      const global = findNextColonizeTarget(
+        env.scans,
+        env.registry,
+        home,
+        env.targets,
+        env.preferOther,
+      );
+      if (global) {
+        candidate = {
+          galaxy: global.galaxy,
+          system: global.system,
+          position: global.position,
+        };
+      }
+    }
+    return { kind: 'galaxy', candidate, nextScan, scanCooldown };
+  }
+
+  // Idle branch — anywhere else (overview, galaxy-less research, ...).
+  /** @type {Coords | null} */
+  let candidate = null;
+  if (home) {
+    const global = findNextColonizeTarget(
+      env.scans,
+      env.registry,
+      home,
+      env.targets,
+      env.preferOther,
+    );
+    if (global) {
+      candidate = {
+        galaxy: global.galaxy,
+        system: global.system,
+        position: global.position,
+      };
+    }
+  }
+  return { kind: 'idle', candidate, nextScan, scanCooldown };
 };
 
-// ─── Min-gap wait helper ────────────────────────────────────────────────────
+// ─── Pure render() ─────────────────────────────────────────────────────
 
 /**
- * Compute the number of seconds we must wait before firing the current
- * fleetdispatch to keep min-gap with all pending colonize arrivals in
- * the registry. Zero = safe to send. Synchronous: reads
- * `#durationOneWay` from the DOM and the registry from
- * {@link registryStore}.
+ * Render a `ctx` to paint instructions. Pure: no DOM, no window.
  *
- * Mirror of 4.x's `mobile.js:getColonizeWaitTime`, consolidated around
- * the pure {@link findConflict} helper. The strict "< minGap" semantics
- * are what findConflict already enforces — so this wrapper only has to
- * handle the DOM parsing and the final seconds-to-wait math.
- *
- * @returns {number} whole seconds to wait (`Math.ceil`), 0 when safe.
+ * @param {ButtonContext} ctx
+ * @returns {RenderResult}
  */
-const getColonizeWaitTime = () => {
-  const durEl = document.getElementById('durationOneWay');
-  if (!durEl) return 0;
-  const parts = (durEl.textContent ?? '').trim().split(':').map(Number);
-  if (parts.length === 0 || parts.some((n) => !Number.isFinite(n))) return 0;
-  let durSec = 0;
-  if (parts.length === 3) {
-    durSec = parts[0] * 3600 + parts[1] * 60 + parts[2];
-  } else if (parts.length === 4) {
-    durSec = parts[0] * 86400 + parts[1] * 3600 + parts[2] * 60 + parts[3];
-  }
-  if (!durSec) return 0;
-
-  const now = Date.now();
-  const ourArrival = now + durSec * 1000;
-  const minGapMs = settingsStore.get().colMinGap * 1000;
-  const registry = registryStore.get();
-  const conflict = findConflict(registry, ourArrival, minGapMs);
-
-  // Opt-in diagnostic (4.9.4 port). Flip `localStorage.oge5_debugMinGap
-  // = 'true'` in DevTools and the next Send click logs every input the
-  // calculation used. Useful when the user reports "min-gap didn't
-  // block even though arrivals coincided" — usually turns out to be a
-  // registry entry with a malformed arrivalAt, a stale entry that
-  // should have been pruned, or a durationOneWay that parsed to 0.
-  if (safeLS.bool('oge5_debugMinGap', false)) {
-    const pending = registry
-      .filter((r) => (Number(r.arrivalAt) || 0) > now)
-      .map((r) => ({ coords: r.coords, arrivalAt: r.arrivalAt }));
-    // eslint-disable-next-line no-console
-    console.debug('[OG-E min-gap]', {
-      durationSec: durSec,
-      ourArrival,
-      minGapMs,
-      pending,
-      conflict,
-      resultWaitSec: conflict
-        ? Math.max(
-          0,
-          Math.ceil((minGapMs - Math.abs(Number(conflict.arrivalAt) - ourArrival)) / 1000),
-        )
-        : 0,
-    });
+export const render = (ctx) => {
+  // Scan paint:
+  //   - On galaxy view: two-line "Scan / [g:s]" — we'll AJAX-submit
+  //     into that system. AJAX = our observer fires = store updates =
+  //     persistence kicks in.
+  //   - Anywhere else: "to Galaxy" — clicking just hops the user to
+  //     the galaxy page (bare URL, no specific system). The first
+  //     system is server-rendered without an AJAX call, so we'd miss
+  //     it anyway; better to land the user on galaxy and let them
+  //     drive subsequent scans via AJAX.
+  //   - When the entire database is scanned fresh: "All scanned!".
+  /** @type {Paint} */
+  let scanPaint;
+  if (!ctx.nextScan) {
+    scanPaint = { text: 'All scanned!', bg: BG_SCAN_IDLE };
+  } else if (ctx.kind === 'galaxy') {
+    scanPaint = {
+      text: `[${ctx.nextScan.galaxy}:${ctx.nextScan.system}]`,
+      subtext: 'Scan',
+      bg: BG_SCAN_IDLE,
+      dim: ctx.scanCooldown,
+    };
+  } else {
+    scanPaint = { text: 'to Galaxy', bg: BG_SCAN_IDLE };
   }
 
-  if (!conflict) return 0;
-  const gap = Math.abs((Number(conflict.arrivalAt) || 0) - ourArrival);
-  const waitMs = minGapMs - gap;
-  if (waitMs <= 0) return 0;
-  return Math.ceil(waitMs / 1000);
+  if (ctx.kind === 'idle') {
+    return {
+      send: ctx.candidate
+        ? {
+            text: `[${ctx.candidate.galaxy}:${ctx.candidate.system}:${ctx.candidate.position}]`,
+            subtext: 'Send Colony',
+            bg: BG_SEND_READY,
+          }
+        : { text: 'Send', bg: BG_SEND_IDLE },
+      scan: scanPaint,
+    };
+  }
+
+  if (ctx.kind === 'galaxy') {
+    return {
+      send: ctx.candidate
+        ? {
+            text: `[${ctx.candidate.galaxy}:${ctx.candidate.system}:${ctx.candidate.position}]`,
+            subtext: 'Send Colony',
+            bg: BG_SEND_READY,
+          }
+        : { text: 'Send', bg: BG_SEND_IDLE },
+      scan: scanPaint,
+    };
+  }
+
+  // ctx.kind === 'fleetdispatch'
+  const { target, phase } = ctx;
+  const coords = target
+    ? `[${target.galaxy}:${target.system}:${target.position}]`
+    : '';
+  /** @type {Paint} */
+  let sendPaint;
+  switch (phase.tag) {
+    case 'noTarget':
+      sendPaint = { text: 'Send', bg: BG_SEND_IDLE };
+      break;
+    case 'ready':
+      sendPaint = { text: coords, subtext: 'Dispatch!', bg: BG_SEND_READY };
+      break;
+    case 'noShip':
+      sendPaint = { text: coords, subtext: 'No ship!', bg: BG_SEND_ERROR };
+      break;
+    case 'reserved':
+      sendPaint = { text: coords, subtext: 'Reserved', bg: BG_SEND_STALE };
+      break;
+    case 'stale':
+      sendPaint = { text: coords, subtext: 'Stale', bg: BG_SEND_STALE };
+      break;
+    case 'timeout':
+      sendPaint = { text: coords, subtext: 'Timeout', bg: BG_SEND_STALE };
+      break;
+    case 'waitGap':
+      sendPaint = { text: `Wait ${phase.remaining}s`, bg: BG_SEND_WAIT };
+      break;
+    default:
+      sendPaint = { text: 'Send', bg: BG_SEND_IDLE };
+  }
+  return { send: sendPaint, scan: scanPaint };
 };
 
-// ─── DOM helpers ────────────────────────────────────────────────────────────
+// ─── DOM paint (impure — walks the mounted halves) ─────────────────────
 
 /**
- * Read the active planet's coords from `#planetList .hightlightPlanet`
- * (note the game's CSS-class typo). Returns `null` on a page that
- * doesn't carry the planet list (unexpected — we gracefully bail).
+ * Paint a two-line label on a half: a small caption on top, a big
+ * primary line below. Built with two flex-column `<div>`s so line wrap
+ * is deterministic regardless of the half's font-size.
  *
- * @returns {{ galaxy: number, system: number } | null}
+ * @param {HTMLElement} half
+ * @param {string} small
+ * @param {string} big
+ * @param {string} bg
+ * @returns {void}
  */
-const readHomePlanet = () => {
-  const active = document.querySelector('#planetList .hightlightPlanet');
-  if (!active) return null;
-  const coords = active.querySelector('.planet-koords')?.textContent?.trim();
-  const m = (coords || '').match(/\[(\d+):(\d+):(\d+)\]/);
-  if (!m) return null;
-  return { galaxy: parseInt(m[1], 10), system: parseInt(m[2], 10) };
+const setHalfTwoLine = (half, small, big, bg) => {
+  half.textContent = '';
+  const wrap = document.createElement('div');
+  wrap.style.cssText =
+    'display:flex;flex-direction:column;align-items:center;' +
+    'justify-content:center;line-height:1.05;width:100%;';
+  const top = document.createElement('div');
+  top.textContent = small;
+  top.style.cssText = 'font-size:0.5em;opacity:0.85;letter-spacing:0.5px;';
+  const bottom = document.createElement('div');
+  bottom.textContent = big;
+  bottom.style.cssText = 'font-size:1em;margin-top:2px;';
+  wrap.appendChild(top);
+  wrap.appendChild(bottom);
+  half.appendChild(wrap);
+  half.style.background = bg;
 };
 
 /**
- * Read the galaxy view's current `(galaxy, system)` from
- * `location.search` when the user is on it, otherwise `null`.
+ * Paint a single-line label on a half.
  *
- * @returns {{ galaxy: number, system: number } | null}
+ * @param {HTMLElement} half
+ * @param {string} text
+ * @param {string} bg
+ * @returns {void}
  */
-const parseCurrentGalaxyView = () => {
-  if (!location.search.includes('component=galaxy')) return null;
-  // Prefer the live form inputs over location.search. After AGR's
-  // in-page submit (`navigateGalaxyInPage`) the URL stays at the
-  // initial-load coords, but the input values track every subsequent
-  // scan target. Reading the URL here meant the second + later scan
-  // clicks all picked up the same stale starting point and looped.
-  const galInput = /** @type {HTMLInputElement | null} */ (
-    document.getElementById('galaxy_input')
-  );
-  const sysInput = /** @type {HTMLInputElement | null} */ (
-    document.getElementById('system_input')
-  );
-  const inputG = galInput ? parseInt(galInput.value, 10) : NaN;
-  const inputS = sysInput ? parseInt(sysInput.value, 10) : NaN;
-  if (Number.isFinite(inputG) && Number.isFinite(inputS)) {
-    return { galaxy: inputG, system: inputS };
-  }
-  // Fallback to URL — covers the very first scan, before AGR has had
-  // a chance to render the form inputs.
-  const params = new URLSearchParams(location.search);
-  const g = parseInt(params.get('galaxy') ?? '', 10);
-  const s = parseInt(params.get('system') ?? '', 10);
-  if (!Number.isFinite(g) || !Number.isFinite(s)) return null;
-  return { galaxy: g, system: s };
+const setHalfOneLine = (half, text, bg) => {
+  half.textContent = text;
+  half.style.background = bg;
 };
 
 /**
- * Look up the current send / scan halves by DOM id. Returns `null`
- * for either slot when the button isn't mounted — every caller
- * tolerates that by no-op'ing.
+ * Apply a {@link Paint} to a half DOM element. `subtext` triggers the
+ * two-line layout; otherwise it's one line.
  *
- * @returns {{ send: HTMLButtonElement | null, scan: HTMLButtonElement | null, wrap: HTMLElement | null }}
+ * @param {HTMLElement} half
+ * @param {Paint} p
+ * @returns {void}
+ */
+const applyPaint = (half, p) => {
+  if (p.subtext) {
+    setHalfTwoLine(half, p.subtext, p.text, p.bg);
+  } else {
+    setHalfOneLine(half, p.text, p.bg);
+  }
+  // Visual cooldown indicator — `dim: true` greys the half out so the
+  // user can see a click would be ignored right now. Render paths that
+  // don't set `dim` imply full opacity, so we always explicitly write it.
+  half.style.opacity = p.dim ? '0.5' : '1';
+};
+
+/**
+ * Walk to the currently mounted halves + wrap. Any may be null when the
+ * button isn't mounted — every caller no-ops in that case.
+ *
+ * @returns {{
+ *   wrap: HTMLElement | null,
+ *   send: HTMLButtonElement | null,
+ *   scan: HTMLButtonElement | null,
+ * }}
  */
 const getHalves = () => ({
   wrap: document.getElementById(BUTTON_ID),
@@ -431,114 +579,64 @@ const getHalves = () => ({
 });
 
 /**
- * Paint a label on the send half. No-op when the button isn't mounted.
+ * Apply a {@link RenderResult} to the mounted DOM. No-op when the button
+ * is not mounted.
  *
- * @param {string} text
- * @param {string} [bg] CSS background. Defaults to keeping current.
+ * @param {RenderResult} result
  * @returns {void}
  */
-const setSendLabel = (text, bg) => {
-  const { send } = getHalves();
-  if (!send) return;
-  send.textContent = text;
-  if (bg) send.style.background = bg;
+export const paint = (result) => {
+  const { send, scan } = getHalves();
+  if (send) applyPaint(send, result.send);
+  if (scan) applyPaint(scan, result.scan);
+};
+
+// ─── captureEnv + refresh ──────────────────────────────────────────────
+
+/**
+ * Snapshot the reactive inputs of `derive()` into a single `env` object.
+ * The only impurity here is the read of `window.fleetDispatcher`,
+ * `location.search`, `settingsStore.get()`, and the two scan / registry
+ * stores — all deterministic at the moment of call.
+ *
+ * @returns {DeriveEnv}
+ */
+const captureEnv = () => {
+  const settings = settingsStore.get();
+  return {
+    search: location.search,
+    // `window.fleetDispatcher` lives in the page world and is NOT
+    // accessible from the isolated content script. We read a snapshot
+    // published by `bridges/fleetDispatcherSnapshot.js` (MAIN world) via
+    // `oge5:fleetDispatcher` event. `fleetDispatcherSnapshot` below is
+    // the cached latest snapshot, `null` until first event arrives.
+    fleetDispatcher: fleetDispatcherSnapshot,
+    scans: scansStore.get(),
+    registry: registryStore.get(),
+    targets: parsePositions(settings.colPositions),
+    preferOther: settings.colPreferOtherGalaxies,
+    now: Date.now(),
+  };
 };
 
 /**
- * Two-line variant: small caption on top, big primary text underneath.
- * Built with two `<div>`s inside a flex column so line wrap is
- * deterministic regardless of the half's font-size and avoids the
- * old "Stale [g:s:p] — click Send to check system" overflow on
- * narrow buttons.
+ * Full pipeline: capture env → derive → render → paint. Called from
+ * the settings / stores subscriptions, from every bridge-event
+ * listener, from the 1 Hz ticker, and at the end of the click
+ * handlers so the user's action is reflected before the navigation
+ * starts.
  *
- * The small line is sized at 0.5em of the half's base font and lightly
- * faded — enough to read but visually subordinate to the coords. The
- * big line keeps the half's full font-size.
- *
- * @param {string} small Top caption ("Send Colony", "Ready!", ...).
- * @param {string} big   Bottom text, typically `"[g:s:p]"`.
- * @param {string} [bg]  Optional background colour.
  * @returns {void}
  */
-const setSendLabelTwo = (small, big, bg) => {
-  const { send } = getHalves();
-  if (!send) return;
-  send.textContent = '';
-  const wrap = document.createElement('div');
-  wrap.style.cssText =
-    'display:flex;flex-direction:column;align-items:center;'
-    + 'justify-content:center;line-height:1.05;width:100%;';
-  if (small) {
-    const top = document.createElement('div');
-    top.textContent = small;
-    top.style.cssText = 'font-size:0.5em;opacity:0.85;letter-spacing:0.5px;';
-    wrap.appendChild(top);
-  }
-  if (big) {
-    const bottom = document.createElement('div');
-    bottom.textContent = big;
-    bottom.style.cssText = 'font-size:1em;margin-top:2px;';
-    wrap.appendChild(bottom);
-  }
-  send.appendChild(wrap);
-  if (bg) send.style.background = bg;
+const refresh = () => {
+  paint(render(derive(captureEnv())));
 };
 
-/**
- * Re-entry guard for {@link handleScanClick}. Flipped `true` when we
- * fire an in-page galaxy submit and wait for the `oge5:galaxyScanned`
- * event (or the safety-net timeout) to release it. Prevents a user
- * spamming the button from queueing multiple AGR form submits, which
- * in the worst case could trip rate limits or leave the scansStore
- * out of sync with the current view.
- */
-let scanBusy = false;
-
-/**
- * Safety-net timer for {@link scanBusy}. If `oge5:galaxyScanned` never
- * fires (no network, AGR swapped out its submit handler, ...), the
- * timer unlocks the button so the user isn't stuck staring at a greyed
- * control. 10 s matches the AGR-readiness timeouts elsewhere.
- *
- * @type {ReturnType<typeof setTimeout> | null}
- */
-let scanUnlockTimer = null;
-
-const SCAN_UNLOCK_TIMEOUT_MS = 10_000;
-
-const lockScanHalf = () => {
-  scanBusy = true;
-  const { scan } = getHalves();
-  if (scan) scan.style.opacity = '0.5';
-};
-
-const unlockScanHalf = () => {
-  scanBusy = false;
-  if (scanUnlockTimer) {
-    clearTimeout(scanUnlockTimer);
-    scanUnlockTimer = null;
-  }
-  const { scan } = getHalves();
-  if (scan) scan.style.opacity = '1';
-};
-
-/**
- * Paint a label on the scan half. No-op when the button isn't mounted.
- *
- * @param {string} text
- * @param {string} [bg] CSS background. Defaults to keeping current.
- * @returns {void}
- */
-const setScanLabel = (text, bg) => {
-  const { scan } = getHalves();
-  if (!scan) return;
-  scan.textContent = text;
-  if (bg) scan.style.background = bg;
-};
+// ─── Keyboard synth (Enter on the focused dispatch form) ───────────────
 
 /**
  * Synthesize `Enter` on `document.activeElement` so OGame's own
- * fleetdispatch form submits. Copy of `sendExp.dispatchEnter`.
+ * fleetdispatch form submits. Copy of `labels.js:dispatchEnter`.
  *
  * @returns {void}
  */
@@ -564,421 +662,179 @@ const dispatchEnter = () => {
   );
 };
 
+// ─── Click handlers (§6) ───────────────────────────────────────────────
+
 /**
- * Remove the button container (and therefore both halves) from the
- * document if present. Safe to call unmounted.
+ * Handle a click on the Send half. Switches on `ctx.kind` × `phase.tag`
+ * per SENDCOL_DESIGN.md §6.
  *
  * @returns {void}
  */
-const removeButton = () => {
-  const el = document.getElementById(BUTTON_ID);
-  if (el) el.remove();
-};
-
-// ─── Button rendering ───────────────────────────────────────────────────────
-
-/**
- * Apply the split-circle styles to `wrap` and both halves. Split out
- * so install can call it on fresh mount and later size updates can
- * re-apply the diameter-specific bits in place.
- *
- * @param {HTMLElement} wrap
- * @param {HTMLButtonElement} sendHalf
- * @param {HTMLButtonElement} scanHalf
- * @param {number} size  current diameter in px
- * @returns {void}
- */
-const applyStyles = (wrap, sendHalf, scanHalf, size) => {
-  const fontSize = Math.round(size * 0.12) + 'px';
-  wrap.style.cssText = [
-    'position:fixed',
-    'border-radius:50%',
-    'overflow:hidden',
-    'display:flex',
-    'flex-direction:column',
-    'z-index:99999',
-    'touch-action:none',
-    'user-select:none',
-    'cursor:pointer',
-    'box-shadow:0 2px 8px rgba(0,0,0,0.5)',
-    `width:${size}px`,
-    `height:${size}px`,
-  ].join(';');
-
-  const halfStyle = [
-    'flex:1',
-    'display:flex',
-    'align-items:center',
-    'justify-content:center',
-    'color:#fff',
-    'font-weight:bold',
-    'border:none',
-    'cursor:pointer',
-    `font-size:${fontSize}`,
-  ].join(';');
-  sendHalf.style.cssText = halfStyle + ';background:' + BG_SEND_IDLE + ';';
-  scanHalf.style.cssText = halfStyle + ';background:' + BG_SCAN_IDLE + ';';
-};
-
-/**
- * Create the wrapper `<div>` plus the two `<button>` halves. Returns
- * the handles so callers can wire behaviour. Does NOT attach to the
- * DOM — the install function does that after positioning.
- *
- * @param {number} size
- * @returns {{
- *   wrap: HTMLDivElement,
- *   sendHalf: HTMLButtonElement,
- *   scanHalf: HTMLButtonElement,
- * }}
- */
-const createButton = (size) => {
-  const wrap = document.createElement('div');
-  wrap.id = BUTTON_ID;
-
-  const sendHalf = document.createElement('button');
-  sendHalf.type = 'button';
-  sendHalf.id = SEND_HALF_ID;
-  sendHalf.className = 'oge5-col-half oge5-col-send';
-  sendHalf.tabIndex = 0;
-  sendHalf.setAttribute('aria-label', 'Send colonization');
-  sendHalf.textContent = LABEL_SEND_IDLE;
-
-  const scanHalf = document.createElement('button');
-  scanHalf.type = 'button';
-  scanHalf.id = SCAN_HALF_ID;
-  scanHalf.className = 'oge5-col-half oge5-col-scan';
-  scanHalf.tabIndex = 0;
-  scanHalf.setAttribute('aria-label', 'Scan next system');
-  scanHalf.textContent = LABEL_SCAN_IDLE;
-
-  applyStyles(wrap, sendHalf, scanHalf, size);
-
-  wrap.appendChild(sendHalf);
-  wrap.appendChild(scanHalf);
-  return { wrap, sendHalf, scanHalf };
-};
-
-// ─── Click handlers ─────────────────────────────────────────────────────────
-
-/**
- * Module-scope min-gap countdown timer handle. Cleared on dispose,
- * on successful send, and on fresh arm (we never run two at once).
- *
- * @type {ReturnType<typeof setInterval> | null}
- */
-let colWaitInterval = null;
-
-/**
- * Stuck-protection timer for `pendingColVerify`. Started when we paint
- * the "Checking [coords]…" label on a fleetdispatch page; cancelled
- * when the matching `oge5:checkTargetResult` arrives. If it fires the
- * label flips to a recoverable "Timeout" state and we arm the
- * navigation-to-galaxy stale retry so the user can press Send again
- * to refresh reality.
- *
- * @type {ReturnType<typeof setTimeout> | null}
- */
-let checkTargetWatchdog = null;
-
-/** How long to wait for a matching checkTargetResult before giving up. */
-const CHECK_TARGET_TIMEOUT_MS = 15_000;
-
-/**
- * Set when the last checkTarget came back with error 140035
- * ("no colonization ship"). Locks the send half — clicking Send again
- * would just fire another identical XHR with the same failure, so we
- * no-op instead. Cleared on install (new content-script = fresh state)
- * and on every successful Ready.
- */
-let noShipBlocked = false;
-
-const clearCheckTargetWatchdog = () => {
-  if (checkTargetWatchdog) {
-    clearTimeout(checkTargetWatchdog);
-    checkTargetWatchdog = null;
-  }
-};
-
-/**
- * Arm the stuck-protection timer. After {@link CHECK_TARGET_TIMEOUT_MS}
- * with no matching `oge5:checkTargetResult`, paint a recoverable
- * timeout label and arm navigation-to-galaxy stale retry so the user
- * isn't trapped staring at "Checking…".
- *
- * @param {{ galaxy: number, system: number, position: number }} verify
- */
-const armCheckTargetWatchdog = (verify) => {
-  clearCheckTargetWatchdog();
-  checkTargetWatchdog = setTimeout(() => {
-    checkTargetWatchdog = null;
-    // If the verify slot is still pending, the game never responded
-    // (rate-limited, network blip, AGR ate the XHR, …). Move the user
-    // out of the dead-end state and into stale-retry so the next
-    // Send click navigates to the system's galaxy view.
-    const ui = uiState.get();
-    if (!ui.pendingColVerify) return;
-    if (
-      ui.pendingColVerify.galaxy !== verify.galaxy ||
-      ui.pendingColVerify.system !== verify.system ||
-      ui.pendingColVerify.position !== verify.position
-    ) return;
-    setSendLabelTwo(
-      'Timeout',
-      `[${verify.galaxy}:${verify.system}:${verify.position}]`,
-      BG_SEND_STALE,
-    );
-    uiState.update((s) => ({
-      ...s,
-      pendingColVerify: null,
-      staleRetryActive: true,
-      staleTargetCoords: { galaxy: verify.galaxy, system: verify.system },
-    }));
-  }, CHECK_TARGET_TIMEOUT_MS);
-};
-
-/**
- * DESIGN.md §9.2 stale-retry: take the user to the stale system's
- * galaxy view via a single full-page navigation. The game then fires
- * its own `fetchGalaxyContent` for that system, our `galaxyHook`
- * captures the payload, and `scansStore` learns the real state of
- * every slot (reserved / inactive / mine / occupied / …). The user
- * sees the galaxy view and picks what to do next.
- *
- * Strict 1:1: user's Send click → our location.href assignment →
- * game's own XHR. No automated chain, no form-swap gymnastics.
- *
- * `staleRetryActive` is disarmed here so a double-tap during the
- * in-flight nav doesn't try to navigate twice.
- *
- * @returns {void}
- */
-const navigateToStaleSystem = () => {
-  const ui = uiState.get();
-  const coords = ui.staleTargetCoords;
-  uiState.update((s) => ({
-    ...s,
-    staleRetryActive: false,
-    staleTargetCoords: null,
-  }));
-  if (!coords) {
-    setSendLabel('No stale target', BG_SEND_ERROR);
-    return;
-  }
-  const base = location.href.split('?')[0];
-  location.href =
-    base +
-    `?page=ingame&component=galaxy&galaxy=${coords.galaxy}&system=${coords.system}`;
-};
-
-/**
- * Legacy 4.7.x stale-retry path — kept as dead code for reference
- * only. DO NOT call from production code. The form-swap approach has
- * a documented "Checking... stuck" failure mode that
- * {@link navigateToStaleSystem} replaces. Left here so future readers
- * looking for "why did we change stale-retry" have the old code in
- * one commit's blame.
- *
- * @returns {void}
- */
-// eslint-disable-next-line no-unused-vars
-const retryWithNextCandidate = () => {
-  uiState.update((s) => ({ ...s, staleRetryActive: false }));
-  setSendLabel('Searching…', BG_SEND_STALE);
-
-  const home = readHomePlanet();
-  if (!home) {
-    setSendLabel('No home planet', BG_SEND_ERROR);
-    return;
-  }
-  const settings = settingsStore.get();
-  const targets = parsePositions(settings.colPositions);
-  const target = findNextColonizeTarget(
-    scansStore.get(),
-    registryStore.get(),
-    home,
-    targets,
-    settings.colPreferOtherGalaxies,
-  );
-  if (!target) {
-    setSendLabel('No candidates', BG_SEND_ERROR);
-    return;
+const onSendClick = () => {
+  const ctx = derive(captureEnv());
+  if (safeLS.bool('oge5_debugSendCol', false)) {
+    // eslint-disable-next-line no-console
+    console.debug('[OG-E sendCol] onSendClick ctx:', ctx);
   }
 
-  /** @param {string} name */
-  const findInput = (name) =>
-    document.getElementById(name) ||
-    document.querySelector(`input[name="${name}"]`);
-  const galInput = findInput('galaxy');
-  const sysInput = findInput('system');
-  const posInput = findInput('position');
-  if (!galInput || !sysInput || !posInput) {
-    setSendLabel('No form inputs', BG_SEND_ERROR);
-    return;
-  }
-
-  /** @param {Element} el @param {number} v */
-  const setField = (el, v) => {
-    /** @type {HTMLInputElement} */ (el).value = String(v);
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-  };
-  setField(galInput, target.galaxy);
-  setField(sysInput, target.system);
-  setField(posInput, target.position);
-
-  uiState.update((s) => ({
-    ...s,
-    pendingColLink: target.link,
-    pendingColVerify: {
-      galaxy: target.galaxy,
-      system: target.system,
-      position: target.position,
-    },
-  }));
-  setSendLabel(
-    `Checking [${target.galaxy}:${target.system}:${target.position}]…`,
-    BG_SEND_STALE,
-  );
-};
-
-/**
- * Handle a click on the sendHalf. Dispatches based on the current
- * page + state — see file header state machine.
- *
- * @returns {void}
- */
-const handleSendClick = () => {
-  const settings = settingsStore.get();
-
-  // Abandon mode: sendHalf is the "Too small!" info; no-op on click.
-  if (checkAbandonState(settings)) return;
-
-  const ui = uiState.get();
-  const isFleet = location.search.includes('component=fleetdispatch');
-  const isColMission = location.search.includes(
-    `mission=${MISSION_COLONIZE}`,
-  );
-
-  if (isFleet && isColMission) {
-    // Short-circuit on the no-ship lock (set by the checkTarget
-    // reactor when error 140035 came back). Clicking would fire
-    // another identical failing XHR — no-op instead.
-    if (noShipBlocked) return;
-    if (ui.staleRetryActive) {
-      // DESIGN.md §9.2: stale retry navigates to the system's galaxy
-      // view. One visible user click → one location.href → one game
-      // fetchGalaxyContent → scansStore learns the real state (empty
-      // / reserved / inactive / …) and the user sees what happened.
-      // Mirror of v4 4.9.2. Replaced the form-swap retry, which had
-      // a "Checking... stuck" failure mode when two consecutive
-      // candidates were both stale.
-      navigateToStaleSystem();
+  if (ctx.kind === 'idle' || ctx.kind === 'galaxy') {
+    if (ctx.candidate) {
+      lastNavToFleetdispatchAt = Date.now();
+      lastCheckTargetError = null;
+      waitSeconds = 0;
+      location.href = buildFleetdispatchUrl(ctx.candidate);
       return;
     }
-    dispatchColonizeWithGapCheck();
+    // No candidate — transient "None available" flash, then revert.
+    const { send } = getHalves();
+    if (send) setHalfOneLine(send, 'None available', BG_SEND_IDLE);
     return;
   }
 
-  // Outside fleetdispatch: search the DB, then GO — no intermediate
-  // "Found! Go" label + a second user click. If we find a candidate,
-  // stash `pendingColVerify` so the checkTarget listener on the
-  // destination page can flip us to Ready/Stale, and navigate.
-  const home = readHomePlanet();
-  if (!home) return;
-  const targets = parsePositions(settings.colPositions);
-  const target = findNextColonizeTarget(
-    scansStore.get(),
-    registryStore.get(),
-    home,
-    targets,
-    settings.colPreferOtherGalaxies,
-  );
-  if (target) {
-    uiState.update((s) => ({
-      ...s,
-      pendingColLink: null,
-      pendingColVerify: {
-        galaxy: target.galaxy,
-        system: target.system,
-        position: target.position,
-      },
-    }));
-    location.href = target.link;
-    return;
+  // ctx.kind === 'fleetdispatch'
+  switch (ctx.phase.tag) {
+    case 'noTarget':
+    case 'noShip':
+      return;
+
+    case 'reserved': {
+      // Reserved (error 140016 = another player reserved via DM). We
+      // already marked the slot as `'reserved'` in scansStore from the
+      // checkTarget reactor, so `findNextColonizeTarget` skips it for
+      // the 24 h cooldown window. Best action on click: jump straight
+      // to the next candidate in the DB so the user isn't stuck.
+      const settings = settingsStore.get();
+      const home = readHomePlanet();
+      if (!home) return;
+      const next = findNextColonizeTarget(
+        scansStore.get(),
+        registryStore.get(),
+        home,
+        /** @type {number[]} */ (parsePositions(settings.colPositions)),
+        settings.colPreferOtherGalaxies,
+      );
+      if (!next) {
+        const { send } = getHalves();
+        if (send) setHalfOneLine(send, 'No more candidates', BG_SEND_IDLE);
+        return;
+      }
+      lastNavToFleetdispatchAt = Date.now();
+      lastCheckTargetError = null;
+      waitSeconds = 0;
+      location.href = buildFleetdispatchUrl({
+        galaxy: next.galaxy,
+        system: next.system,
+        position: next.position,
+      });
+      return;
+    }
+
+    case 'stale':
+    case 'timeout': {
+      if (!ctx.target) return;
+      // Stale-retry: navigate to the galaxy view of the stuck system.
+      // One click → one location.href → game's own fetchGalaxyContent.
+      location.href = buildGalaxyUrl({
+        galaxy: ctx.target.galaxy,
+        system: ctx.target.system,
+      });
+      return;
+    }
+
+    case 'waitGap':
+      // Countdown in progress — user click is a no-op (repaint handles
+      // the visible timer; a click would otherwise re-check min-gap and
+      // bounce right back into waitGap).
+      return;
+
+    case 'ready': {
+      const wait = getColonizeWaitTime();
+      if (wait > 0) {
+        waitStartAt = Date.now();
+        waitSeconds = wait;
+        refresh();
+        return;
+      }
+      dispatchEnter();
+      return;
+    }
   }
-  // No candidate in the local DB → user still needs to scan first.
-  // Hop onto galaxy view so the next Scan click has a live form to
-  // submit; if already on galaxy view, say so plainly.
-  setSendLabel('None available');
+};
+
+/**
+ * Handle a click on the Scan half. Scan is independent from Send (axiom
+ * #1): we pick the next system to scan and either navigate full-page
+ * (outside galaxy view) or submit the in-page galaxy form.
+ *
+ * @returns {void}
+ */
+const onScanClick = () => {
+  // Two behaviours:
+  //   1. NOT on galaxy view: "to Galaxy" — full-page nav to the bare
+  //      galaxy URL (no specific coords). The game serves whatever
+  //      its default system is, which it server-renders without an
+  //      AJAX call — meaning our hooks would miss it anyway. So we
+  //      don't try to scan a specific system from here; we just get
+  //      the user onto galaxy view, where every subsequent click
+  //      AJAX-submits and is observed.
+  //   2. ON galaxy view: find next unscanned system, in-page submit
+  //      via the galaxy form. Cooldown is event-driven (locks until
+  //      `oge5:galaxyScanned` arrives, hard cap 8 s).
+  const home = readHomePlanet();
+  if (safeLS.bool('oge5_debugSendCol', false)) {
+    const view = parseCurrentGalaxyView();
+    const next = home ? findNextScanSystem(scansStore.get(), home, view) : null;
+    // eslint-disable-next-line no-console
+    console.debug('[OG-E sendCol] onScanClick', {
+      home,
+      view,
+      nextScanSystem: next,
+      scansEntryCount: Object.keys(scansStore.get()).length,
+      lastScanSubmitAt,
+      lastScanEventAt,
+      now: Date.now(),
+    });
+  }
+  if (!home) return;
+
+  // Off galaxy view: hop to bare galaxy. No coord targeting (full-nav
+  // initial-system loads aren't AJAX-observed; would silently waste the
+  // user's click).
   if (!location.search.includes('component=galaxy')) {
     const base = location.href.split('?')[0];
-    location.href = base + '?page=ingame&component=galaxy';
-  }
-};
-
-/**
- * Handle a click on the scanHalf.
- *
- *   - Abandon mode → delegate to {@link abandonPlanet}.
- *   - Otherwise    → find next system to scan and either navigate to
- *                    its galaxy-view URL or (on the galaxy view) update
- *                    the galaxy/system inputs for an in-page navigation.
- *
- * @returns {void}
- */
-const handleScanClick = () => {
-  // Block re-entry while an in-page scan is still resolving. Without
-  // this, a user spamming the button queues several AGR submits and
-  // the scansStore ends up merging partial responses out of order.
-  if (scanBusy) return;
-  // Clear any no-ship lock — user is moving on to another candidate,
-  // so the "click Send" path should work again at the next stop.
-  noShipBlocked = false;
-
-  const settings = settingsStore.get();
-  if (checkAbandonState(settings)) {
-    // Fire-and-forget; the abandon feature manages its own state.
-    void abandonPlanet();
+    location.href = `${base}?page=ingame&component=galaxy`;
     return;
   }
-  const home = readHomePlanet();
-  if (!home) return;
-  // Clear any leftover pendingColLink — user explicitly asked to scan.
-  uiState.update((s) => ({ ...s, pendingColLink: null }));
-  const currentView = parseCurrentGalaxyView();
-  const next = findNextScanSystem(scansStore.get(), home, currentView);
+
+  // On galaxy view: cooldown then in-page submit to next unscanned.
+  const now = Date.now();
+  if (lastScanSubmitAt > lastScanEventAt && now - lastScanSubmitAt < SCAN_COOLDOWN_MS) {
+    return;
+  }
+
+  const view = parseCurrentGalaxyView();
+  const next = findNextScanSystem(scansStore.get(), home, view);
   if (!next) {
-    setScanLabel('All scanned!');
+    const { scan } = getHalves();
+    if (scan) setHalfOneLine(scan, 'All scanned!', BG_SCAN_IDLE);
     return;
   }
-  // Try the in-page form submit first (no full reload — much faster
-  // and matches v4 UX). When the user IS on galaxy view, this runs
-  // AGR's own submit handler, which fires `fetchGalaxyContent` so our
-  // scansStore captures the new system. URL doesn't change, but
-  // `#galaxy_input` / `#system_input` do — `parseCurrentGalaxyView`
-  // reads from those first, so the next click sees fresh coords.
-  if (currentView) {
-    if (navigateGalaxyInPage(next.galaxy, next.system)) {
-      // Lock until the galaxy event lands (or the safety timer fires).
-      lockScanHalf();
-      scanUnlockTimer = setTimeout(unlockScanHalf, SCAN_UNLOCK_TIMEOUT_MS);
-      return;
-    }
+
+  lastScanSubmitAt = now;
+  if (navigateGalaxyInPage(next.galaxy, next.system)) {
+    refresh();  // repaint so cooldown dim applies immediately
+    return;
   }
-  // Fallback: full nav. The page reload replaces this content script,
-  // so we don't lock — the new instance starts with scanBusy=false.
-  const base = location.href.split('?')[0];
-  location.href =
-    base +
-    `?page=ingame&component=galaxy&galaxy=${next.galaxy}&system=${next.system}`;
+  // Fallback: in-page submit failed (no form? AGR quirk?). Do a full
+  // nav — accepts the "first system not scanned" cost since it's the
+  // exception path.
+  location.href = buildGalaxyUrl(next);
 };
 
 /**
- * Try to update the galaxy-view form inputs for a fast in-page nav
- * (avoids a full page reload). Returns `true` when the submit button
- * was found and clicked; `false` when the caller should fall back to a
- * full `location.href =` navigation.
+ * Update the galaxy-view form inputs and submit for a fast in-page nav.
+ * Returns `true` when the submit button was found + clicked; `false` so
+ * the caller can fall back to a full-page `location.href =` navigation.
  *
  * @param {number} galaxy
  * @param {number} system
@@ -1005,407 +861,36 @@ const navigateGalaxyInPage = (galaxy, system) => {
   return false;
 };
 
-/**
- * The "I'm on fleetdispatch with mission=7" send path. Runs the
- * min-gap guard: if a conflict exists we paint "Wait Xs" and start a
- * 1-Hz countdown to "Dispatch!"; the user must click again to actually
- * fire. Otherwise we synthesize Enter immediately.
- *
- * @returns {void}
- */
-const dispatchColonizeWithGapCheck = () => {
-  const waitSec = getColonizeWaitTime();
-  if (waitSec > 0) {
-    setSendLabel(`Wait ${waitSec}s`, BG_SEND_WAIT);
-    if (colWaitInterval) clearInterval(colWaitInterval);
-    let remaining = waitSec;
-    colWaitInterval = setInterval(() => {
-      remaining--;
-      if (remaining <= 0) {
-        if (colWaitInterval) clearInterval(colWaitInterval);
-        colWaitInterval = null;
-        setSendLabel(LABEL_DISPATCH, BG_SEND_READY);
-      } else {
-        setSendLabel(`Wait ${remaining}s`);
-      }
-    }, 1000);
-    return;
-  }
-  dispatchEnter();
-};
-
-// ─── Event reactors ─────────────────────────────────────────────────────────
+// ─── Event reactors (§7) ───────────────────────────────────────────────
 
 /**
- * React to `oge5:galaxyScanned`. After the MAIN-world galaxy hook
- * classifies a freshly scanned system, we scan the new positions for
- * a user-target and update the button labels:
+ * Extract an error code from a `oge5:checkTargetResult` detail. Handles
+ * both the current bridge shape (`errorCodes: number[]`) and the future
+ * simplified shape (`errorCode: number | null`) per SENDCOL_DESIGN.md §9.
  *
- *   - empty + canColonize     → "Found! Go" + stash pendingColLink
- *   - empty + NOT canColonize → "No ship!" (user has no colonizer)
- *   - no target empty         → revert to "Scan next"
- *
- * `e.detail` shape: `{ galaxy, system, positions, canColonize }` —
- * identical to the 4.x contract.
- *
- * @param {Event} e
- * @returns {void}
+ * @param {any} detail
+ * @returns {number | null}
  */
-const onGalaxyScanned = (e) => {
-  const detail =
-    /** @type {{ galaxy?: number, system?: number, positions?: Record<number, import('../domain/scans.js').Position>, canColonize?: boolean } | undefined} */ (
-      /** @type {CustomEvent} */ (e).detail
-    );
-  if (!detail || !detail.positions) return;
-  // A galaxy event means the in-page scan cycle resolved — release
-  // the scan lock even when we don't know whether it was ours.
-  unlockScanHalf();
-  // Narrow via locals so every use below is a concrete `number`.
-  // tsc doesn't propagate the optional-field guard through the
-  // CustomEvent<T> cast when we dereference `detail.galaxy` directly.
-  const { galaxy, system, canColonize, positions } = detail;
-  if (typeof galaxy !== 'number' || typeof system !== 'number') return;
-  if (!document.getElementById(BUTTON_ID)) return;
-
-  const targets = parsePositions(settingsStore.get().colPositions);
-  /** @type {number | null} */
-  let foundPos = null;
-  for (const pos of targets) {
-    if (positions[pos]?.status === 'empty') {
-      foundPos = pos;
-      break;
-    }
+const extractErrorCode = (detail) => {
+  if (!detail) return null;
+  if (typeof detail.errorCode === 'number') return detail.errorCode;
+  if (detail.errorCode === null) return null;
+  if (Array.isArray(detail.errorCodes) && typeof detail.errorCodes[0] === 'number') {
+    return detail.errorCodes[0];
   }
-
-  if (foundPos !== null && canColonize) {
-    // Auto-navigate straight to fleetdispatch. The old "Found! Go"
-    // label + a second user click was a needless two-step — we
-    // already know the coords and the fleet is available, so just
-    // take them there. Stashing `pendingColVerify` here means the
-    // checkTarget listener can still paint Ready/Stale after the
-    // page reload without the old `pendingColLink` round-trip.
-    const base = location.href.split('?')[0];
-    const link =
-      base +
-      `?page=ingame&component=fleetdispatch` +
-      `&galaxy=${galaxy}&system=${system}` +
-      `&position=${foundPos}&type=1&mission=${MISSION_COLONIZE}&am208=1`;
-    uiState.update((s) => ({
-      ...s,
-      pendingColLink: null,
-      pendingColVerify: { galaxy, system, position: foundPos },
-    }));
-    location.href = link;
-    return;
-  }
-  // Empty target in THIS system but not auto-navigable (either
-  // `canColonize === false`, meaning the scanning planet has no
-  // colonizer right now, or the target picker rejected the pick
-  // for some other reason). Show the coords on the Send label
-  // anyway so the user sees what's queued — clicking Send takes
-  // them to fleetdispatch, where `onCheckTargetResult` paints
-  // "No ship!" / "Reserved" / "Stale" from the real checkTarget
-  // response. No "No ship!" label here: the galaxy XHR's
-  // `canColonize` reflects only the scanning planet's ship
-  // inventory, which is the wrong context.
-  if (foundPos !== null) {
-    uiState.update((s) => ({ ...s, pendingColLink: null }));
-    setSendLabelTwo(
-      'Send Colony',
-      `[${galaxy}:${system}:${foundPos}]`,
-      BG_SEND_READY,
-    );
-    setScanLabel('Scan next');
-    return;
-  }
-
-  // Nothing empty in this scan — fall back to whichever candidate
-  // the scansStore has queued from prior scans. `refreshSendPreview`
-  // handles the "nothing anywhere" case by painting plain idle.
-  uiState.update((s) => ({ ...s, pendingColLink: null }));
-  refreshSendPreview();
-  setScanLabel('Scan next');
+  return null;
 };
 
 /**
- * Parse the `?galaxy=&system=&position=` triple out of the current
- * fleetdispatch URL. Returns `null` when we're not on fleetdispatch
- * or any coordinate is missing / non-numeric.
- *
- * Used by the install path to recover an implicit verify target when
- * the user landed on fleetdispatch through some path other than our
- * Send Col flow (manual URL, AGR menu, post-send game redirect, …).
- *
- * @returns {{ galaxy: number, system: number, position: number } | null}
- */
-const parseFleetdispatchUrlCoords = () => {
-  if (!location.search.includes('component=fleetdispatch')) return null;
-  const params = new URLSearchParams(location.search);
-  const g = parseInt(params.get('galaxy') ?? '', 10);
-  const s = parseInt(params.get('system') ?? '', 10);
-  const p = parseInt(params.get('position') ?? '', 10);
-  if (!Number.isFinite(g) || !Number.isFinite(s) || !Number.isFinite(p)) {
-    return null;
-  }
-  return { galaxy: g, system: s, position: p };
-};
-
-/**
- * Preview the next colonize candidate (from the scansStore + registry)
- * on the Send half as `"Send [g:s:p]"`. When there's no eligible
- * candidate at all the label falls back to the plain idle text.
- *
- * Called in three places:
- *   - `mount()` after install so the button comes up already showing
- *     the queued target.
- *   - `onGalaxyScanned()` after a scan so the label updates when a
- *     new empty slot appears in the DB.
- *   - settings subscriber reacts to colPositions / preferOtherGalaxies
- *     edits without a page reload.
- *
- * No-op on fleetdispatch — that page has its own label flow
- * ("Checking…" / "Ready!" / "Stale…"). Also no-op in abandon state,
- * which owns the "Too small!" label.
- *
- * @returns {void}
- */
-const refreshSendPreview = () => {
-  const isFleetCol =
-    location.search.includes('component=fleetdispatch') &&
-    location.search.includes(`mission=${MISSION_COLONIZE}`);
-  if (isFleetCol) return;
-  const settings = settingsStore.get();
-  if (checkAbandonState(settings)) return;
-  const home = readHomePlanet();
-  if (!home) {
-    setSendLabel(LABEL_SEND_IDLE, BG_SEND_IDLE);
-    return;
-  }
-  const targets = parsePositions(settings.colPositions);
-  const next = findNextColonizeTarget(
-    scansStore.get(),
-    registryStore.get(),
-    home,
-    targets,
-    settings.colPreferOtherGalaxies,
-  );
-  if (next) {
-    setSendLabelTwo(
-      'Send Colony',
-      `[${next.galaxy}:${next.system}:${next.position}]`,
-      BG_SEND_READY,
-    );
-  } else {
-    setSendLabel(LABEL_SEND_IDLE, BG_SEND_IDLE);
-  }
-};
-
-/**
- * Mirror of 4.x's `markPositionAbandoned`. Write a single position as
- * `'abandoned'` in `scansStore` so the target picker stops proposing
- * it. No historyStore touch — the histogram wants to see abandoned
- * planets (see abandon.js file header for the 4.8.3 lesson).
- *
- * @param {number} galaxy
- * @param {number} system
- * @param {number} position
- * @returns {void}
- */
-const markPositionAbandoned = (galaxy, system, position) => {
-  const key = /** @type {`${number}:${number}`} */ (`${galaxy}:${system}`);
-  scansStore.update((prev) => {
-    const existing = prev[key] ?? {
-      scannedAt: Date.now(),
-      positions: {},
-    };
-    /** @type {Record<number, import('../domain/scans.js').Position>} */
-    const newPositions = {
-      ...existing.positions,
-      [position]: {
-        status: 'abandoned',
-        flags: { hasAbandonedPlanet: true },
-      },
-    };
-    return {
-      ...prev,
-      [key]: { scannedAt: Date.now(), positions: newPositions },
-    };
-  });
-};
-
-/**
- * Mark a single slot as `'reserved'` (planet-move by another player,
- * checkTarget error 140016). 4.9.2 semantics: distinct from abandoned
- * — no `hasAbandonedPlanet` flag, 24h rescan window so the slot
- * becomes available again after the DM cooldown.
- *
- * @param {number} galaxy
- * @param {number} system
- * @param {number} position
- * @returns {void}
- */
-const markPositionReserved = (galaxy, system, position) => {
-  const key = /** @type {`${number}:${number}`} */ (`${galaxy}:${system}`);
-  scansStore.update((prev) => {
-    const existing = prev[key] ?? {
-      scannedAt: Date.now(),
-      positions: {},
-    };
-    /** @type {Record<number, import('../domain/scans.js').Position>} */
-    const newPositions = {
-      ...existing.positions,
-      [position]: { status: 'reserved' },
-    };
-    return {
-      ...prev,
-      [key]: { scannedAt: Date.now(), positions: newPositions },
-    };
-  });
-};
-
-/**
- * React to `oge5:checkTargetResult`. The event is fired every time the
- * game runs its own `checkTarget` XHR on the fleetdispatch page. We
- * only care when the coords match our `pendingColVerify` (i.e. the
- * user is verifying a target OUR flow pointed them at).
- *
- *   - `colonizable === true`  → clear verify, paint "Ready!".
- *   - otherwise              → mark the slot abandoned, arm
- *                               `staleRetryActive`, paint "Stale —
- *                               click Send".
- *
- * The caller (checkTargetHook) computes `colonizable` = `success &&
- * targetOk && orders[7] === true && !targetInhabited`; we consume the
- * field verbatim rather than re-deriving here.
+ * React to `oge5:checkTargetResult`. Cross-check the event's coords
+ * against `window.fleetDispatcher.targetPlanet` — an old response from
+ * an earlier target must not poison the current derive().
  *
  * @param {Event} e
  * @returns {void}
  */
 const onCheckTargetResult = (e) => {
-  const detail =
-    /** @type {{
-     *   galaxy?: number, system?: number, position?: number,
-     *   colonizable?: boolean, reserved?: boolean, noShip?: boolean,
-     * } | undefined} */ (
-      /** @type {CustomEvent} */ (e).detail
-    );
-  if (!detail) return;
-  const { galaxy, system, position, colonizable, reserved, noShip } = detail;
-  if (
-    typeof galaxy !== 'number' ||
-    typeof system !== 'number' ||
-    typeof position !== 'number'
-  ) {
-    return;
-  }
-
-  const verify = uiState.get().pendingColVerify;
-  if (!verify) return;
-  if (
-    verify.galaxy !== galaxy ||
-    verify.system !== system ||
-    verify.position !== position
-  ) {
-    return;
-  }
-
-  const coordLabel = `[${galaxy}:${system}:${position}]`;
-
-  // Whatever the verdict, the game answered — release the watchdog.
-  clearCheckTargetWatchdog();
-
-  if (colonizable) {
-    setSendLabelTwo('Ready!', coordLabel, BG_SEND_READY);
-    // Fresh green light → clear any prior no-ship block so Send
-    // works again for this new target.
-    noShipBlocked = false;
-    uiState.update((s) => ({
-      ...s,
-      pendingColVerify: null,
-      staleRetryActive: false,
-    }));
-    return;
-  }
-
-  // "No ship!" — game refused the send with error 140035 ("no
-  // colonization ship"). Not a stale target (destination is fine);
-  // the fix is "build a colonizer". Paint the label and stop — no
-  // stale-retry nav, no abandoned mark, so the slot stays in the
-  // `empty` pool for when the user has ships again.
-  //
-  // Detected purely by error code so we don't depend on `orders`
-  // being populated: OGame's failure response omits `orders`
-  // entirely when it rejects on missing-ship grounds.
-  if (noShip) {
-    setSendLabelTwo('No ship!', coordLabel, BG_SEND_ERROR);
-    // Lock the Send half — retrying just fires another failing
-    // XHR, and the label would flicker every time. User should go
-    // build a colonizer (or click Scan for a different target).
-    noShipBlocked = true;
-    uiState.update((s) => ({
-      ...s,
-      pendingColVerify: null,
-      staleRetryActive: false,
-    }));
-    return;
-  }
-
-  // Reserved (planet-move, error 140016): the slot is held for ~22h
-  // and no amount of retry will help until it frees up. Mark distinct
-  // status + 24h rescan window; label calls it out so the user knows
-  // this isn't the usual "player moved in" stale.
-  if (reserved) {
-    markPositionReserved(galaxy, system, position);
-    setSendLabelTwo('Reserved', coordLabel, BG_SEND_STALE);
-    uiState.update((s) => ({
-      ...s,
-      pendingColVerify: null,
-      staleRetryActive: true,
-      staleTargetCoords: { galaxy, system },
-    }));
-    return;
-  }
-
-  // Generic stale (player moved in, mission not available, ...).
-  // Mark abandoned + arm navigation-to-galaxy retry so the user's
-  // next Send click refreshes the whole system from the game.
-  markPositionAbandoned(galaxy, system, position);
-  setSendLabelTwo('Stale', coordLabel, BG_SEND_STALE);
-  uiState.update((s) => ({
-    ...s,
-    pendingColVerify: null,
-    staleRetryActive: true,
-    staleTargetCoords: { galaxy, system },
-  }));
-};
-
-/**
- * React to `oge5:colonizeSent` (dispatched by `sendFleetHook` in the
- * MAIN world after the game's own `sendFleet` XHR came back
- * `success: true` for a colonize mission).
- *
- * Two things happen here:
- *
- *   1. Mark the just-sent slot `'empty_sent'` in scansStore so
- *      `findNextColonizeTarget` won't re-pick it (matched against the
- *      pending registry in `mergeScanResult` — the registry entry was
- *      pre-written synchronously before the send by sendFleetHook).
- *   2. If `settings.autoRedirectColonize` is on, hop straight to the
- *      next colonize target. Mirrors the expedition-redirect UX:
- *      after a successful send the user usually wants to send the
- *      next one, not re-select it by hand. We wait one tick so the
- *      game's own post-send navigation flushes before we overwrite
- *      it (direct `location.href` during the response handler can
- *      race the game's redirect).
- *
- * @param {Event} e
- * @returns {void}
- */
-const onColonizeSent = (e) => {
-  const detail =
-    /** @type {{ galaxy?: number, system?: number, position?: number } | undefined} */ (
-      /** @type {CustomEvent} */ (e).detail
-    );
+  const detail = /** @type {CustomEvent} */ (e).detail;
   if (!detail) return;
   const { galaxy, system, position } = detail;
   if (
@@ -1415,10 +900,142 @@ const onColonizeSent = (e) => {
   ) {
     return;
   }
+  // Coord match against the cached fleetDispatcher snapshot — skip
+  // ancient responses that arrived after the user moved on. When the
+  // snapshot isn't yet populated (first event race), accept the result.
+  const tp = fleetDispatcherSnapshot && fleetDispatcherSnapshot.targetPlanet;
+  if (
+    tp &&
+    (tp.galaxy !== galaxy || tp.system !== system || tp.position !== position)
+  ) {
+    return;
+  }
+  lastCheckTargetError = extractErrorCode(detail);
 
-  // Mark empty_sent so the slot filters out of the target picker
-  // until the fleet either lands (scan will show `mine`) or fails
-  // (auto-prune of the registry + re-scan will flip it back).
+  // Proactively mark the slot in `scansStore` so `findNextColonizeTarget`
+  // stops proposing it. This matters because stale-retry's response is
+  // a full-page NAVIGATION to the system's galaxy view — the game
+  // server-renders that view without firing `fetchGalaxyContent`, so
+  // our galaxyHook observes NOTHING and the DB stays wrong unless we
+  // mark here. A later user-driven scan (AJAX in-page submit) refreshes
+  // the slot's real status.
+  //
+  //   - error 140016 (reserved for planet-move) → status 'reserved',
+  //     RESCAN_AFTER 24 h (planet-move cooldown).
+  //   - error 140035 (no colonization ship) → NO mark: slot is fine,
+  //     we just lack a ship. Changing active planet (or building one)
+  //     lets us send later.
+  //   - everything else (`!canColonize` without the above codes) →
+  //     treat as generic stale: mark as 'abandoned' with
+  //     `hasAbandonedPlanet` flag so it sits out the ~day cooldown
+  //     and a later scan reclassifies.
+  const fd = fleetDispatcherSnapshot;
+  const stillMatching =
+    !fd || !fd.targetPlanet ||
+    (fd.targetPlanet.galaxy === galaxy &&
+      fd.targetPlanet.system === system &&
+      fd.targetPlanet.position === position);
+  if (stillMatching) {
+    const canColonize = fd && fd.orders && fd.orders['7'] === true;
+    /** @type {import('../domain/scans.js').Position | null} */
+    let newPos = null;
+    if (lastCheckTargetError === 140016) {
+      newPos = { status: 'reserved' };
+    } else if (
+      lastCheckTargetError !== 140035 &&
+      lastCheckTargetError !== null &&
+      !canColonize
+    ) {
+      newPos = {
+        status: 'abandoned',
+        flags: { hasAbandonedPlanet: true },
+      };
+    }
+    if (newPos) {
+      const key = /** @type {`${number}:${number}`} */ (`${galaxy}:${system}`);
+      const p = newPos;
+      scansStore.update((prev) => {
+        const existing = prev[key] ?? { scannedAt: Date.now(), positions: {} };
+        /** @type {Record<number, import('../domain/scans.js').Position>} */
+        const newPositions = { ...existing.positions, [position]: p };
+        return {
+          ...prev,
+          [key]: { scannedAt: Date.now(), positions: newPositions },
+        };
+      });
+    }
+  }
+
+  // A response means we're no longer waiting — reset the nav timestamp
+  // so a subsequent timeout measurement starts from "after we heard back".
+  // Leaving it set would make the timeout branch fire once the clock
+  // wandered past 15 s even though we got an answer.
+  lastNavToFleetdispatchAt = 0;
+  refresh();
+};
+
+/**
+ * React to `oge5:fleetDispatcher` — MAIN-world bridge publishing a fresh
+ * snapshot of `window.fleetDispatcher`. Stash it and refresh so the
+ * button reflects the new target/orders/ship inventory immediately.
+ *
+ * @param {Event} e
+ * @returns {void}
+ */
+const onFleetDispatcherSnapshot = (e) => {
+  const detail = /** @type {CustomEvent} */ (e).detail;
+  if (!detail || typeof detail !== 'object') return;
+  fleetDispatcherSnapshot =
+    /** @type {FleetDispatcherSnapshot} */ (detail);
+  refresh();
+};
+
+/**
+ * React to `oge5:galaxyScanned`. Three things happen:
+ *
+ *   1. Timestamp — record that the game answered. `scanCooldown` goes
+ *      false on the next derive, dropping the Scan half dim. No more
+ *      fixed-duration waiting: the UI unlocks exactly as fast as the
+ *      game does.
+ *   2. Store update — `state/scans.js` already merged the payload into
+ *      `scansStore`; that fires its own subscribe → refresh path too.
+ *   3. Refresh — repaint both halves with the new data.
+ *
+ * @returns {void}
+ */
+const onGalaxyScanned = () => {
+  lastScanEventAt = Date.now();
+  refresh();
+};
+
+/**
+ * React to `oge5:colonizeSent`. Two things happen:
+ *
+ *   1. Mark the just-sent slot `'empty_sent'` in `scansStore` so
+ *      {@link findNextColonizeTarget} stops picking it until the fleet
+ *      either lands (next scan sees `mine`) or fails (auto-prune of
+ *      registry + re-scan flips it back).
+ *   2. If `settings.autoRedirectColonize` is on, hop straight to the
+ *      next colonize target. Mirrors `autoRedirectExpedition` for
+ *      expeditions — after a successful send the user usually wants
+ *      the next one set up. Deferred by 100 ms so the game's own
+ *      post-send navigation flushes first (direct `location.href`
+ *      during the response handler races the game's redirect).
+ *
+ * @param {Event} e
+ * @returns {void}
+ */
+const onColonizeSent = (e) => {
+  const detail = /** @type {CustomEvent} */ (e).detail;
+  if (!detail) return;
+  const { galaxy, system, position } = detail;
+  if (
+    typeof galaxy !== 'number' ||
+    typeof system !== 'number' ||
+    typeof position !== 'number'
+  ) {
+    return;
+  }
   const key = /** @type {`${number}:${number}`} */ (`${galaxy}:${system}`);
   scansStore.update((prev) => {
     const existing = prev[key] ?? { scannedAt: Date.now(), positions: {} };
@@ -1433,62 +1050,103 @@ const onColonizeSent = (e) => {
     };
   });
 
+  // Auto-redirect to next candidate (opt-in, default true — matches
+  // `autoRedirectExpedition` behaviour). User can disable in settings.
   if (!settingsStore.get().autoRedirectColonize) return;
-
   const home = readHomePlanet();
   if (!home) return;
   const settings = settingsStore.get();
-  const targets = parsePositions(settings.colPositions);
   const next = findNextColonizeTarget(
     scansStore.get(),
     registryStore.get(),
     home,
-    targets,
+    /** @type {number[]} */ (parsePositions(settings.colPositions)),
     settings.colPreferOtherGalaxies,
   );
   if (!next) return;
-
-  // Defer one tick: the game's post-send navigation (its own
-  // redirectUrl) happens a moment after our event fires. Setting
-  // location.href now would race that nav and could be preempted.
-  // A small setTimeout lets the game flush first; ours lands second
-  // and wins.
+  // Defer one tick — the game's own `redirectUrl` post-send handler
+  // fires right after our event; setting `location.href` immediately
+  // would race with (and could be preempted by) that redirect.
   setTimeout(() => {
-    uiState.update((s) => ({
-      ...s,
-      pendingColVerify: {
-        galaxy: next.galaxy,
-        system: next.system,
-        position: next.position,
-      },
-    }));
-    location.href = next.link;
+    lastNavToFleetdispatchAt = Date.now();
+    lastCheckTargetError = null;
+    waitSeconds = 0;
+    location.href = buildFleetdispatchUrl({
+      galaxy: next.galaxy,
+      system: next.system,
+      position: next.position,
+    });
   }, 100);
 };
 
-// ─── Install / dispose ──────────────────────────────────────────────────────
+// ─── Lifecycle ─────────────────────────────────────────────────────────
 
 /**
- * Module-scope install handle. Identical pattern to sendExp.
+ * Module-scope install handle. Holds the dispose fn between install
+ * and dispose; `null` otherwise. Makes `installSendCol` idempotent.
  *
  * @type {{ dispose: () => void } | null}
  */
 let installed = null;
 
 /**
- * Install the split-button colonize helper. Idempotent.
+ * Apply the wrap + halves styling for a given diameter. Split out so
+ * live size updates can re-apply without recreating the DOM.
+ *
+ * @param {HTMLElement} wrap
+ * @param {HTMLButtonElement} sendHalf
+ * @param {HTMLButtonElement} scanHalf
+ * @param {number} size
+ * @returns {void}
+ */
+const applyStyles = (wrap, sendHalf, scanHalf, size) => {
+  const fontSize = Math.round(size * 0.12) + 'px';
+  wrap.style.cssText = [
+    'position:fixed',
+    'border-radius:50%',
+    'overflow:hidden',
+    'display:flex',
+    'flex-direction:column',
+    'z-index:99999',
+    'touch-action:none',
+    'user-select:none',
+    'cursor:pointer',
+    'box-shadow:0 2px 8px rgba(0,0,0,0.5)',
+    `width:${size}px`,
+    `height:${size}px`,
+  ].join(';');
+  const halfStyle = [
+    'flex:1',
+    'display:flex',
+    'align-items:center',
+    'justify-content:center',
+    'color:#fff',
+    'font-weight:bold',
+    'border:none',
+    'cursor:pointer',
+    `font-size:${fontSize}`,
+  ].join(';');
+  sendHalf.style.cssText = halfStyle + ';background:' + BG_SEND_IDLE + ';';
+  scanHalf.style.cssText = halfStyle + ';background:' + BG_SCAN_IDLE + ';';
+};
+
+/**
+ * Install the colonize button. Idempotent — a second call returns the
+ * SAME dispose fn as the first.
  *
  * Lifecycle:
- *   1. If `settings.colonizeMode === false` we skip DOM work entirely
- *      but still subscribe to settings — a later flip to `true`
- *      creates the button live.
- *   2. Renders the `<div id="oge5-send-col">` + two halves. Position
- *      from `oge5_colBtnPos` or bottom-right default. Drag, focus,
- *      and click wiring attached.
- *   3. Installs document-level listeners for `oge5:galaxyScanned` and
- *      `oge5:checkTargetResult`.
- *   4. Returns a dispose fn that removes button, unsubs settings,
- *      removes event listeners, and cancels any pending countdown.
+ *   1. Snapshot settings. If `colonizeMode === false` we skip DOM work
+ *      entirely but still subscribe to settings so a later flip to
+ *      `true` creates the button live.
+ *   2. Renders (if enabled): `<div id="oge5-send-col">` + two halves.
+ *      Position from `oge5_colBtnPos` or bottom-right default. Drag +
+ *      focus wired via `lib/draggableButton.js`.
+ *   3. Paints the initial label via derive → render → paint.
+ *   4. Starts a 1 Hz repaint ticker.
+ *   5. Subscribes to settings / scans / registry stores + three
+ *      bridge events for refresh triggers.
+ *   6. Returns dispose: removes button, unsubs all, removes listeners,
+ *      clears ticker.
  *
  * @returns {() => void} Dispose handle.
  */
@@ -1496,168 +1154,38 @@ export const installSendCol = () => {
   if (installed) return installed.dispose;
 
   /**
-   * Wire touch + mouse drag on `wrap`, plus the click listeners on the
-   * two halves. The click handler consults `hasMoved` so a drag
-   * terminating on a half doesn't double-fire as a click.
+   * Create + mount the button DOM. Idempotent: bails when already mounted.
    *
-   * @param {HTMLElement} wrap
-   * @param {HTMLButtonElement} sendHalf
-   * @param {HTMLButtonElement} scanHalf
-   * @param {number} size
    * @returns {void}
    */
-  const installDragAndClick = (wrap, sendHalf, scanHalf, size) => {
-    let isDragging = false;
-    let hasMoved = false;
-    let startX = 0;
-    let startY = 0;
-    let startLeft = 0;
-    let startTop = 0;
+  const mount = () => {
+    if (document.getElementById(BUTTON_ID)) return;
 
-    /** @param {number} cx @param {number} cy */
-    const onStart = (cx, cy) => {
-      isDragging = true;
-      hasMoved = false;
-      startX = cx;
-      startY = cy;
-      const r = wrap.getBoundingClientRect();
-      startLeft = r.left;
-      startTop = r.top;
-    };
+    const size = settingsStore.get().colBtnSize;
+    const wrap = document.createElement('div');
+    wrap.id = BUTTON_ID;
 
-    /** @param {number} cx @param {number} cy */
-    const onMove = (cx, cy) => {
-      if (!isDragging) return;
-      const dx = cx - startX;
-      const dy = cy - startY;
-      if (
-        !hasMoved &&
-        Math.abs(dx) < DRAG_THRESHOLD &&
-        Math.abs(dy) < DRAG_THRESHOLD
-      ) {
-        return;
-      }
-      hasMoved = true;
-      wrap.style.right = 'auto';
-      wrap.style.bottom = 'auto';
-      const newX = Math.max(
-        0,
-        Math.min(startLeft + dx, window.innerWidth - size),
-      );
-      const newY = Math.max(
-        0,
-        Math.min(startTop + dy, window.innerHeight - size),
-      );
-      wrap.style.left = newX + 'px';
-      wrap.style.top = newY + 'px';
-    };
+    const sendHalf = document.createElement('button');
+    sendHalf.type = 'button';
+    sendHalf.id = SEND_HALF_ID;
+    sendHalf.className = 'oge5-col-half oge5-col-send';
+    sendHalf.tabIndex = 0;
+    sendHalf.setAttribute('aria-label', 'Send colonization');
+    sendHalf.textContent = 'Send';
 
-    const onEnd = () => {
-      if (!isDragging) return;
-      isDragging = false;
-      if (hasMoved) {
-        safeLS.setJSON(POS_KEY, {
-          x: parseInt(wrap.style.left, 10),
-          y: parseInt(wrap.style.top, 10),
-        });
-      }
-    };
+    const scanHalf = document.createElement('button');
+    scanHalf.type = 'button';
+    scanHalf.id = SCAN_HALF_ID;
+    scanHalf.className = 'oge5-col-half oge5-col-scan';
+    scanHalf.tabIndex = 0;
+    scanHalf.setAttribute('aria-label', 'Scan next system');
+    scanHalf.textContent = 'Scan';
 
-    wrap.addEventListener(
-      'touchstart',
-      (e) => {
-        const t = e.touches[0];
-        if (!t) return;
-        onStart(t.clientX, t.clientY);
-      },
-      { passive: true },
-    );
-    wrap.addEventListener(
-      'touchmove',
-      (e) => {
-        const t = e.touches[0];
-        if (!t) return;
-        onMove(t.clientX, t.clientY);
-        if (hasMoved) e.preventDefault();
-      },
-      { passive: false },
-    );
-    wrap.addEventListener('touchend', () => {
-      onEnd();
-    });
-    wrap.addEventListener('mousedown', (e) => {
-      onStart(e.clientX, e.clientY);
-      /** @param {MouseEvent} ev */
-      const mv = (ev) => onMove(ev.clientX, ev.clientY);
-      const up = () => {
-        onEnd();
-        document.removeEventListener('mousemove', mv);
-        document.removeEventListener('mouseup', up);
-      };
-      document.addEventListener('mousemove', mv);
-      document.addEventListener('mouseup', up);
-    });
+    applyStyles(wrap, sendHalf, scanHalf, size);
+    wrap.appendChild(sendHalf);
+    wrap.appendChild(scanHalf);
 
-    sendHalf.addEventListener('click', (e) => {
-      if (hasMoved) {
-        hasMoved = false;
-        return;
-      }
-      e.stopPropagation();
-      handleSendClick();
-    });
-    scanHalf.addEventListener('click', (e) => {
-      if (hasMoved) {
-        hasMoved = false;
-        return;
-      }
-      e.stopPropagation();
-      handleScanClick();
-    });
-  };
-
-  /**
-   * Focus-persistence wiring: write the half's tag to `FOCUS_KEY` on
-   * focus, clear on blur iff we're the current owner, and — if the
-   * saved tag matches one of our halves at install time — restore
-   * focus 50 ms later.
-   *
-   * @param {HTMLButtonElement} sendHalf
-   * @param {HTMLButtonElement} scanHalf
-   * @returns {void}
-   */
-  const installFocusPersist = (sendHalf, scanHalf) => {
-    sendHalf.addEventListener('focus', () =>
-      safeLS.set(FOCUS_KEY, FOCUS_SEND),
-    );
-    sendHalf.addEventListener('blur', () => {
-      if (safeLS.get(FOCUS_KEY) === FOCUS_SEND) safeLS.remove(FOCUS_KEY);
-    });
-    scanHalf.addEventListener('focus', () =>
-      safeLS.set(FOCUS_KEY, FOCUS_SCAN),
-    );
-    scanHalf.addEventListener('blur', () => {
-      if (safeLS.get(FOCUS_KEY) === FOCUS_SCAN) safeLS.remove(FOCUS_KEY);
-    });
-    const current = safeLS.get(FOCUS_KEY);
-    if (current === FOCUS_SEND) {
-      setTimeout(() => sendHalf.focus(), FOCUS_RESTORE_DELAY_MS);
-    } else if (current === FOCUS_SCAN) {
-      setTimeout(() => scanHalf.focus(), FOCUS_RESTORE_DELAY_MS);
-    }
-  };
-
-  /**
-   * Position + paint context-aware labels on the freshly mounted
-   * button, taking current page / abandon-state into account.
-   *
-   * @param {HTMLElement} wrap
-   * @param {HTMLButtonElement} sendHalf
-   * @param {HTMLButtonElement} scanHalf
-   * @param {number} size
-   * @returns {void}
-   */
-  const positionAndLabel = (wrap, sendHalf, scanHalf, size) => {
+    // Position — saved drag target or bottom-right default.
     const savedPos = safeLS.json(POS_KEY);
     if (
       savedPos &&
@@ -1674,88 +1202,75 @@ export const installSendCol = () => {
       wrap.style.bottom = DEFAULT_EDGE_OFFSET_PX + 'px';
     }
 
-    const settings = settingsStore.get();
-    const abandonInfo = checkAbandonState(settings);
-    const isFleetCol =
-      location.search.includes('component=fleetdispatch') &&
-      location.search.includes(`mission=${MISSION_COLONIZE}`);
+    document.body.appendChild(wrap);
 
-    if (abandonInfo) {
-      sendHalf.textContent = `Too small! (${abandonInfo.max})`;
-      sendHalf.style.background = BG_SEND_ERROR;
-      scanHalf.textContent = 'Abandon';
-      scanHalf.style.background = BG_SCAN_ABANDON;
-    } else if (isFleetCol) {
-      // Show the coords we just redirected to so the user can see
-      // WHICH slot they're about to send to, not just "Dispatch".
-      // v4 parity — the per-slot label was in `mobile.js` too.
-      //
-      // Recover an implicit verify target from the URL when the user
-      // landed here without going through our Send flow (manual URL,
-      // AGR menu, page reload after send, …). The game itself fires
-      // checkTarget on initial fleetdispatch load if the URL carries
-      // coords — we simply hold the watchdog and listen for the
-      // result so the label transitions Checking → Ready/No ship/
-      // Stale/Reserved instead of staying on a generic "Dispatch!".
-      let verify = uiState.get().pendingColVerify;
-      if (!verify) {
-        const urlCoords = parseFleetdispatchUrlCoords();
-        if (urlCoords) {
-          verify = urlCoords;
-          uiState.update((s) => ({ ...s, pendingColVerify: urlCoords }));
-        }
-      }
-      if (verify) {
-        // Two-line: "Checking" / "[g:s:p]" so the coords don't get
-        // truncated even at the smallest button sizes.
-        sendHalf.textContent = '';
-        const wrap = document.createElement('div');
-        wrap.style.cssText =
-          'display:flex;flex-direction:column;align-items:center;'
-          + 'justify-content:center;line-height:1.05;width:100%;';
-        const top = document.createElement('div');
-        top.textContent = 'Checking…';
-        top.style.cssText = 'font-size:0.5em;opacity:0.85;letter-spacing:0.5px;';
-        const bottom = document.createElement('div');
-        bottom.textContent = `[${verify.galaxy}:${verify.system}:${verify.position}]`;
-        bottom.style.cssText = 'font-size:1em;margin-top:2px;';
-        wrap.appendChild(top);
-        wrap.appendChild(bottom);
-        sendHalf.appendChild(wrap);
-        sendHalf.style.background = BG_SEND_STALE;
-        // Arm the stuck-protection watchdog. If checkTarget never
-        // comes back (rate limit, AGR oddity, …) we still recover.
-        armCheckTargetWatchdog(verify);
-      } else {
-        sendHalf.textContent = LABEL_DISPATCH;
-        sendHalf.style.background = BG_SEND_READY;
-      }
-      scanHalf.textContent = LABEL_SCAN_SKIP;
+    // If we're landing on fleetdispatch directly (user typed a URL,
+    // page reload after send, AGR menu), assume the nav timestamp is
+    // "now" so the timeout branch doesn't immediately fire on startup.
+    if (
+      location.search.includes('component=fleetdispatch') &&
+      location.search.includes(`mission=${MISSION_COLONIZE}`)
+    ) {
+      lastNavToFleetdispatchAt = Date.now();
     }
+
+    // Drag + click wiring. Drag lives on the outer wrap so a touch on
+    // either half still drags the whole circle. Click handlers consult
+    // `wasDrag()` so a drag terminating on a half doesn't double-fire.
+    const drag = installDrag({
+      element: wrap,
+      posKey: POS_KEY,
+      size,
+      dragThreshold: DRAG_THRESHOLD,
+    });
+    sendHalf.addEventListener('click', (e) => {
+      if (drag.wasDrag()) {
+        drag.resetDrag();
+        return;
+      }
+      e.stopPropagation();
+      onSendClick();
+    });
+    scanHalf.addEventListener('click', (e) => {
+      if (drag.wasDrag()) {
+        drag.resetDrag();
+        return;
+      }
+      e.stopPropagation();
+      onScanClick();
+    });
+
+    // Focus persistence — shared `oge5_focusedBtn` key with sendExp.
+    installButtonFocusPersist({
+      button: sendHalf,
+      focusKey: FOCUS_KEY,
+      focusValue: FOCUS_SEND,
+      focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,
+    });
+    installButtonFocusPersist({
+      button: scanHalf,
+      focusKey: FOCUS_KEY,
+      focusValue: FOCUS_SCAN,
+      focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,
+    });
+
+    // First paint driven by the full pipeline.
+    refresh();
   };
 
   /**
-   * Create + mount the button. Idempotent (no-op when already present).
+   * Remove the button container (and therefore both halves) from the
+   * DOM. Safe to call unmounted.
    *
    * @returns {void}
    */
-  const mount = () => {
-    if (document.getElementById(BUTTON_ID)) return;
-    const size = settingsStore.get().colBtnSize;
-    const { wrap, sendHalf, scanHalf } = createButton(size);
-    positionAndLabel(wrap, sendHalf, scanHalf, size);
-    document.body.appendChild(wrap);
-    // After the button is in the DOM, preview the queued candidate
-    // on the Send label. `positionAndLabel` only handles the broad
-    // "fleet-dispatch" / "abandon" / "idle" branches — this one adds
-    // the per-candidate coordinate preview for the idle case.
-    refreshSendPreview();
-    installDragAndClick(wrap, sendHalf, scanHalf, size);
-    installFocusPersist(sendHalf, scanHalf);
+  const removeButton = () => {
+    const el = document.getElementById(BUTTON_ID);
+    if (el) el.remove();
   };
 
   /**
-   * Live-resize the currently mounted button.
+   * Live-resize the currently mounted button. No-op when unmounted.
    *
    * @param {number} size
    * @returns {void}
@@ -1765,6 +1280,19 @@ export const installSendCol = () => {
     if (!wrap || !send || !scan) return;
     applyStyles(wrap, send, scan, size);
   };
+
+  // Bootstrap snapshot BEFORE first mount — so the initial paint sees
+  // the right phase. If `window.fleetDispatcher` happens to be readable
+  // right now (Firefox Xray, tests assigning directly), seed the cache.
+  // Chrome MV3 isolated scripts get undefined here; we rely on the
+  // bridge event (`oge5:fleetDispatcher` from `bridges/fleetDispatcherSnapshot.js`)
+  // to populate it asynchronously in production.
+  if (!fleetDispatcherSnapshot) {
+    const liveFd = /** @type {any} */ (window).fleetDispatcher;
+    if (liveFd && typeof liveFd === 'object') {
+      fleetDispatcherSnapshot = /** @type {FleetDispatcherSnapshot} */ (liveFd);
+    }
+  }
 
   // Initial render based on current settings.
   const initial = settingsStore.get();
@@ -1782,7 +1310,7 @@ export const installSendCol = () => {
     }
   }
 
-  // React to settings changes — visibility + size.
+  // Live settings reactions.
   let prevColonizeMode = initial.colonizeMode;
   let prevColBtnSize = initial.colBtnSize;
   const unsubSettings = settingsStore.subscribe((next) => {
@@ -1798,37 +1326,33 @@ export const installSendCol = () => {
       updateButtonSize(next.colBtnSize);
       prevColBtnSize = next.colBtnSize;
     }
+    // Any other settings change (colPositions, colPreferOtherGalaxies, ...)
+    // can flip the candidate, so refresh on every settings notification.
+    refresh();
   });
 
-  // Event reactors attach at document level — they fire across page
-  // transitions and we want them live for the whole install span.
-  document.addEventListener('oge5:galaxyScanned', onGalaxyScanned);
+  const unsubScans = scansStore.subscribe(() => refresh());
+  const unsubRegistry = registryStore.subscribe(() => refresh());
+
+  // Bridge event listeners.
+  document.addEventListener('oge5:fleetDispatcher', onFleetDispatcherSnapshot);
   document.addEventListener('oge5:checkTargetResult', onCheckTargetResult);
+  document.addEventListener('oge5:galaxyScanned', onGalaxyScanned);
   document.addEventListener('oge5:colonizeSent', onColonizeSent);
+
+  // 1 Hz repaint ticker — the only timer in the whole feature.
+  const tickerHandle = setInterval(refresh, REPAINT_TICK_MS);
 
   installed = {
     dispose: () => {
-      if (colWaitInterval) {
-        clearInterval(colWaitInterval);
-        colWaitInterval = null;
-      }
-      clearCheckTargetWatchdog();
-      // Also clear the scan-half lock so a fresh install (e.g. after
-      // a settings toggle removed and re-mounted us) doesn't inherit
-      // a busy=true that no event will ever release.
-      if (scanUnlockTimer) {
-        clearTimeout(scanUnlockTimer);
-        scanUnlockTimer = null;
-      }
-      scanBusy = false;
-      noShipBlocked = false;
+      clearInterval(tickerHandle);
       removeButton();
       unsubSettings();
+      unsubScans();
+      unsubRegistry();
+      document.removeEventListener('oge5:fleetDispatcher', onFleetDispatcherSnapshot);
+      document.removeEventListener('oge5:checkTargetResult', onCheckTargetResult);
       document.removeEventListener('oge5:galaxyScanned', onGalaxyScanned);
-      document.removeEventListener(
-        'oge5:checkTargetResult',
-        onCheckTargetResult,
-      );
       document.removeEventListener('oge5:colonizeSent', onColonizeSent);
       installed = null;
     },
@@ -1837,8 +1361,9 @@ export const installSendCol = () => {
 };
 
 /**
- * Test-only reset of the module-scope install handle. Runs dispose
- * first so DOM + subscriptions don't leak across cases.
+ * Test-only reset — runs the current dispose (if any) and zeroes the
+ * module-local state so each test starts from a clean slate. `_`-prefixed
+ * to signal "do not import from production code".
  *
  * @returns {void}
  */
@@ -1847,8 +1372,11 @@ export const _resetSendColForTest = () => {
     installed.dispose();
     installed = null;
   }
-  if (colWaitInterval) {
-    clearInterval(colWaitInterval);
-    colWaitInterval = null;
-  }
+  lastNavToFleetdispatchAt = 0;
+  lastScanSubmitAt = 0;
+  lastScanEventAt = 0;
+  lastCheckTargetError = null;
+  waitStartAt = 0;
+  waitSeconds = 0;
+  fleetDispatcherSnapshot = null;
 };

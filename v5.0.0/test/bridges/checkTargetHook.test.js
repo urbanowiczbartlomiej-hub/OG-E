@@ -77,15 +77,13 @@ afterEach(() => {
 });
 
 describe('installCheckTargetHook — happy path', () => {
-  it('dispatches oge5:checkTargetResult with parsed detail on a valid response', async () => {
+  it('dispatches oge5:checkTargetResult with coords + null errorCode on success', async () => {
     installCheckTargetHook();
 
     await fakeCheckTargetXHR('galaxy=4&system=30&position=8&type=1', {
       status: 'success',
       targetOk: true,
       targetInhabited: false,
-      targetPlayerId: 0,
-      targetPlayerName: '',
       orders: { 7: true, 15: false },
     });
 
@@ -94,41 +92,23 @@ describe('installCheckTargetHook — happy path', () => {
     expect(detail.galaxy).toBe(4);
     expect(detail.system).toBe(30);
     expect(detail.position).toBe(8);
-    expect(detail.targetOk).toBe(true);
-    expect(detail.targetInhabited).toBe(false);
-    expect(detail.targetPlayerId).toBe(0);
-    expect(detail.targetPlayerName).toBe('');
-    // Orders keys come through as whatever the JSON had — numeric keys
-    // in object literals serialize as string keys, which is exactly what
-    // consumers expect (`orders['7']`).
-    expect(detail.orders).toEqual({ 7: true, 15: false });
-  });
-
-  it('passes through targetPlayerId and name for inhabited slots', async () => {
-    installCheckTargetHook();
-
-    await fakeCheckTargetXHR('galaxy=1&system=2&position=3&type=1', {
-      status: 'success',
-      targetOk: true,
-      targetInhabited: true,
-      targetPlayerId: 12345,
-      targetPlayerName: 'SomePlayer',
-      orders: {},
-    });
-
-    const detail = /** @type {any} */ (captured).detail;
-    expect(detail.targetInhabited).toBe(true);
-    expect(detail.targetPlayerId).toBe(12345);
-    expect(detail.targetPlayerName).toBe('SomePlayer');
+    // Simplified shape: errorCode is null on success responses (no errors[])
+    // or on success+empty-errors — consumers read the rest of target
+    // state from window.fleetDispatcher.
+    expect(detail.errorCode).toBeNull();
+    // Shape assertion: only the 4 documented fields, nothing else.
+    expect(Object.keys(detail).sort()).toEqual(
+      ['errorCode', 'galaxy', 'position', 'system'],
+    );
   });
 });
 
 describe('installCheckTargetHook — response gating', () => {
-  it('DOES dispatch when response.status !== "success" (4.9.2 parity, exposes errorCodes)', async () => {
-    // v4 4.9.2 changed the hook to dispatch on both success AND
-    // failure responses so consumers can read `errors[]` for
-    // reserved-slot detection (140016) and other edge cases. v5
-    // inherits the same contract.
+  it('DOES dispatch on failure response, surfacing first errorCode (4.9.2 parity)', async () => {
+    // v4 4.9.2 changed the hook to dispatch on both success AND failure
+    // responses so consumers can read the error code for reserved-slot
+    // detection (140016) and other edge cases. v5 inherits the
+    // contract; simplified shape exposes a single `errorCode` field.
     installCheckTargetHook();
     await fakeCheckTargetXHR('galaxy=4&system=30&position=8&type=1', {
       status: 'error',
@@ -137,10 +117,38 @@ describe('installCheckTargetHook — response gating', () => {
     });
     expect(captured).not.toBeNull();
     const detail = /** @type {any} */ (captured).detail;
-    expect(detail.success).toBe(false);
-    expect(detail.errorCodes).toEqual([140016]);
-    expect(detail.reserved).toBe(true);
-    expect(detail.colonizable).toBe(false);
+    expect(detail.errorCode).toBe(140016);
+  });
+
+  it('errorCode is first code when errors[] has multiple entries', async () => {
+    installCheckTargetHook();
+    await fakeCheckTargetXHR('galaxy=4&system=30&position=8&type=1', {
+      status: 'error',
+      errors: [
+        { error: 140035, message: 'no ship' },
+        { error: 140016, message: 'reserved too' },
+      ],
+    });
+    const detail = /** @type {any} */ (captured).detail;
+    expect(detail.errorCode).toBe(140035);
+  });
+
+  it('errorCode is null when errors[] is empty or missing', async () => {
+    installCheckTargetHook();
+    // errors[] missing entirely (typical success response)
+    await fakeCheckTargetXHR('galaxy=4&system=30&position=8&type=1', {
+      status: 'success',
+      targetOk: true,
+    });
+    expect(/** @type {any} */ (captured).detail.errorCode).toBeNull();
+
+    captured = null;
+    // errors[] present but empty
+    await fakeCheckTargetXHR('galaxy=1&system=2&position=3&type=1', {
+      status: 'success',
+      errors: [],
+    });
+    expect(/** @type {any} */ (captured).detail.errorCode).toBeNull();
   });
 
   it('does NOT dispatch when response is not valid JSON', async () => {
@@ -213,50 +221,27 @@ describe('installCheckTargetHook — body gating', () => {
   });
 });
 
-describe('installCheckTargetHook — defensive defaults', () => {
-  it('coerces non-number targetPlayerId to 0', async () => {
+describe('installCheckTargetHook — errorCode defensive parsing', () => {
+  it('skips malformed error entries (non-number .error field)', async () => {
     installCheckTargetHook();
     await fakeCheckTargetXHR('galaxy=4&system=30&position=8&type=1', {
-      status: 'success',
-      targetOk: true,
-      targetInhabited: false,
-      // Game historically sent a number; a string slip would otherwise
-      // flow straight through to consumers and break `=== 0` checks.
-      targetPlayerId: '99',
-      targetPlayerName: 'X',
-      orders: {},
+      status: 'error',
+      errors: [
+        { error: 'not-a-number' },  // invalid, skip
+        { error: 140016 },           // valid, first taken
+      ],
     });
-
     const detail = /** @type {any} */ (captured).detail;
-    expect(detail.targetPlayerId).toBe(0);
-    expect(detail.targetPlayerName).toBe('X');
+    expect(detail.errorCode).toBe(140016);
   });
 
-  it('defaults targetPlayerName to "" when field is missing or non-string', async () => {
+  it('errorCode is null when `errors` field is not an array', async () => {
     installCheckTargetHook();
     await fakeCheckTargetXHR('galaxy=4&system=30&position=8&type=1', {
-      status: 'success',
-      targetOk: false,
-      targetInhabited: false,
-      // targetPlayerName omitted entirely
-      orders: {},
+      status: 'error',
+      errors: 'not an array',
     });
-
-    const detail = /** @type {any} */ (captured).detail;
-    expect(detail.targetPlayerName).toBe('');
-  });
-
-  it('defaults orders to {} when field is missing or not an object', async () => {
-    installCheckTargetHook();
-    await fakeCheckTargetXHR('galaxy=4&system=30&position=8&type=1', {
-      status: 'success',
-      targetOk: true,
-      targetInhabited: false,
-      // orders omitted
-    });
-
-    const detail = /** @type {any} */ (captured).detail;
-    expect(detail.orders).toEqual({});
+    expect(/** @type {any} */ (captured).detail.errorCode).toBeNull();
   });
 });
 

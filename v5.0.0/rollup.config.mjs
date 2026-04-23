@@ -10,6 +10,7 @@
 // so the source never hardcodes a version number.
 
 import replace from '@rollup/plugin-replace';
+import terser from '@rollup/plugin-terser';
 import { readFileSync } from 'node:fs';
 
 const manifest = JSON.parse(readFileSync('./manifest.json', 'utf-8'));
@@ -30,6 +31,18 @@ const bundle = (input, file) => ({
         __OGE_VERSION__: JSON.stringify(manifest.version),
       },
     }),
+    ...(isProd
+      ? [
+          terser({
+            compress: {
+              drop_console: true,
+              drop_debugger: true,
+              passes: 2,
+            },
+            format: { comments: false },
+          }),
+        ]
+      : []),
   ],
 });
 

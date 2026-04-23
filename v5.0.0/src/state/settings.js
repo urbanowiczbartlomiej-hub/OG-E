@@ -70,6 +70,7 @@ export const SETTINGS_PREFIX = 'oge5_';
  *
  *   mobileMode              false — Send Exp button visible in mobile layout
  *   colonizeMode            false — Send Col button visible
+
  *   expeditionBadges        true  — ekspedycje dot on planet list
  *   autoRedirectExpedition  true  — redirect to next planet after expedition
  *   autoRedirectColonize    true  — redirect to next colonize target after send

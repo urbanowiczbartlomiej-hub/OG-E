@@ -617,8 +617,8 @@ export const clearGistScansForGalaxy = async (galaxy) => {
       // legit upload will rebuild everything from local.
     }
   }
-  // Drop the requested galaxy's keys; everything else (other galaxies,
-  // history, deletedColonies if present at the top level) survives.
+  // Drop the requested galaxy's keys; everything else (other galaxies
+  // and the colony history) survives.
   const prefix = galaxy + ':';
   /** @type {GalaxyScans} */
   const filtered = {};

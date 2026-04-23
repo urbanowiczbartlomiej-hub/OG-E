@@ -306,8 +306,7 @@ const wireListeners = () => {
     } else {
       setStatus(
         'Imported: +' + res.colonies + ' colonies, '
-        + '+' + res.scans + ' scans, '
-        + '+' + res.deleted + ' deleted',
+        + '+' + res.scans + ' scans',
       );
     }
     // Clear the input so re-selecting the same file fires `change`.

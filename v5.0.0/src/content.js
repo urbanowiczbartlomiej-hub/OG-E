@@ -17,13 +17,20 @@
 //      the extension-origin histogram page can read it across origins.
 //
 //   3. Feature installs — colonyRecorder, badges, sendExp, sendCol,
-//      settingsUi. Each is a standalone `install*` function that hooks
-//      into the DOM / events it needs. Order is not load-bearing
-//      today — none of these features depend on each other's DOM —
-//      but we follow the "passive data → visible UI" mental grouping:
-//      colonyRecorder (observes overview) and badges (observes
-//      planet list) first, then the user-facing buttons, then the
-//      settings panel that controls them all.
+//      abandonOverview, newPlanetDetector, settingsUi, agrLogoRewire,
+//      readabilityBoost.
+//      Each is a standalone `install*` function that hooks into the DOM
+//      / events it needs. Order is not load-bearing today — none of
+//      these features depend on each other's DOM — but we follow the
+//      "passive data → visible UI" mental grouping: colonyRecorder
+//      (observes overview) and badges (observes planet list) first,
+//      then the user-facing buttons, then the settings panel that
+//      controls them all. The new-planet banner sits with the
+//      user-facing overlays — it is purely a read on `#planetList`
+//      against the persisted `knownPlanets` Set and a banner paint on
+//      diff. readabilityBoost is CSS-only and runs at the very top of
+//      the file next to blackBg — both inject a stylesheet and need no
+//      DOM beyond `documentElement`.
 //
 //   4. Sync scheduler — top-frame only. Gist calls are HTTP requests
 //      to api.github.com; firing them from every iframe would multiply
@@ -34,30 +41,34 @@
 //      needed (rollup can tree-shake the guarded branch in theory; in
 //      practice the early return is what keeps runtime simple).
 //
-// Note: the abandon flow has no separate `installAbandon` — the
-// `sendCol` feature integrates it directly via the scanHalf (v4
-// parity). When `checkAbandonState` matches, scanHalf flips to "Abandon"
-// and click delegates to `abandonPlanet()`. See `features/sendCol.js`.
+// Note: the abandon flow is split across two modules:
+//   - `abandon.js`     — the 3-click flow with overlay buttons inside
+//                        game popups. Exports `abandonPlanet()` + `checkAbandonState()`.
+//   - `abandonOverview.js` — the UI entry point: a big red overlay on
+//                        `#planet` div on overview pages that triggers
+//                        `abandonPlanet()`. Independent from sendCol.
 
 import { installBlackBackground } from './features/blackBg.js';
-
-// TEMP debug — remove once smoke-test confirms the content script is
-// being injected. Diagnosing "no visible trace of v5" on the game page.
-console.log('[OG-E v5] content.js isolated world — top-level entry reached');
+import { installReadabilityBoost } from './features/readabilityBoost.js';
 
 installBlackBackground();
+installReadabilityBoost();
 
 import { initHistoryStore } from './state/history.js';
 import { initScansStore, installScansListener } from './state/scans.js';
 import { initRegistryStore } from './state/registry.js';
 import { initSettingsStore } from './state/settings.js';
+import { initKnownPlanetsStore } from './state/knownPlanets.js';
 import { installSettingsMirror } from './state/settingsMirror.js';
 
 import { installColonyRecorder } from './features/colonyRecorder.js';
 import { installBadges } from './features/badges.js';
 import { installSendExp } from './features/sendExp.js';
 import { installSendCol } from './features/sendCol.js';
+import { installAbandonOverview } from './features/abandonOverview.js';
+import { installNewPlanetDetector } from './features/newPlanetDetector.js';
 import { installSettingsUi } from './features/settingsUi.js';
+import { installAgrLogoRewire } from './features/agrLogoRewire.js';
 import { installFleetdispatchShortcut } from './features/fleetdispatchShortcut.js';
 
 import { installSync } from './sync/scheduler.js';
@@ -68,6 +79,7 @@ initSettingsStore();
 initHistoryStore();
 initScansStore();
 initRegistryStore();
+initKnownPlanetsStore();
 installSettingsMirror();
 
 // Bridge from the MAIN-world galaxy XHR hook into scansStore. Without
@@ -101,6 +113,16 @@ const installDomFeatures = () => {
   installSendExp();
   installSendCol();
 
+  // Standalone overlay on overview for fresh-small colonies.
+  // Independent from sendCol; reuses `abandonPlanet()` from abandon.js.
+  installAbandonOverview();
+
+  // Top-center banner when `#planetList` gained a planet we haven't
+  // confirmed yet. Reads `#planetList` + `#diameterContentField` and
+  // writes to the persisted `knownPlanets` Set. Independent from
+  // abandonOverview — the two overlays can coexist on the same page.
+  installNewPlanetDetector();
+
   // Keyboard shortcut on fleetdispatch — desktop users press
   // ArrowRight to advance through AGR/OGame's send panels.
   installFleetdispatchShortcut();
@@ -109,15 +131,17 @@ const installDomFeatures = () => {
   // dependency per DESIGN.md §15 P3; if AGR isn't present the install
   // skips silently (no-op) and the panel simply doesn't appear.
   installSettingsUi();
+
+  // Rewire AGR's otherwise-idle menu-logo anchor: swap its image to the
+  // OG-E icon and make a click open AGR's menu + auto-expand our
+  // settings tab. Same silent-no-op-without-AGR behaviour as settingsUi.
+  installAgrLogoRewire();
 };
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     installDomFeatures();
-    // TEMP debug — remove with the other console.logs once smoke-test passes.
-    console.log('[OG-E v5] content.js bootstrap complete (post-DOM)');
   }, { once: true });
 } else {
   installDomFeatures();
-  console.log('[OG-E v5] content.js bootstrap complete (immediate)');
 }

@@ -26,12 +26,13 @@ import { installGalaxyHook } from './bridges/galaxyHook.js';
 import { installCheckTargetHook } from './bridges/checkTargetHook.js';
 import { installSendFleetHook } from './bridges/sendFleetHook.js';
 import { installExpeditionRedirect } from './bridges/expeditionRedirect.js';
-
-// TEMP debug — remove once smoke-test confirms the MAIN-world script is
-// being injected. Paired with the console.log in src/content.js.
-console.log('[OG-E v5] page.js MAIN world — top-level entry reached');
+import { installFleetDispatcherSnapshot } from './bridges/fleetDispatcherSnapshot.js';
 
 installGalaxyHook();
 installCheckTargetHook();
 installSendFleetHook();
 installExpeditionRedirect();
+// Publish window.fleetDispatcher state across the world boundary so
+// isolated-world content scripts can read it. See that module's header
+// for the cross-realm access problem it solves.
+installFleetDispatcherSnapshot();

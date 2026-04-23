@@ -23,9 +23,8 @@
 // the colonize-target picker knows when to bail on a run of bad rolls.
 //
 // We therefore append-only on first observation and never remove on
-// abandonment. The only removal path is explicit tombstones in a
-// separate `oge5_deletedColonies` store (user-driven — see DESIGN.md
-// §7), which is a different concern from this file.
+// abandonment. There is no removal path — the store is strictly
+// append-only.
 //
 // # Why debounce 0 ms
 //

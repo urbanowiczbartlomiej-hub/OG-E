@@ -36,42 +36,15 @@ import { observeXHR } from './xhrObserver.js';
  *   request body (the game's own form field).
  * @property {number} system Target system coordinate, parsed from body.
  * @property {number} position Target position coordinate, parsed from body.
- * @property {boolean} success From `response.status === 'success'`. Failure
- *   responses (`status !== 'success'`) also fire this event — v4 4.9.2
- *   onward — so consumers can differentiate "ok but not colonizable" from
- *   "the server rejected the target outright".
- * @property {boolean} targetOk From `response.targetOk`. When `false`, the
- *   slot cannot be targeted for the chosen mission (e.g. empty slot +
- *   attack mission).
- * @property {boolean} targetInhabited From `response.targetInhabited`. When
- *   `true`, the slot has an owner; when `false`, it's an empty slot and a
- *   candidate for colonization.
- * @property {number} targetPlayerId From `response.targetPlayerId`. `0`
- *   when the slot is empty, or when the field is missing / non-numeric
- *   (defensive default).
- * @property {string} targetPlayerName From `response.targetPlayerName`.
- *   Empty string when the slot is empty, or when the field is missing /
- *   non-string (defensive default).
- * @property {Record<string, boolean>} orders Per-mission availability map
- *   from `response.orders`. Keys are mission IDs as strings:
- *   `orders['7']` is the colonization flag, `orders['15']` is expedition,
- *   etc. Empty object `{}` when the response omits the field.
- * @property {number[]} errorCodes Flat list of `error` fields from
- *   `response.errors`. Used by colonize logic to distinguish a
- *   "reserved for planet-move" slot (error `140016`) from a generic
- *   stale target.
- * @property {boolean} colonizable Composite: `success && targetOk &&
- *   !targetInhabited && orders['7'] === true`. The one flag the
- *   colonize flow cares about.
- * @property {boolean} reserved True iff `errorCodes.includes(140016)` —
- *   the slot is reserved for a planet-move by another DM-paying player.
- *   Surfaces as a separate badge colour in the histogram and a distinct
- *   label on the Send button.
- * @property {boolean} noShip True iff `errorCodes.includes(140035)` —
- *   the game refused the send because the active planet has no
- *   colonization ship. Surfaced as a "No ship!" label rather than
- *   "Stale" — the target is fine, the user just needs to build a
- *   colonizer. Do NOT arm stale-retry for this case.
+ * @property {number | null} errorCode First `error` code from
+ *   `response.errors[]`, or `null` on success / no errors. Consumers
+ *   pattern-match on specific codes (`140016` reserved, `140035` no ship,
+ *   ...) and read the rest of target state from `window.fleetDispatcher`
+ *   (populated by the game's own response handler).
+ *
+ * Dispatched on BOTH success AND failure responses (4.9.2+ semantics).
+ * On success `errorCode` is `null`; on failure it carries the first
+ * error code from `response.errors[]`.
  */
 
 /**
@@ -174,49 +147,29 @@ export const installCheckTargetHook = () => {
       // same constraint the game enforces client-side.
       if (!galaxy || !system || !position) return;
 
-      const orders =
-        parsed.orders && typeof parsed.orders === 'object' && !Array.isArray(parsed.orders)
-          ? /** @type {Record<string, boolean>} */ (parsed.orders)
-          : {};
-      const targetOk = Boolean(parsed.targetOk);
-      const targetInhabited = Boolean(parsed.targetInhabited);
-
-      // Extract error codes from `response.errors[]`. The server ships
-      // entries as `{ error: <number>, message: <string> }`; we keep
-      // just the numeric code so consumers can do fast set-membership.
-      /** @type {number[]} */
-      const errorCodes = [];
+      // Extract first error code from `response.errors[]`. The server
+      // ships entries as `{ error: <number>, message: <string> }`. We
+      // only carry the first numeric code — consumers pattern-match on
+      // specific values (140016 reserved, 140035 no ship). On success
+      // the array is absent or empty, yielding `null`.
+      /** @type {number | null} */
+      let errorCode = null;
       if (Array.isArray(parsed.errors)) {
         for (const err of parsed.errors) {
-          if (err && typeof err.error === 'number') errorCodes.push(err.error);
+          if (err && typeof err.error === 'number') {
+            errorCode = err.error;
+            break;
+          }
         }
       }
-
-      // Composite flags. The colonize flow asks "can I send a
-      // colonizer here right now?"; the reserved flag distinguishes
-      // planet-move reservations from every other kind of stale.
-      const colonizable =
-        success && targetOk && !targetInhabited && orders['7'] === true;
-      const reserved = errorCodes.includes(140016);
-      const noShip = errorCodes.includes(140035);
+      // `success` is kept in scope for the `if (!success) return` gate
+      // above (actually there's no gate — we dispatch on both), but we
+      // no longer export it in the detail. Consumers that care about
+      // success/failure read `errorCode === null` as the signal.
+      void success;
 
       /** @type {CheckTargetResultDetail} */
-      const detail = {
-        galaxy,
-        system,
-        position,
-        success,
-        targetOk,
-        targetInhabited,
-        targetPlayerId: typeof parsed.targetPlayerId === 'number' ? parsed.targetPlayerId : 0,
-        targetPlayerName:
-          typeof parsed.targetPlayerName === 'string' ? parsed.targetPlayerName : '',
-        orders,
-        errorCodes,
-        colonizable,
-        reserved,
-        noShip,
-      };
+      const detail = { galaxy, system, position, errorCode };
 
       document.dispatchEvent(new CustomEvent('oge5:checkTargetResult', { detail }));
     },

@@ -70,6 +70,80 @@ import { settingsStore } from '../state/settings.js';
 import { safeLS } from '../lib/storage.js';
 import { safeClick, waitFor } from '../lib/dom.js';
 import { MISSION_EXPEDITION } from '../domain/rules.js';
+import {
+  installDrag,
+  installFocusPersist as installButtonFocusPersist,
+} from '../lib/draggableButton.js';
+
+/**
+ * @typedef {import('../bridges/fleetDispatcherSnapshot.js').FleetDispatcherSnapshot} FleetDispatcherSnapshot
+ */
+
+/**
+ * Cached snapshot of `window.fleetDispatcher` published by the MAIN-world
+ * bridge `bridges/fleetDispatcherSnapshot.js`. `null` until the first
+ * `oge5:fleetDispatcher` event arrives (initial publish deferred to
+ * DOMContentLoaded + microtask). On fleetdispatch, the click handler
+ * consults this to short-circuit the per-planet DOM walk when the game
+ * already reports the GLOBAL expedition cap is reached (14/14), and to
+ * skip the post-send auto-redirect when the send we're about to issue
+ * tips us over the cap.
+ *
+ * @type {FleetDispatcherSnapshot | null}
+ */
+let fleetDispatcherSnapshot = null;
+
+/**
+ * React to `oge5:fleetDispatcher` — MAIN-world bridge publishing a fresh
+ * snapshot of `window.fleetDispatcher`. Stash it so subsequent clicks
+ * consult the GLOBAL expeditionCount / maxExpeditionCount numbers rather
+ * than the per-planet DOM scan alone.
+ *
+ * @param {Event} e
+ * @returns {void}
+ */
+const onFleetDispatcherSnapshot = (e) => {
+  const detail = /** @type {CustomEvent} */ (e).detail;
+  if (!detail || typeof detail !== 'object') return;
+  fleetDispatcherSnapshot = /** @type {FleetDispatcherSnapshot} */ (detail);
+};
+
+/**
+ * Return `true` when the snapshot is populated and reports every
+ * expedition slot in use (`expeditionCount >= maxExpeditionCount`, e.g.
+ * 14/14). This is the GLOBAL authority — on fleetdispatch we trust it
+ * over any DOM count because the game updates it live and it captures
+ * expeditions launched from other tabs / sessions immediately.
+ *
+ * `maxExpeditionCount > 0` guards against an uninitialised snapshot
+ * where both numbers are 0 (technically `0 >= 0` would otherwise report
+ * max reached, which is wrong).
+ *
+ * @returns {boolean}
+ */
+const isGlobalExpeditionCapReached = () => {
+  const s = fleetDispatcherSnapshot;
+  if (!s) return false;
+  return s.maxExpeditionCount > 0 && s.expeditionCount >= s.maxExpeditionCount;
+};
+
+/**
+ * Return `true` when the snapshot is populated and reports we're one
+ * send away from the global cap (`expeditionCount >= maxExpeditionCount - 1`,
+ * e.g. 13/14). Used AFTER a successful Phase 1 send to skip the
+ * post-send auto-redirect: if this send makes us 14/14, there's no
+ * point walking to another planet — every planet will report full.
+ *
+ * @returns {boolean}
+ */
+const isGlobalExpeditionCapReachedAfterNextSend = () => {
+  const s = fleetDispatcherSnapshot;
+  if (!s) return false;
+  return (
+    s.maxExpeditionCount > 0 &&
+    s.expeditionCount >= s.maxExpeditionCount - 1
+  );
+};
 
 /**
  * DOM id of the floating button. Stable so repeated `createButton`
@@ -485,6 +559,16 @@ export const installSendExp = () => {
   const handleClick = (btn) => {
     if (busy) return;
 
+    // Global-cap gate (snapshot is authoritative when populated): if
+    // the game reports every expedition slot in use (e.g. 14/14), there
+    // is nowhere to send from — paint "All maxed!" and bail before any
+    // DOM walk. Only applies when the snapshot is populated (non-null
+    // on fleetdispatch AFTER the MAIN-world bridge publishes).
+    if (isGlobalExpeditionCapReached()) {
+      paintAllMaxed(btn);
+      return;
+    }
+
     const isFleet = location.search.includes('component=fleetdispatch');
 
     if (!isFleet) {
@@ -508,6 +592,16 @@ export const installSendExp = () => {
     const max = settingsStore.get().maxExpPerPlanet;
     const count = countActiveExpeditions(getActivePlanetCoords());
     if (count >= max) {
+      // Pre-redirect guard: if the snapshot reports we're one send
+      // away from the global cap (e.g. 13/14), the pending send is
+      // about to tip us to 14/14. No point walking to another planet
+      // — every planet will then report full once the send lands and
+      // the game refreshes its counts. Paint "All maxed!" and stop so
+      // the user sees why no nav happened.
+      if (isGlobalExpeditionCapReachedAfterNextSend()) {
+        paintAllMaxed(btn);
+        return;
+      }
       const nextCp = findPlanetWithExpSlot(true);
       if (nextCp !== null) {
         location.href = buildFleetdispatchUrl(nextCp);
@@ -534,109 +628,27 @@ export const installSendExp = () => {
   };
 
   /**
-   * Wire drag (mouse + touch) and click handlers onto `btn`. The
-   * click listener consults `hasMoved` from the closing scope so a
-   * drag that ended inside the button doesn't double-fire as a click.
+   * Wire drag (mouse + touch) and the click handler onto `btn`. Drag
+   * + storage persistence live in {@link installDrag}; we just hook
+   * the click listener and consult `wasDrag()` so a drag terminating
+   * inside the button doesn't double-fire as a click.
    *
    * @param {HTMLButtonElement} btn
-   * @param {number} size  Current button diameter — captured for the
-   *   viewport clamp in `onMove`. Re-captured on size change via a
-   *   fresh call path (`updateButtonSize` doesn't need to rewire drag
-   *   because the clamp tolerates drift up to one button diameter).
+   * @param {number} size  Current button diameter — passed through to
+   *   {@link installDrag} for the viewport clamp.
    * @returns {void}
    */
   const installDragAndClick = (btn, size) => {
-    let isDragging = false;
-    let hasMoved = false;
-    let startX = 0;
-    let startY = 0;
-    let startLeft = 0;
-    let startTop = 0;
-
-    /**
-     * @param {number} cx
-     * @param {number} cy
-     */
-    const onStart = (cx, cy) => {
-      isDragging = true;
-      hasMoved = false;
-      startX = cx;
-      startY = cy;
-      const r = btn.getBoundingClientRect();
-      startLeft = r.left;
-      startTop = r.top;
-    };
-
-    /**
-     * @param {number} cx
-     * @param {number} cy
-     */
-    const onMove = (cx, cy) => {
-      if (!isDragging) return;
-      const dx = cx - startX;
-      const dy = cy - startY;
-      if (!hasMoved && Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
-      hasMoved = true;
-      btn.style.right = 'auto';
-      btn.style.bottom = 'auto';
-      const newX = Math.max(0, Math.min(startLeft + dx, window.innerWidth - size));
-      const newY = Math.max(0, Math.min(startTop + dy, window.innerHeight - size));
-      btn.style.left = newX + 'px';
-      btn.style.top = newY + 'px';
-    };
-
-    const onEnd = () => {
-      if (!isDragging) return;
-      isDragging = false;
-      if (hasMoved) {
-        safeLS.setJSON(POS_KEY, {
-          x: parseInt(btn.style.left, 10),
-          y: parseInt(btn.style.top, 10),
-        });
-      }
-    };
-
-    btn.addEventListener(
-      'touchstart',
-      (e) => {
-        const t = e.touches[0];
-        if (!t) return;
-        onStart(t.clientX, t.clientY);
-      },
-      { passive: true },
-    );
-
-    btn.addEventListener(
-      'touchmove',
-      (e) => {
-        const t = e.touches[0];
-        if (!t) return;
-        onMove(t.clientX, t.clientY);
-        if (hasMoved) e.preventDefault();
-      },
-      { passive: false },
-    );
-
-    btn.addEventListener('touchend', () => {
-      onEnd();
-    });
-
-    btn.addEventListener('mousedown', (e) => {
-      onStart(e.clientX, e.clientY);
-      /** @param {MouseEvent} ev */
-      const mv = (ev) => onMove(ev.clientX, ev.clientY);
-      const up = () => {
-        onEnd();
-        document.removeEventListener('mousemove', mv);
-        document.removeEventListener('mouseup', up);
-      };
-      document.addEventListener('mousemove', mv);
-      document.addEventListener('mouseup', up);
+    const drag = installDrag({
+      element: btn,
+      posKey: POS_KEY,
+      size,
+      dragThreshold: DRAG_THRESHOLD,
     });
 
     btn.addEventListener('click', (e) => {
-      if (hasMoved) {
-        hasMoved = false;
+      if (drag.wasDrag()) {
+        drag.resetDrag();
         return;
       }
       e.stopPropagation();
@@ -645,23 +657,19 @@ export const installSendExp = () => {
   };
 
   /**
-   * Wire focus-persist: write `send-exp` to `FOCUS_KEY` while the
-   * button is focused, clear it on blur (only if we're the current
-   * owner of the key — a different button may have claimed it
-   * meanwhile). If the key was `'send-exp'` at install time, restore
-   * focus after a 50 ms tick so the DOM is fully painted.
+   * Wire focus-persist via {@link installButtonFocusPersist} (shared
+   * helper used by sendCol too — same `oge5_focusedBtn` key).
    *
    * @param {HTMLButtonElement} btn
    * @returns {void}
    */
   const installFocusPersist = (btn) => {
-    btn.addEventListener('focus', () => safeLS.set(FOCUS_KEY, FOCUS_VALUE));
-    btn.addEventListener('blur', () => {
-      if (safeLS.get(FOCUS_KEY) === FOCUS_VALUE) safeLS.remove(FOCUS_KEY);
+    installButtonFocusPersist({
+      button: btn,
+      focusKey: FOCUS_KEY,
+      focusValue: FOCUS_VALUE,
+      focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,
     });
-    if (safeLS.get(FOCUS_KEY) === FOCUS_VALUE) {
-      setTimeout(() => btn.focus(), FOCUS_RESTORE_DELAY_MS);
-    }
   };
 
   /**
@@ -749,6 +757,20 @@ export const installSendExp = () => {
     btn.style.fontSize = Math.round(size * 0.23) + 'px';
   };
 
+  // Bootstrap snapshot BEFORE first mount — so the initial click can
+  // see the right phase. If `window.fleetDispatcher` happens to be
+  // readable right now (Firefox Xray, tests assigning directly), seed
+  // the cache. Chrome MV3 isolated scripts get undefined here; we rely
+  // on the bridge event (`oge5:fleetDispatcher` from
+  // `bridges/fleetDispatcherSnapshot.js`) to populate it asynchronously
+  // in production. Pattern mirrors `features/sendCol.js:installSendCol`.
+  if (!fleetDispatcherSnapshot) {
+    const liveFd = /** @type {any} */ (window).fleetDispatcher;
+    if (liveFd && typeof liveFd === 'object') {
+      fleetDispatcherSnapshot = /** @type {FleetDispatcherSnapshot} */ (liveFd);
+    }
+  }
+
   // Initial render based on current settings.
   const initial = settingsStore.get();
   if (initial.mobileMode) {
@@ -787,10 +809,18 @@ export const installSendExp = () => {
     }
   });
 
+  // Bridge event listener: keeps `fleetDispatcherSnapshot` fresh across
+  // checkTarget XHRs and subsequent publishes from the MAIN-world bridge.
+  document.addEventListener('oge5:fleetDispatcher', onFleetDispatcherSnapshot);
+
   installed = {
     dispose: () => {
       removeButton();
       unsubSettings();
+      document.removeEventListener(
+        'oge5:fleetDispatcher',
+        onFleetDispatcherSnapshot,
+      );
       installed = null;
     },
   };
@@ -810,4 +840,17 @@ export const _resetSendExpForTest = () => {
     installed.dispose();
     installed = null;
   }
+};
+
+/**
+ * Test-only reset for the module-scope `fleetDispatcherSnapshot` cache.
+ * Lets cases that rely on a pristine snapshot state (e.g. "no snapshot
+ * dispatched yet") run independently of earlier tests that may have
+ * published one. Exported with a `_` prefix to signal "do not import
+ * from production code".
+ *
+ * @returns {void}
+ */
+export const _resetFleetDispatcherSnapshotForSendExpTest = () => {
+  fleetDispatcherSnapshot = null;
 };
