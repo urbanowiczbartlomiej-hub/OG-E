@@ -1,57 +1,43 @@
 // @ts-check
 
-// Contrast boost for two chronically low-visibility AGR/OGame elements.
+// Contrast + legibility boost for two chronically painful AGR / OGame
+// surfaces: the fleet-event box at the top of the page and the
+// "light green" fleet-movement link in the fleetdispatch header.
 //
-// # Why
+// # Event box (`#eventboxFilled`)
 //
-// On dark themes (and especially on mobile in daylight) two specific
-// DOM surfaces are painful to read:
+// Out of the box the event row squishes three pieces of information
+// ("15 Misje: …", mission type + target, and a countdown) into a
+// single dense line at tiny text, and its parent chain
+// (`#messages_collapsed` → `#message-wrapper` → `#notificationbarcomponent`)
+// clips anything that dares stick out. We reshape the box into a
+// two-line flex column with a gradient background, a bold coloured
+// mission-type line, and a big absolute-positioned countdown chip on
+// the right. Parent overflow/z-index is relaxed so the countdown chip
+// can sit proudly above the page. Because the countdown escapes its
+// parent via `position: absolute`, every ancestor that would otherwise
+// clip it gets a targeted `overflow: visible; z-index: 9999` override.
 //
-//   1. `#eventboxFilled` — the fleet-event box at the top of the page.
-//      AGR paints its text in faded greys on a near-black background;
-//      at small font sizes it degenerates into noise.
-//   2. `a.ago_movement.tooltip.ago_color_lightgreen` — AGR's "light
-//      green" fleet-movement link. The shade is close enough to the
-//      page background that the link all but disappears for users with
-//      reduced colour sensitivity.
+// # Movement link (`a.ago_movement.tooltip.ago_color_lightgreen`)
 //
-// Neither surface has a settings toggle on AGR's side and both are
-// rendered into HTML that ships inline `style` / high-specificity CSS,
-// so the only reliable way to override them is a stylesheet with
-// `!important` declarations. The overrides here are deliberate and
-// minimal — white bold text for the event box, a brighter green and a
-// bump in size for the movement link — tuned to preserve AGR's palette
-// semantics while clearing the contrast floor.
+// The link is a mixed-coloured status row: "Floty: 18/37" (green) +
+// inline `<span class="ago_color_palered">Ekspedycje: 14/14</span>`
+// (red when full). Earlier revisions of this module forced the green
+// onto every descendant via `a.xxx *`, which destroyed the native red
+// "max reached" indicator. The new rule applies the green to the anchor
+// ONLY (text nodes inherit, explicit `ago_color_palered` child keeps
+// its red). We also reshape the anchor as a column flex container so
+// the two status lines stack vertically, left-aligned, and bump the
+// font to 15 px so small-screen users can read them at a glance.
 //
-// # What
+// # Why a single stylesheet
 //
-// Inject a single `<style id="oge5-readability-boost">` node at
-// `document_start` with three rule blocks. The element is idempotent:
-// re-installs dedupe on the stable id and return the existing dispose
-// without rewriting the stylesheet.
-//
-// ## Event box (`#eventboxFilled`)
-//
-// Earlier revisions slammed `color: #fff !important` onto every
-// descendant (`#eventboxFilled *`). That flattened AGR's resource
-// colour coding (metal / crystal / deut tints) and ate the status
-// glyphs. The current rule applies the white only to the root; CSS
-// inheritance carries the lift to plain-text children while spans
-// with their own explicit `color` keep it. Bold is still forced on
-// every descendant (no cascade issue — it stacks additively with no
-// visual cost).
-//
-// ## Movement link (`.ago_movement.tooltip.ago_color_lightgreen`)
-//
-// Colour override stays but `font-size: larger` and `font-weight: bold`
-// are now applied only to the anchor itself, not `*`. `larger` is
-// relative to the parent — recursing through `*` would compound the
-// bump at every nesting level and blow up deeply nested tooltips.
-//
-// Mirrors the shape of {@link ../features/blackBg.js} — both are
-// CSS-only, run before the parser has produced `<body>`, and fall back
-// to `document.documentElement` when `document.head` is still null at
-// the install instant.
+// Both concerns are CSS-only, run at `document_start` before `<body>`,
+// and must beat inline styles + game rules. One injected
+// `<style id="oge5-readability-boost">` with `!important` declarations
+// is the simplest way — re-installs dedupe on the stable id and return
+// the existing dispose without rewriting the stylesheet. Mirrors the
+// shape of {@link ../features/blackBg.js}.
 
 /** Stable id so repeated installs collapse to a no-op. */
 const STYLE_ID = 'oge5-readability-boost';
@@ -61,25 +47,124 @@ const STYLE_ID = 'oge5-readability-boost';
  * assert on the exact selectors + `!important` presence without
  * reaching into internals.
  */
-const CSS = `/* OG-E: contrast boost for low-visibility elements */
-/* Event box — root-only colour so game-coloured spans keep their tint;
-   bold is forced on every descendant (inheritance alone skips bold on
-   anchors / table cells with lighter UA defaults). */
+const CSS = `/* OG-E: readability boost — event box + fleet movement link */
+
+/* ===== Parent chain fixes =====
+   #eventboxFilled's countdown chip uses position: absolute to float on
+   the right; its ancestors clip any child by default. Lift overflow +
+   z-index on the three levels we actually inject into. */
+#messages_collapsed,
+#message-wrapper,
+#notificationbarcomponent {
+  overflow: visible !important;
+  position: relative !important;
+  z-index: 9999 !important;
+}
+
+/* ===== Event box container ===== */
 #eventboxFilled {
-  color: #fff !important;
+  position: relative !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  gap: 2px !important;
+  padding: 5px 160px 5px 14px !important;
+  min-height: 44px !important;
+  margin-top: -15px !important;
+  background: linear-gradient(160deg, #081828 0%, #0d2a45 100%) !important;
+  border: 1px solid #1e5080 !important;
+  border-top: 3px solid #4da6ff !important;
+  box-shadow: 0 4px 18px rgba(0, 80, 180, 0.5) !important;
+  z-index: 10000 !important;
 }
-#eventboxFilled * {
-  font-weight: bold !important;
+
+/* Row 1: hide the "X Misje:" prefix, keep the compact "X × type" span. */
+#eventboxFilled > p.event_list:first-child {
+  font-size: 0 !important;
+  margin: 0 !important;
+  white-space: nowrap !important;
 }
-/* Movement link — colour on the whole subtree, size/weight only on the
-   anchor itself to avoid compounding "larger" through nested spans. */
-a.ago_movement.tooltip.ago_color_lightgreen,
-a.ago_movement.tooltip.ago_color_lightgreen * {
-  color: #a0ff60 !important;
+#eventboxFilled > p.event_list:first-child .undermark {
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  color: #7ecfff !important;
+  display: inline-block !important;
 }
+
+/* Row 2: mission-type line + (absolute) countdown. */
+#eventboxFilled > p.event_list:nth-child(2) {
+  margin: 0 !important;
+}
+
+/* Hide the "Następna:" label — countdown stays visible via the chip
+   rule below (position: absolute escapes font-size: 0). */
+#eventboxFilled .next_event:has(.countdown) {
+  font-size: 0 !important;
+  color: transparent !important;
+}
+
+/* Mission-type line (when there's no countdown inside — this is the
+   row with the mission label + target coords). */
+#eventboxFilled .next_event:not(:has(.countdown)) {
+  font-size: 12px !important;
+  color: #99bbdd !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  white-space: nowrap !important;
+}
+#eventboxFilled .next_event:not(:has(.countdown)) > span {
+  margin-left: -233px !important;
+  font-size: x-large !important;
+  font-weight: 700 !important;
+}
+
+/* Mission-type colour semantics (AGR palette). */
+#eventboxFilled .friendly { color: #55e87a !important; }
+#eventboxFilled .hostile  { color: #ff4d4d !important; }
+#eventboxFilled .neutral  { color: #ffaa33 !important; }
+
+/* Countdown chip — big, yellow, sits on the right. */
+#eventboxFilled .countdown {
+  position: absolute !important;
+  right: 5px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  font-size: 20px !important;
+  font-weight: 900 !important;
+  color: #ffe04b !important;
+  background: rgba(255, 210, 50, 0.1) !important;
+  border: 2px solid rgba(255, 210, 50, 0.5) !important;
+  border-radius: 6px !important;
+  padding: 5px 12px !important;
+  letter-spacing: 0.5px !important;
+  white-space: nowrap !important;
+  display: block !important;
+  line-height: 1.2 !important;
+}
+
+/* AGR's expand/collapse toggles are irrelevant to our compact layout. */
+#eventboxFilled #js_eventDetailsClosed,
+#eventboxFilled #js_eventDetailsOpen {
+  display: none !important;
+}
+
+/* ===== Movement link (fleetdispatch header) =====
+   Stack "Floty: X/Y" on top of "Ekspedycje: X/Y" left-aligned. Colour
+   the anchor only (not every descendant) so the child
+   .ago_color_palered keeps its native red "max reached" tint.
+   height:auto cancels any inline workaround the user might have left
+   behind. */
 a.ago_movement.tooltip.ago_color_lightgreen {
-  font-size: larger !important;
+  color: #a0ff60 !important;
+  font-size: 15px !important;
   font-weight: bold !important;
+  display: inline-flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  line-height: 1.2 !important;
+  height: auto !important;
+  padding: 2px 0 !important;
+  gap: 1px !important;
 }
 `;
 

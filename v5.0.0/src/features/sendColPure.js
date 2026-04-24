@@ -47,6 +47,7 @@ import {
   findNextScanSystem,
   findNextColonizeTarget,
   pickCandidateInView,
+  countScansRemaining,
 } from './sendColLogic.js';
 
 /**
@@ -104,9 +105,15 @@ export const BG_SEND_WAIT = 'rgba(200, 200, 0, 0.8)';
 // ─── Discriminated unions ────────────────────────────────────────────────
 
 /**
- * `nextScan` + `scanCooldown` apply everywhere (user can click Scan from
- * idle / galaxy / fleetdispatch pages alike). `candidate` / `target` /
- * `phase` are page-kind specific.
+ * `nextScan` + `scanCooldown` + `scansRemaining` apply everywhere (user
+ * can click Scan from idle / galaxy / fleetdispatch pages alike).
+ * `candidate` / `target` / `phase` are page-kind specific.
+ *
+ * `scansRemaining` is the count of systems that would match
+ * {@link findNextScanSystem} if called repeatedly — i.e. how many scan
+ * clicks it would take to make the DB fully fresh. Optional (derive
+ * omits it only when a test passes an incomplete ButtonContext; render
+ * treats missing/zero interchangeably).
  *
  * @typedef {(
  *   | {
@@ -114,12 +121,14 @@ export const BG_SEND_WAIT = 'rgba(200, 200, 0, 0.8)';
  *       candidate: Coords | null,
  *       nextScan: { galaxy: number, system: number } | null,
  *       scanCooldown: boolean,
+ *       scansRemaining?: number,
  *     }
  *   | {
  *       kind: 'galaxy',
  *       candidate: Coords | null,
  *       nextScan: { galaxy: number, system: number } | null,
  *       scanCooldown: boolean,
+ *       scansRemaining?: number,
  *     }
  *   | {
  *       kind: 'fleetdispatch',
@@ -134,6 +143,7 @@ export const BG_SEND_WAIT = 'rgba(200, 200, 0, 0.8)';
  *         | { tag: 'waitGap', remaining: number },
  *       nextScan: { galaxy: number, system: number } | null,
  *       scanCooldown: boolean,
+ *       scansRemaining?: number,
  *     }
  * )} ButtonContext
  */
@@ -233,6 +243,9 @@ export const derive = (env) => {
   const scanCooldown =
     lastScanSubmitAt > lastScanEventAt &&
     env.now - lastScanSubmitAt < SCAN_COOLDOWN_MS;
+  // Cheap full-universe count so the Scan button label can show the
+  // user how far the scan-fresh frontier is from covering everything.
+  const scansRemaining = countScansRemaining(env.scans);
 
   // Fleetdispatch branch — `fleetDispatcher` snapshot is the truth.
   if (
@@ -247,6 +260,7 @@ export const derive = (env) => {
         phase: { tag: 'noTarget' },
         nextScan,
         scanCooldown,
+        scansRemaining,
       };
     }
     const tp = fd.targetPlanet;
@@ -262,6 +276,7 @@ export const derive = (env) => {
         phase: { tag: 'noTarget' },
         nextScan,
         scanCooldown,
+        scansRemaining,
       };
     }
 
@@ -311,7 +326,14 @@ export const derive = (env) => {
         phase = { tag: 'stale' };
       }
     }
-    return { kind: 'fleetdispatch', target, phase, nextScan, scanCooldown };
+    return {
+      kind: 'fleetdispatch',
+      target,
+      phase,
+      nextScan,
+      scanCooldown,
+      scansRemaining,
+    };
   }
 
   // Galaxy branch — current-view priority (§4) so the coords the user
@@ -344,7 +366,7 @@ export const derive = (env) => {
         };
       }
     }
-    return { kind: 'galaxy', candidate, nextScan, scanCooldown };
+    return { kind: 'galaxy', candidate, nextScan, scanCooldown, scansRemaining };
   }
 
   // Idle branch — anywhere else (overview, galaxy-less research, ...).
@@ -366,7 +388,7 @@ export const derive = (env) => {
       };
     }
   }
-  return { kind: 'idle', candidate, nextScan, scanCooldown };
+  return { kind: 'idle', candidate, nextScan, scanCooldown, scansRemaining };
 };
 
 // ─── Pure render ──────────────────────────────────────────────────────────
@@ -379,15 +401,18 @@ export const derive = (env) => {
  */
 export const render = (ctx) => {
   // Scan paint:
-  //   - On galaxy view: two-line "Scan / [g:s]" — we'll AJAX-submit
-  //     into that system. AJAX = our observer fires = store updates =
-  //     persistence kicks in.
-  //   - Anywhere else: "to Galaxy" — clicking just hops the user to
-  //     the galaxy page (bare URL, no specific system). The first
-  //     system is server-rendered without an AJAX call, so we'd miss
-  //     it anyway; better to land the user on galaxy and let them
-  //     drive subsequent scans via AJAX.
-  //   - When the entire database is scanned fresh: "All scanned!".
+  //   - On galaxy view: two-line "Scan · N left / [g:s]" — one AJAX
+  //     click shrinks `scansRemaining` by (up to) 1 as the observer
+  //     writes the fresh scan into scansStore. The count is a useful
+  //     progress signal against the 3493-system scan universe.
+  //   - Anywhere else: "to Galaxy / N left" — clicking just hops the
+  //     user to the galaxy page. The first system is server-rendered
+  //     without an AJAX call, so we'd miss it from the isolated
+  //     content script; better to land the user on galaxy and let
+  //     them drive subsequent scans via AJAX.
+  //   - When the entire database is scanned fresh: "All scanned!"
+  //     (no count — zero remaining by definition).
+  const remaining = ctx.scansRemaining ?? 0;
   /** @type {Paint} */
   let scanPaint;
   if (!ctx.nextScan) {
@@ -395,12 +420,19 @@ export const render = (ctx) => {
   } else if (ctx.kind === 'galaxy') {
     scanPaint = {
       text: `[${ctx.nextScan.galaxy}:${ctx.nextScan.system}]`,
-      subtext: 'Scan',
+      subtext: remaining > 0 ? `Scan · ${remaining} left` : 'Scan',
       bg: BG_SCAN_IDLE,
       dim: ctx.scanCooldown,
     };
   } else {
-    scanPaint = { text: 'to Galaxy', bg: BG_SCAN_IDLE };
+    scanPaint =
+      remaining > 0
+        ? {
+            text: 'to Galaxy',
+            subtext: `${remaining} left`,
+            bg: BG_SCAN_IDLE,
+          }
+        : { text: 'to Galaxy', bg: BG_SCAN_IDLE };
   }
 
   if (ctx.kind === 'idle') {

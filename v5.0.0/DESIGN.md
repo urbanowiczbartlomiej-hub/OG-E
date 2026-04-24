@@ -206,9 +206,6 @@ v5.0.0/
 │   │   ├── scans.js                 oge5_galaxyScans (chrome.storage)
 │   │   ├── registry.js              oge5_colonizationRegistry (localStorage)
 │   │   ├── history.js               oge5_colonyHistory (chrome.storage)
-│   │   ├── knownPlanets.js          oge5_knownPlanets (chrome.storage) — Set<cp>
-│   │   │                            confirmed-as-permanent, czytany przez
-│   │   │                            newPlanetDetector
 │   │   ├── settings.js              preferencje (localStorage per klucz)
 │   │   └── settingsMirror.js        mirror wybranych kluczy do chrome.storage
 │   │                                (histogram extension origin czyta mirror)
@@ -218,8 +215,9 @@ v5.0.0/
 │   │   ├── readabilityBoost.js      wstrzyknięty CSS dla low-contrast elementów
 │   │   ├── agrLogoRewire.js         zamienia logo AGR na ikonę OG-E; klik
 │   │   │                            otwiera AGR menu i rozwija zakładkę OG-E
-│   │   ├── newPlanetDetector.js     banner "new planet" po kolonizacji
-│   │   │                            (diff #planetList vs knownPlanetsStore)
+│   │   ├── smallPlanetDetector.js   banner "mała planeta" dla pierwszej kolonii
+│   │   │                            gdzie usedFields < colMinFields (stateless,
+│   │   │                            parsuje tooltip planetList)
 │   │   ├── sendExp.js               przycisk Send Exp + flow ekspedycji
 │   │   ├── sendCol.js               przycisk Send Col — pojedynczy orchestrator
 │   │   │                            (derive/render/click) ~1100 LoC. Pełna
@@ -341,7 +339,6 @@ export const persist = ({ store, key, storage, debounceMs = 0 }) => {
 | `scansStore` | `GalaxyScans` | chrome.storage.local | 200ms | duży, dużo zapisów podczas skanu |
 | `registryStore` | `ColonizationEntry[]` | **localStorage (sync!)** | 0 | race nawigacji na mobile wymaga natychmiastowego zapisu |
 | `historyStore` | `ColonyEntry[]` | chrome.storage.local | 0 | rzadkie zapisy (wizyty na kolonii) |
-| `knownPlanetsStore` | `Set<number>` | chrome.storage.local (as array) | 0 | rzadkie zapisy (seed/mark/prune), codec Set↔array na granicy |
 | `settingsStore` | `Settings` | localStorage per-klucz | 0 | per-klucz dla integracji z AGR |
 
 **Brak globalnego transient-store'u dla UI.** Transientny stan UI
@@ -444,28 +441,20 @@ brak ścieżki usuwania. V4 miało `deletedColonies` tombstones; v5 tę funkcję
 porzuciło — nie było UI, sync nigdy ich nie propagował, zostało jako dead
 code i usunięte.
 
-### `oge5_knownPlanets` (chrome.storage.local)
+### (Brak `oge5_knownPlanets`)
 
-```ts
-type KnownPlanetsOnDisk = number[];          // CPs, array shape na dysku
-type KnownPlanetsInMemory = Set<number>;     // Set w RAM dla O(1) membership
-```
+Usunięte w fali "review-driven refactors + feature repair". Był to Set
+CP służący do odróżniania "świeżo skolonizowanej" planety od już-znanej
+przez `newPlanetDetector` → banner "nowa planeta". Problem: cztero-fazowy
+lifecycle (seed / prune / mark-built / compute-new) miał wyścigi między
+instalacjami content-script i gubił albo duplikował detekcję.
 
-Zbiór CP (IDs planet), które użytkownik "potwierdził" jako stałe. Codec
-Set↔array na granicy hydrate/save — `chrome.storage.local` nie round-tripuje
-Set konsystentnie między przeglądarkami (Firefox serializuje Set jako `{}`),
-więc na dysku trzymamy array.
-
-**Reguły przejścia:**
-- **seed przy pierwszym uruchomieniu** (pusty Set): wszystkie obecne CP
-  z `#planetList` dodane jednym zapisem, żeby świeża instalacja nie
-  generowała banneru na każdą istniejącą planetę.
-- **confirmed** (CP wchodzi do Set-u): user otworzył overview planety z
-  `usedFields > 0`, albo był to seed.
-- **unconfirmed/new** (CP jest w `#planetList`, ale nie w Set-cie):
-  `newPlanetDetector` paintuje banner zachęcający do obejrzenia planety.
-- **abandoned** (CP znikł z `#planetList`): usunięty z Set-u przez
-  `pruneAbandoned`.
+Zastąpione przez `features/smallPlanetDetector.js` — bez stanu, bez
+sync key. Kryterium "mała planeta = kandydat do porzucenia" czytane
+wprost z tooltipu planetList (`(used/max)`). Porównanie z
+`settings.colMinFields` robione na każdym mount. Planeta kwalifikuje
+się → banner, kliknięcie → nawigacja do overview → `abandonOverview`
+paintuje red overlay. Żadnego stanu między mountami, żadnego sync key.
 
 ### Ustawienia (indywidualne klucze localStorage, prefiks `oge5_*`)
 
@@ -951,47 +940,50 @@ linia w `src/content.js` (przed czymkolwiek innym). Nie ma zależności
 — nie potrzebuje lib/ ani domain/, więc jeśli cokolwiek innego rzuci
 błędem podczas importu, czarne tło i tak zadziała.
 
-### 9.7 Wykrywanie nowej planety (`features/newPlanetDetector.js`)
+### 9.7 Wykrywanie małej planety (`features/smallPlanetDetector.js`)
 
-Feature orthogonalny do Send Col — paintuje centralny banner zapraszający
-usera do obejrzenia świeżo skolonizowanej planety. Stan prawdy:
-`knownPlanetsStore` (`oge5_knownPlanets`, Set CP).
+Feature orthogonalny do Send Col — paintuje centralny banner dla
+pierwszej kolonii która spełnia kryterium porzucenia (`usedFields <
+settings.colMinFields`). Klik = nawigacja do overview, gdzie
+`abandonOverview.js` przejmuje i paintuje swój red overlay.
+
+**Stateless.** Wcześniejsza wersja (`newPlanetDetector` + store
+`knownPlanets`) utrzymywała zbiór CP "potwierdzonych" planet i
+diffowała go względem `#planetList`. Cztero-fazowy lifecycle (seed /
+prune / mark-built / compute-new) miał race'y między re-mountami i
+gubił detekcję. Rewrite czyta kryterium wprost z gry.
 
 ```
 [content script mount]
   │
   ▼
-hydrate knownPlanetsStore z chrome.storage.local
+read #planetList każdy .smallplanet [id^=planet-]
   │
   ▼
-read #planetList → current = Set<CP>
+parsuj data-tooltip-title:
+  - [g:s:p] z <b>...</b>
+  - (used/max) z "DDD.DDkm (used/max)"
 
-  jeśli knownPlanets JEST PUSTE (first-run):
-    knownPlanets := current    (seed — brak banneru)
-    STOP
-
-  new = current \ knownPlanets
-  gone = knownPlanets \ current
-
-  jeśli gone !== ∅:  knownPlanets := knownPlanets \ gone   (planeta
-                                                           porzucona —
-                                                           prune)
-
-  jeśli new !== ∅:
-    wybierz pierwszy CP z new
-    paint "New planet detected — click to inspect" banner
-
-[user wchodzi na overview nowej planety]
+  szukaj pierwszego row gdzie used < settings.colMinFields
   │
   ▼
-  jeśli usedFields > 0:
-    knownPlanets.add(cp)       (potwierdzenie: user buduje na niej)
+  hit:
+    jeśli już na overview tego cp → usuń banner (no-op nav)
+    else → paint "Mała planeta [g:s:p] (used/max pól)"
+  no hit:
+    usuń banner (nic się nie kwalifikuje)
+
+[user klik banner]
+  → location.href = overview URL tego cp
+  → abandonOverview.js paintuje red overlay na overview
 ```
 
-Invariant: banner pokazuje się co najwyżej raz per fresh planeta; znika
-gdy user ją potwierdzi (zbudował coś) lub ją porzuci (zniknęła z
-`#planetList`). First-run seed jest kluczowy — inaczej świeża instalacja
-rozszerzenia dla usera z 8 planetami wyświetliłaby banner 8 razy.
+Subscribuje `settingsStore` — zmiana `colMinFields` (w górę/w dół)
+natychmiast re-evaluuje. Banner znika sam gdy user zbuduje pola
+powyżej progu lub podniesie `colMinFields`. Brak "confirmed" fazy —
+planeta która legitnie ma pozostać mała wyświetla banner za każdym
+page load'em (akceptowalne, intent feature'u to "przypomnij o
+kandydatach do porzucenia", nie "pamiętaj co widziałem").
 
 ---
 
@@ -1014,8 +1006,6 @@ Dwa poziomy, jasne odpowiedzialności.
 synchronizowalne):
 - `oge5_galaxyScans` — ten duży
 - `oge5_colonyHistory` — dane do histogramu
-- `oge5_knownPlanets` — zbiór CP, który `newPlanetDetector` uznał za
-  potwierdzone (array na dysku, Set w RAM)
 - Tombstone'y dla cross-kontekstowych triggerów (clear, sync request)
 
 **Anti-wzorce, których unikamy:**
@@ -1254,8 +1244,9 @@ Rzeczy, które zobowiązujemy się NIE robić:
 - [x] **5. state/** — 4 persisted stores + uiState + lib/persist. +80 testów.
       (uiState zostało później usunięte w post-review cleanup — transientny
       stan Send Col przeniesiony do module-local `let`-ów w `sendCol.js`,
-      patrz §3 `SENDCOL_DESIGN.md`. `knownPlanets` store dołączony w
-      ostatnim polish'u pod feature `newPlanetDetector`.)
+      patrz §3 `SENDCOL_DESIGN.md`. `knownPlanets` store DODANY w
+      polish'u pod `newPlanetDetector`, USUNIĘTY w "review-driven refactors"
+      gdy feature został zastąpiony przez stateless `smallPlanetDetector`.)
 - [x] **6. bridges/** — 5 MAIN-world XHR hooków. +89 testów.
 - [x] **7. features/sendExp.js** — floating Send Exp + Phase 0/1/2 flow
       (v4 port), per-planet count, context-aware label, ArrowRight shortcut.

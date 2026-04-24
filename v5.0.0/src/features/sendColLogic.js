@@ -87,6 +87,38 @@ export const findNextScanSystem = (scans, home, currentView) => {
 };
 
 /**
+ * Count how many systems across every galaxy still need a (re)scan —
+ * i.e. have no entry in `scans` OR their entry is stale per
+ * {@link isSystemStale}. Used by the Scan button label so the user can
+ * see at a glance how far the scan-fresh frontier is from covering the
+ * whole universe.
+ *
+ * Scope is 1..COL_MAX_SYSTEM × every galaxy (COL_MAX_GALAXY total = 7 ×
+ * 499 = 3493 checks). Each check is a hash lookup + a couple of
+ * integer comparisons, so the whole pass is well under a millisecond
+ * on modern hardware — cheap enough to run from the 1 Hz refresh
+ * ticker without caching.
+ *
+ * Pure: no DOM, no storage, no clock reads beyond what
+ * {@link isSystemStale} does via its default `now` parameter.
+ *
+ * @param {GalaxyScans} scans
+ * @returns {number} number of systems that would return a hit from
+ *   {@link findNextScanSystem}. Zero means "everything fresh".
+ */
+export const countScansRemaining = (scans) => {
+  let remaining = 0;
+  for (let g = 1; g <= COL_MAX_GALAXY; g++) {
+    for (let s = 1; s <= COL_MAX_SYSTEM; s++) {
+      const key = /** @type {`${number}:${number}`} */ (`${g}:${s}`);
+      const scan = scans[key];
+      if (!scan || isSystemStale(scan)) remaining++;
+    }
+  }
+  return remaining;
+};
+
+/**
  * Find the next colonization target in the local scan DB, respecting
  * the user's `colPositions` priority, the in-flight registry, and the
  * "prefer other galaxies first" toggle.

@@ -68,32 +68,66 @@ describe('readabilityBoost', () => {
     expect(document.getElementById(STYLE_ID)).toBeNull();
   });
 
-  it('CSS rules include the two target selectors + !important', () => {
+  it('CSS rules include both target selectors + !important', () => {
     installReadabilityBoost();
 
     const css = document.getElementById(STYLE_ID)?.textContent ?? '';
     expect(css).toContain('#eventboxFilled');
     expect(css).toContain('a.ago_movement.tooltip.ago_color_lightgreen');
     expect(css).toContain('!important');
-    // Guard against accidental deletion of the bold override that
-    // carries most of the perceptual contrast lift for the event box.
+    // Guard against accidental deletion of the bold override on the
+    // movement anchor — that bold is what makes the small-screen
+    // stacked lines readable.
     expect(css).toContain('font-weight: bold');
-    // Movement link bumped to `larger` — separate rule from the colour
-    // override so the size lift actually lands on the anchor text.
-    expect(css).toContain('font-size: larger');
   });
 
-  it('#eventboxFilled descendant rule does NOT force a colour override', () => {
-    // Earlier revisions set `color: #fff` on `#eventboxFilled *`, which
-    // flattened the game's resource / status colour coding. The current
-    // contract is: colour only on the root, bold on descendants. A
-    // regression that re-adds `color:` into the `*` rule block would
-    // silently break in-game palette semantics.
+  it('eventbox countdown is absolutely positioned and styled as a big chip', () => {
     installReadabilityBoost();
-
     const css = document.getElementById(STYLE_ID)?.textContent ?? '';
-    const descendantRule = css.match(/#eventboxFilled\s+\*\s*\{([^}]*)\}/);
-    expect(descendantRule).not.toBeNull();
-    expect(descendantRule?.[1]).not.toContain('color:');
+    // The countdown chip is the visual focal point of the box — if
+    // this block drifts away, the box degenerates back to the squished
+    // single-line AGR default.
+    const countdownRule = css.match(
+      /#eventboxFilled\s+\.countdown\s*\{([^}]*)\}/,
+    );
+    expect(countdownRule).not.toBeNull();
+    const body = countdownRule?.[1] ?? '';
+    expect(body).toContain('position: absolute');
+    expect(body).toContain('font-size: 20px');
+    expect(body).toContain('font-weight: 900');
+  });
+
+  it('parent chain gets overflow:visible so the countdown chip is not clipped', () => {
+    // The chip uses position:absolute to escape its flex parent — any
+    // ancestor with overflow:hidden would clip it. These three ids are
+    // the ones OGame/AGR wrap #eventboxFilled in; a regression that
+    // drops them brings the clipping bug right back.
+    installReadabilityBoost();
+    const css = document.getElementById(STYLE_ID)?.textContent ?? '';
+    expect(css).toContain('#messages_collapsed');
+    expect(css).toContain('#message-wrapper');
+    expect(css).toContain('#notificationbarcomponent');
+    expect(css).toMatch(/overflow:\s*visible\s*!important/);
+  });
+
+  it('movement-link rule stacks vertically and leaves child colours alone', () => {
+    // flex-direction: column + align-items: flex-start is what gets
+    // "Floty: …" on top of "Ekspedycje: …" — and critically the rule
+    // does NOT cascade colour through `*`, so the native red on
+    // `.ago_color_palered` (Ekspedycje maxed) stays red.
+    installReadabilityBoost();
+    const css = document.getElementById(STYLE_ID)?.textContent ?? '';
+    const linkRule = css.match(
+      /a\.ago_movement\.tooltip\.ago_color_lightgreen\s*\{([^}]*)\}/,
+    );
+    expect(linkRule).not.toBeNull();
+    const body = linkRule?.[1] ?? '';
+    expect(body).toContain('flex-direction: column');
+    expect(body).toContain('align-items: flex-start');
+    // No universal-child rule targeting the anchor's descendants — if
+    // one reappears, the red "Ekspedycje: 14/14" span loses its tint.
+    expect(css).not.toMatch(
+      /a\.ago_movement\.tooltip\.ago_color_lightgreen\s+\*/,
+    );
   });
 });

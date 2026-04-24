@@ -17,7 +17,7 @@
 //      the extension-origin histogram page can read it across origins.
 //
 //   3. Feature installs — colonyRecorder, badges, sendExp, sendCol,
-//      abandonOverview, newPlanetDetector, settingsUi, agrLogoRewire,
+//      abandonOverview, smallPlanetDetector, settingsUi, agrLogoRewire,
 //      readabilityBoost.
 //      Each is a standalone `install*` function that hooks into the DOM
 //      / events it needs. Order is not load-bearing today — none of
@@ -25,12 +25,13 @@
 //      "passive data → visible UI" mental grouping: colonyRecorder
 //      (observes overview) and badges (observes planet list) first,
 //      then the user-facing buttons, then the settings panel that
-//      controls them all. The new-planet banner sits with the
-//      user-facing overlays — it is purely a read on `#planetList`
-//      against the persisted `knownPlanets` Set and a banner paint on
-//      diff. readabilityBoost is CSS-only and runs at the very top of
-//      the file next to blackBg — both inject a stylesheet and need no
-//      DOM beyond `documentElement`.
+//      controls them all. The small-planet banner sits with the
+//      user-facing overlays — it is a pure tooltip read on `#planetList`
+//      that paints a banner for the first colony below the
+//      `colMinFields` threshold (no persisted state, see
+//      `smallPlanetDetector.js`). readabilityBoost is CSS-only and runs
+//      at the very top of the file next to blackBg — both inject a
+//      stylesheet and need no DOM beyond `documentElement`.
 //
 //   4. Sync scheduler — top-frame only. Gist calls are HTTP requests
 //      to api.github.com; firing them from every iframe would multiply
@@ -58,7 +59,6 @@ import { initHistoryStore } from './state/history.js';
 import { initScansStore } from './state/scans.js';
 import { initRegistryStore } from './state/registry.js';
 import { initSettingsStore } from './state/settings.js';
-import { initKnownPlanetsStore } from './state/knownPlanets.js';
 import { installSettingsMirror } from './state/settingsMirror.js';
 
 import { installColonyRecorder } from './features/colonyRecorder.js';
@@ -66,7 +66,7 @@ import { installBadges } from './features/badges.js';
 import { installSendExp } from './features/sendExp.js';
 import { installSendCol } from './features/sendCol.js';
 import { installAbandonOverview } from './features/abandonOverview.js';
-import { installNewPlanetDetector } from './features/newPlanetDetector.js';
+import { installSmallPlanetDetector } from './features/smallPlanetDetector.js';
 import { installSettingsUi } from './features/settingsUi.js';
 import { installAgrLogoRewire } from './features/agrLogoRewire.js';
 import { installFleetdispatchShortcut } from './features/fleetdispatchShortcut.js';
@@ -87,7 +87,6 @@ initSettingsStore();
 initHistoryStore();
 initScansStore();
 initRegistryStore();
-initKnownPlanetsStore();
 installSettingsMirror();
 
 // Top-frame-only: sync scheduler. OGame embeds several iframes; running
@@ -119,11 +118,13 @@ const installDomFeatures = () => {
   // Independent from sendCol; reuses `abandonPlanet()` from abandon.js.
   installAbandonOverview();
 
-  // Top-center banner when `#planetList` gained a planet we haven't
-  // confirmed yet. Reads `#planetList` + `#diameterContentField` and
-  // writes to the persisted `knownPlanets` Set. Independent from
-  // abandonOverview — the two overlays can coexist on the same page.
-  installNewPlanetDetector();
+  // Top-center banner when any planet in `#planetList` is below the
+  // `colMinFields` threshold (candidate for abandon). Stateless: reads
+  // the tooltip's `(used/max)` on every mount + on settings change.
+  // Independent from abandonOverview — the two overlays can coexist
+  // on the same page (banner on planetList, overlay on the opened
+  // planet's overview).
+  installSmallPlanetDetector();
 
   // Keyboard shortcut on fleetdispatch — desktop users press
   // ArrowRight to advance through AGR/OGame's send panels.
