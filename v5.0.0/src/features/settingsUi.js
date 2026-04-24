@@ -315,9 +315,175 @@ const writeSetting = (id, value) => {
   }
 };
 
+// ─── Per-type control builders ──────────────────────────────────────────
+//
+// Each builder appends ONE control (plus any wrapping / display span it
+// needs) to the passed `valueCell`. No return value — the row's label +
+// value cell structure is owned by {@link buildRow}, these functions
+// only fill the control. Adding a new control type = write one new
+// `buildXxxControl` and add one entry to {@link CONTROL_BUILDERS}; no
+// edit to `buildRow` or `syncInputsFromState` needed.
+
+/** Inline styles shared by several builders. */
+const RANGE_WRAP_STYLE =
+  'display:inline-flex;align-items:center;gap:6px;width:100%';
+const RANGE_DISPLAY_STYLE =
+  'min-width:50px;text-align:right;font-size:11px;color:#848484;';
+const BUTTON_STYLE =
+  'padding:4px 14px;background:#1a2a3a;border:1px solid #2a4a5a;' +
+  'color:#4a9eff;border-radius:4px;font-size:12px;cursor:pointer;font-weight:bold;';
+const STATIC_STYLE = 'font-size:11px;color:#888;white-space:pre-line;';
+
 /**
- * Build one `<tr>` for a single option. The row is a label cell + a
- * control cell; the control's exact DOM depends on `opt.type`.
+ * Render the checkbox flavour.
+ * @param {SettingsOption} opt
+ * @param {HTMLTableCellElement} valueCell
+ * @returns {void}
+ */
+const buildCheckboxControl = (opt, valueCell) => {
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.id = INPUT_ID_PREFIX + opt.id;
+  cb.checked = Boolean(readSetting(opt.id));
+  cb.addEventListener('change', () => {
+    writeSetting(opt.id, cb.checked);
+  });
+  valueCell.appendChild(cb);
+};
+
+/**
+ * Render the range (slider + value display) flavour.
+ * @param {SettingsOption} opt
+ * @param {HTMLTableCellElement} valueCell
+ * @returns {void}
+ */
+const buildRangeControl = (opt, valueCell) => {
+  const wrap = document.createElement('span');
+  wrap.style.cssText = RANGE_WRAP_STYLE;
+
+  const slider = document.createElement('input');
+  slider.type = 'range';
+  slider.id = INPUT_ID_PREFIX + opt.id;
+  slider.min = String(opt.min ?? 0);
+  slider.max = String(opt.max ?? 100);
+  slider.step = String(opt.step ?? 1);
+  slider.value = String(readSetting(opt.id));
+  slider.style.flex = '1';
+
+  const display = document.createElement('span');
+  display.style.cssText = RANGE_DISPLAY_STYLE;
+  display.textContent = slider.value + (opt.unit ?? '');
+
+  slider.addEventListener('input', () => {
+    const v = Number(slider.value);
+    display.textContent = v + (opt.unit ?? '');
+    writeSetting(opt.id, v);
+  });
+
+  wrap.appendChild(slider);
+  wrap.appendChild(display);
+  valueCell.appendChild(wrap);
+};
+
+/**
+ * Render the text / password flavours. Shared because the only DOM
+ * difference is `input.type`; the value-coercion + write-back logic is
+ * identical. Detects numeric fields by the current runtime type of the
+ * setting (pre-populated from the hydrated store), so adding a new
+ * integer field to Settings requires zero edits here.
+ *
+ * @param {SettingsOption} opt
+ * @param {HTMLTableCellElement} valueCell
+ * @returns {void}
+ */
+const buildInputControl = (opt, valueCell) => {
+  const input = document.createElement('input');
+  input.type = opt.type;
+  input.id = INPUT_ID_PREFIX + opt.id;
+  const currentValue = readSetting(opt.id);
+  input.value = currentValue == null ? '' : String(currentValue);
+  if (opt.placeholder) input.placeholder = opt.placeholder;
+  // Capture the current value's TYPE at row-build time. Settings
+  // typedef fields are either string or number in the text/password
+  // flavour; we use the current runtime type to decide whether the
+  // typed-in string should be coerced to a number on write-back.
+  // Doing this on the current value (rather than consulting
+  // SETTINGS_SCHEMA explicitly) keeps this module ignorant of the
+  // schema shape — if a new int field gets added, as long as the
+  // store holds a number we coerce correctly.
+  const isNumberField = typeof currentValue === 'number';
+  input.addEventListener('change', () => {
+    const raw = input.value;
+    /** @type {unknown} */
+    let nextValue;
+    if (isNumberField) {
+      const n = parseInt(raw, 10);
+      nextValue = Number.isFinite(n) ? n : currentValue;
+    } else {
+      nextValue = raw;
+    }
+    writeSetting(opt.id, nextValue);
+  });
+  valueCell.appendChild(input);
+};
+
+/**
+ * Render the button flavour — not data-bound, just fires `opt.onclick`.
+ * @param {SettingsOption} opt
+ * @param {HTMLTableCellElement} valueCell
+ * @returns {void}
+ */
+const buildButtonControl = (opt, valueCell) => {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.id = INPUT_ID_PREFIX + opt.id;
+  btn.textContent = opt.buttonText ?? opt.label;
+  btn.style.cssText = BUTTON_STYLE;
+  btn.addEventListener('click', () => {
+    if (opt.onclick) opt.onclick();
+  });
+  valueCell.appendChild(btn);
+};
+
+/**
+ * Render the static (read-only text) flavour. `getText` is called once
+ * at build time; subsequent refreshes flow through
+ * {@link syncInputsFromState}.
+ *
+ * @param {SettingsOption} opt
+ * @param {HTMLTableCellElement} valueCell
+ * @returns {void}
+ */
+const buildStaticControl = (opt, valueCell) => {
+  const span = document.createElement('span');
+  span.id = INPUT_ID_PREFIX + opt.id;
+  span.style.cssText = STATIC_STYLE;
+  span.textContent = opt.getText ? opt.getText() : '';
+  valueCell.appendChild(span);
+};
+
+/**
+ * Dispatch table from `opt.type` → control builder. Adding a new type is:
+ *   1. extend the `type` union in {@link SettingsOption}
+ *   2. write one `buildXxxControl`
+ *   3. add the entry here
+ * No `buildRow` / `syncInputsFromState` edit required.
+ *
+ * @type {Record<SettingsOption['type'], (opt: SettingsOption, valueCell: HTMLTableCellElement) => void>}
+ */
+const CONTROL_BUILDERS = {
+  checkbox: buildCheckboxControl,
+  range: buildRangeControl,
+  text: buildInputControl,
+  password: buildInputControl,
+  button: buildButtonControl,
+  static: buildStaticControl,
+};
+
+/**
+ * Build one `<tr>` for a single option: label cell + value cell. The
+ * per-type work lives in {@link CONTROL_BUILDERS}; this function just
+ * lays down the row skeleton and delegates.
  *
  * For data-bound types (checkbox / range / text / password) the control
  * is pre-populated from the current settings state and wired with a
@@ -345,87 +511,8 @@ const buildRow = (opt) => {
   const valueCell = document.createElement('td');
   tr.appendChild(valueCell);
 
-  if (opt.type === 'checkbox') {
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.id = INPUT_ID_PREFIX + opt.id;
-    cb.checked = Boolean(readSetting(opt.id));
-    cb.addEventListener('change', () => {
-      writeSetting(opt.id, cb.checked);
-    });
-    valueCell.appendChild(cb);
-  } else if (opt.type === 'range') {
-    const wrap = document.createElement('span');
-    wrap.style.cssText = 'display:inline-flex;align-items:center;gap:6px;width:100%';
-
-    const slider = document.createElement('input');
-    slider.type = 'range';
-    slider.id = INPUT_ID_PREFIX + opt.id;
-    slider.min = String(opt.min ?? 0);
-    slider.max = String(opt.max ?? 100);
-    slider.step = String(opt.step ?? 1);
-    slider.value = String(readSetting(opt.id));
-    slider.style.flex = '1';
-
-    const display = document.createElement('span');
-    display.style.cssText = 'min-width:50px;text-align:right;font-size:11px;color:#848484;';
-    display.textContent = slider.value + (opt.unit ?? '');
-
-    slider.addEventListener('input', () => {
-      const v = Number(slider.value);
-      display.textContent = v + (opt.unit ?? '');
-      writeSetting(opt.id, v);
-    });
-
-    wrap.appendChild(slider);
-    wrap.appendChild(display);
-    valueCell.appendChild(wrap);
-  } else if (opt.type === 'text' || opt.type === 'password') {
-    const input = document.createElement('input');
-    input.type = opt.type;
-    input.id = INPUT_ID_PREFIX + opt.id;
-    const currentValue = readSetting(opt.id);
-    input.value = currentValue == null ? '' : String(currentValue);
-    if (opt.placeholder) input.placeholder = opt.placeholder;
-    // Capture the current value's TYPE at row-build time. Settings
-    // typedef fields are either string or number in the text/password
-    // flavour; we use the current runtime type to decide whether the
-    // typed-in string should be coerced to a number on write-back.
-    // Doing this on the current value (rather than consulting
-    // SETTINGS_SCHEMA explicitly) keeps this module ignorant of the
-    // schema shape — if a new int field gets added, as long as the
-    // store holds a number we coerce correctly.
-    const isNumberField = typeof currentValue === 'number';
-    input.addEventListener('change', () => {
-      const raw = input.value;
-      /** @type {unknown} */
-      let nextValue;
-      if (isNumberField) {
-        const n = parseInt(raw, 10);
-        nextValue = Number.isFinite(n) ? n : currentValue;
-      } else {
-        nextValue = raw;
-      }
-      writeSetting(opt.id, nextValue);
-    });
-    valueCell.appendChild(input);
-  } else if (opt.type === 'button') {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.id = INPUT_ID_PREFIX + opt.id;
-    btn.textContent = opt.buttonText ?? opt.label;
-    btn.style.cssText = 'padding:4px 14px;background:#1a2a3a;border:1px solid #2a4a5a;color:#4a9eff;border-radius:4px;font-size:12px;cursor:pointer;font-weight:bold;';
-    btn.addEventListener('click', () => {
-      if (opt.onclick) opt.onclick();
-    });
-    valueCell.appendChild(btn);
-  } else if (opt.type === 'static') {
-    const span = document.createElement('span');
-    span.id = INPUT_ID_PREFIX + opt.id;
-    span.style.cssText = 'font-size:11px;color:#888;white-space:pre-line;';
-    span.textContent = opt.getText ? opt.getText() : '';
-    valueCell.appendChild(span);
-  }
+  const build = CONTROL_BUILDERS[opt.type];
+  if (build) build(opt, valueCell);
 
   return tr;
 };

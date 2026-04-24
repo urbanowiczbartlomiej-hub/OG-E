@@ -290,6 +290,11 @@ describe('derive — idle branch', () => {
       targets: [8],
       preferOther: false,
       now: Date.now(),
+      // `derive` no longer reads the DOM itself — home / view are
+      // passed explicitly (see sendColPure.js DeriveEnv). `setupScene`
+      // paints the active planet row at [4:30:8]; mirror that here.
+      home: { galaxy: 4, system: 30 },
+      view: null,
     });
     expect(ctx.kind).toBe('idle');
     if (ctx.kind === 'idle') {
@@ -309,6 +314,8 @@ describe('derive — galaxy branch', () => {
       targets: [8],
       preferOther: false,
       now: Date.now(),
+      home: { galaxy: 4, system: 30 },
+      view: { galaxy: 4, system: 42 },
     });
     expect(ctx.kind).toBe('galaxy');
     if (ctx.kind === 'galaxy') {
@@ -338,6 +345,8 @@ describe('derive — galaxy branch', () => {
       targets: [8],
       preferOther: false,
       now: Date.now(),
+      home: { galaxy: 4, system: 30 },
+      view: { galaxy: 4, system: 42 },
     });
     expect(ctx.kind).toBe('galaxy');
     if (ctx.kind === 'galaxy') {

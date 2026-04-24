@@ -55,7 +55,7 @@ installBlackBackground();
 installReadabilityBoost();
 
 import { initHistoryStore } from './state/history.js';
-import { initScansStore, installScansListener } from './state/scans.js';
+import { initScansStore } from './state/scans.js';
 import { initRegistryStore } from './state/registry.js';
 import { initSettingsStore } from './state/settings.js';
 import { initKnownPlanetsStore } from './state/knownPlanets.js';
@@ -75,18 +75,20 @@ import { installSync } from './sync/scheduler.js';
 
 // State persistence — settings first so other stores and features that
 // read settings at install time see the hydrated values, not defaults.
+//
+// `initScansStore` also auto-installs the `oge5:galaxyScanned` MAIN-world
+// bridge listener internally (see `state/scans.js`), so nothing extra is
+// needed here to hook the galaxy XHR observer up to the store. Before
+// that was internalised, a separate `installScansListener()` call had to
+// be remembered as its own step — a bug-class that actually bit us in
+// Phase 10 when the listener was forgotten and every scan fired into a
+// void.
 initSettingsStore();
 initHistoryStore();
 initScansStore();
 initRegistryStore();
 initKnownPlanetsStore();
 installSettingsMirror();
-
-// Bridge from the MAIN-world galaxy XHR hook into scansStore. Without
-// this, `oge5:galaxyScanned` events fire into a void and the scan
-// database never grows from navigation alone — scans.js Phase 5 wired
-// persistence, but not this listener. Missed in Phase 10 wire-up.
-installScansListener();
 
 // Top-frame-only: sync scheduler. OGame embeds several iframes; running
 // the gist round-trip in each would multiply API traffic for no gain

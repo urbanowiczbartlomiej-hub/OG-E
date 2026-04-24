@@ -5,6 +5,18 @@
 // authoritative spec, especially §1 axioms, §2 ButtonContext, §3 state
 // fields, §4 derive pseudocode, §5 render pseudocode, §6 click handlers.
 //
+// # File partitioning
+//
+// The PURE core of the pipeline (`derive(env)` + `render(ctx)` plus all
+// the typedefs / colour constants they reference) lives in the sibling
+// file {@link ./sendColPure.js}. This file is the IMPURE orchestrator:
+// module-local state, DOM paint, click handlers, event reactors, the
+// 1 Hz ticker and the install/dispose lifecycle. The split keeps the
+// big-by-necessity orchestrator readable (no 250-line switch statement
+// buried under lifecycle wiring) and makes `derive` / `render` usable
+// from any context — node tests, hypothetical SSR, — that doesn't have
+// a `document` to read `readHomePlanet()` from.
+//
 // # Role
 //
 // The colonize button. One ui widget, two halves: Send (top) picks the
@@ -89,58 +101,36 @@ import {
 import {
   findNextScanSystem,
   findNextColonizeTarget,
-  pickCandidateInView,
   getColonizeWaitTime,
   readHomePlanet,
   parseCurrentGalaxyView,
   buildFleetdispatchUrl,
   buildGalaxyUrl,
 } from './sendColLogic.js';
+import {
+  derive,
+  render,
+  MISSION_COLONIZE,
+  CHECK_TARGET_TIMEOUT_MS,
+  SCAN_COOLDOWN_MS,
+  BG_SEND_IDLE,
+  BG_SCAN_IDLE,
+} from './sendColPure.js';
+
+// Re-export the pure pipeline so existing call-sites (e.g. the test
+// file which imports `derive` + `render` from this module) keep
+// working without a migration step.
+export { derive, render } from './sendColPure.js';
 
 /**
  * @typedef {import('../state/scans.js').GalaxyScans} GalaxyScans
  * @typedef {import('../domain/registry.js').RegistryEntry} RegistryEntry
  * @typedef {{ galaxy: number, system: number, position: number }} Coords
- */
-
-/**
- * `nextScan` + `scanCooldown` apply everywhere (user can click Scan
- * from idle / galaxy / fleetdispatch pages alike). `candidate` / `target`
- * / `phase` are page-kind specific.
- *
- * @typedef {(
- *   | {
- *       kind: 'idle',
- *       candidate: Coords | null,
- *       nextScan: { galaxy: number, system: number } | null,
- *       scanCooldown: boolean,
- *     }
- *   | {
- *       kind: 'galaxy',
- *       candidate: Coords | null,
- *       nextScan: { galaxy: number, system: number } | null,
- *       scanCooldown: boolean,
- *     }
- *   | {
- *       kind: 'fleetdispatch',
- *       target: Coords | null,
- *       phase:
- *         | { tag: 'noTarget' }
- *         | { tag: 'ready' }
- *         | { tag: 'noShip' }
- *         | { tag: 'reserved' }
- *         | { tag: 'stale' }
- *         | { tag: 'timeout' }
- *         | { tag: 'waitGap', remaining: number },
- *       nextScan: { galaxy: number, system: number } | null,
- *       scanCooldown: boolean,
- *     }
- * )} ButtonContext
- */
-
-/**
- * @typedef {{ text: string, bg: string, subtext?: string, dim?: boolean }} Paint
- * @typedef {{ send: Paint, scan: Paint }} RenderResult
+ * @typedef {import('./sendColPure.js').ButtonContext} ButtonContext
+ * @typedef {import('./sendColPure.js').Paint} Paint
+ * @typedef {import('./sendColPure.js').RenderResult} RenderResult
+ * @typedef {import('./sendColPure.js').DeriveEnv} DeriveEnv
+ * @typedef {import('../bridges/fleetDispatcherSnapshot.js').FleetDispatcherSnapshot} FleetDispatcherSnapshot
  */
 
 // ─── DOM ids ───────────────────────────────────────────────────────────
@@ -163,22 +153,14 @@ const FOCUS_SCAN = 'col-scan';
 /** localStorage key for the dragged wrap `(x, y)` position. */
 const POS_KEY = 'oge5_colBtnPos';
 
-// ─── Colors (inlined from the old labels.js — see SENDCOL_DESIGN.md §5) ──
-
-/** Green, translucent — idle "Send" with no candidate yet. */
-const BG_SEND_IDLE = 'rgba(0, 160, 0, 0.75)';
-/** Darker blue — idle "Scan" / "Skip" half. */
-const BG_SCAN_IDLE = 'rgba(60, 100, 150, 0.75)';
-/** Bright green — active "Dispatch!" / "Send Colony [g:s:p]". */
-const BG_SEND_READY = 'rgba(0, 200, 0, 0.85)';
-/** Amber — reserved / stale / timeout states (recoverable). */
-const BG_SEND_STALE = 'rgba(200, 150, 0, 0.85)';
-/** Red — "No ship!" (unrecoverable until user builds a colonizer). */
-const BG_SEND_ERROR = 'rgba(200, 0, 0, 0.85)';
-/** Yellow — mid-countdown "Wait Xs" label. */
-const BG_SEND_WAIT = 'rgba(200, 200, 0, 0.8)';
-
 // ─── Tunables ──────────────────────────────────────────────────────────
+//
+// Colour constants (`BG_SEND_*` / `BG_SCAN_*`), the checkTarget /
+// scan-cooldown timeouts, and `MISSION_COLONIZE` all moved to
+// `./sendColPure.js` because they belong to the pure render / derive
+// surface. Imported above and used below only for the impure paint
+// fallbacks (e.g. "None available" flash) and the fleetdispatch URL
+// sniff.
 
 /** Drag-vs-tap threshold in pixels (matches sendExp + 4.x). */
 const DRAG_THRESHOLD = 8;
@@ -186,19 +168,8 @@ const DRAG_THRESHOLD = 8;
 const DEFAULT_EDGE_OFFSET_PX = 20;
 /** Delay before restoring focus on install (matches sendExp). */
 const FOCUS_RESTORE_DELAY_MS = 50;
-/** After this many ms without a checkTarget response on fleetdispatch,
- *  derive() returns phase `timeout`. */
-const CHECK_TARGET_TIMEOUT_MS = 15_000;
-/** Safety cap — if `oge5:galaxyScanned` never arrives (AGR swallowed
- *  the XHR, network died, …), the Scan half unlocks anyway after this
- *  many ms. Under normal conditions the event arrives well under 1s
- *  and the cooldown lifts event-driven; this is the escape hatch. */
-const SCAN_COOLDOWN_MS = 8000;
 /** Repaint ticker period in ms. */
 const REPAINT_TICK_MS = 1000;
-/** Mission id for colonize. Duplicated here from domain/rules.js so the
- *  search-string check in derive() doesn't pay a module import. */
-const MISSION_COLONIZE = 7;
 
 // ─── Module-local state (§3) ───────────────────────────────────────────
 
@@ -234,265 +205,6 @@ let fleetDispatcherSnapshot = null;
 let waitStartAt = 0;
 /** Total seconds of the current waitGap countdown (0 = no countdown). */
 let waitSeconds = 0;
-
-// ─── Pure derive() ─────────────────────────────────────────────────────
-
-/**
- * @typedef {import('../bridges/fleetDispatcherSnapshot.js').FleetDispatcherSnapshot} FleetDispatcherSnapshot
- * @typedef {{
- *   search: string,
- *   fleetDispatcher: FleetDispatcherSnapshot | null,
- *   scans: GalaxyScans,
- *   registry: RegistryEntry[],
- *   targets: number[],
- *   preferOther: boolean,
- *   now: number,
- * }} DeriveEnv
- */
-
-/**
- * Pure `env → ButtonContext` compute. Follows SENDCOL_DESIGN.md §4
- * verbatim — fleetdispatch branch first (the richest), galaxy branch
- * second (with current-view priority), idle branch last.
- *
- * @param {DeriveEnv} env
- * @returns {ButtonContext}
- */
-export const derive = (env) => {
-  // Universal scan state — user can Scan from any page (idle / galaxy /
-  // fleetdispatch). Cooldown is event-driven (unlocks on
-  // `oge5:galaxyScanned`) with a hard safety cap for silent failures.
-  const home = readHomePlanet();
-  const view = parseCurrentGalaxyView();
-  const nextScan = home ? findNextScanSystem(env.scans, home, view) : null;
-  const scanCooldown =
-    lastScanSubmitAt > lastScanEventAt &&
-    env.now - lastScanSubmitAt < SCAN_COOLDOWN_MS;
-
-  // Fleetdispatch branch — `fleetDispatcher` snapshot is the truth.
-  if (
-    env.search.includes('component=fleetdispatch') &&
-    env.search.includes(`mission=${MISSION_COLONIZE}`)
-  ) {
-    const fd = env.fleetDispatcher;
-    if (!fd) {
-      return {
-        kind: 'fleetdispatch', target: null, phase: { tag: 'noTarget' },
-        nextScan, scanCooldown,
-      };
-    }
-    const tp = fd.targetPlanet;
-    /** @type {Coords | null} */
-    const target =
-      tp && tp.galaxy && tp.system && tp.position
-        ? { galaxy: tp.galaxy, system: tp.system, position: tp.position }
-        : null;
-    if (!target) {
-      return {
-        kind: 'fleetdispatch', target: null, phase: { tag: 'noTarget' },
-        nextScan, scanCooldown,
-      };
-    }
-
-    const shipsOnPlanet = Array.isArray(fd.shipsOnPlanet) ? fd.shipsOnPlanet : [];
-    const hasColonizer = shipsOnPlanet.some(
-      (/** @type {any} */ s) => s && s.id === 208 && (s.number || 0) > 0,
-    );
-    const canColonize =
-      fd.orders && fd.orders['7'] === true;
-    const err = lastCheckTargetError;
-
-    // Priority (§4): timeout > waitGap > reserved > noShip > stale > ready.
-    /** @type {
-     *   | { tag: 'noTarget' }
-     *   | { tag: 'ready' }
-     *   | { tag: 'noShip' }
-     *   | { tag: 'reserved' }
-     *   | { tag: 'stale' }
-     *   | { tag: 'timeout' }
-     *   | { tag: 'waitGap', remaining: number }
-     * } */
-    let phase = { tag: 'ready' };
-    if (
-      env.now - lastNavToFleetdispatchAt > CHECK_TARGET_TIMEOUT_MS &&
-      lastNavToFleetdispatchAt > 0 &&
-      !canColonize &&
-      err === null
-    ) {
-      phase = { tag: 'timeout' };
-    } else if (waitSeconds > 0) {
-      const remaining = Math.max(
-        0,
-        waitSeconds - Math.floor((env.now - waitStartAt) / 1000),
-      );
-      // Countdown active → waitGap wins over everything else. When the
-      // remaining seconds hit zero, fall through to the next block so
-      // the underlying phase (usually `ready`) takes over.
-      if (remaining > 0) {
-        phase = { tag: 'waitGap', remaining };
-      }
-    }
-    if (phase.tag === 'ready') {
-      if (err === 140016) {
-        phase = { tag: 'reserved' };
-      } else if (err === 140035 || !hasColonizer) {
-        phase = { tag: 'noShip' };
-      } else if (!canColonize) {
-        phase = { tag: 'stale' };
-      }
-    }
-    return { kind: 'fleetdispatch', target, phase, nextScan, scanCooldown };
-  }
-
-  // Galaxy branch — current-view priority (§4) so the coords the user
-  // just scanned win over the global DB pick.
-  if (env.search.includes('component=galaxy')) {
-    /** @type {Coords | null} */
-    let candidate = null;
-    if (home && view) {
-      candidate = pickCandidateInView(
-        env.scans,
-        env.registry,
-        env.targets,
-        view,
-        env.now,
-      );
-    }
-    if (!candidate && home) {
-      const global = findNextColonizeTarget(
-        env.scans,
-        env.registry,
-        home,
-        env.targets,
-        env.preferOther,
-      );
-      if (global) {
-        candidate = {
-          galaxy: global.galaxy,
-          system: global.system,
-          position: global.position,
-        };
-      }
-    }
-    return { kind: 'galaxy', candidate, nextScan, scanCooldown };
-  }
-
-  // Idle branch — anywhere else (overview, galaxy-less research, ...).
-  /** @type {Coords | null} */
-  let candidate = null;
-  if (home) {
-    const global = findNextColonizeTarget(
-      env.scans,
-      env.registry,
-      home,
-      env.targets,
-      env.preferOther,
-    );
-    if (global) {
-      candidate = {
-        galaxy: global.galaxy,
-        system: global.system,
-        position: global.position,
-      };
-    }
-  }
-  return { kind: 'idle', candidate, nextScan, scanCooldown };
-};
-
-// ─── Pure render() ─────────────────────────────────────────────────────
-
-/**
- * Render a `ctx` to paint instructions. Pure: no DOM, no window.
- *
- * @param {ButtonContext} ctx
- * @returns {RenderResult}
- */
-export const render = (ctx) => {
-  // Scan paint:
-  //   - On galaxy view: two-line "Scan / [g:s]" — we'll AJAX-submit
-  //     into that system. AJAX = our observer fires = store updates =
-  //     persistence kicks in.
-  //   - Anywhere else: "to Galaxy" — clicking just hops the user to
-  //     the galaxy page (bare URL, no specific system). The first
-  //     system is server-rendered without an AJAX call, so we'd miss
-  //     it anyway; better to land the user on galaxy and let them
-  //     drive subsequent scans via AJAX.
-  //   - When the entire database is scanned fresh: "All scanned!".
-  /** @type {Paint} */
-  let scanPaint;
-  if (!ctx.nextScan) {
-    scanPaint = { text: 'All scanned!', bg: BG_SCAN_IDLE };
-  } else if (ctx.kind === 'galaxy') {
-    scanPaint = {
-      text: `[${ctx.nextScan.galaxy}:${ctx.nextScan.system}]`,
-      subtext: 'Scan',
-      bg: BG_SCAN_IDLE,
-      dim: ctx.scanCooldown,
-    };
-  } else {
-    scanPaint = { text: 'to Galaxy', bg: BG_SCAN_IDLE };
-  }
-
-  if (ctx.kind === 'idle') {
-    return {
-      send: ctx.candidate
-        ? {
-            text: `[${ctx.candidate.galaxy}:${ctx.candidate.system}:${ctx.candidate.position}]`,
-            subtext: 'Send Colony',
-            bg: BG_SEND_READY,
-          }
-        : { text: 'Send', bg: BG_SEND_IDLE },
-      scan: scanPaint,
-    };
-  }
-
-  if (ctx.kind === 'galaxy') {
-    return {
-      send: ctx.candidate
-        ? {
-            text: `[${ctx.candidate.galaxy}:${ctx.candidate.system}:${ctx.candidate.position}]`,
-            subtext: 'Send Colony',
-            bg: BG_SEND_READY,
-          }
-        : { text: 'Send', bg: BG_SEND_IDLE },
-      scan: scanPaint,
-    };
-  }
-
-  // ctx.kind === 'fleetdispatch'
-  const { target, phase } = ctx;
-  const coords = target
-    ? `[${target.galaxy}:${target.system}:${target.position}]`
-    : '';
-  /** @type {Paint} */
-  let sendPaint;
-  switch (phase.tag) {
-    case 'noTarget':
-      sendPaint = { text: 'Send', bg: BG_SEND_IDLE };
-      break;
-    case 'ready':
-      sendPaint = { text: coords, subtext: 'Dispatch!', bg: BG_SEND_READY };
-      break;
-    case 'noShip':
-      sendPaint = { text: coords, subtext: 'No ship!', bg: BG_SEND_ERROR };
-      break;
-    case 'reserved':
-      sendPaint = { text: coords, subtext: 'Reserved', bg: BG_SEND_STALE };
-      break;
-    case 'stale':
-      sendPaint = { text: coords, subtext: 'Stale', bg: BG_SEND_STALE };
-      break;
-    case 'timeout':
-      sendPaint = { text: coords, subtext: 'Timeout', bg: BG_SEND_STALE };
-      break;
-    case 'waitGap':
-      sendPaint = { text: `Wait ${phase.remaining}s`, bg: BG_SEND_WAIT };
-      break;
-    default:
-      sendPaint = { text: 'Send', bg: BG_SEND_IDLE };
-  }
-  return { send: sendPaint, scan: scanPaint };
-};
 
 // ─── DOM paint (impure — walks the mounted halves) ─────────────────────
 
@@ -594,10 +306,11 @@ export const paint = (result) => {
 // ─── captureEnv + refresh ──────────────────────────────────────────────
 
 /**
- * Snapshot the reactive inputs of `derive()` into a single `env` object.
- * The only impurity here is the read of `window.fleetDispatcher`,
- * `location.search`, `settingsStore.get()`, and the two scan / registry
- * stores — all deterministic at the moment of call.
+ * Snapshot every input of `derive()` into a single `env` object. This is
+ * the one-and-only impure read in the derive/render pipeline — making
+ * `sendColPure.js` completely DOM- and store-free by construction. All
+ * of `location.search`, `#planetList .hightlightPlanet`, `#galaxy_input`,
+ * and the module-local `lastXxx` / `waitXxx` lets flow through here.
  *
  * @returns {DeriveEnv}
  */
@@ -616,6 +329,21 @@ const captureEnv = () => {
     targets: parsePositions(settings.colPositions),
     preferOther: settings.colPreferOtherGalaxies,
     now: Date.now(),
+    // Previously read directly by `derive`; now snapshotted here so the
+    // pure core stays DOM-free. `readHomePlanet` → `#planetList`,
+    // `parseCurrentGalaxyView` → `#galaxy_input` / URL.
+    home: readHomePlanet(),
+    view: parseCurrentGalaxyView(),
+    // Module-local transient state that drives the fleetdispatch phase
+    // sub-selection (timeout / reserved / noShip / stale / waitGap) and
+    // the Scan-cooldown visual. Previously read from closure by derive;
+    // now passed explicitly.
+    lastNavToFleetdispatchAt,
+    lastScanSubmitAt,
+    lastScanEventAt,
+    lastCheckTargetError,
+    waitStartAt,
+    waitSeconds,
   };
 };
 

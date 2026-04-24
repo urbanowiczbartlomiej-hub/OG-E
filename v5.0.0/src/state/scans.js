@@ -141,6 +141,17 @@ export const initScansStore = () => {
     save: (value) => chromeStore.set(SCANS_KEY, value),
     debounceMs: DEBOUNCE_MS,
   });
+
+  // Auto-wire the MAIN-world bridge listener so callers only need one
+  // entry point for "boot the scans store". Before this was bundled in,
+  // `content.js` had to remember to call `installScansListener` as a
+  // separate step — a bug-class that actually bit us in Phase 10 when
+  // the listener was forgotten and every galaxy scan fired into a void.
+  // The listener itself is idempotent and defensive (no-op when the
+  // runtime has no `document`, i.e. node tests), so auto-installing it
+  // here never produces surprises.
+  installScansListener();
+
   return disposeFn;
 };
 
@@ -158,6 +169,10 @@ export const disposeScansStore = () => {
     disposeFn();
     disposeFn = null;
   }
+  // Tear the auto-installed listener down in lock-step so a test that
+  // disposes the store doesn't leave a dangling `document` listener
+  // feeding into `scansStore` from leftover event dispatches.
+  disposeScansListener();
 };
 
 /**
@@ -197,6 +212,18 @@ let disposeScansListenerFn = null;
  */
 export const installScansListener = () => {
   if (disposeScansListenerFn) return disposeScansListenerFn;
+
+  // Defensive: in node-env tests (e.g. `test/state/scans.test.js` which
+  // runs `initScansStore` to exercise the persist wiring) there is no
+  // `document`. Return a no-op dispose so callers get the same shape
+  // they expect; the listener in production is wired from the content-
+  // script bootstrap path, which always has a document.
+  if (typeof document === 'undefined') {
+    disposeScansListenerFn = () => {
+      disposeScansListenerFn = null;
+    };
+    return disposeScansListenerFn;
+  }
 
   /** @param {Event} e */
   const handler = (e) => {
