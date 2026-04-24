@@ -621,6 +621,15 @@ export const installSendExp = () => {
     if (dispatch && fleetPanel) {
       safeClick(dispatch);
       setLabel(btn, 'Sent!');
+      // Lock the button while the game processes the dispatch XHR + its
+      // own post-send navigation. In the happy path OGame reloads the
+      // page within ~1 s and the whole content-script reinitialises, so
+      // the lock is moot. The safety timeout covers the rare case where
+      // the dispatch XHR fails (validation error, network blip) and the
+      // game stays put — without it the button would sit on "Sent!"
+      // forever, taking clicks that would do nothing visible.
+      lock(btn);
+      setTimeout(() => unlock(btn), 3000);
       return;
     }
     lock(btn);
