@@ -1,6 +1,14 @@
-# Build artifacts
+# Build artefacts
 dist/
 *.zip
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+
+# Type-check cache
+*.tsbuildinfo
 
 # Editor / OS
 .vscode/
@@ -11,24 +19,11 @@ dist/
 Thumbs.db
 .DS_Store
 
-# Node (jeśli kiedyś w v5 dojdzie npm)
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-
-# v5.0.0 build (gdy ruszy)
-v5.0.0/dist/
-v5.0.0/node_modules/
-
 # Logs & temp
 *.log
 *.tmp
 
-# Type-check cache (v5 tsc --noEmit)
-*.tsbuildinfo
-
-# Secrets — belt + suspenders; kod NIE trzyma tokenów w plikach,
-# ale ignorujemy obvious names gdyby kiedyś coś się dostało na dysk
+# Secrets — code never stores tokens in files, but belt + suspenders
 .env
 .env.local
 .env.*.local

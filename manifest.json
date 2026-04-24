@@ -1,8 +1,20 @@
 {
   "manifest_version": 3,
-  "name": "OG-E: OGame Expedition Helper",
-  "version": "4.9.6",
-  "description": "OGame UI modification (requires AntiGameReborn): large mobile-friendly buttons that map each tap to one native game button (expedition / colonization missions), colony size histogram built from planets you visit, local database of galaxy positions recorded from systems you navigate to yourself, cross-device sync of your collected data via your own private GitHub Gist. Does not initiate game requests, does not automate gameplay.",
+  "name": "OG-E",
+  "version": "1.0.0",
+  "description": "OGame UI helper (requires AntiGameReborn). Floating Send buttons, galaxy scan tracker, abandon overlay. Does not initiate game requests, does not automate gameplay.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "oge@ogame-extensions",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    },
+    "gecko_android": {
+      "strict_min_version": "142.0"
+    }
+  },
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -15,61 +27,22 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["histogram.html", "histogram.js"],
+      "resources": ["histogram.html", "histogram.js", "icons/*.png"],
       "matches": ["*://*.ogame.gameforge.com/*"]
     }
   ],
   "content_scripts": [
     {
-      "matches": [
-        "*://*.ogame.gameforge.com/*"
-      ],
-      "js": [
-        "mobile.js"
-      ],
+      "matches": ["*://*.ogame.gameforge.com/*"],
+      "js": ["content.js"],
       "run_at": "document_start",
       "all_frames": false
     },
     {
-      "matches": [
-        "*://*.ogame.gameforge.com/*"
-      ],
-      "js": [
-        "content.js"
-      ],
-      "run_at": "document_idle",
-      "all_frames": true
-    },
-    {
-      "matches": [
-        "*://*.ogame.gameforge.com/*"
-      ],
-      "js": [
-        "sync.js"
-      ],
-      "run_at": "document_idle",
-      "all_frames": false
-    },
-    {
-      "matches": [
-        "*://*.ogame.gameforge.com/game/index.php*"
-      ],
-      "js": [
-        "fleet-redirect.js",
-        "colonize.js"
-      ],
+      "matches": ["*://*.ogame.gameforge.com/game/index.php*"],
+      "js": ["page.js"],
       "run_at": "document_idle",
       "world": "MAIN"
-    },
-    {
-      "matches": [
-        "*://*.ogame.gameforge.com/game/index.php*"
-      ],
-      "js": [
-        "settings.js"
-      ],
-      "run_at": "document_idle",
-      "all_frames": false
     }
   ]
 }
