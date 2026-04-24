@@ -239,7 +239,7 @@ const renderBadges = () => {
     if (!container) continue;
     const dots = document.createElement('div');
     dots.className = BADGE_CLASS;
-    dots.title = `Ekspedycje: ${info.count} | Statki: ${info.ships.toLocaleString('pl-PL')}`;
+    dots.title = `Expeditions: ${info.count} | Ships: ${info.ships.toLocaleString('en-US')}`;
     for (let i = 0; i < info.count; i++) {
       const dot = document.createElement('div');
       dot.className = DOT_CLASS;

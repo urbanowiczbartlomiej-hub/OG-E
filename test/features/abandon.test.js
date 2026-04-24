@@ -38,7 +38,7 @@ import {
   checkAbandonState,
   abandonPlanet,
   _resetAbandonForTest,
-} from '../../src/features/abandon.js';
+} from '../../src/features/abandon/index.js';
 import { settingsStore, SETTINGS_SCHEMA } from '../../src/state/settings.js';
 import { scansStore } from '../../src/state/scans.js';
 

@@ -8,7 +8,7 @@
 // below the user's keep threshold (`settings.colMinFields`), we paint
 // a semi-transparent red overlay over the `#planet` graphic with an
 // "ABANDON" call to action. Click on the overlay hands off to the
-// existing {@link abandonPlanet} flow in `../abandon.js` — which owns
+// existing {@link abandonPlanet} flow in `./index.js` — which owns
 // the 3-click safety-gated tear-down.
 //
 // # Precondition
@@ -32,7 +32,7 @@
 // # Interaction with abandon.js
 //
 // We import {@link checkAbandonState} and {@link abandonPlanet} from
-// `../abandon.js` and call them read-only — the abandon module owns
+// `./index.js` and call them read-only — the abandon module owns
 // the flow's state (re-entry guard, safety gates, coord verification,
 // overlay buttons inside the native popups). Our overlay is the
 // ENTRY POINT; once the user taps it, everything downstream lives in
@@ -53,8 +53,8 @@
 //
 // @ts-check
 
-import { settingsStore } from '../state/settings.js';
-import { checkAbandonState, abandonPlanet } from './abandon.js';
+import { settingsStore } from '../../state/settings.js';
+import { checkAbandonState, abandonPlanet } from './index.js';
 
 /**
  * DOM id of the overlay. Stable so repeated mount calls short-circuit,
@@ -184,7 +184,7 @@ export const installAbandonOverview = () => {
     // this number against their `colMinFields` threshold and either
     // confirms or closes.
     const sizeLine = document.createElement('div');
-    sizeLine.textContent = `${info.max} p\u00F3l`;
+    sizeLine.textContent = `${info.max} fields`;
     sizeLine.style.cssText = 'font-size:56px;margin:8px 0;line-height:1;letter-spacing:1px';
 
     const hintLine = document.createElement('div');

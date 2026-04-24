@@ -48,7 +48,7 @@ import {
 // hoisting catches the static import. `checkAbandonState` is a spy we
 // can retune per test via `mockReturnValue`; `abandonPlanet` is a
 // no-op async spy so click assertions can verify it was called.
-vi.mock('../../src/features/abandon.js', () => ({
+vi.mock('../../src/features/abandon/index.js', () => ({
   checkAbandonState: vi.fn(() => null),
   abandonPlanet: vi.fn(async () => true),
 }));
@@ -56,11 +56,11 @@ vi.mock('../../src/features/abandon.js', () => ({
 import {
   installAbandonOverview,
   _resetAbandonOverviewForTest,
-} from '../../src/features/abandonOverview.js';
+} from '../../src/features/abandon/overview.js';
 import {
   checkAbandonState,
   abandonPlanet,
-} from '../../src/features/abandon.js';
+} from '../../src/features/abandon/index.js';
 import {
   settingsStore,
   SETTINGS_SCHEMA,

@@ -115,3 +115,19 @@ export const UNSCANNED_COLOR = '#1a1a2a';
  * against the page background, which is a similar dark shade.
  */
 export const UNSCANNED_BORDER = '1px solid #222';
+
+/**
+ * Colour of the "stale — due for rescan" inset ring drawn around
+ * system pixels whose scan is older than the per-status threshold. A
+ * warm amber that reads distinctly from every {@link STATUS_COLORS}
+ * entry while leaning "attention, but not alarm" — stale scans are a
+ * nudge, not a problem.
+ */
+export const STALE_COLOR = '#ffd84d';
+
+/**
+ * Label used next to the {@link STALE_COLOR} swatch in the galaxy-map
+ * legend. Explicit about the recommended user action so hovering the
+ * legend is enough — no secondary tooltip needed.
+ */
+export const STALE_LABEL = 'Stale — rescan recommended';

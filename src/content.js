@@ -43,12 +43,15 @@
 //      branch in theory; in practice the early return is what keeps
 //      runtime simple).
 //
-// Note: the abandon flow is split across two modules:
-//   - `abandon.js`     — the 3-click flow with overlay buttons inside
-//                        game popups. Exports `abandonPlanet()` + `checkAbandonState()`.
-//   - `abandonOverview.js` — the UI entry point: a big red overlay on
-//                        `#planet` div on overview pages that triggers
-//                        `abandonPlanet()`. Independent from sendCol.
+// Note: the abandon flow is split across two files inside
+// `features/abandon/`:
+//   - `abandon/index.js`    — the 3-click flow with overlay buttons
+//                             injected inside game popups. Exports
+//                             `abandonPlanet()` + `checkAbandonState()`.
+//   - `abandon/overview.js` — the UI entry point: a big red overlay on
+//                             the `#planet` div on overview pages that
+//                             triggers `abandonPlanet()`. Independent
+//                             from sendCol.
 
 import { installBlackBackground } from './features/blackBg.js';
 import { installReadabilityBoost } from './features/readabilityBoost.js';
@@ -60,13 +63,13 @@ import { initHistoryStore } from './state/history.js';
 import { initScansStore } from './state/scans.js';
 import { initRegistryStore } from './state/registry.js';
 import { initSettingsStore } from './state/settings.js';
-import { installSettingsMirror } from './state/settingsMirror.js';
+import { installSettingsMirror } from './state/settings.js';
 
 import { installColonyRecorder } from './features/colonyRecorder.js';
 import { installBadges } from './features/badges.js';
 import { installSendExp } from './features/sendExp.js';
 import { installSendCol } from './features/sendCol/index.js';
-import { installAbandonOverview } from './features/abandonOverview.js';
+import { installAbandonOverview } from './features/abandon/overview.js';
 import { installFreshPlanetDetector } from './features/freshPlanetDetector.js';
 import { installSettingsUi } from './features/settingsUi.js';
 import { installAgrLogo } from './features/agrLogo.js';
@@ -112,7 +115,8 @@ const installDomFeatures = () => {
   installSendCol();
 
   // Standalone overlay on overview for fresh-small colonies.
-  // Independent from sendCol; reuses `abandonPlanet()` from abandon.js.
+  // Independent from sendCol; reuses `abandonPlanet()` from
+  // `features/abandon/index.js`.
   installAbandonOverview();
 
   // Top-center banner for a freshly-colonized planet (usedFields === 0

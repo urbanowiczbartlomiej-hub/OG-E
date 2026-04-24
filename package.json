@@ -5,12 +5,14 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "build": "rollup -c && node scripts/copy-static.mjs",
-    "build:prod": "cross-env NODE_ENV=production rollup -c && node scripts/copy-static.mjs",
+    "clean": "node scripts/clean.mjs",
+    "build": "npm run clean && rollup -c && node scripts/copy-static.mjs",
+    "build:prod": "npm run clean && cross-env NODE_ENV=production rollup -c && node scripts/copy-static.mjs",
     "dev": "rollup -c -w",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "package": "npm run build:prod && node scripts/package.mjs"
   },
   "devDependencies": {
     "@rollup/plugin-replace": "^5.0.7",

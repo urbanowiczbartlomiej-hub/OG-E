@@ -69,12 +69,12 @@
 //
 // @ts-check
 
-import { settingsStore } from '../state/settings.js';
-import { scansStore } from '../state/scans.js';
-import { safeClick, waitFor } from '../lib/dom.js';
+import { settingsStore } from '../../state/settings.js';
+import { scansStore } from '../../state/scans.js';
+import { safeClick, waitFor } from '../../lib/dom.js';
 
 /**
- * @typedef {import('../state/settings.js').Settings} Settings
+ * @typedef {import('../../state/settings.js').Settings} Settings
  */
 
 /**
@@ -158,7 +158,7 @@ const cleanupAbandonedPlanet = (galaxy, system, position) => {
   const key = /** @type {`${number}:${number}`} */ (`${galaxy}:${system}`);
   scansStore.update((prev) => {
     const existing = prev[key] ?? { scannedAt: Date.now(), positions: {} };
-    /** @type {import('../state/scans.js').SystemScan['positions']} */
+    /** @type {import('../../state/scans.js').SystemScan['positions']} */
     const newPositions = {
       ...existing.positions,
       [position]: {

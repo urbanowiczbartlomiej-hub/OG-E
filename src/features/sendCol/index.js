@@ -78,7 +78,7 @@
 //   - Abandon overlay is `features/abandonOverview.js` — orthogonal.
 //
 // @see ./logic.js — pure helpers this orchestrator consumes.
-// @see ../abandonOverview.js — the abandon-on-overview feature.
+// @see ../abandon/overview.js — the abandon-on-overview feature.
 // @see ../sendExp.js — parallel mobile-button feature (reference pattern).
 
 /** @ts-check */

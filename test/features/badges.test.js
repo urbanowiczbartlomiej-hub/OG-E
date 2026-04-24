@@ -265,7 +265,7 @@ describe('installBadges — render gating', () => {
     expect(dotsOn(7)).toBe(1);
   });
 
-  it('writes a Polish tooltip summarising count and ships', () => {
+  it('writes a tooltip summarising count and ships', () => {
     setupGameDOM({
       expeditions: [
         { coords: '1:2:3', name: 'X', ships: 100, returning: true },
@@ -277,8 +277,8 @@ describe('installBadges — render gating', () => {
 
     const cluster = document.querySelector('.ogi-exp-dots');
     expect(cluster).not.toBeNull();
-    // 100 + 200 = 300; Polish locale writes it plain as "300" (no thousand sep).
-    expect(cluster?.getAttribute('title')).toBe('Ekspedycje: 2 | Statki: 300');
+    // 100 + 200 = 300; en-US locale writes it plain as "300" (no thousand sep).
+    expect(cluster?.getAttribute('title')).toBe('Expeditions: 2 | Ships: 300');
   });
 });
 

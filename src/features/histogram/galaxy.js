@@ -34,7 +34,11 @@ import {
   RESCAN_TOOLTIP,
   UNSCANNED_COLOR,
   UNSCANNED_BORDER,
+  STALE_COLOR,
+  STALE_LABEL,
 } from './palette.js';
+
+import { isSystemStale } from '../../domain/scheduling.js';
 
 /**
  * @typedef {import('../../state/scans.js').GalaxyScans} GalaxyScans
@@ -181,6 +185,10 @@ export const renderGalaxyMap = (opts) => {
   // unscanned systems (gap between 1..MAX_SYS and the actually-scanned
   // subset), so a user looking at the key should always find it.
   legend.appendChild(makeLegendItem(UNSCANNED_COLOR, 'Not scanned', true));
+  // "Stale" is always shown too — any scanned system eventually ages
+  // past its rescan threshold, and the user needs a key for the amber
+  // inset ring that appears around those pixels.
+  legend.appendChild(makeStaleLegendItem());
   containerEl.appendChild(legend);
 
   // ── Per-galaxy sections ─────────────────────────────────────────────
@@ -269,6 +277,38 @@ const makeLegendItem = (color, label, withBorder) => {
   const txt = document.createElement('span');
   txt.style.color = '#888';
   txt.textContent = label;
+
+  item.appendChild(dot);
+  item.appendChild(txt);
+  return item;
+};
+
+/**
+ * Build the legend entry for the "stale" marker. The swatch is styled
+ * to match the real pixel treatment: a neutral fill with an inset
+ * amber ring, so the user sees the exact visual cue they'll find on
+ * the pixel map.
+ *
+ * @returns {HTMLSpanElement}
+ */
+const makeStaleLegendItem = () => {
+  const item = document.createElement('span');
+  item.style.cssText = 'display:flex;align-items:center;gap:4px;';
+
+  const dot = document.createElement('span');
+  // Mid-green neutral fill under the amber ring — echoes the visual
+  // pattern users will encounter on a stale "empty" pixel (the most
+  // common stale case).
+  dot.style.cssText =
+    'width:10px;height:10px;border-radius:2px;background:' +
+    STATUS_COLORS.empty +
+    ';box-shadow:inset 0 0 0 1.5px ' +
+    STALE_COLOR +
+    ';display:inline-block;';
+
+  const txt = document.createElement('span');
+  txt.style.color = '#888';
+  txt.textContent = STALE_LABEL;
 
   item.appendChild(dot);
   item.appendChild(txt);
@@ -437,13 +477,33 @@ const renderSystemPixel = (g, s, scans, targetPositions) => {
   if (scan && scan.positions) {
     const best = bestStatusInSystem(scan.positions, targetPositions);
     const bg = best ? STATUS_COLORS[best] : UNSCANNED_COLOR;
+    // Stale = scanned, but one (or more) positions has aged past its
+    // `RESCAN_AFTER` threshold. We draw an amber inset ring via
+    // `box-shadow` so the pixel stays a crisp 8×8 (outer size unchanged;
+    // neighbouring pixels don't shift). The ring is 1.5px — thick enough
+    // to read at a glance, thin enough to leave the status colour
+    // visible as the dominant signal.
+    const stale = isSystemStale(scan);
+    const ring = stale
+      ? ';box-shadow:inset 0 0 0 1.5px ' + STALE_COLOR
+      : '';
     px.style.cssText =
-      'width:8px;height:8px;border-radius:1px;cursor:pointer;background:' + bg + ';';
+      'width:8px;height:8px;border-radius:1px;cursor:pointer;background:' +
+      bg +
+      ring +
+      ';';
 
     /** @type {string[]} */
-    const lines = [
+    const lines = [];
+    if (stale) {
+      // Prepend a clear "STALE" marker so the tooltip tells the same
+      // story as the amber ring — users who hover before they learn
+      // the colour code still understand the call to action.
+      lines.push('[' + g + ':' + s + '] STALE — rescan recommended');
+    }
+    lines.push(
       '[' + g + ':' + s + '] scanned ' + new Date(scan.scannedAt).toLocaleString(),
-    ];
+    );
     for (let pos = 1; pos <= 15; pos++) {
       const p = scan.positions[pos];
       if (!p) continue;

@@ -19,13 +19,14 @@ import { settingsStore } from '../state/settings.js';
 // Out of the box the event row renders three pieces of information
 // ("17 Misje:", mission-type + target, and a countdown) but pads them
 // with verbose labels ("Misje:", "Następna:", "Rodzaj:") that eat more
-// space than the payload itself. We paint the box black, nudge it up
-// slightly to close the gap under AGR's header, then collapse every
-// label's font-size to 0 so only the compact payload bits remain:
+// space than the payload itself. We nudge the box up slightly to close
+// the gap under AGR's header and then collapse every label's font-size
+// to 0 so only the compact payload bits remain:
 //   - `.undermark` → the "17 x własna" chip (first row)
-//   - `.countdown` → the yellow time-to-next-event
+//   - `.countdown` → the big yellow time-to-next-event
 //   - `.friendly` / `.hostile` / `.neutral` → the mission-type name
-// Game's own layout does the rest — no flex, no positioning hacks.
+// Game's own layout + theme colours are preserved; no background
+// override, no flex, no positioning hacks.
 //
 // # Movement link (`a.ago_movement.tooltip.ago_color_lightgreen`)
 //
@@ -59,13 +60,12 @@ const STYLE_ID = 'oge-readability-boost';
 const CSS = `/* OG-E: readability boost — event box + fleet movement link */
 
 /* ===== Event box container =====
-   Keep the game's default layout, just paint the background black and
-   nudge it up to fit tighter under AGR's header. Every OGame skin
-   looks fine against solid black, unlike the lighter defaults that
-   interact badly with AGR's dark theme. */
+   Keep the game's default layout + background; just nudge the box up
+   a touch so it sits tighter under AGR's header. Backgrounds vary
+   across OGame skins and AGR themes — overriding them here caused
+   avoidable contrast surprises, so we leave that alone. */
 #eventboxFilled {
   margin-top: -5px !important;
-  background: black !important;
 }
 
 /* Hide the verbose "N Misje:" prefix — the compact "N x type" span
@@ -89,10 +89,12 @@ const CSS = `/* OG-E: readability boost — event box + fleet movement link */
   font-size: 0 !important;
 }
 
-/* Countdown: large, bold, yellow. This is what the user checks
-   repeatedly — it wins the attention budget. */
+/* Countdown: outsized, bold, yellow. This is THE glance-value — the
+   user reads it repeatedly, everything else in the row is supporting
+   context. The font-size is deliberately larger than anything else in
+   the AGR header row so it reads at peripheral vision. */
 #eventboxFilled .next_event .countdown {
-  font-size: 20px !important;
+  font-size: 28px !important;
   font-weight: 900 !important;
   color: #ffe04b !important;
   letter-spacing: 0.5px !important;

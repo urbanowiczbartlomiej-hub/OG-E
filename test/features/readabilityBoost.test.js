@@ -99,7 +99,14 @@ describe('readabilityBoost', () => {
     expect(countdownRule).not.toBeNull();
     const body = countdownRule?.[1] ?? '';
     expect(body).toMatch(/color:\s*#ffe04b/);
-    expect(body).toMatch(/font-size:\s*20px/);
+    // Countdown must be DISTINCTLY larger than the mission-type
+    // payload — the asymmetry is the whole point. We don't pin the
+    // exact px so the design can be re-tuned without a test update,
+    // we just guard against anyone shrinking it below a clearly-big
+    // threshold.
+    const fsMatch = body.match(/font-size:\s*(\d+)px/);
+    expect(fsMatch).not.toBeNull();
+    expect(parseInt(fsMatch?.[1] ?? '0', 10)).toBeGreaterThanOrEqual(24);
     expect(body).toMatch(/font-weight:\s*900/);
   });
 

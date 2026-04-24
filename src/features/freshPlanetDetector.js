@@ -40,7 +40,7 @@ import { safeLS } from '../lib/storage.js';
 // script reinstalls on every page load. A MutationObserver would
 // just add noise.
 //
-// @see ./abandonOverview.js — the overview-page overlay that actions
+// @see ./abandon/overview.js — the overview-page overlay that actions
 //   the candidate the banner points to.
 
 /** Stable DOM id of the banner — lets re-paints dedupe on it. */
