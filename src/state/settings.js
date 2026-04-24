@@ -80,6 +80,7 @@ export const SETTINGS_PREFIX = 'oge_';
  *   colPreferOtherGalaxies  false — prefer neighbouring galaxies first
  *   cloudSync               false — enable Gist-based cross-device sync
  *   gistToken               ''    — GitHub personal access token
+ *   readabilityBoost        true  — inject CSS fix for event box + movement link
  *
  * @typedef {object} Settings
  * @property {boolean} mobileMode
@@ -97,6 +98,7 @@ export const SETTINGS_PREFIX = 'oge_';
  * @property {boolean} colPreferOtherGalaxies
  * @property {boolean} cloudSync
  * @property {string}  gistToken
+ * @property {boolean} readabilityBoost
  */
 
 /**
@@ -149,6 +151,7 @@ export const SETTINGS_SCHEMA = {
   colPreferOtherGalaxies: { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'colPreferOtherGalaxies' },
   cloudSync:              { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'cloudSync' },
   gistToken:              { type: 'string', default: '',    key: SETTINGS_PREFIX + 'gistToken' },
+  readabilityBoost:       { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'readabilityBoost' },
 };
 
 /**

@@ -159,7 +159,7 @@ export const exportAllData = async () => {
   const blob = new Blob([JSON.stringify(payload, null, 2)], {
     type: 'application/json',
   });
-  downloadBlob(blob, `oge-v5-data-${todayIso()}.json`);
+  downloadBlob(blob, `oge-data-${todayIso()}.json`);
 };
 
 /**
@@ -318,7 +318,7 @@ export const exportColonyCsv = (entries) => {
   const body = [header, ...rows].join('\n') + '\n';
 
   const blob = new Blob([body], { type: 'text/csv' });
-  downloadBlob(blob, 'oge-v5-colony-history.csv');
+  downloadBlob(blob, 'oge-colony-history.csv');
 };
 
 /**

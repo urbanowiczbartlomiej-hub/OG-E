@@ -145,7 +145,7 @@ describe('installSettingsUi — AGR availability', () => {
     // Header contains the two arrow glyphs + the label text; use
     // `toContain` rather than `toBe` so the check stays meaningful
     // regardless of where AGR positions the arrows.
-    expect(header?.textContent).toContain('OG-E v5 Settings');
+    expect(header?.textContent).toContain('OG-E Settings');
     // The header sits inside the `.ago_menu_tab` wrapper, which sits
     // inside the AGR container. Two levels up from the header.
     expect(header?.parentElement?.className).toBe('ago_menu_tab');

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 //
-// Behavioural tests for the colonize button (see `src/features/sendCol.js`).
+// Behavioural tests for the colonize button (see `src/features/sendCol/index.js`).
 //
 // # Test coverage strategy
 //
@@ -38,7 +38,7 @@ import {
   _resetSendColForTest,
   derive,
   render,
-} from '../../src/features/sendCol.js';
+} from '../../src/features/sendCol/index.js';
 import {
   settingsStore,
   SETTINGS_SCHEMA,
@@ -290,7 +290,7 @@ describe('derive — idle branch', () => {
       preferOther: false,
       now: Date.now(),
       // `derive` no longer reads the DOM itself — home / view are
-      // passed explicitly (see sendColPure.js DeriveEnv). `setupScene`
+      // passed explicitly (see sendCol/pure.js DeriveEnv). `setupScene`
       // paints the active planet row at [4:30:8]; mirror that here.
       home: { galaxy: 4, system: 30 },
       view: null,
@@ -594,7 +594,7 @@ describe('render — pure paint instructions', () => {
     expect(r.scan.subtext).toBe('Scan');
   });
 
-  it('fleetdispatch/ready → coords + "Dispatch!" subtext, scan half shows "to Galaxy"', () => {
+  it('fleetdispatch/ready → coords + "Send!" subtext, scan half shows "to Galaxy"', () => {
     const r = render({
       kind: 'fleetdispatch',
       target: { galaxy: 4, system: 30, position: 8 },
@@ -602,7 +602,7 @@ describe('render — pure paint instructions', () => {
       ...freshScan,
     });
     expect(r.send.text).toBe('[4:30:8]');
-    expect(r.send.subtext).toBe('Dispatch!');
+    expect(r.send.subtext).toBe('Send!');
     // Scan half off-galaxy is "to Galaxy" (full nav to bare galaxy URL) —
     // avoids the "first system load isn't AJAX, we'd miss it" bug.
     expect(r.scan.text).toBe('to Galaxy');
@@ -987,8 +987,8 @@ describe('oge:checkTargetResult reactor', () => {
         detail: { galaxy: 9, system: 9, position: 9, errorCodes: [140035] },
       }),
     );
-    // Label stays "Dispatch!" (phase=ready).
-    expect(getSend()?.textContent).toContain('Dispatch!');
+    // Label stays "Send!" (phase=ready).
+    expect(getSend()?.textContent).toContain('Send!');
   });
 });
 

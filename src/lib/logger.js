@@ -44,7 +44,7 @@ import { safeLS } from './storage.js';
  */
 
 const ENABLED_KEY = 'oge_debugLoggerEnabled';
-const PREFIX = '[OG-E v5]';
+const PREFIX = '[OG-E]';
 const MAX_ENTRIES = 500;
 
 /** @type {LogEntry[]} */

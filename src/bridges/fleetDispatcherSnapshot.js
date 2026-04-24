@@ -43,7 +43,7 @@
 //
 // @see ./checkTargetHook.js — emits `oge:checkTargetResult`; this
 //   module emits a sibling event with complementary data.
-// @see ../features/sendCol.js — primary consumer of the snapshot.
+// @see ../features/sendCol/index.js — primary consumer of the snapshot.
 
 import { observeXHR } from './xhrObserver.js';
 

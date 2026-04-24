@@ -86,7 +86,7 @@ describe('logger methods when enabled', () => {
     expect(typeof snap[0].timestamp).toBe('number');
 
     expect(spy).toHaveBeenCalledTimes(1);
-    expect(spy).toHaveBeenCalledWith('[OG-E v5]', 'hello', 42);
+    expect(spy).toHaveBeenCalledWith('[OG-E]', 'hello', 42);
   });
 
   it('logger.warn records a warn-level entry AND forwards to console.warn with the prefix', () => {
@@ -100,7 +100,7 @@ describe('logger methods when enabled', () => {
     expect(snap[0].args).toEqual(['watch out', { code: 7 }]);
 
     expect(spy).toHaveBeenCalledTimes(1);
-    expect(spy).toHaveBeenCalledWith('[OG-E v5]', 'watch out', { code: 7 });
+    expect(spy).toHaveBeenCalledWith('[OG-E]', 'watch out', { code: 7 });
   });
 
   it('logger.error records an error-level entry AND forwards to console.error with the prefix', () => {
@@ -115,7 +115,7 @@ describe('logger methods when enabled', () => {
     expect(snap[0].args).toEqual(['oops', err]);
 
     expect(spy).toHaveBeenCalledTimes(1);
-    expect(spy).toHaveBeenCalledWith('[OG-E v5]', 'oops', err);
+    expect(spy).toHaveBeenCalledWith('[OG-E]', 'oops', err);
   });
 
   it('preserves insertion order across mixed log/warn/log calls', () => {

@@ -29,9 +29,9 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
-  installAgrLogoRewire,
-  _resetAgrLogoRewireForTest,
-} from '../../src/features/agrLogoRewire.js';
+  installAgrLogo,
+  _resetAgrLogoForTest,
+} from '../../src/features/agrLogo.js';
 
 /** DOM id of AGR's logo anchor — mirrors the module constant. */
 const LOGO_ID = 'ago_menubutton_logo';
@@ -83,7 +83,7 @@ const flushWaitFor = async () => {
 // ──────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
-  _resetAgrLogoRewireForTest();
+  _resetAgrLogoForTest();
   document.body.innerHTML = '';
   /** @type {any} */ (globalThis).browser = {
     runtime: {
@@ -93,7 +93,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  _resetAgrLogoRewireForTest();
+  _resetAgrLogoForTest();
   document.body.innerHTML = '';
   delete (/** @type {any} */ (globalThis)).browser;
   vi.useRealTimers();
@@ -103,10 +103,10 @@ afterEach(() => {
 // install + wiring
 // ──────────────────────────────────────────────────────────────────
 
-describe('installAgrLogoRewire — wiring', () => {
+describe('installAgrLogo — wiring', () => {
   it('finds #ago_menubutton_logo when present and leaves it in the DOM', async () => {
     setupAgrDom();
-    installAgrLogoRewire();
+    installAgrLogo();
     await flushWaitFor();
 
     const logo = document.getElementById(LOGO_ID);
@@ -126,7 +126,7 @@ describe('installAgrLogoRewire — wiring', () => {
       .getElementById(OGE_TAB_HEADER_ID)
       ?.addEventListener('click', tabHeaderSpy);
 
-    installAgrLogoRewire();
+    installAgrLogo();
     // Flush the waitFor resolution under fake timers.
     await vi.advanceTimersByTimeAsync(0);
 
@@ -146,9 +146,9 @@ describe('installAgrLogoRewire — wiring', () => {
     vi.useFakeTimers();
     setupAgrDom();
 
-    const dispose1 = installAgrLogoRewire();
+    const dispose1 = installAgrLogo();
     await vi.advanceTimersByTimeAsync(0);
-    const dispose2 = installAgrLogoRewire();
+    const dispose2 = installAgrLogo();
     await vi.advanceTimersByTimeAsync(0);
 
     expect(dispose2).toBe(dispose1);
@@ -173,7 +173,7 @@ describe('installAgrLogoRewire — wiring', () => {
     const originalStyleAttr = logo.getAttribute('style');
     expect(originalStyleAttr).toBeNull();
 
-    const dispose = installAgrLogoRewire();
+    const dispose = installAgrLogo();
     await vi.advanceTimersByTimeAsync(0);
 
     // Confirm the image was actually swapped in.
@@ -195,18 +195,18 @@ describe('installAgrLogoRewire — wiring', () => {
   it('silently no-ops when AGR never appears (10s timeout)', async () => {
     vi.useFakeTimers();
     // No AGR DOM painted. Install and push past the 10s timeout.
-    installAgrLogoRewire();
+    installAgrLogo();
     await vi.advanceTimersByTimeAsync(10_001);
     // Nothing to assert DOM-wise; the main contract is "no throw,
     // dispose is still callable".
     // Calling dispose must not throw even though the wait timed out.
-    expect(() => _resetAgrLogoRewireForTest()).not.toThrow();
+    expect(() => _resetAgrLogoForTest()).not.toThrow();
   });
 
   it('background-image is set to runtime.getURL result when available', async () => {
     vi.useFakeTimers();
     setupAgrDom();
-    installAgrLogoRewire();
+    installAgrLogo();
     await vi.advanceTimersByTimeAsync(0);
 
     const logo = /** @type {HTMLElement} */ (document.getElementById(LOGO_ID));
@@ -219,7 +219,7 @@ describe('installAgrLogoRewire — wiring', () => {
   it('forces a 27×27 square on the logo anchor', async () => {
     vi.useFakeTimers();
     setupAgrDom();
-    installAgrLogoRewire();
+    installAgrLogo();
     await vi.advanceTimersByTimeAsync(0);
 
     const logo = /** @type {HTMLElement} */ (document.getElementById(LOGO_ID));
@@ -234,7 +234,7 @@ describe('installAgrLogoRewire — wiring', () => {
   it('injects a hover stylesheet with the :hover rule', async () => {
     vi.useFakeTimers();
     setupAgrDom();
-    installAgrLogoRewire();
+    installAgrLogo();
     await vi.advanceTimersByTimeAsync(0);
 
     const styleEl = document.getElementById(HOVER_STYLE_ID);
@@ -249,7 +249,7 @@ describe('installAgrLogoRewire — wiring', () => {
   it('dispose removes the hover stylesheet', async () => {
     vi.useFakeTimers();
     setupAgrDom();
-    const dispose = installAgrLogoRewire();
+    const dispose = installAgrLogo();
     await vi.advanceTimersByTimeAsync(0);
     expect(document.getElementById(HOVER_STYLE_ID)).not.toBeNull();
 

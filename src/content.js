@@ -17,7 +17,7 @@
 //      the extension-origin histogram page can read it across origins.
 //
 //   3. Feature installs — colonyRecorder, badges, sendExp, sendCol,
-//      abandonOverview, smallPlanetDetector, settingsUi, agrLogoRewire,
+//      abandonOverview, freshPlanetDetector, settingsUi, agrLogo,
 //      readabilityBoost.
 //      Each is a standalone `install*` function that hooks into the DOM
 //      / events it needs. Order is not load-bearing today — none of
@@ -27,9 +27,9 @@
 //      then the user-facing buttons, then the settings panel that
 //      controls them all. The small-planet banner sits with the
 //      user-facing overlays — it is a pure tooltip read on `#planetList`
-//      that paints a banner for the first colony below the
-//      `colMinFields` threshold (no persisted state, see
-//      `smallPlanetDetector.js`). readabilityBoost is CSS-only and runs
+//      that paints a banner for the first freshly-colonized planet
+//      (`usedFields === 0`, no persisted state, see
+//      `freshPlanetDetector.js`). readabilityBoost is CSS-only and runs
 //      at the very top of the file next to blackBg — both inject a
 //      stylesheet and need no DOM beyond `documentElement`.
 //
@@ -65,11 +65,11 @@ import { installSettingsMirror } from './state/settingsMirror.js';
 import { installColonyRecorder } from './features/colonyRecorder.js';
 import { installBadges } from './features/badges.js';
 import { installSendExp } from './features/sendExp.js';
-import { installSendCol } from './features/sendCol.js';
+import { installSendCol } from './features/sendCol/index.js';
 import { installAbandonOverview } from './features/abandonOverview.js';
 import { installFreshPlanetDetector } from './features/freshPlanetDetector.js';
 import { installSettingsUi } from './features/settingsUi.js';
-import { installAgrLogoRewire } from './features/agrLogoRewire.js';
+import { installAgrLogo } from './features/agrLogo.js';
 import { installFleetdispatchShortcut } from './features/fleetdispatchShortcut.js';
 
 import { installSync } from './sync/scheduler.js';
@@ -135,7 +135,7 @@ const installDomFeatures = () => {
   // Rewire AGR's otherwise-idle menu-logo anchor: swap its image to the
   // OG-E icon and make a click open AGR's menu + auto-expand our
   // settings tab. Same silent-no-op-without-AGR behaviour as settingsUi.
-  installAgrLogoRewire();
+  installAgrLogo();
 };
 
 if (document.readyState === 'loading') {

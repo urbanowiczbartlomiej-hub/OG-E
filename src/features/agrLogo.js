@@ -129,7 +129,7 @@ const resolveIconUrl = () => {
 
 /**
  * Module-scope install handle. Holds the dispose fn between install and
- * dispose; `null` otherwise. Used to make {@link installAgrLogoRewire}
+ * dispose; `null` otherwise. Used to make {@link installAgrLogo}
  * idempotent (second call returns the same dispose without touching
  * DOM) and to allow in-flight AGR-wait resolutions to exit early when
  * the install was disposed before the logo appeared.
@@ -150,7 +150,7 @@ let installed = null;
  *
  * @returns {() => void} Dispose handle.
  */
-export const installAgrLogoRewire = () => {
+export const installAgrLogo = () => {
   if (installed) return installed.dispose;
 
   let disposed = false;
@@ -279,7 +279,7 @@ export const installAgrLogoRewire = () => {
  *
  * @returns {void}
  */
-export const _resetAgrLogoRewireForTest = () => {
+export const _resetAgrLogoForTest = () => {
   if (installed) {
     installed.dispose();
     installed = null;

@@ -1,18 +1,18 @@
 // @ts-check
 
-// Pure compute core of `features/sendCol.js` — `derive(env)` and
+// Pure compute core of `features/sendCol/index.js` — `derive(env)` and
 // `render(ctx)` plus every typedef / constant they reference.
 //
 // # Why this split exists
 //
-// `sendCol.js` mixes three very different kinds of code:
+// `./index.js` mixes three very different kinds of code:
 //   1. PURE — compute-the-right-label-for-env (derive + render).
 //   2. IMPURE DOM — click handlers that navigate, paint helpers that
 //      walk the mounted button halves.
 //   3. LIFECYCLE — install/dispose, mount, store subscriptions, event
 //      reactors, 1 Hz ticker.
 //
-// Before this file the first bucket lived in `sendCol.js` alongside the
+// Before this file the first bucket lived in `./index.js` alongside the
 // other two and had hidden reads of six module-local `let`s
 // (`lastNavToFleetdispatchAt`, `lastScanSubmitAt`, `lastScanEventAt`,
 // `lastCheckTargetError`, `waitStartAt`, `waitSeconds`) plus two direct
@@ -30,7 +30,7 @@
 // are now optional with documented defaults — a test that forgets to
 // pass `lastScanSubmitAt` gets "no cooldown active", which is the same
 // as a fresh install would see. Production callers use `captureEnv()`
-// in `sendCol.js` to fill every field from the live page.
+// in `./index.js` to fill every field from the live page.
 //
 // # What this file does NOT own
 //
@@ -38,23 +38,23 @@
 // module-local mutable state. Every export is either a constant, a
 // typedef, or a pure function. If you find yourself wanting to import
 // `document` / `window` / `location` here, STOP — that belongs in
-// `sendCol.js`, not here.
+// `./index.js`, not here.
 //
-// @see ./sendCol.js — the orchestrator that consumes this.
+// @see ./index.js — the orchestrator that consumes this.
 
 import {
   findNextScanSystem,
   findNextColonizeTarget,
   pickCandidateInView,
   countScansRemaining,
-} from './sendColLogic.js';
+} from './logic.js';
 
 /**
- * @typedef {import('./sendColLogic.js').GalaxyScans} GalaxyScans
+ * @typedef {import('./logic.js').GalaxyScans} GalaxyScans
  *   Re-exported via typedef import so consumers that only need the pure
  *   core don't have to reach into `state/scans.js` themselves.
- * @typedef {import('./sendColLogic.js').RegistryEntry} RegistryEntry
- * @typedef {import('../bridges/fleetDispatcherSnapshot.js').FleetDispatcherSnapshot} FleetDispatcherSnapshot
+ * @typedef {import('./logic.js').RegistryEntry} RegistryEntry
+ * @typedef {import('../../bridges/fleetDispatcherSnapshot.js').FleetDispatcherSnapshot} FleetDispatcherSnapshot
  * @typedef {{ galaxy: number, system: number, position: number }} Coords
  */
 
@@ -74,7 +74,7 @@ export const MISSION_COLONIZE = 7;
 /**
  * After this many ms without a `checkTarget` response on fleetdispatch,
  * {@link derive} returns phase `timeout`. Matches
- * `sendCol.js CHECK_TARGET_TIMEOUT_MS` 1:1 — kept here because it is the
+ * `./index.js CHECK_TARGET_TIMEOUT_MS` 1:1 — kept here because it is the
  * pure derive's own tunable, not a DOM-side concern.
  */
 export const CHECK_TARGET_TIMEOUT_MS = 15_000;
@@ -92,7 +92,7 @@ export const SCAN_COOLDOWN_MS = 8000;
 export const BG_SEND_IDLE = 'rgba(0, 160, 0, 0.75)';
 /** Darker blue — idle "Scan" / "Skip" half. */
 export const BG_SCAN_IDLE = 'rgba(60, 100, 150, 0.75)';
-/** Bright green — active "Dispatch!" / "Send Colony [g:s:p]". */
+/** Bright green — active "Send!" / "Send Colony [g:s:p]". */
 export const BG_SEND_READY = 'rgba(0, 200, 0, 0.85)';
 /** Amber — reserved / stale / timeout states (recoverable). */
 export const BG_SEND_STALE = 'rgba(200, 150, 0, 0.85)';
@@ -170,11 +170,11 @@ export const BG_SEND_WAIT = 'rgba(200, 200, 0, 0.8)';
  *
  * `home` and `view` previously came from `readHomePlanet()` /
  * `parseCurrentGalaxyView()` inside `derive`. Moving them into `env`
- * keeps the pure core DOM-free — `sendCol.js captureEnv()` makes the
+ * keeps the pure core DOM-free — `./index.js captureEnv()` makes the
  * reads in production, tests pass the values explicitly.
  *
  * The six `last*` / `wait*` fields previously lived as module-local
- * `let`s on `sendCol.js` and were read directly by `derive`. They now
+ * `let`s on `./index.js` and were read directly by `derive`. They now
  * flow through env too.
  *
  * @typedef {object} DeriveEnv
@@ -472,7 +472,7 @@ export const render = (ctx) => {
       sendPaint = { text: 'Send', bg: BG_SEND_IDLE };
       break;
     case 'ready':
-      sendPaint = { text: coords, subtext: 'Dispatch!', bg: BG_SEND_READY };
+      sendPaint = { text: coords, subtext: 'Send!', bg: BG_SEND_READY };
       break;
     case 'noShip':
       sendPaint = { text: coords, subtext: 'No ship!', bg: BG_SEND_ERROR };

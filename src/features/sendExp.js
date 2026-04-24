@@ -270,7 +270,7 @@ const countActiveExpeditions = (originCoords) => {
  * page state at render time:
  *
  *   - On fleetdispatch with `#dispatchFleet` already in the DOM →
- *     "Dispatch!" (user's next tap fires the send).
+ *     "Send!" (user's next tap fires the send).
  *   - On fleetdispatch with `#ago_routine_7` but no dispatch button →
  *     "Prepare" (user's next tap kicks AGR's routine).
  *   - Otherwise → the default `BUTTON_TEXT` ("Send Exp").
@@ -282,7 +282,7 @@ const countActiveExpeditions = (originCoords) => {
  */
 const computeInitialLabel = () => {
   if (!location.search.includes('component=fleetdispatch')) return BUTTON_TEXT;
-  if (document.getElementById('dispatchFleet')) return 'Dispatch!';
+  if (document.getElementById('dispatchFleet')) return 'Send!';
   if (document.getElementById('ago_routine_7')) return 'Prepare';
   return BUTTON_TEXT;
 };
@@ -465,7 +465,7 @@ export const installSendExp = () => {
    *
    *   - `ago_routine_check_3` (ready): click the routine element —
    *     AGR renders `#ago_fleet2_main` + the native `#dispatchFleet`
-   *     button. Then wait for both and flip the label to "Dispatch!"
+   *     button. Then wait for both and flip the label to "Send!"
    *     so the user's next tap issues the real send.
    *   - `ago_routine_check_1` / `_check_2` (no ships): no expedition
    *     is possible from here. Navigate to the next planet that still
@@ -511,7 +511,7 @@ export const installSendExp = () => {
       );
 
       if (ready) {
-        setLabel(btn, 'Dispatch!');
+        setLabel(btn, 'Send!');
       } else {
         setLabel(btn, BUTTON_TEXT);
       }
@@ -763,7 +763,7 @@ export const installSendExp = () => {
   // the cache. Chrome MV3 isolated scripts get undefined here; we rely
   // on the bridge event (`oge:fleetDispatcher` from
   // `bridges/fleetDispatcherSnapshot.js`) to populate it asynchronously
-  // in production. Pattern mirrors `features/sendCol.js:installSendCol`.
+  // in production. Pattern mirrors `features/sendCol/index.js:installSendCol`.
   if (!fleetDispatcherSnapshot) {
     const liveFd = /** @type {any} */ (window).fleetDispatcher;
     if (liveFd && typeof liveFd === 'object') {

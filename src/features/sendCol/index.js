@@ -5,7 +5,7 @@
 //
 // The PURE core of the pipeline (`derive(env)` + `render(ctx)` plus all
 // the typedefs / colour constants they reference) lives in the sibling
-// file {@link ./sendColPure.js}. This file is the IMPURE orchestrator:
+// file {@link ./pure.js}. This file is the IMPURE orchestrator:
 // module-local state, DOM paint, click handlers, event reactors, the
 // 1 Hz ticker and the install/dispose lifecycle. The split keeps the
 // big-by-necessity orchestrator readable (no 250-line switch statement
@@ -71,27 +71,27 @@
 //
 // # Integration seams
 //
-//   - Pure helpers live in `./sendColLogic.js` — all target-picking
+//   - Pure helpers live in `./logic.js` — all target-picking
 //     algorithms plus URL builders + DOM coord readers are there.
 //   - Drag + focus reuse `lib/draggableButton.js` (same `oge_focusedBtn`
 //     key as sendExp).
 //   - Abandon overlay is `features/abandonOverview.js` — orthogonal.
 //
-// @see ./sendColLogic.js — pure helpers this orchestrator consumes.
-// @see ./abandonOverview.js — the abandon-on-overview feature.
-// @see ./sendExp.js — parallel mobile-button feature (reference pattern).
+// @see ./logic.js — pure helpers this orchestrator consumes.
+// @see ../abandonOverview.js — the abandon-on-overview feature.
+// @see ../sendExp.js — parallel mobile-button feature (reference pattern).
 
 /** @ts-check */
 
-import { settingsStore } from '../state/settings.js';
-import { scansStore } from '../state/scans.js';
-import { registryStore } from '../state/registry.js';
-import { safeLS } from '../lib/storage.js';
-import { parsePositions } from '../domain/positions.js';
+import { settingsStore } from '../../state/settings.js';
+import { scansStore } from '../../state/scans.js';
+import { registryStore } from '../../state/registry.js';
+import { safeLS } from '../../lib/storage.js';
+import { parsePositions } from '../../domain/positions.js';
 import {
   installDrag,
   installFocusPersist as installButtonFocusPersist,
-} from '../lib/draggableButton.js';
+} from '../../lib/draggableButton.js';
 import {
   findNextScanSystem,
   findNextColonizeTarget,
@@ -100,7 +100,7 @@ import {
   parseCurrentGalaxyView,
   buildFleetdispatchUrl,
   buildGalaxyUrl,
-} from './sendColLogic.js';
+} from './logic.js';
 import {
   derive,
   render,
@@ -109,22 +109,22 @@ import {
   SCAN_COOLDOWN_MS,
   BG_SEND_IDLE,
   BG_SCAN_IDLE,
-} from './sendColPure.js';
+} from './pure.js';
 
 // Re-export the pure pipeline so existing call-sites (e.g. the test
 // file which imports `derive` + `render` from this module) keep
 // working without a migration step.
-export { derive, render } from './sendColPure.js';
+export { derive, render } from './pure.js';
 
 /**
- * @typedef {import('../state/scans.js').GalaxyScans} GalaxyScans
- * @typedef {import('../domain/registry.js').RegistryEntry} RegistryEntry
+ * @typedef {import('../../state/scans.js').GalaxyScans} GalaxyScans
+ * @typedef {import('../../domain/registry.js').RegistryEntry} RegistryEntry
  * @typedef {{ galaxy: number, system: number, position: number }} Coords
- * @typedef {import('./sendColPure.js').ButtonContext} ButtonContext
- * @typedef {import('./sendColPure.js').Paint} Paint
- * @typedef {import('./sendColPure.js').RenderResult} RenderResult
- * @typedef {import('./sendColPure.js').DeriveEnv} DeriveEnv
- * @typedef {import('../bridges/fleetDispatcherSnapshot.js').FleetDispatcherSnapshot} FleetDispatcherSnapshot
+ * @typedef {import('./pure.js').ButtonContext} ButtonContext
+ * @typedef {import('./pure.js').Paint} Paint
+ * @typedef {import('./pure.js').RenderResult} RenderResult
+ * @typedef {import('./pure.js').DeriveEnv} DeriveEnv
+ * @typedef {import('../../bridges/fleetDispatcherSnapshot.js').FleetDispatcherSnapshot} FleetDispatcherSnapshot
  */
 
 // ─── DOM ids ───────────────────────────────────────────────────────────
@@ -151,7 +151,7 @@ const POS_KEY = 'oge_colBtnPos';
 //
 // Colour constants (`BG_SEND_*` / `BG_SCAN_*`), the checkTarget /
 // scan-cooldown timeouts, and `MISSION_COLONIZE` all moved to
-// `./sendColPure.js` because they belong to the pure render / derive
+// `./pure.js` because they belong to the pure render / derive
 // surface. Imported above and used below only for the impure paint
 // fallbacks (e.g. "None available" flash) and the fleetdispatch URL
 // sniff.
@@ -192,7 +192,7 @@ let lastCheckTargetError = /** @type {number | null} */ (null);
  * DOMContentLoaded + microtask). On fleetdispatch, `derive()` reads
  * targetPlanet/orders/shipsOnPlanet from here.
  *
- * @type {import('../bridges/fleetDispatcherSnapshot.js').FleetDispatcherSnapshot | null}
+ * @type {import('../../bridges/fleetDispatcherSnapshot.js').FleetDispatcherSnapshot | null}
  */
 let fleetDispatcherSnapshot = null;
 
@@ -302,7 +302,7 @@ export const paint = (result) => {
 /**
  * Snapshot every input of `derive()` into a single `env` object. This is
  * the one-and-only impure read in the derive/render pipeline — making
- * `sendColPure.js` completely DOM- and store-free by construction. All
+ * `./pure.js` completely DOM- and store-free by construction. All
  * of `location.search`, `#planetList .hightlightPlanet`, `#galaxy_input`,
  * and the module-local `lastXxx` / `waitXxx` lets flow through here.
  *
@@ -658,7 +658,7 @@ const onCheckTargetResult = (e) => {
       fd.targetPlanet.position === position);
   if (stillMatching) {
     const canColonize = fd && fd.orders && fd.orders['7'] === true;
-    /** @type {import('../domain/scans.js').Position | null} */
+    /** @type {import('../../domain/scans.js').Position | null} */
     let newPos = null;
     if (lastCheckTargetError === 140016) {
       newPos = { status: 'reserved' };
@@ -677,7 +677,7 @@ const onCheckTargetResult = (e) => {
       const p = newPos;
       scansStore.update((prev) => {
         const existing = prev[key] ?? { scannedAt: Date.now(), positions: {} };
-        /** @type {Record<number, import('../domain/scans.js').Position>} */
+        /** @type {Record<number, import('../../domain/scans.js').Position>} */
         const newPositions = { ...existing.positions, [position]: p };
         return {
           ...prev,
@@ -760,7 +760,7 @@ const onColonizeSent = (e) => {
   const key = /** @type {`${number}:${number}`} */ (`${galaxy}:${system}`);
   scansStore.update((prev) => {
     const existing = prev[key] ?? { scannedAt: Date.now(), positions: {} };
-    /** @type {Record<number, import('../domain/scans.js').Position>} */
+    /** @type {Record<number, import('../../domain/scans.js').Position>} */
     const newPositions = {
       ...existing.positions,
       [position]: { status: 'empty_sent' },

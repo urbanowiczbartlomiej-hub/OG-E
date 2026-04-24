@@ -1,8 +1,18 @@
 // @ts-check
 
+import { settingsStore } from '../state/settings.js';
+
 // Contrast + legibility boost for two chronically painful AGR / OGame
 // surfaces: the fleet-event box at the top of the page and the
 // "light green" fleet-movement link in the fleetdispatch header.
+//
+// # Toggle
+//
+// Gated on `settings.readabilityBoost` (default `true`). The install
+// call unconditionally injects the stylesheet so there's no flash of
+// un-styled content at `document_start` — any user-off preference
+// then fires via the subscription after `initSettingsStore` hydrates,
+// removing the node within the same tick.
 //
 // # Event box (`#eventboxFilled`)
 //
@@ -72,28 +82,33 @@ const CSS = `/* OG-E: readability boost — event box + fleet movement link */
 /* Both status rows ("Następna: <countdown>" and "Rodzaj: <type>") use
    the same .next_event wrapper. Collapse the parent's font-size to 0
    so the "Następna:" / "Rodzaj:" literal text vanishes, then re-show
-   the nested payload (countdown digits, mission-type name) with an
-   explicit size. */
+   the nested payload at explicit sizes — deliberately asymmetric: the
+   countdown (time-to-next-mission) is the glance-value, and mission
+   type changes rarely so it stays small. */
 #eventboxFilled .next_event {
   font-size: 0 !important;
 }
-#eventboxFilled .next_event .countdown,
+
+/* Countdown: large, bold, yellow. This is what the user checks
+   repeatedly — it wins the attention budget. */
+#eventboxFilled .next_event .countdown {
+  font-size: 20px !important;
+  font-weight: 900 !important;
+  color: #ffe04b !important;
+  letter-spacing: 0.5px !important;
+}
+
+/* Mission-type (friendly/hostile/neutral): small, secondary. Colour
+   still carries the AGR semantic palette. */
 #eventboxFilled .next_event .friendly,
 #eventboxFilled .next_event .hostile,
 #eventboxFilled .next_event .neutral {
-  font-size: 14px !important;
+  font-size: 11px !important;
   font-weight: bold !important;
 }
-
-/* Mission-type semantic colours — AGR palette, preserved. */
 #eventboxFilled .friendly { color: #55e87a !important; }
 #eventboxFilled .hostile  { color: #ff4d4d !important; }
 #eventboxFilled .neutral  { color: #ffaa33 !important; }
-
-/* Yellow countdown so it wins attention against black background. */
-#eventboxFilled .countdown {
-  color: #ffe04b !important;
-}
 
 /* AGR's expand/collapse toggles are irrelevant to the compact view. */
 #eventboxFilled #js_eventDetailsClosed,
@@ -150,33 +165,63 @@ export const installReadabilityBoost = () => {
     return () => {};
   }
 
-  // Defensive: another install might have run in a previous page load
-  // (e.g. dev-reload) and left the node behind. Reuse it.
+  // Defensive: a previous page load / dev-reload may have left the
+  // node behind. Drop it so we don't end up with two stylesheets when
+  // the fresh install runs `inject()` below.
   const existing = document.getElementById(STYLE_ID);
-  if (existing) {
-    installed = {
-      dispose: () => {
-        existing.remove();
-        installed = null;
-      },
-    };
-    return installed.dispose;
+  if (existing && existing.parentNode) {
+    existing.parentNode.removeChild(existing);
   }
 
-  const style = document.createElement('style');
-  style.id = STYLE_ID;
-  style.textContent = CSS;
+  /** @type {HTMLStyleElement | null} */
+  let styleEl = null;
 
-  // At `document_start` both `document.head` and `document.body` may
-  // be null; `document.documentElement` exists from the moment the
-  // Document node is constructed, so it's the only reliably-available
-  // mount point for injection pre-parse.
-  const parent = document.head || document.documentElement;
-  parent.appendChild(style);
+  /**
+   * Put the <style> node into the document. Idempotent: returns early
+   * if already mounted. `document.head` may still be null at
+   * `document_start`; we fall back to `documentElement`.
+   *
+   * @returns {void}
+   */
+  const inject = () => {
+    if (styleEl && styleEl.parentNode) return;
+    styleEl = document.createElement('style');
+    styleEl.id = STYLE_ID;
+    styleEl.textContent = CSS;
+    const parent = document.head || document.documentElement;
+    parent.appendChild(styleEl);
+  };
+
+  /**
+   * Remove the <style> node if mounted.
+   *
+   * @returns {void}
+   */
+  const retract = () => {
+    if (styleEl && styleEl.parentNode) styleEl.parentNode.removeChild(styleEl);
+    styleEl = null;
+  };
+
+  // Initial paint: inject unconditionally so nothing flashes between
+  // `document_start` and the first settings-store tick. The subscription
+  // below reconciles to the hydrated preference on the next microtask.
+  inject();
+
+  // React to preference changes. When the user toggles the setting off,
+  // remove the stylesheet; back on, re-inject. `prev` is tracked so the
+  // subscriber is a no-op on unrelated settings changes.
+  let prev = settingsStore.get().readabilityBoost;
+  const unsubscribe = settingsStore.subscribe((next) => {
+    if (next.readabilityBoost === prev) return;
+    prev = next.readabilityBoost;
+    if (prev) inject();
+    else retract();
+  });
 
   installed = {
     dispose: () => {
-      style.remove();
+      unsubscribe();
+      retract();
       installed = null;
     },
   };

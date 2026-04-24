@@ -1,7 +1,7 @@
 // @ts-check
 
 // Pure logic helpers for sendCol. Imported by the orchestrator file
-// `sendCol.js`. Holds target-pick algorithms, DOM coord readers, URL
+// `./index.js`. Holds target-pick algorithms, DOM coord readers, URL
 // builders, and the min-gap wait helper.
 //
 // Purity levels:
@@ -15,25 +15,25 @@
 // sendCol reads `fleetDispatcher.targetPlanet` directly rather than
 // parsing coords out of the fleetdispatch URL.
 
-import { settingsStore } from '../state/settings.js';
-import { registryStore } from '../state/registry.js';
-import { safeLS } from '../lib/storage.js';
+import { settingsStore } from '../../state/settings.js';
+import { registryStore } from '../../state/registry.js';
+import { safeLS } from '../../lib/storage.js';
 import {
   sysDist,
   buildGalaxyOrder,
-} from '../domain/positions.js';
-import { findConflict } from '../domain/registry.js';
-import { isSystemStale } from '../domain/scheduling.js';
+} from '../../domain/positions.js';
+import { findConflict } from '../../domain/registry.js';
+import { isSystemStale } from '../../domain/scheduling.js';
 import {
   COL_MAX_SYSTEM,
   COL_MAX_GALAXY,
   MISSION_COLONIZE,
-} from '../domain/rules.js';
+} from '../../domain/rules.js';
 
 /**
- * @typedef {import('../state/scans.js').GalaxyScans} GalaxyScans
- * @typedef {import('../state/scans.js').SystemScan} SystemScan
- * @typedef {import('../domain/registry.js').RegistryEntry} RegistryEntry
+ * @typedef {import('../../state/scans.js').GalaxyScans} GalaxyScans
+ * @typedef {import('../../state/scans.js').SystemScan} SystemScan
+ * @typedef {import('../../domain/registry.js').RegistryEntry} RegistryEntry
  */
 
 // ─── Pure target selection ─────────────────────────────────────────────────

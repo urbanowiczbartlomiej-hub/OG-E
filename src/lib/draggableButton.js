@@ -34,7 +34,7 @@
 // twice (once per half) with different `focusValue`s. sendExp uses a
 // single button so calls both helpers once.
 //
-// @see ../features/sendCol.js        — caller for the colonize button.
+// @see ../features/sendCol/index.js  — caller for the colonize button.
 // @see ../features/sendExp.js       — caller for the expedition button.
 
 /** @ts-check */

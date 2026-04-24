@@ -24,6 +24,7 @@ import {
   installReadabilityBoost,
   _resetReadabilityBoostForTest,
 } from '../../src/features/readabilityBoost.js';
+import { settingsStore } from '../../src/state/settings.js';
 
 const STYLE_ID = 'oge-readability-boost';
 
@@ -34,10 +35,14 @@ describe('readabilityBoost', () => {
     // abnormal termination, happy-dom state carrying across files, etc).
     const existing = document.getElementById(STYLE_ID);
     if (existing) existing.remove();
+    // Every test starts from "feature enabled" — tests that want the
+    // disabled branch flip the flag explicitly.
+    settingsStore.update((s) => ({ ...s, readabilityBoost: true }));
   });
 
   afterEach(() => {
     _resetReadabilityBoostForTest();
+    settingsStore.update((s) => ({ ...s, readabilityBoost: true }));
   });
 
   it('creates <style id="oge-readability-boost"> appended to document', () => {
@@ -81,18 +86,40 @@ describe('readabilityBoost', () => {
     expect(css).toContain('font-weight: bold');
   });
 
-  it('eventbox countdown is coloured yellow to stand out against black', () => {
+  it('eventbox countdown is large, bold, and yellow (primary focal point)', () => {
     installReadabilityBoost();
     const css = document.getElementById(STYLE_ID)?.textContent ?? '';
-    // The countdown is the visual focal point — if this rule drifts
-    // away, the digits blend into the regular text and the feature
-    // silently stops working for contrast.
+    // Countdown holds the attention budget: user reads it repeatedly.
+    // Mission-type changes rarely and stays small — if someone swaps
+    // these two sizes back to symmetric, the UX regresses to "which
+    // number am I supposed to be watching?".
     const countdownRule = css.match(
-      /#eventboxFilled\s+\.countdown\s*\{([^}]*)\}/,
+      /#eventboxFilled\s+\.next_event\s+\.countdown\s*\{([^}]*)\}/,
     );
     expect(countdownRule).not.toBeNull();
     const body = countdownRule?.[1] ?? '';
     expect(body).toMatch(/color:\s*#ffe04b/);
+    expect(body).toMatch(/font-size:\s*20px/);
+    expect(body).toMatch(/font-weight:\s*900/);
+  });
+
+  it('mission-type payload stays smaller than the countdown', () => {
+    // .friendly / .hostile / .neutral share one rule that explicitly
+    // sets a SMALL font-size. If the rule drifts up to match the
+    // countdown, the box turns into visual noise.
+    installReadabilityBoost();
+    const css = document.getElementById(STYLE_ID)?.textContent ?? '';
+    const missionRule = css.match(
+      /#eventboxFilled\s+\.next_event\s+\.friendly,[^{]*\{([^}]*)\}/,
+    );
+    expect(missionRule).not.toBeNull();
+    const body = missionRule?.[1] ?? '';
+    // The actual number is whatever the rule says — we just assert
+    // it's not the same 20px used by the countdown.
+    const m = body.match(/font-size:\s*(\d+)px/);
+    expect(m).not.toBeNull();
+    const fontSize = parseInt(m?.[1] ?? '0', 10);
+    expect(fontSize).toBeLessThan(20);
   });
 
   it('both status rows ("Następna:" and "Rodzaj:") get the hide trick', () => {
@@ -115,6 +142,18 @@ describe('readabilityBoost', () => {
     expect(css).toContain('.next_event .hostile');
     expect(css).toContain('.next_event .neutral');
     expect(css).toContain('.next_event .countdown');
+  });
+
+  it('removes the <style> when settings.readabilityBoost flips to false', () => {
+    installReadabilityBoost();
+    expect(document.getElementById(STYLE_ID)).not.toBeNull();
+
+    settingsStore.update((s) => ({ ...s, readabilityBoost: false }));
+    expect(document.getElementById(STYLE_ID)).toBeNull();
+
+    // Flipping back on re-injects — same contract.
+    settingsStore.update((s) => ({ ...s, readabilityBoost: true }));
+    expect(document.getElementById(STYLE_ID)).not.toBeNull();
   });
 
   it('movement-link rule stacks vertically and leaves child colours alone', () => {

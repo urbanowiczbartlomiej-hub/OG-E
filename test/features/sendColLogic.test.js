@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 //
-// Unit tests for sendColLogic.js — the pure-logic helpers that the
+// Unit tests for sendCol/logic.js — the pure-logic helpers that the
 // sendCol orchestrator builds on.
 //
 // Coverage breakdown:
@@ -17,7 +17,7 @@
 //
 // - UI click flow, button lifecycle, reactors — those are the
 //   orchestrator's job and live in sendCol.test.js (and will get their
-//   own tests once the new sendCol.js ships).
+//   own tests once the new sendCol/index.js ships).
 //
 // @ts-check
 
@@ -31,7 +31,7 @@ import {
   parseCurrentGalaxyView,
   buildFleetdispatchUrl,
   buildGalaxyUrl,
-} from '../../src/features/sendColLogic.js';
+} from '../../src/features/sendCol/logic.js';
 import {
   settingsStore,
   SETTINGS_SCHEMA,

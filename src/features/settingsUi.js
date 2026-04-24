@@ -71,7 +71,7 @@ import { waitFor } from '../lib/dom.js';
  */
 const TAB_ID = 'oge-settings-tab';
 
-/** DOM id of the settings tab header (the clickable "▼ OG-E v5 Settings" strip). */
+/** DOM id of the settings tab header (the clickable "▼ OG-E Settings" strip). */
 const HEADER_ID = 'oge-settings-header';
 
 /** DOM id of the settings table element. Stable for dispose + query by tests. */
@@ -225,6 +225,16 @@ const SECTIONS = [
       { id: 'colMinGap', label: 'Min gap between arrivals (sec)', type: 'text', placeholder: 'e.g. 20' },
       { id: 'colMinFields', label: 'Min fields to keep colony', type: 'text', placeholder: 'e.g. 200' },
       { id: 'colPassword', label: 'Account password (for abandon)', type: 'password' },
+    ],
+  },
+  {
+    section: 'Display',
+    options: [
+      {
+        id: 'readabilityBoost',
+        label: 'Readability boost (event box + fleet movement link)',
+        type: 'checkbox',
+      },
     ],
   },
   {
@@ -667,7 +677,7 @@ const buildTab = () => {
   // Gold label is the single visual marker for "this row is the OG-E
   // add-on". See file header for why we avoid borders/spacing hints.
   const labelSpan = document.createElement('span');
-  labelSpan.textContent = 'OG-E v5 Settings';
+  labelSpan.textContent = 'OG-E Settings';
   labelSpan.style.color = '#d4af37';
 
   header.appendChild(arrowClose);
