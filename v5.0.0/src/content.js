@@ -66,7 +66,7 @@ import { installBadges } from './features/badges.js';
 import { installSendExp } from './features/sendExp.js';
 import { installSendCol } from './features/sendCol.js';
 import { installAbandonOverview } from './features/abandonOverview.js';
-import { installSmallPlanetDetector } from './features/smallPlanetDetector.js';
+import { installFreshPlanetDetector } from './features/freshPlanetDetector.js';
 import { installSettingsUi } from './features/settingsUi.js';
 import { installAgrLogoRewire } from './features/agrLogoRewire.js';
 import { installFleetdispatchShortcut } from './features/fleetdispatchShortcut.js';
@@ -118,13 +118,13 @@ const installDomFeatures = () => {
   // Independent from sendCol; reuses `abandonPlanet()` from abandon.js.
   installAbandonOverview();
 
-  // Top-center banner when any planet in `#planetList` is below the
-  // `colMinFields` threshold (candidate for abandon). Stateless: reads
-  // the tooltip's `(used/max)` on every mount + on settings change.
-  // Independent from abandonOverview — the two overlays can coexist
-  // on the same page (banner on planetList, overlay on the opened
-  // planet's overview).
-  installSmallPlanetDetector();
+  // Top-center banner for a freshly-colonized planet (usedFields === 0
+  // in the planetList tooltip). Stateless: one pass at mount. The
+  // banner disappears the moment the user builds anything on that
+  // planet (next reload will see usedFields > 0). Independent from
+  // abandonOverview — both overlays can coexist (banner on planetList
+  // pages, abandon overlay on the opened planet's overview).
+  installFreshPlanetDetector();
 
   // Keyboard shortcut on fleetdispatch — desktop users press
   // ArrowRight to advance through AGR/OGame's send panels.

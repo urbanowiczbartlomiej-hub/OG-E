@@ -1,32 +1,27 @@
 // @vitest-environment happy-dom
 //
-// Behavioural tests for the stateless small-planet detector.
+// Behavioural tests for the stateless fresh-planet detector.
 //
 // # Coverage strategy
 //
-// The detector is a pure pipeline: read planetList + colMinFields →
-// pick first row where `used < colMinFields` → paint banner. We test
-// each stage by arranging the DOM + settings before calling
-// `installSmallPlanetDetector`, then asserting the banner element's
-// presence/content.
+// The detector is a pure pipeline: scan planetList → pick first row
+// with `usedFields === 0` → paint banner. We test each stage by
+// arranging the DOM before calling `installFreshPlanetDetector`, then
+// asserting the banner element's presence/content.
 //
-// Location.href is mocked the same way as in sendCol.test.js /
-// newPlanetDetector.test.js — spy getter/setter so banner clicks can
-// be observed without racing happy-dom's frame navigator.
+// Location.href is mocked the same way as in other feature tests —
+// spy getter/setter so banner clicks can be observed without racing
+// happy-dom's frame navigator.
 //
 // @ts-check
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import {
-  installSmallPlanetDetector,
-  findFirstSmallPlanet,
-  _resetSmallPlanetDetectorForTest,
-} from '../../src/features/smallPlanetDetector.js';
-import {
-  settingsStore,
-  SETTINGS_SCHEMA,
-} from '../../src/state/settings.js';
+  installFreshPlanetDetector,
+  findFirstFreshPlanet,
+  _resetFreshPlanetDetectorForTest,
+} from '../../src/features/freshPlanetDetector.js';
 
 // ── location.href mocking ────────────────────────────────────────────
 
@@ -49,9 +44,7 @@ const unmockLocationHref = () => {
   delete (/** @type {any} */ (window.location)).href;
 };
 
-/** Override `location.search` the same way — needed for the
- *  "suppress on overview of cp" path.
- *  @param {string} search */
+/** @param {string} search */
 const setSearch = (search) => {
   Object.defineProperty(window.location, 'search', {
     configurable: true,
@@ -70,8 +63,7 @@ const unsetSearch = () => {
 /**
  * Build a real-shape OGame tooltip string. The parser walks the
  * `<b>Name [g:s:p]</b>` header for coords and `DDD.DDkm (used/max)`
- * for fields. The rest of the tooltip (temperature, links) is
- * ignored but we paint it too so tests exercise realistic strings.
+ * for fields.
  *
  * @param {{ coords: string, name: string, diameter: string, used: number, max: number }} p
  * @returns {string}
@@ -111,81 +103,61 @@ const setupPlanetList = (planets) => {
     .join('')}</div>`;
 };
 
-const BANNER_ID = 'oge5-small-planet-banner';
+const BANNER_ID = 'oge-fresh-planet-banner';
 
 const getBanner = () =>
   /** @type {HTMLElement | null} */ (document.getElementById(BANNER_ID));
 
-/** Restore settings to the schema defaults between tests. */
-const resetSettings = () => {
-  /** @type {Record<string, unknown>} */
-  const defaults = {};
-  for (const key of /** @type {Array<keyof typeof SETTINGS_SCHEMA>} */ (
-    Object.keys(SETTINGS_SCHEMA)
-  )) {
-    defaults[key] = SETTINGS_SCHEMA[key].default;
-  }
-  settingsStore.set(
-    /** @type {import('../../src/state/settings.js').Settings} */ (
-      /** @type {unknown} */ (defaults)
-    ),
-  );
-};
-
 // ── Global setup / teardown ─────────────────────────────────────────
 
 beforeEach(() => {
-  _resetSmallPlanetDetectorForTest();
+  _resetFreshPlanetDetectorForTest();
   document.body.innerHTML = '';
   navTarget = null;
   mockLocationHref();
   setSearch('?page=ingame&component=overview');
-  resetSettings();
 });
 
 afterEach(() => {
-  _resetSmallPlanetDetectorForTest();
+  _resetFreshPlanetDetectorForTest();
   document.body.innerHTML = '';
   unmockLocationHref();
   unsetSearch();
 });
 
-// ─── findFirstSmallPlanet (pure) ─────────────────────────────────────
+// ─── findFirstFreshPlanet (pure) ─────────────────────────────────────
 
-describe('findFirstSmallPlanet', () => {
+describe('findFirstFreshPlanet', () => {
   it('returns null when planetList is empty', () => {
     document.body.innerHTML = '<div id="planetList"></div>';
-    expect(findFirstSmallPlanet(200)).toBeNull();
+    expect(findFirstFreshPlanet()).toBeNull();
   });
 
-  it('returns the first row below the threshold', () => {
+  it('returns the first row whose usedFields is exactly 0', () => {
     setupPlanetList([
       { cp: 100, coords: '[4:467:15]', name: 'P1', used: 275, max: 318 },
-      { cp: 101, coords: '[4:468:14]', name: 'P2', used: 100, max: 200 },
-      { cp: 102, coords: '[4:469:15]', name: 'P3', used: 50, max: 180 },
+      { cp: 101, coords: '[4:468:14]', name: 'P2', used: 0, max: 200 },
+      { cp: 102, coords: '[4:469:15]', name: 'P3', used: 0, max: 180 },
     ]);
-    const hit = findFirstSmallPlanet(200);
-    expect(hit).not.toBeNull();
-    // P2 is the first row with used=100 < 200. P3 also qualifies but
-    // the detector picks the first document-order hit, matching the
-    // visible planetList order the user sees.
+    const hit = findFirstFreshPlanet();
     expect(hit?.cp).toBe(101);
-    expect(hit?.used).toBe(100);
+    expect(hit?.used).toBe(0);
     expect(hit?.max).toBe(200);
   });
 
-  it('returns null when every planet is above the threshold', () => {
+  it('skips a planet with ANY built field (used > 0)', () => {
+    // Regression guard for the previous bug: the earlier detector
+    // fired for any `used < colMinFields`, which flashed the banner
+    // on legitimately-in-progress colonies. Now only pristine
+    // (`used === 0`) planets qualify.
     setupPlanetList([
-      { cp: 100, coords: '[4:467:15]', name: 'P1', used: 275, max: 318 },
-      { cp: 101, coords: '[4:468:14]', name: 'P2', used: 286, max: 363 },
+      { cp: 100, coords: '[4:467:15]', name: 'P1', used: 1, max: 200 },
+      { cp: 101, coords: '[4:468:14]', name: 'P2', used: 50, max: 180 },
     ]);
-    expect(findFirstSmallPlanet(200)).toBeNull();
+    expect(findFirstFreshPlanet()).toBeNull();
   });
 
   it('skips rows with a malformed tooltip instead of blocking', () => {
-    // Row 100's tooltip has no "(used/max)" block at all. Row 101
-    // is well-formed and small; the parser should skip 100 and
-    // return 101 rather than falling over on the first error.
     document.body.innerHTML = `
       <div id="planetList">
         <div class="smallplanet" id="planet-100">
@@ -196,115 +168,85 @@ describe('findFirstSmallPlanet', () => {
             coords: '[4:468:14]',
             name: 'P2',
             diameter: '16.9',
-            used: 50,
+            used: 0,
             max: 180,
           })}"></a>
         </div>
       </div>
     `;
-    const hit = findFirstSmallPlanet(200);
+    const hit = findFirstFreshPlanet();
     expect(hit?.cp).toBe(101);
   });
 });
 
 // ─── install — banner behaviour ─────────────────────────────────────
 
-describe('installSmallPlanetDetector — banner', () => {
-  it('mounts the banner for the first small planet', () => {
+describe('installFreshPlanetDetector — banner', () => {
+  it('mounts the banner for the first fresh planet', () => {
     setupPlanetList([
       { cp: 100, coords: '[4:467:15]', name: 'P1', used: 275, max: 318 },
-      { cp: 101, coords: '[4:468:14]', name: 'P2', used: 80, max: 200 },
+      { cp: 101, coords: '[4:468:14]', name: 'P2', used: 0, max: 200 },
     ]);
-    settingsStore.update((s) => ({ ...s, colMinFields: 200 }));
 
-    installSmallPlanetDetector();
+    installFreshPlanetDetector();
 
     const banner = getBanner();
     expect(banner).not.toBeNull();
     expect(banner?.dataset.cp).toBe('101');
     expect(banner?.textContent).toContain('[4:468:14]');
-    expect(banner?.textContent).toContain('80/200');
+    expect(banner?.textContent).toContain('0/200');
   });
 
-  it('does NOT mount a banner when every planet is big enough', () => {
+  it('does NOT mount a banner when no planet is used===0', () => {
     setupPlanetList([
       { cp: 100, coords: '[4:467:15]', name: 'P1', used: 275, max: 318 },
+      { cp: 101, coords: '[4:468:14]', name: 'P2', used: 1, max: 200 },
     ]);
-    settingsStore.update((s) => ({ ...s, colMinFields: 200 }));
 
-    installSmallPlanetDetector();
+    installFreshPlanetDetector();
     expect(getBanner()).toBeNull();
   });
 
   it('suppresses the banner when already on the overview of that cp', () => {
     setupPlanetList([
-      { cp: 101, coords: '[4:468:14]', name: 'P2', used: 80, max: 200 },
+      { cp: 101, coords: '[4:468:14]', name: 'P2', used: 0, max: 200 },
     ]);
-    settingsStore.update((s) => ({ ...s, colMinFields: 200 }));
-    // Mirror the "I'm already looking at that planet" state — the
-    // banner would be a no-op link, `abandonOverview` is doing the
-    // work on the same page.
     setSearch('?page=ingame&component=overview&cp=101');
 
-    installSmallPlanetDetector();
+    installFreshPlanetDetector();
     expect(getBanner()).toBeNull();
   });
 
   it('click on the banner navigates to the overview URL', () => {
     setupPlanetList([
-      { cp: 101, coords: '[4:468:14]', name: 'P2', used: 80, max: 200 },
+      { cp: 101, coords: '[4:468:14]', name: 'P2', used: 0, max: 200 },
     ]);
-    settingsStore.update((s) => ({ ...s, colMinFields: 200 }));
 
-    installSmallPlanetDetector();
+    installFreshPlanetDetector();
     const banner = getBanner();
-    expect(banner).not.toBeNull();
     banner?.click();
 
     expect(navTarget).toContain('component=overview');
     expect(navTarget).toContain('cp=101');
   });
 
-  it('settings change (colMinFields bumped up) re-paints / hides', () => {
-    setupPlanetList([
-      { cp: 101, coords: '[4:468:14]', name: 'P2', used: 80, max: 200 },
-    ]);
-    // Start with threshold BELOW planet's used fields — no banner.
-    settingsStore.update((s) => ({ ...s, colMinFields: 50 }));
-    installSmallPlanetDetector();
-    expect(getBanner()).toBeNull();
-
-    // Raise threshold above 80 — banner should appear on the subscribe
-    // callback without any extra mount call.
-    settingsStore.update((s) => ({ ...s, colMinFields: 200 }));
-    expect(getBanner()).not.toBeNull();
-
-    // Drop threshold back below — banner goes away again.
-    settingsStore.update((s) => ({ ...s, colMinFields: 50 }));
-    expect(getBanner()).toBeNull();
-  });
-
   it('is idempotent — second call returns the same dispose', () => {
     setupPlanetList([
-      { cp: 101, coords: '[4:468:14]', name: 'P2', used: 80, max: 200 },
+      { cp: 101, coords: '[4:468:14]', name: 'P2', used: 0, max: 200 },
     ]);
-    settingsStore.update((s) => ({ ...s, colMinFields: 200 }));
 
-    const dispose1 = installSmallPlanetDetector();
-    const dispose2 = installSmallPlanetDetector();
+    const dispose1 = installFreshPlanetDetector();
+    const dispose2 = installFreshPlanetDetector();
     expect(dispose2).toBe(dispose1);
-
-    // Only one banner in the DOM (no double-mount).
     expect(document.querySelectorAll(`#${BANNER_ID}`).length).toBe(1);
   });
 
   it('dispose removes the banner', () => {
     setupPlanetList([
-      { cp: 101, coords: '[4:468:14]', name: 'P2', used: 80, max: 200 },
+      { cp: 101, coords: '[4:468:14]', name: 'P2', used: 0, max: 200 },
     ]);
-    settingsStore.update((s) => ({ ...s, colMinFields: 200 }));
 
-    const dispose = installSmallPlanetDetector();
+    const dispose = installFreshPlanetDetector();
     expect(getBanner()).not.toBeNull();
 
     dispose();

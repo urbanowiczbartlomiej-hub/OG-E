@@ -1,69 +1,52 @@
 // @ts-check
 
-// Small-planet detector — scans `#planetList` on every mount for
-// colonies that still sit under the `colMinFields` threshold and
+// Fresh-planet detector — scans `#planetList` on every mount for a
+// colony where nothing has been built yet (`usedFields === 0`) and
 // paints a top-of-screen banner pointing to the first one. Clicking
 // the banner navigates to that planet's overview, where
-// `abandonOverview.js` takes over and offers the red abandon-overlay.
+// `abandonOverview.js` takes over with the red abandon overlay.
 //
-// # Why this replaces `newPlanetDetector`
+// # Why the criterion is strictly `used === 0`
 //
-// The old `newPlanetDetector` tracked a persisted `knownPlanets` Set
-// and diffed it against the current `#planetList` to flag "not yet
-// confirmed" planets. Three phases (seed / prune / mark-built)
-// mutated the set under various conditions, and race-y interactions
-// between them (page load order, in-page navigation, settings-driven
-// refresh) meant the banner would sometimes not fire for a fresh
-// colony, then reappear later, then miss the next one — exactly the
-// flakiness flagged in the smoke test. The bookkeeping also
-// introduced a chrome.storage sync key (`oge5_knownPlanets`) purely
-// to serve this one feature.
-//
-// We now read the criterion directly from the source of truth: the
-// game's own planetList tooltip. Every `.smallplanet` row carries a
-// `data-tooltip-title` with the pattern
-// `<b>Name [g:s:p]</b>…<diameter>km (used/max)…`. Parsing that gives
-// us (used, max) without any persistence or round-tripping: if
-// `used < colMinFields` the planet is an abandon candidate by the
-// same rule `abandonOverview` enforces on the overview page itself.
-//
-// The only behaviour we lose is "don't banner a small planet the
-// user already confirmed". In practice the same deterrent still
-// applies: the banner flashes once per page load, and the moment the
-// user builds past `colMinFields` (or raises the setting) the
-// banner disappears for good. A legitimately-tiny keeper planet
-// shows the banner on every load — acceptable given the feature's
-// core intent is "alert me to abandon candidates", not "remind me
-// what I've seen".
+// An earlier revision triggered the banner for any planet below
+// `colMinFields`. Smoke-test surfaced a false-positive class: a
+// colony with ~100 fields built (legitimately kept, mid-build) still
+// fell under the threshold and kept flashing the banner on every page
+// load. The signal the user actually wants is "you just colonized
+// here and haven't touched it yet — decide if you're keeping". That
+// is exactly `used === 0`: the moment the user lays down ONE field
+// the banner disappears. Matches the intent of the old
+// `newPlanetDetector` (bannered fresh colonies) without any of the
+// persisted-Set bookkeeping that made it flaky.
 //
 // # Lifecycle
 //
-//   1. install reads current planetList + settings, picks the first
-//      row whose `used < colMinFields`, paints the banner.
-//   2. Subscribes to `settingsStore` — changing `colMinFields` or
-//      any other setting triggers a re-evaluation (in case the
-//      threshold was the reason the banner was up / down).
-//   3. dispose removes the banner and unsubscribes.
+//   1. install scans `#planetList`, picks the first row whose
+//      `usedFields === 0`, paints the banner.
+//   2. dispose removes the banner.
+//
+// No store subscriptions: the criterion doesn't depend on any
+// setting. The banner is re-evaluated on the next page load — OGame
+// reloads on every top-level navigation, so this is more than often
+// enough. If a future setting needs to affect banner visibility, add
+// a subscription then, not speculatively.
 //
 // # Why no MutationObserver
 //
 // `#planetList` only repaints on a full page load, and our content
-// script reinstalls on every page load — a MutationObserver would
-// just add noise. If OGame ever starts AJAX-swapping the planet list
-// we can add one; today a single pass at install is correct.
+// script reinstalls on every page load. A MutationObserver would
+// just add noise.
 //
 // @see ./abandonOverview.js — the overview-page overlay that actions
 //   the candidate the banner points to.
 
-import { settingsStore } from '../state/settings.js';
-
 /** Stable DOM id of the banner — lets re-paints dedupe on it. */
-const BANNER_ID = 'oge5-small-planet-banner';
+const BANNER_ID = 'oge-fresh-planet-banner';
 
 /**
- * One planet-list row, projected to just the fields the banner
- * needs. `used` / `max` are the parsed field counts from the
- * tooltip's `(used/max)` parenthetical.
+ * One planet-list row projected to just the fields the banner needs.
+ * `used` / `max` are the parsed field counts from the tooltip's
+ * `(used/max)` parenthetical.
  *
  * @typedef {object} PlanetRow
  * @property {number} cp
@@ -119,22 +102,21 @@ const parsePlanetRow = (row) => {
 };
 
 /**
- * Scan `#planetList` and return the first row whose usedFields lands
- * below `minFields`. Row order is preserved (we return the first hit
- * in document order), matching the visual order in the game's
- * sidebar — users expect the banner to track the top-most candidate.
+ * Scan `#planetList` and return the first row whose `usedFields` is
+ * exactly zero (i.e. a freshly-colonized planet where the user has
+ * not built anything yet). Row order is preserved — we return the
+ * first hit in document order, matching the sidebar's visual order.
  *
- * @param {number} minFields Current `colMinFields` setting.
  * @returns {PlanetRow | null}
  */
-export const findFirstSmallPlanet = (minFields) => {
+export const findFirstFreshPlanet = () => {
   const rows = document.querySelectorAll(
     '#planetList .smallplanet[id^="planet-"]',
   );
   for (const row of rows) {
     const p = parsePlanetRow(row);
     if (!p) continue;
-    if (p.used < minFields) return p;
+    if (p.used === 0) return p;
   }
   return null;
 };
@@ -158,8 +140,7 @@ const getOverviewCp = () => {
 /**
  * Build the overview URL for `cp`. Base is derived from
  * `location.href` so we stay on whatever origin / path the game
- * served; the query tail is dropped to avoid leaking stale params
- * into the nav.
+ * served; the query tail is dropped to avoid leaking stale params.
  *
  * @param {number} cp
  * @returns {string}
@@ -171,7 +152,7 @@ const buildOverviewUrl = (cp) => {
 
 /**
  * Remove the banner if present. Safe to call when the banner is not
- * mounted (returns without touching the DOM).
+ * mounted.
  *
  * @returns {void}
  */
@@ -181,9 +162,8 @@ const removeBanner = () => {
 };
 
 /**
- * Mount the banner for `planet`. If a banner is already mounted for
- * the SAME cp, leave it alone (avoids an unnecessary DOM churn during
- * a repaint). Otherwise strip the old one and paint fresh.
+ * Mount the banner for `planet`. Short-circuits if a banner is
+ * already mounted for the same cp.
  *
  * @param {PlanetRow} planet
  * @returns {void}
@@ -215,7 +195,7 @@ const showBanner = (planet) => {
   ].join(';');
 
   const titleLine = document.createElement('div');
-  titleLine.textContent = 'Mała planeta';
+  titleLine.textContent = 'Nowa planeta';
   titleLine.style.cssText = 'font-size:18px;margin-bottom:6px;opacity:0.9';
 
   const bigLine = document.createElement('div');
@@ -225,7 +205,7 @@ const showBanner = (planet) => {
     'font-size:28px;margin:4px 0;line-height:1.1;letter-spacing:1px';
 
   const fieldsLine = document.createElement('div');
-  fieldsLine.textContent = `${planet.used}/${planet.max} pól`;
+  fieldsLine.textContent = `0/${planet.max} pól`;
   fieldsLine.style.cssText = 'font-size:14px;margin-top:4px;opacity:0.95';
 
   const hintLine = document.createElement('div');
@@ -246,50 +226,35 @@ const showBanner = (planet) => {
 
 /**
  * Module-scope install handle. Holds the dispose fn between install
- * and dispose; `null` otherwise. Makes `installSmallPlanetDetector`
- * idempotent: a second call while already installed returns the same
- * dispose without touching the DOM or re-subscribing.
+ * and dispose; `null` otherwise. Makes
+ * {@link installFreshPlanetDetector} idempotent.
  *
  * @type {{ dispose: () => void } | null}
  */
 let installed = null;
 
 /**
- * Install the small-planet detector. On every mount (and on every
- * subsequent `settingsStore` change) we scan `#planetList` for the
- * first row whose `used < colMinFields` and paint / refresh the
- * banner accordingly. Clicking the banner navigates to the overview
- * page of the corresponding cp — the `abandonOverview` feature then
- * paints its red abandon-overlay.
+ * Install the fresh-planet detector. Scans `#planetList` once at
+ * mount and paints the banner for the first `used === 0` row, unless
+ * we're already on its overview page (in which case the click target
+ * would be a no-op).
  *
- * Idempotent: calling `installSmallPlanetDetector()` twice while
- * installed returns the same dispose fn without double-subscribing.
+ * Idempotent: calling `installFreshPlanetDetector()` twice while
+ * installed returns the same dispose fn.
  *
- * @returns {() => void} Dispose — removes the banner + unsubscribes.
+ * @returns {() => void} Dispose — removes the banner.
  */
-export const installSmallPlanetDetector = () => {
+export const installFreshPlanetDetector = () => {
   if (installed) return installed.dispose;
 
-  const refresh = () => {
-    const { colMinFields } = settingsStore.get();
-    const match = findFirstSmallPlanet(colMinFields);
-    // Suppress the banner when we're already looking at that cp's
-    // overview — navigating there would be a no-op and the
-    // abandonOverview overlay is already doing the job.
-    if (!match || getOverviewCp() === match.cp) {
-      removeBanner();
-      return;
-    }
+  const match = findFirstFreshPlanet();
+  if (match && getOverviewCp() !== match.cp) {
     showBanner(match);
-  };
-
-  refresh();
-  const unsubSettings = settingsStore.subscribe(refresh);
+  }
 
   installed = {
     dispose: () => {
       removeBanner();
-      unsubSettings();
       installed = null;
     },
   };
@@ -297,14 +262,14 @@ export const installSmallPlanetDetector = () => {
 };
 
 /**
- * Test-only reset for the module-scope `installed` sentinel. Runs the
- * current dispose (if any) so each test case starts with a clean DOM
- * and no leaked subscription. Prefixed with `_` to signal "do not
- * import from production code".
+ * Test-only reset for the module-scope `installed` sentinel. Runs
+ * the current dispose (if any) so each test case starts with a clean
+ * DOM. Prefixed with `_` to signal "do not import from production
+ * code".
  *
  * @returns {void}
  */
-export const _resetSmallPlanetDetectorForTest = () => {
+export const _resetFreshPlanetDetectorForTest = () => {
   if (installed) {
     installed.dispose();
     installed = null;
