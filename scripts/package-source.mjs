@@ -34,6 +34,7 @@ const INCLUDE = [
   'package-lock.json',
   'rollup.config.mjs',
   'tsconfig.json',
+  '.nvmrc',
   'README.md',
   'CONTRIBUTING.md',
   'CHANGELOG.md',
