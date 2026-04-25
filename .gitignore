@@ -2,6 +2,9 @@
 dist/
 *.zip
 
+# Claude Code per-project state
+.claude/
+
 # Node
 node_modules/
 npm-debug.log*

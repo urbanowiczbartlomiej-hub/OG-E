@@ -136,6 +136,11 @@ has no server.
 
 ---
 
+## Privacy
+
+No servers, no telemetry. Optional gist-based sync uses a GitHub PAT
+*you* supply. Full statement: [`PRIVACY.md`](PRIVACY.md).
+
 ## License
 
 [MIT](LICENSE). Do what you want, but remember: this code works
