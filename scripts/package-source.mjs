@@ -7,11 +7,19 @@
 //
 // Includes everything needed for that build (and the docs the reviewer
 // will read), excludes node_modules/, dist/, dist.zip, .claude/, .git/,
-// and test/. Uses PowerShell's Compress-Archive on Windows and `zip`
-// elsewhere — same pattern as scripts/package.mjs.
+// and test/.
+//
+// Implementation: stage the included entries into a temporary
+// directory, then zip the directory with `tar -a` — picks the format
+// from the extension (.zip → zip) and writes forward-slash entry
+// paths on every platform, including Windows (where Compress-Archive
+// and .NET Framework's ZipFile.CreateFromDirectory both write
+// backslashes that AMO's validator rejects). `tar.exe` ships with
+// Windows 10 1803+ (bsdtar/libarchive).
 
-import { existsSync, rmSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, rmSync, mkdtempSync, cpSync } from 'node:fs';
+import { resolve, join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { execSync } from 'node:child_process';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -44,25 +52,20 @@ if (existsSync(ZIP)) {
   console.log('package-source: removed stale source.zip');
 }
 
-const isWindows = process.platform === 'win32';
+const STAGE = mkdtempSync(join(tmpdir(), 'oge-source-'));
 
 try {
-  if (isWindows) {
-    const paths = present
-      .map((entry) => `"${resolve(ROOT, entry)}"`)
-      .join(',');
-    const cmd = `Compress-Archive -Path ${paths} -DestinationPath "${ZIP}" -Force`;
-    execSync(`powershell -NoProfile -Command "${cmd.replace(/"/g, '\\"')}"`, {
-      stdio: 'inherit',
-    });
-  } else {
-    const list = present.map((p) => `"${p}"`).join(' ');
-    execSync(`cd "${ROOT}" && zip -r "${ZIP}" ${list}`, { stdio: 'inherit' });
+  for (const entry of present) {
+    cpSync(resolve(ROOT, entry), join(STAGE, entry), { recursive: true });
   }
+
+  execSync(`tar -a -c -f "${ZIP}" -C "${STAGE}" .`, { stdio: 'inherit' });
 } catch (err) {
   console.error('package-source: archive command failed');
   console.error(err instanceof Error ? err.message : err);
+  rmSync(STAGE, { recursive: true, force: true });
   process.exit(1);
 }
 
+rmSync(STAGE, { recursive: true, force: true });
 console.log(`package-source: wrote ${ZIP}`);

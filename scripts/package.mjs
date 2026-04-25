@@ -40,26 +40,16 @@ if (existsSync(ZIP)) {
   console.log('package: removed stale dist.zip');
 }
 
-const isWindows = process.platform === 'win32';
-
+// Windows 10 1803+ ships bsdtar (libarchive) as `tar.exe`. Both
+// PowerShell's `Compress-Archive` and .NET Framework's
+// `ZipFile.CreateFromDirectory` write backslashes in archive entry
+// paths (the latter only fixed in .NET 7+, which Windows PowerShell
+// 5.1 does not use). Backslash entry paths violate the ZIP spec and
+// trip AMO's validator: `Invalid file name in archive: icons\…`.
+// `tar -a` picks the format from the extension (.zip → zip) and
+// writes forward-slash entries on every platform.
 try {
-  if (isWindows) {
-    // PowerShell's `Compress-Archive` takes a set of literal paths.
-    // Globbing `dist/*` via `-Path` pulls the contents (not the wrapper
-    // folder) into the zip root. `-Force` tolerates the archive
-    // already being present (we removed it above, but belt + braces).
-    const paths = distEntries
-      .map((entry) => `"${resolve(DIST, entry)}"`)
-      .join(',');
-    const cmd = `Compress-Archive -Path ${paths} -DestinationPath "${ZIP}" -Force`;
-    execSync(`powershell -NoProfile -Command "${cmd.replace(/"/g, '\\"')}"`, {
-      stdio: 'inherit',
-    });
-  } else {
-    // Change into dist/ so zip stores relative paths (manifest.json at
-    // archive root, not dist/manifest.json).
-    execSync(`cd "${DIST}" && zip -r "${ZIP}" .`, { stdio: 'inherit' });
-  }
+  execSync(`tar -a -c -f "${ZIP}" -C "${DIST}" .`, { stdio: 'inherit' });
 } catch (err) {
   console.error('package: archive command failed');
   console.error(err instanceof Error ? err.message : err);
