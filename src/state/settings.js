@@ -69,7 +69,6 @@ export const SETTINGS_PREFIX = 'oge_';
 
  *   expeditionBadges        true  — ekspedycje dot on planet list
  *   autoRedirectExpedition  true  — redirect to next planet after expedition
- *   autoRedirectColonize    true  — redirect to next colonize target after send
  *   enterBtnSize            560   — Send Exp button size in px
  *   colBtnSize              336   — Send Col button size in px
  *   colPositions            '8'   — comma-separated colonize positions e.g. "8,9,10"
@@ -87,7 +86,6 @@ export const SETTINGS_PREFIX = 'oge_';
  * @property {boolean} colonizeMode
  * @property {boolean} expeditionBadges
  * @property {boolean} autoRedirectExpedition
- * @property {boolean} autoRedirectColonize
  * @property {number}  enterBtnSize
  * @property {number}  colBtnSize
  * @property {string}  colPositions
@@ -140,7 +138,6 @@ export const SETTINGS_SCHEMA = {
   colonizeMode:           { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'colonizeMode' },
   expeditionBadges:       { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'expeditionBadges' },
   autoRedirectExpedition: { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'autoRedirectExpedition' },
-  autoRedirectColonize:   { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'autoRedirectColonize' },
   enterBtnSize:           { type: 'int',    default: 560,   key: SETTINGS_PREFIX + 'enterBtnSize' },
   colBtnSize:             { type: 'int',    default: 336,   key: SETTINGS_PREFIX + 'colBtnSize' },
   colPositions:           { type: 'string', default: '8',   key: SETTINGS_PREFIX + 'colPositions' },
