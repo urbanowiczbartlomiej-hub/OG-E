@@ -473,3 +473,71 @@ describe('installBadges — idempotency', () => {
     expect(document.querySelectorAll('#oge-badges-style').length).toBe(1);
   });
 });
+
+// ──────────────────────────────────────────────────────────────────
+// MutationObserver feedback-loop regression
+// ──────────────────────────────────────────────────────────────────
+
+describe('installBadges — observer feedback loop', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('does not feedback-loop on its own DOM mutations (regression for "DOM skacze")', async () => {
+    setupGameDOM({
+      expeditions: [
+        { coords: '1:2:3', name: 'P1', ships: 1, returning: true },
+      ],
+      planets: [{ cp: 1, name: 'P1', coords: '[1:2:3]' }],
+    });
+    installBadges();
+
+    // Install-time render produces 1 cluster — capture its identity.
+    const initial = document.querySelector('.ogi-exp-dots');
+    expect(initial).not.toBeNull();
+
+    // Trigger ONE external mutation to wake the observer up. The new
+    // planet has no matching expedition, so render output is unchanged
+    // (still exactly one cluster on planet-1); we're testing whether
+    // the observer-driven render STAYS quiescent or feedback-loops on
+    // its own clearBadges + appendChild mutations.
+    const planetList = /** @type {HTMLElement} */ (
+      document.getElementById('planetList')
+    );
+    const newRow = document.createElement('div');
+    newRow.className = 'smallplanet';
+    newRow.id = 'planet-2';
+    newRow.innerHTML =
+      '<a class="planetlink"><span class="planet-name">P2</span>' +
+      '<span class="planet-koords">[4:5:6]</span>' +
+      '<span class="planetBarSpaceObjectContainer"></span></a>';
+    planetList.appendChild(newRow);
+
+    // Settle the debounced render triggered by the external mutation
+    // (200 ms debounce + microtask flush).
+    await vi.advanceTimersByTimeAsync(300);
+
+    // Snapshot the cluster element AFTER that one render pass.
+    const afterFirstRender = document.querySelector('.ogi-exp-dots');
+    expect(afterFirstRender).not.toBeNull();
+
+    // Advance another 1500 ms — well past 7 more 200 ms debounce
+    // windows but short of the 3 s safety-poll. Without the loop fix,
+    // the renderBadges in the previous step would have fired the
+    // observer (clear + append on `.ogi-exp-dots`), which would have
+    // scheduled another render, which would fire the observer again,
+    // etc. Each loop iteration creates a fresh cluster element via
+    // `clearBadges` + `container.appendChild`, so the identity captured
+    // at `afterFirstRender` would NOT be the current cluster anymore.
+    // With the fix (observer paused around our own renders), no further
+    // renders happen and the cluster identity is preserved.
+    await vi.advanceTimersByTimeAsync(1500);
+
+    const afterQuiescence = document.querySelector('.ogi-exp-dots');
+    expect(afterQuiescence).toBe(afterFirstRender);
+  });
+});

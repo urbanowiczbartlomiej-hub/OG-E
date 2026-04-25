@@ -4,6 +4,40 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+### Fixed
+
+- **Expedition badges no longer flicker the planet list.** The badges
+  feature's `MutationObserver` was firing on its own `clearBadges` +
+  `appendChild` writes, which scheduled another debounced render
+  (200 ms), which fired the observer again — a tight feedback loop
+  that re-created `.ogi-exp-dots` elements every 200 ms forever. Fixed
+  by pausing the observer around our own renders
+  (disconnect-render-reattach). Bug present since v1.0.0; surfaces
+  visually as the planet list "jumping" while an expedition is in
+  flight. Locked in by a regression test that asserts cluster
+  identity is preserved across multiple debounce cycles.
+
+### Added
+
+- **Per-galaxy stale-count badge** in the galaxy observations header —
+  amber pill showing how many systems in that galaxy are past their
+  rescan threshold. Mirrors the amber inset ring on stale pixels in
+  the map below; hidden when the count is zero so fully-fresh galaxies
+  stay uncluttered. Backed by a new pure helper
+  `domain/histogram.js#countStaleByGalaxy(scans, now)` with seven
+  tests covering empty input, multi-galaxy binning, malformed keys,
+  and null entries.
+
+### Deferred for a later release
+
+- Stale rescan queue (one-click-per-jump) on the galaxy observations
+  page. TOS allows at most one HTTP request per click, so this must
+  take the queue-cursor shape (1 click → 1 nav to the next stale
+  system), not a batch action.
+- Keyboard shortcuts beyond ArrowRight on fleetdispatch.
+
 ## [1.0.0] — 2026-04-24
 
 First public release.
@@ -60,12 +94,3 @@ most one HTTP request to the game. No background work, no cycles, no
 CAPTCHA bypass. See [`CONTRIBUTING.md`](CONTRIBUTING.md) §Compliance
 for the full guarantee and review checklist.
 
-## [Unreleased]
-
-Deliberately deferred for the first minor release:
-
-- i18n framework (English only for 1.0.0; PL/DE/FR planned later).
-- Dark-mode CSS toggle.
-- Bulk "rescan all stale" action on the galaxy observations page.
-- Keyboard shortcuts beyond ArrowRight on fleetdispatch.
-- Per-galaxy stale-count summary in the galaxy observations header.

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "OG-E",
   "version": "1.0.0",
-  "description": "OGame UI helper (requires AntiGameReborn). Floating Send buttons, galaxy scan tracker, abandon overlay. Does not initiate game requests, does not automate gameplay.",
+  "description": "UI helper for OGame: floating Send Exp/Col, galaxy scan tracker, abandon overlay. Requires AntiGameReborn. Unofficial.",
   "browser_specific_settings": {
     "gecko": {
       "id": "oge@ogame-extensions",

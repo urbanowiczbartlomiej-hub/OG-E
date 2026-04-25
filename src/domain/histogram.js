@@ -16,6 +16,7 @@
 //   - computeFieldStats(entries)               → summary stats of `fields` column
 //   - buildFieldBuckets(entries)               → Map<fields, count> (sorted)
 //   - collectGalaxyStats(scans, targets)       → global + per-galaxy tallies
+//   - countStaleByGalaxy(scans, now)           → per-galaxy count of stale systems
 //
 // @see ../state/scans.js  — GalaxyScans / SystemScan shapes
 // @see ../state/history.js — ColonyHistory / ColonyEntry shapes
@@ -23,6 +24,7 @@
 // @see ./positions.js     — parsePositions underlying parser
 
 import { parsePositions } from './positions.js';
+import { isSystemStale } from './scheduling.js';
 
 /**
  * @typedef {import('./scans.js').Position} Position
@@ -273,4 +275,53 @@ export const collectGalaxyStats = (scans, targetPositions) => {
   }
 
   return { global, byGalaxy };
+};
+
+/**
+ * Count stale systems per galaxy. A system is stale per
+ * {@link isSystemStale}; this function bins the count by the galaxy
+ * extracted from each scan key.
+ *
+ * Useful for the histogram page's per-galaxy header — surfaces "X
+ * systems past their rescan threshold" so the user knows which
+ * galaxies need attention without expanding every accordion to read
+ * the amber pixel rings.
+ *
+ * Defensive parsing: malformed system keys (missing `:`, non-numeric
+ * galaxy) are silently skipped — same convention as
+ * {@link collectGalaxyStats}. A `null` / missing scan entry is also
+ * skipped (treated as "no usable data" rather than "stale by default")
+ * so a galaxy whose only entries are null doesn't appear in the result
+ * at all.
+ *
+ * @param {GalaxyScans} scans
+ * @param {number} [now] Epoch-ms passed through to `isSystemStale`.
+ *   Defaults to `Date.now()` for call-site convenience; tests should
+ *   pass a stable value to stay deterministic.
+ * @returns {Record<number, number>} galaxy → count of stale systems.
+ *   Galaxies with no usable scans are absent from the map; galaxies
+ *   with at least one usable scan but zero stale entries map to `0`,
+ *   so callers can distinguish "no data" from "all fresh".
+ *
+ * @example
+ *   countStaleByGalaxy(
+ *     {
+ *       '4:30': { scannedAt: 100, positions: { 8: { status: 'empty_sent' } } },
+ *       '5:1':  { scannedAt: 100, positions: { 8: { status: 'empty' } } },
+ *     },
+ *     100 + 5 * 3600_000, // 5h later — empty_sent (4h threshold) is stale
+ *   );
+ *   // { 4: 1, 5: 0 }
+ */
+export const countStaleByGalaxy = (scans, now = Date.now()) => {
+  /** @type {Record<number, number>} */
+  const out = {};
+  for (const [key, scan] of Object.entries(scans)) {
+    if (!scan) continue;
+    const g = Number(key.split(':')[0]);
+    if (!Number.isFinite(g)) continue;
+    if (out[g] === undefined) out[g] = 0;
+    if (isSystemStale(scan, now)) out[g]++;
+  }
+  return out;
 };

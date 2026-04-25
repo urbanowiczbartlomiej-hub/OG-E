@@ -9,7 +9,12 @@
 // @ts-check
 
 import { describe, it, expect } from 'vitest';
-import { mergeScans, mergeHistory } from '../../src/sync/merge.js';
+import {
+  mergeScans,
+  mergeHistory,
+  clearScans,
+  clearGalaxyScans,
+} from '../../src/sync/merge.js';
 
 /**
  * @typedef {import('../../src/state/scans.js').GalaxyScans} GalaxyScans
@@ -294,5 +299,102 @@ describe('mergeHistory', () => {
     // AND the new cp is appended at the end in remote's order.
     expect(merged).toEqual([l1, l2, r3]);
     expect(changed).toBe(true);
+  });
+});
+
+describe('clearScans', () => {
+  it('returns empty galaxyScans and preserves colonyHistory by reference', () => {
+    /** @type {ColonyHistory} */
+    const colonyHistory = [entry(1), entry(2)];
+    /** @type {GalaxyScans} */
+    const galaxyScans = { '4:30': scan(1000), '5:1': scan(2000) };
+    const result = clearScans({ version: 3, updatedAt: 'x', galaxyScans, colonyHistory });
+    expect(result.galaxyScans).toEqual({});
+    // Reference equality on colonyHistory — no allocation needed when
+    // the input array is the source of truth.
+    expect(result.colonyHistory).toBe(colonyHistory);
+  });
+
+  it('returns empty defaults for a null payload', () => {
+    const result = clearScans(null);
+    expect(result).toEqual({ galaxyScans: {}, colonyHistory: [] });
+  });
+
+  it('returns empty defaults for an undefined payload', () => {
+    const result = clearScans(undefined);
+    expect(result).toEqual({ galaxyScans: {}, colonyHistory: [] });
+  });
+
+  it('falls back to [] when colonyHistory is not an array', () => {
+    const result = clearScans({ colonyHistory: 'not-an-array' });
+    expect(result.colonyHistory).toEqual([]);
+  });
+
+  it('falls back to [] when colonyHistory is missing', () => {
+    const result = clearScans({ galaxyScans: { '1:1': scan(1) } });
+    expect(result.colonyHistory).toEqual([]);
+  });
+});
+
+describe('clearGalaxyScans', () => {
+  it('drops only the requested galaxy keys; preserves others and colonyHistory', () => {
+    /** @type {ColonyHistory} */
+    const colonyHistory = [entry(7)];
+    const keep1 = scan(1000);
+    const keep2 = scan(2000);
+    /** @type {GalaxyScans} */
+    const galaxyScans = {
+      '4:1': scan(500),  // dropped (galaxy 4)
+      '4:30': scan(600), // dropped (galaxy 4)
+      '5:1': keep1,      // kept (different galaxy)
+      '6:1': keep2,      // kept
+    };
+    const result = clearGalaxyScans({ galaxyScans, colonyHistory }, 4);
+    expect(result.galaxyScans).toEqual({ '5:1': keep1, '6:1': keep2 });
+    expect(result.colonyHistory).toBe(colonyHistory);
+  });
+
+  it('returns empty galaxyScans when input galaxyScans is missing', () => {
+    const result = clearGalaxyScans({ colonyHistory: [entry(1)] }, 4);
+    expect(result.galaxyScans).toEqual({});
+  });
+
+  it('returns empty defaults for a null payload', () => {
+    const result = clearGalaxyScans(null, 4);
+    expect(result).toEqual({ galaxyScans: {}, colonyHistory: [] });
+  });
+
+  it('returns empty galaxyScans when input galaxyScans is not an object', () => {
+    const result = clearGalaxyScans({ galaxyScans: 'nope', colonyHistory: [] }, 4);
+    expect(result.galaxyScans).toEqual({});
+  });
+
+  it('matches by exact "${galaxy}:" prefix — galaxy 1 does NOT drop "10:*" keys', () => {
+    // Regression-lock: a naive String.startsWith on the bare digit
+    // would conflate galaxies 1 and 10. The trailing ":" in the prefix
+    // is what prevents that — this test fails the moment someone
+    // simplifies the prefix construction.
+    const k10 = scan(2);
+    const k11 = scan(3);
+    /** @type {GalaxyScans} */
+    const galaxyScans = {
+      '1:1': scan(1),  // dropped (galaxy 1)
+      '10:1': k10,     // kept (galaxy 10)
+      '11:1': k11,     // kept (galaxy 11)
+    };
+    const result = clearGalaxyScans({ galaxyScans, colonyHistory: [] }, 1);
+    expect(result.galaxyScans).toEqual({ '10:1': k10, '11:1': k11 });
+  });
+
+  it('leaves galaxyScans untouched when the target galaxy has no keys', () => {
+    const k = scan(1);
+    /** @type {GalaxyScans} */
+    const galaxyScans = { '5:1': k };
+    const result = clearGalaxyScans({ galaxyScans, colonyHistory: [] }, 9);
+    // Same value, but a fresh object — the function copies into a new
+    // record, so reference equality on the map is intentionally not
+    // promised; only the value mapping is.
+    expect(result.galaxyScans).toEqual({ '5:1': k });
+    expect(result.galaxyScans['5:1']).toBe(k);
   });
 });

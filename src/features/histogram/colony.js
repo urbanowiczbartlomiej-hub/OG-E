@@ -42,15 +42,29 @@ const MIN_BAR_PX = 3;
  *
  * The first option (`<option value="all">`) is pre-rendered in
  * `histogram.html` and must survive re-renders — we preserve it and
- * pop only the Position-N entries added by previous calls. That keeps
- * the user's current selection valid across refreshes whenever they're
- * still on "all".
+ * pop only the Position-N entries added by previous calls.
+ *
+ * # Preserving the user's selection across re-populates
+ *
+ * Browsers reset `select.value` to the first option whenever the
+ * currently-selected `<option>` is removed. Our re-populate wipes
+ * every Position-N option and re-adds them fresh, which means a user
+ * who had `"Position 8"` selected would silently snap back to
+ * `"all"` on every render triggered by the `change` handler itself
+ * — dropping the filter as soon as the user picked one. We save the
+ * pre-rebuild `.value` here and set it back after the rebuild; if
+ * the option is still present (usual case) it sticks, and if the
+ * user filtered on a position that no longer exists in `entries` the
+ * browser's own default-to-first-option behaviour takes over,
+ * sending them to `"all"` — which is the correct fallback.
  *
  * @param {HTMLSelectElement} selectEl
  * @param {ReadonlyArray<ColonyEntry>} entries
  * @returns {void}
  */
 export const populatePositionFilter = (selectEl, entries) => {
+  const previousValue = selectEl.value;
+
   // Drop any Position-N entries from a previous render but keep option[0]
   // ("All positions") which is owned by the HTML template.
   while (selectEl.options.length > 1) {
@@ -64,6 +78,14 @@ export const populatePositionFilter = (selectEl, entries) => {
     opt.value = String(pos);
     opt.textContent = 'Position ' + pos;
     selectEl.appendChild(opt);
+  }
+
+  // Restore the pre-rebuild selection. Assignment to a value that
+  // doesn't match any option silently lands on `""` on Firefox and
+  // the first option on Chrome; both behave as "fall back to all"
+  // since the first option carries `value="all"`.
+  if (previousValue && previousValue !== selectEl.value) {
+    selectEl.value = previousValue;
   }
 };
 

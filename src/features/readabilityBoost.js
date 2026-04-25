@@ -53,6 +53,42 @@ import { settingsStore } from '../state/settings.js';
 const STYLE_ID = 'oge-readability-boost';
 
 /**
+ * Compact the countdown string by:
+ *   1. Stripping the trailing seconds suffix entirely
+ *      (`"42min. 56sek."` → `"42min. 56"`).
+ *   2. Shortening the minutes suffix to a single `m`
+ *      (`"42min. 56"` → `"42m 56"`).
+ *
+ * The result is a tighter glance-value that still reads unambiguously
+ * ("42m 56" = 42 minutes 56 seconds). Hours and other units are left
+ * alone — the transformation is deliberately narrow so countdowns on
+ * pages using exotic unit strings degrade gracefully instead of
+ * losing information.
+ *
+ * Seconds-strip only fires when the suffix is attached to a numeric
+ * value. Expiry strings OGame might render on countdown completion
+ * (`"teraz"`, `"now"`, ...) pass through untouched.
+ *
+ * Covered second-unit variants: Polish `sek`, English `sec` / `s`,
+ * Cyrillic `с`. Minutes match `min` / `Min` case-insensitively, which
+ * covers every Latin-script locale OGame ships.
+ *
+ * Exported so tests can pin the pattern without mounting a DOM.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+export const stripCountdownUnitSuffix = (text) => {
+  const withoutSeconds = text.replace(
+    /(\d)\s*(?:sek|sec|s|с)\.?\s*$/i,
+    '$1',
+  );
+  // `min.` / `min` / `Min.` → `m`. Global + case-insensitive so every
+  // minute marker in a multi-unit countdown compresses uniformly.
+  return withoutSeconds.replace(/min\.?/gi, 'm');
+};
+
+/**
  * The override rules. Kept as a module-level constant so tests can
  * assert on the exact selectors + `!important` presence without
  * reaching into internals.
@@ -60,18 +96,30 @@ const STYLE_ID = 'oge-readability-boost';
 const CSS = `/* OG-E: readability boost — event box + fleet movement link */
 
 /* ===== Event box container =====
-   Keep the game's default layout + background; just nudge the box up
-   a touch so it sits tighter under AGR's header. Backgrounds vary
-   across OGame skins and AGR themes — overriding them here caused
-   avoidable contrast surprises, so we leave that alone. */
+   Three pieces of information sit inside this box: the mission count
+   summary ("17 Misje: 17 x własna"), the countdown to the next event,
+   and the mission-type name. OGame renders them across two <p> tags
+   at small default text. Our reshape keeps the game's background /
+   border / theme colour / position untouched and only:
+     1. Makes the container a positioning context for the countdown.
+     2. Reserves enough right-padding for the countdown to float on
+        top without overlapping the left column text. */
 #eventboxFilled {
-  margin-top: -5px !important;
+  position: relative !important;
+  padding-right: 130px !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow: visible !important;
 }
 
-/* Hide the verbose "N Misje:" prefix — the compact "N x type" span
-   (.undermark) carries the same information at half the width. */
+/* Row 1 (left column, top): hide the verbose "N Misje:" prefix — the
+   compact "N x type" span (.undermark) carries the same information
+   at half the width. */
 #eventboxFilled > p.event_list:first-child {
   font-size: 0 !important;
+  margin: 0 !important;
+  line-height: 1.2 !important;
 }
 #eventboxFilled > p.event_list:first-child .undermark {
   font-size: 13px !important;
@@ -79,38 +127,56 @@ const CSS = `/* OG-E: readability boost — event box + fleet movement link */
   color: #7ecfff !important;
 }
 
-/* Both status rows ("Następna: <countdown>" and "Rodzaj: <type>") use
-   the same .next_event wrapper. Collapse the parent's font-size to 0
-   so the "Następna:" / "Rodzaj:" literal text vanishes, then re-show
-   the nested payload at explicit sizes — deliberately asymmetric: the
-   countdown (time-to-next-mission) is the glance-value, and mission
-   type changes rarely so it stays small. */
+/* Row 2 (left column, bottom + absolute right): the second <p>
+   contains BOTH .next_event spans — the one wrapping the countdown
+   and the one wrapping the mission-type name. We hide the parent
+   font-size so the "Następna:" / "Rodzaj:" prefixes vanish; the
+   nested payload re-appears via its own explicit font-size. */
+#eventboxFilled > p.event_list:nth-child(2) {
+  font-size: 0 !important;
+  margin: 0 !important;
+  line-height: 1.2 !important;
+}
+
+/* Reset the block override we used to carry from a previous revision
+   — both .next_event spans flow inline again, which is what lets the
+   mission-type sit naturally on its line in the left column. The
+   countdown escapes the flow via the absolute rule below. */
 #eventboxFilled .next_event {
   font-size: 0 !important;
+  display: inline !important;
 }
 
-/* Countdown: outsized, bold, yellow. This is THE glance-value — the
-   user reads it repeatedly, everything else in the row is supporting
-   context. The font-size is deliberately larger than anything else in
-   the AGR header row so it reads at peripheral vision. */
-#eventboxFilled .next_event .countdown {
-  font-size: 28px !important;
-  font-weight: 900 !important;
-  color: #ffe04b !important;
-  letter-spacing: 0.5px !important;
-}
-
-/* Mission-type (friendly/hostile/neutral): small, secondary. Colour
-   still carries the AGR semantic palette. */
+/* Mission-type (friendly/hostile/neutral): small but readable, left
+   column, right under the undermark chip. */
 #eventboxFilled .next_event .friendly,
 #eventboxFilled .next_event .hostile,
 #eventboxFilled .next_event .neutral {
-  font-size: 11px !important;
+  font-size: 13px !important;
   font-weight: bold !important;
 }
 #eventboxFilled .friendly { color: #55e87a !important; }
 #eventboxFilled .hostile  { color: #ff4d4d !important; }
 #eventboxFilled .neutral  { color: #ffaa33 !important; }
+
+/* Countdown: escapes the left column via absolute positioning so it
+   can grow arbitrarily large without pushing the mission-type line
+   around. Right-anchored to the container, vertically centred.
+   Inset-right matches the container's 130px padding reservation
+   minus ~110px for the countdown width — keeps it just inside the
+   box's right edge. */
+#eventboxFilled .next_event .countdown {
+  position: absolute !important;
+  right: 12px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  font-size: 35px !important;
+  font-weight: 900 !important;
+  color: #ffe04b !important;
+  letter-spacing: 0.5px !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+}
 
 /* AGR's expand/collapse toggles are irrelevant to the compact view. */
 #eventboxFilled #js_eventDetailsClosed,
@@ -204,26 +270,82 @@ export const installReadabilityBoost = () => {
     styleEl = null;
   };
 
+  // ─── Countdown suffix trimmer ─────────────────────────────────────
+  //
+  // `#eventboxFilled .countdown` is refreshed once per second by
+  // OGame. A MutationObserver catches every refresh and re-applies
+  // `stripCountdownUnitSuffix`. When the observer's own write fires a
+  // mutation, the regex is idempotent on the already-stripped text,
+  // so we don't loop. The trimmer shares the `readabilityBoost`
+  // toggle — start on enable, disconnect on disable.
+
+  /** @type {MutationObserver | null} */
+  let countdownObserver = null;
+
+  const trimCountdown = () => {
+    const cd = document.querySelector('#eventboxFilled .countdown');
+    if (!cd) return;
+    const raw = cd.textContent ?? '';
+    const stripped = stripCountdownUnitSuffix(raw);
+    if (stripped !== raw) cd.textContent = stripped;
+  };
+
+  const startCountdownTrimmer = () => {
+    if (countdownObserver) return;
+    const box = document.getElementById('eventboxFilled');
+    if (!box) return; // nothing to observe — eventbox only exists on some pages
+    trimCountdown();
+    countdownObserver = new MutationObserver(trimCountdown);
+    countdownObserver.observe(box, {
+      subtree: true,
+      characterData: true,
+      childList: true,
+    });
+  };
+
+  const stopCountdownTrimmer = () => {
+    if (countdownObserver) {
+      countdownObserver.disconnect();
+      countdownObserver = null;
+    }
+  };
+
+  // At document_start `#eventboxFilled` doesn't exist yet. Start once
+  // now (no-op if absent) and once on DOMContentLoaded.
+  const onDomReady = () => startCountdownTrimmer();
+
   // Initial paint: inject unconditionally so nothing flashes between
   // `document_start` and the first settings-store tick. The subscription
   // below reconciles to the hydrated preference on the next microtask.
   inject();
+  startCountdownTrimmer();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', onDomReady, { once: true });
+  }
 
   // React to preference changes. When the user toggles the setting off,
-  // remove the stylesheet; back on, re-inject. `prev` is tracked so the
-  // subscriber is a no-op on unrelated settings changes.
+  // remove the stylesheet AND disconnect the countdown trimmer; back
+  // on, re-inject + re-observe. `prev` is tracked so the subscriber is
+  // a no-op on unrelated settings changes.
   let prev = settingsStore.get().readabilityBoost;
   const unsubscribe = settingsStore.subscribe((next) => {
     if (next.readabilityBoost === prev) return;
     prev = next.readabilityBoost;
-    if (prev) inject();
-    else retract();
+    if (prev) {
+      inject();
+      startCountdownTrimmer();
+    } else {
+      retract();
+      stopCountdownTrimmer();
+    }
   });
 
   installed = {
     dispose: () => {
       unsubscribe();
       retract();
+      stopCountdownTrimmer();
+      document.removeEventListener('DOMContentLoaded', onDomReady);
       installed = null;
     },
   };

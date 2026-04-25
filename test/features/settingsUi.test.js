@@ -32,7 +32,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   installSettingsUi,
   _resetSettingsUiForTest,
-} from '../../src/features/settingsUi.js';
+} from '../../src/features/settingsUi/index.js';
 import {
   settingsStore,
   SETTINGS_SCHEMA,

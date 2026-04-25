@@ -22,6 +22,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import {
   installReadabilityBoost,
+  stripCountdownUnitSuffix,
   _resetReadabilityBoostForTest,
 } from '../../src/features/readabilityBoost.js';
 import { settingsStore } from '../../src/state/settings.js';
@@ -161,6 +162,53 @@ describe('readabilityBoost', () => {
     // Flipping back on re-injects — same contract.
     settingsStore.update((s) => ({ ...s, readabilityBoost: true }));
     expect(document.getElementById(STYLE_ID)).not.toBeNull();
+  });
+
+  // ── stripCountdownUnitSuffix — pure helper ──────────────────────
+
+  describe('stripCountdownUnitSuffix', () => {
+    it('strips Polish "sek." AND compacts "min." to "m"', () => {
+      expect(stripCountdownUnitSuffix('42min. 56sek.')).toBe('42m 56');
+    });
+
+    it('strips English "sec." AND compacts "min."', () => {
+      expect(stripCountdownUnitSuffix('1h 23min. 45sec.')).toBe('1h 23m 45');
+    });
+
+    it('strips single-letter "s" suffix', () => {
+      expect(stripCountdownUnitSuffix('2min. 7s')).toBe('2m 7');
+    });
+
+    it('strips "sek" with no trailing dot', () => {
+      expect(stripCountdownUnitSuffix('12sek')).toBe('12');
+    });
+
+    it('compacts a minutes-only countdown to "Nm"', () => {
+      // The game briefly renders a countdown without seconds on the
+      // minute roll-over. Before the minute rewrite this string used
+      // to pass through untouched; now it compacts to "42m" — still
+      // shorter than the original, still unambiguous.
+      expect(stripCountdownUnitSuffix('42min.')).toBe('42m');
+    });
+
+    it('preserves hours ("h") and other non-minute units', () => {
+      // Only the minutes suffix is rewritten. Hours keep their "h",
+      // days keep whatever locale suffix the game uses.
+      expect(stripCountdownUnitSuffix('2h 0min. 0sek.')).toBe('2h 0m 0');
+    });
+
+    it('leaves non-numeric expiry strings alone', () => {
+      // OGame renders "teraz" / "now" / similar on countdown expiry.
+      // Stripping those would leave an empty box.
+      expect(stripCountdownUnitSuffix('teraz')).toBe('teraz');
+      expect(stripCountdownUnitSuffix('now')).toBe('now');
+      expect(stripCountdownUnitSuffix('')).toBe('');
+    });
+
+    it('is idempotent — second application is a no-op', () => {
+      const once = stripCountdownUnitSuffix('42min. 56sek.');
+      expect(stripCountdownUnitSuffix(once)).toBe(once);
+    });
   });
 
   it('movement-link rule stacks vertically and leaves child colours alone', () => {

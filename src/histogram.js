@@ -5,6 +5,6 @@
 // without dragging in any content-script code. See
 // `features/histogram/index.js` for the wire-up.
 
-import { install } from './features/histogram/index.js';
+import { installHistogram } from './features/histogram/index.js';
 
-install();
+installHistogram();

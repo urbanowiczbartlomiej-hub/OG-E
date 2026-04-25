@@ -329,6 +329,46 @@ export const installBadges = () => {
   injectStyle(STYLE_ID, CSS);
 
   /**
+   * MutationObserver instance, declared up front so {@link renderGuarded}
+   * can pause it during our own DOM writes and avoid a feedback loop.
+   * Assigned below once the observer is constructed; `null` until then,
+   * so the very first `renderGuarded` call (during initial visibility
+   * apply) just no-ops the disconnect/reattach.
+   *
+   * @type {MutationObserver | null}
+   */
+  let observer = null;
+
+  /**
+   * Run {@link renderBadges} with the observer paused. Without this
+   * wrapper, our own `clearBadges` + `container.appendChild` mutations
+   * fire the MutationObserver, which schedules a refresh, which renders
+   * again — a 200 ms (debounce-limited) feedback loop that visibly
+   * flickers the planet list every tick.
+   *
+   * Single-threaded JS means nothing else can mutate the DOM while
+   * `renderBadges` runs synchronously, so the disconnect window only
+   * drops OUR own (intentional) mutations. External mutations (game
+   * AJAX, AGR rebuilds) re-fire normally after the reattach, and the
+   * 3 s safety poll catches anything we'd theoretically miss in the
+   * tiny disconnect gap.
+   *
+   * No-op observer-side when `observer` is still null (initial render
+   * runs before the observer is constructed) — the inner
+   * `renderBadges()` still happens.
+   *
+   * @returns {void}
+   */
+  const renderGuarded = () => {
+    if (observer) observer.disconnect();
+    try {
+      renderBadges();
+    } finally {
+      if (observer) attachObserver(observer);
+    }
+  };
+
+  /**
    * Apply the current visibility flag. `enabled=true` removes the hide
    * rule (if present) and triggers a render so any expeditions that
    * started while hidden show up immediately. `enabled=false` installs
@@ -342,7 +382,7 @@ export const installBadges = () => {
     if (enabled) {
       const hideEl = document.getElementById(HIDE_STYLE_ID);
       if (hideEl) hideEl.remove();
-      renderBadges();
+      renderGuarded();
       // Post-reload race: at DOMContentLoaded, #planetList and
       // #eventContent are in the DOM but empty — OGame's inline
       // scripts populate them moments later. If the observer
@@ -357,7 +397,7 @@ export const installBadges = () => {
         () => document.querySelectorAll('#planetList .smallplanet').length > 0,
         { timeoutMs: 5000, intervalMs: 250 },
       ).then(() => {
-        if (installed && settingsStore.get().expeditionBadges) renderBadges();
+        if (installed && settingsStore.get().expeditionBadges) renderGuarded();
       });
     } else {
       injectStyle(HIDE_STYLE_ID, HIDE_CSS);
@@ -375,7 +415,7 @@ export const installBadges = () => {
    */
   const scheduleRefresh = debounce(() => {
     if (!installed) return;
-    if (settingsStore.get().expeditionBadges) renderBadges();
+    if (settingsStore.get().expeditionBadges) renderGuarded();
   }, REFRESH_DEBOUNCE_MS);
 
   // React to settings toggles. The settings store is the whole panel,
@@ -390,7 +430,7 @@ export const installBadges = () => {
     }
   });
 
-  const observer = new MutationObserver(() => {
+  observer = new MutationObserver(() => {
     scheduleRefresh();
   });
   attachObserver(observer);
@@ -403,7 +443,7 @@ export const installBadges = () => {
   // ops, practically free. Gated on `expeditionBadges` so a disabled
   // feature costs literally one settings read per interval.
   const safetyPoll = setInterval(() => {
-    if (settingsStore.get().expeditionBadges) renderBadges();
+    if (settingsStore.get().expeditionBadges) renderGuarded();
   }, 3000);
 
   installed = {

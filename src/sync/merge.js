@@ -189,3 +189,70 @@ export const mergeHistory = (local, remote) => {
   }
   return { merged: [...byCp.values()], changed };
 };
+
+/**
+ * Pure: build the data slice of a gist payload that has every scan
+ * wiped while preserving `colonyHistory`. Used by the "clear scan
+ * data" UI action — `mergeScans` is a UNION, so a local wipe alone
+ * would be undone on the next sync round-trip; we have to wipe the
+ * remote side too.
+ *
+ * Defensive: if `payload` is missing, malformed, or its
+ * `colonyHistory` isn't an array, the returned `colonyHistory` is `[]`.
+ * The caller composes the full gist payload by stamping `version` and
+ * `updatedAt` on top of the returned slice.
+ *
+ * @param {unknown} payload
+ *   The decoded remote gist payload (output of
+ *   `JSON.parse(gzipDecode(content))`), or `null` if the read or parse
+ *   failed.
+ * @returns {{ galaxyScans: GalaxyScans, colonyHistory: ColonyHistory }}
+ */
+export const clearScans = (payload) => {
+  /** @type {ColonyHistory} */
+  let colonyHistory = [];
+  if (payload && typeof payload === 'object') {
+    const ch = /** @type {{ colonyHistory?: unknown }} */ (payload).colonyHistory;
+    if (Array.isArray(ch)) colonyHistory = /** @type {ColonyHistory} */ (ch);
+  }
+  return { galaxyScans: {}, colonyHistory };
+};
+
+/**
+ * Pure: build the data slice of a gist payload that drops every
+ * `${galaxy}:*` key from `galaxyScans` while preserving the other
+ * galaxies' scans and `colonyHistory`. Counterpart to the histogram's
+ * per-galaxy "Reset" button — same anti-`mergeScans`-undo argument as
+ * {@link clearScans}.
+ *
+ * Defensive: missing or malformed `payload`, `colonyHistory`, or
+ * `galaxyScans` fall back to the empty defaults. The caller composes
+ * the full gist payload by stamping `version` and `updatedAt` on top
+ * of the returned slice.
+ *
+ * @param {unknown} payload
+ * @param {number} galaxy
+ * @returns {{ galaxyScans: GalaxyScans, colonyHistory: ColonyHistory }}
+ */
+export const clearGalaxyScans = (payload, galaxy) => {
+  /** @type {ColonyHistory} */
+  let colonyHistory = [];
+  /** @type {GalaxyScans} */
+  let galaxyScans = {};
+  if (payload && typeof payload === 'object') {
+    const p = /** @type {{ colonyHistory?: unknown, galaxyScans?: unknown }} */ (payload);
+    if (Array.isArray(p.colonyHistory)) {
+      colonyHistory = /** @type {ColonyHistory} */ (p.colonyHistory);
+    }
+    if (p.galaxyScans && typeof p.galaxyScans === 'object') {
+      galaxyScans = /** @type {GalaxyScans} */ (p.galaxyScans);
+    }
+  }
+  const prefix = galaxy + ':';
+  /** @type {GalaxyScans} */
+  const filtered = {};
+  for (const key of /** @type {(keyof GalaxyScans)[]} */ (Object.keys(galaxyScans))) {
+    if (!key.startsWith(prefix)) filtered[key] = galaxyScans[key];
+  }
+  return { galaxyScans: filtered, colonyHistory };
+};

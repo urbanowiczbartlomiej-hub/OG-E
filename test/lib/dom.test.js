@@ -154,6 +154,25 @@ describe('waitFor', () => {
     // ~50 polls; we only assert a sensible lower bound to stay robust.
     expect(predicate.mock.calls.length).toBeGreaterThan(10);
   });
+
+  it('reads the injected `now` clock and never touches Date.now', async () => {
+    const dateNowSpy = vi.spyOn(Date, 'now');
+    let clock = 1000;
+    const now = () => clock;
+    const predicate = vi.fn(() => null);
+
+    const p = waitFor(predicate, { timeoutMs: 50, intervalMs: 10, now });
+
+    // Advance the injected clock past the timeout; one tick at intervalMs
+    // is enough for the timeout branch to fire.
+    clock = 1100;
+    await vi.advanceTimersByTimeAsync(20);
+
+    const result = await p;
+    expect(result).toBeNull();
+    expect(dateNowSpy).not.toHaveBeenCalled();
+    dateNowSpy.mockRestore();
+  });
 });
 
 describe('injectStyle', () => {

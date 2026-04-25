@@ -82,25 +82,6 @@ npm run build:prod    # minified dist/ (terser, console dropped)
 
 ---
 
-## How OG-E differs from AntiGameReborn
-
-AGR is a full-featured UI modification for OGame — routines, colour
-themes, statistics, galaxy overlays. OG-E is **not** a replacement.
-OG-E is a thin, opinionated layer that sits on top of AGR and adds:
-
-- A pair of big draggable send-buttons built for touch.
-- A stricter colonize flow with explicit handling of reserved slots
-  and missing colony ships.
-- A local scan database that remembers what you looked at and nudges
-  you toward the next rescan.
-- A cloud-sync round-trip that stores the database on a gist you own.
-
-If you already use AGR, adding OG-E gives you those specific
-affordances. If you don't use AGR, you almost certainly want AGR
-first — OG-E's settings panel lives inside AGR's menu.
-
----
-
 ## Architecture in five minutes
 
 ```
@@ -152,11 +133,6 @@ scan database + colony history gzip-compress into a single private
 gist. Every device that knows the same token syncs to that gist
 (15 s debounce, merge-on-write, anti-loop). The gist is yours; OG-E
 has no server.
-
-**How do I migrate from the pre-v1 build?** The extension page has an
-Import JSON button. Export from the old build, import here. Scan
-database + colony history transfer cleanly; some pre-v1 settings may
-need a one-time retype.
 
 ---
 

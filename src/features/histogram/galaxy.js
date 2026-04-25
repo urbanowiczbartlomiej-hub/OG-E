@@ -26,6 +26,7 @@ import {
   STATUS_PRIORITY,
   bestStatusInSystem,
   collectGalaxyStats,
+  countStaleByGalaxy,
 } from '../../domain/histogram.js';
 
 import {
@@ -116,6 +117,11 @@ export const renderGalaxyMap = (opts) => {
   }
 
   const { global, byGalaxy } = collectGalaxyStats(scans, targetPositions);
+  // Per-galaxy stale-count drives the amber pill in each section
+  // header — same visual cue as the inset rings on stale pixels in the
+  // map below, so the user can spot "this galaxy needs attention"
+  // without expanding the accordion.
+  const staleByGalaxy = countStaleByGalaxy(scans);
 
   // ── Filter bar ──────────────────────────────────────────────────────
   const filterBar = document.createElement('div');
@@ -213,6 +219,7 @@ export const renderGalaxyMap = (opts) => {
         galaxy: g,
         galCount,
         galStats,
+        staleCount: staleByGalaxy[g] ?? 0,
         scans,
         targetPositions,
         expandedGalaxies,
@@ -328,6 +335,7 @@ const makeStaleLegendItem = () => {
  *   galaxy: number,
  *   galCount: number,
  *   galStats: StatusCounts,
+ *   staleCount: number,
  *   scans: GalaxyScans,
  *   targetPositions: Set<number>,
  *   expandedGalaxies: Set<number>,
@@ -341,6 +349,7 @@ const renderGalaxySection = (args) => {
     galaxy: g,
     galCount,
     galStats,
+    staleCount,
     scans,
     targetPositions,
     expandedGalaxies,
@@ -403,6 +412,22 @@ const renderGalaxySection = (args) => {
   if (galStats.abandoned) parts.push(galStats.abandoned + ' aband');
   miniStats.textContent = parts.join(', ');
   header.appendChild(miniStats);
+
+  // Stale-systems badge: amber to mirror the inset ring on stale
+  // pixels in the map below — same visual cue, same colour, so the
+  // user can spot "this galaxy needs attention" without expanding the
+  // accordion. Hidden when zero so the header stays uncluttered for
+  // galaxies that are fully fresh.
+  if (staleCount > 0) {
+    const stalePill = document.createElement('span');
+    stalePill.style.cssText =
+      'font-size:11px;color:' + STALE_COLOR + ';font-weight:bold;';
+    stalePill.textContent = staleCount + ' stale';
+    stalePill.title =
+      staleCount +
+      ' system(s) past their rescan threshold — see the amber ring on the pixel map below.';
+    header.appendChild(stalePill);
+  }
 
   const resetBtn = document.createElement('button');
   resetBtn.textContent = '✕';

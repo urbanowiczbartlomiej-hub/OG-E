@@ -117,6 +117,7 @@
 import { gzipEncode, gzipDecode } from '../lib/gzip.js';
 import { safeLS } from '../lib/storage.js';
 import { logger } from '../lib/logger.js';
+import { clearScans, clearGalaxyScans } from './merge.js';
 
 /**
  * @typedef {import('../state/scans.js').GalaxyScans} GalaxyScans
@@ -567,25 +568,20 @@ export const clearGistScans = async () => {
   const id = await ensureGistV3();
   const gist = await gh(`/gists/${id}`);
   const content = await readGistFile(gist, GIST_FILENAME);
-  /** @type {ColonyHistory} */
-  let colonyHistory = [];
+  let parsed = null;
   if (content) {
     try {
-      const parsed = JSON.parse(await gzipDecode(content));
-      if (parsed && Array.isArray(parsed.colonyHistory)) {
-        colonyHistory = parsed.colonyHistory;
-      }
+      parsed = JSON.parse(await gzipDecode(content));
     } catch {
-      // Corrupt payload: fall back to wiping the whole thing. That's
-      // still the correct "clear scans" semantics — history will
+      // Corrupt payload: `clearScans` falls back to empty defaults,
+      // which is the correct "clear scans" semantics — history will
       // re-populate from local on the next upload.
     }
   }
   await writeGistData({
     version: SCHEMA_VERSION,
     updatedAt: new Date().toISOString(),
-    galaxyScans: /** @type {GalaxyScans} */ ({}),
-    colonyHistory,
+    ...clearScans(parsed),
   });
   setStatus('up', new Date().toISOString());
 };
@@ -606,37 +602,19 @@ export const clearGistScansForGalaxy = async (galaxy) => {
   const id = await ensureGistV3();
   const gist = await gh(`/gists/${id}`);
   const content = await readGistFile(gist, GIST_FILENAME);
-  /** @type {ColonyHistory} */
-  let colonyHistory = [];
-  /** @type {GalaxyScans} */
-  let galaxyScans = {};
+  let parsed = null;
   if (content) {
     try {
-      const parsed = JSON.parse(await gzipDecode(content));
-      if (parsed && Array.isArray(parsed.colonyHistory)) {
-        colonyHistory = parsed.colonyHistory;
-      }
-      if (parsed && parsed.galaxyScans && typeof parsed.galaxyScans === 'object') {
-        galaxyScans = parsed.galaxyScans;
-      }
+      parsed = JSON.parse(await gzipDecode(content));
     } catch {
-      // Corrupt payload: fall through with empty defaults — the next
-      // legit upload will rebuild everything from local.
+      // Corrupt payload: `clearGalaxyScans` falls back to empty
+      // defaults — the next legit upload rebuilds everything from local.
     }
-  }
-  // Drop the requested galaxy's keys; everything else (other galaxies
-  // and the colony history) survives.
-  const prefix = galaxy + ':';
-  /** @type {GalaxyScans} */
-  const filtered = {};
-  for (const key of /** @type {(keyof GalaxyScans)[]} */ (Object.keys(galaxyScans))) {
-    if (!key.startsWith(prefix)) filtered[key] = galaxyScans[key];
   }
   await writeGistData({
     version: SCHEMA_VERSION,
     updatedAt: new Date().toISOString(),
-    galaxyScans: filtered,
-    colonyHistory,
+    ...clearGalaxyScans(parsed, galaxy),
   });
   setStatus('up', new Date().toISOString());
 };

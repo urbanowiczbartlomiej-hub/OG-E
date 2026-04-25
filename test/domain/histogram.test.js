@@ -14,6 +14,7 @@ import {
   computeFieldStats,
   buildFieldBuckets,
   collectGalaxyStats,
+  countStaleByGalaxy,
 } from '../../src/domain/histogram.js';
 
 describe('STATUS_PRIORITY', () => {
@@ -260,5 +261,102 @@ describe('collectGalaxyStats', () => {
     // No target position seen in galaxy 1 → byGalaxy entry exists but
     // is all-zero (we created it on first system iteration).
     expect(byGalaxy[1].total).toBe(0);
+  });
+});
+
+describe('countStaleByGalaxy', () => {
+  // Convenience builders. `empty_sent` has the shortest threshold (4h)
+  // so it's the easiest to push past staleness in tests; `empty` has
+  // no threshold so it stays fresh forever.
+  /**
+   * @param {number} scannedAt
+   * @returns {import('../../src/state/scans.js').SystemScan}
+   */
+  const sentScan = (scannedAt) => ({
+    scannedAt,
+    positions: { 8: { status: 'empty_sent' } },
+  });
+
+  /**
+   * @param {number} scannedAt
+   * @returns {import('../../src/state/scans.js').SystemScan}
+   */
+  const emptyScan = (scannedAt) => ({
+    scannedAt,
+    positions: { 8: { status: 'empty' } },
+  });
+
+  it('returns an empty record for empty scans', () => {
+    expect(countStaleByGalaxy({}, 0)).toEqual({});
+  });
+
+  it('records 0 for galaxies whose scans are all fresh', () => {
+    /** @type {import('../../src/state/scans.js').GalaxyScans} */
+    const scans = {
+      '4:30': sentScan(1_000),
+      '5:1':  sentScan(1_000),
+    };
+    // 1h later — well within the 4h threshold.
+    const now = 1_000 + 3600_000;
+    expect(countStaleByGalaxy(scans, now)).toEqual({ 4: 0, 5: 0 });
+  });
+
+  it('counts a single stale system in one galaxy', () => {
+    /** @type {import('../../src/state/scans.js').GalaxyScans} */
+    const scans = {
+      '4:30': sentScan(1_000),
+    };
+    // 5h later — past the 4h threshold.
+    const now = 1_000 + 5 * 3600_000;
+    expect(countStaleByGalaxy(scans, now)).toEqual({ 4: 1 });
+  });
+
+  it('bins counts per galaxy across multiple galaxies', () => {
+    /** @type {import('../../src/state/scans.js').GalaxyScans} */
+    const scans = {
+      '4:30': sentScan(1_000),    // stale
+      '4:31': sentScan(1_000),    // stale
+      '4:32': emptyScan(1_000),   // fresh (empty has no threshold)
+      '5:1':  sentScan(1_000),    // stale
+      '6:1':  emptyScan(1_000),   // fresh (galaxy still appears with 0)
+    };
+    const now = 1_000 + 5 * 3600_000;
+    expect(countStaleByGalaxy(scans, now)).toEqual({
+      4: 2,
+      5: 1,
+      6: 0,
+    });
+  });
+
+  it('skips malformed keys (no colon, non-numeric galaxy)', () => {
+    /** @type {import('../../src/state/scans.js').GalaxyScans} */
+    const scans = /** @type {any} */ ({
+      'no-colon-here': sentScan(1_000),
+      'abc:1':         sentScan(1_000),
+      '4:30':          sentScan(1_000),
+    });
+    const now = 1_000 + 5 * 3600_000;
+    expect(countStaleByGalaxy(scans, now)).toEqual({ 4: 1 });
+  });
+
+  it('skips null entries — they neither initialize nor count', () => {
+    /** @type {import('../../src/state/scans.js').GalaxyScans} */
+    const scans = /** @type {any} */ ({
+      '4:30': null,
+      '4:31': sentScan(1_000),
+    });
+    const now = 1_000 + 5 * 3600_000;
+    // Galaxy 4 sees one usable entry (4:31, stale) — count is 1.
+    // The null at 4:30 contributes nothing, despite `isSystemStale(null)`
+    // technically returning true; we filter null BEFORE asking.
+    expect(countStaleByGalaxy(scans, now)).toEqual({ 4: 1 });
+  });
+
+  it('omits a galaxy whose only entry is null', () => {
+    /** @type {import('../../src/state/scans.js').GalaxyScans} */
+    const scans = /** @type {any} */ ({
+      '7:1': null,
+    });
+    expect(countStaleByGalaxy(scans, 1_000)).toEqual({});
   });
 });

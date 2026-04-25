@@ -1,9 +1,16 @@
-// Shared drag + focus-persistence helper for the floating mobile
-// buttons (sendExp, sendCol). Both features previously open-coded the
-// same touch/mouse drag wiring with an 8-px threshold and the same
-// `oge_focusedBtn`-based focus persistence. This module factors that
-// out so changes (e.g. adjusting the drag threshold, tweaking restore
-// timing) land in one place instead of two near-identical copies.
+// Shared drag + focus-persistence helpers used by the floating mobile
+// buttons (sendExp, sendCol) and the fresh-planet banner
+// (freshPlanetDetector). The two button features previously open-coded
+// the same touch/mouse drag wiring with an 8-px threshold and the same
+// `oge_focusedBtn`-based focus persistence; freshPlanetDetector grew
+// the same drag wiring independently. This module factors that out so
+// changes (e.g. adjusting the drag threshold, tweaking restore timing)
+// land in one place instead of three near-identical copies.
+//
+// Lives in `features/shared/` rather than `lib/` because it touches
+// `window`, `document`, and `safeLS` — `lib/` is the pure-helpers
+// boundary (see `CONTRIBUTING.md` §2). `shared/` is the conventional
+// home for cross-feature helpers that legitimately need DOM/storage.
 //
 // # What this helper does
 //
@@ -26,20 +33,22 @@
 //   - Click behaviour — caller wires its own `'click'` listener; this
 //     helper exposes a `wasDrag()` predicate the listener checks first.
 //
-// # Why a single helper for two features
+// # Why a single helper for three features
 //
 // sendCol's container wraps two halves; the drag/focus logic still
 // lives on the OUTER `wrap`, and the focus persistence wires on each
 // half independently — which we model by calling `installFocusPersist`
 // twice (once per half) with different `focusValue`s. sendExp uses a
-// single button so calls both helpers once.
+// single button so calls both helpers once. freshPlanetDetector calls
+// only `installDrag` — the banner has no focus state to persist.
 //
-// @see ../features/sendCol/index.js  — caller for the colonize button.
-// @see ../features/sendExp.js       — caller for the expedition button.
+// @see ../sendCol/index.js          — caller for the colonize button.
+// @see ../sendExp/index.js          — caller for the expedition button.
+// @see ../freshPlanetDetector.js    — drag-only caller for the banner.
 
 /** @ts-check */
 
-import { safeLS } from './storage.js';
+import { safeLS } from '../../lib/storage.js';
 
 /**
  * Wire mouse + touch drag onto a draggable element. The caller's click

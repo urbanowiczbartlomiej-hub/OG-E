@@ -4,7 +4,7 @@
 //   src/histogram.js → dist/histogram.js (extension page, own origin)
 //
 // Outputs are single-file IIFE — manifest content_scripts load them directly.
-// No CommonJS, no node resolution: v5 has zero runtime dependencies.
+// No CommonJS, no node resolution: OG-E has zero runtime dependencies.
 //
 // @rollup/plugin-replace injects the manifest version as `__OGE_VERSION__`
 // so the source never hardcodes a version number.

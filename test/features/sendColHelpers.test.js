@@ -1,23 +1,25 @@
 // @vitest-environment happy-dom
 //
-// Unit tests for sendCol/logic.js — the pure-logic helpers that the
-// sendCol orchestrator builds on.
+// Unit tests for sendCol's helper modules — the pure helpers in
+// `pure.js` and the impure DOM/store readers in `domHelpers.js` that
+// the sendCol orchestrator builds on.
 //
 // Coverage breakdown:
-//   - findNextScanSystem — pure target picker.
-//   - findNextColonizeTarget — pure colonize picker.
-//   - pickCandidateInView — current-view priority target picker.
-//   - getColonizeWaitTime — DOM + store-aware min-gap wait computation.
-//   - readHomePlanet — DOM coord reader.
-//   - parseCurrentGalaxyView — DOM + URL coord reader.
-//   - buildFleetdispatchUrl — URL builder.
-//   - buildGalaxyUrl — URL builder.
+//   - findNextScanSystem — pure target picker (pure.js).
+//   - findNextColonizeTarget — pure colonize picker (pure.js).
+//   - pickCandidateInView — current-view priority target picker (pure.js).
+//   - getColonizeWaitTime — DOM + store-aware min-gap wait (domHelpers.js).
+//   - readHomePlanet — DOM coord reader (domHelpers.js).
+//   - parseCurrentGalaxyView — DOM + URL coord reader (domHelpers.js).
+//   - buildFleetdispatchUrl — URL builder (pure.js).
+//   - buildGalaxyUrl — URL builder (pure.js).
 //
 // # What we do NOT cover
 //
 // - UI click flow, button lifecycle, reactors — those are the
-//   orchestrator's job and live in sendCol.test.js (and will get their
-//   own tests once the new sendCol/index.js ships).
+//   orchestrator's job and live in sendCol.test.js.
+// - `derive` / `render` from `pure.js` — also covered by sendCol.test.js
+//   via the orchestrator's integration paths.
 //
 // @ts-check
 
@@ -26,12 +28,14 @@ import {
   findNextScanSystem,
   findNextColonizeTarget,
   pickCandidateInView,
+  buildFleetdispatchUrl,
+  buildGalaxyUrl,
+} from '../../src/features/sendCol/pure.js';
+import {
   getColonizeWaitTime,
   readHomePlanet,
   parseCurrentGalaxyView,
-  buildFleetdispatchUrl,
-  buildGalaxyUrl,
-} from '../../src/features/sendCol/logic.js';
+} from '../../src/features/sendCol/domHelpers.js';
 import {
   settingsStore,
   SETTINGS_SCHEMA,

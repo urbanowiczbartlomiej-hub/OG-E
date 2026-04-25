@@ -6,21 +6,21 @@
 // XHR objects the game itself creates. We NEVER issue requests here —
 // only passive hooks on response handling (per TOS).
 //
-// Each hook is installed exactly once at module eval. They all patch
-// `XMLHttpRequest.prototype` (`galaxyHook`, `checkTargetHook`,
-// `sendFleetHook` via the shared `observeXHR` helper;
-// `expeditionRedirect` via its own per-instance `open`/`send` override
-// chain). The hooks dispatch `oge:*` CustomEvents to the isolated
-// world; `content.js` features listen for those.
+// Each hook is installed exactly once at module eval. `galaxyHook`,
+// `checkTargetHook`, `sendFleetHook`, and `expeditionRedirect`'s
+// trigger all route through the shared `observeXHR` helper, which
+// patches `XMLHttpRequest.prototype.open`/`send` once. The first three
+// are pure observers — they read the response and dispatch `oge:*`
+// CustomEvents to the isolated world. `expeditionRedirect`
+// additionally overrides `responseText` per-instance on the matched
+// XHR so the game's reader sees a rewritten `redirectUrl`.
+// `fleetDispatcherSnapshot` is a different shape: it reads the
+// page-world `window.fleetDispatcher` global and republishes a trimmed
+// snapshot as an event after each `checkTarget` response.
 //
-// Order of install matters for a single subtlety: `expeditionRedirect`
-// installs AFTER the three generic observer hooks so that its
-// per-instance `open` override sees whatever `observeXHR`'s prototype
-// patch did to `open`, not the other way around. In practice both
-// orderings work today (the shared observer patches once then
-// dispatches), but the convention keeps the feature-specific hook
-// outermost so future refactors don't accidentally hide it behind the
-// generic layer.
+// Install order is not load-bearing — every hook routes through the
+// same shared observer, and the per-instance override only attaches
+// inside its own handler.
 
 import { installGalaxyHook } from './bridges/galaxyHook.js';
 import { installCheckTargetHook } from './bridges/checkTargetHook.js';

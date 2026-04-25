@@ -67,11 +67,11 @@ import { installSettingsMirror } from './state/settings.js';
 
 import { installColonyRecorder } from './features/colonyRecorder.js';
 import { installBadges } from './features/badges.js';
-import { installSendExp } from './features/sendExp.js';
+import { installSendExp } from './features/sendExp/index.js';
 import { installSendCol } from './features/sendCol/index.js';
 import { installAbandonOverview } from './features/abandon/overview.js';
 import { installFreshPlanetDetector } from './features/freshPlanetDetector.js';
-import { installSettingsUi } from './features/settingsUi.js';
+import { installSettingsUi } from './features/settingsUi/index.js';
 import { installAgrLogo } from './features/agrLogo.js';
 import { installFleetdispatchShortcut } from './features/fleetdispatchShortcut.js';
 

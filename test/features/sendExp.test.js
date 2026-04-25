@@ -35,7 +35,7 @@ import {
   installSendExp,
   _resetSendExpForTest,
   _resetFleetDispatcherSnapshotForSendExpTest,
-} from '../../src/features/sendExp.js';
+} from '../../src/features/sendExp/index.js';
 import {
   settingsStore,
   SETTINGS_SCHEMA,
@@ -511,7 +511,8 @@ describe('installSendExp — idempotency + edges', () => {
   it('click is a safe no-op when there is no active planet', () => {
     setupScene({ activeCp: null });
     installSendExp();
-    // getBtn works because mobileMode is on — but getActiveCp will be null.
+    // getBtn works because mobileMode is on — but with no .hightlightPlanet
+    // the click handler short-circuits and never navigates.
     getBtn()?.click();
     expect(navTarget).toBeNull();
   });

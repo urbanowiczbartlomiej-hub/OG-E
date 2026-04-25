@@ -1,13 +1,13 @@
 // @ts-check
 
-import { installDrag } from '../lib/draggableButton.js';
+import { installDrag } from './shared/draggableButton.js';
 import { safeLS } from '../lib/storage.js';
 
 // Fresh-planet detector — scans `#planetList` on every mount for a
 // colony where nothing has been built yet (`usedFields === 0`) and
 // paints a top-of-screen banner pointing to the first one. Clicking
 // the banner navigates to that planet's overview, where
-// `abandonOverview.js` takes over with the red abandon overlay. The
+// `abandon/overview.js` takes over with the red abandon overlay. The
 // banner is draggable (same drag helper as sendExp/sendCol) and its
 // position is persisted, so the user can park it anywhere on screen
 // and only the first arrival-load needs a conscious placement.

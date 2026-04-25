@@ -1,5 +1,10 @@
-// Floating "Send Exp" button — large round tap target that collapses the
-// multi-step expedition dispatch flow into a single click.
+// @ts-check
+
+// Floating "Send Exp" button — orchestrator + DOM I/O. Pure helpers
+// (constants, stripBrackets, URL builder, cap checks, initial-label
+// decision) live in `./pure.js`; this file owns the install/dispose
+// lifecycle, the click-handler state machine, the DOM readers, and
+// the bridge listener that keeps the fleetDispatcher snapshot fresh.
 //
 // # Why this feature exists
 //
@@ -29,10 +34,10 @@
 // # Max-expedition guard
 //
 // If `#eventContent` already shows `maxExpPerPlanet` expedition fleets
-// we paint a transient "Max!" label on the button for 2 seconds and
-// abort the dispatch. We do NOT auto-advance to a different planet —
-// that is what `bridges/expeditionRedirect.js` does on successful
-// sends, orthogonally.
+// we paint a transient "All maxed!" label on the button for 2 seconds
+// and abort the dispatch. We do NOT auto-advance to a different
+// planet — that is what `bridges/expeditionRedirect.js` does on
+// successful sends, orthogonally.
 //
 // # Settings-driven lifecycle
 //
@@ -59,23 +64,44 @@
 // mobile keyboard-Enter flow where the user's Enter key naturally
 // triggers `click` on the focused button.
 //
-// @see ../bridges/expeditionRedirect.js — orthogonal: rewrites the
+// @see ./pure.js — pure constants + helpers consumed here.
+// @see ../../bridges/expeditionRedirect.js — orthogonal: rewrites the
 //   post-send `redirectUrl` so successive dispatches hop planets.
 
-/** @ts-check */
-
-import { settingsStore } from '../state/settings.js';
-import { safeLS } from '../lib/storage.js';
-import { safeClick, waitFor } from '../lib/dom.js';
-import { MISSION_EXPEDITION } from '../domain/rules.js';
+import { settingsStore } from '../../state/settings.js';
+import { safeLS } from '../../lib/storage.js';
+import { safeClick, waitFor } from '../../lib/dom.js';
 import {
   installDrag,
   installFocusPersist as installButtonFocusPersist,
-} from '../lib/draggableButton.js';
+} from '../shared/draggableButton.js';
+import {
+  BUTTON_ID,
+  FOCUS_KEY,
+  FOCUS_VALUE,
+  POS_KEY,
+  DRAG_THRESHOLD,
+  MAX_LABEL_MS,
+  POLL_TIMEOUT_MS,
+  POLL_INTERVAL_MS,
+  DEFAULT_EDGE_OFFSET_PX,
+  FOCUS_RESTORE_DELAY_MS,
+  BUTTON_TEXT,
+  ALL_MAXED_LABEL,
+  BG_IDLE,
+  BG_MAX,
+  stripBrackets,
+  buildFleetdispatchUrl,
+  isGlobalExpeditionCapReached,
+  isGlobalExpeditionCapReachedAfterNextSend,
+  computeInitialLabel,
+} from './pure.js';
 
 /**
- * @typedef {import('../bridges/fleetDispatcherSnapshot.js').FleetDispatcherSnapshot} FleetDispatcherSnapshot
+ * @typedef {import('../../bridges/fleetDispatcherSnapshot.js').FleetDispatcherSnapshot} FleetDispatcherSnapshot
  */
+
+// ── Module-level snapshot of `window.fleetDispatcher` ────────────────
 
 /**
  * Cached snapshot of `window.fleetDispatcher` published by the MAIN-world
@@ -106,122 +132,7 @@ const onFleetDispatcherSnapshot = (e) => {
   fleetDispatcherSnapshot = /** @type {FleetDispatcherSnapshot} */ (detail);
 };
 
-/**
- * Return `true` when the snapshot is populated and reports every
- * expedition slot in use (`expeditionCount >= maxExpeditionCount`, e.g.
- * 14/14). This is the GLOBAL authority — on fleetdispatch we trust it
- * over any DOM count because the game updates it live and it captures
- * expeditions launched from other tabs / sessions immediately.
- *
- * `maxExpeditionCount > 0` guards against an uninitialised snapshot
- * where both numbers are 0 (technically `0 >= 0` would otherwise report
- * max reached, which is wrong).
- *
- * @returns {boolean}
- */
-const isGlobalExpeditionCapReached = () => {
-  const s = fleetDispatcherSnapshot;
-  if (!s) return false;
-  return s.maxExpeditionCount > 0 && s.expeditionCount >= s.maxExpeditionCount;
-};
-
-/**
- * Return `true` when the snapshot is populated and reports we're one
- * send away from the global cap (`expeditionCount >= maxExpeditionCount - 1`,
- * e.g. 13/14). Used AFTER a successful Phase 1 send to skip the
- * post-send auto-redirect: if this send makes us 14/14, there's no
- * point walking to another planet — every planet will report full.
- *
- * @returns {boolean}
- */
-const isGlobalExpeditionCapReachedAfterNextSend = () => {
-  const s = fleetDispatcherSnapshot;
-  if (!s) return false;
-  return (
-    s.maxExpeditionCount > 0 &&
-    s.expeditionCount >= s.maxExpeditionCount - 1
-  );
-};
-
-/**
- * DOM id of the floating button. Stable so repeated `createButton`
- * calls short-circuit, and so tests / CSS overrides can target it.
- */
-const BUTTON_ID = 'oge-send-exp';
-
-/**
- * localStorage key — holds the id of whichever of our buttons was last
- * focused. Currently only {@link FOCUS_VALUE} ever lands here, but the
- * value string is namespaced (e.g. `'send-exp'`) so additional buttons
- * can share this key without collision.
- */
-const FOCUS_KEY = 'oge_focusedBtn';
-
-/** Focus-persist value written/read by this feature. */
-const FOCUS_VALUE = 'send-exp';
-
-/** localStorage key — holds `{ x: number, y: number }` dragged position. */
-const POS_KEY = 'oge_enterBtnPos';
-
-/**
- * Movement threshold in pixels before a pointer gesture counts as a
- * drag. Anything below this (jitter from thumb contact, touch-start
- * micro-moves) still fires as a click.
- */
-const DRAG_THRESHOLD = 8;
-
-/**
- * How long the "Max!" warning label stays on the button when the
- * click handler bails due to `maxExpPerPlanet`. 2 s is long enough to
- * read, short enough that a user retrying immediately after adding
- * a slot is not interrupted.
- */
-const MAX_LABEL_MS = 2000;
-
-/** Default button copy — what the user sees in the "idle" state. */
-const BUTTON_TEXT = 'Send Exp';
-
-/** Transient copy painted when the max-exp guard trips on this planet. */
-const MAX_LABEL = 'Max!';
-
-/** Transient copy when every planet has hit `maxExpPerPlanet`. */
-const ALL_MAXED_LABEL = 'All maxed!';
-
-/**
- * Timeout for waiting on AGR's routine element / fleet panel hydration.
- * 15 s is long enough for a slow phone on a cold cache to receive the
- * async fleet-panel assets, short enough that an obviously-broken page
- * doesn't lock the button forever.
- */
-const POLL_TIMEOUT_MS = 15_000;
-
-/** Poll interval for AGR-readiness checks. */
-const POLL_INTERVAL_MS = 300;
-
-/** Background color for the idle button (blue, translucent). */
-const BG_IDLE = 'rgba(0,150,255,0.7)';
-
-/** Background color for the "Max!" state (amber, more opaque). */
-const BG_MAX = 'rgba(200,150,0,0.85)';
-
-/** Default offset from the bottom-right corner when no saved pos. */
-const DEFAULT_EDGE_OFFSET_PX = 20;
-
-/** Delay before restoring focus on install. */
-const FOCUS_RESTORE_DELAY_MS = 50;
-
-// ── Pure helpers ──────────────────────────────────────────────────────
-
-/**
- * Strip the surrounding `[` and `]` from a coords string. OGame renders
- * both `.planet-koords` (planet list) and `.coordsOrigin` (event row)
- * with the brackets — stripping them once gives a consistent `g:s:p`
- * key usable for equality comparison across the two lookups.
- *
- * @param {string | null | undefined} raw
- * @returns {string}
- */
-const stripBrackets = (raw) => (raw ?? '').trim().replace(/^\[|]$/g, '');
+// ── DOM readers ──────────────────────────────────────────────────────
 
 /**
  * Read the currently-active planet's coords from `#planetList`. Returns
@@ -245,8 +156,8 @@ const getActivePlanetCoords = () => {
  *
  * When the active planet's coords can't be read (`originCoords === null`)
  * we fall back to counting every expedition in `#eventContent` — safer
- * to over-report and show "Max!" than under-report and let the user
- * blow past their configured cap.
+ * to over-report and show "All maxed!" than under-report and let the
+ * user blow past their configured cap.
  *
  * @param {string | null} originCoords
  *   Active-planet coords in `g:s:p` form. Pass `null` to count globally.
@@ -263,28 +174,6 @@ const countActiveExpeditions = (originCoords) => {
     if (c === originCoords) count += 1;
   }
   return count;
-};
-
-/**
- * Pick the right initial label for the floating button based on the
- * page state at render time:
- *
- *   - On fleetdispatch with `#dispatchFleet` already in the DOM →
- *     "Send!" (user's next tap fires the send).
- *   - On fleetdispatch with `#ago_routine_7` but no dispatch button →
- *     "Prepare" (user's next tap kicks AGR's routine).
- *   - Otherwise → the default `BUTTON_TEXT` ("Send Exp").
- *
- * Snapshot only — the button is recreated on every page reload anyway,
- * so we don't need a live update path.
- *
- * @returns {string}
- */
-const computeInitialLabel = () => {
-  if (!location.search.includes('component=fleetdispatch')) return BUTTON_TEXT;
-  if (document.getElementById('dispatchFleet')) return 'Send!';
-  if (document.getElementById('ago_routine_7')) return 'Prepare';
-  return BUTTON_TEXT;
 };
 
 /**
@@ -324,44 +213,6 @@ const findPlanetWithExpSlot = (skipCurrent) => {
     if (Number.isFinite(cp) && cp > 0) return cp;
   }
   return null;
-};
-
-/**
- * Extract the active planet's `cp` from
- * `#planetList .hightlightPlanet` (note the game's CSS-class spelling).
- * Returns `null` when the highlight is missing or malformed — the
- * click handler treats that as "do nothing" rather than navigating
- * to a bogus URL.
- *
- * @returns {number | null}
- */
-const getActiveCp = () => {
-  const el = document.querySelector('#planetList .hightlightPlanet');
-  if (!el) return null;
-  const id = el.id;
-  if (!id || !id.startsWith('planet-')) return null;
-  const cp = parseInt(id.slice('planet-'.length), 10);
-  return Number.isFinite(cp) && cp > 0 ? cp : null;
-};
-
-/**
- * Build a fleetdispatch URL pointing at the given `cp`. No `mission`
- * param — AGR's own expedition routine sets the mission when the user
- * taps it on the fleetdispatch page, so baking `mission=15` into the
- * URL here would be redundant and would miss the case where the user
- * lands on fleetdispatch through our redirect and then changes AGR's
- * selection.
- *
- * Base is derived from `location.href` so we stay on the origin/path
- * the game served; the query tail is dropped to avoid leaking stale
- * params (old `position=`, `mission=`) into the navigation.
- *
- * @param {number} cp
- * @returns {string}
- */
-const buildFleetdispatchUrl = (cp) => {
-  const base = location.href.split('?')[0];
-  return `${base}?page=ingame&component=fleetdispatch&cp=${cp}`;
 };
 
 // ── Install / dispose ────────────────────────────────────────────────
@@ -443,8 +294,8 @@ export const installSendExp = () => {
 
   /**
    * Transient "All maxed!" painted when every planet has hit the
-   * expedition cap. 2 s matches the original `MAX_LABEL` timing so
-   * users learn the cadence once.
+   * expedition cap. Duration is {@link MAX_LABEL_MS} so users learn
+   * the cadence once.
    *
    * @param {HTMLButtonElement} btn
    */
@@ -557,7 +408,7 @@ export const installSendExp = () => {
     // is nowhere to send from — paint "All maxed!" and bail before any
     // DOM walk. Only applies when the snapshot is populated (non-null
     // on fleetdispatch AFTER the MAIN-world bridge publishes).
-    if (isGlobalExpeditionCapReached()) {
+    if (isGlobalExpeditionCapReached(fleetDispatcherSnapshot)) {
       paintAllMaxed(btn);
       return;
     }
@@ -590,7 +441,7 @@ export const installSendExp = () => {
       // — every planet will then report full once the send lands and
       // the game refreshes its counts. Paint "All maxed!" and stop so
       // the user sees why no nav happened.
-      if (isGlobalExpeditionCapReachedAfterNextSend()) {
+      if (isGlobalExpeditionCapReachedAfterNextSend(fleetDispatcherSnapshot)) {
         paintAllMaxed(btn);
         return;
       }
@@ -688,7 +539,11 @@ export const installSendExp = () => {
     // Context-aware initial label: on fleetdispatch the user's next
     // tap meaning is different depending on AGR/OGame hydration state,
     // so the button label tells them what's about to happen.
-    btn.textContent = computeInitialLabel();
+    btn.textContent = computeInitialLabel({
+      search: location.search,
+      hasDispatchFleet: document.getElementById('dispatchFleet') !== null,
+      hasAgoRoutine7: document.getElementById('ago_routine_7') !== null,
+    });
     btn.tabIndex = 0;
     btn.setAttribute('aria-label', 'Send expedition');
 

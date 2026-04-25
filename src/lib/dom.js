@@ -66,19 +66,23 @@ export const safeClick = (el) => {
  *   Check invoked on each tick. Any truthy return value resolves the
  *   promise; falsy values (`null`, `undefined`, `false`, `0`, `''`)
  *   schedule another poll.
- * @param {{ timeoutMs?: number, intervalMs?: number }} [options]
- *   `timeoutMs` defaults to 5000, `intervalMs` defaults to 100.
+ * @param {{ timeoutMs?: number, intervalMs?: number, now?: () => number }} [options]
+ *   `timeoutMs` defaults to 5000, `intervalMs` defaults to 100. `now`
+ *   defaults to `Date.now` and exists so callers in pure environments
+ *   can inject a deterministic clock — the only `Date` read in this
+ *   module routes through it.
  * @returns {Promise<T | null>} Resolves with the first truthy predicate
  *   value, or `null` if `timeoutMs` elapses first.
  */
 export const waitFor = (predicate, options) => {
   const timeoutMs = options?.timeoutMs ?? 5000;
   const intervalMs = options?.intervalMs ?? 100;
+  const now = options?.now ?? Date.now;
 
   return new Promise(
     /** @param {(value: T | null) => void} resolve */
     (resolve) => {
-      const started = Date.now();
+      const started = now();
 
       const tick = () => {
         const result = predicate();
@@ -86,7 +90,7 @@ export const waitFor = (predicate, options) => {
           resolve(result);
           return;
         }
-        if (Date.now() - started >= timeoutMs) {
+        if (now() - started >= timeoutMs) {
           resolve(null);
           return;
         }

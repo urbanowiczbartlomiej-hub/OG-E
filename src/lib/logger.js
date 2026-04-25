@@ -3,7 +3,7 @@
 // Deliberately keeps DevTools quiet in the common case. When a user
 // hits a bug and the support channel asks "send us the console", we
 // want a single toggle that (a) starts echoing our events to the real
-// console with a recognizable `[OG-E v5]` prefix and (b) captures the
+// console with a recognizable `[OG-E]` prefix and (b) captures the
 // last ~500 events in a ring buffer the user can grab straight from
 // DevTools (`logger.getEntries()`) for paste-back. When the toggle is
 // off, every call site turns into an early-return no-op: no buffering,

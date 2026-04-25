@@ -96,7 +96,7 @@ const expandedGalaxies = new Set();
  *
  * @returns {void}
  */
-export const install = () => {
+export const installHistogram = () => {
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => { void boot(); });
   } else {

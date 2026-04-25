@@ -24,7 +24,7 @@
 //   1. Scan and Send are independent. Scan never navigates to
 //      fleetdispatch. Send never submits galaxy scan forms.
 //   2. `window.fleetDispatcher` is the source of truth on fleetdispatch.
-//   3. Abandon belongs to `abandonOverview.js` now — this file does NOT
+//   3. Abandon belongs to `abandon/overview.js` now — this file does NOT
 //      reference `checkAbandonState` / `abandonPlanet`.
 //   4. State machine is explicit: discriminated `ButtonContext` union
 //      worked out in `derive()`, not spread across 8 fields.
@@ -71,15 +71,15 @@
 //
 // # Integration seams
 //
-//   - Pure helpers live in `./logic.js` — all target-picking
-//     algorithms plus URL builders + DOM coord readers are there.
-//   - Drag + focus reuse `lib/draggableButton.js` (same `oge_focusedBtn`
+//   - Pure helpers live in `./pure.js`; impure DOM helpers in
+//     `./domHelpers.js` — target-picking, URL builders, coord readers.
+//   - Drag + focus reuse `shared/draggableButton.js` (same `oge_focusedBtn`
 //     key as sendExp).
-//   - Abandon overlay is `features/abandonOverview.js` — orthogonal.
+//   - Abandon overlay is `features/abandon/overview.js` — orthogonal.
 //
-// @see ./logic.js — pure helpers this orchestrator consumes.
+// @see ./pure.js — pure helpers this orchestrator consumes.
 // @see ../abandon/overview.js — the abandon-on-overview feature.
-// @see ../sendExp.js — parallel mobile-button feature (reference pattern).
+// @see ../sendExp/index.js — parallel mobile-button feature (reference pattern).
 
 /** @ts-check */
 
@@ -91,17 +91,12 @@ import { parsePositions } from '../../domain/positions.js';
 import {
   installDrag,
   installFocusPersist as installButtonFocusPersist,
-} from '../../lib/draggableButton.js';
+} from '../shared/draggableButton.js';
 import {
   findNextScanSystem,
   findNextColonizeTarget,
-  getColonizeWaitTime,
-  readHomePlanet,
-  parseCurrentGalaxyView,
   buildFleetdispatchUrl,
   buildGalaxyUrl,
-} from './logic.js';
-import {
   derive,
   render,
   MISSION_COLONIZE,
@@ -110,6 +105,11 @@ import {
   BG_SEND_IDLE,
   BG_SCAN_IDLE,
 } from './pure.js';
+import {
+  getColonizeWaitTime,
+  readHomePlanet,
+  parseCurrentGalaxyView,
+} from './domHelpers.js';
 
 // Re-export the pure pipeline so existing call-sites (e.g. the test
 // file which imports `derive` + `render` from this module) keep
@@ -861,7 +861,7 @@ const applyStyles = (wrap, sendHalf, scanHalf, size) => {
  *      `true` creates the button live.
  *   2. Renders (if enabled): `<div id="oge-send-col">` + two halves.
  *      Position from `oge_colBtnPos` or bottom-right default. Drag +
- *      focus wired via `lib/draggableButton.js`.
+ *      focus wired via `shared/draggableButton.js`.
  *   3. Paints the initial label via derive → render → paint.
  *   4. Starts a 1 Hz repaint ticker.
  *   5. Subscribes to settings / scans / registry stores + three

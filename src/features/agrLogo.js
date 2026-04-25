@@ -10,10 +10,10 @@
 // piece of pre-existing chrome at the top of the OGame UI — rather than
 // paint a second floating button we reuse it. Clicking the AGR logo
 // becomes the canonical "open OG-E settings" affordance, consistent with
-// the AGR-embedded settings panel owned by `features/settingsUi.js`.
+// the AGR-embedded settings panel owned by `features/settingsUi/index.js`.
 //
 // This module assumes AGR is installed (hard dependency — see the
-// AGR-as-dependency rationale in settingsUi.js's file header). If AGR
+// AGR-as-dependency rationale in settingsUi/index.js's file header). If AGR
 // never hydrates the logo button within 10 s the install silently
 // no-ops, same failure mode as settingsUi.
 //
@@ -44,7 +44,7 @@
 //
 // # Why two clicks with an 80 ms gap
 //
-// AGR rebuilds the menu panel when it toggles — `settingsUi.js` watches
+// AGR rebuilds the menu panel when it toggles — `settingsUi/index.js` watches
 // for that via a MutationObserver and re-injects our tab. Firing our
 // header click synchronously would target the stale tab node that AGR
 // is about to destroy. An 80 ms `setTimeout` gives AGR time to re-render
@@ -52,7 +52,7 @@
 // `#oge-settings-header`. The interval is empirical but generous; AGR
 // typically re-renders within a few ms.
 //
-// @see ./settingsUi.js — owner of the `#oge-settings-header` tab id.
+// @see ./settingsUi/index.js — owner of the `#oge-settings-header` tab id.
 // @see ../lib/dom.js — `waitFor` for the AGR hydration race.
 
 /** @ts-check */
@@ -67,7 +67,7 @@ const MENU_BUTTON_ID = 'ago_menubutton';
 
 /**
  * DOM id of our own settings-tab header inside the AGR menu — must match
- * the constant of the same name in `features/settingsUi.js`. If that
+ * the constant of the same name in `features/settingsUi/index.js`. If that
  * changes, this one must change too.
  */
 const OGE_TAB_HEADER_ID = 'oge-settings-header';
@@ -97,7 +97,7 @@ const AGR_TIMEOUT_MS = 10_000;
 
 /**
  * Delay between opening the AGR menu and clicking our tab header. AGR
- * rebuilds the panel children on toggle; `settingsUi.js` re-injects on
+ * rebuilds the panel children on toggle; `settingsUi/index.js` re-injects on
  * that rebuild via a MutationObserver. 80 ms is a generous window for
  * that chain to settle.
  */

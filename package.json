@@ -1,7 +1,7 @@
 {
   "name": "og-e",
   "version": "1.0.0",
-  "description": "OGame UI helper (requires AntiGameReborn). Floating Send buttons, galaxy scan tracker, abandon overlay. See README.md.",
+  "description": "UI helper for OGame: floating Send Exp/Col, galaxy scan tracker, abandon overlay. Requires AntiGameReborn. See README.md.",
   "type": "module",
   "private": true,
   "scripts": {
@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "package": "npm run build:prod && node scripts/package.mjs"
+    "package": "npm run build:prod && node scripts/package.mjs",
+    "package:source": "node scripts/package-source.mjs"
   },
   "devDependencies": {
     "@rollup/plugin-replace": "^5.0.7",
