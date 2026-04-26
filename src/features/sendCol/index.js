@@ -56,12 +56,6 @@
 // detection — zero other timers (no scanUnlock, no checkTargetWatchdog,
 // no countdown-setInterval).
 //
-// # autoRedirectColonize — not honoured
-//
-// The setting stays in `state/settings.js` but is ignored. The
-// `colonizeSent` reactor only marks the sent slot as `empty_sent` in
-// scansStore — it does NOT auto-navigate anywhere. Fits axiom #1.
-//
 // # Bridge event shape compat
 //
 // The `oge:checkTargetResult` bridge still ships the full 13-field
@@ -730,18 +724,15 @@ const onGalaxyScanned = () => {
 };
 
 /**
- * React to `oge:colonizeSent`. Two things happen:
+ * React to `oge:colonizeSent`: mark the just-sent slot `'empty_sent'`
+ * in `scansStore` so {@link findNextColonizeTarget} stops picking it
+ * until the fleet either lands (next scan sees `mine`) or fails
+ * (auto-prune of registry + re-scan flips it back).
  *
- *   1. Mark the just-sent slot `'empty_sent'` in `scansStore` so
- *      {@link findNextColonizeTarget} stops picking it until the fleet
- *      either lands (next scan sees `mine`) or fails (auto-prune of
- *      registry + re-scan flips it back).
- *   2. If `settings.autoRedirectColonize` is on, hop straight to the
- *      next colonize target. Mirrors `autoRedirectExpedition` for
- *      expeditions — after a successful send the user usually wants
- *      the next one set up. Deferred by 100 ms so the game's own
- *      post-send navigation flushes first (direct `location.href`
- *      during the response handler races the game's redirect).
+ * Does NOT auto-navigate anywhere. Each user click produces at most
+ * one navigation; chaining a redirect off the post-send event would
+ * fire a second navigation without a second click. The user pulls up
+ * the next target themselves — usually by tapping Scan or Send again.
  *
  * @param {Event} e
  * @returns {void}
@@ -770,34 +761,6 @@ const onColonizeSent = (e) => {
       [key]: { scannedAt: existing.scannedAt, positions: newPositions },
     };
   });
-
-  // Auto-redirect to next candidate (opt-in, default true — matches
-  // `autoRedirectExpedition` behaviour). User can disable in settings.
-  if (!settingsStore.get().autoRedirectColonize) return;
-  const home = readHomePlanet();
-  if (!home) return;
-  const settings = settingsStore.get();
-  const next = findNextColonizeTarget(
-    scansStore.get(),
-    registryStore.get(),
-    home,
-    /** @type {number[]} */ (parsePositions(settings.colPositions)),
-    settings.colPreferOtherGalaxies,
-  );
-  if (!next) return;
-  // Defer one tick — the game's own `redirectUrl` post-send handler
-  // fires right after our event; setting `location.href` immediately
-  // would race with (and could be preempted by) that redirect.
-  setTimeout(() => {
-    lastNavToFleetdispatchAt = Date.now();
-    lastCheckTargetError = null;
-    waitSeconds = 0;
-    location.href = buildFleetdispatchUrl({
-      galaxy: next.galaxy,
-      system: next.system,
-      position: next.position,
-    });
-  }, 100);
 };
 
 // ─── Lifecycle ─────────────────────────────────────────────────────────

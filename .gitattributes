@@ -1,0 +1,4 @@
+# Normalise line endings on commit. Repo stores LF; working trees
+# get OS-native EOL on checkout. Keeps cross-platform clones (and
+# AMO source-archive review on Linux) free of spurious diffs.
+* text=auto

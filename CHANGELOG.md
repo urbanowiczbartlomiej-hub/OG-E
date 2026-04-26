@@ -6,6 +6,15 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Removed
+
+- **`autoRedirectColonize` setting + post-send hop** ("After sending
+  colonize, open the next target"). In practice the user reaches for
+  Scan/Send themselves and the auto-redirect just got in the way. The
+  `oge:colonizeSent` reactor now only marks the sent slot
+  `'empty_sent'` in `scansStore`. Setting key, schema entry, UI row,
+  and dead state-mutation in the redirect path are all gone.
+
 ### Fixed
 
 - **Expedition badges no longer flicker the planet list.** The badges

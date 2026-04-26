@@ -5,16 +5,21 @@
 //   npm install
 //   npm run build:prod
 //
-// Includes everything needed for that build, the docs the reviewer
-// will read, and REVIEWERS.md (a dedicated build-and-verify guide).
-// Excludes node_modules/, dist/, dist.zip, .claude/, .git/, and
-// test/. Same Windows/POSIX zip strategy as scripts/package.mjs —
-// bsdtar on Windows so stored paths use forward slashes (AMO's
-// validator rejects PowerShell Compress-Archive output, which uses
-// backslashes).
+// Includes everything needed for that build (and the docs the reviewer
+// will read), excludes node_modules/, dist/, dist.zip, .claude/, .git/,
+// and test/.
+//
+// Implementation: stage the included entries into a temporary
+// directory, then zip the directory with `tar -a` — picks the format
+// from the extension (.zip → zip) and writes forward-slash entry
+// paths on every platform, including Windows (where Compress-Archive
+// and .NET Framework's ZipFile.CreateFromDirectory both write
+// backslashes that AMO's validator rejects). `tar.exe` ships with
+// Windows 10 1803+ (bsdtar/libarchive).
 
-import { existsSync, rmSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, rmSync, mkdtempSync, cpSync } from 'node:fs';
+import { resolve, join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { execSync } from 'node:child_process';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -29,6 +34,7 @@ const INCLUDE = [
   'package-lock.json',
   'rollup.config.mjs',
   'tsconfig.json',
+  '.nvmrc',
   'README.md',
   'REVIEWERS.md',
   'CONTRIBUTING.md',
@@ -48,27 +54,20 @@ if (existsSync(ZIP)) {
   console.log('package-source: removed stale source.zip');
 }
 
-const isWindows = process.platform === 'win32';
+const STAGE = mkdtempSync(join(tmpdir(), 'oge-source-'));
 
 try {
-  if (isWindows) {
-    // bsdtar from system32 — see scripts/package.mjs header for why we
-    // skip PowerShell's Compress-Archive (it writes backslashes that
-    // AMO's validator rejects).
-    const tarExe = 'C:\\Windows\\System32\\tar.exe';
-    const list = present.map((entry) => `"${entry}"`).join(' ');
-    execSync(
-      `"${tarExe}" --format=zip -cf "${ZIP}" -C "${ROOT}" ${list}`,
-      { stdio: 'inherit' },
-    );
-  } else {
-    const list = present.map((p) => `"${p}"`).join(' ');
-    execSync(`cd "${ROOT}" && zip -r "${ZIP}" ${list}`, { stdio: 'inherit' });
+  for (const entry of present) {
+    cpSync(resolve(ROOT, entry), join(STAGE, entry), { recursive: true });
   }
+
+  execSync(`tar -a -c -f "${ZIP}" -C "${STAGE}" .`, { stdio: 'inherit' });
 } catch (err) {
   console.error('package-source: archive command failed');
   console.error(err instanceof Error ? err.message : err);
+  rmSync(STAGE, { recursive: true, force: true });
   process.exit(1);
 }
 
+rmSync(STAGE, { recursive: true, force: true });
 console.log(`package-source: wrote ${ZIP}`);
