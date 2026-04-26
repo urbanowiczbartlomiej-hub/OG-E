@@ -210,6 +210,7 @@ afterEach(() => {
 describe('installSendCol — lifecycle', () => {
   it('does not render when colonizeMode is off', () => {
     setupScene();
+    settingsStore.set({ ...settingsStore.get(), colonizeMode: false });
     installSendCol();
     expect(getWrap()).toBeNull();
   });
@@ -1087,7 +1088,7 @@ describe('settings reactions', () => {
     setupScene();
     settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
     installSendCol();
-    expect(getWrap()?.style.width).toBe('336px'); // default
+    expect(getWrap()?.style.width).toBe('320px'); // default
     settingsStore.update((s) => ({ ...s, colBtnSize: 500 }));
     expect(getWrap()?.style.width).toBe('500px');
   });

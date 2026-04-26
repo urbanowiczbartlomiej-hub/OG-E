@@ -116,10 +116,10 @@ afterEach(() => {
 
 describe('checkAbandonState', () => {
   it('returns the parsed triple for a fresh small colony', () => {
-    // Default `colMinFields` is 200; max=100 is below threshold.
+    // Default `colMinFields` is 320; max=100 is below threshold.
     setupOverviewScene({ usedFields: 0, maxFields: 100 });
     const result = checkAbandonState();
-    expect(result).toEqual({ used: 0, max: 100, minFields: 200 });
+    expect(result).toEqual({ used: 0, max: 100, minFields: 320 });
   });
 
   it('returns null when the page is not the overview', () => {
@@ -129,7 +129,7 @@ describe('checkAbandonState', () => {
 
   it('returns null when max fields is at or above minFields', () => {
     // Boundary case — `max === minFields` is also "big enough".
-    setupOverviewScene({ usedFields: 0, maxFields: 250 });
+    setupOverviewScene({ usedFields: 0, maxFields: 350 });
     expect(checkAbandonState()).toBeNull();
   });
 

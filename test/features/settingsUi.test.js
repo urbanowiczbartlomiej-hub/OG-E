@@ -213,13 +213,13 @@ describe('installSettingsUi — checkbox', () => {
     );
     expect(cb).not.toBeNull();
 
-    // Default: false → click → true.
-    expect(settingsStore.get().mobileMode).toBe(false);
+    // Default: true → uncheck → false.
+    expect(settingsStore.get().mobileMode).toBe(true);
     if (cb) {
-      cb.checked = true;
+      cb.checked = false;
       cb.dispatchEvent(new Event('change'));
     }
-    expect(settingsStore.get().mobileMode).toBe(true);
+    expect(settingsStore.get().mobileMode).toBe(false);
   });
 });
 
@@ -415,13 +415,13 @@ describe('installSettingsUi — reactive sync from store', () => {
     const cb = /** @type {HTMLInputElement | null} */ (
       document.getElementById(INPUT_PREFIX + 'mobileMode')
     );
-    expect(cb?.checked).toBe(false);
-
-    settingsStore.update((prev) => ({ ...prev, mobileMode: true }));
     expect(cb?.checked).toBe(true);
 
     settingsStore.update((prev) => ({ ...prev, mobileMode: false }));
     expect(cb?.checked).toBe(false);
+
+    settingsStore.update((prev) => ({ ...prev, mobileMode: true }));
+    expect(cb?.checked).toBe(true);
   });
 
   it('external settingsStore.update updates the range slider + display', async () => {

@@ -123,11 +123,13 @@ describe('readabilityBoost', () => {
     expect(missionRule).not.toBeNull();
     const body = missionRule?.[1] ?? '';
     // The actual number is whatever the rule says — we just assert
-    // it's not the same 20px used by the countdown.
+    // it stays distinctly smaller than the countdown's 50 px so the
+    // focal-point asymmetry survives. Countdown is 50, mission-type
+    // sits well below; 30 is a comfortable upper bound.
     const m = body.match(/font-size:\s*(\d+)px/);
     expect(m).not.toBeNull();
     const fontSize = parseInt(m?.[1] ?? '0', 10);
-    expect(fontSize).toBeLessThan(20);
+    expect(fontSize).toBeLessThan(30);
   });
 
   it('both status rows ("Następna:" and "Rodzaj:") get the hide trick', () => {
@@ -211,24 +213,31 @@ describe('readabilityBoost', () => {
     });
   });
 
-  it('movement-link rule stacks vertically and leaves child colours alone', () => {
-    // flex-direction: column + align-items: flex-start is what gets
-    // "Floty: …" on top of "Ekspedycje: …" — and critically the rule
-    // does NOT cascade colour through `*`, so the native red on
-    // `.ago_color_palered` (Ekspedycje maxed) stays red.
+  it('movement-link rule stacks vertically regardless of AGR colour modifier', () => {
+    // Layout (flex column + bold + bigger font) is applied to the bare
+    // `a.ago_movement.tooltip` selector so the rule fires for BOTH the
+    // lightgreen ("slots free") and palered ("37/37 — fleets capped")
+    // variants AGR may swap the anchor between. The lightgreen-only
+    // sibling rule supplies the green tint without forcing it onto the
+    // palered case.
     installReadabilityBoost();
     const css = document.getElementById(STYLE_ID)?.textContent ?? '';
-    const linkRule = css.match(
-      /a\.ago_movement\.tooltip\.ago_color_lightgreen\s*\{([^}]*)\}/,
+    const layoutRule = css.match(
+      /a\.ago_movement\.tooltip\s*\{([^}]*)\}/,
     );
-    expect(linkRule).not.toBeNull();
-    const body = linkRule?.[1] ?? '';
+    expect(layoutRule).not.toBeNull();
+    const body = layoutRule?.[1] ?? '';
     expect(body).toContain('flex-direction: column');
     expect(body).toContain('align-items: flex-start');
-    // No universal-child rule targeting the anchor's descendants — if
+    // The lightgreen-tint rule is still present for the "slots free"
+    // case, but it does NOT carry layout — only the colour.
+    expect(css).toMatch(
+      /a\.ago_movement\.tooltip\.ago_color_lightgreen\s*\{[^}]*color:\s*#a0ff60/,
+    );
+    // No universal-child rule cascading colour into descendants — if
     // one reappears, the red "Ekspedycje: 14/14" span loses its tint.
     expect(css).not.toMatch(
-      /a\.ago_movement\.tooltip\.ago_color_lightgreen\s+\*/,
+      /a\.ago_movement\.tooltip[^\{]*\s+\*\s*\{/,
     );
   });
 });

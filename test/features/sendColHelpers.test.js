@@ -535,7 +535,7 @@ describe('getColonizeWaitTime', () => {
     vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
     paintDuration('0:01:00'); // 60s flight.
     const now = Date.now();
-    // gap of 10s < default minGap (20s) → conflict.
+    // gap of 10s < default minGap (15s) → conflict.
     registryStore.set([
       {
         coords: '4:40:8',
@@ -545,8 +545,8 @@ describe('getColonizeWaitTime', () => {
     ]);
     const wait = getColonizeWaitTime();
     expect(wait).toBeGreaterThan(0);
-    // minGap 20s - gap 10s = 10s wait.
-    expect(wait).toBe(10);
+    // minGap 15s - gap 10s = 5s wait.
+    expect(wait).toBe(5);
     vi.useRealTimers();
   });
 
@@ -559,7 +559,7 @@ describe('getColonizeWaitTime', () => {
       {
         coords: '4:40:8',
         sentAt: now,
-        arrivalAt: now + 60_000 + 20_000,
+        arrivalAt: now + 60_000 + 15_000,
       },
     ]);
     expect(getColonizeWaitTime()).toBe(0);

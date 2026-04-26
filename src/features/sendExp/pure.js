@@ -87,6 +87,26 @@ export const DEFAULT_EDGE_OFFSET_PX = 20;
 /** Delay before restoring focus on install. */
 export const FOCUS_RESTORE_DELAY_MS = 50;
 
+/**
+ * Safety fallback for the eventbox-readiness gate (fleetdispatch only).
+ * If `oge:eventBoxLoaded` hasn't arrived within this window — a missed
+ * XHR (run_at race, future OGame URL change, ...) — the button activates
+ * anyway. The gate's only purpose is to swallow taps in the very first
+ * moment after a fleetdispatch nav lands; a missed XHR here is much
+ * less costly than blocking the user's normal flow. The window.load
+ * listener is the primary fallback (fires reliably right after the
+ * page settles); this constant is the worst-case backstop.
+ */
+export const EVENTBOX_SAFETY_TIMEOUT_MS = 1200;
+
+/**
+ * How long the transient "Loading..." cue stays on the button when the
+ * user clicks before the eventbox-readiness gate opens. Short enough
+ * that it doesn't outlast a missed-XHR safety window — once the gate
+ * opens, the button must be ready to accept the very next tap.
+ */
+export const EVENTBOX_LOADING_LABEL_MS = 400;
+
 // ─── Button copy ─────────────────────────────────────────────────────
 
 /** Default button copy — what the user sees in the "idle" state. */

@@ -95,12 +95,12 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
 
     expect(SETTINGS_SCHEMA.mobileMode).toEqual({
       type: 'bool',
-      default: false,
+      default: true,
       key: 'oge_mobileMode',
     });
     expect(SETTINGS_SCHEMA.enterBtnSize).toEqual({
       type: 'int',
-      default: 560,
+      default: 320,
       key: 'oge_enterBtnSize',
     });
     expect(SETTINGS_SCHEMA.colPositions).toEqual({
@@ -116,18 +116,19 @@ describe('settingsStore — initial state (pre-init)', () => {
     // beforeEach resets the store to defaults — but the assertion is that
     // the DEFAULTS are what the store exposes, regardless of init.
     const state = settingsStore.get();
-    expect(state.mobileMode).toBe(false);
-    expect(state.colonizeMode).toBe(false);
+    expect(state.mobileMode).toBe(true);
+    expect(state.colonizeMode).toBe(true);
     expect(state.expeditionBadges).toBe(true);
     expect(state.autoRedirectExpedition).toBe(true);
-    expect(state.enterBtnSize).toBe(560);
-    expect(state.colBtnSize).toBe(336);
+    expect(state.autoRedirectColonize).toBe(false);
+    expect(state.enterBtnSize).toBe(320);
+    expect(state.colBtnSize).toBe(320);
     expect(state.colPositions).toBe('8');
-    expect(state.colMinGap).toBe(20);
-    expect(state.colMinFields).toBe(200);
+    expect(state.colMinGap).toBe(15);
+    expect(state.colMinFields).toBe(320);
     expect(state.colPassword).toBe('');
     expect(state.maxExpPerPlanet).toBe(1);
-    expect(state.colPreferOtherGalaxies).toBe(false);
+    expect(state.colPreferOtherGalaxies).toBe(true);
     expect(state.cloudSync).toBe(false);
     expect(state.gistToken).toBe('');
   });
@@ -180,11 +181,11 @@ describe('initSettingsStore — hydration', () => {
     // safeLS.int returns the default when parseInt fails entirely.
     localStorage.setItem('oge_colMinGap', 'not-a-number');
     initSettingsStore();
-    expect(settingsStore.get().colMinGap).toBe(20);
+    expect(settingsStore.get().colMinGap).toBe(15);
   });
 
   it('hydrates a mix of fields at once in a single store update', () => {
-    localStorage.setItem('oge_mobileMode', 'true');
+    localStorage.setItem('oge_mobileMode', 'false');
     localStorage.setItem('oge_colMinGap', '30');
     localStorage.setItem('oge_colPositions', '7,8');
     localStorage.setItem('oge_gistToken', 'ghp_abc123');
@@ -192,12 +193,12 @@ describe('initSettingsStore — hydration', () => {
     initSettingsStore();
 
     const state = settingsStore.get();
-    expect(state.mobileMode).toBe(true);
+    expect(state.mobileMode).toBe(false);
     expect(state.colMinGap).toBe(30);
     expect(state.colPositions).toBe('7,8');
     expect(state.gistToken).toBe('ghp_abc123');
     // Untouched fields stay at defaults.
-    expect(state.colonizeMode).toBe(false);
+    expect(state.colonizeMode).toBe(true);
     expect(state.expeditionBadges).toBe(true);
   });
 });
@@ -205,8 +206,8 @@ describe('initSettingsStore — hydration', () => {
 describe('initSettingsStore — write-through (per-key diff)', () => {
   it('writes a changed bool field to its own localStorage key', () => {
     initSettingsStore();
-    settingsStore.update((s) => ({ ...s, mobileMode: true }));
-    expect(localStorage.getItem('oge_mobileMode')).toBe('true');
+    settingsStore.update((s) => ({ ...s, mobileMode: false }));
+    expect(localStorage.getItem('oge_mobileMode')).toBe('false');
   });
 
   it('writes a changed int field to its own localStorage key', () => {
@@ -227,18 +228,18 @@ describe('initSettingsStore — write-through (per-key diff)', () => {
       ...s,
       colMinGap: 30,
       colPositions: '7',
-      mobileMode: true,
+      mobileMode: false,
     }));
 
     expect(localStorage.getItem('oge_colMinGap')).toBe('30');
     expect(localStorage.getItem('oge_colPositions')).toBe('7');
-    expect(localStorage.getItem('oge_mobileMode')).toBe('true');
+    expect(localStorage.getItem('oge_mobileMode')).toBe('false');
   });
 
   it('does NOT touch localStorage keys for fields that did not change', () => {
     // Pre-seed a sentinel value under a key the test will NOT modify.
     // The hydrate will read it as an int (parseInt('SENTINEL') → NaN →
-    // default 336) but the LS string itself remains untouched unless
+    // default 320) but the LS string itself remains untouched unless
     // the store writes back. Since we only mutate `colMinGap`, the
     // sentinel must survive — proving the diff write-through.
     localStorage.setItem('oge_colBtnSize', 'SENTINEL');
@@ -249,7 +250,7 @@ describe('initSettingsStore — write-through (per-key diff)', () => {
     settingsStore.update((s) => ({ ...s, colMinGap: 30 }));
 
     expect(localStorage.getItem('oge_colMinGap')).toBe('30');
-    // colBtnSize key was not written because the store value (336,
+    // colBtnSize key was not written because the store value (320,
     // hydrated as default) did not change from its hydrated state.
     expect(localStorage.getItem('oge_colBtnSize')).toBe('SENTINEL');
   });
@@ -259,13 +260,13 @@ describe('initSettingsStore — write-through (per-key diff)', () => {
 
     settingsStore.update((s) => ({
       ...s,
-      mobileMode: true,
+      mobileMode: false,
       expeditionBadges: false,
       enterBtnSize: 42,
       gistToken: 'abc',
     }));
 
-    expect(localStorage.getItem('oge_mobileMode')).toBe('true');
+    expect(localStorage.getItem('oge_mobileMode')).toBe('false');
     expect(localStorage.getItem('oge_expeditionBadges')).toBe('false');
     expect(localStorage.getItem('oge_enterBtnSize')).toBe('42');
     expect(localStorage.getItem('oge_gistToken')).toBe('abc');
@@ -280,9 +281,9 @@ describe('initSettingsStore — write-through (per-key diff)', () => {
     expect(settingsStore.get().colMinGap).toBe(60);
 
     // Reset to the default.
-    settingsStore.update((s) => ({ ...s, colMinGap: 20 }));
+    settingsStore.update((s) => ({ ...s, colMinGap: 15 }));
 
-    expect(localStorage.getItem('oge_colMinGap')).toBe('20');
+    expect(localStorage.getItem('oge_colMinGap')).toBe('15');
   });
 });
 
@@ -291,7 +292,7 @@ describe('initSettingsStore — persistence round-trip', () => {
     initSettingsStore();
     settingsStore.update((s) => ({
       ...s,
-      mobileMode: true,
+      mobileMode: false,
       colMinGap: 45,
       colPositions: '7,8,9',
       gistToken: 'ghp_roundtrip',
@@ -301,12 +302,12 @@ describe('initSettingsStore — persistence round-trip', () => {
     // Wipe in-memory state back to defaults to prove the next init
     // hydrates from LS and not from leftover memory.
     settingsStore.set(defaultsFromSchema());
-    expect(settingsStore.get().mobileMode).toBe(false);
+    expect(settingsStore.get().mobileMode).toBe(true);
 
     initSettingsStore();
 
     const state = settingsStore.get();
-    expect(state.mobileMode).toBe(true);
+    expect(state.mobileMode).toBe(false);
     expect(state.colMinGap).toBe(45);
     expect(state.colPositions).toBe('7,8,9');
     expect(state.gistToken).toBe('ghp_roundtrip');

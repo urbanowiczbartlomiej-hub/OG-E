@@ -305,6 +305,11 @@ describe('installSendExp — click navigation', () => {
     // navigation happens just because `mission` isn't 15.
     setupScene({ onFleetdispatch: true, mission: 7, activeCp: 42 });
     installSendExp();
+    // The eventbox-readiness gate (added in 1.0.1) suppresses Phase 1/2
+    // until OGame's eventbox refresh XHR has fired. Tests that exercise
+    // the click logic itself bypass the gate by dispatching the bridge
+    // event the production XHR observer would have dispatched.
+    document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
     const btn = getBtn();
     btn?.click();
 
@@ -318,6 +323,7 @@ describe('installSendExp — click navigation', () => {
   it('Phase 1: fleetdispatch + mission=15 + fleet panel loaded → paint "Sent!", no navigation', () => {
     setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
     installSendExp();
+    document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
     // Simulate AGR having already hydrated the fleet panel + its
     // native dispatch button. Phase 1 fires `safeClick(dispatch)`
     // and flips the label to "Sent!". (We don't assert the click
@@ -579,6 +585,7 @@ describe('installSendExp — fleetDispatcher snapshot gates', () => {
       activeExpeditions: 1,
     });
     installSendExp();
+    document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
     setFleetDispatcher({ expeditionCount: 13, maxExpeditionCount: 14 });
 
     const btn = getBtn();
@@ -590,5 +597,63 @@ describe('installSendExp — fleetDispatcher snapshot gates', () => {
     vi.advanceTimersByTime(2000);
     expect(btn?.textContent).toBe('Send Exp');
     vi.useRealTimers();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// Eventbox-readiness gate (added 1.0.1)
+// ──────────────────────────────────────────────────────────────────
+
+describe('installSendExp — eventbox readiness gate', () => {
+  it('on fleetdispatch, click before eventbox loads paints "Loading..." and bails (no nav, no lock)', () => {
+    // Pre-1.0.1 a tap on fleetdispatch immediately after navigation
+    // entered Phase 2 against a half-hydrated DOM and locked the button
+    // for the full 15 s POLL_TIMEOUT_MS. The gate suppresses the Phase
+    // 1/2 entry until OGame's eventbox refresh XHR has fired — without
+    // locking, so the user can simply tap again once the page settles.
+    vi.useFakeTimers();
+    setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
+    installSendExp();
+    // Note: NO `oge:eventBoxLoaded` dispatched here — that's the whole
+    // point of this case.
+
+    const btn = getBtn();
+    btn?.click();
+
+    expect(btn?.textContent).toBe('Loading...');
+    expect(btn?.style.opacity).not.toBe('0.5');
+    expect(navTarget).toBeNull();
+
+    // The cue clears after EVENTBOX_LOADING_LABEL_MS (800 ms).
+    vi.advanceTimersByTime(800);
+    expect(btn?.textContent).toBe('Send Exp');
+    vi.useRealTimers();
+  });
+
+  it('off fleetdispatch the gate is a no-op (clicks navigate immediately)', () => {
+    // The gate is fleetdispatch-only — pages that don't trigger an
+    // eventbox refresh XHR shouldn't gate clicks against an event that
+    // will never arrive.
+    setupScene({ onFleetdispatch: false, activeCp: 11 });
+    installSendExp();
+    // Deliberately no event dispatched — overview page doesn't depend
+    // on it.
+    getBtn()?.click();
+    expect(navTarget).not.toBeNull();
+    expect(navTarget).toContain('cp=11');
+  });
+
+  it('after oge:eventBoxLoaded fires, clicks proceed normally', () => {
+    // Same fleetdispatch scene; once the bridge event arrives the gate
+    // opens permanently (until next page navigation re-installs).
+    setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
+    installSendExp();
+    document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
+
+    const btn = getBtn();
+    btn?.click();
+    // No fleet panel → Phase 2 (locks + paints "Loading...").
+    expect(btn?.style.opacity).toBe('0.5');
+    expect(btn?.textContent).toBe('Loading...');
   });
 });

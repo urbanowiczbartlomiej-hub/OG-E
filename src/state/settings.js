@@ -64,20 +64,19 @@ export const SETTINGS_PREFIX = 'oge_';
  * single source of truth at runtime; this typedef is the compile-time
  * counterpart):
  *
- *   mobileMode              false — Send Exp button visible in mobile layout
- *   colonizeMode            false — Send Col button visible
-
+ *   mobileMode              true  — Send Exp button visible in mobile layout
+ *   colonizeMode            true  — Send Col button visible
  *   expeditionBadges        true  — ekspedycje dot on planet list
  *   autoRedirectExpedition  true  — redirect to next planet after expedition
- *   autoRedirectColonize    true  — redirect to next colonize target after send
- *   enterBtnSize            560   — Send Exp button size in px
- *   colBtnSize              336   — Send Col button size in px
+ *   autoRedirectColonize    false — redirect to next colonize target after send
+ *   enterBtnSize            320   — Send Exp button size in px
+ *   colBtnSize              320   — Send Col button size in px
  *   colPositions            '8'   — comma-separated colonize positions e.g. "8,9,10"
- *   colMinGap               20    — seconds between colonize arrivals
- *   colMinFields            200   — abandon threshold (fields)
+ *   colMinGap               15    — seconds between colonize arrivals
+ *   colMinFields            320   — abandon threshold (fields)
  *   colPassword             ''    — autofill value for the abandon form
  *   maxExpPerPlanet         1     — simultaneous expeditions per planet
- *   colPreferOtherGalaxies  false — prefer neighbouring galaxies first
+ *   colPreferOtherGalaxies  true  — prefer neighbouring galaxies first
  *   cloudSync               false — enable Gist-based cross-device sync
  *   gistToken               ''    — GitHub personal access token
  *   readabilityBoost        true  — inject CSS fix for event box + movement link
@@ -136,19 +135,19 @@ export const SETTINGS_PREFIX = 'oge_';
  * @type {Record<keyof Settings, SettingSchema>}
  */
 export const SETTINGS_SCHEMA = {
-  mobileMode:             { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'mobileMode' },
-  colonizeMode:           { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'colonizeMode' },
+  mobileMode:             { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'mobileMode' },
+  colonizeMode:           { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'colonizeMode' },
   expeditionBadges:       { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'expeditionBadges' },
   autoRedirectExpedition: { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'autoRedirectExpedition' },
-  autoRedirectColonize:   { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'autoRedirectColonize' },
-  enterBtnSize:           { type: 'int',    default: 560,   key: SETTINGS_PREFIX + 'enterBtnSize' },
-  colBtnSize:             { type: 'int',    default: 336,   key: SETTINGS_PREFIX + 'colBtnSize' },
+  autoRedirectColonize:   { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'autoRedirectColonize' },
+  enterBtnSize:           { type: 'int',    default: 320,   key: SETTINGS_PREFIX + 'enterBtnSize' },
+  colBtnSize:             { type: 'int',    default: 320,   key: SETTINGS_PREFIX + 'colBtnSize' },
   colPositions:           { type: 'string', default: '8',   key: SETTINGS_PREFIX + 'colPositions' },
-  colMinGap:              { type: 'int',    default: 20,    key: SETTINGS_PREFIX + 'colMinGap' },
-  colMinFields:           { type: 'int',    default: 200,   key: SETTINGS_PREFIX + 'colMinFields' },
+  colMinGap:              { type: 'int',    default: 15,    key: SETTINGS_PREFIX + 'colMinGap' },
+  colMinFields:           { type: 'int',    default: 320,   key: SETTINGS_PREFIX + 'colMinFields' },
   colPassword:            { type: 'string', default: '',    key: SETTINGS_PREFIX + 'colPassword' },
   maxExpPerPlanet:        { type: 'int',    default: 1,     key: SETTINGS_PREFIX + 'maxExpPerPlanet' },
-  colPreferOtherGalaxies: { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'colPreferOtherGalaxies' },
+  colPreferOtherGalaxies: { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'colPreferOtherGalaxies' },
   cloudSync:              { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'cloudSync' },
   gistToken:              { type: 'string', default: '',    key: SETTINGS_PREFIX + 'gistToken' },
   readabilityBoost:       { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'readabilityBoost' },

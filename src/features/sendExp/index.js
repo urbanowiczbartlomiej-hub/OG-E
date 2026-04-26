@@ -86,6 +86,8 @@ import {
   POLL_INTERVAL_MS,
   DEFAULT_EDGE_OFFSET_PX,
   FOCUS_RESTORE_DELAY_MS,
+  EVENTBOX_SAFETY_TIMEOUT_MS,
+  EVENTBOX_LOADING_LABEL_MS,
   BUTTON_TEXT,
   ALL_MAXED_LABEL,
   BG_IDLE,
@@ -260,6 +262,50 @@ export const installSendExp = () => {
   // Dimmed opacity gives a visible cue that the button is working.
   let busy = false;
 
+  // Eventbox readiness gate (fleetdispatch only). On `component=fleetdispatch`
+  // OGame fires an async XHR for the fleet-event list shortly after page
+  // load; until that lands, `#eventContent` rows and AGR's routine state
+  // are stale, and a click handed to runPhase2 polls a half-hydrated DOM
+  // for the full 15 s POLL_TIMEOUT_MS window before recovering. We gate
+  // clicks on the bridge's `oge:eventBoxLoaded` signal (see
+  // `bridges/eventBoxHook.js`) and fall back to a safety timeout so a
+  // missed XHR (run_at race, future URL change, …) doesn't lock the
+  // button forever — 8 s is well past the typical eventbox load (~1 s)
+  // but a fraction of the 15 s Phase 2 timeout we'd otherwise hit. Pages
+  // other than fleetdispatch start ready immediately.
+  const isFleetdispatchPage = location.search.includes('component=fleetdispatch');
+  let eventBoxReady = !isFleetdispatchPage;
+
+  /** @type {((e: Event) => void) | null} */
+  let onEventBoxLoaded = null;
+  /** @type {(() => void) | null} */
+  let onWindowLoad = null;
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let eventBoxSafetyTimer = null;
+  if (isFleetdispatchPage) {
+    onEventBoxLoaded = () => {
+      eventBoxReady = true;
+    };
+    document.addEventListener('oge:eventBoxLoaded', onEventBoxLoaded);
+
+    // Secondary trigger: window 'load' event. The eventbox refresh XHR
+    // typically fires DURING page load and lands shortly after `load`
+    // does, but some installs (cached responses, future OGame URL
+    // shape) won't go through our XHR observer. The load event is a
+    // hard guarantee that the page itself is no longer hydrating, so
+    // it's a safe moment to open the gate. We hook it unconditionally
+    // — if the page is already 'complete' the listener is harmlessly
+    // dead, and the safety timer still fires.
+    onWindowLoad = () => {
+      eventBoxReady = true;
+    };
+    window.addEventListener('load', onWindowLoad, { once: true });
+
+    eventBoxSafetyTimer = setTimeout(() => {
+      eventBoxReady = true;
+    }, EVENTBOX_SAFETY_TIMEOUT_MS);
+  }
+
   /**
    * Repaint the button text. Idempotent; no-op when the button was
    * torn down between schedule and fire.
@@ -402,6 +448,23 @@ export const installSendExp = () => {
    */
   const handleClick = (btn) => {
     if (busy) return;
+
+    // Eventbox-readiness gate. On fleetdispatch the click handler reads
+    // DOM state (`#eventContent` rows, AGR's `#ago_routine_7` check
+    // class) that is only authoritative after OGame's eventbox refresh
+    // XHR lands. Clicking before that puts the button into a Phase 2
+    // poll against stale state. Paint a brief "Loading..." cue and bail
+    // — no lock, so the user can tap again as soon as the page settles.
+    if (!eventBoxReady) {
+      const original = btn.textContent;
+      setLabel(btn, 'Loading...');
+      setTimeout(() => {
+        // The eventbox may have arrived during the cue window; restore
+        // whatever label was there before rather than the idle default.
+        if (btn.textContent === 'Loading...') setLabel(btn, original ?? BUTTON_TEXT);
+      }, EVENTBOX_LOADING_LABEL_MS);
+      return;
+    }
 
     // Global-cap gate (snapshot is authoritative when populated): if
     // the game reports every expedition slot in use (e.g. 14/14), there
@@ -676,6 +739,18 @@ export const installSendExp = () => {
         'oge:fleetDispatcher',
         onFleetDispatcherSnapshot,
       );
+      if (onEventBoxLoaded) {
+        document.removeEventListener('oge:eventBoxLoaded', onEventBoxLoaded);
+        onEventBoxLoaded = null;
+      }
+      if (onWindowLoad) {
+        window.removeEventListener('load', onWindowLoad);
+        onWindowLoad = null;
+      }
+      if (eventBoxSafetyTimer !== null) {
+        clearTimeout(eventBoxSafetyTimer);
+        eventBoxSafetyTimer = null;
+      }
       installed = null;
     },
   };

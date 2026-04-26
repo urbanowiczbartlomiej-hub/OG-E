@@ -38,6 +38,46 @@ version numbers follow [Semantic Versioning](https://semver.org).
   system), not a batch action.
 - Keyboard shortcuts beyond ArrowRight on fleetdispatch.
 
+## [1.0.1] — 2026-04-26
+
+### Fixed
+
+- **Send Exp button no longer locks for 15 s after a too-eager tap on
+  fleetdispatch.** OGame fetches its fleet-event list via an async XHR
+  shortly after the page itself loads. A user tapping the floating
+  button before that XHR landed entered Phase 2 polling against a
+  half-hydrated DOM (`#eventContent` empty, AGR's routine state stale)
+  and the button stayed locked for the full 15 s `POLL_TIMEOUT_MS`
+  window before recovery. Added a new MAIN-world bridge
+  (`bridges/eventBoxHook.js`) that observes the eventbox refresh XHR
+  and dispatches `oge:eventBoxLoaded`; the click handler gates Phase
+  1/2 on that signal and falls back to an 8 s safety timer so a
+  missed XHR can never lock the button forever. Pre-readiness clicks
+  paint a transient "Loading..." cue and bail without locking.
+- **Movement-link readability rule now fires when the fleet count is
+  capped (37/37).** AGR swaps the anchor's status colour between
+  `ago_color_lightgreen` (slots free) and `ago_color_palered` (capped).
+  The previous selector required the green class, so once the user
+  hit the cap the stacked-line layout disappeared. Layout (flex
+  column + bold + bigger font) now lives on the bare
+  `a.ago_movement.tooltip` selector and applies regardless of the
+  colour modifier; the green tint is opt-in via a sibling rule that
+  leaves the native red alone.
+
+### Changed
+
+- **Eventbox countdown is bigger and right-anchored to the box edge.**
+  Bumped `#eventboxFilled .next_event .countdown` from 35 px to 50 px
+  and reset its `right` inset from 12 px to 0 — the countdown is the
+  primary focal point, so it now genuinely dominates the row instead
+  of competing with the mission-type label.
+- **Mission-type label ("Rodzaj") bumped from 13 px to 20 px** for
+  legibility on small screens; still distinctly smaller than the
+  50 px countdown to preserve the focal-point asymmetry.
+- **Fleet-movement link font bumped from 15 px to 18 px** so the
+  stacked "Floty: X/Y" + "Ekspedycje: X/Y" lines read at a glance
+  on mobile.
+
 ## [1.0.0] — 2026-04-24
 
 First public release.

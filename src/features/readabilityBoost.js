@@ -152,7 +152,7 @@ const CSS = `/* OG-E: readability boost — event box + fleet movement link */
 #eventboxFilled .next_event .friendly,
 #eventboxFilled .next_event .hostile,
 #eventboxFilled .next_event .neutral {
-  font-size: 13px !important;
+  font-size: 20px !important;
   font-weight: bold !important;
 }
 #eventboxFilled .friendly { color: #55e87a !important; }
@@ -167,10 +167,17 @@ const CSS = `/* OG-E: readability boost — event box + fleet movement link */
    box's right edge. */
 #eventboxFilled .next_event .countdown {
   position: absolute !important;
-  right: 12px !important;
+  right: 0 !important;
+  /* Vertical centre on the geometric midpoint of the container, then
+     nudged 5 px up: with line 1 (undermark, 13 px) and line 2
+     (mission-type, 20 px) the visual mass leans toward line 2, so
+     pure 50 % centring reads ~5 px low. Pulling the countdown up by
+     5 px via the translateY offset rebalances without risking
+     overflow at the container's top edge — anchoring at top: 70 %
+     dropped the 50 px countdown clean below the box. */
   top: 50% !important;
-  transform: translateY(-50%) !important;
-  font-size: 35px !important;
+  transform: translateY(calc(-50% - 5px)) !important;
+  font-size: 50px !important;
   font-weight: 900 !important;
   color: #ffe04b !important;
   letter-spacing: 0.5px !important;
@@ -185,22 +192,34 @@ const CSS = `/* OG-E: readability boost — event box + fleet movement link */
 }
 
 /* ===== Movement link (fleetdispatch header) =====
-   Stack "Floty: X/Y" on top of "Ekspedycje: X/Y" left-aligned. Colour
-   the anchor only (not every descendant) so the child
-   .ago_color_palered keeps its native red "max reached" tint.
-   height:auto cancels any inline workaround the user might have left
-   behind. */
-a.ago_movement.tooltip.ago_color_lightgreen {
-  color: #a0ff60 !important;
-  font-size: 15px !important;
+   Stack "Floty: X/Y" on top of "Ekspedycje: X/Y" left-aligned. AGR
+   swaps the anchor's status colour between ago_color_lightgreen
+   (slots free) and ago_color_palered (37/37 — fleets capped), so
+   the LAYOUT rule must match ANY ago_movement anchor, regardless of
+   the colour modifier. The colour override is opt-in via the
+   lightgreen sibling rule below — when AGR has already swapped to
+   palered we leave the native red alone. height:auto cancels any
+   inline workaround the user might have left behind. */
+a.ago_movement.tooltip {
+  font-size: 18px !important;
   font-weight: bold !important;
   display: inline-flex !important;
   flex-direction: column !important;
   align-items: flex-start !important;
   line-height: 1.2 !important;
+  width: auto !important;
   height: auto !important;
   padding: 2px 0 !important;
   gap: 1px !important;
+}
+
+/* Colour override for the green ("slots free") variant only. The
+   palered variant keeps AGR's native red so 37/37 reads as a warning
+   at a glance. The child .ago_color_palered span keeps its red in
+   either case because we colour the anchor only — no universal-
+   child cascade. */
+a.ago_movement.tooltip.ago_color_lightgreen {
+  color: #a0ff60 !important;
 }
 `;
 

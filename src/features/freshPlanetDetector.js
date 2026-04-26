@@ -190,14 +190,14 @@ const showBanner = (planet) => {
     'position:fixed',
     'background:rgba(220, 120, 0, 0.95)',
     'color:#fff',
-    'padding:20px 40px',
-    'border:3px solid #fff',
-    'border-radius:12px',
+    'padding:40px 80px',
+    'border:6px solid #fff',
+    'border-radius:24px',
     'z-index:99998',
     'cursor:pointer',
     'text-align:center',
     'font-weight:bold',
-    'box-shadow:0 4px 16px rgba(0,0,0,0.6)',
+    'box-shadow:0 8px 32px rgba(0,0,0,0.6)',
     // `touch-action: none` keeps touch gestures from scrolling the
     // page while the user drags the banner. Matches sendExp/sendCol.
     'touch-action:none',
@@ -205,21 +205,21 @@ const showBanner = (planet) => {
 
   const titleLine = document.createElement('div');
   titleLine.textContent = 'New planet';
-  titleLine.style.cssText = 'font-size:18px;margin-bottom:6px;opacity:0.9';
+  titleLine.style.cssText = 'font-size:36px;margin-bottom:12px;opacity:0.9';
 
   const bigLine = document.createElement('div');
   const nameText = planet.name ? ` ${planet.name}` : '';
   bigLine.textContent = `${planet.coords}${nameText}`.trim();
   bigLine.style.cssText =
-    'font-size:28px;margin:4px 0;line-height:1.1;letter-spacing:1px';
+    'font-size:56px;margin:8px 0;line-height:1.1;letter-spacing:2px';
 
   const fieldsLine = document.createElement('div');
   fieldsLine.textContent = `0/${planet.max} fields`;
-  fieldsLine.style.cssText = 'font-size:14px;margin-top:4px;opacity:0.95';
+  fieldsLine.style.cssText = 'font-size:28px;margin-top:8px;opacity:0.95';
 
   const hintLine = document.createElement('div');
   hintLine.textContent = 'click to open';
-  hintLine.style.cssText = 'font-size:12px;opacity:0.8;margin-top:6px';
+  hintLine.style.cssText = 'font-size:24px;opacity:0.8;margin-top:12px';
 
   banner.appendChild(titleLine);
   banner.appendChild(bigLine);
