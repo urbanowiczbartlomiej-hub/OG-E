@@ -38,6 +38,30 @@ version numbers follow [Semantic Versioning](https://semver.org).
   system), not a batch action.
 - Keyboard shortcuts beyond ArrowRight on fleetdispatch.
 
+## [1.0.2] — 2026-04-26
+
+### Fixed
+
+- **`npm run package` now produces ZIPs with forward-slash entry
+  paths.** The previous Windows path shelled out to PowerShell's
+  `Compress-Archive`, which writes `icons\icon16.png` (backslash)
+  instead of `icons/icon16.png` (forward slash). The ZIP spec
+  mandates forward slashes; AMO's validator rejects the archive with
+  "invalid characters in filename" and reviewers had to repack the
+  bundle by hand to get it through review. Both `scripts/package.mjs`
+  and `scripts/package-source.mjs` now invoke
+  `C:\Windows\System32\tar.exe` (bsdtar, which ships with Windows
+  10/11) and force `--format=zip`. POSIX behaviour is unchanged
+  (`zip -r`).
+
+### Added
+
+- **`REVIEWERS.md` shipped inside `source.zip`.** A dedicated build-
+  and-verify guide for AMO / Chrome Web Store reviewers — Node version
+  requirements, exact `npm install && npm run build:prod` flow,
+  reproducibility notes, and a compliance summary on the no-traffic
+  guarantee.
+
 ## [1.0.1] — 2026-04-26
 
 ### Fixed

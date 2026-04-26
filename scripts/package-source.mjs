@@ -5,10 +5,13 @@
 //   npm install
 //   npm run build:prod
 //
-// Includes everything needed for that build (and the docs the reviewer
-// will read), excludes node_modules/, dist/, dist.zip, .claude/, .git/,
-// and test/. Uses PowerShell's Compress-Archive on Windows and `zip`
-// elsewhere — same pattern as scripts/package.mjs.
+// Includes everything needed for that build, the docs the reviewer
+// will read, and REVIEWERS.md (a dedicated build-and-verify guide).
+// Excludes node_modules/, dist/, dist.zip, .claude/, .git/, and
+// test/. Same Windows/POSIX zip strategy as scripts/package.mjs —
+// bsdtar on Windows so stored paths use forward slashes (AMO's
+// validator rejects PowerShell Compress-Archive output, which uses
+// backslashes).
 
 import { existsSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -27,6 +30,7 @@ const INCLUDE = [
   'rollup.config.mjs',
   'tsconfig.json',
   'README.md',
+  'REVIEWERS.md',
   'CONTRIBUTING.md',
   'CHANGELOG.md',
   'PRIVACY.md',
@@ -48,13 +52,15 @@ const isWindows = process.platform === 'win32';
 
 try {
   if (isWindows) {
-    const paths = present
-      .map((entry) => `"${resolve(ROOT, entry)}"`)
-      .join(',');
-    const cmd = `Compress-Archive -Path ${paths} -DestinationPath "${ZIP}" -Force`;
-    execSync(`powershell -NoProfile -Command "${cmd.replace(/"/g, '\\"')}"`, {
-      stdio: 'inherit',
-    });
+    // bsdtar from system32 — see scripts/package.mjs header for why we
+    // skip PowerShell's Compress-Archive (it writes backslashes that
+    // AMO's validator rejects).
+    const tarExe = 'C:\\Windows\\System32\\tar.exe';
+    const list = present.map((entry) => `"${entry}"`).join(' ');
+    execSync(
+      `"${tarExe}" --format=zip -cf "${ZIP}" -C "${ROOT}" ${list}`,
+      { stdio: 'inherit' },
+    );
   } else {
     const list = present.map((p) => `"${p}"`).join(' ');
     execSync(`cd "${ROOT}" && zip -r "${ZIP}" ${list}`, { stdio: 'inherit' });

@@ -2,16 +2,28 @@
 // artifact can be uploaded directly to AMO / Chrome Web Store.
 //
 // Design choices:
-//   - We do NOT recurse into a vendored zip library. Node's `zlib` only
-//     gzips single streams; ZIP archives are a structured format.
-//     Rather than pull in a dependency, we shell out to PowerShell's
-//     `Compress-Archive` on Windows and `zip` on POSIX. Both are
-//     present on every platform that has a stable home for browser
-//     extension dev.
+//   - We do NOT vendor a JS zip library. Node's `zlib` only gzips
+//     single streams; ZIP archives are a structured format. Rather
+//     than pull in a dependency, we shell out to bsdtar (`tar.exe`)
+//     on Windows and `zip` on POSIX. Both are stock on systems that
+//     run a browser-extension dev environment.
 //   - The zip contains the contents OF dist/, not the `dist/` folder
 //     itself. AMO rejects archives whose manifest.json is nested.
-//   - Existing dist.zip is deleted first — Compress-Archive refuses to
-//     overwrite silently.
+//   - Existing dist.zip is deleted first — neither tar nor zip
+//     overwrites silently in a portable way.
+//
+// Why NOT PowerShell's Compress-Archive on Windows:
+//   It writes ZIP entries with backslash separators (`icons\icon16.png`)
+//   instead of forward slashes. The ZIP spec mandates forward slashes;
+//   AMO's validator rejects backslash entries with a hard error
+//   ("invalid characters in filename"), forcing a manual repack on the
+//   reviewer's side. Windows 10/11 ship bsdtar at C:\Windows\System32\
+//   tar.exe — it produces spec-compliant archives (forward slashes,
+//   no BOM, no extra metadata) and is what we shell out to instead.
+//
+//   Note: a `tar` on PATH may resolve to GNU tar from Git Bash, which
+//   can't write zips. We invoke the system32 path explicitly to force
+//   bsdtar regardless of PATH order.
 //
 // Run via `npm run package` after `npm run build:prod` has produced
 // the minified bundle.
@@ -44,17 +56,18 @@ const isWindows = process.platform === 'win32';
 
 try {
   if (isWindows) {
-    // PowerShell's `Compress-Archive` takes a set of literal paths.
-    // Globbing `dist/*` via `-Path` pulls the contents (not the wrapper
-    // folder) into the zip root. `-Force` tolerates the archive
-    // already being present (we removed it above, but belt + braces).
-    const paths = distEntries
-      .map((entry) => `"${resolve(DIST, entry)}"`)
-      .join(',');
-    const cmd = `Compress-Archive -Path ${paths} -DestinationPath "${ZIP}" -Force`;
-    execSync(`powershell -NoProfile -Command "${cmd.replace(/"/g, '\\"')}"`, {
-      stdio: 'inherit',
-    });
+    // bsdtar from the system32 path. `--format=zip` selects the ZIP
+    // container, `-C dist` enters the dist directory so stored paths
+    // are relative to it (manifest.json at archive root, not
+    // dist/manifest.json). The trailing entry list is each top-level
+    // child of dist/ — bsdtar recurses into directories. Forward
+    // slashes are produced regardless of host OS.
+    const tarExe = 'C:\\Windows\\System32\\tar.exe';
+    const list = distEntries.map((entry) => `"${entry}"`).join(' ');
+    execSync(
+      `"${tarExe}" --format=zip -cf "${ZIP}" -C "${DIST}" ${list}`,
+      { stdio: 'inherit' },
+    );
   } else {
     // Change into dist/ so zip stores relative paths (manifest.json at
     // archive root, not dist/manifest.json).
