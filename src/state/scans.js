@@ -156,6 +156,16 @@ export const initScansStore = () => {
 };
 
 /**
+ * Bypass the debounce and write the current store value to
+ * chrome.storage.local immediately. Call this before navigating away
+ * so that in-memory deletions (e.g. stale-click rescan marking) are
+ * not lost when the page unloads before the debounced save fires.
+ *
+ * @returns {Promise<void>}
+ */
+export const flushScansStore = () => chromeStore.set(SCANS_KEY, scansStore.get());
+
+/**
  * Tear down the persist wiring installed by {@link initScansStore}.
  * Idempotent — does nothing when persistence is not currently wired.
  * Primarily useful between tests so state and subscriptions don't

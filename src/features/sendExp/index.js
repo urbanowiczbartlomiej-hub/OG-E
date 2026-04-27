@@ -648,6 +648,12 @@ export const installSendExp = () => {
     }
 
     document.body.appendChild(btn);
+    // Brief lock on first appearance so in-flight XHRs can settle before
+    // the user can trigger Phase 2 prematurely.
+    if (btn.textContent === 'Prepare') {
+      lock(btn);
+      setTimeout(() => unlock(btn), 200);
+    }
     installDragAndClick(btn, size);
     installFocusPersist(btn);
   };
