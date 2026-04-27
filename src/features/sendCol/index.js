@@ -78,7 +78,7 @@
 /** @ts-check */
 
 import { settingsStore } from '../../state/settings.js';
-import { scansStore } from '../../state/scans.js';
+import { scansStore, flushScansStore } from '../../state/scans.js';
 import { registryStore } from '../../state/registry.js';
 import { safeLS } from '../../lib/storage.js';
 import { parsePositions } from '../../domain/positions.js';
@@ -444,14 +444,79 @@ const onSendClick = () => {
       return;
     }
 
-    case 'stale':
-    case 'timeout': {
+    case 'stale': {
+      // onCheckTargetResult already fired and marked the target slot as
+      // 'abandoned' — do NOT delete the system key. The marking is the
+      // correct persistent record: findNextColonizeTarget skips non-empty
+      // statuses, and isSystemStale will queue a rescan after the
+      // abandoned-cleanup deadline (~25-47 h). Mirrors 'reserved'.
       if (!ctx.target) return;
-      // Stale-retry: navigate to the galaxy view of the stuck system.
-      // One click → one location.href → game's own fetchGalaxyContent.
-      location.href = buildGalaxyUrl({
-        galaxy: ctx.target.galaxy,
-        system: ctx.target.system,
+      const staleSettings = settingsStore.get();
+      const staleHome = readHomePlanet();
+      if (!staleHome) return;
+      const staleNext = findNextColonizeTarget(
+        scansStore.get(),
+        registryStore.get(),
+        staleHome,
+        /** @type {number[]} */ (parsePositions(staleSettings.colPositions)),
+        staleSettings.colPreferOtherGalaxies,
+      );
+      if (!staleNext) {
+        const { send } = getHalves();
+        if (send) setHalfOneLine(send, 'No more candidates', BG_SEND_IDLE);
+        return;
+      }
+      lastNavToFleetdispatchAt = Date.now();
+      lastCheckTargetError = null;
+      waitSeconds = 0;
+      flushScansStore().then(() => {
+        location.href = buildFleetdispatchUrl({
+          galaxy: staleNext.galaxy,
+          system: staleNext.system,
+          position: staleNext.position,
+        });
+      });
+      return;
+    }
+
+    case 'timeout': {
+      // checkTarget XHR timed out — onCheckTargetResult never fired so
+      // the slot is still 'empty' in scansStore. Delete the system key
+      // so the scan button re-queues it and findNextColonizeTarget skips it.
+      if (!ctx.target) return;
+      const { galaxy: toG, system: toS } = ctx.target;
+      if (lastCheckTargetError === null) {
+        const toKey = /** @type {`${number}:${number}`} */ (`${toG}:${toS}`);
+        scansStore.update((prev) => {
+          const next = { ...prev };
+          delete next[toKey];
+          return next;
+        });
+      }
+      const toSettings = settingsStore.get();
+      const toHome = readHomePlanet();
+      if (!toHome) return;
+      const toNext = findNextColonizeTarget(
+        scansStore.get(),
+        registryStore.get(),
+        toHome,
+        /** @type {number[]} */ (parsePositions(toSettings.colPositions)),
+        toSettings.colPreferOtherGalaxies,
+      );
+      if (!toNext) {
+        const { send } = getHalves();
+        if (send) setHalfOneLine(send, 'No more candidates', BG_SEND_IDLE);
+        return;
+      }
+      lastNavToFleetdispatchAt = Date.now();
+      lastCheckTargetError = null;
+      waitSeconds = 0;
+      flushScansStore().then(() => {
+        location.href = buildFleetdispatchUrl({
+          galaxy: toNext.galaxy,
+          system: toNext.system,
+          position: toNext.position,
+        });
       });
       return;
     }
@@ -658,7 +723,6 @@ const onCheckTargetResult = (e) => {
       newPos = { status: 'reserved' };
     } else if (
       lastCheckTargetError !== 140035 &&
-      lastCheckTargetError !== null &&
       !canColonize
     ) {
       newPos = {
