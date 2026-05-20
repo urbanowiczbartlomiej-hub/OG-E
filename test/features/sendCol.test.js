@@ -737,14 +737,13 @@ describe('onSendClick — fleetdispatch branch', () => {
     expect(seen).toEqual([]);
   });
 
-  it('stale → navigates to galaxy view of target', () => {
+  it('stale with no candidates → shows "No more candidates", no nav', () => {
+    // scansStore is empty (beforeEach), so findNextColonizeTarget returns
+    // null → handler shows the label and returns without navigating.
     installFleet({ canColonize: false, hasColonizer: true });
     getSend()?.click();
-    expect(navTarget).toContain('component=galaxy');
-    expect(navTarget).toContain('galaxy=4');
-    expect(navTarget).toContain('system=30');
-    // Should NOT contain mission=7 — we're going to galaxy view.
-    expect(navTarget).not.toContain('mission=7');
+    expect(navTarget).toBeNull();
+    expect(getSend()?.textContent).toContain('No more candidates');
   });
 
   it('ready with no wait → synthesizes Enter', () => {

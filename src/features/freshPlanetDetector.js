@@ -249,13 +249,12 @@ const showBanner = (planet) => {
     banner.style.top = Math.round(ih * 0.25) + 'px';
   }
 
-  // Wire drag. The banner's width is roughly text-dependent but the
-  // drag helper only uses `size` to clamp to [0, viewport - size];
-  // passing the actual measured width gives a correct clamp.
+  // Wire drag. The helper measures the banner's current width and
+  // height itself on each drag-start, so the clamp is correct on both
+  // axes even though the banner is a tall rectangle, not a square.
   const drag = installDrag({
     element: banner,
     posKey: POS_KEY,
-    size: banner.offsetWidth,
   });
 
   banner.addEventListener('click', () => {

@@ -40,6 +40,14 @@ import { settingsStore } from '../state/settings.js';
 // the two status lines stack vertically, left-aligned, and bump the
 // font to 15 px so small-screen users can read them at a glance.
 //
+// AGR renders the same status link in two distinct DOM shells across
+// the two fleetdispatch steps:
+//   - Step 1 (ship picker): `a.ago_movement.tooltip` in `#planet`.
+//   - Step 2 (target / mission): anchor inside `#ago_summary_fleets`
+//     that DROPS the `ago_movement` class. A single-class selector
+//     would only catch step 1, so we pair the rules with a sibling
+//     selector keyed on the step-2 wrapper id.
+//
 // # Why a single stylesheet
 //
 // Both concerns are CSS-only, run at `document_start` before `<body>`,
@@ -195,12 +203,19 @@ const CSS = `/* OG-E: readability boost — event box + fleet movement link */
    Stack "Floty: X/Y" on top of "Ekspedycje: X/Y" left-aligned. AGR
    swaps the anchor's status colour between ago_color_lightgreen
    (slots free) and ago_color_palered (37/37 — fleets capped), so
-   the LAYOUT rule must match ANY ago_movement anchor, regardless of
+   the LAYOUT rule must match ANY movement anchor, regardless of
    the colour modifier. The colour override is opt-in via the
    lightgreen sibling rule below — when AGR has already swapped to
    palered we leave the native red alone. height:auto cancels any
-   inline workaround the user might have left behind. */
-a.ago_movement.tooltip {
+   inline workaround the user might have left behind.
+
+   Two selectors here cover the two fleetdispatch steps: step 1
+   carries the ago_movement class on the anchor itself, step 2
+   wraps the (otherwise identical) anchor in #ago_summary_fleets
+   and drops the class. We pair them so the same layout + colour
+   land on both. */
+a.ago_movement.tooltip,
+#ago_summary_fleets > a.tooltip {
   font-size: 18px !important;
   font-weight: bold !important;
   display: inline-flex !important;
@@ -218,7 +233,8 @@ a.ago_movement.tooltip {
    at a glance. The child .ago_color_palered span keeps its red in
    either case because we colour the anchor only — no universal-
    child cascade. */
-a.ago_movement.tooltip.ago_color_lightgreen {
+a.ago_movement.tooltip.ago_color_lightgreen,
+#ago_summary_fleets > a.tooltip.ago_color_lightgreen {
   color: #a0ff60 !important;
 }
 `;

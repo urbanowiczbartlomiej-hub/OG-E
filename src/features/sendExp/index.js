@@ -549,15 +549,12 @@ export const installSendExp = () => {
    * inside the button doesn't double-fire as a click.
    *
    * @param {HTMLButtonElement} btn
-   * @param {number} size  Current button diameter — passed through to
-   *   {@link installDrag} for the viewport clamp.
    * @returns {void}
    */
-  const installDragAndClick = (btn, size) => {
+  const installDragAndClick = (btn) => {
     const drag = installDrag({
       element: btn,
       posKey: POS_KEY,
-      size,
       dragThreshold: DRAG_THRESHOLD,
     });
 
@@ -654,7 +651,7 @@ export const installSendExp = () => {
       lock(btn);
       setTimeout(() => unlock(btn), 200);
     }
-    installDragAndClick(btn, size);
+    installDragAndClick(btn);
     installFocusPersist(btn);
   };
 

@@ -222,17 +222,29 @@ describe('readabilityBoost', () => {
     // palered case.
     installReadabilityBoost();
     const css = document.getElementById(STYLE_ID)?.textContent ?? '';
+    // The layout rule lives in a multi-selector that ALSO targets the
+    // step-2 wrapper anchor (`#ago_summary_fleets > a.tooltip`) — AGR
+    // drops the `ago_movement` class on the fleet2 page, so a single
+    // selector would miss it. We match across the selector list to the
+    // body, then assert the column-flex contract.
     const layoutRule = css.match(
-      /a\.ago_movement\.tooltip\s*\{([^}]*)\}/,
+      /a\.ago_movement\.tooltip\s*,[^{]*\{([^}]*)\}/,
     );
     expect(layoutRule).not.toBeNull();
     const body = layoutRule?.[1] ?? '';
     expect(body).toContain('flex-direction: column');
     expect(body).toContain('align-items: flex-start');
+    // Step-2 anchor is part of the SAME layout rule — guard against a
+    // future split that forgets the fleet2 wrapper.
+    expect(layoutRule?.[0] ?? '').toContain('#ago_summary_fleets');
     // The lightgreen-tint rule is still present for the "slots free"
-    // case, but it does NOT carry layout — only the colour.
+    // case, but it does NOT carry layout — only the colour. Same
+    // multi-selector shape: step-1 anchor + step-2 wrapper anchor.
     expect(css).toMatch(
-      /a\.ago_movement\.tooltip\.ago_color_lightgreen\s*\{[^}]*color:\s*#a0ff60/,
+      /a\.ago_movement\.tooltip\.ago_color_lightgreen\s*,[^{]*\{[^}]*color:\s*#a0ff60/,
+    );
+    expect(css).toMatch(
+      /#ago_summary_fleets\s*>\s*a\.tooltip\.ago_color_lightgreen[^{]*\{[^}]*color:\s*#a0ff60/,
     );
     // No universal-child rule cascading colour into descendants — if
     // one reappears, the red "Ekspedycje: 14/14" span loses its tint.

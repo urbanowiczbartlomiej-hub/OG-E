@@ -68,10 +68,18 @@ import { debounce } from './debounce.js';
  * @param {number} [cfg.debounceMs=0]
  *   If > 0, debounce write-through by this many ms. Default 0 =
  *   immediate write on every change.
+ * @param {() => void} [cfg.onHydrate]
+ *   Fires exactly once, after the hydrate phase finishes — i.e. after the
+ *   sync `load` returns, or after the async `load` promise resolves. Lets
+ *   consumers gate side-effectful work that reads the store on a hydrated
+ *   value (see `colonyRecorder.js` + `whenHistoryHydrated`). Receives no
+ *   arguments — read the store via `store.get()` if you need the value.
+ *   Called even when `load` returned `null`/`undefined` (no value
+ *   hydrated, but the read settled).
  * @returns {() => void} Unsubscribe the write-through listener. Does NOT
  *   attempt to remove any pending debounced save.
  */
-export const persist = ({ store, load, save, debounceMs = 0 }) => {
+export const persist = ({ store, load, save, debounceMs = 0, onHydrate }) => {
   // Wire the write-through FIRST so that the hydrate `store.set` below
   // also fires through the subscription (the "echo" documented above).
   // The alternative order — hydrate, then subscribe — would silently
@@ -87,9 +95,11 @@ export const persist = ({ store, load, save, debounceMs = 0 }) => {
   if (loaded !== null && loaded !== undefined && typeof (/** @type {any} */ (loaded)).then === 'function') {
     /** @type {Promise<T | null | undefined>} */ (loaded).then((v) => {
       if (v !== null && v !== undefined) store.set(v);
+      onHydrate?.();
     });
-  } else if (loaded !== null && loaded !== undefined) {
-    store.set(/** @type {T} */ (loaded));
+  } else {
+    if (loaded !== null && loaded !== undefined) store.set(/** @type {T} */ (loaded));
+    onHydrate?.();
   }
 
   return unsubscribe;

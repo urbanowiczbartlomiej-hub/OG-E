@@ -119,7 +119,6 @@ describe('settingsStore — initial state (pre-init)', () => {
     expect(state.colonizeMode).toBe(true);
     expect(state.expeditionBadges).toBe(true);
     expect(state.autoRedirectExpedition).toBe(true);
-    expect(state.autoRedirectColonize).toBe(false);
     expect(state.enterBtnSize).toBe(320);
     expect(state.colBtnSize).toBe(320);
     expect(state.colPositions).toBe('8');

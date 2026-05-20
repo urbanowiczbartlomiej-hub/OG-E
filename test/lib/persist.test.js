@@ -204,6 +204,92 @@ describe('persist — write-through (debounced)', () => {
   });
 });
 
+describe('persist — onHydrate callback', () => {
+  it('fires once after a sync load that returned a value', () => {
+    const store = createStore('initial');
+    const onHydrate = vi.fn();
+    persist({
+      store,
+      load: () => 'from-storage',
+      save: () => {},
+      onHydrate,
+    });
+    expect(onHydrate).toHaveBeenCalledTimes(1);
+    // Store has been seeded by the time the callback fires; this is the
+    // whole point of the gate (consumers reading the store inside
+    // onHydrate must see the hydrated value, not the initial).
+    expect(store.get()).toBe('from-storage');
+  });
+
+  it('fires once after a sync load that returned null (nothing stored)', () => {
+    // Even "nothing to hydrate" must still settle the gate — otherwise
+    // consumers (e.g. colonyRecorder) would hang forever waiting for
+    // a hydrate signal that will never arrive.
+    const store = createStore('initial');
+    const onHydrate = vi.fn();
+    persist({ store, load: () => null, save: () => {}, onHydrate });
+    expect(onHydrate).toHaveBeenCalledTimes(1);
+    expect(store.get()).toBe('initial');
+  });
+
+  it('fires once after an async load resolves with a value', async () => {
+    const store = createStore('initial');
+    const onHydrate = vi.fn();
+    persist({
+      store,
+      load: () => Promise.resolve('from-storage'),
+      save: () => {},
+      onHydrate,
+    });
+    // Async branch — not yet settled at the synchronous tick.
+    expect(onHydrate).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(onHydrate).toHaveBeenCalledTimes(1);
+    expect(store.get()).toBe('from-storage');
+  });
+
+  it('fires once after an async load resolves with null', async () => {
+    const store = createStore('initial');
+    const onHydrate = vi.fn();
+    persist({
+      store,
+      load: () => Promise.resolve(null),
+      save: () => {},
+      onHydrate,
+    });
+    await Promise.resolve();
+    expect(onHydrate).toHaveBeenCalledTimes(1);
+    expect(store.get()).toBe('initial');
+  });
+
+  it('omitting onHydrate is fine (no throw, no observable difference)', async () => {
+    const store = createStore('initial');
+    // Sync branch with no onHydrate.
+    expect(() => {
+      persist({ store, load: () => 'sync-value', save: () => {} });
+    }).not.toThrow();
+    expect(store.get()).toBe('sync-value');
+
+    // Async branch with no onHydrate.
+    const store2 = createStore('init');
+    persist({ store: store2, load: () => Promise.resolve('async-value'), save: () => {} });
+    await Promise.resolve();
+    expect(store2.get()).toBe('async-value');
+  });
+
+  it('does NOT fire on subsequent user-driven writes', async () => {
+    const store = createStore('initial');
+    const onHydrate = vi.fn();
+    persist({ store, load: () => 'from-storage', save: () => {}, onHydrate });
+    expect(onHydrate).toHaveBeenCalledTimes(1);
+
+    store.set('a');
+    store.set('b');
+    store.update((s) => s + '-c');
+    expect(onHydrate).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('persist — unsubscribe', () => {
   it('returned function prevents future saves', () => {
     const store = createStore('initial');

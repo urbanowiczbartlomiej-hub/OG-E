@@ -41,12 +41,31 @@
 // still be hydrating when `content.js` fires; once the relevant nodes
 // are present (or 5s has elapsed), the recorder is done.
 //
+// # Why the first attempt is gated on `whenHistoryHydrated`
+//
+// `historyStore` hydrates asynchronously from `chrome.storage.local`.
+// If `tryCollect` ran before that landed, the dedup-by-cp check would
+// read an empty store (regardless of what storage actually held),
+// pass, and append to `[]`. The write-through would save `[newC]`.
+// Then the async hydrate would resolve with `[oldA, oldB, ...]` and
+// `store.set(stored)` would wipe `newC` from the store — and the
+// write-through fires again, saving `[oldA, oldB, ...]` back to
+// storage. Net result: the just-observed colony vanishes.
+//
+// The race was nearly invisible on Chrome desktop (storage usually
+// settles before `DOMContentLoaded`) but reliably reproduced on
+// Firefox, especially Android — heavier storage IPC means
+// `DOMContentLoaded` wins more often. Awaiting `whenHistoryHydrated()`
+// makes the dedup read see the real persisted history and removes the
+// race entirely. See `state/history.js` for the lifecycle of the
+// hydrated promise.
+//
 // @see ../state/history.js — the store this feature writes into, and the
 //   canonical explanation of the "keep every observation" invariant.
 
 /** @ts-check */
 
-import { historyStore } from '../state/history.js';
+import { historyStore, whenHistoryHydrated } from '../state/history.js';
 import { waitFor } from '../lib/dom.js';
 
 /**
@@ -174,16 +193,22 @@ let installed = null;
  * Install the colony recorder for the current page-load.
  *
  * Behaviour:
- *   1. First synchronous attempt. If the overview DOM is already
+ *   1. Both collection attempts are gated on
+ *      {@link whenHistoryHydrated}. Without that gate the dedup read
+ *      against `historyStore` races the async chrome.storage.local
+ *      hydrate — see module header for the full failure mode. In tests
+ *      that bypass `initHistoryStore` the promise is pre-resolved, so
+ *      the deferred work fires on the next microtask.
+ *   2. After hydration: first attempt — if the overview DOM is already
  *      populated and the planet is fresh, the write happens immediately
  *      and the returned dispose is effectively a no-op.
- *   2. If the sync attempt did not record anything, schedule a
+ *   3. If that attempt did not record anything, schedule a
  *      {@link waitFor} poll for `#diameterContentField` (the last DOM
  *      node the overview page paints). When it appears we retry exactly
  *      once; on timeout we silently give up. We never retry on "present
  *      but malformed" — that indicates the page is not the overview we
  *      expected and polling will not fix it.
- *   3. Idempotent per page-load: calling `installColonyRecorder()` a
+ *   4. Idempotent per page-load: calling `installColonyRecorder()` a
  *      second time returns the dispose handle from the first call
  *      without scheduling a second attempt. The OGame content script
  *      only runs once per navigation, so this guards against accidental
@@ -191,11 +216,11 @@ let installed = null;
  *      lifecycle.
  *
  * The returned dispose flips `installed` back to `null`, re-enabling a
- * future install. It does NOT cancel a still-pending `waitFor` poll —
- * the poll's resolution always goes through `tryCollect`, which is a
- * no-op once the entry exists in history (dedup by cp) or once the page
- * has navigated away (location.search check). No cleanup is necessary
- * for correctness; the dispose is there for API symmetry with other
+ * future install. It does NOT cancel a still-pending hydrate-await or
+ * `waitFor` poll — every eventual `tryCollect` is a no-op once the
+ * entry exists in history (dedup by cp) or once the page has navigated
+ * away (location.search check). No cleanup is necessary for
+ * correctness; the dispose is there for API symmetry with other
  * features (blackBg, expeditionRedirect, ...).
  *
  * @returns {() => void} Dispose handle — currently just flips the
@@ -207,23 +232,31 @@ export const installColonyRecorder = () => {
     installed = null;
   };
 
-  // Synchronous first try — avoids a pointless waitFor roundtrip when
-  // the overview DOM is already hydrated (the common case once OGame's
-  // own scripts have finished running before us).
-  if (tryCollect()) return installed;
+  // Defer every collection attempt until history hydration has
+  // settled — see module header on the race this avoids. The promise
+  // is pre-resolved when `initHistoryStore` was never called (the
+  // unit-test path), so the .then callback simply fires on the next
+  // microtask in that case.
+  void whenHistoryHydrated().then(() => {
+    // First try — avoids a pointless waitFor roundtrip when the
+    // overview DOM is already hydrated (the common case once OGame's
+    // own scripts have finished running before us).
+    if (tryCollect()) return;
 
-  // Retry path: poll for the diameter element, then attempt once more.
-  // The poll itself aborts (returns truthy) when location.search stops
-  // saying `component=overview`, so a user navigating away mid-wait
-  // does not leave us stuck until the 5s timeout.
-  waitFor(
-    () => {
-      if (!location.search.includes('component=overview')) return true;
-      return document.getElementById('diameterContentField') !== null;
-    },
-    { timeoutMs: 5000, intervalMs: 200 },
-  ).then(() => {
-    tryCollect();
+    // Retry path: poll for the diameter element, then attempt once
+    // more. The poll itself aborts (returns truthy) when
+    // location.search stops saying `component=overview`, so a user
+    // navigating away mid-wait does not leave us stuck until the 5s
+    // timeout.
+    waitFor(
+      () => {
+        if (!location.search.includes('component=overview')) return true;
+        return document.getElementById('diameterContentField') !== null;
+      },
+      { timeoutMs: 5000, intervalMs: 200 },
+    ).then(() => {
+      tryCollect();
+    });
   });
 
   return installed;

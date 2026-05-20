@@ -58,23 +58,29 @@ import { safeLS } from '../../lib/storage.js';
  * Movement under `dragThreshold` px is ignored (counts as a tap). Once
  * the threshold trips, the element switches from `right`/`bottom`
  * anchoring to absolute `left`/`top` and the position is clamped to
- * `[0, viewport - size]`. On release the final coords are written to
- * `safeLS.setJSON(posKey, { x, y })`.
+ * `[0, viewport - element]` on each axis independently. The element
+ * size is re-measured on every drag-start so resizes between drags
+ * (e.g. sendExp's `enterBtnSize` setting change) get picked up
+ * automatically, and so non-square elements (the freshPlanet banner)
+ * clamp against their actual height rather than borrowing the width.
+ * On release the final coords are written to `safeLS.setJSON(posKey,
+ * { x, y })`.
  *
  * @param {object} opts
  * @param {HTMLElement} opts.element  The draggable element (the wrap div for split buttons).
  * @param {string} opts.posKey  localStorage key for `{ x, y }`.
- * @param {number} opts.size  Current diameter; used for the viewport clamp.
  * @param {number} [opts.dragThreshold=8]  px before a gesture counts as drag.
  * @returns {{ wasDrag: () => boolean, resetDrag: () => void }}
  */
-export const installDrag = ({ element, posKey, size, dragThreshold = 8 }) => {
+export const installDrag = ({ element, posKey, dragThreshold = 8 }) => {
   let isDragging = false;
   let hasMoved = false;
   let startX = 0;
   let startY = 0;
   let startLeft = 0;
   let startTop = 0;
+  let width = 0;
+  let height = 0;
 
   /** @param {number} cx @param {number} cy */
   const onStart = (cx, cy) => {
@@ -85,6 +91,8 @@ export const installDrag = ({ element, posKey, size, dragThreshold = 8 }) => {
     const r = element.getBoundingClientRect();
     startLeft = r.left;
     startTop = r.top;
+    width = r.width;
+    height = r.height;
   };
 
   /** @param {number} cx @param {number} cy */
@@ -104,11 +112,11 @@ export const installDrag = ({ element, posKey, size, dragThreshold = 8 }) => {
     element.style.bottom = 'auto';
     const newX = Math.max(
       0,
-      Math.min(startLeft + dx, window.innerWidth - size),
+      Math.min(startLeft + dx, window.innerWidth - width),
     );
     const newY = Math.max(
       0,
-      Math.min(startTop + dy, window.innerHeight - size),
+      Math.min(startTop + dy, window.innerHeight - height),
     );
     element.style.left = newX + 'px';
     element.style.top = newY + 'px';

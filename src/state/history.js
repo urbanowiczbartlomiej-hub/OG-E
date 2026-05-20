@@ -114,6 +114,72 @@ export const historyStore = createStore(/** @type {ColonyHistory} */ ([]));
 let disposeFn = null;
 
 /**
+ * Resolver for {@link hydratedPromise}. Re-bound on every
+ * {@link initHistoryStore} call so the matching `persist` `onHydrate`
+ * callback can settle the right promise. Kept at module scope (not
+ * inside the closure) so {@link disposeHistoryStore} can drop it on
+ * teardown without leaking the previous resolver across re-inits.
+ *
+ * @type {() => void}
+ */
+let resolveHydrated = () => {};
+
+/**
+ * The Promise returned by {@link whenHistoryHydrated}. Pre-resolved
+ * until {@link initHistoryStore} swaps it for a pending one — that way
+ * unit tests that bypass init (and exercise features against
+ * `historyStore` directly) don't hang waiting for a hydrate that will
+ * never arrive.
+ *
+ * @type {Promise<void>}
+ */
+let hydratedPromise = Promise.resolve();
+
+/**
+ * Resolves once the {@link historyStore} hydrate phase has settled —
+ * i.e. `chromeStore.get(HISTORY_KEY)` has returned and any stored array
+ * has been applied to the store. Resolves even when storage held
+ * nothing useful (null / non-array / undefined), so consumers should
+ * not infer a hydrated value from the resolution alone — they must
+ * still read `historyStore.get()`.
+ *
+ * # Why this exists
+ *
+ * `historyStore` hydrates asynchronously from `chrome.storage.local`.
+ * Features that read it on first run (canonical case:
+ * `features/colonyRecorder.js` doing a dedup-by-cp check) used to race
+ * the hydrate: the sync read at install time saw `[]`, dedup passed,
+ * an `update` appended to the empty array, and a moment later the
+ * landing hydrate `store.set(stored)` wiped the just-appended row. The
+ * write-through then saved the stale value back to storage, losing the
+ * new colony entry.
+ *
+ * The race was rare on Chrome desktop (chrome.storage.local typically
+ * settles within a few ms, before `DOMContentLoaded` fires the install)
+ * but reliably reproduced on Firefox — IPC to the parent process is
+ * heavier there, and on Android even more so. Gating the first
+ * `tryCollect` on this promise removes the race entirely without
+ * forcing every other code path to await hydration.
+ *
+ * # Lifecycle
+ *
+ * - Before {@link initHistoryStore} runs: pre-resolved (no hydration
+ *   pending, so awaiting is a no-op).
+ * - Inside {@link initHistoryStore}: replaced by a fresh pending
+ *   Promise, which the `persist` `onHydrate` callback resolves when
+ *   the load Promise settles.
+ * - After {@link disposeHistoryStore}: reset to pre-resolved, matching
+ *   the "no persistence wired" state.
+ *
+ * Consumers must call this as a function rather than capturing the
+ * Promise at import time — the binding identity changes across
+ * init/dispose, and the function ensures every read sees the latest.
+ *
+ * @returns {Promise<void>}
+ */
+export const whenHistoryHydrated = () => hydratedPromise;
+
+/**
  * Wire the history store to chrome.storage.local: hydrate from
  * `HISTORY_KEY`, and write every change back immediately (no debounce).
  * Safe to call multiple times — subsequent calls return the same
@@ -129,11 +195,17 @@ let disposeFn = null;
  * stored" so the store keeps its initial `[]`. The next legitimate
  * write overwrites the bad payload.
  *
+ * Side effect on {@link whenHistoryHydrated}: this call swaps the
+ * module-scope hydrated promise for a fresh pending one, and resolves
+ * it from `persist`'s `onHydrate` callback once the load settles. See
+ * the `whenHistoryHydrated` docstring for why this gating exists.
+ *
  * @returns {() => void} Dispose function that unsubscribes the
  *   write-through listener.
  */
 export const initHistoryStore = () => {
   if (disposeFn) return disposeFn;
+  hydratedPromise = new Promise((resolve) => { resolveHydrated = resolve; });
   disposeFn = persist({
     store: historyStore,
     load: async () => {
@@ -148,6 +220,7 @@ export const initHistoryStore = () => {
     // a handful per day) so there is no burst to collapse; keeping it
     // immediate makes tests deterministic without fake timers.
     debounceMs: 0,
+    onHydrate: () => { resolveHydrated(); },
   });
   return disposeFn;
 };
@@ -159,6 +232,10 @@ export const initHistoryStore = () => {
  * leak across cases; production code generally leaves the store
  * wired for the lifetime of the page.
  *
+ * Also resets {@link whenHistoryHydrated} to the pre-resolved sentinel,
+ * matching the "no init has run" state. A subsequent re-init creates
+ * a fresh pending promise.
+ *
  * @returns {void}
  */
 export const disposeHistoryStore = () => {
@@ -166,4 +243,6 @@ export const disposeHistoryStore = () => {
     disposeFn();
     disposeFn = null;
   }
+  hydratedPromise = Promise.resolve();
+  resolveHydrated = () => {};
 };

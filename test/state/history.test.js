@@ -32,6 +32,7 @@ import {
   historyStore,
   initHistoryStore,
   disposeHistoryStore,
+  whenHistoryHydrated,
   HISTORY_KEY,
 } from '../../src/state/history.js';
 
@@ -195,6 +196,103 @@ describe('historyStore (module)', () => {
       historyStore.set([entry({ cp: 3, timestamp: 300 })]);
       // Subscription was cut — chromeStore.set must not be called again.
       expect(chromeStore.set).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('whenHistoryHydrated', () => {
+    it('is pre-resolved when initHistoryStore has not been called', async () => {
+      // Default state — no init has run since the beforeEach dispose.
+      // Awaiting must not hang; this is the contract that lets feature
+      // unit tests (which bypass initHistoryStore) install without
+      // waiting on a hydrate that will never arrive.
+      let settled = false;
+      whenHistoryHydrated().then(() => { settled = true; });
+      // One microtask is enough to drain a pre-resolved promise.
+      await Promise.resolve();
+      expect(settled).toBe(true);
+    });
+
+    it('returns a pending promise after initHistoryStore — resolved on hydrate', async () => {
+      // Hand-rolled deferred so we control exactly when chromeStore.get
+      // settles — letting us assert "pending before, resolved after".
+      /** @type {(value: unknown) => void} */
+      let resolveGet = () => {};
+      /** @type {import('vitest').Mock} */ (chromeStore.get).mockReturnValue(
+        new Promise((r) => { resolveGet = r; }),
+      );
+
+      initHistoryStore();
+      const hydrated = whenHistoryHydrated();
+
+      let settled = false;
+      hydrated.then(() => { settled = true; });
+      // chromeStore.get is still pending — hydrate cannot have settled.
+      // Flush a few microtasks to make sure no spurious resolution
+      // sneaks through.
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+      expect(settled).toBe(false);
+
+      // Resolve the storage round-trip. The full chain from here is:
+      // chromeStore.get → async load's await → persist's .then → our
+      // outer .then. Each link is one microtask; we flush generously
+      // rather than pin an exact count (matches the existing hydrate
+      // tests in this file).
+      resolveGet([entry({ cp: 9 })]);
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+
+      expect(settled).toBe(true);
+      // Sanity: the hydrate did its job — store reflects storage.
+      expect(historyStore.get()).toEqual([entry({ cp: 9 })]);
+    });
+
+    it('resolves even when storage held no value (undefined)', async () => {
+      /** @type {import('vitest').Mock} */ (chromeStore.get).mockResolvedValue(undefined);
+      initHistoryStore();
+
+      let settled = false;
+      whenHistoryHydrated().then(() => { settled = true; });
+      // Empty-storage path still has to settle the gate — see history.js
+      // docstring on why this matters for downstream features. Flush
+      // enough microtasks for the load() → persist .then → our .then
+      // chain (the mockResolvedValue Promise.resolve adds a microtask
+      // on top of the async load's await unwrap).
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+      expect(settled).toBe(true);
+    });
+
+    it('resolves even when storage payload is non-array (treated as no-op)', async () => {
+      /** @type {import('vitest').Mock} */ (chromeStore.get).mockResolvedValue({ corrupt: true });
+      initHistoryStore();
+
+      let settled = false;
+      whenHistoryHydrated().then(() => { settled = true; });
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+      expect(settled).toBe(true);
+      // Defensive narrowing kept the store at its initial value.
+      expect(historyStore.get()).toEqual([]);
+    });
+
+    it('disposeHistoryStore resets the gate to pre-resolved', async () => {
+      // Set up a pending hydrate, then dispose without resolving it.
+      // After dispose, whenHistoryHydrated() must hand out a settled
+      // promise again so the next test (or re-init cycle) starts clean.
+      /** @type {(value: unknown) => void} */
+      let resolveGet = () => {};
+      /** @type {import('vitest').Mock} */ (chromeStore.get).mockReturnValue(
+        new Promise((r) => { resolveGet = r; }),
+      );
+
+      initHistoryStore();
+      disposeHistoryStore();
+
+      let settled = false;
+      whenHistoryHydrated().then(() => { settled = true; });
+      await Promise.resolve();
+      expect(settled).toBe(true);
+
+      // Resolving the original storage promise after dispose must not
+      // throw and must not double-resolve anyone.
+      expect(() => resolveGet([])).not.toThrow();
     });
   });
 

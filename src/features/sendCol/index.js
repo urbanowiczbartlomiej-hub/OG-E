@@ -968,7 +968,6 @@ export const installSendCol = () => {
     const drag = installDrag({
       element: wrap,
       posKey: POS_KEY,
-      size,
       dragThreshold: DRAG_THRESHOLD,
     });
     sendHalf.addEventListener('click', (e) => {
