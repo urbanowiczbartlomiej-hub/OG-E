@@ -6,6 +6,58 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Deferred for a later release
+
+- Stale rescan queue (one-click-per-jump) on the galaxy observations
+  page. TOS allows at most one HTTP request per click, so this must
+  take the queue-cursor shape (1 click → 1 nav to the next stale
+  system), not a batch action.
+- Keyboard shortcuts beyond ArrowRight on fleetdispatch.
+
+## [1.0.6] — 2026-05-20
+
+### Fixed
+
+- **Colony record loss on Firefox/Android (hydration race).** When
+  `chrome.storage.local` resolved after `DOMContentLoaded`, the
+  recorder's first `tryCollect` read an empty `historyStore`, passed
+  the dedup check, and appended the new entry to `[]`. The subsequent
+  async hydrate then overwrote the just-written entry via
+  `store.set(stored)`. Fixed by gating every `tryCollect` on
+  `whenHistoryHydrated()` — a `Promise` that resolves once
+  `persist`'s `onHydrate` callback fires. Pre-resolved in unit tests
+  that bypass `initHistoryStore`.
+- **Draggable button Y-axis clamping for non-square elements.** The
+  `installDrag` helper accepted a `size` parameter (button diameter)
+  that callers measured at construction time. Non-square elements (the
+  freshPlanet banner, split-button wraps) were clamped against their
+  *width* on both axes, letting the banner drift below the viewport.
+  The helper now reads `getBoundingClientRect()` on each drag-start,
+  clamping width and height independently. The caller-supplied `size`
+  parameter is gone.
+- **AGR fleet-status link unstyled on fleetdispatch step 2.** AGR
+  renders the same link in two DOM shells: step 1
+  (`a.ago_movement.tooltip` in `#planet`) carries the `ago_movement`
+  class; step 2 (anchor inside `#ago_summary_fleets`) drops it. A
+  single selector only caught step 1, leaving the step-2 link without
+  the stacked-line layout and colour tint. Both selectors now share
+  the same CSS rule blocks.
+
+## [1.0.5] — 2026-04-27
+
+### Fixed
+
+- **Stale/timeout click on fleetdispatch advances to the next
+  candidate instead of looping back to galaxy view.** When
+  `checkTarget` reported an occupied slot (stale) or the 15 s
+  watchdog expired (timeout), the Send button navigated to the galaxy
+  view of the *original* target instead of moving on. The handlers
+  now call `findNextColonizeTarget` — if a candidate exists it
+  navigates directly to its `fleetdispatch` URL; if none remain it
+  paints "No more candidates" and returns without navigating.
+
+## [1.0.3] — 2026-04-26
+
 ### Removed
 
 - **`autoRedirectColonize` setting + post-send hop** ("After sending
@@ -39,13 +91,15 @@ version numbers follow [Semantic Versioning](https://semver.org).
   tests covering empty input, multi-galaxy binning, malformed keys,
   and null entries.
 
-### Deferred for a later release
+### Changed
 
-- Stale rescan queue (one-click-per-jump) on the galaxy observations
-  page. TOS allows at most one HTTP request per click, so this must
-  take the queue-cursor shape (1 click → 1 nav to the next stale
-  system), not a batch action.
-- Keyboard shortcuts beyond ArrowRight on fleetdispatch.
+- **Build: `tar -a` used consistently for forward-slash ZIP entries.**
+  Both `scripts/package.mjs` and `scripts/package-source.mjs` now use
+  `tar -a -c -f` on all platforms, superseding the earlier
+  Compress-Archive workaround from v1.0.2 and closing the last
+  remaining path-separator edge case on Windows.
+- **`.nvmrc` + `.gitattributes` added.** Node version pinned; line
+  endings normalised for reproducible builds across platforms.
 
 ## [1.0.2] — 2026-04-26
 
@@ -166,4 +220,3 @@ OG-E is a UI modification, not an automator. Every click produces at
 most one HTTP request to the game. No background work, no cycles, no
 CAPTCHA bypass. See [`CONTRIBUTING.md`](CONTRIBUTING.md) §Compliance
 for the full guarantee and review checklist.
-

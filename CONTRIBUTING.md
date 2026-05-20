@@ -106,18 +106,20 @@ Before merging anything that touches DOM behaviour:
 ## Release workflow
 
 1. Move `CHANGELOG.md` `[Unreleased]` entries into a new `[X.Y.Z]`
-   section with today's date.
+   section with today's date. **This step is mandatory — never bump
+   the version without a matching CHANGELOG entry.**
 2. Bump `manifest.json` and `package.json` `version` to `X.Y.Z`.
-3. `npm run typecheck && npm run test -- --run && npm run build:prod`.
-4. `npm run package` — produces `dist.zip` with just runtime assets.
-5. `npm run package:source` — produces `source.zip` for AMO source review
-   (AMO requires it when the bundle is minified, which it is).
-6. Load `dist/manifest.json` locally, spot-check every feature in the
+3. `npm run typecheck && npm run test -- --run`.
+4. `npm run package` — produces **both** `dist.zip` (extension upload)
+   and `source.zip` (AMO source review) in one step. AMO requires the
+   source archive whenever the bundle is minified, which it always is.
+5. Load `dist/manifest.json` locally, spot-check every feature in the
    checklist above on both Firefox and Chrome.
-7. `git commit`, `git tag vX.Y.Z`, `git push --tags`.
-8. Upload `dist.zip` **and** `source.zip` to AMO (Firefox); upload
+6. `git commit`, `git tag vX.Y.Z`, `git push --tags`.
+7. Upload `dist.zip` **and** `source.zip` to AMO (Firefox); upload
    `dist.zip` to Chrome Web Store if applicable. Copy the release
-   notes from the new CHANGELOG section.
+   notes from the new CHANGELOG section into the AMO "Notes to
+   Reviewer" field together with the standard build instructions.
 
 ## Contact
 
