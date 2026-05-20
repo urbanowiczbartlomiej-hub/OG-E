@@ -15,7 +15,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "package": "npm run build:prod && node scripts/package.mjs",
+    "package": "npm run build:prod && node scripts/package.mjs && node scripts/package-source.mjs",
     "package:source": "node scripts/package-source.mjs"
   },
   "devDependencies": {
