@@ -183,6 +183,70 @@ export const buildFieldBuckets = (entries) => {
 };
 
 /**
+ * One bin produced by {@link binFieldBuckets}.
+ *
+ * @typedef {object} FieldBin
+ * @property {number} start  Smallest field value in this bin. With
+ *   `binSize === 1` every bin has `start === end`.
+ * @property {number} end    Largest field value in this bin.
+ * @property {number} count  Sum of the counts of every input bucket
+ *   merged into this bin.
+ */
+
+/**
+ * Group consecutive entries of a {@link buildFieldBuckets} result into
+ * fixed-size bins. Each output bin carries the min and max field
+ * values it covers plus the sum of counts.
+ *
+ * # Why this exists
+ *
+ * The colony histogram renders one bar per distinct `fields` value. A
+ * mid-game empire commonly produces ~140 distinct values across its
+ * planets, which on a typical laptop (≈1366 px wide minus body
+ * padding ≈ 1300 px usable) leaves ~9 px per bar — past the threshold
+ * where vertical-text labels read cleanly. Above a viewport-derived
+ * threshold the renderer pre-bins consecutive field values together
+ * so each rendered bar stays at least ~8 px wide.
+ *
+ * The input Map's iteration order matters — `buildFieldBuckets`
+ * already returns ascending-by-field, and this function preserves
+ * that order while producing one output bin per `binSize` input
+ * entries.
+ *
+ * # Edge cases
+ *
+ *   - `binSize ≤ 1` returns one bin per input entry, each with
+ *     `start === end`. Functionally identical to a plain Map walk;
+ *     useful so the caller doesn't have to branch on the no-binning
+ *     case.
+ *   - An empty input map returns an empty array.
+ *   - Non-integer or fractional `binSize` is floored.
+ *
+ * @param {Map<number, number>} buckets  From {@link buildFieldBuckets}.
+ * @param {number} binSize  Number of consecutive input entries to
+ *   merge into one output bin. Values ≤ 1 produce one-to-one
+ *   passthrough.
+ * @returns {FieldBin[]}
+ */
+export const binFieldBuckets = (buckets, binSize) => {
+  const entries = [...buckets.entries()];
+  const step = Math.max(1, Math.floor(binSize));
+  /** @type {FieldBin[]} */
+  const out = [];
+  for (let i = 0; i < entries.length; i += step) {
+    const slice = entries.slice(i, i + step);
+    let count = 0;
+    for (const [, c] of slice) count += c;
+    out.push({
+      start: slice[0][0],
+      end: slice[slice.length - 1][0],
+      count,
+    });
+  }
+  return out;
+};
+
+/**
  * Per-system tally: one counter per {@link PositionStatus} plus a
  * running `total` of counted positions (= sum of all status counters
  * plus any unknown-status observations, which advance `total` but no

@@ -22,19 +22,51 @@
 import {
   computeFieldStats,
   buildFieldBuckets,
+  binFieldBuckets,
 } from '../../domain/histogram.js';
 
 /**
  * @typedef {import('../../state/history.js').ColonyEntry} ColonyEntry
+ * @typedef {import('../../domain/histogram.js').FieldBin} FieldBin
  */
 
 // Bar-height constants. The chart container is 300px tall; we reserve
-// ~55px for the top count label and bottom
-// rotated fields label, leaving 240px of usable bar area. `MIN_BAR_PX`
-// guarantees that a bucket with a single entry still renders visibly
-// when another bucket dominates the scale.
-const BAR_AREA_PX = 240;
+// ~80px for the top count label (up to ~36px, vertical-rl) plus the
+// bottom rotated fields label (40px) plus a few px of margin, leaving
+// 220px of usable bar area. `MIN_BAR_PX` guarantees that a bucket
+// with a single entry still renders visibly when another bucket
+// dominates the scale.
+const BAR_AREA_PX = 220;
 const MIN_BAR_PX = 3;
+
+/**
+ * Minimum on-screen width (in CSS pixels) we want each rendered bar
+ * to occupy. Below this, vertical-text labels start to overlap their
+ * neighbours and the chart turns into a smear. The renderer measures
+ * the chart's available width at render time and picks a `binSize`
+ * such that `bucketCount / binSize ≤ availableWidth / MIN_BAR_WIDTH_PX`
+ * — i.e. each rendered bar is at least this wide.
+ *
+ * The number is empirical: 8 px keeps the rotated 3-digit labels
+ * (e.g. "200") just-readable on a typical 1366 px laptop with ~140
+ * field-size buckets, and falls back to 2-step binning if the player
+ * has even more distinct sizes.
+ */
+const MIN_BAR_WIDTH_PX = 8;
+
+/**
+ * Fallback width used when the chart container reports `clientWidth
+ * === 0`. That happens when the colony tab is hidden behind another
+ * tab (its `display: none` zeroes the layout) but the renderer still
+ * runs to keep the data fresh. We estimate the on-screen width from
+ * the viewport instead so binning still picks a sensible value.
+ *
+ * Subtracts twice the body's 20 px padding (see histogram.html) so
+ * the estimate matches what the chart will actually get once shown.
+ *
+ * @returns {number}
+ */
+const estimateChartWidth = () => Math.max(200, window.innerWidth - 40);
 
 /**
  * Populate the position filter `<select>` with one option per distinct
@@ -164,38 +196,68 @@ export const renderColonyChart = (opts) => {
   }
 
   const buckets = buildFieldBuckets(entries);
-  // `Math.max(...[])` is -Infinity; buckets is guaranteed non-empty
-  // here because entries.length > 0 was checked above.
-  const maxCount = Math.max(...buckets.values());
 
-  for (const [fields, count] of buckets) {
+  // Adaptive binning: when the bucket count exceeds the number of
+  // bars the chart can show without each one dropping below
+  // MIN_BAR_WIDTH_PX, group consecutive field values together so the
+  // chart still fits the viewport AND stays legible. With binSize=1
+  // (small histograms / wide screens) `binFieldBuckets` is a no-op
+  // passthrough — each output bin has start === end and count
+  // matches the input bucket exactly.
+  const availableWidth = chartEl.clientWidth || estimateChartWidth();
+  const maxBars = Math.max(1, Math.floor(availableWidth / MIN_BAR_WIDTH_PX));
+  const binSize = buckets.size > maxBars
+    ? Math.ceil(buckets.size / maxBars)
+    : 1;
+  const bins = binFieldBuckets(buckets, binSize);
+
+  // `Math.max(...[])` is -Infinity; bins is guaranteed non-empty here
+  // because entries.length > 0 was checked above. Note: with binning,
+  // counts are sums across the grouped fields, which means the y-axis
+  // scale is the per-bin total, not the per-fields-value total. That
+  // is the right scaling — a bar 2× as tall genuinely represents 2×
+  // as many recorded colonies.
+  const maxCount = Math.max(...bins.map((b) => b.count));
+
+  for (const bin of bins) {
     // Compute height in pixels rather than percent: the bar lives
     // inside a nested flex chain, and `height:X%` resolves against
     // `.bar-group`'s content height instead of the intended 300px
     // chart area, which silently zeroes the bars.
     const barHeightPx = Math.max(
-      Math.round((count / maxCount) * BAR_AREA_PX),
+      Math.round((bin.count / maxCount) * BAR_AREA_PX),
       MIN_BAR_PX,
     );
+
+    // Single-field bins (binSize === 1, OR a tail bin that happens to
+    // contain only one field) render their label and tooltip exactly
+    // like the pre-binning version. Multi-field bins use a `start-end`
+    // range so the user can still see what range of sizes the bar
+    // represents.
+    const isRange = bin.start !== bin.end;
+    const label = isRange ? `${bin.start}-${bin.end}` : String(bin.start);
+    const tooltip = isRange
+      ? `${bin.start}-${bin.end} fields: ${bin.count}x (binned)`
+      : `${bin.start} fields: ${bin.count}x`;
 
     const group = document.createElement('div');
     group.className = 'bar-group';
 
     const countLabel = document.createElement('div');
     countLabel.className = 'bar-count';
-    countLabel.textContent = String(count);
+    countLabel.textContent = String(bin.count);
     group.appendChild(countLabel);
 
     const bar = document.createElement('div');
     bar.className = 'bar';
     bar.style.height = barHeightPx + 'px';
-    bar.title = fields + ' fields: ' + count + 'x';
+    bar.title = tooltip;
     group.appendChild(bar);
 
-    const label = document.createElement('div');
-    label.className = 'bar-label';
-    label.textContent = String(fields);
-    group.appendChild(label);
+    const labelEl = document.createElement('div');
+    labelEl.className = 'bar-label';
+    labelEl.textContent = label;
+    group.appendChild(labelEl);
 
     chartEl.appendChild(group);
   }

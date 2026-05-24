@@ -3,6 +3,8 @@
 // Data section. Owns the histogram-page URL resolver because the Open
 // Histogram button is its only consumer.
 
+import { parseUniverseId } from '../../../lib/universeId.js';
+
 /**
  * @typedef {import('../controls.js').SettingsSection} SettingsSection
  */
@@ -34,7 +36,16 @@ export const dataSection = {
       type: 'button',
       buttonText: 'Open histogram',
       onclick: () => {
-        if (HISTOGRAM_URL) window.open(HISTOGRAM_URL, '_blank');
+        if (!HISTOGRAM_URL) return;
+        // Pass the current tab's universe id as `?host=` so the histogram
+        // auto-selects this server in its dropdown. Encodes defensively
+        // even though universe ids are restricted ASCII — costs nothing
+        // and matches general "URL-safe parameter" practice.
+        const universeId = parseUniverseId(location.host);
+        const url = universeId
+          ? `${HISTOGRAM_URL}?host=${encodeURIComponent(universeId)}`
+          : HISTOGRAM_URL;
+        window.open(url, '_blank');
       },
     },
   ],

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "OG-E",
-  "version": "1.0.6",
+  "version": "1.2.0",
   "description": "UI helper for OGame: floating Send Exp/Col, galaxy scan tracker, abandon overlay. Requires AntiGameReborn. Unofficial.",
   "browser_specific_settings": {
     "gecko": {
@@ -33,7 +33,7 @@
   ],
   "content_scripts": [
     {
-      "matches": ["*://*.ogame.gameforge.com/*"],
+      "matches": ["*://*.ogame.gameforge.com/game/index.php*"],
       "js": ["content.js"],
       "run_at": "document_start",
       "all_frames": false

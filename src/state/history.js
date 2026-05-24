@@ -40,6 +40,7 @@
 import { createStore } from '../lib/createStore.js';
 import { persist } from '../lib/persist.js';
 import { chromeStore } from '../lib/storage.js';
+import { parseUniverseId } from '../lib/universeId.js';
 
 /**
  * One observation of a newly-colonized planet, captured the first time
@@ -83,11 +84,41 @@ import { chromeStore } from '../lib/storage.js';
  */
 
 /**
- * chrome.storage.local key under which the full {@link ColonyHistory}
- * array is persisted. Namespaced with the `oge_` prefix shared by
- * every OG-E storage key so any legacy data never collides.
+ * Suffix portion of the chrome.storage.local key under which the
+ * {@link ColonyHistory} array is persisted. The actual key written is
+ * `<universeId>:<HISTORY_KEY_BASE>` — see {@link historyKeyFor}. Kept
+ * exported so the histogram (extension origin) can compose a key for
+ * an arbitrary selected universe and so the migration code can read
+ * the legacy un-namespaced location.
  */
-export const HISTORY_KEY = 'oge_colonyHistory';
+export const HISTORY_KEY_BASE = 'oge_colonyHistory';
+
+/**
+ * Compose the full chrome.storage.local key for a given universe id.
+ * Called by the histogram page (which knows the selected universe
+ * from its dropdown) and by the migration code in `state/migrate.js`.
+ *
+ * @param {string} universeId  e.g. `'s163-pl'` from
+ *   {@link parseUniverseId}.
+ * @returns {string} The namespaced key, e.g. `'s163-pl:oge_colonyHistory'`.
+ */
+export const historyKeyFor = (universeId) => `${universeId}:${HISTORY_KEY_BASE}`;
+
+/**
+ * Resolve the chrome.storage.local key for the current tab's universe.
+ * Reads `location.host` defensively — in non-DOM test environments where
+ * `location` is undefined the call falls back to the legacy un-namespaced
+ * key so tests don't have to stub the global. Production never hits the
+ * fallback because manifest content_scripts restricts this module to
+ * `*.ogame.gameforge.com/game/index.php*`.
+ *
+ * @returns {string}
+ */
+const currentHistoryKey = () => {
+  if (typeof location === 'undefined') return HISTORY_KEY_BASE;
+  const id = parseUniverseId(location.host);
+  return id ? historyKeyFor(id) : HISTORY_KEY_BASE;
+};
 
 /**
  * The colony-history store.
@@ -137,7 +168,7 @@ let hydratedPromise = Promise.resolve();
 
 /**
  * Resolves once the {@link historyStore} hydrate phase has settled —
- * i.e. `chromeStore.get(HISTORY_KEY)` has returned and any stored array
+ * i.e. `chromeStore.get(currentHistoryKey())` has returned and any stored array
  * has been applied to the store. Resolves even when storage held
  * nothing useful (null / non-array / undefined), so consumers should
  * not infer a hydrated value from the resolution alone — they must
@@ -181,7 +212,7 @@ export const whenHistoryHydrated = () => hydratedPromise;
 
 /**
  * Wire the history store to chrome.storage.local: hydrate from
- * `HISTORY_KEY`, and write every change back immediately (no debounce).
+ * `<universeId>:oge_colonyHistory`, and write every change back immediately (no debounce).
  * Safe to call multiple times — subsequent calls return the same
  * dispose handle without double-registering the write-through
  * subscription.
@@ -212,10 +243,10 @@ export const initHistoryStore = () => {
       // chromeStore.get resolves to `unknown` — any shape could live
       // at the key. Narrow to array; anything else is treated as
       // "nothing stored" so persist skips hydration and keeps [].
-      const parsed = await chromeStore.get(HISTORY_KEY);
+      const parsed = await chromeStore.get(currentHistoryKey());
       return Array.isArray(parsed) ? /** @type {ColonyHistory} */ (parsed) : null;
     },
-    save: (value) => chromeStore.set(HISTORY_KEY, value),
+    save: (value) => chromeStore.set(currentHistoryKey(), value),
     // 0 ms = SYNC write on every set. History writes are rare (typically
     // a handful per day) so there is no burst to collapse; keeping it
     // immediate makes tests deterministic without fake timers.

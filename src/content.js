@@ -59,11 +59,13 @@ import { installReadabilityBoost } from './features/readabilityBoost.js';
 installBlackBackground();
 installReadabilityBoost();
 
+import { parseUniverseId } from './lib/universeId.js';
 import { initHistoryStore } from './state/history.js';
 import { initScansStore } from './state/scans.js';
 import { initRegistryStore } from './state/registry.js';
 import { initSettingsStore } from './state/settings.js';
 import { installSettingsMirror } from './state/settings.js';
+import { migrateLegacyStorageKeys } from './state/migrate.js';
 
 import { installColonyRecorder } from './features/colonyRecorder.js';
 import { installBadges } from './features/badges.js';
@@ -74,29 +76,42 @@ import { installFreshPlanetDetector } from './features/freshPlanetDetector.js';
 import { installSettingsUi } from './features/settingsUi/index.js';
 import { installAgrLogo } from './features/agrLogo.js';
 import { installFleetdispatchShortcut } from './features/fleetdispatchShortcut.js';
+import { installEventMenuHighlight } from './features/eventMenuHighlight.js';
 
 import { installSync } from './sync/scheduler.js';
 
-// State persistence — settings first so other stores and features that
-// read settings at install time see the hydrated values, not defaults.
+// Localstorage-backed stores hydrate synchronously and need no migration
+// (`localStorage` is already per-origin, so settings and registry are
+// naturally isolated per OGame server).
+initSettingsStore();
+initRegistryStore();
+
+// chrome.storage-backed wiring runs AFTER a one-shot legacy-key
+// migration. The migration lifts pre-v1.1.0 un-namespaced data
+// (`oge_colonyHistory`, `oge_galaxyScans`) into the per-universe slot
+// for `location.host`. Without this ordering the persist `load` would
+// hydrate from the empty namespaced slot while the legacy data sat
+// orphaned. The first server opened post-upgrade wins ownership —
+// see `state/migrate.js` for the rationale.
 //
 // `initScansStore` also auto-installs the `oge:galaxyScanned` MAIN-world
-// bridge listener internally (see `state/scans.js`), so nothing extra is
-// needed here to hook the galaxy XHR observer up to the store.
-initSettingsStore();
-initHistoryStore();
-initScansStore();
-initRegistryStore();
-installSettingsMirror();
+// bridge listener internally (see `state/scans.js`), so nothing extra
+// is needed here to hook the galaxy XHR observer up to the store.
+(async () => {
+  await migrateLegacyStorageKeys(parseUniverseId(location.host));
+  initHistoryStore();
+  initScansStore();
+  installSettingsMirror();
 
-// Top-frame-only: sync scheduler. OGame embeds several iframes; running
-// the gist round-trip in each would multiply API traffic for no gain
-// (the data is identical across frames). Sync doesn't touch the DOM
-// (only chrome.storage + HTTP + store subscriptions), so it's safe to
-// install before DOMContentLoaded.
-if (window.top === window.self) {
-  installSync();
-}
+  // Top-frame-only: sync scheduler. OGame embeds several iframes;
+  // running the gist round-trip in each would multiply API traffic
+  // for no gain (the data is identical across frames). Sync doesn't
+  // touch the DOM (only chrome.storage + HTTP + store subscriptions),
+  // so it's safe to install before DOMContentLoaded.
+  if (window.top === window.self) {
+    installSync();
+  }
+})();
 
 // Every feature below touches the DOM on install — at `document_start`
 // the HTML parser hasn't produced `<body>` yet, so e.g. badges.js's
@@ -109,6 +124,7 @@ const installDomFeatures = () => {
   // Passive observers (data capture).
   installColonyRecorder();
   installBadges();
+  installEventMenuHighlight();
 
   // User-facing buttons.
   installSendExp();

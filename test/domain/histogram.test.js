@@ -13,6 +13,7 @@ import {
   bestStatusInSystem,
   computeFieldStats,
   buildFieldBuckets,
+  binFieldBuckets,
   collectGalaxyStats,
   countStaleByGalaxy,
 } from '../../src/domain/histogram.js';
@@ -177,6 +178,87 @@ describe('buildFieldBuckets', () => {
     // Insertion order is 300 → 100 → 200 — but iteration must be 100, 200, 300.
     const buckets = buildFieldBuckets([mkEntry(300, 1), mkEntry(100, 2), mkEntry(200, 3)]);
     expect([...buckets.keys()]).toEqual([100, 200, 300]);
+  });
+});
+
+describe('binFieldBuckets', () => {
+  /**
+   * Build a (fields → count) Map directly so each test case keeps a
+   * tight, declarative shape — bypasses buildFieldBuckets entirely.
+   *
+   * @param {Array<[number, number]>} pairs
+   * @returns {Map<number, number>}
+   */
+  const mkBuckets = (pairs) => new Map(pairs);
+
+  it('returns an empty array for empty input', () => {
+    expect(binFieldBuckets(new Map(), 2)).toEqual([]);
+    expect(binFieldBuckets(new Map(), 1)).toEqual([]);
+  });
+
+  it('binSize 1 produces one bin per input entry with start === end', () => {
+    const buckets = mkBuckets([[100, 1], [101, 2], [102, 3]]);
+    expect(binFieldBuckets(buckets, 1)).toEqual([
+      { start: 100, end: 100, count: 1 },
+      { start: 101, end: 101, count: 2 },
+      { start: 102, end: 102, count: 3 },
+    ]);
+  });
+
+  it('binSize ≤ 1 (zero, negative, fractional below 1) is treated as 1', () => {
+    const buckets = mkBuckets([[10, 1], [11, 2]]);
+    expect(binFieldBuckets(buckets, 0)).toEqual([
+      { start: 10, end: 10, count: 1 },
+      { start: 11, end: 11, count: 2 },
+    ]);
+    expect(binFieldBuckets(buckets, -3)).toEqual([
+      { start: 10, end: 10, count: 1 },
+      { start: 11, end: 11, count: 2 },
+    ]);
+  });
+
+  it('binSize 2 merges adjacent buckets pairwise', () => {
+    const buckets = mkBuckets([[100, 1], [101, 2], [102, 3], [103, 4]]);
+    expect(binFieldBuckets(buckets, 2)).toEqual([
+      { start: 100, end: 101, count: 3 },
+      { start: 102, end: 103, count: 7 },
+    ]);
+  });
+
+  it('tail bin contains fewer than binSize entries when input count is not divisible', () => {
+    // 5 input buckets, binSize=2 → bins of 2, 2, and a trailing 1.
+    const buckets = mkBuckets([[10, 1], [11, 1], [12, 1], [13, 1], [14, 5]]);
+    expect(binFieldBuckets(buckets, 2)).toEqual([
+      { start: 10, end: 11, count: 2 },
+      { start: 12, end: 13, count: 2 },
+      { start: 14, end: 14, count: 5 },
+    ]);
+  });
+
+  it('preserves the input order (low fields first)', () => {
+    // buildFieldBuckets returns ascending order; binFieldBuckets must
+    // not reshuffle. Input here is already ascending; the test pins
+    // the contract for the renderer that depends on left-to-right
+    // bucket order on the chart.
+    const buckets = mkBuckets([[40, 1], [60, 2], [80, 3], [100, 4]]);
+    const bins = binFieldBuckets(buckets, 2);
+    expect(bins.map((b) => b.start)).toEqual([40, 80]);
+  });
+
+  it('floors non-integer binSize', () => {
+    // binSize 2.7 → step 2. Same shape as the binSize=2 case above.
+    const buckets = mkBuckets([[10, 1], [11, 2], [12, 3], [13, 4]]);
+    expect(binFieldBuckets(buckets, 2.7)).toEqual([
+      { start: 10, end: 11, count: 3 },
+      { start: 12, end: 13, count: 7 },
+    ]);
+  });
+
+  it('binSize larger than entry count produces a single all-encompassing bin', () => {
+    const buckets = mkBuckets([[10, 1], [11, 2], [12, 3]]);
+    expect(binFieldBuckets(buckets, 99)).toEqual([
+      { start: 10, end: 12, count: 6 },
+    ]);
   });
 });
 

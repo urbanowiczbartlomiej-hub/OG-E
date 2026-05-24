@@ -84,6 +84,7 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
         'colPreferOtherGalaxies',
         'colonizeMode',
         'enterBtnSize',
+        'eventMenuHighlight',
         'expeditionBadges',
         'gistToken',
         'maxExpPerPlanet',

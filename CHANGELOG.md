@@ -14,6 +14,158 @@ version numbers follow [Semantic Versioning](https://semver.org).
   system), not a batch action.
 - Keyboard shortcuts beyond ArrowRight on fleetdispatch.
 
+## [1.2.0] — 2026-05-24
+
+### Added
+
+- **Tabbed navigation on the histogram page.** The data viewer is now
+  split into three independent tabs — `Colony Sizes`,
+  `Galaxy Observations`, `Free Positions` — instead of one long
+  scrollable page. The active tab is remembered per device in
+  `localStorage` under `oge_histogramTab`. Existing content is
+  unchanged; only the surrounding shell wraps each section in
+  `<section class="tab-section">` plus a `.top-bar` row at the top
+  that anchors navigation on the left (tabs) and technical
+  operations on the right (server selector, Export / Import JSON).
+  Single horizontal row when the viewport is wide enough; wraps to
+  two rows on narrow viewports via `flex-wrap: wrap`.
+- **Free Positions analyzer.** New tab that scans the per-universe
+  galaxy data for the longest contiguous runs of systems whose chosen
+  slot is confirmed `empty`. Position-selector lets the player pick
+  any of the 15 slots (defaults to 15 — the classic colonise-row
+  use case). Results table lists the top 20 runs across all scanned
+  galaxies plus the absolute record. Wrap-around at the 499 → 1
+  boundary is handled, and an unscanned (or scanned-but-non-matching)
+  system breaks the run — reported lengths are a lower bound that
+  only grows with more scans. Backed by a new pure helper
+  `domain/freeStreak.js#findLongestStreaks(scans, { position, status })`
+  with 14 unit tests covering wrap-around, gaps, multi-galaxy
+  independence, malformed keys, and tie-breaking.
+- **Per-universe data isolation.** Colony history and galaxy scans —
+  previously stored under shared `chrome.storage.local` keys
+  (`oge_colonyHistory`, `oge_galaxyScans`) — are now namespaced per
+  OGame universe (`s163-pl:oge_colonyHistory`, ...). Each server keeps
+  its own dataset, statistics, and (via the already-per-origin
+  `localStorage`-backed gistId / gistToken) its own cloud-sync target,
+  even for the same account. The settings-mirror `oge_colPositions`
+  and the sync-scheduler tombstones (`oge_syncRequestAt`,
+  `oge_clearRemoteAt`, `oge_resetGalaxyAt`) are namespaced on the
+  same scheme. New module `lib/universeId.js` extracts the universe
+  short id (e.g. `s163-pl`) from `location.host`; key composition
+  goes through `historyKeyFor` / `scansKeyFor` / `colPositionsKeyFor`
+  / `syncRequestKeyFor` / `clearRemoteKeyFor` / `resetGalaxyKeyFor`
+  exported from the modules that own each base suffix.
+- **One-shot legacy → per-universe migration.** New
+  `state/migrate.js` runs once at content-script bootstrap (before
+  the persist `load`s fire) and lifts pre-1.1.0 un-namespaced
+  `oge_colonyHistory` / `oge_galaxyScans` into the active universe's
+  slot. The first server opened post-upgrade inherits the legacy
+  dataset; subsequent servers start empty (matching the per-server
+  isolation the rest of this release adds). Idempotent — re-runs are
+  no-ops because the legacy keys are removed at the end of the move.
+- **Server selector dropdown on the histogram page.** New
+  `<select id="universeSelect">` at the top of the data viewer lists
+  every universe found in storage; the page hydrates against the
+  selected universe and Export / Import / Clear / Reset-galaxy all
+  scope to that selection. The Settings panel's "Open histogram"
+  button now appends `?host=<universeId>` so opening the page from
+  server X auto-selects X. Export filenames embed the id
+  (`oge-s163-pl-2026-05-23.json`, `oge-s163-pl-colony-history.csv`).
+- **`chromeStore.getAll`** helper on the storage wrapper — wraps the
+  canonical `chrome.storage.local.get(null, cb)` enumeration. Used by
+  the histogram to discover which universes have data, but exposed as
+  a general primitive.
+
+### Fixed
+
+- **OG-E no longer loads on forum or lobby subdomains.** The
+  `content_scripts[0].matches` entry in `manifest.json` was widened
+  to `*://*.ogame.gameforge.com/*` in earlier releases, which pulled
+  the content script (and its floating UI) onto
+  `forum.*.ogame.gameforge.com` and `lobby.ogame.gameforge.com` —
+  pages where the OG-E buttons have no game context. The match is now
+  scoped to `*://*.ogame.gameforge.com/game/index.php*`, matching the
+  page-script entry (`page.js`).
+- **CSP violation when clicking a banner link for an OGame menu item
+  whose href is `javascript:`.** The event-menu highlight feature
+  (added on this branch) copied OGame's anchor `href` onto its banner
+  link, which for some premium-menu items is `javascript:return
+  false;` paired with an `onclick` listener. The page's `script-src`
+  policy blocks `javascript:` URL navigations, so the banner click
+  surfaced as a Content Security Policy error and did nothing.
+  `eventMenuHighlight` now delegates clicks to the original anchor
+  via the existing `safeClick` helper (which strips the `javascript:`
+  href and fires the click event so OGame's own listener still
+  runs); plain `http(s)` hrefs are still copied through unchanged so
+  middle-click / right-click "open in new tab" keep working.
+- **CSP violation from AGR-anchor `.click()` callsites.** Three
+  remaining bare `.click()` invocations targeted AGR-shipped anchors
+  (`agrLogo.js` clicking AGR's menu button + the OG-E tab header;
+  `settingsUi/index.js` collapsing sibling AGR tabs when the OG-E
+  one is opened). AGR ships those as `<a href="javascript:...">` —
+  the same shape the event-banner fix above addressed. Routed every
+  remaining call through `safeClick` so the page CSP no longer logs
+  blocked `javascript:` navigations from any OG-E codepath.
+- **`safeClick` no longer strips AGR menu CSS.** The original
+  `safeClick` removed the `javascript:` href before dispatching the
+  click but never restored it, which silently broke AGR's
+  attribute-selector styling (`a[href]`, `a[href^="javascript:"]`)
+  — the menu lost its background and shifted left whenever any
+  OG-E codepath clicked an AGR anchor. The helper now strips the
+  href, dispatches the click (synchronous; the CSP-blocked
+  navigation never fires), and immediately writes the original href
+  back. AGR sees its menu CSS intact again.
+- **Vertical count labels above each colony histogram bar.** The
+  per-bar count label was horizontal, which overflowed the bar
+  width as soon as a bucket reached two digits (very common — most
+  fields-size buckets have at least 10 colonies once the player has
+  more than a handful of planets). Switched to `writing-mode:
+  vertical-rl` to match the existing field-label rotation below the
+  bar; single-digit counts look unchanged (one glyph either way),
+  multi-digit counts now stack vertically inside the bar's own
+  column instead of bleeding into neighbours. Reduced the per-bar
+  height budget from 240 px to 220 px to reserve room for the
+  taller count text (capped at 36 px tall — enough for 4 digits,
+  which covers every realistic case).
+- **Colony histogram re-bins on window resize.** A debounced
+  (150 ms) `resize` listener on `window` triggers a full
+  `renderAll()` cycle so the adaptive binning re-evaluates against
+  the new chart width. The galaxy map and Free Positions table
+  repaint along with it — they're width-agnostic but the render
+  pass is DOM-only and the cost is negligible. Debouncing keeps the
+  render rate sane during a slow window-edge drag (one render after
+  the user pauses for 150 ms, instead of ~60 per second).
+- **Colony Size Histogram fits the viewport instead of horizontal
+  scroll, with adaptive binning at high bucket counts.** The chart's
+  `.bar-group` was `flex: 1 0 18px; min-width: 18px`, which at ~140
+  distinct field-size buckets forced ~2.5k px of layout width and a
+  horizontal scrollbar on most laptops. Switched to
+  `flex: 1 1 0; min-width: 0` plus `overflow: hidden` on the chart
+  container so the full bucket range always fits the available
+  width. On top of the pure-CSS fit, the renderer now measures the
+  chart's on-screen width and adaptively bins consecutive field
+  values together so each rendered bar stays at least ~8 px wide —
+  e.g. on a 1366 px laptop the 140-bucket distribution renders as
+  ~150 bars at 1× binning, but a narrower viewport or even-more
+  distinct fields triggers `binSize=2`, `3`, ... bins labelled
+  `200-201`, `300-302` with summed counts. Per-bar tooltip carries
+  the bin range and total when binning is active, the exact value
+  when it isn't. Backed by a new pure helper
+  `domain/histogram.js#binFieldBuckets(buckets, binSize)` with 8
+  unit tests covering empty input, binSize edge cases (≤ 1,
+  fractional, larger than input), tail bins, and order preservation.
+
+### Removed
+
+- **"Refresh" buttons on the histogram page** (two of them: one above
+  the colony chart, one above the galaxy map). Both called
+  `triggerSync` + a manual local reload; the local reload is already
+  handled automatically by `chrome.storage.onChanged` whenever the
+  selected universe's data lands, and an explicit "Sync now" button
+  is already available in the Settings → Cloud sync section. The
+  histogram surface gains no real affordance from the duplicate
+  trigger, so the buttons are gone.
+
 ## [1.0.6] — 2026-05-20
 
 ### Fixed

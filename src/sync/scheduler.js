@@ -99,27 +99,41 @@ import {
 } from './gist.js';
 import { debounce } from '../lib/debounce.js';
 import { chromeStore } from '../lib/storage.js';
+import { parseUniverseId } from '../lib/universeId.js';
 
 /**
- * Tombstone keys the histogram page (extension origin) writes into
- * `chrome.storage.local` to cross-origin-signal the game-origin sync
- * scheduler. A direct `document.dispatchEvent` wouldn't work — the two
- * pages live in separate JS realms and separate origins — so the
- * shared storage area is the only reliable channel.
+ * Tombstone key suffixes the histogram page (extension origin) writes
+ * into `chrome.storage.local` to cross-origin-signal the game-origin
+ * sync scheduler. The actual key written is
+ * `<universeId>:<base>` — see {@link syncRequestKeyFor} etc. — so
+ * each universe's scheduler only reacts to tombstones aimed at its
+ * own server. A direct `document.dispatchEvent` wouldn't work because
+ * histogram and game live in separate origins and JS realms; the
+ * shared storage area is the only reliable cross-origin channel.
  *
- * Kept local (not exported) because the only writers are
- * `features/histogram/io.js` (see `SYNC_REQUEST_KEY` / `CLEAR_REMOTE_KEY`
- * there) and the only reader is this file. If a third participant ever
- * needs these strings, promote them to a small shared constants module.
+ * Exported so `features/histogram/io.js` (the writer) and any future
+ * tooling can compose the same keys without redeclaring the suffix.
  */
-const SYNC_REQUEST_TOMBSTONE = 'oge_syncRequestAt';
-const CLEAR_REMOTE_TOMBSTONE = 'oge_clearRemoteAt';
+export const SYNC_REQUEST_KEY_BASE = 'oge_syncRequestAt';
+export const CLEAR_REMOTE_KEY_BASE = 'oge_clearRemoteAt';
+
 /**
- * Per-galaxy reset tombstone. Value is `"<galaxy>:<timestamp>"` so two
- * resets of the same galaxy back-to-back register as distinct changes
- * (chrome.storage.onChanged only fires when the value actually changes).
+ * Per-galaxy reset tombstone suffix. Value is `"<galaxy>:<timestamp>"`
+ * so two resets of the same galaxy back-to-back register as distinct
+ * changes (chrome.storage.onChanged only fires when the value actually
+ * changes).
  */
-const RESET_GALAXY_TOMBSTONE = 'oge_resetGalaxyAt';
+export const RESET_GALAXY_KEY_BASE = 'oge_resetGalaxyAt';
+
+/** @param {string} universeId */
+export const syncRequestKeyFor = (universeId) =>
+  `${universeId}:${SYNC_REQUEST_KEY_BASE}`;
+/** @param {string} universeId */
+export const clearRemoteKeyFor = (universeId) =>
+  `${universeId}:${CLEAR_REMOTE_KEY_BASE}`;
+/** @param {string} universeId */
+export const resetGalaxyKeyFor = (universeId) =>
+  `${universeId}:${RESET_GALAXY_KEY_BASE}`;
 
 /**
  * Quiet-period length (ms) for {@link scheduleUpload}. See file header
@@ -385,21 +399,42 @@ export const installSync = () => {
   };
   document.addEventListener(FORCE_SYNC_EVENT, onForceSync);
 
+  // Per-universe tombstone keys — captured at install time so the
+  // onStorageChange listener doesn't recompute them on every event.
+  // `location.host` does not change for a tab's lifetime, so caching
+  // is safe. Fallback to bare suffixes when `location` is undefined
+  // (node tests) — production always has it because the manifest
+  // restricts this module to game-origin tabs.
+  const universeId =
+    typeof location !== 'undefined' ? parseUniverseId(location.host) : '';
+  const syncKey = universeId
+    ? syncRequestKeyFor(universeId)
+    : SYNC_REQUEST_KEY_BASE;
+  const clearKey = universeId
+    ? clearRemoteKeyFor(universeId)
+    : CLEAR_REMOTE_KEY_BASE;
+  const resetKey = universeId
+    ? resetGalaxyKeyFor(universeId)
+    : RESET_GALAXY_KEY_BASE;
+
   /**
    * Bridge from the extension-origin histogram page to this scheduler.
-   * The histogram writes `oge_syncRequestAt = Date.now()` on "Refresh"
-   * and `oge_clearRemoteAt = Date.now()` on "Clear observation data";
-   * chrome.storage.onChanged fires in THIS origin (game), so we can
-   * observe and act. Value changes — we don't care about the timestamp
-   * itself, only that the key was touched.
+   * The histogram writes `<universeId>:oge_syncRequestAt = Date.now()`
+   * for the selected universe's "Sync now" button and
+   * `<universeId>:oge_clearRemoteAt = Date.now()` for its
+   * "Clear observation data" action. chrome.storage.onChanged fires in
+   * THIS origin (game), so we observe and act on the tombstones whose
+   * key matches our universe — the histogram may have selected a
+   * different server in the dropdown, in which case its tombstone has
+   * a different prefix and we ignore it.
    *
    * @param {Record<string, unknown>} changes
    */
   const onStorageChange = (changes) => {
-    if (SYNC_REQUEST_TOMBSTONE in changes) {
+    if (syncKey in changes) {
       void onForceSync();
     }
-    if (CLEAR_REMOTE_TOMBSTONE in changes) {
+    if (clearKey in changes) {
       // The histogram wiped `chrome.storage.local` before writing this
       // tombstone — but scansStore IN MEMORY on the game tab still
       // holds every scan. Without a symmetric in-memory wipe, the next
@@ -415,12 +450,12 @@ export const installSync = () => {
         }
       })();
     }
-    if (RESET_GALAXY_TOMBSTONE in changes) {
+    if (resetKey in changes) {
       // Value shape is `"<galaxy>:<timestamp>"`; we only care about the
       // galaxy id. Bad parses fall through silently — a corrupt
       // tombstone shouldn't take down the listener for the next one.
       const raw = /** @type {{ newValue?: unknown }} */ (
-        changes[RESET_GALAXY_TOMBSTONE]
+        changes[resetKey]
       ).newValue;
       const str = typeof raw === 'string' ? raw : '';
       const galaxy = parseInt(str.split(':')[0], 10);

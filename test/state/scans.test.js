@@ -29,7 +29,8 @@ vi.mock('../../src/lib/storage.js', () => ({
 
 import { chromeStore } from '../../src/lib/storage.js';
 import {
-  SCANS_KEY,
+  SCANS_KEY_BASE,
+  scansKeyFor,
   scansStore,
   initScansStore,
   disposeScansStore,
@@ -84,8 +85,12 @@ describe('scansStore — default state and basic ops', () => {
     expect(scansStore.get()).toEqual({});
   });
 
-  it('exports the expected chrome.storage key', () => {
-    expect(SCANS_KEY).toBe('oge_galaxyScans');
+  it('exports the expected chrome.storage key suffix', () => {
+    expect(SCANS_KEY_BASE).toBe('oge_galaxyScans');
+  });
+
+  it('scansKeyFor composes a per-universe namespaced key', () => {
+    expect(scansKeyFor('s163-pl')).toBe('s163-pl:oge_galaxyScans');
   });
 
   it('round-trips set/get without any persist wiring', () => {

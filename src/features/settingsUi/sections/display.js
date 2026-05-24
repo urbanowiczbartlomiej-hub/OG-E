@@ -17,5 +17,10 @@ export const displaySection = {
       label: 'Readability boost (event box + fleet movement link)',
       type: 'checkbox',
     },
+    {
+      id: 'eventMenuHighlight',
+      label: 'Event menu highlight (pulse animation + alert banner for active events)',
+      type: 'checkbox',
+    },
   ],
 };

@@ -1,6 +1,7 @@
 // @ts-check
 
-// Histogram page entry — bootstrap + storage-change re-render.
+// Histogram page entry — bootstrap + universe selector + storage-change
+// re-render.
 //
 // Loads data via chromeStore, invokes the render modules, and listens
 // for chrome.storage.onChanged to refresh. The histogram page is
@@ -9,36 +10,66 @@
 // game-origin content script's write-through. Here we simply read the
 // same keys on demand and re-render when they change.
 //
-// Data flow:
-//   install() → wait for DOMContentLoaded → wireDom() → loadAll() →
-//   render{Colony, Galaxy}() → wireListeners() → chromeStore.onChanged
-//   hook. User-driven mutations (import, reset, clear) write to
-//   chromeStore, which fires onChanged in this same tab, which calls
-//   loadAll() + render*() again. Single direction, no duplicate paths.
+// # Per-universe scope
 //
-// Target positions: we try to read `oge_colPositions` from
-// chrome.storage.local. The game side mirrors this setting from
-// localStorage (where state/settings.js owns it) so this page can see
-// it across origins. When the read returns undefined we fall back to
-// the '8' default.
+// `chrome.storage.local` holds one slice of data per OGame universe
+// the player has played on (keys are namespaced
+// `<universeId>:oge_colonyHistory` / `<universeId>:oge_galaxyScans`).
+// The page exposes a server-selector dropdown so the player can flip
+// between universes; every Export/Import/Clear/ResetGalaxy/Sync action
+// targets the currently-selected universe. The initial selection comes
+// from a `?host=<universeId>` URL param (set by the Settings "Open
+// histogram" button so opening from server X auto-selects X); if the
+// param is absent or names an unknown universe we fall back to the
+// first universe found in storage.
+//
+// # Data flow
+//
+//   install() → wait for DOMContentLoaded → wireDom() → discoverUniverses()
+//   → resolveInitialUniverse() → populateUniverseSelect() → loadAll()
+//   → render{Colony, Galaxy}() → wireListeners() → chromeStore.onChanged
+//   hook.
+//
+//   User-driven mutations (import, reset, clear) write to chromeStore,
+//   which fires onChanged in this same tab, which calls loadAll() +
+//   render*() again. The listener only re-renders when one of the
+//   selected universe's keys changed — events for other universes are
+//   ignored to avoid spurious re-renders.
+//
+//   Changing the universe selector resets the module-scope cache and
+//   re-runs loadAll() + render*() against the new universe's keys.
 //
 // @see ./colony.js  — renderColonyChart + populatePositionFilter
 // @see ./galaxy.js  — renderGalaxyMap (accordion + pixel map)
-// @see ./io.js      — Export/Import/CSV + tombstones
+// @see ./io.js      — Export/Import/CSV + tombstones (all universe-scoped)
 
 import { chromeStore, safeLS } from '../../lib/storage.js';
+import { debounce } from '../../lib/debounce.js';
 import { parseTargetPositions } from '../../domain/histogram.js';
 import { populatePositionFilter, renderColonyChart } from './colony.js';
 import { renderGalaxyMap } from './galaxy.js';
 import {
+  populatePositionOptions as populateFreePosOptions,
+  renderFreeStreak,
+} from './freeStreak.js';
+import {
+  HISTORY_KEY_BASE,
+  historyKeyFor,
+} from '../../state/history.js';
+import {
+  SCANS_KEY_BASE,
+  scansKeyFor,
+} from '../../state/scans.js';
+import {
+  COL_POSITIONS_KEY_BASE,
+  colPositionsKeyFor,
+} from '../../state/settings.js';
+import {
   exportAllData,
   importAllData,
   exportColonyCsv,
-  triggerSync,
   triggerClearRemote,
   triggerResetGalaxy,
-  HISTORY_KEY,
-  SCANS_KEY,
 } from './io.js';
 
 /**
@@ -46,14 +77,16 @@ import {
  * @typedef {import('../../state/scans.js').GalaxyScans} GalaxyScans
  */
 
-// chrome.storage.local key the game-side settingsStore mirrors
-// `colPositions` into. Nothing here writes to this key — the histogram
-// page only reads.
-const COL_POSITIONS_KEY = 'oge_colPositions';
-
 // localStorage key for accordion open/closed state. Per-device, not
 // synced — accordion state is UI preference, not user data.
 const EXPANDED_LS_KEY = 'oge_expandedGalaxies';
+
+// localStorage key for the active histogram tab. Per-device UI prefs.
+// Possible values are the `data-tab` attributes from histogram.html:
+// `'colony'`, `'galaxy'`, `'free'`. Anything unrecognised falls back
+// to `'colony'` (the page's first tab).
+const ACTIVE_TAB_LS_KEY = 'oge_histogramTab';
+const DEFAULT_TAB = 'colony';
 
 // Default target positions when no mirror is available. Matches the
 // default shipped by state/settings.js so the histogram reads the same
@@ -61,6 +94,16 @@ const EXPANDED_LS_KEY = 'oge_expandedGalaxies';
 const DEFAULT_COL_POSITIONS = '8';
 
 // ── Module-local caches ────────────────────────────────────────────────
+
+/**
+ * Currently-selected universe id (e.g. `'s163-pl'`). Populated by
+ * `resolveInitialUniverse` at boot and updated by the selector
+ * onchange handler. All `loadAll` calls and io.js delegations key off
+ * this value.
+ *
+ * @type {string}
+ */
+let selectedUniverseId = '';
 
 /** @type {ColonyEntry[]} */
 let history = [];
@@ -85,8 +128,12 @@ const expandedGalaxies = new Set();
 /** @type {HTMLElement} */ let chartEl;
 /** @type {HTMLElement} */ let countInfoEl;
 /** @type {HTMLSelectElement} */ let posFilter;
+/** @type {HTMLSelectElement} */ let universeSelect;
 /** @type {HTMLElement} */ let scansContainer;
 /** @type {HTMLElement | null} */ let importStatusEl;
+/** @type {HTMLSelectElement} */ let freePosSelect;
+/** @type {HTMLElement} */ let freeContainer;
+/** @type {HTMLElement | null} */ let freeCountInfoEl;
 
 /**
  * Bootstrap the histogram page. Safe to call multiple times but
@@ -113,22 +160,136 @@ export const installHistogram = () => {
 const boot = async () => {
   wireDom();
   loadExpanded();
+  populateFreePosOptions(freePosSelect);
+  wireTabs();
+
+  const universes = await discoverUniverses();
+  selectedUniverseId = resolveInitialUniverse(universes);
+  populateUniverseSelect(universes, selectedUniverseId);
+
   await loadAll();
   renderAll();
   wireListeners();
 
   chromeStore.onChanged((changes) => {
-    // Only bother re-rendering when one of OUR keys changed. Other
-    // tombstones / settings updates happen too and would otherwise
-    // cause a spurious re-render cycle.
-    if (
-      HISTORY_KEY in changes
-      || SCANS_KEY in changes
-      || COL_POSITIONS_KEY in changes
-    ) {
+    // Filter: only re-render when one of the SELECTED universe's keys
+    // changed. Events from other universes' tabs would otherwise
+    // trigger a render cycle that produces identical output (we don't
+    // even read those keys). Universe enumeration is similarly
+    // sticky — the dropdown is built once at boot; the user opens the
+    // page again to pick up a new universe.
+    const keysToWatch = [
+      historyKeyFor(selectedUniverseId),
+      scansKeyFor(selectedUniverseId),
+      colPositionsKeyFor(selectedUniverseId),
+    ];
+    if (keysToWatch.some((k) => k in changes)) {
       void loadAll().then(renderAll);
     }
   });
+};
+
+/**
+ * Enumerate every universe with persisted data by scanning
+ * `chrome.storage.local` for keys matching the `<universeId>:oge_*`
+ * pattern. Returns the sorted, de-duplicated list of universe ids.
+ *
+ * A universe id is the prefix portion of a key that ends in one of
+ * the namespaced base suffixes — typically `oge_colonyHistory` or
+ * `oge_galaxyScans`. The settings mirror (`oge_colPositions`) is also
+ * recognised so a fresh universe that has only the mirror written
+ * (no scans / no colonies yet) still shows up.
+ *
+ * @returns {Promise<string[]>}
+ */
+const discoverUniverses = async () => {
+  const all = await chromeStore.getAll();
+  /** @type {Set<string>} */
+  const ids = new Set();
+  const suffixes = [
+    `:${HISTORY_KEY_BASE}`,
+    `:${SCANS_KEY_BASE}`,
+    `:${COL_POSITIONS_KEY_BASE}`,
+  ];
+  for (const key of Object.keys(all)) {
+    for (const suffix of suffixes) {
+      if (key.endsWith(suffix)) {
+        ids.add(key.slice(0, key.length - suffix.length));
+        break;
+      }
+    }
+  }
+  return [...ids].sort();
+};
+
+/**
+ * Decide which universe should be active when the page first renders.
+ *
+ * Priority:
+ *   1. `?host=<universeId>` URL param (set by the Settings panel's
+ *      "Open histogram" button so opening from server X auto-selects
+ *      X) — but only when that universe is in the discovered list, OR
+ *      when the discovered list is empty (a freshly-opened universe
+ *      with no data yet still deserves to show up as the active tab).
+ *   2. The first universe in the alphabetically-sorted list.
+ *   3. Empty string — no data on any universe yet. The selector will
+ *      show an empty/placeholder option and Export/Import/etc. become
+ *      effectively no-ops until data lands.
+ *
+ * @param {string[]} universes
+ * @returns {string}
+ */
+const resolveInitialUniverse = (universes) => {
+  const fromUrl = new URLSearchParams(location.search).get('host') ?? '';
+  if (fromUrl) {
+    if (universes.includes(fromUrl)) return fromUrl;
+    // A fresh universe (just opened post-upgrade, no data yet) is
+    // legitimate — surface it so the player can see "this server has
+    // nothing recorded yet" rather than silently falling back to a
+    // different universe's data.
+    return fromUrl;
+  }
+  return universes[0] ?? '';
+};
+
+/**
+ * Render the universe-selector `<option>` list. Includes every
+ * discovered universe plus, if the URL-param universe isn't already
+ * in the list, the URL-param entry as a "(no data yet)" placeholder.
+ *
+ * @param {string[]} universes
+ * @param {string} active
+ * @returns {void}
+ */
+const populateUniverseSelect = (universes, active) => {
+  // Ensure the active universe is in the option list. resolveInitialUniverse
+  // can return a URL-param universe that has no data yet, in which case
+  // it would not appear in `universes`. We splice it in so the selector
+  // can show it as the active row.
+  const list = universes.slice();
+  if (active && !list.includes(active)) list.push(active);
+  list.sort();
+
+  // Clear and repopulate. The element starts empty; rebuilding from
+  // scratch is simpler than diffing and the option count is tiny
+  // (typically 1-5).
+  universeSelect.innerHTML = '';
+  if (list.length === 0) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = '(no servers recorded yet)';
+    universeSelect.appendChild(opt);
+    universeSelect.disabled = true;
+    return;
+  }
+  universeSelect.disabled = false;
+  for (const id of list) {
+    const opt = document.createElement('option');
+    opt.value = id;
+    opt.textContent = id;
+    if (id === active) opt.selected = true;
+    universeSelect.appendChild(opt);
+  }
 };
 
 /**
@@ -145,8 +306,71 @@ const wireDom = () => {
   chartEl = /** @type {HTMLElement} */ (document.getElementById('chart'));
   countInfoEl = /** @type {HTMLElement} */ (document.getElementById('countInfo'));
   posFilter = /** @type {HTMLSelectElement} */ (document.getElementById('posFilter'));
+  universeSelect = /** @type {HTMLSelectElement} */ (document.getElementById('universeSelect'));
   scansContainer = /** @type {HTMLElement} */ (document.getElementById('scansContainer'));
   importStatusEl = document.getElementById('importStatus');
+  freePosSelect = /** @type {HTMLSelectElement} */ (document.getElementById('freePosSelect'));
+  freeContainer = /** @type {HTMLElement} */ (document.getElementById('freeContainer'));
+  freeCountInfoEl = document.getElementById('freeCountInfo');
+};
+
+/**
+ * Apply the active class to one tab + section pair and strip it from
+ * the others. The DOM is the source of truth for which tab is visible;
+ * we persist the requested tab key to localStorage so a refresh
+ * restores the same view.
+ *
+ * Falls back to `DEFAULT_TAB` for any unknown `tabKey` (e.g. a corrupt
+ * localStorage value or a stale key from a build that had different
+ * tab names).
+ *
+ * @param {string} tabKey  `data-tab` value of the target button.
+ * @returns {void}
+ */
+const setActiveTab = (tabKey) => {
+  const buttons = document.querySelectorAll('.tab-btn');
+  const sections = document.querySelectorAll('.tab-section');
+
+  // Resolve the actual key we will use (input may not match any button).
+  /** @type {string} */
+  let resolved = DEFAULT_TAB;
+  for (const btn of buttons) {
+    if (/** @type {HTMLElement} */ (btn).dataset.tab === tabKey) {
+      resolved = tabKey;
+      break;
+    }
+  }
+
+  for (const btn of buttons) {
+    const key = /** @type {HTMLElement} */ (btn).dataset.tab;
+    btn.classList.toggle('active', key === resolved);
+  }
+  for (const section of sections) {
+    // section ids end in `Section` — strip that to get the tab key.
+    const id = section.id;
+    const key = id.endsWith('Section') ? id.slice(0, -'Section'.length) : id;
+    section.classList.toggle('active', key === resolved);
+  }
+  safeLS.set(ACTIVE_TAB_LS_KEY, resolved);
+};
+
+/**
+ * Wire the tab bar: read the last-active tab from localStorage,
+ * apply it, and attach a click handler to each `.tab-btn` so future
+ * clicks update both the DOM and the persisted preference.
+ *
+ * @returns {void}
+ */
+const wireTabs = () => {
+  const initial = safeLS.get(ACTIVE_TAB_LS_KEY) ?? DEFAULT_TAB;
+  setActiveTab(initial);
+
+  for (const btn of document.querySelectorAll('.tab-btn')) {
+    btn.addEventListener('click', () => {
+      const key = /** @type {HTMLElement} */ (btn).dataset.tab ?? DEFAULT_TAB;
+      setActiveTab(key);
+    });
+  }
 };
 
 /**
@@ -175,16 +399,24 @@ const persistExpanded = () => {
 
 /**
  * Refresh module-local caches (`history`, `scans`, `targetPositions`)
- * from chrome.storage.local. Single Promise.all so a cold start only
- * pays one round-trip.
+ * from chrome.storage.local for the currently-selected universe.
+ * Single Promise.all so a cold start only pays one round-trip. With
+ * no universe selected we resolve to empty collections so the render
+ * cycle can paint an "empty state" without branching.
  *
  * @returns {Promise<void>}
  */
 const loadAll = async () => {
+  if (!selectedUniverseId) {
+    history = [];
+    scans = {};
+    targetPositions = parseTargetPositions(DEFAULT_COL_POSITIONS);
+    return;
+  }
   const [h, s, p] = await Promise.all([
-    chromeStore.get(HISTORY_KEY),
-    chromeStore.get(SCANS_KEY),
-    chromeStore.get(COL_POSITIONS_KEY),
+    chromeStore.get(historyKeyFor(selectedUniverseId)),
+    chromeStore.get(scansKeyFor(selectedUniverseId)),
+    chromeStore.get(colPositionsKeyFor(selectedUniverseId)),
   ]);
   history = Array.isArray(h) ? /** @type {ColonyEntry[]} */ (h) : [];
   scans = s && typeof s === 'object' ? /** @type {GalaxyScans} */ (s) : {};
@@ -231,21 +463,36 @@ const renderAll = () => {
     // button in wireListeners; galaxy.js only holds the signature.
     onClearAll: () => {},
   });
+
+  // Free Positions section — runs over the same `scans` data with the
+  // currently-selected slot. Repainting on every renderAll keeps it in
+  // sync with universe changes / storage updates; the position select
+  // also has its own onchange listener that re-paints only this
+  // section without paying for the colony / galaxy passes.
+  renderFreeStreak({
+    containerEl: freeContainer,
+    countInfoEl: freeCountInfoEl,
+    scans,
+    position: parseInt(freePosSelect.value, 10) || 15,
+  });
 };
 
 /**
- * Delete every scan whose key starts with `"${g}:"`, then flag a
- * per-galaxy remote reset so the next sync cycle wipes the gist's
- * copy of this galaxy too. Without the remote-side wipe the union
- * merge would reintroduce the just-deleted local entries on the next
- * download. (Plain `triggerSync` is wrong here for the same reason —
- * it merges, it doesn't subtract.)
+ * Delete every scan whose key starts with `"${g}:"` from the selected
+ * universe's scans map, then flag a per-galaxy remote reset so the
+ * next sync cycle wipes the gist's copy of this galaxy too. Without
+ * the remote-side wipe the union merge would reintroduce the
+ * just-deleted local entries on the next download. (Plain
+ * triggerSync is wrong here for the same reason — it merges, it
+ * doesn't subtract.)
  *
  * @param {number} g
  * @returns {Promise<void>}
  */
 const resetGalaxy = async (g) => {
-  const raw = await chromeStore.get(SCANS_KEY);
+  if (!selectedUniverseId) return;
+  const scansKey = scansKeyFor(selectedUniverseId);
+  const raw = await chromeStore.get(scansKey);
   if (!raw || typeof raw !== 'object') return;
   /** @type {GalaxyScans} */
   const current = { .../** @type {GalaxyScans} */ (raw) };
@@ -254,8 +501,8 @@ const resetGalaxy = async (g) => {
       delete current[/** @type {`${number}:${number}`} */ (key)];
     }
   }
-  await chromeStore.set(SCANS_KEY, current);
-  await triggerResetGalaxy(g);
+  await chromeStore.set(scansKey, current);
+  await triggerResetGalaxy(g, selectedUniverseId);
 };
 
 /**
@@ -280,16 +527,18 @@ const wireListeners = () => {
   const importFile = /** @type {HTMLInputElement | null} */ (
     document.getElementById('importFile')
   );
-  const refreshBtn = document.getElementById('refreshBtn');
   const exportCsvBtn = document.getElementById('exportCsvBtn');
-  const refreshScansBtn = document.getElementById('refreshScansBtn');
   const clearScansBtn = document.getElementById('clearScansBtn');
 
   exportBtn?.addEventListener('click', () => {
-    void exportAllData().then(() => {
+    if (!selectedUniverseId) {
+      setStatus('No server selected.');
+      return;
+    }
+    void exportAllData(selectedUniverseId).then(() => {
       setStatus(
         'Exported ' + history.length + ' colonies, '
-        + Object.keys(scans).length + ' scans',
+        + Object.keys(scans).length + ' scans (' + selectedUniverseId + ')',
       );
     });
   });
@@ -299,40 +548,68 @@ const wireListeners = () => {
   importFile?.addEventListener('change', async () => {
     const file = importFile.files?.[0];
     if (!file) return;
-    const res = await importAllData(file);
+    if (!selectedUniverseId) {
+      setStatus('No server selected.');
+      importFile.value = '';
+      return;
+    }
+    const res = await importAllData(file, selectedUniverseId);
     if (res.warning) {
       setStatus('Error: ' + res.warning);
     } else {
       setStatus(
-        'Imported: +' + res.colonies + ' colonies, '
-        + '+' + res.scans + ' scans',
+        'Imported into ' + selectedUniverseId + ': +' + res.colonies
+        + ' colonies, +' + res.scans + ' scans',
       );
     }
     // Clear the input so re-selecting the same file fires `change`.
     importFile.value = '';
   });
 
-  refreshBtn?.addEventListener('click', () => {
-    void triggerSync();
-    void loadAll().then(renderAll);
+  exportCsvBtn?.addEventListener('click', () => {
+    if (!selectedUniverseId) {
+      setStatus('No server selected.');
+      return;
+    }
+    exportColonyCsv(history, selectedUniverseId);
   });
-
-  exportCsvBtn?.addEventListener('click', () => exportColonyCsv(history));
 
   posFilter.addEventListener('change', () => renderAll());
 
-  refreshScansBtn?.addEventListener('click', () => {
-    void triggerSync();
+  // Position-selector only repaints the Free Positions section. The
+  // underlying `scans` cache hasn't changed — only the slot we query
+  // against has — so the colony / galaxy passes would be wasted work.
+  freePosSelect.addEventListener('change', () => {
+    renderFreeStreak({
+      containerEl: freeContainer,
+      countInfoEl: freeCountInfoEl,
+      scans,
+      position: parseInt(freePosSelect.value, 10) || 15,
+    });
+  });
+
+  universeSelect.addEventListener('change', () => {
+    selectedUniverseId = universeSelect.value;
     void loadAll().then(renderAll);
   });
 
   clearScansBtn?.addEventListener('click', async () => {
+    if (!selectedUniverseId) return;
     if (!confirm(
-      'Clear all galaxy observation data?\n\n'
+      'Clear all galaxy observation data for ' + selectedUniverseId + '?\n\n'
       + 'This removes data from this device AND your cloud sync '
       + '(so it does not come back on the next page load).',
     )) return;
-    await chromeStore.remove(SCANS_KEY);
-    await triggerClearRemote();
+    await chromeStore.remove(scansKeyFor(selectedUniverseId));
+    await triggerClearRemote(selectedUniverseId);
   });
+
+  // Re-render on window resize so the colony chart's adaptive binning
+  // re-evaluates against the new chart width. Debounced (150 ms quiet
+  // window) because resize events fire at ~60 Hz during a drag — a
+  // bare listener would call renderAll dozens of times per second for
+  // no visible benefit. Galaxy map and Free Positions also repaint
+  // here but they're width-agnostic and the render is DOM-only
+  // (no storage round-trip), so the cost is negligible.
+  window.addEventListener('resize', debounce(() => renderAll(), 150));
 };

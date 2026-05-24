@@ -57,7 +57,7 @@
 
 /** @ts-check */
 
-import { waitFor } from '../lib/dom.js';
+import { waitFor, safeClick } from '../lib/dom.js';
 
 /** DOM id of the AGR menu-logo anchor. Idle by default; we hijack it. */
 const LOGO_ID = 'ago_menubutton_logo';
@@ -228,11 +228,15 @@ export const installAgrLogo = () => {
       e.preventDefault();
       e.stopImmediatePropagation();
       const menuBtn = document.getElementById(MENU_BUTTON_ID);
-      if (menuBtn) /** @type {HTMLElement} */ (menuBtn).click();
+      // safeClick (not bare .click()) — AGR's menu button and tab
+      // headers ship as `<a href="javascript:...">` anchors; bare
+      // .click() would navigate to the javascript: URL and the page
+      // CSP blocks that. safeClick strips the href first.
+      if (menuBtn) safeClick(menuBtn);
       pendingTabClick = setTimeout(() => {
         pendingTabClick = null;
         const tabHeader = document.getElementById(OGE_TAB_HEADER_ID);
-        if (tabHeader) /** @type {HTMLElement} */ (tabHeader).click();
+        if (tabHeader) safeClick(tabHeader);
       }, TAB_EXPAND_DELAY_MS);
     };
     logoEl.addEventListener('click', clickListener, true);

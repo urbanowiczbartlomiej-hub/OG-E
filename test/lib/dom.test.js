@@ -16,18 +16,26 @@ describe('safeClick', () => {
     document.body.innerHTML = '';
   });
 
-  it('removes a javascript: href before clicking (CSP workaround)', () => {
+  it('strips a javascript: href across the click then restores it (CSP workaround + CSS preservation)', () => {
     const a = document.createElement('a');
     a.setAttribute('href', 'javascript:alert(1)');
     document.body.appendChild(a);
 
-    // mockImplementation(() => {}) short-circuits the real click so we
-    // are counting dispatches, not triggering navigation side effects.
-    const clickSpy = vi.spyOn(a, 'click').mockImplementation(() => {});
+    // Observe the href value AT THE MOMENT of click — that is the
+    // window during which navigation would otherwise fire (and CSP
+    // would block it). We assert: (1) the href was absent during the
+    // click, (2) it is restored after the call returns, (3) the click
+    // event itself was dispatched exactly once.
+    /** @type {string | null} */
+    let hrefDuringClick = '<not-observed>';
+    const clickSpy = vi.spyOn(a, 'click').mockImplementation(() => {
+      hrefDuringClick = a.getAttribute('href');
+    });
 
     safeClick(a);
 
-    expect(a.hasAttribute('href')).toBe(false);
+    expect(hrefDuringClick).toBeNull();
+    expect(a.getAttribute('href')).toBe('javascript:alert(1)');
     expect(clickSpy).toHaveBeenCalledTimes(1);
   });
 

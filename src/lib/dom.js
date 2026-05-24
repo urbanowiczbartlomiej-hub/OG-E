@@ -25,7 +25,24 @@
 
 /**
  * Click an element, first stripping a `javascript:` href so the click
- * event fires even when the page's CSP forbids inline script URLs.
+ * event fires even when the page's CSP forbids inline script URLs,
+ * then restoring the original attribute so the element's CSS shape
+ * survives unchanged.
+ *
+ * # Why restore the href
+ *
+ * AGR (and similar host scripts) style their menu items via attribute
+ * selectors — typically `a[href]` or `a[href^="javascript:"]` carry
+ * the background, padding, and active-state rules. Leaving the
+ * attribute removed after a click silently strips the element of
+ * every dependent CSS rule, which looks to the user like "the menu
+ * lost its background and shifted left". `.click()` is synchronous —
+ * the event dispatch and every sync listener finish before this
+ * function returns — so writing the original href back immediately
+ * after the call is safe: handlers that ran during dispatch did so
+ * with the href absent (avoiding the CSP-blocked navigation), and
+ * the DOM is back to its original shape by the time anyone else
+ * reads it.
  *
  * We read the href through `getAttribute('href')` rather than `el.href`
  * because the property accessor returns a resolved URL string whose
@@ -39,7 +56,8 @@
 export const safeClick = (el) => {
   if (el === null) return;
   const href = el.getAttribute('href');
-  if (href !== null && href.startsWith('javascript:')) {
+  const needsStrip = href !== null && href.startsWith('javascript:');
+  if (needsStrip) {
     el.removeAttribute('href');
   }
   // Narrow to HTMLElement for the `.click()` call — the Element
@@ -48,6 +66,13 @@ export const safeClick = (el) => {
   // a sibling interface that structurally matches HTMLElement. A cast
   // is the path of least ceremony here.
   /** @type {HTMLElement} */ (el).click();
+  // Restore the original href so attribute-selector CSS keeps matching
+  // the element. The strip-then-restore cycle is invisible to the
+  // outside world because `.click()` is synchronous; only this
+  // function's frame ever sees the element in its href-less state.
+  if (needsStrip && href !== null) {
+    el.setAttribute('href', href);
+  }
 };
 
 /**

@@ -158,6 +158,11 @@ const pickStorage = () => {
  * @typedef {object} ChromeStore
  * @property {(key: string) => Promise<unknown>} get
  *   Resolve with the value at `key`, or `undefined` if missing / API absent.
+ * @property {() => Promise<Record<string, unknown>>} getAll
+ *   Resolve with every key/value pair currently in the storage area.
+ *   Used by the histogram page to enumerate which universes have data
+ *   (it scans the keys for the `<universeId>:oge_*` namespacing pattern).
+ *   Resolves to `{}` when the WebExtension API is absent.
  * @property {(key: string, value: unknown) => Promise<void>} set
  *   Persist `{ [key]: value }`. Resolves when the backing store acks.
  * @property {(key: string | string[]) => Promise<void>} remove
@@ -179,6 +184,23 @@ export const chromeStore = {
       api.local.get(key, (items) => {
         resolve(items ? items[key] : undefined);
       });
+    }),
+
+  getAll: () =>
+    new Promise((resolve) => {
+      const api = pickStorage();
+      if (!api) {
+        resolve({});
+        return;
+      }
+      // `get` accepts a key, an array of keys, an object of defaults, or
+      // `null` for "everything". The wrapper's typed signature only
+      // promises the string form, but the underlying API tolerates the
+      // null sentinel — chrome.storage.local has no key-enumeration
+      // method, so this is the canonical way to list all keys.
+      /** @type {(items: Record<string, unknown>) => void} */
+      const cb = (items) => resolve(items || {});
+      /** @type {any} */ (api.local.get)(null, cb);
     }),
 
   set: (key, value) =>

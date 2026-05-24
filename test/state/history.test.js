@@ -33,7 +33,8 @@ import {
   initHistoryStore,
   disposeHistoryStore,
   whenHistoryHydrated,
-  HISTORY_KEY,
+  HISTORY_KEY_BASE,
+  historyKeyFor,
 } from '../../src/state/history.js';
 
 /** @typedef {import('../../src/state/history.js').ColonyEntry} ColonyEntry */
@@ -106,17 +107,21 @@ describe('historyStore (module)', () => {
     });
   });
 
-  describe('HISTORY_KEY', () => {
-    it("is the documented 'oge_colonyHistory'", () => {
+  describe('storage key', () => {
+    it("HISTORY_KEY_BASE is the documented suffix 'oge_colonyHistory'", () => {
       // Pinning the exact string guards against an accidental rename —
-      // the key is the wire contract with chrome.storage.local and the
-      // sync payload.
-      expect(HISTORY_KEY).toBe('oge_colonyHistory');
+      // the suffix is half of the wire contract with chrome.storage.local
+      // (the universe id is the other half — see historyKeyFor).
+      expect(HISTORY_KEY_BASE).toBe('oge_colonyHistory');
+    });
+
+    it('historyKeyFor composes a per-universe namespaced key', () => {
+      expect(historyKeyFor('s163-pl')).toBe('s163-pl:oge_colonyHistory');
     });
   });
 
   describe('initHistoryStore — hydration', () => {
-    it('reads via chromeStore.get with HISTORY_KEY', () => {
+    it('reads via chromeStore.get with HISTORY_KEY (node env: falls back to bare suffix)', () => {
       initHistoryStore();
       expect(chromeStore.get).toHaveBeenCalledTimes(1);
       expect(chromeStore.get).toHaveBeenCalledWith('oge_colonyHistory');

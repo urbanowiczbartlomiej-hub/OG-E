@@ -407,12 +407,19 @@ describe('installColonyRecorder — hydration race regression', () => {
     // anything shorter means a write-through fired while the store was
     // mid-race. We don't pin the exact call count (the hydrate echo
     // also fires a save with the 2-row stored snapshot) but the last
-    // observed payload must include the new colony.
+    // observed payload must include the new colony. We also don't pin
+    // the exact storage KEY — under happy-dom `location.host` is
+    // `'localhost'` and the per-universe namespace puts the data under
+    // `'localhost:oge_colonyHistory'` here; under a real Gameforge tab
+    // it would be `'s163-pl:oge_colonyHistory'`. Reading the single
+    // value out of the payload sidesteps that.
     expect(setSpy).toHaveBeenCalled();
     const lastCall = setSpy.mock.calls[setSpy.mock.calls.length - 1];
-    /** @type {{ oge_colonyHistory: ColonyEntry[] }} */
+    /** @type {Record<string, ColonyEntry[]>} */
     const lastPayload = lastCall[0];
-    expect(lastPayload.oge_colonyHistory.map((e) => e.cp)).toEqual([11111, 22222, 33333]);
+    const values = Object.values(lastPayload);
+    expect(values).toHaveLength(1);
+    expect(values[0].map((e) => e.cp)).toEqual([11111, 22222, 33333]);
   });
 
   it('skips the write when the in-flight hydrate already contains this cp', async () => {

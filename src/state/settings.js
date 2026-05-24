@@ -48,6 +48,7 @@
 
 import { createStore } from '../lib/createStore.js';
 import { chromeStore, safeLS } from '../lib/storage.js';
+import { parseUniverseId } from '../lib/universeId.js';
 
 /**
  * Shared prefix for every localStorage key this module owns. Kept exported
@@ -79,6 +80,7 @@ export const SETTINGS_PREFIX = 'oge_';
  *   cloudSync               false — enable Gist-based cross-device sync
  *   gistToken               ''    — GitHub personal access token
  *   readabilityBoost        true  — inject CSS fix for event box + movement link
+ *   eventMenuHighlight      true  — animate event menu entries + alert banner in #middle
  *
  * @typedef {object} Settings
  * @property {boolean} mobileMode
@@ -96,6 +98,7 @@ export const SETTINGS_PREFIX = 'oge_';
  * @property {boolean} cloudSync
  * @property {string}  gistToken
  * @property {boolean} readabilityBoost
+ * @property {boolean} eventMenuHighlight
  */
 
 /**
@@ -148,6 +151,7 @@ export const SETTINGS_SCHEMA = {
   cloudSync:              { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'cloudSync' },
   gistToken:              { type: 'string', default: '',    key: SETTINGS_PREFIX + 'gistToken' },
   readabilityBoost:       { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'readabilityBoost' },
+  eventMenuHighlight:     { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'eventMenuHighlight' },
 };
 
 /**
@@ -324,16 +328,46 @@ export const disposeSettingsStore = () => {
 // leak sensitive fields (`gistToken`, `colPassword`) into a second
 // storage area for no benefit. Today that's just `colPositions`.
 //
-// @see ../features/histogram/index.js — COL_POSITIONS_KEY reader
+// Per-universe: the actual key written is
+// `<universeId>:oge_colPositions` so two servers' mirrors don't
+// clobber each other in the shared `chrome.storage.local` area. The
+// histogram reads the mirror for the currently-selected universe.
+//
+// @see ../features/histogram/index.js — colPositions reader
 
 /**
- * chrome.storage.local key the histogram reads. Matches
- * `features/histogram/index.js:COL_POSITIONS_KEY`. Keep the two in
- * sync if either side changes — they don't import a shared constant
- * because they live in different module trees (state vs. features)
- * and a shared constants module would be overkill for one string.
+ * Suffix portion of the chrome.storage.local key the histogram reads.
+ * The actual key is `<universeId>:<COL_POSITIONS_KEY_BASE>` — see
+ * {@link colPositionsKeyFor}. Exported so the histogram can compose
+ * a key for the selected universe without re-deriving the suffix.
  */
-const COL_POSITIONS_KEY = 'oge_colPositions';
+export const COL_POSITIONS_KEY_BASE = 'oge_colPositions';
+
+/**
+ * Compose the per-universe chrome.storage.local key for the
+ * `colPositions` mirror. Histogram side imports this; mirror code
+ * below resolves `location.host` at write time.
+ *
+ * @param {string} universeId  e.g. `'s163-pl'` from
+ *   {@link parseUniverseId}.
+ * @returns {string}
+ */
+export const colPositionsKeyFor = (universeId) =>
+  `${universeId}:${COL_POSITIONS_KEY_BASE}`;
+
+/**
+ * Resolve the mirror key for the current tab's universe. Defensive
+ * fallback to the base suffix when `location` is unavailable (node
+ * tests) — production always has `location` because the manifest
+ * restricts this module to game-origin tabs.
+ *
+ * @returns {string}
+ */
+const currentColPositionsKey = () => {
+  if (typeof location === 'undefined') return COL_POSITIONS_KEY_BASE;
+  const id = parseUniverseId(location.host);
+  return id ? colPositionsKeyFor(id) : COL_POSITIONS_KEY_BASE;
+};
 
 /**
  * Active install handle, or `null` when the mirror is not installed.
@@ -366,7 +400,7 @@ export const installSettingsMirror = () => {
   // the histogram page has already started — and haven't yet changed a
   // setting — would see the histogram stuck on its default filter.
   let last = settingsStore.get().colPositions;
-  void chromeStore.set(COL_POSITIONS_KEY, last);
+  void chromeStore.set(currentColPositionsKey(), last);
 
   const unsubscribe = settingsStore.subscribe((settings) => {
     // Diff-guarded write: the store notifies on ANY field change, but
@@ -376,7 +410,7 @@ export const installSettingsMirror = () => {
     // in every consuming origin).
     if (settings.colPositions !== last) {
       last = settings.colPositions;
-      void chromeStore.set(COL_POSITIONS_KEY, last);
+      void chromeStore.set(currentColPositionsKey(), last);
     }
   });
 

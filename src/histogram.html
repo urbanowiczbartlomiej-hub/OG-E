@@ -19,6 +19,34 @@
   .controls button.danger { background: #4a2a2a; border-color: #6a3a3a; color: #ff8888; }
   .controls button.danger:hover { background: #6a3a3a; }
 
+  /* Single horizontal top bar: tabs on the left as primary navigation,
+     tools (server selector + Export/Import) on the right as technical
+     operations. Both clusters use their own internal flex; `justify-
+     content: space-between` on the bar keeps them anchored to their
+     edges, and `flex-wrap: wrap` falls back to two rows on viewports
+     too narrow to fit everything in one line. */
+  .top-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap;
+    margin-bottom: 20px; padding: 6px 10px;
+    background: #111820; border: 1px solid #2a4a5a; border-radius: 8px;
+  }
+  .tabs { display: flex; gap: 4px; }
+  .tab-btn {
+    background: transparent; border: 1px solid transparent;
+    color: #888; padding: 6px 14px; font-size: 13px; cursor: pointer;
+    border-radius: 6px;
+  }
+  .tab-btn:hover { color: #ccc; background: #1a2a3a; }
+  .tab-btn.active {
+    color: #fff; background: #2a4a6a; border-color: #4a9eff;
+    font-weight: bold;
+  }
+  .tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .tools .label { color: #4a9eff; font-weight: bold; font-size: 14px; }
+  .tab-section { display: none; }
+  .tab-section.active { display: block; }
+
   .stats { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
   .stat-card {
     background: #1a2a3a; border: 1px solid #2a4a5a; border-radius: 8px;
@@ -28,18 +56,24 @@
   .stat-card .stat-label { font-size: 11px; color: #888; margin-top: 2px; }
 
   .chart-container { margin-bottom: 20px; }
-  /* align-items: stretch so bar-group takes full 300px height → bar's height:X% gets a real base */
+  /* align-items: stretch so bar-group takes full 300px height → bar's height:X% gets a real base.
+     overflow: hidden (was overflow-x:auto) + flex:1 1 0 on bar-group + min-width:0 below
+     lets the whole 100..300-bucket distribution shrink to whatever width the viewport allows.
+     At extreme bucket counts the labels get cramped, but the chart shape stays visible without
+     a horizontal scrollbar; tooltips on each bar carry the exact fields/count. */
   .chart {
-    display: flex; align-items: stretch; gap: 2px; height: 300px;
+    display: flex; align-items: stretch; gap: 1px; height: 300px;
     border-left: 1px solid #2a4a5a; border-bottom: 1px solid #2a4a5a;
     padding: 0 0 0 4px; position: relative;
-    overflow-x: auto; overflow-y: hidden;
+    overflow: hidden;
   }
-  /* justify-content: flex-end pushes count → bar → label stack to the bottom of the 300px group */
+  /* justify-content: flex-end pushes count → bar → label stack to the bottom of the 300px group.
+     flex: 1 1 0 + min-width: 0 allows the bar-group to shrink below its natural content size
+     so 140 buckets share the viewport width instead of forcing horizontal scroll. */
   .bar-group {
     display: flex; flex-direction: column; align-items: center;
     justify-content: flex-end;
-    flex: 1 0 18px; min-width: 18px;
+    flex: 1 1 0; min-width: 0;
     height: 100%;
   }
   .bar {
@@ -48,52 +82,100 @@
     min-height: 2px;
   }
   .bar:hover { background: #6ab4ff; }
-  .bar-label { font-size: 10px; color: #888; margin-top: 4px; writing-mode: vertical-rl; text-orientation: mixed; height: 40px; flex-shrink: 0; }
-  .bar-count { font-size: 10px; color: #fff; margin-bottom: 2px; flex-shrink: 0; }
+  /* overflow: hidden on the label rows so when the bar-group becomes very thin (high
+     bucket counts), the rotated labels and counts clip cleanly inside their own group
+     instead of bleeding into neighbours.
+     Both the field label below the bar AND the count above use vertical-rl so they
+     occupy the same narrow column the bar does — single-digit counts look unchanged,
+     multi-digit counts ("23", "150") stack vertically instead of overflowing the bar
+     width. max-height caps the count column at ~4 digits to keep the chart area
+     reservation predictable (see BAR_AREA_PX in features/histogram/colony.js). */
+  .bar-label { font-size: 10px; color: #888; margin-top: 4px; writing-mode: vertical-rl; text-orientation: mixed; height: 40px; flex-shrink: 0; overflow: hidden; }
+  .bar-count { font-size: 10px; color: #fff; margin-bottom: 2px; writing-mode: vertical-rl; text-orientation: mixed; max-height: 36px; flex-shrink: 0; overflow: hidden; }
 
   .empty { text-align: center; color: #666; padding: 60px; font-size: 16px; }
+
+  /* Free Positions table */
+  .streak-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  .streak-table th, .streak-table td {
+    padding: 8px 12px; text-align: left;
+    border-bottom: 1px solid #1a2a3a; font-size: 13px;
+  }
+  .streak-table th { color: #4a9eff; font-weight: bold; background: #111820; }
+  .streak-table tbody tr:hover { background: #161e28; }
+  .streak-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .streak-record {
+    background: #1a2a3a; border: 1px solid #2a4a5a; border-radius: 8px;
+    padding: 12px 18px; margin-top: 16px; font-size: 14px;
+  }
+  .streak-record .label { color: #888; font-size: 12px; }
+  .streak-record .value { color: #4a9eff; font-weight: bold; }
 </style>
 </head>
 <body>
 
-<div class="controls" style="margin-bottom:20px;padding:10px;background:#111820;border:1px solid #2a4a5a;border-radius:8px;">
-  <span style="color:#4a9eff;font-weight:bold;font-size:14px;">Data</span>
-  <button id="exportBtn">Export JSON</button>
-  <button id="importBtn">Import JSON</button>
-  <input type="file" id="importFile" accept=".json" style="display:none;">
-  <span id="importStatus" style="color:#888;font-size:12px;"></span>
+<div class="top-bar">
+  <div class="tabs" role="tablist">
+    <button class="tab-btn" data-tab="colony" role="tab">Colony Sizes</button>
+    <button class="tab-btn" data-tab="galaxy" role="tab">Galaxy Observations</button>
+    <button class="tab-btn" data-tab="free"   role="tab">Free Positions</button>
+  </div>
+  <div class="tools">
+    <span class="label">Server</span>
+    <select id="universeSelect" title="Pick which OGame universe to view. Switching reloads all data on this page."></select>
+    <button id="exportBtn">Export JSON</button>
+    <button id="importBtn">Import JSON</button>
+    <input type="file" id="importFile" accept=".json" style="display:none;">
+    <span id="importStatus" style="color:#888;font-size:12px;"></span>
+  </div>
 </div>
 
-<h1>Colony Size Histogram</h1>
-<p style="color:#888;font-size:13px;margin-bottom:16px;">
-  Field sizes of planets you have personally visited (recorded the first time you opened each overview page).
-  No new data is requested — this is a read-only view of data already stored locally on this device.
-</p>
+<section id="colonySection" class="tab-section">
+  <h1>Colony Size Histogram</h1>
+  <p style="color:#888;font-size:13px;margin-bottom:16px;">
+    Field sizes of planets you have personally visited (recorded the first time you opened each overview page).
+    No new data is requested — this is a read-only view of data already stored locally on this device.
+  </p>
 
-<div class="controls">
-  <label>Position filter:</label>
-  <select id="posFilter"><option value="all">All positions</option></select>
-  <button id="refreshBtn">Refresh</button>
-  <button id="exportCsvBtn">Export CSV</button>
-  <span id="countInfo" style="color:#888;font-size:13px;margin-left:auto;"></span>
-</div>
+  <div class="controls">
+    <label>Position filter:</label>
+    <select id="posFilter"><option value="all">All positions</option></select>
+    <button id="exportCsvBtn">Export CSV</button>
+    <span id="countInfo" style="color:#888;font-size:13px;margin-left:auto;"></span>
+  </div>
 
-<div class="stats" id="statsContainer"></div>
-<div class="chart-container"><div class="chart" id="chart"></div></div>
+  <div class="stats" id="statsContainer"></div>
+  <div class="chart-container"><div class="chart" id="chart"></div></div>
+</section>
 
-<hr style="border-color:#2a4a5a;margin:30px 0;">
+<section id="galaxySection" class="tab-section">
+  <h1>Galaxy Observations</h1>
+  <p style="color:#888;font-size:13px;margin-bottom:16px;">
+    Per-system summary of positions you have navigated past in the in-game galaxy view.
+    Data was recorded only for galaxy pages you yourself opened. Filtered by the target
+    positions list from settings (only those positions count toward the stats below).
+  </p>
+  <div class="controls">
+    <button id="clearScansBtn" class="danger">Clear observation data</button>
+  </div>
+  <div id="scansContainer"></div>
+</section>
 
-<h1>Galaxy Observations</h1>
-<p style="color:#888;font-size:13px;margin-bottom:16px;">
-  Per-system summary of positions you have navigated past in the in-game galaxy view.
-  Data was recorded only for galaxy pages you yourself opened. Filtered by the target
-  positions list from settings (only those positions count toward the stats below).
-</p>
-<div class="controls">
-  <button id="refreshScansBtn">Refresh</button>
-  <button id="clearScansBtn" class="danger">Clear observation data</button>
-</div>
-<div id="scansContainer"></div>
+<section id="freeSection" class="tab-section">
+  <h1>Free Positions — longest confirmed empty runs</h1>
+  <p style="color:#888;font-size:13px;margin-bottom:16px;">
+    For each scanned galaxy, the longest contiguous run of systems whose chosen slot
+    is confirmed <code style="color:#4a9eff;">empty</code>. An unscanned system, or a
+    scanned system with a different status, breaks the run — reported lengths are a
+    lower bound on what actually exists, so they only grow as you keep scanning.
+  </p>
+  <div class="controls">
+    <label>Slot position:</label>
+    <select id="freePosSelect" title="Which of the 15 planet slots to analyse."></select>
+    <span id="freeCountInfo" style="color:#888;font-size:13px;margin-left:auto;"></span>
+  </div>
+  <div id="freeContainer"></div>
+</section>
 
 <script src="histogram.js"></script>
 </body>

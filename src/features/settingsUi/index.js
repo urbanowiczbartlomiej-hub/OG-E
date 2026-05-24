@@ -59,6 +59,7 @@
 // @see ../../state/settings.js — the store this module's controls bind to.
 
 import { settingsStore } from '../../state/settings.js';
+import { safeClick } from '../../lib/dom.js';
 import { SECTIONS } from './sections/index.js';
 import {
   buildRow,
@@ -223,7 +224,9 @@ const buildTab = () => {
       for (const t of others) {
         if (t === tab) continue;
         const otherHeader = t.querySelector('.ago_menu_tab_header');
-        if (otherHeader) /** @type {HTMLElement} */ (otherHeader).click();
+        // safeClick — AGR ships tab headers as `<a href="javascript:...">`,
+        // bare .click() would trigger a CSP-blocked javascript: navigation.
+        if (otherHeader) safeClick(otherHeader);
       }
     }
     applyCollapse(tab, isOpen);

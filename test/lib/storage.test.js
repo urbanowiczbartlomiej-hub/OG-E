@@ -231,6 +231,44 @@ describe('chromeStore', () => {
     });
   });
 
+  describe('getAll', () => {
+    it('forwards the null sentinel to api.get and returns every key/value pair', async () => {
+      // Override the outer beforeEach mock with one that ignores the
+      // key argument and returns a multi-key payload — modeling the
+      // canonical `chrome.storage.local.get(null, cb)` behavior.
+      localApi.get.mockImplementationOnce(
+        (
+          /** @type {string | null} */ _k,
+          /** @type {(items: Record<string, unknown>) => void} */ cb,
+        ) => {
+          cb({ a: 1, 'b:oge_galaxyScans': { foo: 'bar' }, 'c:oge_colonyHistory': [] });
+        },
+      );
+
+      const items = await chromeStore.getAll();
+      expect(items).toEqual({
+        a: 1,
+        'b:oge_galaxyScans': { foo: 'bar' },
+        'c:oge_colonyHistory': [],
+      });
+      expect(localApi.get).toHaveBeenCalledTimes(1);
+      expect(localApi.get).toHaveBeenCalledWith(null, expect.any(Function));
+    });
+
+    it('resolves to {} when the backing response is empty', async () => {
+      localApi.get.mockImplementationOnce(
+        (
+          /** @type {string | null} */ _k,
+          /** @type {(items: Record<string, unknown>) => void} */ cb,
+        ) => {
+          cb({});
+        },
+      );
+      const items = await chromeStore.getAll();
+      expect(items).toEqual({});
+    });
+  });
+
   describe('remove', () => {
     it('forwards a string key to api.remove and resolves void', async () => {
       const result = await chromeStore.remove('my-key');
@@ -296,6 +334,11 @@ describe('chromeStore', () => {
     it('get resolves with undefined', async () => {
       const value = await chromeStore.get('k');
       expect(value).toBeUndefined();
+    });
+
+    it('getAll resolves with {} (no throw)', async () => {
+      const items = await chromeStore.getAll();
+      expect(items).toEqual({});
     });
 
     it('set resolves with void (no throw)', async () => {

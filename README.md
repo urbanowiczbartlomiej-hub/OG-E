@@ -33,9 +33,13 @@ talks to the game server on your behalf.
   your `colMinFields` threshold, a big red overlay offers abandon in
   three clicks. The buttons are injected inside the game's own popups
   for mobile safety.
-- **Histogram + galaxy map** — extension page with colony-size bar
-  chart and 499-pixel galaxy observation maps. Per-galaxy reset,
-  export/import JSON, no telemetry.
+- **Histogram + galaxy map** — extension page with three tabs:
+  *Colony Sizes* (bar chart with adaptive binning), *Galaxy
+  Observations* (499-pixel maps + per-galaxy reset), and *Free
+  Positions* (longest confirmed-empty runs per slot, top-20 table).
+  Server selector at the top: each OGame universe keeps its own
+  data slice, settings, and gist sync target. Export/import JSON,
+  no telemetry.
 - **Cloud sync** — cross-device sync through *your own* private GitHub
   gist. gzip-compressed payload (~6× smaller), 15 s debounce, anti-loop
   via a `changed` flag.
@@ -71,7 +75,7 @@ For a packaged release, see [`CONTRIBUTING.md`](CONTRIBUTING.md)
 ```bash
 npm install
 npm run dev           # rollup watch, rebuilds dist/ on save
-npm run test          # vitest, ~650 tests
+npm run test          # vitest, ~775 tests
 npm run typecheck     # tsc --noEmit, JSDoc-as-types
 npm run build:prod    # minified dist/ (terser, console dropped)
 ```

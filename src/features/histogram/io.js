@@ -5,14 +5,24 @@
 //
 // This module is the only place the histogram page talks to
 // `chrome.storage.local` for the export/import round-trip and for the
-// two tombstone keys the sync scheduler observes. It never hits the
+// tombstone keys the sync scheduler observes. It never hits the
 // network — all downloads go through Blob + ObjectURL, and neither
 // `fetch()` nor `XMLHttpRequest` appear anywhere in this file.
+//
+// # Per-universe scope
+//
+// Every storage operation here is scoped to a `universeId` passed in
+// by the caller (the histogram's server-selector dropdown). The base
+// suffixes (`oge_colonyHistory`, `oge_galaxyScans`, ...) and the
+// `*KeyFor` composers are imported from the state / sync modules that
+// own them, so this file does not re-declare any key string — keeping
+// the wire contract single-sourced.
 //
 // Shape of the exported JSON:
 //   {
 //     version: 1,
 //     exportedAt: <ISO>,
+//     universeId: <e.g. "s163-pl">,
 //     colonyHistory: ColonyEntry[],
 //     galaxyScans:   GalaxyScans
 //   }
@@ -24,52 +34,25 @@
 //   - galaxyScans:   per key, newer `scannedAt` wins.
 //
 // Old export files may include a `deletedColonies` field; it is
-// silently ignored on import (only `version` is validated).
+// silently ignored on import (only `version` is validated). The
+// `universeId` field on the import payload is also ignored at
+// import time — the caller's currently-selected universe owns the
+// merge target, so a file exported from s163 can be imported into s164.
 
 import { chromeStore } from '../../lib/storage.js';
+import { historyKeyFor } from '../../state/history.js';
+import { scansKeyFor } from '../../state/scans.js';
+import {
+  syncRequestKeyFor,
+  clearRemoteKeyFor,
+  resetGalaxyKeyFor,
+} from '../../sync/scheduler.js';
 
 /**
  * @typedef {import('../../state/history.js').ColonyEntry} ColonyEntry
  * @typedef {import('../../state/history.js').ColonyHistory} ColonyHistory
  * @typedef {import('../../state/scans.js').GalaxyScans} GalaxyScans
  */
-
-/**
- * chrome.storage.local key for the colony-history array. Mirrors the
- * constant re-exported from `state/history.js`; we re-declare it here
- * so the histogram page can read/write without depending on the state
- * module (which would drag the persist/store wiring along on import).
- */
-export const HISTORY_KEY = 'oge_colonyHistory';
-
-/** chrome.storage.local key for the full galaxy-scan map. */
-export const SCANS_KEY = 'oge_galaxyScans';
-
-/**
- * Tombstone written when the user clicks "Sync now". The sync
- * scheduler (running in the game-origin content script) observes the
- * change via `chrome.storage.onChanged` and forces an upload cycle.
- * Its value is a Date.now() timestamp — the scheduler only cares that
- * it changed, not about the exact number.
- */
-export const SYNC_REQUEST_KEY = 'oge_syncRequestAt';
-
-/**
- * Tombstone written when the user clicks "Clear remote". Tells the
- * sync scheduler to wipe the remote gist contents so local state
- * does not re-upload the scans we just deleted.
- */
-export const CLEAR_REMOTE_KEY = 'oge_clearRemoteAt';
-
-/**
- * Tombstone for per-galaxy reset. Value shape `"<galaxy>:<timestamp>"`
- * — including the timestamp ensures resetting the same galaxy twice
- * still fires `chrome.storage.onChanged` (it only triggers when value
- * actually changes). The scheduler parses out the galaxy id and runs
- * the matching `clearGistScansForGalaxy(g)` so the union merge doesn't
- * undo the local delete on the next sync round-trip.
- */
-export const RESET_GALAXY_KEY = 'oge_resetGalaxyAt';
 
 /** Schema version embedded in the exported JSON payload. */
 const EXPORT_VERSION = 1;
@@ -121,20 +104,24 @@ const readFileAsText = (file) =>
   });
 
 /**
- * Download the full dataset as a pretty-printed JSON file. Missing
- * keys (nothing recorded yet, or the WebExtension API is absent) are
- * exported as the appropriate empty collection so the file always
- * round-trips cleanly. When the API is absent and `document` is missing
- * (node tests), this resolves without writing — the Blob step itself
- * requires `document.createElement('a')`, so the guard below makes the
- * "stripped context" case a no-op rather than a throw.
+ * Download the selected universe's dataset as a pretty-printed JSON
+ * file. Missing keys (nothing recorded yet, or the WebExtension API is
+ * absent) are exported as the appropriate empty collection so the file
+ * always round-trips cleanly. When the API is absent and `document` is
+ * missing (node tests), this resolves without writing — the Blob step
+ * itself requires `document.createElement('a')`, so the guard below
+ * makes the "stripped context" case a no-op rather than a throw.
  *
+ * Filename embeds the universe id so a user managing several servers
+ * can tell exports apart at a glance: `oge-s163-pl-2026-05-23.json`.
+ *
+ * @param {string} universeId  Selected universe (e.g. `'s163-pl'`).
  * @returns {Promise<void>}
  */
-export const exportAllData = async () => {
+export const exportAllData = async (universeId) => {
   const [history, scans] = await Promise.all([
-    chromeStore.get(HISTORY_KEY),
-    chromeStore.get(SCANS_KEY),
+    chromeStore.get(historyKeyFor(universeId)),
+    chromeStore.get(scansKeyFor(universeId)),
   ]);
 
   // Defensive narrowing — corrupt or absent values fall back to empty.
@@ -148,6 +135,7 @@ export const exportAllData = async () => {
   const payload = {
     version: EXPORT_VERSION,
     exportedAt: new Date().toISOString(),
+    universeId,
     colonyHistory,
     galaxyScans,
   };
@@ -159,7 +147,7 @@ export const exportAllData = async () => {
   const blob = new Blob([JSON.stringify(payload, null, 2)], {
     type: 'application/json',
   });
-  downloadBlob(blob, `oge-data-${todayIso()}.json`);
+  downloadBlob(blob, `oge-${universeId}-${todayIso()}.json`);
 };
 
 /**
@@ -210,20 +198,22 @@ const mergeScans = (local, imported) => {
 };
 
 /**
- * Parse a user-uploaded JSON file and merge it into
- * `chrome.storage.local`. Each field is independently optional — a file
- * may contain only `colonyHistory`, only `galaxyScans`, and the
- * other field is left untouched. Unknown fields (e.g. legacy exports'
- * `deletedColonies`) are silently ignored — only `version` is validated.
+ * Parse a user-uploaded JSON file and merge it into the selected
+ * universe's slot in `chrome.storage.local`. Each field is
+ * independently optional — a file may contain only `colonyHistory`,
+ * only `galaxyScans`, and the other field is left untouched. Unknown
+ * fields (legacy exports' `deletedColonies`, or the new `universeId`
+ * tag) are silently ignored — only `version` is validated.
  *
  * On parse failure or unsupported version, returns a zero-count result
  * with a `warning` describing the reason. This is the one place we
  * wrap awaits in try/catch because the failure mode IS user-visible.
  *
  * @param {File} file
+ * @param {string} universeId  Selected universe (destination of the merge).
  * @returns {Promise<{ colonies: number, scans: number, warning?: string }>}
  */
-export const importAllData = async (file) => {
+export const importAllData = async (file, universeId) => {
   /** @type {unknown} */
   let parsed;
   try {
@@ -242,11 +232,14 @@ export const importAllData = async (file) => {
     return { colonies: 0, scans: 0, warning: 'Unsupported version' };
   }
 
+  const historyKey = historyKeyFor(universeId);
+  const scansKey = scansKeyFor(universeId);
+
   let colonies = 0;
   let scans = 0;
 
   if (Array.isArray(imported.colonyHistory)) {
-    const localRaw = await chromeStore.get(HISTORY_KEY);
+    const localRaw = await chromeStore.get(historyKey);
     const local = /** @type {ColonyHistory} */ (
       Array.isArray(localRaw) ? localRaw : []
     );
@@ -254,12 +247,12 @@ export const importAllData = async (file) => {
       local,
       /** @type {ColonyHistory} */ (imported.colonyHistory),
     );
-    if (added > 0) await chromeStore.set(HISTORY_KEY, merged);
+    if (added > 0) await chromeStore.set(historyKey, merged);
     colonies = added;
   }
 
   if (imported.galaxyScans && typeof imported.galaxyScans === 'object') {
-    const localRaw = await chromeStore.get(SCANS_KEY);
+    const localRaw = await chromeStore.get(scansKey);
     const local = /** @type {GalaxyScans} */ (
       localRaw && typeof localRaw === 'object' ? localRaw : {}
     );
@@ -267,7 +260,7 @@ export const importAllData = async (file) => {
       local,
       /** @type {GalaxyScans} */ (imported.galaxyScans),
     );
-    if (changed > 0) await chromeStore.set(SCANS_KEY, merged);
+    if (changed > 0) await chromeStore.set(scansKey, merged);
     scans = changed;
   }
 
@@ -290,17 +283,22 @@ const csvField = (value) => {
 
 /**
  * Download the colony history as a CSV file. The caller passes the
- * already-loaded entries (typically from `historyStore.get()` in
- * `colony.js`) so this module stays free of store wiring.
+ * already-loaded entries (typically from the histogram page's
+ * module-scope cache populated by `chromeStore.get(historyKeyFor(...))`)
+ * so this module stays free of store wiring.
  *
  * Columns: CP, Coords, Position, Fields, Date (ISO).
  * Rows sorted by timestamp descending — most recent first, matching
  * the on-page list order.
  *
+ * Filename embeds the universe id for the same disambiguation reason
+ * as {@link exportAllData}.
+ *
  * @param {ColonyEntry[]} entries
+ * @param {string} universeId
  * @returns {void}
  */
-export const exportColonyCsv = (entries) => {
+export const exportColonyCsv = (entries, universeId) => {
   if (typeof document === 'undefined') return;
 
   const sorted = [...entries].sort((a, b) => b.timestamp - a.timestamp);
@@ -318,39 +316,47 @@ export const exportColonyCsv = (entries) => {
   const body = [header, ...rows].join('\n') + '\n';
 
   const blob = new Blob([body], { type: 'text/csv' });
-  downloadBlob(blob, 'oge-colony-history.csv');
+  downloadBlob(blob, `oge-${universeId}-colony-history.csv`);
 };
 
 /**
- * Request a forced sync cycle. Writes a timestamp to
- * {@link SYNC_REQUEST_KEY}; the sync scheduler observes the change
- * via `chrome.storage.onChanged` and uploads immediately.
+ * Request a forced sync cycle for the given universe. Writes a
+ * timestamp to that universe's namespaced sync tombstone; the sync
+ * scheduler running on a game tab for the SAME universe observes the
+ * change via `chrome.storage.onChanged` and uploads immediately. If no
+ * tab for that universe is currently open, the tombstone sits until
+ * one is — natural behaviour since sync requires a game tab anyway.
  *
+ * @param {string} universeId
  * @returns {Promise<void>}
  */
-export const triggerSync = () => chromeStore.set(SYNC_REQUEST_KEY, Date.now());
+export const triggerSync = (universeId) =>
+  chromeStore.set(syncRequestKeyFor(universeId), Date.now());
 
 /**
- * Request a remote-clear operation. Writes a timestamp to
- * {@link CLEAR_REMOTE_KEY}; the sync scheduler uses this to wipe
- * the Gist payload without letting local state re-upload the
- * now-deleted scans.
+ * Request a remote-clear operation for the given universe. Writes a
+ * timestamp to that universe's namespaced clear-remote tombstone; the
+ * sync scheduler uses this to wipe the Gist payload without letting
+ * local state re-upload the now-deleted scans.
  *
+ * @param {string} universeId
  * @returns {Promise<void>}
  */
-export const triggerClearRemote = () =>
-  chromeStore.set(CLEAR_REMOTE_KEY, Date.now());
+export const triggerClearRemote = (universeId) =>
+  chromeStore.set(clearRemoteKeyFor(universeId), Date.now());
 
 /**
- * Request a remote-side reset for a single galaxy. Writes
- * `"<galaxy>:<Date.now()>"` to {@link RESET_GALAXY_KEY} so back-to-back
- * resets of the same galaxy each fire a fresh `onChanged` event. The
- * scheduler reads the galaxy id and runs `clearGistScansForGalaxy`.
- * Pair with the local `chromeStore.set(SCANS_KEY, ...)` that already
- * dropped the galaxy's keys on this device.
+ * Request a remote-side reset for a single galaxy within the given
+ * universe. Writes `"<galaxy>:<Date.now()>"` to that universe's
+ * namespaced reset tombstone so back-to-back resets of the same galaxy
+ * each fire a fresh `onChanged` event. The scheduler reads the galaxy
+ * id and runs `clearGistScansForGalaxy`. Pair with the local
+ * `chromeStore.set(scansKeyFor(universeId), ...)` that already dropped
+ * the galaxy's keys on this device.
  *
  * @param {number} galaxy
+ * @param {string} universeId
  * @returns {Promise<void>}
  */
-export const triggerResetGalaxy = (galaxy) =>
-  chromeStore.set(RESET_GALAXY_KEY, `${galaxy}:${Date.now()}`);
+export const triggerResetGalaxy = (galaxy, universeId) =>
+  chromeStore.set(resetGalaxyKeyFor(universeId), `${galaxy}:${Date.now()}`);
