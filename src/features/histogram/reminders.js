@@ -251,23 +251,79 @@ const setPreviewStatus = (text, kind) => {
   el.remPreviewStatus.className = 'rem-status ' + kind;
 };
 
-/** @param {string} s */
-const esc = (s) =>
-  String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] || c));
+/**
+ * Create an element with an optional class and text. All dynamic values
+ * flow in through `textContent`, never markup — so the preview is built
+ * entirely from DOM nodes with no `innerHTML` assignment (avoids the
+ * AMO "unsafe innerHTML" warning and any injection surface).
+ *
+ * @param {string} tag
+ * @param {{ class?: string, text?: string }} [o]
+ * @returns {HTMLElement}
+ */
+const node = (tag, o = {}) => {
+  const n = document.createElement(tag);
+  if (o.class) n.className = o.class;
+  if (o.text != null) n.textContent = o.text;
+  return n;
+};
+
+/**
+ * Build the "Config (as last written…)" summary line as a node tree.
+ *
+ * @param {Partial<ReminderConfig>} cfg
+ * @returns {HTMLParagraphElement}
+ */
+const buildConfigLine = (cfg) => {
+  const p = /** @type {HTMLParagraphElement} */ (node('p'));
+  p.style.color = '#888';
+  p.style.marginBottom = '12px';
+  p.appendChild(document.createTextNode('Config (as last written by the game tab): '));
+
+  const enabled = node('strong', { text: cfg.enabled ? 'enabled' : 'disabled' });
+  enabled.style.color = cfg.enabled ? '#5fd08a' : '#ff8888';
+  p.appendChild(enabled);
+
+  const every = cfg.reminderEveryMinutes ?? '?';
+  const start = cfg.allowedHours?.start ?? '?';
+  const end = cfg.allowedHours?.end ?? '?';
+  const tz = cfg.timezone ?? '?';
+  const cap = cfg.maxNotificationsPerWave ?? '?';
+  p.appendChild(document.createTextNode(
+    `, every ${every} min, ${start}–${end} (${tz}), cap ${cap}, topic `,
+  ));
+
+  const code = node('code');
+  if (cfg.ntfyTopic) code.textContent = cfg.ntfyTopic;
+  else code.appendChild(node('em', { text: 'not set' }));
+  p.appendChild(code);
+  p.appendChild(document.createTextNode('.'));
+  return p;
+};
 
 /**
  * Render the reminder state into the preview panel. Shows the config
  * block as last written, then each wave with its return time, fleet
  * count, origins, overdue badge, and the Worker's notify counters.
  *
+ * Built entirely with `document.createElement` + `textContent` — no
+ * `innerHTML`, so untrusted gist content can never be interpreted as
+ * markup.
+ *
  * @param {ReminderState | null} state
  * @returns {void}
  */
 const renderPreview = (state) => {
   if (!el.remPreview) return;
+  const root = el.remPreview;
+  root.textContent = ''; // clear safely (no innerHTML)
+
   if (!state || !Array.isArray(state.waves)) {
-    el.remPreview.innerHTML =
-      '<p style="color:#888">No reminder data in the gist yet. Set a GitHub token + cloud sync in the game, then send your expeditions — they will appear here.</p>';
+    const p = node('p', {
+      text: 'No reminder data in the gist yet. Set a GitHub token + cloud sync in the game, then send your expeditions — they will appear here.',
+    });
+    p.style.color = '#888';
+    root.appendChild(p);
     return;
   }
 
@@ -275,42 +331,45 @@ const renderPreview = (state) => {
   const cfg = state.config || /** @type {ReminderConfig} */ ({});
   const notify = state.notifyState || {};
 
-  const configHtml = `
-    <p style="color:#888;margin-bottom:12px">
-      Config (as last written by the game tab):
-      <strong style="color:${cfg.enabled ? '#5fd08a' : '#ff8888'}">${cfg.enabled ? 'enabled' : 'disabled'}</strong>,
-      every ${esc(String(cfg.reminderEveryMinutes ?? '?'))} min,
-      ${esc(cfg.allowedHours?.start ?? '?')}–${esc(cfg.allowedHours?.end ?? '?')} (${esc(cfg.timezone ?? '?')}),
-      cap ${esc(String(cfg.maxNotificationsPerWave ?? '?'))},
-      topic <code>${cfg.ntfyTopic ? esc(cfg.ntfyTopic) : '<em>not set</em>'}</code>.
-    </p>`;
+  root.appendChild(buildConfigLine(cfg));
 
   if (state.waves.length === 0) {
-    el.remPreview.innerHTML = configHtml +
-      '<p style="color:#888">No outstanding waves right now. Send an expedition burst to create one.</p>';
+    const p = node('p', { text: 'No outstanding waves right now. Send an expedition burst to create one.' });
+    p.style.color = '#888';
+    root.appendChild(p);
     return;
   }
 
-  const wavesHtml = state.waves
-    .slice()
-    .sort((a, b) => a.nextWaveAt - b.nextWaveAt)
-    .map((w) => {
-      const due = nowSec >= w.nextWaveAt;
-      const when = new Date(w.nextWaveAt * 1000).toLocaleString();
-      const ns = notify[w.id] || { notifyCount: 0, lastNotifiedAt: null };
-      const last = ns.lastNotifiedAt ? new Date(ns.lastNotifiedAt * 1000).toLocaleTimeString() : '—';
-      const originsShort = (w.origins || []).join(', ');
-      return `
-        <div class="rem-wave ${due ? 'due' : ''}">
-          <div class="wave-head">
-            <span class="wave-when">${esc(when)}</span>
-            <span class="rem-badge ${due ? 'due' : ''}">${due ? 'overdue — re-send' : 'in flight'}</span>
-          </div>
-          <div class="wave-meta">${esc(String(w.fleetCount))} expeditions · pushes sent: ${esc(String(ns.notifyCount))} · last: ${esc(last)}</div>
-          <div class="wave-origins">${esc(originsShort)}</div>
-        </div>`;
-    })
-    .join('');
+  const sorted = state.waves.slice().sort((a, b) => a.nextWaveAt - b.nextWaveAt);
+  for (const w of sorted) {
+    const due = nowSec >= w.nextWaveAt;
+    const ns = notify[w.id] || { notifyCount: 0, lastNotifiedAt: null };
+    const last = ns.lastNotifiedAt
+      ? new Date(ns.lastNotifiedAt * 1000).toLocaleTimeString()
+      : '—';
 
-  el.remPreview.innerHTML = configHtml + wavesHtml;
+    const card = node('div', { class: 'rem-wave' + (due ? ' due' : '') });
+
+    const head = node('div', { class: 'wave-head' });
+    head.appendChild(node('span', {
+      class: 'wave-when',
+      text: new Date(w.nextWaveAt * 1000).toLocaleString(),
+    }));
+    head.appendChild(node('span', {
+      class: 'rem-badge' + (due ? ' due' : ''),
+      text: due ? 'overdue — re-send' : 'in flight',
+    }));
+    card.appendChild(head);
+
+    card.appendChild(node('div', {
+      class: 'wave-meta',
+      text: `${w.fleetCount} expeditions · pushes sent: ${ns.notifyCount} · last: ${last}`,
+    }));
+    card.appendChild(node('div', {
+      class: 'wave-origins',
+      text: (w.origins || []).join(', '),
+    }));
+
+    root.appendChild(card);
+  }
 };
