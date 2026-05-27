@@ -77,6 +77,8 @@ import { installSettingsUi } from './features/settingsUi/index.js';
 import { installAgrLogo } from './features/agrLogo.js';
 import { installFleetdispatchShortcut } from './features/fleetdispatchShortcut.js';
 import { installEventMenuHighlight } from './features/eventMenuHighlight.js';
+import { installExpeditionReminder } from './features/expeditionReminder/index.js';
+import { initReminderConfig } from './state/reminderConfig.js';
 
 import { installSync } from './sync/scheduler.js';
 
@@ -103,6 +105,11 @@ initRegistryStore();
   initScansStore();
   installSettingsMirror();
 
+  // Reminder config lives in chrome.storage (authored on the histogram
+  // tab, consumed here). Hydrate it so the expedition-reminder feature
+  // and any config-change push see real values.
+  initReminderConfig();
+
   // Top-frame-only: sync scheduler. OGame embeds several iframes;
   // running the gist round-trip in each would multiply API traffic
   // for no gain (the data is identical across frames). Sync doesn't
@@ -125,6 +132,13 @@ const installDomFeatures = () => {
   installColonyRecorder();
   installBadges();
   installEventMenuHighlight();
+
+  // Expedition-reminder producer — reads expedition return-flights from
+  // #eventContent and pushes wave state to the gist for the Cloudflare
+  // Worker. Top-frame only: it does gist IO, and running it in OGame's
+  // embedded iframes would multiply that API traffic for no gain (same
+  // reasoning as installSync). The event box lives in the top frame.
+  if (window.top === window.self) installExpeditionReminder();
 
   // User-facing buttons.
   installSendExp();

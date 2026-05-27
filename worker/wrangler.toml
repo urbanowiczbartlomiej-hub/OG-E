@@ -1,0 +1,18 @@
+name = "oge-expedition-reminder"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# Runs the reminder check once per minute.
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+# Gist id holding oge-reminders.json. NOT a secret — the gist is private
+# and protected by GIST_TOKEN; the id alone grants nothing.
+GIST_ID  = "2dd8f8d3583f230ecd1e8af440e5e10d"
+NTFY_URL = "https://ntfy.sh"
+
+# Secrets (NOT stored here — set with `wrangler secret put`):
+#   GIST_TOKEN  — GitHub PAT with `gist` scope (required)
+#   NTFY_TOPIC  — optional fallback; normally the topic comes from the
+#                 gist's config.ntfyTopic written by the extension.

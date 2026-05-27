@@ -14,6 +14,53 @@ version numbers follow [Semantic Versioning](https://semver.org).
   system), not a batch action.
 - Keyboard shortcuts beyond ArrowRight on fleetdispatch.
 
+## [1.3.0] — 2026-05-27
+
+### Added
+
+- **Expedition return reminders (push to phone / smartwatch).** OG-E now
+  records, per *wave*, when your expedition fleets land back home and
+  publishes that to your private gist; a small companion Cloudflare
+  Worker (shipped in `worker/`, deployed separately) watches the clock
+  and sends a push via [ntfy](https://ntfy.sh) when a wave is overdue —
+  so you remember to re-send even with the browser closed. The extension
+  is a pure state producer: it sets the deadline and stops watching.
+  - A **wave** is a cluster of expeditions sent together. Return-flight
+    rows are read passively from the in-game event list (`#eventContent`,
+    the same source as the green planet dots — no traffic to the game)
+    and clustered by return-time proximity, so a single 14-ship burst is
+    one wave and a deliberate two-batch send becomes two independent
+    waves, each reminded on its own. Backed by a new pure helper
+    `domain/waves.js` (clustering, origin-set wave identity, re-send
+    reconciliation, allowed-hours window) with 25 unit tests.
+  - Wave identity is the **set of origin planets**, so re-sending from
+    the same planets is recognised as the same wave (its counters reset)
+    and a returned-but-idle wave survives a page reload instead of being
+    dropped.
+  - New **Expedition Reminders** tab on the histogram page: enable/disable,
+    repeat interval, allowed-hours window (in your timezone), per-wave
+    push cap, ntfy topic generator, step-by-step setup guide, and a live
+    preview of the gist state (config, outstanding waves, push counts).
+- **Reminder configuration store** (`state/reminderConfig.js`) — a single
+  global config persisted in `chrome.storage.local` so the histogram tab
+  can author it and the game-side content script can read it and push it
+  to the gist. 8 unit tests.
+
+### Changed
+
+- Reminder state lives in a **separate, uncompressed gist file**
+  (`oge-reminders.json`) alongside the existing compressed sync payload,
+  so the Worker can read it with a plain `JSON.parse` and the schema-3
+  sync reader is never affected. Field ownership is split — the extension
+  owns `config` + `waves`, the Worker owns `notifyState` — and each side
+  preserves the other's block on write.
+- The gist token is now also mirrored into `chrome.storage.local` (in
+  addition to its existing game-origin `localStorage` home) so the
+  extension-origin histogram page can fetch the gist for the live
+  reminder preview. `chrome.storage` is extension-private; no new
+  network destination and no new permission (`api.github.com` was
+  already in `host_permissions`; ntfy is contacted only by the Worker).
+
 ## [1.2.0] — 2026-05-24
 
 ### Added

@@ -1,0 +1,14 @@
+{
+  "name": "oge-expedition-reminder-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare Worker: cron reminder that pushes via ntfy when OG-E expedition waves return. Independent from the extension build.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}
