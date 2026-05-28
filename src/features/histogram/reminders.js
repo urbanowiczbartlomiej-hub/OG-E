@@ -31,6 +31,7 @@ import {
   REMINDER_TOKEN_KEY,
   REMINDER_NTFY_TOKEN_KEY,
   REMINDER_FILENAME_RE,
+  reminderFilenameFor,
   deriveNtfyTopic,
 } from '../../sync/reminders.js';
 import { fetchScheduledMessages, cancelWaveReminders } from '../../sync/ntfyScheduler.js';
@@ -345,8 +346,101 @@ const renderPreviewMulti = (states, ntfyMap) => {
 
   const section = node('section', { class: 'rem-universe' });
   section.appendChild(node('h3', { class: 'rem-universe-head', text: active }));
-  renderWavesInto(section, state, ntfyMap);
+  renderWavesInto(section, active, state, ntfyMap);
   root.appendChild(section);
+};
+
+/**
+ * Dashboard-side cancel of one wave: DELETE its pending ntfy messages,
+ * mark the wave `cancelled: true` and zero its `scheduledMessageIds` in
+ * the gist file, then re-render. Tombstone the wave (rather than removing
+ * it) so the game-side `reconcileWaves` matches it across subsequent
+ * scans and the cancelled flag carries forward — without it, the wave
+ * would look brand-new again on the next game-side sync while its DOM
+ * rows are still in the eventList, and a fresh schedule would land.
+ *
+ * Direct GitHub PATCH from the extension origin: we already have the
+ * mirrored gist token in `chrome.storage` (same one the live preview
+ * fetch uses), so we don't route through `writeReminderState` (which
+ * reads the token from the game-origin `localStorage`).
+ *
+ * Best-effort: every failure mode is shown in the preview status line
+ * and the dashboard re-renders so the user sees the current truth.
+ *
+ * @param {string} universeId
+ * @param {string} waveId
+ * @returns {Promise<void>}
+ */
+const cancelWaveFromDashboard = async (universeId, waveId) => {
+  const [gistId, gistToken, ntfyToken] = await Promise.all([
+    chromeStore.get(REMINDER_GIST_ID_KEY),
+    chromeStore.get(REMINDER_TOKEN_KEY),
+    chromeStore.get(REMINDER_NTFY_TOKEN_KEY),
+  ]);
+  if (typeof gistId !== 'string' || !gistId || typeof gistToken !== 'string' || !gistToken) {
+    setPreviewStatus('cancel failed: gist not configured yet', 'err');
+    return;
+  }
+
+  /** @type {Record<string, ReminderState>} */
+  let states;
+  try {
+    states = await fetchAllReminderStates(gistId, gistToken);
+  } catch (err) {
+    setPreviewStatus('cancel failed: ' + /** @type {Error} */ (err).message, 'err');
+    return;
+  }
+  const state = states[universeId];
+  const wave = state?.waves?.find((w) => w.id === waveId);
+  if (!state || !wave) {
+    setPreviewStatus('cancel failed: wave already gone', 'warn');
+    void refreshPreview();
+    return;
+  }
+
+  const notify = state.notifyState || {};
+  const entry = notify[waveId] || {};
+  const ids = entry.scheduledMessageIds ?? [];
+
+  if (typeof ntfyToken === 'string' && ntfyToken && ids.length > 0) {
+    const topic = await deriveNtfyTopic(gistId);
+    if (topic) {
+      try {
+        await cancelWaveReminders({ ids, topic, token: ntfyToken });
+      } catch {
+        // Per-message DELETE failures are already swallowed inside the
+        // helper; this catch is for the rare "whole call threw" path.
+      }
+    }
+  }
+
+  /** @type {ReminderState} */
+  const next = {
+    ...state,
+    updatedAt: new Date().toISOString(),
+    waves: state.waves.map((w) => (w.id === waveId ? { ...w, cancelled: true } : w)),
+    notifyState: { ...notify, [waveId]: { scheduledMessageIds: [] } },
+  };
+
+  const res = await fetch(`https://api.github.com/gists/${gistId}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${gistToken}`,
+      Accept: 'application/vnd.github+json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      files: {
+        [reminderFilenameFor(universeId)]: { content: JSON.stringify(next, null, 2) },
+      },
+    }),
+  });
+  if (!res.ok) {
+    setPreviewStatus(`cancel failed: gist PATCH ${res.status}`, 'err');
+    void refreshPreview();
+    return;
+  }
+  void refreshPreview();
 };
 
 /**
@@ -355,11 +449,13 @@ const renderPreviewMulti = (states, ntfyMap) => {
  * universe with no duplication.
  *
  * @param {HTMLElement} section
+ * @param {string} universeId  Which universe these waves belong to —
+ *   needed so the per-card cancel button knows which gist file to PATCH.
  * @param {ReminderState} state
  * @param {Map<string, { id: string, time: number }>} ntfyMap
  * @returns {void}
  */
-const renderWavesInto = (section, state, ntfyMap) => {
+const renderWavesInto = (section, universeId, state, ntfyMap) => {
   if (!state || !Array.isArray(state.waves) || state.waves.length === 0) {
     const p = node('p', {
       text: 'No outstanding waves. Send an expedition burst in-game to queue reminders.',
@@ -373,6 +469,7 @@ const renderWavesInto = (section, state, ntfyMap) => {
   const notify = state.notifyState || {};
   const sorted = state.waves.slice().sort((a, b) => a.nextWaveAt - b.nextWaveAt);
   for (const w of sorted) {
+    const cancelled = w.cancelled === true;
     const due = nowSec >= w.nextWaveAt;
     const ns = notify[w.id] || {};
     const ids = ns.scheduledMessageIds ?? [];
@@ -386,17 +483,31 @@ const renderWavesInto = (section, state, ntfyMap) => {
       .filter(/** @returns {m is { id: string, time: number }} */ (m) => Boolean(m))
       .sort((a, b) => a.time - b.time);
 
-    const card = node('div', { class: 'rem-wave' + (due ? ' due' : '') });
+    const cardClass = 'rem-wave' + (cancelled ? ' cancelled' : due ? ' due' : '');
+    const card = node('div', { class: cardClass });
 
     const head = node('div', { class: 'wave-head' });
     head.appendChild(node('span', {
       class: 'wave-when',
       text: new Date(w.nextWaveAt * 1000).toLocaleString(),
     }));
-    head.appendChild(node('span', {
-      class: 'rem-badge' + (due ? ' due' : ''),
-      text: due ? 'overdue' : 'in flight',
-    }));
+    const badgeText = cancelled ? 'cancelled' : due ? 'overdue' : 'in flight';
+    const badgeClass = 'rem-badge' + (cancelled ? ' cancelled' : due ? ' due' : '');
+    head.appendChild(node('span', { class: badgeClass, text: badgeText }));
+
+    // Cancel button: only useful while the wave still has something to
+    // tear down (pending ntfy ids the user actually wants killed). Hide
+    // once it's already cancelled or no longer holds a queue.
+    if (!cancelled && stillQueued.length > 0) {
+      const btn = node('button', { class: 'rem-cancel', text: '×' });
+      btn.setAttribute('type', 'button');
+      btn.setAttribute('title', 'Cancel this wave (delete pending ntfy reminders)');
+      btn.addEventListener('click', () => {
+        btn.setAttribute('disabled', '');
+        void cancelWaveFromDashboard(universeId, w.id);
+      });
+      head.appendChild(btn);
+    }
     card.appendChild(head);
 
     /** @param {number} n */

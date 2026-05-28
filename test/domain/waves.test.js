@@ -293,6 +293,52 @@ describe('reconcileWaves', () => {
   it('CLEANUP_GRACE_SEC is 60 — first-reminder window', () => {
     expect(CLEANUP_GRACE_SEC).toBe(60);
   });
+
+  it('cancelled flag carries forward on overlap match', () => {
+    // Dashboard tombstoned a wave. The next reconcile (game-side, after
+    // the user clicked × in the dashboard) must keep `cancelled: true`
+    // so syncReminderWaves doesn't reschedule it.
+    const prev = wave({
+      id: 'w_orig', returnAts: [NOW + 300, NOW + 350], nextWaveAt: NOW + 300,
+    });
+    /** @type {import('../../src/domain/waves.js').Wave} */
+    const prevCancelled = { ...prev, cancelled: true };
+    const stillVisible = [
+      { returnAt: NOW + 300, origin: '1:1:1' },
+      { returnAt: NOW + 350, origin: '1:1:1' },
+    ];
+    const { waves } = reconcileWaves(
+      [prevCancelled], clusterWaves(stillVisible), NOW,
+    );
+    expect(waves).toHaveLength(1);
+    expect(waves[0].id).toBe('w_orig');
+    expect(waves[0].cancelled).toBe(true);
+  });
+
+  it('brand-new wave never starts with cancelled set', () => {
+    const cands = clusterWaves(BURST);
+    const { waves } = reconcileWaves([], cands, NOW);
+    expect(waves[0].cancelled).toBeUndefined();
+  });
+
+  it('re-send from same planets after cancel: new id, no cancelled flag', () => {
+    // After the user cancels in the Dashboard, the wave eventually
+    // lands (returns disappear from the eventList). A fresh re-send
+    // from the same planets gets a fresh id; the cancelled tombstone
+    // is not inherited.
+    const prevCancelled = /** @type {import('../../src/domain/waves.js').Wave} */ ({
+      ...wave({ id: 'w_old', returnAts: [NOW + 10], nextWaveAt: NOW + 10 }),
+      cancelled: true,
+    });
+    const resend = [{ returnAt: NOW + 5400, origin: '1:1:1' }];
+    const { waves, droppedIds } = reconcileWaves(
+      [prevCancelled], clusterWaves(resend), NOW,
+    );
+    expect(droppedIds).toEqual(['w_old']);
+    expect(waves).toHaveLength(1);
+    expect(waves[0].id).toBe('w_' + (NOW + 5400));
+    expect(waves[0].cancelled).toBeUndefined();
+  });
 });
 
 describe('pruneNotifyState', () => {

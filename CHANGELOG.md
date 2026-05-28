@@ -6,6 +6,20 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-05-28
+
+### Added
+
+- **Cancel a queued reminder wave from the Dashboard.** Each wave card
+  in the Reminders tab now has an × button that deletes its pending
+  ntfy messages and tombstones the wave (`cancelled: true` on the
+  gist entry, empty `scheduledMessageIds`). The game-side reconciler
+  carries the flag across subsequent scans, so as long as the
+  wave's return-flight rows are still visible in the eventList it
+  matches the tombstone and stays unscheduled — no auto-reschedule
+  loop. A fresh re-send from the same planets gets a brand-new id
+  and a normal schedule.
+
 ## [1.5.3] — 2026-05-28
 
 ### Fixed

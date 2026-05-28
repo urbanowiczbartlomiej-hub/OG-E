@@ -390,8 +390,11 @@ export const syncReminderWaves = async (config, currentCandidates, now, universe
 
   // Brand-new waves are the ones whose id does NOT appear in prevNotify.
   // Matched waves carry their prev id forward, so prevNotify[w.id] exists.
+  // Cancelled waves (user-dismissed from the Dashboard) are skipped even
+  // if they look brand-new on first scan after cancellation — the flag
+  // rides on the Wave itself through reconcileWaves.
   /** @type {Wave[]} */
-  const toSchedule = waves.filter((w) => !prevNotify[w.id]);
+  const toSchedule = waves.filter((w) => !prevNotify[w.id] && !w.cancelled);
 
   // Anything dropped (landed or swept) feeds toCancel.
   /** @type {string[]} */

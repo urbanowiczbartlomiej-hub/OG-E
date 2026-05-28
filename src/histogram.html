@@ -152,11 +152,20 @@
   .rem-wave .wave-fires { color: #888; font-size: 12px; margin-top: 4px; }
   .rem-wave .wave-fires .wave-times { color: #9fd0ff; font-family: 'Consolas', 'Courier New', monospace; }
   .rem-wave.due { border-color: #6a5a2a; }
+  .rem-wave.cancelled { border-color: #3a3a3a; opacity: 0.6; }
   .rem-badge {
     display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 10px;
     background: #2a4a6a; color: #cfe6ff;
   }
   .rem-badge.due { background: #6a5a2a; color: #ffe2a8; }
+  .rem-badge.cancelled { background: #3a3a3a; color: #aaa; }
+  .rem-cancel {
+    background: transparent; color: #c47070; border: 1px solid #5a2a2a;
+    border-radius: 4px; font-size: 14px; line-height: 1; padding: 0 7px;
+    cursor: pointer; font-family: inherit;
+  }
+  .rem-cancel:hover { background: #3a1a1a; color: #ff9090; }
+  .rem-cancel[disabled] { opacity: 0.4; cursor: wait; }
 </style>
 </head>
 <body>

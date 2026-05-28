@@ -92,6 +92,11 @@ export const CLEANUP_GRACE_SEC = 60;
  *   (for display only).
  * @property {number}   [detectedAt] Epoch SECONDS this wave was first
  *   observed. Carried forward across same-wave scans.
+ * @property {boolean}  [cancelled] User dismissed this wave from the
+ *   Dashboard. Carried across matched scans so the scheduler skips it
+ *   for the rest of its life. Naturally cleared when the wave falls
+ *   out of `out` (DOM rows gone → unmatched prev) and a re-send from
+ *   the same planets stamps a brand-new id.
  */
 
 /**
@@ -251,6 +256,7 @@ export const reconcileWaves = (prevWaves, currentCandidates, now) => {
         returnAts: cand.returnAts,
         origins: cand.origins,
         detectedAt: match.detectedAt ?? now,
+        ...(match.cancelled ? { cancelled: true } : {}),
       });
     } else {
       brandNewDetected = true;
