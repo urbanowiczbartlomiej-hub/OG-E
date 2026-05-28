@@ -39,6 +39,61 @@
 /* global fetch */
 
 /**
+ * Fetch wrapper for ntfy.sh requests. Routes through the background
+ * service worker when running inside an extension content script, so
+ * the request is made from extension origin and bypasses Firefox's
+ * CORS restriction on content scripts.
+ *
+ * # Why the proxy is needed
+ *
+ * Firefox content scripts are subject to CORS even when the extension
+ * has declared `host_permissions` for the target. ntfy.sh responds to
+ * CORS preflights with `Access-Control-Allow-Headers: *`; per the Fetch
+ * spec that wildcard does NOT cover `Authorization`, so every ntfy
+ * request with a Bearer token fails the preflight and is never sent.
+ *
+ * The background service worker (`src/background.js`) runs at extension
+ * origin. Extension-origin requests bypass web-page CORS restrictions,
+ * so the Authorization header goes through without issue.
+ *
+ * # Test-environment fallback
+ *
+ * `browser` is undefined in Node / happy-dom. The fallback path uses
+ * `globalThis.fetch` directly, keeping all existing test stubs working
+ * with no changes to the test suite.
+ *
+ * @param {string} url
+ * @param {{ method?: string, headers?: Record<string, string>, body?: string }} [init]
+ * @returns {Promise<{ ok: boolean, status: number, statusText: string, text(): Promise<string>, json(): Promise<unknown> }>}
+ */
+const ntfyFetch = async (url, init = {}) => {
+  // Access `browser` via globalThis so TypeScript doesn't error under
+  // strict mode — `browser` isn't declared in lib.dom and we must treat
+  // it as a possibly-undefined property on the global object (same
+  // pattern as `pickStorage` in lib/storage.js).
+  const g = /** @type {Record<string, any>} */ (/** @type {unknown} */ (globalThis));
+  if (g.browser?.runtime?.sendMessage) {
+    const result = await g.browser.runtime.sendMessage({
+      type: 'ntfy-fetch',
+      url,
+      method: init.method ?? 'GET',
+      headers: init.headers ?? {},
+      body: init.body ?? null,
+    });
+    const { text } = result;
+    return {
+      ok: result.ok,
+      status: result.status,
+      statusText: result.statusText,
+      text: async () => text,
+      json: async () => JSON.parse(text),
+    };
+  }
+  // Test environment or non-extension context — use fetch directly.
+  return /** @type {any} */ (fetch(url, init));
+};
+
+/**
  * Total reminders queued per wave. Six × ten minutes ≈ one hour of
  * nudges — long enough that an AFK player should notice, short enough
  * that an already-acknowledged-but-not-yet-resent wave doesn't keep
@@ -126,7 +181,7 @@ export const scheduleWaveReminders = async ({ wave, topic, token, now, universeI
  */
 export const fetchScheduledMessages = async ({ topic, token, now }) => {
   const url = `https://ntfy.sh/${topic}/json?poll=1&scheduled=1`;
-  const res = await fetch(url, {
+  const res = await ntfyFetch(url, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) {
@@ -174,7 +229,7 @@ export const cancelWaveReminders = async ({ ids, topic, token }) => {
   let ok = 0;
   for (const id of ids) {
     try {
-      const res = await fetch(`https://ntfy.sh/${topic}/${id}`, {
+      const res = await ntfyFetch(`https://ntfy.sh/${topic}/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -232,7 +287,7 @@ const postOne = async ({ topic, token, fireAt, now, n, universeId }) => {
   if (delay >= NTFY_MIN_DELAY_SEC) headers['X-Delay'] = String(fireAt);
 
   const body = `Expeditions returned - Reminder #${n}.`;
-  const res = await fetch(`https://ntfy.sh/${topic}`, {
+  const res = await ntfyFetch(`https://ntfy.sh/${topic}`, {
     method: 'POST',
     headers,
     body,

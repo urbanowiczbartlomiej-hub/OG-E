@@ -4,6 +4,22 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.3.3] — 2026-05-28
+
+### Fixed
+
+- **ntfy.sh requests now work in Firefox.** Firefox content scripts are
+  subject to CORS even when the extension has declared `host_permissions`
+  for the target domain. ntfy.sh responds to CORS preflights with
+  `Access-Control-Allow-Headers: *`; the Fetch spec — and Firefox's
+  strict enforcement of it — does not treat the wildcard as covering
+  the `Authorization` header, so every ntfy request with a Bearer token
+  silently failed the preflight and was never sent. Fixed by adding a
+  background service worker (`background.js`) that makes the ntfy fetch
+  from extension origin (CORS-free). Content scripts relay ntfy requests
+  through `browser.runtime.sendMessage`; the histogram extension page
+  continues to call ntfy directly (it already runs at extension origin).
+
 ## [1.3.2] — 2026-05-28
 
 ### Fixed
