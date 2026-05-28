@@ -6,6 +6,20 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.5.2] — 2026-05-28
+
+### Fixed
+
+- **Reminders tab now respects the dashboard's universe selector.**
+  v1.5.0 made the tab render every universe in the gist as a separate
+  section, which felt redundant with the page-wide server selector
+  that already drove the Colony History / Galaxy / Free Positions
+  tabs. Now the Reminders tab shows only the currently-selected
+  universe — same UX as the rest of the dashboard — and repaints
+  whenever the selector changes. "No data yet for s201-pl" placeholder
+  shown when the selected server has no waves in the gist; "Pick a
+  server" hint when the selector hasn't resolved yet.
+
 ## [1.5.1] — 2026-05-28
 
 ### Fixed

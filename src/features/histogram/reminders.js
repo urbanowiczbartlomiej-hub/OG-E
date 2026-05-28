@@ -45,6 +45,21 @@ const el = {};
 /** Idempotency — the tab is wired exactly once. */
 let wired = false;
 
+/**
+ * Callback handed in by the host page (`features/histogram/index.js`)
+ * so the reminders tab knows which universe is currently selected in
+ * the page-wide universe selector. Returns `''` when no universe has
+ * been resolved yet (e.g. the dashboard just booted, before
+ * `discoverUniverses` ran). The reminders tab filters its render to
+ * this universe — same UX as the other tabs.
+ *
+ * Defaults to a stub returning `''` so calling `installReminders()`
+ * without arguments stays valid for tests.
+ *
+ * @type {() => string}
+ */
+let getActiveUniverseId = () => '';
+
 /** @param {string} id @returns {HTMLElement | null} */
 const byId = (id) => document.getElementById(id);
 
@@ -53,10 +68,17 @@ const byId = (id) => document.getElementById(id);
  * preview, then re-renders whenever the game-origin sync writes a new
  * mirror snapshot.
  *
- * @returns {void}
+ * @param {{ getUniverseId?: () => string }} [opts]
+ *   `getUniverseId` — host-provided getter for the current universe
+ *   selected in the dashboard's selector. The reminders preview filters
+ *   to this universe. Omit only in tests; the dashboard always passes it.
+ * @returns {{ refresh: () => void }}  `refresh()` forces a re-render
+ *   without re-fetching state listeners — call it from the host's
+ *   universe-selector change handler.
  */
-export const installReminders = () => {
-  if (wired) return;
+export const installReminders = (opts = {}) => {
+  if (opts.getUniverseId) getActiveUniverseId = opts.getUniverseId;
+  if (wired) return { refresh: () => { void refreshPreview(); } };
   wired = true;
 
   for (const id of ['remTopic', 'remCopyTopic', 'remPreview', 'remPreviewStatus', 'remRefresh']) {
@@ -87,6 +109,8 @@ export const installReminders = () => {
     if (REMINDER_GIST_ID_KEY in changes) void updateTopic();
     if (REMINDER_MIRROR_KEY in changes) void refreshPreview();
   });
+
+  return { refresh: () => { void refreshPreview(); } };
 };
 
 /** Recompute and paint the derived topic from the mirrored gist id. */
@@ -270,10 +294,14 @@ const node = (tag, o = {}) => {
 };
 
 /**
- * Render every universe's reminder state into the preview panel. One
- * section per universe (header with universeId), each containing the
- * per-wave cards. Built entirely with `document.createElement` +
- * `textContent` — no `innerHTML`.
+ * Render the active universe's reminder state into the preview panel.
+ * The dashboard's universe selector controls which universe is
+ * "active" via {@link getActiveUniverseId}; everything else lives in
+ * the gist but is hidden here, matching how the colony / galaxy /
+ * free-positions tabs only show data for the selected server.
+ *
+ * Built entirely with `document.createElement` + `textContent` — no
+ * `innerHTML`.
  *
  * @param {Record<string, ReminderState>} states
  * @param {Map<string, { id: string, time: number }>} ntfyMap
@@ -284,8 +312,10 @@ const renderPreviewMulti = (states, ntfyMap) => {
   const root = el.remPreview;
   root.textContent = '';
 
-  const universeIds = Object.keys(states).sort();
-  if (universeIds.length === 0) {
+  const active = getActiveUniverseId();
+  const universesInGist = Object.keys(states);
+
+  if (universesInGist.length === 0) {
     const p = node('p', {
       text: 'No data yet. Enable cloud sync + reminders in OG-E settings and send an expedition.',
     });
@@ -294,12 +324,29 @@ const renderPreviewMulti = (states, ntfyMap) => {
     return;
   }
 
-  for (const universeId of universeIds) {
-    const section = node('section', { class: 'rem-universe' });
-    section.appendChild(node('h3', { class: 'rem-universe-head', text: universeId }));
-    renderWavesInto(section, states[universeId], ntfyMap);
-    root.appendChild(section);
+  if (!active) {
+    const p = node('p', {
+      text: 'Pick a server in the selector above to see its expedition reminders.',
+    });
+    p.style.color = '#888';
+    root.appendChild(p);
+    return;
   }
+
+  const state = states[active];
+  if (!state) {
+    const p = node('p', {
+      text: `No reminder data for ${active} yet. Send an expedition burst in-game to queue reminders.`,
+    });
+    p.style.color = '#888';
+    root.appendChild(p);
+    return;
+  }
+
+  const section = node('section', { class: 'rem-universe' });
+  section.appendChild(node('h3', { class: 'rem-universe-head', text: active }));
+  renderWavesInto(section, state, ntfyMap);
+  root.appendChild(section);
 };
 
 /**

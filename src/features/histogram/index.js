@@ -106,6 +106,15 @@ const DEFAULT_COL_POSITIONS = '8';
  */
 let selectedUniverseId = '';
 
+/**
+ * Handle to the reminders module's refresh entrypoint, set by
+ * `installReminders` at boot. Called from the universe-selector change
+ * handler so the reminders tab repaints with the newly-selected server.
+ *
+ * @type {{ refresh: () => void } | null}
+ */
+let remindersApi = null;
+
 /** @type {ColonyEntry[]} */
 let history = [];
 
@@ -164,10 +173,11 @@ const boot = async () => {
   populateFreePosOptions(freePosSelect);
   wireTabs();
 
-  // Reminders tab is self-contained: it owns its live gist preview,
-  // independent of the universe-scoped data the other tabs render.
-  // Wire it once at boot.
-  installReminders();
+  // Reminders tab filters by the active universe (same UX as the other
+  // tabs). The host passes a getter so reminders never has to import
+  // this module's module-scope state; the universe selector's change
+  // handler calls `remindersApi.refresh()` to repaint.
+  remindersApi = installReminders({ getUniverseId: () => selectedUniverseId });
 
   const universes = await discoverUniverses();
   selectedUniverseId = resolveInitialUniverse(universes);
@@ -175,6 +185,10 @@ const boot = async () => {
 
   await loadAll();
   renderAll();
+  // Reminders tab read `selectedUniverseId` via its getter when its
+  // initial paint ran inside `installReminders` — which was BEFORE we
+  // resolved the active universe. Repaint now that it's known.
+  remindersApi?.refresh();
   wireListeners();
 
   chromeStore.onChanged((changes) => {
@@ -597,6 +611,7 @@ const wireListeners = () => {
   universeSelect.addEventListener('change', () => {
     selectedUniverseId = universeSelect.value;
     void loadAll().then(renderAll);
+    remindersApi?.refresh();
   });
 
   clearScansBtn?.addEventListener('click', async () => {
