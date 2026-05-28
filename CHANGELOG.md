@@ -6,6 +6,42 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-05-28
+
+### Fixed
+
+- **Cross-universe ping-pong on a shared gist file is gone.** Before
+  this release every OGame universe (different game origin) wrote to
+  the same `oge-reminders.json` and saw the other universe's waves as
+  "brand-new" because no return-time was shared between A and B.
+  Result: each universe repeatedly scheduled its own ntfy messages
+  and cancelled the other's, burning the ntfy.sh per-account rate
+  budget until ntfy.sh started returning 429 Too Many Requests on
+  every POST and DELETE. The dashboard would then show waves with
+  `0 reminders scheduled` because the schedule attempts were
+  rejected.
+- **`reminderNtfyToken` is now usable across all universes.** The
+  token still lives in per-origin localStorage as before (so the
+  Settings panel works on every universe), but `syncReminderWaves`
+  falls back to a chrome.storage mirror when the local value is empty.
+  Set it once on any universe and the others pick it up automatically.
+
+### Changed
+
+- **Per-universe gist file**: each universe owns
+  `oge-reminders-<universeId>.json` (e.g. `oge-reminders-s163-pl.json`).
+  GitHub's gist PATCH operates per file, so two universes can sync
+  simultaneously with zero conflict.
+- **Per-universe chrome.storage mirror**: `REMINDER_MIRROR_KEY` value
+  is now `Record<universeId, ReminderState>`. The OG-E Dashboard
+  reads all entries and renders one section per universe — no
+  selector, all visible at once.
+- **Reminder gist file schema bumped to v3**. v2 state is treated
+  as absent on read; the orphan sweep on the next sync cancels any
+  v2-era ntfy messages still queued. v2 single-file leftovers
+  (`oge-reminders.json`) are deliberately ignored by the dashboard
+  enumeration regex.
+
 ## [1.4.0] — 2026-05-28
 
 ### Fixed

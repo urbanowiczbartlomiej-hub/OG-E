@@ -30,7 +30,7 @@ import {
   REMINDER_GIST_ID_KEY,
   REMINDER_TOKEN_KEY,
   REMINDER_NTFY_TOKEN_KEY,
-  REMINDER_FILENAME,
+  REMINDER_FILENAME_RE,
   deriveNtfyTopic,
 } from '../../sync/reminders.js';
 import { fetchScheduledMessages, cancelWaveReminders } from '../../sync/ntfyScheduler.js';
@@ -100,41 +100,80 @@ const updateTopic = async () => {
 };
 
 /**
- * Fetch both the gist (waves + per-wave message ids) and the ntfy.sh
- * queue (currently undelivered scheduled pushes) in parallel, then
- * cross-reference: each wave's `scheduledMessageIds` are looked up in
- * the ntfy queue so we can render exact upcoming push times. Falls
- * back to the mirrored snapshot when the live gist fetch can't run;
- * ntfy queue is best-effort (missing → "fires at —" line is omitted).
+ * Coerce whatever lives under `REMINDER_MIRROR_KEY` into the v3 dict
+ * shape `Record<universeId, ReminderState>`. v2 mirror was a plain
+ * `ReminderState`; we treat that as "no data" to avoid rendering a
+ * single phantom universe with the wrong id.
+ *
+ * @param {unknown} m
+ * @returns {Record<string, ReminderState>}
+ */
+const coerceMirror = (m) => {
+  if (!m || typeof m !== 'object' || Array.isArray(m)) return {};
+  // v2 leftover detection: top-level `version` + `waves` keys.
+  if ('version' in m && 'waves' in m) return {};
+  return /** @type {Record<string, ReminderState>} */ (m);
+};
+
+/**
+ * Fetch the gist and partition reminder files by universeId.
+ * Returns one `ReminderState` per universe present in the gist.
+ *
+ * @param {string} gistId
+ * @param {string} gistToken
+ * @returns {Promise<Record<string, ReminderState>>}
+ */
+const fetchAllReminderStates = async (gistId, gistToken) => {
+  const res = await fetch(`https://api.github.com/gists/${gistId}`, {
+    headers: {
+      Authorization: `Bearer ${gistToken}`,
+      Accept: 'application/vnd.github+json',
+    },
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const gist = await res.json();
+  const files = gist?.files ?? {};
+  /** @type {Record<string, ReminderState>} */
+  const out = {};
+  for (const [filename, file] of Object.entries(files)) {
+    const m = REMINDER_FILENAME_RE.exec(filename);
+    if (!m) continue;
+    const f = /** @type {{ content?: string }} */ (file);
+    if (!f?.content) continue;
+    try {
+      const parsed = /** @type {ReminderState} */ (JSON.parse(f.content));
+      out[m[1]] = parsed;
+    } catch {
+      // Skip corrupt file; next write rebuilds it.
+    }
+  }
+  return out;
+};
+
+/**
+ * Fetch all per-universe gist states + the ntfy.sh queue in parallel,
+ * then render one section per universe with the same per-wave card
+ * layout as before. Falls back to the chrome.storage mirror dict when
+ * the live gist fetch can't run.
  */
 const refreshPreview = async () => {
   setPreviewStatus('loading…', 'warn');
-  const [gistId, gistToken, ntfyToken, mirror] = await Promise.all([
+  const [gistId, gistToken, ntfyToken, mirrorRaw] = await Promise.all([
     chromeStore.get(REMINDER_GIST_ID_KEY),
     chromeStore.get(REMINDER_TOKEN_KEY),
     chromeStore.get(REMINDER_NTFY_TOKEN_KEY),
     chromeStore.get(REMINDER_MIRROR_KEY),
   ]);
+  const mirror = coerceMirror(mirrorRaw);
 
   if (!gistId || !gistToken) {
-    renderPreview(/** @type {ReminderState | null} */ (mirror ?? null), new Map());
-    setPreviewStatus(mirror ? 'from last mirror (no token yet)' : 'no data yet', 'warn');
+    renderPreviewMulti(mirror, new Map());
+    setPreviewStatus(
+      Object.keys(mirror).length > 0 ? 'from last mirror (no token yet)' : 'no data yet',
+      'warn',
+    );
     return;
   }
-
-  /** @type {Promise<ReminderState | null>} */
-  const gistP = (async () => {
-    const res = await fetch(`https://api.github.com/gists/${gistId}`, {
-      headers: {
-        Authorization: `Bearer ${gistToken}`,
-        Accept: 'application/vnd.github+json',
-      },
-    });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const gist = await res.json();
-    const file = gist?.files?.[REMINDER_FILENAME];
-    return file && file.content ? JSON.parse(file.content) : null;
-  })();
 
   const nowSec = Math.floor(Date.now() / 1000);
   /** @type {Promise<Map<string, { id: string, time: number }>>} */
@@ -153,33 +192,34 @@ const refreshPreview = async () => {
   })();
 
   try {
-    const [state, ntfyMap] = await Promise.all([gistP, ntfyP]);
+    const [states, ntfyMap] = await Promise.all([
+      fetchAllReminderStates(/** @type {string} */ (gistId), /** @type {string} */ (gistToken)),
+      ntfyP,
+    ]);
 
-    // Orphan sweep from the dashboard side. The game-side
-    // `syncReminderWaves` does the same on every wave push, but if the
-    // user only ever opens the dashboard (game tab closed) the orphans
-    // never get cleaned up there. So we also sweep here on Refresh.
-    //
-    // Guard: skip when the gist was written less than 120 s ago. The
-    // game-side sync POSTs to ntfy *before* it PATCHes the gist, so
-    // there is a brief window where new message IDs exist on ntfy but
-    // haven't been persisted to the gist yet. Sweeping during that
-    // window would mistakenly cancel freshly-scheduled messages and
-    // mark them as "fired" in the preview. The game-side sweep (which
-    // uses the in-memory notifyState, always up to date) is sufficient
-    // for active sessions; this pass is only useful for stale orphans
-    // from a crashed or interrupted sync, which are at least 2 min old.
+    // Orphan sweep: cancel ntfy messages that aren't claimed by ANY
+    // universe in the gist. Guard skips the sweep when every universe
+    // file is fresh (< 120 s old) to avoid cancelling messages that
+    // were just posted but not yet PATCHed.
     let orphansCancelled = 0;
-    const gistAge = state
-      ? nowSec - Math.floor(new Date(state.updatedAt).getTime() / 1000)
-      : Infinity;
-    if (typeof ntfyToken === 'string' && ntfyToken && ntfyMap.size > 0 && state && gistAge > 120) {
+    /** @type {Set<string>} */
+    const ours = new Set();
+    let freshestAge = Infinity;
+    for (const state of Object.values(states)) {
+      for (const e of Object.values(state.notifyState || {})) {
+        if (e.scheduledMessageIds) for (const id of e.scheduledMessageIds) ours.add(id);
+      }
+      if (state.updatedAt) {
+        const age = nowSec - Math.floor(new Date(state.updatedAt).getTime() / 1000);
+        if (age < freshestAge) freshestAge = age;
+      }
+    }
+    if (
+      typeof ntfyToken === 'string' && ntfyToken && ntfyMap.size > 0 &&
+      Object.keys(states).length > 0 && freshestAge > 120
+    ) {
       const topic = await deriveNtfyTopic(typeof gistId === 'string' ? gistId : '');
       if (topic) {
-        const ours = new Set();
-        for (const e of Object.values(state.notifyState || {})) {
-          if (e.scheduledMessageIds) for (const id of e.scheduledMessageIds) ours.add(id);
-        }
         const orphanIds = [];
         for (const id of ntfyMap.keys()) if (!ours.has(id)) orphanIds.push(id);
         if (orphanIds.length > 0) {
@@ -189,15 +229,18 @@ const refreshPreview = async () => {
       }
     }
 
-    renderPreview(state, ntfyMap);
+    renderPreviewMulti(states, ntfyMap);
     const queued = ntfyMap.size;
-    const sweepNote = orphansCancelled > 0 ? ` · cleaned ${orphansCancelled} orphan${orphansCancelled === 1 ? '' : 's'}` : '';
+    const sweepNote = orphansCancelled > 0
+      ? ` · cleaned ${orphansCancelled} orphan${orphansCancelled === 1 ? '' : 's'}`
+      : '';
+    const universes = Object.keys(states).length;
     setPreviewStatus(
-      `live · ${new Date().toLocaleTimeString()} · ${queued} message${queued === 1 ? '' : 's'} queued on ntfy${sweepNote}`,
+      `live · ${new Date().toLocaleTimeString()} · ${universes} universe${universes === 1 ? '' : 's'} · ${queued} message${queued === 1 ? '' : 's'} queued on ntfy${sweepNote}`,
       'ok',
     );
   } catch (err) {
-    renderPreview(/** @type {ReminderState | null} */ (mirror ?? null), new Map());
+    renderPreviewMulti(mirror, new Map());
     setPreviewStatus('live fetch failed (' + /** @type {Error} */ (err).message + ') — showing mirror', 'err');
   }
 };
@@ -227,32 +270,55 @@ const node = (tag, o = {}) => {
 };
 
 /**
- * Render the reminder state into the preview panel. Each wave gets one
- * card: return time + queued-count badge + origins + concrete upcoming
- * push times from ntfy. Built entirely with `document.createElement` +
- * `textContent` — no `innerHTML`, so untrusted gist/ntfy content can
- * never be interpreted as markup.
+ * Render every universe's reminder state into the preview panel. One
+ * section per universe (header with universeId), each containing the
+ * per-wave cards. Built entirely with `document.createElement` +
+ * `textContent` — no `innerHTML`.
  *
- * @param {ReminderState | null} state
+ * @param {Record<string, ReminderState>} states
  * @param {Map<string, { id: string, time: number }>} ntfyMap
- *   ntfy message id → ntfy queue entry. Empty when the ntfy fetch
- *   couldn't run (no token, network error). The per-wave "Fires at:"
- *   line is omitted in that case.
  * @returns {void}
  */
-const renderPreview = (state, ntfyMap) => {
+const renderPreviewMulti = (states, ntfyMap) => {
   if (!el.remPreview) return;
   const root = el.remPreview;
-  root.textContent = ''; // clear safely
+  root.textContent = '';
 
-  if (!state || !Array.isArray(state.waves) || state.waves.length === 0) {
+  const universeIds = Object.keys(states).sort();
+  if (universeIds.length === 0) {
     const p = node('p', {
-      text: state
-        ? 'No outstanding waves. Send an expedition burst in-game to queue reminders.'
-        : 'No data yet. Enable cloud sync + reminders in OG-E settings and send an expedition.',
+      text: 'No data yet. Enable cloud sync + reminders in OG-E settings and send an expedition.',
     });
     p.style.color = '#888';
     root.appendChild(p);
+    return;
+  }
+
+  for (const universeId of universeIds) {
+    const section = node('section', { class: 'rem-universe' });
+    section.appendChild(node('h3', { class: 'rem-universe-head', text: universeId }));
+    renderWavesInto(section, states[universeId], ntfyMap);
+    root.appendChild(section);
+  }
+};
+
+/**
+ * Render one universe's wave cards into `section`. Extracted from the
+ * old renderPreview so the multi-universe wrapper can call it once per
+ * universe with no duplication.
+ *
+ * @param {HTMLElement} section
+ * @param {ReminderState} state
+ * @param {Map<string, { id: string, time: number }>} ntfyMap
+ * @returns {void}
+ */
+const renderWavesInto = (section, state, ntfyMap) => {
+  if (!state || !Array.isArray(state.waves) || state.waves.length === 0) {
+    const p = node('p', {
+      text: 'No outstanding waves. Send an expedition burst in-game to queue reminders.',
+    });
+    p.style.color = '#888';
+    section.appendChild(p);
     return;
   }
 
@@ -311,6 +377,6 @@ const renderPreview = (state, ntfyMap) => {
       text: (w.origins || []).join(', '),
     }));
 
-    root.appendChild(card);
+    section.appendChild(card);
   }
 };

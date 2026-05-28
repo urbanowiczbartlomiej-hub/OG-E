@@ -84,22 +84,51 @@ import {
  * @property {string} ntfyToken
  */
 
-/** Filename of the plain-JSON reminder-state file inside the OG-E gist. */
-export const REMINDER_FILENAME = 'oge-reminders.json';
+/**
+ * Filename prefix of the per-universe reminder-state files inside the
+ * OG-E gist. The full filename is `${REMINDER_FILENAME_PREFIX}${universeId}.json`.
+ *
+ * Multi-universe isolation rule (v3): each OGame universe owns its OWN
+ * file in the shared gist. Universe A's content script writes
+ * `oge-reminders-s163-pl.json`, universe B's writes
+ * `oge-reminders-s201-pl.json`. GitHub's gist PATCH operates per file,
+ * so one universe never clobbers another's waves or notifyState. This
+ * fixes the v2-era ping-pong where two universes sharing one file
+ * cancelled each other's ntfy schedules repeatedly until ntfy.sh
+ * rate-limited the account.
+ */
+export const REMINDER_FILENAME_PREFIX = 'oge-reminders-';
+
+/**
+ * Build the gist filename for a universe.
+ *
+ * @param {string} universeId  e.g. `'s163-pl'`. See `lib/universeId.js`.
+ * @returns {string}
+ */
+export const reminderFilenameFor = (universeId) =>
+  `${REMINDER_FILENAME_PREFIX}${universeId}.json`;
+
+/**
+ * Regex matching all per-universe reminder filenames in a gist.
+ * Capture group 1 is the universeId. Used by the dashboard to
+ * enumerate every universe currently in the gist.
+ */
+export const REMINDER_FILENAME_RE = /^oge-reminders-([^/]+)\.json$/;
 
 /**
  * Schema version of the reminder file.
  *
  *   - v1: time-based wave identity (pre-1.3.2). `Wave.id` was
  *     `'w_' + nextWaveAt`, with a 300 s drift tolerance in reconcile.
- *   - v2: return-time-set overlap identity. `Wave.id` is stamped once
- *     at brand-new detection and never re-derived; `Wave.returnAts` is
- *     part of the persisted shape. We do NOT migrate v1 state — the
- *     orphan sweep on the next sync cancels any v1-era ntfy messages
- *     still queued, and waves in flight at upgrade time get fresh
- *     v2 identities + fresh schedules.
+ *   - v2: return-time-set overlap identity, single shared file
+ *     `oge-reminders.json` — broken in multi-universe setups.
+ *   - v3: same identity model as v2, but the file is now scoped per
+ *     universe (`oge-reminders-<universeId>.json`). Mirror in
+ *     chrome.storage is also keyed per universe. We do NOT migrate v2
+ *     state — the next sync drops it and the orphan sweep cancels any
+ *     v2-era ntfy messages still queued.
  */
-export const REMINDER_SCHEMA_VERSION = 2;
+export const REMINDER_SCHEMA_VERSION = 3;
 
 /**
  * Derive the ntfy.sh topic deterministically from the gist id. Topics
@@ -160,20 +189,21 @@ export const REMINDER_NTFY_TOKEN_KEY = 'oge_reminderNtfyTokenMirror';
  */
 
 /**
- * Read and parse the reminder file from the gist. Returns `null` when
- * the gist has no such file yet (first run) or the content can't be
- * parsed (hand-edited / corrupt — the next write rebuilds it).
+ * Read and parse this universe's reminder file from the gist. Returns
+ * `null` when the gist has no such file yet (first run) or the content
+ * can't be parsed (hand-edited / corrupt — the next write rebuilds it).
  *
  * State at older schema versions is treated as absent: we never
  * migrate, we just start fresh and let the orphan sweep clean up any
  * ntfy messages the old code had scheduled.
  *
+ * @param {string} universeId
  * @returns {Promise<ReminderState | null>}
  */
-export const readReminderState = async () => {
+export const readReminderState = async (universeId) => {
   const id = await ensureGistV3();
   const gist = await gh(`/gists/${id}`);
-  const file = gist?.files?.[REMINDER_FILENAME];
+  const file = gist?.files?.[reminderFilenameFor(universeId)];
   if (!file) return null;
   const text =
     file.truncated && file.raw_url
@@ -189,18 +219,21 @@ export const readReminderState = async () => {
 };
 
 /**
- * Write the reminder file (plain JSON, pretty-printed). Creates /
- * discovers the gist as needed via {@link ensureGistV3}.
+ * Write this universe's reminder file (plain JSON, pretty-printed).
+ * Creates / discovers the gist as needed via {@link ensureGistV3}.
  *
+ * @param {string} universeId
  * @param {ReminderState} state
  * @returns {Promise<void>}
  */
-export const writeReminderState = async (state) => {
+export const writeReminderState = async (universeId, state) => {
   const id = await ensureGistV3();
   await gh(`/gists/${id}`, {
     method: 'PATCH',
     body: JSON.stringify({
-      files: { [REMINDER_FILENAME]: { content: JSON.stringify(state, null, 2) } },
+      files: {
+        [reminderFilenameFor(universeId)]: { content: JSON.stringify(state, null, 2) },
+      },
     }),
   });
 };
@@ -228,24 +261,52 @@ const sameState = (a, b) => {
  * mirrored credentials: the gist fetch (gist token) and the ntfy
  * queue fetch (ntfy token).
  *
+ * The mirror is a dict keyed by universeId so multiple universes
+ * (multiple OGame tabs from different servers) coexist in the same
+ * `chrome.storage.local`. Each producer reads-modifies-writes only
+ * its own slot, never touching the others.
+ *
  * Best-effort: failures are swallowed (preview is non-critical, never
  * let it break a wave write).
  *
+ * @param {string} universeId
  * @param {ReminderState} state
  * @param {string} ntfyToken  Current ntfy access token from Settings.
  * @returns {Promise<void>}
  */
-const mirrorForPreview = async (state, ntfyToken) => {
+const mirrorForPreview = async (universeId, state, ntfyToken) => {
   try {
+    const existing = await chromeStore.get(REMINDER_MIRROR_KEY);
+    /** @type {Record<string, ReminderState>} */
+    const dict = (existing && typeof existing === 'object' && !Array.isArray(existing))
+      ? { .../** @type {Record<string, ReminderState>} */ (existing) }
+      : {};
+    dict[universeId] = state;
     await Promise.all([
-      chromeStore.set(REMINDER_MIRROR_KEY, state),
+      chromeStore.set(REMINDER_MIRROR_KEY, dict),
       chromeStore.set(REMINDER_GIST_ID_KEY, getGistId()),
       chromeStore.set(REMINDER_TOKEN_KEY, getToken()),
-      chromeStore.set(REMINDER_NTFY_TOKEN_KEY, ntfyToken),
+      // ntfyToken is global — last writer wins, all universes share.
+      ...(ntfyToken ? [chromeStore.set(REMINDER_NTFY_TOKEN_KEY, ntfyToken)] : []),
     ]);
   } catch {
     // Best-effort — see above.
   }
+};
+
+/**
+ * Resolve the ntfy access token to use. Prefers the value the caller
+ * passed in (from per-origin localStorage Settings), falling back to
+ * the chrome.storage mirror so a universe whose Settings panel hasn't
+ * been touched still gets reminders once any other universe sets one.
+ *
+ * @param {string} configToken  `ntfyToken` as passed by the producer.
+ * @returns {Promise<string>}
+ */
+const resolveNtfyToken = async (configToken) => {
+  if (configToken) return configToken;
+  const mirrored = await chromeStore.get(REMINDER_NTFY_TOKEN_KEY);
+  return typeof mirrored === 'string' ? mirrored : '';
 };
 
 /**
@@ -276,7 +337,13 @@ const mirrorForPreview = async (state, ntfyToken) => {
 export const syncReminderWaves = async (config, currentCandidates, now, universeId) => {
   if (!getToken()) return { ok: false, reason: 'no-token' };
 
-  const existing = await readReminderState();
+  // Token resolution: prefer per-origin localStorage value; fall back
+  // to the global chrome.storage mirror so a universe that hasn't been
+  // configured manually still works once any other universe has set
+  // its ntfy token.
+  const ntfyToken = await resolveNtfyToken(config.ntfyToken);
+
+  const existing = await readReminderState(universeId);
   const prevWaves = existing?.waves ?? [];
   const prevNotify = existing?.notifyState ?? {};
 
@@ -305,7 +372,7 @@ export const syncReminderWaves = async (config, currentCandidates, now, universe
   let cancelled = 0;
   let scheduled = 0;
 
-  if (config.ntfyToken && topic) {
+  if (ntfyToken && topic) {
     if (!config.enabled) {
       // Feature off → cancel everything we ever queued, including
       // schedules for in-flight waves we'd normally have left alone.
@@ -314,19 +381,19 @@ export const syncReminderWaves = async (config, currentCandidates, now, universe
         if (entry.scheduledMessageIds) everyId.push(...entry.scheduledMessageIds);
       }
       cancelled += await cancelWaveReminders({
-        ids: everyId, topic, token: config.ntfyToken,
+        ids: everyId, topic, token: ntfyToken,
       });
       // Strip schedules from notifyState so re-enabling triggers fresh schedules.
       for (const id of Object.keys(notifyState)) delete notifyState[id];
     } else {
       // Cancel dropped first so we don't race a brand-new schedule.
       cancelled += await cancelWaveReminders({
-        ids: toCancel, topic, token: config.ntfyToken,
+        ids: toCancel, topic, token: ntfyToken,
       });
       for (const wave of toSchedule) {
         try {
           const newIds = await scheduleWaveReminders({
-            wave, topic, token: config.ntfyToken, now, universeId,
+            wave, topic, token: ntfyToken, now, universeId,
           });
           notifyState[wave.id] = { scheduledMessageIds: newIds };
           scheduled += newIds.length;
@@ -362,13 +429,13 @@ export const syncReminderWaves = async (config, currentCandidates, now, universe
       for (const e of Object.values(notifyState)) {
         if (e.scheduledMessageIds) for (const id of e.scheduledMessageIds) ours.add(id);
       }
-      const queue = await fetchScheduledMessages({ topic, token: config.ntfyToken, now });
+      const queue = await fetchScheduledMessages({ topic, token: ntfyToken, now });
       const orphanIds = queue.map((m) => m.id).filter((id) => !ours.has(id));
       if (orphanIds.length > 0) {
         // eslint-disable-next-line no-console
         console.log(`[oge] cancelling ${orphanIds.length} orphan ntfy message(s)`);
         cancelled += await cancelWaveReminders({
-          ids: orphanIds, topic, token: config.ntfyToken,
+          ids: orphanIds, topic, token: ntfyToken,
         });
       }
     } catch (e) {
@@ -386,7 +453,7 @@ export const syncReminderWaves = async (config, currentCandidates, now, universe
   };
 
   const changed = !sameState(existing, next);
-  if (changed) await writeReminderState(next);
-  await mirrorForPreview(next, config.ntfyToken);
+  if (changed) await writeReminderState(universeId, next);
+  await mirrorForPreview(universeId, next, ntfyToken);
   return { ok: true, changed, waves, scheduled, cancelled };
 };
