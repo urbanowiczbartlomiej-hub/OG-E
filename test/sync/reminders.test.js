@@ -16,6 +16,7 @@ import {
   REMINDER_MIRROR_KEY,
   REMINDER_GIST_ID_KEY,
   REMINDER_TOKEN_KEY,
+  isValidNtfyToken,
 } from '../../src/sync/reminders.js';
 
 describe('reminder file constants', () => {
@@ -55,5 +56,39 @@ describe('reminder file constants', () => {
     const keys = [REMINDER_MIRROR_KEY, REMINDER_GIST_ID_KEY, REMINDER_TOKEN_KEY];
     expect(new Set(keys).size).toBe(keys.length);
     for (const k of keys) expect(typeof k).toBe('string');
+  });
+});
+
+describe('isValidNtfyToken', () => {
+  it('accepts a realistic ntfy access token (tk_ + 30 chars)', () => {
+    expect(isValidNtfyToken('tk_tbqdljrkz4ivlgagxwewjz17k26gw')).toBe(true);
+  });
+
+  it('accepts tokens with mixed case + digits past the 20-char minimum', () => {
+    expect(isValidNtfyToken('tk_AbCdEfGhIjKlMnOpQrStUvWxYz0123')).toBe(true);
+  });
+
+  it('rejects empty / missing / non-string values', () => {
+    expect(isValidNtfyToken('')).toBe(false);
+    expect(isValidNtfyToken(undefined)).toBe(false);
+    expect(isValidNtfyToken(null)).toBe(false);
+    expect(isValidNtfyToken(42)).toBe(false);
+  });
+
+  it('rejects values without the tk_ prefix', () => {
+    expect(isValidNtfyToken('abcdefghijklmnopqrstuvwxyz12')).toBe(false);
+  });
+
+  it('rejects values too short after the prefix', () => {
+    expect(isValidNtfyToken('tk_short')).toBe(false);
+  });
+
+  it('rejects multi-line / whitespace-containing garbage (the dashboard-paste bug)', () => {
+    // The real-world failure mode: user pasted the entire dashboard
+    // preview text into the Settings field. Multi-line, spaces,
+    // punctuation. Must not be treated as a valid token.
+    expect(isValidNtfyToken(':Currently queued live · 20:36:42 · 0 messages')).toBe(false);
+    expect(isValidNtfyToken('tk_with spaces here')).toBe(false);
+    expect(isValidNtfyToken('tk_x\ny')).toBe(false);
   });
 });

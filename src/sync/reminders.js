@@ -286,7 +286,9 @@ const mirrorForPreview = async (universeId, state, ntfyToken) => {
       chromeStore.set(REMINDER_GIST_ID_KEY, getGistId()),
       chromeStore.set(REMINDER_TOKEN_KEY, getToken()),
       // ntfyToken is global — last writer wins, all universes share.
-      ...(ntfyToken ? [chromeStore.set(REMINDER_NTFY_TOKEN_KEY, ntfyToken)] : []),
+      // Only mirror a syntactically valid token, so garbage typed into
+      // one universe's Settings can't poison the global mirror.
+      ...(isValidNtfyToken(ntfyToken) ? [chromeStore.set(REMINDER_NTFY_TOKEN_KEY, ntfyToken)] : []),
     ]);
   } catch {
     // Best-effort — see above.
@@ -294,18 +296,56 @@ const mirrorForPreview = async (universeId, state, ntfyToken) => {
 };
 
 /**
- * Resolve the ntfy access token to use. Prefers the value the caller
- * passed in (from per-origin localStorage Settings), falling back to
- * the chrome.storage mirror so a universe whose Settings panel hasn't
- * been touched still gets reminders once any other universe sets one.
+ * ntfy.sh access-token format. Tokens look like `tk_` + at least 20
+ * alphanumeric characters (see https://docs.ntfy.sh/config/#access-
+ * tokens). We require this shape strictly because the Settings input
+ * is a freeform text field — users have historically pasted other
+ * things into it (most amusingly: a copy of the dashboard preview
+ * text), and ntfy's response to a malformed token is a 401 that
+ * Firefox surfaces as a CORS preflight failure. Treating any value
+ * that doesn't match this pattern as "not configured" lets the
+ * chrome.storage fallback kick in instead, which usually has the
+ * correct token from another universe.
+ */
+const NTFY_TOKEN_RE = /^tk_[A-Za-z0-9]{20,}$/;
+
+/**
+ * @param {unknown} token
+ * @returns {token is string}
+ */
+export const isValidNtfyToken = (token) =>
+  typeof token === 'string' && NTFY_TOKEN_RE.test(token);
+
+/**
+ * Resolve the ntfy access token to use. Validates the per-origin
+ * Settings value against the ntfy `tk_…` format; if it's missing,
+ * empty, or syntactically wrong, falls back to the chrome.storage
+ * mirror. Returns `''` only when both sources fail validation, which
+ * causes the producer to skip ntfy scheduling entirely (no garbage
+ * 401-triggering POSTs).
+ *
+ * Also logs a console hint when a malformed local token is overridden
+ * by a valid mirrored one — the player otherwise sees "no reminders"
+ * with no obvious cause.
  *
  * @param {string} configToken  `ntfyToken` as passed by the producer.
  * @returns {Promise<string>}
  */
 const resolveNtfyToken = async (configToken) => {
-  if (configToken) return configToken;
+  if (isValidNtfyToken(configToken)) return configToken;
   const mirrored = await chromeStore.get(REMINDER_NTFY_TOKEN_KEY);
-  return typeof mirrored === 'string' ? mirrored : '';
+  if (isValidNtfyToken(mirrored)) {
+    if (configToken) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[oge] ntfy token in this universe\'s Settings is malformed; ' +
+        'using the value mirrored from another universe instead. ' +
+        'Fix the Settings field to silence this warning.',
+      );
+    }
+    return mirrored;
+  }
+  return '';
 };
 
 /**

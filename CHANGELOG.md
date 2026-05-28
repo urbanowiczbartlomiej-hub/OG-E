@@ -6,6 +6,28 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.5.3] — 2026-05-28
+
+### Fixed
+
+- **Malformed ntfy token in one universe's Settings no longer breaks
+  reminders on that universe.** ntfy access tokens have a strict shape
+  (`tk_` + at least 20 alphanumeric characters); anything else
+  produces a 401 that Firefox surfaces as a CORS preflight failure on
+  every reminder POST. Real-world cause of the breakage: the player
+  selected and pasted the dashboard's preview text (`":Currently
+  queued live · …"`) into the ntfy-token field by mistake. From now
+  on:
+    - The producer validates the local Settings value against the
+      `tk_…` regex; if it doesn't match, the chrome.storage mirror is
+      used instead (a valid token from any other universe).
+    - A console warning fires when a malformed local token is
+      overridden by a valid mirrored one, so the player knows what
+      to fix.
+    - The mirror only accepts syntactically valid tokens — garbage
+      pasted into one universe can no longer poison the global
+      fallback that other universes rely on.
+
 ## [1.5.2] — 2026-05-28
 
 ### Fixed
