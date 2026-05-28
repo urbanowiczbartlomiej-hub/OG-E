@@ -30,13 +30,14 @@
 // czy dokąd leci. Fala to czas." Pure time-based identity also makes
 // reconcile trivial.
 //
-// Tradeoff we explicitly accept: when the user re-sends a wave between
-// two scans (so the extension never observes the old cluster going
-// away and the new one appearing), the old wave persists as "idle" and
-// its remaining ntfy.sh reminders keep firing until they expire. The
-// {@link STALE_WAVE_AFTER_SEC} purge below curbs that — any prev wave
-// whose return time + the full reminder window has elapsed gets
-// dropped on the next reconcile.
+// When `currentWaves` is non-empty the player is actively in the game
+// with expeditions in flight. In that case idle prev waves (fleets that
+// already landed while the player was away) are dropped immediately —
+// their reminders serve no purpose once the player is back at the
+// keyboard and has sent a fresh wave. When `currentWaves` is empty
+// (event box visible but nothing in flight) idle waves are preserved so
+// the player still receives the "your fleets are back" push even if the
+// browser stayed open past the return time.
 
 /**
  * Default maximum gap, in seconds, between two consecutive expedition
@@ -211,12 +212,17 @@ export const reconcileWaves = (prevWaves, currentWaves, now, opts = {}) => {
     }
   }
 
-  // Idle prev waves: known before, not seen now → keep reminding,
-  // unless past the stale horizon (all reminders fired anyway).
-  for (const prev of prevWaves) {
-    if (consumed.has(prev.id)) continue;
-    if (prev.nextWaveAt + staleAfter < now) continue; // dropped
-    out.push(prev);
+  // Idle prev waves: known before, not seen now.
+  // Keep only when the player has no active expeditions (currentWaves
+  // empty). If the player is back in the game with new waves, idle
+  // reminders are irrelevant — the expeditions already landed.
+  // Always drop waves past the stale horizon (all reminders fired).
+  if (currentWaves.length === 0) {
+    for (const prev of prevWaves) {
+      if (consumed.has(prev.id)) continue;
+      if (prev.nextWaveAt + staleAfter < now) continue; // dropped
+      out.push(prev);
+    }
   }
 
   out.sort((a, b) => a.nextWaveAt - b.nextWaveAt);

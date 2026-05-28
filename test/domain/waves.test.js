@@ -177,18 +177,29 @@ describe('reconcileWaves', () => {
     expect(renames).toEqual({ w_1000: 'w_1004' });
   });
 
-  it('treats a wave whose nextWaveAt jumped past gapSeconds as brand-new', () => {
+  it('treats a wave whose nextWaveAt jumped past gapSeconds as brand-new; drops idle when player has active expeditions', () => {
     // The user re-sent: same planets, completely new cycle 16 min later.
-    // Under v1.3.1 pure-time identity that's a NEW wave with a new id;
-    // the old prev wave hangs around as idle until it goes stale.
+    // Under v1.3.1 pure-time identity that's a NEW wave with a new id.
+    // Because currentWaves is non-empty (player is back in game with
+    // active expeditions) the old idle wave is dropped — its reminders
+    // are no longer relevant.
     const prev = [wave({ nextWaveAt: 1000, detectedAt: 900 })];
     const cur = [wave({ nextWaveAt: 1000 + 960 })]; // 16 min later
     const { waves, renames, resetIds } = reconcileWaves(prev, cur, 1100);
-    expect(waves).toHaveLength(2);
-    expect(waves[0].nextWaveAt).toBe(1000);     // prev kept as idle
-    expect(waves[1].nextWaveAt).toBe(1960);     // new wave
+    expect(waves).toHaveLength(1);
+    expect(waves[0].nextWaveAt).toBe(1960);     // only new wave
     expect(renames).toEqual({});
     expect(resetIds).toEqual([]);
+  });
+
+  it('keeps idle wave from a re-send when player has no active expeditions', () => {
+    // currentWaves is empty: no expeditions in the event box. The old
+    // idle wave is preserved so the player still gets reminded even if
+    // the browser stayed open past the return time.
+    const prev = [wave({ nextWaveAt: 1000, detectedAt: 900 })];
+    const { waves } = reconcileWaves(prev, [], 1100);
+    expect(waves).toHaveLength(1);
+    expect(waves[0].nextWaveAt).toBe(1000);
   });
 
   it('drops idle prev waves older than STALE_WAVE_AFTER_SEC', () => {
@@ -223,9 +234,23 @@ describe('reconcileWaves', () => {
     ];
     const cur = [wave({ nextWaveAt: 1090 })];
     const { waves, renames } = reconcileWaves(prevs, cur, 1100);
-    // Cur consumes the 1100 prev (closer), 1000 stays idle.
-    expect(waves).toHaveLength(2);
+    // Cur consumes the 1100 prev (closer); 1000 is idle but dropped
+    // because currentWaves is non-empty (player has active expeditions).
+    expect(waves).toHaveLength(1);
+    expect(waves[0].nextWaveAt).toBe(1090);
     expect(renames).toEqual({ w_1100: 'w_1090' });
+  });
+
+  it('keeps unmatched idle prev when currentWaves is empty', () => {
+    // Same two-prev scenario but no current expeditions in flight.
+    // The unmatched prev (1000) stays idle because the player isn't
+    // actively in game.
+    const prevs = [
+      wave({ nextWaveAt: 1000, detectedAt: 900, id: 'w_1000' }),
+    ];
+    const { waves } = reconcileWaves(prevs, [], 1100);
+    expect(waves).toHaveLength(1);
+    expect(waves[0].nextWaveAt).toBe(1000);
   });
 });
 

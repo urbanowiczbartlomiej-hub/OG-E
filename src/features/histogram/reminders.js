@@ -159,8 +159,21 @@ const refreshPreview = async () => {
     // `syncReminderWaves` does the same on every wave push, but if the
     // user only ever opens the dashboard (game tab closed) the orphans
     // never get cleaned up there. So we also sweep here on Refresh.
+    //
+    // Guard: skip when the gist was written less than 120 s ago. The
+    // game-side sync POSTs to ntfy *before* it PATCHes the gist, so
+    // there is a brief window where new message IDs exist on ntfy but
+    // haven't been persisted to the gist yet. Sweeping during that
+    // window would mistakenly cancel freshly-scheduled messages and
+    // mark them as "fired" in the preview. The game-side sweep (which
+    // uses the in-memory notifyState, always up to date) is sufficient
+    // for active sessions; this pass is only useful for stale orphans
+    // from a crashed or interrupted sync, which are at least 2 min old.
     let orphansCancelled = 0;
-    if (typeof ntfyToken === 'string' && ntfyToken && ntfyMap.size > 0 && state) {
+    const gistAge = state
+      ? nowSec - Math.floor(new Date(state.updatedAt).getTime() / 1000)
+      : Infinity;
+    if (typeof ntfyToken === 'string' && ntfyToken && ntfyMap.size > 0 && state && gistAge > 120) {
       const topic = await deriveNtfyTopic(typeof gistId === 'string' ? gistId : '');
       if (topic) {
         const ours = new Set();

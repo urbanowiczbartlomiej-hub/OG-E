@@ -4,6 +4,33 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.3.2] — 2026-05-28
+
+### Fixed
+
+- **ntfy reminders after re-send no longer get deleted by the dashboard
+  orphan sweep.** A race condition caused the OG-E Dashboard's "Refresh"
+  to run its orphan sweep while the game tab was still mid-sync (ntfy
+  messages already posted, gist not yet patched). The sweep saw fresh
+  IDs on ntfy that weren't in the stale gist and cancelled them,
+  leaving the new wave with "6 fired, 0 pending" and the old wave still
+  live on ntfy. Fixed by skipping the dashboard sweep when the gist was
+  updated less than 120 seconds ago — the game-side sweep (which uses
+  in-memory state, always current) is sufficient for active sessions.
+- **Old "idle" wave reminders are now cancelled when the player re-sends.**
+  Previously, if a player returned to the game and launched a new
+  expedition burst, the old wave's remaining ntfy reminders kept firing
+  (up to 70 min of extra notifications). Now, whenever the event box
+  shows at least one active expedition, idle waves from prior sessions
+  are dropped from the reconcile output — their ntfy IDs flow into
+  `toCancel` and are deleted before the new schedule is posted.
+
+### Added
+
+- `console.log` in the game tab when new ntfy reminders are scheduled,
+  e.g. `[oge] scheduled 6 ntfy reminder(s) → 17:04:03, 17:14:03, …`
+  Visible in DevTools → Console on the game page.
+
 ## [Unreleased]
 
 ### Deferred for a later release

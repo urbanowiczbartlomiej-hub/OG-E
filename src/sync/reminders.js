@@ -57,6 +57,8 @@ import {
   scheduleWaveReminders,
   cancelWaveReminders,
   fetchScheduledMessages,
+  REMINDER_COUNT,
+  REMINDER_INTERVAL_SEC,
 } from './ntfyScheduler.js';
 
 /**
@@ -330,6 +332,18 @@ export const syncReminderWaves = async (config, currentWaves, now, universeId) =
           // eslint-disable-next-line no-console
           console.warn(`[oge] schedule failed for ${wave.id}:`, e);
         }
+      }
+      if (scheduled > 0) {
+        const fireTimes = toSchedule.flatMap((w) => {
+          const times = [];
+          for (let i = 0; i < REMINDER_COUNT; i++) {
+            const t = w.nextWaveAt + i * REMINDER_INTERVAL_SEC;
+            if (t > now) times.push(new Date(t * 1000).toLocaleTimeString());
+          }
+          return times;
+        });
+        // eslint-disable-next-line no-console
+        console.log(`[oge] scheduled ${scheduled} ntfy reminder(s) → ${fireTimes.join(', ')}`);
       }
     }
 
