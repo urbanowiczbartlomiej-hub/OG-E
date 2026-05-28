@@ -39,9 +39,10 @@
 // @see ../../sync/reminders.js   — gist IO + reconcile + preview mirror
 // @see ../../state/reminderConfig.js — the global config store
 
-import { clusterWaves } from '../../domain/waves.js';
-import { reminderConfigStore } from '../../state/reminderConfig.js';
+import { clusterWaves, DEFAULT_CLUSTER_GAP_SECONDS } from '../../domain/waves.js';
+import { settingsStore } from '../../state/settings.js';
 import { syncReminderWaves } from '../../sync/reminders.js';
+import { parseUniverseId } from '../../lib/universeId.js';
 import { debounce } from '../../lib/debounce.js';
 
 /**
@@ -130,17 +131,20 @@ export const installExpeditionReminder = () => {
   const run = async () => {
     const force = pendingForce;
     pendingForce = false;
-    const config = reminderConfigStore.get();
-    // Dormant when off — unless a config change is forcing a push (e.g.
-    // the user just toggled it off and the Worker must learn that).
+    const s = settingsStore.get();
+    const config = { enabled: s.reminderEnabled, ntfyToken: s.reminderNtfyToken };
+    // Dormant when off — unless a settings change is forcing a push
+    // (e.g. the user just toggled it off and we must cancel scheduled
+    // ntfys).
     if (!config.enabled && !force) return;
 
-    const waves = clusterWaves(extractReturnEntries(), { gapSeconds: config.gapSeconds });
+    const waves = clusterWaves(extractReturnEntries(), { gapSeconds: DEFAULT_CLUSTER_GAP_SECONDS });
     const sig = signatureOf(waves);
     if (sig === lastSig && !force) return;
 
     const now = Math.floor(Date.now() / 1000);
-    const res = await syncReminderWaves(config, waves, now);
+    const universeId = parseUniverseId(location.host);
+    const res = await syncReminderWaves(config, waves, now, universeId);
     // Only advance the cached signature on a successful push. A failed
     // attempt (e.g. no token, rate-limited) leaves lastSig stale so the
     // next trigger retries instead of silently skipping.
@@ -152,13 +156,17 @@ export const installExpeditionReminder = () => {
   const onEventBox = () => scheduleRun();
   document.addEventListener('oge:eventBoxLoaded', onEventBox);
 
-  // Force a push on any config change so enable/disable/topic/hours/
-  // interval edits made on the histogram tab propagate to the gist.
-  let prevConfig = JSON.stringify(reminderConfigStore.get());
-  const unsubConfig = reminderConfigStore.subscribe((next) => {
-    const sig = JSON.stringify(next);
-    if (sig === prevConfig) return;
-    prevConfig = sig;
+  // Force a push on any reminder-setting change so enable/disable
+  // and token edits in the in-game Settings panel propagate immediately
+  // (cancel scheduled messages on disable, schedule them on enable).
+  /** @param {ReturnType<typeof settingsStore.get>} s */
+  const pickReminderSig = (s) =>
+    JSON.stringify({ e: s.reminderEnabled, t: s.reminderNtfyToken });
+  let prevReminderSig = pickReminderSig(settingsStore.get());
+  const unsubConfig = settingsStore.subscribe((next) => {
+    const sig = pickReminderSig(next);
+    if (sig === prevReminderSig) return;
+    prevReminderSig = sig;
     pendingForce = true;
     scheduleRun();
   });

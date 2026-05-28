@@ -3,22 +3,29 @@
 // Unit tests for the `waves` pure-domain module.
 //
 // Node env, no DOM, no fake timers — `now` flows in explicitly. The
-// fixture mirrors the real event-list capture in `odp.html`: a single
-// 14-expedition burst whose return-flight rows land 1779913212..1779913226
-// (a ~14 s spread), each from a distinct origin in galaxy 4.
+// burst fixture mirrors the real event-list capture in `odp.html`: a
+// 14-expedition burst with returns spread over ~14 s from distinct
+// galaxy-4 planets.
+//
+// v1.3.1 identity model: a wave is identified by its `nextWaveAt`.
+// Two scans with `nextWaveAt` within `gapSeconds` of each other are
+// the same wave. Origin-set, fleet count, etc. are kept for display
+// but no longer participate in identity. See `src/domain/waves.js`
+// header for the rationale.
 
 import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_CLUSTER_GAP_SECONDS,
+  STALE_WAVE_AFTER_SEC,
   computeWaveId,
   clusterWaves,
   reconcileWaves,
+  applyRenames,
   applyResets,
   pruneNotifyState,
-  withinAllowedHours,
 } from '../../src/domain/waves.js';
 
-/** One real burst from odp.html (return-flight rows), origin coords g:s:p. */
+/** One real burst from odp.html (return-flight rows). */
 const BURST = [
   { fleetId: '141279718', returnAt: 1779913212, origin: '4:467:15' },
   { fleetId: '141279726', returnAt: 1779913216, origin: '4:468:14' },
@@ -31,22 +38,16 @@ const BURST = [
 ];
 
 describe('computeWaveId', () => {
-  it('is order-independent (sorts origins)', () => {
-    expect(computeWaveId(['4:468:14', '4:467:15'])).toBe(
-      computeWaveId(['4:467:15', '4:468:14']),
-    );
+  it('is a function of nextWaveAt only', () => {
+    expect(computeWaveId(1779913212)).toBe('w_1779913212');
   });
 
-  it('de-duplicates repeated origins', () => {
-    expect(computeWaveId(['4:467:15', '4:467:15'])).toBe('w_4-467-15');
+  it('two equal timestamps map to the same id', () => {
+    expect(computeWaveId(1779913212)).toBe(computeWaveId(1779913212));
   });
 
-  it('replaces colons and joins with double underscore', () => {
-    expect(computeWaveId(['4:467:15', '4:468:14'])).toBe('w_4-467-15__4-468-14');
-  });
-
-  it('falls back to fleet ids when no origins are present', () => {
-    expect(computeWaveId([], ['b', 'a'])).toBe('wf_a__b');
+  it('fractional seconds are floored — gist file is plain JSON, no float ids', () => {
+    expect(computeWaveId(1779913212.7)).toBe('w_1779913212');
   });
 });
 
@@ -60,9 +61,10 @@ describe('clusterWaves', () => {
   it('uses the EARLIEST return as nextWaveAt', () => {
     const [wave] = clusterWaves(BURST);
     expect(wave.nextWaveAt).toBe(1779913212);
+    expect(wave.id).toBe('w_1779913212');
   });
 
-  it('lists sorted, de-duplicated origins', () => {
+  it('lists sorted, de-duplicated origins (display-only field)', () => {
     const [wave] = clusterWaves(BURST);
     expect(wave.origins).toEqual([
       '4:467:15', '4:468:14', '4:469:15', '4:470:14',
@@ -82,11 +84,10 @@ describe('clusterWaves', () => {
     expect(waves).toHaveLength(2);
     expect(waves[0].nextWaveAt).toBe(1000);
     expect(waves[1].nextWaveAt).toBe(1900);
+    expect(waves[0].id).not.toBe(waves[1].id);
   });
 
   it('keeps a single wave when gaps stay within the threshold', () => {
-    // Five entries each 4 minutes apart: every consecutive gap (240s) is
-    // under the 300s default, so a slow-but-continuous send is one wave.
     const slow = [0, 240, 480, 720, 960].map((d, i) => ({
       fleetId: 'f' + i, returnAt: 5000 + d, origin: `2:${i}:1`,
     }));
@@ -102,7 +103,7 @@ describe('clusterWaves', () => {
     expect(clusterWaves(two, { gapSeconds: 120 })).toHaveLength(1);
   });
 
-  it('drops entries with a non-finite returnAt without poisoning the cluster', () => {
+  it('drops entries with a non-finite returnAt', () => {
     const dirty = [
       { fleetId: 'a', returnAt: 1000, origin: '1:1:1' },
       { fleetId: 'b', returnAt: NaN, origin: '1:2:1' },
@@ -127,16 +128,25 @@ describe('clusterWaves', () => {
 describe('reconcileWaves', () => {
   const NOW = 1779913000;
 
+  /** @param {Partial<import('../../src/domain/waves.js').Wave>} w @returns {import('../../src/domain/waves.js').Wave} */
+  const wave = (w) => ({
+    id: w.id ?? computeWaveId(w.nextWaveAt ?? NOW),
+    nextWaveAt: w.nextWaveAt ?? NOW,
+    fleetCount: w.fleetCount ?? 1,
+    origins: w.origins ?? ['1:1:1'],
+    detectedAt: w.detectedAt,
+  });
+
   it('stamps detectedAt on a brand-new wave', () => {
     const current = clusterWaves(BURST);
-    const { waves, resetIds } = reconcileWaves([], current, NOW);
+    const { waves, resetIds, renames } = reconcileWaves([], current, NOW);
     expect(waves).toHaveLength(1);
     expect(waves[0].detectedAt).toBe(NOW);
     expect(resetIds).toEqual([]);
+    expect(renames).toEqual({});
   });
 
   it('keeps an idle wave that vanished from the event list', () => {
-    // Fleet landed and is idle → its return row is gone, current is empty.
     const prev = reconcileWaves([], clusterWaves(BURST), NOW).waves;
     const { waves, resetIds } = reconcileWaves(prev, [], NOW + 100);
     expect(waves).toHaveLength(1);
@@ -144,41 +154,55 @@ describe('reconcileWaves', () => {
     expect(resetIds).toEqual([]);
   });
 
-  it('detects a re-send (same origins, later return) and flags a reset', () => {
-    const prev = reconcileWaves([], clusterWaves(BURST), NOW).waves;
-    // Same planets, returns pushed ~16 minutes into the future.
-    const resent = clusterWaves(BURST.map((e) => ({ ...e, returnAt: e.returnAt + 1000 })));
-    const { waves, resetIds } = reconcileWaves(prev, resent, NOW + 1000);
+  it('matches two scans of the same wave within tolerance (no drift)', () => {
+    const prev = [wave({ nextWaveAt: NOW, detectedAt: NOW - 100 })];
+    const cur = [wave({ nextWaveAt: NOW })];
+    const { waves, resetIds, renames } = reconcileWaves(prev, cur, NOW + 50);
     expect(waves).toHaveLength(1);
-    expect(waves[0].nextWaveAt).toBe(1779913212 + 1000);
-    expect(waves[0].detectedAt).toBe(NOW + 1000);
-    expect(resetIds).toEqual([prev[0].id]);
+    expect(waves[0].id).toBe(prev[0].id);
+    expect(waves[0].detectedAt).toBe(NOW - 100);
+    expect(resetIds).toEqual([]);
+    expect(renames).toEqual({});
   });
 
-  it('preserves detectedAt for an in-flight wave seen again unchanged', () => {
-    const prev = reconcileWaves([], clusterWaves(BURST), NOW).waves;
-    const { waves, resetIds } = reconcileWaves(prev, clusterWaves(BURST), NOW + 50);
-    expect(waves[0].detectedAt).toBe(NOW);
+  it('matches with small drift and emits a rename so notifyState carries', () => {
+    // A DOM blink dropped the original earliest fleet for one scan, so
+    // cluster now picks the next-earliest return — id drifts by 4 s.
+    const prev = [wave({ nextWaveAt: 1000, detectedAt: 900 })];
+    const cur = [wave({ nextWaveAt: 1004 })];
+    const { waves, renames } = reconcileWaves(prev, cur, 1100);
+    expect(waves).toHaveLength(1);
+    expect(waves[0].nextWaveAt).toBe(1004);
+    expect(waves[0].detectedAt).toBe(900);
+    expect(renames).toEqual({ w_1000: 'w_1004' });
+  });
+
+  it('treats a wave whose nextWaveAt jumped past gapSeconds as brand-new', () => {
+    // The user re-sent: same planets, completely new cycle 16 min later.
+    // Under v1.3.1 pure-time identity that's a NEW wave with a new id;
+    // the old prev wave hangs around as idle until it goes stale.
+    const prev = [wave({ nextWaveAt: 1000, detectedAt: 900 })];
+    const cur = [wave({ nextWaveAt: 1000 + 960 })]; // 16 min later
+    const { waves, renames, resetIds } = reconcileWaves(prev, cur, 1100);
+    expect(waves).toHaveLength(2);
+    expect(waves[0].nextWaveAt).toBe(1000);     // prev kept as idle
+    expect(waves[1].nextWaveAt).toBe(1960);     // new wave
+    expect(renames).toEqual({});
     expect(resetIds).toEqual([]);
   });
 
-  it('tracks two partial waves independently', () => {
-    const waveA = [
-      { fleetId: 'a', returnAt: 1000, origin: '1:1:1' },
-      { fleetId: 'b', returnAt: 1003, origin: '1:2:1' },
-    ];
-    const waveB = [
-      { fleetId: 'c', returnAt: 1900, origin: '1:3:1' },
-      { fleetId: 'd', returnAt: 1903, origin: '1:4:1' },
-    ];
-    const prev = reconcileWaves([], clusterWaves([...waveA, ...waveB]), NOW).waves;
-    expect(prev).toHaveLength(2);
-    // Wave A re-sent (later), wave B still in flight unchanged.
-    const resentA = waveA.map((e) => ({ ...e, returnAt: e.returnAt + 5000 }));
-    const current = clusterWaves([...resentA, ...waveB]);
-    const { waves, resetIds } = reconcileWaves(prev, current, NOW + 5000);
-    expect(waves).toHaveLength(2);
-    expect(resetIds).toHaveLength(1);
+  it('drops idle prev waves older than STALE_WAVE_AFTER_SEC', () => {
+    // A wave whose return time + the full reminder window has elapsed
+    // is dead — all ntfy.sh messages have fired. No point keeping it.
+    const ancient = wave({ nextWaveAt: 1000, detectedAt: 900 });
+    const { waves } = reconcileWaves([ancient], [], 1000 + STALE_WAVE_AFTER_SEC + 1);
+    expect(waves).toHaveLength(0);
+  });
+
+  it('keeps an idle prev wave that is past return but inside the stale window', () => {
+    const recent = wave({ nextWaveAt: 1000, detectedAt: 900 });
+    const { waves } = reconcileWaves([recent], [], 1000 + 1000);
+    expect(waves).toHaveLength(1);
   });
 
   it('returns waves sorted by nextWaveAt', () => {
@@ -189,57 +213,71 @@ describe('reconcileWaves', () => {
     const { waves } = reconcileWaves([], clusterWaves(mixed), NOW);
     expect(waves[0].nextWaveAt).toBeLessThan(waves[1].nextWaveAt);
   });
+
+  it('matches the best (smallest-diff) prev when several are within tolerance', () => {
+    // Two prevs at 1000 and 1100; cur at 1090. Tolerance is 300, both
+    // match. The closer one (1100) wins.
+    const prevs = [
+      wave({ nextWaveAt: 1000, detectedAt: 900, id: 'w_1000' }),
+      wave({ nextWaveAt: 1100, detectedAt: 1000, id: 'w_1100' }),
+    ];
+    const cur = [wave({ nextWaveAt: 1090 })];
+    const { waves, renames } = reconcileWaves(prevs, cur, 1100);
+    // Cur consumes the 1100 prev (closer), 1000 stays idle.
+    expect(waves).toHaveLength(2);
+    expect(renames).toEqual({ w_1100: 'w_1090' });
+  });
+});
+
+describe('applyRenames', () => {
+  it('moves entries to their new ids', () => {
+    const state = { old1: { scheduledMessageIds: ['m1', 'm2'] } };
+    const next = applyRenames(state, { old1: 'new1' });
+    expect(next).toEqual({ new1: { scheduledMessageIds: ['m1', 'm2'] } });
+  });
+
+  it('does not clobber an existing new-id entry', () => {
+    const state = {
+      old1: { scheduledMessageIds: ['old'] },
+      new1: { scheduledMessageIds: ['keep'] },
+    };
+    const next = applyRenames(state, { old1: 'new1' });
+    expect(next.new1).toEqual({ scheduledMessageIds: ['keep'] });
+    expect(next.old1).toBeUndefined();
+  });
+
+  it('is a no-op for renames whose old id is absent', () => {
+    const state = { keep: { scheduledMessageIds: ['m1'] } };
+    const next = applyRenames(state, { ghost: 'phantom' });
+    expect(next).toEqual(state);
+  });
 });
 
 describe('applyResets', () => {
-  it('zeroes only the listed ids and leaves others untouched', () => {
+  it('drops only the listed ids and leaves others untouched', () => {
     const state = {
-      a: { notifyCount: 3, lastNotifiedAt: 100 },
-      b: { notifyCount: 5, lastNotifiedAt: 200 },
+      a: { scheduledMessageIds: ['m1', 'm2'] },
+      b: { scheduledMessageIds: ['m3'] },
     };
     const next = applyResets(state, ['a']);
-    expect(next.a).toEqual({ notifyCount: 0, lastNotifiedAt: null });
-    expect(next.b).toEqual({ notifyCount: 5, lastNotifiedAt: 200 });
+    expect(next.a).toBeUndefined();
+    expect(next.b).toEqual({ scheduledMessageIds: ['m3'] });
   });
 
-  it('does not mutate the input', () => {
-    const state = { a: { notifyCount: 3, lastNotifiedAt: 100 } };
-    applyResets(state, ['a']);
-    expect(state.a.notifyCount).toBe(3);
+  it('is a no-op for unknown ids', () => {
+    const state = { a: { scheduledMessageIds: ['m1'] } };
+    expect(applyResets(state, ['ghost'])).toEqual(state);
   });
 });
 
 describe('pruneNotifyState', () => {
   it('drops counters for waves no longer present', () => {
     const state = {
-      keep: { notifyCount: 1, lastNotifiedAt: 10 },
-      drop: { notifyCount: 2, lastNotifiedAt: 20 },
+      keep: { scheduledMessageIds: ['m1'] },
+      drop: { scheduledMessageIds: ['m2'] },
     };
     const waves = [{ id: 'keep', nextWaveAt: 0, fleetCount: 1, origins: [] }];
     const next = pruneNotifyState(state, waves);
     expect(Object.keys(next)).toEqual(['keep']);
-  });
-});
-
-describe('withinAllowedHours', () => {
-  /** @param {number} h @param {number} [m] @returns {number} */
-  const at = (h, m = 0) => h * 60 + m;
-
-  it('treats start === end as no restriction', () => {
-    expect(withinAllowedHours(at(3), '00:00', '00:00')).toBe(true);
-  });
-
-  it('handles a normal daytime window', () => {
-    expect(withinAllowedHours(at(7, 59), '08:00', '23:00')).toBe(false);
-    expect(withinAllowedHours(at(8, 0), '08:00', '23:00')).toBe(true);
-    expect(withinAllowedHours(at(22, 59), '08:00', '23:00')).toBe(true);
-    expect(withinAllowedHours(at(23, 0), '08:00', '23:00')).toBe(false);
-  });
-
-  it('handles a window that wraps past midnight', () => {
-    expect(withinAllowedHours(at(23), '22:00', '06:00')).toBe(true);
-    expect(withinAllowedHours(at(2), '22:00', '06:00')).toBe(true);
-    expect(withinAllowedHours(at(6), '22:00', '06:00')).toBe(false);
-    expect(withinAllowedHours(at(12), '22:00', '06:00')).toBe(false);
   });
 });

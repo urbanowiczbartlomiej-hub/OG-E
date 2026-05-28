@@ -90,6 +90,8 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
         'maxExpPerPlanet',
         'mobileMode',
         'readabilityBoost',
+        'reminderEnabled',
+        'reminderNtfyToken',
       ].sort(),
     );
 

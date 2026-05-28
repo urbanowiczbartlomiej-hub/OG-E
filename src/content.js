@@ -78,7 +78,6 @@ import { installAgrLogo } from './features/agrLogo.js';
 import { installFleetdispatchShortcut } from './features/fleetdispatchShortcut.js';
 import { installEventMenuHighlight } from './features/eventMenuHighlight.js';
 import { installExpeditionReminder } from './features/expeditionReminder/index.js';
-import { initReminderConfig } from './state/reminderConfig.js';
 
 import { installSync } from './sync/scheduler.js';
 
@@ -105,10 +104,9 @@ initRegistryStore();
   initScansStore();
   installSettingsMirror();
 
-  // Reminder config lives in chrome.storage (authored on the histogram
-  // tab, consumed here). Hydrate it so the expedition-reminder feature
-  // and any config-change push see real values.
-  initReminderConfig();
+  // Reminder config lives in `settings.js` (regular localStorage Settings,
+  // authored in the in-game OG-E settings panel). Nothing extra to wire
+  // here — initSettingsStore was hydrated synchronously above.
 
   // Top-frame-only: sync scheduler. OGame embeds several iframes;
   // running the gist round-trip in each would multiply API traffic

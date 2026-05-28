@@ -164,9 +164,9 @@ const boot = async () => {
   populateFreePosOptions(freePosSelect);
   wireTabs();
 
-  // Reminders tab is self-contained: it owns its config store binding
-  // and live gist preview, independent of the universe-scoped data the
-  // other tabs render. Wire it once at boot.
+  // Reminders tab is self-contained: it owns its live gist preview,
+  // independent of the universe-scoped data the other tabs render.
+  // Wire it once at boot.
   installReminders();
 
   const universes = await discoverUniverses();

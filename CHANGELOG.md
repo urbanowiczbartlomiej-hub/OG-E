@@ -14,6 +14,78 @@ version numbers follow [Semantic Versioning](https://semver.org).
   system), not a batch action.
 - Keyboard shortcuts beyond ArrowRight on fleetdispatch.
 
+## [1.3.1] — 2026-05-28
+
+### Changed
+
+- **Expedition reminders no longer need a Cloudflare Worker.** Setup is
+  now three things: enable the toggle in the in-game OG-E settings, paste
+  an ntfy.sh access token, subscribe to the auto-derived topic in the
+  ntfy phone app. The extension publishes pre-scheduled messages to
+  ntfy.sh using its `X-Delay` header — ntfy itself holds the queue and
+  delivers each push at the right minute, even when the browser is
+  closed. No `wrangler deploy`, no per-user server, no GitHub PAT for a
+  Worker. The `worker/` directory has been removed.
+- **Wave identity is now purely time-based.** Two clusters whose
+  `nextWaveAt` are within five minutes of each other count as the same
+  wave; planet-set tracking was dropped from identity (still shown on
+  the dashboard for display). One consequence the user should know
+  about: if you re-send your whole burst between extension scans, the
+  old wave persists as "idle" until the full 70-minute reminder
+  window passes — its lingering pushes will fire. Re-sending while the
+  game tab is active (the common case) is unaffected.
+- **ntfy topic is derived from the gist id** (SHA-256 prefix). No more
+  random topic generation; both the extension and the (formerly) Worker
+  arrive at the same channel by computing from `GIST_ID`. Existing
+  configurations that still carry an old `ntfyTopic` field are silently
+  ignored.
+- **Reminders config moved to the in-game Settings panel** alongside
+  cloud sync and the other preferences. The dashboard's Reminders tab
+  is now observability-only: shows the derived topic, the live ntfy.sh
+  queue per wave, and the per-wave fire times pulled directly from
+  ntfy's queue endpoint (so you see "Fires at: 12:22, 12:32, …" with
+  the actual scheduled moments).
+- **Six reminders × 10 min per wave, hard-coded.** No more user-tunable
+  repeat interval, allowed-hours window, per-wave cap, or gap-seconds
+  knob — the Settings table is two rows (toggle + token), nothing else.
+  Quiet hours are handled on the phone via ntfy's do-not-disturb.
+- **Push priority escalates 3 → 4 → 5 across the six reminders**
+  (default → high → max, two per band). First ping is normal so it
+  doesn't yank you out of whatever you're doing; later ones get
+  louder if you keep ignoring them.
+- **Histogram page rebranded "OG-E Dashboard"** — the multi-tab layout
+  (Colony Sizes, Galaxy Observations, Free Positions, Reminders) had
+  outgrown the "histogram" label. File paths on disk are unchanged for
+  backwards compatibility.
+
+### Fixed
+
+- **Overlap-aware wave reconcile + automatic orphan cleanup.** Earlier
+  versions could leave stale reminders queued on ntfy.sh after schema
+  changes or partial cancellations. Each sync now sweeps ntfy.sh and
+  cancels any scheduled message that is not in the current state
+  (filtered to future-only, so already-delivered cached messages are
+  never DELETE-stormed). The dashboard's Refresh button does the same
+  sweep client-side so users who only ever open the dashboard still
+  get a clean queue.
+
+### Added
+
+- **Live ntfy.sh queue preview in the OG-E Dashboard.** Per-wave
+  display of the exact fire times (`Fires at: 12:22, 12:32, …`),
+  pulled from ntfy's `/json?poll=1&scheduled=1` endpoint, alongside
+  the gist-stored wave list. Lets you confirm at a glance that the
+  reminders are queued and when they'll arrive.
+
+### Notes for ntfy.sh free-tier users
+
+The free ntfy.sh tier rate-limits anonymous publishers by IP. Because
+the extension publishes from your browser (your own IP) and is
+authenticated with your account token, this is not an issue in
+practice — but the prior Worker-based flow hit Cloudflare-shared edge
+IPs and was effectively unusable without a paid account. The new
+flow works reliably on the free tier for a single user.
+
 ## [1.3.0] — 2026-05-27
 
 ### Added

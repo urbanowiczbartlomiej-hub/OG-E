@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>OG-E Histogram</title>
+<title>OG-E Dashboard</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #0d1117; color: #ccc; font-family: 'Segoe UI', Arial, sans-serif; padding: 20px; }
@@ -111,52 +111,28 @@
   .streak-record .label { color: #888; font-size: 12px; }
   .streak-record .value { color: #4a9eff; font-weight: bold; }
 
-  /* Expedition Reminders tab */
-  .rem-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
-  @media (max-width: 860px) { .rem-grid { grid-template-columns: 1fr; } }
+  /* Reminders tab — preview-only surface. Setup form lives in the
+     in-game Settings panel, so this tab is intentionally compact. */
+  .rem-intro { color: #aaa; font-size: 13px; margin-bottom: 14px; line-height: 1.5; }
   .rem-card {
     background: #111820; border: 1px solid #2a4a5a; border-radius: 8px;
-    padding: 16px 18px;
+    padding: 14px 16px;
   }
-  .rem-card h2 { color: #4a9eff; font-size: 16px; margin-bottom: 12px; }
-  .rem-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
-  .rem-row label { color: #aaa; font-size: 13px; min-width: 150px; }
-  .rem-row input[type="text"], .rem-row input[type="number"], .rem-row input[type="time"] {
-    background: #0d1117; border: 1px solid #2a4a5a; color: #ccc;
-    padding: 6px 10px; border-radius: 6px; font-size: 13px;
-  }
-  .rem-row input[type="number"] { width: 90px; }
-  .rem-row .grow { flex: 1; min-width: 160px; }
+  .rem-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .rem-row label { color: #aaa; font-size: 13px; min-width: 220px; }
   .rem-row button {
     background: #1a2a3a; border: 1px solid #2a4a5a; color: #ccc;
-    padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer;
+    padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;
   }
   .rem-row button:hover { background: #2a4a6a; }
-  .rem-toggle { font-size: 15px; color: #fff; font-weight: bold; }
-  .rem-hint { color: #6b7785; font-size: 12px; margin: -4px 0 14px 0; }
+  .rem-hint { color: #6b7785; font-size: 12px; margin-top: 8px; line-height: 1.5; }
   .rem-mono {
+    flex: 1; min-width: 160px;
     font-family: 'Consolas', 'Courier New', monospace; font-size: 12px;
     background: #0d1117; border: 1px solid #2a4a5a; border-radius: 6px;
-    padding: 8px 10px; color: #9fd0ff; word-break: break-all;
+    padding: 6px 10px; color: #9fd0ff; word-break: break-all;
   }
-  .rem-steps { counter-reset: step; list-style: none; }
-  .rem-steps li {
-    position: relative; padding: 0 0 14px 38px; color: #bbb; font-size: 13px; line-height: 1.5;
-  }
-  .rem-steps li::before {
-    counter-increment: step; content: counter(step);
-    position: absolute; left: 0; top: 0;
-    width: 24px; height: 24px; border-radius: 50%;
-    background: #2a4a6a; color: #fff; font-weight: bold; font-size: 12px;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .rem-steps code, .rem-desc code {
-    background: #0d1117; border: 1px solid #2a4a5a; border-radius: 4px;
-    padding: 1px 5px; color: #9fd0ff; font-size: 12px;
-  }
-  .rem-desc { color: #bbb; font-size: 13px; line-height: 1.6; }
-  .rem-desc p { margin-bottom: 10px; }
-  .rem-status { font-size: 12px; margin-left: auto; }
+  .rem-status { font-size: 12px; }
   .rem-status.ok { color: #5fd08a; }
   .rem-status.warn { color: #ffb454; }
   .rem-status.err { color: #ff8888; }
@@ -166,8 +142,10 @@
   }
   .rem-wave .wave-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
   .rem-wave .wave-when { color: #4a9eff; font-weight: bold; font-size: 14px; }
-  .rem-wave .wave-meta { color: #888; font-size: 12px; }
+  .rem-wave .wave-meta { color: #888; font-size: 12px; margin-top: 2px; }
   .rem-wave .wave-origins { color: #6b7785; font-size: 11px; margin-top: 4px; word-break: break-all; }
+  .rem-wave .wave-fires { color: #888; font-size: 12px; margin-top: 4px; }
+  .rem-wave .wave-fires .wave-times { color: #9fd0ff; font-family: 'Consolas', 'Courier New', monospace; }
   .rem-wave.due { border-color: #6a5a2a; }
   .rem-badge {
     display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 10px;
@@ -183,7 +161,7 @@
     <button class="tab-btn" data-tab="colony" role="tab">Colony Sizes</button>
     <button class="tab-btn" data-tab="galaxy" role="tab">Galaxy Observations</button>
     <button class="tab-btn" data-tab="free"   role="tab">Free Positions</button>
-    <button class="tab-btn" data-tab="reminders" role="tab">Expedition Reminders</button>
+    <button class="tab-btn" data-tab="reminders" role="tab">Reminders</button>
   </div>
   <div class="tools">
     <span class="label">Server</span>
@@ -244,91 +222,33 @@
 
 <section id="remindersSection" class="tab-section">
   <h1>Expedition Reminders</h1>
-  <p style="color:#888;font-size:13px;margin-bottom:16px;">
-    Get a push notification on your phone / smartwatch when your expedition fleets land back home,
-    so you remember to re-send them — even when your browser is closed. OG-E only records when the
-    next wave returns; a tiny Cloudflare Worker watches the clock and ntfy delivers the push.
+  <p class="rem-intro">
+    Read-only view of the push reminders OG-E has queued on ntfy.sh.
+    Setup (enable toggle + access token) lives in the
+    <strong>OG-E settings panel inside the game</strong>, alongside the
+    cloud-sync token — this tab is just a look at what's pending.
   </p>
 
-  <div class="rem-grid">
-
-    <!-- LEFT: configuration -->
-    <div class="rem-card">
-      <h2>Configuration</h2>
-
-      <div class="rem-row">
-        <input type="checkbox" id="remEnabled">
-        <label for="remEnabled" class="rem-toggle">Enable reminders</label>
-        <span id="remSaveStatus" class="rem-status"></span>
-      </div>
-      <p class="rem-hint">When off, the Worker stays silent. Wave state is still recorded so turning it back on resumes instantly.</p>
-
-      <div class="rem-row">
-        <label for="remEvery">Repeat every (minutes)</label>
-        <input type="number" id="remEvery" min="1" max="180" step="1">
-      </div>
-
-      <div class="rem-row">
-        <label>Allowed hours</label>
-        <input type="time" id="remStart"> <span style="color:#888">–</span> <input type="time" id="remEnd">
-      </div>
-      <p class="rem-hint">Window in which pushes may be sent, in your timezone (<span id="remTz" class="rem-mono" style="padding:1px 5px"></span>). Equal start/end = no restriction.</p>
-
-      <div class="rem-row">
-        <label for="remMax">Max pushes per wave</label>
-        <input type="number" id="remMax" min="1" max="500" step="1">
-      </div>
-      <p class="rem-hint">Anti-spam backstop if a wave is never re-sent.</p>
-
-      <div class="rem-row">
-        <label for="remTopic">ntfy topic</label>
-        <input type="text" id="remTopic" class="grow" placeholder="not set — generate one">
-        <button id="remGenTopic" title="Generate a new random topic">Generate</button>
-      </div>
-      <p class="rem-hint">This string is effectively a password — anyone who knows it can read your reminders. Keep it secret.</p>
+  <div class="rem-card">
+    <div class="rem-row">
+      <label>Your ntfy topic (subscribe to this on your phone)</label>
+      <span id="remTopic" class="rem-mono">—</span>
+      <button id="remCopyTopic">Copy</button>
     </div>
-
-    <!-- RIGHT: step-by-step setup -->
-    <div class="rem-card">
-      <h2>Setup — step by step</h2>
-      <ol class="rem-steps">
-        <li>In OG-E settings (in the game), paste a GitHub token with <code>gist</code> scope and turn on cloud sync. The reminder feature reuses that same token and private gist.</li>
-        <li>Generate an <strong>ntfy topic</strong> above. Install the <strong>ntfy</strong> app on your phone (Android / iOS) and subscribe to that exact topic. Your smartwatch will mirror the notification automatically.</li>
-        <li>Deploy the Cloudflare Worker (one-time). It needs the gist id below as the <code>GIST_ID</code> variable and your token as the <code>GIST_TOKEN</code> secret, with a cron trigger of <code>* * * * *</code> (every minute). Full <code>wrangler.toml</code> + <code>index.js</code> were provided separately.</li>
-        <li>Open a game tab and send your expeditions. OG-E reads the return times and writes them to the gist — confirm they appear in the live preview below.</li>
-        <li>Flip <strong>Enable reminders</strong> on. From now on, when a wave is overdue and the time is inside your allowed window, you'll get a push until you re-send (or until the cap).</li>
-      </ol>
-
-      <div class="rem-row" style="margin-top:6px">
-        <label>Gist id</label>
-        <span id="remGistId" class="rem-mono grow">—</span>
-        <button id="remCopyGist">Copy</button>
-      </div>
-      <div class="rem-row">
-        <label>Token mirrored</label>
-        <span id="remTokenStatus" class="rem-status"></span>
-      </div>
-    </div>
+    <p class="rem-hint">
+      In the ntfy.sh app, signed in to the account whose token you pasted in OG-E settings,
+      tap + and paste this exact topic. You'll get up to 6 push reminders, 10 minutes apart,
+      each time an expedition wave returns. Re-sending in-game cancels the queue and starts a new one.
+    </p>
   </div>
 
-  <!-- BOTTOM: live preview + description -->
-  <div class="rem-card" style="margin-top:20px">
+  <div class="rem-card" style="margin-top:14px">
     <div class="rem-row" style="margin-bottom:8px">
-      <h2 style="margin:0">Live Gist preview</h2>
+      <h2 style="margin:0;color:#4a9eff;font-size:16px;flex:1">Currently queued</h2>
       <span id="remPreviewStatus" class="rem-status"></span>
-      <button id="remRefresh" style="margin-left:auto">Refresh</button>
+      <button id="remRefresh">Refresh</button>
     </div>
-    <div id="remPreview" class="rem-desc"></div>
-  </div>
-
-  <div class="rem-card" style="margin-top:20px">
-    <h2>How it works</h2>
-    <div class="rem-desc">
-      <p><strong>A "wave"</strong> is a group of expeditions sent together that come home together. OG-E reads each expedition's return-flight from the in-game event list (the same passive read that powers the green planet dots) and clusters returns that land within a few minutes of each other into one wave. Sending in two batches a while apart produces two independent waves, each reminded on its own.</p>
-      <p><strong>The extension only sets the deadline.</strong> It writes, per wave, the time the fleet returns home (<code>nextWaveAt</code>) plus your config into the gist, then stops watching — it does not need to stay open.</p>
-      <p><strong>The Worker watches the clock.</strong> Every minute it reads the gist; if reminders are on, the time is inside your window, and a wave is overdue, it sends a push via ntfy and bumps that wave's counter. It repeats until you re-send (which pushes the return time into the future) or you turn reminders off.</p>
-      <p>Identity is the set of origin planets, so re-sending from the same planets is recognised as the same wave and its counters reset cleanly.</p>
-    </div>
+    <div id="remPreview"></div>
   </div>
 </section>
 

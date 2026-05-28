@@ -1,50 +1,46 @@
 // @ts-check
 
-// Expedition-reminders tab (histogram page, extension origin).
+// OG-E Dashboard — Expedition Reminders tab.
 //
-// Two jobs:
-//   1. Edit the GLOBAL reminder config. The config lives in
-//      chrome.storage.local (see `state/reminderConfig.js`); this form is
-//      its primary editor. The game-origin content script observes the
-//      same key and re-pushes config into the gist, so edits here reach
-//      the Worker without the user touching the game tab.
-//   2. Render a friendly, live preview of the gist's `oge-reminders.json`.
-//      The game side mirrors the gist id + token into chrome.storage
-//      (a deliberate, approved exception to "never mirror the token" —
-//      chrome.storage is extension-private). We fetch the gist directly
-//      with that token so the preview reflects the Worker's latest
-//      notifyState, falling back to the mirrored snapshot if the live
-//      fetch can't run.
+// Pure observability surface: shows which expedition waves currently
+// have notifications queued on ntfy.sh, plus a short explainer. The
+// USER-FACING CONFIG (enable toggle + ntfy access token) lives in the
+// in-game OG-E settings panel; this tab deliberately holds no inputs.
+// Splitting it that way means setup happens once where every other
+// preference lives, and this page becomes a read-only "what's in the
+// queue right now" view.
 //
-// @see ../../state/reminderConfig.js
-// @see ../../sync/reminders.js — the mirror keys + filename
+// Data path: the game-origin sync mirrors the last-written state +
+// gist id + gist token into `chrome.storage.local` on every wave push.
+// We read those mirrors here and additionally do a live `fetch`
+// against the gist (using the mirrored token) so the preview is fresh
+// even when the game tab hasn't synced in a while. Mirror snapshot is
+// the fallback when the live fetch can't run (no token yet, offline,
+// rate-limited).
+//
+// @see ../../sync/reminders.js — mirror keys + filename
+// @see ../../sync/ntfyScheduler.js — REMINDER_COUNT / REMINDER_INTERVAL_SEC
+// @see ./index.js — installReminders wired into the dashboard boot
 
-/* global fetch, navigator */
+/* global fetch */
 
-import {
-  reminderConfigStore,
-  initReminderConfig,
-  generateNtfyTopic,
-} from '../../state/reminderConfig.js';
 import { chromeStore } from '../../lib/storage.js';
 import {
   REMINDER_MIRROR_KEY,
   REMINDER_GIST_ID_KEY,
   REMINDER_TOKEN_KEY,
+  REMINDER_NTFY_TOKEN_KEY,
   REMINDER_FILENAME,
+  deriveNtfyTopic,
 } from '../../sync/reminders.js';
+import { fetchScheduledMessages, cancelWaveReminders } from '../../sync/ntfyScheduler.js';
 
 /**
  * @typedef {import('../../sync/reminders.js').ReminderState} ReminderState
- * @typedef {import('../../state/reminderConfig.js').ReminderConfig} ReminderConfig
  */
 
 /** @type {Record<string, HTMLElement | null>} */
 const el = {};
-
-/** Guard: true while we're writing inputs FROM the store, so the input
- * `change` handlers don't loop a store write back. */
-let writingFromStore = false;
 
 /** Idempotency — the tab is wired exactly once. */
 let wired = false;
@@ -53,8 +49,9 @@ let wired = false;
 const byId = (id) => document.getElementById(id);
 
 /**
- * Wire the reminders tab. Idempotent. Hydrates the config store, binds
- * the form both ways, hooks the buttons, and paints the first preview.
+ * Wire the Reminders tab. Idempotent. Paints the initial topic +
+ * preview, then re-renders whenever the game-origin sync writes a new
+ * mirror snapshot.
  *
  * @returns {void}
  */
@@ -62,184 +59,132 @@ export const installReminders = () => {
   if (wired) return;
   wired = true;
 
-  initReminderConfig();
-
-  for (const id of [
-    'remEnabled', 'remEvery', 'remStart', 'remEnd', 'remMax', 'remTz',
-    'remTopic', 'remGenTopic', 'remSaveStatus', 'remGistId', 'remCopyGist',
-    'remTokenStatus', 'remPreview', 'remPreviewStatus', 'remRefresh',
-  ]) {
+  for (const id of ['remTopic', 'remCopyTopic', 'remPreview', 'remPreviewStatus', 'remRefresh']) {
     el[id] = byId(id);
   }
 
-  syncFormFromStore(reminderConfigStore.get());
-  reminderConfigStore.subscribe(syncFormFromStore);
-
-  wireInputs();
-  wireButtons();
-
-  void updateIdentity();
-  void refreshPreview();
-
-  // React to the game side mirroring fresh state / identity.
-  chromeStore.onChanged((changes) => {
-    if (REMINDER_GIST_ID_KEY in changes || REMINDER_TOKEN_KEY in changes) {
-      void updateIdentity();
-    }
-    if (REMINDER_MIRROR_KEY in changes) {
-      void refreshPreview();
-    }
-  });
-};
-
-/**
- * Push current config values into the form inputs. Wrapped in the
- * `writingFromStore` guard so the resulting input mutations don't echo
- * back into the store.
- *
- * @param {ReminderConfig} c
- * @returns {void}
- */
-const syncFormFromStore = (c) => {
-  writingFromStore = true;
-  try {
-    if (el.remEnabled) /** @type {HTMLInputElement} */ (el.remEnabled).checked = c.enabled;
-    if (el.remEvery) /** @type {HTMLInputElement} */ (el.remEvery).value = String(c.reminderEveryMinutes);
-    if (el.remStart) /** @type {HTMLInputElement} */ (el.remStart).value = c.allowedHours.start;
-    if (el.remEnd) /** @type {HTMLInputElement} */ (el.remEnd).value = c.allowedHours.end;
-    if (el.remMax) /** @type {HTMLInputElement} */ (el.remMax).value = String(c.maxNotificationsPerWave);
-    if (el.remTopic) /** @type {HTMLInputElement} */ (el.remTopic).value = c.ntfyTopic;
-    if (el.remTz) el.remTz.textContent = c.timezone;
-  } finally {
-    writingFromStore = false;
-  }
-};
-
-/**
- * Read the form back into the config store. No-op while
- * `writingFromStore` is set. Non-positive / unparseable numbers fall
- * back to the store's current value so a half-typed field doesn't reset
- * to a default mid-edit.
- *
- * @returns {void}
- */
-const readFormToStore = () => {
-  if (writingFromStore) return;
-  const prev = reminderConfigStore.get();
-  /** @param {HTMLElement | null} node @param {number} fallback @returns {number} */
-  const intOr = (node, fallback) => {
-    const n = parseInt(/** @type {HTMLInputElement} */ (node)?.value ?? '', 10);
-    return Number.isFinite(n) && n > 0 ? n : fallback;
-  };
-  reminderConfigStore.set({
-    ...prev,
-    enabled: /** @type {HTMLInputElement} */ (el.remEnabled)?.checked ?? prev.enabled,
-    reminderEveryMinutes: intOr(el.remEvery, prev.reminderEveryMinutes),
-    maxNotificationsPerWave: intOr(el.remMax, prev.maxNotificationsPerWave),
-    allowedHours: {
-      start: /** @type {HTMLInputElement} */ (el.remStart)?.value || prev.allowedHours.start,
-      end: /** @type {HTMLInputElement} */ (el.remEnd)?.value || prev.allowedHours.end,
-    },
-    ntfyTopic: /** @type {HTMLInputElement} */ (el.remTopic)?.value ?? prev.ntfyTopic,
-  });
-  flashSaved();
-};
-
-/** Briefly show a "Saved" confirmation next to the enable toggle. */
-const flashSaved = () => {
-  if (!el.remSaveStatus) return;
-  el.remSaveStatus.textContent = 'Saved';
-  el.remSaveStatus.className = 'rem-status ok';
-  setTimeout(() => { if (el.remSaveStatus) el.remSaveStatus.textContent = ''; }, 1200);
-};
-
-/** Attach change/input listeners to every form control. */
-const wireInputs = () => {
-  for (const id of ['remEnabled', 'remEvery', 'remStart', 'remEnd', 'remMax', 'remTopic']) {
-    el[id]?.addEventListener('change', readFormToStore);
-  }
-};
-
-/** Hook the action buttons (generate topic, copy gist id, refresh). */
-const wireButtons = () => {
-  el.remGenTopic?.addEventListener('click', () => {
-    reminderConfigStore.set({ ...reminderConfigStore.get(), ntfyTopic: generateNtfyTopic() });
-    flashSaved();
-  });
-
-  el.remCopyGist?.addEventListener('click', async () => {
-    const id = el.remGistId?.textContent || '';
-    if (!id || id === '—') return;
+  el.remCopyTopic?.addEventListener('click', async () => {
+    const topic = el.remTopic?.textContent || '';
+    if (!topic || topic === '—') return;
     try {
-      await navigator.clipboard.writeText(id);
-      if (el.remGistId) {
-        const orig = el.remGistId.textContent;
-        el.remGistId.textContent = 'copied!';
-        setTimeout(() => { if (el.remGistId) el.remGistId.textContent = orig; }, 900);
+      await navigator.clipboard.writeText(topic);
+      const orig = el.remTopic?.textContent;
+      if (el.remTopic) {
+        el.remTopic.textContent = 'copied!';
+        setTimeout(() => { if (el.remTopic) el.remTopic.textContent = orig ?? '—'; }, 900);
       }
     } catch {
-      // Clipboard denied (focus / permissions) — user can select manually.
+      // Clipboard denied — user can select manually.
     }
   });
 
   el.remRefresh?.addEventListener('click', () => { void refreshPreview(); });
+
+  void updateTopic();
+  void refreshPreview();
+
+  chromeStore.onChanged((changes) => {
+    if (REMINDER_GIST_ID_KEY in changes) void updateTopic();
+    if (REMINDER_MIRROR_KEY in changes) void refreshPreview();
+  });
 };
 
-/**
- * Read the mirrored gist id + token (written by the game side on its
- * first wave push) and reflect them in the identity rows.
- *
- * @returns {Promise<void>}
- */
-const updateIdentity = async () => {
-  const [id, token] = await Promise.all([
-    chromeStore.get(REMINDER_GIST_ID_KEY),
-    chromeStore.get(REMINDER_TOKEN_KEY),
-  ]);
-  if (el.remGistId) el.remGistId.textContent = (typeof id === 'string' && id) ? id : '—';
-  if (el.remTokenStatus) {
-    const ok = typeof token === 'string' && token.length > 0;
-    el.remTokenStatus.textContent = ok ? 'yes' : 'not yet — run a sync from the game tab';
-    el.remTokenStatus.className = 'rem-status ' + (ok ? 'ok' : 'warn');
+/** Recompute and paint the derived topic from the mirrored gist id. */
+const updateTopic = async () => {
+  const gistId = await chromeStore.get(REMINDER_GIST_ID_KEY);
+  if (el.remTopic) {
+    el.remTopic.textContent = typeof gistId === 'string' && gistId
+      ? await deriveNtfyTopic(gistId)
+      : '— (enable cloud sync in OG-E settings first)';
   }
 };
 
 /**
- * Fetch the gist live (via the mirrored token) and render its
- * `oge-reminders.json`. Falls back to the mirrored snapshot when the
- * live fetch can't run (no token yet, offline, rate-limited).
- *
- * @returns {Promise<void>}
+ * Fetch both the gist (waves + per-wave message ids) and the ntfy.sh
+ * queue (currently undelivered scheduled pushes) in parallel, then
+ * cross-reference: each wave's `scheduledMessageIds` are looked up in
+ * the ntfy queue so we can render exact upcoming push times. Falls
+ * back to the mirrored snapshot when the live gist fetch can't run;
+ * ntfy queue is best-effort (missing → "fires at —" line is omitted).
  */
 const refreshPreview = async () => {
   setPreviewStatus('loading…', 'warn');
-  const [id, token, mirror] = await Promise.all([
+  const [gistId, gistToken, ntfyToken, mirror] = await Promise.all([
     chromeStore.get(REMINDER_GIST_ID_KEY),
     chromeStore.get(REMINDER_TOKEN_KEY),
+    chromeStore.get(REMINDER_NTFY_TOKEN_KEY),
     chromeStore.get(REMINDER_MIRROR_KEY),
   ]);
 
-  if (!id || !token) {
-    renderPreview(/** @type {ReminderState | null} */ (mirror ?? null));
+  if (!gistId || !gistToken) {
+    renderPreview(/** @type {ReminderState | null} */ (mirror ?? null), new Map());
     setPreviewStatus(mirror ? 'from last mirror (no token yet)' : 'no data yet', 'warn');
     return;
   }
 
-  try {
-    const res = await fetch(`https://api.github.com/gists/${id}`, {
+  /** @type {Promise<ReminderState | null>} */
+  const gistP = (async () => {
+    const res = await fetch(`https://api.github.com/gists/${gistId}`, {
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${gistToken}`,
         Accept: 'application/vnd.github+json',
       },
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const gist = await res.json();
     const file = gist?.files?.[REMINDER_FILENAME];
-    const state = file && file.content ? JSON.parse(file.content) : null;
-    renderPreview(state);
-    setPreviewStatus('live · ' + new Date().toLocaleTimeString(), 'ok');
+    return file && file.content ? JSON.parse(file.content) : null;
+  })();
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  /** @type {Promise<Map<string, { id: string, time: number }>>} */
+  const ntfyP = (async () => {
+    if (typeof ntfyToken !== 'string' || !ntfyToken) return new Map();
+    const topic = await deriveNtfyTopic(typeof gistId === 'string' ? gistId : '');
+    if (!topic) return new Map();
+    try {
+      const msgs = await fetchScheduledMessages({ topic, token: ntfyToken, now: nowSec });
+      return new Map(msgs.map((m) => [m.id, m]));
+    } catch {
+      // ntfy fetch failed (network, 401) — preview just hides the
+      // "fires at" line for each wave. Not fatal.
+      return new Map();
+    }
+  })();
+
+  try {
+    const [state, ntfyMap] = await Promise.all([gistP, ntfyP]);
+
+    // Orphan sweep from the dashboard side. The game-side
+    // `syncReminderWaves` does the same on every wave push, but if the
+    // user only ever opens the dashboard (game tab closed) the orphans
+    // never get cleaned up there. So we also sweep here on Refresh.
+    let orphansCancelled = 0;
+    if (typeof ntfyToken === 'string' && ntfyToken && ntfyMap.size > 0 && state) {
+      const topic = await deriveNtfyTopic(typeof gistId === 'string' ? gistId : '');
+      if (topic) {
+        const ours = new Set();
+        for (const e of Object.values(state.notifyState || {})) {
+          if (e.scheduledMessageIds) for (const id of e.scheduledMessageIds) ours.add(id);
+        }
+        const orphanIds = [];
+        for (const id of ntfyMap.keys()) if (!ours.has(id)) orphanIds.push(id);
+        if (orphanIds.length > 0) {
+          orphansCancelled = await cancelWaveReminders({ ids: orphanIds, topic, token: ntfyToken });
+          for (const id of orphanIds) ntfyMap.delete(id);
+        }
+      }
+    }
+
+    renderPreview(state, ntfyMap);
+    const queued = ntfyMap.size;
+    const sweepNote = orphansCancelled > 0 ? ` · cleaned ${orphansCancelled} orphan${orphansCancelled === 1 ? '' : 's'}` : '';
+    setPreviewStatus(
+      `live · ${new Date().toLocaleTimeString()} · ${queued} message${queued === 1 ? '' : 's'} queued on ntfy${sweepNote}`,
+      'ok',
+    );
   } catch (err) {
-    renderPreview(/** @type {ReminderState | null} */ (mirror ?? null));
+    renderPreview(/** @type {ReminderState | null} */ (mirror ?? null), new Map());
     setPreviewStatus('live fetch failed (' + /** @type {Error} */ (err).message + ') — showing mirror', 'err');
   }
 };
@@ -253,9 +198,9 @@ const setPreviewStatus = (text, kind) => {
 
 /**
  * Create an element with an optional class and text. All dynamic values
- * flow in through `textContent`, never markup — so the preview is built
+ * flow in through `textContent`, never markup — preview is built
  * entirely from DOM nodes with no `innerHTML` assignment (avoids the
- * AMO "unsafe innerHTML" warning and any injection surface).
+ * AMO "unsafe innerHTML" warning).
  *
  * @param {string} tag
  * @param {{ class?: string, text?: string }} [o]
@@ -269,58 +214,29 @@ const node = (tag, o = {}) => {
 };
 
 /**
- * Build the "Config (as last written…)" summary line as a node tree.
- *
- * @param {Partial<ReminderConfig>} cfg
- * @returns {HTMLParagraphElement}
- */
-const buildConfigLine = (cfg) => {
-  const p = /** @type {HTMLParagraphElement} */ (node('p'));
-  p.style.color = '#888';
-  p.style.marginBottom = '12px';
-  p.appendChild(document.createTextNode('Config (as last written by the game tab): '));
-
-  const enabled = node('strong', { text: cfg.enabled ? 'enabled' : 'disabled' });
-  enabled.style.color = cfg.enabled ? '#5fd08a' : '#ff8888';
-  p.appendChild(enabled);
-
-  const every = cfg.reminderEveryMinutes ?? '?';
-  const start = cfg.allowedHours?.start ?? '?';
-  const end = cfg.allowedHours?.end ?? '?';
-  const tz = cfg.timezone ?? '?';
-  const cap = cfg.maxNotificationsPerWave ?? '?';
-  p.appendChild(document.createTextNode(
-    `, every ${every} min, ${start}–${end} (${tz}), cap ${cap}, topic `,
-  ));
-
-  const code = node('code');
-  if (cfg.ntfyTopic) code.textContent = cfg.ntfyTopic;
-  else code.appendChild(node('em', { text: 'not set' }));
-  p.appendChild(code);
-  p.appendChild(document.createTextNode('.'));
-  return p;
-};
-
-/**
- * Render the reminder state into the preview panel. Shows the config
- * block as last written, then each wave with its return time, fleet
- * count, origins, overdue badge, and the Worker's notify counters.
- *
- * Built entirely with `document.createElement` + `textContent` — no
- * `innerHTML`, so untrusted gist content can never be interpreted as
- * markup.
+ * Render the reminder state into the preview panel. Each wave gets one
+ * card: return time + queued-count badge + origins + concrete upcoming
+ * push times from ntfy. Built entirely with `document.createElement` +
+ * `textContent` — no `innerHTML`, so untrusted gist/ntfy content can
+ * never be interpreted as markup.
  *
  * @param {ReminderState | null} state
+ * @param {Map<string, { id: string, time: number }>} ntfyMap
+ *   ntfy message id → ntfy queue entry. Empty when the ntfy fetch
+ *   couldn't run (no token, network error). The per-wave "Fires at:"
+ *   line is omitted in that case.
  * @returns {void}
  */
-const renderPreview = (state) => {
+const renderPreview = (state, ntfyMap) => {
   if (!el.remPreview) return;
   const root = el.remPreview;
-  root.textContent = ''; // clear safely (no innerHTML)
+  root.textContent = ''; // clear safely
 
-  if (!state || !Array.isArray(state.waves)) {
+  if (!state || !Array.isArray(state.waves) || state.waves.length === 0) {
     const p = node('p', {
-      text: 'No reminder data in the gist yet. Set a GitHub token + cloud sync in the game, then send your expeditions — they will appear here.',
+      text: state
+        ? 'No outstanding waves. Send an expedition burst in-game to queue reminders.'
+        : 'No data yet. Enable cloud sync + reminders in OG-E settings and send an expedition.',
     });
     p.style.color = '#888';
     root.appendChild(p);
@@ -328,25 +244,21 @@ const renderPreview = (state) => {
   }
 
   const nowSec = Math.floor(Date.now() / 1000);
-  const cfg = state.config || /** @type {ReminderConfig} */ ({});
   const notify = state.notifyState || {};
-
-  root.appendChild(buildConfigLine(cfg));
-
-  if (state.waves.length === 0) {
-    const p = node('p', { text: 'No outstanding waves right now. Send an expedition burst to create one.' });
-    p.style.color = '#888';
-    root.appendChild(p);
-    return;
-  }
-
   const sorted = state.waves.slice().sort((a, b) => a.nextWaveAt - b.nextWaveAt);
   for (const w of sorted) {
     const due = nowSec >= w.nextWaveAt;
-    const ns = notify[w.id] || { notifyCount: 0, lastNotifiedAt: null };
-    const last = ns.lastNotifiedAt
-      ? new Date(ns.lastNotifiedAt * 1000).toLocaleTimeString()
-      : '—';
+    const ns = notify[w.id] || {};
+    const ids = ns.scheduledMessageIds ?? [];
+    const totalScheduled = ids.length;
+    // Resolve ids → ntfy entries in the order they were scheduled (so
+    // "fires at: 12:22, 12:32, ..." reads chronologically). Filter to
+    // the ones ntfy still has queued — already-fired messages drop out
+    // of the queue endpoint, so this count shrinks over time.
+    const stillQueued = ids
+      .map((id) => ntfyMap.get(id))
+      .filter(/** @returns {m is { id: string, time: number }} */ (m) => Boolean(m))
+      .sort((a, b) => a.time - b.time);
 
     const card = node('div', { class: 'rem-wave' + (due ? ' due' : '') });
 
@@ -357,14 +269,30 @@ const renderPreview = (state) => {
     }));
     head.appendChild(node('span', {
       class: 'rem-badge' + (due ? ' due' : ''),
-      text: due ? 'overdue — re-send' : 'in flight',
+      text: due ? 'overdue' : 'in flight',
     }));
     card.appendChild(head);
 
-    card.appendChild(node('div', {
-      class: 'wave-meta',
-      text: `${w.fleetCount} expeditions · pushes sent: ${ns.notifyCount} · last: ${last}`,
-    }));
+    /** @param {number} n */
+    const plural = (n) => (n === 1 ? '' : 's');
+    let metaText = `${w.fleetCount} expedition${plural(w.fleetCount)} · ${totalScheduled} reminder${plural(totalScheduled)} scheduled`;
+    if (ntfyMap.size > 0 && totalScheduled > 0) {
+      const fired = totalScheduled - stillQueued.length;
+      if (fired > 0) metaText += ` (${fired} fired, ${stillQueued.length} pending)`;
+      else metaText += ` (all pending)`;
+    }
+    card.appendChild(node('div', { class: 'wave-meta', text: metaText }));
+
+    if (stillQueued.length > 0) {
+      const timesText = stillQueued
+        .map((m) => new Date(m.time * 1000).toLocaleTimeString())
+        .join(', ');
+      const firesAt = node('div', { class: 'wave-fires' });
+      firesAt.appendChild(node('span', { text: 'Fires at: ' }));
+      firesAt.appendChild(node('span', { class: 'wave-times', text: timesText }));
+      card.appendChild(firesAt);
+    }
+
     card.appendChild(node('div', {
       class: 'wave-origins',
       text: (w.origins || []).join(', '),

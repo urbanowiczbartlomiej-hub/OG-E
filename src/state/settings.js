@@ -81,6 +81,8 @@ export const SETTINGS_PREFIX = 'oge_';
  *   gistToken               ''    — GitHub personal access token
  *   readabilityBoost        true  — inject CSS fix for event box + movement link
  *   eventMenuHighlight      true  — animate event menu entries + alert banner in #middle
+ *   reminderEnabled         false — schedule ntfy.sh pushes for expedition returns
+ *   reminderNtfyToken       ''    — ntfy.sh access token (Bearer) for publish/cancel
  *
  * @typedef {object} Settings
  * @property {boolean} mobileMode
@@ -99,6 +101,8 @@ export const SETTINGS_PREFIX = 'oge_';
  * @property {string}  gistToken
  * @property {boolean} readabilityBoost
  * @property {boolean} eventMenuHighlight
+ * @property {boolean} reminderEnabled
+ * @property {string}  reminderNtfyToken
  */
 
 /**
@@ -152,6 +156,8 @@ export const SETTINGS_SCHEMA = {
   gistToken:              { type: 'string', default: '',    key: SETTINGS_PREFIX + 'gistToken' },
   readabilityBoost:       { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'readabilityBoost' },
   eventMenuHighlight:     { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'eventMenuHighlight' },
+  reminderEnabled:        { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'reminderEnabled' },
+  reminderNtfyToken:      { type: 'string', default: '',    key: SETTINGS_PREFIX + 'reminderNtfyToken' },
 };
 
 /**
