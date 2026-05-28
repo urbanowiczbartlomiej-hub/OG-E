@@ -39,59 +39,28 @@
 /* global fetch */
 
 /**
- * Fetch wrapper for ntfy.sh requests. Routes through the background
- * service worker when running inside an extension content script, so
- * the request is made from extension origin and bypasses Firefox's
- * CORS restriction on content scripts.
+ * Return the `auth=…` query-string parameter that authenticates the
+ * request without an `Authorization` header.
  *
- * # Why the proxy is needed
+ * ntfy.sh accepts `?auth=base64(user:password)` on every endpoint as an
+ * alternative to the `Authorization` header. For a bare access token the
+ * "username" is empty and the token is the "password", so the encoding is
+ * `btoa(':' + token)`.
  *
- * Firefox content scripts are subject to CORS even when the extension
- * has declared `host_permissions` for the target. ntfy.sh responds to
- * CORS preflights with `Access-Control-Allow-Headers: *`; per the Fetch
- * spec that wildcard does NOT cover `Authorization`, so every ntfy
- * request with a Bearer token fails the preflight and is never sent.
+ * Using query-param auth avoids the Firefox CORS restriction: ntfy responds
+ * with `Access-Control-Allow-Headers: *`, which — per the Fetch spec — does
+ * NOT cover `Authorization`. Content-script requests that include that header
+ * fail the CORS preflight in Firefox even when the extension has declared
+ * `host_permissions` for ntfy.sh. The `auth` query param is an ordinary
+ * non-forbidden header-free alternative that passes through without issue.
  *
- * The background service worker (`src/background.js`) runs at extension
- * origin. Extension-origin requests bypass web-page CORS restrictions,
- * so the Authorization header goes through without issue.
+ * `btoa` is available as a global in browsers and in Node ≥ 16 (the project
+ * requires Node ≥ 20), so no polyfill is needed.
  *
- * # Test-environment fallback
- *
- * `browser` is undefined in Node / happy-dom. The fallback path uses
- * `globalThis.fetch` directly, keeping all existing test stubs working
- * with no changes to the test suite.
- *
- * @param {string} url
- * @param {{ method?: string, headers?: Record<string, string>, body?: string }} [init]
- * @returns {Promise<{ ok: boolean, status: number, statusText: string, text(): Promise<string>, json(): Promise<unknown> }>}
+ * @param {string} token  ntfy.sh access token.
+ * @returns {string}  Ready-to-append query param, e.g. `auth=dGVzdA==`.
  */
-const ntfyFetch = async (url, init = {}) => {
-  // Access `browser` via globalThis so TypeScript doesn't error under
-  // strict mode — `browser` isn't declared in lib.dom and we must treat
-  // it as a possibly-undefined property on the global object (same
-  // pattern as `pickStorage` in lib/storage.js).
-  const g = /** @type {Record<string, any>} */ (/** @type {unknown} */ (globalThis));
-  if (g.browser?.runtime?.sendMessage) {
-    const result = await g.browser.runtime.sendMessage({
-      type: 'ntfy-fetch',
-      url,
-      method: init.method ?? 'GET',
-      headers: init.headers ?? {},
-      body: init.body ?? null,
-    });
-    const { text } = result;
-    return {
-      ok: result.ok,
-      status: result.status,
-      statusText: result.statusText,
-      text: async () => text,
-      json: async () => JSON.parse(text),
-    };
-  }
-  // Test environment or non-extension context — use fetch directly.
-  return /** @type {any} */ (fetch(url, init));
-};
+const ntfyAuthParam = (token) => 'auth=' + btoa(':' + token);
 
 /**
  * Total reminders queued per wave. Six × ten minutes ≈ one hour of
@@ -180,10 +149,8 @@ export const scheduleWaveReminders = async ({ wave, topic, token, now, universeI
  * @returns {Promise<Array<{ id: string, time: number, message?: string, title?: string }>>}
  */
 export const fetchScheduledMessages = async ({ topic, token, now }) => {
-  const url = `https://ntfy.sh/${topic}/json?poll=1&scheduled=1`;
-  const res = await ntfyFetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const url = `https://ntfy.sh/${topic}/json?poll=1&scheduled=1&${ntfyAuthParam(token)}`;
+  const res = await fetch(url);
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(`ntfy poll ${res.status}: ${body.slice(0, 200)}`);
@@ -229,9 +196,8 @@ export const cancelWaveReminders = async ({ ids, topic, token }) => {
   let ok = 0;
   for (const id of ids) {
     try {
-      const res = await ntfyFetch(`https://ntfy.sh/${topic}/${id}`, {
+      const res = await fetch(`https://ntfy.sh/${topic}/${id}?${ntfyAuthParam(token)}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) ok++;
     } catch {
@@ -279,7 +245,6 @@ const postOne = async ({ topic, token, fireAt, now, n, universeId }) => {
   const delay = fireAt - now;
   /** @type {Record<string, string>} */
   const headers = {
-    Authorization: `Bearer ${token}`,
     Title: `[${universeId}] Expeditions back`,
     Tags: 'rocket',
     Priority: String(priorityForReminder(n)),
@@ -287,7 +252,7 @@ const postOne = async ({ topic, token, fireAt, now, n, universeId }) => {
   if (delay >= NTFY_MIN_DELAY_SEC) headers['X-Delay'] = String(fireAt);
 
   const body = `Expeditions returned - Reminder #${n}.`;
-  const res = await ntfyFetch(`https://ntfy.sh/${topic}`, {
+  const res = await fetch(`https://ntfy.sh/${topic}?${ntfyAuthParam(token)}`, {
     method: 'POST',
     headers,
     body,

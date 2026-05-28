@@ -47,7 +47,6 @@ const bundle = (input, file) => ({
 });
 
 export default [
-  bundle('src/background.js', 'dist/background.js'),
   bundle('src/content.js', 'dist/content.js'),
   bundle('src/page.js', 'dist/page.js'),
   bundle('src/histogram.js', 'dist/histogram.js'),

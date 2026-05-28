@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "OG-E",
-  "version": "1.3.4",
+  "version": "1.3.5",
   "description": "UI helper for OGame: floating Send Exp/Col, galaxy scan tracker, abandon overlay. Requires AntiGameReborn. Unofficial.",
   "browser_specific_settings": {
     "gecko": {
@@ -19,9 +19,6 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  },
-  "background": {
-    "scripts": ["background.js"]
   },
   "permissions": ["storage"],
   "host_permissions": [

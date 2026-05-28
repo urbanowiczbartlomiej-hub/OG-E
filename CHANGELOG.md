@@ -4,6 +4,19 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.3.5] — 2026-05-28
+
+### Fixed
+
+- **ntfy CORS issue resolved without a background script.** Instead of
+  routing requests through a background page (which broke extension loading),
+  ntfy.sh authentication now uses the `?auth=base64(:token)` query-parameter
+  instead of the `Authorization` header. This is a documented ntfy.sh
+  alternative that bypasses the Firefox CORS restriction entirely — no
+  preflight headers are required, so the request goes through cleanly from
+  the content script. The background script and its manifest/rollup entries
+  have been removed.
+
 ## [1.3.4] — 2026-05-28
 
 ### Fixed

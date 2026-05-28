@@ -68,11 +68,12 @@ describe('scheduleWaveReminders', () => {
     expect(ids).toEqual(['id-0', 'id-1', 'id-2', 'id-3', 'id-4', 'id-5']);
     expect(fetchMock).toHaveBeenCalledTimes(REMINDER_COUNT);
 
+    const expectedAuth = 'auth=' + btoa(':tk_abc');
     for (let slot = 0; slot < REMINDER_COUNT; slot++) {
       const [url, init] = fetchMock.mock.calls[slot];
-      expect(url).toBe('https://ntfy.sh/oge-test');
+      expect(url).toBe(`https://ntfy.sh/oge-test?${expectedAuth}`);
       expect(init.method).toBe('POST');
-      expect(init.headers.Authorization).toBe('Bearer tk_abc');
+      expect(init.headers.Authorization).toBeUndefined();
       expect(init.headers['X-Delay']).toBe(
         String(WAVE.nextWaveAt + slot * REMINDER_INTERVAL_SEC),
       );
@@ -152,12 +153,12 @@ describe('fetchScheduledMessages', () => {
     text: async () => text,
   });
 
-  it('GETs /topic/json?poll=1&scheduled=1 with Bearer auth', async () => {
+  it('GETs /topic/json?poll=1&scheduled=1&auth=… (no Authorization header)', async () => {
     fetchMock.mockResolvedValue(ndjsonResponse(''));
     await fetchScheduledMessages({ topic: 'oge-t', token: 'tk_abc', now: 0 });
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('https://ntfy.sh/oge-t/json?poll=1&scheduled=1');
-    expect(init.headers.Authorization).toBe('Bearer tk_abc');
+    expect(url).toBe(`https://ntfy.sh/oge-t/json?poll=1&scheduled=1&auth=${btoa(':tk_abc')}`);
+    expect(init).toBeUndefined();
   });
 
   it('parses NDJSON: one message per line, future-only', async () => {
@@ -230,18 +231,19 @@ describe('fetchScheduledMessages', () => {
 });
 
 describe('cancelWaveReminders', () => {
-  it('DELETEs each id with Bearer auth', async () => {
+  it('DELETEs each id via ?auth=… URL (no Authorization header)', async () => {
     fetchMock.mockResolvedValue(okResponse());
     const ok = await cancelWaveReminders({
       ids: ['a', 'b', 'c'], topic: 't', token: 'tk',
     });
+    const expectedAuth = 'auth=' + btoa(':tk');
     expect(ok).toBe(3);
     expect(fetchMock).toHaveBeenCalledTimes(3);
     for (let i = 0; i < 3; i++) {
       const [url, init] = fetchMock.mock.calls[i];
-      expect(url).toBe(`https://ntfy.sh/t/${['a','b','c'][i]}`);
+      expect(url).toBe(`https://ntfy.sh/t/${['a','b','c'][i]}?${expectedAuth}`);
       expect(init.method).toBe('DELETE');
-      expect(init.headers.Authorization).toBe('Bearer tk');
+      expect(init.headers).toBeUndefined();
     }
   });
 
