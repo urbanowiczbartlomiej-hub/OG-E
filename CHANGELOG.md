@@ -6,6 +6,24 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.5.1] — 2026-05-28
+
+### Fixed
+
+- **Game-side orphan sweep removed — it was a cross-universe-broken
+  bug AND a per-click traffic hog.** The ntfy topic is derived from
+  the gist id and is therefore shared by every OGame universe. The
+  game-side sweep only knew its OWN universe's scheduled message IDs,
+  so it labelled every other universe's legitimate scheduled message
+  as an "orphan" and DELETE-d it. Combined with OGame's full-page
+  navigation model (every click reloads the page → content script
+  re-inits → `oge:eventBoxLoaded` → debounce → sync → sweep), this
+  produced one fetch + cascade of DELETEs per click, keeping ntfy.sh
+  at the rate limit indefinitely. The dashboard already does the
+  sweep correctly (unions `scheduledMessageIds` across every
+  per-universe state file in the gist, gated by a 120 s freshness
+  check) — that is now the single canonical place for cleanup.
+
 ## [1.5.0] — 2026-05-28
 
 ### Fixed

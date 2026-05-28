@@ -63,7 +63,6 @@ import { reconcileWaves, pruneNotifyState } from '../domain/waves.js';
 import {
   scheduleWaveReminders,
   cancelWaveReminders,
-  fetchScheduledMessages,
   REMINDER_COUNT,
   REMINDER_INTERVAL_SEC,
 } from './ntfyScheduler.js';
@@ -418,30 +417,20 @@ export const syncReminderWaves = async (config, currentCandidates, now, universe
       }
     }
 
-    // Orphan sweep: anything still queued on ntfy that doesn't appear
-    // in our final notifyState is a leftover — a 401 on cancel, a
-    // mid-iteration crash, a v1→v2 schema migration that wiped our
-    // local map of ids. Cancel them so the user doesn't get ghosts.
-    // Failures here are non-fatal — orphans live until they either
-    // fire or `expires` ticks past.
-    try {
-      const ours = new Set();
-      for (const e of Object.values(notifyState)) {
-        if (e.scheduledMessageIds) for (const id of e.scheduledMessageIds) ours.add(id);
-      }
-      const queue = await fetchScheduledMessages({ topic, token: ntfyToken, now });
-      const orphanIds = queue.map((m) => m.id).filter((id) => !ours.has(id));
-      if (orphanIds.length > 0) {
-        // eslint-disable-next-line no-console
-        console.log(`[oge] cancelling ${orphanIds.length} orphan ntfy message(s)`);
-        cancelled += await cancelWaveReminders({
-          ids: orphanIds, topic, token: ntfyToken,
-        });
-      }
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.warn('[oge] orphan sweep failed:', e);
-    }
+    // Orphan sweep is intentionally NOT done on the game side.
+    //
+    // The ntfy topic is derived from the gist id and is therefore
+    // shared by all universes (different OGame servers, one gist).
+    // The game-side process only knows ITS OWN universe's notifyState
+    // — every other universe's scheduled message would appear as an
+    // "orphan" from here, and we'd cancel it. That's the same kind
+    // of cross-universe ping-pong v1.5.0 set out to fix.
+    //
+    // The dashboard (`features/histogram/reminders.js`) does the sweep
+    // properly: it unions `scheduledMessageIds` across every per-
+    // universe state file in the gist before deciding what's actually
+    // orphaned. It also gates on a freshness check so it never races
+    // a mid-sync POST. That's the single canonical place for cleanup.
   }
 
   /** @type {ReminderState} */
