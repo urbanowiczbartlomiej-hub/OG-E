@@ -32,11 +32,11 @@ const paint = (rowsHtml) => {
 };
 
 describe('extractReturnEntries', () => {
-  it('reads fleetId, returnAt and dense origin coords from return-flight rows', () => {
+  it('reads returnAt and dense origin coords from return-flight rows', () => {
     paint(row({ id: '141279718', arrival: '1779913212', coords: '4:467:15' }));
     const entries = extractReturnEntries();
     expect(entries).toEqual([
-      { fleetId: '141279718', returnAt: 1779913212, origin: '4:467:15' },
+      { returnAt: 1779913212, origin: '4:467:15' },
     ]);
   });
 
@@ -47,7 +47,7 @@ describe('extractReturnEntries', () => {
     );
     const entries = extractReturnEntries();
     expect(entries).toHaveLength(1);
-    expect(entries[0].fleetId).toBe('2');
+    expect(entries[0].returnAt).toBe(1779913212);
   });
 
   it('ignores non-expedition missions', () => {

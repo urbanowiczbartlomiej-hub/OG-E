@@ -77,6 +77,7 @@ import { installSettingsUi } from './features/settingsUi/index.js';
 import { installAgrLogo } from './features/agrLogo.js';
 import { installFleetdispatchShortcut } from './features/fleetdispatchShortcut.js';
 import { installEventMenuHighlight } from './features/eventMenuHighlight.js';
+import { installTraderMenuHighlight } from './features/traderMenuHighlight.js';
 import { installExpeditionReminder } from './features/expeditionReminder/index.js';
 
 import { installSync } from './sync/scheduler.js';
@@ -130,6 +131,7 @@ const installDomFeatures = () => {
   installColonyRecorder();
   installBadges();
   installEventMenuHighlight();
+  installTraderMenuHighlight();
 
   // Expedition-reminder producer — reads expedition return-flights from
   // #eventContent and pushes wave state to the gist for the Cloudflare

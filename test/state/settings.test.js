@@ -92,6 +92,7 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
         'readabilityBoost',
         'reminderEnabled',
         'reminderNtfyToken',
+        'traderMenuHighlight',
       ].sort(),
     );
 

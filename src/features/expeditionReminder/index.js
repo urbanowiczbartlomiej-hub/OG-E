@@ -40,6 +40,7 @@
 // @see ../../state/reminderConfig.js — the global config store
 
 import { clusterWaves, DEFAULT_CLUSTER_GAP_SECONDS } from '../../domain/waves.js';
+/** @typedef {import('../../domain/waves.js').WaveCandidate} WaveCandidate */
 import { settingsStore } from '../../state/settings.js';
 import { syncReminderWaves } from '../../sync/reminders.js';
 import { parseUniverseId } from '../../lib/universeId.js';
@@ -69,8 +70,8 @@ const DEBOUNCE_MS = 1500;
  * DOM but holds no state and returns a fresh array, so it can be unit
  * tested against a happy-dom fixture (see the matching test).
  *
- *   - `fleetId` — the numeric suffix of the row's `eventRow-<id>` id.
  *   - `returnAt` — `data-arrival-time` parsed as an integer (epoch s).
+ *     Doubles as the wave-identity carrier (see `domain/waves.js`).
  *   - `origin` — `.coordsOrigin` text with brackets/whitespace stripped
  *     to a dense `"g:s:p"` (matches the coord normalisation badges uses).
  *
@@ -83,26 +84,32 @@ export const extractReturnEntries = (root = document) => {
   for (const row of root.querySelectorAll(RETURN_ROW_SELECTOR)) {
     const arrivalAttr = row.getAttribute('data-arrival-time');
     const returnAt = arrivalAttr ? parseInt(arrivalAttr, 10) : NaN;
-    const fleetId = (row.id || '').replace(/^eventRow-/, '');
     const coordsText = row.querySelector('.coordsOrigin')?.textContent || '';
     const origin = coordsText.replace(/[\s[\]]/g, '');
-    out.push({ fleetId, returnAt, origin });
+    out.push({ returnAt, origin });
   }
   return out;
 };
 
 /**
- * Compact signature of a wave set — id + nextWaveAt per wave. Two sets
- * with the same signature need no gist write (the reconcile would be a
- * no-op). Sorted by id so ordering noise from the DOM doesn't produce a
- * spurious mismatch.
+ * Compact signature of a wave-candidate set — the full `returnAts` list
+ * per candidate. Two sets with the same signature need no gist write
+ * (the reconcile would be a no-op). Sorted by the smallest return-time
+ * so ordering noise from the DOM doesn't produce a spurious mismatch.
  *
- * @param {import('../../domain/waves.js').Wave[]} waves
+ * `returnAts` IS the signature because the v1.3.2 reconcile matches on
+ * return-time overlap: a fleet landing (one timestamp leaving the set)
+ * or a brand-new send (a new timestamp joining a fresh cluster) must
+ * trigger a sync even when `nextWaveAt` happens not to move.
+ *
+ * @param {WaveCandidate[]} candidates
  * @returns {string}
  */
-const signatureOf = (waves) =>
+const signatureOf = (candidates) =>
   JSON.stringify(
-    waves.map((w) => [w.id, w.nextWaveAt]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+    candidates
+      .map((c) => c.returnAts)
+      .sort((a, b) => (a[0] ?? 0) - (b[0] ?? 0)),
   );
 
 /** Idempotency sentinel — holds the dispose fn while installed. */
@@ -138,13 +145,13 @@ export const installExpeditionReminder = () => {
     // ntfys).
     if (!config.enabled && !force) return;
 
-    const waves = clusterWaves(extractReturnEntries(), { gapSeconds: DEFAULT_CLUSTER_GAP_SECONDS });
-    const sig = signatureOf(waves);
+    const candidates = clusterWaves(extractReturnEntries(), { gapSeconds: DEFAULT_CLUSTER_GAP_SECONDS });
+    const sig = signatureOf(candidates);
     if (sig === lastSig && !force) return;
 
     const now = Math.floor(Date.now() / 1000);
     const universeId = parseUniverseId(location.host);
-    const res = await syncReminderWaves(config, waves, now, universeId);
+    const res = await syncReminderWaves(config, candidates, now, universeId);
     // Only advance the cached signature on a successful push. A failed
     // attempt (e.g. no token, rate-limited) leaves lastSig stale so the
     // next trigger retries instead of silently skipping.

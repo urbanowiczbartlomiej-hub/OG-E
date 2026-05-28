@@ -16,53 +16,63 @@
 // of {@link ReturnEntry}. Everything here works on that list; we never
 // touch the DOM ourselves.
 //
-// # Wave identity = TIME
+// # Wave identity = the set of return-times
 //
-// As of v1.3.1 a wave is identified by its `nextWaveAt` — the earliest
-// return time in the cluster. Two clusters whose `nextWaveAt` falls
-// within {@link DEFAULT_CLUSTER_GAP_SECONDS} of each other are treated
-// as the same wave (so a brief DOM mutation that drops then re-adds a
-// row doesn't spawn a duplicate). Origin planets are kept on the wave
-// for display, but they no longer participate in identity.
+// As of v1.3.2 a wave's identity is the **set of return-time epoch
+// seconds** that belong to it. Each in-flight expedition has a fixed,
+// deterministic return time the moment OGame accepts the send; that
+// timestamp never changes in flight. The DOM row carrying it
+// disappears the moment the fleet lands. Two scans share a wave iff
+// their return-time sets overlap by at least one timestamp.
+// Consequences:
 //
-// Rationale — quoting the product owner: "Skoro coś wraca w jednej
-// minucie to jest dla gracza tą samą falą niezależnie od tego skąd
-// czy dokąd leci. Fala to czas." Pure time-based identity also makes
-// reconcile trivial.
+//   - Landing: the set shrinks (landed expeditions disappear from
+//     `#eventContent`). Overlap with the previous scan is always
+//     non-empty until the last expedition lands — same wave, same id.
+//   - Re-send: brand-new return-times (≥ one full round-trip later),
+//     zero overlap with any prev wave — brand-new wave, fresh id and
+//     fresh reminder schedule.
+//   - `nextWaveAt` drifts across scans (it's the earliest remaining
+//     return); since identity doesn't depend on it, drift is irrelevant.
 //
-// When `currentWaves` is non-empty the player is actively in the game
-// with expeditions in flight. In that case idle prev waves (fleets that
-// already landed while the player was away) are dropped immediately —
-// their reminders serve no purpose once the player is back at the
-// keyboard and has sent a fresh wave. When `currentWaves` is empty
-// (event box visible but nothing in flight) idle waves are preserved so
-// the player still receives the "your fleets are back" push even if the
-// browser stayed open past the return time.
+// The id is **stamped once at brand-new detection** (`'w_' + min
+// returnAt` at that moment) and carried forward unchanged through the
+// wave's whole life, even when the smallest live return-time changes
+// as expeditions land. Stamping happens ONLY on the `!match` branch
+// of `reconcileWaves`; matched waves inherit `match.id` verbatim.
+//
+// Rationale: pure-time identity by `nextWaveAt` alone (v1.3.1) broke
+// whenever a long gap between observations let `nextWaveAt` drift past
+// the 300 s tolerance — typically a page reload mid-wave — causing the
+// same wave to be treated as brand-new and getting a second six-
+// reminder schedule stacked on top of the original one still queued
+// on ntfy. Identity by the FULL set of return-times closes that gap:
+// even one shared timestamp is enough to tie the scans together.
 
 /**
  * Default maximum gap, in seconds, between two consecutive expedition
- * returns for them to count as the SAME wave. 300 s (5 min) sits well
- * above the few-seconds spacing of a single send burst and well below
- * the minutes-to-quarter-hour gap of a deliberate partial send.
- * Doubles as the tolerance for identifying two scans of the same wave
- * across time in {@link reconcileWaves}.
+ * returns for them to count as the SAME wave inside a single scan.
+ * Used purely for grouping returns within one observation — identity
+ * across scans no longer relies on it (see {@link reconcileWaves}).
  */
 export const DEFAULT_CLUSTER_GAP_SECONDS = 300;
 
 /**
- * After this many seconds past `nextWaveAt`, a wave that hasn't been
- * observed in the current scan is dropped. Sized to be longer than the
- * ntfy.sh reminder window (6 × 10 min = 3600 s) plus a buffer, so we
- * never drop a wave whose pushes are still firing.
+ * After this many seconds past the wave's first reminder a matched
+ * wave is dropped if a brand-new wave shows up in the same scan. The
+ * player has clearly re-sent, the wave's first push already fired (or
+ * is about to), so the remaining pings are noise.
+ *
+ * 60 s also covers the "first reminder fires in <1 minute" case the
+ * product owner asked about explicitly.
  */
-export const STALE_WAVE_AFTER_SEC = 4200;
+export const CLEANUP_GRACE_SEC = 60;
 
 /**
  * One expedition's return-flight, as extracted from the event list by
  * the feature layer. All this module needs to cluster and identify.
  *
  * @typedef {object} ReturnEntry
- * @property {string} fleetId   OGame's per-flight row id.
  * @property {number} returnAt  Epoch SECONDS the fleet lands back home.
  * @property {string} origin    Origin coords `"g:s:p"`. May be empty.
  */
@@ -71,55 +81,68 @@ export const STALE_WAVE_AFTER_SEC = 4200;
  * A clustered wave — the unit ntfy.sh reminds on.
  *
  * @typedef {object} Wave
- * @property {string}   id          Stable identity, see {@link computeWaveId}.
- * @property {number}   nextWaveAt  Epoch SECONDS of the EARLIEST return.
+ * @property {string}   id          Stable identity stamped at brand-new
+ *   detection and carried through the wave's life. See module header.
+ * @property {number}   nextWaveAt  Epoch SECONDS of the EARLIEST return
+ *   currently observed. May drift across scans; not part of identity.
  * @property {number}   fleetCount  How many expeditions share this wave.
+ * @property {number[]} returnAts   Sorted, unique return-time timestamps
+ *   currently observed for this wave. The identity carrier.
  * @property {string[]} origins     Sorted, de-duplicated origin coords
- *   (for display only — no longer part of identity).
+ *   (for display only).
  * @property {number}   [detectedAt] Epoch SECONDS this wave was first
  *   observed. Carried forward across same-wave scans.
  */
 
 /**
  * Per-wave reminder bookkeeping. Keyed by {@link Wave.id} in the gist's
- * `notifyState`. As of v1.3.1 this only stores the ids of the ntfy.sh
- * messages we have queued ahead of time so that a re-send can cancel
- * them before delivery (the Worker / push counters from v1.3.0 are
- * gone — ntfy.sh's `X-Delay` carries the timing instead).
+ * `notifyState`. Stores the ids of the ntfy.sh messages we have queued
+ * for that wave so a "player is back" event can cancel them before
+ * delivery.
  *
  * @typedef {object} NotifyEntry
  * @property {string[]} [scheduledMessageIds]
  */
 
 /**
- * Build a stable wave id from its `nextWaveAt`. Pure time-based — two
- * clusters whose returns land at the exact same epoch second share an
- * id, and within {@link reconcileWaves}'s tolerance any drift of less
- * than {@link DEFAULT_CLUSTER_GAP_SECONDS} is treated as the same wave.
+ * A clustering candidate produced by {@link clusterWaves}. Same shape
+ * as {@link Wave} minus the `id` (assigned only by {@link reconcileWaves}
+ * once we can tell whether this matches a prev wave or is brand-new).
  *
- * @param {number} nextWaveAt
- * @returns {string}
+ * @typedef {object} WaveCandidate
+ * @property {number}   nextWaveAt
+ * @property {number}   fleetCount
+ * @property {number[]} returnAts
+ * @property {string[]} origins
  */
-export const computeWaveId = (nextWaveAt) => 'w_' + Math.floor(nextWaveAt);
 
 /**
- * Reduce a flat list of return-flights into one {@link Wave} per group
- * of returns whose consecutive gaps stay within `gapSeconds`.
+ * Reduce a flat list of return-flights into one {@link WaveCandidate}
+ * per group of returns whose consecutive gaps stay within `gapSeconds`.
  *
  * Algorithm:
  *   1. Drop entries with a non-finite `returnAt` (defensive).
  *   2. Sort ascending by `returnAt`.
  *   3. Walk the sorted list; start a new cluster whenever the gap from
  *      the previous entry's return time exceeds `gapSeconds`.
- *   4. Each cluster becomes a wave: `nextWaveAt` = its earliest return,
- *      `fleetCount` = entries in cluster, `origins` = sorted unique
- *      origins (display-only).
+ *   4. Each cluster becomes a candidate: `nextWaveAt` = its earliest
+ *      return, `fleetCount` = entries in cluster, `returnAts` = sorted
+ *      unique return-times, `origins` = sorted unique origins.
+ *
+ * Two fleets that happen to share the exact same epoch second collapse
+ * to one element in `returnAts` (set semantics). `fleetCount` keeps
+ * the true count from `group.length`. Identity is still preserved: the
+ * shared timestamp leaves `returnAts` only when BOTH fleets land.
+ *
+ * No `id` is assigned here — {@link reconcileWaves} does that, because
+ * identity depends on history (a candidate's return-times may overlap
+ * a prev wave, in which case the prev id is carried forward).
  *
  * Pure: returns a fresh array, never mutates the input.
  *
  * @param {ReturnEntry[]} entries
  * @param {{ gapSeconds?: number }} [opts]
- * @returns {Wave[]} Waves in ascending `nextWaveAt` order.
+ * @returns {WaveCandidate[]} Candidates in ascending `nextWaveAt` order.
  */
 export const clusterWaves = (entries, opts = {}) => {
   const gapSeconds = opts.gapSeconds ?? DEFAULT_CLUSTER_GAP_SECONDS;
@@ -142,141 +165,138 @@ export const clusterWaves = (entries, opts = {}) => {
 
   return clusters.map((group) => {
     const origins = [...new Set(group.map((e) => e.origin).filter(Boolean))].sort();
-    const nextWaveAt = group[0].returnAt;
+    const returnAts = [...new Set(group.map((e) => e.returnAt))].sort((a, b) => a - b);
     return {
-      id: computeWaveId(nextWaveAt),
-      nextWaveAt,
+      nextWaveAt: group[0].returnAt,
       fleetCount: group.length,
+      returnAts,
       origins,
     };
   });
 };
 
 /**
- * Reconcile the previously-stored waves with the waves just observed
- * in the event list. Two scans match when their `nextWaveAt` fall
- * within `gapSeconds` of each other — that's "the same wave" by the
- * v1.3.1 time-only identity rule.
- *
- *   - **Match within tolerance** → same wave, in-flight. Carry
- *     `detectedAt` and, if the exact id changed (a few seconds of
- *     drift across scans), emit a rename so the caller can move
- *     `notifyState[oldId]` to `notifyState[newId]`.
- *   - **No match** → brand-new wave, stamp `detectedAt = now`.
- *
- * Prev waves left unmatched are kept as idle (the fleet landed and
- * its row dropped from `#eventContent`) UNLESS they are stale —
- * older than `STALE_WAVE_AFTER_SEC` past their return time, by
- * which point all six reminders have fired and there's nothing left
- * to remind about. Stale prev waves are simply dropped.
- *
- * Pure: no `Date.now()` (time comes in via `now`), no mutation.
+ * Find the prev wave with the greatest return-time overlap with the
+ * candidate. Returns `null` when no prev wave shares any return-time.
+ * Ties broken by largest overlap first, then by appearance order.
  *
  * @param {Wave[]} prevWaves
- * @param {Wave[]} currentWaves
- * @param {number} now            Epoch SECONDS.
- * @param {{ gapSeconds?: number, staleAfterSec?: number }} [opts]
- * @returns {{ waves: Wave[], resetIds: string[], renames: Record<string, string> }}
+ * @param {WaveCandidate} cand
+ * @param {Set<string>} consumed  prev ids already matched
+ * @returns {Wave | null}
  */
-export const reconcileWaves = (prevWaves, currentWaves, now, opts = {}) => {
-  const gapSeconds = opts.gapSeconds ?? DEFAULT_CLUSTER_GAP_SECONDS;
-  const staleAfter = opts.staleAfterSec ?? STALE_WAVE_AFTER_SEC;
+const findBestOverlap = (prevWaves, cand, consumed) => {
+  const curSet = new Set(cand.returnAts);
+  /** @type {Wave | null} */
+  let best = null;
+  let bestOverlap = 0;
+  for (const prev of prevWaves) {
+    if (consumed.has(prev.id)) continue;
+    let overlap = 0;
+    for (const t of prev.returnAts) if (curSet.has(t)) overlap++;
+    if (overlap > bestOverlap) {
+      best = prev;
+      bestOverlap = overlap;
+    }
+  }
+  return best;
+};
 
+/**
+ * Reconcile the previously-stored waves with the wave candidates just
+ * observed in the event list.
+ *
+ *   - **Overlap match** (`|prev.returnAts ∩ cand.returnAts| ≥ 1`) →
+ *     same wave. Carry `id` and `detectedAt`; reuse identity unchanged.
+ *     The `id` field is NEVER recomputed for matched waves.
+ *   - **No overlap** → brand-new wave. Stamp `id = 'w_' + min returnAt`
+ *     observed RIGHT NOW; that's the wave's identity forever. Later
+ *     scans never re-derive this even though the smallest LIVE return
+ *     shifts as expeditions land — the original stamp persists via the
+ *     match branch.
+ *   - **Unmatched prev** (no current candidate shares any of its
+ *     return-times) → the wave has fully landed; drop from the
+ *     returned set. The caller cancels its `scheduledMessageIds`.
+ *   - **Brand-new triggers cleanup**: whenever at least one brand-new
+ *     wave is detected, any matched prev wave whose `nextWaveAt` is
+ *     within {@link CLEANUP_GRACE_SEC} of `now` (i.e. its first
+ *     reminder already fired or fires in <1 min) is also dropped. The
+ *     player is clearly back in game; the rest of that wave's cycle is
+ *     noise. The caller cancels the dropped wave's scheduled messages.
+ *
+ * Pure: no `Date.now()` (time comes in via `now`), no mutation. Returns
+ * the reconciled wave list plus the ids of waves that fell out (so the
+ * caller can pick up their `notifyState` entries for cancellation).
+ *
+ * @param {Wave[]} prevWaves
+ * @param {WaveCandidate[]} currentCandidates
+ * @param {number} now            Epoch SECONDS.
+ * @returns {{ waves: Wave[], droppedIds: string[], brandNewDetected: boolean }}
+ */
+export const reconcileWaves = (prevWaves, currentCandidates, now) => {
   /** @type {Wave[]} */
   const out = [];
-  /** @type {string[]} */
-  const resetIds = [];
-  /** @type {Record<string, string>} */
-  const renames = {};
   /** @type {Set<string>} */
   const consumed = new Set();
+  let brandNewDetected = false;
 
-  for (const cur of currentWaves) {
-    /** @type {Wave | null} */
-    let match = null;
-    let bestDiff = Infinity;
-    for (const prev of prevWaves) {
-      if (consumed.has(prev.id)) continue;
-      const diff = Math.abs(prev.nextWaveAt - cur.nextWaveAt);
-      if (diff <= gapSeconds && diff < bestDiff) {
-        match = prev;
-        bestDiff = diff;
-      }
-    }
+  for (const cand of currentCandidates) {
+    const match = findBestOverlap(prevWaves, cand, consumed);
     if (match) {
       consumed.add(match.id);
-      if (match.id !== cur.id) renames[match.id] = cur.id;
-      out.push({ ...cur, detectedAt: match.detectedAt ?? now });
+      out.push({
+        id: match.id,
+        nextWaveAt: cand.nextWaveAt,
+        fleetCount: cand.fleetCount,
+        returnAts: cand.returnAts,
+        origins: cand.origins,
+        detectedAt: match.detectedAt ?? now,
+      });
     } else {
-      out.push({ ...cur, detectedAt: now });
+      brandNewDetected = true;
+      const stamp = cand.returnAts.length > 0 ? cand.returnAts[0] : cand.nextWaveAt;
+      out.push({
+        id: 'w_' + stamp,
+        nextWaveAt: cand.nextWaveAt,
+        fleetCount: cand.fleetCount,
+        returnAts: cand.returnAts,
+        origins: cand.origins,
+        detectedAt: now,
+      });
     }
   }
 
-  // Idle prev waves: known before, not seen now.
-  // Keep only when the player has no active expeditions (currentWaves
-  // empty). If the player is back in the game with new waves, idle
-  // reminders are irrelevant — the expeditions already landed.
-  // Always drop waves past the stale horizon (all reminders fired).
-  if (currentWaves.length === 0) {
-    for (const prev of prevWaves) {
-      if (consumed.has(prev.id)) continue;
-      if (prev.nextWaveAt + staleAfter < now) continue; // dropped
-      out.push(prev);
+  /** @type {string[]} */
+  const droppedIds = [];
+
+  // Cleanup rule: a brand-new wave means the player is actively
+  // sending again. Any matched wave whose first reminder already fired
+  // (or fires in <CLEANUP_GRACE_SEC) is noise from this point — drop
+  // it so the caller cancels its remaining schedule.
+  if (brandNewDetected) {
+    for (let i = out.length - 1; i >= 0; i--) {
+      const w = out[i];
+      const wasMatched = consumed.has(w.id);
+      if (wasMatched && w.nextWaveAt <= now + CLEANUP_GRACE_SEC) {
+        droppedIds.push(w.id);
+        out.splice(i, 1);
+      }
     }
+  }
+
+  // Unmatched prev waves — fully landed. Drop them.
+  for (const prev of prevWaves) {
+    if (!consumed.has(prev.id)) droppedIds.push(prev.id);
   }
 
   out.sort((a, b) => a.nextWaveAt - b.nextWaveAt);
-  return { waves: out, resetIds, renames };
-};
-
-/**
- * Return a copy of `notifyState` with each `oldId` entry moved to its
- * `newId` slot, per the `renames` produced by {@link reconcileWaves}.
- * A new-id entry that already exists wins — we never clobber an
- * existing schedule on top of an old one.
- *
- * Must run BEFORE {@link applyResets} and {@link pruneNotifyState} so
- * reset/prune operate on the final ids.
- *
- * @param {Record<string, NotifyEntry>} notifyState
- * @param {Record<string, string>} renames
- * @returns {Record<string, NotifyEntry>}
- */
-export const applyRenames = (notifyState, renames) => {
-  const next = { ...notifyState };
-  for (const [oldId, newId] of Object.entries(renames)) {
-    if (next[oldId] === undefined) continue;
-    if (next[newId] === undefined) next[newId] = next[oldId];
-    delete next[oldId];
-  }
-  return next;
-};
-
-/**
- * Return a copy of `notifyState` with the given ids removed entirely.
- * A reset means "this wave is conceptually brand new" — the caller is
- * expected to schedule fresh ntfy messages and write a new entry, so
- * dropping the old entry is the cleanest representation.
- *
- * In the pure-time identity model {@link reconcileWaves} never emits
- * `resetIds` (a re-send becomes a brand-new wave with a brand-new id,
- * so there's nothing to reset). The function stays as a no-op safety
- * net for any caller still threading reset ids through the pipeline.
- *
- * @param {Record<string, NotifyEntry>} notifyState
- * @param {string[]} resetIds
- * @returns {Record<string, NotifyEntry>}
- */
-export const applyResets = (notifyState, resetIds) => {
-  const next = { ...notifyState };
-  for (const id of resetIds) delete next[id];
-  return next;
+  return { waves: out, droppedIds, brandNewDetected };
 };
 
 /**
  * Return a copy of `notifyState` containing only entries whose id still
  * appears in `waves`. Keeps the gist from accumulating dead counters
- * for waves that have been superseded.
+ * for waves that have been dropped (landed or swept by the cleanup rule).
  *
  * @param {Record<string, NotifyEntry>} notifyState
  * @param {Wave[]} waves

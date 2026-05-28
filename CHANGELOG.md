@@ -4,6 +4,77 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+## [1.4.0] — 2026-05-28
+
+### Fixed
+
+- **Expedition reminders no longer stack duplicate ntfy schedules after
+  a page reload mid-wave.** The previous identity model (`Wave.id =
+  'w_' + nextWaveAt`, with a 300 s drift tolerance in reconcile) flipped
+  a partially-returned wave to "brand-new" whenever a long gap between
+  observations let `nextWaveAt` drift past the tolerance — typically a
+  page reload while the wave was landing. The brand-new branch scheduled
+  six fresh reminders on top of the original schedule that was already
+  queued on ntfy, producing bursts of pushes a few seconds apart while
+  the wave was finishing.
+- **Re-sending while the previous wave is still landing cancels the
+  rest of its reminder cycle.** Once the player is clearly back in game
+  (any brand-new wave detected), any matched wave whose first reminder
+  has already fired or fires in under 60 s gets its remaining schedule
+  cancelled on ntfy. No more pings for expeditions that are visibly
+  landing in front of the player.
+
+### Changed
+
+- **Wave identity switched to the SET of return-time epoch seconds.**
+  Two scans share a wave iff their `returnAts` sets overlap by at least
+  one timestamp. `Wave.id` is stamped once at brand-new detection
+  (`'w_' + min returnAt at that moment`) and carried through the wave's
+  whole life — never re-derived even when the smallest live return
+  shifts as expeditions land. Drift of `nextWaveAt` between scans is
+  irrelevant; even one shared return-time ties the scans together.
+- **Reminder schedule is locked at wave birth.** ntfy messages are
+  scheduled exactly once, on the brand-new branch. Matched waves are
+  never re-scheduled, adjusted, or re-cancelled — their six timestamps
+  freeze on the first `nextWaveAt` ever observed for that wave.
+- **Reminder gist file schema bumped to v2** (`oge-reminders.json`).
+  Older v1 state is treated as absent on read; the orphan sweep on the
+  next sync cancels any v1-era ntfy messages still queued. Waves in
+  flight at upgrade time get fresh v2 identities and fresh schedules.
+- **Event menu highlight no longer paints the loud central banner.** The
+  pulsing red-orange strip prepended to `#middle` for active event
+  entries proved disruptive during normal play; the existing left-menu
+  pulse is sufficient to draw attention. The banner code, its dismiss
+  flag (`oge-event-banner-dismissed`), and its tests have been removed.
+  The menu pulse itself is unchanged.
+
+### Added
+
+- **Trader (Handlarz) reminder highlight** — new opt-out toggle in
+  Settings → Display. Time-aware pulse on the Trader menu entry:
+    - 00:00–06:00 (night): no highlight.
+    - 06:00–14:00: subtle yellow pulse, suppressed for the current
+      30-minute slot once the user clicks Trader (returns at the next
+      :00 / :30 boundary).
+    - 14:00–24:00, before the first click of the day: intense red
+      pulse — escalation for the late-day push to claim the daily
+      trader bonus.
+    - 14:00–24:00, after the first click: same subtle / per-slot
+      behavior as the morning band.
+  Click state lives in localStorage under `oge-trader-last-click`.
+
+### Removed
+
+- `Wave.fleetIds` (intermediate refactor step). `ReturnEntry.fleetId`
+  is no longer extracted from the DOM — return-time alone is the
+  identity carrier. No user-visible effect.
+- Dead helpers from the v1.3.1 reconcile pipeline: `computeWaveId`,
+  `applyResets`, `applyRenames`, `STALE_WAVE_AFTER_SEC`, the time-
+  tolerance match path, and the renames/resets plumbing in
+  `syncReminderWaves`.
+
 ## [1.3.5] — 2026-05-28
 
 ### Fixed

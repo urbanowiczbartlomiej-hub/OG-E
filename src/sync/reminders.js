@@ -13,16 +13,28 @@
 //
 // # What's stored
 //
-// One global file per gist. Three top-level blocks:
+// One global file per gist. Two top-level blocks:
 //
-//   - `config`      — `{ enabled }`, plus any token mirrored for the
-//                     histogram preview (gist id + gist token).
 //   - `waves`       — the reconciled wave set (output of
 //                     `domain/waves.reconcileWaves`).
-//   - `notifyState` — per-wave bookkeeping. As of v1.3.1 each entry
-//                     holds the IDs of the ntfy.sh scheduled messages
-//                     queued for that wave, so a re-send can cancel
-//                     them before delivery (no separate cron worker).
+//   - `notifyState` — per-wave bookkeeping. Each entry holds the IDs of
+//                     the ntfy.sh scheduled messages queued for that
+//                     wave, so a re-send / cleanup pass can cancel them
+//                     before delivery.
+//
+// # Lock-at-birth scheduling rule
+//
+// ntfy.sh messages are scheduled **exactly once per wave**, at the
+// moment the wave is detected as brand-new. Subsequent observations of
+// the same wave (matched by fleet-ID overlap in `reconcileWaves`) do
+// not re-schedule, do not adjust, do not cancel anything. The six
+// timestamps freeze on the first `nextWaveAt` we ever saw for that wave.
+//
+// This is a deliberate trade-off: if a later send adds a fleet whose
+// return is earlier than the first one we observed, the first reminder
+// fires a minute late. In exchange we get a wave whose identity AND
+// schedule are completely immutable from creation to landing, with no
+// stacked-schedule bug possible.
 //
 // # OG-E Dashboard preview mirror
 //
@@ -39,7 +51,7 @@
 // `chrome.storage` is extension-private (not web-reachable) and the
 // live preview is the concrete benefit.
 //
-// @see ../domain/waves.js — reconcileWaves / applyResets / pruneNotifyState
+// @see ../domain/waves.js — reconcileWaves / pruneNotifyState
 // @see ../state/settings.js — `reminderEnabled` / `reminderNtfyToken`
 // @see ../features/histogram/reminders.js — the preview consumer
 
@@ -47,12 +59,7 @@
 
 import { gh, ensureGistV3, getToken, getGistId } from './gist.js';
 import { chromeStore } from '../lib/storage.js';
-import {
-  reconcileWaves,
-  applyRenames,
-  applyResets,
-  pruneNotifyState,
-} from '../domain/waves.js';
+import { reconcileWaves, pruneNotifyState } from '../domain/waves.js';
 import {
   scheduleWaveReminders,
   cancelWaveReminders,
@@ -80,8 +87,19 @@ import {
 /** Filename of the plain-JSON reminder-state file inside the OG-E gist. */
 export const REMINDER_FILENAME = 'oge-reminders.json';
 
-/** Schema version of the reminder file. Bumped only on breaking shape changes. */
-export const REMINDER_SCHEMA_VERSION = 1;
+/**
+ * Schema version of the reminder file.
+ *
+ *   - v1: time-based wave identity (pre-1.3.2). `Wave.id` was
+ *     `'w_' + nextWaveAt`, with a 300 s drift tolerance in reconcile.
+ *   - v2: return-time-set overlap identity. `Wave.id` is stamped once
+ *     at brand-new detection and never re-derived; `Wave.returnAts` is
+ *     part of the persisted shape. We do NOT migrate v1 state — the
+ *     orphan sweep on the next sync cancels any v1-era ntfy messages
+ *     still queued, and waves in flight at upgrade time get fresh
+ *     v2 identities + fresh schedules.
+ */
+export const REMINDER_SCHEMA_VERSION = 2;
 
 /**
  * Derive the ntfy.sh topic deterministically from the gist id. Topics
@@ -128,11 +146,10 @@ export const REMINDER_TOKEN_KEY = 'oge_reminderToken';
 export const REMINDER_NTFY_TOKEN_KEY = 'oge_reminderNtfyTokenMirror';
 
 /**
- * Full shape of {@link REMINDER_FILENAME}. Reminder config is NOT in the
- * gist any more — it lives in localStorage settings at the game origin
- * (see `state/settings.js`). The gist is purely the wave list + the
- * `scheduledMessageIds` cancellation handles, durable across browser
- * restarts.
+ * Full shape of {@link REMINDER_FILENAME}. Reminder config lives in
+ * localStorage settings at the game origin (see `state/settings.js`).
+ * The gist is purely the wave list + the `scheduledMessageIds`
+ * cancellation handles, durable across browser restarts.
  *
  * @typedef {object} ReminderState
  * @property {number} version
@@ -147,6 +164,10 @@ export const REMINDER_NTFY_TOKEN_KEY = 'oge_reminderNtfyTokenMirror';
  * the gist has no such file yet (first run) or the content can't be
  * parsed (hand-edited / corrupt — the next write rebuilds it).
  *
+ * State at older schema versions is treated as absent: we never
+ * migrate, we just start fresh and let the orphan sweep clean up any
+ * ntfy messages the old code had scheduled.
+ *
  * @returns {Promise<ReminderState | null>}
  */
 export const readReminderState = async () => {
@@ -159,7 +180,9 @@ export const readReminderState = async () => {
       ? await (await fetch(file.raw_url)).text()
       : file.content;
   try {
-    return /** @type {ReminderState} */ (JSON.parse(text));
+    const parsed = /** @type {ReminderState} */ (JSON.parse(text));
+    if (parsed?.version !== REMINDER_SCHEMA_VERSION) return null;
+    return parsed;
   } catch {
     return null;
   }
@@ -231,71 +254,52 @@ const mirrorForPreview = async (state, ntfyToken) => {
  *   1. Bail when no GitHub token is configured (no way to read/write the
  *      gist). The histogram tab tells the user.
  *   2. Read the existing reminder file; build prev waves + notifyState.
- *   3. {@link reconcileWaves} — overlap-aware match producing the wave
- *      set to store, the ids whose schedules must reset (re-send), and
- *      a rename channel for adopted supersets.
- *   4. Apply renames so per-wave `scheduledMessageIds` follow their
- *      wave's new identity.
- *   5. Talk to ntfy.sh: cancel messages for waves that vanished and for
- *      waves that need rescheduling; schedule six fresh pushes (every
- *      ten minutes) for each new or re-sent wave. When the feature is
- *      disabled, cancel everything we ever queued. Failures inside the
- *      ntfy loop are isolated per wave — one bad slot doesn't block the
- *      gist write or the other waves.
- *   6. Finalise notifyState (drop resets + dead entries; install the
- *      fresh schedule ids) and PATCH the gist only when the owned
- *      blocks actually changed.
- *   7. Refresh the histogram preview mirror.
+ *   3. {@link reconcileWaves} — fleet-ID overlap matching producing the
+ *      wave set to store, the ids of waves that fell out (landed or
+ *      swept by the brand-new cleanup rule), and a flag indicating
+ *      whether at least one brand-new wave was stamped.
+ *   4. Talk to ntfy.sh: cancel scheduled message IDs for every dropped
+ *      wave. Schedule six fresh pushes (every ten minutes) for each
+ *      brand-new wave. Matched waves are NEVER re-scheduled — their
+ *      schedule was locked at birth. When the feature is disabled,
+ *      cancel everything we ever queued.
+ *   5. Refresh the histogram preview mirror.
  *
  * @param {ReminderConfig} config   Current config (from the store).
- * @param {Wave[]} currentWaves     Freshly clustered waves from the DOM.
+ * @param {import('../domain/waves.js').WaveCandidate[]} currentCandidates
+ *   Freshly clustered wave candidates from the DOM (no id yet).
  * @param {number} now              Epoch SECONDS, injected by the caller.
  * @param {string} universeId       OGame server id, used only as a label in
  *   ntfy.sh push titles (`[s163-pl] Expeditions back`).
  * @returns {Promise<{ ok: boolean, reason?: string, changed?: boolean, waves?: Wave[], scheduled?: number, cancelled?: number }>}
  */
-export const syncReminderWaves = async (config, currentWaves, now, universeId) => {
+export const syncReminderWaves = async (config, currentCandidates, now, universeId) => {
   if (!getToken()) return { ok: false, reason: 'no-token' };
 
   const existing = await readReminderState();
   const prevWaves = existing?.waves ?? [];
   const prevNotify = existing?.notifyState ?? {};
 
-  const { waves, resetIds, renames } = reconcileWaves(prevWaves, currentWaves, now);
-  const renamed = applyRenames(prevNotify, renames);
+  const { waves, droppedIds } = reconcileWaves(prevWaves, currentCandidates, now);
 
-  // Figure out which waves need a fresh schedule and which old message
-  // ids to cancel. Done BEFORE we mutate notifyState further so we can
-  // still see the prior `scheduledMessageIds`.
-  const outIds = new Set(waves.map((w) => w.id));
-  const resetSet = new Set(resetIds);
+  // Brand-new waves are the ones whose id does NOT appear in prevNotify.
+  // Matched waves carry their prev id forward, so prevNotify[w.id] exists.
   /** @type {Wave[]} */
-  const toSchedule = [];
+  const toSchedule = waves.filter((w) => !prevNotify[w.id]);
+
+  // Anything dropped (landed or swept) feeds toCancel.
   /** @type {string[]} */
   const toCancel = [];
-
-  for (const w of waves) {
-    const prev = renamed[w.id];
-    const isReset = resetSet.has(w.id);
-    const isBrandNew = !prev;
-    if (isReset || isBrandNew) {
-      toSchedule.push(w);
-      if (prev?.scheduledMessageIds) toCancel.push(...prev.scheduledMessageIds);
-    }
-    // else: in-flight unchanged — keep its existing schedule
-  }
-  for (const [id, entry] of Object.entries(renamed)) {
-    if (outIds.has(id)) continue;
-    if (entry.scheduledMessageIds) toCancel.push(...entry.scheduledMessageIds);
+  for (const id of droppedIds) {
+    const e = prevNotify[id];
+    if (e?.scheduledMessageIds) toCancel.push(...e.scheduledMessageIds);
   }
 
-  // Start the next notifyState from the pruned + reset shape; we'll
-  // overwrite entries for waves we successfully (re)schedule below.
+  // Start the next notifyState from the prev shape, pruned to the live
+  // set; we'll add entries for brand-new waves we successfully schedule.
   /** @type {Record<string, NotifyEntry>} */
-  const notifyState = pruneNotifyState(applyResets(renamed, resetIds), waves);
+  const notifyState = pruneNotifyState(prevNotify, waves);
 
-  // ntfy operations — skip when disabled OR no token (we still persist
-  // the reconciled gist state so the histogram preview stays current).
   const gistId = await ensureGistV3();
   const topic = await deriveNtfyTopic(gistId);
   let cancelled = 0;
@@ -306,7 +310,7 @@ export const syncReminderWaves = async (config, currentWaves, now, universeId) =
       // Feature off → cancel everything we ever queued, including
       // schedules for in-flight waves we'd normally have left alone.
       const everyId = [];
-      for (const entry of Object.values(renamed)) {
+      for (const entry of Object.values(prevNotify)) {
         if (entry.scheduledMessageIds) everyId.push(...entry.scheduledMessageIds);
       }
       cancelled += await cancelWaveReminders({
@@ -315,7 +319,7 @@ export const syncReminderWaves = async (config, currentWaves, now, universeId) =
       // Strip schedules from notifyState so re-enabling triggers fresh schedules.
       for (const id of Object.keys(notifyState)) delete notifyState[id];
     } else {
-      // Cancel obsolete first so we don't race the new schedule.
+      // Cancel dropped first so we don't race a brand-new schedule.
       cancelled += await cancelWaveReminders({
         ids: toCancel, topic, token: config.ntfyToken,
       });
@@ -348,11 +352,11 @@ export const syncReminderWaves = async (config, currentWaves, now, universeId) =
     }
 
     // Orphan sweep: anything still queued on ntfy that doesn't appear
-    // in our final notifyState is a leftover from an earlier sync that
-    // lost track of an id (a 401 on cancel, a mid-iteration crash, a
-    // pre-token-mirror schedule). Cancel them so the user doesn't get
-    // ghosts. Failures here are non-fatal — orphans live until they
-    // either fire or `expires` ticks past.
+    // in our final notifyState is a leftover — a 401 on cancel, a
+    // mid-iteration crash, a v1→v2 schema migration that wiped our
+    // local map of ids. Cancel them so the user doesn't get ghosts.
+    // Failures here are non-fatal — orphans live until they either
+    // fire or `expires` ticks past.
     try {
       const ours = new Set();
       for (const e of Object.values(notifyState)) {

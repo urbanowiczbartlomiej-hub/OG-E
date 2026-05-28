@@ -12,7 +12,7 @@
 // chrome.storage + real gist + ntfy); we test the decision criterion only.
 
 import { describe, it, expect } from 'vitest';
-import { reconcileWaves, computeWaveId } from '../../../src/domain/waves.js';
+import { reconcileWaves } from '../../../src/domain/waves.js';
 
 /**
  * Compute the age guard used inside `refreshPreview`.
@@ -63,40 +63,46 @@ describe('dashboard orphan sweep freshness guard', () => {
   });
 });
 
-describe('reconcileWaves — idle-wave drop prevents double-reminders on re-send', () => {
-  // Integration-level conceptual test: when the player re-sends
-  // (currentWaves non-empty) idle waves are dropped so their ntfy IDs
-  // flow into toCancel in syncReminderWaves.
+describe('reconcileWaves — landed-wave drop feeds toCancel in syncReminderWaves', () => {
+  // Integration-level conceptual test: when a prev wave's fleet IDs
+  // disappear from the current observation (all expeditions landed),
+  // it falls into droppedIds — the caller pipes those into
+  // cancelWaveReminders.
 
-  /** @param {Partial<import('../../../src/domain/waves.js').Wave>} w */
+  /** @param {Partial<import('../../../src/domain/waves.js').Wave>} w
+   *  @returns {import('../../../src/domain/waves.js').Wave} */
   const wave = (w) => ({
-    id: w.id ?? computeWaveId(w.nextWaveAt ?? 1000),
+    id: w.id ?? 'w_' + (w.returnAts?.[0] ?? 0),
     nextWaveAt: w.nextWaveAt ?? 1000,
-    fleetCount: w.fleetCount ?? 1,
+    fleetCount: w.fleetCount ?? (w.returnAts?.length ?? 1),
+    returnAts: w.returnAts ?? [1000],
     origins: w.origins ?? ['1:1:1'],
     detectedAt: w.detectedAt,
   });
 
-  it('idle wave is dropped when new wave is present — its IDs reach toCancel', () => {
-    const oldWave = wave({ nextWaveAt: 1000, detectedAt: 900 }); // landed
-    const newWave = wave({ nextWaveAt: 2000 });                  // just sent
-
-    // Simulate syncReminderWaves decision: outIds + cancel loop
-    const { waves } = reconcileWaves([oldWave], [newWave], 1100);
-    const outIds = new Set(waves.map((w) => w.id));
-
-    // Old wave must NOT be in outIds so its IDs reach toCancel
-    expect(outIds.has(oldWave.id)).toBe(false);
-    // New wave must be present
-    expect(outIds.has(newWave.id)).toBe(true);
+  it('landed wave (return-times disjoint from current) flows into droppedIds', () => {
+    const oldWave = wave({
+      id: 'w_old', returnAts: [1000, 1002], nextWaveAt: 1000,
+    });
+    // New observation: brand-new wave, completely disjoint return-times.
+    const newCands = [{
+      nextWaveAt: 2000, fleetCount: 1, returnAts: [2000], origins: ['1:1:1'],
+    }];
+    const { waves, droppedIds } = reconcileWaves([oldWave], newCands, 1100);
+    expect(droppedIds).toEqual(['w_old']);
+    expect(waves.map((w) => w.id)).toEqual(['w_2000']);
   });
 
-  it('idle wave is kept when player has no active expeditions', () => {
-    const oldWave = wave({ nextWaveAt: 1000, detectedAt: 900 });
-
-    const { waves } = reconcileWaves([oldWave], [], 1100);
-    const outIds = new Set(waves.map((w) => w.id));
-
-    expect(outIds.has(oldWave.id)).toBe(true);
+  it('matched wave (any overlap) stays — id carries through', () => {
+    const oldWave = wave({
+      id: 'w_old', returnAts: [1000, 1002], nextWaveAt: 1000,
+    });
+    // Same wave, partially drained — 1000 landed, 1002 still flying.
+    const tailing = [{
+      nextWaveAt: 1002, fleetCount: 1, returnAts: [1002], origins: ['1:1:1'],
+    }];
+    const { waves, droppedIds } = reconcileWaves([oldWave], tailing, 1100);
+    expect(droppedIds).toEqual([]);
+    expect(waves[0].id).toBe('w_old');
   });
 });

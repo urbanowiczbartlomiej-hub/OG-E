@@ -80,7 +80,8 @@ export const SETTINGS_PREFIX = 'oge_';
  *   cloudSync               false — enable Gist-based cross-device sync
  *   gistToken               ''    — GitHub personal access token
  *   readabilityBoost        true  — inject CSS fix for event box + movement link
- *   eventMenuHighlight      true  — animate event menu entries + alert banner in #middle
+ *   eventMenuHighlight      true  — animate ephemeral event entries in the left toolbar
+ *   traderMenuHighlight     true  — time-aware pulse on the Trader (Handlarz) entry
  *   reminderEnabled         false — schedule ntfy.sh pushes for expedition returns
  *   reminderNtfyToken       ''    — ntfy.sh access token (Bearer) for publish/cancel
  *
@@ -101,6 +102,7 @@ export const SETTINGS_PREFIX = 'oge_';
  * @property {string}  gistToken
  * @property {boolean} readabilityBoost
  * @property {boolean} eventMenuHighlight
+ * @property {boolean} traderMenuHighlight
  * @property {boolean} reminderEnabled
  * @property {string}  reminderNtfyToken
  */
@@ -156,6 +158,7 @@ export const SETTINGS_SCHEMA = {
   gistToken:              { type: 'string', default: '',    key: SETTINGS_PREFIX + 'gistToken' },
   readabilityBoost:       { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'readabilityBoost' },
   eventMenuHighlight:     { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'eventMenuHighlight' },
+  traderMenuHighlight:    { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'traderMenuHighlight' },
   reminderEnabled:        { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'reminderEnabled' },
   reminderNtfyToken:      { type: 'string', default: '',    key: SETTINGS_PREFIX + 'reminderNtfyToken' },
 };

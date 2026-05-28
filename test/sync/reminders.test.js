@@ -20,10 +20,12 @@ describe('reminder file constants', () => {
     expect(REMINDER_FILENAME).toBe('oge-reminders.json');
   });
 
-  it('is at schema version 1', () => {
-    // v1.3.1 stayed on v1: the X-Delay scheduling pivot only mutated
-    // optional fields of `notifyState`, no breaking shape change.
-    expect(REMINDER_SCHEMA_VERSION).toBe(1);
+  it('is at schema version 2', () => {
+    // v1.3.2 bumped to v2 with the switch to return-time-set overlap
+    // identity. `Wave.returnAts` is now part of the persisted shape and
+    // `Wave.id` is stamped at brand-new instead of derived from
+    // `nextWaveAt`. v1 state is treated as absent on read (no migration).
+    expect(REMINDER_SCHEMA_VERSION).toBe(2);
   });
 
   it('exposes distinct chrome.storage mirror keys for the dashboard preview', () => {
