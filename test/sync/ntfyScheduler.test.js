@@ -7,16 +7,19 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   reconcileWaveQueue,
+  reconcileAdhocQueue,
+  adhocTitleFor,
   reminderFireTimes,
   titleFor,
   cancelWaveReminders,
   fetchScheduledMessages,
-  priorityForSlot,
   offsetsForSchedule,
   REMINDER_PRESETS,
   DEFAULT_REMINDER_SCHEDULE,
   REMINDER_COUNT,
   REMINDER_INTERVAL_SEC,
+  WAVE_PRIORITY,
+  ADHOC_PRIORITY,
 } from '../../src/sync/ntfyScheduler.js';
 
 /** @type {ReturnType<typeof vi.fn>} */
@@ -137,11 +140,9 @@ describe('reconcileWaveQueue', () => {
       expect(init.headers.Authorization).toBeUndefined();
       expect(init.headers.Title).toBe(TITLE);
       expect(init.headers['X-Delay']).toBe(String(2000 + slot * REMINDER_INTERVAL_SEC));
-      expect(init.headers.Priority).toBe(['3', '3', '4', '4', '5', '5'][slot]);
-      // Tags carry rocket + an escalation emoji matched to the priority band.
-      expect(init.headers.Tags).toBe(
-        `rocket,${['hourglass', 'hourglass', 'warning', 'warning', 'rotating_light', 'rotating_light'][slot]}`,
-      );
+      // Wave reminders are flat "default" priority now (3) — no escalation.
+      expect(init.headers.Priority).toBe(String(WAVE_PRIORITY));
+      expect(init.headers.Tags).toBe('rocket,hourglass');
       // Icon is a public https URL (ntfy app fetches it; moz-extension:// won't do).
       expect(init.headers.Icon).toMatch(/^https:\/\/raw\.githubusercontent\.com\/.+\/icons\/icon128\.png$/);
       // Body states the wave's local return time + slot position; exact
@@ -261,21 +262,65 @@ describe('reconcileWaveQueue', () => {
   });
 });
 
-describe('priorityForSlot', () => {
-  /** @param {number} total */
-  const ladder = (total) => Array.from({ length: total }, (_, i) => priorityForSlot(i, total));
+describe('adhocTitleFor', () => {
+  it('prefixes the universe id and differs from the wave title', () => {
+    expect(adhocTitleFor('s163-pl')).toBe('[s163-pl] Fleet');
+    expect(adhocTitleFor('s163-pl')).not.toBe(titleFor('s163-pl'));
+  });
+});
 
-  it('reproduces the historical 3,3,4,4,5,5 ladder for the 6-slot standard preset', () => {
-    expect(ladder(6)).toEqual([3, 3, 4, 4, 5, 5]);
+describe('reconcileAdhocQueue', () => {
+  const base = { topic: 'oge-test', token: 'tk_abc', universeId: 's163-pl' };
+  const ADHOC_TITLE = adhocTitleFor('s163-pl');
+  /** @param {string} id @param {number} time */
+  const ourAdhoc = (id, time) =>
+    JSON.stringify({ id, time, event: 'message', title: ADHOC_TITLE });
+
+  it('posts one max-priority slot per entry at its fireAt, under the ad-hoc title', async () => {
+    dispatchReconcile([]);
+    const { idsByEntry, posted, cancelled } = await reconcileAdhocQueue({
+      ...base, now: 1000,
+      entries: [{ id: 'eventRow-42', fireAt: 5000, body: 'Ekspedycja → [4:467:16] o 20:23' }],
+    });
+
+    expect(posted).toBe(1);
+    expect(cancelled).toBe(0);
+    expect(idsByEntry['eventRow-42']).toEqual(['post-0']);
+
+    const post = fetchMock.mock.calls.find((c) => c[1]?.method === 'POST');
+    expect(post?.[1].headers.Title).toBe(ADHOC_TITLE);
+    expect(post?.[1].headers.Priority).toBe(String(ADHOC_PRIORITY));
+    expect(post?.[1].headers.Tags).toBe('rocket,rotating_light');
+    expect(post?.[1].headers['X-Delay']).toBe('5000');
+    expect(post?.[1].body).toBe('Ekspedycja → [4:467:16] o 20:23');
   });
 
-  it('spreads the three bands across other preset lengths', () => {
-    expect(ladder(4)).toEqual([3, 4, 5, 5]);
-    expect(ladder(8)).toEqual([3, 3, 3, 4, 4, 5, 5, 5]);
+  it('is idempotent: an already-queued entry posts nothing and reuses the id', async () => {
+    dispatchReconcile([ourAdhoc('q0', 5000)]);
+    const { idsByEntry, posted } = await reconcileAdhocQueue({
+      ...base, now: 1000,
+      entries: [{ id: 'eventRow-42', fireAt: 5000, body: 'x' }],
+    });
+    expect(posted).toBe(0);
+    expect(idsByEntry['eventRow-42']).toEqual(['q0']);
   });
 
-  it('treats a single-slot series as max urgency', () => {
-    expect(priorityForSlot(0, 1)).toBe(5);
+  it('sweeps ad-hoc messages with no live entry, and cancels all when entries is empty', async () => {
+    dispatchReconcile([ourAdhoc('q0', 5000), ourAdhoc('q1', 6000)]);
+    const { posted, cancelled } = await reconcileAdhocQueue({ ...base, now: 1000, entries: [] });
+    expect(posted).toBe(0);
+    expect(cancelled).toBe(2);
+  });
+
+  it('never touches WAVE messages on the same shared topic (different title)', async () => {
+    // A queued wave message must survive an ad-hoc reconcile that wants
+    // nothing — the two kinds are separated purely by title.
+    const waveMsg = JSON.stringify({ id: 'wave', time: 5000, event: 'message', title: titleFor('s163-pl') });
+    dispatchReconcile([waveMsg]);
+    const { posted, cancelled } = await reconcileAdhocQueue({ ...base, now: 1000, entries: [] });
+    expect(posted).toBe(0);
+    expect(cancelled).toBe(0);
+    expect(fetchMock.mock.calls.some((c) => c[1]?.method === 'DELETE')).toBe(false);
   });
 });
 

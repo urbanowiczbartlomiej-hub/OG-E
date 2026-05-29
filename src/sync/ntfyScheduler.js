@@ -297,32 +297,16 @@ export const cancelWaveReminders = async ({ ids, topic, token }) => {
 };
 
 /**
- * ntfy priority for slot `i` (0-indexed) of a series of `total` reminders.
- * The escalation ladder is spread evenly across the series in three
- * bands — start at "default" (3) so the first ping doesn't yank the user
- * out of whatever they're doing, climb to "high" (4) around the middle,
- * and cap at "max" (5) for the final third. Generalises the old fixed
- * 3,3,4,4,5,5 ladder so any preset length escalates sensibly:
+ * Fixed ntfy priority per notification kind.
  *
- *   - 6 slots → 3,3,4,4,5,5  (unchanged from the historical default)
- *   - 4 slots → 3,4,5,5
- *   - 8 slots → 3,3,3,4,4,5,5,5
- *
- * A single-slot series is treated as max urgency.
- *
- * Exported for the tests; runtime callers go through `postOne`.
- *
- * @param {number} i      Zero-based slot index.
- * @param {number} total  Total slots in this wave's schedule.
- * @returns {number}
+ * Expedition-wave reminders stay at "default" (3) — they're background
+ * nudges. They used to escalate 3→4→5 across the series, but that
+ * competed for attention with the notifications the player marks ON
+ * PURPOSE. Those intentional marks are the ad-hoc fleet reminders, so
+ * they ring at "max" (5). One flat priority per kind, no per-slot ladder.
  */
-export const priorityForSlot = (i, total) => {
-  if (total <= 1) return 5;
-  const p = i / (total - 1); // 0 → first, 1 → last
-  if (p < 1 / 3) return 3;
-  if (p < 2 / 3) return 4;
-  return 5;
-};
+export const WAVE_PRIORITY = 3;
+export const ADHOC_PRIORITY = 5;
 
 /**
  * Escalation emoji tag for a priority band, appended after `rocket` so
@@ -339,44 +323,36 @@ const tagsForPriority = (priority) => {
 };
 
 /**
- * Publish one message. Splits the immediate vs delayed path: ntfy
- * rejects `X-Delay` values below {@link NTFY_MIN_DELAY_SEC}, so we
- * just publish without the header in that range and let it deliver
- * straight away.
+ * Publish one message at `fireAt`. Generic over notification kind: the
+ * caller supplies the `title` (which doubles as the per-kind queue filter
+ * — see {@link reconcileQueue}), `body`, `priority`, and `tags`.
+ *
+ * Splits the immediate vs delayed path: ntfy rejects `X-Delay` values
+ * below {@link NTFY_MIN_DELAY_SEC}, so within that window we publish
+ * without the header and let it deliver straight away.
  *
  * @param {object} args
  * @param {string} args.topic
  * @param {string} args.token
- * @param {number} args.fireAt  Absolute epoch seconds when this push should land.
+ * @param {number} args.fireAt    Absolute epoch seconds when this push should land.
  * @param {number} args.now
- * @param {number} args.i       Zero-based slot index in this wave's schedule.
- * @param {number} args.total   Total slots in this wave's schedule.
- * @param {number} args.baseAt  Wave's locked schedule anchor (epoch s); the
- *   earliest known return time, shown in the body so the player sees WHEN
- *   the wave came home.
- * @param {string} args.universeId  Server id, used as the title prefix.
- * @returns {Promise<string>}
+ * @param {string} args.title     Push title (also the per-kind queue filter).
+ * @param {string} args.body      Notification body, baked in at post time.
+ * @param {number} args.priority  ntfy priority (1–5).
+ * @param {string} args.tags      Comma-separated ntfy `Tags` value.
+ * @returns {Promise<string>}     ntfy message id (the cancellation handle).
  */
-const postOne = async ({ topic, token, fireAt, now, i, total, baseAt, universeId }) => {
+const postMessage = async ({ topic, token, fireAt, now, title, body, priority, tags }) => {
   const delay = fireAt - now;
-  const priority = priorityForSlot(i, total);
   /** @type {Record<string, string>} */
   const headers = {
-    Title: titleFor(universeId),
-    Tags: tagsForPriority(priority),
+    Title: title,
+    Tags: tags,
     Priority: String(priority),
     Icon: OGE_ICON_URL,
   };
   if (delay >= NTFY_MIN_DELAY_SEC) headers['X-Delay'] = String(fireAt);
 
-  // Local return time, baked in at post time (the ntfy app shows the body
-  // verbatim). We can't list fleet count / origins: the schedule is queued
-  // the instant the FIRST expedition of a wave is detected — before the
-  // rest of the burst is sent — precisely so a browser close mid-send still
-  // leaves reminders queued. So `baseAt` (when the wave returns) is the only
-  // detail we can state honestly.
-  const when = new Date(baseAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const body = `Expeditions back (${when}) — reminder #${i + 1}/${total}.`;
   const res = await fetch(`https://ntfy.sh/${topic}?${ntfyAuthParam(token)}`, {
     method: 'POST',
     headers,
@@ -392,99 +368,211 @@ const postOne = async ({ topic, token, fireAt, now, i, total, baseAt, universeId
 };
 
 /**
- * Reconcile this universe's slice of the shared ntfy queue so it holds
- * exactly one message per FUTURE reminder slot of every supplied live
- * wave — no more, no less. This is the whole scheduling contract; callers
- * just hand over the live waves and store the returned id sets.
+ * One scheduled "series" handed to {@link reconcileQueue}: a stable
+ * identity plus the future fire slots it wants on the queue. Each slot
+ * carries the message to publish at that moment.
+ *
+ * @typedef {object} QueueSlot
+ * @property {number} fireAt    Absolute epoch SECONDS to deliver at.
+ * @property {string} body      Notification body (baked in at post time).
+ * @property {number} priority  ntfy priority (1–5).
+ * @property {string} tags      Comma-separated ntfy `Tags` value.
+ *
+ * @typedef {object} QueueSeries
+ * @property {string}     id     Identity; the reconcile keys returned ids by it.
+ * @property {QueueSlot[]} slots Desired future slots, in fire order.
+ */
+
+/**
+ * Reconcile ONE notification kind's slice of the shared ntfy queue so it
+ * holds exactly one message per FUTURE slot of every supplied series — no
+ * more, no less. This is the whole scheduling contract; callers expand
+ * their domain objects (waves, ad-hoc fleets, …) into {@link QueueSeries}
+ * and store the returned id sets.
  *
  * Idempotent and self-healing. Safe to run on every sync and after any
  * number of interrupted prior runs (the mobile page-reload case):
  *
- *   - **Universe isolation.** Only messages titled {@link titleFor} are
- *     considered "ours". The topic is shared across OGame servers (it is
- *     derived from the ntfy access token), so every other server's
- *     schedule is invisible here and never cancelled.
- *   - **Post the gaps.** For each wave, slot `i` wants a message at
- *     `baseAt + i*interval`. We post only the slots that are far enough in
- *     the future to schedule (`>= now + NTFY_MIN_DELAY`) AND absent from
- *     the queue. Slots already queued are reused by their existing id.
+ *   - **Kind + universe isolation.** Only messages whose title is exactly
+ *     `title` are considered "ours". The topic is shared across OGame
+ *     servers AND across notification kinds (it's derived from the ntfy
+ *     access token), so every other server's schedule AND every other
+ *     kind's schedule (waves vs ad-hoc use different titles) is invisible
+ *     here and never cancelled.
+ *   - **Post the gaps.** For each series, each slot wants a message at
+ *     `slot.fireAt`. We post only the slots far enough in the future to
+ *     schedule (`>= now + NTFY_MIN_DELAY`) AND absent from the queue.
+ *     Slots already queued are reused by their existing id.
  *   - **Sweep the rest.** Any of our future messages whose fire time
- *     matches no live wave's slot is cancelled — that covers landed waves,
- *     user-dismissed waves, lost-write partials, and base-time drift.
+ *     matches no live slot is cancelled — that covers finished/landed
+ *     items, user-dismissed items, lost-write partials, and time drift.
  *
- * Pass `waves: []` (e.g. feature disabled) to cancel everything queued for
- * this universe.
- *
- * `baseAt` is the wave's locked schedule anchor. The caller persists it on
- * first sight and feeds it back unchanged, so the slot times stay stable
- * across scans even as the earliest live return drifts.
+ * Pass `series: []` (e.g. feature disabled) to cancel everything queued
+ * for this title.
  *
  * Per-message POST failures throw (the caller retries next tick); per-id
  * cancellation failures are swallowed inside {@link cancelWaveReminders}.
  *
+ * Note: slots are matched to queued messages by fire TIME, so two slots
+ * of the same kind sharing the exact same epoch second collapse to one
+ * message (set semantics) — the same property the wave path always had.
+ *
  * @param {object} args
- * @param {Array<{ id: string, baseAt: number }>} args.waves  Live, non-dismissed waves.
+ * @param {QueueSeries[]} args.series  Live series for this kind.
  * @param {string} args.topic
- * @param {string} args.token       ntfy.sh access token (sent as a query param, not Bearer).
- * @param {number} args.now         Epoch SECONDS — injected for testability.
- * @param {string} args.universeId  OGame server id; the title prefix + queue filter.
- * @param {number[]} [args.offsetsSec]  Reminder offsets (seconds from each wave's
- *   `baseAt`) for the active schedule preset. Defaults to the `standard`
- *   preset so existing callers/tests keep the 6×10-min behaviour. Changing
- *   the preset moves slot times, so the next reconcile sweeps the old
- *   message set and posts the new one — by design.
- * @returns {Promise<{ idsByWave: Record<string, string[]>, posted: number, cancelled: number }>}
- *   `idsByWave` maps each wave id to its slot message ids in fire order.
+ * @param {string} args.token  ntfy.sh access token (sent as a query param, not Bearer).
+ * @param {number} args.now    Epoch SECONDS — injected for testability.
+ * @param {string} args.title  Exact push title for this kind; doubles as the
+ *   "ours" queue filter. Different kinds MUST use different titles.
+ * @returns {Promise<{ idsBySeries: Record<string, string[]>, posted: number, cancelled: number }>}
+ *   `idsBySeries` maps each series id to its slot message ids in fire order.
  */
-export const reconcileWaveQueue = async ({
-  waves, topic, token, now, universeId,
-  offsetsSec = REMINDER_PRESETS[DEFAULT_REMINDER_SCHEDULE].offsetsSec,
-}) => {
-  const title = titleFor(universeId);
+export const reconcileQueue = async ({ series, topic, token, now, title }) => {
   const all = await fetchScheduledMessages({ topic, token, now });
   const ours = all.filter((m) => m.title === title);
 
-  // time -> id for a message already queued in this universe (first wins).
+  // time -> id for a message already queued under this title (first wins).
   /** @type {Map<number, string>} */
-  const queuedById = new Map();
-  for (const m of ours) if (!queuedById.has(m.time)) queuedById.set(m.time, m.id);
+  const queuedByTime = new Map();
+  for (const m of ours) if (!queuedByTime.has(m.time)) queuedByTime.set(m.time, m.id);
 
-  // Every future slot of every live wave is "wanted" — protected from the
-  // sweep even when it's too soon to (re)schedule, so a reminder about to
-  // fire is never yanked out from under itself.
+  // Every future slot is "wanted" — protected from the sweep even when
+  // it's too soon to (re)schedule, so a message about to fire is never
+  // yanked out from under itself.
   /** @type {Set<number>} */
   const wantedTimes = new Set();
-  const plan = waves.map((w) => {
-    const times = reminderFireTimes(w.baseAt, offsetsSec);
-    for (const t of times) if (t > now) wantedTimes.add(t);
-    return { wave: w, times };
-  });
+  for (const s of series) for (const slot of s.slots) if (slot.fireAt > now) wantedTimes.add(slot.fireAt);
 
   /** @type {Record<string, string[]>} */
-  const idsByWave = {};
+  const idsBySeries = {};
   let posted = 0;
-  for (const { wave, times } of plan) {
+  for (const s of series) {
     /** @type {string[]} */
     const ids = [];
-    for (let i = 0; i < times.length; i++) {
-      const t = times[i];
-      if (t < now + NTFY_MIN_DELAY_SEC) continue; // past / too-soon to schedule
-      let id = queuedById.get(t);
+    for (const slot of s.slots) {
+      if (slot.fireAt < now + NTFY_MIN_DELAY_SEC) continue; // past / too-soon to schedule
+      let id = queuedByTime.get(slot.fireAt);
       if (!id) {
-        id = await postOne({
-          topic, token, fireAt: t, now,
-          i, total: times.length, baseAt: wave.baseAt, universeId,
+        id = await postMessage({
+          topic, token, fireAt: slot.fireAt, now,
+          title, body: slot.body, priority: slot.priority, tags: slot.tags,
         });
-        queuedById.set(t, id);
+        queuedByTime.set(slot.fireAt, id);
         posted++;
       }
       ids.push(id);
     }
-    idsByWave[wave.id] = ids;
+    idsBySeries[s.id] = ids;
   }
 
   const orphanIds = ours.filter((m) => !wantedTimes.has(m.time)).map((m) => m.id);
   const cancelled = await cancelWaveReminders({ ids: orphanIds, topic, token });
 
-  return { idsByWave, posted, cancelled };
+  return { idsBySeries, posted, cancelled };
+};
+
+/**
+ * Body line for an expedition-wave reminder, baked in at post time (the
+ * ntfy app shows it verbatim). We can't list fleet count / origins: the
+ * schedule is queued the instant the FIRST expedition of a wave is
+ * detected — before the rest of the burst is sent — precisely so a
+ * browser close mid-send still leaves reminders queued. So `baseAt` (when
+ * the wave returns) is the only detail we can state honestly.
+ *
+ * @param {number} baseAt  Wave's locked schedule anchor (epoch s).
+ * @param {number} i       Zero-based slot index.
+ * @param {number} total   Total slots in this wave's schedule.
+ * @returns {string}
+ */
+const waveBody = (baseAt, i, total) => {
+  const when = new Date(baseAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return `Expeditions back (${when}) — reminder #${i + 1}/${total}.`;
+};
+
+/**
+ * Reconcile this universe's EXPEDITION-WAVE slice of the queue. Thin
+ * wrapper over {@link reconcileQueue}: expands each wave into a series of
+ * slots (fire times from the active preset, flat {@link WAVE_PRIORITY}),
+ * and maps the generic result back to the historical `idsByWave` shape so
+ * existing callers/tests are unaffected.
+ *
+ * `baseAt` is the wave's locked schedule anchor. The caller persists it on
+ * first sight and feeds it back unchanged, so the slot times stay stable
+ * across scans even as the earliest live return drifts.
+ *
+ * Pass `waves: []` (feature disabled) to cancel everything wave-related
+ * queued for this universe.
+ *
+ * @param {object} args
+ * @param {Array<{ id: string, baseAt: number }>} args.waves  Live, non-dismissed waves.
+ * @param {string} args.topic
+ * @param {string} args.token
+ * @param {number} args.now         Epoch SECONDS — injected for testability.
+ * @param {string} args.universeId  OGame server id; the title prefix + queue filter.
+ * @param {number[]} [args.offsetsSec]  Reminder offsets (seconds from each wave's
+ *   `baseAt`) for the active schedule preset. Defaults to the `standard`
+ *   preset so existing callers/tests keep the 6×10-min behaviour.
+ * @returns {Promise<{ idsByWave: Record<string, string[]>, posted: number, cancelled: number }>}
+ */
+export const reconcileWaveQueue = async ({
+  waves, topic, token, now, universeId,
+  offsetsSec = REMINDER_PRESETS[DEFAULT_REMINDER_SCHEDULE].offsetsSec,
+}) => {
+  const tags = tagsForPriority(WAVE_PRIORITY);
+  /** @type {QueueSeries[]} */
+  const series = waves.map((w) => {
+    const times = reminderFireTimes(w.baseAt, offsetsSec);
+    return {
+      id: w.id,
+      slots: times.map((fireAt, i) => ({
+        fireAt, body: waveBody(w.baseAt, i, times.length), priority: WAVE_PRIORITY, tags,
+      })),
+    };
+  });
+  const { idsBySeries, posted, cancelled } = await reconcileQueue({
+    series, topic, token, now, title: titleFor(universeId),
+  });
+  return { idsByWave: idsBySeries, posted, cancelled };
+};
+
+/**
+ * The ntfy push title for this universe's AD-HOC fleet reminders. Distinct
+ * from {@link titleFor} (the wave title) so the two kinds never sweep each
+ * other on the shared topic, and prefixed with the universe id so other
+ * servers' ad-hoc reminders stay invisible here too.
+ *
+ * @param {string} universeId
+ * @returns {string}
+ */
+export const adhocTitleFor = (universeId) => `[${universeId}] Fleet`;
+
+/**
+ * Reconcile this universe's AD-HOC slice of the queue. Each armed entry is
+ * a single-slot series fired at its `fireAt`, at flat {@link ADHOC_PRIORITY}
+ * (max — the player marked it on purpose). The body is built by the caller
+ * (it needs domain detail this module doesn't carry) and passed in.
+ *
+ * Same idempotent reconcile as waves, under the ad-hoc title, so arming on
+ * mobile survives the send-reload and the queue self-heals. Pass
+ * `entries: []` to cancel every ad-hoc reminder queued for this universe.
+ *
+ * @param {object} args
+ * @param {Array<{ id: string, fireAt: number, body: string }>} args.entries  Armed entries.
+ * @param {string} args.topic
+ * @param {string} args.token
+ * @param {number} args.now         Epoch SECONDS.
+ * @param {string} args.universeId
+ * @returns {Promise<{ idsByEntry: Record<string, string[]>, posted: number, cancelled: number }>}
+ */
+export const reconcileAdhocQueue = async ({ entries, topic, token, now, universeId }) => {
+  const tags = tagsForPriority(ADHOC_PRIORITY);
+  /** @type {QueueSeries[]} */
+  const series = entries.map((e) => ({
+    id: e.id,
+    slots: [{ fireAt: e.fireAt, body: e.body, priority: ADHOC_PRIORITY, tags }],
+  }));
+  const { idsBySeries, posted, cancelled } = await reconcileQueue({
+    series, topic, token, now, title: adhocTitleFor(universeId),
+  });
+  return { idsByEntry: idsBySeries, posted, cancelled };
 };
