@@ -34,15 +34,30 @@ import { REMINDER_PRESETS } from '../../../sync/ntfyScheduler.js';
  */
 
 /**
+ * Render a preset's offsets as a relative-minute series, e.g.
+ * `"0, 10, 20, 30, 40, 50"` — the times (after the wave returns) at which
+ * each reminder in the series fires. All preset offsets are whole minutes.
+ *
+ * @param {number[]} offsetsSec
+ * @returns {string}
+ */
+const minutesList = (offsetsSec) => offsetsSec.map((s) => s / 60).join(', ');
+
+/** Strip a trailing parenthetical from a preset label (we add our own). */
+const stripParen = (/** @type {string} */ s) => s.replace(/\s*\([^)]*\)\s*$/, '');
+
+/**
  * Schedule choices for the picker, built from the single source of truth
- * in `ntfyScheduler.js` so the dropdown labels can never drift from the
- * actual offsets.
+ * in `ntfyScheduler.js` so the labels can never drift from the actual
+ * offsets. Each label spells out the whole series — "6 × 10 min — at 0,
+ * 10, 20, 30, 40, 50 min" — so the player sees exactly when the reminders
+ * will fire, not just how many.
  *
  * @type {{ value: string, label: string }[]}
  */
-const SCHEDULE_CHOICES = Object.entries(REMINDER_PRESETS).map(([value, { label }]) => ({
+const SCHEDULE_CHOICES = Object.entries(REMINDER_PRESETS).map(([value, { label, offsetsSec }]) => ({
   value,
-  label,
+  label: `${stripParen(label)} — at ${minutesList(offsetsSec)} min`,
 }));
 
 /** @type {SettingsSection} */
