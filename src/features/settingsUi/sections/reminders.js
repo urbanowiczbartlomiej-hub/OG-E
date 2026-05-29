@@ -27,7 +27,8 @@
 // read-only on the OG-E Dashboard's Reminders tab, so it isn't repeated
 // here.
 
-import { REMINDER_PRESETS } from '../../../sync/ntfyScheduler.js';
+import { REMINDER_PRESETS, offsetsForSchedule } from '../../../sync/ntfyScheduler.js';
+import { settingsStore } from '../../../state/settings.js';
 
 /**
  * @typedef {import('../controls.js').SettingsSection} SettingsSection
@@ -35,29 +36,24 @@ import { REMINDER_PRESETS } from '../../../sync/ntfyScheduler.js';
 
 /**
  * Render a preset's offsets as a relative-minute series, e.g.
- * `"0, 10, 20, 30, 40, 50"` — the times (after the wave returns) at which
- * each reminder in the series fires. All preset offsets are whole minutes.
+ * `"0, 10, 20, 30, 40, 50"` — the minutes (after the wave returns) at
+ * which each reminder fires. All preset offsets are whole minutes.
  *
  * @param {number[]} offsetsSec
  * @returns {string}
  */
 const minutesList = (offsetsSec) => offsetsSec.map((s) => s / 60).join(', ');
 
-/** Strip a trailing parenthetical from a preset label (we add our own). */
-const stripParen = (/** @type {string} */ s) => s.replace(/\s*\([^)]*\)\s*$/, '');
-
 /**
- * Schedule choices for the picker, built from the single source of truth
- * in `ntfyScheduler.js` so the labels can never drift from the actual
- * offsets. Each label spells out the whole series — "6 × 10 min — at 0,
- * 10, 20, 30, 40, 50 min" — so the player sees exactly when the reminders
- * will fire, not just how many.
+ * Schedule choices for the picker — kept short (the explicit series times
+ * live in the read-only row below, where they can't be truncated by a
+ * narrow select).
  *
  * @type {{ value: string, label: string }[]}
  */
-const SCHEDULE_CHOICES = Object.entries(REMINDER_PRESETS).map(([value, { label, offsetsSec }]) => ({
+const SCHEDULE_CHOICES = Object.entries(REMINDER_PRESETS).map(([value, { label }]) => ({
   value,
-  label: `${stripParen(label)} — at ${minutesList(offsetsSec)} min`,
+  label,
 }));
 
 /** @type {SettingsSection} */
@@ -76,6 +72,17 @@ export const remindersSection = {
       label: 'Wave reminder schedule',
       type: 'select',
       selectOptions: SCHEDULE_CHOICES,
+    },
+    {
+      // Read-only: spells out WHEN the selected schedule's reminders fire,
+      // updating live as the picker changes. Not a Settings field — the id
+      // is DOM-only. Always-visible + full-width, so the times can't get
+      // clipped the way a long <option> label can.
+      id: 'reminderScheduleTimes',
+      label: 'Reminders fire at',
+      type: 'static',
+      getText: () =>
+        `${minutesList(offsetsForSchedule(settingsStore.get().reminderSchedule))} min after the wave returns`,
     },
     { id: 'adhocEnabled', label: 'Ad-hoc fleet reminders (event list)', type: 'checkbox' },
     {

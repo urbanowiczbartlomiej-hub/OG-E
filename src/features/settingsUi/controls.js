@@ -373,11 +373,21 @@ export const buildRow = (opt) => {
  * @returns {void}
  */
 export const syncInputsFromState = () => {
-  if (writingFromUi) return;
   for (const section of SECTIONS) {
     for (const opt of section.options) {
       const el = document.getElementById(INPUT_ID_PREFIX + opt.id);
       if (!el) continue;
+      // Static rows are read-only derived text (e.g. the reminder-series
+      // times that depend on the schedule select). Refresh them ALWAYS —
+      // including during our own UI write — so a value derived from a
+      // just-changed control updates immediately. (Refreshing read-only
+      // text can't reset a caret, so the writingFromUi guard isn't needed
+      // here; it only matters for data-bound inputs below.)
+      if (opt.type === 'static') {
+        if (opt.getText) el.textContent = opt.getText();
+        continue;
+      }
+      if (writingFromUi) continue;
       if (opt.type === 'checkbox') {
         /** @type {HTMLInputElement} */ (el).checked = Boolean(readSetting(opt.id));
       } else if (opt.type === 'range') {
@@ -392,8 +402,6 @@ export const syncInputsFromState = () => {
         /** @type {HTMLInputElement} */ (el).value = v == null ? '' : String(v);
       } else if (opt.type === 'select') {
         /** @type {HTMLSelectElement} */ (el).value = String(readSetting(opt.id) ?? '');
-      } else if (opt.type === 'static') {
-        if (opt.getText) el.textContent = opt.getText();
       }
     }
   }
