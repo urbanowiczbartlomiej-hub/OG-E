@@ -219,14 +219,17 @@ export const installReminderProducer = (opts = {}) => {
 
     const s = settingsStore.get();
     const config = {
+      masterEnabled: s.remindersMasterEnabled,
       enabled: s.reminderEnabled,
       adhocEnabled: s.adhocEnabled,
       ntfyToken: s.reminderNtfyToken,
       schedule: s.reminderSchedule,
     };
-    // Dormant only when BOTH kinds are off — unless something forces a push
-    // (a settings toggle, or a queued user action).
-    if (!config.enabled && !config.adhocEnabled && !force) return;
+    // Dormant unless the master switch is on AND at least one kind is — or
+    // something forces a push (a settings toggle we must act on, e.g. the
+    // master just went off and we must sweep, or a queued user action).
+    const anyActive = config.masterEnabled && (config.enabled || config.adhocEnabled);
+    if (!anyActive && !force) return;
 
     const candidates = clusterWaves(extractReturnEntries(), { gapSeconds: DEFAULT_CLUSTER_GAP_SECONDS });
     const present = extractPresentFleets();
@@ -287,6 +290,7 @@ export const installReminderProducer = (opts = {}) => {
   /** @param {ReturnType<typeof settingsStore.get>} s */
   const pickReminderSig = (s) =>
     JSON.stringify({
+      m: s.remindersMasterEnabled,
       e: s.reminderEnabled, t: s.reminderNtfyToken, s: s.reminderSchedule,
       a: s.adhocEnabled,
     });

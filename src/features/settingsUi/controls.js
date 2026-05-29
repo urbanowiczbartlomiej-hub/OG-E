@@ -53,6 +53,10 @@ import { SECTIONS } from './sections/index.js';
  * @property {string} [buttonText] Button label override (button only; defaults to `label`).
  * @property {() => void} [onclick] Button click handler (button only).
  * @property {() => string} [getText] Dynamic text producer (static only).
+ * @property {(s: import('../../state/settings.js').Settings) => boolean} [disabledWhen]
+ *   Optional predicate over current settings; when it returns true the
+ *   control is rendered disabled (greyed). Re-evaluated on every store
+ *   change so a dependency (e.g. a master switch) greys/un-greys it live.
  */
 
 /**
@@ -377,12 +381,18 @@ export const syncInputsFromState = () => {
     for (const opt of section.options) {
       const el = document.getElementById(INPUT_ID_PREFIX + opt.id);
       if (!el) continue;
+      // Enable/disable a control from a predicate over current settings
+      // (e.g. the reminder sub-options are disabled until the master switch
+      // is on AND a token is set). Applied ALWAYS — including during our own
+      // UI write — so flipping the master switch greys/un-greys dependents
+      // immediately. Toggling `.disabled` never resets a caret.
+      if (opt.disabledWhen) {
+        /** @type {HTMLInputElement} */ (el).disabled =
+          opt.disabledWhen(settingsStore.get());
+      }
       // Static rows are read-only derived text (e.g. the reminder-series
       // times that depend on the schedule select). Refresh them ALWAYS —
-      // including during our own UI write — so a value derived from a
-      // just-changed control updates immediately. (Refreshing read-only
-      // text can't reset a caret, so the writingFromUi guard isn't needed
-      // here; it only matters for data-bound inputs below.)
+      // same reasoning as above.
       if (opt.type === 'static') {
         if (opt.getText) el.textContent = opt.getText();
         continue;

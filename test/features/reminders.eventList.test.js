@@ -49,7 +49,7 @@ beforeEach(() => {
   _resetEventListRemindersForTest();
   localStorage.clear();
   document.body.innerHTML = '';
-  setSettings({ adhocEnabled: true, reminderEnabled: false, reminderNtfyToken: VALID_TOKEN, adhocOffsetSec: 60 });
+  setSettings({ remindersMasterEnabled: true, adhocEnabled: true, reminderEnabled: false, reminderNtfyToken: VALID_TOKEN, adhocOffsetSec: 60 });
 });
 
 afterEach(() => {
@@ -98,7 +98,16 @@ describe('event-list badges', () => {
   });
 
   it('shows no badge when the ntfy token is missing', async () => {
-    setSettings({ adhocEnabled: true, reminderEnabled: false, reminderNtfyToken: '', adhocOffsetSec: 60 });
+    setSettings({ remindersMasterEnabled: true, adhocEnabled: true, reminderEnabled: false, reminderNtfyToken: '', adhocOffsetSec: 60 });
+    const cell = paintRow(Math.floor(Date.now() / 1000) + 3600);
+    installEventListReminders(stubApi());
+    await tick();
+    expect(cell.classList.contains('oge-rem-badge')).toBe(false);
+    expect(cell.classList.contains('arrivalTime')).toBe(true);
+  });
+
+  it('shows no badge when the master switch is off (token present)', async () => {
+    setSettings({ remindersMasterEnabled: false, adhocEnabled: true, reminderEnabled: false, reminderNtfyToken: VALID_TOKEN, adhocOffsetSec: 60 });
     const cell = paintRow(Math.floor(Date.now() / 1000) + 3600);
     installEventListReminders(stubApi());
     await tick();

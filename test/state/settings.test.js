@@ -92,6 +92,7 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
         'maxExpPerPlanet',
         'mobileMode',
         'readabilityBoost',
+        'remindersMasterEnabled',
         'reminderEnabled',
         'reminderNtfyToken',
         'reminderSchedule',

@@ -92,6 +92,9 @@ import {
  * tests).
  *
  * @typedef {object} ReminderConfig
+ * @property {boolean} [masterEnabled] Master switch for the whole section.
+ *   When false, NEITHER kind is queued (everything is swept) regardless of
+ *   the per-kind flags. Absent ⇒ treated as on (back-compat for direct callers).
  * @property {boolean} enabled       Auto expedition-WAVE reminders on/off.
  * @property {boolean} [adhocEnabled] Ad-hoc per-fleet reminders on/off. When
  *   false, armed entries are kept in state but nothing is queued on ntfy.
@@ -496,6 +499,11 @@ export const syncReminders = async (config, dom, now, universeId) => {
   let cancelled = 0;
   let scheduled = 0;
 
+  // Master switch gates both kinds; absent ⇒ on (direct-caller back-compat).
+  const master = config.masterEnabled !== false;
+  const waveActive = master && config.enabled;
+  const adhocActive = master && Boolean(config.adhocEnabled);
+
   if (ntfyToken && topic) {
     // One queue poll, shared by both kinds — OGame reloads (and re-runs
     // this producer) on every click, so halving the ntfy polls per sync
@@ -504,10 +512,10 @@ export const syncReminders = async (config, dom, now, universeId) => {
 
     // ── Expedition waves ───────────────────────────────────────────────
     // Live waves ntfy should keep queued. Dismissed waves and — when wave
-    // auto-reminders are off — ALL waves are excluded, so the reconciler
-    // sweeps their messages. Idempotent against ntfy's own queue, so an
-    // interrupted prior run (the mobile page-reload case) just converges.
-    const liveWaves = config.enabled
+    // reminders are off (master off, or auto-wave off) — ALL waves are
+    // excluded, so the reconciler sweeps their messages. Idempotent against
+    // ntfy's own queue, so an interrupted prior run just converges.
+    const liveWaves = waveActive
       ? waves.filter((w) => !w.cancelled).map((w) => ({ id: w.id, baseAt: baseAtFor(w) }))
       : [];
     const waveRes = await reconcileWaveQueue({
@@ -519,14 +527,14 @@ export const syncReminders = async (config, dom, now, universeId) => {
     // the gist always mirrors what's actually on the queue.
     notifyState = {};
     for (const w of waves) {
-      const ids = (!config.enabled || w.cancelled) ? [] : (waveRes.idsByWave[w.id] ?? []);
+      const ids = (!waveActive || w.cancelled) ? [] : (waveRes.idsByWave[w.id] ?? []);
       notifyState[w.id] = { baseAt: baseAtFor(w), scheduledMessageIds: ids };
     }
 
     // ── Ad-hoc fleets ──────────────────────────────────────────────────
     // One ping per armed entry, within ntfy's 3-day cap. Disabled ⇒ no
     // live entries ⇒ messages swept (entries themselves stay in state).
-    const liveAdhoc = config.adhocEnabled
+    const liveAdhoc = adhocActive
       ? adhoc
           .filter((e) => e.fireAt <= now + NTFY_MAX_DELAY_SEC)
           .map((e) => ({ id: e.id, fireAt: e.fireAt, body: adhocBody(e) }))
@@ -537,7 +545,7 @@ export const syncReminders = async (config, dom, now, universeId) => {
 
     adhocNotify = {};
     for (const e of adhoc) {
-      const ids = config.adhocEnabled ? (adhocRes.idsByEntry[e.id] ?? []) : [];
+      const ids = adhocActive ? (adhocRes.idsByEntry[e.id] ?? []) : [];
       adhocNotify[e.id] = { scheduledMessageIds: ids };
     }
 

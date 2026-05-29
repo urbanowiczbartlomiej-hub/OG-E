@@ -29,10 +29,22 @@
 
 import { REMINDER_PRESETS, offsetsForSchedule } from '../../../sync/ntfyScheduler.js';
 import { settingsStore } from '../../../state/settings.js';
+import { isValidNtfyToken } from '../../../sync/reminders.js';
 
 /**
  * @typedef {import('../controls.js').SettingsSection} SettingsSection
  */
+
+/**
+ * The reminder sub-options (auto-wave, schedule, ad-hoc, lead time) are
+ * locked until the section is switched on AND a valid token is entered —
+ * the token is the credential everything rides on. Used as each
+ * sub-option's `disabledWhen`.
+ *
+ * @param {import('../../../state/settings.js').Settings} s
+ * @returns {boolean}
+ */
+const sectionLocked = (s) => !s.remindersMasterEnabled || !isValidNtfyToken(s.reminderNtfyToken);
 
 /**
  * Render a preset's offsets as a relative-minute series, e.g.
@@ -60,18 +72,27 @@ const SCHEDULE_CHOICES = Object.entries(REMINDER_PRESETS).map(([value, { label }
 export const remindersSection = {
   section: 'Reminders (ntfy.sh)',
   options: [
+    // Master switch + credential first. Until BOTH are set, everything
+    // below is greyed out (see `sectionLocked`).
+    { id: 'remindersMasterEnabled', label: 'Enable reminders', type: 'checkbox' },
     {
       id: 'reminderNtfyToken',
       label: 'ntfy.sh access token (required)',
       type: 'password',
       placeholder: 'tk_…',
     },
-    { id: 'reminderEnabled', label: 'Auto expedition-wave reminders', type: 'checkbox' },
+    {
+      id: 'reminderEnabled',
+      label: 'Auto expedition-wave reminders',
+      type: 'checkbox',
+      disabledWhen: sectionLocked,
+    },
     {
       id: 'reminderSchedule',
       label: 'Wave reminder schedule',
       type: 'select',
       selectOptions: SCHEDULE_CHOICES,
+      disabledWhen: sectionLocked,
     },
     {
       // Read-only: spells out WHEN the selected schedule's reminders fire,
@@ -84,15 +105,18 @@ export const remindersSection = {
       getText: () =>
         `${minutesList(offsetsForSchedule(settingsStore.get().reminderSchedule))} min after the wave returns`,
     },
-    { id: 'adhocEnabled', label: 'Ad-hoc fleet reminders (event list)', type: 'checkbox' },
+    {
+      id: 'adhocEnabled',
+      label: 'Ad-hoc fleet reminders (event list)',
+      type: 'checkbox',
+      disabledWhen: sectionLocked,
+    },
     {
       id: 'adhocOffsetSec',
-      label: 'Ad-hoc lead time before arrival',
-      type: 'range',
-      min: 0,
-      max: 600,
-      step: 15,
-      unit: 's',
+      label: 'Ad-hoc lead time before arrival (seconds)',
+      type: 'text',
+      placeholder: '60',
+      disabledWhen: sectionLocked,
     },
   ],
 };

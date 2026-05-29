@@ -43,7 +43,7 @@
 import { settingsStore } from '../../state/settings.js';
 import { chromeStore } from '../../lib/storage.js';
 import { REMINDER_MIRROR_KEY, isValidNtfyToken } from '../../sync/reminders.js';
-import { NTFY_MAX_DELAY_SEC } from '../../sync/ntfyScheduler.js';
+import { NTFY_MAX_DELAY_SEC, offsetsForSchedule } from '../../sync/ntfyScheduler.js';
 import { parseUniverseId } from '../../lib/universeId.js';
 import { fireAtFor } from '../../domain/adhoc.js';
 import { injectStyle } from '../../lib/dom.js';
@@ -166,6 +166,25 @@ const clearCell = (cell) => {
   setAttr(cell, 'title', null);
 };
 
+/**
+ * Multi-line tooltip for a wave anchor: the whole reminder series spelled
+ * out as clock times (the wave's locked `baseAt` + each preset offset),
+ * then the action hint. Browsers render `\n` in `title` tooltips, so the
+ * player can read every scheduled ntfy time for the wave at a glance.
+ *
+ * @param {import('../../domain/waves.js').Wave} w
+ * @param {string} schedule  Active schedule preset key.
+ * @param {string} hint      Trailing action line.
+ * @returns {string}
+ */
+const waveTitle = (w, schedule, hint) => {
+  const baseAt = snapshot?.notifyState?.[w.id]?.baseAt ?? w.nextWaveAt;
+  const times = offsetsForSchedule(schedule)
+    .map((o) => new Date((baseAt + o) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+    .join(', ');
+  return `Wave reminders at: ${times}\n${hint}`;
+};
+
 // ── Render ──────────────────────────────────────────────────────────────
 
 /**
@@ -177,9 +196,9 @@ const clearCell = (cell) => {
  */
 const render = () => {
   const s = settingsStore.get();
-  const tokenOk = isValidNtfyToken(s.reminderNtfyToken);
-  const adhocOn = s.adhocEnabled && tokenOk;
-  const waveOn = s.reminderEnabled && tokenOk;
+  const sectionOn = s.remindersMasterEnabled && isValidNtfyToken(s.reminderNtfyToken);
+  const adhocOn = sectionOn && s.adhocEnabled;
+  const waveOn = sectionOn && s.reminderEnabled;
   const now = Math.floor(Date.now() / 1000);
   const universeId = parseUniverseId(location.host);
   const pending = readPending(universeId);
@@ -223,10 +242,10 @@ const render = () => {
       if (isAnchor) {
         if (cancelled) {
           stamp(cell, `wave-off${syncing}`, 'resendWave', w.id,
-            'Wave reminder cancelled — click to resend the whole series');
+            waveTitle(w, s.reminderSchedule, 'Cancelled — click to resend the whole series'));
         } else {
           stamp(cell, `wave${syncing}`, 'cancelWave', w.id,
-            'Auto expedition-wave reminder scheduled — click to cancel the whole wave');
+            waveTitle(w, s.reminderSchedule, 'Click to cancel the whole wave'));
         }
       } else {
         stamp(cell, cancelled ? 'member-off' : 'member', '', '',

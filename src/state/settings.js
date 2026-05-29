@@ -82,6 +82,8 @@ export const SETTINGS_PREFIX = 'oge_';
  *   readabilityBoost        true  — inject CSS fix for event box + movement link
  *   eventMenuHighlight      true  — animate ephemeral event entries in the left toolbar
  *   traderMenuHighlight     true  — time-aware pulse on the Trader (Handlarz) entry
+ *   remindersMasterEnabled  false — master switch for the whole reminders section; with
+ *                                   a valid token, gates both wave + ad-hoc reminders
  *   reminderEnabled         false — auto-schedule ntfy.sh pushes for expedition return waves
  *   reminderNtfyToken       ''    — ntfy.sh access token (Bearer) for publish/cancel
  *   reminderSchedule        'standard' — push cadence preset (standard/short/fibonacci)
@@ -106,6 +108,7 @@ export const SETTINGS_PREFIX = 'oge_';
  * @property {boolean} readabilityBoost
  * @property {boolean} eventMenuHighlight
  * @property {boolean} traderMenuHighlight
+ * @property {boolean} remindersMasterEnabled
  * @property {boolean} reminderEnabled
  * @property {string}  reminderNtfyToken
  * @property {string}  reminderSchedule
@@ -165,6 +168,7 @@ export const SETTINGS_SCHEMA = {
   readabilityBoost:       { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'readabilityBoost' },
   eventMenuHighlight:     { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'eventMenuHighlight' },
   traderMenuHighlight:    { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'traderMenuHighlight' },
+  remindersMasterEnabled: { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'remindersMasterEnabled' },
   reminderEnabled:        { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'reminderEnabled' },
   reminderNtfyToken:      { type: 'string', default: '',    key: SETTINGS_PREFIX + 'reminderNtfyToken' },
   reminderSchedule:       { type: 'string', default: 'standard', key: SETTINGS_PREFIX + 'reminderSchedule' },
