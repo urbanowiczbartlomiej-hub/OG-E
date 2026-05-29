@@ -9,7 +9,6 @@ import { expeditionsSection } from './expeditions.js';
 import { colonizationSection } from './colonization.js';
 import { displaySection } from './display.js';
 import { syncSection } from './sync.js';
-import { dataSection } from './data.js';
 import { remindersSection } from './reminders.js';
 
 /**
@@ -33,5 +32,4 @@ export const SECTIONS = [
   displaySection,
   syncSection,
   remindersSection,
-  dataSection,
 ];

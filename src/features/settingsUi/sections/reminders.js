@@ -80,6 +80,9 @@ export const remindersSection = {
       label: 'ntfy.sh access token (required)',
       type: 'password',
       placeholder: 'tk_…',
+      // Editable only once the section is switched on (the token is the
+      // credential the whole section unlocks behind).
+      disabledWhen: (s) => !s.remindersMasterEnabled,
     },
     {
       id: 'reminderEnabled',

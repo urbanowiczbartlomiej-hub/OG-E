@@ -61,6 +61,7 @@
 import { settingsStore } from '../../state/settings.js';
 import { safeClick } from '../../lib/dom.js';
 import { SECTIONS } from './sections/index.js';
+import { buildDashboardButton } from './sections/data.js';
 import {
   buildRow,
   syncInputsFromState,
@@ -112,9 +113,12 @@ const applyCollapse = (tab, collapse) => {
   for (const child of Array.from(tab.children)) {
     if (child === headerChild) continue;
     const el = /** @type {HTMLElement} */ (child);
-    // `setProperty(..., 'important')` is the one hammer that works
-    // even against `!important` rules shipped by AGR's stylesheet.
-    el.style.setProperty('display', collapse ? 'none' : 'table', 'important');
+    // `setProperty(..., 'important')` is the one hammer that works even
+    // against `!important` rules shipped by AGR's stylesheet. Section
+    // tables want `table`; the Dashboard-button wrapper (a div) wants
+    // `block`, so pick by tag rather than forcing every child to `table`.
+    const shown = el.tagName === 'TABLE' ? 'table' : 'block';
+    el.style.setProperty('display', collapse ? 'none' : shown, 'important');
   }
   if (arrowClose) arrowClose.style.display = collapse ? '' : 'none';
   if (arrowOpen) arrowOpen.style.display = collapse ? 'none' : '';
@@ -170,6 +174,10 @@ const buildTab = () => {
   header.appendChild(arrowOpen);
   header.appendChild(labelSpan);
   tab.appendChild(header);
+
+  // Primary call-to-action up top, before the section tables: a full-width
+  // "Open OG-E Dashboard" button (no label row — it speaks for itself).
+  tab.appendChild(buildDashboardButton());
 
   let primaryTableSet = false;
   for (const section of SECTIONS) {
