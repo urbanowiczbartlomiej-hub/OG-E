@@ -20,9 +20,11 @@
 //   - minimum delay  10 seconds
 //   - maximum delay  3 days
 //
-// We aim for SIX messages per wave (`REMINDER_COUNT`), 10 minutes apart
-// (`REMINDER_INTERVAL_SEC`), starting at the wave's locked base time
-// (`baseAt`). Slot i fires at `baseAt + i * REMINDER_INTERVAL_SEC`.
+// The number of pushes per wave and their spacing come from the player's
+// chosen schedule preset (`REMINDER_PRESETS`); the default `standard`
+// preset is SIX messages 10 minutes apart. Every preset is a list of
+// offsets in seconds from the wave's locked base time (`baseAt`); slot i
+// fires at `baseAt + offsetsSec[i]`.
 //
 // # The queue is the source of truth — {@link reconcileWaveQueue}
 //
@@ -84,18 +86,93 @@
 const ntfyAuthParam = (token) => 'auth=' + btoa(':' + token);
 
 /**
- * Total reminders queued per wave. Six × ten minutes ≈ one hour of
- * nudges — long enough that an AFK player should notice, short enough
- * that an already-acknowledged-but-not-yet-resent wave doesn't keep
- * vibrating into the next day.
+ * Total reminders queued per wave in the DEFAULT (`standard`) preset.
+ * Six × ten minutes ≈ one hour of nudges — long enough that an AFK
+ * player should notice, short enough that an already-acknowledged-but-
+ * not-yet-resent wave doesn't keep vibrating into the next day. Other
+ * presets queue a different count (see {@link REMINDER_PRESETS}).
  */
 export const REMINDER_COUNT = 6;
 
-/** Gap, in seconds, between consecutive reminders for the same wave. */
+/** Gap, in seconds, between consecutive reminders in the `standard` preset. */
 export const REMINDER_INTERVAL_SEC = 600;
+
+/**
+ * Selectable reminder schedules. Each preset is a list of OFFSETS (in
+ * seconds) from the wave's locked `baseAt`; slot i fires at
+ * `baseAt + offsetsSec[i]`. The number of pushes per wave is simply the
+ * length of the list, and the escalation ladder is spread across that
+ * length by {@link priorityForSlot}.
+ *
+ * Three fixed presets (no free-form tuning — see the product note in
+ * `features/settingsUi/sections/reminders.js`):
+ *
+ *   - `standard`  — 6 pushes, every 10 min (0–50 min). The historical
+ *     default; offsets equal `REMINDER_COUNT × REMINDER_INTERVAL_SEC`.
+ *   - `short`     — 4 pushes, every 5 min (0–15 min). Tighter, quieter.
+ *   - `fibonacci` — 8 pushes at Fibonacci-minute offsets
+ *     (0, 3, 5, 8, 13, 21, 34, 55 min): dense early nudging that thins
+ *     out, spanning ~1 h.
+ *
+ * @type {Record<string, { label: string, offsetsSec: number[] }>}
+ */
+export const REMINDER_PRESETS = {
+  standard: {
+    label: '6 × 10 min',
+    offsetsSec: Array.from({ length: REMINDER_COUNT }, (_, i) => i * REMINDER_INTERVAL_SEC),
+  },
+  short: {
+    label: '4 × 5 min',
+    offsetsSec: [0, 300, 600, 900],
+  },
+  fibonacci: {
+    label: '8 × Fibonacci (0–55 min)',
+    offsetsSec: [0, 180, 300, 480, 780, 1260, 2040, 3300],
+  },
+};
+
+/** Preset key used when none is configured / an unknown key is stored. */
+export const DEFAULT_REMINDER_SCHEDULE = 'standard';
+
+/**
+ * Resolve a schedule key to its offset list, falling back to the
+ * {@link DEFAULT_REMINDER_SCHEDULE} preset for an unknown / empty key
+ * (e.g. a value written by a newer version, or a hand-edited setting).
+ *
+ * @param {string} [schedule]
+ * @returns {number[]}
+ */
+export const offsetsForSchedule = (schedule) =>
+  (REMINDER_PRESETS[schedule ?? ''] ?? REMINDER_PRESETS[DEFAULT_REMINDER_SCHEDULE]).offsetsSec;
 
 /** ntfy's documented minimum `X-Delay` value (anything smaller would be rejected). */
 const NTFY_MIN_DELAY_SEC = 10;
+
+/* global chrome */
+
+/**
+ * Public https URL of the OG-E notification icon, pinned to the running
+ * extension's version tag so it is immutable per release. `X-Icon` is
+ * fetched by the ntfy *app*, not the extension, so it must be a public
+ * URL — `moz-extension://` and `data:` URIs do not work. We read the
+ * version from `chrome.runtime.getManifest()` (available in both the
+ * content-script and the dashboard origins); in Node tests `chrome` is
+ * absent, so we fall back to the `main` branch ref. Computed once at
+ * module load.
+ */
+const OGE_ICON_URL = (() => {
+  let ref = 'main';
+  try {
+    const c = /** @type {{ runtime?: { getManifest?: () => { version?: string } } }} */ (
+      /** @type {Record<string, unknown>} */ (/** @type {unknown} */ (globalThis)).chrome
+    );
+    const v = c?.runtime?.getManifest?.().version;
+    if (typeof v === 'string' && v) ref = 'v' + v;
+  } catch {
+    // No chrome runtime (tests / unexpected context) — keep `main`.
+  }
+  return `https://raw.githubusercontent.com/urbanowiczbartlomiej-hub/OG-E/${ref}/icons/icon128.png`;
+})();
 
 /**
  * The ntfy push title for a universe. Doubles as the per-universe filter
@@ -108,19 +185,22 @@ const NTFY_MIN_DELAY_SEC = 10;
 export const titleFor = (universeId) => `[${universeId}] Expeditions back`;
 
 /**
- * The {@link REMINDER_COUNT} absolute fire times for a wave whose schedule
- * is anchored at `baseAt` (epoch seconds): `baseAt + i * REMINDER_INTERVAL_SEC`
- * for `i` in `0..REMINDER_COUNT-1`. Pure — exported for the tests.
+ * Absolute fire times for a wave whose schedule is anchored at `baseAt`
+ * (epoch seconds): `baseAt + offsetsSec[i]` for every offset in the
+ * chosen preset. Pure — exported for the tests.
+ *
+ * `offsetsSec` defaults to the {@link DEFAULT_REMINDER_SCHEDULE}
+ * (`standard`) preset, so callers that don't care about the schedule
+ * (and the legacy tests) keep the historical 6×10-min behaviour.
  *
  * @param {number} baseAt
+ * @param {number[]} [offsetsSec]  Offsets from `baseAt`, in seconds.
  * @returns {number[]}
  */
-export const reminderFireTimes = (baseAt) => {
-  /** @type {number[]} */
-  const out = [];
-  for (let i = 0; i < REMINDER_COUNT; i++) out.push(baseAt + i * REMINDER_INTERVAL_SEC);
-  return out;
-};
+export const reminderFireTimes = (
+  baseAt,
+  offsetsSec = REMINDER_PRESETS[DEFAULT_REMINDER_SCHEDULE].offsetsSec,
+) => offsetsSec.map((o) => baseAt + o);
 
 /**
  * Fetch ntfy's currently-scheduled queue for `topic`. Each entry is one
@@ -217,22 +297,46 @@ export const cancelWaveReminders = async ({ ids, topic, token }) => {
 };
 
 /**
- * Compute the ntfy priority for the n-th reminder (1-indexed) in the
- * escalation ladder: 3, 3, 4, 4, 5, 5. Start at "default" so the first
- * ping doesn't yank the user out of whatever they're doing, then bump
- * by one band every two reminders until we cap at max.
+ * ntfy priority for slot `i` (0-indexed) of a series of `total` reminders.
+ * The escalation ladder is spread evenly across the series in three
+ * bands — start at "default" (3) so the first ping doesn't yank the user
+ * out of whatever they're doing, climb to "high" (4) around the middle,
+ * and cap at "max" (5) for the final third. Generalises the old fixed
+ * 3,3,4,4,5,5 ladder so any preset length escalates sensibly:
  *
- *   n=1,2 → 3 (default)
- *   n=3,4 → 4 (high)
- *   n=5,6 → 5 (max)
+ *   - 6 slots → 3,3,4,4,5,5  (unchanged from the historical default)
+ *   - 4 slots → 3,4,5,5
+ *   - 8 slots → 3,3,3,4,4,5,5,5
+ *
+ * A single-slot series is treated as max urgency.
  *
  * Exported for the tests; runtime callers go through `postOne`.
  *
- * @param {number} n
+ * @param {number} i      Zero-based slot index.
+ * @param {number} total  Total slots in this wave's schedule.
  * @returns {number}
  */
-export const priorityForReminder = (n) =>
-  3 + Math.min(2, Math.floor(Math.max(0, n - 1) / 2));
+export const priorityForSlot = (i, total) => {
+  if (total <= 1) return 5;
+  const p = i / (total - 1); // 0 → first, 1 → last
+  if (p < 1 / 3) return 3;
+  if (p < 2 / 3) return 4;
+  return 5;
+};
+
+/**
+ * Escalation emoji tag for a priority band, appended after `rocket` so
+ * the urgency reads at a glance in the notification list:
+ *
+ *   3 → ⏳ hourglass · 4 → ⚠️ warning · 5 → 🚨 rotating_light
+ *
+ * @param {number} priority
+ * @returns {string}  Comma-separated ntfy `Tags` value.
+ */
+const tagsForPriority = (priority) => {
+  const escalation = priority >= 5 ? 'rotating_light' : priority >= 4 ? 'warning' : 'hourglass';
+  return `rocket,${escalation}`;
+};
 
 /**
  * Publish one message. Splits the immediate vs delayed path: ntfy
@@ -245,21 +349,34 @@ export const priorityForReminder = (n) =>
  * @param {string} args.token
  * @param {number} args.fireAt  Absolute epoch seconds when this push should land.
  * @param {number} args.now
- * @param {number} args.n       Which-of-six this push is (1..6).
+ * @param {number} args.i       Zero-based slot index in this wave's schedule.
+ * @param {number} args.total   Total slots in this wave's schedule.
+ * @param {number} args.baseAt  Wave's locked schedule anchor (epoch s); the
+ *   earliest known return time, shown in the body so the player sees WHEN
+ *   the wave came home.
  * @param {string} args.universeId  Server id, used as the title prefix.
  * @returns {Promise<string>}
  */
-const postOne = async ({ topic, token, fireAt, now, n, universeId }) => {
+const postOne = async ({ topic, token, fireAt, now, i, total, baseAt, universeId }) => {
   const delay = fireAt - now;
+  const priority = priorityForSlot(i, total);
   /** @type {Record<string, string>} */
   const headers = {
     Title: titleFor(universeId),
-    Tags: 'rocket',
-    Priority: String(priorityForReminder(n)),
+    Tags: tagsForPriority(priority),
+    Priority: String(priority),
+    Icon: OGE_ICON_URL,
   };
   if (delay >= NTFY_MIN_DELAY_SEC) headers['X-Delay'] = String(fireAt);
 
-  const body = `Expeditions returned - Reminder #${n}.`;
+  // Local return time, baked in at post time (the ntfy app shows the body
+  // verbatim). We can't list fleet count / origins: the schedule is queued
+  // the instant the FIRST expedition of a wave is detected — before the
+  // rest of the burst is sent — precisely so a browser close mid-send still
+  // leaves reminders queued. So `baseAt` (when the wave returns) is the only
+  // detail we can state honestly.
+  const when = new Date(baseAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const body = `Expeditions back (${when}) — reminder #${i + 1}/${total}.`;
   const res = await fetch(`https://ntfy.sh/${topic}?${ntfyAuthParam(token)}`, {
     method: 'POST',
     headers,
@@ -311,10 +428,18 @@ const postOne = async ({ topic, token, fireAt, now, n, universeId }) => {
  * @param {string} args.token       ntfy.sh access token (sent as a query param, not Bearer).
  * @param {number} args.now         Epoch SECONDS — injected for testability.
  * @param {string} args.universeId  OGame server id; the title prefix + queue filter.
+ * @param {number[]} [args.offsetsSec]  Reminder offsets (seconds from each wave's
+ *   `baseAt`) for the active schedule preset. Defaults to the `standard`
+ *   preset so existing callers/tests keep the 6×10-min behaviour. Changing
+ *   the preset moves slot times, so the next reconcile sweeps the old
+ *   message set and posts the new one — by design.
  * @returns {Promise<{ idsByWave: Record<string, string[]>, posted: number, cancelled: number }>}
  *   `idsByWave` maps each wave id to its slot message ids in fire order.
  */
-export const reconcileWaveQueue = async ({ waves, topic, token, now, universeId }) => {
+export const reconcileWaveQueue = async ({
+  waves, topic, token, now, universeId,
+  offsetsSec = REMINDER_PRESETS[DEFAULT_REMINDER_SCHEDULE].offsetsSec,
+}) => {
   const title = titleFor(universeId);
   const all = await fetchScheduledMessages({ topic, token, now });
   const ours = all.filter((m) => m.title === title);
@@ -330,7 +455,7 @@ export const reconcileWaveQueue = async ({ waves, topic, token, now, universeId 
   /** @type {Set<number>} */
   const wantedTimes = new Set();
   const plan = waves.map((w) => {
-    const times = reminderFireTimes(w.baseAt);
+    const times = reminderFireTimes(w.baseAt, offsetsSec);
     for (const t of times) if (t > now) wantedTimes.add(t);
     return { wave: w, times };
   });
@@ -346,7 +471,10 @@ export const reconcileWaveQueue = async ({ waves, topic, token, now, universeId 
       if (t < now + NTFY_MIN_DELAY_SEC) continue; // past / too-soon to schedule
       let id = queuedById.get(t);
       if (!id) {
-        id = await postOne({ topic, token, fireAt: t, now, n: i + 1, universeId });
+        id = await postOne({
+          topic, token, fireAt: t, now,
+          i, total: times.length, baseAt: wave.baseAt, universeId,
+        });
         queuedById.set(t, id);
         posted++;
       }

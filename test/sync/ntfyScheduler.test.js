@@ -11,7 +11,10 @@ import {
   titleFor,
   cancelWaveReminders,
   fetchScheduledMessages,
-  priorityForReminder,
+  priorityForSlot,
+  offsetsForSchedule,
+  REMINDER_PRESETS,
+  DEFAULT_REMINDER_SCHEDULE,
   REMINDER_COUNT,
   REMINDER_INTERVAL_SEC,
 } from '../../src/sync/ntfyScheduler.js';
@@ -78,9 +81,32 @@ const ourMsg = (id, time) =>
   JSON.stringify({ id, time, event: 'message', title: TITLE });
 
 describe('reminderFireTimes', () => {
-  it('returns REMINDER_COUNT slots spaced REMINDER_INTERVAL_SEC apart from baseAt', () => {
+  it('defaults to the standard preset (REMINDER_COUNT slots, REMINDER_INTERVAL_SEC apart)', () => {
     expect(reminderFireTimes(2000)).toEqual([2000, 2600, 3200, 3800, 4400, 5000]);
     expect(reminderFireTimes(2000)).toHaveLength(REMINDER_COUNT);
+  });
+
+  it('applies an explicit offset list relative to baseAt', () => {
+    expect(reminderFireTimes(2000, [0, 300, 900])).toEqual([2000, 2300, 2900]);
+  });
+});
+
+describe('offsetsForSchedule', () => {
+  it('resolves each known preset to its offsets', () => {
+    expect(offsetsForSchedule('standard')).toEqual([0, 600, 1200, 1800, 2400, 3000]);
+    expect(offsetsForSchedule('short')).toEqual([0, 300, 600, 900]);
+    expect(offsetsForSchedule('fibonacci')).toEqual([0, 180, 300, 480, 780, 1260, 2040, 3300]);
+  });
+
+  it('falls back to the default preset for unknown / missing keys', () => {
+    const def = REMINDER_PRESETS[DEFAULT_REMINDER_SCHEDULE].offsetsSec;
+    expect(offsetsForSchedule('nope')).toEqual(def);
+    expect(offsetsForSchedule(undefined)).toEqual(def);
+    expect(offsetsForSchedule('')).toEqual(def);
+  });
+
+  it('the fibonacci preset offsets are Fibonacci minutes', () => {
+    expect(offsetsForSchedule('fibonacci').map((s) => s / 60)).toEqual([0, 3, 5, 8, 13, 21, 34, 55]);
   });
 });
 
@@ -112,8 +138,46 @@ describe('reconcileWaveQueue', () => {
       expect(init.headers.Title).toBe(TITLE);
       expect(init.headers['X-Delay']).toBe(String(2000 + slot * REMINDER_INTERVAL_SEC));
       expect(init.headers.Priority).toBe(['3', '3', '4', '4', '5', '5'][slot]);
-      expect(init.body).toBe(`Expeditions returned - Reminder #${slot + 1}.`);
+      // Tags carry rocket + an escalation emoji matched to the priority band.
+      expect(init.headers.Tags).toBe(
+        `rocket,${['hourglass', 'hourglass', 'warning', 'warning', 'rotating_light', 'rotating_light'][slot]}`,
+      );
+      // Icon is a public https URL (ntfy app fetches it; moz-extension:// won't do).
+      expect(init.headers.Icon).toMatch(/^https:\/\/raw\.githubusercontent\.com\/.+\/icons\/icon128\.png$/);
+      // Body states the wave's local return time + slot position; exact
+      // clock string is TZ-dependent, so assert the shape.
+      expect(init.body).toMatch(/^Expeditions back \(\d{1,2}:\d{2}(?:\s?[AP]M)?\) — reminder #\d+\/6\.$/);
     });
+  });
+
+  it('honours a non-standard preset: posts one slot per offset at baseAt+offset', async () => {
+    dispatchReconcile([]);
+    const offsetsSec = offsetsForSchedule('short'); // [0,300,600,900] → 4 slots
+    const { posted, idsByWave } = await reconcileWaveQueue({
+      ...base, now: 1000, waves: [{ id: 'w_2000', baseAt: 2000 }], offsetsSec,
+    });
+
+    expect(posted).toBe(offsetsSec.length);
+    expect(idsByWave.w_2000).toHaveLength(offsetsSec.length);
+    const posts = fetchMock.mock.calls.filter((c) => c[1]?.method === 'POST');
+    posts.forEach(([, init], slot) => {
+      expect(init.headers['X-Delay']).toBe(String(2000 + offsetsSec[slot]));
+      // Body slot count reflects the preset length, not the hard-coded 6.
+      expect(init.body).toContain(`/${offsetsSec.length}.`);
+    });
+  });
+
+  it('fibonacci preset queues 8 slots at Fibonacci-minute offsets', async () => {
+    dispatchReconcile([]);
+    const offsetsSec = offsetsForSchedule('fibonacci');
+    const { posted } = await reconcileWaveQueue({
+      ...base, now: 1000, waves: [{ id: 'w_5000', baseAt: 5000 }], offsetsSec,
+    });
+    expect(posted).toBe(8);
+    const delays = fetchMock.mock.calls
+      .filter((c) => c[1]?.method === 'POST')
+      .map((c) => Number(c[1].headers['X-Delay']));
+    expect(delays).toEqual([0, 180, 300, 480, 780, 1260, 2040, 3300].map((o) => 5000 + o));
   });
 
   it('is idempotent: a fully-queued wave posts nothing and reuses the queued ids', async () => {
@@ -197,15 +261,21 @@ describe('reconcileWaveQueue', () => {
   });
 });
 
-describe('priorityForReminder', () => {
-  it('starts at default (3), climbs by one band every two reminders, caps at max (5)', () => {
-    expect([1, 2, 3, 4, 5, 6].map(priorityForReminder)).toEqual([3, 3, 4, 4, 5, 5]);
+describe('priorityForSlot', () => {
+  /** @param {number} total */
+  const ladder = (total) => Array.from({ length: total }, (_, i) => priorityForSlot(i, total));
+
+  it('reproduces the historical 3,3,4,4,5,5 ladder for the 6-slot standard preset', () => {
+    expect(ladder(6)).toEqual([3, 3, 4, 4, 5, 5]);
   });
 
-  it('clamps non-positive and over-range inputs', () => {
-    expect(priorityForReminder(0)).toBe(3);
-    expect(priorityForReminder(-1)).toBe(3);
-    expect(priorityForReminder(99)).toBe(5);
+  it('spreads the three bands across other preset lengths', () => {
+    expect(ladder(4)).toEqual([3, 4, 5, 5]);
+    expect(ladder(8)).toEqual([3, 3, 3, 4, 4, 5, 5, 5]);
+  });
+
+  it('treats a single-slot series as max urgency', () => {
+    expect(priorityForSlot(0, 1)).toBe(5);
   });
 });
 

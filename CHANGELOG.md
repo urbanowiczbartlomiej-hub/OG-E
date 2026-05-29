@@ -6,6 +6,35 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.7.0] — 2026-05-29
+
+### Added
+
+- **Choose your reminder cadence.** A new "Reminder schedule" dropdown in
+  the OG-E settings panel (Expedition reminders section) offers three
+  fixed presets instead of the previously hard-coded schedule:
+    - **6 × 10 min** — the existing default (0–50 min). Unchanged for
+      everyone who doesn't touch the setting.
+    - **4 × 5 min** — tighter, quieter burst (0–15 min).
+    - **8 × Fibonacci (0–55 min)** — dense early nudging that thins out
+      (offsets at 0, 3, 5, 8, 13, 21, 34, 55 min).
+  Fewer/cheaper presets also let players keep ntfy.sh usage down. The
+  priority escalation ladder (default → high → max) now spreads evenly
+  across whatever preset length you pick, so the 6-slot default still
+  rings 3,3,4,4,5,5 exactly as before. Changing the preset re-converges
+  the ntfy queue on the next sync (old slots swept, new ones posted).
+- **Richer push notifications.** Each reminder now carries the OG-E icon
+  and states the wave's local return time, e.g. *"Expeditions back
+  (12:22) — reminder #3/6."* Tags also escalate with urgency
+  (⏳ → ⚠️ → 🚨) so the priority reads at a glance in the notification
+  list. (Fleet count / origins are deliberately omitted: the schedule is
+  queued the instant the first expedition of a wave is detected — before
+  the rest of the burst is sent — so those details aren't reliably known
+  yet.)
+
+  No new permissions, no new network destinations (the notification icon
+  is fetched by the ntfy app from the project's public repo).
+
 ## [1.6.2] — 2026-05-29
 
 ### Fixed

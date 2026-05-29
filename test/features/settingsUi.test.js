@@ -336,6 +336,44 @@ describe('installSettingsUi — text + password', () => {
 });
 
 // ──────────────────────────────────────────────────────────────────
+// Select (dropdown) rendering + binding
+// ──────────────────────────────────────────────────────────────────
+
+describe('installSettingsUi — select', () => {
+  it('renders the reminder-schedule dropdown with the preset choices', async () => {
+    setupAGR();
+    installSettingsUi();
+    await flushWaitFor();
+
+    const sel = /** @type {HTMLSelectElement | null} */ (
+      document.getElementById(INPUT_PREFIX + 'reminderSchedule')
+    );
+    expect(sel).not.toBeNull();
+    expect(sel?.tagName).toBe('SELECT');
+    const values = Array.from(sel?.options ?? []).map((o) => o.value);
+    expect(values).toEqual(['standard', 'short', 'fibonacci']);
+    // Default value is selected.
+    expect(sel?.value).toBe('standard');
+  });
+
+  it('change writes the chosen preset key back to settings', async () => {
+    setupAGR();
+    installSettingsUi();
+    await flushWaitFor();
+
+    const sel = /** @type {HTMLSelectElement | null} */ (
+      document.getElementById(INPUT_PREFIX + 'reminderSchedule')
+    );
+    expect(sel).not.toBeNull();
+    if (sel) {
+      sel.value = 'fibonacci';
+      sel.dispatchEvent(new Event('change'));
+    }
+    expect(settingsStore.get().reminderSchedule).toBe('fibonacci');
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
 // Button rendering + click
 // ──────────────────────────────────────────────────────────────────
 

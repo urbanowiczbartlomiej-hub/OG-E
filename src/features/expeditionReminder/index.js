@@ -139,7 +139,11 @@ export const installExpeditionReminder = () => {
     const force = pendingForce;
     pendingForce = false;
     const s = settingsStore.get();
-    const config = { enabled: s.reminderEnabled, ntfyToken: s.reminderNtfyToken };
+    const config = {
+      enabled: s.reminderEnabled,
+      ntfyToken: s.reminderNtfyToken,
+      schedule: s.reminderSchedule,
+    };
     // Dormant when off — unless a settings change is forcing a push
     // (e.g. the user just toggled it off and we must cancel scheduled
     // ntfys).
@@ -168,7 +172,7 @@ export const installExpeditionReminder = () => {
   // (cancel scheduled messages on disable, schedule them on enable).
   /** @param {ReturnType<typeof settingsStore.get>} s */
   const pickReminderSig = (s) =>
-    JSON.stringify({ e: s.reminderEnabled, t: s.reminderNtfyToken });
+    JSON.stringify({ e: s.reminderEnabled, t: s.reminderNtfyToken, s: s.reminderSchedule });
   let prevReminderSig = pickReminderSig(settingsStore.get());
   const unsubConfig = settingsStore.subscribe((next) => {
     const sig = pickReminderSig(next);

@@ -43,12 +43,13 @@ import { SECTIONS } from './sections/index.js';
  * @typedef {object} SettingsOption
  * @property {string} id Option identifier — matches `Settings` field for data-bound types.
  * @property {string} label Human-readable row label.
- * @property {'checkbox' | 'range' | 'text' | 'password' | 'button' | 'static'} type Control flavour.
+ * @property {'checkbox' | 'range' | 'text' | 'password' | 'button' | 'static' | 'select'} type Control flavour.
  * @property {number} [min] Slider minimum (range only).
  * @property {number} [max] Slider maximum (range only).
  * @property {number} [step] Slider step (range only; defaults to 1).
  * @property {string} [unit] Slider display unit suffix (range only, e.g. `'px'`).
  * @property {string} [placeholder] Input placeholder (text / password only).
+ * @property {{ value: string, label: string }[]} [selectOptions] Choices (select only).
  * @property {string} [buttonText] Button label override (button only; defaults to `label`).
  * @property {() => void} [onclick] Button click handler (button only).
  * @property {() => string} [getText] Dynamic text producer (static only).
@@ -235,6 +236,34 @@ const buildInputControl = (opt, valueCell) => {
 };
 
 /**
+ * Render the select (dropdown) flavour. Data-bound like the input
+ * flavours: the current Settings value selects the matching `<option>`,
+ * and a change writes the chosen value back through {@link writeSetting}.
+ * Used for the few preferences that are an enumerated choice rather than
+ * a free value (e.g. the reminder schedule preset).
+ *
+ * @param {SettingsOption} opt
+ * @param {HTMLTableCellElement} valueCell
+ * @returns {void}
+ */
+const buildSelectControl = (opt, valueCell) => {
+  const select = document.createElement('select');
+  select.id = INPUT_ID_PREFIX + opt.id;
+  const current = String(readSetting(opt.id) ?? '');
+  for (const choice of opt.selectOptions ?? []) {
+    const optionEl = document.createElement('option');
+    optionEl.value = choice.value;
+    optionEl.textContent = choice.label;
+    if (choice.value === current) optionEl.selected = true;
+    select.appendChild(optionEl);
+  }
+  select.addEventListener('change', () => {
+    writeSetting(opt.id, select.value);
+  });
+  valueCell.appendChild(select);
+};
+
+/**
  * Render the button flavour — not data-bound, just fires `opt.onclick`.
  * @param {SettingsOption} opt
  * @param {HTMLTableCellElement} valueCell
@@ -283,6 +312,7 @@ const CONTROL_BUILDERS = {
   range: buildRangeControl,
   text: buildInputControl,
   password: buildInputControl,
+  select: buildSelectControl,
   button: buildButtonControl,
   static: buildStaticControl,
 };
@@ -360,6 +390,8 @@ export const syncInputsFromState = () => {
       } else if (opt.type === 'text' || opt.type === 'password') {
         const v = readSetting(opt.id);
         /** @type {HTMLInputElement} */ (el).value = v == null ? '' : String(v);
+      } else if (opt.type === 'select') {
+        /** @type {HTMLSelectElement} */ (el).value = String(readSetting(opt.id) ?? '');
       } else if (opt.type === 'static') {
         if (opt.getText) el.textContent = opt.getText();
       }

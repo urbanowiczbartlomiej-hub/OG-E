@@ -92,9 +92,16 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
         'readabilityBoost',
         'reminderEnabled',
         'reminderNtfyToken',
+        'reminderSchedule',
         'traderMenuHighlight',
       ].sort(),
     );
+
+    expect(SETTINGS_SCHEMA.reminderSchedule).toEqual({
+      type: 'string',
+      default: 'standard',
+      key: 'oge_reminderSchedule',
+    });
 
     expect(SETTINGS_SCHEMA.mobileMode).toEqual({
       type: 'bool',

@@ -72,7 +72,7 @@
 import { gh, ensureGistV3, getToken, getGistId } from './gist.js';
 import { chromeStore } from '../lib/storage.js';
 import { reconcileWaves, pruneNotifyState } from '../domain/waves.js';
-import { reconcileWaveQueue } from './ntfyScheduler.js';
+import { reconcileWaveQueue, offsetsForSchedule } from './ntfyScheduler.js';
 
 /**
  * @typedef {import('../domain/waves.js').Wave} Wave
@@ -88,6 +88,9 @@ import { reconcileWaveQueue } from './ntfyScheduler.js';
  * @typedef {object} ReminderConfig
  * @property {boolean} enabled
  * @property {string} ntfyToken
+ * @property {string} [schedule]  Reminder schedule preset key (see
+ *   `ntfyScheduler.REMINDER_PRESETS`). Falls back to the default preset
+ *   when absent / unknown.
  */
 
 /**
@@ -426,6 +429,7 @@ export const syncReminderWaves = async (config, currentCandidates, now, universe
 
     const { idsByWave, posted, cancelled: swept } = await reconcileWaveQueue({
       waves: liveForNtfy, topic, token: ntfyToken, now, universeId,
+      offsetsSec: offsetsForSchedule(config.schedule),
     });
     scheduled = posted;
     cancelled = swept;
