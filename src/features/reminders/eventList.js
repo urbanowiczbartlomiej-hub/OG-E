@@ -4,37 +4,41 @@
 // (`td.arrivalTime`) into a compact, clickable badge. No new column, no
 // extra row height: we restyle the cell OGame already renders.
 //
-// # Two context-determined modes (one click target per cell)
+// # Context-determined modes (one click target per cell)
 //
-//   - **Wave mode.** An expedition return leg already covered by a live,
-//     scheduled auto-wave reminder shows a "wave scheduled" badge; one
-//     click cancels the whole wave (`cancelWave`) — the same action the
-//     dashboard offers, now inline. No ad-hoc on these legs (the wave
-//     already covers them).
-//   - **Ad-hoc mode.** Every other leg (outbound, non-expedition, or a
-//     return not covered by a scheduled wave) is an ad-hoc toggle: click
-//     to arm a one-shot reminder `adhocOffsetSec` before arrival, click
-//     again to cancel. Legs whose fire time is past ntfy's 3-day cap are
-//     shown disabled.
+//   - **Expedition wave.** When auto-wave detection is on, the legs of a
+//     returning expedition wave are controlled AS A WHOLE — never per
+//     mission. Only the wave's ANCHOR row (the earliest-returning leg
+//     present, i.e. the one whose time matches the reminder) carries the
+//     control: one click cancels the whole series, and on an
+//     already-cancelled wave one click RESENDS it. Every other leg of the
+//     wave shows a passive "🛰 part of a wave" marker so the grouping is
+//     visible, but isn't independently armable.
+//   - **Ad-hoc.** Every other leg (outbound, non-expedition, or a return
+//     not part of a scheduled wave) is an ad-hoc toggle: click to arm a
+//     one-shot reminder `adhocOffsetSec` before arrival, click again to
+//     cancel. Legs past ntfy's 3-day cap show disabled.
 //
-// Picking the mode per cell keeps a single tap target — important on
-// mobile, where OG-E is used most.
+// # Honest "syncing" state (OGame is not an SPA)
 //
-// # State, not closures
+// Every click reloads the PHP page; our gist + ntfy round-trip takes a
+// few seconds. So an action writes its intent to localStorage
+// synchronously (see `./pending.js`) and the badge immediately shows a
+// "syncing" state — which survives both re-renders AND the page reload —
+// flipping to the confirmed state only once the gist mirror shows ntfy
+// actually holds (or dropped) the message. No more "looked armed, wasn't".
 //
-// The render pass writes the chosen mode + ids onto the cell (classes +
-// data-* attributes) from a cached snapshot of the gist mirror; a single
-// delegated click listener reads that back and dispatches. So AGR/OGame
-// swapping `#eventContent` never strands a stale handler — the next
-// render re-applies, and the listener lives on `document`.
+// # Surviving AGR
 //
-// Writes are guarded (only when the value actually changes) so our own
-// attribute edits don't re-trigger the MutationObserver into a loop —
-// same net effect as the disconnect/reattach dance in `badges.js`, less
-// machinery.
+// State is stamped on the cell (classes + data-*) from the mirror +
+// pending queue; a single delegated click listener reads it back and
+// dispatches. AGR/OGame swapping `#eventContent` never strands a handler.
+// Writes are guarded (only when the value changes) so our own edits don't
+// loop the MutationObserver.
 //
-// @see ./producer.js — owns the gist writes; we only call its arm/disarm/
-//   cancel API and read the mirror it publishes.
+// @see ./producer.js — owns gist writes; we call its arm/disarm/cancel/
+//   resend API and read the mirror it publishes.
+// @see ./pending.js  — the reload-safe intent queue we read for "syncing".
 
 import { settingsStore } from '../../state/settings.js';
 import { chromeStore } from '../../lib/storage.js';
@@ -44,6 +48,7 @@ import { parseUniverseId } from '../../lib/universeId.js';
 import { fireAtFor } from '../../domain/adhoc.js';
 import { injectStyle } from '../../lib/dom.js';
 import { debounce } from '../../lib/debounce.js';
+import { readPending, lastAdhocIntent, lastWaveIntent } from './pending.js';
 
 /** @typedef {import('../../sync/reminders.js').ReminderState} ReminderState */
 /** @typedef {import('../../domain/adhoc.js').AdhocReminder} AdhocReminder */
@@ -60,52 +65,31 @@ const MISSION_NAMES = /** @type {Record<string, string>} */ ({
 });
 
 const CSS = `
-.${BADGE_CLASS} {
-  cursor: pointer;
-  border-radius: 3px;
-  transition: box-shadow .12s, background-color .12s;
-}
-.${BADGE_CLASS}.idle:hover {
-  box-shadow: inset 0 0 0 1px rgba(120, 200, 255, 0.6);
-}
-.${BADGE_CLASS}.idle::before {
-  content: '🔔';
-  opacity: 0;
-  margin-right: 2px;
-  font-size: 0.85em;
-}
+.${BADGE_CLASS} { border-radius: 3px; transition: box-shadow .12s, background-color .12s; }
+.${BADGE_CLASS}.act { cursor: pointer; }
+.${BADGE_CLASS}.idle::before { content: '🔔'; opacity: 0; margin-right: 2px; font-size: 0.85em; }
 .${BADGE_CLASS}.idle:hover::before { opacity: 0.6; }
-.${BADGE_CLASS}.armed {
-  background: rgba(0, 200, 90, 0.22);
-  box-shadow: inset 0 0 0 1px rgba(0, 220, 110, 0.7);
-}
-.${BADGE_CLASS}.armed::before {
-  content: '🔔';
-  margin-right: 2px;
-  font-size: 0.85em;
-}
-.${BADGE_CLASS}.wave {
-  background: rgba(70, 150, 255, 0.20);
-  box-shadow: inset 0 0 0 1px rgba(90, 170, 255, 0.7);
-  cursor: pointer;
-}
-.${BADGE_CLASS}.wave::before {
-  content: '🛰';
-  margin-right: 2px;
-  font-size: 0.85em;
-}
-.${BADGE_CLASS}.disabled {
-  cursor: default;
-  opacity: 0.5;
-}
+.${BADGE_CLASS}.idle:hover { box-shadow: inset 0 0 0 1px rgba(120, 200, 255, 0.6); }
+.${BADGE_CLASS}.armed { background: rgba(0, 200, 90, 0.22); box-shadow: inset 0 0 0 1px rgba(0, 220, 110, 0.7); }
+.${BADGE_CLASS}.armed::before { content: '🔔'; margin-right: 2px; font-size: 0.85em; }
+.${BADGE_CLASS}.wave { background: rgba(70, 150, 255, 0.20); box-shadow: inset 0 0 0 1px rgba(90, 170, 255, 0.7); }
+.${BADGE_CLASS}.wave::before { content: '🛰'; margin-right: 2px; font-size: 0.85em; }
+.${BADGE_CLASS}.wave-off { box-shadow: inset 0 0 0 1px rgba(150, 150, 150, 0.6); opacity: 0.75; }
+.${BADGE_CLASS}.wave-off::before { content: '🛰'; margin-right: 2px; font-size: 0.85em; opacity: 0.6; }
+.${BADGE_CLASS}.member { box-shadow: inset 2px 0 0 0 rgba(90, 170, 255, 0.6); }
+.${BADGE_CLASS}.member::before { content: '🛰'; margin-right: 2px; font-size: 0.7em; opacity: 0.5; }
+.${BADGE_CLASS}.member-off { box-shadow: inset 2px 0 0 0 rgba(150, 150, 150, 0.5); opacity: 0.7; }
+.${BADGE_CLASS}.disabled { opacity: 0.5; }
+.${BADGE_CLASS}.syncing { animation: oge-rem-pulse 1s ease-in-out infinite; }
+.${BADGE_CLASS}.syncing::after { content: '⏳'; margin-left: 2px; font-size: 0.8em; }
+@keyframes oge-rem-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
 `;
 
 // ── Mirror snapshot ─────────────────────────────────────────────────────
 
 /**
  * Cached reminder state for THIS universe (the slice of the gist mirror
- * the producer publishes). Refreshed on install and whenever the mirror
- * changes; the render pass reads it synchronously.
+ * the producer publishes), refreshed on install + on every mirror change.
  *
  * @type {ReminderState | null}
  */
@@ -129,13 +113,7 @@ const refreshSnapshot = async () => {
 /** @param {string | null | undefined} s @returns {string} dense `g:s:p` */
 const denseCoords = (s) => (s || '').replace(/[\s[\]]/g, '');
 
-/**
- * Build the ad-hoc push label for a row: mission name + destination
- * coords (where the leg arrives). The body adds the clock time later.
- *
- * @param {Element} row
- * @returns {string}
- */
+/** @param {Element} row @returns {string} push label, e.g. "Expedition → [4:467:16]" */
 const labelFor = (row) => {
   const mt = row.getAttribute('data-mission-type') || '';
   const mission = MISSION_NAMES[mt] || 'Fleet';
@@ -143,108 +121,129 @@ const labelFor = (row) => {
   return dest ? `${mission} → [${dest}]` : mission;
 };
 
-/**
- * Resolve which scheduled wave (if any) covers a return leg arriving at
- * `arrivalAt`. A wave covers it when the leg's arrival is one of the
- * wave's return times, the wave isn't cancelled, and it actually has
- * messages queued (so a disabled / swept wave doesn't claim the cell).
- *
- * @param {number} arrivalAt
- * @returns {string | null}  wave id, or null when not covered.
- */
-const waveCovering = (arrivalAt) => {
-  if (!snapshot?.waves) return null;
-  const notify = snapshot.notifyState || {};
-  for (const w of snapshot.waves) {
-    if (w.cancelled) continue;
-    if (!(w.returnAts || []).includes(arrivalAt)) continue;
-    if ((notify[w.id]?.scheduledMessageIds || []).length === 0) continue;
-    return w.id;
-  }
-  return null;
-};
+/** @param {Element} el @param {string} cls */
+const setClass = (el, cls) => { if (el.className !== cls) el.className = cls; };
 
-/** @returns {Set<string>} armed ad-hoc event-row ids for this universe. */
-const armedIds = () => new Set((snapshot?.adhoc || []).map((e) => e.id));
-
-/**
- * Idempotent attribute write — only touches the DOM when the value
- * actually changes, so our edits don't feed the MutationObserver a loop.
- *
- * @param {Element} el @param {string} attr @param {string | null} val
- */
+/** @param {Element} el @param {string} attr @param {string | null} val */
 const setAttr = (el, attr, val) => {
   const cur = el.getAttribute(attr);
   if (val === null) { if (cur !== null) el.removeAttribute(attr); }
   else if (cur !== val) el.setAttribute(attr, val);
 };
 
-/** @param {HTMLElement} el @param {string} cls */
-const setClass = (el, cls) => { if (el.className !== cls) el.className = cls; };
+/**
+ * Stamp a cell's badge: visual classes, click action, wave id, title —
+ * all via guarded writes so we never feed the MutationObserver a loop.
+ *
+ * @param {HTMLElement} cell
+ * @param {string} classes  Space-separated visual classes (without BADGE_CLASS).
+ * @param {string} act      Click action ('' = inert).
+ * @param {string} waveId   Wave id for wave actions ('' = none).
+ * @param {string} title
+ */
+const stamp = (cell, classes, act, waveId, title) => {
+  setClass(cell, `${BADGE_CLASS} ${classes}${act ? ' act' : ''}`.trim());
+  setAttr(cell, 'data-oge-act', act || null);
+  setAttr(cell, 'data-oge-wave', waveId || null);
+  setAttr(cell, 'title', title);
+};
+
+/** Strip every badge marking we may have applied to a cell. @param {HTMLElement} cell */
+const clearCell = (cell) => {
+  if (!cell.classList.contains(BADGE_CLASS)) return;
+  setClass(cell, cell.className.replace(/\boge-rem-badge\b|\b(?:act|idle|armed|wave|wave-off|member|member-off|disabled|syncing)\b/g, '').replace(/\s+/g, ' ').trim());
+  setAttr(cell, 'data-oge-act', null);
+  setAttr(cell, 'data-oge-wave', null);
+  setAttr(cell, 'title', null);
+};
 
 // ── Render ──────────────────────────────────────────────────────────────
 
 /**
- * One render pass: walk every fleet row and set its arrival-time cell's
- * badge mode from the current settings + mirror snapshot. Pure-ish: reads
- * the DOM + snapshot, writes only classes / data-* / title (guarded).
+ * One render pass: stamp every fleet row's arrival cell from settings +
+ * mirror snapshot + the pending-intent queue. Pure-ish (reads DOM +
+ * snapshot + localStorage; writes only guarded classes/attrs).
  *
  * @returns {void}
  */
 const render = () => {
   const s = settingsStore.get();
-  const adhocOn = s.adhocEnabled && isValidNtfyToken(s.reminderNtfyToken);
+  const tokenOk = isValidNtfyToken(s.reminderNtfyToken);
+  const adhocOn = s.adhocEnabled && tokenOk;
+  const waveOn = s.reminderEnabled && tokenOk;
   const now = Math.floor(Date.now() / 1000);
-  const armed = armedIds();
+  const universeId = parseUniverseId(location.host);
+  const pending = readPending(universeId);
 
-  const rows = document.querySelectorAll('#eventContent tr.eventFleet[id^="eventRow-"]');
+  const rows = [.../** @type {NodeListOf<HTMLElement>} */ (
+    document.querySelectorAll('#eventContent tr.eventFleet[id^="eventRow-"]')
+  )];
+
+  // Pre-pass: map each row to its wave (if any) and find each wave's
+  // anchor — the earliest-returning leg currently present.
+  /** @type {Map<HTMLElement, import('../../domain/waves.js').Wave>} */
+  const waveOf = new Map();
+  /** @type {Map<string, { arrivalAt: number, rowId: string }>} */
+  const anchor = new Map();
+  if (waveOn && snapshot?.waves) {
+    for (const row of rows) {
+      const arrivalAt = parseInt(row.getAttribute('data-arrival-time') || '', 10);
+      if (!Number.isFinite(arrivalAt)) continue;
+      const w = snapshot.waves.find((x) => (x.returnAts || []).includes(arrivalAt));
+      if (!w) continue;
+      waveOf.set(row, w);
+      const cur = anchor.get(w.id);
+      if (!cur || arrivalAt < cur.arrivalAt) anchor.set(w.id, { arrivalAt, rowId: row.id });
+    }
+  }
+
+  const armedSet = new Set((snapshot?.adhoc || []).map((e) => e.id));
+
   for (const row of rows) {
     const cell = /** @type {HTMLElement | null} */ (row.querySelector('td.arrivalTime'));
     if (!cell) continue;
-    const id = /** @type {HTMLElement} */ (row).id;
-    const arrivalAttr = row.getAttribute('data-arrival-time');
-    const arrivalAt = arrivalAttr ? parseInt(arrivalAttr, 10) : NaN;
+    const id = row.id;
+    const arrivalAt = parseInt(row.getAttribute('data-arrival-time') || '', 10);
 
-    // Decide the mode for this cell.
-    let mode = 'none';
-    let title = '';
-    let waveId = '';
-    if (Number.isFinite(arrivalAt)) {
-      const cover = waveCovering(arrivalAt);
-      if (cover) {
-        mode = 'wave';
-        waveId = cover;
-        title = 'Auto expedition reminder scheduled — click to cancel it';
-      } else if (adhocOn) {
-        if (armed.has(id)) {
-          mode = 'armed';
-          title = 'Reminder armed — click to cancel';
+    const w = waveOf.get(row);
+    if (w) {
+      const pw = lastWaveIntent(pending, w.id);
+      const cancelled = pw ? pw === 'cancelWave' : Boolean(w.cancelled);
+      const syncing = pw !== null ? ' syncing' : '';
+      const isAnchor = anchor.get(w.id)?.rowId === id;
+      if (isAnchor) {
+        if (cancelled) {
+          stamp(cell, `wave-off${syncing}`, 'resendWave', w.id,
+            'Wave reminder cancelled — click to resend the whole series');
         } else {
-          const fireAt = fireAtFor(arrivalAt, s.adhocOffsetSec);
-          if (fireAt - now > NTFY_MAX_DELAY_SEC) {
-            mode = 'disabled';
-            title = 'Too far ahead to remind (ntfy limit is 3 days)';
-          } else {
-            mode = 'idle';
-            title = 'Click to get a push reminder before this arrives';
-          }
+          stamp(cell, `wave${syncing}`, 'cancelWave', w.id,
+            'Auto expedition-wave reminder scheduled — click to cancel the whole wave');
         }
+      } else {
+        stamp(cell, cancelled ? 'member-off' : 'member', '', '',
+          'Part of an expedition-wave reminder');
       }
-    }
-
-    if (mode === 'none') {
-      // Strip any badge we previously applied (e.g. token cleared).
-      if (cell.classList.contains(BADGE_CLASS)) setClass(cell, cell.className.replace(/\boge-rem-[\w-]+\b/g, '').trim());
-      setAttr(cell, 'data-oge-rem', null);
-      setAttr(cell, 'data-oge-wave', null);
-      setAttr(cell, 'title', null);
       continue;
     }
 
-    setClass(cell, `${BADGE_CLASS} ${mode}`);
-    setAttr(cell, 'data-oge-rem', mode);
-    setAttr(cell, 'data-oge-wave', waveId || null);
-    setAttr(cell, 'title', title);
+    if (adhocOn && Number.isFinite(arrivalAt)) {
+      const pa = lastAdhocIntent(pending, id);
+      const armed = pa ? pa === 'arm' : armedSet.has(id);
+      const syncing = pa !== null ? ' syncing' : '';
+      if (armed) {
+        stamp(cell, `armed${syncing}`, 'disarm', '', 'Reminder armed — click to cancel');
+      } else {
+        const fireAt = fireAtFor(arrivalAt, s.adhocOffsetSec);
+        if (fireAt - now > NTFY_MAX_DELAY_SEC) {
+          stamp(cell, 'disabled', '', '', 'Too far ahead to remind (ntfy limit is 3 days)');
+        } else {
+          stamp(cell, `idle${syncing}`, 'arm', '', 'Click to get a push reminder before this arrives');
+        }
+      }
+      continue;
+    }
+
+    clearCell(cell);
   }
 };
 
@@ -256,71 +255,58 @@ let installed = null;
 /**
  * Install the event-list reminder badges.
  *
- * @param {object} api  Producer actions (see {@link './producer.js'}).
+ * @param {object} api  Producer actions (see `./producer.js`).
  * @param {(entry: AdhocReminder) => void} api.armAdhoc
  * @param {(id: string) => void} api.disarmAdhoc
  * @param {(waveId: string) => void} api.cancelWave
+ * @param {(waveId: string) => void} api.resendWave
  * @returns {() => void} dispose
  */
-export const installEventListReminders = ({ armAdhoc, disarmAdhoc, cancelWave }) => {
+export const installEventListReminders = ({ armAdhoc, disarmAdhoc, cancelWave, resendWave }) => {
   if (installed) return installed.dispose;
 
   injectStyle(STYLE_ID, CSS);
 
   const scheduleRender = debounce(() => { if (installed) render(); }, REFRESH_DEBOUNCE_MS);
 
-  // Delegated click — survives AGR swapping #eventContent. Reads the mode
-  // the render pass stamped on the cell, flips it optimistically for snap,
-  // and dispatches; the next mirror update re-renders the truth.
   /** @param {MouseEvent} ev */
   const onClick = (ev) => {
     const target = /** @type {HTMLElement} */ (ev.target);
-    const cell = target?.closest?.(`.${BADGE_CLASS}`);
+    const cell = target?.closest?.(`.${BADGE_CLASS}.act`);
     if (!cell) return;
-    const mode = cell.getAttribute('data-oge-rem');
-    if (!mode || mode === 'disabled') return;
+    const act = cell.getAttribute('data-oge-act');
     const row = cell.closest('tr.eventFleet');
-    if (!row) return;
+    if (!act || !row) return;
     ev.preventDefault();
     ev.stopPropagation();
 
     const id = /** @type {HTMLElement} */ (row).id;
-    if (mode === 'wave') {
-      const waveId = cell.getAttribute('data-oge-wave');
-      if (waveId) { cancelWave(waveId); setClass(/** @type {HTMLElement} */ (cell), `${BADGE_CLASS} idle`); }
-      return;
+    const waveId = cell.getAttribute('data-oge-wave') || '';
+    if (act === 'cancelWave' && waveId) cancelWave(waveId);
+    else if (act === 'resendWave' && waveId) resendWave(waveId);
+    else if (act === 'disarm') disarmAdhoc(id);
+    else if (act === 'arm') {
+      const arrivalAt = parseInt(row.getAttribute('data-arrival-time') || '', 10);
+      if (!Number.isFinite(arrivalAt)) return;
+      const offsetSec = settingsStore.get().adhocOffsetSec;
+      const fleetId = row.querySelector('.recallFleet')?.getAttribute('data-fleet-id') || undefined;
+      armAdhoc({
+        id, arrivalAt, offsetSec, fireAt: fireAtFor(arrivalAt, offsetSec),
+        label: labelFor(row),
+        ...(fleetId ? { fleetId } : {}),
+        createdAt: Math.floor(Date.now() / 1000),
+      });
     }
-    if (mode === 'armed') {
-      disarmAdhoc(id);
-      setClass(/** @type {HTMLElement} */ (cell), `${BADGE_CLASS} idle`);
-      return;
-    }
-    // idle → arm
-    const arrivalAttr = row.getAttribute('data-arrival-time');
-    const arrivalAt = arrivalAttr ? parseInt(arrivalAttr, 10) : NaN;
-    if (!Number.isFinite(arrivalAt)) return;
-    const offsetSec = settingsStore.get().adhocOffsetSec;
-    const fleetId = row.querySelector('.recallFleet')?.getAttribute('data-fleet-id') || undefined;
-    armAdhoc({
-      id,
-      arrivalAt,
-      offsetSec,
-      fireAt: fireAtFor(arrivalAt, offsetSec),
-      label: labelFor(row),
-      ...(fleetId ? { fleetId } : {}),
-      createdAt: Math.floor(Date.now() / 1000),
-    });
-    setClass(/** @type {HTMLElement} */ (cell), `${BADGE_CLASS} armed`);
+    // Reflect the just-queued intent immediately (render reads the pending
+    // queue we just wrote) — shows the "syncing" state without waiting for
+    // the sync round-trip.
+    render();
   };
   document.addEventListener('click', onClick, true);
 
-  // Re-render on event-box churn (observe body — OGame swaps #eventContent
-  // wholesale on its AJAX tick, same as badges.js).
   const observer = new MutationObserver(scheduleRender);
   observer.observe(document.body, { childList: true, subtree: true });
 
-  // Re-render on mirror change (arm/disarm/cancel landed, or another
-  // device synced) and on the relevant settings toggles.
   const onMirror = (/** @type {Record<string, unknown>} */ changes) => {
     if (REMINDER_MIRROR_KEY in changes) void refreshSnapshot().then(() => scheduleRender());
   };
@@ -334,9 +320,6 @@ export const installEventListReminders = ({ armAdhoc, disarmAdhoc, cancelWave })
     scheduleRender();
   });
 
-  // Safety poll (OGame dodges scoped observers historically — same net as
-  // badges.js). Cheap: render is guarded, so a no-change tick costs almost
-  // nothing.
   const safetyPoll = setInterval(() => { if (installed) render(); }, 3000);
 
   void refreshSnapshot().then(() => render());
@@ -348,11 +331,7 @@ export const installEventListReminders = ({ armAdhoc, disarmAdhoc, cancelWave })
       clearInterval(safetyPoll);
       unsubSettings();
       document.getElementById(STYLE_ID)?.remove();
-      document.querySelectorAll(`.${BADGE_CLASS}`).forEach((el) => {
-        el.classList.remove(BADGE_CLASS, 'idle', 'armed', 'wave', 'disabled');
-        el.removeAttribute('data-oge-rem');
-        el.removeAttribute('data-oge-wave');
-      });
+      document.querySelectorAll(`.${BADGE_CLASS}`).forEach((el) => clearCell(/** @type {HTMLElement} */ (el)));
       installed = null;
     },
   };

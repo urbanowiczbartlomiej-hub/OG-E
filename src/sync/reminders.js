@@ -75,6 +75,7 @@ import { reconcileWaves, pruneNotifyState } from '../domain/waves.js';
 import { reconcileAdhoc, pruneAdhocNotify } from '../domain/adhoc.js';
 import {
   reconcileWaveQueue, reconcileAdhocQueue, offsetsForSchedule, NTFY_MAX_DELAY_SEC,
+  fetchScheduledMessages,
 } from './ntfyScheduler.js';
 
 /**
@@ -496,6 +497,11 @@ export const syncReminders = async (config, dom, now, universeId) => {
   let scheduled = 0;
 
   if (ntfyToken && topic) {
+    // One queue poll, shared by both kinds — OGame reloads (and re-runs
+    // this producer) on every click, so halving the ntfy polls per sync
+    // meaningfully cuts request volume.
+    const queue = await fetchScheduledMessages({ topic, token: ntfyToken, now });
+
     // ── Expedition waves ───────────────────────────────────────────────
     // Live waves ntfy should keep queued. Dismissed waves and — when wave
     // auto-reminders are off — ALL waves are excluded, so the reconciler
@@ -506,7 +512,7 @@ export const syncReminders = async (config, dom, now, universeId) => {
       : [];
     const waveRes = await reconcileWaveQueue({
       waves: liveWaves, topic, token: ntfyToken, now, universeId,
-      offsetsSec: offsetsForSchedule(config.schedule),
+      offsetsSec: offsetsForSchedule(config.schedule), queue,
     });
 
     // Rebuild notifyState from the reconciler's authoritative id sets so
@@ -526,7 +532,7 @@ export const syncReminders = async (config, dom, now, universeId) => {
           .map((e) => ({ id: e.id, fireAt: e.fireAt, body: adhocBody(e) }))
       : [];
     const adhocRes = await reconcileAdhocQueue({
-      entries: liveAdhoc, topic, token: ntfyToken, now, universeId,
+      entries: liveAdhoc, topic, token: ntfyToken, now, universeId, queue,
     });
 
     adhocNotify = {};

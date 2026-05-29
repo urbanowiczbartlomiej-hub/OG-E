@@ -59,6 +59,10 @@ import { settingsStore } from '../../state/settings.js';
 import { syncReminders } from '../../sync/reminders.js';
 import { parseUniverseId } from '../../lib/universeId.js';
 import { debounce } from '../../lib/debounce.js';
+import { safeLS } from '../../lib/storage.js';
+import {
+  readPending, writePending, pushPending, applyAdhocCmds, applyWaveCmds,
+} from './pending.js';
 
 /**
  * Selector for expedition return-flight rows. Identical predicate to the
@@ -156,15 +160,20 @@ const signatureOf = (candidates, present) =>
     p: present.map((f) => `${f.id}:${f.arrivalAt}`).sort(),
   });
 
+/** localStorage key for the persisted last-successful scan signature. */
+const sigKeyFor = (/** @type {string} */ universeId) => `oge_reminderSig_${universeId}`;
+
 /**
- * The producer's public handle: a dispose fn plus the three event-list
- * actions, each of which enqueues a mutation and forces the next sync.
+ * The producer's public handle: a dispose fn plus the event-list actions.
+ * Each action persists its intent to localStorage (reload-safe, see
+ * `./pending.js`) and forces the next sync.
  *
  * @typedef {object} ReminderProducer
  * @property {() => void} dispose
  * @property {(entry: AdhocReminder) => void} armAdhoc    Arm (or re-arm) a fleet leg.
  * @property {(id: string) => void} disarmAdhoc           Cancel an armed leg.
  * @property {(waveId: string) => void} cancelWave        Tombstone an expedition wave.
+ * @property {(waveId: string) => void} resendWave        Re-schedule a tombstoned wave's series.
  */
 
 /** Idempotency sentinel — holds the producer handle while installed. */
@@ -180,31 +189,28 @@ let installed = null;
 export const installReminderProducer = () => {
   if (installed) return installed;
 
-  // Last scan signature we successfully pushed. Reset to '' on install so
-  // the first trigger after a page load always pushes once (re-affirming
-  // state, refreshing the preview mirror, re-keeping idle waves).
-  let lastSig = '';
-  // Forces the next run past the signature short-circuit (settings edits,
-  // arm/disarm/cancel) so the change always reaches the gist.
+  const universeId = parseUniverseId(location.host);
+
+  // Last scan signature we successfully synced — PERSISTED in localStorage
+  // (per universe) so a reload whose event list is unchanged skips the
+  // whole gist + ntfy round-trip. OGame reloads on every click, so without
+  // this every click would re-sync. A failed sync never advances it, so
+  // the next load retries; the pending queue + settings edits force a run
+  // regardless.
+  let lastSig = safeLS.get(sigKeyFor(universeId)) || '';
+  // Forces the next run past the signature short-circuit (settings edits;
+  // a queued user action is detected separately, below).
   let pendingForce = false;
-  // Queued user mutations, drained per run and re-queued on failure so an
-  // arm/disarm/cancel is never silently lost to a transient error.
-  /** @type {Array<(entries: AdhocReminder[]) => AdhocReminder[]>} */
-  let pendingAdhocMut = [];
-  /** @type {Array<(waves: Wave[]) => Wave[]>} */
-  let pendingWaveMut = [];
 
   const run = async () => {
-    const force = pendingForce;
+    const forceSettings = pendingForce;
     pendingForce = false;
-    const adhocMut = pendingAdhocMut; pendingAdhocMut = [];
-    const waveMut = pendingWaveMut; pendingWaveMut = [];
 
-    /** Put drained mutations back at the front for a later retry. */
-    const requeue = () => {
-      pendingAdhocMut = [...adhocMut, ...pendingAdhocMut];
-      pendingWaveMut = [...waveMut, ...pendingWaveMut];
-    };
+    // Snapshot the persisted intent queue. Its length lets us clear ONLY
+    // what we drained after a successful sync — anything the user clicks
+    // during the await stays queued for the next run.
+    const pending = readPending(universeId);
+    const force = forceSettings || pending.length > 0;
 
     const s = settingsStore.get();
     const config = {
@@ -213,32 +219,38 @@ export const installReminderProducer = () => {
       ntfyToken: s.reminderNtfyToken,
       schedule: s.reminderSchedule,
     };
-    // Dormant only when BOTH kinds are off — unless something is forcing a
-    // push (a settings toggle we must act on, or a queued mutation).
-    if (!config.enabled && !config.adhocEnabled && !force) { requeue(); return; }
+    // Dormant only when BOTH kinds are off — unless something forces a push
+    // (a settings toggle, or a queued user action).
+    if (!config.enabled && !config.adhocEnabled && !force) return;
 
     const candidates = clusterWaves(extractReturnEntries(), { gapSeconds: DEFAULT_CLUSTER_GAP_SECONDS });
     const present = extractPresentFleets();
     const sig = signatureOf(candidates, present);
-    if (sig === lastSig && !force) { requeue(); return; }
+    if (sig === lastSig && !force) return;
 
-    const adhocMutate = adhocMut.length
-      ? (/** @type {AdhocReminder[]} */ entries) => adhocMut.reduce((acc, m) => m(acc), entries)
+    const adhocCmds = pending.filter((c) => c.kind === 'arm' || c.kind === 'disarm');
+    const waveCmds = pending.filter((c) => c.kind === 'cancelWave' || c.kind === 'resendWave');
+    const adhocMutate = adhocCmds.length
+      ? (/** @type {AdhocReminder[]} */ entries) => applyAdhocCmds(entries, adhocCmds)
       : undefined;
-    const waveMutate = waveMut.length
-      ? (/** @type {Wave[]} */ waves) => waveMut.reduce((acc, m) => m(acc), waves)
+    const waveMutate = waveCmds.length
+      ? (/** @type {Wave[]} */ waves) => applyWaveCmds(waves, waveCmds)
       : undefined;
 
     const now = Math.floor(Date.now() / 1000);
-    const universeId = parseUniverseId(location.host);
     const res = await syncReminders(
       config, { waveCandidates: candidates, present, adhocMutate, waveMutate }, now, universeId,
     );
-    // Advance the cached signature only on success. A failed attempt
-    // (no token, rate-limited) leaves lastSig stale and re-queues any
-    // mutation so the next trigger retries instead of dropping it.
-    if (res.ok) lastSig = sig;
-    else { requeue(); pendingForce = true; }
+
+    if (res.ok) {
+      lastSig = sig;
+      safeLS.set(sigKeyFor(universeId), sig);
+      // Drop the commands we applied; keep any the user queued meanwhile.
+      writePending(universeId, readPending(universeId).slice(pending.length));
+    } else {
+      // Leave the pending queue intact and re-try on the next trigger.
+      pendingForce = true;
+    }
   };
 
   const scheduleRun = debounce(() => { void run(); }, DEBOUNCE_MS);
@@ -246,24 +258,13 @@ export const installReminderProducer = () => {
   const force = () => { pendingForce = true; scheduleRun(); };
 
   /** @param {AdhocReminder} entry */
-  const armAdhoc = (entry) => {
-    pendingAdhocMut.push((entries) =>
-      entries.some((e) => e.id === entry.id)
-        ? entries.map((e) => (e.id === entry.id ? entry : e))
-        : [...entries, entry]);
-    force();
-  };
+  const armAdhoc = (entry) => { pushPending(universeId, { kind: 'arm', entry }); force(); };
   /** @param {string} id */
-  const disarmAdhoc = (id) => {
-    pendingAdhocMut.push((entries) => entries.filter((e) => e.id !== id));
-    force();
-  };
+  const disarmAdhoc = (id) => { pushPending(universeId, { kind: 'disarm', id }); force(); };
   /** @param {string} waveId */
-  const cancelWave = (waveId) => {
-    pendingWaveMut.push((waves) =>
-      waves.map((w) => (w.id === waveId ? { ...w, cancelled: true } : w)));
-    force();
-  };
+  const cancelWave = (waveId) => { pushPending(universeId, { kind: 'cancelWave', waveId }); force(); };
+  /** @param {string} waveId */
+  const resendWave = (waveId) => { pushPending(universeId, { kind: 'resendWave', waveId }); force(); };
 
   const onEventBox = () => scheduleRun();
   document.addEventListener('oge:eventBoxLoaded', onEventBox);
@@ -284,8 +285,8 @@ export const installReminderProducer = () => {
     force();
   });
 
-  // Initial pass: the event box may already be populated when we install
-  // (we run at DOMContentLoaded; the eventbox XHR sometimes lands first).
+  // Initial pass: the event box may already be populated when we install,
+  // and a reload may have left a pending intent to finish.
   scheduleRun();
 
   installed = {
@@ -297,6 +298,7 @@ export const installReminderProducer = () => {
     armAdhoc,
     disarmAdhoc,
     cancelWave,
+    resendWave,
   };
   return installed;
 };

@@ -28,6 +28,7 @@ export const installReminders = () => {
     armAdhoc: producer.armAdhoc,
     disarmAdhoc: producer.disarmAdhoc,
     cancelWave: producer.cancelWave,
+    resendWave: producer.resendWave,
   });
   installed = () => {
     disposeUi();

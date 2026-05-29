@@ -432,11 +432,18 @@ const postMessage = async ({ topic, token, fireAt, now, title, body, priority, t
  * @param {number} args.now    Epoch SECONDS — injected for testability.
  * @param {string} args.title  Exact push title for this kind; doubles as the
  *   "ours" queue filter. Different kinds MUST use different titles.
+ * @param {Array<{ id: string, time: number, title?: string }>} [args.queue]
+ *   Pre-fetched scheduled queue (from {@link fetchScheduledMessages}). When
+ *   given, we skip the poll and filter this snapshot — lets one sync
+ *   reconcile multiple kinds (waves + ad-hoc) off a SINGLE ntfy poll, which
+ *   matters because OGame reloads the page (and re-runs the producer) on
+ *   every click. Posts under one title don't affect another's filter, so
+ *   sharing the snapshot across kinds is safe.
  * @returns {Promise<{ idsBySeries: Record<string, string[]>, posted: number, cancelled: number }>}
  *   `idsBySeries` maps each series id to its slot message ids in fire order.
  */
-export const reconcileQueue = async ({ series, topic, token, now, title }) => {
-  const all = await fetchScheduledMessages({ topic, token, now });
+export const reconcileQueue = async ({ series, topic, token, now, title, queue }) => {
+  const all = queue ?? await fetchScheduledMessages({ topic, token, now });
   const ours = all.filter((m) => m.title === title);
 
   // time -> id for a message already queued under this title (first wins).
@@ -520,11 +527,15 @@ const waveBody = (baseAt, i, total) => {
  * @param {number[]} [args.offsetsSec]  Reminder offsets (seconds from each wave's
  *   `baseAt`) for the active schedule preset. Defaults to the `standard`
  *   preset so existing callers/tests keep the 6×10-min behaviour.
+ * @param {Array<{ id: string, time: number, title?: string }>} [args.queue]
+ *   Pre-fetched queue snapshot (see {@link reconcileQueue}) — lets the
+ *   caller share one poll across kinds.
  * @returns {Promise<{ idsByWave: Record<string, string[]>, posted: number, cancelled: number }>}
  */
 export const reconcileWaveQueue = async ({
   waves, topic, token, now, universeId,
   offsetsSec = REMINDER_PRESETS[DEFAULT_REMINDER_SCHEDULE].offsetsSec,
+  queue,
 }) => {
   const tags = tagsForPriority(WAVE_PRIORITY);
   /** @type {QueueSeries[]} */
@@ -538,7 +549,7 @@ export const reconcileWaveQueue = async ({
     };
   });
   const { idsBySeries, posted, cancelled } = await reconcileQueue({
-    series, topic, token, now, title: titleFor(universeId),
+    series, topic, token, now, title: titleFor(universeId), queue,
   });
   return { idsByWave: idsBySeries, posted, cancelled };
 };
@@ -570,9 +581,12 @@ export const adhocTitleFor = (universeId) => `[${universeId}] Fleet`;
  * @param {string} args.token
  * @param {number} args.now         Epoch SECONDS.
  * @param {string} args.universeId
+ * @param {Array<{ id: string, time: number, title?: string }>} [args.queue]
+ *   Pre-fetched queue snapshot (see {@link reconcileQueue}) — lets the
+ *   caller share one poll across kinds.
  * @returns {Promise<{ idsByEntry: Record<string, string[]>, posted: number, cancelled: number }>}
  */
-export const reconcileAdhocQueue = async ({ entries, topic, token, now, universeId }) => {
+export const reconcileAdhocQueue = async ({ entries, topic, token, now, universeId, queue }) => {
   const tags = tagsForPriority(ADHOC_PRIORITY);
   /** @type {QueueSeries[]} */
   const series = entries.map((e) => ({
@@ -580,7 +594,7 @@ export const reconcileAdhocQueue = async ({ entries, topic, token, now, universe
     slots: [{ fireAt: e.fireAt, body: e.body, priority: ADHOC_PRIORITY, tags }],
   }));
   const { idsBySeries, posted, cancelled } = await reconcileQueue({
-    series, topic, token, now, title: adhocTitleFor(universeId),
+    series, topic, token, now, title: adhocTitleFor(universeId), queue,
   });
   return { idsByEntry: idsBySeries, posted, cancelled };
 };
