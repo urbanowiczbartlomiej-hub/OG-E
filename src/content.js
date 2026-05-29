@@ -78,7 +78,7 @@ import { installAgrLogo } from './features/agrLogo.js';
 import { installFleetdispatchShortcut } from './features/fleetdispatchShortcut.js';
 import { installEventMenuHighlight } from './features/eventMenuHighlight.js';
 import { installTraderMenuHighlight } from './features/traderMenuHighlight.js';
-import { installExpeditionReminder } from './features/expeditionReminder/index.js';
+import { installReminders } from './features/reminders/index.js';
 
 import { installSync } from './sync/scheduler.js';
 
@@ -133,12 +133,14 @@ const installDomFeatures = () => {
   installEventMenuHighlight();
   installTraderMenuHighlight();
 
-  // Expedition-reminder producer — reads expedition return-flights from
-  // #eventContent and reconciles the wave reminders on ntfy.sh (state
-  // cached in the gist). Top-frame only: it does gist IO, and running it in OGame's
-  // embedded iframes would multiply that API traffic for no gain (same
-  // reasoning as installSync). The event box lives in the top frame.
-  if (window.top === window.self) installExpeditionReminder();
+  // Reminders — the producer reads expedition return-flights + present
+  // fleet legs from #eventContent and reconciles both wave and ad-hoc
+  // reminders on ntfy.sh (state cached in the gist), and the event-list
+  // badge UI drives the ad-hoc arming / wave cancelling. Top-frame only:
+  // it does gist IO, and running it in OGame's embedded iframes would
+  // multiply that API traffic for no gain (same reasoning as installSync).
+  // The event box lives in the top frame.
+  if (window.top === window.self) installReminders();
 
   // User-facing buttons.
   installSendExp();

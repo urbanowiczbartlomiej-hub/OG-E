@@ -445,6 +445,11 @@ const adhocBody = (e) => {
  * @param {(prev: AdhocReminder[]) => AdhocReminder[]} [dom.adhocMutate]
  *   Optional user mutation applied before reconcile (arm adds an entry,
  *   disarm removes one). Omitted on the periodic event-box-driven pass.
+ * @param {(prev: Wave[]) => Wave[]} [dom.waveMutate]
+ *   Optional user mutation on the PREV wave set, applied before
+ *   {@link reconcileWaves} (used by the event-list "cancel this wave"
+ *   action to tombstone a wave game-side; the flag is then carried
+ *   forward by the overlap match). Omitted on the periodic pass.
  * @param {number} now             Epoch SECONDS, injected by the caller.
  * @param {string} universeId      OGame server id; ntfy push title prefix.
  * @returns {Promise<{ ok: boolean, reason?: string, changed?: boolean, scheduled?: number, cancelled?: number }>}
@@ -452,7 +457,7 @@ const adhocBody = (e) => {
 export const syncReminders = async (config, dom, now, universeId) => {
   if (!getToken()) return { ok: false, reason: 'no-token' };
 
-  const { waveCandidates, present, adhocMutate } = dom;
+  const { waveCandidates, present, adhocMutate, waveMutate } = dom;
 
   // Token resolution: prefer per-origin localStorage value; fall back
   // to the global chrome.storage mirror so a universe that hasn't been
@@ -466,7 +471,8 @@ export const syncReminders = async (config, dom, now, universeId) => {
   const prevAdhoc = existing?.adhoc ?? [];
   const prevAdhocNotify = existing?.adhocNotify ?? {};
 
-  const { waves } = reconcileWaves(prevWaves, waveCandidates, now);
+  const prevWavesMutated = waveMutate ? waveMutate(prevWaves) : prevWaves;
+  const { waves } = reconcileWaves(prevWavesMutated, waveCandidates, now);
 
   const adhocWorking = adhocMutate ? adhocMutate(prevAdhoc) : prevAdhoc;
   const { entries: adhoc } = reconcileAdhoc(adhocWorking, present);
