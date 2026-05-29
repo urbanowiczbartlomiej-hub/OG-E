@@ -196,10 +196,12 @@ describe('reconcileWaves', () => {
     expect(waves.map((w) => w.id)).toEqual(['w_' + (1779913212 + 5400)]);
   });
 
-  it('cleanup: brand-new triggers drop of matched waves whose first reminder is past or imminent', () => {
+  it('cleanup: brand-new TOMBSTONES (does not drop) matched waves whose first reminder is past or imminent', () => {
     // Old wave has nextWaveAt = now - 5s (first reminder already fired
     // a few seconds ago, remaining ones queued at +10/20/30/40/50 min).
-    // Player re-sends → brand-new appears → old wave gets swept.
+    // Player re-sends → brand-new appears → old wave is tombstoned, NOT
+    // removed: its fleets are still in flight, so removing it would let
+    // the next scan re-cluster the same returns into a brand-new wave.
     const oldWave = wave({
       id: 'w_old', returnAts: [NOW + 10, NOW + 12], nextWaveAt: NOW - 5,
     });
@@ -216,8 +218,60 @@ describe('reconcileWaves', () => {
       [oldWave], cands, NOW,
     );
     expect(brandNewDetected).toBe(true);
-    expect(droppedIds).toEqual(['w_old']);
-    expect(waves.map((w) => w.id)).toEqual(['w_' + (NOW + 5400)]);
+    // Old wave is NOT dropped — it is tombstoned and kept in the set so
+    // the caller (liveForNtfy = waves.filter(!cancelled)) sweeps its
+    // queued messages while it can never be re-detected as brand-new.
+    expect(droppedIds).toEqual([]);
+    const old = waves.find((w) => w.id === 'w_old');
+    expect(old).toBeDefined();
+    expect(old?.cancelled).toBe(true);
+    // Brand-new wave is present and live (not cancelled).
+    const fresh = waves.find((w) => w.id === 'w_' + (NOW + 5400));
+    expect(fresh).toBeDefined();
+    expect(fresh?.cancelled).toBeUndefined();
+  });
+
+  it('cleanup tombstone survives the next scan — a partially-landed swept wave is NOT resurrected', () => {
+    // The bug this guards: cleanup used to DROP the near-term wave. But
+    // its fleets are still in flight, so the next scan re-clustered the
+    // same return-times, found no matching prev wave, and stamped them
+    // brand-new — queuing a fresh six-reminder schedule for a wave the
+    // player had already re-sent past. Tombstoning keeps the wave in the
+    // set so overlap-matching carries `cancelled` forward instead.
+    const oldWave = wave({
+      id: 'w_old',
+      returnAts: [NOW + 10, NOW + 200, NOW + 260],
+      nextWaveAt: NOW + 10,
+    });
+    const oldVisible1 = [
+      { returnAt: NOW + 10, origin: '1:1:1' },
+      { returnAt: NOW + 200, origin: '1:2:1' },
+      { returnAt: NOW + 260, origin: '1:3:1' },
+    ];
+    const resend = [{ returnAt: NOW + 5400, origin: '1:1:1' }];
+
+    // Scan 1: re-send detected → old wave tombstoned, kept in the set.
+    const scan1 = reconcileWaves(
+      [oldWave], clusterWaves([...oldVisible1, ...resend]), NOW,
+    ).waves;
+    expect(scan1.find((w) => w.id === 'w_old')?.cancelled).toBe(true);
+
+    // Scan 2: NOW+10 fleet landed; NOW+200 and NOW+260 still in flight.
+    const oldVisible2 = [
+      { returnAt: NOW + 200, origin: '1:2:1' },
+      { returnAt: NOW + 260, origin: '1:3:1' },
+    ];
+    const { waves, brandNewDetected } = reconcileWaves(
+      scan1, clusterWaves([...oldVisible2, ...resend]), NOW + 15,
+    );
+    // The still-flying remainder matches w_old (overlap) — NOT brand-new.
+    expect(brandNewDetected).toBe(false);
+    const old = waves.find((w) => w.id === 'w_old');
+    expect(old).toBeDefined();
+    expect(old?.cancelled).toBe(true);
+    // Only the genuine re-send wave is live; no resurrected schedule.
+    expect(waves.filter((w) => w.cancelled !== true).map((w) => w.id))
+      .toEqual(['w_' + (NOW + 5400)]);
   });
 
   it('cleanup: matched wave whose first reminder is still > 60s away is KEPT', () => {

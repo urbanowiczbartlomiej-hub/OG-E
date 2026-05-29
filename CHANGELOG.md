@@ -6,6 +6,24 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.6.2] — 2026-05-29
+
+### Fixed
+
+- **A re-sent wave can no longer "resurrect" its own reminders.** When
+  you send a fresh expedition wave while an older one is still in flight
+  and its first reminder has already fired (or is about to, within one
+  minute), the older wave is now permanently suppressed for the rest of
+  its life. Previously it was removed from the stored state entirely —
+  but since its fleets were still airborne, the very next event-box
+  refresh re-detected the same return-times as a brand-new wave and
+  queued a fresh six-reminder schedule for a wave you had already moved
+  past. The cleanup now tombstones the wave (keeps it on record, marked
+  cancelled) instead of dropping it, so the overlap match carries the
+  suppression forward every scan and the scheduler keeps its ntfy queue
+  swept until every fleet lands. No new permissions, no new network
+  destinations.
+
 ## [1.6.1] — 2026-05-29
 
 ### Fixed

@@ -59,9 +59,13 @@ export const DEFAULT_CLUSTER_GAP_SECONDS = 300;
 
 /**
  * After this many seconds past the wave's first reminder a matched
- * wave is dropped if a brand-new wave shows up in the same scan. The
- * player has clearly re-sent, the wave's first push already fired (or
- * is about to), so the remaining pings are noise.
+ * wave is TOMBSTONED (`cancelled: true`) if a brand-new wave shows up
+ * in the same scan. The player has clearly re-sent, the wave's first
+ * push already fired (or is about to), so the remaining pings are noise.
+ *
+ * Tombstone — not drop — because the wave's fleets are still in flight;
+ * see the cleanup rule in {@link reconcileWaves} for why dropping would
+ * let the wave resurrect with a fresh schedule on the next scan.
  *
  * 60 s also covers the "first reminder fires in <1 minute" case the
  * product owner asked about explicitly.
@@ -92,11 +96,14 @@ export const CLEANUP_GRACE_SEC = 60;
  *   (for display only).
  * @property {number}   [detectedAt] Epoch SECONDS this wave was first
  *   observed. Carried forward across same-wave scans.
- * @property {boolean}  [cancelled] User dismissed this wave from the
- *   Dashboard. Carried across matched scans so the scheduler skips it
- *   for the rest of its life. Naturally cleared when the wave falls
- *   out of `out` (DOM rows gone → unmatched prev) and a re-send from
- *   the same planets stamps a brand-new id.
+ * @property {boolean}  [cancelled] This wave is suppressed — the scheduler
+ *   skips it for the rest of its life. Set either by the user dismissing
+ *   it from the Dashboard OR by the brand-new cleanup rule (a re-send made
+ *   its remaining reminders noise; see {@link reconcileWaves}). Carried
+ *   across matched scans so the flag sticks even as fleets land and
+ *   `nextWaveAt` drifts. Naturally cleared when the wave falls out of
+ *   `out` (DOM rows gone → unmatched prev) and a re-send from the same
+ *   planets stamps a brand-new id.
  */
 
 /**
@@ -231,9 +238,17 @@ const findBestOverlap = (prevWaves, cand, consumed) => {
  *   - **Brand-new triggers cleanup**: whenever at least one brand-new
  *     wave is detected, any matched prev wave whose `nextWaveAt` is
  *     within {@link CLEANUP_GRACE_SEC} of `now` (i.e. its first
- *     reminder already fired or fires in <1 min) is also dropped. The
- *     player is clearly back in game; the rest of that wave's cycle is
- *     noise. The caller cancels the dropped wave's scheduled messages.
+ *     reminder already fired or fires in <1 min) is TOMBSTONED
+ *     (`cancelled: true`), NOT removed from the set. The player is
+ *     clearly back in game; the rest of that wave's cycle is noise.
+ *     Keeping the wave in the set (with the flag) is what stops it
+ *     resurrecting: its fleets are still in flight, so their return-
+ *     times keep matching it and carry the flag forward, instead of
+ *     being re-clustered into a brand-new wave with a fresh six-reminder
+ *     schedule on the next scan. The caller excludes `cancelled` waves
+ *     from the live set, so their queued messages are swept off ntfy.
+ *     The tombstone exits naturally once every fleet lands (unmatched
+ *     prev → dropped).
  *
  * Pure: no `Date.now()` (time comes in via `now`), no mutation. Returns
  * the reconciled wave list plus the ids of waves that fell out (so the
@@ -281,17 +296,27 @@ export const reconcileWaves = (prevWaves, currentCandidates, now) => {
   /** @type {string[]} */
   const droppedIds = [];
 
-  // Cleanup rule: a brand-new wave means the player is actively
-  // sending again. Any matched wave whose first reminder already fired
-  // (or fires in <CLEANUP_GRACE_SEC) is noise from this point — drop
-  // it so the caller cancels its remaining schedule.
+  // Cleanup rule: a brand-new wave means the player is actively sending
+  // again. Any matched wave whose first reminder already fired (or fires
+  // in <CLEANUP_GRACE_SEC) is noise from this point on. TOMBSTONE it
+  // (cancelled: true) rather than remove it from the set.
+  //
+  // Why tombstone, not drop: the wave's fleets are still in flight, so
+  // their return rows persist in the event list. If we dropped the wave
+  // entirely, the very next scan would re-cluster those same return-
+  // times, find no matching prev wave, and stamp them brand-new — handing
+  // the wave a fresh six-reminder schedule (resurrecting a wave the player
+  // already re-sent past). Keeping it with cancelled:true lets the
+  // overlap-match branch carry the flag forward every scan, so the caller
+  // skips it (excluded from the live ntfy set → its queued messages are
+  // swept). It exits naturally once every fleet has landed: no candidate
+  // overlaps it → unmatched prev → dropped just below.
   if (brandNewDetected) {
-    for (let i = out.length - 1; i >= 0; i--) {
+    for (let i = 0; i < out.length; i++) {
       const w = out[i];
       const wasMatched = consumed.has(w.id);
-      if (wasMatched && w.nextWaveAt <= now + CLEANUP_GRACE_SEC) {
-        droppedIds.push(w.id);
-        out.splice(i, 1);
+      if (wasMatched && !w.cancelled && w.nextWaveAt <= now + CLEANUP_GRACE_SEC) {
+        out[i] = { ...w, cancelled: true };
       }
     }
   }
