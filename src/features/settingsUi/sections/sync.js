@@ -53,9 +53,9 @@ const formatSyncStatus = () => {
 
 /** @type {SettingsSection} */
 export const syncSection = {
-  section: 'Cloud sync',
+  section: 'Multi-device sync',
   options: [
-    { id: 'cloudSync', label: 'Enable cloud sync', type: 'checkbox' },
+    { id: 'cloudSync', label: 'Sync my data across devices', type: 'checkbox' },
     { id: 'gistToken', label: 'GitHub Personal Access Token (gist scope)', type: 'password' },
     {
       id: 'syncForce',

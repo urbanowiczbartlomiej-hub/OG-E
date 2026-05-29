@@ -19,12 +19,12 @@ export const displaySection = {
     },
     {
       id: 'eventMenuHighlight',
-      label: 'Event menu highlight (pulse animation for ephemeral event entries)',
+      label: 'Event reminder (pulse menu button)',
       type: 'checkbox',
     },
     {
       id: 'traderMenuHighlight',
-      label: 'Trader reminder (subtle yellow pulse, intense red 14:00–24:00 until first click)',
+      label: 'Trader reminder (pulse menu button)',
       type: 'checkbox',
     },
   ],
