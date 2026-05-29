@@ -121,8 +121,15 @@ const labelFor = (row) => {
   return dest ? `${mission} → [${dest}]` : mission;
 };
 
-/** @param {Element} el @param {string} cls */
-const setClass = (el, cls) => { if (el.className !== cls) el.className = cls; };
+/**
+ * Every class we own. We toggle ONLY these via classList so OGame's own
+ * cell classes (notably `arrivalTime`, which `render` selects on) survive
+ * — overwriting `className` wholesale used to strip `arrivalTime`, after
+ * which the cell could never be found (or updated) again.
+ */
+const OWNED_CLASSES = [
+  BADGE_CLASS, 'act', 'idle', 'armed', 'wave', 'wave-off', 'member', 'member-off', 'disabled', 'syncing',
+];
 
 /** @param {Element} el @param {string} attr @param {string | null} val */
 const setAttr = (el, attr, val) => {
@@ -132,26 +139,28 @@ const setAttr = (el, attr, val) => {
 };
 
 /**
- * Stamp a cell's badge: visual classes, click action, wave id, title —
- * all via guarded writes so we never feed the MutationObserver a loop.
+ * Stamp a cell's badge: add the wanted owned-classes, remove the rest,
+ * leave every foreign (OGame/AGR) class untouched. classList add/remove of
+ * an already-(absent|present) class is a no-op, so this stays idempotent.
  *
  * @param {HTMLElement} cell
- * @param {string} classes  Space-separated visual classes (without BADGE_CLASS).
+ * @param {string} classes  Space-separated state classes (without BADGE_CLASS).
  * @param {string} act      Click action ('' = inert).
  * @param {string} waveId   Wave id for wave actions ('' = none).
  * @param {string} title
  */
 const stamp = (cell, classes, act, waveId, title) => {
-  setClass(cell, `${BADGE_CLASS} ${classes}${act ? ' act' : ''}`.trim());
+  const want = new Set([BADGE_CLASS, ...classes.split(' ').filter(Boolean), ...(act ? ['act'] : [])]);
+  for (const c of OWNED_CLASSES) cell.classList.toggle(c, want.has(c));
   setAttr(cell, 'data-oge-act', act || null);
   setAttr(cell, 'data-oge-wave', waveId || null);
   setAttr(cell, 'title', title);
 };
 
-/** Strip every badge marking we may have applied to a cell. @param {HTMLElement} cell */
+/** Strip every badge marking we may have applied, keeping foreign classes. @param {HTMLElement} cell */
 const clearCell = (cell) => {
   if (!cell.classList.contains(BADGE_CLASS)) return;
-  setClass(cell, cell.className.replace(/\boge-rem-badge\b|\b(?:act|idle|armed|wave|wave-off|member|member-off|disabled|syncing)\b/g, '').replace(/\s+/g, ' ').trim());
+  cell.classList.remove(...OWNED_CLASSES);
   setAttr(cell, 'data-oge-act', null);
   setAttr(cell, 'data-oge-wave', null);
   setAttr(cell, 'title', null);
