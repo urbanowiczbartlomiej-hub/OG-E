@@ -8,9 +8,9 @@
 //     see `REMINDER_PRESETS` in `sync/ntfyScheduler.js`. We deliberately
 //     offer a short list of curated cadences rather than raw count/interval
 //     inputs, to keep the panel simple and the ntfy.sh quota predictable.
-//   - Topic is derived from the gist id (SHA-256 prefix) and shown
-//     read-only on the OG-E Dashboard's Reminders tab. We don't repeat
-//     it here to keep the settings table compact.
+//   - Topic is derived from the ntfy access token (SHA-256 prefix) and
+//     shown read-only on the OG-E Dashboard's Reminders tab. We don't
+//     repeat it here to keep the settings table compact.
 
 import { REMINDER_PRESETS } from '../../../sync/ntfyScheduler.js';
 

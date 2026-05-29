@@ -402,8 +402,8 @@ const postOne = async ({ topic, token, fireAt, now, i, total, baseAt, universeId
  *
  *   - **Universe isolation.** Only messages titled {@link titleFor} are
  *     considered "ours". The topic is shared across OGame servers (it is
- *     derived from the gist id), so every other server's schedule is
- *     invisible here and never cancelled.
+ *     derived from the ntfy access token), so every other server's
+ *     schedule is invisible here and never cancelled.
  *   - **Post the gaps.** For each wave, slot `i` wants a message at
  *     `baseAt + i*interval`. We post only the slots that are far enough in
  *     the future to schedule (`>= now + NTFY_MIN_DELAY`) AND absent from

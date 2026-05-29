@@ -107,20 +107,20 @@ export const installReminders = (opts = {}) => {
   void refreshPreview();
 
   chromeStore.onChanged((changes) => {
-    if (REMINDER_GIST_ID_KEY in changes) void updateTopic();
+    if (REMINDER_NTFY_TOKEN_KEY in changes) void updateTopic();
     if (REMINDER_MIRROR_KEY in changes) void refreshPreview();
   });
 
   return { refresh: () => { void refreshPreview(); } };
 };
 
-/** Recompute and paint the derived topic from the mirrored gist id. */
+/** Recompute and paint the derived topic from the mirrored ntfy token. */
 const updateTopic = async () => {
-  const gistId = await chromeStore.get(REMINDER_GIST_ID_KEY);
+  const ntfyToken = await chromeStore.get(REMINDER_NTFY_TOKEN_KEY);
   if (el.remTopic) {
-    el.remTopic.textContent = typeof gistId === 'string' && gistId
-      ? await deriveNtfyTopic(gistId)
-      : '— (enable cloud sync in OG-E settings first)';
+    el.remTopic.textContent = typeof ntfyToken === 'string' && ntfyToken
+      ? await deriveNtfyTopic(ntfyToken)
+      : '— (set your ntfy.sh access token in OG-E settings first)';
   }
 };
 
@@ -204,7 +204,7 @@ const refreshPreview = async () => {
   /** @type {Promise<Map<string, { id: string, time: number }>>} */
   const ntfyP = (async () => {
     if (typeof ntfyToken !== 'string' || !ntfyToken) return new Map();
-    const topic = await deriveNtfyTopic(typeof gistId === 'string' ? gistId : '');
+    const topic = await deriveNtfyTopic(typeof ntfyToken === 'string' ? ntfyToken : '');
     if (!topic) return new Map();
     try {
       const msgs = await fetchScheduledMessages({ topic, token: ntfyToken, now: nowSec });
@@ -243,7 +243,7 @@ const refreshPreview = async () => {
       typeof ntfyToken === 'string' && ntfyToken && ntfyMap.size > 0 &&
       Object.keys(states).length > 0 && freshestAge > 120
     ) {
-      const topic = await deriveNtfyTopic(typeof gistId === 'string' ? gistId : '');
+      const topic = await deriveNtfyTopic(typeof ntfyToken === 'string' ? ntfyToken : '');
       if (topic) {
         const orphanIds = [];
         for (const id of ntfyMap.keys()) if (!ours.has(id)) orphanIds.push(id);
@@ -403,7 +403,7 @@ const cancelWaveFromDashboard = async (universeId, waveId) => {
   const ids = entry.scheduledMessageIds ?? [];
 
   if (typeof ntfyToken === 'string' && ntfyToken && ids.length > 0) {
-    const topic = await deriveNtfyTopic(gistId);
+    const topic = await deriveNtfyTopic(ntfyToken);
     if (topic) {
       try {
         await cancelWaveReminders({ ids, topic, token: ntfyToken });

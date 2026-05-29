@@ -8,6 +8,14 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ### Changed
 
+- **ntfy topic now derives from your ntfy access token, not the gist
+  id.** This decouples push notifications from cloud-sync setup: the
+  topic appears the moment a token is set, and the gist stays purely the
+  durable state cache (clean split — topic ← ntfy, state ← gist).
+  ⚠️ **Existing users:** the topic string changes, so open the OG-E
+  Dashboard → Reminders, copy the new topic, and re-subscribe to it in
+  your ntfy app — the old topic stops receiving new pushes. Reminders
+  already queued on the old topic still fire (up to 3 days).
 - **Extension description rewritten** to lead with what OG-E is for —
   making expeditions easier and hunting for big colonies — and to state
   plainly that it does not automate the game (it never clicks for you and

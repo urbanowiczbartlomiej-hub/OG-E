@@ -140,25 +140,35 @@ export const REMINDER_FILENAME_RE = /^oge-reminders-([^/]+)\.json$/;
 export const REMINDER_SCHEMA_VERSION = 3;
 
 /**
- * Derive the ntfy.sh topic deterministically from the gist id. Topics
- * are public-by-URL, so we want a string an attacker can't guess — but
- * we also want one canonical channel without extra configuration. SHA-
- * 256 over the gist id (already a 32-char hex secret rendered private
- * by the gist token) gives us exactly that.
+ * Derive the ntfy.sh topic deterministically from the ntfy access
+ * token. Topics are public-by-URL, so we want a string an attacker
+ * can't guess — but we also want one canonical channel without extra
+ * configuration. SHA-256 over the token gives us exactly that.
  *
  *   - `oge-` prefix → recognisable in the ntfy app.
  *   - 22 hex chars → 88 bits of entropy, plenty for an unguessable
  *     topic, while staying short enough for the ntfy UI.
  *
- * Returns the empty string when `gistId` is falsy (preview before the
- * gist has been set up).
+ * # Why the token, not the gist id (changed in v1.8.0)
  *
- * @param {string} gistId
+ * The topic used to be derived from the gist id, which tied the push
+ * channel to cloud-sync setup even though ntfy and the gist are
+ * otherwise independent concerns. Deriving from the ntfy token instead
+ * makes the channel "belong to" the ntfy account: it appears the moment
+ * a token is set, the gist stays purely the durable state cache, and the
+ * dashboard can explain the two halves separately (topic ← ntfy, state ←
+ * gist). SHA-256 is one-way, so publishing the derived topic never
+ * reveals the token (the topic is public; the token is not).
+ *
+ * Returns the empty string when `ntfyToken` is falsy (no token set yet),
+ * which the callers treat as "ntfy not configured — skip scheduling".
+ *
+ * @param {string} ntfyToken  The ntfy.sh access token (`tk_…`).
  * @returns {Promise<string>}
  */
-export const deriveNtfyTopic = async (gistId) => {
-  if (!gistId) return '';
-  const bytes = new TextEncoder().encode(gistId);
+export const deriveNtfyTopic = async (ntfyToken) => {
+  if (!ntfyToken) return '';
+  const bytes = new TextEncoder().encode(ntfyToken);
   const hash = await crypto.subtle.digest('SHA-256', bytes);
   const hex = Array.from(new Uint8Array(hash))
     .map((b) => b.toString(16).padStart(2, '0'))
@@ -406,8 +416,7 @@ export const syncReminderWaves = async (config, currentCandidates, now, universe
   /** @param {Wave} w */
   const baseAtFor = (w) => prevNotify[w.id]?.baseAt ?? w.nextWaveAt;
 
-  const gistId = await ensureGistV3();
-  const topic = await deriveNtfyTopic(gistId);
+  const topic = await deriveNtfyTopic(ntfyToken);
 
   // Default: keep prev bookkeeping pruned to the live set. Only replaced
   // when we actually reach ntfy (token + topic present).
