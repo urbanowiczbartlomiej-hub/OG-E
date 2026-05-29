@@ -419,7 +419,7 @@ const cancelWaveFromDashboard = async (universeId, waveId) => {
     ...state,
     updatedAt: new Date().toISOString(),
     waves: state.waves.map((w) => (w.id === waveId ? { ...w, cancelled: true } : w)),
-    notifyState: { ...notify, [waveId]: { scheduledMessageIds: [] } },
+    notifyState: { ...notify, [waveId]: { ...(notify[waveId] || {}), scheduledMessageIds: [] } },
   };
 
   const res = await fetch(`https://api.github.com/gists/${gistId}`, {

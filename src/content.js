@@ -134,8 +134,8 @@ const installDomFeatures = () => {
   installTraderMenuHighlight();
 
   // Expedition-reminder producer — reads expedition return-flights from
-  // #eventContent and pushes wave state to the gist for the Cloudflare
-  // Worker. Top-frame only: it does gist IO, and running it in OGame's
+  // #eventContent and reconciles the wave reminders on ntfy.sh (state
+  // cached in the gist). Top-frame only: it does gist IO, and running it in OGame's
   // embedded iframes would multiply that API traffic for no gain (same
   // reasoning as installSync). The event box lives in the top frame.
   if (window.top === window.self) installExpeditionReminder();

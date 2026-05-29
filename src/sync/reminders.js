@@ -8,33 +8,45 @@
 // The cross-device sync payload lives in `oge-data.json.gz.b64`
 // (gzip+base64, schema 3) and `fetchGistData` rejects anything that
 // isn't schema 3. The reminder state must NOT go there. Instead we keep
-// it in a SECOND file in the same gist, {@link REMINDER_FILENAME}, as
-// plain pretty-printed JSON.
+// it in separate files in the same gist, one per universe (see
+// {@link reminderFilenameFor}), as plain pretty-printed JSON.
 //
 // # What's stored
 //
-// One global file per gist. Two top-level blocks:
+// One file per OGame universe per gist (multi-universe isolation, v3 —
+// see {@link REMINDER_FILENAME_PREFIX}). Two top-level blocks:
 //
 //   - `waves`       — the reconciled wave set (output of
 //                     `domain/waves.reconcileWaves`).
-//   - `notifyState` — per-wave bookkeeping. Each entry holds the IDs of
-//                     the ntfy.sh scheduled messages queued for that
-//                     wave, so a re-send / cleanup pass can cancel them
-//                     before delivery.
+//   - `notifyState` — per-wave bookkeeping. Each entry holds the locked
+//                     schedule anchor (`baseAt`) and the IDs of the
+//                     ntfy.sh messages currently queued for that wave.
+//                     The gist is a CACHE of the queue, not the source of
+//                     truth — see the scheduling rule below.
 //
-// # Lock-at-birth scheduling rule
+// # Idempotent scheduling, locked at birth
 //
-// ntfy.sh messages are scheduled **exactly once per wave**, at the
-// moment the wave is detected as brand-new. Subsequent observations of
-// the same wave (matched by fleet-ID overlap in `reconcileWaves`) do
-// not re-schedule, do not adjust, do not cancel anything. The six
-// timestamps freeze on the first `nextWaveAt` we ever saw for that wave.
+// The queue on ntfy.sh — not the gist — is the source of truth for what
+// is scheduled. Every sync hands the live waves to
+// `ntfyScheduler.reconcileWaveQueue`, which polls the queue and converges
+// it to exactly one message per future slot of every live wave: it posts
+// only missing slots and cancels only messages that belong to no live
+// wave. We then write whatever ids ended up on the queue back to the gist.
 //
-// This is a deliberate trade-off: if a later send adds a fleet whose
-// return is earlier than the first one we observed, the first reminder
-// fires a minute late. In exchange we get a wave whose identity AND
-// schedule are completely immutable from creation to landing, with no
-// stacked-schedule bug possible.
+// Each wave's slot times are anchored at `baseAt`, locked the first time
+// we record the wave and fed back unchanged on later scans, so the six
+// timestamps stay put even as the earliest live return drifts. Trade-off:
+// if a later send adds a fleet returning earlier than the first we saw,
+// the first reminder fires a minute late. In exchange the schedule is
+// immutable from creation to landing.
+//
+// Why reconcile instead of "schedule once, never touch again": on mobile,
+// *sending a fleet reloads the page* and kills the content script mid-
+// sync. The old "POST six, then write the ids" sequence routinely lost the
+// gist write after only some POSTs landed, so the next load saw no record,
+// treated the wave as brand-new, and stacked another partial schedule —
+// the 7×/5×/3× duplicate-notification bug. Reconciling against the queue
+// makes a mid-sync reload harmless: the next load just converges.
 //
 // # OG-E Dashboard preview mirror
 //
@@ -60,12 +72,7 @@
 import { gh, ensureGistV3, getToken, getGistId } from './gist.js';
 import { chromeStore } from '../lib/storage.js';
 import { reconcileWaves, pruneNotifyState } from '../domain/waves.js';
-import {
-  scheduleWaveReminders,
-  cancelWaveReminders,
-  REMINDER_COUNT,
-  REMINDER_INTERVAL_SEC,
-} from './ntfyScheduler.js';
+import { reconcileWaveQueue } from './ntfyScheduler.js';
 
 /**
  * @typedef {import('../domain/waves.js').Wave} Wave
@@ -174,10 +181,11 @@ export const REMINDER_TOKEN_KEY = 'oge_reminderToken';
 export const REMINDER_NTFY_TOKEN_KEY = 'oge_reminderNtfyTokenMirror';
 
 /**
- * Full shape of {@link REMINDER_FILENAME}. Reminder config lives in
- * localStorage settings at the game origin (see `state/settings.js`).
- * The gist is purely the wave list + the `scheduledMessageIds`
- * cancellation handles, durable across browser restarts.
+ * Full shape of a per-universe reminder file (see {@link reminderFilenameFor}).
+ * Reminder config lives in localStorage settings at the game origin (see
+ * `state/settings.js`). The gist is purely the wave list + per-wave
+ * bookkeeping (`baseAt` anchor + queued `scheduledMessageIds`), a cache of
+ * the ntfy queue that is durable across browser restarts.
  *
  * @typedef {object} ReminderState
  * @property {number} version
@@ -354,15 +362,15 @@ const resolveNtfyToken = async (configToken) => {
  *   1. Bail when no GitHub token is configured (no way to read/write the
  *      gist). The histogram tab tells the user.
  *   2. Read the existing reminder file; build prev waves + notifyState.
- *   3. {@link reconcileWaves} — fleet-ID overlap matching producing the
- *      wave set to store, the ids of waves that fell out (landed or
- *      swept by the brand-new cleanup rule), and a flag indicating
- *      whether at least one brand-new wave was stamped.
- *   4. Talk to ntfy.sh: cancel scheduled message IDs for every dropped
- *      wave. Schedule six fresh pushes (every ten minutes) for each
- *      brand-new wave. Matched waves are NEVER re-scheduled — their
- *      schedule was locked at birth. When the feature is disabled,
- *      cancel everything we ever queued.
+ *   3. {@link reconcileWaves} — return-time-set overlap matching, producing
+ *      the live wave set to store (landed waves fall out; the brand-new
+ *      cleanup rule drops near-term matched waves on a fresh send).
+ *   4. {@link reconcileWaveQueue} — converge this universe's slice of the
+ *      ntfy.sh queue to exactly one message per future slot of every live,
+ *      non-dismissed wave: post the gaps, cancel the orphans. Idempotent,
+ *      so it self-heals after a reload-interrupted prior run. When the
+ *      feature is disabled, pass no live waves → everything is swept.
+ *      Persist the resulting id sets (+ `baseAt`) back into notifyState.
  *   5. Refresh the histogram preview mirror.
  *
  * @param {ReminderConfig} config   Current config (from the store).
@@ -386,94 +394,55 @@ export const syncReminderWaves = async (config, currentCandidates, now, universe
   const prevWaves = existing?.waves ?? [];
   const prevNotify = existing?.notifyState ?? {};
 
-  const { waves, droppedIds } = reconcileWaves(prevWaves, currentCandidates, now);
+  const { waves } = reconcileWaves(prevWaves, currentCandidates, now);
 
-  // Brand-new waves are the ones whose id does NOT appear in prevNotify.
-  // Matched waves carry their prev id forward, so prevNotify[w.id] exists.
-  // Cancelled waves (user-dismissed from the Dashboard) are skipped even
-  // if they look brand-new on first scan after cancellation — the flag
-  // rides on the Wave itself through reconcileWaves.
-  /** @type {Wave[]} */
-  const toSchedule = waves.filter((w) => !prevNotify[w.id] && !w.cancelled);
-
-  // Anything dropped (landed or swept) feeds toCancel.
-  /** @type {string[]} */
-  const toCancel = [];
-  for (const id of droppedIds) {
-    const e = prevNotify[id];
-    if (e?.scheduledMessageIds) toCancel.push(...e.scheduledMessageIds);
-  }
-
-  // Start the next notifyState from the prev shape, pruned to the live
-  // set; we'll add entries for brand-new waves we successfully schedule.
-  /** @type {Record<string, NotifyEntry>} */
-  const notifyState = pruneNotifyState(prevNotify, waves);
+  // Each wave's schedule is anchored at a base time locked on first sight
+  // (`baseAt`). Re-derive it from the prev bookkeeping when we have it;
+  // fall back to the current earliest return for a wave we've not yet
+  // recorded. Stable across scans → stable slot times → idempotent reconcile.
+  /** @param {Wave} w */
+  const baseAtFor = (w) => prevNotify[w.id]?.baseAt ?? w.nextWaveAt;
 
   const gistId = await ensureGistV3();
   const topic = await deriveNtfyTopic(gistId);
+
+  // Default: keep prev bookkeeping pruned to the live set. Only replaced
+  // when we actually reach ntfy (token + topic present).
+  /** @type {Record<string, NotifyEntry>} */
+  let notifyState = pruneNotifyState(prevNotify, waves);
   let cancelled = 0;
   let scheduled = 0;
 
   if (ntfyToken && topic) {
-    if (!config.enabled) {
-      // Feature off → cancel everything we ever queued, including
-      // schedules for in-flight waves we'd normally have left alone.
-      const everyId = [];
-      for (const entry of Object.values(prevNotify)) {
-        if (entry.scheduledMessageIds) everyId.push(...entry.scheduledMessageIds);
-      }
-      cancelled += await cancelWaveReminders({
-        ids: everyId, topic, token: ntfyToken,
-      });
-      // Strip schedules from notifyState so re-enabling triggers fresh schedules.
-      for (const id of Object.keys(notifyState)) delete notifyState[id];
-    } else {
-      // Cancel dropped first so we don't race a brand-new schedule.
-      cancelled += await cancelWaveReminders({
-        ids: toCancel, topic, token: ntfyToken,
-      });
-      for (const wave of toSchedule) {
-        try {
-          const newIds = await scheduleWaveReminders({
-            wave, topic, token: ntfyToken, now, universeId,
-          });
-          notifyState[wave.id] = { scheduledMessageIds: newIds };
-          scheduled += newIds.length;
-        } catch (e) {
-          // One bad wave: log and carry on. Next sync tick will retry
-          // because we never advance `lastSig` on a failed schedule.
-          // eslint-disable-next-line no-console
-          console.warn(`[oge] schedule failed for ${wave.id}:`, e);
-        }
-      }
-      if (scheduled > 0) {
-        const fireTimes = toSchedule.flatMap((w) => {
-          const times = [];
-          for (let i = 0; i < REMINDER_COUNT; i++) {
-            const t = w.nextWaveAt + i * REMINDER_INTERVAL_SEC;
-            if (t > now) times.push(new Date(t * 1000).toLocaleTimeString());
-          }
-          return times;
-        });
-        // eslint-disable-next-line no-console
-        console.log(`[oge] scheduled ${scheduled} ntfy reminder(s) → ${fireTimes.join(', ')}`);
-      }
+    // The live waves ntfy should keep queued. Dismissed waves and — when
+    // the feature is off — ALL waves are excluded, so the reconciler
+    // sweeps their messages off the queue. Everything is idempotent and
+    // reconciled against ntfy's own queue, so an interrupted prior run
+    // (the mobile page-reload mid-sync case) simply converges next time
+    // instead of stacking partial, uncancellable schedules.
+    const liveForNtfy = config.enabled
+      ? waves.filter((w) => !w.cancelled).map((w) => ({ id: w.id, baseAt: baseAtFor(w) }))
+      : [];
+
+    const { idsByWave, posted, cancelled: swept } = await reconcileWaveQueue({
+      waves: liveForNtfy, topic, token: ntfyToken, now, universeId,
+    });
+    scheduled = posted;
+    cancelled = swept;
+
+    // Rebuild notifyState from the reconciler's authoritative id sets so
+    // the gist always mirrors what's actually on the queue (the stored
+    // ids feed the Dashboard's cross-universe orphan backstop).
+    notifyState = {};
+    for (const w of waves) {
+      const ids = (!config.enabled || w.cancelled) ? [] : (idsByWave[w.id] ?? []);
+      notifyState[w.id] = { baseAt: baseAtFor(w), scheduledMessageIds: ids };
     }
 
-    // Orphan sweep is intentionally NOT done on the game side.
-    //
-    // The ntfy topic is derived from the gist id and is therefore
-    // shared by all universes (different OGame servers, one gist).
-    // The game-side process only knows ITS OWN universe's notifyState
-    // — every other universe's scheduled message would appear as an
-    // "orphan" from here, and we'd cancel it. That's the same kind
-    // of cross-universe ping-pong v1.5.0 set out to fix.
-    //
-    // The dashboard (`features/histogram/reminders.js`) does the sweep
-    // properly: it unions `scheduledMessageIds` across every per-
-    // universe state file in the gist before deciding what's actually
-    // orphaned. It also gates on a freshness check so it never races
-    // a mid-sync POST. That's the single canonical place for cleanup.
+    if (posted > 0 || swept > 0) {
+      // eslint-disable-next-line no-console
+      console.log(`[oge] reminders reconciled: +${posted} queued, -${swept} cancelled`);
+    }
   }
 
   /** @type {ReminderState} */

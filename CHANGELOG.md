@@ -6,6 +6,32 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.6.1] — 2026-05-29
+
+### Fixed
+
+- **Rapid expedition bursts on mobile no longer pile up duplicate
+  reminders.** Sending a wave fleet-by-fleet (E1, E2, E3 …) reloads the
+  game page on each send, which tore the content script down mid-sync.
+  The old "POST six ntfy messages, then write their ids to the gist"
+  sequence routinely lost the gist write after only some POSTs had
+  landed, so the next page load saw no record, treated the wave as
+  brand-new, and stacked another partial schedule — producing the
+  reported "7× at T, 5× at T+10m, 3× at T+20m" duplicates, with the
+  orphaned messages impossible to cancel (their ids were never stored).
+- **A re-sent wave now reliably cancels the previous wave's pending
+  reminders.** Cancellation no longer depends on ids that a lost gist
+  write may never have recorded.
+
+  Both are fixed by making scheduling an **idempotent reconciliation**
+  against ntfy.sh's own scheduled queue (the durable source of truth)
+  instead of a fire-and-remember POST. Every sync polls this universe's
+  slice of the queue, posts only the missing future reminder slots, and
+  cancels only the messages that belong to no live wave. A mid-sync page
+  reload is now harmless — the next load simply converges. The fix also
+  cleans up any duplicate/orphaned messages left by older versions on the
+  next sync. No new permissions, no new network destinations.
+
 ## [1.6.0] — 2026-05-28
 
 ### Added

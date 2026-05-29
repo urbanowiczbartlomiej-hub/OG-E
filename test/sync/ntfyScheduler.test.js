@@ -6,7 +6,9 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
-  scheduleWaveReminders,
+  reconcileWaveQueue,
+  reminderFireTimes,
+  titleFor,
   cancelWaveReminders,
   fetchScheduledMessages,
   priorityForReminder,
@@ -44,91 +46,154 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const WAVE = {
-  id: 'w_1-1-1__1-2-1',
-  nextWaveAt: 2000,
-  fleetCount: 2,
-  origins: ['1:1:1', '1:2:1'],
+/** NDJSON poll response for the queue GET. @param {string[]} lines */
+const queueResponse = (lines) => ({
+  ok: true,
+  status: 200,
+  statusText: 'OK',
+  text: async () => lines.join('\n'),
+});
+
+/**
+ * Dispatch fetch by method/URL so a reconcile pass (one GET poll, then N
+ * POSTs, then maybe DELETEs) can be driven from a single mock. POSTs hand
+ * back sequential `post-0`, `post-1`, … ids.
+ *
+ * @param {string[]} queueLines  NDJSON lines the poll returns.
+ */
+const dispatchReconcile = (queueLines) => {
+  let postSeq = 0;
+  fetchMock.mockImplementation(async (url, init) => {
+    const method = init?.method ?? 'GET';
+    if (method === 'GET' && url.includes('/json?poll=1')) return queueResponse(queueLines);
+    if (method === 'POST') return okResponse({ id: `post-${postSeq++}` });
+    if (method === 'DELETE') return okResponse();
+    throw new Error(`unexpected ${method} ${url}`);
+  });
 };
 
-describe('scheduleWaveReminders', () => {
-  it('publishes REMINDER_COUNT (=6) messages with X-Delay spaced REMINDER_INTERVAL_SEC apart', async () => {
-    let i = 0;
-    fetchMock.mockImplementation(async () => okResponse({ id: `id-${i++}` }));
+const TITLE = titleFor('s163-pl');
+/** One queue NDJSON line for a message of ours at `time`. @param {string} id @param {number} time */
+const ourMsg = (id, time) =>
+  JSON.stringify({ id, time, event: 'message', title: TITLE });
 
-    const ids = await scheduleWaveReminders({
-      wave: WAVE,
-      topic: 'oge-test',
-      token: 'tk_abc',
-      now: 1000,
-      universeId: 's163-pl',
+describe('reminderFireTimes', () => {
+  it('returns REMINDER_COUNT slots spaced REMINDER_INTERVAL_SEC apart from baseAt', () => {
+    expect(reminderFireTimes(2000)).toEqual([2000, 2600, 3200, 3800, 4400, 5000]);
+    expect(reminderFireTimes(2000)).toHaveLength(REMINDER_COUNT);
+  });
+});
+
+describe('titleFor', () => {
+  it('prefixes the universe id', () => {
+    expect(titleFor('s163-pl')).toBe('[s163-pl] Expeditions back');
+  });
+});
+
+describe('reconcileWaveQueue', () => {
+  const base = { topic: 'oge-test', token: 'tk_abc', universeId: 's163-pl' };
+
+  it('posts every future slot when the queue is empty', async () => {
+    dispatchReconcile([]);
+    const { idsByWave, posted, cancelled } = await reconcileWaveQueue({
+      ...base, now: 1000, waves: [{ id: 'w_2000', baseAt: 2000 }],
     });
 
-    expect(ids).toHaveLength(REMINDER_COUNT);
-    expect(ids).toEqual(['id-0', 'id-1', 'id-2', 'id-3', 'id-4', 'id-5']);
-    expect(fetchMock).toHaveBeenCalledTimes(REMINDER_COUNT);
+    expect(posted).toBe(REMINDER_COUNT);
+    expect(cancelled).toBe(0);
+    expect(idsByWave.w_2000).toEqual(['post-0', 'post-1', 'post-2', 'post-3', 'post-4', 'post-5']);
 
+    const posts = fetchMock.mock.calls.filter((c) => c[1]?.method === 'POST');
+    expect(posts).toHaveLength(REMINDER_COUNT);
     const expectedAuth = 'auth=' + btoa(':tk_abc');
-    for (let slot = 0; slot < REMINDER_COUNT; slot++) {
-      const [url, init] = fetchMock.mock.calls[slot];
+    posts.forEach(([url, init], slot) => {
       expect(url).toBe(`https://ntfy.sh/oge-test?${expectedAuth}`);
-      expect(init.method).toBe('POST');
       expect(init.headers.Authorization).toBeUndefined();
-      expect(init.headers['X-Delay']).toBe(
-        String(WAVE.nextWaveAt + slot * REMINDER_INTERVAL_SEC),
-      );
-    }
-  });
-
-  it('omits X-Delay for slots whose absolute time is already (within 10s of) now', async () => {
-    fetchMock.mockImplementation(async () => okResponse({ id: 'x' }));
-    await scheduleWaveReminders({
-      wave: WAVE, topic: 'oge-test', token: 'tk', now: 2005, universeId: 's163-pl',
-    });
-    const slot0Init = fetchMock.mock.calls[0][1];
-    expect(slot0Init.headers['X-Delay']).toBeUndefined();
-    const slot1Init = fetchMock.mock.calls[1][1];
-    expect(slot1Init.headers['X-Delay']).toBe('2600');
-  });
-
-  it('escalates priority: 3,3,4,4,5,5 across the six reminders', async () => {
-    fetchMock.mockImplementation(async () => okResponse({ id: 'x' }));
-    await scheduleWaveReminders({
-      wave: WAVE, topic: 't', token: 'tk', now: 0, universeId: 's163-pl',
-    });
-    expect(fetchMock.mock.calls.map((c) => c[1].headers.Priority)).toEqual(
-      ['3', '3', '4', '4', '5', '5'],
-    );
-  });
-
-  it('uses the universe-prefixed title and a simple body', async () => {
-    fetchMock.mockImplementation(async () => okResponse({ id: 'x' }));
-    await scheduleWaveReminders({
-      wave: WAVE, topic: 't', token: 'tk', now: 0, universeId: 's163-pl',
-    });
-    for (let slot = 0; slot < REMINDER_COUNT; slot++) {
-      const init = fetchMock.mock.calls[slot][1];
-      expect(init.headers.Title).toBe('[s163-pl] Expeditions back');
+      expect(init.headers.Title).toBe(TITLE);
+      expect(init.headers['X-Delay']).toBe(String(2000 + slot * REMINDER_INTERVAL_SEC));
+      expect(init.headers.Priority).toBe(['3', '3', '4', '4', '5', '5'][slot]);
       expect(init.body).toBe(`Expeditions returned - Reminder #${slot + 1}.`);
-    }
+    });
   });
 
-  it('throws on ntfy error and surfaces the response body', async () => {
-    fetchMock.mockResolvedValueOnce(errResponse(429, 'rate limited'));
-    await expect(
-      scheduleWaveReminders({
-        wave: WAVE, topic: 't', token: 'tk', now: 0, universeId: 's163-pl',
-      }),
-    ).rejects.toThrow(/429.*rate limited/);
+  it('is idempotent: a fully-queued wave posts nothing and reuses the queued ids', async () => {
+    const times = reminderFireTimes(2000);
+    dispatchReconcile(times.map((t, i) => ourMsg(`q${i}`, t)));
+    const { idsByWave, posted, cancelled } = await reconcileWaveQueue({
+      ...base, now: 1000, waves: [{ id: 'w_2000', baseAt: 2000 }],
+    });
+
+    expect(posted).toBe(0);
+    expect(cancelled).toBe(0);
+    expect(idsByWave.w_2000).toEqual(['q0', 'q1', 'q2', 'q3', 'q4', 'q5']);
+    expect(fetchMock.mock.calls.some((c) => c[1]?.method === 'POST')).toBe(false);
   });
 
-  it('throws when ntfy returns OK without an id', async () => {
-    fetchMock.mockResolvedValueOnce(okResponse({}));
-    await expect(
-      scheduleWaveReminders({
-        wave: WAVE, topic: 't', token: 'tk', now: 0, universeId: 's163-pl',
-      }),
-    ).rejects.toThrow(/missing id/);
+  it('fills only the gaps of a partial (reload-interrupted) schedule', async () => {
+    const times = reminderFireTimes(2000);
+    // Only slots 0,1,2 made it onto the queue before the page reloaded.
+    dispatchReconcile([ourMsg('q0', times[0]), ourMsg('q1', times[1]), ourMsg('q2', times[2])]);
+    const { idsByWave, posted, cancelled } = await reconcileWaveQueue({
+      ...base, now: 1000, waves: [{ id: 'w_2000', baseAt: 2000 }],
+    });
+
+    expect(posted).toBe(3);
+    expect(cancelled).toBe(0);
+    // Existing ids reused, new ones appended in fire order.
+    expect(idsByWave.w_2000).toEqual(['q0', 'q1', 'q2', 'post-0', 'post-1', 'post-2']);
+  });
+
+  it('sweeps our messages that belong to no live wave (landed / re-sent / drifted)', async () => {
+    // A live wave at baseAt=2000 plus a stale message at 9999 (no wave).
+    const times = reminderFireTimes(2000);
+    dispatchReconcile([...times.map((t, i) => ourMsg(`q${i}`, t)), ourMsg('stale', 9999)]);
+    const { cancelled, posted } = await reconcileWaveQueue({
+      ...base, now: 1000, waves: [{ id: 'w_2000', baseAt: 2000 }],
+    });
+
+    expect(posted).toBe(0);
+    expect(cancelled).toBe(1);
+    const del = fetchMock.mock.calls.find((c) => c[1]?.method === 'DELETE');
+    expect(del?.[0]).toContain('/stale?');
+  });
+
+  it('cancels everything for the universe when no live waves are passed (feature off)', async () => {
+    const times = reminderFireTimes(2000);
+    dispatchReconcile(times.map((t, i) => ourMsg(`q${i}`, t)));
+    const { posted, cancelled } = await reconcileWaveQueue({ ...base, now: 1000, waves: [] });
+
+    expect(posted).toBe(0);
+    expect(cancelled).toBe(REMINDER_COUNT);
+  });
+
+  it('never touches another universe\'s messages on the shared topic', async () => {
+    const otherTitle = titleFor('s201-pl');
+    const otherMsg = JSON.stringify({ id: 'other', time: 9999, event: 'message', title: otherTitle });
+    dispatchReconcile([otherMsg]);
+    const { posted, cancelled } = await reconcileWaveQueue({
+      ...base, now: 1000, waves: [], // even with nothing of ours wanted…
+    });
+    expect(posted).toBe(0);
+    expect(cancelled).toBe(0); // …the other server's message survives.
+    expect(fetchMock.mock.calls.some((c) => c[1]?.method === 'DELETE')).toBe(false);
+  });
+
+  it('protects an imminent slot (fires in <10s) from being swept or re-posted', async () => {
+    // baseAt=1005, now=1000 → slot 0 at 1005 is in the future but too soon
+    // to (re)schedule. It must stay queued and must not be re-posted.
+    const queuedImminent = ourMsg('q-soon', 1005);
+    const times = reminderFireTimes(1005); // [1005,1605,2205,2805,3405,4005]
+    // Pre-queue slot 0 only; the rest are gaps to fill.
+    dispatchReconcile([queuedImminent]);
+    const { idsByWave, posted, cancelled } = await reconcileWaveQueue({
+      ...base, now: 1000, waves: [{ id: 'w_1005', baseAt: 1005 }],
+    });
+
+    expect(cancelled).toBe(0); // slot 0 protected (time 1005 > now)
+    expect(posted).toBe(REMINDER_COUNT - 1); // slots 1..5 posted
+    // slot 0 is too-soon → not in the returned id set; only schedulable slots are.
+    expect(idsByWave.w_1005).toEqual(['post-0', 'post-1', 'post-2', 'post-3', 'post-4']);
+    expect(times[0]).toBe(1005);
   });
 });
 

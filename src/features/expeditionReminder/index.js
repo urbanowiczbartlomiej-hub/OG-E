@@ -10,10 +10,10 @@
 // return-flight rows out of `#eventContent` — exactly the passive DOM
 // read the badge feature does (see `features/badges.js`), no traffic to
 // the game — clusters them into waves (`domain/waves.clusterWaves`), and
-// pushes the result into the gist's `oge-reminders.json`
-// (`sync/reminders.syncReminderWaves`). From there the Cloudflare Worker
-// takes over the timing entirely; this feature does NOT keep watch after
-// the write.
+// hands them to `sync/reminders.syncReminderWaves`. That reconciles the
+// per-universe reminder file in the gist AND this universe's slice of the
+// ntfy.sh scheduled queue. ntfy holds the delayed pushes server-side and
+// fires them on time; this feature does NOT keep watch after the sync.
 //
 // # Why it almost never calls the API
 //
@@ -29,9 +29,9 @@
 //
 //   - `oge:eventBoxLoaded` — the main driver. Skipped entirely while the
 //     feature is disabled (no DOM read, no API).
-//   - reminder-config change — forces one push so enabling/disabling, a
-//     new ntfy topic, changed hours, etc. reach the gist immediately
-//     (and thus the Worker) without waiting for the next event refresh.
+//   - reminder-config change — forces one sync so enabling/disabling or
+//     an ntfy-token edit reaches ntfy immediately (cancel the queue on
+//     disable, repopulate it on enable) without waiting for an event refresh.
 //
 // Both go through a short debounce so a burst of refreshes coalesces.
 //

@@ -20,19 +20,40 @@
 //   - minimum delay  10 seconds
 //   - maximum delay  3 days
 //
-// We schedule SIX messages per wave (`REMINDER_COUNT`), 10 minutes apart
-// (`REMINDER_INTERVAL_SEC`), starting at the wave's `nextWaveAt`. Sub-
-// minimum delays are sent immediately (no X-Delay header) — that covers
-// the case where the player opens a game tab AFTER a wave already
-// landed, so the first reminder fires right away.
+// We aim for SIX messages per wave (`REMINDER_COUNT`), 10 minutes apart
+// (`REMINDER_INTERVAL_SEC`), starting at the wave's locked base time
+// (`baseAt`). Slot i fires at `baseAt + i * REMINDER_INTERVAL_SEC`.
+//
+// # The queue is the source of truth — {@link reconcileWaveQueue}
+//
+// We do NOT blindly POST six messages and trust a separate gist write to
+// remember their ids. On mobile, *sending a fleet reloads the game page*,
+// which tears the content script down mid-flight — so a "POST six, then
+// write the ids to the gist" sequence routinely lost the gist write after
+// only some POSTs had landed. The result was stacked partial schedules
+// (7×, 5×, 3× …) and orphaned messages with no stored id to cancel.
+//
+// Instead, scheduling is an *idempotent reconciliation* against ntfy's own
+// scheduled queue, which is durable and pollable. Each pass:
+//
+//   1. Polls the queue and keeps only THIS universe's messages (matched by
+//      the `[universeId] …` title — never touches other servers' topics).
+//   2. Posts only the future slots that are MISSING from the queue.
+//   3. Cancels any of this universe's future messages that belong to NO
+//      live wave (landed, dismissed, lost-write partials, base drift).
+//
+// A page reload is now harmless: the next load re-polls and converges to
+// exactly one message per future slot of every live wave. There is no
+// "immediate fire" path — past/too-soon slots are simply left alone; while
+// a wave is landing the player is by definition in-game and needs no nudge.
 //
 // # Authentication
 //
-// ntfy.sh's free / Pro plans rate-limit anonymous publishers per IP. The
-// Cloudflare-edge IPs are shared by thousands of Workers, so anonymous
-// publishing from a Worker is unworkable in practice; that's why we made
-// the user paste a personal access token. With the token, the per-IP
-// budget no longer applies — the rate limit is per account. The token
+// ntfy.sh's free / Pro plans rate-limit anonymous publishers per IP, and a
+// burst send fires several POSTs in quick succession — easily enough to
+// trip the anonymous budget. That's why we make the user paste a personal
+// access token: with it the per-IP budget no longer applies — the rate
+// limit is per account. The token
 // is mirrored from chrome.storage by the histogram tab and passed in
 // here as a parameter; this module never reads storage directly.
 
@@ -73,45 +94,32 @@ export const REMINDER_COUNT = 6;
 /** Gap, in seconds, between consecutive reminders for the same wave. */
 export const REMINDER_INTERVAL_SEC = 600;
 
-/** ntfy's documented minimum `X-Delay` value (anything smaller fires immediately). */
+/** ntfy's documented minimum `X-Delay` value (anything smaller would be rejected). */
 const NTFY_MIN_DELAY_SEC = 10;
 
 /**
- * Schedule {@link REMINDER_COUNT} pushes for one wave. Returns the
- * array of ntfy message ids in the order they were scheduled — keep
- * this array for the cancellation handle.
+ * The ntfy push title for a universe. Doubles as the per-universe filter
+ * when reconciling the shared topic's queue: messages whose title is not
+ * exactly this belong to another OGame server and are never touched.
  *
- * Each push fires at `nextWaveAt + i * REMINDER_INTERVAL_SEC`. Pushes
- * whose absolute time is already <= now + 10s are sent immediately
- * (no `X-Delay` header); the rest get an `X-Delay` with the absolute
- * Unix timestamp.
- *
- * Priority escalates across the six reminders — default→high→max,
- * two per band — so a user who shrugs off the first ping gets louder
- * later ones. See `postOne` for the exact ladder.
- *
- * Network failures throw — the caller (in `syncReminderWaves`) treats
- * a partial schedule as "try again next sync tick" by NOT persisting
- * an advance in `lastSig`. Already-scheduled ids inside this call are
- * returned even if a later one fails, so the caller can cancel them.
- *
- * @param {object} args
- * @param {{ id: string, nextWaveAt: number, fleetCount: number, origins: string[] }} args.wave
- * @param {string} args.topic
- * @param {string} args.token   ntfy.sh access token (Bearer).
- * @param {number} args.now     Epoch SECONDS — pass injected for testability.
- * @param {string} args.universeId  OGame server id, used as the title prefix.
- * @returns {Promise<string[]>}
+ * @param {string} universeId
+ * @returns {string}
  */
-export const scheduleWaveReminders = async ({ wave, topic, token, now, universeId }) => {
-  /** @type {string[]} */
-  const ids = [];
-  for (let i = 0; i < REMINDER_COUNT; i++) {
-    const fireAt = wave.nextWaveAt + i * REMINDER_INTERVAL_SEC;
-    const id = await postOne({ topic, token, fireAt, now, n: i + 1, universeId });
-    ids.push(id);
-  }
-  return ids;
+export const titleFor = (universeId) => `[${universeId}] Expeditions back`;
+
+/**
+ * The {@link REMINDER_COUNT} absolute fire times for a wave whose schedule
+ * is anchored at `baseAt` (epoch seconds): `baseAt + i * REMINDER_INTERVAL_SEC`
+ * for `i` in `0..REMINDER_COUNT-1`. Pure — exported for the tests.
+ *
+ * @param {number} baseAt
+ * @returns {number[]}
+ */
+export const reminderFireTimes = (baseAt) => {
+  /** @type {number[]} */
+  const out = [];
+  for (let i = 0; i < REMINDER_COUNT; i++) out.push(baseAt + i * REMINDER_INTERVAL_SEC);
+  return out;
 };
 
 /**
@@ -245,7 +253,7 @@ const postOne = async ({ topic, token, fireAt, now, n, universeId }) => {
   const delay = fireAt - now;
   /** @type {Record<string, string>} */
   const headers = {
-    Title: `[${universeId}] Expeditions back`,
+    Title: titleFor(universeId),
     Tags: 'rocket',
     Priority: String(priorityForReminder(n)),
   };
@@ -264,4 +272,91 @@ const postOne = async ({ topic, token, fireAt, now, n, universeId }) => {
   const json = /** @type {{ id?: string }} */ (await res.json().catch(() => ({})));
   if (!json.id) throw new Error('ntfy publish: response missing id');
   return json.id;
+};
+
+/**
+ * Reconcile this universe's slice of the shared ntfy queue so it holds
+ * exactly one message per FUTURE reminder slot of every supplied live
+ * wave — no more, no less. This is the whole scheduling contract; callers
+ * just hand over the live waves and store the returned id sets.
+ *
+ * Idempotent and self-healing. Safe to run on every sync and after any
+ * number of interrupted prior runs (the mobile page-reload case):
+ *
+ *   - **Universe isolation.** Only messages titled {@link titleFor} are
+ *     considered "ours". The topic is shared across OGame servers (it is
+ *     derived from the gist id), so every other server's schedule is
+ *     invisible here and never cancelled.
+ *   - **Post the gaps.** For each wave, slot `i` wants a message at
+ *     `baseAt + i*interval`. We post only the slots that are far enough in
+ *     the future to schedule (`>= now + NTFY_MIN_DELAY`) AND absent from
+ *     the queue. Slots already queued are reused by their existing id.
+ *   - **Sweep the rest.** Any of our future messages whose fire time
+ *     matches no live wave's slot is cancelled — that covers landed waves,
+ *     user-dismissed waves, lost-write partials, and base-time drift.
+ *
+ * Pass `waves: []` (e.g. feature disabled) to cancel everything queued for
+ * this universe.
+ *
+ * `baseAt` is the wave's locked schedule anchor. The caller persists it on
+ * first sight and feeds it back unchanged, so the slot times stay stable
+ * across scans even as the earliest live return drifts.
+ *
+ * Per-message POST failures throw (the caller retries next tick); per-id
+ * cancellation failures are swallowed inside {@link cancelWaveReminders}.
+ *
+ * @param {object} args
+ * @param {Array<{ id: string, baseAt: number }>} args.waves  Live, non-dismissed waves.
+ * @param {string} args.topic
+ * @param {string} args.token       ntfy.sh access token (sent as a query param, not Bearer).
+ * @param {number} args.now         Epoch SECONDS — injected for testability.
+ * @param {string} args.universeId  OGame server id; the title prefix + queue filter.
+ * @returns {Promise<{ idsByWave: Record<string, string[]>, posted: number, cancelled: number }>}
+ *   `idsByWave` maps each wave id to its slot message ids in fire order.
+ */
+export const reconcileWaveQueue = async ({ waves, topic, token, now, universeId }) => {
+  const title = titleFor(universeId);
+  const all = await fetchScheduledMessages({ topic, token, now });
+  const ours = all.filter((m) => m.title === title);
+
+  // time -> id for a message already queued in this universe (first wins).
+  /** @type {Map<number, string>} */
+  const queuedById = new Map();
+  for (const m of ours) if (!queuedById.has(m.time)) queuedById.set(m.time, m.id);
+
+  // Every future slot of every live wave is "wanted" — protected from the
+  // sweep even when it's too soon to (re)schedule, so a reminder about to
+  // fire is never yanked out from under itself.
+  /** @type {Set<number>} */
+  const wantedTimes = new Set();
+  const plan = waves.map((w) => {
+    const times = reminderFireTimes(w.baseAt);
+    for (const t of times) if (t > now) wantedTimes.add(t);
+    return { wave: w, times };
+  });
+
+  /** @type {Record<string, string[]>} */
+  const idsByWave = {};
+  let posted = 0;
+  for (const { wave, times } of plan) {
+    /** @type {string[]} */
+    const ids = [];
+    for (let i = 0; i < times.length; i++) {
+      const t = times[i];
+      if (t < now + NTFY_MIN_DELAY_SEC) continue; // past / too-soon to schedule
+      let id = queuedById.get(t);
+      if (!id) {
+        id = await postOne({ topic, token, fireAt: t, now, n: i + 1, universeId });
+        queuedById.set(t, id);
+        posted++;
+      }
+      ids.push(id);
+    }
+    idsByWave[wave.id] = ids;
+  }
+
+  const orphanIds = ours.filter((m) => !wantedTimes.has(m.time)).map((m) => m.id);
+  const cancelled = await cancelWaveReminders({ ids: orphanIds, topic, token });
+
+  return { idsByWave, posted, cancelled };
 };
