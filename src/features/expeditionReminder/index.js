@@ -42,7 +42,7 @@
 import { clusterWaves, DEFAULT_CLUSTER_GAP_SECONDS } from '../../domain/waves.js';
 /** @typedef {import('../../domain/waves.js').WaveCandidate} WaveCandidate */
 import { settingsStore } from '../../state/settings.js';
-import { syncReminderWaves } from '../../sync/reminders.js';
+import { syncReminders } from '../../sync/reminders.js';
 import { parseUniverseId } from '../../lib/universeId.js';
 import { debounce } from '../../lib/debounce.js';
 
@@ -92,25 +92,55 @@ export const extractReturnEntries = (root = document) => {
 };
 
 /**
- * Compact signature of a wave-candidate set — the full `returnAts` list
- * per candidate. Two sets with the same signature need no gist write
- * (the reconcile would be a no-op). Sorted by the smallest return-time
- * so ordering noise from the DOM doesn't produce a spurious mismatch.
+ * Selector for every fleet leg currently in the event list — one
+ * `<tr class="eventFleet" id="eventRow-<n>">` per in-flight leg (any
+ * mission, any direction). The `eventRow-` id prefix is the stable
+ * per-leg identity ad-hoc reminders key on; `data-arrival-time` is the
+ * leg's arrival epoch.
+ */
+const PRESENT_ROW_SELECTOR = '#eventContent tr.eventFleet[id^="eventRow-"]';
+
+/**
+ * Extract every present fleet leg as `{ id, arrivalAt }` — the
+ * authoritative "what exists right now" set the ad-hoc reconcile matches
+ * armed reminders against (vanished ⇒ the reminder is dropped). Pure-ish
+ * DOM read, same passive style as {@link extractReturnEntries}.
  *
- * `returnAts` IS the signature because the v1.3.2 reconcile matches on
- * return-time overlap: a fleet landing (one timestamp leaving the set)
- * or a brand-new send (a new timestamp joining a fresh cluster) must
- * trigger a sync even when `nextWaveAt` happens not to move.
+ * @param {ParentNode} [root=document]
+ * @returns {import('../../domain/adhoc.js').PresentFleet[]}
+ */
+export const extractPresentFleets = (root = document) => {
+  /** @type {import('../../domain/adhoc.js').PresentFleet[]} */
+  const out = [];
+  for (const row of root.querySelectorAll(PRESENT_ROW_SELECTOR)) {
+    const id = /** @type {HTMLElement} */ (row).id;
+    const arrivalAttr = row.getAttribute('data-arrival-time');
+    const arrivalAt = arrivalAttr ? parseInt(arrivalAttr, 10) : NaN;
+    if (id && Number.isFinite(arrivalAt)) out.push({ id, arrivalAt });
+  }
+  return out;
+};
+
+/**
+ * Compact signature of one scan — the wave-candidate return-times plus
+ * the present fleet legs (id + arrival). Two scans with the same
+ * signature need no gist round-trip (the reconcile would be a no-op).
+ *
+ * The wave half uses `returnAts` because the reconcile matches on
+ * return-time overlap. The present half (`id:arrivalAt` per leg) makes a
+ * fleet appearing / landing / being recalled — which moves the ad-hoc
+ * cleanup — trigger a sync too. Both halves are sorted so DOM ordering
+ * noise doesn't produce a spurious mismatch.
  *
  * @param {WaveCandidate[]} candidates
+ * @param {import('../../domain/adhoc.js').PresentFleet[]} present
  * @returns {string}
  */
-const signatureOf = (candidates) =>
-  JSON.stringify(
-    candidates
-      .map((c) => c.returnAts)
-      .sort((a, b) => (a[0] ?? 0) - (b[0] ?? 0)),
-  );
+const signatureOf = (candidates, present) =>
+  JSON.stringify({
+    w: candidates.map((c) => c.returnAts).sort((a, b) => (a[0] ?? 0) - (b[0] ?? 0)),
+    p: present.map((f) => `${f.id}:${f.arrivalAt}`).sort(),
+  });
 
 /** Idempotency sentinel — holds the dispose fn while installed. */
 /** @type {(() => void) | null} */
@@ -141,21 +171,23 @@ export const installExpeditionReminder = () => {
     const s = settingsStore.get();
     const config = {
       enabled: s.reminderEnabled,
+      adhocEnabled: s.adhocEnabled,
       ntfyToken: s.reminderNtfyToken,
       schedule: s.reminderSchedule,
     };
-    // Dormant when off — unless a settings change is forcing a push
-    // (e.g. the user just toggled it off and we must cancel scheduled
-    // ntfys).
-    if (!config.enabled && !force) return;
+    // Dormant only when BOTH kinds are off — unless a settings change is
+    // forcing a push (e.g. the user just toggled one off and we must
+    // sweep its scheduled ntfys).
+    if (!config.enabled && !config.adhocEnabled && !force) return;
 
     const candidates = clusterWaves(extractReturnEntries(), { gapSeconds: DEFAULT_CLUSTER_GAP_SECONDS });
-    const sig = signatureOf(candidates);
+    const present = extractPresentFleets();
+    const sig = signatureOf(candidates, present);
     if (sig === lastSig && !force) return;
 
     const now = Math.floor(Date.now() / 1000);
     const universeId = parseUniverseId(location.host);
-    const res = await syncReminderWaves(config, candidates, now, universeId);
+    const res = await syncReminders(config, { waveCandidates: candidates, present }, now, universeId);
     // Only advance the cached signature on a successful push. A failed
     // attempt (e.g. no token, rate-limited) leaves lastSig stale so the
     // next trigger retries instead of silently skipping.
@@ -172,7 +204,10 @@ export const installExpeditionReminder = () => {
   // (cancel scheduled messages on disable, schedule them on enable).
   /** @param {ReturnType<typeof settingsStore.get>} s */
   const pickReminderSig = (s) =>
-    JSON.stringify({ e: s.reminderEnabled, t: s.reminderNtfyToken, s: s.reminderSchedule });
+    JSON.stringify({
+      e: s.reminderEnabled, t: s.reminderNtfyToken, s: s.reminderSchedule,
+      a: s.adhocEnabled,
+    });
   let prevReminderSig = pickReminderSig(settingsStore.get());
   const unsubConfig = settingsStore.subscribe((next) => {
     const sig = pickReminderSig(next);

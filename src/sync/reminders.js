@@ -72,25 +72,32 @@
 import { gh, ensureGistV3, getToken, getGistId } from './gist.js';
 import { chromeStore } from '../lib/storage.js';
 import { reconcileWaves, pruneNotifyState } from '../domain/waves.js';
-import { reconcileWaveQueue, offsetsForSchedule } from './ntfyScheduler.js';
+import { reconcileAdhoc, pruneAdhocNotify } from '../domain/adhoc.js';
+import {
+  reconcileWaveQueue, reconcileAdhocQueue, offsetsForSchedule, NTFY_MAX_DELAY_SEC,
+} from './ntfyScheduler.js';
 
 /**
  * @typedef {import('../domain/waves.js').Wave} Wave
  * @typedef {import('../domain/waves.js').NotifyEntry} NotifyEntry
+ * @typedef {import('../domain/adhoc.js').AdhocReminder} AdhocReminder
+ * @typedef {import('../domain/adhoc.js').PresentFleet} PresentFleet
  */
 
 /**
- * Minimal config shape the producer passes in. Mirrors the two
- * reminder-related fields of `Settings` so this module does not depend
- * on the settings typedef (any caller that yields the right shape
- * works — useful for tests).
+ * Minimal config shape the producer passes in. Mirrors the reminder
+ * fields of `Settings` so this module does not depend on the settings
+ * typedef (any caller that yields the right shape works — useful for
+ * tests).
  *
  * @typedef {object} ReminderConfig
- * @property {boolean} enabled
+ * @property {boolean} enabled       Auto expedition-WAVE reminders on/off.
+ * @property {boolean} [adhocEnabled] Ad-hoc per-fleet reminders on/off. When
+ *   false, armed entries are kept in state but nothing is queued on ntfy.
  * @property {string} ntfyToken
  * @property {string} [schedule]  Reminder schedule preset key (see
  *   `ntfyScheduler.REMINDER_PRESETS`). Falls back to the default preset
- *   when absent / unknown.
+ *   when absent / unknown. Applies to expedition waves only.
  */
 
 /**
@@ -136,8 +143,15 @@ export const REMINDER_FILENAME_RE = /^oge-reminders-([^/]+)\.json$/;
  *     chrome.storage is also keyed per universe. We do NOT migrate v2
  *     state — the next sync drops it and the orphan sweep cancels any
  *     v2-era ntfy messages still queued.
+ *   - v4: adds the ad-hoc per-fleet reminder blocks (`adhoc` +
+ *     `adhocNotify`) alongside the existing wave blocks. Migration from
+ *     v3 is ADDITIVE — `readReminderState` accepts v3 and defaults the
+ *     new arrays empty, so existing wave schedules survive the upgrade.
  */
-export const REMINDER_SCHEMA_VERSION = 3;
+export const REMINDER_SCHEMA_VERSION = 4;
+
+/** Schema versions we can read (and normalise forward). */
+const READABLE_SCHEMA_VERSIONS = new Set([3, 4]);
 
 /**
  * Derive the ntfy.sh topic deterministically from the ntfy access
@@ -206,6 +220,9 @@ export const REMINDER_NTFY_TOKEN_KEY = 'oge_reminderNtfyTokenMirror';
  * @property {Wave[]} waves              Reconciled wave set.
  * @property {Record<string, NotifyEntry>} notifyState  Per-wave bookkeeping
  *   (scheduled ntfy.sh message ids for cancellation).
+ * @property {AdhocReminder[]} adhoc     Player-armed per-fleet reminders.
+ * @property {Record<string, NotifyEntry>} adhocNotify  Per-ad-hoc bookkeeping
+ *   (scheduled ntfy.sh message ids), keyed by event-row id.
  */
 
 /**
@@ -213,9 +230,12 @@ export const REMINDER_NTFY_TOKEN_KEY = 'oge_reminderNtfyTokenMirror';
  * `null` when the gist has no such file yet (first run) or the content
  * can't be parsed (hand-edited / corrupt — the next write rebuilds it).
  *
- * State at older schema versions is treated as absent: we never
- * migrate, we just start fresh and let the orphan sweep clean up any
- * ntfy messages the old code had scheduled.
+ * Accepts schema v3 and v4 and normalises forward: a v3 file (no ad-hoc
+ * blocks) comes back with `adhoc: []` / `adhocNotify: {}` so callers
+ * always see the v4 shape and existing wave schedules survive the
+ * upgrade. Versions outside {@link READABLE_SCHEMA_VERSIONS} are treated
+ * as absent (start fresh; the orphan sweep clears their stale ntfy
+ * messages).
  *
  * @param {string} universeId
  * @returns {Promise<ReminderState | null>}
@@ -231,8 +251,14 @@ export const readReminderState = async (universeId) => {
       : file.content;
   try {
     const parsed = /** @type {ReminderState} */ (JSON.parse(text));
-    if (parsed?.version !== REMINDER_SCHEMA_VERSION) return null;
-    return parsed;
+    if (!READABLE_SCHEMA_VERSIONS.has(parsed?.version)) return null;
+    return {
+      ...parsed,
+      waves: parsed.waves ?? [],
+      notifyState: parsed.notifyState ?? {},
+      adhoc: parsed.adhoc ?? [],
+      adhocNotify: parsed.adhocNotify ?? {},
+    };
   } catch {
     return null;
   }
@@ -270,7 +296,10 @@ export const writeReminderState = async (universeId, state) => {
 const sameState = (a, b) => {
   if (!a) return false;
   /** @param {ReminderState} s @returns {string} */
-  const pick = (s) => JSON.stringify({ waves: s.waves, notifyState: s.notifyState });
+  const pick = (s) => JSON.stringify({
+    waves: s.waves, notifyState: s.notifyState,
+    adhoc: s.adhoc, adhocNotify: s.adhocNotify,
+  });
   return pick(a) === pick(b);
 };
 
@@ -370,32 +399,60 @@ const resolveNtfyToken = async (configToken) => {
 };
 
 /**
- * The core extension-side round-trip:
+ * Body line for an ad-hoc fleet reminder. The `label` (direction + coords
+ * + mission, built at arm time by the UI) carries the "what"; we append
+ * the actual arrival clock time. The ping itself fires `offsetSec` earlier
+ * (see {@link AdhocReminder}), so stating the arrival is the honest cue.
+ *
+ * @param {AdhocReminder} e
+ * @returns {string}
+ */
+const adhocBody = (e) => {
+  const when = new Date(e.arrivalAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return `${e.label} — arrives ${when}.`;
+};
+
+/**
+ * The core extension-side round-trip — the SINGLE writer of this
+ * universe's reminder file. Reconciles BOTH notification kinds (auto
+ * expedition waves + player-armed ad-hoc fleets) in one read-modify-write,
+ * so the two never clobber each other's slice of the gist:
  *
  *   1. Bail when no GitHub token is configured (no way to read/write the
- *      gist). The histogram tab tells the user.
- *   2. Read the existing reminder file; build prev waves + notifyState.
- *   3. {@link reconcileWaves} — return-time-set overlap matching, producing
- *      the live wave set to store (landed waves fall out; the brand-new
- *      cleanup rule drops near-term matched waves on a fresh send).
- *   4. {@link reconcileWaveQueue} — converge this universe's slice of the
- *      ntfy.sh queue to exactly one message per future slot of every live,
- *      non-dismissed wave: post the gaps, cancel the orphans. Idempotent,
- *      so it self-heals after a reload-interrupted prior run. When the
- *      feature is disabled, pass no live waves → everything is swept.
- *      Persist the resulting id sets (+ `baseAt`) back into notifyState.
- *   5. Refresh the histogram preview mirror.
+ *      gist). The dashboard tells the user.
+ *   2. Read the existing file (v3/v4 normalised) → prev waves + ad-hoc.
+ *   3. {@link reconcileWaves} — live wave set (landed waves fall out; the
+ *      brand-new cleanup rule tombstones near-term matched waves on a
+ *      fresh send).
+ *   4. {@link reconcileAdhoc} — apply the optional user mutation (arm /
+ *      disarm), then drop armed entries whose event row vanished and
+ *      reschedule any whose arrival moved.
+ *   5. {@link reconcileWaveQueue} + {@link reconcileAdhocQueue} — converge
+ *      each kind's slice of the ntfy queue (distinct titles → no
+ *      cross-cancel). Disabled kind ⇒ pass an empty live set ⇒ its
+ *      messages are swept (ad-hoc ENTRIES are still kept in state, just
+ *      not queued). Ad-hoc entries beyond ntfy's 3-day cap are kept but
+ *      not queued (defense in depth; arming is already blocked past it).
+ *   6. Persist the resulting id sets; refresh the dashboard mirror.
  *
- * @param {ReminderConfig} config   Current config (from the store).
- * @param {import('../domain/waves.js').WaveCandidate[]} currentCandidates
- *   Freshly clustered wave candidates from the DOM (no id yet).
- * @param {number} now              Epoch SECONDS, injected by the caller.
- * @param {string} universeId       OGame server id, used only as a label in
- *   ntfy.sh push titles (`[s163-pl] Expeditions back`).
- * @returns {Promise<{ ok: boolean, reason?: string, changed?: boolean, waves?: Wave[], scheduled?: number, cancelled?: number }>}
+ * @param {ReminderConfig} config  Current config (from the store).
+ * @param {object} dom             DOM-derived inputs for this scan.
+ * @param {import('../domain/waves.js').WaveCandidate[]} dom.waveCandidates
+ *   Freshly clustered expedition-return candidates (no id yet).
+ * @param {PresentFleet[]} dom.present  Every fleet leg currently in the
+ *   event list (id + arrivalAt) — the authoritative set ad-hoc cleanup
+ *   matches against. MUST come from a real event-box read.
+ * @param {(prev: AdhocReminder[]) => AdhocReminder[]} [dom.adhocMutate]
+ *   Optional user mutation applied before reconcile (arm adds an entry,
+ *   disarm removes one). Omitted on the periodic event-box-driven pass.
+ * @param {number} now             Epoch SECONDS, injected by the caller.
+ * @param {string} universeId      OGame server id; ntfy push title prefix.
+ * @returns {Promise<{ ok: boolean, reason?: string, changed?: boolean, scheduled?: number, cancelled?: number }>}
  */
-export const syncReminderWaves = async (config, currentCandidates, now, universeId) => {
+export const syncReminders = async (config, dom, now, universeId) => {
   if (!getToken()) return { ok: false, reason: 'no-token' };
+
+  const { waveCandidates, present, adhocMutate } = dom;
 
   // Token resolution: prefer per-origin localStorage value; fall back
   // to the global chrome.storage mirror so a universe that hasn't been
@@ -406,8 +463,13 @@ export const syncReminderWaves = async (config, currentCandidates, now, universe
   const existing = await readReminderState(universeId);
   const prevWaves = existing?.waves ?? [];
   const prevNotify = existing?.notifyState ?? {};
+  const prevAdhoc = existing?.adhoc ?? [];
+  const prevAdhocNotify = existing?.adhocNotify ?? {};
 
-  const { waves } = reconcileWaves(prevWaves, currentCandidates, now);
+  const { waves } = reconcileWaves(prevWaves, waveCandidates, now);
+
+  const adhocWorking = adhocMutate ? adhocMutate(prevAdhoc) : prevAdhoc;
+  const { entries: adhoc } = reconcileAdhoc(adhocWorking, present);
 
   // Each wave's schedule is anchored at a base time locked on first sight
   // (`baseAt`). Re-derive it from the prev bookkeeping when we have it;
@@ -418,43 +480,60 @@ export const syncReminderWaves = async (config, currentCandidates, now, universe
 
   const topic = await deriveNtfyTopic(ntfyToken);
 
-  // Default: keep prev bookkeeping pruned to the live set. Only replaced
+  // Default: keep prev bookkeeping pruned to the live sets. Only replaced
   // when we actually reach ntfy (token + topic present).
   /** @type {Record<string, NotifyEntry>} */
   let notifyState = pruneNotifyState(prevNotify, waves);
+  /** @type {Record<string, NotifyEntry>} */
+  let adhocNotify = pruneAdhocNotify(prevAdhocNotify, adhoc);
   let cancelled = 0;
   let scheduled = 0;
 
   if (ntfyToken && topic) {
-    // The live waves ntfy should keep queued. Dismissed waves and — when
-    // the feature is off — ALL waves are excluded, so the reconciler
-    // sweeps their messages off the queue. Everything is idempotent and
-    // reconciled against ntfy's own queue, so an interrupted prior run
-    // (the mobile page-reload mid-sync case) simply converges next time
-    // instead of stacking partial, uncancellable schedules.
-    const liveForNtfy = config.enabled
+    // ── Expedition waves ───────────────────────────────────────────────
+    // Live waves ntfy should keep queued. Dismissed waves and — when wave
+    // auto-reminders are off — ALL waves are excluded, so the reconciler
+    // sweeps their messages. Idempotent against ntfy's own queue, so an
+    // interrupted prior run (the mobile page-reload case) just converges.
+    const liveWaves = config.enabled
       ? waves.filter((w) => !w.cancelled).map((w) => ({ id: w.id, baseAt: baseAtFor(w) }))
       : [];
-
-    const { idsByWave, posted, cancelled: swept } = await reconcileWaveQueue({
-      waves: liveForNtfy, topic, token: ntfyToken, now, universeId,
+    const waveRes = await reconcileWaveQueue({
+      waves: liveWaves, topic, token: ntfyToken, now, universeId,
       offsetsSec: offsetsForSchedule(config.schedule),
     });
-    scheduled = posted;
-    cancelled = swept;
 
     // Rebuild notifyState from the reconciler's authoritative id sets so
-    // the gist always mirrors what's actually on the queue (the stored
-    // ids feed the Dashboard's cross-universe orphan backstop).
+    // the gist always mirrors what's actually on the queue.
     notifyState = {};
     for (const w of waves) {
-      const ids = (!config.enabled || w.cancelled) ? [] : (idsByWave[w.id] ?? []);
+      const ids = (!config.enabled || w.cancelled) ? [] : (waveRes.idsByWave[w.id] ?? []);
       notifyState[w.id] = { baseAt: baseAtFor(w), scheduledMessageIds: ids };
     }
 
-    if (posted > 0 || swept > 0) {
+    // ── Ad-hoc fleets ──────────────────────────────────────────────────
+    // One ping per armed entry, within ntfy's 3-day cap. Disabled ⇒ no
+    // live entries ⇒ messages swept (entries themselves stay in state).
+    const liveAdhoc = config.adhocEnabled
+      ? adhoc
+          .filter((e) => e.fireAt <= now + NTFY_MAX_DELAY_SEC)
+          .map((e) => ({ id: e.id, fireAt: e.fireAt, body: adhocBody(e) }))
+      : [];
+    const adhocRes = await reconcileAdhocQueue({
+      entries: liveAdhoc, topic, token: ntfyToken, now, universeId,
+    });
+
+    adhocNotify = {};
+    for (const e of adhoc) {
+      const ids = config.adhocEnabled ? (adhocRes.idsByEntry[e.id] ?? []) : [];
+      adhocNotify[e.id] = { scheduledMessageIds: ids };
+    }
+
+    scheduled = waveRes.posted + adhocRes.posted;
+    cancelled = waveRes.cancelled + adhocRes.cancelled;
+    if (scheduled > 0 || cancelled > 0) {
       // eslint-disable-next-line no-console
-      console.log(`[oge] reminders reconciled: +${posted} queued, -${swept} cancelled`);
+      console.log(`[oge] reminders reconciled: +${scheduled} queued, -${cancelled} cancelled`);
     }
   }
 
@@ -464,10 +543,12 @@ export const syncReminderWaves = async (config, currentCandidates, now, universe
     updatedAt: new Date().toISOString(),
     waves,
     notifyState,
+    adhoc,
+    adhocNotify,
   };
 
   const changed = !sameState(existing, next);
   if (changed) await writeReminderState(universeId, next);
   await mirrorForPreview(universeId, next, ntfyToken);
-  return { ok: true, changed, waves, scheduled, cancelled };
+  return { ok: true, changed, scheduled, cancelled };
 };

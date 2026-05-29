@@ -146,7 +146,15 @@ export const offsetsForSchedule = (schedule) =>
   (REMINDER_PRESETS[schedule ?? ''] ?? REMINDER_PRESETS[DEFAULT_REMINDER_SCHEDULE]).offsetsSec;
 
 /** ntfy's documented minimum `X-Delay` value (anything smaller would be rejected). */
-const NTFY_MIN_DELAY_SEC = 10;
+export const NTFY_MIN_DELAY_SEC = 10;
+
+/**
+ * ntfy's documented MAXIMUM `X-Delay` — three days. A reminder whose fire
+ * time is further out than this can't be scheduled, so the UI blocks
+ * arming it and the orchestration excludes it from the queue (defense in
+ * depth). Exported so the event-list badge can grey out far-future fleets.
+ */
+export const NTFY_MAX_DELAY_SEC = 3 * 24 * 60 * 60;
 
 /* global chrome */
 

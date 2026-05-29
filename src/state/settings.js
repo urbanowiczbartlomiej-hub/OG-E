@@ -82,9 +82,11 @@ export const SETTINGS_PREFIX = 'oge_';
  *   readabilityBoost        true  — inject CSS fix for event box + movement link
  *   eventMenuHighlight      true  — animate ephemeral event entries in the left toolbar
  *   traderMenuHighlight     true  — time-aware pulse on the Trader (Handlarz) entry
- *   reminderEnabled         false — schedule ntfy.sh pushes for expedition returns
+ *   reminderEnabled         false — auto-schedule ntfy.sh pushes for expedition return waves
  *   reminderNtfyToken       ''    — ntfy.sh access token (Bearer) for publish/cancel
  *   reminderSchedule        'standard' — push cadence preset (standard/short/fibonacci)
+ *   adhocEnabled            true  — allow per-fleet ad-hoc reminders from the event list
+ *   adhocOffsetSec          60    — fire an ad-hoc reminder this many seconds before arrival
  *
  * @typedef {object} Settings
  * @property {boolean} mobileMode
@@ -107,6 +109,8 @@ export const SETTINGS_PREFIX = 'oge_';
  * @property {boolean} reminderEnabled
  * @property {string}  reminderNtfyToken
  * @property {string}  reminderSchedule
+ * @property {boolean} adhocEnabled
+ * @property {number}  adhocOffsetSec
  */
 
 /**
@@ -164,6 +168,8 @@ export const SETTINGS_SCHEMA = {
   reminderEnabled:        { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'reminderEnabled' },
   reminderNtfyToken:      { type: 'string', default: '',    key: SETTINGS_PREFIX + 'reminderNtfyToken' },
   reminderSchedule:       { type: 'string', default: 'standard', key: SETTINGS_PREFIX + 'reminderSchedule' },
+  adhocEnabled:           { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'adhocEnabled' },
+  adhocOffsetSec:         { type: 'int',    default: 60,    key: SETTINGS_PREFIX + 'adhocOffsetSec' },
 };
 
 /**
