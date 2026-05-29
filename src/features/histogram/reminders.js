@@ -234,6 +234,11 @@ const refreshPreview = async () => {
       for (const e of Object.values(state.notifyState || {})) {
         if (e.scheduledMessageIds) for (const id of e.scheduledMessageIds) ours.add(id);
       }
+      // Ad-hoc messages are ours too — must be unioned in or the sweep
+      // would cancel every armed ad-hoc reminder as an "orphan".
+      for (const e of Object.values(state.adhocNotify || {})) {
+        if (e.scheduledMessageIds) for (const id of e.scheduledMessageIds) ours.add(id);
+      }
       if (state.updatedAt) {
         const age = nowSec - Math.floor(new Date(state.updatedAt).getTime() / 1000);
         if (age < freshestAge) freshestAge = age;
@@ -347,6 +352,7 @@ const renderPreviewMulti = (states, ntfyMap) => {
   const section = node('section', { class: 'rem-universe' });
   section.appendChild(node('h3', { class: 'rem-universe-head', text: active }));
   renderWavesInto(section, active, state, ntfyMap);
+  renderAdhocInto(section, active, state, ntfyMap);
   root.appendChild(section);
 };
 
@@ -534,6 +540,64 @@ const renderWavesInto = (section, universeId, state, ntfyMap) => {
       class: 'wave-origins',
       text: (w.origins || []).join(', '),
     }));
+
+    section.appendChild(card);
+  }
+};
+
+/**
+ * Render one universe's AD-HOC fleet reminders into `section`, below the
+ * waves. Read-only: the cancel path lives in-game on the event-list badge
+ * (a single game-side writer — a dashboard remove could be resurrected by
+ * a concurrent game sync that still sees the entry, the same reason wave
+ * cancel tombstones rather than deletes). Here we just surface what's
+ * armed and whether ntfy still holds each ping.
+ *
+ * Reuses the wave card classes so the two lists look of a piece.
+ *
+ * @param {HTMLElement} section
+ * @param {string} universeId
+ * @param {ReminderState} state
+ * @param {Map<string, { id: string, time: number }>} ntfyMap
+ * @returns {void}
+ */
+const renderAdhocInto = (section, universeId, state, ntfyMap) => {
+  const entries = Array.isArray(state?.adhoc) ? state.adhoc : [];
+  if (entries.length === 0) return;
+
+  section.appendChild(node('h4', { class: 'rem-universe-head', text: 'Ad-hoc fleet reminders' }));
+
+  const notify = state.adhocNotify || {};
+  const sorted = entries.slice().sort((a, b) => a.fireAt - b.fireAt);
+  for (const e of sorted) {
+    const ids = notify[e.id]?.scheduledMessageIds ?? [];
+    const stillQueued = ids
+      .map((id) => ntfyMap.get(id))
+      .filter(/** @returns {m is { id: string, time: number }} */ (m) => Boolean(m));
+    const queued = stillQueued.length > 0;
+
+    const card = node('div', { class: 'rem-wave' + (queued ? '' : ' cancelled') });
+
+    const head = node('div', { class: 'wave-head' });
+    head.appendChild(node('span', {
+      class: 'wave-when',
+      text: new Date(e.arrivalAt * 1000).toLocaleString(),
+    }));
+    const badgeText = queued ? 'queued' : (ids.length > 0 ? 'fired' : 'not scheduled');
+    head.appendChild(node('span', { class: 'rem-badge' + (queued ? '' : ' cancelled'), text: badgeText }));
+    card.appendChild(head);
+
+    card.appendChild(node('div', { class: 'wave-meta', text: e.label || 'Fleet reminder' }));
+
+    if (queued) {
+      const firesAt = node('div', { class: 'wave-fires' });
+      firesAt.appendChild(node('span', { text: 'Fires at: ' }));
+      firesAt.appendChild(node('span', {
+        class: 'wave-times',
+        text: stillQueued.map((m) => new Date(m.time * 1000).toLocaleTimeString()).join(', '),
+      }));
+      card.appendChild(firesAt);
+    }
 
     section.appendChild(card);
   }
