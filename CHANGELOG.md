@@ -6,6 +6,16 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Changed
+
+- **Extension description rewritten** to lead with what OG-E is for —
+  making expeditions easier and hunting for big colonies — and to state
+  plainly that it does not automate the game (it never clicks for you and
+  never originates traffic to the game server; it only reads what's
+  on screen and reshapes the UI). Mirrors the refreshed
+  addons.mozilla.org listing. No version bump on its own — ships with the
+  next release.
+
 ## [1.7.0] — 2026-05-29
 
 ### Added
