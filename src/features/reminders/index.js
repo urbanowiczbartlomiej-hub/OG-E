@@ -23,15 +23,20 @@ let installed = null;
  */
 export const installReminders = () => {
   if (installed) return installed;
-  const producer = installReminderProducer();
-  const disposeUi = installEventListReminders({
+  // Late-bound so the producer can notify the UI after each sync without a
+  // construction-order cycle (producer is built first to hand the UI its
+  // arm/disarm/cancel/resend API).
+  let uiRefresh = () => {};
+  const producer = installReminderProducer({ onSynced: () => uiRefresh() });
+  const ui = installEventListReminders({
     armAdhoc: producer.armAdhoc,
     disarmAdhoc: producer.disarmAdhoc,
     cancelWave: producer.cancelWave,
     resendWave: producer.resendWave,
   });
+  uiRefresh = ui.refresh;
   installed = () => {
-    disposeUi();
+    ui.dispose();
     producer.dispose();
     installed = null;
   };

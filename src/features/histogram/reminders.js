@@ -585,6 +585,20 @@ const renderAdhocInto = (section, universeId, state, ntfyMap) => {
     }));
     const badgeText = queued ? 'queued' : (ids.length > 0 ? 'fired' : 'not scheduled');
     head.appendChild(node('span', { class: 'rem-badge' + (queued ? '' : ' cancelled'), text: badgeText }));
+
+    // Cancel only while something is still queued to tear down. Unlike a
+    // wave (DOM-derived, so tombstoned), an ad-hoc entry is intent-only and
+    // never re-created from the event list, so we delete it outright.
+    if (queued) {
+      const btn = node('button', { class: 'rem-cancel', text: '×' });
+      btn.setAttribute('type', 'button');
+      btn.setAttribute('title', 'Cancel this reminder (delete the pending ntfy push)');
+      btn.addEventListener('click', () => {
+        btn.setAttribute('disabled', '');
+        void cancelAdhocFromDashboard(universeId, e.id);
+      });
+      head.appendChild(btn);
+    }
     card.appendChild(head);
 
     card.appendChild(node('div', { class: 'wave-meta', text: e.label || 'Fleet reminder' }));
@@ -601,4 +615,86 @@ const renderAdhocInto = (section, universeId, state, ntfyMap) => {
 
     section.appendChild(card);
   }
+};
+
+/**
+ * Dashboard-side cancel of one ad-hoc reminder: DELETE its pending ntfy
+ * messages, then REMOVE the entry from `adhoc` + `adhocNotify` and PATCH
+ * the gist. Unlike a wave we delete rather than tombstone — an ad-hoc
+ * entry is only ever created by an explicit in-game arm (never derived
+ * from the event list), so a concurrent game-side sync won't re-create it.
+ *
+ * @param {string} universeId
+ * @param {string} entryId
+ * @returns {Promise<void>}
+ */
+const cancelAdhocFromDashboard = async (universeId, entryId) => {
+  const [gistId, gistToken, ntfyToken] = await Promise.all([
+    chromeStore.get(REMINDER_GIST_ID_KEY),
+    chromeStore.get(REMINDER_TOKEN_KEY),
+    chromeStore.get(REMINDER_NTFY_TOKEN_KEY),
+  ]);
+  if (typeof gistId !== 'string' || !gistId || typeof gistToken !== 'string' || !gistToken) {
+    setPreviewStatus('cancel failed: gist not configured yet', 'err');
+    return;
+  }
+
+  /** @type {Record<string, ReminderState>} */
+  let states;
+  try {
+    states = await fetchAllReminderStates(gistId, gistToken);
+  } catch (err) {
+    setPreviewStatus('cancel failed: ' + /** @type {Error} */ (err).message, 'err');
+    return;
+  }
+  const state = states[universeId];
+  const entry = state?.adhoc?.find((e) => e.id === entryId);
+  if (!state || !entry) {
+    setPreviewStatus('cancel failed: reminder already gone', 'warn');
+    void refreshPreview();
+    return;
+  }
+
+  const notify = state.adhocNotify || {};
+  const ids = notify[entryId]?.scheduledMessageIds ?? [];
+  if (typeof ntfyToken === 'string' && ntfyToken && ids.length > 0) {
+    const topic = await deriveNtfyTopic(ntfyToken);
+    if (topic) {
+      try {
+        await cancelWaveReminders({ ids, topic, token: ntfyToken });
+      } catch {
+        // Per-message DELETE failures are swallowed inside the helper.
+      }
+    }
+  }
+
+  const nextNotify = { ...notify };
+  delete nextNotify[entryId];
+  /** @type {ReminderState} */
+  const next = {
+    ...state,
+    updatedAt: new Date().toISOString(),
+    adhoc: state.adhoc.filter((e) => e.id !== entryId),
+    adhocNotify: nextNotify,
+  };
+
+  const res = await fetch(`https://api.github.com/gists/${gistId}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${gistToken}`,
+      Accept: 'application/vnd.github+json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      files: {
+        [reminderFilenameFor(universeId)]: { content: JSON.stringify(next, null, 2) },
+      },
+    }),
+  });
+  if (!res.ok) {
+    setPreviewStatus(`cancel failed: gist PATCH ${res.status}`, 'err');
+    void refreshPreview();
+    return;
+  }
+  void refreshPreview();
 };

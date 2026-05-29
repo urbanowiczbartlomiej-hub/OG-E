@@ -249,7 +249,7 @@ const render = () => {
 
 // ── Install / dispose ─────────────────────────────────────────────────────
 
-/** @type {{ dispose: () => void } | null} */
+/** @type {{ dispose: () => void, refresh: () => void } | null} */
 let installed = null;
 
 /**
@@ -260,10 +260,12 @@ let installed = null;
  * @param {(id: string) => void} api.disarmAdhoc
  * @param {(waveId: string) => void} api.cancelWave
  * @param {(waveId: string) => void} api.resendWave
- * @returns {() => void} dispose
+ * @returns {{ dispose: () => void, refresh: () => void }}
+ *   `refresh` re-reads the gist mirror and re-renders — call it after a
+ *   sync so confirmed state appears without waiting on a storage event.
  */
 export const installEventListReminders = ({ armAdhoc, disarmAdhoc, cancelWave, resendWave }) => {
-  if (installed) return installed.dispose;
+  if (installed) return installed;
 
   injectStyle(STYLE_ID, CSS);
 
@@ -320,9 +322,14 @@ export const installEventListReminders = ({ armAdhoc, disarmAdhoc, cancelWave, r
     scheduleRender();
   });
 
-  const safetyPoll = setInterval(() => { if (installed) render(); }, 3000);
+  // Re-read the mirror + render. The poll refreshes the SNAPSHOT (not just
+  // re-render) so a confirmed state can't get stuck behind a stale snapshot
+  // if a storage event is missed.
+  const refresh = () => { void refreshSnapshot().then(() => { if (installed) render(); }); };
 
-  void refreshSnapshot().then(() => render());
+  const safetyPoll = setInterval(refresh, 3000);
+
+  refresh();
 
   installed = {
     dispose: () => {
@@ -334,8 +341,9 @@ export const installEventListReminders = ({ armAdhoc, disarmAdhoc, cancelWave, r
       document.querySelectorAll(`.${BADGE_CLASS}`).forEach((el) => clearCell(/** @type {HTMLElement} */ (el)));
       installed = null;
     },
+    refresh,
   };
-  return installed.dispose;
+  return installed;
 };
 
 /** @param {ReturnType<typeof settingsStore.get>} s @returns {string} */

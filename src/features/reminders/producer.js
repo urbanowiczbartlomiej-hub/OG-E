@@ -184,10 +184,15 @@ let installed = null;
  * Install the reminder producer. Idempotent — a second call while
  * installed returns the existing handle.
  *
+ * @param {{ onSynced?: () => void }} [opts]  `onSynced` is called after every
+ *   run (success or failure) — a reliable same-tab signal for the event-list
+ *   UI to re-read the freshly-written mirror, instead of depending on
+ *   `chrome.storage.onChanged` firing in the writer's own context.
  * @returns {ReminderProducer}
  */
-export const installReminderProducer = () => {
+export const installReminderProducer = (opts = {}) => {
   if (installed) return installed;
+  const onSynced = opts.onSynced;
 
   const universeId = parseUniverseId(location.host);
 
@@ -238,18 +243,26 @@ export const installReminderProducer = () => {
       : undefined;
 
     const now = Math.floor(Date.now() / 1000);
-    const res = await syncReminders(
-      config, { waveCandidates: candidates, present, adhocMutate, waveMutate }, now, universeId,
-    );
-
-    if (res.ok) {
-      lastSig = sig;
-      safeLS.set(sigKeyFor(universeId), sig);
-      // Drop the commands we applied; keep any the user queued meanwhile.
-      writePending(universeId, readPending(universeId).slice(pending.length));
-    } else {
-      // Leave the pending queue intact and re-try on the next trigger.
+    try {
+      const res = await syncReminders(
+        config, { waveCandidates: candidates, present, adhocMutate, waveMutate }, now, universeId,
+      );
+      if (res.ok) {
+        lastSig = sig;
+        safeLS.set(sigKeyFor(universeId), sig);
+        // Drop the commands we applied; keep any the user queued meanwhile.
+        writePending(universeId, readPending(universeId).slice(pending.length));
+      } else {
+        // Leave the pending queue intact and re-try on the next trigger.
+        pendingForce = true;
+      }
+    } catch {
+      // Network / gist error — keep pending, retry next trigger.
       pendingForce = true;
+    } finally {
+      // Tell the UI to re-read the (possibly just-written) mirror — reliable
+      // in-tab signal, independent of chrome.storage.onChanged.
+      if (onSynced) onSynced();
     }
   };
 
