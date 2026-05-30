@@ -67,8 +67,10 @@ const MISSION_NAMES = /** @type {Record<string, string>} */ ({
 const CSS = `
 .${BADGE_CLASS} { border-radius: 3px; transition: box-shadow .12s, background-color .12s; }
 .${BADGE_CLASS}.act { cursor: pointer; }
-.${BADGE_CLASS}.idle::before { content: '🔔'; opacity: 0; margin-right: 2px; font-size: 0.85em; }
-.${BADGE_CLASS}.idle:hover::before { opacity: 0.6; }
+/* Idle: the bell is ALWAYS visible (faint) so the cell reads as tappable
+   on mobile, where there's no hover. Hover just brightens it. */
+.${BADGE_CLASS}.idle::before { content: '🔔'; opacity: 0.55; margin-right: 2px; font-size: 0.85em; }
+.${BADGE_CLASS}.idle:hover::before { opacity: 1; }
 .${BADGE_CLASS}.idle:hover { box-shadow: inset 0 0 0 1px rgba(120, 200, 255, 0.6); }
 .${BADGE_CLASS}.armed { background: rgba(0, 200, 90, 0.22); box-shadow: inset 0 0 0 1px rgba(0, 220, 110, 0.7); }
 .${BADGE_CLASS}.armed::before { content: '🔔'; margin-right: 2px; font-size: 0.85em; }
