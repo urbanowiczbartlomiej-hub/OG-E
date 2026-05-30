@@ -16,9 +16,9 @@ Every version bump **requires all four steps in the same commit**:
 AMO without `source.zip`.** These are the two things that have been
 forgotten before.
 
-## AMO "Notes to Reviewer" field
+## AMO submission — two separate fields
 
-Always fill this in when uploading. Template:
+### "Notes to Reviewer" (internal, technical)
 
 ```
 Build instructions are in REVIEWERS.md inside source.zip (Node ≥ 20):
@@ -26,10 +26,30 @@ Build instructions are in REVIEWERS.md inside source.zip (Node ≥ 20):
   npm run build:prod
 The resulting dist/ matches the uploaded extension exactly.
 
-Changes in vX.Y.Z:
-<copy the Fixed/Added/Changed bullets from the CHANGELOG section>
-
 No new permissions. No new network destinations.
+```
+
+### "Release notes" (public, shown to users)
+
+Short one-liners only — no implementation detail. Full detail lives in
+`CHANGELOG.md`. Template:
+
+```
+Changes in vX.Y.Z:
+- <one short phrase per Added item>
+- <one short phrase per Changed item>
+- <one short phrase per Fixed item>
+```
+
+Example for v1.8.0:
+```
+Changes in v1.8.0:
+- Ad-hoc fleet reminders from the event list
+- Expedition waves cancellable/resendable inline
+- ntfy topic decoupled from cloud-sync setup
+- "Enable reminders" master switch in settings
+- Dashboard: ad-hoc reminders view with cancel button
+- Badge clicks now update immediately (no reload needed)
 ```
 
 ## General rules
