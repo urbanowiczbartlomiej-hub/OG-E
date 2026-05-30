@@ -317,23 +317,25 @@ export const WAVE_PRIORITY = 3;
 export const ADHOC_PRIORITY = 5;
 
 /**
- * Escalation emoji tag for a priority band, appended after `rocket` so
- * the urgency reads at a glance in the notification list:
+ * Flare appended to the BODY of a top-priority push so the urgency reads
+ * at a glance. We dropped ntfy `Tags` entirely — on Android they only
+ * render as extra emoji prepended to the title (the same glance value, in
+ * a place the player ignores), and on the web/desktop client they show as
+ * a separate metadata row that just adds noise. A trailing 🔥 on the body
+ * of the max-priority (player-armed) reminders is the one signal worth
+ * keeping; wave nudges stay plain.
  *
- *   3 → ⏳ hourglass · 4 → ⚠️ warning · 5 → 🚨 rotating_light
- *
- * @param {number} priority
- * @returns {string}  Comma-separated ntfy `Tags` value.
+ * @param {number} priority  ntfy priority (1–5).
+ * @param {string} body
+ * @returns {string}  `body`, with the flare appended at max priority.
  */
-const tagsForPriority = (priority) => {
-  const escalation = priority >= 5 ? 'rotating_light' : priority >= 4 ? 'warning' : 'hourglass';
-  return `rocket,${escalation}`;
-};
+const flarePriorityBody = (priority, body) =>
+  priority >= ADHOC_PRIORITY ? `${body} 🔥` : body;
 
 /**
  * Publish one message at `fireAt`. Generic over notification kind: the
  * caller supplies the `title` (which doubles as the per-kind queue filter
- * — see {@link reconcileQueue}), `body`, `priority`, and `tags`.
+ * — see {@link reconcileQueue}), `body`, and `priority`.
  *
  * Splits the immediate vs delayed path: ntfy rejects `X-Delay` values
  * below {@link NTFY_MIN_DELAY_SEC}, so within that window we publish
@@ -347,15 +349,13 @@ const tagsForPriority = (priority) => {
  * @param {string} args.title     Push title (also the per-kind queue filter).
  * @param {string} args.body      Notification body, baked in at post time.
  * @param {number} args.priority  ntfy priority (1–5).
- * @param {string} args.tags      Comma-separated ntfy `Tags` value.
  * @returns {Promise<string>}     ntfy message id (the cancellation handle).
  */
-const postMessage = async ({ topic, token, fireAt, now, title, body, priority, tags }) => {
+const postMessage = async ({ topic, token, fireAt, now, title, body, priority }) => {
   const delay = fireAt - now;
   /** @type {Record<string, string>} */
   const headers = {
     Title: title,
-    Tags: tags,
     Priority: String(priority),
     Icon: OGE_ICON_URL,
   };
@@ -364,7 +364,7 @@ const postMessage = async ({ topic, token, fireAt, now, title, body, priority, t
   const res = await fetch(`https://ntfy.sh/${topic}?${ntfyAuthParam(token)}`, {
     method: 'POST',
     headers,
-    body,
+    body: flarePriorityBody(priority, body),
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
@@ -384,7 +384,6 @@ const postMessage = async ({ topic, token, fireAt, now, title, body, priority, t
  * @property {number} fireAt    Absolute epoch SECONDS to deliver at.
  * @property {string} body      Notification body (baked in at post time).
  * @property {number} priority  ntfy priority (1–5).
- * @property {string} tags      Comma-separated ntfy `Tags` value.
  *
  * @typedef {object} QueueSeries
  * @property {string}     id     Identity; the reconcile keys returned ids by it.
@@ -470,7 +469,7 @@ export const reconcileQueue = async ({ series, topic, token, now, title, queue }
       if (!id) {
         id = await postMessage({
           topic, token, fireAt: slot.fireAt, now,
-          title, body: slot.body, priority: slot.priority, tags: slot.tags,
+          title, body: slot.body, priority: slot.priority,
         });
         queuedByTime.set(slot.fireAt, id);
         posted++;
@@ -537,14 +536,13 @@ export const reconcileWaveQueue = async ({
   offsetsSec = REMINDER_PRESETS[DEFAULT_REMINDER_SCHEDULE].offsetsSec,
   queue,
 }) => {
-  const tags = tagsForPriority(WAVE_PRIORITY);
   /** @type {QueueSeries[]} */
   const series = waves.map((w) => {
     const times = reminderFireTimes(w.baseAt, offsetsSec);
     return {
       id: w.id,
       slots: times.map((fireAt, i) => ({
-        fireAt, body: waveBody(w.baseAt, i, times.length), priority: WAVE_PRIORITY, tags,
+        fireAt, body: waveBody(w.baseAt, i, times.length), priority: WAVE_PRIORITY,
       })),
     };
   });
@@ -587,11 +585,10 @@ export const adhocTitleFor = (universeId) => `[${universeId}] Fleet`;
  * @returns {Promise<{ idsByEntry: Record<string, string[]>, posted: number, cancelled: number }>}
  */
 export const reconcileAdhocQueue = async ({ entries, topic, token, now, universeId, queue }) => {
-  const tags = tagsForPriority(ADHOC_PRIORITY);
   /** @type {QueueSeries[]} */
   const series = entries.map((e) => ({
     id: e.id,
-    slots: [{ fireAt: e.fireAt, body: e.body, priority: ADHOC_PRIORITY, tags }],
+    slots: [{ fireAt: e.fireAt, body: e.body, priority: ADHOC_PRIORITY }],
   }));
   const { idsBySeries, posted, cancelled } = await reconcileQueue({
     series, topic, token, now, title: adhocTitleFor(universeId), queue,

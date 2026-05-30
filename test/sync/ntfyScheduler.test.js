@@ -142,11 +142,13 @@ describe('reconcileWaveQueue', () => {
       expect(init.headers['X-Delay']).toBe(String(2000 + slot * REMINDER_INTERVAL_SEC));
       // Wave reminders are flat "default" priority now (3) — no escalation.
       expect(init.headers.Priority).toBe(String(WAVE_PRIORITY));
-      expect(init.headers.Tags).toBe('rocket,hourglass');
+      // Tags were dropped entirely — no `Tags` header on any push.
+      expect(init.headers.Tags).toBeUndefined();
       // Icon is a public https URL (ntfy app fetches it; moz-extension:// won't do).
       expect(init.headers.Icon).toMatch(/^https:\/\/raw\.githubusercontent\.com\/.+\/icons\/icon128\.png$/);
       // Body states the wave's local return time + slot position; exact
-      // clock string is TZ-dependent, so assert the shape.
+      // clock string is TZ-dependent, so assert the shape. Wave nudges are
+      // not max priority, so they carry no 🔥 flare.
       expect(init.body).toMatch(/^Expeditions back \(\d{1,2}:\d{2}(?:\s?[AP]M)?\) — reminder #\d+\/6\.$/);
     });
   });
@@ -290,9 +292,11 @@ describe('reconcileAdhocQueue', () => {
     const post = fetchMock.mock.calls.find((c) => c[1]?.method === 'POST');
     expect(post?.[1].headers.Title).toBe(ADHOC_TITLE);
     expect(post?.[1].headers.Priority).toBe(String(ADHOC_PRIORITY));
-    expect(post?.[1].headers.Tags).toBe('rocket,rotating_light');
+    // No `Tags` header any more.
+    expect(post?.[1].headers.Tags).toBeUndefined();
     expect(post?.[1].headers['X-Delay']).toBe('5000');
-    expect(post?.[1].body).toBe('Ekspedycja → [4:467:16] o 20:23');
+    // Max-priority (player-armed) bodies get a trailing 🔥 flare.
+    expect(post?.[1].body).toBe('Ekspedycja → [4:467:16] o 20:23 🔥');
   });
 
   it('is idempotent: an already-queued entry posts nothing and reuses the id', async () => {

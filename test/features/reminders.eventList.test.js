@@ -114,4 +114,34 @@ describe('event-list badges', () => {
     expect(cell.classList.contains('oge-rem-badge')).toBe(false);
     expect(cell.classList.contains('arrivalTime')).toBe(true);
   });
+
+  it('labels an outbound leg with its DESTINATION coords', async () => {
+    const cell = paintRow(Math.floor(Date.now() / 1000) + 3600);
+    const api = stubApi();
+    installEventListReminders(api);
+    await tick();
+    cell.click();
+    expect(api.armAdhoc.mock.calls[0][0].label).toBe('Expedition → [4:467:16]');
+  });
+
+  it('labels a RETURN leg with its ORIGIN coords (where it actually lands)', async () => {
+    // A returning fleet lands at its home/start position (`.coordsOrigin`),
+    // NOT the target it is leaving (`.destCoords`). Regression-locks the bug
+    // where every return was labelled with the destination it flew away from.
+    const arrival = Math.floor(Date.now() / 1000) + 3600;
+    document.body.innerHTML = `
+      <table id="eventContent"><tbody>
+        <tr class="eventFleet" id="eventRow-7" data-mission-type="15" data-return-flight="true" data-arrival-time="${arrival}">
+          <td class="arrivalTime" original="x">20:23:20</td>
+          <td class="coordsOrigin"><a>[1:22:3]</a></td>
+          <td class="destCoords"><a>[4:467:16]</a></td>
+        </tr>
+      </tbody></table>`;
+    const cell = /** @type {HTMLElement} */ (document.querySelector('td.arrivalTime'));
+    const api = stubApi();
+    installEventListReminders(api);
+    await tick();
+    cell.click();
+    expect(api.armAdhoc.mock.calls[0][0].label).toBe('Expedition → [1:22:3]');
+  });
 });

@@ -164,8 +164,25 @@ const READABLE_SCHEMA_VERSIONS = new Set([3, 4]);
  * configuration. SHA-256 over the token gives us exactly that.
  *
  *   - `oge-` prefix → recognisable in the ntfy app.
- *   - 22 hex chars → 88 bits of entropy, plenty for an unguessable
- *     topic, while staying short enough for the ntfy UI.
+ *   - 22 hex chars → an 88-bit topic. SHA-256 does NOT manufacture
+ *     entropy: the topic's real unpredictability is bounded by the
+ *     token's, i.e. `min(88, entropy(token))`. A ntfy `tk_…` token is
+ *     high-entropy random, so in practice the full 88 bits hold — but a
+ *     weak hand-picked token would yield a weak topic, hash or no hash.
+ *
+ * # Security model — the topic IS the secret
+ *
+ * On the public ntfy.sh instance topics are open by default: reading or
+ * publishing to a topic needs no auth, and reserving a topic (an ACL that
+ * binds it to the token owner) requires a paid/self-hosted plan. The
+ * token we send on every request (see `ntfyAuthParam`) lifts the
+ * anonymous per-IP rate limit — it does NOT gate the channel. So the
+ * channel's confidentiality rests entirely on the topic staying secret:
+ * 88 unguessable bits defend against brute force, but anyone who LEARNS
+ * the topic (it is a URL — it leaks into proxy logs, history, the ntfy
+ * app UI) can read these reminders (fleet-movement intel) and inject
+ * fakes. This is an accepted trade-off for low-sensitivity data; for full
+ * isolation the user should reserve the topic on their ntfy account.
  *
  * # Why the token, not the gist id (changed in v1.8.0)
  *

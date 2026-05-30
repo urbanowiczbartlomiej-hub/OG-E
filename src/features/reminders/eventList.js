@@ -115,12 +115,28 @@ const refreshSnapshot = async () => {
 /** @param {string | null | undefined} s @returns {string} dense `g:s:p` */
 const denseCoords = (s) => (s || '').replace(/[\s[\]]/g, '');
 
-/** @param {Element} row @returns {string} push label, e.g. "Expedition → [4:467:16]" */
+/**
+ * Push label naming where the fleet actually LANDS, e.g.
+ * "Expedition → [4:467:16]".
+ *
+ * The reminder fires for the arrival of THIS leg, so the coords must be
+ * the leg's landing point — not always the mission destination. On a
+ * return flight (`data-return-flight="true"`) the fleet is coming home,
+ * so it lands at its origin (`.coordsOrigin`); on an outbound leg it
+ * lands at the destination (`.destCoords`). Reading `.destCoords`
+ * unconditionally mislabels every return as arriving at the target it is
+ * in fact leaving.
+ *
+ * @param {Element} row
+ * @returns {string}
+ */
 const labelFor = (row) => {
   const mt = row.getAttribute('data-mission-type') || '';
   const mission = MISSION_NAMES[mt] || 'Fleet';
-  const dest = denseCoords(row.querySelector('.destCoords')?.textContent);
-  return dest ? `${mission} → [${dest}]` : mission;
+  const isReturn = row.getAttribute('data-return-flight') === 'true';
+  const sel = isReturn ? '.coordsOrigin' : '.destCoords';
+  const landing = denseCoords(row.querySelector(sel)?.textContent);
+  return landing ? `${mission} → [${landing}]` : mission;
 };
 
 /**

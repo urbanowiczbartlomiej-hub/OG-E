@@ -6,6 +6,22 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.8.1] — 2026-05-30
+
+### Changed
+
+- Reminder pushes no longer carry ntfy `Tags` (rocket/escalation emoji);
+  they added clutter without signal. Max-priority (player-armed) pushes
+  now end with a 🔥 flare instead.
+- Documented the ntfy topic's security model: confidentiality rests on the
+  topic URL staying secret, not on an ACL (reserve the topic on your ntfy
+  account for full isolation).
+
+### Fixed
+
+- Ad-hoc reminders for **return** flights now name the coords where the
+  fleet actually lands (its origin), not the destination it is leaving.
+
 ## [1.8.0] — 2026-05-30
 
 A big reminders release: notifications are no longer just for expedition
