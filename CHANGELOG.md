@@ -6,19 +6,71 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.8.0] — 2026-05-30
+
+A big reminders release: notifications are no longer just for expedition
+waves — you can now mark **any fleet** in the event list for a push, and
+the whole system is decoupled from cloud-sync.
+
+### Added
+
+- **Ad-hoc fleet reminders.** Click the arrival time of any fleet in the
+  event list to get a push reminder shortly before it arrives — any
+  mission, outbound or return, not only expeditions. Click again to
+  cancel. A small bell marks every taggable row (visible without hover, so
+  it works on touch). The reminder fires a configurable lead time before
+  arrival (default 60 s). They clean themselves up: if the fleet is
+  recalled or otherwise leaves the event list, the pending push is dropped
+  automatically — you're never reminded about something that no longer
+  exists. (ntfy's 3-day delivery limit applies; fleets further out can't
+  be armed.)
+- **Expedition waves, controllable inline.** A returning wave now shows
+  its reminder right on the event list: the wave's earliest leg carries a
+  single control that cancels the whole series — and re-sends it if you
+  change your mind — without opening the Dashboard. The other legs of the
+  wave show a passive "part of a wave" marker. Hover the control to read
+  every scheduled push time.
+- **"Enable reminders" master switch** in settings: the whole reminders
+  section sits behind it plus your ntfy token, so you can pause everything
+  without losing your setup.
+- **Dashboard: ad-hoc reminders view**, with a per-reminder cancel button,
+  alongside the existing wave view.
+
 ### Changed
 
-- **ntfy topic now derives from your ntfy access token, not the gist
-  id.** This decouples push notifications from cloud-sync setup: the
-  topic appears the moment a token is set, and the gist stays purely the
-  durable state cache (clean split — topic ← ntfy, state ← gist).
+- **The ntfy topic now derives from your ntfy access token, not the gist
+  id** — push notifications are decoupled from cloud-sync setup; the topic
+  appears the moment a token is set, and the gist stays purely the durable
+  state cache.
+- **Expedition-wave reminders ring at normal priority; ad-hoc reminders
+  ring at maximum.** The things you mark on purpose win your attention; the
+  old per-reminder escalation ladder is gone.
+- **Reminders settings reorganised** under a single "Reminders (ntfy.sh)"
+  section: master switch + token lead (and gate) the rest, the wave
+  schedule spells out exactly when each reminder fires, and the ad-hoc lead
+  time is a plain seconds field.
+- **Settings panel tidy-up.** "Open OG-E Dashboard" moved to the top as the
+  primary action. Friendlier labels: *Event reminder (pulse menu button)*,
+  *Trader reminder (pulse menu button)*, and *Multi-device sync* /
+  *Sync my data across devices*.
+- **Fewer requests.** Both reminder kinds reconcile in one combined sync
+  (a single ntfy poll per refresh), and an unchanged event list skips the
+  round-trip entirely — OGame reloads the page on every click, so this
+  keeps traffic down.
 - **Extension description rewritten** to lead with what OG-E is for —
   making expeditions easier and hunting for big colonies — and to state
   plainly that it does not automate the game (it never clicks for you and
-  never originates traffic to the game server; it only reads what's
-  on screen and reshapes the UI). Mirrors the refreshed
-  addons.mozilla.org listing. No version bump on its own — ships with the
-  next release.
+  never originates traffic to the game server; it only reads what's on
+  screen and reshapes the UI). Mirrors the refreshed addons.mozilla.org
+  listing.
+
+### Fixed
+
+- Event-list badge clicks now update **immediately** instead of only after
+  a page reload.
+- Reminder actions survive the page reload OGame fires on the very click
+  that triggers them — the intent is saved synchronously and finished on
+  the next load, so a quick tap-and-navigate no longer loses the reminder.
 
 ## [1.7.0] — 2026-05-29
 
