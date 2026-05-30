@@ -295,6 +295,8 @@ describe('reconcileAdhocQueue', () => {
     // No `Tags` header any more.
     expect(post?.[1].headers.Tags).toBeUndefined();
     expect(post?.[1].headers['X-Delay']).toBe('5000');
+    // Max-priority pushes carry the RED icon variant.
+    expect(post?.[1].headers.Icon).toMatch(/^https:\/\/raw\.githubusercontent\.com\/.+\/icons\/icon_red\.png$/);
     // Max-priority (player-armed) bodies get a trailing 🔥 flare.
     expect(post?.[1].body).toBe('Ekspedycja → [4:467:16] o 20:23 🔥');
   });

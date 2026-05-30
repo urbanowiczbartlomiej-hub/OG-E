@@ -6,6 +6,14 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.8.2] — 2026-05-30
+
+### Added
+
+- Max-priority (player-armed) reminders now use a red notification icon,
+  so an urgent push reads as urgent at a glance in the ntfy app. Wave
+  nudges keep the standard icon.
+
 ## [1.8.1] — 2026-05-30
 
 ### Changed

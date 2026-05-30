@@ -159,16 +159,20 @@ export const NTFY_MAX_DELAY_SEC = 3 * 24 * 60 * 60;
 /* global chrome */
 
 /**
- * Public https URL of the OG-E notification icon, pinned to the running
- * extension's version tag so it is immutable per release. `X-Icon` is
- * fetched by the ntfy *app*, not the extension, so it must be a public
- * URL — `moz-extension://` and `data:` URIs do not work. We read the
- * version from `chrome.runtime.getManifest()` (available in both the
- * content-script and the dashboard origins); in Node tests `chrome` is
- * absent, so we fall back to the `main` branch ref. Computed once at
- * module load.
+ * GitHub raw ref the notification icons are pinned to: the running
+ * extension's version tag (`vX.Y.Z`) so the icon a push points at is
+ * immutable per release. `X-Icon` is fetched by the ntfy *app*, not the
+ * extension, so it must be a public URL — `moz-extension://` and `data:`
+ * URIs do not work. We read the version from `chrome.runtime.getManifest()`
+ * (available in both the content-script and the dashboard origins); in Node
+ * tests `chrome` is absent, so we fall back to the `main` branch ref.
+ * Computed once at module load.
+ *
+ * NOTE: a new icon file (e.g. `icon_red.png`) only resolves once the tag
+ * that includes it is pushed — it must ship in the SAME release that first
+ * references it, or the ntfy app gets a 404 and shows no icon.
  */
-const OGE_ICON_URL = (() => {
+const ICON_REF = (() => {
   let ref = 'main';
   try {
     const c = /** @type {{ runtime?: { getManifest?: () => { version?: string } } }} */ (
@@ -179,8 +183,18 @@ const OGE_ICON_URL = (() => {
   } catch {
     // No chrome runtime (tests / unexpected context) — keep `main`.
   }
-  return `https://raw.githubusercontent.com/urbanowiczbartlomiej-hub/OG-E/${ref}/icons/icon128.png`;
+  return ref;
 })();
+
+/** @param {string} file @returns {string} public https URL of an icon in `icons/`. */
+const iconUrl = (file) =>
+  `https://raw.githubusercontent.com/urbanowiczbartlomiej-hub/OG-E/${ICON_REF}/icons/${file}`;
+
+/** Default OG-E notification icon. */
+const OGE_ICON_URL = iconUrl('icon128.png');
+
+/** Red variant for max-priority (player-armed) reminders — reads as urgent. */
+const OGE_ICON_RED_URL = iconUrl('icon_red.png');
 
 /**
  * The ntfy push title for a universe. Doubles as the per-universe filter
@@ -357,7 +371,7 @@ const postMessage = async ({ topic, token, fireAt, now, title, body, priority })
   const headers = {
     Title: title,
     Priority: String(priority),
-    Icon: OGE_ICON_URL,
+    Icon: priority >= ADHOC_PRIORITY ? OGE_ICON_RED_URL : OGE_ICON_URL,
   };
   if (delay >= NTFY_MIN_DELAY_SEC) headers['X-Delay'] = String(fireAt);
 
