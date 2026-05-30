@@ -11,6 +11,10 @@ Every version bump **requires all four steps in the same commit**:
    `source.zip`. Never produce a release without `source.zip`; AMO
    requires the source archive for every minified submission.
 4. Commit, tag `vX.Y.Z`, push with `--tags`.
+5. Upload `dist.zip` + `source.zip` to AMO. Fill in **both** fields:
+   - **Notes to Reviewer** (internal) — build instructions + permissions note.
+   - **Release notes** (public) — short one-liner bullets only, no details.
+   See the templates below.
 
 **Never bump the version without a CHANGELOG entry. Never upload to
 AMO without `source.zip`.** These are the two things that have been
