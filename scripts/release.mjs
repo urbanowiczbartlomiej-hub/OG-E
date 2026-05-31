@@ -118,7 +118,14 @@ if (!DRY && !tagExists) {
   // A pending edit to a RELEASE_FILES entry is expected (we commit it below);
   // anything ELSE dirty means the code/tests aren't committed yet — refuse,
   // so the release commit stays a clean CHANGELOG + version bump.
-  const stray = capture('git status --porcelain')
+  //
+  // NOTE: read the status RAW, not via capture() — capture() trims the whole
+  // output, which eats the leading space of the first porcelain line (an
+  // unstaged " M CHANGELOG.md"), shifting slice(3) to "HANGELOG.md" and
+  // flagging the one expected file as stray. This bites every normal release
+  // (CHANGELOG is the sole dirty file). Only strip the trailing newline.
+  const stray = execSync('git status --porcelain', { cwd: ROOT })
+    .toString()
     .split(/\r?\n/)
     .filter(Boolean)
     .filter((line) => !RELEASE_FILES.has(line.slice(3).trim()));
