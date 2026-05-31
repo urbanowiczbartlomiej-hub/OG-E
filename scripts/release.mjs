@@ -5,7 +5,8 @@
 //   npm run release 1.10.0
 //
 // Phases (each guarded so a re-run after a failure resumes cleanly):
-//   0. parse version, require clean git tree
+//   0. parse version, require a clean tree EXCEPT CHANGELOG/package/manifest
+//      (those are the release's own edits — they ride in the release commit)
 //   1. validate CHANGELOG section exists (+ date); extract it as the
 //      public release notes; require AMO credentials in the env
 //   2. npm run test + npm run typecheck            (skip with --skip-tests)
@@ -63,6 +64,15 @@ const CHANNEL = 'listed';
 const POLL_TIMEOUT_MS = 5 * 60_000;
 const POLL_INTERVAL_MS = 5_000;
 
+// The files the release itself writes + commits (phase 3 + 5). A pending
+// edit to any of these is EXPECTED — the CHANGELOG section is the one manual
+// step and the two version files are bumped here — so they're excluded from
+// the clean-tree gate. The result: code + tests live in their own commit(s),
+// and the CHANGELOG entry lands together with the version bump in the single
+// `chore(release)` commit the tag points at (the standard-version shape), with
+// no transient commit where the CHANGELOG and the version disagree.
+const RELEASE_FILES = new Set(['CHANGELOG.md', 'package.json', 'manifest.json']);
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
@@ -93,7 +103,7 @@ function capture(cmd) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------------------------------------------------------------------------
-// phase 0 — version + clean tree
+// phase 0 — version + clean tree (clean EXCEPT the release files)
 // ---------------------------------------------------------------------------
 
 const VERSION = positional[0];
@@ -104,8 +114,23 @@ const TAG = `v${VERSION}`;
 const tagExists = capture(`git tag -l ${TAG}`) === TAG;
 
 if (!DRY && !tagExists) {
-  const dirty = capture('git status --porcelain');
-  if (dirty) die('working tree is not clean. Commit or stash first.');
+  // `git status --porcelain` lines are "XY <path>"; the path starts at col 3.
+  // A pending edit to a RELEASE_FILES entry is expected (we commit it below);
+  // anything ELSE dirty means the code/tests aren't committed yet — refuse,
+  // so the release commit stays a clean CHANGELOG + version bump.
+  const stray = capture('git status --porcelain')
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .filter((line) => !RELEASE_FILES.has(line.slice(3).trim()));
+  if (stray.length) {
+    die(
+      'working tree has uncommitted changes outside the release files ' +
+        '(CHANGELOG.md / package.json / manifest.json):\n       ' +
+        stray.join('\n       ') +
+        '\n       Commit or stash them first — only the CHANGELOG entry + the ' +
+        'version bump belong in the release commit.',
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

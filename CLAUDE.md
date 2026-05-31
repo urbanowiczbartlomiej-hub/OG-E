@@ -8,13 +8,20 @@ tests + typecheck, `npm run package`, commits, tags, uploads to AMO
 (both note fields + `source.zip`), then `git push --tags`. It is
 idempotent: a re-run after a failure resumes from where it stopped.
 
-**You do exactly two things by hand before running it:**
+**You do these by hand before running it:**
 
-1. Write a dated `## [X.Y.Z] — YYYY-MM-DD` section in `CHANGELOG.md`
-   (move items from `[Unreleased]` if present). The script refuses to
-   run without it, and sends that section verbatim as the public AMO
-   release notes — so this section *is* the release notes.
-2. Have `AMO_JWT_ISSUER` / `AMO_JWT_SECRET` available (a gitignored
+1. **Commit the code + tests** for the release. The script requires a
+   clean tree EXCEPT `CHANGELOG.md` / `package.json` / `manifest.json`
+   (those are the release's own edits), so everything else must already
+   be committed. Code/tests get their own descriptive `fix:`/`feat:`
+   commit; the release commit stays just CHANGELOG + version bump.
+2. Write a dated `## [X.Y.Z] — YYYY-MM-DD` section in `CHANGELOG.md`
+   (move items from `[Unreleased]` if present) and **leave it
+   uncommitted** — the script commits it together with the version bump
+   into the single `chore(release): X.Y.Z` commit the tag points at. The
+   script refuses to run without the section, and sends it verbatim as
+   the public AMO release notes — so this section *is* the release notes.
+3. Have `AMO_JWT_ISSUER` / `AMO_JWT_SECRET` available (a gitignored
    `.env` is loaded automatically — see `.env.example`).
 
 The real release (the `--` forwards the version to the script):
