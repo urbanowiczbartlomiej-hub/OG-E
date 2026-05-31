@@ -89,6 +89,10 @@ export const SETTINGS_PREFIX = 'oge_';
  *   reminderSchedule        'standard' — push cadence preset (standard/short/fibonacci)
  *   adhocEnabled            true  — allow per-fleet ad-hoc reminders from the event list
  *   adhocOffsetSec          60    — fire an ad-hoc reminder this many seconds before arrival
+ *   fsEnabled               false — auto-detect fleet-saves (big own fleets) in the event list
+ *   fsThreshold             100000 — minimum total ships for a leg to count as a fleet-save
+ *   fsOffsets               '-600,0,600' — FS reminder offsets (sec) relative to arrival
+ *                                   (negative = before landing, 0 = at landing, positive = after)
  *
  * @typedef {object} Settings
  * @property {boolean} mobileMode
@@ -114,6 +118,9 @@ export const SETTINGS_PREFIX = 'oge_';
  * @property {string}  reminderSchedule
  * @property {boolean} adhocEnabled
  * @property {number}  adhocOffsetSec
+ * @property {boolean} fsEnabled
+ * @property {number}  fsThreshold
+ * @property {string}  fsOffsets
  */
 
 /**
@@ -174,6 +181,9 @@ export const SETTINGS_SCHEMA = {
   reminderSchedule:       { type: 'string', default: 'standard', key: SETTINGS_PREFIX + 'reminderSchedule' },
   adhocEnabled:           { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'adhocEnabled' },
   adhocOffsetSec:         { type: 'int',    default: 60,    key: SETTINGS_PREFIX + 'adhocOffsetSec' },
+  fsEnabled:              { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'fsEnabled' },
+  fsThreshold:            { type: 'int',    default: 100000, key: SETTINGS_PREFIX + 'fsThreshold' },
+  fsOffsets:              { type: 'string', default: '-600,0,600', key: SETTINGS_PREFIX + 'fsOffsets' },
 };
 
 /**

@@ -14,6 +14,11 @@
 //     already-cancelled wave one click RESENDS it. Every other leg of the
 //     wave shows a passive "🛰 part of a wave" marker so the grouping is
 //     visible, but isn't independently armable.
+//   - **Fleet-save.** Any of YOUR fleets whose total ship count crosses the
+//     FS threshold shows a passive 🛡 marker (amber). It is auto-detected and
+//     auto-scheduled by the producer; the player can't arm or cancel it, so
+//     the badge carries no click action. Takes precedence over the ad-hoc
+//     toggle on the same row (wave > fleet-save > ad-hoc).
 //   - **Ad-hoc.** Every other leg (outbound, non-expedition, or a return
 //     not part of a scheduled wave) is an ad-hoc toggle: click to arm a
 //     one-shot reminder `adhocOffsetSec` before arrival, click again to
@@ -49,6 +54,7 @@ import { fireAtFor } from '../../domain/adhoc.js';
 import { injectStyle } from '../../lib/dom.js';
 import { debounce } from '../../lib/debounce.js';
 import { readPending, lastAdhocIntent, lastWaveIntent } from './pending.js';
+import { shipCountOf, isOwnFleet } from './fsScan.js';
 
 /** @typedef {import('../../sync/reminders.js').ReminderState} ReminderState */
 /** @typedef {import('../../domain/adhoc.js').AdhocReminder} AdhocReminder */
@@ -81,6 +87,8 @@ const CSS = `
 .${BADGE_CLASS}.member { box-shadow: inset 2px 0 0 0 rgba(90, 170, 255, 0.6); }
 .${BADGE_CLASS}.member::before { content: '🛰'; margin-right: 2px; font-size: 0.7em; opacity: 0.5; }
 .${BADGE_CLASS}.member-off { box-shadow: inset 2px 0 0 0 rgba(150, 150, 150, 0.5); opacity: 0.7; }
+.${BADGE_CLASS}.fs { background: rgba(255, 176, 32, 0.20); box-shadow: inset 0 0 0 1px rgba(255, 176, 32, 0.75); }
+.${BADGE_CLASS}.fs::before { content: '🛡'; margin-right: 2px; font-size: 0.85em; }
 .${BADGE_CLASS}.disabled { opacity: 0.5; }
 .${BADGE_CLASS}.syncing { animation: oge-rem-pulse 1s ease-in-out infinite; }
 .${BADGE_CLASS}.syncing::after { content: '⏳'; margin-left: 2px; font-size: 0.8em; }
@@ -146,7 +154,7 @@ const labelFor = (row) => {
  * which the cell could never be found (or updated) again.
  */
 const OWNED_CLASSES = [
-  BADGE_CLASS, 'act', 'idle', 'armed', 'wave', 'wave-off', 'member', 'member-off', 'disabled', 'syncing',
+  BADGE_CLASS, 'act', 'idle', 'armed', 'wave', 'wave-off', 'member', 'member-off', 'fs', 'disabled', 'syncing',
 ];
 
 /** @param {Element} el @param {string} attr @param {string | null} val */
@@ -217,6 +225,7 @@ const render = () => {
   const sectionOn = s.remindersMasterEnabled && isValidNtfyToken(s.reminderNtfyToken);
   const adhocOn = sectionOn && s.adhocEnabled;
   const waveOn = sectionOn && s.reminderEnabled;
+  const fsOn = sectionOn && s.fsEnabled;
   const now = Math.floor(Date.now() / 1000);
   const universeId = parseUniverseId(location.host);
   const pending = readPending(universeId);
@@ -270,6 +279,19 @@ const render = () => {
           'Part of an expedition-wave reminder');
       }
       continue;
+    }
+
+    // Fleet-save: an own leg over the ship threshold. Passive, non-clickable
+    // (auto-detected + auto-scheduled), and it outranks the ad-hoc toggle on
+    // the same row. Read straight from the DOM (ship count + ownership) so
+    // the badge is instant, independent of the gist round-trip.
+    if (fsOn && Number.isFinite(arrivalAt) && isOwnFleet(row)) {
+      const ships = shipCountOf(row);
+      if (Number.isFinite(ships) && ships >= s.fsThreshold) {
+        stamp(cell, 'fs', '', '',
+          `Fleet-save detected (${ships.toLocaleString()} ships) — reminder set automatically (can't be cancelled)`);
+        continue;
+      }
     }
 
     if (adhocOn && Number.isFinite(arrivalAt)) {
@@ -394,7 +416,10 @@ export const installEventListReminders = ({ armAdhoc, disarmAdhoc, cancelWave, r
 
 /** @param {ReturnType<typeof settingsStore.get>} s @returns {string} */
 const pickSig = (s) =>
-  JSON.stringify({ a: s.adhocEnabled, t: s.reminderNtfyToken, o: s.adhocOffsetSec, e: s.reminderEnabled });
+  JSON.stringify({
+    a: s.adhocEnabled, t: s.reminderNtfyToken, o: s.adhocOffsetSec, e: s.reminderEnabled,
+    m: s.remindersMasterEnabled, f: s.fsEnabled, fth: s.fsThreshold,
+  });
 
 /**
  * Test-only reset.

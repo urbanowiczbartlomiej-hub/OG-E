@@ -55,6 +55,8 @@ import { clusterWaves, DEFAULT_CLUSTER_GAP_SECONDS } from '../../domain/waves.js
 /** @typedef {import('../../domain/waves.js').WaveCandidate} WaveCandidate */
 /** @typedef {import('../../domain/waves.js').Wave} Wave */
 /** @typedef {import('../../domain/adhoc.js').AdhocReminder} AdhocReminder */
+import { computeFleetSaves, parseFsOffsets } from '../../domain/fleetSave.js';
+import { extractFleetSaveCandidates } from './fsScan.js';
 import { settingsStore } from '../../state/settings.js';
 import { syncReminders } from '../../sync/reminders.js';
 import { parseUniverseId } from '../../lib/universeId.js';
@@ -222,19 +224,31 @@ export const installReminderProducer = (opts = {}) => {
       masterEnabled: s.remindersMasterEnabled,
       enabled: s.reminderEnabled,
       adhocEnabled: s.adhocEnabled,
+      fsEnabled: s.fsEnabled,
       ntfyToken: s.reminderNtfyToken,
       schedule: s.reminderSchedule,
     };
     // Dormant unless the master switch is on AND at least one kind is — or
     // something forces a push (a settings toggle we must act on, e.g. the
     // master just went off and we must sweep, or a queued user action).
-    const anyActive = config.masterEnabled && (config.enabled || config.adhocEnabled);
+    const anyActive = config.masterEnabled
+      && (config.enabled || config.adhocEnabled || config.fsEnabled);
     if (!anyActive && !force) return;
 
     const candidates = clusterWaves(extractReturnEntries(), { gapSeconds: DEFAULT_CLUSTER_GAP_SECONDS });
     const present = extractPresentFleets();
     const sig = signatureOf(candidates, present);
     if (sig === lastSig && !force) return;
+
+    // Fleet-saves are a pure function of the live event list (own legs over
+    // the ship threshold) + the offset schedule. Recomputed each scan — a
+    // landed/recalled FS just isn't present, so the reconcile sweeps it. We
+    // compute AFTER the signature gate (present-leg changes already move the
+    // signature; a threshold/offset edit forces via the settings subscriber).
+    const fleetSave = computeFleetSaves(extractFleetSaveCandidates(), {
+      threshold: s.fsThreshold,
+      offsetsSec: parseFsOffsets(s.fsOffsets),
+    });
 
     const adhocCmds = pending.filter((c) => c.kind === 'arm' || c.kind === 'disarm');
     const waveCmds = pending.filter((c) => c.kind === 'cancelWave' || c.kind === 'resendWave');
@@ -248,7 +262,9 @@ export const installReminderProducer = (opts = {}) => {
     const now = Math.floor(Date.now() / 1000);
     try {
       const res = await syncReminders(
-        config, { waveCandidates: candidates, present, adhocMutate, waveMutate }, now, universeId,
+        config,
+        { waveCandidates: candidates, present, adhocMutate, waveMutate, fleetSave },
+        now, universeId,
       );
       if (res.ok) {
         lastSig = sig;
@@ -293,6 +309,7 @@ export const installReminderProducer = (opts = {}) => {
       m: s.remindersMasterEnabled,
       e: s.reminderEnabled, t: s.reminderNtfyToken, s: s.reminderSchedule,
       a: s.adhocEnabled,
+      f: s.fsEnabled, ft: s.fsThreshold, fo: s.fsOffsets,
     });
   let prevReminderSig = pickReminderSig(settingsStore.get());
   const unsubConfig = settingsStore.subscribe((next) => {

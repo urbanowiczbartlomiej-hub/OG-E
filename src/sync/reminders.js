@@ -73,9 +73,10 @@ import { gh, ensureGistV3, getToken, getGistId } from './gist.js';
 import { chromeStore } from '../lib/storage.js';
 import { reconcileWaves, pruneNotifyState } from '../domain/waves.js';
 import { reconcileAdhoc, pruneAdhocNotify } from '../domain/adhoc.js';
+import { pruneFsNotify } from '../domain/fleetSave.js';
 import {
-  reconcileWaveQueue, reconcileAdhocQueue, offsetsForSchedule, NTFY_MAX_DELAY_SEC,
-  fetchScheduledMessages,
+  reconcileWaveQueue, reconcileAdhocQueue, reconcileFleetSaveQueue,
+  offsetsForSchedule, NTFY_MAX_DELAY_SEC, fetchScheduledMessages,
 } from './ntfyScheduler.js';
 
 /**
@@ -83,6 +84,7 @@ import {
  * @typedef {import('../domain/waves.js').NotifyEntry} NotifyEntry
  * @typedef {import('../domain/adhoc.js').AdhocReminder} AdhocReminder
  * @typedef {import('../domain/adhoc.js').PresentFleet} PresentFleet
+ * @typedef {import('../domain/fleetSave.js').FleetSaveReminder} FleetSaveReminder
  */
 
 /**
@@ -98,6 +100,8 @@ import {
  * @property {boolean} enabled       Auto expedition-WAVE reminders on/off.
  * @property {boolean} [adhocEnabled] Ad-hoc per-fleet reminders on/off. When
  *   false, armed entries are kept in state but nothing is queued on ntfy.
+ * @property {boolean} [fsEnabled]   Fleet-save auto-detection on/off. When
+ *   false, detected entries are kept in state but nothing is queued on ntfy.
  * @property {string} ntfyToken
  * @property {string} [schedule]  Reminder schedule preset key (see
  *   `ntfyScheduler.REMINDER_PRESETS`). Falls back to the default preset
@@ -151,11 +155,14 @@ export const REMINDER_FILENAME_RE = /^oge-reminders-([^/]+)\.json$/;
  *     `adhocNotify`) alongside the existing wave blocks. Migration from
  *     v3 is ADDITIVE — `readReminderState` accepts v3 and defaults the
  *     new arrays empty, so existing wave schedules survive the upgrade.
+ *   - v5: adds the fleet-save auto-detection blocks (`fleetSave` +
+ *     `fleetSaveNotify`). Migration from v3/v4 is ADDITIVE — older files
+ *     read forward with the new blocks defaulted empty.
  */
-export const REMINDER_SCHEMA_VERSION = 4;
+export const REMINDER_SCHEMA_VERSION = 5;
 
 /** Schema versions we can read (and normalise forward). */
-const READABLE_SCHEMA_VERSIONS = new Set([3, 4]);
+const READABLE_SCHEMA_VERSIONS = new Set([3, 4, 5]);
 
 /**
  * Derive the ntfy.sh topic deterministically from the ntfy access
@@ -244,6 +251,9 @@ export const REMINDER_NTFY_TOKEN_KEY = 'oge_reminderNtfyTokenMirror';
  * @property {AdhocReminder[]} adhoc     Player-armed per-fleet reminders.
  * @property {Record<string, NotifyEntry>} adhocNotify  Per-ad-hoc bookkeeping
  *   (scheduled ntfy.sh message ids), keyed by event-row id.
+ * @property {FleetSaveReminder[]} fleetSave  Auto-detected fleet-save reminders.
+ * @property {Record<string, NotifyEntry>} fleetSaveNotify  Per-FS bookkeeping
+ *   (scheduled ntfy.sh message ids), keyed by event-row id.
  */
 
 /**
@@ -279,6 +289,8 @@ export const readReminderState = async (universeId) => {
       notifyState: parsed.notifyState ?? {},
       adhoc: parsed.adhoc ?? [],
       adhocNotify: parsed.adhocNotify ?? {},
+      fleetSave: parsed.fleetSave ?? [],
+      fleetSaveNotify: parsed.fleetSaveNotify ?? {},
     };
   } catch {
     return null;
@@ -320,6 +332,7 @@ const sameState = (a, b) => {
   const pick = (s) => JSON.stringify({
     waves: s.waves, notifyState: s.notifyState,
     adhoc: s.adhoc, adhocNotify: s.adhocNotify,
+    fleetSave: s.fleetSave, fleetSaveNotify: s.fleetSaveNotify,
   });
   return pick(a) === pick(b);
 };
@@ -471,6 +484,10 @@ const adhocBody = (e) => {
  *   {@link reconcileWaves} (used by the event-list "cancel this wave"
  *   action to tombstone a wave game-side; the flag is then carried
  *   forward by the overlap match). Omitted on the periodic pass.
+ * @param {FleetSaveReminder[]} [dom.fleetSave]  Fleet-saves detected this scan
+ *   (own legs over the ship threshold), already expanded to relative-offset
+ *   fire times by the producer. The complete live set — recomputed every
+ *   scan, so a landed/recalled FS simply isn't present and its queue is swept.
  * @param {number} now             Epoch SECONDS, injected by the caller.
  * @param {string} universeId      OGame server id; ntfy push title prefix.
  * @returns {Promise<{ ok: boolean, reason?: string, changed?: boolean, scheduled?: number, cancelled?: number }>}
@@ -478,7 +495,7 @@ const adhocBody = (e) => {
 export const syncReminders = async (config, dom, now, universeId) => {
   if (!getToken()) return { ok: false, reason: 'no-token' };
 
-  const { waveCandidates, present, adhocMutate, waveMutate } = dom;
+  const { waveCandidates, present, adhocMutate, waveMutate, fleetSave = [] } = dom;
 
   // Token resolution: prefer per-origin localStorage value; fall back
   // to the global chrome.storage mirror so a universe that hasn't been
@@ -491,6 +508,7 @@ export const syncReminders = async (config, dom, now, universeId) => {
   const prevNotify = existing?.notifyState ?? {};
   const prevAdhoc = existing?.adhoc ?? [];
   const prevAdhocNotify = existing?.adhocNotify ?? {};
+  const prevFsNotify = existing?.fleetSaveNotify ?? {};
 
   const prevWavesMutated = waveMutate ? waveMutate(prevWaves) : prevWaves;
   const { waves } = reconcileWaves(prevWavesMutated, waveCandidates, now);
@@ -513,13 +531,16 @@ export const syncReminders = async (config, dom, now, universeId) => {
   let notifyState = pruneNotifyState(prevNotify, waves);
   /** @type {Record<string, NotifyEntry>} */
   let adhocNotify = pruneAdhocNotify(prevAdhocNotify, adhoc);
+  /** @type {Record<string, NotifyEntry>} */
+  let fsNotify = pruneFsNotify(prevFsNotify, fleetSave);
   let cancelled = 0;
   let scheduled = 0;
 
-  // Master switch gates both kinds; absent ⇒ on (direct-caller back-compat).
+  // Master switch gates every kind; absent ⇒ on (direct-caller back-compat).
   const master = config.masterEnabled !== false;
   const waveActive = master && config.enabled;
   const adhocActive = master && Boolean(config.adhocEnabled);
+  const fsActive = master && Boolean(config.fsEnabled);
 
   if (ntfyToken && topic) {
     // One queue poll, shared by both kinds — OGame reloads (and re-runs
@@ -566,8 +587,26 @@ export const syncReminders = async (config, dom, now, universeId) => {
       adhocNotify[e.id] = { scheduledMessageIds: ids };
     }
 
-    scheduled = waveRes.posted + adhocRes.posted;
-    cancelled = waveRes.cancelled + adhocRes.cancelled;
+    // ── Fleet saves ────────────────────────────────────────────────────
+    // A multi-slot series per detected FS (offsets relative to arrival).
+    // Disabled ⇒ no live entries ⇒ messages swept (entries stay in state).
+    // The whole set is recomputed from the live event list each scan, so a
+    // landed/recalled FS isn't present here and its future slots are swept —
+    // which is exactly the "auto-cancel post-landing pings once you're back
+    // in-game" behaviour.
+    const liveFs = fsActive ? fleetSave : [];
+    const fsRes = await reconcileFleetSaveQueue({
+      entries: liveFs, topic, token: ntfyToken, now, universeId, queue,
+    });
+
+    fsNotify = {};
+    for (const e of fleetSave) {
+      const ids = fsActive ? (fsRes.idsByEntry[e.id] ?? []) : [];
+      fsNotify[e.id] = { scheduledMessageIds: ids };
+    }
+
+    scheduled = waveRes.posted + adhocRes.posted + fsRes.posted;
+    cancelled = waveRes.cancelled + adhocRes.cancelled + fsRes.cancelled;
     if (scheduled > 0 || cancelled > 0) {
       // eslint-disable-next-line no-console
       console.log(`[oge] reminders reconciled: +${scheduled} queued, -${cancelled} cancelled`);
@@ -582,6 +621,8 @@ export const syncReminders = async (config, dom, now, universeId) => {
     notifyState,
     adhoc,
     adhocNotify,
+    fleetSave,
+    fleetSaveNotify: fsNotify,
   };
 
   const changed = !sameState(existing, next);

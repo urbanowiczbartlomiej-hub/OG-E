@@ -124,6 +124,56 @@ describe('event-list badges', () => {
     expect(api.armAdhoc.mock.calls[0][0].label).toBe('Expedition → [4:467:16]');
   });
 
+  it('stamps a passive, non-clickable 🛡 badge on an own fleet over the FS threshold', async () => {
+    setSettings({
+      remindersMasterEnabled: true, adhocEnabled: true, reminderEnabled: false,
+      reminderNtfyToken: VALID_TOKEN, fsEnabled: true, fsThreshold: 100000,
+    });
+    const arrival = Math.floor(Date.now() / 1000) + 3600;
+    document.body.innerHTML = `
+      <table id="eventContent"><tbody>
+        <tr class="eventFleet" id="eventRow-9" data-mission-type="4" data-return-flight="false" data-arrival-time="${arrival}">
+          <td class="countDown"><span class="friendly textBeefy">x</span></td>
+          <td class="arrivalTime" original="x">20:23:20</td>
+          <td class="detailsFleet"><span>8.256.872</span></td>
+          <td class="destCoords"><a>[4:478:14]</a></td>
+        </tr>
+      </tbody></table>`;
+    const cell = /** @type {HTMLElement} */ (document.querySelector('td.arrivalTime'));
+    installEventListReminders(stubApi());
+    await tick();
+
+    expect(cell.classList.contains('arrivalTime')).toBe(true); // foreign class survives
+    expect(cell.classList.contains('fs')).toBe(true);
+    expect(cell.classList.contains('act')).toBe(false); // non-clickable
+    expect(cell.getAttribute('data-oge-act')).toBeNull();
+    // FS outranks the ad-hoc idle badge on the same row.
+    expect(cell.classList.contains('idle')).toBe(false);
+  });
+
+  it('does NOT flag a fleet below the FS threshold (stays an ad-hoc idle badge)', async () => {
+    setSettings({
+      remindersMasterEnabled: true, adhocEnabled: true, reminderEnabled: false,
+      reminderNtfyToken: VALID_TOKEN, fsEnabled: true, fsThreshold: 100000, adhocOffsetSec: 60,
+    });
+    const arrival = Math.floor(Date.now() / 1000) + 3600;
+    document.body.innerHTML = `
+      <table id="eventContent"><tbody>
+        <tr class="eventFleet" id="eventRow-9" data-mission-type="4" data-return-flight="false" data-arrival-time="${arrival}">
+          <td class="countDown"><span class="friendly textBeefy">x</span></td>
+          <td class="arrivalTime" original="x">20:23:20</td>
+          <td class="detailsFleet"><span>8.000</span></td>
+          <td class="destCoords"><a>[4:478:14]</a></td>
+        </tr>
+      </tbody></table>`;
+    const cell = /** @type {HTMLElement} */ (document.querySelector('td.arrivalTime'));
+    installEventListReminders(stubApi());
+    await tick();
+    expect(cell.classList.contains('fs')).toBe(false);
+    expect(cell.classList.contains('idle')).toBe(true);
+    expect(cell.getAttribute('data-oge-act')).toBe('arm');
+  });
+
   it('labels a RETURN leg with its ORIGIN coords (where it actually lands)', async () => {
     // A returning fleet lands at its home/start position (`.coordsOrigin`),
     // NOT the target it is leaving (`.destCoords`). Regression-locks the bug

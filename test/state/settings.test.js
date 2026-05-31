@@ -88,6 +88,9 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
         'enterBtnSize',
         'eventMenuHighlight',
         'expeditionBadges',
+        'fsEnabled',
+        'fsOffsets',
+        'fsThreshold',
         'gistToken',
         'maxExpPerPlanet',
         'mobileMode',
@@ -120,6 +123,21 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
       type: 'string',
       default: '8',
       key: 'oge_colPositions',
+    });
+    expect(SETTINGS_SCHEMA.fsEnabled).toEqual({
+      type: 'bool',
+      default: false,
+      key: 'oge_fsEnabled',
+    });
+    expect(SETTINGS_SCHEMA.fsThreshold).toEqual({
+      type: 'int',
+      default: 100000,
+      key: 'oge_fsThreshold',
+    });
+    expect(SETTINGS_SCHEMA.fsOffsets).toEqual({
+      type: 'string',
+      default: '-600,0,600',
+      key: 'oge_fsOffsets',
     });
   });
 });

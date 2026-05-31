@@ -6,6 +6,38 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.9.0] — 2026-05-31
+
+### Added
+
+- **Automatic fleet-save (FS) detection.** Any of your own fleets in the
+  event list whose total ship count crosses a configurable threshold
+  (default 100 000) is flagged with a 🛡 badge and gets a push-reminder
+  series. It is auto-detected and auto-scheduled — non-cancellable by
+  design (the badge carries no click action), and it takes precedence over
+  the ad-hoc toggle on the same row (wave → fleet-save → ad-hoc).
+- FS reminder times are a free-form, comma-separated list of offsets
+  **relative to arrival** (default `-600,0,600` → 10 min before landing,
+  at landing, and 10 min after). Negative = before, 0 = at, positive =
+  after. Post-landing pings auto-cancel once the fleet has landed and you
+  are back in-game (being in-game re-runs detection; the landed row is gone,
+  so its remaining future slots are swept from the ntfy queue).
+- New **Reminders** settings: enable fleet-save detection, the ship
+  threshold, and the offset list — beside the existing ad-hoc options.
+
+### Changed
+
+- Reminder gist file is now schema v5 (adds the `fleetSave` /
+  `fleetSaveNotify` blocks). v3/v4 files are read forward additively, so
+  existing wave + ad-hoc schedules survive the upgrade.
+
+### Fixed
+
+- Trader menu highlight: a morning click no longer silences the intense
+  (red) afternoon escalation. The 14:00–24:00 red pulse is now cleared
+  only by a click made inside that window — a click earlier in the day
+  satisfies just the subtle morning reminder.
+
 ## [1.8.2] — 2026-05-30
 
 ### Added

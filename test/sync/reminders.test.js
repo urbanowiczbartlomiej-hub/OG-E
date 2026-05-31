@@ -45,11 +45,12 @@ describe('reminder file constants', () => {
     expect(REMINDER_FILENAME_RE.exec('README.md')).toBeNull();
   });
 
-  it('is at schema version 4', () => {
+  it('is at schema version 5', () => {
     // v1.5.0 bumped to v3 (per-universe files). v1.8.0 bumped to v4,
-    // adding the ad-hoc reminder blocks; v3 is read forward (additive
-    // migration), older versions treated as absent.
-    expect(REMINDER_SCHEMA_VERSION).toBe(4);
+    // adding the ad-hoc reminder blocks. v1.9.0 bumped to v5, adding the
+    // fleet-save blocks; v3/v4 are read forward (additive migration),
+    // older versions treated as absent.
+    expect(REMINDER_SCHEMA_VERSION).toBe(5);
   });
 
   it('exposes distinct chrome.storage mirror keys for the dashboard preview', () => {

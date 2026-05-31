@@ -609,3 +609,70 @@ export const reconcileAdhocQueue = async ({ entries, topic, token, now, universe
   });
   return { idsByEntry: idsBySeries, posted, cancelled };
 };
+
+/**
+ * The ntfy push title for this universe's FLEET-SAVE reminders. Distinct
+ * from both {@link titleFor} (waves) and {@link adhocTitleFor} (ad-hoc) so
+ * the three kinds never sweep each other on the shared topic, and prefixed
+ * with the universe id so other servers' FS reminders stay invisible here.
+ *
+ * @param {string} universeId
+ * @returns {string}
+ */
+export const fsTitleFor = (universeId) => `[${universeId}] Fleet save`;
+
+/**
+ * Body for one fleet-save slot, baked in at post time (the ntfy app shows
+ * it verbatim). States where/when the fleet lands and whether THIS slot is
+ * before / at / after landing, so the push reads honestly on its own.
+ *
+ * @param {string} label     Direction + landing coords, built by the caller.
+ * @param {number} arrivalAt Epoch SECONDS the fleet lands.
+ * @param {number} fireAt    Epoch SECONDS this slot fires.
+ * @returns {string}
+ */
+const fsBody = (label, arrivalAt, fireAt) => {
+  const when = new Date(arrivalAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const dm = Math.round(Math.abs(fireAt - arrivalAt) / 60);
+  const rel = fireAt < arrivalAt
+    ? `${dm} min before landing`
+    : fireAt > arrivalAt ? `${dm} min after landing` : 'landing now';
+  return `Fleet save: ${label} — lands ${when} (${rel}).`;
+};
+
+/**
+ * Reconcile this universe's FLEET-SAVE slice of the queue. Each detected FS
+ * is a MULTI-slot series fired at each of its `fireAts` (the relative-offset
+ * schedule resolved against the leg's arrival), at flat {@link ADHOC_PRIORITY}
+ * — an FS is high-value, so it rings as urgently as a player-armed reminder.
+ *
+ * Same idempotent reconcile as waves/ad-hoc, under the distinct FS title, so
+ * a send-reload on mobile self-heals. Slots beyond ntfy's 3-day cap are
+ * dropped here (ntfy would reject the `X-Delay` and the producer would retry
+ * forever); past / too-soon slots are skipped inside {@link reconcileQueue}.
+ * Pass `entries: []` to cancel every FS reminder queued for this universe.
+ *
+ * @param {object} args
+ * @param {Array<{ id: string, arrivalAt: number, label: string, fireAts: number[] }>} args.entries
+ * @param {string} args.topic
+ * @param {string} args.token
+ * @param {number} args.now         Epoch SECONDS.
+ * @param {string} args.universeId
+ * @param {Array<{ id: string, time: number, title?: string }>} [args.queue]
+ *   Pre-fetched queue snapshot (see {@link reconcileQueue}) — lets the caller
+ *   share one poll across kinds.
+ * @returns {Promise<{ idsByEntry: Record<string, string[]>, posted: number, cancelled: number }>}
+ */
+export const reconcileFleetSaveQueue = async ({ entries, topic, token, now, universeId, queue }) => {
+  /** @type {QueueSeries[]} */
+  const series = entries.map((e) => ({
+    id: e.id,
+    slots: e.fireAts
+      .filter((fireAt) => fireAt <= now + NTFY_MAX_DELAY_SEC)
+      .map((fireAt) => ({ fireAt, body: fsBody(e.label, e.arrivalAt, fireAt), priority: ADHOC_PRIORITY })),
+  }));
+  const { idsBySeries, posted, cancelled } = await reconcileQueue({
+    series, topic, token, now, title: fsTitleFor(universeId), queue,
+  });
+  return { idsByEntry: idsBySeries, posted, cancelled };
+};

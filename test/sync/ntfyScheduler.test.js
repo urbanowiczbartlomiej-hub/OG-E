@@ -8,7 +8,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   reconcileWaveQueue,
   reconcileAdhocQueue,
+  reconcileFleetSaveQueue,
   adhocTitleFor,
+  fsTitleFor,
   reminderFireTimes,
   titleFor,
   cancelWaveReminders,
@@ -324,6 +326,72 @@ describe('reconcileAdhocQueue', () => {
     const waveMsg = JSON.stringify({ id: 'wave', time: 5000, event: 'message', title: titleFor('s163-pl') });
     dispatchReconcile([waveMsg]);
     const { posted, cancelled } = await reconcileAdhocQueue({ ...base, now: 1000, entries: [] });
+    expect(posted).toBe(0);
+    expect(cancelled).toBe(0);
+    expect(fetchMock.mock.calls.some((c) => c[1]?.method === 'DELETE')).toBe(false);
+  });
+});
+
+describe('fsTitleFor', () => {
+  it('prefixes the universe id and differs from the wave + ad-hoc titles', () => {
+    expect(fsTitleFor('s163-pl')).toBe('[s163-pl] Fleet save');
+    expect(fsTitleFor('s163-pl')).not.toBe(titleFor('s163-pl'));
+    expect(fsTitleFor('s163-pl')).not.toBe(adhocTitleFor('s163-pl'));
+  });
+});
+
+describe('reconcileFleetSaveQueue', () => {
+  const base = { topic: 'oge-test', token: 'tk_abc', universeId: 's163-pl' };
+  const FS_TITLE = fsTitleFor('s163-pl');
+  /** @param {string} id @param {number} time */
+  const ourFs = (id, time) => JSON.stringify({ id, time, event: 'message', title: FS_TITLE });
+
+  it('posts one max-priority slot per future fireAt, under the FS title', async () => {
+    dispatchReconcile([]);
+    const { idsByEntry, posted, cancelled } = await reconcileFleetSaveQueue({
+      ...base, now: 1000,
+      entries: [{ id: 'eventRow-9', arrivalAt: 5000, label: 'Deployment → [4:478:14]', fireAts: [4400, 5000, 5600] }],
+    });
+
+    expect(posted).toBe(3);
+    expect(cancelled).toBe(0);
+    expect(idsByEntry['eventRow-9']).toEqual(['post-0', 'post-1', 'post-2']);
+
+    const posts = fetchMock.mock.calls.filter((c) => c[1]?.method === 'POST');
+    expect(posts).toHaveLength(3);
+    for (const p of posts) {
+      expect(p[1].headers.Title).toBe(FS_TITLE);
+      expect(p[1].headers.Priority).toBe(String(ADHOC_PRIORITY));
+    }
+    // Bodies state before/at/after landing honestly.
+    const bodies = posts.map((p) => p[1].body);
+    expect(bodies.some((b) => /before landing/.test(b))).toBe(true);
+    expect(bodies.some((b) => /landing now/.test(b))).toBe(true);
+    expect(bodies.some((b) => /after landing/.test(b))).toBe(true);
+  });
+
+  it('drops slots past ntfy\'s 3-day cap (would otherwise be rejected forever)', async () => {
+    dispatchReconcile([]);
+    const FOUR_DAYS = 4 * 24 * 3600;
+    const { posted } = await reconcileFleetSaveQueue({
+      ...base, now: 1000,
+      entries: [{ id: 'eventRow-9', arrivalAt: 1000 + FOUR_DAYS, label: 'x', fireAts: [1000 + FOUR_DAYS] }],
+    });
+    expect(posted).toBe(0);
+  });
+
+  it('sweeps FS messages with no live entry, and cancels all when entries is empty', async () => {
+    dispatchReconcile([ourFs('q0', 5000), ourFs('q1', 6000)]);
+    const { posted, cancelled } = await reconcileFleetSaveQueue({ ...base, now: 1000, entries: [] });
+    expect(posted).toBe(0);
+    expect(cancelled).toBe(2);
+  });
+
+  it('never touches wave or ad-hoc messages on the shared topic (distinct title)', async () => {
+    const waveMsg = JSON.stringify({ id: 'w', time: 5000, event: 'message', title: titleFor('s163-pl') });
+    const adhocMsg = JSON.stringify({ id: 'a', time: 6000, event: 'message', title: adhocTitleFor('s163-pl') });
+    dispatchReconcile([waveMsg, adhocMsg]);
+    const { posted, cancelled } = await reconcileFleetSaveQueue({ ...base, now: 1000, entries: [] });
     expect(posted).toBe(0);
     expect(cancelled).toBe(0);
     expect(fetchMock.mock.calls.some((c) => c[1]?.method === 'DELETE')).toBe(false);

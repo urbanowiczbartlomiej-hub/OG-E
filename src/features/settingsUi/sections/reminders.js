@@ -1,8 +1,8 @@
 // @ts-check
 
 // Reminders section of the OG-E settings tab. The umbrella for every
-// ntfy.sh push OG-E can schedule — today expedition-wave auto-reminders
-// and ad-hoc per-fleet reminders, with fleet-save auto-detection planned.
+// ntfy.sh push OG-E can schedule — expedition-wave auto-reminders, ad-hoc
+// per-fleet reminders, and fleet-save (FS) auto-detection.
 //
 // Layout, top to bottom:
 //
@@ -22,6 +22,12 @@
 //   5. Ad-hoc lead time — how many seconds before arrival an ad-hoc ping
 //      fires. Captured per reminder at arm time, so changing it here only
 //      affects reminders armed afterwards.
+//   6. Auto fleet-save detection — flag any own fleet over the ship
+//      threshold and schedule a reminder series. Off ⇒ no 🛡 badges, no FS
+//      scheduling.
+//   7. Fleet-save threshold — total ship count that makes a leg an FS.
+//   8. Fleet-save offsets — the FS reminder schedule, RELATIVE to arrival
+//      (negative = before landing, 0 = at landing, positive = after).
 //
 // The topic itself is automatic (derived from the token) and shown
 // read-only on the OG-E Dashboard's Reminders tab, so it isn't repeated
@@ -30,6 +36,7 @@
 import { REMINDER_PRESETS, offsetsForSchedule } from '../../../sync/ntfyScheduler.js';
 import { settingsStore } from '../../../state/settings.js';
 import { isValidNtfyToken } from '../../../sync/reminders.js';
+import { parseFsOffsets } from '../../../domain/fleetSave.js';
 
 /**
  * @typedef {import('../controls.js').SettingsSection} SettingsSection
@@ -55,6 +62,25 @@ const sectionLocked = (s) => !s.remindersMasterEnabled || !isValidNtfyToken(s.re
  * @returns {string}
  */
 const minutesList = (offsetsSec) => offsetsSec.map((s) => s / 60).join(', ');
+
+/**
+ * Spell out a fleet-save offset list as a human phrase relative to landing,
+ * e.g. `-600,0,600` → `"10 min before, at landing, 10 min after"`. Empty /
+ * all-invalid input reads as "(none)" so the player sees that no FS push
+ * would be scheduled.
+ *
+ * @param {number[]} offsetsSec
+ * @returns {string}
+ */
+const fsOffsetsText = (offsetsSec) =>
+  offsetsSec.length
+    ? offsetsSec
+        .map((o) => {
+          const m = Math.round(Math.abs(o) / 60);
+          return o < 0 ? `${m} min before` : o > 0 ? `${m} min after` : 'at landing';
+        })
+        .join(', ')
+    : '(none — no FS pushes scheduled)';
 
 /**
  * Schedule choices for the picker — kept short (the explicit series times
@@ -120,6 +146,40 @@ export const remindersSection = {
       type: 'text',
       placeholder: '60',
       disabledWhen: sectionLocked,
+    },
+    {
+      // Fleet-save auto-detection: any of your own fleets whose total ship
+      // count crosses the threshold is flagged 🛡 in the event list and gets
+      // a reminder series. Not armable/cancellable — it's automatic.
+      id: 'fsEnabled',
+      label: 'Auto fleet-save detection (event list)',
+      type: 'checkbox',
+      disabledWhen: sectionLocked,
+    },
+    {
+      // The "big fleet" cutoff, right beside its toggle. Default 100 000.
+      id: 'fsThreshold',
+      label: 'Fleet-save threshold (total ships)',
+      type: 'text',
+      placeholder: '100000',
+      disabledWhen: sectionLocked,
+    },
+    {
+      // Free-form reminder schedule, RELATIVE to arrival (comma-separated
+      // seconds; negative = before landing, 0 = at landing, positive =
+      // after). e.g. -600,0,600 ⇒ 10 min before, at, and 10 min after.
+      id: 'fsOffsets',
+      label: 'Fleet-save reminder offsets (seconds, relative to arrival)',
+      type: 'text',
+      placeholder: '-600,0,600',
+      disabledWhen: sectionLocked,
+    },
+    {
+      // Read-only: spells out the parsed FS offsets, updating live.
+      id: 'fsOffsetsTimes',
+      label: 'Fleet-save reminders fire',
+      type: 'static',
+      getText: () => fsOffsetsText(parseFsOffsets(settingsStore.get().fsOffsets)),
     },
   ],
 };
