@@ -19,10 +19,13 @@
 //                                 the current 30-minute slot if the user
 //                                 has already clicked Trader inside it
 //   - 14:00–24:00, BEFORE the
-//     first click of the day    → intense red pulse (the daily reset
-//                                 is by local calendar date)
-//   - 14:00–24:00, AFTER the
-//     first click of the day    → subtle yellow pulse with the same
+//     first click MADE INSIDE
+//     this window today          → intense red pulse (the daily reset
+//                                 is by local calendar date). A morning
+//                                 click does NOT clear this — only a
+//                                 click at/after 14:00 does.
+//   - 14:00–24:00, AFTER a
+//     click inside this window   → subtle yellow pulse with the same
 //                                 30-minute-slot suppression
 //
 // "Slot" means a half-hour window aligned to :00 and :30 of local time
@@ -219,14 +222,23 @@ export const computeTraderMode = (now, lastClickMs) => {
   // user's daily rhythm — no nudges while they're asleep.
   if (hour < NIGHT_END_HOUR) return 'off';
 
-  const clickedToday =
-    lastClickMs !== null && sameLocalDay(now, new Date(lastClickMs));
+  const lastClick = lastClickMs !== null ? new Date(lastClickMs) : null;
+
+  // The intense escalation has its OWN daily obligation: it must be
+  // cleared by a click made *inside* the 14:00–24:00 window, not by an
+  // earlier click that already satisfied the subtle morning reminder.
+  // A morning click silences the morning pulse but leaves the afternoon
+  // escalation pending — that's the whole point of the red tier.
+  const clickedInIntenseWindowToday =
+    lastClick !== null &&
+    sameLocalDay(now, lastClick) &&
+    lastClick.getHours() >= INTENSE_START_HOUR;
 
   // Intense window: 14:00–24:00 local time, ONLY until the first click
-  // of the current calendar day. The user explicitly asked for this
-  // late-day escalation — they're more likely to be active and the
+  // made within that same window today. The user explicitly asked for
+  // this late-day escalation — they're more likely to be active and the
   // Trader reset is still pending.
-  if (hour >= INTENSE_START_HOUR && !clickedToday) return 'intense';
+  if (hour >= INTENSE_START_HOUR && !clickedInIntenseWindowToday) return 'intense';
 
   // Subtle path. Suppressed inside the half-hour slot the user already
   // clicked in; comes back at the next :00 / :30 boundary.

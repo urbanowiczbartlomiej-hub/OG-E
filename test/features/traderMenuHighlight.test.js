@@ -103,6 +103,15 @@ describe('computeTraderMode', () => {
     expect(computeTraderMode(at('2026-05-28T15:00:00'), yesterdayClick)).toBe('intense');
   });
 
+  it('keeps "intense" in the afternoon when the only click today was in the MORNING', () => {
+    // Regression: a morning click satisfies the subtle morning reminder
+    // but must NOT silence the afternoon red escalation. The intense
+    // tier is only cleared by a click made inside the 14:00–24:00 window.
+    const morningClick = at('2026-05-28T10:00:00').getTime();
+    expect(computeTraderMode(at('2026-05-28T14:00:00'), morningClick)).toBe('intense');
+    expect(computeTraderMode(at('2026-05-28T18:42:00'), morningClick)).toBe('intense');
+  });
+
   it('downgrades to "subtle" after the first click of the day (in next slot)', () => {
     const click = at('2026-05-28T15:10:00').getTime();
     // Same slot as click: off.
