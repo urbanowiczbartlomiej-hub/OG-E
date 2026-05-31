@@ -1,0 +1,6 @@
+Build instructions are in REVIEWERS.md inside source.zip (Node >= 20):
+  npm install
+  npm run build:prod
+The resulting dist/ matches the uploaded extension exactly.
+
+No new permissions. No new network destinations.

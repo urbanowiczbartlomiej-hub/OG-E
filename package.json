@@ -16,7 +16,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "package": "npm run build:prod && node scripts/package.mjs && node scripts/package-source.mjs",
-    "package:source": "node scripts/package-source.mjs"
+    "package:source": "node scripts/package-source.mjs",
+    "release": "node --env-file-if-exists=.env scripts/release.mjs"
   },
   "devDependencies": {
     "@rollup/plugin-replace": "^5.0.7",
