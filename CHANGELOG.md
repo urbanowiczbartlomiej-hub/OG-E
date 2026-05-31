@@ -6,6 +6,20 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.9.3] — 2026-05-31
+
+### Fixed
+
+- ntfy pushes are now correctly authenticated as your account. The `auth`
+  query parameter was malformed — it carried the bare token credential with
+  no `Bearer`/`Basic` scheme, so ntfy.sh silently fell back to **anonymous**
+  publishing. Notifications still arrived (the topic is public), but they
+  were never attributed to your account (the ntfy dashboard showed 0 sent)
+  and were rate-limited per-IP instead of per-account — defeating the whole
+  reason the access token exists. The parameter now sends the documented
+  `base64("Bearer <token>")` (url-safe, no padding) on every publish, poll,
+  and cancel.
+
 ## [1.9.2] — 2026-05-31
 
 ### Fixed
