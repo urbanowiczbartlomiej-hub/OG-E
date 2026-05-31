@@ -20,6 +20,13 @@
 // and a positive offset is after — e.g. `[-600, 0, 600]` ⇒ 10 min before
 // landing, at landing, and 10 min after.
 //
+// # Which leg counts (round-trip vs one-way)
+//
+// Round-trip missions (Transport, Espionage, Attack, …) show an OUTBOUND and
+// a RETURN leg at send time; the fleet only lands back home on the return, so
+// the outbound is skipped (see {@link isFleetSaveLeg} / {@link ONE_WAY_MISSIONS}).
+// One-way missions (Deployment, Colonisation) keep their single outbound leg.
+//
 // # Two gates: ship count AND flight time
 //
 // "Big fleet" alone over-fires: players routinely shuttle their whole fleet
@@ -84,6 +91,43 @@
  * @property {number[]} fireAts   Derived absolute fire times (`arrivalAt + o`
  *   for each offset, same order). Stored so the scheduler doesn't recompute.
  */
+
+/**
+ * Missions that do NOT auto-return: the fleet STAYS at the destination, so
+ * its OUTBOUND arrival is the vulnerable landing a fleet-save reminder must
+ * track.
+ *
+ *   4 = Deployment (Stacjonuj) — the fleet stations and stays.
+ *   7 = Colonisation — the colony ship is consumed at the target.
+ *
+ * Every other mission is a ROUND-TRIP: OGame generates an outbound AND a
+ * return leg at send time (e.g. Transport, Espionage). For those the fleet
+ * only flies THROUGH the destination and lands back home on the RETURN leg,
+ * so the outbound leg must not be treated as a fleet-save — otherwise we'd
+ * schedule a reminder for a stop-over the fleet never pauses at.
+ *
+ * @type {Set<string>}
+ */
+export const ONE_WAY_MISSIONS = new Set(['4', '7']);
+
+/**
+ * Whether a fleet leg is the one whose arrival a fleet-save reminder should
+ * track:
+ *
+ *   - a RETURN leg always lands the fleet back home → yes;
+ *   - an OUTBOUND leg only matters for a {@link ONE_WAY_MISSIONS} mission
+ *     (the fleet stops and stays there). For a round-trip mission the
+ *     outbound is a fly-through, so → no (its paired return leg is the one).
+ *
+ * Pure — the feature layer reads `data-mission-type` / `data-return-flight`
+ * and feeds them here.
+ *
+ * @param {string} missionType  `data-mission-type` value (string).
+ * @param {boolean} isReturn    `data-return-flight === 'true'`.
+ * @returns {boolean}
+ */
+export const isFleetSaveLeg = (missionType, isReturn) =>
+  isReturn || ONE_WAY_MISSIONS.has(missionType);
 
 /**
  * Parse the FS offsets setting — a comma-separated list of whole-second

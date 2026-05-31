@@ -1,7 +1,9 @@
 // @ts-check
 
 import { describe, it, expect } from 'vitest';
-import { parseFsOffsets, reconcileFleetSaves, pruneFsNotify } from '../../src/domain/fleetSave.js';
+import {
+  parseFsOffsets, reconcileFleetSaves, pruneFsNotify, isFleetSaveLeg,
+} from '../../src/domain/fleetSave.js';
 
 /**
  * @param {Partial<import('../../src/domain/fleetSave.js').FleetSaveCandidate> & { id: string }} o
@@ -32,6 +34,25 @@ describe('parseFsOffsets', () => {
     expect(parseFsOffsets('600,abc,12.5,,90')).toEqual([90, 600]);
     expect(parseFsOffsets('')).toEqual([]);
     expect(parseFsOffsets(/** @type {any} */ (undefined))).toEqual([]);
+  });
+});
+
+describe('isFleetSaveLeg', () => {
+  it('treats every RETURN leg as a fleet-save landing', () => {
+    for (const m of ['1', '3', '4', '6', '7', '15']) {
+      expect(isFleetSaveLeg(m, true)).toBe(true);
+    }
+  });
+
+  it('treats an OUTBOUND leg as a fleet-save only for one-way missions (4, 7)', () => {
+    expect(isFleetSaveLeg('4', false)).toBe(true); // Deployment — fleet stays
+    expect(isFleetSaveLeg('7', false)).toBe(true); // Colonisation
+  });
+
+  it('skips the OUTBOUND leg of round-trip missions (only the return lands home)', () => {
+    for (const m of ['1', '2', '3', '5', '6', '8', '9', '15']) {
+      expect(isFleetSaveLeg(m, false)).toBe(false);
+    }
   });
 });
 

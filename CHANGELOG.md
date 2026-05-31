@@ -6,6 +6,17 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.9.2] — 2026-05-31
+
+### Fixed
+
+- Round-trip missions (Transport, Espionage, Attack, …) no longer raise a
+  duplicate fleet-save reminder on their **outbound** leg. OGame shows an
+  outbound *and* a return leg the moment such a fleet is sent, but the fleet
+  only lands back home on the **return** — so only the return leg is now
+  treated as a fleet-save. One-way missions (Deployment, Colonisation), where
+  the fleet stays at the destination, keep their single outbound leg.
+
 ## [1.9.1] — 2026-05-31
 
 ### Fixed

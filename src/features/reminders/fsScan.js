@@ -7,6 +7,8 @@
 //
 // @see ../../domain/fleetSave.js — the pure threshold/offset logic.
 
+import { isFleetSaveLeg } from '../../domain/fleetSave.js';
+
 /** @typedef {import('../../domain/fleetSave.js').FleetSaveCandidate} FleetSaveCandidate */
 
 /** English mission-type names for the push label (locale-independent). */
@@ -64,11 +66,18 @@ export const fsLabelFor = (row) => {
 };
 
 /**
- * Extract every OWN fleet leg as a {@link FleetSaveCandidate}. Threshold-
- * INDEPENDENT (the domain applies the threshold), so the producer's scan
- * signature stays stable across threshold edits and a setting change is the
- * only thing that re-runs the FS computation for an unchanged event list.
- * Pure-ish DOM read, same passive style as the producer's other extractors.
+ * Extract every OWN fleet leg that could be a fleet-save as a
+ * {@link FleetSaveCandidate}. Threshold-INDEPENDENT (the domain applies the
+ * threshold), so the producer's scan signature stays stable across threshold
+ * edits and a setting change is the only thing that re-runs the FS
+ * computation for an unchanged event list.
+ *
+ * Skips the OUTBOUND leg of round-trip missions: a mission like Transport or
+ * Espionage shows an outbound + a return leg at once, and only the RETURN
+ * lands the fleet back home (see {@link isFleetSaveLeg}). One-way missions
+ * (Deployment / Colonisation) keep their outbound leg — the fleet stays
+ * there. Pure-ish DOM read, same passive style as the producer's other
+ * extractors.
  *
  * @param {ParentNode} [root=document]
  * @returns {FleetSaveCandidate[]}
@@ -78,6 +87,9 @@ export const extractFleetSaveCandidates = (root = document) => {
   const out = [];
   for (const row of root.querySelectorAll('#eventContent tr.eventFleet[id^="eventRow-"]')) {
     if (!isOwnFleet(row)) continue;
+    const isReturn = row.getAttribute('data-return-flight') === 'true';
+    const missionType = row.getAttribute('data-mission-type') || '';
+    if (!isFleetSaveLeg(missionType, isReturn)) continue;
     const id = /** @type {HTMLElement} */ (row).id;
     const arrivalAttr = row.getAttribute('data-arrival-time');
     const arrivalAt = arrivalAttr ? Number.parseInt(arrivalAttr, 10) : NaN;

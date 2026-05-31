@@ -96,4 +96,28 @@ describe('extractFleetSaveCandidates', () => {
       '</tbody></table>';
     expect(extractFleetSaveCandidates()).toEqual([]);
   });
+
+  it('keeps the outbound leg of one-way missions (Deployment 4, Colonisation 7)', () => {
+    paint(
+      row({ id: '1', mission: '4', ret: 'false', arrival: '100', ships: '500000' }) +
+      row({ id: '2', mission: '7', ret: 'false', arrival: '200', ships: '500000' }),
+    );
+    expect(extractFleetSaveCandidates().map((c) => c.id)).toEqual(['eventRow-1', 'eventRow-2']);
+  });
+
+  it('skips the OUTBOUND leg of a round-trip mission, keeping only the RETURN', () => {
+    // Espionage (6) shows both legs at once; only the return lands home.
+    paint(
+      row({ id: '850', mission: '6', ret: 'false', arrival: '100', ships: '8108672' }) +
+      row({ id: '851', mission: '6', ret: 'true', arrival: '300', ships: '8108672', origin: '4:478:14' }),
+    );
+    const got = extractFleetSaveCandidates();
+    expect(got.map((c) => c.id)).toEqual(['eventRow-851']);
+    expect(got[0].label).toBe('Espionage → [4:478:14]');
+  });
+
+  it('skips round-trip outbound for Transport (3) too', () => {
+    paint(row({ id: '9', mission: '3', ret: 'false', arrival: '100', ships: '500000' }));
+    expect(extractFleetSaveCandidates()).toEqual([]);
+  });
 });
