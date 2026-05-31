@@ -65,10 +65,25 @@
  * Return the `auth=…` query-string parameter that authenticates the
  * request without an `Authorization` header.
  *
- * ntfy.sh accepts `?auth=base64(user:password)` on every endpoint as an
- * alternative to the `Authorization` header. For a bare access token the
- * "username" is empty and the token is the "password", so the encoding is
- * `btoa(':' + token)`.
+ * The value is the base64 of the ENTIRE `Authorization` header — for a
+ * bearer token, `base64("Bearer " + token)` — url-safe (`+`→`-`, `/`→`_`)
+ * with the `=` padding stripped. That is exactly what ntfy.sh documents:
+ *
+ *   echo -n "Bearer faketoken" | base64 -w0 | tr -d '='
+ *
+ * (its own example `?auth=QmFzaWM…` decodes to `Basic base64(user:pass)`,
+ * confirming the value is the encoded header line, not bare credentials).
+ *
+ * # The bug this replaced
+ *
+ * We used to send `btoa(':' + token)` — the inner Basic-auth credential
+ * blob with NO `Basic `/`Bearer ` scheme and NO outer base64. ntfy could
+ * not parse it as an auth header, so it silently fell back to ANONYMOUS
+ * publishing. Because our topic (`oge-<sha256(token)>`) is public and
+ * unreserved, the POSTs still succeeded and notifications still arrived —
+ * but they were never attributed to the account (the dashboard showed 0
+ * sent) and were rate-limited per-IP, defeating the entire reason the
+ * token exists (see the per-account rate-limit note below).
  *
  * Using query-param auth avoids the Firefox CORS restriction: ntfy responds
  * with `Access-Control-Allow-Headers: *`, which — per the Fetch spec — does
@@ -81,9 +96,10 @@
  * requires Node ≥ 20), so no polyfill is needed.
  *
  * @param {string} token  ntfy.sh access token.
- * @returns {string}  Ready-to-append query param, e.g. `auth=dGVzdA==`.
+ * @returns {string}  Ready-to-append query param, e.g. `auth=QmVhcmVyIHRr…`.
  */
-const ntfyAuthParam = (token) => 'auth=' + btoa(':' + token);
+const ntfyAuthParam = (token) =>
+  'auth=' + btoa('Bearer ' + token).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
 /**
  * Total reminders queued per wave in the DEFAULT (`standard`) preset.

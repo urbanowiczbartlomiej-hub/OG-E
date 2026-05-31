@@ -24,6 +24,19 @@ import {
   ADHOC_PRIORITY,
 } from '../../src/sync/ntfyScheduler.js';
 
+/**
+ * Expected `auth=…` query param: base64 of the full `Authorization` header
+ * (`Bearer <token>`), url-safe and stripped of `=` padding — exactly the
+ * recipe ntfy documents (`echo -n "Bearer …" | base64 | tr -d '='`). Pins
+ * the wire format independently of the production helper so a regression to
+ * the old anonymous `btoa(':' + token)` form trips loudly.
+ *
+ * @param {string} token
+ * @returns {string}
+ */
+const expectedAuthParam = (token) =>
+  'auth=' + btoa('Bearer ' + token).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
 /** @type {ReturnType<typeof vi.fn>} */
 let fetchMock;
 
@@ -136,7 +149,7 @@ describe('reconcileWaveQueue', () => {
 
     const posts = fetchMock.mock.calls.filter((c) => c[1]?.method === 'POST');
     expect(posts).toHaveLength(REMINDER_COUNT);
-    const expectedAuth = 'auth=' + btoa(':tk_abc');
+    const expectedAuth = expectedAuthParam('tk_abc');
     posts.forEach(([url, init], slot) => {
       expect(url).toBe(`https://ntfy.sh/oge-test?${expectedAuth}`);
       expect(init.headers.Authorization).toBeUndefined();
@@ -411,7 +424,7 @@ describe('fetchScheduledMessages', () => {
     fetchMock.mockResolvedValue(ndjsonResponse(''));
     await fetchScheduledMessages({ topic: 'oge-t', token: 'tk_abc', now: 0 });
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe(`https://ntfy.sh/oge-t/json?poll=1&scheduled=1&auth=${btoa(':tk_abc')}`);
+    expect(url).toBe(`https://ntfy.sh/oge-t/json?poll=1&scheduled=1&${expectedAuthParam('tk_abc')}`);
     expect(init).toBeUndefined();
   });
 
@@ -490,7 +503,7 @@ describe('cancelWaveReminders', () => {
     const ok = await cancelWaveReminders({
       ids: ['a', 'b', 'c'], topic: 't', token: 'tk',
     });
-    const expectedAuth = 'auth=' + btoa(':tk');
+    const expectedAuth = expectedAuthParam('tk');
     expect(ok).toBe(3);
     expect(fetchMock).toHaveBeenCalledTimes(3);
     for (let i = 0; i < 3; i++) {
