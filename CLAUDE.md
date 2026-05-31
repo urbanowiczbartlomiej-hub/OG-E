@@ -17,11 +17,22 @@ idempotent: a re-run after a failure resumes from where it stopped.
 2. Have `AMO_JWT_ISSUER` / `AMO_JWT_SECRET` available (a gitignored
    `.env` is loaded automatically — see `.env.example`).
 
-Then (note the `--` so npm forwards the flags to the script, rather
-than treating `--dry-run` as its own flag):
+The real release (the `--` forwards the version to the script):
 ```
-npm run release -- 1.10.0 --dry-run   # preview: validate + show notes, mutate nothing
-npm run release -- 1.10.0             # the real thing
+npm run release -- 1.10.0
+```
+
+**To PREVIEW, do NOT pass a `--flag` through npm.** This npm swallows
+every `--flag` as its own config even after `--` (you'll see "Unknown env
+config …"), so `npm run release -- 1.10.0 --preview` / `--dry-run` reaches
+the script with NO flag and performs a REAL release. This already bit us —
+a "dry-run" published 1.9.1. Preview one of these two ways instead:
+```
+# robust: run the script directly so the flag actually arrives
+node --env-file-if-exists=.env scripts/release.mjs 1.10.0 --preview
+
+# or via npm using the env escape hatch (PowerShell shown)
+$env:RELEASE_PREVIEW=1; npm run release -- 1.10.0; Remove-Item Env:RELEASE_PREVIEW
 ```
 
 The script enforces the two things that have been forgotten before:

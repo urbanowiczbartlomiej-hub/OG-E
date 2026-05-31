@@ -33,7 +33,23 @@
 // Load them however you like; `node --env-file=.env scripts/release.mjs`
 // works if you keep a local .env (already gitignored).
 //
-// Flags: --dry-run (validate + preview, mutate nothing), --skip-tests.
+// Flags / env:
+//   --preview / --dry-run     validate + preview, mutate nothing
+//   RELEASE_PREVIEW=1 (env)   same as --preview
+//   --skip-tests              skip the test + typecheck phase
+//
+// IMPORTANT — how to PREVIEW safely. This npm eats EVERY `--flag` as its own
+// config even after the `--` separator (you'll see "Unknown env config …"),
+// so `npm run release -- X.Y.Z --preview` reaches this script with NO flag
+// and performs a REAL release. Only the positional version forwards. So:
+//
+//   • Real release (no flags):   npm run release -- X.Y.Z
+//   • Preview, the robust way:   node --env-file-if-exists=.env \
+//                                  scripts/release.mjs X.Y.Z --preview
+//   • Preview via npm (env):     RELEASE_PREVIEW=1 npm run release -- X.Y.Z
+//     (PowerShell: $env:RELEASE_PREVIEW=1; npm run release -- X.Y.Z)
+//
+// This bit us once: a `--dry-run` meant as a preview published 1.9.1.
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -54,7 +70,10 @@ const POLL_INTERVAL_MS = 5_000;
 const argv = process.argv.slice(2);
 const flags = new Set(argv.filter((a) => a.startsWith('--')));
 const positional = argv.filter((a) => !a.startsWith('--'));
-const DRY = flags.has('--dry-run');
+// npm swallows --flags even after `--` (see header), so a flag alone can't be
+// trusted for preview when invoked via npm. RELEASE_PREVIEW=1 is the
+// npm-passable escape hatch; the flags work when run directly with node.
+const DRY = flags.has('--preview') || flags.has('--dry-run') || process.env.RELEASE_PREVIEW === '1';
 const SKIP_TESTS = flags.has('--skip-tests');
 
 function die(msg) {
@@ -78,7 +97,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // ---------------------------------------------------------------------------
 
 const VERSION = positional[0];
-if (!VERSION) die('usage: npm run release <X.Y.Z> [--dry-run] [--skip-tests]');
+if (!VERSION) die('usage: npm run release -- <X.Y.Z> [--preview] [--skip-tests]');
 if (!/^\d+\.\d+\.\d+$/.test(VERSION)) die(`not a semver version: "${VERSION}"`);
 const TAG = `v${VERSION}`;
 
