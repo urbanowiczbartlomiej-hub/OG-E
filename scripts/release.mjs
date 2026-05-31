@@ -289,9 +289,24 @@ async function uploadToAmo() {
 await uploadToAmo();
 
 // ---------------------------------------------------------------------------
-// phase 7 — publish the tag
+// phase 7 — publish the branch + tag
 // ---------------------------------------------------------------------------
 
-run('git push --tags origin HEAD');
+// Resolve the remote from the branch's upstream (the remote is not always
+// "origin" here). Fall back to the first configured remote.
+function resolveRemote() {
+  try {
+    return capture('git rev-parse --abbrev-ref --symbolic-full-name @{u}').split('/')[0];
+  } catch {
+    const remotes = capture('git remote').split(/\r?\n/).filter(Boolean);
+    if (!remotes.length) die('no git remote configured to push to.');
+    return remotes[0];
+  }
+}
+
+const remote = resolveRemote();
+run(`git push ${remote} HEAD`);
+// Push the lightweight tag explicitly — --follow-tags only pushes annotated tags.
+run(`git push ${remote} ${TAG}`);
 
 console.log(`\nrelease: ${TAG} done — uploaded to AMO and pushed.`);
