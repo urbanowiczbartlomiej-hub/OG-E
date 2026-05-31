@@ -89,6 +89,7 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
         'eventMenuHighlight',
         'expeditionBadges',
         'fsEnabled',
+        'fsMinFlightSec',
         'fsOffsets',
         'fsThreshold',
         'gistToken',
@@ -138,6 +139,11 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
       type: 'string',
       default: '-600,0,600',
       key: 'oge_fsOffsets',
+    });
+    expect(SETTINGS_SCHEMA.fsMinFlightSec).toEqual({
+      type: 'int',
+      default: 600,
+      key: 'oge_fsMinFlightSec',
     });
   });
 });

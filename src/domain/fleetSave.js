@@ -20,18 +20,42 @@
 // and a positive offset is after — e.g. `[-600, 0, 600]` ⇒ 10 min before
 // landing, at landing, and 10 min after.
 //
-// # No user state ⇒ recompute each scan ⇒ non-cancellable + self-cleaning
+// # Two gates: ship count AND flight time
 //
-// FS reminders are never armed or cancelled by the player: they are a pure
-// function of the live event list + the threshold. The producer recomputes
-// the whole set on every scan, so an FS whose row has vanished (the fleet
-// landed, or was recalled) simply isn't recomputed, and the ntfy queue
-// reconcile sweeps its remaining future slots. This is the mechanism behind
-// "once the fleet has landed and you're back in-game, the post-landing pings
-// auto-cancel": being in-game runs the producer, the landed row is gone, its
-// future slots fall out of the live set and are swept. The pre-landing slots
-// stay queued while the row is present, so an offline player still gets the
-// warning.
+// "Big fleet" alone over-fires: players routinely shuttle their whole fleet
+// between a planet and its moon — a huge fleet, but a SHORT flight, and not a
+// fleet-save. So a leg becomes an FS only when BOTH hold:
+//
+//   - `shipCount >= threshold`, and
+//   - its flight TIME is at least `minFlightSec` (server-speed dependent, so
+//     configurable; default 10 min).
+//
+// We don't have the departure time in the event list, so flight time is
+// approximated by the time remaining at FIRST sight (`arrivalAt - now`): a
+// short hop reads as short however early we observe it, and a long flight
+// first observed late is the benign case (no prior reminder to keep, almost
+// no time left to act).
+//
+// # The decision is LOCKED once made — never cancel a scheduled FS
+//
+// Crucially the flight-time gate runs ONLY when a leg is first classified.
+// {@link reconcileFleetSaves} carries an already-known FS forward unchanged,
+// so a long fleet-save observed again 2 minutes before landing — when the
+// remaining time is now tiny — is NEVER reclassified as a short hop and its
+// already-queued ntfy reminders are NEVER swept. The lock lives in the gist
+// (the persisted `fleetSave` set), so it survives reloads and crosses
+// devices.
+//
+// # Still non-cancellable + self-cleaning
+//
+// The player never arms or cancels an FS. An FS whose row has vanished (the
+// fleet landed, or was recalled) is simply absent from the candidates, so it
+// drops out of the reconcile and the ntfy queue reconcile sweeps its
+// remaining future slots. This is the mechanism behind "once the fleet has
+// landed and you're back in-game, the post-landing pings auto-cancel": being
+// in-game runs the producer, the landed row is gone, its slots fall out and
+// are swept. Pre-landing slots stay queued while the row is present, so an
+// offline player still gets the warning.
 
 /**
  * One fleet leg as read from the event list, before the threshold test.
@@ -84,24 +108,45 @@ export const parseFsOffsets = (str) => {
 };
 
 /**
- * Compute the fleet-save reminder set from the live candidates. Pure: a
- * function of the present event-list rows + the threshold + the offsets.
- * Re-run on every scan — survival is presence, so a vanished row drops out
- * (see the module header). Returns fresh objects, never mutates the input.
+ * Reconcile the fleet-save set: carry forward already-classified saves,
+ * newly classify qualifying candidates, and drop those whose row vanished.
+ * Pure — returns fresh objects, never mutates the inputs, no `Date.now()`
+ * (the caller injects `now`).
  *
- * @param {FleetSaveCandidate[]} candidates  Own legs with a ship count.
+ *   - **present, already FS** (`prev` has the id) → KEPT, with its
+ *     arrival-derived fields refreshed (a redirect can move arrival; the
+ *     player may have edited the offset schedule). The two gates are NOT
+ *     re-applied — this is the lock that stops a late observation from
+ *     cancelling a scheduled save (see the module header).
+ *   - **present, not yet FS** → classified now: kept only if
+ *     `shipCount >= threshold` AND flight time `(arrivalAt - now) >=
+ *     minFlightSec`. `minFlightSec <= 0` disables the flight-time gate.
+ *   - **absent** (`prev` id not among candidates) → dropped (landed /
+ *     recalled), so its queue is swept.
+ *
+ * @param {FleetSaveReminder[]} prev  Previously-persisted FS set (the lock).
+ * @param {FleetSaveCandidate[]} candidates  Own legs present this scan.
  * @param {object} opts
- * @param {number} opts.threshold    Minimum ship count to count as an FS.
+ * @param {number} opts.threshold    Minimum ship count to classify as FS.
  * @param {number[]} opts.offsetsSec Relative fire offsets (see {@link parseFsOffsets}).
+ * @param {number} opts.minFlightSec Minimum flight time (s) for a NEW save.
+ * @param {number} opts.now          Epoch SECONDS — first-sight reference.
  * @returns {FleetSaveReminder[]}
  */
-export const computeFleetSaves = (candidates, { threshold, offsetsSec }) => {
+export const reconcileFleetSaves = (prev, candidates, { threshold, offsetsSec, minFlightSec, now }) => {
+  const known = new Map(prev.map((e) => [e.id, e]));
   /** @type {FleetSaveReminder[]} */
   const out = [];
   for (const c of candidates) {
     if (!Number.isFinite(c.arrivalAt) || !Number.isFinite(c.shipCount)) continue;
-    if (c.shipCount < threshold) continue;
+    const locked = known.get(c.id);
+    if (!locked) {
+      // Classify a brand-new leg — BOTH gates apply, exactly once.
+      if (c.shipCount < threshold) continue;
+      if (minFlightSec > 0 && c.arrivalAt - now < minFlightSec) continue;
+    }
     out.push({
+      ...(locked ?? {}),
       id: c.id,
       arrivalAt: c.arrivalAt,
       shipCount: c.shipCount,

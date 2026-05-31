@@ -26,7 +26,9 @@
 //      threshold and schedule a reminder series. Off ⇒ no 🛡 badges, no FS
 //      scheduling.
 //   7. Fleet-save threshold — total ship count that makes a leg an FS.
-//   8. Fleet-save offsets — the FS reminder schedule, RELATIVE to arrival
+//   8. Fleet-save minimum flight time — excludes short planet⇄moon hops; a
+//      big fleet on a short flight is a logistics shuffle, not a save.
+//   9. Fleet-save offsets — the FS reminder schedule, RELATIVE to arrival
 //      (negative = before landing, 0 = at landing, positive = after).
 //
 // The topic itself is automatic (derived from the token) and shown
@@ -162,6 +164,16 @@ export const remindersSection = {
       label: 'Fleet-save threshold (total ships)',
       type: 'text',
       placeholder: '100000',
+      disabledWhen: sectionLocked,
+    },
+    {
+      // Second gate: exclude short planet⇄moon hops. A big fleet on a short
+      // flight is a logistics shuffle, not a save. Server-speed dependent,
+      // so configurable. Default 600 s (10 min). 0 disables the gate.
+      id: 'fsMinFlightSec',
+      label: 'Fleet-save minimum flight time (seconds)',
+      type: 'text',
+      placeholder: '600',
       disabledWhen: sectionLocked,
     },
     {

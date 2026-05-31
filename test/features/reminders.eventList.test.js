@@ -11,12 +11,42 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { settingsStore, SETTINGS_SCHEMA } from '../../src/state/settings.js';
 import { parseUniverseId } from '../../src/lib/universeId.js';
 import { writePending } from '../../src/features/reminders/pending.js';
+import { REMINDER_MIRROR_KEY } from '../../src/sync/reminders.js';
 import {
   installEventListReminders, _resetEventListRemindersForTest,
 } from '../../src/features/reminders/eventList.js';
 
 const VALID_TOKEN = 'tk_tbqdljrkz4ivlgagxwewjz17k26gw';
 const tick = () => new Promise((r) => setTimeout(r, 0));
+
+// In-memory chrome.storage.local stub — the event-list badge reads the
+// reminder mirror from it (fleet-save badges are mirror-driven). Empty by
+// default ⇒ snapshot is null ⇒ behaves exactly as "no extension API".
+/** @type {Record<string, unknown>} */
+let chromeStoreData = {};
+const installChromeStub = () => {
+  chromeStoreData = {};
+  /** @type {any} */ (globalThis).chrome = {
+    storage: {
+      local: {
+        get: (/** @type {string} */ key, /** @type {Function} */ cb) => cb({ [key]: chromeStoreData[key] }),
+        set: (/** @type {Record<string, unknown>} */ items, /** @type {Function} */ cb) => { Object.assign(chromeStoreData, items); cb && cb(); },
+        remove: (/** @type {string} */ key, /** @type {Function} */ cb) => { delete chromeStoreData[key]; cb && cb(); },
+      },
+      onChanged: { addListener: () => {}, removeListener: () => {} },
+    },
+  };
+};
+
+/** Seed this universe's mirror slice with a fleet-save set. @param {object[]} fleetSave */
+const seedMirror = (fleetSave) => {
+  chromeStoreData[REMINDER_MIRROR_KEY] = {
+    [parseUniverseId(location.host)]: {
+      version: 5, waves: [], notifyState: {}, adhoc: [], adhocNotify: {},
+      fleetSave, fleetSaveNotify: {},
+    },
+  };
+};
 
 /** @param {Partial<import('../../src/state/settings.js').Settings>} [over] */
 const setSettings = (over = {}) => {
@@ -47,6 +77,7 @@ const stubApi = () => ({
 
 beforeEach(() => {
   _resetEventListRemindersForTest();
+  installChromeStub();
   localStorage.clear();
   document.body.innerHTML = '';
   setSettings({ remindersMasterEnabled: true, adhocEnabled: true, reminderEnabled: false, reminderNtfyToken: VALID_TOKEN, adhocOffsetSec: 60 });
@@ -54,6 +85,7 @@ beforeEach(() => {
 
 afterEach(() => {
   _resetEventListRemindersForTest();
+  delete (/** @type {any} */ (globalThis).chrome);
   localStorage.clear();
   document.body.innerHTML = '';
 });
@@ -124,22 +156,13 @@ describe('event-list badges', () => {
     expect(api.armAdhoc.mock.calls[0][0].label).toBe('Expedition → [4:467:16]');
   });
 
-  it('stamps a passive, non-clickable 🛡 badge on an own fleet over the FS threshold', async () => {
+  it('stamps a passive, non-clickable 🛡 badge for a leg the mirror marks as a fleet-save', async () => {
     setSettings({
       remindersMasterEnabled: true, adhocEnabled: true, reminderEnabled: false,
-      reminderNtfyToken: VALID_TOKEN, fsEnabled: true, fsThreshold: 100000,
+      reminderNtfyToken: VALID_TOKEN, fsEnabled: true,
     });
-    const arrival = Math.floor(Date.now() / 1000) + 3600;
-    document.body.innerHTML = `
-      <table id="eventContent"><tbody>
-        <tr class="eventFleet" id="eventRow-9" data-mission-type="4" data-return-flight="false" data-arrival-time="${arrival}">
-          <td class="countDown"><span class="friendly textBeefy">x</span></td>
-          <td class="arrivalTime" original="x">20:23:20</td>
-          <td class="detailsFleet"><span>8.256.872</span></td>
-          <td class="destCoords"><a>[4:478:14]</a></td>
-        </tr>
-      </tbody></table>`;
-    const cell = /** @type {HTMLElement} */ (document.querySelector('td.arrivalTime'));
+    seedMirror([{ id: 'eventRow-42', arrivalAt: 0, shipCount: 8256872, label: 'Deployment → [4:478:14]', offsetsSec: [0], fireAts: [0] }]);
+    const cell = paintRow(Math.floor(Date.now() / 1000) + 3600);
     installEventListReminders(stubApi());
     await tick();
 
@@ -149,24 +172,16 @@ describe('event-list badges', () => {
     expect(cell.getAttribute('data-oge-act')).toBeNull();
     // FS outranks the ad-hoc idle badge on the same row.
     expect(cell.classList.contains('idle')).toBe(false);
+    expect(cell.getAttribute('title')).toMatch(/Fleet-save: Deployment → \[4:478:14\].*ships.*can't be cancelled/);
   });
 
-  it('does NOT flag a fleet below the FS threshold (stays an ad-hoc idle badge)', async () => {
+  it('does NOT flag a leg the mirror omits (stays an ad-hoc idle badge — short hops never get a 🛡)', async () => {
     setSettings({
       remindersMasterEnabled: true, adhocEnabled: true, reminderEnabled: false,
-      reminderNtfyToken: VALID_TOKEN, fsEnabled: true, fsThreshold: 100000, adhocOffsetSec: 60,
+      reminderNtfyToken: VALID_TOKEN, fsEnabled: true, adhocOffsetSec: 60,
     });
-    const arrival = Math.floor(Date.now() / 1000) + 3600;
-    document.body.innerHTML = `
-      <table id="eventContent"><tbody>
-        <tr class="eventFleet" id="eventRow-9" data-mission-type="4" data-return-flight="false" data-arrival-time="${arrival}">
-          <td class="countDown"><span class="friendly textBeefy">x</span></td>
-          <td class="arrivalTime" original="x">20:23:20</td>
-          <td class="detailsFleet"><span>8.000</span></td>
-          <td class="destCoords"><a>[4:478:14]</a></td>
-        </tr>
-      </tbody></table>`;
-    const cell = /** @type {HTMLElement} */ (document.querySelector('td.arrivalTime'));
+    seedMirror([]); // producer classified nothing as a save (e.g. a short hop)
+    const cell = paintRow(Math.floor(Date.now() / 1000) + 3600);
     installEventListReminders(stubApi());
     await tick();
     expect(cell.classList.contains('fs')).toBe(false);

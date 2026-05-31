@@ -73,7 +73,7 @@ import { gh, ensureGistV3, getToken, getGistId } from './gist.js';
 import { chromeStore } from '../lib/storage.js';
 import { reconcileWaves, pruneNotifyState } from '../domain/waves.js';
 import { reconcileAdhoc, pruneAdhocNotify } from '../domain/adhoc.js';
-import { pruneFsNotify } from '../domain/fleetSave.js';
+import { reconcileFleetSaves, pruneFsNotify, parseFsOffsets } from '../domain/fleetSave.js';
 import {
   reconcileWaveQueue, reconcileAdhocQueue, reconcileFleetSaveQueue,
   offsetsForSchedule, NTFY_MAX_DELAY_SEC, fetchScheduledMessages,
@@ -85,6 +85,7 @@ import {
  * @typedef {import('../domain/adhoc.js').AdhocReminder} AdhocReminder
  * @typedef {import('../domain/adhoc.js').PresentFleet} PresentFleet
  * @typedef {import('../domain/fleetSave.js').FleetSaveReminder} FleetSaveReminder
+ * @typedef {import('../domain/fleetSave.js').FleetSaveCandidate} FleetSaveCandidate
  */
 
 /**
@@ -102,6 +103,12 @@ import {
  *   false, armed entries are kept in state but nothing is queued on ntfy.
  * @property {boolean} [fsEnabled]   Fleet-save auto-detection on/off. When
  *   false, detected entries are kept in state but nothing is queued on ntfy.
+ * @property {number} [fsThreshold]   Minimum total ships to classify as a save.
+ * @property {string} [fsOffsets]     FS reminder offsets relative to arrival
+ *   (comma-separated seconds; see `domain/fleetSave.parseFsOffsets`).
+ * @property {number} [fsMinFlightSec] Minimum flight time (s) for a NEW save —
+ *   excludes short planet⇄moon hops. The gate runs once, then the save is
+ *   locked (see `domain/fleetSave.reconcileFleetSaves`).
  * @property {string} ntfyToken
  * @property {string} [schedule]  Reminder schedule preset key (see
  *   `ntfyScheduler.REMINDER_PRESETS`). Falls back to the default preset
@@ -484,10 +491,11 @@ const adhocBody = (e) => {
  *   {@link reconcileWaves} (used by the event-list "cancel this wave"
  *   action to tombstone a wave game-side; the flag is then carried
  *   forward by the overlap match). Omitted on the periodic pass.
- * @param {FleetSaveReminder[]} [dom.fleetSave]  Fleet-saves detected this scan
- *   (own legs over the ship threshold), already expanded to relative-offset
- *   fire times by the producer. The complete live set — recomputed every
- *   scan, so a landed/recalled FS simply isn't present and its queue is swept.
+ * @param {FleetSaveCandidate[]} [dom.fleetSaveCandidates]  Every OWN fleet leg
+ *   present this scan (id + arrival + ship count + label). The full candidate
+ *   set; {@link reconcileFleetSaves} applies the ship + flight-time gates
+ *   against the persisted (locked) save set, and a landed/recalled leg simply
+ *   isn't present so its queue is swept.
  * @param {number} now             Epoch SECONDS, injected by the caller.
  * @param {string} universeId      OGame server id; ntfy push title prefix.
  * @returns {Promise<{ ok: boolean, reason?: string, changed?: boolean, scheduled?: number, cancelled?: number }>}
@@ -495,7 +503,7 @@ const adhocBody = (e) => {
 export const syncReminders = async (config, dom, now, universeId) => {
   if (!getToken()) return { ok: false, reason: 'no-token' };
 
-  const { waveCandidates, present, adhocMutate, waveMutate, fleetSave = [] } = dom;
+  const { waveCandidates, present, adhocMutate, waveMutate, fleetSaveCandidates = [] } = dom;
 
   // Token resolution: prefer per-origin localStorage value; fall back
   // to the global chrome.storage mirror so a universe that hasn't been
@@ -508,6 +516,7 @@ export const syncReminders = async (config, dom, now, universeId) => {
   const prevNotify = existing?.notifyState ?? {};
   const prevAdhoc = existing?.adhoc ?? [];
   const prevAdhocNotify = existing?.adhocNotify ?? {};
+  const prevFs = existing?.fleetSave ?? [];
   const prevFsNotify = existing?.fleetSaveNotify ?? {};
 
   const prevWavesMutated = waveMutate ? waveMutate(prevWaves) : prevWaves;
@@ -515,6 +524,16 @@ export const syncReminders = async (config, dom, now, universeId) => {
 
   const adhocWorking = adhocMutate ? adhocMutate(prevAdhoc) : prevAdhoc;
   const { entries: adhoc } = reconcileAdhoc(adhocWorking, present);
+
+  // Fleet-saves: gate new candidates on ship count + flight time, carry
+  // forward (lock) anything already classified, drop the vanished. The lock
+  // is why a save observed 2 min before landing keeps its queued pings.
+  const fleetSave = reconcileFleetSaves(prevFs, fleetSaveCandidates, {
+    threshold: config.fsThreshold ?? 0,
+    offsetsSec: parseFsOffsets(config.fsOffsets ?? ''),
+    minFlightSec: config.fsMinFlightSec ?? 0,
+    now,
+  });
 
   // Each wave's schedule is anchored at a base time locked on first sight
   // (`baseAt`). Re-derive it from the prev bookkeeping when we have it;

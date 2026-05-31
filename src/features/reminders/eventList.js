@@ -14,11 +14,13 @@
 //     already-cancelled wave one click RESENDS it. Every other leg of the
 //     wave shows a passive "🛰 part of a wave" marker so the grouping is
 //     visible, but isn't independently armable.
-//   - **Fleet-save.** Any of YOUR fleets whose total ship count crosses the
-//     FS threshold shows a passive 🛡 marker (amber). It is auto-detected and
-//     auto-scheduled by the producer; the player can't arm or cancel it, so
-//     the badge carries no click action. Takes precedence over the ad-hoc
-//     toggle on the same row (wave > fleet-save > ad-hoc).
+//   - **Fleet-save.** A leg the producer classified as a fleet-save (big own
+//     fleet on a long-enough flight) shows a passive 🛡 marker (amber). It is
+//     auto-detected and auto-scheduled; the player can't arm or cancel it, so
+//     the badge carries no click action. Driven by the mirror's `fleetSave`
+//     set (not a local DOM guess) so it matches what's actually scheduled —
+//     short planet⇄moon hops never get flagged. Takes precedence over the
+//     ad-hoc toggle on the same row (wave > fleet-save > ad-hoc).
 //   - **Ad-hoc.** Every other leg (outbound, non-expedition, or a return
 //     not part of a scheduled wave) is an ad-hoc toggle: click to arm a
 //     one-shot reminder `adhocOffsetSec` before arrival, click again to
@@ -54,7 +56,6 @@ import { fireAtFor } from '../../domain/adhoc.js';
 import { injectStyle } from '../../lib/dom.js';
 import { debounce } from '../../lib/debounce.js';
 import { readPending, lastAdhocIntent, lastWaveIntent } from './pending.js';
-import { shipCountOf, isOwnFleet } from './fsScan.js';
 
 /** @typedef {import('../../sync/reminders.js').ReminderState} ReminderState */
 /** @typedef {import('../../domain/adhoc.js').AdhocReminder} AdhocReminder */
@@ -253,6 +254,7 @@ const render = () => {
   }
 
   const armedSet = new Set((snapshot?.adhoc || []).map((e) => e.id));
+  const fsById = new Map((snapshot?.fleetSave || []).map((e) => [e.id, e]));
 
   for (const row of rows) {
     const cell = /** @type {HTMLElement | null} */ (row.querySelector('td.arrivalTime'));
@@ -281,15 +283,15 @@ const render = () => {
       continue;
     }
 
-    // Fleet-save: an own leg over the ship threshold. Passive, non-clickable
-    // (auto-detected + auto-scheduled), and it outranks the ad-hoc toggle on
-    // the same row. Read straight from the DOM (ship count + ownership) so
-    // the badge is instant, independent of the gist round-trip.
-    if (fsOn && Number.isFinite(arrivalAt) && isOwnFleet(row)) {
-      const ships = shipCountOf(row);
-      if (Number.isFinite(ships) && ships >= s.fsThreshold) {
+    // Fleet-save: a leg the producer classified as a save (mirror-driven, so
+    // it reflects the ship + flight-time gates and the lock — never a short
+    // hop). Passive, non-clickable, outranks the ad-hoc toggle on the row.
+    if (fsOn) {
+      const fs = fsById.get(id);
+      if (fs) {
+        const ships = Number(fs.shipCount).toLocaleString();
         stamp(cell, 'fs', '', '',
-          `Fleet-save detected (${ships.toLocaleString()} ships) — reminder set automatically (can't be cancelled)`);
+          `Fleet-save: ${fs.label} (${ships} ships) — reminder set automatically (can't be cancelled)`);
         continue;
       }
     }
@@ -418,7 +420,7 @@ export const installEventListReminders = ({ armAdhoc, disarmAdhoc, cancelWave, r
 const pickSig = (s) =>
   JSON.stringify({
     a: s.adhocEnabled, t: s.reminderNtfyToken, o: s.adhocOffsetSec, e: s.reminderEnabled,
-    m: s.remindersMasterEnabled, f: s.fsEnabled, fth: s.fsThreshold,
+    m: s.remindersMasterEnabled, f: s.fsEnabled,
   });
 
 /**

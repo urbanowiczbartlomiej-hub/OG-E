@@ -6,6 +6,25 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.9.1] — 2026-05-31
+
+### Fixed
+
+- Fleet-save detection no longer flags short planet⇄moon shuffles. A big
+  fleet on a quick hop is logistics, not a save — so a leg now counts as a
+  fleet-save only if its **flight time** is at least a configurable minimum
+  (default 10 min), on top of the ship-count threshold.
+- The flight-time check runs **once**, when the leg is first seen, and the
+  classification is then locked. Logging in shortly before a long
+  fleet-save lands can no longer reclassify it as "short" and cancel its
+  already-scheduled reminders — the lock survives reloads and crosses
+  devices (it lives in the gist state).
+
+### Added
+
+- New **Reminders** setting: *Fleet-save minimum flight time (seconds)* —
+  server-speed dependent, so configurable (default 600).
+
 ## [1.9.0] — 2026-05-31
 
 ### Added

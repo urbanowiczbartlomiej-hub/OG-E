@@ -93,6 +93,8 @@ export const SETTINGS_PREFIX = 'oge_';
  *   fsThreshold             100000 — minimum total ships for a leg to count as a fleet-save
  *   fsOffsets               '-600,0,600' — FS reminder offsets (sec) relative to arrival
  *                                   (negative = before landing, 0 = at landing, positive = after)
+ *   fsMinFlightSec          600   — minimum flight time (sec) for a leg to count as a fleet-save;
+ *                                   excludes short planet⇄moon hops. Server-speed dependent.
  *
  * @typedef {object} Settings
  * @property {boolean} mobileMode
@@ -121,6 +123,7 @@ export const SETTINGS_PREFIX = 'oge_';
  * @property {boolean} fsEnabled
  * @property {number}  fsThreshold
  * @property {string}  fsOffsets
+ * @property {number}  fsMinFlightSec
  */
 
 /**
@@ -184,6 +187,7 @@ export const SETTINGS_SCHEMA = {
   fsEnabled:              { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'fsEnabled' },
   fsThreshold:            { type: 'int',    default: 100000, key: SETTINGS_PREFIX + 'fsThreshold' },
   fsOffsets:              { type: 'string', default: '-600,0,600', key: SETTINGS_PREFIX + 'fsOffsets' },
+  fsMinFlightSec:         { type: 'int',    default: 600,   key: SETTINGS_PREFIX + 'fsMinFlightSec' },
 };
 
 /**
