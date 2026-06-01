@@ -6,6 +6,23 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.10.0] — 2026-06-01
+
+### Changed
+- Trader reminder reworked. The Auctioneer and Import/Export reminders are
+  now separate glows, and each one clears only when you actually do the
+  thing — place a bid / take the container — rather than just by opening
+  the Trader menu.
+  - Yellow (Auctioneer): glows during auction hours; placing a bid quiets
+    it for about half an hour, then it reminds you about the next auction.
+  - Red (Import/Export): glows from 14:00 until you take the daily
+    container, then resets at midnight. It deliberately stays dark before
+    14:00 so it never tempts you to spend your one daily import before the
+    afternoon tasks that may need it.
+- The glows now also light the matching tiles on the Trader overview
+  screen, and the Trader menu button steps aside for OGame's own
+  hover/selected styling instead of overriding it.
+
 ## [1.9.3] — 2026-05-31
 
 ### Fixed
