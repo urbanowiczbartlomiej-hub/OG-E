@@ -74,3 +74,29 @@ pushed tag pointing at a non-existent release.
 - `npm run typecheck` must exit 0 before any commit.
 - Follow Conventional Commits: `fix:` / `feat:` / `refactor:` /
   `chore:` / `test:` / `docs:`.
+
+## Context hygiene (read this every session)
+
+This repo is large (`src/` ~830 KB, `test/` ~600 KB, single files up to
+~1100 lines) and OGame HTML dumps the user pastes are huge. A naive
+session burns hundreds of thousands of tokens. Keep context lean:
+
+- **Read narrowly.** Prefer `Grep`/`Glob` to locate, then `Read` with
+  `offset`/`limit` for just the relevant span. Don't slurp whole large
+  files when you need one function. Never read a file already pasted into
+  the conversation.
+- **Don't read tests you aren't changing.** To copy a harness pattern
+  (e.g. the fake-XHR helper), open ONE example with a tight `limit`, not
+  every test file.
+- **Truncate every command's output.** Pipe through
+  `Select-String`/`Select-Object -Last N`; never dump full `npm test` /
+  `npm run build` / `tsc` logs — capture the summary line only (e.g.
+  `Select-String "Test Files|Tests |FAIL"`).
+- **Delegate broad search to an agent, ask for conclusions.** When using
+  the Explore/general agent, instruct it to return file:line pointers and
+  a short verdict — not large code excerpts.
+- **Never echo back the user's pasted HTML.** Extract the few selectors /
+  IDs / values you need and reference those; quoting the blob doubles its
+  cost.
+- `dist/` is gitignored — building never dirties the tree, so a build for
+  manual testing is free of release-process side effects.
