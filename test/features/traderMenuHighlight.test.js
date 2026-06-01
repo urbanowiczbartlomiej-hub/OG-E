@@ -1,19 +1,21 @@
 // @vitest-environment happy-dom
 //
-// Unit tests for the Trader menu highlight feature.
+// Unit tests for the Trader highlight feature.
 //
 // Coverage split:
 //
-//   - Pure policy:    `computeTraderMode(now, lastClickMs)` — covers all
-//                     time-of-day × click-history combinations without
-//                     touching DOM or localStorage.
-//   - DOM lifecycle:  install / settings toggle / dispose / click handler
-//                     write-through to localStorage and immediate visual
-//                     update on click.
+//   - Pure policy:   `traderGlows(now, state)` — every window × history
+//                    combination, the ~30-min bid snooze, the daily import
+//                    reset, and the red-over-yellow menu priority. No DOM,
+//                    no storage.
+//   - DOM lifecycle: install / settings toggle / dispose, painting the
+//                    menu button and the two overview tiles, and the
+//                    action events (`oge:traderBidPlaced` /
+//                    `oge:traderImportTraded`) stamping localStorage and
+//                    clearing the matching glow.
 //
-// Date handling uses `vi.useFakeTimers` + `setSystemTime` so the install
-// path picks up a deterministic clock. The pure function tests pass
-// `Date`s directly and don't need the fake-timer setup.
+// Date handling uses `vi.useFakeTimers` + `setSystemTime` so install/event
+// paths pick up a deterministic clock. The pure tests pass `Date`s directly.
 //
 // @ts-check
 
@@ -21,23 +23,24 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import {
   installTraderMenuHighlight,
-  computeTraderMode,
+  traderGlows,
+  localDayKey,
   _resetTraderMenuHighlightForTest,
-  TRADER_CLICK_KEY,
+  AUCTION_BID_KEY,
+  IMPORT_TRADED_KEY,
 } from '../../src/features/traderMenuHighlight.js';
 import { settingsStore } from '../../src/state/settings.js';
 
 const STYLE_ID = 'oge-trader-highlight-style';
 const HIGHLIGHT_CLASS = 'oge-trader-highlight';
-const SUBTLE_CLASS = 'oge-trader-subtle';
-const INTENSE_CLASS = 'oge-trader-intense';
+const YELLOW_CLASS = 'oge-trader-yellow';
+const RED_CLASS = 'oge-trader-red';
 
-/** Build a `#menuTable` containing only the Trader anchor. */
+/** Build `#menuTable` with the Trader anchor; return the anchor. */
 const buildMenu = () => {
   const ul = document.createElement('ul');
   ul.id = 'menuTable';
   const a = /** @type {HTMLAnchorElement} */ (document.createElement('a'));
-  a.className = 'menubutton premiumHighligt';
   a.dataset.ipiHint = 'ipiToolbarTrader';
   a.href = '#trader';
   const span = document.createElement('span');
@@ -51,86 +54,93 @@ const buildMenu = () => {
   return a;
 };
 
-const findTrader = () =>
+/** Build the two overview tiles; return `{ auction, importTile }`. */
+const buildTiles = () => {
+  const make = (/** @type {string} */ hint, /** @type {string} */ label) => {
+    const div = document.createElement('div');
+    div.dataset.ipiHint = hint;
+    const h2 = document.createElement('h2');
+    h2.textContent = label;
+    div.appendChild(h2);
+    document.body.appendChild(div);
+    return div;
+  };
+  return {
+    auction: make('ipiTraderAuctioneer', 'Licytator'),
+    importTile: make('ipiTraderImportExport', 'Import / Eksport'),
+  };
+};
+
+const findMenu = () =>
   /** @type {HTMLElement | null} */ (
-    document.querySelector('[data-ipi-hint="ipiToolbarTrader"]')
+    document.querySelector('#menuTable [data-ipi-hint="ipiToolbarTrader"]')
   );
 
 // ── Pure policy ──────────────────────────────────────────────────────
 
-describe('computeTraderMode', () => {
-  // Build a local-time Date that survives DST/timezone surprises: the
-  // browser interprets a "no-Z" string as local, which is exactly what
-  // the production code does (it reads `now.getHours()` etc).
+describe('traderGlows', () => {
   /** @param {string} iso */
   const at = (iso) => new Date(iso);
+  /** @type {import('../../src/features/traderMenuHighlight.js').TraderState} */
+  const blank = { auctionBidAt: null, importTradedDay: null };
 
-  it('returns "off" during night (00:00–06:00) regardless of clicks', () => {
-    expect(computeTraderMode(at('2026-05-28T00:00:00'), null)).toBe('off');
-    expect(computeTraderMode(at('2026-05-28T03:30:00'), null)).toBe('off');
-    expect(computeTraderMode(at('2026-05-28T05:59:00'), null)).toBe('off');
-    expect(computeTraderMode(at('2026-05-28T05:59:00'), Date.now())).toBe('off');
+  it('everything off during the night (00:00–06:00)', () => {
+    const g = traderGlows(at('2026-05-28T03:30:00'), blank);
+    expect(g).toEqual({ menu: 'off', auctionPending: false, importPending: false });
   });
 
-  it('returns "subtle" in the morning band (06:00–14:00) with no prior click', () => {
-    expect(computeTraderMode(at('2026-05-28T06:00:00'), null)).toBe('subtle');
-    expect(computeTraderMode(at('2026-05-28T10:15:00'), null)).toBe('subtle');
-    expect(computeTraderMode(at('2026-05-28T13:59:00'), null)).toBe('subtle');
+  it('yellow-only in auction morning (06:00–14:00), no import nudge before 14', () => {
+    for (const iso of ['2026-05-28T06:00:00', '2026-05-28T10:00:00', '2026-05-28T13:59:00']) {
+      const g = traderGlows(at(iso), blank);
+      expect(g.auctionPending).toBe(true);
+      expect(g.importPending).toBe(false);
+      expect(g.menu).toBe('yellow');
+    }
   });
 
-  it('returns "off" inside the same 30-min slot as the last click (morning)', () => {
-    const click = at('2026-05-28T10:14:00').getTime();
-    // Same slot (10:00–10:30): suppressed.
-    expect(computeTraderMode(at('2026-05-28T10:20:00'), click)).toBe('off');
-    expect(computeTraderMode(at('2026-05-28T10:29:59'), click)).toBe('off');
+  it('red takes the menu from 14:00 while the auction tile stays yellow', () => {
+    const g = traderGlows(at('2026-05-28T15:00:00'), blank);
+    expect(g.auctionPending).toBe(true);
+    expect(g.importPending).toBe(true);
+    expect(g.menu).toBe('red'); // red > yellow on the single menu button
   });
 
-  it('returns "subtle" in the very next 30-min slot after a click (morning)', () => {
-    const click = at('2026-05-28T10:14:00').getTime();
-    // 10:30 starts a new slot — the reminder comes back.
-    expect(computeTraderMode(at('2026-05-28T10:30:00'), click)).toBe('subtle');
-    expect(computeTraderMode(at('2026-05-28T10:45:00'), click)).toBe('subtle');
+  it('after 23:00 the auction window closes; red still nags until midnight', () => {
+    const g = traderGlows(at('2026-05-28T23:30:00'), blank);
+    expect(g.auctionPending).toBe(false);
+    expect(g.importPending).toBe(true);
+    expect(g.menu).toBe('red');
   });
 
-  it('returns "intense" in the afternoon band (14:00–24:00) when no click today', () => {
-    expect(computeTraderMode(at('2026-05-28T14:00:00'), null)).toBe('intense');
-    expect(computeTraderMode(at('2026-05-28T18:42:00'), null)).toBe('intense');
-    expect(computeTraderMode(at('2026-05-28T23:59:00'), null)).toBe('intense');
+  it('a successful bid snoozes yellow for ~30 min, then it returns', () => {
+    const now = at('2026-05-28T10:00:00');
+    const justBid = { auctionBidAt: now.getTime() - 5 * 60 * 1000, importTradedDay: null };
+    expect(traderGlows(now, justBid).auctionPending).toBe(false); // within 30 min
+    const staleBid = { auctionBidAt: now.getTime() - 31 * 60 * 1000, importTradedDay: null };
+    expect(traderGlows(now, staleBid).auctionPending).toBe(true); // snooze expired
   });
 
-  it('returns "intense" in the afternoon when last click was on a PREVIOUS day', () => {
-    const yesterdayClick = at('2026-05-27T22:00:00').getTime();
-    expect(computeTraderMode(at('2026-05-28T15:00:00'), yesterdayClick)).toBe('intense');
+  it('a bid does not affect the import (red) reminder', () => {
+    const now = at('2026-05-28T15:00:00');
+    const bid = { auctionBidAt: now.getTime(), importTradedDay: null };
+    const g = traderGlows(now, bid);
+    expect(g.auctionPending).toBe(false); // snoozed
+    expect(g.importPending).toBe(true); // untouched
+    expect(g.menu).toBe('red');
   });
 
-  it('keeps "intense" in the afternoon when the only click today was in the MORNING', () => {
-    // Regression: a morning click satisfies the subtle morning reminder
-    // but must NOT silence the afternoon red escalation. The intense
-    // tier is only cleared by a click made inside the 14:00–24:00 window.
-    const morningClick = at('2026-05-28T10:00:00').getTime();
-    expect(computeTraderMode(at('2026-05-28T14:00:00'), morningClick)).toBe('intense');
-    expect(computeTraderMode(at('2026-05-28T18:42:00'), morningClick)).toBe('intense');
+  it('taking the import today clears red for the rest of the day', () => {
+    const now = at('2026-05-28T15:00:00');
+    const traded = { auctionBidAt: null, importTradedDay: localDayKey(now) };
+    const g = traderGlows(now, traded);
+    expect(g.importPending).toBe(false);
+    expect(g.menu).toBe('yellow'); // auction still pending → menu falls back to yellow
   });
 
-  it('downgrades to "subtle" after the first click of the day (in next slot)', () => {
-    const click = at('2026-05-28T15:10:00').getTime();
-    // Same slot as click: off.
-    expect(computeTraderMode(at('2026-05-28T15:20:00'), click)).toBe('off');
-    // Next slot: subtle (NOT intense — first click of the day already
-    // happened so the intense escalation is silenced for the rest of
-    // the calendar day).
-    expect(computeTraderMode(at('2026-05-28T15:35:00'), click)).toBe('subtle');
-    expect(computeTraderMode(at('2026-05-28T22:00:00'), click)).toBe('subtle');
-  });
-
-  it('treats a click at 06:00 morning identically to one at 06:00 evening for slot suppression', () => {
-    // Slot boundary alignment: a click exactly at :30 puts us in the
-    // :30 slot; the :00 slot just before is the previous slot.
-    const click = at('2026-05-28T10:30:00').getTime();
-    expect(computeTraderMode(at('2026-05-28T10:29:59'), click)).toBe('subtle');
-    expect(computeTraderMode(at('2026-05-28T10:30:00'), click)).toBe('off');
-    expect(computeTraderMode(at('2026-05-28T10:59:59'), click)).toBe('off');
-    expect(computeTraderMode(at('2026-05-28T11:00:00'), click)).toBe('subtle');
+  it('an import taken YESTERDAY re-arms red today', () => {
+    const now = at('2026-05-28T15:00:00');
+    const yesterday = { auctionBidAt: null, importTradedDay: localDayKey(at('2026-05-27T15:00:00')) };
+    expect(traderGlows(now, yesterday).importPending).toBe(true);
   });
 });
 
@@ -140,131 +150,143 @@ describe('installTraderMenuHighlight', () => {
   beforeEach(() => {
     _resetTraderMenuHighlightForTest();
     settingsStore.update((s) => ({ ...s, traderMenuHighlight: true }));
-    localStorage.removeItem(TRADER_CLICK_KEY);
+    localStorage.removeItem(AUCTION_BID_KEY);
+    localStorage.removeItem(IMPORT_TRADED_KEY);
     document.getElementById(STYLE_ID)?.remove();
-    document.getElementById('menuTable')?.remove();
+    document.body.innerHTML = '';
     vi.useFakeTimers();
-    // Default: afternoon, no clicks → intense expected.
+    // Default: afternoon, nothing done → menu red, both tiles glowing.
     vi.setSystemTime(new Date('2026-05-28T18:00:00'));
     buildMenu();
+    buildTiles();
   });
 
   afterEach(() => {
     _resetTraderMenuHighlightForTest();
     settingsStore.update((s) => ({ ...s, traderMenuHighlight: true }));
-    localStorage.removeItem(TRADER_CLICK_KEY);
+    localStorage.removeItem(AUCTION_BID_KEY);
+    localStorage.removeItem(IMPORT_TRADED_KEY);
     document.getElementById(STYLE_ID)?.remove();
-    document.getElementById('menuTable')?.remove();
+    document.body.innerHTML = '';
     vi.useRealTimers();
   });
 
-  it('injects the trader-highlight stylesheet', () => {
+  it('injects the stylesheet', () => {
     installTraderMenuHighlight();
     expect(document.getElementById(STYLE_ID)?.tagName).toBe('STYLE');
   });
 
-  it('is idempotent — second install returns same dispose and does not duplicate <style>', () => {
+  it('is idempotent — second install returns same dispose, no duplicate <style>', () => {
     const a = installTraderMenuHighlight();
     const b = installTraderMenuHighlight();
     expect(a).toBe(b);
     expect(document.querySelectorAll(`#${STYLE_ID}`).length).toBe(1);
   });
 
-  it('applies the intense modifier in the afternoon when no click today', () => {
+  it('afternoon, nothing done: menu red, auction tile yellow, import tile red', () => {
     installTraderMenuHighlight();
-    const trader = findTrader();
-    expect(trader?.classList.contains(HIGHLIGHT_CLASS)).toBe(true);
-    expect(trader?.classList.contains(INTENSE_CLASS)).toBe(true);
-    expect(trader?.classList.contains(SUBTLE_CLASS)).toBe(false);
+    expect(findMenu()?.classList.contains(RED_CLASS)).toBe(true);
+    const auction = /** @type {HTMLElement} */ (document.querySelector('[data-ipi-hint="ipiTraderAuctioneer"]'));
+    const importTile = /** @type {HTMLElement} */ (document.querySelector('[data-ipi-hint="ipiTraderImportExport"]'));
+    expect(auction.classList.contains(YELLOW_CLASS)).toBe(true);
+    expect(importTile.classList.contains(RED_CLASS)).toBe(true);
   });
 
-  it('applies the subtle modifier in the morning when no click today', () => {
+  it('tags the menu button with the menu marker but not the tiles', () => {
+    installTraderMenuHighlight(); // 18:00 → menu red, both tiles lit
+    expect(findMenu()?.classList.contains('oge-trader-menu')).toBe(true);
+    const auction = /** @type {HTMLElement} */ (document.querySelector('[data-ipi-hint="ipiTraderAuctioneer"]'));
+    const importTile = /** @type {HTMLElement} */ (document.querySelector('[data-ipi-hint="ipiTraderImportExport"]'));
+    expect(auction.classList.contains('oge-trader-menu')).toBe(false);
+    expect(importTile.classList.contains('oge-trader-menu')).toBe(false);
+  });
+
+  it('morning: menu yellow and import tile not lit (before 14:00)', () => {
     vi.setSystemTime(new Date('2026-05-28T08:00:00'));
     installTraderMenuHighlight();
-    const trader = findTrader();
-    expect(trader?.classList.contains(SUBTLE_CLASS)).toBe(true);
-    expect(trader?.classList.contains(INTENSE_CLASS)).toBe(false);
+    expect(findMenu()?.classList.contains(YELLOW_CLASS)).toBe(true);
+    const importTile = /** @type {HTMLElement} */ (document.querySelector('[data-ipi-hint="ipiTraderImportExport"]'));
+    expect(importTile.classList.contains(HIGHLIGHT_CLASS)).toBe(false);
   });
 
-  it('applies no class during night hours', () => {
+  it('night: nothing lit', () => {
     vi.setSystemTime(new Date('2026-05-28T03:00:00'));
     installTraderMenuHighlight();
-    const trader = findTrader();
-    expect(trader?.classList.contains(HIGHLIGHT_CLASS)).toBe(false);
+    expect(findMenu()?.classList.contains(HIGHLIGHT_CLASS)).toBe(false);
+    expect(
+      /** @type {HTMLElement} */ (document.querySelector('[data-ipi-hint="ipiTraderAuctioneer"]')).classList.contains(HIGHLIGHT_CLASS),
+    ).toBe(false);
   });
 
-  it('click on Trader anchor writes a timestamp to localStorage and downgrades to off (same slot)', () => {
+  it('oge:traderBidPlaced stamps the bid time and clears yellow (snoozed)', () => {
+    // Morning so the menu is yellow-only (isolates the auction reminder).
+    vi.setSystemTime(new Date('2026-05-28T08:00:00'));
     installTraderMenuHighlight();
-    const trader = findTrader();
-    expect(trader?.classList.contains(INTENSE_CLASS)).toBe(true);
+    expect(findMenu()?.classList.contains(YELLOW_CLASS)).toBe(true);
 
-    trader?.click();
+    document.dispatchEvent(new CustomEvent('oge:traderBidPlaced'));
 
-    const stored = localStorage.getItem(TRADER_CLICK_KEY);
-    expect(stored).not.toBeNull();
-    expect(Number.isFinite(Number(stored))).toBe(true);
-
-    // Same slot as the click → highlight goes away.
-    expect(trader?.classList.contains(HIGHLIGHT_CLASS)).toBe(false);
+    expect(localStorage.getItem(AUCTION_BID_KEY)).not.toBeNull();
+    expect(findMenu()?.classList.contains(HIGHLIGHT_CLASS)).toBe(false);
+    const auction = /** @type {HTMLElement} */ (document.querySelector('[data-ipi-hint="ipiTraderAuctioneer"]'));
+    expect(auction.classList.contains(HIGHLIGHT_CLASS)).toBe(false);
   });
 
-  it('click via an inner child element is detected via event delegation', () => {
-    installTraderMenuHighlight();
-    const span = document.querySelector(
-      '[data-ipi-hint="ipiToolbarTrader"] .textlabel',
-    );
-    /** @type {HTMLElement} */ (span)?.click();
-    expect(localStorage.getItem(TRADER_CLICK_KEY)).not.toBeNull();
+  it('oge:traderImportTraded stamps today and clears red (menu falls back to yellow)', () => {
+    installTraderMenuHighlight(); // 18:00 → menu red
+    expect(findMenu()?.classList.contains(RED_CLASS)).toBe(true);
+
+    document.dispatchEvent(new CustomEvent('oge:traderImportTraded'));
+
+    expect(localStorage.getItem(IMPORT_TRADED_KEY)).toBe(localDayKey(new Date()));
+    const importTile = /** @type {HTMLElement} */ (document.querySelector('[data-ipi-hint="ipiTraderImportExport"]'));
+    expect(importTile.classList.contains(HIGHLIGHT_CLASS)).toBe(false);
+    // Auction still pending → the single menu button now shows yellow.
+    expect(findMenu()?.classList.contains(YELLOW_CLASS)).toBe(true);
   });
 
-  it('after a click, advancing into the next slot brings back subtle (not intense)', () => {
+  it('yellow returns after the bid snooze expires (safety-poll re-eval)', () => {
+    vi.setSystemTime(new Date('2026-05-28T08:00:00'));
     installTraderMenuHighlight();
-    const trader = findTrader();
-    trader?.click();
-    expect(trader?.classList.contains(HIGHLIGHT_CLASS)).toBe(false);
+    document.dispatchEvent(new CustomEvent('oge:traderBidPlaced'));
+    expect(findMenu()?.classList.contains(HIGHLIGHT_CLASS)).toBe(false);
 
-    // Advance past the 30-min slot. The safety-poll fires every 60s,
-    // so 31 minutes of fake time guarantees at least one re-evaluation.
-    vi.setSystemTime(new Date('2026-05-28T18:31:00'));
+    // Past the 30-min snooze; the 60s poll re-evaluates.
+    vi.setSystemTime(new Date('2026-05-28T08:31:00'));
     vi.advanceTimersByTime(60_000);
 
-    expect(trader?.classList.contains(HIGHLIGHT_CLASS)).toBe(true);
-    // First click of the day already happened → intense is silenced.
-    expect(trader?.classList.contains(SUBTLE_CLASS)).toBe(true);
-    expect(trader?.classList.contains(INTENSE_CLASS)).toBe(false);
+    expect(findMenu()?.classList.contains(YELLOW_CLASS)).toBe(true);
   });
 
   it('disabling the setting strips classes and removes the stylesheet', () => {
     installTraderMenuHighlight();
-    expect(findTrader()?.classList.contains(HIGHLIGHT_CLASS)).toBe(true);
+    expect(findMenu()?.classList.contains(HIGHLIGHT_CLASS)).toBe(true);
 
     settingsStore.update((s) => ({ ...s, traderMenuHighlight: false }));
 
-    expect(findTrader()?.classList.contains(HIGHLIGHT_CLASS)).toBe(false);
+    expect(findMenu()?.classList.contains(HIGHLIGHT_CLASS)).toBe(false);
     expect(document.getElementById(STYLE_ID)).toBeNull();
   });
 
-  it('re-enabling the setting restores the highlight', () => {
+  it('re-enabling restores the highlight', () => {
     installTraderMenuHighlight();
     settingsStore.update((s) => ({ ...s, traderMenuHighlight: false }));
     settingsStore.update((s) => ({ ...s, traderMenuHighlight: true }));
-
-    expect(findTrader()?.classList.contains(HIGHLIGHT_CLASS)).toBe(true);
+    expect(findMenu()?.classList.contains(HIGHLIGHT_CLASS)).toBe(true);
     expect(document.getElementById(STYLE_ID)).not.toBeNull();
   });
 
-  it('dispose tears down style, classes, listeners, and observer', () => {
+  it('dispose tears down style, classes, listeners, observer, and poll', () => {
     const dispose = installTraderMenuHighlight();
-    expect(findTrader()?.classList.contains(HIGHLIGHT_CLASS)).toBe(true);
+    expect(findMenu()?.classList.contains(HIGHLIGHT_CLASS)).toBe(true);
 
     dispose();
 
     expect(document.getElementById(STYLE_ID)).toBeNull();
-    expect(findTrader()?.classList.contains(HIGHLIGHT_CLASS)).toBe(false);
+    expect(findMenu()?.classList.contains(HIGHLIGHT_CLASS)).toBe(false);
 
-    // A click after dispose must NOT mutate localStorage — the
-    // delegated listener was removed.
-    findTrader()?.click();
-    expect(localStorage.getItem(TRADER_CLICK_KEY)).toBeNull();
+    // Events after dispose must NOT mutate storage — listeners were removed.
+    document.dispatchEvent(new CustomEvent('oge:traderBidPlaced'));
+    expect(localStorage.getItem(AUCTION_BID_KEY)).toBeNull();
   });
 });

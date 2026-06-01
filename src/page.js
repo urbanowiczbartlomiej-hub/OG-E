@@ -28,6 +28,7 @@ import { installSendFleetHook } from './bridges/sendFleetHook.js';
 import { installExpeditionRedirect } from './bridges/expeditionRedirect.js';
 import { installFleetDispatcherSnapshot } from './bridges/fleetDispatcherSnapshot.js';
 import { installEventBoxHook } from './bridges/eventBoxHook.js';
+import { installTraderActionHook } from './bridges/traderActionHook.js';
 
 installGalaxyHook();
 installCheckTargetHook();
@@ -42,3 +43,7 @@ installFleetDispatcherSnapshot();
 // this, a user tapping immediately on fleetdispatch enters Phase 2
 // polling against a half-hydrated DOM and locks the button for 15 s.
 installEventBoxHook();
+// Observe the two daily Trader actions (auctioneer bid / import trade) so
+// the isolated-world trader highlight can clear the matching glow only
+// when the player actually performs the action — not on a mere menu open.
+installTraderActionHook();
