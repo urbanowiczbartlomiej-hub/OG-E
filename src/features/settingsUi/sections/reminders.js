@@ -144,24 +144,6 @@ export const remindersSection = {
       disabledWhen: (s) => !s.remindersMasterEnabled,
     },
     {
-      // The push topic OG-E derives from the token (a private hash). This is
-      // what you subscribe to in the ntfy app on your phone to receive the
-      // reminders. Read-only + async (the derivation hashes the token), so
-      // it rides the same asyncStatus control as the account status and
-      // re-derives whenever the token changes. Sits DIRECTLY under the token
-      // (above the account-status usage line) so the value you must copy into
-      // the phone app is right where you paste the token — also shown on the
-      // OG-E Dashboard's Reminders tab.
-      id: 'ntfyTopic',
-      label: 'ntfy.sh — your topic (subscribe on phone)',
-      type: 'asyncStatus',
-      refreshKey: (s) => s.reminderNtfyToken,
-      fetchText: async (s) =>
-        isValidNtfyToken(s.reminderNtfyToken)
-          ? await deriveNtfyTopic(s.reminderNtfyToken)
-          : '— (enter a valid token first)',
-    },
-    {
       // Async probe of the ntfy account: re-runs whenever the token changes
       // (and on the manual button). Gives the token explicit validation +
       // shows today's usage against the daily limit. Editable/usable as
@@ -176,6 +158,23 @@ export const remindersSection = {
       // The manual re-probe trigger ("Check now") moved up onto the master
       // row; it dispatches this event, which we re-probe on.
       refreshEvent: NTFY_CHECK_NOW_EVENT,
+    },
+    {
+      // The push topic OG-E derives from the token (a private hash). This is
+      // what you subscribe to in the ntfy app on your phone to receive the
+      // reminders. Read-only + async (the derivation hashes the token), so
+      // it rides the same asyncStatus control as the account status and
+      // re-derives whenever the token changes. Painted on load (not only
+      // after a token edit) so the topic is always there, ready to copy.
+      // Also shown on the OG-E Dashboard's Reminders tab.
+      id: 'ntfyTopic',
+      label: 'ntfy.sh — your topic (subscribe on phone)',
+      type: 'asyncStatus',
+      refreshKey: (s) => s.reminderNtfyToken,
+      fetchText: async (s) =>
+        isValidNtfyToken(s.reminderNtfyToken)
+          ? await deriveNtfyTopic(s.reminderNtfyToken)
+          : '— (enter a valid token first)',
     },
     {
       id: 'reminderEnabled',

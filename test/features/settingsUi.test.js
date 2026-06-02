@@ -470,17 +470,23 @@ describe('installSettingsUi — asyncStatus (ntfy account)', () => {
     expect(document.getElementById(INPUT_PREFIX + 'ntfyTopic-btn')).toBeNull();
   });
 
-  it('places the topic row directly under the token (above the account-status line)', async () => {
+  it('paints the topic row on load, without waiting for a token change (regression)', async () => {
+    // A returning user already has a token in the store. The derived topic
+    // must show on first render — the bug left the asyncStatus rows blank
+    // until the token changed, because the build-time probe (fired while the
+    // row was still detached) recorded the refreshKey and made the later
+    // in-DOM refresh a no-op.
+    settingsStore.update((s) => ({
+      ...s, remindersMasterEnabled: true, reminderNtfyToken: 'tk_' + 'a'.repeat(24),
+    }));
     setupAGR();
     installSettingsUi();
     await flushWaitFor();
-    const token = document.getElementById(INPUT_PREFIX + 'reminderNtfyToken');
     const topic = document.getElementById(INPUT_PREFIX + 'ntfyTopic');
     const status = document.getElementById(INPUT_PREFIX + 'ntfyAccountStatus');
-    if (!token || !topic || !status) throw new Error('expected token, topic and status rows');
-    // Document order: token → topic → account status.
-    expect(token.compareDocumentPosition(topic) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(topic.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Painted (resolved text, "Checking…", or an error line) — never blank.
+    expect(topic?.textContent).toBeTruthy();
+    expect(status?.textContent).toBeTruthy();
   });
 });
 

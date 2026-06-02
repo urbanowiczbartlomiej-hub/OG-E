@@ -167,12 +167,19 @@ const asyncStateFor = (id) => {
  * @returns {void}
  */
 const refreshAsyncStatus = (opt, force = false) => {
+  // Resolve the span FIRST and bail before touching `lastKey` if it isn't in
+  // the document yet. The control builder fires an initial probe while its
+  // row is still a DETACHED node (rows are appended to the table after
+  // building), so `getElementById` misses it. If we recorded `lastKey` on
+  // that miss, the post-append `syncInputsFromState` refresh would see an
+  // unchanged key and skip painting — leaving the row blank until the token
+  // changed. Bailing without recording lets that later, in-DOM call paint it.
+  const span = document.getElementById(INPUT_ID_PREFIX + opt.id);
+  if (!span || !opt.fetchText) return;
   const key = opt.refreshKey ? opt.refreshKey(settingsStore.get()) : '';
   const st = asyncStateFor(opt.id);
   if (!force && key === st.lastKey) return;
   st.lastKey = key;
-  const span = document.getElementById(INPUT_ID_PREFIX + opt.id);
-  if (!span || !opt.fetchText) return;
   const seq = ++st.seq;
   span.textContent = 'Checking…';
   Promise.resolve(opt.fetchText(settingsStore.get()))

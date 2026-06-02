@@ -16,11 +16,12 @@ version numbers follow [Semantic Versioning](https://semver.org).
   post-landing pings are pointless. The cancellation is local and
   self-expiring, and survives the fleet being re-detected on the next scan.
 
-### Changed
-- **Your ntfy topic now sits directly under the token** in Reminders
-  settings (above the account-status line), so the topic to subscribe to in
-  the phone app is right where you paste the token — not just on the
-  Dashboard.
+### Fixed
+- **Your ntfy topic (and the account-status line) now show on load** in
+  Reminders settings, ready to copy — they used to stay blank until you
+  edited the token. The async status rows fired their first probe while the
+  row was still detached from the page, which then suppressed the real
+  paint once it was attached.
 
 ## [1.13.0] — 2026-06-02
 
