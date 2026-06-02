@@ -6,6 +6,55 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.12.0] — 2026-06-02
+
+### Added
+- **All your settings now sync across devices.** Cloud sync used to carry
+  only scan/colony data; it now also syncs your OG-E preferences through
+  your private GitHub gist — **including the ntfy token** — so a second
+  device picks up your configuration. Each setting merges independently
+  (most-recently-changed wins per setting). Per-device exceptions that never
+  sync: the two floating-button sizes and the GitHub token itself.
+- **ntfy.sh account status** under the token field: today's usage vs your
+  daily limit (`✓ 12 / 250 messages used`) with a **Check now** button, and
+  explicit feedback for a wrong/rejected token (`✗ Not a valid token`,
+  `✗ Token rejected by ntfy.sh`) instead of silent failure.
+- **Your ntfy topic** is now shown in the Reminders settings too (was
+  Dashboard-only) — the topic to subscribe to in the ntfy app on your phone,
+  right where you enter the token.
+
+### Changed
+- **Expedition-wave reminder schedule is now free-form** (default
+  `0m, 10m, 30m, 60m`), and **all reminder time fields share one
+  minutes-first format** with an optional `s`/`m`/`h` suffix (a bare number
+  is minutes). Lead time / min flight read `1m` / `10m`; fleet-save offsets
+  read `-10m, 0m, 10m`.
+- **Section master switches**: a section's top toggle now greys out the rest
+  when off. Multi-device sync (`Sync across devices`) gates the token +
+  status; Colonization gates its options. (Expeditions stays independent —
+  badges and auto-redirect aren't tied to the floating button.)
+- **Multi-device sync layout + feedback**: the **Sync now** button moved onto
+  the master row (right-aligned); the status line gets its own full-width row
+  with upload/download on one line, updates the **instant** a sync settles
+  (a failed sync shows `⚠ HTTP 401: Bad credentials` right away instead of
+  after a delay), and the GitHub error is condensed to one line instead of a
+  multi-line JSON dump.
+- **Reminders settings relabelled** to a consistent `Group — attribute`
+  scheme; value input fields widened.
+- **Max expeditions per planet** is now a 1–20 slider instead of a text box.
+- **Colonization tidied**: the target-positions field documents its range
+  syntax (`8,10-12,15`), the "prefer neighbouring galaxies" toggle moved
+  above it, and its label was shortened so it no longer wraps.
+
+### Note
+- The wave schedule and fleet-save offsets **reset to their defaults** on
+  this update (the old formats are incompatible with the new free-form one).
+  Re-enter a custom series if you had one.
+- Synced settings include your **ntfy token and — if set — the abandon
+  password**, stored in your **private** GitHub gist. Private gists are not
+  encrypted: anyone with your GitHub token could read them. The GitHub token
+  itself is never synced.
+
 ## [1.11.1] — 2026-06-02
 
 ### Fixed
@@ -58,7 +107,6 @@ version numbers follow [Semantic Versioning](https://semver.org).
     the bare auto hint until its first slot comes into range.
   - **Ad-hoc** hover now reads `Reminder at HH:MM — click to cancel` instead
     of the time-less `Reminder armed`.
-
 ## [1.10.0] — 2026-06-01
 
 ### Changed
