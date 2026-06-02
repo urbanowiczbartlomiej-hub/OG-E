@@ -6,6 +6,8 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.13.0] — 2026-06-02
+
 ### Added
 - **Trader red glow clears from the Import/Export page.** Opening
   Import/Export and seeing "no more offers today" (the daily container is
