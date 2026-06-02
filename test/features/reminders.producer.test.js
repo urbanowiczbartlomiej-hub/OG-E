@@ -9,7 +9,9 @@
 // @ts-check
 
 import { describe, it, expect } from 'vitest';
-import { extractReturnEntries, extractPresentFleets } from '../../src/features/reminders/producer.js';
+import {
+  extractReturnEntries, extractPresentFleets, signatureOf, fsCapReadyIds,
+} from '../../src/features/reminders/producer.js';
 
 /**
  * Build one `#eventContent` row.
@@ -92,5 +94,53 @@ describe('extractPresentFleets', () => {
       '<tr class="eventFleet" id="eventRow-1"><td></td></tr>' +
       '</tbody></table>';
     expect(extractPresentFleets()).toEqual([]);
+  });
+});
+
+const NOW = 1_000_000;
+const DAY = 86400;
+/** @param {string} id @param {number} arrivalAt */
+const fsCand = (id, arrivalAt) => ({ id, arrivalAt, shipCount: 200000, label: 'x' });
+
+describe('fsCapReadyIds', () => {
+  it('includes a save whose earliest slot is within the 3-day cap', () => {
+    expect(fsCapReadyIds([fsCand('eventRow-1', NOW + 2 * DAY)], [-600, 0, 600], NOW))
+      .toEqual(['eventRow-1']);
+  });
+
+  it('excludes a save still beyond the cap, then includes it once it crosses', () => {
+    const arrival = NOW + 5 * DAY; // earliest slot = arrival-600, ~5 days out
+    expect(fsCapReadyIds([fsCand('eventRow-1', arrival)], [-600, 0, 600], NOW)).toEqual([]);
+    // Same arrival, but observed 2 days later → earliest slot now < 3 days off.
+    expect(fsCapReadyIds([fsCand('eventRow-1', arrival)], [-600, 0, 600], NOW + 2 * DAY + 700))
+      .toEqual(['eventRow-1']);
+  });
+
+  it('uses the most-negative offset as the earliest slot, and tolerates no offsets', () => {
+    // arrival exactly 3 days + 5 min out: a -600 offset pulls the first slot
+    // inside the cap, but a 0-or-later schedule leaves it just outside.
+    const arrival = NOW + 3 * DAY + 300;
+    expect(fsCapReadyIds([fsCand('a', arrival)], [-600, 0], NOW)).toEqual(['a']);
+    expect(fsCapReadyIds([fsCand('a', arrival)], [0, 600], NOW)).toEqual([]);
+    expect(fsCapReadyIds([fsCand('a', arrival)], [], NOW)).toEqual([]);
+  });
+
+  it('drops candidates with a non-finite arrival', () => {
+    expect(fsCapReadyIds([fsCand('a', NaN)], [-600], NOW)).toEqual([]);
+  });
+});
+
+describe('signatureOf', () => {
+  it('changes when a far fleet-save crosses into the schedulable window', () => {
+    const present = [{ id: 'eventRow-1', arrivalAt: 9_999_999 }];
+    // Same DOM (id + arrival unchanged) — only the cap-readiness flips. This
+    // is the term that defeats the no-op short-circuit for a long fleet-save.
+    expect(signatureOf([], present, [])).not.toBe(signatureOf([], present, ['eventRow-1']));
+  });
+
+  it('is order-independent across legs and ready-ids', () => {
+    const a = signatureOf([], [{ id: 'b', arrivalAt: 2 }, { id: 'a', arrivalAt: 1 }], ['y', 'x']);
+    const b = signatureOf([], [{ id: 'a', arrivalAt: 1 }, { id: 'b', arrivalAt: 2 }], ['x', 'y']);
+    expect(a).toBe(b);
   });
 });

@@ -124,6 +124,10 @@ const refreshSnapshot = async () => {
 /** @param {string | null | undefined} s @returns {string} dense `g:s:p` */
 const denseCoords = (s) => (s || '').replace(/[\s[\]]/g, '');
 
+/** Epoch SECONDS → locale HH:MM — the one clock format every tooltip uses. */
+const fmtClock = (/** @type {number} */ epochSec) =>
+  new Date(epochSec * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
 /**
  * Push label naming where the fleet actually LANDS, e.g.
  * "Expedition → [4:467:16]".
@@ -206,10 +210,30 @@ const clearCell = (cell) => {
  */
 const waveTitle = (w, schedule, hint) => {
   const baseAt = snapshot?.notifyState?.[w.id]?.baseAt ?? w.nextWaveAt;
-  const times = offsetsForSchedule(schedule)
-    .map((o) => new Date((baseAt + o) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
-    .join(', ');
+  const times = offsetsForSchedule(schedule).map((o) => fmtClock(baseAt + o)).join(', ');
   return `Wave reminders at: ${times}\n${hint}`;
+};
+
+/**
+ * Multi-line tooltip for a fleet-save badge: the reminder times actually
+ * registered with ntfy — its `fireAts` filtered to the future slots still
+ * inside the 3-day cap (exactly what the scheduler queues) — then the
+ * "auto, can't cancel" hint. The leg's mission / coords / ship count are
+ * deliberately omitted: the player already reads those in the row itself
+ * (they ride along only in the push body). A save still more than 3 days
+ * out has no registered slot yet, so it falls back to the bare hint.
+ *
+ * @param {import('../../domain/fleetSave.js').FleetSaveReminder} fs
+ * @param {number} now  Epoch SECONDS.
+ * @returns {string}
+ */
+const fsTitle = (fs, now) => {
+  const live = (fs.fireAts || [])
+    .filter((t) => Number.isFinite(t) && t > now && t <= now + NTFY_MAX_DELAY_SEC)
+    .map(fmtClock);
+  return live.length
+    ? `Fleet-save reminders at: ${live.join(', ')}\nSet automatically — can't be cancelled`
+    : "Fleet-save reminder set automatically (can't be cancelled)";
 };
 
 // ── Render ──────────────────────────────────────────────────────────────
@@ -289,9 +313,7 @@ const render = () => {
     if (fsOn) {
       const fs = fsById.get(id);
       if (fs) {
-        const ships = Number(fs.shipCount).toLocaleString();
-        stamp(cell, 'fs', '', '',
-          `Fleet-save: ${fs.label} (${ships} ships) — reminder set automatically (can't be cancelled)`);
+        stamp(cell, 'fs', '', '', fsTitle(fs, now));
         continue;
       }
     }
@@ -301,7 +323,9 @@ const render = () => {
       const armed = pa ? pa === 'arm' : armedSet.has(id);
       const syncing = pa !== null ? ' syncing' : '';
       if (armed) {
-        stamp(cell, `armed${syncing}`, 'disarm', '', 'Reminder armed — click to cancel');
+        const entry = (snapshot?.adhoc || []).find((e) => e.id === id);
+        const fireAt = entry?.fireAt ?? fireAtFor(arrivalAt, s.adhocOffsetSec);
+        stamp(cell, `armed${syncing}`, 'disarm', '', `Reminder at ${fmtClock(fireAt)} — click to cancel`);
       } else {
         const fireAt = fireAtFor(arrivalAt, s.adhocOffsetSec);
         if (fireAt - now > NTFY_MAX_DELAY_SEC) {

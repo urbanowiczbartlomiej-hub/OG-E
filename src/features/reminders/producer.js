@@ -56,6 +56,8 @@ import { clusterWaves, DEFAULT_CLUSTER_GAP_SECONDS } from '../../domain/waves.js
 /** @typedef {import('../../domain/waves.js').Wave} Wave */
 /** @typedef {import('../../domain/adhoc.js').AdhocReminder} AdhocReminder */
 import { extractFleetSaveCandidates } from './fsScan.js';
+import { parseFsOffsets } from '../../domain/fleetSave.js';
+import { NTFY_MAX_DELAY_SEC } from '../../sync/ntfyScheduler.js';
 import { settingsStore } from '../../state/settings.js';
 import { syncReminders } from '../../sync/reminders.js';
 import { parseUniverseId } from '../../lib/universeId.js';
@@ -141,25 +143,56 @@ export const extractPresentFleets = (root = document) => {
 };
 
 /**
- * Compact signature of one scan — the wave-candidate return-times plus
- * the present fleet legs (id + arrival). Two scans with the same
- * signature need no gist round-trip (the reconcile would be a no-op).
+ * Compact signature of one scan — the wave-candidate return-times, the
+ * present fleet legs (id + arrival), and the ids of fleet-saves whose
+ * earliest reminder slot has entered ntfy's 3-day schedulable window. Two
+ * scans with the same signature need no gist round-trip (the reconcile
+ * would be a no-op).
  *
  * The wave half uses `returnAts` because the reconcile matches on
  * return-time overlap. The present half (`id:arrivalAt` per leg) makes a
  * fleet appearing / landing / being recalled — which moves the ad-hoc
- * cleanup — trigger a sync too. Both halves are sorted so DOM ordering
- * noise doesn't produce a spurious mismatch.
+ * cleanup — trigger a sync too. The fleet-save half (`capReadyIds`) is the
+ * ONE term that depends on wall-clock `now`: a save first seen more than 3
+ * days out has every slot filtered by ntfy's cap, and its row's id+arrival
+ * never change as time passes — so without this the no-op short-circuit
+ * would skip the very sync that finally schedules it once it crosses into
+ * range. Each id flips into the set exactly once (it never leaves), so this
+ * adds at most one extra sync per fleet-save. All three halves are sorted
+ * so DOM ordering noise doesn't produce a spurious mismatch.
  *
  * @param {WaveCandidate[]} candidates
  * @param {import('../../domain/adhoc.js').PresentFleet[]} present
+ * @param {string[]} [capReadyIds]  FS ids now inside the 3-day window.
  * @returns {string}
  */
-const signatureOf = (candidates, present) =>
+export const signatureOf = (candidates, present, capReadyIds = []) =>
   JSON.stringify({
     w: candidates.map((c) => c.returnAts).sort((a, b) => (a[0] ?? 0) - (b[0] ?? 0)),
     p: present.map((f) => `${f.id}:${f.arrivalAt}`).sort(),
+    f: [...capReadyIds].sort(),
   });
+
+/**
+ * Ids of fleet-save candidates whose EARLIEST reminder slot
+ * (`arrivalAt + min(offset)`) is at most {@link NTFY_MAX_DELAY_SEC} ahead of
+ * `now` — i.e. close enough that ntfy will accept its `X-Delay`. Folded into
+ * {@link signatureOf} so a long fleet-save first detected beyond the cap (all
+ * its slots dropped at queue time) re-syncs the moment it becomes
+ * schedulable, instead of staying badge-only with no push ever queued.
+ *
+ * @param {import('../../domain/fleetSave.js').FleetSaveCandidate[]} fsCandidates
+ * @param {number[]} offsetsSec  Parsed FS offsets, sorted ascending.
+ * @param {number} now           Epoch SECONDS.
+ * @returns {string[]}
+ */
+export const fsCapReadyIds = (fsCandidates, offsetsSec, now) => {
+  const earliestOffset = offsetsSec.length ? offsetsSec[0] : 0;
+  const horizon = now + NTFY_MAX_DELAY_SEC;
+  return fsCandidates
+    .filter((c) => Number.isFinite(c.arrivalAt) && c.arrivalAt + earliestOffset <= horizon)
+    .map((c) => c.id);
+};
 
 /** localStorage key for the persisted last-successful scan signature. */
 const sigKeyFor = (/** @type {string} */ universeId) => `oge_reminderSig_${universeId}`;
@@ -237,17 +270,27 @@ export const installReminderProducer = (opts = {}) => {
       && (config.enabled || config.adhocEnabled || config.fsEnabled);
     if (!anyActive && !force) return;
 
+    const now = Math.floor(Date.now() / 1000);
     const candidates = clusterWaves(extractReturnEntries(), { gapSeconds: DEFAULT_CLUSTER_GAP_SECONDS });
     const present = extractPresentFleets();
-    const sig = signatureOf(candidates, present);
-    if (sig === lastSig && !force) return;
 
     // Fleet-save CANDIDATES: every own leg with its ship count. The ship +
     // flight-time gates and the lock live in `reconcileFleetSaves` (inside
-    // syncReminders, which holds the persisted save set). We extract AFTER
-    // the signature gate (present-leg changes already move the signature; a
-    // threshold/offset/min-flight edit forces via the settings subscriber).
+    // syncReminders, which holds the persisted save set). We extract them
+    // AHEAD of the signature gate only so the signature can carry each
+    // save's 3-day-cap readiness (`fsCapReadyIds`): a brand-new save first
+    // seen beyond the cap has all its slots filtered, and nothing else about
+    // its row moves the signature as it nears, so without this it would stay
+    // badge-only forever. A threshold/offset/min-flight edit still forces a
+    // run via the settings subscriber.
     const fleetSaveCandidates = extractFleetSaveCandidates();
+    const fsOn = config.masterEnabled !== false && Boolean(config.fsEnabled);
+    const capReadyIds = fsOn
+      ? fsCapReadyIds(fleetSaveCandidates, parseFsOffsets(config.fsOffsets ?? ''), now)
+      : [];
+
+    const sig = signatureOf(candidates, present, capReadyIds);
+    if (sig === lastSig && !force) return;
 
     const adhocCmds = pending.filter((c) => c.kind === 'arm' || c.kind === 'disarm');
     const waveCmds = pending.filter((c) => c.kind === 'cancelWave' || c.kind === 'resendWave');
@@ -258,7 +301,6 @@ export const installReminderProducer = (opts = {}) => {
       ? (/** @type {Wave[]} */ waves) => applyWaveCmds(waves, waveCmds)
       : undefined;
 
-    const now = Math.floor(Date.now() / 1000);
     try {
       const res = await syncReminders(
         config,

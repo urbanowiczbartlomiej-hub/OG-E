@@ -161,8 +161,12 @@ describe('event-list badges', () => {
       remindersMasterEnabled: true, adhocEnabled: true, reminderEnabled: false,
       reminderNtfyToken: VALID_TOKEN, fsEnabled: true,
     });
-    seedMirror([{ id: 'eventRow-42', arrivalAt: 0, shipCount: 8256872, label: 'Deployment → [4:478:14]', offsetsSec: [0], fireAts: [0] }]);
-    const cell = paintRow(Math.floor(Date.now() / 1000) + 3600);
+    const base = Math.floor(Date.now() / 1000) + 3600;
+    seedMirror([{
+      id: 'eventRow-42', arrivalAt: base, shipCount: 8256872, label: 'Deployment → [4:478:14]',
+      offsetsSec: [-600, 0, 600], fireAts: [base - 600, base, base + 600],
+    }]);
+    const cell = paintRow(base);
     installEventListReminders(stubApi());
     await tick();
 
@@ -172,7 +176,48 @@ describe('event-list badges', () => {
     expect(cell.getAttribute('data-oge-act')).toBeNull();
     // FS outranks the ad-hoc idle badge on the same row.
     expect(cell.classList.contains('idle')).toBe(false);
-    expect(cell.getAttribute('title')).toMatch(/Fleet-save: Deployment → \[4:478:14\].*ships.*can't be cancelled/);
+    // Tooltip lists the registered ntfy times + the auto hint, and drops the
+    // redundant mission / coords / ship-count the player already sees.
+    const title = cell.getAttribute('title') || '';
+    expect(title.startsWith('Fleet-save reminders at:')).toBe(true);
+    expect(title).toContain("can't be cancelled");
+    expect(title).not.toContain('Deployment');
+    expect(title).not.toContain('ships');
+  });
+
+  it('shows the bare auto hint (no times) for a fleet-save still beyond the 3-day cap', async () => {
+    setSettings({
+      remindersMasterEnabled: true, adhocEnabled: true, reminderEnabled: false,
+      reminderNtfyToken: VALID_TOKEN, fsEnabled: true,
+    });
+    const far = Math.floor(Date.now() / 1000) + 5 * 24 * 3600; // 5 days out
+    seedMirror([{
+      id: 'eventRow-42', arrivalAt: far, shipCount: 8256872, label: 'Deployment → [4:478:14]',
+      offsetsSec: [-600, 0, 600], fireAts: [far - 600, far, far + 600],
+    }]);
+    const cell = paintRow(far);
+    installEventListReminders(stubApi());
+    await tick();
+    expect(cell.classList.contains('fs')).toBe(true);
+    expect(cell.getAttribute('title')).toBe("Fleet-save reminder set automatically (can't be cancelled)");
+  });
+
+  it('shows the fire time on an armed ad-hoc badge', async () => {
+    const base = Math.floor(Date.now() / 1000) + 3600;
+    chromeStoreData[REMINDER_MIRROR_KEY] = {
+      [parseUniverseId(location.host)]: {
+        version: 5, waves: [], notifyState: {},
+        adhoc: [{ id: 'eventRow-42', arrivalAt: base, offsetSec: 60, fireAt: base - 60 }],
+        adhocNotify: {}, fleetSave: [], fleetSaveNotify: {},
+      },
+    };
+    const cell = paintRow(base);
+    installEventListReminders(stubApi());
+    await tick();
+    expect(cell.classList.contains('armed')).toBe(true);
+    const title = cell.getAttribute('title') || '';
+    expect(title.startsWith('Reminder at ')).toBe(true);
+    expect(title).toContain('click to cancel');
   });
 
   it('does NOT flag a leg the mirror omits (stays an ad-hoc idle badge — short hops never get a 🛡)', async () => {
