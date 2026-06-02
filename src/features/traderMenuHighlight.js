@@ -77,6 +77,7 @@ import { debounce } from '../lib/debounce.js';
 import { safeLS } from '../lib/storage.js';
 import { settingsStore } from '../state/settings.js';
 import { GAME } from '../lib/gameDom.js';
+import { parseTraderCountdown } from '../domain/traderCountdown.js';
 
 const STYLE_ID = 'oge-trader-highlight-style';
 
@@ -114,6 +115,28 @@ export const AUCTION_BID_KEY = 'oge-trader-auction-bid-at';
  * player's last successful import trade. Drives the daily red reset.
  */
 export const IMPORT_TRADED_KEY = 'oge-trader-import-traded-day';
+
+/**
+ * localStorage key holding an epoch-ms timestamp until which the yellow glow
+ * stays quiet — set from the Auctioneer page's "next auction in …" countdown
+ * when no auction is currently live, so the nag returns exactly as the next
+ * auction opens (a precise alternative to the fixed ~30-min bid snooze).
+ */
+export const AUCTION_QUIET_KEY = 'oge-trader-auction-quiet-until';
+
+/**
+ * Trader sub-page selectors (game DOM — fragile, locale-independent where
+ * possible). Local to this feature: no other feature reads the Trader pages.
+ *   - The Import/Export "done for today" overlay is shown (display ≠ none)
+ *     once the daily container is taken; its visibility is our "no more
+ *     offers today" signal.
+ *   - The Auctioneer shows `#nextAuction` (a live countdown) and a visible
+ *     `.noAuctionOverlay` only between auctions; both together mean "no
+ *     auction live right now", which is when we may push the quiet window.
+ */
+const IMPORT_DONE_OVERLAY_SEL = '#div_traderImportExport .bargain_overlay';
+const AUCTION_NEXT_COUNTDOWN_SEL = '#nextAuction';
+const AUCTION_NO_AUCTION_OVERLAY_SEL = '.noAuctionOverlay';
 
 /** Auction hours — yellow shows in `[start, end)` local time. */
 const AUCTION_START_HOUR = 6;
@@ -260,6 +283,9 @@ export const localDayKey = (d) => {
  *   bid, or `null` if never.
  * @property {string | null} importTradedDay Local day-key of the last
  *   successful import trade, or `null` if never.
+ * @property {number | null} [auctionQuietUntil] Epoch ms until which the
+ *   yellow glow is suppressed (from the Auctioneer "next auction in"
+ *   countdown), `null`/absent if none.
  */
 
 /**
@@ -281,12 +307,17 @@ export const traderGlows = (now, state) => {
   const hour = now.getHours();
   const auctionBidAt = state?.auctionBidAt ?? null;
   const importTradedDay = state?.importTradedDay ?? null;
+  const auctionQuietUntil = state?.auctionQuietUntil ?? null;
 
-  // Yellow (Licytator): auction hours, snoozed for ~30 min after a bid.
+  // Yellow (Licytator): auction hours, suppressed while EITHER the ~30-min
+  // post-bid snooze is active OR the "next auction" quiet window (read off
+  // the Auctioneer page between auctions) has not yet elapsed.
   const inAuctionWindow = hour >= AUCTION_START_HOUR && hour < AUCTION_END_HOUR;
   const bidSnoozed =
     auctionBidAt !== null && now.getTime() - auctionBidAt < BID_SNOOZE_MS;
-  const auctionPending = inAuctionWindow && !bidSnoozed;
+  const quietActive =
+    auctionQuietUntil !== null && now.getTime() < auctionQuietUntil;
+  const auctionPending = inAuctionWindow && !bidSnoozed && !quietActive;
 
   // Red (Import/Eksport): 14:00 onward, until taken today.
   const inImportWindow = hour >= IMPORT_START_HOUR;
@@ -311,6 +342,19 @@ const readAuctionBidAt = () => {
 };
 
 /**
+ * Read the stored auction quiet-until timestamp, or `null` when missing /
+ * unparseable.
+ *
+ * @returns {number | null}
+ */
+const readAuctionQuietUntil = () => {
+  const raw = safeLS.get(AUCTION_QUIET_KEY);
+  if (raw === null) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+};
+
+/**
  * Assemble the persisted state from localStorage.
  *
  * @returns {TraderState}
@@ -318,7 +362,19 @@ const readAuctionBidAt = () => {
 const readState = () => ({
   auctionBidAt: readAuctionBidAt(),
   importTradedDay: safeLS.get(IMPORT_TRADED_KEY),
+  auctionQuietUntil: readAuctionQuietUntil(),
 });
+
+/**
+ * Whether an element is present AND not hidden by an inline `display:none`.
+ * OGame toggles these Trader overlays via inline display, so the inline
+ * style is the reliable (and happy-dom-testable) visibility signal.
+ *
+ * @param {Element | null} el
+ * @returns {boolean}
+ */
+const isShown = (el) =>
+  !!el && /** @type {HTMLElement} */ (el).style.display !== 'none';
 
 /** @param {string} hint @returns {HTMLElement | null} */
 const findByHint = (hint) =>
@@ -381,6 +437,65 @@ const applyHighlight = () => {
   paint(findByHint(IMPORT_HINT), importPending ? 'red' : 'off');
 };
 
+/**
+ * Read the Trader sub-pages (if the player is on them) and stamp storage
+ * from what they show — the passive counterpart to the action XHR events:
+ *
+ *   - Import/Export: a visible "done for today" overlay means today's
+ *     container is already taken (or there are no more offers), so stamp
+ *     today's import day-key — same end-state as `oge:traderImportTraded`.
+ *     Lets the red glow clear from merely visiting the page, not only from
+ *     trading through it in this session.
+ *   - Auctioneer: between auctions the page shows a live `#nextAuction`
+ *     countdown behind a visible `.noAuctionOverlay`. Convert the countdown
+ *     to an absolute quiet-until so the yellow glow returns exactly when the
+ *     next auction opens. Guarded on the overlay so we never suppress yellow
+ *     while an auction is actually live (overlay hidden).
+ *
+ * Idempotent and cheap: each branch writes only when the value would
+ * actually change / move forward, so re-running on every refresh tick is a
+ * no-op once stamped.
+ *
+ * @param {Date} now
+ * @returns {void}
+ */
+const scanTraderSubpages = (now) => {
+  // Import/Export — daily container taken / no more offers today.
+  if (isShown(document.querySelector(IMPORT_DONE_OVERLAY_SEL))) {
+    const today = localDayKey(now);
+    if (safeLS.get(IMPORT_TRADED_KEY) !== today) safeLS.set(IMPORT_TRADED_KEY, today);
+  }
+
+  // Auctioneer — no auction live; push the quiet window to the next auction.
+  if (isShown(document.querySelector(AUCTION_NO_AUCTION_OVERLAY_SEL))) {
+    const sec = parseTraderCountdown(
+      document.querySelector(AUCTION_NEXT_COUNTDOWN_SEL)?.textContent ?? '',
+    );
+    if (sec !== null && sec > 0) {
+      const target = now.getTime() + sec * 1000;
+      const stored = readAuctionQuietUntil();
+      // Only ever extend forward; a ±1 s wobble across ticks must not churn.
+      if (stored === null || target > stored + 1000) {
+        safeLS.set(AUCTION_QUIET_KEY, String(target));
+      }
+    }
+  }
+};
+
+/**
+ * Scan the Trader sub-pages, then re-render. The single refresh path used
+ * by the MutationObserver, the safety-poll, and install. No-op when the
+ * feature is toggled off (so navigating the Trader pages with it disabled
+ * neither stamps storage nor paints).
+ *
+ * @returns {void}
+ */
+const refresh = () => {
+  if (!settingsStore.get().traderMenuHighlight) return;
+  scanTraderSubpages(new Date());
+  applyHighlight();
+};
+
 /** Stamp the bid time and re-render. Driven by `oge:traderBidPlaced`. */
 const onBidPlaced = () => {
   safeLS.set(AUCTION_BID_KEY, String(Date.now()));
@@ -411,10 +526,10 @@ export const installTraderMenuHighlight = () => {
   if (installed) return installed.dispose;
 
   injectStyle(STYLE_ID, CSS);
-  applyHighlight();
+  refresh();
 
   const scheduleRefresh = debounce(() => {
-    if (installed) applyHighlight();
+    if (installed) refresh();
   }, REFRESH_DEBOUNCE_MS);
 
   // Observe the whole body: the menu rebuilds via AJAX, and the Trader
@@ -428,7 +543,7 @@ export const installTraderMenuHighlight = () => {
   // 60-second safety-poll: covers idle crossings of the auction/import
   // window boundaries, local midnight, and bid-snooze expiry.
   const safetyPoll = setInterval(() => {
-    if (installed) applyHighlight();
+    if (installed) refresh();
   }, SAFETY_POLL_MS);
 
   document.addEventListener('oge:traderBidPlaced', onBidPlaced);
@@ -440,7 +555,7 @@ export const installTraderMenuHighlight = () => {
     prevEnabled = next.traderMenuHighlight;
     if (prevEnabled) {
       injectStyle(STYLE_ID, CSS);
-      applyHighlight();
+      refresh();
     } else {
       teardownDom();
     }

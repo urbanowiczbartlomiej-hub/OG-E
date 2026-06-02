@@ -6,6 +6,29 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+- **Trader red glow clears from the Import/Export page.** Opening
+  Import/Export and seeing "no more offers today" (the daily container is
+  already taken) now clears the red glow for the rest of the day — you no
+  longer have to take the container *through* OG-E in the same session for
+  the reminder to settle.
+- **Trader yellow glow follows the auction clock.** On the Auctioneer page
+  between auctions, OG-E reads the "next auction in …" countdown and keeps
+  the yellow glow quiet until that auction actually opens — a precise
+  replacement for the old fixed ~30-minute guess. While an auction is live,
+  the glow is left alone so it still nudges you to bid.
+
+### Changed
+- **Reminders settings — "Check now" moved to the master row.** The ntfy
+  account-status re-check button now sits on the *Reminders — master switch*
+  row (right-aligned, like *Sync now* in Multi-device sync); the status line
+  below it is read-only.
+- **Reminders settings — per-group gating.** Each reminder group's options
+  now grey out when that group's own *enable* is off: the expedition-wave
+  schedule follows *Expedition-wave reminders — enable*, the ad-hoc lead time
+  follows *Ad-hoc reminders — enable*, and the fleet-save threshold / min
+  flight time / schedule follow *Fleet-save reminders — enable*.
+
 ## [1.12.0] — 2026-06-02
 
 ### Added

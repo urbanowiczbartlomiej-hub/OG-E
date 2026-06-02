@@ -28,6 +28,7 @@ import {
   _resetTraderMenuHighlightForTest,
   AUCTION_BID_KEY,
   IMPORT_TRADED_KEY,
+  AUCTION_QUIET_KEY,
 } from '../../src/features/traderMenuHighlight.js';
 import { settingsStore } from '../../src/state/settings.js';
 
@@ -142,6 +143,14 @@ describe('traderGlows', () => {
     const yesterday = { auctionBidAt: null, importTradedDay: localDayKey(at('2026-05-27T15:00:00')) };
     expect(traderGlows(now, yesterday).importPending).toBe(true);
   });
+
+  it('a future auction quiet-until suppresses yellow; once past it returns', () => {
+    const now = at('2026-05-28T10:00:00');
+    const quiet = { ...blank, auctionQuietUntil: now.getTime() + 18 * 60 * 1000 };
+    expect(traderGlows(now, quiet).auctionPending).toBe(false); // next auction not yet
+    const elapsed = { ...blank, auctionQuietUntil: now.getTime() - 1000 };
+    expect(traderGlows(now, elapsed).auctionPending).toBe(true); // window passed
+  });
 });
 
 // ── DOM lifecycle ────────────────────────────────────────────────────
@@ -152,6 +161,7 @@ describe('installTraderMenuHighlight', () => {
     settingsStore.update((s) => ({ ...s, traderMenuHighlight: true }));
     localStorage.removeItem(AUCTION_BID_KEY);
     localStorage.removeItem(IMPORT_TRADED_KEY);
+    localStorage.removeItem(AUCTION_QUIET_KEY);
     document.getElementById(STYLE_ID)?.remove();
     document.body.innerHTML = '';
     vi.useFakeTimers();
@@ -166,6 +176,7 @@ describe('installTraderMenuHighlight', () => {
     settingsStore.update((s) => ({ ...s, traderMenuHighlight: true }));
     localStorage.removeItem(AUCTION_BID_KEY);
     localStorage.removeItem(IMPORT_TRADED_KEY);
+    localStorage.removeItem(AUCTION_QUIET_KEY);
     document.getElementById(STYLE_ID)?.remove();
     document.body.innerHTML = '';
     vi.useRealTimers();
@@ -288,5 +299,102 @@ describe('installTraderMenuHighlight', () => {
     // Events after dispose must NOT mutate storage — listeners were removed.
     document.dispatchEvent(new CustomEvent('oge:traderBidPlaced'));
     expect(localStorage.getItem(AUCTION_BID_KEY)).toBeNull();
+  });
+});
+
+// ── Trader sub-page scanning (passive, on navigation) ────────────────
+
+describe('installTraderMenuHighlight — sub-page scanning', () => {
+  beforeEach(() => {
+    _resetTraderMenuHighlightForTest();
+    settingsStore.update((s) => ({ ...s, traderMenuHighlight: true }));
+    localStorage.removeItem(AUCTION_BID_KEY);
+    localStorage.removeItem(IMPORT_TRADED_KEY);
+    localStorage.removeItem(AUCTION_QUIET_KEY);
+    document.getElementById(STYLE_ID)?.remove();
+    document.body.innerHTML = '';
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-28T18:00:00')); // afternoon: both windows open
+    buildMenu();
+    buildTiles();
+  });
+
+  afterEach(() => {
+    _resetTraderMenuHighlightForTest();
+    localStorage.removeItem(AUCTION_BID_KEY);
+    localStorage.removeItem(IMPORT_TRADED_KEY);
+    localStorage.removeItem(AUCTION_QUIET_KEY);
+    document.getElementById(STYLE_ID)?.remove();
+    document.body.innerHTML = '';
+    vi.useRealTimers();
+  });
+
+  /** @param {string} display Inline display for the done overlay. */
+  const buildImportPage = (display) => {
+    const div = document.createElement('div');
+    div.id = 'div_traderImportExport';
+    const overlay = document.createElement('div');
+    overlay.className = 'bargain_overlay';
+    overlay.style.display = display;
+    div.appendChild(overlay);
+    document.body.appendChild(div);
+  };
+
+  /** @param {string} display Inline display for `.noAuctionOverlay`. @param {string} countdown */
+  const buildAuctioneerPage = (display, countdown) => {
+    const noAuction = document.createElement('div');
+    noAuction.className = 'noAuctionOverlay';
+    noAuction.style.display = display;
+    const next = document.createElement('span');
+    next.id = 'nextAuction';
+    next.textContent = countdown;
+    document.body.appendChild(noAuction);
+    document.body.appendChild(next);
+  };
+
+  const importTile = () =>
+    /** @type {HTMLElement} */ (document.querySelector('[data-ipi-hint="ipiTraderImportExport"]'));
+  const auctionTile = () =>
+    /** @type {HTMLElement} */ (document.querySelector('[data-ipi-hint="ipiTraderAuctioneer"]'));
+
+  it('a visible "no more offers today" overlay stamps today and clears red', () => {
+    buildImportPage('block');
+    installTraderMenuHighlight();
+    expect(localStorage.getItem(IMPORT_TRADED_KEY)).toBe(localDayKey(new Date()));
+    expect(importTile().classList.contains(RED_CLASS)).toBe(false);
+  });
+
+  it('a hidden import overlay (offers still available) does NOT stamp; red stays', () => {
+    buildImportPage('none');
+    installTraderMenuHighlight();
+    expect(localStorage.getItem(IMPORT_TRADED_KEY)).toBeNull();
+    expect(importTile().classList.contains(RED_CLASS)).toBe(true);
+  });
+
+  it('between auctions, the countdown sets quiet-until and clears yellow', () => {
+    buildAuctioneerPage('', '18min. 20sek.');
+    installTraderMenuHighlight();
+    const expected = Date.now() + (18 * 60 + 20) * 1000;
+    expect(Number(localStorage.getItem(AUCTION_QUIET_KEY))).toBe(expected);
+    expect(auctionTile().classList.contains(YELLOW_CLASS)).toBe(false);
+  });
+
+  it('does NOT set quiet-until while an auction is live (overlay hidden); yellow stays', () => {
+    buildAuctioneerPage('none', '18min. 20sek.');
+    installTraderMenuHighlight();
+    expect(localStorage.getItem(AUCTION_QUIET_KEY)).toBeNull();
+    expect(auctionTile().classList.contains(YELLOW_CLASS)).toBe(true);
+  });
+
+  it('once the quiet window elapses, the safety-poll brings yellow back', () => {
+    buildAuctioneerPage('', '5sek.');
+    installTraderMenuHighlight();
+    expect(auctionTile().classList.contains(YELLOW_CLASS)).toBe(false);
+
+    // Past the 5 s window; remove the page so the re-scan can't re-stamp.
+    document.body.querySelector('#nextAuction')?.remove();
+    vi.setSystemTime(new Date('2026-05-28T18:00:10'));
+    vi.advanceTimersByTime(60_000);
+    expect(auctionTile().classList.contains(YELLOW_CLASS)).toBe(true);
   });
 });
