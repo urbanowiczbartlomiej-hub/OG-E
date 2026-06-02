@@ -86,13 +86,15 @@ export const SETTINGS_PREFIX = 'oge_';
  *                                   a valid token, gates both wave + ad-hoc reminders
  *   reminderEnabled         false — auto-schedule ntfy.sh pushes for expedition return waves
  *   reminderNtfyToken       ''    — ntfy.sh access token (Bearer) for publish/cancel
- *   reminderSchedule        'standard' — push cadence preset (standard/short/fibonacci)
+ *   reminderSchedule        '0m, 10m, 30m, 60m' — free-form wave cadence: minutes-first
+ *                                   offset list AFTER the wave returns (LS key reminderWaveOffsets)
  *   adhocEnabled            true  — allow per-fleet ad-hoc reminders from the event list
  *   adhocOffsetSec          60    — fire an ad-hoc reminder this many seconds before arrival
  *   fsEnabled               false — auto-detect fleet-saves (big own fleets) in the event list
  *   fsThreshold             100000 — minimum total ships for a leg to count as a fleet-save
- *   fsOffsets               '-600,0,600' — FS reminder offsets (sec) relative to arrival
- *                                   (negative = before landing, 0 = at landing, positive = after)
+ *   fsOffsets               '-10m, 0m, 10m' — FS reminder offsets relative to arrival,
+ *                                   minutes-first (negative = before landing, 0 = at, + = after;
+ *                                   LS key fsReminderOffsets)
  *   fsMinFlightSec          600   — minimum flight time (sec) for a leg to count as a fleet-save;
  *                                   excludes short planet⇄moon hops. Server-speed dependent.
  *
@@ -181,12 +183,17 @@ export const SETTINGS_SCHEMA = {
   remindersMasterEnabled: { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'remindersMasterEnabled' },
   reminderEnabled:        { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'reminderEnabled' },
   reminderNtfyToken:      { type: 'string', default: '',    key: SETTINGS_PREFIX + 'reminderNtfyToken' },
-  reminderSchedule:       { type: 'string', default: 'standard', key: SETTINGS_PREFIX + 'reminderSchedule' },
+  // v1.11.0 moved the wave schedule + FS offsets from fixed presets / raw
+  // seconds to a free-form, minutes-first duration list (`0m, 10m, …`). The
+  // old stored formats are incompatible (a preset KEY, or seconds read as
+  // minutes), so these point at NEW keys — the old values are orphaned and
+  // every player lands on the new default. Deliberate: no migration.
+  reminderSchedule:       { type: 'string', default: '0m, 10m, 30m, 60m', key: SETTINGS_PREFIX + 'reminderWaveOffsets' },
   adhocEnabled:           { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'adhocEnabled' },
   adhocOffsetSec:         { type: 'int',    default: 60,    key: SETTINGS_PREFIX + 'adhocOffsetSec' },
   fsEnabled:              { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'fsEnabled' },
   fsThreshold:            { type: 'int',    default: 100000, key: SETTINGS_PREFIX + 'fsThreshold' },
-  fsOffsets:              { type: 'string', default: '-600,0,600', key: SETTINGS_PREFIX + 'fsOffsets' },
+  fsOffsets:              { type: 'string', default: '-10m, 0m, 10m', key: SETTINGS_PREFIX + 'fsReminderOffsets' },
   fsMinFlightSec:         { type: 'int',    default: 600,   key: SETTINGS_PREFIX + 'fsMinFlightSec' },
 };
 

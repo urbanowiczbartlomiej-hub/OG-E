@@ -21,10 +21,10 @@
 //   - maximum delay  3 days
 //
 // The number of pushes per wave and their spacing come from the player's
-// chosen schedule preset (`REMINDER_PRESETS`); the default `standard`
-// preset is SIX messages 10 minutes apart. Every preset is a list of
-// offsets in seconds from the wave's locked base time (`baseAt`); slot i
-// fires at `baseAt + offsetsSec[i]`.
+// free-form schedule setting (parsed by `offsetsForSchedule`); the default
+// is four messages over an hour (`0m, 10m, 30m, 60m`). The setting resolves
+// to a list of offsets in seconds from the wave's locked base time
+// (`baseAt`); slot i fires at `baseAt + offsetsSec[i]`.
 //
 // # The queue is the source of truth — {@link reconcileWaveQueue}
 //
@@ -58,6 +58,8 @@
 // limit is per account. The token
 // is mirrored from chrome.storage by the histogram tab and passed in
 // here as a parameter; this module never reads storage directly.
+
+import { parseDurationList } from '../domain/duration.js';
 
 /* global fetch */
 
@@ -98,68 +100,40 @@
  * @param {string} token  ntfy.sh access token.
  * @returns {string}  Ready-to-append query param, e.g. `auth=QmVhcmVyIHRr…`.
  */
-const ntfyAuthParam = (token) =>
+export const ntfyAuthParam = (token) =>
   'auth=' + btoa('Bearer ' + token).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
 /**
- * Total reminders queued per wave in the DEFAULT (`standard`) preset.
- * Six × ten minutes ≈ one hour of nudges — long enough that an AFK
- * player should notice, short enough that an already-acknowledged-but-
- * not-yet-resent wave doesn't keep vibrating into the next day. Other
- * presets queue a different count (see {@link REMINDER_PRESETS}).
+ * Default wave reminder schedule, in seconds AFTER the wave returns —
+ * `0m, 10m, 30m, 60m`. Used when the (free-form) schedule setting is empty
+ * or all-garbage. Must stay in sync with the `reminderSchedule` default in
+ * `state/settings.js`.
+ *
+ * Four nudges spanning an hour — long enough that an AFK player should
+ * notice, short enough that an already-resent wave doesn't keep vibrating
+ * into the next day. The player can override the cadence entirely from the
+ * Settings panel; the number of pushes is simply the length of their list.
  */
-export const REMINDER_COUNT = 6;
-
-/** Gap, in seconds, between consecutive reminders in the `standard` preset. */
-export const REMINDER_INTERVAL_SEC = 600;
+export const DEFAULT_WAVE_OFFSETS_SEC = [0, 600, 1800, 3600];
 
 /**
- * Selectable reminder schedules. Each preset is a list of OFFSETS (in
- * seconds) from the wave's locked `baseAt`; slot i fires at
- * `baseAt + offsetsSec[i]`. The number of pushes per wave is simply the
- * length of the list, and the escalation ladder is spread across that
- * length by {@link priorityForSlot}.
- *
- * Three fixed presets (no free-form tuning — see the product note in
- * `features/settingsUi/sections/reminders.js`):
- *
- *   - `standard`  — 6 pushes, every 10 min (0–50 min). The historical
- *     default; offsets equal `REMINDER_COUNT × REMINDER_INTERVAL_SEC`.
- *   - `short`     — 4 pushes, every 5 min (0–15 min). Tighter, quieter.
- *   - `fibonacci` — 8 pushes at Fibonacci-minute offsets
- *     (0, 3, 5, 8, 13, 21, 34, 55 min): dense early nudging that thins
- *     out, spanning ~1 h.
- *
- * @type {Record<string, { label: string, offsetsSec: number[] }>}
- */
-export const REMINDER_PRESETS = {
-  standard: {
-    label: '6 × 10 min',
-    offsetsSec: Array.from({ length: REMINDER_COUNT }, (_, i) => i * REMINDER_INTERVAL_SEC),
-  },
-  short: {
-    label: '4 × 5 min',
-    offsetsSec: [0, 300, 600, 900],
-  },
-  fibonacci: {
-    label: '8 × Fibonacci (0–55 min)',
-    offsetsSec: [0, 180, 300, 480, 780, 1260, 2040, 3300],
-  },
-};
-
-/** Preset key used when none is configured / an unknown key is stored. */
-export const DEFAULT_REMINDER_SCHEDULE = 'standard';
-
-/**
- * Resolve a schedule key to its offset list, falling back to the
- * {@link DEFAULT_REMINDER_SCHEDULE} preset for an unknown / empty key
- * (e.g. a value written by a newer version, or a hand-edited setting).
+ * Resolve the wave-schedule SETTING to a list of OFFSETS (in seconds) from
+ * the wave's locked `baseAt`; slot i fires at `baseAt + offsetsSec[i]`. The
+ * setting is a free-form, minutes-first duration list (e.g.
+ * `"0m, 10m, 30m, 60m"`, parsed by {@link parseDurationList}); negatives are
+ * dropped — a wave reminder can't fire before the wave is back. Falls back
+ * to {@link DEFAULT_WAVE_OFFSETS_SEC} when the parse yields nothing (empty /
+ * all-garbage / a value left over from an older preset key). The number of
+ * pushes per wave is the length of the list, and the escalation ladder is
+ * spread across it by {@link priorityForSlot}.
  *
  * @param {string} [schedule]
  * @returns {number[]}
  */
-export const offsetsForSchedule = (schedule) =>
-  (REMINDER_PRESETS[schedule ?? ''] ?? REMINDER_PRESETS[DEFAULT_REMINDER_SCHEDULE]).offsetsSec;
+export const offsetsForSchedule = (schedule) => {
+  const offsets = parseDurationList(schedule ?? '', { signed: false });
+  return offsets.length ? offsets : DEFAULT_WAVE_OFFSETS_SEC;
+};
 
 /** ntfy's documented minimum `X-Delay` value (anything smaller would be rejected). */
 export const NTFY_MIN_DELAY_SEC = 10;
@@ -225,11 +199,10 @@ export const titleFor = (universeId) => `[${universeId}] Expeditions back`;
 /**
  * Absolute fire times for a wave whose schedule is anchored at `baseAt`
  * (epoch seconds): `baseAt + offsetsSec[i]` for every offset in the
- * chosen preset. Pure — exported for the tests.
+ * resolved schedule. Pure — exported for the tests.
  *
- * `offsetsSec` defaults to the {@link DEFAULT_REMINDER_SCHEDULE}
- * (`standard`) preset, so callers that don't care about the schedule
- * (and the legacy tests) keep the historical 6×10-min behaviour.
+ * `offsetsSec` defaults to {@link DEFAULT_WAVE_OFFSETS_SEC}, so callers that
+ * don't care about the schedule (and the tests) get the default cadence.
  *
  * @param {number} baseAt
  * @param {number[]} [offsetsSec]  Offsets from `baseAt`, in seconds.
@@ -237,7 +210,7 @@ export const titleFor = (universeId) => `[${universeId}] Expeditions back`;
  */
 export const reminderFireTimes = (
   baseAt,
-  offsetsSec = REMINDER_PRESETS[DEFAULT_REMINDER_SCHEDULE].offsetsSec,
+  offsetsSec = DEFAULT_WAVE_OFFSETS_SEC,
 ) => offsetsSec.map((o) => baseAt + o);
 
 /**
@@ -554,8 +527,8 @@ const waveBody = (baseAt, i, total) => {
  * @param {number} args.now         Epoch SECONDS — injected for testability.
  * @param {string} args.universeId  OGame server id; the title prefix + queue filter.
  * @param {number[]} [args.offsetsSec]  Reminder offsets (seconds from each wave's
- *   `baseAt`) for the active schedule preset. Defaults to the `standard`
- *   preset so existing callers/tests keep the 6×10-min behaviour.
+ *   `baseAt`) for the active schedule. Defaults to
+ *   {@link DEFAULT_WAVE_OFFSETS_SEC} so callers/tests get the default cadence.
  * @param {Array<{ id: string, time: number, title?: string }>} [args.queue]
  *   Pre-fetched queue snapshot (see {@link reconcileQueue}) — lets the
  *   caller share one poll across kinds.
@@ -563,7 +536,7 @@ const waveBody = (baseAt, i, total) => {
  */
 export const reconcileWaveQueue = async ({
   waves, topic, token, now, universeId,
-  offsetsSec = REMINDER_PRESETS[DEFAULT_REMINDER_SCHEDULE].offsetsSec,
+  offsetsSec = DEFAULT_WAVE_OFFSETS_SEC,
   queue,
 }) => {
   /** @type {QueueSeries[]} */

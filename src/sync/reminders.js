@@ -105,14 +105,14 @@ import {
  *   false, detected entries are kept in state but nothing is queued on ntfy.
  * @property {number} [fsThreshold]   Minimum total ships to classify as a save.
  * @property {string} [fsOffsets]     FS reminder offsets relative to arrival
- *   (comma-separated seconds; see `domain/fleetSave.parseFsOffsets`).
+ *   (comma-separated minutes-first durations; see `domain/fleetSave.parseFsOffsets`).
  * @property {number} [fsMinFlightSec] Minimum flight time (s) for a NEW save —
  *   excludes short planet⇄moon hops. The gate runs once, then the save is
  *   locked (see `domain/fleetSave.reconcileFleetSaves`).
  * @property {string} ntfyToken
- * @property {string} [schedule]  Reminder schedule preset key (see
- *   `ntfyScheduler.REMINDER_PRESETS`). Falls back to the default preset
- *   when absent / unknown. Applies to expedition waves only.
+ * @property {string} [schedule]  Free-form wave reminder schedule — a
+ *   minutes-first duration list (see `ntfyScheduler.offsetsForSchedule`).
+ *   Falls back to the default cadence when absent / empty. Waves only.
  */
 
 /**

@@ -88,7 +88,7 @@
 import { scansStore } from '../state/scans.js';
 import { historyStore } from '../state/history.js';
 import { settingsStore } from '../state/settings.js';
-import { mergeScans, mergeHistory } from './merge.js';
+import { mergeScans, mergeHistory, mergeSettings } from './merge.js';
 import {
   fetchGistData,
   writeGistData,
@@ -97,6 +97,13 @@ import {
   clearGistScans,
   clearGistScansForGalaxy,
 } from './gist.js';
+import {
+  pickSyncedValues,
+  readTsMap,
+  writeTsMap,
+  stampChanged,
+  seedSettingsTsIfAbsent,
+} from './settingsSync.js';
 import { debounce } from '../lib/debounce.js';
 import { chromeStore } from '../lib/storage.js';
 import { parseUniverseId } from '../lib/universeId.js';
@@ -169,6 +176,44 @@ let installed = null;
 let inFlight = false;
 
 /**
+ * Anti-loop flag for SETTINGS sync, mirroring the scans/history
+ * `changed`-guard at the value level. Raised while we write merged remote
+ * settings back into {@link settingsStore} (in {@link applyMergedSettings})
+ * so the settings subscriber installed by {@link installSync} doesn't
+ * re-stamp those keys with `now` (which would clobber the remote
+ * timestamps) or schedule a redundant upload.
+ */
+let applyingSettingsFromSync = false;
+
+/**
+ * Write a merged settings result back to local: persist the per-key ts map
+ * and apply the values to {@link settingsStore} (excluded keys, absent from
+ * `merged.values`, keep their current local value). Guarded by
+ * {@link applyingSettingsFromSync} so our own settings subscriber treats
+ * this as a sync-origin write, not a user edit.
+ *
+ * @param {{ values: Record<string, unknown>, ts: Record<string, number> }} merged
+ * @returns {void}
+ */
+const applyMergedSettings = (merged) => {
+  applyingSettingsFromSync = true;
+  try {
+    writeTsMap(merged.ts);
+    settingsStore.update((cur) => {
+      const spread = {
+        .../** @type {Record<string, unknown>} */ (/** @type {unknown} */ (cur)),
+        ...merged.values,
+      };
+      return /** @type {import('../state/settings.js').Settings} */ (
+        /** @type {unknown} */ (spread)
+      );
+    });
+  } finally {
+    applyingSettingsFromSync = false;
+  }
+};
+
+/**
  * Compare two values by JSON structural equality. Cheap and good
  * enough for the "is the gist already current?" check at the end of
  * {@link upload} — both sides are plain JSON (nested records / arrays
@@ -232,12 +277,18 @@ const downloadAndMerge = async () => {
 
     const scansResult = mergeScans(localScans, remote.galaxyScans);
     const histResult = mergeHistory(localHistory, remote.colonyHistory);
+    const setResult = mergeSettings(
+      { values: pickSyncedValues(settingsStore.get()), ts: readTsMap() },
+      remote.settings,
+    );
 
     // Anti-loop: see file header. `changed === false` means merge is a
     // structural no-op; skipping the write breaks the subscription
-    // feedback loop at its source.
+    // feedback loop at its source. Settings have their own value-level
+    // anti-loop flag inside applyMergedSettings.
     if (scansResult.changed) scansStore.set(scansResult.merged);
     if (histResult.changed) historyStore.set(histResult.merged);
+    if (setResult.changed) applyMergedSettings(setResult.merged);
 
     setStatus('down', new Date().toISOString());
     setStatus('err', null);
@@ -298,12 +349,17 @@ const upload = async () => {
 
     const scansResult = mergeScans(localScans, remote?.galaxyScans);
     const histResult = mergeHistory(localHistory, remote?.colonyHistory);
+    const setResult = mergeSettings(
+      { values: pickSyncedValues(settingsStore.get()), ts: readTsMap() },
+      remote?.settings,
+    );
 
     // Same anti-loop guard as downloadAndMerge. Without this, a store
     // subscription would fire on every upload-round and re-schedule
     // indefinitely.
     if (scansResult.changed) scansStore.set(scansResult.merged);
     if (histResult.changed) historyStore.set(histResult.merged);
+    if (setResult.changed) applyMergedSettings(setResult.merged);
 
     // Skip the PATCH when the gist already matches the merged state.
     // This is the common case when upload fires right after a download
@@ -311,7 +367,8 @@ const upload = async () => {
     // anyway would burn a request and produce a no-op revision.
     const gistIsCurrent =
       sameJSON(remote?.galaxyScans, scansResult.merged) &&
-      sameJSON(remote?.colonyHistory, histResult.merged);
+      sameJSON(remote?.colonyHistory, histResult.merged) &&
+      sameJSON(remote?.settings, setResult.merged);
 
     if (!gistIsCurrent) {
       await writeGistData({
@@ -319,6 +376,7 @@ const upload = async () => {
         updatedAt: new Date().toISOString(),
         galaxyScans: scansResult.merged,
         colonyHistory: histResult.merged,
+        settings: setResult.merged,
       });
       setStatus('up', new Date().toISOString());
     }
@@ -378,6 +436,11 @@ export const installSync = () => {
     return noop;
   }
 
+  // One-time seed of the per-key settings timestamp map: stamp the keys the
+  // user has already customised so a fresh device adopts them on the first
+  // sync (see `seedSettingsTsIfAbsent`). No-op once a map exists.
+  seedSettingsTsIfAbsent(settingsStore.get(), Date.now());
+
   const onStoreChange = () => {
     // Re-check settings on every event: the user might have flipped
     // cloudSync off mid-session. We leave the subscription in place
@@ -388,6 +451,27 @@ export const installSync = () => {
 
   const unsubScans = scansStore.subscribe(onStoreChange);
   const unsubHistory = historyStore.subscribe(onStoreChange);
+
+  // Settings sync: stamp the keys that changed since the last tick with
+  // `now`, then schedule an upload. `applyingSettingsFromSync` skips
+  // sync-origin writes (those carry remote timestamps we must keep), and
+  // we also skip while cloudSync is off — but always advance `prev` so a
+  // later edit diffs against the true last state, not a stale snapshot.
+  let prevSyncedSettings = pickSyncedValues(settingsStore.get());
+  const onSettingsChange = () => {
+    const next = pickSyncedValues(settingsStore.get());
+    if (applyingSettingsFromSync || !settingsStore.get().cloudSync) {
+      prevSyncedSettings = next;
+      return;
+    }
+    const { ts, changed } = stampChanged(prevSyncedSettings, next, readTsMap(), Date.now());
+    prevSyncedSettings = next;
+    if (changed) {
+      writeTsMap(ts);
+      scheduleUpload();
+    }
+  };
+  const unsubSettings = settingsStore.subscribe(onSettingsChange);
 
   const onForceSync = async () => {
     // Force-sync is an explicit user action (settings "Sync now" or
@@ -502,6 +586,7 @@ export const installSync = () => {
     dispose: () => {
       unsubScans();
       unsubHistory();
+      unsubSettings();
       document.removeEventListener(FORCE_SYNC_EVENT, onForceSync);
       unsubStorage();
       installed = null;
@@ -526,4 +611,5 @@ export const _resetSchedulerForTest = () => {
     installed = null;
   }
   inFlight = false;
+  applyingSettingsFromSync = false;
 };

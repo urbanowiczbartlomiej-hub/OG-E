@@ -16,10 +16,7 @@ import {
   cancelWaveReminders,
   fetchScheduledMessages,
   offsetsForSchedule,
-  REMINDER_PRESETS,
-  DEFAULT_REMINDER_SCHEDULE,
-  REMINDER_COUNT,
-  REMINDER_INTERVAL_SEC,
+  DEFAULT_WAVE_OFFSETS_SEC,
   WAVE_PRIORITY,
   ADHOC_PRIORITY,
 } from '../../src/sync/ntfyScheduler.js';
@@ -99,9 +96,9 @@ const ourMsg = (id, time) =>
   JSON.stringify({ id, time, event: 'message', title: TITLE });
 
 describe('reminderFireTimes', () => {
-  it('defaults to the standard preset (REMINDER_COUNT slots, REMINDER_INTERVAL_SEC apart)', () => {
-    expect(reminderFireTimes(2000)).toEqual([2000, 2600, 3200, 3800, 4400, 5000]);
-    expect(reminderFireTimes(2000)).toHaveLength(REMINDER_COUNT);
+  it('defaults to the default wave schedule offsets', () => {
+    expect(reminderFireTimes(2000)).toEqual(DEFAULT_WAVE_OFFSETS_SEC.map((o) => 2000 + o));
+    expect(reminderFireTimes(2000)).toHaveLength(DEFAULT_WAVE_OFFSETS_SEC.length);
   });
 
   it('applies an explicit offset list relative to baseAt', () => {
@@ -110,21 +107,21 @@ describe('reminderFireTimes', () => {
 });
 
 describe('offsetsForSchedule', () => {
-  it('resolves each known preset to its offsets', () => {
-    expect(offsetsForSchedule('standard')).toEqual([0, 600, 1200, 1800, 2400, 3000]);
-    expect(offsetsForSchedule('short')).toEqual([0, 300, 600, 900]);
-    expect(offsetsForSchedule('fibonacci')).toEqual([0, 180, 300, 480, 780, 1260, 2040, 3300]);
+  it('parses a free-form minutes-first list into seconds after the wave returns', () => {
+    expect(offsetsForSchedule('0m, 10m, 30m, 60m')).toEqual([0, 600, 1800, 3600]);
+    expect(offsetsForSchedule('0, 5, 15')).toEqual([0, 300, 900]); // bare = minutes
+    expect(offsetsForSchedule('90s, 2m')).toEqual([90, 120]);
   });
 
-  it('falls back to the default preset for unknown / missing keys', () => {
-    const def = REMINDER_PRESETS[DEFAULT_REMINDER_SCHEDULE].offsetsSec;
-    expect(offsetsForSchedule('nope')).toEqual(def);
-    expect(offsetsForSchedule(undefined)).toEqual(def);
-    expect(offsetsForSchedule('')).toEqual(def);
+  it('drops negatives — a wave reminder cannot fire before the wave is back', () => {
+    expect(offsetsForSchedule('-10m, 0m, 10m')).toEqual([0, 600]);
   });
 
-  it('the fibonacci preset offsets are Fibonacci minutes', () => {
-    expect(offsetsForSchedule('fibonacci').map((s) => s / 60)).toEqual([0, 3, 5, 8, 13, 21, 34, 55]);
+  it('falls back to the default offsets for empty / all-garbage input (incl. an old preset key)', () => {
+    expect(offsetsForSchedule('nope')).toEqual(DEFAULT_WAVE_OFFSETS_SEC);
+    expect(offsetsForSchedule('standard')).toEqual(DEFAULT_WAVE_OFFSETS_SEC);
+    expect(offsetsForSchedule(undefined)).toEqual(DEFAULT_WAVE_OFFSETS_SEC);
+    expect(offsetsForSchedule('')).toEqual(DEFAULT_WAVE_OFFSETS_SEC);
   });
 });
 
@@ -136,25 +133,31 @@ describe('titleFor', () => {
 
 describe('reconcileWaveQueue', () => {
   const base = { topic: 'oge-test', token: 'tk_abc', universeId: 's163-pl' };
+  // A uniform 6×10-min cadence, passed EXPLICITLY to every call so these
+  // tests exercise slot math independently of the production default
+  // (which the player can now override to any free-form list).
+  const WAVE_OFFSETS = [0, 600, 1200, 1800, 2400, 3000];
+  const WAVE_COUNT = WAVE_OFFSETS.length;
+  const WAVE_INTERVAL = 600;
 
   it('posts every future slot when the queue is empty', async () => {
     dispatchReconcile([]);
     const { idsByWave, posted, cancelled } = await reconcileWaveQueue({
-      ...base, now: 1000, waves: [{ id: 'w_2000', baseAt: 2000 }],
+      ...base, now: 1000, waves: [{ id: 'w_2000', baseAt: 2000 }], offsetsSec: WAVE_OFFSETS,
     });
 
-    expect(posted).toBe(REMINDER_COUNT);
+    expect(posted).toBe(WAVE_COUNT);
     expect(cancelled).toBe(0);
     expect(idsByWave.w_2000).toEqual(['post-0', 'post-1', 'post-2', 'post-3', 'post-4', 'post-5']);
 
     const posts = fetchMock.mock.calls.filter((c) => c[1]?.method === 'POST');
-    expect(posts).toHaveLength(REMINDER_COUNT);
+    expect(posts).toHaveLength(WAVE_COUNT);
     const expectedAuth = expectedAuthParam('tk_abc');
     posts.forEach(([url, init], slot) => {
       expect(url).toBe(`https://ntfy.sh/oge-test?${expectedAuth}`);
       expect(init.headers.Authorization).toBeUndefined();
       expect(init.headers.Title).toBe(TITLE);
-      expect(init.headers['X-Delay']).toBe(String(2000 + slot * REMINDER_INTERVAL_SEC));
+      expect(init.headers['X-Delay']).toBe(String(2000 + slot * WAVE_INTERVAL));
       // Wave reminders are flat "default" priority now (3) — no escalation.
       expect(init.headers.Priority).toBe(String(WAVE_PRIORITY));
       // Tags were dropped entirely — no `Tags` header on any push.
@@ -168,9 +171,9 @@ describe('reconcileWaveQueue', () => {
     });
   });
 
-  it('honours a non-standard preset: posts one slot per offset at baseAt+offset', async () => {
+  it('honours an arbitrary schedule: posts one slot per offset at baseAt+offset', async () => {
     dispatchReconcile([]);
-    const offsetsSec = offsetsForSchedule('short'); // [0,300,600,900] → 4 slots
+    const offsetsSec = [0, 300, 600, 900]; // 4 slots
     const { posted, idsByWave } = await reconcileWaveQueue({
       ...base, now: 1000, waves: [{ id: 'w_2000', baseAt: 2000 }], offsetsSec,
     });
@@ -180,14 +183,14 @@ describe('reconcileWaveQueue', () => {
     const posts = fetchMock.mock.calls.filter((c) => c[1]?.method === 'POST');
     posts.forEach(([, init], slot) => {
       expect(init.headers['X-Delay']).toBe(String(2000 + offsetsSec[slot]));
-      // Body slot count reflects the preset length, not the hard-coded 6.
+      // Body slot count reflects the schedule length, not a hard-coded 6.
       expect(init.body).toContain(`/${offsetsSec.length}.`);
     });
   });
 
-  it('fibonacci preset queues 8 slots at Fibonacci-minute offsets', async () => {
+  it('queues a longer schedule at the given offsets', async () => {
     dispatchReconcile([]);
-    const offsetsSec = offsetsForSchedule('fibonacci');
+    const offsetsSec = [0, 180, 300, 480, 780, 1260, 2040, 3300];
     const { posted } = await reconcileWaveQueue({
       ...base, now: 1000, waves: [{ id: 'w_5000', baseAt: 5000 }], offsetsSec,
     });
@@ -195,14 +198,14 @@ describe('reconcileWaveQueue', () => {
     const delays = fetchMock.mock.calls
       .filter((c) => c[1]?.method === 'POST')
       .map((c) => Number(c[1].headers['X-Delay']));
-    expect(delays).toEqual([0, 180, 300, 480, 780, 1260, 2040, 3300].map((o) => 5000 + o));
+    expect(delays).toEqual(offsetsSec.map((o) => 5000 + o));
   });
 
   it('is idempotent: a fully-queued wave posts nothing and reuses the queued ids', async () => {
-    const times = reminderFireTimes(2000);
+    const times = reminderFireTimes(2000, WAVE_OFFSETS);
     dispatchReconcile(times.map((t, i) => ourMsg(`q${i}`, t)));
     const { idsByWave, posted, cancelled } = await reconcileWaveQueue({
-      ...base, now: 1000, waves: [{ id: 'w_2000', baseAt: 2000 }],
+      ...base, now: 1000, waves: [{ id: 'w_2000', baseAt: 2000 }], offsetsSec: WAVE_OFFSETS,
     });
 
     expect(posted).toBe(0);
@@ -212,11 +215,11 @@ describe('reconcileWaveQueue', () => {
   });
 
   it('fills only the gaps of a partial (reload-interrupted) schedule', async () => {
-    const times = reminderFireTimes(2000);
+    const times = reminderFireTimes(2000, WAVE_OFFSETS);
     // Only slots 0,1,2 made it onto the queue before the page reloaded.
     dispatchReconcile([ourMsg('q0', times[0]), ourMsg('q1', times[1]), ourMsg('q2', times[2])]);
     const { idsByWave, posted, cancelled } = await reconcileWaveQueue({
-      ...base, now: 1000, waves: [{ id: 'w_2000', baseAt: 2000 }],
+      ...base, now: 1000, waves: [{ id: 'w_2000', baseAt: 2000 }], offsetsSec: WAVE_OFFSETS,
     });
 
     expect(posted).toBe(3);
@@ -227,10 +230,10 @@ describe('reconcileWaveQueue', () => {
 
   it('sweeps our messages that belong to no live wave (landed / re-sent / drifted)', async () => {
     // A live wave at baseAt=2000 plus a stale message at 9999 (no wave).
-    const times = reminderFireTimes(2000);
+    const times = reminderFireTimes(2000, WAVE_OFFSETS);
     dispatchReconcile([...times.map((t, i) => ourMsg(`q${i}`, t)), ourMsg('stale', 9999)]);
     const { cancelled, posted } = await reconcileWaveQueue({
-      ...base, now: 1000, waves: [{ id: 'w_2000', baseAt: 2000 }],
+      ...base, now: 1000, waves: [{ id: 'w_2000', baseAt: 2000 }], offsetsSec: WAVE_OFFSETS,
     });
 
     expect(posted).toBe(0);
@@ -240,12 +243,12 @@ describe('reconcileWaveQueue', () => {
   });
 
   it('cancels everything for the universe when no live waves are passed (feature off)', async () => {
-    const times = reminderFireTimes(2000);
+    const times = reminderFireTimes(2000, WAVE_OFFSETS);
     dispatchReconcile(times.map((t, i) => ourMsg(`q${i}`, t)));
     const { posted, cancelled } = await reconcileWaveQueue({ ...base, now: 1000, waves: [] });
 
     expect(posted).toBe(0);
-    expect(cancelled).toBe(REMINDER_COUNT);
+    expect(cancelled).toBe(WAVE_COUNT);
   });
 
   it('never touches another universe\'s messages on the shared topic', async () => {
@@ -264,15 +267,15 @@ describe('reconcileWaveQueue', () => {
     // baseAt=1005, now=1000 → slot 0 at 1005 is in the future but too soon
     // to (re)schedule. It must stay queued and must not be re-posted.
     const queuedImminent = ourMsg('q-soon', 1005);
-    const times = reminderFireTimes(1005); // [1005,1605,2205,2805,3405,4005]
+    const times = reminderFireTimes(1005, WAVE_OFFSETS); // [1005,1605,2205,2805,3405,4005]
     // Pre-queue slot 0 only; the rest are gaps to fill.
     dispatchReconcile([queuedImminent]);
     const { idsByWave, posted, cancelled } = await reconcileWaveQueue({
-      ...base, now: 1000, waves: [{ id: 'w_1005', baseAt: 1005 }],
+      ...base, now: 1000, waves: [{ id: 'w_1005', baseAt: 1005 }], offsetsSec: WAVE_OFFSETS,
     });
 
     expect(cancelled).toBe(0); // slot 0 protected (time 1005 > now)
-    expect(posted).toBe(REMINDER_COUNT - 1); // slots 1..5 posted
+    expect(posted).toBe(WAVE_COUNT - 1); // slots 1..5 posted
     // slot 0 is too-soon → not in the returned id set; only schedulable slots are.
     expect(idsByWave.w_1005).toEqual(['post-0', 'post-1', 'post-2', 'post-3', 'post-4']);
     expect(times[0]).toBe(1005);

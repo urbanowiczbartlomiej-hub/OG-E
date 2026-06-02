@@ -4,51 +4,56 @@
 // ntfy.sh push OG-E can schedule — expedition-wave auto-reminders, ad-hoc
 // per-fleet reminders, and fleet-save (FS) auto-detection.
 //
+// # Label convention
+//
+// Every row reads `Group — attribute`, with the same attribute words
+// (`enable`, `schedule`, `fires at`) reused across groups so the panel is
+// systematic and scannable. No units in labels — the VALUE carries the
+// unit (minutes-first with an `s`/`m`/`h` suffix; see `domain/duration.js`).
+//
 // Layout, top to bottom:
 //
-//   1. ntfy.sh access token — the PREREQUISITE for everything here. With
-//      no (valid) token there is no push channel: the topic is derived
-//      from it, the producer skips scheduling, and the event-list badges
-//      stay hidden. So it leads the section.
-//   2. Auto expedition-wave reminders — the original feature: detect a
-//      returning expedition wave and schedule its reminder series.
-//   3. Wave reminder schedule — the cadence preset for (2). One of a few
-//      FIXED presets (see `REMINDER_PRESETS` in `sync/ntfyScheduler.js`),
-//      not free-form tuning, to keep the panel simple and ntfy usage
-//      predictable. Only affects waves.
-//   4. Ad-hoc fleet reminders — the master switch for the event-list
-//      badges. Off ⇒ badges hidden, no ad-hoc scheduling (armed entries
-//      are kept but dormant).
-//   5. Ad-hoc lead time — how many seconds before arrival an ad-hoc ping
-//      fires. Captured per reminder at arm time, so changing it here only
-//      affects reminders armed afterwards.
-//   6. Auto fleet-save detection — flag any own fleet over the ship
-//      threshold and schedule a reminder series. Off ⇒ no 🛡 badges, no FS
-//      scheduling.
-//   7. Fleet-save threshold — total ship count that makes a leg an FS.
-//   8. Fleet-save minimum flight time — excludes short planet⇄moon hops; a
-//      big fleet on a short flight is a logistics shuffle, not a save.
-//   9. Fleet-save offsets — the FS reminder schedule, RELATIVE to arrival
-//      (negative = before landing, 0 = at landing, positive = after).
+//   1. Reminders — master switch. With no (valid) token there is no push
+//      channel, so the credential + its status lead the section.
+//   2. ntfy.sh — access token. The PREREQUISITE for everything below: the
+//      topic is derived from it, the producer skips scheduling without it.
+//   3. ntfy.sh — account status. Async probe of `/v1/account`: confirms the
+//      token is accepted and shows today's message usage vs the daily
+//      limit. Turns a wrong token (previously silent) into explicit
+//      feedback. Manual "Check now" re-runs the probe.
+//   3b. ntfy.sh — your topic. The push topic derived from the token; what
+//      you subscribe to in the ntfy app on your phone. Read-only.
+//   4. Expedition-wave reminders — enable / schedule / fires at. Detect a
+//      returning expedition wave and schedule a reminder SERIES. The
+//      schedule is a free-form minutes-first list of offsets AFTER the wave
+//      returns (e.g. `0m, 10m, 30m, 60m`); "fires at" previews it live.
+//   5. Ad-hoc reminders — enable / lead time. The event-list badges; lead
+//      time is how long before arrival an ad-hoc ping fires (captured per
+//      reminder at arm time).
+//   6. Fleet-save reminders — enable / ship threshold / min flight time /
+//      schedule / fires at. Auto-detect a big own fleet and schedule a
+//      series RELATIVE to landing (negative = before, 0 = at, positive =
+//      after). Min flight time excludes short planet⇄moon hops.
 //
-// The topic itself is automatic (derived from the token) and shown
-// read-only on the OG-E Dashboard's Reminders tab, so it isn't repeated
-// here.
+// The topic is automatic (derived from the token); it's shown read-only
+// both here (row 3b) and on the OG-E Dashboard's Reminders tab.
 
-import { REMINDER_PRESETS, offsetsForSchedule } from '../../../sync/ntfyScheduler.js';
+import { offsetsForSchedule } from '../../../sync/ntfyScheduler.js';
 import { settingsStore } from '../../../state/settings.js';
-import { isValidNtfyToken } from '../../../sync/reminders.js';
+import { isValidNtfyToken, deriveNtfyTopic } from '../../../sync/reminders.js';
+import { fetchNtfyAccount } from '../../../sync/ntfyAccount.js';
+import { formatNtfyAccountStatus } from '../../../domain/ntfyAccount.js';
 import { parseFsOffsets } from '../../../domain/fleetSave.js';
+import { formatDuration } from '../../../domain/duration.js';
 
 /**
  * @typedef {import('../controls.js').SettingsSection} SettingsSection
  */
 
 /**
- * The reminder sub-options (auto-wave, schedule, ad-hoc, lead time) are
- * locked until the section is switched on AND a valid token is entered —
- * the token is the credential everything rides on. Used as each
- * sub-option's `disabledWhen`.
+ * The reminder sub-options (wave, ad-hoc, fleet-save) are locked until the
+ * section is switched on AND a valid token is entered — the token is the
+ * credential everything rides on. Used as each sub-option's `disabledWhen`.
  *
  * @param {import('../../../state/settings.js').Settings} s
  * @returns {boolean}
@@ -56,18 +61,18 @@ import { parseFsOffsets } from '../../../domain/fleetSave.js';
 const sectionLocked = (s) => !s.remindersMasterEnabled || !isValidNtfyToken(s.reminderNtfyToken);
 
 /**
- * Render a preset's offsets as a relative-minute series, e.g.
- * `"0, 10, 20, 30, 40, 50"` — the minutes (after the wave returns) at
- * which each reminder fires. All preset offsets are whole minutes.
+ * Render an offset list (whole seconds) as a canonical minutes-first
+ * series, e.g. `[0, 600, 1800, 3600]` → `"0m, 10m, 30m, 60m"`. Used by the
+ * read-only wave "fires at" preview.
  *
  * @param {number[]} offsetsSec
  * @returns {string}
  */
-const minutesList = (offsetsSec) => offsetsSec.map((s) => s / 60).join(', ');
+const offsetsList = (offsetsSec) => offsetsSec.map(formatDuration).join(', ');
 
 /**
  * Spell out a fleet-save offset list as a human phrase relative to landing,
- * e.g. `-600,0,600` → `"10 min before, at landing, 10 min after"`. Empty /
+ * e.g. `[-600, 0, 600]` → `"10m before, at landing, 10m after"`. Empty /
  * all-invalid input reads as "(none)" so the player sees that no FS push
  * would be scheduled.
  *
@@ -77,24 +82,11 @@ const minutesList = (offsetsSec) => offsetsSec.map((s) => s / 60).join(', ');
 const fsOffsetsText = (offsetsSec) =>
   offsetsSec.length
     ? offsetsSec
-        .map((o) => {
-          const m = Math.round(Math.abs(o) / 60);
-          return o < 0 ? `${m} min before` : o > 0 ? `${m} min after` : 'at landing';
-        })
+        .map((o) =>
+          o < 0 ? `${formatDuration(-o)} before` : o > 0 ? `${formatDuration(o)} after` : 'at landing',
+        )
         .join(', ')
     : '(none — no FS pushes scheduled)';
-
-/**
- * Schedule choices for the picker — kept short (the explicit series times
- * live in the read-only row below, where they can't be truncated by a
- * narrow select).
- *
- * @type {{ value: string, label: string }[]}
- */
-const SCHEDULE_CHOICES = Object.entries(REMINDER_PRESETS).map(([value, { label }]) => ({
-  value,
-  label,
-}));
 
 /** @type {SettingsSection} */
 export const remindersSection = {
@@ -102,10 +94,10 @@ export const remindersSection = {
   options: [
     // Master switch + credential first. Until BOTH are set, everything
     // below is greyed out (see `sectionLocked`).
-    { id: 'remindersMasterEnabled', label: 'Enable reminders', type: 'checkbox' },
+    { id: 'remindersMasterEnabled', label: 'Reminders — master switch', type: 'checkbox' },
     {
       id: 'reminderNtfyToken',
-      label: 'ntfy.sh access token (required)',
+      label: 'ntfy.sh — access token',
       type: 'password',
       placeholder: 'tk_…',
       // Editable only once the section is switched on (the token is the
@@ -113,40 +105,78 @@ export const remindersSection = {
       disabledWhen: (s) => !s.remindersMasterEnabled,
     },
     {
+      // Async probe of the ntfy account: re-runs whenever the token changes
+      // (and on the manual button). Gives the token explicit validation +
+      // shows today's usage against the daily limit. Editable/usable as
+      // soon as the section is on — even an invalid token gets feedback
+      // (the probe short-circuits to a "not a valid token" line, no
+      // request). Not a Settings field — the id is DOM-only.
+      id: 'ntfyAccountStatus',
+      label: 'ntfy.sh — account status',
+      type: 'asyncStatus',
+      buttonText: 'Check now',
+      refreshKey: (s) => s.reminderNtfyToken,
+      fetchText: async (s) => formatNtfyAccountStatus(await fetchNtfyAccount(s.reminderNtfyToken)),
+      disabledWhen: (s) => !s.remindersMasterEnabled,
+    },
+    {
+      // The push topic OG-E derives from the token (a private hash). This is
+      // what you subscribe to in the ntfy app on your phone to receive the
+      // reminders. Read-only + async (the derivation hashes the token), so
+      // it rides the same asyncStatus control as the account status and
+      // re-derives whenever the token changes. Also shown on the OG-E
+      // Dashboard's Reminders tab; surfaced here too so it's discoverable
+      // right where the token is entered.
+      id: 'ntfyTopic',
+      label: 'ntfy.sh — your topic (subscribe on phone)',
+      type: 'asyncStatus',
+      refreshKey: (s) => s.reminderNtfyToken,
+      fetchText: async (s) =>
+        isValidNtfyToken(s.reminderNtfyToken)
+          ? await deriveNtfyTopic(s.reminderNtfyToken)
+          : '— (enter a valid token first)',
+    },
+    {
       id: 'reminderEnabled',
-      label: 'Auto expedition-wave reminders',
+      label: 'Expedition-wave reminders — enable',
       type: 'checkbox',
       disabledWhen: sectionLocked,
     },
     {
+      // Free-form schedule: comma-separated minutes-first offsets AFTER the
+      // wave returns (e.g. `0m, 10m, 30m, 60m`). Resolved by
+      // `offsetsForSchedule`; negatives are dropped (can't fire before the
+      // wave is back). The explicit series lives in the read-only row below.
       id: 'reminderSchedule',
-      label: 'Wave reminder schedule',
-      type: 'select',
-      selectOptions: SCHEDULE_CHOICES,
+      label: 'Expedition-wave reminders — schedule',
+      type: 'text',
+      placeholder: '0m, 10m, 30m, 60m',
       disabledWhen: sectionLocked,
     },
     {
-      // Read-only: spells out WHEN the selected schedule's reminders fire,
-      // updating live as the picker changes. Not a Settings field — the id
-      // is DOM-only. Always-visible + full-width, so the times can't get
-      // clipped the way a long <option> label can.
+      // Read-only: spells out WHEN the wave schedule's reminders fire,
+      // updating live as the field changes. Always-visible + full-width so
+      // the times can't get clipped. Not a Settings field — DOM-only id.
       id: 'reminderScheduleTimes',
-      label: 'Reminders fire at',
+      label: 'Expedition-wave reminders — fires at',
       type: 'static',
       getText: () =>
-        `${minutesList(offsetsForSchedule(settingsStore.get().reminderSchedule))} min after the wave returns`,
+        `${offsetsList(offsetsForSchedule(settingsStore.get().reminderSchedule))} after the wave returns`,
     },
     {
       id: 'adhocEnabled',
-      label: 'Ad-hoc fleet reminders (event list)',
+      label: 'Ad-hoc reminders — enable',
       type: 'checkbox',
       disabledWhen: sectionLocked,
     },
     {
+      // How long before arrival an ad-hoc ping fires. Minutes-first; default
+      // 60 s (shown as `1m`). Captured per reminder at arm time, so changing
+      // it here only affects reminders armed afterwards.
       id: 'adhocOffsetSec',
-      label: 'Ad-hoc lead time before arrival (seconds)',
-      type: 'text',
-      placeholder: '60',
+      label: 'Ad-hoc reminders — lead time',
+      type: 'duration',
+      placeholder: '1m',
       disabledWhen: sectionLocked,
     },
     {
@@ -154,14 +184,14 @@ export const remindersSection = {
       // count crosses the threshold is flagged 🛡 in the event list and gets
       // a reminder series. Not armable/cancellable — it's automatic.
       id: 'fsEnabled',
-      label: 'Auto fleet-save detection (event list)',
+      label: 'Fleet-save reminders — enable',
       type: 'checkbox',
       disabledWhen: sectionLocked,
     },
     {
-      // The "big fleet" cutoff, right beside its toggle. Default 100 000.
+      // The "big fleet" cutoff (a ship COUNT, not a duration). Default 100 000.
       id: 'fsThreshold',
-      label: 'Fleet-save threshold (total ships)',
+      label: 'Fleet-save reminders — ship threshold',
       type: 'text',
       placeholder: '100000',
       disabledWhen: sectionLocked,
@@ -169,27 +199,28 @@ export const remindersSection = {
     {
       // Second gate: exclude short planet⇄moon hops. A big fleet on a short
       // flight is a logistics shuffle, not a save. Server-speed dependent,
-      // so configurable. Default 600 s (10 min). 0 disables the gate.
+      // so configurable. Default 600 s (`10m`). 0 disables the gate.
       id: 'fsMinFlightSec',
-      label: 'Fleet-save minimum flight time (seconds)',
-      type: 'text',
-      placeholder: '600',
+      label: 'Fleet-save reminders — min flight time',
+      type: 'duration',
+      placeholder: '10m',
       disabledWhen: sectionLocked,
     },
     {
       // Free-form reminder schedule, RELATIVE to arrival (comma-separated
-      // seconds; negative = before landing, 0 = at landing, positive =
-      // after). e.g. -600,0,600 ⇒ 10 min before, at, and 10 min after.
+      // minutes-first offsets; negative = before landing, 0 = at landing,
+      // positive = after). e.g. `-10m, 0m, 10m` ⇒ 10 min before, at, and
+      // 10 min after.
       id: 'fsOffsets',
-      label: 'Fleet-save reminder offsets (seconds, relative to arrival)',
+      label: 'Fleet-save reminders — schedule',
       type: 'text',
-      placeholder: '-600,0,600',
+      placeholder: '-10m, 0m, 10m',
       disabledWhen: sectionLocked,
     },
     {
       // Read-only: spells out the parsed FS offsets, updating live.
       id: 'fsOffsetsTimes',
-      label: 'Fleet-save reminders fire',
+      label: 'Fleet-save reminders — fires at',
       type: 'static',
       getText: () => fsOffsetsText(parseFsOffsets(settingsStore.get().fsOffsets)),
     },

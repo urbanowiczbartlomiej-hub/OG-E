@@ -19,7 +19,7 @@
 // rate-limited).
 //
 // @see ../../sync/reminders.js — mirror keys + filename
-// @see ../../sync/ntfyScheduler.js — REMINDER_COUNT / REMINDER_INTERVAL_SEC
+// @see ../../sync/ntfyScheduler.js — offsetsForSchedule / DEFAULT_WAVE_OFFSETS_SEC
 // @see ./index.js — installReminders wired into the dashboard boot
 
 /* global fetch */

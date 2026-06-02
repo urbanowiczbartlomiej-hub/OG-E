@@ -65,8 +65,18 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
   });
 
   it('every schema key is prefixed with SETTINGS_PREFIX + field name', () => {
+    // A handful of fields point at a DIFFERENT LS key than their field name:
+    // v1.11.0 repointed the wave schedule + FS offsets to fresh keys so the
+    // old incompatible stored values are orphaned (a deliberate reset, not a
+    // migration — see SETTINGS_SCHEMA). Their keys are pinned explicitly in
+    // the "correct types" test below.
+    const REMAPPED = new Set(['reminderSchedule', 'fsOffsets']);
     for (const [field, schema] of Object.entries(SETTINGS_SCHEMA)) {
-      expect(schema.key).toBe(SETTINGS_PREFIX + field);
+      if (REMAPPED.has(field)) {
+        expect(schema.key.startsWith(SETTINGS_PREFIX)).toBe(true);
+      } else {
+        expect(schema.key).toBe(SETTINGS_PREFIX + field);
+      }
     }
   });
 
@@ -106,8 +116,8 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
 
     expect(SETTINGS_SCHEMA.reminderSchedule).toEqual({
       type: 'string',
-      default: 'standard',
-      key: 'oge_reminderSchedule',
+      default: '0m, 10m, 30m, 60m',
+      key: 'oge_reminderWaveOffsets',
     });
 
     expect(SETTINGS_SCHEMA.mobileMode).toEqual({
@@ -137,8 +147,8 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
     });
     expect(SETTINGS_SCHEMA.fsOffsets).toEqual({
       type: 'string',
-      default: '-600,0,600',
-      key: 'oge_fsOffsets',
+      default: '-10m, 0m, 10m',
+      key: 'oge_fsReminderOffsets',
     });
     expect(SETTINGS_SCHEMA.fsMinFlightSec).toEqual({
       type: 'int',

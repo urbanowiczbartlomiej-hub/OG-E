@@ -336,52 +336,116 @@ describe('installSettingsUi — text + password', () => {
 });
 
 // ──────────────────────────────────────────────────────────────────
-// Select (dropdown) rendering + binding
+// Reminders section: free-form schedule (text), duration + asyncStatus
 // ──────────────────────────────────────────────────────────────────
 
-describe('installSettingsUi — select', () => {
-  it('renders the reminder-schedule dropdown with the preset choices', async () => {
+describe('installSettingsUi — wave schedule (free-form text)', () => {
+  it('renders the wave schedule as a text input at its default', async () => {
     setupAGR();
     installSettingsUi();
     await flushWaitFor();
 
-    const sel = /** @type {HTMLSelectElement | null} */ (
+    const inp = /** @type {HTMLInputElement | null} */ (
       document.getElementById(INPUT_PREFIX + 'reminderSchedule')
     );
-    expect(sel).not.toBeNull();
-    expect(sel?.tagName).toBe('SELECT');
-    const values = Array.from(sel?.options ?? []).map((o) => o.value);
-    expect(values).toEqual(['standard', 'short', 'fibonacci']);
-    // Default value is selected.
-    expect(sel?.value).toBe('standard');
+    expect(inp).not.toBeNull();
+    expect(inp?.tagName).toBe('INPUT');
+    expect(inp?.value).toBe('0m, 10m, 30m, 60m');
   });
 
-  it('change writes the chosen preset key back to settings', async () => {
+  it('change writes the typed schedule string back to settings', async () => {
     setupAGR();
     installSettingsUi();
     await flushWaitFor();
 
-    const sel = /** @type {HTMLSelectElement | null} */ (
+    const inp = /** @type {HTMLInputElement | null} */ (
       document.getElementById(INPUT_PREFIX + 'reminderSchedule')
     );
-    expect(sel).not.toBeNull();
-    if (sel) {
-      sel.value = 'fibonacci';
-      sel.dispatchEvent(new Event('change'));
+    if (inp) {
+      inp.value = '5m, 15m';
+      inp.dispatchEvent(new Event('change'));
     }
-    expect(settingsStore.get().reminderSchedule).toBe('fibonacci');
+    expect(settingsStore.get().reminderSchedule).toBe('5m, 15m');
+  });
+});
+
+describe('installSettingsUi — duration control', () => {
+  it('shows the ad-hoc lead time in minutes-first form and writes back seconds', async () => {
+    setupAGR();
+    installSettingsUi();
+    await flushWaitFor();
+
+    const inp = /** @type {HTMLInputElement | null} */ (
+      document.getElementById(INPUT_PREFIX + 'adhocOffsetSec')
+    );
+    expect(inp).not.toBeNull();
+    expect(inp?.value).toBe('1m'); // default 60 s
+    if (inp) {
+      inp.value = '2m';
+      inp.dispatchEvent(new Event('change'));
+    }
+    expect(settingsStore.get().adhocOffsetSec).toBe(120);
+    expect(inp?.value).toBe('2m'); // re-rendered canonical form
+  });
+
+  it('reverts to the stored value when the typed token is garbage', async () => {
+    setupAGR();
+    installSettingsUi();
+    await flushWaitFor();
+
+    const inp = /** @type {HTMLInputElement | null} */ (
+      document.getElementById(INPUT_PREFIX + 'adhocOffsetSec')
+    );
+    if (inp) {
+      inp.value = 'oops';
+      inp.dispatchEvent(new Event('change'));
+    }
+    expect(settingsStore.get().adhocOffsetSec).toBe(60); // unchanged
+    expect(inp?.value).toBe('1m');
+  });
+});
+
+describe('installSettingsUi — asyncStatus (ntfy account)', () => {
+  it('renders the account-status row with a manual "Check now" button', async () => {
+    setupAGR();
+    installSettingsUi();
+    await flushWaitFor();
+
+    const span = document.getElementById(INPUT_PREFIX + 'ntfyAccountStatus');
+    const btn = document.getElementById(INPUT_PREFIX + 'ntfyAccountStatus-btn');
+    expect(span).not.toBeNull();
+    expect(btn).not.toBeNull();
+    expect(btn?.textContent).toBe('Check now');
+  });
+
+  it('renders the derived-topic row (read-only, no button) with the no-token hint', async () => {
+    setupAGR();
+    installSettingsUi();
+    await flushWaitFor();
+
+    const span = document.getElementById(INPUT_PREFIX + 'ntfyTopic');
+    expect(span).not.toBeNull();
+    // No manual button on this row — it's purely informational (read-only
+    // derived topic). The text resolves asynchronously via the same
+    // asyncStatus path the account row uses; its content is exercised by
+    // the deriveNtfyTopic + formatter tests, so here we pin the structure.
+    expect(document.getElementById(INPUT_PREFIX + 'ntfyTopic-btn')).toBeNull();
   });
 });
 
 // ──────────────────────────────────────────────────────────────────
-// Button rendering + click
+// Checkbox inline action button (sync master row "Sync now") + click
 // ──────────────────────────────────────────────────────────────────
 
-describe('installSettingsUi — button', () => {
-  it('Sync button dispatches oge:syncForce CustomEvent on click', async () => {
+describe('installSettingsUi — checkbox inline button', () => {
+  it('the "Sync now" button (inline on the cloudSync master row) dispatches oge:syncForce', async () => {
     setupAGR();
     installSettingsUi();
     await flushWaitFor();
+    // The button is disabled while cloudSync is off (default) — a disabled
+    // button never fires click — so turn the master on first. The store
+    // subscriber re-runs syncInputsFromState and un-disables it.
+    settingsStore.update((s) => ({ ...s, cloudSync: true }));
 
     /** @type {string[]} */
     const received = [];
@@ -392,13 +456,26 @@ describe('installSettingsUi — button', () => {
     document.addEventListener('oge:syncForce', handler);
 
     const btn = /** @type {HTMLButtonElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'syncForce')
+      document.getElementById(INPUT_PREFIX + 'cloudSync-btn')
     );
     expect(btn).not.toBeNull();
+    expect(btn?.textContent).toBe('Sync now');
+    expect(btn?.disabled).toBe(false);
     btn?.click();
 
     document.removeEventListener('oge:syncForce', handler);
     expect(received).toContain('oge:syncForce');
+  });
+
+  it('disables the "Sync now" button while cloudSync is off', async () => {
+    setupAGR();
+    installSettingsUi();
+    await flushWaitFor();
+    settingsStore.update((s) => ({ ...s, cloudSync: false }));
+    const btn = /** @type {HTMLButtonElement | null} */ (
+      document.getElementById(INPUT_PREFIX + 'cloudSync-btn')
+    );
+    expect(btn?.disabled).toBe(true);
   });
 });
 
@@ -437,6 +514,33 @@ describe('installSettingsUi — static status', () => {
 
     const span = document.getElementById(INPUT_PREFIX + 'syncStatus');
     expect(span?.textContent).toContain('⚠ rate limited');
+  });
+
+  it('repaints the status row when oge:syncStatus fires (sync-layer push)', async () => {
+    setupAGR();
+    installSettingsUi();
+    await flushWaitFor();
+
+    // Simulate the sync layer writing a fresh error + emitting the event.
+    localStorage.setItem('oge_lastSyncErr', 'HTTP 401: Bad credentials');
+    document.dispatchEvent(new CustomEvent('oge:syncStatus'));
+
+    const span = document.getElementById(INPUT_PREFIX + 'syncStatus');
+    expect(span?.textContent).toContain('⚠ HTTP 401: Bad credentials');
+  });
+
+  it('paints "Syncing…" immediately when the master "Sync now" is clicked', async () => {
+    setupAGR();
+    installSettingsUi();
+    await flushWaitFor();
+    settingsStore.update((s) => ({ ...s, cloudSync: true }));
+
+    const btn = /** @type {HTMLButtonElement | null} */ (
+      document.getElementById(INPUT_PREFIX + 'cloudSync-btn')
+    );
+    btn?.click(); // no scheduler in this test → status stays at the optimistic paint
+    const span = document.getElementById(INPUT_PREFIX + 'syncStatus');
+    expect(span?.textContent).toBe('Syncing…');
   });
 });
 

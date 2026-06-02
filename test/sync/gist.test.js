@@ -41,6 +41,7 @@ import {
   getGistId,
   setGistId,
   gh,
+  conciseErrorBody,
   ensureGistV3,
   fetchGistData,
   writeGistData,
@@ -205,6 +206,27 @@ describe('gh() API client', () => {
     // body snippet so Settings-UI can show the real reason.
     mockFetch(makeResponse({ ok: false, status: 500, body: 'internal server error' }));
     await expect(gh('/gists')).rejects.toThrow('HTTP 500: internal server error');
+  });
+
+  it('reduces a GitHub JSON error body to its message (one line, not a JSON dump)', async () => {
+    // The real 401 a bad PAT returns is multi-line JSON; the thrown
+    // message must be the concise `message`, so the Settings status row
+    // stays a single line.
+    const body = '{\n  "message": "Bad credentials",\n  "documentation_url": "https://docs.github.com/rest",\n  "status": "401"\n}';
+    mockFetch(makeResponse({ ok: false, status: 401, body }));
+    await expect(gh('/gists')).rejects.toThrow('HTTP 401: Bad credentials');
+  });
+});
+
+describe('conciseErrorBody', () => {
+  it('extracts the message from a JSON error body', () => {
+    expect(conciseErrorBody('{"message":"Bad credentials","status":"401"}')).toBe('Bad credentials');
+  });
+
+  it('collapses whitespace and truncates a non-JSON body', () => {
+    expect(conciseErrorBody('line one\n  line two\t\tline three')).toBe('line one line two line three');
+    expect(conciseErrorBody('')).toBe('');
+    expect(conciseErrorBody('x'.repeat(300))).toHaveLength(120);
   });
 });
 

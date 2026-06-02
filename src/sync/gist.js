@@ -129,6 +129,20 @@ import { clearScans, clearGalaxyScans } from './merge.js';
  * The whole payload is serialised, gzipped, base64-encoded, then shoved
  * into the file's `content` field.
  *
+ * @typedef {object} SyncedSettings
+ * @property {Record<string, unknown>} values
+ *   Synced preference values (every Settings key except the few that are
+ *   per-device — see `EXCLUDED_SETTINGS` in `sync/settingsSync.js`).
+ * @property {Record<string, number>} ts
+ *   Per-key last-change epoch-ms timestamps, the merge granularity for
+ *   {@link import('./merge.js').mergeSettings} (newer wins).
+ */
+
+/**
+ * Shape of the JSON we compress and store in the gist's single data file.
+ * The whole payload is serialised, gzipped, base64-encoded, then shoved
+ * into the file's `content` field.
+ *
  * @typedef {object} GistPayload
  * @property {3} version
  *   Schema version. Pinned to 3 — readers reject anything else via
@@ -143,6 +157,11 @@ import { clearScans, clearGalaxyScans } from './merge.js';
  *   Full galaxy-scan map. See {@link GalaxyScans}.
  * @property {ColonyHistory} colonyHistory
  *   Full colony-history list. See {@link ColonyHistory}.
+ * @property {SyncedSettings} [settings]
+ *   OPTIONAL, additive (no version bump): synced user preferences. Absent
+ *   on gists written before this feature; new readers treat absence as
+ *   "nothing to merge", old readers ignore the unknown field. That two-way
+ *   tolerance is why this could be added without a schema-version change.
  */
 
 // ── Storage keys ────────────────────────────────────────────────────
@@ -179,6 +198,13 @@ export const LAST_DOWN_KEY = 'oge_lastDownAt';
 
 /** localStorage key holding the last error message, or absent on success. */
 export const LAST_ERR_KEY = 'oge_lastSyncErr';
+
+/**
+ * Document event fired after any sync-status write (see {@link setStatus}),
+ * so a live status display can re-read immediately. The Settings "Sync
+ * status" row listens for it (via the asyncStatus control's `refreshEvent`).
+ */
+export const SYNC_STATUS_EVENT = 'oge:syncStatus';
 
 // ── Gist identity ───────────────────────────────────────────────────
 
@@ -280,9 +306,39 @@ export const setStatus = (kind, value) => {
         : LAST_ERR_KEY;
   if (value === null) safeLS.remove(key);
   else safeLS.set(key, value);
+  // Nudge any live status display (the Settings "Sync status" row) to
+  // re-read immediately. Without this the row only refreshed on the next
+  // unrelated settings-store tick, so a manual "Sync now" that failed
+  // showed nothing until you touched another setting. Covers every status
+  // write (manual force-sync, background upload, clears, errors). Guarded
+  // for non-DOM contexts (defensive — both origins that run this have one).
+  if (typeof document !== 'undefined') {
+    document.dispatchEvent(new CustomEvent(SYNC_STATUS_EVENT));
+  }
 };
 
 // ── GitHub API client ───────────────────────────────────────────────
+
+/**
+ * Reduce a GitHub error body to ONE short line for the thrown message
+ * (which surfaces verbatim in the Settings "Sync status" row). GitHub
+ * returns JSON like `{"message":"Bad credentials", ...}` — we take just
+ * `message`; otherwise we collapse whitespace so a multi-line body can't
+ * blow the status line up to several rows. Truncated for UI sizing.
+ *
+ * @param {string} text  Raw response body.
+ * @returns {string}
+ */
+export const conciseErrorBody = (text) => {
+  if (!text) return '';
+  try {
+    const j = JSON.parse(text);
+    if (j && typeof j.message === 'string' && j.message) return j.message;
+  } catch {
+    // Not JSON — fall through to the collapsed-text path.
+  }
+  return text.replace(/\s+/g, ' ').trim().slice(0, 120);
+};
 
 /**
  * One-call GitHub API client with token, headers, and 403/429 backoff
@@ -360,7 +416,7 @@ export const gh = async (path, options = {}) => {
     // decodable (e.g. upstream connection reset), in which case we fall
     // back to the status line.
     const text = await res.text().catch(() => '');
-    throw new Error(`HTTP ${res.status}: ${text.slice(0, 200) || res.statusText}`);
+    throw new Error(`HTTP ${res.status}: ${conciseErrorBody(text) || res.statusText}`);
   }
   return res.json();
 };

@@ -185,7 +185,10 @@ const buildTab = () => {
     table.className = 'ago_menu_section';
     // Fixed layout + explicit 434/220 colgroup so inputs align between
     // sections (without this, Expeditions labels pushed their inputs
-    // further right than Colonization).
+    // further right than Colonization). Free-value inputs are stretched to
+    // fill the value column (see FULL_WIDTH_STYLE in controls.js), so even
+    // at 220px the token / duration-list fields are roomy — no need to
+    // steal width from the (long) label column.
     table.style.tableLayout = 'fixed';
     const colgroup = document.createElement('colgroup');
     const col1 = document.createElement('col');

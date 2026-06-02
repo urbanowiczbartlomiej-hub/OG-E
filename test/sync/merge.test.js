@@ -12,6 +12,7 @@ import { describe, it, expect } from 'vitest';
 import {
   mergeScans,
   mergeHistory,
+  mergeSettings,
   clearScans,
   clearGalaxyScans,
 } from '../../src/sync/merge.js';
@@ -396,5 +397,47 @@ describe('clearGalaxyScans', () => {
     // promised; only the value mapping is.
     expect(result.galaxyScans).toEqual({ '5:1': k });
     expect(result.galaxyScans['5:1']).toBe(k);
+  });
+});
+
+describe('mergeSettings', () => {
+  it('takes the remote value for a key with a strictly newer ts', () => {
+    const local = { values: { a: 1, b: 2 }, ts: { a: 100, b: 100 } };
+    const remote = { values: { a: 9, b: 2 }, ts: { a: 200, b: 50 } };
+    const { merged, changed } = mergeSettings(local, remote);
+    expect(changed).toBe(true);
+    expect(merged.values).toEqual({ a: 9, b: 2 }); // a from remote (newer), b stays local
+    expect(merged.ts).toEqual({ a: 200, b: 100 });
+  });
+
+  it('keeps local on tie and reports no change (anti-loop)', () => {
+    const local = { values: { a: 1 }, ts: { a: 100 } };
+    const remote = { values: { a: 9 }, ts: { a: 100 } };
+    const { merged, changed } = mergeSettings(local, remote);
+    expect(changed).toBe(false);
+    expect(merged.values).toEqual({ a: 1 });
+  });
+
+  it('keeps the ts map sparse — no explicit zeros for untouched keys', () => {
+    const local = { values: { a: 1, b: 2 }, ts: {} };
+    const remote = { values: { a: 1, b: 2 }, ts: {} };
+    const { merged, changed } = mergeSettings(local, remote);
+    expect(changed).toBe(false);
+    expect(merged.ts).toEqual({});
+  });
+
+  it('iterates local keys only — a remote-only key is ignored', () => {
+    const local = { values: { a: 1 }, ts: {} };
+    const remote = { values: { a: 1, gistToken: 'leak' }, ts: { gistToken: 999 } };
+    const { merged } = mergeSettings(local, remote);
+    expect(merged.values).toEqual({ a: 1 });
+    expect('gistToken' in merged.values).toBe(false);
+  });
+
+  it('is identity when remote is absent / has no values', () => {
+    const local = { values: { a: 1 }, ts: { a: 5 } };
+    expect(mergeSettings(local, null)).toEqual({ merged: local, changed: false });
+    expect(mergeSettings(local, undefined)).toEqual({ merged: local, changed: false });
+    expect(mergeSettings(local, /** @type {any} */ ({}))).toEqual({ merged: local, changed: false });
   });
 });

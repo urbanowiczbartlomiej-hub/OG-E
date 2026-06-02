@@ -20,19 +20,22 @@ const cand = (o) => ({
 const opts = (over = {}) => ({ threshold: 100000, offsetsSec: [-600, 0, 600], minFlightSec: 600, now: 0, ...over });
 
 describe('parseFsOffsets', () => {
-  it('parses a comma list, de-dupes, sorts ascending', () => {
-    expect(parseFsOffsets('-600,0,600')).toEqual([-600, 0, 600]);
-    expect(parseFsOffsets('600, 0, -600')).toEqual([-600, 0, 600]);
-    expect(parseFsOffsets('0,0,600,600')).toEqual([0, 600]);
+  // Thin signed wrapper over the minutes-first duration grammar (full
+  // coverage lives in test/domain/duration.test.js); these just pin the
+  // FS-relevant behaviour: signed offsets in seconds, sorted + de-duped.
+  it('parses a minutes-first signed list into seconds, de-dupes, sorts', () => {
+    expect(parseFsOffsets('-10m, 0m, 10m')).toEqual([-600, 0, 600]);
+    expect(parseFsOffsets('10m, 0m, -10m')).toEqual([-600, 0, 600]);
+    expect(parseFsOffsets('0m, 0m, 10m, 10m')).toEqual([0, 600]);
   });
 
-  it('tolerates spaces, a leading +, and a trailing comma', () => {
-    expect(parseFsOffsets('  -600 , +300 , 0 ,')).toEqual([-600, 0, 300]);
+  it('keeps negatives (before landing) and mixes units', () => {
+    expect(parseFsOffsets('-90s, 0m, 2m')).toEqual([-90, 0, 120]);
   });
 
-  it('drops non-integer / garbage tokens', () => {
-    expect(parseFsOffsets('600,abc,12.5,,90')).toEqual([90, 600]);
+  it('yields [] for empty / all-garbage input', () => {
     expect(parseFsOffsets('')).toEqual([]);
+    expect(parseFsOffsets('nope')).toEqual([]);
     expect(parseFsOffsets(/** @type {any} */ (undefined))).toEqual([]);
   });
 });

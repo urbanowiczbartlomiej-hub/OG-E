@@ -191,6 +191,63 @@ export const mergeHistory = (local, remote) => {
 };
 
 /**
+ * Merge local + remote synced settings, PER KEY, newer-`ts`-wins.
+ *
+ * Unlike scans/history (additive collections), settings are a scalar bag
+ * where each key has an independent "most recently changed" truth. So the
+ * grain is the key, and the tie-breaker is the per-key change timestamp
+ * (`ts`), not a collection union.
+ *
+ * Behaviour:
+ *   - Iterates LOCAL's keys only. Local always holds the full current
+ *     schema (minus the per-device exclusions the caller already stripped),
+ *     so it's authoritative for WHICH keys exist; a key present only on a
+ *     stale remote is ignored (and a remote-only excluded key can never
+ *     leak in, because the caller never puts excluded keys in `local`).
+ *   - For each key, the side with the strictly greater `ts` wins. Ties (and
+ *     missing/0 timestamps) go to LOCAL — that's the anti-loop no-write
+ *     path and the reason a key nobody has explicitly changed (ts 0 both
+ *     sides) keeps the local value.
+ *
+ * The `changed` flag is the caller's anti-loop hint (see file header):
+ * `true` iff remote strictly displaced at least one key with a newer
+ * timestamp. If `false`, callers MUST NOT write `merged` back.
+ *
+ * @param {{ values: Record<string, unknown>, ts: Record<string, number> }} local
+ * @param {{ values?: Record<string, unknown>, ts?: Record<string, number> } | undefined | null} remote
+ * @returns {{ merged: { values: Record<string, unknown>, ts: Record<string, number> }, changed: boolean }}
+ */
+export const mergeSettings = (local, remote) => {
+  if (!remote || !remote.values) return { merged: local, changed: false };
+  const lv = local.values || {};
+  const lt = local.ts || {};
+  const rv = remote.values || {};
+  const rt = remote.ts || {};
+  /** @type {Record<string, unknown>} */
+  const values = {};
+  /** @type {Record<string, number>} */
+  const ts = {};
+  let changed = false;
+  for (const key of Object.keys(lv)) {
+    const lTime = Number(lt[key]) || 0;
+    const rTime = Number(rt[key]) || 0;
+    if (key in rv && rTime > lTime) {
+      values[key] = rv[key];
+      ts[key] = rTime;
+      changed = true;
+    } else {
+      values[key] = lv[key];
+      // Keep the ts map SPARSE — only carry a real (>0) timestamp. Emitting
+      // an explicit 0 for every untouched key would bloat the map and, worse,
+      // make `merged.ts` differ from the sparse local/remote maps on every
+      // round-trip, defeating the sameJSON "already current" skip.
+      if (lTime) ts[key] = lTime;
+    }
+  }
+  return { merged: { values, ts }, changed };
+};
+
+/**
  * Pure: build the data slice of a gist payload that has every scan
  * wiped while preserving `colonyHistory`. Used by the "clear scan
  * data" UI action — `mergeScans` is a UNION, so a local wipe alone

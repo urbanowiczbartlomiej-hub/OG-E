@@ -64,6 +64,8 @@
 // are swept. Pre-landing slots stay queued while the row is present, so an
 // offline player still gets the warning.
 
+import { parseDurationList } from './duration.js';
+
 /**
  * One fleet leg as read from the event list, before the threshold test.
  * DOM-derived (see `features/reminders/fsScan.js`) but a plain data shape so
@@ -130,26 +132,17 @@ export const isFleetSaveLeg = (missionType, isReturn) =>
   isReturn || ONE_WAY_MISSIONS.has(missionType);
 
 /**
- * Parse the FS offsets setting — a comma-separated list of whole-second
- * offsets relative to arrival (e.g. `"-600,0,600"`). Tolerant of spaces, a
- * leading `+`, and a trailing comma. Drops non-integer tokens, de-dupes, and
- * sorts ascending so the fire order (and the resulting ntfy reconcile) is
- * stable.
+ * Parse the FS offsets setting into whole-second offsets relative to
+ * arrival. The setting is a comma-separated, minutes-first duration list
+ * (e.g. `"-10m, 0m, 10m"` ⇒ `[-600, 0, 600]`); negatives are kept (before
+ * landing). Just a thin signed wrapper over the shared duration grammar so
+ * the FS field and the wave field parse identically — see
+ * {@link parseDurationList} for the full token rules.
  *
  * @param {string} str
  * @returns {number[]}
  */
-export const parseFsOffsets = (str) => {
-  /** @type {Set<number>} */
-  const seen = new Set();
-  for (const tok of String(str ?? '').split(',')) {
-    const t = tok.trim();
-    if (!t) continue;
-    const n = Number(t);
-    if (Number.isInteger(n)) seen.add(n);
-  }
-  return [...seen].sort((a, b) => a - b);
-};
+export const parseFsOffsets = (str) => parseDurationList(str, { signed: true });
 
 /**
  * Reconcile the fleet-save set: carry forward already-classified saves,

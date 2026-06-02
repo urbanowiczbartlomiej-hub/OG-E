@@ -58,6 +58,7 @@ import {
 import { scansStore } from '../../src/state/scans.js';
 import { historyStore } from '../../src/state/history.js';
 import { settingsStore } from '../../src/state/settings.js';
+import { pickSyncedValues } from '../../src/sync/settingsSync.js';
 
 /**
  * @typedef {import('../../src/state/scans.js').GalaxyScans} GalaxyScans
@@ -119,13 +120,15 @@ const tick = async (ms) => {
  * @param {object} [opts]
  * @param {GalaxyScans} [opts.galaxyScans]
  * @param {ColonyHistory} [opts.colonyHistory]
+ * @param {import('../../src/sync/gist.js').SyncedSettings} [opts.settings]
  * @returns {import('../../src/sync/gist.js').GistPayload}
  */
-const payload = ({ galaxyScans = {}, colonyHistory = [] } = {}) => ({
+const payload = ({ galaxyScans = {}, colonyHistory = [], settings } = {}) => ({
   version: 3,
   updatedAt: '2025-01-01T00:00:00.000Z',
   galaxyScans,
   colonyHistory,
+  ...(settings ? { settings } : {}),
 });
 
 beforeEach(() => {
@@ -140,6 +143,10 @@ beforeEach(() => {
   scansStore.set({});
   historyStore.set([]);
   settingsStore.set({ ...settingsStore.get(), cloudSync: true });
+  // Settings-sync seeds a per-key timestamp map on first install; clear it
+  // so each test starts from a known "no map yet" state (installSync re-seeds
+  // deterministically under fake timers).
+  localStorage.removeItem('oge_settingsTs');
 });
 
 afterEach(() => {
@@ -357,14 +364,20 @@ describe('upload', () => {
     // revision).
     const shared = /** @type {GalaxyScans} */ ({ '4:30': scan(5000) });
     scansStore.set(shared);
+    // Pre-seed an EMPTY ts map so installSync skips seeding (no `now`
+    // timestamps a fixture couldn't match), then make the remote carry a
+    // settings slice that deep-equals what local would upload — so the
+    // sameJSON check covers settings too and the PATCH is genuinely skipped.
+    localStorage.setItem('oge_settingsTs', '{}');
+    const settings = { values: pickSyncedValues(settingsStore.get()), ts: {} };
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(
-      payload({ galaxyScans: shared }),
+      payload({ galaxyScans: shared, settings }),
     );
     installSync();
     await tick(0);
     // Second fetch for the upload pre-merge.
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(
-      payload({ galaxyScans: shared }),
+      payload({ galaxyScans: shared, settings }),
     );
     // Nudge the store (same value, but set() still notifies).
     scansStore.set(shared);
@@ -487,5 +500,58 @@ describe('inFlight lock', () => {
     // operations again.
     resolveFetch(payload());
     await tick(0);
+  });
+});
+
+describe('settings sync', () => {
+  it('applies a remote setting with a newer ts on download', async () => {
+    // Local colMinGap=20 stamped at ts 100; remote has 99 at ts 200 (newer).
+    settingsStore.set({ ...settingsStore.get(), colMinGap: 20 });
+    localStorage.setItem('oge_settingsTs', JSON.stringify({ colMinGap: 100 }));
+    /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(
+      payload({ settings: { values: { colMinGap: 99 }, ts: { colMinGap: 200 } } }),
+    );
+
+    installSync();
+    await tick(0);
+
+    expect(settingsStore.get().colMinGap).toBe(99);
+    // The remote timestamp is carried into the local map (not re-stamped).
+    expect(JSON.parse(localStorage.getItem('oge_settingsTs') || '{}').colMinGap).toBe(200);
+  });
+
+  it('uploads a locally-changed setting (stamped) inside the payload', async () => {
+    /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(payload());
+    installSync();
+    await tick(0);
+    /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(payload());
+
+    settingsStore.set({ ...settingsStore.get(), colMinGap: 42 });
+    await tick(15_000);
+
+    expect(writeGistData).toHaveBeenCalledWith(
+      expect.objectContaining({
+        settings: expect.objectContaining({
+          values: expect.objectContaining({ colMinGap: 42 }),
+        }),
+      }),
+    );
+  });
+
+  it('does NOT sync the excluded keys (button sizes, gist token)', async () => {
+    /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(payload());
+    installSync();
+    await tick(0);
+    /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(payload());
+
+    settingsStore.set({ ...settingsStore.get(), enterBtnSize: 123, colMinGap: 7 });
+    await tick(15_000);
+
+    const call = /** @type {import('vitest').Mock} */ (writeGistData).mock.calls.at(-1);
+    const values = call?.[0]?.settings?.values ?? {};
+    expect(values.colMinGap).toBe(7);
+    expect('enterBtnSize' in values).toBe(false);
+    expect('gistToken' in values).toBe(false);
+    expect('colBtnSize' in values).toBe(false);
   });
 });

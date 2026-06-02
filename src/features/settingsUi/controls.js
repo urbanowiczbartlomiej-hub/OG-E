@@ -29,6 +29,7 @@
 
 import { settingsStore } from '../../state/settings.js';
 import { SECTIONS } from './sections/index.js';
+import { parseDuration, formatDuration } from '../../domain/duration.js';
 
 /**
  * Shape of a single option in the SECTIONS config. Each `type` is
@@ -43,20 +44,37 @@ import { SECTIONS } from './sections/index.js';
  * @typedef {object} SettingsOption
  * @property {string} id Option identifier — matches `Settings` field for data-bound types.
  * @property {string} label Human-readable row label.
- * @property {'checkbox' | 'range' | 'text' | 'password' | 'button' | 'static' | 'select'} type Control flavour.
+ * @property {'checkbox' | 'range' | 'text' | 'password' | 'button' | 'static' | 'select' | 'duration' | 'asyncStatus'} type Control flavour.
  * @property {number} [min] Slider minimum (range only).
  * @property {number} [max] Slider maximum (range only).
  * @property {number} [step] Slider step (range only; defaults to 1).
  * @property {string} [unit] Slider display unit suffix (range only, e.g. `'px'`).
- * @property {string} [placeholder] Input placeholder (text / password only).
+ * @property {string} [placeholder] Input placeholder (text / password / duration only).
  * @property {{ value: string, label: string }[]} [selectOptions] Choices (select only).
- * @property {string} [buttonText] Button label override (button only; defaults to `label`).
- * @property {() => void} [onclick] Button click handler (button only).
+ * @property {string} [buttonText] Button label. `button`: label override (defaults to `label`). `asyncStatus`: renders a manual-refresh button. `static`: with `onclick`, renders an inline action button beside the text.
+ * @property {() => void} [onclick] Button click handler (`button`, or `static` with `buttonText`).
  * @property {() => string} [getText] Dynamic text producer (static only).
+ * @property {(s: import('../../state/settings.js').Settings) => string} [refreshKey]
+ *   `asyncStatus` only: a string derived from settings (e.g. the token). The
+ *   async producer re-runs only when this value changes (or the manual
+ *   button is clicked), so a fetch isn't fired on every unrelated store tick.
+ * @property {(s: import('../../state/settings.js').Settings) => Promise<string>} [fetchText]
+ *   `asyncStatus` only: resolves the line to display. Must not throw for the
+ *   common failure modes — return a `✗ …` string instead.
+ * @property {string} [refreshEvent]
+ *   `asyncStatus` / `static`: a `document` event name that, when fired,
+ *   re-runs the row's text producer (`fetchText` / `getText`). Lets an
+ *   external producer (e.g. the sync layer after a sync settles) push a
+ *   fresh status into the row without a settings-store change.
  * @property {(s: import('../../state/settings.js').Settings) => boolean} [disabledWhen]
  *   Optional predicate over current settings; when it returns true the
  *   control is rendered disabled (greyed). Re-evaluated on every store
  *   change so a dependency (e.g. a master switch) greys/un-greys it live.
+ * @property {(s: import('../../state/settings.js').Settings) => boolean} [buttonDisabledWhen]
+ *   `checkbox` / `static` inline-button rows only: predicate that disables
+ *   the INLINE BUTTON independently of the primary control. Lets a master
+ *   checkbox stay enabled while its own "do it now" button greys out when
+ *   the feature is off. Re-evaluated on every store change.
  */
 
 /**
@@ -80,6 +98,12 @@ const BUTTON_STYLE =
   'padding:4px 14px;background:#1a2a3a;border:1px solid #2a4a5a;' +
   'color:#4a9eff;border-radius:4px;font-size:12px;cursor:pointer;font-weight:bold;';
 const STATIC_STYLE = 'font-size:11px;color:#888;white-space:pre-line;';
+// Free-value controls (text / password / select / duration) fill their
+// cell so the offset/token strings aren't clipped in a narrow box. The
+// column width is set once in `index.js`; `border-box` keeps the input
+// inside the cell regardless of padding.
+const FULL_WIDTH_STYLE = 'width:100%;box-sizing:border-box;';
+const STATUS_WRAP_STYLE = 'display:inline-flex;align-items:center;gap:8px;width:100%;';
 
 // ─── Anti-loop flag + bound state helpers ────────────────────────────────
 
@@ -94,6 +118,71 @@ const STATIC_STYLE = 'font-size:11px;color:#888;white-space:pre-line;';
  * and `syncInputsFromState` need to see the same flag.
  */
 let writingFromUi = false;
+
+/**
+ * Per-`asyncStatus`-row bookkeeping, keyed by option id:
+ *   - `lastKey` — the `refreshKey` value the displayed line reflects, so a
+ *     store tick that didn't change the key skips the re-fetch.
+ *   - `seq` — monotonically-increasing request id; a resolved fetch only
+ *     paints if it is still the latest in-flight one (drops stale races,
+ *     e.g. the user edits the token again before the first probe returns).
+ *
+ * @type {Map<string, { lastKey: string | undefined, seq: number }>}
+ */
+const asyncStatusState = new Map();
+
+/**
+ * Option ids whose `refreshEvent` document listener has already been
+ * registered, so a panel rebuild doesn't stack duplicates. Module-scope
+ * because the listener outlives any single build.
+ *
+ * @type {Set<string>}
+ */
+const asyncRefreshEventBound = new Set();
+
+/**
+ * Get (or lazily create) the bookkeeping entry for an `asyncStatus` row.
+ *
+ * @param {string} id
+ * @returns {{ lastKey: string | undefined, seq: number }}
+ */
+const asyncStateFor = (id) => {
+  let st = asyncStatusState.get(id);
+  if (!st) {
+    st = { lastKey: undefined, seq: 0 };
+    asyncStatusState.set(id, st);
+  }
+  return st;
+};
+
+/**
+ * Kick off (or refresh) an `asyncStatus` row's probe. Self-guards on
+ * {@link asyncStateFor}'s `lastKey`: a no-op when the key is unchanged
+ * unless `force` is set (the manual button). Paints `Checking…` while the
+ * `fetchText` promise is in flight and the result only if no newer request
+ * has started since.
+ *
+ * @param {SettingsOption} opt
+ * @param {boolean} [force]
+ * @returns {void}
+ */
+const refreshAsyncStatus = (opt, force = false) => {
+  const key = opt.refreshKey ? opt.refreshKey(settingsStore.get()) : '';
+  const st = asyncStateFor(opt.id);
+  if (!force && key === st.lastKey) return;
+  st.lastKey = key;
+  const span = document.getElementById(INPUT_ID_PREFIX + opt.id);
+  if (!span || !opt.fetchText) return;
+  const seq = ++st.seq;
+  span.textContent = 'Checking…';
+  Promise.resolve(opt.fetchText(settingsStore.get()))
+    .then((txt) => {
+      if (st.seq === seq) span.textContent = txt;
+    })
+    .catch(() => {
+      if (st.seq === seq) span.textContent = '✗ check failed';
+    });
+};
 
 /**
  * Read the current `Settings` value for an option id. Centralised so
@@ -160,6 +249,29 @@ const buildCheckboxControl = (opt, valueCell) => {
   cb.addEventListener('change', () => {
     writeSetting(opt.id, cb.checked);
   });
+
+  // Optional inline action button pushed to the right (e.g. the sync master
+  // row's "Sync now"): the checkbox stays the section toggle, the button
+  // triggers the one-off action. Its enabled state is governed separately
+  // by `buttonDisabledWhen` so the master checkbox can stay live while the
+  // action greys out when the feature is off.
+  if (opt.buttonText && opt.onclick) {
+    const wrap = document.createElement('span');
+    wrap.style.cssText = STATUS_WRAP_STYLE;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = INPUT_ID_PREFIX + opt.id + '-btn';
+    btn.textContent = opt.buttonText;
+    btn.style.cssText = BUTTON_STYLE + 'margin-left:auto;';
+    btn.addEventListener('click', () => {
+      if (opt.onclick) opt.onclick();
+    });
+    wrap.appendChild(cb);
+    wrap.appendChild(btn);
+    valueCell.appendChild(wrap);
+    return;
+  }
+
   valueCell.appendChild(cb);
 };
 
@@ -212,6 +324,7 @@ const buildInputControl = (opt, valueCell) => {
   const input = document.createElement('input');
   input.type = opt.type;
   input.id = INPUT_ID_PREFIX + opt.id;
+  input.style.cssText = FULL_WIDTH_STYLE;
   const currentValue = readSetting(opt.id);
   input.value = currentValue == null ? '' : String(currentValue);
   if (opt.placeholder) input.placeholder = opt.placeholder;
@@ -253,6 +366,7 @@ const buildInputControl = (opt, valueCell) => {
 const buildSelectControl = (opt, valueCell) => {
   const select = document.createElement('select');
   select.id = INPUT_ID_PREFIX + opt.id;
+  select.style.cssText = FULL_WIDTH_STYLE;
   const current = String(readSetting(opt.id) ?? '');
   for (const choice of opt.selectOptions ?? []) {
     const optionEl = document.createElement('option');
@@ -299,7 +413,122 @@ const buildStaticControl = (opt, valueCell) => {
   span.id = INPUT_ID_PREFIX + opt.id;
   span.style.cssText = STATIC_STYLE;
   span.textContent = opt.getText ? opt.getText() : '';
+
+  // Optional external refresh trigger (same contract as asyncStatus): re-run
+  // getText into the span whenever the named document event fires — e.g. the
+  // sync layer's SYNC_STATUS_EVENT after a sync settles. Bound once per id;
+  // the handler re-finds the span by id, so it survives panel rebuilds.
+  if (opt.refreshEvent && opt.getText && !asyncRefreshEventBound.has(opt.id)) {
+    asyncRefreshEventBound.add(opt.id);
+    const getText = opt.getText;
+    document.addEventListener(opt.refreshEvent, () => {
+      const el = document.getElementById(INPUT_ID_PREFIX + opt.id);
+      if (el) el.textContent = getText();
+    });
+  }
+
+  // Optional inline action button beside the text (e.g. the sync "Sync now"
+  // trigger) — laid out exactly like the asyncStatus row's button so a
+  // status-line-plus-button reads the same everywhere. The span keeps its
+  // id, so the live `getText` refresh in syncInputsFromState still finds it.
+  if (opt.buttonText && opt.onclick) {
+    const wrap = document.createElement('span');
+    wrap.style.cssText = STATUS_WRAP_STYLE;
+    span.style.cssText = STATIC_STYLE + 'flex:1;';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = INPUT_ID_PREFIX + opt.id + '-btn';
+    btn.textContent = opt.buttonText;
+    btn.style.cssText = BUTTON_STYLE;
+    btn.addEventListener('click', () => {
+      if (opt.onclick) opt.onclick();
+    });
+    wrap.appendChild(span);
+    wrap.appendChild(btn);
+    valueCell.appendChild(wrap);
+    return;
+  }
+
   valueCell.appendChild(span);
+};
+
+/**
+ * Render the duration flavour — a text input over an INT-SECONDS Settings
+ * field, displayed and edited in the minutes-first grammar (see
+ * `domain/duration.js`). The store always holds canonical seconds; this
+ * control is the only place the user sees/types the `Nm`/`Ns` form.
+ *
+ * On edit: parse the typed token; if it's well-formed, write the seconds
+ * and re-render the canonical form (so `90` snaps to `90s`, `1.5m` to
+ * `90s`); if it's garbage, revert to the stored value rather than writing a
+ * NaN.
+ *
+ * @param {SettingsOption} opt
+ * @param {HTMLTableCellElement} valueCell
+ * @returns {void}
+ */
+const buildDurationControl = (opt, valueCell) => {
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.id = INPUT_ID_PREFIX + opt.id;
+  input.style.cssText = FULL_WIDTH_STYLE;
+  if (opt.placeholder) input.placeholder = opt.placeholder;
+  input.value = formatDuration(Number(readSetting(opt.id)));
+  input.addEventListener('change', () => {
+    const sec = parseDuration(input.value);
+    if (sec === null) {
+      input.value = formatDuration(Number(readSetting(opt.id)));
+      return;
+    }
+    writeSetting(opt.id, sec);
+    input.value = formatDuration(sec);
+  });
+  valueCell.appendChild(input);
+};
+
+/**
+ * Render the asyncStatus flavour — a read-only line whose text is produced
+ * by an ASYNC `fetchText` (e.g. an ntfy account probe), plus an optional
+ * manual-refresh button. Not data-bound; the producer reads settings
+ * itself. Refresh policy lives in {@link refreshAsyncStatus}: auto on
+ * `refreshKey` change (and once at build), on demand via the button.
+ *
+ * @param {SettingsOption} opt
+ * @param {HTMLTableCellElement} valueCell
+ * @returns {void}
+ */
+const buildAsyncStatusControl = (opt, valueCell) => {
+  const wrap = document.createElement('span');
+  wrap.style.cssText = STATUS_WRAP_STYLE;
+
+  const span = document.createElement('span');
+  span.id = INPUT_ID_PREFIX + opt.id;
+  span.style.cssText = STATIC_STYLE + 'flex:1;';
+  wrap.appendChild(span);
+
+  if (opt.buttonText) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = INPUT_ID_PREFIX + opt.id + '-btn';
+    btn.textContent = opt.buttonText;
+    btn.style.cssText = BUTTON_STYLE;
+    btn.addEventListener('click', () => refreshAsyncStatus(opt, true));
+    wrap.appendChild(btn);
+  }
+
+  valueCell.appendChild(wrap);
+  // Initial probe (lastKey starts undefined, so this always runs once).
+  refreshAsyncStatus(opt);
+
+  // Optional external refresh trigger: re-run fetchText whenever the named
+  // document event fires (e.g. the sync layer's `oge:syncStatus` after a
+  // sync settles). Bound once per id — the panel is built once, but the
+  // guard keeps a rebuild (tests) from stacking duplicate listeners. The
+  // handler re-finds the span by id, so it stays correct across rebuilds.
+  if (opt.refreshEvent && !asyncRefreshEventBound.has(opt.id)) {
+    asyncRefreshEventBound.add(opt.id);
+    document.addEventListener(opt.refreshEvent, () => refreshAsyncStatus(opt, true));
+  }
 };
 
 /**
@@ -319,6 +548,8 @@ const CONTROL_BUILDERS = {
   select: buildSelectControl,
   button: buildButtonControl,
   static: buildStaticControl,
+  duration: buildDurationControl,
+  asyncStatus: buildAsyncStatusControl,
 };
 
 /**
@@ -381,6 +612,17 @@ export const syncInputsFromState = () => {
     for (const opt of section.options) {
       const el = document.getElementById(INPUT_ID_PREFIX + opt.id);
       if (!el) continue;
+      // asyncStatus: the disable target is the manual button (the text span
+      // can't be disabled), and a refreshKey change re-probes. Handled
+      // ALWAYS (like static), then short-circuited.
+      if (opt.type === 'asyncStatus') {
+        const btn = document.getElementById(INPUT_ID_PREFIX + opt.id + '-btn');
+        if (btn && opt.disabledWhen) {
+          /** @type {HTMLButtonElement} */ (btn).disabled = opt.disabledWhen(settingsStore.get());
+        }
+        refreshAsyncStatus(opt);
+        continue;
+      }
       // Enable/disable a control from a predicate over current settings
       // (e.g. the reminder sub-options are disabled until the master switch
       // is on AND a token is set). Applied ALWAYS — including during our own
@@ -389,6 +631,16 @@ export const syncInputsFromState = () => {
       if (opt.disabledWhen) {
         /** @type {HTMLInputElement} */ (el).disabled =
           opt.disabledWhen(settingsStore.get());
+      }
+      // Inline action button (checkbox/static rows) greys independently of
+      // its row's primary control — e.g. the sync master stays on while its
+      // "Sync now" button disables when sync is off.
+      if (opt.buttonDisabledWhen) {
+        const btn = document.getElementById(INPUT_ID_PREFIX + opt.id + '-btn');
+        if (btn) {
+          /** @type {HTMLButtonElement} */ (btn).disabled =
+            opt.buttonDisabledWhen(settingsStore.get());
+        }
       }
       // Static rows are read-only derived text (e.g. the reminder-series
       // times that depend on the schedule select). Refresh them ALWAYS —
@@ -412,6 +664,9 @@ export const syncInputsFromState = () => {
         /** @type {HTMLInputElement} */ (el).value = v == null ? '' : String(v);
       } else if (opt.type === 'select') {
         /** @type {HTMLSelectElement} */ (el).value = String(readSetting(opt.id) ?? '');
+      } else if (opt.type === 'duration') {
+        // Re-render the canonical minutes-first form from stored seconds.
+        /** @type {HTMLInputElement} */ (el).value = formatDuration(Number(readSetting(opt.id)));
       }
     }
   }
