@@ -54,6 +54,7 @@
 // @ts-check
 
 import { settingsStore } from '../../state/settings.js';
+import { logger } from '../../lib/logger.js';
 import { checkAbandonState, abandonPlanet } from './index.js';
 
 /**
@@ -227,12 +228,10 @@ export const installAbandonOverview = () => {
       try {
         const ok = await abandonPlanet();
         if (!ok) {
-          // eslint-disable-next-line no-console
-          console.debug('[OG-E abandonOverview] abandonPlanet returned false — safety gate aborted');
+          logger.warn('[abandonOverview] abandonPlanet returned false — safety gate aborted');
         }
       } catch (err) {
-        // eslint-disable-next-line no-console
-        console.debug('[OG-E abandonOverview] abandonPlanet threw:', err);
+        logger.error('[abandonOverview] abandonPlanet threw:', err);
       }
     });
 

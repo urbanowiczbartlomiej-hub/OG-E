@@ -1,13 +1,19 @@
-// Opt-in diagnostic logger — off by default, enabled from Settings.
+// Opt-in diagnostic logger — off by default.
+//
+// Today the only way to flip it on is the `oge_debugLoggerEnabled`
+// localStorage flag (set it from DevTools; see README §Debug flags).
+// There is no Settings checkbox yet — `loggerEnabled` is exposed as a
+// reactive store so one could be wired up later without touching this
+// module, but nothing in `features/` subscribes to it right now.
 //
 // Deliberately keeps DevTools quiet in the common case. When a user
-// hits a bug and the support channel asks "send us the console", we
-// want a single toggle that (a) starts echoing our events to the real
-// console with a recognizable `[OG-E]` prefix and (b) captures the
-// last ~500 events in a ring buffer the user can grab straight from
-// DevTools (`logger.getEntries()`) for paste-back. When the toggle is
-// off, every call site turns into an early-return no-op: no buffering,
-// no console chatter, no measurable cost.
+// hits a bug and the support channel asks "send us the console", the
+// flag (a) starts echoing our events to the real console with a
+// recognizable `[OG-E]` prefix and (b) captures the last ~500 events in
+// a ring buffer the user can grab straight from DevTools
+// (`logger.getEntries()`) for paste-back. When it is off, every call
+// site turns into an early-return no-op: no buffering, no console
+// chatter, no measurable cost.
 //
 // Privacy / persistence split:
 //   - The `enabled` FLAG IS persisted (localStorage, `oge_debugLoggerEnabled`)
@@ -18,8 +24,8 @@
 //     buffer is gone. The user copies what they need from DevTools while
 //     the session is live; we never exfiltrate anything implicitly.
 //
-// Reactive store shape: `loggerEnabled` is a real `Store<boolean>` so
-// the Settings UI can subscribe, render the checkbox live, and flip
+// Reactive store shape: `loggerEnabled` is a real `Store<boolean>` so a
+// future Settings UI could subscribe, render a checkbox live, and flip
 // state with `.set(...)`. A subscriber wired up at module load writes
 // every flip back to localStorage; that's the whole persistence story.
 //

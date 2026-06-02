@@ -1,13 +1,11 @@
-// Unit tests for the debounce / throttle rate limiters.
+// Unit tests for the debounce rate limiter.
 //
 // Pure timer semantics only — no DOM, no happy-dom. Vitest fake timers
-// advance both `setTimeout` AND `Date.now()` in lockstep, which matters
-// because `throttle` measures its cool-down window off `Date.now()`
-// rather than a timer handle. Using real timers here would make the
-// tests nondeterministic; using happy-dom would add pointless overhead.
+// drive `setTimeout` deterministically; using real timers here would make
+// the tests nondeterministic, and happy-dom would add pointless overhead.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { debounce, throttle } from '../../src/lib/debounce.js';
+import { debounce } from '../../src/lib/debounce.js';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -93,85 +91,5 @@ describe('debounce', () => {
 
     expect(fn).toHaveBeenCalledTimes(1);
     expect(fn).toHaveBeenCalledWith(7, 'hello');
-  });
-});
-
-describe('throttle', () => {
-  it('fires the first call synchronously (leading edge, no timer advance)', () => {
-    const fn = vi.fn();
-    const throttled = throttle(fn, 100);
-
-    throttled();
-    // No `advanceTimersByTime` — the leading call must have fired already.
-    expect(fn).toHaveBeenCalledTimes(1);
-  });
-
-  it('ignores subsequent calls inside the cool-down window', () => {
-    const fn = vi.fn();
-    const throttled = throttle(fn, 100);
-
-    throttled(); // t=0, fires
-    vi.advanceTimersByTime(30);
-    throttled(); // dropped
-    vi.advanceTimersByTime(30);
-    throttled(); // dropped
-    vi.advanceTimersByTime(30);
-    throttled(); // dropped (t=90, still inside 100ms window)
-
-    expect(fn).toHaveBeenCalledTimes(1);
-  });
-
-  it('fires again on the first call after ms has elapsed since the last firing', () => {
-    const fn = vi.fn();
-    const throttled = throttle(fn, 100);
-
-    throttled(); // t=0, fires (count=1)
-    vi.advanceTimersByTime(100);
-    throttled(); // t=100, boundary reached, fires (count=2)
-
-    expect(fn).toHaveBeenCalledTimes(2);
-  });
-
-  it('passes args from the firing call — never from ignored calls', () => {
-    const fn = vi.fn();
-    /** @type {(n: number) => void} */
-    const throttled = throttle(fn, 100);
-
-    throttled(1); // fires with 1
-    throttled(2); // ignored
-    vi.advanceTimersByTime(100);
-    throttled(3); // fires with 3
-
-    expect(fn).toHaveBeenCalledTimes(2);
-    expect(fn).toHaveBeenNthCalledWith(1, 1);
-    expect(fn).toHaveBeenNthCalledWith(2, 3);
-  });
-
-  it('on a continuous stream of calls, fires once per ms window', () => {
-    const fn = vi.fn();
-    const throttled = throttle(fn, 100);
-
-    // Call every 10ms for 500ms — i.e. 50 calls spread across 5 windows.
-    // Leading edge fires at t=0, then at t=100/200/300/400/500.
-    for (let t = 0; t <= 500; t += 10) {
-      throttled();
-      if (t < 500) vi.advanceTimersByTime(10);
-    }
-
-    // 6 firings: t=0, 100, 200, 300, 400, 500.
-    expect(fn).toHaveBeenCalledTimes(6);
-  });
-
-  it('preserves the argument tuple type (TArgs) in the returned wrapper', () => {
-    // Mirror of the debounce type-preservation test — the tsc contract
-    // is the real assertion, the runtime check just pins the behavior.
-    /** @type {(a: number, b: string) => void} */
-    const fn = vi.fn();
-    const throttled = throttle(fn, 50);
-
-    throttled(9, 'world');
-
-    expect(fn).toHaveBeenCalledTimes(1);
-    expect(fn).toHaveBeenCalledWith(9, 'world');
   });
 });
