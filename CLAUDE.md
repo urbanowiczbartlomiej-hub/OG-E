@@ -1,5 +1,65 @@
 # CLAUDE.md — instructions for the AI assistant
 
+## Architecture & invariants (don't break these)
+
+This section is deliberately about *rules that must stay true*, not a
+description of what each file does (descriptions rot; invariants don't).
+If a change would violate one of these, that's a design smell — stop and
+reconsider, don't paper over it. The layering below is the reason this
+extension stays testable and survives OGame updates.
+
+**Dependency direction (one-way, no cycles):**
+
+```
+domain  ←  state  ←  features / sync
+  ↑          ↑            ↑
+  └──────── lib (foundation, zero app deps) ───────┘
+bridges → lib only (MAIN-world; must NOT import state/)
+```
+
+- **`domain/`** is pure logic: no DOM, no timers, no storage, no
+  `chrome.*`. Plain functions over plain data. Everything here is unit
+  tested. Never reach into the page from `domain/`.
+- **`state/`** owns all persisted state. Mutate it ONLY through the
+  reactive stores (`store.set(...)`); never write the backing
+  `localStorage` / `chrome.storage` keys from a feature directly. Stores
+  are write-through and their `init*()` is idempotent.
+- **`features/`** may depend on `domain` + `state` + `lib`, but **no
+  feature imports another feature.** Each `install*()` is independent and
+  idempotent, and ships a `_reset*ForTest()` for the suite. Order in
+  `content.js` is not load-bearing.
+- **`bridges/`** are MAIN-world observers. They talk to `lib` only —
+  never `state/` — and communicate with the isolated world exclusively
+  via `oge:*` CustomEvents on `document`.
+- **`lib/`** is the dependency-free foundation. Nothing here may import
+  from `domain`/`state`/`features`/`sync`.
+
+**The pure-core rule.** A feature big enough to have non-trivial logic
+splits it into a `pure.js` (the axiom there: *no DOM reads/writes, no
+timers, no listeners*) so the logic is testable without happy-dom. See
+`features/sendCol/pure.js` / `features/sendExp/pure.js`. Don't grow an
+orchestrator past ~400 lines of mixed logic+DOM without extracting a
+pure core.
+
+**Game-DOM selectors live in ONE place.** Every OGame-native / AGR CSS
+selector read by **two or more** features goes in `src/lib/gameDom.js`
+and is imported from there — that file is the single source of truth for
+our fragile external DOM contract (so a game rename is a one-line fix).
+Rules: (1) selectors used by exactly ONE feature stay local to it —
+hoisting them only adds indirection; (2) OG-E's OWN injected ids/classes
+(dashboard elements, `oge-*`, badge classes) are NOT a contract with
+anyone — keep them next to the code that emits them; (3) the game's
+misspellings (`hightlightPlanet`, `planet-koords`) are kept verbatim,
+documented in `gameDom.js`.
+
+**Testing bar.** Pure/domain/state/sync logic is expected to be unit
+tested. New bridge logic (XHR projection, event gating) and dashboard
+I/O (import/merge, tombstone writes) need *behavioral* tests — drive a
+fake XHR / `File` through happy-dom and assert the observable output
+(dispatched event, stored value), not internals. `npm run test` and
+`npm run typecheck` (test files included) must both be green before any
+commit touching `src/` — see General rules below.
+
 ## Release checklist (now one command)
 
 `npm run release X.Y.Z` runs the whole checklist (`scripts/release.mjs`):
