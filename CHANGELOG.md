@@ -6,6 +6,30 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.11.1] — 2026-06-02
+
+### Fixed
+
+- **Fleet-save reminders now appear on the Dashboard.** The Reminders tab
+  listed expedition waves and ad-hoc fleet reminders but silently omitted
+  the auto-detected fleet-saves added in 1.11.0 — the preview had no
+  fleet-save section at all, so a detected 🛡 save showed nowhere even
+  though its pushes were queued.
+- **The Dashboard no longer cancels its own fleet-save pushes.** The tab's
+  orphan sweep (which deletes ntfy messages that belong to no live
+  reminder) only recognised wave and ad-hoc messages as "ours", so it
+  treated every queued fleet-save reminder as a stray and deleted it from
+  ntfy — quietly undoing the feature whenever the Dashboard was open. It
+  now claims all three reminder kinds.
+
+### Changed
+
+- The extension page is now named **dashboard** on disk (`dashboard.html` /
+  `dashboard.js`), retiring the legacy `histogram` filename — it has been
+  the multi-tab "OG-E Dashboard" for several releases, not just a
+  histogram. Purely an internal/asset rename; the visible name, tabs, and
+  data are unchanged, and your saved active-tab preference carries over.
+
 ## [1.11.0] — 2026-06-02
 
 ### Fixed
