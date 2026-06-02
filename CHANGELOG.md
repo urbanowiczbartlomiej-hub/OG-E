@@ -16,6 +16,12 @@ version numbers follow [Semantic Versioning](https://semver.org).
   post-landing pings are pointless. The cancellation is local and
   self-expiring, and survives the fleet being re-detected on the next scan.
 
+### Changed
+- **Your ntfy topic now sits directly under the token** in Reminders
+  settings (above the account-status line), so the topic to subscribe to in
+  the phone app is right where you paste the token — not just on the
+  Dashboard.
+
 ## [1.13.0] — 2026-06-02
 
 ### Added

@@ -469,6 +469,19 @@ describe('installSettingsUi — asyncStatus (ntfy account)', () => {
     // the deriveNtfyTopic + formatter tests, so here we pin the structure.
     expect(document.getElementById(INPUT_PREFIX + 'ntfyTopic-btn')).toBeNull();
   });
+
+  it('places the topic row directly under the token (above the account-status line)', async () => {
+    setupAGR();
+    installSettingsUi();
+    await flushWaitFor();
+    const token = document.getElementById(INPUT_PREFIX + 'reminderNtfyToken');
+    const topic = document.getElementById(INPUT_PREFIX + 'ntfyTopic');
+    const status = document.getElementById(INPUT_PREFIX + 'ntfyAccountStatus');
+    if (!token || !topic || !status) throw new Error('expected token, topic and status rows');
+    // Document order: token → topic → account status.
+    expect(token.compareDocumentPosition(topic) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(topic.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });
 
 // ──────────────────────────────────────────────────────────────────
