@@ -53,9 +53,11 @@ import { REMINDER_MIRROR_KEY, isValidNtfyToken } from '../../sync/reminders.js';
 import { NTFY_MAX_DELAY_SEC, offsetsForSchedule } from '../../sync/ntfyScheduler.js';
 import { parseUniverseId } from '../../lib/universeId.js';
 import { fireAtFor } from '../../domain/adhoc.js';
+import { nearestCancellableSlot, fsOffsetsToCancel } from '../../domain/fleetSave.js';
 import { injectStyle } from '../../lib/dom.js';
 import { debounce } from '../../lib/debounce.js';
 import { readPending, lastAdhocIntent, lastWaveIntent } from './pending.js';
+import { readFsCancel, pruneFsCancel } from './fsCancel.js';
 import { GAME } from '../../lib/gameDom.js';
 
 /** @typedef {import('../../sync/reminders.js').ReminderState} ReminderState */
@@ -218,23 +220,48 @@ const waveTitle = (w, schedule, hint) => {
 /**
  * Multi-line tooltip for a fleet-save badge: the reminder times actually
  * registered with ntfy — its `fireAts` filtered to the future slots still
- * inside the 3-day cap (exactly what the scheduler queues) — then the
- * "auto, can't cancel" hint. The leg's mission / coords / ship count are
- * deliberately omitted: the player already reads those in the row itself
- * (they ride along only in the push body). A save still more than 3 days
- * out has no registered slot yet, so it falls back to the bare hint.
+ * inside the 3-day cap (exactly what the scheduler queues) — then a hint
+ * whose wording depends on `mode` (cancellable now / collapses the rest /
+ * passive). The leg's mission / coords / ship count are deliberately omitted:
+ * the player already reads those in the row itself (they ride along only in
+ * the push body). A save still more than 3 days out has no registered slot
+ * yet, so it falls back to the bare hint.
  *
  * @param {import('../../domain/fleetSave.js').FleetSaveReminder} fs
  * @param {number} now  Epoch SECONDS.
+ * @param {'cancel' | 'cancel-collapse' | 'passive'} mode  Hint wording.
  * @returns {string}
  */
-const fsTitle = (fs, now) => {
+const fsTitle = (fs, now, mode) => {
   const live = (fs.fireAts || [])
     .filter((t) => Number.isFinite(t) && t > now && t <= now + NTFY_MAX_DELAY_SEC)
     .map(fmtClock);
-  return live.length
-    ? `Fleet-save reminders at: ${live.join(', ')}\nSet automatically — can't be cancelled`
-    : "Fleet-save reminder set automatically (can't be cancelled)";
+  const hint =
+    mode === 'cancel'
+      ? 'Click to cancel this reminder (only in its final 2 min)'
+      : mode === 'cancel-collapse'
+        ? 'Click to cancel this + the landing/after reminders (only in its final 2 min)'
+        : live.length
+          ? 'Set automatically — the next reminder is cancellable in its final 2 min'
+          : 'Set automatically';
+  return live.length ? `Fleet-save reminders at: ${live.join(', ')}\n${hint}` : hint;
+};
+
+/**
+ * Apply the player's not-yet-synced slot cancellations to a fleet-save's
+ * series, returning a copy with the suppressed offsets removed. The gist
+ * mirror reflects them only after the next sync; this keeps the badge honest
+ * (and the cancellable-slot maths correct) in the gap between click and sync.
+ *
+ * @param {import('../../domain/fleetSave.js').FleetSaveReminder} fs
+ * @param {number[] | undefined} cancelledOffsets
+ * @returns {import('../../domain/fleetSave.js').FleetSaveReminder}
+ */
+const effectiveFs = (fs, cancelledOffsets) => {
+  if (!cancelledOffsets || !cancelledOffsets.length) return fs;
+  const offsetsSec = (fs.offsetsSec || []).filter((o) => !cancelledOffsets.includes(o));
+  const fireAts = (fs.fireAts || []).filter((_, i) => !cancelledOffsets.includes(fs.offsetsSec[i]));
+  return { ...fs, offsetsSec, fireAts };
 };
 
 // ── Render ──────────────────────────────────────────────────────────────
@@ -280,6 +307,9 @@ const render = () => {
 
   const armedSet = new Set((snapshot?.adhoc || []).map((e) => e.id));
   const fsById = new Map((snapshot?.fleetSave || []).map((e) => [e.id, e]));
+  // Local, not-yet-synced FS slot cancellations (read-only here; the producer
+  // owns the writes). Keyed by reminder id → suppressed offsets.
+  const fsCancel = pruneFsCancel(readFsCancel(universeId), now);
 
   for (const row of rows) {
     const cell = /** @type {HTMLElement | null} */ (row.querySelector('td.arrivalTime'));
@@ -312,9 +342,16 @@ const render = () => {
     // it reflects the ship + flight-time gates and the lock — never a short
     // hop). Passive, non-clickable, outranks the ad-hoc toggle on the row.
     if (fsOn) {
-      const fs = fsById.get(id);
-      if (fs) {
-        stamp(cell, 'fs', '', '', fsTitle(fs, now));
+      const rawFs = fsById.get(id);
+      if (rawFs) {
+        const fs = effectiveFs(rawFs, fsCancel[id]?.offsets);
+        const slot = nearestCancellableSlot(fs, now);
+        if (slot) {
+          const collapse = fsOffsetsToCancel(fs.offsetsSec, slot.offset).length > 1;
+          stamp(cell, 'fs', 'cancelFs', '', fsTitle(fs, now, collapse ? 'cancel-collapse' : 'cancel'));
+        } else {
+          stamp(cell, 'fs', '', '', fsTitle(fs, now, 'passive'));
+        }
         continue;
       }
     }
@@ -355,11 +392,14 @@ let installed = null;
  * @param {(id: string) => void} api.disarmAdhoc
  * @param {(waveId: string) => void} api.cancelWave
  * @param {(waveId: string) => void} api.resendWave
+ * @param {(id: string, offsets: number[], expiresAt: number) => void} [api.cancelFsSlot]
  * @returns {{ dispose: () => void, refresh: () => void }}
  *   `refresh` re-reads the gist mirror and re-renders — call it after a
  *   sync so confirmed state appears without waiting on a storage event.
  */
-export const installEventListReminders = ({ armAdhoc, disarmAdhoc, cancelWave, resendWave }) => {
+export const installEventListReminders = ({
+  armAdhoc, disarmAdhoc, cancelWave, resendWave, cancelFsSlot = () => {},
+}) => {
   if (installed) return installed;
 
   injectStyle(STYLE_ID, CSS);
@@ -382,7 +422,22 @@ export const installEventListReminders = ({ armAdhoc, disarmAdhoc, cancelWave, r
     if (act === 'cancelWave' && waveId) cancelWave(waveId);
     else if (act === 'resendWave' && waveId) resendWave(waveId);
     else if (act === 'disarm') disarmAdhoc(id);
-    else if (act === 'arm') {
+    else if (act === 'cancelFs') {
+      // Re-derive from the freshest state at click time — the 2-min window
+      // may have moved since render, and the slot must still be cancellable.
+      const universeId = parseUniverseId(location.host);
+      const now = Math.floor(Date.now() / 1000);
+      const rawFs = (snapshot?.fleetSave || []).find((e) => e.id === id);
+      if (rawFs) {
+        const fs = effectiveFs(rawFs, pruneFsCancel(readFsCancel(universeId), now)[id]?.offsets);
+        const slot = nearestCancellableSlot(fs, now);
+        if (slot) {
+          const offsets = fsOffsetsToCancel(fs.offsetsSec, slot.offset);
+          const expiresAt = Math.max(...offsets.map((o) => fs.arrivalAt + o)) + 60;
+          cancelFsSlot(id, offsets, expiresAt);
+        }
+      }
+    } else if (act === 'arm') {
       const arrivalAt = parseInt(row.getAttribute('data-arrival-time') || '', 10);
       if (!Number.isFinite(arrivalAt)) return;
       const offsetSec = settingsStore.get().adhocOffsetSec;

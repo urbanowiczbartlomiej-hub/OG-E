@@ -168,9 +168,19 @@ export const parseFsOffsets = (str) => parseDurationList(str, { signed: true });
  * @param {number[]} opts.offsetsSec Relative fire offsets (see {@link parseFsOffsets}).
  * @param {number} opts.minFlightSec Minimum flight time (s) for a NEW save.
  * @param {number} opts.now          Epoch SECONDS — first-sight reference.
+ * @param {Record<string, number[]>} [opts.cancelledById] Per-id offsets the
+ *   player has cancelled (see {@link fsOffsetsToCancel}). Those offsets are
+ *   dropped from that save's series so the queue reconcile sweeps their ntfy
+ *   messages while the rest of the series stays queued. Re-applied every scan
+ *   (the suppression store outlives one sync), so a still-present fleet can't
+ *   re-grow a cancelled slot.
  * @returns {FleetSaveReminder[]}
  */
-export const reconcileFleetSaves = (prev, candidates, { threshold, offsetsSec, minFlightSec, now }) => {
+export const reconcileFleetSaves = (
+  prev,
+  candidates,
+  { threshold, offsetsSec, minFlightSec, now, cancelledById = {} },
+) => {
   const known = new Map(prev.map((e) => [e.id, e]));
   /** @type {FleetSaveReminder[]} */
   const out = [];
@@ -182,17 +192,72 @@ export const reconcileFleetSaves = (prev, candidates, { threshold, offsetsSec, m
       if (c.shipCount < threshold) continue;
       if (minFlightSec > 0 && c.arrivalAt - now < minFlightSec) continue;
     }
+    const cancelled = cancelledById[c.id];
+    const eff = cancelled && cancelled.length
+      ? offsetsSec.filter((o) => !cancelled.includes(o))
+      : offsetsSec;
     out.push({
       ...(locked ?? {}),
       id: c.id,
       arrivalAt: c.arrivalAt,
       shipCount: c.shipCount,
       label: c.label,
-      offsetsSec,
-      fireAts: offsetsSec.map((o) => c.arrivalAt + o),
+      offsetsSec: eff,
+      fireAts: eff.map((o) => c.arrivalAt + o),
     });
   }
   return out;
+};
+
+/**
+ * How long before a fleet-save slot fires it becomes cancellable. The FS
+ * reminder is a safety net, so cancelling is deliberately allowed only at the
+ * last moment — when the player is clearly attending to this very arrival —
+ * not hours ahead by accident.
+ */
+export const FS_CANCEL_WINDOW_SEC = 120;
+
+/**
+ * The nearest still-upcoming slot of a fleet-save, but ONLY if it is inside
+ * its final {@link FS_CANCEL_WINDOW_SEC}-second cancel window. Returns the
+ * slot's `{ offset, fireAt }` or `null` (no upcoming slot, or the next one is
+ * still further out than the window). Pure.
+ *
+ * @param {{ offsetsSec: number[], fireAts: number[] }} fs
+ * @param {number} now Epoch SECONDS.
+ * @returns {{ offset: number, fireAt: number } | null}
+ */
+export const nearestCancellableSlot = (fs, now) => {
+  /** @type {{ offset: number, fireAt: number } | null} */
+  let best = null;
+  const fireAts = fs.fireAts || [];
+  for (let i = 0; i < fireAts.length; i++) {
+    const fireAt = fireAts[i];
+    if (!Number.isFinite(fireAt) || fireAt <= now) continue;
+    if (best === null || fireAt < best.fireAt) best = { offset: fs.offsetsSec[i], fireAt };
+  }
+  if (best === null) return null;
+  return now >= best.fireAt - FS_CANCEL_WINDOW_SEC ? best : null;
+};
+
+/**
+ * Which offsets a single cancel click removes. Normally just the chosen slot;
+ * but if it is the LAST reminder before landing (the largest negative offset
+ * still in the series), the player is in-game seeing it now, so every
+ * at/after-landing reminder (offset ≥ 0) is pointless — they collapse too.
+ * Pure.
+ *
+ * @param {number[]} offsetsSec  The save's current offsets.
+ * @param {number} slotOffset    The offset being cancelled.
+ * @returns {number[]} Offsets to suppress (includes `slotOffset`).
+ */
+export const fsOffsetsToCancel = (offsetsSec, slotOffset) => {
+  const negatives = offsetsSec.filter((o) => o < 0);
+  const lastPreLanding = negatives.length ? Math.max(...negatives) : null;
+  if (slotOffset < 0 && slotOffset === lastPreLanding) {
+    return offsetsSec.filter((o) => o === slotOffset || o >= 0);
+  }
+  return [slotOffset];
 };
 
 /**

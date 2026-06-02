@@ -33,6 +33,7 @@ export const installReminders = () => {
     disarmAdhoc: producer.disarmAdhoc,
     cancelWave: producer.cancelWave,
     resendWave: producer.resendWave,
+    cancelFsSlot: producer.cancelFsSlot,
   });
   uiRefresh = ui.refresh;
   installed = () => {

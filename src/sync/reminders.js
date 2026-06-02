@@ -496,6 +496,9 @@ const adhocBody = (e) => {
  *   set; {@link reconcileFleetSaves} applies the ship + flight-time gates
  *   against the persisted (locked) save set, and a landed/recalled leg simply
  *   isn't present so its queue is swept.
+ * @param {Record<string, number[]>} [dom.fsCancelById]  Per-fleet-save offsets
+ *   the player cancelled (see `domain/fleetSave.fsOffsetsToCancel`); dropped
+ *   from that save's series so the queue reconcile sweeps just those slots.
  * @param {number} now             Epoch SECONDS, injected by the caller.
  * @param {string} universeId      OGame server id; ntfy push title prefix.
  * @returns {Promise<{ ok: boolean, reason?: string, changed?: boolean, scheduled?: number, cancelled?: number }>}
@@ -503,7 +506,7 @@ const adhocBody = (e) => {
 export const syncReminders = async (config, dom, now, universeId) => {
   if (!getToken()) return { ok: false, reason: 'no-token' };
 
-  const { waveCandidates, present, adhocMutate, waveMutate, fleetSaveCandidates = [] } = dom;
+  const { waveCandidates, present, adhocMutate, waveMutate, fleetSaveCandidates = [], fsCancelById = {} } = dom;
 
   // Token resolution: prefer per-origin localStorage value; fall back
   // to the global chrome.storage mirror so a universe that hasn't been
@@ -533,6 +536,7 @@ export const syncReminders = async (config, dom, now, universeId) => {
     offsetsSec: parseFsOffsets(config.fsOffsets ?? ''),
     minFlightSec: config.fsMinFlightSec ?? 0,
     now,
+    cancelledById: fsCancelById,
   });
 
   // Each wave's schedule is anchored at a base time locked on first sight

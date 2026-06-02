@@ -180,7 +180,9 @@ describe('event-list badges', () => {
     // redundant mission / coords / ship-count the player already sees.
     const title = cell.getAttribute('title') || '';
     expect(title.startsWith('Fleet-save reminders at:')).toBe(true);
-    expect(title).toContain("can't be cancelled");
+    // Far from any slot's window → passive, but the tooltip now advertises the
+    // last-2-min cancel affordance instead of the old "can't be cancelled".
+    expect(title).toContain('final 2 min');
     expect(title).not.toContain('Deployment');
     expect(title).not.toContain('ships');
   });
@@ -199,7 +201,7 @@ describe('event-list badges', () => {
     installEventListReminders(stubApi());
     await tick();
     expect(cell.classList.contains('fs')).toBe(true);
-    expect(cell.getAttribute('title')).toBe("Fleet-save reminder set automatically (can't be cancelled)");
+    expect(cell.getAttribute('title')).toBe('Set automatically');
   });
 
   it('shows the fire time on an armed ad-hoc badge', async () => {
@@ -253,5 +255,83 @@ describe('event-list badges', () => {
     await tick();
     cell.click();
     expect(api.armAdhoc.mock.calls[0][0].label).toBe('Expedition → [1:22:3]');
+  });
+
+  // ── Fleet-save slot cancellation (within the final 2-min window) ──────
+
+  /** Settings with FS on, plus a click-capable api carrying cancelFsSlot. */
+  const fsApi = () => ({ ...stubApi(), cancelFsSlot: vi.fn() });
+  const enableFs = () => setSettings({
+    remindersMasterEnabled: true, adhocEnabled: true, reminderEnabled: false,
+    reminderNtfyToken: VALID_TOKEN, fsEnabled: true,
+  });
+
+  it('makes the 🛡 badge clickable inside a slot\'s final 2 min and cancels just that slot', async () => {
+    enableFs();
+    const now = Math.floor(Date.now() / 1000);
+    // Nearest upcoming slot fires in 20 s (inside the 2-min window) and is NOT
+    // the last pre-landing one (−60 still follows), so only it is cancelled.
+    const arrivalAt = now + 200;
+    seedMirror([{
+      id: 'eventRow-42', arrivalAt, shipCount: 8256872, label: 'Deployment → [4:478:14]',
+      offsetsSec: [-180, -60, 0], fireAts: [arrivalAt - 180, arrivalAt - 60, arrivalAt],
+    }]);
+    const cell = paintRow(arrivalAt);
+    const api = fsApi();
+    installEventListReminders(api);
+    await tick();
+
+    expect(cell.classList.contains('fs')).toBe(true);
+    expect(cell.classList.contains('act')).toBe(true);
+    expect(cell.getAttribute('data-oge-act')).toBe('cancelFs');
+    expect(cell.getAttribute('title') || '').toContain('Click to cancel this reminder');
+
+    cell.click();
+    expect(api.cancelFsSlot).toHaveBeenCalledTimes(1);
+    expect(api.cancelFsSlot.mock.calls[0][0]).toBe('eventRow-42');
+    expect(api.cancelFsSlot.mock.calls[0][1]).toEqual([-180]); // just the nearest slot
+  });
+
+  it('cancelling the LAST pre-landing slot collapses the landing/after slots too', async () => {
+    enableFs();
+    const now = Math.floor(Date.now() / 1000);
+    // Nearest upcoming (−60, fires in 20 s) IS the last pre-landing slot, so
+    // the click also drops the at-landing (0) and after (+600) reminders.
+    const arrivalAt = now + 80;
+    seedMirror([{
+      id: 'eventRow-42', arrivalAt, shipCount: 8256872, label: 'Deployment → [4:478:14]',
+      offsetsSec: [-60, 0, 600], fireAts: [arrivalAt - 60, arrivalAt, arrivalAt + 600],
+    }]);
+    const cell = paintRow(arrivalAt);
+    const api = fsApi();
+    installEventListReminders(api);
+    await tick();
+
+    expect(cell.getAttribute('data-oge-act')).toBe('cancelFs');
+    expect(cell.getAttribute('title') || '').toContain('landing/after');
+
+    cell.click();
+    expect(api.cancelFsSlot).toHaveBeenCalledTimes(1);
+    expect(api.cancelFsSlot.mock.calls[0][1]).toEqual([-60, 0, 600]);
+  });
+
+  it('keeps the 🛡 badge passive when the nearest slot is still beyond its 2-min window', async () => {
+    enableFs();
+    const now = Math.floor(Date.now() / 1000);
+    const arrivalAt = now + 3600; // nearest slot ~50 min out → not yet cancellable
+    seedMirror([{
+      id: 'eventRow-42', arrivalAt, shipCount: 8256872, label: 'Deployment → [4:478:14]',
+      offsetsSec: [-600, 0, 600], fireAts: [arrivalAt - 600, arrivalAt, arrivalAt + 600],
+    }]);
+    const cell = paintRow(arrivalAt);
+    const api = fsApi();
+    installEventListReminders(api);
+    await tick();
+
+    expect(cell.classList.contains('fs')).toBe(true);
+    expect(cell.classList.contains('act')).toBe(false);
+    expect(cell.getAttribute('data-oge-act')).toBeNull();
+    cell.click();
+    expect(api.cancelFsSlot).not.toHaveBeenCalled();
   });
 });

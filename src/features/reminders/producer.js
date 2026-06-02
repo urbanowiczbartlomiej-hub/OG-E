@@ -67,6 +67,7 @@ import { GAME } from '../../lib/gameDom.js';
 import {
   readPending, writePending, pushPending, applyAdhocCmds, applyWaveCmds,
 } from './pending.js';
+import { addFsCancel, fsCancelOffsets } from './fsCancel.js';
 
 /**
  * Selector for expedition return-flight rows. Identical predicate to the
@@ -209,6 +210,8 @@ const sigKeyFor = (/** @type {string} */ universeId) => `oge_reminderSig_${unive
  * @property {(id: string) => void} disarmAdhoc           Cancel an armed leg.
  * @property {(waveId: string) => void} cancelWave        Tombstone an expedition wave.
  * @property {(waveId: string) => void} resendWave        Re-schedule a tombstoned wave's series.
+ * @property {(id: string, offsets: number[], expiresAt: number) => void} cancelFsSlot
+ *   Suppress the given fleet-save offsets for `id` until `expiresAt` (epoch s).
  */
 
 /** Idempotency sentinel — holds the producer handle while installed. */
@@ -302,10 +305,14 @@ export const installReminderProducer = (opts = {}) => {
       ? (/** @type {Wave[]} */ waves) => applyWaveCmds(waves, waveCmds)
       : undefined;
 
+    // Durable per-slot FS cancellations (self-expiring; survives re-detection
+    // of the still-in-flight fleet, unlike the once-drained pending queue).
+    const fsCancelById = fsCancelOffsets(universeId, now);
+
     try {
       const res = await syncReminders(
         config,
-        { waveCandidates: candidates, present, adhocMutate, waveMutate, fleetSaveCandidates },
+        { waveCandidates: candidates, present, adhocMutate, waveMutate, fleetSaveCandidates, fsCancelById },
         now, universeId,
       );
       if (res.ok) {
@@ -339,6 +346,11 @@ export const installReminderProducer = (opts = {}) => {
   const cancelWave = (waveId) => { pushPending(universeId, { kind: 'cancelWave', waveId }); force(); };
   /** @param {string} waveId */
   const resendWave = (waveId) => { pushPending(universeId, { kind: 'resendWave', waveId }); force(); };
+  /** @param {string} id @param {number[]} offsets @param {number} expiresAt */
+  const cancelFsSlot = (id, offsets, expiresAt) => {
+    addFsCancel(universeId, id, offsets, expiresAt, Math.floor(Date.now() / 1000));
+    force();
+  };
 
   const onEventBox = () => scheduleRun();
   document.addEventListener('oge:eventBoxLoaded', onEventBox);
@@ -375,6 +387,7 @@ export const installReminderProducer = (opts = {}) => {
     disarmAdhoc,
     cancelWave,
     resendWave,
+    cancelFsSlot,
   };
   return installed;
 };

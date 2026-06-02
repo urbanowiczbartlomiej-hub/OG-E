@@ -3,6 +3,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseFsOffsets, reconcileFleetSaves, pruneFsNotify, isFleetSaveLeg,
+  nearestCancellableSlot, fsOffsetsToCancel, FS_CANCEL_WINDOW_SEC,
 } from '../../src/domain/fleetSave.js';
 
 /**
@@ -141,5 +142,81 @@ describe('pruneFsNotify', () => {
     const [live] = reconcileFleetSaves([], [cand({ id: 'a' })], opts());
     const pruned = pruneFsNotify(notify, [live]);
     expect(pruned).toEqual({ a: { scheduledMessageIds: ['m1'] } });
+  });
+});
+
+describe('reconcileFleetSaves — cancelledById', () => {
+  it('drops the cancelled offsets from a save\'s series, recomputing fireAts', () => {
+    const c = cand({ id: 'a', arrivalAt: 100000 });
+    const out = reconcileFleetSaves([], [c], opts({
+      offsetsSec: [-600, 0, 600], cancelledById: { a: [-600] },
+    }));
+    expect(out[0].offsetsSec).toEqual([0, 600]);
+    expect(out[0].fireAts).toEqual([100000, 100600]);
+  });
+
+  it('leaves other saves untouched and ignores unknown ids', () => {
+    const out = reconcileFleetSaves([], [cand({ id: 'a' }), cand({ id: 'b' })], opts({
+      offsetsSec: [-600, 0, 600], cancelledById: { a: [0, 600], zzz: [-600] },
+    }));
+    const byId = Object.fromEntries(out.map((e) => [e.id, e.offsetsSec]));
+    expect(byId.a).toEqual([-600]);
+    expect(byId.b).toEqual([-600, 0, 600]);
+  });
+});
+
+describe('nearestCancellableSlot', () => {
+  /** @param {number[]} offsetsSec @param {number} arrivalAt */
+  const fs = (offsetsSec, arrivalAt) => ({ offsetsSec, fireAts: offsetsSec.map((o) => arrivalAt + o) });
+
+  it('returns null when the nearest upcoming slot is beyond its window', () => {
+    const now = 1000;
+    // nearest upcoming = arrival-600 = 1400 (600 s out > 120 s window)
+    expect(nearestCancellableSlot(fs([-600, 0], 2000), now)).toBeNull();
+  });
+
+  it('returns the nearest slot once inside the window', () => {
+    const now = 1000;
+    // nearest upcoming = arrival-60 = 1060 (60 s out, inside 120 s)
+    const got = nearestCancellableSlot(fs([-60, 0, 600], 1120), now);
+    expect(got).toEqual({ offset: -60, fireAt: 1060 });
+  });
+
+  it('picks the EARLIEST upcoming slot when several are in the window', () => {
+    const now = 1000;
+    // arrival 1080 → fireAts [1020, 1080]; both upcoming & inside the window.
+    const got = nearestCancellableSlot(fs([-60, 0], 1080), now);
+    expect(got).toEqual({ offset: -60, fireAt: 1020 });
+  });
+
+  it('returns null when no slot is still upcoming', () => {
+    const now = 1000;
+    expect(nearestCancellableSlot(fs([-600, 0], 900), now)).toBeNull(); // fireAts 300, 900 ≤ now
+  });
+
+  it('uses the exact window boundary (now === fireAt - window)', () => {
+    const now = 1000;
+    const arrivalAt = now + FS_CANCEL_WINDOW_SEC; // slot at offset 0 fires exactly window away
+    expect(nearestCancellableSlot(fs([0], arrivalAt), now)).toEqual({ offset: 0, fireAt: arrivalAt });
+  });
+});
+
+describe('fsOffsetsToCancel', () => {
+  it('cancels only the chosen slot when it is not the last pre-landing one', () => {
+    expect(fsOffsetsToCancel([-600, -60, 0, 600], -600)).toEqual([-600]);
+  });
+
+  it('collapses at/after-landing (offset ≥ 0) when cancelling the LAST pre-landing slot', () => {
+    expect(fsOffsetsToCancel([-600, -60, 0, 600], -60)).toEqual([-60, 0, 600]);
+  });
+
+  it('treats the max negative offset as the last pre-landing slot', () => {
+    expect(fsOffsetsToCancel([-600, -120], -120)).toEqual([-120]); // no ≥0 slots to collapse
+    expect(fsOffsetsToCancel([-600, -120], -600)).toEqual([-600]); // not the last → just itself
+  });
+
+  it('cancels only itself for an at/after-landing slot (no negatives present)', () => {
+    expect(fsOffsetsToCancel([0, 600], 0)).toEqual([0]);
+    expect(fsOffsetsToCancel([0, 600], 600)).toEqual([600]);
   });
 });

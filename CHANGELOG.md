@@ -6,6 +6,16 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+- **Fleet-save reminders can now be cancelled — but only at the last
+  moment.** A 🛡 reminder becomes clickable only in the final **2 minutes**
+  before each slot fires (before that it stays the passive auto badge). One
+  click cancels just that nearest reminder; any later ones in the series stay.
+  The exception: cancelling the **last reminder before landing** also drops
+  every at/after-landing reminder — if you're in-game seeing it, the
+  post-landing pings are pointless. The cancellation is local and
+  self-expiring, and survives the fleet being re-detected on the next scan.
+
 ## [1.13.0] — 2026-06-02
 
 ### Added
