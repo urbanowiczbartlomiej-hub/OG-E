@@ -6,6 +6,35 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.11.0] — 2026-06-02
+
+### Fixed
+
+- Long fleet-saves now actually fire. A fleet-save detected while its
+  landing was still **more than 3 days out** got its 🛡 badge but never a
+  push: ntfy.sh refuses delays beyond 3 days, so every reminder slot was
+  filtered out at detection — and because the producer skips the sync
+  whenever the event list looks unchanged, nothing rescheduled it once the
+  fleet finally crossed into the 3-day window (the row's id and arrival
+  never change as time passes). The scan signature now tracks when a
+  fleet-save's earliest slot enters ntfy's range, so it re-syncs and queues
+  the pushes exactly once at that moment. This also closes the matching gap
+  for a fleet recalled mid-flight whose return leg is retimed past — or back
+  inside — the 3-day cap.
+
+### Changed
+
+- Reminder tooltips now spell out the exact clock times that were
+  registered with ntfy, matching the expedition-wave tooltip:
+  - **Fleet-save** hover now reads `Fleet-save reminders at: HH:MM, …` (the
+    slots actually queued, inside the 3-day cap) followed by `Set
+    automatically — can't be cancelled`. The mission, coordinates and ship
+    count are dropped from the hover — you already see them in the row; they
+    still ride along in the push itself. A save still beyond the cap shows
+    the bare auto hint until its first slot comes into range.
+  - **Ad-hoc** hover now reads `Reminder at HH:MM — click to cancel` instead
+    of the time-less `Reminder armed`.
+
 ## [1.10.0] — 2026-06-01
 
 ### Changed
