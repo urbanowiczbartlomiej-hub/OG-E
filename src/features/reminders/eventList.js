@@ -56,6 +56,7 @@ import { fireAtFor } from '../../domain/adhoc.js';
 import { injectStyle } from '../../lib/dom.js';
 import { debounce } from '../../lib/debounce.js';
 import { readPending, lastAdhocIntent, lastWaveIntent } from './pending.js';
+import { GAME } from '../../lib/gameDom.js';
 
 /** @typedef {import('../../sync/reminders.js').ReminderState} ReminderState */
 /** @typedef {import('../../domain/adhoc.js').AdhocReminder} AdhocReminder */
@@ -256,7 +257,7 @@ const render = () => {
   const pending = readPending(universeId);
 
   const rows = [.../** @type {NodeListOf<HTMLElement>} */ (
-    document.querySelectorAll('#eventContent tr.eventFleet[id^="eventRow-"]')
+    document.querySelectorAll(GAME.EVENT_FLEET_ROWS)
   )];
 
   // Pre-pass: map each row to its wave (if any) and find each wave's

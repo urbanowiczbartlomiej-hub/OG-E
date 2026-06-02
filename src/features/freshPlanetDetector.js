@@ -2,6 +2,7 @@
 
 import { installDrag } from './shared/draggableButton.js';
 import { safeLS } from '../lib/storage.js';
+import { GAME } from '../lib/gameDom.js';
 
 // Fresh-planet detector — scans `#planetList` on every mount for a
 // colony where nothing has been built yet (`usedFields === 0`) and
@@ -89,7 +90,7 @@ const parsePlanetRow = (row) => {
   const cp = parseInt(id.slice('planet-'.length), 10);
   if (!Number.isFinite(cp) || cp <= 0) return null;
 
-  const link = row.querySelector('.planetlink');
+  const link = row.querySelector(GAME.PLANET_LINK);
   if (!link) return null;
   const tooltip = link.getAttribute('data-tooltip-title') ?? '';
   if (!tooltip) return null;
@@ -103,7 +104,7 @@ const parsePlanetRow = (row) => {
   const max = parseInt(fieldsMatch[3], 10);
   if (!Number.isFinite(used) || !Number.isFinite(max)) return null;
 
-  const name = (row.querySelector('.planet-name')?.textContent ?? '').trim();
+  const name = (row.querySelector(GAME.PLANET_NAME)?.textContent ?? '').trim();
   return { cp, coords, name, used, max };
 };
 
@@ -116,9 +117,7 @@ const parsePlanetRow = (row) => {
  * @returns {PlanetRow | null}
  */
 export const findFirstFreshPlanet = () => {
-  const rows = document.querySelectorAll(
-    '#planetList .smallplanet[id^="planet-"]',
-  );
+  const rows = document.querySelectorAll(GAME.SMALL_PLANET_ONLY);
   for (const row of rows) {
     const p = parsePlanetRow(row);
     if (!p) continue;

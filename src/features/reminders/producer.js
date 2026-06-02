@@ -63,6 +63,7 @@ import { syncReminders } from '../../sync/reminders.js';
 import { parseUniverseId } from '../../lib/universeId.js';
 import { debounce } from '../../lib/debounce.js';
 import { safeLS } from '../../lib/storage.js';
+import { GAME } from '../../lib/gameDom.js';
 import {
   readPending, writePending, pushPending, applyAdhocCmds, applyWaveCmds,
 } from './pending.js';
@@ -105,7 +106,7 @@ export const extractReturnEntries = (root = document) => {
   for (const row of root.querySelectorAll(RETURN_ROW_SELECTOR)) {
     const arrivalAttr = row.getAttribute('data-arrival-time');
     const returnAt = arrivalAttr ? parseInt(arrivalAttr, 10) : NaN;
-    const coordsText = row.querySelector('.coordsOrigin')?.textContent || '';
+    const coordsText = row.querySelector(GAME.COORDS_ORIGIN)?.textContent || '';
     const origin = coordsText.replace(/[\s[\]]/g, '');
     out.push({ returnAt, origin });
   }
@@ -119,7 +120,7 @@ export const extractReturnEntries = (root = document) => {
  * per-leg identity ad-hoc reminders key on; `data-arrival-time` is the
  * leg's arrival epoch.
  */
-const PRESENT_ROW_SELECTOR = '#eventContent tr.eventFleet[id^="eventRow-"]';
+const PRESENT_ROW_SELECTOR = GAME.EVENT_FLEET_ROWS;
 
 /**
  * Extract every present fleet leg as `{ id, arrivalAt }` — the

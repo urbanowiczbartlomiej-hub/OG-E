@@ -53,6 +53,7 @@
 import { settingsStore } from '../state/settings.js';
 import { injectStyle, waitFor } from '../lib/dom.js';
 import { debounce } from '../lib/debounce.js';
+import { GAME } from '../lib/gameDom.js';
 
 /**
  * Style-element id for the visible-badge CSS. Kept stable across the
@@ -187,8 +188,8 @@ const collectActiveExpeditions = () => {
   );
   for (const row of rows) {
     const name = trim(row.querySelector('.originFleet')?.textContent);
-    const coords = trimCoords(row.querySelector('.coordsOrigin')?.textContent);
-    const ships = parseShipCount(row.querySelector('.detailsFleet span')?.textContent);
+    const coords = trimCoords(row.querySelector(GAME.COORDS_ORIGIN)?.textContent);
+    const ships = parseShipCount(row.querySelector(`${GAME.DETAILS_FLEET} span`)?.textContent);
     const key = coords || (name ? `name:${name}` : '');
     if (!key) continue;
     const entry = map.get(key) || { count: 0, ships: 0, name, coords };
@@ -227,12 +228,12 @@ const renderBadges = () => {
   clearBadges();
   const expeditions = collectActiveExpeditions();
   if (expeditions.size === 0) return;
-  const planets = document.querySelectorAll('#planetList .smallplanet');
+  const planets = document.querySelectorAll(GAME.SMALL_PLANET);
   for (const planet of planets) {
-    const link = planet.querySelector('a.planetlink');
+    const link = planet.querySelector(`a${GAME.PLANET_LINK}`);
     if (!link) continue;
-    const name = trim(link.querySelector('.planet-name')?.textContent);
-    const coords = trimCoords(link.querySelector('.planet-koords')?.textContent);
+    const name = trim(link.querySelector(GAME.PLANET_NAME)?.textContent);
+    const coords = trimCoords(link.querySelector(GAME.PLANET_KOORDS)?.textContent);
     const info = expeditions.get(coords) || expeditions.get(`name:${name}`);
     if (!info) continue;
     const container = link.querySelector('.planetBarSpaceObjectContainer');
@@ -394,7 +395,7 @@ export const installBadges = () => {
       // initial render already succeeded (renderBadges is idempotent
       // and cheap).
       void waitFor(
-        () => document.querySelectorAll('#planetList .smallplanet').length > 0,
+        () => document.querySelectorAll(GAME.SMALL_PLANET).length > 0,
         { timeoutMs: 5000, intervalMs: 250 },
       ).then(() => {
         if (installed && settingsStore.get().expeditionBadges) renderGuarded();

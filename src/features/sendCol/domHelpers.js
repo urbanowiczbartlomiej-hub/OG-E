@@ -34,6 +34,7 @@ import { settingsStore } from '../../state/settings.js';
 import { registryStore } from '../../state/registry.js';
 import { safeLS } from '../../lib/storage.js';
 import { findConflict } from '../../domain/registry.js';
+import { GAME } from '../../lib/gameDom.js';
 
 // ─── Min-gap wait helper ──────────────────────────────────────────────────
 
@@ -113,9 +114,9 @@ export const getColonizeWaitTime = () => {
  * @returns {{ galaxy: number, system: number } | null}
  */
 export const readHomePlanet = () => {
-  const active = document.querySelector('#planetList .hightlightPlanet');
+  const active = document.querySelector(GAME.ACTIVE_PLANET);
   if (!active) return null;
-  const coords = active.querySelector('.planet-koords')?.textContent?.trim();
+  const coords = active.querySelector(GAME.PLANET_KOORDS)?.textContent?.trim();
   const m = (coords || '').match(/\[(\d+):(\d+):(\d+)\]/);
   if (!m) return null;
   return { galaxy: parseInt(m[1], 10), system: parseInt(m[2], 10) };

@@ -63,6 +63,7 @@
 import { injectStyle } from '../lib/dom.js';
 import { debounce } from '../lib/debounce.js';
 import { settingsStore } from '../state/settings.js';
+import { GAME } from '../lib/gameDom.js';
 
 const STYLE_ID = 'oge-event-highlight-style';
 
@@ -145,7 +146,7 @@ const REFRESH_DEBOUNCE_MS = 150;
  * @returns {Element[]}
  */
 const findEventItems = () =>
-  [...document.querySelectorAll('#menuTable .menubutton.premiumHighligt')].filter(
+  [...document.querySelectorAll(`${GAME.MENU_TABLE} .menubutton.premiumHighligt`)].filter(
     (el) => !PERMANENT_HINTS.has(/** @type {HTMLElement} */ (el).dataset.ipiHint ?? ''),
   );
 

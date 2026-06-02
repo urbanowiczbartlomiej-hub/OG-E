@@ -8,6 +8,7 @@
 // @see ../../domain/fleetSave.js — the pure threshold/offset logic.
 
 import { isFleetSaveLeg } from '../../domain/fleetSave.js';
+import { GAME } from '../../lib/gameDom.js';
 
 /** @typedef {import('../../domain/fleetSave.js').FleetSaveCandidate} FleetSaveCandidate */
 
@@ -31,7 +32,7 @@ const denseCoords = (s) => (s || '').replace(/[\s[\]]/g, '');
  * @returns {number}
  */
 export const shipCountOf = (row) => {
-  const txt = row.querySelector('.detailsFleet')?.textContent || '';
+  const txt = row.querySelector(GAME.DETAILS_FLEET)?.textContent || '';
   const digits = txt.replace(/\D/g, '');
   return digits ? Number.parseInt(digits, 10) : NaN;
 };
@@ -61,7 +62,7 @@ export const fsLabelFor = (row) => {
   const mt = row.getAttribute('data-mission-type') || '';
   const mission = MISSION_NAMES[mt] || 'Fleet';
   const isReturn = row.getAttribute('data-return-flight') === 'true';
-  const landing = denseCoords(row.querySelector(isReturn ? '.coordsOrigin' : '.destCoords')?.textContent);
+  const landing = denseCoords(row.querySelector(isReturn ? GAME.COORDS_ORIGIN : '.destCoords')?.textContent);
   return landing ? `${mission} → [${landing}]` : mission;
 };
 
@@ -85,7 +86,7 @@ export const fsLabelFor = (row) => {
 export const extractFleetSaveCandidates = (root = document) => {
   /** @type {FleetSaveCandidate[]} */
   const out = [];
-  for (const row of root.querySelectorAll('#eventContent tr.eventFleet[id^="eventRow-"]')) {
+  for (const row of root.querySelectorAll(GAME.EVENT_FLEET_ROWS)) {
     if (!isOwnFleet(row)) continue;
     const isReturn = row.getAttribute('data-return-flight') === 'true';
     const missionType = row.getAttribute('data-mission-type') || '';

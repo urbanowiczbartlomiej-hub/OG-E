@@ -56,6 +56,7 @@
 import { settingsStore } from '../../state/settings.js';
 import { logger } from '../../lib/logger.js';
 import { checkAbandonState, abandonPlanet } from './index.js';
+import { GAME } from '../../lib/gameDom.js';
 
 /**
  * DOM id of the overlay. Stable so repeated mount calls short-circuit,
@@ -84,7 +85,7 @@ let installed = null;
  * @returns {string}
  */
 const readCoordsText = () => {
-  const el = document.querySelector('#positionContentField a');
+  const el = document.querySelector(GAME.POSITION_FIELD_LINK);
   const raw = el?.textContent?.trim() ?? '';
   const m = raw.match(/\[\d+:\d+:\d+\]/);
   return m ? m[0] : '';

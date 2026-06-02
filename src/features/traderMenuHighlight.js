@@ -76,6 +76,7 @@ import { injectStyle } from '../lib/dom.js';
 import { debounce } from '../lib/debounce.js';
 import { safeLS } from '../lib/storage.js';
 import { settingsStore } from '../state/settings.js';
+import { GAME } from '../lib/gameDom.js';
 
 const STYLE_ID = 'oge-trader-highlight-style';
 
@@ -328,7 +329,7 @@ const findByHint = (hint) =>
 /** The global Trader menu button, scoped to `#menuTable`. */
 const findMenuAnchor = () =>
   /** @type {HTMLElement | null} */ (
-    document.querySelector(`#menuTable [data-ipi-hint="${MENU_HINT}"]`)
+    document.querySelector(`${GAME.MENU_TABLE} [data-ipi-hint="${MENU_HINT}"]`)
   );
 
 /**

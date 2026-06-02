@@ -67,6 +67,7 @@
 
 import { historyStore, whenHistoryHydrated } from '../state/history.js';
 import { waitFor } from '../lib/dom.js';
+import { GAME } from '../lib/gameDom.js';
 
 /**
  * Parse the bracketed coord string OGame renders inside
@@ -125,7 +126,7 @@ const parseDiameter = (text) => {
  * @returns {number | null}
  */
 const readActiveCp = () => {
-  const active = document.querySelector('#planetList .hightlightPlanet');
+  const active = document.querySelector(GAME.ACTIVE_PLANET);
   if (!active) return null;
   const id = active.id;
   if (typeof id !== 'string' || !id.startsWith('planet-')) return null;
@@ -157,7 +158,7 @@ const tryCollect = () => {
   // Fresh colonies only — see module header on why this gate matters.
   if (diameter.usedFields !== 0) return false;
 
-  const coordsEl = document.querySelector('#positionContentField a');
+  const coordsEl = document.querySelector(GAME.POSITION_FIELD_LINK);
   const parsed = parseCoords(coordsEl?.textContent);
   if (!parsed) return false;
 

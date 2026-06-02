@@ -72,6 +72,7 @@
 import { settingsStore } from '../../state/settings.js';
 import { scansStore } from '../../state/scans.js';
 import { safeClick, waitFor } from '../../lib/dom.js';
+import { GAME } from '../../lib/gameDom.js';
 
 /**
  * @typedef {import('../../state/settings.js').Settings} Settings
@@ -231,7 +232,7 @@ export const abandonPlanet = async () => {
   if (!checkAbandonState(settings)) return false;
 
   // ── Safety 2: capture planet coords for mid-flow verification ──
-  const posEl = document.querySelector('#positionContentField a');
+  const posEl = document.querySelector(GAME.POSITION_FIELD_LINK);
   const coordsMatch = posEl?.textContent?.trim()?.match(/\[(\d+):(\d+):(\d+)\]/);
   if (!coordsMatch) return false;
   const galaxy = parseInt(coordsMatch[1], 10);

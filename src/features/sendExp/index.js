@@ -71,6 +71,7 @@
 import { settingsStore } from '../../state/settings.js';
 import { safeLS } from '../../lib/storage.js';
 import { safeClick, waitFor } from '../../lib/dom.js';
+import { GAME, ACTIVE_PLANET_CLASS } from '../../lib/gameDom.js';
 import {
   installDrag,
   installFocusPersist as installButtonFocusPersist,
@@ -144,9 +145,9 @@ const onFleetDispatcherSnapshot = (e) => {
  * @returns {string | null}  `"g:s:p"` without brackets, or `null`.
  */
 const getActivePlanetCoords = () => {
-  const planet = document.querySelector('#planetList .hightlightPlanet');
+  const planet = document.querySelector(GAME.ACTIVE_PLANET);
   if (!planet) return null;
-  const coordsEl = planet.querySelector('.planet-koords');
+  const coordsEl = planet.querySelector(GAME.PLANET_KOORDS);
   const coords = stripBrackets(coordsEl?.textContent);
   return coords || null;
 };
@@ -172,7 +173,7 @@ const countActiveExpeditions = (originCoords) => {
   if (originCoords === null) return rows.length;
   let count = 0;
   for (const row of rows) {
-    const c = stripBrackets(row.querySelector('.coordsOrigin')?.textContent);
+    const c = stripBrackets(row.querySelector(GAME.COORDS_ORIGIN)?.textContent);
     if (c === originCoords) count += 1;
   }
   return count;
@@ -195,18 +196,18 @@ const countActiveExpeditions = (originCoords) => {
 const findPlanetWithExpSlot = (skipCurrent) => {
   const max = settingsStore.get().maxExpPerPlanet;
   const planets = Array.from(
-    document.querySelectorAll('#planetList .smallplanet'),
+    document.querySelectorAll(GAME.SMALL_PLANET),
   );
   if (planets.length === 0) return null;
   const activeIdx = planets.findIndex((p) =>
-    p.classList.contains('hightlightPlanet'),
+    p.classList.contains(ACTIVE_PLANET_CLASS),
   );
   const start = activeIdx < 0 ? 0 : activeIdx;
   const startOffset = skipCurrent ? 1 : 0;
   for (let i = startOffset; i < planets.length; i++) {
     const idx = (start + i) % planets.length;
     const p = planets[idx];
-    const coords = stripBrackets(p.querySelector('.planet-koords')?.textContent);
+    const coords = stripBrackets(p.querySelector(GAME.PLANET_KOORDS)?.textContent);
     if (!coords) continue;
     if (countActiveExpeditions(coords) >= max) continue;
     const id = p.id;

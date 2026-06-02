@@ -53,6 +53,7 @@
 import { observeXHR } from './xhrObserver.js';
 import { safeLS } from '../lib/storage.js';
 import { MISSION_EXPEDITION } from '../domain/rules.js';
+import { GAME, ACTIVE_PLANET_CLASS } from '../lib/gameDom.js';
 
 /**
  * localStorage key for the user preference. OPT-OUT: default is `true`,
@@ -133,11 +134,11 @@ const getMissionFromBody = (body) => {
  */
 const findNextPlanetWithoutExpedition = () => {
   const planets = /** @type {HTMLElement[]} */ (
-    [...document.querySelectorAll('#planetList .smallplanet')]
+    [...document.querySelectorAll(GAME.SMALL_PLANET)]
   );
   if (planets.length < 2) return null;
 
-  const currentIdx = planets.findIndex((el) => el.classList.contains('hightlightPlanet'));
+  const currentIdx = planets.findIndex((el) => el.classList.contains(ACTIVE_PLANET_CLASS));
   if (currentIdx === -1) return null;
 
   // Wrap-around scan: we skip offset 0 (that's the current planet, which
