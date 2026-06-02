@@ -406,16 +406,54 @@ describe('installSettingsUi — duration control', () => {
 });
 
 describe('installSettingsUi — asyncStatus (ntfy account)', () => {
-  it('renders the account-status row with a manual "Check now" button', async () => {
+  it('renders the account-status row read-only (the "Check now" button moved to the master row)', async () => {
     setupAGR();
     installSettingsUi();
     await flushWaitFor();
 
     const span = document.getElementById(INPUT_PREFIX + 'ntfyAccountStatus');
-    const btn = document.getElementById(INPUT_PREFIX + 'ntfyAccountStatus-btn');
     expect(span).not.toBeNull();
+    // The manual re-probe trigger now lives on the master row, not here.
+    expect(document.getElementById(INPUT_PREFIX + 'ntfyAccountStatus-btn')).toBeNull();
+  });
+
+  it('the master row\'s "Check now" button dispatches oge:ntfyCheckNow', async () => {
+    setupAGR();
+    installSettingsUi();
+    await flushWaitFor();
+    // Disabled while the section is off (default) — turn the master on so the
+    // button is clickable. The store subscriber re-runs syncInputsFromState.
+    settingsStore.update((s) => ({ ...s, remindersMasterEnabled: true }));
+
+    /** @type {string[]} */
+    const received = [];
+    /** @type {EventListener} */
+    const handler = (e) => {
+      received.push(e.type);
+    };
+    document.addEventListener('oge:ntfyCheckNow', handler);
+
+    const btn = /** @type {HTMLButtonElement | null} */ (
+      document.getElementById(INPUT_PREFIX + 'remindersMasterEnabled-btn')
+    );
     expect(btn).not.toBeNull();
     expect(btn?.textContent).toBe('Check now');
+    expect(btn?.disabled).toBe(false);
+    btn?.click();
+
+    document.removeEventListener('oge:ntfyCheckNow', handler);
+    expect(received).toContain('oge:ntfyCheckNow');
+  });
+
+  it('disables the master row\'s "Check now" button while the section is off', async () => {
+    setupAGR();
+    installSettingsUi();
+    await flushWaitFor();
+    settingsStore.update((s) => ({ ...s, remindersMasterEnabled: false }));
+    const btn = /** @type {HTMLButtonElement | null} */ (
+      document.getElementById(INPUT_PREFIX + 'remindersMasterEnabled-btn')
+    );
+    expect(btn?.disabled).toBe(true);
   });
 
   it('renders the derived-topic row (read-only, no button) with the no-token hint', async () => {
@@ -476,6 +514,52 @@ describe('installSettingsUi — checkbox inline button', () => {
       document.getElementById(INPUT_PREFIX + 'cloudSync-btn')
     );
     expect(btn?.disabled).toBe(true);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// Per-group gating: each group's options lock when its own `enable` is off,
+// even with the section fully unlocked (master on + valid token).
+// ──────────────────────────────────────────────────────────────────
+
+describe('installSettingsUi — per-group enable gates its own options', () => {
+  // A syntactically valid ntfy token (`tk_` + ≥20 alphanumerics) so the
+  // section is unlocked and only the group enable decides the sub-options.
+  const VALID_TOKEN = 'tk_' + 'a'.repeat(24);
+
+  /** Master on + valid token + every group enabled. */
+  const unlockSection = () =>
+    settingsStore.update((s) => ({
+      ...s,
+      remindersMasterEnabled: true,
+      reminderNtfyToken: VALID_TOKEN,
+      reminderEnabled: true,
+      adhocEnabled: true,
+      fsEnabled: true,
+    }));
+
+  /** @param {string} id */
+  const isDisabled = (id) =>
+    /** @type {HTMLInputElement | null} */ (
+      document.getElementById(INPUT_PREFIX + id)
+    )?.disabled;
+
+  it.each([
+    ['reminderEnabled', ['reminderSchedule']],
+    ['adhocEnabled', ['adhocOffsetSec']],
+    ['fsEnabled', ['fsThreshold', 'fsMinFlightSec', 'fsOffsets']],
+  ])('%s gates its group options', async (enableId, optionIds) => {
+    setupAGR();
+    installSettingsUi();
+    await flushWaitFor();
+
+    unlockSection();
+    // With the group enabled, its options are live…
+    for (const id of optionIds) expect(isDisabled(id)).toBe(false);
+
+    // …and unchecking the group's own enable greys exactly those options.
+    settingsStore.update((s) => ({ ...s, [enableId]: false }));
+    for (const id of optionIds) expect(isDisabled(id)).toBe(true);
   });
 });
 

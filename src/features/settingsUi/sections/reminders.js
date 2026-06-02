@@ -51,6 +51,15 @@ import { formatDuration } from '../../../domain/duration.js';
  */
 
 /**
+ * Document event the master row's "Check now" button dispatches to force the
+ * account-status row to re-probe. The status row listens for it via
+ * `refreshEvent`, mirroring the Sync section: there the master row's "Sync
+ * now" drives the status line through an event rather than a direct call, so
+ * the trigger and the line it refreshes can live on different rows.
+ */
+const NTFY_CHECK_NOW_EVENT = 'oge:ntfyCheckNow';
+
+/**
  * The reminder sub-options (wave, ad-hoc, fleet-save) are locked until the
  * section is switched on AND a valid token is entered — the token is the
  * credential everything rides on. Used as each sub-option's `disabledWhen`.
@@ -59,6 +68,23 @@ import { formatDuration } from '../../../domain/duration.js';
  * @returns {boolean}
  */
 const sectionLocked = (s) => !s.remindersMasterEnabled || !isValidNtfyToken(s.reminderNtfyToken);
+
+/**
+ * Each reminder group (wave / ad-hoc / fleet-save) has its own `enable`
+ * checkbox above its option rows. A group's options lock when the SECTION is
+ * locked OR that group's own enable is off — so unchecking "… — enable" greys
+ * just that group's schedule/threshold/offset rows, while the enable
+ * checkbox itself stays governed by `sectionLocked` alone. Used as each
+ * sub-option's `disabledWhen`.
+ *
+ * @param {import('../../../state/settings.js').Settings} s
+ * @returns {boolean}
+ */
+const waveLocked = (s) => sectionLocked(s) || !s.reminderEnabled;
+/** @param {import('../../../state/settings.js').Settings} s @returns {boolean} */
+const adhocLocked = (s) => sectionLocked(s) || !s.adhocEnabled;
+/** @param {import('../../../state/settings.js').Settings} s @returns {boolean} */
+const fsLocked = (s) => sectionLocked(s) || !s.fsEnabled;
 
 /**
  * Render an offset list (whole seconds) as a canonical minutes-first
@@ -94,7 +120,20 @@ export const remindersSection = {
   options: [
     // Master switch + credential first. Until BOTH are set, everything
     // below is greyed out (see `sectionLocked`).
-    { id: 'remindersMasterEnabled', label: 'Reminders — master switch', type: 'checkbox' },
+    {
+      // Master switch + the manual "Check now" account probe on its right
+      // (mirrors the Sync master row's "Sync now"). The checkbox stays the
+      // section toggle; the button dispatches NTFY_CHECK_NOW_EVENT, which the
+      // account-status row below re-probes on via its `refreshEvent`. The
+      // button greys while the section is off (probing is pointless without
+      // the channel on); the master checkbox itself always stays live.
+      id: 'remindersMasterEnabled',
+      label: 'Reminders — master switch',
+      type: 'checkbox',
+      buttonText: 'Check now',
+      onclick: () => document.dispatchEvent(new CustomEvent(NTFY_CHECK_NOW_EVENT)),
+      buttonDisabledWhen: (s) => !s.remindersMasterEnabled,
+    },
     {
       id: 'reminderNtfyToken',
       label: 'ntfy.sh — access token',
@@ -114,10 +153,11 @@ export const remindersSection = {
       id: 'ntfyAccountStatus',
       label: 'ntfy.sh — account status',
       type: 'asyncStatus',
-      buttonText: 'Check now',
       refreshKey: (s) => s.reminderNtfyToken,
       fetchText: async (s) => formatNtfyAccountStatus(await fetchNtfyAccount(s.reminderNtfyToken)),
-      disabledWhen: (s) => !s.remindersMasterEnabled,
+      // The manual re-probe trigger ("Check now") moved up onto the master
+      // row; it dispatches this event, which we re-probe on.
+      refreshEvent: NTFY_CHECK_NOW_EVENT,
     },
     {
       // The push topic OG-E derives from the token (a private hash). This is
@@ -151,7 +191,7 @@ export const remindersSection = {
       label: 'Expedition-wave reminders — schedule',
       type: 'text',
       placeholder: '0m, 10m, 30m, 60m',
-      disabledWhen: sectionLocked,
+      disabledWhen: waveLocked,
     },
     {
       // Read-only: spells out WHEN the wave schedule's reminders fire,
@@ -177,7 +217,7 @@ export const remindersSection = {
       label: 'Ad-hoc reminders — lead time',
       type: 'duration',
       placeholder: '1m',
-      disabledWhen: sectionLocked,
+      disabledWhen: adhocLocked,
     },
     {
       // Fleet-save auto-detection: any of your own fleets whose total ship
@@ -194,7 +234,7 @@ export const remindersSection = {
       label: 'Fleet-save reminders — ship threshold',
       type: 'text',
       placeholder: '100000',
-      disabledWhen: sectionLocked,
+      disabledWhen: fsLocked,
     },
     {
       // Second gate: exclude short planet⇄moon hops. A big fleet on a short
@@ -204,7 +244,7 @@ export const remindersSection = {
       label: 'Fleet-save reminders — min flight time',
       type: 'duration',
       placeholder: '10m',
-      disabledWhen: sectionLocked,
+      disabledWhen: fsLocked,
     },
     {
       // Free-form reminder schedule, RELATIVE to arrival (comma-separated
@@ -215,7 +255,7 @@ export const remindersSection = {
       label: 'Fleet-save reminders — schedule',
       type: 'text',
       placeholder: '-10m, 0m, 10m',
-      disabledWhen: sectionLocked,
+      disabledWhen: fsLocked,
     },
     {
       // Read-only: spells out the parsed FS offsets, updating live.
