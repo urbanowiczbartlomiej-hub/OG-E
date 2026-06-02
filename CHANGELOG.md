@@ -6,6 +6,8 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.14.0] — 2026-06-03
+
 ### Added
 - **Fleet-save reminders can now be cancelled — but only at the last
   moment.** A 🛡 reminder becomes clickable only in the final **2 minutes**
