@@ -59,7 +59,10 @@ pushed tag pointing at a non-existent release.
     npm run build:prod
   The resulting dist/ matches the uploaded extension exactly.
 
-  No new permissions. No new network destinations.
+  Permissions: storage. Host permissions: *.ogame.gameforge.com (content
+  scripts), api.github.com (opt-in gist sync), ntfy.sh (opt-in fleet-landing
+  reminders). All outbound traffic is user-initiated and goes only to those
+  hosts; no telemetry, no analytics. See PRIVACY.md in source.zip for detail.
   ```
 
 - **Release notes** (public) ← the `## [X.Y.Z]` section of `CHANGELOG.md`,

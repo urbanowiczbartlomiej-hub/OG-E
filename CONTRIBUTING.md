@@ -15,9 +15,11 @@ we never inject synthetic XMLHttpRequests against the game.
 No background cycles. No batch actions. No "one click, five fleets
 out". No CAPTCHA / rate-limit circumvention.
 
-Requests to our own services (`api.github.com` for cloud sync) are
-fine. `location.href = url` in response to a single visible user
-click is fine.
+Requests to user-controlled third-party services are fine: `api.github.com`
+for cloud sync, `ntfy.sh` for fleet-landing reminders — both opt-in and
+keyed by a token the user supplies. The rule above is specifically about
+the **game server**: never originate traffic to it. `location.href = url`
+in response to a single visible user click is fine.
 
 When unsure, open an issue before the PR.
 
@@ -105,21 +107,38 @@ Before merging anything that touches DOM behaviour:
 
 ## Release workflow
 
-1. Move `CHANGELOG.md` `[Unreleased]` entries into a new `[X.Y.Z]`
-   section with today's date. **This step is mandatory — never bump
-   the version without a matching CHANGELOG entry.**
-2. Bump `manifest.json` and `package.json` `version` to `X.Y.Z`.
-3. `npm run typecheck && npm run test -- --run`.
-4. `npm run package` — produces **both** `dist.zip` (extension upload)
-   and `source.zip` (AMO source review) in one step. AMO requires the
-   source archive whenever the bundle is minified, which it always is.
-5. Load `dist/manifest.json` locally, spot-check every feature in the
-   checklist above on both Firefox and Chrome.
-6. `git commit`, `git tag vX.Y.Z`, `git push --tags`.
-7. Upload `dist.zip` **and** `source.zip` to AMO (Firefox); upload
-   `dist.zip` to Chrome Web Store if applicable. Copy the release
-   notes from the new CHANGELOG section into the AMO "Notes to
-   Reviewer" field together with the standard build instructions.
+The whole release is one command — `scripts/release.mjs`. It bumps the
+version, runs tests + typecheck, builds and packages (**both** `dist.zip`
+and the `source.zip` AMO requires for a minified bundle), commits, tags,
+uploads to AMO (both reviewer-note fields + `source.zip`), and pushes the
+tag. It is idempotent: re-running after a failure resumes from where it
+stopped.
+
+Do these by hand first:
+
+1. Commit the release's code + tests under their own `fix:`/`feat:`
+   commit, so the tree is clean except the files the script edits.
+2. Write a dated `## [X.Y.Z] — YYYY-MM-DD` section in `CHANGELOG.md`
+   (move `[Unreleased]` items into it) and **leave it uncommitted**.
+   The script refuses to run without it and sends it verbatim as the
+   public AMO release notes. **Never bump the version without it.**
+3. Have `AMO_JWT_ISSUER` / `AMO_JWT_SECRET` in a gitignored `.env`
+   (see `.env.example`).
+
+Then:
+
+```bash
+npm run release -- X.Y.Z
+```
+
+To **preview** without publishing, run the script directly so the flag
+actually arrives (npm swallows `--flags`, which has caused an accidental
+real release): `node --env-file-if-exists=.env scripts/release.mjs X.Y.Z --preview`.
+
+Before releasing anything that touches DOM behaviour, load
+`dist/manifest.json` locally and spot-check the in-game checklist above
+on both Firefox and Chrome. Chrome Web Store, if you publish there, still
+takes a manual `dist.zip` upload.
 
 ## Contact
 

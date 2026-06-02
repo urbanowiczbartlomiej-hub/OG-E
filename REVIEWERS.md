@@ -36,14 +36,15 @@ by the ZIP spec and AMO's validator.
 ## Verifying the build
 
 `npm run typecheck` runs `tsc --noEmit` against the JSDoc-as-types
-sources. `npm run test` runs the vitest suite (~775 unit tests, all
+sources. `npm run test` runs the vitest suite (~945 unit tests, all
 synchronous, no network).
 
 ## What the source archive contains
 
 - `src/` — every JavaScript module loaded by the manifest
 - `scripts/` — build / package / clean utilities
-- `icons/` — extension icons (16/48/128 px PNG)
+- `icons/` — extension icons (16/48/128 px) plus the notification
+  icons referenced by reminders, all PNG
 - `manifest.json`, `package.json`, `package-lock.json`,
   `rollup.config.mjs`, `tsconfig.json` — build configuration
 - `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, `PRIVACY.md`,
@@ -62,8 +63,16 @@ user click. The MAIN-world bridges (`src/bridges/*.js`) only observe
 XHRs the game already fires; nowhere in the codebase does OG-E call
 `fetch()` or `xhr.send()` for a game endpoint.
 
-The only outbound traffic OG-E may issue is to `api.github.com`,
-gated behind the user enabling cloud sync and pasting their own
-GitHub personal-access token. The token is stored locally
-(`localStorage`); OG-E has no servers and no telemetry.
-See [`PRIVACY.md`](PRIVACY.md) for the full statement.
+OG-E issues outbound traffic to exactly two destinations, both
+opt-in and both to a service the user controls:
+
+- `api.github.com` — cross-device sync, gated behind the user enabling
+  cloud sync and pasting their own GitHub personal-access token.
+- `ntfy.sh` — fleet-landing reminders, gated behind the user enabling
+  the reminders feature and pasting their own ntfy access token. OG-E
+  POSTs scheduled notifications to a token-derived topic and never
+  contacts any other ntfy endpoint.
+
+Both tokens are stored locally (`localStorage`). OG-E runs no servers
+of its own and ships no telemetry. See [`PRIVACY.md`](PRIVACY.md) for
+the full statement.

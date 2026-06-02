@@ -1,7 +1,10 @@
 # Privacy
 
-OG-E has no servers and collects no telemetry. Everything stays in
-your browser unless you opt into the optional cross-device sync.
+OG-E runs no servers of its own and collects no telemetry. Everything
+stays in your browser unless you opt into one of two features that talk
+to a third party *you* control: cross-device sync (your GitHub gist) and
+fleet-landing reminders (the public ntfy.sh push service). Both are off
+until you turn them on.
 
 ## Stored locally
 
@@ -24,13 +27,40 @@ If you paste a GitHub Personal Access Token into the sync section:
 - Remove the PAT from settings → sync stops. Revoke the PAT on
   GitHub → existing requests fail until you supply a new one.
 
+## Sent to ntfy.sh (only if you turn reminders on)
+
+Fleet-landing reminders deliver a phone notification shortly before a
+fleet returns. They are off by default; the master reminders switch must
+be enabled and you must paste an ntfy access token. When armed, OG-E
+talks to the public push service [ntfy.sh](https://ntfy.sh):
+
+- Requests go to `https://ntfy.sh/<topic>` only (POST to schedule a
+  notification, GET to reconcile the queue, DELETE to cancel). No other
+  ntfy endpoint is contacted.
+- `<topic>` is derived one-way from your token (`oge-` + a SHA-256
+  prefix), so it is unguessable but reproducible across your devices.
+  The token is never sent in the URL path — only as ntfy's auth header.
+- The notification carries low-sensitivity flight data: the universe id,
+  the mission type, the landing coordinates, the arrival time, and (for
+  fleet-save reminders) the ship count. **Treat the topic as a secret:**
+  anyone who learns it can read these notifications. This is an accepted
+  trade-off for convenience — do not enable reminders if that bothers you.
+- The token is stored in `localStorage` (and mirrored into
+  `chrome.storage.local` so the extension page can show the queue).
+  Clearing the token, or turning the master switch off, stops all ntfy
+  traffic.
+- Notification icons are referenced by a `raw.githubusercontent.com`
+  URL inside the push; your phone's ntfy app fetches them, not OG-E.
+
 ## What OG-E never does
 
 - No telemetry, analytics, or crash reporting.
 - No background tasks against the game server. Every game request is
   a direct response to your own click — see
   [`CONTRIBUTING.md`](CONTRIBUTING.md) §1 (Compliance).
-- No third-party fonts, scripts, or trackers.
+- No third-party fonts, scripts, or trackers. The only outbound traffic
+  is to the services above (GitHub for sync, ntfy.sh for reminders), and
+  only after you opt in.
 
 ## Permissions
 
@@ -38,6 +68,7 @@ If you paste a GitHub Personal Access Token into the sync section:
 - `host: ogame.gameforge.com` — content scripts run on game tabs;
   the XHR observer reads requests the game already fires.
 - `host: api.github.com` — only used when you enable gist sync.
+- `host: ntfy.sh` — only used when you enable fleet-landing reminders.
 
 ## Contact
 

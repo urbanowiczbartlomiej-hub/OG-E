@@ -40,6 +40,14 @@ talks to the game server on your behalf.
   Server selector at the top: each OGame universe keeps its own
   data slice, settings, and gist sync target. Export/import JSON,
   no telemetry.
+- **Fleet-landing reminders** — optional phone notifications a few
+  minutes before a fleet returns: expedition waves, ad-hoc fleet
+  arrivals, and fleet-save landings. Delivered through the public
+  [ntfy.sh](https://ntfy.sh) push service to a topic derived from *your
+  own* ntfy token; off until you enable it and paste a token. The
+  histogram page has a dashboard tab showing the queued waves, with
+  selectable schedule presets and manual cancel. Notification payloads
+  carry low-sensitivity flight data — see [`PRIVACY.md`](PRIVACY.md).
 - **Cloud sync** — cross-device sync through *your own* private GitHub
   gist. gzip-compressed payload (~6× smaller), 15 s debounce, anti-loop
   via a `changed` flag.
@@ -75,7 +83,7 @@ For a packaged release, see [`CONTRIBUTING.md`](CONTRIBUTING.md)
 ```bash
 npm install
 npm run dev           # rollup watch, rebuilds dist/ on save
-npm run test          # vitest, ~775 tests
+npm run test          # vitest, ~945 tests
 npm run typecheck     # tsc --noEmit, JSDoc-as-types
 npm run build:prod    # minified dist/ (terser, console dropped)
 ```
@@ -83,6 +91,9 @@ npm run build:prod    # minified dist/ (terser, console dropped)
 **Debug flags** (set in DevTools Console):
 - `localStorage.oge_debugSendCol = 'true'` — log Send/Scan click context.
 - `localStorage.oge_debugMinGap = 'true'` — log min-gap inputs/outputs.
+- `localStorage.oge_debugLoggerEnabled = 'true'` — turn on the diagnostic
+  logger: echoes `[OG-E]` events to the console and keeps the last ~500
+  in an in-memory ring buffer (`logger.getEntries()` to grab them).
 
 ---
 
@@ -98,8 +109,9 @@ src/
 ├── domain/        pure logic: scans, positions, registry, scheduling
 ├── state/         observable stores + persistence wiring
 ├── bridges/       MAIN-world XHR observers → DOM events
-├── features/      UI modules: sendExp, sendCol, badges, abandon...
-└── sync/          gist round-trip (gzip + debounce + anti-loop)
+├── features/      UI modules: sendExp, sendCol, badges, abandon, reminders...
+└── sync/          gist round-trip (gzip + debounce + anti-loop) and
+                   the ntfy reminder scheduler
 ```
 
 **Data flow.** Bridges (MAIN world) observe the game's XHRs and dispatch
@@ -138,12 +150,23 @@ gist. Every device that knows the same token syncs to that gist
 (15 s debounce, merge-on-write, anti-loop). The gist is yours; OG-E
 has no server.
 
+**How do fleet-landing reminders work?** When enabled, OG-E reads the
+return times of fleets the game already shows you and schedules a push
+notification a few minutes before each landing via ntfy.sh. You install
+the ntfy app, create a token, and paste it into OG-E's settings; the
+notification topic is derived from that token. Reminders never send game
+traffic — they only schedule a notification to yourself. The payload
+carries low-sensitivity flight data, so treat the topic as a secret. See
+[`PRIVACY.md`](PRIVACY.md).
+
 ---
 
 ## Privacy
 
-No servers, no telemetry. Optional gist-based sync uses a GitHub PAT
-*you* supply. Full statement: [`PRIVACY.md`](PRIVACY.md).
+No servers of our own, no telemetry. The two features that leave your
+browser are both opt-in and both point at a service *you* control:
+gist-based sync (a GitHub PAT you supply) and fleet-landing reminders
+(an ntfy.sh token you supply). Full statement: [`PRIVACY.md`](PRIVACY.md).
 
 ## License
 
