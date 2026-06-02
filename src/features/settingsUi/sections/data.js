@@ -11,15 +11,15 @@ import { parseUniverseId } from '../../../lib/universeId.js';
  * URL of the OG-E Dashboard extension page, resolved once at module eval
  * via `chrome.runtime.getURL` / `browser.runtime.getURL`. Empty string
  * when the WebExtension runtime API isn't present (test environments); the
- * click handler guards on this, so a missing URL just no-ops. The on-disk
- * filename is still `histogram.html` (kept stable across reloads); only the
- * visible name changed in v1.3.1.
+ * click handler guards on this, so a missing URL just no-ops. The visible
+ * name changed to "Dashboard" in v1.3.1; the on-disk page was renamed from
+ * the legacy `histogram.html` to `dashboard.html` in v1.11.1.
  */
 const DASHBOARD_URL = (() => {
   try {
     const g = /** @type {any} */ (/** @type {unknown} */ (globalThis));
     const ns = g.browser ?? g.chrome;
-    const url = ns?.runtime?.getURL?.('histogram.html');
+    const url = ns?.runtime?.getURL?.('dashboard.html');
     return typeof url === 'string' ? url : '';
   } catch {
     return '';

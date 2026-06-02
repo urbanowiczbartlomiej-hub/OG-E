@@ -256,7 +256,7 @@ export const binFieldBuckets = (buckets, binSize) => {
  * percentages without re-summing the record.
  *
  * Exported for cross-module typing — the histogram renderers in
- * `features/histogram/` type their args against this.
+ * `features/dashboard/` type their args against this.
  *
  * @typedef {{
  *   total: number,

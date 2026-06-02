@@ -1,7 +1,7 @@
 // Rollup configuration — three IIFE bundles, one per execution context:
 //   src/content.js → dist/content.js   (extension isolated world)
 //   src/page.js    → dist/page.js      (MAIN world, shares game's JS realm)
-//   src/histogram.js → dist/histogram.js (extension page, own origin)
+//   src/dashboard.js → dist/dashboard.js (extension page, own origin)
 //
 // Outputs are single-file IIFE — manifest content_scripts load them directly.
 // No CommonJS, no node resolution: OG-E has zero runtime dependencies.
@@ -49,5 +49,5 @@ const bundle = (input, file) => ({
 export default [
   bundle('src/content.js', 'dist/content.js'),
   bundle('src/page.js', 'dist/page.js'),
-  bundle('src/histogram.js', 'dist/histogram.js'),
+  bundle('src/dashboard.js', 'dist/dashboard.js'),
 ];

@@ -65,7 +65,7 @@
 //
 // @see ../domain/waves.js — reconcileWaves / pruneNotifyState
 // @see ../state/settings.js — `reminderEnabled` / `reminderNtfyToken`
-// @see ../features/histogram/reminders.js — the preview consumer
+// @see ../features/dashboard/reminders.js — the preview consumer
 
 /* global fetch */
 

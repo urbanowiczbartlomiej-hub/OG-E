@@ -2,7 +2,7 @@
 // folder can be loaded as a temporary add-on straight from disk.
 //
 //   manifest.json       → dist/manifest.json
-//   src/histogram.html  → dist/histogram.html
+//   src/dashboard.html  → dist/dashboard.html
 //   icons/icon{16,48,128}.png → dist/icons/…
 //
 // One unified manifest.json serves both Chrome and Firefox. Firefox
@@ -30,7 +30,7 @@ const copy = (src, dest) => {
 console.log('copy-static: populating dist/ ...');
 mkdirSync(resolve(ROOT, 'dist'), { recursive: true });
 copy('manifest.json', 'dist/manifest.json');
-copy('src/histogram.html', 'dist/histogram.html');
+copy('src/dashboard.html', 'dist/dashboard.html');
 // Only the three sizes the manifest references. The 500×500
 // `icon.png` master stays in the repo as source material but never
 // ships — it's an 87 KB asset that the browser never resolves.

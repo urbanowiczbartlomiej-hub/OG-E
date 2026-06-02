@@ -111,7 +111,7 @@ import { parseUniverseId } from '../lib/universeId.js';
  * histogram and game live in separate origins and JS realms; the
  * shared storage area is the only reliable cross-origin channel.
  *
- * Exported so `features/histogram/io.js` (the writer) and any future
+ * Exported so `features/dashboard/io.js` (the writer) and any future
  * tooling can compose the same keys without redeclaring the suffix.
  */
 export const SYNC_REQUEST_KEY_BASE = 'oge_syncRequestAt';

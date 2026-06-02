@@ -5,9 +5,9 @@
 // empty runs, and a record-line summary.
 //
 // Pure DOM module. Every node is built with `document.createElement`,
-// classes match the rules in `histogram.html`, and no chrome.storage
+// classes match the rules in `dashboard.html`, and no chrome.storage
 // or network access happens here. Data flow is owned by the caller
-// (the page entry in `features/histogram/index.js`):
+// (the page entry in `features/dashboard/index.js`):
 //
 //   1. The page selects a universe and loads its `scans` map.
 //   2. The page reads `freePosSelect.value` for the chosen slot.
@@ -164,7 +164,7 @@ const buildRecord = (record) => {
 /**
  * @typedef {object} RenderFreeStreakOptions
  * @property {HTMLElement} containerEl
- *   Target wrapper — typically `#freeContainer` in histogram.html.
+ *   Target wrapper — typically `#freeContainer` in dashboard.html.
  *   Cleared and repainted on each call.
  * @property {HTMLElement | null} countInfoEl
  *   Optional `<span>` to update with a "Found N runs across M galaxies"

@@ -1,10 +1,10 @@
 // @ts-check
 
-// Histogram page entry — bootstrap + universe selector + storage-change
-// re-render.
+// OG-E Dashboard page entry — bootstrap + universe selector +
+// storage-change re-render.
 //
 // Loads data via chromeStore, invokes the render modules, and listens
-// for chrome.storage.onChanged to refresh. The histogram page is
+// for chrome.storage.onChanged to refresh. The dashboard page is
 // extension-origin and read-only: we don't wire state persistence
 // (initHistoryStore / initScansStore), because that's for the
 // game-origin content script's write-through. Here we simply read the
@@ -82,10 +82,11 @@ import { installReminders } from './reminders.js';
 // synced — accordion state is UI preference, not user data.
 const EXPANDED_LS_KEY = 'oge_expandedGalaxies';
 
-// localStorage key for the active histogram tab. Per-device UI prefs.
-// Possible values are the `data-tab` attributes from histogram.html:
-// `'colony'`, `'galaxy'`, `'free'`. Anything unrecognised falls back
-// to `'colony'` (the page's first tab).
+// localStorage key for the active dashboard tab. Per-device UI prefs.
+// Possible values are the `data-tab` attributes from dashboard.html:
+// `'colony'`, `'galaxy'`, `'free'`, `'reminders'`. Anything unrecognised
+// falls back to `'colony'` (the page's first tab). The key keeps its
+// legacy `oge_histogram` name so the saved preference survives the rename.
 const ACTIVE_TAB_LS_KEY = 'oge_histogramTab';
 const DEFAULT_TAB = 'colony';
 
@@ -146,14 +147,14 @@ const expandedGalaxies = new Set();
 /** @type {HTMLElement | null} */ let freeCountInfoEl;
 
 /**
- * Bootstrap the histogram page. Safe to call multiple times but
+ * Bootstrap the dashboard page. Safe to call multiple times but
  * there's no reason to — the HTML entry invokes this exactly once.
  * Defers real work until DOMContentLoaded when the page is still
  * loading so `document.getElementById` lookups resolve.
  *
  * @returns {void}
  */
-export const installHistogram = () => {
+export const installDashboard = () => {
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => { void boot(); });
   } else {
@@ -247,7 +248,7 @@ const discoverUniverses = async () => {
  *
  * Priority:
  *   1. `?host=<universeId>` URL param (set by the Settings panel's
- *      "Open histogram" button so opening from server X auto-selects
+ *      "Open OG-E Dashboard" button so opening from server X auto-selects
  *      X) — but only when that universe is in the discovered list, OR
  *      when the discovered list is empty (a freshly-opened universe
  *      with no data yet still deserves to show up as the active tab).
@@ -314,7 +315,7 @@ const populateUniverseSelect = (universes, active) => {
 
 /**
  * Resolve every DOM reference the page needs in one place. The IDs
- * here must match `histogram.html`; a missing node returns null and
+ * here must match `dashboard.html`; a missing node returns null and
  * typechecks as HTMLElement via cast — we'd crash on first use, which
  * is the right failure mode (a missing ID is a build-time issue, not
  * a runtime one worth paying defensive null checks for).

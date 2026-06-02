@@ -28,7 +28,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["histogram.html", "histogram.js", "icons/*.png"],
+      "resources": ["dashboard.html", "dashboard.js", "icons/*.png"],
       "matches": ["*://*.ogame.gameforge.com/*"]
     }
   ],

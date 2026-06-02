@@ -6,7 +6,7 @@
 //
 // Pure DOM module. Every node is produced with `document.createElement`
 // so we never touch innerHTML and never need CSS sanitisation. All
-// required styles already ship in `histogram.html` — this module only
+// required styles already ship in `dashboard.html` — this module only
 // sets class names, text content, and a single inline `height` on each
 // bar (see the bar-height algorithm note below).
 //
@@ -17,7 +17,7 @@
 // storage layer.
 //
 // @see ../../domain/histogram.js     — computeFieldStats / buildFieldBuckets
-// @see ../../../histogram.html       — CSS definitions for every class used
+// @see ../../../dashboard.html       — CSS definitions for every class used
 
 import {
   computeFieldStats,
@@ -61,7 +61,7 @@ const MIN_BAR_WIDTH_PX = 8;
  * runs to keep the data fresh. We estimate the on-screen width from
  * the viewport instead so binning still picks a sensible value.
  *
- * Subtracts twice the body's 20 px padding (see histogram.html) so
+ * Subtracts twice the body's 20 px padding (see dashboard.html) so
  * the estimate matches what the chart will actually get once shown.
  *
  * @returns {number}
@@ -73,7 +73,7 @@ const estimateChartWidth = () => Math.max(200, window.innerWidth - 40);
  * `position` observed in `entries`, sorted ascending.
  *
  * The first option (`<option value="all">`) is pre-rendered in
- * `histogram.html` and must survive re-renders — we preserve it and
+ * `dashboard.html` and must survive re-renders — we preserve it and
  * pop only the Position-N entries added by previous calls.
  *
  * # Preserving the user's selection across re-populates

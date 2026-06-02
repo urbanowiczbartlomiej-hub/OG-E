@@ -13,6 +13,40 @@
 
 import { describe, it, expect } from 'vitest';
 import { reconcileWaves } from '../../../src/domain/waves.js';
+import { collectOurMessageIds } from '../../../src/features/dashboard/reminders.js';
+
+describe('collectOurMessageIds — orphan-sweep claims every reminder kind', () => {
+  // Partial ReminderState shapes — only the notify maps matter here, so we
+  // cast through `any` rather than build full states for each case.
+  /** @param {any} s @returns {Record<string, import('../../../src/sync/reminders.js').ReminderState>} */
+  const asStates = (s) => s;
+
+  it('unions wave, ad-hoc AND fleet-save ids (regression: FS were missed)', () => {
+    const ids = collectOurMessageIds(asStates({
+      u1: {
+        notifyState: { w1: { scheduledMessageIds: ['wave-a', 'wave-b'] } },
+        adhocNotify: { e1: { scheduledMessageIds: ['adhoc-a'] } },
+        fleetSaveNotify: { f1: { scheduledMessageIds: ['fs-a', 'fs-b'] } },
+      },
+    }));
+    // The whole point of the fix: fs-* must be claimed so the sweep never
+    // cancels live fleet-save pushes as phantom orphans.
+    expect([...ids].sort()).toEqual(['adhoc-a', 'fs-a', 'fs-b', 'wave-a', 'wave-b']);
+  });
+
+  it('tolerates missing maps and missing scheduledMessageIds', () => {
+    expect(collectOurMessageIds(asStates({ u1: {} })).size).toBe(0);
+    expect(collectOurMessageIds(asStates({ u1: { notifyState: { w1: {} } } })).size).toBe(0);
+  });
+
+  it('unions across multiple universes', () => {
+    const ids = collectOurMessageIds(asStates({
+      u1: { fleetSaveNotify: { f1: { scheduledMessageIds: ['a'] } } },
+      u2: { fleetSaveNotify: { f2: { scheduledMessageIds: ['b'] } } },
+    }));
+    expect([...ids].sort()).toEqual(['a', 'b']);
+  });
+});
 
 /**
  * Compute the age guard used inside `refreshPreview`.

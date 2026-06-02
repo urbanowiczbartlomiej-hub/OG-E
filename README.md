@@ -33,20 +33,21 @@ talks to the game server on your behalf.
   your `colMinFields` threshold, a big red overlay offers abandon in
   three clicks. The buttons are injected inside the game's own popups
   for mobile safety.
-- **Histogram + galaxy map** — extension page with three tabs:
+- **OG-E Dashboard** — extension page with four tabs:
   *Colony Sizes* (bar chart with adaptive binning), *Galaxy
-  Observations* (499-pixel maps + per-galaxy reset), and *Free
-  Positions* (longest confirmed-empty runs per slot, top-20 table).
-  Server selector at the top: each OGame universe keeps its own
-  data slice, settings, and gist sync target. Export/import JSON,
-  no telemetry.
+  Observations* (499-pixel maps + per-galaxy reset), *Free
+  Positions* (longest confirmed-empty runs per slot, top-20 table),
+  and *Reminders* (see below). Server selector at the top: each OGame
+  universe keeps its own data slice, settings, and gist sync target.
+  Export/import JSON, no telemetry.
 - **Fleet-landing reminders** — optional phone notifications a few
   minutes before a fleet returns: expedition waves, ad-hoc fleet
   arrivals, and fleet-save landings. Delivered through the public
   [ntfy.sh](https://ntfy.sh) push service to a topic derived from *your
   own* ntfy token; off until you enable it and paste a token. The
-  histogram page has a dashboard tab showing the queued waves, with
-  selectable schedule presets and manual cancel. Notification payloads
+  Dashboard's *Reminders* tab shows everything currently queued —
+  expedition waves, ad-hoc fleets, and fleet-saves — with selectable
+  schedule presets and manual cancel. Notification payloads
   carry low-sensitivity flight data — see [`PRIVACY.md`](PRIVACY.md).
 - **Cloud sync** — cross-device sync through *your own* private GitHub
   gist. gzip-compressed payload (~6× smaller), 15 s debounce, anti-loop
@@ -103,7 +104,7 @@ npm run build:prod    # minified dist/ (terser, console dropped)
 src/
 ├── content.js     isolated-world entry  (document_start)
 ├── page.js        MAIN-world entry      (XHR hooks)
-├── histogram.js   extension page entry
+├── dashboard.js   extension page entry (the OG-E Dashboard)
 │
 ├── lib/           pure helpers: store, storage, dom, gzip, debounce...
 ├── domain/        pure logic: scans, positions, registry, scheduling

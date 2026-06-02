@@ -369,7 +369,7 @@ export const disposeSettingsStore = () => {
 // clobber each other in the shared `chrome.storage.local` area. The
 // histogram reads the mirror for the currently-selected universe.
 //
-// @see ../features/histogram/index.js — colPositions reader
+// @see ../features/dashboard/index.js — colPositions reader
 
 /**
  * Suffix portion of the chrome.storage.local key the histogram reads.

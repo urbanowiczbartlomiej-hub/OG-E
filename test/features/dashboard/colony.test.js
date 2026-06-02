@@ -1,16 +1,16 @@
 // @vitest-environment happy-dom
 //
-// Unit tests for `features/histogram/colony.js` — the colony-size
+// Unit tests for `features/dashboard/colony.js` — the colony-size
 // histogram renderer. We exercise the `populatePositionFilter` helper
 // in particular because it underpins the position filter on the
-// histogram page; a regression there silently drops user selections
-// and was observed in the wild.
+// dashboard's Colony Sizes tab; a regression there silently drops user
+// selections and was observed in the wild.
 //
 // @ts-check
 
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { populatePositionFilter } from '../../../src/features/histogram/colony.js';
+import { populatePositionFilter } from '../../../src/features/dashboard/colony.js';
 
 /**
  * @typedef {import('../../../src/state/history.js').ColonyEntry} ColonyEntry

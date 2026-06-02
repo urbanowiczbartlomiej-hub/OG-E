@@ -6,7 +6,7 @@
 //
 // Pure DOM module. Every node is produced with `document.createElement`
 // and styled via `style.cssText` inline; the `.stat-card` / `.empty`
-// classes come from the page stylesheet in `histogram.html`. No
+// classes come from the page stylesheet in `dashboard.html`. No
 // chrome.storage access, no network, no module-level state — everything
 // flows through `opts`.
 //
@@ -92,7 +92,7 @@ export const renderGalaxyMap = (opts) => {
     onResetGalaxy,
   } = opts;
   // `onClearAll` is intentionally unread: the top-level "Clear observation
-  // data" button lives in histogram.html and is wired by index.js, not
+  // data" button lives in dashboard.html and is wired by index.js, not
   // here. Keeping the parameter in the signature preserves a stable
   // consumer contract — see module header.
   void opts.onClearAll;
@@ -233,7 +233,7 @@ export const renderGalaxyMap = (opts) => {
 /**
  * Build one stat card (coloured value + monochrome label). Relies on
  * the `.stat-card` / `.stat-value` / `.stat-label` classes already
- * defined in `histogram.html`; only the value colour is set inline
+ * defined in `dashboard.html`; only the value colour is set inline
  * because it varies per status.
  *
  * @param {string} color

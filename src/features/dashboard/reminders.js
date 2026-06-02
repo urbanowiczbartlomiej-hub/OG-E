@@ -47,7 +47,7 @@ const el = {};
 let wired = false;
 
 /**
- * Callback handed in by the host page (`features/histogram/index.js`)
+ * Callback handed in by the host page (`features/dashboard/index.js`)
  * so the reminders tab knows which universe is currently selected in
  * the page-wide universe selector. Returns `''` when no universe has
  * been resolved yet (e.g. the dashboard just booted, before
@@ -176,6 +176,35 @@ const fetchAllReminderStates = async (gistId, gistToken) => {
 };
 
 /**
+ * Collect every ntfy message id that belongs to a LIVE reminder, unioned
+ * across all universes and across all three reminder kinds: expedition
+ * waves (`notifyState`), ad-hoc fleets (`adhocNotify`) and auto-detected
+ * fleet-saves (`fleetSaveNotify`).
+ *
+ * The orphan sweep deletes any message on the ntfy queue that is NOT in
+ * this set, so EVERY kind that schedules messages must be unioned in here.
+ * Omitting a kind makes the sweep treat its live pushes as phantom orphans
+ * and cancel them — exactly the bug that left fleet-save pings silently
+ * torn down from the dashboard side.
+ *
+ * @param {Record<string, ReminderState>} states
+ * @returns {Set<string>}
+ */
+export const collectOurMessageIds = (states) => {
+  /** @type {Set<string>} */
+  const ours = new Set();
+  for (const state of Object.values(states)) {
+    const maps = [state.notifyState, state.adhocNotify, state.fleetSaveNotify];
+    for (const map of maps) {
+      for (const e of Object.values(map || {})) {
+        if (e?.scheduledMessageIds) for (const id of e.scheduledMessageIds) ours.add(id);
+      }
+    }
+  }
+  return ours;
+};
+
+/**
  * Fetch all per-universe gist states + the ntfy.sh queue in parallel,
  * then render one section per universe with the same per-wave card
  * layout as before. Falls back to the chrome.storage mirror dict when
@@ -227,18 +256,9 @@ const refreshPreview = async () => {
     // file is fresh (< 120 s old) to avoid cancelling messages that
     // were just posted but not yet PATCHed.
     let orphansCancelled = 0;
-    /** @type {Set<string>} */
-    const ours = new Set();
+    const ours = collectOurMessageIds(states);
     let freshestAge = Infinity;
     for (const state of Object.values(states)) {
-      for (const e of Object.values(state.notifyState || {})) {
-        if (e.scheduledMessageIds) for (const id of e.scheduledMessageIds) ours.add(id);
-      }
-      // Ad-hoc messages are ours too — must be unioned in or the sweep
-      // would cancel every armed ad-hoc reminder as an "orphan".
-      for (const e of Object.values(state.adhocNotify || {})) {
-        if (e.scheduledMessageIds) for (const id of e.scheduledMessageIds) ours.add(id);
-      }
       if (state.updatedAt) {
         const age = nowSec - Math.floor(new Date(state.updatedAt).getTime() / 1000);
         if (age < freshestAge) freshestAge = age;
@@ -353,6 +373,7 @@ const renderPreviewMulti = (states, ntfyMap) => {
   section.appendChild(node('h3', { class: 'rem-universe-head', text: active }));
   renderWavesInto(section, active, state, ntfyMap);
   renderAdhocInto(section, active, state, ntfyMap);
+  renderFleetSavesInto(section, state, ntfyMap);
   root.appendChild(section);
 };
 
@@ -602,6 +623,83 @@ const renderAdhocInto = (section, universeId, state, ntfyMap) => {
     card.appendChild(head);
 
     card.appendChild(node('div', { class: 'wave-meta', text: e.label || 'Fleet reminder' }));
+
+    if (queued) {
+      const firesAt = node('div', { class: 'wave-fires' });
+      firesAt.appendChild(node('span', { text: 'Fires at: ' }));
+      firesAt.appendChild(node('span', {
+        class: 'wave-times',
+        text: stillQueued.map((m) => new Date(m.time * 1000).toLocaleTimeString()).join(', '),
+      }));
+      card.appendChild(firesAt);
+    }
+
+    section.appendChild(card);
+  }
+};
+
+/**
+ * Render one universe's auto-detected FLEET-SAVE reminders into `section`,
+ * below the ad-hoc list. Read-only BY DESIGN: a fleet-save is never armed
+ * or cancelled by the player — it is auto-detected from a large outbound/
+ * return leg and self-cleans the moment its event row vanishes (the fleet
+ * lands or is recalled). See `domain/fleetSave.js`. So, unlike waves and
+ * ad-hoc, there is deliberately NO cancel button here; the tab only
+ * surfaces what's been detected and which pings ntfy still holds.
+ *
+ * Each fleet-save schedules a SERIES of pings (offsets relative to arrival),
+ * so the card mirrors the wave layout: a "fires at" line lists every
+ * still-queued slot chronologically.
+ *
+ * Guards on `Array.isArray(state.fleetSave)` because the dashboard's live
+ * gist fetch parses files raw (no forward-normalisation), so a pre-v5 file
+ * legitimately has no fleet-save block.
+ *
+ * @param {HTMLElement} section
+ * @param {ReminderState} state
+ * @param {Map<string, { id: string, time: number }>} ntfyMap
+ * @returns {void}
+ */
+const renderFleetSavesInto = (section, state, ntfyMap) => {
+  const entries = Array.isArray(state?.fleetSave) ? state.fleetSave : [];
+  if (entries.length === 0) return;
+
+  section.appendChild(node('h4', { class: 'rem-universe-head', text: 'Fleet-save reminders' }));
+
+  const notify = state.fleetSaveNotify || {};
+  const sorted = entries.slice().sort((a, b) => a.arrivalAt - b.arrivalAt);
+  for (const e of sorted) {
+    const ids = notify[e.id]?.scheduledMessageIds ?? [];
+    const totalScheduled = ids.length;
+    const stillQueued = ids
+      .map((id) => ntfyMap.get(id))
+      .filter(/** @returns {m is { id: string, time: number }} */ (m) => Boolean(m))
+      .sort((a, b) => a.time - b.time);
+    const queued = stillQueued.length > 0;
+
+    const card = node('div', { class: 'rem-wave' + (queued ? '' : ' cancelled') });
+
+    const head = node('div', { class: 'wave-head' });
+    head.appendChild(node('span', {
+      class: 'wave-when',
+      text: new Date(e.arrivalAt * 1000).toLocaleString(),
+    }));
+    const badgeText = queued ? 'queued' : (totalScheduled > 0 ? 'fired' : 'not scheduled');
+    head.appendChild(node('span', { class: 'rem-badge' + (queued ? '' : ' cancelled'), text: badgeText }));
+    card.appendChild(head);
+
+    /** @param {number} n */
+    const plural = (n) => (n === 1 ? '' : 's');
+    let metaText = e.label || 'Fleet save';
+    if (Number.isFinite(e.shipCount)) metaText += ` · ${e.shipCount} ship${plural(e.shipCount)}`;
+    if (totalScheduled > 0) {
+      metaText += ` · ${totalScheduled} reminder${plural(totalScheduled)} scheduled`;
+      if (ntfyMap.size > 0) {
+        const fired = totalScheduled - stillQueued.length;
+        metaText += fired > 0 ? ` (${fired} fired, ${stillQueued.length} pending)` : ' (all pending)';
+      }
+    }
+    card.appendChild(node('div', { class: 'wave-meta', text: metaText }));
 
     if (queued) {
       const firesAt = node('div', { class: 'wave-fires' });
