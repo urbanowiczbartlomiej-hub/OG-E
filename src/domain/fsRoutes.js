@@ -358,3 +358,73 @@ export const migrateFsRoutes = (stored) => {
   }
   return { routes, collectTarget };
 };
+
+/**
+ * @typedef {object} RemovedEndpoint
+ * @property {TargetCoord} coord  The endpoint that no longer exists.
+ * @property {'source' | 'target'} role  Which side it was on.
+ */
+
+/**
+ * Prune route endpoints that no longer exist among the player's captured
+ * bodies. An endpoint (source or target) survives iff its
+ * {@link coordTypeKey} is in `bodies`; a route is DROPPED entirely once it
+ * loses all sources OR all targets (it can no longer fire / has nowhere to
+ * send). Pure — returns a new routes array (unchanged routes keep their
+ * original reference) plus the list of removed endpoints for reporting.
+ *
+ * # Caller contract (IMPORTANT)
+ *
+ * Reconcile ONLY against a NON-EMPTY `bodies` snapshot. An empty inventory
+ * (capture not yet run, or a mis-read) would mark every endpoint invalid
+ * and wipe all routes. `features/planetBarCapture` already refuses to
+ * persist an empty capture, so the snapshot handed here is real; this
+ * function additionally short-circuits to a no-op (identity, no removals)
+ * when `bodies` is empty, as a second line of defence.
+ *
+ * `changed` is implied by `removed.length > 0` — equivalently, the returned
+ * `routes` is reference-equal to the input's surviving routes only when
+ * nothing was pruned, so the caller can skip the store write when
+ * `removed` is empty (anti-loop).
+ *
+ * @param {Route[]} routes
+ * @param {Array<{ galaxy: number, system: number, position: number, type: number }>} bodies
+ * @returns {{ routes: Route[], removed: RemovedEndpoint[] }}
+ */
+export const reconcileRoutes = (routes, bodies) => {
+  if (!Array.isArray(routes)) return { routes: [], removed: [] };
+  // Empty inventory ⇒ no-op (see caller contract): never prune against it.
+  if (!Array.isArray(bodies) || bodies.length === 0) {
+    return { routes, removed: [] };
+  }
+  const valid = new Set(bodies.map(coordTypeKey));
+  /** @type {RemovedEndpoint[]} */
+  const removed = [];
+  /** @type {Route[]} */
+  const out = [];
+
+  for (const route of routes) {
+    if (!route || !Array.isArray(route.sources) || !Array.isArray(route.targets)) {
+      continue; // malformed — drop silently (migrate already filters these)
+    }
+    const sources = route.sources.filter((s) => valid.has(coordTypeKey(s)));
+    const targets = route.targets.filter((t) => valid.has(coordTypeKey(t)));
+    const droppedSources = route.sources.filter((s) => !valid.has(coordTypeKey(s)));
+    const droppedTargets = route.targets.filter((t) => !valid.has(coordTypeKey(t)));
+
+    for (const s of droppedSources) removed.push({ coord: s, role: 'source' });
+    for (const t of droppedTargets) removed.push({ coord: t, role: 'target' });
+
+    if (sources.length === 0 || targets.length === 0) {
+      continue; // route can no longer fire / has nowhere to send → drop it
+    }
+    // Keep the original object reference when nothing changed (anti-loop).
+    out.push(
+      droppedSources.length || droppedTargets.length
+        ? { ...route, sources, targets }
+        : route,
+    );
+  }
+
+  return { routes: out, removed };
+};

@@ -5,9 +5,17 @@
 // On each in-game page-load it reads the left planet bar (`#planetList`),
 // extracts every planet and moon as a {@link Body}, and writes the whole
 // list to {@link bodiesStore}. The dashboard route editor (extension
-// origin) reads that snapshot to render a clickable planet/moon picker, and
-// `domain/fsRoutes.reconcileRoutes` uses it to prune routes whose endpoints
-// no longer exist (wired in a later step).
+// origin) reads that snapshot to render a clickable planet/moon picker.
+//
+// # Route reconciliation (prune dead endpoints)
+//
+// After a successful capture it also RECONCILES the fleet-save routes: any
+// route source/target whose body no longer exists is dropped, and a route
+// that loses all sources or all targets is removed entirely. This is gated
+// on {@link whenFsRoutesHydrated} (so it never prunes against not-yet-loaded
+// routes) and only writes when something actually changed (anti-loop). The
+// removals are logged. Because capture only ever runs against a non-empty
+// bar (see below), reconciliation never sees an empty inventory.
 //
 // # Why a full overwrite (not an incremental merge)
 //
@@ -45,10 +53,13 @@
 // @ts-check
 
 import { waitFor } from '../lib/dom.js';
+import { logger } from '../lib/logger.js';
 import { GAME } from '../lib/gameDom.js';
 import { TARGET_PLANET, TARGET_MOON } from '../domain/rules.js';
 import { parseKoords, dedupeBodies, isCompleteBody } from '../domain/bodies.js';
+import { reconcileRoutes } from '../domain/fsRoutes.js';
 import { bodiesStore, whenBodiesHydrated } from '../state/bodies.js';
+import { fsRoutesStore, whenFsRoutesHydrated } from '../state/fsRoutes.js';
 
 /**
  * @typedef {import('../domain/bodies.js').Body} Body
@@ -156,15 +167,41 @@ export const readPlanetBar = () => {
 
 /**
  * Single capture attempt. Reads the bar and, ONLY when it found ≥1 body,
- * replaces the stored snapshot. Returns `true` iff it persisted.
+ * replaces the stored snapshot. Returns the captured bodies on success
+ * (so the caller can reconcile routes against them), or `null` when the
+ * bar was empty / not ready.
  *
- * @returns {boolean}
+ * @returns {Body[] | null}
  */
 const tryCapture = () => {
   const bodies = readPlanetBar();
-  if (bodies.length === 0) return false; // Not ready / nothing to store.
+  if (bodies.length === 0) return null; // Not ready / nothing to store.
   bodiesStore.set({ bodies, capturedAt: Date.now() });
-  return true;
+  return bodies;
+};
+
+/**
+ * Prune fleet-save routes against a fresh body snapshot. Gated on
+ * {@link whenFsRoutesHydrated} so routes are loaded before we judge what's
+ * "dead", and writes back only when {@link reconcileRoutes} actually
+ * removed something (anti-loop). Logs what was dropped.
+ *
+ * @param {Body[]} bodies  A non-empty capture (the caller guarantees this).
+ * @returns {void}
+ */
+const reconcileRoutesAgainst = (bodies) => {
+  void whenFsRoutesHydrated().then(() => {
+    const { routes } = fsRoutesStore.get();
+    const { routes: pruned, removed } = reconcileRoutes(routes, bodies);
+    if (removed.length === 0) return;
+    fsRoutesStore.update((prev) => ({ ...prev, routes: pruned }));
+    const detail = removed
+      .map((r) => `${r.role} ${r.coord.galaxy}:${r.coord.system}:${r.coord.position}:${r.coord.type}`)
+      .join(', ');
+    logger.log(
+      `[planetBarCapture] pruned ${removed.length} dead route endpoint(s): ${detail}`,
+    );
+  });
 };
 
 /**
@@ -197,12 +234,17 @@ export const installPlanetBarCapture = () => {
   };
 
   void whenBodiesHydrated().then(() => {
-    if (tryCapture()) return;
+    const captured = tryCapture();
+    if (captured) {
+      reconcileRoutesAgainst(captured);
+      return;
+    }
     waitFor(
       () => document.querySelector(GAME.PLANET_LIST) !== null,
       { timeoutMs: 5000, intervalMs: 200 },
     ).then(() => {
-      tryCapture();
+      const retry = tryCapture();
+      if (retry) reconcileRoutesAgainst(retry);
     });
   });
 

@@ -124,6 +124,35 @@ export const fsRoutesStore = createStore(/** @type {FsRoutes} */ (emptyConfig())
 let disposeFn = null;
 
 /**
+ * Resolver for {@link hydratedPromise}, re-bound on every
+ * {@link initFsRoutesStore} call. See `state/history.js` for the full
+ * lifecycle rationale.
+ *
+ * @type {() => void}
+ */
+let resolveHydrated = () => {};
+
+/**
+ * The promise returned by {@link whenFsRoutesHydrated}. Pre-resolved until
+ * {@link initFsRoutesStore} swaps it for a pending one, so tests that bypass
+ * init don't hang awaiting a hydrate that never arrives.
+ *
+ * @type {Promise<void>}
+ */
+let hydratedPromise = Promise.resolve();
+
+/**
+ * Resolves once the {@link fsRoutesStore} hydrate phase has settled (the
+ * stored value — migrated if legacy — has been applied, or the load found
+ * nothing). The planet-bar capture gates route RECONCILIATION on this so it
+ * never prunes against not-yet-hydrated (empty) routes. Call as a function,
+ * not captured at import — the binding changes across init/dispose.
+ *
+ * @returns {Promise<void>}
+ */
+export const whenFsRoutesHydrated = () => hydratedPromise;
+
+/**
  * Wire the store to chrome.storage.local: hydrate from
  * `<universeId>:oge_fsRoutes` and write every change back (debounced).
  * Idempotent — subsequent calls return the same dispose handle without
@@ -134,6 +163,7 @@ let disposeFn = null;
  */
 export const initFsRoutesStore = () => {
   if (disposeFn) return disposeFn;
+  hydratedPromise = new Promise((resolve) => { resolveHydrated = resolve; });
   disposeFn = persist({
     store: fsRoutesStore,
     load: async () => {
@@ -147,6 +177,7 @@ export const initFsRoutesStore = () => {
     },
     save: (value) => chromeStore.set(currentFsRoutesKey(), value),
     debounceMs: DEBOUNCE_MS,
+    onHydrate: () => { resolveHydrated(); },
   });
   return disposeFn;
 };
@@ -171,6 +202,8 @@ export const disposeFsRoutesStore = () => {
     disposeFn();
     disposeFn = null;
   }
+  hydratedPromise = Promise.resolve();
+  resolveHydrated = () => {};
 };
 
 /**
