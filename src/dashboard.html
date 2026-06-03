@@ -176,7 +176,7 @@
     <button class="tab-btn" data-tab="galaxy" role="tab">Galaxy Observations</button>
     <button class="tab-btn" data-tab="free"   role="tab">Free Positions</button>
     <button class="tab-btn" data-tab="reminders" role="tab">Reminders</button>
-    <button class="tab-btn" data-tab="routes" role="tab">FS Routes</button>
+    <button class="tab-btn" data-tab="routes" role="tab">Trasy</button>
   </div>
   <div class="tools">
     <span class="label">Server</span>
@@ -269,28 +269,42 @@
 </section>
 
 <section id="routesSection" class="tab-section">
-  <h1>Fleet-Save Micro-Fleet Routes</h1>
-  <p style="color:#888;font-size:13px;margin-bottom:16px;">
-    Define which micro-fleets the <strong>Mikrofloty</strong> button sends, per source moon.
-    One route per line:
-    <code style="color:#4a9eff;">&lt;srcMoon&gt; = &lt;ship&gt;x&lt;count&gt; -&gt; &lt;target&gt;, &lt;target&gt;, …</code><br>
-    Ship is an alias (<code style="color:#4a9eff;">MT</code> / <code style="color:#4a9eff;">DT</code> /
-    <code style="color:#4a9eff;">PIO</code>) or a raw id (202 / 203 / 219); count accepts a
-    <code style="color:#4a9eff;">k</code> suffix (×1000). A target with a trailing
-    <code style="color:#4a9eff;">m</code> is a moon, otherwise a planet. Lines starting with
-    <code style="color:#4a9eff;">#</code> are comments. The collect target is set in-game with the
-    <strong>Zbieraj → Cel</strong> button, not here.
-  </p>
+  <h1>Trasy Transportowe</h1>
   <p style="color:#888;font-size:13px;margin-bottom:8px;">
-    Example: <code style="color:#4a9eff;">4:472:15 = DT x15000 -&gt; 4:475:14, 4:480:8m, 5:120:6</code>
+    Każda trasa wysyła mikroflotę z jednego lub więcej <strong>źródeł</strong>
+    (planet i/lub księżyców) do uporządkowanej listy <strong>celów</strong>. Stojąc na
+    dowolnym źródle, górna strefa przycisku Transport rozsyła flotę do celów po kolei.
+    Wybieraj ze swoich planet i księżyców — nic nie trzeba wpisywać. Cel zbierania ustawia się
+    w grze długim przytrzymaniem środkowej strefy przycisku Transport.
   </p>
-  <textarea id="routesDsl" spellcheck="false"
-    style="width:100%;min-height:260px;box-sizing:border-box;background:#0d1620;color:#cfe;border:1px solid #244;border-radius:6px;padding:10px;font-family:monospace;font-size:13px;line-height:1.5;"></textarea>
+  <p id="routesInvStatus" style="color:#888;font-size:12px;margin-bottom:12px;"></p>
+
+  <div id="routesList"></div>
+
   <div class="controls" style="margin-top:10px;">
+    <button id="routesAddBtn">+ Add route</button>
     <button id="routesSaveBtn">Save routes</button>
     <button id="routesRevertBtn">Revert</button>
     <span id="routesStatus" style="color:#888;font-size:13px;margin-left:12px;"></span>
   </div>
+
+  <details id="routesAdvanced" style="margin-top:18px;">
+    <summary style="cursor:pointer;color:#4a9eff;font-size:13px;">Advanced — text import / export (DSL)</summary>
+    <p style="color:#888;font-size:12px;margin:8px 0;">
+      One route per line:
+      <code style="color:#4a9eff;">&lt;src&gt;, … = &lt;ship&gt;x&lt;count&gt; -&gt; &lt;target&gt;, …</code> — ship is an alias
+      (<code style="color:#4a9eff;">MT</code>/<code style="color:#4a9eff;">DT</code>/<code style="color:#4a9eff;">PIO</code>)
+      or raw id; count takes a <code style="color:#4a9eff;">k</code> suffix (×1000); a trailing
+      <code style="color:#4a9eff;">m</code> marks a moon (on either side). Editing here and pressing
+      <em>Apply</em> replaces the cards above. This text is what syncs across devices.
+    </p>
+    <textarea id="routesDsl" spellcheck="false"
+      style="width:100%;min-height:160px;box-sizing:border-box;background:#0d1620;color:#cfe;border:1px solid #244;border-radius:6px;padding:10px;font-family:monospace;font-size:13px;line-height:1.5;"></textarea>
+    <div class="controls" style="margin-top:8px;">
+      <button id="routesDslApply">Apply DSL to editor</button>
+      <span id="routesDslStatus" style="color:#888;font-size:12px;margin-left:12px;"></span>
+    </div>
+  </details>
 </section>
 
 <script src="dashboard.js"></script>

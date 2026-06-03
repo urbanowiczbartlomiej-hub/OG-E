@@ -162,7 +162,7 @@ const installDomFeatures = () => {
   // User-facing buttons.
   installSendExp();
   installSendCol();
-  // Fleet-save micro-fleet buttons (Mikrofloty + Zbieraj). Gated on the
+  // Unified Transport button (wyślij mikrofloty + zbieraj). Gated on the
   // fsCollectMode setting (default off); independent of the others.
   installFsCollect();
 

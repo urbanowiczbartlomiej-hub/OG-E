@@ -263,12 +263,12 @@ const onMicroClick = () => {
   const body = readCurrentBody();
   const route = findRouteForBody(fsRoutesStore.get().routes, body);
   if (!route) {
-    flash(microZone, 'No route');
+    flash(microZone, 'Brak trasy');
     return;
   }
   const next = findNextMicroTarget(route.targets, microInFlightKeys());
   if (!next) {
-    flash(microZone, 'All sent');
+    flash(microZone, 'Wysłano');
     return;
   }
   location.href = buildDeployUrl(gameBase(), next, route.microFleet);
@@ -308,7 +308,7 @@ const onCollectClick = () => {
   }
 
   if (!target) {
-    flash(collectZone, 'No target');
+    flash(collectZone, 'Brak celu');
     return;
   }
   location.href = buildCollectUrl(gameBase(), target);
@@ -354,38 +354,38 @@ const refresh = () => {
   const targetZone = document.getElementById(FS_TARGET_ZONE_ID);
   const collectZone = document.getElementById(FS_COLLECT_ZONE_ID);
 
-  // Micro (top zone) label.
+  // Wyślij (top zone) label.
   if (microZone) {
     if (onFleetdispatch() && isStep2()) {
-      setLabel(microZone, 'Send', 'micro');
+      setLabel(microZone, 'Wyślij', 'micro');
     } else if (onFleetdispatch() && urlHasAm()) {
-      setLabel(microZone, 'Next', 'micro');
+      setLabel(microZone, 'Dalej', 'micro');
     } else {
       const body = readCurrentBody();
       const route = findRouteForBody(fsRoutesStore.get().routes, body);
       if (!route) {
-        setLabel(microZone, 'Micro', 'no route');
+        setLabel(microZone, 'Wyślij', 'brak trasy');
       } else {
         const left = countRemainingMicroTargets(route.targets, microInFlightKeys());
-        setLabel(microZone, left > 0 ? `${left}` : '0', 'micro');
+        setLabel(microZone, left > 0 ? `${left}` : '✓', 'wyślij');
       }
     }
   }
 
-  // Target (middle zone) label — shows current collect target.
+  // Cel (middle zone) label — shows current collect target.
   if (targetZone) {
     const t = fsRoutesStore.get().collectTarget;
-    setLabel(targetZone, t ? `${t.galaxy}:${t.system}:${t.position}` : '—', 'target');
+    setLabel(targetZone, t ? `${t.galaxy}:${t.system}:${t.position}` : '—', 'cel');
   }
 
-  // Collect (bottom zone) label.
+  // Zbieraj (bottom zone) label.
   if (collectZone) {
     if (onFleetdispatch() && isStep2()) {
-      setLabel(collectZone, 'Send', 'collect');
+      setLabel(collectZone, 'Wyślij', 'zbieraj');
     } else if (onFleetdispatch()) {
-      setLabel(collectZone, 'Next', 'collect');
+      setLabel(collectZone, 'Dalej', 'zbieraj');
     } else {
-      setLabel(collectZone, 'Collect');
+      setLabel(collectZone, 'Zbieraj');
     }
   }
 };
