@@ -87,8 +87,7 @@ export const installRoutes = ({ getUniverseId }) => {
   const list = document.getElementById('routesList');
   const invStatus = document.getElementById('routesInvStatus');
   const addBtn = document.getElementById('routesAddBtn');
-  const saveBtn = document.getElementById('routesSaveBtn');
-  const revertBtn = document.getElementById('routesRevertBtn');
+  const saveBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById('routesSaveBtn'));
   const status = document.getElementById('routesStatus');
   const dsl = /** @type {HTMLTextAreaElement | null} */ (document.getElementById('routesDsl'));
   const dslApply = document.getElementById('routesDslApply');
@@ -348,6 +347,32 @@ export const installRoutes = ({ getUniverseId }) => {
     // Keep the Advanced DSL mirror in sync (export view).
     if (dsl) dsl.value = formatRoutesDsl(model.routes);
     if (dslStatus) dslStatus.textContent = '';
+
+    updateSaveState();
+  };
+
+  /**
+   * Reflect unsaved-changes state on the Save button: emphasised (accent +
+   * trailing dot) when the in-memory routes differ from what was last
+   * loaded/saved, muted + disabled when everything is already persisted.
+   * There's no Revert — discarding is just a page refresh — so this dirty
+   * cue is the one nudge not to forget to save.
+   *
+   * @returns {void}
+   */
+  const updateSaveState = () => {
+    if (!saveBtn) return;
+    const dirty = JSON.stringify(model.routes) !== baseline;
+    saveBtn.disabled = !dirty;
+    saveBtn.textContent = dirty ? 'Save routes •' : 'Save routes';
+    saveBtn.style.opacity = dirty ? '1' : '0.55';
+    saveBtn.style.cursor = dirty ? 'pointer' : 'default';
+    // Empty string clears the inline override → falls back to the dashboard's
+    // base `.controls button` style when clean.
+    saveBtn.style.background = dirty ? '#2a5a2a' : '';
+    saveBtn.style.borderColor = dirty ? '#3a8a3a' : '';
+    saveBtn.style.color = dirty ? '#eaffea' : '';
+    saveBtn.style.fontWeight = dirty ? 'bold' : '';
   };
 
   // ── load / save ──────────────────────────────────────────────────────
@@ -408,11 +433,6 @@ export const installRoutes = ({ getUniverseId }) => {
     render();
   });
   saveBtn?.addEventListener('click', () => void save());
-  revertBtn?.addEventListener('click', () => {
-    model.routes = clone(JSON.parse(baseline));
-    render();
-    setStatus('Reverted to last saved.');
-  });
   dslApply?.addEventListener('click', () => {
     if (!dsl) return;
     const { routes, errors } = parseRoutesDsl(dsl.value);

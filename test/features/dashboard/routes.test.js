@@ -39,7 +39,6 @@ const MARKUP = `
   <div id="routesList"></div>
   <button id="routesAddBtn"></button>
   <button id="routesSaveBtn"></button>
-  <button id="routesRevertBtn"></button>
   <span id="routesStatus"></span>
   <details>
     <textarea id="routesDsl"></textarea>
@@ -186,7 +185,7 @@ describe('build a route by clicking', () => {
   });
 });
 
-describe('advanced DSL + revert', () => {
+describe('advanced DSL + dirty Save', () => {
   it('Apply parses the DSL into editor cards', async () => {
     seedBodies([]);
     seedRoutes([]);
@@ -202,18 +201,32 @@ describe('advanced DSL + revert', () => {
     expect($('#routesDslStatus').textContent).toContain('Applied 1 route');
   });
 
-  it('Revert restores the last loaded routes', async () => {
-    seedBodies([{ cp: 101, name: 'K1', ...moon(4, 467, 15) }]);
-    seedRoutes([{ sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8)], microFleet: { shipId: SHIP_LARGE_CARGO, count: 1 } }]);
+  it('marks Save dirty on an edit and clears it after saving', async () => {
+    seedBodies([
+      { cp: 101, name: 'K1', ...moon(4, 467, 15) },
+      { cp: 200, name: 'P2', ...planet(5, 172, 8) },
+    ]);
+    seedRoutes([]);
     install().refresh();
     await flush();
 
-    $('#routesAddBtn').click(); // dirty: now 2 cards
-    expect(list().querySelectorAll('button').length).toBeGreaterThan(0);
-    $('#routesRevertBtn').click();
+    const save = () => /** @type {HTMLButtonElement} */ ($('#routesSaveBtn'));
 
-    // Back to exactly one route's worth of content.
-    expect($('#routesStatus').textContent).toContain('Reverted');
-    expect(list().textContent).toContain('K1');
+    // Clean on load → disabled, no dot.
+    expect(save().disabled).toBe(true);
+    expect(save().textContent).toBe('Save routes');
+
+    // Build a complete route → dirty marker appears.
+    $('#routesAddBtn').click();
+    pick('add-source', '4:467:15:3');
+    pick('add-target', '5:172:8:1');
+    expect(save().disabled).toBe(false);
+    expect(save().textContent).toContain('•');
+
+    // Save → back to clean.
+    save().click();
+    await flush();
+    expect(save().disabled).toBe(true);
+    expect(save().textContent).toBe('Save routes');
   });
 });
