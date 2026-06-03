@@ -236,7 +236,16 @@ export const installRoutes = ({ getUniverseId }) => {
     // Header: title + remove route.
     const head = mk('div', 'display:flex;align-items:center;margin-bottom:8px;');
     head.appendChild(mk('strong', 'flex:1;color:#4a9eff;font-size:14px;', `Route ${idx + 1}`));
-    const del = /** @type {HTMLButtonElement} */ (mk('button', '', 'Remove route'));
+    // Inline-styled (it lives inside #routesList, so the dashboard's
+    // `.controls button` CSS doesn't reach it). Danger palette matching
+    // dashboard.html's `.controls button.danger`.
+    const del = /** @type {HTMLButtonElement} */ (
+      mk(
+        'button',
+        'background:#4a2a2a;border:1px solid #6a3a3a;color:#ff8888;padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;',
+        'Remove route',
+      )
+    );
     del.addEventListener('click', () => { model.routes.splice(idx, 1); render(); });
     head.appendChild(del);
     card.appendChild(head);
