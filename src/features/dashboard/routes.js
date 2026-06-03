@@ -49,9 +49,9 @@ import {
 
 /** Ship choices offered in the per-route fleet dropdown. */
 const SHIP_OPTIONS = [
-  { id: SHIP_SMALL_CARGO, label: 'MT — Mały transporter (202)' },
-  { id: SHIP_LARGE_CARGO, label: 'DT — Duży transporter (203)' },
-  { id: SHIP_PATHFINDER, label: 'PIO — Pionier (219)' },
+  { id: SHIP_SMALL_CARGO, label: 'Small cargo (202)' },
+  { id: SHIP_LARGE_CARGO, label: 'Large cargo (203)' },
+  { id: SHIP_PATHFINDER, label: 'Pathfinder (219)' },
 ];
 
 // ── tiny DOM helpers ─────────────────────────────────────────────────────

@@ -199,7 +199,7 @@ describe('formatRoutesDsl round-trip', () => {
     expect(reparsed).toEqual(once);
   });
 
-  it('renders known ship ids as aliases and moons with the m suffix on both sides', () => {
+  it('renders known ship ids as English aliases (SC/LC/PF) and moons with the m suffix', () => {
     const out = formatRoutesDsl([
       {
         sources: [tgt(4, 472, 15, TARGET_MOON)],
@@ -207,12 +207,32 @@ describe('formatRoutesDsl round-trip', () => {
         microFleet: { shipId: SHIP_LARGE_CARGO, count: 15000 },
       },
     ]);
-    expect(out).toBe('4:472:15m = DTx15000 -> 4:475:14, 4:480:8m');
+    expect(out).toBe('4:472:15m = LCx15000 -> 4:475:14, 4:480:8m');
   });
 
   it('is null-safe / empty on a non-array', () => {
     // @ts-expect-error intentional bad input
     expect(formatRoutesDsl({})).toBe('');
+  });
+});
+
+describe('ship aliases — English canonical + legacy Polish input', () => {
+  it('parses the canonical English codes SC / LC / PF (case-insensitive)', () => {
+    expect(parseRoutesDsl('1:1:1 = SC x10 -> 1:1:2').routes[0].microFleet.shipId).toBe(SHIP_SMALL_CARGO);
+    expect(parseRoutesDsl('1:1:1 = lc x10 -> 1:1:2').routes[0].microFleet.shipId).toBe(SHIP_LARGE_CARGO);
+    expect(parseRoutesDsl('1:1:1 = PF x10 -> 1:1:2').routes[0].microFleet.shipId).toBe(SHIP_PATHFINDER);
+  });
+
+  it('still ACCEPTS the legacy Polish codes MT / DT / PIO on input', () => {
+    expect(parseRoutesDsl('1:1:1 = MT x10 -> 1:1:2').routes[0].microFleet.shipId).toBe(SHIP_SMALL_CARGO);
+    expect(parseRoutesDsl('1:1:1 = DT x10 -> 1:1:2').routes[0].microFleet.shipId).toBe(SHIP_LARGE_CARGO);
+    expect(parseRoutesDsl('1:1:1 = PIO x10 -> 1:1:2').routes[0].microFleet.shipId).toBe(SHIP_PATHFINDER);
+  });
+
+  it('NORMALISES legacy input to the English alias on format', () => {
+    // Parse a legacy-DT line, re-format → it comes back as LC (never DT).
+    const { routes } = parseRoutesDsl('1:1:1 = DT x10 -> 1:1:2');
+    expect(formatRoutesDsl(routes)).toBe('1:1:1 = LCx10 -> 1:1:2');
   });
 });
 

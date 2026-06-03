@@ -128,11 +128,13 @@ export const findRouteForBody = (routes, body) => {
 //
 // One route per line:
 //   <src>, <src>, ... = <ship>x<count> -> <target>, <target>, ...
-//   e.g.  4:472:15m, 4:473:15m = DT x15000 -> 4:475:14, 4:480:8m, 5:120:6
+//   e.g.  4:472:15m, 4:473:15m = LC x15000 -> 4:475:14, 4:480:8m, 5:120:6
 //
 // src   : g:s:p with optional trailing `m` ⇒ moon (type 3), else planet.
 //         One or more, comma-separated — they share the line's fleet+targets.
-// ship  : alias MT/DT/PIO (case-insensitive) or raw id 202/203/219.
+// ship  : alias SC / LC / PF (Small cargo / Large cargo / Pathfinder,
+//         case-insensitive) or raw id 202 / 203 / 219. The legacy Polish
+//         codes MT / DT / PIO are still ACCEPTED on input but never emitted.
 // count : integer; a trailing `k` means ×1000.
 // target: g:s:p with optional trailing `m` ⇒ moon (type 3), else planet.
 // Blank lines and `#` comments are ignored. Malformed lines are reported
@@ -143,8 +145,19 @@ export const findRouteForBody = (routes, body) => {
 // `formatRoutesDsl` renders their sources with the `m` suffix — the DSL is
 // always self-describing about planet vs moon on both sides.
 
-/** Ship-alias → id map. @type {Record<string, number>} */
+/**
+ * Ship-alias → id map. Canonical English codes (SC/LC/PF) plus the legacy
+ * Polish codes (MT/DT/PIO) kept for backward-compatible INPUT only — a user
+ * pasting DSL copied from an older build still parses. {@link formatRoutesDsl}
+ * only ever emits the canonical codes via {@link ID_TO_ALIAS}.
+ *
+ * @type {Record<string, number>}
+ */
 const SHIP_ALIASES = {
+  SC: SHIP_SMALL_CARGO,
+  LC: SHIP_LARGE_CARGO,
+  PF: SHIP_PATHFINDER,
+  // Legacy Polish codes — accepted on input, never emitted.
   MT: SHIP_SMALL_CARGO,
   DT: SHIP_LARGE_CARGO,
   PIO: SHIP_PATHFINDER,
@@ -152,9 +165,9 @@ const SHIP_ALIASES = {
 
 /** Canonical alias per known id, for {@link formatRoutesDsl}. @type {Record<number, string>} */
 const ID_TO_ALIAS = {
-  [SHIP_SMALL_CARGO]: 'MT',
-  [SHIP_LARGE_CARGO]: 'DT',
-  [SHIP_PATHFINDER]: 'PIO',
+  [SHIP_SMALL_CARGO]: 'SC',
+  [SHIP_LARGE_CARGO]: 'LC',
+  [SHIP_PATHFINDER]: 'PF',
 };
 
 /**
@@ -263,7 +276,7 @@ export const parseRoutesDsl = (text) => {
     }
     const microFleet = parseShipToken(line.slice(eq + 1, arrow));
     if (!microFleet) {
-      errors.push({ line: lineNo, message: 'bad micro-fleet (expected e.g. DT x15000 or 203x15000)' });
+      errors.push({ line: lineNo, message: 'bad micro-fleet (expected e.g. LC x15000 or 203x15000)' });
       continue;
     }
     const tgt = parseCoordList(line.slice(arrow + 2));
@@ -285,7 +298,7 @@ export const parseRoutesDsl = (text) => {
 /**
  * Render a `routes` array back to canonical DSL text (one route per line).
  * `parseRoutesDsl(formatRoutesDsl(r)).routes` deep-equals `r`. Known ship
- * ids render as aliases (DT/MT/PIO); moons (sources OR targets) carry the
+ * ids render as aliases (SC/LC/PF); moons (sources OR targets) carry the
  * trailing `m`.
  *
  * @param {Route[]} routes
