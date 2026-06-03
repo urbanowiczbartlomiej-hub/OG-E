@@ -50,6 +50,44 @@
 
 import { safeLS } from '../../lib/storage.js';
 
+// ─── Shared stacking order (last-touched on top) ────────────────────────
+//
+// As the number of floating buttons grows (sendExp, sendCol, and the two
+// fsCollect buttons) they increasingly overlap. To keep the one the user
+// is reaching for usable, every drag/tap START raises that element above
+// the others: a single module-wide monotonic counter hands out
+// ever-larger z-index values, so the most-recently-touched button always
+// paints on top and covers the ones beneath it.
+//
+// All OG-E floating buttons historically pin `z-index:99999` in their
+// inline cssText, so the counter starts just above that — the first touch
+// of any button already lifts it over the static crowd, and subsequent
+// touches keep promoting whichever was touched last. Runtime-only by
+// design: there's nothing to persist, the order simply reflects recency
+// within the current page.
+
+/** Base z-index the floating buttons pin in their cssText. */
+const Z_BASE = 99999;
+
+/**
+ * Monotonic z-index dispenser. Bumped on every {@link bringToFront} call.
+ * Module scope so it is shared across every `installDrag` consumer — that
+ * sharing is the whole point (a global ordering across all buttons).
+ */
+let zTop = Z_BASE;
+
+/**
+ * Raise `element` above every other floating button by assigning it the
+ * next z-index from the shared counter. Called on each drag/tap start.
+ *
+ * @param {HTMLElement} element
+ * @returns {void}
+ */
+const bringToFront = (element) => {
+  zTop += 1;
+  element.style.zIndex = String(zTop);
+};
+
 /**
  * Wire mouse + touch drag onto a draggable element. The caller's click
  * listener should consult `wasDrag()` and short-circuit when it returns
@@ -86,6 +124,9 @@ export const installDrag = ({ element, posKey, dragThreshold = 8 }) => {
   const onStart = (cx, cy) => {
     isDragging = true;
     hasMoved = false;
+    // Raise the touched element above the other floating buttons so the
+    // one the user is interacting with is never hidden underneath.
+    bringToFront(element);
     startX = cx;
     startY = cy;
     const r = element.getBoundingClientRect();
