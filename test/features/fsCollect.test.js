@@ -1,10 +1,11 @@
 // @vitest-environment happy-dom
 //
-// Behavioral tests for the fsCollect orchestrator (the two floating
-// buttons). We drive real clicks through happy-dom and assert observable
-// outputs: mount/unmount, the collect-target write, and the navigations /
-// dispatch + redirect handoff. The pure URL/target logic and the redirect
-// bridge are covered by their own unit tests; here we prove the wiring.
+// Behavioral tests for the fsCollect orchestrator (the unified floating
+// button with three zones: micro, target, collect). We drive real clicks
+// and long-press through happy-dom and assert observable outputs: mount/unmount,
+// the collect-target write via long-press, and the navigations / dispatch +
+// redirect handoff. The pure URL/target logic and the redirect bridge are
+// covered by their own unit tests; here we prove the wiring.
 //
 // @ts-check
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -81,40 +82,43 @@ const enable = () => {
 describe('mount / unmount', () => {
   it('does not mount when fsCollectMode is off', () => {
     installFsCollect();
-    expect(document.getElementById('oge-fs-micro')).toBeNull();
-    expect(document.getElementById('oge-fs-collect')).toBeNull();
+    expect(document.getElementById('oge-fs-unified')).toBeNull();
   });
 
-  it('mounts both widgets when fsCollectMode is on', () => {
+  it('mounts the unified button with three zones when fsCollectMode is on', () => {
     enable();
     installFsCollect();
-    expect(document.getElementById('oge-fs-micro')).not.toBeNull();
-    expect(document.getElementById('oge-fs-collect-top')).not.toBeNull();
-    expect(document.getElementById('oge-fs-collect-set')).not.toBeNull();
+    expect(document.getElementById('oge-fs-unified')).not.toBeNull();
+    expect(document.getElementById('oge-fs-micro-zone')).not.toBeNull();
+    expect(document.getElementById('oge-fs-target-zone')).not.toBeNull();
+    expect(document.getElementById('oge-fs-collect-zone')).not.toBeNull();
   });
 
-  it('removes the widgets when the toggle flips off at runtime', () => {
+  it('removes the button when the toggle flips off at runtime', () => {
     enable();
     installFsCollect();
     settingsStore.set({ ...settingsStore.get(), fsCollectMode: false });
-    expect(document.getElementById('oge-fs-micro')).toBeNull();
-    expect(document.getElementById('oge-fs-collect')).toBeNull();
+    expect(document.getElementById('oge-fs-unified')).toBeNull();
   });
 });
 
-describe('set collect target', () => {
-  it('writes the current body (from meta tags) as collectTarget', () => {
+describe('set collect target (via long-press on middle zone)', () => {
+  it('writes the current body (from meta tags) as collectTarget on long-press', async () => {
     enable();
     installFsCollect();
     setBodyMeta('4:472:15', 'moon');
-    /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-set')).click();
+    const targetZone = /** @type {HTMLElement} */ (document.getElementById('oge-fs-target-zone'));
+    targetZone.dispatchEvent(new PointerEvent('pointerdown'));
+    // Simulate long-press: wait 300ms, then pointerup.
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    targetZone.dispatchEvent(new PointerEvent('pointerup'));
     expect(fsRoutesStore.get().collectTarget).toEqual({
       galaxy: 4, system: 472, position: 15, type: TARGET_MOON,
     });
   });
 });
 
-describe('micro send — navigation', () => {
+describe('micro send — navigation (top zone)', () => {
   it('navigates to the next route target preloading the micro-fleet', () => {
     enable();
     installFsCollect();
@@ -128,7 +132,7 @@ describe('micro send — navigation', () => {
       },
       collectTarget: null,
     });
-    /** @type {HTMLElement} */ (document.getElementById('oge-fs-micro')).click();
+    /** @type {HTMLElement} */ (document.getElementById('oge-fs-micro-zone')).click();
     expect(navTarget).toContain('galaxy=4&system=475&position=14&type=1&mission=4');
     expect(navTarget).toContain(`am${SHIP_LARGE_CARGO}=15000`);
   });
@@ -151,7 +155,7 @@ describe('micro send — navigation', () => {
     });
     // An inbound deployment to the first target (planet 4:475:14).
     // insertAdjacentHTML appends WITHOUT reparsing the body, so the
-    // already-mounted buttons keep their click/drag listeners.
+    // already-mounted button keeps its click/drag listeners.
     document.body.insertAdjacentHTML('beforeend', `
       <table id="eventContent"><tbody>
         <tr class="eventFleet" data-mission-type="4" data-return-flight="false">
@@ -160,13 +164,13 @@ describe('micro send — navigation', () => {
           <td class="destCoords"><a>[4:475:14]</a></td>
         </tr>
       </tbody></table>`);
-    /** @type {HTMLElement} */ (document.getElementById('oge-fs-micro')).click();
+    /** @type {HTMLElement} */ (document.getElementById('oge-fs-micro-zone')).click();
     // First target skipped → navigates to the second (4:480:8).
     expect(navTarget).toContain('system=480&position=8');
   });
 });
 
-describe('collect send — navigation + dispatch', () => {
+describe('collect send — navigation + dispatch (bottom zone)', () => {
   it('navigates to buildCollectUrl(target) when idle on a planet', () => {
     enable();
     installFsCollect();
@@ -174,7 +178,7 @@ describe('collect send — navigation + dispatch', () => {
       routes: {},
       collectTarget: { galaxy: 4, system: 472, position: 15, type: TARGET_MOON },
     });
-    /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-top')).click();
+    /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-zone')).click();
     expect(navTarget).toContain('galaxy=4&system=472&position=15&type=3&mission=4');
     expect(navTarget).not.toMatch(/&am\d+=/);
   });
@@ -187,7 +191,7 @@ describe('collect send — navigation + dispatch', () => {
       routes: {},
       collectTarget: { galaxy: 4, system: 472, position: 15, type: TARGET_MOON },
     });
-    // Planet list (via insertAdjacentHTML — preserves the mounted buttons'
+    // Planet list (via insertAdjacentHTML — preserves the mounted button's
     // listeners) + step-2 controls created with a real click spy.
     document.body.insertAdjacentHTML('beforeend', `
       <div id="planetList">
@@ -203,7 +207,7 @@ describe('collect send — navigation + dispatch', () => {
     resources.id = 'allresources';
     document.body.appendChild(resources);
 
-    /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-top')).click();
+    /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-zone')).click();
     expect(dispatched).toBe(true);
     expect(localStorage.getItem(FS_REDIRECT_KEY)).toContain('cp=200');
   });

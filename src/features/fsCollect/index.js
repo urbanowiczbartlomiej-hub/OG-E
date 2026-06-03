@@ -1,25 +1,27 @@
 // @ts-check
 
-// Fleet-save micro-fleet feature — TWO floating buttons that automate the
+// Fleet-save micro-fleet feature — ONE unified floating button that automates the
 // "park the fleet on a moon, scatter micro-fleets to the planets, then
 // pull everything back" workflow.
 //
-// # The two buttons
+// # The unified button — three zones
 //
-//   - "Mikrofloty" (single circle): from the current MOON, send a fixed
-//     micro-fleet (Stacjonuj / mission=4) to each target defined for that
-//     moon in the routes config, skipping targets that already have a
-//     deployment inbound. Ships are preloaded via the fleetdispatch URL
-//     `am<shipId>=count` param, so the page lands on fleet step 1 with the
-//     micro-fleet already selected.
-//   - "Zbieraj" (two halves like sendCol): TOP collects — from the current
-//     planet send EVERYTHING (all ships + all resources) back to the
-//     ad-hoc collect target. BOTTOM marks the body you're standing on as
-//     that collect target ("Cel").
+// A single circular button divided into three equal-height zones, stacked vertically:
+//
+//   - TOP (Micro): from the current MOON, send a fixed micro-fleet
+//     (Stacjonuj / mission=4) to each target defined for that moon in the routes
+//     config, skipping targets that already have a deployment inbound. Ships are
+//     preloaded via the fleetdispatch URL `am<shipId>=count` param, so the page
+//     lands on fleet step 1 with the micro-fleet already selected.
+//   - MIDDLE (Target): long-press (300ms+) to mark the current body as the
+//     ad-hoc collect target, shown as "galaxy:system:position". Single-tap
+//     navigates to the target page.
+//   - BOTTOM (Collect): from the current planet send EVERYTHING (all ships +
+//     all resources) back to the ad-hoc collect target.
 //
 // # Two-tap send model (TOS-safe: one click → one originated request)
 //
-// On the fleetdispatch page each button drives the game's own two-step
+// On the fleetdispatch page each zone drives the game's own two-step
 // form one tap at a time:
 //   - tap "Przygotuj" → (collect: select all ships) → click Continue,
 //     wait for step 2, relabel "Wyślij".
@@ -40,7 +42,7 @@
 // @see ./pure.js — URL builders, target picking, the routes DSL.
 // @see ./domHelpers.js — DOM readers + fleet-step drivers.
 // @see ../../bridges/deployRedirect.js — consumes `oge_fsRedirect`.
-// @see ../sendCol/index.js — two-half widget pattern reused here.
+// @see ../shared/draggableButton.js — drag + focus persistence.
 
 import { settingsStore } from '../../state/settings.js';
 import {
@@ -74,24 +76,24 @@ import {
 
 // ─── DOM ids / storage keys ─────────────────────────────────────────────
 
-const MICRO_ID = 'oge-fs-micro';
-const COLLECT_ID = 'oge-fs-collect';
-const COLLECT_TOP_ID = 'oge-fs-collect-top';
-const COLLECT_SET_ID = 'oge-fs-collect-set';
+const FS_UNIFIED_ID = 'oge-fs-unified';
+const FS_MICRO_ZONE_ID = 'oge-fs-micro-zone';
+const FS_TARGET_ZONE_ID = 'oge-fs-target-zone';
+const FS_COLLECT_ZONE_ID = 'oge-fs-collect-zone';
 
-const MICRO_POS_KEY = 'oge_fsMicroPos';
-const COLLECT_POS_KEY = 'oge_fsCollectPos';
+const FS_POS_KEY = 'oge_fsUnifiedPos';
 const FOCUS_KEY = 'oge_focusedBtn';
 
 const DRAG_THRESHOLD = 8;
 const DEFAULT_EDGE_OFFSET_PX = 20;
 const FLASH_MS = 1500;
 const SENT_LOCK_MS = 3000;
+const LONG_PRESS_MS = 300;
 
 // Colours — distinct from sendExp (blue) / sendCol (green/teal).
 const BG_MICRO = '#7b3fa0'; // violet
+const BG_TARGET = '#333'; // dark gray
 const BG_COLLECT = '#1f6f6f'; // teal-dark
-const BG_SET = '#444';
 
 // ─── helpers (impure env reads) ─────────────────────────────────────────
 
@@ -225,27 +227,27 @@ const safeWrite = (url) => {
 let busy = false;
 
 /**
- * "Mikrofloty" click. Idle/elsewhere → navigate to the next target for the
+ * TOP zone (Micro) click. Idle/elsewhere → navigate to the next target for the
  * current moon's route. On fleetdispatch → two-tap drive (Przygotuj/Wyślij).
  *
  * @returns {void}
  */
 const onMicroClick = () => {
   if (busy) return;
-  const micro = document.getElementById(MICRO_ID);
+  const microZone = document.getElementById(FS_MICRO_ZONE_ID);
 
   if (onFleetdispatch()) {
     if (isStep2()) {
       stashMicroRedirect();
       clickDispatch();
-      setLabel(micro, 'Sent');
+      setLabel(microZone, 'Sent');
       lockBriefly();
       return;
     }
     if (urlHasAm()) {
       // Step 1 with the micro-fleet preloaded → advance to step 2.
       clickContinue();
-      setLabel(micro, 'Wait…');
+      setLabel(microZone, 'Wait…');
       busy = true;
       waitForStep2().then(() => {
         busy = false;
@@ -260,19 +262,19 @@ const onMicroClick = () => {
   const body = readCurrentBody();
   const route = body ? fsRoutesStore.get().routes[coordKey(body)] : null;
   if (!route) {
-    flash(micro, 'No route');
+    flash(microZone, 'No route');
     return;
   }
   const next = findNextMicroTarget(route.targets, microInFlightKeys());
   if (!next) {
-    flash(micro, 'All sent');
+    flash(microZone, 'All sent');
     return;
   }
   location.href = buildDeployUrl(gameBase(), next, route.microFleet);
 };
 
 /**
- * "Zbieraj" (top half) click. Idle/elsewhere → navigate to the collect
+ * BOTTOM zone (Collect) click. Idle/elsewhere → navigate to the collect
  * target from the current planet. On fleetdispatch → two-tap drive,
  * selecting all ships (step 1) and all resources (step 2).
  *
@@ -280,7 +282,7 @@ const onMicroClick = () => {
  */
 const onCollectClick = () => {
   if (busy) return;
-  const top = document.getElementById(COLLECT_TOP_ID);
+  const collectZone = document.getElementById(FS_COLLECT_ZONE_ID);
   const target = fsRoutesStore.get().collectTarget;
 
   if (onFleetdispatch()) {
@@ -288,14 +290,14 @@ const onCollectClick = () => {
       loadAllResources();
       stashCollectRedirect(target);
       clickDispatch();
-      setLabel(top, 'Sent');
+      setLabel(collectZone, 'Sent');
       lockBriefly();
       return;
     }
     // Step 1: select all ships, then continue.
     selectAllShips();
     clickContinue();
-    setLabel(top, 'Wait…');
+    setLabel(collectZone, 'Wait…');
     busy = true;
     waitForStep2().then(() => {
       busy = false;
@@ -305,23 +307,23 @@ const onCollectClick = () => {
   }
 
   if (!target) {
-    flash(top, 'No target');
+    flash(collectZone, 'No target');
     return;
   }
   location.href = buildCollectUrl(gameBase(), target);
 };
 
 /**
- * "Cel" (bottom half) click. Mark the body you're currently on as the
+ * MIDDLE zone (Target) long-press. Mark the body you're currently on as the
  * ad-hoc collect target and persist it immediately.
  *
  * @returns {void}
  */
 const onSetTargetClick = () => {
-  const setHalf = document.getElementById(COLLECT_SET_ID);
+  const targetZone = document.getElementById(FS_TARGET_ZONE_ID);
   const body = readCurrentBody();
   if (!body) {
-    flash(setHalf, '?');
+    flash(targetZone, '?');
     return;
   }
   fsRoutesStore.update((prev) => ({ ...prev, collectTarget: body }));
@@ -339,51 +341,51 @@ const lockBriefly = () => {
   }, SENT_LOCK_MS);
 };
 
-// ─── refresh (repaint both widgets) ─────────────────────────────────────
+// ─── refresh (repaint unified button) ───────────────────────────────────
 
 /**
- * Recompute and repaint both buttons from current DOM + store state.
+ * Recompute and repaint the unified button from current DOM + store state.
  *
  * @returns {void}
  */
 const refresh = () => {
-  const micro = document.getElementById(MICRO_ID);
-  const top = document.getElementById(COLLECT_TOP_ID);
-  const setHalf = document.getElementById(COLLECT_SET_ID);
+  const microZone = document.getElementById(FS_MICRO_ZONE_ID);
+  const targetZone = document.getElementById(FS_TARGET_ZONE_ID);
+  const collectZone = document.getElementById(FS_COLLECT_ZONE_ID);
 
-  // Micro label.
-  if (micro) {
+  // Micro (top zone) label.
+  if (microZone) {
     if (onFleetdispatch() && isStep2()) {
-      setLabel(micro, 'Send', 'micro');
+      setLabel(microZone, 'Send', 'micro');
     } else if (onFleetdispatch() && urlHasAm()) {
-      setLabel(micro, 'Next', 'micro');
+      setLabel(microZone, 'Next', 'micro');
     } else {
       const body = readCurrentBody();
       const route = body ? fsRoutesStore.get().routes[coordKey(body)] : null;
       if (!route) {
-        setLabel(micro, 'Micro', 'no route');
+        setLabel(microZone, 'Micro', 'no route');
       } else {
         const left = countRemainingMicroTargets(route.targets, microInFlightKeys());
-        setLabel(micro, left > 0 ? `${left}` : '0', 'micro');
+        setLabel(microZone, left > 0 ? `${left}` : '0', 'micro');
       }
     }
   }
 
-  // Collect top label.
-  if (top) {
-    if (onFleetdispatch() && isStep2()) {
-      setLabel(top, 'Send', 'collect');
-    } else if (onFleetdispatch()) {
-      setLabel(top, 'Next', 'collect');
-    } else {
-      setLabel(top, 'Collect');
-    }
+  // Target (middle zone) label — shows current collect target.
+  if (targetZone) {
+    const t = fsRoutesStore.get().collectTarget;
+    setLabel(targetZone, t ? `${t.galaxy}:${t.system}:${t.position}` : '—', 'target');
   }
 
-  // Collect set-target label.
-  if (setHalf) {
-    const t = fsRoutesStore.get().collectTarget;
-    setLabel(setHalf, t ? `${t.galaxy}:${t.system}:${t.position}` : '—', 'target');
+  // Collect (bottom zone) label.
+  if (collectZone) {
+    if (onFleetdispatch() && isStep2()) {
+      setLabel(collectZone, 'Send', 'collect');
+    } else if (onFleetdispatch()) {
+      setLabel(collectZone, 'Next', 'collect');
+    } else {
+      setLabel(collectZone, 'Collect');
+    }
   }
 };
 
@@ -393,51 +395,17 @@ const refresh = () => {
 let installed = null;
 
 /**
- * Style a SINGLE circular button (the Micro widget). Combines the circle
- * geometry, content centering, and background in one `cssText` — splitting
- * it across two assignments on the same element would clobber the first,
- * leaving an unstyled rectangle in the document flow.
- *
- * @param {HTMLElement} btn
- * @param {number} size
- * @param {string} bg
- * @returns {void}
- */
-const styleSingle = (btn, size, bg) => {
-  btn.style.cssText = [
-    'position:fixed',
-    'border-radius:50%',
-    'display:flex',
-    'align-items:center',
-    'justify-content:center',
-    'text-align:center',
-    'color:#fff',
-    'font-weight:bold',
-    'border:none',
-    'cursor:pointer',
-    'z-index:99999',
-    'touch-action:none',
-    'user-select:none',
-    'box-shadow:0 2px 8px rgba(0,0,0,0.5)',
-    `width:${size}px`,
-    `height:${size}px`,
-    `font-size:${Math.round(size * 0.14)}px`,
-    `background:${bg}`,
-  ].join(';');
-};
-
-/**
- * Style a SPLIT widget — an outer circular wrap clipping two stacked
- * half-buttons. Wrap and halves are distinct elements, so the two
- * `cssText` assignments don't collide.
+ * Style the unified three-zone circular button. The wrapper defines the
+ * outer circle geometry, and each zone (micro/target/collect) is a flex
+ * child filling 1/3 of the height.
  *
  * @param {HTMLElement} wrap
- * @param {HTMLElement[]} halves
+ * @param {HTMLElement[]} zones  [microZone, targetZone, collectZone]
  * @param {number} size
- * @param {string[]} bgs  one bg per half
+ * @param {string[]} bgs  one bg per zone
  * @returns {void}
  */
-const styleSplit = (wrap, halves, size, bgs) => {
+const styleThreeZone = (wrap, zones, size, bgs) => {
   const fontSize = Math.round(size * 0.14) + 'px';
   wrap.style.cssText = [
     'position:fixed',
@@ -453,8 +421,8 @@ const styleSplit = (wrap, halves, size, bgs) => {
     `width:${size}px`,
     `height:${size}px`,
   ].join(';');
-  halves.forEach((h, i) => {
-    h.style.cssText = [
+  zones.forEach((z, i) => {
+    z.style.cssText = [
       'flex:1',
       'display:flex',
       'align-items:center',
@@ -471,17 +439,14 @@ const styleSplit = (wrap, halves, size, bgs) => {
 };
 
 /**
- * Restore a saved drag position onto `wrap`, else anchor bottom-right with
- * a per-button vertical offset so the two widgets don't spawn on top of
- * each other.
+ * Restore a saved drag position onto `wrap`, else anchor bottom-right.
  *
  * @param {HTMLElement} wrap
  * @param {string} posKey
  * @param {number} size
- * @param {number} stackOffset
  * @returns {void}
  */
-const placeWrap = (wrap, posKey, size, stackOffset) => {
+const placeWrap = (wrap, posKey, size) => {
   const saved = safeJson(posKey);
   if (
     saved &&
@@ -494,7 +459,7 @@ const placeWrap = (wrap, posKey, size, stackOffset) => {
     wrap.style.top = Math.min(p.y, window.innerHeight - size) + 'px';
   } else {
     wrap.style.right = DEFAULT_EDGE_OFFSET_PX + 'px';
-    wrap.style.bottom = DEFAULT_EDGE_OFFSET_PX + stackOffset + 'px';
+    wrap.style.bottom = DEFAULT_EDGE_OFFSET_PX + 'px';
   }
 };
 
@@ -509,104 +474,133 @@ const safeJson = (key) => {
 };
 
 /**
- * Install the fleet-save buttons. Idempotent — a second call returns the
+ * Install the unified fleet-save button. Idempotent — a second call returns the
  * same dispose fn. Gated on `settings.fsCollectMode`; flipping it at
- * runtime mounts/removes both widgets live.
+ * runtime mounts/removes the widget live.
  *
  * @returns {() => void} Dispose handle.
  */
 export const installFsCollect = () => {
   if (installed) return installed.dispose;
 
+  /** @type {ReturnType<import('../shared/draggableButton.js').installDrag> | null} */
+  let dragHandle = null;
+  /** @type {number | null} */
+  let longPressTimer = null;
+
   const mount = () => {
-    if (document.getElementById(MICRO_ID) || document.getElementById(COLLECT_ID)) {
+    if (document.getElementById(FS_UNIFIED_ID)) {
       return;
     }
     const size = settingsStore.get().fsBtnSize;
 
-    // Micro — single button.
-    const micro = document.createElement('button');
-    micro.type = 'button';
-    micro.id = MICRO_ID;
-    micro.tabIndex = 0;
-    micro.setAttribute('aria-label', 'Send micro-fleets');
-    styleSingle(micro, size, BG_MICRO);
-    placeWrap(micro, MICRO_POS_KEY, size, size + 12);
-    document.body.appendChild(micro);
+    // Create wrapper and three zones.
+    const wrap = document.createElement('div');
+    wrap.id = FS_UNIFIED_ID;
 
-    // Collect — two halves (top collect, bottom set-target).
-    const collect = document.createElement('div');
-    collect.id = COLLECT_ID;
-    const top = document.createElement('button');
-    top.type = 'button';
-    top.id = COLLECT_TOP_ID;
-    top.tabIndex = 0;
-    top.setAttribute('aria-label', 'Collect to target');
-    const setHalf = document.createElement('button');
-    setHalf.type = 'button';
-    setHalf.id = COLLECT_SET_ID;
-    setHalf.tabIndex = 0;
-    setHalf.setAttribute('aria-label', 'Set collect target');
-    styleSplit(collect, [top, setHalf], size, [BG_COLLECT, BG_SET]);
-    collect.appendChild(top);
-    collect.appendChild(setHalf);
-    placeWrap(collect, COLLECT_POS_KEY, size, 0);
-    document.body.appendChild(collect);
+    const microZone = document.createElement('button');
+    microZone.type = 'button';
+    microZone.id = FS_MICRO_ZONE_ID;
+    microZone.tabIndex = 0;
+    microZone.setAttribute('aria-label', 'Send micro-fleets');
 
-    // Drag + click wiring.
-    const microDrag = installDrag({ element: micro, posKey: MICRO_POS_KEY, dragThreshold: DRAG_THRESHOLD });
-    micro.addEventListener('click', (e) => {
-      if (microDrag.wasDrag()) { microDrag.resetDrag(); return; }
+    const targetZone = document.createElement('button');
+    targetZone.type = 'button';
+    targetZone.id = FS_TARGET_ZONE_ID;
+    targetZone.tabIndex = 0;
+    targetZone.setAttribute('aria-label', 'Set or view collect target (long-press)');
+
+    const collectZone = document.createElement('button');
+    collectZone.type = 'button';
+    collectZone.id = FS_COLLECT_ZONE_ID;
+    collectZone.tabIndex = 0;
+    collectZone.setAttribute('aria-label', 'Collect to target');
+
+    styleThreeZone(wrap, [microZone, targetZone, collectZone], size, [BG_MICRO, BG_TARGET, BG_COLLECT]);
+    wrap.appendChild(microZone);
+    wrap.appendChild(targetZone);
+    wrap.appendChild(collectZone);
+    placeWrap(wrap, FS_POS_KEY, size);
+    document.body.appendChild(wrap);
+
+    // Install drag on the outer wrapper.
+    dragHandle = installDrag({ element: wrap, posKey: FS_POS_KEY, dragThreshold: DRAG_THRESHOLD });
+
+    // Micro zone — regular click.
+    microZone.addEventListener('click', (e) => {
+      if (dragHandle?.wasDrag()) { dragHandle.resetDrag(); return; }
       e.stopPropagation();
       onMicroClick();
     });
 
-    const collectDrag = installDrag({ element: collect, posKey: COLLECT_POS_KEY, dragThreshold: DRAG_THRESHOLD });
-    top.addEventListener('click', (e) => {
-      if (collectDrag.wasDrag()) { collectDrag.resetDrag(); return; }
+    // Target zone — long-press sets target, regular click ignored (or navigates to target).
+    targetZone.addEventListener('pointerdown', (e) => {
+      longPressTimer = setTimeout(() => {
+        longPressTimer = null;
+        onSetTargetClick();
+      }, LONG_PRESS_MS);
+    });
+    targetZone.addEventListener('pointerup', () => {
+      if (longPressTimer !== null) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+    });
+    targetZone.addEventListener('pointercancel', () => {
+      if (longPressTimer !== null) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+    });
+    targetZone.addEventListener('click', (e) => {
+      if (dragHandle?.wasDrag()) { dragHandle.resetDrag(); return; }
+      e.stopPropagation();
+      // Regular click does nothing for now (target-only shows via label).
+    });
+
+    // Collect zone — regular click.
+    collectZone.addEventListener('click', (e) => {
+      if (dragHandle?.wasDrag()) { dragHandle.resetDrag(); return; }
       e.stopPropagation();
       onCollectClick();
     });
-    setHalf.addEventListener('click', (e) => {
-      if (collectDrag.wasDrag()) { collectDrag.resetDrag(); return; }
-      e.stopPropagation();
-      onSetTargetClick();
-    });
 
-    installFocusPersist({ button: micro, focusKey: FOCUS_KEY, focusValue: 'fs-micro' });
-    installFocusPersist({ button: top, focusKey: FOCUS_KEY, focusValue: 'fs-collect' });
+    installFocusPersist({ button: microZone, focusKey: FOCUS_KEY, focusValue: 'fs-unified-micro' });
+    installFocusPersist({ button: targetZone, focusKey: FOCUS_KEY, focusValue: 'fs-unified-target' });
+    installFocusPersist({ button: collectZone, focusKey: FOCUS_KEY, focusValue: 'fs-unified-collect' });
 
     refresh();
   };
 
-  const removeButtons = () => {
-    document.getElementById(MICRO_ID)?.remove();
-    document.getElementById(COLLECT_ID)?.remove();
+  const removeButton = () => {
+    if (longPressTimer !== null) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+    document.getElementById(FS_UNIFIED_ID)?.remove();
   };
 
   /**
-   * Live-resize the mounted widgets. Only width/height/font-size change —
+   * Live-resize the mounted button. Only width/height/font-size change —
    * NOT the full cssText — so a dragged position survives a size change.
    *
    * @param {number} size
    */
   const updateSize = (size) => {
     const fontSize = Math.round(size * 0.14) + 'px';
-    const micro = document.getElementById(MICRO_ID);
-    if (micro) {
-      micro.style.width = size + 'px';
-      micro.style.height = size + 'px';
-      micro.style.fontSize = fontSize;
+    const wrap = document.getElementById(FS_UNIFIED_ID);
+    if (wrap) {
+      wrap.style.width = size + 'px';
+      wrap.style.height = size + 'px';
     }
-    const collect = document.getElementById(COLLECT_ID);
-    if (collect) {
-      collect.style.width = size + 'px';
-      collect.style.height = size + 'px';
-    }
-    const top = document.getElementById(COLLECT_TOP_ID);
-    const setHalf = document.getElementById(COLLECT_SET_ID);
-    if (top) top.style.fontSize = fontSize;
-    if (setHalf) setHalf.style.fontSize = fontSize;
+    const zones = [
+      document.getElementById(FS_MICRO_ZONE_ID),
+      document.getElementById(FS_TARGET_ZONE_ID),
+      document.getElementById(FS_COLLECT_ZONE_ID),
+    ];
+    zones.forEach((z) => {
+      if (z) z.style.fontSize = fontSize;
+    });
     refresh();
   };
 
@@ -623,7 +617,7 @@ export const installFsCollect = () => {
   const unsubSettings = settingsStore.subscribe((next) => {
     if (next.fsCollectMode !== prevMode) {
       if (next.fsCollectMode) { if (document.body) mount(); }
-      else removeButtons();
+      else removeButton();
       prevMode = next.fsCollectMode;
     }
     if (next.fsBtnSize !== prevSize) {
@@ -636,7 +630,7 @@ export const installFsCollect = () => {
 
   installed = {
     dispose: () => {
-      removeButtons();
+      removeButton();
       unsubSettings();
       unsubRoutes();
       installed = null;
