@@ -15,7 +15,7 @@
 
 import { chromeStore } from '../../lib/storage.js';
 import { fsRoutesKeyFor } from '../../state/fsRoutes.js';
-import { parseRoutesDsl, formatRoutesDsl } from '../../domain/fsRoutes.js';
+import { parseRoutesDsl, formatRoutesDsl, migrateFsRoutes } from '../../domain/fsRoutes.js';
 
 /**
  * @param {{ getUniverseId: () => string }} opts
@@ -51,9 +51,10 @@ export const installRoutes = ({ getUniverseId }) => {
       setStatus('');
       return;
     }
-    const stored = /** @type {any} */ (await chromeStore.get(fsRoutesKeyFor(uni)));
-    const routes =
-      stored && typeof stored === 'object' && stored.routes ? stored.routes : {};
+    const stored = await chromeStore.get(fsRoutesKeyFor(uni));
+    // Migrate-on-read so the editor shows the current (array) shape even
+    // for a universe whose in-game migration hasn't run yet.
+    const { routes } = migrateFsRoutes(stored);
     ta.value = formatRoutesDsl(routes);
     baseline = ta.value;
     setStatus('');
@@ -67,12 +68,11 @@ export const installRoutes = ({ getUniverseId }) => {
     }
     const { routes, errors } = parseRoutesDsl(ta.value);
     // Preserve the in-game-set collect target; we only own `routes` here.
-    const stored = /** @type {any} */ (await chromeStore.get(fsRoutesKeyFor(uni)));
-    const collectTarget =
-      stored && typeof stored === 'object' ? stored.collectTarget ?? null : null;
+    const stored = await chromeStore.get(fsRoutesKeyFor(uni));
+    const { collectTarget } = migrateFsRoutes(stored);
     await chromeStore.set(fsRoutesKeyFor(uni), { routes, collectTarget });
     baseline = formatRoutesDsl(routes);
-    const n = Object.keys(routes).length;
+    const n = routes.length;
     if (errors.length) {
       const detail = errors.map((e) => `L${e.line}: ${e.message}`).join('; ');
       setStatus(`Saved ${n} route(s). ${errors.length} skipped — ${detail}`, '#e6a23c');

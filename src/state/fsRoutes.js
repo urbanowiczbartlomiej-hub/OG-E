@@ -4,11 +4,12 @@
 //
 // # What it holds
 //
-//   - `routes` — keyed by SOURCE-MOON coords `"galaxy:system:position"`.
-//     Each route is the target list + micro-fleet definition for sending
-//     micro-fleets OUT from that moon. Keyed by coords (not by type)
-//     because a source is always a moon; the position uniquely identifies
-//     it within the account.
+//   - `routes` — an ARRAY of {@link Route}. Each route has one or more
+//     SOURCE bodies (planets and/or moons), one ordered target list, and
+//     one micro-fleet; standing on any source fires it. Legacy configs
+//     keyed routes by a single source-moon coord — {@link migrateFsRoutes}
+//     lifts that `Record<coordKey, …>` form into the source-array shape on
+//     hydrate (and the migrated value is written straight back).
 //   - `collectTarget` — the single ad-hoc destination the COLLECT action
 //     sends everything back to. Set by clicking "set target" while on the
 //     staging moon; `null` until chosen. Carries `type` because the
@@ -30,6 +31,7 @@ import { createStore } from '../lib/createStore.js';
 import { persist } from '../lib/persist.js';
 import { chromeStore } from '../lib/storage.js';
 import { parseUniverseId } from '../lib/universeId.js';
+import { migrateFsRoutes } from '../domain/fsRoutes.js';
 
 /**
  * The coordinate / route shapes live in `domain/fsRoutes.js` (pure,
@@ -46,8 +48,8 @@ import { parseUniverseId } from '../lib/universeId.js';
  * Full route config persisted under `<universeId>:oge_fsRoutes`.
  *
  * @typedef {object} FsRoutes
- * @property {Record<string, Route>} routes  Keyed by source-moon
- *   `"galaxy:system:position"`.
+ * @property {Route[]} routes  All micro-fleet routes (each with its own
+ *   source/target lists). See {@link migrateFsRoutes} for the legacy shape.
  * @property {TargetCoord | null} collectTarget  Ad-hoc collect destination.
  */
 
@@ -102,7 +104,7 @@ const DEBOUNCE_MS = 200;
  *
  * @returns {FsRoutes}
  */
-const emptyConfig = () => ({ routes: {}, collectTarget: null });
+const emptyConfig = () => ({ routes: [], collectTarget: null });
 
 /**
  * The fleet-save route store. Initial value is empty; hydration is async
@@ -136,7 +138,12 @@ export const initFsRoutesStore = () => {
     store: fsRoutesStore,
     load: async () => {
       const raw = await chromeStore.get(currentFsRoutesKey());
-      return /** @type {FsRoutes | null | undefined} */ (raw);
+      // Nothing stored yet → keep the empty initial (no migration write).
+      if (raw === null || raw === undefined) return null;
+      // Normalise + migrate the legacy moon-keyed shape. The migrated value
+      // is what gets `store.set`, so the write-through persists it back in
+      // the current shape — a one-time, transparent upgrade.
+      return /** @type {FsRoutes} */ (migrateFsRoutes(raw));
     },
     save: (value) => chromeStore.set(currentFsRoutesKey(), value),
     debounceMs: DEBOUNCE_MS,

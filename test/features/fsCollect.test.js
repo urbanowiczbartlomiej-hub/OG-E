@@ -124,12 +124,13 @@ describe('micro send — navigation (top zone)', () => {
     installFsCollect();
     setBodyMeta('4:472:15', 'moon');
     fsRoutesStore.set({
-      routes: {
-        '4:472:15': {
+      routes: [
+        {
+          sources: [{ galaxy: 4, system: 472, position: 15, type: TARGET_MOON }],
           targets: [{ galaxy: 4, system: 475, position: 14, type: TARGET_PLANET }],
           microFleet: { shipId: SHIP_LARGE_CARGO, count: 15000 },
         },
-      },
+      ],
       collectTarget: null,
     });
     /** @type {HTMLElement} */ (document.getElementById('oge-fs-micro-zone')).click();
@@ -142,15 +143,16 @@ describe('micro send — navigation (top zone)', () => {
     installFsCollect();
     setBodyMeta('4:472:15', 'moon');
     fsRoutesStore.set({
-      routes: {
-        '4:472:15': {
+      routes: [
+        {
+          sources: [{ galaxy: 4, system: 472, position: 15, type: TARGET_MOON }],
           targets: [
             { galaxy: 4, system: 475, position: 14, type: TARGET_PLANET },
             { galaxy: 4, system: 480, position: 8, type: TARGET_PLANET },
           ],
           microFleet: { shipId: SHIP_LARGE_CARGO, count: 15000 },
         },
-      },
+      ],
       collectTarget: null,
     });
     // An inbound deployment to the first target (planet 4:475:14).
@@ -175,7 +177,7 @@ describe('collect send — navigation + dispatch (bottom zone)', () => {
     enable();
     installFsCollect();
     fsRoutesStore.set({
-      routes: {},
+      routes: [],
       collectTarget: { galaxy: 4, system: 472, position: 15, type: TARGET_MOON },
     });
     /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-zone')).click();
@@ -188,7 +190,7 @@ describe('collect send — navigation + dispatch (bottom zone)', () => {
     installFsCollect();
     location.search = '?page=ingame&component=fleetdispatch&cp=100&mission=4&galaxy=4&system=472&position=15&type=3';
     fsRoutesStore.set({
-      routes: {},
+      routes: [],
       collectTarget: { galaxy: 4, system: 472, position: 15, type: TARGET_MOON },
     });
     // Planet list (via insertAdjacentHTML — preserves the mounted button's

@@ -9,6 +9,7 @@ import { describe, it, expect } from 'vitest';
 import {
   coordKey,
   coordTypeKey,
+  findRouteForBody,
   buildDeployUrl,
   buildCollectUrl,
   findNextMicroTarget,
@@ -121,63 +122,127 @@ describe('countRemainingMicroTargets', () => {
 });
 
 describe('parseRoutesDsl', () => {
-  it('parses a route with alias ship and mixed planet/moon targets', () => {
+  it('parses a single-source route with alias ship and mixed planet/moon targets', () => {
     const { routes, errors } = parseRoutesDsl(
-      '4:472:15 = DT x15000 -> 4:475:14, 4:480:8m, 5:120:6',
+      '4:472:15m = DT x15000 -> 4:475:14, 4:480:8m, 5:120:6',
     );
     expect(errors).toEqual([]);
-    expect(routes['4:472:15']).toEqual({
-      microFleet: { shipId: SHIP_LARGE_CARGO, count: 15000 },
-      targets: [
-        tgt(4, 475, 14, TARGET_PLANET),
-        tgt(4, 480, 8, TARGET_MOON),
-        tgt(5, 120, 6, TARGET_PLANET),
-      ],
-    });
+    expect(routes).toEqual([
+      {
+        sources: [tgt(4, 472, 15, TARGET_MOON)],
+        targets: [
+          tgt(4, 475, 14, TARGET_PLANET),
+          tgt(4, 480, 8, TARGET_MOON),
+          tgt(5, 120, 6, TARGET_PLANET),
+        ],
+        microFleet: { shipId: SHIP_LARGE_CARGO, count: 15000 },
+      },
+    ]);
+  });
+
+  it('parses MULTIPLE sources (planets and moons) sharing one fleet + targets', () => {
+    const { routes, errors } = parseRoutesDsl(
+      '4:472:15m, 4:473:15m, 5:120:6 = DT x15000 -> 4:475:14',
+    );
+    expect(errors).toEqual([]);
+    expect(routes[0].sources).toEqual([
+      tgt(4, 472, 15, TARGET_MOON),
+      tgt(4, 473, 15, TARGET_MOON),
+      tgt(5, 120, 6, TARGET_PLANET),
+    ]);
+    expect(routes[0].targets).toEqual([tgt(4, 475, 14, TARGET_PLANET)]);
+  });
+
+  it('parses a bare (no-m) source as a PLANET', () => {
+    const { routes } = parseRoutesDsl('4:472:15 = DT x10 -> 1:1:1');
+    expect(routes[0].sources).toEqual([tgt(4, 472, 15, TARGET_PLANET)]);
   });
 
   it('accepts a raw numeric ship id and the k count suffix', () => {
     const { routes } = parseRoutesDsl('1:2:3 = 202x25k -> 1:2:4');
-    expect(routes['1:2:3'].microFleet).toEqual({ shipId: SHIP_SMALL_CARGO, count: 25000 });
+    expect(routes[0].microFleet).toEqual({ shipId: SHIP_SMALL_CARGO, count: 25000 });
   });
 
   it('ignores blank lines and # comments', () => {
     const { routes, errors } = parseRoutesDsl('# header\n\n1:1:1 = PIO x100000 -> 1:1:2\n');
     expect(errors).toEqual([]);
-    expect(Object.keys(routes)).toEqual(['1:1:1']);
-    expect(routes['1:1:1'].microFleet.shipId).toBe(SHIP_PATHFINDER);
+    expect(routes).toHaveLength(1);
+    expect(routes[0].microFleet.shipId).toBe(SHIP_PATHFINDER);
   });
 
   it('reports a malformed line but keeps the good ones', () => {
     const { routes, errors } = parseRoutesDsl('garbage line\n1:1:1 = DT x10 -> 1:1:2');
-    expect(Object.keys(routes)).toEqual(['1:1:1']);
+    expect(routes).toHaveLength(1);
+    expect(routes[0].sources).toEqual([tgt(1, 1, 1, TARGET_PLANET)]);
     expect(errors).toHaveLength(1);
     expect(errors[0].line).toBe(1);
   });
 
-  it('reports a bad ship and a bad target', () => {
+  it('reports a bad ship, a bad target, and a bad source', () => {
     expect(parseRoutesDsl('1:1:1 = XYZ x10 -> 1:1:2').errors[0].message).toMatch(/micro-fleet/);
     expect(parseRoutesDsl('1:1:1 = DT x10 -> nope').errors[0].message).toMatch(/target/);
+    expect(parseRoutesDsl('nope = DT x10 -> 1:1:2').errors[0].message).toMatch(/source/);
   });
 
   it('is null-safe on non-string input', () => {
     // @ts-expect-error intentional bad input
-    expect(parseRoutesDsl(null)).toEqual({ routes: {}, errors: [] });
+    expect(parseRoutesDsl(null)).toEqual({ routes: [], errors: [] });
   });
 });
 
 describe('formatRoutesDsl round-trip', () => {
-  it('round-trips parse(format(parse(x))) to the same routes', () => {
-    const text = '4:472:15 = DT x15000 -> 4:475:14, 4:480:8m\n1:2:3 = PIO x100000 -> 1:2:4';
+  it('round-trips parse(format(parse(x))) to the same routes (incl. multi-source + moon sources)', () => {
+    const text =
+      '4:472:15m, 4:473:15m = DT x15000 -> 4:475:14, 4:480:8m\n1:2:3 = PIO x100000 -> 1:2:4';
     const once = parseRoutesDsl(text).routes;
     const reparsed = parseRoutesDsl(formatRoutesDsl(once)).routes;
     expect(reparsed).toEqual(once);
   });
 
-  it('renders known ship ids as aliases', () => {
-    const out = formatRoutesDsl({
-      '4:472:15': { microFleet: { shipId: SHIP_LARGE_CARGO, count: 15000 }, targets: [tgt(4, 475, 14, TARGET_PLANET)] },
-    });
-    expect(out).toBe('4:472:15 = DTx15000 -> 4:475:14');
+  it('renders known ship ids as aliases and moons with the m suffix on both sides', () => {
+    const out = formatRoutesDsl([
+      {
+        sources: [tgt(4, 472, 15, TARGET_MOON)],
+        targets: [tgt(4, 475, 14, TARGET_PLANET), tgt(4, 480, 8, TARGET_MOON)],
+        microFleet: { shipId: SHIP_LARGE_CARGO, count: 15000 },
+      },
+    ]);
+    expect(out).toBe('4:472:15m = DTx15000 -> 4:475:14, 4:480:8m');
+  });
+
+  it('is null-safe / empty on a non-array', () => {
+    // @ts-expect-error intentional bad input
+    expect(formatRoutesDsl({})).toBe('');
+  });
+});
+
+describe('findRouteForBody', () => {
+  const routes = [
+    {
+      sources: [tgt(4, 472, 15, TARGET_MOON), tgt(4, 473, 15, TARGET_MOON)],
+      targets: [tgt(4, 475, 14, TARGET_PLANET)],
+      microFleet: { shipId: SHIP_LARGE_CARGO, count: 15000 },
+    },
+    {
+      sources: [tgt(5, 120, 6, TARGET_PLANET)],
+      targets: [tgt(5, 120, 7, TARGET_PLANET)],
+      microFleet: { shipId: SHIP_SMALL_CARGO, count: 1000 },
+    },
+  ];
+
+  it('matches a body against any source (type-aware)', () => {
+    expect(findRouteForBody(routes, tgt(4, 473, 15, TARGET_MOON))).toBe(routes[0]);
+    expect(findRouteForBody(routes, tgt(5, 120, 6, TARGET_PLANET))).toBe(routes[1]);
+  });
+
+  it('does not match when the type differs (planet at a moon source slot)', () => {
+    expect(findRouteForBody(routes, tgt(4, 472, 15, TARGET_PLANET))).toBeNull();
+  });
+
+  it('returns null for an unknown body / null body / non-array routes', () => {
+    expect(findRouteForBody(routes, tgt(9, 9, 9, TARGET_PLANET))).toBeNull();
+    expect(findRouteForBody(routes, null)).toBeNull();
+    // @ts-expect-error intentional bad input
+    expect(findRouteForBody(null, tgt(1, 1, 1, 1))).toBeNull();
   });
 });

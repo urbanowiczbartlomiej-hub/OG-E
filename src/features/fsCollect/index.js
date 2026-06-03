@@ -57,6 +57,7 @@ import {
 import {
   coordKey,
   coordTypeKey,
+  findRouteForBody,
   buildDeployUrl,
   buildCollectUrl,
   findNextMicroTarget,
@@ -260,7 +261,7 @@ const onMicroClick = () => {
   }
 
   const body = readCurrentBody();
-  const route = body ? fsRoutesStore.get().routes[coordKey(body)] : null;
+  const route = findRouteForBody(fsRoutesStore.get().routes, body);
   if (!route) {
     flash(microZone, 'No route');
     return;
@@ -361,7 +362,7 @@ const refresh = () => {
       setLabel(microZone, 'Next', 'micro');
     } else {
       const body = readCurrentBody();
-      const route = body ? fsRoutesStore.get().routes[coordKey(body)] : null;
+      const route = findRouteForBody(fsRoutesStore.get().routes, body);
       if (!route) {
         setLabel(microZone, 'Micro', 'no route');
       } else {

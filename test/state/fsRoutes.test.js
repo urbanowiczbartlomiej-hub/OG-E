@@ -29,6 +29,7 @@ import {
   disposeFsRoutesStore,
   _resetFsRoutesStoreForTest,
 } from '../../src/state/fsRoutes.js';
+import { migrateFsRoutes } from '../../src/domain/fsRoutes.js';
 
 /**
  * @type {{
@@ -60,7 +61,7 @@ describe('fsRoutesStore — defaults and basic ops', () => {
   afterEach(disposeFsRoutesStore);
 
   it('starts as an empty config when persist has not been initialised', () => {
-    expect(fsRoutesStore.get()).toEqual({ routes: {}, collectTarget: null });
+    expect(fsRoutesStore.get()).toEqual({ routes: [], collectTarget: null });
   });
 
   it('exports the expected key suffix', () => {
@@ -73,12 +74,13 @@ describe('fsRoutesStore — defaults and basic ops', () => {
 
   it('round-trips set/get without persist wiring', () => {
     const cfg = {
-      routes: {
-        '4:472:15': {
+      routes: [
+        {
+          sources: [{ galaxy: 4, system: 472, position: 15, type: 3 }],
           targets: [{ galaxy: 4, system: 475, position: 14, type: 1 }],
           microFleet: { shipId: 203, count: 15000 },
         },
-      },
+      ],
       collectTarget: { galaxy: 4, system: 472, position: 15, type: 3 },
     };
     fsRoutesStore.set(/** @type {any} */ (cfg));
@@ -88,7 +90,7 @@ describe('fsRoutesStore — defaults and basic ops', () => {
   it('notifies subscribers on set', () => {
     const sub = vi.fn();
     const unsub = fsRoutesStore.subscribe(sub);
-    fsRoutesStore.set(/** @type {any} */ ({ routes: {}, collectTarget: null }));
+    fsRoutesStore.set(/** @type {any} */ ({ routes: [], collectTarget: null }));
     expect(sub).toHaveBeenCalledTimes(1);
     unsub();
   });
@@ -104,16 +106,50 @@ describe('fsRoutesStore — hydration via initFsRoutesStore', () => {
     expect(mockStore.get).toHaveBeenCalledWith('oge_fsRoutes');
   });
 
-  it('hydrates the store when chromeStore.get resolves with a value', async () => {
+  it('hydrates the store when chromeStore.get resolves with a current-shape value', async () => {
     const stored = {
-      routes: { '1:2:3': { targets: [], microFleet: { shipId: 219, count: 100000 } } },
+      routes: [
+        {
+          sources: [{ galaxy: 1, system: 2, position: 3, type: 3 }],
+          targets: [{ galaxy: 1, system: 2, position: 4, type: 1 }],
+          microFleet: { shipId: 219, count: 100000 },
+        },
+      ],
       collectTarget: null,
     };
     mockStore.get.mockResolvedValueOnce(stored);
     initFsRoutesStore();
-    expect(fsRoutesStore.get()).toEqual({ routes: {}, collectTarget: null });
+    expect(fsRoutesStore.get()).toEqual({ routes: [], collectTarget: null });
     await flushMicrotasks();
     expect(fsRoutesStore.get()).toEqual(stored);
+  });
+
+  it('MIGRATES a legacy moon-keyed Record on hydrate into the source-array shape', async () => {
+    // Legacy shape: routes keyed by source-moon coords, type-less.
+    const legacy = {
+      routes: {
+        '4:472:15': {
+          targets: [{ galaxy: 4, system: 475, position: 14, type: 1 }],
+          microFleet: { shipId: 203, count: 15000 },
+        },
+      },
+      collectTarget: { galaxy: 4, system: 472, position: 15, type: 3 },
+    };
+    mockStore.get.mockResolvedValueOnce(legacy);
+    initFsRoutesStore();
+    await flushMicrotasks();
+
+    expect(fsRoutesStore.get()).toEqual({
+      routes: [
+        {
+          // legacy key lifted to a single MOON source (type 3)
+          sources: [{ galaxy: 4, system: 472, position: 15, type: 3 }],
+          targets: [{ galaxy: 4, system: 475, position: 14, type: 1 }],
+          microFleet: { shipId: 203, count: 15000 },
+        },
+      ],
+      collectTarget: { galaxy: 4, system: 472, position: 15, type: 3 },
+    });
   });
 
   it('is idempotent — a second init does not re-register', () => {
@@ -121,5 +157,74 @@ describe('fsRoutesStore — hydration via initFsRoutesStore', () => {
     const dispose2 = initFsRoutesStore();
     expect(dispose1).toBe(dispose2);
     expect(mockStore.get).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('migrateFsRoutes (pure)', () => {
+  it('passes a current-shape array through, dropping malformed routes', () => {
+    const ok = {
+      sources: [{ galaxy: 1, system: 1, position: 1, type: 3 }],
+      targets: [{ galaxy: 1, system: 1, position: 2, type: 1 }],
+      microFleet: { shipId: 203, count: 10 },
+    };
+    const result = migrateFsRoutes({
+      routes: [
+        ok,
+        { sources: [], targets: [{}], microFleet: { shipId: 1, count: 1 } }, // no sources
+        { sources: [{}], microFleet: { shipId: 1, count: 1 } }, // no targets array
+        { sources: [{}], targets: [] }, // no microFleet
+      ],
+      collectTarget: null,
+    });
+    expect(result.routes).toEqual([ok]);
+  });
+
+  it('converts the legacy moon-keyed Record into single-moon-source routes', () => {
+    const result = migrateFsRoutes({
+      routes: {
+        '4:472:15': {
+          targets: [{ galaxy: 4, system: 475, position: 14, type: 1 }],
+          microFleet: { shipId: 203, count: 15000 },
+        },
+        '5:120:6': {
+          targets: [{ galaxy: 5, system: 120, position: 7, type: 1 }],
+          microFleet: { shipId: 202, count: 500 },
+        },
+      },
+      collectTarget: null,
+    });
+    expect(result.routes).toEqual([
+      {
+        sources: [{ galaxy: 4, system: 472, position: 15, type: 3 }],
+        targets: [{ galaxy: 4, system: 475, position: 14, type: 1 }],
+        microFleet: { shipId: 203, count: 15000 },
+      },
+      {
+        sources: [{ galaxy: 5, system: 120, position: 6, type: 3 }],
+        targets: [{ galaxy: 5, system: 120, position: 7, type: 1 }],
+        microFleet: { shipId: 202, count: 500 },
+      },
+    ]);
+  });
+
+  it('is idempotent — migrating an already-migrated value is a no-op', () => {
+    const legacy = {
+      routes: { '4:472:15': { targets: [{ galaxy: 4, system: 475, position: 14, type: 1 }], microFleet: { shipId: 203, count: 15000 } } },
+      collectTarget: null,
+    };
+    const once = migrateFsRoutes(legacy);
+    const twice = migrateFsRoutes(once);
+    expect(twice).toEqual(once);
+  });
+
+  it('defaults to an empty route list + null target for junk / missing input', () => {
+    expect(migrateFsRoutes(null)).toEqual({ routes: [], collectTarget: null });
+    expect(migrateFsRoutes({})).toEqual({ routes: [], collectTarget: null });
+    expect(migrateFsRoutes({ routes: 42 })).toEqual({ routes: [], collectTarget: null });
+  });
+
+  it('preserves an existing collectTarget', () => {
+    const ct = { galaxy: 4, system: 472, position: 15, type: 3 };
+    expect(migrateFsRoutes({ routes: [], collectTarget: ct }).collectTarget).toEqual(ct);
   });
 });

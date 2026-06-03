@@ -41,10 +41,21 @@ import {
  */
 
 /**
- * One source moon's route: its target list + the micro-fleet size.
+ * A fleet-save micro-fleet route: one or more SOURCE bodies (planets
+ * and/or moons) sharing ONE ordered target list and ONE micro-fleet.
+ * Standing on ANY of the sources fires the route. Source matching uses
+ * {@link coordTypeKey}, so a planet and the moon at the same slot are
+ * distinct sources — which is why each source carries its own `type`
+ * (older configs, where a source was always a moon, are lifted to
+ * `type === 3` by {@link migrateFsRoutes}).
+ *
+ * No synthetic `id`: a route's identity IS its source set (a body belongs
+ * to at most one route), and dropping the field keeps the DSL round-trip
+ * (`parse(format(r)) === r`) free of an unencoded field.
  *
  * @typedef {object} Route
- * @property {TargetCoord[]} targets
+ * @property {TargetCoord[]} sources  Source bodies (planets and/or moons).
+ * @property {TargetCoord[]} targets  Destinations, tried in order.
  * @property {MicroFleet} microFleet
  */
 
@@ -67,17 +78,70 @@ export const coordKey = ({ galaxy, system, position }) =>
 export const coordTypeKey = ({ galaxy, system, position, type }) =>
   `${galaxy}:${system}:${position}:${type}`;
 
+/**
+ * Build a {@link TargetCoord} from a type-less coord key (`"g:s:p"`) and a
+ * `type`. Returns `null` when the key isn't a bare `g:s:p` triple. Used by
+ * {@link migrateFsRoutes} to lift legacy moon-keyed routes into the
+ * source-array shape.
+ *
+ * @param {string} key
+ * @param {number} type
+ * @returns {TargetCoord | null}
+ */
+export const coordFromKey = (key, type) => {
+  const m = String(key).match(/^(\d+):(\d+):(\d+)$/);
+  if (!m) return null;
+  return {
+    galaxy: parseInt(m[1], 10),
+    system: parseInt(m[2], 10),
+    position: parseInt(m[3], 10),
+    type,
+  };
+};
+
+/**
+ * Find the route whose `sources` contain the body you're standing on, or
+ * `null`. Matching is type-aware ({@link coordTypeKey}) so a planet and the
+ * moon at the same slot select different routes. First match wins (a body
+ * should belong to at most one route; the dashboard editor enforces that).
+ *
+ * @param {Route[]} routes
+ * @param {{ galaxy: number, system: number, position: number, type: number } | null | undefined} body
+ * @returns {Route | null}
+ */
+export const findRouteForBody = (routes, body) => {
+  if (!Array.isArray(routes) || !body) return null;
+  const key = coordTypeKey(body);
+  for (const route of routes) {
+    if (
+      route &&
+      Array.isArray(route.sources) &&
+      route.sources.some((s) => coordTypeKey(s) === key)
+    ) {
+      return route;
+    }
+  }
+  return null;
+};
+
 // ─── Routes DSL ─────────────────────────────────────────────────────────
 //
 // One route per line:
-//   <srcMoon> = <ship>x<count> -> <target>, <target>, ...
-//   e.g.  4:472:15 = DT x15000 -> 4:475:14, 4:480:8m, 5:120:6
+//   <src>, <src>, ... = <ship>x<count> -> <target>, <target>, ...
+//   e.g.  4:472:15m, 4:473:15m = DT x15000 -> 4:475:14, 4:480:8m, 5:120:6
 //
+// src   : g:s:p with optional trailing `m` ⇒ moon (type 3), else planet.
+//         One or more, comma-separated — they share the line's fleet+targets.
 // ship  : alias MT/DT/PIO (case-insensitive) or raw id 202/203/219.
 // count : integer; a trailing `k` means ×1000.
 // target: g:s:p with optional trailing `m` ⇒ moon (type 3), else planet.
 // Blank lines and `#` comments are ignored. Malformed lines are reported
 // in `errors` (1-based line number) and skipped — the rest still parse.
+//
+// NB: sources WITHOUT a trailing `m` now parse as PLANETS. Legacy single-
+// moon configs are migrated in `state/fsRoutes.js` (which sets type=3), so
+// `formatRoutesDsl` renders their sources with the `m` suffix — the DSL is
+// always self-describing about planet vs moon on both sides.
 
 /** Ship-alias → id map. @type {Record<string, number>} */
 const SHIP_ALIASES = {
@@ -134,18 +198,43 @@ const parseShipToken = (token) => {
 };
 
 /**
- * Parse the routes DSL text into a `routes` map (keyed by source-moon
- * {@link coordKey}) plus per-line `errors`. Never throws.
+ * Parse a comma-separated coordinate list (`"a, b, c"`) into
+ * {@link TargetCoord}s. Returns the parsed list plus the first bad token
+ * (if any) so the caller can report it; an empty/whitespace list yields
+ * `{ coords: [], bad: null }`.
+ *
+ * @param {string} segment
+ * @returns {{ coords: TargetCoord[], bad: string | null }}
+ */
+const parseCoordList = (segment) => {
+  /** @type {TargetCoord[]} */
+  const coords = [];
+  const tokens = segment
+    .split(',')
+    .map((t) => t.trim())
+    .filter((t) => t !== '');
+  for (const tok of tokens) {
+    const c = parseTargetToken(tok);
+    if (!c) return { coords, bad: tok };
+    coords.push(c);
+  }
+  return { coords, bad: null };
+};
+
+/**
+ * Parse the routes DSL text into a `routes` array plus per-line `errors`.
+ * Never throws. Each line maps a source list (left of `=`) to a micro-fleet
+ * and an ordered target list (right of `->`).
  *
  * @param {string} text
  * @returns {{
- *   routes: Record<string, Route>,
+ *   routes: Route[],
  *   errors: Array<{ line: number, message: string }>,
  * }}
  */
 export const parseRoutesDsl = (text) => {
-  /** @type {Record<string, Route>} */
-  const routes = {};
+  /** @type {Route[]} */
+  const routes = [];
   /** @type {Array<{ line: number, message: string }>} */
   const errors = [];
   if (typeof text !== 'string') return { routes, errors };
@@ -159,13 +248,17 @@ export const parseRoutesDsl = (text) => {
     const eq = line.indexOf('=');
     const arrow = line.indexOf('->');
     if (eq < 0 || arrow < 0 || arrow < eq) {
-      errors.push({ line: lineNo, message: 'expected "<src> = <ship>x<count> -> <targets>"' });
+      errors.push({ line: lineNo, message: 'expected "<src,...> = <ship>x<count> -> <targets>"' });
       continue;
     }
 
-    const src = parseTargetToken(line.slice(0, eq));
-    if (!src) {
-      errors.push({ line: lineNo, message: 'bad source coords (expected g:s:p)' });
+    const src = parseCoordList(line.slice(0, eq));
+    if (src.bad) {
+      errors.push({ line: lineNo, message: `bad source "${src.bad}"` });
+      continue;
+    }
+    if (src.coords.length === 0) {
+      errors.push({ line: lineNo, message: 'no sources (expected g:s:p before "=")' });
       continue;
     }
     const microFleet = parseShipToken(line.slice(eq + 1, arrow));
@@ -173,55 +266,95 @@ export const parseRoutesDsl = (text) => {
       errors.push({ line: lineNo, message: 'bad micro-fleet (expected e.g. DT x15000 or 203x15000)' });
       continue;
     }
-    const targetTokens = line
-      .slice(arrow + 2)
-      .split(',')
-      .map((t) => t.trim())
-      .filter((t) => t !== '');
-    /** @type {TargetCoord[]} */
-    const targets = [];
-    let badTarget = false;
-    for (const tok of targetTokens) {
-      const t = parseTargetToken(tok);
-      if (!t) {
-        errors.push({ line: lineNo, message: `bad target "${tok}"` });
-        badTarget = true;
-        break;
-      }
-      targets.push(t);
+    const tgt = parseCoordList(line.slice(arrow + 2));
+    if (tgt.bad) {
+      errors.push({ line: lineNo, message: `bad target "${tgt.bad}"` });
+      continue;
     }
-    if (badTarget) continue;
-    if (targets.length === 0) {
+    if (tgt.coords.length === 0) {
       errors.push({ line: lineNo, message: 'no targets' });
       continue;
     }
 
-    routes[coordKey(src)] = { targets, microFleet };
+    routes.push({ sources: src.coords, targets: tgt.coords, microFleet });
   }
 
   return { routes, errors };
 };
 
 /**
- * Render a `routes` map back to canonical DSL text (one route per line).
+ * Render a `routes` array back to canonical DSL text (one route per line).
  * `parseRoutesDsl(formatRoutesDsl(r)).routes` deep-equals `r`. Known ship
- * ids render as aliases (DT/MT/PIO).
+ * ids render as aliases (DT/MT/PIO); moons (sources OR targets) carry the
+ * trailing `m`.
  *
- * @param {Record<string, Route>} routes
+ * @param {Route[]} routes
  * @returns {string}
  */
 export const formatRoutesDsl = (routes) => {
-  if (!routes || typeof routes !== 'object') return '';
+  if (!Array.isArray(routes)) return '';
   /** @param {TargetCoord} t */
-  const fmtTarget = (t) =>
+  const fmtCoord = (t) =>
     `${t.galaxy}:${t.system}:${t.position}${t.type === TARGET_MOON ? 'm' : ''}`;
   const lines = [];
-  for (const key of Object.keys(routes)) {
-    const route = routes[key];
-    if (!route || !route.microFleet || !Array.isArray(route.targets)) continue;
+  for (const route of routes) {
+    if (
+      !route ||
+      !route.microFleet ||
+      !Array.isArray(route.sources) ||
+      !Array.isArray(route.targets) ||
+      route.sources.length === 0
+    ) {
+      continue;
+    }
     const ship = ID_TO_ALIAS[route.microFleet.shipId] || String(route.microFleet.shipId);
-    const targets = route.targets.map(fmtTarget).join(', ');
-    lines.push(`${key} = ${ship}x${route.microFleet.count} -> ${targets}`);
+    const sources = route.sources.map(fmtCoord).join(', ');
+    const targets = route.targets.map(fmtCoord).join(', ');
+    lines.push(`${sources} = ${ship}x${route.microFleet.count} -> ${targets}`);
   }
   return lines.join('\n');
+};
+
+/**
+ * Normalise a stored {@link import('../state/fsRoutes.js').FsRoutes} value
+ * into the current shape (`routes: Route[]`), migrating the legacy
+ * `routes: Record<coordKey, { targets, microFleet }>` form on the way.
+ *
+ * Legacy keys were source MOONS (type-less coords), so each becomes a
+ * single-source route with `type === 3` ({@link TARGET_MOON}). Already-array
+ * input is filtered to well-formed routes (drops anything missing a source
+ * list, target list, or micro-fleet). Anything unrecognisable yields an
+ * empty route list. `collectTarget` passes through (or `null`).
+ *
+ * Pure + idempotent — `migrate(migrate(x))` equals `migrate(x)`.
+ *
+ * @param {unknown} stored
+ * @returns {{ routes: Route[], collectTarget: TargetCoord | null }}
+ */
+export const migrateFsRoutes = (stored) => {
+  const obj = stored && typeof stored === 'object' ? /** @type {any} */ (stored) : {};
+  /** @type {TargetCoord | null} */
+  const collectTarget = obj.collectTarget ?? null;
+  const raw = obj.routes;
+
+  /** @param {any} r */
+  const isWellFormed = (r) =>
+    r && Array.isArray(r.sources) && r.sources.length > 0 && Array.isArray(r.targets) && r.microFleet;
+
+  if (Array.isArray(raw)) {
+    return { routes: raw.filter(isWellFormed), collectTarget };
+  }
+
+  /** @type {Route[]} */
+  const routes = [];
+  if (raw && typeof raw === 'object') {
+    for (const key of Object.keys(raw)) {
+      const r = raw[key];
+      if (!r || !Array.isArray(r.targets) || !r.microFleet) continue;
+      const src = coordFromKey(key, TARGET_MOON);
+      if (!src) continue;
+      routes.push({ sources: [src], targets: r.targets, microFleet: r.microFleet });
+    }
+  }
+  return { routes, collectTarget };
 };
