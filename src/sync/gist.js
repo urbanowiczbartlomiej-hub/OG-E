@@ -162,6 +162,16 @@ import { clearScans, clearGalaxyScans } from './merge.js';
  *   on gists written before this feature; new readers treat absence as
  *   "nothing to merge", old readers ignore the unknown field. That two-way
  *   tolerance is why this could be added without a schema-version change.
+ * @property {Record<string, FsRoutesSlot>} [fsRoutes]
+ *   OPTIONAL, additive (same two-way tolerance as `settings`): fleet-save
+ *   routes keyed by universe id. Each slot is whole-universe newest-wins
+ *   (see {@link import('./merge.js').mergeFsRoutes}). Per-universe because,
+ *   unlike scans/history, routes target a specific server's own bodies and
+ *   must never leak across universes.
+ */
+
+/**
+ * @typedef {import('./merge.js').FsRoutesSlot} FsRoutesSlot
  */
 
 // ── Storage keys ────────────────────────────────────────────────────

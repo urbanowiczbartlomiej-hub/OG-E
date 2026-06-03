@@ -83,6 +83,33 @@ export const FS_REDIRECT_KEY = 'oge_fsRedirect';
 export const fsRoutesKeyFor = (universeId) => `${universeId}:${FS_ROUTES_KEY_BASE}`;
 
 /**
+ * Suffix of the per-universe "routes last changed" timestamp key
+ * (`<universeId>:oge_fsRoutesTs`). The cross-device sync engine uses this
+ * epoch-ms value for whole-universe newest-wins merging (see
+ * `sync/merge.mergeFsRoutes`).
+ *
+ * Why a SEPARATE chrome.storage key rather than a field inside the routes
+ * value, and why chrome.storage rather than localStorage:
+ *   - It's sync METADATA, not route config — kept out of the {@link FsRoutes}
+ *     domain value, exactly as the settings ts map is kept out of the
+ *     settings values (`settingsSync.SETTINGS_TS_KEY`).
+ *   - Routes are edited from TWO origins: in-game (game origin) AND the
+ *     dashboard (extension origin). localStorage is per-origin, so it
+ *     couldn't be shared; `chrome.storage.local` is the one store both
+ *     origins see. Every writer (dashboard save, in-game prune / set-target)
+ *     stamps it via {@link stampFsRoutesChanged} / the dashboard's own write.
+ */
+export const FS_ROUTES_TS_BASE = 'oge_fsRoutesTs';
+
+/**
+ * Compose the per-universe routes-timestamp key.
+ *
+ * @param {string} universeId
+ * @returns {string} e.g. `'s163-pl:oge_fsRoutesTs'`.
+ */
+export const fsRoutesTsKeyFor = (universeId) => `${universeId}:${FS_ROUTES_TS_BASE}`;
+
+/**
  * Resolve the chrome.storage.local key for the current tab's universe.
  * Falls back to the bare key in non-DOM test environments (mirrors
  * `state/scans.js:currentScansKey`).
@@ -191,6 +218,21 @@ export const initFsRoutesStore = () => {
  */
 export const flushFsRoutesStore = () =>
   chromeStore.set(currentFsRoutesKey(), fsRoutesStore.get());
+
+/**
+ * Stamp "routes changed just now" for the current universe, so the next
+ * sync round-trip treats this device's routes as the freshest for
+ * whole-universe newest-wins (see `sync/merge.mergeFsRoutes`). Call AFTER
+ * any in-game write that changes routes/collectTarget (route pruning,
+ * set-collect-target). The dashboard writes the same key directly on save.
+ *
+ * @returns {Promise<void>}
+ */
+export const stampFsRoutesChanged = () => {
+  if (typeof location === 'undefined') return chromeStore.set(FS_ROUTES_TS_BASE, Date.now());
+  const id = parseUniverseId(location.host);
+  return chromeStore.set(id ? fsRoutesTsKeyFor(id) : FS_ROUTES_TS_BASE, Date.now());
+};
 
 /**
  * Tear down the persist wiring. Idempotent.

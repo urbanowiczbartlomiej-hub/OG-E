@@ -25,8 +25,9 @@
 // @see ../../state/bodies.js / ../../state/fsRoutes.js — per-universe keys.
 
 import { chromeStore } from '../../lib/storage.js';
-import { fsRoutesKeyFor } from '../../state/fsRoutes.js';
+import { fsRoutesKeyFor, fsRoutesTsKeyFor } from '../../state/fsRoutes.js';
 import { bodiesKeyFor } from '../../state/bodies.js';
+import { syncRequestKeyFor } from '../../sync/scheduler.js';
 import {
   parseRoutesDsl,
   formatRoutesDsl,
@@ -377,6 +378,11 @@ export const installRoutes = ({ getUniverseId }) => {
     const stored = await chromeStore.get(fsRoutesKeyFor(uni));
     const { collectTarget } = migrateFsRoutes(stored);
     await chromeStore.set(fsRoutesKeyFor(uni), { routes: clean, collectTarget });
+    // Stamp the cross-device sync clock (whole-universe newest-wins) and poke
+    // any open game tab to push the change to the gist (same tombstone the
+    // "Sync now" button uses). Harmless no-op when cloud sync is off.
+    await chromeStore.set(fsRoutesTsKeyFor(uni), Date.now());
+    await chromeStore.set(syncRequestKeyFor(uni), Date.now());
     model.routes = clean;
     baseline = JSON.stringify(clean);
     render();

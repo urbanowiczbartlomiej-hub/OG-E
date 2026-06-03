@@ -59,7 +59,7 @@ import { TARGET_PLANET, TARGET_MOON } from '../domain/rules.js';
 import { parseKoords, dedupeBodies, isCompleteBody } from '../domain/bodies.js';
 import { reconcileRoutes } from '../domain/fsRoutes.js';
 import { bodiesStore, whenBodiesHydrated } from '../state/bodies.js';
-import { fsRoutesStore, whenFsRoutesHydrated } from '../state/fsRoutes.js';
+import { fsRoutesStore, whenFsRoutesHydrated, stampFsRoutesChanged } from '../state/fsRoutes.js';
 
 /**
  * @typedef {import('../domain/bodies.js').Body} Body
@@ -195,6 +195,9 @@ const reconcileRoutesAgainst = (bodies) => {
     const { routes: pruned, removed } = reconcileRoutes(routes, bodies);
     if (removed.length === 0) return;
     fsRoutesStore.update((prev) => ({ ...prev, routes: pruned }));
+    // Pruning is a real route change — stamp the cross-device sync clock so
+    // the prune propagates (whole-universe newest-wins).
+    void stampFsRoutesChanged();
     const detail = removed
       .map((r) => `${r.role} ${r.coord.galaxy}:${r.coord.system}:${r.coord.position}:${r.coord.type}`)
       .join(', ');

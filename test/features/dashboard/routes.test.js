@@ -13,6 +13,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../../src/lib/storage.js', () => ({
   chromeStore: { get: vi.fn(), set: vi.fn(), remove: vi.fn(), onChanged: vi.fn() },
+  // routes.js now imports syncRequestKeyFor from sync/scheduler.js, which
+  // transitively pulls gist.js + logger.js — both read `safeLS` at import
+  // time. Provide a no-op stub so the module graph loads under the mock.
+  safeLS: { bool: () => false, get: () => null, set: () => {}, remove: () => {}, json: () => null, setJSON: () => {} },
 }));
 
 import { chromeStore } from '../../../src/lib/storage.js';
@@ -53,7 +57,7 @@ const seedBodies = (bodies) => store.set(BODIES_KEY, { bodies, capturedAt: 1 });
 /** @param {any[]} routes @param {any} [collectTarget] */
 const seedRoutes = (routes, collectTarget = null) => store.set(ROUTES_KEY, { routes, collectTarget });
 
-const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); };
+const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 const install = () => installRoutes({ getUniverseId: () => UNI });
 
 const $ = (/** @type {string} */ sel) => /** @type {HTMLElement} */ (document.querySelector(sel));
@@ -139,6 +143,10 @@ describe('build a route by clicking', () => {
       collectTarget: moon(4, 472, 15),
     });
     expect($('#routesStatus').textContent).toContain('Saved 1 route');
+    // Save also stamps the cross-device sync clock and pokes any open game
+    // tab to push to the gist (whole-universe newest-wins).
+    expect(typeof store.get(`${UNI}:oge_fsRoutesTs`)).toBe('number');
+    expect(store.has(`${UNI}:oge_syncRequestAt`)).toBe(true);
   });
 
   it('drops an incomplete route (no targets) on save and says so', async () => {
