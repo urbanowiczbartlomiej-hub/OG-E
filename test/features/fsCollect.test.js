@@ -85,13 +85,14 @@ describe('mount / unmount', () => {
     expect(document.getElementById('oge-fs-unified')).toBeNull();
   });
 
-  it('mounts the unified button with three zones when fsCollectMode is on', () => {
+  it('mounts the unified button with two zones when fsCollectMode is on', () => {
     enable();
     installFsCollect();
     expect(document.getElementById('oge-fs-unified')).not.toBeNull();
     expect(document.getElementById('oge-fs-micro-zone')).not.toBeNull();
-    expect(document.getElementById('oge-fs-target-zone')).not.toBeNull();
     expect(document.getElementById('oge-fs-collect-zone')).not.toBeNull();
+    // The dedicated middle target zone is gone — folded into Collect.
+    expect(document.getElementById('oge-fs-target-zone')).toBeNull();
   });
 
   it('removes the button when the toggle flips off at runtime', () => {
@@ -102,19 +103,39 @@ describe('mount / unmount', () => {
   });
 });
 
-describe('set collect target (via long-press on middle zone)', () => {
+describe('set collect target (via long-press on the Collect zone)', () => {
   it('writes the current body (from meta tags) as collectTarget on long-press', async () => {
     enable();
     installFsCollect();
     setBodyMeta('4:472:15', 'moon');
-    const targetZone = /** @type {HTMLElement} */ (document.getElementById('oge-fs-target-zone'));
-    targetZone.dispatchEvent(new PointerEvent('pointerdown'));
-    // Simulate long-press: wait 300ms, then pointerup.
+    const collectZone = /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-zone'));
+    collectZone.dispatchEvent(new PointerEvent('pointerdown', { clientX: 0, clientY: 0 }));
+    // Simulate long-press: wait past the threshold, then release.
     await new Promise((resolve) => setTimeout(resolve, 350));
-    targetZone.dispatchEvent(new PointerEvent('pointerup'));
+    collectZone.dispatchEvent(new PointerEvent('pointerup'));
     expect(fsRoutesStore.get().collectTarget).toEqual({
       galaxy: 4, system: 472, position: 15, type: TARGET_MOON,
     });
+  });
+
+  it('a quick tap collects instead of setting the target', () => {
+    enable();
+    installFsCollect();
+    setBodyMeta('4:472:15', 'moon');
+    fsRoutesStore.set({
+      routes: [],
+      collectTarget: { galaxy: 4, system: 480, position: 8, type: TARGET_PLANET },
+    });
+    const collectZone = /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-zone'));
+    // pointerdown + immediate pointerup (no long-press) then click → collect.
+    collectZone.dispatchEvent(new PointerEvent('pointerdown', { clientX: 0, clientY: 0 }));
+    collectZone.dispatchEvent(new PointerEvent('pointerup'));
+    collectZone.click();
+    // Target unchanged (no long-press fired) and we navigated to collect it.
+    expect(fsRoutesStore.get().collectTarget).toEqual({
+      galaxy: 4, system: 480, position: 8, type: TARGET_PLANET,
+    });
+    expect(navTarget).toContain('galaxy=4&system=480&position=8&type=1&mission=4');
   });
 });
 
@@ -124,12 +145,13 @@ describe('micro send — navigation (top zone)', () => {
     installFsCollect();
     setBodyMeta('4:472:15', 'moon');
     fsRoutesStore.set({
-      routes: {
-        '4:472:15': {
+      routes: [
+        {
+          sources: [{ galaxy: 4, system: 472, position: 15, type: TARGET_MOON }],
           targets: [{ galaxy: 4, system: 475, position: 14, type: TARGET_PLANET }],
           microFleet: { shipId: SHIP_LARGE_CARGO, count: 15000 },
         },
-      },
+      ],
       collectTarget: null,
     });
     /** @type {HTMLElement} */ (document.getElementById('oge-fs-micro-zone')).click();
@@ -142,15 +164,16 @@ describe('micro send — navigation (top zone)', () => {
     installFsCollect();
     setBodyMeta('4:472:15', 'moon');
     fsRoutesStore.set({
-      routes: {
-        '4:472:15': {
+      routes: [
+        {
+          sources: [{ galaxy: 4, system: 472, position: 15, type: TARGET_MOON }],
           targets: [
             { galaxy: 4, system: 475, position: 14, type: TARGET_PLANET },
             { galaxy: 4, system: 480, position: 8, type: TARGET_PLANET },
           ],
           microFleet: { shipId: SHIP_LARGE_CARGO, count: 15000 },
         },
-      },
+      ],
       collectTarget: null,
     });
     // An inbound deployment to the first target (planet 4:475:14).
@@ -168,6 +191,22 @@ describe('micro send — navigation (top zone)', () => {
     // First target skipped → navigates to the second (4:480:8).
     expect(navTarget).toContain('system=480&position=8');
   });
+
+  it('does not navigate when no route matches the current body', () => {
+    // With no route for this body, the Send zone is a "set up" affordance:
+    // it opens the dashboard (when the runtime URL resolves) and otherwise
+    // flashes "No route". Either way it must NOT build a deploy navigation.
+    // The dashboard URL is unresolved in tests (no chrome.runtime), so this
+    // exercises the fallback branch.
+    enable();
+    installFsCollect();
+    setBodyMeta('4:472:15', 'moon');
+    fsRoutesStore.set({ routes: [], collectTarget: null });
+    const micro = /** @type {HTMLElement} */ (document.getElementById('oge-fs-micro-zone'));
+    micro.click();
+    expect(navTarget).toBeNull();
+    expect(micro.textContent).toContain('No route');
+  });
 });
 
 describe('collect send — navigation + dispatch (bottom zone)', () => {
@@ -175,7 +214,7 @@ describe('collect send — navigation + dispatch (bottom zone)', () => {
     enable();
     installFsCollect();
     fsRoutesStore.set({
-      routes: {},
+      routes: [],
       collectTarget: { galaxy: 4, system: 472, position: 15, type: TARGET_MOON },
     });
     /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-zone')).click();
@@ -188,7 +227,7 @@ describe('collect send — navigation + dispatch (bottom zone)', () => {
     installFsCollect();
     location.search = '?page=ingame&component=fleetdispatch&cp=100&mission=4&galaxy=4&system=472&position=15&type=3';
     fsRoutesStore.set({
-      routes: {},
+      routes: [],
       collectTarget: { galaxy: 4, system: 472, position: 15, type: TARGET_MOON },
     });
     // Planet list (via insertAdjacentHTML — preserves the mounted button's

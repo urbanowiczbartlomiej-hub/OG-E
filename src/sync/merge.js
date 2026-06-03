@@ -248,6 +248,51 @@ export const mergeSettings = (local, remote) => {
 };
 
 /**
+ * @typedef {object} FsRoutesSlot
+ * @property {import('../domain/fsRoutes.js').Route[]} routes
+ * @property {import('../domain/fsRoutes.js').TargetCoord | null} collectTarget
+ * @property {number} updatedAt  Epoch-ms of the last local edit (0 = never).
+ */
+
+/**
+ * Merge one universe's fleet-save routes slice, WHOLE-UNIVERSE
+ * newest-`updatedAt`-wins. Unlike scans/history (additive collections) a
+ * route config is a single edited unit per universe, so the grain is the
+ * whole slot and the tie-breaker is its `updatedAt` (set by whichever device
+ * last edited the routes/collectTarget — dashboard or in-game). The newer
+ * side wins the ENTIRE slot (routes + collectTarget together); ties and a
+ * missing/0 remote timestamp keep local (the anti-loop no-write path).
+ *
+ * The whole-universe grain is a deliberate trade: concurrent edits to the
+ * SAME universe on two devices resolve last-writer-wins (the older edit is
+ * lost). Route configs are edited rarely by a single user, so this is
+ * acceptable and far simpler than per-route id/timestamp reconciliation.
+ *
+ * `changed` is `true` only when remote strictly displaced local — the caller
+ * writes the merged slot back to local storage only then (anti-loop).
+ *
+ * @param {FsRoutesSlot} local
+ * @param {Partial<FsRoutesSlot> | undefined | null} remote
+ * @returns {{ merged: FsRoutesSlot, changed: boolean }}
+ */
+export const mergeFsRoutes = (local, remote) => {
+  if (!remote || typeof remote !== 'object') return { merged: local, changed: false };
+  const lT = Number(local?.updatedAt) || 0;
+  const rT = Number(remote.updatedAt) || 0;
+  if (rT > lT) {
+    return {
+      merged: {
+        routes: Array.isArray(remote.routes) ? remote.routes : [],
+        collectTarget: remote.collectTarget ?? null,
+        updatedAt: rT,
+      },
+      changed: true,
+    };
+  }
+  return { merged: local, changed: false };
+};
+
+/**
  * Pure: build the data slice of a gist payload that has every scan
  * wiped while preserving `colonyHistory`. Used by the "clear scan
  * data" UI action — `mergeScans` is a UNION, so a local wipe alone

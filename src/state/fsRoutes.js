@@ -4,11 +4,12 @@
 //
 // # What it holds
 //
-//   - `routes` — keyed by SOURCE-MOON coords `"galaxy:system:position"`.
-//     Each route is the target list + micro-fleet definition for sending
-//     micro-fleets OUT from that moon. Keyed by coords (not by type)
-//     because a source is always a moon; the position uniquely identifies
-//     it within the account.
+//   - `routes` — an ARRAY of {@link Route}. Each route has one or more
+//     SOURCE bodies (planets and/or moons), one ordered target list, and
+//     one micro-fleet; standing on any source fires it. Legacy configs
+//     keyed routes by a single source-moon coord — {@link migrateFsRoutes}
+//     lifts that `Record<coordKey, …>` form into the source-array shape on
+//     hydrate (and the migrated value is written straight back).
 //   - `collectTarget` — the single ad-hoc destination the COLLECT action
 //     sends everything back to. Set by clicking "set target" while on the
 //     staging moon; `null` until chosen. Carries `type` because the
@@ -30,6 +31,7 @@ import { createStore } from '../lib/createStore.js';
 import { persist } from '../lib/persist.js';
 import { chromeStore } from '../lib/storage.js';
 import { parseUniverseId } from '../lib/universeId.js';
+import { migrateFsRoutes } from '../domain/fsRoutes.js';
 
 /**
  * The coordinate / route shapes live in `domain/fsRoutes.js` (pure,
@@ -46,8 +48,8 @@ import { parseUniverseId } from '../lib/universeId.js';
  * Full route config persisted under `<universeId>:oge_fsRoutes`.
  *
  * @typedef {object} FsRoutes
- * @property {Record<string, Route>} routes  Keyed by source-moon
- *   `"galaxy:system:position"`.
+ * @property {Route[]} routes  All micro-fleet routes (each with its own
+ *   source/target lists). See {@link migrateFsRoutes} for the legacy shape.
  * @property {TargetCoord | null} collectTarget  Ad-hoc collect destination.
  */
 
@@ -81,6 +83,33 @@ export const FS_REDIRECT_KEY = 'oge_fsRedirect';
 export const fsRoutesKeyFor = (universeId) => `${universeId}:${FS_ROUTES_KEY_BASE}`;
 
 /**
+ * Suffix of the per-universe "routes last changed" timestamp key
+ * (`<universeId>:oge_fsRoutesTs`). The cross-device sync engine uses this
+ * epoch-ms value for whole-universe newest-wins merging (see
+ * `sync/merge.mergeFsRoutes`).
+ *
+ * Why a SEPARATE chrome.storage key rather than a field inside the routes
+ * value, and why chrome.storage rather than localStorage:
+ *   - It's sync METADATA, not route config — kept out of the {@link FsRoutes}
+ *     domain value, exactly as the settings ts map is kept out of the
+ *     settings values (`settingsSync.SETTINGS_TS_KEY`).
+ *   - Routes are edited from TWO origins: in-game (game origin) AND the
+ *     dashboard (extension origin). localStorage is per-origin, so it
+ *     couldn't be shared; `chrome.storage.local` is the one store both
+ *     origins see. Every writer (dashboard save, in-game prune / set-target)
+ *     stamps it via {@link stampFsRoutesChanged} / the dashboard's own write.
+ */
+export const FS_ROUTES_TS_BASE = 'oge_fsRoutesTs';
+
+/**
+ * Compose the per-universe routes-timestamp key.
+ *
+ * @param {string} universeId
+ * @returns {string} e.g. `'s163-pl:oge_fsRoutesTs'`.
+ */
+export const fsRoutesTsKeyFor = (universeId) => `${universeId}:${FS_ROUTES_TS_BASE}`;
+
+/**
  * Resolve the chrome.storage.local key for the current tab's universe.
  * Falls back to the bare key in non-DOM test environments (mirrors
  * `state/scans.js:currentScansKey`).
@@ -102,7 +131,7 @@ const DEBOUNCE_MS = 200;
  *
  * @returns {FsRoutes}
  */
-const emptyConfig = () => ({ routes: {}, collectTarget: null });
+const emptyConfig = () => ({ routes: [], collectTarget: null });
 
 /**
  * The fleet-save route store. Initial value is empty; hydration is async
@@ -122,6 +151,35 @@ export const fsRoutesStore = createStore(/** @type {FsRoutes} */ (emptyConfig())
 let disposeFn = null;
 
 /**
+ * Resolver for {@link hydratedPromise}, re-bound on every
+ * {@link initFsRoutesStore} call. See `state/history.js` for the full
+ * lifecycle rationale.
+ *
+ * @type {() => void}
+ */
+let resolveHydrated = () => {};
+
+/**
+ * The promise returned by {@link whenFsRoutesHydrated}. Pre-resolved until
+ * {@link initFsRoutesStore} swaps it for a pending one, so tests that bypass
+ * init don't hang awaiting a hydrate that never arrives.
+ *
+ * @type {Promise<void>}
+ */
+let hydratedPromise = Promise.resolve();
+
+/**
+ * Resolves once the {@link fsRoutesStore} hydrate phase has settled (the
+ * stored value — migrated if legacy — has been applied, or the load found
+ * nothing). The planet-bar capture gates route RECONCILIATION on this so it
+ * never prunes against not-yet-hydrated (empty) routes. Call as a function,
+ * not captured at import — the binding changes across init/dispose.
+ *
+ * @returns {Promise<void>}
+ */
+export const whenFsRoutesHydrated = () => hydratedPromise;
+
+/**
  * Wire the store to chrome.storage.local: hydrate from
  * `<universeId>:oge_fsRoutes` and write every change back (debounced).
  * Idempotent — subsequent calls return the same dispose handle without
@@ -132,14 +190,21 @@ let disposeFn = null;
  */
 export const initFsRoutesStore = () => {
   if (disposeFn) return disposeFn;
+  hydratedPromise = new Promise((resolve) => { resolveHydrated = resolve; });
   disposeFn = persist({
     store: fsRoutesStore,
     load: async () => {
       const raw = await chromeStore.get(currentFsRoutesKey());
-      return /** @type {FsRoutes | null | undefined} */ (raw);
+      // Nothing stored yet → keep the empty initial (no migration write).
+      if (raw === null || raw === undefined) return null;
+      // Normalise + migrate the legacy moon-keyed shape. The migrated value
+      // is what gets `store.set`, so the write-through persists it back in
+      // the current shape — a one-time, transparent upgrade.
+      return /** @type {FsRoutes} */ (migrateFsRoutes(raw));
     },
     save: (value) => chromeStore.set(currentFsRoutesKey(), value),
     debounceMs: DEBOUNCE_MS,
+    onHydrate: () => { resolveHydrated(); },
   });
   return disposeFn;
 };
@@ -155,6 +220,21 @@ export const flushFsRoutesStore = () =>
   chromeStore.set(currentFsRoutesKey(), fsRoutesStore.get());
 
 /**
+ * Stamp "routes changed just now" for the current universe, so the next
+ * sync round-trip treats this device's routes as the freshest for
+ * whole-universe newest-wins (see `sync/merge.mergeFsRoutes`). Call AFTER
+ * any in-game write that changes routes/collectTarget (route pruning,
+ * set-collect-target). The dashboard writes the same key directly on save.
+ *
+ * @returns {Promise<void>}
+ */
+export const stampFsRoutesChanged = () => {
+  if (typeof location === 'undefined') return chromeStore.set(FS_ROUTES_TS_BASE, Date.now());
+  const id = parseUniverseId(location.host);
+  return chromeStore.set(id ? fsRoutesTsKeyFor(id) : FS_ROUTES_TS_BASE, Date.now());
+};
+
+/**
  * Tear down the persist wiring. Idempotent.
  *
  * @returns {void}
@@ -164,6 +244,8 @@ export const disposeFsRoutesStore = () => {
     disposeFn();
     disposeFn = null;
   }
+  hydratedPromise = Promise.resolve();
+  resolveHydrated = () => {};
 };
 
 /**

@@ -88,7 +88,9 @@
 import { scansStore } from '../state/scans.js';
 import { historyStore } from '../state/history.js';
 import { settingsStore } from '../state/settings.js';
-import { mergeScans, mergeHistory, mergeSettings } from './merge.js';
+import { fsRoutesStore, fsRoutesKeyFor, fsRoutesTsKeyFor } from '../state/fsRoutes.js';
+import { migrateFsRoutes } from '../domain/fsRoutes.js';
+import { mergeScans, mergeHistory, mergeSettings, mergeFsRoutes } from './merge.js';
 import {
   fetchGistData,
   writeGistData,
@@ -184,6 +186,71 @@ let inFlight = false;
  * timestamps) or schedule a redundant upload.
  */
 let applyingSettingsFromSync = false;
+
+/**
+ * The universe id this scheduler instance owns (from `location.host`),
+ * captured in {@link installSync}. Fleet-save routes are per-universe, so
+ * sync only ever touches THIS universe's slot in the gist's `fsRoutes` map.
+ * Empty string in non-DOM tests / when the host isn't a known universe.
+ */
+let routesUniverseId = '';
+
+/**
+ * Anti-loop flag for ROUTES sync, mirroring {@link applyingSettingsFromSync}.
+ * Raised while we write a merged remote routes slot back into chrome.storage
+ * + {@link fsRoutesStore} so the fsRoutes subscriber doesn't re-stamp the
+ * change and schedule a redundant upload.
+ */
+let applyingRoutesFromSync = false;
+
+/**
+ * Read this universe's local fleet-save routes slot from chrome.storage —
+ * NOT from {@link fsRoutesStore} in memory. Routes are edited from the
+ * dashboard (a different origin) too, and the game tab's in-memory store
+ * wouldn't see those edits; chrome.storage is the cross-origin source of
+ * truth. `updatedAt` comes from the separate per-universe timestamp key.
+ *
+ * @returns {Promise<import('./merge.js').FsRoutesSlot>}
+ */
+const readLocalRoutesSlot = async () => {
+  if (!routesUniverseId) return { routes: [], collectTarget: null, updatedAt: 0 };
+  const [raw, ts] = await Promise.all([
+    chromeStore.get(fsRoutesKeyFor(routesUniverseId)),
+    chromeStore.get(fsRoutesTsKeyFor(routesUniverseId)),
+  ]);
+  const { routes, collectTarget } = migrateFsRoutes(raw);
+  return { routes, collectTarget, updatedAt: typeof ts === 'number' ? ts : 0 };
+};
+
+/**
+ * Write a merged remote routes slot back to local: the routes value + its
+ * timestamp into chrome.storage, and the in-memory {@link fsRoutesStore} so
+ * the current game session reflects the adopted config without a reload.
+ * Guarded by {@link applyingRoutesFromSync} so the fsRoutes subscriber treats
+ * it as a sync-origin write (no re-stamp, no upload reschedule).
+ *
+ * @param {import('./merge.js').FsRoutesSlot} slot
+ * @returns {Promise<void>}
+ */
+const writeLocalRoutesSlot = async (slot) => {
+  if (!routesUniverseId) return;
+  applyingRoutesFromSync = true;
+  try {
+    await chromeStore.set(fsRoutesKeyFor(routesUniverseId), {
+      routes: slot.routes,
+      collectTarget: slot.collectTarget,
+    });
+    await chromeStore.set(fsRoutesTsKeyFor(routesUniverseId), slot.updatedAt);
+    fsRoutesStore.set(
+      /** @type {import('../state/fsRoutes.js').FsRoutes} */ ({
+        routes: slot.routes,
+        collectTarget: slot.collectTarget,
+      }),
+    );
+  } finally {
+    applyingRoutesFromSync = false;
+  }
+};
 
 /**
  * Write a merged settings result back to local: persist the per-key ts map
@@ -290,6 +357,14 @@ const downloadAndMerge = async () => {
     if (histResult.changed) historyStore.set(histResult.merged);
     if (setResult.changed) applyMergedSettings(setResult.merged);
 
+    // Routes: per-universe newest-wins. Read local from chrome.storage (the
+    // cross-origin source of truth) and adopt remote only when it's newer.
+    const routesResult = mergeFsRoutes(
+      await readLocalRoutesSlot(),
+      remote.fsRoutes?.[routesUniverseId],
+    );
+    if (routesResult.changed) await writeLocalRoutesSlot(routesResult.merged);
+
     setStatus('down', new Date().toISOString());
     setStatus('err', null);
   } catch (err) {
@@ -361,6 +436,27 @@ const upload = async () => {
     if (histResult.changed) historyStore.set(histResult.merged);
     if (setResult.changed) applyMergedSettings(setResult.merged);
 
+    // Routes: per-universe newest-wins. Adopt remote locally if newer, then
+    // build the merged `fsRoutes` map for the payload — PRESERVING every
+    // OTHER universe's slot (we only own ours).
+    const routesResult = mergeFsRoutes(
+      await readLocalRoutesSlot(),
+      remote?.fsRoutes?.[routesUniverseId],
+    );
+    if (routesResult.changed) await writeLocalRoutesSlot(routesResult.merged);
+    const mergedFsRoutes = { ...(remote?.fsRoutes || {}) };
+    // Only contribute our universe's slot when it actually carries data —
+    // a never-configured universe (no routes, no target, ts 0) must NOT
+    // write an empty slot, which would differ from the gist's absent field
+    // and force a perpetual no-op PATCH.
+    const slot = routesResult.merged;
+    const slotHasData = slot.updatedAt > 0 || slot.routes.length > 0 || slot.collectTarget != null;
+    if (routesUniverseId && slotHasData) mergedFsRoutes[routesUniverseId] = slot;
+    // Normalise an empty map to `undefined` so a gist with no fsRoutes field
+    // and our empty map compare equal (sameJSON(undefined, {}) is false) —
+    // otherwise we'd PATCH a no-op `fsRoutes: {}` onto every upload.
+    const mergedFsRoutesOut = Object.keys(mergedFsRoutes).length ? mergedFsRoutes : undefined;
+
     // Skip the PATCH when the gist already matches the merged state.
     // This is the common case when upload fires right after a download
     // from another device and both sides already agree — PATCHing
@@ -368,7 +464,8 @@ const upload = async () => {
     const gistIsCurrent =
       sameJSON(remote?.galaxyScans, scansResult.merged) &&
       sameJSON(remote?.colonyHistory, histResult.merged) &&
-      sameJSON(remote?.settings, setResult.merged);
+      sameJSON(remote?.settings, setResult.merged) &&
+      sameJSON(remote?.fsRoutes, mergedFsRoutesOut);
 
     if (!gistIsCurrent) {
       await writeGistData({
@@ -377,6 +474,7 @@ const upload = async () => {
         galaxyScans: scansResult.merged,
         colonyHistory: histResult.merged,
         settings: setResult.merged,
+        fsRoutes: mergedFsRoutesOut,
       });
       setStatus('up', new Date().toISOString());
     }
@@ -452,6 +550,17 @@ export const installSync = () => {
   const unsubScans = scansStore.subscribe(onStoreChange);
   const unsubHistory = historyStore.subscribe(onStoreChange);
 
+  // Fleet-save routes: an in-game change (route pruning, set-collect-target)
+  // flips fsRoutesStore → schedule an upload. Skip sync-origin writes (those
+  // carry a remote timestamp we must keep) and skip while cloudSync is off.
+  // Dashboard edits (a different origin) instead arrive via the
+  // `oge_syncRequestAt` tombstone handled in onStorageChange below.
+  const onRoutesChange = () => {
+    if (applyingRoutesFromSync || !settingsStore.get().cloudSync) return;
+    scheduleUpload();
+  };
+  const unsubRoutes = fsRoutesStore.subscribe(onRoutesChange);
+
   // Settings sync: stamp the keys that changed since the last tick with
   // `now`, then schedule an upload. `applyingSettingsFromSync` skips
   // sync-origin writes (those carry remote timestamps we must keep), and
@@ -491,6 +600,9 @@ export const installSync = () => {
   // restricts this module to game-origin tabs.
   const universeId =
     typeof location !== 'undefined' ? parseUniverseId(location.host) : '';
+  // Fleet-save routes live per-universe in the gist; this scheduler only
+  // ever touches its own universe's slot.
+  routesUniverseId = universeId || '';
   const syncKey = universeId
     ? syncRequestKeyFor(universeId)
     : SYNC_REQUEST_KEY_BASE;
@@ -587,6 +699,7 @@ export const installSync = () => {
       unsubScans();
       unsubHistory();
       unsubSettings();
+      unsubRoutes();
       document.removeEventListener(FORCE_SYNC_EVENT, onForceSync);
       unsubStorage();
       installed = null;
@@ -612,4 +725,6 @@ export const _resetSchedulerForTest = () => {
   }
   inFlight = false;
   applyingSettingsFromSync = false;
+  applyingRoutesFromSync = false;
+  routesUniverseId = '';
 };

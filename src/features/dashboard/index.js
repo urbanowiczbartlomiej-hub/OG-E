@@ -85,9 +85,10 @@ const EXPANDED_LS_KEY = 'oge_expandedGalaxies';
 
 // localStorage key for the active dashboard tab. Per-device UI prefs.
 // Possible values are the `data-tab` attributes from dashboard.html:
-// `'colony'`, `'galaxy'`, `'free'`, `'reminders'`. Anything unrecognised
-// falls back to `'colony'` (the page's first tab). The key keeps its
-// legacy `oge_histogram` name so the saved preference survives the rename.
+// `'colony'`, `'galaxy'`, `'free'`, `'reminders'`, `'routes'`. Anything
+// unrecognised falls back to `'colony'` (the page's first tab). The key
+// keeps its legacy `oge_histogram` name so the saved preference survives
+// the rename.
 const ACTIVE_TAB_LS_KEY = 'oge_histogramTab';
 const DEFAULT_TAB = 'colony';
 
@@ -395,7 +396,12 @@ const setActiveTab = (tabKey) => {
  * @returns {void}
  */
 const wireTabs = () => {
-  const initial = safeLS.get(ACTIVE_TAB_LS_KEY) ?? DEFAULT_TAB;
+  // A `?tab=<data-tab>` URL param deep-links a specific tab (e.g. the
+  // in-game "no route" Daily Transport button opens `?tab=routes`). It
+  // wins over the persisted preference when present; `setActiveTab` falls
+  // back to DEFAULT_TAB for an unknown value, so a bad param is harmless.
+  const fromUrl = new URLSearchParams(location.search).get('tab');
+  const initial = fromUrl || safeLS.get(ACTIVE_TAB_LS_KEY) || DEFAULT_TAB;
   setActiveTab(initial);
 
   for (const btn of document.querySelectorAll('.tab-btn')) {

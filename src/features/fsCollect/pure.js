@@ -22,6 +22,7 @@ import { coordKey, coordTypeKey } from '../../domain/fsRoutes.js';
 export {
   coordKey,
   coordTypeKey,
+  findRouteForBody,
   parseRoutesDsl,
   formatRoutesDsl,
 } from '../../domain/fsRoutes.js';

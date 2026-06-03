@@ -4,28 +4,28 @@
 // "park the fleet on a moon, scatter micro-fleets to the planets, then
 // pull everything back" workflow.
 //
-// # The unified button — three zones
+// # The unified button — two zones
 //
-// A single circular button divided into three equal-height zones, stacked vertically:
+// A single circular button split into two equal-height zones, stacked vertically:
 //
-//   - TOP (Micro): from the current MOON, send a fixed micro-fleet
+//   - TOP (Send): from the current MOON, send a fixed micro-fleet
 //     (Stacjonuj / mission=4) to each target defined for that moon in the routes
 //     config, skipping targets that already have a deployment inbound. Ships are
 //     preloaded via the fleetdispatch URL `am<shipId>=count` param, so the page
-//     lands on fleet step 1 with the micro-fleet already selected.
-//   - MIDDLE (Target): long-press (300ms+) to mark the current body as the
-//     ad-hoc collect target, shown as "galaxy:system:position". Single-tap
-//     navigates to the target page.
-//   - BOTTOM (Collect): from the current planet send EVERYTHING (all ships +
-//     all resources) back to the ad-hoc collect target.
+//     lands on fleet step 1 with the micro-fleet already selected. With no route
+//     for the current body, a tap opens the dashboard's route-setup tab instead.
+//   - BOTTOM (Collect): TAP sends EVERYTHING (all ships + all resources) from the
+//     current planet back to the ad-hoc collect target. LONG-PRESS (300ms+) marks
+//     the body you're standing on as that collect target. The label shows the
+//     current target so it's clear where a collect run goes.
 //
 // # Two-tap send model (TOS-safe: one click → one originated request)
 //
 // On the fleetdispatch page each zone drives the game's own two-step
-// form one tap at a time:
-//   - tap "Przygotuj" → (collect: select all ships) → click Continue,
-//     wait for step 2, relabel "Wyślij".
-//   - tap "Wyślij" → (collect: load all resources) → stash the post-send
+// form one tap at a time (the zone shows "Send", then "Next"/"Send"):
+//   - first tap → (collect: select all ships) → click Continue,
+//     wait for step 2.
+//   - second tap → (collect: load all resources) → stash the post-send
 //     redirect URL in `oge_fsRedirect` → click the native dispatch button.
 // The only server-visible action a tap originates is the final dispatch.
 //
@@ -45,9 +45,11 @@
 // @see ../shared/draggableButton.js — drag + focus persistence.
 
 import { settingsStore } from '../../state/settings.js';
+import { parseUniverseId } from '../../lib/universeId.js';
 import {
   fsRoutesStore,
   flushFsRoutesStore,
+  stampFsRoutesChanged,
   FS_REDIRECT_KEY,
 } from '../../state/fsRoutes.js';
 import {
@@ -57,6 +59,7 @@ import {
 import {
   coordKey,
   coordTypeKey,
+  findRouteForBody,
   buildDeployUrl,
   buildCollectUrl,
   findNextMicroTarget,
@@ -78,7 +81,6 @@ import {
 
 const FS_UNIFIED_ID = 'oge-fs-unified';
 const FS_MICRO_ZONE_ID = 'oge-fs-micro-zone';
-const FS_TARGET_ZONE_ID = 'oge-fs-target-zone';
 const FS_COLLECT_ZONE_ID = 'oge-fs-collect-zone';
 
 const FS_POS_KEY = 'oge_fsUnifiedPos';
@@ -92,7 +94,6 @@ const LONG_PRESS_MS = 300;
 
 // Colours — distinct from sendExp (blue) / sendCol (green/teal).
 const BG_MICRO = '#7b3fa0'; // violet
-const BG_TARGET = '#333'; // dark gray
 const BG_COLLECT = '#1f6f6f'; // teal-dark
 
 // ─── helpers (impure env reads) ─────────────────────────────────────────
@@ -102,6 +103,44 @@ const onFleetdispatch = () => location.search.includes('component=fleetdispatch'
 const urlHasAm = () => /[?&]am\d+=/.test(location.search);
 /** @param {string} name */
 const urlParam = (name) => new URLSearchParams(location.search).get(name);
+
+/**
+ * URL of the OG-E Dashboard extension page, resolved once via
+ * `browser/chrome.runtime.getURL`. Empty string when the WebExtension
+ * runtime API isn't present (test environments) — {@link openDashboardRoutes}
+ * guards on this. Mirrors the resolver in `settingsUi/sections/data.js`
+ * (kept local — a feature must not import another feature).
+ *
+ * @type {string}
+ */
+const DASHBOARD_URL = (() => {
+  try {
+    const g = /** @type {any} */ (/** @type {unknown} */ (globalThis));
+    const ns = g.browser ?? g.chrome;
+    const url = ns?.runtime?.getURL?.('dashboard.html');
+    return typeof url === 'string' ? url : '';
+  } catch {
+    return '';
+  }
+})();
+
+/**
+ * Open the Dashboard's Daily Transport tab in a new tab, pre-selecting the
+ * current universe (`?host=`) and deep-linking the routes tab (`?tab=routes`).
+ * No-op (returns false) when the runtime URL is unavailable, so the caller
+ * can fall back to an in-place hint.
+ *
+ * @returns {boolean} Whether the dashboard was opened.
+ */
+const openDashboardRoutes = () => {
+  if (!DASHBOARD_URL) return false;
+  const universeId = parseUniverseId(location.host);
+  const url =
+    DASHBOARD_URL +
+    (universeId ? `?host=${encodeURIComponent(universeId)}&tab=routes` : '?tab=routes');
+  window.open(url, '_blank');
+  return true;
+};
 
 /**
  * Set of {@link coordTypeKey}s that currently have a deployment inbound —
@@ -138,14 +177,16 @@ const collectedOriginKeys = (target) => {
 // ─── label painting ─────────────────────────────────────────────────────
 
 /**
- * Paint a button/half with a big primary line and an optional small line.
+ * Paint a zone with up to three lines: optional top caption, main text,
+ * optional bottom hint (shown dimmer and smaller than the top caption).
  *
  * @param {HTMLElement | null} el
  * @param {string} big
- * @param {string} [small]
+ * @param {string} [small]   top caption (0.5em, 85% opacity)
+ * @param {string} [hint]    bottom hint (0.42em, 55% opacity)
  * @returns {void}
  */
-const setLabel = (el, big, small) => {
+const setLabel = (el, big, small, hint) => {
   if (!el) return;
   el.textContent = '';
   const wrap = document.createElement('div');
@@ -157,10 +198,16 @@ const setLabel = (el, big, small) => {
     top.style.cssText = 'font-size:0.5em;opacity:0.85;letter-spacing:0.5px;';
     wrap.appendChild(top);
   }
-  const bottom = document.createElement('div');
-  bottom.textContent = big;
-  bottom.style.cssText = 'font-size:1em;margin-top:2px;';
-  wrap.appendChild(bottom);
+  const middle = document.createElement('div');
+  middle.textContent = big;
+  middle.style.cssText = 'font-size:1em;margin-top:2px;';
+  wrap.appendChild(middle);
+  if (hint) {
+    const bot = document.createElement('div');
+    bot.textContent = hint;
+    bot.style.cssText = 'font-size:0.42em;opacity:0.55;margin-top:1px;letter-spacing:0.3px;';
+    wrap.appendChild(bot);
+  }
   el.appendChild(wrap);
 };
 
@@ -227,8 +274,8 @@ const safeWrite = (url) => {
 let busy = false;
 
 /**
- * TOP zone (Micro) click. Idle/elsewhere → navigate to the next target for the
- * current moon's route. On fleetdispatch → two-tap drive (Przygotuj/Wyślij).
+ * TOP zone (Send) click. Idle/elsewhere → navigate to the next target for the
+ * current source's route. On fleetdispatch → two-tap drive (Send → Next).
  *
  * @returns {void}
  */
@@ -260,9 +307,12 @@ const onMicroClick = () => {
   }
 
   const body = readCurrentBody();
-  const route = body ? fsRoutesStore.get().routes[coordKey(body)] : null;
+  const route = findRouteForBody(fsRoutesStore.get().routes, body);
   if (!route) {
-    flash(microZone, 'No route');
+    // No route for this body — guide the user straight to where routes are
+    // set up rather than just flashing an error. Falls back to the flash
+    // when the dashboard URL can't be resolved (e.g. tests).
+    if (!openDashboardRoutes()) flash(microZone, 'No route');
     return;
   }
   const next = findNextMicroTarget(route.targets, microInFlightKeys());
@@ -314,21 +364,24 @@ const onCollectClick = () => {
 };
 
 /**
- * MIDDLE zone (Target) long-press. Mark the body you're currently on as the
- * ad-hoc collect target and persist it immediately.
+ * Collect-zone LONG-PRESS. Mark the body you're currently on as the ad-hoc
+ * collect target and persist it immediately.
  *
  * @returns {void}
  */
 const onSetTargetClick = () => {
-  const targetZone = document.getElementById(FS_TARGET_ZONE_ID);
+  const collectZone = document.getElementById(FS_COLLECT_ZONE_ID);
   const body = readCurrentBody();
   if (!body) {
-    flash(targetZone, '?');
+    flash(collectZone, '?');
     return;
   }
   fsRoutesStore.update((prev) => ({ ...prev, collectTarget: body }));
   // Persist now — the user may navigate away before the debounce fires.
   flushFsRoutesStore();
+  // Stamp the cross-device sync clock so this collect-target change wins
+  // the next whole-universe newest-wins merge.
+  void stampFsRoutesChanged();
   refresh();
 };
 
@@ -350,41 +403,45 @@ const lockBriefly = () => {
  */
 const refresh = () => {
   const microZone = document.getElementById(FS_MICRO_ZONE_ID);
-  const targetZone = document.getElementById(FS_TARGET_ZONE_ID);
   const collectZone = document.getElementById(FS_COLLECT_ZONE_ID);
 
-  // Micro (top zone) label.
+  // Send (top zone) label.
   if (microZone) {
     if (onFleetdispatch() && isStep2()) {
-      setLabel(microZone, 'Send', 'micro');
+      setLabel(microZone, 'Send', 'send');
     } else if (onFleetdispatch() && urlHasAm()) {
-      setLabel(microZone, 'Next', 'micro');
+      setLabel(microZone, 'Next', 'send');
     } else {
       const body = readCurrentBody();
-      const route = body ? fsRoutesStore.get().routes[coordKey(body)] : null;
+      const route = findRouteForBody(fsRoutesStore.get().routes, body);
       if (!route) {
-        setLabel(microZone, 'Micro', 'no route');
+        setLabel(microZone, 'Set up', 'no route', 'open routes');
       } else {
-        const left = countRemainingMicroTargets(route.targets, microInFlightKeys());
-        setLabel(microZone, left > 0 ? `${left}` : '0', 'micro');
+        // "<in-flight>/<total>" — how many of the route's targets currently
+        // have a micro-fleet inbound, out of all targets defined for it.
+        const total = route.targets.length;
+        const inFlight = total - countRemainingMicroTargets(route.targets, microInFlightKeys());
+        setLabel(microZone, `${inFlight}/${total}`, 'send');
       }
     }
   }
 
-  // Target (middle zone) label — shows current collect target.
-  if (targetZone) {
-    const t = fsRoutesStore.get().collectTarget;
-    setLabel(targetZone, t ? `${t.galaxy}:${t.system}:${t.position}` : '—', 'target');
-  }
-
-  // Collect (bottom zone) label.
+  // Collect (bottom zone) label — TAP collects, LONG-PRESS sets the target.
+  // Idle state shows the destination + the long-press affordance so both
+  // actions are discoverable on the one zone.
   if (collectZone) {
     if (onFleetdispatch() && isStep2()) {
       setLabel(collectZone, 'Send', 'collect');
     } else if (onFleetdispatch()) {
       setLabel(collectZone, 'Next', 'collect');
     } else {
-      setLabel(collectZone, 'Collect');
+      const t = fsRoutesStore.get().collectTarget;
+      setLabel(
+        collectZone,
+        'Collect',
+        t ? `→ ${t.galaxy}:${t.system}:${t.position}` : 'no target',
+        'hold = set target',
+      );
     }
   }
 };
@@ -394,19 +451,20 @@ const refresh = () => {
 /** @type {{ dispose: () => void } | null} */
 let installed = null;
 
+/** @param {number} size */
+const zoneFontSize = (size) => Math.round(size * 0.14) + 'px';
+
 /**
- * Style the unified three-zone circular button. The wrapper defines the
- * outer circle geometry, and each zone (micro/target/collect) is a flex
- * child filling 1/3 of the height.
+ * Style the unified two-zone circular button. The wrapper defines the outer
+ * circle geometry; each zone (Send / Collect) is an equal-height flex child.
  *
  * @param {HTMLElement} wrap
- * @param {HTMLElement[]} zones  [microZone, targetZone, collectZone]
+ * @param {HTMLElement[]} zones  [microZone, collectZone]
  * @param {number} size
  * @param {string[]} bgs  one bg per zone
  * @returns {void}
  */
-const styleThreeZone = (wrap, zones, size, bgs) => {
-  const fontSize = Math.round(size * 0.14) + 'px';
+const styleZones = (wrap, zones, size, bgs) => {
   wrap.style.cssText = [
     'position:fixed',
     'border-radius:50%',
@@ -432,7 +490,7 @@ const styleThreeZone = (wrap, zones, size, bgs) => {
       'font-weight:bold',
       'border:none',
       'cursor:pointer',
-      `font-size:${fontSize}`,
+      `font-size:${zoneFontSize(size)}`,
       `background:${bgs[i]}`,
     ].join(';');
   });
@@ -487,6 +545,18 @@ export const installFsCollect = () => {
   let dragHandle = null;
   /** @type {number | null} */
   let longPressTimer = null;
+  /** Set true when a long-press fired, so the trailing click is swallowed. */
+  let longPressFired = false;
+  /** Pointer-down coords, to cancel the long-press once a drag starts. */
+  let pressX = 0;
+  let pressY = 0;
+
+  const clearLongPress = () => {
+    if (longPressTimer !== null) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+  };
 
   const mount = () => {
     if (document.getElementById(FS_UNIFIED_ID)) {
@@ -494,7 +564,7 @@ export const installFsCollect = () => {
     }
     const size = settingsStore.get().fsBtnSize;
 
-    // Create wrapper and three zones.
+    // Create wrapper and two zones.
     const wrap = document.createElement('div');
     wrap.id = FS_UNIFIED_ID;
 
@@ -504,21 +574,14 @@ export const installFsCollect = () => {
     microZone.tabIndex = 0;
     microZone.setAttribute('aria-label', 'Send micro-fleets');
 
-    const targetZone = document.createElement('button');
-    targetZone.type = 'button';
-    targetZone.id = FS_TARGET_ZONE_ID;
-    targetZone.tabIndex = 0;
-    targetZone.setAttribute('aria-label', 'Set or view collect target (long-press)');
-
     const collectZone = document.createElement('button');
     collectZone.type = 'button';
     collectZone.id = FS_COLLECT_ZONE_ID;
     collectZone.tabIndex = 0;
-    collectZone.setAttribute('aria-label', 'Collect to target');
+    collectZone.setAttribute('aria-label', 'Tap to collect; long-press to set the collect target');
 
-    styleThreeZone(wrap, [microZone, targetZone, collectZone], size, [BG_MICRO, BG_TARGET, BG_COLLECT]);
+    styleZones(wrap, [microZone, collectZone], size, [BG_MICRO, BG_COLLECT]);
     wrap.appendChild(microZone);
-    wrap.appendChild(targetZone);
     wrap.appendChild(collectZone);
     placeWrap(wrap, FS_POS_KEY, size);
     document.body.appendChild(wrap);
@@ -533,50 +596,52 @@ export const installFsCollect = () => {
       onMicroClick();
     });
 
-    // Target zone — long-press sets target, regular click ignored (or navigates to target).
-    targetZone.addEventListener('pointerdown', (e) => {
+    // Collect zone — TAP collects, LONG-PRESS sets the target. The long-press
+    // timer is armed on pointerdown, disarmed on release/leave, and cancelled
+    // once movement crosses the drag threshold (so dragging never sets the
+    // target). A fired long-press sets `longPressFired` so the click handler
+    // swallows the trailing tap.
+    collectZone.addEventListener('pointerdown', (e) => {
+      longPressFired = false;
+      pressX = e.clientX;
+      pressY = e.clientY;
+      clearLongPress();
       longPressTimer = setTimeout(() => {
         longPressTimer = null;
+        longPressFired = true;
         onSetTargetClick();
       }, LONG_PRESS_MS);
     });
-    targetZone.addEventListener('pointerup', () => {
-      if (longPressTimer !== null) {
-        clearTimeout(longPressTimer);
-        longPressTimer = null;
+    collectZone.addEventListener('pointermove', (e) => {
+      if (
+        longPressTimer !== null &&
+        (Math.abs(e.clientX - pressX) > DRAG_THRESHOLD ||
+          Math.abs(e.clientY - pressY) > DRAG_THRESHOLD)
+      ) {
+        clearLongPress();
       }
     });
-    targetZone.addEventListener('pointercancel', () => {
-      if (longPressTimer !== null) {
-        clearTimeout(longPressTimer);
-        longPressTimer = null;
-      }
-    });
-    targetZone.addEventListener('click', (e) => {
-      if (dragHandle?.wasDrag()) { dragHandle.resetDrag(); return; }
-      e.stopPropagation();
-      // Regular click does nothing for now (target-only shows via label).
-    });
-
-    // Collect zone — regular click.
+    collectZone.addEventListener('pointerup', clearLongPress);
+    collectZone.addEventListener('pointercancel', clearLongPress);
+    collectZone.addEventListener('pointerleave', clearLongPress);
+    // Long-press on touch can raise the native context menu — suppress it so
+    // the gesture is ours alone.
+    collectZone.addEventListener('contextmenu', (e) => e.preventDefault());
     collectZone.addEventListener('click', (e) => {
       if (dragHandle?.wasDrag()) { dragHandle.resetDrag(); return; }
+      if (longPressFired) { longPressFired = false; return; }
       e.stopPropagation();
       onCollectClick();
     });
 
     installFocusPersist({ button: microZone, focusKey: FOCUS_KEY, focusValue: 'fs-unified-micro' });
-    installFocusPersist({ button: targetZone, focusKey: FOCUS_KEY, focusValue: 'fs-unified-target' });
     installFocusPersist({ button: collectZone, focusKey: FOCUS_KEY, focusValue: 'fs-unified-collect' });
 
     refresh();
   };
 
   const removeButton = () => {
-    if (longPressTimer !== null) {
-      clearTimeout(longPressTimer);
-      longPressTimer = null;
-    }
+    clearLongPress();
     document.getElementById(FS_UNIFIED_ID)?.remove();
   };
 
@@ -587,19 +652,15 @@ export const installFsCollect = () => {
    * @param {number} size
    */
   const updateSize = (size) => {
-    const fontSize = Math.round(size * 0.14) + 'px';
     const wrap = document.getElementById(FS_UNIFIED_ID);
     if (wrap) {
       wrap.style.width = size + 'px';
       wrap.style.height = size + 'px';
     }
-    const zones = [
-      document.getElementById(FS_MICRO_ZONE_ID),
-      document.getElementById(FS_TARGET_ZONE_ID),
-      document.getElementById(FS_COLLECT_ZONE_ID),
-    ];
-    zones.forEach((z) => {
-      if (z) z.style.fontSize = fontSize;
+    const zoneIds = [FS_MICRO_ZONE_ID, FS_COLLECT_ZONE_ID];
+    zoneIds.forEach((id) => {
+      const z = document.getElementById(id);
+      if (z) z.style.fontSize = zoneFontSize(size);
     });
     refresh();
   };

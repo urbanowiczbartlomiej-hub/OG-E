@@ -1,9 +1,10 @@
 // @ts-check
 
-// Fleet-Save section of the OG-E settings tab — the two floating buttons
-// (Mikrofloty + Zbieraj) from `features/fsCollect`. `fsCollectMode` is the
-// section master; the size only matters when it's on. The per-moon routes
-// themselves are defined in the dashboard's "FS Routes" tab, not here.
+// "Daily Transport" section of the OG-E settings tab — the unified floating
+// button from `features/fsCollect` that handles daily micro-fleet distribution
+// (Send) and collection (Collect). `fsCollectMode` is the section master; size
+// only matters when on. Routes are defined in the dashboard's "Daily Transport"
+// tab, not here.
 
 /**
  * @typedef {import('../controls.js').SettingsSection} SettingsSection
@@ -17,9 +18,9 @@ const fsLocked = (s) => !s.fsCollectMode;
 
 /** @type {SettingsSection} */
 export const fleetSaveSection = {
-  section: 'Fleet Save',
+  section: 'Daily Transport',
   options: [
-    { id: 'fsCollectMode', label: 'Floating Mikrofloty + Zbieraj buttons (routes set in the dashboard FS Routes tab)', type: 'checkbox' },
-    { id: 'fsBtnSize', label: 'Fleet-save button size', type: 'range', min: 40, max: 560, step: 10, unit: 'px', disabledWhen: fsLocked },
+    { id: 'fsCollectMode', label: 'Daily Transport button (tap the Send zone with no route to open route setup)', type: 'checkbox' },
+    { id: 'fsBtnSize', label: 'Daily Transport button size', type: 'range', min: 40, max: 560, step: 10, unit: 'px', disabledWhen: fsLocked },
   ],
 };
