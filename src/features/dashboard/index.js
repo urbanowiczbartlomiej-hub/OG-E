@@ -72,6 +72,7 @@ import {
   triggerResetGalaxy,
 } from './io.js';
 import { installReminders } from './reminders.js';
+import { installRoutes } from './routes.js';
 
 /**
  * @typedef {import('../../state/history.js').ColonyEntry} ColonyEntry
@@ -115,6 +116,15 @@ let selectedUniverseId = '';
  * @type {{ refresh: () => void } | null}
  */
 let remindersApi = null;
+
+/**
+ * Handle to the FS-routes tab's refresh entrypoint, set by
+ * `installRoutes` at boot. Called from the universe-selector change
+ * handler so the routes textarea reloads for the newly-selected server.
+ *
+ * @type {{ refresh: () => void } | null}
+ */
+let routesApi = null;
 
 /** @type {ColonyEntry[]} */
 let history = [];
@@ -179,6 +189,7 @@ const boot = async () => {
   // this module's module-scope state; the universe selector's change
   // handler calls `remindersApi.refresh()` to repaint.
   remindersApi = installReminders({ getUniverseId: () => selectedUniverseId });
+  routesApi = installRoutes({ getUniverseId: () => selectedUniverseId });
 
   const universes = await discoverUniverses();
   selectedUniverseId = resolveInitialUniverse(universes);
@@ -186,10 +197,11 @@ const boot = async () => {
 
   await loadAll();
   renderAll();
-  // Reminders tab read `selectedUniverseId` via its getter when its
-  // initial paint ran inside `installReminders` — which was BEFORE we
-  // resolved the active universe. Repaint now that it's known.
+  // Reminders + routes tabs read `selectedUniverseId` via their getter
+  // when their initial paint ran inside install* — BEFORE we resolved the
+  // active universe. Repaint now that it's known.
   remindersApi?.refresh();
+  routesApi?.refresh();
   wireListeners();
 
   chromeStore.onChanged((changes) => {
@@ -613,6 +625,7 @@ const wireListeners = () => {
     selectedUniverseId = universeSelect.value;
     void loadAll().then(renderAll);
     remindersApi?.refresh();
+    routesApi?.refresh();
   });
 
   clearScansBtn?.addEventListener('click', async () => {

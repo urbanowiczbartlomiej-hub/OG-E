@@ -64,6 +64,7 @@ import { initHistoryStore } from './state/history.js';
 import { initScansStore } from './state/scans.js';
 import { initRegistryStore } from './state/registry.js';
 import { initSettingsStore } from './state/settings.js';
+import { initFsRoutesStore } from './state/fsRoutes.js';
 import { installSettingsMirror } from './state/settings.js';
 import { migrateLegacyStorageKeys } from './state/migrate.js';
 
@@ -71,6 +72,7 @@ import { installColonyRecorder } from './features/colonyRecorder.js';
 import { installBadges } from './features/badges.js';
 import { installSendExp } from './features/sendExp/index.js';
 import { installSendCol } from './features/sendCol/index.js';
+import { installFsCollect } from './features/fsCollect/index.js';
 import { installAbandonOverview } from './features/abandon/overview.js';
 import { installFreshPlanetDetector } from './features/freshPlanetDetector.js';
 import { installSettingsUi } from './features/settingsUi/index.js';
@@ -103,6 +105,10 @@ initRegistryStore();
   await migrateLegacyStorageKeys(parseUniverseId(location.host));
   initHistoryStore();
   initScansStore();
+  // Fleet-save routes (per-universe, chrome.storage). Without this the
+  // in-game fsCollect buttons never see routes authored in the dashboard
+  // and the ad-hoc collect target wouldn't survive a page reload.
+  initFsRoutesStore();
   installSettingsMirror();
 
   // Reminder config lives in `settings.js` (regular localStorage Settings,
@@ -145,6 +151,9 @@ const installDomFeatures = () => {
   // User-facing buttons.
   installSendExp();
   installSendCol();
+  // Fleet-save micro-fleet buttons (Mikrofloty + Zbieraj). Gated on the
+  // fsCollectMode setting (default off); independent of the others.
+  installFsCollect();
 
   // Standalone overlay on overview for fresh-small colonies.
   // Independent from sendCol; reuses `abandonPlanet()` from

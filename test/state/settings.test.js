@@ -98,6 +98,8 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
         'enterBtnSize',
         'eventMenuHighlight',
         'expeditionBadges',
+        'fsBtnSize',
+        'fsCollectMode',
         'fsEnabled',
         'fsMinFlightSec',
         'fsOffsets',

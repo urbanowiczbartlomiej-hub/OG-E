@@ -150,7 +150,7 @@ const labelFor = (row) => {
   const mt = row.getAttribute('data-mission-type') || '';
   const mission = MISSION_NAMES[mt] || 'Fleet';
   const isReturn = row.getAttribute('data-return-flight') === 'true';
-  const sel = isReturn ? '.coordsOrigin' : '.destCoords';
+  const sel = isReturn ? GAME.COORDS_ORIGIN : GAME.COORDS_DEST;
   const landing = denseCoords(row.querySelector(sel)?.textContent);
   return landing ? `${mission} → [${landing}]` : mission;
 };

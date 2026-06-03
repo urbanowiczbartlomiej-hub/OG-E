@@ -126,6 +126,8 @@ export const SETTINGS_PREFIX = 'oge_';
  * @property {number}  fsThreshold
  * @property {string}  fsOffsets
  * @property {number}  fsMinFlightSec
+ * @property {boolean} fsCollectMode
+ * @property {number}  fsBtnSize
  */
 
 /**
@@ -195,6 +197,10 @@ export const SETTINGS_SCHEMA = {
   fsThreshold:            { type: 'int',    default: 100000, key: SETTINGS_PREFIX + 'fsThreshold' },
   fsOffsets:              { type: 'string', default: '-10m, 0m, 10m', key: SETTINGS_PREFIX + 'fsReminderOffsets' },
   fsMinFlightSec:         { type: 'int',    default: 600,   key: SETTINGS_PREFIX + 'fsMinFlightSec' },
+  // Fleet-save micro-fleet feature (`features/fsCollect`): master toggle
+  // for the two floating buttons (Mikrofloty + Zbieraj) and their size.
+  fsCollectMode:          { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'fsCollectMode' },
+  fsBtnSize:              { type: 'int',    default: 320,   key: SETTINGS_PREFIX + 'fsBtnSize' },
 };
 
 /**

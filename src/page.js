@@ -26,6 +26,7 @@ import { installGalaxyHook } from './bridges/galaxyHook.js';
 import { installCheckTargetHook } from './bridges/checkTargetHook.js';
 import { installSendFleetHook } from './bridges/sendFleetHook.js';
 import { installExpeditionRedirect } from './bridges/expeditionRedirect.js';
+import { installDeployRedirect } from './bridges/deployRedirect.js';
 import { installFleetDispatcherSnapshot } from './bridges/fleetDispatcherSnapshot.js';
 import { installEventBoxHook } from './bridges/eventBoxHook.js';
 import { installTraderActionHook } from './bridges/traderActionHook.js';
@@ -34,6 +35,11 @@ installGalaxyHook();
 installCheckTargetHook();
 installSendFleetHook();
 installExpeditionRedirect();
+// Rewrite the post-send redirect for fleet-save deployment sends. Unlike
+// expeditionRedirect it computes nothing — the isolated-world fsCollect
+// orchestrator hands it a precomputed URL via the `oge_fsRedirect`
+// localStorage key. See that module's header for the handoff contract.
+installDeployRedirect();
 // Publish window.fleetDispatcher state across the world boundary so
 // isolated-world content scripts can read it. See that module's header
 // for the cross-realm access problem it solves.

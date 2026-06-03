@@ -40,3 +40,34 @@ export const MISSION_EXPEDITION = 15;
 
 /** Game's `mission` parameter for colonization sends. */
 export const MISSION_COLONIZE = 7;
+
+/**
+ * Game's `mission` parameter for deployment ("Stacjonuj") sends — a
+ * one-way mission where the fleet stations at the target and stays.
+ * Used by the fleet-save micro-fleet feature (`features/fsCollect`).
+ */
+export const MISSION_DEPLOYMENT = 4;
+
+/**
+ * Target-type ids used in the fleetdispatch URL `type=` param and the
+ * galaxy-row target icons (`.targetIcons a[data-type]`). A moon shares
+ * its planet's `galaxy:system:position` but is reached with `type=3`.
+ *
+ *   1 = planet, 2 = debris field, 3 = moon.
+ */
+export const TARGET_PLANET = 1;
+export const TARGET_DEBRIS = 2;
+export const TARGET_MOON = 3;
+
+/**
+ * Ship ids used to preload a fleet via the fleetdispatch URL param
+ * `am<shipId>=<count>` (e.g. `am203=15000`). Only the ships the
+ * fleet-save workflow uses for micro-fleets are listed here.
+ *
+ *   202 = small cargo (Mały transporter)
+ *   203 = large cargo (Duży transporter)
+ *   219 = pathfinder (Pionier)
+ */
+export const SHIP_SMALL_CARGO = 202;
+export const SHIP_LARGE_CARGO = 203;
+export const SHIP_PATHFINDER = 219;

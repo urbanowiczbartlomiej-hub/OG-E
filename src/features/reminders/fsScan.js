@@ -62,7 +62,7 @@ export const fsLabelFor = (row) => {
   const mt = row.getAttribute('data-mission-type') || '';
   const mission = MISSION_NAMES[mt] || 'Fleet';
   const isReturn = row.getAttribute('data-return-flight') === 'true';
-  const landing = denseCoords(row.querySelector(isReturn ? GAME.COORDS_ORIGIN : '.destCoords')?.textContent);
+  const landing = denseCoords(row.querySelector(isReturn ? GAME.COORDS_ORIGIN : GAME.COORDS_DEST)?.textContent);
   return landing ? `${mission} → [${landing}]` : mission;
 };
 

@@ -70,6 +70,15 @@ export const GAME = {
   EVENT_FLEET_ROWS: '#eventContent tr.eventFleet[id^="eventRow-"]',
   /** Origin-coordinate cell, present on most fleet rows. */
   COORDS_ORIGIN: '.coordsOrigin',
+
+  /**
+   * Destination-coords cell of an event-ticker fleet row. The anchor's
+   * href carries only `galaxy`+`system`, but its text is the full
+   * `[g:s:p]` — parse the position from the text. Read by the reminders
+   * feature (where an outbound leg lands) and by `features/fsCollect`
+   * (which targets already have an inbound Deployment fleet).
+   */
+  COORDS_DEST: '.destCoords',
   /** Fleet-details cell (ship counts / mission text). */
   DETAILS_FLEET: '.detailsFleet',
 
