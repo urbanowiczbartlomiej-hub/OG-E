@@ -162,8 +162,8 @@ const installDomFeatures = () => {
   // User-facing buttons.
   installSendExp();
   installSendCol();
-  // Unified Transport button (wyślij mikrofloty + zbieraj). Gated on the
-  // fsCollectMode setting (default off); independent of the others.
+  // Unified Daily Transport button (Send micro-fleets + Collect). Gated on
+  // the fsCollectMode setting (default off); independent of the others.
   installFsCollect();
 
   // Standalone overlay on overview for fresh-small colonies.

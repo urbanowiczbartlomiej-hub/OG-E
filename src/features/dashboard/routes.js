@@ -1,6 +1,6 @@
 // @ts-check
 
-// Dashboard "FS Routes" tab — a CLICKABLE editor for the fleet-save
+// Dashboard "Daily Transport" tab — a CLICKABLE editor for the daily-transport
 // micro-fleet routes, per selected universe. Sources and targets are picked
 // from the player's own planets/moons (captured in-game into the per-universe
 // `<universeId>:oge_bodies` snapshot by `features/planetBarCapture`), so a

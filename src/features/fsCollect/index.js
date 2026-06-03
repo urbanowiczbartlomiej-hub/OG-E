@@ -22,10 +22,10 @@
 // # Two-tap send model (TOS-safe: one click → one originated request)
 //
 // On the fleetdispatch page each zone drives the game's own two-step
-// form one tap at a time:
-//   - tap "Przygotuj" → (collect: select all ships) → click Continue,
-//     wait for step 2, relabel "Wyślij".
-//   - tap "Wyślij" → (collect: load all resources) → stash the post-send
+// form one tap at a time (the zone shows "Send", then "Next"/"Send"):
+//   - first tap → (collect: select all ships) → click Continue,
+//     wait for step 2.
+//   - second tap → (collect: load all resources) → stash the post-send
 //     redirect URL in `oge_fsRedirect` → click the native dispatch button.
 // The only server-visible action a tap originates is the final dispatch.
 //
@@ -236,8 +236,8 @@ const safeWrite = (url) => {
 let busy = false;
 
 /**
- * TOP zone (Micro) click. Idle/elsewhere → navigate to the next target for the
- * current moon's route. On fleetdispatch → two-tap drive (Przygotuj/Wyślij).
+ * TOP zone (Send) click. Idle/elsewhere → navigate to the next target for the
+ * current source's route. On fleetdispatch → two-tap drive (Send → Next).
  *
  * @returns {void}
  */
@@ -271,12 +271,12 @@ const onMicroClick = () => {
   const body = readCurrentBody();
   const route = findRouteForBody(fsRoutesStore.get().routes, body);
   if (!route) {
-    flash(microZone, 'Brak trasy');
+    flash(microZone, 'No route');
     return;
   }
   const next = findNextMicroTarget(route.targets, microInFlightKeys());
   if (!next) {
-    flash(microZone, 'Wysłano');
+    flash(microZone, 'All sent');
     return;
   }
   location.href = buildDeployUrl(gameBase(), next, route.microFleet);
@@ -316,7 +316,7 @@ const onCollectClick = () => {
   }
 
   if (!target) {
-    flash(collectZone, 'Brak celu');
+    flash(collectZone, 'No target');
     return;
   }
   location.href = buildCollectUrl(gameBase(), target);
@@ -362,38 +362,38 @@ const refresh = () => {
   const targetZone = document.getElementById(FS_TARGET_ZONE_ID);
   const collectZone = document.getElementById(FS_COLLECT_ZONE_ID);
 
-  // Wyślij (top zone) label.
+  // Send (top zone) label.
   if (microZone) {
     if (onFleetdispatch() && isStep2()) {
-      setLabel(microZone, 'Wyślij', 'micro');
+      setLabel(microZone, 'Send', 'send');
     } else if (onFleetdispatch() && urlHasAm()) {
-      setLabel(microZone, 'Dalej', 'micro');
+      setLabel(microZone, 'Next', 'send');
     } else {
       const body = readCurrentBody();
       const route = findRouteForBody(fsRoutesStore.get().routes, body);
       if (!route) {
-        setLabel(microZone, 'Wyślij', 'brak trasy');
+        setLabel(microZone, 'Send', 'no route');
       } else {
         const left = countRemainingMicroTargets(route.targets, microInFlightKeys());
-        setLabel(microZone, left > 0 ? `${left}` : '✓', 'wyślij');
+        setLabel(microZone, left > 0 ? `${left}` : '✓', 'send');
       }
     }
   }
 
-  // Cel (middle zone) label — shows current collect target + long-press hint.
+  // Target (middle zone) label — shows current collect target + long-press hint.
   if (targetZone) {
     const t = fsRoutesStore.get().collectTarget;
-    setLabel(targetZone, t ? `${t.galaxy}:${t.system}:${t.position}` : '—', 'cel', 'przytrzymaj');
+    setLabel(targetZone, t ? `${t.galaxy}:${t.system}:${t.position}` : '—', 'target', 'hold to set');
   }
 
-  // Zbieraj (bottom zone) label.
+  // Collect (bottom zone) label.
   if (collectZone) {
     if (onFleetdispatch() && isStep2()) {
-      setLabel(collectZone, 'Wyślij', 'zbieraj');
+      setLabel(collectZone, 'Send', 'collect');
     } else if (onFleetdispatch()) {
-      setLabel(collectZone, 'Dalej', 'zbieraj');
+      setLabel(collectZone, 'Next', 'collect');
     } else {
-      setLabel(collectZone, 'Zbieraj');
+      setLabel(collectZone, 'Collect');
     }
   }
 };
