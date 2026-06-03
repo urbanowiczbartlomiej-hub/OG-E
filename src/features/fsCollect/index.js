@@ -139,14 +139,16 @@ const collectedOriginKeys = (target) => {
 // ─── label painting ─────────────────────────────────────────────────────
 
 /**
- * Paint a button/half with a big primary line and an optional small line.
+ * Paint a zone with up to three lines: optional top caption, main text,
+ * optional bottom hint (shown dimmer and smaller than the top caption).
  *
  * @param {HTMLElement | null} el
  * @param {string} big
- * @param {string} [small]
+ * @param {string} [small]   top caption (0.5em, 85% opacity)
+ * @param {string} [hint]    bottom hint (0.42em, 55% opacity)
  * @returns {void}
  */
-const setLabel = (el, big, small) => {
+const setLabel = (el, big, small, hint) => {
   if (!el) return;
   el.textContent = '';
   const wrap = document.createElement('div');
@@ -158,10 +160,16 @@ const setLabel = (el, big, small) => {
     top.style.cssText = 'font-size:0.5em;opacity:0.85;letter-spacing:0.5px;';
     wrap.appendChild(top);
   }
-  const bottom = document.createElement('div');
-  bottom.textContent = big;
-  bottom.style.cssText = 'font-size:1em;margin-top:2px;';
-  wrap.appendChild(bottom);
+  const middle = document.createElement('div');
+  middle.textContent = big;
+  middle.style.cssText = 'font-size:1em;margin-top:2px;';
+  wrap.appendChild(middle);
+  if (hint) {
+    const bot = document.createElement('div');
+    bot.textContent = hint;
+    bot.style.cssText = 'font-size:0.42em;opacity:0.55;margin-top:1px;letter-spacing:0.3px;';
+    wrap.appendChild(bot);
+  }
   el.appendChild(wrap);
 };
 
@@ -372,10 +380,10 @@ const refresh = () => {
     }
   }
 
-  // Cel (middle zone) label — shows current collect target.
+  // Cel (middle zone) label — shows current collect target + long-press hint.
   if (targetZone) {
     const t = fsRoutesStore.get().collectTarget;
-    setLabel(targetZone, t ? `${t.galaxy}:${t.system}:${t.position}` : '—', 'cel');
+    setLabel(targetZone, t ? `${t.galaxy}:${t.system}:${t.position}` : '—', 'cel', 'przytrzymaj');
   }
 
   // Zbieraj (bottom zone) label.
@@ -395,10 +403,17 @@ const refresh = () => {
 /** @type {{ dispose: () => void } | null} */
 let installed = null;
 
+// Middle (target) zone is visually smaller — it's rarely interacted with and
+// serves mainly as a status display for the collect target.
+const ZONE_FLEX = [1.15, 0.7, 1.15];
+/** @param {number} size @param {number} i */
+const zoneFontSize = (size, i) =>
+  Math.round(size * (i === 1 ? 0.11 : 0.14)) + 'px';
+
 /**
  * Style the unified three-zone circular button. The wrapper defines the
  * outer circle geometry, and each zone (micro/target/collect) is a flex
- * child filling 1/3 of the height.
+ * child. The middle (target) zone takes less space and uses a smaller font.
  *
  * @param {HTMLElement} wrap
  * @param {HTMLElement[]} zones  [microZone, targetZone, collectZone]
@@ -407,7 +422,6 @@ let installed = null;
  * @returns {void}
  */
 const styleThreeZone = (wrap, zones, size, bgs) => {
-  const fontSize = Math.round(size * 0.14) + 'px';
   wrap.style.cssText = [
     'position:fixed',
     'border-radius:50%',
@@ -424,7 +438,7 @@ const styleThreeZone = (wrap, zones, size, bgs) => {
   ].join(';');
   zones.forEach((z, i) => {
     z.style.cssText = [
-      'flex:1',
+      `flex:${ZONE_FLEX[i]}`,
       'display:flex',
       'align-items:center',
       'justify-content:center',
@@ -433,7 +447,7 @@ const styleThreeZone = (wrap, zones, size, bgs) => {
       'font-weight:bold',
       'border:none',
       'cursor:pointer',
-      `font-size:${fontSize}`,
+      `font-size:${zoneFontSize(size, i)}`,
       `background:${bgs[i]}`,
     ].join(';');
   });
@@ -588,19 +602,15 @@ export const installFsCollect = () => {
    * @param {number} size
    */
   const updateSize = (size) => {
-    const fontSize = Math.round(size * 0.14) + 'px';
     const wrap = document.getElementById(FS_UNIFIED_ID);
     if (wrap) {
       wrap.style.width = size + 'px';
       wrap.style.height = size + 'px';
     }
-    const zones = [
-      document.getElementById(FS_MICRO_ZONE_ID),
-      document.getElementById(FS_TARGET_ZONE_ID),
-      document.getElementById(FS_COLLECT_ZONE_ID),
-    ];
-    zones.forEach((z) => {
-      if (z) z.style.fontSize = fontSize;
+    const zoneIds = [FS_MICRO_ZONE_ID, FS_TARGET_ZONE_ID, FS_COLLECT_ZONE_ID];
+    zoneIds.forEach((id, i) => {
+      const z = document.getElementById(id);
+      if (z) z.style.fontSize = zoneFontSize(size, i);
     });
     refresh();
   };
