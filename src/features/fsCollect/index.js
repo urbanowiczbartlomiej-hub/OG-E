@@ -432,14 +432,16 @@ const refresh = () => {
     setLabel(targetZone, t ? `${t.galaxy}:${t.system}:${t.position}` : '—', 'target', 'hold to set');
   }
 
-  // Collect (bottom zone) label.
+  // Collect (bottom zone) label — idle state shows the collect destination
+  // under "Collect" so it's clear where everything is sent.
   if (collectZone) {
     if (onFleetdispatch() && isStep2()) {
       setLabel(collectZone, 'Send', 'collect');
     } else if (onFleetdispatch()) {
       setLabel(collectZone, 'Next', 'collect');
     } else {
-      setLabel(collectZone, 'Collect');
+      const t = fsRoutesStore.get().collectTarget;
+      setLabel(collectZone, 'Collect', undefined, t ? `→ ${t.galaxy}:${t.system}:${t.position}` : 'no target');
     }
   }
 };
