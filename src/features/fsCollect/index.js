@@ -420,8 +420,11 @@ const refresh = () => {
       if (!route) {
         setLabel(microZone, 'Set up', 'no route', 'open routes');
       } else {
-        const left = countRemainingMicroTargets(route.targets, microInFlightKeys());
-        setLabel(microZone, left > 0 ? `${left}` : '✓', 'send');
+        // "<in-flight>/<total>" — how many of the route's targets currently
+        // have a micro-fleet inbound, out of all targets defined for it.
+        const total = route.targets.length;
+        const inFlight = total - countRemainingMicroTargets(route.targets, microInFlightKeys());
+        setLabel(microZone, `${inFlight}/${total}`, 'send');
       }
     }
   }
