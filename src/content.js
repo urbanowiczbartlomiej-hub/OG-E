@@ -65,10 +65,12 @@ import { initScansStore } from './state/scans.js';
 import { initRegistryStore } from './state/registry.js';
 import { initSettingsStore } from './state/settings.js';
 import { initFsRoutesStore } from './state/fsRoutes.js';
+import { initBodiesStore } from './state/bodies.js';
 import { installSettingsMirror } from './state/settings.js';
 import { migrateLegacyStorageKeys } from './state/migrate.js';
 
 import { installColonyRecorder } from './features/colonyRecorder.js';
+import { installPlanetBarCapture } from './features/planetBarCapture.js';
 import { installBadges } from './features/badges.js';
 import { installSendExp } from './features/sendExp/index.js';
 import { installSendCol } from './features/sendCol/index.js';
@@ -109,6 +111,10 @@ initRegistryStore();
   // in-game fsCollect buttons never see routes authored in the dashboard
   // and the ad-hoc collect target wouldn't survive a page reload.
   initFsRoutesStore();
+  // Body inventory (per-universe, chrome.storage). Hydrated here so the
+  // planet-bar capture below can gate its first write on the hydrate and
+  // the dashboard route editor can read a snapshot of owned planets/moons.
+  initBodiesStore();
   installSettingsMirror();
 
   // Reminder config lives in `settings.js` (regular localStorage Settings,
@@ -135,6 +141,11 @@ initRegistryStore();
 const installDomFeatures = () => {
   // Passive observers (data capture).
   installColonyRecorder();
+  // Snapshot the planet bar (owned planets + moons) for the dashboard
+  // route picker + route reconciliation. Top-frame only: the bar is
+  // identical across OGame's iframes, so sub-frame captures would just
+  // multiply storage writes.
+  if (window.top === window.self) installPlanetBarCapture();
   installBadges();
   installEventMenuHighlight();
   installTraderMenuHighlight();
