@@ -170,6 +170,22 @@ describe('micro send — navigation (top zone)', () => {
     // First target skipped → navigates to the second (4:480:8).
     expect(navTarget).toContain('system=480&position=8');
   });
+
+  it('does not navigate when no route matches the current body', () => {
+    // With no route for this body, the Send zone is a "set up" affordance:
+    // it opens the dashboard (when the runtime URL resolves) and otherwise
+    // flashes "No route". Either way it must NOT build a deploy navigation.
+    // The dashboard URL is unresolved in tests (no chrome.runtime), so this
+    // exercises the fallback branch.
+    enable();
+    installFsCollect();
+    setBodyMeta('4:472:15', 'moon');
+    fsRoutesStore.set({ routes: [], collectTarget: null });
+    const micro = /** @type {HTMLElement} */ (document.getElementById('oge-fs-micro-zone'));
+    micro.click();
+    expect(navTarget).toBeNull();
+    expect(micro.textContent).toContain('No route');
+  });
 });
 
 describe('collect send — navigation + dispatch (bottom zone)', () => {

@@ -20,7 +20,7 @@ const fsLocked = (s) => !s.fsCollectMode;
 export const fleetSaveSection = {
   section: 'Daily Transport',
   options: [
-    { id: 'fsCollectMode', label: 'Daily Transport button (routes set in Dashboard → Daily Transport Routes)', type: 'checkbox' },
+    { id: 'fsCollectMode', label: 'Daily Transport button (tap the Send zone with no route to open route setup)', type: 'checkbox' },
     { id: 'fsBtnSize', label: 'Daily Transport button size', type: 'range', min: 40, max: 560, step: 10, unit: 'px', disabledWhen: fsLocked },
   ],
 };

@@ -45,9 +45,11 @@
 // @see ../shared/draggableButton.js — drag + focus persistence.
 
 import { settingsStore } from '../../state/settings.js';
+import { parseUniverseId } from '../../lib/universeId.js';
 import {
   fsRoutesStore,
   flushFsRoutesStore,
+  stampFsRoutesChanged,
   FS_REDIRECT_KEY,
 } from '../../state/fsRoutes.js';
 import {
@@ -103,6 +105,44 @@ const onFleetdispatch = () => location.search.includes('component=fleetdispatch'
 const urlHasAm = () => /[?&]am\d+=/.test(location.search);
 /** @param {string} name */
 const urlParam = (name) => new URLSearchParams(location.search).get(name);
+
+/**
+ * URL of the OG-E Dashboard extension page, resolved once via
+ * `browser/chrome.runtime.getURL`. Empty string when the WebExtension
+ * runtime API isn't present (test environments) — {@link openDashboardRoutes}
+ * guards on this. Mirrors the resolver in `settingsUi/sections/data.js`
+ * (kept local — a feature must not import another feature).
+ *
+ * @type {string}
+ */
+const DASHBOARD_URL = (() => {
+  try {
+    const g = /** @type {any} */ (/** @type {unknown} */ (globalThis));
+    const ns = g.browser ?? g.chrome;
+    const url = ns?.runtime?.getURL?.('dashboard.html');
+    return typeof url === 'string' ? url : '';
+  } catch {
+    return '';
+  }
+})();
+
+/**
+ * Open the Dashboard's Daily Transport tab in a new tab, pre-selecting the
+ * current universe (`?host=`) and deep-linking the routes tab (`?tab=routes`).
+ * No-op (returns false) when the runtime URL is unavailable, so the caller
+ * can fall back to an in-place hint.
+ *
+ * @returns {boolean} Whether the dashboard was opened.
+ */
+const openDashboardRoutes = () => {
+  if (!DASHBOARD_URL) return false;
+  const universeId = parseUniverseId(location.host);
+  const url =
+    DASHBOARD_URL +
+    (universeId ? `?host=${encodeURIComponent(universeId)}&tab=routes` : '?tab=routes');
+  window.open(url, '_blank');
+  return true;
+};
 
 /**
  * Set of {@link coordTypeKey}s that currently have a deployment inbound —
@@ -271,7 +311,10 @@ const onMicroClick = () => {
   const body = readCurrentBody();
   const route = findRouteForBody(fsRoutesStore.get().routes, body);
   if (!route) {
-    flash(microZone, 'No route');
+    // No route for this body — guide the user straight to where routes are
+    // set up rather than just flashing an error. Falls back to the flash
+    // when the dashboard URL can't be resolved (e.g. tests).
+    if (!openDashboardRoutes()) flash(microZone, 'No route');
     return;
   }
   const next = findNextMicroTarget(route.targets, microInFlightKeys());
@@ -338,6 +381,9 @@ const onSetTargetClick = () => {
   fsRoutesStore.update((prev) => ({ ...prev, collectTarget: body }));
   // Persist now — the user may navigate away before the debounce fires.
   flushFsRoutesStore();
+  // Stamp the cross-device sync clock so this collect-target change wins
+  // the next whole-universe newest-wins merge.
+  void stampFsRoutesChanged();
   refresh();
 };
 
@@ -372,7 +418,7 @@ const refresh = () => {
       const body = readCurrentBody();
       const route = findRouteForBody(fsRoutesStore.get().routes, body);
       if (!route) {
-        setLabel(microZone, 'Send', 'no route');
+        setLabel(microZone, 'Set up', 'no route', 'open routes');
       } else {
         const left = countRemainingMicroTargets(route.targets, microInFlightKeys());
         setLabel(microZone, left > 0 ? `${left}` : '✓', 'send');
