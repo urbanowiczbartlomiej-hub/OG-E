@@ -6,6 +6,64 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.15.0] — 2026-06-04
+
+### Added
+
+- **Body inventory capture and route picker.** OG-E now reads your planet and
+  moon list from the in-game left bar on each page load and persists a
+  snapshot. The dashboard's **Routes editor** now shows a clickable picker for
+  both route source and destination instead of manual coordinate entry; you
+  see body names (P1, K1) with icons and can click to select. Dead-body
+  reconciliation runs automatically — if you abandon a colony or destroy a
+  moon, any routes using it as a source or target are pruned, and a route
+  that loses all sources or targets is dropped entirely.
+
+- **Fleet-save routes redesign — multi-source + automatic migration.**
+  Routes can now depart from **any of your planets or moons** instead of a
+  single hardcoded source. Old single-source routes from 1.14.0 are
+  automatically migrated. Each route independently tracks its departure
+  bodies, so a route can use multiple sources; the collect sequence sends
+  from each in turn.
+
+- **Daily Transport button — unified three-zone design.** The floating button
+  now combines micro-fleet, target pick, and collect actions in a compact
+  two-zone layout with new micro-navigation:
+  - **Micro zone** (top-left): send a single small cargo to the route
+    destination, if a route exists.
+  - **Collect zone** (bottom-right): run the full multi-source fleet-save
+    sequence.
+  - Current route destination displays under each zone; tapping "no route" on
+    the Collect zone opens the dashboard route editor.
+  - Real-time **send counter** shows in-flight vs total targets (e.g. `2 ⇄ 5`).
+  - **Long-press hint** on smaller viewports to aid mobile discovery.
+
+- **Cross-device route sync.** Your fleet-save routes now sync across devices
+  via your private GitHub gist, alongside the other settings and data that
+  already sync — set up a route on one device and it appears everywhere.
+
+- **Dashboard fleet-save Routes editor** — full-featured management UI:
+  - Click routes in the list to edit or delete.
+  - Clickable **source picker** (any of your planets/moons) with names + icons.
+  - Clickable **target picker** (any coordinates, any body type).
+  - **Save button** with dirty-state indicator — unsaved changes are
+    highlighted visually.
+  - Reconciliation feedback — removed routes are logged to console when bodies
+    disappear.
+
+### Changed
+
+- **Daily Transport button renamed** — previously labeled "Fleet Save" (v1.9.0);
+  now correctly named to reflect what it does. The button sends daily cargo
+  fleets to your designated target, not a "fleet save" per se.
+- **Ship names now display in English** — routes show ship types as "Small
+  cargo", "Large cargo", "Pathfinder" instead of Polish (małe, duże, zwiadowca).
+
+### Fixed
+
+- **Dashboard routes remove button styling** — aligned with the button row
+  layout.
+
 ## [1.14.0] — 2026-06-03
 
 ### Added
