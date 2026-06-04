@@ -6,6 +6,14 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.15.5] — 2026-06-04
+
+### Changed
+
+- **Engraved button title sits on the ring.** The curved title now rides
+  along the ring band near its top, instead of dropping onto the lit
+  button face — so each button's name reads as cut into the ring itself.
+
 ## [1.15.4] — 2026-06-04
 
 ### Changed
