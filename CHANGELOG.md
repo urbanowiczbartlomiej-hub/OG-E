@@ -6,6 +6,25 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.15.3] — 2026-06-04
+
+### Changed
+
+- **Floating buttons redesigned to match the OGame look.** The three
+  draggable buttons — **Expeditions**, **Colonization** and **Daily
+  Resource Run** — share a new decorative layer drawn on top of their
+  state colours: a thin light rim, a darkened edge vignette and a soft
+  top sheen give each one a glassy, game-native finish instead of the
+  flat technical look. Drop shadows are deeper for a clearer sense of
+  the buttons floating above the page.
+- **Each button now has a hover title.** A subtle native tooltip names
+  the button (`Expeditions`, `Colonization`, `Daily Resource Run`) on
+  hover, so its identity is discoverable without cluttering the face.
+- **Daily Resource Run polish.** Zone colours are now semi-transparent
+  to match the other two buttons, labels use sentence case (`Dispatch`,
+  `Send All`, `Send`) instead of shouting capitals, and holding the
+  collect zone shows a radial sweep that fills as the long-press arms.
+
 ## [1.15.2] — 2026-06-04
 
 ### Changed
