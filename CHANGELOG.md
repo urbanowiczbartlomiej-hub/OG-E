@@ -6,6 +6,23 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.15.4] — 2026-06-04
+
+### Changed
+
+- **Floating buttons get a tactile tap effect.** Tapping a button now
+  sends a light ripple out from the exact touch point and briefly
+  brightens the pressed area. On the two split buttons (Colonization,
+  Daily Resource Run) the ripple starts in whichever half you pressed,
+  so it is obvious which action you triggered.
+- **Engraved title ring.** Each button now carries a thicker ring with
+  its name engraved along the top of the ring itself —
+  `EXPEDITIONS`, `COLONIZATION`, `DAILY RESOURCE RUN` — in a dark,
+  cut-in style that stands out against the band.
+- **Deeper outer shadow.** The buttons cast a stronger, layered shadow
+  for a clearer floating look, with a tight rim that keeps them defined
+  against bright backgrounds.
+
 ## [1.15.3] — 2026-06-04
 
 ### Changed
