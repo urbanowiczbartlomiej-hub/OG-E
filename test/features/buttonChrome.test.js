@@ -1,16 +1,19 @@
 // @vitest-environment happy-dom
 //
 // Behavioural tests for the shared OGame-style button chrome: a single
-// idempotently-injected <style> element that decorates the three
-// floating buttons (#oge-send-exp, #oge-send-col, #oge-fs-unified) with a
-// rim + edge-vignette + sheen overlay. We assert the observable output
-// (the injected element and the rules it carries), not pixels.
+// idempotently-injected <style> that decorates the three floating buttons
+// (#oge-send-exp, #oge-send-col, #oge-fs-unified) with a vignette + sheen
+// overlay, plus decorateButton(), which appends the engraved title ring
+// and tap-ripple layer and wires per-zone press feedback. We assert the
+// observable output (injected element, appended DOM, wired classes), not
+// rendered pixels.
 //
 // @ts-check
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   installButtonChrome,
+  decorateButton,
   CHROME_STYLE_ID,
   BUTTON_CHROME_CSS,
 } from '../../src/features/shared/buttonChrome.js';
@@ -20,7 +23,7 @@ beforeEach(() => {
   document.body.innerHTML = '';
 });
 
-describe('shared button chrome', () => {
+describe('shared button chrome stylesheet', () => {
   it('injects a single <style> element with the chrome CSS', () => {
     installButtonChrome();
     const style = document.getElementById(CHROME_STYLE_ID);
@@ -36,12 +39,59 @@ describe('shared button chrome', () => {
     expect(document.querySelectorAll(`#${CHROME_STYLE_ID}`)).toHaveLength(1);
   });
 
-  it('targets all three floating buttons with a pseudo-element overlay', () => {
+  it('targets all three buttons and carries vignette + ring + ripple rules', () => {
     for (const id of ['oge-send-exp', 'oge-send-col', 'oge-fs-unified']) {
       expect(BUTTON_CHROME_CSS).toContain(`#${id}::after`);
     }
-    // The overlay must not eat taps and must carry the inset edge-vignette.
     expect(BUTTON_CHROME_CSS).toContain('pointer-events:none');
-    expect(BUTTON_CHROME_CSS).toContain('inset 0 0 16px 3px rgba(0,0,0,0.55)');
+    expect(BUTTON_CHROME_CSS).toContain('inset 0 0 18px 4px rgba(0,0,0,0.55)');
+    expect(BUTTON_CHROME_CSS).toContain('.oge-ring-title');
+    expect(BUTTON_CHROME_CSS).toContain('@keyframes oge-ripple-kf');
+    expect(BUTTON_CHROME_CSS).toContain('.oge-tap-active');
+  });
+});
+
+describe('decorateButton', () => {
+  /** @returns {{ wrap: HTMLElement, a: HTMLButtonElement, b: HTMLButtonElement }} */
+  const makeSplit = () => {
+    const wrap = document.createElement('div');
+    const a = document.createElement('button');
+    const b = document.createElement('button');
+    wrap.append(a, b);
+    document.body.appendChild(wrap);
+    return { wrap, a, b };
+  };
+
+  it('injects the stylesheet and appends a ripple layer + engraved ring', () => {
+    const { wrap, a, b } = makeSplit();
+    decorateButton({ host: wrap, zones: [a, b], title: 'Colonization', ringId: 'r1' });
+
+    expect(document.getElementById(CHROME_STYLE_ID)).not.toBeNull();
+    expect(wrap.querySelector('.oge-deco-layer')).not.toBeNull();
+    const ring = wrap.querySelector('svg.oge-ring');
+    expect(ring).not.toBeNull();
+    // Title is engraved uppercase along an arc path referenced by ringId.
+    expect(ring?.querySelector('textPath')?.textContent).toBe('COLONIZATION');
+    expect(ring?.querySelector('path')?.getAttribute('id')).toBe('r1');
+  });
+
+  it('is idempotent per host — a second call adds no duplicate ring/layer', () => {
+    const { wrap, a, b } = makeSplit();
+    decorateButton({ host: wrap, zones: [a, b], title: 'X', ringId: 'r2' });
+    decorateButton({ host: wrap, zones: [a, b], title: 'X', ringId: 'r2' });
+    expect(wrap.querySelectorAll('.oge-deco-layer')).toHaveLength(1);
+    expect(wrap.querySelectorAll('svg.oge-ring')).toHaveLength(1);
+  });
+
+  it('marks the pressed zone with .oge-tap-active and clears it on release', () => {
+    const { wrap, a, b } = makeSplit();
+    decorateButton({ host: wrap, zones: [a, b], title: 'X', ringId: 'r3' });
+
+    a.dispatchEvent(new Event('pointerdown'));
+    expect(a.classList.contains('oge-tap-active')).toBe(true);
+    expect(b.classList.contains('oge-tap-active')).toBe(false);
+
+    a.dispatchEvent(new Event('pointerup'));
+    expect(a.classList.contains('oge-tap-active')).toBe(false);
   });
 });

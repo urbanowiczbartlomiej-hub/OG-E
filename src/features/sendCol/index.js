@@ -86,7 +86,7 @@ import {
   installDrag,
   installFocusPersist as installButtonFocusPersist,
 } from '../shared/draggableButton.js';
-import { installButtonChrome } from '../shared/buttonChrome.js';
+import { decorateButton } from '../shared/buttonChrome.js';
 import {
   findNextScanSystem,
   findNextColonizeTarget,
@@ -860,7 +860,7 @@ const applyStyles = (wrap, sendHalf, scanHalf, size) => {
     'touch-action:none',
     'user-select:none',
     'cursor:pointer',
-    'box-shadow:0 4px 14px rgba(0,0,0,0.55),0 1px 2px rgba(0,0,0,0.4)',
+    'box-shadow:0 8px 22px rgba(0,0,0,0.55),0 3px 8px rgba(0,0,0,0.45),0 0 0 1px rgba(0,0,0,0.40)',
     `width:${size}px`,
     `height:${size}px`,
   ].join(';');
@@ -933,9 +933,15 @@ export const installSendCol = () => {
     scanHalf.textContent = 'Scan';
 
     applyStyles(wrap, sendHalf, scanHalf, size);
-    installButtonChrome();
     wrap.appendChild(sendHalf);
     wrap.appendChild(scanHalf);
+    // Engraved title ring + per-half tap ripple/press.
+    decorateButton({
+      host: wrap,
+      zones: [sendHalf, scanHalf],
+      title: 'Colonization',
+      ringId: 'oge-ring-col',
+    });
 
     // Position — saved drag target or bottom-right default.
     const savedPos = safeLS.json(POS_KEY);

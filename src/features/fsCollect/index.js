@@ -56,7 +56,7 @@ import {
   installDrag,
   installFocusPersist,
 } from '../shared/draggableButton.js';
-import { installButtonChrome } from '../shared/buttonChrome.js';
+import { decorateButton } from '../shared/buttonChrome.js';
 import {
   coordKey,
   coordTypeKey,
@@ -481,7 +481,7 @@ const styleZones = (wrap, zones, size, bgs) => {
     'touch-action:none',
     'user-select:none',
     'cursor:pointer',
-    'box-shadow:0 4px 14px rgba(0,0,0,0.55),0 1px 2px rgba(0,0,0,0.4)',
+    'box-shadow:0 8px 22px rgba(0,0,0,0.55),0 3px 8px rgba(0,0,0,0.45),0 0 0 1px rgba(0,0,0,0.40)',
     `width:${size}px`,
     `height:${size}px`,
   ].join(';');
@@ -624,9 +624,15 @@ export const installFsCollect = () => {
     collectZone.setAttribute('aria-label', 'Tap to collect; long-press to set the collect target');
 
     styleZones(wrap, [microZone, collectZone], size, [BG_MICRO, BG_COLLECT]);
-    installButtonChrome();
     wrap.appendChild(microZone);
     wrap.appendChild(collectZone);
+    // Engraved title ring + per-zone tap ripple/press.
+    decorateButton({
+      host: wrap,
+      zones: [microZone, collectZone],
+      title: 'Daily Resource Run',
+      ringId: 'oge-ring-fs',
+    });
     placeWrap(wrap, FS_POS_KEY, size);
     document.body.appendChild(wrap);
 

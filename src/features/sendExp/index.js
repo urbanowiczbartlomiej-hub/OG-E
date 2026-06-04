@@ -76,7 +76,10 @@ import {
   installDrag,
   installFocusPersist as installButtonFocusPersist,
 } from '../shared/draggableButton.js';
-import { installButtonChrome } from '../shared/buttonChrome.js';
+import {
+  installButtonChrome,
+  decorateButton,
+} from '../shared/buttonChrome.js';
 import {
   BUTTON_ID,
   FOCUS_KEY,
@@ -309,14 +312,36 @@ export const installSendExp = () => {
   }
 
   /**
-   * Repaint the button text. Idempotent; no-op when the button was
-   * torn down between schedule and fire.
+   * Read the current label. The label lives in a dedicated
+   * `.oge-exp-label` span (not the button's textContent) so the engraved
+   * title-ring SVG appended by {@link decorateButton} doesn't pollute it.
+   *
+   * @param {HTMLButtonElement} btn
+   * @returns {string}
+   */
+  const getLabel = (btn) =>
+    /** @type {HTMLElement | null} */ (
+      btn.querySelector('.oge-exp-label')
+    )?.textContent ?? '';
+
+  /**
+   * Repaint the button text into the dedicated label span (auto-creating
+   * it on first use). Idempotent; no-op when the button was torn down
+   * between schedule and fire.
    *
    * @param {HTMLButtonElement} btn
    * @param {string} text
    */
   const setLabel = (btn, text) => {
-    btn.textContent = text;
+    let span = /** @type {HTMLElement | null} */ (
+      btn.querySelector('.oge-exp-label')
+    );
+    if (!span) {
+      span = document.createElement('span');
+      span.className = 'oge-exp-label';
+      btn.appendChild(span);
+    }
+    span.textContent = text;
   };
 
   /**
@@ -348,11 +373,11 @@ export const installSendExp = () => {
    * @param {HTMLButtonElement} btn
    */
   const paintAllMaxed = (btn) => {
-    const original = btn.textContent;
-    btn.textContent = ALL_MAXED_LABEL;
+    const original = getLabel(btn);
+    setLabel(btn, ALL_MAXED_LABEL);
     btn.style.background = BG_MAX;
     setTimeout(() => {
-      btn.textContent = original;
+      setLabel(btn, original);
       btn.style.background = BG_IDLE;
     }, MAX_LABEL_MS);
   };
@@ -458,12 +483,12 @@ export const installSendExp = () => {
     // poll against stale state. Paint a brief "Loading..." cue and bail
     // — no lock, so the user can tap again as soon as the page settles.
     if (!eventBoxReady) {
-      const original = btn.textContent;
+      const original = getLabel(btn);
       setLabel(btn, 'Loading...');
       setTimeout(() => {
         // The eventbox may have arrived during the cue window; restore
         // whatever label was there before rather than the idle default.
-        if (btn.textContent === 'Loading...') setLabel(btn, original ?? BUTTON_TEXT);
+        if (getLabel(btn) === 'Loading...') setLabel(btn, original || BUTTON_TEXT);
       }, EVENTBOX_LOADING_LABEL_MS);
       return;
     }
@@ -601,7 +626,7 @@ export const installSendExp = () => {
     // Context-aware initial label: on fleetdispatch the user's next
     // tap meaning is different depending on AGR/OGame hydration state,
     // so the button label tells them what's about to happen.
-    btn.textContent = computeInitialLabel({
+    const initialLabel = computeInitialLabel({
       search: location.search,
       hasDispatchFleet: document.getElementById('dispatchFleet') !== null,
       hasAgoRoutine7: document.getElementById('ago_routine_7') !== null,
@@ -620,7 +645,7 @@ export const installSendExp = () => {
       'color:#fff',
       'font-weight:bold',
       'z-index:99999',
-      'box-shadow:0 4px 14px rgba(0,0,0,0.55),0 1px 2px rgba(0,0,0,0.4)',
+      'box-shadow:0 8px 22px rgba(0,0,0,0.55),0 3px 8px rgba(0,0,0,0.45),0 0 0 1px rgba(0,0,0,0.40)',
       'touch-action:none',
       'user-select:none',
       'cursor:pointer',
@@ -648,14 +673,22 @@ export const installSendExp = () => {
       btn.style.bottom = DEFAULT_EDGE_OFFSET_PX + 'px';
     }
 
+    setLabel(btn, initialLabel);
     document.body.appendChild(btn);
+    // Engraved title ring + tap ripple/press. The single button is its
+    // own clickable zone.
+    decorateButton({
+      host: btn,
+      zones: [btn],
+      title: 'Expeditions',
+      ringId: 'oge-ring-exp',
+    });
     // Brief lock on first appearance so in-flight XHRs can settle before
     // the user can trigger Phase 2 prematurely.
-    if (btn.textContent === 'Prepare') {
+    if (initialLabel === 'Prepare') {
       lock(btn);
       setTimeout(() => unlock(btn), 200);
     }
-    installButtonChrome();
     installDragAndClick(btn);
     installFocusPersist(btn);
   };

@@ -221,6 +221,18 @@ const setupScene = ({
 const getBtn = () =>
   /** @type {HTMLButtonElement | null} */ (document.getElementById('oge-send-exp'));
 
+/**
+ * Read the button's label. Since the engraved title-ring SVG lives inside
+ * the button, its label is painted into a dedicated `.oge-exp-label` span
+ * rather than the button's textContent (which now also contains the ring
+ * title). Tests assert on the span.
+ *
+ * @param {HTMLElement | null} [btn]
+ * @returns {string | null | undefined}
+ */
+const labelOf = (btn = getBtn()) =>
+  btn?.querySelector('.oge-exp-label')?.textContent;
+
 beforeEach(() => {
   _resetSendExpForTest();
   _resetFleetDispatcherSnapshotForSendExpTest();
@@ -258,7 +270,7 @@ describe('installSendExp — visibility via mobileMode', () => {
     installSendExp();
     const btn = getBtn();
     expect(btn).not.toBeNull();
-    expect(btn?.textContent).toBe('Send Exp');
+    expect(labelOf(btn)).toBe('Send Exp');
     expect(btn?.getAttribute('aria-label')).toBe('Send expedition');
     expect(btn?.tabIndex).toBe(0);
   });
@@ -317,7 +329,7 @@ describe('installSendExp — click navigation', () => {
     // Phase 2 locks the button (opacity 0.5) and starts polling.
     expect(navTarget).toBeNull();
     expect(btn?.style.opacity).toBe('0.5');
-    expect(btn?.textContent).toBe('Loading...');
+    expect(labelOf(btn)).toBe('Loading...');
   });
 
   it('Phase 1: fleetdispatch + mission=15 + fleet panel loaded → paint "Sent!", no navigation', () => {
@@ -340,7 +352,7 @@ describe('installSendExp — click navigation', () => {
     getBtn()?.click();
 
     expect(navTarget).toBeNull();
-    expect(getBtn()?.textContent).toBe('Sent!');
+    expect(labelOf(getBtn())).toBe('Sent!');
   });
 });
 
@@ -361,12 +373,12 @@ describe('installSendExp — max expedition guard', () => {
 
     btn?.click();
 
-    expect(btn?.textContent).toBe('All maxed!');
+    expect(labelOf(btn)).toBe('All maxed!');
     expect(navTarget).toBeNull();
 
     // After 2s the label reverts.
     vi.advanceTimersByTime(2000);
-    expect(btn?.textContent).toBe('Send Exp');
+    expect(labelOf(btn)).toBe('Send Exp');
 
     vi.useRealTimers();
   });
@@ -542,11 +554,11 @@ describe('installSendExp — fleetDispatcher snapshot gates', () => {
     const btn = getBtn();
     btn?.click();
 
-    expect(btn?.textContent).toBe('All maxed!');
+    expect(labelOf(btn)).toBe('All maxed!');
     expect(navTarget).toBeNull();
 
     vi.advanceTimersByTime(2000);
-    expect(btn?.textContent).toBe('Send Exp');
+    expect(labelOf(btn)).toBe('Send Exp');
     vi.useRealTimers();
   });
 
@@ -591,11 +603,11 @@ describe('installSendExp — fleetDispatcher snapshot gates', () => {
     const btn = getBtn();
     btn?.click();
 
-    expect(btn?.textContent).toBe('All maxed!');
+    expect(labelOf(btn)).toBe('All maxed!');
     expect(navTarget).toBeNull();
 
     vi.advanceTimersByTime(2000);
-    expect(btn?.textContent).toBe('Send Exp');
+    expect(labelOf(btn)).toBe('Send Exp');
     vi.useRealTimers();
   });
 });
@@ -620,13 +632,13 @@ describe('installSendExp — eventbox readiness gate', () => {
     const btn = getBtn();
     btn?.click();
 
-    expect(btn?.textContent).toBe('Loading...');
+    expect(labelOf(btn)).toBe('Loading...');
     expect(btn?.style.opacity).not.toBe('0.5');
     expect(navTarget).toBeNull();
 
     // The cue clears after EVENTBOX_LOADING_LABEL_MS (800 ms).
     vi.advanceTimersByTime(800);
-    expect(btn?.textContent).toBe('Send Exp');
+    expect(labelOf(btn)).toBe('Send Exp');
     vi.useRealTimers();
   });
 
@@ -654,6 +666,6 @@ describe('installSendExp — eventbox readiness gate', () => {
     btn?.click();
     // No fleet panel → Phase 2 (locks + paints "Loading...").
     expect(btn?.style.opacity).toBe('0.5');
-    expect(btn?.textContent).toBe('Loading...');
+    expect(labelOf(btn)).toBe('Loading...');
   });
 });
