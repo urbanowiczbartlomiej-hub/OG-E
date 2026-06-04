@@ -132,23 +132,28 @@ const buildRing = (title, ringId) => {
   band.setAttribute('r', '45');
   svg.appendChild(band);
 
-  // Invisible top-arc path the title rides on. Baseline at r=42 so the
-  // glyphs (which extend OUTWARD from the baseline) sit centred on the
-  // r=45 band rather than on the button face. sweep-flag 0 keeps the arc
-  // on the TOP half so glyphs stay upright, reading left→right.
+  // Invisible arc the title rides on, at the band's own radius (r=46.5).
+  // From the LEFT point over the TOP to the RIGHT point: with these two
+  // endpoints (both at y=50) sweep-flag 1 is the upper semicircle, so the
+  // title sits across the TOP of the ring (sweep-flag 0 would drop it to
+  // the bottom). Combined with dominant-baseline:central below the glyphs
+  // are centred ON the band, upright, reading left→right.
   const defs = document.createElementNS(SVG_NS, 'defs');
   const path = document.createElementNS(SVG_NS, 'path');
   path.setAttribute('id', ringId);
   path.setAttribute('fill', 'none');
-  path.setAttribute('d', 'M 8 50 A 42 42 0 0 0 92 50');
+  path.setAttribute('d', 'M 3.5 50 A 46.5 46.5 0 0 1 96.5 50');
   defs.appendChild(path);
   svg.appendChild(defs);
 
   const text = document.createElementNS(SVG_NS, 'text');
   text.setAttribute('class', 'oge-ring-title');
   text.setAttribute('text-anchor', 'middle');
+  // Centre the glyphs on the path so they sit on the band, not beside it.
+  text.setAttribute('dominant-baseline', 'central');
   const upper = title.toUpperCase();
-  const fontSize = Math.max(5, Math.min(9, 92 / (upper.length * 0.72)));
+  // Cap at 8 so the tallest glyphs stay inside the rim at this radius.
+  const fontSize = Math.max(5, Math.min(8, 92 / (upper.length * 0.72)));
   text.setAttribute('font-size', fontSize.toFixed(2));
   text.setAttribute('letter-spacing', (fontSize * 0.06).toFixed(2));
 
