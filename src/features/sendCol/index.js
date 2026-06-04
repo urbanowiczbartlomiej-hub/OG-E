@@ -86,6 +86,7 @@ import {
   installDrag,
   installFocusPersist as installButtonFocusPersist,
 } from '../shared/draggableButton.js';
+import { installButtonChrome } from '../shared/buttonChrome.js';
 import {
   findNextScanSystem,
   findNextColonizeTarget,
@@ -859,7 +860,7 @@ const applyStyles = (wrap, sendHalf, scanHalf, size) => {
     'touch-action:none',
     'user-select:none',
     'cursor:pointer',
-    'box-shadow:0 2px 8px rgba(0,0,0,0.5)',
+    'box-shadow:0 4px 14px rgba(0,0,0,0.55),0 1px 2px rgba(0,0,0,0.4)',
     `width:${size}px`,
     `height:${size}px`,
   ].join(';');
@@ -912,6 +913,8 @@ export const installSendCol = () => {
     const size = settingsStore.get().colBtnSize;
     const wrap = document.createElement('div');
     wrap.id = BUTTON_ID;
+    // Subtle hover title — the button's identity, hidden until hover.
+    wrap.title = 'Colonization';
 
     const sendHalf = document.createElement('button');
     sendHalf.type = 'button';
@@ -930,6 +933,7 @@ export const installSendCol = () => {
     scanHalf.textContent = 'Scan';
 
     applyStyles(wrap, sendHalf, scanHalf, size);
+    installButtonChrome();
     wrap.appendChild(sendHalf);
     wrap.appendChild(scanHalf);
 

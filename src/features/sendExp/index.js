@@ -76,6 +76,7 @@ import {
   installDrag,
   installFocusPersist as installButtonFocusPersist,
 } from '../shared/draggableButton.js';
+import { installButtonChrome } from '../shared/buttonChrome.js';
 import {
   BUTTON_ID,
   FOCUS_KEY,
@@ -607,6 +608,8 @@ export const installSendExp = () => {
     });
     btn.tabIndex = 0;
     btn.setAttribute('aria-label', 'Send expedition');
+    // Subtle hover title — the button's identity, hidden until hover.
+    btn.title = 'Expeditions';
 
     const size = settingsStore.get().enterBtnSize;
     btn.style.cssText = [
@@ -617,7 +620,7 @@ export const installSendExp = () => {
       'color:#fff',
       'font-weight:bold',
       'z-index:99999',
-      'box-shadow:0 2px 8px rgba(0,0,0,0.5)',
+      'box-shadow:0 4px 14px rgba(0,0,0,0.55),0 1px 2px rgba(0,0,0,0.4)',
       'touch-action:none',
       'user-select:none',
       'cursor:pointer',
@@ -652,6 +655,7 @@ export const installSendExp = () => {
       lock(btn);
       setTimeout(() => unlock(btn), 200);
     }
+    installButtonChrome();
     installDragAndClick(btn);
     installFocusPersist(btn);
   };
