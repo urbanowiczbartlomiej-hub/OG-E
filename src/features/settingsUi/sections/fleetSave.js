@@ -1,10 +1,10 @@
 // @ts-check
 
-// "Daily Transport" section of the OG-E settings tab — the unified floating
+// "Daily Resource Run" section of the OG-E settings tab — the unified floating
 // button from `features/fsCollect` that handles daily micro-fleet distribution
-// (Send) and collection (Collect). `fsCollectMode` is the section master; size
-// only matters when on. Routes are defined in the dashboard's "Daily Transport"
-// tab, not here.
+// (DISPATCH) and collection (SEND ALL). `fsCollectMode` is the section master;
+// size only matters when on. Routes are defined in the dashboard's
+// "Daily Resource Run" tab, not here.
 
 /**
  * @typedef {import('../controls.js').SettingsSection} SettingsSection
@@ -18,9 +18,9 @@ const fsLocked = (s) => !s.fsCollectMode;
 
 /** @type {SettingsSection} */
 export const fleetSaveSection = {
-  section: 'Daily Transport',
+  section: 'Daily Resource Run',
   options: [
-    { id: 'fsCollectMode', label: 'Daily Transport button (tap the Send zone with no route to open route setup)', type: 'checkbox' },
-    { id: 'fsBtnSize', label: 'Daily Transport button size', type: 'range', min: 40, max: 560, step: 10, unit: 'px', disabledWhen: fsLocked },
+    { id: 'fsCollectMode', label: 'Daily Resource Run button', type: 'checkbox' },
+    { id: 'fsBtnSize', label: 'Daily Resource Run button size', type: 'range', min: 40, max: 560, step: 10, unit: 'px', disabledWhen: fsLocked },
   ],
 };

@@ -125,7 +125,7 @@ const DASHBOARD_URL = (() => {
 })();
 
 /**
- * Open the Dashboard's Daily Transport tab in a new tab, pre-selecting the
+ * Open the Dashboard's Daily Resource Run tab in a new tab, pre-selecting the
  * current universe (`?host=`) and deep-linking the routes tab (`?tab=routes`).
  * No-op (returns false) when the runtime URL is unavailable, so the caller
  * can fall back to an in-place hint.
@@ -405,7 +405,7 @@ const refresh = () => {
   const microZone = document.getElementById(FS_MICRO_ZONE_ID);
   const collectZone = document.getElementById(FS_COLLECT_ZONE_ID);
 
-  // Send (top zone) label.
+  // DISPATCH (top zone) label.
   if (microZone) {
     if (onFleetdispatch() && isStep2()) {
       setLabel(microZone, 'Send', 'send');
@@ -413,20 +413,17 @@ const refresh = () => {
       setLabel(microZone, 'Next', 'send');
     } else {
       const body = readCurrentBody();
-      const route = findRouteForBody(fsRoutesStore.get().routes, body);
+      const allRoutes = fsRoutesStore.get().routes;
+      const route = findRouteForBody(allRoutes, body);
       if (!route) {
-        setLabel(microZone, 'Set up', 'no route', 'open routes');
+        setLabel(microZone, 'SETUP', 'Collectors (no routes)', 'open routes');
       } else {
-        // "<in-flight>/<total>" — how many of the route's targets currently
-        // have a micro-fleet inbound, out of all targets defined for it.
-        const total = route.targets.length;
-        const inFlight = total - countRemainingMicroTargets(route.targets, microInFlightKeys());
-        setLabel(microZone, `${inFlight}/${total}`, 'send');
+        setLabel(microZone, 'DISPATCH', `Collectors (${allRoutes.length})`);
       }
     }
   }
 
-  // Collect (bottom zone) label — TAP collects, LONG-PRESS sets the target.
+  // SEND ALL (bottom zone) label — TAP collects, LONG-PRESS sets the target.
   // Idle state shows the destination + the long-press affordance so both
   // actions are discoverable on the one zone.
   if (collectZone) {
@@ -438,9 +435,9 @@ const refresh = () => {
       const t = fsRoutesStore.get().collectTarget;
       setLabel(
         collectZone,
-        'Collect',
-        t ? `→ ${t.galaxy}:${t.system}:${t.position}` : 'no target',
-        'hold = set target',
+        'SEND ALL',
+        t ? `to ${t.galaxy}:${t.system}:${t.position}${t.type === 3 ? ' moon' : ''}` : 'no target',
+        '(Hold to change/set target)',
       );
     }
   }
