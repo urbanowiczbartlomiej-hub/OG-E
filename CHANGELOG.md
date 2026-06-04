@@ -6,6 +6,18 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.15.1] — 2026-06-04
+
+### Changed
+
+- **Daily Transport renamed to Daily Resource Run.** The feature, its dashboard
+  tab, and its settings section are now consistently named "Daily Resource Run"
+  across all UI surfaces.
+- **Button labels refreshed.** The top zone now reads **SETUP** (no routes
+  configured) or **DISPATCH** with a *Collectors (n)* subtitle. The bottom zone
+  now reads **SEND ALL** with a *to G:S:P [moon]* destination line and
+  *(Hold to change/set target)* micro-hint.
+
 ## [1.15.0] — 2026-06-04
 
 ### Added
