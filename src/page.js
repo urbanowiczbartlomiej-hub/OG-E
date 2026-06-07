@@ -30,6 +30,7 @@ import { installDeployRedirect } from './bridges/deployRedirect.js';
 import { installFleetDispatcherSnapshot } from './bridges/fleetDispatcherSnapshot.js';
 import { installEventBoxHook } from './bridges/eventBoxHook.js';
 import { installTraderActionHook } from './bridges/traderActionHook.js';
+import { installFleetExecutor } from './bridges/fleetExecutor.js';
 
 installGalaxyHook();
 installCheckTargetHook();
@@ -53,3 +54,8 @@ installEventBoxHook();
 // the isolated-world trader highlight can clear the matching glow only
 // when the player actually performs the action — not on a mere menu open.
 installTraderActionHook();
+// Perform the fleetdispatch actions the isolated world can't: ship
+// selection + target/mission setting go through window.fleetDispatcher.
+// The isolated-world fleet courier (features/shared/fleetCourier.js)
+// drives this via oge:fd:cmd / oge:fd:res events. See that module's header.
+installFleetExecutor();

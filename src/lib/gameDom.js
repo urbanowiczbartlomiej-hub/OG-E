@@ -86,6 +86,23 @@ export const GAME = {
   /** Anchor holding the current planet's coords, e.g. "[4:30:8]". */
   POSITION_FIELD_LINK: '#positionContentField a',
 
+  // ── Fleetdispatch (the two-step send form) ─────────────────────────
+  // Native OGame ids/classes read by the shared fleet courier (and the
+  // buttons that drive it). The ship selection + target setting go through
+  // the MAIN-world `fleetDispatcher` API (see bridges/fleetExecutor.js) —
+  // these are only the native controls the ISOLATED courier clicks /
+  // observes directly.
+  /** Step-1 container (ship selection). Absent once on step 2. */
+  FD_FLEET1: '#fleet1',
+  /** "Continue to step 2" control (step 1). */
+  FD_CONTINUE: '#continueToFleet2',
+  /** "Dispatch fleet" control — present ONLY on step 2. */
+  FD_DISPATCH: '#dispatchFleet',
+  /** Class on #dispatchFleet while the game is NOT yet ready to send. */
+  FD_DISABLED_CLASS: 'off',
+  /** "Load all resources" control (step 2). */
+  FD_ALL_RESOURCES: '#allresources',
+
   // ── Top menu ───────────────────────────────────────────────────────
   MENU_TABLE: '#menuTable',
 };
