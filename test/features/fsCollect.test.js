@@ -131,16 +131,21 @@ describe('set collect target (via long-press on the Collect zone)', () => {
     collectZone.dispatchEvent(new PointerEvent('pointerdown', { clientX: 0, clientY: 0 }));
     collectZone.dispatchEvent(new PointerEvent('pointerup'));
     collectZone.click();
-    // Target unchanged (no long-press fired) and we navigated to collect it.
+    // Target unchanged (no long-press fired) and we navigated to a BARE
+    // fleetdispatch — the courier sets ships+target in-page (no params).
     expect(fsRoutesStore.get().collectTarget).toEqual({
       galaxy: 4, system: 480, position: 8, type: TARGET_PLANET,
     });
-    expect(navTarget).toContain('galaxy=4&system=480&position=8&type=1&mission=4');
+    expect(navTarget).toContain('component=fleetdispatch');
+    expect(navTarget).not.toMatch(/galaxy=/);
   });
 });
 
 describe('micro send — navigation (top zone)', () => {
-  it('navigates to the next route target preloading the micro-fleet', () => {
+  it('navigates to a bare fleetdispatch when a route target is available', () => {
+    // With bare-URL entry the target is no longer in the URL — the courier
+    // selects ships + sets the target in-page on the next tap. So idle nav
+    // just lands on a bare fleetdispatch (no ship/target params).
     enable();
     installFsCollect();
     setBodyMeta('4:472:15', 'moon');
@@ -155,11 +160,12 @@ describe('micro send — navigation (top zone)', () => {
       collectTarget: null,
     });
     /** @type {HTMLElement} */ (document.getElementById('oge-fs-micro-zone')).click();
-    expect(navTarget).toContain('galaxy=4&system=475&position=14&type=1&mission=4');
-    expect(navTarget).toContain(`am${SHIP_LARGE_CARGO}=15000`);
+    expect(navTarget).toContain('component=fleetdispatch');
+    expect(navTarget).not.toMatch(/galaxy=/);
+    expect(navTarget).not.toMatch(/&am\d+=/);
   });
 
-  it('skips a target that already has a deployment inbound', () => {
+  it('flashes "All sent" and does not navigate when every target is inbound', () => {
     enable();
     installFsCollect();
     setBodyMeta('4:472:15', 'moon');
@@ -167,18 +173,13 @@ describe('micro send — navigation (top zone)', () => {
       routes: [
         {
           sources: [{ galaxy: 4, system: 472, position: 15, type: TARGET_MOON }],
-          targets: [
-            { galaxy: 4, system: 475, position: 14, type: TARGET_PLANET },
-            { galaxy: 4, system: 480, position: 8, type: TARGET_PLANET },
-          ],
+          targets: [{ galaxy: 4, system: 475, position: 14, type: TARGET_PLANET }],
           microFleet: { shipId: SHIP_LARGE_CARGO, count: 15000 },
         },
       ],
       collectTarget: null,
     });
-    // An inbound deployment to the first target (planet 4:475:14).
-    // insertAdjacentHTML appends WITHOUT reparsing the body, so the
-    // already-mounted button keeps its click/drag listeners.
+    // The route's only target already has an inbound deployment.
     document.body.insertAdjacentHTML('beforeend', `
       <table id="eventContent"><tbody>
         <tr class="eventFleet" data-mission-type="4" data-return-flight="false">
@@ -187,9 +188,10 @@ describe('micro send — navigation (top zone)', () => {
           <td class="destCoords"><a>[4:475:14]</a></td>
         </tr>
       </tbody></table>`);
-    /** @type {HTMLElement} */ (document.getElementById('oge-fs-micro-zone')).click();
-    // First target skipped → navigates to the second (4:480:8).
-    expect(navTarget).toContain('system=480&position=8');
+    const micro = /** @type {HTMLElement} */ (document.getElementById('oge-fs-micro-zone'));
+    micro.click();
+    expect(navTarget).toBeNull();
+    expect(micro.textContent).toContain('All sent');
   });
 
   it('does not navigate when no route matches the current body', () => {
@@ -210,7 +212,7 @@ describe('micro send — navigation (top zone)', () => {
 });
 
 describe('collect send — navigation + dispatch (bottom zone)', () => {
-  it('navigates to buildCollectUrl(target) when idle on a planet', () => {
+  it('navigates to a bare fleetdispatch when idle with a collect target', () => {
     enable();
     installFsCollect();
     fsRoutesStore.set({
@@ -218,8 +220,8 @@ describe('collect send — navigation + dispatch (bottom zone)', () => {
       collectTarget: { galaxy: 4, system: 472, position: 15, type: TARGET_MOON },
     });
     /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-zone')).click();
-    expect(navTarget).toContain('galaxy=4&system=472&position=15&type=3&mission=4');
-    expect(navTarget).not.toMatch(/&am\d+=/);
+    expect(navTarget).toContain('component=fleetdispatch');
+    expect(navTarget).not.toMatch(/galaxy=/);
   });
 
   it('on step 2 stashes oge_fsRedirect and clicks the native dispatch button', () => {

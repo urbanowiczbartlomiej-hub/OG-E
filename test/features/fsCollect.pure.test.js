@@ -10,15 +10,12 @@ import {
   coordKey,
   coordTypeKey,
   findRouteForBody,
-  buildDeployUrl,
-  buildCollectUrl,
   findNextMicroTarget,
   countRemainingMicroTargets,
   parseRoutesDsl,
   formatRoutesDsl,
 } from '../../src/features/fsCollect/pure.js';
 import {
-  MISSION_DEPLOYMENT,
   TARGET_PLANET,
   TARGET_MOON,
   SHIP_SMALL_CARGO,
@@ -45,41 +42,6 @@ describe('coordKey / coordTypeKey', () => {
   it('coordTypeKey includes type so planet and moon differ', () => {
     expect(coordTypeKey(tgt(4, 475, 14, TARGET_PLANET))).toBe('4:475:14:1');
     expect(coordTypeKey(tgt(4, 475, 14, TARGET_MOON))).toBe('4:475:14:3');
-  });
-});
-
-describe('buildDeployUrl', () => {
-  it('builds a deployment URL with target type and mission=4', () => {
-    const url = buildDeployUrl(BASE, tgt(4, 472, 15, TARGET_MOON), null);
-    expect(url).toBe(
-      `${BASE}?page=ingame&component=fleetdispatch` +
-        `&galaxy=4&system=472&position=15&type=3&mission=${MISSION_DEPLOYMENT}`,
-    );
-  });
-
-  it('appends am<shipId>=count when a micro-fleet is given', () => {
-    const url = buildDeployUrl(BASE, tgt(4, 475, 14, TARGET_PLANET), {
-      shipId: SHIP_LARGE_CARGO,
-      count: 15000,
-    });
-    expect(url).toContain('&type=1&mission=4');
-    expect(url).toContain(`&am${SHIP_LARGE_CARGO}=15000`);
-  });
-
-  it('omits the am param for a zero or missing micro-fleet', () => {
-    expect(buildDeployUrl(BASE, tgt(1, 1, 1, TARGET_PLANET), { shipId: 203, count: 0 })).not.toContain('am203');
-    expect(buildDeployUrl(BASE, tgt(1, 1, 1, TARGET_PLANET), undefined)).not.toMatch(/&am\d+=/);
-  });
-});
-
-describe('buildCollectUrl', () => {
-  it('builds a deployment URL with no ship preload', () => {
-    const url = buildCollectUrl(BASE, tgt(4, 472, 15, TARGET_MOON));
-    expect(url).toBe(
-      `${BASE}?page=ingame&component=fleetdispatch` +
-        `&galaxy=4&system=472&position=15&type=3&mission=${MISSION_DEPLOYMENT}`,
-    );
-    expect(url).not.toMatch(/&am\d+=/);
   });
 });
 
