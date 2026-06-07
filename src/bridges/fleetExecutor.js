@@ -122,6 +122,17 @@ const runCommand = (fd, cmd) => {
       return { ok: true };
     }
 
+    case 'getSelection': {
+      // Read the fleet the user has currently selected on fleet1 (used by
+      // Expeditions' long-press to remember a fleet preset).
+      const ships = Array.isArray(fd.shipsToSend)
+        ? fd.shipsToSend
+            .filter((/** @type {any} */ s) => s && typeof s.id === 'number')
+            .map((/** @type {any} */ s) => ({ id: s.id, count: s.number || 0 }))
+        : [];
+      return { ok: true, data: { ships } };
+    }
+
     case 'selectMission': {
       const mission = Number(args.mission);
       const available =

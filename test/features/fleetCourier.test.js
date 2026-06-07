@@ -14,6 +14,7 @@ import {
   readyToDispatch,
   select,
   dispatch,
+  readSelection,
   installFleetCourier,
   _resetFleetCourierForTest,
 } from '../../src/features/shared/fleetCourier.js';
@@ -166,6 +167,25 @@ describe('select — failures', () => {
     const r = await select({ spec: { kind: 'all' }, target: TARGET, mission: 4 });
     expect(r.ok).toBe(false);
     expect(r.reason).toBe('offPage');
+  });
+});
+
+describe('readSelection', () => {
+  it('returns the fleet the executor reports', async () => {
+    unhook = (() => {
+      const onCmd = (/** @type {any} */ e) => {
+        const { id, op } = e.detail;
+        if (op === 'getSelection') {
+          document.dispatchEvent(new CustomEvent('oge:fd:res', {
+            detail: { id, ok: true, data: { ships: [{ id: 203, count: 9 }] } },
+          }));
+        }
+      };
+      document.addEventListener('oge:fd:cmd', onCmd);
+      return () => document.removeEventListener('oge:fd:cmd', onCmd);
+    })();
+    const ships = await readSelection();
+    expect(ships).toEqual([{ id: 203, count: 9 }]);
   });
 });
 

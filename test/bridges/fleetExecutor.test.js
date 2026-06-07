@@ -135,6 +135,18 @@ describe('fleetExecutor', () => {
     expect(no.data.available).toBe(false);
   });
 
+  it('getSelection returns the currently selected fleet', async () => {
+    const fd = makeFakeFd();
+    fd.shipsToSend = [{ id: 203, number: 12 }, { id: 202, number: 5 }];
+    /** @type {any} */ (window).fleetDispatcher = fd;
+    const res = await command('getSelection', {});
+    expect(res.ok).toBe(true);
+    expect(res.data.ships).toEqual([
+      { id: 203, count: 12 },
+      { id: 202, count: 5 },
+    ]);
+  });
+
   it('replies with an error when no fleetDispatcher is present', async () => {
     const res = await command('selectShips', { ships: [{ id: 203, count: 1 }] });
     expect(res.ok).toBe(false);

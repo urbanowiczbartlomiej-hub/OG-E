@@ -199,6 +199,18 @@ const availability = () => {
   return map;
 };
 
+/**
+ * Read the fleet the user currently has selected on fleet1 (via the MAIN
+ * executor's `getSelection`). Used by Expeditions to capture a fleet preset
+ * on long-press. Resolves `[]` when nothing's selected or off-page.
+ *
+ * @returns {Promise<Array<{ id: number, count: number }>>}
+ */
+export const readSelection = async () => {
+  const r = await rpc('getSelection');
+  return r && r.ok && r.data && Array.isArray(r.data.ships) ? r.data.ships : [];
+};
+
 // ─── the two-tap surface ───────────────────────────────────────────────────
 
 /**
