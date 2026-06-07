@@ -28,7 +28,6 @@ import {
   findNextScanSystem,
   findNextColonizeTarget,
   pickCandidateInView,
-  buildFleetdispatchUrl,
   buildGalaxyUrl,
 } from '../../src/features/sendCol/pure.js';
 import {
@@ -737,40 +736,8 @@ describe('parseCurrentGalaxyView', () => {
   });
 });
 
-// ──────────────────────────────────────────────────────────────────
-// buildFleetdispatchUrl
-// ──────────────────────────────────────────────────────────────────
-
-describe('buildFleetdispatchUrl', () => {
-  it('builds the expected URL with all params', () => {
-    // navTarget null → getter returns the default base.
-    const url = buildFleetdispatchUrl({ galaxy: 4, system: 30, position: 8 });
-    expect(url).toContain('page=ingame');
-    expect(url).toContain('component=fleetdispatch');
-    expect(url).toContain('galaxy=4');
-    expect(url).toContain('system=30');
-    expect(url).toContain('position=8');
-    expect(url).toContain('type=1');
-    expect(url).toContain('mission=7');
-    expect(url).toContain('am208=1');
-  });
-
-  it('preserves origin from location.href', () => {
-    navTarget = 'https://s2-pl.ogame.gameforge.com/game/index.php?old=1';
-    const url = buildFleetdispatchUrl({ galaxy: 1, system: 2, position: 3 });
-    expect(url.startsWith('https://s2-pl.ogame.gameforge.com/game/index.php?')).toBe(true);
-  });
-
-  it('produces the exact format of the design spec', () => {
-    navTarget = 'https://example.com/game/index.php';
-    const url = buildFleetdispatchUrl({ galaxy: 1, system: 2, position: 3 });
-    expect(url).toBe(
-      'https://example.com/game/index.php?page=ingame&component=fleetdispatch' +
-        '&galaxy=1&system=2&position=3' +
-        '&type=1&mission=7&am208=1',
-    );
-  });
-});
+// (buildFleetdispatchUrl was removed with the courier migration — colonize
+// now uses bare-URL entry + in-page selection; see fleetCourier.)
 
 // ──────────────────────────────────────────────────────────────────
 // buildGalaxyUrl

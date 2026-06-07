@@ -319,33 +319,11 @@ export const pickCandidateInView = (scans, registry, targets, view, now) => {
 };
 
 // ─── URL builders ─────────────────────────────────────────────────────────
-
-/**
- * Build the full fleetdispatch URL for a colonize mission: game origin
- * + `?page=ingame&component=fleetdispatch&galaxy=X&system=Y&position=Z
- * &type=1&mission=7&am208=1`. `type=1` preselects planet, `mission=7` is
- * colonize, `am208=1` auto-loads one colony ship.
- *
- * Origin comes from `location.href.split('?')[0]` so the built URL stays
- * on whatever host the user is playing on (pl/org/de/…) without the
- * caller having to know.
- *
- * Pure with respect to its arguments: the only external read is
- * `location.href`, which every page share a value for within a single
- * navigation.
- *
- * @param {{ galaxy: number, system: number, position: number }} coords
- * @returns {string}
- */
-export const buildFleetdispatchUrl = ({ galaxy, system, position }) => {
-  const base = location.href.split('?')[0];
-  return (
-    base +
-    `?page=ingame&component=fleetdispatch` +
-    `&galaxy=${galaxy}&system=${system}&position=${position}` +
-    `&type=1&mission=${MISSION_COLONIZE}&am208=1`
-  );
-};
+//
+// The colonize fleetdispatch URL builder is gone: with bare-URL entry the
+// fleet courier sets the colony ship + target in-page (see
+// features/shared/fleetCourier.js), so no params are built here. Only the
+// galaxy-view builder (for the Scan half) remains.
 
 /**
  * Build the galaxy-view URL for a given `(galaxy, system)`: game origin

@@ -84,9 +84,15 @@ import { safeLS } from '../../lib/storage.js';
 import { parsePositions } from '../../domain/positions.js';
 import { createButton as makeButton } from '../shared/button.js';
 import {
+  select as courierSelect,
+  dispatch as courierDispatch,
+  step as courierStep,
+  readyToDispatch,
+  installFleetCourier,
+} from '../shared/fleetCourier.js';
+import {
   findNextScanSystem,
   findNextColonizeTarget,
-  buildFleetdispatchUrl,
   buildGalaxyUrl,
   derive,
   render,
@@ -94,6 +100,10 @@ import {
   CHECK_TARGET_TIMEOUT_MS,
   SCAN_COOLDOWN_MS,
   BG_SEND_IDLE,
+  BG_SEND_READY,
+  BG_SEND_ERROR,
+  BG_SEND_STALE,
+  BG_SEND_WAIT,
   BG_SCAN_IDLE,
 } from './pure.js';
 import {
@@ -101,6 +111,7 @@ import {
   readHomePlanet,
   parseCurrentGalaxyView,
 } from './domHelpers.js';
+import { SHIP_COLONY, TARGET_PLANET } from '../../domain/rules.js';
 
 // Re-export the pure pipeline so existing call-sites (e.g. the test
 // file which imports `derive` + `render` from this module) keep
@@ -199,6 +210,18 @@ let waitSeconds = 0;
  */
 let controller = null;
 
+/** Re-entry guard while a courier select()/dispatch() is in flight. */
+let busy = false;
+/** True once a select() has armed a ready-to-send colonize on step 2. */
+let colReady = false;
+/** The candidate the armed send is aimed at (for the ready label). */
+let colTarget = /** @type {Coords | null} */ (null);
+
+/** Bare fleetdispatch URL — the courier sets the colony ship + target
+ * in-page, so no coords/mission/am params (avoids the second reload). */
+const bareFleetdispatchUrl = () =>
+  location.href.split('?')[0] + '?page=ingame&component=fleetdispatch';
+
 // ─── DOM paint (impure — drives the shared Button controller) ──────────
 
 /**
@@ -291,196 +314,152 @@ const captureEnv = () => {
  * @returns {void}
  */
 const refresh = () => {
-  paint(render(derive(captureEnv())));
+  const result = render(derive(captureEnv()));
+  // Scan half is always derive-driven. The Send half is owned by the
+  // courier handler while a select()/dispatch() is in flight (busy) or once
+  // a send is armed-ready on step 2; otherwise it shows the derive-computed
+  // next-candidate label (which, on a bare fleetdispatch, is the idle-branch
+  // "[g:s:p] Send Colony").
+  paintZone('scan', result.scan);
+  if (busy) return;
+  if (colReady && colTarget && courierStep() === 'fleet2') {
+    // Armed and ready — but keep showing a live min-gap countdown if a
+    // colony arrival is too close (the 1 Hz ticker drives it down).
+    const wait = getColonizeWaitTime();
+    if (wait > 0) {
+      paintZone('send', { text: `Wait ${wait}s`, bg: BG_SEND_WAIT, dim: true });
+    } else {
+      paintZone('send', {
+        text: `[${colTarget.galaxy}:${colTarget.system}:${colTarget.position}]`,
+        subtext: 'Send!',
+        bg: BG_SEND_READY,
+      });
+    }
+    return;
+  }
+  paintZone('send', result.send);
 };
 
-// ─── Keyboard synth (Enter on the focused dispatch form) ───────────────
-
-/**
- * Synthesize `Enter` on `document.activeElement` so OGame's own
- * fleetdispatch form submits. Copy of `labels.js:dispatchEnter`.
- *
- * @returns {void}
- */
-const dispatchEnter = () => {
-  const target = document.activeElement || document;
-  target.dispatchEvent(
-    new KeyboardEvent('keydown', {
-      key: 'Enter',
-      code: 'Enter',
-      keyCode: 13,
-      which: 13,
-      bubbles: true,
-    }),
-  );
-  target.dispatchEvent(
-    new KeyboardEvent('keyup', {
-      key: 'Enter',
-      code: 'Enter',
-      keyCode: 13,
-      which: 13,
-      bubbles: true,
-    }),
-  );
-};
 
 // ─── Click handlers ───────────────────────────────────────────────────
 
 /**
- * Handle a click on the Send half. Switches on `ctx.kind` × `phase.tag`.
+ * Build the send-zone paint for a courier select() failure. reserved/stale
+ * slots are ALSO recorded in scansStore by onCheckTargetResult (it fires
+ * from the game's checkTarget that the courier triggered), so the next tap
+ * picks a different candidate.
  *
- * @returns {void}
+ * @param {string | undefined} reason
+ * @param {Coords} c
+ * @returns {Paint}
  */
-const onSendClick = () => {
-  const ctx = derive(captureEnv());
-  if (safeLS.bool('oge_debugSendCol', false)) {
-    // eslint-disable-next-line no-console
-    console.debug('[OG-E sendCol] onSendClick ctx:', ctx);
+const colErrorPaint = (reason, c) => {
+  const coords = `[${c.galaxy}:${c.system}:${c.position}]`;
+  switch (reason) {
+    case 'noShip':
+      return { text: coords, subtext: 'No ship!', bg: BG_SEND_ERROR };
+    case 'noMoon':
+      return { text: coords, subtext: 'No moon', bg: BG_SEND_ERROR };
+    case 'reserved':
+      return { text: coords, subtext: 'Reserved', bg: BG_SEND_STALE };
+    case 'mission':
+    case 'stale':
+      return { text: coords, subtext: 'Stale', bg: BG_SEND_STALE };
+    case 'timeout':
+      return { text: coords, subtext: 'Timeout', bg: BG_SEND_STALE };
+    default:
+      return { text: coords, subtext: 'Failed', bg: BG_SEND_ERROR };
   }
+};
 
-  if (ctx.kind === 'idle' || ctx.kind === 'galaxy') {
-    if (ctx.candidate) {
-      lastNavToFleetdispatchAt = Date.now();
-      lastCheckTargetError = null;
-      waitSeconds = 0;
-      location.href = buildFleetdispatchUrl(ctx.candidate);
+/**
+ * Send-half handler — two intentional taps via the shared courier (bare-URL
+ * entry, in-page colony-ship + target selection, `.off` readiness, sendFleet
+ * result handling). The Scan half + candidate finding are unchanged.
+ *
+ * @returns {Promise<void>}
+ */
+const onSendClick = async () => {
+  if (busy) return;
+  const s = courierStep();
+
+  // Tap 2 — dispatch the armed colonize, gated by the min-gap.
+  if (colReady && s === 'fleet2') {
+    if (!readyToDispatch()) return;
+    const wait = getColonizeWaitTime();
+    if (wait > 0) {
+      // Min-gap: too close to an existing colony arrival. Show it and let
+      // the user re-tap once the gap passes (no live countdown — low value).
+      paintZone('send', { text: `Wait ${wait}s`, bg: BG_SEND_WAIT, dim: true });
       return;
     }
-    // No candidate — transient "None available" flash, then revert.
-    paintZone('send', { text: 'None available', bg: BG_SEND_IDLE });
+    busy = true;
+    paintZone('send', { text: 'Wait…', bg: BG_SEND_WAIT, dim: true });
+    const r = await courierDispatch();
+    busy = false;
+    colReady = false;
+    if (!r.ok) {
+      paintZone('send', {
+        text: r.errorCode === 140026 ? 'No fuel' : 'Failed',
+        bg: BG_SEND_ERROR,
+      });
+      return;
+    }
+    // Success → the game navigates; onColonizeSent records the slot.
+    colTarget = null;
+    paintZone('send', { text: 'Sent!', bg: BG_SEND_READY });
     return;
   }
 
-  // ctx.kind === 'fleetdispatch'
-  switch (ctx.phase.tag) {
-    case 'noTarget':
-    case 'noShip':
-      return;
-
-    case 'reserved': {
-      // Reserved (error 140016 = another player reserved via DM). We
-      // already marked the slot as `'reserved'` in scansStore from the
-      // checkTarget reactor, so `findNextColonizeTarget` skips it for
-      // the 24 h cooldown window. Best action on click: jump straight
-      // to the next candidate in the DB so the user isn't stuck.
-      const settings = settingsStore.get();
-      const home = readHomePlanet();
-      if (!home) return;
-      const next = findNextColonizeTarget(
+  // Find the next DB candidate (works on AND off fleetdispatch).
+  const settings = settingsStore.get();
+  const home = readHomePlanet();
+  const candidate = home
+    ? findNextColonizeTarget(
         scansStore.get(),
         registryStore.get(),
         home,
         /** @type {number[]} */ (parsePositions(settings.colPositions)),
         settings.colPreferOtherGalaxies,
-      );
-      if (!next) {
-        paintZone('send', { text: 'No more candidates', bg: BG_SEND_IDLE });
-        return;
-      }
-      lastNavToFleetdispatchAt = Date.now();
-      lastCheckTargetError = null;
-      waitSeconds = 0;
-      location.href = buildFleetdispatchUrl({
-        galaxy: next.galaxy,
-        system: next.system,
-        position: next.position,
-      });
-      return;
-    }
-
-    case 'stale': {
-      // onCheckTargetResult already fired and marked the target slot as
-      // 'abandoned' — do NOT delete the system key. The marking is the
-      // correct persistent record: findNextColonizeTarget skips non-empty
-      // statuses, and isSystemStale will queue a rescan after the
-      // abandoned-cleanup deadline (~25-47 h). Mirrors 'reserved'.
-      if (!ctx.target) return;
-      const staleSettings = settingsStore.get();
-      const staleHome = readHomePlanet();
-      if (!staleHome) return;
-      const staleNext = findNextColonizeTarget(
-        scansStore.get(),
-        registryStore.get(),
-        staleHome,
-        /** @type {number[]} */ (parsePositions(staleSettings.colPositions)),
-        staleSettings.colPreferOtherGalaxies,
-      );
-      if (!staleNext) {
-        paintZone('send', { text: 'No more candidates', bg: BG_SEND_IDLE });
-        return;
-      }
-      lastNavToFleetdispatchAt = Date.now();
-      lastCheckTargetError = null;
-      waitSeconds = 0;
-      flushScansStore().then(() => {
-        location.href = buildFleetdispatchUrl({
-          galaxy: staleNext.galaxy,
-          system: staleNext.system,
-          position: staleNext.position,
-        });
-      });
-      return;
-    }
-
-    case 'timeout': {
-      // checkTarget XHR timed out — onCheckTargetResult never fired so
-      // the slot is still 'empty' in scansStore. Delete the system key
-      // so the scan button re-queues it and findNextColonizeTarget skips it.
-      if (!ctx.target) return;
-      const { galaxy: toG, system: toS } = ctx.target;
-      if (lastCheckTargetError === null) {
-        const toKey = /** @type {`${number}:${number}`} */ (`${toG}:${toS}`);
-        scansStore.update((prev) => {
-          const next = { ...prev };
-          delete next[toKey];
-          return next;
-        });
-      }
-      const toSettings = settingsStore.get();
-      const toHome = readHomePlanet();
-      if (!toHome) return;
-      const toNext = findNextColonizeTarget(
-        scansStore.get(),
-        registryStore.get(),
-        toHome,
-        /** @type {number[]} */ (parsePositions(toSettings.colPositions)),
-        toSettings.colPreferOtherGalaxies,
-      );
-      if (!toNext) {
-        paintZone('send', { text: 'No more candidates', bg: BG_SEND_IDLE });
-        return;
-      }
-      lastNavToFleetdispatchAt = Date.now();
-      lastCheckTargetError = null;
-      waitSeconds = 0;
-      flushScansStore().then(() => {
-        location.href = buildFleetdispatchUrl({
-          galaxy: toNext.galaxy,
-          system: toNext.system,
-          position: toNext.position,
-        });
-      });
-      return;
-    }
-
-    case 'waitGap':
-      // Countdown in progress — user click is a no-op (repaint handles
-      // the visible timer; a click would otherwise re-check min-gap and
-      // bounce right back into waitGap).
-      return;
-
-    case 'ready': {
-      const wait = getColonizeWaitTime();
-      if (wait > 0) {
-        waitStartAt = Date.now();
-        waitSeconds = wait;
-        refresh();
-        return;
-      }
-      dispatchEnter();
-      return;
-    }
+      )
+    : null;
+  if (!candidate) {
+    paintZone('send', { text: 'No more candidates', bg: BG_SEND_IDLE });
+    return;
   }
+
+  // Off fleetdispatch → bare nav; the next tap selects the fleet in-page.
+  if (s === 'off') {
+    location.href = bareFleetdispatchUrl();
+    return;
+  }
+
+  // Tap 1 — select the colony ship + target, walk to a ready step 2.
+  busy = true;
+  colReady = false;
+  paintZone('send', { text: 'Wait…', bg: BG_SEND_WAIT, dim: true });
+  const r = await courierSelect({
+    spec: { kind: 'list', ships: [{ id: SHIP_COLONY, qty: 1, frac: 1 }] },
+    target: {
+      galaxy: candidate.galaxy,
+      system: candidate.system,
+      position: candidate.position,
+      type: TARGET_PLANET,
+    },
+    mission: MISSION_COLONIZE,
+  });
+  busy = false;
+  if (!r.ok) {
+    paintZone('send', colErrorPaint(r.reason, candidate));
+    return;
+  }
+  colReady = true;
+  colTarget = candidate;
+  paintZone('send', {
+    text: `[${candidate.galaxy}:${candidate.system}:${candidate.position}]`,
+    subtext: 'Send!',
+    bg: BG_SEND_READY,
+  });
 };
 
 /**
@@ -801,6 +780,10 @@ let installed = null;
 export const installSendCol = () => {
   if (installed) return installed.dispose;
 
+  // Cache the fleetDispatcher snapshot (colony-ship availability) so the
+  // courier's select() can resolve the fleet.
+  installFleetCourier();
+
   /**
    * Create + mount the button DOM. Idempotent: bails when already mounted.
    *
@@ -828,7 +811,7 @@ export const installSendCol = () => {
           id: SEND_HALF_ID,
           ariaLabel: 'Send colonization',
           bg: BG_SEND_IDLE,
-          onTap: onSendClick,
+          onTap: () => void onSendClick(),
           focusValue: FOCUS_SEND,
           focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,
         },
@@ -976,4 +959,7 @@ export const _resetSendColForTest = () => {
   waitStartAt = 0;
   waitSeconds = 0;
   fleetDispatcherSnapshot = null;
+  busy = false;
+  colReady = false;
+  colTarget = null;
 };

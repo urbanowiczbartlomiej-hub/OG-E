@@ -516,33 +516,8 @@ describe('derive — fleetdispatch branch', () => {
     vi.useRealTimers();
   });
 
-  it('waitGap with remaining seconds when a countdown is active', () => {
-    _resetSendColForTest();
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-    // Install on fleetdispatch with a conflict in registry → click
-    // starts a countdown.
-    setupScene({ onFleetdispatch: true, mission: 7 });
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
-    setFleetDispatcher(makeFleetDispatcher({
-      canColonize: true,
-      hasColonizer: true,
-    }));
-    const dur = document.createElement('div');
-    dur.id = 'durationOneWay';
-    dur.textContent = '0:01:00'; // 60s arrival
-    document.body.appendChild(dur);
-    // Registry conflict 10s after our arrival (within the 20s default gap).
-    const now = Date.now();
-    registryStore.set([
-      { coords: '4:40:8', sentAt: now, arrivalAt: now + 60_000 + 10_000 },
-    ]);
-    installSendCol();
-    getSend()?.click();
-    // waitGap now active; label contains "Wait".
-    expect(getSend()?.textContent).toMatch(/Wait \d+s/);
-    vi.useRealTimers();
-  });
+  // (waitGap-via-button is now covered by the courier two-click min-gap
+  // test under "onSendClick — fleetdispatch branch".)
 });
 
 // ──────────────────────────────────────────────────────────────────
@@ -676,7 +651,7 @@ describe('render — pure paint instructions', () => {
 // ──────────────────────────────────────────────────────────────────
 
 describe('onSendClick — idle/galaxy branch', () => {
-  it('idle with a candidate → navigates to buildFleetdispatchUrl', () => {
+  it('idle with a candidate → navigates to a bare fleetdispatch', () => {
     setupScene();
     settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
     scansStore.set({
@@ -684,19 +659,18 @@ describe('onSendClick — idle/galaxy branch', () => {
     });
     installSendCol();
     getSend()?.click();
+    // bare-URL entry — the courier sets the colony ship + target in-page.
     expect(navTarget).toContain('component=fleetdispatch');
-    expect(navTarget).toContain('galaxy=4');
-    expect(navTarget).toContain('system=30');
-    expect(navTarget).toContain('position=8');
-    expect(navTarget).toContain('mission=7');
+    expect(navTarget).not.toMatch(/galaxy=/);
+    expect(navTarget).not.toMatch(/mission=/);
   });
 
-  it('idle with no candidate → paints "None available" (no nav)', () => {
+  it('idle with no candidate → paints "No more candidates" (no nav)', () => {
     setupScene();
     settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
     installSendCol();
     getSend()?.click();
-    expect(getSend()?.textContent).toBe('None available');
+    expect(getSend()?.textContent).toBe('No more candidates');
     expect(navTarget).toBeNull();
   });
 });
@@ -746,24 +720,83 @@ describe('onSendClick — fleetdispatch branch', () => {
     expect(getSend()?.textContent).toContain('No more candidates');
   });
 
-  it('ready with no wait → synthesizes Enter', () => {
-    installFleet({ canColonize: true, hasColonizer: true });
-    const seen = /** @type {string[]} */ ([]);
-    document.addEventListener('keydown', (e) => {
-      if (e instanceof KeyboardEvent) seen.push(e.type);
+  // ── courier two-click harness ─────────────────────────────────────────
+  // A fake MAIN executor + a step-1→step-2 DOM, so a tap-1 select() can
+  // reach a ready step 2 (the real courier flow is covered in
+  // fleetCourier.test.js; here we prove sendCol wires into it).
+  /** @param {{ errorCode?: number|null, missionOk?: boolean }} [opts] */
+  const armCourier = (opts = {}) => {
+    document.dispatchEvent(new CustomEvent('oge:fleetDispatcher', {
+      detail: { shipsOnPlanet: [{ id: 208, number: 1 }], orders: {} },
+    }));
+    document.body.insertAdjacentHTML('beforeend', '<div id="fleet1"></div>');
+    const cont = document.createElement('a');
+    cont.id = 'continueToFleet2';
+    cont.addEventListener('click', () => {
+      document.getElementById('fleet1')?.remove();
+      const d = document.createElement('a');
+      d.id = 'dispatchFleet';
+      d.className = 'off';
+      document.body.appendChild(d);
     });
-    document.addEventListener('keyup', (e) => {
-      if (e instanceof KeyboardEvent) seen.push(e.type);
+    document.body.appendChild(cont);
+    const onCmd = (/** @type {any} */ e) => {
+      const { id, op, args } = e.detail;
+      /** @type {any} */ let res = { id, ok: true };
+      if (op === 'setTarget') {
+        setTimeout(() => document.dispatchEvent(new CustomEvent('oge:checkTargetResult', {
+          detail: { galaxy: args.galaxy, system: args.system, position: args.position, errorCode: opts.errorCode ?? null },
+        })), 0);
+      } else if (op === 'selectMission') {
+        const ok = opts.missionOk ?? true;
+        res = { id, ok, data: { available: ok } };
+        if (ok) setTimeout(() => document.getElementById('dispatchFleet')?.classList.remove('off'), 0);
+      }
+      document.dispatchEvent(new CustomEvent('oge:fd:res', { detail: res }));
+    };
+    document.addEventListener('oge:fd:cmd', onCmd);
+    return () => document.removeEventListener('oge:fd:cmd', onCmd);
+  };
+
+  const settle = () => new Promise((r) => setTimeout(r, 500));
+
+  it('two taps: select arms a ready send, then dispatch fires', async () => {
+    setupScene({ onFleetdispatch: true });
+    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
+    scansStore.set({
+      '4:30': { scannedAt: Date.now(), positions: { 8: { status: 'empty' } } },
+    });
+    installSendCol();
+    const unhook = armCourier({ errorCode: null, missionOk: true });
+    // Tap 1 — select; walks to a ready step 2.
+    getSend()?.click();
+    await settle();
+    expect(getSend()?.textContent).toContain('Send!');
+    // Tap 2 — dispatch.
+    let clicks = 0;
+    document.getElementById('dispatchFleet')?.addEventListener('click', () => {
+      clicks += 1;
+      document.dispatchEvent(new CustomEvent('oge:sendFleetResult', {
+        detail: { success: true, errorCode: null, mission: 7 },
+      }));
     });
     getSend()?.click();
-    expect(seen).toContain('keydown');
-    expect(seen).toContain('keyup');
+    await settle();
+    expect(clicks).toBe(1);
+    unhook();
   });
 
-  it('ready with minGap conflict → starts countdown, paints "Wait Ns"', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-    installFleet({ canColonize: true, hasColonizer: true });
+  it('tap 2 with a min-gap conflict shows "Wait Ns" and does not dispatch', async () => {
+    setupScene({ onFleetdispatch: true });
+    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
+    scansStore.set({
+      '4:30': { scannedAt: Date.now(), positions: { 8: { status: 'empty' } } },
+    });
+    installSendCol();
+    const unhook = armCourier({ errorCode: null, missionOk: true });
+    getSend()?.click();
+    await settle();
+    // Arm a min-gap conflict: a colony arrival within the default gap.
     const dur = document.createElement('div');
     dur.id = 'durationOneWay';
     dur.textContent = '0:01:00';
@@ -772,15 +805,13 @@ describe('onSendClick — fleetdispatch branch', () => {
     registryStore.set([
       { coords: '4:40:8', sentAt: now, arrivalAt: now + 60_000 + 10_000 },
     ]);
-    const seen = /** @type {string[]} */ ([]);
-    document.addEventListener('keydown', (e) => {
-      if (e instanceof KeyboardEvent) seen.push(e.type);
-    });
+    let clicks = 0;
+    document.getElementById('dispatchFleet')?.addEventListener('click', () => (clicks += 1));
     getSend()?.click();
-    // No Enter fired — countdown armed instead.
-    expect(seen).toEqual([]);
+    await settle();
     expect(getSend()?.textContent).toMatch(/Wait \d+s/);
-    vi.useRealTimers();
+    expect(clicks).toBe(0);
+    unhook();
   });
 });
 
@@ -1030,42 +1061,9 @@ describe('oge:colonizeSent reactor', () => {
 // Ticker — 1 Hz repaint drives waitGap countdown
 // ──────────────────────────────────────────────────────────────────
 
-describe('ticker', () => {
-  it('1 Hz repaint drives the waitGap countdown down', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-    setupScene({ onFleetdispatch: true, mission: 7 });
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
-    setFleetDispatcher(makeFleetDispatcher({
-      canColonize: true,
-      hasColonizer: true,
-    }));
-    const dur = document.createElement('div');
-    dur.id = 'durationOneWay';
-    dur.textContent = '0:01:00';
-    document.body.appendChild(dur);
-    const now = Date.now();
-    registryStore.set([
-      { coords: '4:40:8', sentAt: now, arrivalAt: now + 60_000 + 5_000 },
-    ]);
-    installSendCol();
-    getSend()?.click();
-    const labelStart = getSend()?.textContent;
-    expect(labelStart).toMatch(/Wait \d+s/);
-    // Advance 3s — countdown should reflect it.
-    vi.advanceTimersByTime(3_000);
-    const labelLater = getSend()?.textContent;
-    expect(labelLater).toMatch(/Wait \d+s/);
-    // labelLater's seconds number must be strictly smaller.
-    /** @param {string | null | undefined} s */
-    const extract = (s) => {
-      const m = (s ?? '').match(/Wait (\d+)s/);
-      return m ? parseInt(m[1], 10) : NaN;
-    };
-    expect(extract(labelLater)).toBeLessThan(extract(labelStart));
-    vi.useRealTimers();
-  });
-});
+// (The live waitGap countdown was dropped with the courier migration —
+// min-gap now shows a static "Wait Ns" the user re-taps past. The 1 Hz
+// ticker still repaints the scan + candidate labels.)
 
 // ──────────────────────────────────────────────────────────────────
 // Settings reactions

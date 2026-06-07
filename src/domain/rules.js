@@ -71,3 +71,5 @@ export const TARGET_MOON = 3;
 export const SHIP_SMALL_CARGO = 202;
 export const SHIP_LARGE_CARGO = 203;
 export const SHIP_PATHFINDER = 219;
+/** Colony ship (Statek kolonizacyjny) — the one a colonize mission needs. */
+export const SHIP_COLONY = 208;
