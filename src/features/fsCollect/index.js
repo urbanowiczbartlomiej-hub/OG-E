@@ -52,11 +52,7 @@ import {
   stampFsRoutesChanged,
   FS_REDIRECT_KEY,
 } from '../../state/fsRoutes.js';
-import {
-  installDrag,
-  installFocusPersist,
-} from '../shared/draggableButton.js';
-import { decorateButton } from '../shared/buttonChrome.js';
+import { createButton as makeButton, LABEL_CLASS } from '../shared/button.js';
 import {
   coordKey,
   coordTypeKey,
@@ -198,7 +194,10 @@ const collectedOriginKeys = (target) => {
  */
 const setLabel = (el, big, small, hint) => {
   if (!el) return;
-  el.textContent = '';
+  // Paint into the shared Button's label span so the ring/ripple
+  // decoration (on the wrap) survives; fall back to the element itself.
+  const target = el.querySelector('.' + LABEL_CLASS) || el;
+  target.textContent = '';
   const wrap = document.createElement('div');
   wrap.style.cssText =
     'display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.1;width:100%;';
@@ -218,7 +217,7 @@ const setLabel = (el, big, small, hint) => {
     bot.style.cssText = 'font-size:0.37em;opacity:0.55;margin-top:2px;letter-spacing:0.3px;';
     wrap.appendChild(bot);
   }
-  el.appendChild(wrap);
+  target.appendChild(wrap);
 };
 
 /**
@@ -457,86 +456,6 @@ const refresh = () => {
 /** @type {{ dispose: () => void } | null} */
 let installed = null;
 
-/** @param {number} size */
-const zoneFontSize = (size) => Math.round(size * 0.14) + 'px';
-
-/**
- * Style the unified two-zone circular button. The wrapper defines the outer
- * circle geometry; each zone (Send / Collect) is an equal-height flex child.
- *
- * @param {HTMLElement} wrap
- * @param {HTMLElement[]} zones  [microZone, collectZone]
- * @param {number} size
- * @param {string[]} bgs  one bg per zone
- * @returns {void}
- */
-const styleZones = (wrap, zones, size, bgs) => {
-  wrap.style.cssText = [
-    'position:fixed',
-    'border-radius:50%',
-    'overflow:hidden',
-    'display:flex',
-    'flex-direction:column',
-    'z-index:99999',
-    'touch-action:none',
-    'user-select:none',
-    'cursor:pointer',
-    'box-shadow:0 8px 22px rgba(0,0,0,0.55),0 3px 8px rgba(0,0,0,0.45),0 0 0 1px rgba(0,0,0,0.40)',
-    `width:${size}px`,
-    `height:${size}px`,
-  ].join(';');
-  zones.forEach((z, i) => {
-    z.style.cssText = [
-      'flex:1',
-      'display:flex',
-      'align-items:center',
-      'justify-content:center',
-      'text-align:center',
-      'color:#fff',
-      'font-weight:bold',
-      'border:none',
-      'cursor:pointer',
-      `font-size:${zoneFontSize(size)}`,
-      `background:${bgs[i]}`,
-    ].join(';');
-  });
-};
-
-/**
- * Restore a saved drag position onto `wrap`, else anchor bottom-right.
- *
- * @param {HTMLElement} wrap
- * @param {string} posKey
- * @param {number} size
- * @returns {void}
- */
-const placeWrap = (wrap, posKey, size) => {
-  const saved = safeJson(posKey);
-  if (
-    saved &&
-    typeof saved === 'object' &&
-    typeof (/** @type {any} */ (saved).x) === 'number' &&
-    typeof (/** @type {any} */ (saved).y) === 'number'
-  ) {
-    const p = /** @type {{ x: number, y: number }} */ (saved);
-    wrap.style.left = Math.min(p.x, window.innerWidth - size) + 'px';
-    wrap.style.top = Math.min(p.y, window.innerHeight - size) + 'px';
-  } else {
-    wrap.style.right = DEFAULT_EDGE_OFFSET_PX + 'px';
-    wrap.style.bottom = DEFAULT_EDGE_OFFSET_PX + 'px';
-  }
-};
-
-/** @param {string} key */
-const safeJson = (key) => {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-};
-
 /**
  * Install the unified fleet-save button. Idempotent — a second call returns the
  * same dispose fn. Gated on `settings.fsCollectMode`; flipping it at
@@ -547,154 +466,61 @@ const safeJson = (key) => {
 export const installFsCollect = () => {
   if (installed) return installed.dispose;
 
-  /** @type {ReturnType<import('../shared/draggableButton.js').installDrag> | null} */
-  let dragHandle = null;
-  /** @type {number | null} */
-  let longPressTimer = null;
-  /** Set true when a long-press fired, so the trailing click is swallowed. */
-  let longPressFired = false;
-  /** Pointer-down coords, to cancel the long-press once a drag starts. */
-  let pressX = 0;
-  let pressY = 0;
-
-  // ── radial sweep (hold indicator on the collect zone) ──────────────────
-  // The bottom zone is the bottom half of a circle. conic-gradient centered
-  // at `50% 0%` (= button center = top of zone) sweeps from 90° (right) to
-  // 270° (left) clockwise — exactly the visible 180° of the semicircle.
-  /** @type {number | null} */
-  let sweepRaf = null;
-  /** @type {HTMLElement | null} */
-  let sweepEl = null;
-
-  /** @param {HTMLElement} zone */
-  const startSweep = (zone) => {
-    stopSweep();
-    const el = document.createElement('div');
-    el.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
-    zone.appendChild(el);
-    sweepEl = el;
-    const t0 = performance.now();
-    const tick = () => {
-      const pct = Math.min((performance.now() - t0) / LONG_PRESS_MS, 1);
-      const deg = pct * 184; // slight overshoot so last frame is fully filled
-      el.style.background =
-        `conic-gradient(from 90deg at 50% 0%, rgba(255,255,255,0.18) ${deg}deg, transparent ${deg}deg)`;
-      if (pct < 1) sweepRaf = requestAnimationFrame(tick);
-    };
-    sweepRaf = requestAnimationFrame(tick);
-  };
-
-  const stopSweep = () => {
-    if (sweepRaf !== null) { cancelAnimationFrame(sweepRaf); sweepRaf = null; }
-    sweepEl?.remove();
-    sweepEl = null;
-  };
-  // ───────────────────────────────────────────────────────────────────────
-
-  const clearLongPress = () => {
-    if (longPressTimer !== null) {
-      clearTimeout(longPressTimer);
-      longPressTimer = null;
-    }
-    stopSweep();
-  };
+  /**
+   * The shared {@link makeButton} controller — owns geometry, placement,
+   * the engraved ring, drag, the collect-zone long-press + sweep, and
+   * focus persistence. `null` until mounted.
+   *
+   * @type {import('../shared/button.js').Button | null}
+   */
+  let controller = null;
 
   const mount = () => {
-    if (document.getElementById(FS_UNIFIED_ID)) {
-      return;
-    }
+    // Already mounted → keep the live controller (makeButton returns null).
+    if (document.getElementById(FS_UNIFIED_ID)) return;
+
     const size = settingsStore.get().fsBtnSize;
-
-    // Create wrapper and two zones.
-    const wrap = document.createElement('div');
-    wrap.id = FS_UNIFIED_ID;
-    // Subtle hover title — the button's identity, hidden until hover.
-    wrap.title = 'Daily Resource Run';
-
-    const microZone = document.createElement('button');
-    microZone.type = 'button';
-    microZone.id = FS_MICRO_ZONE_ID;
-    microZone.tabIndex = 0;
-    microZone.setAttribute('aria-label', 'Send micro-fleets');
-
-    const collectZone = document.createElement('button');
-    collectZone.type = 'button';
-    collectZone.id = FS_COLLECT_ZONE_ID;
-    collectZone.tabIndex = 0;
-    collectZone.setAttribute('aria-label', 'Tap to collect; long-press to set the collect target');
-
-    styleZones(wrap, [microZone, collectZone], size, [BG_MICRO, BG_COLLECT]);
-    wrap.appendChild(microZone);
-    wrap.appendChild(collectZone);
-    // Engraved title ring + per-zone tap ripple/press.
-    decorateButton({
-      host: wrap,
-      zones: [microZone, collectZone],
+    controller = makeButton({
+      id: FS_UNIFIED_ID,
       title: 'Daily Resource Run',
       ringId: 'oge-ring-fs',
+      size,
+      fontScale: 0.14,
+      posKey: FS_POS_KEY,
+      focusKey: FOCUS_KEY,
+      edgeOffset: DEFAULT_EDGE_OFFSET_PX,
+      dragThreshold: DRAG_THRESHOLD,
+      holdMs: LONG_PRESS_MS,
+      zones: [
+        {
+          key: 'micro',
+          id: FS_MICRO_ZONE_ID,
+          ariaLabel: 'Send micro-fleets',
+          bg: BG_MICRO,
+          onTap: onMicroClick,
+          focusValue: 'fs-unified-micro',
+        },
+        {
+          // TAP collects; LONG-PRESS (onHold) sets the collect target.
+          key: 'collect',
+          id: FS_COLLECT_ZONE_ID,
+          ariaLabel:
+            'Tap to collect; long-press to set the collect target',
+          bg: BG_COLLECT,
+          onTap: onCollectClick,
+          onHold: onSetTargetClick,
+          focusValue: 'fs-unified-collect',
+        },
+      ],
     });
-    placeWrap(wrap, FS_POS_KEY, size);
-    document.body.appendChild(wrap);
-
-    // Install drag on the outer wrapper.
-    dragHandle = installDrag({ element: wrap, posKey: FS_POS_KEY, dragThreshold: DRAG_THRESHOLD });
-
-    // Micro zone — regular click.
-    microZone.addEventListener('click', (e) => {
-      if (dragHandle?.wasDrag()) { dragHandle.resetDrag(); return; }
-      e.stopPropagation();
-      onMicroClick();
-    });
-
-    // Collect zone — TAP collects, LONG-PRESS sets the target. The long-press
-    // timer is armed on pointerdown, disarmed on release/leave, and cancelled
-    // once movement crosses the drag threshold (so dragging never sets the
-    // target). A fired long-press sets `longPressFired` so the click handler
-    // swallows the trailing tap.
-    collectZone.addEventListener('pointerdown', (e) => {
-      longPressFired = false;
-      pressX = e.clientX;
-      pressY = e.clientY;
-      clearLongPress();
-      startSweep(collectZone);
-      longPressTimer = setTimeout(() => {
-        longPressTimer = null;
-        longPressFired = true;
-        stopSweep();
-        onSetTargetClick();
-      }, LONG_PRESS_MS);
-    });
-    collectZone.addEventListener('pointermove', (e) => {
-      if (
-        longPressTimer !== null &&
-        (Math.abs(e.clientX - pressX) > DRAG_THRESHOLD ||
-          Math.abs(e.clientY - pressY) > DRAG_THRESHOLD)
-      ) {
-        clearLongPress();
-      }
-    });
-    collectZone.addEventListener('pointerup', clearLongPress);
-    collectZone.addEventListener('pointercancel', clearLongPress);
-    collectZone.addEventListener('pointerleave', clearLongPress);
-    // Long-press on touch can raise the native context menu — suppress it so
-    // the gesture is ours alone.
-    collectZone.addEventListener('contextmenu', (e) => e.preventDefault());
-    collectZone.addEventListener('click', (e) => {
-      if (dragHandle?.wasDrag()) { dragHandle.resetDrag(); return; }
-      if (longPressFired) { longPressFired = false; return; }
-      e.stopPropagation();
-      onCollectClick();
-    });
-
-    installFocusPersist({ button: microZone, focusKey: FOCUS_KEY, focusValue: 'fs-unified-micro' });
-    installFocusPersist({ button: collectZone, focusKey: FOCUS_KEY, focusValue: 'fs-unified-collect' });
+    if (!controller) return;
 
     refresh();
   };
 
   const removeButton = () => {
-    clearLongPress();
-    document.getElementById(FS_UNIFIED_ID)?.remove();
+    controller?.dispose();
+    controller = null;
   };
 
   /**
@@ -704,16 +530,7 @@ export const installFsCollect = () => {
    * @param {number} size
    */
   const updateSize = (size) => {
-    const wrap = document.getElementById(FS_UNIFIED_ID);
-    if (wrap) {
-      wrap.style.width = size + 'px';
-      wrap.style.height = size + 'px';
-    }
-    const zoneIds = [FS_MICRO_ZONE_ID, FS_COLLECT_ZONE_ID];
-    zoneIds.forEach((id) => {
-      const z = document.getElementById(id);
-      if (z) z.style.fontSize = zoneFontSize(size);
-    });
+    controller?.resize(size);
     refresh();
   };
 

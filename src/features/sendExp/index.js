@@ -69,17 +69,9 @@
 //   post-send `redirectUrl` so successive dispatches hop planets.
 
 import { settingsStore } from '../../state/settings.js';
-import { safeLS } from '../../lib/storage.js';
 import { safeClick, waitFor } from '../../lib/dom.js';
 import { GAME, ACTIVE_PLANET_CLASS } from '../../lib/gameDom.js';
-import {
-  installDrag,
-  installFocusPersist as installButtonFocusPersist,
-} from '../shared/draggableButton.js';
-import {
-  installButtonChrome,
-  decorateButton,
-} from '../shared/buttonChrome.js';
+import { createButton as makeButton, LABEL_CLASS } from '../shared/button.js';
 import {
   BUTTON_ID,
   FOCUS_KEY,
@@ -267,6 +259,12 @@ export const installSendExp = () => {
   // Dimmed opacity gives a visible cue that the button is working.
   let busy = false;
 
+  // The shared Button controller (view + gestures). Created on mount,
+  // nulled on dispose. The label/lock/colour helpers below delegate to it
+  // so the phase logic stays untouched.
+  /** @type {import('../shared/button.js').Button | null} */
+  let controller = null;
+
   // Eventbox readiness gate (fleetdispatch only). On `component=fleetdispatch`
   // OGame fires an async XHR for the fleet-event list shortly after page
   // load; until that lands, `#eventContent` rows and AGR's routine state
@@ -312,16 +310,16 @@ export const installSendExp = () => {
   }
 
   /**
-   * Read the current label. The label lives in a dedicated
-   * `.oge-exp-label` span (not the button's textContent) so the engraved
-   * title-ring SVG appended by {@link decorateButton} doesn't pollute it.
+   * Read the current label. The label lives in the shared Button's
+   * `.oge-btn-label` span (not the button's textContent) so the engraved
+   * title-ring SVG sharing the host doesn't pollute it.
    *
    * @param {HTMLButtonElement} btn
    * @returns {string}
    */
   const getLabel = (btn) =>
     /** @type {HTMLElement | null} */ (
-      btn.querySelector('.oge-exp-label')
+      btn.querySelector('.' + LABEL_CLASS)
     )?.textContent ?? '';
 
   /**
@@ -329,40 +327,30 @@ export const installSendExp = () => {
    * it on first use). Idempotent; no-op when the button was torn down
    * between schedule and fire.
    *
-   * @param {HTMLButtonElement} btn
+   * @param {HTMLElement} _btn  vestigial — the controller owns the element.
    * @param {string} text
    */
-  const setLabel = (btn, text) => {
-    let span = /** @type {HTMLElement | null} */ (
-      btn.querySelector('.oge-exp-label')
-    );
-    if (!span) {
-      span = document.createElement('span');
-      span.className = 'oge-exp-label';
-      btn.appendChild(span);
-    }
-    span.textContent = text;
-  };
+  const setLabel = (_btn, text) => controller?.setText('main', text);
 
   /**
    * Lock the button for the duration of a Phase 2 run — greys it out
    * and sets the re-entry flag so a second click is ignored.
    *
-   * @param {HTMLButtonElement} btn
+   * @param {HTMLElement} [_btn]  vestigial — the controller owns the element.
    */
-  const lock = (btn) => {
+  const lock = (_btn) => {
     busy = true;
-    btn.style.opacity = '0.5';
+    controller?.setDim('main', true);
   };
 
   /**
    * Release the Phase 2 lock and restore the opacity.
    *
-   * @param {HTMLButtonElement} btn
+   * @param {HTMLElement} [_btn]  vestigial — the controller owns the element.
    */
-  const unlock = (btn) => {
+  const unlock = (_btn) => {
     busy = false;
-    btn.style.opacity = '1';
+    controller?.setDim('main', false);
   };
 
   /**
@@ -375,10 +363,10 @@ export const installSendExp = () => {
   const paintAllMaxed = (btn) => {
     const original = getLabel(btn);
     setLabel(btn, ALL_MAXED_LABEL);
-    btn.style.background = BG_MAX;
+    controller?.setBg('main', BG_MAX);
     setTimeout(() => {
       setLabel(btn, original);
-      btn.style.background = BG_IDLE;
+      controller?.setBg('main', BG_IDLE);
     }, MAX_LABEL_MS);
   };
 
@@ -570,59 +558,18 @@ export const installSendExp = () => {
   };
 
   /**
-   * Wire drag (mouse + touch) and the click handler onto `btn`. Drag
-   * + storage persistence live in {@link installDrag}; we just hook
-   * the click listener and consult `wasDrag()` so a drag terminating
-   * inside the button doesn't double-fire as a click.
-   *
-   * @param {HTMLButtonElement} btn
-   * @returns {void}
-   */
-  const installDragAndClick = (btn) => {
-    const drag = installDrag({
-      element: btn,
-      posKey: POS_KEY,
-      dragThreshold: DRAG_THRESHOLD,
-    });
-
-    btn.addEventListener('click', (e) => {
-      if (drag.wasDrag()) {
-        drag.resetDrag();
-        return;
-      }
-      e.stopPropagation();
-      handleClick(btn);
-    });
-  };
-
-  /**
-   * Wire focus-persist via {@link installButtonFocusPersist} (shared
-   * helper used by sendCol too — same `oge_focusedBtn` key).
-   *
-   * @param {HTMLButtonElement} btn
-   * @returns {void}
-   */
-  const installFocusPersist = (btn) => {
-    installButtonFocusPersist({
-      button: btn,
-      focusKey: FOCUS_KEY,
-      focusValue: FOCUS_VALUE,
-      focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,
-    });
-  };
-
-  /**
-   * Create and mount the button. Idempotent: bails early if the
-   * button id already exists in the document.
+   * Create and mount the button via the shared {@link makeButton}
+   * controller (geometry, placement, engraved ring, drag, click + focus
+   * persistence). Idempotent: {@link makeButton} returns `null` when the
+   * id is already mounted, so a second call is a no-op.
    *
    * @returns {void}
    */
   const createButton = () => {
+    // Already mounted → keep the live controller; a redundant call must
+    // NOT overwrite it with makeButton's null (idempotency-guard return).
     if (document.getElementById(BUTTON_ID)) return;
 
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.id = BUTTON_ID;
     // Context-aware initial label: on fleetdispatch the user's next
     // tap meaning is different depending on AGR/OGame hydration state,
     // so the button label tells them what's about to happen.
@@ -631,74 +578,49 @@ export const installSendExp = () => {
       hasDispatchFleet: document.getElementById('dispatchFleet') !== null,
       hasAgoRoutine7: document.getElementById('ago_routine_7') !== null,
     });
-    btn.tabIndex = 0;
-    btn.setAttribute('aria-label', 'Send expedition');
-    // Subtle hover title — the button's identity, hidden until hover.
-    btn.title = 'Expeditions';
 
     const size = settingsStore.get().enterBtnSize;
-    btn.style.cssText = [
-      'position:fixed',
-      'border-radius:50%',
-      'border:none',
-      `background:${BG_IDLE}`,
-      'color:#fff',
-      'font-weight:bold',
-      'z-index:99999',
-      'box-shadow:0 8px 22px rgba(0,0,0,0.55),0 3px 8px rgba(0,0,0,0.45),0 0 0 1px rgba(0,0,0,0.40)',
-      'touch-action:none',
-      'user-select:none',
-      'cursor:pointer',
-      `width:${size}px`,
-      `height:${size}px`,
-      `font-size:${Math.round(size * 0.23)}px`,
-    ].join(';');
-
-    // Restore saved position if present, otherwise anchor bottom-right.
-    // The saved position is clamped to the current viewport so resizing
-    // the window since the last drag doesn't stash the button off-screen.
-    const savedPos = safeLS.json(POS_KEY);
-    if (
-      savedPos &&
-      typeof savedPos === 'object' &&
-      savedPos !== null &&
-      typeof /** @type {any} */ (savedPos).x === 'number' &&
-      typeof /** @type {any} */ (savedPos).y === 'number'
-    ) {
-      const p = /** @type {{ x: number, y: number }} */ (savedPos);
-      btn.style.left = Math.min(p.x, window.innerWidth - size) + 'px';
-      btn.style.top = Math.min(p.y, window.innerHeight - size) + 'px';
-    } else {
-      btn.style.right = DEFAULT_EDGE_OFFSET_PX + 'px';
-      btn.style.bottom = DEFAULT_EDGE_OFFSET_PX + 'px';
-    }
-
-    setLabel(btn, initialLabel);
-    document.body.appendChild(btn);
-    // Engraved title ring + tap ripple/press. The single button is its
-    // own clickable zone.
-    decorateButton({
-      host: btn,
-      zones: [btn],
+    controller = makeButton({
+      id: BUTTON_ID,
       title: 'Expeditions',
       ringId: 'oge-ring-exp',
+      size,
+      fontScale: 0.23,
+      posKey: POS_KEY,
+      focusKey: FOCUS_KEY,
+      edgeOffset: DEFAULT_EDGE_OFFSET_PX,
+      dragThreshold: DRAG_THRESHOLD,
+      zones: [
+        {
+          key: 'main',
+          id: BUTTON_ID,
+          ariaLabel: 'Send expedition',
+          bg: BG_IDLE,
+          onTap: () =>
+            handleClick(/** @type {HTMLButtonElement} */ (controller?.el)),
+          focusValue: FOCUS_VALUE,
+          focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,
+        },
+      ],
     });
+    if (!controller) return;
+
+    const el = controller.el;
+    setLabel(el, initialLabel);
     // Brief lock on first appearance so in-flight XHRs can settle before
     // the user can trigger Phase 2 prematurely.
     if (initialLabel === 'Prepare') {
-      lock(btn);
-      setTimeout(() => unlock(btn), 200);
+      lock(el);
+      setTimeout(() => unlock(el), 200);
     }
-    installDragAndClick(btn);
-    installFocusPersist(btn);
   };
 
   /**
    * Remove the button (if present). Safe to call when not rendered.
    */
   const removeButton = () => {
-    const el = document.getElementById(BUTTON_ID);
-    if (el) el.remove();
+    controller?.dispose();
+    controller = null;
   };
 
   /**
@@ -708,13 +630,7 @@ export const installSendExp = () => {
    * @param {number} size
    * @returns {void}
    */
-  const updateButtonSize = (size) => {
-    const btn = /** @type {HTMLButtonElement | null} */ (document.getElementById(BUTTON_ID));
-    if (!btn) return;
-    btn.style.width = size + 'px';
-    btn.style.height = size + 'px';
-    btn.style.fontSize = Math.round(size * 0.23) + 'px';
-  };
+  const updateButtonSize = (size) => controller?.resize(size);
 
   // Bootstrap snapshot BEFORE first mount — so the initial click can
   // see the right phase. If `window.fleetDispatcher` happens to be

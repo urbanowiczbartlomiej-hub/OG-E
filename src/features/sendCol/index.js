@@ -82,11 +82,7 @@ import { scansStore, flushScansStore } from '../../state/scans.js';
 import { registryStore } from '../../state/registry.js';
 import { safeLS } from '../../lib/storage.js';
 import { parsePositions } from '../../domain/positions.js';
-import {
-  installDrag,
-  installFocusPersist as installButtonFocusPersist,
-} from '../shared/draggableButton.js';
-import { decorateButton } from '../shared/buttonChrome.js';
+import { createButton as makeButton } from '../shared/button.js';
 import {
   findNextScanSystem,
   findNextColonizeTarget,
@@ -195,101 +191,50 @@ let waitStartAt = 0;
 /** Total seconds of the current waitGap countdown (0 = no countdown). */
 let waitSeconds = 0;
 
-// ─── DOM paint (impure — walks the mounted halves) ─────────────────────
-
 /**
- * Paint a two-line label on a half: a small caption on top, a big
- * primary line below. Built with two flex-column `<div>`s so line wrap
- * is deterministic regardless of the half's font-size.
+ * The shared {@link makeButton} controller (view + gestures). `null` until
+ * mounted; the top-level paint helpers below no-op while it's null.
  *
- * @param {HTMLElement} half
- * @param {string} small
- * @param {string} big
- * @param {string} bg
- * @returns {void}
+ * @type {import('../shared/button.js').Button | null}
  */
-const setHalfTwoLine = (half, small, big, bg) => {
-  half.textContent = '';
-  const wrap = document.createElement('div');
-  wrap.style.cssText =
-    'display:flex;flex-direction:column;align-items:center;' +
-    'justify-content:center;line-height:1.05;width:100%;';
-  const top = document.createElement('div');
-  top.textContent = small;
-  top.style.cssText = 'font-size:0.5em;opacity:0.85;letter-spacing:0.5px;';
-  const bottom = document.createElement('div');
-  bottom.textContent = big;
-  bottom.style.cssText = 'font-size:1em;margin-top:2px;';
-  wrap.appendChild(top);
-  wrap.appendChild(bottom);
-  half.appendChild(wrap);
-  half.style.background = bg;
-};
+let controller = null;
+
+// ─── DOM paint (impure — drives the shared Button controller) ──────────
 
 /**
- * Paint a single-line label on a half.
+ * Paint one zone of the button from a {@link Paint}. `subtext` → two
+ * stacked lines (small caption on top, big primary below, matching the
+ * previous bespoke layout); otherwise a single line. Always writes the
+ * background and the dim (greyed-out) flag. No-op while unmounted.
  *
- * @param {HTMLElement} half
- * @param {string} text
- * @param {string} bg
- * @returns {void}
- */
-const setHalfOneLine = (half, text, bg) => {
-  half.textContent = text;
-  half.style.background = bg;
-};
-
-/**
- * Apply a {@link Paint} to a half DOM element. `subtext` triggers the
- * two-line layout; otherwise it's one line.
- *
- * @param {HTMLElement} half
+ * @param {'send'|'scan'} key
  * @param {Paint} p
  * @returns {void}
  */
-const applyPaint = (half, p) => {
+const paintZone = (key, p) => {
+  if (!controller) return;
   if (p.subtext) {
-    setHalfTwoLine(half, p.subtext, p.text, p.bg);
+    controller.paintLines(key, [
+      { text: p.subtext, em: '0.5em', opacity: 0.85, letterSpacing: 0.5 },
+      { text: p.text, em: '1em', marginTop: 2 },
+    ]);
   } else {
-    setHalfOneLine(half, p.text, p.bg);
+    controller.setText(key, p.text);
   }
-  // Visual cooldown indicator — `dim: true` greys the half out so the
-  // user can see a click would be ignored right now. Render paths that
-  // don't set `dim` imply full opacity, so we always explicitly write it.
-  half.style.opacity = p.dim ? '0.5' : '1';
+  controller.setBg(key, p.bg);
+  // `dim: true` greys the zone so the user sees a click would be ignored.
+  controller.setDim(key, p.dim === true);
 };
 
 /**
- * Walk to the currently mounted halves + wrap. Any may be null when the
- * button isn't mounted — every caller no-ops in that case.
- *
- * @returns {{
- *   wrap: HTMLElement | null,
- *   send: HTMLButtonElement | null,
- *   scan: HTMLButtonElement | null,
- * }}
- */
-const getHalves = () => ({
-  wrap: document.getElementById(BUTTON_ID),
-  send: /** @type {HTMLButtonElement | null} */ (
-    document.getElementById(SEND_HALF_ID)
-  ),
-  scan: /** @type {HTMLButtonElement | null} */ (
-    document.getElementById(SCAN_HALF_ID)
-  ),
-});
-
-/**
- * Apply a {@link RenderResult} to the mounted DOM. No-op when the button
- * is not mounted.
+ * Apply a {@link RenderResult} to the mounted button. No-op when unmounted.
  *
  * @param {RenderResult} result
  * @returns {void}
  */
 export const paint = (result) => {
-  const { send, scan } = getHalves();
-  if (send) applyPaint(send, result.send);
-  if (scan) applyPaint(scan, result.scan);
+  paintZone('send', result.send);
+  paintZone('scan', result.scan);
 };
 
 // ─── captureEnv + refresh ──────────────────────────────────────────────
@@ -402,8 +347,7 @@ const onSendClick = () => {
       return;
     }
     // No candidate — transient "None available" flash, then revert.
-    const { send } = getHalves();
-    if (send) setHalfOneLine(send, 'None available', BG_SEND_IDLE);
+    paintZone('send', { text: 'None available', bg: BG_SEND_IDLE });
     return;
   }
 
@@ -430,8 +374,7 @@ const onSendClick = () => {
         settings.colPreferOtherGalaxies,
       );
       if (!next) {
-        const { send } = getHalves();
-        if (send) setHalfOneLine(send, 'No more candidates', BG_SEND_IDLE);
+        paintZone('send', { text: 'No more candidates', bg: BG_SEND_IDLE });
         return;
       }
       lastNavToFleetdispatchAt = Date.now();
@@ -463,8 +406,7 @@ const onSendClick = () => {
         staleSettings.colPreferOtherGalaxies,
       );
       if (!staleNext) {
-        const { send } = getHalves();
-        if (send) setHalfOneLine(send, 'No more candidates', BG_SEND_IDLE);
+        paintZone('send', { text: 'No more candidates', bg: BG_SEND_IDLE });
         return;
       }
       lastNavToFleetdispatchAt = Date.now();
@@ -505,8 +447,7 @@ const onSendClick = () => {
         toSettings.colPreferOtherGalaxies,
       );
       if (!toNext) {
-        const { send } = getHalves();
-        if (send) setHalfOneLine(send, 'No more candidates', BG_SEND_IDLE);
+        paintZone('send', { text: 'No more candidates', bg: BG_SEND_IDLE });
         return;
       }
       lastNavToFleetdispatchAt = Date.now();
@@ -596,8 +537,7 @@ const onScanClick = () => {
   const view = parseCurrentGalaxyView();
   const next = findNextScanSystem(scansStore.get(), home, view);
   if (!next) {
-    const { scan } = getHalves();
-    if (scan) setHalfOneLine(scan, 'All scanned!', BG_SCAN_IDLE);
+    paintZone('scan', { text: 'All scanned!', bg: BG_SCAN_IDLE });
     return;
   }
 
@@ -839,47 +779,6 @@ const onColonizeSent = (e) => {
 let installed = null;
 
 /**
- * Apply the wrap + halves styling for a given diameter. Split out so
- * live size updates can re-apply without recreating the DOM.
- *
- * @param {HTMLElement} wrap
- * @param {HTMLButtonElement} sendHalf
- * @param {HTMLButtonElement} scanHalf
- * @param {number} size
- * @returns {void}
- */
-const applyStyles = (wrap, sendHalf, scanHalf, size) => {
-  const fontSize = Math.round(size * 0.12) + 'px';
-  wrap.style.cssText = [
-    'position:fixed',
-    'border-radius:50%',
-    'overflow:hidden',
-    'display:flex',
-    'flex-direction:column',
-    'z-index:99999',
-    'touch-action:none',
-    'user-select:none',
-    'cursor:pointer',
-    'box-shadow:0 8px 22px rgba(0,0,0,0.55),0 3px 8px rgba(0,0,0,0.45),0 0 0 1px rgba(0,0,0,0.40)',
-    `width:${size}px`,
-    `height:${size}px`,
-  ].join(';');
-  const halfStyle = [
-    'flex:1',
-    'display:flex',
-    'align-items:center',
-    'justify-content:center',
-    'color:#fff',
-    'font-weight:bold',
-    'border:none',
-    'cursor:pointer',
-    `font-size:${fontSize}`,
-  ].join(';');
-  sendHalf.style.cssText = halfStyle + ';background:' + BG_SEND_IDLE + ';';
-  scanHalf.style.cssText = halfStyle + ';background:' + BG_SCAN_IDLE + ';';
-};
-
-/**
  * Install the colonize button. Idempotent — a second call returns the
  * SAME dispose fn as the first.
  *
@@ -908,59 +807,43 @@ export const installSendCol = () => {
    * @returns {void}
    */
   const mount = () => {
+    // Already mounted → keep the live controller; a redundant call must
+    // NOT overwrite it with makeButton's null (idempotency-guard return).
     if (document.getElementById(BUTTON_ID)) return;
 
     const size = settingsStore.get().colBtnSize;
-    const wrap = document.createElement('div');
-    wrap.id = BUTTON_ID;
-    // Subtle hover title — the button's identity, hidden until hover.
-    wrap.title = 'Colonization';
-
-    const sendHalf = document.createElement('button');
-    sendHalf.type = 'button';
-    sendHalf.id = SEND_HALF_ID;
-    sendHalf.className = 'oge-col-half oge-col-send';
-    sendHalf.tabIndex = 0;
-    sendHalf.setAttribute('aria-label', 'Send colonization');
-    sendHalf.textContent = 'Send';
-
-    const scanHalf = document.createElement('button');
-    scanHalf.type = 'button';
-    scanHalf.id = SCAN_HALF_ID;
-    scanHalf.className = 'oge-col-half oge-col-scan';
-    scanHalf.tabIndex = 0;
-    scanHalf.setAttribute('aria-label', 'Scan next system');
-    scanHalf.textContent = 'Scan';
-
-    applyStyles(wrap, sendHalf, scanHalf, size);
-    wrap.appendChild(sendHalf);
-    wrap.appendChild(scanHalf);
-    // Engraved title ring + per-half tap ripple/press.
-    decorateButton({
-      host: wrap,
-      zones: [sendHalf, scanHalf],
+    controller = makeButton({
+      id: BUTTON_ID,
       title: 'Colonization',
       ringId: 'oge-ring-col',
+      size,
+      fontScale: 0.12,
+      posKey: POS_KEY,
+      focusKey: FOCUS_KEY,
+      edgeOffset: DEFAULT_EDGE_OFFSET_PX,
+      dragThreshold: DRAG_THRESHOLD,
+      zones: [
+        {
+          key: 'send',
+          id: SEND_HALF_ID,
+          ariaLabel: 'Send colonization',
+          bg: BG_SEND_IDLE,
+          onTap: onSendClick,
+          focusValue: FOCUS_SEND,
+          focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,
+        },
+        {
+          key: 'scan',
+          id: SCAN_HALF_ID,
+          ariaLabel: 'Scan next system',
+          bg: BG_SCAN_IDLE,
+          onTap: onScanClick,
+          focusValue: FOCUS_SCAN,
+          focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,
+        },
+      ],
     });
-
-    // Position — saved drag target or bottom-right default.
-    const savedPos = safeLS.json(POS_KEY);
-    if (
-      savedPos &&
-      typeof savedPos === 'object' &&
-      savedPos !== null &&
-      typeof /** @type {any} */ (savedPos).x === 'number' &&
-      typeof /** @type {any} */ (savedPos).y === 'number'
-    ) {
-      const p = /** @type {{ x: number, y: number }} */ (savedPos);
-      wrap.style.left = Math.min(p.x, window.innerWidth - size) + 'px';
-      wrap.style.top = Math.min(p.y, window.innerHeight - size) + 'px';
-    } else {
-      wrap.style.right = DEFAULT_EDGE_OFFSET_PX + 'px';
-      wrap.style.bottom = DEFAULT_EDGE_OFFSET_PX + 'px';
-    }
-
-    document.body.appendChild(wrap);
+    if (!controller) return;
 
     // If we're landing on fleetdispatch directly (user typed a URL,
     // page reload after send, AGR menu), assume the nav timestamp is
@@ -971,45 +854,6 @@ export const installSendCol = () => {
     ) {
       lastNavToFleetdispatchAt = Date.now();
     }
-
-    // Drag + click wiring. Drag lives on the outer wrap so a touch on
-    // either half still drags the whole circle. Click handlers consult
-    // `wasDrag()` so a drag terminating on a half doesn't double-fire.
-    const drag = installDrag({
-      element: wrap,
-      posKey: POS_KEY,
-      dragThreshold: DRAG_THRESHOLD,
-    });
-    sendHalf.addEventListener('click', (e) => {
-      if (drag.wasDrag()) {
-        drag.resetDrag();
-        return;
-      }
-      e.stopPropagation();
-      onSendClick();
-    });
-    scanHalf.addEventListener('click', (e) => {
-      if (drag.wasDrag()) {
-        drag.resetDrag();
-        return;
-      }
-      e.stopPropagation();
-      onScanClick();
-    });
-
-    // Focus persistence — shared `oge_focusedBtn` key with sendExp.
-    installButtonFocusPersist({
-      button: sendHalf,
-      focusKey: FOCUS_KEY,
-      focusValue: FOCUS_SEND,
-      focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,
-    });
-    installButtonFocusPersist({
-      button: scanHalf,
-      focusKey: FOCUS_KEY,
-      focusValue: FOCUS_SCAN,
-      focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,
-    });
 
     // First paint driven by the full pipeline.
     refresh();
@@ -1022,8 +866,8 @@ export const installSendCol = () => {
    * @returns {void}
    */
   const removeButton = () => {
-    const el = document.getElementById(BUTTON_ID);
-    if (el) el.remove();
+    controller?.dispose();
+    controller = null;
   };
 
   /**
@@ -1032,11 +876,7 @@ export const installSendCol = () => {
    * @param {number} size
    * @returns {void}
    */
-  const updateButtonSize = (size) => {
-    const { wrap, send, scan } = getHalves();
-    if (!wrap || !send || !scan) return;
-    applyStyles(wrap, send, scan, size);
-  };
+  const updateButtonSize = (size) => controller?.resize(size);
 
   // Bootstrap snapshot BEFORE first mount — so the initial paint sees
   // the right phase. If `window.fleetDispatcher` happens to be readable

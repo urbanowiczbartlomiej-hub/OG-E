@@ -223,15 +223,15 @@ const getBtn = () =>
 
 /**
  * Read the button's label. Since the engraved title-ring SVG lives inside
- * the button, its label is painted into a dedicated `.oge-exp-label` span
- * rather than the button's textContent (which now also contains the ring
- * title). Tests assert on the span.
+ * the button, its label is painted into the shared Button's
+ * `.oge-btn-label` span rather than the button's textContent (which now
+ * also contains the ring title). Tests assert on the span.
  *
  * @param {HTMLElement | null} [btn]
  * @returns {string | null | undefined}
  */
 const labelOf = (btn = getBtn()) =>
-  btn?.querySelector('.oge-exp-label')?.textContent;
+  btn?.querySelector('.oge-btn-label')?.textContent;
 
 beforeEach(() => {
   _resetSendExpForTest();
