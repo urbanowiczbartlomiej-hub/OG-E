@@ -311,48 +311,101 @@ describe('installSendExp — click navigation', () => {
     expect(navTarget).not.toContain('mission=');
   });
 
-  it('on fleetdispatch (any mission) with no fleet panel → enters Phase 2 and locks', () => {
-    // User lands on fleetdispatch with whatever mission. As long as
-    // `component=fleetdispatch`, the click enters Phase 1/2 — no
-    // navigation happens just because `mission` isn't 15.
-    setupScene({ onFleetdispatch: true, mission: 7, activeCp: 42 });
+  // ── courier two-tap harness (no AGR) ───────────────────────────────────
+  /** @param {{ errorCode?: number|null, missionOk?: boolean }} [opts] */
+  const armCourier = (opts = {}) => {
+    document.dispatchEvent(new CustomEvent('oge:fleetDispatcher', {
+      detail: { shipsOnPlanet: [{ id: 203, number: 100 }], orders: {}, expeditionCount: 0, maxExpeditionCount: 14 },
+    }));
+    document.body.insertAdjacentHTML('beforeend', '<div id="fleet1"></div>');
+    const cont = document.createElement('a');
+    cont.id = 'continueToFleet2';
+    cont.addEventListener('click', () => {
+      document.getElementById('fleet1')?.remove();
+      const d = document.createElement('a');
+      d.id = 'dispatchFleet';
+      d.className = 'off';
+      document.body.appendChild(d);
+    });
+    document.body.appendChild(cont);
+    const onCmd = (/** @type {any} */ e) => {
+      const { id, op, args } = e.detail;
+      /** @type {any} */ let res = { id, ok: true };
+      if (op === 'setTarget') {
+        setTimeout(() => document.dispatchEvent(new CustomEvent('oge:checkTargetResult', {
+          detail: { galaxy: args.galaxy, system: args.system, position: args.position, errorCode: opts.errorCode ?? null },
+        })), 0);
+      } else if (op === 'selectMission') {
+        const ok = opts.missionOk ?? true;
+        res = { id, ok, data: { available: ok } };
+        if (ok) setTimeout(() => document.getElementById('dispatchFleet')?.classList.remove('off'), 0);
+      }
+      document.dispatchEvent(new CustomEvent('oge:fd:res', { detail: res }));
+    };
+    document.addEventListener('oge:fd:cmd', onCmd);
+    return () => document.removeEventListener('oge:fd:cmd', onCmd);
+  };
+  const settle = () => new Promise((r) => setTimeout(r, 500));
+
+  it('on fleet1 with no remembered fleet → prompts "Hold to set" (no nav)', () => {
+    localStorage.removeItem('oge_expFleet');
+    setupScene({ onFleetdispatch: true, activeCp: 42 });
     installSendExp();
-    // The eventbox-readiness gate (added in 1.0.1) suppresses Phase 1/2
-    // until OGame's eventbox refresh XHR has fired. Tests that exercise
-    // the click logic itself bypass the gate by dispatching the bridge
-    // event the production XHR observer would have dispatched.
     document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
+    document.dispatchEvent(new CustomEvent('oge:fleetDispatcher', {
+      detail: { shipsOnPlanet: [], orders: {}, expeditionCount: 0, maxExpeditionCount: 14 },
+    }));
+    document.body.insertAdjacentHTML('beforeend', '<div id="fleet1"></div>');
     const btn = getBtn();
     btn?.click();
-
-    // No #dispatchFleet + #ago_fleet2_main in the fixture → Phase 2.
-    // Phase 2 locks the button (opacity 0.5) and starts polling.
     expect(navTarget).toBeNull();
-    expect(btn?.style.opacity).toBe('0.5');
-    expect(labelOf(btn)).toBe('Loading...');
+    expect(labelOf(btn)).toBe('Hold to set');
   });
 
-  it('Phase 1: fleetdispatch + mission=15 + fleet panel loaded → paint "Sent!", no navigation', () => {
-    setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
+  it('two taps: select arms a ready expedition, then dispatch fires', async () => {
+    setupScene({ onFleetdispatch: true, activeCp: 42 });
     installSendExp();
     document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
-    // Simulate AGR having already hydrated the fleet panel + its
-    // native dispatch button. Phase 1 fires `safeClick(dispatch)`
-    // and flips the label to "Sent!". (We don't assert the click
-    // event itself — happy-dom sometimes swallows `.click()` on
-    // synthetic buttons without form context; the label flip is a
-    // sufficient witness that Phase 1 executed its branch.)
-    const panel = document.createElement('div');
-    panel.id = 'ago_fleet2_main';
-    document.body.appendChild(panel);
-    const dispatch = document.createElement('button');
-    dispatch.id = 'dispatchFleet';
-    document.body.appendChild(dispatch);
+    localStorage.setItem('oge_expFleet', JSON.stringify({ ships: [{ id: 203, count: 10 }] }));
+    const unhook = armCourier({ errorCode: null, missionOk: true });
+    const btn = getBtn();
+    btn?.click(); // tap 1 — select
+    await settle();
+    expect(labelOf(btn)).toBe('Send!');
+    let clicks = 0;
+    document.getElementById('dispatchFleet')?.addEventListener('click', () => {
+      clicks += 1;
+      document.dispatchEvent(new CustomEvent('oge:sendFleetResult', {
+        detail: { success: true, errorCode: null, mission: 15 },
+      }));
+    });
+    btn?.click(); // tap 2 — dispatch
+    await settle();
+    expect(clicks).toBe(1);
+    unhook();
+  });
 
-    getBtn()?.click();
-
-    expect(navTarget).toBeNull();
-    expect(labelOf(getBtn())).toBe('Sent!');
+  it('long-press remembers the current fleet1 selection as the preset', async () => {
+    localStorage.removeItem('oge_expFleet');
+    setupScene({ onFleetdispatch: true, activeCp: 42 });
+    installSendExp();
+    const onCmd = (/** @type {any} */ e) => {
+      const { id, op } = e.detail;
+      if (op === 'getSelection') {
+        document.dispatchEvent(new CustomEvent('oge:fd:res', {
+          detail: { id, ok: true, data: { ships: [{ id: 203, count: 7 }] } },
+        }));
+      }
+    };
+    document.addEventListener('oge:fd:cmd', onCmd);
+    const btn = /** @type {HTMLElement} */ (getBtn());
+    btn.dispatchEvent(new PointerEvent('pointerdown', { clientX: 0, clientY: 0 }));
+    await new Promise((r) => setTimeout(r, 360)); // past the 300ms hold
+    btn.dispatchEvent(new PointerEvent('pointerup'));
+    await new Promise((r) => setTimeout(r, 20));
+    const saved = JSON.parse(localStorage.getItem('oge_expFleet') || '{}');
+    expect(saved.ships).toEqual([{ id: 203, count: 7 }]);
+    document.removeEventListener('oge:fd:cmd', onCmd);
   });
 });
 
@@ -632,7 +685,7 @@ describe('installSendExp — eventbox readiness gate', () => {
     const btn = getBtn();
     btn?.click();
 
-    expect(labelOf(btn)).toBe('Loading...');
+    expect(labelOf(btn)).toBe('Wait…');
     expect(btn?.style.opacity).not.toBe('0.5');
     expect(navTarget).toBeNull();
 
@@ -657,15 +710,14 @@ describe('installSendExp — eventbox readiness gate', () => {
 
   it('after oge:eventBoxLoaded fires, clicks proceed normally', () => {
     // Same fleetdispatch scene; once the bridge event arrives the gate
-    // opens permanently (until next page navigation re-installs).
+    // opens permanently (until next page navigation re-installs). With no
+    // step-1 DOM the courier reports "off", so the click proceeds to
+    // navigate to a planet with a free expedition slot.
     setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
     installSendExp();
     document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
 
-    const btn = getBtn();
-    btn?.click();
-    // No fleet panel → Phase 2 (locks + paints "Loading...").
-    expect(btn?.style.opacity).toBe('0.5');
-    expect(labelOf(btn)).toBe('Loading...');
+    getBtn()?.click();
+    expect(navTarget).toContain('cp=42');
   });
 });

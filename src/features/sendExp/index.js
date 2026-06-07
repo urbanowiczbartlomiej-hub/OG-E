@@ -69,9 +69,18 @@
 //   post-send `redirectUrl` so successive dispatches hop planets.
 
 import { settingsStore } from '../../state/settings.js';
-import { safeClick, waitFor } from '../../lib/dom.js';
+import { safeLS } from '../../lib/storage.js';
 import { GAME, ACTIVE_PLANET_CLASS } from '../../lib/gameDom.js';
 import { createButton as makeButton, LABEL_CLASS } from '../shared/button.js';
+import {
+  select as courierSelect,
+  dispatch as courierDispatch,
+  step as courierStep,
+  readyToDispatch,
+  readSelection as courierReadSelection,
+  installFleetCourier,
+} from '../shared/fleetCourier.js';
+import { MISSION_EXPEDITION, TARGET_PLANET } from '../../domain/rules.js';
 import {
   BUTTON_ID,
   FOCUS_KEY,
@@ -79,8 +88,6 @@ import {
   POS_KEY,
   DRAG_THRESHOLD,
   MAX_LABEL_MS,
-  POLL_TIMEOUT_MS,
-  POLL_INTERVAL_MS,
   DEFAULT_EDGE_OFFSET_PX,
   FOCUS_RESTORE_DELAY_MS,
   EVENTBOX_SAFETY_TIMEOUT_MS,
@@ -93,7 +100,6 @@ import {
   buildFleetdispatchUrl,
   isGlobalExpeditionCapReached,
   isGlobalExpeditionCapReachedAfterNextSend,
-  computeInitialLabel,
 } from './pure.js';
 
 /**
@@ -147,6 +153,28 @@ const getActivePlanetCoords = () => {
   const coords = stripBrackets(coordsEl?.textContent);
   return coords || null;
 };
+
+// ── Expedition fleet preset (remembered via long-press) ──────────────
+//
+// The fleet the courier sends on each expedition. Captured from the live
+// fleet1 selection on a long-press (see onExpHold) and replayed with a
+// 51% requirement fraction: send what you have as long as you have at
+// least half the remembered count of every ship.
+
+/** localStorage key for the remembered expedition fleet preset. */
+const EXP_FLEET_KEY = 'oge_expFleet';
+/** Per-ship requirement fraction for the remembered preset. */
+const EXP_FLEET_FRAC = 0.51;
+
+/** @returns {Array<{ id: number, count: number }>} */
+const readExpPreset = () => {
+  const v = safeLS.json(EXP_FLEET_KEY);
+  const ships = v && /** @type {any} */ (v).ships;
+  return Array.isArray(ships) ? ships : [];
+};
+
+/** @param {Array<{ id: number, count: number }>} ships */
+const saveExpPreset = (ships) => safeLS.setJSON(EXP_FLEET_KEY, { ships });
 
 /**
  * Count currently in-flight expeditions, filtered to those whose origin
@@ -253,6 +281,9 @@ let installed = null;
 export const installSendExp = () => {
   if (installed) return installed.dispose;
 
+  // Cache the fleetDispatcher snapshot (ship availability) for the courier.
+  installFleetCourier();
+
   // Re-entry guard: a user tapping twice during Phase 2 polling must
   // NOT start a second poll loop (or double-click the routine element,
   // which at best is wasted and at worst confuses AGR's state machine).
@@ -264,6 +295,8 @@ export const installSendExp = () => {
   // so the phase logic stays untouched.
   /** @type {import('../shared/button.js').Button | null} */
   let controller = null;
+  /** True once a tap-1 select() has armed a ready expedition on step 2. */
+  let expReady = false;
 
   // Eventbox readiness gate (fleetdispatch only). On `component=fleetdispatch`
   // OGame fires an async XHR for the fleet-event list shortly after page
@@ -371,133 +404,57 @@ export const installSendExp = () => {
   };
 
   /**
-   * Phase 2 (fleetdispatch + mission=15, fleet panel NOT yet loaded):
-   * wait for AGR's `#ago_routine_7` to exist and inspect its
-   * `.ago_routine_check` child. Three outcomes:
-   *
-   *   - `ago_routine_check_3` (ready): click the routine element —
-   *     AGR renders `#ago_fleet2_main` + the native `#dispatchFleet`
-   *     button. Then wait for both and flip the label to "Send!"
-   *     so the user's next tap issues the real send.
-   *   - `ago_routine_check_1` / `_check_2` (no ships): no expedition
-   *     is possible from here. Navigate to the next planet that still
-   *     has slots, else paint "All maxed!".
-   *   - Routine never appears within {@link POLL_TIMEOUT_MS}: give up
-   *     quietly and restore the idle label. The user can retry.
-   *
-   * Returns a promise so the click handler can await completion (only
-   * to then exit — the Phase 2 outcomes already repaint + unlock).
+   * Send-button TAP — two intentional taps via the shared courier (no AGR).
+   * Tap 1 selects the remembered fleet preset + the pos-16 expedition target
+   * and walks to a ready step 2; tap 2 dispatches. Off fleetdispatch (or when
+   * the current planet is maxed) it first navigates to a planet that still
+   * has an expedition slot. The per-planet + global caps are unchanged.
    *
    * @param {HTMLButtonElement} btn
    * @returns {Promise<void>}
    */
-  const runPhase2 = async (btn) => {
-    setLabel(btn, 'Loading...');
-
-    const routine = await waitFor(() => {
-      const el = document.getElementById('ago_routine_7');
-      return el?.querySelector('.ago_routine_check') ? el : null;
-    }, { timeoutMs: POLL_TIMEOUT_MS, intervalMs: POLL_INTERVAL_MS });
-
-    if (!routine) {
-      setLabel(btn, BUTTON_TEXT);
-      unlock(btn);
-      return;
-    }
-
-    const check = routine.querySelector('.ago_routine_check');
-    if (check?.classList.contains('ago_routine_check_3')) {
-      // Routine is ready — AGR prep+fire. The 50 ms delayed second click
-      // shakes loose cases where one click left AGR half-idled.
-      safeClick(routine);
-      setTimeout(() => safeClick(routine), 50);
-      setLabel(btn, 'Preparing...');
-
-      const ready = await waitFor(
-        () =>
-          document.getElementById('dispatchFleet')
-            && document.getElementById('ago_fleet2_main')
-            ? true
-            : null,
-        { timeoutMs: POLL_TIMEOUT_MS, intervalMs: POLL_INTERVAL_MS },
-      );
-
-      if (ready) {
-        setLabel(btn, 'Send!');
-      } else {
-        setLabel(btn, BUTTON_TEXT);
-      }
-      unlock(btn);
-      return;
-    }
-
-    // `_check_1` or `_check_2` → no ships here. Look for a planet
-    // that CAN still send; navigate there. If none, paint "All maxed!"
-    // and let the user deal with it.
-    setLabel(btn, 'No ships');
-    const nextCp = findPlanetWithExpSlot(true);
-    if (nextCp !== null) {
-      location.href = buildFleetdispatchUrl(nextCp);
-      return;
-    }
-    paintAllMaxed(btn);
-    unlock(btn);
-  };
-
-  /**
-   * Handle the idle-state click. Not called when a drag just finished
-   * (the click listener short-circuits on `hasMoved`).
-   *
-   * Flow:
-   *   Phase 0 — current planet maxed → navigate to next free planet
-   *             (or paint "All maxed!" when nothing has room).
-   *   Phase 1 — fleetdispatch + mission=15 + fleet panel loaded →
-   *             click the native `#dispatchFleet` button (sends).
-   *   Phase 2 — fleetdispatch + mission=15 + fleet panel NOT loaded →
-   *             see {@link runPhase2}: poll the AGR routine element,
-   *             click it, wait for the fleet panel, flip the label.
-   *   Else  → navigate to fleetdispatch for the active planet.
-   *
-   * @param {HTMLButtonElement} btn
-   * @returns {void}
-   */
-  const handleClick = (btn) => {
+  const handleClick = async (btn) => {
     if (busy) return;
 
-    // Eventbox-readiness gate. On fleetdispatch the click handler reads
-    // DOM state (`#eventContent` rows, AGR's `#ago_routine_7` check
-    // class) that is only authoritative after OGame's eventbox refresh
-    // XHR lands. Clicking before that puts the button into a Phase 2
-    // poll against stale state. Paint a brief "Loading..." cue and bail
-    // — no lock, so the user can tap again as soon as the page settles.
+    // Eventbox-readiness gate (fleetdispatch only). The cap counts read
+    // `#eventContent`, authoritative only after OGame's eventbox XHR lands.
     if (!eventBoxReady) {
-      const original = getLabel(btn);
-      setLabel(btn, 'Loading...');
+      setLabel(btn, 'Wait…');
       setTimeout(() => {
-        // The eventbox may have arrived during the cue window; restore
-        // whatever label was there before rather than the idle default.
-        if (getLabel(btn) === 'Loading...') setLabel(btn, original || BUTTON_TEXT);
+        if (getLabel(btn) === 'Wait…') setLabel(btn, BUTTON_TEXT);
       }, EVENTBOX_LOADING_LABEL_MS);
       return;
     }
 
-    // Global-cap gate (snapshot is authoritative when populated): if
-    // the game reports every expedition slot in use (e.g. 14/14), there
-    // is nowhere to send from — paint "All maxed!" and bail before any
-    // DOM walk. Only applies when the snapshot is populated (non-null
-    // on fleetdispatch AFTER the MAIN-world bridge publishes).
+    const s = courierStep();
+
+    // Tap 2 — dispatch the armed expedition.
+    if (expReady && s === 'fleet2') {
+      if (!readyToDispatch()) return;
+      lock(btn);
+      setLabel(btn, 'Wait…');
+      const r = await courierDispatch();
+      expReady = false;
+      if (!r.ok) {
+        unlock(btn);
+        setLabel(btn, r.errorCode === 140026 ? 'No fuel' : 'Failed');
+        return;
+      }
+      // Success → the game navigates; expeditionRedirect hops to the next
+      // planet with a free slot. Keep "Sent!" until that reload settles.
+      setLabel(btn, 'Sent!');
+      setTimeout(() => unlock(btn), 3000);
+      return;
+    }
+
+    // Global-cap gate — every expedition slot in use ⇒ nowhere to send.
     if (isGlobalExpeditionCapReached(fleetDispatcherSnapshot)) {
       paintAllMaxed(btn);
       return;
     }
 
-    const isFleet = location.search.includes('component=fleetdispatch');
-
-    if (!isFleet) {
-      // Not on fleetdispatch yet — hop to the first planet that has
-      // room (possibly the active one). `findPlanetWithExpSlot(false)`
-      // — skipCurrent=false. No separate "current cap" check here; if
-      // the active planet is maxed the iteration just moves past it.
+    // Off fleetdispatch → hop to the first planet with a free slot.
+    if (s === 'off') {
       const cp = findPlanetWithExpSlot(false);
       if (cp === null) {
         paintAllMaxed(btn);
@@ -507,18 +464,10 @@ export const installSendExp = () => {
       return;
     }
 
-    // Already on fleetdispatch. Phase 0 — current planet cap check.
-    // When the active planet is full, jump to the next free one so
-    // the user doesn't have to re-pick manually.
+    // On fleetdispatch — current-planet cap: full ⇒ jump to the next free
+    // planet (unless the next send would hit the global cap anyway).
     const max = settingsStore.get().maxExpPerPlanet;
-    const count = countActiveExpeditions(getActivePlanetCoords());
-    if (count >= max) {
-      // Pre-redirect guard: if the snapshot reports we're one send
-      // away from the global cap (e.g. 13/14), the pending send is
-      // about to tip us to 14/14. No point walking to another planet
-      // — every planet will then report full once the send lands and
-      // the game refreshes its counts. Paint "All maxed!" and stop so
-      // the user sees why no nav happened.
+    if (countActiveExpeditions(getActivePlanetCoords()) >= max) {
       if (isGlobalExpeditionCapReachedAfterNextSend(fleetDispatcherSnapshot)) {
         paintAllMaxed(btn);
         return;
@@ -532,29 +481,64 @@ export const installSendExp = () => {
       return;
     }
 
-    // Phase 1 — fleet panel already loaded → just fire dispatch.
-    // Phase 2 — panel not loaded → click AGR routine, wait for it.
-    // Gate on `component=fleetdispatch` only: AGR assigns the mission
-    // itself when the user taps its expedition routine, so `mission=15`
-    // is not a reliable precondition for Phase 1/2 here.
-    const dispatch = document.getElementById('dispatchFleet');
-    const fleetPanel = document.getElementById('ago_fleet2_main');
-    if (dispatch && fleetPanel) {
-      safeClick(dispatch);
-      setLabel(btn, 'Sent!');
-      // Lock the button while the game processes the dispatch XHR + its
-      // own post-send navigation. In the happy path OGame reloads the
-      // page within ~1 s and the whole content-script reinitialises, so
-      // the lock is moot. The safety timeout covers the rare case where
-      // the dispatch XHR fails (validation error, network blip) and the
-      // game stays put — without it the button would sit on "Sent!"
-      // forever, taking clicks that would do nothing visible.
-      lock(btn);
-      setTimeout(() => unlock(btn), 3000);
+    // Tap 1 — select the remembered fleet preset to the pos-16 target.
+    const preset = readExpPreset();
+    if (preset.length === 0) {
+      // Nothing remembered yet — guide the user to the long-press capture.
+      setLabel(btn, 'Hold to set');
+      setTimeout(() => {
+        if (getLabel(btn) === 'Hold to set') setLabel(btn, BUTTON_TEXT);
+      }, EVENTBOX_LOADING_LABEL_MS);
+      return;
+    }
+    const here = getActivePlanetCoords();
+    const parts = here ? here.split(':').map((n) => parseInt(n, 10)) : null;
+    if (!parts || parts.some((n) => Number.isNaN(n))) {
+      setLabel(btn, BUTTON_TEXT);
       return;
     }
     lock(btn);
-    void runPhase2(btn);
+    setLabel(btn, 'Wait…');
+    const r = await courierSelect({
+      spec: {
+        kind: 'list',
+        ships: preset.map((p) => ({ id: p.id, qty: p.count, frac: EXP_FLEET_FRAC })),
+      },
+      target: { galaxy: parts[0], system: parts[1], position: 16, type: TARGET_PLANET },
+      mission: MISSION_EXPEDITION,
+    });
+    unlock(btn);
+    if (!r.ok) {
+      setLabel(btn, r.reason === 'noShips' ? 'No ships' : 'Failed');
+      return;
+    }
+    expReady = true;
+    setLabel(btn, 'Send!');
+  };
+
+  /**
+   * Send-button LONG-PRESS — remember the fleet the user has selected on
+   * fleet1 as the expedition preset. Must be on fleetdispatch with a fleet
+   * picked; flashes a short cue either way.
+   *
+   * @returns {Promise<void>}
+   */
+  const onExpHold = async () => {
+    const btn = /** @type {HTMLButtonElement} */ (controller?.el);
+    if (!btn) return;
+    const ships = await courierReadSelection();
+    if (ships.length === 0) {
+      setLabel(btn, 'Pick fleet');
+      setTimeout(() => {
+        if (getLabel(btn) === 'Pick fleet') setLabel(btn, BUTTON_TEXT);
+      }, EVENTBOX_LOADING_LABEL_MS);
+      return;
+    }
+    saveExpPreset(ships);
+    setLabel(btn, 'Saved');
+    setTimeout(() => {
+      if (getLabel(btn) === 'Saved') setLabel(btn, BUTTON_TEXT);
+    }, EVENTBOX_LOADING_LABEL_MS);
   };
 
   /**
@@ -569,15 +553,6 @@ export const installSendExp = () => {
     // Already mounted → keep the live controller; a redundant call must
     // NOT overwrite it with makeButton's null (idempotency-guard return).
     if (document.getElementById(BUTTON_ID)) return;
-
-    // Context-aware initial label: on fleetdispatch the user's next
-    // tap meaning is different depending on AGR/OGame hydration state,
-    // so the button label tells them what's about to happen.
-    const initialLabel = computeInitialLabel({
-      search: location.search,
-      hasDispatchFleet: document.getElementById('dispatchFleet') !== null,
-      hasAgoRoutine7: document.getElementById('ago_routine_7') !== null,
-    });
 
     const size = settingsStore.get().enterBtnSize;
     controller = makeButton({
@@ -596,8 +571,8 @@ export const installSendExp = () => {
           id: BUTTON_ID,
           ariaLabel: 'Send expedition',
           bg: BG_IDLE,
-          onTap: () =>
-            handleClick(/** @type {HTMLButtonElement} */ (controller?.el)),
+          onTap: () => void handleClick(/** @type {HTMLButtonElement} */ (controller?.el)),
+          onHold: () => void onExpHold(),
           focusValue: FOCUS_VALUE,
           focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,
         },
@@ -605,14 +580,7 @@ export const installSendExp = () => {
     });
     if (!controller) return;
 
-    const el = controller.el;
-    setLabel(el, initialLabel);
-    // Brief lock on first appearance so in-flight XHRs can settle before
-    // the user can trigger Phase 2 prematurely.
-    if (initialLabel === 'Prepare') {
-      lock(el);
-      setTimeout(() => unlock(el), 200);
-    }
+    setLabel(controller.el, BUTTON_TEXT);
   };
 
   /**
