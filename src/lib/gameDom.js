@@ -102,6 +102,16 @@ export const GAME = {
   FD_DISABLED_CLASS: 'off',
   /** "Load all resources" control (step 2). */
   FD_ALL_RESOURCES: '#allresources',
+  // Target coord inputs on step 2. NB: the game renders the SAME ids on
+  // both steps, so these match TWO nodes — set all of them. The target is
+  // applied by writing these inputs + firing input/keyup/change/blur and
+  // then calling fleetDispatcher.updateTarget() (setTargetPlanet alone is
+  // a no-op — verified on the live page).
+  FD_GALAXY: '#galaxy',
+  FD_SYSTEM: '#system',
+  FD_POSITION: '#position',
+  /** Hidden target-type input (1 planet · 2 debris · 3 moon). */
+  FD_TYPE: '#type',
 
   // ── Top menu ───────────────────────────────────────────────────────
   MENU_TABLE: '#menuTable',

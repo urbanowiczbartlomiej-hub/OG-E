@@ -104,12 +104,21 @@ describe('fleetExecutor', () => {
     expect(res.data.totalSelected).toBe(0);
   });
 
-  it('setTarget sets the planet/type and fires updateTarget', async () => {
+  it('setTarget writes the native coord inputs and fires updateTarget', async () => {
     const fd = makeFakeFd();
     /** @type {any} */ (window).fleetDispatcher = fd;
-    const res = await command('setTarget', { galaxy: 4, system: 472, position: 15, type: 1 });
+    for (const id of ['galaxy', 'system', 'position', 'type']) {
+      const i = document.createElement('input');
+      i.id = id;
+      document.body.appendChild(i);
+    }
+    const res = await command('setTarget', { galaxy: 4, system: 472, position: 15, type: 3 });
     expect(res.ok).toBe(true);
-    expect(fd.calls).toContainEqual(['setTargetPlanet', { galaxy: 4, system: 472, position: 15, type: 1 }]);
+    expect(/** @type {HTMLInputElement} */ (document.getElementById('galaxy')).value).toBe('4');
+    expect(/** @type {HTMLInputElement} */ (document.getElementById('system')).value).toBe('472');
+    expect(/** @type {HTMLInputElement} */ (document.getElementById('position')).value).toBe('15');
+    expect(/** @type {HTMLInputElement} */ (document.getElementById('type')).value).toBe('3');
+    expect(fd.calls).toContainEqual(['setTargetType', 3]);
     expect(fd.calls).toContainEqual(['updateTarget']);
   });
 

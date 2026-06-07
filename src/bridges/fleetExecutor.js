@@ -35,6 +35,29 @@
 // @ts-check
 
 import { FD_CMD_EVENT as CMD_EVENT, FD_RES_EVENT as RES_EVENT } from '../lib/fleetProtocol.js';
+import { GAME } from '../lib/gameDom.js';
+
+/**
+ * Write `value` into every input matching `sel` and fire the event
+ * sequence a real keystroke produces, so the game's bound handlers pick it
+ * up. The fleetdispatch coord ids exist on BOTH steps, so we set all
+ * matches. (Setting the value alone, or only `change`, does NOT register —
+ * verified on the live page.)
+ *
+ * @param {string} sel
+ * @param {string | number} value
+ * @returns {void}
+ */
+const fireInput = (sel, value) => {
+  for (const el of document.querySelectorAll(sel)) {
+    const input = /** @type {HTMLInputElement} */ (el);
+    if (typeof input.focus === 'function') input.focus();
+    input.value = String(value);
+    for (const type of ['input', 'keyup', 'change', 'blur']) {
+      input.dispatchEvent(new Event(type, { bubbles: true }));
+    }
+  }
+};
 
 /**
  * @typedef {object} FdCommand
@@ -83,12 +106,15 @@ const runCommand = (fd, cmd) => {
 
     case 'setTarget': {
       const { galaxy, system, position, type } = args;
-      // Set the model, then let the game re-check the target. Different
-      // game versions expose slightly different setters; call whatever's
-      // present. updateTarget() is what actually fires the checkTarget XHR.
-      if (typeof fd.setTargetPlanet === 'function') {
-        fd.setTargetPlanet({ galaxy, system, position, type });
-      }
+      // The target is applied by writing the native coord inputs (with the
+      // full keystroke event sequence) and the hidden type input, then
+      // letting fleetDispatcher.updateTarget() read them and fire the
+      // game's own checkTarget XHR. setTargetPlanet() alone is a no-op on
+      // the live page; setTargetType() is called too as a belt-and-braces.
+      fireInput(GAME.FD_GALAXY, galaxy);
+      fireInput(GAME.FD_SYSTEM, system);
+      fireInput(GAME.FD_POSITION, position);
+      if (type != null) fireInput(GAME.FD_TYPE, type);
       if (typeof fd.setTargetType === 'function' && type != null) {
         fd.setTargetType(type);
       }
