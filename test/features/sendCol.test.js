@@ -355,170 +355,11 @@ describe('derive — galaxy branch', () => {
   });
 });
 
-describe('derive — fleetdispatch branch', () => {
-  const baseSearch = '?page=ingame&component=fleetdispatch&mission=7';
-
-  it('noTarget when fleetDispatcher is absent', () => {
-    const ctx = derive({
-      search: baseSearch,
-      fleetDispatcher: null,
-      scans: {},
-      registry: [],
-      targets: [8],
-      preferOther: false,
-      now: Date.now(),
-    });
-    expect(ctx.kind).toBe('fleetdispatch');
-    if (ctx.kind === 'fleetdispatch') {
-      expect(ctx.phase.tag).toBe('noTarget');
-    }
-  });
-
-  it('noTarget when fleetDispatcher.targetPlanet is missing', () => {
-    const ctx = derive({
-      search: baseSearch,
-      fleetDispatcher: makeFleetDispatcher({ target: null }),
-      scans: {},
-      registry: [],
-      targets: [8],
-      preferOther: false,
-      now: Date.now(),
-    });
-    expect(ctx.kind).toBe('fleetdispatch');
-    if (ctx.kind === 'fleetdispatch') expect(ctx.phase.tag).toBe('noTarget');
-  });
-
-  it('ready when orders[7]=true and colonizer is present', () => {
-    _resetSendColForTest();
-    const ctx = derive({
-      search: baseSearch,
-      fleetDispatcher: makeFleetDispatcher({ canColonize: true, hasColonizer: true }),
-      scans: {},
-      registry: [],
-      targets: [8],
-      preferOther: false,
-      now: Date.now(),
-    });
-    expect(ctx.kind).toBe('fleetdispatch');
-    if (ctx.kind === 'fleetdispatch') {
-      expect(ctx.phase.tag).toBe('ready');
-      expect(ctx.target).toEqual({ galaxy: 4, system: 30, position: 8 });
-    }
-  });
-
-  it('noShip when the planet has no colonizer', () => {
-    _resetSendColForTest();
-    const ctx = derive({
-      search: baseSearch,
-      fleetDispatcher: makeFleetDispatcher({ canColonize: false, hasColonizer: false }),
-      scans: {},
-      registry: [],
-      targets: [8],
-      preferOther: false,
-      now: Date.now(),
-    });
-    if (ctx.kind === 'fleetdispatch') expect(ctx.phase.tag).toBe('noShip');
-  });
-
-  it('noShip when the last checkTarget error was 140035, even if hasColonizer', () => {
-    _resetSendColForTest();
-    // Install to get the event listener wired so the module can consume
-    // errorCode.
-    setupScene({ onFleetdispatch: true, mission: 7 });
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
-    setFleetDispatcher(makeFleetDispatcher({
-      canColonize: false,
-      hasColonizer: true,
-    }));
-    installSendCol();
-    document.dispatchEvent(
-      new CustomEvent('oge:checkTargetResult', {
-        detail: { galaxy: 4, system: 30, position: 8, errorCodes: [140035] },
-      }),
-    );
-    const { send } = { send: getSend() };
-    expect(send?.textContent).toContain('No ship!');
-  });
-
-  it('reserved when the last checkTarget error was 140016', () => {
-    _resetSendColForTest();
-    setupScene({ onFleetdispatch: true, mission: 7 });
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
-    setFleetDispatcher(makeFleetDispatcher({
-      canColonize: false,
-      hasColonizer: true,
-    }));
-    installSendCol();
-    document.dispatchEvent(
-      new CustomEvent('oge:checkTargetResult', {
-        detail: { galaxy: 4, system: 30, position: 8, errorCodes: [140016] },
-      }),
-    );
-    expect(getSend()?.textContent).toContain('Reserved');
-  });
-
-  it('stale when orders[7]=false, has ship, no error', () => {
-    _resetSendColForTest();
-    const ctx = derive({
-      search: baseSearch,
-      fleetDispatcher: makeFleetDispatcher({ canColonize: false, hasColonizer: true }),
-      scans: {},
-      registry: [],
-      targets: [8],
-      preferOther: false,
-      now: Date.now(),
-    });
-    if (ctx.kind === 'fleetdispatch') expect(ctx.phase.tag).toBe('stale');
-  });
-
-  it('timeout when > 15s since nav, no canColonize, no err', () => {
-    _resetSendColForTest();
-    // Seed the timestamp via the send-click path. Easier: install,
-    // arrange a ctx that triggers a nav, then advance.
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-    setupScene();
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
-    scansStore.set({
-      '4:30': { scannedAt: Date.now(), positions: { 8: { status: 'empty' } } },
-    });
-    installSendCol();
-    // Click Send to set lastNavToFleetdispatchAt.
-    getSend()?.click();
-    // Swap to fleetdispatch with a stale target.
-    location.search = '?page=ingame&component=fleetdispatch&mission=7';
-    setFleetDispatcher(makeFleetDispatcher({
-      canColonize: false,
-      hasColonizer: true,
-    }));
-    // Advance > 15s.
-    vi.advanceTimersByTime(16_000);
-    const ctx = derive({
-      search: location.search,
-      fleetDispatcher: /** @type {any} */ (window).fleetDispatcher,
-      scans: scansStore.get(),
-      registry: [],
-      targets: [8],
-      preferOther: false,
-      now: Date.now(),
-    });
-    // Without an err AND not canColonize, we expect stale — timeout requires
-    // the no-err/no-canColonize path AND a nav timestamp > 15s old. But the
-    // priority order puts stale under timeout, so the timeout flag must
-    // win when conditions match.
-    // Actually with hasColonizer=true + no err + !canColonize + 16s old nav,
-    // timeout branch fires because timeout takes priority over stale.
-    if (ctx.kind === 'fleetdispatch') {
-      expect(['timeout', 'stale']).toContain(ctx.phase.tag);
-      // The key behavioural assertion: post-15s we're NOT "ready" anymore.
-      expect(ctx.phase.tag).not.toBe('ready');
-    }
-    vi.useRealTimers();
-  });
-
-  // (waitGap-via-button is now covered by the courier two-click min-gap
-  // test under "onSendClick — fleetdispatch branch".)
-});
+// (The derive() "fleetdispatch branch" was removed with the courier
+// migration — on a bare fleetdispatch derive uses the idle branch, and the
+// Send half's ready/reserved/no-ship/stale states are owned by the
+// courier-driven handler. Those paths are covered by the "onSendClick —
+// fleetdispatch branch" courier tests + the oge:checkTargetResult reactor.)
 
 // ──────────────────────────────────────────────────────────────────
 // render — each kind × phase
@@ -570,80 +411,8 @@ describe('render — pure paint instructions', () => {
     expect(r.scan.subtext).toBe('Scan');
   });
 
-  it('fleetdispatch/ready → coords + "Send!" subtext, scan half shows "to Galaxy"', () => {
-    const r = render({
-      kind: 'fleetdispatch',
-      target: { galaxy: 4, system: 30, position: 8 },
-      phase: { tag: 'ready' },
-      ...freshScan,
-    });
-    expect(r.send.text).toBe('[4:30:8]');
-    expect(r.send.subtext).toBe('Send!');
-    // Scan half off-galaxy is "to Galaxy" (full nav to bare galaxy URL) —
-    // avoids the "first system load isn't AJAX, we'd miss it" bug.
-    expect(r.scan.text).toBe('to Galaxy');
-  });
-
-  it('fleetdispatch/noShip → coords + "No ship!" subtext', () => {
-    const r = render({
-      kind: 'fleetdispatch',
-      target: { galaxy: 4, system: 30, position: 8 },
-      phase: { tag: 'noShip' },
-      ...noScan,
-    });
-    expect(r.send.subtext).toBe('No ship!');
-  });
-
-  it('fleetdispatch/reserved → "Reserved"', () => {
-    const r = render({
-      kind: 'fleetdispatch',
-      target: { galaxy: 4, system: 30, position: 8 },
-      phase: { tag: 'reserved' },
-      ...noScan,
-    });
-    expect(r.send.subtext).toBe('Reserved');
-  });
-
-  it('fleetdispatch/stale → "Stale"', () => {
-    const r = render({
-      kind: 'fleetdispatch',
-      target: { galaxy: 4, system: 30, position: 8 },
-      phase: { tag: 'stale' },
-      ...noScan,
-    });
-    expect(r.send.subtext).toBe('Stale');
-  });
-
-  it('fleetdispatch/timeout → "Timeout"', () => {
-    const r = render({
-      kind: 'fleetdispatch',
-      target: { galaxy: 4, system: 30, position: 8 },
-      phase: { tag: 'timeout' },
-      ...noScan,
-    });
-    expect(r.send.subtext).toBe('Timeout');
-  });
-
-  it('fleetdispatch/waitGap → "Wait Ns"', () => {
-    const r = render({
-      kind: 'fleetdispatch',
-      target: { galaxy: 4, system: 30, position: 8 },
-      phase: { tag: 'waitGap', remaining: 7 },
-      ...noScan,
-    });
-    expect(r.send.text).toBe('Wait 7s');
-    expect(r.send.subtext).toBeUndefined();
-  });
-
-  it('fleetdispatch/noTarget → plain "Send"', () => {
-    const r = render({
-      kind: 'fleetdispatch',
-      target: null,
-      phase: { tag: 'noTarget' },
-      ...noScan,
-    });
-    expect(r.send.text).toBe('Send');
-  });
+  // (render's "fleetdispatch" kind was removed with the courier migration —
+  // the Send half on fleetdispatch is painted by the handler now, not render.)
 });
 
 // ──────────────────────────────────────────────────────────────────
@@ -969,7 +738,7 @@ describe('onScanClick', () => {
 // ──────────────────────────────────────────────────────────────────
 
 describe('oge:checkTargetResult reactor', () => {
-  it('matching coords + errorCodes[0]=140016 → label flips to Reserved', () => {
+  it('matching coords + errorCodes[0]=140016 → marks the slot Reserved', () => {
     setupScene({ onFleetdispatch: true, mission: 7 });
     settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
     setFleetDispatcher(makeFleetDispatcher({
@@ -982,12 +751,12 @@ describe('oge:checkTargetResult reactor', () => {
         detail: { galaxy: 4, system: 30, position: 8, errorCodes: [140016] },
       }),
     );
-    expect(getSend()?.textContent).toContain('Reserved');
+    expect(scansStore.get()['4:30']?.positions?.[8]?.status).toBe('reserved');
   });
 
-  it('simplified shape {errorCode: 140035} → No ship!', () => {
-    // Bridge-shape-compat: future simplified shape carries `errorCode`
-    // directly instead of `errorCodes[]`.
+  it('errorCode 140035 (no colony ship) → does NOT mark the slot', () => {
+    // 140035 means "you lack a colony ship", not "the slot is bad" — so the
+    // reactor leaves the DB alone (the user can build/move a ship and retry).
     setupScene({ onFleetdispatch: true, mission: 7 });
     settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
     setFleetDispatcher(makeFleetDispatcher({
@@ -1000,7 +769,7 @@ describe('oge:checkTargetResult reactor', () => {
         detail: { galaxy: 4, system: 30, position: 8, errorCode: 140035 },
       }),
     );
-    expect(getSend()?.textContent).toContain('No ship!');
+    expect(scansStore.get()['4:30']).toBeUndefined();
   });
 
   it('non-matching coords against fleetDispatcher.targetPlanet → ignored', () => {
@@ -1012,14 +781,13 @@ describe('oge:checkTargetResult reactor', () => {
       hasColonizer: true,
     }));
     installSendCol();
-    // Old response for a different target should not change our state.
+    // A stale response for a different target must not touch the DB.
     document.dispatchEvent(
       new CustomEvent('oge:checkTargetResult', {
-        detail: { galaxy: 9, system: 9, position: 9, errorCodes: [140035] },
+        detail: { galaxy: 9, system: 9, position: 9, errorCodes: [140016] },
       }),
     );
-    // Label stays "Send!" (phase=ready).
-    expect(getSend()?.textContent).toContain('Send!');
+    expect(scansStore.get()['9:9']).toBeUndefined();
   });
 });
 

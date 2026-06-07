@@ -370,21 +370,6 @@ export const buildGalaxyUrl = ({ galaxy, system }) => {
  *       scanCooldown: boolean,
  *       scansRemaining?: number,
  *     }
- *   | {
- *       kind: 'fleetdispatch',
- *       target: Coords | null,
- *       phase:
- *         | { tag: 'noTarget' }
- *         | { tag: 'ready' }
- *         | { tag: 'noShip' }
- *         | { tag: 'reserved' }
- *         | { tag: 'stale' }
- *         | { tag: 'timeout' }
- *         | { tag: 'waitGap', remaining: number },
- *       nextScan: { galaxy: number, system: number } | null,
- *       scanCooldown: boolean,
- *       scansRemaining?: number,
- *     }
  * )} ButtonContext
  */
 
@@ -414,9 +399,9 @@ export const buildGalaxyUrl = ({ galaxy, system }) => {
  * keeps the pure core DOM-free — `./index.js captureEnv()` makes the
  * reads in production, tests pass the values explicitly.
  *
- * The six `last*` / `wait*` fields previously lived as module-local
- * `let`s on `./index.js` and were read directly by `derive`. They now
- * flow through env too.
+ * The scan-timing fields (`lastScanSubmitAt` / `lastScanEventAt`)
+ * previously lived as module-local `let`s on `./index.js` and are read
+ * here to derive `scanCooldown`.
  *
  * @typedef {object} DeriveEnv
  * @property {string} search `location.search` (raw, including leading `?`).
@@ -436,22 +421,11 @@ export const buildGalaxyUrl = ({ galaxy, system }) => {
  * @property {{ galaxy: number, system: number } | null} [view]
  *   Current galaxy-view coords (from `#galaxy_input` / URL). `null`
  *   outside the galaxy component.
- * @property {number} [lastNavToFleetdispatchAt]
- *   Epoch-ms of the last navigation to a fleetdispatch URL with a
- *   target. Drives the `timeout` phase together with `now`. Default 0
- *   (no prior nav → timeout branch never fires).
  * @property {number} [lastScanSubmitAt]
  *   Epoch-ms of the last in-page galaxy submit. Together with
  *   `lastScanEventAt` drives `scanCooldown`. Default 0.
  * @property {number} [lastScanEventAt]
  *   Epoch-ms of the last `oge:galaxyScanned` we observed. Default 0.
- * @property {number | null} [lastCheckTargetError]
- *   Error code from the most recent `checkTarget` response, or `null`.
- *   Drives the `reserved` / `noShip` sub-phases. Default `null`.
- * @property {number} [waitStartAt]
- *   Epoch-ms when the min-gap countdown started. Default 0 (no countdown).
- * @property {number} [waitSeconds]
- *   Total seconds of the active countdown. Default 0 (no countdown).
  */
 
 // ─── Pure derive ──────────────────────────────────────────────────────────
@@ -469,12 +443,8 @@ export const derive = (env) => {
   // so a legitimate `0` stays `0` rather than falling to the default.
   const home = env.home ?? null;
   const view = env.view ?? null;
-  const lastNavToFleetdispatchAt = env.lastNavToFleetdispatchAt ?? 0;
   const lastScanSubmitAt = env.lastScanSubmitAt ?? 0;
   const lastScanEventAt = env.lastScanEventAt ?? 0;
-  const lastCheckTargetError = env.lastCheckTargetError ?? null;
-  const waitStartAt = env.waitStartAt ?? 0;
-  const waitSeconds = env.waitSeconds ?? 0;
 
   // Universal scan state — user can Scan from any page (idle / galaxy /
   // fleetdispatch). Cooldown is event-driven (unlocks on
@@ -487,94 +457,11 @@ export const derive = (env) => {
   // user how far the scan-fresh frontier is from covering everything.
   const scansRemaining = countScansRemaining(env.scans);
 
-  // Fleetdispatch branch — `fleetDispatcher` snapshot is the truth.
-  if (
-    env.search.includes('component=fleetdispatch') &&
-    env.search.includes(`mission=${MISSION_COLONIZE}`)
-  ) {
-    const fd = env.fleetDispatcher;
-    if (!fd) {
-      return {
-        kind: 'fleetdispatch',
-        target: null,
-        phase: { tag: 'noTarget' },
-        nextScan,
-        scanCooldown,
-        scansRemaining,
-      };
-    }
-    const tp = fd.targetPlanet;
-    /** @type {Coords | null} */
-    const target =
-      tp && tp.galaxy && tp.system && tp.position
-        ? { galaxy: tp.galaxy, system: tp.system, position: tp.position }
-        : null;
-    if (!target) {
-      return {
-        kind: 'fleetdispatch',
-        target: null,
-        phase: { tag: 'noTarget' },
-        nextScan,
-        scanCooldown,
-        scansRemaining,
-      };
-    }
-
-    const shipsOnPlanet = Array.isArray(fd.shipsOnPlanet) ? fd.shipsOnPlanet : [];
-    const hasColonizer = shipsOnPlanet.some(
-      (/** @type {any} */ s) => s && s.id === 208 && (s.number || 0) > 0,
-    );
-    const canColonize = fd.orders && fd.orders['7'] === true;
-    const err = lastCheckTargetError;
-
-    // Priority (§4): timeout > waitGap > reserved > noShip > stale > ready.
-    /** @type {
-     *   | { tag: 'noTarget' }
-     *   | { tag: 'ready' }
-     *   | { tag: 'noShip' }
-     *   | { tag: 'reserved' }
-     *   | { tag: 'stale' }
-     *   | { tag: 'timeout' }
-     *   | { tag: 'waitGap', remaining: number }
-     * } */
-    let phase = { tag: 'ready' };
-    if (
-      env.now - lastNavToFleetdispatchAt > CHECK_TARGET_TIMEOUT_MS &&
-      lastNavToFleetdispatchAt > 0 &&
-      !canColonize &&
-      err === null
-    ) {
-      phase = { tag: 'timeout' };
-    } else if (waitSeconds > 0) {
-      const remaining = Math.max(
-        0,
-        waitSeconds - Math.floor((env.now - waitStartAt) / 1000),
-      );
-      // Countdown active → waitGap wins over everything else. When the
-      // remaining seconds hit zero, fall through to the next block so
-      // the underlying phase (usually `ready`) takes over.
-      if (remaining > 0) {
-        phase = { tag: 'waitGap', remaining };
-      }
-    }
-    if (phase.tag === 'ready') {
-      if (err === 140016) {
-        phase = { tag: 'reserved' };
-      } else if (err === 140035 || !hasColonizer) {
-        phase = { tag: 'noShip' };
-      } else if (!canColonize) {
-        phase = { tag: 'stale' };
-      }
-    }
-    return {
-      kind: 'fleetdispatch',
-      target,
-      phase,
-      nextScan,
-      scanCooldown,
-      scansRemaining,
-    };
-  }
+  // NB: on fleetdispatch the Send half's label + action are owned by the
+  // courier-driven handler in index.js (the fleet courier sets the colony
+  // ship + target in-page on a bare URL). derive() therefore only computes
+  // the candidate (idle branch below) + the Scan half here — there is no
+  // dedicated "fleetdispatch" branch any more.
 
   // Galaxy branch — current-view priority (§4) so the coords the user
   // just scanned win over the global DB pick.
@@ -675,63 +562,18 @@ export const render = (ctx) => {
         : { text: 'to Galaxy', bg: BG_SCAN_IDLE };
   }
 
-  if (ctx.kind === 'idle') {
-    return {
-      send: ctx.candidate
-        ? {
-            text: `[${ctx.candidate.galaxy}:${ctx.candidate.system}:${ctx.candidate.position}]`,
-            subtext: 'Send Colony',
-            bg: BG_SEND_READY,
-          }
-        : { text: 'Send', bg: BG_SEND_IDLE },
-      scan: scanPaint,
-    };
-  }
-
-  if (ctx.kind === 'galaxy') {
-    return {
-      send: ctx.candidate
-        ? {
-            text: `[${ctx.candidate.galaxy}:${ctx.candidate.system}:${ctx.candidate.position}]`,
-            subtext: 'Send Colony',
-            bg: BG_SEND_READY,
-          }
-        : { text: 'Send', bg: BG_SEND_IDLE },
-      scan: scanPaint,
-    };
-  }
-
-  // ctx.kind === 'fleetdispatch'
-  const { target, phase } = ctx;
-  const coords = target
-    ? `[${target.galaxy}:${target.system}:${target.position}]`
-    : '';
-  /** @type {Paint} */
-  let sendPaint;
-  switch (phase.tag) {
-    case 'noTarget':
-      sendPaint = { text: 'Send', bg: BG_SEND_IDLE };
-      break;
-    case 'ready':
-      sendPaint = { text: coords, subtext: 'Send!', bg: BG_SEND_READY };
-      break;
-    case 'noShip':
-      sendPaint = { text: coords, subtext: 'No ship!', bg: BG_SEND_ERROR };
-      break;
-    case 'reserved':
-      sendPaint = { text: coords, subtext: 'Reserved', bg: BG_SEND_STALE };
-      break;
-    case 'stale':
-      sendPaint = { text: coords, subtext: 'Stale', bg: BG_SEND_STALE };
-      break;
-    case 'timeout':
-      sendPaint = { text: coords, subtext: 'Timeout', bg: BG_SEND_STALE };
-      break;
-    case 'waitGap':
-      sendPaint = { text: `Wait ${phase.remaining}s`, bg: BG_SEND_WAIT };
-      break;
-    default:
-      sendPaint = { text: 'Send', bg: BG_SEND_IDLE };
-  }
-  return { send: sendPaint, scan: scanPaint };
+  // idle + galaxy share the same Send paint: the next-candidate coords (or
+  // a bare "Send" when the DB has none). On a bare fleetdispatch the handler
+  // owns the Send label; this idle-branch paint is what the 1 Hz ticker
+  // shows there before the first tap.
+  return {
+    send: ctx.candidate
+      ? {
+          text: `[${ctx.candidate.galaxy}:${ctx.candidate.system}:${ctx.candidate.position}]`,
+          subtext: 'Send Colony',
+          bg: BG_SEND_READY,
+        }
+      : { text: 'Send', bg: BG_SEND_IDLE },
+    scan: scanPaint,
+  };
 };

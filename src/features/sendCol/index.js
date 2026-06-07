@@ -97,7 +97,6 @@ import {
   derive,
   render,
   MISSION_COLONIZE,
-  CHECK_TARGET_TIMEOUT_MS,
   SCAN_COOLDOWN_MS,
   BG_SEND_IDLE,
   BG_SEND_READY,
@@ -169,8 +168,6 @@ const REPAINT_TICK_MS = 1000;
 
 // ─── Module-local state (§3) ───────────────────────────────────────────
 
-/** Timestamp of the last "nav to fleetdispatch with a target" action. */
-let lastNavToFleetdispatchAt = 0;
 /**
  * Timestamp of the last `oge:galaxyScanned` event we received. Used
  * together with {@link lastScanSubmitAt} to derive `scanCooldown`:
@@ -197,10 +194,6 @@ let lastCheckTargetError = /** @type {number | null} */ (null);
  * @type {import('../../bridges/fleetDispatcherSnapshot.js').FleetDispatcherSnapshot | null}
  */
 let fleetDispatcherSnapshot = null;
-
-let waitStartAt = 0;
-/** Total seconds of the current waitGap countdown (0 = no countdown). */
-let waitSeconds = 0;
 
 /**
  * The shared {@link makeButton} controller (view + gestures). `null` until
@@ -291,16 +284,10 @@ const captureEnv = () => {
     // `parseCurrentGalaxyView` → `#galaxy_input` / URL.
     home: readHomePlanet(),
     view: parseCurrentGalaxyView(),
-    // Module-local transient state that drives the fleetdispatch phase
-    // sub-selection (timeout / reserved / noShip / stale / waitGap) and
-    // the Scan-cooldown visual. Previously read from closure by derive;
-    // now passed explicitly.
-    lastNavToFleetdispatchAt,
+    // Scan-cooldown timing (the only module-local state derive still reads;
+    // the Send half on fleetdispatch is courier-driven in the handler).
     lastScanSubmitAt,
     lastScanEventAt,
-    lastCheckTargetError,
-    waitStartAt,
-    waitSeconds,
   };
 };
 
@@ -665,11 +652,6 @@ const onCheckTargetResult = (e) => {
     }
   }
 
-  // A response means we're no longer waiting — reset the nav timestamp
-  // so a subsequent timeout measurement starts from "after we heard back".
-  // Leaving it set would make the timeout branch fire once the clock
-  // wandered past 15 s even though we got an answer.
-  lastNavToFleetdispatchAt = 0;
   refresh();
 };
 
@@ -828,16 +810,6 @@ export const installSendCol = () => {
     });
     if (!controller) return;
 
-    // If we're landing on fleetdispatch directly (user typed a URL,
-    // page reload after send, AGR menu), assume the nav timestamp is
-    // "now" so the timeout branch doesn't immediately fire on startup.
-    if (
-      location.search.includes('component=fleetdispatch') &&
-      location.search.includes(`mission=${MISSION_COLONIZE}`)
-    ) {
-      lastNavToFleetdispatchAt = Date.now();
-    }
-
     // First paint driven by the full pipeline.
     refresh();
   };
@@ -952,12 +924,9 @@ export const _resetSendColForTest = () => {
     installed.dispose();
     installed = null;
   }
-  lastNavToFleetdispatchAt = 0;
   lastScanSubmitAt = 0;
   lastScanEventAt = 0;
   lastCheckTargetError = null;
-  waitStartAt = 0;
-  waitSeconds = 0;
   fleetDispatcherSnapshot = null;
   busy = false;
   colReady = false;
