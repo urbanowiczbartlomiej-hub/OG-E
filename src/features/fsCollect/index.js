@@ -129,7 +129,7 @@ const DASHBOARD_URL = (() => {
 })();
 
 /**
- * Open the Dashboard's Daily Resource Run tab in a new tab, pre-selecting the
+ * Open the Dashboard's Daily Run tab in a new tab, pre-selecting the
  * current universe (`?host=`) and deep-linking the routes tab (`?tab=routes`).
  * No-op (returns false) when the runtime URL is unavailable, so the caller
  * can fall back to an in-place hint.
@@ -550,7 +550,7 @@ export const installFsCollect = () => {
     const size = settingsStore.get().fsBtnSize;
     controller = makeButton({
       id: FS_UNIFIED_ID,
-      title: 'Daily Resource Run',
+      title: 'Daily Run',
       ringId: 'oge-ring-fs',
       size,
       fontScale: 0.14,
