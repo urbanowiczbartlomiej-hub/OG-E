@@ -15,3 +15,11 @@
 export const FD_CMD_EVENT = 'oge:fd:cmd';
 /** Reply: MAIN executor → isolated courier. */
 export const FD_RES_EVENT = 'oge:fd:res';
+/**
+ * Result of the game's own `action=sendFleet` XHR, published by
+ * bridges/sendFleetResultHook.js so the courier's dispatch() can tell a
+ * real send (200 + success:true) from a rejected one (200 + success:false,
+ * e.g. error 140026 "insufficient fuel").
+ * detail { success:boolean, errorCode:number|null, mission:number|null }
+ */
+export const FD_SEND_RESULT_EVENT = 'oge:sendFleetResult';

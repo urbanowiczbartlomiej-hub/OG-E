@@ -29,7 +29,7 @@
 // why a too-early "send" can't lock the button: it simply isn't ready yet.
 
 import { resolveSelection, classifyTargetError } from '../../domain/fleetPlan.js';
-import { FD_CMD_EVENT, FD_RES_EVENT } from '../../lib/fleetProtocol.js';
+import { FD_CMD_EVENT, FD_RES_EVENT, FD_SEND_RESULT_EVENT } from '../../lib/fleetProtocol.js';
 import { GAME } from '../../lib/gameDom.js';
 import { safeClick, waitFor } from '../../lib/dom.js';
 
@@ -41,6 +41,8 @@ const CHECK_TARGET_TIMEOUT_MS = 8000;
 const STEP2_TIMEOUT_MS = 8000;
 /** How long to wait for the dispatch control to become ready. */
 const READY_TIMEOUT_MS = 8000;
+/** How long to wait for the sendFleet result after a dispatch click. */
+const SEND_RESULT_TIMEOUT_MS = 8000;
 const POLL_MS = 100;
 
 /**
@@ -259,15 +261,46 @@ export const select = async (order) => {
 };
 
 /**
- * Tap 2 — "Wysłanie". Click the now-ready native dispatch control. No-op
- * (returns false) when not ready, so an early tap can never fire a send.
+ * Await the game's own sendFleet result (published by
+ * bridges/sendFleetResultHook.js). Resolves `{ ok, errorCode }` — `ok` is
+ * the server's `success` flag, so a 200-but-rejected send (e.g. no fuel)
+ * resolves `{ ok:false, errorCode:140026 }`. Times out to `notReady`-style
+ * `{ ok:false, reason:'timeout' }`.
  *
- * @returns {boolean} whether the dispatch click was issued.
+ * @returns {Promise<{ ok: boolean, errorCode?: number | null, reason?: string }>}
+ */
+const awaitSendResult = () =>
+  new Promise((resolve) => {
+    let done = false;
+    /** @param {{ ok: boolean, errorCode?: number | null, reason?: string }} v */
+    const finish = (v) => {
+      if (done) return;
+      done = true;
+      document.removeEventListener(FD_SEND_RESULT_EVENT, onRes);
+      clearTimeout(timer);
+      resolve(v);
+    };
+    /** @param {Event} e */
+    const onRes = (e) => {
+      const d = /** @type {any} */ (/** @type {CustomEvent} */ (e).detail);
+      finish({ ok: !!(d && d.success), errorCode: d ? d.errorCode : null });
+    };
+    const timer = setTimeout(() => finish({ ok: false, reason: 'timeout' }), SEND_RESULT_TIMEOUT_MS);
+    document.addEventListener(FD_SEND_RESULT_EVENT, onRes);
+  });
+
+/**
+ * Tap 2 — "Wysłanie". Click the now-ready native dispatch control and await
+ * the game's sendFleet result. Resolves `{ ok:false, reason:'notReady' }`
+ * without clicking when not ready, so an early tap can never fire a send.
+ *
+ * @returns {Promise<{ ok: boolean, errorCode?: number | null, reason?: string }>}
  */
 export const dispatch = () => {
-  if (!readyToDispatch()) return false;
+  if (!readyToDispatch()) return Promise.resolve({ ok: false, reason: 'notReady' });
+  const result = awaitSendResult();
   safeClick(document.querySelector(GAME.FD_DISPATCH));
-  return true;
+  return result;
 };
 
 // ─── lifecycle ─────────────────────────────────────────────────────────────

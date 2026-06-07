@@ -170,18 +170,47 @@ describe('select — failures', () => {
 });
 
 describe('dispatch — tap 2', () => {
-  it('clicks the native dispatch only when ready', () => {
+  it('does not click and resolves notReady when not ready', async () => {
     const d = el('a', 'dispatchFleet');
     d.className = 'off';
     let clicks = 0;
     d.addEventListener('click', () => (clicks += 1));
     document.body.appendChild(d);
-
-    expect(dispatch()).toBe(false); // not ready
+    const r = await dispatch();
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('notReady');
     expect(clicks).toBe(0);
+  });
 
-    d.classList.remove('off');
-    expect(dispatch()).toBe(true);
+  it('clicks when ready and surfaces a rejected send (e.g. no fuel)', async () => {
+    const d = el('a', 'dispatchFleet'); // ready (no .off)
+    let clicks = 0;
+    d.addEventListener('click', () => {
+      clicks += 1;
+      document.dispatchEvent(
+        new CustomEvent('oge:sendFleetResult', {
+          detail: { success: false, errorCode: 140026, mission: 4 },
+        }),
+      );
+    });
+    document.body.appendChild(d);
+    const r = await dispatch();
     expect(clicks).toBe(1);
+    expect(r.ok).toBe(false);
+    expect(r.errorCode).toBe(140026);
+  });
+
+  it('resolves ok on a successful send', async () => {
+    const d = el('a', 'dispatchFleet');
+    d.addEventListener('click', () =>
+      document.dispatchEvent(
+        new CustomEvent('oge:sendFleetResult', {
+          detail: { success: true, errorCode: null, mission: 4 },
+        }),
+      ),
+    );
+    document.body.appendChild(d);
+    const r = await dispatch();
+    expect(r.ok).toBe(true);
   });
 });

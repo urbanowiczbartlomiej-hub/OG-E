@@ -274,6 +274,19 @@ const safeWrite = (url) => {
   }
 };
 
+/** Drop a stashed redirect (the send was rejected, so no navigation). */
+const clearRedirectStash = () => {
+  try {
+    localStorage.removeItem(FS_REDIRECT_KEY);
+  } catch {
+    // ignore
+  }
+};
+
+/** Short label for a rejected sendFleet, by error code.
+ * @param {number | null | undefined} code */
+const sendErrorLabel = (code) => (code === 140026 ? 'No fuel' : 'Failed');
+
 // ─── click handlers ─────────────────────────────────────────────────────
 
 /** @type {boolean} */
@@ -355,12 +368,27 @@ const handleZone = async (mode) => {
   const zone = document.getElementById(zoneId);
   const s = courierStep();
 
-  // Tap 2 — dispatch (only when the game says it's ready).
+  // Tap 2 — dispatch (only when the game says it's ready). The redirect is
+  // stashed BEFORE the click (deployRedirect consumes it on the send-phase);
+  // we await the game's result and, on a rejected send (e.g. no fuel), drop
+  // that stash and surface the error instead of a false "Sent".
   if (s === 'fleet2') {
     if (!readyToDispatch()) return;
     if (mode === 'micro') stashMicroRedirect();
     else stashCollectRedirect(fsRoutesStore.get().collectTarget);
-    courierDispatch();
+    busy = true;
+    setLabel(zone, 'Wait…');
+    dimZone(zone, true);
+    const r = await courierDispatch();
+    if (!r.ok) {
+      clearRedirectStash();
+      busy = false;
+      dimZone(zone, false);
+      flash(zone, sendErrorLabel(r.errorCode));
+      return;
+    }
+    // Success → the game navigates via the stashed redirect; keep the zone
+    // locked (greyed) until that reload settles.
     setLabel(zone, 'Sent');
     pending = null;
     lockBriefly(zone);

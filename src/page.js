@@ -31,6 +31,7 @@ import { installFleetDispatcherSnapshot } from './bridges/fleetDispatcherSnapsho
 import { installEventBoxHook } from './bridges/eventBoxHook.js';
 import { installTraderActionHook } from './bridges/traderActionHook.js';
 import { installFleetExecutor } from './bridges/fleetExecutor.js';
+import { installSendFleetResultHook } from './bridges/sendFleetResultHook.js';
 
 installGalaxyHook();
 installCheckTargetHook();
@@ -59,3 +60,6 @@ installTraderActionHook();
 // The isolated-world fleet courier (features/shared/fleetCourier.js)
 // drives this via oge:fd:cmd / oge:fd:res events. See that module's header.
 installFleetExecutor();
+// Publish the result of every sendFleet XHR so the courier's dispatch()
+// can distinguish a real send from a 200-but-rejected one (e.g. no fuel).
+installSendFleetResultHook();

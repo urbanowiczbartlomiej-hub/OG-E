@@ -224,32 +224,64 @@ describe('collect send — navigation + dispatch (bottom zone)', () => {
     expect(navTarget).not.toMatch(/galaxy=/);
   });
 
-  it('on step 2 stashes oge_fsRedirect and clicks the native dispatch button', () => {
-    enable();
-    installFsCollect();
-    location.search = '?page=ingame&component=fleetdispatch&cp=100&mission=4&galaxy=4&system=472&position=15&type=3';
-    fsRoutesStore.set({
-      routes: [],
-      collectTarget: { galaxy: 4, system: 472, position: 15, type: TARGET_MOON },
-    });
-    // Planet list (via insertAdjacentHTML — preserves the mounted button's
-    // listeners) + step-2 controls created with a real click spy.
+  /**
+   * Build a step-2 fleetdispatch DOM (planet list + dispatch/resources
+   * controls). The dispatch click fires a fake game sendFleet result with
+   * `success`, mirroring bridges/sendFleetResultHook.
+   *
+   * @param {boolean} success
+   * @param {number | null} [errorCode]
+   * @returns {{ clicks: () => number }}
+   */
+  const buildStep2 = (success, errorCode = null) => {
     document.body.insertAdjacentHTML('beforeend', `
       <div id="planetList">
         <div class="smallplanet hightlightPlanet" id="planet-100"><span class="planet-koords">[4:472:15]</span></div>
         <div class="smallplanet" id="planet-200"><span class="planet-koords">[4:480:8]</span></div>
       </div>`);
-    let dispatched = false;
+    let clicks = 0;
     const dispatch = document.createElement('a');
-    dispatch.id = 'dispatchFleet';
-    dispatch.addEventListener('click', () => { dispatched = true; });
+    dispatch.id = 'dispatchFleet'; // ready (no .off)
+    dispatch.addEventListener('click', () => {
+      clicks += 1;
+      document.dispatchEvent(new CustomEvent('oge:sendFleetResult', {
+        detail: { success, errorCode, mission: 4 },
+      }));
+    });
     document.body.appendChild(dispatch);
     const resources = document.createElement('a');
     resources.id = 'allresources';
     document.body.appendChild(resources);
+    return { clicks: () => clicks };
+  };
 
+  it('on step 2 stashes oge_fsRedirect and dispatches on a successful send', async () => {
+    enable();
+    installFsCollect();
+    fsRoutesStore.set({
+      routes: [],
+      collectTarget: { galaxy: 4, system: 472, position: 15, type: TARGET_MOON },
+    });
+    const spy = buildStep2(true);
     /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-zone')).click();
-    expect(dispatched).toBe(true);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(spy.clicks()).toBe(1);
+    // Success → redirect to the next collect planet survives.
     expect(localStorage.getItem(FS_REDIRECT_KEY)).toContain('cp=200');
+  });
+
+  it('on a rejected send (no fuel) drops the redirect and flashes the error', async () => {
+    enable();
+    installFsCollect();
+    fsRoutesStore.set({
+      routes: [],
+      collectTarget: { galaxy: 4, system: 472, position: 15, type: TARGET_MOON },
+    });
+    buildStep2(false, 140026);
+    const zone = /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-zone'));
+    zone.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(localStorage.getItem(FS_REDIRECT_KEY)).toBeNull();
+    expect(zone.textContent).toContain('No fuel');
   });
 });
