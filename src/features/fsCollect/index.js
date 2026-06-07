@@ -363,7 +363,7 @@ const handleZone = async (mode) => {
     courierDispatch();
     setLabel(zone, 'Sent');
     pending = null;
-    lockBriefly();
+    lockBriefly(zone);
     return;
   }
 
@@ -388,8 +388,10 @@ const handleZone = async (mode) => {
   }
   busy = true;
   setLabel(zone, 'Wait…');
+  dimZone(zone, true);
   const r = await courierSelect(built.order);
   busy = false;
+  dimZone(zone, false);
   if (!r.ok) {
     flash(zone, reasonLabel(r.reason));
     return;
@@ -400,6 +402,12 @@ const handleZone = async (mode) => {
 
 const onMicroClick = () => void handleZone('micro');
 const onCollectClick = () => void handleZone('collect');
+
+/** Grey a zone out (or restore it) to show it's working / locked.
+ * @param {HTMLElement | null} zone @param {boolean} on */
+const dimZone = (zone, on) => {
+  if (zone) zone.style.opacity = on ? '0.5' : '1';
+};
 
 /**
  * Collect-zone LONG-PRESS. Mark the body you're currently on as the ad-hoc
@@ -423,11 +431,14 @@ const onSetTargetClick = () => {
   refresh();
 };
 
-/** Briefly lock the buttons while a dispatch + reload settles. */
-const lockBriefly = () => {
+/** Briefly lock (and grey) a zone while a dispatch + reload settles.
+ * @param {HTMLElement | null} [zone] */
+const lockBriefly = (zone) => {
   busy = true;
+  dimZone(zone ?? null, true);
   setTimeout(() => {
     busy = false;
+    dimZone(zone ?? null, false);
     refresh();
   }, SENT_LOCK_MS);
 };
