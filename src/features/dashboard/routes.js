@@ -278,7 +278,7 @@ export const installRoutes = ({ getUniverseId }) => {
       shipSel.appendChild(opt);
     }
     shipSel.value = String(route.microFleet.shipId);
-    shipSel.addEventListener('change', () => { route.microFleet.shipId = parseInt(shipSel.value, 10); });
+    shipSel.addEventListener('change', () => { route.microFleet.shipId = parseInt(shipSel.value, 10); updateSaveState(); });
     fleetWrap.appendChild(shipSel);
 
     const countInput = /** @type {HTMLInputElement} */ (
@@ -290,6 +290,7 @@ export const installRoutes = ({ getUniverseId }) => {
     countInput.addEventListener('input', () => {
       const n = parseInt(countInput.value, 10);
       route.microFleet.count = Number.isFinite(n) && n > 0 ? n : 0;
+      updateSaveState();
     });
     fleetWrap.appendChild(countInput);
     fleetWrap.appendChild(mk('span', 'color:#667;font-size:12px;', 'ships'));
