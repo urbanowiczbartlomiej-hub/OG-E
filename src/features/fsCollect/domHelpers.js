@@ -99,20 +99,18 @@ export const readCurrentBody = () => {
 
 /**
  * Resolve a body's display name from the live planet sidebar by matching
- * `g:s:p` AND body type. Planet rows carry `id="planet-NNN"`; moon rows
- * lack that prefix (per the gameDom comment "moons lack the planet-<id>
- * id"). When an exact type match is found we return it immediately; if only
- * the wrong type matches (e.g. the moon row is absent) we fall back to that
- * name so the label is never empty. Returns `null` when the list isn't
- * rendered or no row matches at all.
+ * `g:s:p`. Each `div.smallplanet` holds ONE planet (`.planet-name` span)
+ * and optionally ONE moon (`a.moonlink img.icon-moon[alt]`). For planet
+ * targets we return the `.planet-name` text; for moon targets we return
+ * the moon image's `alt` (the name visible in the tooltip, e.g. "K1").
+ * Falls back to the planet name when the moon image is absent. Returns
+ * `null` when no matching row is found or the list isn't rendered.
  *
  * @param {TargetCoord | null | undefined} coord
  * @returns {string | null}
  */
 export const bodyNameByCoord = (coord) => {
   if (!coord) return null;
-  /** @type {string | null} */
-  let fallback = null;
   for (const row of document.querySelectorAll(GAME.SMALL_PLANET)) {
     const c = parseCoordsText(
       row.querySelector(GAME.PLANET_KOORDS)?.textContent,
@@ -123,15 +121,15 @@ export const bodyNameByCoord = (coord) => {
       c.system === coord.system &&
       c.position === coord.position
     ) {
-      const isMoonRow = !row.id.startsWith('planet-');
-      const name = row.querySelector(GAME.PLANET_NAME)?.textContent?.trim() || null;
-      // Exact type match: return immediately.
-      if (coord.type === 3 ? isMoonRow : !isMoonRow) return name;
-      // Wrong type but matching coords: save as fallback.
-      if (name && !fallback) fallback = name;
+      if (coord.type === 3) {
+        // Moon name is the alt of the moon image inside a.moonlink.
+        const alt = row.querySelector('a.moonlink img.icon-moon')?.getAttribute('alt')?.trim();
+        return alt || row.querySelector(GAME.PLANET_NAME)?.textContent?.trim() || null;
+      }
+      return row.querySelector(GAME.PLANET_NAME)?.textContent?.trim() || null;
     }
   }
-  return fallback;
+  return null;
 };
 
 /**
