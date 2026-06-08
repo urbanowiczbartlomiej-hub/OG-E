@@ -728,6 +728,9 @@ const onColonizeSent = (e) => {
       [key]: { scannedAt: existing.scannedAt, positions: newPositions },
     };
   });
+  // Bypass the 200 ms debounce so the mark survives a page reload that
+  // the game triggers immediately after a successful sendFleet.
+  flushScansStore();
 };
 
 // ─── Lifecycle ─────────────────────────────────────────────────────────

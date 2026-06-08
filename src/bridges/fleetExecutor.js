@@ -142,6 +142,16 @@ const runCommand = (fd, cmd) => {
       return { ok: true };
     }
 
+    case 'setTargetType': {
+      // Re-arm the planet/moon type on AGR's fleet1 row after AGR finishes
+      // applying coords (its async keyup handler may have reset type to
+      // planet). Called by the courier after continueReady() clears, just
+      // before clicking continue — at that point AGR's work is done and a
+      // single type-span click is the last thing before advancing to fleet2.
+      if (args.type != null) setTargetType(Number(args.type));
+      return { ok: true };
+    }
+
     case 'selectMission': {
       const mission = Number(args.mission);
       // Select the mission by clicking the visible mission icon, NOT via

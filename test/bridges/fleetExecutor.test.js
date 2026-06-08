@@ -170,6 +170,31 @@ describe('fleetExecutor', () => {
     expect(planetClicked).toBe(0);
   });
 
+  it('setTargetType clicks the moon span and is independent of setTarget', async () => {
+    /** @type {any} */ (window).fleetDispatcher = makeFakeFd();
+    buildAgoRow();
+    let moonClicked = 0;
+    /** @type {HTMLElement} */ (document.querySelector('#ago_type .moon')).addEventListener(
+      'click', () => { moonClicked += 1; });
+
+    const res = await command('setTargetType', { type: 3 });
+    expect(res.ok).toBe(true);
+    expect(moonClicked).toBe(1);
+  });
+
+  it('setTargetType skips the click when the span is already selected', async () => {
+    /** @type {any} */ (window).fleetDispatcher = makeFakeFd();
+    buildAgoRow();
+    /** @type {HTMLElement} */ (document.querySelector('#ago_type .moon')).classList.add('selected');
+    let moonClicked = 0;
+    /** @type {HTMLElement} */ (document.querySelector('#ago_type .moon')).addEventListener(
+      'click', () => { moonClicked += 1; });
+
+    const res = await command('setTargetType', { type: 3 });
+    expect(res.ok).toBe(true);
+    expect(moonClicked).toBe(0);
+  });
+
   it('selectMission clicks the available mission icon, reports unavailable otherwise', async () => {
     /** @type {any} */ (window).fleetDispatcher = makeFakeFd();
     // mission4 is available ("on"); mission7 is present but not allowed.

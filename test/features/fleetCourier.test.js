@@ -75,6 +75,8 @@ const fakeExecutor = (opts = /** @type {any} */ ({})) => {
       res = { id, ok: true };
       // AGR enables "continue" once the target is applied.
       setTimeout(() => document.getElementById('continueToFleet2')?.classList.remove('off'), 0);
+    } else if (op === 'setTargetType') {
+      res = { id, ok: true };
     } else if (op === 'selectMission') {
       const ok = opts.missionOk ?? true;
       res = { id, ok, data: { available: ok } };
@@ -173,6 +175,10 @@ describe('select — happy path', () => {
     expect(r.ok).toBe(true);
     expect(stepAtSetTarget).toBe('fleet1');
     expect(order.indexOf('setTarget')).toBeLessThan(order.indexOf('selectMission'));
+    // setTargetType is called after continueReady (i.e. after setTarget, before
+    // selectMission) to re-arm the type in case AGR's async keyup handler reset it.
+    expect(order.indexOf('setTargetType')).toBeGreaterThan(order.indexOf('setTarget'));
+    expect(order.indexOf('setTargetType')).toBeLessThan(order.indexOf('selectMission'));
   });
 });
 

@@ -490,7 +490,7 @@ const refresh = () => {
     if (!route) {
       setLabel(microZone, 'Setup', undefined, 'no route here');
     } else if (onF2Ready && pending && pending.mode === 'micro') {
-      setLabel(microZone, 'Send', targetLabel(pending.target), 'tap to send');
+      setLabel(microZone, 'Send', collectTargetLabel(pending.target), 'tap to send');
     } else {
       const inflight = microInFlightKeys();
       const next = findNextMicroTarget(route.targets, inflight);
@@ -498,7 +498,7 @@ const refresh = () => {
         setLabel(microZone, 'Done', undefined, 'all sent');
       } else {
         const left = countRemainingMicroTargets(route.targets, inflight);
-        setLabel(microZone, 'Send', targetLabel(next), `${left} left`);
+        setLabel(microZone, 'Send', collectTargetLabel(next), `${left} left`);
       }
     }
   }

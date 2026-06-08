@@ -308,6 +308,14 @@ export const select = async (order) => {
     });
     if (!cont) return { ok: false, reason: 'notReady' };
 
+    // Re-arm the planet/moon type AFTER AGR finishes processing the coords.
+    // AGR's ago_keys_arrows handler can reset the type to planet asynchronously
+    // after our initial setTarget — re-clicking here, once continueReady()
+    // signals AGR is done, ensures the type is correct before we continue.
+    if (order.target.type != null) {
+      await rpc('setTargetType', { type: order.target.type });
+    }
+
     // Arm the checkTarget listener BEFORE continuing — the game fires its
     // checkTarget XHR as fleet2 loads, and we must not miss it.
     ctPromise = awaitCheckTarget(order.target);
