@@ -143,12 +143,20 @@ const runCommand = (fd, cmd) => {
     }
 
     case 'setTargetType': {
-      // Re-arm the planet/moon type on AGR's fleet1 row after AGR finishes
-      // applying coords (its async keyup handler may have reset type to
-      // planet). Called by the courier after continueReady() clears, just
-      // before clicking continue — at that point AGR's work is done and a
-      // single type-span click is the last thing before advancing to fleet2.
-      if (args.type != null) setTargetType(Number(args.type));
+      // Re-arm planet/moon type, called by the courier after continueReady()
+      // clears (just before clickContinue). Two complementary paths:
+      //   1. Click the AGR span — updates AGR's visual state and its internal
+      //      type if AGR does NOT filter on event.isTrusted.
+      //   2. fd.setTargetType(type) — writes directly into the game's own
+      //      fleetDispatcher so the correct type reaches fleet2 even if AGR
+      //      ignored the synthetic click (isTrusted === false in userscripts).
+      // We intentionally do NOT call fd.updateTarget() here — that would fire
+      // a second checkTarget XHR on fleet1 which the courier isn't awaiting.
+      const t = args.type != null ? Number(args.type) : null;
+      if (t != null) {
+        setTargetType(t);
+        if (typeof fd.setTargetType === 'function') fd.setTargetType(t);
+      }
       return { ok: true };
     }
 
