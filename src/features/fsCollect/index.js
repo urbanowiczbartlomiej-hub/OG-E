@@ -52,7 +52,12 @@ import {
   stampFsRoutesChanged,
   FS_REDIRECT_KEY,
 } from '../../state/fsRoutes.js';
-import { createButton as makeButton, LABEL_CLASS } from '../shared/button.js';
+import {
+  createButton as makeButton,
+  LABEL_CLASS,
+  renderLines,
+  labelLines,
+} from '../shared/button.js';
 import {
   select as courierSelect,
   dispatch as courierDispatch,
@@ -72,6 +77,7 @@ import {
   readCurrentBody,
   readDeployLegs,
   findNextCollectPlanetCp,
+  bodyNameByCoord,
 } from './domHelpers.js';
 
 // ─── DOM ids / storage keys ─────────────────────────────────────────────
@@ -107,6 +113,16 @@ const bareFleetdispatchUrl = (cp) =>
  * @param {import('../../state/fsRoutes.js').TargetCoord | null | undefined} t */
 const targetLabel = (t) =>
   t ? `→ ${t.galaxy}:${t.system}:${t.position} ${t.type === 3 ? '🌙' : '🪐'}` : '';
+
+/** Like {@link targetLabel} but prefers the body's NAME (resolved from the
+ * live planet list) over its coords — used by the "Send All" collect zone.
+ * Falls back to coords when the name can't be resolved.
+ * @param {import('../../state/fsRoutes.js').TargetCoord | null | undefined} t */
+const collectTargetLabel = (t) => {
+  if (!t) return '';
+  const name = bodyNameByCoord(t);
+  return name ? `→ ${name} ${t.type === 3 ? '🌙' : '🪐'}` : targetLabel(t);
+};
 
 /**
  * URL of the OG-E Dashboard extension page, resolved once via
@@ -182,12 +198,14 @@ const collectedOriginKeys = (target) => {
 
 /**
  * Paint a zone with up to three lines: main text, optional subtitle below,
- * optional micro-hint at the bottom (dimmer and smaller).
+ * optional micro-hint at the bottom. Renders through the SHARED
+ * {@link renderLines} + {@link labelLines} so this button reads exactly
+ * like sendCol / sendExp (one source of truth for the font sizes).
  *
  * @param {HTMLElement | null} el
  * @param {string} big
- * @param {string} [small]   subtitle below main (0.44em, 85% opacity)
- * @param {string} [hint]    micro-hint at bottom (0.37em, 55% opacity)
+ * @param {string} [small]   subtitle below main
+ * @param {string} [hint]    micro-hint at bottom (low-weight)
  * @returns {void}
  */
 const setLabel = (el, big, small, hint) => {
@@ -195,27 +213,10 @@ const setLabel = (el, big, small, hint) => {
   // Paint into the shared Button's label span so the ring/ripple
   // decoration (on the wrap) survives; fall back to the element itself.
   const target = el.querySelector('.' + LABEL_CLASS) || el;
-  target.textContent = '';
-  const wrap = document.createElement('div');
-  wrap.style.cssText =
-    'display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.1;width:100%;';
-  const middle = document.createElement('div');
-  middle.textContent = big;
-  middle.style.cssText = 'font-size:0.88em;';
-  wrap.appendChild(middle);
-  if (small) {
-    const sub = document.createElement('div');
-    sub.textContent = small;
-    sub.style.cssText = 'font-size:0.44em;opacity:0.85;letter-spacing:0.3px;margin-top:2px;';
-    wrap.appendChild(sub);
-  }
-  if (hint) {
-    const bot = document.createElement('div');
-    bot.textContent = hint;
-    bot.style.cssText = 'font-size:0.37em;opacity:0.55;margin-top:2px;letter-spacing:0.3px;';
-    wrap.appendChild(bot);
-  }
-  target.appendChild(wrap);
+  renderLines(
+    /** @type {HTMLElement} */ (target),
+    labelLines({ main: big, sub: small, hint }),
+  );
 };
 
 /**
@@ -508,9 +509,9 @@ const refresh = () => {
     if (!t) {
       setLabel(collectZone, 'Send All', undefined, '(hold to set target)');
     } else if (onF2Ready && pending && pending.mode === 'collect') {
-      setLabel(collectZone, 'Send All', targetLabel(t), 'tap to send');
+      setLabel(collectZone, 'Send All', collectTargetLabel(t), 'tap to send');
     } else {
-      setLabel(collectZone, 'Send All', targetLabel(t), '(hold to change)');
+      setLabel(collectZone, 'Send All', collectTargetLabel(t), '(hold to change)');
     }
   }
 };
@@ -553,7 +554,8 @@ export const installFsCollect = () => {
       title: 'Daily Run',
       ringId: 'oge-ring-fs',
       size,
-      fontScale: 0.14,
+      // Matches sendCol so identical `em` labels render at identical px.
+      fontScale: 0.12,
       posKey: FS_POS_KEY,
       focusKey: FOCUS_KEY,
       edgeOffset: DEFAULT_EDGE_OFFSET_PX,
@@ -567,6 +569,7 @@ export const installFsCollect = () => {
           bg: BG_MICRO,
           onTap: onMicroClick,
           focusValue: 'fs-unified-micro',
+          labelShiftY: 10,
         },
         {
           // TAP collects; LONG-PRESS (onHold) sets the collect target.
@@ -578,6 +581,7 @@ export const installFsCollect = () => {
           onTap: onCollectClick,
           onHold: onSetTargetClick,
           focusValue: 'fs-unified-collect',
+          labelShiftY: -10,
         },
       ],
     });

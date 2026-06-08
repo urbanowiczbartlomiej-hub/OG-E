@@ -98,6 +98,33 @@ export const readCurrentBody = () => {
 };
 
 /**
+ * Resolve a body's display name from the live planet sidebar by matching
+ * `g:s:p` (the `.planet-name` is the label the user recognises, so we use
+ * it for moons too — the moon shares its planet's coords). `null` when no
+ * row matches or the list isn't rendered.
+ *
+ * @param {TargetCoord | null | undefined} coord
+ * @returns {string | null}
+ */
+export const bodyNameByCoord = (coord) => {
+  if (!coord) return null;
+  for (const row of document.querySelectorAll(GAME.SMALL_PLANET)) {
+    const c = parseCoordsText(
+      row.querySelector(GAME.PLANET_KOORDS)?.textContent,
+    );
+    if (
+      c &&
+      c.galaxy === coord.galaxy &&
+      c.system === coord.system &&
+      c.position === coord.position
+    ) {
+      return row.querySelector(GAME.PLANET_NAME)?.textContent?.trim() || null;
+    }
+  }
+  return null;
+};
+
+/**
  * Read every inbound deployment leg from the event ticker as
  * `{ origin, dest }`. `origin` is `{g,s,p}` (or `null` when unreadable);
  * `dest` is a full {@link TargetCoord} (type from the dest icon —

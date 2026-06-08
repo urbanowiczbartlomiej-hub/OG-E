@@ -85,7 +85,8 @@ describe('single-zone button', () => {
     ctl.resize(120);
     expect(btn.style.width).toBe('120px');
     expect(btn.style.height).toBe('120px');
-    expect(btn.style.fontSize).toBe(Math.round(120 * 0.23) + 'px');
+    // Single-zone labels render 1px under the raw scale.
+    expect(btn.style.fontSize).toBe(Math.round(120 * 0.23) - 1 + 'px');
   });
 
   it('fires onTap on a plain click', () => {

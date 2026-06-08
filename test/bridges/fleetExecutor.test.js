@@ -104,47 +104,105 @@ describe('fleetExecutor', () => {
     expect(res.data.totalSelected).toBe(0);
   });
 
-  it('setTarget writes the native coord inputs and fires updateTarget', async () => {
-    const fd = makeFakeFd();
-    /** @type {any} */ (window).fleetDispatcher = fd;
-    for (const id of ['galaxy', 'system', 'position', 'type']) {
-      const i = document.createElement('input');
-      i.id = id;
-      document.body.appendChild(i);
-    }
+  /** Build AGR's fleet1 coord row (#ago_galaxy/system/position + #ago_type spans). */
+  const buildAgoRow = () => {
+    document.body.innerHTML = `
+      <td class="ago_coords">
+        <input id="ago_galaxy" type="text" value="">
+        <input id="ago_system" type="text" value="">
+        <input id="ago_position" type="text" value="">
+        <a id="ago_type" href="#">
+          <span class="planet"></span>
+          <span class="moon"></span>
+        </a>
+      </td>`;
+  };
+
+  it('setTarget writes AGR fleet1 coord inputs and clicks the moon span for type 3', async () => {
+    /** @type {any} */ (window).fleetDispatcher = makeFakeFd();
+    buildAgoRow();
+    let moonClicked = 0;
+    let planetClicked = 0;
+    /** @type {HTMLElement} */ (document.querySelector('#ago_type .moon')).addEventListener(
+      'click', () => { moonClicked += 1; });
+    /** @type {HTMLElement} */ (document.querySelector('#ago_type .planet')).addEventListener(
+      'click', () => { planetClicked += 1; });
+
     const res = await command('setTarget', { galaxy: 4, system: 472, position: 15, type: 3 });
     expect(res.ok).toBe(true);
-    expect(/** @type {HTMLInputElement} */ (document.getElementById('galaxy')).value).toBe('4');
-    expect(/** @type {HTMLInputElement} */ (document.getElementById('system')).value).toBe('472');
-    expect(/** @type {HTMLInputElement} */ (document.getElementById('position')).value).toBe('15');
-    expect(/** @type {HTMLInputElement} */ (document.getElementById('type')).value).toBe('3');
-    expect(fd.calls).toContainEqual(['setTargetType', 3]);
-    expect(fd.calls).toContainEqual(['updateTarget']);
+    expect(/** @type {HTMLInputElement} */ (document.getElementById('ago_galaxy')).value).toBe('4');
+    expect(/** @type {HTMLInputElement} */ (document.getElementById('ago_system')).value).toBe('472');
+    expect(/** @type {HTMLInputElement} */ (document.getElementById('ago_position')).value).toBe('15');
+    expect(moonClicked).toBe(1);
+    expect(planetClicked).toBe(0);
   });
 
-  it('selectMission selects when available, reports unavailable otherwise', async () => {
-    const fd = makeFakeFd();
-    /** @type {any} */ (window).fleetDispatcher = fd;
+  it('setTarget clicks the planet span for type 1 when planet is not already selected', async () => {
+    /** @type {any} */ (window).fleetDispatcher = makeFakeFd();
+    buildAgoRow();
+    let moonClicked = 0;
+    let planetClicked = 0;
+    /** @type {HTMLElement} */ (document.querySelector('#ago_type .moon')).addEventListener(
+      'click', () => { moonClicked += 1; });
+    /** @type {HTMLElement} */ (document.querySelector('#ago_type .planet')).addEventListener(
+      'click', () => { planetClicked += 1; });
+
+    const res = await command('setTarget', { galaxy: 1, system: 2, position: 3, type: 1 });
+    expect(res.ok).toBe(true);
+    expect(planetClicked).toBe(1);
+    expect(moonClicked).toBe(0);
+  });
+
+  it('setTarget does NOT re-click the type span when the wanted type is already selected', async () => {
+    // AGR auto-applies coords from the inputs; re-clicking the already-active
+    // type span re-fires action:42 and can stomp the just-applied target.
+    /** @type {any} */ (window).fleetDispatcher = makeFakeFd();
+    buildAgoRow();
+    // Planet is the default-selected type in AGR's row.
+    /** @type {HTMLElement} */ (document.querySelector('#ago_type .planet')).classList.add('selected');
+    let planetClicked = 0;
+    /** @type {HTMLElement} */ (document.querySelector('#ago_type .planet')).addEventListener(
+      'click', () => { planetClicked += 1; });
+
+    const res = await command('setTarget', { galaxy: 4, system: 5, position: 6, type: 1 });
+    expect(res.ok).toBe(true);
+    expect(/** @type {HTMLInputElement} */ (document.getElementById('ago_galaxy')).value).toBe('4');
+    expect(planetClicked).toBe(0);
+  });
+
+  it('selectMission clicks the available mission icon, reports unavailable otherwise', async () => {
+    /** @type {any} */ (window).fleetDispatcher = makeFakeFd();
+    // mission4 is available ("on"); mission7 is present but not allowed.
+    document.body.innerHTML = `
+      <table class="missionSelection">
+        <a class="missionIcon mission4 on" ago-data='{"mission":4}'></a>
+        <a class="missionIcon mission7" ago-data='{"mission":7}'></a>
+      </table>`;
+    let m4Clicks = 0;
+    /** @type {HTMLElement} */ (document.querySelector('.missionIcon.mission4'))
+      .addEventListener('click', () => { m4Clicks += 1; });
+
     const ok = await command('selectMission', { mission: 4 });
     expect(ok.ok).toBe(true);
     expect(ok.data.available).toBe(true);
-    expect(fd.calls).toContainEqual(['selectMission', 4]);
+    expect(m4Clicks).toBe(1);
 
     const no = await command('selectMission', { mission: 7 });
     expect(no.ok).toBe(false);
     expect(no.data.available).toBe(false);
   });
 
-  it('getSelection returns the currently selected fleet', async () => {
-    const fd = makeFakeFd();
-    fd.shipsToSend = [{ id: 203, number: 12 }, { id: 202, number: 5 }];
-    /** @type {any} */ (window).fleetDispatcher = fd;
-    const res = await command('getSelection', {});
+  it('selectMission does NOT re-click an already-selected mission icon', async () => {
+    /** @type {any} */ (window).fleetDispatcher = makeFakeFd();
+    document.body.innerHTML = `
+      <a class="missionIcon mission4 on selected" ago-data='{"mission":4}'></a>`;
+    let clicks = 0;
+    /** @type {HTMLElement} */ (document.querySelector('.missionIcon.mission4'))
+      .addEventListener('click', () => { clicks += 1; });
+
+    const res = await command('selectMission', { mission: 4 });
     expect(res.ok).toBe(true);
-    expect(res.data.ships).toEqual([
-      { id: 203, count: 12 },
-      { id: 202, count: 5 },
-    ]);
+    expect(clicks).toBe(0);
   });
 
   it('replies with an error when no fleetDispatcher is present', async () => {

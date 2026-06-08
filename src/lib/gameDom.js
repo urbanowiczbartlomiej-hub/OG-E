@@ -88,13 +88,16 @@ export const GAME = {
 
   // ── Fleetdispatch (the two-step send form) ─────────────────────────
   // Native OGame ids/classes read by the shared fleet courier (and the
-  // buttons that drive it). The ship selection + target setting go through
-  // the MAIN-world `fleetDispatcher` API (see bridges/fleetExecutor.js) —
-  // these are only the native controls the ISOLATED courier clicks /
-  // observes directly.
-  /** Step-1 container (ship selection). Absent once on step 2. */
+  // buttons that drive it). Ship + mission selection go through the
+  // MAIN-world `fleetDispatcher` API (see bridges/fleetExecutor.js); the
+  // TARGET is set on AGR's own fleet1 controls (AGO_* below) because AGR
+  // overwrites the native fleet2 coord inputs. These FD_* entries are only
+  // the native step controls the ISOLATED courier clicks / observes.
+  /** Step-1 container (ship selection). Hidden — not removed — on step 2. */
   FD_FLEET1: '#fleet1',
-  /** "Continue to step 2" control (step 1). */
+  /** Step-2 container (target / mission / dispatch). Hidden on step 1. */
+  FD_FLEET2: '#fleet2',
+  /** "Continue to step 2" control (step 1). Carries `.off` until ready. */
   FD_CONTINUE: '#continueToFleet2',
   /** "Dispatch fleet" control — present ONLY on step 2. */
   FD_DISPATCH: '#dispatchFleet',
@@ -102,16 +105,24 @@ export const GAME = {
   FD_DISABLED_CLASS: 'off',
   /** "Load all resources" control (step 2). */
   FD_ALL_RESOURCES: '#allresources',
-  // Target coord inputs on step 2. NB: the game renders the SAME ids on
-  // both steps, so these match TWO nodes — set all of them. The target is
-  // applied by writing these inputs + firing input/keyup/change/blur and
-  // then calling fleetDispatcher.updateTarget() (setTargetPlanet alone is
-  // a no-op — verified on the live page).
-  FD_GALAXY: '#galaxy',
-  FD_SYSTEM: '#system',
-  FD_POSITION: '#position',
-  /** Hidden target-type input (1 planet · 2 debris · 3 moon). */
-  FD_TYPE: '#type',
+
+  // ── AGR fleet1 target interface (the dedicated coord row AGR injects) ─
+  // The target (coords + planet/moon type) is set HERE, on fleet1, not on
+  // the native fleet2 inputs — AGR clobbers fleet2's target with its own,
+  // so the only durable way to aim a fleet is through AGR's own controls.
+  // Writing these inputs (with the keystroke event sequence) feeds AGR's
+  // `ago_keys_arrows` handler; clicking a type span fires AGR `action:42`.
+  // These are AGR-owned ids — kept verbatim; an AGR rename is a one-liner.
+  /** AGR galaxy coord input (fleet1). */
+  AGO_GALAXY: '#ago_galaxy',
+  /** AGR system coord input (fleet1). */
+  AGO_SYSTEM: '#ago_system',
+  /** AGR position coord input (fleet1). */
+  AGO_POSITION: '#ago_position',
+  /** AGR planet target-type span (ago-data type:1, action:42). */
+  AGO_TYPE_PLANET: '#ago_type .planet',
+  /** AGR moon target-type span (ago-data type:3, action:42). */
+  AGO_TYPE_MOON: '#ago_type .moon',
 
   // ── Top menu ───────────────────────────────────────────────────────
   MENU_TABLE: '#menuTable',

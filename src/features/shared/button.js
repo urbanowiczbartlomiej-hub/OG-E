@@ -32,9 +32,14 @@ import { decorateButton } from './buttonChrome.js';
 import { installDrag, installFocusPersist } from './draggableButton.js';
 import { safeLS } from '../../lib/storage.js';
 
-/** Shared drop-shadow every floating button pins (matches the originals). */
+/**
+ * Shared drop-shadow every floating button pins. Deeper than the original,
+ * and the `0 0 18px 5px` layer (no offset, positive spread) makes the
+ * shadow begin already AT the button's outer rim rather than only past it.
+ */
 const SHADOW =
-  '0 8px 22px rgba(0,0,0,0.55),0 3px 8px rgba(0,0,0,0.45),0 0 0 1px rgba(0,0,0,0.40)';
+  '0 10px 30px rgba(0,0,0,0.70),0 4px 12px rgba(0,0,0,0.60),' +
+  '0 0 18px 5px rgba(0,0,0,0.55),0 0 0 1px rgba(0,0,0,0.45)';
 
 /** Class on the per-zone label container the paint methods write into. */
 export const LABEL_CLASS = 'oge-btn-label';
@@ -62,6 +67,10 @@ export const LABEL_CLASS = 'oge-btn-label';
  * @property {() => void} [onHold]         present ⇒ enables long-press on this zone.
  * @property {string} [focusValue]         present ⇒ persist focus under `focusKey`.
  * @property {number} [focusRestoreDelay]
+ * @property {number} [labelShiftY]        px to nudge this zone's label toward
+ *                                         the button centre (split buttons:
+ *                                         +down on the top zone, -up on the
+ *                                         bottom one). Applied to the label span.
  */
 
 /**
@@ -137,7 +146,7 @@ const place = (el, posKey, size, edgeOffset) => {
  * @param {LabelLine[]} lines
  * @returns {void}
  */
-const renderLines = (span, lines) => {
+export const renderLines = (span, lines) => {
   span.textContent = '';
   const col = document.createElement('div');
   col.style.cssText =
@@ -157,6 +166,29 @@ const renderLines = (span, lines) => {
 };
 
 /**
+ * Canonical stacked-label spec shared by every button so all three read
+ * identically: a 1em primary on top, an optional 0.5em caption below, and
+ * an optional 0.34em low-weight hint at the bottom. An omitted/empty
+ * `sub`/`hint` drops that line. This is the single source of truth for the
+ * label font sizes / opacities / spacing — pass the result to
+ * {@link renderLines} (or `Button.paintLines`).
+ *
+ * @param {{ main: string, sub?: string, hint?: string }} parts
+ * @returns {LabelLine[]}
+ */
+export const labelLines = ({ main, sub, hint }) => {
+  /** @type {LabelLine[]} */
+  const lines = [{ text: main, em: '1em' }];
+  if (sub != null && sub !== '') {
+    lines.push({ text: sub, em: '0.5em', opacity: 0.85, marginTop: 2, letterSpacing: 0.5 });
+  }
+  if (hint != null && hint !== '') {
+    lines.push({ text: hint, em: '0.34em', opacity: 0.55, marginTop: 2, letterSpacing: 0.5 });
+  }
+  return lines;
+};
+
+/**
  * Build, mount and wire a floating button from `cfg`. Returns a controller,
  * or `null` if a button with `cfg.id` is already mounted (idempotent
  * mount — mirrors the features' pre-existing guard).
@@ -171,8 +203,10 @@ export const createButton = (cfg) => {
   const dragThreshold = cfg.dragThreshold ?? DEFAULTS.dragThreshold;
   const focusKey = cfg.focusKey ?? DEFAULTS.focusKey;
   const holdMs = cfg.holdMs ?? DEFAULTS.holdMs;
-  const base = Math.round(cfg.size * cfg.fontScale) + 'px';
   const single = cfg.zones.length === 1;
+  // Single-zone labels run 1px smaller than the raw scale (the split
+  // buttons keep theirs, which stay legible across two stacked halves).
+  const base = Math.round(cfg.size * cfg.fontScale) - (single ? 1 : 0) + 'px';
 
   /** @type {Map<string, HTMLElement>} zone key → zone element. */
   const zoneEls = new Map();
@@ -252,12 +286,16 @@ export const createButton = (cfg) => {
   }
 
   // Label container per zone (a span the paint methods rewrite, leaving the
-  // ring/ripple decoration — appended to the host below — untouched).
-  for (const [key, el] of zoneEls) {
+  // ring/ripple decoration — appended to the host below — untouched). An
+  // optional per-zone `labelShiftY` nudges the whole label toward centre;
+  // it rides on the span so it survives every repaint.
+  for (const z of cfg.zones) {
+    const el = /** @type {HTMLElement} */ (zoneEls.get(z.key));
     const span = document.createElement('span');
     span.className = LABEL_CLASS;
+    if (z.labelShiftY) span.style.transform = `translateY(${z.labelShiftY}px)`;
     el.appendChild(span);
-    labelEls.set(key, span);
+    labelEls.set(z.key, span);
   }
 
   place(outer, cfg.posKey, cfg.size, edgeOffset);
@@ -395,7 +433,7 @@ export const createButton = (cfg) => {
     resize: (size) => {
       outer.style.width = size + 'px';
       outer.style.height = size + 'px';
-      const px = Math.round(size * cfg.fontScale) + 'px';
+      const px = Math.round(size * cfg.fontScale) - (single ? 1 : 0) + 'px';
       if (single) {
         outer.style.fontSize = px;
       } else {

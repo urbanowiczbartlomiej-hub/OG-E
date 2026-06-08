@@ -493,29 +493,40 @@ describe('onSendClick — fleetdispatch branch', () => {
   // A fake MAIN executor + a step-1→step-2 DOM, so a tap-1 select() can
   // reach a ready step 2 (the real courier flow is covered in
   // fleetCourier.test.js; here we prove sendCol wires into it).
-  /** @param {{ errorCode?: number|null, missionOk?: boolean }} [opts] */
+  /** @param {{ errorCode?: number|null, missionOk?: boolean, orders?: Record<string,boolean> }} [opts] */
   const armCourier = (opts = {}) => {
     document.dispatchEvent(new CustomEvent('oge:fleetDispatcher', {
       detail: { shipsOnPlanet: [{ id: 208, number: 1 }], orders: {} },
     }));
     document.body.insertAdjacentHTML('beforeend', '<div id="fleet1"></div>');
+    let lastTarget = /** @type {any} */ (null);
     const cont = document.createElement('a');
     cont.id = 'continueToFleet2';
+    cont.className = 'off';
     cont.addEventListener('click', () => {
       document.getElementById('fleet1')?.remove();
       const d = document.createElement('a');
       d.id = 'dispatchFleet';
       d.className = 'off';
       document.body.appendChild(d);
+      // The game fires checkTarget as fleet2 loads (carries orders + errorCode).
+      const t = lastTarget || {};
+      document.dispatchEvent(new CustomEvent('oge:checkTargetResult', {
+        detail: {
+          galaxy: t.galaxy, system: t.system, position: t.position,
+          errorCode: opts.errorCode ?? null,
+          orders: opts.orders ?? { 7: true },
+        },
+      }));
     });
     document.body.appendChild(cont);
     const onCmd = (/** @type {any} */ e) => {
       const { id, op, args } = e.detail;
       /** @type {any} */ let res = { id, ok: true };
       if (op === 'setTarget') {
-        setTimeout(() => document.dispatchEvent(new CustomEvent('oge:checkTargetResult', {
-          detail: { galaxy: args.galaxy, system: args.system, position: args.position, errorCode: opts.errorCode ?? null },
-        })), 0);
+        lastTarget = args;
+        // AGR enables "continue" once the target is applied.
+        setTimeout(() => document.getElementById('continueToFleet2')?.classList.remove('off'), 0);
       } else if (op === 'selectMission') {
         const ok = opts.missionOk ?? true;
         res = { id, ok, data: { available: ok } };

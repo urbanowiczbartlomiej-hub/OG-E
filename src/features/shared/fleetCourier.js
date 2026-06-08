@@ -28,7 +28,7 @@
 // readiness is read from the game's `.off` class, NOT a timer — which is
 // why a too-early "send" can't lock the button: it simply isn't ready yet.
 
-import { resolveSelection, classifyTargetError } from '../../domain/fleetPlan.js';
+import { resolveSelection, classifyTargetError, isMissionAllowed } from '../../domain/fleetPlan.js';
 import { FD_CMD_EVENT, FD_RES_EVENT, FD_SEND_RESULT_EVENT } from '../../lib/fleetProtocol.js';
 import { GAME } from '../../lib/gameDom.js';
 import { safeClick, waitFor } from '../../lib/dom.js';
@@ -41,6 +41,8 @@ const CHECK_TARGET_TIMEOUT_MS = 8000;
 const STEP2_TIMEOUT_MS = 8000;
 /** How long to wait for the dispatch control to become ready. */
 const READY_TIMEOUT_MS = 8000;
+/** How long to retry arming the mission icon after checkTarget confirms it. */
+const MISSION_ARM_TIMEOUT_MS = 2000;
 /** How long to wait for the sendFleet result after a dispatch click. */
 const SEND_RESULT_TIMEOUT_MS = 8000;
 const POLL_MS = 100;
@@ -85,16 +87,53 @@ let installed = false;
 // ─── step / readiness (pure DOM reads) ─────────────────────────────────────
 
 /**
- * Which step of the fleetdispatch form we're on, from live DOM — so a
- * back-button or manual navigation is reflected immediately (no internal
- * step counter to desync).
+ * Is `el` present AND not hidden? OGame/AGR toggle between fleet1 and fleet2
+ * by VISIBILITY (jQuery .show()/.hide() → inline `display`), not by adding/
+ * removing nodes — and the player can hop back via AGR's `backToFleet1`
+ * button. So node existence is not enough; we must honour `display:none` on
+ * the element or any ancestor. (Inline-style walk is deterministic under
+ * happy-dom; jQuery sets display inline, which is what OGame uses.)
+ *
+ * @param {Element | null} el
+ * @returns {boolean}
+ */
+const isShown = (el) => {
+  if (!el) return false;
+  for (let n = /** @type {Element | null} */ (el); n && n.nodeType === 1; n = n.parentElement) {
+    const style = /** @type {HTMLElement} */ (n).style;
+    if (style && style.display === 'none') return false;
+  }
+  return true;
+};
+
+/**
+ * Which step of the fleetdispatch form is VISIBLE, from live DOM — so a
+ * back-button (AGR `backToFleet1`) or manual navigation is reflected
+ * immediately (no internal step counter to desync). We key off visibility,
+ * not existence, because both `#fleet1` and `#fleet2` stay in the DOM and are
+ * shown/hidden in place.
  *
  * @returns {'off' | 'fleet1' | 'fleet2'}
  */
 export const step = () => {
-  if (document.querySelector(GAME.FD_DISPATCH)) return 'fleet2';
-  if (document.querySelector(GAME.FD_FLEET1)) return 'fleet1';
+  if (isShown(document.querySelector(GAME.FD_FLEET2))) return 'fleet2';
+  if (isShown(document.querySelector(GAME.FD_DISPATCH))) return 'fleet2';
+  if (isShown(document.querySelector(GAME.FD_FLEET1))) return 'fleet1';
   return 'off';
+};
+
+/**
+ * Whether AGR has enabled the "continue to step 2" control — it carries the
+ * `.off` class until the selected ships + target are applied, then clears it.
+ * This is the durable "ready to advance" signal under AGR (which auto-applies
+ * the target straight from the fleet1 inputs), replacing a blocking wait on
+ * the game's checkTarget XHR (AGR doesn't reliably fire it on fleet1).
+ *
+ * @returns {boolean}
+ */
+const continueReady = () => {
+  const el = document.querySelector(GAME.FD_CONTINUE);
+  return !!el && !el.classList.contains(GAME.FD_DISABLED_CLASS);
 };
 
 /**
@@ -110,6 +149,25 @@ export const readyToDispatch = () => {
 };
 
 // ─── RPC to the MAIN executor ──────────────────────────────────────────────
+
+/**
+ * Make `detail` readable by the MAIN-world executor. We dispatch the command
+ * event from the ISOLATED content-script world; on Firefox the page (MAIN)
+ * realm cannot read properties of an isolated-world object across the Xray
+ * boundary — reading `detail.id` there throws "Permission denied to access
+ * property id" and the executor never replies (the RPC then times out). The
+ * fix is the standard WebExtension idiom: clone the payload into the page
+ * realm with `cloneInto` so it's a page-world object. Chrome has no Xray, so
+ * `cloneInto` is absent there and we pass the object through unchanged.
+ *
+ * @template T
+ * @param {T} detail
+ * @returns {T}
+ */
+const toPageRealm = (detail) => {
+  const fn = /** @type {any} */ (globalThis).cloneInto;
+  return typeof fn === 'function' ? fn(detail, window) : detail;
+};
 
 /**
  * Send one command to the MAIN executor and await its reply. Resolves the
@@ -139,7 +197,9 @@ const rpc = (op, args = {}, timeoutMs = RPC_TIMEOUT_MS) =>
     };
     const timer = setTimeout(() => finish(null), timeoutMs);
     document.addEventListener(FD_RES_EVENT, onRes);
-    document.dispatchEvent(new CustomEvent(FD_CMD_EVENT, { detail: { id, op, args } }));
+    document.dispatchEvent(
+      new CustomEvent(FD_CMD_EVENT, { detail: toPageRealm({ id, op, args }) }),
+    );
   });
 
 /**
@@ -147,7 +207,7 @@ const rpc = (op, args = {}, timeoutMs = RPC_TIMEOUT_MS) =>
  * for other coords. Resolves the detail or `null` on timeout.
  *
  * @param {Target} target
- * @returns {Promise<{ errorCode: number | null } | null>}
+ * @returns {Promise<{ errorCode: number | null, orders: Record<string, boolean> | null } | null>}
  */
 const awaitCheckTarget = (target) =>
   new Promise((resolve) => {
@@ -199,18 +259,6 @@ const availability = () => {
   return map;
 };
 
-/**
- * Read the fleet the user currently has selected on fleet1 (via the MAIN
- * executor's `getSelection`). Used by Expeditions to capture a fleet preset
- * on long-press. Resolves `[]` when nothing's selected or off-page.
- *
- * @returns {Promise<Array<{ id: number, count: number }>>}
- */
-export const readSelection = async () => {
-  const r = await rpc('getSelection');
-  return r && r.ok && r.data && Array.isArray(r.data.ships) ? r.data.ships : [];
-};
-
 // ─── the two-tap surface ───────────────────────────────────────────────────
 
 /**
@@ -234,10 +282,35 @@ export const select = async (order) => {
     };
   }
 
-  // Step 1: select ships via the MAIN controller, then advance to step 2.
+  // Step 1: select ships, set the target on AGR's OWN fleet1 controls, then
+  // click "continue" once AGR marks it ready. The target MUST be set here, on
+  // fleet1 — on fleet2 AGR overwrites the native coord inputs with its own,
+  // so fleet1's AGR row is the only durable way to aim. (A fleet2 re-entry —
+  // e.g. retry after a mission rejection — skips this block and relies on the
+  // target AGR is already holding from the prior fleet1 pass.)
+  //
+  // We do NOT block on checkTarget here on fleet1: AGR auto-applies the coords
+  // and the game fires its checkTarget on the fleet1→fleet2 transition, not on
+  // the fleet1 inputs. So we gate fleet1 on AGR clearing the `.off` class on
+  // #continueToFleet2 (its "applied & valid" signal), arm the checkTarget
+  // listener just before continuing, and read the result on fleet2 below.
+  /** @type {Promise<{ errorCode: number|null, orders: Record<string,boolean>|null } | null> | null} */
+  let ctPromise = null;
   if (step() === 'fleet1') {
     const r = await rpc('selectShips', { ships: sel.selection });
     if (!r || !r.ok) return { ok: false, reason: 'selectFailed' };
+
+    await rpc('setTarget', order.target);
+
+    const cont = await waitFor(() => (continueReady() ? true : null), {
+      timeoutMs: STEP2_TIMEOUT_MS,
+      intervalMs: POLL_MS,
+    });
+    if (!cont) return { ok: false, reason: 'notReady' };
+
+    // Arm the checkTarget listener BEFORE continuing — the game fires its
+    // checkTarget XHR as fleet2 loads, and we must not miss it.
+    ctPromise = awaitCheckTarget(order.target);
     clickContinue();
     const onF2 = await waitFor(() => (step() === 'fleet2' ? true : null), {
       timeoutMs: STEP2_TIMEOUT_MS,
@@ -246,19 +319,36 @@ export const select = async (order) => {
     if (!onF2) return { ok: false, reason: 'noFleet2' };
   }
 
-  // Step 2: set the target (the game fires checkTarget), read the result.
-  const ctPromise = awaitCheckTarget(order.target);
-  await rpc('setTarget', order.target);
-  const ct = await ctPromise;
-  if (!ct) return { ok: false, reason: 'timeout' };
-
-  const tag = classifyTargetError(ct.errorCode);
-  if (tag !== 'ok') {
-    return { ok: false, reason: tag, ...(ct.errorCode != null ? { errorCode: ct.errorCode } : {}) };
+  // Step 2: read the game's checkTarget for this target (fired on the fleet2
+  // transition). Its `errorCode` flags an unusable target (noMoon/reserved/
+  // noShip → the feature marks the slot for re-scan); its `orders` map says
+  // whether the mission is permitted — authoritative even though fd.orders is
+  // empty when AGR applied the target. Gating here is a fast pass/fail; no
+  // blind polling.
+  if (ctPromise) {
+    const ct = await ctPromise;
+    if (ct) {
+      const tag = classifyTargetError(ct.errorCode);
+      if (tag !== 'ok') {
+        return { ok: false, reason: tag, ...(ct.errorCode != null ? { errorCode: ct.errorCode } : {}) };
+      }
+      if (ct.orders && !isMissionAllowed(ct.orders, order.mission)) {
+        return { ok: false, reason: 'mission' };
+      }
+    }
   }
 
-  // Mission must be allowed for this target.
-  const m = await rpc('selectMission', { mission: order.mission });
+  // Arm the mission by clicking its icon (via the executor). checkTarget has
+  // confirmed it's allowed, so the icon is `on`; a short retry covers the
+  // brief render lag between the XHR landing and AGR painting the icon.
+  /** @type {{ ok: boolean, data?: any, error?: string } | null} */
+  let m = null;
+  const missionTries = Math.max(1, Math.ceil(MISSION_ARM_TIMEOUT_MS / POLL_MS));
+  for (let i = 0; i < missionTries; i += 1) {
+    m = await rpc('selectMission', { mission: order.mission });
+    if (m && m.ok) break;
+    await new Promise((r) => setTimeout(r, POLL_MS));
+  }
   if (!m || !m.ok) return { ok: false, reason: 'mission' };
 
   if (order.resources === 'all') clickAllResources();

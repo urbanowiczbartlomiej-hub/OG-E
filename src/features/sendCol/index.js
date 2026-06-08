@@ -82,7 +82,7 @@ import { scansStore, flushScansStore } from '../../state/scans.js';
 import { registryStore } from '../../state/registry.js';
 import { safeLS } from '../../lib/storage.js';
 import { parsePositions } from '../../domain/positions.js';
-import { createButton as makeButton } from '../shared/button.js';
+import { createButton as makeButton, labelLines } from '../shared/button.js';
 import {
   select as courierSelect,
   dispatch as courierDispatch,
@@ -219,9 +219,10 @@ const bareFleetdispatchUrl = () =>
 
 /**
  * Paint one zone of the button from a {@link Paint}. `subtext` → two
- * stacked lines (small caption on top, big primary below, matching the
- * previous bespoke layout); otherwise a single line. Always writes the
- * background and the dim (greyed-out) flag. No-op while unmounted.
+ * stacked lines (big primary on top, small caption below — matching the
+ * fsCollect / sendExp layout so all three buttons read the same way);
+ * otherwise a single line. Always writes the background and the dim
+ * (greyed-out) flag. No-op while unmounted.
  *
  * @param {'send'|'scan'} key
  * @param {Paint} p
@@ -230,10 +231,7 @@ const bareFleetdispatchUrl = () =>
 const paintZone = (key, p) => {
   if (!controller) return;
   if (p.subtext) {
-    controller.paintLines(key, [
-      { text: p.subtext, em: '0.5em', opacity: 0.85, letterSpacing: 0.5 },
-      { text: p.text, em: '1em', marginTop: 2 },
-    ]);
+    controller.paintLines(key, labelLines({ main: p.text, sub: p.subtext }));
   } else {
     controller.setText(key, p.text);
   }
@@ -355,7 +353,10 @@ const colErrorPaint = (reason, c) => {
     case 'timeout':
       return { text: coords, subtext: 'Timeout', bg: BG_SEND_STALE };
     default:
-      return { text: coords, subtext: 'Failed', bg: BG_SEND_ERROR };
+      // Surface the raw courier reason (selectFailed / noFleet2 / empty /
+      // notReady / generic / …) so a failure is diagnosable at a glance
+      // instead of a catch-all "Failed".
+      return { text: coords, subtext: reason || 'Failed', bg: BG_SEND_ERROR };
   }
 };
 
@@ -796,6 +797,7 @@ export const installSendCol = () => {
           onTap: () => void onSendClick(),
           focusValue: FOCUS_SEND,
           focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,
+          labelShiftY: 10,
         },
         {
           key: 'scan',
@@ -805,6 +807,7 @@ export const installSendCol = () => {
           onTap: onScanClick,
           focusValue: FOCUS_SCAN,
           focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,
+          labelShiftY: -10,
         },
       ],
     });

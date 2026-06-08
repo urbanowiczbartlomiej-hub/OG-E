@@ -14,22 +14,22 @@
 // 560) and draggable to the user's preferred spot on the screen, so it
 // is always comfortably reachable with the thumb.
 //
-// # What one click does (three cases, each = exactly ONE game action)
+// # What one click does (each tap = exactly ONE game action)
 //
 //   1. User is NOT on fleetdispatch → we navigate to fleetdispatch with
-//      `mission=15` and `cp=<current planet>`. The game's own page load
-//      happens next; we originate no request ourselves.
-//   2. User IS on fleetdispatch with `mission=15` → we synthesize an
-//      `Enter` keyboard event on `document.activeElement`. OGame's own
-//      keydown handler reads that and calls `sendFleet`. We never call
-//      the game's internals directly.
-//   3. User IS on fleetdispatch with a different mission → we navigate
-//      to the same fleetdispatch page with `mission=15` substituted in.
-//      Exactly one navigation, no cascade.
+//      `cp=<a planet that still has an expedition slot>`. The game's own
+//      page load happens next; we originate no request ourselves.
+//   2. On fleetdispatch, fleet panel NOT yet hydrated → we click AGR's
+//      expedition routine `#ago_routine_7` (once it reports ready). AGR
+//      assigns the mission + fleet and renders the native dispatch button;
+//      the label flips to "Send!" so the user's NEXT tap sends.
+//   3. On fleetdispatch, fleet panel hydrated (`#dispatchFleet` present)
+//      → we click the native dispatch button. Exactly one send.
 //
 // The "one click → one action" contract is the same TOS-safe boundary
 // every OG-E feature respects: we never chain server-visible actions,
-// and we never originate our own requests.
+// and we lean on AGR (which every player runs) rather than driving the
+// native form ourselves — AGR overwrites the fleet2 target anyway.
 //
 // # Max-expedition guard
 //
@@ -69,18 +69,9 @@
 //   post-send `redirectUrl` so successive dispatches hop planets.
 
 import { settingsStore } from '../../state/settings.js';
-import { safeLS } from '../../lib/storage.js';
+import { safeClick, waitFor } from '../../lib/dom.js';
 import { GAME, ACTIVE_PLANET_CLASS } from '../../lib/gameDom.js';
 import { createButton as makeButton, LABEL_CLASS } from '../shared/button.js';
-import {
-  select as courierSelect,
-  dispatch as courierDispatch,
-  step as courierStep,
-  readyToDispatch,
-  readSelection as courierReadSelection,
-  installFleetCourier,
-} from '../shared/fleetCourier.js';
-import { MISSION_EXPEDITION, TARGET_PLANET } from '../../domain/rules.js';
 import {
   BUTTON_ID,
   FOCUS_KEY,
@@ -88,6 +79,8 @@ import {
   POS_KEY,
   DRAG_THRESHOLD,
   MAX_LABEL_MS,
+  POLL_TIMEOUT_MS,
+  POLL_INTERVAL_MS,
   DEFAULT_EDGE_OFFSET_PX,
   FOCUS_RESTORE_DELAY_MS,
   EVENTBOX_SAFETY_TIMEOUT_MS,
@@ -100,6 +93,7 @@ import {
   buildFleetdispatchUrl,
   isGlobalExpeditionCapReached,
   isGlobalExpeditionCapReachedAfterNextSend,
+  computeInitialLabel,
 } from './pure.js';
 
 /**
@@ -153,28 +147,6 @@ const getActivePlanetCoords = () => {
   const coords = stripBrackets(coordsEl?.textContent);
   return coords || null;
 };
-
-// ── Expedition fleet preset (remembered via long-press) ──────────────
-//
-// The fleet the courier sends on each expedition. Captured from the live
-// fleet1 selection on a long-press (see onExpHold) and replayed with a
-// 51% requirement fraction: send what you have as long as you have at
-// least half the remembered count of every ship.
-
-/** localStorage key for the remembered expedition fleet preset. */
-const EXP_FLEET_KEY = 'oge_expFleet';
-/** Per-ship requirement fraction for the remembered preset. */
-const EXP_FLEET_FRAC = 0.51;
-
-/** @returns {Array<{ id: number, count: number }>} */
-const readExpPreset = () => {
-  const v = safeLS.json(EXP_FLEET_KEY);
-  const ships = v && /** @type {any} */ (v).ships;
-  return Array.isArray(ships) ? ships : [];
-};
-
-/** @param {Array<{ id: number, count: number }>} ships */
-const saveExpPreset = (ships) => safeLS.setJSON(EXP_FLEET_KEY, { ships });
 
 /**
  * Count currently in-flight expeditions, filtered to those whose origin
@@ -281,9 +253,6 @@ let installed = null;
 export const installSendExp = () => {
   if (installed) return installed.dispose;
 
-  // Cache the fleetDispatcher snapshot (ship availability) for the courier.
-  installFleetCourier();
-
   // Re-entry guard: a user tapping twice during Phase 2 polling must
   // NOT start a second poll loop (or double-click the routine element,
   // which at best is wasted and at worst confuses AGR's state machine).
@@ -295,8 +264,6 @@ export const installSendExp = () => {
   // so the phase logic stays untouched.
   /** @type {import('../shared/button.js').Button | null} */
   let controller = null;
-  /** True once a tap-1 select() has armed a ready expedition on step 2. */
-  let expReady = false;
 
   // Eventbox readiness gate (fleetdispatch only). On `component=fleetdispatch`
   // OGame fires an async XHR for the fleet-event list shortly after page
@@ -404,46 +371,99 @@ export const installSendExp = () => {
   };
 
   /**
-   * Send-button TAP — two intentional taps via the shared courier (no AGR).
-   * Tap 1 selects the remembered fleet preset + the pos-16 expedition target
-   * and walks to a ready step 2; tap 2 dispatches. Off fleetdispatch (or when
-   * the current planet is maxed) it first navigates to a planet that still
-   * has an expedition slot. The per-planet + global caps are unchanged.
+   * Phase 2 (fleetdispatch, fleet panel NOT yet loaded): wait for AGR's
+   * `#ago_routine_7` to exist and inspect its `.ago_routine_check` child.
+   * Three outcomes:
+   *
+   *   - `ago_routine_check_3` (ready): click the routine element — AGR
+   *     renders `#ago_fleet2_main` + the native `#dispatchFleet` button.
+   *     Then wait for both and flip the label to "Send!" so the user's
+   *     next tap issues the real send.
+   *   - `ago_routine_check_1` / `_check_2` (no ships): no expedition is
+   *     possible from here. Navigate to the next planet that still has
+   *     slots, else paint "All maxed!".
+   *   - Routine never appears within {@link POLL_TIMEOUT_MS}: give up
+   *     quietly and restore the idle label. The user can retry.
    *
    * @param {HTMLButtonElement} btn
    * @returns {Promise<void>}
    */
-  const handleClick = async (btn) => {
-    if (busy) return;
+  const runPhase2 = async (btn) => {
+    setLabel(btn, 'Loading...');
 
-    // Eventbox-readiness gate (fleetdispatch only). The cap counts read
-    // `#eventContent`, authoritative only after OGame's eventbox XHR lands.
-    if (!eventBoxReady) {
-      setLabel(btn, 'Wait…');
-      setTimeout(() => {
-        if (getLabel(btn) === 'Wait…') setLabel(btn, BUTTON_TEXT);
-      }, EVENTBOX_LOADING_LABEL_MS);
+    const routine = await waitFor(() => {
+      const el = document.getElementById('ago_routine_7');
+      return el?.querySelector('.ago_routine_check') ? el : null;
+    }, { timeoutMs: POLL_TIMEOUT_MS, intervalMs: POLL_INTERVAL_MS });
+
+    if (!routine) {
+      setLabel(btn, BUTTON_TEXT);
+      unlock(btn);
       return;
     }
 
-    const s = courierStep();
+    const check = routine.querySelector('.ago_routine_check');
+    if (check?.classList.contains('ago_routine_check_3')) {
+      // Routine is ready — AGR prep+fire. The 50 ms delayed second click
+      // shakes loose cases where one click left AGR half-idled.
+      safeClick(routine);
+      setTimeout(() => safeClick(routine), 50);
+      setLabel(btn, 'Preparing...');
 
-    // Tap 2 — dispatch the armed expedition.
-    if (expReady && s === 'fleet2') {
-      if (!readyToDispatch()) return;
-      lock(btn);
-      setLabel(btn, 'Wait…');
-      const r = await courierDispatch();
-      expReady = false;
-      if (!r.ok) {
-        unlock(btn);
-        setLabel(btn, r.errorCode === 140026 ? 'No fuel' : 'Failed');
-        return;
-      }
-      // Success → the game navigates; expeditionRedirect hops to the next
-      // planet with a free slot. Keep "Sent!" until that reload settles.
-      setLabel(btn, 'Sent!');
-      setTimeout(() => unlock(btn), 3000);
+      const ready = await waitFor(
+        () =>
+          document.getElementById('dispatchFleet')
+            && document.getElementById('ago_fleet2_main')
+            ? true
+            : null,
+        { timeoutMs: POLL_TIMEOUT_MS, intervalMs: POLL_INTERVAL_MS },
+      );
+
+      setLabel(btn, ready ? 'Send!' : BUTTON_TEXT);
+      unlock(btn);
+      return;
+    }
+
+    // `_check_1` or `_check_2` → no ships here. Look for a planet that CAN
+    // still send; navigate there. If none, paint "All maxed!".
+    setLabel(btn, 'No ships');
+    const nextCp = findPlanetWithExpSlot(true);
+    if (nextCp !== null) {
+      location.href = buildFleetdispatchUrl(nextCp);
+      return;
+    }
+    paintAllMaxed(btn);
+    unlock(btn);
+  };
+
+  /**
+   * Send-button TAP — drive AGR's expedition routine (no fleet memory).
+   *
+   * Flow:
+   *   - Eventbox gate: on fleetdispatch the cap counts + routine state are
+   *     stale until OGame's eventbox XHR lands; paint a brief cue and bail.
+   *   - Global-cap gate → "All maxed!".
+   *   - Off fleetdispatch → hop to the first planet with a free slot.
+   *   - On fleetdispatch, current-planet cap full → jump to the next free
+   *     planet (unless the next send would hit the global cap anyway).
+   *   - Phase 1 (fleet panel already loaded) → click `#dispatchFleet`.
+   *   - Phase 2 (panel not loaded) → {@link runPhase2}: click AGR's routine.
+   *
+   * @param {HTMLButtonElement} btn
+   * @returns {void}
+   */
+  const handleClick = (btn) => {
+    if (busy) return;
+
+    // Eventbox-readiness gate (fleetdispatch only). The cap counts + AGR's
+    // `#ago_routine_7` check class are authoritative only after OGame's
+    // eventbox XHR lands. Clicking before that polls a half-hydrated DOM.
+    if (!eventBoxReady) {
+      const original = getLabel(btn);
+      setLabel(btn, 'Loading...');
+      setTimeout(() => {
+        if (getLabel(btn) === 'Loading...') setLabel(btn, original || BUTTON_TEXT);
+      }, EVENTBOX_LOADING_LABEL_MS);
       return;
     }
 
@@ -453,8 +473,10 @@ export const installSendExp = () => {
       return;
     }
 
+    const isFleet = location.search.includes('component=fleetdispatch');
+
     // Off fleetdispatch → hop to the first planet with a free slot.
-    if (s === 'off') {
+    if (!isFleet) {
       const cp = findPlanetWithExpSlot(false);
       if (cp === null) {
         paintAllMaxed(btn);
@@ -481,64 +503,24 @@ export const installSendExp = () => {
       return;
     }
 
-    // Tap 1 — select the remembered fleet preset to the pos-16 target.
-    const preset = readExpPreset();
-    if (preset.length === 0) {
-      // Nothing remembered yet — guide the user to the long-press capture.
-      setLabel(btn, 'Hold to set');
-      setTimeout(() => {
-        if (getLabel(btn) === 'Hold to set') setLabel(btn, BUTTON_TEXT);
-      }, EVENTBOX_LOADING_LABEL_MS);
-      return;
-    }
-    const here = getActivePlanetCoords();
-    const parts = here ? here.split(':').map((n) => parseInt(n, 10)) : null;
-    if (!parts || parts.some((n) => Number.isNaN(n))) {
-      setLabel(btn, BUTTON_TEXT);
+    // Phase 1 — fleet panel already loaded → just fire dispatch.
+    // Phase 2 — panel not loaded → click AGR routine, wait for it. Gate on
+    // `component=fleetdispatch` only: AGR assigns the mission itself when
+    // the user taps its routine, so `mission=15` is not a precondition.
+    const dispatch = document.getElementById('dispatchFleet');
+    const fleetPanel = document.getElementById('ago_fleet2_main');
+    if (dispatch && fleetPanel) {
+      safeClick(dispatch);
+      setLabel(btn, 'Sent!');
+      // Lock while the game processes the dispatch + its post-send nav. In
+      // the happy path OGame reloads within ~1 s; the safety timeout covers
+      // the rare case where the dispatch fails and the page stays put.
+      lock(btn);
+      setTimeout(() => unlock(btn), 3000);
       return;
     }
     lock(btn);
-    setLabel(btn, 'Wait…');
-    const r = await courierSelect({
-      spec: {
-        kind: 'list',
-        ships: preset.map((p) => ({ id: p.id, qty: p.count, frac: EXP_FLEET_FRAC })),
-      },
-      target: { galaxy: parts[0], system: parts[1], position: 16, type: TARGET_PLANET },
-      mission: MISSION_EXPEDITION,
-    });
-    unlock(btn);
-    if (!r.ok) {
-      setLabel(btn, r.reason === 'noShips' ? 'No ships' : 'Failed');
-      return;
-    }
-    expReady = true;
-    setLabel(btn, 'Send!');
-  };
-
-  /**
-   * Send-button LONG-PRESS — remember the fleet the user has selected on
-   * fleet1 as the expedition preset. Must be on fleetdispatch with a fleet
-   * picked; flashes a short cue either way.
-   *
-   * @returns {Promise<void>}
-   */
-  const onExpHold = async () => {
-    const btn = /** @type {HTMLButtonElement} */ (controller?.el);
-    if (!btn) return;
-    const ships = await courierReadSelection();
-    if (ships.length === 0) {
-      setLabel(btn, 'Pick fleet');
-      setTimeout(() => {
-        if (getLabel(btn) === 'Pick fleet') setLabel(btn, BUTTON_TEXT);
-      }, EVENTBOX_LOADING_LABEL_MS);
-      return;
-    }
-    saveExpPreset(ships);
-    setLabel(btn, 'Saved');
-    setTimeout(() => {
-      if (getLabel(btn) === 'Saved') setLabel(btn, BUTTON_TEXT);
-    }, EVENTBOX_LOADING_LABEL_MS);
+    void runPhase2(btn);
   };
 
   /**
@@ -572,7 +554,6 @@ export const installSendExp = () => {
           ariaLabel: 'Send expedition',
           bg: BG_IDLE,
           onTap: () => void handleClick(/** @type {HTMLButtonElement} */ (controller?.el)),
-          onHold: () => void onExpHold(),
           focusValue: FOCUS_VALUE,
           focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,
         },
@@ -580,7 +561,17 @@ export const installSendExp = () => {
     });
     if (!controller) return;
 
-    setLabel(controller.el, BUTTON_TEXT);
+    // Initial label reflects the page state at mount: "Send!" when the
+    // native dispatch button is already up, "Prepare" when only AGR's
+    // routine is present, else the idle default.
+    setLabel(
+      controller.el,
+      computeInitialLabel({
+        search: location.search,
+        hasDispatchFleet: document.getElementById('dispatchFleet') !== null,
+        hasAgoRoutine7: document.getElementById('ago_routine_7') !== null,
+      }),
+    );
   };
 
   /**

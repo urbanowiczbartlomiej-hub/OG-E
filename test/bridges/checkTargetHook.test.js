@@ -96,9 +96,11 @@ describe('installCheckTargetHook — happy path', () => {
     // or on success+empty-errors — consumers read the rest of target
     // state from window.fleetDispatcher.
     expect(detail.errorCode).toBeNull();
-    // Shape assertion: only the 4 documented fields, nothing else.
+    // The mission-permission map is carried through for the fleet courier.
+    expect(detail.orders).toEqual({ 7: true, 15: false });
+    // Shape assertion: the documented fields, nothing else.
     expect(Object.keys(detail).sort()).toEqual(
-      ['errorCode', 'galaxy', 'position', 'system'],
+      ['errorCode', 'galaxy', 'orders', 'position', 'system'],
     );
   });
 });

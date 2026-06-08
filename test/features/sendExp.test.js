@@ -270,7 +270,7 @@ describe('installSendExp — visibility via mobileMode', () => {
     installSendExp();
     const btn = getBtn();
     expect(btn).not.toBeNull();
-    expect(labelOf(btn)).toBe('Send Exp');
+    expect(labelOf(btn)).toBe('Send');
     expect(btn?.getAttribute('aria-label')).toBe('Send expedition');
     expect(btn?.tabIndex).toBe(0);
   });
@@ -288,8 +288,8 @@ describe('installSendExp — size from settings', () => {
     expect(btn).not.toBeNull();
     expect(btn?.style.width).toBe('400px');
     expect(btn?.style.height).toBe('400px');
-    // font-size is ~23% of size → round(400 * 0.23) === 92.
-    expect(btn?.style.fontSize).toBe('92px');
+    // font-size is ~23% of size, less 1px for single-zone → 92 - 1.
+    expect(btn?.style.fontSize).toBe('91px');
   });
 });
 
@@ -311,101 +311,89 @@ describe('installSendExp — click navigation', () => {
     expect(navTarget).not.toContain('mission=');
   });
 
-  // ── courier two-tap harness (no AGR) ───────────────────────────────────
-  /** @param {{ errorCode?: number|null, missionOk?: boolean }} [opts] */
-  const armCourier = (opts = {}) => {
-    document.dispatchEvent(new CustomEvent('oge:fleetDispatcher', {
-      detail: { shipsOnPlanet: [{ id: 203, number: 100 }], orders: {}, expeditionCount: 0, maxExpeditionCount: 14 },
-    }));
-    document.body.insertAdjacentHTML('beforeend', '<div id="fleet1"></div>');
-    const cont = document.createElement('a');
-    cont.id = 'continueToFleet2';
-    cont.addEventListener('click', () => {
-      document.getElementById('fleet1')?.remove();
-      const d = document.createElement('a');
-      d.id = 'dispatchFleet';
-      d.className = 'off';
-      document.body.appendChild(d);
-    });
-    document.body.appendChild(cont);
-    const onCmd = (/** @type {any} */ e) => {
-      const { id, op, args } = e.detail;
-      /** @type {any} */ let res = { id, ok: true };
-      if (op === 'setTarget') {
-        setTimeout(() => document.dispatchEvent(new CustomEvent('oge:checkTargetResult', {
-          detail: { galaxy: args.galaxy, system: args.system, position: args.position, errorCode: opts.errorCode ?? null },
-        })), 0);
-      } else if (op === 'selectMission') {
-        const ok = opts.missionOk ?? true;
-        res = { id, ok, data: { available: ok } };
-        if (ok) setTimeout(() => document.getElementById('dispatchFleet')?.classList.remove('off'), 0);
-      }
-      document.dispatchEvent(new CustomEvent('oge:fd:res', { detail: res }));
-    };
-    document.addEventListener('oge:fd:cmd', onCmd);
-    return () => document.removeEventListener('oge:fd:cmd', onCmd);
-  };
-  const settle = () => new Promise((r) => setTimeout(r, 500));
+  // ── AGR routine flow (ago_routine_7) ───────────────────────────────────
+  const settle = () => new Promise((r) => setTimeout(r, 600));
 
-  it('on fleet1 with no remembered fleet → prompts "Hold to set" (no nav)', () => {
-    localStorage.removeItem('oge_expFleet');
-    setupScene({ onFleetdispatch: true, activeCp: 42 });
+  /**
+   * Mount AGR's `#ago_routine_7` element with the given readiness check
+   * class. When `hydrateOnClick` is set, clicking the routine adds the
+   * native dispatch button + AGR fleet panel (simulating AGR firing).
+   *
+   * @param {string} checkClass e.g. 'ago_routine_check_3' (ready).
+   * @param {boolean} [hydrateOnClick]
+   */
+  const mountRoutine = (checkClass, hydrateOnClick = false) => {
+    const routine = document.createElement('div');
+    routine.id = 'ago_routine_7';
+    routine.innerHTML = `<span class="ago_routine_check ${checkClass}"></span>`;
+    if (hydrateOnClick) {
+      routine.addEventListener('click', () => {
+        if (!document.getElementById('ago_fleet2_main')) {
+          const panel = document.createElement('div');
+          panel.id = 'ago_fleet2_main';
+          document.body.appendChild(panel);
+          const d = document.createElement('button');
+          d.id = 'dispatchFleet';
+          document.body.appendChild(d);
+        }
+      });
+    }
+    document.body.appendChild(routine);
+    return routine;
+  };
+
+  it('on fleetdispatch with no fleet panel and no routine yet → Phase 2 "Loading...", no nav', () => {
+    setupScene({ onFleetdispatch: true, mission: 7, activeCp: 42 });
     installSendExp();
     document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
-    document.dispatchEvent(new CustomEvent('oge:fleetDispatcher', {
-      detail: { shipsOnPlanet: [], orders: {}, expeditionCount: 0, maxExpeditionCount: 14 },
-    }));
-    document.body.insertAdjacentHTML('beforeend', '<div id="fleet1"></div>');
     const btn = getBtn();
     btn?.click();
     expect(navTarget).toBeNull();
-    expect(labelOf(btn)).toBe('Hold to set');
+    expect(labelOf(btn)).toBe('Loading...');
   });
 
-  it('two taps: select arms a ready expedition, then dispatch fires', async () => {
-    setupScene({ onFleetdispatch: true, activeCp: 42 });
+  it('Phase 1: fleet panel + #dispatchFleet present → clicks dispatch, paints "Sent!"', () => {
+    setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
     installSendExp();
     document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
-    localStorage.setItem('oge_expFleet', JSON.stringify({ ships: [{ id: 203, count: 10 }] }));
-    const unhook = armCourier({ errorCode: null, missionOk: true });
-    const btn = getBtn();
-    btn?.click(); // tap 1 — select
-    await settle();
-    expect(labelOf(btn)).toBe('Send!');
+    const panel = document.createElement('div');
+    panel.id = 'ago_fleet2_main';
+    document.body.appendChild(panel);
+    const dispatch = document.createElement('button');
+    dispatch.id = 'dispatchFleet';
+    document.body.appendChild(dispatch);
     let clicks = 0;
-    document.getElementById('dispatchFleet')?.addEventListener('click', () => {
-      clicks += 1;
-      document.dispatchEvent(new CustomEvent('oge:sendFleetResult', {
-        detail: { success: true, errorCode: null, mission: 15 },
-      }));
-    });
-    btn?.click(); // tap 2 — dispatch
-    await settle();
+    dispatch.addEventListener('click', () => { clicks += 1; });
+
+    getBtn()?.click();
+
+    expect(navTarget).toBeNull();
+    expect(labelOf(getBtn())).toBe('Sent!');
     expect(clicks).toBe(1);
-    unhook();
   });
 
-  it('long-press remembers the current fleet1 selection as the preset', async () => {
-    localStorage.removeItem('oge_expFleet');
-    setupScene({ onFleetdispatch: true, activeCp: 42 });
+  it('Phase 2: routine ready (check_3) → clicks it, panel hydrates, label flips to "Send!"', async () => {
+    setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
     installSendExp();
-    const onCmd = (/** @type {any} */ e) => {
-      const { id, op } = e.detail;
-      if (op === 'getSelection') {
-        document.dispatchEvent(new CustomEvent('oge:fd:res', {
-          detail: { id, ok: true, data: { ships: [{ id: 203, count: 7 }] } },
-        }));
-      }
-    };
-    document.addEventListener('oge:fd:cmd', onCmd);
-    const btn = /** @type {HTMLElement} */ (getBtn());
-    btn.dispatchEvent(new PointerEvent('pointerdown', { clientX: 0, clientY: 0 }));
-    await new Promise((r) => setTimeout(r, 360)); // past the 300ms hold
-    btn.dispatchEvent(new PointerEvent('pointerup'));
-    await new Promise((r) => setTimeout(r, 20));
-    const saved = JSON.parse(localStorage.getItem('oge_expFleet') || '{}');
-    expect(saved.ships).toEqual([{ id: 203, count: 7 }]);
-    document.removeEventListener('oge:fd:cmd', onCmd);
+    document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
+    mountRoutine('ago_routine_check_3', /* hydrateOnClick */ true);
+    const btn = getBtn();
+    btn?.click();
+    await settle();
+    expect(navTarget).toBeNull();
+    expect(labelOf(btn)).toBe('Send!');
+  });
+
+  it('Phase 2: routine reports no ships (check_1) and no other planet → "All maxed!", no nav', async () => {
+    setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
+    installSendExp();
+    document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
+    mountRoutine('ago_routine_check_1');
+    const btn = getBtn();
+    btn?.click();
+    await settle();
+    expect(navTarget).toBeNull();
+    expect(labelOf(btn)).toBe('All maxed!');
   });
 });
 
@@ -431,7 +419,7 @@ describe('installSendExp — max expedition guard', () => {
 
     // After 2s the label reverts.
     vi.advanceTimersByTime(2000);
-    expect(labelOf(btn)).toBe('Send Exp');
+    expect(labelOf(btn)).toBe('Send');
 
     vi.useRealTimers();
   });
@@ -515,8 +503,8 @@ describe('installSendExp — live settings updates', () => {
     settingsStore.update((s) => ({ ...s, enterBtnSize: 300 }));
     expect(btn?.style.width).toBe('300px');
     expect(btn?.style.height).toBe('300px');
-    // 300 * 0.23 = 69.
-    expect(btn?.style.fontSize).toBe('69px');
+    // 300 * 0.23 = 69, less 1px for single-zone.
+    expect(btn?.style.fontSize).toBe('68px');
   });
 });
 
@@ -611,7 +599,7 @@ describe('installSendExp — fleetDispatcher snapshot gates', () => {
     expect(navTarget).toBeNull();
 
     vi.advanceTimersByTime(2000);
-    expect(labelOf(btn)).toBe('Send Exp');
+    expect(labelOf(btn)).toBe('Send');
     vi.useRealTimers();
   });
 
@@ -660,7 +648,7 @@ describe('installSendExp — fleetDispatcher snapshot gates', () => {
     expect(navTarget).toBeNull();
 
     vi.advanceTimersByTime(2000);
-    expect(labelOf(btn)).toBe('Send Exp');
+    expect(labelOf(btn)).toBe('Send');
     vi.useRealTimers();
   });
 });
@@ -685,13 +673,14 @@ describe('installSendExp — eventbox readiness gate', () => {
     const btn = getBtn();
     btn?.click();
 
-    expect(labelOf(btn)).toBe('Wait…');
+    expect(labelOf(btn)).toBe('Loading...');
     expect(btn?.style.opacity).not.toBe('0.5');
     expect(navTarget).toBeNull();
 
-    // The cue clears after EVENTBOX_LOADING_LABEL_MS (800 ms).
+    // The cue clears after EVENTBOX_LOADING_LABEL_MS and restores the idle
+    // label (the page is not on a routine/dispatch state → "Send").
     vi.advanceTimersByTime(800);
-    expect(labelOf(btn)).toBe('Send Exp');
+    expect(labelOf(btn)).toBe('Send');
     vi.useRealTimers();
   });
 
@@ -711,13 +700,15 @@ describe('installSendExp — eventbox readiness gate', () => {
   it('after oge:eventBoxLoaded fires, clicks proceed normally', () => {
     // Same fleetdispatch scene; once the bridge event arrives the gate
     // opens permanently (until next page navigation re-installs). With no
-    // step-1 DOM the courier reports "off", so the click proceeds to
-    // navigate to a planet with a free expedition slot.
+    // fleet panel in the DOM the click enters Phase 2 (locks + "Loading...")
+    // rather than being suppressed by the gate.
     setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
     installSendExp();
     document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
 
-    getBtn()?.click();
-    expect(navTarget).toContain('cp=42');
+    const btn = getBtn();
+    btn?.click();
+    expect(navTarget).toBeNull();
+    expect(labelOf(btn)).toBe('Loading...');
   });
 });

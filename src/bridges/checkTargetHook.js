@@ -41,6 +41,9 @@ import { observeXHR } from './xhrObserver.js';
  *   pattern-match on specific codes (`140016` reserved, `140035` no ship,
  *   ...) and read the rest of target state from `window.fleetDispatcher`
  *   (populated by the game's own response handler).
+ * @property {Record<string, boolean> | null} orders Mission-permission map
+ *   from `response.orders` (e.g. `{ "7": true }` ⇒ colonize allowed), or
+ *   `null` when absent. The fleet courier reads this to gate mission arming.
  *
  * Dispatched on BOTH success AND failure responses. On success
  * `errorCode` is `null`; on failure it carries the first error code
@@ -168,8 +171,19 @@ export const installCheckTargetHook = () => {
       // success/failure read `errorCode === null` as the signal.
       void success;
 
+      // The `orders` map says which missions the target permits (e.g.
+      // `{ "7": true }` ⇒ colonize allowed). The fleet courier reads it to
+      // decide whether to arm a mission — authoritative even when the target
+      // was applied through AGR's fleet1 row (which leaves fd.orders empty).
+      /** @type {Record<string, boolean> | null} */
+      let orders = null;
+      if (parsed.orders && typeof parsed.orders === 'object' && !Array.isArray(parsed.orders)) {
+        orders = {};
+        for (const k of Object.keys(parsed.orders)) orders[k] = Boolean(parsed.orders[k]);
+      }
+
       /** @type {CheckTargetResultDetail} */
-      const detail = { galaxy, system, position, errorCode };
+      const detail = { galaxy, system, position, errorCode, orders };
 
       document.dispatchEvent(new CustomEvent('oge:checkTargetResult', { detail }));
     },

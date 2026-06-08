@@ -110,7 +110,7 @@ export const EVENTBOX_LOADING_LABEL_MS = 400;
 // ─── Button copy ─────────────────────────────────────────────────────
 
 /** Default button copy — what the user sees in the "idle" state. */
-export const BUTTON_TEXT = 'Send Exp';
+export const BUTTON_TEXT = 'Send';
 
 /** Transient copy when every planet has hit `maxExpPerPlanet`. */
 export const ALL_MAXED_LABEL = 'All maxed!';

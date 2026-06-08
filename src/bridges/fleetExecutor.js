@@ -5,15 +5,16 @@
 //   The game's fleet form is driven by the page-world `window.fleetDispatcher`
 //   controller. Setting the native `#shipNNN` inputs from the isolated world
 //   does NOT register a selection (`shipsToSend` stays empty) — only
-//   `fleetDispatcher.selectShip(id, n)` does. Likewise the target is set via
-//   `setTargetPlanet` / `updateTarget`, not by poking the coord inputs.
+//   `fleetDispatcher.selectShip(id, n)` does, which needs the controller.
+//   The TARGET is a different story: AGR overwrites the native fleet2 coord
+//   inputs with its own target, so we set coords + planet/moon type on AGR's
+//   dedicated fleet1 controls (`#ago_galaxy` … `#ago_type` spans) instead.
 //
 //   So the ISOLATED-world fleet courier (features/shared/fleetCourier.js)
-//   sends us a command CustomEvent and we call the matching `fleetDispatcher`
-//   methods here, in the page realm, then dispatch a reply CustomEvent. The
-//   native step controls that DO work from isolated (continue, load-all-
-//   resources, dispatch) stay on the courier side; we own only the three
-//   actions that genuinely need the controller.
+//   sends us a command CustomEvent and we run the matching action here, in
+//   the page realm, then dispatch a reply CustomEvent. The native step
+//   controls that DO work from isolated (continue, load-all-resources,
+//   dispatch) stay on the courier side.
 //
 // TOS posture: every action here is one the player's own click would
 // perform via the game's UI, and it is gated behind the courier's two
@@ -27,9 +28,10 @@
 // Ops:
 //   selectShips  { ships:[{id,count}] } → reset + selectShip each + refresh;
 //                  data { totalSelected }
-//   setTarget    { galaxy, system, position, type } → setTargetPlanet +
-//                  setTargetType + updateTarget (fires the game's checkTarget
-//                  XHR; the courier awaits oge:checkTargetResult separately)
+//   setTarget    { galaxy, system, position, type } → write AGR's fleet1
+//                  coord inputs + click the planet/moon type span (AGR
+//                  action:42). AGR applies the target and fires the game's
+//                  checkTarget XHR; the courier awaits oge:checkTargetResult.
 //   selectMission{ mission } → selectMission iff available; data { available }
 //
 // @ts-check
@@ -38,11 +40,12 @@ import { FD_CMD_EVENT as CMD_EVENT, FD_RES_EVENT as RES_EVENT } from '../lib/fle
 import { GAME } from '../lib/gameDom.js';
 
 /**
- * Write `value` into every input matching `sel` and fire the event
- * sequence a real keystroke produces, so the game's bound handlers pick it
- * up. The fleetdispatch coord ids exist on BOTH steps, so we set all
- * matches. (Setting the value alone, or only `change`, does NOT register —
- * verified on the live page.)
+ * Write `value` into every input matching `sel` and fire the full event
+ * sequence a real keystroke produces — including `keydown`/`keyup` as real
+ * `KeyboardEvent`s — so AGR's `ago_keys_arrows` handler auto-applies the
+ * value (AGR aims the fleet straight off the fleet1 inputs; no submit
+ * click is needed). The coord ids may exist on more than one node, so we
+ * set every match.
  *
  * @param {string} sel
  * @param {string | number} value
@@ -53,9 +56,29 @@ const fireInput = (sel, value) => {
     const input = /** @type {HTMLInputElement} */ (el);
     if (typeof input.focus === 'function') input.focus();
     input.value = String(value);
-    for (const type of ['input', 'keyup', 'change', 'blur']) {
-      input.dispatchEvent(new Event(type, { bubbles: true }));
-    }
+    input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true }));
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    input.dispatchEvent(new Event('blur', { bubbles: true }));
+  }
+};
+
+/**
+ * Ensure AGR's target type matches `type` (1 planet · 3 moon). The row's
+ * planet/moon spans carry a `.selected` class for the active one; clicking
+ * a span re-fires AGR `action:42`. We click ONLY when the wanted span is
+ * not already selected — re-clicking the already-active span re-triggers
+ * action:42 and can stomp the coords AGR just auto-applied from the inputs.
+ *
+ * @param {number} type
+ * @returns {void}
+ */
+const setTargetType = (type) => {
+  const wantSel = type === 3 ? GAME.AGO_TYPE_MOON : GAME.AGO_TYPE_PLANET;
+  const el = /** @type {HTMLElement | null} */ (document.querySelector(wantSel));
+  if (el && !el.classList.contains('selected')) {
+    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
   }
 };
 
@@ -106,41 +129,35 @@ const runCommand = (fd, cmd) => {
 
     case 'setTarget': {
       const { galaxy, system, position, type } = args;
-      // The target is applied by writing the native coord inputs (with the
-      // full keystroke event sequence) and the hidden type input, then
-      // letting fleetDispatcher.updateTarget() read them and fire the
-      // game's own checkTarget XHR. setTargetPlanet() alone is a no-op on
-      // the live page; setTargetType() is called too as a belt-and-braces.
-      fireInput(GAME.FD_GALAXY, galaxy);
-      fireInput(GAME.FD_SYSTEM, system);
-      fireInput(GAME.FD_POSITION, position);
-      if (type != null) fireInput(GAME.FD_TYPE, type);
-      if (typeof fd.setTargetType === 'function' && type != null) {
-        fd.setTargetType(type);
-      }
-      if (typeof fd.updateTarget === 'function') fd.updateTarget();
+      // The target is set on AGR's OWN fleet1 controls, not the native
+      // fleet2 inputs (AGR clobbers those). Writing #ago_galaxy/#ago_system/
+      // #ago_position with the full keystroke sequence feeds AGR's
+      // `ago_keys_arrows` handler, which AUTO-APPLIES the coords and triggers
+      // the game's checkTarget XHR (the courier awaits the result). The type
+      // span is only clicked when switching planet↔moon — see setTargetType.
+      fireInput(GAME.AGO_GALAXY, galaxy);
+      fireInput(GAME.AGO_SYSTEM, system);
+      fireInput(GAME.AGO_POSITION, position);
+      if (type != null) setTargetType(type);
       return { ok: true };
-    }
-
-    case 'getSelection': {
-      // Read the fleet the user has currently selected on fleet1 (used by
-      // Expeditions' long-press to remember a fleet preset).
-      const ships = Array.isArray(fd.shipsToSend)
-        ? fd.shipsToSend
-            .filter((/** @type {any} */ s) => s && typeof s.id === 'number')
-            .map((/** @type {any} */ s) => ({ id: s.id, count: s.number || 0 }))
-        : [];
-      return { ok: true, data: { ships } };
     }
 
     case 'selectMission': {
       const mission = Number(args.mission);
-      const available =
-        typeof fd.isMissionAvailable === 'function'
-          ? !!fd.isMissionAvailable(mission)
-          : !!(fd.orders && fd.orders[String(mission)] === true);
-      if (available && typeof fd.selectMission === 'function') {
-        fd.selectMission(mission);
+      // Select the mission by clicking the visible mission icon, NOT via
+      // fd.selectMission. When the target was applied through AGR's fleet1
+      // row, `fd.orders` is empty and `fd.selectMission` updates `fd.mission`
+      // WITHOUT moving the UI's `.selected` marker — so the send would still
+      // go as whatever icon is highlighted. The icon `.missionIcon.missionN`
+      // is the source of truth: its `on` class mirrors checkTarget `orders`
+      // (available), and clicking it runs the game's own mission-select
+      // (updating both the `.selected` marker and `fd.mission`).
+      const icon = /** @type {HTMLElement | null} */ (
+        document.querySelector('.missionIcon.mission' + mission)
+      );
+      const available = !!icon && icon.classList.contains('on');
+      if (icon && available && !icon.classList.contains('selected')) {
+        icon.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
       }
       return { ok: available, data: { available } };
     }

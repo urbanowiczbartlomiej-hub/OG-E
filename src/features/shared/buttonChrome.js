@@ -60,12 +60,13 @@ export const BUTTON_CHROME_CSS = [
   // ── Engraved title ring (SVG overlay, scales via viewBox) ──
   '.oge-ring{position:absolute;inset:0;width:100%;height:100%;',
   'pointer-events:none;z-index:3;overflow:visible;}',
-  '.oge-ring-band{fill:none;stroke:rgba(214,232,250,0.22);stroke-width:9;}',
+  '.oge-ring-band{fill:none;stroke:rgba(214,232,250,0.22);stroke-width:7;}',
   '.oge-ring-title{fill:rgba(8,16,26,0.72);font-weight:700;',
   'font-family:Verdana,Geneva,Tahoma,sans-serif;text-transform:uppercase;',
   // Engraved-into-the-ring look: dark glyphs with a thin light highlight
-  // below, so the title reads as cut into the band rather than floating.
-  'filter:drop-shadow(0 0.5px 0.4px rgba(255,255,255,0.45));}',
+  // below, plus a soft white halo so the title reads as cut into a lit band.
+  'filter:drop-shadow(0 0.5px 0.4px rgba(255,255,255,0.45)) ',
+  'drop-shadow(0 0 1.2px rgba(255,255,255,0.9));}',
 
   // ── Tap ripple (light wave from the touch point) ──
   '.oge-deco-layer{position:absolute;inset:0;border-radius:50%;',
@@ -129,7 +130,9 @@ const buildRing = (title, ringId) => {
   band.setAttribute('class', 'oge-ring-band');
   band.setAttribute('cx', '50');
   band.setAttribute('cy', '50');
-  band.setAttribute('r', '45');
+  // r=46.5 with stroke 7 ⇒ band spans 43..50: OUTER edge meets the button
+  // rim, inner edge widened back so the engraved titles fit on the band.
+  band.setAttribute('r', '46.5');
   svg.appendChild(band);
 
   // Invisible arc the title rides on, at the band's own radius (r=46.5).
@@ -138,6 +141,7 @@ const buildRing = (title, ringId) => {
   // title sits across the TOP of the ring (sweep-flag 0 would drop it to
   // the bottom). Combined with dominant-baseline:central below the glyphs
   // are centred ON the band, upright, reading left→right.
+  // Title arc at r=46.5 — toward the band's outer half, nudged 1 unit in.
   const defs = document.createElementNS(SVG_NS, 'defs');
   const path = document.createElementNS(SVG_NS, 'path');
   path.setAttribute('id', ringId);
@@ -152,8 +156,8 @@ const buildRing = (title, ringId) => {
   // Centre the glyphs on the path so they sit on the band, not beside it.
   text.setAttribute('dominant-baseline', 'central');
   const upper = title.toUpperCase();
-  // Cap at 8 so the tallest glyphs stay inside the rim at this radius.
-  const fontSize = Math.max(5, Math.min(8, 92 / (upper.length * 0.72)));
+  // Cap at 7 (then 2 smaller) so longer titles fit fully inside the rim.
+  const fontSize = Math.max(3.5, Math.min(7, 92 / (upper.length * 0.72)) - 2);
   text.setAttribute('font-size', fontSize.toFixed(2));
   text.setAttribute('letter-spacing', (fontSize * 0.06).toFixed(2));
 
@@ -165,6 +169,34 @@ const buildRing = (title, ringId) => {
   textPath.textContent = upper;
   text.appendChild(textPath);
   svg.appendChild(text);
+
+  // ── Brand label "OG-E" engraved on the LOWER arc ──
+  // Same styling as the title, but on the bottom of the ring. To read
+  // upright AND left→right at the bottom, the arc must travel left→right
+  // THROUGH 6 o'clock — that is sweep-flag 0, the opposite of the title's
+  // top arc (sweep-flag 1). So technically the mirror sweep of the title,
+  // yet the identical visual reading direction (left→right).
+  const brandId = ringId + '-b';
+  const bpath = document.createElementNS(SVG_NS, 'path');
+  bpath.setAttribute('id', brandId);
+  bpath.setAttribute('fill', 'none');
+  bpath.setAttribute('d', 'M 3.5 50 A 46.5 46.5 0 0 0 96.5 50');
+  defs.appendChild(bpath);
+
+  const brand = document.createElementNS(SVG_NS, 'text');
+  brand.setAttribute('class', 'oge-ring-title');
+  brand.setAttribute('text-anchor', 'middle');
+  brand.setAttribute('dominant-baseline', 'central');
+  brand.setAttribute('font-size', '4');
+  brand.setAttribute('letter-spacing', '0.4');
+  const brandPath = document.createElementNS(SVG_NS, 'textPath');
+  brandPath.setAttribute('href', '#' + brandId);
+  brandPath.setAttributeNS(XLINK_NS, 'xlink:href', '#' + brandId);
+  brandPath.setAttribute('startOffset', '50%');
+  brandPath.textContent = 'OG-E';
+  brand.appendChild(brandPath);
+  svg.appendChild(brand);
+
   return svg;
 };
 

@@ -14,7 +14,6 @@ import {
   readyToDispatch,
   select,
   dispatch,
-  readSelection,
   installFleetCourier,
   _resetFleetCourierForTest,
 } from '../../src/features/shared/fleetCourier.js';
@@ -26,17 +25,39 @@ const el = (tag, id) => {
   return e;
 };
 
-/** Mount a fresh step-1 DOM. Clicking continue advances to step 2. */
-const buildFleet1 = () => {
+/** Coords from the most recent setTarget — used by the continue handler to
+ *  fire the fleet2 checkTarget for the right target. */
+let lastTarget = /** @type {any} */ (null);
+
+/** Mount a fresh step-1 DOM. Clicking continue advances to step 2 AND fires
+ *  the game's checkTarget (as it does on the fleet2 transition), carrying the
+ *  `orders` map + any `errorCode`. #continueToFleet2 starts `.off`; the fake
+ *  executor clears it once the target is applied (mirrors AGR).
+ *  @param {{ errorCode?: number|null, orders?: Record<string,boolean>, mission?: number }} [opts] */
+const buildFleet1 = (opts = {}) => {
   document.body.innerHTML = '';
   document.body.appendChild(el('div', 'fleet1'));
   document.body.appendChild(el('a', 'allresources'));
   const cont = el('a', 'continueToFleet2');
+  cont.className = 'off';
   cont.addEventListener('click', () => {
     document.getElementById('fleet1')?.remove();
     const disp = el('a', 'dispatchFleet');
     disp.className = 'off'; // game not ready yet
     document.body.appendChild(disp);
+    // The game fires its checkTarget as fleet2 loads.
+    const t = lastTarget || {};
+    document.dispatchEvent(
+      new CustomEvent('oge:checkTargetResult', {
+        detail: {
+          galaxy: t.galaxy,
+          system: t.system,
+          position: t.position,
+          errorCode: opts.errorCode ?? null,
+          orders: opts.orders ?? { [String(opts.mission ?? 4)]: true },
+        },
+      }),
+    );
   });
   document.body.appendChild(cont);
 };
@@ -50,19 +71,10 @@ const fakeExecutor = (opts = /** @type {any} */ ({})) => {
     if (op === 'selectShips') {
       res = { id, ok: true, data: { totalSelected: args.ships.reduce((/** @type {number} */ a, /** @type {any} */ s) => a + s.count, 0) } };
     } else if (op === 'setTarget') {
+      lastTarget = args;
       res = { id, ok: true };
-      setTimeout(() => {
-        document.dispatchEvent(
-          new CustomEvent('oge:checkTargetResult', {
-            detail: {
-              galaxy: args.galaxy,
-              system: args.system,
-              position: args.position,
-              errorCode: opts.errorCode ?? null,
-            },
-          }),
-        );
-      }, 0);
+      // AGR enables "continue" once the target is applied.
+      setTimeout(() => document.getElementById('continueToFleet2')?.classList.remove('off'), 0);
     } else if (op === 'selectMission') {
       const ok = opts.missionOk ?? true;
       res = { id, ok, data: { available: ok } };
@@ -104,6 +116,20 @@ describe('step / readiness (from live DOM)', () => {
     expect(step()).toBe('fleet2'); // dispatch present wins
   });
 
+  it('keys off VISIBILITY so a backButton fleet2→fleet1 swap is detected', () => {
+    const f1 = el('div', 'fleet1');
+    const f2 = el('div', 'fleet2');
+    const disp = el('a', 'dispatchFleet');
+    f2.appendChild(disp);
+    document.body.append(f1, f2);
+    // Both present, fleet2 shown → step 2.
+    expect(step()).toBe('fleet2');
+    // Player taps AGR "Powrót": fleet2 hidden, fleet1 shown → back to step 1
+    // even though #dispatchFleet still exists in the (hidden) DOM.
+    f2.style.display = 'none';
+    expect(step()).toBe('fleet1');
+  });
+
   it('readyToDispatch tracks the .off class', () => {
     const d = el('a', 'dispatchFleet');
     d.className = 'off';
@@ -125,6 +151,29 @@ describe('select — happy path', () => {
     expect(step()).toBe('fleet2');
     expect(readyToDispatch()).toBe(true);
   });
+
+  it('sets the target on fleet1 (AGR row), BEFORE continuing to fleet2', async () => {
+    buildFleet1();
+    // Record whether #fleet1 was still present when setTarget arrived — the
+    // target must be set on AGR's fleet1 controls, never on fleet2 (which AGR
+    // clobbers). A custom hook wraps the standard fake executor's replies.
+    /** @type {string[]} */ const order = [];
+    let stepAtSetTarget = '';
+    const onCmd = (/** @type {any} */ e) => {
+      const { op } = /** @type {any} */ (e).detail;
+      order.push(op);
+      if (op === 'setTarget') stepAtSetTarget = step();
+    };
+    document.addEventListener('oge:fd:cmd', onCmd);
+    const unhookExec = fakeExecutor({ errorCode: null, missionOk: true });
+    unhook = () => { document.removeEventListener('oge:fd:cmd', onCmd); unhookExec(); };
+    snapshot([{ id: 203, number: 100 }], { 4: true });
+
+    const r = await select({ spec: { kind: 'all' }, target: TARGET, mission: 4 });
+    expect(r.ok).toBe(true);
+    expect(stepAtSetTarget).toBe('fleet1');
+    expect(order.indexOf('setTarget')).toBeLessThan(order.indexOf('selectMission'));
+  });
 });
 
 describe('select — failures', () => {
@@ -143,7 +192,7 @@ describe('select — failures', () => {
   });
 
   it('surfaces a checkTarget error (and its tag)', async () => {
-    buildFleet1();
+    buildFleet1({ errorCode: 140035 });
     unhook = fakeExecutor({ errorCode: 140035 });
     snapshot([{ id: 203, number: 100 }]);
     const r = await select({ spec: { kind: 'all' }, target: TARGET, mission: 4 });
@@ -153,7 +202,8 @@ describe('select — failures', () => {
   });
 
   it('returns mission when the mission is not allowed on the target', async () => {
-    buildFleet1();
+    // checkTarget orders say mission 4 is NOT permitted → fast fail, no poll.
+    buildFleet1({ orders: { 4: false } });
     unhook = fakeExecutor({ errorCode: null, missionOk: false });
     snapshot([{ id: 203, number: 100 }]);
     const r = await select({ spec: { kind: 'all' }, target: TARGET, mission: 4 });
@@ -170,24 +220,6 @@ describe('select — failures', () => {
   });
 });
 
-describe('readSelection', () => {
-  it('returns the fleet the executor reports', async () => {
-    unhook = (() => {
-      const onCmd = (/** @type {any} */ e) => {
-        const { id, op } = e.detail;
-        if (op === 'getSelection') {
-          document.dispatchEvent(new CustomEvent('oge:fd:res', {
-            detail: { id, ok: true, data: { ships: [{ id: 203, count: 9 }] } },
-          }));
-        }
-      };
-      document.addEventListener('oge:fd:cmd', onCmd);
-      return () => document.removeEventListener('oge:fd:cmd', onCmd);
-    })();
-    const ships = await readSelection();
-    expect(ships).toEqual([{ id: 203, count: 9 }]);
-  });
-});
 
 describe('dispatch — tap 2', () => {
   it('does not click and resolves notReady when not ready', async () => {
