@@ -71,6 +71,13 @@ const fireInput = (sel, value) => {
  * not already selected — re-clicking the already-active span re-triggers
  * action:42 and can stomp the coords AGR just auto-applied from the inputs.
  *
+ * For moon (type=3) AGR guards the type-span click with isTrusted, so the
+ * synthetic click is ignored. Workaround: click the first
+ * span.ago_shortcuts_moon inside td.ago_shortcuts_own BEFORE writing coords —
+ * that path in AGR's shortcuts handler does accept synthetic events and sets
+ * the internal moon flag. After that, writing the coords via fireInput keeps
+ * moon selected because we never click the planet span.
+ *
  * @param {number} type
  * @returns {void}
  */
@@ -79,6 +86,26 @@ const setTargetType = (type) => {
   const el = /** @type {HTMLElement | null} */ (document.querySelector(wantSel));
   if (el && !el.classList.contains('selected')) {
     el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  }
+};
+
+/**
+ * Pre-arm AGR's moon flag by clicking the first span.ago_shortcuts_moon inside
+ * td.ago_shortcuts_own. AGR's shortcuts handler does not check isTrusted on
+ * that element, so a synthetic click works and sets the internal moon type
+ * before we write the actual target coords.
+ *
+ * Call this BEFORE fireInput when type === 3 and the moon span is not already
+ * active in AGR's type row.
+ *
+ * @returns {void}
+ */
+const primeAgrMoon = () => {
+  const moonSpan = /** @type {HTMLElement | null} */ (
+    document.querySelector('td.ago_shortcuts_own span.ago_shortcuts_moon')
+  );
+  if (moonSpan) {
+    moonSpan.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
   }
 };
 
@@ -106,9 +133,9 @@ const getDispatcher = () => {
  *
  * @param {any} fd
  * @param {FdCommand} cmd
- * @returns {{ ok: boolean, data?: any }}
+ * @returns {Promise<{ ok: boolean, data?: any }>}
  */
-const runCommand = (fd, cmd) => {
+const runCommand = async (fd, cmd) => {
   const args = cmd.args || {};
   switch (cmd.op) {
     case 'selectShips': {
@@ -135,6 +162,16 @@ const runCommand = (fd, cmd) => {
       // `ago_keys_arrows` handler, which AUTO-APPLIES the coords and triggers
       // the game's checkTarget XHR (the courier awaits the result). The type
       // span is only clicked when switching planet↔moon — see setTargetType.
+      //
+      // For moon targets, prime AGR's moon flag via the shortcuts panel BEFORE
+      // writing coords — that element does not enforce isTrusted so a synthetic
+      // click works. After priming, writing coords keeps the moon type because
+      // we skip the planet-span click.
+      if (type === 3) {
+        primeAgrMoon();
+        await new Promise((r) => setTimeout(r, 1));
+        primeAgrMoon();
+      }
       fireInput(GAME.AGO_GALAXY, galaxy);
       fireInput(GAME.AGO_SYSTEM, system);
       fireInput(GAME.AGO_POSITION, position);
@@ -146,12 +183,16 @@ const runCommand = (fd, cmd) => {
       // Re-arm planet/moon type, called by the courier after continueReady()
       // clears (just before clickContinue). Two complementary paths:
       //   1. Click the AGR span — updates AGR's visual state and its internal
-      //      type if AGR does NOT filter on event.isTrusted.
+      //      type if AGR does NOT filter on event.isTrusted. For moon this is
+      //      typically a no-op because setTarget's primeAgrMoon already set
+      //      the type; the .selected guard in setTargetType() prevents a
+      //      redundant re-click.
       //   2. fd.setTargetType(type) — writes directly into the game's own
       //      fleetDispatcher so the correct type reaches fleet2 even if AGR
       //      ignored the synthetic click (isTrusted === false in userscripts).
-      // We intentionally do NOT call fd.updateTarget() here — that would fire
-      // a second checkTarget XHR on fleet1 which the courier isn't awaiting.
+      // NOTE: do NOT call primeAgrMoon here — that click bubbles to the <a>
+      // shortcut entry and overwrites AGR's coords with the shortcut's coords,
+      // corrupting the target before clickContinue.
       const t = args.type != null ? Number(args.type) : null;
       if (t != null) {
         setTargetType(t);
@@ -202,7 +243,7 @@ let onCmd = null;
 export const installFleetExecutor = () => {
   if (onCmd) return dispose;
 
-  onCmd = (e) => {
+  onCmd = async (e) => {
     const detail = /** @type {FdCommand | undefined} */ (
       /** @type {CustomEvent} */ (e).detail
     );
@@ -216,7 +257,7 @@ export const installFleetExecutor = () => {
       if (!fd) {
         result = { ok: false, error: 'noDispatcher' };
       } else {
-        result = runCommand(fd, detail);
+        result = await runCommand(fd, detail);
       }
     } catch (err) {
       result = { ok: false, error: String(err && /** @type {any} */ (err).message) };

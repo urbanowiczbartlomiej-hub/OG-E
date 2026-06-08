@@ -37,6 +37,13 @@ import { safeClick, waitFor } from '../../lib/dom.js';
 const RPC_TIMEOUT_MS = 4000;
 /** How long to wait for the game's checkTarget response after setTarget. */
 const CHECK_TARGET_TIMEOUT_MS = 8000;
+/**
+ * Short fallback for checkTarget on re-entry (back-button scenario): the game
+ * deduplicates XHRs when coords are unchanged, so the event may never fire.
+ * If checkTarget doesn't arrive within this window we treat the target as
+ * still valid (it was validated on the previous pass) and continue.
+ */
+const CHECK_TARGET_REENTRY_MS = 500;
 /** How long to wait for step 2 to render after "continue". */
 const STEP2_TIMEOUT_MS = 8000;
 /** How long to wait for the dispatch control to become ready. */
@@ -316,8 +323,11 @@ export const select = async (order) => {
       await rpc('setTargetType', { type: order.target.type });
     }
 
-    // Arm the checkTarget listener BEFORE continuing — the game fires its
-    // checkTarget XHR as fleet2 loads, and we must not miss it.
+    // Arm checkTarget listener here — just before clickContinue — so it
+    // catches the fleet1→fleet2 transition XHR. Arming earlier (before
+    // setTarget) would cause it to resolve from primeAgrMoon's K1 XHR or
+    // fireInput's fleet1 XHR, which carry different orders than the
+    // authoritative fleet2 transition response.
     ctPromise = awaitCheckTarget(order.target);
     clickContinue();
     const onF2 = await waitFor(() => (step() === 'fleet2' ? true : null), {
@@ -334,7 +344,15 @@ export const select = async (order) => {
   // empty when AGR applied the target. Gating here is a fast pass/fail; no
   // blind polling.
   if (ctPromise) {
-    const ct = await ctPromise;
+    // Race checkTarget against a short fallback: on re-entry after the game's
+    // back-button the game deduplicates XHRs for unchanged coords and never
+    // fires, so awaitCheckTarget would block until CHECK_TARGET_TIMEOUT_MS.
+    // CHECK_TARGET_REENTRY_MS (500ms) is well above the normal XHR RTT (~50ms)
+    // so the race is transparent for first-pass flows.
+    const ct = await Promise.race([
+      ctPromise,
+      new Promise((r) => setTimeout(() => r(null), CHECK_TARGET_REENTRY_MS)),
+    ]);
     if (ct) {
       const tag = classifyTargetError(ct.errorCode);
       if (tag !== 'ok') {

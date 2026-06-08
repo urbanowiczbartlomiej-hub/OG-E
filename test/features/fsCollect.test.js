@@ -10,7 +10,7 @@
 // @ts-check
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   installFsCollect,
   _resetFsCollectForTest,
@@ -105,17 +105,22 @@ describe('mount / unmount', () => {
 
 describe('set collect target (via long-press on the Collect zone)', () => {
   it('writes the current body (from meta tags) as collectTarget on long-press', async () => {
-    enable();
-    installFsCollect();
-    setBodyMeta('4:472:15', 'moon');
-    const collectZone = /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-zone'));
-    collectZone.dispatchEvent(new PointerEvent('pointerdown', { clientX: 0, clientY: 0 }));
-    // Simulate long-press: wait past the threshold, then release.
-    await new Promise((resolve) => setTimeout(resolve, 350));
-    collectZone.dispatchEvent(new PointerEvent('pointerup'));
-    expect(fsRoutesStore.get().collectTarget).toEqual({
-      galaxy: 4, system: 472, position: 15, type: TARGET_MOON,
-    });
+    vi.useFakeTimers();
+    try {
+      enable();
+      installFsCollect();
+      setBodyMeta('4:472:15', 'moon');
+      const collectZone = /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-zone'));
+      collectZone.dispatchEvent(new PointerEvent('pointerdown', { clientX: 0, clientY: 0 }));
+      // Advance past the 3000ms long-press threshold.
+      await vi.advanceTimersByTimeAsync(3100);
+      collectZone.dispatchEvent(new PointerEvent('pointerup'));
+      expect(fsRoutesStore.get().collectTarget).toEqual({
+        galaxy: 4, system: 472, position: 15, type: TARGET_MOON,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('a quick tap collects instead of setting the target', () => {

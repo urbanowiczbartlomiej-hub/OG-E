@@ -93,7 +93,7 @@ const DRAG_THRESHOLD = 8;
 const DEFAULT_EDGE_OFFSET_PX = 20;
 const FLASH_MS = 1500;
 const SENT_LOCK_MS = 3000;
-const LONG_PRESS_MS = 300;
+const LONG_PRESS_MS = 3000;
 
 // Colours — distinct from sendExp (blue) / sendCol (green/teal).
 const BG_MICRO = 'rgba(123,63,160,0.7)'; // violet, semi-transparent
@@ -488,9 +488,9 @@ const refresh = () => {
   if (microZone) {
     const route = findRouteForBody(fsRoutesStore.get().routes, readCurrentBody());
     if (!route) {
-      setLabel(microZone, 'Setup', undefined, 'no route here');
+      setLabel(microZone, 'Setup', undefined, '(no routes)');
     } else if (onF2Ready && pending && pending.mode === 'micro') {
-      setLabel(microZone, 'Send', collectTargetLabel(pending.target), 'tap to send');
+      setLabel(microZone, 'Send', collectTargetLabel(pending.target), '(tap to send)');
     } else {
       const inflight = microInFlightKeys();
       const next = findNextMicroTarget(route.targets, inflight);
@@ -509,7 +509,7 @@ const refresh = () => {
     if (!t) {
       setLabel(collectZone, 'Send All', undefined, '(hold to set target)');
     } else if (onF2Ready && pending && pending.mode === 'collect') {
-      setLabel(collectZone, 'Send All', collectTargetLabel(t), 'tap to send');
+      setLabel(collectZone, 'Send All', collectTargetLabel(t), '(tap to send)');
     } else {
       setLabel(collectZone, 'Send All', collectTargetLabel(t), '(hold to change)');
     }
@@ -588,6 +588,14 @@ export const installFsCollect = () => {
     if (!controller) return;
 
     refresh();
+    // OGame populates #eventContent via its own JS after DOMContentLoaded.
+    // Watch for the first child mutation and re-run refresh so "X left"
+    // reflects actual in-flight fleets without waiting a fixed timeout.
+    const eventBox = document.getElementById('eventContent');
+    if (eventBox) {
+      const obs = new MutationObserver(() => { obs.disconnect(); refresh(); });
+      obs.observe(eventBox, { childList: true, subtree: true });
+    }
   };
 
   const removeButton = () => {
