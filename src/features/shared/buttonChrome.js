@@ -59,9 +59,9 @@ export const BUTTON_CHROME_CSS = [
 
   // ── Engraved title ring (SVG overlay, scales via viewBox) ──
   '.oge-ring{position:absolute;inset:0;width:100%;height:100%;',
-  'pointer-events:none;z-index:3;overflow:visible;}',
-  '.oge-ring-band{fill:none;stroke:rgba(214,232,250,0.22);stroke-width:7;}',
-  '.oge-ring-title{fill:rgba(8,16,26,0.72);font-weight:700;',
+  'pointer-events:none;overflow:visible;}',
+  '.oge-ring-band{fill:none;stroke:rgba(255,252,252,0.15);stroke-width:7;}',
+  '.oge-ring-title{fill:rgba(2,2,2,0.70);font-weight:700;',
   'font-family:Verdana,Geneva,Tahoma,sans-serif;text-transform:uppercase;',
   // Engraved-into-the-ring look: dark glyphs with a thin light highlight
   // below, plus a soft white halo so the title reads as cut into a lit band.
