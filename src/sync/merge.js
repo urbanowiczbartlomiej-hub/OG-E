@@ -358,3 +358,51 @@ export const clearGalaxyScans = (payload, galaxy) => {
   }
   return { galaxyScans: filtered, colonyHistory };
 };
+
+/**
+ * @typedef {import('../state/dailyActions.js').DailyState} DailyState
+ */
+
+/**
+ * Merge local + remote per-universe daily-action state, field-by-field
+ * max-wins.
+ *
+ * Merge rules:
+ *   - String fields (day keys): lexicographic max — a later YYYY-MM-DD date
+ *     string is always larger, so "2026-06-09" beats "2026-06-08".
+ *   - Numeric fields (epoch-ms timestamps): larger number is newer.
+ *   - A missing / falsy remote value is treated as 0 / ""; local keeps.
+ *
+ * `changed` is `true` iff remote contributed a strictly newer value for at
+ * least one field (anti-loop hint for the caller — see file header).
+ *
+ * @param {DailyState} local
+ * @param {Partial<DailyState> | undefined | null} remote
+ * @returns {{ merged: DailyState, changed: boolean }}
+ */
+export const mergeDailyState = (local, remote) => {
+  if (!remote || typeof remote !== 'object') return { merged: local, changed: false };
+
+  /** @param {string} a @param {string} b @returns {string} */
+  const maxStr = (a, b) => ((b ?? '') > (a ?? '') ? b : a);
+  /** @param {number} a @param {number} b @returns {number} */
+  const maxNum = (a, b) => ((b ?? 0) > (a ?? 0) ? b : a);
+
+  const merged = {
+    rewardingDoneDay: maxStr(local.rewardingDoneDay, remote.rewardingDoneDay ?? ''),
+    traderImportDay: maxStr(local.traderImportDay, remote.traderImportDay ?? ''),
+    traderAuctionBidAt: maxNum(local.traderAuctionBidAt, remote.traderAuctionBidAt ?? 0),
+    traderAuctionQuietUntil: maxNum(
+      local.traderAuctionQuietUntil,
+      remote.traderAuctionQuietUntil ?? 0,
+    ),
+  };
+
+  const changed =
+    merged.rewardingDoneDay !== local.rewardingDoneDay ||
+    merged.traderImportDay !== local.traderImportDay ||
+    merged.traderAuctionBidAt !== local.traderAuctionBidAt ||
+    merged.traderAuctionQuietUntil !== local.traderAuctionQuietUntil;
+
+  return { merged, changed };
+};

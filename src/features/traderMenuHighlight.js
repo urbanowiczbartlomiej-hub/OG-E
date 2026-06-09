@@ -78,6 +78,12 @@ import { safeLS } from '../lib/storage.js';
 import { settingsStore } from '../state/settings.js';
 import { GAME } from '../lib/gameDom.js';
 import { parseTraderCountdown } from '../domain/traderCountdown.js';
+import {
+  TRADER_AUCTION_BID_KEY,
+  TRADER_IMPORT_KEY,
+  TRADER_AUCTION_QUIET_KEY,
+  DAILY_STATE_CHANGED_EVENT,
+} from '../state/dailyActions.js';
 
 const STYLE_ID = 'oge-trader-highlight-style';
 
@@ -104,25 +110,11 @@ const MENU_HINT = 'ipiToolbarTrader';
 const AUCTION_HINT = 'ipiTraderAuctioneer';
 const IMPORT_HINT = 'ipiTraderImportExport';
 
-/**
- * localStorage key holding the millisecond timestamp of the player's last
- * successful auction bid. Drives the ~30-minute yellow snooze.
- */
-export const AUCTION_BID_KEY = 'oge-trader-auction-bid-at';
-
-/**
- * localStorage key holding the local day-string (`YYYY-MM-DD`) of the
- * player's last successful import trade. Drives the daily red reset.
- */
-export const IMPORT_TRADED_KEY = 'oge-trader-import-traded-day';
-
-/**
- * localStorage key holding an epoch-ms timestamp until which the yellow glow
- * stays quiet — set from the Auctioneer page's "next auction in …" countdown
- * when no auction is currently live, so the nag returns exactly as the next
- * auction opens (a precise alternative to the fixed ~30-min bid snooze).
- */
-export const AUCTION_QUIET_KEY = 'oge-trader-auction-quiet-until';
+// Re-exported under their historical names so existing tests and any external
+// tooling that imports from this module continue to work unchanged.
+export const AUCTION_BID_KEY = TRADER_AUCTION_BID_KEY;
+export const IMPORT_TRADED_KEY = TRADER_IMPORT_KEY;
+export const AUCTION_QUIET_KEY = TRADER_AUCTION_QUIET_KEY;
 
 /**
  * Trader sub-page selectors (game DOM — fragile, locale-independent where
@@ -500,12 +492,14 @@ const refresh = () => {
 const onBidPlaced = () => {
   safeLS.set(AUCTION_BID_KEY, String(Date.now()));
   applyHighlight();
+  document.dispatchEvent(new CustomEvent(DAILY_STATE_CHANGED_EVENT));
 };
 
 /** Stamp today's import and re-render. Driven by `oge:traderImportTraded`. */
 const onImportTraded = () => {
   safeLS.set(IMPORT_TRADED_KEY, localDayKey(new Date()));
   applyHighlight();
+  document.dispatchEvent(new CustomEvent(DAILY_STATE_CHANGED_EVENT));
 };
 
 /** Strip highlight + remove style — used when toggled off. */

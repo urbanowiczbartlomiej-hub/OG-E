@@ -90,7 +90,7 @@ import { historyStore } from '../state/history.js';
 import { settingsStore } from '../state/settings.js';
 import { fsRoutesStore, fsRoutesKeyFor, fsRoutesTsKeyFor } from '../state/fsRoutes.js';
 import { migrateFsRoutes } from '../domain/fsRoutes.js';
-import { mergeScans, mergeHistory, mergeSettings, mergeFsRoutes } from './merge.js';
+import { mergeScans, mergeHistory, mergeSettings, mergeFsRoutes, mergeDailyState } from './merge.js';
 import {
   fetchGistData,
   writeGistData,
@@ -112,6 +112,11 @@ import {
 import { debounce } from '../lib/debounce.js';
 import { chromeStore } from '../lib/storage.js';
 import { parseUniverseId } from '../lib/universeId.js';
+import {
+  readDailyState,
+  writeDailyState,
+  DAILY_STATE_CHANGED_EVENT,
+} from '../state/dailyActions.js';
 
 /**
  * Tombstone key suffixes the histogram page (extension origin) writes
@@ -434,6 +439,15 @@ const downloadAndMerge = async () => {
     );
     if (routesResult.changed) await writeLocalRoutesSlot(routesResult.merged);
 
+    // Daily-action state: per-universe, field-by-field max-wins.
+    if (routesUniverseId) {
+      const dailyResult = mergeDailyState(
+        readDailyState(),
+        remote.dailyStatePerUniverse?.[routesUniverseId],
+      );
+      if (dailyResult.changed) writeDailyState(dailyResult.merged);
+    }
+
     setStatus('down', new Date().toISOString());
     setStatus('err', null);
   } catch (err) {
@@ -549,6 +563,25 @@ const upload = async () => {
       ? mergedPerUniverse
       : undefined;
 
+    // Daily-action state: per-universe, field-by-field max-wins. Only
+    // contribute our universe's slot when at least one field is non-empty —
+    // same no-op PATCH guard as fsRoutes / settingsPerUniverse.
+    const mergedDailyPerUniverse = { ...(remote?.dailyStatePerUniverse || {}) };
+    if (routesUniverseId) {
+      const dailyResult = mergeDailyState(
+        readDailyState(),
+        remote?.dailyStatePerUniverse?.[routesUniverseId],
+      );
+      if (dailyResult.changed) writeDailyState(dailyResult.merged);
+      const ds = dailyResult.merged;
+      const dailyHasData =
+        ds.rewardingDoneDay || ds.traderImportDay || ds.traderAuctionBidAt || ds.traderAuctionQuietUntil;
+      if (dailyHasData) mergedDailyPerUniverse[routesUniverseId] = ds;
+    }
+    const mergedDailyPerUniverseOut = Object.keys(mergedDailyPerUniverse).length
+      ? mergedDailyPerUniverse
+      : undefined;
+
     // Skip the PATCH when the gist already matches the merged state.
     // This is the common case when upload fires right after a download
     // from another device and both sides already agree — PATCHing
@@ -558,7 +591,8 @@ const upload = async () => {
       sameJSON(remote?.colonyHistory, histResult.merged) &&
       sameJSON(remote?.settings, setResult.merged) &&
       sameJSON(remote?.fsRoutes, mergedFsRoutesOut) &&
-      sameJSON(remote?.settingsPerUniverse, mergedPerUniverseOut);
+      sameJSON(remote?.settingsPerUniverse, mergedPerUniverseOut) &&
+      sameJSON(remote?.dailyStatePerUniverse, mergedDailyPerUniverseOut);
 
     if (!gistIsCurrent) {
       await writeGistData({
@@ -569,6 +603,7 @@ const upload = async () => {
         settings: setResult.merged,
         fsRoutes: mergedFsRoutesOut,
         settingsPerUniverse: mergedPerUniverseOut,
+        dailyStatePerUniverse: mergedDailyPerUniverseOut,
       });
       setStatus('up', new Date().toISOString());
     }
@@ -737,6 +772,14 @@ export const installSync = () => {
   };
   document.addEventListener(FORCE_SYNC_EVENT, onForceSync);
 
+  // Daily-action state changes (rewarding done, trader bid/trade) — schedule
+  // an upload so the updated state reaches the gist quickly.
+  const onDailyStateChanged = () => {
+    if (!settingsStore.get().cloudSync) return;
+    scheduleUpload();
+  };
+  document.addEventListener(DAILY_STATE_CHANGED_EVENT, onDailyStateChanged);
+
   const syncKey = universeId
     ? syncRequestKeyFor(universeId)
     : SYNC_REQUEST_KEY_BASE;
@@ -835,6 +878,7 @@ export const installSync = () => {
       unsubSettings();
       unsubRoutes();
       document.removeEventListener(FORCE_SYNC_EVENT, onForceSync);
+      document.removeEventListener(DAILY_STATE_CHANGED_EVENT, onDailyStateChanged);
       unsubStorage();
       installed = null;
     },

@@ -175,6 +175,12 @@ import { clearScans, clearGalaxyScans } from './merge.js';
  *   Per-universe because these parameters (fsThreshold, colPassword, …)
  *   depend on which OGame server the user is playing and must not leak across
  *   universes. The top-level `settings` field retains only global preferences.
+ * @property {Record<string, import('../state/dailyActions.js').DailyState>} [dailyStatePerUniverse]
+ *   OPTIONAL, additive: daily-action completion state keyed by universe id.
+ *   Each slot is a {@link import('../state/dailyActions.js').DailyState} object.
+ *   Merge strategy: per-field max-wins (a later day string / higher timestamp
+ *   always beats an earlier one). Per-universe because tasks are server-specific
+ *   and must not leak across universes.
  */
 
 /**

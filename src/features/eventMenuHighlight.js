@@ -64,6 +64,8 @@ import { injectStyle } from '../lib/dom.js';
 import { debounce } from '../lib/debounce.js';
 import { settingsStore } from '../state/settings.js';
 import { GAME } from '../lib/gameDom.js';
+import { gameDayKey } from '../domain/gameDayKey.js';
+import { readDailyState } from '../state/dailyActions.js';
 
 const STYLE_ID = 'oge-event-highlight-style';
 
@@ -140,15 +142,44 @@ const CSS = `
 const REFRESH_DEBOUNCE_MS = 150;
 
 /**
+ * Return true when the element's href leads to the Rewarding component.
+ * Checks the element itself first (if it's an `<a>`), then its first `<a>`
+ * descendant (OGame wraps menu items in anchor tags inside `<li>` buttons).
+ *
+ * @param {Element} el
+ * @returns {boolean}
+ */
+const isRewardingButton = (el) => {
+  const href =
+    (el instanceof HTMLAnchorElement ? el.getAttribute('href') : null) ??
+    el.querySelector('a')?.getAttribute('href') ??
+    '';
+  return href.includes('component=rewarding');
+};
+
+/**
  * Return all ephemeral event menu entries: `.menubutton.premiumHighligt`
- * items inside `#menuTable` that are not one of the three permanent items.
+ * items inside `#menuTable` that are not one of the three permanent items,
+ * and that are not suppressed by a completed daily event.
+ *
+ * Rewarding buttons are excluded for the rest of the current game-day
+ * (14:00 reset) once `rewardingDoneDay` in localStorage matches today.
  *
  * @returns {Element[]}
  */
-const findEventItems = () =>
-  [...document.querySelectorAll(`${GAME.MENU_TABLE} .menubutton.premiumHighligt`)].filter(
-    (el) => !PERMANENT_HINTS.has(/** @type {HTMLElement} */ (el).dataset.ipiHint ?? ''),
+const findEventItems = () => {
+  const today = gameDayKey(new Date());
+  const { rewardingDoneDay } = readDailyState();
+  const rewardingDone = rewardingDoneDay === today;
+
+  return [...document.querySelectorAll(`${GAME.MENU_TABLE} .menubutton.premiumHighligt`)].filter(
+    (el) => {
+      if (PERMANENT_HINTS.has(/** @type {HTMLElement} */ (el).dataset.ipiHint ?? '')) return false;
+      if (rewardingDone && isRewardingButton(el)) return false;
+      return true;
+    },
   );
+};
 
 /**
  * Strip the highlight class from any previously tagged element, then
