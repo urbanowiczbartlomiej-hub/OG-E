@@ -213,6 +213,10 @@ let colReady = false;
 let colTarget = /** @type {Coords | null} */ (null);
 /** Last candidate surfaced by derive() — used by onSendHold to know what to skip. */
 let lastDerivedCandidate = /** @type {Coords | null} */ (null);
+/** Epoch-ms when the current min-gap wait started (0 = not in wait). */
+let waitStartAt = 0;
+/** Total wait seconds measured at the start of the current min-gap cycle. */
+let waitTotalSecs = 0;
 
 /** Bare fleetdispatch URL — the courier sets the colony ship + target
  * in-page, so no coords/mission/am params (avoids the second reload). */
@@ -318,8 +322,22 @@ const refresh = () => {
     // colony arrival is too close (the 1 Hz ticker drives it down).
     const wait = getColonizeWaitTime();
     if (wait > 0) {
+      // Record start time + total on first tick of this wait cycle.
+      if (waitStartAt === 0) {
+        waitStartAt = Date.now();
+        waitTotalSecs = wait;
+      }
+      // Progress arc: fills proportionally as the wait elapses (0 → 1).
+      const elapsed = (Date.now() - waitStartAt) / 1000;
+      controller?.setProgress(Math.min(elapsed / waitTotalSecs, 1));
       paintZone('send', { text: `Wait ${wait}s`, bg: BG_SEND_WAIT, dim: true });
     } else {
+      // Wait cleared — reset arc and show ready state.
+      if (waitStartAt !== 0) {
+        waitStartAt = 0;
+        waitTotalSecs = 0;
+        controller?.setProgress(0);
+      }
       paintZone('send', {
         text: 'Send!',
         subtext: `[${colTarget.galaxy}:${colTarget.system}:${colTarget.position}]`,
@@ -327,6 +345,12 @@ const refresh = () => {
       });
     }
     return;
+  }
+  // Not armed or not on fleet2 — clear any leftover progress arc.
+  if (waitStartAt !== 0) {
+    waitStartAt = 0;
+    waitTotalSecs = 0;
+    controller?.setProgress(0);
   }
   paintZone('send', result.send);
 };
@@ -992,4 +1016,6 @@ export const _resetSendColForTest = () => {
   colReady = false;
   colTarget = null;
   lastDerivedCandidate = null;
+  waitStartAt = 0;
+  waitTotalSecs = 0;
 };

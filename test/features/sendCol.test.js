@@ -383,13 +383,13 @@ describe('render — pure paint instructions', () => {
     expect(r.scan.text).toBe('All scanned!');
   });
 
-  it('idle with candidate -> "Send Colony" main + coords subtext', () => {
+  it('idle with candidate -> "Send" main + coords subtext', () => {
     const r = render({
       kind: 'idle',
       candidate: { galaxy: 4, system: 30, position: 8 },
       ...noScan,
     });
-    expect(r.send.text).toBe('Send Colony');
+    expect(r.send.text).toBe('Send');
     expect(r.send.subtext).toBe('[4:30:8]');
     expect(r.send.hint).toBe('(hold to skip)');
   });

@@ -570,7 +570,7 @@ export const render = (ctx) => {
   return {
     send: ctx.candidate
       ? {
-          text: 'Send Colony',
+          text: 'Send',
           subtext: `[${ctx.candidate.galaxy}:${ctx.candidate.system}:${ctx.candidate.position}]`,
           hint: '(hold to skip)',
           bg: BG_SEND_READY,
