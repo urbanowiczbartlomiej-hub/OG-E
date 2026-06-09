@@ -6,6 +6,58 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.16.0] — 2026-06-09
+
+### Added
+
+- **Per-universe settings sync via Gist.** Each universe you play now gets
+  its own section in the Gist — expedition/colonization slots, daily route,
+  fleet-save and reminder settings — so switching universes no longer
+  overwrites your other accounts. One Gist, all universes, fully
+  independent.
+- **Expedition fleet memory.** After landing on fleet1 for an expedition,
+  long-press the button to save the current ship selection as your preset.
+  Every subsequent tap replays that preset at 51 % of available ships (as
+  before). No preset saved yet? The button shows "Hold to set" so you
+  always know where you stand.
+- **Colonization: skip a blocked target with a 3-second hold.** If the
+  colony-ship is already flying toward a slot, you can hold the Send zone
+  to jump past that target and queue the next candidate instead of
+  waiting for it to clear.
+
+### Changed
+
+- **Expedition and Colonization buttons are now independent of AGR.**
+  OG-E drives the fleetdispatch page directly — no `#ago_routine_7` or
+  `#sendall` hooks — so the buttons continue to work even when AGR is
+  disabled or absent. Target coordinates are written straight into the
+  native form inputs; the game fires its own `checkTarget` as normal.
+- **Daily Run button** (formerly "Daily Resource Run") renamed to the
+  shorter "Daily Run" across the dashboard tab, hover tooltip and settings
+  panel.
+- **Reliable fleet-dispatch readiness.** All three buttons now wait for
+  the game's own `#dispatchFleet` element to be ready (absence of the
+  `.off` class) before firing — eliminating the race condition where an
+  early click would lock the button without sending.
+- **Moon targets supported.** The courier correctly fills in planet-type 3
+  when the configured destination is a moon, fixing a silent no-send for
+  moon-to-moon operations.
+- **Colonization re-entry wait.** After a colony-ship dispatch OG-E pauses
+  until fleetdispatch reloads before resetting the button, preventing a
+  double-click from landing on a stale page.
+
+### Fixed
+
+- Daily Run: ship-count edits in the settings panel now correctly activate
+  the Save button.
+- Daily Run: moon planet name is now read from the icon `alt` attribute
+  instead of `.planet-name`, matching what the game sets in that context.
+- Fleet: `setTargetType` also calls `fd.setTargetType` to bypass AGR's
+  `isTrusted` guard that was silently dropping the call.
+- Multiple smaller bugs in the Colonization / Daily Run send flow
+  (galaxy/system/position not wiring, mission not being armed, result not
+  being awaited).
+
 ## [1.15.5] — 2026-06-04
 
 ### Changed
