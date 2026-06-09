@@ -6,6 +6,32 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.16.1] — 2026-06-09
+
+### Added
+
+- **Event highlight auto-silences when all daily tasks are done.** Once you
+  complete every task on the Rewards page the orange pulse on the event menu
+  button disappears for the rest of the day (14:00 reset). It comes back
+  automatically the next game-day, when a fresh batch of tasks is available.
+- **Daily-action state syncs across devices.** "Rewards done today", last
+  trader bid, and last import trade are now included in the Gist sync — so
+  completing tasks on one device silences the highlights on all others within
+  the next sync cycle.
+
+### Changed
+
+- **Button "Wait…" state is now consistent and grayed out.** All three
+  floating buttons (expedition, colonization, daily-run) now show **Wait…**
+  while an async operation is in progress and dim to 50 % opacity for the
+  duration — replacing the earlier mix of "Loading…" and "Preparing…" labels
+  on the expedition button.
+- **Colonization button label hierarchy flipped.** The action label is now the
+  large primary line; coordinates and hints appear smaller below it.
+  Send zone: **Send Colony** (large) → `[g:s:p]` → *(hold to skip)*.
+  Scan zone on galaxy view: **Scan** (large) → `[g:s]` → *(N left)*.
+  Scan zone elsewhere: **To galaxy** (large) → *N left*.
+
 ## [1.16.0] — 2026-06-09
 
 ### Added
