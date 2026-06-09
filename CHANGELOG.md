@@ -6,6 +6,29 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.16.2] — 2026-06-09
+
+### Added
+
+- **Progress arc on colonization wait.** While waiting for the colony-ship
+  min-gap (the "Wait Xs" state), a visual progress arc fills proportionally
+  as the wait elapses — giving real-time feedback on how much longer until
+  the send becomes available.
+
+### Fixed
+
+- **Moon page home-planet detection.** On moon pages where OGame places the
+  highlight marker on the moon-link rather than the row element, the
+  colonization button now correctly identifies your home planet.
+
+### Changed
+
+- **Colonization "Send Colony" label shortened to "Send".** Shorter label
+  fits the new HUD-style button design while coords remain visible below.
+- **Fleet dispatcher integration.** The send-colony hook now reads the
+  target from `window.fleetDispatcher.targetPlanet` when available,
+  allowing fleet-courier links to work without encoding coords in the URL.
+
 ## [1.16.1] — 2026-06-09
 
 ### Added
