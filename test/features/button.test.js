@@ -165,6 +165,28 @@ describe('two-zone button', () => {
     expect(document.getElementById('oge-test-top')?.style.fontSize).toBe(expected);
     expect(document.getElementById('oge-test-bottom')?.style.fontSize).toBe(expected);
   });
+
+  it('setProgress drives the progress arc stroke-dashoffset (0 = empty, 1 = full)', () => {
+    const ctl = make();
+    const arc = document.querySelector('.oge-ring-progress');
+    expect(arc).not.toBeNull();
+    // Initial state: dashoffset=100 (arc empty, invisible).
+    expect(arc?.getAttribute('stroke-dashoffset')).toBe('100');
+    // Half filled: dashoffset=50.
+    ctl.setProgress(0.5);
+    expect(arc?.getAttribute('stroke-dashoffset')).toBe('50');
+    // Fully filled: dashoffset=0.
+    ctl.setProgress(1);
+    expect(arc?.getAttribute('stroke-dashoffset')).toBe('0');
+    // Reset: back to empty.
+    ctl.setProgress(0);
+    expect(arc?.getAttribute('stroke-dashoffset')).toBe('100');
+    // Clamps to [0,1].
+    ctl.setProgress(2);
+    expect(arc?.getAttribute('stroke-dashoffset')).toBe('0');
+    ctl.setProgress(-1);
+    expect(arc?.getAttribute('stroke-dashoffset')).toBe('100');
+  });
 });
 
 describe('long-press (hold) gesture on a zone', () => {

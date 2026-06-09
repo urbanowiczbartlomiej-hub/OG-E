@@ -202,7 +202,7 @@ export const installButtonChrome = () => {
  *
  * @param {string} title
  * @param {string} ringId  unique id for the arc <path> this svg references.
- * @param {number | null} [progress]  0..1 initial fill of the progress arc (omit = hidden).
+ * @param {number | null} [progress]  0..1 initial fill of the progress arc (omit = starts empty).
  * @returns {SVGSVGElement}
  */
 const buildRing = (title, ringId, progress = null) => {
@@ -231,18 +231,19 @@ const buildRing = (title, ringId, progress = null) => {
   charge.setAttribute('transform', 'rotate(-90 50 50)');
   svg.appendChild(charge);
 
-  // Optional countdown progress arc (e.g. "Wait Xs" state). Starts at the
-  // top (−90°) and travels clockwise. stroke-dashoffset encodes the fill.
-  if (progress != null) {
-    const prog = document.createElementNS(SVG_NS, 'circle');
-    prog.setAttribute('class', 'oge-ring-progress');
-    prog.setAttribute('cx', '50'); prog.setAttribute('cy', '50'); prog.setAttribute('r', '46.5');
-    prog.setAttribute('pathLength', '100');
-    prog.setAttribute('stroke-dasharray', '100');
-    prog.setAttribute('stroke-dashoffset', String(100 - Math.max(0, Math.min(1, progress)) * 100));
-    prog.setAttribute('transform', 'rotate(-90 50 50)');
-    svg.appendChild(prog);
-  }
+  // Countdown progress arc (e.g. "Wait Xs" min-gap state). Always present
+  // so callers can drive it at any time via setProgress(); starts at
+  // dashoffset=100 (invisible / empty). stroke-dashoffset encodes the fill:
+  // 100 = empty, 0 = full circle.
+  const prog = document.createElementNS(SVG_NS, 'circle');
+  prog.setAttribute('class', 'oge-ring-progress');
+  prog.setAttribute('cx', '50'); prog.setAttribute('cy', '50'); prog.setAttribute('r', '46.5');
+  prog.setAttribute('pathLength', '100');
+  prog.setAttribute('stroke-dasharray', '100');
+  prog.setAttribute('stroke-dashoffset',
+    progress != null ? String(100 - Math.max(0, Math.min(1, progress)) * 100) : '100');
+  prog.setAttribute('transform', 'rotate(-90 50 50)');
+  svg.appendChild(prog);
 
   // Invisible arc the title rides on, at the band's own radius (r=46.5).
   // From the LEFT point over the TOP to the RIGHT point: with these two

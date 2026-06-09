@@ -90,6 +90,7 @@ export const LABEL_CLASS = 'oge-btn-label';
  * @property {(key: string, text: string) => void} setText  single-line shortcut.
  * @property {(key: string, bg: string) => void} setBg
  * @property {(key: string, dim: boolean) => void} setDim
+ * @property {(pct: number) => void} setProgress  0 = empty, 1 = full circle on the progress arc.
  * @property {(size: number) => void} resize                live diameter + font.
  * @property {() => boolean} wasDrag
  * @property {() => void} resetDrag
@@ -405,6 +406,10 @@ export const createButton = (cfg) => {
     }
   }
 
+  const progressArc = /** @type {SVGCircleElement | null} */ (
+    outer.querySelector('.oge-ring-progress')
+  );
+
   return {
     el: outer,
     zoneEl: (key) => zoneEls.get(key) ?? null,
@@ -425,6 +430,12 @@ export const createButton = (cfg) => {
     setDim: (key, dim) => {
       const el = zoneEls.get(key);
       if (el) el.style.opacity = dim ? '0.5' : '1';
+    },
+    setProgress: (pct) => {
+      progressArc?.setAttribute(
+        'stroke-dashoffset',
+        String((1 - Math.max(0, Math.min(1, pct))) * 100),
+      );
     },
     resize: (size) => {
       outer.style.width = size + 'px';
