@@ -96,8 +96,8 @@ const SENT_LOCK_MS = 3000;
 const LONG_PRESS_MS = 3000;
 
 // Colours — distinct from sendExp (blue) / sendCol (green/teal).
-const BG_MICRO = 'rgba(123,63,160,0.7)'; // violet, semi-transparent
-const BG_COLLECT = 'rgba(31,111,111,0.7)'; // teal-dark, semi-transparent
+const BG_MICRO = '#a78bfa';   // violet rim
+const BG_COLLECT = '#2dd4bf'; // teal rim
 
 // ─── helpers (impure env reads) ─────────────────────────────────────────
 

@@ -39,13 +39,12 @@ describe('shared button chrome stylesheet', () => {
     expect(document.querySelectorAll(`#${CHROME_STYLE_ID}`)).toHaveLength(1);
   });
 
-  it('targets all three buttons and carries vignette + ring + ripple rules', () => {
-    for (const id of ['oge-send-exp', 'oge-send-col', 'oge-fs-unified']) {
-      expect(BUTTON_CHROME_CSS).toContain(`#${id}::after`);
-    }
+  it('targets .oge-host with state rim colour and carries ring + ripple rules', () => {
+    expect(BUTTON_CHROME_CSS).toContain('.oge-host');
+    expect(BUTTON_CHROME_CSS).toContain('--rim');
     expect(BUTTON_CHROME_CSS).toContain('pointer-events:none');
-    expect(BUTTON_CHROME_CSS).toContain('inset 0 0 18px 4px rgba(0,0,0,0.55)');
     expect(BUTTON_CHROME_CSS).toContain('.oge-ring-title');
+    expect(BUTTON_CHROME_CSS).toContain('.oge-ring-brand');
     expect(BUTTON_CHROME_CSS).toContain('@keyframes oge-ripple-kf');
     expect(BUTTON_CHROME_CSS).toContain('.oge-tap-active');
   });

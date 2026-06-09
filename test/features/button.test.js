@@ -45,7 +45,7 @@ describe('single-zone button', () => {
     expect(btn?.tagName).toBe('BUTTON');
     expect(btn?.getAttribute('aria-label')).toBe('Do it');
     expect(btn?.title).toBe('Expeditions');
-    expect(btn?.style.background).toBe('red');
+    expect(btn?.style.getPropertyValue('--rim')).toBe('red');
   });
 
   it('returns null on a redundant mount (idempotent)', () => {
@@ -68,15 +68,15 @@ describe('single-zone button', () => {
     expect(btn.querySelector('.oge-ring')).not.toBeNull();
   });
 
-  it('setDim toggles opacity on the host; setBg recolours it', () => {
+  it('setDim toggles opacity on the host; setBg updates --rim', () => {
     const ctl = make();
     const btn = /** @type {HTMLElement} */ (document.getElementById('oge-test-single'));
     ctl.setDim('main', true);
     expect(btn.style.opacity).toBe('0.5');
     ctl.setDim('main', false);
     expect(btn.style.opacity).toBe('1');
-    ctl.setBg('main', 'blue');
-    expect(btn.style.background).toBe('blue');
+    ctl.setBg('main', '#38bdf8');
+    expect(btn.style.getPropertyValue('--rim')).toBe('#38bdf8');
   });
 
   it('resize updates diameter and font-size', () => {
@@ -143,8 +143,8 @@ describe('two-zone button', () => {
     expect(top.style.opacity).toBe('0.5');
     expect(bottom.style.opacity).not.toBe('0.5');
     ctl.setBg('bottom', 'purple');
-    expect(bottom.style.background).toBe('purple');
-    expect(top.style.background).toBe('green');
+    expect(bottom.style.getPropertyValue('--rim')).toBe('purple');
+    expect(top.style.getPropertyValue('--rim')).toBe('green');
   });
 
   it('routes each zone click to its own onTap', () => {

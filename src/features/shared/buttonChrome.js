@@ -39,60 +39,146 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const XLINK_NS = 'http://www.w3.org/1999/xlink';
 
 /**
- * The OGame-style decorative CSS shared by all three floating buttons.
- * Exported as a pure string so a test can assert it targets the three
- * button ids and carries the overlay / ring / ripple / press rules.
+ * The HUD command-node decorative CSS shared by all three floating buttons.
+ * State colour lives in `--rim` (set per button via `style.setProperty`);
+ * the dark `--surface` core reads on any game background.  Exported as a
+ * pure string so a test can assert it carries the right class selectors.
  */
 export const BUTTON_CHROME_CSS = [
-  // ── Edge vignette + glassy top sheen (drawn on top of the colours) ──
-  // pointer-events:none so taps fall through; clipped to the circle by
-  // the host's own border-radius (+ overflow on the split buttons).
-  '#oge-send-exp::after,#oge-send-col::after,#oge-fs-unified::after{',
-  'content:"";position:absolute;inset:0;border-radius:50%;',
-  'pointer-events:none;z-index:2;',
+  // ── Host: dark core, state rim colour, shared transitions ──────────────
+  '.oge-host{',
+  '--surface:#0b1220;--rim:#38bdf8;--label:#f8fafc;',
+  'position:relative;border-radius:50%;isolation:isolate;',
+  'font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Verdana,sans-serif;',
+  'font-weight:700;color:var(--label);cursor:pointer;',
+  '-webkit-user-select:none;user-select:none;touch-action:none;',
+  'transition:transform .16s cubic-bezier(.2,.7,.3,1),box-shadow .2s ease,filter .12s ease;}',
+
+  // ── Elevation + state rim border + glow ─────────────────────────────────
+  '.oge-host{',
   'box-shadow:',
-  'inset 0 0 18px 4px rgba(0,0,0,0.55),', // edge vignette ("załamanie")
-  'inset 0 2px 4px rgba(255,255,255,0.20);', // top bevel highlight
-  'background:radial-gradient(circle at 50% 26%,',
-  'rgba(255,255,255,0.16),rgba(255,255,255,0) 58%);', // glassy sheen
-  '}',
+  'inset 0 1px 0 rgba(255,255,255,.07),',
+  'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) 55%,transparent),',
+  '0 0 24px -6px var(--rim),',
+  '0 18px 36px -12px rgba(0,0,0,.72),',
+  '0 4px 12px -2px rgba(0,0,0,.5);}',
 
-  // ── Engraved title ring (SVG overlay, scales via viewBox) ──
+  // ── Single-zone: radial gradient tinted by rim ──────────────────────────
+  '.oge-host.single{',
+  'background:radial-gradient(125% 125% at 50% 16%,',
+  'color-mix(in oklab,var(--rim) 26%,var(--surface)) 0%,',
+  'var(--surface) 62%);}',
+
+  // ── Split-zone layout ───────────────────────────────────────────────────
+  '.oge-host.split{overflow:hidden;display:flex;flex-direction:column;background:var(--surface);}',
+
+  // ── Per-zone: rim-tinted gradient + zone divider ────────────────────────
+  '.oge-host .zone{',
+  'flex:1;border:none;cursor:pointer;color:var(--label);font-weight:700;',
+  'display:flex;align-items:center;justify-content:center;text-align:center;',
+  'position:relative;',
+  'background:radial-gradient(150% 150% at 50% 0%,',
+  'color-mix(in oklab,var(--rim) 30%,var(--surface)),',
+  'color-mix(in oklab,var(--rim) 12%,var(--surface)));',
+  'transition:filter .12s ease;}',
+  '.oge-host .zone+.zone::before{',
+  'content:"";position:absolute;left:14%;right:14%;top:-.5px;height:1.5px;z-index:4;',
+  'background:linear-gradient(90deg,transparent,',
+  'color-mix(in oklab,var(--rim) 60%,#fff),transparent);',
+  'opacity:.45;}',
+  '.oge-host .zone:hover{filter:brightness(1.12) saturate(1.05);}',
+
+  // ── Label container ─────────────────────────────────────────────────────
+  '.oge-btn-label{display:flex;align-items:center;justify-content:center;',
+  'width:100%;pointer-events:none;z-index:3;text-shadow:0 1px 2px rgba(0,0,6,.45);}',
+  '.oge-host.single>.oge-btn-label{position:absolute;inset:0;}',
+
+  // ── Ring: band, charge arc, progress arc, title, brand ──────────────────
   '.oge-ring{position:absolute;inset:0;width:100%;height:100%;',
-  'pointer-events:none;overflow:visible;}',
-  '.oge-ring-band{fill:none;stroke:rgba(255,252,252,0.15);stroke-width:7;}',
-  '.oge-ring-title{fill:rgba(2,2,2,0.70);font-weight:700;',
-  'font-family:Verdana,Geneva,Tahoma,sans-serif;text-transform:uppercase;',
-  // Engraved-into-the-ring look: dark glyphs with a thin light highlight
-  // below, plus a soft white halo so the title reads as cut into a lit band.
-  'filter:drop-shadow(0 0.5px 0.4px rgba(255,255,255,0.45)) ',
-  'drop-shadow(0 0 1.2px rgba(255,255,255,0.9));}',
+  'pointer-events:none;overflow:visible;z-index:2;}',
+  '.oge-ring-band{fill:none;stroke:rgba(148,163,184,.22);stroke-width:6;}',
+  '.oge-ring-progress{fill:none;stroke:var(--rim);stroke-width:6;stroke-linecap:round;',
+  'filter:drop-shadow(0 0 2.5px var(--rim));transition:stroke-dashoffset .4s ease;}',
+  '.oge-ring-charge{fill:none;stroke:var(--rim);stroke-width:6.5;stroke-linecap:round;',
+  'filter:drop-shadow(0 0 5px var(--rim));}',
+  '.oge-ring-title{fill:var(--label);font-weight:700;',
+  'font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Verdana,sans-serif;',
+  'text-transform:uppercase;',
+  // paint-order:stroke puts the stroke under the fill so halos don't eat glyph details.
+  'paint-order:stroke;stroke:rgba(2,6,16,.6);stroke-width:.7px;stroke-linejoin:round;}',
+  '.oge-ring-brand{fill:color-mix(in oklab,var(--rim) 62%,#94a3b8);font-weight:700;',
+  'text-transform:uppercase;letter-spacing:.4px;',
+  'paint-order:stroke;stroke:rgba(2,6,16,.55);stroke-width:.6px;}',
 
-  // ── Tap ripple (light wave from the touch point) ──
+  // ── Tap ripple (rim-coloured wave from the touch point) ─────────────────
   '.oge-deco-layer{position:absolute;inset:0;border-radius:50%;',
   'overflow:hidden;pointer-events:none;z-index:1;}',
   '.oge-ripple{position:absolute;border-radius:50%;',
-  'background:radial-gradient(circle,rgba(255,255,255,0.45),',
-  'rgba(255,255,255,0.12) 60%,rgba(255,255,255,0) 70%);',
+  'background:radial-gradient(circle,',
+  'color-mix(in oklab,var(--rim) 55%,#fff) 0%,',
+  'color-mix(in oklab,var(--rim) 30%,transparent) 55%,transparent 70%);',
   'transform:translate(-50%,-50%) scale(0);',
-  'animation:oge-ripple-kf 0.5s ease-out forwards;}',
+  'animation:oge-ripple-kf .5s ease-out forwards;}',
   '@keyframes oge-ripple-kf{',
-  'from{transform:translate(-50%,-50%) scale(0);opacity:0.9;}',
+  'from{transform:translate(-50%,-50%) scale(0);opacity:.85;}',
   'to{transform:translate(-50%,-50%) scale(1);opacity:0;}}',
 
-  // ── Per-zone press feedback ──
-  // No inline `filter` exists anywhere, so this always wins (unlike
-  // box-shadow, which sendExp pins inline). A quick brighten reads as the
-  // glassy face lighting up under the finger.
-  '#oge-send-exp,#oge-send-col button,#oge-fs-unified button{',
-  'transition:filter 0.12s ease;}',
-  '.oge-tap-active{filter:brightness(1.18) saturate(1.08);}',
+  // ── Hover / active states ────────────────────────────────────────────────
+  '.oge-host:hover{transform:translateY(-1px);',
+  'box-shadow:',
+  'inset 0 1px 0 rgba(255,255,255,.09),',
+  'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) 70%,transparent),',
+  '0 0 30px -4px var(--rim),',
+  '0 22px 40px -12px rgba(0,0,0,.74),',
+  '0 4px 12px -2px rgba(0,0,0,.5);}',
+  '.oge-host:active{transform:scale(.975);}',
+  '.oge-tap-active{filter:brightness(1.08);}',
 
-  // ── Suppress the permanent native focus ring ──
-  // The buttons auto-restore focus on load (see draggableButton.js), so a
-  // native outline would otherwise sit forever on one of them.
-  '#oge-send-exp:focus,#oge-send-col button:focus,#oge-fs-unified button:focus',
-  '{outline:none;}',
+  // ── Hold-to-confirm ring charge animation ────────────────────────────────
+  // --charge (0→1) is set by JS; drives scale, glow intensity and arc fill.
+  '.oge-host.oge-charging{',
+  'transform:scale(calc(1 + .045*var(--charge,0)));',
+  'box-shadow:',
+  'inset 0 1px 0 rgba(255,255,255,.1),',
+  'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) calc(55% + 35%*var(--charge,0)),transparent),',
+  '0 0 calc(22px + 30px*var(--charge,0)) -6px var(--rim),',
+  '0 18px 36px -12px rgba(0,0,0,.72),0 4px 12px -2px rgba(0,0,0,.5);}',
+  '.oge-host.oge-fired{animation:oge-fire .45s ease-out;}',
+  '@keyframes oge-fire{',
+  '0%{filter:brightness(1.6);transform:scale(1.07);}',
+  '100%{filter:none;transform:scale(1);}}',
+
+  // ── Focus ring (keyboard a11y) ───────────────────────────────────────────
+  '.oge-host:focus-visible,.oge-host .zone:focus-visible{',
+  'outline:3px solid color-mix(in oklab,var(--rim) 85%,#fff);outline-offset:3px;}',
+  '.oge-host:focus:not(:focus-visible),.oge-host .zone:focus:not(:focus-visible){outline:none;}',
+
+  // ── State flag animations (error pulsates faster, wait slower) ───────────
+  '.oge-host[data-flag~="error"]{animation:oge-alert 1.6s ease-in-out infinite;}',
+  '.oge-host[data-flag~="wait"]{animation:oge-alert 2.4s ease-in-out infinite;}',
+  '@keyframes oge-alert{',
+  '0%,100%{box-shadow:',
+  'inset 0 1px 0 rgba(255,255,255,.07),',
+  'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) 55%,transparent),',
+  '0 0 22px -8px var(--rim),0 18px 36px -12px rgba(0,0,0,.72),0 4px 12px -2px rgba(0,0,0,.5);}',
+  '50%{box-shadow:',
+  'inset 0 1px 0 rgba(255,255,255,.1),',
+  'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) 80%,transparent),',
+  '0 0 34px -2px var(--rim),0 18px 36px -12px rgba(0,0,0,.72),0 4px 12px -2px rgba(0,0,0,.5);}}',
+
+  // ── Disabled ─────────────────────────────────────────────────────────────
+  '.oge-host[aria-disabled="true"]{cursor:not-allowed;filter:grayscale(.55) brightness(.72);',
+  'box-shadow:inset 0 0 0 1px rgba(148,163,184,.25),',
+  '0 16px 30px -14px rgba(0,0,0,.7);animation:none;}',
+  '.oge-host[aria-disabled="true"] .zone{pointer-events:none;}',
+
+  // ── Reduced motion ────────────────────────────────────────────────────────
+  '@media (prefers-reduced-motion:reduce){',
+  '.oge-host,.oge-host .zone,.oge-ring-progress{transition:none;}',
+  '.oge-ripple{display:none;}',
+  '.oge-host[data-flag]{animation:none;}',
+  '.oge-host.oge-charging{transform:none;}',
+  '.oge-host.oge-fired{animation:none;}}',
 ].join('');
 
 /**
@@ -116,24 +202,47 @@ export const installButtonChrome = () => {
  *
  * @param {string} title
  * @param {string} ringId  unique id for the arc <path> this svg references.
+ * @param {number | null} [progress]  0..1 initial fill of the progress arc (omit = hidden).
  * @returns {SVGSVGElement}
  */
-const buildRing = (title, ringId) => {
+const buildRing = (title, ringId, progress = null) => {
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('class', 'oge-ring');
   svg.setAttribute('viewBox', '0 0 100 100');
   svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
   svg.setAttribute('aria-hidden', 'true');
 
-  // The ring band itself (the thick "obwódka" the title is engraved on).
+  // The ring band itself (the "obwódka" the title is engraved on).
   const band = document.createElementNS(SVG_NS, 'circle');
   band.setAttribute('class', 'oge-ring-band');
   band.setAttribute('cx', '50');
   band.setAttribute('cy', '50');
-  // r=46.5 with stroke 7 ⇒ band spans 43..50: OUTER edge meets the button
-  // rim, inner edge widened back so the engraved titles fit on the band.
+  // r=46.5 with stroke 6 ⇒ band spans ~43..50: outer edge meets the rim.
   band.setAttribute('r', '46.5');
   svg.appendChild(band);
+
+  // Hold-to-confirm charge arc: starts hidden (dashoffset=100), animated by JS.
+  const charge = document.createElementNS(SVG_NS, 'circle');
+  charge.setAttribute('class', 'oge-ring-charge');
+  charge.setAttribute('cx', '50'); charge.setAttribute('cy', '50'); charge.setAttribute('r', '46.5');
+  charge.setAttribute('pathLength', '100');
+  charge.setAttribute('stroke-dasharray', '100');
+  charge.setAttribute('stroke-dashoffset', '100');
+  charge.setAttribute('transform', 'rotate(-90 50 50)');
+  svg.appendChild(charge);
+
+  // Optional countdown progress arc (e.g. "Wait Xs" state). Starts at the
+  // top (−90°) and travels clockwise. stroke-dashoffset encodes the fill.
+  if (progress != null) {
+    const prog = document.createElementNS(SVG_NS, 'circle');
+    prog.setAttribute('class', 'oge-ring-progress');
+    prog.setAttribute('cx', '50'); prog.setAttribute('cy', '50'); prog.setAttribute('r', '46.5');
+    prog.setAttribute('pathLength', '100');
+    prog.setAttribute('stroke-dasharray', '100');
+    prog.setAttribute('stroke-dashoffset', String(100 - Math.max(0, Math.min(1, progress)) * 100));
+    prog.setAttribute('transform', 'rotate(-90 50 50)');
+    svg.appendChild(prog);
+  }
 
   // Invisible arc the title rides on, at the band's own radius (r=46.5).
   // From the LEFT point over the TOP to the RIGHT point: with these two
@@ -159,7 +268,7 @@ const buildRing = (title, ringId) => {
   // Cap at 7 (then 2 smaller) so longer titles fit fully inside the rim.
   const fontSize = Math.max(3.5, Math.min(7, 92 / (upper.length * 0.72)) - 2);
   text.setAttribute('font-size', fontSize.toFixed(2));
-  text.setAttribute('letter-spacing', (fontSize * 0.06).toFixed(2));
+  text.setAttribute('letter-spacing', (fontSize * 0.08).toFixed(2));
 
   const textPath = document.createElementNS(SVG_NS, 'textPath');
   textPath.setAttribute('href', '#' + ringId);
@@ -184,7 +293,7 @@ const buildRing = (title, ringId) => {
   defs.appendChild(bpath);
 
   const brand = document.createElementNS(SVG_NS, 'text');
-  brand.setAttribute('class', 'oge-ring-title');
+  brand.setAttribute('class', 'oge-ring-brand');
   brand.setAttribute('text-anchor', 'middle');
   brand.setAttribute('dominant-baseline', 'central');
   brand.setAttribute('font-size', '4');
@@ -259,9 +368,10 @@ const wireZoneTap = (zone, host, layer) => {
  * @param {HTMLElement[]} opts.zones  Clickable zones to wire (1 or 2).
  * @param {string} opts.title  Human title, engraved uppercase on the ring.
  * @param {string} opts.ringId  Unique id for this button's arc path.
+ * @param {number} [opts.progress]  0..1 initial fill of the progress arc (omit = hidden).
  * @returns {void}
  */
-export const decorateButton = ({ host, zones, title, ringId }) => {
+export const decorateButton = ({ host, zones, title, ringId, progress }) => {
   if (!host || host.querySelector('.oge-deco-layer')) return;
   installButtonChrome();
 
@@ -269,7 +379,7 @@ export const decorateButton = ({ host, zones, title, ringId }) => {
   layer.className = 'oge-deco-layer';
   host.appendChild(layer);
 
-  host.appendChild(buildRing(title, ringId));
+  host.appendChild(buildRing(title, ringId, progress ?? null));
 
   for (const zone of zones) wireZoneTap(zone, host, layer);
 };

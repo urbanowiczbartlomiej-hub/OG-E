@@ -92,18 +92,18 @@ export const SCAN_COOLDOWN_MS = 8000;
 
 // ─── BG colors ───────────────────────────────────────────────────────────
 
-/** Green, translucent — idle "Send" with no candidate yet. */
-export const BG_SEND_IDLE = 'rgba(0, 160, 0, 0.75)';
-/** Darker blue — idle "Scan" / "Skip" half. */
-export const BG_SCAN_IDLE = 'rgba(60, 100, 150, 0.75)';
-/** Bright green — active "Send!" / "Send Colony [g:s:p]". */
-export const BG_SEND_READY = 'rgba(0, 200, 0, 0.85)';
-/** Amber — reserved / stale / timeout states (recoverable). */
-export const BG_SEND_STALE = 'rgba(200, 150, 0, 0.85)';
-/** Red — "No ship!" (unrecoverable until user builds a colonizer). */
-export const BG_SEND_ERROR = 'rgba(200, 0, 0, 0.85)';
-/** Yellow — mid-countdown "Wait Xs" label. */
-export const BG_SEND_WAIT = 'rgba(200, 200, 0, 0.8)';
+/** Rim colour for idle "Send" with no candidate yet (muted emerald). */
+export const BG_SEND_IDLE = '#22b07d';
+/** Rim colour for idle "Scan" / "Skip" half (steel blue). */
+export const BG_SCAN_IDLE = '#5b8fb9';
+/** Rim colour for active "Send!" / "Send Colony [g:s:p]" (bright emerald). */
+export const BG_SEND_READY = '#34d399';
+/** Rim colour for reserved / stale / timeout states — recoverable (amber). */
+export const BG_SEND_STALE = '#f59e0b';
+/** Rim colour for "No ship!" — unrecoverable until user builds a colonizer (rose). */
+export const BG_SEND_ERROR = '#fb7185';
+/** Rim colour for mid-countdown "Wait Xs" label (yellow). */
+export const BG_SEND_WAIT = '#fbbf24';
 
 // ─── Pure target selection ─────────────────────────────────────────────────
 

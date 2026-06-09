@@ -32,14 +32,8 @@ import { decorateButton } from './buttonChrome.js';
 import { installDrag, installFocusPersist } from './draggableButton.js';
 import { safeLS } from '../../lib/storage.js';
 
-/**
- * Shared drop-shadow every floating button pins. Deeper than the original,
- * and the `0 0 18px 5px` layer (no offset, positive spread) makes the
- * shadow begin already AT the button's outer rim rather than only past it.
- */
-const SHADOW =
-  '0 10px 30px rgba(0,0,0,0.70),0 4px 12px rgba(0,0,0,0.60),' +
-  '0 0 18px 5px rgba(0,0,0,0.55),0 0 0 1px rgba(0,0,0,0.45)';
+// box-shadow and background are now driven by the .oge-host CSS class via
+// the --rim custom property — no inline SHADOW constant needed here.
 
 /** Class on the per-zone label container the paint methods write into. */
 export const LABEL_CLASS = 'oge-btn-label';
@@ -62,7 +56,7 @@ export const LABEL_CLASS = 'oge-btn-label';
  * @property {string} key                  stable handle used by paint/setBg/setDim.
  * @property {string} id                   element id (OG-E's own surface).
  * @property {string} [ariaLabel]
- * @property {string} bg                   initial background.
+ * @property {string} bg                   initial rim/state colour (used as CSS --rim).
  * @property {(ev: MouseEvent) => void} onTap
  * @property {() => void} [onHold]         present ⇒ enables long-press on this zone.
  * @property {string} [focusValue]         present ⇒ persist focus under `focusKey`.
@@ -221,18 +215,16 @@ export const createButton = (cfg) => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.id = cfg.id;
+    btn.className = 'oge-host single';
     btn.tabIndex = 0;
     if (z.ariaLabel) btn.setAttribute('aria-label', z.ariaLabel);
     btn.title = cfg.title;
+    // background and box-shadow are driven by .oge-host CSS via --rim.
     btn.style.cssText = [
       'position:fixed',
       'border-radius:50%',
       'border:none',
-      `background:${z.bg}`,
-      'color:#fff',
-      'font-weight:bold',
       'z-index:99999',
-      `box-shadow:${SHADOW}`,
       'touch-action:none',
       'user-select:none',
       'cursor:pointer',
@@ -240,12 +232,15 @@ export const createButton = (cfg) => {
       `height:${cfg.size}px`,
       `font-size:${base}`,
     ].join(';');
+    btn.style.setProperty('--rim', z.bg);
     outer = btn;
     zoneEls.set(z.key, btn);
   } else {
     const wrap = document.createElement('div');
     wrap.id = cfg.id;
+    wrap.className = 'oge-host split';
     wrap.title = cfg.title;
+    // box-shadow is driven by .oge-host CSS via --rim (set to primary zone colour).
     wrap.style.cssText = [
       'position:fixed',
       'border-radius:50%',
@@ -256,29 +251,29 @@ export const createButton = (cfg) => {
       'touch-action:none',
       'user-select:none',
       'cursor:pointer',
-      `box-shadow:${SHADOW}`,
       `width:${cfg.size}px`,
       `height:${cfg.size}px`,
     ].join(';');
+    wrap.style.setProperty('--rim', cfg.zones[0].bg);
     for (const z of cfg.zones) {
       const half = document.createElement('button');
       half.type = 'button';
       half.id = z.id;
+      half.className = 'zone';
       half.tabIndex = 0;
       if (z.ariaLabel) half.setAttribute('aria-label', z.ariaLabel);
+      // background is driven by .oge-host .zone CSS via --rim.
       half.style.cssText = [
         'flex:1',
         'display:flex',
         'align-items:center',
         'justify-content:center',
         'text-align:center',
-        'color:#fff',
-        'font-weight:bold',
         'border:none',
         'cursor:pointer',
         `font-size:${base}`,
-        `background:${z.bg}`,
       ].join(';');
+      half.style.setProperty('--rim', z.bg);
       wrap.appendChild(half);
       zoneEls.set(z.key, half);
     }
@@ -312,10 +307,15 @@ export const createButton = (cfg) => {
   // circle) + tap/drag discriminator shared by every zone's click. ────────
   const drag = installDrag({ element: outer, posKey: cfg.posKey, dragThreshold });
 
-  // ── long-press (radial sweep) — only zones that declared onHold. ─────────
+  // ── long-press charge arc + hold timer — only zones that declared onHold. ─
+  // The charge arc SVG element is appended by decorateButton; we animate its
+  // stroke-dashoffset (100 = empty → 0 = full circle) instead of a conic-
+  // gradient overlay div so the animation uses the rim colour automatically.
+  const chargeArc = /** @type {SVGCircleElement | null} */ (
+    outer.querySelector('.oge-ring-charge')
+  );
   /** @type {number | null} */ let holdTimer = null;
   /** @type {number | null} */ let sweepRaf = null;
-  /** @type {HTMLElement | null} */ let sweepEl = null;
   let holdFired = false;
   let pressX = 0;
   let pressY = 0;
@@ -325,21 +325,15 @@ export const createButton = (cfg) => {
       cancelAnimationFrame(sweepRaf);
       sweepRaf = null;
     }
-    sweepEl?.remove();
-    sweepEl = null;
+    chargeArc?.setAttribute('stroke-dashoffset', '100');
   };
-  /** @param {HTMLElement} zone */
-  const startSweep = (zone) => {
+  /** @param {HTMLElement} _zone */
+  const startSweep = (_zone) => {
     stopSweep();
-    const el = document.createElement('div');
-    el.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
-    zone.appendChild(el);
-    sweepEl = el;
     const t0 = performance.now();
     const tick = () => {
       const pct = Math.min((performance.now() - t0) / holdMs, 1);
-      const deg = pct * 184; // slight overshoot so the last frame is full
-      el.style.background = `conic-gradient(from 90deg at 50% 0%, rgba(255,255,255,0.18) ${deg}deg, transparent ${deg}deg)`;
+      chargeArc?.setAttribute('stroke-dashoffset', String((1 - pct) * 100));
       if (pct < 1) sweepRaf = requestAnimationFrame(tick);
     };
     sweepRaf = requestAnimationFrame(tick);
@@ -422,9 +416,11 @@ export const createButton = (cfg) => {
       const span = labelEls.get(key);
       if (span) renderLines(span, [{ text }]);
     },
-    setBg: (key, bg) => {
+    setBg: (key, rim) => {
       const el = zoneEls.get(key);
-      if (el) el.style.background = bg;
+      if (el) el.style.setProperty('--rim', rim);
+      // Keep the host's outer glow in sync with the primary zone's colour.
+      if (key === cfg.zones[0].key) outer.style.setProperty('--rim', rim);
     },
     setDim: (key, dim) => {
       const el = zoneEls.get(key);
