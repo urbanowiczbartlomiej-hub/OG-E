@@ -587,15 +587,8 @@ export const installFsCollect = () => {
     });
     if (!controller) return;
 
+    // Initial paint.
     refresh();
-    // OGame populates #eventContent via its own JS after DOMContentLoaded.
-    // Watch for the first child mutation and re-run refresh so "X left"
-    // reflects actual in-flight fleets without waiting a fixed timeout.
-    const eventBox = document.getElementById('eventContent');
-    if (eventBox) {
-      const obs = new MutationObserver(() => { obs.disconnect(); refresh(); });
-      obs.observe(eventBox, { childList: true, subtree: true });
-    }
   };
 
   const removeButton = () => {
@@ -638,11 +631,16 @@ export const installFsCollect = () => {
 
   const unsubRoutes = fsRoutesStore.subscribe(() => refresh());
 
+  // 1 Hz repaint ticker — keeps "N left" counter in sync even if OGame populates
+  // #eventContent after our initial refresh.
+  const tickerHandle = setInterval(refresh, 1000);
+
   installed = {
     dispose: () => {
       removeButton();
       unsubSettings();
       unsubRoutes();
+      clearInterval(tickerHandle);
       installed = null;
     },
   };

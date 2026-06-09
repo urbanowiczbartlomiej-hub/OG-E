@@ -110,6 +110,26 @@ const primeAgrMoon = () => {
 };
 
 /**
+ * Pre-arm AGR's planet flag by clicking the first span.ago_shortcuts_coords inside
+ * td.ago_shortcuts_own. AGR's shortcuts handler does not check isTrusted on
+ * that element, so a synthetic click works and sets the internal planet type
+ * before we write the actual target coords.
+ *
+ * Call this BEFORE fireInput when type === 1 and the planet span is not already
+ * active in AGR's type row.
+ *
+ * @returns {void}
+ */
+const primeAgrPlanet = () => {
+  const planetSpan = /** @type {HTMLElement | null} */ (
+    document.querySelector('td.ago_shortcuts_own span.ago_shortcuts_coords')
+  );
+  if (planetSpan) {
+    planetSpan.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  }
+};
+
+/**
  * @typedef {object} FdCommand
  * @property {number} id
  * @property {string} op
@@ -171,6 +191,10 @@ const runCommand = async (fd, cmd) => {
         primeAgrMoon();
         await new Promise((r) => setTimeout(r, 1));
         primeAgrMoon();
+      } else if (type === 1) {
+        primeAgrPlanet();
+        await new Promise((r) => setTimeout(r, 1));
+        primeAgrPlanet();
       }
       fireInput(GAME.AGO_GALAXY, galaxy);
       fireInput(GAME.AGO_SYSTEM, system);

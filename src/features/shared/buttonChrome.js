@@ -51,7 +51,7 @@ export const BUTTON_CHROME_CSS = [
   'position:relative;border-radius:50%;isolation:isolate;',
   'font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Verdana,sans-serif;',
   'font-weight:700;color:var(--label);cursor:pointer;',
-  '-webkit-user-select:none;user-select:none;touch-action:none;',
+  '-webkit-user-select:none;user-select:none;touch-action:manipulation;',
   'transition:transform .16s cubic-bezier(.2,.7,.3,1),box-shadow .2s ease,filter .12s ease;}',
 
   // ── Elevation + state rim border + glow ─────────────────────────────────
