@@ -1,4 +1,4 @@
-// @vitest-environment happy-dom
+﻿// @vitest-environment happy-dom
 //
 // Unit tests for the floating Send Exp button.
 //
@@ -342,14 +342,14 @@ describe('installSendExp — click navigation', () => {
     return routine;
   };
 
-  it('on fleetdispatch with no fleet panel and no routine yet → Phase 2 "Loading...", no nav', () => {
+  it('on fleetdispatch with no fleet panel and no routine yet → Phase 2 "Wait...", no nav', () => {
     setupScene({ onFleetdispatch: true, mission: 7, activeCp: 42 });
     installSendExp();
     document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
     const btn = getBtn();
     btn?.click();
     expect(navTarget).toBeNull();
-    expect(labelOf(btn)).toBe('Loading...');
+    expect(labelOf(btn)).toBe('Wait...');
   });
 
   it('Phase 1: fleet panel + #dispatchFleet present → clicks dispatch, paints "Sent!"', () => {
@@ -658,12 +658,12 @@ describe('installSendExp — fleetDispatcher snapshot gates', () => {
 // ──────────────────────────────────────────────────────────────────
 
 describe('installSendExp — eventbox readiness gate', () => {
-  it('on fleetdispatch, click before eventbox loads paints "Loading..." and bails (no nav, no lock)', () => {
+  it('on fleetdispatch, click before eventbox loads paints "Wait..." and bails (no nav, busy stays false)', () => {
     // Pre-1.0.1 a tap on fleetdispatch immediately after navigation
     // entered Phase 2 against a half-hydrated DOM and locked the button
     // for the full 15 s POLL_TIMEOUT_MS. The gate suppresses the Phase
-    // 1/2 entry until OGame's eventbox refresh XHR has fired — without
-    // locking, so the user can simply tap again once the page settles.
+    // 1/2 entry until OGame's eventbox refresh XHR has fired — dimming
+    // but NOT setting busy, so the user can simply tap again once the page settles.
     vi.useFakeTimers();
     setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
     installSendExp();
@@ -673,8 +673,7 @@ describe('installSendExp — eventbox readiness gate', () => {
     const btn = getBtn();
     btn?.click();
 
-    expect(labelOf(btn)).toBe('Loading...');
-    expect(btn?.style.opacity).not.toBe('0.5');
+    expect(labelOf(btn)).toBe('Wait...');
     expect(navTarget).toBeNull();
 
     // The cue clears after EVENTBOX_LOADING_LABEL_MS and restores the idle
@@ -700,7 +699,7 @@ describe('installSendExp — eventbox readiness gate', () => {
   it('after oge:eventBoxLoaded fires, clicks proceed normally', () => {
     // Same fleetdispatch scene; once the bridge event arrives the gate
     // opens permanently (until next page navigation re-installs). With no
-    // fleet panel in the DOM the click enters Phase 2 (locks + "Loading...")
+    // fleet panel in the DOM the click enters Phase 2 (locks + "Wait...")
     // rather than being suppressed by the gate.
     setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
     installSendExp();
@@ -709,6 +708,6 @@ describe('installSendExp — eventbox readiness gate', () => {
     const btn = getBtn();
     btn?.click();
     expect(navTarget).toBeNull();
-    expect(labelOf(btn)).toBe('Loading...');
+    expect(labelOf(btn)).toBe('Wait...');
   });
 });

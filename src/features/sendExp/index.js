@@ -1,4 +1,4 @@
-// @ts-check
+﻿// @ts-check
 
 // Floating "Send Exp" button — orchestrator + DOM I/O. Pure helpers
 // (constants, stripBrackets, URL builder, cap checks, initial-label
@@ -389,7 +389,7 @@ export const installSendExp = () => {
    * @returns {Promise<void>}
    */
   const runPhase2 = async (btn) => {
-    setLabel(btn, 'Loading...');
+    setLabel(btn, 'Wait...');
 
     const routine = await waitFor(() => {
       const el = document.getElementById('ago_routine_7');
@@ -408,7 +408,7 @@ export const installSendExp = () => {
       // shakes loose cases where one click left AGR half-idled.
       safeClick(routine);
       setTimeout(() => safeClick(routine), 50);
-      setLabel(btn, 'Preparing...');
+      setLabel(btn, 'Wait...');
 
       const ready = await waitFor(
         () =>
@@ -460,9 +460,11 @@ export const installSendExp = () => {
     // eventbox XHR lands. Clicking before that polls a half-hydrated DOM.
     if (!eventBoxReady) {
       const original = getLabel(btn);
-      setLabel(btn, 'Loading...');
+      setLabel(btn, 'Wait...');
+      controller?.setDim('main', true);
       setTimeout(() => {
-        if (getLabel(btn) === 'Loading...') setLabel(btn, original || BUTTON_TEXT);
+        if (getLabel(btn) === 'Wait...') setLabel(btn, original || BUTTON_TEXT);
+        controller?.setDim('main', false);
       }, EVENTBOX_LOADING_LABEL_MS);
       return;
     }

@@ -1,4 +1,4 @@
-// @ts-check
+﻿// @ts-check
 
 // Pure compute core of `features/sendCol/index.js` — `derive(env)`,
 // `render(ctx)`, the pure helpers they call (target pickers, URL
@@ -546,8 +546,9 @@ export const render = (ctx) => {
     scanPaint = { text: 'All scanned!', bg: BG_SCAN_IDLE };
   } else if (ctx.kind === 'galaxy') {
     scanPaint = {
-      text: `[${ctx.nextScan.galaxy}:${ctx.nextScan.system}]`,
-      subtext: remaining > 0 ? `Scan · ${remaining} left` : 'Scan',
+      text: 'Scan',
+      subtext: `[${ctx.nextScan.galaxy}:${ctx.nextScan.system}]`,
+      hint: remaining > 0 ? `(${remaining} left)` : undefined,
       bg: BG_SCAN_IDLE,
       dim: ctx.scanCooldown,
     };
@@ -555,13 +556,13 @@ export const render = (ctx) => {
     scanPaint =
       remaining > 0
         ? {
-            text: 'to Galaxy',
+            text: 'To galaxy',
             subtext: `${remaining} left`,
             bg: BG_SCAN_IDLE,
           }
-        : { text: 'to Galaxy', bg: BG_SCAN_IDLE };
-  }
+        : { text: 'To galaxy', bg: BG_SCAN_IDLE };
 
+  }
   // idle + galaxy share the same Send paint: the next-candidate coords (or
   // a bare "Send" when the DB has none). On a bare fleetdispatch the handler
   // owns the Send label; this idle-branch paint is what the 1 Hz ticker
@@ -569,9 +570,9 @@ export const render = (ctx) => {
   return {
     send: ctx.candidate
       ? {
-          text: `[${ctx.candidate.galaxy}:${ctx.candidate.system}:${ctx.candidate.position}]`,
-          subtext: 'Send Colony',
-          hint: 'hold=skip',
+          text: 'Send Colony',
+          subtext: `[${ctx.candidate.galaxy}:${ctx.candidate.system}:${ctx.candidate.position}]`,
+          hint: '(hold to skip)',
           bg: BG_SEND_READY,
         }
       : { text: 'Send', bg: BG_SEND_IDLE },

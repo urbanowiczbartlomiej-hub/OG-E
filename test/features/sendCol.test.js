@@ -1,4 +1,4 @@
-// @vitest-environment happy-dom
+﻿// @vitest-environment happy-dom
 //
 // Behavioural tests for the colonize button (see `src/features/sendCol/index.js`).
 //
@@ -383,14 +383,15 @@ describe('render — pure paint instructions', () => {
     expect(r.scan.text).toBe('All scanned!');
   });
 
-  it('idle with candidate → coords + "Send Colony" subtext', () => {
+  it('idle with candidate -> "Send Colony" main + coords subtext', () => {
     const r = render({
       kind: 'idle',
       candidate: { galaxy: 4, system: 30, position: 8 },
       ...noScan,
     });
-    expect(r.send.text).toBe('[4:30:8]');
-    expect(r.send.subtext).toBe('Send Colony');
+    expect(r.send.text).toBe('Send Colony');
+    expect(r.send.subtext).toBe('[4:30:8]');
+    expect(r.send.hint).toBe('(hold to skip)');
   });
 
   it('galaxy with nextScan=null → "All scanned!"', () => {
@@ -402,14 +403,14 @@ describe('render — pure paint instructions', () => {
     expect(r.scan.text).toBe('All scanned!');
   });
 
-  it('galaxy with nextScan → "[g:s] / Scan"', () => {
+  it('galaxy with nextScan -> "Scan" main + [g:s] subtext', () => {
     const r = render({
       kind: 'galaxy',
       candidate: null,
       ...freshScan,
     });
-    expect(r.scan.text).toBe('[4:31]');
-    expect(r.scan.subtext).toBe('Scan');
+    expect(r.scan.text).toBe('Scan');
+    expect(r.scan.subtext).toBe('[4:31]');
   });
 
   // (render's "fleetdispatch" kind was removed with the courier migration —

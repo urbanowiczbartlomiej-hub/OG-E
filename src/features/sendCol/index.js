@@ -1,4 +1,4 @@
-// Floating "Send Col" button — a single orchestrator file driven by a
+﻿// Floating "Send Col" button — a single orchestrator file driven by a
 // pure `derive()` → `render()` → `paint()` pipeline.
 //
 // # File partitioning
@@ -321,8 +321,8 @@ const refresh = () => {
       paintZone('send', { text: `Wait ${wait}s`, bg: BG_SEND_WAIT, dim: true });
     } else {
       paintZone('send', {
-        text: `[${colTarget.galaxy}:${colTarget.system}:${colTarget.position}]`,
-        subtext: 'Send!',
+        text: 'Send!',
+        subtext: `[${colTarget.galaxy}:${colTarget.system}:${colTarget.position}]`,
         bg: BG_SEND_READY,
       });
     }
@@ -348,21 +348,21 @@ const colErrorPaint = (reason, c) => {
   const coords = `[${c.galaxy}:${c.system}:${c.position}]`;
   switch (reason) {
     case 'noShip':
-      return { text: coords, subtext: 'No ship!', bg: BG_SEND_ERROR };
+      return { text: 'No ship!', subtext: coords, bg: BG_SEND_ERROR };
     case 'noMoon':
-      return { text: coords, subtext: 'No moon', bg: BG_SEND_ERROR };
+      return { text: 'No moon', subtext: coords, bg: BG_SEND_ERROR };
     case 'reserved':
-      return { text: coords, subtext: 'Reserved', bg: BG_SEND_STALE };
+      return { text: 'Reserved', subtext: coords, bg: BG_SEND_STALE };
     case 'mission':
     case 'stale':
-      return { text: coords, subtext: 'Stale', bg: BG_SEND_STALE };
+      return { text: 'Stale', subtext: coords, bg: BG_SEND_STALE };
     case 'timeout':
-      return { text: coords, subtext: 'Timeout', bg: BG_SEND_STALE };
+      return { text: 'Timeout', subtext: coords, bg: BG_SEND_STALE };
     default:
       // Surface the raw courier reason (selectFailed / noFleet2 / empty /
       // notReady / generic / …) so a failure is diagnosable at a glance
       // instead of a catch-all "Failed".
-      return { text: coords, subtext: reason || 'Failed', bg: BG_SEND_ERROR };
+      return { text: reason || 'Failed', subtext: coords, bg: BG_SEND_ERROR };
   }
 };
 
@@ -450,8 +450,8 @@ const onSendClick = async () => {
   colReady = true;
   colTarget = candidate;
   paintZone('send', {
-    text: `[${candidate.galaxy}:${candidate.system}:${candidate.position}]`,
-    subtext: 'Send!',
+    text: 'Send!',
+    subtext: `[${candidate.galaxy}:${candidate.system}:${candidate.position}]`,
     bg: BG_SEND_READY,
   });
 };
