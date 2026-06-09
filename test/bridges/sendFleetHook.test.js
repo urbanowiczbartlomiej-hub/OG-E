@@ -449,6 +449,96 @@ describe('installSendFleetHook — registry behaviour', () => {
   });
 });
 
+describe('installSendFleetHook — bare URL + fleetDispatcher target (courier path)', () => {
+  it('reads coords from window.fleetDispatcher.targetPlanet when URL has no galaxy/system', async () => {
+    // Simulate the courier approach: bare fleetdispatch URL, target set
+    // in-page via window.fleetDispatcher.
+    /** @type {any} */ (window).fleetDispatcher = {
+      targetPlanet: { galaxy: 4, system: 30, position: 8 },
+    };
+
+    installSendFleetHook();
+    const { events } = trackCleanup(captureColonizeEvents());
+
+    await setupScene({
+      duration: '01:00:00',
+      galaxy: undefined,
+      system: undefined,
+      position: undefined,
+      mission: 7,
+      responseObj: { success: true },
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0].galaxy).toBe(4);
+    expect(events[0].system).toBe(30);
+    expect(events[0].position).toBe(8);
+
+    const reg = JSON.parse(localStorage.getItem(REGISTRY_KEY) || '[]');
+    expect(reg).toHaveLength(1);
+    expect(reg[0].coords).toBe('4:30:8');
+
+    delete (/** @type {any} */ (window)).fleetDispatcher;
+  });
+
+  it('falls back to 0 for position when fleetDispatcher.targetPlanet.position is missing', async () => {
+    /** @type {any} */ (window).fleetDispatcher = {
+      targetPlanet: { galaxy: 2, system: 15 }, // no position field
+    };
+
+    installSendFleetHook();
+    const { events } = trackCleanup(captureColonizeEvents());
+
+    await setupScene({
+      duration: '02:00:00',
+      galaxy: undefined,
+      system: undefined,
+      position: undefined,
+      mission: 7,
+      responseObj: { success: true },
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0].position).toBe(0);
+
+    const reg = JSON.parse(localStorage.getItem(REGISTRY_KEY) || '[]');
+    expect(reg).toHaveLength(1);
+    expect(reg[0].coords).toBe('2:15:0');
+
+    delete (/** @type {any} */ (window)).fleetDispatcher;
+  });
+
+  it('prefers fleetDispatcher over URL coords when both are present', async () => {
+    // fleetDispatcher wins — authoritative source in courier flow.
+    /** @type {any} */ (window).fleetDispatcher = {
+      targetPlanet: { galaxy: 3, system: 10, position: 5 },
+    };
+
+    installSendFleetHook();
+    const { events } = trackCleanup(captureColonizeEvents());
+
+    // URL has different coords — these should be ignored.
+    await setupScene({
+      duration: '01:00:00',
+      galaxy: 4,
+      system: 30,
+      position: 8,
+      mission: 7,
+      responseObj: { success: true },
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0].galaxy).toBe(3);
+    expect(events[0].system).toBe(10);
+    expect(events[0].position).toBe(5);
+
+    const reg = JSON.parse(localStorage.getItem(REGISTRY_KEY) || '[]');
+    expect(reg[0].coords).toBe('3:10:5');
+
+    delete (/** @type {any} */ (window)).fleetDispatcher;
+  });
+});
+
 describe('installSendFleetHook — context isolation', () => {
   it('dispatches using send-phase context, not load-phase DOM/URL', async () => {
     installSendFleetHook();

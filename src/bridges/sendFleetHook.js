@@ -135,18 +135,34 @@ const getMissionFromBody = (body) => {
 };
 
 /**
- * Read galaxy / system / position from the current `location.search`.
+ * Read galaxy / system / position of the fleet target at send time.
  *
- * The fleetdispatch URL always carries the target coords in the query
- * string because the user navigated there via our Send-Col link (or
- * via the game's own galaxy-row actions, which use the same shape).
- * Values default to `NaN` when missing; callers range-check `galaxy`
- * and `system` before trusting the result. `position` is allowed to
- * be missing → consumer falls back to `0`.
+ * Two sources, tried in order:
+ *   1. `window.fleetDispatcher.targetPlanet` — populated by the courier
+ *      via `setTarget` on step 1. This is authoritative when the user
+ *      arrives via the bare fleetdispatch URL (no coord params) because
+ *      the fleet courier sets the target in-page instead of encoding it
+ *      in the link.
+ *   2. `location.search` — legacy fallback for direct galaxy-row sends
+ *      where the URL itself carries galaxy/system/position params.
+ *
+ * Values default to `NaN` when both sources miss; callers range-check
+ * `galaxy` and `system` before trusting the result. `position` is
+ * allowed to be missing → consumer falls back to `0`.
  *
  * @returns {{ galaxy: number, system: number, position: number }}
  */
 const getTargetCoords = () => {
+  // MAIN world can read window.fleetDispatcher directly. Prefer it over
+  // URL params — the courier leaves targetPlanet set until the game
+  // navigates away, so it is reliable at sendFleet send time.
+  const fd = /** @type {any} */ (window).fleetDispatcher;
+  if (fd && fd.targetPlanet) {
+    const { galaxy, system, position } = fd.targetPlanet;
+    if (Number.isFinite(galaxy) && galaxy > 0 && Number.isFinite(system) && system > 0) {
+      return { galaxy, system, position: Number.isFinite(position) ? position : 0 };
+    }
+  }
   const params = new URLSearchParams(location.search);
   const galaxy = parseInt(params.get('galaxy') || '', 10);
   const system = parseInt(params.get('system') || '', 10);
