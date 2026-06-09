@@ -378,7 +378,7 @@ export const buildGalaxyUrl = ({ galaxy, system }) => {
  * two-line render (small top line + big bottom line). `dim: true`
  * renders the half at reduced opacity (cooldown / disabled hint).
  *
- * @typedef {{ text: string, bg: string, subtext?: string, dim?: boolean }} Paint
+ * @typedef {{ text: string, bg: string, subtext?: string, hint?: string, dim?: boolean }} Paint
  */
 
 /**
@@ -571,6 +571,7 @@ export const render = (ctx) => {
       ? {
           text: `[${ctx.candidate.galaxy}:${ctx.candidate.system}:${ctx.candidate.position}]`,
           subtext: 'Send Colony',
+          hint: 'hold=skip',
           bg: BG_SEND_READY,
         }
       : { text: 'Send', bg: BG_SEND_IDLE },

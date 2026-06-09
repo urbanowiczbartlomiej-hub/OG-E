@@ -36,6 +36,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   installSendCol,
   _resetSendColForTest,
+  _onSendHoldForTest,
   derive,
   render,
 } from '../../src/features/sendCol/index.js';
@@ -833,6 +834,50 @@ describe('oge:colonizeSent reactor', () => {
       new CustomEvent('oge:colonizeSent', { detail: { galaxy: 'oops' } }),
     );
     expect(Object.keys(scansStore.get())).toHaveLength(0);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// onSendHold — manual skip (hold-to-skip)
+// ──────────────────────────────────────────────────────────────────
+
+describe('onSendHold — manual skip', () => {
+  it('is a no-op when no candidate is shown (empty scansStore)', () => {
+    setupScene(); // overview, no galaxy view → derive finds no candidate
+    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
+    installSendCol(); // refresh() → lastDerivedCandidate = null
+    _onSendHoldForTest();
+    expect(Object.keys(scansStore.get())).toHaveLength(0);
+  });
+
+  it('marks the current candidate empty_sent without dispatching a fleet', () => {
+    setupScene({ onGalaxy: true, galaxyG: 4, galaxyS: 30 });
+    settingsStore.set({
+      ...settingsStore.get(),
+      colonizeMode: true,
+      colPositions: '9',
+    });
+    scansStore.set({
+      '4:30': { scannedAt: Date.now(), positions: { 9: { status: 'empty' } } },
+    });
+    installSendCol(); // refresh() → lastDerivedCandidate = {4,30,9}
+    _onSendHoldForTest();
+    expect(scansStore.get()['4:30']?.positions[9]?.status).toBe('empty_sent');
+  });
+
+  it('does not trigger any navigation', () => {
+    setupScene({ onGalaxy: true, galaxyG: 4, galaxyS: 30 });
+    settingsStore.set({
+      ...settingsStore.get(),
+      colonizeMode: true,
+      colPositions: '9',
+    });
+    scansStore.set({
+      '4:30': { scannedAt: Date.now(), positions: { 9: { status: 'empty' } } },
+    });
+    installSendCol();
+    _onSendHoldForTest();
+    expect(navTarget).toBeNull();
   });
 });
 

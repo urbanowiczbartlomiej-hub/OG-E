@@ -165,6 +165,8 @@ const DEFAULT_EDGE_OFFSET_PX = 20;
 const FOCUS_RESTORE_DELAY_MS = 50;
 /** Repaint ticker period in ms. */
 const REPAINT_TICK_MS = 1000;
+/** Hold duration (ms) required to trigger a manual skip of the current candidate. */
+const HOLD_SKIP_MS = 3000;
 
 // ─── Module-local state (§3) ───────────────────────────────────────────
 
@@ -209,6 +211,8 @@ let busy = false;
 let colReady = false;
 /** The candidate the armed send is aimed at (for the ready label). */
 let colTarget = /** @type {Coords | null} */ (null);
+/** Last candidate surfaced by derive() — used by onSendHold to know what to skip. */
+let lastDerivedCandidate = /** @type {Coords | null} */ (null);
 
 /** Bare fleetdispatch URL — the courier sets the colony ship + target
  * in-page, so no coords/mission/am params (avoids the second reload). */
@@ -230,8 +234,8 @@ const bareFleetdispatchUrl = () =>
  */
 const paintZone = (key, p) => {
   if (!controller) return;
-  if (p.subtext) {
-    controller.paintLines(key, labelLines({ main: p.text, sub: p.subtext }));
+  if (p.subtext || p.hint) {
+    controller.paintLines(key, labelLines({ main: p.text, sub: p.subtext, hint: p.hint }));
   } else {
     controller.setText(key, p.text);
   }
@@ -299,7 +303,9 @@ const captureEnv = () => {
  * @returns {void}
  */
 const refresh = () => {
-  const result = render(derive(captureEnv()));
+  const ctx = derive(captureEnv());
+  lastDerivedCandidate = ctx.candidate ?? null;
+  const result = render(ctx);
   // Scan half is always derive-driven. The Send half is owned by the
   // courier handler while a select()/dispatch() is in flight (busy) or once
   // a send is armed-ready on step 2; otherwise it shows the derive-computed
@@ -733,6 +739,49 @@ const onColonizeSent = (e) => {
   flushScansStore();
 };
 
+/**
+ * Hold gesture (3 s) on the Send zone: manually skip the current candidate
+ * by marking it `'empty_sent'` without dispatching a fleet. The slot returns
+ * to requires-rescan after `RESCAN_AFTER.empty_sent` hours so the next scan
+ * reveals what was blocking colonization.
+ *
+ * Intended for unhandled game-side blocks: the position can't be colonized
+ * but our DB still shows it as a valid target, causing the button to stall.
+ * Hold lets the player move past it without losing progress.
+ *
+ * @returns {void}
+ */
+const onSendHold = () => {
+  if (busy) return;
+  // When the courier is already armed (step 1 done), skip that specific target;
+  // otherwise skip whatever derive() is currently showing.
+  const c = colReady && colTarget ? colTarget : lastDerivedCandidate;
+  if (!c) return;
+
+  const key = /** @type {`${number}:${number}`} */ (`${c.galaxy}:${c.system}`);
+  scansStore.update((prev) => {
+    const existing = prev[key];
+    if (!existing) return prev;
+    const pos = existing.positions?.[c.position];
+    if (!pos) return prev;
+    return {
+      ...prev,
+      [key]: {
+        ...existing,
+        positions: {
+          ...existing.positions,
+          [c.position]: { ...pos, status: 'empty_sent' },
+        },
+      },
+    };
+  });
+  // Bypass the 200 ms debounce — same reason as onColonizeSent.
+  flushScansStore();
+
+  colReady = false;
+  colTarget = null;
+};
+
 // ─── Lifecycle ─────────────────────────────────────────────────────────
 
 /**
@@ -791,6 +840,7 @@ export const installSendCol = () => {
       focusKey: FOCUS_KEY,
       edgeOffset: DEFAULT_EDGE_OFFSET_PX,
       dragThreshold: DRAG_THRESHOLD,
+      holdMs: HOLD_SKIP_MS,
       zones: [
         {
           key: 'send',
@@ -798,6 +848,7 @@ export const installSendCol = () => {
           ariaLabel: 'Send colonization',
           bg: BG_SEND_IDLE,
           onTap: () => void onSendClick(),
+          onHold: onSendHold,
           focusValue: FOCUS_SEND,
           focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,
           labelShiftY: 10,
@@ -925,6 +976,9 @@ export const installSendCol = () => {
  *
  * @returns {void}
  */
+/** Exposed only for unit-tests — do not call from production code. */
+export const _onSendHoldForTest = onSendHold;
+
 export const _resetSendColForTest = () => {
   if (installed) {
     installed.dispose();
@@ -937,4 +991,5 @@ export const _resetSendColForTest = () => {
   busy = false;
   colReady = false;
   colTarget = null;
+  lastDerivedCandidate = null;
 };
