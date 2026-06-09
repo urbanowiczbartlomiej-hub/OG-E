@@ -6,6 +6,34 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.16.3] — 2026-06-09
+
+### Added
+
+- **Symmetrical planet prime function in fleet executor.** Mirror of the moon
+  prime logic — `primeAgrPlanet()` ensures AGR's planet flag is set before
+  writing coordinates (needed because AGR guards planet-type clicks with
+  `isTrusted`, blocking synthetic events).
+
+### Fixed
+
+- **Daily-run button label now shows correct next target on page load.** Added
+  1 Hz ticker (matching send-colony pattern) to refresh labels even if
+  `#eventContent` populates late — ensures "N left" counter and target name
+  are accurate from the moment the page loads.
+- **Mobile keyboard no longer pops up when tapping floating buttons.** Changed
+  button `tabIndex` from `0` to `-1` — buttons remain clickable but exit tab
+  flow, preventing unwanted focus on touch.
+
+### Changed
+
+- **Button touch-action CSS.** Changed from `none` (blocks all gestures) to
+  `manipulation` (allows tap, blocks auto-zoom and system tap highlights) for
+  better mobile UX.
+- **Daily-run dim state now uses controller API.** Replaced manual `dimZone()`
+  calls with `controller.setDim()` for consistency with expedition/colony
+  buttons and reliability.
+
 ## [1.16.2] — 2026-06-09
 
 ### Added
