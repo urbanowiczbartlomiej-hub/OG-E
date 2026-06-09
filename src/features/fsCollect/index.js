@@ -95,9 +95,10 @@ const FLASH_MS = 1500;
 const SENT_LOCK_MS = 3000;
 const LONG_PRESS_MS = 3000;
 
-// Colours — distinct from sendExp (blue) / sendCol (green/teal).
-const BG_MICRO = '#a78bfa';   // violet rim
-const BG_COLLECT = '#2dd4bf'; // teal rim
+// Colours — distinct from sendExp (blue #4aa8ff) / sendCol (cyan #13d1de).
+// Daily Run uses pure green: micro & collect both in green family (minimal difference).
+const BG_MICRO = '#34d96e';   // green rim (micro zone)
+const BG_COLLECT = '#43cf72'; // green rim (collect zone, slightly brighter)
 
 // ─── helpers (impure env reads) ─────────────────────────────────────────
 

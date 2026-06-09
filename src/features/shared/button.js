@@ -217,7 +217,7 @@ export const createButton = (cfg) => {
     btn.type = 'button';
     btn.id = cfg.id;
     btn.className = 'oge-host single';
-    btn.tabIndex = 0;
+    btn.tabIndex = -1;
     if (z.ariaLabel) btn.setAttribute('aria-label', z.ariaLabel);
     btn.title = cfg.title;
     // background and box-shadow are driven by .oge-host CSS via --rim.
@@ -261,7 +261,7 @@ export const createButton = (cfg) => {
       half.type = 'button';
       half.id = z.id;
       half.className = 'zone';
-      half.tabIndex = 0;
+      half.tabIndex = -1;
       if (z.ariaLabel) half.setAttribute('aria-label', z.ariaLabel);
       // background is driven by .oge-host .zone CSS via --rim.
       half.style.cssText = [
