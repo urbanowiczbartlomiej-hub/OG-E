@@ -272,7 +272,7 @@ describe('installSendExp — visibility via mobileMode', () => {
     expect(btn).not.toBeNull();
     expect(labelOf(btn)).toBe('Send');
     expect(btn?.getAttribute('aria-label')).toBe('Send expedition');
-    expect(btn?.tabIndex).toBe(0);
+    expect(btn?.tabIndex).toBe(-1);
   });
 });
 
