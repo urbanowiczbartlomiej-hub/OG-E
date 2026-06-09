@@ -694,6 +694,35 @@ describe('readHomePlanet', () => {
     `;
     expect(readHomePlanet()).toEqual({ galaxy: 2, system: 150 });
   });
+
+  it('reads coords when on a moon (hightlightPlanet on moonlink anchor, not on the row)', () => {
+    // OGame puts .hightlightPlanet on the <a class="moonlink"> when the
+    // user is on a moon page. The .planet-koords span lives inside the
+    // sibling .planetlink anchor. readHomePlanet must climb to the
+    // .smallplanet row to find it.
+    document.body.innerHTML = `
+      <div id="planetList">
+        <div class="smallplanet" id="planet-1">
+          <a class="planetlink">
+            <span class="planet-koords">[3:77:5]</span>
+          </a>
+          <a class="moonlink hightlightPlanet"></a>
+        </div>
+      </div>
+    `;
+    expect(readHomePlanet()).toEqual({ galaxy: 3, system: 77 });
+  });
+
+  it('returns null when moon row has no .planet-koords anywhere in the chain', () => {
+    document.body.innerHTML = `
+      <div id="planetList">
+        <div class="smallplanet" id="planet-1">
+          <a class="moonlink hightlightPlanet"></a>
+        </div>
+      </div>
+    `;
+    expect(readHomePlanet()).toBeNull();
+  });
 });
 
 // ──────────────────────────────────────────────────────────────────

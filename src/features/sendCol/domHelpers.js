@@ -116,7 +116,11 @@ export const getColonizeWaitTime = () => {
 export const readHomePlanet = () => {
   const active = document.querySelector(GAME.ACTIVE_PLANET);
   if (!active) return null;
-  const coords = active.querySelector(GAME.PLANET_KOORDS)?.textContent?.trim();
+  // On moon pages OGame puts .hightlightPlanet on the moonlink <a> rather
+  // than the parent .smallplanet row. .planet-koords lives inside the
+  // sibling .planetlink, so climb to the row first to find it reliably.
+  const row = active.closest('.smallplanet') ?? active;
+  const coords = row.querySelector(GAME.PLANET_KOORDS)?.textContent?.trim();
   const m = (coords || '').match(/\[(\d+):(\d+):(\d+)\]/);
   if (!m) return null;
   return { galaxy: parseInt(m[1], 10), system: parseInt(m[2], 10) };
