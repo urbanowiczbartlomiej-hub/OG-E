@@ -121,14 +121,21 @@ const tick = async (ms) => {
  * @param {GalaxyScans} [opts.galaxyScans]
  * @param {ColonyHistory} [opts.colonyHistory]
  * @param {import('../../src/sync/gist.js').SyncedSettings} [opts.settings]
+ * @param {Record<string, import('../../src/sync/gist.js').SyncedSettings>} [opts.settingsPerUniverse]
  * @returns {import('../../src/sync/gist.js').GistPayload}
  */
-const payload = ({ galaxyScans = {}, colonyHistory = [], settings } = {}) => ({
+const payload = ({
+  galaxyScans = {},
+  colonyHistory = [],
+  settings,
+  settingsPerUniverse,
+} = {}) => ({
   version: 3,
   updatedAt: '2025-01-01T00:00:00.000Z',
   galaxyScans,
   colonyHistory,
   ...(settings ? { settings } : {}),
+  ...(settingsPerUniverse ? { settingsPerUniverse } : {}),
 });
 
 beforeEach(() => {
@@ -364,12 +371,12 @@ describe('upload', () => {
     // revision).
     const shared = /** @type {GalaxyScans} */ ({ '4:30': scan(5000) });
     scansStore.set(shared);
-    // Pre-seed an EMPTY ts map so installSync skips seeding (no `now`
-    // timestamps a fixture couldn't match), then make the remote carry a
-    // settings slice that deep-equals what local would upload — so the
-    // sameJSON check covers settings too and the PATCH is genuinely skipped.
+    // Pre-seed an EMPTY ts map so installSync skips seeding. The remote
+    // settings slot must deep-equal what local would upload (global-only
+    // keys) and settingsPerUniverse must be absent (no universe-scoped
+    // key has been explicitly changed, so ts is empty → slot omitted).
     localStorage.setItem('oge_settingsTs', '{}');
-    const settings = { values: pickSyncedValues(settingsStore.get()), ts: {} };
+    const settings = { values: pickSyncedValues(settingsStore.get(), 'global'), ts: {} };
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(
       payload({ galaxyScans: shared, settings }),
     );
@@ -504,35 +511,68 @@ describe('inFlight lock', () => {
 });
 
 describe('settings sync', () => {
-  it('applies a remote setting with a newer ts on download', async () => {
-    // Local colMinGap=20 stamped at ts 100; remote has 99 at ts 200 (newer).
-    settingsStore.set({ ...settingsStore.get(), colMinGap: 20 });
-    localStorage.setItem('oge_settingsTs', JSON.stringify({ colMinGap: 100 }));
+  it('applies a remote GLOBAL setting with a newer ts on download', async () => {
+    // Local adhocOffsetSec=20 stamped at ts 100; remote has 99 at ts 200
+    // (newer). adhocOffsetSec is a global setting → goes through the top-level
+    // `settings` slot and the localStorage ts map.
+    settingsStore.set({ ...settingsStore.get(), adhocOffsetSec: 20 });
+    localStorage.setItem('oge_settingsTs', JSON.stringify({ adhocOffsetSec: 100 }));
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(
-      payload({ settings: { values: { colMinGap: 99 }, ts: { colMinGap: 200 } } }),
+      payload({ settings: { values: { adhocOffsetSec: 99 }, ts: { adhocOffsetSec: 200 } } }),
+    );
+
+    installSync();
+    await tick(0);
+
+    expect(settingsStore.get().adhocOffsetSec).toBe(99);
+    // The remote timestamp is carried into the local global ts map.
+    expect(JSON.parse(localStorage.getItem('oge_settingsTs') || '{}').adhocOffsetSec).toBe(200);
+  });
+
+  it('applies a remote UNIVERSE-SCOPED setting via settingsPerUniverse on download', async () => {
+    // colMinGap is universe-scoped; remote carries it in settingsPerUniverse
+    // (the new dedicated slot). Since routesUniverseId = parseUniverseId(location.host)
+    // in this happy-dom env, we use that same key for the slot.
+    const uid = /** @type {string} */ (
+      typeof location !== 'undefined'
+        ? location.host.match(/^(s\d+-[a-z]{2,4})\./)
+          ? location.host.match(/^(s\d+-[a-z]{2,4})\./)?.[1]
+          : location.host
+        : ''
+    );
+    settingsStore.set({ ...settingsStore.get(), colMinGap: 20 });
+    /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(
+      payload({
+        settingsPerUniverse: {
+          [uid]: { values: { colMinGap: 99 }, ts: { colMinGap: 200 } },
+        },
+      }),
     );
 
     installSync();
     await tick(0);
 
     expect(settingsStore.get().colMinGap).toBe(99);
-    // The remote timestamp is carried into the local map (not re-stamped).
-    expect(JSON.parse(localStorage.getItem('oge_settingsTs') || '{}').colMinGap).toBe(200);
+    // Global ts map is NOT touched (colMinGap is universe-scoped).
+    expect(
+      'colMinGap' in JSON.parse(localStorage.getItem('oge_settingsTs') || '{}'),
+    ).toBe(false);
   });
 
-  it('uploads a locally-changed setting (stamped) inside the payload', async () => {
+  it('uploads a locally-changed GLOBAL setting (stamped) inside the payload', async () => {
+    // adhocOffsetSec is global → appears in settings.values (not settingsPerUniverse).
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(payload());
     installSync();
     await tick(0);
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(payload());
 
-    settingsStore.set({ ...settingsStore.get(), colMinGap: 42 });
+    settingsStore.set({ ...settingsStore.get(), adhocOffsetSec: 42 });
     await tick(15_000);
 
     expect(writeGistData).toHaveBeenCalledWith(
       expect.objectContaining({
         settings: expect.objectContaining({
-          values: expect.objectContaining({ colMinGap: 42 }),
+          values: expect.objectContaining({ adhocOffsetSec: 42 }),
         }),
       }),
     );
@@ -544,12 +584,13 @@ describe('settings sync', () => {
     await tick(0);
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(payload());
 
-    settingsStore.set({ ...settingsStore.get(), enterBtnSize: 123, colMinGap: 7 });
+    // adhocOffsetSec is global → goes to settings.values; excluded keys must not appear.
+    settingsStore.set({ ...settingsStore.get(), enterBtnSize: 123, adhocOffsetSec: 7 });
     await tick(15_000);
 
     const call = /** @type {import('vitest').Mock} */ (writeGistData).mock.calls.at(-1);
     const values = call?.[0]?.settings?.values ?? {};
-    expect(values.colMinGap).toBe(7);
+    expect(values.adhocOffsetSec).toBe(7);
     expect('enterBtnSize' in values).toBe(false);
     expect('gistToken' in values).toBe(false);
     expect('colBtnSize' in values).toBe(false);

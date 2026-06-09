@@ -168,6 +168,13 @@ import { clearScans, clearGalaxyScans } from './merge.js';
  *   (see {@link import('./merge.js').mergeFsRoutes}). Per-universe because,
  *   unlike scans/history, routes target a specific server's own bodies and
  *   must never leak across universes.
+ * @property {Record<string, SyncedSettings>} [settingsPerUniverse]
+ *   OPTIONAL, additive: game-logic settings keyed by universe id. Each slot
+ *   uses the same `{ values, ts }` shape as `settings` but carries only the
+ *   keys listed in `UNIVERSE_SCOPED_SETTINGS` (see `sync/settingsSync.js`).
+ *   Per-universe because these parameters (fsThreshold, colPassword, …)
+ *   depend on which OGame server the user is playing and must not leak across
+ *   universes. The top-level `settings` field retains only global preferences.
  */
 
 /**

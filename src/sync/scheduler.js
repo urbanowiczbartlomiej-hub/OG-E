@@ -105,6 +105,9 @@ import {
   writeTsMap,
   stampChanged,
   seedSettingsTsIfAbsent,
+  readUniverseTsMap,
+  writeUniverseTsMap,
+  seedUniverseTsIfAbsent,
 } from './settingsSync.js';
 import { debounce } from '../lib/debounce.js';
 import { chromeStore } from '../lib/storage.js';
@@ -204,6 +207,17 @@ let routesUniverseId = '';
 let applyingRoutesFromSync = false;
 
 /**
+ * In-memory cache of the per-universe settings timestamp map, loaded from
+ * chrome.storage at install time (see {@link installSync}). Updated
+ * synchronously whenever a universe-scoped setting changes so the
+ * `onSettingsChange` subscriber can stamp without an async chrome.storage
+ * read on every keystroke. Written through to chrome.storage on every change.
+ *
+ * @type {Record<string, number>}
+ */
+let localUniverseTsMap = {};
+
+/**
  * Read this universe's local fleet-save routes slot from chrome.storage —
  * NOT from {@link fsRoutesStore} in memory. Routes are edited from the
  * dashboard (a different origin) too, and the game tab's in-memory store
@@ -249,6 +263,50 @@ const writeLocalRoutesSlot = async (slot) => {
     );
   } finally {
     applyingRoutesFromSync = false;
+  }
+};
+
+/**
+ * Read this universe's local per-universe settings slot — values from the
+ * in-memory {@link settingsStore} and timestamps from the in-memory cache
+ * {@link localUniverseTsMap} (backed by chrome.storage). Used by both
+ * {@link downloadAndMerge} and {@link upload} to assemble the local side of
+ * the per-universe merge.
+ *
+ * @returns {{ values: Record<string, unknown>, ts: Record<string, number> }}
+ */
+const readLocalUniverseSettingsSlot = () => ({
+  values: pickSyncedValues(settingsStore.get(), 'universe'),
+  ts: localUniverseTsMap,
+});
+
+/**
+ * Write a merged per-universe settings result back to local: update the
+ * in-memory timestamp cache, persist to chrome.storage, and spread the new
+ * values into {@link settingsStore}. Guarded by
+ * {@link applyingSettingsFromSync} so our own settings subscriber treats
+ * this as a sync-origin write, not a user edit.
+ *
+ * @param {{ values: Record<string, unknown>, ts: Record<string, number> }} merged
+ * @returns {Promise<void>}
+ */
+const writeLocalUniverseSettingsSlot = async (merged) => {
+  if (!routesUniverseId) return;
+  applyingSettingsFromSync = true;
+  try {
+    localUniverseTsMap = merged.ts;
+    await writeUniverseTsMap(routesUniverseId, merged.ts);
+    settingsStore.update((cur) => {
+      const spread = {
+        .../** @type {Record<string, unknown>} */ (/** @type {unknown} */ (cur)),
+        ...merged.values,
+      };
+      return /** @type {import('../state/settings.js').Settings} */ (
+        /** @type {unknown} */ (spread)
+      );
+    });
+  } finally {
+    applyingSettingsFromSync = false;
   }
 };
 
@@ -344,18 +402,29 @@ const downloadAndMerge = async () => {
 
     const scansResult = mergeScans(localScans, remote.galaxyScans);
     const histResult = mergeHistory(localHistory, remote.colonyHistory);
+    // Global settings: merge only global-scoped keys against the gist's
+    // top-level `settings` slot.
     const setResult = mergeSettings(
-      { values: pickSyncedValues(settingsStore.get()), ts: readTsMap() },
+      { values: pickSyncedValues(settingsStore.get(), 'global'), ts: readTsMap() },
       remote.settings,
     );
+    // Universe-scoped settings: prefer the per-universe slot; fall back to
+    // the top-level `settings` on the first sync after the feature is enabled
+    // (one-time migration: old gist has everything in `settings.values`).
+    const remoteUniSlot =
+      remote.settingsPerUniverse?.[routesUniverseId] ?? remote.settings;
+    const uniResult = routesUniverseId
+      ? mergeSettings(readLocalUniverseSettingsSlot(), remoteUniSlot)
+      : { changed: false, merged: readLocalUniverseSettingsSlot() };
 
     // Anti-loop: see file header. `changed === false` means merge is a
     // structural no-op; skipping the write breaks the subscription
     // feedback loop at its source. Settings have their own value-level
-    // anti-loop flag inside applyMergedSettings.
+    // anti-loop flag inside applyMergedSettings / writeLocalUniverseSettingsSlot.
     if (scansResult.changed) scansStore.set(scansResult.merged);
     if (histResult.changed) historyStore.set(histResult.merged);
     if (setResult.changed) applyMergedSettings(setResult.merged);
+    if (uniResult.changed) await writeLocalUniverseSettingsSlot(uniResult.merged);
 
     // Routes: per-universe newest-wins. Read local from chrome.storage (the
     // cross-origin source of truth) and adopt remote only when it's newer.
@@ -424,10 +493,18 @@ const upload = async () => {
 
     const scansResult = mergeScans(localScans, remote?.galaxyScans);
     const histResult = mergeHistory(localHistory, remote?.colonyHistory);
+    // Global settings: merge only global-scoped keys.
     const setResult = mergeSettings(
-      { values: pickSyncedValues(settingsStore.get()), ts: readTsMap() },
+      { values: pickSyncedValues(settingsStore.get(), 'global'), ts: readTsMap() },
       remote?.settings,
     );
+    // Universe-scoped settings: prefer per-universe slot, fall back to old
+    // top-level `settings` for one-time migration (same as downloadAndMerge).
+    const remoteUniSlot =
+      remote?.settingsPerUniverse?.[routesUniverseId] ?? remote?.settings;
+    const uniResult = routesUniverseId
+      ? mergeSettings(readLocalUniverseSettingsSlot(), remoteUniSlot)
+      : { changed: false, merged: readLocalUniverseSettingsSlot() };
 
     // Same anti-loop guard as downloadAndMerge. Without this, a store
     // subscription would fire on every upload-round and re-schedule
@@ -435,6 +512,7 @@ const upload = async () => {
     if (scansResult.changed) scansStore.set(scansResult.merged);
     if (histResult.changed) historyStore.set(histResult.merged);
     if (setResult.changed) applyMergedSettings(setResult.merged);
+    if (uniResult.changed) await writeLocalUniverseSettingsSlot(uniResult.merged);
 
     // Routes: per-universe newest-wins. Adopt remote locally if newer, then
     // build the merged `fsRoutes` map for the payload — PRESERVING every
@@ -457,6 +535,20 @@ const upload = async () => {
     // otherwise we'd PATCH a no-op `fsRoutes: {}` onto every upload.
     const mergedFsRoutesOut = Object.keys(mergedFsRoutes).length ? mergedFsRoutes : undefined;
 
+    // Build the per-universe settings map for the payload — preserving every
+    // OTHER universe's slot (same pattern as fsRoutes). Only contribute ours
+    // when the ts map is non-empty: an empty ts means the user has never
+    // explicitly changed any universe-scoped setting (all at defaults), which
+    // is indistinguishable from "no slot" for another device and must not
+    // force a perpetual no-op PATCH.
+    const mergedPerUniverse = { ...(remote?.settingsPerUniverse || {}) };
+    if (routesUniverseId && Object.keys(uniResult.merged.ts).length > 0) {
+      mergedPerUniverse[routesUniverseId] = uniResult.merged;
+    }
+    const mergedPerUniverseOut = Object.keys(mergedPerUniverse).length
+      ? mergedPerUniverse
+      : undefined;
+
     // Skip the PATCH when the gist already matches the merged state.
     // This is the common case when upload fires right after a download
     // from another device and both sides already agree — PATCHing
@@ -465,7 +557,8 @@ const upload = async () => {
       sameJSON(remote?.galaxyScans, scansResult.merged) &&
       sameJSON(remote?.colonyHistory, histResult.merged) &&
       sameJSON(remote?.settings, setResult.merged) &&
-      sameJSON(remote?.fsRoutes, mergedFsRoutesOut);
+      sameJSON(remote?.fsRoutes, mergedFsRoutesOut) &&
+      sameJSON(remote?.settingsPerUniverse, mergedPerUniverseOut);
 
     if (!gistIsCurrent) {
       await writeGistData({
@@ -475,6 +568,7 @@ const upload = async () => {
         colonyHistory: histResult.merged,
         settings: setResult.merged,
         fsRoutes: mergedFsRoutesOut,
+        settingsPerUniverse: mergedPerUniverseOut,
       });
       setStatus('up', new Date().toISOString());
     }
@@ -534,10 +628,37 @@ export const installSync = () => {
     return noop;
   }
 
-  // One-time seed of the per-key settings timestamp map: stamp the keys the
-  // user has already customised so a fresh device adopts them on the first
-  // sync (see `seedSettingsTsIfAbsent`). No-op once a map exists.
+  // Per-universe tombstone keys — captured at install time so the
+  // onStorageChange listener doesn't recompute them on every event.
+  // `location.host` does not change for a tab's lifetime, so caching
+  // is safe. Fallback to bare suffixes when `location` is undefined
+  // (node tests) — production always has it because the manifest
+  // restricts this module to game-origin tabs.
+  const universeId =
+    typeof location !== 'undefined' ? parseUniverseId(location.host) : '';
+  // Fleet-save routes and per-universe settings both live per-universe in
+  // the gist; this scheduler only ever touches its own universe's slot.
+  routesUniverseId = universeId || '';
+
+  // One-time seed of the global per-key settings timestamp map: stamp the
+  // keys the user has already customised so a fresh device adopts them on
+  // the first sync (see `seedSettingsTsIfAbsent`). No-op once a map exists.
   seedSettingsTsIfAbsent(settingsStore.get(), Date.now());
+
+  // Load (or seed) the per-universe ts map into the in-memory cache.
+  // `seedUniverseTsIfAbsent` returns the freshly-seeded map (first boot) or
+  // null (already existed). When null, we fall back to a direct read so the
+  // cache always ends up populated before the first downloadAndMerge runs.
+  if (routesUniverseId) {
+    void (async () => {
+      const seeded = await seedUniverseTsIfAbsent(
+        routesUniverseId,
+        settingsStore.get(),
+        Date.now(),
+      );
+      localUniverseTsMap = seeded ?? (await readUniverseTsMap(routesUniverseId));
+    })();
+  }
 
   const onStoreChange = () => {
     // Re-check settings on every event: the user might have flipped
@@ -566,6 +687,10 @@ export const installSync = () => {
   // sync-origin writes (those carry remote timestamps we must keep), and
   // we also skip while cloudSync is off — but always advance `prev` so a
   // later edit diffs against the true last state, not a stale snapshot.
+  //
+  // Global and universe-scoped keys are stamped into separate timestamp maps:
+  // - global → localStorage (sync read/write via readTsMap / writeTsMap)
+  // - universe → in-memory localUniverseTsMap (async write-through to chromeStore)
   let prevSyncedSettings = pickSyncedValues(settingsStore.get());
   const onSettingsChange = () => {
     const next = pickSyncedValues(settingsStore.get());
@@ -573,12 +698,32 @@ export const installSync = () => {
       prevSyncedSettings = next;
       return;
     }
-    const { ts, changed } = stampChanged(prevSyncedSettings, next, readTsMap(), Date.now());
+    const now = Date.now();
+
+    // Global keys: sync stamp into localStorage ts map.
+    const { ts: globalTs, changed: globalChanged } = stampChanged(
+      pickSyncedValues(prevSyncedSettings, 'global'),
+      pickSyncedValues(next, 'global'),
+      readTsMap(),
+      now,
+    );
+
+    // Universe-scoped keys: stamp into in-memory cache, async write-through.
+    const { ts: uniTs, changed: uniChanged } = stampChanged(
+      pickSyncedValues(prevSyncedSettings, 'universe'),
+      pickSyncedValues(next, 'universe'),
+      localUniverseTsMap,
+      now,
+    );
+
     prevSyncedSettings = next;
-    if (changed) {
-      writeTsMap(ts);
-      scheduleUpload();
+
+    if (globalChanged) writeTsMap(globalTs);
+    if (uniChanged && routesUniverseId) {
+      localUniverseTsMap = uniTs;
+      void writeUniverseTsMap(routesUniverseId, uniTs);
     }
+    if (globalChanged || uniChanged) scheduleUpload();
   };
   const unsubSettings = settingsStore.subscribe(onSettingsChange);
 
@@ -592,17 +737,6 @@ export const installSync = () => {
   };
   document.addEventListener(FORCE_SYNC_EVENT, onForceSync);
 
-  // Per-universe tombstone keys — captured at install time so the
-  // onStorageChange listener doesn't recompute them on every event.
-  // `location.host` does not change for a tab's lifetime, so caching
-  // is safe. Fallback to bare suffixes when `location` is undefined
-  // (node tests) — production always has it because the manifest
-  // restricts this module to game-origin tabs.
-  const universeId =
-    typeof location !== 'undefined' ? parseUniverseId(location.host) : '';
-  // Fleet-save routes live per-universe in the gist; this scheduler only
-  // ever touches its own universe's slot.
-  routesUniverseId = universeId || '';
   const syncKey = universeId
     ? syncRequestKeyFor(universeId)
     : SYNC_REQUEST_KEY_BASE;
@@ -727,4 +861,5 @@ export const _resetSchedulerForTest = () => {
   applyingSettingsFromSync = false;
   applyingRoutesFromSync = false;
   routesUniverseId = '';
+  localUniverseTsMap = {};
 };

@@ -5,21 +5,55 @@
 //
 // @ts-check
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import {
   EXCLUDED_SETTINGS,
+  UNIVERSE_SCOPED_SETTINGS,
   SETTINGS_TS_KEY,
   isSyncedSetting,
+  isUniverseScopedSetting,
   pickSyncedValues,
   seedTsMap,
   stampChanged,
   readTsMap,
   writeTsMap,
   seedSettingsTsIfAbsent,
+  universeSettingsTsKeyFor,
+  readUniverseTsMap,
+  writeUniverseTsMap,
+  seedUniverseTsIfAbsent,
 } from '../../src/sync/settingsSync.js';
 
+/** Minimal fake chromeStore for tests (no actual WebExtension API). */
+const store = /** @type {Record<string, unknown>} */ ({});
 beforeEach(() => {
   localStorage.clear();
+  Object.keys(store).forEach((k) => delete store[k]);
+  // Stub globalThis.chrome so chromeStore.get/set work in happy-dom.
+  vi.stubGlobal('chrome', {
+    storage: {
+      local: {
+        get: (/** @type {string} */ key, /** @type {(r: Record<string, unknown>) => void} */ cb) =>
+          cb({ [key]: store[key] }),
+        set: (/** @type {Record<string, unknown>} */ items, /** @type {(() => void) | undefined} */ cb) => {
+          Object.assign(store, items);
+          cb?.();
+        },
+        remove: (/** @type {string | string[]} */ keys, /** @type {(() => void) | undefined} */ cb) => {
+          (Array.isArray(keys) ? keys : [keys]).forEach((/** @type {string} */ k) => delete store[k]);
+          cb?.();
+        },
+      },
+      onChanged: {
+        addListener: () => {},
+        removeListener: () => {},
+      },
+    },
+  });
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe('isSyncedSetting / EXCLUDED_SETTINGS', () => {
@@ -32,8 +66,21 @@ describe('isSyncedSetting / EXCLUDED_SETTINGS', () => {
   });
 });
 
+describe('isUniverseScopedSetting / UNIVERSE_SCOPED_SETTINGS', () => {
+  it('marks all 12 universe-scoped keys', () => {
+    expect(UNIVERSE_SCOPED_SETTINGS.size).toBe(12);
+    expect(isUniverseScopedSetting('colPassword')).toBe(true);
+    expect(isUniverseScopedSetting('fsThreshold')).toBe(true);
+    expect(isUniverseScopedSetting('reminderNtfyToken')).toBe(true);
+    expect(isUniverseScopedSetting('mobileMode')).toBe(false);
+    expect(isUniverseScopedSetting('readabilityBoost')).toBe(false);
+    // Excluded settings are not universe-scoped (they're not synced at all).
+    expect(isUniverseScopedSetting('gistToken')).toBe(false);
+  });
+});
+
 describe('pickSyncedValues', () => {
-  it('drops the excluded keys, keeps the rest', () => {
+  it('drops the excluded keys, keeps the rest (scope=all by default)', () => {
     const out = pickSyncedValues({
       mobileMode: true,
       enterBtnSize: 320,
@@ -42,6 +89,22 @@ describe('pickSyncedValues', () => {
       reminderNtfyToken: 'tk_x',
     });
     expect(out).toEqual({ mobileMode: true, reminderNtfyToken: 'tk_x' });
+  });
+
+  it('scope=global keeps only non-universe-scoped synced keys', () => {
+    const out = pickSyncedValues(
+      { mobileMode: true, fsThreshold: 50000, enterBtnSize: 320 },
+      'global',
+    );
+    expect(out).toEqual({ mobileMode: true });
+  });
+
+  it('scope=universe keeps only universe-scoped keys', () => {
+    const out = pickSyncedValues(
+      { mobileMode: true, fsThreshold: 50000, colPassword: 'abc', enterBtnSize: 320 },
+      'universe',
+    );
+    expect(out).toEqual({ fsThreshold: 50000, colPassword: 'abc' });
   });
 });
 
@@ -96,15 +159,69 @@ describe('readTsMap / writeTsMap', () => {
 });
 
 describe('seedSettingsTsIfAbsent', () => {
-  it('seeds non-default keys once, then no-ops', () => {
-    const seeded = seedSettingsTsIfAbsent({ mobileMode: true, colMinGap: 99 }, 1234);
+  it('seeds only GLOBAL non-default keys once, then no-ops', () => {
+    // colMinGap is now universe-scoped — must NOT appear in the global ts map.
+    // adhocOffsetSec (default 60) is global — customised value 99 is stamped.
+    const seeded = seedSettingsTsIfAbsent(
+      { mobileMode: true, colMinGap: 99, adhocOffsetSec: 99 },
+      1234,
+    );
     expect(seeded).toBe(true);
-    // colMinGap default is 15, so it's customised and stamped; mobileMode
-    // default is true (unchanged) so it isn't.
-    expect(readTsMap()).toEqual({ colMinGap: 1234 });
+    const ts = readTsMap();
+    // adhocOffsetSec is global + customised → stamped.
+    expect(ts.adhocOffsetSec).toBe(1234);
+    // colMinGap is universe-scoped → must NOT be in the global ts map.
+    expect('colMinGap' in ts).toBe(false);
 
     // Second call is a no-op (map already present).
     expect(seedSettingsTsIfAbsent({ mobileMode: false }, 9999)).toBe(false);
-    expect(readTsMap()).toEqual({ colMinGap: 1234 });
+    expect(readTsMap().adhocOffsetSec).toBe(1234);
+  });
+});
+
+describe('per-universe chrome.storage wrappers', () => {
+  it('universeSettingsTsKeyFor follows the <id>:oge_settingsTs pattern', () => {
+    expect(universeSettingsTsKeyFor('s163-pl')).toBe('s163-pl:oge_settingsTs');
+  });
+
+  it('readUniverseTsMap / writeUniverseTsMap round-trip via chromeStore', async () => {
+    await writeUniverseTsMap('s163-pl', { fsThreshold: 42 });
+    const loaded = await readUniverseTsMap('s163-pl');
+    expect(loaded).toEqual({ fsThreshold: 42 });
+  });
+
+  it('readUniverseTsMap returns {} when absent', async () => {
+    expect(await readUniverseTsMap('s999-de')).toEqual({});
+  });
+
+  it('seedUniverseTsIfAbsent stamps customised universe-scoped keys, returns seeded map', async () => {
+    // fsThreshold default=100000; custom value 50000 should be stamped.
+    // mobileMode is global → must NOT appear in universe ts map.
+    const result = await seedUniverseTsIfAbsent(
+      's163-pl',
+      { mobileMode: true, fsThreshold: 50000, colPassword: '' },
+      777,
+    );
+    expect(result).not.toBeNull();
+    // fsThreshold customised → stamped
+    expect(result?.fsThreshold).toBe(777);
+    // colPassword is at default ('') → not stamped
+    expect('colPassword' in (result ?? {})).toBe(false);
+    // mobileMode is global → not stamped in universe map
+    expect('mobileMode' in (result ?? {})).toBe(false);
+
+    // Persisted to chromeStore
+    const stored = await readUniverseTsMap('s163-pl');
+    expect(stored.fsThreshold).toBe(777);
+
+    // Second call: already exists → returns null (no-op)
+    const result2 = await seedUniverseTsIfAbsent(
+      's163-pl',
+      { fsThreshold: 99999 },
+      9999,
+    );
+    expect(result2).toBeNull();
+    // Map unchanged
+    expect((await readUniverseTsMap('s163-pl')).fsThreshold).toBe(777);
   });
 });
