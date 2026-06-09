@@ -21,7 +21,7 @@ vi.mock('../../../src/lib/storage.js', () => ({
 
 import { chromeStore } from '../../../src/lib/storage.js';
 import { installRoutes } from '../../../src/features/dashboard/routes.js';
-import { TARGET_PLANET, TARGET_MOON, SHIP_LARGE_CARGO } from '../../../src/domain/rules.js';
+import { TARGET_PLANET, TARGET_MOON, SHIP_LARGE_CARGO, SHIP_SMALL_CARGO } from '../../../src/domain/rules.js';
 
 const mockStore = /** @type {{ get: import('vitest').Mock, set: import('vitest').Mock }} */ (
   /** @type {any} */ (chromeStore)
@@ -228,5 +228,47 @@ describe('advanced DSL + dirty Save', () => {
     await flush();
     expect(save().disabled).toBe(true);
     expect(save().textContent).toBe('Save routes');
+  });
+
+  it('marks Save dirty when fleet ship type changes', async () => {
+    seedBodies([
+      { cp: 101, name: 'K1', ...moon(4, 467, 15) },
+      { cp: 200, name: 'P2', ...planet(5, 172, 8) },
+    ]);
+    seedRoutes([
+      { sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8)], microFleet: { shipId: SHIP_LARGE_CARGO, count: 15000 } },
+    ]);
+    install().refresh();
+    await flush();
+
+    const save = () => /** @type {HTMLButtonElement} */ ($('#routesSaveBtn'));
+    expect(save().disabled).toBe(true);
+
+    // Change ship type → must activate Save.
+    pick('ship', String(SHIP_SMALL_CARGO));
+    expect(save().disabled).toBe(false);
+    expect(save().textContent).toContain('•');
+  });
+
+  it('marks Save dirty when fleet ship count changes', async () => {
+    seedBodies([
+      { cp: 101, name: 'K1', ...moon(4, 467, 15) },
+      { cp: 200, name: 'P2', ...planet(5, 172, 8) },
+    ]);
+    seedRoutes([
+      { sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8)], microFleet: { shipId: SHIP_LARGE_CARGO, count: 15000 } },
+    ]);
+    install().refresh();
+    await flush();
+
+    const save = () => /** @type {HTMLButtonElement} */ ($('#routesSaveBtn'));
+    expect(save().disabled).toBe(true);
+
+    // Change ship count → must activate Save.
+    const countInp = /** @type {HTMLInputElement} */ (list().querySelector('input[type="number"]'));
+    countInp.value = '999';
+    countInp.dispatchEvent(new Event('input'));
+    expect(save().disabled).toBe(false);
+    expect(save().textContent).toContain('•');
   });
 });
