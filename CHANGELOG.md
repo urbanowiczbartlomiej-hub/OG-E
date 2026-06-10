@@ -6,6 +6,30 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.16.4] — 2026-06-10
+
+### Added
+
+- **Per-button identity colours.** Each floating button now has its own
+  colour signature: expedition in cerulean blue (`#4aa8ff`), colonisation
+  in cyan (`#13d1de` ready / `#12b3c2` idle) with a muted cyan scan zone
+  (`#3a9fb0`), daily-run in pure green (unchanged). Status colours (amber
+  wait, rose error, slate disabled) remain shared and unchanged.
+- **`--glow` intensity multiplier.** A new `--glow` CSS variable (default
+  `1`) scales the button's resting and hover glow radius. Expedition is
+  set to `1.3` for a visibly stronger glow; other buttons stay at `1`.
+
+### Fixed
+
+- **Mobile keyboard no longer pops up on button tap (split buttons).**
+  `mousedown.preventDefault()` in the tap-wire layer prevents the browser
+  from focusing `<button>` elements on touch without suppressing the click
+  event. Complements the `tabIndex=-1` fix from 1.16.3.
+- **Mobile keyboard no longer pops up on page load after navigation.**
+  `installFocusPersist` now skips programmatic `button.focus()` on
+  `pointer:coarse` devices, where focus restoration has no UX value and
+  could trigger the virtual keyboard.
+
 ## [1.16.3] — 2026-06-09
 
 ### Added
