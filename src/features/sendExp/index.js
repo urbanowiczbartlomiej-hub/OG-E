@@ -72,6 +72,7 @@ import { settingsStore } from '../../state/settings.js';
 import { safeClick, waitFor } from '../../lib/dom.js';
 import { GAME, ACTIVE_PLANET_CLASS } from '../../lib/gameDom.js';
 import { createButton as makeButton, LABEL_CLASS } from '../shared/button.js';
+import { COMET_GLYPH } from '../shared/buttonGlyphs.js';
 import {
   BUTTON_ID,
   FOCUS_KEY,
@@ -555,6 +556,7 @@ export const installSendExp = () => {
           id: BUTTON_ID,
           ariaLabel: 'Send expedition',
           bg: BG_IDLE,
+          glyph: COMET_GLYPH,
           onTap: () => void handleClick(/** @type {HTMLButtonElement} */ (controller?.el)),
           focusValue: FOCUS_VALUE,
           focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,

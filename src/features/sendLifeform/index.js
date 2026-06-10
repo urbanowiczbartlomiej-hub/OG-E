@@ -33,6 +33,7 @@
 import { settingsStore } from '../../state/settings.js';
 import { scansStore, flushScansStore } from '../../state/scans.js';
 import { createButton as makeButton, labelLines } from '../shared/button.js';
+import { DNA_GLYPH } from '../shared/buttonGlyphs.js';
 import { SYSTEM_DISCOVERY_RESULT_EVENT } from '../../bridges/discoveryHook.js';
 import {
   derive,
@@ -291,7 +292,7 @@ const onDiscoveryResult = (e) => {
     showTransient(
       detail.shipsSent > 0
         ? { text: `Sent ${detail.shipsSent}!`, subtext: coords, bg: BG_LF_ACTIVE }
-        : { text: 'Empty → next', subtext: coords, bg: BG_LF_IDLE },
+        : { text: 'Empty', subtext: coords, bg: BG_LF_IDLE },
     );
     return;
   }
@@ -339,6 +340,7 @@ export const installSendLifeform = () => {
           id: BUTTON_ID,
           ariaLabel: 'Discover lifeforms in the next system',
           bg: BG_LF_IDLE,
+          glyph: DNA_GLYPH,
           onTap: onClick,
           focusValue: FOCUS_VALUE,
           focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,

@@ -112,7 +112,7 @@ describe('set collect target (via long-press on the Collect zone)', () => {
       setBodyMeta('4:472:15', 'moon');
       const collectZone = /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-zone'));
       collectZone.dispatchEvent(new PointerEvent('pointerdown', { clientX: 0, clientY: 0 }));
-      // Advance past the 3000ms long-press threshold.
+      // Advance past the 2000ms long-press threshold.
       await vi.advanceTimersByTimeAsync(3100);
       collectZone.dispatchEvent(new PointerEvent('pointerup'));
       expect(fsRoutesStore.get().collectTarget).toEqual({

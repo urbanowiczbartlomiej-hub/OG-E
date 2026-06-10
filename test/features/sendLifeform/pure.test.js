@@ -182,9 +182,9 @@ describe('render', () => {
     const p = render({ kind: 'navigate', target: { galaxy: 5, system: 1 }, cooldown: false, scansRemaining: 5 });
     expect(p).toMatchObject({ text: 'Next', subtext: '[5:1]' });
   });
-  it('offGalaxy → "To galaxy" (idle violet)', () => {
+  it('offGalaxy → "Discover" (idle violet)', () => {
     const p = render({ kind: 'offGalaxy', scansRemaining: 10 });
-    expect(p).toMatchObject({ text: 'To galaxy', bg: BG_LF_IDLE });
+    expect(p).toMatchObject({ text: 'Discover', bg: BG_LF_IDLE });
   });
   it('allDone → "All discovered!"', () => {
     const p = render({ kind: 'allDone', cooldown: false, scansRemaining: 0 });

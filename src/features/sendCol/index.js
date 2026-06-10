@@ -83,6 +83,7 @@ import { registryStore } from '../../state/registry.js';
 import { safeLS } from '../../lib/storage.js';
 import { parsePositions } from '../../domain/positions.js';
 import { createButton as makeButton, labelLines } from '../shared/button.js';
+import { LANDER_GLYPH } from '../shared/buttonGlyphs.js';
 import {
   select as courierSelect,
   dispatch as courierDispatch,
@@ -167,7 +168,7 @@ const FOCUS_RESTORE_DELAY_MS = 50;
 /** Repaint ticker period in ms. */
 const REPAINT_TICK_MS = 1000;
 /** Hold duration (ms) required to trigger a manual skip of the current candidate. */
-const HOLD_SKIP_MS = 3000;
+const HOLD_SKIP_MS = 2000;
 
 // ─── Module-local state (§3) ───────────────────────────────────────────
 
@@ -872,11 +873,12 @@ export const installSendCol = () => {
           id: SEND_HALF_ID,
           ariaLabel: 'Send colonization',
           bg: BG_SEND_IDLE,
+          glyph: LANDER_GLYPH,
           onTap: () => void onSendClick(),
           onHold: onSendHold,
           focusValue: FOCUS_SEND,
           focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,
-          labelShiftY: 10,
+          labelShiftY: 17,
         },
         {
           key: 'scan',
@@ -886,7 +888,7 @@ export const installSendCol = () => {
           onTap: onScanClick,
           focusValue: FOCUS_SCAN,
           focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,
-          labelShiftY: -10,
+          labelShiftY: -17,
         },
       ],
     });

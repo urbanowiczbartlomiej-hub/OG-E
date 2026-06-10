@@ -11,7 +11,7 @@
 // One single-zone button that walks the universe firing lifeform system
 // discoveries (one user tap = one game action):
 //
-//   1. Off galaxy view            → "To galaxy" (caller full-navigates).
+//   1. Off galaxy view            → "Discover" (caller full-navigates).
 //   2. On galaxy, current system
 //      still needs discovery       → "Discover [g:s]" (caller clicks the
 //                                    game's `#discoverSystemBtn`).
@@ -55,7 +55,7 @@ export const LF_RESCAN_MS = 7 * 24 * 3600 * 1000;
 // Seeded from the planted TODO in `sendCol/pure.js`. Distinct hue from the
 // cyan Send-Col / amber-wait palette so the three buttons read apart.
 
-/** Rim colour — idle / "To galaxy" (violet). */
+/** Rim colour — idle / "Discover" (violet). */
 export const BG_LF_IDLE = '#a78bfa';
 /** Rim colour — ready to discover / navigate (brighter violet). */
 export const BG_LF_ACTIVE = '#bb9dff';
@@ -296,19 +296,15 @@ const systemScan = (scans, c) =>
  * @returns {Paint}
  */
 export const render = (ctx) => {
-  const left =
-    ctx.scansRemaining > 0 ? `(${ctx.scansRemaining} left)` : undefined;
-
+  // No "N left" hint: for lifeforms there are always thousands of stale
+  // systems, so the count carries no signal — it's just noise on the button.
   switch (ctx.kind) {
     case 'offGalaxy':
-      return left
-        ? { text: 'To galaxy', subtext: `${ctx.scansRemaining} left`, bg: BG_LF_IDLE }
-        : { text: 'To galaxy', bg: BG_LF_IDLE };
+      return { text: 'Discover', bg: BG_LF_IDLE };
     case 'discover':
       return {
         text: 'Discover',
         subtext: `[${ctx.target.galaxy}:${ctx.target.system}]`,
-        hint: left,
         bg: BG_LF_ACTIVE,
         dim: ctx.cooldown,
       };
@@ -316,7 +312,6 @@ export const render = (ctx) => {
       return {
         text: 'Next',
         subtext: `[${ctx.target.galaxy}:${ctx.target.system}]`,
-        hint: left,
         bg: BG_LF_ACTIVE,
         dim: ctx.cooldown,
       };

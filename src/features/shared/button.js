@@ -28,7 +28,7 @@
 // @see ./buttonChrome.js     — the engraved ring + ripple decoration.
 // @see ./draggableButton.js  — the drag + focus-persistence primitives.
 
-import { decorateButton } from './buttonChrome.js';
+import { decorateButton, appendGlyph } from './buttonChrome.js';
 import { installDrag, installFocusPersist } from './draggableButton.js';
 import { safeLS } from '../../lib/storage.js';
 
@@ -59,6 +59,9 @@ export const LABEL_CLASS = 'oge-btn-label';
  * @property {string} bg                   initial rim/state colour (used as CSS --rim).
  * @property {(ev: MouseEvent) => void} onTap
  * @property {() => void} [onHold]         present ⇒ enables long-press on this zone.
+ * @property {string} [glyph]              inner SVG markup of a faint
+ *                                         background watermark glyph (see
+ *                                         buttonGlyphs.js); omitted ⇒ no art.
  * @property {string} [focusValue]         present ⇒ persist focus under `focusKey`.
  * @property {number} [focusRestoreDelay]
  * @property {number} [labelShiftY]        px to nudge this zone's label toward
@@ -287,6 +290,9 @@ export const createButton = (cfg) => {
   // it rides on the span so it survives every repaint.
   for (const z of cfg.zones) {
     const el = /** @type {HTMLElement} */ (zoneEls.get(z.key));
+    // Faint background watermark behind the label (z-index ordering keeps it
+    // under the label/ring regardless of DOM order); skipped if no glyph.
+    if (z.glyph) appendGlyph(el, z.glyph);
     const span = document.createElement('span');
     span.className = LABEL_CLASS;
     if (z.labelShiftY) span.style.transform = `translateY(${z.labelShiftY}px)`;

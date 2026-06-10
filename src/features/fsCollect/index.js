@@ -58,6 +58,7 @@ import {
   renderLines,
   labelLines,
 } from '../shared/button.js';
+import { PLANET_ARROW_GLYPH } from '../shared/buttonGlyphs.js';
 import {
   select as courierSelect,
   dispatch as courierDispatch,
@@ -93,7 +94,7 @@ const DRAG_THRESHOLD = 8;
 const DEFAULT_EDGE_OFFSET_PX = 20;
 const FLASH_MS = 1500;
 const SENT_LOCK_MS = 3000;
-const LONG_PRESS_MS = 3000;
+const LONG_PRESS_MS = 2000;
 
 // Colours — distinct from sendExp (blue #4aa8ff) / sendCol (cyan #13d1de).
 // Daily Run uses pure green: micro & collect both in green family (minimal difference).
@@ -568,9 +569,10 @@ export const installFsCollect = () => {
           id: FS_MICRO_ZONE_ID,
           ariaLabel: 'Send micro-fleets',
           bg: BG_MICRO,
+          glyph: PLANET_ARROW_GLYPH,
           onTap: onMicroClick,
           focusValue: 'fs-unified-micro',
-          labelShiftY: 10,
+          labelShiftY: 17,
         },
         {
           // TAP collects; LONG-PRESS (onHold) sets the collect target.
@@ -582,7 +584,7 @@ export const installFsCollect = () => {
           onTap: onCollectClick,
           onHold: onSetTargetClick,
           focusValue: 'fs-unified-collect',
-          labelShiftY: -10,
+          labelShiftY: -17,
         },
       ],
     });

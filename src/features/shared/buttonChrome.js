@@ -47,7 +47,7 @@ const XLINK_NS = 'http://www.w3.org/1999/xlink';
 export const BUTTON_CHROME_CSS = [
   // ── Host: dark core, state rim colour, shared transitions ──────────────
   '.oge-host{',
-  '--surface:#0b1220;--rim:#38bdf8;--glow:1;--label:#f8fafc;',
+  '--surface:#0b1220;--rim:#38bdf8;--glow:1;--label:#f8fafc;--art-opacity:.1;',
   'position:relative;border-radius:50%;isolation:isolate;',
   'font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Verdana,sans-serif;',
   'font-weight:700;color:var(--label);cursor:pointer;',
@@ -109,6 +109,24 @@ export const BUTTON_CHROME_CSS = [
   '.oge-ring-brand{fill:color-mix(in oklab,var(--rim) 62%,#94a3b8);font-weight:700;',
   'text-transform:uppercase;letter-spacing:.4px;',
   'paint-order:stroke;stroke:rgba(2,6,16,.55);stroke-width:.6px;}',
+
+  // ── Background watermark glyph (rim-tinted, below the functional layer) ──
+  // Sits at z-index 0: above the host's gradient fill, below ripple(1),
+  // ring(2) and label(3). Tints to --rim via currentColor and fades with
+  // --art-opacity. On a 1-zone circle it centres large; on a split zone it
+  // shrinks to the half it lives in. Never reacts to hold/charge.
+  '.oge-art{position:absolute;inset:0;z-index:0;pointer-events:none;',
+  'display:flex;align-items:center;justify-content:center;',
+  'color:var(--rim);opacity:var(--art-opacity,.1);}',
+  '.oge-art svg{width:60%;height:60%;overflow:visible;}',
+  // 1-zone: half-size glyph tucked into the upper part (label sits below it).
+  '.oge-host.single .oge-art{align-items:flex-start;padding-top:13%;}',
+  '.oge-host.single .oge-art svg{width:30%;height:30%;}',
+  // 2-zone: smaller glyph pulled to the top of its half so the (low-shifted)
+  // label below doesn't bury it.
+  '.oge-host.split .oge-art{align-items:flex-start;padding-top:6%;}',
+  '.oge-host.split .oge-art svg{width:30%;height:42%;}',
+  '@media (prefers-reduced-motion:reduce){.oge-art{transition:none;}}',
 
   // ── Tap ripple (rim-coloured wave from the touch point) ─────────────────
   '.oge-deco-layer{position:absolute;inset:0;border-radius:50%;',
@@ -308,6 +326,29 @@ const buildRing = (title, ringId, progress = null) => {
   svg.appendChild(brand);
 
   return svg;
+};
+
+/**
+ * Append the faint background watermark glyph to a zone element (idempotent
+ * per element). `inner` is the inner markup of a `0 0 64 64` SVG using
+ * `currentColor` so it tints to the zone's `--rim`. The wrapping `.oge-art`
+ * layer parents an SVG; built via innerHTML so the namespaced children parse
+ * correctly without per-node createElementNS plumbing.
+ *
+ * @param {HTMLElement} zone
+ * @param {string} inner  inner SVG markup (paths/lines/circles, currentColor).
+ * @returns {void}
+ */
+export const appendGlyph = (zone, inner) => {
+  if (!zone || !inner || zone.querySelector(':scope > .oge-art')) return;
+  const art = document.createElement('span');
+  art.className = 'oge-art';
+  art.setAttribute('aria-hidden', 'true');
+  art.innerHTML =
+    '<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" focusable="false">' +
+    inner +
+    '</svg>';
+  zone.appendChild(art);
 };
 
 /**
