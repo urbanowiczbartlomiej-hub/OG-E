@@ -6,6 +6,38 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.17.0] — 2026-06-10
+
+### Added
+
+- **Subtle background glyphs on the floating buttons.** Each command button
+  now carries a faint, monochrome line-glyph behind its label as a
+  glanceability cue — a comet for Expeditions, a landing craft for
+  Colonization, a planet-with-flight-arc for the Daily Run, and a DNA helix
+  for Lifeforms. The glyph is tinted to the button's current state colour
+  (so it stays quiet in the amber "wait" / rose "error" states and brightens
+  with the active colour) and sits below the label, ring and charge arc so
+  it never competes with them. Single-zone buttons show one half-size glyph
+  tucked toward the top; split buttons carry a smaller glyph in the lead zone
+  only.
+
+### Changed
+
+- **Hold-to-confirm is now 2s (was 3s)** on the two buttons that use it — the
+  Colonization "skip/scan" hold and the Daily Run "set collect target" hold.
+- **Lifeforms button labels tidied.** "Empty → next" → "Empty", "To galaxy" →
+  "Discover", and the "(N left)" counter is gone (with thousands of systems
+  always pending, the number carried no useful signal).
+
+### Fixed
+
+- **Cross-device sync no longer drops lifeform discoveries.** A plain galaxy
+  rescan on one device could overwrite a lifeform discovery recorded on
+  another after a sync round-trip, because scans merged as a whole unit keyed
+  on the regular scan timestamp. Lifeform markers now reconcile independently
+  (newest discovery wins; discovered positions are unioned), so a routine
+  rescan can't erase a discovery from another device.
+
 ## [1.16.5] — 2026-06-10
 
 ### Added
