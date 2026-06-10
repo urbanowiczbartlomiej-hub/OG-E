@@ -32,6 +32,7 @@ import { installEventBoxHook } from './bridges/eventBoxHook.js';
 import { installTraderActionHook } from './bridges/traderActionHook.js';
 import { installFleetExecutor } from './bridges/fleetExecutor.js';
 import { installSendFleetResultHook } from './bridges/sendFleetResultHook.js';
+import { installDiscoveryHook } from './bridges/discoveryHook.js';
 
 installGalaxyHook();
 installCheckTargetHook();
@@ -63,3 +64,7 @@ installFleetExecutor();
 // Publish the result of every sendFleet XHR so the courier's dispatch()
 // can distinguish a real send from a 200-but-rejected one (e.g. no fuel).
 installSendFleetResultHook();
+// Observe the lifeform system-discovery send (sendSystemDiscoveryFleet) so
+// the isolated-world Lifeforms button can mark the discovered system with a
+// 7-day retention and read shipsSent / the fleet-cap rejection message.
+installDiscoveryHook();

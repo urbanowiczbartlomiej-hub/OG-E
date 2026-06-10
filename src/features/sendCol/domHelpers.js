@@ -142,10 +142,10 @@ export const readHomePlanet = () => {
 export const parseCurrentGalaxyView = () => {
   if (!location.search.includes('component=galaxy')) return null;
   const galInput = /** @type {HTMLInputElement | null} */ (
-    document.getElementById('galaxy_input')
+    document.querySelector(GAME.GALAXY_INPUT)
   );
   const sysInput = /** @type {HTMLInputElement | null} */ (
-    document.getElementById('system_input')
+    document.querySelector(GAME.SYSTEM_INPUT)
   );
   const inputG = galInput ? parseInt(galInput.value, 10) : NaN;
   const inputS = sysInput ? parseInt(sysInput.value, 10) : NaN;

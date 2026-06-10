@@ -124,6 +124,21 @@ export const GAME = {
   /** AGR moon target-type span (ago-data type:3, action:42). */
   AGO_TYPE_MOON: '#ago_type .moon',
 
+  // ── Galaxy view (the system-browser form) ──────────────────────────
+  // Read by `features/sendCol` (Scan half) and `features/sendLifeform`
+  // (system-discovery navigation) — hence centralized here. The submit
+  // control AGR/OGame render carries an `onclick="submitForm()"`; the
+  // `#galaxyHeader .btn_blue` fallback covers layouts where that handler
+  // attribute is absent.
+  /** Galaxy coord input on the galaxy view. */
+  GALAXY_INPUT: '#galaxy_input',
+  /** System coord input on the galaxy view. */
+  SYSTEM_INPUT: '#system_input',
+  /** "Show system" submit control on the galaxy view (primary selector). */
+  GALAXY_SUBMIT: '.btn_blue[onclick*="submitForm"]',
+  /** Fallback "Show system" submit control when the onclick attr is absent. */
+  GALAXY_SUBMIT_FALLBACK: '#galaxyHeader .btn_blue',
+
   // ── Top menu ───────────────────────────────────────────────────────
   MENU_TABLE: '#menuTable',
 };

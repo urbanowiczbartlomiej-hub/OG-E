@@ -65,6 +65,17 @@ import { registryStore } from './registry.js';
  *   ms timestamp of the most recent scan of this system.
  * @property {Record<number, Position>} positions
  *   Per-slot classification. Keys are numeric slots 1..15.
+ * @property {number} [lfScannedAt]
+ *   ms timestamp of the last successful lifeform system-discovery for this
+ *   system (the `features/sendLifeform` button). Drives a 7-day retention
+ *   gate that is INDEPENDENT of the colonization `scannedAt` above. Absent
+ *   means "never discovered". Set by the Lifeforms feature, never by the
+ *   galaxy (colonization) scan — and preserved across colonization rescans
+ *   by {@link installScansListener}.
+ * @property {Record<number, number>} [lfPositions]
+ *   Per-position ms timestamps from the discovery response's
+ *   `sentToCoordinates`. Record/fidelity only — the 7-day gate keys off
+ *   {@link SystemScan.lfScannedAt}. Keys are slot numbers 1..15.
  */
 
 /**
@@ -308,6 +319,13 @@ export const installScansListener = () => {
     scansStore.set({
       ...current,
       [systemKey]: {
+        // Spread the existing record FIRST so lifeform discovery markers
+        // (`lfScannedAt` / `lfPositions`, owned by `features/sendLifeform`)
+        // survive a colonization rescan — the galaxy XHR observes neither,
+        // so without this carry-forward every scan would silently reset the
+        // 7-day discovery retention. `scannedAt` + `positions` below
+        // overwrite the colonization-owned fields with the fresh values.
+        ...existingScan,
         scannedAt: now,
         positions: mergedPositions,
       },

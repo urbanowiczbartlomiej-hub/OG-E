@@ -111,6 +111,7 @@ import {
   parseCurrentGalaxyView,
 } from './domHelpers.js';
 import { SHIP_COLONY, TARGET_PLANET } from '../../domain/rules.js';
+import { GAME } from '../../lib/gameDom.js';
 
 // Re-export the pure pipeline so existing call-sites (e.g. the test
 // file which imports `derive` + `render` from this module) keep
@@ -560,17 +561,17 @@ const onScanClick = () => {
  */
 const navigateGalaxyInPage = (galaxy, system) => {
   const galInput = /** @type {HTMLInputElement | null} */ (
-    document.getElementById('galaxy_input')
+    document.querySelector(GAME.GALAXY_INPUT)
   );
   const sysInput = /** @type {HTMLInputElement | null} */ (
-    document.getElementById('system_input')
+    document.querySelector(GAME.SYSTEM_INPUT)
   );
   if (!sysInput) return false;
   if (galInput) galInput.value = String(galaxy);
   sysInput.value = String(system);
   const submitBtn = /** @type {HTMLElement | null} */ (
-    document.querySelector('.btn_blue[onclick*="submitForm"]') ??
-      document.querySelector('#galaxyHeader .btn_blue')
+    document.querySelector(GAME.GALAXY_SUBMIT) ??
+      document.querySelector(GAME.GALAXY_SUBMIT_FALLBACK)
   );
   if (submitBtn) {
     submitBtn.click();

@@ -74,6 +74,7 @@ import { installPlanetBarCapture } from './features/planetBarCapture.js';
 import { installBadges } from './features/badges.js';
 import { installSendExp } from './features/sendExp/index.js';
 import { installSendCol } from './features/sendCol/index.js';
+import { installSendLifeform } from './features/sendLifeform/index.js';
 import { installFsCollect } from './features/fsCollect/index.js';
 import { installAbandonOverview } from './features/abandon/overview.js';
 import { installFreshPlanetDetector } from './features/freshPlanetDetector.js';
@@ -164,6 +165,10 @@ const installDomFeatures = () => {
   // User-facing buttons.
   installSendExp();
   installSendCol();
+  // Lifeforms (system-discovery) button — walks the galaxy firing lifeform
+  // discoveries, one system per tap. Independent of Send-Col; gated on the
+  // lifeformMode setting (default on).
+  installSendLifeform();
   // Unified Daily Transport button (Send micro-fleets + Collect). Gated on
   // the fsCollectMode setting (default off); independent of the others.
   installFsCollect();

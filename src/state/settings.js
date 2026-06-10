@@ -71,6 +71,8 @@ export const SETTINGS_PREFIX = 'oge_';
  *   autoRedirectExpedition  true  — redirect to next planet after expedition
  *   enterBtnSize            320   — Send Exp button size in px
  *   colBtnSize              320   — Send Col button size in px
+ *   lifeformMode            true  — Lifeforms (system-discovery) button visible
+ *   lfBtnSize               320   — Lifeforms button size in px
  *   colPositions            '8'   — comma-separated colonize positions e.g. "8,9,10"
  *   colMinGap               15    — seconds between colonize arrivals
  *   colMinFields            320   — abandon threshold (fields)
@@ -105,6 +107,8 @@ export const SETTINGS_PREFIX = 'oge_';
  * @property {boolean} autoRedirectExpedition
  * @property {number}  enterBtnSize
  * @property {number}  colBtnSize
+ * @property {boolean} lifeformMode
+ * @property {number}  lfBtnSize
  * @property {string}  colPositions
  * @property {number}  colMinGap
  * @property {number}  colMinFields
@@ -171,6 +175,8 @@ export const SETTINGS_SCHEMA = {
   autoRedirectExpedition: { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'autoRedirectExpedition' },
   enterBtnSize:           { type: 'int',    default: 320,   key: SETTINGS_PREFIX + 'enterBtnSize' },
   colBtnSize:             { type: 'int',    default: 320,   key: SETTINGS_PREFIX + 'colBtnSize' },
+  lifeformMode:           { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'lifeformMode' },
+  lfBtnSize:              { type: 'int',    default: 320,   key: SETTINGS_PREFIX + 'lfBtnSize' },
   colPositions:           { type: 'string', default: '8',   key: SETTINGS_PREFIX + 'colPositions' },
   colMinGap:              { type: 'int',    default: 15,    key: SETTINGS_PREFIX + 'colMinGap' },
   colMinFields:           { type: 'int',    default: 320,   key: SETTINGS_PREFIX + 'colMinFields' },

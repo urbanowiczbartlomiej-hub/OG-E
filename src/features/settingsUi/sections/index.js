@@ -7,6 +7,7 @@
 
 import { expeditionsSection } from './expeditions.js';
 import { colonizationSection } from './colonization.js';
+import { lifeformsSection } from './lifeforms.js';
 import { fleetSaveSection } from './fleetSave.js';
 import { displaySection } from './display.js';
 import { syncSection } from './sync.js';
@@ -30,6 +31,7 @@ import { remindersSection } from './reminders.js';
 export const SECTIONS = [
   expeditionsSection,
   colonizationSection,
+  lifeformsSection,
   fleetSaveSection,
   displaySection,
   syncSection,
