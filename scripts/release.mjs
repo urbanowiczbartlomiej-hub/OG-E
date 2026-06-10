@@ -216,8 +216,8 @@ if (SKIP_TESTS) {
 function bumpVersionFile(file) {
   const path = resolve(ROOT, file);
   const text = readFileSync(path, 'utf8');
+  if (!/"version":\s*"/.test(text)) die(`could not find a "version" field to bump in ${file}`);
   const next = text.replace(/("version":\s*")[^"]+(")/, `$1${VERSION}$2`);
-  if (next === text) die(`could not find a "version" field to bump in ${file}`);
   writeFileSync(path, next);
   console.log(`release: bumped ${file} → ${VERSION}`);
 }
