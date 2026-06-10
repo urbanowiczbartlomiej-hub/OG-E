@@ -6,6 +6,29 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.16.5] — 2026-06-10
+
+### Added
+
+- **Floating "Lifeforms" button** (violet, single zone). Automates OGame's
+  system-discovery action across the whole universe — one tap per system,
+  TOS-safe (the button clicks the game's own `#discoverSystemBtn`; it never
+  originates an HTTP request itself).
+  - Off galaxy view → navigates to the galaxy page.
+  - On galaxy, current system undiscovered → clicks the game's discover
+    control; the result is observed via the new `discoveryHook` bridge and
+    `lfScannedAt` / `lfPositions` are stamped in the scan store.
+  - On galaxy, current system already covered → in-page hops to the
+    **nearest** still-undiscovered system (wrap-aware: dist(499, 1) = 1).
+  - `shipsSent: 0` (game reports system fully sent) → still marks the system
+    as covered so the button advances cleanly.
+  - Fleet-cap rejection ("Maksymalna liczba flot") → surfaces "Max fleets",
+    marks nothing; the system remains queued.
+  - 7-day per-system retention gate (same store as colonisation scanning;
+    colonisation rescans do not wipe lifeform markers).
+  - Enabled by default. Settings: "Floating Lifeforms button" toggle +
+    size slider (40–560 px, default 320 px).
+
 ## [1.16.4] — 2026-06-10
 
 ### Added
