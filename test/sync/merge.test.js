@@ -36,6 +36,22 @@ import {
 const scan = (scannedAt) => ({ scannedAt, positions: {} });
 
 /**
+ * A `SystemScan` carrying lifeform-discovery markers on top of the base
+ * scan fields, for the LF-reconciliation cases.
+ *
+ * @param {number} scannedAt
+ * @param {number} lfScannedAt
+ * @param {Record<number, number>} [lfPositions]
+ * @returns {SystemScan}
+ */
+const lfScan = (scannedAt, lfScannedAt, lfPositions = {}) => ({
+  scannedAt,
+  positions: {},
+  lfScannedAt,
+  lfPositions,
+});
+
+/**
  * Compact factory for a `ColonyEntry`. Fields unrelated to the merge
  * (`fields`, `coords`, `position`, `timestamp`) are stubbed so each
  * test can focus on `cp` — the one field that affects the merger.
@@ -192,6 +208,51 @@ describe('mergeScans', () => {
     expect(changed).toBe(true);
     // Sanity: merged has exactly the three keys.
     expect(Object.keys(merged).sort()).toEqual(['1:1', '2:2', '3:3']);
+  });
+
+  // ── Lifeform marker reconciliation (independent of `scannedAt`) ──────────
+
+  it('a remote plain rescan (newer scannedAt, no LF) keeps the local LF marker', () => {
+    // The data-loss case: device B re-scanned 4:30 (newer scannedAt) without
+    // any LF discovery; device A had recorded an LF discovery there. The
+    // newer scan snapshot wins, but the discovery must survive.
+    const l = lfScan(1000, 5000, { 3: 5000 });
+    const r = scan(2000); // plain rescan, no LF fields
+    const { merged, changed } = mergeScans({ '4:30': l }, { '4:30': r });
+    expect(merged['4:30'].scannedAt).toBe(2000);      // remote scan snapshot won
+    expect(merged['4:30'].lfScannedAt).toBe(5000);    // local discovery survives
+    expect(merged['4:30'].lfPositions).toEqual({ 3: 5000 });
+    expect(changed).toBe(true);                       // remote's scan displaced local
+  });
+
+  it('a remote LF discovery grafts onto a newer local plain scan', () => {
+    // Symmetric: local has the newer plain scan, remote carries the LF
+    // discovery — the marker must be adopted even though local wins the snapshot.
+    const l = scan(2000);
+    const r = lfScan(1000, 5000, { 7: 5000 });
+    const { merged, changed } = mergeScans({ '4:30': l }, { '4:30': r });
+    expect(merged['4:30'].scannedAt).toBe(2000);      // local scan snapshot kept
+    expect(merged['4:30'].lfScannedAt).toBe(5000);    // remote discovery adopted
+    expect(merged['4:30'].lfPositions).toEqual({ 7: 5000 });
+    expect(changed).toBe(true);                       // remote contributed the LF marker
+  });
+
+  it('unions lfPositions and takes the newer lfScannedAt per system', () => {
+    const l = lfScan(1500, 5000, { 3: 5000, 4: 5000 });
+    const r = lfScan(1500, 6000, { 4: 6000, 9: 6000 });
+    const { merged, changed } = mergeScans({ '4:30': l }, { '4:30': r });
+    expect(merged['4:30'].lfScannedAt).toBe(6000);    // newer discovery wins
+    expect(merged['4:30'].lfPositions).toEqual({ 3: 5000, 4: 6000, 9: 6000 });
+    expect(changed).toBe(true);
+  });
+
+  it('is a no-op (changed=false, same reference) when LF data already agrees', () => {
+    const l = lfScan(1500, 5000, { 3: 5000 });
+    const r = lfScan(1500, 5000, { 3: 5000 });
+    const { merged, changed } = mergeScans({ '4:30': l }, { '4:30': r });
+    // Identical round-trip: local kept by reference, no write scheduled.
+    expect(merged['4:30']).toBe(l);
+    expect(changed).toBe(false);
   });
 });
 

@@ -55,6 +55,69 @@
  */
 
 /**
+ * Whether two lifeform-position maps (slot → discovery epoch-ms) carry the
+ * identical data. Missing maps are treated as empty. Used to decide when the
+ * LF reconciliation left a scan untouched so {@link mergeScans} can reuse the
+ * existing reference (preserving the anti-loop no-write path).
+ *
+ * @param {Record<number, number> | undefined} a
+ * @param {Record<number, number> | undefined} b
+ * @returns {boolean}
+ */
+const lfPositionsEqual = (a, b) => {
+  const av = /** @type {Record<string, number>} */ (a || {});
+  const bv = /** @type {Record<string, number>} */ (b || {});
+  const ak = Object.keys(av);
+  if (ak.length !== Object.keys(bv).length) return false;
+  for (const k of ak) {
+    if ((Number(av[k]) || 0) !== (Number(bv[k]) || 0)) return false;
+  }
+  return true;
+};
+
+/**
+ * Reconcile the lifeform-discovery markers of two scans of the SAME system,
+ * INDEPENDENTLY of `scannedAt`. A plain galaxy rescan carries no LF fields,
+ * so letting it win the whole entry (it well may, on a newer `scannedAt`)
+ * would silently erase a discovery recorded on another device. Rule: newer
+ * `lfScannedAt` wins; `lfPositions` union with max-ts per slot.
+ *
+ * Returns `null` on the fast path where NEITHER side carries any LF data —
+ * the caller then keeps the original whole-entry-by-`scannedAt` behaviour and
+ * its reference identity. Otherwise returns the reconciled markers plus
+ * `remoteAdded`: `true` iff remote contributed an LF marker/position local
+ * lacked (an anti-loop `changed` input).
+ *
+ * @param {SystemScan} l
+ * @param {SystemScan} r
+ * @returns {{ lfScannedAt: number, lfPositions: Record<number, number> | null, remoteAdded: boolean } | null}
+ */
+const reconcileLf = (l, r) => {
+  const lLf = Number(l.lfScannedAt) || 0;
+  const rLf = Number(r.lfScannedAt) || 0;
+  const lp = l.lfPositions && typeof l.lfPositions === 'object' ? l.lfPositions : null;
+  const rp = r.lfPositions && typeof r.lfPositions === 'object' ? r.lfPositions : null;
+  if (!lLf && !rLf && !lp && !rp) return null;
+
+  let remoteAdded = rLf > lLf;
+  /** @type {Record<number, number> | null} */
+  let lfPositions = null;
+  if (lp || rp) {
+    lfPositions = { ...(lp || {}) };
+    const rpKeys = rp ? Object.keys(/** @type {Record<string, number>} */ (rp)) : [];
+    for (const k of rpKeys) {
+      const key = /** @type {number} */ (/** @type {unknown} */ (k));
+      const rv = Number(/** @type {Record<string, number>} */ (rp)[k]) || 0;
+      if (rv > (Number(lfPositions[key]) || 0)) {
+        lfPositions[key] = rv;
+        remoteAdded = true;
+      }
+    }
+  }
+  return { lfScannedAt: Math.max(lLf, rLf), lfPositions, remoteAdded };
+};
+
+/**
  * Merge local + remote galaxy scans, per-system, max-`scannedAt` wins.
  *
  * Behaviour:
@@ -64,6 +127,10 @@
  *     way local can be displaced is by a strictly newer remote scan.
  *   - Missing / non-numeric `scannedAt` is treated as 0, so a well-
  *     formed side always beats a malformed one.
+ *   - Lifeform markers (`lfScannedAt` / `lfPositions`) reconcile
+ *     INDEPENDENTLY of `scannedAt` (newer `lfScannedAt` wins, positions
+ *     union) so a plain rescan winning on `scannedAt` can't erase a
+ *     discovery the other side recorded. See {@link reconcileLf}.
  *
  * The `changed` flag is the caller's anti-loop hint (see file header):
  * `true` iff remote contributed at least one key local did not have
@@ -117,16 +184,38 @@ export const mergeScans = (local, remote) => {
       merged[typedKey] = l;
       continue;
     }
-    // Both sides have data. `||0` normalises missing/NaN `scannedAt`
-    // to 0 so a well-formed side beats a malformed one. Ties go to
-    // local (>=) — that is the source of the no-write path when
-    // local === remote already.
-    if ((l.scannedAt || 0) >= (r.scannedAt || 0)) {
-      merged[typedKey] = l;
-    } else {
-      merged[typedKey] = r;
-      changed = true;
+    // Both sides have data. The base scan snapshot (`scannedAt` +
+    // `positions`) goes to the side with the larger `scannedAt`; `||0`
+    // normalises missing/NaN so a well-formed side beats a malformed one,
+    // and ties go to local (the no-write path when local === remote).
+    const remoteScanWins = (r.scannedAt || 0) > (l.scannedAt || 0);
+    const base = remoteScanWins ? r : l;
+    // Lifeform markers reconcile INDEPENDENTLY of `scannedAt` (see
+    // reconcileLf): a plain rescan winning on `scannedAt` must NOT erase a
+    // discovery the other device recorded. `null` = no LF on either side,
+    // so the original whole-entry-by-reference behaviour stands.
+    const lf = reconcileLf(l, r);
+    if (!lf) {
+      merged[typedKey] = base;
+      if (remoteScanWins) changed = true;
+      continue;
     }
+    const sameAsBase =
+      lf.lfScannedAt === (Number(base.lfScannedAt) || 0) &&
+      lfPositionsEqual(base.lfPositions, lf.lfPositions ?? undefined);
+    if (sameAsBase) {
+      // Reconciliation added nothing over the base — keep its reference so
+      // an identical round-trip stays a no-op.
+      merged[typedKey] = base;
+    } else {
+      const entry = { ...base };
+      if (lf.lfScannedAt > 0) entry.lfScannedAt = lf.lfScannedAt;
+      if (lf.lfPositions && Object.keys(lf.lfPositions).length > 0) {
+        entry.lfPositions = lf.lfPositions;
+      }
+      merged[typedKey] = entry;
+    }
+    if (remoteScanWins || lf.remoteAdded) changed = true;
   }
   return { merged, changed };
 };
