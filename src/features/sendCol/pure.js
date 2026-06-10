@@ -92,12 +92,16 @@ export const SCAN_COOLDOWN_MS = 8000;
 
 // ─── BG colors ───────────────────────────────────────────────────────────
 
-/** Rim colour for idle "Send" with no candidate yet (muted emerald). */
-export const BG_SEND_IDLE = '#22b07d';
-/** Rim colour for idle "Scan" / "Skip" half (steel blue). */
-export const BG_SCAN_IDLE = '#5b8fb9';
-/** Rim colour for active "Send!" / "Send Colony [g:s:p]" (bright emerald). */
-export const BG_SEND_READY = '#34d399';
+/** Rim colour for idle "Send" with no candidate yet (cyan). */
+export const BG_SEND_IDLE = '#12b3c2';
+/** Rim colour for idle "Scan" / "Skip" half (muted cyan — secondary zone). */
+export const BG_SCAN_IDLE = '#3a9fb0';
+/** Rim colour for active "Send!" / "Send Colony [g:s:p]" (bright cyan). */
+export const BG_SEND_READY = '#13d1de';
+
+// TODO: Lifeforms button (planned)
+// export const BG_LF_IDLE   = '#a78bfa'; // violet rim — idle  (hue ~255, glow:1.15)
+// export const BG_LF_ACTIVE = '#bb9dff'; // violet rim — active
 /** Rim colour for reserved / stale / timeout states — recoverable (amber). */
 export const BG_SEND_STALE = '#f59e0b';
 /** Rim colour for "No ship!" — unrecoverable until user builds a colonizer (rose). */

@@ -240,7 +240,11 @@ export const installFocusPersist = ({
   button.addEventListener('blur', () => {
     if (safeLS.get(focusKey) === focusValue) safeLS.remove(focusKey);
   });
-  if (safeLS.get(focusKey) === focusValue) {
+  // Skip programmatic focus restoration on touch-primary devices. On mobile,
+  // calling button.focus() can trigger virtual keyboard popup or focus ring
+  // with no UX benefit (no keyboard navigation on touch).
+  const isTouchPrimary = window.matchMedia('(pointer: coarse)').matches;
+  if (!isTouchPrimary && safeLS.get(focusKey) === focusValue) {
     setTimeout(() => button.focus(), focusRestoreDelay);
   }
 };

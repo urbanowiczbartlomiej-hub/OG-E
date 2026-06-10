@@ -47,7 +47,7 @@ const XLINK_NS = 'http://www.w3.org/1999/xlink';
 export const BUTTON_CHROME_CSS = [
   // ── Host: dark core, state rim colour, shared transitions ──────────────
   '.oge-host{',
-  '--surface:#0b1220;--rim:#38bdf8;--label:#f8fafc;',
+  '--surface:#0b1220;--rim:#38bdf8;--glow:1;--label:#f8fafc;',
   'position:relative;border-radius:50%;isolation:isolate;',
   'font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Verdana,sans-serif;',
   'font-weight:700;color:var(--label);cursor:pointer;',
@@ -59,7 +59,7 @@ export const BUTTON_CHROME_CSS = [
   'box-shadow:',
   'inset 0 1px 0 rgba(255,255,255,.07),',
   'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) 55%,transparent),',
-  '0 0 24px -6px var(--rim),',
+  '0 0 calc(24px * var(--glow)) -6px var(--rim),',
   '0 18px 36px -12px rgba(0,0,0,.72),',
   '0 4px 12px -2px rgba(0,0,0,.5);}',
 
@@ -128,7 +128,7 @@ export const BUTTON_CHROME_CSS = [
   'box-shadow:',
   'inset 0 1px 0 rgba(255,255,255,.09),',
   'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) 70%,transparent),',
-  '0 0 30px -4px var(--rim),',
+  '0 0 calc(30px * var(--glow)) -4px var(--rim),',
   '0 22px 40px -12px rgba(0,0,0,.74),',
   '0 4px 12px -2px rgba(0,0,0,.5);}',
   '.oge-host:active{transform:scale(.975);}',
@@ -350,6 +350,9 @@ const spawnRipple = (layer, host, clientX, clientY) => {
  */
 const wireZoneTap = (zone, host, layer) => {
   const release = () => zone.classList.remove('oge-tap-active');
+  // Prevent the browser from giving focus to the <button> on tap/click.
+  // mousedown.preventDefault() blocks focus without suppressing the click event.
+  zone.addEventListener('mousedown', (e) => e.preventDefault());
   zone.addEventListener('pointerdown', (e) => {
     zone.classList.add('oge-tap-active');
     spawnRipple(layer, host, e.clientX, e.clientY);

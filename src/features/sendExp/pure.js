@@ -117,8 +117,8 @@ export const ALL_MAXED_LABEL = 'All maxed!';
 
 // ─── Background colors ───────────────────────────────────────────────
 
-/** Rim colour for the idle button (sky blue). */
-export const BG_IDLE = '#38bdf8';
+/** Rim colour for the idle button (cerulean blue). */
+export const BG_IDLE = '#4aa8ff';
 
 /** Rim colour for the "All maxed!" state (amber). */
 export const BG_MAX = '#fbbf24';

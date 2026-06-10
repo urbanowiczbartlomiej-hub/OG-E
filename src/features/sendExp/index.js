@@ -562,6 +562,7 @@ export const installSendExp = () => {
       ],
     });
     if (!controller) return;
+    controller.el.style.setProperty('--glow', '1.3');
 
     // Initial label reflects the page state at mount: "Send!" when the
     // native dispatch button is already up, "Prepare" when only AGR's
