@@ -40,16 +40,15 @@ if (existsSync(ZIP)) {
   console.log('package: removed stale dist.zip');
 }
 
-// Windows 10 1803+ ships bsdtar (libarchive) as `tar.exe`. Both
-// PowerShell's `Compress-Archive` and .NET Framework's
-// `ZipFile.CreateFromDirectory` write backslashes in archive entry
-// paths (the latter only fixed in .NET 7+, which Windows PowerShell
-// 5.1 does not use). Backslash entry paths violate the ZIP spec and
-// trip AMO's validator: `Invalid file name in archive: icons\…`.
+// Windows 10 1803+ ships bsdtar (libarchive) as tar.exe in System32.
+// Git's GNU tar appears earlier in PATH in some environments and
+// mis-treats the drive letter in "C:\…" as a remote hostname.
+// Use the absolute System32 path on Windows to guarantee bsdtar.
 // `tar -a` picks the format from the extension (.zip → zip) and
 // writes forward-slash entries on every platform.
+const TAR = process.platform === 'win32' ? 'C:\\Windows\\System32\\tar.exe' : 'tar';
 try {
-  execSync(`tar -a -c -f "${ZIP}" -C "${DIST}" .`, { stdio: 'inherit' });
+  execSync(`"${TAR}" -a -c -f "${ZIP}" -C "${DIST}" .`, { stdio: 'inherit' });
 } catch (err) {
   console.error('package: archive command failed');
   console.error(err instanceof Error ? err.message : err);
