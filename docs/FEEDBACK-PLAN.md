@@ -48,7 +48,7 @@
 | T4  | Anulowanie remaindera FS na eventList (stan, 3 min, odznaczanie) | średnie | REVIEW |
 | T5  | Własność przejścia fleet1→fleet2 po XHR checkTarget | trudne | TODO |
 | T6  | Free Positions → mapa sąsiedztwa / regiony zasiedlenia | trudne | TODO |
-| T7  | DAILY RUN: za mało statków → komunikat/blokada; Send All pusta planeta → redirect | średnie | TODO |
+| T7  | DAILY RUN: za mało statków → komunikat/blokada; Send All pusta planeta → redirect | średnie | REVIEW |
 | T8  | Bug „Vlad”: na księżycu kolonizacja fałszuje brak wolnych pozycji | średnie | REVIEW |
 | T9  | Redesign pozostałych komponentów w duchu 4 nowych przycisków | średnie | TODO |
 | T10 | Lifeform: blokada Discovery po osiągnięciu 3600 (+ kiedy odblokować) | średnie | TODO |
@@ -362,7 +362,7 @@ przy pozycji) — żeby wiedzieć, co da się zbierać podczas skanu. ⛔ częś
 ---
 
 ### T7 — DAILY RUN: za mało statków + Send All na pustej planecie
-**Status:** TODO · **Trudność:** średnie
+**Status:** REVIEW · **Trudność:** średnie
 
 **Feedback (wiernie):** „Co w chwili wysyłania DAILY RUN górna strefa, a statków
 nie jest wystarczająca ilość? Powinien być jasny komunikat i zablokowanie
@@ -389,7 +389,20 @@ następnej planety, jak po wysłanym Send All.”
 **Dane:** może wymagać potwierdzenia, jak wygląda DOM/snapshot przy „pustej
 planecie” i „za mało statków”. ⛔ częściowo (do potwierdzenia w grze).
 
-**Dziennik:** —
+**Dziennik:**
+- 2026-06-11 (sesja 3): Zaimplementowane oba przypadki, bez nowych dumpów —
+  źródłem prawdy jest snapshot `fleetDispatcher` (`shipsOnPlanet`), który już
+  zasila kuriera. Nowy read-only eksport `shipAvailability()` w
+  `fleetCourier.js` (`null` = brak snapshotu, więc poza fleetdispatch nic
+  się nie zmienia). (1) Micro za mało statków: trwała etykieta
+  „No ships have/want" w `refresh()` (ticker 1 Hz) + twarda blokada w
+  `buildOrder` zanim kurier cokolwiek dotknie. (2) Send All na pustej
+  planecie: etykieta „Empty → next planet (tap to jump)", tap wykonuje skok
+  do następnej planety wymagającej zbiórki (`findNextCollectPlanetCp`, ten
+  sam mechanizm co redirect po wysyłce); gdy nic nie zostało — flash
+  „All done". Detekcja przez `resolveSelection` z domain/fleetPlan (te same
+  reguły co przy faktycznej selekcji). Status: REVIEW — do weryfikacji w
+  grze: etykiety na planecie bez statków i z niepełną mikroflotą, skok.
 
 ---
 
@@ -596,3 +609,8 @@ stref, by efekt blasku był jak w 1-zone.
   i ✕, dokładny timer tranzycji, zwolnienie wiersza do ad-hoc po wyczerpaniu
   serii; garda z wym. 3 świadomie zastąpiona lockiem — szczegóły w dzienniku
   T4). **Następna sesja: T7** (średnie, bez blokad danych).
+- **2026-06-11 (sesja 3, cd.):** T7 → REVIEW. Oba przypadki rozwiązane
+  snapshotem `fleetDispatcher` (nowy eksport `shipAvailability()` z kuriera):
+  trwała etykieta + blokada przy niepełnej mikroflocie, „Empty → next planet"
+  z tap-to-jump przy pustym Send All. Pozostałe bez blokad: T9 (redesign).
+  Zablokowane na dane/decyzje: T5, T6b, T10, T11; T6a możliwe od ręki.
