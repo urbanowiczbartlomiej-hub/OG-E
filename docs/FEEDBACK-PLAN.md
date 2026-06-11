@@ -49,7 +49,7 @@
 | T5  | Własność przejścia fleet1→fleet2 po XHR checkTarget | trudne | TODO |
 | T6  | Free Positions → mapa sąsiedztwa / regiony zasiedlenia | trudne | TODO |
 | T7  | DAILY RUN: za mało statków → komunikat/blokada; Send All pusta planeta → redirect | średnie | TODO |
-| T8  | Bug „Vlad”: na księżycu kolonizacja fałszuje brak wolnych pozycji | średnie | TODO |
+| T8  | Bug „Vlad”: na księżycu kolonizacja fałszuje brak wolnych pozycji | średnie | REVIEW |
 | T9  | Redesign pozostałych komponentów w duchu 4 nowych przycisków | średnie | TODO |
 | T10 | Lifeform: blokada Discovery po osiągnięciu 3600 (+ kiedy odblokować) | średnie | TODO |
 | T11 | Obsługa „all fleets” dla każdego przycisku | średnie | TODO |
@@ -396,7 +396,11 @@ koordynaty z planetą — pozycja w systemie jest ta sama).
 **Dane:** pomocny byłby **dump HTML, gdy gracz stoi na księżycu** (planet bar /
 koordynaty / lista ciał) — żeby potwierdzić, co odczytujemy. ⛔ częściowo.
 
-**Dziennik:** —
+**Dziennik:**
+- 2026-06-11: Zaimplementowano fix w `src/features/sendCol/domHelpers.js`.
+  `readHomePlanet()` teraz szuka `.planet-koords` w `previousElementSibling`,
+  gdy własny wiersz `.smallplanet` księżyca jej nie zawiera. Commit `91f666a`.
+  Status: **REVIEW** — wymaga potwierdzenia w grze na telefonie.
 
 ---
 
