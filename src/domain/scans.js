@@ -68,12 +68,17 @@
  *   (a d-slot or similar). Coexists with a live planet — a player can
  *   still own slot N while slot N has leftover debris of a prior colony.
  * @property {true} [hasMoon] At least one planet in the slot carries a
- *   moon (`isMoon` or `luna` truthy in the game payload).
- * @property {true} [hasDebris] Debris field observed, either attached
- *   to the slot (`entry.debris`) or to one of its planets (`p.debris`).
+ *   moon. Current payloads mark moons with `planetType: 3`; older shapes
+ *   used `isMoon` / `luna` — all three are honoured.
+ * @property {true} [hasDebris] Debris field observed. Current payloads
+ *   list debris as a `planets[]` entry with `planetType: 2`; older shapes
+ *   attached `debris` to the slot or a planet — all are honoured.
  * @property {true} [inAlliance] The slot's player has a non-zero
  *   `allyId`. Absent for empty / abandoned / mine positions where we
  *   intentionally drop the `player` block.
+ * @property {true} [honorable] The game marks this player an honourable
+ *   target (`isHonorableTarget`) — attacking them yields honour points.
+ *   A snapshot at scan time, like every flag here.
  */
 
 /**
@@ -84,11 +89,15 @@
  * @typedef {object} PositionPlayer
  * @property {number} id   Game-assigned `playerId`.
  * @property {string} name Game-shown `playerName` (display name).
- * @property {number} [rank] Player's highscore rank AT SCAN TIME, when the
- *   galaxy payload carries it (see {@link readPlayerRank}). Feeds the
+ * @property {number} [rank] Player's highscore rank AT SCAN TIME
+ *   (`highscorePositionPlayer` in the payload — confirmed numeric on
+ *   live s163-pl data; see {@link readPlayerRank}). Feeds the
  *   settlement-region / neighbourhood analysis (low-rank regions = safe
  *   colonising, high-rank neighbours = "w paszczy lwa"). Omitted when the
  *   payload doesn't expose it — consumers must null-check.
+ * @property {string} [ally] Alliance TAG (e.g. `"FORMOZA"`), when the
+ *   player is in one — who controls a region matters as much as who the
+ *   individual neighbours are. Omitted for alliance-less players.
  */
 
 /**
@@ -109,6 +118,11 @@
  * @property {PositionPlayer} [player] Present only for non-`mine` live
  *   colonies — see invariant above.
  * @property {PositionFlags} [flags] Absent when no flags apply.
+ * @property {number} [moonSize] The moon's diameter (km) when the slot
+ *   has one AND the payload exposes its `size`. Durable (a moon's size
+ *   never changes once formed) and the raw material for moon-destruction
+ *   / phalanx-range analysis. Present for any slot with a sized moon,
+ *   including `mine`.
  */
 
 /**
@@ -124,8 +138,14 @@
  *   isMoon?: boolean,
  *   luna?: unknown,
  *   debris?: unknown,
- * }>} [planets] Zero-or-more planet entries. A slot is observable as
- *   empty when this is missing OR empty-after-filter.
+ *   planetType?: number,
+ *   size?: number | string,
+ * }>} [planets] Zero-or-more space-object entries. In current payloads
+ *   `planetType` discriminates: 1 = planet, 2 = debris field, 3 = moon
+ *   (moons additionally carry their diameter in `size`, as a string).
+ *   Older shapes used `isMoon`/`luna`/`debris` instead — both are
+ *   honoured. A slot is observable as empty when this is missing OR
+ *   empty-after-filter.
  * @property {{
  *   playerId: number,
  *   playerName: string,
@@ -134,31 +154,36 @@
  *   isOnVacation?: boolean,
  *   isInactive?: boolean,
  *   isLongInactive?: boolean,
+ *   isHonorableTarget?: boolean,
  *   allyId?: number,
+ *   allianceId?: number,
+ *   allianceTag?: string,
  *   highscorePositionPlayer?: number,
  *   highscorePosition?: number,
- *   rank?: number,
- * }} [player] Owner metadata. Absent on empty / abandoned slots. The
- *   three rank-ish fields are CANDIDATES — OGame has renamed this field
- *   across versions, so {@link readPlayerRank} probes them in order and
- *   takes the first finite positive value.
- * @property {unknown} [debris] System-level debris hint (the game
- *   sometimes attaches debris at the entry level rather than per-planet).
+ * }} [player] Owner metadata. Absent on empty / abandoned slots (and a
+ *   placeholder block with `playerId: 99999` marks deep space on empty
+ *   slots). The two rank candidates are probed in order by
+ *   {@link readPlayerRank}; NOTE the payload's `player.rank` is an
+ *   OBJECT (rank TITLE — `{hasRank, rankTitle, rankClass}`), not the
+ *   highscore position, and is deliberately not read.
+ * @property {unknown} [debris] System-level debris hint (older payloads
+ *   attached debris at the entry level rather than as a planets[] entry).
  */
 
 /**
- * Probe the galaxy payload's player block for a highscore rank. OGame's
- * field name has varied across versions (`highscorePositionPlayer` in
- * current v9+ payloads; older/alternative spellings kept as fallbacks),
- * so we take the first finite positive candidate. Returns `null` when
- * none is present — rank collection is best-effort and a payload without
- * it must not affect classification.
+ * Probe the galaxy payload's player block for a highscore rank.
+ * `highscorePositionPlayer` is the live field (confirmed numeric, e.g.
+ * `749`, on a real s163-pl response); `highscorePosition` is kept as a
+ * legacy fallback. The payload's `player.rank` is NOT a candidate — it
+ * is the rank-title object (`{hasRank, rankTitle, rankClass}`). Returns
+ * `null` when no candidate is present — rank collection is best-effort
+ * and a payload without it must not affect classification.
  *
  * @param {NonNullable<GalaxyContentEntry['player']>} player
  * @returns {number | null}
  */
 const readPlayerRank = (player) => {
-  for (const v of [player.highscorePositionPlayer, player.highscorePosition, player.rank]) {
+  for (const v of [player.highscorePositionPlayer, player.highscorePosition]) {
     if (typeof v === 'number' && Number.isFinite(v) && v > 0) return v;
   }
   return null;
@@ -235,22 +260,44 @@ const readPlayerRank = (player) => {
 export const classifyPosition = (entry, ownPlayerId) => {
   const planets = entry.planets || [];
   const player = entry.player || null;
-  const livePlanets = planets.filter((p) => !p.isDestroyed);
+  // A debris field rides in `planets[]` as `planetType: 2` in current
+  // payloads — it is never a colony, so it must not count as a live
+  // planet (otherwise a slot holding only debris would read `occupied`).
+  const livePlanets = planets.filter((p) => !p.isDestroyed && p.planetType !== 2);
 
   // Compute flags defensively — a slot can carry debris / an abandoned
   // remnant / an alliance badge regardless of whether it ends up
   // classified as empty, occupied, or anything else. We build the
   // object up front so every branch below can reference the same
   // `flags.hasAbandonedPlanet` when deciding between 'empty' and
-  // 'abandoned'.
+  // 'abandoned'. Each check honours BOTH the current payload shape
+  // (`planetType` discriminator, `allianceId`) and the legacy one
+  // (`isMoon`/`luna`/`debris`, `allyId`) — see GalaxyContentEntry.
   /** @type {PositionFlags} */
   const flags = {};
   if (planets.some((p) => p.isDestroyed)) flags.hasAbandonedPlanet = true;
-  if (planets.some((p) => p.isMoon || p.luna)) flags.hasMoon = true;
-  if (entry.debris || planets.some((p) => p.debris)) flags.hasDebris = true;
-  if (player && player.allyId) flags.inAlliance = true;
+  if (planets.some((p) => p.planetType === 3 || p.isMoon || p.luna)) flags.hasMoon = true;
+  if (entry.debris || planets.some((p) => p.planetType === 2 || p.debris)) flags.hasDebris = true;
+  if (player && (player.allyId || player.allianceId)) flags.inAlliance = true;
+  if (player && player.isHonorableTarget) flags.honorable = true;
 
   const hasAnyFlag = Object.keys(flags).length > 0;
+
+  // A moon's diameter is durable (fixed at formation) and drives the
+  // moon-destruction / phalanx analyses, so capture it when exposed.
+  // Payloads carry it as a string (`"6011"`).
+  const moon = planets.find((p) => (p.planetType === 3 || p.isMoon || p.luna) && !p.isDestroyed);
+  const moonSize = moon && moon.size != null ? Number(moon.size) : NaN;
+
+  /**
+   * Stamp the shared optional extras on a branch's result.
+   * @param {Position} out @returns {Position}
+   */
+  const finish = (out) => {
+    if (hasAnyFlag) out.flags = flags;
+    if (Number.isFinite(moonSize) && moonSize > 0) out.moonSize = moonSize;
+    return out;
+  };
 
   // No live planet — "empty-ish" branch. The only question is whether
   // destroyed remnants exist, which promotes us from 'empty' to
@@ -259,12 +306,9 @@ export const classifyPosition = (entry, ownPlayerId) => {
   // fully-destroyed colonies), but our vocabulary reserves the player
   // block for live-colony statuses.
   if (livePlanets.length === 0) {
-    /** @type {Position} */
-    const out = {
+    return finish({
       status: flags.hasAbandonedPlanet ? 'abandoned' : 'empty',
-    };
-    if (hasAnyFlag) out.flags = flags;
-    return out;
+    });
   }
 
   // Live planet owned by us. We explicitly drop the `player` block —
@@ -272,10 +316,7 @@ export const classifyPosition = (entry, ownPlayerId) => {
   // status, and leaking our own player id / name into every scan
   // result is pointless.
   if (player && ownPlayerId !== null && player.playerId === ownPlayerId) {
-    /** @type {Position} */
-    const out = { status: 'mine' };
-    if (hasAnyFlag) out.flags = flags;
-    return out;
+    return finish({ status: 'mine' });
   }
 
   // Live planet with an identifiable player. Pick status from the
@@ -292,30 +333,28 @@ export const classifyPosition = (entry, ownPlayerId) => {
     else status = 'occupied';
 
     const rank = readPlayerRank(player);
-    /** @type {Position} */
-    const out = {
+    const ally = typeof player.allianceTag === 'string' && player.allianceTag
+      ? player.allianceTag
+      : null;
+    return finish({
       status,
       player: {
         id: player.playerId,
         name: player.playerName,
-        // Rank rides along when the payload exposes it — the raw material
-        // for the neighbourhood-map analysis (T6b). Omitted otherwise so
-        // the stored shape stays minimal.
+        // Rank + alliance tag ride along when the payload exposes them —
+        // the raw material for the neighbourhood-map analysis (T6b).
+        // Omitted otherwise so the stored shape stays minimal.
         ...(rank !== null ? { rank } : {}),
+        ...(ally !== null ? { ally } : {}),
       },
-    };
-    if (hasAnyFlag) out.flags = flags;
-    return out;
+    });
   }
 
   // Live planet with no player object. Unusual — the game normally
   // attaches a player record to any live colony — but defensive
   // handling keeps downstream code simple: treat as generic 'occupied'
   // without a player block. Flags still flow through untouched.
-  /** @type {Position} */
-  const out = { status: 'occupied' };
-  if (hasAnyFlag) out.flags = flags;
-  return out;
+  return finish({ status: 'occupied' });
 };
 
 /**
