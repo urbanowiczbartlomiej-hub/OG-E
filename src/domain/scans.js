@@ -98,6 +98,11 @@
  * @property {string} [ally] Alliance TAG (e.g. `"FORMOZA"`), when the
  *   player is in one — who controls a region matters as much as who the
  *   individual neighbours are. Omitted for alliance-less players.
+ * @property {string} [rankClass] Honor-rank CSS class from the game (e.g.
+ *   `"rank_bandit2"`, `"rank_starlord3"`). Encodes both sign (negative /
+ *   positive honour) and intensity level (1–3). Collected as-is — the
+ *   interpretation (safe vs. risky neighbour) belongs to the scoring /
+ *   display layer. Omitted for neutral players (`player.rank.hasRank: false`).
  */
 
 /**
@@ -160,6 +165,7 @@
  *   allianceTag?: string,
  *   highscorePositionPlayer?: number,
  *   highscorePosition?: number,
+ *   rank?: { hasRank?: boolean, rankTitle?: string, rankClass?: string },
  * }} [player] Owner metadata. Absent on empty / abandoned slots (and a
  *   placeholder block with `playerId: 99999` marks deep space on empty
  *   slots). The two rank candidates are probed in order by
@@ -336,16 +342,21 @@ export const classifyPosition = (entry, ownPlayerId) => {
     const ally = typeof player.allianceTag === 'string' && player.allianceTag
       ? player.allianceTag
       : null;
+    const rankObj = player.rank;
+    const rankClass = rankObj && rankObj.hasRank && typeof rankObj.rankClass === 'string'
+      ? rankObj.rankClass
+      : null;
     return finish({
       status,
       player: {
         id: player.playerId,
         name: player.playerName,
-        // Rank + alliance tag ride along when the payload exposes them —
-        // the raw material for the neighbourhood-map analysis (T6b).
+        // rank (highscore), ally tag, rankClass all ride along when the
+        // payload exposes them — raw material for neighbourhood-map analysis.
         // Omitted otherwise so the stored shape stays minimal.
         ...(rank !== null ? { rank } : {}),
         ...(ally !== null ? { ally } : {}),
+        ...(rankClass !== null ? { rankClass } : {}),
       },
     });
   }
