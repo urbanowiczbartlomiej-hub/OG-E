@@ -47,7 +47,7 @@
 | T3  | Tytuł sekcji „Currently queued” dla ekspedycji w Reminders | łatwe | REVIEW |
 | T4  | Anulowanie remaindera FS na eventList (stan, 3 min, odznaczanie) | średnie | REVIEW |
 | T5  | Własność przejścia fleet1→fleet2 po XHR checkTarget | trudne | TODO |
-| T6  | Free Positions → mapa sąsiedztwa / regiony zasiedlenia | trudne | TODO |
+| T6  | Free Positions → mapa sąsiedztwa / regiony zasiedlenia | trudne | W TOKU |
 | T7  | DAILY RUN: za mało statków → komunikat/blokada; Send All pusta planeta → redirect | średnie | REVIEW |
 | T8  | Bug „Vlad”: na księżycu kolonizacja fałszuje brak wolnych pozycji | średnie | REVIEW |
 | T9  | Redesign pozostałych komponentów w duchu 4 nowych przycisków | średnie | TODO |
@@ -302,7 +302,8 @@ teoretyczny.
 ---
 
 ### T6 — Free Positions → mapa sąsiedztwa / regiony zasiedlenia
-**Status:** TODO · **Trudność:** trudne
+**Status:** W TOKU (T6a + silnik regionów + zbieranie ranku → REVIEW;
+mapa/strategie zaprojektowane, czekają na potwierdzenie danych) · **Trudność:** trudne
 
 **Feedback (wiernie):** „Na mobile lista menu na dashboard nie mieści się w jednej
 linii. Prawdopodobnie jedną opcję można z niej usunąć, a mianowicie liczenia
@@ -356,8 +357,42 @@ przygotować lepsze algorytmy pod potencjalne analizy.”
 
 **Dane:** dla T6b warto **dump HTML widoku galaktyki** (gdzie widać ranking gracza
 przy pozycji) — żeby wiedzieć, co da się zbierać podczas skanu. ⛔ częściowo.
+**Aktualizacja:** ranking jest zbierany defensywnie z XHR `fetchGalaxyContent`
+(kandydaci: `highscorePositionPlayer` → `highscorePosition` → `rank`); zamiast
+dumpu wystarczy WERYFIKACJA: przeskanować kilka systemów i sprawdzić w
+Export JSON, czy przy zajętych pozycjach pojawia się `player.rank`. Jeśli nie —
+pole ma inną nazwę i wtedy faktycznie potrzebny dump odpowiedzi XHR.
 
-**Dziennik:** —
+**Dziennik:**
+- 2026-06-11 (sesja 3): **T6a zrobione** — zakładka „Free Positions" usunięta
+  z paska (menu mieści się w jednej linii na mobile), treść jako pod-sekcja
+  `.sub-section` w Galaxy Observations; zapamiętany tab `free` w localStorage
+  bezpiecznie spada na default. **Silnik regionów** — nowy czysty
+  `domain/regions.js` `findBestRegions(scans, { positions, status, maxGaps,
+  galaxyMax })`: lista/zakres pozycji (gramatyka `parsePositions`, np.
+  `12-15`; system pasuje gdy KAŻDY slot potwierdzony), tolerancja luk
+  (region może mostkować ≤K niezgodnych/nieskanowanych systemów; zawsze
+  zaczyna i kończy się na trafieniu), zawijanie 499→1 (podwojona lista
+  trafień + two-pointer). Z defaultami (slot 15, 0 luk) wynik ≡ stare
+  `findLongestStreaks` (moduł zostawiony — testy). UI: input pozycji +
+  select tolerancji (perfect/1/2), tabela z kolumnami Free/Gaps; sanity
+  ad-hoc w node potwierdził wrap/luki/AND/pełne koło. **Zbieranie ranku** —
+  `Position.player.rank?` z payloadu galaktyki (best-effort, kandydaci jw.),
+  klasyfikacja nietknięta gdy pola brak. Commity: `dashboard` + `scans`.
+- **Projekt T6b etap 2 (mapa sąsiedztwa + strategie)** — do podjęcia PO
+  potwierdzeniu, że rank przychodzi:
+  1. *Scoring regionu:* funkcja czysta nad oknem systemów — gęstość
+     zasiedlenia (udział `occupied`/`inactive`/…), rozkład ranków sąsiadów
+     (mediana/min), liczba wolnych slotów docelowych w oknie.
+  2. *Tryby strategii* (preset = parametry scoringu): „bezpieczny" (min
+     zasiedlenie + niskie ranki), „agresywny" (max aktywnych/nieaktywnych
+     celów), „paszcza lwa" (wysokie ranki sąsiadów), „metal-8" (gęste wolne
+     ósemki = obecny silnik z positions=[8]).
+  3. *UI — progressive disclosure:* domyślnie obecna prosta tabela; tryby
+     i mapa w zwijanym `<details>` „Advanced", żeby nie przytłoczyć normal
+     userów.
+  4. *Mapa sąsiedztwa:* pasek pikselowy regionu (reuse stylu mapy galaktyk
+     z `galaxy.js`/`palette.js`) — kolor statusu + intensywność wg ranku.
 
 ---
 
@@ -614,3 +649,9 @@ stref, by efekt blasku był jak w 1-zone.
   trwała etykieta + blokada przy niepełnej mikroflocie, „Empty → next planet"
   z tap-to-jump przy pustym Send All. Pozostałe bez blokad: T9 (redesign).
   Zablokowane na dane/decyzje: T5, T6b, T10, T11; T6a możliwe od ręki.
+- **2026-06-11 (sesja 3, cd. 2):** T6 ruszone na całego. T6a zrobione
+  (zakładka zwinięta do Galaxy Observations). T6b etap 1: uogólniony silnik
+  regionów (`domain/regions.js` — zakres pozycji, tolerancja luk, wrap) +
+  nowe UI + defensywne zbieranie ranku gracza ze skanów. Etap 2 (scoring,
+  tryby strategii, mapa sąsiedztwa) zaprojektowany w dzienniku T6 — start
+  po potwierdzeniu w grze, że `player.rank` ląduje w danych (Export JSON).
