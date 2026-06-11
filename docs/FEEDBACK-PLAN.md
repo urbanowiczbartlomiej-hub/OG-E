@@ -42,9 +42,9 @@
 
 | ID | Zadanie | Trudność | Status |
 |----|---------|----------|--------|
-| T1  | Klawiatura wyskakuje na DAILY RUN przy przejściu na fleet2 | łatwe | TODO |
-| T2  | Płynniejsze podświetlanie handlarza (jak Event) | łatwe | TODO |
-| T3  | Tytuł sekcji „Currently queued” dla ekspedycji w Reminders | łatwe | TODO |
+| T1  | Klawiatura wyskakuje na DAILY RUN przy przejściu na fleet2 | łatwe | REVIEW |
+| T2  | Płynniejsze podświetlanie handlarza (jak Event) | łatwe | REVIEW |
+| T3  | Tytuł sekcji „Currently queued” dla ekspedycji w Reminders | łatwe | REVIEW |
 | T4  | Anulowanie remaindera FS na eventList (stan, 3 min, odznaczanie) | średnie | TODO |
 | T5  | Własność przejścia fleet1→fleet2 po XHR checkTarget | trudne | TODO |
 | T6  | Free Positions → mapa sąsiedztwa / regiony zasiedlenia | trudne | TODO |
@@ -53,7 +53,7 @@
 | T9  | Redesign pozostałych komponentów w duchu 4 nowych przycisków | średnie | TODO |
 | T10 | Lifeform: blokada Discovery po osiągnięciu 3600 (+ kiedy odblokować) | średnie | TODO |
 | T11 | Obsługa „all fleets” dla każdego przycisku | średnie | TODO |
-| T12 | Blask cieniutkiej krawędzi w przyciskach dwustrefowych | łatwe | TODO |
+| T12 | Blask cieniutkiej krawędzi w przyciskach dwustrefowych | łatwe | REVIEW |
 
 ### Sugerowana kolejność
 
@@ -82,7 +82,7 @@ Zależności / powiązania:
 ---
 
 ### T1 — Klawiatura wyskakuje na DAILY RUN przy przejściu na fleet2
-**Status:** TODO · **Trudność:** łatwe
+**Status:** REVIEW · **Trudność:** łatwe
 
 **Feedback (wiernie):** „Klawiatura wyskakuje na przycisku DAILY RUN. W momencie
 przechodzenia na fleet2. Pojawia się i od razu chowa.”
@@ -111,12 +111,18 @@ przywraca focus). Hipoteza: dodać daily-run do tej samej ścieżki
 **Dane:** w większości analiza kodu wystarczy; ostateczna weryfikacja w grze
 (REVIEW) na telefonie po stronie użytkownika.
 
-**Dziennik:** —
+**Dziennik:**
+- 2026-06-11 (sesja 2): Fałszywa hipoteza zweryfikowana — fsCollect MA
+  `installFocusPersist` z gardą coarse-pointer. Rzeczywista przyczyna:
+  `fleetExecutor.js:fireInput()` wywołuje `input.focus()` na polach
+  koordynatów AGR (fleet1), co na mobile otwiera klawiaturę. Fix: garda
+  `!isTouchPrimary` przed `input.focus()` — zdarzenia KeyboardEvent
+  działają bez rzeczywistego focusu. Commit `f889bb3`. Status: REVIEW.
 
 ---
 
 ### T2 — Płynniejsze podświetlanie handlarza (jak Event)
-**Status:** TODO · **Trudność:** łatwe
+**Status:** REVIEW · **Trudność:** łatwe
 
 **Feedback (wiernie):** „Do poprawy podświetlanie handlarza w menu. Obecne nie
 jest płynne. Dużo lepiej zachowuje się na przycisku Event. Może najlepiej będzie
@@ -140,12 +146,16 @@ Plan: przenieść timing/krzywą i zachowanie hover/active z Event do Tradera,
 
 **Dane:** nie — czysto kod + weryfikacja wizualna (REVIEW).
 
-**Dziennik:** —
+**Dziennik:**
+- 2026-06-11 (sesja 2): Zmieniono keyframe'y menu (`oge-trader-menu-*`)
+  z symetrycznego 50% na asymetryczny 0%/70%/100% + 85% peak (jak Event),
+  dodano `animation-timing-function: linear` dla `.oge-trader-menu.*`.
+  Kolory i zachowanie hover/active niezmienione. Commit `880c2d1`. REVIEW.
 
 ---
 
 ### T3 — Tytuł sekcji „Currently queued” dla ekspedycji w Reminders
-**Status:** TODO · **Trudność:** łatwe
+**Status:** REVIEW · **Trudność:** łatwe
 
 **Feedback (wiernie):** „Dodać poprawny tytuł sekcji w dashboard w remainders dla
 Currently queued dla ekspedycji. Sekcja FS jest dobrze nazwana i sekcja ad-hoc
@@ -165,7 +175,10 @@ typu „Expedition waves” (do ustalenia dokładny tekst) przed renderowaniem f
 
 **Dane:** nie.
 
-**Dziennik:** —
+**Dziennik:**
+- 2026-06-11 (sesja 2): Dodano `h4` z tekstem „Currently queued" na
+  początku `renderWavesInto` (po early-return), spójny stylem z h4 w
+  sekcjach ad-hoc i fleet-save. Commit `5394664`. Status: REVIEW.
 
 ---
 
@@ -499,7 +512,7 @@ flot (nie tylko ekspedycji). ⛔ częściowo (do potwierdzenia).
 ---
 
 ### T12 — Blask cieniutkiej krawędzi w przyciskach dwustrefowych
-**Status:** TODO · **Trudność:** łatwe
+**Status:** REVIEW · **Trudność:** łatwe
 
 **Feedback (wiernie):** „Poza ring w przyciskach wystaje jeszcze cieniutka nitka
 nadająca błyszczącą krawędź. W przyciskach mających dwie strefy krawędź ta nie
@@ -523,7 +536,11 @@ stref, by efekt blasku był jak w 1-zone.
 
 **Dane:** nie (wizualne, REVIEW). Ustalenia przenieść do **T9**.
 
-**Dziennik:** —
+**Dziennik:**
+- 2026-06-11 (sesja 2): Dodano reguły CSS `box-shadow` override dla
+  `.oge-host.split` (idle: rim 72%, top-edge .12) i `.oge-host.split:hover`
+  (rim 85%, top-edge .14). Split teraz dopasowuje postrzeganą jasność
+  krawędzi do single. Commit `bf25ab6`. Status: REVIEW.
 
 ---
 
@@ -539,3 +556,8 @@ stref, by efekt blasku był jak w 1-zone.
   rzeczywistą przyczynę: `hightlightMoon` zamiast `hightlightPlanet`. Poprawiony
   fix w `src/features/sendCol/domHelpers.js`, commit `3e289a8`. T8 → REVIEW.
   Kolejne zadanie: zacząć od T3 (łatwe) w nowej sesji.
+- **2026-06-11 (sesja 2):** T3 (tytuł sekcji ekspedycji w Reminders), T2
+  (animacja handlarza), T12 (blask krawędzi split), T1 (klawiatura DAILY RUN)
+  — wszystkie zaimplementowane i w REVIEW. T1: rzeczywistą przyczyną był
+  `fireInput()` w `fleetExecutor.js` wywołujący `input.focus()` na mobile.
+  Następna sesja: T7 lub T4 (średnie, bez blokad).
