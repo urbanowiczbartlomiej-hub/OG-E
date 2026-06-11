@@ -1,8 +1,10 @@
 // @ts-check
 
-// Free-positions renderer — populates the "Free Positions" tab of the
-// histogram page with a position selector, a top-N table of confirmed
-// empty runs, and a record-line summary.
+// Settlement-regions renderer — paints the "Free positions" block that
+// lives INSIDE the Galaxy Observations tab (it was a tab of its own up
+// to 1.17.0; folded in so the mobile tab bar fits one line). Shows a
+// top-N table of the best confirmed-empty regions per galaxy and a
+// record-line summary.
 //
 // Pure DOM module. Every node is built with `document.createElement`,
 // classes match the rules in `dashboard.html`, and no chrome.storage
@@ -10,41 +12,32 @@
 // (the page entry in `features/dashboard/index.js`):
 //
 //   1. The page selects a universe and loads its `scans` map.
-//   2. The page reads `freePosSelect.value` for the chosen slot.
-//   3. The page calls `renderFreeStreak({ ..., scans, position })`.
-//   4. This module runs `findLongestStreaks` and paints the section.
+//   2. The page parses the positions input + tolerance select.
+//   3. The page calls `renderFreeRegions({ ..., scans, positions, maxGaps })`.
+//   4. This module runs `findBestRegions` and paints the section.
 //
-// Re-rendering on a position-selector change is the caller's job too —
-// we expose a `populatePositionOptions` helper for the initial seeding,
-// then the caller hooks the `change` event and re-calls `renderFreeStreak`.
+// Re-rendering on a control change is the caller's job too — it hooks
+// the `change` events and re-calls `renderFreeRegions`.
 //
-// # Why generic in position + status under the hood
+// # Generalised search (post-1.17.0 feedback)
 //
-// The v1.2.0 UI only exposes the position selector; `status` is fixed
-// to `'empty'` (matching the original Free_15_position tool that
-// motivated the feature). Keeping the underlying `findLongestStreaks`
-// generic in status means future tabs ("inactive farm runs", etc.)
-// reuse the same domain primitive — no rewrite, just a new renderer
-// that picks a different status.
+// The block accepts a positions LIST/RANGE (a system matches only when
+// every requested slot is confirmed empty) and a gap TOLERANCE (a region
+// may bridge up to N non-matching systems instead of demanding a perfect
+// streak). Defaults — single slot 15, zero gaps — reproduce the original
+// Free_15_position behaviour exactly, so the simple view stays simple.
 //
-// @see ../../domain/freeStreak.js — findLongestStreaks (pure analyzer)
+// @see ../../domain/regions.js — findBestRegions (pure analyzer)
 
-import { findLongestStreaks } from '../../domain/freeStreak.js';
+import { findBestRegions } from '../../domain/regions.js';
 
 /**
  * @typedef {import('../../state/scans.js').GalaxyScans} GalaxyScans
- * @typedef {import('../../domain/freeStreak.js').Streak} Streak
+ * @typedef {import('../../domain/regions.js').Region} Region
  */
 
 /**
- * Number of slot positions (planet slots 1..15 in an OGame system).
- * Hard-coded because OGame's universe constant has been 15 since the
- * game launched; if it ever changes, this is the single place to bump.
- */
-const POSITIONS = 15;
-
-/**
- * Maximum number of rows shown in the streaks table. Matches the "TOP
+ * Maximum number of rows shown in the regions table. Matches the "TOP
  * 20" cap from the original `Free_15_position.html` tool — long enough
  * to cover all interesting candidates in a fully-scanned universe,
  * short enough to render fast and stay scannable.
@@ -52,36 +45,12 @@ const POSITIONS = 15;
 const TOP_N = 20;
 
 /**
- * Populate the slot-position `<select>` once at page boot. Builds
- * options 1..{@link POSITIONS} with `15` pre-selected — the most
- * common colonisation slot and the default the feature inherits
- * from the original tool.
- *
- * Idempotent: a second call wipes existing options first so the
- * select stays at 15 numeric entries (matters for the test setup
- * where the page might be re-bootstrapped).
- *
- * @param {HTMLSelectElement} selectEl
- * @returns {void}
- */
-export const populatePositionOptions = (selectEl) => {
-  selectEl.innerHTML = '';
-  for (let i = 1; i <= POSITIONS; i++) {
-    const opt = document.createElement('option');
-    opt.value = String(i);
-    opt.textContent = String(i);
-    if (i === POSITIONS) opt.selected = true;
-    selectEl.appendChild(opt);
-  }
-};
-
-/**
- * Build a `<table class="streak-table">` with one row per result up to
+ * Build a `<table class="streak-table">` with one row per region up to
  * `TOP_N`. The table is structurally simple — header + tbody — so we
  * skip a render diff and rebuild from scratch every call. With at
  * most {@link TOP_N} rows this is comfortably under a millisecond.
  *
- * @param {Streak[]} results
+ * @param {Region[]} results
  * @returns {HTMLTableElement}
  */
 const buildTable = (results) => {
@@ -90,12 +59,10 @@ const buildTable = (results) => {
 
   const thead = document.createElement('thead');
   const headRow = document.createElement('tr');
-  for (const label of ['#', 'Galaxy', 'Start', 'End', 'Length']) {
+  for (const label of ['#', 'Galaxy', 'Start', 'End', 'Length', 'Free', 'Gaps']) {
     const th = document.createElement('th');
     th.textContent = label;
-    if (label === '#' || label === 'Length' || label === 'Start' || label === 'End') {
-      th.style.textAlign = 'right';
-    }
+    if (label !== 'Galaxy') th.style.textAlign = 'right';
     headRow.appendChild(th);
   }
   thead.appendChild(headRow);
@@ -112,6 +79,8 @@ const buildTable = (results) => {
       [String(r.start), true],
       [String(r.end), true],
       [String(r.length), true],
+      [String(r.matched), true],
+      [r.gaps ? String(r.gaps) : '—', true],
     ];
     for (const [text, isNum] of cells) {
       const td = document.createElement('td');
@@ -128,12 +97,12 @@ const buildTable = (results) => {
 
 /**
  * Build the "record" summary card shown below the table — the single
- * longest run across all galaxies, with its coordinates and length.
- * Returned as a `<div>` ready to be appended; not appended when
- * `results` is empty (the caller paints an empty-state message
- * instead).
+ * best region across all galaxies, with its coordinates, span and
+ * blemish count. Returned as a `<div>` ready to be appended; not
+ * appended when `results` is empty (the caller paints an empty-state
+ * message instead).
  *
- * @param {Streak} record
+ * @param {Region} record
  * @returns {HTMLElement}
  */
 const buildRecord = (record) => {
@@ -154,47 +123,51 @@ const buildRecord = (record) => {
   detailLine.style.fontSize = '12px';
   detailLine.style.marginTop = '4px';
   detailLine.textContent =
-    `Galaxy ${record.galaxy}, system ${record.start} → ${record.end}` +
-    (record.end < record.start ? ' (wraps across the 499 → 1 boundary)' : '');
+    `Galaxy ${record.galaxy}, system ${record.start} → ${record.end}`
+    + (record.gaps ? ` (${record.matched} free, ${record.gaps} gap${record.gaps === 1 ? '' : 's'})` : '')
+    + (record.end < record.start ? ' (wraps across the 499 → 1 boundary)' : '');
   el.append(labelLine, detailLine);
 
   return el;
 };
 
 /**
- * @typedef {object} RenderFreeStreakOptions
+ * @typedef {object} RenderFreeRegionsOptions
  * @property {HTMLElement} containerEl
- *   Target wrapper — typically `#freeContainer` in dashboard.html.
- *   Cleared and repainted on each call.
+ *   Target wrapper — `#freeContainer` in dashboard.html. Cleared and
+ *   repainted on each call.
  * @property {HTMLElement | null} countInfoEl
- *   Optional `<span>` to update with a "Found N runs across M galaxies"
+ *   Optional `<span>` to update with a "N regions across M galaxies"
  *   summary. `null` skips that update — supplied for `#freeCountInfo`
- *   in production, omitted in unit tests that only care about the
- *   table.
+ *   in production, omitted in unit tests that only care about the table.
  * @property {GalaxyScans} scans
- *   Same map the rest of the histogram reads.
- * @property {number} position
- *   Slot to analyse — 1..15. Comes from the position-selector value.
+ *   Same map the rest of the dashboard reads.
+ * @property {number[]} positions
+ *   Slots that must ALL be empty — parsed by the caller from the
+ *   positions input (`parseTargetPositions` grammar).
+ * @property {number} maxGaps
+ *   Non-matching systems tolerated inside a region (0 = perfect streak).
  */
 
 /**
- * Repaint the Free Positions section against `scans` for the requested
- * `position`. Owns the empty-state branch: when nothing matched, the
- * table area gets a single `.empty`-class line and no record card.
+ * Repaint the settlement-regions block against `scans` for the requested
+ * slots + tolerance. Owns the empty-state branch: when nothing matched,
+ * the table area gets a single `.empty`-class line and no record card.
  *
- * @param {RenderFreeStreakOptions} opts
+ * @param {RenderFreeRegionsOptions} opts
  * @returns {void}
  */
-export const renderFreeStreak = ({ containerEl, countInfoEl, scans, position }) => {
+export const renderFreeRegions = ({ containerEl, countInfoEl, scans, positions, maxGaps }) => {
   containerEl.innerHTML = '';
 
-  const results = findLongestStreaks(scans, { position, status: 'empty' });
+  const results = findBestRegions(scans, { positions, status: 'empty', maxGaps });
+  const posLabel = positions.join(', ');
 
   if (countInfoEl) {
     const galaxyCount = new Set(results.map((r) => r.galaxy)).size;
     countInfoEl.textContent = results.length === 0
-      ? 'No confirmed empty runs yet for this slot.'
-      : `${results.length} run${results.length === 1 ? '' : 's'} across `
+      ? 'No confirmed empty regions yet for these slots.'
+      : `${results.length} region${results.length === 1 ? '' : 's'} across `
         + `${galaxyCount} galax${galaxyCount === 1 ? 'y' : 'ies'}`;
   }
 
@@ -202,14 +175,15 @@ export const renderFreeStreak = ({ containerEl, countInfoEl, scans, position }) 
     const empty = document.createElement('div');
     empty.className = 'empty';
     empty.textContent =
-      'Nothing to show yet. Scan more galaxy pages with slot '
-      + position + ' empty, then come back here.';
+      'Nothing to show yet. Scan more galaxy pages with slot'
+      + (positions.length === 1 ? '' : 's') + ' ' + posLabel
+      + ' empty, then come back here.';
     containerEl.appendChild(empty);
     return;
   }
 
   containerEl.appendChild(buildTable(results));
   // The record is just the first item of the already-sorted list —
-  // results are sorted by length descending in findLongestStreaks.
+  // results are sorted best-first in findBestRegions.
   containerEl.appendChild(buildRecord(results[0]));
 };

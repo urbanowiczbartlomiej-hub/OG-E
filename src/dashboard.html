@@ -47,6 +47,15 @@
   .tab-section { display: none; }
   .tab-section.active { display: block; }
 
+  /* In-tab sub-section (e.g. the settlement-regions block folded into
+     Galaxy Observations) — visually separated, one heading size down. */
+  .sub-section { margin-top: 28px; border-top: 1px solid #2a4a5a; padding-top: 18px; }
+  .sub-section h2 { color: #4a9eff; font-size: 17px; margin-bottom: 10px; }
+  .controls input {
+    background: #1a2a3a; border: 1px solid #2a4a5a; color: #ccc;
+    padding: 6px 12px; border-radius: 6px; font-size: 13px;
+  }
+
   .stats { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
   .stat-card {
     background: #1a2a3a; border: 1px solid #2a4a5a; border-radius: 8px;
@@ -174,7 +183,6 @@
   <div class="tabs" role="tablist">
     <button class="tab-btn" data-tab="colony" role="tab">Colony Sizes</button>
     <button class="tab-btn" data-tab="galaxy" role="tab">Galaxy Observations</button>
-    <button class="tab-btn" data-tab="free"   role="tab">Free Positions</button>
     <button class="tab-btn" data-tab="reminders" role="tab">Reminders</button>
     <button class="tab-btn" data-tab="routes" role="tab">Daily Run</button>
   </div>
@@ -217,22 +225,33 @@
     <button id="clearScansBtn" class="danger">Clear observation data</button>
   </div>
   <div id="scansContainer"></div>
-</section>
 
-<section id="freeSection" class="tab-section">
-  <h1>Free Positions — longest confirmed empty runs</h1>
-  <p style="color:#888;font-size:13px;margin-bottom:16px;">
-    For each scanned galaxy, the longest contiguous run of systems whose chosen slot
-    is confirmed <code style="color:#4a9eff;">empty</code>. An unscanned system, or a
-    scanned system with a different status, breaks the run — reported lengths are a
-    lower bound on what actually exists, so they only grow as you keep scanning.
-  </p>
-  <div class="controls">
-    <label>Slot position:</label>
-    <select id="freePosSelect" title="Which of the 15 planet slots to analyse."></select>
-    <span id="freeCountInfo" style="color:#888;font-size:13px;margin-left:auto;"></span>
+  <div class="sub-section">
+    <h2>Free positions — settlement regions</h2>
+    <p style="color:#888;font-size:13px;margin-bottom:16px;">
+      For each scanned galaxy, the best contiguous region of systems whose chosen slots are
+      confirmed <code style="color:#4a9eff;">empty</code>. Positions takes a list or range
+      (e.g. <code style="color:#4a9eff;">8</code> or <code style="color:#4a9eff;">12-15</code>);
+      with several slots a system counts only when ALL of them are empty. Tolerance lets a
+      region bridge a few non-matching or unscanned systems instead of demanding a perfect
+      streak. Unscanned systems never count as free — results are a lower bound and only
+      grow as you keep scanning.
+    </p>
+    <div class="controls">
+      <label>Slot positions:</label>
+      <input id="freePosInput" value="15" size="8"
+        title="Which planet slots to analyse — a list or range like 8 or 12-15. A system matches only when every listed slot is confirmed empty.">
+      <label>Tolerance:</label>
+      <select id="freeGapsSelect"
+        title="How many non-matching (occupied or unscanned) systems a region may bridge.">
+        <option value="0" selected>perfect streak</option>
+        <option value="1">allow 1 gap</option>
+        <option value="2">allow 2 gaps</option>
+      </select>
+      <span id="freeCountInfo" style="color:#888;font-size:13px;margin-left:auto;"></span>
+    </div>
+    <div id="freeContainer"></div>
   </div>
-  <div id="freeContainer"></div>
 </section>
 
 <section id="remindersSection" class="tab-section">

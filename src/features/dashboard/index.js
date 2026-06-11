@@ -48,10 +48,7 @@ import { debounce } from '../../lib/debounce.js';
 import { parseTargetPositions } from '../../domain/histogram.js';
 import { populatePositionFilter, renderColonyChart } from './colony.js';
 import { renderGalaxyMap } from './galaxy.js';
-import {
-  populatePositionOptions as populateFreePosOptions,
-  renderFreeStreak,
-} from './freeStreak.js';
+import { renderFreeRegions } from './freeStreak.js';
 import {
   HISTORY_KEY_BASE,
   historyKeyFor,
@@ -85,10 +82,11 @@ const EXPANDED_LS_KEY = 'oge_expandedGalaxies';
 
 // localStorage key for the active dashboard tab. Per-device UI prefs.
 // Possible values are the `data-tab` attributes from dashboard.html:
-// `'colony'`, `'galaxy'`, `'free'`, `'reminders'`, `'routes'`. Anything
-// unrecognised falls back to `'colony'` (the page's first tab). The key
-// keeps its legacy `oge_histogram` name so the saved preference survives
-// the rename.
+// `'colony'`, `'galaxy'`, `'reminders'`, `'routes'`. Anything
+// unrecognised — including the retired `'free'` (its content folded into
+// the galaxy tab) — falls back to `'colony'` (the page's first tab). The
+// key keeps its legacy `oge_histogram` name so the saved preference
+// survives the rename.
 const ACTIVE_TAB_LS_KEY = 'oge_histogramTab';
 const DEFAULT_TAB = 'colony';
 
@@ -153,7 +151,8 @@ const expandedGalaxies = new Set();
 /** @type {HTMLSelectElement} */ let universeSelect;
 /** @type {HTMLElement} */ let scansContainer;
 /** @type {HTMLElement | null} */ let importStatusEl;
-/** @type {HTMLSelectElement} */ let freePosSelect;
+/** @type {HTMLInputElement} */ let freePosInput;
+/** @type {HTMLSelectElement} */ let freeGapsSelect;
 /** @type {HTMLElement} */ let freeContainer;
 /** @type {HTMLElement | null} */ let freeCountInfoEl;
 
@@ -182,7 +181,6 @@ export const installDashboard = () => {
 const boot = async () => {
   wireDom();
   loadExpanded();
-  populateFreePosOptions(freePosSelect);
   wireTabs();
 
   // Reminders tab filters by the active universe (same UX as the other
@@ -343,7 +341,8 @@ const wireDom = () => {
   universeSelect = /** @type {HTMLSelectElement} */ (document.getElementById('universeSelect'));
   scansContainer = /** @type {HTMLElement} */ (document.getElementById('scansContainer'));
   importStatusEl = document.getElementById('importStatus');
-  freePosSelect = /** @type {HTMLSelectElement} */ (document.getElementById('freePosSelect'));
+  freePosInput = /** @type {HTMLInputElement} */ (document.getElementById('freePosInput'));
+  freeGapsSelect = /** @type {HTMLSelectElement} */ (document.getElementById('freeGapsSelect'));
   freeContainer = /** @type {HTMLElement} */ (document.getElementById('freeContainer'));
   freeCountInfoEl = document.getElementById('freeCountInfo');
 };
@@ -503,16 +502,37 @@ const renderAll = () => {
     onClearAll: () => {},
   });
 
-  // Free Positions section — runs over the same `scans` data with the
-  // currently-selected slot. Repainting on every renderAll keeps it in
-  // sync with universe changes / storage updates; the position select
-  // also has its own onchange listener that re-paints only this
-  // section without paying for the colony / galaxy passes.
-  renderFreeStreak({
+  // Settlement-regions block (inside the galaxy tab) — runs over the
+  // same `scans` data with the current positions + tolerance controls.
+  // Repainting on every renderAll keeps it in sync with universe changes
+  // / storage updates; the controls also have their own onchange
+  // listeners that re-paint only this block without paying for the
+  // colony / galaxy passes.
+  repaintFreeRegions();
+};
+
+/**
+ * Slots the settlement-regions block analyses, parsed from the positions
+ * input (same `parsePositions` grammar as the colonize-targets setting:
+ * lists and ranges, e.g. `"8"` / `"12-15"`). Out-of-range entries are
+ * dropped; an empty/invalid input falls back to the classic slot 15.
+ *
+ * @returns {number[]}
+ */
+const freeRegionPositions = () => {
+  const list = [...parseTargetPositions(freePosInput.value)]
+    .filter((p) => p >= 1 && p <= 15);
+  return list.length ? list : [15];
+};
+
+/** Repaint ONLY the settlement-regions block from current controls. */
+const repaintFreeRegions = () => {
+  renderFreeRegions({
     containerEl: freeContainer,
     countInfoEl: freeCountInfoEl,
     scans,
-    position: parseInt(freePosSelect.value, 10) || 15,
+    positions: freeRegionPositions(),
+    maxGaps: parseInt(freeGapsSelect.value, 10) || 0,
   });
 };
 
@@ -615,17 +635,12 @@ const wireListeners = () => {
 
   posFilter.addEventListener('change', () => renderAll());
 
-  // Position-selector only repaints the Free Positions section. The
-  // underlying `scans` cache hasn't changed — only the slot we query
-  // against has — so the colony / galaxy passes would be wasted work.
-  freePosSelect.addEventListener('change', () => {
-    renderFreeStreak({
-      containerEl: freeContainer,
-      countInfoEl: freeCountInfoEl,
-      scans,
-      position: parseInt(freePosSelect.value, 10) || 15,
-    });
-  });
+  // Region controls only repaint the settlement-regions block. The
+  // underlying `scans` cache hasn't changed — only the slots/tolerance
+  // we query against have — so the colony / galaxy passes would be
+  // wasted work.
+  freePosInput.addEventListener('change', repaintFreeRegions);
+  freeGapsSelect.addEventListener('change', repaintFreeRegions);
 
   universeSelect.addEventListener('change', () => {
     selectedUniverseId = universeSelect.value;
