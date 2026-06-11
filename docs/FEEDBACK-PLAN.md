@@ -355,13 +355,14 @@ przygotować lepsze algorytmy pod potencjalne analizy.”
 4. **T6b-UI:** progresywne ujawnianie (prosty widok dla zwykłych, zaawansowany
    opcjonalny).
 
-**Dane:** dla T6b warto **dump HTML widoku galaktyki** (gdzie widać ranking gracza
-przy pozycji) — żeby wiedzieć, co da się zbierać podczas skanu. ⛔ częściowo.
-**Aktualizacja:** ranking jest zbierany defensywnie z XHR `fetchGalaxyContent`
-(kandydaci: `highscorePositionPlayer` → `highscorePosition` → `rank`); zamiast
-dumpu wystarczy WERYFIKACJA: przeskanować kilka systemów i sprawdzić w
-Export JSON, czy przy zajętych pozycjach pojawia się `player.rank`. Jeśli nie —
-pole ma inną nazwę i wtedy faktycznie potrzebny dump odpowiedzi XHR.
+**Dane:** ⛔ ZDJĘTE — użytkownik dostarczył pełny response `fetchGalaxyContent`
+(s163-pl, G1:S119). Potwierdzone: ranking = `player.highscorePositionPlayer`
+(liczba, np. 749); UWAGA `player.rank` to OBIEKT tytułu („Bandyta") — usunięty
+z kandydatów. Response ujawnił też, że trzy detekcje były MARTWE na
+współczesnym payloadzie: księżyc = `planetType: 3` (brak `isMoon`/`luna`),
+debris = wpis w `planets[]` z `planetType: 2` (brak `entry.debris`), sojusz =
+`allianceId` (nie `allyId`). Naprawione + regresja: slot z samym debris
+klasyfikował się jako `occupied`, teraz `empty` + `hasDebris`.
 
 **Dziennik:**
 - 2026-06-11 (sesja 3): **T6a zrobione** — zakładka „Free Positions" usunięta
@@ -379,8 +380,16 @@ pole ma inną nazwę i wtedy faktycznie potrzebny dump odpowiedzi XHR.
   ad-hoc w node potwierdził wrap/luki/AND/pełne koło. **Zbieranie ranku** —
   `Position.player.rank?` z payloadu galaktyki (best-effort, kandydaci jw.),
   klasyfikacja nietknięta gdy pola brak. Commity: `dashboard` + `scans`.
-- **Projekt T6b etap 2 (mapa sąsiedztwa + strategie)** — do podjęcia PO
-  potwierdzeniu, że rank przychodzi:
+- 2026-06-11 (sesja 3, cd.): Użytkownik wkleił prawdziwy response skanu →
+  model danych POTWIERDZONY i rozszerzony. Zbieramy teraz per pozycja:
+  `player.rank` (highscore, potwierdzony numerycznie), `player.ally` (tag
+  sojuszu), `flags.honorable` (`isHonorableTarget`), `moonSize` (trwała
+  średnica księżyca — pod analizy zniszczenia księżyca/falangi) + naprawione
+  martwe detekcje `hasMoon`/`hasDebris`/`inAlliance` (szczegóły w „Dane").
+  Sanity na realnych pozycjach 1/2/4 + debris-only w node — OK. Etap 2
+  ODBLOKOWANY (rank potwierdzony bez czekania na skany użytkownika).
+- **Projekt T6b etap 2 (mapa sąsiedztwa + strategie)** — ODBLOKOWANY,
+  do podjęcia w następnej sesji:
   1. *Scoring regionu:* funkcja czysta nad oknem systemów — gęstość
      zasiedlenia (udział `occupied`/`inactive`/…), rozkład ranków sąsiadów
      (mediana/min), liczba wolnych slotów docelowych w oknie.
