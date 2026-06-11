@@ -230,26 +230,39 @@
   <div id="scansContainer"></div>
 
   <div class="sub-section">
-    <h2>Free positions — settlement regions</h2>
+    <h2>🔭 Colony Scout — settlement area analysis</h2>
     <p style="color:#888;font-size:13px;margin-bottom:16px;">
-      For each scanned galaxy, the best contiguous region of systems whose chosen slots are
-      confirmed <code style="color:#4a9eff;">empty</code>. Positions takes a list or range
+      For each scanned galaxy, the best contiguous run of systems whose target slots are all
+      confirmed <code style="color:#4a9eff;">empty</code> — scored and ranked by how well the
+      neighbourhood fits your play style. <strong style="color:#ccc;">Positions</strong>: a slot list or range
       (e.g. <code style="color:#4a9eff;">8</code> or <code style="color:#4a9eff;">12-15</code>);
-      with several slots a system counts only when ALL of them are empty. Tolerance lets a
+      every listed slot must be empty for a system to count.
+      <strong style="color:#ccc;">Tolerance</strong> lets a
       region bridge a few non-matching or unscanned systems instead of demanding a perfect
-      streak. Unscanned systems never count as free — results are a lower bound and only
-      grow as you keep scanning.
+      run. Unscanned systems never count as free — results grow as you keep scanning.
+      <strong style="color:#ccc;">Strategy</strong> re-ranks found regions by neighbourhood
+      profile: player density, honour ranks, farm targets, proximity to your existing colonies.
     </p>
     <div class="controls">
-      <label>Slot positions:</label>
+      <label>Slots:</label>
       <input id="freePosInput" value="15" size="8"
-        title="Which planet slots to analyse — a list or range like 8 or 12-15. A system matches only when every listed slot is confirmed empty.">
+        title="Which planet slots to analyse — a list or range like 8 or 12-15. A system counts only when every listed slot is confirmed empty.">
       <label>Tolerance:</label>
       <select id="freeGapsSelect"
         title="How many non-matching (occupied or unscanned) systems a region may bridge.">
         <option value="0" selected>perfect streak</option>
         <option value="1">allow 1 gap</option>
         <option value="2">allow 2 gaps</option>
+      </select>
+      <label>Strategy:</label>
+      <select id="freeStrategySelect"
+        title="Re-ranks regions by neighbourhood fit for your play style. Affects sort order, not which regions are found.">
+        <option value="longest">Longest streak</option>
+        <option value="peaceful">Peaceful settler</option>
+        <option value="farmer">Farmer</option>
+        <option value="honor_pvp">Honor PvP</option>
+        <option value="aggressive">Aggressive PvP</option>
+        <option value="expansion">Expansion</option>
       </select>
       <span id="freeCountInfo" style="color:#888;font-size:13px;margin-left:auto;"></span>
     </div>

@@ -37,11 +37,12 @@
 //
 // @see ../../domain/regions.js — findBestRegions / scoreRegion (pure)
 
-import { findBestRegions } from '../../domain/regions.js';
+import { findBestRegions, sortRegionsByStrategy, STRATEGIES } from '../../domain/regions.js';
 
 /**
  * @typedef {import('../../state/scans.js').GalaxyScans} GalaxyScans
  * @typedef {import('../../domain/regions.js').Region} Region
+ * @typedef {import('../../domain/regions.js').RegionScore} RegionScore
  */
 
 /**
@@ -275,6 +276,9 @@ const buildRecord = (record, scans) => {
  *   positions input (`parseTargetPositions` grammar).
  * @property {number} maxGaps
  *   Non-matching systems tolerated inside a region (0 = perfect streak).
+ * @property {string} [strategy]
+ *   Key of {@link STRATEGIES} — re-sorts regions after finding them.
+ *   Defaults to `'longest'` (pure length sort, existing behaviour).
  */
 
 /**
@@ -285,18 +289,21 @@ const buildRecord = (record, scans) => {
  * @param {RenderFreeRegionsOptions} opts
  * @returns {void}
  */
-export const renderFreeRegions = ({ containerEl, countInfoEl, scans, positions, maxGaps }) => {
+export const renderFreeRegions = ({ containerEl, countInfoEl, scans, positions, maxGaps, strategy }) => {
   containerEl.innerHTML = '';
 
-  const results = findBestRegions(scans, { positions, status: 'empty', maxGaps });
+  const raw = findBestRegions(scans, { positions, status: 'empty', maxGaps });
+  const results = sortRegionsByStrategy(raw, strategy ?? 'longest');
   const posLabel = positions.join(', ');
 
   if (countInfoEl) {
     const galaxyCount = new Set(results.map((r) => r.galaxy)).size;
+    const stratLabel = strategy && strategy !== 'longest' && STRATEGIES[strategy]
+      ? ` · ${STRATEGIES[strategy].label}` : '';
     countInfoEl.textContent = results.length === 0
       ? 'No confirmed empty regions yet for these slots.'
       : `${results.length} region${results.length === 1 ? '' : 's'} across `
-        + `${galaxyCount} galax${galaxyCount === 1 ? 'y' : 'ies'}`;
+        + `${galaxyCount} galax${galaxyCount === 1 ? 'y' : 'ies'}${stratLabel}`;
   }
 
   if (results.length === 0) {

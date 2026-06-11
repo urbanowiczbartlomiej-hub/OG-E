@@ -153,6 +153,7 @@ const expandedGalaxies = new Set();
 /** @type {HTMLElement | null} */ let importStatusEl;
 /** @type {HTMLInputElement} */ let freePosInput;
 /** @type {HTMLSelectElement} */ let freeGapsSelect;
+/** @type {HTMLSelectElement} */ let freeStrategySelect;
 /** @type {HTMLElement} */ let freeContainer;
 /** @type {HTMLElement | null} */ let freeCountInfoEl;
 
@@ -343,6 +344,7 @@ const wireDom = () => {
   importStatusEl = document.getElementById('importStatus');
   freePosInput = /** @type {HTMLInputElement} */ (document.getElementById('freePosInput'));
   freeGapsSelect = /** @type {HTMLSelectElement} */ (document.getElementById('freeGapsSelect'));
+  freeStrategySelect = /** @type {HTMLSelectElement} */ (document.getElementById('freeStrategySelect'));
   freeContainer = /** @type {HTMLElement} */ (document.getElementById('freeContainer'));
   freeCountInfoEl = document.getElementById('freeCountInfo');
 };
@@ -533,6 +535,7 @@ const repaintFreeRegions = () => {
     scans,
     positions: freeRegionPositions(),
     maxGaps: parseInt(freeGapsSelect.value, 10) || 0,
+    strategy: freeStrategySelect.value || 'longest',
   });
 };
 
@@ -641,6 +644,7 @@ const wireListeners = () => {
   // wasted work.
   freePosInput.addEventListener('change', repaintFreeRegions);
   freeGapsSelect.addEventListener('change', repaintFreeRegions);
+  freeStrategySelect.addEventListener('change', repaintFreeRegions);
 
   universeSelect.addEventListener('change', () => {
     selectedUniverseId = universeSelect.value;
