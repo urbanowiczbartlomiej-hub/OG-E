@@ -15,12 +15,20 @@
 //     wave shows a passive "🛰 part of a wave" marker so the grouping is
 //     visible, but isn't independently armable.
 //   - **Fleet-save.** A leg the producer classified as a fleet-save (big own
-//     fleet on a long-enough flight) shows a passive 🛡 marker (amber). It is
-//     auto-detected and auto-scheduled; the player can't arm or cancel it, so
-//     the badge carries no click action. Driven by the mirror's `fleetSave`
-//     set (not a local DOM guess) so it matches what's actually scheduled —
-//     short planet⇄moon hops never get flagged. Takes precedence over the
-//     ad-hoc toggle on the same row (wave > fleet-save > ad-hoc).
+//     fleet on a long-enough flight) shows a 🛡 marker (amber). It is
+//     auto-detected and auto-scheduled; the player can't arm it, and can
+//     cancel a slot only inside its final cancel window
+//     (`FS_CANCEL_WINDOW_SEC` before it fires). The badge visibly FLIPS when
+//     that window opens — brighter, pulsing, with a ✕ affordance — on an
+//     exact timer armed for the next state transition (no polling lag). A
+//     save whose every slot has fired or been cancelled is SPENT: the row is
+//     released back to the ad-hoc toggle below, which is safe because the
+//     persisted entry survives as an empty-series lock and can never be
+//     re-auto-classified (see `domain/fleetSave.reconcileFleetSaves`).
+//     Driven by the mirror's `fleetSave` set (not a local DOM guess) so it
+//     matches what's actually scheduled — short planet⇄moon hops never get
+//     flagged. Takes precedence over the ad-hoc toggle on the same row
+//     (wave > fleet-save > ad-hoc).
 //   - **Ad-hoc.** Every other leg (outbound, non-expedition, or a return
 //     not part of a scheduled wave) is an ad-hoc toggle: click to arm a
 //     one-shot reminder `adhocOffsetSec` before arrival, click again to
@@ -53,7 +61,9 @@ import { REMINDER_MIRROR_KEY, isValidNtfyToken } from '../../sync/reminders.js';
 import { NTFY_MAX_DELAY_SEC, offsetsForSchedule } from '../../sync/ntfyScheduler.js';
 import { parseUniverseId } from '../../lib/universeId.js';
 import { fireAtFor } from '../../domain/adhoc.js';
-import { nearestCancellableSlot, fsOffsetsToCancel } from '../../domain/fleetSave.js';
+import {
+  nearestCancellableSlot, fsOffsetsToCancel, hasUpcomingFsSlot, FS_CANCEL_WINDOW_SEC,
+} from '../../domain/fleetSave.js';
 import { injectStyle } from '../../lib/dom.js';
 import { debounce } from '../../lib/debounce.js';
 import { readPending, lastAdhocIntent, lastWaveIntent } from './pending.js';
@@ -66,6 +76,8 @@ import { GAME } from '../../lib/gameDom.js';
 const STYLE_ID = 'oge-eventlist-rem-style';
 const BADGE_CLASS = 'oge-rem-badge';
 const REFRESH_DEBOUNCE_MS = 200;
+/** The cancel window, in whole minutes, for human-facing hint text. */
+const FS_CANCEL_WINDOW_MIN = Math.round(FS_CANCEL_WINDOW_SEC / 60);
 
 /** English mission-type names for the push label (locale-independent). */
 const MISSION_NAMES = /** @type {Record<string, string>} */ ({
@@ -93,6 +105,15 @@ const CSS = `
 .${BADGE_CLASS}.member-off { box-shadow: inset 2px 0 0 0 rgba(150, 150, 150, 0.5); opacity: 0.7; }
 .${BADGE_CLASS}.fs { background: rgba(255, 176, 32, 0.20); box-shadow: inset 0 0 0 1px rgba(255, 176, 32, 0.75); }
 .${BADGE_CLASS}.fs::before { content: '🛡'; margin-right: 2px; font-size: 0.85em; }
+/* Cancel window open: the badge brightens, pulses and grows a ✕ so the
+   player SEES the moment the slot becomes cancellable (and sees the state
+   drop back after a successful cancel). */
+.${BADGE_CLASS}.fs-cancel { background: rgba(255, 176, 32, 0.32); animation: oge-rem-fs-cancel 1.2s ease-in-out infinite; }
+.${BADGE_CLASS}.fs-cancel::after { content: '✕'; margin-left: 3px; font-size: 0.8em; opacity: 0.85; }
+@keyframes oge-rem-fs-cancel {
+  0%, 100% { box-shadow: inset 0 0 0 1px rgba(255, 205, 90, 0.95); }
+  50% { box-shadow: inset 0 0 0 2px rgba(255, 220, 130, 0.55); }
+}
 .${BADGE_CLASS}.disabled { opacity: 0.5; }
 .${BADGE_CLASS}.syncing { animation: oge-rem-pulse 1s ease-in-out infinite; }
 .${BADGE_CLASS}.syncing::after { content: '⏳'; margin-left: 2px; font-size: 0.8em; }
@@ -162,7 +183,8 @@ const labelFor = (row) => {
  * which the cell could never be found (or updated) again.
  */
 const OWNED_CLASSES = [
-  BADGE_CLASS, 'act', 'idle', 'armed', 'wave', 'wave-off', 'member', 'member-off', 'fs', 'disabled', 'syncing',
+  BADGE_CLASS, 'act', 'idle', 'armed', 'wave', 'wave-off', 'member', 'member-off', 'fs', 'fs-cancel',
+  'disabled', 'syncing',
 ];
 
 /** @param {Element} el @param {string} attr @param {string | null} val */
@@ -238,11 +260,11 @@ const fsTitle = (fs, now, mode) => {
     .map(fmtClock);
   const hint =
     mode === 'cancel'
-      ? 'Click to cancel this reminder (only in its final 2 min)'
+      ? 'Cancellable now — click to cancel this reminder'
       : mode === 'cancel-collapse'
-        ? 'Click to cancel this + the landing/after reminders (only in its final 2 min)'
+        ? 'Cancellable now — click to cancel this + the landing/after reminders'
         : live.length
-          ? 'Set automatically — the next reminder is cancellable in its final 2 min'
+          ? `Set automatically — the next reminder is cancellable in its final ${FS_CANCEL_WINDOW_MIN} min`
           : 'Set automatically';
   return live.length ? `Fleet-save reminders at: ${live.join(', ')}\n${hint}` : hint;
 };
@@ -265,6 +287,20 @@ const effectiveFs = (fs, cancelledOffsets) => {
 };
 
 // ── Render ──────────────────────────────────────────────────────────────
+
+/**
+ * Exact re-render timer for the next fleet-save state flip (a cancel window
+ * opening, or the open slot firing). Re-armed on every render pass to the
+ * EARLIEST upcoming transition, so the badge changes at the right second
+ * instead of waiting on the 3 s safety poll.
+ *
+ * @type {ReturnType<typeof setTimeout> | null}
+ */
+let fsFlipTimer = null;
+
+const clearFsFlipTimer = () => {
+  if (fsFlipTimer !== null) { clearTimeout(fsFlipTimer); fsFlipTimer = null; }
+};
 
 /**
  * One render pass: stamp every fleet row's arrival cell from settings +
@@ -305,6 +341,9 @@ const render = () => {
     }
   }
 
+  /** Earliest upcoming FS state flip (epoch sec) — feeds the exact timer. */
+  let nextFsFlipAt = Infinity;
+
   const armedSet = new Set((snapshot?.adhoc || []).map((e) => e.id));
   const fsById = new Map((snapshot?.fleetSave || []).map((e) => [e.id, e]));
   // Local, not-yet-synced FS slot cancellations (read-only here; the producer
@@ -340,19 +379,30 @@ const render = () => {
 
     // Fleet-save: a leg the producer classified as a save (mirror-driven, so
     // it reflects the ship + flight-time gates and the lock — never a short
-    // hop). Passive, non-clickable, outranks the ad-hoc toggle on the row.
+    // hop). Outranks the ad-hoc toggle on the row — but a SPENT series
+    // (every slot fired or cancelled) falls through and releases the row to
+    // ad-hoc; safe, because the persisted entry survives as an empty-series
+    // lock and can't be re-auto-classified.
     if (fsOn) {
       const rawFs = fsById.get(id);
       if (rawFs) {
         const fs = effectiveFs(rawFs, fsCancel[id]?.offsets);
-        const slot = nearestCancellableSlot(fs, now);
-        if (slot) {
-          const collapse = fsOffsetsToCancel(fs.offsetsSec, slot.offset).length > 1;
-          stamp(cell, 'fs', 'cancelFs', '', fsTitle(fs, now, collapse ? 'cancel-collapse' : 'cancel'));
-        } else {
-          stamp(cell, 'fs', '', '', fsTitle(fs, now, 'passive'));
+        if (hasUpcomingFsSlot(fs, now)) {
+          const slot = nearestCancellableSlot(fs, now);
+          if (slot) {
+            const collapse = fsOffsetsToCancel(fs.offsetsSec, slot.offset).length > 1;
+            stamp(cell, 'fs fs-cancel', 'cancelFs', '', fsTitle(fs, now, collapse ? 'cancel-collapse' : 'cancel'));
+            // Open window: next flip is the slot firing (badge drops back).
+            nextFsFlipAt = Math.min(nextFsFlipAt, slot.fireAt);
+          } else {
+            stamp(cell, 'fs', '', '', fsTitle(fs, now, 'passive'));
+            // Closed window: next flip is the window opening for the
+            // nearest upcoming slot.
+            const nextFireAt = Math.min(...fs.fireAts.filter((t) => Number.isFinite(t) && t > now));
+            nextFsFlipAt = Math.min(nextFsFlipAt, nextFireAt - FS_CANCEL_WINDOW_SEC);
+          }
+          continue;
         }
-        continue;
       }
     }
 
@@ -376,6 +426,15 @@ const render = () => {
     }
 
     clearCell(cell);
+  }
+
+  // Re-arm the exact flip timer to the earliest upcoming FS transition.
+  // +250 ms lands safely past the boundary; capped at 1 h (the 3 s safety
+  // poll covers anything farther out after sleep/clock drift anyway).
+  clearFsFlipTimer();
+  if (Number.isFinite(nextFsFlipAt)) {
+    const delayMs = Math.min(Math.max(nextFsFlipAt - now, 0) * 1000 + 250, 3_600_000);
+    fsFlipTimer = setTimeout(() => { fsFlipTimer = null; if (installed) render(); }, delayMs);
   }
 };
 
@@ -423,7 +482,7 @@ export const installEventListReminders = ({
     else if (act === 'resendWave' && waveId) resendWave(waveId);
     else if (act === 'disarm') disarmAdhoc(id);
     else if (act === 'cancelFs') {
-      // Re-derive from the freshest state at click time — the 2-min window
+      // Re-derive from the freshest state at click time — the cancel window
       // may have moved since render, and the slot must still be cancellable.
       const universeId = parseUniverseId(location.host);
       const now = Math.floor(Date.now() / 1000);
@@ -486,6 +545,7 @@ export const installEventListReminders = ({
       document.removeEventListener('click', onClick, true);
       observer.disconnect();
       clearInterval(safetyPoll);
+      clearFsFlipTimer();
       unsubSettings();
       document.getElementById(STYLE_ID)?.remove();
       document.querySelectorAll(`.${BADGE_CLASS}`).forEach((el) => clearCell(/** @type {HTMLElement} */ (el)));

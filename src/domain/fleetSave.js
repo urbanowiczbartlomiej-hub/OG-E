@@ -154,7 +154,11 @@ export const parseFsOffsets = (str) => parseDurationList(str, { signed: true });
  *     arrival-derived fields refreshed (a redirect can move arrival; the
  *     player may have edited the offset schedule). The two gates are NOT
  *     re-applied — this is the lock that stops a late observation from
- *     cancelling a scheduled save (see the module header).
+ *     cancelling a scheduled save (see the module header). The lock also
+ *     holds when EVERY offset has been cancelled: the entry is carried as
+ *     an empty-series tombstone, so a cancelled, still-flying fleet can
+ *     never be re-auto-classified and re-grow its reminders. (This is what
+ *     lets the UI safely release such a row back to the ad-hoc toggle.)
  *   - **present, not yet FS** → classified now: kept only if
  *     `shipCount >= threshold` AND flight time `(arrivalAt - now) >=
  *     minFlightSec`. `minFlightSec <= 0` disables the flight-time gate.
@@ -215,7 +219,21 @@ export const reconcileFleetSaves = (
  * last moment — when the player is clearly attending to this very arrival —
  * not hours ahead by accident.
  */
-export const FS_CANCEL_WINDOW_SEC = 120;
+export const FS_CANCEL_WINDOW_SEC = 180;
+
+/**
+ * Whether a fleet-save still has a slot ahead of it. When every slot has
+ * fired or been cancelled the series is SPENT: the badge releases the row
+ * back to the ad-hoc toggle, while the persisted entry stays behind as an
+ * empty-series lock (see {@link reconcileFleetSaves}) so the still-flying
+ * fleet is never re-auto-classified. Pure.
+ *
+ * @param {{ fireAts: number[] }} fs
+ * @param {number} now Epoch SECONDS.
+ * @returns {boolean}
+ */
+export const hasUpcomingFsSlot = (fs, now) =>
+  (fs.fireAts || []).some((t) => Number.isFinite(t) && t > now);
 
 /**
  * The nearest still-upcoming slot of a fleet-save, but ONLY if it is inside
