@@ -64,9 +64,11 @@ import {
   dispatch as courierDispatch,
   step as courierStep,
   readyToDispatch,
+  shipAvailability,
   installFleetCourier,
 } from '../shared/fleetCourier.js';
 import { MISSION_DEPLOYMENT } from '../../domain/rules.js';
+import { resolveSelection } from '../../domain/fleetPlan.js';
 import {
   coordKey,
   coordTypeKey,
@@ -196,6 +198,42 @@ const collectedOriginKeys = (target) => {
   return set;
 };
 
+// ─── pre-tap availability checks (snapshot-driven, null = unknown) ──────
+
+/**
+ * The route's micro-fleet shortfall on the current body, or `null` when the
+ * fleet can be filled — or when availability is UNKNOWN (off the
+ * fleetdispatch page / no snapshot yet), so the off-page tap still
+ * navigates instead of false-flagging "no ships".
+ *
+ * @param {{ microFleet: { shipId: number | string, count: number | string } }} route
+ * @returns {{ have: number, want: number } | null}
+ */
+const microShortfall = (route) => {
+  const avail = shipAvailability();
+  if (!avail) return null;
+  const f = route.microFleet;
+  const sel = resolveSelection(
+    { kind: 'list', ships: [{ id: Number(f.shipId), qty: Number(f.count), frac: 1 }] },
+    avail,
+  );
+  if (sel.ok) return null;
+  const s = sel.shortfalls[0];
+  return { have: s?.have ?? 0, want: s?.want ?? Number(f.count) };
+};
+
+/**
+ * Whether the current planet has NOTHING for a Send All to take — i.e. the
+ * snapshot is present and holds zero ships. `false` when availability is
+ * unknown (no snapshot), so off-page behaviour is untouched.
+ *
+ * @returns {boolean}
+ */
+const collectPlanetEmpty = () => {
+  const avail = shipAvailability();
+  return !!avail && !resolveSelection({ kind: 'all' }, avail).ok;
+};
+
 // ─── label painting ─────────────────────────────────────────────────────
 
 /**
@@ -318,6 +356,10 @@ const buildOrder = (mode) => {
     if (!route) return { flash: 'No route', openDash: true };
     const next = findNextMicroTarget(route.targets, microInFlightKeys());
     if (!next) return { flash: 'All sent' };
+    // Hard gate BEFORE any courier action: a micro-fleet that can't be
+    // filled must never start the select→continue walk (the label already
+    // says why — see refresh()).
+    if (microShortfall(route)) return { flash: 'No ships' };
     const f = route.microFleet;
     return {
       order: {
@@ -417,6 +459,22 @@ const handleZone = async (mode) => {
     flash(zone, built.flash);
     return;
   }
+  // Send All on an EMPTY planet: nothing to take here, so instead of a dead
+  // "No ships" the tap accepts the jump the label proposes — straight to the
+  // next planet still needing collection (same walk as the post-send
+  // redirect). Nothing left → everything is collected.
+  if (mode === 'collect' && collectPlanetEmpty()) {
+    const target = fsRoutesStore.get().collectTarget;
+    const nextCp = target
+      ? findNextCollectPlanetCp(collectedOriginKeys(target), coordKey(target))
+      : null;
+    if (!nextCp) {
+      flash(zone, 'All done');
+      return;
+    }
+    location.href = bareFleetdispatchUrl(nextCp);
+    return;
+  }
   busy = true;
   setLabel(zone, 'Wait…');
   dimZone(zone, true);
@@ -499,8 +557,15 @@ const refresh = () => {
       if (!next) {
         setLabel(microZone, 'Done', undefined, 'all sent');
       } else {
-        const left = countRemainingMicroTargets(route.targets, inflight);
-        setLabel(microZone, 'Send', collectTargetLabel(next), `${left} left`);
+        const short = microShortfall(route);
+        if (short) {
+          // Not enough ships for the micro-fleet — say so persistently
+          // (and buildOrder blocks the tap with the same message).
+          setLabel(microZone, 'No ships', `${short.have}/${short.want}`, '(micro-fleet short)');
+        } else {
+          const left = countRemainingMicroTargets(route.targets, inflight);
+          setLabel(microZone, 'Send', collectTargetLabel(next), `${left} left`);
+        }
       }
     }
   }
@@ -512,6 +577,11 @@ const refresh = () => {
       setLabel(collectZone, 'Send All', undefined, '(hold to set target)');
     } else if (onF2Ready && pending && pending.mode === 'collect') {
       setLabel(collectZone, 'Send All', collectTargetLabel(t), '(tap to send)');
+    } else if (collectPlanetEmpty()) {
+      // Nothing to take here — propose the jump; the tap performs it
+      // (see handleZone). Mirrors the post-send "advance to the next
+      // planet" flow, just without a send.
+      setLabel(collectZone, 'Empty', '→ next planet', '(tap to jump)');
     } else {
       setLabel(collectZone, 'Send All', collectTargetLabel(t), '(hold to change)');
     }

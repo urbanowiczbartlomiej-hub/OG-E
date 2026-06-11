@@ -266,6 +266,18 @@ const availability = () => {
   return map;
 };
 
+/**
+ * Read-only ship availability from the latest fleetDispatcher snapshot —
+ * `null` until a snapshot has been captured (off the fleetdispatch page, or
+ * before the bridge fires), so callers can tell "unknown" apart from "the
+ * planet is empty". Lets a button paint a truthful "not enough ships" /
+ * "nothing here" state BEFORE the player taps, instead of discovering it
+ * via a failed select().
+ *
+ * @returns {Record<number, number> | null}
+ */
+export const shipAvailability = () => (snapshot ? availability() : null);
+
 // ─── the two-tap surface ───────────────────────────────────────────────────
 
 /**
