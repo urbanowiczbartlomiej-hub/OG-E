@@ -120,7 +120,12 @@ export const readHomePlanet = () => {
   // than the parent .smallplanet row. .planet-koords lives inside the
   // sibling .planetlink, so climb to the row first to find it reliably.
   const row = active.closest('.smallplanet') ?? active;
-  const coords = row.querySelector(GAME.PLANET_KOORDS)?.textContent?.trim();
+  // When the moon occupies its own .smallplanet row (no planet-<id>),
+  // that row has no .planet-koords. The planet row immediately precedes
+  // the moon row in the bar — fall back to it.
+  const coords =
+    row.querySelector(GAME.PLANET_KOORDS)?.textContent?.trim() ??
+    row.previousElementSibling?.querySelector(GAME.PLANET_KOORDS)?.textContent?.trim();
   const m = (coords || '').match(/\[(\d+):(\d+):(\d+)\]/);
   if (!m) return null;
   return { galaxy: parseInt(m[1], 10), system: parseInt(m[2], 10) };
