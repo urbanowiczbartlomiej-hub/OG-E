@@ -88,6 +88,24 @@ export const BUTTON_CHROME_CSS = [
   'opacity:.45;}',
   '.oge-host .zone:hover{filter:brightness(1.12) saturate(1.05);}',
 
+  // ── Split: stronger rim + top-edge thread (zones + divider visually compete
+  //    with the inherited 55% rim, so we raise it to 72% and brighten the
+  //    top-edge highlight to restore the same perceived "shiny thread" as single)
+  '.oge-host.split{',
+  'box-shadow:',
+  'inset 0 1px 0 rgba(255,255,255,.12),',
+  'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) 72%,transparent),',
+  '0 0 calc(24px * var(--glow)) -6px var(--rim),',
+  '0 18px 36px -12px rgba(0,0,0,.72),',
+  '0 4px 12px -2px rgba(0,0,0,.5);}',
+  '.oge-host.split:hover{',
+  'box-shadow:',
+  'inset 0 1px 0 rgba(255,255,255,.14),',
+  'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) 85%,transparent),',
+  '0 0 calc(30px * var(--glow)) -4px var(--rim),',
+  '0 22px 40px -12px rgba(0,0,0,.74),',
+  '0 4px 12px -2px rgba(0,0,0,.5);}',
+
   // ── Label container ─────────────────────────────────────────────────────
   '.oge-btn-label{display:flex;align-items:center;justify-content:center;',
   'width:100%;pointer-events:none;z-index:3;text-shadow:0 1px 2px rgba(0,0,6,.45);}',
