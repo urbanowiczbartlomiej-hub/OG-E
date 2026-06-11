@@ -567,19 +567,12 @@ export const render = (ctx) => {
         : { text: 'To galaxy', bg: BG_SCAN_IDLE };
 
   }
-  // idle + galaxy share the same Send paint: the next-candidate coords (or
-  // a bare "Send" when the DB has none). On a bare fleetdispatch the handler
-  // owns the Send label; this idle-branch paint is what the 1 Hz ticker
-  // shows there before the first tap.
+  // idle + galaxy: plain "Colonize" — coordinates and hold hint are shown
+  // only once the user has tapped (step 2), keeping the idle view minimal.
   return {
     send: ctx.candidate
-      ? {
-          text: 'Send',
-          subtext: `[${ctx.candidate.galaxy}:${ctx.candidate.system}:${ctx.candidate.position}]`,
-          hint: '(hold to skip)',
-          bg: BG_SEND_READY,
-        }
-      : { text: 'Send', bg: BG_SEND_IDLE },
+      ? { text: 'Colonize', bg: BG_SEND_READY }
+      : { text: 'Colonize', bg: BG_SEND_IDLE },
     scan: scanPaint,
   };
 };

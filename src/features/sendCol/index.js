@@ -213,8 +213,6 @@ let busy = false;
 let colReady = false;
 /** The candidate the armed send is aimed at (for the ready label). */
 let colTarget = /** @type {Coords | null} */ (null);
-/** Last candidate surfaced by derive() — used by onSendHold to know what to skip. */
-let lastDerivedCandidate = /** @type {Coords | null} */ (null);
 /** Epoch-ms when the current min-gap wait started (0 = not in wait). */
 let waitStartAt = 0;
 /** Total wait seconds measured at the start of the current min-gap cycle. */
@@ -310,7 +308,6 @@ const captureEnv = () => {
  */
 const refresh = () => {
   const ctx = derive(captureEnv());
-  lastDerivedCandidate = ctx.candidate ?? null;
   const result = render(ctx);
   // Scan half is always derive-driven. The Send half is owned by the
   // courier handler while a select()/dispatch() is in flight (busy) or once
@@ -779,9 +776,9 @@ const onColonizeSent = (e) => {
  */
 const onSendHold = () => {
   if (busy) return;
-  // When the courier is already armed (step 1 done), skip that specific target;
-  // otherwise skip whatever derive() is currently showing.
-  const c = colReady && colTarget ? colTarget : lastDerivedCandidate;
+  // Only available after step 1 — skip the armed target and reset to idle.
+  // In the idle state the hold does nothing (no visible hint, no known target).
+  const c = colReady && colTarget ? colTarget : null;
   if (!c) return;
 
   const key = /** @type {`${number}:${number}`} */ (`${c.galaxy}:${c.system}`);
@@ -1018,7 +1015,6 @@ export const _resetSendColForTest = () => {
   busy = false;
   colReady = false;
   colTarget = null;
-  lastDerivedCandidate = null;
   waitStartAt = 0;
   waitTotalSecs = 0;
 };
