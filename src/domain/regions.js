@@ -46,6 +46,30 @@
  */
 
 /**
+ * Neighbourhood stats computed over the full system range of a region
+ * (all systems start→end, wrap included). Players are de-duplicated by id
+ * so a player with two colonies in the region counts as one.
+ *
+ * @typedef {object} RegionScore
+ * @property {number} systemCount Total systems in the region span.
+ * @property {number} scanned    How many of those systems have any scan data.
+ * @property {number} occupied   Distinct players with `status: 'occupied'`
+ *   in the range. Active neighbours — shows how crowded the area is.
+ * @property {number} inactive   Distinct players in `inactive | long_inactive
+ *   | vacation` states. Potential farm targets for the new colonist.
+ * @property {number[]} ranks    Highscore rank of every player seen in range,
+ *   sorted ascending (rank 1 = #1 on highscore = strongest). Empty when no
+ *   rank data was collected — the field was added in v1.17.x so older scans
+ *   won't have it.
+ * @property {number} bandits    Players with negative honor
+ *   (`rankClass` starts with `"rank_bandit"`). A proxy for combat-active
+ *   neighbours (though it can reflect defence too — use as a soft signal).
+ * @property {number} honored    Players with positive honor (non-bandit
+ *   ranked class — likely `rank_general*` / `rank_starlord*`).
+ * @property {number} allianceCount Distinct alliance tags seen in range.
+ */
+
+/**
  * One reported region.
  *
  * @typedef {object} Region
@@ -59,6 +83,8 @@
  *   slot matches. `matched = length - gaps`.
  * @property {number} gaps     Tolerated non-matching systems inside the
  *   span (unscanned or wrong status). Always ≤ `maxGaps`.
+ * @property {RegionScore} [score] Neighbourhood stats, present when
+ *   `scans` were supplied to {@link findBestRegions}.
  */
 
 /**
@@ -76,6 +102,94 @@
  *   Systems per galaxy. Defaults to `499` (OGame's constant); exposed so
  *   tests can use small fixtures.
  */
+
+/**
+ * Enumerate the system numbers spanned by a region, honouring wrap-around.
+ *
+ * @param {Pick<Region,'start'|'end'>} region
+ * @param {number} galaxyMax
+ * @returns {number[]}
+ */
+const regionSystems = ({ start, end }, galaxyMax) => {
+  const out = [];
+  if (end >= start) {
+    for (let s = start; s <= end; s++) out.push(s);
+  } else {
+    for (let s = start; s <= galaxyMax; s++) out.push(s);
+    for (let s = 1; s <= end; s++) out.push(s);
+  }
+  return out;
+};
+
+/**
+ * Compute neighbourhood stats for a region by scanning the systems it spans.
+ * Pure: reads `scans` but never mutates it. Players are de-duplicated by id.
+ *
+ * @param {Pick<Region,'galaxy'|'start'|'end'>} region
+ * @param {GalaxyScans} scans
+ * @param {number} [galaxyMax]
+ * @returns {RegionScore}
+ */
+export const scoreRegion = (region, scans, galaxyMax = 499) => {
+  const systems = regionSystems(region, galaxyMax);
+  let scanned = 0;
+  /** @type {Map<number, string>} id → dominant status */
+  const playerStatus = new Map();
+  /** @type {Map<number, number>} id → rank */
+  const playerRank = new Map();
+  /** @type {Map<number, string>} id → rankClass */
+  const playerRankClass = new Map();
+  const alliances = new Set();
+
+  for (const sys of systems) {
+    const sysData = scans[`${region.galaxy}:${sys}`];
+    if (!sysData?.positions) continue;
+    scanned++;
+    for (const pos of Object.values(sysData.positions)) {
+      const p = pos.player;
+      if (!p) continue;
+      // First-seen status wins for the player. occupied overrides inactive
+      // (the player may have colonies in both states in different systems).
+      if (!playerStatus.has(p.id) || pos.status === 'occupied') {
+        playerStatus.set(p.id, pos.status);
+      }
+      if (typeof p.rank === 'number' && !playerRank.has(p.id)) {
+        playerRank.set(p.id, p.rank);
+      }
+      if (typeof p.rankClass === 'string' && !playerRankClass.has(p.id)) {
+        playerRankClass.set(p.id, p.rankClass);
+      }
+      if (p.ally) alliances.add(p.ally);
+    }
+  }
+
+  let occupied = 0;
+  let inactive = 0;
+  for (const st of playerStatus.values()) {
+    if (st === 'occupied') occupied++;
+    else if (st === 'inactive' || st === 'long_inactive' || st === 'vacation') inactive++;
+  }
+
+  const ranks = [...playerRank.values()].sort((a, b) => a - b);
+
+  let bandits = 0;
+  let honored = 0;
+  for (const rc of playerRankClass.values()) {
+    if (rc.startsWith('rank_bandit')) bandits++;
+    else honored++;
+  }
+
+  return {
+    systemCount: systems.length,
+    scanned,
+    occupied,
+    inactive,
+    ranks,
+    bandits,
+    honored,
+    allianceCount: alliances.size,
+  };
+};
 
 /**
  * Find the best (longest, then fewest-gaps) region per galaxy.
@@ -150,14 +264,17 @@ export const findBestRegions = (scans, opts) => {
 
     if (best) {
       const endIdx = best.startIdx + best.matched - 1;
-      results.push({
+      /** @type {Region} */
+      const region = {
         galaxy,
         start: ((m[best.startIdx] - 1) % galaxyMax) + 1,
         end: ((m[endIdx] - 1) % galaxyMax) + 1,
         length: best.span,
         matched: best.matched,
         gaps: best.gaps,
-      });
+      };
+      region.score = scoreRegion(region, scans, galaxyMax);
+      results.push(region);
     }
   }
 

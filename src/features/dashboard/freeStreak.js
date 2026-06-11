@@ -4,7 +4,7 @@
 // lives INSIDE the Galaxy Observations tab (it was a tab of its own up
 // to 1.17.0; folded in so the mobile tab bar fits one line). Shows a
 // top-N table of the best confirmed-empty regions per galaxy and a
-// record-line summary.
+// record-line summary with neighbourhood intel.
 //
 // Pure DOM module. Every node is built with `document.createElement`,
 // classes match the rules in `dashboard.html`, and no chrome.storage
@@ -27,7 +27,15 @@
 // streak). Defaults — single slot 15, zero gaps — reproduce the original
 // Free_15_position behaviour exactly, so the simple view stays simple.
 //
-// @see ../../domain/regions.js — findBestRegions (pure analyzer)
+// # Neighbourhood scoring (post-1.17.x feedback)
+//
+// `findBestRegions` now attaches a `score` object to every region that
+// summarises the players seen in the range: active/inactive counts, rank
+// distribution, bandit / honour flags, alliance presence. The top region's
+// record card renders this as a line of stats plus a pixel-strip showing
+// each system in the range coloured by its dominant status.
+//
+// @see ../../domain/regions.js — findBestRegions / scoreRegion (pure)
 
 import { findBestRegions } from '../../domain/regions.js';
 
@@ -45,10 +53,63 @@ import { findBestRegions } from '../../domain/regions.js';
 const TOP_N = 20;
 
 /**
+ * Map a system's position map to a background colour for the strip.
+ * Priority: mine > occupied > inactive/long_inactive > vacation > unscanned >
+ * empty. Called once per system cell.
+ *
+ * @param {Region['score']} _score unused (reserved for future per-cell rank tint)
+ * @param {import('../../state/scans.js').SystemScan['positions'] | undefined} positions
+ * @returns {string} CSS colour string.
+ */
+const systemColor = (_score, positions) => {
+  if (!positions) return '#1e1e1e'; // unscanned — dark neutral
+  const statuses = Object.values(positions).map((p) => p.status);
+  if (statuses.includes('mine')) return '#4466cc';           // our colony — blue
+  if (statuses.includes('occupied')) return '#b83010';       // active player — red
+  if (statuses.some((s) => s === 'inactive' || s === 'long_inactive')) return '#775500'; // dormant — amber
+  if (statuses.includes('vacation')) return '#1a4477';       // vacation — navy
+  return '#0a4420';                                          // empty/abandoned — dark green
+};
+
+/**
+ * Build a pixel-strip `<div>` visualising every system in the region.
+ * One cell per system, coloured by dominant status. Long regions (100+
+ * systems) use 1px-min cells so the strip never overflows its container.
+ *
+ * @param {Region} region
+ * @param {GalaxyScans} scans
+ * @returns {HTMLElement}
+ */
+const buildStrip = (region, scans) => {
+  const el = document.createElement('div');
+  el.className = 'region-strip';
+
+  const galaxyMax = 499;
+  const systems = [];
+  if (region.end >= region.start) {
+    for (let s = region.start; s <= region.end; s++) systems.push(s);
+  } else {
+    for (let s = region.start; s <= galaxyMax; s++) systems.push(s);
+    for (let s = 1; s <= region.end; s++) systems.push(s);
+  }
+
+  for (const sys of systems) {
+    const sysData = scans[`${region.galaxy}:${sys}`];
+    const cell = document.createElement('span');
+    cell.className = 'strip-cell';
+    cell.style.backgroundColor = systemColor(region.score, sysData?.positions);
+    cell.title = `S${sys}`;
+    el.appendChild(cell);
+  }
+
+  return el;
+};
+
+/**
  * Build a `<table class="streak-table">` with one row per region up to
- * `TOP_N`. The table is structurally simple — header + tbody — so we
- * skip a render diff and rebuild from scratch every call. With at
- * most {@link TOP_N} rows this is comfortably under a millisecond.
+ * `TOP_N`. The "Nbrs" column shows the total player count (active +
+ * inactive) derived from the region's neighbourhood score — a quick
+ * signal of how crowded the area is. '?' means no scan data in range.
  *
  * @param {Region[]} results
  * @returns {HTMLTableElement}
@@ -59,9 +120,19 @@ const buildTable = (results) => {
 
   const thead = document.createElement('thead');
   const headRow = document.createElement('tr');
-  for (const label of ['#', 'Galaxy', 'Start', 'End', 'Length', 'Free', 'Gaps']) {
+  for (const [label, title] of [
+    ['#', ''],
+    ['Galaxy', ''],
+    ['Start', ''],
+    ['End', ''],
+    ['Length', 'Total systems spanned (including gap systems)'],
+    ['Free', 'Systems where every requested slot is confirmed empty'],
+    ['Gaps', 'Non-matching systems tolerated inside the region'],
+    ['Nbrs', 'Players seen in range (active + dormant) — neighbourhood crowdedness'],
+  ]) {
     const th = document.createElement('th');
     th.textContent = label;
+    if (title) th.title = title;
     if (label !== 'Galaxy') th.style.textAlign = 'right';
     headRow.appendChild(th);
   }
@@ -69,23 +140,26 @@ const buildTable = (results) => {
   table.appendChild(thead);
 
   const tbody = document.createElement('tbody');
-  const top = results.slice(0, TOP_N);
-  top.forEach((r, i) => {
+  results.slice(0, TOP_N).forEach((r, i) => {
     const tr = document.createElement('tr');
-    /** @type {[string, boolean][]} */
+    const s = r.score;
+    const nbrs = s ? String(s.occupied + s.inactive) : '?';
+    /** @type {[string, boolean, string][]} */
     const cells = [
-      [String(i + 1), true],
-      [String(r.galaxy), false],
-      [String(r.start), true],
-      [String(r.end), true],
-      [String(r.length), true],
-      [String(r.matched), true],
-      [r.gaps ? String(r.gaps) : '—', true],
+      [String(i + 1), true, ''],
+      [String(r.galaxy), false, ''],
+      [String(r.start), true, ''],
+      [String(r.end), true, ''],
+      [String(r.length), true, ''],
+      [String(r.matched), true, ''],
+      [r.gaps ? String(r.gaps) : '—', true, ''],
+      [nbrs, true, s ? `${s.occupied} active, ${s.inactive} inactive (${s.scanned}/${s.systemCount} scanned)` : 'No scan data in range'],
     ];
-    for (const [text, isNum] of cells) {
+    for (const [text, isNum, tip] of cells) {
       const td = document.createElement('td');
       td.textContent = text;
       if (isNum) td.className = 'num';
+      if (tip) td.title = tip;
       tr.appendChild(td);
     }
     tbody.appendChild(tr);
@@ -97,15 +171,15 @@ const buildTable = (results) => {
 
 /**
  * Build the "record" summary card shown below the table — the single
- * best region across all galaxies, with its coordinates, span and
- * blemish count. Returned as a `<div>` ready to be appended; not
- * appended when `results` is empty (the caller paints an empty-state
- * message instead).
+ * best region across all galaxies, with its coordinates, span, blemish
+ * count, neighbourhood stats and a pixel strip of the range. Not
+ * appended when `results` is empty.
  *
  * @param {Region} record
+ * @param {GalaxyScans} scans
  * @returns {HTMLElement}
  */
-const buildRecord = (record) => {
+const buildRecord = (record, scans) => {
   const el = document.createElement('div');
   el.className = 'streak-record';
 
@@ -126,7 +200,35 @@ const buildRecord = (record) => {
     `Galaxy ${record.galaxy}, system ${record.start} → ${record.end}`
     + (record.gaps ? ` (${record.matched} free, ${record.gaps} gap${record.gaps === 1 ? '' : 's'})` : '')
     + (record.end < record.start ? ' (wraps across the 499 → 1 boundary)' : '');
+
   el.append(labelLine, detailLine);
+
+  const s = record.score;
+  if (s) {
+    const scoreLine = document.createElement('div');
+    scoreLine.className = 'streak-score';
+    const coverage = s.scanned === s.systemCount ? `all ${s.systemCount}` : `${s.scanned}/${s.systemCount}`;
+    const parts = [`${coverage} sys scanned`];
+    if (s.occupied || s.inactive) {
+      parts.push(`${s.occupied} active · ${s.inactive} dormant`);
+    }
+    if (s.allianceCount) {
+      parts.push(`${s.allianceCount} alliance${s.allianceCount > 1 ? 's' : ''}`);
+    }
+    if (s.bandits || s.honored) {
+      const honor = [];
+      if (s.bandits) honor.push(`${s.bandits} bandit${s.bandits > 1 ? 's' : ''}`);
+      if (s.honored) honor.push(`${s.honored} honored`);
+      parts.push(honor.join(', '));
+    }
+    if (s.ranks.length) {
+      parts.push(`top neighbour rank #${s.ranks[0]}`);
+    }
+    scoreLine.textContent = parts.join(' · ');
+    el.appendChild(scoreLine);
+
+    el.appendChild(buildStrip(record, scans));
+  }
 
   return el;
 };
@@ -183,7 +285,5 @@ export const renderFreeRegions = ({ containerEl, countInfoEl, scans, positions, 
   }
 
   containerEl.appendChild(buildTable(results));
-  // The record is just the first item of the already-sorted list —
-  // results are sorted best-first in findBestRegions.
-  containerEl.appendChild(buildRecord(results[0]));
+  containerEl.appendChild(buildRecord(results[0], scans));
 };
