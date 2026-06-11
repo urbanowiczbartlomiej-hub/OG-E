@@ -539,8 +539,12 @@ stref, by efekt blasku był jak w 1-zone.
 **Dziennik:**
 - 2026-06-11 (sesja 2): Dodano reguły CSS `box-shadow` override dla
   `.oge-host.split` (idle: rim 72%, top-edge .12) i `.oge-host.split:hover`
-  (rim 85%, top-edge .14). Split teraz dopasowuje postrzeganą jasność
-  krawędzi do single. Commit `bf25ab6`. Status: REVIEW.
+  (rim 85%, top-edge .14). Commit `bf25ab6`.
+- 2026-06-11 (sesja 2, cd.): Po analizie zidentyfikowano głębszą przyczynę —
+  gradienty stref zabarwiają krawędź wewnętrzną, redukując kontrast nitki.
+  Dodano ciemny inset-backing (`inset 0 0 0 3px rgba(0,0,0,.45)`) tuż za
+  nitką, symulując ciemne tło jakie single-zone dostaje naturalnie.
+  Commit `5409d43`. Status: REVIEW.
 
 ---
 
@@ -560,4 +564,11 @@ stref, by efekt blasku był jak w 1-zone.
   (animacja handlarza), T12 (blask krawędzi split), T1 (klawiatura DAILY RUN)
   — wszystkie zaimplementowane i w REVIEW. T1: rzeczywistą przyczyną był
   `fireInput()` w `fleetExecutor.js` wywołujący `input.focus()` na mobile.
-  Następna sesja: T7 lub T4 (średnie, bez blokad).
+- **2026-06-11 (sesja 2, cd.):** Zmiany poza tablicą zadań (ad-hoc podczas
+  przeglądu wizualnego): T12 wzmocnione dark-inset-backing (`5409d43`);
+  etykieta ekspedycji `'Send'` → `'Explore'` (`f6302cd`); etykieta
+  kolonizacji `'Send'` → `'Colonize'`, idle uproszczony do 1 linii,
+  hold-to-skip przeniesiony do kroku 2 (`6014828`); glify DNA obrócony 45°
+  (lewy-dół → prawy-góry) i oba glify (DNA + kometa) powiększone ×1.15
+  (`1cb88ea`). Wszystkie zmiany na `claude/project-setup-branch-hq8sgn`.
+  **Następna sesja: T7 lub T4** (średnie, bez blokad danych).
