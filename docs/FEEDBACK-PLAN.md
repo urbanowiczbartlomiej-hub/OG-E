@@ -45,7 +45,7 @@
 | T1  | Klawiatura wyskakuje na DAILY RUN przy przejściu na fleet2 | łatwe | REVIEW |
 | T2  | Płynniejsze podświetlanie handlarza (jak Event) | łatwe | REVIEW |
 | T3  | Tytuł sekcji „Currently queued” dla ekspedycji w Reminders | łatwe | REVIEW |
-| T4  | Anulowanie remaindera FS na eventList (stan, 3 min, odznaczanie) | średnie | TODO |
+| T4  | Anulowanie remaindera FS na eventList (stan, 3 min, odznaczanie) | średnie | REVIEW |
 | T5  | Własność przejścia fleet1→fleet2 po XHR checkTarget | trudne | TODO |
 | T6  | Free Positions → mapa sąsiedztwa / regiony zasiedlenia | trudne | TODO |
 | T7  | DAILY RUN: za mało statków → komunikat/blokada; Send All pusta planeta → redirect | średnie | TODO |
@@ -183,7 +183,7 @@ typu „Expedition waves” (do ustalenia dokładny tekst) przed renderowaniem f
 ---
 
 ### T4 — Anulowanie remaindera FS na eventList (stan, 3 min, odznaczanie)
-**Status:** TODO · **Trudność:** średnie
+**Status:** REVIEW · **Trudność:** średnie
 
 **Feedback (wiernie):** „Poprawić anulowanie remainders dla FS na eventList.
 Komunikat mówi że jak jest 2 minuty przed przypomnieniem to można je anulować,
@@ -228,7 +228,24 @@ anulowania remaindera dla FS z 2 na 3 minut.”
 
 **Dane:** raczej kod; ewentualnie potwierdzenie zachowania w grze (REVIEW).
 
-**Dziennik:** —
+**Dziennik:**
+- 2026-06-11 (sesja 3): Zaimplementowano wymagania 1, 2, 4. Diagnoza wym. 1:
+  stan „cancellable" i „passive" miały IDENTYCZNE klasy CSS (`fs`) — różniły
+  się tylko tooltipem i kursorem, stąd „przycisk nie zmienia stanu" po
+  kliknięciu. Dodano klasę `fs-cancel` (jaśniejszy badge + puls + ✕) oraz
+  dokładny timer (`fsFlipTimer`) re-renderujący w momencie najbliższej
+  tranzycji (otwarcie okna / odpalenie slotu) — wariant „timer od góry
+  znany" zamiast 2 Hz. Okno: `FS_CANCEL_WINDOW_SEC` 120→180 s, hinty liczone
+  z tej stałej. Wym. 2: nowy pure-helper `hasUpcomingFsSlot` — wyczerpana
+  seria (wszystko anulowane/odpalone) zwalnia wiersz do trybu ad-hoc.
+  **Wym. 3 (garda) ŚWIADOMIE POMINIĘTE** — dwa powody: (a) re-klasyfikacja
+  jest już niemożliwa: `reconcileFleetSaves` trzyma anulowany wpis jako lock
+  z pustą serią póki flota leci (udokumentowano to jako inwariant w
+  docstringu); (b) dosłowna garda „blokuj gdy pozostały lot ≥ minFlightSec"
+  przy domyślnej konfiguracji (slot -10 min, okno 3 min ⇒ pozostały lot
+  600–780 s ≥ 600 s) blokowałaby anulowanie ZAWSZE, zabijając całą funkcję.
+  Intencja gardy (brak re-detekcji po anulowaniu) jest spełniona przez lock.
+  Do weryfikacji w grze: puls badge w oknie, anulowanie, powrót do ad-hoc.
 
 ---
 
@@ -572,3 +589,10 @@ stref, by efekt blasku był jak w 1-zone.
   (lewy-dół → prawy-góry) i oba glify (DNA + kometa) powiększone ×1.15
   (`1cb88ea`). Wszystkie zmiany na `claude/project-setup-branch-hq8sgn`.
   **Następna sesja: T7 lub T4** (średnie, bez blokad danych).
+- **2026-06-11 (sesja 3):** Branch roboczy przeniesiony na
+  `claude/project-setup-feedback-gv66h4` (fast-forward z poprzedniego, autorzy
+  commitów znormalizowani do `Claude <noreply@anthropic.com>`). T4
+  zaimplementowane → REVIEW (okno 3 min, widoczny stan cancellable z pulsem
+  i ✕, dokładny timer tranzycji, zwolnienie wiersza do ad-hoc po wyczerpaniu
+  serii; garda z wym. 3 świadomie zastąpiona lockiem — szczegóły w dzienniku
+  T4). **Następna sesja: T7** (średnie, bez blokad danych).
