@@ -106,6 +106,26 @@ const buildStrip = (region, scans) => {
 };
 
 /**
+ * Build the tooltip text for the "Nbrs" table cell.
+ * Shows active/dormant split plus the highest bandit tier as a
+ * quick danger indicator — a single bandit3 is more alarming than
+ * three bandit1s, so the max level is surfaced explicitly.
+ *
+ * @param {import('../../domain/regions.js').RegionScore} s
+ * @returns {string}
+ */
+const buildNbrsTip = (s) => {
+  const parts = [`${s.occupied} active, ${s.inactive} dormant (${s.scanned}/${s.systemCount} scanned)`];
+  if (s.bandits) {
+    parts.push(`⚠ ${s.bandits} bandit${s.bandits > 1 ? 's' : ''}, max tier ${s.banditMaxLevel}/3`);
+  }
+  if (s.honored) {
+    parts.push(`${s.honored} honored, max tier ${s.honoredMaxLevel}/3`);
+  }
+  return parts.join('\n');
+};
+
+/**
  * Build a `<table class="streak-table">` with one row per region up to
  * `TOP_N`. The "Nbrs" column shows the total player count (active +
  * inactive) derived from the region's neighbourhood score — a quick
@@ -153,7 +173,7 @@ const buildTable = (results) => {
       [String(r.length), true, ''],
       [String(r.matched), true, ''],
       [r.gaps ? String(r.gaps) : '—', true, ''],
-      [nbrs, true, s ? `${s.occupied} active, ${s.inactive} inactive (${s.scanned}/${s.systemCount} scanned)` : 'No scan data in range'],
+      [nbrs, true, s ? buildNbrsTip(s) : 'No scan data in range'],
     ];
     for (const [text, isNum, tip] of cells) {
       const td = document.createElement('td');
@@ -217,8 +237,14 @@ const buildRecord = (record, scans) => {
     }
     if (s.bandits || s.honored) {
       const honor = [];
-      if (s.bandits) honor.push(`${s.bandits} bandit${s.bandits > 1 ? 's' : ''}`);
-      if (s.honored) honor.push(`${s.honored} honored`);
+      if (s.bandits) {
+        const lvl = '★'.repeat(s.banditMaxLevel);
+        honor.push(`${s.bandits}× bandit${s.bandits > 1 ? 's' : ''} ${lvl}`);
+      }
+      if (s.honored) {
+        const lvl = '★'.repeat(s.honoredMaxLevel);
+        honor.push(`${s.honored}× honored ${lvl}`);
+      }
       parts.push(honor.join(', '));
     }
     if (s.ranks.length) {

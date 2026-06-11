@@ -62,10 +62,19 @@
  *   rank data was collected — the field was added in v1.17.x so older scans
  *   won't have it.
  * @property {number} bandits    Players with negative honor
- *   (`rankClass` starts with `"rank_bandit"`). A proxy for combat-active
- *   neighbours (though it can reflect defence too — use as a soft signal).
+ *   (`rankClass` starts with `"rank_bandit"`). Falling into bandit1 can
+ *   happen by accident; bandit3 is top-10-server-level aggressor who very
+ *   consistently targets weaker players — treat as a strong danger signal.
+ * @property {number} banditMaxLevel Highest bandit tier seen in range (1–3;
+ *   0 when `bandits === 0`). The tier is the trailing digit of `rankClass`
+ *   (`"rank_bandit3"` → 3). Use this to distinguish an accidental bandit1
+ *   from a true top-tier aggressor.
  * @property {number} honored    Players with positive honor (non-bandit
- *   ranked class — likely `rank_general*` / `rank_starlord*`).
+ *   ranked — likely `rank_general*` / `rank_starlord*`). Also mostly
+ *   combat-active, but they prefer stronger targets — lower danger for a
+ *   new, weak colonist than bandits of the same level.
+ * @property {number} honoredMaxLevel Highest honored tier (1–3; 0 when
+ *   `honored === 0`). Mirrors `banditMaxLevel`.
  * @property {number} allianceCount Distinct alliance tags seen in range.
  */
 
@@ -173,10 +182,20 @@ export const scoreRegion = (region, scans, galaxyMax = 499) => {
   const ranks = [...playerRank.values()].sort((a, b) => a - b);
 
   let bandits = 0;
+  let banditMaxLevel = 0;
   let honored = 0;
+  let honoredMaxLevel = 0;
   for (const rc of playerRankClass.values()) {
-    if (rc.startsWith('rank_bandit')) bandits++;
-    else honored++;
+    // Tier is the trailing digit: "rank_bandit3" → 3, "rank_starlord2" → 2.
+    // Falls back to 1 when the class has no trailing digit (unknown variant).
+    const tier = parseInt(rc.slice(-1), 10) || 1;
+    if (rc.startsWith('rank_bandit')) {
+      bandits++;
+      if (tier > banditMaxLevel) banditMaxLevel = tier;
+    } else {
+      honored++;
+      if (tier > honoredMaxLevel) honoredMaxLevel = tier;
+    }
   }
 
   return {
@@ -186,7 +205,9 @@ export const scoreRegion = (region, scans, galaxyMax = 499) => {
     inactive,
     ranks,
     bandits,
+    banditMaxLevel,
     honored,
+    honoredMaxLevel,
     allianceCount: alliances.size,
   };
 };
