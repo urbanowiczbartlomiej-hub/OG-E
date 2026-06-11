@@ -52,9 +52,13 @@ import { GAME } from '../lib/gameDom.js';
  * @returns {void}
  */
 const fireInput = (sel, value) => {
+  // Skip focus() on touch-primary devices — focusing a game <input> would
+  // pop the virtual keyboard. The keyboard events are dispatched directly on
+  // the element so AGR picks them up without the element being focused first.
+  const isTouchPrimary = window.matchMedia('(pointer: coarse)').matches;
   for (const el of document.querySelectorAll(sel)) {
     const input = /** @type {HTMLInputElement} */ (el);
-    if (typeof input.focus === 'function') input.focus();
+    if (!isTouchPrimary && typeof input.focus === 'function') input.focus();
     input.value = String(value);
     input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true }));
     input.dispatchEvent(new Event('input', { bubbles: true }));
