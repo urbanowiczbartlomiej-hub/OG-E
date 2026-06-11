@@ -19,7 +19,7 @@
 
 /** Expedition — comet with a tail and two sparks (sendExp). */
 export const COMET_GLYPH = [
-  '<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">',
+  '<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" transform="translate(32,32) scale(1.15) translate(-32,-32)">',
   '<line x1="35" y1="29" x2="10" y2="54"/>',
   '<line x1="40" y1="35" x2="24" y2="51"/>',
   '<line x1="29" y1="24" x2="17" y2="36"/>',
@@ -54,7 +54,7 @@ export const PLANET_ARROW_GLYPH = [
 
 /** Lifeforms — a DNA double helix with four rungs (sendLifeform). */
 export const DNA_GLYPH = [
-  '<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">',
+  '<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" transform="translate(32,32) rotate(45) scale(1.15) translate(-32,-32)">',
   '<line x1="25" y1="14" x2="39" y2="14"/>',
   '<line x1="29" y1="22" x2="35" y2="22"/>',
   '<line x1="29" y1="42" x2="35" y2="42"/>',
