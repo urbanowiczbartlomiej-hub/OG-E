@@ -88,13 +88,17 @@ export const BUTTON_CHROME_CSS = [
   'opacity:.45;}',
   '.oge-host .zone:hover{filter:brightness(1.12) saturate(1.05);}',
 
-  // ── Split: stronger rim + top-edge thread (zones + divider visually compete
-  //    with the inherited 55% rim, so we raise it to 72% and brighten the
-  //    top-edge highlight to restore the same perceived "shiny thread" as single)
+  // ── Split: stronger rim + dark inset backing to restore thread contrast
+  //    Zone gradients colour the area just inside the circular edge, reducing
+  //    contrast between the thread and its inner background. A dark inset at
+  //    3px sits behind the 1.5px thread, creating a ~1.5px dark strip that
+  //    decouples the thread from the zone gradient — matching the contrast
+  //    a single-zone button gets naturally from its near-black edge fill.
   '.oge-host.split{',
   'box-shadow:',
   'inset 0 1px 0 rgba(255,255,255,.12),',
   'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) 72%,transparent),',
+  'inset 0 0 0 3px rgba(0,0,0,.45),',
   '0 0 calc(24px * var(--glow)) -6px var(--rim),',
   '0 18px 36px -12px rgba(0,0,0,.72),',
   '0 4px 12px -2px rgba(0,0,0,.5);}',
@@ -102,6 +106,7 @@ export const BUTTON_CHROME_CSS = [
   'box-shadow:',
   'inset 0 1px 0 rgba(255,255,255,.14),',
   'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) 85%,transparent),',
+  'inset 0 0 0 3px rgba(0,0,0,.40),',
   '0 0 calc(30px * var(--glow)) -4px var(--rim),',
   '0 22px 40px -12px rgba(0,0,0,.74),',
   '0 4px 12px -2px rgba(0,0,0,.5);}',
