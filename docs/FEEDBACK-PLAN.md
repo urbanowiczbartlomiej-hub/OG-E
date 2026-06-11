@@ -393,14 +393,18 @@ koordynaty z planetą — pozycja w systemie jest ta sama).
    ciała).
 3. Sprawdzić, czy ten sam problem nie dotyczy skanowania (przycisk skanu).
 
-**Dane:** pomocny byłby **dump HTML, gdy gracz stoi na księżycu** (planet bar /
-koordynaty / lista ciał) — żeby potwierdzić, co odczytujemy. ⛔ częściowo.
+**Dane:** dump HTML paska planet dostarczony przez użytkownika — ⛔ ZDJĘTE. Struktura
+potwierdzona: na księżycu `.smallplanet` dostaje klasę `hightlightMoon` (nie
+`hightlightPlanet`), a `.planet-koords` jest w tym samym wierszu.
 
 **Dziennik:**
-- 2026-06-11: Zaimplementowano fix w `src/features/sendCol/domHelpers.js`.
-  `readHomePlanet()` teraz szuka `.planet-koords` w `previousElementSibling`,
-  gdy własny wiersz `.smallplanet` księżyca jej nie zawiera. Commit `91f666a`.
-  Status: **REVIEW** — wymaga potwierdzenia w grze na telefonie.
+- 2026-06-11: Błędny fix (commit `91f666a`) oparty na starym, niepoprawnym
+  komentarzu w kodzie — zakładał oddzielny wiersz księżyca bez `.planet-koords`.
+- 2026-06-11: Dostarczono dump HTML z gry. Rzeczywista przyczyna: na stronach
+  księżyca OGame ustawia `hightlightMoon` zamiast `hightlightPlanet` na elemencie
+  `.smallplanet` — `GAME.ACTIVE_PLANET` zwracał `null`, stąd `home=null` w
+  `derive()`. Fix: fallback `#planetList .hightlightMoon` w `readHomePlanet()`.
+  Commit `3e289a8`. Status: **REVIEW** — wymaga weryfikacji w grze na księżycu.
 
 ---
 
@@ -527,6 +531,11 @@ stref, by efekt blasku był jak w 1-zone.
 
 > Krótkie wpisy „co zrobiono w tej sesji”, żeby kolejna szybko złapała kontekst.
 
-- **2026-06-11 (sesja startowa):** Zmergowano `v1.17.0` do `main` (fast-forward),
+- **2026-06-11 (sesja 1):** Zmergowano `v1.17.0` do `main` (fast-forward),
   przebazowano branch roboczy na `main` (wersja 1.17.0). Zebrano i skatalogowano
-  12 zadań z feedbacku do tego pliku. Nie zaczęto jeszcze implementacji.
+  12 zadań z feedbacku do tego pliku.
+- **2026-06-11 (sesja 1, cd.):** T8 — bug „Vlad" na księżycu. Pierwsze podejście
+  błędne (zły model DOM). Po dostarczeniu zrzutu HTML z DevTools zidentyfikowano
+  rzeczywistą przyczynę: `hightlightMoon` zamiast `hightlightPlanet`. Poprawiony
+  fix w `src/features/sendCol/domHelpers.js`, commit `3e289a8`. T8 → REVIEW.
+  Kolejne zadanie: zacząć od T3 (łatwe) w nowej sesji.
