@@ -114,18 +114,15 @@ export const getColonizeWaitTime = () => {
  * @returns {{ galaxy: number, system: number } | null}
  */
 export const readHomePlanet = () => {
-  const active = document.querySelector(GAME.ACTIVE_PLANET);
-  if (!active) return null;
-  // On moon pages OGame puts .hightlightPlanet on the moonlink <a> rather
-  // than the parent .smallplanet row. .planet-koords lives inside the
-  // sibling .planetlink, so climb to the row first to find it reliably.
-  const row = active.closest('.smallplanet') ?? active;
-  // When the moon occupies its own .smallplanet row (no planet-<id>),
-  // that row has no .planet-koords. The planet row immediately precedes
-  // the moon row in the bar — fall back to it.
-  const coords =
-    row.querySelector(GAME.PLANET_KOORDS)?.textContent?.trim() ??
-    row.previousElementSibling?.querySelector(GAME.PLANET_KOORDS)?.textContent?.trim();
+  // On planet pages .hightlightPlanet is on the .smallplanet row.
+  // On moon pages .hightlightMoon is on the .smallplanet row instead —
+  // .hightlightPlanet is absent entirely (the moonlink only gets `active`).
+  // Both cases keep .planet-koords inside the same .smallplanet row.
+  const row =
+    document.querySelector(GAME.ACTIVE_PLANET) ??
+    document.querySelector('#planetList .hightlightMoon');
+  if (!row) return null;
+  const coords = row.querySelector(GAME.PLANET_KOORDS)?.textContent?.trim();
   const m = (coords || '').match(/\[(\d+):(\d+):(\d+)\]/);
   if (!m) return null;
   return { galaxy: parseInt(m[1], 10), system: parseInt(m[2], 10) };
