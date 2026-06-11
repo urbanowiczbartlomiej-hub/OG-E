@@ -77,13 +77,18 @@
  */
 
 /**
- * A minimal player projection. We deliberately keep this to the two
+ * A minimal player projection. We deliberately keep this to the few
  * fields every consumer needs; richer metadata lives in a separate
  * player cache, not in per-slot scan results.
  *
  * @typedef {object} PositionPlayer
  * @property {number} id   Game-assigned `playerId`.
  * @property {string} name Game-shown `playerName` (display name).
+ * @property {number} [rank] Player's highscore rank AT SCAN TIME, when the
+ *   galaxy payload carries it (see {@link readPlayerRank}). Feeds the
+ *   settlement-region / neighbourhood analysis (low-rank regions = safe
+ *   colonising, high-rank neighbours = "w paszczy lwa"). Omitted when the
+ *   payload doesn't expose it — consumers must null-check.
  */
 
 /**
@@ -130,10 +135,34 @@
  *   isInactive?: boolean,
  *   isLongInactive?: boolean,
  *   allyId?: number,
- * }} [player] Owner metadata. Absent on empty / abandoned slots.
+ *   highscorePositionPlayer?: number,
+ *   highscorePosition?: number,
+ *   rank?: number,
+ * }} [player] Owner metadata. Absent on empty / abandoned slots. The
+ *   three rank-ish fields are CANDIDATES — OGame has renamed this field
+ *   across versions, so {@link readPlayerRank} probes them in order and
+ *   takes the first finite positive value.
  * @property {unknown} [debris] System-level debris hint (the game
  *   sometimes attaches debris at the entry level rather than per-planet).
  */
+
+/**
+ * Probe the galaxy payload's player block for a highscore rank. OGame's
+ * field name has varied across versions (`highscorePositionPlayer` in
+ * current v9+ payloads; older/alternative spellings kept as fallbacks),
+ * so we take the first finite positive candidate. Returns `null` when
+ * none is present — rank collection is best-effort and a payload without
+ * it must not affect classification.
+ *
+ * @param {NonNullable<GalaxyContentEntry['player']>} player
+ * @returns {number | null}
+ */
+const readPlayerRank = (player) => {
+  for (const v of [player.highscorePositionPlayer, player.highscorePosition, player.rank]) {
+    if (typeof v === 'number' && Number.isFinite(v) && v > 0) return v;
+  }
+  return null;
+};
 
 /**
  * Classify one `galaxyContent` entry into our {@link Position} shape.
@@ -262,10 +291,18 @@ export const classifyPosition = (entry, ownPlayerId) => {
     else if (player.isInactive) status = 'inactive';
     else status = 'occupied';
 
+    const rank = readPlayerRank(player);
     /** @type {Position} */
     const out = {
       status,
-      player: { id: player.playerId, name: player.playerName },
+      player: {
+        id: player.playerId,
+        name: player.playerName,
+        // Rank rides along when the payload exposes it — the raw material
+        // for the neighbourhood-map analysis (T6b). Omitted otherwise so
+        // the stored shape stays minimal.
+        ...(rank !== null ? { rank } : {}),
+      },
     };
     if (hasAnyFlag) out.flags = flags;
     return out;
