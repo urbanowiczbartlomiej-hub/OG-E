@@ -178,15 +178,15 @@ const CSS = `
  * (the menu button is small and sits in a busy sidebar, so a softer frame
  * reads better). The tiles keep the stronger pulse. */
 @keyframes oge-trader-menu-yellow-bg {
-  0%, 100% { box-shadow: inset 0 0 3px rgba(255, 235, 80, 0.15); }
-  50% {
+  0%, 70%, 100% { box-shadow: inset 0 0 3px rgba(255, 235, 80, 0.15); }
+  85% {
     box-shadow: inset 0 0 7px rgba(255, 230, 70, 0.40),
                 0 0 4px rgba(255, 215, 50, 0.20);
   }
 }
 @keyframes oge-trader-menu-red-bg {
-  0%, 100% { box-shadow: inset 0 0 4px rgba(255, 60, 40, 0.25); }
-  50% {
+  0%, 70%, 100% { box-shadow: inset 0 0 4px rgba(255, 60, 40, 0.25); }
+  85% {
     box-shadow: inset 0 0 10px rgba(255, 70, 50, 0.55),
                 0 0 7px rgba(255, 40, 20, 0.30);
   }
@@ -220,8 +220,8 @@ const CSS = `
  * shows a STEADY glow — mirroring eventMenuHighlight. A running pulse
  * would smother OGame's own hover/selected styling; a steady, softer glow
  * lets that native state read through while still marking the item. */
-.${MENU_CLASS}.${YELLOW_CLASS} { animation-name: oge-trader-menu-yellow-bg; }
-.${MENU_CLASS}.${RED_CLASS} { animation-name: oge-trader-menu-red-bg; }
+.${MENU_CLASS}.${YELLOW_CLASS} { animation-name: oge-trader-menu-yellow-bg; animation-timing-function: linear; }
+.${MENU_CLASS}.${RED_CLASS} { animation-name: oge-trader-menu-red-bg; animation-timing-function: linear; }
 .${MENU_CLASS}.${YELLOW_CLASS}:hover,
 .${MENU_CLASS}.${YELLOW_CLASS}:active,
 .${MENU_CLASS}.${YELLOW_CLASS}.on {
