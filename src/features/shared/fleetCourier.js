@@ -321,13 +321,14 @@ export const shipAvailability = () => (snapshot ? availability() : null);
  * @returns {Promise<SelectResult>}
  */
 export const select = async (order) => {
-  if (step() === 'off') return { ok: false, reason: 'offPage' };
-
   // All GENERAL fleet slots in use (T11, "Floty: 37/37") — no fleet of any
-  // kind can launch, so walking the form would only end in the game's
-  // error 612. Bail before touching anything; the feature maps the reason
-  // to an "All fleets!" label on its button.
+  // kind can launch, so walking the form (or even navigating to it from
+  // another page) would only end in the game's error 612. Checked BEFORE
+  // the off-page gate: the cap is account-global, and features map the
+  // reason to an "All fleets!" label instead of pointlessly navigating.
   if (isFleetCapReached(snapshot)) return { ok: false, reason: 'allFleets' };
+
+  if (step() === 'off') return { ok: false, reason: 'offPage' };
 
   // Ownership gate (T5): entering at fleet2 means this call would skip the
   // fleet1 block below and complete a fleet2 state somebody else prepared —
