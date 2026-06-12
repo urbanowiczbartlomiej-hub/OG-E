@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>OG-E — Unified FAB (demo testowe)</title>
 <style>
+  /* Demo do testu na telefonie — celowo BEZ color-mix()/oklab (nieobsługiwane
+     na starszych WebView/Safari, gdzie cały box-shadow/tło stawały się
+     nieprawidłowe i przycisk znikał). Tinty liczone w JS jako rgba(). */
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{height:100%;margin:0;overscroll-behavior:none}
   body{
@@ -21,7 +24,7 @@
   /* ── demo controls (nie jest częścią wtyczki) ───────────────────────── */
   .panel{
     position:fixed;top:0;left:0;right:0;z-index:5;
-    padding:10px 14px calc(10px);display:flex;gap:12px;align-items:center;
+    padding:10px 14px;display:flex;gap:12px;align-items:center;
     font-size:12px;color:#9aa7b5;background:linear-gradient(#070a10ee,#070a1000);
   }
   .panel input[type=range]{flex:1;accent-color:#4aa8ff}
@@ -43,18 +46,17 @@
     background:#0b1220;
     box-shadow:
       inset 0 1px 0 rgba(255,255,255,.07),
-      0 0 0 1.5px color-mix(in oklab, var(--rim) 65%, transparent),
-      0 0 22px color-mix(in oklab, var(--rim) 40%, transparent),
+      0 0 0 2px var(--rim,#4aa8ff),
+      0 0 22px var(--glow,rgba(74,168,255,.42)),
       0 8px 22px #000a;
     transition:transform .15s ease, box-shadow .25s ease;
   }
   .host.pressed{transform:scale(.96)}
   .zone{
-    flex:1;border:none;background:radial-gradient(circle at 35% 28%,
-      color-mix(in oklab, var(--rim) 26%, #0b1220) 0%, #0b1220 78%);
-    color:inherit;font:inherit;cursor:pointer;position:relative;
-    display:flex;align-items:center;justify-content:center;text-align:center;
-    padding:0 10%;
+    flex:1;border:none;color:inherit;font:inherit;cursor:pointer;position:relative;
+    background:#0b1220;
+    background:radial-gradient(circle at 35% 28%, var(--ztint,rgba(74,168,255,.28)) 0%, #0b1220 78%);
+    display:flex;align-items:center;justify-content:center;text-align:center;padding:0 9%;
   }
   .zone + .zone{border-top:1px solid #ffffff1c}
   .zone:active{filter:brightness(1.18)}
@@ -63,7 +65,7 @@
   .art{
     position:absolute;inset:0;z-index:0;pointer-events:none;
     display:flex;align-items:flex-start;justify-content:center;padding-top:8%;
-    color:var(--rim);opacity:.12;
+    color:var(--rim,#4aa8ff);opacity:.13;
   }
   .art svg{width:34%;height:46%;overflow:visible}
   .host.single .art{padding-top:13%}
@@ -71,9 +73,9 @@
   /* hold sweep — odpowiednik .oge-ring-charge */
   .sweep{position:absolute;inset:0;z-index:3;pointer-events:none}
   .sweep circle{
-    fill:none;stroke:var(--rim);stroke-width:5;stroke-linecap:round;
+    fill:none;stroke:var(--rim,#4aa8ff);stroke-width:5;stroke-linecap:round;
     stroke-dasharray:100;stroke-dashoffset:100;
-    filter:drop-shadow(0 0 5px var(--rim));
+    filter:drop-shadow(0 0 5px var(--rim,#4aa8ff));
     transform:rotate(-90deg);transform-origin:50% 50%;
   }
 
@@ -82,26 +84,25 @@
     position:absolute;right:2%;bottom:2%;z-index:3;border-radius:50%;border:none;
     background:#0b1220;color:#e2e8f0;display:flex;align-items:center;justify-content:center;
     cursor:pointer;padding:0;
-    box-shadow:0 0 0 1.5px color-mix(in oklab, var(--mod,#38bdf8) 60%, transparent),0 3px 10px rgba(0,0,0,.6);
+    box-shadow:0 0 0 2px var(--mod,#38bdf8),0 3px 10px rgba(0,0,0,.6);
   }
   #fab-handle svg{width:55%;height:55%;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;transition:transform .2s ease}
   .fab-open #fab-handle svg{transform:rotate(45deg)}
 
   /* ── orbital picker — odpowiednik #oge-fab-overlay + .oge-fab-orb ───── */
-  #overlay{position:fixed;inset:0;background:rgba(2,6,12,.55);backdrop-filter:blur(2px)}
+  #overlay{position:fixed;inset:0;background:rgba(2,6,12,.55)}
   .orb{
     position:fixed;transform:translate(-50%,-50%) scale(.4);opacity:0;border-radius:50%;
     border:none;cursor:pointer;padding:0;color:#e2e8f0;
-    background:radial-gradient(circle at 35% 28%, color-mix(in oklab, var(--mod) 30%, #0b1220) 0%, #0b1220 75%);
-    box-shadow:0 0 0 1.5px color-mix(in oklab, var(--mod) 60%, transparent),
-      0 0 18px color-mix(in oklab, var(--mod) 35%, transparent),0 8px 22px rgba(0,0,0,.7);
+    background:#0b1220;
+    background:radial-gradient(circle at 35% 28%, var(--mtint,rgba(74,168,255,.3)) 0%, #0b1220 75%);
+    box-shadow:0 0 0 2px var(--mod,#4aa8ff),0 0 18px var(--mglow,rgba(74,168,255,.4)),0 8px 22px rgba(0,0,0,.7);
     transition:transform .26s cubic-bezier(.2,1.35,.4,1), opacity .18s ease;
     display:flex;align-items:center;justify-content:center;
   }
   .orb.in{transform:translate(-50%,-50%) scale(1);opacity:1}
-  .orb.is-active{box-shadow:0 0 0 2.5px var(--mod),
-      0 0 26px color-mix(in oklab, var(--mod) 65%, transparent),0 8px 22px rgba(0,0,0,.7)}
-  .orb svg{width:60%;height:60%;color:var(--mod);opacity:.9;overflow:visible}
+  .orb.is-active{box-shadow:0 0 0 3px var(--mod,#4aa8ff),0 0 26px var(--mglow,rgba(74,168,255,.4)),0 8px 22px rgba(0,0,0,.7)}
+  .orb svg{width:60%;height:60%;color:var(--mod,#4aa8ff);opacity:.92;overflow:visible}
   .orb-label{
     position:fixed;transform:translate(-50%,-50%);pointer-events:none;opacity:0;
     font:700 10px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.14em;
@@ -165,6 +166,12 @@ const MODULES = [
       { key:'collect', main:'Collect',  sub:'→ K9 🌙 · hold: change',  bg:'#43cf72', hold:'Zmieniono cel Collect' } ]},
 ];
 
+/* ════ kolory: hex → rgba (zamiast color-mix, dla pełnej zgodności) ════ */
+const rgba=(hex,a)=>{
+  const h=hex.replace('#',''); const n=parseInt(h,16);
+  return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;
+};
+
 /* ════ stałe i geometria 1:1 z unifiedFabPure.js ════ */
 const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
 const ORBIT_SPREAD=Math.PI*0.62, EDGE=20, LABEL_GAP=12, HOLD_MS=2000, DRAG_THRESHOLD=8;
@@ -197,9 +204,7 @@ const wrap=document.getElementById('fab-wrap'),
       sizeInput=document.getElementById('size'),
       sizeVal=document.getElementById('sizeVal');
 
-let size=parseInt(localStorage.getItem(LS.size),10)||320;
-// na telefonie 320 px to dużo — demo startuje od zapisanego/realnego defaultu
-size=clamp(size,40,560);
+let size=clamp(parseInt(localStorage.getItem(LS.size),10)||320,40,560);
 let hosts=new Map(), menuEls=[], menuOpen=false;
 
 let toastT;
@@ -227,12 +232,15 @@ function buildHosts(){
     const host=document.createElement('div');
     host.className='host'+(m.zones.length===1?' single':'');
     host.style.setProperty('--rim',m.color);
+    host.style.setProperty('--glow',rgba(m.color,.42));
     host.style.width=host.style.height=size+'px';
     host.style.fontSize=Math.round(size*m.fontScale)+'px';
     for(const z of m.zones){
+      const zc=z.bg||m.color;
       const zone=document.createElement('button');
       zone.type='button'; zone.className='zone';
-      zone.style.setProperty('--rim',z.bg||m.color);
+      zone.style.setProperty('--rim',zc);
+      zone.style.setProperty('--ztint',rgba(zc,.28));
       zone.style.fontSize='inherit';
       zone.innerHTML=`<span class="zlabel"><span>${z.main}</span>${z.sub?`<small>${z.sub}</small>`:''}</span>`;
       if(m.zones.length===1||z===m.zones[0]){
@@ -243,7 +251,6 @@ function buildHosts(){
       wireZone(zone,m,z,host);
       host.appendChild(zone);
     }
-    // hold sweep ring (jeden na hosta, jak .oge-ring-charge)
     const sweep=document.createElementNS('http://www.w3.org/2000/svg','svg');
     sweep.setAttribute('class','sweep'); sweep.setAttribute('viewBox','0 0 36 36');
     sweep.innerHTML='<circle cx="18" cy="18" r="15.9" pathLength="100"/>';
@@ -357,6 +364,8 @@ function openMenu(){
     o.title=m.name; o.setAttribute('aria-label','Switch to '+m.name);
     o.style.cssText=`left:${pos.x}px;top:${pos.y}px;width:${orb}px;height:${orb}px;z-index:99998`;
     o.style.setProperty('--mod',m.color);
+    o.style.setProperty('--mtint',rgba(m.color,.3));
+    o.style.setProperty('--mglow',rgba(m.color,.4));
     o.innerHTML=`<svg viewBox="0 0 64 64" aria-hidden="true">${GLYPHS[m.id]}</svg>`;
     o.addEventListener('click',()=>{
       if(m.id!==act){ setActive(m.id); toast(`Aktywny moduł: <b>${m.name}</b> <span style="color:#9aa7b5">(bez akcji — tap na FAB ją odpali)</span>`,m.color); }
@@ -397,7 +406,7 @@ sizeInput.addEventListener('input',()=>{
   applySize();
 });
 
-addEventListener('resize',()=>{ restorePosition(); if(menuOpen){ closeMenu(); } });
+addEventListener('resize',()=>{ restorePosition(); if(menuOpen) closeMenu(); });
 
 /* init */
 applySize();
