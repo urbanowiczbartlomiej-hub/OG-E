@@ -50,19 +50,18 @@
 | T6  | Free Positions → mapa sąsiedztwa / regiony zasiedlenia | trudne | REVIEW |
 | T7  | DAILY RUN: za mało statków → komunikat/blokada; Send All pusta planeta → redirect | średnie | REVIEW |
 | T8  | Bug „Vlad”: na księżycu kolonizacja fałszuje brak wolnych pozycji | średnie | REVIEW |
-| T9  | Redesign pozostałych komponentów w duchu 4 nowych przycisków | średnie | TODO |
+| T9  | Redesign pozostałych komponentów w duchu 4 nowych przycisków | średnie | REVIEW |
 | T10 | Lifeform: blokada Discovery po osiągnięciu 3600 (+ kiedy odblokować) | średnie | TODO |
 | T11 | Obsługa „all fleets” dla każdego przycisku | średnie | TODO |
 | T12 | Blask cieniutkiej krawędzi w przyciskach dwustrefowych | łatwe | REVIEW |
 
-### Sugerowana kolejność (stan po sesji 6)
+### Sugerowana kolejność (stan po sesji 7)
 
-T1–T4, T6–T8, T12 → REVIEW lub DONE. Pozostaje:
-1. **Bez blokad, wizualne:** T9 (redesign) — dobry start nowej sesji.
-2. **Częściowo zablokowane na dane:** T11 (all fleets) — dane z
+T1–T4, T6–T9, T12 → REVIEW lub DONE. Pozostaje:
+1. **Częściowo zablokowane na dane:** T11 (all fleets) — dane z
    `window.fleetDispatcher` do potwierdzenia; T10 (lifeform 3600) — decyzja
    o warunku odblokowania.
-3. **Mocno zablokowane:** T5 (własność fleet2) — potrzebne XHR `checkTarget`
+2. **Mocno zablokowane:** T5 (własność fleet2) — potrzebne XHR `checkTarget`
    + `sendFleet`.
 
 Zależności / powiązania:
@@ -499,7 +498,7 @@ potwierdzona: na księżycu `.smallplanet` dostaje klasę `hightlightMoon` (nie
 ---
 
 ### T9 — Redesign pozostałych komponentów w duchu 4 nowych przycisków
-**Status:** TODO · **Trudność:** średnie
+**Status:** REVIEW · **Trudność:** średnie
 
 **Feedback (wiernie):** „Inspirując się wyglądem czterech bardzo nowoczesnych i
 profesjonalnie wyglądających przycisków pasujących do stylu OGame (kolonizacja,
@@ -524,7 +523,36 @@ szerokości obwódek; rozważyć modernizację dialogu nakładki i palety banera
 
 **Dane:** nie (wizualne, REVIEW). Powiązane z **T12**.
 
-**Dziennik:** —
+**Dziennik:**
+- 2026-06-12 (sesja 7): Audyt komponent po komponencie. Wnioski:
+  highlighty (trader/event) już spójne między sobą po T2 — celowo zostają
+  w konwencji „glow na natywnym elemencie gry” (nie da się im nadać HUD-owej
+  powierzchni, bo malujemy po elementach OGame); settingsUi spójne wewnętrznie
+  z natywnym panelem gry — poza zakresem; `agrLogo`/`fleetdispatchShortcut`
+  nic widocznego nie wstrzykują. Odstawały 3 powierzchnie „flat box + biała
+  ramka”: overlay ABANDON, banner „New planet” i proxy-przyciski w popupach
+  abandon.
+- 2026-06-12 (sesja 7, cd.): Nowy współdzielony moduł
+  `src/features/shared/panelChrome.js` — prostokątny odpowiednik
+  `buttonChrome`: te same tokeny (`--surface` ciemny rdzeń, `--rim` kolor
+  stanu, nitka 1.5px przez `color-mix`, outer glow, głębokie cienie,
+  `text-shadow`, font-stack, kadencje pulsu error 1.6s / wait 2.4s,
+  `prefers-reduced-motion`). Klasa `.oge-panel` + helpery typograficzne
+  `.oge-panel-title` (uppercase, letter-spacing, tint rim) i
+  `.oge-panel-hint` (wyciszony slate). Przepięte:
+  - **Overlay ABANDON** (`abandon/overview.js`): rose rim `#fb7185`
+    (= `BG_SEND_ERROR`), pulsuje `data-flag=error`; zniknęła płaska czerwień
+    `rgba(160,0,0,.85)` + `border:3px solid #fff`. Layout i cała logika
+    (mount/unmount/click/dispose) bez zmian.
+  - **Banner „New planet”** (`freshPlanetDetector.js`): amber rim `#fbbf24`
+    (= `BG_SEND_WAIT`), puls `data-flag=wait`; padding 40/80→28/56. Drag
+    i klik bez zmian.
+  - **Proxy-przyciski abandon** (`abandon/index.js::makeInjectedButton`):
+    parametr `bgColor`→`rim` + opcjonalny `flag`; SUBMIT PASSWORD =
+    `#f59e0b` (amber/stale), CONFIRM DELETE = `#fb7185` + puls error.
+    Mechanika watchdogów/idów nietknięta.
+  `npm run typecheck` zielony. Status: REVIEW — do oceny wizualnej w grze
+  (overview z fresh kolonią, popupy abandon, banner po kolonizacji).
 
 ---
 
@@ -720,3 +748,16 @@ stref, by efekt blasku był jak w 1-zone.
     lepsze pokrycie (do rozważenia w przyszłości).
   - Opcje `<select>` strategii w HTML są hardcoded zamiast generowane z `STRATEGIES`
     (hinty w typedef są ale nie trafiają do UI).
+- **2026-06-12 (sesja 7):** T9 → REVIEW. Audyt spójności wizualnej: highlighty
+  spójne po T2 (zostają — malują po natywnym DOM gry), settingsUi poza zakresem
+  (spójne z natywnym panelem). Odstawały: overlay ABANDON, banner „New planet”
+  i proxy-przyciski popupów abandon (flat box + biała ramka). Nowy moduł
+  `features/shared/panelChrome.js` (`.oge-panel` — prostokątny odpowiednik
+  buttonChrome z tymi samymi tokenami) i przepięcie tych 3 powierzchni:
+  overlay = rose `#fb7185` + puls error, banner = amber `#fbbf24` + puls wait,
+  SUBMIT = `#f59e0b`, CONFIRM = rose + puls error. Logika nietknięta;
+  typecheck zielony. Sesja prowadzona na branchu
+  `claude/og-e-feedback-review-xti5n0` (kontynuacja stanu z
+  `claude/project-setup-feedback-gv66h4`). **Pozostają tylko zadania
+  zablokowane na dane/decyzje: T5, T10, T11** — następna sesja wymaga
+  wkładu użytkownika (XHR-y / decyzja o odblokowaniu / pole slotów flot).
