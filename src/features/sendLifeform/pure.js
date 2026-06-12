@@ -268,20 +268,27 @@ export const buildLfResearchUrl = (href) =>
  *                    refresh the counter before the session starts.
  *   - `offGalaxy`  — not on the galaxy component; one tap navigates there.
  *   - `discover`   — on galaxy, the viewed system needs discovery AND the
- *                    game's discover button is present.
+ *                    game's discover button is present (and clickable).
+ *   - `blocked`    — on galaxy, the viewed system needs discovery but the
+ *                    game's discover button is DISABLED (T11): the game
+ *                    refuses discovery sends right now — all fleet slots
+ *                    used being the canonical cause. A tap does nothing;
+ *                    the 1 Hz ticker dissolves the state the moment the
+ *                    game re-enables the control (a fleet returned).
  *   - `navigate`   — on galaxy, the viewed system is fresh but `target`
  *                    (the nearest stale system) still needs a discovery.
  *   - `allDone`    — on galaxy, nothing left to discover anywhere.
  *
  * `cooldown` overlays any phase (the post-click lock) and `scansRemaining`
  * rides along for the label. `target` is the nearest stale system in the
- * `navigate` phase (and the viewed system in `discover`).
+ * `navigate` phase (and the viewed system in `discover` / `blocked`).
  *
  * @typedef {(
  *   | { kind: 'artifactsFull', current: number, max: number, scansRemaining: number }
  *   | { kind: 'checkArtifacts', scansRemaining: number }
  *   | { kind: 'offGalaxy', scansRemaining: number }
  *   | { kind: 'discover', target: SystemCoords, cooldown: boolean, scansRemaining: number }
+ *   | { kind: 'blocked', target: SystemCoords, scansRemaining: number }
  *   | { kind: 'navigate', target: SystemCoords, cooldown: boolean, scansRemaining: number }
  *   | { kind: 'allDone', cooldown: boolean, scansRemaining: number }
  * )} LfContext
@@ -304,6 +311,10 @@ export const buildLfResearchUrl = (href) =>
  * @property {SystemCoords | null} home     active-planet coords, or null.
  * @property {SystemCoords | null} view     galaxy-view coords, or null (off galaxy).
  * @property {boolean} hasDiscoverBtn       is `#discoverSystemBtn` present in the DOM?
+ * @property {boolean} [discoverBtnDisabled]
+ *   Is the present `#discoverSystemBtn` DISABLED (`disabled` attribute /
+ *   `.disabled` veil)? The game's signal that no discovery can be sent —
+ *   all fleet slots used (T11) being the canonical cause. Absent ⇒ `false`.
  * @property {boolean} cooldown             post-click lock active?
  * @property {import('../../state/lifeformArtifacts.js').ArtifactReading | null} [artifacts]
  *   Last persisted artifact-counter reading, or null/absent when never read
@@ -349,6 +360,12 @@ export const derive = (env) => {
   // On galaxy: prefer discovering the system the user is already looking at.
   if (env.view && isSystemLfStale(systemScan(env.scans, env.view), env.now)) {
     if (env.hasDiscoverBtn) {
+      // The game disabled its discover control (T11) — sends are refused
+      // (all fleet slots used / other game-side blocker). Surface it
+      // instead of arming a click that cannot go anywhere.
+      if (env.discoverBtnDisabled === true) {
+        return { kind: 'blocked', target: env.view, scansRemaining };
+      }
       return { kind: 'discover', target: env.view, cooldown: env.cooldown, scansRemaining };
     }
     // Stale but the game's discover control isn't in the DOM yet — treat as
@@ -414,6 +431,16 @@ export const render = (ctx) => {
         subtext: `[${ctx.target.galaxy}:${ctx.target.system}]`,
         bg: BG_LF_ACTIVE,
         dim: ctx.cooldown,
+      };
+    case 'blocked':
+      // Same copy as the post-send fleet-cap transient ("Max fleets") so
+      // the two faces of the condition read as one state. Dim — nothing
+      // to do here; the ticker re-enables when the game does.
+      return {
+        text: 'Max fleets',
+        subtext: `[${ctx.target.galaxy}:${ctx.target.system}]`,
+        bg: BG_LF_ERROR,
+        dim: true,
       };
     case 'navigate':
       return {

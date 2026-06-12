@@ -75,6 +75,8 @@ describe('snapshot projection — happy path', () => {
       shipsOnPlanet: [{ id: 202, number: 100 }],
       expeditionCount: 3,
       maxExpeditionCount: 14,
+      fleetCount: 18,
+      maxFleetCount: 37,
       // Fields that must be dropped from the projection:
       loca: 'junk',
       fleetHelper: {},
@@ -89,10 +91,14 @@ describe('snapshot projection — happy path', () => {
     expect(detail.shipsOnPlanet).toEqual([{ id: 202, number: 100 }]);
     expect(detail.expeditionCount).toBe(3);
     expect(detail.maxExpeditionCount).toBe(14);
+    expect(detail.fleetCount).toBe(18);
+    expect(detail.maxFleetCount).toBe(37);
     expect(Object.keys(detail).sort()).toEqual([
       'currentPlanet',
       'expeditionCount',
+      'fleetCount',
       'maxExpeditionCount',
+      'maxFleetCount',
       'orders',
       'shipsOnPlanet',
       'targetPlanet',
@@ -163,6 +169,26 @@ describe('snapshot projection — defensive coercion', () => {
     await flush();
     expect(detail.expeditionCount).toBe(0);
     expect(detail.maxExpeditionCount).toBe(0);
+    expect(detail.fleetCount).toBe(0);
+    expect(detail.maxFleetCount).toBe(0);
+  });
+
+  it('fleet-slot counts fall back to the page globals when the instance lacks them', async () => {
+    // The game declares `var fleetCount / maxFleetCount` in its inline
+    // script; should a build stop mirroring them onto the FleetDispatcher
+    // instance, the projection reads the globals instead.
+    setFleetDispatcher({ expeditionCount: 1, maxExpeditionCount: 14 });
+    /** @type {any} */ (window).fleetCount = 18;
+    /** @type {any} */ (window).maxFleetCount = 37;
+    try {
+      installFleetDispatcherSnapshot();
+      await flush();
+      expect(detail.fleetCount).toBe(18);
+      expect(detail.maxFleetCount).toBe(37);
+    } finally {
+      delete (/** @type {any} */ (window).fleetCount);
+      delete (/** @type {any} */ (window).maxFleetCount);
+    }
   });
 });
 

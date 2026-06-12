@@ -411,6 +411,7 @@ const buildOrder = (mode) => {
  */
 const reasonLabel = (reason) => {
   switch (reason) {
+    case 'allFleets': return 'All fleets!';
     case 'noShips': return 'No ships';
     case 'empty': return 'No ships';
     case 'noShip': return 'No ship';

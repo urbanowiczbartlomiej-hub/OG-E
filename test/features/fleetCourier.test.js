@@ -228,6 +228,19 @@ describe('select — failures', () => {
     expect(r.ok).toBe(false);
     expect(r.reason).toBe('offPage');
   });
+
+  it('returns allFleets immediately when every fleet slot is in use', async () => {
+    // No DOM setup needed — the fleet-cap gate fires before any DOM walk.
+    unhook = fakeExecutor();
+    document.dispatchEvent(
+      new CustomEvent('oge:fleetDispatcher', {
+        detail: { shipsOnPlanet: [{ id: 202, number: 50 }], orders: {}, fleetCount: 18, maxFleetCount: 18 },
+      }),
+    );
+    const r = await select({ spec: { kind: 'all' }, target: TARGET, mission: 4 });
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('allFleets');
+  });
 });
 
 

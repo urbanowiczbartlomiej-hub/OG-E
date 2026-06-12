@@ -28,7 +28,12 @@
 // readiness is read from the game's `.off` class, NOT a timer — which is
 // why a too-early "send" can't lock the button: it simply isn't ready yet.
 
-import { resolveSelection, classifyTargetError, isMissionAllowed } from '../../domain/fleetPlan.js';
+import {
+  resolveSelection,
+  classifyTargetError,
+  isMissionAllowed,
+  isFleetCapReached,
+} from '../../domain/fleetPlan.js';
 import { FD_CMD_EVENT, FD_RES_EVENT, FD_SEND_RESULT_EVENT } from '../../lib/fleetProtocol.js';
 import { GAME } from '../../lib/gameDom.js';
 import { safeClick, waitFor } from '../../lib/dom.js';
@@ -83,8 +88,8 @@ const POLL_MS = 100;
  *
  * @typedef {object} SelectResult
  * @property {boolean} ok
- * @property {'offPage'|'noShips'|'empty'|'selectFailed'|'noFleet2'|'timeout'
- *   |'noMoon'|'noShip'|'reserved'|'generic'|'mission'|'notReady'
+ * @property {'offPage'|'allFleets'|'noShips'|'empty'|'selectFailed'|'noFleet2'
+ *   |'timeout'|'noMoon'|'noShip'|'reserved'|'generic'|'mission'|'notReady'
  *   |'foreign'} [reason]
  * @property {number} [errorCode]
  * @property {Array<{ id: number, want: number, have: number }>} [shortfalls]
@@ -318,6 +323,12 @@ export const shipAvailability = () => (snapshot ? availability() : null);
 export const select = async (order) => {
   if (step() === 'off') return { ok: false, reason: 'offPage' };
 
+  // All GENERAL fleet slots in use (T11, "Floty: 37/37") — no fleet of any
+  // kind can launch, so walking the form would only end in the game's
+  // error 612. Bail before touching anything; the feature maps the reason
+  // to an "All fleets!" label on its button.
+  if (isFleetCapReached(snapshot)) return { ok: false, reason: 'allFleets' };
+
   // Ownership gate (T5): entering at fleet2 means this call would skip the
   // fleet1 block below and complete a fleet2 state somebody else prepared —
   // legitimate ONLY when that somebody is the same owner (re-entry retry
@@ -516,6 +527,8 @@ export const installFleetCourier = () => {
         orders: fd.orders || null,
         currentPlanet: fd.currentPlanet || null,
         targetPlanet: fd.targetPlanet || null,
+        fleetCount: Number(fd.fleetCount) || 0,
+        maxFleetCount: Number(fd.maxFleetCount) || 0,
       });
     }
   }

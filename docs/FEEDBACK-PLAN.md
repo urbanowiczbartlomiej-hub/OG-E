@@ -52,16 +52,14 @@
 | T8  | Bug „Vlad”: na księżycu kolonizacja fałszuje brak wolnych pozycji | średnie | REVIEW |
 | T9  | Redesign pozostałych komponentów w duchu 4 nowych przycisków | średnie | REVIEW |
 | T10 | Lifeform: blokada Discovery po osiągnięciu 3600 (+ kiedy odblokować) | średnie | REVIEW |
-| T11 | Obsługa „all fleets” dla każdego przycisku | średnie | TODO |
+| T11 | Obsługa „all fleets” dla każdego przycisku | średnie | REVIEW |
 | T12 | Blask cieniutkiej krawędzi w przyciskach dwustrefowych | łatwe | REVIEW |
 | T13 | DAILY RUN: błędny subtitle/hint zanim gra doczyta eventList | łatwe/średnie | REVIEW |
 
-### Sugerowana kolejność (stan po sesji 8)
+### Sugerowana kolejność (stan po sesji 10)
 
-T1–T10, T12, T13 → REVIEW lub DONE (T5 zaimplementowane w sesji 9).
-Pozostaje:
-1. **Częściowo zablokowane na dane:** T11 (all fleets) — dane z
-   `window.fleetDispatcher` do potwierdzenia.
+T1–T13 → wszystkie w REVIEW lub DONE. Brak otwartych TODO.
+Do weryfikacji w grze: T11 (all fleets), T10 (discovery cap).
 
 **✓ Dług testowy SPŁACONY (sesja 9):** 19 czerwonych asercji w 6 plikach
 zaktualizowano do zmian z tego cyklu (T4/T8/T9/T13 + etykiety z sesji 2);
@@ -704,7 +702,7 @@ po wysyłce); odblokowanie = świeży odczyt poniżej max (gracz wydał artefakt
 ---
 
 ### T11 — Obsługa „all fleets” dla każdego przycisku
-**Status:** TODO · **Trudność:** średnie
+**Status:** REVIEW · **Trudność:** średnie
 
 **Feedback (wiernie):** „Dodać obsługę all fleets! Dla każdego przycisku... Dla
 lifeform nieco inaczej tj przez niedostępny przycisk do wysyłania a dla tych z
@@ -718,19 +716,24 @@ fleet1 po etykiecie.”
 `maxExpeditionCount`); dla pozostałych dodać liczbę zajętych/maks slotów.
 
 **Pliki:**
-- `src/bridges/fleetDispatcherSnapshot.js:56-100` (`expeditionCount`/`maxExpeditionCount`)
-- `src/features/sendExp/pure.js:95-98` (`isGlobalExpeditionCapReached…`)
-- `src/features/{sendExp,sendCol,fsCollect,sendLifeform}/index.js` (etykiety/disabled)
+- `src/bridges/fleetDispatcherSnapshot.js` — rozszerzony snapshot o `fleetCount`/`maxFleetCount` (z fallbackiem na `window.fleetCount`/`window.maxFleetCount`)
+- `src/domain/fleetPlan.js` — nowy predykat `isFleetCapReached(counts)`
+- `src/features/shared/fleetCourier.js` — gate przed `select()`, reason `'allFleets'`
+- `src/features/sendExp/index.js` + `pure.js` — `ALL_FLEETS_LABEL`, gate przed cap ekspedycyjnym
+- `src/features/sendCol/index.js`, `src/features/fsCollect/index.js` — obsługa `'allFleets'`
+- `src/features/sendLifeform/domHelpers.js` — `isDiscoverButtonDisabled()` (attr + `.disabled` veil)
+- `src/features/sendLifeform/pure.js` — nowy ctx `'blocked'`, render „Max fleets”
+- `src/features/sendLifeform/index.js` — `captureEnv()` czyta `discoverBtnDisabled`
 
-**Podzadania:**
-1. Rozszerzyć snapshot o ogólną liczbę slotów flot (used/max), jeśli brak.
-2. Wspólny helper „disabled + powód” (współdzielony z T10).
-3. Etykieta dla exp/col/daily; disabled dla lifeform.
-
-**Dane:** potwierdzić w `window.fleetDispatcher`, jakie pole daje used/max slotów
-flot (nie tylko ekspedycji). ⛔ częściowo (do potwierdzenia).
-
-**Dziennik:** —
+**Dziennik (sesja 10):** Dane potwierdzone z DOM (`window.fleetDispatcher.fleetCount`
+= 18, `maxFleetCount` = 37, gra mirroruje też jako globals). Zaimplementowano
+pełną ścieżkę: bridge → `oge:fleetDispatcher` → `isFleetCapReached` → reason
+`'allFleets'` w courier (sendCol/fsCollect) i bezpośredni gate w sendExp; lifeform
+dostała nowy stan `blocked` gdy `#discoverSystemBtn` ma `disabled` lub `.disabled`
+veil (działa też pod AGR — native node zostaje w DOM). Testy: 12 nowych cases,
+suite zielona (35 plików, typecheck 0). Commit: `feat(T11)` na branchu
+`claude/fleet-dispatch-feedback-t4okv2`. Do weryfikacji w grze przy
+`fleetCount == maxFleetCount`.
 
 ---
 

@@ -39,6 +39,12 @@
 //     game reports every expedition slot in use (14/14), and to skip
 //     the per-planet hop when the pending send would tip us over the
 //     cap (13/14).
+//   - `fleetCount` / `maxFleetCount` — the GENERAL fleet-slot counters
+//     (the "Floty: 18/37" pair the game renders in `#slots`). Read via
+//     `domain/fleetPlan.js isFleetCapReached` by the shared courier and
+//     the sendExp click gate so every fleetdispatch button can report
+//     "all fleet slots used" instead of walking into the game's
+//     error 612.
 //
 // Not published: fleet helper config, planet list, cargo settings, loca
 // strings, API data blobs, fleet templates. These are accessible via
@@ -61,6 +67,8 @@ import { observeXHR } from './xhrObserver.js';
  * @property {Array<{ id: number, number: number }>} shipsOnPlanet
  * @property {number} expeditionCount
  * @property {number} maxExpeditionCount
+ * @property {number} fleetCount
+ * @property {number} maxFleetCount
  */
 
 /**
@@ -119,6 +127,14 @@ const readSnapshot = () => {
     shipsOnPlanet: ships,
     expeditionCount: Number(fd.expeditionCount) || 0,
     maxExpeditionCount: Number(fd.maxExpeditionCount) || 0,
+    // The game declares `var fleetCount / maxFleetCount` in the page's
+    // inline script and mirrors them onto the FleetDispatcher instance.
+    // Prefer the instance fields (they track post-send updates); fall
+    // back to the globals should a game build stop mirroring them.
+    fleetCount:
+      Number(fd.fleetCount ?? /** @type {any} */ (window).fleetCount) || 0,
+    maxFleetCount:
+      Number(fd.maxFleetCount ?? /** @type {any} */ (window).maxFleetCount) || 0,
   };
 };
 

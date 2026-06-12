@@ -367,6 +367,10 @@ const refresh = () => {
 const colErrorPaint = (reason, c) => {
   const coords = `[${c.galaxy}:${c.system}:${c.position}]`;
   switch (reason) {
+    case 'allFleets':
+      // Every general fleet slot in use (T11) — nothing can launch until a
+      // fleet returns. Not an error with the target, so no coords subtext.
+      return { text: 'All fleets!', bg: BG_SEND_ERROR };
     case 'noShip':
       return { text: 'No ship!', subtext: coords, bg: BG_SEND_ERROR };
     case 'noMoon':

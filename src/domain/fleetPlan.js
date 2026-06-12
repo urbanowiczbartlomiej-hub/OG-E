@@ -143,6 +143,24 @@ export const isMissionAllowed = (orders, mission) =>
   !!orders && orders[String(mission)] === true;
 
 /**
+ * Whether every GENERAL fleet slot is in use (the game's "Floty: 37/37"
+ * pair) — no fleet of any kind can launch until one returns. Pure over a
+ * snapshot-shaped object so the courier, sendExp and tests share one
+ * definition. `null`/absent snapshot ⇒ `false` (the gate is opt-in via
+ * the bridge populating it), and `maxFleetCount > 0` guards the
+ * uninitialised all-zeros snapshot from reading as "cap reached".
+ *
+ * @param {{ fleetCount?: number, maxFleetCount?: number } | null | undefined} counts
+ * @returns {boolean}
+ */
+export const isFleetCapReached = (counts) => {
+  if (!counts) return false;
+  const max = counts.maxFleetCount ?? 0;
+  const used = counts.fleetCount ?? 0;
+  return max > 0 && used >= max;
+};
+
+/**
  * Turn a checkTarget error code into a stable tag. `null`/`0`/absent ⇒
  * `'ok'` (no error). Unknown non-zero codes ⇒ `'generic'`.
  *

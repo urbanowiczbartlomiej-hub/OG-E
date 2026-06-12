@@ -14,6 +14,7 @@ import {
   BG_LF_IDLE,
   BG_LF_ACTIVE,
   BG_LF_DONE,
+  BG_LF_ERROR,
 } from '../../../src/features/sendLifeform/pure.js';
 
 const NOW = 1_000_000_000_000;
@@ -189,5 +190,47 @@ describe('render', () => {
   it('allDone → "All discovered!"', () => {
     const p = render({ kind: 'allDone', cooldown: false, scansRemaining: 0 });
     expect(p).toMatchObject({ text: 'All discovered!', bg: BG_LF_DONE });
+  });
+  it('blocked → "Max fleets" in error red, dimmed, with system subtext', () => {
+    const p = render({ kind: 'blocked', target: { galaxy: 4, system: 250 }, scansRemaining: 3 });
+    expect(p).toMatchObject({ text: 'Max fleets', subtext: '[4:250]', bg: BG_LF_ERROR, dim: true });
+  });
+});
+
+describe('derive — blocked', () => {
+  const base = { scans: {}, now: NOW, home: { galaxy: 4, system: 250 }, view: null, hasDiscoverBtn: false, cooldown: false };
+
+  it('stale system + discover button present + button disabled → blocked', () => {
+    const ctx = derive({
+      ...base,
+      search: '?page=ingame&component=galaxy',
+      view: { galaxy: 4, system: 250 },
+      hasDiscoverBtn: true,
+      discoverBtnDisabled: true,
+    });
+    expect(ctx.kind).toBe('blocked');
+    expect(ctx).toMatchObject({ target: { galaxy: 4, system: 250 } });
+  });
+
+  it('stale system + discover button present + button NOT disabled → discover (not blocked)', () => {
+    const ctx = derive({
+      ...base,
+      search: '?page=ingame&component=galaxy',
+      view: { galaxy: 4, system: 250 },
+      hasDiscoverBtn: true,
+      discoverBtnDisabled: false,
+    });
+    expect(ctx.kind).toBe('discover');
+  });
+
+  it('discoverBtnDisabled without hasDiscoverBtn → navigate (button absence takes precedence)', () => {
+    const ctx = derive({
+      ...base,
+      search: '?page=ingame&component=galaxy',
+      view: { galaxy: 4, system: 250 },
+      hasDiscoverBtn: false,
+      discoverBtnDisabled: true,
+    });
+    expect(ctx.kind).toBe('navigate');
   });
 });
