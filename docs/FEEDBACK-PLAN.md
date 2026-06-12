@@ -46,7 +46,7 @@
 | T2  | Płynniejsze podświetlanie handlarza (jak Event) | łatwe | REVIEW |
 | T3  | Tytuł sekcji „Currently queued” dla ekspedycji w Reminders | łatwe | REVIEW |
 | T4  | Anulowanie remaindera FS na eventList (stan, 3 min, odznaczanie) | średnie | REVIEW |
-| T5  | Własność przejścia fleet1→fleet2 po XHR checkTarget | trudne | TODO |
+| T5  | Własność przejścia fleet1→fleet2 po XHR checkTarget | trudne | REVIEW |
 | T6  | Free Positions → mapa sąsiedztwa / regiony zasiedlenia | trudne | REVIEW |
 | T7  | DAILY RUN: za mało statków → komunikat/blokada; Send All pusta planeta → redirect | średnie | REVIEW |
 | T8  | Bug „Vlad”: na księżycu kolonizacja fałszuje brak wolnych pozycji | średnie | REVIEW |
@@ -58,27 +58,18 @@
 
 ### Sugerowana kolejność (stan po sesji 8)
 
-T1–T4, T6–T10, T12, T13 → REVIEW lub DONE. Pozostaje:
+T1–T10, T12, T13 → REVIEW lub DONE (T5 zaimplementowane w sesji 9).
+Pozostaje:
 1. **Częściowo zablokowane na dane:** T11 (all fleets) — dane z
    `window.fleetDispatcher` do potwierdzenia.
-2. **Odblokowane (sesja 9):** T5 (własność fleet2) — `checkTarget`
-   dostarczony (skład floty jest w body → heurystyka routine-7 wykonalna);
-   dump `sendFleet` uznany za zbędny, heurystyka routine-7 domknięta z
-   wiedzy użytkownika. Gotowe do implementacji.
 
-**⚠ Przed najbliższym release (konsekwencja skrótu „bez testów"):** przejść
-`npm run test` i zaktualizować asercje do zmian z tego cyklu. Stan zmierzony
-w sesji 8: **19 czerwonych asercji w 6 plikach** —
-`test/features/abandon.test.js` (po T9 kolor żyje w `--rim`/klasie
-`oge-panel`, nie w `style.background`), `test/features/fsCollect.test.js`
-(case'y montują DOM bez `#eventContent`, więc gate T13 trzyma przycisk w
-„Wait…" — dodać tabelę do fixture lub dispatchować `oge:eventBoxLoaded`),
-`test/features/reminders.eventList.test.js` (okno anulowania 2→3 min +
-klasa `fs-cancel` z T4), `test/features/sendCol.test.js` +
-`test/features/sendExp.test.js` (etykiety `Colonize`/`Explore` z sesji 2,
-gate eventboxa), `test/features/sendColHelpers.test.js` (fallback
-`hightlightMoon` z T8). `npm run release` odpala testy, więc bez tego
-wydanie się zablokuje. Testy sendLifeform (T10) przechodzą.
+**✓ Dług testowy SPŁACONY (sesja 9):** 19 czerwonych asercji w 6 plikach
+zaktualizowano do zmian z tego cyklu (T4/T8/T9/T13 + etykiety z sesji 2);
+przy okazji case'y „step 2" w fsCollect i „Phase 1" w sendExp przepisano na
+prawdziwe przepływy dwu-tapowe, bo blokował je też nowy gate własności z T5
+(asercje obserwowalnych skutków bez zmian). Pełny `npm run test`:
+**1325/1325 zielone**, `npm run typecheck` 0 — release nie jest już
+zablokowany.
 
 Zależności / powiązania:
 - **T12 ⟷ T9** — poprawka krawędzi to część szerszego audytu wyglądu; T12 zrób
@@ -268,8 +259,7 @@ anulowania remaindera dla FS z 2 na 3 minut.”
 ---
 
 ### T5 — Własność przejścia fleet1→fleet2 po XHR checkTarget
-**Status:** TODO (blokada danych ZDJĘTA w sesji 9 — gotowe do
-implementacji) · **Trudność:** trudne
+**Status:** REVIEW · **Trudność:** trudne
 
 **Feedback (wiernie):** „Być może da się śledzić XHR sprawdzania targetu misji i
 na tej podstawie aktywować odpowiedni przycisk który mógł być potencjalnym
@@ -359,6 +349,49 @@ użytkownika bez próbki.
     Potwierdzenie z kodu: `checkTargetHook.js` dokumentuje, że
     `checkTarget` odpala się także gdy target ustawia AGR (`fd.orders`
     zostaje wtedy puste) — hook ten ruch widzi.
+- 2026-06-12 (sesja 9, c.d.): **ZAIMPLEMENTOWANE** → REVIEW.
+  - `bridges/checkTargetHook.js`: detail `oge:checkTargetResult` niesie
+    teraz `ships` (pary `am<id>=<count>` z body; `null` gdy brak).
+  - Nowy pure core `domain/fleetOwnership.js`: słownik właścicieli
+    (`OWNER_EXP/COL/FS`), `isExpeditionCheckTarget` (poz. 16 + ≥1 Pionier,
+    fail-closed) i tabela decyzyjna `resolveFleet2Completion`:
+    sesja własna → wolno (w tym re-entry/retry); sesja cudza → blokada
+    (jawny claim zawsze bije heurystykę); brak sesji + profil ekspedycji →
+    wolno tylko OWNER_EXP; brak sesji + nie-ekspedycja → `unknown`
+    (ręczna wysyłka gracza) — ręce precz.
+  - Nowy stan strony `features/shared/fleetOwnership.js` (in-memory,
+    celowo bez persystencji — reload i tak zeruje formularz gry):
+    `claimFleet2` / `mayCompleteFleet2` + nasłuch checkTargetów.
+  - `fleetCourier`: `select()` z `order.owner` odmawia domknięcia cudzego
+    fleet2 (`reason:'foreign'`) i claimuje sesję po własnym przejściu
+    fleet1→fleet2; `dispatch(owner)` to ostatnia linia obrony przed
+    klikiem. Bez `owner` zachowanie legacy (bez gate'u).
+  - Feature'y: sendCol i fsCollect przekazują ownera i na `foreign`
+    przekierowują na goły fleetdispatch (czysty fleet1 — zgodnie z
+    feedbackiem); fsCollect dodatkowo nie traktuje już samego „jestem na
+    fleet2" jako swojego tap-2 (wymaga `pending` + sesji). sendExp:
+    claim przy kliku routine-7, a faza 1 (klik `#dispatchFleet`) jest
+    bramkowana własnością/heurystyką — cudzy stan ⇒ redirect zamiast
+    wysyłki.
+  - Testy: `test/domain/fleetOwnership.test.js` (macierz decyzji +
+    heurystyka), `test/bridges/checkTargetHook.test.js` (projekcja
+    `ships` z body), `test/features/fleetCourier.test.js` (behawioralne:
+    odmowa na cudzym fleet2 bez ani jednej komendy do executora, claim +
+    re-entry vs „kradzież", dispatch nie klika cudzego).
+  - Do weryfikacji w grze: (a) Explore na fleet2 przygotowanym ręcznie →
+    redirect, nie wysyłka; (b) Explore po ręcznym kliknięciu routine-7
+    AGR → wysyłka działa (adopcja po heurystyce); (c) DAILY RUN / Colony
+    na cudzym fleet2 → redirect; (d) zwykłe przepływy dwu-tapowe bez
+    regresji.
+  - Znane zachowanie fail-closed (świadome): tap Explore w oknie ~RTT
+    między ręcznym kliknięciem routine-7 a wylądowaniem odpowiedzi
+    checkTarget → heurystyka jeszcze nie widzi profilu → redirect zamiast
+    wysyłki; przepływ odbudowuje się kolejnymi tapami (faza 2).
+  - Review (7 finderów + weryfikacja): 3 zasadne znaleziska wdrożone —
+    konsolidacja `bareFleetdispatchUrl` (3 kopie → eksport z couriera),
+    usunięcie martwego pola `at` sesji, symetryczna obsługa `foreign`
+    z `dispatch()` w fsCollect. Reszta odrzucona (błędne odczytania /
+    koszt pomijalny).
 
 ---
 
