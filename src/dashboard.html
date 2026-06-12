@@ -122,6 +122,29 @@
   .streak-score { color: #aaa; font-size: 11px; margin-top: 6px; line-height: 1.5; }
   .region-strip { display: flex; height: 10px; margin-top: 8px; border-radius: 3px; overflow: hidden; }
   .strip-cell { flex: 1; min-width: 1px; }
+  /* Custom weight panel */
+  details.weight-panel { margin-top: 10px; }
+  details.weight-panel > summary {
+    cursor: pointer; color: #4a9eff; font-size: 12px;
+    user-select: none; list-style: none; display: inline-block;
+  }
+  details.weight-panel > summary::-webkit-details-marker { display: none; }
+  .weight-grid {
+    display: grid; grid-template-columns: 130px 1fr 34px;
+    gap: 6px 8px; align-items: center; margin-top: 8px;
+  }
+  .weight-label { color: #aaa; font-size: 12px; }
+  .weight-slider { width: 100%; accent-color: #4a9eff; cursor: pointer; }
+  .weight-val {
+    color: #4a9eff; text-align: right; font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+  .weight-reset {
+    background: #111820; border: 1px solid #2a4a5a; color: #888;
+    padding: 3px 10px; border-radius: 5px; font-size: 11px;
+    cursor: pointer; margin-top: 6px;
+  }
+  .weight-reset:hover { border-color: #4a9eff; color: #ccc; }
 
   /* Reminders tab — preview-only surface. Setup form lives in the
      in-game Settings panel, so this tab is intentionally compact. */
@@ -275,6 +298,31 @@
         title="Your alliance tag. When set, regions with allied neighbours score higher (alliance proximity bonus). Leave empty to skip.">
       <span id="freeCountInfo" style="color:#888;font-size:13px;margin-left:auto;"></span>
     </div>
+    <details class="weight-panel">
+      <summary>⚙ Adjust weights</summary>
+      <div class="weight-grid">
+        <span class="weight-label" title="How much the density of confirmed-empty target slots matters. High = must have many free slots.">Free slots</span>
+        <input type="range" id="freeW_free"     class="weight-slider" min="-3" max="3" step="0.1" value="0">
+        <span id="freeWV_free"     class="weight-val">0</span>
+
+        <span class="weight-label" title="Inactive / long-inactive / vacation players = farm targets. Positive = seek them; negative = avoid (they bring active defenders).">Inactive (farm)</span>
+        <input type="range" id="freeW_inactive" class="weight-slider" min="-3" max="3" step="0.1" value="0">
+        <span id="freeWV_inactive" class="weight-val">0</span>
+
+        <span class="weight-label" title="Active (occupied) players. Positive = want PvP targets nearby; negative = want a quiet neighbourhood.">Active players</span>
+        <input type="range" id="freeW_occupied" class="weight-slider" min="-3" max="3" step="0.1" value="0">
+        <span id="freeWV_occupied" class="weight-val">0</span>
+
+        <span class="weight-label" title="Bandit-rank neighbours (negative honour, attack the weak). Tier level amplifies the threat — bandit3 counts 3× more than bandit1. Negative = strongly avoid; positive = seek them.">Bandit threat</span>
+        <input type="range" id="freeW_bandit"   class="weight-slider" min="-3" max="3" step="0.1" value="0">
+        <span id="freeWV_bandit"   class="weight-val">0</span>
+
+        <span class="weight-label" title="Honored-rank neighbours (positive honour, attack the strong). Less dangerous to weak settlers than bandits. Positive = seek honour fights; negative = avoid combat altogether.">Honored fighters</span>
+        <input type="range" id="freeW_honored"  class="weight-slider" min="-3" max="3" step="0.1" value="0">
+        <span id="freeWV_honored"  class="weight-val">0</span>
+      </div>
+      <button id="freeWeightsReset" class="weight-reset">↺ Reset to selected preset</button>
+    </details>
     <div id="freeContainer"></div>
   </div>
 </section>

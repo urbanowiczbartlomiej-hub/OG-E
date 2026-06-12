@@ -49,6 +49,7 @@ import { parseTargetPositions } from '../../domain/histogram.js';
 import { populatePositionFilter, renderColonyChart } from './colony.js';
 import { renderGalaxyMap } from './galaxy.js';
 import { renderFreeRegions } from './freeStreak.js';
+import { STRATEGIES } from '../../domain/regions.js';
 import {
   HISTORY_KEY_BASE,
   historyKeyFor,
@@ -159,6 +160,13 @@ const expandedGalaxies = new Set();
 /** @type {HTMLElement} */ let freeContainer;
 /** @type {HTMLElement | null} */ let freeCountInfoEl;
 
+/** The 5 neighbourhood factors users can tune via sliders. */
+const WEIGHT_FIELDS = /** @type {const} */ (['free', 'inactive', 'occupied', 'bandit', 'honored']);
+/** @type {Partial<Record<typeof WEIGHT_FIELDS[number], HTMLInputElement>>} */
+const weightSliders = {};
+/** @type {Partial<Record<typeof WEIGHT_FIELDS[number], HTMLElement>>} */
+const weightValues = {};
+
 /**
  * Bootstrap the dashboard page. Safe to call multiple times but
  * there's no reason to — the HTML entry invokes this exactly once.
@@ -205,6 +213,7 @@ const boot = async () => {
   remindersApi?.refresh();
   routesApi?.refresh();
   wireListeners();
+  applyPresetToSliders(freeStrategySelect.value);
 
   chromeStore.onChanged((changes) => {
     // Filter: only re-render when one of the SELECTED universe's keys
@@ -351,6 +360,12 @@ const wireDom = () => {
   freeAllyInput = /** @type {HTMLInputElement} */ (document.getElementById('freeAllyInput'));
   freeContainer = /** @type {HTMLElement} */ (document.getElementById('freeContainer'));
   freeCountInfoEl = document.getElementById('freeCountInfo');
+  for (const k of WEIGHT_FIELDS) {
+    const s = document.getElementById(`freeW_${k}`);
+    const v = document.getElementById(`freeWV_${k}`);
+    if (s instanceof HTMLInputElement) weightSliders[k] = s;
+    if (v instanceof HTMLElement) weightValues[k] = v;
+  }
 };
 
 /**
@@ -531,6 +546,42 @@ const freeRegionPositions = () => {
   return list.length ? list : [15];
 };
 
+/**
+ * Read current slider values as a StrategyWeights object.
+ * Returns `undefined` when all sliders are zero (no customisation) so the
+ * caller can fall back to the named preset without extra allocations.
+ *
+ * @returns {import('../../domain/regions.js').StrategyWeights | undefined}
+ */
+const readCustomWeights = () => {
+  let hasAny = false;
+  /** @type {import('../../domain/regions.js').StrategyWeights} */
+  const w = {};
+  for (const k of WEIGHT_FIELDS) {
+    const v = parseFloat(weightSliders[k]?.value ?? '0') || 0;
+    if (v !== 0) hasAny = true;
+    w[k] = v;
+  }
+  return hasAny ? w : undefined;
+};
+
+/**
+ * Populate weight sliders from a named strategy preset.
+ * Called when the strategy select changes and on initial load.
+ *
+ * @param {string} strategyKey
+ */
+const applyPresetToSliders = (strategyKey) => {
+  const preset = STRATEGIES[strategyKey];
+  for (const k of WEIGHT_FIELDS) {
+    const val = (preset?.weights[k] ?? 0).toFixed(1);
+    const slider = weightSliders[k];
+    const display = weightValues[k];
+    if (slider) slider.value = val;
+    if (display) display.textContent = val;
+  }
+};
+
 /** Repaint ONLY the settlement-regions block from current controls. */
 const repaintFreeRegions = () => {
   const allyTag = freeAllyInput.value.trim();
@@ -543,6 +594,7 @@ const repaintFreeRegions = () => {
     strategy: freeStrategySelect.value || 'longest',
     expansion: parseInt(freeExpansionSelect.value, 10) || 0,
     allyTag,
+    customWeights: readCustomWeights(),
   });
 };
 
@@ -651,9 +703,25 @@ const wireListeners = () => {
   // wasted work.
   freePosInput.addEventListener('change', repaintFreeRegions);
   freeGapsSelect.addEventListener('change', repaintFreeRegions);
-  freeStrategySelect.addEventListener('change', repaintFreeRegions);
+  freeStrategySelect.addEventListener('change', () => {
+    applyPresetToSliders(freeStrategySelect.value);
+    repaintFreeRegions();
+  });
   freeExpansionSelect.addEventListener('change', repaintFreeRegions);
   freeAllyInput.addEventListener('change', repaintFreeRegions);
+
+  for (const k of WEIGHT_FIELDS) {
+    weightSliders[k]?.addEventListener('input', () => {
+      const v = weightSliders[k]?.value ?? '0';
+      if (weightValues[k]) weightValues[k].textContent = parseFloat(v).toFixed(1);
+      repaintFreeRegions();
+    });
+  }
+
+  document.getElementById('freeWeightsReset')?.addEventListener('click', () => {
+    applyPresetToSliders(freeStrategySelect.value);
+    repaintFreeRegions();
+  });
 
   universeSelect.addEventListener('change', () => {
     selectedUniverseId = universeSelect.value;

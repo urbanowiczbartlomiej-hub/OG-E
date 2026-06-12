@@ -285,6 +285,9 @@ const buildRecord = (record, scans) => {
  * @property {string} [allyTag]
  *   Own alliance TAG. When non-empty, `findBestRegions` computes
  *   `allyNearby` per region and the sort rewards allied neighbours.
+ * @property {import('../../domain/regions.js').StrategyWeights} [customWeights]
+ *   When set, overrides the named strategy's weights with user-customised
+ *   values from the weight sliders.
  */
 
 /**
@@ -295,7 +298,7 @@ const buildRecord = (record, scans) => {
  * @param {RenderFreeRegionsOptions} opts
  * @returns {void}
  */
-export const renderFreeRegions = ({ containerEl, countInfoEl, scans, positions, maxGaps, strategy, expansion, allyTag }) => {
+export const renderFreeRegions = ({ containerEl, countInfoEl, scans, positions, maxGaps, strategy, expansion, allyTag, customWeights }) => {
   containerEl.innerHTML = '';
 
   const ownAllyTag = allyTag?.trim() ?? '';
@@ -304,6 +307,7 @@ export const renderFreeRegions = ({ containerEl, countInfoEl, scans, positions, 
   const results = sortRegionsByStrategy(raw, strategy ?? 'longest', {
     expansion: expansion ?? 0,
     allyBonus,
+    customWeights,
   });
   const posLabel = positions.join(', ');
 

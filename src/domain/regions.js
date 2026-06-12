@@ -362,6 +362,11 @@ export const expansionFactor = (mineMinDist) => {
  *   neighbours (`allyNearby / scanned` rate). Requires `ownAllyTag`
  *   passed to `findBestRegions` — otherwise `allyNearby` is always 0.
  *   Typical value: `1.5` when an ally tag is provided.
+ * @property {StrategyWeights} [customWeights]
+ *   When provided, REPLACES the named strategy's built-in weights.
+ *   The UI writes slider values here; the strategy key then acts only
+ *   as a "load preset" convenience. `length` tiebreaker (0.1) is
+ *   included automatically if omitted from the custom set.
  */
 
 /**
@@ -413,10 +418,14 @@ const scoreForStrategy = (region, weights, mods = {}) => {
 export const sortRegionsByStrategy = (regions, strategyKey, opts = {}) => {
   const strategy = STRATEGIES[strategyKey];
   const hasModifiers = (opts.expansion ?? 0) !== 0 || (opts.allyBonus ?? 0) > 0;
-  if (!hasModifiers && (!strategy || strategyKey === 'longest')) {
+  const hasCustom = !!opts.customWeights;
+  if (!hasModifiers && !hasCustom && (!strategy || strategyKey === 'longest')) {
     return [...regions].sort((a, b) => b.length - a.length || a.gaps - b.gaps || a.galaxy - b.galaxy);
   }
-  const w = strategy?.weights ?? STRATEGIES.longest.weights;
+  // Custom weights override the preset; keep a small length tiebreaker if omitted.
+  const w = opts.customWeights
+    ? { length: 0.1, ...opts.customWeights }
+    : (strategy?.weights ?? STRATEGIES.longest.weights);
   return [...regions].sort(
     (a, b) => scoreForStrategy(b, w, opts) - scoreForStrategy(a, w, opts) || b.length - a.length || a.galaxy - b.galaxy,
   );
