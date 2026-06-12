@@ -21,7 +21,7 @@
 //   0. (outranks all) Artifact cap reached → button gated as "Full"; the
 //      tap navigates to the lfresearch page (spend artifacts there — the
 //      visit also refreshes the counter). The counter is harvested from
-//      every lfresearch visit and refetched quietly once per hour.
+//      every lfresearch visit (passive DOM read, never an automated request).
 //
 // # Marking + 7-day retention
 //
@@ -47,7 +47,6 @@ import {
   buildGalaxySystemUrl,
   buildLfResearchUrl,
   DISCOVERY_COOLDOWN_MS,
-  ARTIFACTS_REFRESH_MS,
   BG_LF_IDLE,
   BG_LF_WAIT,
   BG_LF_ACTIVE,
@@ -249,21 +248,10 @@ const onClick = () => {
 
 // ─── Artifact counter (T10) ──────────────────────────────────────────────────
 //
-// Two acquisition paths for the "Zebrane artefakty: N / M" reading that
-// gates the button once the cap is hit:
-//   1. PASSIVE — every visit to the lfresearch page reads the live DOM.
-//   2. HOURLY — when the persisted reading is older than
-//      ARTIFACTS_REFRESH_MS, a quiet same-origin fetch of the lfresearch
-//      page refreshes it (in-flight discovery waves keep landing artifacts
-//      after the send, so the count drifts up between visits).
-
-/** Retry delay after a failed background fetch (network / non-200). */
-const ARTIFACTS_FETCH_RETRY_MS = 5 * 60_000;
-
-/** One background fetch at a time. */
-let artifactsFetchInFlight = false;
-/** Epoch-ms before which the background fetch must not retry. */
-let artifactsFetchBackoffUntil = 0;
+// Passive-only acquisition: every visit to the lfresearch page reads the
+// live DOM counter and persists it. No automated background requests —
+// that would violate OGame's ToS. The reading is therefore as fresh as the
+// user's last natural visit to that page.
 
 /**
  * On the lfresearch page, read the artifact counter from the live DOM and
@@ -276,46 +264,6 @@ const harvestArtifactsFromPage = () => {
   const counter = readArtifactCounter();
   if (!counter) return;
   writeLfArtifacts({ ...counter, readAt: Date.now() });
-};
-
-/**
- * Refresh a stale artifact reading via a quiet same-origin fetch of the
- * lfresearch page. Self-throttling: skips while a reading is fresh
- * (< {@link ARTIFACTS_REFRESH_MS}), while a fetch is in flight, during the
- * post-failure backoff, and on the lfresearch page itself (the live DOM
- * harvest owns it there). A page that fetches fine but has no counter
- * (e.g. lifeforms disabled) is treated as a completed check — backoff a
- * full refresh interval instead of hammering retries.
- *
- * @returns {void}
- */
-const maybeRefreshArtifacts = () => {
-  if (artifactsFetchInFlight) return;
-  const now = Date.now();
-  if (now < artifactsFetchBackoffUntil) return;
-  if (location.search.includes('component=lfresearch')) return;
-  const reading = readLfArtifacts();
-  if (reading && now - reading.readAt < ARTIFACTS_REFRESH_MS) return;
-
-  artifactsFetchInFlight = true;
-  fetch(buildLfResearchUrl(location.href), { credentials: 'same-origin' })
-    .then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`))))
-    .then((html) => {
-      const doc = new DOMParser().parseFromString(html, 'text/html');
-      const counter = readArtifactCounter(doc);
-      if (counter) {
-        writeLfArtifacts({ ...counter, readAt: Date.now() });
-        refresh();
-      } else {
-        artifactsFetchBackoffUntil = Date.now() + ARTIFACTS_REFRESH_MS;
-      }
-    })
-    .catch(() => {
-      artifactsFetchBackoffUntil = Date.now() + ARTIFACTS_FETCH_RETRY_MS;
-    })
-    .finally(() => {
-      artifactsFetchInFlight = false;
-    });
 };
 
 // ─── Result reactor ──────────────────────────────────────────────────────────
@@ -498,13 +446,7 @@ export const installSendLifeform = () => {
   const unsubScans = scansStore.subscribe(() => refresh());
   document.addEventListener(SYSTEM_DISCOVERY_RESULT_EVENT, onDiscoveryResult);
 
-  const tickerHandle = setInterval(() => {
-    refresh();
-    // Hourly staleness check rides the 1 Hz ticker but only while the
-    // button is actually mounted (lifeformMode on) — no reason to poll the
-    // game for a counter nothing displays.
-    if (controller) maybeRefreshArtifacts();
-  }, REPAINT_TICK_MS);
+  const tickerHandle = setInterval(refresh, REPAINT_TICK_MS);
 
   installed = {
     dispose: () => {
@@ -537,8 +479,6 @@ export const _resetSendLifeformForTest = () => {
   }
   transientPaint = null;
   transientUntil = 0;
-  artifactsFetchInFlight = false;
-  artifactsFetchBackoffUntil = 0;
 };
 
 /** Exposed only for unit tests — do not call from production code. */

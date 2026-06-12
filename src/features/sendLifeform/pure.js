@@ -78,15 +78,6 @@ export const DISCOVERY_COOLDOWN_MS = 8000;
 // ─── Artifact cap ──────────────────────────────────────────────────────────
 
 /**
- * How stale the persisted artifact reading may grow before the feature
- * refetches the lfresearch page in the background. One hour: in-flight
- * discovery waves keep landing artifacts after the send, so a reading
- * taken before a wave returned undercounts — an hourly recheck is the
- * agreed trade-off between freshness and request volume.
- */
-export const ARTIFACTS_REFRESH_MS = 3600_000;
-
-/**
  * Extract the artifact counter from the lfresearch header slot text, e.g.
  * `"Zebrane artefakty: 3609 / 3600"`. Locale-independent: the label text
  * varies per language, so we only look for the first `N / M` number pair

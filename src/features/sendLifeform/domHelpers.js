@@ -136,19 +136,16 @@ export const clickDiscover = () => {
 const LF_ARTIFACT_SLOT_SELECTOR = '#lfresearch header .slot';
 
 /**
- * Read the artifact counter (`current / max`) out of an lfresearch
- * document — the live page when visiting it, or a `DOMParser` document
- * from the hourly background refetch. Scans every header slot and returns
- * the first one that parses; `null` when the page has no counter (e.g.
- * lifeforms disabled on the account).
+ * Read the artifact counter (`current / max`) from the live lfresearch
+ * page DOM. Scans every header slot and returns the first that parses;
+ * `null` when the page has no counter (e.g. lifeforms disabled on the
+ * account) or when called outside a browser context (node tests).
  *
- * @param {Document | null} [doc]  defaults to the live `document`.
  * @returns {{ current: number, max: number } | null}
  */
-export const readArtifactCounter = (doc) => {
-  const d = doc ?? (typeof document === 'undefined' ? null : document);
-  if (!d) return null;
-  const slots = d.querySelectorAll(LF_ARTIFACT_SLOT_SELECTOR);
+export const readArtifactCounter = () => {
+  if (typeof document === 'undefined') return null;
+  const slots = document.querySelectorAll(LF_ARTIFACT_SLOT_SELECTOR);
   for (const slot of slots) {
     const parsed = parseArtifactCounter(slot.textContent);
     if (parsed) return parsed;
