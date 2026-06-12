@@ -58,6 +58,7 @@ import {
   parseCurrentGalaxyView,
   navigateGalaxyInPage,
   hasDiscoverButton,
+  isDiscoverButtonDisabled,
   clickDiscover,
   readArtifactCounter,
 } from './domHelpers.js';
@@ -137,6 +138,7 @@ const captureEnv = () => {
     home: readHomePlanet(),
     view: parseCurrentGalaxyView(),
     hasDiscoverBtn: hasDiscoverButton(),
+    discoverBtnDisabled: isDiscoverButtonDisabled(),
     cooldown: busy,
     artifacts: readLfArtifacts(),
     lastLfSentAt: maxLfScannedAt(scans),
@@ -246,6 +248,10 @@ const onClick = () => {
       return;
     }
 
+    case 'blocked':
+      // The game's discover control is disabled (all fleet slots used /
+      // other game-side blocker) — a click could not send anything. Just
+      // repaint; the 1 Hz ticker lifts the state when the game does.
     case 'allDone':
       paint(render(ctx));
       return;

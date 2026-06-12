@@ -115,6 +115,13 @@ export const BUTTON_TEXT = 'Explore';
 /** Transient copy when every planet has hit `maxExpPerPlanet`. */
 export const ALL_MAXED_LABEL = 'All maxed!';
 
+/**
+ * Transient copy when every GENERAL fleet slot is in use (T11) — distinct
+ * from {@link ALL_MAXED_LABEL} so the user can tell "my expedition budget
+ * is spent" apart from "no fleet of any kind can launch right now".
+ */
+export const ALL_FLEETS_LABEL = 'All fleets!';
+
 // ─── Background colors ───────────────────────────────────────────────
 
 /** Rim colour for the idle button (cerulean blue). */

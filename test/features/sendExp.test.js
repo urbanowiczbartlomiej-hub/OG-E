@@ -49,8 +49,10 @@ import {
  * `installSendExp()`. Mirrors the helper in `sendCol.test.js`.
  *
  * @param {{
- *   expeditionCount: number,
- *   maxExpeditionCount: number,
+ *   expeditionCount?: number,
+ *   maxExpeditionCount?: number,
+ *   fleetCount?: number,
+ *   maxFleetCount?: number,
  * }} snap
  */
 const setFleetDispatcher = (snap) => {
@@ -659,6 +661,34 @@ describe('installSendExp — fleetDispatcher snapshot gates', () => {
     vi.advanceTimersByTime(2000);
     expect(labelOf(btn)).toBe('Explore');
     vi.useRealTimers();
+  });
+
+  it('snapshot at general fleet cap (18/18) → "All fleets!" painted, no nav', () => {
+    vi.useFakeTimers();
+    setupScene({ onFleetdispatch: false, activeCp: 42, activeExpeditions: 0 });
+    installSendExp();
+    setFleetDispatcher({ expeditionCount: 3, maxExpeditionCount: 14, fleetCount: 18, maxFleetCount: 18 });
+
+    const btn = getBtn();
+    btn?.click();
+
+    expect(labelOf(btn)).toBe('All fleets!');
+    expect(navTarget).toBeNull();
+
+    vi.advanceTimersByTime(2000);
+    expect(labelOf(btn)).toBe('Explore');
+    vi.useRealTimers();
+  });
+
+  it('fleet cap not reached (17/18) → expedition check runs normally', () => {
+    setupScene({ onFleetdispatch: false, activeCp: 7, activeExpeditions: 0, maxExpPerPlanet: 2 });
+    installSendExp();
+    setFleetDispatcher({ expeditionCount: 3, maxExpeditionCount: 14, fleetCount: 17, maxFleetCount: 18 });
+
+    getBtn()?.click();
+
+    expect(navTarget).not.toBeNull();
+    expect(navTarget).toContain('component=fleetdispatch');
   });
 });
 

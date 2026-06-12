@@ -9,6 +9,7 @@ import {
   resolveSelection,
   isMissionAllowed,
   classifyTargetError,
+  isFleetCapReached,
   ERR_NO_MOON,
   ERR_NO_COLONIZER,
   ERR_RESERVED,
@@ -144,5 +145,28 @@ describe('classifyTargetError', () => {
     expect(classifyTargetError(0)).toBe('ok');
     expect(classifyTargetError(undefined)).toBe('ok');
     expect(classifyTargetError(999999)).toBe('generic');
+  });
+});
+
+describe('isFleetCapReached', () => {
+  it('returns true when used slots equal the max', () => {
+    expect(isFleetCapReached({ fleetCount: 18, maxFleetCount: 18 })).toBe(true);
+  });
+
+  it('returns true when used slots exceed the max', () => {
+    expect(isFleetCapReached({ fleetCount: 20, maxFleetCount: 18 })).toBe(true);
+  });
+
+  it('returns false when below the cap', () => {
+    expect(isFleetCapReached({ fleetCount: 17, maxFleetCount: 18 })).toBe(false);
+  });
+
+  it('returns false when maxFleetCount is 0 (game not loaded yet)', () => {
+    expect(isFleetCapReached({ fleetCount: 0, maxFleetCount: 0 })).toBe(false);
+  });
+
+  it('returns false for null/undefined input', () => {
+    expect(isFleetCapReached(null)).toBe(false);
+    expect(isFleetCapReached(undefined)).toBe(false);
   });
 });

@@ -113,14 +113,36 @@ export const hasDiscoverButton = () =>
   document.getElementById(DISCOVER_BTN_ID) !== null;
 
 /**
+ * Is the game's discover-system control present but DISABLED? The game
+ * marks the unavailable state (all fleet slots used, or any other blocker)
+ * with a `disabled="disabled"` attribute on the control plus an inner
+ * `<div class="disabled">` veil — we accept either signal. AGR hides the
+ * native control behind its own clone (`#ago_discovery`), but the native
+ * node stays in the DOM with its state, so this read works under AGR too.
+ *
+ * Absent control ⇒ `false` ("not disabled" — presence is a separate
+ * question answered by {@link hasDiscoverButton}).
+ *
+ * @returns {boolean}
+ */
+export const isDiscoverButtonDisabled = () => {
+  const btn = document.getElementById(DISCOVER_BTN_ID);
+  if (!btn) return false;
+  return btn.hasAttribute('disabled') || btn.querySelector('.disabled') !== null;
+};
+
+/**
  * Click the game's discover-system control (the game then fires
- * `sendSystemDiscoveryFleet`). Returns `true` if the control existed.
+ * `sendSystemDiscoveryFleet`). Returns `true` if the control existed and
+ * was clicked. A DISABLED control is never clicked — the game would
+ * ignore it and the caller would burn its post-click cooldown waiting
+ * for a result that cannot come.
  *
  * @returns {boolean}
  */
 export const clickDiscover = () => {
   const btn = document.getElementById(DISCOVER_BTN_ID);
-  if (!btn) return false;
+  if (!btn || isDiscoverButtonDisabled()) return false;
   safeClick(btn);
   return true;
 };

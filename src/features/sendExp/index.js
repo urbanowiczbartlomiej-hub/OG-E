@@ -74,6 +74,7 @@ import { GAME, ACTIVE_PLANET_CLASS } from '../../lib/gameDom.js';
 import { createButton as makeButton, LABEL_CLASS } from '../shared/button.js';
 import { COMET_GLYPH } from '../shared/buttonGlyphs.js';
 import { OWNER_EXP } from '../../domain/fleetOwnership.js';
+import { isFleetCapReached } from '../../domain/fleetPlan.js';
 import {
   installFleetOwnership,
   claimFleet2,
@@ -95,6 +96,7 @@ import {
   EVENTBOX_LOADING_LABEL_MS,
   BUTTON_TEXT,
   ALL_MAXED_LABEL,
+  ALL_FLEETS_LABEL,
   BG_IDLE,
   BG_MAX,
   stripBrackets,
@@ -368,21 +370,29 @@ export const installSendExp = () => {
   };
 
   /**
-   * Transient "All maxed!" painted when every planet has hit the
-   * expedition cap. Duration is {@link MAX_LABEL_MS} so users learn
-   * the cadence once.
+   * Transient cap label (amber) — restores the previous label and idle
+   * colour after {@link MAX_LABEL_MS} so users learn the cadence once.
    *
    * @param {HTMLButtonElement} btn
+   * @param {string} label
    */
-  const paintAllMaxed = (btn) => {
+  const paintCapLabel = (btn, label) => {
     const original = getLabel(btn);
-    setLabel(btn, ALL_MAXED_LABEL);
+    setLabel(btn, label);
     controller?.setBg('main', BG_MAX);
     setTimeout(() => {
       setLabel(btn, original);
       controller?.setBg('main', BG_IDLE);
     }, MAX_LABEL_MS);
   };
+
+  /**
+   * Transient "All maxed!" painted when every planet has hit the
+   * expedition cap.
+   *
+   * @param {HTMLButtonElement} btn
+   */
+  const paintAllMaxed = (btn) => paintCapLabel(btn, ALL_MAXED_LABEL);
 
   /**
    * Phase 2 (fleetdispatch, fleet panel NOT yet loaded): wait for AGR's
@@ -484,6 +494,14 @@ export const installSendExp = () => {
         if (getLabel(btn) === 'Wait...') setLabel(btn, original || BUTTON_TEXT);
         controller?.setDim('main', false);
       }, EVENTBOX_LOADING_LABEL_MS);
+      return;
+    }
+
+    // General fleet-slot gate (T11) — every fleet slot in use ⇒ NO fleet
+    // of any kind can launch. Broader than the expedition cap below, so it
+    // is checked first and gets its own label.
+    if (isFleetCapReached(fleetDispatcherSnapshot)) {
+      paintCapLabel(btn, ALL_FLEETS_LABEL);
       return;
     }
 
