@@ -46,6 +46,7 @@ import {
   buildGalaxyUrl,
   buildGalaxySystemUrl,
   buildLfResearchUrl,
+  maxLfScannedAt,
   DISCOVERY_COOLDOWN_MS,
   BG_LF_IDLE,
   BG_LF_WAIT,
@@ -127,16 +128,20 @@ const paint = (p) => {
  *
  * @returns {import('./pure.js').LfDeriveEnv}
  */
-const captureEnv = () => ({
-  search: location.search,
-  scans: scansStore.get(),
-  now: Date.now(),
-  home: readHomePlanet(),
-  view: parseCurrentGalaxyView(),
-  hasDiscoverBtn: hasDiscoverButton(),
-  cooldown: busy,
-  artifacts: readLfArtifacts(),
-});
+const captureEnv = () => {
+  const scans = scansStore.get();
+  return {
+    search: location.search,
+    scans,
+    now: Date.now(),
+    home: readHomePlanet(),
+    view: parseCurrentGalaxyView(),
+    hasDiscoverBtn: hasDiscoverButton(),
+    cooldown: busy,
+    artifacts: readLfArtifacts(),
+    lastLfSentAt: maxLfScannedAt(scans),
+  };
+};
 
 /**
  * Full pipeline: hold a live transient if one is active, else
@@ -201,9 +206,10 @@ const onClick = () => {
 
   switch (ctx.kind) {
     case 'artifactsFull':
-      // Cap reached — sending is blocked; the one useful action left is
-      // jumping to lifeform research (spend artifacts there; the visit
-      // also re-reads the counter and lifts this state once below max).
+    case 'checkArtifacts':
+      // Cap reached OR stale counter after a send — navigate to lfresearch.
+      // The visit harvests a fresh reading; if the count is below max,
+      // checkArtifacts dissolves on the next tap (offGalaxy or discover).
       location.href = buildLfResearchUrl(location.href);
       return;
 

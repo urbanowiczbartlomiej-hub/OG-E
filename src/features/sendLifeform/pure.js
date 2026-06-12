@@ -179,6 +179,25 @@ const systemsAtDistance = (center, d) => {
 };
 
 /**
+ * Most recent `lfScannedAt` across all scanned systems — the epoch-ms
+ * timestamp of the last discovery send. Returns `null` when nothing has
+ * ever been sent (no system has `lfScannedAt` set).
+ *
+ * Used by `derive` to detect sessions where a wave was sent after the last
+ * artifact-counter reading (so the counter may have grown since then).
+ *
+ * @param {GalaxyScans} scans
+ * @returns {number | null}
+ */
+export const maxLfScannedAt = (scans) => {
+  let max = 0;
+  for (const scan of Object.values(scans)) {
+    if (scan.lfScannedAt && scan.lfScannedAt > max) max = scan.lfScannedAt;
+  }
+  return max > 0 ? max : null;
+};
+
+/**
  * Count systems across every galaxy that still need a discovery. Cheap
  * full-universe pass (7 × 499 hash lookups), run from the 1 Hz refresh for
  * the button's progress label — same pattern as
@@ -243,6 +262,10 @@ export const buildLfResearchUrl = (href) =>
  *                    to the lfresearch page (where artifacts are spent —
  *                    and where the counter re-reads itself). Outranks every
  *                    other phase.
+ *   - `checkArtifacts` — we have a prior lfresearch reading AND at least one
+ *                    discovery was sent AFTER that reading (the count may have
+ *                    climbed since then). One tap navigates to lfresearch to
+ *                    refresh the counter before the session starts.
  *   - `offGalaxy`  — not on the galaxy component; one tap navigates there.
  *   - `discover`   — on galaxy, the viewed system needs discovery AND the
  *                    game's discover button is present.
@@ -256,6 +279,7 @@ export const buildLfResearchUrl = (href) =>
  *
  * @typedef {(
  *   | { kind: 'artifactsFull', current: number, max: number, scansRemaining: number }
+ *   | { kind: 'checkArtifacts', scansRemaining: number }
  *   | { kind: 'offGalaxy', scansRemaining: number }
  *   | { kind: 'discover', target: SystemCoords, cooldown: boolean, scansRemaining: number }
  *   | { kind: 'navigate', target: SystemCoords, cooldown: boolean, scansRemaining: number }
@@ -284,6 +308,9 @@ export const buildLfResearchUrl = (href) =>
  * @property {import('../../state/lifeformArtifacts.js').ArtifactReading | null} [artifacts]
  *   Last persisted artifact-counter reading, or null/absent when never read
  *   (absent ⇒ no cap gating — degrade to today's behaviour).
+ * @property {number | null} [lastLfSentAt]
+ *   Most recent `lfScannedAt` across all systems — epoch-ms of the last
+ *   discovery send, or null when nothing has ever been sent.
  */
 
 // ─── derive ─────────────────────────────────────────────────────────────────
@@ -305,10 +332,17 @@ export const derive = (env) => {
     return { kind: 'artifactsFull', current: a.current, max: a.max, scansRemaining };
   }
 
-  // Off galaxy: a tap just gets the user onto the galaxy component (the
-  // first system there is server-rendered, not AJAX, so we don't target a
-  // specific system from here — mirrors the Send-Col Scan half).
+  // Off galaxy: either navigate to lfresearch first (if a send happened after
+  // the last counter reading — the wave may have brought artifacts), or go
+  // directly to the galaxy component. The lfresearch redirect requires a
+  // prior reading: without one we have no baseline, and forcing an lfresearch
+  // visit on every fresh install would be annoying.
   if (!env.search.includes('component=galaxy')) {
+    const lastSent = env.lastLfSentAt ?? null;
+    const readAt = env.artifacts?.readAt ?? null;
+    if (lastSent !== null && readAt !== null && lastSent > readAt) {
+      return { kind: 'checkArtifacts', scansRemaining };
+    }
     return { kind: 'offGalaxy', scansRemaining };
   }
 
@@ -363,6 +397,14 @@ export const render = (ctx) => {
         hint: 'artifacts — tap: research',
         bg: BG_LF_DONE,
         dim: true,
+      };
+    case 'checkArtifacts':
+      // A discovery was sent after the last counter reading: the wave may
+      // have brought the count near or over the cap. Tap → lfresearch.
+      return {
+        text: 'Discover',
+        subtext: 'check artifacts',
+        bg: BG_LF_IDLE,
       };
     case 'offGalaxy':
       return { text: 'Discover', bg: BG_LF_IDLE };
