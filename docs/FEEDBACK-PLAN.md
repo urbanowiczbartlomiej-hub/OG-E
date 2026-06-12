@@ -54,6 +54,7 @@
 | T10 | Lifeform: blokada Discovery po osiągnięciu 3600 (+ kiedy odblokować) | średnie | TODO |
 | T11 | Obsługa „all fleets” dla każdego przycisku | średnie | TODO |
 | T12 | Blask cieniutkiej krawędzi w przyciskach dwustrefowych | łatwe | REVIEW |
+| T13 | DAILY RUN: błędny subtitle/hint zanim gra doczyta eventList | łatwe/średnie | ANALIZA |
 
 ### Sugerowana kolejność (stan po sesji 7)
 
@@ -650,6 +651,77 @@ stref, by efekt blasku był jak w 1-zone.
   Dodano ciemny inset-backing (`inset 0 0 0 3px rgba(0,0,0,.45)`) tuż za
   nitką, symulując ciemne tło jakie single-zone dostaje naturalnie.
   Commit `5409d43`. Status: REVIEW.
+
+---
+
+### T13 — DAILY RUN: błędny subtitle/hint zanim gra doczyta eventList
+**Status:** ANALIZA (diagnoza + projekt gotowe, czeka na zielone światło) ·
+**Trudność:** łatwe/średnie
+
+**Feedback (wiernie):** „Przycisk daily run w górnej sekcji, na samym początku
+wskazuje w subtitle i hint z nazwą kolejnej pozycji i ile jeszcze ich zostało.
+Niestety opiera się on na eventList, a ten gra zwraca dopiero po jakimś czasie
+po załadowaniu strony. Leci tam XHR, może Ajax i doczytuje eventList. Przycisk
+to wyłapie, ale dopiero po tym jak złapie to odświeżanie 1 Hz. Czyli przez nawet
+kilka sekund gracz widzi błędne dane, po czym pokazują się poprawne. To mocno
+wprowadza w błąd.”
+
+**Analiza/projekt (diagnoza potwierdzona w kodzie):**
+- `fsCollect/index.js::refresh()` maluje strefę DISPATCH jako
+  `Send / <nazwa next targetu> / N left` z
+  `findNextMicroTarget(route.targets, microInFlightKeys())` +
+  `countRemainingMicroTargets`.
+- `microInFlightKeys()` ← `readDeployLegs()` (`domHelpers.js:146`) ←
+  `#eventContent tr.eventFleet[data-mission-type="4"]...`. Zanim XHR
+  eventList wyląduje, wierszy NIE MA → zbiór in-flight pusty → licznik
+  liczy WSZYSTKIE cele trasy jako pozostałe i proponuje cel, który może już
+  mieć deployment w drodze. Po dolocie XHR koryguje się — ale dopiero na
+  ticku 1 Hz (`index.js:709`).
+- Infrastruktura sygnału JUŻ ISTNIEJE: bridge `bridges/eventBoxHook.js`
+  (instalowany globalnie w `page.js:54`) dispatchuje `oge:eventBoxLoaded`
+  po HTTP 200 na URL `event(box|list)`. Konsumują go już `sendExp/index.js`
+  (gate kliknięć: event + window-load fallback + safety-timeout
+  `EVENTBOX_SAFETY_TIMEOUT_MS=1200`) i `reminders/producer.js`
+  (`scheduleRun()` debounced — pokrywa wyścig XHR→wstawienie DOM).
+  fsCollect jako jedyny czytelnik eventListy NIE słucha tego eventu.
+
+**Projekt fixu (dwie warstwy):**
+1. **Nie pokazuj błędnych danych:** flaga `eventBoxReady` w fsCollect —
+   na starcie `true` tylko gdy `#eventContent` już jest w DOM (wolny
+   install po dolocie XHR); inaczej `false` → `refresh()` maluje
+   `Send / syncing…` (bez nazwy celu i bez „N left") zamiast fałszywego
+   stanu. Fallback-timer (~5–8 s, dłuższy niż 1.2 s sendExpa — tu chodzi
+   o dane, nie o odblokowanie klików; brak eventu = degradacja do
+   dzisiejszego zachowania, nigdy trwałe „syncing").
+2. **Maluj natychmiast po dolocie:** listener `oge:eventBoxLoaded` →
+   `eventBoxReady = true` + `refresh()` (z mikro-debounce jak w producer,
+   na wyścig XHR-load vs. wstawienie wierszy przez grę) — koniec czekania
+   na tick 1 Hz.
+
+Uwaga: strefa „Send All" ma już poprawny wzorzec „unknown ≠ zero"
+(`microShortfall`/`collectPlanetEmpty` zwracają null/false bez snapshotu) —
+T13 wyrównuje strefę DISPATCH do tej samej filozofii.
+
+**Pliki:**
+- `src/features/fsCollect/index.js` (refresh, mount/dispose — flaga,
+  listener, fallback-timer)
+- wzorce: `src/features/sendExp/index.js:269-311`,
+  `src/features/reminders/producer.js:355`
+- `src/bridges/eventBoxHook.js` — bez zmian (gotowy)
+
+**Podzadania:**
+1. Flaga `eventBoxReady` + detekcja `#eventContent` przy mount.
+2. Placeholder „syncing…" w strefie DISPATCH gdy not-ready.
+3. Listener `oge:eventBoxLoaded` → ready + natychmiastowy repaint.
+4. Fallback-timer otwierający gate (degradacja, nie blokada).
+
+**Dane:** nie — diagnoza potwierdzona w kodzie; weryfikacja wizualna (REVIEW)
+po implementacji.
+
+**Dziennik:**
+- 2026-06-12 (sesja 7): Zgłoszone przez użytkownika, zbadane od razu.
+  Diagnoza i projekt jak wyżej; implementacja czeka na akceptację
+  (decyzja kosmetyczna: treść placeholdera).
 
 ---
 
