@@ -261,28 +261,28 @@ afterEach(() => {
 // ──────────────────────────────────────────────────────────────────
 
 describe('installSendCol — lifecycle', () => {
-  it('does not render when colonizeMode is off', () => {
+  it('does not render when fabMode is off', () => {
     setupScene();
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: false });
+    settingsStore.set({ ...settingsStore.get(), fabMode: false });
     installSendCol();
     expect(getWrap()).toBeNull();
   });
 
-  it('renders both halves when colonizeMode is on', () => {
+  it('renders both halves when fabMode is on', () => {
     setupScene();
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
     installSendCol();
     expect(getWrap()).not.toBeNull();
     expect(getSend()).not.toBeNull();
     expect(getScan()).not.toBeNull();
   });
 
-  it('applies colBtnSize from settings', () => {
+  it('applies fabBtnSize from settings', () => {
     setupScene();
     settingsStore.set({
       ...settingsStore.get(),
-      colonizeMode: true,
-      colBtnSize: 400,
+      fabMode: true,
+      fabBtnSize: 400,
     });
     installSendCol();
     expect(getWrap()?.style.width).toBe('400px');
@@ -291,7 +291,7 @@ describe('installSendCol — lifecycle', () => {
 
   it('dispose removes the button', () => {
     setupScene();
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
     const dispose = installSendCol();
     expect(getWrap()).not.toBeNull();
     dispose();
@@ -300,7 +300,7 @@ describe('installSendCol — lifecycle', () => {
 
   it('is idempotent — second install returns the same dispose', () => {
     setupScene();
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
     const d1 = installSendCol();
     const d2 = installSendCol();
     expect(d2).toBe(d1);
@@ -481,7 +481,7 @@ describe('render — pure paint instructions', () => {
 describe('onSendClick — idle/galaxy branch', () => {
   it('idle with a candidate → navigates to a bare fleetdispatch', () => {
     setupScene();
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
     scansStore.set({
       '4:30': { scannedAt: Date.now(), positions: { 8: { status: 'empty' } } },
     });
@@ -495,7 +495,7 @@ describe('onSendClick — idle/galaxy branch', () => {
 
   it('idle with no candidate → paints "No more candidates" (no nav)', () => {
     setupScene();
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
     installSendCol();
     getSend()?.click();
     expect(getSend()?.textContent).toBe('No more candidates');
@@ -507,7 +507,7 @@ describe('onSendClick — fleetdispatch branch', () => {
   /** @param {Parameters<typeof makeFleetDispatcher>[0]} fdOpts */
   const installFleet = (fdOpts = {}) => {
     setupScene({ onFleetdispatch: true, mission: 7 });
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
     setFleetDispatcher(makeFleetDispatcher(fdOpts));
     installSendCol();
   };
@@ -550,7 +550,7 @@ describe('onSendClick — fleetdispatch branch', () => {
 
   it('two taps: select arms a ready send, then dispatch fires', async () => {
     setupScene({ onFleetdispatch: true });
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
     scansStore.set({
       '4:30': { scannedAt: Date.now(), positions: { 8: { status: 'empty' } } },
     });
@@ -576,7 +576,7 @@ describe('onSendClick — fleetdispatch branch', () => {
 
   it('tap 2 with a min-gap conflict shows "Wait Ns" and does not dispatch', async () => {
     setupScene({ onFleetdispatch: true });
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
     scansStore.set({
       '4:30': { scannedAt: Date.now(), positions: { 8: { status: 'empty' } } },
     });
@@ -615,7 +615,7 @@ describe('onScanClick', () => {
     // we targeted it via full nav. Better to let the user arrive on
     // galaxy and drive subsequent scans via AJAX-observed submits.
     setupScene();
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
     installSendCol();
     getScan()?.click();
     expect(navTarget).toContain('component=galaxy');
@@ -626,7 +626,7 @@ describe('onScanClick', () => {
 
   it('on-galaxy + all-scanned → paints "All scanned!", no nav', () => {
     setupScene({ onGalaxy: true, galaxyG: 4, galaxyS: 42 });
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
     /** @type {import('../../src/state/scans.js').GalaxyScans} */
     const scans = {};
     for (let g = 1; g <= 7; g++) {
@@ -672,7 +672,7 @@ describe('onScanClick', () => {
 
   it('galaxy view → in-page submit when submit button exists', () => {
     setupScene({ onGalaxy: true, galaxyG: 4, galaxyS: 42 });
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
     const { systemInput, submitBtn } = installGalaxyForm();
     let clicked = false;
     submitBtn.addEventListener('click', () => {
@@ -694,7 +694,7 @@ describe('onScanClick', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
     setupScene({ onGalaxy: true, galaxyG: 4, galaxyS: 42 });
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
     const { submitBtn } = installGalaxyForm();
     let clicks = 0;
     submitBtn.addEventListener('click', () => {
@@ -729,7 +729,7 @@ describe('onScanClick', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
     setupScene({ onGalaxy: true, galaxyG: 4, galaxyS: 42 });
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
     const { submitBtn } = installGalaxyForm();
     let clicks = 0;
     submitBtn.addEventListener('click', () => {
@@ -759,7 +759,7 @@ describe('onScanClick', () => {
 describe('oge:checkTargetResult reactor', () => {
   it('matching coords + errorCodes[0]=140016 → marks the slot Reserved', () => {
     setupScene({ onFleetdispatch: true, mission: 7 });
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
     setFleetDispatcher(makeFleetDispatcher({
       canColonize: false,
       hasColonizer: true,
@@ -777,7 +777,7 @@ describe('oge:checkTargetResult reactor', () => {
     // 140035 means "you lack a colony ship", not "the slot is bad" — so the
     // reactor leaves the DB alone (the user can build/move a ship and retry).
     setupScene({ onFleetdispatch: true, mission: 7 });
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
     setFleetDispatcher(makeFleetDispatcher({
       canColonize: false,
       hasColonizer: true,
@@ -793,7 +793,7 @@ describe('oge:checkTargetResult reactor', () => {
 
   it('non-matching coords against fleetDispatcher.targetPlanet → ignored', () => {
     setupScene({ onFleetdispatch: true, mission: 7 });
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
     setFleetDispatcher(makeFleetDispatcher({
       target: { galaxy: 4, system: 30, position: 8 },
       canColonize: true,
@@ -813,7 +813,7 @@ describe('oge:checkTargetResult reactor', () => {
 describe('oge:colonizeSent reactor', () => {
   it('marks the sent slot empty_sent in scansStore + NO auto-redirect', () => {
     setupScene();
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
     // Preload scansStore with TWO candidates — if auto-redirect fired
     // we'd observe a nav to the next one.
     scansStore.set({
@@ -834,7 +834,7 @@ describe('oge:colonizeSent reactor', () => {
 
   it('bad detail payload is tolerated (no-op)', () => {
     setupScene();
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
     installSendCol();
     // No galaxy/system/position → no-op.
     document.dispatchEvent(
@@ -851,7 +851,7 @@ describe('oge:colonizeSent reactor', () => {
 describe('onSendHold — manual skip', () => {
   it('is a no-op when no candidate is shown (empty scansStore)', () => {
     setupScene(); // overview, no galaxy view → derive finds no candidate
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
     installSendCol(); // refresh() → lastDerivedCandidate = null
     _onSendHoldForTest();
     expect(Object.keys(scansStore.get())).toHaveLength(0);
@@ -864,7 +864,7 @@ describe('onSendHold — manual skip', () => {
     setupScene({ onFleetdispatch: true });
     settingsStore.set({
       ...settingsStore.get(),
-      colonizeMode: true,
+      fabMode: true,
       colPositions: '9',
     });
     scansStore.set({
@@ -887,7 +887,7 @@ describe('onSendHold — manual skip', () => {
     setupScene({ onGalaxy: true, galaxyG: 4, galaxyS: 30 });
     settingsStore.set({
       ...settingsStore.get(),
-      colonizeMode: true,
+      fabMode: true,
       colPositions: '9',
     });
     scansStore.set({
@@ -902,7 +902,7 @@ describe('onSendHold — manual skip', () => {
     setupScene({ onGalaxy: true, galaxyG: 4, galaxyS: 30 });
     settingsStore.set({
       ...settingsStore.get(),
-      colonizeMode: true,
+      fabMode: true,
       colPositions: '9',
     });
     scansStore.set({
@@ -927,23 +927,23 @@ describe('onSendHold — manual skip', () => {
 // ──────────────────────────────────────────────────────────────────
 
 describe('settings reactions', () => {
-  it('colonizeMode toggle off → button removed; on → remounted', () => {
+  it('fabMode toggle off → button removed; on → remounted', () => {
     setupScene();
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
     installSendCol();
     expect(getWrap()).not.toBeNull();
-    settingsStore.update((s) => ({ ...s, colonizeMode: false }));
+    settingsStore.update((s) => ({ ...s, fabMode: false }));
     expect(getWrap()).toBeNull();
-    settingsStore.update((s) => ({ ...s, colonizeMode: true }));
+    settingsStore.update((s) => ({ ...s, fabMode: true }));
     expect(getWrap()).not.toBeNull();
   });
 
-  it('colBtnSize change → button resizes live', () => {
+  it('fabBtnSize change → button resizes live', () => {
     setupScene();
-    settingsStore.set({ ...settingsStore.get(), colonizeMode: true });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
     installSendCol();
     expect(getWrap()?.style.width).toBe('320px'); // default
-    settingsStore.update((s) => ({ ...s, colBtnSize: 500 }));
+    settingsStore.update((s) => ({ ...s, fabBtnSize: 500 }));
     expect(getWrap()?.style.width).toBe('500px');
   });
 });

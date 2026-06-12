@@ -6,8 +6,10 @@
 //
 //   • structure: one circular button (1 zone) or a vertically split
 //     circle (2+ stacked zones), with the shared geometry/shadow/position;
-//   • placement: restore a dragged position from `posKey` (clamped to the
-//     viewport) or anchor bottom-right at `edgeOffset`;
+//   • placement: a `module` config joins the unified FAB (the shell in
+//     ./unifiedFab.js owns position/drag/visibility); a standalone button
+//     restores a dragged position from `posKey` (clamped to the viewport)
+//     or anchors bottom-right at `edgeOffset`;
 //   • a per-zone label container painted via {@link Button#paintLines}
 //     (1–3 stacked lines) WITHOUT clobbering the engraved ring / ripple
 //     decoration — which is exactly why the single-zone button paints into
@@ -29,8 +31,12 @@
 // @see ./draggableButton.js  — the drag + focus-persistence primitives.
 
 import { decorateButton, appendGlyph } from './buttonChrome.js';
-import { installDrag, installFocusPersist } from './draggableButton.js';
-import { safeLS } from '../../lib/storage.js';
+import {
+  installDrag,
+  installFocusPersist,
+  restorePosition,
+} from './draggableButton.js';
+import { registerFabModule } from './unifiedFab.js';
 
 // box-shadow and background are now driven by the .oge-host CSS class via
 // the --rim custom property — no inline SHADOW constant needed here.
@@ -77,7 +83,12 @@ export const LABEL_CLASS = 'oge-btn-label';
  * @property {string} ringId               unique id for the ring's arc path.
  * @property {number} size                 diameter in px.
  * @property {number} fontScale            zone base font-size = round(size * fontScale).
- * @property {string} posKey               localStorage key for the dragged position.
+ * @property {import('./unifiedFab.js').FabModuleMeta} [module]
+ *   present ⇒ the button joins the unified FAB: the shell owns position,
+ *   drag and visibility (only the active module shows), and `posKey` /
+ *   `edgeOffset` are ignored. The four command buttons all pass this.
+ * @property {string} [posKey]             localStorage key for the dragged
+ *                                         position (standalone buttons only).
  * @property {ZoneConfig[]} zones          1 zone ⇒ single circle; 2+ ⇒ split.
  * @property {number} [edgeOffset]         bottom-right anchor inset (default 20).
  * @property {number} [dragThreshold]      px before a gesture is a drag (default 8).
@@ -105,34 +116,6 @@ const DEFAULTS = {
   dragThreshold: 8,
   focusKey: 'oge_focusedBtn',
   holdMs: 300,
-};
-
-/**
- * Restore a saved `{x,y}` onto `el` (clamped to the viewport so a resize
- * since the last drag can't strand it off-screen), else anchor
- * bottom-right at `edgeOffset`.
- *
- * @param {HTMLElement} el
- * @param {string} posKey
- * @param {number} size
- * @param {number} edgeOffset
- * @returns {void}
- */
-const place = (el, posKey, size, edgeOffset) => {
-  const saved = safeLS.json(posKey);
-  if (
-    saved &&
-    typeof saved === 'object' &&
-    typeof (/** @type {any} */ (saved).x) === 'number' &&
-    typeof (/** @type {any} */ (saved).y) === 'number'
-  ) {
-    const p = /** @type {{ x: number, y: number }} */ (saved);
-    el.style.left = Math.min(p.x, window.innerWidth - size) + 'px';
-    el.style.top = Math.min(p.y, window.innerHeight - size) + 'px';
-  } else {
-    el.style.right = edgeOffset + 'px';
-    el.style.bottom = edgeOffset + 'px';
-  }
 };
 
 /**
@@ -205,6 +188,12 @@ export const createButton = (cfg) => {
   // Single-zone labels run 1px smaller than the raw scale (the split
   // buttons keep theirs, which stay legible across two stacked halves).
   const base = Math.round(cfg.size * cfg.fontScale) - (single ? 1 : 0) + 'px';
+  // Unified-FAB members fill the shell's wrapper (which owns the fixed
+  // position, the z-index and the drag); standalone buttons position and
+  // stack themselves as before.
+  const positionCss = cfg.module
+    ? ['position:absolute', 'left:0', 'top:0']
+    : ['position:fixed', 'z-index:99999'];
 
   /** @type {Map<string, HTMLElement>} zone key → zone element. */
   const zoneEls = new Map();
@@ -225,10 +214,9 @@ export const createButton = (cfg) => {
     btn.title = cfg.title;
     // background and box-shadow are driven by .oge-host CSS via --rim.
     btn.style.cssText = [
-      'position:fixed',
+      ...positionCss,
       'border-radius:50%',
       'border:none',
-      'z-index:99999',
       'touch-action:none',
       'user-select:none',
       'cursor:pointer',
@@ -246,12 +234,11 @@ export const createButton = (cfg) => {
     wrap.title = cfg.title;
     // box-shadow is driven by .oge-host CSS via --rim (set to primary zone colour).
     wrap.style.cssText = [
-      'position:fixed',
+      ...positionCss,
       'border-radius:50%',
       'overflow:hidden',
       'display:flex',
       'flex-direction:column',
-      'z-index:99999',
       'touch-action:none',
       'user-select:none',
       'cursor:pointer',
@@ -300,8 +287,32 @@ export const createButton = (cfg) => {
     labelEls.set(z.key, span);
   }
 
-  place(outer, cfg.posKey, cfg.size, edgeOffset);
-  document.body.appendChild(outer);
+  // ── mount + drag ────────────────────────────────────────────────────────
+  // Unified-FAB members are mounted into (and dragged via) the shared shell;
+  // standalone buttons place themselves and own their drag. Either way the
+  // zones' click handlers consult the same wasDrag/resetDrag discriminator.
+  /** @type {{ wasDrag: () => boolean, resetDrag: () => void }} */
+  let drag;
+  /** @type {(() => void) | null} */
+  let unregisterFab = null;
+  if (cfg.module) {
+    const reg = registerFabModule({ meta: cfg.module, host: outer });
+    drag = reg.drag;
+    unregisterFab = reg.dispose;
+  } else {
+    restorePosition({
+      element: outer,
+      posKey: /** @type {string} */ (cfg.posKey),
+      size: cfg.size,
+      edgeOffset,
+    });
+    document.body.appendChild(outer);
+    drag = installDrag({
+      element: outer,
+      posKey: /** @type {string} */ (cfg.posKey),
+      dragThreshold,
+    });
+  }
 
   decorateButton({
     host: outer,
@@ -309,10 +320,6 @@ export const createButton = (cfg) => {
     title: cfg.title,
     ringId: cfg.ringId,
   });
-
-  // ── drag (on the outer element, so a touch on any zone drags the whole
-  // circle) + tap/drag discriminator shared by every zone's click. ────────
-  const drag = installDrag({ element: outer, posKey: cfg.posKey, dragThreshold });
 
   // ── long-press charge arc + hold timer — only zones that declared onHold. ─
   // The charge arc SVG element is appended by decorateButton; we animate its
@@ -457,7 +464,8 @@ export const createButton = (cfg) => {
     resetDrag: () => drag.resetDrag(),
     dispose: () => {
       clearHold();
-      outer.remove();
+      if (unregisterFab) unregisterFab();
+      else outer.remove();
     },
   };
 };

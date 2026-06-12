@@ -58,21 +58,21 @@ afterEach(() => {
 
 describe('isSyncedSetting / EXCLUDED_SETTINGS', () => {
   it('excludes exactly the per-device keys', () => {
-    expect([...EXCLUDED_SETTINGS].sort()).toEqual(['colBtnSize', 'enterBtnSize', 'gistToken']);
+    expect([...EXCLUDED_SETTINGS].sort()).toEqual(['fabBtnSize', 'gistToken']);
     expect(isSyncedSetting('reminderNtfyToken')).toBe(true);
     expect(isSyncedSetting('colPassword')).toBe(true);
     expect(isSyncedSetting('gistToken')).toBe(false);
-    expect(isSyncedSetting('enterBtnSize')).toBe(false);
+    expect(isSyncedSetting('fabBtnSize')).toBe(false);
   });
 });
 
 describe('isUniverseScopedSetting / UNIVERSE_SCOPED_SETTINGS', () => {
-  it('marks all 12 universe-scoped keys', () => {
-    expect(UNIVERSE_SCOPED_SETTINGS.size).toBe(12);
+  it('marks all 11 universe-scoped keys', () => {
+    expect(UNIVERSE_SCOPED_SETTINGS.size).toBe(11);
     expect(isUniverseScopedSetting('colPassword')).toBe(true);
     expect(isUniverseScopedSetting('fsThreshold')).toBe(true);
     expect(isUniverseScopedSetting('reminderNtfyToken')).toBe(true);
-    expect(isUniverseScopedSetting('mobileMode')).toBe(false);
+    expect(isUniverseScopedSetting('fabMode')).toBe(false);
     expect(isUniverseScopedSetting('readabilityBoost')).toBe(false);
     // Excluded settings are not universe-scoped (they're not synced at all).
     expect(isUniverseScopedSetting('gistToken')).toBe(false);
@@ -82,26 +82,25 @@ describe('isUniverseScopedSetting / UNIVERSE_SCOPED_SETTINGS', () => {
 describe('pickSyncedValues', () => {
   it('drops the excluded keys, keeps the rest (scope=all by default)', () => {
     const out = pickSyncedValues({
-      mobileMode: true,
-      enterBtnSize: 320,
-      colBtnSize: 320,
+      fabMode: true,
+      fabBtnSize: 320,
       gistToken: 'ghp_x',
       reminderNtfyToken: 'tk_x',
     });
-    expect(out).toEqual({ mobileMode: true, reminderNtfyToken: 'tk_x' });
+    expect(out).toEqual({ fabMode: true, reminderNtfyToken: 'tk_x' });
   });
 
   it('scope=global keeps only non-universe-scoped synced keys', () => {
     const out = pickSyncedValues(
-      { mobileMode: true, fsThreshold: 50000, enterBtnSize: 320 },
+      { fabMode: true, fsThreshold: 50000, fabBtnSize: 320 },
       'global',
     );
-    expect(out).toEqual({ mobileMode: true });
+    expect(out).toEqual({ fabMode: true });
   });
 
   it('scope=universe keeps only universe-scoped keys', () => {
     const out = pickSyncedValues(
-      { mobileMode: true, fsThreshold: 50000, colPassword: 'abc', enterBtnSize: 320 },
+      { fabMode: true, fsThreshold: 50000, colPassword: 'abc', fabBtnSize: 320 },
       'universe',
     );
     expect(out).toEqual({ fsThreshold: 50000, colPassword: 'abc' });
@@ -140,7 +139,7 @@ describe('stampChanged', () => {
   });
 
   it('ignores changes to excluded keys', () => {
-    const { changed } = stampChanged({ enterBtnSize: 1 }, { enterBtnSize: 2 }, {}, 777);
+    const { changed } = stampChanged({ fabBtnSize: 1 }, { fabBtnSize: 2 }, {}, 777);
     expect(changed).toBe(false);
   });
 });
@@ -163,7 +162,7 @@ describe('seedSettingsTsIfAbsent', () => {
     // colMinGap is now universe-scoped — must NOT appear in the global ts map.
     // adhocOffsetSec (default 60) is global — customised value 99 is stamped.
     const seeded = seedSettingsTsIfAbsent(
-      { mobileMode: true, colMinGap: 99, adhocOffsetSec: 99 },
+      { fabMode: true, colMinGap: 99, adhocOffsetSec: 99 },
       1234,
     );
     expect(seeded).toBe(true);
@@ -174,7 +173,7 @@ describe('seedSettingsTsIfAbsent', () => {
     expect('colMinGap' in ts).toBe(false);
 
     // Second call is a no-op (map already present).
-    expect(seedSettingsTsIfAbsent({ mobileMode: false }, 9999)).toBe(false);
+    expect(seedSettingsTsIfAbsent({ fabMode: false }, 9999)).toBe(false);
     expect(readTsMap().adhocOffsetSec).toBe(1234);
   });
 });
@@ -196,10 +195,10 @@ describe('per-universe chrome.storage wrappers', () => {
 
   it('seedUniverseTsIfAbsent stamps customised universe-scoped keys, returns seeded map', async () => {
     // fsThreshold default=100000; custom value 50000 should be stamped.
-    // mobileMode is global → must NOT appear in universe ts map.
+    // fabMode is global → must NOT appear in universe ts map.
     const result = await seedUniverseTsIfAbsent(
       's163-pl',
-      { mobileMode: true, fsThreshold: 50000, colPassword: '' },
+      { fabMode: true, fsThreshold: 50000, colPassword: '' },
       777,
     );
     expect(result).not.toBeNull();
@@ -207,8 +206,8 @@ describe('per-universe chrome.storage wrappers', () => {
     expect(result?.fsThreshold).toBe(777);
     // colPassword is at default ('') → not stamped
     expect('colPassword' in (result ?? {})).toBe(false);
-    // mobileMode is global → not stamped in universe map
-    expect('mobileMode' in (result ?? {})).toBe(false);
+    // fabMode is global → not stamped in universe map
+    expect('fabMode' in (result ?? {})).toBe(false);
 
     // Persisted to chromeStore
     const stored = await readUniverseTsMap('s163-pl');

@@ -12,7 +12,7 @@
 // Synced settings are split into two buckets:
 //
 //   - GLOBAL: UI / behaviour preferences that apply identically on every
-//     OGame server (mobileMode, readabilityBoost, reminderSchedule, …).
+//     OGame server (fabMode, readabilityBoost, reminderSchedule, …).
 //     Stored in the gist's top-level `settings` field and in a localStorage
 //     timestamp map under `SETTINGS_TS_KEY`.
 //
@@ -29,15 +29,15 @@ import { SETTINGS_SCHEMA } from '../state/settings.js';
 
 /**
  * Settings keys that are deliberately PER-DEVICE and never synced:
- *   - `enterBtnSize` / `colBtnSize`: the floating-button sizes, tuned to
- *     each screen (a phone and a desktop want different sizes).
+ *   - `fabBtnSize`: the unified floating-button size, tuned to each
+ *     screen (a phone and a desktop want different sizes).
  *   - `gistToken`: the sync credential itself — circular to sync (you need
  *     it to read the gist) and a security footgun to place inside a
  *     (private but unencrypted) gist.
  *
  * @type {Set<string>}
  */
-export const EXCLUDED_SETTINGS = new Set(['enterBtnSize', 'colBtnSize', 'gistToken']);
+export const EXCLUDED_SETTINGS = new Set(['fabBtnSize', 'gistToken']);
 
 /**
  * Settings keys that are synced PER-UNIVERSE (one slot per server in the
@@ -61,7 +61,6 @@ export const UNIVERSE_SCOPED_SETTINGS = new Set([
   'fsThreshold',
   'fsOffsets',
   'fsMinFlightSec',
-  'fsCollectMode',
   'reminderNtfyToken',
 ]);
 

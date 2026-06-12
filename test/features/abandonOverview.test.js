@@ -8,7 +8,7 @@
 //
 //   1. Precondition gating — overlay mounts iff
 //      `location.search` includes `component=overview`, settings
-//      `colonizeMode` is on, `checkAbandonState` returns truthy, AND
+//      `fabMode` is on, `checkAbandonState` returns truthy, AND
 //      `#planet` exists.
 //   2. DOM side effects on mount — overlay element created inside
 //      `#planet`, content (title / coords / size / hint), and the
@@ -70,7 +70,7 @@ import {
 
 /**
  * Reset the settings store to schema defaults, plus the overrides
- * relevant to this feature (`colonizeMode`, `colMinFields`). `colonizeMode`
+ * relevant to this feature (`fabMode`, `colMinFields`). `fabMode`
  * defaults to `false` in the schema, so this helper flips it on by
  * default — every test that wants the overlay to render needs it.
  *
@@ -88,7 +88,7 @@ const resetSettings = (overrides = {}) => {
   const merged = /** @type {import('../../src/state/settings.js').Settings} */ (
     /** @type {unknown} */ ({
       ...defaults,
-      colonizeMode: true,
+      fabMode: true,
       colMinFields: 200,
       ...overrides,
     })
@@ -204,8 +204,8 @@ describe('installAbandonOverview — mount gating', () => {
     expect(getOverlay()).toBeNull();
   });
 
-  it('does not render overlay when colonizeMode is off', () => {
-    resetSettings({ colonizeMode: false });
+  it('does not render overlay when fabMode is off', () => {
+    resetSettings({ fabMode: false });
     setupOverviewScene();
     vi.mocked(checkAbandonState).mockReturnValue({
       used: 0,

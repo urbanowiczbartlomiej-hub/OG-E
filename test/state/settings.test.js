@@ -25,8 +25,11 @@ import {
   settingsStore,
   initSettingsStore,
   disposeSettingsStore,
+  migrateLegacyButtonSettings,
   SETTINGS_SCHEMA,
   SETTINGS_PREFIX,
+  FAB_ACTIVE_KEY,
+  FAB_POS_KEY,
 } from '../../src/state/settings.js';
 
 /** @typedef {import('../../src/state/settings.js').Settings} Settings */
@@ -88,27 +91,21 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
         'adhocOffsetSec',
         'autoRedirectExpedition',
         'cloudSync',
-        'colBtnSize',
         'colMinFields',
         'colMinGap',
         'colPassword',
         'colPositions',
         'colPreferOtherGalaxies',
-        'colonizeMode',
-        'enterBtnSize',
         'eventMenuHighlight',
         'expeditionBadges',
-        'fsBtnSize',
-        'fsCollectMode',
+        'fabBtnSize',
+        'fabMode',
         'fsEnabled',
         'fsMinFlightSec',
         'fsOffsets',
         'fsThreshold',
         'gistToken',
-        'lfBtnSize',
-        'lifeformMode',
         'maxExpPerPlanet',
-        'mobileMode',
         'readabilityBoost',
         'remindersMasterEnabled',
         'reminderEnabled',
@@ -124,15 +121,15 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
       key: 'oge_reminderWaveOffsets',
     });
 
-    expect(SETTINGS_SCHEMA.mobileMode).toEqual({
+    expect(SETTINGS_SCHEMA.fabMode).toEqual({
       type: 'bool',
       default: true,
-      key: 'oge_mobileMode',
+      key: 'oge_fabMode',
     });
-    expect(SETTINGS_SCHEMA.enterBtnSize).toEqual({
+    expect(SETTINGS_SCHEMA.fabBtnSize).toEqual({
       type: 'int',
       default: 320,
-      key: 'oge_enterBtnSize',
+      key: 'oge_fabBtnSize',
     });
     expect(SETTINGS_SCHEMA.colPositions).toEqual({
       type: 'string',
@@ -167,12 +164,10 @@ describe('settingsStore — initial state (pre-init)', () => {
     // beforeEach resets the store to defaults — but the assertion is that
     // the DEFAULTS are what the store exposes, regardless of init.
     const state = settingsStore.get();
-    expect(state.mobileMode).toBe(true);
-    expect(state.colonizeMode).toBe(true);
+    expect(state.fabMode).toBe(true);
     expect(state.expeditionBadges).toBe(true);
     expect(state.autoRedirectExpedition).toBe(true);
-    expect(state.enterBtnSize).toBe(320);
-    expect(state.colBtnSize).toBe(320);
+    expect(state.fabBtnSize).toBe(320);
     expect(state.colPositions).toBe('8');
     expect(state.colMinGap).toBe(15);
     expect(state.colMinFields).toBe(320);
@@ -192,9 +187,9 @@ describe('initSettingsStore — hydration', () => {
   });
 
   it('hydrates a boolean field from localStorage', () => {
-    localStorage.setItem('oge_mobileMode', 'true');
+    localStorage.setItem('oge_fabMode', 'true');
     initSettingsStore();
-    expect(settingsStore.get().mobileMode).toBe(true);
+    expect(settingsStore.get().fabMode).toBe(true);
   });
 
   it('hydrates an int field from localStorage', () => {
@@ -235,7 +230,7 @@ describe('initSettingsStore — hydration', () => {
   });
 
   it('hydrates a mix of fields at once in a single store update', () => {
-    localStorage.setItem('oge_mobileMode', 'false');
+    localStorage.setItem('oge_fabMode', 'false');
     localStorage.setItem('oge_colMinGap', '30');
     localStorage.setItem('oge_colPositions', '7,8');
     localStorage.setItem('oge_gistToken', 'ghp_abc123');
@@ -243,12 +238,12 @@ describe('initSettingsStore — hydration', () => {
     initSettingsStore();
 
     const state = settingsStore.get();
-    expect(state.mobileMode).toBe(false);
+    expect(state.fabMode).toBe(false);
     expect(state.colMinGap).toBe(30);
     expect(state.colPositions).toBe('7,8');
     expect(state.gistToken).toBe('ghp_abc123');
     // Untouched fields stay at defaults.
-    expect(state.colonizeMode).toBe(true);
+    expect(state.autoRedirectExpedition).toBe(true);
     expect(state.expeditionBadges).toBe(true);
   });
 });
@@ -256,8 +251,8 @@ describe('initSettingsStore — hydration', () => {
 describe('initSettingsStore — write-through (per-key diff)', () => {
   it('writes a changed bool field to its own localStorage key', () => {
     initSettingsStore();
-    settingsStore.update((s) => ({ ...s, mobileMode: false }));
-    expect(localStorage.getItem('oge_mobileMode')).toBe('false');
+    settingsStore.update((s) => ({ ...s, fabMode: false }));
+    expect(localStorage.getItem('oge_fabMode')).toBe('false');
   });
 
   it('writes a changed int field to its own localStorage key', () => {
@@ -278,12 +273,12 @@ describe('initSettingsStore — write-through (per-key diff)', () => {
       ...s,
       colMinGap: 30,
       colPositions: '7',
-      mobileMode: false,
+      fabMode: false,
     }));
 
     expect(localStorage.getItem('oge_colMinGap')).toBe('30');
     expect(localStorage.getItem('oge_colPositions')).toBe('7');
-    expect(localStorage.getItem('oge_mobileMode')).toBe('false');
+    expect(localStorage.getItem('oge_fabMode')).toBe('false');
   });
 
   it('does NOT touch localStorage keys for fields that did not change', () => {
@@ -292,7 +287,7 @@ describe('initSettingsStore — write-through (per-key diff)', () => {
     // default 320) but the LS string itself remains untouched unless
     // the store writes back. Since we only mutate `colMinGap`, the
     // sentinel must survive — proving the diff write-through.
-    localStorage.setItem('oge_colBtnSize', 'SENTINEL');
+    localStorage.setItem('oge_fabBtnSize', 'SENTINEL');
 
     initSettingsStore();
 
@@ -300,9 +295,9 @@ describe('initSettingsStore — write-through (per-key diff)', () => {
     settingsStore.update((s) => ({ ...s, colMinGap: 30 }));
 
     expect(localStorage.getItem('oge_colMinGap')).toBe('30');
-    // colBtnSize key was not written because the store value (320,
+    // fabBtnSize key was not written because the store value (320,
     // hydrated as default) did not change from its hydrated state.
-    expect(localStorage.getItem('oge_colBtnSize')).toBe('SENTINEL');
+    expect(localStorage.getItem('oge_fabBtnSize')).toBe('SENTINEL');
   });
 
   it('coerces values via String(): true → "true", 42 → "42"', () => {
@@ -310,15 +305,15 @@ describe('initSettingsStore — write-through (per-key diff)', () => {
 
     settingsStore.update((s) => ({
       ...s,
-      mobileMode: false,
+      fabMode: false,
       expeditionBadges: false,
-      enterBtnSize: 42,
+      fabBtnSize: 42,
       gistToken: 'abc',
     }));
 
-    expect(localStorage.getItem('oge_mobileMode')).toBe('false');
+    expect(localStorage.getItem('oge_fabMode')).toBe('false');
     expect(localStorage.getItem('oge_expeditionBadges')).toBe('false');
-    expect(localStorage.getItem('oge_enterBtnSize')).toBe('42');
+    expect(localStorage.getItem('oge_fabBtnSize')).toBe('42');
     expect(localStorage.getItem('oge_gistToken')).toBe('abc');
   });
 
@@ -342,7 +337,7 @@ describe('initSettingsStore — persistence round-trip', () => {
     initSettingsStore();
     settingsStore.update((s) => ({
       ...s,
-      mobileMode: false,
+      fabMode: false,
       colMinGap: 45,
       colPositions: '7,8,9',
       gistToken: 'ghp_roundtrip',
@@ -352,12 +347,12 @@ describe('initSettingsStore — persistence round-trip', () => {
     // Wipe in-memory state back to defaults to prove the next init
     // hydrates from LS and not from leftover memory.
     settingsStore.set(defaultsFromSchema());
-    expect(settingsStore.get().mobileMode).toBe(true);
+    expect(settingsStore.get().fabMode).toBe(true);
 
     initSettingsStore();
 
     const state = settingsStore.get();
-    expect(state.mobileMode).toBe(false);
+    expect(state.fabMode).toBe(false);
     expect(state.colMinGap).toBe(45);
     expect(state.colPositions).toBe('7,8,9');
     expect(state.gistToken).toBe('ghp_roundtrip');
@@ -432,5 +427,62 @@ describe('initSettingsStore — idempotent', () => {
     // Second init should be a no-op: it must NOT re-hydrate from '30'.
     initSettingsStore();
     expect(settingsStore.get().colMinGap).toBe(77);
+  });
+});
+
+describe('migrateLegacyButtonSettings (pre-unified-FAB upgrade)', () => {
+  it('is a no-op on a fresh install (no legacy keys, no fab keys written)', () => {
+    initSettingsStore();
+    expect(localStorage.getItem('oge_fabMode')).toBeNull();
+    expect(localStorage.getItem(FAB_ACTIVE_KEY)).toBeNull();
+    // Schema defaults still apply through hydration.
+    expect(settingsStore.get().fabMode).toBe(true);
+    expect(settingsStore.get().fabBtnSize).toBe(320);
+  });
+
+  it('disables the FAB when every legacy button was disabled', () => {
+    localStorage.setItem('oge_mobileMode', 'false');
+    localStorage.setItem('oge_colonizeMode', 'false');
+    localStorage.setItem('oge_lifeformMode', 'false');
+    // fsCollectMode absent → legacy default false.
+    initSettingsStore();
+    expect(localStorage.getItem('oge_fabMode')).toBe('false');
+    expect(settingsStore.get().fabMode).toBe(false);
+  });
+
+  it('adopts the first legacy-enabled module: size, active id and position', () => {
+    localStorage.setItem('oge_mobileMode', 'false');
+    localStorage.setItem('oge_colonizeMode', 'true');
+    localStorage.setItem('oge_colBtnSize', '200');
+    localStorage.setItem('oge_colBtnPos', JSON.stringify({ x: 11, y: 22 }));
+    initSettingsStore();
+    const state = settingsStore.get();
+    expect(state.fabMode).toBe(true);
+    expect(state.fabBtnSize).toBe(200);
+    expect(localStorage.getItem(FAB_ACTIVE_KEY)).toBe('col');
+    expect(JSON.parse(/** @type {string} */ (localStorage.getItem(FAB_POS_KEY)))).toEqual({
+      x: 11,
+      y: 22,
+    });
+  });
+
+  it('falls back to legacy mode defaults when only a size key exists', () => {
+    // mobileMode default was true → 'exp' is the first enabled module even
+    // though no mode key was ever written; its stored size is adopted.
+    localStorage.setItem('oge_enterBtnSize', '480');
+    initSettingsStore();
+    expect(settingsStore.get().fabMode).toBe(true);
+    expect(settingsStore.get().fabBtnSize).toBe(480);
+    expect(localStorage.getItem(FAB_ACTIVE_KEY)).toBe('exp');
+  });
+
+  it('never overwrites already-written fab keys (one-shot)', () => {
+    localStorage.setItem('oge_fabMode', 'false');
+    localStorage.setItem('oge_colonizeMode', 'true');
+    localStorage.setItem('oge_colBtnSize', '200');
+    migrateLegacyButtonSettings();
+    expect(localStorage.getItem('oge_fabMode')).toBe('false');
+    expect(localStorage.getItem('oge_fabBtnSize')).toBeNull();
+    expect(localStorage.getItem(FAB_ACTIVE_KEY)).toBeNull();
   });
 });

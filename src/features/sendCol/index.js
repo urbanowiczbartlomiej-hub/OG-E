@@ -149,8 +149,6 @@ const FOCUS_KEY = 'oge_focusedBtn';
 const FOCUS_SEND = 'col-send';
 /** Focus-persist value written when the scanHalf holds focus. */
 const FOCUS_SCAN = 'col-scan';
-/** localStorage key for the dragged wrap `(x, y)` position. */
-const POS_KEY = 'oge_colBtnPos';
 
 // ─── Tunables ──────────────────────────────────────────────────────────
 //
@@ -161,10 +159,6 @@ const POS_KEY = 'oge_colBtnPos';
 // fallbacks (e.g. "None available" flash) and the fleetdispatch URL
 // sniff.
 
-/** Drag-vs-tap threshold in pixels (matches sendExp). */
-const DRAG_THRESHOLD = 8;
-/** Default offset from the bottom-right corner when no saved pos. */
-const DEFAULT_EDGE_OFFSET_PX = 20;
 /** Delay before restoring focus on install (matches sendExp). */
 const FOCUS_RESTORE_DELAY_MS = 50;
 /** Repaint ticker period in ms. */
@@ -835,12 +829,12 @@ let installed = null;
  * SAME dispose fn as the first.
  *
  * Lifecycle:
- *   1. Snapshot settings. If `colonizeMode === false` we skip DOM work
+ *   1. Snapshot settings. If `fabMode === false` we skip DOM work
  *      entirely but still subscribe to settings so a later flip to
  *      `true` creates the button live.
- *   2. Renders (if enabled): `<div id="oge-send-col">` + two halves.
- *      Position from `oge_colBtnPos` or bottom-right default. Drag +
- *      focus wired via `shared/draggableButton.js`.
+ *   2. Renders (if enabled): `<div id="oge-send-col">` + two halves,
+ *      registered as the 'col' module of the unified FAB (which owns
+ *      position + drag). Focus wired via `shared/draggableButton.js`.
  *   3. Paints the initial label via derive → render → paint.
  *   4. Starts a 1 Hz repaint ticker.
  *   5. Subscribes to settings / scans / registry stores + three
@@ -867,17 +861,15 @@ export const installSendCol = () => {
     // NOT overwrite it with makeButton's null (idempotency-guard return).
     if (document.getElementById(BUTTON_ID)) return;
 
-    const size = settingsStore.get().colBtnSize;
+    const size = settingsStore.get().fabBtnSize;
     controller = makeButton({
       id: BUTTON_ID,
       title: 'Colonization',
       ringId: 'oge-ring-col',
       size,
       fontScale: 0.12,
-      posKey: POS_KEY,
+      module: { id: 'col', name: 'Colonization', color: BG_SEND_IDLE, glyph: LANDER_GLYPH },
       focusKey: FOCUS_KEY,
-      edgeOffset: DEFAULT_EDGE_OFFSET_PX,
-      dragThreshold: DRAG_THRESHOLD,
       holdMs: HOLD_SKIP_MS,
       zones: [
         {
@@ -944,14 +936,14 @@ export const installSendCol = () => {
 
   // Initial render based on current settings.
   const initial = settingsStore.get();
-  if (initial.colonizeMode) {
+  if (initial.fabMode) {
     if (document.body) {
       mount();
     } else {
       document.addEventListener(
         'DOMContentLoaded',
         () => {
-          if (installed && settingsStore.get().colonizeMode) mount();
+          if (installed && settingsStore.get().fabMode) mount();
         },
         { once: true },
       );
@@ -959,20 +951,20 @@ export const installSendCol = () => {
   }
 
   // Live settings reactions.
-  let prevColonizeMode = initial.colonizeMode;
-  let prevColBtnSize = initial.colBtnSize;
+  let prevFabMode = initial.fabMode;
+  let prevFabBtnSize = initial.fabBtnSize;
   const unsubSettings = settingsStore.subscribe((next) => {
-    if (next.colonizeMode !== prevColonizeMode) {
-      if (next.colonizeMode) {
+    if (next.fabMode !== prevFabMode) {
+      if (next.fabMode) {
         if (document.body) mount();
       } else {
         removeButton();
       }
-      prevColonizeMode = next.colonizeMode;
+      prevFabMode = next.fabMode;
     }
-    if (next.colBtnSize !== prevColBtnSize) {
-      updateButtonSize(next.colBtnSize);
-      prevColBtnSize = next.colBtnSize;
+    if (next.fabBtnSize !== prevFabBtnSize) {
+      updateButtonSize(next.fabBtnSize);
+      prevFabBtnSize = next.fabBtnSize;
     }
     // Any other settings change (colPositions, colPreferOtherGalaxies, ...)
     // can flip the candidate, so refresh on every settings notification.

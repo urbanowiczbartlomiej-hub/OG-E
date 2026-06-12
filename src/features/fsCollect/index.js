@@ -93,11 +93,8 @@ const FS_UNIFIED_ID = 'oge-fs-unified';
 const FS_MICRO_ZONE_ID = 'oge-fs-micro-zone';
 const FS_COLLECT_ZONE_ID = 'oge-fs-collect-zone';
 
-const FS_POS_KEY = 'oge_fsUnifiedPos';
 const FOCUS_KEY = 'oge_focusedBtn';
 
-const DRAG_THRESHOLD = 8;
-const DEFAULT_EDGE_OFFSET_PX = 20;
 const FLASH_MS = 1500;
 const SENT_LOCK_MS = 3000;
 const LONG_PRESS_MS = 2000;
@@ -675,7 +672,7 @@ let installed = null;
 
 /**
  * Install the unified fleet-save button. Idempotent — a second call returns the
- * same dispose fn. Gated on `settings.fsCollectMode`; flipping it at
+ * same dispose fn. Gated on `settings.fabMode`; flipping it at
  * runtime mounts/removes the widget live.
  *
  * @returns {() => void} Dispose handle.
@@ -721,7 +718,7 @@ export const installFsCollect = () => {
     // Already mounted → keep the live controller (makeButton returns null).
     if (document.getElementById(FS_UNIFIED_ID)) return;
 
-    const size = settingsStore.get().fsBtnSize;
+    const size = settingsStore.get().fabBtnSize;
     controller = makeButton({
       id: FS_UNIFIED_ID,
       title: 'Daily Run',
@@ -729,10 +726,8 @@ export const installFsCollect = () => {
       size,
       // Matches sendCol so identical `em` labels render at identical px.
       fontScale: 0.12,
-      posKey: FS_POS_KEY,
+      module: { id: 'fs', name: 'Daily Run', color: BG_MICRO, glyph: PLANET_ARROW_GLYPH },
       focusKey: FOCUS_KEY,
-      edgeOffset: DEFAULT_EDGE_OFFSET_PX,
-      dragThreshold: DRAG_THRESHOLD,
       holdMs: LONG_PRESS_MS,
       zones: [
         {
@@ -782,24 +777,24 @@ export const installFsCollect = () => {
   };
 
   const initial = settingsStore.get();
-  if (initial.fsCollectMode) {
+  if (initial.fabMode) {
     if (document.body) mount();
     else document.addEventListener('DOMContentLoaded', () => {
-      if (installed && settingsStore.get().fsCollectMode) mount();
+      if (installed && settingsStore.get().fabMode) mount();
     }, { once: true });
   }
 
-  let prevMode = initial.fsCollectMode;
-  let prevSize = initial.fsBtnSize;
+  let prevMode = initial.fabMode;
+  let prevSize = initial.fabBtnSize;
   const unsubSettings = settingsStore.subscribe((next) => {
-    if (next.fsCollectMode !== prevMode) {
-      if (next.fsCollectMode) { if (document.body) mount(); }
+    if (next.fabMode !== prevMode) {
+      if (next.fabMode) { if (document.body) mount(); }
       else removeButton();
-      prevMode = next.fsCollectMode;
+      prevMode = next.fabMode;
     }
-    if (next.fsBtnSize !== prevSize) {
-      updateSize(next.fsBtnSize);
-      prevSize = next.fsBtnSize;
+    if (next.fabBtnSize !== prevSize) {
+      updateSize(next.fabBtnSize);
+      prevSize = next.fabBtnSize;
     }
   });
 

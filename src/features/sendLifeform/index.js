@@ -79,12 +79,9 @@ const BUTTON_ID = 'oge-send-lf';
 /** Shared focus-persist key (same as sendExp / sendCol). */
 const FOCUS_KEY = 'oge_focusedBtn';
 const FOCUS_VALUE = 'lf-main';
-const POS_KEY = 'oge_lfBtnPos';
 
 // ─── Tunables (match the other buttons) ────────────────────────────────────
 
-const DRAG_THRESHOLD = 8;
-const DEFAULT_EDGE_OFFSET_PX = 20;
 const FOCUS_RESTORE_DELAY_MS = 50;
 const REPAINT_TICK_MS = 1000;
 /** How long the transient "Sent!" / "Empty" / "Max fleets" label lingers. */
@@ -360,8 +357,9 @@ let installed = null;
 
 /**
  * Install the Lifeforms button. Idempotent — a second call returns the SAME
- * dispose fn as the first. Gated on the `lifeformMode` setting (mount /
- * remove live on toggle); resized live on `lfBtnSize`.
+ * dispose fn as the first. Gated on the `fabMode` setting (mount /
+ * remove live on toggle); resized live on `fabBtnSize`. Registers as the
+ * 'lf' module of the unified FAB.
  *
  * @returns {() => void} Dispose handle.
  */
@@ -370,17 +368,15 @@ export const installSendLifeform = () => {
 
   const mount = () => {
     if (document.getElementById(BUTTON_ID)) return;
-    const size = settingsStore.get().lfBtnSize;
+    const size = settingsStore.get().fabBtnSize;
     controller = makeButton({
       id: BUTTON_ID,
       title: 'Lifeforms',
       ringId: 'oge-ring-lf',
       size,
       fontScale: 0.18,
-      posKey: POS_KEY,
+      module: { id: 'lf', name: 'Lifeforms', color: BG_LF_IDLE, glyph: DNA_GLYPH },
       focusKey: FOCUS_KEY,
-      edgeOffset: DEFAULT_EDGE_OFFSET_PX,
-      dragThreshold: DRAG_THRESHOLD,
       zones: [
         {
           key: 'main',
@@ -408,7 +404,7 @@ export const installSendLifeform = () => {
   /** @param {number} size */
   const updateButtonSize = (size) => controller?.resize(size);
 
-  // Passive artifact-counter harvest — NOT gated on lifeformMode: like the
+  // Passive artifact-counter harvest — NOT gated on fabMode: like the
   // galaxy scans it's pure data collection, and a reading taken while the
   // button is off is immediately correct when the user re-enables it.
   if (document.body) {
@@ -424,34 +420,34 @@ export const installSendLifeform = () => {
   }
 
   const initial = settingsStore.get();
-  if (initial.lifeformMode) {
+  if (initial.fabMode) {
     if (document.body) {
       mount();
     } else {
       document.addEventListener(
         'DOMContentLoaded',
         () => {
-          if (installed && settingsStore.get().lifeformMode) mount();
+          if (installed && settingsStore.get().fabMode) mount();
         },
         { once: true },
       );
     }
   }
 
-  let prevLifeformMode = initial.lifeformMode;
-  let prevLfBtnSize = initial.lfBtnSize;
+  let prevFabMode = initial.fabMode;
+  let prevFabBtnSize = initial.fabBtnSize;
   const unsubSettings = settingsStore.subscribe((next) => {
-    if (next.lifeformMode !== prevLifeformMode) {
-      if (next.lifeformMode) {
+    if (next.fabMode !== prevFabMode) {
+      if (next.fabMode) {
         if (document.body) mount();
       } else {
         removeButton();
       }
-      prevLifeformMode = next.lifeformMode;
+      prevFabMode = next.fabMode;
     }
-    if (next.lfBtnSize !== prevLfBtnSize) {
-      updateButtonSize(next.lfBtnSize);
-      prevLfBtnSize = next.lfBtnSize;
+    if (next.fabBtnSize !== prevFabBtnSize) {
+      updateButtonSize(next.fabBtnSize);
+      prevFabBtnSize = next.fabBtnSize;
     }
   });
 

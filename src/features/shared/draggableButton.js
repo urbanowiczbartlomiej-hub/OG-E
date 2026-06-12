@@ -70,6 +70,37 @@ import { safeLS } from '../../lib/storage.js';
 const Z_BASE = 99999;
 
 /**
+ * Restore a saved `{x,y}` position onto `el` (clamped to the viewport so a
+ * resize since the last drag can't strand it off-screen), else anchor it
+ * bottom-right at `edgeOffset`. The natural companion of {@link installDrag}
+ * (which persists the position this restores) — shared by the standalone
+ * button path in `./button.js` and the unified-FAB wrapper.
+ *
+ * @param {object} opts
+ * @param {HTMLElement} opts.element
+ * @param {string} opts.posKey     localStorage key holding `{ x, y }`.
+ * @param {number} opts.size       element diameter in px (for clamping).
+ * @param {number} opts.edgeOffset bottom-right inset when no saved position.
+ * @returns {void}
+ */
+export const restorePosition = ({ element, posKey, size, edgeOffset }) => {
+  const saved = safeLS.json(posKey);
+  if (
+    saved &&
+    typeof saved === 'object' &&
+    typeof (/** @type {any} */ (saved).x) === 'number' &&
+    typeof (/** @type {any} */ (saved).y) === 'number'
+  ) {
+    const p = /** @type {{ x: number, y: number }} */ (saved);
+    element.style.left = Math.min(p.x, window.innerWidth - size) + 'px';
+    element.style.top = Math.min(p.y, window.innerHeight - size) + 'px';
+  } else {
+    element.style.right = edgeOffset + 'px';
+    element.style.bottom = edgeOffset + 'px';
+  }
+};
+
+/**
  * Monotonic z-index dispenser. Bumped on every {@link bringToFront} call.
  * Module scope so it is shared across every `installDrag` consumer — that
  * sharing is the whole point (a global ordering across all buttons).
@@ -98,7 +129,7 @@ const bringToFront = (element) => {
  * anchoring to absolute `left`/`top` and the position is clamped to
  * `[0, viewport - element]` on each axis independently. The element
  * size is re-measured on every drag-start so resizes between drags
- * (e.g. sendExp's `enterBtnSize` setting change) get picked up
+ * (e.g. a `fabBtnSize` setting change) get picked up
  * automatically, and so non-square elements (the freshPlanet banner)
  * clamp against their actual height rather than borrowing the width.
  * On release the final coords are written to `safeLS.setJSON(posKey,

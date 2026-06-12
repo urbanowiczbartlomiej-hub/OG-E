@@ -578,21 +578,20 @@ describe('settings sync', () => {
     );
   });
 
-  it('does NOT sync the excluded keys (button sizes, gist token)', async () => {
+  it('does NOT sync the excluded keys (button size, gist token)', async () => {
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(payload());
     installSync();
     await tick(0);
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(payload());
 
     // adhocOffsetSec is global → goes to settings.values; excluded keys must not appear.
-    settingsStore.set({ ...settingsStore.get(), enterBtnSize: 123, adhocOffsetSec: 7 });
+    settingsStore.set({ ...settingsStore.get(), fabBtnSize: 123, adhocOffsetSec: 7 });
     await tick(15_000);
 
     const call = /** @type {import('vitest').Mock} */ (writeGistData).mock.calls.at(-1);
     const values = call?.[0]?.settings?.values ?? {};
     expect(values.adhocOffsetSec).toBe(7);
-    expect('enterBtnSize' in values).toBe(false);
+    expect('fabBtnSize' in values).toBe(false);
     expect('gistToken' in values).toBe(false);
-    expect('colBtnSize' in values).toBe(false);
   });
 });

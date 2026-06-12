@@ -190,13 +190,13 @@ describe('installSettingsUi — AGR availability', () => {
 
 describe('installSettingsUi — checkbox', () => {
   it('renders checked=true when underlying settings value is true', async () => {
-    settingsStore.set({ ...settingsStore.get(), mobileMode: true });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
     setupAGR();
     installSettingsUi();
     await flushWaitFor();
 
     const cb = /** @type {HTMLInputElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'mobileMode')
+      document.getElementById(INPUT_PREFIX + 'fabMode')
     );
     expect(cb).not.toBeNull();
     expect(cb?.type).toBe('checkbox');
@@ -209,17 +209,17 @@ describe('installSettingsUi — checkbox', () => {
     await flushWaitFor();
 
     const cb = /** @type {HTMLInputElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'mobileMode')
+      document.getElementById(INPUT_PREFIX + 'fabMode')
     );
     expect(cb).not.toBeNull();
 
     // Default: true → uncheck → false.
-    expect(settingsStore.get().mobileMode).toBe(true);
+    expect(settingsStore.get().fabMode).toBe(true);
     if (cb) {
       cb.checked = false;
       cb.dispatchEvent(new Event('change'));
     }
-    expect(settingsStore.get().mobileMode).toBe(false);
+    expect(settingsStore.get().fabMode).toBe(false);
   });
 });
 
@@ -229,13 +229,13 @@ describe('installSettingsUi — checkbox', () => {
 
 describe('installSettingsUi — range', () => {
   it('renders slider value + unit display from current settings', async () => {
-    settingsStore.set({ ...settingsStore.get(), enterBtnSize: 400 });
+    settingsStore.set({ ...settingsStore.get(), fabBtnSize: 400 });
     setupAGR();
     installSettingsUi();
     await flushWaitFor();
 
     const slider = /** @type {HTMLInputElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'enterBtnSize')
+      document.getElementById(INPUT_PREFIX + 'fabBtnSize')
     );
     expect(slider).not.toBeNull();
     expect(slider?.type).toBe('range');
@@ -251,14 +251,14 @@ describe('installSettingsUi — range', () => {
     await flushWaitFor();
 
     const slider = /** @type {HTMLInputElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'enterBtnSize')
+      document.getElementById(INPUT_PREFIX + 'fabBtnSize')
     );
     expect(slider).not.toBeNull();
     if (slider) {
       slider.value = '200';
       slider.dispatchEvent(new Event('input'));
     }
-    const next = settingsStore.get().enterBtnSize;
+    const next = settingsStore.get().fabBtnSize;
     expect(next).toBe(200);
     expect(typeof next).toBe('number');
   });
@@ -658,14 +658,14 @@ describe('installSettingsUi — reactive sync from store', () => {
     await flushWaitFor();
 
     const cb = /** @type {HTMLInputElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'mobileMode')
+      document.getElementById(INPUT_PREFIX + 'fabMode')
     );
     expect(cb?.checked).toBe(true);
 
-    settingsStore.update((prev) => ({ ...prev, mobileMode: false }));
+    settingsStore.update((prev) => ({ ...prev, fabMode: false }));
     expect(cb?.checked).toBe(false);
 
-    settingsStore.update((prev) => ({ ...prev, mobileMode: true }));
+    settingsStore.update((prev) => ({ ...prev, fabMode: true }));
     expect(cb?.checked).toBe(true);
   });
 
@@ -675,10 +675,10 @@ describe('installSettingsUi — reactive sync from store', () => {
     await flushWaitFor();
 
     const slider = /** @type {HTMLInputElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'enterBtnSize')
+      document.getElementById(INPUT_PREFIX + 'fabBtnSize')
     );
     const display = slider?.nextElementSibling;
-    settingsStore.update((prev) => ({ ...prev, enterBtnSize: 120 }));
+    settingsStore.update((prev) => ({ ...prev, fabBtnSize: 120 }));
 
     expect(slider?.value).toBe('120');
     expect(display?.textContent).toBe('120px');
@@ -714,9 +714,9 @@ describe('installSettingsUi — dispose + idempotency', () => {
     // Grab a no-longer-in-DOM snapshot and bump settings. Nothing
     // should re-appear, and the nuked input element must not somehow
     // be auto-reinserted.
-    settingsStore.update((prev) => ({ ...prev, mobileMode: true }));
+    settingsStore.update((prev) => ({ ...prev, fabMode: true }));
     expect(document.getElementById(HEADER_ID)).toBeNull();
-    expect(document.getElementById(INPUT_PREFIX + 'mobileMode')).toBeNull();
+    expect(document.getElementById(INPUT_PREFIX + 'fabMode')).toBeNull();
   });
 
   it('second install returns the same dispose without duplicating DOM', async () => {

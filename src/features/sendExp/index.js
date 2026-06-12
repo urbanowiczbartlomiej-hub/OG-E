@@ -41,22 +41,21 @@
 //
 // # Settings-driven lifecycle
 //
-//   - `mobileMode`  toggles visibility. Flipping it off at runtime
-//                   removes the DOM node entirely (we aren't a CSS-hide
-//                   feature like the badges cluster; the button would
-//                   grab tap area even while invisible, so actual
-//                   removal is correct).
-//   - `enterBtnSize` resizes the circle and scales the font to ~23%.
+//   - `fabMode`     toggles visibility (shared by all unified-FAB
+//                   modules). Flipping it off at runtime removes the DOM
+//                   node entirely (we aren't a CSS-hide feature like the
+//                   badges cluster; the button would grab tap area even
+//                   while invisible, so actual removal is correct).
+//   - `fabBtnSize`  resizes the circle and scales the font to ~23%.
 //                   Updates apply live.
 //   - `maxExpPerPlanet` gates the click handler. Read per click, so
 //                   panel edits take effect on the very next tap.
 //
-// # Draggability + focus persistence
+// # Unified FAB + focus persistence
 //
-// The button can be dragged with mouse or touch. We use an 8px movement
-// threshold to distinguish drag from tap — anything under that is still
-// a click. The final position is written to `oge_enterBtnPos` as JSON
-// and restored on install.
+// The button is one module of the unified FAB (`shared/unifiedFab.js`):
+// the shell owns the shared dragged position (`oge_fabPos`) and shows the
+// button only while it is the active module.
 //
 // Focus persists across reloads via `oge_focusedBtn`. When the button
 // is the focused element on reload, we restore focus 50 ms after
@@ -85,12 +84,9 @@ import {
   BUTTON_ID,
   FOCUS_KEY,
   FOCUS_VALUE,
-  POS_KEY,
-  DRAG_THRESHOLD,
   MAX_LABEL_MS,
   POLL_TIMEOUT_MS,
   POLL_INTERVAL_MS,
-  DEFAULT_EDGE_OFFSET_PX,
   FOCUS_RESTORE_DELAY_MS,
   EVENTBOX_SAFETY_TIMEOUT_MS,
   EVENTBOX_LOADING_LABEL_MS,
@@ -241,17 +237,17 @@ let installed = null;
  * Install the floating Send Exp button.
  *
  * Lifecycle:
- *   1. Snapshots current settings. If `mobileMode === false` we skip
+ *   1. Snapshots current settings. If `fabMode === false` we skip
  *      DOM work entirely — but still wire the settings subscriber so
  *      a later flip to `true` creates the button live.
  *   2. Renders (if enabled): creates the `<button id="oge-send-exp">`,
- *      applies size + position, wires drag / click / focus handlers,
- *      and appends to `document.body`. When body is not yet present
- *      we defer insertion to `DOMContentLoaded` (once).
+ *      registers it as the 'exp' module of the unified FAB, and wires
+ *      click / focus handlers. When body is not yet present we defer
+ *      insertion to `DOMContentLoaded` (once).
  *   3. Subscribes to `settingsStore` for live updates:
- *        - `mobileMode true → false`: remove button,
- *        - `mobileMode false → true`: create button,
- *        - `enterBtnSize` change: resize width/height/font-size in place.
+ *        - `fabMode true → false`: remove button,
+ *        - `fabMode false → true`: create button,
+ *        - `fabBtnSize` change: resize width/height/font-size in place.
  *   4. Returns a dispose fn that removes the button (if present) and
  *      unsubscribes from settings.
  *
@@ -586,17 +582,15 @@ export const installSendExp = () => {
     // NOT overwrite it with makeButton's null (idempotency-guard return).
     if (document.getElementById(BUTTON_ID)) return;
 
-    const size = settingsStore.get().enterBtnSize;
+    const size = settingsStore.get().fabBtnSize;
     controller = makeButton({
       id: BUTTON_ID,
       title: 'Expeditions',
       ringId: 'oge-ring-exp',
       size,
       fontScale: 0.23,
-      posKey: POS_KEY,
+      module: { id: 'exp', name: 'Expeditions', color: BG_IDLE, glyph: COMET_GLYPH },
       focusKey: FOCUS_KEY,
-      edgeOffset: DEFAULT_EDGE_OFFSET_PX,
-      dragThreshold: DRAG_THRESHOLD,
       zones: [
         {
           key: 'main',
@@ -659,7 +653,7 @@ export const installSendExp = () => {
 
   // Initial render based on current settings.
   const initial = settingsStore.get();
-  if (initial.mobileMode) {
+  if (initial.fabMode) {
     if (document.body) {
       createButton();
     } else {
@@ -667,7 +661,7 @@ export const installSendExp = () => {
         'DOMContentLoaded',
         () => {
           // Re-check in case dispose ran before DOMContentLoaded fired.
-          if (installed && settingsStore.get().mobileMode) createButton();
+          if (installed && settingsStore.get().fabMode) createButton();
         },
         { once: true },
       );
@@ -675,23 +669,23 @@ export const installSendExp = () => {
   }
 
   // Subscribe for live changes. We react ONLY to the two fields we
-  // care about (mobileMode, enterBtnSize) — the settings store carries
+  // care about (fabMode, fabBtnSize) — the settings store carries
   // the whole panel so unrelated edits (colMinGap, colPassword, ...)
   // would otherwise spam this callback.
-  let prevMobileMode = initial.mobileMode;
-  let prevEnterBtnSize = initial.enterBtnSize;
+  let prevFabMode = initial.fabMode;
+  let prevFabBtnSize = initial.fabBtnSize;
   const unsubSettings = settingsStore.subscribe((next) => {
-    if (next.mobileMode !== prevMobileMode) {
-      if (next.mobileMode) {
+    if (next.fabMode !== prevFabMode) {
+      if (next.fabMode) {
         if (document.body) createButton();
       } else {
         removeButton();
       }
-      prevMobileMode = next.mobileMode;
+      prevFabMode = next.fabMode;
     }
-    if (next.enterBtnSize !== prevEnterBtnSize) {
-      updateButtonSize(next.enterBtnSize);
-      prevEnterBtnSize = next.enterBtnSize;
+    if (next.fabBtnSize !== prevFabBtnSize) {
+      updateButtonSize(next.fabBtnSize);
+      prevFabBtnSize = next.fabBtnSize;
     }
   });
 

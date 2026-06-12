@@ -65,14 +65,11 @@ export const SETTINGS_PREFIX = 'oge_';
  * single source of truth at runtime; this typedef is the compile-time
  * counterpart):
  *
- *   mobileMode              true  — Send Exp button visible in mobile layout
- *   colonizeMode            true  — Send Col button visible
+ *   fabMode                 true  — unified floating button (all four command
+ *                                   modules: Exp / Col / Lifeforms / Daily Run) visible
+ *   fabBtnSize              320   — unified floating button size in px
  *   expeditionBadges        true  — ekspedycje dot on planet list
  *   autoRedirectExpedition  true  — redirect to next planet after expedition
- *   enterBtnSize            320   — Send Exp button size in px
- *   colBtnSize              320   — Send Col button size in px
- *   lifeformMode            true  — Lifeforms (system-discovery) button visible
- *   lfBtnSize               320   — Lifeforms button size in px
  *   colPositions            '8'   — comma-separated colonize positions e.g. "8,9,10"
  *   colMinGap               15    — seconds between colonize arrivals
  *   colMinFields            320   — abandon threshold (fields)
@@ -101,14 +98,10 @@ export const SETTINGS_PREFIX = 'oge_';
  *                                   excludes short planet⇄moon hops. Server-speed dependent.
  *
  * @typedef {object} Settings
- * @property {boolean} mobileMode
- * @property {boolean} colonizeMode
+ * @property {boolean} fabMode
+ * @property {number}  fabBtnSize
  * @property {boolean} expeditionBadges
  * @property {boolean} autoRedirectExpedition
- * @property {number}  enterBtnSize
- * @property {number}  colBtnSize
- * @property {boolean} lifeformMode
- * @property {number}  lfBtnSize
  * @property {string}  colPositions
  * @property {number}  colMinGap
  * @property {number}  colMinFields
@@ -130,8 +123,6 @@ export const SETTINGS_PREFIX = 'oge_';
  * @property {number}  fsThreshold
  * @property {string}  fsOffsets
  * @property {number}  fsMinFlightSec
- * @property {boolean} fsCollectMode
- * @property {number}  fsBtnSize
  */
 
 /**
@@ -169,14 +160,12 @@ export const SETTINGS_PREFIX = 'oge_';
  * @type {Record<keyof Settings, SettingSchema>}
  */
 export const SETTINGS_SCHEMA = {
-  mobileMode:             { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'mobileMode' },
-  colonizeMode:           { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'colonizeMode' },
+  // v2 unified floating button (replaces the four per-button mode/size
+  // pairs — see migrateLegacyButtonSettings below).
+  fabMode:                { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'fabMode' },
+  fabBtnSize:             { type: 'int',    default: 320,   key: SETTINGS_PREFIX + 'fabBtnSize' },
   expeditionBadges:       { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'expeditionBadges' },
   autoRedirectExpedition: { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'autoRedirectExpedition' },
-  enterBtnSize:           { type: 'int',    default: 320,   key: SETTINGS_PREFIX + 'enterBtnSize' },
-  colBtnSize:             { type: 'int',    default: 320,   key: SETTINGS_PREFIX + 'colBtnSize' },
-  lifeformMode:           { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'lifeformMode' },
-  lfBtnSize:              { type: 'int',    default: 320,   key: SETTINGS_PREFIX + 'lfBtnSize' },
   colPositions:           { type: 'string', default: '8',   key: SETTINGS_PREFIX + 'colPositions' },
   colMinGap:              { type: 'int',    default: 15,    key: SETTINGS_PREFIX + 'colMinGap' },
   colMinFields:           { type: 'int',    default: 320,   key: SETTINGS_PREFIX + 'colMinFields' },
@@ -203,10 +192,70 @@ export const SETTINGS_SCHEMA = {
   fsThreshold:            { type: 'int',    default: 100000, key: SETTINGS_PREFIX + 'fsThreshold' },
   fsOffsets:              { type: 'string', default: '-10m, 0m, 10m', key: SETTINGS_PREFIX + 'fsReminderOffsets' },
   fsMinFlightSec:         { type: 'int',    default: 600,   key: SETTINGS_PREFIX + 'fsMinFlightSec' },
-  // Daily Transport feature (`features/fsCollect`): master toggle for the
-  // unified floating button (Send / Target / Collect) and its size.
-  fsCollectMode:          { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'fsCollectMode' },
-  fsBtnSize:              { type: 'int',    default: 320,   key: SETTINGS_PREFIX + 'fsBtnSize' },
+};
+
+// ─────────────────────────────────────────────────────────────────────────
+// Unified-FAB keys that are persisted state but NOT Settings-panel fields
+// (they change through direct interaction with the button, like the drag
+// position always has). Declared here so there is a single owner for the
+// key names; `features/shared/unifiedFab.js` imports them.
+
+/** localStorage key for the unified FAB's dragged `{x,y}` position. */
+export const FAB_POS_KEY = SETTINGS_PREFIX + 'fabPos';
+
+/** localStorage key for the id of the currently active FAB module. */
+export const FAB_ACTIVE_KEY = SETTINGS_PREFIX + 'fabActive';
+
+/**
+ * Pre-unified-FAB per-button keys (≤ v1.x), frozen verbatim for migration:
+ * one mode/size/pos triple per floating button, with the historical mode
+ * defaults. Order matters — it is the priority used to pick the module the
+ * migrated FAB starts on (first legacy-enabled one wins).
+ */
+const LEGACY_FAB_MODULES = [
+  { id: 'exp', modeKey: SETTINGS_PREFIX + 'mobileMode',    modeDefault: true,  sizeKey: SETTINGS_PREFIX + 'enterBtnSize', posKey: SETTINGS_PREFIX + 'enterBtnPos' },
+  { id: 'col', modeKey: SETTINGS_PREFIX + 'colonizeMode',  modeDefault: true,  sizeKey: SETTINGS_PREFIX + 'colBtnSize',   posKey: SETTINGS_PREFIX + 'colBtnPos' },
+  { id: 'lf',  modeKey: SETTINGS_PREFIX + 'lifeformMode',  modeDefault: true,  sizeKey: SETTINGS_PREFIX + 'lfBtnSize',    posKey: SETTINGS_PREFIX + 'lfBtnPos' },
+  { id: 'fs',  modeKey: SETTINGS_PREFIX + 'fsCollectMode', modeDefault: false, sizeKey: SETTINGS_PREFIX + 'fsBtnSize',    posKey: SETTINGS_PREFIX + 'fsUnifiedPos' },
+];
+
+/**
+ * One-shot migration from the four legacy per-button settings to the
+ * unified FAB. Runs before hydration on every {@link initSettingsStore}
+ * call but only acts when `oge_fabMode` is still unset AND at least one
+ * legacy key exists (a fresh install has neither and just gets the schema
+ * defaults). Derivation:
+ *
+ *   - `fabMode`    — true iff any legacy button was enabled;
+ *   - `fabBtnSize` — the first legacy-enabled button's size (its module is
+ *     the one the user actually looked at), default 320;
+ *   - `oge_fabActive` / `oge_fabPos` — that same button's id and dragged
+ *     position, so the unified FAB appears exactly where the user's main
+ *     button used to be.
+ *
+ * The legacy keys are left in place (harmless, and a downgrade keeps
+ * working); only new keys are written. Exported for tests.
+ *
+ * @returns {void}
+ */
+export const migrateLegacyButtonSettings = () => {
+  if (safeLS.get(SETTINGS_SCHEMA.fabMode.key) !== null) return;
+  const hasLegacy = LEGACY_FAB_MODULES.some(
+    (m) => safeLS.get(m.modeKey) !== null || safeLS.get(m.sizeKey) !== null,
+  );
+  if (!hasLegacy) return;
+  const enabled = LEGACY_FAB_MODULES.filter((m) =>
+    safeLS.bool(m.modeKey, m.modeDefault),
+  );
+  safeLS.set(SETTINGS_SCHEMA.fabMode.key, String(enabled.length > 0));
+  const primary = enabled[0] ?? LEGACY_FAB_MODULES[0];
+  safeLS.set(
+    SETTINGS_SCHEMA.fabBtnSize.key,
+    String(safeLS.int(primary.sizeKey, /** @type {number} */ (SETTINGS_SCHEMA.fabBtnSize.default))),
+  );
+  if (safeLS.get(FAB_ACTIVE_KEY) === null) safeLS.set(FAB_ACTIVE_KEY, primary.id);
+  const pos = safeLS.json(primary.posKey);
+  if (pos && safeLS.json(FAB_POS_KEY) === null) safeLS.setJSON(FAB_POS_KEY, pos);
 };
 
 /**
@@ -319,6 +368,11 @@ let disposeFn = null;
  */
 export const initSettingsStore = () => {
   if (disposeFn) return disposeFn;
+
+  // Upgrade path: fold the four legacy per-button settings into the
+  // unified-FAB keys BEFORE hydration reads them. No-op on fresh installs
+  // and on every run after the first.
+  migrateLegacyButtonSettings();
 
   // Hydrate: one set() → one notification.
   settingsStore.set(hydrateFromStorage());

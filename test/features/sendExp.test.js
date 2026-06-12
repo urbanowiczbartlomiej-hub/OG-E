@@ -3,8 +3,8 @@
 // Unit tests for the floating Send Exp button.
 //
 // The module reads three things from the page:
-//   - `settings.mobileMode` gates visibility,
-//   - `settings.enterBtnSize` drives diameter + font scaling,
+//   - `settings.fabMode` gates visibility,
+//   - `settings.fabBtnSize` drives diameter + font scaling,
 //   - `settings.maxExpPerPlanet` gates the click handler.
 // ... and writes the button to `document.body`, plus JSON position to
 // `oge_enterBtnPos` and focus marker to `oge_focusedBtn`.
@@ -154,8 +154,8 @@ const resetSettingsToDefaults = () => {
  * `location.search` at whichever scene we need.
  *
  * @param {{
- *   mobileMode?: boolean,
- *   enterBtnSize?: number,
+ *   fabMode?: boolean,
+ *   fabBtnSize?: number,
  *   maxExpPerPlanet?: number,
  *   onFleetdispatch?: boolean,
  *   mission?: number | null,
@@ -164,8 +164,8 @@ const resetSettingsToDefaults = () => {
  * }} [opts]
  */
 const setupScene = ({
-  mobileMode = true,
-  enterBtnSize = 560,
+  fabMode = true,
+  fabBtnSize = 560,
   maxExpPerPlanet = 1,
   onFleetdispatch = false,
   mission = null,
@@ -174,8 +174,8 @@ const setupScene = ({
 } = {}) => {
   settingsStore.set({
     ...settingsStore.get(),
-    mobileMode,
-    enterBtnSize,
+    fabMode,
+    fabBtnSize,
     maxExpPerPlanet,
   });
 
@@ -259,18 +259,18 @@ afterEach(() => {
 });
 
 // ──────────────────────────────────────────────────────────────────
-// Visibility gating via mobileMode
+// Visibility gating via fabMode
 // ──────────────────────────────────────────────────────────────────
 
-describe('installSendExp — visibility via mobileMode', () => {
-  it('does not render a button when mobileMode is off', () => {
-    setupScene({ mobileMode: false });
+describe('installSendExp — visibility via fabMode', () => {
+  it('does not render a button when fabMode is off', () => {
+    setupScene({ fabMode: false });
     installSendExp();
     expect(getBtn()).toBeNull();
   });
 
-  it('renders the button with the correct id + text when mobileMode is on', () => {
-    setupScene({ mobileMode: true });
+  it('renders the button with the correct id + text when fabMode is on', () => {
+    setupScene({ fabMode: true });
     installSendExp();
     const btn = getBtn();
     expect(btn).not.toBeNull();
@@ -285,8 +285,8 @@ describe('installSendExp — visibility via mobileMode', () => {
 // ──────────────────────────────────────────────────────────────────
 
 describe('installSendExp — size from settings', () => {
-  it('applies enterBtnSize to width and height', () => {
-    setupScene({ enterBtnSize: 400 });
+  it('applies fabBtnSize to width and height', () => {
+    setupScene({ fabBtnSize: 400 });
     installSendExp();
     const btn = getBtn();
     expect(btn).not.toBeNull();
@@ -457,28 +457,29 @@ describe('installSendExp — max expedition guard', () => {
 // Button position
 // ──────────────────────────────────────────────────────────────────
 
-describe('installSendExp — position', () => {
-  it('restores position from localStorage when oge_enterBtnPos is set', () => {
-    // Need to set BEFORE install; setupScene only writes settings.
-    localStorage.setItem('oge_enterBtnPos', JSON.stringify({ x: 50, y: 60 }));
+describe('installSendExp — position (unified FAB wrapper)', () => {
+  it('restores the FAB position from localStorage when oge_fabPos is set', () => {
+    // Position now lives on the unified-FAB wrapper, shared by all four
+    // modules. Need to set BEFORE install; setupScene only writes settings.
+    localStorage.setItem('oge_fabPos', JSON.stringify({ x: 50, y: 60 }));
     setupScene({});
     installSendExp();
-    const btn = getBtn();
-    expect(btn).not.toBeNull();
-    expect(btn?.style.left).toBe('50px');
-    expect(btn?.style.top).toBe('60px');
+    const wrap = document.getElementById('oge-fab-wrap');
+    expect(getBtn()).not.toBeNull();
+    expect(wrap?.style.left).toBe('50px');
+    expect(wrap?.style.top).toBe('60px');
   });
 
   it('uses bottom-right default when no saved position is present', () => {
     setupScene({});
     installSendExp();
-    const btn = getBtn();
-    expect(btn).not.toBeNull();
-    expect(btn?.style.right).toBe('20px');
-    expect(btn?.style.bottom).toBe('20px');
+    const wrap = document.getElementById('oge-fab-wrap');
+    expect(getBtn()).not.toBeNull();
+    expect(wrap?.style.right).toBe('20px');
+    expect(wrap?.style.bottom).toBe('20px');
     // No explicit left/top when using edge-anchor defaults.
-    expect(btn?.style.left).toBe('');
-    expect(btn?.style.top).toBe('');
+    expect(wrap?.style.left).toBe('');
+    expect(wrap?.style.top).toBe('');
   });
 });
 
@@ -487,31 +488,31 @@ describe('installSendExp — position', () => {
 // ──────────────────────────────────────────────────────────────────
 
 describe('installSendExp — live settings updates', () => {
-  it('removes the button when mobileMode is toggled off after install', () => {
-    setupScene({ mobileMode: true });
+  it('removes the button when fabMode is toggled off after install', () => {
+    setupScene({ fabMode: true });
     installSendExp();
     expect(getBtn()).not.toBeNull();
 
-    settingsStore.update((s) => ({ ...s, mobileMode: false }));
+    settingsStore.update((s) => ({ ...s, fabMode: false }));
     expect(getBtn()).toBeNull();
   });
 
-  it('creates the button when mobileMode is toggled on after install', () => {
-    setupScene({ mobileMode: false });
+  it('creates the button when fabMode is toggled on after install', () => {
+    setupScene({ fabMode: false });
     installSendExp();
     expect(getBtn()).toBeNull();
 
-    settingsStore.update((s) => ({ ...s, mobileMode: true }));
+    settingsStore.update((s) => ({ ...s, fabMode: true }));
     expect(getBtn()).not.toBeNull();
   });
 
-  it('resizes the button when enterBtnSize changes live', () => {
-    setupScene({ enterBtnSize: 560 });
+  it('resizes the button when fabBtnSize changes live', () => {
+    setupScene({ fabBtnSize: 560 });
     installSendExp();
     const btn = getBtn();
     expect(btn?.style.width).toBe('560px');
 
-    settingsStore.update((s) => ({ ...s, enterBtnSize: 300 }));
+    settingsStore.update((s) => ({ ...s, fabBtnSize: 300 }));
     expect(btn?.style.width).toBe('300px');
     expect(btn?.style.height).toBe('300px');
     // 300 * 0.23 = 69, less 1px for single-zone.
@@ -547,7 +548,7 @@ describe('installSendExp — focus persistence', () => {
 
 describe('installSendExp — dispose', () => {
   it('dispose removes the button and settings updates no longer resurrect it', () => {
-    setupScene({ mobileMode: true });
+    setupScene({ fabMode: true });
     const dispose = installSendExp();
     expect(getBtn()).not.toBeNull();
 
@@ -557,8 +558,8 @@ describe('installSendExp — dispose', () => {
     // Flipping settings after dispose is a no-op (subscriber was
     // unsubscribed, and even if re-install were called we'd want the
     // button to come back ONLY via an explicit install).
-    settingsStore.update((s) => ({ ...s, mobileMode: false }));
-    settingsStore.update((s) => ({ ...s, mobileMode: true }));
+    settingsStore.update((s) => ({ ...s, fabMode: false }));
+    settingsStore.update((s) => ({ ...s, fabMode: true }));
     expect(getBtn()).toBeNull();
   });
 });
@@ -581,7 +582,7 @@ describe('installSendExp — idempotency + edges', () => {
   it('click is a safe no-op when there is no active planet', () => {
     setupScene({ activeCp: null });
     installSendExp();
-    // getBtn works because mobileMode is on — but with no .hightlightPlanet
+    // getBtn works because fabMode is on — but with no .hightlightPlanet
     // the click handler short-circuits and never navigates.
     getBtn()?.click();
     expect(navTarget).toBeNull();

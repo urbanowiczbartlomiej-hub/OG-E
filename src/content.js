@@ -162,15 +162,16 @@ const installDomFeatures = () => {
   // The event box lives in the top frame.
   if (window.top === window.self) installReminders();
 
-  // User-facing buttons.
+  // User-facing buttons — the four modules of the unified FAB
+  // (features/shared/unifiedFab.js). All gated on the single fabMode
+  // setting; exactly one is visible at a time and the FAB's orbital
+  // picker switches between them. Install order = picker order only.
   installSendExp();
   installSendCol();
   // Lifeforms (system-discovery) button — walks the galaxy firing lifeform
-  // discoveries, one system per tap. Independent of Send-Col; gated on the
-  // lifeformMode setting (default on).
+  // discoveries, one system per tap. Independent of Send-Col.
   installSendLifeform();
-  // Unified Daily Transport button (Send micro-fleets + Collect). Gated on
-  // the fsCollectMode setting (default off); independent of the others.
+  // Unified Daily Transport button (Send micro-fleets + Collect).
   installFsCollect();
 
   // Standalone overlay on overview for fresh-small colonies.

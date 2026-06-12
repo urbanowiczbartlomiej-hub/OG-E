@@ -76,7 +76,7 @@ afterEach(() => {
 });
 
 const enable = () => {
-  settingsStore.set({ ...settingsStore.get(), fsCollectMode: true });
+  settingsStore.set({ ...settingsStore.get(), fabMode: true });
 };
 
 // T13 eventbox readiness gate: fixtures mount without the game's
@@ -88,12 +88,15 @@ const openEventBoxGate = () => {
 };
 
 describe('mount / unmount', () => {
-  it('does not mount when fsCollectMode is off', () => {
+  it('does not mount when fabMode is off', () => {
+    // fabMode defaults to true (unlike the legacy fsCollectMode) — turn it
+    // off explicitly to exercise the gate.
+    settingsStore.set({ ...settingsStore.get(), fabMode: false });
     installFsCollect();
     expect(document.getElementById('oge-fs-unified')).toBeNull();
   });
 
-  it('mounts the unified button with two zones when fsCollectMode is on', () => {
+  it('mounts the unified button with two zones when fabMode is on', () => {
     enable();
     installFsCollect();
     expect(document.getElementById('oge-fs-unified')).not.toBeNull();
@@ -106,7 +109,7 @@ describe('mount / unmount', () => {
   it('removes the button when the toggle flips off at runtime', () => {
     enable();
     installFsCollect();
-    settingsStore.set({ ...settingsStore.get(), fsCollectMode: false });
+    settingsStore.set({ ...settingsStore.get(), fabMode: false });
     expect(document.getElementById('oge-fs-unified')).toBeNull();
   });
 });

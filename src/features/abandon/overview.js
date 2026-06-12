@@ -16,9 +16,9 @@
 // Every one of these must hold for the overlay to mount:
 //
 //   - `location.search` contains `component=overview`
-//   - `settings.colonizeMode === true` (user opted into the colonize
-//     feature suite; without it `colMinFields` is not a meaningful
-//     signal)
+//   - `settings.fabMode === true` (user opted into the unified floating
+//     button, whose colonize module is what makes `colMinFields` a
+//     meaningful signal)
 //   - {@link checkAbandonState} returns truthy (overview + fresh +
 //     below threshold — same gate `sendCol` historically used, now
 //     owned by this feature)
@@ -98,7 +98,7 @@ const readCoordsText = () => {
  * Lifecycle:
  *   1. Runs `refresh()` once synchronously — mounts the overlay if
  *      the current page already satisfies all preconditions.
- *   2. Subscribes to `settingsStore` so `colMinFields` / `colonizeMode`
+ *   2. Subscribes to `settingsStore` so `colMinFields` / `fabMode`
  *      edits re-evaluate the mount state live.
  *   3. Installs a `MutationObserver` on `document.body` (childList +
  *      subtree). OGame AJAX-swaps the overview content when the user
@@ -253,7 +253,7 @@ export const installAbandonOverview = () => {
    */
   const refresh = () => {
     const settings = settingsStore.get();
-    if (!settings.colonizeMode) {
+    if (!settings.fabMode) {
       unmount();
       return;
     }
@@ -278,7 +278,7 @@ export const installAbandonOverview = () => {
   // settings change.
   refresh();
 
-  // React to settings edits — `colMinFields` bump or `colonizeMode`
+  // React to settings edits — `colMinFields` bump or `fabMode`
   // toggle should flip the overlay in-place.
   const unsubSettings = settingsStore.subscribe(refresh);
 

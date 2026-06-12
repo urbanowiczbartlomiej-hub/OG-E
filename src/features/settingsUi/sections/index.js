@@ -5,10 +5,9 @@
 // `../index.js` (for buildTab's table rendering). Order matters —
 // top-to-bottom in the AGR settings tab.
 
+import { floatingButtonSection } from './floatingButton.js';
 import { expeditionsSection } from './expeditions.js';
 import { colonizationSection } from './colonization.js';
-import { lifeformsSection } from './lifeforms.js';
-import { fleetSaveSection } from './fleetSave.js';
 import { displaySection } from './display.js';
 import { syncSection } from './sync.js';
 import { remindersSection } from './reminders.js';
@@ -29,10 +28,9 @@ import { remindersSection } from './reminders.js';
  * @type {SettingsSection[]}
  */
 export const SECTIONS = [
+  floatingButtonSection,
   expeditionsSection,
   colonizationSection,
-  lifeformsSection,
-  fleetSaveSection,
   displaySection,
   syncSection,
   remindersSection,
