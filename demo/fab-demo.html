@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>OG-E — Unified FAB (demo testowe)</title>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;margin:0;overscroll-behavior:none}
+  body{
+    background:#070a10;color:#eef2f6;overflow:hidden;
+    font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,Verdana,sans-serif;
+    background-image:
+      radial-gradient(1px 1px at 12% 22%, #ffffff66 50%, transparent 51%),
+      radial-gradient(1px 1px at 78% 12%, #ffffff44 50%, transparent 51%),
+      radial-gradient(1.5px 1.5px at 64% 58%, #ffffff55 50%, transparent 51%),
+      radial-gradient(1px 1px at 30% 80%, #ffffff3a 50%, transparent 51%),
+      radial-gradient(circle at 70% -10%, #16233b 0%, transparent 55%);
+  }
+
+  /* ── demo controls (nie jest częścią wtyczki) ───────────────────────── */
+  .panel{
+    position:fixed;top:0;left:0;right:0;z-index:5;
+    padding:10px 14px calc(10px);display:flex;gap:12px;align-items:center;
+    font-size:12px;color:#9aa7b5;background:linear-gradient(#070a10ee,#070a1000);
+  }
+  .panel input[type=range]{flex:1;accent-color:#4aa8ff}
+  .panel b{color:#eef2f6;min-width:52px;text-align:right}
+  .hint{
+    position:fixed;inset:auto 0 0 0;z-index:5;pointer-events:none;
+    padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+    font-size:12px;line-height:1.55;color:#9aa7b5;text-align:center;
+    background:linear-gradient(#070a1000,#070a10ee);
+  }
+  .hint b{color:#eef2f6;font-weight:600}
+
+  /* ── FAB shell — odpowiednik #oge-fab-wrap + #oge-fab-handle ────────── */
+  #fab-wrap{position:fixed;z-index:99999;touch-action:none;user-select:none;-webkit-user-select:none}
+  .host{
+    position:absolute;left:0;top:0;border-radius:50%;isolation:isolate;
+    font-weight:700;color:#f8fafc;cursor:pointer;overflow:hidden;
+    display:flex;flex-direction:column;
+    background:#0b1220;
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.07),
+      0 0 0 1.5px color-mix(in oklab, var(--rim) 65%, transparent),
+      0 0 22px color-mix(in oklab, var(--rim) 40%, transparent),
+      0 8px 22px #000a;
+    transition:transform .15s ease, box-shadow .25s ease;
+  }
+  .host.pressed{transform:scale(.96)}
+  .zone{
+    flex:1;border:none;background:radial-gradient(circle at 35% 28%,
+      color-mix(in oklab, var(--rim) 26%, #0b1220) 0%, #0b1220 78%);
+    color:inherit;font:inherit;cursor:pointer;position:relative;
+    display:flex;align-items:center;justify-content:center;text-align:center;
+    padding:0 10%;
+  }
+  .zone + .zone{border-top:1px solid #ffffff1c}
+  .zone:active{filter:brightness(1.18)}
+  .zlabel{display:flex;flex-direction:column;align-items:center;line-height:1.12;pointer-events:none;z-index:2}
+  .zlabel small{font-size:.5em;opacity:.85;letter-spacing:.5px;margin-top:2px;font-weight:500}
+  .art{
+    position:absolute;inset:0;z-index:0;pointer-events:none;
+    display:flex;align-items:flex-start;justify-content:center;padding-top:8%;
+    color:var(--rim);opacity:.12;
+  }
+  .art svg{width:34%;height:46%;overflow:visible}
+  .host.single .art{padding-top:13%}
+  .host.single .art svg{width:30%;height:30%}
+  /* hold sweep — odpowiednik .oge-ring-charge */
+  .sweep{position:absolute;inset:0;z-index:3;pointer-events:none}
+  .sweep circle{
+    fill:none;stroke:var(--rim);stroke-width:5;stroke-linecap:round;
+    stroke-dasharray:100;stroke-dashoffset:100;
+    filter:drop-shadow(0 0 5px var(--rim));
+    transform:rotate(-90deg);transform-origin:50% 50%;
+  }
+
+  /* handle — odpowiednik #oge-fab-handle */
+  #fab-handle{
+    position:absolute;right:2%;bottom:2%;z-index:3;border-radius:50%;border:none;
+    background:#0b1220;color:#e2e8f0;display:flex;align-items:center;justify-content:center;
+    cursor:pointer;padding:0;
+    box-shadow:0 0 0 1.5px color-mix(in oklab, var(--mod,#38bdf8) 60%, transparent),0 3px 10px rgba(0,0,0,.6);
+  }
+  #fab-handle svg{width:55%;height:55%;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;transition:transform .2s ease}
+  .fab-open #fab-handle svg{transform:rotate(45deg)}
+
+  /* ── orbital picker — odpowiednik #oge-fab-overlay + .oge-fab-orb ───── */
+  #overlay{position:fixed;inset:0;background:rgba(2,6,12,.55);backdrop-filter:blur(2px)}
+  .orb{
+    position:fixed;transform:translate(-50%,-50%) scale(.4);opacity:0;border-radius:50%;
+    border:none;cursor:pointer;padding:0;color:#e2e8f0;
+    background:radial-gradient(circle at 35% 28%, color-mix(in oklab, var(--mod) 30%, #0b1220) 0%, #0b1220 75%);
+    box-shadow:0 0 0 1.5px color-mix(in oklab, var(--mod) 60%, transparent),
+      0 0 18px color-mix(in oklab, var(--mod) 35%, transparent),0 8px 22px rgba(0,0,0,.7);
+    transition:transform .26s cubic-bezier(.2,1.35,.4,1), opacity .18s ease;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .orb.in{transform:translate(-50%,-50%) scale(1);opacity:1}
+  .orb.is-active{box-shadow:0 0 0 2.5px var(--mod),
+      0 0 26px color-mix(in oklab, var(--mod) 65%, transparent),0 8px 22px rgba(0,0,0,.7)}
+  .orb svg{width:60%;height:60%;color:var(--mod);opacity:.9;overflow:visible}
+  .orb-label{
+    position:fixed;transform:translate(-50%,-50%);pointer-events:none;opacity:0;
+    font:700 10px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.14em;
+    text-transform:uppercase;white-space:nowrap;color:#cbd5e1;text-shadow:0 1px 4px #000;
+    transition:opacity .25s ease .08s;
+  }
+  .orb-label.in{opacity:1}
+
+  /* toast */
+  #toast{
+    position:fixed;left:50%;top:54px;transform:translate(-50%,-10px);z-index:100000;
+    background:#0e1420;border:1px solid #ffffff24;border-radius:12px;padding:10px 16px;
+    font-size:13px;box-shadow:0 8px 26px #000c;opacity:0;transition:opacity .2s,transform .2s;
+    max-width:92vw;text-align:center;pointer-events:none;
+  }
+  #toast.show{opacity:1;transform:translate(-50%,0)}
+  #toast b{color:var(--tc,#eef2f6)}
+  @media (prefers-reduced-motion:reduce){*{transition-duration:.01ms !important}}
+</style>
+</head>
+<body>
+
+<div class="panel">
+  <span>Rozmiar FAB</span>
+  <input id="size" type="range" min="40" max="560" step="10">
+  <b id="sizeVal"></b>
+</div>
+
+<div class="hint">
+  <b>Tap</b> = akcja strefy &nbsp;·&nbsp; <b>Hold 2s</b> = akcja hold (Col·Send / Daily·Collect) &nbsp;·&nbsp;
+  <b>+</b> = menu orbitalne (tap na kulę tylko przełącza moduł) &nbsp;·&nbsp; <b>Drag</b> = pozycja<br>
+  Pozycja, aktywny moduł i rozmiar przeżywają odświeżenie strony.
+</div>
+
+<div id="fab-wrap">
+  <button id="fab-handle" aria-label="Switch floating button module" aria-expanded="false">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+</div>
+<div id="toast"></div>
+
+<script>
+'use strict';
+/* ════ moduły 1:1 z wtyczki: id / nazwa / kolor / glyph (buttonGlyphs.js) ════ */
+const GLYPHS = {
+  exp:'<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" transform="translate(32,32) scale(1.15) translate(-32,-32)"><line x1="35" y1="29" x2="10" y2="54"/><line x1="40" y1="35" x2="24" y2="51"/><line x1="29" y1="24" x2="17" y2="36"/><circle cx="44" cy="20" r="9" fill="currentColor"/><path d="M55 40 v6 M52 43 h6"/><path d="M14 16 v5 M11.5 18.5 h5"/></g>',
+  col:'<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 41 V27 a12 12 0 0 1 24 0 V41 Z"/><circle cx="32" cy="29" r="4.5" fill="currentColor"/><line x1="23" y1="41" x2="15" y2="53"/><line x1="41" y1="41" x2="49" y2="53"/><line x1="10" y1="53" x2="20" y2="53"/><line x1="44" y1="53" x2="54" y2="53"/></g>',
+  lf:'<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" transform="translate(32,32) rotate(45) scale(1.15) translate(-32,-32)"><line x1="25" y1="14" x2="39" y2="14"/><line x1="29" y1="22" x2="35" y2="22"/><line x1="29" y1="42" x2="35" y2="42"/><line x1="25" y1="50" x2="39" y2="50"/><path d="M23 7 C23 20 41 24 41 32 C41 40 23 44 23 57"/><path d="M41 7 C41 20 23 24 23 32 C23 40 41 44 41 57"/></g>',
+  fs:'<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="45" r="11"/><path d="M12.5 41.5 Q18 39 23.5 41.5" stroke-width="2.5"/><path d="M29.5 36 Q39 34 44 21"/><path d="M45.5 28 L44 21 L38.1 25.2"/><circle cx="52" cy="11" r="6" fill="currentColor"/></g>'
+};
+const MODULES = [
+  { id:'exp', name:'Expeditions',  color:'#4aa8ff', fontScale:0.23, zones:[
+      { key:'main', main:'Enter', sub:'[1:127:9]', hold:null } ]},
+  { id:'col', name:'Colonization', color:'#12b3c2', fontScale:0.12, zones:[
+      { key:'send', main:'Send',      sub:'[5:70:8] · hold: skip', bg:'#12b3c2', hold:'Pominięto cel kolonizacji' },
+      { key:'scan', main:'To galaxy', sub:'1749 left',             bg:'#3a9fb0', hold:null } ]},
+  { id:'lf',  name:'Lifeforms',    color:'#a78bfa', fontScale:0.18, zones:[
+      { key:'main', main:'Discover', sub:'[3:241]', hold:null } ]},
+  { id:'fs',  name:'Daily Run',    color:'#34d96e', fontScale:0.12, zones:[
+      { key:'micro',   main:'Dispatch', sub:'→ 5:70:8 🪐 · 3 left',     bg:'#34d96e', hold:null },
+      { key:'collect', main:'Collect',  sub:'→ K9 🌙 · hold: change',  bg:'#43cf72', hold:'Zmieniono cel Collect' } ]},
+];
+
+/* ════ stałe i geometria 1:1 z unifiedFabPure.js ════ */
+const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+const ORBIT_SPREAD=Math.PI*0.62, EDGE=20, LABEL_GAP=12, HOLD_MS=2000, DRAG_THRESHOLD=8;
+const orbDiameter=s=>clamp(Math.round(s*0.42),56,150);
+const orbitRadius=(s,o)=>s/2+o/2+14;
+const handleDiameter=s=>clamp(Math.round(s*0.18),24,48);
+const orbitLayout=({cx,cy,count,radius,orbSize,labelGap,vw,vh})=>{
+  const items=[]; if(count<=0) return items;
+  const base=Math.atan2(vh/2-cy,vw/2-cx), start=base-ORBIT_SPREAD/2;
+  const m=orbSize/2+8, lr=radius+orbSize/2+labelGap;
+  for(let i=0;i<count;i++){
+    const a=count===1?base:start+ORBIT_SPREAD*(i/(count-1));
+    items.push({
+      x:clamp(cx+Math.cos(a)*radius,m,vw-m), y:clamp(cy+Math.sin(a)*radius,m,vh-m),
+      labelX:clamp(cx+Math.cos(a)*lr,30,vw-30), labelY:clamp(cy+Math.sin(a)*lr,12,vh-12),
+    });
+  }
+  return items;
+};
+const resolveActive=(stored,ids)=>(stored&&ids.includes(stored))?stored:(ids[0]??null);
+
+/* ════ persystencja (we wtyczce: oge_fabPos / oge_fabActive / oge_fabBtnSize) ════ */
+const LS={pos:'demo_fabPos',active:'demo_fabActive',size:'demo_fabSize'};
+const loadJSON=k=>{try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}};
+
+/* ════ shell ════ */
+const wrap=document.getElementById('fab-wrap'),
+      handle=document.getElementById('fab-handle'),
+      toastEl=document.getElementById('toast'),
+      sizeInput=document.getElementById('size'),
+      sizeVal=document.getElementById('sizeVal');
+
+let size=parseInt(localStorage.getItem(LS.size),10)||320;
+// na telefonie 320 px to dużo — demo startuje od zapisanego/realnego defaultu
+size=clamp(size,40,560);
+let hosts=new Map(), menuEls=[], menuOpen=false;
+
+let toastT;
+function toast(html,color){
+  toastEl.innerHTML=html;
+  toastEl.style.setProperty('--tc',color||'#eef2f6');
+  toastEl.classList.add('show');
+  clearTimeout(toastT); toastT=setTimeout(()=>toastEl.classList.remove('show'),1700);
+}
+
+function activeId(){ return resolveActive(localStorage.getItem(LS.active),MODULES.map(m=>m.id)); }
+function applyActive(){
+  const act=activeId();
+  for(const [id,el] of hosts) el.style.display=id===act?'':'none';
+  const m=MODULES.find(m=>m.id===act);
+  if(m) handle.style.setProperty('--mod',m.color);
+}
+function setActive(id){ localStorage.setItem(LS.active,id); applyActive(); }
+
+/* hosty modułów — odpowiednik createButton (single/split, glyph, hold sweep) */
+function buildHosts(){
+  for(const el of hosts.values()) el.remove();
+  hosts.clear();
+  for(const m of MODULES){
+    const host=document.createElement('div');
+    host.className='host'+(m.zones.length===1?' single':'');
+    host.style.setProperty('--rim',m.color);
+    host.style.width=host.style.height=size+'px';
+    host.style.fontSize=Math.round(size*m.fontScale)+'px';
+    for(const z of m.zones){
+      const zone=document.createElement('button');
+      zone.type='button'; zone.className='zone';
+      zone.style.setProperty('--rim',z.bg||m.color);
+      zone.style.fontSize='inherit';
+      zone.innerHTML=`<span class="zlabel"><span>${z.main}</span>${z.sub?`<small>${z.sub}</small>`:''}</span>`;
+      if(m.zones.length===1||z===m.zones[0]){
+        const art=document.createElement('span'); art.className='art';
+        art.innerHTML=`<svg viewBox="0 0 64 64">${GLYPHS[m.id]}</svg>`;
+        zone.prepend(art);
+      }
+      wireZone(zone,m,z,host);
+      host.appendChild(zone);
+    }
+    // hold sweep ring (jeden na hosta, jak .oge-ring-charge)
+    const sweep=document.createElementNS('http://www.w3.org/2000/svg','svg');
+    sweep.setAttribute('class','sweep'); sweep.setAttribute('viewBox','0 0 36 36');
+    sweep.innerHTML='<circle cx="18" cy="18" r="15.9" pathLength="100"/>';
+    host.appendChild(sweep);
+    host.addEventListener('pointerdown',()=>{ if(menuOpen) closeMenu(); });
+    wrap.insertBefore(host,handle);
+    hosts.set(m.id,host);
+  }
+  applyActive();
+}
+
+/* tap vs hold na strefie (drag obsługuje wrap; tu tylko dyskryminator) */
+function wireZone(zone,m,z,host){
+  let holdT=null,fired=false,px=0,py=0;
+  const arc=()=>host.querySelector('.sweep circle');
+  const stop=()=>{ clearTimeout(holdT); holdT=null; const c=arc(); if(c) c.style.strokeDashoffset='100'; };
+  zone.addEventListener('pointerdown',e=>{
+    fired=false; px=e.clientX; py=e.clientY;
+    host.classList.add('pressed');
+    if(z.hold){
+      const c=arc(), t0=performance.now();
+      const tick=()=>{ if(!holdT) return;
+        const p=Math.min((performance.now()-t0)/HOLD_MS,1);
+        if(c) c.style.strokeDashoffset=String((1-p)*100);
+        if(p<1) requestAnimationFrame(tick); };
+      holdT=setTimeout(()=>{ holdT=null; fired=true; stop();
+        if(navigator.vibrate) navigator.vibrate(12);
+        toast(`<b>${m.name}</b>: ${z.hold} <span style="color:#9aa7b5">(hold)</span>`,m.color);
+      },HOLD_MS);
+      requestAnimationFrame(tick);
+    }
+  });
+  zone.addEventListener('pointermove',e=>{
+    if(holdT&&(Math.abs(e.clientX-px)>DRAG_THRESHOLD||Math.abs(e.clientY-py)>DRAG_THRESHOLD)) stop();
+  });
+  for(const ev of ['pointerup','pointercancel','pointerleave'])
+    zone.addEventListener(ev,()=>{ stop(); host.classList.remove('pressed'); });
+  zone.addEventListener('contextmenu',e=>e.preventDefault());
+  zone.addEventListener('click',()=>{
+    if(drag.wasDrag()){ drag.resetDrag(); return; }
+    if(fired){ fired=false; return; }
+    toast(`<b>${m.name}</b> → ${z.main} <span style="color:#9aa7b5">(tu wtyczka odpala akcję / reload)</span>`,m.color);
+  });
+}
+
+/* ════ pozycja + drag — odpowiednik restorePosition + installDrag ════ */
+function restorePosition(){
+  const p=loadJSON(LS.pos);
+  if(p&&typeof p.x==='number'&&typeof p.y==='number'){
+    wrap.style.left=Math.min(p.x,innerWidth-size)+'px';
+    wrap.style.top=Math.min(p.y,innerHeight-size)+'px';
+    wrap.style.right=wrap.style.bottom='auto';
+  }else{
+    wrap.style.left=wrap.style.top='auto';
+    wrap.style.right=EDGE+'px'; wrap.style.bottom=EDGE+'px';
+  }
+}
+const drag=(()=>{
+  let dragging=false,moved=false,sx=0,sy=0,sl=0,st=0,w=0,h=0;
+  const start=(x,y)=>{ dragging=true; moved=false; sx=x; sy=y;
+    const r=wrap.getBoundingClientRect(); sl=r.left; st=r.top; w=r.width; h=r.height; };
+  const move=(x,y)=>{
+    if(!dragging) return;
+    const dx=x-sx,dy=y-sy;
+    if(!moved&&Math.abs(dx)<DRAG_THRESHOLD&&Math.abs(dy)<DRAG_THRESHOLD) return;
+    moved=true;
+    if(menuOpen) closeMenu();
+    wrap.style.right=wrap.style.bottom='auto';
+    wrap.style.left=clamp(sl+dx,0,innerWidth-w)+'px';
+    wrap.style.top=clamp(st+dy,0,innerHeight-h)+'px';
+  };
+  const end=()=>{ if(!dragging) return; dragging=false;
+    if(moved) localStorage.setItem(LS.pos,JSON.stringify({x:parseInt(wrap.style.left,10),y:parseInt(wrap.style.top,10)})); };
+  wrap.addEventListener('touchstart',e=>{const t=e.touches[0]; if(t) start(t.clientX,t.clientY);},{passive:true});
+  wrap.addEventListener('touchmove',e=>{const t=e.touches[0]; if(t){move(t.clientX,t.clientY); if(moved) e.preventDefault();}},{passive:false});
+  wrap.addEventListener('touchend',end);
+  wrap.addEventListener('mousedown',e=>{ start(e.clientX,e.clientY);
+    const mv=ev=>move(ev.clientX,ev.clientY);
+    const up=()=>{ end(); document.removeEventListener('mousemove',mv); document.removeEventListener('mouseup',up); };
+    document.addEventListener('mousemove',mv); document.addEventListener('mouseup',up); });
+  return { wasDrag:()=>moved, resetDrag:()=>{moved=false;} };
+})();
+
+/* ════ menu orbitalne ════ */
+const onKey=e=>{ if(e.key==='Escape') closeMenu(); };
+function closeMenu(){
+  if(!menuOpen) return;
+  menuOpen=false;
+  for(const el of menuEls) el.remove();
+  menuEls=[];
+  document.removeEventListener('keydown',onKey);
+  document.body.classList.remove('fab-open');
+  handle.setAttribute('aria-expanded','false');
+}
+function openMenu(){
+  if(menuOpen) return;
+  const r=wrap.getBoundingClientRect();
+  const cx=r.left+(r.width||size)/2, cy=r.top+(r.height||size)/2;
+  const orb=orbDiameter(size);
+  const items=orbitLayout({cx,cy,count:MODULES.length,radius:orbitRadius(size,orb),
+    orbSize:orb,labelGap:LABEL_GAP,vw:innerWidth,vh:innerHeight});
+  const overlay=document.createElement('div');
+  overlay.id='overlay'; overlay.style.zIndex='99997';
+  overlay.addEventListener('click',closeMenu);
+  menuEls.push(overlay);
+  const act=activeId();
+  MODULES.forEach((m,i)=>{
+    const pos=items[i];
+    const o=document.createElement('button');
+    o.type='button'; o.className='orb'+(m.id===act?' is-active':'');
+    o.title=m.name; o.setAttribute('aria-label','Switch to '+m.name);
+    o.style.cssText=`left:${pos.x}px;top:${pos.y}px;width:${orb}px;height:${orb}px;z-index:99998`;
+    o.style.setProperty('--mod',m.color);
+    o.innerHTML=`<svg viewBox="0 0 64 64" aria-hidden="true">${GLYPHS[m.id]}</svg>`;
+    o.addEventListener('click',()=>{
+      if(m.id!==act){ setActive(m.id); toast(`Aktywny moduł: <b>${m.name}</b> <span style="color:#9aa7b5">(bez akcji — tap na FAB ją odpali)</span>`,m.color); }
+      closeMenu();
+    });
+    menuEls.push(o);
+    const lab=document.createElement('div');
+    lab.className='orb-label'; lab.textContent=m.name;
+    lab.style.cssText=`left:${pos.labelX}px;top:${pos.labelY}px;z-index:99998`;
+    menuEls.push(lab);
+  });
+  for(const el of menuEls) document.body.appendChild(el);
+  requestAnimationFrame(()=>menuEls.forEach(el=>el.classList.add('in')));
+  menuOpen=true;
+  document.addEventListener('keydown',onKey);
+  document.body.classList.add('fab-open');
+  handle.setAttribute('aria-expanded','true');
+}
+handle.addEventListener('click',e=>{
+  if(drag.wasDrag()){ drag.resetDrag(); return; }
+  e.stopPropagation();
+  menuOpen?closeMenu():openMenu();
+});
+
+/* ════ rozmiar (we wtyczce: settings → fabBtnSize) ════ */
+function applySize(){
+  wrap.style.width=wrap.style.height=size+'px';
+  const hs=handleDiameter(size);
+  handle.style.width=handle.style.height=hs+'px';
+  sizeInput.value=String(size); sizeVal.textContent=size+' px';
+  buildHosts();
+  restorePosition();
+  closeMenu();
+}
+sizeInput.addEventListener('input',()=>{
+  size=parseInt(sizeInput.value,10)||320;
+  localStorage.setItem(LS.size,String(size));
+  applySize();
+});
+
+addEventListener('resize',()=>{ restorePosition(); if(menuOpen){ closeMenu(); } });
+
+/* init */
+applySize();
+</script>
+</body>
+</html>
