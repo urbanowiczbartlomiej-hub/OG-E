@@ -1,4 +1,4 @@
-// Big red overlay on #planet div — prompts the user to abandon a fresh
+// Rose HUD overlay on #planet div — prompts the user to abandon a fresh
 // small colony that sits below their `colMinFields` threshold.
 //
 // # Role
@@ -6,8 +6,8 @@
 // On the OGame overview page, when the currently-displayed planet is a
 // freshly-colonized slot (`usedFields === 0`) AND its `maxFields` is
 // below the user's keep threshold (`settings.colMinFields`), we paint
-// a semi-transparent red overlay over the `#planet` graphic with an
-// "ABANDON" call to action. Click on the overlay hands off to the
+// a rose-rimmed HUD panel (shared `panelChrome` styling) over the
+// `#planet` graphic with an "ABANDON" call to action. Click on the overlay hands off to the
 // existing {@link abandonPlanet} flow in `./index.js` — which owns
 // the 3-click safety-gated tear-down.
 //
@@ -57,6 +57,7 @@ import { settingsStore } from '../../state/settings.js';
 import { logger } from '../../lib/logger.js';
 import { checkAbandonState, abandonPlanet } from './index.js';
 import { GAME } from '../../lib/gameDom.js';
+import { installPanelChrome, PANEL_CLASS } from '../shared/panelChrome.js';
 
 /**
  * DOM id of the overlay. Stable so repeated mount calls short-circuit,
@@ -151,9 +152,17 @@ export const installAbandonOverview = () => {
     // state). Keeping `#planet` untouched and floating a body-level
     // overlay avoids any interaction with game's own DOM assumptions.
     const rect = planet.getBoundingClientRect();
+    installPanelChrome();
     const overlay = document.createElement('div');
     overlay.id = OVERLAY_ID;
+    // Rose rim + fast pulse — the buttons' shared error-state colour
+    // (BG_SEND_ERROR) and cadence: this overlay IS a destructive call
+    // to action. Surface/elevation/typography come from the panel
+    // chrome; only layout stays inline.
+    overlay.className = PANEL_CLASS;
+    overlay.dataset.flag = 'error';
     overlay.style.cssText = [
+      '--rim:#fb7185',
       'position:absolute',
       `top:${rect.top + window.scrollY}px`,
       `left:${rect.left + window.scrollX}px`,
@@ -163,19 +172,15 @@ export const installAbandonOverview = () => {
       'flex-direction:column',
       'align-items:center',
       'justify-content:center',
-      'background:rgba(160, 0, 0, 0.85)',
-      'color:#fff',
-      'font-weight:bold',
       'text-align:center',
-      'border:3px solid #fff',
-      'border-radius:12px',
       'z-index:9999',
       'cursor:pointer',
     ].join(';');
 
     const titleLine = document.createElement('div');
     titleLine.textContent = '\u26A0 ABANDON \u26A0';
-    titleLine.style.cssText = 'font-size:24px;margin-bottom:6px;opacity:0.9';
+    titleLine.className = 'oge-panel-title';
+    titleLine.style.cssText = 'font-size:20px;margin-bottom:6px';
 
     const coordsLine = document.createElement('div');
     coordsLine.textContent = readCoordsText();
@@ -191,7 +196,8 @@ export const installAbandonOverview = () => {
 
     const hintLine = document.createElement('div');
     hintLine.textContent = 'click to start';
-    hintLine.style.cssText = 'font-size:12px;opacity:0.7;margin-top:6px';
+    hintLine.className = 'oge-panel-hint';
+    hintLine.style.cssText = 'font-size:11px;margin-top:6px';
 
     overlay.appendChild(titleLine);
     overlay.appendChild(coordsLine);
@@ -218,7 +224,7 @@ export const installAbandonOverview = () => {
       const s = settingsStore.get();
       if (!s.colPassword) {
         hintLine.textContent = '\u26A0 Set password in OG-E settings first';
-        hintLine.style.opacity = '1';
+        hintLine.style.color = '#fecdd3';
         return;
       }
       // Dispose ourselves completely — game takes over. Captured from

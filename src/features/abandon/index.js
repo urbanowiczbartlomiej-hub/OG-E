@@ -73,6 +73,7 @@ import { settingsStore } from '../../state/settings.js';
 import { scansStore } from '../../state/scans.js';
 import { safeClick, waitFor } from '../../lib/dom.js';
 import { GAME } from '../../lib/gameDom.js';
+import { installPanelChrome, PANEL_CLASS } from '../shared/panelChrome.js';
 
 /**
  * @typedef {import('../../state/settings.js').Settings} Settings
@@ -106,23 +107,29 @@ import { GAME } from '../../lib/gameDom.js';
  * still fires their click — visibility is not required for that.
  *
  * @param {string} text    Button label.
- * @param {string} bgColor CSS background colour.
+ * @param {string} rim     State colour for the panel chrome's `--rim`.
  * @param {string} id      DOM id (used by the click watchdogs to
  *                         detect popup-close between steps).
+ * @param {string} [flag]  Optional `data-flag` pulse (`'error'`/`'wait'`).
  * @returns {HTMLButtonElement}  Unattached `<button type="button">`.
  */
-const makeInjectedButton = (text, bgColor, id) => {
+const makeInjectedButton = (text, rim, id, flag) => {
+  installPanelChrome();
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.id = id;
   btn.textContent = text;
+  // Surface/elevation/state colour come from the shared panel chrome
+  // (same HUD family as the floating buttons); only layout stays inline.
+  btn.className = PANEL_CLASS;
+  if (flag) btn.dataset.flag = flag;
   btn.style.cssText = [
+    '--rim:' + rim,
     'position:absolute', 'inset:0',
     'display:flex', 'align-items:center', 'justify-content:center',
     'box-sizing:border-box', 'padding:16px',
-    'background:' + bgColor, 'color:#fff',
-    'font-size:24px', 'font-weight:bold', 'text-align:center',
-    'border:3px solid #fff', 'border-radius:10px',
+    'font-size:22px', 'text-align:center', 'letter-spacing:1px',
+    'border-radius:10px',
     'cursor:pointer', 'touch-action:manipulation',
     'z-index:9999',
   ].join(';');
@@ -298,7 +305,7 @@ export const abandonPlanet = async () => {
     makeInjectedButtonHost(abandonContent);
     const proxySubmit = makeInjectedButton(
       'SUBMIT PASSWORD',
-      '#c07020',
+      '#f59e0b',
       'oge-abandon-proxy-submit',
     );
     abandonContent.appendChild(proxySubmit);
@@ -347,8 +354,9 @@ export const abandonPlanet = async () => {
     makeInjectedButtonHost(confirmDialog);
     const proxyConfirm = makeInjectedButton(
       '⚠ CONFIRM DELETE ⚠',
-      '#a02020',
+      '#fb7185',
       'oge-abandon-proxy-confirm',
+      'error',
     );
     confirmDialog.appendChild(proxyConfirm);
 

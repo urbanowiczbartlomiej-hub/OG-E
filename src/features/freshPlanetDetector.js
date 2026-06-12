@@ -1,6 +1,7 @@
 // @ts-check
 
 import { installDrag } from './shared/draggableButton.js';
+import { installPanelChrome, PANEL_CLASS } from './shared/panelChrome.js';
 import { safeLS } from '../lib/storage.js';
 import { GAME } from '../lib/gameDom.js';
 
@@ -182,21 +183,24 @@ const showBanner = (planet) => {
   if (existing) existing.remove();
   if (!document.body) return;
 
+  installPanelChrome();
   const banner = document.createElement('div');
   banner.id = BANNER_ID;
   banner.dataset.cp = String(planet.cp);
+  // Amber rim + slow pulse — the buttons' shared wait-state colour
+  // (BG_SEND_WAIT) and cadence: a decision is pending, nothing burning.
+  // Surface/elevation/typography come from the panel chrome; only
+  // layout stays inline.
+  banner.className = PANEL_CLASS;
+  banner.dataset.flag = 'wait';
   banner.style.cssText = [
+    '--rim:#fbbf24',
     'position:fixed',
-    'background:rgba(220, 120, 0, 0.95)',
-    'color:#fff',
-    'padding:40px 80px',
-    'border:6px solid #fff',
-    'border-radius:24px',
+    'padding:28px 56px',
+    'border-radius:18px',
     'z-index:99998',
     'cursor:pointer',
     'text-align:center',
-    'font-weight:bold',
-    'box-shadow:0 8px 32px rgba(0,0,0,0.6)',
     // `touch-action: none` keeps touch gestures from scrolling the
     // page while the user drags the banner. Matches sendExp/sendCol.
     'touch-action:none',
@@ -204,7 +208,8 @@ const showBanner = (planet) => {
 
   const titleLine = document.createElement('div');
   titleLine.textContent = 'New planet';
-  titleLine.style.cssText = 'font-size:36px;margin-bottom:12px;opacity:0.9';
+  titleLine.className = 'oge-panel-title';
+  titleLine.style.cssText = 'font-size:28px;margin-bottom:12px';
 
   const bigLine = document.createElement('div');
   const nameText = planet.name ? ` ${planet.name}` : '';
@@ -218,7 +223,8 @@ const showBanner = (planet) => {
 
   const hintLine = document.createElement('div');
   hintLine.textContent = 'click to open';
-  hintLine.style.cssText = 'font-size:24px;opacity:0.8;margin-top:12px';
+  hintLine.className = 'oge-panel-hint';
+  hintLine.style.cssText = 'font-size:16px;margin-top:12px';
 
   banner.appendChild(titleLine);
   banner.appendChild(bigLine);
