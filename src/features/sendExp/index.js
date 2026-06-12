@@ -73,6 +73,13 @@ import { safeClick, waitFor } from '../../lib/dom.js';
 import { GAME, ACTIVE_PLANET_CLASS } from '../../lib/gameDom.js';
 import { createButton as makeButton, LABEL_CLASS } from '../shared/button.js';
 import { COMET_GLYPH } from '../shared/buttonGlyphs.js';
+import { OWNER_EXP } from '../../domain/fleetOwnership.js';
+import {
+  installFleetOwnership,
+  claimFleet2,
+  mayCompleteFleet2,
+} from '../shared/fleetOwnership.js';
+import { bareFleetdispatchUrl } from '../shared/fleetCourier.js';
 import {
   BUTTON_ID,
   FOCUS_KEY,
@@ -100,6 +107,7 @@ import {
 /**
  * @typedef {import('../../bridges/fleetDispatcherSnapshot.js').FleetDispatcherSnapshot} FleetDispatcherSnapshot
  */
+
 
 // ── Module-level snapshot of `window.fleetDispatcher` ────────────────
 
@@ -254,6 +262,11 @@ let installed = null;
 export const installSendExp = () => {
   if (installed) return installed.dispose;
 
+  // Fleet2 ownership (T5): the Phase-1 dispatch gate below reads the
+  // ownership session + the last checkTarget observation; make sure the
+  // shared listener is attached (idempotent — the courier installs it too).
+  installFleetOwnership();
+
   // Re-entry guard: a user tapping twice during Phase 2 polling must
   // NOT start a second poll loop (or double-click the routine element,
   // which at best is wasted and at worst confuses AGR's state machine).
@@ -407,6 +420,10 @@ export const installSendExp = () => {
     if (check?.classList.contains('ago_routine_check_3')) {
       // Routine is ready — AGR prep+fire. The 50 ms delayed second click
       // shakes loose cases where one click left AGR half-idled.
+      // Clicking the routine initiates a fleet1→fleet2 transition: claim it,
+      // so the Phase-1 dispatch tap that follows passes the ownership gate
+      // and other OG-E buttons refuse to complete this expedition.
+      claimFleet2(OWNER_EXP);
       safeClick(routine);
       setTimeout(() => safeClick(routine), 50);
       setLabel(btn, 'Wait...');
@@ -513,6 +530,18 @@ export const installSendExp = () => {
     const dispatch = document.getElementById('dispatchFleet');
     const fleetPanel = document.getElementById('ago_fleet2_main');
     if (dispatch && fleetPanel) {
+      // Ownership gate (T5): a loaded fleet panel is NOT proof this is our
+      // expedition — the player may have armed a manual send, or another
+      // OG-E button's tap-1 prepared its own fleet2. Dispatch only when the
+      // session is ours (we clicked the routine on this page) or, with no
+      // session, when the last checkTarget matches the expedition profile
+      // (position 16 + Pathfinder — AGR's routine-7 run outside our flow).
+      // Anything foreign: leave it untouched, restart from a bare
+      // fleetdispatch.
+      if (!mayCompleteFleet2(OWNER_EXP).allowed) {
+        location.href = bareFleetdispatchUrl();
+        return;
+      }
       safeClick(dispatch);
       setLabel(btn, 'Sent!');
       // Lock while the game processes the dispatch + its post-send nav. In

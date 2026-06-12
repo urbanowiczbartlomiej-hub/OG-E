@@ -66,8 +66,11 @@ import {
   readyToDispatch,
   shipAvailability,
   installFleetCourier,
+  bareFleetdispatchUrl,
 } from '../shared/fleetCourier.js';
 import { MISSION_DEPLOYMENT } from '../../domain/rules.js';
+import { OWNER_FS } from '../../domain/fleetOwnership.js';
+import { mayCompleteFleet2 } from '../shared/fleetOwnership.js';
 import { GAME } from '../../lib/gameDom.js';
 import { resolveSelection } from '../../domain/fleetPlan.js';
 import {
@@ -124,14 +127,8 @@ const EVENTBOX_SETTLE_MS = 150;
 
 // ─── helpers (impure env reads) ─────────────────────────────────────────
 
-const gameBase = () => location.href.split('?')[0];
 /** @param {string} name */
 const urlParam = (name) => new URLSearchParams(location.search).get(name);
-/** Bare fleetdispatch URL (no ship/target params — the courier sets those
- * in-page), optionally pinned to a planet via `cp`.
- * @param {string | null} [cp] */
-const bareFleetdispatchUrl = (cp) =>
-  gameBase() + '?page=ingame&component=fleetdispatch' + (cp ? `&cp=${cp}` : '');
 /** "→ g:s:p 🪐/🌙" label for a target coord.
  * @param {import('../../state/fsRoutes.js').TargetCoord | null | undefined} t */
 const targetLabel = (t) =>
@@ -393,12 +390,17 @@ const buildOrder = (mode) => {
         spec: { kind: 'list', ships: [{ id: Number(f.shipId), qty: Number(f.count), frac: 1 }] },
         target: next,
         mission: MISSION_DEPLOYMENT,
+        owner: OWNER_FS,
       },
     };
   }
   const target = fsRoutesStore.get().collectTarget;
   if (!target) return { flash: 'No target' };
-  return { order: { spec: { kind: 'all' }, target, mission: MISSION_DEPLOYMENT, resources: 'all' } };
+  return {
+    order: {
+      spec: { kind: 'all' }, target, mission: MISSION_DEPLOYMENT, resources: 'all', owner: OWNER_FS,
+    },
+  };
 };
 
 /**
@@ -451,15 +453,30 @@ const handleZone = async (mode) => {
   // we await the game's result and, on a rejected send (e.g. no fuel), drop
   // that stash and surface the error instead of a false "Sent".
   if (s === 'fleet2') {
+    // Ownership gate (T5): treat fleet2 as "our tap 2" only when our own
+    // tap 1 armed it (pending) AND the ownership session still names us.
+    // Anything else — the player's manual send, AGR's routine, another OG-E
+    // button — must not be dispatched from here: block and route to a bare
+    // fleetdispatch so the next tap starts from a clean fleet1.
+    if (!pending || !mayCompleteFleet2(OWNER_FS).allowed) {
+      location.href = bareFleetdispatchUrl();
+      return;
+    }
     if (!readyToDispatch()) return;
     if (mode === 'micro') stashMicroRedirect();
     else stashCollectRedirect(fsRoutesStore.get().collectTarget);
     busy = true;
     setLabel(zone, 'Wait…');
     dimZone(zone, true);
-    const r = await courierDispatch();
+    const r = await courierDispatch(OWNER_FS);
     if (!r.ok) {
       clearRedirectStash();
+      // Belt-and-braces: the gate above already vetted ownership, but keep
+      // the courier's own refusal mapped to the same recovery as sendCol.
+      if (r.reason === 'foreign') {
+        location.href = bareFleetdispatchUrl();
+        return;
+      }
       busy = false;
       dimZone(zone, false);
       flash(zone, sendErrorLabel(r.errorCode));

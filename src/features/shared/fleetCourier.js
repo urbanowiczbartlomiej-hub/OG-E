@@ -32,6 +32,11 @@ import { resolveSelection, classifyTargetError, isMissionAllowed } from '../../d
 import { FD_CMD_EVENT, FD_RES_EVENT, FD_SEND_RESULT_EVENT } from '../../lib/fleetProtocol.js';
 import { GAME } from '../../lib/gameDom.js';
 import { safeClick, waitFor } from '../../lib/dom.js';
+import {
+  installFleetOwnership,
+  claimFleet2,
+  mayCompleteFleet2,
+} from './fleetOwnership.js';
 
 /** RPC reply timeout (MAIN executor is synchronous; this is a safety net). */
 const RPC_TIMEOUT_MS = 4000;
@@ -66,6 +71,11 @@ const POLL_MS = 100;
  * @property {Target} target
  * @property {number} mission
  * @property {'all'} [resources]  load all resources on step 2 when set.
+ * @property {string} [owner]  OWNER_* id (domain/fleetOwnership.js) of the
+ *   calling button. When set, select() refuses to complete a fleet2 state
+ *   the owner did not create (reason `'foreign'`) and claims the ownership
+ *   session after performing the fleet1→fleet2 transition itself. Omitted
+ *   ⇒ legacy behaviour with no ownership checks.
  */
 
 /**
@@ -74,7 +84,8 @@ const POLL_MS = 100;
  * @typedef {object} SelectResult
  * @property {boolean} ok
  * @property {'offPage'|'noShips'|'empty'|'selectFailed'|'noFleet2'|'timeout'
- *   |'noMoon'|'noShip'|'reserved'|'generic'|'mission'|'notReady'} [reason]
+ *   |'noMoon'|'noShip'|'reserved'|'generic'|'mission'|'notReady'
+ *   |'foreign'} [reason]
  * @property {number} [errorCode]
  * @property {Array<{ id: number, want: number, have: number }>} [shortfalls]
  */
@@ -90,6 +101,21 @@ let rpcSeq = 0;
 /** @type {((e: Event) => void) | null} */
 let onSnapshot = null;
 let installed = false;
+
+/**
+ * Bare fleetdispatch URL — no ship/target/mission params (the courier or the
+ * player selects those in-page), optionally pinned to a planet via `cp`.
+ * Base comes from `location.href` so we stay on the origin/path the game
+ * served. This is also the ownership gate's escape hatch: a foreign fleet2
+ * is abandoned by navigating here, restarting the form at a clean step 1.
+ *
+ * @param {string | number | null} [cp]
+ * @returns {string}
+ */
+export const bareFleetdispatchUrl = (cp) =>
+  location.href.split('?')[0]
+  + '?page=ingame&component=fleetdispatch'
+  + (cp ? `&cp=${cp}` : '');
 
 // ─── step / readiness (pure DOM reads) ─────────────────────────────────────
 
@@ -292,6 +318,17 @@ export const shipAvailability = () => (snapshot ? availability() : null);
 export const select = async (order) => {
   if (step() === 'off') return { ok: false, reason: 'offPage' };
 
+  // Ownership gate (T5): entering at fleet2 means this call would skip the
+  // fleet1 block below and complete a fleet2 state somebody else prepared —
+  // legitimate ONLY when that somebody is the same owner (re-entry retry
+  // after e.g. a mission rejection). A foreign fleet2 (another button, AGR's
+  // routine, the player's manual send) must not be touched: arming our
+  // mission on it would dispatch a fleet we are not responsible for.
+  if (order.owner && step() === 'fleet2') {
+    const own = mayCompleteFleet2(order.owner);
+    if (!own.allowed) return { ok: false, reason: 'foreign' };
+  }
+
   const sel = resolveSelection(order.spec, availability());
   if (!sel.ok) {
     return {
@@ -347,6 +384,9 @@ export const select = async (order) => {
       intervalMs: POLL_MS,
     });
     if (!onF2) return { ok: false, reason: 'noFleet2' };
+    // We just performed the fleet1→fleet2 transition — claim it, so foreign
+    // buttons are locked out and our own re-entry (retry) stays permitted.
+    if (order.owner) claimFleet2(order.owner);
   }
 
   // Step 2: read the game's checkTarget for this target (fired on the fleet2
@@ -434,9 +474,16 @@ const awaitSendResult = () =>
  * the game's sendFleet result. Resolves `{ ok:false, reason:'notReady' }`
  * without clicking when not ready, so an early tap can never fire a send.
  *
+ * @param {string} [owner] OWNER_* id of the calling button. When set, the
+ *   click is refused (`reason:'foreign'`) unless the current fleet2 state
+ *   belongs to this owner — the last line of defence should a foreign state
+ *   appear between the owner's select() and its dispatch tap.
  * @returns {Promise<{ ok: boolean, errorCode?: number | null, reason?: string }>}
  */
-export const dispatch = () => {
+export const dispatch = (owner) => {
+  if (owner && !mayCompleteFleet2(owner).allowed) {
+    return Promise.resolve({ ok: false, reason: 'foreign' });
+  }
   if (!readyToDispatch()) return Promise.resolve({ ok: false, reason: 'notReady' });
   const result = awaitSendResult();
   safeClick(document.querySelector(GAME.FD_DISPATCH));
@@ -455,6 +502,7 @@ export const dispatch = () => {
 export const installFleetCourier = () => {
   if (installed) return;
   installed = true;
+  installFleetOwnership();
   onSnapshot = (e) => {
     snapshot = /** @type {any} */ (/** @type {CustomEvent} */ (e).detail);
   };

@@ -17,6 +17,8 @@ import {
   installFleetCourier,
   _resetFleetCourierForTest,
 } from '../../src/features/shared/fleetCourier.js';
+import { _resetFleetOwnershipForTest } from '../../src/features/shared/fleetOwnership.js';
+import { OWNER_COL, OWNER_FS } from '../../src/domain/fleetOwnership.js';
 
 /** @param {string} tag @param {string} id */
 const el = (tag, id) => {
@@ -102,11 +104,13 @@ let unhook = () => {};
 beforeEach(() => {
   document.body.innerHTML = '';
   _resetFleetCourierForTest();
+  _resetFleetOwnershipForTest();
   installFleetCourier();
 });
 afterEach(() => {
   unhook();
   _resetFleetCourierForTest();
+  _resetFleetOwnershipForTest();
 });
 
 describe('step / readiness (from live DOM)', () => {
@@ -269,6 +273,84 @@ describe('dispatch — tap 2', () => {
     );
     document.body.appendChild(d);
     const r = await dispatch();
+    expect(r.ok).toBe(true);
+  });
+});
+
+describe('fleet2 ownership (T5)', () => {
+  /** Mount a ready, session-less fleet2 (somebody else prepared it). */
+  const buildForeignFleet2 = () => {
+    document.body.innerHTML = '';
+    document.body.appendChild(el('a', 'dispatchFleet')); // ready (no .off)
+  };
+
+  it('select(owner) refuses a session-less fleet2 without issuing any command', async () => {
+    buildForeignFleet2();
+    /** @type {string[]} */ const ops = [];
+    const onCmd = (/** @type {any} */ e) => ops.push(e.detail.op);
+    document.addEventListener('oge:fd:cmd', onCmd);
+    unhook = () => document.removeEventListener('oge:fd:cmd', onCmd);
+    snapshot([{ id: 203, number: 100 }], { 4: true });
+
+    const r = await select({ spec: { kind: 'all' }, target: TARGET, mission: 4, owner: OWNER_FS });
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('foreign');
+    expect(ops).toEqual([]);
+  });
+
+  it('select without owner keeps the legacy (ungated) fleet2 behaviour', async () => {
+    buildForeignFleet2();
+    unhook = fakeExecutor({ missionOk: true });
+    snapshot([{ id: 203, number: 100 }], { 4: true });
+    const r = await select({ spec: { kind: 'all' }, target: TARGET, mission: 4 });
+    expect(r.ok).toBe(true);
+  });
+
+  it('claims the session on the fleet1→fleet2 transition: owner may re-enter, others may not', async () => {
+    buildFleet1();
+    unhook = fakeExecutor({ errorCode: null, missionOk: true });
+    snapshot([{ id: 203, number: 100 }], { 4: true });
+
+    const first = await select({ spec: { kind: 'all' }, target: TARGET, mission: 4, owner: OWNER_COL });
+    expect(first.ok).toBe(true);
+    expect(step()).toBe('fleet2');
+
+    // Same owner re-enters on fleet2 (retry path) — allowed.
+    const retry = await select({ spec: { kind: 'all' }, target: TARGET, mission: 4, owner: OWNER_COL });
+    expect(retry.ok).toBe(true);
+
+    // A different button sees the same fleet2 — refused.
+    const thief = await select({ spec: { kind: 'all' }, target: TARGET, mission: 4, owner: OWNER_FS });
+    expect(thief.ok).toBe(false);
+    expect(thief.reason).toBe('foreign');
+  });
+
+  it('dispatch(owner) never clicks a foreign fleet2', async () => {
+    buildForeignFleet2();
+    const d = document.getElementById('dispatchFleet');
+    let clicks = 0;
+    d?.addEventListener('click', () => (clicks += 1));
+    const r = await dispatch(OWNER_COL);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('foreign');
+    expect(clicks).toBe(0);
+  });
+
+  it('dispatch(owner) clicks once the owner armed the fleet itself', async () => {
+    buildFleet1();
+    unhook = fakeExecutor({ errorCode: null, missionOk: true });
+    snapshot([{ id: 203, number: 100 }], { 4: true });
+    const sel = await select({ spec: { kind: 'all' }, target: TARGET, mission: 4, owner: OWNER_COL });
+    expect(sel.ok).toBe(true);
+
+    document.getElementById('dispatchFleet')?.addEventListener('click', () =>
+      document.dispatchEvent(
+        new CustomEvent('oge:sendFleetResult', {
+          detail: { success: true, errorCode: null, mission: 4 },
+        }),
+      ),
+    );
+    const r = await dispatch(OWNER_COL);
     expect(r.ok).toBe(true);
   });
 });

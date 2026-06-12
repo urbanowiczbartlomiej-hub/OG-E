@@ -90,6 +90,7 @@ import {
   step as courierStep,
   readyToDispatch,
   installFleetCourier,
+  bareFleetdispatchUrl,
 } from '../shared/fleetCourier.js';
 import {
   findNextScanSystem,
@@ -112,6 +113,7 @@ import {
   parseCurrentGalaxyView,
 } from './domHelpers.js';
 import { SHIP_COLONY, TARGET_PLANET } from '../../domain/rules.js';
+import { OWNER_COL } from '../../domain/fleetOwnership.js';
 import { GAME } from '../../lib/gameDom.js';
 
 // Re-export the pure pipeline so existing call-sites (e.g. the test
@@ -217,11 +219,6 @@ let colTarget = /** @type {Coords | null} */ (null);
 let waitStartAt = 0;
 /** Total wait seconds measured at the start of the current min-gap cycle. */
 let waitTotalSecs = 0;
-
-/** Bare fleetdispatch URL — the courier sets the colony ship + target
- * in-page, so no coords/mission/am params (avoids the second reload). */
-const bareFleetdispatchUrl = () =>
-  location.href.split('?')[0] + '?page=ingame&component=fleetdispatch';
 
 // ─── DOM paint (impure — drives the shared Button controller) ──────────
 
@@ -412,10 +409,16 @@ const onSendClick = async () => {
     }
     busy = true;
     paintZone('send', { text: 'Wait…', bg: BG_SEND_WAIT, dim: true });
-    const r = await courierDispatch();
+    const r = await courierDispatch(OWNER_COL);
     busy = false;
     colReady = false;
     if (!r.ok) {
+      // Fleet2 stopped being ours between the taps (another initiator took
+      // over) — abandon it for a clean fleet1 instead of sending their fleet.
+      if (r.reason === 'foreign') {
+        location.href = bareFleetdispatchUrl();
+        return;
+      }
       paintZone('send', {
         text: r.errorCode === 140026 ? 'No fuel' : 'Failed',
         bg: BG_SEND_ERROR,
@@ -464,9 +467,17 @@ const onSendClick = async () => {
       type: TARGET_PLANET,
     },
     mission: MISSION_COLONIZE,
+    owner: OWNER_COL,
   });
   busy = false;
   if (!r.ok) {
+    // The visible fleet2 belongs to someone else (player's manual send, AGR
+    // routine, another OG-E button) — never arm colonize over their fleet.
+    // Per T5: block and route to a bare fleetdispatch for a clean fleet1.
+    if (r.reason === 'foreign') {
+      location.href = bareFleetdispatchUrl();
+      return;
+    }
     paintZone('send', colErrorPaint(r.reason, candidate));
     return;
   }

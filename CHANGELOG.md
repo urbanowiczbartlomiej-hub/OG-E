@@ -6,6 +6,19 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Fleet-send buttons no longer complete someone else's fleet2.** Each
+  button (Expeditions, Colonization, Daily Run) now tracks ownership of the
+  fleet1→fleet2 transition it initiated. A button that finds the dispatch
+  form already on step 2 — because you armed a manual send, AGR's routine
+  prepared an expedition, or another OG-E button got there first — blocks
+  instead of firing the foreign fleet, and routes to a fresh fleetdispatch
+  page so its own flow starts cleanly from step 1. Expeditions prepared by
+  AGR's routine-7 outside OG-E are still recognised (target position 16 +
+  a Pathfinder aboard, read from the game's own checkTarget request) and
+  remain one-tap sendable from the Expeditions button.
+
 ## [1.17.0] — 2026-06-10
 
 ### Added

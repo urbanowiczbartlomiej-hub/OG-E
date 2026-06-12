@@ -100,7 +100,7 @@ describe('installCheckTargetHook — happy path', () => {
     expect(detail.orders).toEqual({ 7: true, 15: false });
     // Shape assertion: the documented fields, nothing else.
     expect(Object.keys(detail).sort()).toEqual(
-      ['errorCode', 'galaxy', 'orders', 'position', 'system'],
+      ['errorCode', 'galaxy', 'orders', 'position', 'ships', 'system'],
     );
   });
 });
@@ -318,5 +318,46 @@ describe('installCheckTargetHook — idempotency', () => {
       orders: {},
     });
     expect(captured).toBeNull();
+  });
+});
+
+describe('installCheckTargetHook — ships from the request body (T5)', () => {
+  it('projects am<id>=<count> pairs into detail.ships', async () => {
+    installCheckTargetHook();
+    await fakeCheckTargetXHR(
+      'am203=12433&am219=1&galaxy=5&system=172&position=16&type=1&union=0&token=abc',
+      { status: 'success', targetOk: true, orders: { 15: true } },
+    );
+    expect(captured).not.toBeNull();
+    expect(/** @type {any} */ (captured).detail.ships).toEqual({ 203: 12433, 219: 1 });
+  });
+
+  it('drops zero / malformed counts and yields null when no am* pair exists', async () => {
+    installCheckTargetHook();
+    await fakeCheckTargetXHR(
+      'am204=0&am205=xyz&galaxy=4&system=30&position=8&type=1',
+      { status: 'success', targetOk: true, orders: {} },
+    );
+    expect(captured).not.toBeNull();
+    expect(/** @type {any} */ (captured).detail.ships).toBeNull();
+
+    captured = null;
+    await fakeCheckTargetXHR('galaxy=4&system=30&position=8&type=1', {
+      status: 'success',
+      targetOk: true,
+      orders: {},
+    });
+    expect(captured).not.toBeNull();
+    expect(/** @type {any} */ (captured).detail.ships).toBeNull();
+  });
+
+  it('does not confuse non-ship fields that merely start with am', async () => {
+    installCheckTargetHook();
+    await fakeCheckTargetXHR(
+      'ambush=5&am=7&galaxy=4&system=30&position=8&type=1',
+      { status: 'success', targetOk: true, orders: {} },
+    );
+    expect(captured).not.toBeNull();
+    expect(/** @type {any} */ (captured).detail.ships).toBeNull();
   });
 });

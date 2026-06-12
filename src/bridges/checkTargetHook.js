@@ -44,6 +44,12 @@ import { observeXHR } from './xhrObserver.js';
  * @property {Record<string, boolean> | null} orders Mission-permission map
  *   from `response.orders` (e.g. `{ "7": true }` ⇒ colonize allowed), or
  *   `null` when absent. The fleet courier reads this to gate mission arming.
+ * @property {Record<number, number> | null} ships Fleet composition from the
+ *   request body's `am<shipId>=<count>` pairs (e.g. `am203=12433` ⇒ 12433
+ *   Large Cargo) — the game serialises the step-1 ship selection into every
+ *   checkTarget request. `null` when the body carried no `am*` pair. The
+ *   fleet-ownership layer uses this to recognise AGR routine-7 expeditions
+ *   (position 16 + Pathfinder) without knowing the fleet1 state.
  *
  * Dispatched on BOTH success AND failure responses. On success
  * `errorCode` is `null`; on failure it carries the first error code
@@ -182,8 +188,22 @@ export const installCheckTargetHook = () => {
         for (const k of Object.keys(parsed.orders)) orders[k] = Boolean(parsed.orders[k]);
       }
 
+      // Fleet composition: every `am<digits>` body field is a ship count
+      // from the step-1 selection. Zero counts are kept out of the map (the
+      // game normally omits them; a literal `am204=0` carries no signal).
+      /** @type {Record<number, number> | null} */
+      let ships = null;
+      for (const key of Object.keys(params)) {
+        const m = /^am(\d+)$/.exec(key);
+        if (!m) continue;
+        const count = parseInt(params[key], 10);
+        if (!Number.isFinite(count) || count <= 0) continue;
+        if (!ships) ships = {};
+        ships[parseInt(m[1], 10)] = count;
+      }
+
       /** @type {CheckTargetResultDetail} */
-      const detail = { galaxy, system, position, errorCode, orders };
+      const detail = { galaxy, system, position, errorCode, orders, ships };
 
       document.dispatchEvent(new CustomEvent('oge:checkTargetResult', { detail }));
     },
