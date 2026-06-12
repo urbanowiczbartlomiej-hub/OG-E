@@ -47,7 +47,7 @@
 | T3  | Tytuł sekcji „Currently queued” dla ekspedycji w Reminders | łatwe | REVIEW |
 | T4  | Anulowanie remaindera FS na eventList (stan, 3 min, odznaczanie) | średnie | REVIEW |
 | T5  | Własność przejścia fleet1→fleet2 po XHR checkTarget | trudne | TODO |
-| T6  | Free Positions → mapa sąsiedztwa / regiony zasiedlenia | trudne | W TOKU |
+| T6  | Free Positions → mapa sąsiedztwa / regiony zasiedlenia | trudne | REVIEW |
 | T7  | DAILY RUN: za mało statków → komunikat/blokada; Send All pusta planeta → redirect | średnie | REVIEW |
 | T8  | Bug „Vlad”: na księżycu kolonizacja fałszuje brak wolnych pozycji | średnie | REVIEW |
 | T9  | Redesign pozostałych komponentów w duchu 4 nowych przycisków | średnie | TODO |
@@ -55,12 +55,15 @@
 | T11 | Obsługa „all fleets” dla każdego przycisku | średnie | TODO |
 | T12 | Blask cieniutkiej krawędzi w przyciskach dwustrefowych | łatwe | REVIEW |
 
-### Sugerowana kolejność
+### Sugerowana kolejność (stan po sesji 6)
 
-1. **Najpierw łatwe (szybkie zwycięstwa, niskie ryzyko):** T3 → T2 → T12 → T1.
-2. **Potem średnie, niezależne:** T8 (bug funkcjonalny, wysoki priorytet) → T7 →
-   T10 → T11 → T4 → T9.
-3. **Na końcu trudne (wymagają projektu i/lub danych):** T5 → T6.
+T1–T4, T6–T8, T12 → REVIEW lub DONE. Pozostaje:
+1. **Bez blokad, wizualne:** T9 (redesign) — dobry start nowej sesji.
+2. **Częściowo zablokowane na dane:** T11 (all fleets) — dane z
+   `window.fleetDispatcher` do potwierdzenia; T10 (lifeform 3600) — decyzja
+   o warunku odblokowania.
+3. **Mocno zablokowane:** T5 (własność fleet2) — potrzebne XHR `checkTarget`
+   + `sendFleet`.
 
 Zależności / powiązania:
 - **T12 ⟷ T9** — poprawka krawędzi to część szerszego audytu wyglądu; T12 zrób
@@ -662,5 +665,58 @@ stref, by efekt blasku był jak w 1-zone.
   (zakładka zwinięta do Galaxy Observations). T6b etap 1: uogólniony silnik
   regionów (`domain/regions.js` — zakres pozycji, tolerancja luk, wrap) +
   nowe UI + defensywne zbieranie ranku gracza ze skanów. Etap 2 (scoring,
-  tryby strategii, mapa sąsiedztwa) zaprojektowany w dzienniku T6 — start
-  po potwierdzeniu w grze, że `player.rank` ląduje w danych (Export JSON).
+  tryby strategii, mapa sąsiedztwa) zaprojektowany w dzienniku T6.
+- **2026-06-12 (sesja 4):** T6b kontynuacja — `rankClass` zbierany ze skanów,
+  neighbourhood scoring z bandit/honored tierami, pixel-strip, strategia engine z 5
+  presetami + modyfikatory expansion/ally, custom weight sliders z dirty-flag i
+  persystencją preferencji. Sekcja przemianowana na „Colony Scout — settlement area
+  analysis". Commity: `643b322`…`8fea3c8`.
+- **2026-06-12 (sesja 5):** Gruntowne review całej funkcjonalności Colony Scout →
+  zidentyfikowane fundamentalne wady (1 region per galaxy = scoring na 9 wierszach,
+  vacation=farma, multiplikacja count×maxLevel, ally bonus zbyt słaby). Refaktor
+  fazy 1+2: multi-region per galaxy (do 5 niezachodzących, prawdziwy global TOP 20),
+  precompute mines, vacation oddzielone, Σ tier, ally bonus min(1, n/3). Commit
+  `f9d51a6`. T6 → **REVIEW**. **Następna sesja: T9** (redesign komponentów, bez
+  blokad danych) lub T11/T10 (dane do potwierdzenia). T6b całkowicie zrealizowane — szczegóły poniżej.
+  **Zbieranie `rankClass`:** `player.rank.rankClass` (np. `rank_bandit2`,
+  `rank_starlord3`) zbierany w `domain/scans.js::classifyPosition` — oddany
+  tylko gdy `hasRank === true && typeof rankClass === 'string'`. Commit `643b322`.
+  **Neighbourhood scoring:** `RegionScore` z polami occupied/inactive/ranks/
+  bandits+banditMaxLevel/honored+honoredMaxLevel/allianceCount/allyNearby/mineMinDist.
+  `scoreRegion` de-duplikuje graczy po id; `banditMaxLevel` / `honoredMaxLevel`
+  różnicują przypadkowego bandit1 od top-10-serwera bandit3. `mineMinDist` =
+  minimalna kołowa odległość do własnej kolonii w galaktyce (cały skan,
+  nie tylko wnętrze regionu). Pixel-strip sąsiedztwa z `systemColor` mapping.
+  Commity: `58eecf9`, `57d7e7c`.
+  **Silnik strategii:** 5 presetów (longest/peaceful/farmer/honor_pvp/aggressive)
+  + 2 ortogonalne modyfikatory: expansion (±2, „spread" = bonus za dist≥100 sys
+  od własnej kolonii, „cluster" = odwrotnie) i allyBonus (auto-włączone gdy ally
+  tag podany w UI). `expansionFactor`: 0 przy dist<50, liniowo do 1 przy dist≥200.
+  Commit `a005ceb`, `4ad85b0`.
+  **Custom weight sliders:** 5 suwaków (-3..3, step 0.1) w `<details>` panelu,
+  live-update bez opóźnienia, reset do presetu, persystencja preferencji
+  (strategy/expansion/allyTag) w `oge_colonyScoutPrefs` localStorage, dirty-flag
+  odróżniający „gracz wyzerował ręcznie" od „preset jeszcze nie tknięty".
+  Commit `8fea3c8`.
+  **Gruntowne review + refaktor Fazy 1+2 (commit `f9d51a6`):**
+  - *Generacja kandydatów:* zamiast 1 regionu per galaktyka → do 5 niezachodzących
+    (helper `findGalaxyRegions` — po znalezieniu best window usuwa użyte dopasowania
+    i ponawia); TOP_N=20 staje się realnym globalnym rankingiem.
+  - *Precompute mines:* jeden przebieg po skanach buduje jednocześnie
+    `matchesByGalaxy` i `minesByGalaxy`; `scoreRegion` przyjmuje
+    `mineSystemsInGalaxy` w opts — eliminuje O(N×M) hotspot.
+  - *Vacation ≠ farma:* gracze w trybie urlopowym (gra chroni ich przed atakiem)
+    otrzymali osobne pole `vacation` w `RegionScore`; nie trafiają już do `inactive`.
+  - *Tier sum:* scoring używa `banditTierSum` / `honoredTierSum` (Σ tier_i) zamiast
+    `count×maxLevel` — monotonicznie rośnie z każdym kolejnym bandytą LUB wyższym
+    tierem, bez retro-amplifikacji.
+  - *Ally bonus skalibrowany:* `Math.min(1, allyNearby/3)` zamiast
+    `allyNearby/scanned`; teraz 1 sojusznik = realny ~0.75 bonus (nie ~0.05).
+  Status: **REVIEW** — do weryfikacji w grze przy pełnych danych ze skanów.
+  **Znane ograniczenia do potencjalnego T6c:**
+  - `ranks` (pozycje w rankingu) zbierane ale nieużywane w scoring — dane są,
+    wagi do dodania gdy pojawi się potrzeba.
+  - `mineMinDist` widzi tylko przeskanowane kolonie; historia kolonizacji dałaby
+    lepsze pokrycie (do rozważenia w przyszłości).
+  - Opcje `<select>` strategii w HTML są hardcoded zamiast generowane z `STRATEGIES`
+    (hinty w typedef są ale nie trafiają do UI).
