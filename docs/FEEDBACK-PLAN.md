@@ -51,29 +51,32 @@
 | T7  | DAILY RUN: za mało statków → komunikat/blokada; Send All pusta planeta → redirect | średnie | REVIEW |
 | T8  | Bug „Vlad”: na księżycu kolonizacja fałszuje brak wolnych pozycji | średnie | REVIEW |
 | T9  | Redesign pozostałych komponentów w duchu 4 nowych przycisków | średnie | REVIEW |
-| T10 | Lifeform: blokada Discovery po osiągnięciu 3600 (+ kiedy odblokować) | średnie | TODO |
+| T10 | Lifeform: blokada Discovery po osiągnięciu 3600 (+ kiedy odblokować) | średnie | REVIEW |
 | T11 | Obsługa „all fleets” dla każdego przycisku | średnie | TODO |
 | T12 | Blask cieniutkiej krawędzi w przyciskach dwustrefowych | łatwe | REVIEW |
 | T13 | DAILY RUN: błędny subtitle/hint zanim gra doczyta eventList | łatwe/średnie | REVIEW |
 
-### Sugerowana kolejność (stan po sesji 7)
+### Sugerowana kolejność (stan po sesji 8)
 
-T1–T4, T6–T9, T12 → REVIEW lub DONE. Pozostaje:
+T1–T4, T6–T10, T12, T13 → REVIEW lub DONE. Pozostaje:
 1. **Częściowo zablokowane na dane:** T11 (all fleets) — dane z
-   `window.fleetDispatcher` do potwierdzenia; T10 (lifeform 3600) — decyzja
-   o warunku odblokowania.
+   `window.fleetDispatcher` do potwierdzenia.
 2. **Mocno zablokowane:** T5 (własność fleet2) — potrzebne XHR `checkTarget`
    + `sendFleet`.
 
 **⚠ Przed najbliższym release (konsekwencja skrótu „bez testów"):** przejść
-`npm run test` i zaktualizować asercje do zmian z tego cyklu — na pewno:
-`test/features/abandon.test.js:207` (asercja inline-background `#c07020`;
-po T9 kolor żyje w `--rim`/klasie `oge-panel`, nie w `style.background`)
-oraz `test/features/fsCollect.test.js` (większość case'ów montuje DOM bez
-`#eventContent`, więc gate T13 trzyma przycisk w „Wait…" — dodać tabelę
-`#eventContent` do fixture lub dispatchować `oge:eventBoxLoaded`).
-Prawdopodobnie też etykiety/sub-teksty zmienione w sesjach 2–6.
-`npm run release` odpala testy, więc bez tego wydanie się zablokuje.
+`npm run test` i zaktualizować asercje do zmian z tego cyklu. Stan zmierzony
+w sesji 8: **19 czerwonych asercji w 6 plikach** —
+`test/features/abandon.test.js` (po T9 kolor żyje w `--rim`/klasie
+`oge-panel`, nie w `style.background`), `test/features/fsCollect.test.js`
+(case'y montują DOM bez `#eventContent`, więc gate T13 trzyma przycisk w
+„Wait…" — dodać tabelę do fixture lub dispatchować `oge:eventBoxLoaded`),
+`test/features/reminders.eventList.test.js` (okno anulowania 2→3 min +
+klasa `fs-cancel` z T4), `test/features/sendCol.test.js` +
+`test/features/sendExp.test.js` (etykiety `Colonize`/`Explore` z sesji 2,
+gate eventboxa), `test/features/sendColHelpers.test.js` (fallback
+`hightlightMoon` z T8). `npm run release` odpala testy, więc bez tego
+wydanie się zablokuje. Testy sendLifeform (T10) przechodzą.
 
 Zależności / powiązania:
 - **T12 ⟷ T9** — poprawka krawędzi to część szerszego audytu wyglądu; T12 zrób
@@ -568,7 +571,7 @@ szerokości obwódek; rozważyć modernizację dialogu nakładki i palety banera
 ---
 
 ### T10 — Lifeform: blokada Discovery po 3600 (+ kiedy odblokować)
-**Status:** TODO · **Trudność:** średnie · ⛔ BLOKADA: decyzja (warunek odblokowania)
+**Status:** REVIEW · **Trudność:** średnie
 
 **Feedback (wiernie):** „Kiedy dla form życia osiągniemy max 3600, można
 zablokować wysyłania kolejnych misji Discovery. Tylko kiedy odblokować?”
@@ -580,19 +583,45 @@ artefaktów?) zablokować przycisk lifeform (Discovery). Otwarte pytanie:
 bieżącą wartość 3600 (snapshot fleetDispatcher? osobny XHR? DOM lifeform?).
 
 **Pliki:**
-- `src/features/sendLifeform/index.js` (orkiestracja, etykieta/disabled)
-- `src/bridges/discoveryHook.js:29-100` (`sendSystemDiscoveryFleet`, wynik)
-- `src/state/scans.js` (per-position; ewentualnie nowe pole na sumę)
+- `src/features/sendLifeform/index.js` (orkiestracja, harvest + hourly refetch)
+- `src/features/sendLifeform/pure.js` (`parseArtifactCounter`, faza `artifactsFull`)
+- `src/features/sendLifeform/domHelpers.js` (`readArtifactCounter`)
+- `src/state/lifeformArtifacts.js` (persystencja odczytu, per-origin LS)
 
 **Podzadania:**
-1. Ustalić źródło bieżącej wartości limitu 3600 (skąd ją czytamy).
-2. Zablokować przycisk po osiągnięciu (disabled + etykieta — wspólny mechanizm z T11).
-3. Zdecydować i zaimplementować warunek odblokowania.
+1. ~~Ustalić źródło bieżącej wartości limitu 3600~~ → DOM strony lfresearch.
+2. ~~Zablokować przycisk po osiągnięciu~~ → faza `artifactsFull` w derive.
+3. ~~Zdecydować i zaimplementować warunek odblokowania~~ → świeży odczyt < max.
 
-**Dane:** ⛔ Potrzeba potwierdzić **skąd odczytać 3600** (XHR discovery response /
-DOM lifeform). Oraz decyzja użytkownika o warunku odblokowania.
+**Dane:** ⛔ ZDJĘTE — użytkownik dostarczył dump DOM strony
+`component=lfresearch`: licznik to `<div id="slot01" class="slot">Zebrane
+artefakty: 3609 / 3600</div>` w `#lfresearch > header`. Etykieta jest
+per-język, więc parsujemy wyłącznie parę liczb `N / M` (z tolerancją
+separatorów tysięcy); `current` może PRZEKROCZYĆ `max` (równoczesne doloty
+fal — stąd garda `>=`, nie `==`). Decyzja użytkownika ws. odblokowania:
+kontrola licznika raz na godzinę wystarczy (fale w locie dosypują artefakty
+po wysyłce); odblokowanie = świeży odczyt poniżej max (gracz wydał artefakty).
 
-**Dziennik:** —
+**Dziennik:**
+- 2026-06-12 (sesja 8): Zaimplementowane w całości. Architektura:
+  `parseArtifactCounter` (pure, locale-niezależny regex pary `N / M`) +
+  `readArtifactCounter(doc?)` (domHelpers — działa na żywym `document` I na
+  dokumencie z `DOMParser`) + `state/lifeformArtifacts.js` (odczyt
+  `{current, max, readAt}` w per-origin localStorage, wzorzec
+  `dailyActions`). Dwie ścieżki akwizycji: (1) pasywny harvest przy każdej
+  wizycie na lfresearch (NIE gated na `lifeformMode` — czysta kolekcja
+  danych jak skany); (2) cichy same-origin fetch strony lfresearch gdy
+  odczyt starszy niż 1 h (`ARTIFACTS_REFRESH_MS`), odpalany z tickera 1 Hz
+  tylko przy zamontowanym przycisku, z backoffem 5 min po błędzie sieci i
+  pełną godziną po stronie bez licznika (konto bez lifeforms → nigdy nie
+  młóci). Gating: nowa faza `artifactsFull` w `derive` (outrankuje
+  wszystkie inne, również `offGalaxy`), render = wyciszony fiolet
+  `BG_LF_DONE` + dim, etykieta `Full / 3609 / 3600 / artifacts — tap:
+  research`; tap nawiguje na lfresearch (tam się wydaje artefakty, a wizyta
+  sama odświeża licznik i zdejmuje blokadę). Brak odczytu = zachowanie jak
+  dotychczas (null ⇒ bez gatingu). Typecheck zielony, testy sendLifeform
+  25/25. Status: REVIEW — do weryfikacji w grze: wizyta na lfresearch przy
+  3609/3600 → przycisk „Full", wydanie artefaktów → odblokowanie.
 
 ---
 
@@ -864,3 +893,14 @@ po implementacji.
   i zapisano (sekcja „Przed najbliższym release") czerwone asercje testów
   do aktualizacji przed wydaniem. Całość zmergowana do `main` na prośbę
   użytkownika.
+- **2026-06-12 (sesja 8):** T10 → REVIEW. Użytkownik dostarczył dump DOM
+  lfresearch (licznik w `#slot01`) + decyzję: kontrola raz na godzinę,
+  odblokowanie po odczycie < max. Implementacja: parser pary `N / M`
+  (locale-niezależny), persystowany odczyt `{current, max, readAt}`
+  (`state/lifeformArtifacts.js`), pasywny harvest z wizyt na lfresearch +
+  godzinny cichy refetch, faza `artifactsFull` gate'ująca przycisk (tap →
+  lfresearch). Szczegóły w dzienniku T10. Zmierzono też pełną listę
+  czerwonych testów do naprawy przed release (19 asercji / 6 plików —
+  sekcja „Przed najbliższym release"). Branch:
+  `claude/main-feedback-review-ut2slh`. **Pozostają: T5 (XHR-y), T11
+  (pole slotów flot w `window.fleetDispatcher`).**
