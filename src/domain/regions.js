@@ -55,8 +55,10 @@
  * @property {number} scanned    How many of those systems have any scan data.
  * @property {number} occupied   Distinct players with `status: 'occupied'`
  *   in the range. Active neighbours — shows how crowded the area is.
- * @property {number} inactive   Distinct players in `inactive | long_inactive
- *   | vacation` states. Potential farm targets for the new colonist.
+ * @property {number} inactive   Distinct players in `inactive | long_inactive`
+ *   states. Actual farm targets — they cannot defend.
+ * @property {number} vacation   Distinct players in `vacation` mode.
+ *   Game-protected; cannot be attacked, so not a farm target.
  * @property {number[]} ranks    Highscore rank of every player seen in range,
  *   sorted ascending (rank 1 = #1 on highscore = strongest). Empty when no
  *   rank data was collected — the field was added in v1.17.x so older scans
@@ -69,12 +71,18 @@
  *   0 when `bandits === 0`). The tier is the trailing digit of `rankClass`
  *   (`"rank_bandit3"` → 3). Use this to distinguish an accidental bandit1
  *   from a true top-tier aggressor.
+ * @property {number} banditTierSum  Sum of all bandit tier values (Σ tier_i).
+ *   Monotonically grows with every additional bandit OR with higher tier —
+ *   bandit3 scores 3× the threat of bandit1. Used in scoring; `banditMaxLevel`
+ *   is used only for display.
  * @property {number} honored    Players with positive honor (non-bandit
  *   ranked — likely `rank_general*` / `rank_starlord*`). Also mostly
  *   combat-active, but they prefer stronger targets — lower danger for a
  *   new, weak colonist than bandits of the same level.
  * @property {number} honoredMaxLevel Highest honored tier (1–3; 0 when
  *   `honored === 0`). Mirrors `banditMaxLevel`.
+ * @property {number} honoredTierSum Sum of all honored tier values. Mirrors
+ *   `banditTierSum` for the honor-fighter population.
  * @property {number} allianceCount Distinct alliance tags seen in range.
  * @property {number} allyNearby  Distinct players whose alliance tag matches
  *   the caller's `ownAllyTag`. 0 when no tag was supplied to
@@ -144,10 +152,14 @@ const regionSystems = ({ start, end }, galaxyMax) => {
 
 /**
  * @typedef {object} ScoreRegionOptions
- * @property {number}  [galaxyMax]   Systems per galaxy (default 499).
- * @property {string}  [ownAllyTag]  The caller's own alliance TAG (e.g. `"FORM"`).
+ * @property {number}   [galaxyMax]   Systems per galaxy (default 499).
+ * @property {string}   [ownAllyTag]  The caller's own alliance TAG (e.g. `"FORM"`).
  *   When supplied, players whose `ally` matches are counted in `allyNearby`.
  *   Omit / leave empty to skip alliance proximity scoring.
+ * @property {number[]} [mineSystemsInGalaxy]
+ *   Pre-computed list of systems in this galaxy that contain a `mine` position.
+ *   When provided, `scoreRegion` skips its own full-scan-map pass — pass this
+ *   when calling from a loop over many candidates to avoid O(N×M) work.
  */
 
 /**
@@ -199,18 +211,22 @@ export const scoreRegion = (region, scans, opts = {}) => {
     }
   }
 
-  // Scan the entire galaxy slice for own-colony systems to compute the true
-  // minimum circular distance — the region may be far from any mine even
-  // though no mines fall inside it.
-  const mineSystems = [];
-  for (const [key, sd] of Object.entries(scans)) {
-    const colonIdx = key.indexOf(':');
-    if (colonIdx <= 0) continue;
-    if (parseInt(key.slice(0, colonIdx), 10) !== region.galaxy) continue;
-    const s = parseInt(key.slice(colonIdx + 1), 10);
-    if (!Number.isFinite(s)) continue;
-    if (sd?.positions && Object.values(sd.positions).some((p) => p.status === 'mine')) {
-      mineSystems.push(s);
+  // Compute the true minimum circular distance to any own colony in this galaxy.
+  // Use pre-computed mine systems when available (avoids O(all scans) scan per call).
+  let mineSystems;
+  if (opts.mineSystemsInGalaxy) {
+    mineSystems = opts.mineSystemsInGalaxy;
+  } else {
+    mineSystems = [];
+    for (const [key, sd] of Object.entries(scans)) {
+      const colonIdx = key.indexOf(':');
+      if (colonIdx <= 0) continue;
+      if (parseInt(key.slice(0, colonIdx), 10) !== region.galaxy) continue;
+      const s = parseInt(key.slice(colonIdx + 1), 10);
+      if (!Number.isFinite(s)) continue;
+      if (sd?.positions && Object.values(sd.positions).some((p) => p.status === 'mine')) {
+        mineSystems.push(s);
+      }
     }
   }
   let mineMinDist = Infinity;
@@ -223,26 +239,32 @@ export const scoreRegion = (region, scans, opts = {}) => {
 
   let occupied = 0;
   let inactive = 0;
+  let vacation = 0;
   for (const st of playerStatus.values()) {
     if (st === 'occupied') occupied++;
-    else if (st === 'inactive' || st === 'long_inactive' || st === 'vacation') inactive++;
+    else if (st === 'inactive' || st === 'long_inactive') inactive++;
+    else if (st === 'vacation') vacation++;
   }
 
   const ranks = [...playerRank.values()].sort((a, b) => a - b);
 
   let bandits = 0;
   let banditMaxLevel = 0;
+  let banditTierSum = 0;
   let honored = 0;
   let honoredMaxLevel = 0;
+  let honoredTierSum = 0;
   for (const rc of playerRankClass.values()) {
     // Tier is the trailing digit: "rank_bandit3" → 3, "rank_starlord2" → 2.
     // Falls back to 1 when the class has no trailing digit (unknown variant).
     const tier = parseInt(rc.slice(-1), 10) || 1;
     if (rc.startsWith('rank_bandit')) {
       bandits++;
+      banditTierSum += tier;
       if (tier > banditMaxLevel) banditMaxLevel = tier;
     } else {
       honored++;
+      honoredTierSum += tier;
       if (tier > honoredMaxLevel) honoredMaxLevel = tier;
     }
   }
@@ -252,11 +274,14 @@ export const scoreRegion = (region, scans, opts = {}) => {
     scanned,
     occupied,
     inactive,
+    vacation,
     ranks,
     bandits,
     banditMaxLevel,
+    banditTierSum,
     honored,
     honoredMaxLevel,
+    honoredTierSum,
     allianceCount: alliances.size,
     allyNearby: allyPlayerIds.size,
     mineMinDist,
@@ -383,11 +408,12 @@ const scoreForStrategy = (region, weights, mods = {}) => {
   if (!s || !s.scanned) return (weights.length ?? 0) * (region.length / 499);
   const n = s.scanned;
   let score = (
-    (weights.free    ?? 0) * (region.matched / Math.max(region.length, 1)) +
-    (weights.inactive ?? 0) * (s.inactive  / n) +
-    (weights.occupied ?? 0) * (s.occupied  / n) +
-    (weights.bandit   ?? 0) * (s.bandits   * s.banditMaxLevel  / (n * 3)) +
-    (weights.honored  ?? 0) * (s.honored   * s.honoredMaxLevel / (n * 3)) +
+    (weights.free     ?? 0) * (region.matched / Math.max(region.length, 1)) +
+    (weights.inactive ?? 0) * (s.inactive      / n) +
+    (weights.occupied ?? 0) * (s.occupied      / n) +
+    // banditTierSum / (n×3): normalised 0–1; bandit3 scores 3× bandit1
+    (weights.bandit   ?? 0) * (s.banditTierSum  / (n * 3)) +
+    (weights.honored  ?? 0) * (s.honoredTierSum / (n * 3)) +
     (weights.length   ?? 0) * (region.length / 499)
   );
   // Placement modifier — orthogonal to base strategy
@@ -397,10 +423,11 @@ const scoreForStrategy = (region, weights, mods = {}) => {
     // spread (>0): bonus when far; cluster (<0): bonus when close (1-ef)
     score += Math.abs(expansion) * (expansion > 0 ? ef : 1 - ef);
   }
-  // Alliance proximity modifier
+  // Alliance proximity modifier — saturates at 3 allied neighbours so a single
+  // ally already gives a half-bonus (avoids the /scanned dilution problem).
   const allyBonus = mods.allyBonus ?? 0;
   if (allyBonus > 0) {
-    score += allyBonus * (s.allyNearby / n);
+    score += allyBonus * Math.min(1, s.allyNearby / 3);
   }
   return score;
 };
@@ -431,8 +458,87 @@ export const sortRegionsByStrategy = (regions, strategyKey, opts = {}) => {
   );
 };
 
+/** Minimum region length worth reporting. Shorter spans aren't useful. */
+const MIN_REGION_LENGTH = 5;
+
+/** Non-overlapping regions to extract per galaxy before global ranking. */
+const MAX_REGIONS_PER_GALAXY = 5;
+
 /**
- * Find the best (longest, then fewest-gaps) region per galaxy.
+ * Two-pointer over the doubled match list to find the single best window.
+ * Returns `null` when no window of length ≥ MIN_REGION_LENGTH exists.
+ *
+ * @param {number[]} sorted  Sorted system numbers (already a copy).
+ * @param {number}   maxGaps
+ * @param {number}   galaxyMax
+ * @returns {{ startI: number, endJ: number, span: number, gaps: number, matched: number } | null}
+ */
+const bestWindow = (sorted, maxGaps, galaxyMax) => {
+  const k = sorted.length;
+  if (k === 0) return null;
+  const m = sorted.concat(sorted.map((s) => s + galaxyMax));
+
+  let best = null;
+  let i = 0;
+  for (let j = 0; j < m.length; j++) {
+    if (j - i + 1 > k) i = j - k + 1;
+    while (
+      i < j
+      && (m[j] - m[i] + 1 > galaxyMax
+        || (m[j] - m[i] + 1) - (j - i + 1) > maxGaps)
+    ) i++;
+    if (i >= k) break;
+    const span = m[j] - m[i] + 1;
+    if (span < MIN_REGION_LENGTH) continue;
+    const gaps = span - (j - i + 1);
+    if (!best || span > best.span || (span === best.span && gaps < best.gaps)) {
+      best = { startI: i, endJ: j, span, gaps, matched: j - i + 1 };
+    }
+  }
+  return best;
+};
+
+/**
+ * Extract up to `maxRegions` non-overlapping regions from a galaxy's match
+ * list. After each find, the match indices used are removed and the search
+ * restarts on the remaining matches.
+ *
+ * @param {number[]} arr       Sorted system numbers for matching systems.
+ * @param {number}   maxGaps
+ * @param {number}   galaxyMax
+ * @param {number}   maxRegions
+ * @returns {Array<{start:number,end:number,length:number,matched:number,gaps:number}>}
+ */
+const findGalaxyRegions = (arr, maxGaps, galaxyMax, maxRegions) => {
+  const found = [];
+  let remaining = [...arr]; // sorted copy; we splice used matches out
+
+  while (found.length < maxRegions && remaining.length > 0) {
+    const win = bestWindow(remaining, maxGaps, galaxyMax);
+    if (!win) break;
+
+    const k = remaining.length;
+    const m = remaining.concat(remaining.map((s) => s + galaxyMax));
+    found.push({
+      start: ((m[win.startI] - 1) % galaxyMax) + 1,
+      end:   ((m[win.endJ]   - 1) % galaxyMax) + 1,
+      length: win.span,
+      matched: win.matched,
+      gaps: win.gaps,
+    });
+
+    // Remove the match indices consumed by this window from `remaining`.
+    const usedIndices = new Set();
+    for (let idx = win.startI; idx <= win.endJ; idx++) usedIndices.add(idx % k);
+    remaining = remaining.filter((_, i) => !usedIndices.has(i));
+  }
+
+  return found;
+};
+
+/**
+ * Find the best regions across all galaxies — up to MAX_REGIONS_PER_GALAXY
+ * non-overlapping regions per galaxy, scored and ranked globally.
  *
  * @param {GalaxyScans} scans Full per-system scan map, keys `"galaxy:system"`.
  * @param {FindRegionsOptions} opts
@@ -446,11 +552,13 @@ export const findBestRegions = (scans, opts) => {
   const galaxyMax = opts.galaxyMax ?? 499;
   if (positions.length === 0) return [];
 
-  // Step 1: per galaxy, the sorted list of matching systems. One pass over
-  // the scan map; a system matches only when EVERY requested slot is
-  // confirmed in the requested status.
+  // One pass over the scan map: build matchesByGalaxy AND minesByGalaxy so
+  // scoreRegion can skip its own O(all scans) mine-search for every candidate.
   /** @type {Map<number, number[]>} */
   const matchesByGalaxy = new Map();
+  /** @type {Map<number, number[]>} galaxy → systems that have a 'mine' slot */
+  const minesByGalaxy = new Map();
+
   for (const [key, sysData] of Object.entries(scans)) {
     const colonIdx = key.indexOf(':');
     if (colonIdx <= 0) continue;
@@ -460,6 +568,13 @@ export const findBestRegions = (scans, opts) => {
     if (system < 1 || system > galaxyMax) continue;
     const posMap = sysData?.positions;
     if (!posMap) continue;
+
+    if (Object.values(posMap).some((p) => p.status === 'mine')) {
+      let mArr = minesByGalaxy.get(galaxy);
+      if (!mArr) { mArr = []; minesByGalaxy.set(galaxy, mArr); }
+      mArr.push(system);
+    }
+
     let all = true;
     for (const p of positions) {
       if (posMap[/** @type {any} */ (String(p))]?.status !== status) { all = false; break; }
@@ -470,56 +585,26 @@ export const findBestRegions = (scans, opts) => {
     arr.push(system);
   }
 
-  // Step 2: per galaxy, two-pointer over the doubled match list. For a
-  // window of matches m[i..j] the spanned length is `m[j]-m[i]+1` and its
-  // interior gaps are `span - (j-i+1)`; both shrink as `i` advances, so
-  // the classic sliding window applies. Constraints: gaps ≤ maxGaps, span
-  // ≤ galaxyMax, and at most `k` matches per window (no match reused
-  // across the lap boundary). Windows starting in the second lap are
-  // shifted duplicates — stop once `i` crosses into it.
   /** @type {Region[]} */
   const results = [];
   for (const [galaxy, arr] of matchesByGalaxy) {
     arr.sort((a, b) => a - b);
-    const k = arr.length;
-    const m = arr.concat(arr.map((s) => s + galaxyMax));
-
-    /** @type {{ span: number, gaps: number, matched: number, startIdx: number } | null} */
-    let best = null;
-    let i = 0;
-    for (let j = 0; j < m.length; j++) {
-      if (j - i + 1 > k) i = j - k + 1;
-      while (
-        i < j
-        && (m[j] - m[i] + 1 > galaxyMax
-          || (m[j] - m[i] + 1) - (j - i + 1) > maxGaps)
-      ) i++;
-      if (i >= k) break;
-      const span = m[j] - m[i] + 1;
-      const gaps = span - (j - i + 1);
-      if (!best || span > best.span || (span === best.span && gaps < best.gaps)) {
-        best = { span, gaps, matched: j - i + 1, startIdx: i };
-      }
-    }
-
-    if (best) {
-      const endIdx = best.startIdx + best.matched - 1;
-      /** @type {Region} */
-      const region = {
+    const candidates = findGalaxyRegions(arr, maxGaps, galaxyMax, MAX_REGIONS_PER_GALAXY);
+    const mineSystemsInGalaxy = minesByGalaxy.get(galaxy) ?? [];
+    for (const c of candidates) {
+      const region = /** @type {Region} */ ({
         galaxy,
-        start: ((m[best.startIdx] - 1) % galaxyMax) + 1,
-        end: ((m[endIdx] - 1) % galaxyMax) + 1,
-        length: best.span,
-        matched: best.matched,
-        gaps: best.gaps,
-      };
-      region.score = scoreRegion(region, scans, { galaxyMax, ownAllyTag: opts.ownAllyTag });
+        start: c.start,
+        end: c.end,
+        length: c.length,
+        matched: c.matched,
+        gaps: c.gaps,
+      });
+      region.score = scoreRegion(region, scans, { galaxyMax, ownAllyTag: opts.ownAllyTag, mineSystemsInGalaxy });
       results.push(region);
     }
   }
 
-  // Step 3: longest first; ties prefer cleaner (fewer gaps), then stable
-  // galaxy order.
   results.sort((a, b) => b.length - a.length || a.gaps - b.gaps || a.galaxy - b.galaxy);
   return results;
 };

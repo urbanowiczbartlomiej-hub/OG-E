@@ -81,6 +81,9 @@ import { installRoutes } from './routes.js';
 // synced — accordion state is UI preference, not user data.
 const EXPANDED_LS_KEY = 'oge_expandedGalaxies';
 
+// Colony Scout control preferences — persisted so selections survive page reload.
+const SCOUT_PREFS_KEY = 'oge_colonyScoutPrefs';
+
 // localStorage key for the active dashboard tab. Per-device UI prefs.
 // Possible values are the `data-tab` attributes from dashboard.html:
 // `'colony'`, `'galaxy'`, `'reminders'`, `'routes'`. Anything
@@ -166,6 +169,10 @@ const WEIGHT_FIELDS = /** @type {const} */ (['free', 'inactive', 'occupied', 'ba
 const weightSliders = {};
 /** @type {Partial<Record<typeof WEIGHT_FIELDS[number], HTMLElement>>} */
 const weightValues = {};
+// True once the user has moved any slider away from the preset values.
+// Lets readCustomWeights distinguish "user explicitly set all to zero"
+// from "nothing has been touched yet".
+let weightsDirty = false;
 
 /**
  * Bootstrap the dashboard page. Safe to call multiple times but
@@ -213,6 +220,19 @@ const boot = async () => {
   remindersApi?.refresh();
   routesApi?.refresh();
   wireListeners();
+
+  // Restore Colony Scout preferences from previous session.
+  const scoutPrefs = /** @type {any} */ (safeLS.json(SCOUT_PREFS_KEY, {}));
+  if (scoutPrefs.strategy && freeStrategySelect.querySelector(`[value="${scoutPrefs.strategy}"]`)) {
+    freeStrategySelect.value = scoutPrefs.strategy;
+  }
+  if (scoutPrefs.expansion !== undefined
+    && freeExpansionSelect.querySelector(`[value="${String(scoutPrefs.expansion)}"]`)) {
+    freeExpansionSelect.value = String(scoutPrefs.expansion);
+  }
+  if (typeof scoutPrefs.allyTag === 'string') {
+    freeAllyInput.value = scoutPrefs.allyTag;
+  }
   applyPresetToSliders(freeStrategySelect.value);
 
   chromeStore.onChanged((changes) => {
@@ -548,30 +568,31 @@ const freeRegionPositions = () => {
 
 /**
  * Read current slider values as a StrategyWeights object.
- * Returns `undefined` when all sliders are zero (no customisation) so the
- * caller can fall back to the named preset without extra allocations.
+ * Returns the current slider values as custom weights, or `undefined` when
+ * the user hasn't touched the sliders since the last preset was applied —
+ * in that case the caller uses the named preset unchanged.
  *
  * @returns {import('../../domain/regions.js').StrategyWeights | undefined}
  */
 const readCustomWeights = () => {
-  let hasAny = false;
+  if (!weightsDirty) return undefined;
   /** @type {import('../../domain/regions.js').StrategyWeights} */
   const w = {};
   for (const k of WEIGHT_FIELDS) {
-    const v = parseFloat(weightSliders[k]?.value ?? '0') || 0;
-    if (v !== 0) hasAny = true;
-    w[k] = v;
+    w[k] = parseFloat(weightSliders[k]?.value ?? '0') || 0;
   }
-  return hasAny ? w : undefined;
+  return w;
 };
 
 /**
- * Populate weight sliders from a named strategy preset.
- * Called when the strategy select changes and on initial load.
+ * Populate weight sliders from a named strategy preset and mark them as
+ * clean (not customised). Called when the strategy select changes, on reset,
+ * and on initial load.
  *
  * @param {string} strategyKey
  */
 const applyPresetToSliders = (strategyKey) => {
+  weightsDirty = false;
   const preset = STRATEGIES[strategyKey];
   for (const k of WEIGHT_FIELDS) {
     const val = (preset?.weights[k] ?? 0).toFixed(1);
@@ -703,15 +724,25 @@ const wireListeners = () => {
   // wasted work.
   freePosInput.addEventListener('change', repaintFreeRegions);
   freeGapsSelect.addEventListener('change', repaintFreeRegions);
+  const saveScoutPrefs = () => {
+    safeLS.setJSON(SCOUT_PREFS_KEY, {
+      strategy: freeStrategySelect.value,
+      expansion: freeExpansionSelect.value,
+      allyTag: freeAllyInput.value.trim(),
+    });
+  };
+
   freeStrategySelect.addEventListener('change', () => {
     applyPresetToSliders(freeStrategySelect.value);
+    saveScoutPrefs();
     repaintFreeRegions();
   });
-  freeExpansionSelect.addEventListener('change', repaintFreeRegions);
-  freeAllyInput.addEventListener('change', repaintFreeRegions);
+  freeExpansionSelect.addEventListener('change', () => { saveScoutPrefs(); repaintFreeRegions(); });
+  freeAllyInput.addEventListener('change', () => { saveScoutPrefs(); repaintFreeRegions(); });
 
   for (const k of WEIGHT_FIELDS) {
     weightSliders[k]?.addEventListener('input', () => {
+      weightsDirty = true;
       const v = weightSliders[k]?.value ?? '0';
       if (weightValues[k]) weightValues[k].textContent = parseFloat(v).toFixed(1);
       repaintFreeRegions();

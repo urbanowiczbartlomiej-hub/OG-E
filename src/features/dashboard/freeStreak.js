@@ -116,7 +116,7 @@ const buildStrip = (region, scans) => {
  * @returns {string}
  */
 const buildNbrsTip = (s) => {
-  const parts = [`${s.occupied} active, ${s.inactive} dormant (${s.scanned}/${s.systemCount} scanned)`];
+  const parts = [`${s.occupied} active, ${s.inactive} farmable, ${s.vacation} vacation (${s.scanned}/${s.systemCount} scanned)`];
   if (s.bandits) {
     parts.push(`⚠ ${s.bandits} bandit${s.bandits > 1 ? 's' : ''}, max tier ${s.banditMaxLevel}/3`);
   }
@@ -207,7 +207,7 @@ const buildRecord = (record, scans) => {
   const labelLine = document.createElement('div');
   const label = document.createElement('span');
   label.className = 'label';
-  label.textContent = 'Absolute record: ';
+  label.textContent = 'Top region: ';
   const value = document.createElement('span');
   value.className = 'value';
   value.textContent = `${record.length} systems`;
@@ -230,8 +230,12 @@ const buildRecord = (record, scans) => {
     scoreLine.className = 'streak-score';
     const coverage = s.scanned === s.systemCount ? `all ${s.systemCount}` : `${s.scanned}/${s.systemCount}`;
     const parts = [`${coverage} sys scanned`];
-    if (s.occupied || s.inactive) {
-      parts.push(`${s.occupied} active · ${s.inactive} dormant`);
+    if (s.occupied || s.inactive || s.vacation) {
+      const nbParts = [];
+      if (s.occupied) nbParts.push(`${s.occupied} active`);
+      if (s.inactive) nbParts.push(`${s.inactive} farmable`);
+      if (s.vacation) nbParts.push(`${s.vacation} vacation`);
+      parts.push(nbParts.join(' · '));
     }
     if (s.allianceCount) {
       parts.push(`${s.allianceCount} alliance${s.allianceCount > 1 ? 's' : ''}`);
@@ -315,10 +319,11 @@ export const renderFreeRegions = ({ containerEl, countInfoEl, scans, positions, 
     const galaxyCount = new Set(results.map((r) => r.galaxy)).size;
     const stratLabel = strategy && strategy !== 'longest' && STRATEGIES[strategy]
       ? ` · ${STRATEGIES[strategy].label}` : '';
+    const showingLabel = results.length > TOP_N ? ` (showing top ${TOP_N})` : '';
     countInfoEl.textContent = results.length === 0
       ? 'No confirmed empty regions yet for these slots.'
       : `${results.length} region${results.length === 1 ? '' : 's'} across `
-        + `${galaxyCount} galax${galaxyCount === 1 ? 'y' : 'ies'}${stratLabel}`;
+        + `${galaxyCount} galax${galaxyCount === 1 ? 'y' : 'ies'}${stratLabel}${showingLabel}`;
   }
 
   if (results.length === 0) {
