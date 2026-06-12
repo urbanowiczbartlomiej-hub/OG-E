@@ -36,6 +36,7 @@ import {
   _resetSendExpForTest,
   _resetFleetDispatcherSnapshotForSendExpTest,
 } from '../../src/features/sendExp/index.js';
+import { _resetFleetOwnershipForTest } from '../../src/features/shared/fleetOwnership.js';
 import {
   settingsStore,
   SETTINGS_SCHEMA,
@@ -236,6 +237,7 @@ const labelOf = (btn = getBtn()) =>
 beforeEach(() => {
   _resetSendExpForTest();
   _resetFleetDispatcherSnapshotForSendExpTest();
+  _resetFleetOwnershipForTest(); // drop any T5 session/checkTarget leakage
   localStorage.clear();
   document.body.innerHTML = '';
   resetSettingsToDefaults();
@@ -270,7 +272,7 @@ describe('installSendExp — visibility via mobileMode', () => {
     installSendExp();
     const btn = getBtn();
     expect(btn).not.toBeNull();
-    expect(labelOf(btn)).toBe('Send');
+    expect(labelOf(btn)).toBe('Explore');
     expect(btn?.getAttribute('aria-label')).toBe('Send expedition');
     expect(btn?.tabIndex).toBe(-1);
   });
@@ -356,6 +358,13 @@ describe('installSendExp — click navigation', () => {
     setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
     installSendExp();
     document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
+    // Ownership gate (T5): with no session, a loaded fleet panel is only
+    // dispatchable when the last checkTarget matches the expedition profile
+    // (position 16 + at least one Pathfinder, id 219 — AGR's routine-7 run
+    // outside our flow). Feed that observation, as the game's XHR would.
+    document.dispatchEvent(new CustomEvent('oge:checkTargetResult', {
+      detail: { galaxy: 1, system: 2, position: 16, ships: { 219: 1 } },
+    }));
     const panel = document.createElement('div');
     panel.id = 'ago_fleet2_main';
     document.body.appendChild(panel);
@@ -419,7 +428,7 @@ describe('installSendExp — max expedition guard', () => {
 
     // After 2s the label reverts.
     vi.advanceTimersByTime(2000);
-    expect(labelOf(btn)).toBe('Send');
+    expect(labelOf(btn)).toBe('Explore');
 
     vi.useRealTimers();
   });
@@ -599,7 +608,7 @@ describe('installSendExp — fleetDispatcher snapshot gates', () => {
     expect(navTarget).toBeNull();
 
     vi.advanceTimersByTime(2000);
-    expect(labelOf(btn)).toBe('Send');
+    expect(labelOf(btn)).toBe('Explore');
     vi.useRealTimers();
   });
 
@@ -648,7 +657,7 @@ describe('installSendExp — fleetDispatcher snapshot gates', () => {
     expect(navTarget).toBeNull();
 
     vi.advanceTimersByTime(2000);
-    expect(labelOf(btn)).toBe('Send');
+    expect(labelOf(btn)).toBe('Explore');
     vi.useRealTimers();
   });
 });
@@ -677,9 +686,9 @@ describe('installSendExp — eventbox readiness gate', () => {
     expect(navTarget).toBeNull();
 
     // The cue clears after EVENTBOX_LOADING_LABEL_MS and restores the idle
-    // label (the page is not on a routine/dispatch state → "Send").
+    // label (the page is not on a routine/dispatch state → "Explore").
     vi.advanceTimersByTime(800);
-    expect(labelOf(btn)).toBe('Send');
+    expect(labelOf(btn)).toBe('Explore');
     vi.useRealTimers();
   });
 

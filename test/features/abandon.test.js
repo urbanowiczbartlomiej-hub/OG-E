@@ -202,11 +202,11 @@ describe('makeInjectedButton (via abandonPlanet Click-1 work)', () => {
     // `inset: 0` in cssText — happy-dom doesn't always expose the
     // shorthand via `style.inset`, so read the raw cssText instead.
     expect(injected.style.cssText).toContain('inset');
-    // happy-dom preserves the input colour token; in a real browser
-    // this normalises to `rgb(192, 112, 32)`. Match either form.
-    expect(injected.style.background.toLowerCase()).toMatch(
-      /#c07020|rgb\(192,\s*112,\s*32\)/,
-    );
+    // T9 panel redesign: the state colour no longer lives in
+    // `style.background` — the button carries the shared panel chrome
+    // class and its amber rim via the `--rim` custom property.
+    expect(injected.classList.contains('oge-panel')).toBe(true);
+    expect(injected.style.cssText.toLowerCase()).toMatch(/--rim:\s*#f59e0b/);
     // The host was prepared with `position:relative` + min-height so
     // the overlay has a concrete bounding box to anchor to.
     const host = document.getElementById('abandonplanet');

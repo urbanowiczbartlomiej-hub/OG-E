@@ -181,8 +181,11 @@ describe('event-list badges', () => {
     const title = cell.getAttribute('title') || '';
     expect(title.startsWith('Fleet-save reminders at:')).toBe(true);
     // Far from any slot's window → passive, but the tooltip now advertises the
-    // last-2-min cancel affordance instead of the old "can't be cancelled".
-    expect(title).toContain('final 2 min');
+    // last-3-min cancel affordance (T4: FS_CANCEL_WINDOW_SEC 120 → 180)
+    // instead of the old "can't be cancelled".
+    expect(title).toContain('final 3 min');
+    // Outside the window the cancellable pulse class must NOT be present.
+    expect(cell.classList.contains('fs-cancel')).toBe(false);
     expect(title).not.toContain('Deployment');
     expect(title).not.toContain('ships');
   });
@@ -266,10 +269,10 @@ describe('event-list badges', () => {
     reminderNtfyToken: VALID_TOKEN, fsEnabled: true,
   });
 
-  it('makes the 🛡 badge clickable inside a slot\'s final 2 min and cancels just that slot', async () => {
+  it('makes the 🛡 badge clickable inside a slot\'s final 3 min and cancels just that slot', async () => {
     enableFs();
     const now = Math.floor(Date.now() / 1000);
-    // Nearest upcoming slot fires in 20 s (inside the 2-min window) and is NOT
+    // Nearest upcoming slot fires in 20 s (inside the 3-min window) and is NOT
     // the last pre-landing one (−60 still follows), so only it is cancelled.
     const arrivalAt = now + 200;
     seedMirror([{
@@ -284,7 +287,12 @@ describe('event-list badges', () => {
     expect(cell.classList.contains('fs')).toBe(true);
     expect(cell.classList.contains('act')).toBe(true);
     expect(cell.getAttribute('data-oge-act')).toBe('cancelFs');
-    expect(cell.getAttribute('title') || '').toContain('Click to cancel this reminder');
+    // T4: the cancellable state now carries the pulsing `fs-cancel` class
+    // and the tooltip leads with "Cancellable now".
+    expect(cell.classList.contains('fs-cancel')).toBe(true);
+    expect(cell.getAttribute('title') || '').toContain(
+      'Cancellable now — click to cancel this reminder',
+    );
 
     cell.click();
     expect(api.cancelFsSlot).toHaveBeenCalledTimes(1);

@@ -79,6 +79,14 @@ const enable = () => {
   settingsStore.set({ ...settingsStore.get(), fsCollectMode: true });
 };
 
+// T13 eventbox readiness gate: fixtures mount without the game's
+// `#eventContent`, so installFsCollect holds both zones in "Wait…" until
+// the event list is known to be loaded. Open the gate the way the bridge
+// does — by firing the `oge:eventBoxLoaded` signal after install.
+const openEventBoxGate = () => {
+  document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
+};
+
 describe('mount / unmount', () => {
   it('does not mount when fsCollectMode is off', () => {
     installFsCollect();
@@ -126,6 +134,7 @@ describe('set collect target (via long-press on the Collect zone)', () => {
   it('a quick tap collects instead of setting the target', () => {
     enable();
     installFsCollect();
+    openEventBoxGate();
     setBodyMeta('4:472:15', 'moon');
     fsRoutesStore.set({
       routes: [],
@@ -153,6 +162,7 @@ describe('micro send — navigation (top zone)', () => {
     // just lands on a bare fleetdispatch (no ship/target params).
     enable();
     installFsCollect();
+    openEventBoxGate();
     setBodyMeta('4:472:15', 'moon');
     fsRoutesStore.set({
       routes: [
@@ -193,6 +203,7 @@ describe('micro send — navigation (top zone)', () => {
           <td class="destCoords"><a>[4:475:14]</a></td>
         </tr>
       </tbody></table>`);
+    openEventBoxGate();
     const micro = /** @type {HTMLElement} */ (document.getElementById('oge-fs-micro-zone'));
     micro.click();
     expect(navTarget).toBeNull();
@@ -207,6 +218,7 @@ describe('micro send — navigation (top zone)', () => {
     // exercises the fallback branch.
     enable();
     installFsCollect();
+    openEventBoxGate();
     setBodyMeta('4:472:15', 'moon');
     fsRoutesStore.set({ routes: [], collectTarget: null });
     const micro = /** @type {HTMLElement} */ (document.getElementById('oge-fs-micro-zone'));
@@ -220,6 +232,7 @@ describe('collect send — navigation + dispatch (bottom zone)', () => {
   it('navigates to a bare fleetdispatch when idle with a collect target', () => {
     enable();
     installFsCollect();
+    openEventBoxGate();
     fsRoutesStore.set({
       routes: [],
       collectTarget: { galaxy: 4, system: 472, position: 15, type: TARGET_MOON },
@@ -229,47 +242,114 @@ describe('collect send — navigation + dispatch (bottom zone)', () => {
     expect(navTarget).not.toMatch(/galaxy=/);
   });
 
+  /** Removes the fake MAIN executor's oge:fd:cmd listener after each test. */
+  let cleanupExecutor = () => {};
+  afterEach(() => {
+    cleanupExecutor();
+    cleanupExecutor = () => {};
+  });
+
+  /** Poll until `cond()` is truthy (real timers — the courier's own waits
+   *  run on them).
+   *  @param {() => unknown} cond @param {number} [timeoutMs] */
+  const until = async (cond, timeoutMs = 4000) => {
+    const t0 = Date.now();
+    while (!cond()) {
+      if (Date.now() - t0 > timeoutMs) throw new Error('until(): condition not met');
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  };
+
   /**
-   * Build a step-2 fleetdispatch DOM (planet list + dispatch/resources
-   * controls). The dispatch click fires a fake game sendFleet result with
-   * `success`, mirroring bridges/sendFleetResultHook.
+   * Build a full two-step fleetdispatch scene: planet list, fleet1 controls
+   * and a fake MAIN executor (mirrors test/features/fleetCourier.test.js).
+   * Since T5, a bare step-2 DOM is a FOREIGN fleet2 the button refuses to
+   * dispatch — the FS zone may only complete a fleet2 its own tap 1 armed.
+   * So tap 1 walks the courier's select() through fleet1→fleet2 (claiming
+   * the ownership session) and tap 2 dispatches. The dispatch click fires a
+   * fake game sendFleet result with `success`, mirroring
+   * bridges/sendFleetResultHook.
    *
    * @param {boolean} success
    * @param {number | null} [errorCode]
    * @returns {{ clicks: () => number }}
    */
-  const buildStep2 = (success, errorCode = null) => {
+  const buildTwoStep = (success, errorCode = null) => {
     document.body.insertAdjacentHTML('beforeend', `
       <div id="planetList">
         <div class="smallplanet hightlightPlanet" id="planet-100"><span class="planet-koords">[4:472:15]</span></div>
         <div class="smallplanet" id="planet-200"><span class="planet-koords">[4:480:8]</span></div>
-      </div>`);
+      </div>
+      <div id="fleet1"></div>
+      <a id="allresources"></a>`);
     let clicks = 0;
-    const dispatch = document.createElement('a');
-    dispatch.id = 'dispatchFleet'; // ready (no .off)
-    dispatch.addEventListener('click', () => {
-      clicks += 1;
-      document.dispatchEvent(new CustomEvent('oge:sendFleetResult', {
-        detail: { success, errorCode, mission: 4 },
+    /** @type {any} */
+    let lastTarget = null;
+    const cont = document.createElement('a');
+    cont.id = 'continueToFleet2';
+    cont.className = 'off';
+    cont.addEventListener('click', () => {
+      document.getElementById('fleet1')?.remove();
+      const dispatch = document.createElement('a');
+      dispatch.id = 'dispatchFleet';
+      dispatch.className = 'off'; // not ready until the mission is armed
+      dispatch.addEventListener('click', () => {
+        clicks += 1;
+        document.dispatchEvent(new CustomEvent('oge:sendFleetResult', {
+          detail: { success, errorCode, mission: 4 },
+        }));
+      });
+      document.body.appendChild(dispatch);
+      // The game fires its checkTarget as fleet2 loads.
+      const t = lastTarget || {};
+      document.dispatchEvent(new CustomEvent('oge:checkTargetResult', {
+        detail: {
+          galaxy: t.galaxy, system: t.system, position: t.position,
+          errorCode: null, orders: { 4: true },
+        },
       }));
     });
-    document.body.appendChild(dispatch);
-    const resources = document.createElement('a');
-    resources.id = 'allresources';
-    document.body.appendChild(resources);
+    document.body.appendChild(cont);
+    // Fake MAIN executor answering the courier's oge:fd:cmd RPCs.
+    const onCmd = (/** @type {any} */ e) => {
+      const { id, op, args } = e.detail;
+      /** @type {any} */
+      const res = { id, ok: true };
+      if (op === 'setTarget') {
+        lastTarget = args;
+        // AGR enables "continue" once the target is applied.
+        setTimeout(() => document.getElementById('continueToFleet2')?.classList.remove('off'), 0);
+      } else if (op === 'selectMission') {
+        res.data = { available: true };
+        setTimeout(() => document.getElementById('dispatchFleet')?.classList.remove('off'), 0);
+      }
+      document.dispatchEvent(new CustomEvent('oge:fd:res', { detail: res }));
+    };
+    document.addEventListener('oge:fd:cmd', onCmd);
+    cleanupExecutor = () => document.removeEventListener('oge:fd:cmd', onCmd);
+    // Ship-availability snapshot so select({ kind: 'all' }) resolves a fleet.
+    document.dispatchEvent(new CustomEvent('oge:fleetDispatcher', {
+      detail: { shipsOnPlanet: [{ id: 203, number: 100 }], orders: { 4: true } },
+    }));
     return { clicks: () => clicks };
   };
 
-  it('on step 2 stashes oge_fsRedirect and dispatches on a successful send', async () => {
+  it('two taps: arms its own fleet2, stashes oge_fsRedirect and dispatches on a successful send', async () => {
     enable();
     installFsCollect();
+    openEventBoxGate();
     fsRoutesStore.set({
       routes: [],
       collectTarget: { galaxy: 4, system: 472, position: 15, type: TARGET_MOON },
     });
-    const spy = buildStep2(true);
-    /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-zone')).click();
-    await new Promise((r) => setTimeout(r, 0));
+    const spy = buildTwoStep(true);
+    const zone = /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-zone'));
+    // Tap 1 — select all ships, walk to a ready fleet2 (claims ownership).
+    zone.click();
+    await until(() => zone.textContent?.includes('(tap to send)'));
+    // Tap 2 — stash the redirect, then the one server-visible dispatch.
+    zone.click();
+    await until(() => spy.clicks() === 1);
     expect(spy.clicks()).toBe(1);
     // Success → redirect to the next collect planet survives.
     expect(localStorage.getItem(FS_REDIRECT_KEY)).toContain('cp=200');
@@ -278,15 +358,17 @@ describe('collect send — navigation + dispatch (bottom zone)', () => {
   it('on a rejected send (no fuel) drops the redirect and flashes the error', async () => {
     enable();
     installFsCollect();
+    openEventBoxGate();
     fsRoutesStore.set({
       routes: [],
       collectTarget: { galaxy: 4, system: 472, position: 15, type: TARGET_MOON },
     });
-    buildStep2(false, 140026);
+    buildTwoStep(false, 140026);
     const zone = /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-zone'));
-    zone.click();
-    await new Promise((r) => setTimeout(r, 0));
+    zone.click(); // tap 1 — arm our own fleet2
+    await until(() => zone.textContent?.includes('(tap to send)'));
+    zone.click(); // tap 2 — dispatch, rejected by the game
+    await until(() => zone.textContent?.includes('No fuel'));
     expect(localStorage.getItem(FS_REDIRECT_KEY)).toBeNull();
-    expect(zone.textContent).toContain('No fuel');
   });
 });

@@ -131,6 +131,58 @@ const getSend = () =>
   /** @type {HTMLButtonElement | null} */ (
     document.getElementById('oge-col-send')
   );
+// ── courier two-click harness ─────────────────────────────────────────
+// A fake MAIN executor + a step-1→step-2 DOM, so a tap-1 select() can
+// reach a ready step 2 (the real courier flow is covered in
+// fleetCourier.test.js; here we prove sendCol wires into it). Module
+// scope: used by both the fleetdispatch-branch and onSendHold suites.
+/** @param {{ errorCode?: number|null, missionOk?: boolean, orders?: Record<string,boolean> }} [opts] */
+const armCourier = (opts = {}) => {
+  document.dispatchEvent(new CustomEvent('oge:fleetDispatcher', {
+    detail: { shipsOnPlanet: [{ id: 208, number: 1 }], orders: {} },
+  }));
+  document.body.insertAdjacentHTML('beforeend', '<div id="fleet1"></div>');
+  let lastTarget = /** @type {any} */ (null);
+  const cont = document.createElement('a');
+  cont.id = 'continueToFleet2';
+  cont.className = 'off';
+  cont.addEventListener('click', () => {
+    document.getElementById('fleet1')?.remove();
+    const d = document.createElement('a');
+    d.id = 'dispatchFleet';
+    d.className = 'off';
+    document.body.appendChild(d);
+    // The game fires checkTarget as fleet2 loads (carries orders + errorCode).
+    const t = lastTarget || {};
+    document.dispatchEvent(new CustomEvent('oge:checkTargetResult', {
+      detail: {
+        galaxy: t.galaxy, system: t.system, position: t.position,
+        errorCode: opts.errorCode ?? null,
+        orders: opts.orders ?? { 7: true },
+      },
+    }));
+  });
+  document.body.appendChild(cont);
+  const onCmd = (/** @type {any} */ e) => {
+    const { id, op, args } = e.detail;
+    /** @type {any} */ let res = { id, ok: true };
+    if (op === 'setTarget') {
+      lastTarget = args;
+      // AGR enables "continue" once the target is applied.
+      setTimeout(() => document.getElementById('continueToFleet2')?.classList.remove('off'), 0);
+    } else if (op === 'selectMission') {
+      const ok = opts.missionOk ?? true;
+      res = { id, ok, data: { available: ok } };
+      if (ok) setTimeout(() => document.getElementById('dispatchFleet')?.classList.remove('off'), 0);
+    }
+    document.dispatchEvent(new CustomEvent('oge:fd:res', { detail: res }));
+  };
+  document.addEventListener('oge:fd:cmd', onCmd);
+  return () => document.removeEventListener('oge:fd:cmd', onCmd);
+};
+
+const settle = () => new Promise((r) => setTimeout(r, 500));
+
 const getScan = () =>
   /** @type {HTMLButtonElement | null} */ (
     document.getElementById('oge-col-scan')
@@ -376,22 +428,27 @@ describe('render — pure paint instructions', () => {
     scanCooldown: false,
   };
 
-  it('idle without candidate → plain "Send"', () => {
+  it('idle without candidate → plain "Colonize"', () => {
     const r = render({ kind: 'idle', candidate: null, ...noScan });
-    expect(r.send.text).toBe('Send');
+    expect(r.send.text).toBe('Colonize');
     expect(r.send.subtext).toBeUndefined();
     expect(r.scan.text).toBe('All scanned!');
   });
 
-  it('idle with candidate -> "Send" main + coords subtext', () => {
+  it('idle with candidate -> plain "Colonize" (coords/hint only after tap)', () => {
+    // The idle view stays minimal now: coordinates and the hold hint are
+    // shown only once the user has tapped (step 2). A candidate is still
+    // reflected — via the brighter "ready" rim, not extra text lines.
+    const idle = render({ kind: 'idle', candidate: null, ...noScan });
     const r = render({
       kind: 'idle',
       candidate: { galaxy: 4, system: 30, position: 8 },
       ...noScan,
     });
-    expect(r.send.text).toBe('Send');
-    expect(r.send.subtext).toBe('[4:30:8]');
-    expect(r.send.hint).toBe('(hold to skip)');
+    expect(r.send.text).toBe('Colonize');
+    expect(r.send.subtext).toBeUndefined();
+    expect(r.send.hint).toBeUndefined();
+    expect(r.send.bg).not.toBe(idle.send.bg); // ready rim ≠ idle rim
   });
 
   it('galaxy with nextScan=null → "All scanned!"', () => {
@@ -490,57 +547,6 @@ describe('onSendClick — fleetdispatch branch', () => {
     expect(navTarget).toBeNull();
     expect(getSend()?.textContent).toContain('No more candidates');
   });
-
-  // ── courier two-click harness ─────────────────────────────────────────
-  // A fake MAIN executor + a step-1→step-2 DOM, so a tap-1 select() can
-  // reach a ready step 2 (the real courier flow is covered in
-  // fleetCourier.test.js; here we prove sendCol wires into it).
-  /** @param {{ errorCode?: number|null, missionOk?: boolean, orders?: Record<string,boolean> }} [opts] */
-  const armCourier = (opts = {}) => {
-    document.dispatchEvent(new CustomEvent('oge:fleetDispatcher', {
-      detail: { shipsOnPlanet: [{ id: 208, number: 1 }], orders: {} },
-    }));
-    document.body.insertAdjacentHTML('beforeend', '<div id="fleet1"></div>');
-    let lastTarget = /** @type {any} */ (null);
-    const cont = document.createElement('a');
-    cont.id = 'continueToFleet2';
-    cont.className = 'off';
-    cont.addEventListener('click', () => {
-      document.getElementById('fleet1')?.remove();
-      const d = document.createElement('a');
-      d.id = 'dispatchFleet';
-      d.className = 'off';
-      document.body.appendChild(d);
-      // The game fires checkTarget as fleet2 loads (carries orders + errorCode).
-      const t = lastTarget || {};
-      document.dispatchEvent(new CustomEvent('oge:checkTargetResult', {
-        detail: {
-          galaxy: t.galaxy, system: t.system, position: t.position,
-          errorCode: opts.errorCode ?? null,
-          orders: opts.orders ?? { 7: true },
-        },
-      }));
-    });
-    document.body.appendChild(cont);
-    const onCmd = (/** @type {any} */ e) => {
-      const { id, op, args } = e.detail;
-      /** @type {any} */ let res = { id, ok: true };
-      if (op === 'setTarget') {
-        lastTarget = args;
-        // AGR enables "continue" once the target is applied.
-        setTimeout(() => document.getElementById('continueToFleet2')?.classList.remove('off'), 0);
-      } else if (op === 'selectMission') {
-        const ok = opts.missionOk ?? true;
-        res = { id, ok, data: { available: ok } };
-        if (ok) setTimeout(() => document.getElementById('dispatchFleet')?.classList.remove('off'), 0);
-      }
-      document.dispatchEvent(new CustomEvent('oge:fd:res', { detail: res }));
-    };
-    document.addEventListener('oge:fd:cmd', onCmd);
-    return () => document.removeEventListener('oge:fd:cmd', onCmd);
-  };
-
-  const settle = () => new Promise((r) => setTimeout(r, 500));
 
   it('two taps: select arms a ready send, then dispatch fires', async () => {
     setupScene({ onFleetdispatch: true });
@@ -851,7 +857,33 @@ describe('onSendHold — manual skip', () => {
     expect(Object.keys(scansStore.get())).toHaveLength(0);
   });
 
-  it('marks the current candidate empty_sent without dispatching a fleet', () => {
+  it('marks the ARMED candidate empty_sent without dispatching a fleet', async () => {
+    // The skip is only available after tap 1 armed a target (in the idle
+    // state the hold is a no-op — no visible hint, no known target). Arm
+    // [4:30:9] through the courier, then hold to skip it.
+    setupScene({ onFleetdispatch: true });
+    settingsStore.set({
+      ...settingsStore.get(),
+      colonizeMode: true,
+      colPositions: '9',
+    });
+    scansStore.set({
+      '4:30': { scannedAt: Date.now(), positions: { 9: { status: 'empty' } } },
+    });
+    installSendCol();
+    const unhook = armCourier({ errorCode: null, missionOk: true });
+    getSend()?.click(); // tap 1 — arms [4:30:9]
+    await settle();
+    expect(getSend()?.textContent).toContain('Send!');
+    let clicks = 0;
+    document.getElementById('dispatchFleet')?.addEventListener('click', () => (clicks += 1));
+    _onSendHoldForTest();
+    expect(scansStore.get()['4:30']?.positions[9]?.status).toBe('empty_sent');
+    expect(clicks).toBe(0); // skipped, not dispatched
+    unhook();
+  });
+
+  it('is a no-op in the idle (un-armed) state even with a derivable candidate', () => {
     setupScene({ onGalaxy: true, galaxyG: 4, galaxyS: 30 });
     settingsStore.set({
       ...settingsStore.get(),
@@ -861,9 +893,9 @@ describe('onSendHold — manual skip', () => {
     scansStore.set({
       '4:30': { scannedAt: Date.now(), positions: { 9: { status: 'empty' } } },
     });
-    installSendCol(); // refresh() → lastDerivedCandidate = {4,30,9}
-    _onSendHoldForTest();
-    expect(scansStore.get()['4:30']?.positions[9]?.status).toBe('empty_sent');
+    installSendCol();
+    _onSendHoldForTest(); // nothing armed → nothing skipped
+    expect(scansStore.get()['4:30']?.positions[9]?.status).toBe('empty');
   });
 
   it('does not trigger any navigation', () => {

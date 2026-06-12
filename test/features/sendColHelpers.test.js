@@ -695,18 +695,19 @@ describe('readHomePlanet', () => {
     expect(readHomePlanet()).toEqual({ galaxy: 2, system: 150 });
   });
 
-  it('reads coords when on a moon (hightlightPlanet on moonlink anchor, not on the row)', () => {
-    // OGame puts .hightlightPlanet on the <a class="moonlink"> when the
-    // user is on a moon page. The .planet-koords span lives inside the
-    // sibling .planetlink anchor. readHomePlanet must climb to the
-    // .smallplanet row to find it.
+  it('reads coords when on a moon (hightlightMoon on the row, no hightlightPlanet)', () => {
+    // T8: on moon pages OGame puts .hightlightMoon (same intentional
+    // game-side misspelling) on the .smallplanet row — .hightlightPlanet
+    // is absent entirely (the moonlink only gets `active`).
+    // readHomePlanet falls back to the .hightlightMoon row and reads
+    // its .planet-koords as usual.
     document.body.innerHTML = `
       <div id="planetList">
-        <div class="smallplanet" id="planet-1">
+        <div class="smallplanet hightlightMoon" id="planet-1">
           <a class="planetlink">
             <span class="planet-koords">[3:77:5]</span>
           </a>
-          <a class="moonlink hightlightPlanet"></a>
+          <a class="moonlink active"></a>
         </div>
       </div>
     `;
