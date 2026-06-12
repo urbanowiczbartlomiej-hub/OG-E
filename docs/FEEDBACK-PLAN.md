@@ -61,9 +61,10 @@
 T1–T4, T6–T10, T12, T13 → REVIEW lub DONE. Pozostaje:
 1. **Częściowo zablokowane na dane:** T11 (all fleets) — dane z
    `window.fleetDispatcher` do potwierdzenia.
-2. **Częściowo odblokowane (sesja 9):** T5 (własność fleet2) — `checkTarget`
+2. **Odblokowane (sesja 9):** T5 (własność fleet2) — `checkTarget`
    dostarczony (skład floty jest w body → heurystyka routine-7 wykonalna);
-   brakuje jeszcze body+response `sendFleet` i próbki routine-7 (poz. 16).
+   dump `sendFleet` uznany za zbędny, heurystyka routine-7 domknięta z
+   wiedzy użytkownika. Gotowe do implementacji.
 
 **⚠ Przed najbliższym release (konsekwencja skrótu „bez testów"):** przejść
 `npm run test` i zaktualizować asercje do zmian z tego cyklu. Stan zmierzony
@@ -267,8 +268,8 @@ anulowania remaindera dla FS z 2 na 3 minut.”
 ---
 
 ### T5 — Własność przejścia fleet1→fleet2 po XHR checkTarget
-**Status:** TODO (blokada częściowo zdjęta — `checkTarget` dostarczony,
-brakuje `sendFleet` + próbki routine-7) · **Trudność:** trudne
+**Status:** TODO (blokada danych ZDJĘTA w sesji 9 — gotowe do
+implementacji) · **Trudność:** trudne
 
 **Feedback (wiernie):** „Być może da się śledzić XHR sprawdzania targetu misji i
 na tej podstawie aktywować odpowiedni przycisk który mógł być potencjalnym
@@ -310,11 +311,10 @@ Pionier i co najwyżej jeden statek bojowy.
    jawnego inicjatora OG-E.
 4. Spójne zachowanie dla sendExp/sendCol/fsCollect/lifeform.
 
-**Dane:** `checkTarget` (request + response) **dostarczony 2026-06-12** —
-patrz dziennik. Nadal potrzebne: (a) **body + response `sendFleet`**
-(`sendFleetHook` czyta dziś coords z URL-a, pól body nie znamy: misja,
-`am*`, speed, token?); (b) `checkTarget` odpalony przez **AGR routine-7**
-na pozycję 16 (profil ekspedycyjny floty w body do kalibracji heurystyki).
+**Dane:** KOMPLET (sesja 9). `checkTarget` dostarczony jako **szablon pól**
+(request i response pochodzą z różnych operacji — patrz dziennik); dump
+`sendFleet` uznany za zbędny; heurystyka routine-7 ustalona z wiedzy
+użytkownika bez próbki.
 
 **Dziennik:**
 - 2026-06-12 (sesja 9): Użytkownik dostarczył pełny `checkTarget`
@@ -336,11 +336,29 @@ na pozycję 16 (profil ekspedycyjny floty w body do kalibracji heurystyki).
     baseCargoCapacity / fuelConsumption — wartości już po bonusach
     gracza), `newAjaxToken` (token rotuje po każdym checkTarget — sesja
     własności może go śledzić jako odcisk ciągłości).
-  - ⚠ **Rozjazd w próbce**: request celuje w `5:172:8`, a response
-    `targetPlanet` = `6:177:8`. Do wyjaśnienia z użytkownikiem (redakcja
-    przy wklejaniu vs realne zachowanie gry). Jeśli realne — matchowanie
-    request→response po coords jest niewiarygodne i wiązanie musi iść po
-    instancji XHR (jak WeakMap w `sendFleetHook`).
+  - ~~⚠ Rozjazd w próbce (request `5:172:8` vs `targetPlanet` `6:177:8`)~~
+    **wyjaśnione**: request i response w dumpie pochodzą z DWÓCH różnych
+    operacji (trudność devtools na mobile) — dump traktować jako
+    **szablon pól**, nie spójną parę. Mimo to wiązanie request→response
+    robić po instancji XHR (WeakMap, wzorzec z `sendFleetHook`), nie po
+    coords — to i tak jedyna odporna metoda przy szybkim edytowaniu coords.
+- 2026-06-12 (sesja 9, c.d.): rozstrzygnięto dwa otwarte punkty danych:
+  - **Dump `sendFleet` — ZBĘDNY.** Sesja własności rozstrzyga się PRZED
+    kliknięciem send (inicjator znakuje sesję przy `checkTarget`; courier
+    przy domykaniu fleet2 sprawdza tylko „czy sesja moja"). Body
+    `sendFleet` nic do tej decyzji nie wnosi. Do zamknięcia sesji
+    wystarczy fakt udanego senda — `sendFleetHook` już obserwuje fazę
+    `load` + `response.success`, a po udanym wysłaniu strona i tak się
+    przeładowuje. (Pozyskanie dumpa na mobile jest zresztą niemożliwe —
+    przeładowanie kasuje historię network.)
+  - **Heurystyka routine-7 — wystarczy wiedza użytkownika, bez próbki:**
+    AGR wysyła na pozycję **16**, w składzie statki cargo i **zawsze
+    ≥1 Pionier**. Reguła: `position === 16 && am219 >= 1` (+ obecne
+    `am202`/`am203` jako wzmocnienie). Pozycja 16 nie jest celem żadnej
+    innej misji OG-E, więc profil jest praktycznie jednoznaczny.
+    Potwierdzenie z kodu: `checkTargetHook.js` dokumentuje, że
+    `checkTarget` odpala się także gdy target ustawia AGR (`fd.orders`
+    zostaje wtedy puste) — hook ten ruch widzi.
 
 ---
 
