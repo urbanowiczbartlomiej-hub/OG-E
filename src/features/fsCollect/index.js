@@ -68,6 +68,7 @@ import {
   installFleetCourier,
 } from '../shared/fleetCourier.js';
 import { MISSION_DEPLOYMENT } from '../../domain/rules.js';
+import { GAME } from '../../lib/gameDom.js';
 import { resolveSelection } from '../../domain/fleetPlan.js';
 import {
   coordKey,
@@ -102,6 +103,24 @@ const LONG_PRESS_MS = 2000;
 // Daily Run uses pure green: micro & collect both in green family (minimal difference).
 const BG_MICRO = '#34d96e';   // green rim (micro zone)
 const BG_COLLECT = '#43cf72'; // green rim (collect zone, slightly brighter)
+
+// ─── Eventbox readiness gate ────────────────────────────────────────────
+// OGame fetches the fleet-event list asynchronously, up to a few seconds
+// AFTER page load. Until that XHR lands, `#eventContent` has no rows, so
+// the DISPATCH label's "next target / N left" would be computed against an
+// EMPTY in-flight set — confidently wrong, self-correcting only once the
+// rows appear. While the gate is closed the WHOLE button sits in an amber
+// "Wait…" (wait pulse, taps just flash) — a micro send picked off stale
+// data could duplicate an in-flight deployment, so blocking beats guessing.
+// The gate opens when: `#eventContent` already exists at install (we
+// loaded after hydration), the `oge:eventBoxLoaded` bridge signal arrives,
+// or the safety timeout expires (degrade to the pre-gate behaviour rather
+// than wait forever on a changed game URL).
+const BG_WAIT = '#fbbf24'; // amber — same wait colour as sendCol/sendExp
+const EVENTBOX_SAFETY_TIMEOUT_MS = 6000;
+// The bridge's XHR 'load' signal can precede the game's own success
+// handler inserting the rows — repaint once more after a settle delay.
+const EVENTBOX_SETTLE_MS = 150;
 
 // ─── helpers (impure env reads) ─────────────────────────────────────────
 
@@ -333,6 +352,14 @@ const sendErrorLabel = (code) => (code === 140026 ? 'No fuel' : 'Failed');
 /** @type {boolean} */
 let busy = false;
 /**
+ * False while the game's async event-list XHR hasn't landed on this page
+ * view (see the Eventbox readiness gate constants). Initialised per
+ * install; the `true` default keeps standalone `refresh()` paints ungated.
+ *
+ * @type {boolean}
+ */
+let eventBoxReady = true;
+/**
  * The order whose select() succeeded and is now ready to dispatch — set on
  * tap 1, consumed on tap 2 to stash the right post-send redirect. `null`
  * when no select is currently armed.
@@ -411,6 +438,12 @@ const handleZone = async (mode) => {
   if (busy) return;
   const zoneId = mode === 'micro' ? FS_MICRO_ZONE_ID : FS_COLLECT_ZONE_ID;
   const zone = document.getElementById(zoneId);
+  // Event list not loaded yet — any target/in-flight derivation would run
+  // on stale data; the label already says Wait…, the tap just re-flashes it.
+  if (!eventBoxReady) {
+    flash(zone, 'Wait…');
+    return;
+  }
   const s = courierStep();
 
   // Tap 2 — dispatch (only when the game says it's ready). The redirect is
@@ -535,6 +568,33 @@ const lockBriefly = (zone) => {
 // ─── refresh (repaint unified button) ───────────────────────────────────
 
 /**
+ * Reflect the eventbox gate on the button: while the event list hasn't
+ * loaded, BOTH zones (and the host glow) go amber with a wait pulse and a
+ * "Wait…" label; once it lands, the per-zone greens are restored and the
+ * pulse stops. Rim is set directly on the live elements (the controller is
+ * closure-scoped to the installer); the host carries the `data-flag`.
+ *
+ * @param {HTMLElement | null} microZone
+ * @param {HTMLElement | null} collectZone
+ * @returns {void}
+ */
+const paintEventBoxGate = (microZone, collectZone) => {
+  const wait = !eventBoxReady;
+  const host = document.getElementById(FS_UNIFIED_ID);
+  if (host) {
+    if (wait) host.dataset.flag = 'wait';
+    else if (host.dataset.flag === 'wait') delete host.dataset.flag;
+    host.style.setProperty('--rim', wait ? BG_WAIT : BG_MICRO);
+  }
+  if (microZone) microZone.style.setProperty('--rim', wait ? BG_WAIT : BG_MICRO);
+  if (collectZone) collectZone.style.setProperty('--rim', wait ? BG_WAIT : BG_COLLECT);
+  if (wait) {
+    setLabel(microZone, 'Wait…', undefined, '(event list)');
+    setLabel(collectZone, 'Wait…', undefined, '(event list)');
+  }
+};
+
+/**
  * Recompute and repaint the unified button from current DOM + store state.
  *
  * @returns {void}
@@ -542,6 +602,8 @@ const lockBriefly = (zone) => {
 const refresh = () => {
   const microZone = document.getElementById(FS_MICRO_ZONE_ID);
   const collectZone = document.getElementById(FS_COLLECT_ZONE_ID);
+  paintEventBoxGate(microZone, collectZone);
+  if (!eventBoxReady) return;
   const onF2Ready = courierStep() === 'fleet2' && readyToDispatch();
 
   // DISPATCH (top / micro) label.
@@ -606,6 +668,27 @@ export const installFsCollect = () => {
   // Ensure the shared courier is caching the fleetDispatcher snapshot (ship
   // availability) so select() can resolve the fleet.
   installFleetCourier();
+
+  // Eventbox readiness gate — see the constants block for the rationale.
+  // `#eventContent` already present means the list hydrated before we
+  // installed; otherwise wait for the bridge signal (every eventbox
+  // refresh also re-fires it — a free instant repaint) or the safety net.
+  eventBoxReady = !!document.querySelector(GAME.EVENT_CONTENT);
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let settleTimer = null;
+  const onEventBoxLoaded = () => {
+    eventBoxReady = true;
+    refresh();
+    if (settleTimer) clearTimeout(settleTimer);
+    settleTimer = setTimeout(refresh, EVENTBOX_SETTLE_MS);
+  };
+  document.addEventListener('oge:eventBoxLoaded', onEventBoxLoaded);
+  const safetyTimer = setTimeout(() => {
+    if (!eventBoxReady) {
+      eventBoxReady = true;
+      refresh();
+    }
+  }, EVENTBOX_SAFETY_TIMEOUT_MS);
 
   /**
    * The shared {@link makeButton} controller — owns geometry, placement,
@@ -714,6 +797,9 @@ export const installFsCollect = () => {
       unsubSettings();
       unsubRoutes();
       clearInterval(tickerHandle);
+      document.removeEventListener('oge:eventBoxLoaded', onEventBoxLoaded);
+      clearTimeout(safetyTimer);
+      if (settleTimer) clearTimeout(settleTimer);
       installed = null;
     },
   };
@@ -732,6 +818,7 @@ export const _resetFsCollectForTest = () => {
     installed = null;
   }
   busy = false;
+  eventBoxReady = true;
 };
 
 // Re-export the pure pipeline pieces some tests import via the feature

@@ -54,7 +54,7 @@
 | T10 | Lifeform: blokada Discovery po osiągnięciu 3600 (+ kiedy odblokować) | średnie | TODO |
 | T11 | Obsługa „all fleets” dla każdego przycisku | średnie | TODO |
 | T12 | Blask cieniutkiej krawędzi w przyciskach dwustrefowych | łatwe | REVIEW |
-| T13 | DAILY RUN: błędny subtitle/hint zanim gra doczyta eventList | łatwe/średnie | ANALIZA |
+| T13 | DAILY RUN: błędny subtitle/hint zanim gra doczyta eventList | łatwe/średnie | REVIEW |
 
 ### Sugerowana kolejność (stan po sesji 7)
 
@@ -64,6 +64,16 @@ T1–T4, T6–T9, T12 → REVIEW lub DONE. Pozostaje:
    o warunku odblokowania.
 2. **Mocno zablokowane:** T5 (własność fleet2) — potrzebne XHR `checkTarget`
    + `sendFleet`.
+
+**⚠ Przed najbliższym release (konsekwencja skrótu „bez testów"):** przejść
+`npm run test` i zaktualizować asercje do zmian z tego cyklu — na pewno:
+`test/features/abandon.test.js:207` (asercja inline-background `#c07020`;
+po T9 kolor żyje w `--rim`/klasie `oge-panel`, nie w `style.background`)
+oraz `test/features/fsCollect.test.js` (większość case'ów montuje DOM bez
+`#eventContent`, więc gate T13 trzyma przycisk w „Wait…" — dodać tabelę
+`#eventContent` do fixture lub dispatchować `oge:eventBoxLoaded`).
+Prawdopodobnie też etykiety/sub-teksty zmienione w sesjach 2–6.
+`npm run release` odpala testy, więc bez tego wydanie się zablokuje.
 
 Zależności / powiązania:
 - **T12 ⟷ T9** — poprawka krawędzi to część szerszego audytu wyglądu; T12 zrób
@@ -655,8 +665,7 @@ stref, by efekt blasku był jak w 1-zone.
 ---
 
 ### T13 — DAILY RUN: błędny subtitle/hint zanim gra doczyta eventList
-**Status:** ANALIZA (diagnoza + projekt gotowe, czeka na zielone światło) ·
-**Trudność:** łatwe/średnie
+**Status:** REVIEW · **Trudność:** łatwe/średnie
 
 **Feedback (wiernie):** „Przycisk daily run w górnej sekcji, na samym początku
 wskazuje w subtitle i hint z nazwą kolejnej pozycji i ile jeszcze ich zostało.
@@ -720,8 +729,24 @@ po implementacji.
 
 **Dziennik:**
 - 2026-06-12 (sesja 7): Zgłoszone przez użytkownika, zbadane od razu.
-  Diagnoza i projekt jak wyżej; implementacja czeka na akceptację
-  (decyzja kosmetyczna: treść placeholdera).
+  Diagnoza i projekt jak wyżej.
+- 2026-06-12 (sesja 7, cd.): Decyzja użytkownika: zamiast placeholdera w
+  subtitle blokujemy CAŁY przycisk jako wait — słusznie, bo tap w oknie
+  niespójności mógł wysłać mikroflotę na cel z deploymentem już w drodze
+  (realny bug funkcjonalny, nie tylko wyświetlanie). Zaimplementowane w
+  `fsCollect/index.js`: flaga `eventBoxReady` (na starcie `true` tylko gdy
+  `#eventContent` już w DOM), gdy zamknięta → obie strefy + host amber
+  `#fbbf24` z pulsem `data-flag=wait` i etykietą `Wait… / (event list)`,
+  tap tylko re-flashuje `Wait…`. Otwarcie gate'u: listener
+  `oge:eventBoxLoaded` (natychmiastowy repaint + settle-repaint 150 ms na
+  wyścig XHR→wstawienie wierszy; każdy kolejny refresh eventboxa gry też
+  odmalowuje od ręki) lub safety-timeout 6 s (degradacja do starego
+  zachowania, nigdy trwała blokada). Po otwarciu rimy wracają do zieleni
+  `BG_MICRO`/`BG_COLLECT`. Listener/timery sprzątane w dispose;
+  `_resetFsCollectForTest` przywraca `eventBoxReady=true`. Typecheck
+  zielony. Status: REVIEW — do weryfikacji w grze (pierwsze sekundy po
+  załadowaniu strony: amber „Wait…", potem zielony z poprawnym
+  „N left" bez fazy błędnych danych).
 
 ---
 
@@ -833,3 +858,9 @@ po implementacji.
   `claude/project-setup-feedback-gv66h4`). **Pozostają tylko zadania
   zablokowane na dane/decyzje: T5, T10, T11** — następna sesja wymaga
   wkładu użytkownika (XHR-y / decyzja o odblokowaniu / pole slotów flot).
+- **2026-06-12 (sesja 7, cd.):** T13 → REVIEW (gate eventboxa w fsCollect —
+  decyzja użytkownika: cały przycisk w wait zamiast placeholdera; szczegóły
+  w dzienniku T13). Pełne review wszystkich zmian sesji 7: kod OK; wykryto
+  i zapisano (sekcja „Przed najbliższym release") czerwone asercje testów
+  do aktualizacji przed wydaniem. Całość zmergowana do `main` na prośbę
+  użytkownika.
