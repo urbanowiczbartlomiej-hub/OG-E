@@ -18,6 +18,10 @@
 //   3. On galaxy, viewed system already covered → in-page hop to the
 //      NEAREST system that still needs discovery (wrap-aware).
 //   4. Nothing left anywhere   → "All discovered!".
+//   0. (outranks all) Artifact cap reached → button gated as "Full"; the
+//      tap navigates to the lfresearch page (spend artifacts there — the
+//      visit also refreshes the counter). The counter is harvested from
+//      every lfresearch visit and refetched quietly once per hour.
 //
 // # Marking + 7-day retention
 //
@@ -32,6 +36,7 @@
 
 import { settingsStore } from '../../state/settings.js';
 import { scansStore, flushScansStore } from '../../state/scans.js';
+import { readLfArtifacts, writeLfArtifacts } from '../../state/lifeformArtifacts.js';
 import { createButton as makeButton, labelLines } from '../shared/button.js';
 import { DNA_GLYPH } from '../shared/buttonGlyphs.js';
 import { SYSTEM_DISCOVERY_RESULT_EVENT } from '../../bridges/discoveryHook.js';
@@ -40,7 +45,9 @@ import {
   render,
   buildGalaxyUrl,
   buildGalaxySystemUrl,
+  buildLfResearchUrl,
   DISCOVERY_COOLDOWN_MS,
+  ARTIFACTS_REFRESH_MS,
   BG_LF_IDLE,
   BG_LF_WAIT,
   BG_LF_ACTIVE,
@@ -52,6 +59,7 @@ import {
   navigateGalaxyInPage,
   hasDiscoverButton,
   clickDiscover,
+  readArtifactCounter,
 } from './domHelpers.js';
 
 // Re-export the pure pipeline so the test file can import derive/render
@@ -128,6 +136,7 @@ const captureEnv = () => ({
   view: parseCurrentGalaxyView(),
   hasDiscoverBtn: hasDiscoverButton(),
   cooldown: busy,
+  artifacts: readLfArtifacts(),
 });
 
 /**
@@ -192,6 +201,13 @@ const onClick = () => {
   const ctx = derive(captureEnv());
 
   switch (ctx.kind) {
+    case 'artifactsFull':
+      // Cap reached — sending is blocked; the one useful action left is
+      // jumping to lifeform research (spend artifacts there; the visit
+      // also re-reads the counter and lifts this state once below max).
+      location.href = buildLfResearchUrl(location.href);
+      return;
+
     case 'offGalaxy':
       location.href = buildGalaxyUrl(location.href);
       return;
@@ -229,6 +245,77 @@ const onClick = () => {
       paint(render(ctx));
       return;
   }
+};
+
+// ─── Artifact counter (T10) ──────────────────────────────────────────────────
+//
+// Two acquisition paths for the "Zebrane artefakty: N / M" reading that
+// gates the button once the cap is hit:
+//   1. PASSIVE — every visit to the lfresearch page reads the live DOM.
+//   2. HOURLY — when the persisted reading is older than
+//      ARTIFACTS_REFRESH_MS, a quiet same-origin fetch of the lfresearch
+//      page refreshes it (in-flight discovery waves keep landing artifacts
+//      after the send, so the count drifts up between visits).
+
+/** Retry delay after a failed background fetch (network / non-200). */
+const ARTIFACTS_FETCH_RETRY_MS = 5 * 60_000;
+
+/** One background fetch at a time. */
+let artifactsFetchInFlight = false;
+/** Epoch-ms before which the background fetch must not retry. */
+let artifactsFetchBackoffUntil = 0;
+
+/**
+ * On the lfresearch page, read the artifact counter from the live DOM and
+ * persist it. No-op anywhere else.
+ *
+ * @returns {void}
+ */
+const harvestArtifactsFromPage = () => {
+  if (!location.search.includes('component=lfresearch')) return;
+  const counter = readArtifactCounter();
+  if (!counter) return;
+  writeLfArtifacts({ ...counter, readAt: Date.now() });
+};
+
+/**
+ * Refresh a stale artifact reading via a quiet same-origin fetch of the
+ * lfresearch page. Self-throttling: skips while a reading is fresh
+ * (< {@link ARTIFACTS_REFRESH_MS}), while a fetch is in flight, during the
+ * post-failure backoff, and on the lfresearch page itself (the live DOM
+ * harvest owns it there). A page that fetches fine but has no counter
+ * (e.g. lifeforms disabled) is treated as a completed check — backoff a
+ * full refresh interval instead of hammering retries.
+ *
+ * @returns {void}
+ */
+const maybeRefreshArtifacts = () => {
+  if (artifactsFetchInFlight) return;
+  const now = Date.now();
+  if (now < artifactsFetchBackoffUntil) return;
+  if (location.search.includes('component=lfresearch')) return;
+  const reading = readLfArtifacts();
+  if (reading && now - reading.readAt < ARTIFACTS_REFRESH_MS) return;
+
+  artifactsFetchInFlight = true;
+  fetch(buildLfResearchUrl(location.href), { credentials: 'same-origin' })
+    .then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`))))
+    .then((html) => {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const counter = readArtifactCounter(doc);
+      if (counter) {
+        writeLfArtifacts({ ...counter, readAt: Date.now() });
+        refresh();
+      } else {
+        artifactsFetchBackoffUntil = Date.now() + ARTIFACTS_REFRESH_MS;
+      }
+    })
+    .catch(() => {
+      artifactsFetchBackoffUntil = Date.now() + ARTIFACTS_FETCH_RETRY_MS;
+    })
+    .finally(() => {
+      artifactsFetchInFlight = false;
+    });
 };
 
 // ─── Result reactor ──────────────────────────────────────────────────────────
@@ -361,6 +448,21 @@ export const installSendLifeform = () => {
   /** @param {number} size */
   const updateButtonSize = (size) => controller?.resize(size);
 
+  // Passive artifact-counter harvest — NOT gated on lifeformMode: like the
+  // galaxy scans it's pure data collection, and a reading taken while the
+  // button is off is immediately correct when the user re-enables it.
+  if (document.body) {
+    harvestArtifactsFromPage();
+  } else {
+    document.addEventListener(
+      'DOMContentLoaded',
+      () => {
+        if (installed) harvestArtifactsFromPage();
+      },
+      { once: true },
+    );
+  }
+
   const initial = settingsStore.get();
   if (initial.lifeformMode) {
     if (document.body) {
@@ -396,7 +498,13 @@ export const installSendLifeform = () => {
   const unsubScans = scansStore.subscribe(() => refresh());
   document.addEventListener(SYSTEM_DISCOVERY_RESULT_EVENT, onDiscoveryResult);
 
-  const tickerHandle = setInterval(refresh, REPAINT_TICK_MS);
+  const tickerHandle = setInterval(() => {
+    refresh();
+    // Hourly staleness check rides the 1 Hz ticker but only while the
+    // button is actually mounted (lifeformMode on) — no reason to poll the
+    // game for a counter nothing displays.
+    if (controller) maybeRefreshArtifacts();
+  }, REPAINT_TICK_MS);
 
   installed = {
     dispose: () => {
@@ -429,6 +537,8 @@ export const _resetSendLifeformForTest = () => {
   }
   transientPaint = null;
   transientUntil = 0;
+  artifactsFetchInFlight = false;
+  artifactsFetchBackoffUntil = 0;
 };
 
 /** Exposed only for unit tests — do not call from production code. */

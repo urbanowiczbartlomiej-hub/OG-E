@@ -17,6 +17,7 @@
 
 import { safeClick } from '../../lib/dom.js';
 import { GAME } from '../../lib/gameDom.js';
+import { parseArtifactCounter } from './pure.js';
 
 /**
  * Id of the game's "Discover system" control on the galaxy view. Clicking
@@ -122,4 +123,35 @@ export const clickDiscover = () => {
   if (!btn) return false;
   safeClick(btn);
   return true;
+};
+
+/**
+ * Where the artifact counter lives on the lfresearch page: the header
+ * slot div (`<div id="slot01" class="slot">Zebrane artefakty: N / M</div>`).
+ * We anchor on the structural `header .slot` rather than the `slot01` id so
+ * a second slot appearing some day doesn't silently break the read — the
+ * number-pair parser ignores slots without an `N / M` counter anyway.
+ * Single-feature selector → stays local (per gameDom's scope rules).
+ */
+const LF_ARTIFACT_SLOT_SELECTOR = '#lfresearch header .slot';
+
+/**
+ * Read the artifact counter (`current / max`) out of an lfresearch
+ * document — the live page when visiting it, or a `DOMParser` document
+ * from the hourly background refetch. Scans every header slot and returns
+ * the first one that parses; `null` when the page has no counter (e.g.
+ * lifeforms disabled on the account).
+ *
+ * @param {Document | null} [doc]  defaults to the live `document`.
+ * @returns {{ current: number, max: number } | null}
+ */
+export const readArtifactCounter = (doc) => {
+  const d = doc ?? (typeof document === 'undefined' ? null : document);
+  if (!d) return null;
+  const slots = d.querySelectorAll(LF_ARTIFACT_SLOT_SELECTOR);
+  for (const slot of slots) {
+    const parsed = parseArtifactCounter(slot.textContent);
+    if (parsed) return parsed;
+  }
+  return null;
 };

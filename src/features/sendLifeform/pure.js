@@ -75,6 +75,41 @@ export const BG_LF_ERROR = '#fb7185';
  */
 export const DISCOVERY_COOLDOWN_MS = 8000;
 
+// ─── Artifact cap ──────────────────────────────────────────────────────────
+
+/**
+ * How stale the persisted artifact reading may grow before the feature
+ * refetches the lfresearch page in the background. One hour: in-flight
+ * discovery waves keep landing artifacts after the send, so a reading
+ * taken before a wave returned undercounts — an hourly recheck is the
+ * agreed trade-off between freshness and request volume.
+ */
+export const ARTIFACTS_REFRESH_MS = 3600_000;
+
+/**
+ * Extract the artifact counter from the lfresearch header slot text, e.g.
+ * `"Zebrane artefakty: 3609 / 3600"`. Locale-independent: the label text
+ * varies per language, so we only look for the first `N / M` number pair
+ * and tolerate thousands separators (`.`, `,`, NBSP, space, apostrophe).
+ * Returns `null` when no counter is present or `max` is not positive.
+ *
+ * `current > max` is a legitimate reading (simultaneous wave landings
+ * overshoot the cap) and is preserved verbatim.
+ *
+ * @param {string | null | undefined} text
+ * @returns {{ current: number, max: number } | null}
+ */
+export const parseArtifactCounter = (text) => {
+  if (typeof text !== 'string') return null;
+  const m = text.match(/(\d[\d.,'\u00a0 ]*)\/\s*(\d[\d.,'\u00a0 ]*)/);
+  if (!m) return null;
+  const toInt = (/** @type {string} */ s) => parseInt(s.replace(/[^\d]/g, ''), 10);
+  const current = toInt(m[1]);
+  const max = toInt(m[2]);
+  if (!Number.isFinite(current) || !Number.isFinite(max) || max <= 0) return null;
+  return { current, max };
+};
+
 // ─── Retention predicate ───────────────────────────────────────────────────
 
 /**
@@ -195,11 +230,28 @@ export const buildGalaxyUrl = (href) =>
 export const buildGalaxySystemUrl = (href, { galaxy, system }) =>
   `${href.split('?')[0]}?page=ingame&component=galaxy&galaxy=${galaxy}&system=${system}`;
 
+/**
+ * Lifeform-research page URL (current origin) — the artifact counter lives
+ * in its header. Used by the `artifactsFull` tap and the hourly background
+ * counter refetch.
+ *
+ * @param {string} href  `location.href`.
+ * @returns {string}
+ */
+export const buildLfResearchUrl = (href) =>
+  href.split('?')[0] + '?page=ingame&component=lfresearch';
+
 // ─── Discriminated union ──────────────────────────────────────────────────
 
 /**
  * The button's computed state.
  *
+ *   - `artifactsFull` — the artifact cap is reached (last lfresearch
+ *                    reading has `current >= max`); discoveries can't yield
+ *                    anything, so sending is pointless. One tap navigates
+ *                    to the lfresearch page (where artifacts are spent —
+ *                    and where the counter re-reads itself). Outranks every
+ *                    other phase.
  *   - `offGalaxy`  — not on the galaxy component; one tap navigates there.
  *   - `discover`   — on galaxy, the viewed system needs discovery AND the
  *                    game's discover button is present.
@@ -212,6 +264,7 @@ export const buildGalaxySystemUrl = (href, { galaxy, system }) =>
  * `navigate` phase (and the viewed system in `discover`).
  *
  * @typedef {(
+ *   | { kind: 'artifactsFull', current: number, max: number, scansRemaining: number }
  *   | { kind: 'offGalaxy', scansRemaining: number }
  *   | { kind: 'discover', target: SystemCoords, cooldown: boolean, scansRemaining: number }
  *   | { kind: 'navigate', target: SystemCoords, cooldown: boolean, scansRemaining: number }
@@ -237,6 +290,9 @@ export const buildGalaxySystemUrl = (href, { galaxy, system }) =>
  * @property {SystemCoords | null} view     galaxy-view coords, or null (off galaxy).
  * @property {boolean} hasDiscoverBtn       is `#discoverSystemBtn` present in the DOM?
  * @property {boolean} cooldown             post-click lock active?
+ * @property {import('../../state/lifeformArtifacts.js').ArtifactReading | null} [artifacts]
+ *   Last persisted artifact-counter reading, or null/absent when never read
+ *   (absent ⇒ no cap gating — degrade to today's behaviour).
  */
 
 // ─── derive ─────────────────────────────────────────────────────────────────
@@ -249,6 +305,14 @@ export const buildGalaxySystemUrl = (href, { galaxy, system }) =>
  */
 export const derive = (env) => {
   const scansRemaining = countLfRemaining(env.scans, env.now);
+
+  // Artifact cap reached: the game can't yield more artifacts, so every
+  // other phase is moot — gate the whole button until a fresh reading
+  // (lfresearch visit or the hourly background refetch) drops below max.
+  const a = env.artifacts;
+  if (a && a.current >= a.max) {
+    return { kind: 'artifactsFull', current: a.current, max: a.max, scansRemaining };
+  }
 
   // Off galaxy: a tap just gets the user onto the galaxy component (the
   // first system there is server-rendered, not AJAX, so we don't target a
@@ -299,6 +363,16 @@ export const render = (ctx) => {
   // No "N left" hint: for lifeforms there are always thousands of stale
   // systems, so the count carries no signal — it's just noise on the button.
   switch (ctx.kind) {
+    case 'artifactsFull':
+      // Dim + muted: a "nothing to do" state, not an error. The hint tells
+      // the user the tap is still useful (jump to research to spend).
+      return {
+        text: 'Full',
+        subtext: `${ctx.current} / ${ctx.max}`,
+        hint: 'artifacts — tap: research',
+        bg: BG_LF_DONE,
+        dim: true,
+      };
     case 'offGalaxy':
       return { text: 'Discover', bg: BG_LF_IDLE };
     case 'discover':
