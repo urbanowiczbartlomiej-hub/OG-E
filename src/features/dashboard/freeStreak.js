@@ -279,6 +279,12 @@ const buildRecord = (record, scans) => {
  * @property {string} [strategy]
  *   Key of {@link STRATEGIES} — re-sorts regions after finding them.
  *   Defaults to `'longest'` (pure length sort, existing behaviour).
+ * @property {number} [expansion]
+ *   Placement modifier: `> 0` = spread (prefer 100+ sys from own colonies);
+ *   `< 0` = cluster (prefer near own colonies); `0` = no preference.
+ * @property {string} [allyTag]
+ *   Own alliance TAG. When non-empty, `findBestRegions` computes
+ *   `allyNearby` per region and the sort rewards allied neighbours.
  */
 
 /**
@@ -289,11 +295,16 @@ const buildRecord = (record, scans) => {
  * @param {RenderFreeRegionsOptions} opts
  * @returns {void}
  */
-export const renderFreeRegions = ({ containerEl, countInfoEl, scans, positions, maxGaps, strategy }) => {
+export const renderFreeRegions = ({ containerEl, countInfoEl, scans, positions, maxGaps, strategy, expansion, allyTag }) => {
   containerEl.innerHTML = '';
 
-  const raw = findBestRegions(scans, { positions, status: 'empty', maxGaps });
-  const results = sortRegionsByStrategy(raw, strategy ?? 'longest');
+  const ownAllyTag = allyTag?.trim() ?? '';
+  const raw = findBestRegions(scans, { positions, status: 'empty', maxGaps, ownAllyTag });
+  const allyBonus = ownAllyTag ? 1.5 : 0;
+  const results = sortRegionsByStrategy(raw, strategy ?? 'longest', {
+    expansion: expansion ?? 0,
+    allyBonus,
+  });
   const posLabel = positions.join(', ');
 
   if (countInfoEl) {

@@ -154,6 +154,8 @@ const expandedGalaxies = new Set();
 /** @type {HTMLInputElement} */ let freePosInput;
 /** @type {HTMLSelectElement} */ let freeGapsSelect;
 /** @type {HTMLSelectElement} */ let freeStrategySelect;
+/** @type {HTMLSelectElement} */ let freeExpansionSelect;
+/** @type {HTMLInputElement} */ let freeAllyInput;
 /** @type {HTMLElement} */ let freeContainer;
 /** @type {HTMLElement | null} */ let freeCountInfoEl;
 
@@ -345,6 +347,8 @@ const wireDom = () => {
   freePosInput = /** @type {HTMLInputElement} */ (document.getElementById('freePosInput'));
   freeGapsSelect = /** @type {HTMLSelectElement} */ (document.getElementById('freeGapsSelect'));
   freeStrategySelect = /** @type {HTMLSelectElement} */ (document.getElementById('freeStrategySelect'));
+  freeExpansionSelect = /** @type {HTMLSelectElement} */ (document.getElementById('freeExpansionSelect'));
+  freeAllyInput = /** @type {HTMLInputElement} */ (document.getElementById('freeAllyInput'));
   freeContainer = /** @type {HTMLElement} */ (document.getElementById('freeContainer'));
   freeCountInfoEl = document.getElementById('freeCountInfo');
 };
@@ -529,6 +533,7 @@ const freeRegionPositions = () => {
 
 /** Repaint ONLY the settlement-regions block from current controls. */
 const repaintFreeRegions = () => {
+  const allyTag = freeAllyInput.value.trim();
   renderFreeRegions({
     containerEl: freeContainer,
     countInfoEl: freeCountInfoEl,
@@ -536,6 +541,8 @@ const repaintFreeRegions = () => {
     positions: freeRegionPositions(),
     maxGaps: parseInt(freeGapsSelect.value, 10) || 0,
     strategy: freeStrategySelect.value || 'longest',
+    expansion: parseInt(freeExpansionSelect.value, 10) || 0,
+    allyTag,
   });
 };
 
@@ -645,6 +652,8 @@ const wireListeners = () => {
   freePosInput.addEventListener('change', repaintFreeRegions);
   freeGapsSelect.addEventListener('change', repaintFreeRegions);
   freeStrategySelect.addEventListener('change', repaintFreeRegions);
+  freeExpansionSelect.addEventListener('change', repaintFreeRegions);
+  freeAllyInput.addEventListener('change', repaintFreeRegions);
 
   universeSelect.addEventListener('change', () => {
     selectedUniverseId = universeSelect.value;

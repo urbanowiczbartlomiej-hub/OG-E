@@ -256,14 +256,23 @@
       </select>
       <label>Strategy:</label>
       <select id="freeStrategySelect"
-        title="Re-ranks regions by neighbourhood fit for your play style. Affects sort order, not which regions are found.">
+        title="Re-ranks regions by neighbourhood profile. Affects sort order, not which regions are found.">
         <option value="longest">Longest streak</option>
         <option value="peaceful">Peaceful settler</option>
         <option value="farmer">Farmer</option>
         <option value="honor_pvp">Honor PvP</option>
         <option value="aggressive">Aggressive PvP</option>
-        <option value="expansion">Expansion</option>
       </select>
+      <label>Placement:</label>
+      <select id="freeExpansionSelect"
+        title="Colony placement preference — combinable with any strategy above. 'Spread' favours regions 100+ systems from your existing colonies; 'Cluster' rewards regions near them (eco trade-routes, quick resupply).">
+        <option value="0" selected>No preference</option>
+        <option value="2">Spread out</option>
+        <option value="-2">Cluster near base</option>
+      </select>
+      <label>Ally tag:</label>
+      <input id="freeAllyInput" value="" size="7" placeholder="e.g. FORM"
+        title="Your alliance tag. When set, regions with allied neighbours score higher (alliance proximity bonus). Leave empty to skip.">
       <span id="freeCountInfo" style="color:#888;font-size:13px;margin-left:auto;"></span>
     </div>
     <div id="freeContainer"></div>

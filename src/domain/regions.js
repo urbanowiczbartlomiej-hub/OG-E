@@ -76,9 +76,14 @@
  * @property {number} honoredMaxLevel Highest honored tier (1–3; 0 when
  *   `honored === 0`). Mirrors `banditMaxLevel`.
  * @property {number} allianceCount Distinct alliance tags seen in range.
- * @property {number} mineNearby Systems in the range that contain at least
- *   one of the player's OWN colonies (`status: 'mine'`). Used by the
- *   "Expansion" strategy to favour regions away from existing territory.
+ * @property {number} allyNearby  Distinct players whose alliance tag matches
+ *   the caller's `ownAllyTag`. 0 when no tag was supplied to
+ *   {@link scoreRegion}. Use as a "friendly neighbours" signal.
+ * @property {number} mineMinDist Minimum circular-distance in systems from
+ *   any system in the region to the nearest OWN colony (`status: 'mine'`)
+ *   in the SAME galaxy. `Infinity` when no own colonies exist in that
+ *   galaxy's scans. Used by the placement modifier: < 50 = "too close home",
+ *   100+ = "reasonable expansion territory", 200+ = "solid new zone".
  */
 
 /**
@@ -113,6 +118,10 @@
  * @property {number} [galaxyMax]
  *   Systems per galaxy. Defaults to `499` (OGame's constant); exposed so
  *   tests can use small fixtures.
+ * @property {string} [ownAllyTag]
+ *   The caller's own alliance TAG. When supplied, {@link scoreRegion} counts
+ *   allied neighbours in `RegionScore.allyNearby` — fed by the UI's optional
+ *   "Ally tag" text field and used by the alliance proximity modifier.
  */
 
 /**
@@ -134,15 +143,26 @@ const regionSystems = ({ start, end }, galaxyMax) => {
 };
 
 /**
- * Compute neighbourhood stats for a region by scanning the systems it spans.
+ * @typedef {object} ScoreRegionOptions
+ * @property {number}  [galaxyMax]   Systems per galaxy (default 499).
+ * @property {string}  [ownAllyTag]  The caller's own alliance TAG (e.g. `"FORM"`).
+ *   When supplied, players whose `ally` matches are counted in `allyNearby`.
+ *   Omit / leave empty to skip alliance proximity scoring.
+ */
+
+/**
+ * Compute neighbourhood stats for a region by scanning the systems it spans
+ * AND the full galaxy slice for own-colony distance.
  * Pure: reads `scans` but never mutates it. Players are de-duplicated by id.
  *
  * @param {Pick<Region,'galaxy'|'start'|'end'>} region
  * @param {GalaxyScans} scans
- * @param {number} [galaxyMax]
+ * @param {ScoreRegionOptions} [opts]
  * @returns {RegionScore}
  */
-export const scoreRegion = (region, scans, galaxyMax = 499) => {
+export const scoreRegion = (region, scans, opts = {}) => {
+  const galaxyMax = opts.galaxyMax ?? 499;
+  const ownAllyTag = opts.ownAllyTag ?? '';
   const systems = regionSystems(region, galaxyMax);
   let scanned = 0;
   /** @type {Map<number, string>} id → dominant status */
@@ -152,15 +172,15 @@ export const scoreRegion = (region, scans, galaxyMax = 499) => {
   /** @type {Map<number, string>} id → rankClass */
   const playerRankClass = new Map();
   const alliances = new Set();
+  /** @type {Set<number>} ids of own-ally players seen in range */
+  const allyPlayerIds = new Set();
 
-  let mineNearby = 0;
   for (const sys of systems) {
     const sysData = scans[`${region.galaxy}:${sys}`];
     if (!sysData?.positions) continue;
     scanned++;
-    let hasMine = false;
     for (const pos of Object.values(sysData.positions)) {
-      if (pos.status === 'mine') { hasMine = true; continue; }
+      if (pos.status === 'mine') continue;
       const p = pos.player;
       if (!p) continue;
       // First-seen status wins for the player. occupied overrides inactive
@@ -175,8 +195,30 @@ export const scoreRegion = (region, scans, galaxyMax = 499) => {
         playerRankClass.set(p.id, p.rankClass);
       }
       if (p.ally) alliances.add(p.ally);
+      if (ownAllyTag && p.ally === ownAllyTag) allyPlayerIds.add(p.id);
     }
-    if (hasMine) mineNearby++;
+  }
+
+  // Scan the entire galaxy slice for own-colony systems to compute the true
+  // minimum circular distance — the region may be far from any mine even
+  // though no mines fall inside it.
+  const mineSystems = [];
+  for (const [key, sd] of Object.entries(scans)) {
+    const colonIdx = key.indexOf(':');
+    if (colonIdx <= 0) continue;
+    if (parseInt(key.slice(0, colonIdx), 10) !== region.galaxy) continue;
+    const s = parseInt(key.slice(colonIdx + 1), 10);
+    if (!Number.isFinite(s)) continue;
+    if (sd?.positions && Object.values(sd.positions).some((p) => p.status === 'mine')) {
+      mineSystems.push(s);
+    }
+  }
+  let mineMinDist = Infinity;
+  for (const rSys of systems) {
+    for (const mSys of mineSystems) {
+      const d = Math.min(Math.abs(rSys - mSys), galaxyMax - Math.abs(rSys - mSys));
+      if (d < mineMinDist) mineMinDist = d;
+    }
   }
 
   let occupied = 0;
@@ -216,45 +258,47 @@ export const scoreRegion = (region, scans, galaxyMax = 499) => {
     honored,
     honoredMaxLevel,
     allianceCount: alliances.size,
-    mineNearby,
+    allyNearby: allyPlayerIds.size,
+    mineMinDist,
   };
 };
 
 // ─── Strategy engine ────────────────────────────────────────────────────────
 //
-// A "strategy" is a named set of weights applied to the neighbourhood score
-// to re-sort regions for different play styles. All rate inputs are
-// normalised to roughly 0–1 so weights are directly comparable:
+// Scoring is two-layer:
 //
-//   free      = matched / length        (density of confirmed-free slots)
-//   inactive  = inactive  / scanned     (dormant-player density)
-//   occupied  = occupied  / scanned     (active-player density)
-//   bandit    = bandits  * banditMaxLevel  / (scanned × 3)   (0–1 threat)
-//   honored   = honored  * honoredMaxLevel / (scanned × 3)   (0–1 presence)
-//   mine      = mineNearby / systemCount  (own-colony proximity, 0–1)
-//   length    = region.length / 499      (small length tiebreaker)
+//  1. BASE STRATEGY — a named weight set over neighbourhood rates:
+//       free      = matched / length          (free-slot density, 0–1)
+//       inactive  = inactive  / scanned       (dormant-player density, 0–1)
+//       occupied  = occupied  / scanned       (active-player density, 0–1)
+//       bandit    = bandits × banditMaxLevel  / (scanned × 3)  (0–1 threat)
+//       honored   = honored × honoredMaxLevel / (scanned × 3)  (0–1 presence)
+//       length    = region.length / 499                        (tiebreaker)
 //
-// The default 'longest' preset ignores all rates and sorts purely by length,
-// reproducing the pre-strategy behaviour exactly.
+//  2. ORTHOGONAL MODIFIERS — applied on top of any base strategy:
+//       expansion (+/−) — placement preference
+//         > 0  "Spread":  bonus for mineMinDist ≥ 100 (new territory)
+//         < 0  "Cluster": bonus for mineMinDist < 50  (near home base)
+//         = 0  no preference (default)
+//       allyBonus (≥ 0) — reward regions with allied neighbours
+//         ally rate = allyNearby / scanned (requires ownAllyTag in findBestRegions)
+//
+// The default 'longest' preset reproduces the pre-strategy sort exactly.
 
 /**
  * @typedef {object} StrategyWeights
- * @property {number} [free]     Density of confirmed-free target slots (0–1).
+ * @property {number} [free]     Free-slot density (0–1). Positive = want free slots.
  * @property {number} [inactive] Dormant-player density. Positive = want farm targets.
- * @property {number} [occupied] Active-player density. Positive = want PvP targets; negative = want quiet.
- * @property {number} [bandit]   Bandit-threat factor. Negative = penalise aggressors; positive = seek them.
- * @property {number} [honored]  Honored-presence factor. Positive = seek honour-fighters; negative = avoid.
- * @property {number} [mine]     Own-colony proximity. Negative = expansion away; positive = cluster near base.
- * @property {number} [length]   Tiebreaker length bonus (normalised to 0–1 over 499 systems).
+ * @property {number} [occupied] Active-player density. Positive = want PvP; negative = want quiet.
+ * @property {number} [bandit]   Bandit-threat factor. Negative = penalise; positive = seek.
+ * @property {number} [honored]  Honored-presence factor. Positive = seek; negative = avoid.
+ * @property {number} [length]   Small length tiebreaker (0–1 over 499 systems).
  */
 
 /**
- * Named strategy presets. Exported so the UI can build a `<select>` from them
- * without duplicating label strings.
- *
- * Weights are designed so that a region with "typical" values (e.g. 20% inactive
- * density, 1 bandit3 per 20 systems) gets a meaningful non-zero score component
- * for each weight, making the sort order intuitive at real data scale.
+ * Named strategy presets. Exported so the UI can build a `<select>` from them.
+ * Colony placement (spread / cluster) and alliance proximity are SEPARATE
+ * modifiers passed to {@link sortRegionsByStrategy}, not baked into these presets.
  *
  * @type {Record<string, { label: string, hint: string, weights: StrategyWeights }>}
  */
@@ -271,68 +315,110 @@ export const STRATEGIES = {
   },
   farmer: {
     label: 'Farmer',
-    hint: 'Maximise inactive targets nearby for resource raiding; bandits penalised (they may raid you back)',
+    hint: 'Maximise inactive farm targets; bandits penalised (they raid farmers back)',
     weights: { free: 0.7, inactive: 2.5, bandit: -1.5, honored: -0.3, length: 0.1 },
   },
   honor_pvp: {
     label: 'Honor PvP',
-    hint: 'Seek honored fighters — attacking them earns positive honour points; avoid bandits (they undercut your targets)',
+    hint: 'Seek honored fighters — attacking them earns positive honour; avoid bandits',
     weights: { free: 0.5, occupied: 0.8, honored: 2.5, bandit: -1, length: 0.1 },
   },
   aggressive: {
     label: 'Aggressive PvP',
-    hint: 'Max active players of any honour rank — density of targets matters more than their colour',
+    hint: 'Max active players of any honour rank — target density over colour',
     weights: { free: 0.5, occupied: 2, inactive: 0.5, bandit: 0.3, honored: 0.5, length: 0.1 },
-  },
-  expansion: {
-    label: 'Expansion',
-    hint: 'Away from current colonies — minimise own planets in range; use when spreading to a new part of the galaxy',
-    weights: { free: 1, inactive: 0.2, occupied: -0.2, bandit: -1, honored: -0.5, mine: -3, length: 0.1 },
   },
 };
 
 /**
- * Compute a single comparable score for a region under a given weight set.
- * Higher = better for that strategy.
+ * Map `mineMinDist` to a 0–1 spread factor used by the placement modifier.
+ *
+ * - dist < 50  → 0.0  (too close to home, no spread value)
+ * - dist = 100 → 0.33 (acceptable but not great)
+ * - dist = 150 → 0.67
+ * - dist ≥ 200 → 1.0  (solid new territory)
+ * - dist = Infinity (no mines in galaxy) → 1.0 (pristine)
+ *
+ * The cluster factor is `1 − spreadFactor`.
+ *
+ * @param {number} mineMinDist
+ * @returns {number}
+ */
+export const expansionFactor = (mineMinDist) => {
+  if (!Number.isFinite(mineMinDist)) return 1;
+  return Math.min(1, Math.max(0, mineMinDist - 50) / 150);
+};
+
+/**
+ * @typedef {object} SortOptions
+ * @property {number} [expansion]
+ *   Placement preference:
+ *   `> 0` = spread (bonus for being far from own colonies, 100+ sys);
+ *   `< 0` = cluster (bonus for being near own colonies);
+ *   `0`   = no placement preference (default).
+ *   Typical values: `±1` (light), `±2` (strong).
+ * @property {number} [allyBonus]
+ *   Alliance proximity weight. Positive = reward regions with allied
+ *   neighbours (`allyNearby / scanned` rate). Requires `ownAllyTag`
+ *   passed to `findBestRegions` — otherwise `allyNearby` is always 0.
+ *   Typical value: `1.5` when an ally tag is provided.
+ */
+
+/**
+ * Compute a single comparable score for a region under strategy + modifiers.
+ * Higher = better.
  *
  * @param {Region} region
  * @param {StrategyWeights} weights
+ * @param {SortOptions} [mods]
  * @returns {number}
  */
-const scoreForStrategy = (region, weights) => {
+const scoreForStrategy = (region, weights, mods = {}) => {
   const s = region.score;
-  // No neighbourhood data — fall back to length only.
   if (!s || !s.scanned) return (weights.length ?? 0) * (region.length / 499);
   const n = s.scanned;
-  return (
+  let score = (
     (weights.free    ?? 0) * (region.matched / Math.max(region.length, 1)) +
     (weights.inactive ?? 0) * (s.inactive  / n) +
     (weights.occupied ?? 0) * (s.occupied  / n) +
-    // bandit/honored: normalise by n×3 so "every system has a max-tier player" = 1.0
     (weights.bandit   ?? 0) * (s.bandits   * s.banditMaxLevel  / (n * 3)) +
     (weights.honored  ?? 0) * (s.honored   * s.honoredMaxLevel / (n * 3)) +
-    (weights.mine     ?? 0) * (s.mineNearby / Math.max(s.systemCount, 1)) +
     (weights.length   ?? 0) * (region.length / 499)
   );
+  // Placement modifier — orthogonal to base strategy
+  const expansion = mods.expansion ?? 0;
+  if (expansion !== 0) {
+    const ef = expansionFactor(s.mineMinDist);
+    // spread (>0): bonus when far; cluster (<0): bonus when close (1-ef)
+    score += Math.abs(expansion) * (expansion > 0 ? ef : 1 - ef);
+  }
+  // Alliance proximity modifier
+  const allyBonus = mods.allyBonus ?? 0;
+  if (allyBonus > 0) {
+    score += allyBonus * (s.allyNearby / n);
+  }
+  return score;
 };
 
 /**
- * Re-sort an array of regions by the named strategy. Returns a NEW array
- * (does not mutate `regions`). Unknown key falls back to 'longest'.
+ * Re-sort an array of regions by the named strategy + orthogonal modifiers.
+ * Returns a NEW array (does not mutate `regions`).
+ * Unknown strategy key falls back to `'longest'`.
  *
  * @param {Region[]} regions
- * @param {string} strategyKey — key of {@link STRATEGIES}
+ * @param {string} strategyKey  Key of {@link STRATEGIES}.
+ * @param {SortOptions} [opts]
  * @returns {Region[]}
  */
-export const sortRegionsByStrategy = (regions, strategyKey) => {
+export const sortRegionsByStrategy = (regions, strategyKey, opts = {}) => {
   const strategy = STRATEGIES[strategyKey];
-  if (!strategy || strategyKey === 'longest') {
+  const hasModifiers = (opts.expansion ?? 0) !== 0 || (opts.allyBonus ?? 0) > 0;
+  if (!hasModifiers && (!strategy || strategyKey === 'longest')) {
     return [...regions].sort((a, b) => b.length - a.length || a.gaps - b.gaps || a.galaxy - b.galaxy);
   }
-  const w = strategy.weights;
-  // Secondary tiebreaker: length desc so equal-scoring regions still prefer longer.
+  const w = strategy?.weights ?? STRATEGIES.longest.weights;
   return [...regions].sort(
-    (a, b) => scoreForStrategy(b, w) - scoreForStrategy(a, w) || b.length - a.length || a.galaxy - b.galaxy,
+    (a, b) => scoreForStrategy(b, w, opts) - scoreForStrategy(a, w, opts) || b.length - a.length || a.galaxy - b.galaxy,
   );
 };
 
@@ -418,7 +504,7 @@ export const findBestRegions = (scans, opts) => {
         matched: best.matched,
         gaps: best.gaps,
       };
-      region.score = scoreRegion(region, scans, galaxyMax);
+      region.score = scoreRegion(region, scans, { galaxyMax, ownAllyTag: opts.ownAllyTag });
       results.push(region);
     }
   }
