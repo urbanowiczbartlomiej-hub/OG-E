@@ -61,8 +61,9 @@
 T1–T4, T6–T10, T12, T13 → REVIEW lub DONE. Pozostaje:
 1. **Częściowo zablokowane na dane:** T11 (all fleets) — dane z
    `window.fleetDispatcher` do potwierdzenia.
-2. **Mocno zablokowane:** T5 (własność fleet2) — potrzebne XHR `checkTarget`
-   + `sendFleet`.
+2. **Częściowo odblokowane (sesja 9):** T5 (własność fleet2) — `checkTarget`
+   dostarczony (skład floty jest w body → heurystyka routine-7 wykonalna);
+   brakuje jeszcze body+response `sendFleet` i próbki routine-7 (poz. 16).
 
 **⚠ Przed najbliższym release (konsekwencja skrótu „bez testów"):** przejść
 `npm run test` i zaktualizować asercje do zmian z tego cyklu. Stan zmierzony
@@ -266,7 +267,8 @@ anulowania remaindera dla FS z 2 na 3 minut.”
 ---
 
 ### T5 — Własność przejścia fleet1→fleet2 po XHR checkTarget
-**Status:** TODO · **Trudność:** trudne · ⛔ BLOKADA: dane (XHR)
+**Status:** TODO (blokada częściowo zdjęta — `checkTarget` dostarczony,
+brakuje `sendFleet` + próbki routine-7) · **Trudność:** trudne
 
 **Feedback (wiernie):** „Być może da się śledzić XHR sprawdzania targetu misji i
 na tej podstawie aktywować odpowiedni przycisk który mógł być potencjalnym
@@ -308,12 +310,37 @@ Pionier i co najwyżej jeden statek bojowy.
    jawnego inicjatora OG-E.
 4. Spójne zachowanie dla sendExp/sendCol/fsCollect/lifeform.
 
-**Dane:** ⛔ Potrzebne **payloady XHR** `checkTarget` i `sendFleet` (request +
-response) — szczególnie: jakie pola identyfikują typ misji, target, skład floty;
-oraz przykład przejścia odpalonego przez AGR routine-7. Bez tego projekt zostaje
-teoretyczny.
+**Dane:** `checkTarget` (request + response) **dostarczony 2026-06-12** —
+patrz dziennik. Nadal potrzebne: (a) **body + response `sendFleet`**
+(`sendFleetHook` czyta dziś coords z URL-a, pól body nie znamy: misja,
+`am*`, speed, token?); (b) `checkTarget` odpalony przez **AGR routine-7**
+na pozycję 16 (profil ekspedycyjny floty w body do kalibracji heurystyki).
 
-**Dziennik:** —
+**Dziennik:**
+- 2026-06-12 (sesja 9): Użytkownik dostarczył pełny `checkTarget`
+  (request + response, s163-pl). Ustalenia:
+  - **Body niesie skład floty**: `am<shipId>=<count>` obok
+    `galaxy/system/position/type/union/token` (w próbce `am203=12433` —
+    Duże transportery; `type=3` = księżyc). To zdejmuje najtrudniejszy
+    punkt projektu: heurystyka rozpoznania ekspedycji routine-7
+    (pozycja 16 + profil cargo: MT/DT/Pionier, ≤1 statek bojowy) jest
+    wykonalna na poziomie samego XHR, bez znajomości stanu fleet1 —
+    `checkTargetHook.parseFormBody` już parsuje body, wystarczy
+    przepuścić pary `am*` do detailu `oge:checkTargetResult`.
+  - **Brak pola misji w request** — misja wybierana dopiero na fleet2.
+    „Sesja własności" wiąże się więc po (coords + skład floty + czas
+    + instancja XHR), nie po typie misji.
+  - Response: `status`, `orders` (mapa misji → bool, już konsumowana),
+    `targetOk`, `targetPlanet{galaxy,system,position,type,name}`,
+    `targetInhabited`, `targetPlayer*`, `shipsData` (per statek: speed /
+    baseCargoCapacity / fuelConsumption — wartości już po bonusach
+    gracza), `newAjaxToken` (token rotuje po każdym checkTarget — sesja
+    własności może go śledzić jako odcisk ciągłości).
+  - ⚠ **Rozjazd w próbce**: request celuje w `5:172:8`, a response
+    `targetPlanet` = `6:177:8`. Do wyjaśnienia z użytkownikiem (redakcja
+    przy wklejaniu vs realne zachowanie gry). Jeśli realne — matchowanie
+    request→response po coords jest niewiarygodne i wiązanie musi iść po
+    instancji XHR (jak WeakMap w `sendFleetHook`).
 
 ---
 
