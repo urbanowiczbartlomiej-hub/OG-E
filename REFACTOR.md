@@ -75,7 +75,7 @@ line) · `[-]` dropped (note why; keep for history).
 | 2 | Contract unification & dedup | 5 | 5 / 5 |
 | 3 | Structural (parity, pure-core, test isolation) | 4 | 2 / 4 |
 | 4 | Low-cost polish | 4 | 4 / 4 |
-| 5 | Documentation reduction (DRY for docs) | 5 | 1 / 5 |
+| 5 | Documentation reduction (DRY for docs) | 5 | 2 / 5 |
 
 > Update the "Done" column whenever a task flips to `[x]`.
 
@@ -646,7 +646,25 @@ still works where a task touches release inputs.*
 - **Acceptance:** Each topic's full text exists once; greps for "npm run
   build:prod", release-step lists, permission lists return one canonical hit +
   links. `amo-reviewer-notes.txt` already points to REVIEWERS — keep that.
-- **Done:**
+- **Done:** 2026-06-13 — `docs: de-duplicate standalone docs to canonical homes
+  (D2)`. Consolidated per the canonical homes: (1) **Release workflow** —
+  `CONTRIBUTING §Release workflow` collapsed from ~34 lines of step-by-step to a
+  6-line pointer at `CLAUDE.md §Release checklist` (the authoritative copy).
+  (2) **Build** — `CONTRIBUTING §Dev workflow` and `README §Development` dropped
+  `build:prod` from their dev cheatsheets and point at `REVIEWERS.md §Steps` for
+  the reproducible build (its explanatory text now lives ONCE in REVIEWERS;
+  README §Install still *invokes* the command inline as a user install step,
+  which is not a re-documentation). (3) **Architecture** — removed README's
+  "Purity contract" invariant restatement (README §Architecture is now the
+  friendly diagram + data-flow intro only) and pointed `CONTRIBUTING §2 Purity`
+  at `CLAUDE.md §Architecture & invariants`. (4) **Compliance** — `CONTRIBUTING
+  §1` keeps the punchy contributor headline but defers the formal statement to
+  `REVIEWERS.md §Compliance summary`. (5) **Privacy/permissions** already
+  canonical in PRIVACY (README/amo-notes link). Rode-along accuracy fix: dropped
+  the stale "~945 tests" count from README + REVIEWERS (now 1390; made generic).
+  All cross-doc links are file-only (no fragile heading anchors). CLAUDE.md's own
+  AMO/permission/preview verbatim blocks are left for D3. No code change — JS
+  gates unaffected.
 
 ### `[ ]` D3 — Compact `CLAUDE.md` itself
 - **Severity:** med · **Size:** S · **Deps:** D1

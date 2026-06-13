@@ -9,30 +9,27 @@ and you're set.
 **One user click → at most one HTTP request to the game server.**
 This is not a guideline, it is the whole product's reason for
 existing. We observe XHRs the game already fires (see `src/bridges/`)
-and republish them as DOM events; we never call `fetch('/game/…')`,
-we never inject synthetic XMLHttpRequests against the game.
+and republish them as DOM events; we never originate traffic to the
+game server. No background cycles, no batch actions, no "one click,
+five fleets out", no rate-limit circumvention. `location.href = url`
+in response to a single visible user click is fine; so are requests to
+user-controlled third-party services (`api.github.com` for sync,
+`ntfy.sh` for reminders — both opt-in, both keyed by a token the user
+supplies).
 
-No background cycles. No batch actions. No "one click, five fleets
-out". No CAPTCHA / rate-limit circumvention.
-
-Requests to user-controlled third-party services are fine: `api.github.com`
-for cloud sync, `ntfy.sh` for fleet-landing reminders — both opt-in and
-keyed by a token the user supplies. The rule above is specifically about
-the **game server**: never originate traffic to it. `location.href = url`
-in response to a single visible user click is fine.
-
-When unsure, open an issue before the PR.
+The full, formal statement — the one AMO reviewers read — lives in
+[`REVIEWERS.md`](REVIEWERS.md) (§Compliance summary). When unsure, open
+an issue before the PR.
 
 ## 2. Purity where you can
 
-`src/lib/` and `src/domain/` are **pure**: no DOM access, no storage,
-no `Date.now()` without an explicit parameter. If your helper needs
-any of those, it belongs in `src/state/` (for storage) or
-`src/features/` (for DOM) instead.
-
-Keeping that contract lets about 60 % of the codebase run in Node's
-vitest with zero mocking. Breaking it is the fastest way to make
-tests brittle, so the contract is enforced by taste, not by lint.
+`src/lib/` and `src/domain/` are **pure** — no DOM, no storage, no
+`Date.now()` without an explicit parameter — which is why most of the
+codebase runs in Node's vitest with zero mocking. If your helper needs
+any of those, it belongs in `src/state/` (storage) or `src/features/`
+(DOM) instead. The authoritative layering rules (dependency direction,
+the pure-core rule) live in [`CLAUDE.md`](CLAUDE.md) (§Architecture &
+invariants).
 
 ## 3. JSDoc + `@ts-check`
 
@@ -86,12 +83,13 @@ npm install
 npm run dev           # rollup watch; rebuilds dist/ on save
 npm run test          # vitest
 npm run typecheck     # must exit 0
-npm run build:prod    # production bundle — check the size
 ```
 
-A change is ready when all three commands pass cleanly and you've
-load-tested `dist/manifest.json` as a temporary add-on (Firefox) or
-unpacked extension (Chrome) against a running OGame account.
+A change is ready when those pass cleanly and you've load-tested
+`dist/manifest.json` as a temporary add-on (Firefox) or unpacked
+extension (Chrome) against a running OGame account. The reproducible
+production build (`npm run build:prod` → `dist/`) is documented in
+[`REVIEWERS.md`](REVIEWERS.md) (§Steps) — that's its canonical home.
 
 ## Test-in-game checklist
 
@@ -107,38 +105,16 @@ Before merging anything that touches DOM behaviour:
 
 ## Release workflow
 
-The whole release is one command — `scripts/release.mjs`. It bumps the
-version, runs tests + typecheck, builds and packages (**both** `dist.zip`
-and the `source.zip` AMO requires for a minified bundle), commits, tags,
-uploads to AMO (both reviewer-note fields + `source.zip`), and pushes the
-tag. It is idempotent: re-running after a failure resumes from where it
-stopped.
+The whole release is one idempotent command (`npm run release -- X.Y.Z`)
+with a short by-hand prep (a dated `CHANGELOG.md` section left
+uncommitted; `AMO_JWT_*` secrets in a gitignored `.env`). The
+authoritative, step-by-step procedure — including the `--preview` footgun
+that once caused an accidental real release — lives in
+[`CLAUDE.md`](CLAUDE.md) (§Release checklist). Follow and update it there;
+don't restate it here.
 
-Do these by hand first:
-
-1. Commit the release's code + tests under their own `fix:`/`feat:`
-   commit, so the tree is clean except the files the script edits.
-2. Write a dated `## [X.Y.Z] — YYYY-MM-DD` section in `CHANGELOG.md`
-   (move `[Unreleased]` items into it) and **leave it uncommitted**.
-   The script refuses to run without it and sends it verbatim as the
-   public AMO release notes. **Never bump the version without it.**
-3. Have `AMO_JWT_ISSUER` / `AMO_JWT_SECRET` in a gitignored `.env`
-   (see `.env.example`).
-
-Then:
-
-```bash
-npm run release -- X.Y.Z
-```
-
-To **preview** without publishing, run the script directly so the flag
-actually arrives (npm swallows `--flags`, which has caused an accidental
-real release): `node --env-file-if-exists=.env scripts/release.mjs X.Y.Z --preview`.
-
-Before releasing anything that touches DOM behaviour, load
-`dist/manifest.json` locally and spot-check the in-game checklist above
-on both Firefox and Chrome. Chrome Web Store, if you publish there, still
-takes a manual `dist.zip` upload.
+Before releasing anything that touches DOM behaviour, spot-check the
+in-game checklist above on both Firefox and Chrome.
 
 ## Contact
 

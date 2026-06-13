@@ -84,10 +84,13 @@ For a packaged release, see [`CONTRIBUTING.md`](CONTRIBUTING.md)
 ```bash
 npm install
 npm run dev           # rollup watch, rebuilds dist/ on save
-npm run test          # vitest, ~945 tests
+npm run test          # vitest
 npm run typecheck     # tsc --noEmit, JSDoc-as-types
-npm run build:prod    # minified dist/ (terser, console dropped)
 ```
+
+The reproducible production build (`npm run build:prod`) and how its
+output maps to the uploaded extension are documented in
+[`REVIEWERS.md`](REVIEWERS.md).
 
 **Debug flags** (set in DevTools Console):
 - `localStorage.oge_debugSendCol = 'true'` — log Send/Scan click context.
@@ -121,9 +124,9 @@ State stores (isolated world) subscribe to those events and update.
 Features subscribe to the stores and re-render their DOM. Sync reads
 the stores, merges with the remote gist, writes the result back.
 
-**Purity contract.** `lib/` and `domain/` have zero DOM, zero storage,
-zero `Date.now()` without an explicit parameter — which makes them
-testable in Node's vitest runner with no mocks.
+The layering rules that keep this testable (dependency direction, the
+pure-core rule) are spelled out for contributors in
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ---
 

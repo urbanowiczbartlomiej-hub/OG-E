@@ -36,7 +36,7 @@ by the ZIP spec and AMO's validator.
 ## Verifying the build
 
 `npm run typecheck` runs `tsc --noEmit` against the JSDoc-as-types
-sources. `npm run test` runs the vitest suite (~945 unit tests, all
+sources. `npm run test` runs the vitest suite (the full unit set, all
 synchronous, no network).
 
 ## What the source archive contains
