@@ -10,9 +10,9 @@
 //
 // We enforce the arrows with `import/no-restricted-paths` zones, plus a
 // `no-restricted-globals` rule that keeps `domain/` free of DOM/timer/chrome
-// access. The `bridges → state` zone is intentionally NOT here yet — it goes
-// green only after task I1 moves the shared key constants into lib/, so that
-// zone lands in the I1 commit (see REFACTOR.md).
+// access. The `bridges → state` zone landed in task I1 (shared key constants
+// moved to lib/storageKeys.js); task I3 broadens it to also forbid
+// features/sync and reconciles the doc (bridges may import domain + lib).
 
 import fs from 'node:fs';
 import js from '@eslint/js';
@@ -98,6 +98,17 @@ export default [
               ],
               message:
                 'lib/ is the zero-app-dep foundation and must not import from any app layer (CLAUDE.md invariant).',
+            },
+            // bridges/ are MAIN-world observers — they have no chrome.* and
+            // must not pull in the isolated-world store layer. Shared key
+            // strings live in lib/storageKeys.js (task I1). (Task I3 broadens
+            // this to features/sync.)
+            {
+              target: './src/bridges',
+              from: ['./src/state'],
+              message:
+                'bridges/ run in the MAIN world (no chrome.*) and must not import state/ — ' +
+                'use lib/ (e.g. lib/storageKeys.js) instead (CLAUDE.md invariant).',
             },
             // No feature imports another feature.
             ...crossFeatureZones,

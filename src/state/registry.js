@@ -40,15 +40,16 @@
 import { createStore } from '../lib/createStore.js';
 import { persist } from '../lib/persist.js';
 import { safeLS } from '../lib/storage.js';
+import { REGISTRY_KEY } from '../lib/storageKeys.js';
 
 /**
  * @typedef {import('../domain/registry.js').RegistryEntry} RegistryEntry
  */
 
-/**
- * localStorage key for the colonization registry.
- */
-export const REGISTRY_KEY = 'oge_colonizationRegistry';
+// Canonical key string lives in `lib/storageKeys.js` so MAIN-world bridges
+// can import it without pulling in this store module. Re-exported here so
+// existing isolated-world importers keep reading it from `state/registry`.
+export { REGISTRY_KEY };
 
 /**
  * Reactive store of the currently-pending colonization entries. Always

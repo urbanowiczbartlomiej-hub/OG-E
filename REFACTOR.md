@@ -71,7 +71,7 @@ line) · `[-]` dropped (note why; keep for history).
 | Phase | Theme | Tasks | Done |
 |-------|-------|-------|------|
 | 0 | Gates (tooling that locks invariants in) | 2 | 2 / 2 |
-| 1 | Invariant violations (highest value) | 3 | 0 / 3 |
+| 1 | Invariant violations (highest value) | 3 | 1 / 3 |
 | 2 | Contract unification & dedup | 5 | 0 / 5 |
 | 3 | Structural (parity, pure-core, test isolation) | 4 | 0 / 4 |
 | 4 | Low-cost polish | 4 | 1 / 4 |
@@ -159,7 +159,7 @@ benefits.*
 
 ## Phase 1 — Invariant violations (highest value, mostly mechanical)
 
-### `[ ]` I1 — Move shared key constants to `lib/`; kill `bridges → state`
+### `[x]` I1 — Move shared key constants to `lib/`; kill `bridges → state`
 - **Severity:** high · **Size:** S · **Risk:** low · **Deps:** none (do early)
 - **Why:** `bridges/sendFleetHook.js:51` imports `REGISTRY_KEY` from
   `state/registry.js`, and `bridges/deployRedirect.js:48` imports
@@ -187,7 +187,17 @@ benefits.*
   tests pass unchanged (behavior identical). Bundle no longer references
   `chrome.storage` via these paths (spot-check `dist/page.js` after a build if
   convenient — build is free, `dist/` is gitignored).
-- **Done:**
+- **Done:** 2026-06-13 — `refactor(bridges): source shared storage keys from
+  lib/storageKeys.js`. New `src/lib/storageKeys.js` owns `REGISTRY_KEY` +
+  `FS_REDIRECT_KEY` (pure consts, no imports). `state/registry.js` and
+  `state/fsRoutes.js` now re-export from lib (isolated-world importers
+  unchanged); `bridges/sendFleetHook.js` + `bridges/deployRedirect.js` import
+  from lib and their stale "bare const from state/" comments are corrected.
+  Added the `bridges → state` ESLint zone (deferred from G1) — forbids
+  `./src/state` from `./src/bridges`. Left the broadening to `features|sync`
+  and the CLAUDE.md doc reconciliation to **I3** (kept I1 in scope). No
+  `from '../state/` remains in bridges/; lint/typecheck/test all green
+  (1365 tests).
 
 ### `[ ]` I2 — Centralize duplicated game selectors in `gameDom.js`
 - **Severity:** high · **Size:** M · **Risk:** low · **Deps:** none

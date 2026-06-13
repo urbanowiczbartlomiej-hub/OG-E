@@ -38,9 +38,11 @@
 //   store layer's persist machinery. We write localStorage by hand via
 //   `safeLS.setJSON`, using the pure `pruneRegistry` / `dedupeEntry`
 //   helpers from `domain/registry`. The store in the ISOLATED world
-//   will pick up the change on the next hydrate. Only the key string
-//   (REGISTRY_KEY) is imported from state/registry — a bare string
-//   constant with no side effects.
+//   will pick up the change on the next hydrate. The key string
+//   (REGISTRY_KEY) comes from `lib/storageKeys.js` — a bare const with no
+//   side effects — NOT from `state/registry.js`, since importing that
+//   const would evaluate the store module (top-level `createStore` +
+//   `chrome.storage`) inside the MAIN-world bundle.
 
 /** @ts-check */
 
@@ -48,7 +50,7 @@ import { observeXHR } from './xhrObserver.js';
 import { safeLS } from '../lib/storage.js';
 import { pruneRegistry, dedupeEntry } from '../domain/registry.js';
 import { MISSION_COLONIZE } from '../domain/rules.js';
-import { REGISTRY_KEY } from '../state/registry.js';
+import { REGISTRY_KEY } from '../lib/storageKeys.js';
 
 /**
  * @typedef {import('../domain/registry.js').RegistryEntry} RegistryEntry

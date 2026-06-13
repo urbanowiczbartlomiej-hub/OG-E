@@ -45,13 +45,13 @@
 import { observeXHR } from './xhrObserver.js';
 import { safeLS } from '../lib/storage.js';
 import { MISSION_DEPLOYMENT } from '../domain/rules.js';
-import { FS_REDIRECT_KEY } from '../state/fsRoutes.js';
+import { FS_REDIRECT_KEY } from '../lib/storageKeys.js';
 
 // Re-export so existing importers (and this bridge's test) can keep
 // reading the key from here. The canonical definition lives in
-// `state/fsRoutes.js` — a bare string constant shared with the
-// isolated-world orchestrator (same pattern as sendFleetHook importing
-// REGISTRY_KEY from state/registry.js).
+// `lib/storageKeys.js` — a bare string constant the MAIN-world bridge can
+// import without dragging in the isolated-world store module (same pattern
+// as sendFleetHook importing REGISTRY_KEY from lib/storageKeys.js).
 export { FS_REDIRECT_KEY };
 
 /**

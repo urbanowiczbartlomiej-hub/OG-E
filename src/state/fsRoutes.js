@@ -31,6 +31,7 @@ import { createStore } from '../lib/createStore.js';
 import { persist } from '../lib/persist.js';
 import { chromeStore } from '../lib/storage.js';
 import { parseUniverseId } from '../lib/universeId.js';
+import { FS_REDIRECT_KEY } from '../lib/storageKeys.js';
 import { migrateFsRoutes } from '../domain/fsRoutes.js';
 
 /**
@@ -68,11 +69,12 @@ export const FS_ROUTES_KEY_BASE = 'oge_fsRoutes';
  * synchronously before clicking dispatch; the bridge consumes it to
  * rewrite the post-send `redirectUrl`. A bare string constant (no
  * universe namespacing — it is a transient one-shot, not persisted
- * config), kept here so both worlds share one source of truth without
- * the bridge importing isolated-world code. Mirrors how `sendFleetHook`
- * imports `REGISTRY_KEY` from `state/registry.js`.
+ * config). The canonical string now lives in `lib/storageKeys.js` so the
+ * MAIN-world bridge can import it without pulling in this isolated-world
+ * store module; re-exported here so existing `state/fsRoutes` importers
+ * are unchanged. Mirrors `REGISTRY_KEY` in `state/registry.js`.
  */
-export const FS_REDIRECT_KEY = 'oge_fsRedirect';
+export { FS_REDIRECT_KEY };
 
 /**
  * Compose the full chrome.storage.local key for a given universe id.
