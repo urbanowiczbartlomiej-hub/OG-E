@@ -70,6 +70,7 @@
 import { settingsStore } from '../../state/settings.js';
 import { safeClick, waitFor } from '../../lib/dom.js';
 import { GAME, ACTIVE_PLANET_CLASS } from '../../lib/gameDom.js';
+import { EVENT_BOX_LOADED_EVENT, FLEET_DISPATCHER_EVENT } from '../../lib/ogeEvents.js';
 import { createButton as makeButton, LABEL_CLASS } from '../shared/button.js';
 import { COMET_GLYPH } from '../shared/buttonGlyphs.js';
 import { OWNER_EXP } from '../../domain/fleetOwnership.js';
@@ -301,7 +302,7 @@ export const installSendExp = () => {
     onEventBoxLoaded = () => {
       eventBoxReady = true;
     };
-    document.addEventListener('oge:eventBoxLoaded', onEventBoxLoaded);
+    document.addEventListener(EVENT_BOX_LOADED_EVENT, onEventBoxLoaded);
 
     // Secondary trigger: window 'load' event. The eventbox refresh XHR
     // typically fires DURING page load and lands shortly after `load`
@@ -691,18 +692,18 @@ export const installSendExp = () => {
 
   // Bridge event listener: keeps `fleetDispatcherSnapshot` fresh across
   // checkTarget XHRs and subsequent publishes from the MAIN-world bridge.
-  document.addEventListener('oge:fleetDispatcher', onFleetDispatcherSnapshot);
+  document.addEventListener(FLEET_DISPATCHER_EVENT, onFleetDispatcherSnapshot);
 
   installed = {
     dispose: () => {
       removeButton();
       unsubSettings();
       document.removeEventListener(
-        'oge:fleetDispatcher',
+        FLEET_DISPATCHER_EVENT,
         onFleetDispatcherSnapshot,
       );
       if (onEventBoxLoaded) {
-        document.removeEventListener('oge:eventBoxLoaded', onEventBoxLoaded);
+        document.removeEventListener(EVENT_BOX_LOADED_EVENT, onEventBoxLoaded);
         onEventBoxLoaded = null;
       }
       if (onWindowLoad) {

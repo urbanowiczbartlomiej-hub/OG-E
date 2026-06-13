@@ -72,7 +72,7 @@ line) · `[-]` dropped (note why; keep for history).
 |-------|-------|-------|------|
 | 0 | Gates (tooling that locks invariants in) | 2 | 2 / 2 |
 | 1 | Invariant violations (highest value) | 3 | 3 / 3 |
-| 2 | Contract unification & dedup | 5 | 0 / 5 |
+| 2 | Contract unification & dedup | 5 | 1 / 5 |
 | 3 | Structural (parity, pure-core, test isolation) | 4 | 0 / 4 |
 | 4 | Low-cost polish | 4 | 1 / 4 |
 | 5 | Documentation reduction (DRY for docs) | 5 | 0 / 5 |
@@ -264,7 +264,7 @@ benefits.*
 
 ## Phase 2 — Contract unification & deduplication
 
-### `[ ]` C1 — Central `oge:*` event-name registry
+### `[x]` C1 — Central `oge:*` event-name registry
 - **Severity:** med · **Size:** M · **Risk:** low · **Deps:** none
 - **Why:** ~13 event names are bare string literals on both dispatch and listen
   sides across ~20 files; a typo silently no-ops (CustomEvents never throw on a
@@ -285,7 +285,23 @@ benefits.*
   docs and the two `lib/` registry files. Tests + typecheck green.
 - **Note:** This touches bridges (MAIN world) — `lib/ogeEvents.js` must stay
   dependency-free (it already would be: just consts). Confirms G1 lib zone.
-- **Done:**
+- **Done:** 2026-06-13 — `refactor: central oge:* event-name registry
+  (lib/ogeEvents.js)`. New `lib/ogeEvents.js` defines all 12 event names and
+  re-exports the three fleet-protocol names from `fleetProtocol.js` (one import
+  surface). Removed every bare literal AND the scattered local `const X_EVENT =
+  'oge:…'` definitions (`discoveryHook`, `scheduler` FORCE_SYNC, `gist`
+  SYNC_STATUS, `dailyActions`, `scans`, `settingsUi/reminders`); all
+  producers/consumers now import from `ogeEvents` (config `refreshEvent` sites
+  in `settingsUi/sections/{reminders,sync}.js` too). **Naming deviation
+  (intentional):** kept the `_EVENT` suffix on every export (e.g.
+  `GALAXY_SCANNED_EVENT`, `SYNC_FORCE_EVENT`) rather than the bare names listed
+  above — matches the re-exported `FD_*_EVENT` names and the existing codebase
+  convention, and meant most importers only changed *path*, not identifier.
+  `FORCE_SYNC_EVENT` → `SYNC_FORCE_EVENT` (the one rename) updated at its 2 sites
+  + its test. Two tests re-pointed to import the const from `ogeEvents` (interface
+  moved); all the wire-string literal assertions in tests were left intact —
+  they pin the contract. Grep: no `'oge:` code literal outside the two `lib/`
+  registry files. lint (incl. `no-cycle`) + typecheck + test (1365) all green.
 
 ### `[ ]` C2 — Extract shared `fakeXhr` test helper
 - **Severity:** med · **Size:** M · **Risk:** none · **Deps:** none
@@ -609,6 +625,13 @@ still works where a task touches release inputs.*
   though it's beyond the listed baseline rules — the repo already carried
   `no-console` disable directives for an unconfigured rule, so enabling it makes
   them meaningful and enforces the `lib/logger` sink. Tests/scripts are exempt.
+- 2026-06-13 — **C1 event registry uses the `_EVENT` suffix** on every export,
+  deviating from the bare names the task text listed (`GALAXY_SCANNED`, …). Two
+  reasons: (1) the three re-exported fleet-protocol names already carry `_EVENT`
+  (`FD_CMD_EVENT`), so a suffix-less set would make `ogeEvents.js` internally
+  inconsistent; (2) all pre-existing exported event consts already used the
+  suffix, so keeping it meant importers changed only their *path*, not the
+  identifier — smaller, safer diff. Don't "fix" this back to bare names.
 - 2026-06-13 — **In-code comments are off-limits to reduction (user-confirmed).**
   OG-E depends entirely on a game with no available source or docs; the
   scattered comments are reverse-engineered knowledge (game processes, goals,

@@ -115,6 +115,12 @@ import {
 import { SHIP_COLONY, TARGET_PLANET } from '../../domain/rules.js';
 import { OWNER_COL } from '../../domain/fleetOwnership.js';
 import { GAME } from '../../lib/gameDom.js';
+import {
+  FLEET_DISPATCHER_EVENT,
+  CHECK_TARGET_RESULT_EVENT,
+  GALAXY_SCANNED_EVENT,
+  COLONIZE_SENT_EVENT,
+} from '../../lib/ogeEvents.js';
 
 // Re-export the pure pipeline so existing call-sites (e.g. the test
 // file which imports `derive` + `render` from this module) keep
@@ -975,10 +981,10 @@ export const installSendCol = () => {
   const unsubRegistry = registryStore.subscribe(() => refresh());
 
   // Bridge event listeners.
-  document.addEventListener('oge:fleetDispatcher', onFleetDispatcherSnapshot);
-  document.addEventListener('oge:checkTargetResult', onCheckTargetResult);
-  document.addEventListener('oge:galaxyScanned', onGalaxyScanned);
-  document.addEventListener('oge:colonizeSent', onColonizeSent);
+  document.addEventListener(FLEET_DISPATCHER_EVENT, onFleetDispatcherSnapshot);
+  document.addEventListener(CHECK_TARGET_RESULT_EVENT, onCheckTargetResult);
+  document.addEventListener(GALAXY_SCANNED_EVENT, onGalaxyScanned);
+  document.addEventListener(COLONIZE_SENT_EVENT, onColonizeSent);
 
   // 1 Hz repaint ticker — the only timer in the whole feature.
   const tickerHandle = setInterval(refresh, REPAINT_TICK_MS);
@@ -990,10 +996,10 @@ export const installSendCol = () => {
       unsubSettings();
       unsubScans();
       unsubRegistry();
-      document.removeEventListener('oge:fleetDispatcher', onFleetDispatcherSnapshot);
-      document.removeEventListener('oge:checkTargetResult', onCheckTargetResult);
-      document.removeEventListener('oge:galaxyScanned', onGalaxyScanned);
-      document.removeEventListener('oge:colonizeSent', onColonizeSent);
+      document.removeEventListener(FLEET_DISPATCHER_EVENT, onFleetDispatcherSnapshot);
+      document.removeEventListener(CHECK_TARGET_RESULT_EVENT, onCheckTargetResult);
+      document.removeEventListener(GALAXY_SCANNED_EVENT, onGalaxyScanned);
+      document.removeEventListener(COLONIZE_SENT_EVENT, onColonizeSent);
       installed = null;
     },
   };

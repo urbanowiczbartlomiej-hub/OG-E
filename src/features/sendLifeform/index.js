@@ -39,7 +39,7 @@ import { scansStore, flushScansStore } from '../../state/scans.js';
 import { readLfArtifacts, writeLfArtifacts } from '../../state/lifeformArtifacts.js';
 import { createButton as makeButton, labelLines } from '../shared/button.js';
 import { DNA_GLYPH } from '../shared/buttonGlyphs.js';
-import { SYSTEM_DISCOVERY_RESULT_EVENT } from '../../bridges/discoveryHook.js';
+import { SYSTEM_DISCOVERY_RESULT_EVENT } from '../../lib/ogeEvents.js';
 import {
   derive,
   render,

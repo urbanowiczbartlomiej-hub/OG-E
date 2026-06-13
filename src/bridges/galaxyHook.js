@@ -29,6 +29,7 @@
 
 import { observeXHR } from './xhrObserver.js';
 import { classifyPosition } from '../domain/scans.js';
+import { GALAXY_SCANNED_EVENT } from '../lib/ogeEvents.js';
 
 /**
  * Mission-id the game uses for colonize sends. Duplicated from
@@ -212,7 +213,7 @@ export const installGalaxyHook = () => {
       const analysis = analyzeResponse(parsed);
       if (!analysis) return;
       document.dispatchEvent(
-        new CustomEvent('oge:galaxyScanned', {
+        new CustomEvent(GALAXY_SCANNED_EVENT, {
           detail: {
             ...analysis,
             scannedAt: Date.now(),

@@ -42,6 +42,7 @@
 //   that listens for `oge:traderBidPlaced` / `oge:traderImportTraded`.
 
 import { observeXHR } from './xhrObserver.js';
+import { TRADER_BID_PLACED_EVENT, TRADER_IMPORT_TRADED_EVENT } from '../lib/ogeEvents.js';
 
 /** Idempotency sentinel — a second install returns the same teardown. */
 /** @type {(() => void) | null} */
@@ -84,7 +85,7 @@ export const installTraderActionHook = () => {
     on: 'load',
     handler: ({ xhr, response }) => {
       if (xhr.status !== 200 || !succeeded(response)) return;
-      document.dispatchEvent(new CustomEvent('oge:traderBidPlaced'));
+      document.dispatchEvent(new CustomEvent(TRADER_BID_PLACED_EVENT));
     },
   });
 
@@ -93,7 +94,7 @@ export const installTraderActionHook = () => {
     on: 'load',
     handler: ({ xhr, response }) => {
       if (xhr.status !== 200 || !succeeded(response)) return;
-      document.dispatchEvent(new CustomEvent('oge:traderImportTraded'));
+      document.dispatchEvent(new CustomEvent(TRADER_IMPORT_TRADED_EVENT));
     },
   });
 

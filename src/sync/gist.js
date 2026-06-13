@@ -117,6 +117,7 @@
 import { gzipEncode, gzipDecode } from '../lib/gzip.js';
 import { safeLS } from '../lib/storage.js';
 import { logger } from '../lib/logger.js';
+import { SYNC_STATUS_EVENT } from '../lib/ogeEvents.js';
 import { clearScans, clearGalaxyScans } from './merge.js';
 
 /**
@@ -222,12 +223,10 @@ export const LAST_DOWN_KEY = 'oge_lastDownAt';
 /** localStorage key holding the last error message, or absent on success. */
 export const LAST_ERR_KEY = 'oge_lastSyncErr';
 
-/**
- * Document event fired after any sync-status write (see {@link setStatus}),
- * so a live status display can re-read immediately. The Settings "Sync
- * status" row listens for it (via the asyncStatus control's `refreshEvent`).
- */
-export const SYNC_STATUS_EVENT = 'oge:syncStatus';
+// SYNC_STATUS_EVENT (lib/ogeEvents.js) fires after any sync-status write (see
+// {@link setStatus}), so a live status display can re-read immediately. The
+// Settings "Sync status" row listens for it (via the asyncStatus control's
+// `refreshEvent`).
 
 // ── Gist identity ───────────────────────────────────────────────────
 

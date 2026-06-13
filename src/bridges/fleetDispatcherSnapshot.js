@@ -58,6 +58,7 @@
 //   expedition cap fields via pure.js helpers.
 
 import { observeXHR } from './xhrObserver.js';
+import { FLEET_DISPATCHER_EVENT } from '../lib/ogeEvents.js';
 
 /**
  * @typedef {object} FleetDispatcherSnapshot
@@ -148,7 +149,7 @@ const publish = () => {
   const snap = readSnapshot();
   if (!snap) return;
   document.dispatchEvent(
-    new CustomEvent('oge:fleetDispatcher', { detail: snap }),
+    new CustomEvent(FLEET_DISPATCHER_EVENT, { detail: snap }),
   );
 };
 

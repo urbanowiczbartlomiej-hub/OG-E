@@ -39,6 +39,7 @@ import { createStore } from '../lib/createStore.js';
 import { persist } from '../lib/persist.js';
 import { chromeStore } from '../lib/storage.js';
 import { parseUniverseId } from '../lib/universeId.js';
+import { GALAXY_SCANNED_EVENT } from '../lib/ogeEvents.js';
 import { mergeScanResult } from '../domain/scans.js';
 import { registryStore } from './registry.js';
 
@@ -230,12 +231,9 @@ export const disposeScansStore = () => {
   disposeScansListener();
 };
 
-/**
- * Event name the MAIN-world galaxy bridge dispatches after classifying
- * each `fetchGalaxyContent` response. Shared between bridge and
- * listener — keep the string in sync with `bridges/galaxyHook.js`.
- */
-const GALAXY_SCANNED_EVENT = 'oge:galaxyScanned';
+// GALAXY_SCANNED_EVENT (lib/ogeEvents.js) is dispatched by the MAIN-world
+// galaxy bridge after classifying each `fetchGalaxyContent` response; this
+// store subscribes to it. Centralized so bridge and listener can't drift.
 
 /**
  * Unsubscribe handle for the `oge:galaxyScanned` listener, `null`

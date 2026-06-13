@@ -51,6 +51,7 @@ import { safeLS } from '../lib/storage.js';
 import { pruneRegistry, dedupeEntry } from '../domain/registry.js';
 import { MISSION_COLONIZE } from '../domain/rules.js';
 import { REGISTRY_KEY } from '../lib/storageKeys.js';
+import { COLONIZE_SENT_EVENT } from '../lib/ogeEvents.js';
 
 /**
  * @typedef {import('../domain/registry.js').RegistryEntry} RegistryEntry
@@ -278,7 +279,7 @@ export const installSendFleetHook = () => {
         sentAt: ctx.sentAt,
         arrivalAt: ctx.arrivalAt,
       };
-      document.dispatchEvent(new CustomEvent('oge:colonizeSent', { detail }));
+      document.dispatchEvent(new CustomEvent(COLONIZE_SENT_EVENT, { detail }));
     },
   });
 

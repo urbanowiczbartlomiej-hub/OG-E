@@ -57,6 +57,3 @@ export const writeDailyState = (state) => {
   if (state.traderAuctionQuietUntil != null)
     safeLS.set(TRADER_AUCTION_QUIET_KEY, state.traderAuctionQuietUntil);
 };
-
-/** CustomEvent name dispatched after any daily-state write to trigger a sync upload. */
-export const DAILY_STATE_CHANGED_EVENT = 'oge:dailyStateChanged';

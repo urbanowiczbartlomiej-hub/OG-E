@@ -112,11 +112,8 @@ import {
 import { debounce } from '../lib/debounce.js';
 import { chromeStore } from '../lib/storage.js';
 import { parseUniverseId } from '../lib/universeId.js';
-import {
-  readDailyState,
-  writeDailyState,
-  DAILY_STATE_CHANGED_EVENT,
-} from '../state/dailyActions.js';
+import { readDailyState, writeDailyState } from '../state/dailyActions.js';
+import { SYNC_FORCE_EVENT, DAILY_STATE_CHANGED_EVENT } from '../lib/ogeEvents.js';
 
 /**
  * Tombstone key suffixes the histogram page (extension origin) writes
@@ -159,13 +156,10 @@ export const resetGalaxyKeyFor = (universeId) =>
  */
 const DEBOUNCE_MS = 15_000;
 
-/**
- * DOM event name the Settings UI and histogram dispatch on `document`
- * to request an immediate sync round-trip. Exported so those callers
- * import the exact string rather than hard-coding it (drift between
- * dispatcher and listener would silently break force-sync).
- */
-export const FORCE_SYNC_EVENT = 'oge:syncForce';
+// SYNC_FORCE_EVENT (lib/ogeEvents.js) is dispatched on `document` by the
+// Settings UI and histogram to request an immediate sync round-trip; this
+// scheduler listens for it. Centralized so dispatcher and listener can't drift
+// (a typo would silently break force-sync).
 
 /**
  * Active install handle, or `null` when the scheduler is not installed.
@@ -770,7 +764,7 @@ export const installSync = () => {
     await downloadAndMerge();
     await upload();
   };
-  document.addEventListener(FORCE_SYNC_EVENT, onForceSync);
+  document.addEventListener(SYNC_FORCE_EVENT, onForceSync);
 
   // Daily-action state changes (rewarding done, trader bid/trade) — schedule
   // an upload so the updated state reaches the gist quickly.
@@ -877,7 +871,7 @@ export const installSync = () => {
       unsubHistory();
       unsubSettings();
       unsubRoutes();
-      document.removeEventListener(FORCE_SYNC_EVENT, onForceSync);
+      document.removeEventListener(SYNC_FORCE_EVENT, onForceSync);
       document.removeEventListener(DAILY_STATE_CHANGED_EVENT, onDailyStateChanged);
       unsubStorage();
       installed = null;

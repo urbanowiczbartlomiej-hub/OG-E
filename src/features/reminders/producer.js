@@ -64,6 +64,7 @@ import { parseUniverseId } from '../../lib/universeId.js';
 import { debounce } from '../../lib/debounce.js';
 import { safeLS } from '../../lib/storage.js';
 import { GAME } from '../../lib/gameDom.js';
+import { EVENT_BOX_LOADED_EVENT } from '../../lib/ogeEvents.js';
 import {
   readPending, writePending, pushPending, applyAdhocCmds, applyWaveCmds,
 } from './pending.js';
@@ -353,7 +354,7 @@ export const installReminderProducer = (opts = {}) => {
   };
 
   const onEventBox = () => scheduleRun();
-  document.addEventListener('oge:eventBoxLoaded', onEventBox);
+  document.addEventListener(EVENT_BOX_LOADED_EVENT, onEventBox);
 
   // Force a push on any reminder-setting change so toggle/token edits in
   // the in-game Settings panel propagate immediately.
@@ -379,7 +380,7 @@ export const installReminderProducer = (opts = {}) => {
 
   installed = {
     dispose: () => {
-      document.removeEventListener('oge:eventBoxLoaded', onEventBox);
+      document.removeEventListener(EVENT_BOX_LOADED_EVENT, onEventBox);
       unsubConfig();
       installed = null;
     },

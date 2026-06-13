@@ -21,12 +21,7 @@
 // @ts-check
 
 import { observeXHR } from './xhrObserver.js';
-
-/**
- * Event dispatched on `document` after each observed discovery response.
- * Kept in sync with the listener in `features/sendLifeform/index.js`.
- */
-export const SYSTEM_DISCOVERY_RESULT_EVENT = 'oge:systemDiscoveryResult';
+import { SYSTEM_DISCOVERY_RESULT_EVENT } from '../lib/ogeEvents.js';
 
 /**
  * Pull an integer field out of an `x-www-form-urlencoded` request body.

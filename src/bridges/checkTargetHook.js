@@ -29,6 +29,7 @@
 /** @ts-check */
 
 import { observeXHR } from './xhrObserver.js';
+import { CHECK_TARGET_RESULT_EVENT } from '../lib/ogeEvents.js';
 
 /**
  * @typedef {object} CheckTargetResultDetail
@@ -205,7 +206,7 @@ export const installCheckTargetHook = () => {
       /** @type {CheckTargetResultDetail} */
       const detail = { galaxy, system, position, errorCode, orders, ships };
 
-      document.dispatchEvent(new CustomEvent('oge:checkTargetResult', { detail }));
+      document.dispatchEvent(new CustomEvent(CHECK_TARGET_RESULT_EVENT, { detail }));
     },
   });
 

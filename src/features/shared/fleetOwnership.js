@@ -15,6 +15,7 @@
 // stale claim outlive the state it described.
 
 import { resolveFleet2Completion } from '../../domain/fleetOwnership.js';
+import { CHECK_TARGET_RESULT_EVENT } from '../../lib/ogeEvents.js';
 
 /** @type {import('../../domain/fleetOwnership.js').OwnershipSession | null} */
 let session = null;
@@ -41,7 +42,7 @@ export const installFleetOwnership = () => {
       ships: d.ships && typeof d.ships === 'object' ? d.ships : null,
     };
   };
-  document.addEventListener('oge:checkTargetResult', onCheckTarget);
+  document.addEventListener(CHECK_TARGET_RESULT_EVENT, onCheckTarget);
 };
 
 /**
@@ -73,7 +74,7 @@ export const mayCompleteFleet2 = (claimant) =>
  * @returns {void}
  */
 export const _resetFleetOwnershipForTest = () => {
-  if (onCheckTarget) document.removeEventListener('oge:checkTargetResult', onCheckTarget);
+  if (onCheckTarget) document.removeEventListener(CHECK_TARGET_RESULT_EVENT, onCheckTarget);
   onCheckTarget = null;
   session = null;
   lastCheckTarget = null;

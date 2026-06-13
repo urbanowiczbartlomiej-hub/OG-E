@@ -72,6 +72,7 @@ import { MISSION_DEPLOYMENT } from '../../domain/rules.js';
 import { OWNER_FS } from '../../domain/fleetOwnership.js';
 import { mayCompleteFleet2 } from '../shared/fleetOwnership.js';
 import { GAME } from '../../lib/gameDom.js';
+import { EVENT_BOX_LOADED_EVENT } from '../../lib/ogeEvents.js';
 import { resolveSelection } from '../../domain/fleetPlan.js';
 import {
   coordKey,
@@ -697,7 +698,7 @@ export const installFsCollect = () => {
     if (settleTimer) clearTimeout(settleTimer);
     settleTimer = setTimeout(refresh, EVENTBOX_SETTLE_MS);
   };
-  document.addEventListener('oge:eventBoxLoaded', onEventBoxLoaded);
+  document.addEventListener(EVENT_BOX_LOADED_EVENT, onEventBoxLoaded);
   const safetyTimer = setTimeout(() => {
     if (!eventBoxReady) {
       eventBoxReady = true;
@@ -810,7 +811,7 @@ export const installFsCollect = () => {
       unsubSettings();
       unsubRoutes();
       clearInterval(tickerHandle);
-      document.removeEventListener('oge:eventBoxLoaded', onEventBoxLoaded);
+      document.removeEventListener(EVENT_BOX_LOADED_EVENT, onEventBoxLoaded);
       clearTimeout(safetyTimer);
       if (settleTimer) clearTimeout(settleTimer);
       installed = null;

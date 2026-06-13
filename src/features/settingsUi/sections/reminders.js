@@ -43,6 +43,7 @@ import { settingsStore } from '../../../state/settings.js';
 import { isValidNtfyToken, deriveNtfyTopic } from '../../../sync/reminders.js';
 import { fetchNtfyAccount } from '../../../sync/ntfyAccount.js';
 import { formatNtfyAccountStatus } from '../../../domain/ntfyAccount.js';
+import { NTFY_CHECK_NOW_EVENT } from '../../../lib/ogeEvents.js';
 import { parseFsOffsets } from '../../../domain/fleetSave.js';
 import { formatDuration } from '../../../domain/duration.js';
 
@@ -50,14 +51,12 @@ import { formatDuration } from '../../../domain/duration.js';
  * @typedef {import('../controls.js').SettingsSection} SettingsSection
  */
 
-/**
- * Document event the master row's "Check now" button dispatches to force the
- * account-status row to re-probe. The status row listens for it via
- * `refreshEvent`, mirroring the Sync section: there the master row's "Sync
- * now" drives the status line through an event rather than a direct call, so
- * the trigger and the line it refreshes can live on different rows.
- */
-const NTFY_CHECK_NOW_EVENT = 'oge:ntfyCheckNow';
+// NTFY_CHECK_NOW_EVENT (lib/ogeEvents.js) is dispatched by the master row's
+// "Check now" button to force the account-status row to re-probe. The status
+// row listens for it via `refreshEvent`, mirroring the Sync section: there the
+// master row's "Sync now" drives the status line through an event rather than
+// a direct call, so the trigger and the line it refreshes can live on
+// different rows.
 
 /**
  * The reminder sub-options (wave, ad-hoc, fleet-save) are locked until the

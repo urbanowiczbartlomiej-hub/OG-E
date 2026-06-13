@@ -47,8 +47,8 @@ vi.mock('../../src/sync/gist.js', () => ({
 import {
   installSync,
   _resetSchedulerForTest,
-  FORCE_SYNC_EVENT,
 } from '../../src/sync/scheduler.js';
+import { SYNC_FORCE_EVENT } from '../../src/lib/ogeEvents.js';
 import {
   fetchGistData,
   writeGistData,
@@ -425,7 +425,7 @@ describe('force-sync event', () => {
       .mockResolvedValueOnce(payload({ galaxyScans: { '1:1': scan(100) } }))
       .mockResolvedValueOnce(payload({ galaxyScans: { '1:1': scan(100) } }));
 
-    document.dispatchEvent(new CustomEvent(FORCE_SYNC_EVENT));
+    document.dispatchEvent(new CustomEvent(SYNC_FORCE_EVENT));
     // Let the async chain run. No debounce on the force path —
     // downloadAndMerge and upload run back-to-back immediately.
     await tick(0);
@@ -480,7 +480,7 @@ describe('inFlight lock', () => {
     // the force-sync and the upload get skipped until the initial
     // resolves.
     await tick(0);
-    document.dispatchEvent(new CustomEvent(FORCE_SYNC_EVENT));
+    document.dispatchEvent(new CustomEvent(SYNC_FORCE_EVENT));
     await tick(0);
     // Only the initial install's fetch has been called; force-sync's
     // download and upload both short-circuited on inFlight.

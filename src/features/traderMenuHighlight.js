@@ -82,8 +82,12 @@ import {
   TRADER_AUCTION_BID_KEY,
   TRADER_IMPORT_KEY,
   TRADER_AUCTION_QUIET_KEY,
-  DAILY_STATE_CHANGED_EVENT,
 } from '../state/dailyActions.js';
+import {
+  DAILY_STATE_CHANGED_EVENT,
+  TRADER_BID_PLACED_EVENT,
+  TRADER_IMPORT_TRADED_EVENT,
+} from '../lib/ogeEvents.js';
 
 const STYLE_ID = 'oge-trader-highlight-style';
 
@@ -540,8 +544,8 @@ export const installTraderMenuHighlight = () => {
     if (installed) refresh();
   }, SAFETY_POLL_MS);
 
-  document.addEventListener('oge:traderBidPlaced', onBidPlaced);
-  document.addEventListener('oge:traderImportTraded', onImportTraded);
+  document.addEventListener(TRADER_BID_PLACED_EVENT, onBidPlaced);
+  document.addEventListener(TRADER_IMPORT_TRADED_EVENT, onImportTraded);
 
   let prevEnabled = settingsStore.get().traderMenuHighlight;
   const unsubSettings = settingsStore.subscribe((next) => {
@@ -559,8 +563,8 @@ export const installTraderMenuHighlight = () => {
     dispose: () => {
       observer.disconnect();
       clearInterval(safetyPoll);
-      document.removeEventListener('oge:traderBidPlaced', onBidPlaced);
-      document.removeEventListener('oge:traderImportTraded', onImportTraded);
+      document.removeEventListener(TRADER_BID_PLACED_EVENT, onBidPlaced);
+      document.removeEventListener(TRADER_IMPORT_TRADED_EVENT, onImportTraded);
       unsubSettings();
       teardownDom();
       installed = null;

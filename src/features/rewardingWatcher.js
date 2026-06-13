@@ -52,10 +52,10 @@ import { debounce } from '../lib/debounce.js';
 import { gameDayKey } from '../domain/gameDayKey.js';
 import {
   REWARDING_DONE_KEY,
-  DAILY_STATE_CHANGED_EVENT,
   writeDailyState,
   readDailyState,
 } from '../state/dailyActions.js';
+import { DAILY_STATE_CHANGED_EVENT } from '../lib/ogeEvents.js';
 
 /** Selectors local to this feature — only the Rewarding page uses them. */
 const REWARDINGS_SEL = '#rewardings';

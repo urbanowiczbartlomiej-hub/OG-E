@@ -12,8 +12,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   installDiscoveryHook,
   _resetDiscoveryHookForTest,
-  SYSTEM_DISCOVERY_RESULT_EVENT,
 } from '../../src/bridges/discoveryHook.js';
+import { SYSTEM_DISCOVERY_RESULT_EVENT } from '../../src/lib/ogeEvents.js';
 import { _resetObserversForTest } from '../../src/bridges/xhrObserver.js';
 
 const DISCOVERY_URL =

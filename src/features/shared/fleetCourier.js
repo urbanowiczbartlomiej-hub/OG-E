@@ -34,7 +34,13 @@ import {
   isMissionAllowed,
   isFleetCapReached,
 } from '../../domain/fleetPlan.js';
-import { FD_CMD_EVENT, FD_RES_EVENT, FD_SEND_RESULT_EVENT } from '../../lib/fleetProtocol.js';
+import {
+  FD_CMD_EVENT,
+  FD_RES_EVENT,
+  FD_SEND_RESULT_EVENT,
+  CHECK_TARGET_RESULT_EVENT,
+  FLEET_DISPATCHER_EVENT,
+} from '../../lib/ogeEvents.js';
 import { GAME } from '../../lib/gameDom.js';
 import { safeClick, waitFor } from '../../lib/dom.js';
 import {
@@ -254,7 +260,7 @@ const awaitCheckTarget = (target) =>
     const finish = (val) => {
       if (done) return;
       done = true;
-      document.removeEventListener('oge:checkTargetResult', onCt);
+      document.removeEventListener(CHECK_TARGET_RESULT_EVENT, onCt);
       clearTimeout(timer);
       resolve(val);
     };
@@ -271,7 +277,7 @@ const awaitCheckTarget = (target) =>
       }
     };
     const timer = setTimeout(() => finish(null), CHECK_TARGET_TIMEOUT_MS);
-    document.addEventListener('oge:checkTargetResult', onCt);
+    document.addEventListener(CHECK_TARGET_RESULT_EVENT, onCt);
   });
 
 // ─── native step clicks (work from isolated) ───────────────────────────────
@@ -518,7 +524,7 @@ export const installFleetCourier = () => {
   onSnapshot = (e) => {
     snapshot = /** @type {any} */ (/** @type {CustomEvent} */ (e).detail);
   };
-  document.addEventListener('oge:fleetDispatcher', onSnapshot);
+  document.addEventListener(FLEET_DISPATCHER_EVENT, onSnapshot);
   // Seed from a live fleetDispatcher if readable (tests / Firefox Xray).
   if (!snapshot) {
     const fd = /** @type {any} */ (window).fleetDispatcher;
@@ -541,7 +547,7 @@ export const installFleetCourier = () => {
  * @returns {void}
  */
 export const _resetFleetCourierForTest = () => {
-  if (onSnapshot) document.removeEventListener('oge:fleetDispatcher', onSnapshot);
+  if (onSnapshot) document.removeEventListener(FLEET_DISPATCHER_EVENT, onSnapshot);
   onSnapshot = null;
   snapshot = null;
   installed = false;

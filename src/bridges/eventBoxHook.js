@@ -38,6 +38,7 @@
 //   click handler until this event arrives.
 
 import { observeXHR } from './xhrObserver.js';
+import { EVENT_BOX_LOADED_EVENT } from '../lib/ogeEvents.js';
 
 /** Idempotency sentinel — a second install returns the same teardown. */
 /** @type {(() => void) | null} */
@@ -63,7 +64,7 @@ export const installEventBoxHook = () => {
     on: 'load',
     handler: ({ xhr }) => {
       if (xhr.status !== 200) return;
-      document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
+      document.dispatchEvent(new CustomEvent(EVENT_BOX_LOADED_EVENT));
     },
   });
 

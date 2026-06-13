@@ -7,7 +7,7 @@
 // scattering them across the orchestrator.
 
 import { safeLS } from '../../../lib/storage.js';
-import { SYNC_STATUS_EVENT } from '../../../sync/gist.js';
+import { SYNC_STATUS_EVENT, SYNC_FORCE_EVENT } from '../../../lib/ogeEvents.js';
 
 // DOM id of the Sync status row's span (INPUT_ID_PREFIX + 'syncStatus').
 // Inlined rather than imported from controls.js to avoid a sections↔controls
@@ -82,7 +82,7 @@ export const syncSection = {
         // with the real result (times or a one-line error).
         const span = document.getElementById(SYNC_STATUS_SPAN_ID);
         if (span) span.textContent = 'Syncing…';
-        document.dispatchEvent(new CustomEvent('oge:syncForce'));
+        document.dispatchEvent(new CustomEvent(SYNC_FORCE_EVENT));
       },
       buttonDisabledWhen: (s) => !s.cloudSync,
     },
