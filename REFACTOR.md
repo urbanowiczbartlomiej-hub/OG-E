@@ -91,9 +91,8 @@ line) · `[-]` dropped (note why; keep for history).
 
 **Phases 0, 1, 2, 4 are COMPLETE.** Phase 3 `S3` + `S4` done (`S1`/`S2`
 remain). Phase 5 `D1`–`D4` done; `D5` is `[~]` (lifecycle notes landed; the
-archival is blocked on user in-game verification). Branch is green
-(`npm run test` 1390, plus `typecheck` + `lint`). NOTE: these commits are on
-the branch and not yet merged to `main` — last `main` sync was at `d3ade9e`.
+archival is blocked on user in-game verification). All merged to `main` as of
+2026-06-13 — green there (`npm run test` 1390, plus `typecheck` + `lint`).
 
 **Next unblocked task — pick one (all deps met):**
 
