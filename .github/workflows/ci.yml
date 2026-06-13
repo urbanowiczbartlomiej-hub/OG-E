@@ -1,0 +1,34 @@
+# CI — mechanizes the "must be green before commit" bar from CLAUDE.md.
+# Runs the same three gates locally required (test, typecheck, lint) on every
+# push and pull request. No build/deploy/release steps — releases are a
+# separate, deliberate act (see CLAUDE.md).
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # Single source of truth for the Node version (see REFACTOR.md P1).
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test
+        run: npm run test
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint

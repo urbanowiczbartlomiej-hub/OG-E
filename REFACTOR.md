@@ -70,7 +70,7 @@ line) · `[-]` dropped (note why; keep for history).
 
 | Phase | Theme | Tasks | Done |
 |-------|-------|-------|------|
-| 0 | Gates (tooling that locks invariants in) | 2 | 1 / 2 |
+| 0 | Gates (tooling that locks invariants in) | 2 | 2 / 2 |
 | 1 | Invariant violations (highest value) | 3 | 0 / 3 |
 | 2 | Contract unification & dedup | 5 | 0 / 5 |
 | 3 | Structural (parity, pure-core, test isolation) | 4 | 0 / 4 |
@@ -140,7 +140,7 @@ benefits.*
   disable, and removed 8 stale `@typescript-eslint/no-explicit-any` file-level
   disables (that plugin is not configured).
 
-### `[ ]` G2 — CI workflow (test + typecheck + lint)
+### `[x]` G2 — CI workflow (test + typecheck + lint)
 - **Severity:** low · **Size:** S · **Risk:** none · **Deps:** G1
 - **Why:** The "must be green before commit" bar lives only in `CLAUDE.md`
   prose. Mechanize it.
@@ -149,7 +149,11 @@ benefits.*
   `npm run lint`. No deploy/release steps.
 - **Acceptance:** Workflow file present and valid; jobs run all three commands.
   (Can't fully verify without pushing — keep it minimal and standard.)
-- **Done:**
+- **Done:** 2026-06-13 — `chore: add CI workflow (test + typecheck + lint)`.
+  `.github/workflows/ci.yml` on push + pull_request: checkout, setup-node with
+  `node-version-file: .nvmrc` (+ npm cache), `npm ci`, then `npm run test`,
+  `npm run typecheck`, `npm run lint`. No build/deploy/release steps. YAML
+  validated locally; first real run happens on push.
 
 ---
 
