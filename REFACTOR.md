@@ -81,6 +81,33 @@ line) · `[-]` dropped (note why; keep for history).
 
 ---
 
+## Session resume — read this first (2026-06-13)
+
+**Phases 0, 1, 2 are COMPLETE** (Gates, invariant violations, contract
+unification). Phase 4 `P1` and Phase 3 `S4` are also done. Everything is
+merged to `main`; the branch and `main` are green (`npm run test` 1367, plus
+`typecheck` + `lint`).
+
+**Next unblocked task — pick one (all deps met):**
+
+1. **`S3` — extract `scheduler/pure.js`** · *recommended next* · **no deps**,
+   pure-logic refactor + unit tests, no in-game behaviour change. Safest of the
+   three remaining Phase-3 tasks.
+2. **`S1` — `sendExp/domHelpers.js`** (then **`S2`**, which depends on S1).
+   Both touch **behaviour-critical fleetdispatch** — the plan asks for an
+   in-game smoke test (`verify` skill) after S2. Do these when you can verify
+   in-game, not blind.
+
+Then Phase 4 (`P2`/`P3`/`P4`) and Phase 5 (docs DRY, `D1`→`D5`).
+
+**Housekeeping available (Backlog):** now that Phases 0–2 have landed, the
+"compact `REFACTOR.md`'s own task format" item is ripe — a future session may
+collapse the finished tasks' verbose bodies to one-line summaries (the
+per-task **Done:** lines + the Decision log hold the durable record). Left
+undone deliberately so it's a conscious choice, not a side effect.
+
+---
+
 ## Phase 0 — Gates
 
 *Goal: turn the prose invariants in `CLAUDE.md` into mechanical checks so none
@@ -690,3 +717,12 @@ still works where a task touches release inputs.*
   data shapes, dependencies) with no other home. The ~53% comment density is
   expected and valuable. The Phase-5 DRY-for-docs work targets standalone
   `.md`/`.txt` files only — never in-code comments.
+- 2026-06-13 — **Session milestone: Phases 0–2 complete + `S4` + `P1`.** Landed
+  `I1`/`I2`/`I3` (invariant violations), `C1`–`C5` (contract unification), and
+  `S4` (dashboard test-isolation) in one session — each its own commit, gates
+  green throughout (test 1365→1367, typecheck, lint). Merged to `main`. Next
+  unblocked: `S3` (no deps, safe pure-logic refactor) is the recommended pick;
+  `S1`/`S2` touch behaviour-critical fleetdispatch and want an in-game smoke
+  test, so defer until verifiable in-game. See "Session resume" near the top.
+  `C4` chose dispose-only stores; `C2` kept domain-specific test wrappers
+  delegating to one shared `fakeXhr`; `C3` factored `state/universeKey.js`.
