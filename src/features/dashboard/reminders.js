@@ -798,3 +798,18 @@ const cancelAdhocFromDashboard = async (universeId, entryId) => {
   }
   void refreshPreview();
 };
+
+/**
+ * Test-only reset: undo the one-time wiring so a fresh {@link installReminders}
+ * in a new test starts clean instead of short-circuiting on the `wired` guard
+ * (which would otherwise make a second install a silent no-op). Clears the
+ * cached element refs and the universe getter too. `_`-prefixed: not for
+ * production.
+ *
+ * @returns {void}
+ */
+export const _resetRemindersForTest = () => {
+  wired = false;
+  getActiveUniverseId = () => '';
+  for (const k of Object.keys(el)) delete el[k];
+};

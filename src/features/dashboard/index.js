@@ -69,7 +69,7 @@ import {
   triggerClearRemote,
   triggerResetGalaxy,
 } from './io.js';
-import { installReminders } from './reminders.js';
+import { installReminders, _resetRemindersForTest } from './reminders.js';
 import { installRoutes } from './routes.js';
 
 /**
@@ -780,4 +780,43 @@ const wireListeners = () => {
   // here but they're width-agnostic and the render is DOM-only
   // (no storage round-trip), so the cost is negligible.
   window.addEventListener('resize', debounce(() => renderAll(), 150));
+};
+
+/**
+ * Test-only reset: return the module to its just-loaded state so a fresh
+ * {@link installDashboard} in a new test starts clean. Re-inits the
+ * module-level `let`s, drops the DOM refs cached by {@link wireDom} (so a
+ * stale node from a previous test's DOM can't leak in), and resets the child
+ * tab modules. `_`-prefixed: not for production.
+ *
+ * @returns {void}
+ */
+export const _resetDashboardForTest = () => {
+  selectedUniverseId = '';
+  remindersApi = null;
+  routesApi = null;
+  history = [];
+  scans = {};
+  targetPositions = parseTargetPositions(DEFAULT_COL_POSITIONS);
+  weightsDirty = false;
+  // DOM refs filled by wireDom(); wireDom re-resolves them on the next
+  // install, but null them now so nothing reads a detached node in between.
+  statsEl =
+    chartEl =
+    countInfoEl =
+    posFilter =
+    universeSelect =
+    scansContainer =
+    importStatusEl =
+    freePosInput =
+    freeGapsSelect =
+    freeStrategySelect =
+    freeExpansionSelect =
+    freeAllyInput =
+    freeContainer =
+    freeCountInfoEl =
+      /** @type {any} */ (undefined);
+  for (const k of Object.keys(weightSliders)) delete weightSliders[/** @type {keyof typeof weightSliders} */ (k)];
+  for (const k of Object.keys(weightValues)) delete weightValues[/** @type {keyof typeof weightValues} */ (k)];
+  _resetRemindersForTest();
 };

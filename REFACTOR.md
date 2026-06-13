@@ -73,7 +73,7 @@ line) · `[-]` dropped (note why; keep for history).
 | 0 | Gates (tooling that locks invariants in) | 2 | 2 / 2 |
 | 1 | Invariant violations (highest value) | 3 | 3 / 3 |
 | 2 | Contract unification & dedup | 5 | 5 / 5 |
-| 3 | Structural (parity, pure-core, test isolation) | 4 | 0 / 4 |
+| 3 | Structural (parity, pure-core, test isolation) | 4 | 1 / 4 |
 | 4 | Low-cost polish | 4 | 1 / 4 |
 | 5 | Documentation reduction (DRY for docs) | 5 | 0 / 5 |
 
@@ -444,7 +444,7 @@ benefits.*
   delegates decisions; behavior unchanged (existing scheduler tests green).
 - **Done:**
 
-### `[ ]` S4 — Dashboard test-isolation: resets
+### `[x]` S4 — Dashboard test-isolation: resets
 - **Severity:** med · **Size:** S · **Risk:** low · **Deps:** none
 - **Why:** `dashboard/index.js:185` `installDashboard` holds ~10 module-level
   `let`s + cached element refs (369-385) but ships no `_resetDashboardForTest`.
@@ -456,7 +456,19 @@ benefits.*
   Consider `dashboard/routes.js` too (currently relies on DOM presence).
 - **Acceptance:** Re-installing the dashboard in a test starts clean; add a
   test asserting double-install idempotency. Tests green.
-- **Done:**
+- **Done:** 2026-06-13 — `test(dashboard): add reset affordances + install
+  idempotency coverage`. Added `_resetRemindersForTest` to `dashboard/
+  reminders.js` (clears `wired`, the `el` ref cache, and `getActiveUniverseId`)
+  and `_resetDashboardForTest` to `dashboard/index.js` (re-inits the ~7
+  module-level `let`s, nulls the wireDom-cached DOM refs + `weightSliders`/
+  `weightValues`, and delegates to the reminders reset). New
+  `test/features/dashboard/remindersInstall.test.js` proves install wires the
+  copy-topic listener exactly once, a second install is a no-op while wired,
+  and the reset re-opens the gate so a fresh install re-wires (the exact
+  silent-no-op the reset prevents). **`dashboard/routes.js`: nothing to reset**
+  — it has no module-level mutable state / `wired` guard (rebuilds DOM each
+  `installRoutes` call, relies on DOM presence). +2 tests (1367 total);
+  lint/typecheck green.
 
 ---
 
