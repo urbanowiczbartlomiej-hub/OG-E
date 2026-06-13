@@ -1,6 +1,6 @@
 // @ts-check
 
-// Impure DOM readers + fleet-step drivers for the fsCollect orchestrator.
+// Impure DOM readers for the fsCollect orchestrator.
 // Everything that touches `document` / `location` lives here so `pure.js`
 // stays Node-testable. Selectors used by ONLY this feature live here (per
 // the gameDom invariant — shared ones like COORDS_ORIGIN/COORDS_DEST come
@@ -14,36 +14,19 @@
 // while on the staging moon" needs (it can fire from any page). When the
 // meta tags are missing we fall back to the highlighted planet-row coords
 // (type assumed planet) so coord lookups still work.
-//
-// # Step detection
-//
-// OGame's fleetdispatch is a two-step form. We detect step 2 by the
-// presence of the native `#dispatchFleet` button — the same signal
-// `features/sendExp` keys on. On step 1 only `#continueToFleet2` is live.
 
-import { safeClick, waitFor } from '../../lib/dom.js';
 import { GAME, ACTIVE_PLANET_CLASS } from '../../lib/gameDom.js';
 import { TARGET_PLANET, TARGET_MOON } from '../../domain/rules.js';
 import { coordKey } from './pure.js';
 
 // ─── Feature-local selectors / ids ──────────────────────────────────────
 
-// "select all ships" (GAME.FD_SEND_ALL), "load all resources"
-// (GAME.FD_ALL_RESOURCES), and the step-2 "dispatch fleet" button
-// (GAME.FD_DISPATCH) are shared fleetdispatch controls — sourced from
-// lib/gameDom.js, not re-hardcoded here.
-/** Native "continue to step 2" control. */
-const ID_CONTINUE = 'continueToFleet2';
 /** Inbound deployment fleet rows in the event ticker. */
 const SEL_DEPLOY_ROWS =
   '#eventContent tr.eventFleet[data-mission-type="4"][data-return-flight="false"]';
 /** OGame per-page meta tags for the active body. */
 const SEL_META_COORDS = 'meta[name="ogame-planet-coordinates"]';
 const SEL_META_TYPE = 'meta[name="ogame-planet-type"]';
-
-/** waitFor budget for the step-2 panel to render after "continue". */
-const STEP2_TIMEOUT_MS = 8000;
-const STEP2_INTERVAL_MS = 100;
 
 /**
  * @typedef {import('../../state/fsRoutes.js').TargetCoord} TargetCoord
@@ -192,37 +175,3 @@ export const findNextCollectPlanetCp = (collectedOriginKeys, targetCoordKey) => 
   }
   return null;
 };
-
-// ─── Fleet-step drivers ─────────────────────────────────────────────────
-
-/**
- * Whether the fleetdispatch form is on step 2 (the native dispatch button
- * is present). Mirrors `features/sendExp`'s step-2 signal.
- *
- * @returns {boolean}
- */
-export const isStep2 = () => document.querySelector(GAME.FD_DISPATCH) !== null;
-
-/** Click "select all ships" (step 1). No-op when absent. @returns {void} */
-export const selectAllShips = () => safeClick(document.querySelector(GAME.FD_SEND_ALL));
-
-/** Click "continue to step 2". No-op when absent. @returns {void} */
-export const clickContinue = () => safeClick(document.getElementById(ID_CONTINUE));
-
-/** Click "load all resources" (step 2). No-op when absent. @returns {void} */
-export const loadAllResources = () => safeClick(document.querySelector(GAME.FD_ALL_RESOURCES));
-
-/** Click the native dispatch button (step 2). No-op when absent. @returns {void} */
-export const clickDispatch = () => safeClick(document.querySelector(GAME.FD_DISPATCH));
-
-/**
- * Wait until the step-2 dispatch button appears (after a "continue"
- * click). Resolves `true` when it shows, `null` on timeout.
- *
- * @returns {Promise<true | null>}
- */
-export const waitForStep2 = () =>
-  waitFor(() => (document.querySelector(GAME.FD_DISPATCH) ? true : null), {
-    timeoutMs: STEP2_TIMEOUT_MS,
-    intervalMs: STEP2_INTERVAL_MS,
-  });
