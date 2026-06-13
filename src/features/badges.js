@@ -144,7 +144,7 @@ const trim = (s) => (s || '').replace(/\s+/g, ' ').trim();
  * @param {string | null | undefined} s
  * @returns {string}
  */
-const trimCoords = (s) => trim(s).replace(/[\s\[\]]/g, '');
+const trimCoords = (s) => trim(s).replace(/[\s[\]]/g, '');
 
 /**
  * Parse a ship-count cell. OGame uses non-breaking spaces and dots as

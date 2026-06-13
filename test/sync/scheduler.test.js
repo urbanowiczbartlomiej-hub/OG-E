@@ -78,21 +78,6 @@ import { pickSyncedValues } from '../../src/sync/settingsSync.js';
 const scan = (scannedAt) => ({ scannedAt, positions: {} });
 
 /**
- * Build a compact {@link ColonyEntry} for test fixtures. Only `cp`
- * matters to the merger; the rest is stubbed to fixed values.
- *
- * @param {number} cp
- * @returns {ColonyEntry}
- */
-const entry = (cp) => ({
-  cp,
-  fields: 200,
-  coords: '[1:1:1]',
-  position: 1,
-  timestamp: 1_700_000_000_000,
-});
-
-/**
  * Advance fake timers and let queued microtasks settle. The
  * scheduler's debounced callback resolves a promise internally; we
  * need both the timer tick AND the microtask queue flush for tests

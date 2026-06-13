@@ -10,7 +10,6 @@
 // Node environment — no DOM needed; the storage module is fully stubbed.
 //
 // @ts-check
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 

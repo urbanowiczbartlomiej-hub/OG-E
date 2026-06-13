@@ -7,7 +7,6 @@
 // every chromeStore call is an assertable vi.fn. Node env — no DOM.
 //
 // @ts-check
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 

@@ -12,7 +12,7 @@
 // the prototype either), so we reset the observer registry and the
 // hook's idempotency sentinel between tests.
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   installGalaxyHook,
   _resetGalaxyHookForTest,

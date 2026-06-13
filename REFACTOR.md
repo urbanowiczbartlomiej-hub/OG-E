@@ -70,7 +70,7 @@ line) · `[-]` dropped (note why; keep for history).
 
 | Phase | Theme | Tasks | Done |
 |-------|-------|-------|------|
-| 0 | Gates (tooling that locks invariants in) | 2 | 0 / 2 |
+| 0 | Gates (tooling that locks invariants in) | 2 | 1 / 2 |
 | 1 | Invariant violations (highest value) | 3 | 0 / 3 |
 | 2 | Contract unification & dedup | 5 | 0 / 5 |
 | 3 | Structural (parity, pure-core, test isolation) | 4 | 0 / 4 |
@@ -87,7 +87,7 @@ line) · `[-]` dropped (note why; keep for history).
 of the fixes below can silently regress. Do this first — every later phase
 benefits.*
 
-### `[ ]` G1 — ESLint flat config enforcing the dependency direction
+### `[x]` G1 — ESLint flat config enforcing the dependency direction
 - **Severity:** high · **Size:** M · **Risk:** low · **Deps:** none
 - **Why:** The layering invariants (no feature→feature, bridge→lib-only,
   domain has no DOM/chrome) are honor-system today. A linter makes them
@@ -114,7 +114,31 @@ benefits.*
 - **Note for executor:** if `import/no-restricted-paths` proves fiddly with
   flat config, `eslint-plugin-boundaries` is an acceptable alternative — pick
   whichever expresses the zones cleanly; document the choice in a config comment.
-- **Done:**
+- **Done:** 2026-06-13 — `chore: add ESLint flat config enforcing layering`.
+  `eslint.config.mjs` with `eslint-plugin-import` `no-restricted-paths` zones
+  (domain, lib, and programmatic per-feature cross-feature zones built from the
+  `src/features` listing) + `no-restricted-globals` for `domain/**`. Pinned
+  `eslint@^9` (eslint-plugin-import peer maxes at 9). Notes for later tasks:
+  (1) **bridges→state zone deferred to I1** as planned — no `bridges` zone exists
+  yet, so I3's "bless bridges→domain" is automatically satisfied (nothing
+  restricts bridges today). (2) `except` in `no-restricted-paths` is resolved
+  **relative to `from`**, not cwd — feature zones use `['./<name>', './shared']`.
+  (3) `no-redeclare` is set `{ builtinGlobals: false }` so the repo's per-file
+  `/* global … */` annotations don't collide with our configured browser/
+  webextension globals. (4) **Enabled `no-console` for `src/**`** (beyond the
+  listed baseline): the codebase was already littered with
+  `eslint-disable-next-line no-console` for a never-configured rule, so turning
+  it on makes those opt-outs meaningful and routes logging through `lib/logger`
+  (its single `console[level]` sink got the one sanctioned disable). Tests/
+  scripts use console freely. Small lint-clean fixes rode along (all
+  behavior-preserving): removed dead imports/vars (`TARGET_PLANET`, `coordKey`,
+  `sysDist`, test `vi`/`beforeEach`/`afterEach`/`BASE`/`entry`), an unnecessary
+  regex escape in `badges.js`/`readabilityBoost.test.js`, trimmed unused
+  `/* global */` names (chrome/browser/CustomEvent are read via `globalThis`,
+  not as bare idents), added a `// falls through` marker to the intentional
+  `sendLifeform` switch fall-through, dropped a stale `no-constant-condition`
+  disable, and removed 8 stale `@typescript-eslint/no-explicit-any` file-level
+  disables (that plugin is not configured).
 
 ### `[ ]` G2 — CI workflow (test + typecheck + lint)
 - **Severity:** low · **Size:** S · **Risk:** none · **Deps:** G1
@@ -539,6 +563,12 @@ still works where a task touches release inputs.*
   `CLAUDE.md` quotes `amo-reviewer-notes.txt` verbatim. CHANGELOG 1485L/49
   versions; FEEDBACK-PLAN 987L at 52/62 REVIEW. Principle adopted: one source of
   truth per topic, others link; plan docs have a lifecycle.
+- 2026-06-13 — G1 landed. Chose `eslint-plugin-import` (not
+  `eslint-plugin-boundaries`) for the zones. Pinned `eslint@^9` (plugin-import
+  peer caps at 9). **Enabled `no-console` for `src/**`** as part of G1 even
+  though it's beyond the listed baseline rules — the repo already carried
+  `no-console` disable directives for an unconfigured rule, so enabling it makes
+  them meaningful and enforces the `lib/logger` sink. Tests/scripts are exempt.
 - 2026-06-13 — **In-code comments are off-limits to reduction (user-confirmed).**
   OG-E depends entirely on a game with no available source or docs; the
   scattered comments are reverse-engineered knowledge (game processes, goals,

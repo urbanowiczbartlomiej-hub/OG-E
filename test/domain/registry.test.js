@@ -8,7 +8,7 @@
 // the production default of `Date.now()` is actually what gets applied
 // when the caller omits the argument.
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   pruneRegistry,
   dedupeEntry,

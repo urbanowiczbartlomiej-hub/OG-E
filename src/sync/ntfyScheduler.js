@@ -146,8 +146,6 @@ export const NTFY_MIN_DELAY_SEC = 10;
  */
 export const NTFY_MAX_DELAY_SEC = 3 * 24 * 60 * 60;
 
-/* global chrome */
-
 /**
  * GitHub raw ref the notification icons are pinned to: the running
  * extension's version tag (`vX.Y.Z`) so the icon a push points at is

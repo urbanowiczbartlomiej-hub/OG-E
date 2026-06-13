@@ -249,7 +249,7 @@ describe('readabilityBoost', () => {
     // No universal-child rule cascading colour into descendants — if
     // one reappears, the red "Ekspedycje: 14/14" span loses its tint.
     expect(css).not.toMatch(
-      /a\.ago_movement\.tooltip[^\{]*\s+\*\s*\{/,
+      /a\.ago_movement\.tooltip[^{]*\s+\*\s*\{/,
     );
   });
 });

@@ -15,7 +15,7 @@
 // @see ../../domain/fsRoutes.js — coord keys + routes DSL (shared).
 // @see ./domHelpers.js — impure readers producing the `inFlightKeys` set.
 
-import { coordKey, coordTypeKey } from '../../domain/fsRoutes.js';
+import { coordTypeKey } from '../../domain/fsRoutes.js';
 
 // Re-export the shared domain helpers so existing importers
 // (`./index.js`, tests) keep importing from this module.

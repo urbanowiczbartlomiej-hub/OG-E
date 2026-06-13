@@ -24,7 +24,7 @@
 // async and structured-clone-safe. Neither mirrors the other's data —
 // callers pick the right substrate for each piece of state.
 
-/* global localStorage, chrome, browser */
+/* global localStorage */
 
 /**
  * Synchronous localStorage helper. Every method swallows thrown errors

@@ -102,6 +102,7 @@ const push = (level, args) => {
     entries.splice(0, entries.length - MAX_ENTRIES);
   }
 
+  // eslint-disable-next-line no-console -- this is the project's single sanctioned console sink
   console[level](PREFIX, ...args);
 };
 

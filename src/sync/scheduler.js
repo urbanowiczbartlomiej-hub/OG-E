@@ -83,7 +83,7 @@
 //
 // @ts-check
 
-/* global document, CustomEvent */
+/* global document */
 
 import { scansStore } from '../state/scans.js';
 import { historyStore } from '../state/history.js';

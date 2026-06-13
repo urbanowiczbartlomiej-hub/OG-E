@@ -36,7 +36,6 @@ import {
 } from '../../domain/fsRoutes.js';
 import { sortBodies } from '../../domain/bodies.js';
 import {
-  TARGET_PLANET,
   TARGET_MOON,
   SHIP_SMALL_CARGO,
   SHIP_LARGE_CARGO,

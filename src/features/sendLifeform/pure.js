@@ -32,7 +32,7 @@
 // @see ./domHelpers.js — DOM readers + the discover-button click.
 // @see ../sendCol/pure.js — the parallel colonization pure core.
 
-import { sysDist, buildGalaxyOrder } from '../../domain/positions.js';
+import { buildGalaxyOrder } from '../../domain/positions.js';
 import { COL_MAX_SYSTEM, COL_MAX_GALAXY } from '../../domain/rules.js';
 
 /**

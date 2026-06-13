@@ -249,6 +249,7 @@ const onClick = () => {
       // The game's discover control is disabled (all fleet slots used /
       // other game-side blocker) — a click could not send anything. Just
       // repaint; the 1 Hz ticker lifts the state when the game does.
+      // falls through
     case 'allDone':
       paint(render(ctx));
       return;

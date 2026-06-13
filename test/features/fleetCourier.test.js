@@ -6,7 +6,6 @@
 // then drive the two-tap surface (select → dispatch) and assert outcomes.
 //
 // @ts-check
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {

@@ -8,7 +8,6 @@
 // covered by their own unit tests; here we prove the wiring.
 //
 // @ts-check
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {

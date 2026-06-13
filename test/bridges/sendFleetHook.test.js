@@ -14,7 +14,7 @@
 // the hook's idempotency sentinel, and localStorage so tests do not
 // leak into each other.
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   installSendFleetHook,
   _resetSendFleetHookForTest,

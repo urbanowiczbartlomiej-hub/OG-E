@@ -5,7 +5,6 @@
 // oge:fd:res replies + that the right controller methods were called.
 //
 // @ts-check
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {

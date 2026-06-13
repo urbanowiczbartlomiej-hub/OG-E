@@ -23,8 +23,6 @@ import {
   SHIP_PATHFINDER,
 } from '../../src/domain/rules.js';
 
-const BASE = 'https://s163-pl.ogame.gameforge.com/game/index.php';
-
 /**
  * @param {number} galaxy
  * @param {number} system
