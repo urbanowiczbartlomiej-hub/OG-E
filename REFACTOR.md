@@ -89,22 +89,23 @@ line) · `[-]` dropped (note why; keep for history).
 
 ## Session resume — read this first (2026-06-13)
 
-**Phases 0, 1, 2 are COMPLETE** (Gates, invariant violations, contract
-unification). Phase 3 `S3` + `S4` and Phase 4 `P1` are also done. Everything is
-merged to `main`; the branch and `main` are green (`npm run test` 1388, plus
-`typecheck` + `lint`).
+**Phases 0, 1, 2, 4 are COMPLETE.** Phase 3 `S3` + `S4` done (`S1`/`S2`
+remain). Phase 5 `D1`–`D4` done; `D5` is `[~]` (lifecycle notes landed; the
+archival is blocked on user in-game verification). Branch is green
+(`npm run test` 1390, plus `typecheck` + `lint`). NOTE: these commits are on
+the branch and not yet merged to `main` — last `main` sync was at `d3ade9e`.
 
 **Next unblocked task — pick one (all deps met):**
 
-1. **Phase 4 `P2`/`P4`** · *recommended next* · **no deps**, small, no in-game
-   behaviour change (`P2` ntfy missing-id logging; `P4` `stampFsRoutesChanged`
-   flush). Safe to do blind. (`P3` rename depends on `C1`, which is done.)
-2. **Phase 5 docs DRY** (`D1`→`D5`, `D1` first — it defines D2–D5). No code
-   change; pure docs work.
-3. **`S1` — `sendExp/domHelpers.js`** (then **`S2`**, which depends on S1).
+1. **`S1` — `sendExp/domHelpers.js`** (then **`S2`**, which depends on S1).
    Both touch **behaviour-critical fleetdispatch** — the plan asks for an
    in-game smoke test (`verify` skill) after S2. Do these when you can verify
-   in-game, not blind.
+   in-game, not blind. **These are the only substantive tasks left.**
+2. **`D5` archival** — once the user has verified the FEEDBACK-PLAN REVIEW
+   items in-game and a release ships, move `docs/FEEDBACK-PLAN.md` (and
+   eventually this file) to `docs/plans/`.
+3. **Backlog housekeeping** — e.g. compact this file's finished-task bodies
+   to one-liners (the **Done:** lines + Decision log hold the durable record).
 
 **Housekeeping available (Backlog):** now that Phases 0–2 have landed, the
 "compact `REFACTOR.md`'s own task format" item is ripe — a future session may
