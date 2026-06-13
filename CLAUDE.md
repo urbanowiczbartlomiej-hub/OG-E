@@ -6,7 +6,9 @@ This section is deliberately about *rules that must stay true*, not a
 description of what each file does (descriptions rot; invariants don't).
 If a change would violate one of these, that's a design smell — stop and
 reconsider, don't paper over it. The layering below is the reason this
-extension stays testable and survives OGame updates.
+extension stays testable and survives OGame updates. It is mechanically
+enforced by ESLint (`eslint.config.mjs`; see Phase 0/G1) — not
+honor-system — so `npm run lint` catches a layering violation directly.
 
 **Dependency direction (one-way, no cycles):**
 
@@ -103,17 +105,13 @@ The real release (the `--` forwards the version to the script):
 npm run release -- 1.10.0
 ```
 
-**To PREVIEW, do NOT pass a `--flag` through npm.** This npm swallows
-every `--flag` as its own config even after `--` (you'll see "Unknown env
-config …"), so `npm run release -- 1.10.0 --preview` / `--dry-run` reaches
-the script with NO flag and performs a REAL release. This already bit us —
-a "dry-run" published 1.9.1. Preview one of these two ways instead:
+**To PREVIEW, do NOT pass a `--flag` through npm.** This npm swallows every
+`--flag` as its own config even after `--`, so `npm run release -- 1.10.0
+--preview` reaches the script with NO flag and performs a REAL release —
+this already bit us (a "dry-run" published 1.9.1). Preview by running the
+script directly so the flag actually arrives:
 ```
-# robust: run the script directly so the flag actually arrives
 node --env-file-if-exists=.env scripts/release.mjs 1.10.0 --preview
-
-# or via npm using the env escape hatch (PowerShell shown)
-$env:RELEASE_PREVIEW=1; npm run release -- 1.10.0; Remove-Item Env:RELEASE_PREVIEW
 ```
 
 The script enforces the two things that have been forgotten before:
@@ -124,21 +122,9 @@ pushed tag pointing at a non-existent release.
 
 ## AMO note fields (sent automatically by the script)
 
-- **Notes to Reviewer** (internal) ← `amo-reviewer-notes.txt`, verbatim.
-  Stable boilerplate; edit that file if build steps or permissions change:
-
-  ```
-  Build instructions are in REVIEWERS.md inside source.zip (Node >= 20):
-    npm install
-    npm run build:prod
-  The resulting dist/ matches the uploaded extension exactly.
-
-  Permissions: storage. Host permissions: *.ogame.gameforge.com (content
-  scripts), api.github.com (opt-in gist sync), ntfy.sh (opt-in fleet-landing
-  reminders). All outbound traffic is user-initiated and goes only to those
-  hosts; no telemetry, no analytics. See PRIVACY.md in source.zip for detail.
-  ```
-
+- **Notes to Reviewer** (internal) ← `amo-reviewer-notes.txt`, sent verbatim.
+  That file IS the source of truth (the script reads it) — edit it there when
+  build steps or permissions change; don't restate its contents here.
 - **Release notes** (public) ← the `## [X.Y.Z]` section of `CHANGELOG.md`,
   verbatim. No separate short-form list is maintained any more.
 
@@ -148,7 +134,7 @@ pushed tag pointing at a non-existent release.
   user-visible features; major (`x.0.0`) for breaking changes to
   stored data formats or required AGR version.
 - `npm run test` must be green before any commit that touches `src/`.
-- `npm run typecheck` must exit 0 before any commit.
+- `npm run typecheck` and `npm run lint` must both exit 0 before any commit.
 - Follow Conventional Commits: `fix:` / `feat:` / `refactor:` /
   `chore:` / `test:` / `docs:`.
 - **Documentation hygiene (DRY).** Each topic has ONE source of truth;

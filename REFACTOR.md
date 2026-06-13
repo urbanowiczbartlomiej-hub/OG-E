@@ -75,7 +75,7 @@ line) · `[-]` dropped (note why; keep for history).
 | 2 | Contract unification & dedup | 5 | 5 / 5 |
 | 3 | Structural (parity, pure-core, test isolation) | 4 | 2 / 4 |
 | 4 | Low-cost polish | 4 | 4 / 4 |
-| 5 | Documentation reduction (DRY for docs) | 5 | 2 / 5 |
+| 5 | Documentation reduction (DRY for docs) | 5 | 3 / 5 |
 
 > Update the "Done" column whenever a task flips to `[x]`.
 
@@ -680,7 +680,18 @@ still works where a task touches release inputs.*
 - **Acceptance:** `CLAUDE.md` is meaningfully shorter with **no invariant
   lost**; every remaining rule is load-bearing. (Sanity: line count drops; the
   Architecture & invariants section is untouched in substance.)
-- **Done:**
+- **Done:** 2026-06-13 — `docs: compact CLAUDE.md (AMO pointer, preview trim)
+  (D3)`. −14 lines net (12 insertions / 26 deletions). (1) Replaced the
+  ~11-line verbatim AMO reviewer-note boilerplate with a 3-line pointer at
+  `amo-reviewer-notes.txt` (that file is the source of truth — the script reads
+  it; per D1's no-restate rule). (2) Trimmed the release-`--preview` footgun to
+  the essential warning + the ONE working command (dropped the PowerShell
+  env-escape-hatch alternative), keeping the "why" (the 1.9.1 accident). (3)
+  Annotated the dependency-direction block as mechanically ESLint-enforced (G1)
+  rather than honor-system, and folded `npm run lint` into the General-rules
+  commit gate (it was a Phase-0 addition the gate line hadn't caught up to). The
+  **Architecture & invariants** prose is untouched in substance — no invariant
+  lost. No code change.
 
 ### `[ ]` D4 — Archive old CHANGELOG entries
 - **Severity:** low · **Size:** S · **Deps:** none
