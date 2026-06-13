@@ -40,7 +40,7 @@
 import { createStore } from '../lib/createStore.js';
 import { persist } from '../lib/persist.js';
 import { chromeStore } from '../lib/storage.js';
-import { parseUniverseId } from '../lib/universeId.js';
+import { currentUniverseKey } from './universeKey.js';
 
 /**
  * One observation of a newly-colonized planet, captured the first time
@@ -114,11 +114,7 @@ export const historyKeyFor = (universeId) => `${universeId}:${HISTORY_KEY_BASE}`
  *
  * @returns {string}
  */
-const currentHistoryKey = () => {
-  if (typeof location === 'undefined') return HISTORY_KEY_BASE;
-  const id = parseUniverseId(location.host);
-  return id ? historyKeyFor(id) : HISTORY_KEY_BASE;
-};
+const currentHistoryKey = () => currentUniverseKey(HISTORY_KEY_BASE, historyKeyFor);
 
 /**
  * The colony-history store.

@@ -30,9 +30,9 @@
 import { createStore } from '../lib/createStore.js';
 import { persist } from '../lib/persist.js';
 import { chromeStore } from '../lib/storage.js';
-import { parseUniverseId } from '../lib/universeId.js';
 import { FS_REDIRECT_KEY } from '../lib/storageKeys.js';
 import { migrateFsRoutes } from '../domain/fsRoutes.js';
+import { currentUniverseKey } from './universeKey.js';
 
 /**
  * The coordinate / route shapes live in `domain/fsRoutes.js` (pure,
@@ -118,11 +118,7 @@ export const fsRoutesTsKeyFor = (universeId) => `${universeId}:${FS_ROUTES_TS_BA
  *
  * @returns {string}
  */
-const currentFsRoutesKey = () => {
-  if (typeof location === 'undefined') return FS_ROUTES_KEY_BASE;
-  const id = parseUniverseId(location.host);
-  return id ? fsRoutesKeyFor(id) : FS_ROUTES_KEY_BASE;
-};
+const currentFsRoutesKey = () => currentUniverseKey(FS_ROUTES_KEY_BASE, fsRoutesKeyFor);
 
 /** Write-through debounce window (config edits are infrequent bursts). */
 const DEBOUNCE_MS = 200;
@@ -230,11 +226,8 @@ export const flushFsRoutesStore = () =>
  *
  * @returns {Promise<void>}
  */
-export const stampFsRoutesChanged = () => {
-  if (typeof location === 'undefined') return chromeStore.set(FS_ROUTES_TS_BASE, Date.now());
-  const id = parseUniverseId(location.host);
-  return chromeStore.set(id ? fsRoutesTsKeyFor(id) : FS_ROUTES_TS_BASE, Date.now());
-};
+export const stampFsRoutesChanged = () =>
+  chromeStore.set(currentUniverseKey(FS_ROUTES_TS_BASE, fsRoutesTsKeyFor), Date.now());
 
 /**
  * Tear down the persist wiring. Idempotent.

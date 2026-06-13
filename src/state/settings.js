@@ -48,7 +48,7 @@
 
 import { createStore } from '../lib/createStore.js';
 import { chromeStore, safeLS } from '../lib/storage.js';
-import { parseUniverseId } from '../lib/universeId.js';
+import { currentUniverseKey } from './universeKey.js';
 
 /**
  * Shared prefix for every localStorage key this module owns. Kept exported
@@ -472,11 +472,8 @@ export const colPositionsKeyFor = (universeId) =>
  *
  * @returns {string}
  */
-const currentColPositionsKey = () => {
-  if (typeof location === 'undefined') return COL_POSITIONS_KEY_BASE;
-  const id = parseUniverseId(location.host);
-  return id ? colPositionsKeyFor(id) : COL_POSITIONS_KEY_BASE;
-};
+const currentColPositionsKey = () =>
+  currentUniverseKey(COL_POSITIONS_KEY_BASE, colPositionsKeyFor);
 
 /**
  * Active install handle, or `null` when the mirror is not installed.

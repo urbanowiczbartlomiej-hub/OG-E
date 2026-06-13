@@ -41,7 +41,7 @@
 import { createStore } from '../lib/createStore.js';
 import { persist } from '../lib/persist.js';
 import { chromeStore } from '../lib/storage.js';
-import { parseUniverseId } from '../lib/universeId.js';
+import { currentUniverseKey } from './universeKey.js';
 
 /**
  * The body shape lives in `domain/bodies.js` (pure, shared with the
@@ -83,11 +83,7 @@ export const bodiesKeyFor = (universeId) => `${universeId}:${BODIES_KEY_BASE}`;
  *
  * @returns {string}
  */
-const currentBodiesKey = () => {
-  if (typeof location === 'undefined') return BODIES_KEY_BASE;
-  const id = parseUniverseId(location.host);
-  return id ? bodiesKeyFor(id) : BODIES_KEY_BASE;
-};
+const currentBodiesKey = () => currentUniverseKey(BODIES_KEY_BASE, bodiesKeyFor);
 
 /**
  * The empty initial inventory. A fresh object each call so callers can't

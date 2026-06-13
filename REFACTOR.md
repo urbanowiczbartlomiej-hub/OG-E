@@ -72,7 +72,7 @@ line) · `[-]` dropped (note why; keep for history).
 |-------|-------|-------|------|
 | 0 | Gates (tooling that locks invariants in) | 2 | 2 / 2 |
 | 1 | Invariant violations (highest value) | 3 | 3 / 3 |
-| 2 | Contract unification & dedup | 5 | 1 / 5 |
+| 2 | Contract unification & dedup | 5 | 2 / 5 |
 | 3 | Structural (parity, pure-core, test isolation) | 4 | 0 / 4 |
 | 4 | Low-cost polish | 4 | 1 / 4 |
 | 5 | Documentation reduction (DRY for docs) | 5 | 0 / 5 |
@@ -316,7 +316,7 @@ benefits.*
   `test/bridges/*`. All bridge tests import the shared helper and pass.
 - **Done:**
 
-### `[ ]` C3 — Factor the per-universe key resolver
+### `[x]` C3 — Factor the per-universe key resolver
 - **Severity:** low · **Size:** S · **Risk:** low · **Deps:** none
 - **Why:** `currentScansKey` (scans.js:120), `currentBodiesKey`,
   `currentFsRoutesKey`, `currentHistoryKey`, `currentColPositionsKey`
@@ -327,7 +327,18 @@ benefits.*
   five call sites to one-liners.
 - **Acceptance:** One implementation of the fallback; five call sites use it.
   Tests + typecheck green.
-- **Done:**
+- **Done:** 2026-06-13 — `refactor(state): factor the per-universe key resolver`.
+  New `state/universeKey.js` exports `currentUniverseKey(baseKey, keyForId)`
+  with the single `typeof location==='undefined' → base | parse → keyFor(id) |
+  base` fallback. Collapsed `currentScansKey` / `currentBodiesKey` /
+  `currentFsRoutesKey` / `currentHistoryKey` / `currentColPositionsKey` to
+  one-liners; also collapsed the **6th** identical instance —
+  `stampFsRoutesChanged`'s inline timestamp-key resolution — which let
+  `parseUniverseId`'s import drop from all five store modules (it now lives only
+  in `universeKey.js`; the remaining mentions are `{@link}` JSDoc). Put the
+  helper in `state/` not `lib/universeId.js` because it reads the `location`
+  global and that file's contract is "no DOM access". lint/typecheck/test (1365)
+  green; no behavior change.
 
 ### `[ ]` C4 — Unify the state test-reset convention
 - **Severity:** low · **Size:** S · **Risk:** low · **Deps:** none

@@ -38,8 +38,8 @@
 import { createStore } from '../lib/createStore.js';
 import { persist } from '../lib/persist.js';
 import { chromeStore } from '../lib/storage.js';
-import { parseUniverseId } from '../lib/universeId.js';
 import { GALAXY_SCANNED_EVENT } from '../lib/ogeEvents.js';
+import { currentUniverseKey } from './universeKey.js';
 import { mergeScanResult } from '../domain/scans.js';
 import { registryStore } from './registry.js';
 
@@ -118,11 +118,7 @@ export const scansKeyFor = (universeId) => `${universeId}:${SCANS_KEY_BASE}`;
  *
  * @returns {string}
  */
-const currentScansKey = () => {
-  if (typeof location === 'undefined') return SCANS_KEY_BASE;
-  const id = parseUniverseId(location.host);
-  return id ? scansKeyFor(id) : SCANS_KEY_BASE;
-};
+const currentScansKey = () => currentUniverseKey(SCANS_KEY_BASE, scansKeyFor);
 
 /**
  * Write-through debounce window. See file header for the "collapse a
