@@ -75,7 +75,7 @@ line) · `[-]` dropped (note why; keep for history).
 | 2 | Contract unification & dedup | 5 | 5 / 5 |
 | 3 | Structural (parity, pure-core, test isolation) | 4 | 2 / 4 |
 | 4 | Low-cost polish | 4 | 4 / 4 |
-| 5 | Documentation reduction (DRY for docs) | 5 | 3 / 5 |
+| 5 | Documentation reduction (DRY for docs) | 5 | 4 / 5 |
 
 > Update the "Done" column whenever a task flips to `[x]`.
 
@@ -704,7 +704,17 @@ still works where a task touches release inputs.*
 - **Acceptance:** Active `CHANGELOG.md` is short; archive holds the rest;
   `npm run release` preview still finds the current-version section (verify
   with the preview command from `CLAUDE.md`, NOT a real release).
-- **Done:**
+- **Done:** 2026-06-13 — `docs: archive pre-1.10.0 CHANGELOG entries (D4)`.
+  Split at the pre-1.10.0 cutoff: active `CHANGELOG.md` 1485 → 530 lines (keeps
+  `[Unreleased]` + 1.17.0 … 1.10.0, 18 versions) with a footer link to the
+  archive; new `docs/CHANGELOG-archive.md` (965 lines) holds 1.9.3 … 1.0.0 plus
+  a back-link header explaining why archiving is safe (the release script only
+  reads the current `## [X.Y.Z]` section). Verified the script's
+  `extractChangelogSection` regex still locates current sections (1.17.0 / 1.16.0
+  FOUND with correct dates + bodies) using a node harness rather than a real
+  release — only the now-bottom-most 1.10.0 no longer extracts (no following
+  `## ` for the lookahead), which is a non-issue: real releases always insert
+  the new version at the TOP, followed by the prior version. No code change.
 
 ### `[ ]` D5 — Living-plan lifecycle (FEEDBACK-PLAN + this file)
 - **Severity:** low · **Size:** S · **Deps:** D1 · **may be Blocked**
