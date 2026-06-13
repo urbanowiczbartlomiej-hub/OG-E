@@ -74,7 +74,7 @@ line) · `[-]` dropped (note why; keep for history).
 | 1 | Invariant violations (highest value) | 3 | 0 / 3 |
 | 2 | Contract unification & dedup | 5 | 0 / 5 |
 | 3 | Structural (parity, pure-core, test isolation) | 4 | 0 / 4 |
-| 4 | Low-cost polish | 4 | 0 / 4 |
+| 4 | Low-cost polish | 4 | 1 / 4 |
 | 5 | Documentation reduction (DRY for docs) | 5 | 0 / 5 |
 
 > Update the "Done" column whenever a task flips to `[x]`.
@@ -376,7 +376,7 @@ benefits.*
 
 ## Phase 4 — Low-cost polish (do anytime; no deps unless noted)
 
-### `[ ]` P1 — Align `.nvmrc` with documented Node line
+### `[x]` P1 — Align `.nvmrc` with documented Node line
 - **Severity:** low · **Size:** S · **Deps:** none (do before G2 ideally)
 - **Why:** `.nvmrc` pins `24.7.0` while `engines` says `>=20`, REVIEWERS.md
   says tested on 20.x/22.x, AMO notes say `>=20`. `.nvmrc` is ahead of every
@@ -385,7 +385,10 @@ benefits.*
   dev target, add it to REVIEWERS.md's tested list. Keep CI (G2) reading
   `.nvmrc` so they can't drift again.
 - **Acceptance:** `.nvmrc`, `engines`, REVIEWERS.md, AMO notes tell one story.
-- **Done:**
+- **Done:** 2026-06-13 — `chore: pin .nvmrc to Node 22 (a tested LTS line)`.
+  `.nvmrc` `24.7.0` → `22`. Now consistent: `engines` `>=20`, REVIEWERS tested
+  on 20.x/22.x, AMO notes `>=20`, dev/CI pin on the tested `22` line. Done
+  ahead of G2 so CI reads a tested `.nvmrc`.
 
 ### `[ ]` P2 — Surface ntfy publish failures
 - **Severity:** low · **Size:** S · **Deps:** none
