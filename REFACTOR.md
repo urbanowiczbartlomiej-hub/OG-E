@@ -79,7 +79,7 @@ line) · `[-]` dropped (note why; keep for history).
 | 0 | Gates (tooling that locks invariants in) | 2 | 2 / 2 |
 | 1 | Invariant violations (highest value) | 3 | 3 / 3 |
 | 2 | Contract unification & dedup | 5 | 5 / 5 |
-| 3 | Structural (parity, pure-core, test isolation) | 4 | 2 / 4 |
+| 3 | Structural (parity, pure-core, test isolation) | 4 | 3 / 4 |
 | 4 | Low-cost polish | 4 | 4 / 4 |
 | 5 | Documentation reduction (DRY for docs) | 5 | 4 / 5 |
 
@@ -89,17 +89,19 @@ line) · `[-]` dropped (note why; keep for history).
 
 ## Session resume — read this first (2026-06-13)
 
-**Phases 0, 1, 2, 4 are COMPLETE.** Phase 3 `S3` + `S4` done (`S1`/`S2`
-remain). Phase 5 `D1`–`D4` done; `D5` is `[~]` (lifecycle notes landed; the
-archival is blocked on user in-game verification). All merged to `main` as of
-2026-06-13 — green there (`npm run test` 1390, plus `typecheck` + `lint`).
+**Phases 0, 1, 2, 4 are COMPLETE.** Phase 3 `S1` + `S3` + `S4` done (`S2`
+remains). Phase 5 `D1`–`D4` done; `D5` is `[~]` (lifecycle notes landed; the
+archival is blocked on user in-game verification). Phases 0–5 (minus S2/D5)
+merged to `main` as of 2026-06-13 — green there (`npm run test`, plus
+`typecheck` + `lint`). `S1` lives on `claude/repo-cleanup-refactor-cmm69g`
+(test 1402).
 
 **Next unblocked task — pick one (all deps met):**
 
-1. **`S1` — `sendExp/domHelpers.js`** (then **`S2`**, which depends on S1).
-   Both touch **behaviour-critical fleetdispatch** — the plan asks for an
-   in-game smoke test (`verify` skill) after S2. Do these when you can verify
-   in-game, not blind. **These are the only substantive tasks left.**
+1. **`S2` — consolidate the "advance native fleetdispatch" sequence** (deps
+   I2, S1 — both done). Touches **behaviour-critical fleetdispatch** — the
+   plan asks for an in-game smoke test (`verify` skill) after it. Do it when
+   you can verify in-game, not blind. **This is the only substantive task left.**
 2. **`D5` archival** — once the user has verified the FEEDBACK-PLAN REVIEW
    items in-game and a release ships, move `docs/FEEDBACK-PLAN.md` (and
    eventually this file) to `docs/plans/`.
@@ -435,7 +437,7 @@ benefits.*
 
 ## Phase 3 — Structural (larger; one PR each)
 
-### `[ ]` S1 — Give `sendExp` a `domHelpers.js` (sibling parity)
+### `[x]` S1 — Give `sendExp` a `domHelpers.js` (sibling parity)
 - **Severity:** med · **Size:** M · **Risk:** med (touches a 748-line file) · **Deps:** I2 (selectors centralized first)
 - **Why:** `sendCol` and `sendLifeform` both split DOM reads into
   `domHelpers.js`; `sendExp/index.js` (748L) folds them inline (151-213,
@@ -446,7 +448,17 @@ benefits.*
   helpers carry logic.
 - **Acceptance:** `sendExp/` shape matches `sendCol`/`sendLifeform`; tests +
   typecheck green; no behavior change.
-- **Done:**
+- **Done:** 2026-06-13 — `refactor(sendExp): extract domHelpers.js (sibling
+  parity)`. Moved the three module-level DOM readers (`getActivePlanetCoords`,
+  `countActiveExpeditions`, `findPlanetWithExpSlot`) verbatim out of
+  `index.js` into a new `sendExp/domHelpers.js` with a header docblock
+  matching `sendCol`/`sendLifeform`; `index.js` imports them and drops the now-
+  orphaned `stripBrackets` + `ACTIVE_PLANET_CLASS` imports. The single-feature
+  `#eventContent tr.eventFleet[data-mission-type="15"]` selector stays local
+  per gameDom scope rules. New `test/features/sendExpHelpers.test.js` (12 cases)
+  covers the per-origin/global count + the wrap-around free-planet walk. No
+  behavior change; existing `sendExp.test.js` (27) unchanged. test 1402 /
+  typecheck / lint green.
 
 ### `[ ]` S2 — Consolidate the "advance native fleetdispatch" sequence
 - **Severity:** med · **Size:** M · **Risk:** med · **Deps:** I2, S1
