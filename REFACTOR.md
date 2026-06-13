@@ -74,7 +74,7 @@ line) · `[-]` dropped (note why; keep for history).
 | 1 | Invariant violations (highest value) | 3 | 3 / 3 |
 | 2 | Contract unification & dedup | 5 | 5 / 5 |
 | 3 | Structural (parity, pure-core, test isolation) | 4 | 2 / 4 |
-| 4 | Low-cost polish | 4 | 2 / 4 |
+| 4 | Low-cost polish | 4 | 3 / 4 |
 | 5 | Documentation reduction (DRY for docs) | 5 | 0 / 5 |
 
 > Update the "Done" column whenever a task flips to `[x]`.
@@ -562,7 +562,7 @@ benefits.*
 - **Acceptance:** No `ntfyScheduler` path remains; tests + typecheck green.
 - **Done:**
 
-### `[ ]` P4 — Make `stampFsRoutesChanged` flush (close the debounce race)
+### `[x]` P4 — Make `stampFsRoutesChanged` flush (close the debounce race)
 - **Severity:** low · **Size:** S · **Deps:** none
 - **Why:** `state/fsRoutes.js:231-235` writes a timestamp key directly while the
   routes value itself saves on a `DEBOUNCE_MS` debounce. A caller that mutates
@@ -571,7 +571,18 @@ benefits.*
 - **What:** Have `stampFsRoutesChanged` call `flushFsRoutesStore()` first, or
   document the flush requirement in its JSDoc and at known call sites.
 - **Acceptance:** Stamp can't outrun the routes write; tests green.
-- **Done:**
+- **Done:** 2026-06-13 — `fix: flush fsRoutes value before stamping its sync
+  clock (P4)`. `stampFsRoutesChanged` is now `async` and `await`s
+  `flushFsRoutesStore()` before writing the timestamp, so the routes value is
+  guaranteed on disk before the clock advertises "changed" — closing the race
+  where a stamp+navigate could land the newest ts over a still-debounced (lost)
+  routes value. This fixes the `planetBarCapture` prune path automatically (it
+  stamped right after a debounced `update` with no flush); the `fsCollect`
+  set-target path already flushed explicitly and is left as-is (idempotent
+  same-value write, kept as local documentation of intent). New behavioral test
+  asserts the two writes fire in order — routes value first, timestamp second.
+  test 1390 / typecheck / lint green. No CHANGELOG entry — internal correctness
+  fix with no user-visible behaviour change.
 
 ---
 

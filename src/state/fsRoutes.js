@@ -224,10 +224,23 @@ export const flushFsRoutesStore = () =>
  * any in-game write that changes routes/collectTarget (route pruning,
  * set-collect-target). The dashboard writes the same key directly on save.
  *
+ * # Flushes the routes value first (closes the debounce race)
+ *
+ * The routes VALUE saves on a {@link DEBOUNCE_MS} debounce, but this
+ * timestamp writes immediately. A caller that mutates routes, stamps, then
+ * navigates away could otherwise land the timestamp while the value is still
+ * sitting in the debounce timer — the next sync would then advertise this
+ * device as freshest (newest ts) while its routes value is stale or lost.
+ * Flushing via {@link flushFsRoutesStore} first guarantees the value is on
+ * disk before the clock says it changed. Both writes are awaited, so callers
+ * that navigate should `await` (or `void`-and-accept the in-flight write).
+ *
  * @returns {Promise<void>}
  */
-export const stampFsRoutesChanged = () =>
-  chromeStore.set(currentUniverseKey(FS_ROUTES_TS_BASE, fsRoutesTsKeyFor), Date.now());
+export const stampFsRoutesChanged = async () => {
+  await flushFsRoutesStore();
+  await chromeStore.set(currentUniverseKey(FS_ROUTES_TS_BASE, fsRoutesTsKeyFor), Date.now());
+};
 
 /**
  * Tear down the persist wiring. Idempotent.

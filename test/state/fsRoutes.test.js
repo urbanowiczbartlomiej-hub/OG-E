@@ -22,10 +22,12 @@ vi.mock('../../src/lib/storage.js', () => ({
 import { chromeStore } from '../../src/lib/storage.js';
 import {
   FS_ROUTES_KEY_BASE,
+  FS_ROUTES_TS_BASE,
   fsRoutesKeyFor,
   fsRoutesStore,
   initFsRoutesStore,
   disposeFsRoutesStore,
+  stampFsRoutesChanged,
 } from '../../src/state/fsRoutes.js';
 import { migrateFsRoutes } from '../../src/domain/fsRoutes.js';
 
@@ -92,6 +94,32 @@ describe('fsRoutesStore — defaults and basic ops', () => {
     fsRoutesStore.set(/** @type {any} */ ({ routes: [], collectTarget: null }));
     expect(sub).toHaveBeenCalledTimes(1);
     unsub();
+  });
+});
+
+describe('stampFsRoutesChanged — flushes before stamping (debounce race)', () => {
+  beforeEach(resetAll);
+  afterEach(disposeFsRoutesStore);
+
+  it('flushes the routes value, THEN writes the timestamp', async () => {
+    // A current in-memory edit that the debounce has not yet persisted.
+    fsRoutesStore.set(
+      /** @type {any} */ ({ routes: [{ id: 'r1' }], collectTarget: null }),
+    );
+    mockStore.set.mockClear();
+
+    await stampFsRoutesChanged();
+
+    // Exactly two writes, in order: routes value first (flush), then the
+    // timestamp — so the clock can never claim "changed" before the value
+    // is on disk.
+    const keys = mockStore.set.mock.calls.map((c) => c[0]);
+    expect(keys).toEqual([FS_ROUTES_KEY_BASE, FS_ROUTES_TS_BASE]);
+    expect(mockStore.set.mock.calls[0][1]).toEqual({
+      routes: [{ id: 'r1' }],
+      collectTarget: null,
+    });
+    expect(typeof mockStore.set.mock.calls[1][1]).toBe('number');
   });
 });
 
