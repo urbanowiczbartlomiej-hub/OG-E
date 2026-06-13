@@ -49,6 +49,18 @@
 // "immediate fire" path — past/too-soon slots are simply left alone; while
 // a wave is landing the player is by definition in-game and needs no nudge.
 //
+// # No backoff (by design)
+//
+// Unlike the gist client (`sync/gist.js`, which retries with exponential
+// backoff on a 429/5xx), the ntfy publish path has NO retry or backoff. It
+// doesn't need one: scheduling is the idempotent reconciliation above, so a
+// failed/aborted pass simply leaves the queue as-is and the NEXT reconcile
+// re-converges. A non-2xx POST throws (caller surfaces the error); a 2xx
+// with no readable `id` is logged via `lib/logger` and throws too — the
+// message scheduled but we lost its cancellation handle, and the next
+// reconcile re-discovers it by title (keep if it still matches a live slot,
+// cancel otherwise). The reconcile loop IS the recovery mechanism.
+//
 // # Authentication
 //
 // ntfy.sh's free / Pro plans rate-limit anonymous publishers per IP, and a
@@ -60,6 +72,7 @@
 // here as a parameter; this module never reads storage directly.
 
 import { parseDurationList } from '../domain/duration.js';
+import { logger } from '../lib/logger.js';
 
 /* global fetch */
 
@@ -372,7 +385,17 @@ const postMessage = async ({ topic, token, fireAt, now, title, body, priority })
     throw new Error(`ntfy publish ${res.status}: ${detail.slice(0, 200)}`);
   }
   const json = /** @type {{ id?: string }} */ (await res.json().catch(() => ({})));
-  if (!json.id) throw new Error('ntfy publish: response missing id');
+  if (!json.id) {
+    // A 2xx with no readable `id` means the message DID schedule on ntfy
+    // (the POST succeeded) but we have no cancellation handle for it — a
+    // latent orphan. There is no backoff/retry here (see header "No backoff");
+    // we surface it via the logger and throw so this reconcile pass aborts.
+    // The next reconcile poll re-discovers the message by its title and folds
+    // it back into the queue (keep if it matches a live slot, cancel if not),
+    // so the orphan self-heals without a dedicated retry path.
+    logger.warn('ntfy publish: 2xx response missing id (orphaned schedule; next reconcile will reconcile by title)');
+    throw new Error('ntfy publish: response missing id');
+  }
   return json.id;
 };
 

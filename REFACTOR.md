@@ -74,7 +74,7 @@ line) · `[-]` dropped (note why; keep for history).
 | 1 | Invariant violations (highest value) | 3 | 3 / 3 |
 | 2 | Contract unification & dedup | 5 | 5 / 5 |
 | 3 | Structural (parity, pure-core, test isolation) | 4 | 2 / 4 |
-| 4 | Low-cost polish | 4 | 1 / 4 |
+| 4 | Low-cost polish | 4 | 2 / 4 |
 | 5 | Documentation reduction (DRY for docs) | 5 | 0 / 5 |
 
 > Update the "Done" column whenever a task flips to `[x]`.
@@ -525,7 +525,7 @@ benefits.*
   on 20.x/22.x, AMO notes `>=20`, dev/CI pin on the tested `22` line. Done
   ahead of G2 so CI reads a tested `.nvmrc`.
 
-### `[ ]` P2 — Surface ntfy publish failures
+### `[x]` P2 — Surface ntfy publish failures
 - **Severity:** low · **Size:** S · **Deps:** none
 - **Why:** ntfy POSTs have no backoff (gist does, in `gist.js:400-435`), and
   `ntfyScheduler.js:376` does `res.json().catch(() => ({}))` — a parse failure
@@ -536,7 +536,18 @@ benefits.*
   "ntfy: no backoff, relies on next reconcile" in the module header.
 - **Acceptance:** Missing-`id`-after-2xx is logged; header documents the
   no-backoff design. Add a behavioral test for the missing-id log if cheap.
-- **Done:**
+- **Done:** 2026-06-13 — `feat: log ntfy missing-id orphans; document no-backoff
+  design (P2)`. The missing-id branch already *threw* (the review's silent
+  `{id:undefined}` had since been hardened to a throw); P2 makes it **visible**:
+  it now `logger.warn`s the 2xx-but-no-id anomaly before throwing — the message
+  scheduled on ntfy but we lost its cancellation handle, a latent orphan the
+  next reconcile re-discovers by title (keep if it still matches a live slot,
+  cancel otherwise). Added a "No backoff (by design)" section to the module
+  header contrasting with `gist.js`'s backoff and explaining the reconcile loop
+  IS the recovery mechanism. New behavioral test asserts the warn fires (and the
+  throw propagates) on a 2xx publish with no id. test 1389 / typecheck / lint
+  green. No CHANGELOG entry — diagnostic logging only, no user-visible behaviour
+  change (logger is off by default).
 
 ### `[ ]` P3 — Rename `ntfyScheduler.js` → `ntfyReconciler.js`
 - **Severity:** low · **Size:** S · **Risk:** low (rename + import updates) · **Deps:** C1 (settle imports first to avoid churn collisions)

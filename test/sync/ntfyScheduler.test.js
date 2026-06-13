@@ -20,6 +20,7 @@ import {
   WAVE_PRIORITY,
   ADHOC_PRIORITY,
 } from '../../src/sync/ntfyScheduler.js';
+import { logger } from '../../src/lib/logger.js';
 
 /**
  * Expected `auth=…` query param: base64 of the full `Authorization` header
@@ -169,6 +170,27 @@ describe('reconcileWaveQueue', () => {
       // not max priority, so they carry no 🔥 flare.
       expect(init.body).toMatch(/^Expeditions back \(\d{1,2}:\d{2}(?:\s?[AP]M)?\) — reminder #\d+\/6\.$/);
     });
+  });
+
+  it('logs (and throws) when a 2xx publish response carries no id — a latent orphan', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn');
+    // GET poll → empty queue; POST → 2xx but the JSON body has no `id`, so we
+    // have no cancellation handle for a message ntfy DID schedule.
+    fetchMock.mockImplementation(async (url, init) => {
+      const method = init?.method ?? 'GET';
+      if (method === 'GET' && url.includes('/json?poll=1')) return queueResponse([]);
+      if (method === 'POST')
+        return { ok: true, status: 200, statusText: 'OK', json: async () => ({}), text: async () => '{}' };
+      throw new Error(`unexpected ${method} ${url}`);
+    });
+
+    await expect(
+      reconcileWaveQueue({
+        ...base, now: 1000, waves: [{ id: 'w_2000', baseAt: 2000 }], offsetsSec: WAVE_OFFSETS,
+      }),
+    ).rejects.toThrow(/missing id/);
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('missing id'));
   });
 
   it('honours an arbitrary schedule: posts one slot per offset at baseAt+offset', async () => {
