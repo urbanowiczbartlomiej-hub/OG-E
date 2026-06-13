@@ -18,7 +18,7 @@ import { settingsStore } from '../../src/state/settings.js';
 import { SETTINGS_SCHEMA } from '../../src/state/settings.js';
 import {
   fsRoutesStore,
-  _resetFsRoutesStoreForTest,
+  disposeFsRoutesStore,
   FS_REDIRECT_KEY,
 } from '../../src/state/fsRoutes.js';
 import { TARGET_PLANET, TARGET_MOON, SHIP_LARGE_CARGO } from '../../src/domain/rules.js';
@@ -58,7 +58,8 @@ const setBodyMeta = (coords, type) => {
 
 beforeEach(() => {
   _resetFsCollectForTest();
-  _resetFsRoutesStoreForTest();
+  disposeFsRoutesStore();
+  fsRoutesStore.set({ routes: [], collectTarget: null });
   resetSettingsToDefaults();
   document.body.innerHTML = '';
   document.head.innerHTML = '';

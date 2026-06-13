@@ -26,7 +26,6 @@ import {
   fsRoutesStore,
   initFsRoutesStore,
   disposeFsRoutesStore,
-  _resetFsRoutesStoreForTest,
 } from '../../src/state/fsRoutes.js';
 import { migrateFsRoutes } from '../../src/domain/fsRoutes.js';
 
@@ -41,7 +40,8 @@ import { migrateFsRoutes } from '../../src/domain/fsRoutes.js';
 const mockStore = /** @type {any} */ (chromeStore);
 
 const resetAll = () => {
-  _resetFsRoutesStoreForTest();
+  disposeFsRoutesStore();
+  fsRoutesStore.set({ routes: [], collectTarget: null });
   mockStore.get.mockReset();
   mockStore.set.mockReset();
   mockStore.remove.mockReset();

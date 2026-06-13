@@ -196,14 +196,3 @@ export const disposeBodiesStore = () => {
   hydratedPromise = Promise.resolve();
   resolveHydrated = () => {};
 };
-
-/**
- * Test-only reset — disposes persistence and resets the in-memory value
- * so each case starts clean. `_`-prefixed: do not import from production.
- *
- * @returns {void}
- */
-export const _resetBodiesStoreForTest = () => {
-  disposeBodiesStore();
-  bodiesStore.set(emptyInventory());
-};

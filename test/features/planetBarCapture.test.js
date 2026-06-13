@@ -19,8 +19,8 @@ import {
   bodiesFromRow,
   readPlanetBar,
 } from '../../src/features/planetBarCapture.js';
-import { bodiesStore, _resetBodiesStoreForTest } from '../../src/state/bodies.js';
-import { fsRoutesStore, _resetFsRoutesStoreForTest } from '../../src/state/fsRoutes.js';
+import { bodiesStore, disposeBodiesStore } from '../../src/state/bodies.js';
+import { fsRoutesStore, disposeFsRoutesStore } from '../../src/state/fsRoutes.js';
 import { TARGET_PLANET, TARGET_MOON } from '../../src/domain/rules.js';
 
 const HOST = 'https://s163-pl.ogame.gameforge.com/game/index.php';
@@ -66,14 +66,18 @@ const flush = async () => {
 
 beforeEach(() => {
   document.body.innerHTML = '';
-  _resetBodiesStoreForTest();
-  _resetFsRoutesStoreForTest();
+  disposeBodiesStore();
+  bodiesStore.set({ bodies: [], capturedAt: 0 });
+  disposeFsRoutesStore();
+  fsRoutesStore.set({ routes: [], collectTarget: null });
   _resetPlanetBarCaptureForTest();
 });
 
 afterEach(() => {
-  _resetBodiesStoreForTest();
-  _resetFsRoutesStoreForTest();
+  disposeBodiesStore();
+  bodiesStore.set({ bodies: [], capturedAt: 0 });
+  disposeFsRoutesStore();
+  fsRoutesStore.set({ routes: [], collectTarget: null });
   _resetPlanetBarCaptureForTest();
 });
 

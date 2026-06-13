@@ -27,7 +27,6 @@ import {
   initBodiesStore,
   disposeBodiesStore,
   whenBodiesHydrated,
-  _resetBodiesStoreForTest,
 } from '../../src/state/bodies.js';
 
 /**
@@ -37,7 +36,8 @@ import {
 const mockStore = /** @type {any} */ (chromeStore);
 
 const resetAll = () => {
-  _resetBodiesStoreForTest();
+  disposeBodiesStore();
+  bodiesStore.set({ bodies: [], capturedAt: 0 });
   mockStore.get.mockReset();
   mockStore.set.mockReset();
   mockStore.get.mockResolvedValue(undefined);

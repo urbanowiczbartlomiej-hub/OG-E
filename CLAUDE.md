@@ -23,7 +23,11 @@ bridges → lib + domain (MAIN-world; must NOT import state/features/sync)
 - **`state/`** owns all persisted state. Mutate it ONLY through the
   reactive stores (`store.set(...)`); never write the backing
   `localStorage` / `chrome.storage` keys from a feature directly. Stores
-  are write-through and their `init*()` is idempotent.
+  are write-through and their `init*()` is idempotent. Teardown surface is
+  uniform: every store exposes `dispose*Store()` (idempotent; cuts the
+  persist subscription) and nothing else — tests reset in-memory state with
+  an explicit `store.set(<initial>)` after disposing (no per-store
+  `_reset*ForTest` helper; that affordance is for *features*, not stores).
 - **`features/`** may depend on `domain` + `state` + `lib`, but **no
   feature imports another feature.** Each `install*()` is independent and
   idempotent, and ships a `_reset*ForTest()` for the suite. Order in

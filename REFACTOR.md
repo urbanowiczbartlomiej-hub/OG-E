@@ -72,7 +72,7 @@ line) · `[-]` dropped (note why; keep for history).
 |-------|-------|-------|------|
 | 0 | Gates (tooling that locks invariants in) | 2 | 2 / 2 |
 | 1 | Invariant violations (highest value) | 3 | 3 / 3 |
-| 2 | Contract unification & dedup | 5 | 3 / 5 |
+| 2 | Contract unification & dedup | 5 | 4 / 5 |
 | 3 | Structural (parity, pure-core, test isolation) | 4 | 0 / 4 |
 | 4 | Low-cost polish | 4 | 1 / 4 |
 | 5 | Documentation reduction (DRY for docs) | 5 | 0 / 5 |
@@ -354,7 +354,7 @@ benefits.*
   global and that file's contract is "no DOM access". lint/typecheck/test (1365)
   green; no behavior change.
 
-### `[ ]` C4 — Unify the state test-reset convention
+### `[x]` C4 — Unify the state test-reset convention
 - **Severity:** low · **Size:** S · **Risk:** low · **Deps:** none
 - **Why:** `bodies.js:210` and `fsRoutes.js:257` ship `_reset*ForTest`;
   `registry/history/scans/settings` expose only `dispose*Store`. Two
@@ -366,7 +366,16 @@ benefits.*
   removed name.
 - **Acceptance:** All five store modules expose the same reset surface; tests
   green.
-- **Done:**
+- **Done:** 2026-06-13 — `refactor(state): standardize stores on dispose*Store
+  teardown (drop the two _reset*ForTest)`. Took the task's recommended path
+  (dispose-only is the majority — scans/registry/history/settings already do
+  `disposeXStore() + store.set(...)` inline). Removed `_resetBodiesStoreForTest`
+  and `_resetFsRoutesStoreForTest`; their 4 test files now dispose + set the
+  initial value inline (both empties are trivial literals — `{ bodies: [],
+  capturedAt: 0 }` / `{ routes: [], collectTarget: null }`). Documented the
+  convention in `CLAUDE.md`'s state bullet: stores expose only
+  `dispose*Store()`; `_reset*ForTest` is a *feature* affordance, not a store
+  one. lint/typecheck/test (1365) green.
 
 ### `[ ]` C5 — Document (or migrate) the non-store state modules
 - **Severity:** med · **Size:** S (document) / L (migrate) · **Deps:** none
