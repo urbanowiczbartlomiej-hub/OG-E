@@ -75,6 +75,7 @@ line) · `[-]` dropped (note why; keep for history).
 | 2 | Contract unification & dedup | 5 | 0 / 5 |
 | 3 | Structural (parity, pure-core, test isolation) | 4 | 0 / 4 |
 | 4 | Low-cost polish | 4 | 0 / 4 |
+| 5 | Documentation reduction (DRY for docs) | 5 | 0 / 5 |
 
 > Update the "Done" column whenever a task flips to `[x]`.
 
@@ -401,6 +402,91 @@ benefits.*
 
 ---
 
+## Phase 5 — Documentation reduction (DRY for docs)
+
+*Goal: fewer, leaner, non-overlapping docs. The fix is mostly "one source of
+truth per topic; everything else links." Tasks here are deliberately terse —
+practicing the principle. Behavior never changes; verify the release script
+still works where a task touches release inputs.*
+
+### `[ ]` D1 — Add the doc-hygiene rule to `CLAUDE.md`
+- **Severity:** med · **Size:** S · **Deps:** none (do first — defines D2–D5)
+- **Why:** No rule currently keeps docs DRY; topics are re-stated across 5+
+  files. Codify canonical homes + the living-plan lifecycle.
+- **What:** Add a short "Documentation hygiene" rule under General rules:
+  each topic has ONE source of truth, others link not re-state. Canonical:
+  build→`REVIEWERS.md`; release→`CLAUDE.md`; architecture invariants→`CLAUDE.md`;
+  privacy/permissions→`PRIVACY.md`; user-visible changes→`CHANGELOG.md`. Plan
+  docs (`REFACTOR.md`, feedback plans) are archived/deleted when their cycle
+  closes. In-code: comment the *why* + the fragile external contract, not what
+  the code plainly says.
+- **Acceptance:** Rule present and ≤ ~8 lines. No code change.
+- **Done:**
+
+### `[ ]` D2 — De-duplicate across docs per the canonical homes
+- **Severity:** med · **Size:** M · **Deps:** D1
+- **Why:** Build steps live in 5 files; release workflow, architecture, privacy,
+  and compliance each appear in 2–3. (Confirmed: build steps in README,
+  CONTRIBUTING, REVIEWERS, CLAUDE.md, amo-reviewer-notes.)
+- **What:** For each duplicated block, keep the canonical copy and replace the
+  others with a one-line link:
+  - Build steps → keep in `REVIEWERS.md`; README/CONTRIBUTING link to it.
+  - Release workflow → keep in `CLAUDE.md`; `CONTRIBUTING §Release workflow`
+    shrinks to a pointer.
+  - Architecture → keep invariants in `CLAUDE.md`; `README §Architecture` stays
+    only as the friendly 5-min intro (no invariant restatement);
+    `CONTRIBUTING §Purity` points to `CLAUDE.md`.
+  - Compliance → one home (`REVIEWERS §Compliance summary`); CONTRIBUTING links.
+  - Privacy/permissions → keep in `PRIVACY.md`; README/CLAUDE/amo-notes link.
+- **Acceptance:** Each topic's full text exists once; greps for "npm run
+  build:prod", release-step lists, permission lists return one canonical hit +
+  links. `amo-reviewer-notes.txt` already points to REVIEWERS — keep that.
+- **Done:**
+
+### `[ ]` D3 — Compact `CLAUDE.md` itself
+- **Severity:** med · **Size:** S · **Deps:** D1
+- **Why:** `CLAUDE.md §AMO note fields` quotes `amo-reviewer-notes.txt`
+  **verbatim** (the file is the source of truth — the script reads it). The
+  release-preview footgun is explained at length. Audit every rule for "does
+  this still earn its place / can it be tighter."
+- **What:** Replace the verbatim AMO boilerplate with a one-line pointer to
+  `amo-reviewer-notes.txt`. Tighten the release-preview footgun to the
+  essential warning + the one working preview command (keep the "why" — it
+  bit us). Drop any rule that's now dead or covered by ESLint (G1) — e.g. a
+  layering rule the linter now enforces can compress to "(enforced by lint)".
+- **Acceptance:** `CLAUDE.md` is meaningfully shorter with **no invariant
+  lost**; every remaining rule is load-bearing. (Sanity: line count drops; the
+  Architecture & invariants section is untouched in substance.)
+- **Done:**
+
+### `[ ]` D4 — Archive old CHANGELOG entries
+- **Severity:** low · **Size:** S · **Deps:** none
+- **Why:** `CHANGELOG.md` is 1485 lines / 49 versions back to 1.0.0
+  (2026-04-24). The release script only reads the current `## [X.Y.Z]` section,
+  so archiving old entries is safe.
+- **What:** Move entries below a cutoff (suggest **pre-1.10.0**) to
+  `docs/CHANGELOG-archive.md`; leave a "older releases → docs/CHANGELOG-archive.md"
+  link at the bottom of `CHANGELOG.md`. Keep `[Unreleased]` + recent versions.
+- **Acceptance:** Active `CHANGELOG.md` is short; archive holds the rest;
+  `npm run release` preview still finds the current-version section (verify
+  with the preview command from `CLAUDE.md`, NOT a real release).
+- **Done:**
+
+### `[ ]` D5 — Living-plan lifecycle (FEEDBACK-PLAN + this file)
+- **Severity:** low · **Size:** S · **Deps:** D1 · **may be Blocked**
+- **Why:** `docs/FEEDBACK-PLAN.md` (987L) is 52/62 tasks in `REVIEW` at the
+  current version (1.17.0) — a nearly-closed cycle. Per D1, closed plans get
+  archived/deleted, not kept forever. Same eventually applies to `REFACTOR.md`.
+- **What:** When the FEEDBACK-PLAN REVIEW items are user-verified + a release
+  ships, archive it to `docs/plans/` (or delete — it's in git history). Until
+  then, add a one-line lifecycle note at its top. Apply the same "archive when
+  done" note to `REFACTOR.md`.
+- **Blocked:** on user in-game verification of the REVIEW items — until then
+  only the lifecycle note is actionable.
+- **Done:**
+
+---
+
 ## Backlog (discovered but not yet planned)
 
 *Add items here as you find them; promote to a phase when prioritized.*
@@ -419,6 +505,15 @@ benefits.*
 - Consider a `makePersistedStore({store, load, save, debounceMs})` factory to
   collapse the repeated init/dispose boilerplate across 5 store modules (judgment
   call — current form is readable).
+- **Header-comment trimming (judgment-heavy, low priority).** ~53% of `src` is
+  comment-ish lines; some headers run 60–116 lines (`gist.js` 116, `scheduler.js`
+  87, `traderMenuHighlight.js` 74). Trim *only* where a header restates what the
+  code/tests already show — never delete the documented "why", the invariants, or
+  the verbatim game-misspelling notes. Do per-file, opportunistically, when
+  already editing a file; not a sweep.
+- **Compact `REFACTOR.md`'s own task format** once Phases 0–2 land — the cold-
+  pickup verbosity earns its place now, but finished phases can collapse to a
+  one-line "done" summary to keep this file lean (eat our own dog food).
 
 ---
 
@@ -432,3 +527,9 @@ benefits.*
 - 2026-06-13 — `oge:ntfyCheckNow` is **not** a dead event (initial review
   suspicion); it's consumed via `controls.js` `refreshEvent` wiring
   (`controls.js:431,537`). No fix needed beyond folding it into C1's registry.
+- 2026-06-13 — Doc landscape audited (Phase 5 added). Confirmed duplication:
+  build steps in 5 files; release/architecture/privacy/compliance each in 2–3;
+  `CLAUDE.md` quotes `amo-reviewer-notes.txt` verbatim. CHANGELOG 1485L/49
+  versions; FEEDBACK-PLAN 987L at 52/62 REVIEW. Principle adopted: one source of
+  truth per topic, others link; plan docs have a lifecycle. In-code comment
+  density (~53%) is largely deliberate — trim opportunistically, never sweep.
