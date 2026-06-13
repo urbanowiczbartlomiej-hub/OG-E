@@ -71,7 +71,7 @@ line) · `[-]` dropped (note why; keep for history).
 | Phase | Theme | Tasks | Done |
 |-------|-------|-------|------|
 | 0 | Gates (tooling that locks invariants in) | 2 | 2 / 2 |
-| 1 | Invariant violations (highest value) | 3 | 1 / 3 |
+| 1 | Invariant violations (highest value) | 3 | 2 / 3 |
 | 2 | Contract unification & dedup | 5 | 0 / 5 |
 | 3 | Structural (parity, pure-core, test isolation) | 4 | 0 / 4 |
 | 4 | Low-cost polish | 4 | 1 / 4 |
@@ -199,7 +199,7 @@ benefits.*
   `from '../state/` remains in bridges/; lint/typecheck/test all green
   (1365 tests).
 
-### `[ ]` I2 — Centralize duplicated game selectors in `gameDom.js`
+### `[x]` I2 — Centralize duplicated game selectors in `gameDom.js`
 - **Severity:** high · **Size:** M · **Risk:** low · **Deps:** none
 - **Why:** The "every game selector used by 2+ features lives in one place"
   invariant is partly broken. Several selectors are re-hardcoded inline, and
@@ -229,7 +229,17 @@ benefits.*
   exactly one place (`gameDom.js`). Grep for each raw literal outside
   `gameDom.js` → only matches are the verbatim-misspelling docs. Tests +
   typecheck green. No behavior change.
-- **Done:**
+- **Done:** 2026-06-13 — `refactor: centralize shared game selectors in
+  gameDom.js`. Used existing `GAME.FD_DISPATCH` / `FD_ALL_RESOURCES` /
+  `EVENT_CONTENT` at the re-hardcoded sites; added `GAME.FD_SEND_ALL`,
+  `GAME.DIAMETER_FIELD`, `GAME.MOON_LINK`. Converted the `getElementById('id')`
+  call sites to `querySelector(GAME.X)` (behavior-equivalent) to match the
+  repo's `document.querySelector(GAME.*)` convention. All 6 literals now exist
+  as code strings only in `gameDom.js` (verified by grep; remaining matches are
+  doc comments). `moonlink`'s moon-image part (`img.icon-moon`, one feature)
+  stays local — composed as `${GAME.MOON_LINK} img.icon-moon`. Optional
+  `eventFleetRows(missionType)` helper deferred to Backlog (already listed).
+  lint/typecheck/test all green (1365). No behavior change.
 
 ### `[ ]` I3 — Reconcile `bridges → domain` doc vs. reality
 - **Severity:** med · **Size:** S · **Risk:** none · **Deps:** none
@@ -537,7 +547,14 @@ still works where a task touches release inputs.*
 *Add items here as you find them; promote to a phase when prioritized.*
 
 - Parameterized `eventFleetRows(missionType)` helper if I2's optional part is
-  deferred (4 hand-composed copies of the mission-type row selector).
+  deferred (4 hand-composed copies of the mission-type row selector). **[still
+  open — I2 deferred this optional part.]**
+- Two more selectors re-hardcoded next to ones I2 touched but NOT in I2's
+  table, so left for a follow-up: `getElementById('planetList')`
+  (`badges.js:285`) while `GAME.PLANET_LIST` exists; `getElementById(
+  'continueToFleet2')` (`fsCollect/domHelpers.js` `ID_CONTINUE`) while
+  `GAME.FD_CONTINUE` exists. Both are used by 2+ features → fold into a small
+  follow-up like I2.
 - Coordinate-string normalizers duplicated across features (`badges.trimCoords`,
   `sendExp.stripBrackets`, `reminders.denseCoords`, `fsCollect.parseCoordsText`)
   — check whether one `domain`/`lib` helper covers them.

@@ -207,7 +207,7 @@ let abandonInProgress = false;
 export const checkAbandonState = (settings) => {
   const s = settings ?? settingsStore.get();
   if (!location.search.includes('component=overview')) return null;
-  const diameterEl = document.getElementById('diameterContentField');
+  const diameterEl = document.querySelector(GAME.DIAMETER_FIELD);
   if (!diameterEl) return null;
   const m = diameterEl.textContent?.match(/\((\d+)\/(\d+)\)/);
   if (!m) return null;

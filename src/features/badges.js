@@ -283,7 +283,7 @@ let installed = null;
  */
 const attachObserver = (observer) => {
   const planetList = document.getElementById('planetList');
-  const eventContent = document.getElementById('eventContent');
+  const eventContent = document.querySelector(GAME.EVENT_CONTENT);
   let observedScoped = false;
   if (planetList) {
     observer.observe(planetList, { childList: true, subtree: true });

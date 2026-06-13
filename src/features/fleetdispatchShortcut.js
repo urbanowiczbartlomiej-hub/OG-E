@@ -27,6 +27,7 @@
 // Idempotent install: a second call returns the existing dispose fn.
 
 import { safeClick } from '../lib/dom.js';
+import { GAME } from '../lib/gameDom.js';
 
 /** Substring used to gate the listener to the fleetdispatch page. */
 const FLEETDISPATCH_PATH = 'component=fleetdispatch';
@@ -61,7 +62,7 @@ export const installFleetdispatchShortcut = () => {
     // Panel 2: `#allresources` — advances from ships → resources →
     // dispatch ready. Higher priority than the ships button so a
     // re-press of ArrowRight after the first step does the right thing.
-    const allRes = document.getElementById('allresources');
+    const allRes = document.querySelector(GAME.FD_ALL_RESOURCES);
     if (allRes && /** @type {HTMLElement} */ (allRes).offsetParent !== null) {
       e.preventDefault();
       safeClick(allRes);
@@ -72,7 +73,7 @@ export const installFleetdispatchShortcut = () => {
     // Either selector picks up the "send all ships" trigger that AGR
     // exposes on the fleet selection step.
     const sendAll = document.querySelector('.send_all a')
-      ?? document.getElementById('sendall');
+      ?? document.querySelector(GAME.FD_SEND_ALL);
     if (sendAll && /** @type {HTMLElement} */ (sendAll).offsetParent !== null) {
       e.preventDefault();
       safeClick(sendAll);

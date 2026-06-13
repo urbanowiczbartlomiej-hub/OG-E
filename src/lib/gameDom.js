@@ -63,6 +63,14 @@ export const GAME = {
   PLANET_NAME: '.planet-name',
   /** Coordinate span inside a planet link, e.g. "[4:30:8]". */
   PLANET_KOORDS: '.planet-koords',
+  /**
+   * Moon anchor inside a planet/galaxy row (a row has one only if a moon
+   * exists at that body). Read by `features/planetBarCapture` (the planet
+   * bar) and `features/fsCollect` (galaxy rows). The moon image / name is
+   * a single-feature detail (`img.icon-moon`) — composed locally where
+   * needed, not hoisted here.
+   */
+  MOON_LINK: 'a.moonlink',
 
   // ── Event list (`#eventContent`) ───────────────────────────────────
   EVENT_CONTENT: '#eventContent',
@@ -85,6 +93,12 @@ export const GAME = {
   // ── Planet detail panel ────────────────────────────────────────────
   /** Anchor holding the current planet's coords, e.g. "[4:30:8]". */
   POSITION_FIELD_LINK: '#positionContentField a',
+  /**
+   * Diameter/fields readout, e.g. "12.800km (203/247)". Read by
+   * `features/colonyRecorder` (records size) and `features/abandon`
+   * (used/max fields gate).
+   */
+  DIAMETER_FIELD: '#diameterContentField',
 
   // ── Fleetdispatch (the two-step send form) ─────────────────────────
   // Native OGame ids/classes read by the shared fleet courier (and the
@@ -105,6 +119,8 @@ export const GAME = {
   FD_DISABLED_CLASS: 'off',
   /** "Load all resources" control (step 2). */
   FD_ALL_RESOURCES: '#allresources',
+  /** "Select all ships" control (step 1 fallback to `.send_all a`). */
+  FD_SEND_ALL: '#sendall',
 
   // ── AGR fleet1 target interface (the dedicated coord row AGR injects) ─
   // The target (coords + planet/moon type) is set HERE, on fleet1, not on

@@ -436,7 +436,7 @@ export const installSendExp = () => {
 
       const ready = await waitFor(
         () =>
-          document.getElementById('dispatchFleet')
+          document.querySelector(GAME.FD_DISPATCH)
             && document.getElementById('ago_fleet2_main')
             ? true
             : null,
@@ -541,7 +541,7 @@ export const installSendExp = () => {
     // Phase 2 — panel not loaded → click AGR routine, wait for it. Gate on
     // `component=fleetdispatch` only: AGR assigns the mission itself when
     // the user taps its routine, so `mission=15` is not a precondition.
-    const dispatch = document.getElementById('dispatchFleet');
+    const dispatch = document.querySelector(GAME.FD_DISPATCH);
     const fleetPanel = document.getElementById('ago_fleet2_main');
     if (dispatch && fleetPanel) {
       // Ownership gate (T5): a loaded fleet panel is NOT proof this is our
@@ -614,7 +614,7 @@ export const installSendExp = () => {
       controller.el,
       computeInitialLabel({
         search: location.search,
-        hasDispatchFleet: document.getElementById('dispatchFleet') !== null,
+        hasDispatchFleet: document.querySelector(GAME.FD_DISPATCH) !== null,
         hasAgoRoutine7: document.getElementById('ago_routine_7') !== null,
       }),
     );

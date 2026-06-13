@@ -28,14 +28,12 @@ import { coordKey } from './pure.js';
 
 // ─── Feature-local selectors / ids ──────────────────────────────────────
 
-/** AGR/native "select all ships" control on fleet step 1. */
-const SEL_SELECT_ALL_SHIPS = '#sendall';
+// "select all ships" (GAME.FD_SEND_ALL), "load all resources"
+// (GAME.FD_ALL_RESOURCES), and the step-2 "dispatch fleet" button
+// (GAME.FD_DISPATCH) are shared fleetdispatch controls — sourced from
+// lib/gameDom.js, not re-hardcoded here.
 /** Native "continue to step 2" control. */
 const ID_CONTINUE = 'continueToFleet2';
-/** AGR/native "load all resources" control on fleet step 2. */
-const SEL_ALL_RESOURCES = '#allresources';
-/** Native "dispatch fleet" button — present only on fleet step 2. */
-const ID_DISPATCH = 'dispatchFleet';
 /** Inbound deployment fleet rows in the event ticker. */
 const SEL_DEPLOY_ROWS =
   '#eventContent tr.eventFleet[data-mission-type="4"][data-return-flight="false"]';
@@ -123,7 +121,7 @@ export const bodyNameByCoord = (coord) => {
     ) {
       if (coord.type === 3) {
         // Moon name is the alt of the moon image inside a.moonlink.
-        const alt = row.querySelector('a.moonlink img.icon-moon')?.getAttribute('alt')?.trim();
+        const alt = row.querySelector(`${GAME.MOON_LINK} img.icon-moon`)?.getAttribute('alt')?.trim();
         return alt || row.querySelector(GAME.PLANET_NAME)?.textContent?.trim() || null;
       }
       return row.querySelector(GAME.PLANET_NAME)?.textContent?.trim() || null;
@@ -203,19 +201,19 @@ export const findNextCollectPlanetCp = (collectedOriginKeys, targetCoordKey) => 
  *
  * @returns {boolean}
  */
-export const isStep2 = () => document.getElementById(ID_DISPATCH) !== null;
+export const isStep2 = () => document.querySelector(GAME.FD_DISPATCH) !== null;
 
 /** Click "select all ships" (step 1). No-op when absent. @returns {void} */
-export const selectAllShips = () => safeClick(document.querySelector(SEL_SELECT_ALL_SHIPS));
+export const selectAllShips = () => safeClick(document.querySelector(GAME.FD_SEND_ALL));
 
 /** Click "continue to step 2". No-op when absent. @returns {void} */
 export const clickContinue = () => safeClick(document.getElementById(ID_CONTINUE));
 
 /** Click "load all resources" (step 2). No-op when absent. @returns {void} */
-export const loadAllResources = () => safeClick(document.querySelector(SEL_ALL_RESOURCES));
+export const loadAllResources = () => safeClick(document.querySelector(GAME.FD_ALL_RESOURCES));
 
 /** Click the native dispatch button (step 2). No-op when absent. @returns {void} */
-export const clickDispatch = () => safeClick(document.getElementById(ID_DISPATCH));
+export const clickDispatch = () => safeClick(document.querySelector(GAME.FD_DISPATCH));
 
 /**
  * Wait until the step-2 dispatch button appears (after a "continue"
@@ -224,7 +222,7 @@ export const clickDispatch = () => safeClick(document.getElementById(ID_DISPATCH
  * @returns {Promise<true | null>}
  */
 export const waitForStep2 = () =>
-  waitFor(() => (document.getElementById(ID_DISPATCH) ? true : null), {
+  waitFor(() => (document.querySelector(GAME.FD_DISPATCH) ? true : null), {
     timeoutMs: STEP2_TIMEOUT_MS,
     intervalMs: STEP2_INTERVAL_MS,
   });

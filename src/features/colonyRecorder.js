@@ -152,7 +152,7 @@ const tryCollect = () => {
   const cp = readActiveCp();
   if (cp === null) return false;
 
-  const diameterEl = document.getElementById('diameterContentField');
+  const diameterEl = document.querySelector(GAME.DIAMETER_FIELD);
   const diameter = parseDiameter(diameterEl?.textContent);
   if (!diameter) return false;
   // Fresh colonies only — see module header on why this gate matters.
@@ -252,7 +252,7 @@ export const installColonyRecorder = () => {
     waitFor(
       () => {
         if (!location.search.includes('component=overview')) return true;
-        return document.getElementById('diameterContentField') !== null;
+        return document.querySelector(GAME.DIAMETER_FIELD) !== null;
       },
       { timeoutMs: 5000, intervalMs: 200 },
     ).then(() => {

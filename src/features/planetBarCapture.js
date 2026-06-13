@@ -71,8 +71,8 @@ import { fsRoutesStore, whenFsRoutesHydrated, stampFsRoutesChanged } from '../st
 // lib/gameDom.js. The planet-row / name / koords selectors ARE shared and
 // come from GAME.
 
-/** The moon anchor inside a `.smallplanet` row (absent when no moon). */
-const SEL_MOON_LINK = 'a.moonlink';
+// The moon anchor (`.smallplanet` row, absent when no moon) is shared with
+// features/fsCollect — sourced from GAME.MOON_LINK, not re-hardcoded here.
 /** The moon icon `<img>` whose `alt` carries the moon's display name. */
 const SEL_MOON_IMG = 'img';
 
@@ -130,7 +130,7 @@ export const bodiesFromRow = (row) => {
   if (isCompleteBody(planet)) out.push(planet);
 
   // Moon (optional). Shares the planet's coordinates.
-  const moonLink = row.querySelector(SEL_MOON_LINK);
+  const moonLink = row.querySelector(GAME.MOON_LINK);
   if (moonLink) {
     const moonCp = cpFromUrl(
       moonLink.getAttribute('href') || moonLink.getAttribute('data-link'),
