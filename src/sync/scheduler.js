@@ -114,6 +114,13 @@ import { chromeStore } from '../lib/storage.js';
 import { parseUniverseId } from '../lib/universeId.js';
 import { readDailyState, writeDailyState } from '../state/dailyActions.js';
 import { SYNC_FORCE_EVENT, DAILY_STATE_CHANGED_EVENT } from '../lib/ogeEvents.js';
+import {
+  canStartSync,
+  shouldScheduleUpload,
+  slotHasData,
+  dailyStateHasData,
+  gistIsCurrent,
+} from './scheduler/pure.js';
 
 /**
  * Tombstone key suffixes the histogram page (extension origin) writes
@@ -338,25 +345,6 @@ const applyMergedSettings = (merged) => {
 };
 
 /**
- * Compare two values by JSON structural equality. Cheap and good
- * enough for the "is the gist already current?" check at the end of
- * {@link upload} — both sides are plain JSON (nested records / arrays
- * of primitives), no Dates, no cycles, no functions.
- *
- * Normalises `undefined` / `null` / missing to the literal `null`
- * string so `sameJSON(undefined, null)` is `true`. That matters
- * because `fetchGistData` may yield `undefined` for a missing field
- * while our merge always produces a concrete empty container — we
- * want those shapes to register as "already current" and skip the
- * PATCH.
- *
- * @param {unknown} a
- * @param {unknown} b
- * @returns {boolean}
- */
-const sameJSON = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
-
-/**
  * Pull the remote payload, merge it with local, and conditionally
  * write the merged result back to the local stores.
  *
@@ -383,8 +371,8 @@ const sameJSON = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? nul
  * @returns {Promise<void>}
  */
 const downloadAndMerge = async () => {
-  if (!settingsStore.get().cloudSync || !getToken()) return;
-  if (inFlight) return;
+  if (!canStartSync({ cloudSync: settingsStore.get().cloudSync, hasToken: !!getToken(), inFlight }))
+    return;
   inFlight = true;
   try {
     const remote = await fetchGistData();
@@ -479,8 +467,8 @@ const downloadAndMerge = async () => {
  * @returns {Promise<void>}
  */
 const upload = async () => {
-  if (!settingsStore.get().cloudSync || !getToken()) return;
-  if (inFlight) return;
+  if (!canStartSync({ cloudSync: settingsStore.get().cloudSync, hasToken: !!getToken(), inFlight }))
+    return;
   inFlight = true;
   try {
     const localScans = scansStore.get();
@@ -536,8 +524,7 @@ const upload = async () => {
     // write an empty slot, which would differ from the gist's absent field
     // and force a perpetual no-op PATCH.
     const slot = routesResult.merged;
-    const slotHasData = slot.updatedAt > 0 || slot.routes.length > 0 || slot.collectTarget != null;
-    if (routesUniverseId && slotHasData) mergedFsRoutes[routesUniverseId] = slot;
+    if (routesUniverseId && slotHasData(slot)) mergedFsRoutes[routesUniverseId] = slot;
     // Normalise an empty map to `undefined` so a gist with no fsRoutes field
     // and our empty map compare equal (sameJSON(undefined, {}) is false) —
     // otherwise we'd PATCH a no-op `fsRoutes: {}` onto every upload.
@@ -568,9 +555,7 @@ const upload = async () => {
       );
       if (dailyResult.changed) writeDailyState(dailyResult.merged);
       const ds = dailyResult.merged;
-      const dailyHasData =
-        ds.rewardingDoneDay || ds.traderImportDay || ds.traderAuctionBidAt || ds.traderAuctionQuietUntil;
-      if (dailyHasData) mergedDailyPerUniverse[routesUniverseId] = ds;
+      if (dailyStateHasData(ds)) mergedDailyPerUniverse[routesUniverseId] = ds;
     }
     const mergedDailyPerUniverseOut = Object.keys(mergedDailyPerUniverse).length
       ? mergedDailyPerUniverse
@@ -580,15 +565,16 @@ const upload = async () => {
     // This is the common case when upload fires right after a download
     // from another device and both sides already agree — PATCHing
     // anyway would burn a request and produce a no-op revision.
-    const gistIsCurrent =
-      sameJSON(remote?.galaxyScans, scansResult.merged) &&
-      sameJSON(remote?.colonyHistory, histResult.merged) &&
-      sameJSON(remote?.settings, setResult.merged) &&
-      sameJSON(remote?.fsRoutes, mergedFsRoutesOut) &&
-      sameJSON(remote?.settingsPerUniverse, mergedPerUniverseOut) &&
-      sameJSON(remote?.dailyStatePerUniverse, mergedDailyPerUniverseOut);
-
-    if (!gistIsCurrent) {
+    if (
+      !gistIsCurrent(remote, {
+        galaxyScans: scansResult.merged,
+        colonyHistory: histResult.merged,
+        settings: setResult.merged,
+        fsRoutes: mergedFsRoutesOut,
+        settingsPerUniverse: mergedPerUniverseOut,
+        dailyStatePerUniverse: mergedDailyPerUniverseOut,
+      })
+    ) {
       await writeGistData({
         version: 3,
         updatedAt: new Date().toISOString(),
@@ -693,7 +679,7 @@ export const installSync = () => {
     // Re-check settings on every event: the user might have flipped
     // cloudSync off mid-session. We leave the subscription in place
     // (avoiding tear-down churn) and just skip scheduling.
-    if (!settingsStore.get().cloudSync) return;
+    if (!shouldScheduleUpload({ cloudSync: settingsStore.get().cloudSync })) return;
     scheduleUpload();
   };
 
@@ -706,7 +692,8 @@ export const installSync = () => {
   // Dashboard edits (a different origin) instead arrive via the
   // `oge_syncRequestAt` tombstone handled in onStorageChange below.
   const onRoutesChange = () => {
-    if (applyingRoutesFromSync || !settingsStore.get().cloudSync) return;
+    if (!shouldScheduleUpload({ cloudSync: settingsStore.get().cloudSync, applying: applyingRoutesFromSync }))
+      return;
     scheduleUpload();
   };
   const unsubRoutes = fsRoutesStore.subscribe(onRoutesChange);
@@ -723,7 +710,7 @@ export const installSync = () => {
   let prevSyncedSettings = pickSyncedValues(settingsStore.get());
   const onSettingsChange = () => {
     const next = pickSyncedValues(settingsStore.get());
-    if (applyingSettingsFromSync || !settingsStore.get().cloudSync) {
+    if (!shouldScheduleUpload({ cloudSync: settingsStore.get().cloudSync, applying: applyingSettingsFromSync })) {
       prevSyncedSettings = next;
       return;
     }
@@ -769,7 +756,7 @@ export const installSync = () => {
   // Daily-action state changes (rewarding done, trader bid/trade) — schedule
   // an upload so the updated state reaches the gist quickly.
   const onDailyStateChanged = () => {
-    if (!settingsStore.get().cloudSync) return;
+    if (!shouldScheduleUpload({ cloudSync: settingsStore.get().cloudSync })) return;
     scheduleUpload();
   };
   document.addEventListener(DAILY_STATE_CHANGED_EVENT, onDailyStateChanged);

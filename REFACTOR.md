@@ -73,7 +73,7 @@ line) · `[-]` dropped (note why; keep for history).
 | 0 | Gates (tooling that locks invariants in) | 2 | 2 / 2 |
 | 1 | Invariant violations (highest value) | 3 | 3 / 3 |
 | 2 | Contract unification & dedup | 5 | 5 / 5 |
-| 3 | Structural (parity, pure-core, test isolation) | 4 | 1 / 4 |
+| 3 | Structural (parity, pure-core, test isolation) | 4 | 2 / 4 |
 | 4 | Low-cost polish | 4 | 1 / 4 |
 | 5 | Documentation reduction (DRY for docs) | 5 | 0 / 5 |
 
@@ -84,21 +84,21 @@ line) · `[-]` dropped (note why; keep for history).
 ## Session resume — read this first (2026-06-13)
 
 **Phases 0, 1, 2 are COMPLETE** (Gates, invariant violations, contract
-unification). Phase 4 `P1` and Phase 3 `S4` are also done. Everything is
-merged to `main`; the branch and `main` are green (`npm run test` 1367, plus
+unification). Phase 3 `S3` + `S4` and Phase 4 `P1` are also done. Everything is
+merged to `main`; the branch and `main` are green (`npm run test` 1388, plus
 `typecheck` + `lint`).
 
 **Next unblocked task — pick one (all deps met):**
 
-1. **`S3` — extract `scheduler/pure.js`** · *recommended next* · **no deps**,
-   pure-logic refactor + unit tests, no in-game behaviour change. Safest of the
-   three remaining Phase-3 tasks.
-2. **`S1` — `sendExp/domHelpers.js`** (then **`S2`**, which depends on S1).
+1. **Phase 4 `P2`/`P4`** · *recommended next* · **no deps**, small, no in-game
+   behaviour change (`P2` ntfy missing-id logging; `P4` `stampFsRoutesChanged`
+   flush). Safe to do blind. (`P3` rename depends on `C1`, which is done.)
+2. **Phase 5 docs DRY** (`D1`→`D5`, `D1` first — it defines D2–D5). No code
+   change; pure docs work.
+3. **`S1` — `sendExp/domHelpers.js`** (then **`S2`**, which depends on S1).
    Both touch **behaviour-critical fleetdispatch** — the plan asks for an
    in-game smoke test (`verify` skill) after S2. Do these when you can verify
    in-game, not blind.
-
-Then Phase 4 (`P2`/`P3`/`P4`) and Phase 5 (docs DRY, `D1`→`D5`).
 
 **Housekeeping available (Backlog):** now that Phases 0–2 have landed, the
 "compact `REFACTOR.md`'s own task format" item is ripe — a future session may
@@ -457,7 +457,7 @@ benefits.*
   behavior-critical).
 - **Done:**
 
-### `[ ]` S3 — Extract `scheduler/pure.js` decision core
+### `[x]` S3 — Extract `scheduler/pure.js` decision core
 - **Severity:** med · **Size:** L · **Risk:** med · **Deps:** none
 - **Why:** `sync/scheduler.js` (909L) mixes the lock/debounce/anti-loop
   *decision* logic (the `changed`-flag gating, ~lines 28-46) with store/network
@@ -469,7 +469,17 @@ benefits.*
   Backlog task.)
 - **Acceptance:** A tested `scheduler/pure.js`; `scheduler.js` shrinks and
   delegates decisions; behavior unchanged (existing scheduler tests green).
-- **Done:**
+- **Done:** 2026-06-13 — `refactor(sync): extract scheduler/pure.js decision
+  core`. New `src/sync/scheduler/pure.js` (zero I/O) holds the gating
+  predicates: `canStartSync({cloudSync,hasToken,inFlight})` (folds the two
+  shared download/upload entry guards), `shouldScheduleUpload({cloudSync,
+  applying})` (the subscription-handler gate + `applying*FromSync` anti-loop),
+  `slotHasData`/`dailyStateHasData` (no-op-PATCH guards), and `sameJSON` +
+  `gistIsCurrent` (the skip-PATCH "gist already matches" check, moved out of
+  `scheduler.js`). `scheduler.js` now delegates at all six sites; behaviour
+  identical. New `test/sync/scheduler/pure.test.js` (21 cases) drives each
+  predicate directly in node-env; existing `scheduler.test.js` (19) unchanged
+  and green. test 1388 / typecheck / lint all green.
 
 ### `[x]` S4 — Dashboard test-isolation: resets
 - **Severity:** med · **Size:** S · **Risk:** low · **Deps:** none
