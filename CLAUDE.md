@@ -151,6 +151,17 @@ pushed tag pointing at a non-existent release.
 - `npm run typecheck` must exit 0 before any commit.
 - Follow Conventional Commits: `fix:` / `feat:` / `refactor:` /
   `chore:` / `test:` / `docs:`.
+- **Documentation hygiene (DRY).** Each topic has ONE source of truth;
+  every other mention *links* to it instead of restating it. Canonical
+  homes: build steps → `REVIEWERS.md`; release workflow → `CLAUDE.md`;
+  architecture invariants → `CLAUDE.md`; privacy/permissions → `PRIVACY.md`;
+  user-visible changes → `CHANGELOG.md`. Plan docs (`REFACTOR.md`,
+  `docs/FEEDBACK-PLAN.md`) have a lifecycle — archive/delete them once their
+  cycle closes; they are not permanent. **Carve-out:** this rule governs the
+  standalone `.md`/`.txt` docs ONLY — it does **not** apply to in-code
+  comments. Those are reverse-engineered game knowledge with no other home
+  (OG-E has no access to OGame's source/docs); never trim them under a "DRY"
+  banner. See the Backlog note in `REFACTOR.md`.
 
 ## Context hygiene (read this every session)
 

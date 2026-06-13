@@ -75,7 +75,7 @@ line) · `[-]` dropped (note why; keep for history).
 | 2 | Contract unification & dedup | 5 | 5 / 5 |
 | 3 | Structural (parity, pure-core, test isolation) | 4 | 2 / 4 |
 | 4 | Low-cost polish | 4 | 4 / 4 |
-| 5 | Documentation reduction (DRY for docs) | 5 | 0 / 5 |
+| 5 | Documentation reduction (DRY for docs) | 5 | 1 / 5 |
 
 > Update the "Done" column whenever a task flips to `[x]`.
 
@@ -603,7 +603,7 @@ truth per topic; everything else links." Tasks here are deliberately terse —
 practicing the principle. Behavior never changes; verify the release script
 still works where a task touches release inputs.*
 
-### `[ ]` D1 — Add the doc-hygiene rule to `CLAUDE.md`
+### `[x]` D1 — Add the doc-hygiene rule to `CLAUDE.md`
 - **Severity:** med · **Size:** S · **Deps:** none (do first — defines D2–D5)
 - **Why:** No rule currently keeps docs DRY; topics are re-stated across 5+
   files. Codify canonical homes + the living-plan lifecycle.
@@ -619,7 +619,14 @@ still works where a task touches release inputs.*
   a "DRY docs" banner.
 - **Acceptance:** Rule present and ≤ ~8 lines, with the in-code carve-out. No
   code change.
-- **Done:**
+- **Done:** 2026-06-13 — `docs: add the documentation-hygiene (DRY) rule to
+  CLAUDE.md (D1)`. Added a "Documentation hygiene (DRY)" bullet under General
+  rules: one source of truth per topic, others link; the canonical homes
+  (build→REVIEWERS, release+architecture→CLAUDE, privacy→PRIVACY, user-visible→
+  CHANGELOG); the plan-doc lifecycle (archive/delete on close); and the explicit
+  in-code-comment **carve-out** (reverse-engineered game knowledge, never
+  trimmed under a DRY banner — points at the REFACTOR.md Backlog note). Defines
+  the canonical homes D2–D5 then enforce. No code change.
 
 ### `[ ]` D2 — De-duplicate across docs per the canonical homes
 - **Severity:** med · **Size:** M · **Deps:** D1
