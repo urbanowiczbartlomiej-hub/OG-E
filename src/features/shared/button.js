@@ -30,7 +30,7 @@
 // @see ./buttonChrome.js     — the engraved ring + ripple decoration.
 // @see ./draggableButton.js  — the drag + focus-persistence primitives.
 
-import { decorateButton, appendGlyph } from './buttonChrome.js';
+import { decorateButton, appendGlyph, appendCenterDisc } from './buttonChrome.js';
 import {
   installDrag,
   installFocusPersist,
@@ -70,10 +70,12 @@ export const LABEL_CLASS = 'oge-btn-label';
  *                                         buttonGlyphs.js); omitted ⇒ no art.
  * @property {string} [focusValue]         present ⇒ persist focus under `focusKey`.
  * @property {number} [focusRestoreDelay]
- * @property {number} [labelShiftY]        px to nudge this zone's label toward
- *                                         the button centre (split buttons:
- *                                         +down on the top zone, -up on the
- *                                         bottom one). Applied to the label span.
+ * @property {number} [labelShiftY]        px to nudge this zone's label
+ *                                         vertically (translateY; +down).
+ *                                         Split buttons push labels AWAY from
+ *                                         centre (-up on the top zone, +down on
+ *                                         the bottom one) to clear the central
+ *                                         node disc. Applied to the label span.
  */
 
 /**
@@ -277,14 +279,21 @@ export const createButton = (cfg) => {
   // it rides on the span so it survives every repaint.
   for (const z of cfg.zones) {
     const el = /** @type {HTMLElement} */ (zoneEls.get(z.key));
-    // Faint background watermark behind the label (z-index ordering keeps it
-    // under the label/ring regardless of DOM order); skipped if no glyph.
-    if (z.glyph) appendGlyph(el, z.glyph);
+    // Glyph placement is structural: a SINGLE button paints it as a faint
+    // full-bleed watermark behind its label; a SPLIT button hosts it centred
+    // on the seam in a node disc (appended to the wrap after this loop).
+    if (single && z.glyph) appendGlyph(el, z.glyph);
     const span = document.createElement('span');
     span.className = LABEL_CLASS;
     if (z.labelShiftY) span.style.transform = `translateY(${z.labelShiftY}px)`;
     el.appendChild(span);
     labelEls.set(z.key, span);
+  }
+  // Split buttons carry ONE central node disc (the first zone declaring a
+  // glyph), mounted on the stable wrap so label repaints never wipe it.
+  if (!single) {
+    const withGlyph = cfg.zones.find((z) => z.glyph);
+    if (withGlyph?.glyph) appendCenterDisc(outer, withGlyph.glyph);
   }
 
   // ── mount + drag ────────────────────────────────────────────────────────

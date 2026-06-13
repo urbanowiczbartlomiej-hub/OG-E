@@ -739,7 +739,7 @@ export const installFsCollect = () => {
           glyph: PLANET_ARROW_GLYPH,
           onTap: onMicroClick,
           focusValue: 'fs-unified-micro',
-          labelShiftY: 17,
+          labelShiftY: -14,
         },
         {
           // TAP collects; LONG-PRESS (onHold) sets the collect target.
@@ -751,7 +751,7 @@ export const installFsCollect = () => {
           onTap: onCollectClick,
           onHold: onSetTargetClick,
           focusValue: 'fs-unified-collect',
-          labelShiftY: -17,
+          labelShiftY: 14,
         },
       ],
     });

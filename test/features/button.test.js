@@ -101,6 +101,23 @@ describe('single-zone button', () => {
     ctl.dispose();
     expect(document.getElementById('oge-test-single')).toBeNull();
   });
+
+  it('paints a glyph as a watermark layer, not a central disc', () => {
+    createButton({
+      id: 'oge-test-wm',
+      title: 'Exp',
+      ringId: 'oge-ring-wm',
+      size: 80,
+      fontScale: 0.23,
+      posKey: 'oge_test_wm_pos',
+      zones: [
+        { key: 'main', id: 'oge-test-wm', bg: 'red', glyph: '<circle r="10"/>', onTap: () => {} },
+      ],
+    });
+    const btn = /** @type {HTMLElement} */ (document.getElementById('oge-test-wm'));
+    expect(btn.querySelector('.oge-art svg')).not.toBeNull();
+    expect(btn.querySelector('.oge-disc')).toBeNull();
+  });
 });
 
 describe('two-zone button', () => {
@@ -164,6 +181,33 @@ describe('two-zone button', () => {
     const expected = Math.round(100 * 0.14) + 'px';
     expect(document.getElementById('oge-test-top')?.style.fontSize).toBe(expected);
     expect(document.getElementById('oge-test-bottom')?.style.fontSize).toBe(expected);
+  });
+
+  it('hosts a glyph as a central node disc, not a per-zone watermark', () => {
+    createButton({
+      id: 'oge-test-disc',
+      title: 'Daily',
+      ringId: 'oge-ring-disc',
+      size: 80,
+      fontScale: 0.14,
+      posKey: 'oge_test_disc_pos',
+      zones: [
+        {
+          key: 'top',
+          id: 'oge-test-disc-top',
+          bg: 'green',
+          glyph: '<circle r="10"/>',
+          onTap: () => {},
+        },
+        { key: 'bottom', id: 'oge-test-disc-bottom', bg: 'teal', onTap: () => {} },
+      ],
+    });
+    const wrap = /** @type {HTMLElement} */ (document.getElementById('oge-test-disc'));
+    const disc = wrap.querySelector('.oge-disc');
+    expect(disc).not.toBeNull();
+    expect(disc?.querySelector('svg')).not.toBeNull();
+    // Split buttons carry no per-zone watermark — the glyph moved to centre.
+    expect(wrap.querySelector('.oge-art')).toBeNull();
   });
 
   it('setProgress drives the progress arc stroke-dashoffset (0 = empty, 1 = full)', () => {

@@ -20,6 +20,17 @@ version numbers follow [Semantic Versioning](https://semver.org).
   galaxies" preference moved here too (out of the AGR settings panel). All of
   it is per-universe and syncs across your devices when cloud sync is on.
 
+### Changed
+
+- **Two-part buttons now carry their icon in the centre.** On the split
+  buttons (Colonization, Daily Run) the command glyph moves from a faint
+  watermark on the top half to a small, sharp disc centred on the seam
+  between the two halves. The dividing line is inverted to match — bright at
+  the outer edges, fading to nothing in the middle — so it threads into the
+  central disc from both sides instead of cutting across it. Each half's
+  label is nudged outward to clear the disc. Single buttons (Expeditions,
+  Lifeforms) keep their centred watermark glyph unchanged.
+
 ### Fixed
 
 - **Fleet-send buttons no longer complete someone else's fleet2.** Each

@@ -81,11 +81,16 @@ export const BUTTON_CHROME_CSS = [
   'color-mix(in oklab,var(--rim) 30%,var(--surface)),',
   'color-mix(in oklab,var(--rim) 12%,var(--surface)));',
   'transition:filter .12s ease;}',
+  // Seam runs INVERTED: brightest at the two outer ends, fading to nothing
+  // in the centre — so it threads into the central node disc (see .oge-disc)
+  // from both halves instead of cutting across it. (The old build was the
+  // mirror: bright centre, fading to the sides.)
   '.oge-host .zone+.zone::before{',
   'content:"";position:absolute;left:14%;right:14%;top:-.5px;height:1.5px;z-index:4;',
-  'background:linear-gradient(90deg,transparent,',
-  'color-mix(in oklab,var(--rim) 60%,#fff),transparent);',
-  'opacity:.45;}',
+  'background:linear-gradient(90deg,',
+  'color-mix(in oklab,var(--rim) 60%,#fff),transparent,',
+  'color-mix(in oklab,var(--rim) 60%,#fff));',
+  'opacity:.55;}',
   '.oge-host .zone:hover{filter:brightness(1.12) saturate(1.05);}',
 
   // ── Split: stronger rim + dark inset backing to restore thread contrast
@@ -133,11 +138,12 @@ export const BUTTON_CHROME_CSS = [
   'text-transform:uppercase;letter-spacing:.4px;',
   'paint-order:stroke;stroke:rgba(2,6,16,.55);stroke-width:.6px;}',
 
-  // ── Background watermark glyph (rim-tinted, below the functional layer) ──
-  // Sits at z-index 0: above the host's gradient fill, below ripple(1),
-  // ring(2) and label(3). Tints to --rim via currentColor and fades with
-  // --art-opacity. On a 1-zone circle it centres large; on a split zone it
-  // shrinks to the half it lives in. Never reacts to hold/charge.
+  // ── Background watermark glyph (single-zone only) ───────────────────────
+  // SINGLE buttons paint the glyph as a faint rim-tinted watermark BEHIND the
+  // label (z-index 0: above the gradient fill, below ripple(1), ring(2),
+  // label(3)); it tints via currentColor and fades with --art-opacity. SPLIT
+  // buttons don't use this layer — their glyph lives in the central node disc
+  // (see .oge-disc below). Never reacts to hold/charge.
   '.oge-art{position:absolute;inset:0;z-index:0;pointer-events:none;',
   'display:flex;align-items:center;justify-content:center;',
   'color:var(--rim);opacity:var(--art-opacity,.1);}',
@@ -145,11 +151,25 @@ export const BUTTON_CHROME_CSS = [
   // 1-zone: half-size glyph tucked into the upper part (label sits below it).
   '.oge-host.single .oge-art{align-items:flex-start;padding-top:13%;}',
   '.oge-host.single .oge-art svg{width:30%;height:30%;}',
-  // 2-zone: smaller glyph pulled to the top of its half so the (low-shifted)
-  // label below doesn't bury it.
-  '.oge-host.split .oge-art{align-items:flex-start;padding-top:6%;}',
-  '.oge-host.split .oge-art svg{width:30%;height:42%;}',
   '@media (prefers-reduced-motion:reduce){.oge-art{transition:none;}}',
+
+  // ── Central node disc (split buttons) ───────────────────────────────────
+  // The command glyph, sharp and centred ON the seam, sitting in a calm
+  // recessed "core" that the inverted seam threads into from both halves.
+  // Deliberately SUBTLE: a faint rim hairline + dark recess, no glow — it
+  // reads as a node, not an ornament. z-index 5 keeps it above the seam(4),
+  // label(3), ring(2). Labels are nudged AWAY from centre (ZoneConfig.
+  // labelShiftY) so they clear it.
+  '.oge-disc{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);',
+  'width:33%;height:33%;border-radius:50%;z-index:5;pointer-events:none;',
+  'display:flex;align-items:center;justify-content:center;',
+  'color:color-mix(in oklab,var(--rim) 58%,var(--label));',
+  'background:radial-gradient(120% 120% at 50% 30%,',
+  'color-mix(in oklab,var(--rim) 12%,var(--surface)),var(--surface) 82%);',
+  'box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--rim) 34%,transparent),',
+  '0 1px 3px rgba(0,0,0,.45);}',
+  '.oge-disc svg{width:62%;height:62%;overflow:visible;opacity:.82;',
+  'filter:drop-shadow(0 1px 2px rgba(0,0,6,.5));}',
 
   // ── Tap ripple (rim-coloured wave from the touch point) ─────────────────
   '.oge-deco-layer{position:absolute;inset:0;border-radius:50%;',
@@ -372,6 +392,30 @@ export const appendGlyph = (zone, inner) => {
     inner +
     '</svg>';
   zone.appendChild(art);
+};
+
+/**
+ * Append the central node disc carrying the command glyph to a SPLIT
+ * button's host (idempotent per host). Unlike the single-zone watermark
+ * (see {@link appendGlyph}), this is a sharp, centred glyph on the seam — the
+ * inverted divider threads into it from both halves. `inner` is the inner
+ * markup of a `0 0 64 64` SVG using `currentColor` so it tints to `--rim`
+ * (styled by the `.oge-disc` rules above).
+ *
+ * @param {HTMLElement} host  Stable outer element (the split wrap).
+ * @param {string} inner      Inner SVG markup (paths/lines/circles, currentColor).
+ * @returns {void}
+ */
+export const appendCenterDisc = (host, inner) => {
+  if (!host || !inner || host.querySelector('.oge-disc')) return;
+  const disc = document.createElement('span');
+  disc.className = 'oge-disc';
+  disc.setAttribute('aria-hidden', 'true');
+  disc.innerHTML =
+    '<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" focusable="false">' +
+    inner +
+    '</svg>';
+  host.appendChild(disc);
 };
 
 /**
