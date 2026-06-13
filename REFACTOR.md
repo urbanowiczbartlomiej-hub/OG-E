@@ -11,6 +11,12 @@ able to pick any unblocked task and execute it from this file alone.
 > changes an invariant, it says so explicitly and edits `CLAUDE.md` in the
 > same commit.
 
+> **Lifecycle.** This is a finite-cycle plan doc — per the "Documentation
+> hygiene" rule in `CLAUDE.md`, plans don't live forever. Once every task is
+> `[x]`/`[-]` (or moved to the Backlog) and the work has shipped, **archive
+> this file to `docs/plans/`** (or delete it — git keeps the history). Until
+> then it stays here.
+
 ---
 
 ## How to use this document (guideline postępowania)
@@ -716,7 +722,7 @@ still works where a task touches release inputs.*
   `## ` for the lookahead), which is a non-issue: real releases always insert
   the new version at the TOP, followed by the prior version. No code change.
 
-### `[ ]` D5 — Living-plan lifecycle (FEEDBACK-PLAN + this file)
+### `[~]` D5 — Living-plan lifecycle (FEEDBACK-PLAN + this file)
 - **Severity:** low · **Size:** S · **Deps:** D1 · **may be Blocked**
 - **Why:** `docs/FEEDBACK-PLAN.md` (987L) is 52/62 tasks in `REVIEW` at the
   current version (1.17.0) — a nearly-closed cycle. Per D1, closed plans get
@@ -727,7 +733,15 @@ still works where a task touches release inputs.*
   done" note to `REFACTOR.md`.
 - **Blocked:** on user in-game verification of the REVIEW items — until then
   only the lifecycle note is actionable.
-- **Done:**
+- **In progress:** 2026-06-13 — `docs: add living-plan lifecycle notes
+  (FEEDBACK-PLAN + REFACTOR) (D5)`. Did the actionable half: added a
+  "Cykl życia (lifecycle)" blockquote at the top of `docs/FEEDBACK-PLAN.md`
+  (Polish, matching the doc) and a "Lifecycle" blockquote near the top of this
+  file — both say plans are finite-cycle and get archived to `docs/plans/` (or
+  deleted; git keeps history) once their cycle closes, per the D1 doc-hygiene
+  rule. The **archival itself stays BLOCKED** on the user verifying the
+  FEEDBACK-PLAN REVIEW items in-game + a release shipping; left `[~]` and Phase 5
+  at 4/5 so a future session (or the user) closes it out then. No code change.
 
 ---
 

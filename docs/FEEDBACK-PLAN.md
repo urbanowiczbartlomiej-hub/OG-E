@@ -1,5 +1,11 @@
 # Plan prac — feedback po wydaniu 1.17.0
 
+> **Cykl życia (lifecycle).** To jest **dokument-plan o skończonym cyklu** —
+> zgodnie z regułą „Documentation hygiene" w `CLAUDE.md` plany nie żyją wiecznie.
+> Gdy wszystkie pozycje w `REVIEW` zostaną potwierdzone w grze przez użytkownika
+> **i** wyjdzie wydanie, ten plik należy **zarchiwizować do `docs/plans/`** (albo
+> usunąć — historia i tak jest w gicie). Do tego czasu zostaje tutaj.
+
 > **Cel tego pliku.** To jest centralny rejestr zadań zebranych z feedbacku
 > użytkownika po wydaniu 1.17.0. Służy do tego, by **żadne zadanie nie
 > uciekło**, by pracę dało się prowadzić **przez wiele niezależnych sesji**, i
