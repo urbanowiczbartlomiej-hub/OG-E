@@ -15,10 +15,12 @@ import {
   _resetTraderActionHookForTest,
 } from '../../src/bridges/traderActionHook.js';
 import { _resetObserversForTest } from '../../src/bridges/xhrObserver.js';
+import { fakeXHR as fakeXhrRoundTrip } from '../helpers/fakeXhr.js';
 
 /**
- * Simulate one XHR round-trip through the patched prototype with a given
- * HTTP status and response body.
+ * Simulate one trader-action POST round-trip with a given HTTP status and
+ * response body. Thin wrapper over the shared round-trip helper, keeping this
+ * file's positional `(url, responseText, status)` shape.
  *
  * @param {string} url
  * @param {string} responseText
@@ -26,14 +28,7 @@ import { _resetObserversForTest } from '../../src/bridges/xhrObserver.js';
  * @returns {Promise<void>}
  */
 const fakeXHR = async (url, responseText, status = 200) => {
-  const xhr = new XMLHttpRequest();
-  xhr.open('POST', url);
-  xhr.send();
-  Object.defineProperty(xhr, 'responseText', { value: responseText, configurable: true });
-  Object.defineProperty(xhr, 'status', { value: status, configurable: true });
-  Object.defineProperty(xhr, 'readyState', { value: 4, configurable: true });
-  xhr.dispatchEvent(new Event('load'));
-  await Promise.resolve();
+  await fakeXhrRoundTrip(url, { method: 'POST', responseText, status });
 };
 
 /**

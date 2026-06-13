@@ -17,6 +17,7 @@ import {
   _resetCheckTargetHookForTest,
 } from '../../src/bridges/checkTargetHook.js';
 import { _resetObserversForTest } from '../../src/bridges/xhrObserver.js';
+import { fakeXHR as fakeXhrRoundTrip } from '../helpers/fakeXhr.js';
 
 const CHECK_TARGET_URL =
   '/game/index.php?page=ingame&component=fleetdispatch&action=checkTarget';
@@ -39,20 +40,11 @@ const CHECK_TARGET_URL =
  *   Override to test the URL filter.
  */
 const fakeCheckTargetXHR = async (body, responseObj, url = CHECK_TARGET_URL) => {
-  const xhr = new XMLHttpRequest();
-  xhr.open('POST', url);
-  // @ts-expect-error — happy-dom's XHR accepts anything, and we want to
-  // exercise the module's non-string defensive branch.
-  xhr.send(body);
   const responseText =
     responseObj === '__INVALID_JSON__'
       ? 'not valid json at all {'
       : JSON.stringify(responseObj);
-  Object.defineProperty(xhr, 'responseText', { value: responseText, configurable: true });
-  Object.defineProperty(xhr, 'readyState', { value: 4, configurable: true });
-  xhr.dispatchEvent(new Event('load'));
-  await Promise.resolve();
-  return xhr;
+  return fakeXhrRoundTrip(url, { method: 'POST', body, responseText });
 };
 
 /** @type {CustomEvent | null} */

@@ -18,6 +18,7 @@ import {
   _resetFleetDispatcherSnapshotForTest,
 } from '../../src/bridges/fleetDispatcherSnapshot.js';
 import { _resetObserversForTest } from '../../src/bridges/xhrObserver.js';
+import { fakeXHR as fakeXhrRoundTrip } from '../helpers/fakeXhr.js';
 
 const CHECK_TARGET_URL =
   '/game/index.php?page=ingame&component=fleetdispatch&action=checkTarget';
@@ -29,11 +30,10 @@ const flush = async () => {
 
 /** Drive one checkTarget XHR load to trigger a republish. */
 const fireCheckTarget = async () => {
-  const xhr = new XMLHttpRequest();
-  xhr.open('POST', CHECK_TARGET_URL);
-  xhr.send('galaxy=4&system=30&position=8');
-  Object.defineProperty(xhr, 'readyState', { value: 4, configurable: true });
-  xhr.dispatchEvent(new Event('load'));
+  await fakeXhrRoundTrip(CHECK_TARGET_URL, {
+    method: 'POST',
+    body: 'galaxy=4&system=30&position=8',
+  });
   await flush();
 };
 

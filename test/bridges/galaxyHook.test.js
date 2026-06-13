@@ -18,30 +18,19 @@ import {
   _resetGalaxyHookForTest,
 } from '../../src/bridges/galaxyHook.js';
 import { _resetObserversForTest } from '../../src/bridges/xhrObserver.js';
+import { fakeXHR as fakeXhrRoundTrip } from '../helpers/fakeXhr.js';
 
 /**
- * Simulate one XHR round-trip through the patched prototype. Mirrors
- * the helper in `xhrObserver.test.js`: happy-dom's XHR never reaches
- * the network, so we fake the load side by setting `responseText` and
- * dispatching a synthetic `load` event.
+ * Simulate one galaxy-scan POST round-trip. Thin wrapper over the shared
+ * round-trip helper that pins the method to POST and keeps this file's
+ * `(url, responseText)` argument order.
  *
  * @param {string} url
  * @param {string} responseText
  * @returns {Promise<void>}
  */
 const fakeXHR = async (url, responseText) => {
-  const xhr = new XMLHttpRequest();
-  xhr.open('POST', url);
-  xhr.send();
-  Object.defineProperty(xhr, 'responseText', {
-    value: responseText,
-    configurable: true,
-  });
-  Object.defineProperty(xhr, 'readyState', { value: 4, configurable: true });
-  xhr.dispatchEvent(new Event('load'));
-  // Yield a microtask so `{ once: true }` load handlers fire before
-  // the caller asserts.
-  await Promise.resolve();
+  await fakeXhrRoundTrip(url, { method: 'POST', responseText });
 };
 
 /**

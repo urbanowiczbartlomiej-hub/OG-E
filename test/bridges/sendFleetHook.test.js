@@ -21,6 +21,7 @@ import {
 } from '../../src/bridges/sendFleetHook.js';
 import { _resetObserversForTest } from '../../src/bridges/xhrObserver.js';
 import { REGISTRY_KEY } from '../../src/state/registry.js';
+import { fakeXHR as fakeXhrRoundTrip } from '../helpers/fakeXhr.js';
 
 const SEND_FLEET_URL =
   '/game/index.php?page=ingame&component=fleetdispatch&action=sendFleet';
@@ -91,23 +92,11 @@ const setupScene = async (options = {}) => {
   // "no coords" cases below.
   location.search = query.length > 0 ? `?${query.join('&')}` : '';
 
-  const xhr = new XMLHttpRequest();
-  xhr.open('POST', SEND_FLEET_URL);
   const body =
     mission === null ? 'type=1&am208=1' : `mission=${mission}&type=1&am208=1`;
-  xhr.send(body);
-
   const text =
     responseText !== null ? responseText : JSON.stringify(responseObj);
-  Object.defineProperty(xhr, 'responseText', {
-    value: text,
-    configurable: true,
-  });
-  Object.defineProperty(xhr, 'readyState', { value: 4, configurable: true });
-  xhr.dispatchEvent(new Event('load'));
-  // Let the `{ once: true }` load handler registered by xhrObserver fire.
-  await Promise.resolve();
-  return xhr;
+  return fakeXhrRoundTrip(SEND_FLEET_URL, { method: 'POST', body, responseText: text });
 };
 
 /**

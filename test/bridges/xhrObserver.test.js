@@ -12,33 +12,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { observeXHR, _resetObserversForTest } from '../../src/bridges/xhrObserver.js';
-
-/**
- * Helper: exercise the patched open/send pair and resolve via happy-dom's
- * `respond` / `responseText` plumbing. happy-dom's XHR doesn't actually
- * reach the network — setting `responseText` and dispatching `load` is
- * enough to drive the observers we're testing.
- *
- * Returns the xhr after `load` has fired so tests can assert on side
- * effects registered via `'load'`-phase observers.
- *
- * @param {string} url
- * @param {{ method?: string, body?: string | null, responseText?: string }} [options]
- */
-const fakeXHR = async (url, { method = 'GET', body = null, responseText = '' } = {}) => {
-  const xhr = new XMLHttpRequest();
-  xhr.open(method, url);
-  xhr.send(body);
-  // happy-dom lets us set the readyState + response and fire load manually.
-  // We simulate a normal response arrival here.
-  Object.defineProperty(xhr, 'responseText', { value: responseText, configurable: true });
-  Object.defineProperty(xhr, 'readyState', { value: 4, configurable: true });
-  xhr.dispatchEvent(new Event('load'));
-  // Yield a microtask so any `{ once: true }` listeners registered by the
-  // observer have a chance to fire before the caller asserts.
-  await Promise.resolve();
-  return xhr;
-};
+import { fakeXHR } from '../helpers/fakeXhr.js';
 
 beforeEach(() => {
   _resetObserversForTest();

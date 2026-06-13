@@ -15,23 +15,23 @@ import {
 } from '../../src/bridges/discoveryHook.js';
 import { SYSTEM_DISCOVERY_RESULT_EVENT } from '../../src/lib/ogeEvents.js';
 import { _resetObserversForTest } from '../../src/bridges/xhrObserver.js';
+import { fakeXHR as fakeXhrRoundTrip } from '../helpers/fakeXhr.js';
 
 const DISCOVERY_URL =
   '/game/index.php?page=ingame&component=fleetdispatch&action=sendSystemDiscoveryFleet&asJson=1';
 
-/** @param {unknown} body @param {unknown} responseObj */
+/**
+ * POST a discovery request body and a response object to the fixed discovery
+ * endpoint. Thin wrapper over the shared round-trip helper that keeps this
+ * file's `(body, responseObj)` shape and the `'__INVALID__'` → malformed-JSON
+ * sentinel.
+ *
+ * @param {unknown} body @param {unknown} responseObj
+ */
 const fakeXHR = async (body, responseObj) => {
-  const xhr = new XMLHttpRequest();
-  xhr.open('POST', DISCOVERY_URL);
-  // @ts-expect-error happy-dom accepts anything
-  xhr.send(body);
   const responseText =
     responseObj === '__INVALID__' ? 'nope {' : JSON.stringify(responseObj);
-  Object.defineProperty(xhr, 'responseText', { value: responseText, configurable: true });
-  Object.defineProperty(xhr, 'readyState', { value: 4, configurable: true });
-  xhr.dispatchEvent(new Event('load'));
-  await Promise.resolve();
-  return xhr;
+  return fakeXhrRoundTrip(DISCOVERY_URL, { method: 'POST', body, responseText });
 };
 
 /**

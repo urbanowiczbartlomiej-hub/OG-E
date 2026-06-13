@@ -72,7 +72,7 @@ line) · `[-]` dropped (note why; keep for history).
 |-------|-------|-------|------|
 | 0 | Gates (tooling that locks invariants in) | 2 | 2 / 2 |
 | 1 | Invariant violations (highest value) | 3 | 3 / 3 |
-| 2 | Contract unification & dedup | 5 | 2 / 5 |
+| 2 | Contract unification & dedup | 5 | 3 / 5 |
 | 3 | Structural (parity, pure-core, test isolation) | 4 | 0 / 4 |
 | 4 | Low-cost polish | 4 | 1 / 4 |
 | 5 | Documentation reduction (DRY for docs) | 5 | 0 / 5 |
@@ -303,7 +303,7 @@ benefits.*
   they pin the contract. Grep: no `'oge:` code literal outside the two `lib/`
   registry files. lint (incl. `no-cycle`) + typecheck + test (1365) all green.
 
-### `[ ]` C2 — Extract shared `fakeXhr` test helper
+### `[x]` C2 — Extract shared `fakeXhr` test helper
 - **Severity:** med · **Size:** M · **Risk:** none · **Deps:** none
 - **Why:** 11 bridge tests each redefine a `fakeXHR` helper
   (`galaxyHook.test.js:~24` literally comments "Mirrors the helper in
@@ -314,7 +314,21 @@ benefits.*
   complete existing copy's capabilities so no test loses coverage.
 - **Acceptance:** No `class FakeXHR`/`function fakeXHR` defined inside
   `test/bridges/*`. All bridge tests import the shared helper and pass.
-- **Done:**
+- **Done:** 2026-06-13 — `test: extract shared fakeXhr round-trip helper
+  (test/helpers/fakeXhr.js)`. One low-level helper `fakeXHR(url, { method, body,
+  responseText, status })` (superset of all the per-file copies; returns the
+  xhr after `load` + a microtask). **9** bridge tests now use it: `xhrObserver`
+  imports it directly; `galaxyHook`/`traderActionHook`/`eventBoxHook` keep a
+  thin local wrapper that pins method/positional shape; `discoveryHook`/
+  `checkTargetHook`/`sendFleetResultHook` keep a wrapper carrying their
+  JSON-stringify + invalid-JSON-sentinel shaping; `fleetDispatcherSnapshot`'s
+  `fireCheckTarget` and `sendFleetHook`'s `setupScene` delegate too. No
+  round-trip is re-implemented in `test/bridges/*` anymore. **Deliberately left
+  inline (not copies of the helper):** `sendFleetHook`'s mutate-between-send-
+  and-load case (timing test — needs a split round-trip), `xhrObserver`'s
+  double-`load` `{ once:true }` case, `deployRedirect`'s send-only sims, and
+  `expeditionRedirect`'s send-only `fakeSendFleetXHR` + `overrideResponseText`
+  tests. typecheck/lint/test (1365) green; no assertion weakened.
 
 ### `[x]` C3 — Factor the per-universe key resolver
 - **Severity:** low · **Size:** S · **Risk:** low · **Deps:** none

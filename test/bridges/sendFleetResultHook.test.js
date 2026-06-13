@@ -12,23 +12,22 @@ import {
   _resetSendFleetResultHookForTest,
 } from '../../src/bridges/sendFleetResultHook.js';
 import { _resetObserversForTest } from '../../src/bridges/xhrObserver.js';
+import { fakeXHR as fakeXhrRoundTrip } from '../helpers/fakeXhr.js';
 
 const SEND_URL =
   '/game/index.php?page=ingame&component=fleetdispatch&action=sendFleet&ajax=1&asJson=1';
 
-/** @param {unknown} body @param {unknown} responseObj */
+/**
+ * POST a sendFleet body + response object to the fixed send endpoint. Thin
+ * wrapper over the shared round-trip helper, keeping the `(body, responseObj)`
+ * shape and the `'__INVALID__'` malformed-JSON sentinel.
+ *
+ * @param {unknown} body @param {unknown} responseObj
+ */
 const fakeSendXHR = async (body, responseObj) => {
-  const xhr = new XMLHttpRequest();
-  xhr.open('POST', SEND_URL);
-  // @ts-expect-error happy-dom accepts anything
-  xhr.send(body);
   const responseText =
     responseObj === '__INVALID__' ? 'nope {' : JSON.stringify(responseObj);
-  Object.defineProperty(xhr, 'responseText', { value: responseText, configurable: true });
-  Object.defineProperty(xhr, 'readyState', { value: 4, configurable: true });
-  xhr.dispatchEvent(new Event('load'));
-  await Promise.resolve();
-  return xhr;
+  return fakeXhrRoundTrip(SEND_URL, { method: 'POST', body, responseText });
 };
 
 /** @type {any} */

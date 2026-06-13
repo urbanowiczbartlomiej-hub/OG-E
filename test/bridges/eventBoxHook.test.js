@@ -13,28 +13,20 @@ import {
   _resetEventBoxHookForTest,
 } from '../../src/bridges/eventBoxHook.js';
 import { _resetObserversForTest } from '../../src/bridges/xhrObserver.js';
+import { fakeXHR as fakeXhrRoundTrip } from '../helpers/fakeXhr.js';
 
 const EVENTLIST_URL =
   '/game/index.php?page=componentOnly&component=eventList&ajax=1';
 
 /**
- * Drive one GET through happy-dom's XHR shim and force the load phase with
- * a chosen HTTP status. `open` + `send` trip the xhrObserver patch; we then
- * pin `status`/`readyState` and dispatch a synthetic `load` so the hook
- * evaluates a response we fully control.
+ * Drive one eventList GET round-trip with a chosen HTTP status. Thin wrapper
+ * over the shared round-trip helper, keeping this file's `{ url, status }`
+ * options shape (the hook only cares about the status, not a body).
  *
  * @param {{ url?: string, status?: number }} [opts]
  */
-const fireXHR = async ({ url = EVENTLIST_URL, status = 200 } = {}) => {
-  const xhr = new XMLHttpRequest();
-  xhr.open('GET', url);
-  xhr.send();
-  Object.defineProperty(xhr, 'status', { value: status, configurable: true });
-  Object.defineProperty(xhr, 'readyState', { value: 4, configurable: true });
-  xhr.dispatchEvent(new Event('load'));
-  await Promise.resolve();
-  return xhr;
-};
+const fireXHR = async ({ url = EVENTLIST_URL, status = 200 } = {}) =>
+  fakeXhrRoundTrip(url, { method: 'GET', status });
 
 let fired = 0;
 /** @type {CustomEvent | null} */
