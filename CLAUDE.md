@@ -14,7 +14,7 @@ extension stays testable and survives OGame updates.
 domain  ←  state  ←  features / sync
   ↑          ↑            ↑
   └──────── lib (foundation, zero app deps) ───────┘
-bridges → lib only (MAIN-world; must NOT import state/)
+bridges → lib + domain (MAIN-world; must NOT import state/features/sync)
 ```
 
 - **`domain/`** is pure logic: no DOM, no timers, no storage, no
@@ -28,9 +28,13 @@ bridges → lib only (MAIN-world; must NOT import state/)
   feature imports another feature.** Each `install*()` is independent and
   idempotent, and ships a `_reset*ForTest()` for the suite. Order in
   `content.js` is not load-bearing.
-- **`bridges/`** are MAIN-world observers. They talk to `lib` only —
-  never `state/` — and communicate with the isolated world exclusively
-  via `oge:*` CustomEvents on `document`.
+- **`bridges/`** are MAIN-world observers. They import `lib` and pure
+  `domain` helpers only (domain is side-effect-free, so it is safe across
+  the world boundary) — **never** `state`/`features`/`sync` (the
+  isolated-world layers pull in `chrome.*`, which doesn't exist in the
+  MAIN world). Shared key strings live in `lib/storageKeys.js`. They
+  communicate with the isolated world exclusively via `oge:*` CustomEvents
+  on `document`. (Enforced by the `bridges` lint zone.)
 - **`lib/`** is the dependency-free foundation. Nothing here may import
   from `domain`/`state`/`features`/`sync`.
 

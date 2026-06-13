@@ -71,7 +71,7 @@ line) · `[-]` dropped (note why; keep for history).
 | Phase | Theme | Tasks | Done |
 |-------|-------|-------|------|
 | 0 | Gates (tooling that locks invariants in) | 2 | 2 / 2 |
-| 1 | Invariant violations (highest value) | 3 | 2 / 3 |
+| 1 | Invariant violations (highest value) | 3 | 3 / 3 |
 | 2 | Contract unification & dedup | 5 | 0 / 5 |
 | 3 | Structural (parity, pure-core, test isolation) | 4 | 0 / 4 |
 | 4 | Low-cost polish | 4 | 1 / 4 |
@@ -241,7 +241,7 @@ benefits.*
   `eventFleetRows(missionType)` helper deferred to Backlog (already listed).
   lint/typecheck/test all green (1365). No behavior change.
 
-### `[ ]` I3 — Reconcile `bridges → domain` doc vs. reality
+### `[x]` I3 — Reconcile `bridges → domain` doc vs. reality
 - **Severity:** med · **Size:** S · **Risk:** none · **Deps:** none
 - **Why:** `CLAUDE.md`'s diagram says `bridges → lib only`, but bridges import
   pure `domain/` helpers (`galaxyHook.js:31` `classifyPosition`;
@@ -252,7 +252,13 @@ benefits.*
   bullet. Reflect the same allowance in the ESLint bridges zone (G1/I1): forbid
   `state|features|sync`, **allow** `domain|lib`.
 - **Acceptance:** `CLAUDE.md` and the ESLint config agree. No code change.
-- **Done:**
+- **Done:** 2026-06-13 — `docs: bless bridges → lib + domain (I3)`. Updated the
+  `CLAUDE.md` ASCII diagram (`bridges → lib + domain`, must not import
+  `state/features/sync`) and the bridges bullet (domain is pure, safe across
+  the world boundary; key strings in `lib/storageKeys.js`; enforced by lint).
+  Broadened the ESLint `bridges` zone from just `state` (I1) to
+  `state/features/sync`, leaving `domain`/`lib` allowed. No code change;
+  lint + typecheck green.
 
 ---
 

@@ -10,9 +10,9 @@
 //
 // We enforce the arrows with `import/no-restricted-paths` zones, plus a
 // `no-restricted-globals` rule that keeps `domain/` free of DOM/timer/chrome
-// access. The `bridges → state` zone landed in task I1 (shared key constants
-// moved to lib/storageKeys.js); task I3 broadens it to also forbid
-// features/sync and reconciles the doc (bridges may import domain + lib).
+// access. bridges/ may import lib/ + pure domain/ only (domain is
+// side-effect-free, safe across the MAIN/isolated world boundary); the zone
+// forbids state/features/sync. (Landed across tasks I1 + I3.)
 
 import fs from 'node:fs';
 import js from '@eslint/js';
@@ -99,16 +99,17 @@ export default [
               message:
                 'lib/ is the zero-app-dep foundation and must not import from any app layer (CLAUDE.md invariant).',
             },
-            // bridges/ are MAIN-world observers — they have no chrome.* and
-            // must not pull in the isolated-world store layer. Shared key
-            // strings live in lib/storageKeys.js (task I1). (Task I3 broadens
-            // this to features/sync.)
+            // bridges/ are MAIN-world observers — no chrome.*, no isolated-
+            // world layers. They may import lib/ and pure domain/ only (domain
+            // is side-effect-free, so it is safe across the world boundary);
+            // state/features/sync are forbidden. Shared key strings live in
+            // lib/storageKeys.js (task I1).
             {
               target: './src/bridges',
-              from: ['./src/state'],
+              from: ['./src/state', './src/features', './src/sync'],
               message:
-                'bridges/ run in the MAIN world (no chrome.*) and must not import state/ — ' +
-                'use lib/ (e.g. lib/storageKeys.js) instead (CLAUDE.md invariant).',
+                'bridges/ run in the MAIN world (no chrome.*) and may import only lib/ + pure ' +
+                'domain/ — not state/features/sync. Put shared constants in lib/ (CLAUDE.md invariant).',
             },
             // No feature imports another feature.
             ...crossFeatureZones,
