@@ -72,7 +72,7 @@ line) · `[-]` dropped (note why; keep for history).
 |-------|-------|-------|------|
 | 0 | Gates (tooling that locks invariants in) | 2 | 2 / 2 |
 | 1 | Invariant violations (highest value) | 3 | 3 / 3 |
-| 2 | Contract unification & dedup | 5 | 4 / 5 |
+| 2 | Contract unification & dedup | 5 | 5 / 5 |
 | 3 | Structural (parity, pure-core, test isolation) | 4 | 0 / 4 |
 | 4 | Low-cost polish | 4 | 1 / 4 |
 | 5 | Documentation reduction (DRY for docs) | 5 | 0 / 5 |
@@ -377,7 +377,7 @@ benefits.*
   `dispose*Store()`; `_reset*ForTest` is a *feature* affordance, not a store
   one. lint/typecheck/test (1365) green.
 
-### `[ ]` C5 — Document (or migrate) the non-store state modules
+### `[x]` C5 — Document (or migrate) the non-store state modules
 - **Severity:** med · **Size:** S (document) / L (migrate) · **Deps:** none
 - **Why:** `state/dailyActions.js` and `state/lifeformArtifacts.js` are plain
   `read*/write*` helpers over `safeLS` — no `createStore`/`persist`. This is an
@@ -390,7 +390,13 @@ benefits.*
   Backlog task if so).
 - **Acceptance:** `CLAUDE.md` describes the exception and names both modules;
   no behavior change.
-- **Done:**
+- **Done:** 2026-06-13 — `docs: sanction the plain key-owner state modules
+  (C5)`. Took the cheap path: added a "Sanctioned exception — plain key-owner
+  modules" note to `CLAUDE.md`'s state bullet naming `state/dailyActions.js`
+  and `state/lifeformArtifacts.js` (confirmed: plain `read*/write*` over
+  `safeLS`, no `createStore`/`persist`). Rationale recorded: nothing subscribes
+  to them, so a reactive store would be overhead; migrate only if a consumer
+  needs reactivity. No code change.
 
 ---
 
