@@ -418,9 +418,13 @@ still works where a task touches release inputs.*
   build→`REVIEWERS.md`; release→`CLAUDE.md`; architecture invariants→`CLAUDE.md`;
   privacy/permissions→`PRIVACY.md`; user-visible changes→`CHANGELOG.md`. Plan
   docs (`REFACTOR.md`, feedback plans) are archived/deleted when their cycle
-  closes. In-code: comment the *why* + the fragile external contract, not what
-  the code plainly says.
-- **Acceptance:** Rule present and ≤ ~8 lines. No code change.
+  closes. **Scope:** this DRY rule governs the standalone docs only — it does
+  **not** apply to in-code comments. Those document reverse-engineered game
+  behavior (OG-E has no access to the game's source/docs) and are a primary
+  knowledge asset; the rule must say so explicitly so no one trims them under
+  a "DRY docs" banner.
+- **Acceptance:** Rule present and ≤ ~8 lines, with the in-code carve-out. No
+  code change.
 - **Done:**
 
 ### `[ ]` D2 — De-duplicate across docs per the canonical homes
@@ -505,12 +509,15 @@ still works where a task touches release inputs.*
 - Consider a `makePersistedStore({store, load, save, debounceMs})` factory to
   collapse the repeated init/dispose boilerplate across 5 store modules (judgment
   call — current form is readable).
-- **Header-comment trimming (judgment-heavy, low priority).** ~53% of `src` is
-  comment-ish lines; some headers run 60–116 lines (`gist.js` 116, `scheduler.js`
-  87, `traderMenuHighlight.js` 74). Trim *only* where a header restates what the
-  code/tests already show — never delete the documented "why", the invariants, or
-  the verbatim game-misspelling notes. Do per-file, opportunistically, when
-  already editing a file; not a sweep.
+- **Comments are NOT a reduction target — they are a primary asset.** OG-E is
+  absolutely dependent on a game whose source and docs we do **not** have. The
+  scattered in-code comments are reverse-engineered knowledge about the game's
+  processes, goals, data shapes, and dependencies — knowledge that exists
+  *nowhere else*. The ~53% comment density is therefore expected and valuable.
+  Do **not** sweep, trim headers, or "tighten" comments as a goal. The only
+  comments safe to remove are ones that restate the JavaScript language itself
+  (e.g. `// loop over the array`). When in doubt, **keep**. This item exists to
+  forbid the trim, not to schedule it.
 - **Compact `REFACTOR.md`'s own task format** once Phases 0–2 land — the cold-
   pickup verbosity earns its place now, but finished phases can collapse to a
   one-line "done" summary to keep this file lean (eat our own dog food).
@@ -531,5 +538,10 @@ still works where a task touches release inputs.*
   build steps in 5 files; release/architecture/privacy/compliance each in 2–3;
   `CLAUDE.md` quotes `amo-reviewer-notes.txt` verbatim. CHANGELOG 1485L/49
   versions; FEEDBACK-PLAN 987L at 52/62 REVIEW. Principle adopted: one source of
-  truth per topic, others link; plan docs have a lifecycle. In-code comment
-  density (~53%) is largely deliberate — trim opportunistically, never sweep.
+  truth per topic, others link; plan docs have a lifecycle.
+- 2026-06-13 — **In-code comments are off-limits to reduction (user-confirmed).**
+  OG-E depends entirely on a game with no available source or docs; the
+  scattered comments are reverse-engineered knowledge (game processes, goals,
+  data shapes, dependencies) with no other home. The ~53% comment density is
+  expected and valuable. The Phase-5 DRY-for-docs work targets standalone
+  `.md`/`.txt` files only — never in-code comments.
