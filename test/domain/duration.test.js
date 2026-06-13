@@ -37,6 +37,13 @@ describe('parseDuration', () => {
     expect(parseDuration('10 20')).toBeNull();
     expect(parseDuration('standard')).toBeNull();
   });
+
+  it('scales the day unit (added for Galaxy-Scan rescan fields)', () => {
+    expect(parseDuration('1d')).toBe(86400);
+    expect(parseDuration('5d')).toBe(5 * 86400);
+    expect(parseDuration('0.5d')).toBe(43200);
+    expect(parseDuration('2D')).toBe(2 * 86400); // case-insensitive
+  });
 });
 
 describe('parseDurationList', () => {

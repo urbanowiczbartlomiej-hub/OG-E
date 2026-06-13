@@ -9,7 +9,8 @@
 // MINUTES-FIRST with an explicit unit suffix:
 //
 //   - a BARE number is MINUTES  — `30` ⇒ 1800 s
-//   - an explicit suffix scales — `90s` ⇒ 90 s, `10m` ⇒ 600 s, `1h` ⇒ 3600 s
+//   - an explicit suffix scales — `90s` ⇒ 90 s, `10m` ⇒ 600 s, `1h` ⇒ 3600 s,
+//     `5d` ⇒ 432000 s (days, for the Galaxy-Scan rescan fields)
 //   - decimals are allowed       — `1.5m` ⇒ 90 s
 //
 // So this module is the single boundary that converts the user's
@@ -22,14 +23,14 @@
 // Pure: no DOM, no storage, no `Date`. Fully unit-testable in Node.
 
 /** Seconds-per-unit. The absent suffix defaults to `m` (minutes-first). */
-const UNIT_SECONDS = { s: 1, m: 60, h: 3600 };
+const UNIT_SECONDS = { s: 1, m: 60, h: 3600, d: 86400 };
 
-/** One token: optional sign, integer/decimal magnitude, optional s/m/h. */
-const TOKEN_RE = /^([+-]?)(\d+(?:\.\d+)?)(s|m|h)?$/i;
+/** One token: optional sign, integer/decimal magnitude, optional s/m/h/d. */
+const TOKEN_RE = /^([+-]?)(\d+(?:\.\d+)?)(s|m|h|d)?$/i;
 
 /**
  * Parse ONE duration token into whole seconds. Bare number = minutes; an
- * `s`/`m`/`h` suffix (any case) overrides. Returns `null` for anything
+ * `s`/`m`/`h`/`d` suffix (any case) overrides. Returns `null` for anything
  * that isn't a single well-formed token, so callers can skip garbage.
  *
  * @param {string} token
@@ -42,7 +43,7 @@ export const parseDuration = (token) => {
   const mag = parseFloat(m[2]);
   if (!Number.isFinite(mag)) return null;
   const unit = (m[3] || 'm').toLowerCase();
-  return Math.round(sign * mag * UNIT_SECONDS[/** @type {'s'|'m'|'h'} */ (unit)]);
+  return Math.round(sign * mag * UNIT_SECONDS[/** @type {'s'|'m'|'h'|'d'} */ (unit)]);
 };
 
 /**

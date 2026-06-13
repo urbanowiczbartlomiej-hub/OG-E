@@ -182,6 +182,11 @@ import { clearScans, clearGalaxyScans } from './merge.js';
  *   Merge strategy: per-field max-wins (a later day string / higher timestamp
  *   always beats an earlier one). Per-universe because tasks are server-specific
  *   and must not leak across universes.
+ * @property {Record<string, import('./merge.js').GalaxyScanConfigSlot>} [galaxyScanConfig]
+ *   OPTIONAL, additive: Galaxy-Scan config (positions + rescan policy) keyed
+ *   by universe id. Each slot is whole-universe newest-wins (see
+ *   {@link import('./merge.js').mergeGalaxyScanConfig}). Per-universe because
+ *   the scan strategy depends on which OGame server is being played.
  */
 
 /**

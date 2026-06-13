@@ -65,6 +65,23 @@
  */
 
 /**
+ * A resolved rescan policy as consumed by {@link isSystemStale}: the
+ * per-status age thresholds plus whether `abandoned` slots participate in
+ * staleness at all. Built from the user's Galaxy-Scan config by
+ * `buildRescanPolicy` in `domain/galaxyScanConfig.js`; the module-level
+ * {@link DEFAULT_RESCAN_POLICY} is the built-in "free positions" preset and
+ * is used whenever a caller omits the argument (preserving the historical
+ * behaviour exactly).
+ *
+ * @typedef {object} RescanPolicy
+ * @property {Readonly<{ [K in PositionStatus]?: number }>} rescanAfter
+ *   Per-status threshold (ms). Statuses absent from the map never go stale.
+ * @property {boolean} abandonedEnabled
+ *   When false, `abandoned` slots are never treated as stale (the dynamic
+ *   3 AM-sweep deadline is skipped entirely).
+ */
+
+/**
  * Rescan threshold (ms) per position status. A system is stale if ANY
  * of its positions has a status listed here whose age exceeds the
  * mapped threshold.
@@ -86,6 +103,21 @@ export const RESCAN_AFTER = Object.freeze({
   banned:        30 * 24 * 3600 * 1000,   // 30d  — rarely changes
   occupied:      30 * 24 * 3600 * 1000,   // 30d  — player might still leave
   empty_sent:    4 * 3600 * 1000,         // 4h   — our colonizer should have landed; verify
+});
+
+/**
+ * The built-in "free positions" rescan policy — i.e. {@link RESCAN_AFTER}
+ * with abandoned-sweep handling enabled. This is the default a caller gets
+ * when it does not pass an explicit `policy`, so every legacy call site (and
+ * the unit tests that predate configurable policies) behaves exactly as it
+ * always has. User-customised policies are produced by `buildRescanPolicy`
+ * in `domain/galaxyScanConfig.js` and threaded in by the feature layer.
+ *
+ * @type {RescanPolicy}
+ */
+export const DEFAULT_RESCAN_POLICY = Object.freeze({
+  rescanAfter: RESCAN_AFTER,
+  abandonedEnabled: true,
 });
 
 /**
@@ -174,6 +206,10 @@ export const abandonedCleanupDeadline = (scannedAt) => {
  * @param {number} [now=Date.now()] Wall-clock ms used to compute age.
  *   Defaulted for call-site convenience; tests should pass a stable
  *   value to stay deterministic.
+ * @param {RescanPolicy} [policy=DEFAULT_RESCAN_POLICY] Per-status
+ *   thresholds + abandoned toggle. Defaulted to the built-in "free
+ *   positions" preset so existing callers are unaffected; the feature
+ *   layer passes a policy built from the user's Galaxy-Scan config.
  * @returns {boolean} `true` if the scan should be refreshed.
  *
  * @example
@@ -207,10 +243,15 @@ export const abandonedCleanupDeadline = (scannedAt) => {
  *     now,
  *   ); // true — abandoned has a 24h threshold, 25h > 24h
  */
-export const isSystemStale = (scan, now = Date.now()) => {
+export const isSystemStale = (scan, now = Date.now(), policy = DEFAULT_RESCAN_POLICY) => {
   if (!scan) return true;
   if (!scan.scannedAt) return true;
   if (!scan.positions) return true;
+
+  // Tolerate a partially-shaped policy (defensive): fall back to the
+  // built-in thresholds / abandoned handling for any missing field.
+  const rescanAfter = policy?.rescanAfter ?? RESCAN_AFTER;
+  const abandonedEnabled = policy?.abandonedEnabled ?? true;
 
   const age = now - scan.scannedAt;
   let anyPosition = false;
@@ -220,12 +261,13 @@ export const isSystemStale = (scan, now = Date.now()) => {
     if (!p) continue;
     // Special case: abandoned slots use an absolute deadline
     // (first 3 AM after scannedAt + 24h) rather than a flat age
-    // threshold. See {@link abandonedCleanupDeadline}.
+    // threshold. See {@link abandonedCleanupDeadline}. A policy may opt
+    // out of abandoned rescans entirely (abandonedEnabled === false).
     if (p.status === 'abandoned') {
-      if (now > abandonedCleanupDeadline(scan.scannedAt)) return true;
+      if (abandonedEnabled && now > abandonedCleanupDeadline(scan.scannedAt)) return true;
       continue;
     }
-    const threshold = RESCAN_AFTER[p.status];
+    const threshold = rescanAfter[p.status];
     if (threshold !== undefined && age > threshold) return true;
   }
   if (!anyPosition) return true;

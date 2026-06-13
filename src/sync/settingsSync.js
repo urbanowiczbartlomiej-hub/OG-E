@@ -52,10 +52,8 @@ export const EXCLUDED_SETTINGS = new Set(['fabBtnSize', 'gistToken']);
  */
 export const UNIVERSE_SCOPED_SETTINGS = new Set([
   'colPassword',
-  'colPositions',
   'colMinGap',
   'colMinFields',
-  'colPreferOtherGalaxies',
   'maxExpPerPlanet',
   'fsEnabled',
   'fsThreshold',

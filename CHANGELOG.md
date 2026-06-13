@@ -6,6 +6,20 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+
+- **Configurable Galaxy-Scan strategy, edited in the dashboard.** The Scan
+  button's re-scan timing is no longer fixed: a new **Galaxy-Scan config**
+  panel (dashboard → Galaxy Observations) lets you set, per status, how long
+  a scanned system stays fresh before the Scan button revisits it — using
+  free units like `6h` or `5d`, with `0` meaning "never re-scan this status".
+  This makes the Scan button serve any play style: keep the defaults for
+  finding free colonization slots, shorten the *inactive*/*long-inactive*
+  windows for farm-hunting, or shorten *occupied* (and opt *empty* in) to
+  watch active players. The target-positions list and "prefer neighbouring
+  galaxies" preference moved here too (out of the AGR settings panel). All of
+  it is per-universe and syncs across your devices when cloud sync is on.
+
 ### Fixed
 
 - **Fleet-send buttons no longer complete someone else's fleet2.** Each

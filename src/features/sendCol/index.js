@@ -80,8 +80,10 @@
 import { settingsStore } from '../../state/settings.js';
 import { scansStore, flushScansStore } from '../../state/scans.js';
 import { registryStore } from '../../state/registry.js';
+import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
 import { safeLS } from '../../lib/storage.js';
 import { parsePositions } from '../../domain/positions.js';
+import { buildRescanPolicy } from '../../domain/galaxyScanConfig.js';
 import { createButton as makeButton, labelLines } from '../shared/button.js';
 import { LANDER_GLYPH } from '../shared/buttonGlyphs.js';
 import {
@@ -268,7 +270,7 @@ export const paint = (result) => {
  * @returns {DeriveEnv}
  */
 const captureEnv = () => {
-  const settings = settingsStore.get();
+  const cfg = galaxyScanConfigStore.get();
   return {
     search: location.search,
     // `window.fleetDispatcher` lives in the page world and is NOT
@@ -279,8 +281,9 @@ const captureEnv = () => {
     fleetDispatcher: fleetDispatcherSnapshot,
     scans: scansStore.get(),
     registry: registryStore.get(),
-    targets: parsePositions(settings.colPositions),
-    preferOther: settings.colPreferOtherGalaxies,
+    targets: parsePositions(cfg.positions),
+    preferOther: cfg.preferOtherGalaxies,
+    policy: buildRescanPolicy(cfg.rescan),
     now: Date.now(),
     // Previously read directly by `derive`; now snapshotted here so the
     // pure core stays DOM-free. `readHomePlanet` → `#planetList`,
@@ -436,15 +439,15 @@ const onSendClick = async () => {
   }
 
   // Find the next DB candidate (works on AND off fleetdispatch).
-  const settings = settingsStore.get();
+  const cfg = galaxyScanConfigStore.get();
   const home = readHomePlanet();
   const candidate = home
     ? findNextColonizeTarget(
         scansStore.get(),
         registryStore.get(),
         home,
-        /** @type {number[]} */ (parsePositions(settings.colPositions)),
-        settings.colPreferOtherGalaxies,
+        /** @type {number[]} */ (parsePositions(cfg.positions)),
+        cfg.preferOtherGalaxies,
       )
     : null;
   if (!candidate) {
@@ -516,7 +519,8 @@ const onScanClick = () => {
   const home = readHomePlanet();
   if (safeLS.bool('oge_debugSendCol', false)) {
     const view = parseCurrentGalaxyView();
-    const next = home ? findNextScanSystem(scansStore.get(), home, view) : null;
+    const policy = buildRescanPolicy(galaxyScanConfigStore.get().rescan);
+    const next = home ? findNextScanSystem(scansStore.get(), home, view, policy) : null;
     // eslint-disable-next-line no-console
     console.debug('[OG-E sendCol] onScanClick', {
       home,
@@ -546,7 +550,8 @@ const onScanClick = () => {
   }
 
   const view = parseCurrentGalaxyView();
-  const next = findNextScanSystem(scansStore.get(), home, view);
+  const policy = buildRescanPolicy(galaxyScanConfigStore.get().rescan);
+  const next = findNextScanSystem(scansStore.get(), home, view, policy);
   if (!next) {
     paintZone('scan', { text: 'All scanned!', bg: BG_SCAN_IDLE });
     return;
@@ -972,11 +977,15 @@ export const installSendCol = () => {
       updateButtonSize(next.fabBtnSize);
       prevFabBtnSize = next.fabBtnSize;
     }
-    // Any other settings change (colPositions, colPreferOtherGalaxies, ...)
-    // can flip the candidate, so refresh on every settings notification.
+    // Any other settings change can flip the candidate, so refresh on
+    // every settings notification.
     refresh();
   });
 
+  // Galaxy-Scan config (positions / preference / rescan policy) drives both
+  // the candidate and the Scan-remaining count — refresh on every change,
+  // including the ones sync applies after a cross-device edit.
+  const unsubGalaxyConfig = galaxyScanConfigStore.subscribe(() => refresh());
   const unsubScans = scansStore.subscribe(() => refresh());
   const unsubRegistry = registryStore.subscribe(() => refresh());
 
@@ -994,6 +1003,7 @@ export const installSendCol = () => {
       clearInterval(tickerHandle);
       removeButton();
       unsubSettings();
+      unsubGalaxyConfig();
       unsubScans();
       unsubRegistry();
       document.removeEventListener(FLEET_DISPATCHER_EVENT, onFleetDispatcherSnapshot);

@@ -163,3 +163,29 @@ describe('isSystemStale', () => {
     expect(isSystemStale(scan)).toBe(true);
   });
 });
+
+describe('isSystemStale — custom policy', () => {
+  it('honours a custom per-status threshold (occupied 1h)', () => {
+    const policy = { rescanAfter: { occupied: 1 * H }, abandonedEnabled: true };
+    const scan = { scannedAt: NOW - 2 * H, positions: { 8: { status: /** @type {const} */ ('occupied') } } };
+    // Default policy (occupied 30d) would say fresh; the custom 1h says stale.
+    expect(isSystemStale(scan, NOW)).toBe(false);
+    expect(isSystemStale(scan, NOW, policy)).toBe(true);
+  });
+
+  it('treats empty as stale when the policy opts in (aggressive play)', () => {
+    const policy = { rescanAfter: { empty: 6 * H }, abandonedEnabled: true };
+    const scan = { scannedAt: NOW - 7 * H, positions: { 8: { status: /** @type {const} */ ('empty') } } };
+    // Empty is never-stale by default; the custom policy makes it eligible.
+    expect(isSystemStale(scan, NOW)).toBe(false);
+    expect(isSystemStale(scan, NOW, policy)).toBe(true);
+  });
+
+  it('skips abandoned entirely when abandonedEnabled is false', () => {
+    const policy = { rescanAfter: {}, abandonedEnabled: false };
+    // 5 days old abandoned slot — would normally be well past the sweep.
+    const scan = { scannedAt: NOW - 5 * D, positions: { 8: { status: /** @type {const} */ ('abandoned') } } };
+    expect(isSystemStale(scan, NOW)).toBe(true);          // default: enabled
+    expect(isSystemStale(scan, NOW, policy)).toBe(false); // disabled → never
+  });
+});

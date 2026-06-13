@@ -382,6 +382,41 @@ export const mergeFsRoutes = (local, remote) => {
 };
 
 /**
+ * @typedef {object} GalaxyScanConfigSlot
+ * @property {import('../domain/galaxyScanConfig.js').GalaxyScanConfig} config
+ *   The full per-universe Galaxy-Scan config (positions, preference, rescan).
+ * @property {number} updatedAt  Epoch-ms of the last local edit (0 = never).
+ */
+
+/**
+ * Merge one universe's Galaxy-Scan config slot, WHOLE-UNIVERSE
+ * newest-`updatedAt`-wins — identical strategy to {@link mergeFsRoutes}
+ * (the config is a single edited unit per universe, edited rarely by one
+ * user from either origin, so per-field reconciliation isn't worth it). The
+ * newer side wins the entire config; ties and a missing/0 remote timestamp
+ * keep local (the anti-loop no-write path).
+ *
+ * `changed` is `true` only when remote strictly displaced local — the caller
+ * writes the merged slot back to local storage only then (anti-loop).
+ *
+ * @param {GalaxyScanConfigSlot} local
+ * @param {Partial<GalaxyScanConfigSlot> | undefined | null} remote
+ * @returns {{ merged: GalaxyScanConfigSlot, changed: boolean }}
+ */
+export const mergeGalaxyScanConfig = (local, remote) => {
+  if (!remote || typeof remote !== 'object') return { merged: local, changed: false };
+  const lT = Number(local?.updatedAt) || 0;
+  const rT = Number(remote.updatedAt) || 0;
+  if (rT > lT && remote.config && typeof remote.config === 'object') {
+    return {
+      merged: { config: remote.config, updatedAt: rT },
+      changed: true,
+    };
+  }
+  return { merged: local, changed: false };
+};
+
+/**
  * Pure: build the data slice of a gist payload that has every scan
  * wiped while preserving `colonyHistory`. Used by the "clear scan
  * data" UI action — `mergeScans` is a UNION, so a local wipe alone

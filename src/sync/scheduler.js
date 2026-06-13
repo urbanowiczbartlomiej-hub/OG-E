@@ -89,8 +89,21 @@ import { scansStore } from '../state/scans.js';
 import { historyStore } from '../state/history.js';
 import { settingsStore } from '../state/settings.js';
 import { fsRoutesStore, fsRoutesKeyFor, fsRoutesTsKeyFor } from '../state/fsRoutes.js';
+import {
+  galaxyScanConfigStore,
+  galaxyScanConfigKeyFor,
+  galaxyScanConfigTsKeyFor,
+} from '../state/galaxyScanConfig.js';
 import { migrateFsRoutes } from '../domain/fsRoutes.js';
-import { mergeScans, mergeHistory, mergeSettings, mergeFsRoutes, mergeDailyState } from './merge.js';
+import { normalizeGalaxyScanConfig } from '../domain/galaxyScanConfig.js';
+import {
+  mergeScans,
+  mergeHistory,
+  mergeSettings,
+  mergeFsRoutes,
+  mergeDailyState,
+  mergeGalaxyScanConfig,
+} from './merge.js';
 import {
   fetchGistData,
   writeGistData,
@@ -119,6 +132,7 @@ import {
   shouldScheduleUpload,
   slotHasData,
   dailyStateHasData,
+  galaxyConfigSlotHasData,
   gistIsCurrent,
 } from './scheduler/pure.js';
 
@@ -213,6 +227,14 @@ let routesUniverseId = '';
 let applyingRoutesFromSync = false;
 
 /**
+ * Anti-loop flag for GALAXY-SCAN CONFIG sync, mirroring
+ * {@link applyingRoutesFromSync}. Raised while we write a merged remote
+ * config slot back into chrome.storage + {@link galaxyScanConfigStore} so the
+ * config subscriber doesn't re-stamp and schedule a redundant upload.
+ */
+let applyingGalaxyConfigFromSync = false;
+
+/**
  * In-memory cache of the per-universe settings timestamp map, loaded from
  * chrome.storage at install time (see {@link installSync}). Updated
  * synchronously whenever a universe-scoped setting changes so the
@@ -269,6 +291,51 @@ const writeLocalRoutesSlot = async (slot) => {
     );
   } finally {
     applyingRoutesFromSync = false;
+  }
+};
+
+/**
+ * Read this universe's local Galaxy-Scan config slot from chrome.storage —
+ * NOT from {@link galaxyScanConfigStore} in memory (same cross-origin reason
+ * as {@link readLocalRoutesSlot}: the dashboard edits a different origin). The
+ * raw value is normalised so a partial/legacy blob still yields a complete
+ * config. `updatedAt` comes from the separate per-universe timestamp key.
+ *
+ * @returns {Promise<import('./merge.js').GalaxyScanConfigSlot>}
+ */
+const readLocalGalaxyConfigSlot = async () => {
+  const fallback = () => ({ config: galaxyScanConfigStore.get(), updatedAt: 0 });
+  if (!routesUniverseId) return fallback();
+  const [raw, ts] = await Promise.all([
+    chromeStore.get(galaxyScanConfigKeyFor(routesUniverseId)),
+    chromeStore.get(galaxyScanConfigTsKeyFor(routesUniverseId)),
+  ]);
+  const config = raw === null || raw === undefined
+    ? galaxyScanConfigStore.get()
+    : normalizeGalaxyScanConfig(raw);
+  return { config, updatedAt: typeof ts === 'number' ? ts : 0 };
+};
+
+/**
+ * Write a merged remote Galaxy-Scan config slot back to local: the config
+ * value + its timestamp into chrome.storage, and the in-memory
+ * {@link galaxyScanConfigStore} so the current game session reflects the
+ * adopted config without a reload. Guarded by
+ * {@link applyingGalaxyConfigFromSync}.
+ *
+ * @param {import('./merge.js').GalaxyScanConfigSlot} slot
+ * @returns {Promise<void>}
+ */
+const writeLocalGalaxyConfigSlot = async (slot) => {
+  if (!routesUniverseId) return;
+  applyingGalaxyConfigFromSync = true;
+  try {
+    const config = normalizeGalaxyScanConfig(slot.config);
+    await chromeStore.set(galaxyScanConfigKeyFor(routesUniverseId), config);
+    await chromeStore.set(galaxyScanConfigTsKeyFor(routesUniverseId), slot.updatedAt);
+    galaxyScanConfigStore.set(config);
+  } finally {
+    applyingGalaxyConfigFromSync = false;
   }
 };
 
@@ -421,6 +488,15 @@ const downloadAndMerge = async () => {
     );
     if (routesResult.changed) await writeLocalRoutesSlot(routesResult.merged);
 
+    // Galaxy-Scan config: per-universe newest-wins, same shape as routes.
+    if (routesUniverseId) {
+      const cfgResult = mergeGalaxyScanConfig(
+        await readLocalGalaxyConfigSlot(),
+        remote.galaxyScanConfig?.[routesUniverseId],
+      );
+      if (cfgResult.changed) await writeLocalGalaxyConfigSlot(cfgResult.merged);
+    }
+
     // Daily-action state: per-universe, field-by-field max-wins.
     if (routesUniverseId) {
       const dailyResult = mergeDailyState(
@@ -530,6 +606,23 @@ const upload = async () => {
     // otherwise we'd PATCH a no-op `fsRoutes: {}` onto every upload.
     const mergedFsRoutesOut = Object.keys(mergedFsRoutes).length ? mergedFsRoutes : undefined;
 
+    // Galaxy-Scan config: per-universe newest-wins, same contribution guard
+    // as fsRoutes (only our universe's slot, only once it carries data).
+    const mergedGalaxyConfig = { ...(remote?.galaxyScanConfig || {}) };
+    if (routesUniverseId) {
+      const cfgResult = mergeGalaxyScanConfig(
+        await readLocalGalaxyConfigSlot(),
+        remote?.galaxyScanConfig?.[routesUniverseId],
+      );
+      if (cfgResult.changed) await writeLocalGalaxyConfigSlot(cfgResult.merged);
+      if (galaxyConfigSlotHasData(cfgResult.merged)) {
+        mergedGalaxyConfig[routesUniverseId] = cfgResult.merged;
+      }
+    }
+    const mergedGalaxyConfigOut = Object.keys(mergedGalaxyConfig).length
+      ? mergedGalaxyConfig
+      : undefined;
+
     // Build the per-universe settings map for the payload — preserving every
     // OTHER universe's slot (same pattern as fsRoutes). Only contribute ours
     // when the ts map is non-empty: an empty ts means the user has never
@@ -573,6 +666,7 @@ const upload = async () => {
         fsRoutes: mergedFsRoutesOut,
         settingsPerUniverse: mergedPerUniverseOut,
         dailyStatePerUniverse: mergedDailyPerUniverseOut,
+        galaxyScanConfig: mergedGalaxyConfigOut,
       })
     ) {
       await writeGistData({
@@ -584,6 +678,7 @@ const upload = async () => {
         fsRoutes: mergedFsRoutesOut,
         settingsPerUniverse: mergedPerUniverseOut,
         dailyStatePerUniverse: mergedDailyPerUniverseOut,
+        galaxyScanConfig: mergedGalaxyConfigOut,
       });
       setStatus('up', new Date().toISOString());
     }
@@ -697,6 +792,18 @@ export const installSync = () => {
     scheduleUpload();
   };
   const unsubRoutes = fsRoutesStore.subscribe(onRoutesChange);
+
+  // Galaxy-Scan config: an in-game change (none today — edits happen in the
+  // dashboard) flips the store → schedule an upload. Dashboard edits arrive
+  // via the `oge_syncRequestAt` tombstone (onForceSync) like fsRoutes; this
+  // subscriber covers any future in-game writer and the sync-applied writes
+  // (skipped via the anti-loop flag).
+  const onGalaxyConfigChange = () => {
+    if (!shouldScheduleUpload({ cloudSync: settingsStore.get().cloudSync, applying: applyingGalaxyConfigFromSync }))
+      return;
+    scheduleUpload();
+  };
+  const unsubGalaxyConfig = galaxyScanConfigStore.subscribe(onGalaxyConfigChange);
 
   // Settings sync: stamp the keys that changed since the last tick with
   // `now`, then schedule an upload. `applyingSettingsFromSync` skips
@@ -858,6 +965,7 @@ export const installSync = () => {
       unsubHistory();
       unsubSettings();
       unsubRoutes();
+      unsubGalaxyConfig();
       document.removeEventListener(SYNC_FORCE_EVENT, onForceSync);
       document.removeEventListener(DAILY_STATE_CHANGED_EVENT, onDailyStateChanged);
       unsubStorage();
@@ -885,6 +993,7 @@ export const _resetSchedulerForTest = () => {
   inFlight = false;
   applyingSettingsFromSync = false;
   applyingRoutesFromSync = false;
+  applyingGalaxyConfigFromSync = false;
   routesUniverseId = '';
   localUniverseTsMap = {};
 };

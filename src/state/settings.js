@@ -47,8 +47,7 @@
 // @ts-check
 
 import { createStore } from '../lib/createStore.js';
-import { chromeStore, safeLS } from '../lib/storage.js';
-import { currentUniverseKey } from './universeKey.js';
+import { safeLS } from '../lib/storage.js';
 
 /**
  * Shared prefix for every localStorage key this module owns. Kept exported
@@ -70,13 +69,15 @@ export const SETTINGS_PREFIX = 'oge_';
  *   fabBtnSize              320   — unified floating button size in px
  *   expeditionBadges        true  — ekspedycje dot on planet list
  *   autoRedirectExpedition  true  — redirect to next planet after expedition
- *   colPositions            '8'   — comma-separated colonize positions e.g. "8,9,10"
  *   colMinGap               15    — seconds between colonize arrivals
  *   colMinFields            320   — abandon threshold (fields)
  *   colPassword             ''    — autofill value for the abandon form
  *   maxExpPerPlanet         1     — simultaneous expeditions per planet
- *   colPreferOtherGalaxies  true  — prefer neighbouring galaxies first
  *   cloudSync               false — enable Gist-based cross-device sync
+ *
+ *   (Target positions + "prefer other galaxies" + the galaxy-scan rescan
+ *    policy moved OUT of Settings into the per-universe Galaxy-Scan config —
+ *    edited in the dashboard, see `state/galaxyScanConfig.js`.)
  *   gistToken               ''    — GitHub personal access token
  *   readabilityBoost        true  — inject CSS fix for event box + movement link
  *   eventMenuHighlight      true  — animate ephemeral event entries in the left toolbar
@@ -102,12 +103,10 @@ export const SETTINGS_PREFIX = 'oge_';
  * @property {number}  fabBtnSize
  * @property {boolean} expeditionBadges
  * @property {boolean} autoRedirectExpedition
- * @property {string}  colPositions
  * @property {number}  colMinGap
  * @property {number}  colMinFields
  * @property {string}  colPassword
  * @property {number}  maxExpPerPlanet
- * @property {boolean} colPreferOtherGalaxies
  * @property {boolean} cloudSync
  * @property {string}  gistToken
  * @property {boolean} readabilityBoost
@@ -166,12 +165,10 @@ export const SETTINGS_SCHEMA = {
   fabBtnSize:             { type: 'int',    default: 320,   key: SETTINGS_PREFIX + 'fabBtnSize' },
   expeditionBadges:       { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'expeditionBadges' },
   autoRedirectExpedition: { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'autoRedirectExpedition' },
-  colPositions:           { type: 'string', default: '8',   key: SETTINGS_PREFIX + 'colPositions' },
   colMinGap:              { type: 'int',    default: 15,    key: SETTINGS_PREFIX + 'colMinGap' },
   colMinFields:           { type: 'int',    default: 320,   key: SETTINGS_PREFIX + 'colMinFields' },
   colPassword:            { type: 'string', default: '',    key: SETTINGS_PREFIX + 'colPassword' },
   maxExpPerPlanet:        { type: 'int',    default: 1,     key: SETTINGS_PREFIX + 'maxExpPerPlanet' },
-  colPreferOtherGalaxies: { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'colPreferOtherGalaxies' },
   cloudSync:              { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'cloudSync' },
   gistToken:              { type: 'string', default: '',    key: SETTINGS_PREFIX + 'gistToken' },
   readabilityBoost:       { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'readabilityBoost' },
@@ -413,127 +410,5 @@ export const disposeSettingsStore = () => {
   if (disposeFn) {
     disposeFn();
     disposeFn = null;
-  }
-};
-
-// ─────────────────────────────────────────────────────────────────────────
-// Settings → chrome.storage cross-origin mirror.
-//
-// Problem it solves: the per-key persistence above writes every preference
-// to `localStorage` (for AGR compatibility and per-key debuggability). The
-// histogram extension page, however, runs in the EXTENSION origin and
-// cannot read the game page's localStorage. For every setting the
-// histogram needs to observe (today: `colPositions`, which drives the
-// "target positions" filter), we mirror a copy into
-// `chrome.storage.local` — an API area that IS visible across origins
-// within the same extension.
-//
-// Direction: one-way, settings → chrome.storage. The histogram page
-// never writes back; it reads and renders. Mirroring in reverse would
-// create a feedback loop that the persistence logic above isn't built for.
-//
-// Scope: only the keys the histogram (or any other extension-origin
-// surface) actually reads. Mirroring the full Settings object would
-// leak sensitive fields (`gistToken`, `colPassword`) into a second
-// storage area for no benefit. Today that's just `colPositions`.
-//
-// Per-universe: the actual key written is
-// `<universeId>:oge_colPositions` so two servers' mirrors don't
-// clobber each other in the shared `chrome.storage.local` area. The
-// histogram reads the mirror for the currently-selected universe.
-//
-// @see ../features/dashboard/index.js — colPositions reader
-
-/**
- * Suffix portion of the chrome.storage.local key the histogram reads.
- * The actual key is `<universeId>:<COL_POSITIONS_KEY_BASE>` — see
- * {@link colPositionsKeyFor}. Exported so the histogram can compose
- * a key for the selected universe without re-deriving the suffix.
- */
-export const COL_POSITIONS_KEY_BASE = 'oge_colPositions';
-
-/**
- * Compose the per-universe chrome.storage.local key for the
- * `colPositions` mirror. Histogram side imports this; mirror code
- * below resolves `location.host` at write time.
- *
- * @param {string} universeId  e.g. `'s163-pl'` from
- *   {@link parseUniverseId}.
- * @returns {string}
- */
-export const colPositionsKeyFor = (universeId) =>
-  `${universeId}:${COL_POSITIONS_KEY_BASE}`;
-
-/**
- * Resolve the mirror key for the current tab's universe. Defensive
- * fallback to the base suffix when `location` is unavailable (node
- * tests) — production always has `location` because the manifest
- * restricts this module to game-origin tabs.
- *
- * @returns {string}
- */
-const currentColPositionsKey = () =>
-  currentUniverseKey(COL_POSITIONS_KEY_BASE, colPositionsKeyFor);
-
-/**
- * Active install handle, or `null` when the mirror is not installed.
- * Kept at module scope so a second {@link installSettingsMirror} call
- * can collapse to the existing dispose fn — matches the convention in
- * `state/scans.js`, `state/history.js`, etc.
- *
- * @type {(() => void) | null}
- */
-let mirrorDisposeFn = null;
-
-/**
- * Subscribe to {@link settingsStore} and mirror `colPositions` into
- * `chrome.storage.local` whenever it changes. Fires once on install to
- * carry the current value into chromeStore — otherwise a fresh extension
- * load on a freshly-loaded game page would leave the histogram reading
- * `undefined` (and falling back to the hard-coded default) until the
- * user touched a setting.
- *
- * Idempotent: repeat calls return the existing dispose handle.
- *
- * @returns {() => void} Dispose fn that unsubscribes the listener.
- *   In-memory `settingsStore` state and the already-written chromeStore
- *   value are left intact; only future writes are suppressed.
- */
-export const installSettingsMirror = () => {
-  if (mirrorDisposeFn) return mirrorDisposeFn;
-
-  // Initial mirror. Without this, devices that load the game page AFTER
-  // the histogram page has already started — and haven't yet changed a
-  // setting — would see the histogram stuck on its default filter.
-  let last = settingsStore.get().colPositions;
-  void chromeStore.set(currentColPositionsKey(), last);
-
-  const unsubscribe = settingsStore.subscribe((settings) => {
-    // Diff-guarded write: the store notifies on ANY field change, but
-    // we only care about `colPositions`. Most subscriber firings touch
-    // nothing we mirror — skipping the chromeStore.set on those avoids
-    // unnecessary storage writes (and the onChanged event they produce
-    // in every consuming origin).
-    if (settings.colPositions !== last) {
-      last = settings.colPositions;
-      void chromeStore.set(currentColPositionsKey(), last);
-    }
-  });
-
-  mirrorDisposeFn = unsubscribe;
-  return mirrorDisposeFn;
-};
-
-/**
- * Tear down the mirror subscription. Safe to call when never installed
- * (no-op) and when already disposed. In-memory state and the previously
- * mirrored chromeStore value both survive dispose.
- *
- * @returns {void}
- */
-export const disposeSettingsMirror = () => {
-  if (mirrorDisposeFn) {
-    mirrorDisposeFn();
-    mirrorDisposeFn = null;
   }
 };

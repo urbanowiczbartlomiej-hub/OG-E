@@ -92,6 +92,18 @@ export const dailyStateHasData = (ds) =>
  */
 
 /**
+ * Whether a Galaxy-Scan config slot is worth contributing to the gist. Same
+ * no-op-PATCH guard as {@link slotHasData}: a never-edited universe (ts 0,
+ * config still at the local default/migration seed) must NOT write a slot
+ * that would differ from the gist's absent field. Once the user edits the
+ * config the stamp bumps `updatedAt` and the slot starts syncing.
+ *
+ * @param {import('../merge.js').GalaxyScanConfigSlot} slot
+ * @returns {boolean}
+ */
+export const galaxyConfigSlotHasData = (slot) => slot.updatedAt > 0;
+
+/**
  * Compare two values by JSON structural equality. Cheap and good enough
  * for the "is the gist already current?" check — both sides are plain JSON
  * (nested records / arrays of primitives), no Dates, no cycles, no functions.
@@ -123,6 +135,7 @@ export const sameJSON = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b
  * @param {unknown} merged.fsRoutes
  * @param {unknown} merged.settingsPerUniverse
  * @param {unknown} merged.dailyStatePerUniverse
+ * @param {unknown} merged.galaxyScanConfig
  * @returns {boolean}
  */
 export const gistIsCurrent = (remote, merged) =>
@@ -131,4 +144,5 @@ export const gistIsCurrent = (remote, merged) =>
   sameJSON(remote?.settings, merged.settings) &&
   sameJSON(remote?.fsRoutes, merged.fsRoutes) &&
   sameJSON(remote?.settingsPerUniverse, merged.settingsPerUniverse) &&
-  sameJSON(remote?.dailyStatePerUniverse, merged.dailyStatePerUniverse);
+  sameJSON(remote?.dailyStatePerUniverse, merged.dailyStatePerUniverse) &&
+  sameJSON(remote?.galaxyScanConfig, merged.galaxyScanConfig);

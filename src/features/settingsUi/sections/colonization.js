@@ -1,11 +1,14 @@
 // @ts-check
 
-// Colonization section of the OG-E settings tab. Five options spanning
-// the target-pick policy (positions, prefer-other-galaxies), the
-// scheduling guard (min gap between arrivals), the abandon-eligibility
-// floor (min fields), and the abandon-flow password. (The Send-Col button
-// itself is the unified FAB's 'col' module — its toggle and size live in
-// the "Floating button" section.)
+// Colonization section of the OG-E settings tab. Covers the colonize
+// EXECUTION knobs: the scheduling guard (min gap between arrivals), the
+// abandon-eligibility floor (min fields), and the abandon-flow password.
+// (The Send-Col button itself is the unified FAB's 'col' module — its
+// toggle and size live in the "Floating button" section.)
+//
+// The target-position / prefer-other-galaxies SCAN-strategy knobs moved
+// OUT of here into the per-universe Galaxy-Scan config, edited in the
+// dashboard's Galaxy Scan tab (see `features/dashboard/scanConfig.js`).
 
 /**
  * @typedef {import('../controls.js').SettingsSection} SettingsSection
@@ -26,8 +29,6 @@ const colLocked = (s) => !s.fabMode;
 export const colonizationSection = {
   section: 'Colonization',
   options: [
-    { id: 'colPreferOtherGalaxies', label: 'Prefer neighbouring galaxies (more predictable arrival times)', type: 'checkbox', disabledWhen: colLocked },
-    { id: 'colPositions', label: 'Required target positions (only these; ranges ok, e.g. 8,10-12,15)', type: 'text', placeholder: 'e.g. 8,10-12,15', disabledWhen: colLocked },
     { id: 'colMinGap', label: 'Min gap between arrivals (sec)', type: 'text', placeholder: 'e.g. 20', disabledWhen: colLocked },
     { id: 'colMinFields', label: 'Min fields to keep colony', type: 'text', placeholder: 'e.g. 200', disabledWhen: colLocked },
     { id: 'colPassword', label: 'Account password (for abandon)', type: 'password', disabledWhen: colLocked },

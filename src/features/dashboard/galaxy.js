@@ -32,7 +32,7 @@ import {
 import {
   STATUS_COLORS,
   STATUS_LABELS,
-  RESCAN_TOOLTIP,
+  rescanTooltip,
   UNSCANNED_COLOR,
   UNSCANNED_BORDER,
   STALE_COLOR,
@@ -79,7 +79,10 @@ const MAX_SYS = 499;
  *   onToggleExpand: (galaxy: number, expanded: boolean) => void,
  *   onResetGalaxy: (galaxy: number) => void,
  *   onClearAll: () => void,
+ *   policy?: import('../../domain/scheduling.js').RescanPolicy,
  * }} opts
+ *   `policy` is the user's Galaxy-Scan rescan policy (from the per-universe
+ *   config); when omitted the built-in "free positions" preset is used.
  * @returns {void}
  */
 export const renderGalaxyMap = (opts) => {
@@ -90,6 +93,7 @@ export const renderGalaxyMap = (opts) => {
     expandedGalaxies,
     onToggleExpand,
     onResetGalaxy,
+    policy,
   } = opts;
   // `onClearAll` is intentionally unread: the top-level "Clear observation
   // data" button lives in dashboard.html and is wired by index.js, not
@@ -121,7 +125,7 @@ export const renderGalaxyMap = (opts) => {
   // header — same visual cue as the inset rings on stale pixels in the
   // map below, so the user can spot "this galaxy needs attention"
   // without expanding the accordion.
-  const staleByGalaxy = countStaleByGalaxy(scans);
+  const staleByGalaxy = countStaleByGalaxy(scans, undefined, policy);
 
   // ── Filter bar ──────────────────────────────────────────────────────
   const filterBar = document.createElement('div');
@@ -142,13 +146,13 @@ export const renderGalaxyMap = (opts) => {
   const filterHint = document.createElement('span');
   filterHint.style.cssText = 'color:#666;margin-left:8px;';
   filterHint.textContent =
-    '(change in OG-E Settings → Required target positions)';
+    '(change in the Galaxy-Scan config below)';
 
   const rescanHelp = document.createElement('span');
   rescanHelp.textContent = ' ⓘ Rescan policy';
   rescanHelp.style.cssText =
     'margin-left:12px;cursor:help;color:#4a9eff;border-bottom:1px dotted #4a9eff;';
-  rescanHelp.title = RESCAN_TOOLTIP;
+  rescanHelp.title = rescanTooltip(policy);
 
   filterBar.appendChild(filterLabel);
   filterBar.appendChild(filterValue);
@@ -225,6 +229,7 @@ export const renderGalaxyMap = (opts) => {
         expandedGalaxies,
         onToggleExpand,
         onResetGalaxy,
+        policy,
       }),
     );
   }
@@ -341,6 +346,7 @@ const makeStaleLegendItem = () => {
  *   expandedGalaxies: Set<number>,
  *   onToggleExpand: (galaxy: number, expanded: boolean) => void,
  *   onResetGalaxy: (galaxy: number) => void,
+ *   policy?: import('../../domain/scheduling.js').RescanPolicy,
  * }} args
  * @returns {HTMLDivElement}
  */
@@ -355,6 +361,7 @@ const renderGalaxySection = (args) => {
     expandedGalaxies,
     onToggleExpand,
     onResetGalaxy,
+    policy,
   } = args;
 
   const section = document.createElement('div');
@@ -464,7 +471,7 @@ const renderGalaxySection = (args) => {
   pixelMap.style.cssText = 'display:flex;flex-wrap:wrap;gap:1px;padding:4px;';
 
   for (let s = 1; s <= MAX_SYS; s++) {
-    pixelMap.appendChild(renderSystemPixel(g, s, scans, targetPositions));
+    pixelMap.appendChild(renderSystemPixel(g, s, scans, targetPositions, policy));
   }
 
   mapWrap.appendChild(pixelMap);
@@ -492,9 +499,10 @@ const renderGalaxySection = (args) => {
  * @param {number} s
  * @param {GalaxyScans} scans
  * @param {Set<number>} targetPositions
+ * @param {import('../../domain/scheduling.js').RescanPolicy} [policy]
  * @returns {HTMLDivElement}
  */
-const renderSystemPixel = (g, s, scans, targetPositions) => {
+const renderSystemPixel = (g, s, scans, targetPositions, policy) => {
   const key = /** @type {`${number}:${number}`} */ (g + ':' + s);
   const scan = scans[key];
   const px = document.createElement('div');
@@ -508,7 +516,7 @@ const renderSystemPixel = (g, s, scans, targetPositions) => {
     // neighbouring pixels don't shift). The ring is 1.5px — thick enough
     // to read at a glance, thin enough to leave the status colour
     // visible as the dominant signal.
-    const stale = isSystemStale(scan);
+    const stale = isSystemStale(scan, undefined, policy);
     const ring = stale
       ? ';box-shadow:inset 0 0 0 1.5px ' + STALE_COLOR
       : '';

@@ -67,11 +67,15 @@ describe('isSyncedSetting / EXCLUDED_SETTINGS', () => {
 });
 
 describe('isUniverseScopedSetting / UNIVERSE_SCOPED_SETTINGS', () => {
-  it('marks all 11 universe-scoped keys', () => {
-    expect(UNIVERSE_SCOPED_SETTINGS.size).toBe(11);
+  it('marks the universe-scoped keys', () => {
+    // colPositions / colPreferOtherGalaxies moved OUT to the per-universe
+    // Galaxy-Scan config store (synced via the gist's galaxyScanConfig slot).
+    expect(UNIVERSE_SCOPED_SETTINGS.size).toBe(9);
     expect(isUniverseScopedSetting('colPassword')).toBe(true);
     expect(isUniverseScopedSetting('fsThreshold')).toBe(true);
     expect(isUniverseScopedSetting('reminderNtfyToken')).toBe(true);
+    expect(isUniverseScopedSetting('colPositions')).toBe(false);
+    expect(isUniverseScopedSetting('colPreferOtherGalaxies')).toBe(false);
     expect(isUniverseScopedSetting('fabMode')).toBe(false);
     expect(isUniverseScopedSetting('readabilityBoost')).toBe(false);
     // Excluded settings are not universe-scoped (they're not synced at all).

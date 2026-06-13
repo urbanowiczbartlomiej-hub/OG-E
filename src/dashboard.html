@@ -245,8 +245,22 @@
   <p style="color:#888;font-size:13px;margin-bottom:16px;">
     Per-system summary of positions you have navigated past in the in-game galaxy view.
     Data was recorded only for galaxy pages you yourself opened. Filtered by the target
-    positions list from settings (only those positions count toward the stats below).
+    positions list in the Galaxy-Scan config below (only those positions count toward the
+    stats below).
   </p>
+
+  <div class="sub-section" id="scanConfigContainer">
+    <h2>⚙ Galaxy-Scan config</h2>
+    <p style="color:#888;font-size:13px;margin-bottom:12px;">
+      Tune how the in-game <strong style="color:#ccc;">Scan</strong> button picks targets and how
+      often it revisits a system. These settings are per-universe and sync across your devices.
+      Re-scan times accept free units like <code style="color:#4a9eff;">6h</code> or
+      <code style="color:#4a9eff;">5d</code>; <code style="color:#4a9eff;">0</code> means never re-scan
+      that status.
+    </p>
+    <div id="scanConfigBody"></div>
+  </div>
+
   <div class="controls">
     <button id="clearScansBtn" class="danger">Clear observation data</button>
   </div>

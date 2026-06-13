@@ -12,6 +12,7 @@ import {
   shouldScheduleUpload,
   slotHasData,
   dailyStateHasData,
+  galaxyConfigSlotHasData,
   sameJSON,
   gistIsCurrent,
 } from '../../../src/sync/scheduler/pure.js';
@@ -84,6 +85,16 @@ describe('slotHasData', () => {
   });
 });
 
+describe('galaxyConfigSlotHasData', () => {
+  it('is false until the config has been edited (ts 0)', () => {
+    expect(galaxyConfigSlotHasData(/** @type {any} */ ({ config: {}, updatedAt: 0 }))).toBe(false);
+  });
+
+  it('is true once the slot carries a real timestamp', () => {
+    expect(galaxyConfigSlotHasData(/** @type {any} */ ({ config: {}, updatedAt: 123 }))).toBe(true);
+  });
+});
+
 describe('dailyStateHasData', () => {
   it('is false for an all-empty record', () => {
     expect(dailyStateHasData({})).toBe(false);
@@ -130,6 +141,7 @@ describe('gistIsCurrent', () => {
     fsRoutes: { 's1-pl': { routes: [], collectTarget: null, updatedAt: 5 } },
     settingsPerUniverse: undefined,
     dailyStatePerUniverse: undefined,
+    galaxyScanConfig: undefined,
   };
 
   it('is true when every synced field matches (skip the PATCH)', () => {
@@ -138,9 +150,22 @@ describe('gistIsCurrent', () => {
       colonyHistory: [{ id: 'a' }],
       settings: { values: { x: 1 }, ts: { x: 10 } },
       fsRoutes: { 's1-pl': { routes: [], collectTarget: null, updatedAt: 5 } },
-      // settingsPerUniverse / dailyStatePerUniverse absent — equal to merged's undefined.
+      // settingsPerUniverse / dailyStatePerUniverse / galaxyScanConfig absent
+      // — equal to merged's undefined.
     });
     expect(gistIsCurrent(remote, merged)).toBe(true);
+  });
+
+  it('is false when only the galaxyScanConfig slot differs', () => {
+    const remote = /** @type {any} */ ({
+      galaxyScans: { '1:1:1': { t: 1 } },
+      colonyHistory: [{ id: 'a' }],
+      settings: { values: { x: 1 }, ts: { x: 10 } },
+      fsRoutes: { 's1-pl': { routes: [], collectTarget: null, updatedAt: 5 } },
+      galaxyScanConfig: { 's1-pl': { config: { positions: '9' }, updatedAt: 7 } },
+    });
+    // merged has galaxyScanConfig: undefined → differs → PATCH needed.
+    expect(gistIsCurrent(remote, merged)).toBe(false);
   });
 
   it('is false when any single field differs (PATCH needed)', () => {

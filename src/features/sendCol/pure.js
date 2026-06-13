@@ -47,7 +47,7 @@ import {
   sysDist,
   buildGalaxyOrder,
 } from '../../domain/positions.js';
-import { isSystemStale } from '../../domain/scheduling.js';
+import { isSystemStale, DEFAULT_RESCAN_POLICY } from '../../domain/scheduling.js';
 import {
   COL_MAX_SYSTEM,
   COL_MAX_GALAXY,
@@ -133,9 +133,12 @@ export const BG_SEND_WAIT = '#fbbf24';
  * @param {{ galaxy: number, system: number } | null} currentView
  *   Current galaxy-view coords (null when the user isn't on the galaxy
  *   page — we then start from the home planet instead).
+ * @param {import('../../domain/scheduling.js').RescanPolicy} [policy]
+ *   Rescan policy from the user's Galaxy-Scan config (default = built-in
+ *   "free positions" preset).
  * @returns {{ galaxy: number, system: number } | null}
  */
-export const findNextScanSystem = (scans, home, currentView) => {
+export const findNextScanSystem = (scans, home, currentView, policy = DEFAULT_RESCAN_POLICY) => {
   const startG = currentView ? currentView.galaxy : home.galaxy;
   const startS = currentView ? currentView.system : home.system;
 
@@ -150,7 +153,7 @@ export const findNextScanSystem = (scans, home, currentView) => {
       const s = ((offset + i) % COL_MAX_SYSTEM) + 1;
       const key = /** @type {`${number}:${number}`} */ (`${g}:${s}`);
       const scan = scans[key];
-      if (!scan || isSystemStale(scan)) {
+      if (!scan || isSystemStale(scan, undefined, policy)) {
         return { galaxy: g, system: s };
       }
     }
@@ -175,16 +178,19 @@ export const findNextScanSystem = (scans, home, currentView) => {
  * {@link isSystemStale} does via its default `now` parameter.
  *
  * @param {GalaxyScans} scans
+ * @param {import('../../domain/scheduling.js').RescanPolicy} [policy]
+ *   Rescan policy from the user's Galaxy-Scan config (default = built-in
+ *   "free positions" preset).
  * @returns {number} number of systems that would return a hit from
  *   {@link findNextScanSystem}. Zero means "everything fresh".
  */
-export const countScansRemaining = (scans) => {
+export const countScansRemaining = (scans, policy = DEFAULT_RESCAN_POLICY) => {
   let remaining = 0;
   for (let g = 1; g <= COL_MAX_GALAXY; g++) {
     for (let s = 1; s <= COL_MAX_SYSTEM; s++) {
       const key = /** @type {`${number}:${number}`} */ (`${g}:${s}`);
       const scan = scans[key];
-      if (!scan || isSystemStale(scan)) remaining++;
+      if (!scan || isSystemStale(scan, undefined, policy)) remaining++;
     }
   }
   return remaining;
@@ -414,8 +420,11 @@ export const buildGalaxyUrl = ({ galaxy, system }) => {
  *   `null` when the bridge hasn't fired yet / we're off fleetdispatch.
  * @property {GalaxyScans} scans
  * @property {RegistryEntry[]} registry
- * @property {number[]} targets Parsed `colPositions`.
- * @property {boolean} preferOther `colPreferOtherGalaxies` setting.
+ * @property {number[]} targets Parsed target positions (Galaxy-Scan config).
+ * @property {boolean} preferOther `preferOtherGalaxies` (Galaxy-Scan config).
+ * @property {import('../../domain/scheduling.js').RescanPolicy} [policy]
+ *   Rescan policy from the Galaxy-Scan config; defaults to the built-in
+ *   preset when omitted (keeps older tests/callers working).
  * @property {number} now Epoch-ms (tests pass a fixed value, production
  *   passes `Date.now()`).
  * @property {{ galaxy: number, system: number } | null} [home]
@@ -453,13 +462,14 @@ export const derive = (env) => {
   // Universal scan state — user can Scan from any page (idle / galaxy /
   // fleetdispatch). Cooldown is event-driven (unlocks on
   // `oge:galaxyScanned`) with a hard safety cap for silent failures.
-  const nextScan = home ? findNextScanSystem(env.scans, home, view) : null;
+  const policy = env.policy ?? DEFAULT_RESCAN_POLICY;
+  const nextScan = home ? findNextScanSystem(env.scans, home, view, policy) : null;
   const scanCooldown =
     lastScanSubmitAt > lastScanEventAt &&
     env.now - lastScanSubmitAt < SCAN_COOLDOWN_MS;
   // Cheap full-universe count so the Scan button label can show the
   // user how far the scan-fresh frontier is from covering everything.
-  const scansRemaining = countScansRemaining(env.scans);
+  const scansRemaining = countScansRemaining(env.scans, policy);
 
   // NB: on fleetdispatch the Send half's label + action are owned by the
   // courier-driven handler in index.js (the fleet courier sets the colony

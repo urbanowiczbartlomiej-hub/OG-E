@@ -59,9 +59,14 @@ import {
   scansKeyFor,
 } from '../../state/scans.js';
 import {
-  COL_POSITIONS_KEY_BASE,
-  colPositionsKeyFor,
-} from '../../state/settings.js';
+  GALAXY_SCAN_CONFIG_KEY_BASE,
+  galaxyScanConfigKeyFor,
+} from '../../state/galaxyScanConfig.js';
+import {
+  defaultGalaxyScanConfig,
+  normalizeGalaxyScanConfig,
+  buildRescanPolicy,
+} from '../../domain/galaxyScanConfig.js';
 import {
   exportAllData,
   importAllData,
@@ -71,6 +76,7 @@ import {
 } from './io.js';
 import { installReminders, _resetRemindersForTest } from './reminders.js';
 import { installRoutes } from './routes.js';
+import { installScanConfig } from './scanConfig.js';
 
 /**
  * @typedef {import('../../state/history.js').ColonyEntry} ColonyEntry
@@ -94,10 +100,11 @@ const SCOUT_PREFS_KEY = 'oge_colonyScoutPrefs';
 const ACTIVE_TAB_LS_KEY = 'oge_histogramTab';
 const DEFAULT_TAB = 'colony';
 
-// Default target positions when no mirror is available. Matches the
-// default shipped by state/settings.js so the histogram reads the same
-// filter as the Send Col feature does on the game side.
-const DEFAULT_COL_POSITIONS = '8';
+// Default target positions when no per-universe Galaxy-Scan config is
+// stored yet. Matches the default shipped by `domain/galaxyScanConfig.js`
+// so the dashboard reads the same filter as the Send Col feature does on
+// the game side.
+const DEFAULT_COL_POSITIONS = defaultGalaxyScanConfig().positions;
 
 // ── Module-local caches ────────────────────────────────────────────────
 
@@ -129,6 +136,15 @@ let remindersApi = null;
  */
 let routesApi = null;
 
+/**
+ * Handle to the Galaxy-Scan config editor's refresh entrypoint, set by
+ * `installScanConfig` at boot. Called from the universe-selector change
+ * handler so the config fields reload for the newly-selected server.
+ *
+ * @type {{ refresh: () => void } | null}
+ */
+let scanConfigApi = null;
+
 /** @type {ColonyEntry[]} */
 let history = [];
 
@@ -137,6 +153,14 @@ let scans = {};
 
 /** @type {Set<number>} */
 let targetPositions = parseTargetPositions(DEFAULT_COL_POSITIONS);
+
+/**
+ * The selected universe's Galaxy-Scan config (positions + rescan policy),
+ * refreshed by `loadAll`. Drives both the target-positions filter and the
+ * rescan policy the galaxy map's stale rings/pills are computed against.
+ * @type {import('../../domain/galaxyScanConfig.js').GalaxyScanConfig}
+ */
+let galaxyConfig = defaultGalaxyScanConfig();
 
 /**
  * Per-galaxy accordion open/closed state. A Set so we can mutate it
@@ -207,6 +231,7 @@ const boot = async () => {
   // handler calls `remindersApi.refresh()` to repaint.
   remindersApi = installReminders({ getUniverseId: () => selectedUniverseId });
   routesApi = installRoutes({ getUniverseId: () => selectedUniverseId });
+  scanConfigApi = installScanConfig({ getUniverseId: () => selectedUniverseId });
 
   const universes = await discoverUniverses();
   selectedUniverseId = resolveInitialUniverse(universes);
@@ -219,6 +244,7 @@ const boot = async () => {
   // active universe. Repaint now that it's known.
   remindersApi?.refresh();
   routesApi?.refresh();
+  scanConfigApi?.refresh();
   wireListeners();
 
   // Restore Colony Scout preferences from previous session.
@@ -245,7 +271,7 @@ const boot = async () => {
     const keysToWatch = [
       historyKeyFor(selectedUniverseId),
       scansKeyFor(selectedUniverseId),
-      colPositionsKeyFor(selectedUniverseId),
+      galaxyScanConfigKeyFor(selectedUniverseId),
     ];
     if (keysToWatch.some((k) => k in changes)) {
       void loadAll().then(renderAll);
@@ -260,8 +286,8 @@ const boot = async () => {
  *
  * A universe id is the prefix portion of a key that ends in one of
  * the namespaced base suffixes — typically `oge_colonyHistory` or
- * `oge_galaxyScans`. The settings mirror (`oge_colPositions`) is also
- * recognised so a fresh universe that has only the mirror written
+ * `oge_galaxyScans`. The Galaxy-Scan config (`oge_galaxyScanConfig`) is
+ * also recognised so a fresh universe that has only the config written
  * (no scans / no colonies yet) still shows up.
  *
  * @returns {Promise<string[]>}
@@ -273,7 +299,7 @@ const discoverUniverses = async () => {
   const suffixes = [
     `:${HISTORY_KEY_BASE}`,
     `:${SCANS_KEY_BASE}`,
-    `:${COL_POSITIONS_KEY_BASE}`,
+    `:${GALAXY_SCAN_CONFIG_KEY_BASE}`,
   ];
   for (const key of Object.keys(all)) {
     for (const suffix of suffixes) {
@@ -489,18 +515,19 @@ const loadAll = async () => {
   if (!selectedUniverseId) {
     history = [];
     scans = {};
-    targetPositions = parseTargetPositions(DEFAULT_COL_POSITIONS);
+    galaxyConfig = defaultGalaxyScanConfig();
+    targetPositions = parseTargetPositions(galaxyConfig.positions);
     return;
   }
-  const [h, s, p] = await Promise.all([
+  const [h, s, c] = await Promise.all([
     chromeStore.get(historyKeyFor(selectedUniverseId)),
     chromeStore.get(scansKeyFor(selectedUniverseId)),
-    chromeStore.get(colPositionsKeyFor(selectedUniverseId)),
+    chromeStore.get(galaxyScanConfigKeyFor(selectedUniverseId)),
   ]);
   history = Array.isArray(h) ? /** @type {ColonyEntry[]} */ (h) : [];
   scans = s && typeof s === 'object' ? /** @type {GalaxyScans} */ (s) : {};
-  const colStr = typeof p === 'string' && p.length > 0 ? p : DEFAULT_COL_POSITIONS;
-  targetPositions = parseTargetPositions(colStr);
+  galaxyConfig = normalizeGalaxyScanConfig(c);
+  targetPositions = parseTargetPositions(galaxyConfig.positions);
 };
 
 /**
@@ -536,6 +563,7 @@ const renderAll = () => {
     scans,
     targetPositions,
     expandedGalaxies,
+    policy: buildRescanPolicy(galaxyConfig.rescan),
     onToggleExpand: () => { persistExpanded(); },
     onResetGalaxy: (g) => { void resetGalaxy(g); },
     // onClearAll is wired from the HTML-level "Clear observation data"
@@ -759,6 +787,7 @@ const wireListeners = () => {
     void loadAll().then(renderAll);
     remindersApi?.refresh();
     routesApi?.refresh();
+    scanConfigApi?.refresh();
   });
 
   clearScansBtn?.addEventListener('click', async () => {
@@ -795,8 +824,10 @@ export const _resetDashboardForTest = () => {
   selectedUniverseId = '';
   remindersApi = null;
   routesApi = null;
+  scanConfigApi = null;
   history = [];
   scans = {};
+  galaxyConfig = defaultGalaxyScanConfig();
   targetPositions = parseTargetPositions(DEFAULT_COL_POSITIONS);
   weightsDirty = false;
   // DOM refs filled by wireDom(); wireDom re-resolves them on the next

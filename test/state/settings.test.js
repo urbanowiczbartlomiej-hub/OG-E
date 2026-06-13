@@ -94,8 +94,6 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
         'colMinFields',
         'colMinGap',
         'colPassword',
-        'colPositions',
-        'colPreferOtherGalaxies',
         'eventMenuHighlight',
         'expeditionBadges',
         'fabBtnSize',
@@ -131,10 +129,10 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
       default: 320,
       key: 'oge_fabBtnSize',
     });
-    expect(SETTINGS_SCHEMA.colPositions).toEqual({
+    expect(SETTINGS_SCHEMA.colPassword).toEqual({
       type: 'string',
-      default: '8',
-      key: 'oge_colPositions',
+      default: '',
+      key: 'oge_colPassword',
     });
     expect(SETTINGS_SCHEMA.fsEnabled).toEqual({
       type: 'bool',
@@ -168,12 +166,11 @@ describe('settingsStore — initial state (pre-init)', () => {
     expect(state.expeditionBadges).toBe(true);
     expect(state.autoRedirectExpedition).toBe(true);
     expect(state.fabBtnSize).toBe(320);
-    expect(state.colPositions).toBe('8');
     expect(state.colMinGap).toBe(15);
     expect(state.colMinFields).toBe(320);
     expect(state.colPassword).toBe('');
     expect(state.maxExpPerPlanet).toBe(1);
-    expect(state.colPreferOtherGalaxies).toBe(true);
+    expect(state.readabilityBoost).toBe(true);
     expect(state.cloudSync).toBe(false);
     expect(state.gistToken).toBe('');
   });
@@ -199,19 +196,19 @@ describe('initSettingsStore — hydration', () => {
   });
 
   it('hydrates a string field from localStorage', () => {
-    localStorage.setItem('oge_colPositions', '8,9,10');
+    localStorage.setItem('oge_colPassword', 'secret123');
     initSettingsStore();
-    expect(settingsStore.get().colPositions).toBe('8,9,10');
+    expect(settingsStore.get().colPassword).toBe('secret123');
   });
 
   it('treats an empty string as a legitimate stored value (not missing)', () => {
-    // Users can explicitly blank out e.g. the gistToken — that must
-    // hydrate as '' not fall through to the (already-'') default via
-    // the "missing" path. Same contract for any other string field
-    // whose default is non-empty.
-    localStorage.setItem('oge_colPositions', '');
+    // Users can explicitly blank out e.g. the reminder schedule — that must
+    // hydrate as '' not fall through to the (non-empty) default via the
+    // "missing" path. reminderSchedule has a non-empty default, so '' here
+    // proves the distinction. (Its LS key is the remapped reminderWaveOffsets.)
+    localStorage.setItem('oge_reminderWaveOffsets', '');
     initSettingsStore();
-    expect(settingsStore.get().colPositions).toBe('');
+    expect(settingsStore.get().reminderSchedule).toBe('');
   });
 
   it('falls back to default when a bool value is unparseable', () => {
@@ -232,7 +229,7 @@ describe('initSettingsStore — hydration', () => {
   it('hydrates a mix of fields at once in a single store update', () => {
     localStorage.setItem('oge_fabMode', 'false');
     localStorage.setItem('oge_colMinGap', '30');
-    localStorage.setItem('oge_colPositions', '7,8');
+    localStorage.setItem('oge_colPassword', 'pw7,8');
     localStorage.setItem('oge_gistToken', 'ghp_abc123');
 
     initSettingsStore();
@@ -240,7 +237,7 @@ describe('initSettingsStore — hydration', () => {
     const state = settingsStore.get();
     expect(state.fabMode).toBe(false);
     expect(state.colMinGap).toBe(30);
-    expect(state.colPositions).toBe('7,8');
+    expect(state.colPassword).toBe('pw7,8');
     expect(state.gistToken).toBe('ghp_abc123');
     // Untouched fields stay at defaults.
     expect(state.autoRedirectExpedition).toBe(true);
@@ -263,8 +260,8 @@ describe('initSettingsStore — write-through (per-key diff)', () => {
 
   it('writes a changed string field to its own localStorage key', () => {
     initSettingsStore();
-    settingsStore.update((s) => ({ ...s, colPositions: '7,8,9' }));
-    expect(localStorage.getItem('oge_colPositions')).toBe('7,8,9');
+    settingsStore.update((s) => ({ ...s, colPassword: 'pw789' }));
+    expect(localStorage.getItem('oge_colPassword')).toBe('pw789');
   });
 
   it('writes multiple changed fields in the same set/update call', () => {
@@ -272,12 +269,12 @@ describe('initSettingsStore — write-through (per-key diff)', () => {
     settingsStore.update((s) => ({
       ...s,
       colMinGap: 30,
-      colPositions: '7',
+      colPassword: 'pw7',
       fabMode: false,
     }));
 
     expect(localStorage.getItem('oge_colMinGap')).toBe('30');
-    expect(localStorage.getItem('oge_colPositions')).toBe('7');
+    expect(localStorage.getItem('oge_colPassword')).toBe('pw7');
     expect(localStorage.getItem('oge_fabMode')).toBe('false');
   });
 
@@ -339,7 +336,7 @@ describe('initSettingsStore — persistence round-trip', () => {
       ...s,
       fabMode: false,
       colMinGap: 45,
-      colPositions: '7,8,9',
+      colPassword: 'pw789',
       gistToken: 'ghp_roundtrip',
     }));
     disposeSettingsStore();
@@ -354,7 +351,7 @@ describe('initSettingsStore — persistence round-trip', () => {
     const state = settingsStore.get();
     expect(state.fabMode).toBe(false);
     expect(state.colMinGap).toBe(45);
-    expect(state.colPositions).toBe('7,8,9');
+    expect(state.colPassword).toBe('pw789');
     expect(state.gistToken).toBe('ghp_roundtrip');
   });
 });

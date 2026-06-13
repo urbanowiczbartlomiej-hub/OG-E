@@ -362,6 +362,9 @@ export const collectGalaxyStats = (scans, targetPositions) => {
  * @param {number} [now] Epoch-ms passed through to `isSystemStale`.
  *   Defaults to `Date.now()` for call-site convenience; tests should
  *   pass a stable value to stay deterministic.
+ * @param {import('./scheduling.js').RescanPolicy} [policy] Rescan policy
+ *   from the user's Galaxy-Scan config, passed through to `isSystemStale`.
+ *   Defaults to the built-in "free positions" preset when omitted.
  * @returns {Record<number, number>} galaxy → count of stale systems.
  *   Galaxies with no usable scans are absent from the map; galaxies
  *   with at least one usable scan but zero stale entries map to `0`,
@@ -377,7 +380,7 @@ export const collectGalaxyStats = (scans, targetPositions) => {
  *   );
  *   // { 4: 1, 5: 0 }
  */
-export const countStaleByGalaxy = (scans, now = Date.now()) => {
+export const countStaleByGalaxy = (scans, now = Date.now(), policy = undefined) => {
   /** @type {Record<number, number>} */
   const out = {};
   for (const [key, scan] of Object.entries(scans)) {
@@ -385,7 +388,7 @@ export const countStaleByGalaxy = (scans, now = Date.now()) => {
     const g = Number(key.split(':')[0]);
     if (!Number.isFinite(g)) continue;
     if (out[g] === undefined) out[g] = 0;
-    if (isSystemStale(scan, now)) out[g]++;
+    if (isSystemStale(scan, now, policy)) out[g]++;
   }
   return out;
 };

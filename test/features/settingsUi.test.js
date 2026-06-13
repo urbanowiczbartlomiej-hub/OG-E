@@ -274,16 +274,20 @@ describe('installSettingsUi — text + password', () => {
     installSettingsUi();
     await flushWaitFor();
 
+    // reminderSchedule is a representative string ('text') field — its
+    // change handler writes the raw string straight back (no Number coercion,
+    // unlike the int 'text' fields). (colPositions, the field this previously
+    // used, moved to the dashboard's per-universe Galaxy-Scan config.)
     const input = /** @type {HTMLInputElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'colPositions')
+      document.getElementById(INPUT_PREFIX + 'reminderSchedule')
     );
     expect(input).not.toBeNull();
     expect(input?.type).toBe('text');
     if (input) {
-      input.value = '8,9,10';
+      input.value = '0m, 5m';
       input.dispatchEvent(new Event('change'));
     }
-    expect(settingsStore.get().colPositions).toBe('8,9,10');
+    expect(settingsStore.get().reminderSchedule).toBe('0m, 5m');
   });
 
   it('text change coerces to Number for numeric fields (colMinGap)', async () => {

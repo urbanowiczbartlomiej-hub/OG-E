@@ -17,6 +17,8 @@
 // @see ../../domain/histogram.js — STATUS_PRIORITY (interest order)
 // @see ../../domain/scans.js     — PositionStatus enum
 
+import { formatRescanDuration } from '../../domain/galaxyScanConfig.js';
+
 /**
  * @typedef {import('../../domain/scans.js').PositionStatus} PositionStatus
  */
@@ -78,29 +80,43 @@ export const STATUS_LABELS = {
  * `title` attribute (which preserves `\n` on every browser worth caring
  * about).
  *
- * Mirrors the policy in `domain/scheduling.js` — when the user hovers
- * the icon they should see the same thresholds the actual scan
- * scheduler will use, not a separately maintained rendering. If the
- * policy changes there, this string changes here.
+ * Generated from the ACTIVE per-universe rescan policy so the hover text
+ * matches whatever thresholds the user configured (not a separately
+ * maintained, possibly-stale rendering). A `0`/absent threshold renders as
+ * "never"; `abandoned` reflects the on/off toggle.
+ *
+ * @param {import('../../domain/scheduling.js').RescanPolicy} [policy]
+ *   The resolved policy (from `buildRescanPolicy`). When omitted, the
+ *   caller's default policy is described via empty thresholds → defaults
+ *   are still meaningful because callers always pass the active policy.
+ * @returns {string}
  */
-export const RESCAN_TOOLTIP = [
-  'Re-scan policy (when Scan will revisit a system with this status):',
-  '',
-  '  empty                    — never (stable, awaits Send)',
-  '  empty_sent (our fleet)   — 4 hours after send',
-  '  abandoned (debris)       — dynamic 25-47h (next 3 AM after 24h grace)',
-  '  inactive (i) 7-28d       — 5 days',
-  '  inactive (I) 28+d        — 5 days',
-  '  vacation                 — 30 days',
-  '  banned                   — 30 days',
-  '  occupied (active player) — 30 days',
-  '  mine                     — never (we know the state)',
-  '  admin                    — never (untouchable)',
-  '  not scanned              — highest priority, immediate',
-  '',
-  'A system is eligible for re-scan as soon as ANY of its 15 positions',
-  'has exceeded its threshold.',
-].join('\n');
+export const rescanTooltip = (policy) => {
+  const after = policy?.rescanAfter ?? {};
+  /** @param {number | undefined} ms */
+  const fmt = (ms) => (ms && ms > 0 ? formatRescanDuration(ms / 1000) : 'never');
+  const abandoned = policy?.abandonedEnabled === false
+    ? 'never (disabled)'
+    : 'dynamic 25-47h (next 3 AM after 24h grace)';
+  return [
+    'Re-scan policy (when Scan will revisit a system with this status):',
+    '',
+    `  empty                    — ${fmt(after.empty)}`,
+    `  empty_sent (our fleet)   — ${fmt(after.empty_sent)}`,
+    `  abandoned (debris)       — ${abandoned}`,
+    `  inactive (i) 7-28d       — ${fmt(after.inactive)}`,
+    `  inactive (I) 28+d        — ${fmt(after.long_inactive)}`,
+    `  vacation                 — ${fmt(after.vacation)}`,
+    `  banned                   — ${fmt(after.banned)}`,
+    `  occupied (active player) — ${fmt(after.occupied)}`,
+    '  mine                     — never (we know the state)',
+    '  admin                    — never (untouchable)',
+    '  not scanned              — highest priority, immediate',
+    '',
+    'A system is eligible for re-scan as soon as ANY of its 15 positions',
+    'has exceeded its threshold. Edit these times below.',
+  ].join('\n');
+};
 
 /**
  * Colour for the "no data yet" pixel in the galaxy map and the legend

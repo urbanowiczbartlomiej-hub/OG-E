@@ -13,8 +13,9 @@
 //      its own `init*Store` that hydrates from storage and starts
 //      write-through. Idempotent; called exactly once here.
 //
-//   2. Settings mirror — writes `colPositions` into chrome.storage so
-//      the extension-origin histogram page can read it across origins.
+//   2. Galaxy-Scan config — a per-universe chrome.storage store holding
+//      the target positions + rescan policy, edited from the dashboard
+//      (extension origin) and read in-game by the Scan button.
 //
 //   3. Feature installs — colonyRecorder, badges, sendExp, sendCol,
 //      abandonOverview, freshPlanetDetector, settingsUi, agrLogo,
@@ -65,8 +66,8 @@ import { initScansStore } from './state/scans.js';
 import { initRegistryStore } from './state/registry.js';
 import { initSettingsStore } from './state/settings.js';
 import { initFsRoutesStore } from './state/fsRoutes.js';
+import { initGalaxyScanConfigStore } from './state/galaxyScanConfig.js';
 import { initBodiesStore } from './state/bodies.js';
-import { installSettingsMirror } from './state/settings.js';
 import { migrateLegacyStorageKeys } from './state/migrate.js';
 
 import { installColonyRecorder } from './features/colonyRecorder.js';
@@ -113,11 +114,16 @@ initRegistryStore();
   // in-game fsCollect buttons never see routes authored in the dashboard
   // and the ad-hoc collect target wouldn't survive a page reload.
   initFsRoutesStore();
+  // Galaxy-Scan config (per-universe, chrome.storage). Hydrated here so the
+  // Scan button reads the user's positions + rescan policy, and edits made
+  // in the dashboard (a different origin) reach the in-game button. On first
+  // run after the upgrade, its hydrate seeds positions/preference from the
+  // legacy AGR settings keys (see `state/galaxyScanConfig.js`).
+  initGalaxyScanConfigStore();
   // Body inventory (per-universe, chrome.storage). Hydrated here so the
   // planet-bar capture below can gate its first write on the hydrate and
   // the dashboard route editor can read a snapshot of owned planets/moons.
   initBodiesStore();
-  installSettingsMirror();
 
   // Reminder config lives in `settings.js` (regular localStorage Settings,
   // authored in the in-game OG-E settings panel). Nothing extra to wire

@@ -46,6 +46,8 @@ import {
 } from '../../src/state/settings.js';
 import { scansStore } from '../../src/state/scans.js';
 import { registryStore } from '../../src/state/registry.js';
+import { galaxyScanConfigStore } from '../../src/state/galaxyScanConfig.js';
+import { defaultGalaxyScanConfig } from '../../src/domain/galaxyScanConfig.js';
 
 // ── Location.href mocking ────────────────────────────────────────────
 
@@ -237,6 +239,7 @@ beforeEach(() => {
   localStorage.clear();
   document.body.innerHTML = '';
   resetSettingsToDefaults();
+  galaxyScanConfigStore.set(defaultGalaxyScanConfig());
   scansStore.set({});
   registryStore.set([]);
   delete (/** @type {any} */ (window)).fleetDispatcher;
@@ -862,11 +865,8 @@ describe('onSendHold — manual skip', () => {
     // state the hold is a no-op — no visible hint, no known target). Arm
     // [4:30:9] through the courier, then hold to skip it.
     setupScene({ onFleetdispatch: true });
-    settingsStore.set({
-      ...settingsStore.get(),
-      fabMode: true,
-      colPositions: '9',
-    });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), positions: '9' });
     scansStore.set({
       '4:30': { scannedAt: Date.now(), positions: { 9: { status: 'empty' } } },
     });
@@ -885,11 +885,8 @@ describe('onSendHold — manual skip', () => {
 
   it('is a no-op in the idle (un-armed) state even with a derivable candidate', () => {
     setupScene({ onGalaxy: true, galaxyG: 4, galaxyS: 30 });
-    settingsStore.set({
-      ...settingsStore.get(),
-      fabMode: true,
-      colPositions: '9',
-    });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), positions: '9' });
     scansStore.set({
       '4:30': { scannedAt: Date.now(), positions: { 9: { status: 'empty' } } },
     });
@@ -900,11 +897,8 @@ describe('onSendHold — manual skip', () => {
 
   it('does not trigger any navigation', () => {
     setupScene({ onGalaxy: true, galaxyG: 4, galaxyS: 30 });
-    settingsStore.set({
-      ...settingsStore.get(),
-      fabMode: true,
-      colPositions: '9',
-    });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), positions: '9' });
     scansStore.set({
       '4:30': { scannedAt: Date.now(), positions: { 9: { status: 'empty' } } },
     });

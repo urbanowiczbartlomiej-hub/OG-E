@@ -14,6 +14,7 @@ import {
   mergeHistory,
   mergeSettings,
   mergeFsRoutes,
+  mergeGalaxyScanConfig,
   clearScans,
   clearGalaxyScans,
 } from '../../src/sync/merge.js';
@@ -545,5 +546,38 @@ describe('mergeFsRoutes — whole-universe newest-wins', () => {
     const r = mergeFsRoutes(local, /** @type {any} */ ({ routes: 'oops', collectTarget: null, updatedAt: 9 }));
     expect(r.changed).toBe(true);
     expect(r.merged.routes).toEqual([]);
+  });
+});
+
+describe('mergeGalaxyScanConfig', () => {
+  const cfgA = /** @type {any} */ ({ positions: '8', preferOtherGalaxies: true, rescan: { inactive: 100 } });
+  const cfgB = /** @type {any} */ ({ positions: '12-15', preferOtherGalaxies: false, rescan: { inactive: 200 } });
+
+  it('keeps local when remote is missing / not an object', () => {
+    const local = { config: cfgA, updatedAt: 5 };
+    expect(mergeGalaxyScanConfig(local, null).changed).toBe(false);
+    expect(mergeGalaxyScanConfig(local, undefined).merged).toBe(local);
+    expect(mergeGalaxyScanConfig(local, /** @type {any} */ ('x')).changed).toBe(false);
+  });
+
+  it('adopts remote when its updatedAt is strictly newer', () => {
+    const local = { config: cfgA, updatedAt: 5 };
+    const remote = { config: cfgB, updatedAt: 9 };
+    const r = mergeGalaxyScanConfig(local, remote);
+    expect(r.changed).toBe(true);
+    expect(r.merged).toEqual({ config: cfgB, updatedAt: 9 });
+  });
+
+  it('keeps local on a tie or older remote (anti-loop no-write)', () => {
+    const local = { config: cfgA, updatedAt: 9 };
+    expect(mergeGalaxyScanConfig(local, { config: cfgB, updatedAt: 9 }).changed).toBe(false);
+    expect(mergeGalaxyScanConfig(local, { config: cfgB, updatedAt: 3 }).changed).toBe(false);
+  });
+
+  it('ignores a newer remote that carries no usable config', () => {
+    const local = { config: cfgA, updatedAt: 1 };
+    const r = mergeGalaxyScanConfig(local, /** @type {any} */ ({ updatedAt: 9 }));
+    expect(r.changed).toBe(false);
+    expect(r.merged).toBe(local);
   });
 });
