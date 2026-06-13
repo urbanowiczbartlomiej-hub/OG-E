@@ -28,7 +28,7 @@
 //
 // The queue on ntfy.sh — not the gist — is the source of truth for what
 // is scheduled. Every sync hands the live waves to
-// `ntfyScheduler.reconcileWaveQueue`, which polls the queue and converges
+// `ntfyReconciler.reconcileWaveQueue`, which polls the queue and converges
 // it to exactly one message per future slot of every live wave: it posts
 // only missing slots and cancels only messages that belong to no live
 // wave. We then write whatever ids ended up on the queue back to the gist.
@@ -77,7 +77,7 @@ import { reconcileFleetSaves, pruneFsNotify, parseFsOffsets } from '../domain/fl
 import {
   reconcileWaveQueue, reconcileAdhocQueue, reconcileFleetSaveQueue,
   offsetsForSchedule, NTFY_MAX_DELAY_SEC, fetchScheduledMessages,
-} from './ntfyScheduler.js';
+} from './ntfyReconciler.js';
 
 /**
  * @typedef {import('../domain/waves.js').Wave} Wave
@@ -111,7 +111,7 @@ import {
  *   locked (see `domain/fleetSave.reconcileFleetSaves`).
  * @property {string} ntfyToken
  * @property {string} [schedule]  Free-form wave reminder schedule — a
- *   minutes-first duration list (see `ntfyScheduler.offsetsForSchedule`).
+ *   minutes-first duration list (see `ntfyReconciler.offsetsForSchedule`).
  *   Falls back to the default cadence when absent / empty. Waves only.
  */
 

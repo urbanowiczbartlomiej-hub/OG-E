@@ -1,9 +1,21 @@
 // @ts-check
 
-// ntfy.sh scheduled-delivery client. The only piece of OG-E that actually
+// ntfy.sh queue reconciler. The only piece of OG-E that actually
 // talks to ntfy.sh — everything upstream just hands us a wave + topic +
 // token. There is no `wrangler`-deployed Worker any more; ntfy.sh's own
 // queue is the cron.
+//
+// # Why "reconciler", not "scheduler"
+//
+// This module is NOT a timer-based scheduler (that's `sync/scheduler.js`,
+// which owns debounces + the in-flight lock). It is a STATELESS reconciler:
+// each pass polls ntfy's server-side scheduled queue and converges it to
+// exactly one message per future slot of every live wave (see "The queue is
+// the source of truth" below). The delay/cron lives entirely in ntfy's
+// `X-Delay` queue; we just diff desired-vs-actual and post/cancel the
+// difference. The name was changed from `ntfyScheduler` so it stops
+// inviting the "two schedulers — merge them?" question (the answer is no;
+// they share no mechanism).
 //
 // # How scheduling works on ntfy
 //

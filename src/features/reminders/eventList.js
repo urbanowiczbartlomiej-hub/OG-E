@@ -58,7 +58,7 @@
 import { settingsStore } from '../../state/settings.js';
 import { chromeStore } from '../../lib/storage.js';
 import { REMINDER_MIRROR_KEY, isValidNtfyToken } from '../../sync/reminders.js';
-import { NTFY_MAX_DELAY_SEC, offsetsForSchedule } from '../../sync/ntfyScheduler.js';
+import { NTFY_MAX_DELAY_SEC, offsetsForSchedule } from '../../sync/ntfyReconciler.js';
 import { parseUniverseId } from '../../lib/universeId.js';
 import { fireAtFor } from '../../domain/adhoc.js';
 import {

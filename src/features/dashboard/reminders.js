@@ -19,7 +19,7 @@
 // rate-limited).
 //
 // @see ../../sync/reminders.js — mirror keys + filename
-// @see ../../sync/ntfyScheduler.js — offsetsForSchedule / DEFAULT_WAVE_OFFSETS_SEC
+// @see ../../sync/ntfyReconciler.js — offsetsForSchedule / DEFAULT_WAVE_OFFSETS_SEC
 // @see ./index.js — installReminders wired into the dashboard boot
 
 /* global fetch */
@@ -34,7 +34,7 @@ import {
   reminderFilenameFor,
   deriveNtfyTopic,
 } from '../../sync/reminders.js';
-import { fetchScheduledMessages, cancelWaveReminders } from '../../sync/ntfyScheduler.js';
+import { fetchScheduledMessages, cancelWaveReminders } from '../../sync/ntfyReconciler.js';
 
 /**
  * @typedef {import('../../sync/reminders.js').ReminderState} ReminderState

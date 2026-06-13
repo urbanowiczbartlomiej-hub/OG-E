@@ -115,7 +115,7 @@ export const CLEANUP_GRACE_SEC = 60;
  * @typedef {object} NotifyEntry
  * @property {number} [baseAt] Locked schedule anchor (epoch SECONDS). The
  *   wave's reminder slots are `baseAt + offsetsSec[i]` for the resolved
- *   schedule (see `sync/ntfyScheduler.offsetsForSchedule`). Set the
+ *   schedule (see `sync/ntfyReconciler.offsetsForSchedule`). Set the
  *   first time the wave is recorded and fed back unchanged on later scans,
  *   so the slot times stay stable as the earliest live return drifts.
  * @property {string[]} [scheduledMessageIds] ntfy.sh message ids currently

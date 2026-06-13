@@ -38,7 +38,7 @@
 // The topic is automatic (derived from the token); it's shown read-only
 // both here (row 3b) and on the OG-E Dashboard's Reminders tab.
 
-import { offsetsForSchedule } from '../../../sync/ntfyScheduler.js';
+import { offsetsForSchedule } from '../../../sync/ntfyReconciler.js';
 import { settingsStore } from '../../../state/settings.js';
 import { isValidNtfyToken, deriveNtfyTopic } from '../../../sync/reminders.js';
 import { fetchNtfyAccount } from '../../../sync/ntfyAccount.js';

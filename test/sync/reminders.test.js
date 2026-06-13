@@ -5,7 +5,7 @@
 // integration-level (need a real gist + token) and not exercised here;
 // the reconcile pipeline they orchestrate is fully covered by
 // `test/domain/waves.test.js` and the ntfy scheduling by
-// `test/sync/ntfyScheduler.test.js`.
+// `test/sync/ntfyReconciler.test.js`.
 
 import { describe, it, expect } from 'vitest';
 import {

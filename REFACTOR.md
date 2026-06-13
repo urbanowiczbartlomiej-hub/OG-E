@@ -74,7 +74,7 @@ line) · `[-]` dropped (note why; keep for history).
 | 1 | Invariant violations (highest value) | 3 | 3 / 3 |
 | 2 | Contract unification & dedup | 5 | 5 / 5 |
 | 3 | Structural (parity, pure-core, test isolation) | 4 | 2 / 4 |
-| 4 | Low-cost polish | 4 | 3 / 4 |
+| 4 | Low-cost polish | 4 | 4 / 4 |
 | 5 | Documentation reduction (DRY for docs) | 5 | 0 / 5 |
 
 > Update the "Done" column whenever a task flips to `[x]`.
@@ -549,7 +549,7 @@ benefits.*
   green. No CHANGELOG entry — diagnostic logging only, no user-visible behaviour
   change (logger is off by default).
 
-### `[ ]` P3 — Rename `ntfyScheduler.js` → `ntfyReconciler.js`
+### `[x]` P3 — Rename `ntfyScheduler.js` → `ntfyReconciler.js`
 - **Severity:** low · **Size:** S · **Risk:** low (rename + import updates) · **Deps:** C1 (settle imports first to avoid churn collisions)
 - **Why:** It's not a timer-based scheduler — it's a stateless queue reconciler
   against ntfy's `X-Delay` server-side queue. The name invited the "two
@@ -560,7 +560,17 @@ benefits.*
   reminders.js:41`, `dashboard/reminders.js:37`, `ntfyAccount.js:26`,
   `sync/reminders.js`), rename its test file, update header doc.
 - **Acceptance:** No `ntfyScheduler` path remains; tests + typecheck green.
-- **Done:**
+- **Done:** 2026-06-13 — `refactor: rename ntfyScheduler → ntfyReconciler (P3)`.
+  `git mv`'d `src/sync/ntfyScheduler.js` → `ntfyReconciler.js` and
+  `test/sync/ntfyScheduler.test.js` → `ntfyReconciler.test.js`; updated all 5
+  importers (`reminders/producer`, `reminders/eventList`, `settingsUi/sections/
+  reminders`, `dashboard/reminders`, `sync/ntfyAccount`, `sync/reminders`) plus
+  every comment mention (`sync/reminders`, `domain/waves`, `dashboard/reminders`
+  `@see`, test header). Added a "Why reconciler, not scheduler" section to the
+  module header contrasting it with the timer-based `sync/scheduler.js` (no
+  shared mechanism — the "merge the two schedulers?" non-finding from the
+  Decision log). `grep ntfyScheduler src test` → empty. test 1390 / typecheck /
+  lint green. No CHANGELOG entry — internal rename, no user-visible change.
 
 ### `[x]` P4 — Make `stampFsRoutesChanged` flush (close the debounce race)
 - **Severity:** low · **Size:** S · **Deps:** none

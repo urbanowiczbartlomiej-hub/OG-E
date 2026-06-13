@@ -7,7 +7,7 @@
 //
 // # Auth: query param, not header
 //
-// Reuses `ntfyAuthParam` from `ntfyScheduler.js` — the SAME base64
+// Reuses `ntfyAuthParam` from `ntfyReconciler.js` — the SAME base64
 // `?auth=` query param the publish/poll/cancel calls use. This is not a
 // stylistic choice: Firefox content scripts can't send an `Authorization`
 // header to ntfy.sh even with `host_permissions`, because ntfy's CORS
@@ -23,7 +23,7 @@
 // the validation ladder live in the domain so they're testable without a
 // network.
 
-import { ntfyAuthParam } from './ntfyScheduler.js';
+import { ntfyAuthParam } from './ntfyReconciler.js';
 import { isValidNtfyToken } from './reminders.js';
 
 /** ntfy account endpoint. The token authorises it via the `auth` query param. */

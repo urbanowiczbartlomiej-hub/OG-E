@@ -1,6 +1,6 @@
 // @ts-check
 
-// Unit tests for the ntfy.sh scheduler. `fetch` is stubbed globally so
+// Unit tests for the ntfy.sh queue reconciler. `fetch` is stubbed globally so
 // these tests don't touch the network — we assert on the calls made,
 // not on real ntfy responses.
 
@@ -19,7 +19,7 @@ import {
   DEFAULT_WAVE_OFFSETS_SEC,
   WAVE_PRIORITY,
   ADHOC_PRIORITY,
-} from '../../src/sync/ntfyScheduler.js';
+} from '../../src/sync/ntfyReconciler.js';
 import { logger } from '../../src/lib/logger.js';
 
 /**

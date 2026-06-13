@@ -57,7 +57,7 @@ import { clusterWaves, DEFAULT_CLUSTER_GAP_SECONDS } from '../../domain/waves.js
 /** @typedef {import('../../domain/adhoc.js').AdhocReminder} AdhocReminder */
 import { extractFleetSaveCandidates } from './fsScan.js';
 import { parseFsOffsets } from '../../domain/fleetSave.js';
-import { NTFY_MAX_DELAY_SEC } from '../../sync/ntfyScheduler.js';
+import { NTFY_MAX_DELAY_SEC } from '../../sync/ntfyReconciler.js';
 import { settingsStore } from '../../state/settings.js';
 import { syncReminders } from '../../sync/reminders.js';
 import { parseUniverseId } from '../../lib/universeId.js';
