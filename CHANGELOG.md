@@ -10,69 +10,44 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ### Added
 
-- **Configurable Galaxy-Scan strategy, edited in the dashboard.** The Scan
-  button's re-scan timing is no longer fixed: a new **Galaxy-Scan config**
-  panel (dashboard → Galaxy Observations) lets you set, per status, how long
-  a scanned system stays fresh before the Scan button revisits it — using
-  free units like `6h` or `5d`, with `0` meaning "never re-scan this status".
-  This makes the Scan button serve any play style: keep the defaults for
-  finding free colonization slots, shorten the *inactive*/*long-inactive*
-  windows for farm-hunting, or shorten *occupied* (and opt *empty* in) to
-  watch active players. The target-positions list and "prefer neighbouring
-  galaxies" preference moved here too (out of the AGR settings panel). All of
-  it is per-universe and syncs across your devices when cloud sync is on.
+- **Configurable Galaxy-Scan strategy (dashboard → Galaxy Observations).**
+  Per-status freshness windows for the Scan button — e.g. `6h`, `5d`, or `0`
+  (never re-scan). Suits farm-hunting, slot-finding, or watching active
+  players. Target-positions list and "prefer neighbouring galaxies" also moved
+  here from the AGR panel. Per-universe and cloud-synced.
 
 ### Changed
 
-- **Floating buttons carry the OG-E mark.** Every command button now shows
-  its glyph in the same small "glass node" — a convex glass cabochon framed
-  by the OG-E orbit symbol from the logo (three gold arcs + three beads), with
-  the glyph itself in gold. It turns each button into a recognisable branded
-  node while staying a small accent: the action label stays the focus, and
-  the gold mark is constant in every state (the button's outer rim still
-  carries the live state colour). On the split buttons (Colonization, Daily
-  Run) the node sits centred on the seam, and the dividing line is inverted to
-  suit — bright at the outer edges, fading to nothing in the middle — so it
-  threads into the node from both sides; each half's label is nudged outward
-  to clear it. On the single buttons (Expeditions, Lifeforms) the node sits in
-  the upper section with the label below.
-- **Gold FAB menu handle.** The little handle that opens the floating-button
-  picker now wears the same gold brand thread — a gold ring around a gold
-  "+" (which still rotates to a "×" while the picker is open) — instead of
-  tinting to the active module's colour. The picker orbs keep their per-module
-  colours as identity.
-- **The FAB's "+"/"×" handle now tracks the screen centre too.** It used to
-  sit on a fixed bottom-right corner of the floating button; now it rides the
-  FAB edge on the side facing the viewport centre — the same direction the
-  picker orbs already fan toward — and re-aims live as you drag the button or
-  the window resizes. So the handle and the menu it opens always point the
-  same way, into free screen space, wherever the FAB is parked.
-- **Floating buttons wait for the page before they can be tapped.** On the
-  fleet-dispatch page OGame loads its event list a moment after the page
-  itself; tapping a command button in that gap acted on half-loaded data.
-  All four buttons (Expeditions, Colonization, Daily Run, Lifeforms) now sit
-  visibly disabled — greyed, taps ignored — until that load finishes, then
-  enable themselves (with fallbacks so a missed load never leaves a button
-  stuck). Previously only Expeditions guarded this, and only by flashing
-  "Wait..." after you'd already tapped.
-- **Consistent "disabled" look across button shapes.** A greyed-out button
-  (busy or waiting) now dims only its inner face and label while the rim,
-  progress ring and gold OG-E node stay bright — the same on single-face
-  buttons (Expeditions, Lifeforms) as on the split ones (Colonization, Daily
-  Run). Before, a single-face button greyed out whole, chrome included.
+- **OG-E mark on floating buttons.** Each command button's glyph now sits in
+  a small gold "glass node" — a convex cabochon framed by the OG-E orbit
+  symbol (three gold arcs + three beads). The rim still shows live state
+  colour; the node stays gold in all states. On split buttons (Colonization,
+  Daily Run) the node sits centred on the seam with the dividing line
+  inverted to frame it; on single buttons (Expeditions, Lifeforms) the node
+  sits in the upper section.
+- **Gold FAB handle.** The floating-button picker handle now shows a gold
+  ring + gold "+" (rotating to "×" when open) instead of tinting to the
+  active module's colour. Picker orbs keep their per-module colours.
+- **FAB handle tracks the screen centre.** The "+"/"×" handle rides the FAB
+  edge facing the viewport centre — the same side the picker orbs fan toward
+  — and re-aims live as you drag or resize the window.
+- **Floating buttons wait for page load before responding.** All four buttons
+  (Expeditions, Colonization, Daily Run, Lifeforms) sit visibly disabled
+  until OGame's event list finishes loading on the fleet-dispatch page, then
+  enable themselves. Previously only Expeditions guarded this, and only by
+  flashing "Wait…" after tapping.
+- **Consistent disabled appearance.** A greyed-out button dims only its inner
+  face and label; rim, progress ring and gold node stay bright — same on
+  single-face and split buttons.
 
 ### Fixed
 
-- **Fleet-send buttons no longer complete someone else's fleet2.** Each
-  button (Expeditions, Colonization, Daily Run) now tracks ownership of the
-  fleet1→fleet2 transition it initiated. A button that finds the dispatch
-  form already on step 2 — because you armed a manual send, AGR's routine
-  prepared an expedition, or another OG-E button got there first — blocks
-  instead of firing the foreign fleet, and routes to a fresh fleetdispatch
-  page so its own flow starts cleanly from step 1. Expeditions prepared by
-  AGR's routine-7 outside OG-E are still recognised (target position 16 +
-  a Pathfinder aboard, read from the game's own checkTarget request) and
-  remain one-tap sendable from the Expeditions button.
+- **Fleet-send buttons no longer fire someone else's fleet.** Each button
+  tracks ownership of the fleet1→fleet2 transition it started. If step 2 is
+  already claimed by a manual send, AGR, or another OG-E button, the button
+  blocks and routes to a fresh fleetdispatch page instead of continuing the
+  foreign fleet. AGR routine-7 expeditions (position 16 + Pathfinder) are
+  still recognised and remain one-tap sendable.
 
 ## [1.17.0] — 2026-06-10
 
