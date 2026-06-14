@@ -184,6 +184,25 @@ if (!JWT_ISSUER || !JWT_SECRET) {
 }
 
 console.log(`release: ${TAG}  (CHANGELOG dated ${changelogDate})`);
+if (UNLISTED) console.log('release: channel = unlisted (not offered as update to existing users)');
+
+// Warn if any CHANGELOG version lacks a git tag — symptom of a manual AMO
+// upload that bypassed this script. A missing tag means the release is
+// unreproducible and the channel/version checks above can't be trusted.
+{
+  const clText = readFileSync(resolve(ROOT, 'CHANGELOG.md'), 'utf8');
+  const untagged = [...clText.matchAll(/^## \[(\d+\.\d+\.\d+)\]/gm)]
+    .map((m) => m[1])
+    .filter((v) => capture(`git tag -l v${v}`).trim() !== `v${v}`);
+  if (untagged.length) {
+    console.warn(
+      `release: WARNING — CHANGELOG versions without a git tag: ${untagged.join(', ')}.\n` +
+        '         These were likely uploaded to AMO manually (bypassing this script).\n' +
+        '         If any of those are in the wrong channel, the channel-mismatch guard\n' +
+        '         above will catch it when you try to re-release them.',
+    );
+  }
+}
 
 // ---------------------------------------------------------------------------
 // dry run stops here — preview only, nothing mutated
@@ -292,9 +311,22 @@ function fileBlob(name) {
 async function versionAlreadyOnAmo() {
   try {
     const data = await amo(`/addons/addon/${ADDON_GUID}/versions/?filter=all_with_unlisted`);
-    return (data.results || []).some((v) => v.version === VERSION);
-  } catch {
-    return false; // a 404 here just means "no such version yet"
+    const existing = (data.results || []).find((v) => v.version === VERSION);
+    if (!existing) return false;
+    // Guard against silently skipping when the same version number was already
+    // uploaded to the WRONG channel (e.g. released as "listed" manually, then
+    // re-run with --unlisted). Same channel → idempotent skip is safe; wrong
+    // channel → hard stop so the caller picks a different version number.
+    if (existing.channel !== CHANNEL) {
+      die(
+        `version ${VERSION} already exists on AMO in the "${existing.channel}" channel, ` +
+          `but this release targets "${CHANNEL}". Use a different version number.`,
+      );
+    }
+    return true;
+  } catch (e) {
+    if (e.message?.startsWith('release:')) throw e; // re-throw die() calls
+    return false; // network error / 404 → version not on AMO yet
   }
 }
 
