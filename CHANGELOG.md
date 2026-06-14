@@ -6,6 +6,8 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.17.0] — 2026-06-14
+
 ### Added
 
 - **Configurable Galaxy-Scan strategy, edited in the dashboard.** The Scan
@@ -19,6 +21,16 @@ version numbers follow [Semantic Versioning](https://semver.org).
   watch active players. The target-positions list and "prefer neighbouring
   galaxies" preference moved here too (out of the AGR settings panel). All of
   it is per-universe and syncs across your devices when cloud sync is on.
+- **Subtle background glyphs on the floating buttons.** Each command button
+  now carries a faint, monochrome line-glyph behind its label as a
+  glanceability cue — a comet for Expeditions, a landing craft for
+  Colonization, a planet-with-flight-arc for the Daily Run, and a DNA helix
+  for Lifeforms. The glyph is tinted to the button's current state colour
+  (so it stays quiet in the amber "wait" / rose "error" states and brightens
+  with the active colour) and sits below the label, ring and charge arc so
+  it never competes with them. Single-zone buttons show one half-size glyph
+  tucked toward the top; split buttons carry a smaller glyph in the lead zone
+  only.
 
 ### Changed
 
@@ -45,7 +57,6 @@ version numbers follow [Semantic Versioning](https://semver.org).
   picker orbs already fan toward — and re-aims live as you drag the button or
   the window resizes. So the handle and the menu it opens always point the
   same way, into free screen space, wherever the FAB is parked.
-
 - **Floating buttons wait for the page before they can be tapped.** On the
   fleet-dispatch page OGame loads its event list a moment after the page
   itself; tapping a command button in that gap acted on half-loaded data.
@@ -59,6 +70,11 @@ version numbers follow [Semantic Versioning](https://semver.org).
   progress ring and gold OG-E node stay bright — the same on single-face
   buttons (Expeditions, Lifeforms) as on the split ones (Colonization, Daily
   Run). Before, a single-face button greyed out whole, chrome included.
+- **Hold-to-confirm is now 2s (was 3s)** on the two buttons that use it — the
+  Colonization "skip/scan" hold and the Daily Run "set collect target" hold.
+- **Lifeforms button labels tidied.** "Empty → next" → "Empty", "To galaxy" →
+  "Discover", and the "(N left)" counter is gone (with thousands of systems
+  always pending, the number carried no useful signal).
 
 ### Fixed
 
@@ -72,32 +88,6 @@ version numbers follow [Semantic Versioning](https://semver.org).
   AGR's routine-7 outside OG-E are still recognised (target position 16 +
   a Pathfinder aboard, read from the game's own checkTarget request) and
   remain one-tap sendable from the Expeditions button.
-
-## [1.17.0] — 2026-06-10
-
-### Added
-
-- **Subtle background glyphs on the floating buttons.** Each command button
-  now carries a faint, monochrome line-glyph behind its label as a
-  glanceability cue — a comet for Expeditions, a landing craft for
-  Colonization, a planet-with-flight-arc for the Daily Run, and a DNA helix
-  for Lifeforms. The glyph is tinted to the button's current state colour
-  (so it stays quiet in the amber "wait" / rose "error" states and brightens
-  with the active colour) and sits below the label, ring and charge arc so
-  it never competes with them. Single-zone buttons show one half-size glyph
-  tucked toward the top; split buttons carry a smaller glyph in the lead zone
-  only.
-
-### Changed
-
-- **Hold-to-confirm is now 2s (was 3s)** on the two buttons that use it — the
-  Colonization "skip/scan" hold and the Daily Run "set collect target" hold.
-- **Lifeforms button labels tidied.** "Empty → next" → "Empty", "To galaxy" →
-  "Discover", and the "(N left)" counter is gone (with thousands of systems
-  always pending, the number carried no useful signal).
-
-### Fixed
-
 - **Cross-device sync no longer drops lifeform discoveries.** A plain galaxy
   rescan on one device could overwrite a lifeform discovery recorded on
   another after a sync round-trip, because scans merged as a whole unit keyed
