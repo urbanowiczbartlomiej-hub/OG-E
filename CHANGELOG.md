@@ -22,14 +22,16 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ### Changed
 
-- **Two-part buttons now carry their icon in the centre.** On the split
-  buttons (Colonization, Daily Run) the command glyph moves from a faint
-  watermark on the top half to a small, sharp disc centred on the seam
-  between the two halves. The dividing line is inverted to match — bright at
-  the outer edges, fading to nothing in the middle — so it threads into the
-  central disc from both sides instead of cutting across it. Each half's
-  label is nudged outward to clear the disc. Single buttons (Expeditions,
-  Lifeforms) keep their centred watermark glyph unchanged.
+- **Floating buttons share one glass-node icon.** Every command button now
+  carries its glyph in the same small, convex "glass lens" — a subtle domed
+  cabochon with a soft top highlight — instead of the old flat watermark.
+  It's a deliberately small accent: the action label stays the focus. On the
+  split buttons (Colonization, Daily Run) the lens sits centred on the seam,
+  and the dividing line is inverted to suit — bright at the outer edges,
+  fading to nothing in the middle — so it threads into the lens from both
+  sides instead of cutting across it; each half's label is nudged outward to
+  clear it. On the single buttons (Expeditions, Lifeforms) the lens sits in
+  the upper section with the label below.
 
 ### Fixed
 
