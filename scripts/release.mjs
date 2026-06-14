@@ -318,10 +318,13 @@ async function versionAlreadyOnAmo() {
     // re-run with --unlisted). Same channel → idempotent skip is safe; wrong
     // channel → hard stop so the caller picks a different version number.
     if (existing.channel !== CHANNEL) {
-      die(
-        `version ${VERSION} already exists on AMO in the "${existing.channel}" channel, ` +
-          `but this release targets "${CHANNEL}". Use a different version number.`,
+      // Same version in a DIFFERENT channel is allowed — listed and unlisted
+      // are separate AMO pipelines. Warn and continue with the upload.
+      console.warn(
+        `release: WARNING — version ${VERSION} already exists on AMO as "${existing.channel}". ` +
+          `Uploading to "${CHANNEL}" channel too (both channels will have this version).`,
       );
+      return false;
     }
     return true;
   } catch (e) {
