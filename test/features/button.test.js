@@ -10,7 +10,7 @@
 //
 // @ts-check
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createButton, LABEL_CLASS } from '../../src/features/shared/button.js';
 
 beforeEach(() => {
@@ -307,5 +307,51 @@ describe('long-press (hold) gesture on a zone', () => {
     await new Promise((r) => setTimeout(r, 60));
     zone.dispatchEvent(new PointerEvent('pointerup'));
     expect(holds()).toBe(0);
+  });
+});
+
+describe('eventbox readiness gate (gateUntilEventBox)', () => {
+  afterEach(() => {
+    location.search = '';
+  });
+
+  /** @returns {{ taps: () => number, btn: HTMLElement }} */
+  const make = () => {
+    let taps = 0;
+    createButton({
+      id: 'oge-test-gate',
+      title: 'Gate',
+      ringId: 'oge-ring-gate',
+      size: 80,
+      fontScale: 0.23,
+      posKey: 'oge_test_gate_pos',
+      gateUntilEventBox: true,
+      zones: [{ key: 'main', id: 'oge-test-gate', bg: 'red', onTap: () => (taps += 1) }],
+    });
+    return {
+      taps: () => taps,
+      btn: /** @type {HTMLElement} */ (document.getElementById('oge-test-gate')),
+    };
+  };
+
+  it('on fleetdispatch starts disabled and swallows taps until oge:eventBoxLoaded', () => {
+    location.search = '?page=ingame&component=fleetdispatch';
+    const { taps, btn } = make();
+    expect(btn.getAttribute('aria-disabled')).toBe('true');
+    btn.click();
+    expect(taps()).toBe(0); // swallowed while gated
+
+    document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
+    expect(btn.getAttribute('aria-disabled')).toBeNull();
+    btn.click();
+    expect(taps()).toBe(1); // taps flow once the eventbox is ready
+  });
+
+  it('off fleetdispatch the gate is a no-op (enabled, taps fire immediately)', () => {
+    location.search = '?page=ingame&component=overview';
+    const { taps, btn } = make();
+    expect(btn.getAttribute('aria-disabled')).toBeNull();
+    btn.click();
+    expect(taps()).toBe(1);
   });
 });

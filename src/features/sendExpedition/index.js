@@ -70,7 +70,7 @@
 import { settingsStore } from '../../state/settings.js';
 import { safeClick, waitFor } from '../../lib/dom.js';
 import { GAME } from '../../lib/gameDom.js';
-import { EVENT_BOX_LOADED_EVENT, FLEET_DISPATCHER_EVENT } from '../../lib/ogeEvents.js';
+import { FLEET_DISPATCHER_EVENT } from '../../lib/ogeEvents.js';
 import { createButton as makeButton, LABEL_CLASS } from '../shared/button.js';
 import { COMET_GLYPH } from '../shared/buttonGlyphs.js';
 import { OWNER_EXP } from '../../domain/fleetOwnership.js';
@@ -89,8 +89,6 @@ import {
   POLL_TIMEOUT_MS,
   POLL_INTERVAL_MS,
   FOCUS_RESTORE_DELAY_MS,
-  EVENTBOX_SAFETY_TIMEOUT_MS,
-  EVENTBOX_LOADING_LABEL_MS,
   BUTTON_TEXT,
   ALL_MAXED_LABEL,
   ALL_FLEETS_LABEL,
@@ -199,49 +197,10 @@ export const installSendExpedition = () => {
   /** @type {import('../shared/button.js').Button | null} */
   let controller = null;
 
-  // Eventbox readiness gate (fleetdispatch only). On `component=fleetdispatch`
-  // OGame fires an async XHR for the fleet-event list shortly after page
-  // load; until that lands, `#eventContent` rows and AGR's routine state
-  // are stale, and a click handed to runPhase2 polls a half-hydrated DOM
-  // for the full 15 s POLL_TIMEOUT_MS window before recovering. We gate
-  // clicks on the bridge's `oge:eventBoxLoaded` signal (see
-  // `bridges/eventBoxObserver.js`) and fall back to a safety timeout so a
-  // missed XHR (run_at race, future URL change, …) doesn't lock the
-  // button forever — 8 s is well past the typical eventbox load (~1 s)
-  // but a fraction of the 15 s Phase 2 timeout we'd otherwise hit. Pages
-  // other than fleetdispatch start ready immediately.
-  const isFleetdispatchPage = location.search.includes('component=fleetdispatch');
-  let eventBoxReady = !isFleetdispatchPage;
-
-  /** @type {((e: Event) => void) | null} */
-  let onEventBoxLoaded = null;
-  /** @type {(() => void) | null} */
-  let onWindowLoad = null;
-  /** @type {ReturnType<typeof setTimeout> | null} */
-  let eventBoxSafetyTimer = null;
-  if (isFleetdispatchPage) {
-    onEventBoxLoaded = () => {
-      eventBoxReady = true;
-    };
-    document.addEventListener(EVENT_BOX_LOADED_EVENT, onEventBoxLoaded);
-
-    // Secondary trigger: window 'load' event. The eventbox refresh XHR
-    // typically fires DURING page load and lands shortly after `load`
-    // does, but some installs (cached responses, future OGame URL
-    // shape) won't go through our XHR observer. The load event is a
-    // hard guarantee that the page itself is no longer hydrating, so
-    // it's a safe moment to open the gate. We hook it unconditionally
-    // — if the page is already 'complete' the listener is harmlessly
-    // dead, and the safety timer still fires.
-    onWindowLoad = () => {
-      eventBoxReady = true;
-    };
-    window.addEventListener('load', onWindowLoad, { once: true });
-
-    eventBoxSafetyTimer = setTimeout(() => {
-      eventBoxReady = true;
-    }, EVENTBOX_SAFETY_TIMEOUT_MS);
-  }
+  // The eventbox-readiness gate (hold the button visibly disabled on
+  // fleetdispatch until OGame's post-load eventbox XHR lands) now lives in
+  // the shared Button — see `gateUntilEventBox` in the config below and
+  // `features/shared/eventBoxGate.js`. Every fleet-send button shares it.
 
   /**
    * Read the current label. The label lives in the shared Button's
@@ -401,19 +360,10 @@ export const installSendExpedition = () => {
   const handleClick = (btn) => {
     if (busy) return;
 
-    // Eventbox-readiness gate (fleetdispatch only). The cap counts + AGR's
-    // `#ago_routine_7` check class are authoritative only after OGame's
-    // eventbox XHR lands. Clicking before that polls a half-hydrated DOM.
-    if (!eventBoxReady) {
-      const original = getLabel(btn);
-      setLabel(btn, 'Wait...');
-      controller?.setDim('main', true);
-      setTimeout(() => {
-        if (getLabel(btn) === 'Wait...') setLabel(btn, original || BUTTON_TEXT);
-        controller?.setDim('main', false);
-      }, EVENTBOX_LOADING_LABEL_MS);
-      return;
-    }
+    // The eventbox-readiness gate is enforced upstream by the shared Button
+    // (the button is disabled until the eventbox XHR lands), so by the time a
+    // click reaches here the cap counts + AGR's `#ago_routine_7` check class
+    // are authoritative.
 
     // General fleet-slot gate (T11) — every fleet slot in use ⇒ NO fleet
     // of any kind can launch. Broader than the expedition cap below, so it
@@ -512,6 +462,7 @@ export const installSendExpedition = () => {
       size,
       fontScale: 0.23,
       module: { id: 'exp', name: 'Expeditions', color: BG_IDLE, glyph: COMET_GLYPH },
+      gateUntilEventBox: true,
       focusKey: FOCUS_KEY,
       zones: [
         {
@@ -623,18 +574,6 @@ export const installSendExpedition = () => {
         FLEET_DISPATCHER_EVENT,
         onFleetDispatcherSnapshot,
       );
-      if (onEventBoxLoaded) {
-        document.removeEventListener(EVENT_BOX_LOADED_EVENT, onEventBoxLoaded);
-        onEventBoxLoaded = null;
-      }
-      if (onWindowLoad) {
-        window.removeEventListener('load', onWindowLoad);
-        onWindowLoad = null;
-      }
-      if (eventBoxSafetyTimer !== null) {
-        clearTimeout(eventBoxSafetyTimer);
-        eventBoxSafetyTimer = null;
-      }
       installed = null;
     },
   };

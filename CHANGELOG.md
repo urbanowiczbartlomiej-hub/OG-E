@@ -46,6 +46,20 @@ version numbers follow [Semantic Versioning](https://semver.org).
   the window resizes. So the handle and the menu it opens always point the
   same way, into free screen space, wherever the FAB is parked.
 
+- **Floating buttons wait for the page before they can be tapped.** On the
+  fleet-dispatch page OGame loads its event list a moment after the page
+  itself; tapping a command button in that gap acted on half-loaded data.
+  All four buttons (Expeditions, Colonization, Daily Run, Lifeforms) now sit
+  visibly disabled — greyed, taps ignored — until that load finishes, then
+  enable themselves (with fallbacks so a missed load never leaves a button
+  stuck). Previously only Expeditions guarded this, and only by flashing
+  "Wait..." after you'd already tapped.
+- **Consistent "disabled" look across button shapes.** A greyed-out button
+  (busy or waiting) now dims only its inner face and label while the rim,
+  progress ring and gold OG-E node stay bright — the same on single-face
+  buttons (Expeditions, Lifeforms) as on the split ones (Colonization, Daily
+  Run). Before, a single-face button greyed out whole, chrome included.
+
 ### Fixed
 
 - **Fleet-send buttons no longer complete someone else's fleet2.** Each

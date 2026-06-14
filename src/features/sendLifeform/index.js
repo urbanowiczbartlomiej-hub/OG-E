@@ -377,6 +377,7 @@ export const installSendLifeform = () => {
       size,
       fontScale: 0.18,
       module: { id: 'lf', name: 'Lifeforms', color: BG_LF_IDLE, glyph: DNA_GLYPH },
+      gateUntilEventBox: true,
       focusKey: FOCUS_KEY,
       zones: [
         {

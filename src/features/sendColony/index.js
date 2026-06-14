@@ -880,6 +880,7 @@ export const installSendColony = () => {
       size,
       fontScale: 0.12,
       module: { id: 'col', name: 'Colonization', color: BG_SEND_IDLE, glyph: LANDER_GLYPH },
+      gateUntilEventBox: true,
       focusKey: FOCUS_KEY,
       holdMs: HOLD_SKIP_MS,
       zones: [

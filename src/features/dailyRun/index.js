@@ -728,6 +728,7 @@ export const installDailyRun = () => {
       // Matches sendColony so identical `em` labels render at identical px.
       fontScale: 0.12,
       module: { id: 'fs', name: 'Daily Run', color: BG_MICRO, glyph: PLANET_ARROW_GLYPH },
+      gateUntilEventBox: true,
       focusKey: FOCUS_KEY,
       holdMs: LONG_PRESS_MS,
       zones: [

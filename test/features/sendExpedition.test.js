@@ -698,29 +698,26 @@ describe('installSendExpedition — fleetDispatcher snapshot gates', () => {
 // ──────────────────────────────────────────────────────────────────
 
 describe('installSendExpedition — eventbox readiness gate', () => {
-  it('on fleetdispatch, click before eventbox loads paints "Wait..." and bails (no nav, busy stays false)', () => {
-    // Pre-1.0.1 a tap on fleetdispatch immediately after navigation
-    // entered Phase 2 against a half-hydrated DOM and locked the button
-    // for the full 15 s POLL_TIMEOUT_MS. The gate suppresses the Phase
-    // 1/2 entry until OGame's eventbox refresh XHR has fired — dimming
-    // but NOT setting busy, so the user can simply tap again once the page settles.
-    vi.useFakeTimers();
+  it('on fleetdispatch the button starts VISIBLY disabled until the eventbox loads (taps swallowed, no nav)', () => {
+    // Pre-1.0.1 a tap on fleetdispatch immediately after navigation entered
+    // Phase 2 against a half-hydrated DOM and locked the button for the full
+    // 15 s POLL_TIMEOUT_MS. The shared gate now holds the button disabled
+    // (aria-disabled, greyed fill) until OGame's eventbox refresh XHR fires;
+    // taps in that window are swallowed outright (no nav, no label change).
     setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
     installSendExpedition();
-    // Note: NO `oge:eventBoxLoaded` dispatched here — that's the whole
-    // point of this case.
+    // Note: NO `oge:eventBoxLoaded` dispatched yet — that's the whole point.
 
     const btn = getBtn();
+    expect(btn?.getAttribute('aria-disabled')).toBe('true');
+    const before = labelOf(btn);
     btn?.click();
-
-    expect(labelOf(btn)).toBe('Wait...');
     expect(navTarget).toBeNull();
+    expect(labelOf(btn)).toBe(before); // swallowed — nothing changed
 
-    // The cue clears after EVENTBOX_LOADING_LABEL_MS and restores the idle
-    // label (the page is not on a routine/dispatch state → "Explore").
-    vi.advanceTimersByTime(800);
-    expect(labelOf(btn)).toBe('Explore');
-    vi.useRealTimers();
+    // Once the bridge signal lands the gate opens and the button enables.
+    document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
+    expect(btn?.getAttribute('aria-disabled')).toBeNull();
   });
 
   it('off fleetdispatch the gate is a no-op (clicks navigate immediately)', () => {

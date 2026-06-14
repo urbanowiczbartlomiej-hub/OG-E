@@ -513,6 +513,9 @@ describe('onSendClick — fleetdispatch branch', () => {
     settingsStore.set({ ...settingsStore.get(), fabMode: true });
     setFleetDispatcher(makeFleetDispatcher(fdOpts));
     installSendColony();
+    // Open the shared eventbox-readiness gate so the button is enabled (on
+    // fleetdispatch it starts disabled until OGame's eventbox XHR lands).
+    document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
   };
 
   it('noShip → no-op (no nav, no Enter)', () => {
@@ -558,6 +561,7 @@ describe('onSendClick — fleetdispatch branch', () => {
       '4:30': { scannedAt: Date.now(), positions: { 8: { status: 'empty' } } },
     });
     installSendColony();
+    document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded')); // open the gate
     const unhook = armCourier({ errorCode: null, missionOk: true });
     // Tap 1 — select; walks to a ready step 2.
     getSend()?.click();
@@ -584,6 +588,7 @@ describe('onSendClick — fleetdispatch branch', () => {
       '4:30': { scannedAt: Date.now(), positions: { 8: { status: 'empty' } } },
     });
     installSendColony();
+    document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded')); // open the gate
     const unhook = armCourier({ errorCode: null, missionOk: true });
     getSend()?.click();
     await settle();
@@ -871,6 +876,8 @@ describe('onSendHold — manual skip', () => {
       '4:30': { scannedAt: Date.now(), positions: { 9: { status: 'empty' } } },
     });
     installSendColony();
+    // Open the eventbox-readiness gate so the button accepts taps.
+    document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
     const unhook = armCourier({ errorCode: null, missionOk: true });
     getSend()?.click(); // tap 1 — arms [4:30:9]
     await settle();
