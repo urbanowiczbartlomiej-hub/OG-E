@@ -61,7 +61,7 @@ export const shouldScheduleUpload = ({ cloudSync, applying = false }) =>
  * write an empty slot — that would differ from the gist's absent field and
  * force a perpetual no-op PATCH.
  *
- * @param {import('../merge.js').FsRoutesSlot} slot
+ * @param {import('../merge.js').DailyRunRoutesSlot} slot
  * @returns {boolean}
  */
 export const slotHasData = (slot) =>
@@ -132,7 +132,7 @@ export const sameJSON = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b
  * @param {unknown} merged.galaxyScans
  * @param {unknown} merged.colonyHistory
  * @param {unknown} merged.settings
- * @param {unknown} merged.fsRoutes
+ * @param {unknown} merged.dailyRunRoutes
  * @param {unknown} merged.settingsPerUniverse
  * @param {unknown} merged.dailyStatePerUniverse
  * @param {unknown} merged.galaxyScanConfig
@@ -142,7 +142,7 @@ export const gistIsCurrent = (remote, merged) =>
   sameJSON(remote?.galaxyScans, merged.galaxyScans) &&
   sameJSON(remote?.colonyHistory, merged.colonyHistory) &&
   sameJSON(remote?.settings, merged.settings) &&
-  sameJSON(remote?.fsRoutes, merged.fsRoutes) &&
+  sameJSON(remote?.dailyRunRoutes, merged.dailyRunRoutes) &&
   sameJSON(remote?.settingsPerUniverse, merged.settingsPerUniverse) &&
   sameJSON(remote?.dailyStatePerUniverse, merged.dailyStatePerUniverse) &&
   sameJSON(remote?.galaxyScanConfig, merged.galaxyScanConfig);

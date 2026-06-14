@@ -47,11 +47,11 @@
 import { settingsStore } from '../../state/settings.js';
 import { parseUniverseId } from '../../lib/universeId.js';
 import {
-  fsRoutesStore,
-  flushFsRoutesStore,
-  stampFsRoutesChanged,
-  FS_REDIRECT_KEY,
-} from '../../state/fsRoutes.js';
+  dailyRunRoutesStore,
+  flushDailyRunRoutesStore,
+  stampDailyRunRoutesChanged,
+  DAILY_RUN_REDIRECT_KEY,
+} from '../../state/dailyRunRoutes.js';
 import {
   createButton as makeButton,
   LABEL_CLASS,
@@ -128,14 +128,14 @@ const EVENTBOX_SETTLE_MS = 150;
 /** @param {string} name */
 const urlParam = (name) => new URLSearchParams(location.search).get(name);
 /** "→ g:s:p 🪐/🌙" label for a target coord.
- * @param {import('../../state/fsRoutes.js').TargetCoord | null | undefined} t */
+ * @param {import('../../state/dailyRunRoutes.js').TargetCoord | null | undefined} t */
 const targetLabel = (t) =>
   t ? `→ ${t.galaxy}:${t.system}:${t.position} ${t.type === 3 ? '🌙' : '🪐'}` : '';
 
 /** Like {@link targetLabel} but prefers the body's NAME (resolved from the
  * live planet list) over its coords — used by the "Send All" collect zone.
  * Falls back to coords when the name can't be resolved.
- * @param {import('../../state/fsRoutes.js').TargetCoord | null | undefined} t */
+ * @param {import('../../state/dailyRunRoutes.js').TargetCoord | null | undefined} t */
 const collectTargetLabel = (t) => {
   if (!t) return '';
   const name = bodyNameByCoord(t);
@@ -197,7 +197,7 @@ const microInFlightKeys = () => {
  * inbound to `target` — the "already collected" guard for the next-planet
  * walk.
  *
- * @param {import('../../state/fsRoutes.js').TargetCoord | null} target
+ * @param {import('../../state/dailyRunRoutes.js').TargetCoord | null} target
  * @returns {Set<string>}
  */
 const collectedOriginKeys = (target) => {
@@ -304,7 +304,7 @@ const stashMicroRedirect = () => {
  * needing collection, already aimed at the collect target. No redirect
  * (clears the key) when nothing's left — the game's own redirect stands.
  *
- * @param {import('../../state/fsRoutes.js').TargetCoord | null} target
+ * @param {import('../../state/dailyRunRoutes.js').TargetCoord | null} target
  * @returns {void}
  */
 const stashCollectRedirect = (target) => {
@@ -323,7 +323,7 @@ const stashCollectRedirect = (target) => {
 /** @param {string} url */
 const safeWrite = (url) => {
   try {
-    localStorage.setItem(FS_REDIRECT_KEY, url);
+    localStorage.setItem(DAILY_RUN_REDIRECT_KEY, url);
   } catch {
     // Private mode / quota — the send still works, just no auto-redirect.
   }
@@ -332,7 +332,7 @@ const safeWrite = (url) => {
 /** Drop a stashed redirect (the send was rejected, so no navigation). */
 const clearRedirectStash = () => {
   try {
-    localStorage.removeItem(FS_REDIRECT_KEY);
+    localStorage.removeItem(DAILY_RUN_REDIRECT_KEY);
   } catch {
     // ignore
   }
@@ -359,7 +359,7 @@ let eventBoxReady = true;
  * tap 1, consumed on tap 2 to stash the right post-send redirect. `null`
  * when no select is currently armed.
  *
- * @type {{ mode: 'micro' | 'collect', target: import('../../state/fsRoutes.js').TargetCoord } | null}
+ * @type {{ mode: 'micro' | 'collect', target: import('../../state/dailyRunRoutes.js').TargetCoord } | null}
  */
 let pending = null;
 
@@ -374,7 +374,7 @@ let pending = null;
  */
 const buildOrder = (mode) => {
   if (mode === 'micro') {
-    const route = findRouteForBody(fsRoutesStore.get().routes, readCurrentBody());
+    const route = findRouteForBody(dailyRunRoutesStore.get().routes, readCurrentBody());
     if (!route) return { flash: 'No route', openDash: true };
     const next = findNextMicroTarget(route.targets, microInFlightKeys());
     if (!next) return { flash: 'All sent' };
@@ -392,7 +392,7 @@ const buildOrder = (mode) => {
       },
     };
   }
-  const target = fsRoutesStore.get().collectTarget;
+  const target = dailyRunRoutesStore.get().collectTarget;
   if (!target) return { flash: 'No target' };
   return {
     order: {
@@ -463,7 +463,7 @@ const handleZone = async (mode) => {
     }
     if (!readyToDispatch()) return;
     if (mode === 'micro') stashMicroRedirect();
-    else stashCollectRedirect(fsRoutesStore.get().collectTarget);
+    else stashCollectRedirect(dailyRunRoutesStore.get().collectTarget);
     busy = true;
     setLabel(zone, 'Wait…');
     dimZone(zone, true);
@@ -513,7 +513,7 @@ const handleZone = async (mode) => {
   // next planet still needing collection (same walk as the post-send
   // redirect). Nothing left → everything is collected.
   if (mode === 'collect' && collectPlanetEmpty()) {
-    const target = fsRoutesStore.get().collectTarget;
+    const target = dailyRunRoutesStore.get().collectTarget;
     const nextCp = target
       ? findNextCollectPlanetCp(collectedOriginKeys(target), coordKey(target))
       : null;
@@ -560,12 +560,12 @@ const onSetTargetClick = () => {
     flash(collectZone, '?');
     return;
   }
-  fsRoutesStore.update((prev) => ({ ...prev, collectTarget: body }));
+  dailyRunRoutesStore.update((prev) => ({ ...prev, collectTarget: body }));
   // Persist now — the user may navigate away before the debounce fires.
-  flushFsRoutesStore();
+  flushDailyRunRoutesStore();
   // Stamp the cross-device sync clock so this collect-target change wins
   // the next whole-universe newest-wins merge.
-  void stampFsRoutesChanged();
+  void stampDailyRunRoutesChanged();
   refresh();
 };
 
@@ -624,7 +624,7 @@ const refresh = () => {
 
   // DISPATCH (top / micro) label.
   if (microZone) {
-    const route = findRouteForBody(fsRoutesStore.get().routes, readCurrentBody());
+    const route = findRouteForBody(dailyRunRoutesStore.get().routes, readCurrentBody());
     if (!route) {
       setLabel(microZone, 'Setup', undefined, '(no routes)');
     } else if (onF2Ready && pending && pending.mode === 'micro') {
@@ -650,7 +650,7 @@ const refresh = () => {
 
   // Send All (bottom / collect) label — TAP sends, LONG-PRESS sets target.
   if (collectZone) {
-    const t = fsRoutesStore.get().collectTarget;
+    const t = dailyRunRoutesStore.get().collectTarget;
     if (!t) {
       setLabel(collectZone, 'Send All', undefined, '(hold to set target)');
     } else if (onF2Ready && pending && pending.mode === 'collect') {
@@ -678,7 +678,7 @@ let installed = null;
  *
  * @returns {() => void} Dispose handle.
  */
-export const installFsCollect = () => {
+export const installDailyRun = () => {
   if (installed) return installed.dispose;
 
   // Ensure the shared courier is caching the fleetDispatcher snapshot (ship
@@ -799,7 +799,7 @@ export const installFsCollect = () => {
     }
   });
 
-  const unsubRoutes = fsRoutesStore.subscribe(() => refresh());
+  const unsubRoutes = dailyRunRoutesStore.subscribe(() => refresh());
 
   // 1 Hz repaint ticker — keeps "N left" counter in sync even if OGame populates
   // #eventContent after our initial refresh.
@@ -826,7 +826,7 @@ export const installFsCollect = () => {
  *
  * @returns {void}
  */
-export const _resetFsCollectForTest = () => {
+export const _resetDailyRunForTest = () => {
   if (installed) {
     installed.dispose();
     installed = null;

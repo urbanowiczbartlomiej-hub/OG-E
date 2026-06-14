@@ -1,12 +1,12 @@
-// Unit tests for `domain/fsRoutes.reconcileRoutes` — pruning route endpoints
+// Unit tests for `domain/dailyRunRoutes.reconcileRoutes` — pruning route endpoints
 // against the captured body inventory. Node env — pure functions only. (The
-// DSL parse/format + findRouteForBody are covered via the fsCollect pure
-// suite; migrateFsRoutes via the fsRoutes state suite.)
+// DSL parse/format + findRouteForBody are covered via the dailyRun pure
+// suite; migrateDailyRunRoutes via the dailyRunRoutes state suite.)
 //
 // @ts-check
 
 import { describe, it, expect } from 'vitest';
-import { reconcileRoutes } from '../../src/domain/fsRoutes.js';
+import { reconcileRoutes } from '../../src/domain/dailyRunRoutes.js';
 import { TARGET_PLANET, TARGET_MOON } from '../../src/domain/rules.js';
 
 /** @param {number} g @param {number} s @param {number} p @param {number} t */

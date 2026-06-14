@@ -12,7 +12,7 @@
 //
 //   - edited from the dashboard (extension origin) — so it must be backed
 //     by `chrome.storage`, the only store both origins see (see
-//     `state/galaxyScanConfig.js`, modelled on `state/fsRoutes.js`);
+//     `state/galaxyScanConfig.js`, modelled on `state/dailyRunRoutes.js`);
 //   - synced per-universe via the gist pipeline (whole-slot newest-wins);
 //   - read in-game by `features/sendCol` and on the dashboard by the
 //     galaxy renderer.

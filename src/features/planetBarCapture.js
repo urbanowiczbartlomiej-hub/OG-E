@@ -12,7 +12,7 @@
 // After a successful capture it also RECONCILES the fleet-save routes: any
 // route source/target whose body no longer exists is dropped, and a route
 // that loses all sources or all targets is removed entirely. This is gated
-// on {@link whenFsRoutesHydrated} (so it never prunes against not-yet-loaded
+// on {@link whenDailyRunRoutesHydrated} (so it never prunes against not-yet-loaded
 // routes) and only writes when something actually changed (anti-loop). The
 // removals are logged. Because capture only ever runs against a non-empty
 // bar (see below), reconciliation never sees an empty inventory.
@@ -57,9 +57,9 @@ import { logger } from '../lib/logger.js';
 import { GAME } from '../lib/gameDom.js';
 import { TARGET_PLANET, TARGET_MOON } from '../domain/rules.js';
 import { parseKoords, dedupeBodies, isCompleteBody } from '../domain/bodies.js';
-import { reconcileRoutes } from '../domain/fsRoutes.js';
+import { reconcileRoutes } from '../domain/dailyRunRoutes.js';
 import { bodiesStore, whenBodiesHydrated } from '../state/bodies.js';
-import { fsRoutesStore, whenFsRoutesHydrated, stampFsRoutesChanged } from '../state/fsRoutes.js';
+import { dailyRunRoutesStore, whenDailyRunRoutesHydrated, stampDailyRunRoutesChanged } from '../state/dailyRunRoutes.js';
 
 /**
  * @typedef {import('../domain/bodies.js').Body} Body
@@ -72,7 +72,7 @@ import { fsRoutesStore, whenFsRoutesHydrated, stampFsRoutesChanged } from '../st
 // come from GAME.
 
 // The moon anchor (`.smallplanet` row, absent when no moon) is shared with
-// features/fsCollect — sourced from GAME.MOON_LINK, not re-hardcoded here.
+// features/dailyRun — sourced from GAME.MOON_LINK, not re-hardcoded here.
 /** The moon icon `<img>` whose `alt` carries the moon's display name. */
 const SEL_MOON_IMG = 'img';
 
@@ -182,7 +182,7 @@ const tryCapture = () => {
 
 /**
  * Prune fleet-save routes against a fresh body snapshot. Gated on
- * {@link whenFsRoutesHydrated} so routes are loaded before we judge what's
+ * {@link whenDailyRunRoutesHydrated} so routes are loaded before we judge what's
  * "dead", and writes back only when {@link reconcileRoutes} actually
  * removed something (anti-loop). Logs what was dropped.
  *
@@ -190,14 +190,14 @@ const tryCapture = () => {
  * @returns {void}
  */
 const reconcileRoutesAgainst = (bodies) => {
-  void whenFsRoutesHydrated().then(() => {
-    const { routes } = fsRoutesStore.get();
+  void whenDailyRunRoutesHydrated().then(() => {
+    const { routes } = dailyRunRoutesStore.get();
     const { routes: pruned, removed } = reconcileRoutes(routes, bodies);
     if (removed.length === 0) return;
-    fsRoutesStore.update((prev) => ({ ...prev, routes: pruned }));
+    dailyRunRoutesStore.update((prev) => ({ ...prev, routes: pruned }));
     // Pruning is a real route change — stamp the cross-device sync clock so
     // the prune propagates (whole-universe newest-wins).
-    void stampFsRoutesChanged();
+    void stampDailyRunRoutesChanged();
     const detail = removed
       .map((r) => `${r.role} ${r.coord.galaxy}:${r.coord.system}:${r.coord.position}:${r.coord.type}`)
       .join(', ');

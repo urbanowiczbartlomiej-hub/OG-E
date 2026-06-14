@@ -88,19 +88,19 @@
 import { scansStore } from '../state/scans.js';
 import { historyStore } from '../state/history.js';
 import { settingsStore } from '../state/settings.js';
-import { fsRoutesStore, fsRoutesKeyFor, fsRoutesTsKeyFor } from '../state/fsRoutes.js';
+import { dailyRunRoutesStore, dailyRunRoutesKeyFor, dailyRunRoutesTsKeyFor } from '../state/dailyRunRoutes.js';
 import {
   galaxyScanConfigStore,
   galaxyScanConfigKeyFor,
   galaxyScanConfigTsKeyFor,
 } from '../state/galaxyScanConfig.js';
-import { migrateFsRoutes } from '../domain/fsRoutes.js';
+import { migrateDailyRunRoutes } from '../domain/dailyRunRoutes.js';
 import { normalizeGalaxyScanConfig } from '../domain/galaxyScanConfig.js';
 import {
   mergeScans,
   mergeHistory,
   mergeSettings,
-  mergeFsRoutes,
+  mergeDailyRunRoutes,
   mergeDailyState,
   mergeGalaxyScanConfig,
 } from './merge.js';
@@ -213,7 +213,7 @@ let applyingSettingsFromSync = false;
 /**
  * The universe id this scheduler instance owns (from `location.host`),
  * captured in {@link installSync}. Fleet-save routes are per-universe, so
- * sync only ever touches THIS universe's slot in the gist's `fsRoutes` map.
+ * sync only ever touches THIS universe's slot in the gist's `dailyRunRoutes` map.
  * Empty string in non-DOM tests / when the host isn't a known universe.
  */
 let routesUniverseId = '';
@@ -221,7 +221,7 @@ let routesUniverseId = '';
 /**
  * Anti-loop flag for ROUTES sync, mirroring {@link applyingSettingsFromSync}.
  * Raised while we write a merged remote routes slot back into chrome.storage
- * + {@link fsRoutesStore} so the fsRoutes subscriber doesn't re-stamp the
+ * + {@link dailyRunRoutesStore} so the dailyRunRoutes subscriber doesn't re-stamp the
  * change and schedule a redundant upload.
  */
 let applyingRoutesFromSync = false;
@@ -247,44 +247,44 @@ let localUniverseTsMap = {};
 
 /**
  * Read this universe's local fleet-save routes slot from chrome.storage —
- * NOT from {@link fsRoutesStore} in memory. Routes are edited from the
+ * NOT from {@link dailyRunRoutesStore} in memory. Routes are edited from the
  * dashboard (a different origin) too, and the game tab's in-memory store
  * wouldn't see those edits; chrome.storage is the cross-origin source of
  * truth. `updatedAt` comes from the separate per-universe timestamp key.
  *
- * @returns {Promise<import('./merge.js').FsRoutesSlot>}
+ * @returns {Promise<import('./merge.js').DailyRunRoutesSlot>}
  */
 const readLocalRoutesSlot = async () => {
   if (!routesUniverseId) return { routes: [], collectTarget: null, updatedAt: 0 };
   const [raw, ts] = await Promise.all([
-    chromeStore.get(fsRoutesKeyFor(routesUniverseId)),
-    chromeStore.get(fsRoutesTsKeyFor(routesUniverseId)),
+    chromeStore.get(dailyRunRoutesKeyFor(routesUniverseId)),
+    chromeStore.get(dailyRunRoutesTsKeyFor(routesUniverseId)),
   ]);
-  const { routes, collectTarget } = migrateFsRoutes(raw);
+  const { routes, collectTarget } = migrateDailyRunRoutes(raw);
   return { routes, collectTarget, updatedAt: typeof ts === 'number' ? ts : 0 };
 };
 
 /**
  * Write a merged remote routes slot back to local: the routes value + its
- * timestamp into chrome.storage, and the in-memory {@link fsRoutesStore} so
+ * timestamp into chrome.storage, and the in-memory {@link dailyRunRoutesStore} so
  * the current game session reflects the adopted config without a reload.
- * Guarded by {@link applyingRoutesFromSync} so the fsRoutes subscriber treats
+ * Guarded by {@link applyingRoutesFromSync} so the dailyRunRoutes subscriber treats
  * it as a sync-origin write (no re-stamp, no upload reschedule).
  *
- * @param {import('./merge.js').FsRoutesSlot} slot
+ * @param {import('./merge.js').DailyRunRoutesSlot} slot
  * @returns {Promise<void>}
  */
 const writeLocalRoutesSlot = async (slot) => {
   if (!routesUniverseId) return;
   applyingRoutesFromSync = true;
   try {
-    await chromeStore.set(fsRoutesKeyFor(routesUniverseId), {
+    await chromeStore.set(dailyRunRoutesKeyFor(routesUniverseId), {
       routes: slot.routes,
       collectTarget: slot.collectTarget,
     });
-    await chromeStore.set(fsRoutesTsKeyFor(routesUniverseId), slot.updatedAt);
-    fsRoutesStore.set(
-      /** @type {import('../state/fsRoutes.js').FsRoutes} */ ({
+    await chromeStore.set(dailyRunRoutesTsKeyFor(routesUniverseId), slot.updatedAt);
+    dailyRunRoutesStore.set(
+      /** @type {import('../state/dailyRunRoutes.js').DailyRunRoutes} */ ({
         routes: slot.routes,
         collectTarget: slot.collectTarget,
       }),
@@ -482,9 +482,9 @@ const downloadAndMerge = async () => {
 
     // Routes: per-universe newest-wins. Read local from chrome.storage (the
     // cross-origin source of truth) and adopt remote only when it's newer.
-    const routesResult = mergeFsRoutes(
+    const routesResult = mergeDailyRunRoutes(
       await readLocalRoutesSlot(),
-      remote.fsRoutes?.[routesUniverseId],
+      remote.dailyRunRoutes?.[routesUniverseId],
     );
     if (routesResult.changed) await writeLocalRoutesSlot(routesResult.merged);
 
@@ -587,27 +587,27 @@ const upload = async () => {
     if (uniResult.changed) await writeLocalUniverseSettingsSlot(uniResult.merged);
 
     // Routes: per-universe newest-wins. Adopt remote locally if newer, then
-    // build the merged `fsRoutes` map for the payload — PRESERVING every
+    // build the merged `dailyRunRoutes` map for the payload — PRESERVING every
     // OTHER universe's slot (we only own ours).
-    const routesResult = mergeFsRoutes(
+    const routesResult = mergeDailyRunRoutes(
       await readLocalRoutesSlot(),
-      remote?.fsRoutes?.[routesUniverseId],
+      remote?.dailyRunRoutes?.[routesUniverseId],
     );
     if (routesResult.changed) await writeLocalRoutesSlot(routesResult.merged);
-    const mergedFsRoutes = { ...(remote?.fsRoutes || {}) };
+    const mergedDailyRunRoutes = { ...(remote?.dailyRunRoutes || {}) };
     // Only contribute our universe's slot when it actually carries data —
     // a never-configured universe (no routes, no target, ts 0) must NOT
     // write an empty slot, which would differ from the gist's absent field
     // and force a perpetual no-op PATCH.
     const slot = routesResult.merged;
-    if (routesUniverseId && slotHasData(slot)) mergedFsRoutes[routesUniverseId] = slot;
-    // Normalise an empty map to `undefined` so a gist with no fsRoutes field
+    if (routesUniverseId && slotHasData(slot)) mergedDailyRunRoutes[routesUniverseId] = slot;
+    // Normalise an empty map to `undefined` so a gist with no dailyRunRoutes field
     // and our empty map compare equal (sameJSON(undefined, {}) is false) —
-    // otherwise we'd PATCH a no-op `fsRoutes: {}` onto every upload.
-    const mergedFsRoutesOut = Object.keys(mergedFsRoutes).length ? mergedFsRoutes : undefined;
+    // otherwise we'd PATCH a no-op `dailyRunRoutes: {}` onto every upload.
+    const mergedDailyRunRoutesOut = Object.keys(mergedDailyRunRoutes).length ? mergedDailyRunRoutes : undefined;
 
     // Galaxy-Scan config: per-universe newest-wins, same contribution guard
-    // as fsRoutes (only our universe's slot, only once it carries data).
+    // as dailyRunRoutes (only our universe's slot, only once it carries data).
     const mergedGalaxyConfig = { ...(remote?.galaxyScanConfig || {}) };
     if (routesUniverseId) {
       const cfgResult = mergeGalaxyScanConfig(
@@ -624,7 +624,7 @@ const upload = async () => {
       : undefined;
 
     // Build the per-universe settings map for the payload — preserving every
-    // OTHER universe's slot (same pattern as fsRoutes). Only contribute ours
+    // OTHER universe's slot (same pattern as dailyRunRoutes). Only contribute ours
     // when the ts map is non-empty: an empty ts means the user has never
     // explicitly changed any universe-scoped setting (all at defaults), which
     // is indistinguishable from "no slot" for another device and must not
@@ -639,7 +639,7 @@ const upload = async () => {
 
     // Daily-action state: per-universe, field-by-field max-wins. Only
     // contribute our universe's slot when at least one field is non-empty —
-    // same no-op PATCH guard as fsRoutes / settingsPerUniverse.
+    // same no-op PATCH guard as dailyRunRoutes / settingsPerUniverse.
     const mergedDailyPerUniverse = { ...(remote?.dailyStatePerUniverse || {}) };
     if (routesUniverseId) {
       const dailyResult = mergeDailyState(
@@ -663,7 +663,7 @@ const upload = async () => {
         galaxyScans: scansResult.merged,
         colonyHistory: histResult.merged,
         settings: setResult.merged,
-        fsRoutes: mergedFsRoutesOut,
+        dailyRunRoutes: mergedDailyRunRoutesOut,
         settingsPerUniverse: mergedPerUniverseOut,
         dailyStatePerUniverse: mergedDailyPerUniverseOut,
         galaxyScanConfig: mergedGalaxyConfigOut,
@@ -675,7 +675,7 @@ const upload = async () => {
         galaxyScans: scansResult.merged,
         colonyHistory: histResult.merged,
         settings: setResult.merged,
-        fsRoutes: mergedFsRoutesOut,
+        dailyRunRoutes: mergedDailyRunRoutesOut,
         settingsPerUniverse: mergedPerUniverseOut,
         dailyStatePerUniverse: mergedDailyPerUniverseOut,
         galaxyScanConfig: mergedGalaxyConfigOut,
@@ -782,7 +782,7 @@ export const installSync = () => {
   const unsubHistory = historyStore.subscribe(onStoreChange);
 
   // Fleet-save routes: an in-game change (route pruning, set-collect-target)
-  // flips fsRoutesStore → schedule an upload. Skip sync-origin writes (those
+  // flips dailyRunRoutesStore → schedule an upload. Skip sync-origin writes (those
   // carry a remote timestamp we must keep) and skip while cloudSync is off.
   // Dashboard edits (a different origin) instead arrive via the
   // `oge_syncRequestAt` tombstone handled in onStorageChange below.
@@ -791,11 +791,11 @@ export const installSync = () => {
       return;
     scheduleUpload();
   };
-  const unsubRoutes = fsRoutesStore.subscribe(onRoutesChange);
+  const unsubRoutes = dailyRunRoutesStore.subscribe(onRoutesChange);
 
   // Galaxy-Scan config: an in-game change (none today — edits happen in the
   // dashboard) flips the store → schedule an upload. Dashboard edits arrive
-  // via the `oge_syncRequestAt` tombstone (onForceSync) like fsRoutes; this
+  // via the `oge_syncRequestAt` tombstone (onForceSync) like dailyRunRoutes; this
   // subscriber covers any future in-game writer and the sync-applied writes
   // (skipped via the anti-loop flag).
   const onGalaxyConfigChange = () => {

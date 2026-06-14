@@ -72,8 +72,36 @@ zdarzeń w `lib/ogeEvents.js` (stała JS ≠ string `oge:*` na drucie).
   Per CLAUDE.md (carve-out) wiedza o grze zostaje verbatim. Klucz
   `REWARDING_DONE_KEY='oge-rewarding-done-day'` i tak jest trwały.
 
-**Pozostało w Fazie 1:** nic bezpiecznego (Kat. A) ponad powyższe. Kolejna sesja
-zaczyna **Fazę 2** (`fsCollect` → „Daily Run").
+**Pozostało w Fazie 1:** nic bezpiecznego (Kat. A) ponad powyższe.
+
+**Sesja 2 — Faza 2 (disambiguacja „Daily Run" / `fs`) — ZROBIONE:**
+- ✅ **poz. 1** `features/fsCollect/` → `features/dailyRun/` (`index.js`,
+  `domHelpers.js`, `pure.js`); `installFsCollect` → `installDailyRun`,
+  `_resetFsCollectForTest` → `_resetDailyRunForTest`, `fsCollectMode` →
+  `dailyRunMode`.
+- ✅ **poz. 2** `domain/fsRoutes.js` → `domain/dailyRunRoutes.js`,
+  `state/fsRoutes.js` → `state/dailyRunRoutes.js`. Symbole JS przemianowane:
+  `fsRoutesStore`→`dailyRunRoutesStore`, `initFsRoutesStore`→
+  `initDailyRunRoutesStore`, `migrateFsRoutes`→`migrateDailyRunRoutes`,
+  `mergeFsRoutes`→`mergeDailyRunRoutes`, `FsRoutes` (typedef)→`DailyRunRoutes`,
+  `FsRoutesSlot`→`DailyRunRoutesSlot`, oraz wszystkie pochodne
+  (`fsRoutesKeyFor`, `fsRoutesTsKeyFor`, `flushFsRoutesStore`,
+  `disposeFsRoutesStore`, `stampFsRoutesChanged`, `whenFsRoutesHydrated`,
+  `currentFsRoutesKey`, `FS_ROUTES_KEY_BASE`, `FS_ROUTES_TS_BASE`).
+- ✅ **poz. 3** `domain/fleetSave.js` — **zostawione** (zgodne z UI
+  „Fleet-save reminders", to inny feature niż „Daily Run").
+- ✅ `FS_REDIRECT_KEY` → `DAILY_RUN_REDIRECT_KEY` w `lib/storageKeys.js`
+  (MAIN-world bridge `deployRedirect.js` importuje stałą — działa, bo string
+  zamrożony).
+- 🔒 **Stringi trwałe ZAMROŻONE** (wartości literalne nietknięte, komentarz
+  „historical name — do not change without migration"): `oge_fsRoutes`,
+  `oge_fsRoutesTs`, `oge_fsRedirect`, `<universeId>:oge_fsRoutes`. Zero migracji.
+- Bramki zielone: typecheck + lint + 1443 testy. Bez zmian zachowania.
+
+**Status:** Fazy 1 i 2 zamknięte. Pozostaje tylko **Faza 3** (Kat. B, stringi
+trwałe) — rekomendacja CLAUDE.md/§1: **pominąć** (zerowy zysk dla użytkownika,
+wysokie ryzyko migracji cross-device). Ten dokument można usunąć po decyzji
+o Fazie 3 (plan docs mają cykl życia — patrz CLAUDE.md § Documentation hygiene).
 
 ---
 
@@ -172,8 +200,8 @@ odkryciu, że nazwa pola jest kluczem na drucie gista. Faza 1 zamknięta.
 - Commit(y) `refactor:` per logiczna grupa; bez zmian zachowania.
 - Rozmiar: szeroki, ale płytki (find/replace + importy). Wykonalne w jednej sesji.
 
-### Faza 2 — disambiguacja „Daily Run" / `fs` — **1 sesja, średnie ryzyko**
-Zakres: poz. 1–3.
+### Faza 2 — disambiguacja „Daily Run" / `fs` — **ZROBIONE (Sesja 2)**
+Zakres: poz. 1–3 (patrz dziennik §1a).
 - `features/fsCollect/` → `features/dailyRun/`; `*Routes` → `dailyRun*Routes`.
 - **Krytyczne:** w `lib/storageKeys.js`/`state/fsRoutes.js` zostaw stringi
   `oge_fsRoutes`, `oge_fsRedirect`, `<universeId>:oge_fsRoutes` **niezmienione**

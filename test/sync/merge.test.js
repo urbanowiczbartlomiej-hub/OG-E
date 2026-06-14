@@ -13,7 +13,7 @@ import {
   mergeScans,
   mergeHistory,
   mergeSettings,
-  mergeFsRoutes,
+  mergeDailyRunRoutes,
   mergeGalaxyScanConfig,
   clearScans,
   clearGalaxyScans,
@@ -505,45 +505,45 @@ describe('mergeSettings', () => {
   });
 });
 
-describe('mergeFsRoutes — whole-universe newest-wins', () => {
+describe('mergeDailyRunRoutes — whole-universe newest-wins', () => {
   const routeA = { sources: [{ galaxy: 4, system: 472, position: 15, type: 3 }], targets: [{ galaxy: 4, system: 475, position: 14, type: 1 }], microFleet: { shipId: 203, count: 15000 } };
   const routeB = { sources: [{ galaxy: 5, system: 120, position: 6, type: 1 }], targets: [{ galaxy: 5, system: 120, position: 7, type: 1 }], microFleet: { shipId: 202, count: 500 } };
 
   it('adopts the remote slot WHOLE when remote.updatedAt is strictly newer', () => {
     const local = { routes: [routeA], collectTarget: null, updatedAt: 100 };
     const remote = { routes: [routeB], collectTarget: { galaxy: 1, system: 1, position: 1, type: 3 }, updatedAt: 200 };
-    expect(mergeFsRoutes(local, remote)).toEqual({ merged: remote, changed: true });
+    expect(mergeDailyRunRoutes(local, remote)).toEqual({ merged: remote, changed: true });
   });
 
   it('keeps local (changed=false, same ref) when local is newer or tied', () => {
     const local = { routes: [routeA], collectTarget: null, updatedAt: 200 };
-    expect(mergeFsRoutes(local, { routes: [routeB], collectTarget: null, updatedAt: 100 })).toEqual({ merged: local, changed: false });
+    expect(mergeDailyRunRoutes(local, { routes: [routeB], collectTarget: null, updatedAt: 100 })).toEqual({ merged: local, changed: false });
     // Tie → local wins (anti-loop no-write path).
-    const r = mergeFsRoutes(local, { routes: [routeB], collectTarget: null, updatedAt: 200 });
+    const r = mergeDailyRunRoutes(local, { routes: [routeB], collectTarget: null, updatedAt: 200 });
     expect(r.changed).toBe(false);
     expect(r.merged).toBe(local);
   });
 
   it('is identity when remote is absent / not an object', () => {
     const local = { routes: [routeA], collectTarget: null, updatedAt: 5 };
-    expect(mergeFsRoutes(local, null)).toEqual({ merged: local, changed: false });
-    expect(mergeFsRoutes(local, undefined)).toEqual({ merged: local, changed: false });
+    expect(mergeDailyRunRoutes(local, null)).toEqual({ merged: local, changed: false });
+    expect(mergeDailyRunRoutes(local, undefined)).toEqual({ merged: local, changed: false });
   });
 
   it('treats a missing/zero remote timestamp as older than any real local edit', () => {
     const local = { routes: [routeA], collectTarget: null, updatedAt: 1 };
-    expect(mergeFsRoutes(local, /** @type {any} */ ({ routes: [routeB] })).changed).toBe(false);
+    expect(mergeDailyRunRoutes(local, /** @type {any} */ ({ routes: [routeB] })).changed).toBe(false);
   });
 
   it('a fresh device (updatedAt 0) ADOPTS a configured remote', () => {
     const local = { routes: [], collectTarget: null, updatedAt: 0 };
     const remote = { routes: [routeA], collectTarget: null, updatedAt: 50 };
-    expect(mergeFsRoutes(local, remote)).toEqual({ merged: remote, changed: true });
+    expect(mergeDailyRunRoutes(local, remote)).toEqual({ merged: remote, changed: true });
   });
 
   it('normalises a non-array remote.routes to [] when adopting', () => {
     const local = { routes: [], collectTarget: null, updatedAt: 0 };
-    const r = mergeFsRoutes(local, /** @type {any} */ ({ routes: 'oops', collectTarget: null, updatedAt: 9 }));
+    const r = mergeDailyRunRoutes(local, /** @type {any} */ ({ routes: 'oops', collectTarget: null, updatedAt: 9 }));
     expect(r.changed).toBe(true);
     expect(r.merged.routes).toEqual([]);
   });

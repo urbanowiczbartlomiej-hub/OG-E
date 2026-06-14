@@ -1,6 +1,6 @@
 // @ts-check
 
-// Unit tests for the `features/fsCollect` pure core.
+// Unit tests for the `features/dailyRun` pure core.
 //
 // Pure functions — no DOM, no timers, no `location`. Plain Node, no
 // happy-dom. Covers coord keys, the two URL builders, and target picking.
@@ -14,7 +14,7 @@ import {
   countRemainingMicroTargets,
   parseRoutesDsl,
   formatRoutesDsl,
-} from '../../src/features/fsCollect/pure.js';
+} from '../../src/features/dailyRun/pure.js';
 import {
   TARGET_PLANET,
   TARGET_MOON,
@@ -28,7 +28,7 @@ import {
  * @param {number} system
  * @param {number} position
  * @param {number} type
- * @returns {import('../../src/state/fsRoutes.js').TargetCoord}
+ * @returns {import('../../src/state/dailyRunRoutes.js').TargetCoord}
  */
 const tgt = (galaxy, system, position, type) => ({ galaxy, system, position, type });
 

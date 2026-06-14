@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 //
-// Behavioral tests for the fsCollect orchestrator (the unified floating
+// Behavioral tests for the dailyRun orchestrator (the unified floating
 // button with three zones: micro, target, collect). We drive real clicks
 // and long-press through happy-dom and assert observable outputs: mount/unmount,
 // the collect-target write via long-press, and the navigations / dispatch +
@@ -11,16 +11,16 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
-  installFsCollect,
-  _resetFsCollectForTest,
-} from '../../src/features/fsCollect/index.js';
+  installDailyRun,
+  _resetDailyRunForTest,
+} from '../../src/features/dailyRun/index.js';
 import { settingsStore } from '../../src/state/settings.js';
 import { SETTINGS_SCHEMA } from '../../src/state/settings.js';
 import {
-  fsRoutesStore,
-  disposeFsRoutesStore,
-  FS_REDIRECT_KEY,
-} from '../../src/state/fsRoutes.js';
+  dailyRunRoutesStore,
+  disposeDailyRunRoutesStore,
+  DAILY_RUN_REDIRECT_KEY,
+} from '../../src/state/dailyRunRoutes.js';
 import { TARGET_PLANET, TARGET_MOON, SHIP_LARGE_CARGO } from '../../src/domain/rules.js';
 
 // ── location.href spy (mirrors sendExp.test.js) ──────────────────────────
@@ -57,9 +57,9 @@ const setBodyMeta = (coords, type) => {
 };
 
 beforeEach(() => {
-  _resetFsCollectForTest();
-  disposeFsRoutesStore();
-  fsRoutesStore.set({ routes: [], collectTarget: null });
+  _resetDailyRunForTest();
+  disposeDailyRunRoutesStore();
+  dailyRunRoutesStore.set({ routes: [], collectTarget: null });
   resetSettingsToDefaults();
   document.body.innerHTML = '';
   document.head.innerHTML = '';
@@ -70,7 +70,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  _resetFsCollectForTest();
+  _resetDailyRunForTest();
   unmockLocationHref();
   localStorage.clear();
 });
@@ -80,7 +80,7 @@ const enable = () => {
 };
 
 // T13 eventbox readiness gate: fixtures mount without the game's
-// `#eventContent`, so installFsCollect holds both zones in "Wait…" until
+// `#eventContent`, so installDailyRun holds both zones in "Wait…" until
 // the event list is known to be loaded. Open the gate the way the bridge
 // does — by firing the `oge:eventBoxLoaded` signal after install.
 const openEventBoxGate = () => {
@@ -89,16 +89,16 @@ const openEventBoxGate = () => {
 
 describe('mount / unmount', () => {
   it('does not mount when fabMode is off', () => {
-    // fabMode defaults to true (unlike the legacy fsCollectMode) — turn it
+    // fabMode defaults to true (unlike the legacy dailyRunMode) — turn it
     // off explicitly to exercise the gate.
     settingsStore.set({ ...settingsStore.get(), fabMode: false });
-    installFsCollect();
+    installDailyRun();
     expect(document.getElementById('oge-fs-unified')).toBeNull();
   });
 
   it('mounts the unified button with two zones when fabMode is on', () => {
     enable();
-    installFsCollect();
+    installDailyRun();
     expect(document.getElementById('oge-fs-unified')).not.toBeNull();
     expect(document.getElementById('oge-fs-micro-zone')).not.toBeNull();
     expect(document.getElementById('oge-fs-collect-zone')).not.toBeNull();
@@ -108,7 +108,7 @@ describe('mount / unmount', () => {
 
   it('removes the button when the toggle flips off at runtime', () => {
     enable();
-    installFsCollect();
+    installDailyRun();
     settingsStore.set({ ...settingsStore.get(), fabMode: false });
     expect(document.getElementById('oge-fs-unified')).toBeNull();
   });
@@ -119,14 +119,14 @@ describe('set collect target (via long-press on the Collect zone)', () => {
     vi.useFakeTimers();
     try {
       enable();
-      installFsCollect();
+      installDailyRun();
       setBodyMeta('4:472:15', 'moon');
       const collectZone = /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-zone'));
       collectZone.dispatchEvent(new PointerEvent('pointerdown', { clientX: 0, clientY: 0 }));
       // Advance past the 2000ms long-press threshold.
       await vi.advanceTimersByTimeAsync(3100);
       collectZone.dispatchEvent(new PointerEvent('pointerup'));
-      expect(fsRoutesStore.get().collectTarget).toEqual({
+      expect(dailyRunRoutesStore.get().collectTarget).toEqual({
         galaxy: 4, system: 472, position: 15, type: TARGET_MOON,
       });
     } finally {
@@ -136,10 +136,10 @@ describe('set collect target (via long-press on the Collect zone)', () => {
 
   it('a quick tap collects instead of setting the target', () => {
     enable();
-    installFsCollect();
+    installDailyRun();
     openEventBoxGate();
     setBodyMeta('4:472:15', 'moon');
-    fsRoutesStore.set({
+    dailyRunRoutesStore.set({
       routes: [],
       collectTarget: { galaxy: 4, system: 480, position: 8, type: TARGET_PLANET },
     });
@@ -150,7 +150,7 @@ describe('set collect target (via long-press on the Collect zone)', () => {
     collectZone.click();
     // Target unchanged (no long-press fired) and we navigated to a BARE
     // fleetdispatch — the courier sets ships+target in-page (no params).
-    expect(fsRoutesStore.get().collectTarget).toEqual({
+    expect(dailyRunRoutesStore.get().collectTarget).toEqual({
       galaxy: 4, system: 480, position: 8, type: TARGET_PLANET,
     });
     expect(navTarget).toContain('component=fleetdispatch');
@@ -164,10 +164,10 @@ describe('micro send — navigation (top zone)', () => {
     // selects ships + sets the target in-page on the next tap. So idle nav
     // just lands on a bare fleetdispatch (no ship/target params).
     enable();
-    installFsCollect();
+    installDailyRun();
     openEventBoxGate();
     setBodyMeta('4:472:15', 'moon');
-    fsRoutesStore.set({
+    dailyRunRoutesStore.set({
       routes: [
         {
           sources: [{ galaxy: 4, system: 472, position: 15, type: TARGET_MOON }],
@@ -185,9 +185,9 @@ describe('micro send — navigation (top zone)', () => {
 
   it('flashes "All sent" and does not navigate when every target is inbound', () => {
     enable();
-    installFsCollect();
+    installDailyRun();
     setBodyMeta('4:472:15', 'moon');
-    fsRoutesStore.set({
+    dailyRunRoutesStore.set({
       routes: [
         {
           sources: [{ galaxy: 4, system: 472, position: 15, type: TARGET_MOON }],
@@ -220,10 +220,10 @@ describe('micro send — navigation (top zone)', () => {
     // The dashboard URL is unresolved in tests (no chrome.runtime), so this
     // exercises the fallback branch.
     enable();
-    installFsCollect();
+    installDailyRun();
     openEventBoxGate();
     setBodyMeta('4:472:15', 'moon');
-    fsRoutesStore.set({ routes: [], collectTarget: null });
+    dailyRunRoutesStore.set({ routes: [], collectTarget: null });
     const micro = /** @type {HTMLElement} */ (document.getElementById('oge-fs-micro-zone'));
     micro.click();
     expect(navTarget).toBeNull();
@@ -234,9 +234,9 @@ describe('micro send — navigation (top zone)', () => {
 describe('collect send — navigation + dispatch (bottom zone)', () => {
   it('navigates to a bare fleetdispatch when idle with a collect target', () => {
     enable();
-    installFsCollect();
+    installDailyRun();
     openEventBoxGate();
-    fsRoutesStore.set({
+    dailyRunRoutesStore.set({
       routes: [],
       collectTarget: { galaxy: 4, system: 472, position: 15, type: TARGET_MOON },
     });
@@ -339,9 +339,9 @@ describe('collect send — navigation + dispatch (bottom zone)', () => {
 
   it('two taps: arms its own fleet2, stashes oge_fsRedirect and dispatches on a successful send', async () => {
     enable();
-    installFsCollect();
+    installDailyRun();
     openEventBoxGate();
-    fsRoutesStore.set({
+    dailyRunRoutesStore.set({
       routes: [],
       collectTarget: { galaxy: 4, system: 472, position: 15, type: TARGET_MOON },
     });
@@ -355,14 +355,14 @@ describe('collect send — navigation + dispatch (bottom zone)', () => {
     await until(() => spy.clicks() === 1);
     expect(spy.clicks()).toBe(1);
     // Success → redirect to the next collect planet survives.
-    expect(localStorage.getItem(FS_REDIRECT_KEY)).toContain('cp=200');
+    expect(localStorage.getItem(DAILY_RUN_REDIRECT_KEY)).toContain('cp=200');
   });
 
   it('on a rejected send (no fuel) drops the redirect and flashes the error', async () => {
     enable();
-    installFsCollect();
+    installDailyRun();
     openEventBoxGate();
-    fsRoutesStore.set({
+    dailyRunRoutesStore.set({
       routes: [],
       collectTarget: { galaxy: 4, system: 472, position: 15, type: TARGET_MOON },
     });
@@ -372,6 +372,6 @@ describe('collect send — navigation + dispatch (bottom zone)', () => {
     await until(() => zone.textContent?.includes('(tap to send)'));
     zone.click(); // tap 2 — dispatch, rejected by the game
     await until(() => zone.textContent?.includes('No fuel'));
-    expect(localStorage.getItem(FS_REDIRECT_KEY)).toBeNull();
+    expect(localStorage.getItem(DAILY_RUN_REDIRECT_KEY)).toBeNull();
   });
 });

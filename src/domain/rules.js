@@ -44,7 +44,7 @@ export const MISSION_COLONIZE = 7;
 /**
  * Game's `mission` parameter for deployment ("Stacjonuj") sends — a
  * one-way mission where the fleet stations at the target and stays.
- * Used by the fleet-save micro-fleet feature (`features/fsCollect`).
+ * Used by the fleet-save micro-fleet feature (`features/dailyRun`).
  */
 export const MISSION_DEPLOYMENT = 4;
 

@@ -14,7 +14,7 @@ import {
   installDeployRedirect,
   _resetDeployRedirectForTest,
   _internalsForTest,
-  FS_REDIRECT_KEY,
+  DAILY_RUN_REDIRECT_KEY,
 } from '../../src/bridges/deployRedirect.js';
 import { _resetObserversForTest } from '../../src/bridges/xhrObserver.js';
 import { safeLS } from '../../src/lib/storage.js';
@@ -96,7 +96,7 @@ describe('overrideResponseText', () => {
 describe('installDeployRedirect — handoff consumption', () => {
   it('consumes (removes) the handoff key on a matching deployment send', () => {
     installDeployRedirect();
-    safeLS.set(FS_REDIRECT_KEY, NEXT_URL);
+    safeLS.set(DAILY_RUN_REDIRECT_KEY, NEXT_URL);
 
     // Simulate a sendFleet send-phase by invoking a fresh XHR through the
     // shared observer. We register a sentinel observer to capture that the
@@ -105,18 +105,18 @@ describe('installDeployRedirect — handoff consumption', () => {
     xhr.open('POST', '/game/index.php?page=ingame&component=fleetdispatch&action=sendFleet');
     xhr.send('mission=4&type=3&galaxy=4&system=472&position=15');
 
-    expect(safeLS.get(FS_REDIRECT_KEY)).toBeNull();
+    expect(safeLS.get(DAILY_RUN_REDIRECT_KEY)).toBeNull();
   });
 
   it('leaves the handoff key alone for a non-deployment send', () => {
     installDeployRedirect();
-    safeLS.set(FS_REDIRECT_KEY, NEXT_URL);
+    safeLS.set(DAILY_RUN_REDIRECT_KEY, NEXT_URL);
 
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/game/index.php?page=ingame&component=fleetdispatch&action=sendFleet');
     xhr.send('mission=15&type=1&galaxy=4');
 
-    expect(safeLS.get(FS_REDIRECT_KEY)).toBe(NEXT_URL);
+    expect(safeLS.get(DAILY_RUN_REDIRECT_KEY)).toBe(NEXT_URL);
   });
 
   it('is idempotent — second install returns the same unsubscribe', () => {

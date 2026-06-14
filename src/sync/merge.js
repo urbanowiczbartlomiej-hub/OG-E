@@ -337,9 +337,9 @@ export const mergeSettings = (local, remote) => {
 };
 
 /**
- * @typedef {object} FsRoutesSlot
- * @property {import('../domain/fsRoutes.js').Route[]} routes
- * @property {import('../domain/fsRoutes.js').TargetCoord | null} collectTarget
+ * @typedef {object} DailyRunRoutesSlot
+ * @property {import('../domain/dailyRunRoutes.js').Route[]} routes
+ * @property {import('../domain/dailyRunRoutes.js').TargetCoord | null} collectTarget
  * @property {number} updatedAt  Epoch-ms of the last local edit (0 = never).
  */
 
@@ -360,11 +360,11 @@ export const mergeSettings = (local, remote) => {
  * `changed` is `true` only when remote strictly displaced local — the caller
  * writes the merged slot back to local storage only then (anti-loop).
  *
- * @param {FsRoutesSlot} local
- * @param {Partial<FsRoutesSlot> | undefined | null} remote
- * @returns {{ merged: FsRoutesSlot, changed: boolean }}
+ * @param {DailyRunRoutesSlot} local
+ * @param {Partial<DailyRunRoutesSlot> | undefined | null} remote
+ * @returns {{ merged: DailyRunRoutesSlot, changed: boolean }}
  */
-export const mergeFsRoutes = (local, remote) => {
+export const mergeDailyRunRoutes = (local, remote) => {
   if (!remote || typeof remote !== 'object') return { merged: local, changed: false };
   const lT = Number(local?.updatedAt) || 0;
   const rT = Number(remote.updatedAt) || 0;
@@ -390,7 +390,7 @@ export const mergeFsRoutes = (local, remote) => {
 
 /**
  * Merge one universe's Galaxy-Scan config slot, WHOLE-UNIVERSE
- * newest-`updatedAt`-wins — identical strategy to {@link mergeFsRoutes}
+ * newest-`updatedAt`-wins — identical strategy to {@link mergeDailyRunRoutes}
  * (the config is a single edited unit per universe, edited rarely by one
  * user from either origin, so per-field reconciliation isn't worth it). The
  * newer side wins the entire config; ties and a missing/0 remote timestamp

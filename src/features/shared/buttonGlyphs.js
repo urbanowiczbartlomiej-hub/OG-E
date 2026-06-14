@@ -41,7 +41,7 @@ export const LANDER_GLYPH = [
   '</g>',
 ].join('');
 
-/** Daily run — home planet with a flight arc to a neighbour (fsCollect). */
+/** Daily run — home planet with a flight arc to a neighbour (dailyRun). */
 export const PLANET_ARROW_GLYPH = [
   '<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">',
   '<circle cx="18" cy="45" r="11"/>',

@@ -441,7 +441,7 @@ describe('migrateLegacyButtonSettings (pre-unified-FAB upgrade)', () => {
     localStorage.setItem('oge_mobileMode', 'false');
     localStorage.setItem('oge_colonizeMode', 'false');
     localStorage.setItem('oge_lifeformMode', 'false');
-    // fsCollectMode absent → legacy default false.
+    // dailyRunMode absent → legacy default false.
     initSettingsStore();
     expect(localStorage.getItem('oge_fabMode')).toBe('false');
     expect(settingsStore.get().fabMode).toBe(false);

@@ -1,6 +1,6 @@
 // Unit tests for the galaxyScanConfig state store.
 //
-// Like state/fsRoutes.js, this is a thin createStore wrapper; the behaviour
+// Like state/dailyRunRoutes.js, this is a thin createStore wrapper; the behaviour
 // worth testing is the lazy persist wiring (init hydrates from
 // chrome.storage.local, with a one-time legacy-settings seed) and the
 // per-universe stamp helper. We mock lib/storage.js (chromeStore + safeLS)

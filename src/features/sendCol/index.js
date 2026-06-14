@@ -227,7 +227,7 @@ let waitTotalSecs = 0;
 /**
  * Paint one zone of the button from a {@link Paint}. `subtext` → two
  * stacked lines (big primary on top, small caption below — matching the
- * fsCollect / sendExp layout so all three buttons read the same way);
+ * dailyRun / sendExp layout so all three buttons read the same way);
  * otherwise a single line. Always writes the background and the dim
  * (greyed-out) flag. No-op while unmounted.
  *

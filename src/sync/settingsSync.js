@@ -206,7 +206,7 @@ export const seedSettingsTsIfAbsent = (settings, now) => {
 
 /**
  * chrome.storage key for the per-universe settings timestamp map.
- * Pattern mirrors `fsRoutesTsKeyFor` in `state/fsRoutes.js`.
+ * Pattern mirrors `dailyRunRoutesTsKeyFor` in `state/dailyRunRoutes.js`.
  *
  * @param {string} universeId
  * @returns {string}

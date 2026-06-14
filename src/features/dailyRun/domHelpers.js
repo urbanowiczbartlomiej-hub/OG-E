@@ -1,6 +1,6 @@
 // @ts-check
 
-// Impure DOM readers for the fsCollect orchestrator.
+// Impure DOM readers for the dailyRun orchestrator.
 // Everything that touches `document` / `location` lives here so `pure.js`
 // stays Node-testable. Selectors used by ONLY this feature live here (per
 // the gameDom invariant — shared ones like COORDS_ORIGIN/COORDS_DEST come
@@ -29,7 +29,7 @@ const SEL_META_COORDS = 'meta[name="ogame-planet-coordinates"]';
 const SEL_META_TYPE = 'meta[name="ogame-planet-type"]';
 
 /**
- * @typedef {import('../../state/fsRoutes.js').TargetCoord} TargetCoord
+ * @typedef {import('../../state/dailyRunRoutes.js').TargetCoord} TargetCoord
  */
 
 /**

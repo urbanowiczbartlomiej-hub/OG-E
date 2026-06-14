@@ -8,11 +8,11 @@
 // Unlike `expeditionRedirect.js` — which computes the next planet itself
 // by walking `#planetList` in MAIN — this bridge contains NO routing
 // logic. The decision "where to go next" depends on the fleet-save route
-// config (`state/fsRoutes.js`, persisted to `chrome.storage.local`) and
+// config (`state/dailyRunRoutes.js`, persisted to `chrome.storage.local`) and
 // on the in-flight detection read from `#eventContent`. MAIN-world code
 // has neither `chrome.*` access nor any business duplicating that logic.
 //
-// So the ISOLATED-world orchestrator (`features/fsCollect/index.js`) — which
+// So the ISOLATED-world orchestrator (`features/dailyRun/index.js`) — which
 // already has the store + DOM — computes the next URL and writes it to a
 // localStorage handoff key SYNCHRONOUSLY, in the same tick it clicks the
 // native dispatch button. This bridge just reads that precomputed URL and
@@ -38,21 +38,21 @@
 //
 // @see ./expeditionRedirect.js — the planet-hopping sibling (computes its
 //   own next target; this one is told).
-// @see ../features/fsCollect/index.js — writes `oge_fsRedirect`.
+// @see ../features/dailyRun/index.js — writes `oge_fsRedirect`.
 
 /** @ts-check */
 
 import { observeXHR } from './xhrObserver.js';
 import { safeLS } from '../lib/storage.js';
 import { MISSION_DEPLOYMENT } from '../domain/rules.js';
-import { FS_REDIRECT_KEY } from '../lib/storageKeys.js';
+import { DAILY_RUN_REDIRECT_KEY } from '../lib/storageKeys.js';
 
 // Re-export so existing importers (and this bridge's test) can keep
 // reading the key from here. The canonical definition lives in
 // `lib/storageKeys.js` — a bare string constant the MAIN-world bridge can
 // import without dragging in the isolated-world store module (same pattern
 // as sendFleetHook importing REGISTRY_KEY from lib/storageKeys.js).
-export { FS_REDIRECT_KEY };
+export { DAILY_RUN_REDIRECT_KEY };
 
 /**
  * Extract the `mission` field from a form-encoded sendFleet body. Mirrors
@@ -146,11 +146,11 @@ export const installDeployRedirect = () => {
     handler: ({ xhr, body }) => {
       const mission = getMissionFromBody(body);
       if (mission !== MISSION_DEPLOYMENT) return;
-      const nextUrl = safeLS.get(FS_REDIRECT_KEY);
+      const nextUrl = safeLS.get(DAILY_RUN_REDIRECT_KEY);
       if (!nextUrl) return;
       // Consume the handoff immediately so it can never leak to a later
       // deployment, regardless of whether this send succeeds.
-      safeLS.remove(FS_REDIRECT_KEY);
+      safeLS.remove(DAILY_RUN_REDIRECT_KEY);
       overrideResponseText(xhr, responseTextDescriptor, nextUrl);
     },
   });
@@ -178,5 +178,5 @@ export const _resetDeployRedirectForTest = () => {
 export const _internalsForTest = {
   getMissionFromBody,
   overrideResponseText,
-  FS_REDIRECT_KEY,
+  DAILY_RUN_REDIRECT_KEY,
 };

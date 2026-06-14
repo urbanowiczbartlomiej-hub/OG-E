@@ -1,6 +1,6 @@
 // Shared "OGame-native" visual chrome for the three floating draggable
 // buttons: sendExp (`#oge-send-exp`), sendCol (`#oge-send-col`) and
-// fsCollect (`#oge-fs-unified`).
+// dailyRun (`#oge-fs-unified`).
 //
 // Two things live here:
 //
@@ -449,7 +449,7 @@ const spawnRipple = (layer, host, clientX, clientY) => {
  * class toggled on pointer down/up; the ripple originates at the exact
  * touch point so a tap on one half of a split button visibly starts
  * there. Purely additive — does not interfere with the host's drag wiring
- * (which listens on the outer element) or fsCollect's long-press timer.
+ * (which listens on the outer element) or dailyRun's long-press timer.
  *
  * @param {HTMLElement} zone
  * @param {HTMLElement} host

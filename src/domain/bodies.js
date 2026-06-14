@@ -10,16 +10,16 @@
 // read `#planetList` directly. The `features/planetBarCapture` feature reads
 // the bar in-game and persists a snapshot (see `state/bodies.js`); the
 // dashboard route editor then renders a clickable picker from that snapshot,
-// and `domain/fsRoutes.reconcileRoutes` prunes routes whose endpoints no
+// and `domain/dailyRunRoutes.reconcileRoutes` prunes routes whose endpoints no
 // longer exist among the captured bodies.
 //
 // A {@link Body} shares the `{ galaxy, system, position, type }` shape with
-// `domain/fsRoutes.TargetCoord`, so `coordTypeKey` from there keys a Body
+// `domain/dailyRunRoutes.TargetCoord`, so `coordTypeKey` from there keys a Body
 // just as it keys a route endpoint — that shared key is exactly what makes
 // reconciliation a plain Set lookup.
 //
 // @see ../state/bodies.js — the per-universe store persisting a snapshot.
-// @see ./fsRoutes.js — `coordTypeKey` (the shared identity) + reconcile.
+// @see ./dailyRunRoutes.js — `coordTypeKey` (the shared identity) + reconcile.
 
 import { TARGET_PLANET } from './rules.js';
 
@@ -29,7 +29,7 @@ import { TARGET_PLANET } from './rules.js';
  * `type` follows the game's fleetdispatch `type=` param: 1 = planet,
  * 3 = moon (see `rules.js`). A planet and its moon share the same
  * `galaxy:system:position`; `type` is what tells them apart — which is
- * why a Body's identity is {@link import('./fsRoutes.js').coordTypeKey},
+ * why a Body's identity is {@link import('./dailyRunRoutes.js').coordTypeKey},
  * not the type-less `coordKey`.
  *
  * `cp` is the game-assigned body id (stable while the body exists, but it
@@ -51,7 +51,7 @@ import { TARGET_PLANET } from './rules.js';
  * (`"[4:467:15]"`) or a bare `"4:467:15"` into its three numbers, or
  * `null` when nothing coordinate-shaped is present.
  *
- * Mirrors `features/fsCollect/domHelpers.parseCoordsText` but lives here
+ * Mirrors `features/dailyRun/domHelpers.parseCoordsText` but lives here
  * in `domain/` because the inventory capture needs it independently of
  * that feature (a feature must not import another feature).
  *

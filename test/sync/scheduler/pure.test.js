@@ -138,7 +138,7 @@ describe('gistIsCurrent', () => {
     galaxyScans: { '1:1:1': { t: 1 } },
     colonyHistory: [{ id: 'a' }],
     settings: { values: { x: 1 }, ts: { x: 10 } },
-    fsRoutes: { 's1-pl': { routes: [], collectTarget: null, updatedAt: 5 } },
+    dailyRunRoutes: { 's1-pl': { routes: [], collectTarget: null, updatedAt: 5 } },
     settingsPerUniverse: undefined,
     dailyStatePerUniverse: undefined,
     galaxyScanConfig: undefined,
@@ -149,7 +149,7 @@ describe('gistIsCurrent', () => {
       galaxyScans: { '1:1:1': { t: 1 } },
       colonyHistory: [{ id: 'a' }],
       settings: { values: { x: 1 }, ts: { x: 10 } },
-      fsRoutes: { 's1-pl': { routes: [], collectTarget: null, updatedAt: 5 } },
+      dailyRunRoutes: { 's1-pl': { routes: [], collectTarget: null, updatedAt: 5 } },
       // settingsPerUniverse / dailyStatePerUniverse / galaxyScanConfig absent
       // — equal to merged's undefined.
     });
@@ -161,7 +161,7 @@ describe('gistIsCurrent', () => {
       galaxyScans: { '1:1:1': { t: 1 } },
       colonyHistory: [{ id: 'a' }],
       settings: { values: { x: 1 }, ts: { x: 10 } },
-      fsRoutes: { 's1-pl': { routes: [], collectTarget: null, updatedAt: 5 } },
+      dailyRunRoutes: { 's1-pl': { routes: [], collectTarget: null, updatedAt: 5 } },
       galaxyScanConfig: { 's1-pl': { config: { positions: '9' }, updatedAt: 7 } },
     });
     // merged has galaxyScanConfig: undefined → differs → PATCH needed.
@@ -173,7 +173,7 @@ describe('gistIsCurrent', () => {
       galaxyScans: { '1:1:1': { t: 2 } }, // differs
       colonyHistory: [{ id: 'a' }],
       settings: { values: { x: 1 }, ts: { x: 10 } },
-      fsRoutes: { 's1-pl': { routes: [], collectTarget: null, updatedAt: 5 } },
+      dailyRunRoutes: { 's1-pl': { routes: [], collectTarget: null, updatedAt: 5 } },
     });
     expect(gistIsCurrent(remote, merged)).toBe(false);
   });

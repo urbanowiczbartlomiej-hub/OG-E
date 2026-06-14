@@ -1,7 +1,7 @@
 // @ts-check
 
 // Unified floating button ("FAB") shell — ONE draggable wrapper that hosts
-// all four command buttons (sendExp / sendCol / sendLifeform / fsCollect)
+// all four command buttons (sendExp / sendCol / sendLifeform / dailyRun)
 // and shows exactly one of them at a time. A small "handle" satellite on
 // the FAB's edge opens an orbital picker: every registered module rendered
 // as a single-piece orb (split buttons too — the orb is identity only:

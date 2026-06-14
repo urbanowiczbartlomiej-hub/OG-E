@@ -2,7 +2,7 @@
 //
 // One implementation of the "which storage key for the universe I'm on right
 // now?" fallback that every per-universe store reimplemented identically
-// (scans, bodies, fsRoutes, history, settings/colPositions).
+// (scans, bodies, dailyRunRoutes, history, settings/colPositions).
 //
 // The rule, in one place:
 //   • no `location` (a non-browser caller — a test, edge tooling) → the BASE

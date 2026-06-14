@@ -66,7 +66,7 @@ export const GAME = {
   /**
    * Moon anchor inside a planet/galaxy row (a row has one only if a moon
    * exists at that body). Read by `features/planetBarCapture` (the planet
-   * bar) and `features/fsCollect` (galaxy rows). The moon image / name is
+   * bar) and `features/dailyRun` (galaxy rows). The moon image / name is
    * a single-feature detail (`img.icon-moon`) — composed locally where
    * needed, not hoisted here.
    */
@@ -83,7 +83,7 @@ export const GAME = {
    * Destination-coords cell of an event-ticker fleet row. The anchor's
    * href carries only `galaxy`+`system`, but its text is the full
    * `[g:s:p]` — parse the position from the text. Read by the reminders
-   * feature (where an outbound leg lands) and by `features/fsCollect`
+   * feature (where an outbound leg lands) and by `features/dailyRun`
    * (which targets already have an inbound Deployment fleet).
    */
   COORDS_DEST: '.destCoords',

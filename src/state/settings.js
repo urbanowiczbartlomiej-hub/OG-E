@@ -213,7 +213,7 @@ const LEGACY_FAB_MODULES = [
   { id: 'exp', modeKey: SETTINGS_PREFIX + 'mobileMode',    modeDefault: true,  sizeKey: SETTINGS_PREFIX + 'enterBtnSize', posKey: SETTINGS_PREFIX + 'enterBtnPos' },
   { id: 'col', modeKey: SETTINGS_PREFIX + 'colonizeMode',  modeDefault: true,  sizeKey: SETTINGS_PREFIX + 'colBtnSize',   posKey: SETTINGS_PREFIX + 'colBtnPos' },
   { id: 'lf',  modeKey: SETTINGS_PREFIX + 'lifeformMode',  modeDefault: true,  sizeKey: SETTINGS_PREFIX + 'lfBtnSize',    posKey: SETTINGS_PREFIX + 'lfBtnPos' },
-  { id: 'fs',  modeKey: SETTINGS_PREFIX + 'fsCollectMode', modeDefault: false, sizeKey: SETTINGS_PREFIX + 'fsBtnSize',    posKey: SETTINGS_PREFIX + 'fsUnifiedPos' },
+  { id: 'fs',  modeKey: SETTINGS_PREFIX + 'dailyRunMode', modeDefault: false, sizeKey: SETTINGS_PREFIX + 'fsBtnSize',    posKey: SETTINGS_PREFIX + 'fsUnifiedPos' },
 ];
 
 /**

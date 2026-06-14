@@ -1,17 +1,17 @@
 // @ts-check
 
-// Pure domain logic for the fleet-save micro-fleet route config: the
+// Pure domain logic for the "Daily Run" micro-fleet route config: the
 // coordinate shapes, the key helpers, and the dashboard text DSL parser /
 // formatter. No DOM, no storage, no timers — plain functions over plain
 // data, fully Node-testable.
 //
-// Lives in `domain/` (not `features/fsCollect/pure.js`) because BOTH the
-// fsCollect feature AND the dashboard route-editor tab need the DSL, and
+// Lives in `domain/` (not `features/dailyRun/pure.js`) because BOTH the
+// dailyRun feature AND the dashboard route-editor tab need the DSL, and
 // a feature must not import another feature (see CLAUDE.md). The feature's
 // `pure.js` re-exports these so its own call-sites keep one import path.
 //
-// @see ../features/fsCollect/pure.js — re-exporter + URL builders.
-// @see ../state/fsRoutes.js — the persisted store using these shapes.
+// @see ../features/dailyRun/pure.js — re-exporter + URL builders.
+// @see ../state/dailyRunRoutes.js — the persisted store using these shapes.
 
 import {
   TARGET_PLANET,
@@ -47,7 +47,7 @@ import {
  * {@link coordTypeKey}, so a planet and the moon at the same slot are
  * distinct sources — which is why each source carries its own `type`
  * (older configs, where a source was always a moon, are lifted to
- * `type === 3` by {@link migrateFsRoutes}).
+ * `type === 3` by {@link migrateDailyRunRoutes}).
  *
  * No synthetic `id`: a route's identity IS its source set (a body belongs
  * to at most one route), and dropping the field keeps the DSL round-trip
@@ -81,7 +81,7 @@ export const coordTypeKey = ({ galaxy, system, position, type }) =>
 /**
  * Build a {@link TargetCoord} from a type-less coord key (`"g:s:p"`) and a
  * `type`. Returns `null` when the key isn't a bare `g:s:p` triple. Used by
- * {@link migrateFsRoutes} to lift legacy moon-keyed routes into the
+ * {@link migrateDailyRunRoutes} to lift legacy moon-keyed routes into the
  * source-array shape.
  *
  * @param {string} key
@@ -141,7 +141,7 @@ export const findRouteForBody = (routes, body) => {
 // in `errors` (1-based line number) and skipped — the rest still parse.
 //
 // NB: sources WITHOUT a trailing `m` now parse as PLANETS. Legacy single-
-// moon configs are migrated in `state/fsRoutes.js` (which sets type=3), so
+// moon configs are migrated in `state/dailyRunRoutes.js` (which sets type=3), so
 // `formatRoutesDsl` renders their sources with the `m` suffix — the DSL is
 // always self-describing about planet vs moon on both sides.
 
@@ -329,7 +329,7 @@ export const formatRoutesDsl = (routes) => {
 };
 
 /**
- * Normalise a stored {@link import('../state/fsRoutes.js').FsRoutes} value
+ * Normalise a stored {@link import('../state/dailyRunRoutes.js').DailyRunRoutes} value
  * into the current shape (`routes: Route[]`), migrating the legacy
  * `routes: Record<coordKey, { targets, microFleet }>` form on the way.
  *
@@ -344,7 +344,7 @@ export const formatRoutesDsl = (routes) => {
  * @param {unknown} stored
  * @returns {{ routes: Route[], collectTarget: TargetCoord | null }}
  */
-export const migrateFsRoutes = (stored) => {
+export const migrateDailyRunRoutes = (stored) => {
   const obj = stored && typeof stored === 'object' ? /** @type {any} */ (stored) : {};
   /** @type {TargetCoord | null} */
   const collectTarget = obj.collectTarget ?? null;

@@ -8,8 +8,8 @@
 // This config is edited from TWO origins: in-game (game origin) and the
 // dashboard (extension origin). localStorage is per-origin, so it can't be
 // shared; `chrome.storage.local` is the one store both origins see — exactly
-// the reason `state/fsRoutes.js` lives here too. This store is modelled on
-// fsRoutes 1:1 (lazy `init*`, async hydrate, debounced write-through,
+// the reason `state/dailyRunRoutes.js` lives here too. This store is modelled on
+// dailyRunRoutes 1:1 (lazy `init*`, async hydrate, debounced write-through,
 // per-universe `Ts` key for whole-slot newest-wins sync, `stamp*` helper).
 //
 // The shape, defaults, and normalisation live in the pure
@@ -53,7 +53,7 @@ export const galaxyScanConfigKeyFor = (universeId) =>
  * (`<universeId>:oge_galaxyScanConfigTs`). The sync engine uses this
  * epoch-ms value for whole-universe newest-wins merging (see
  * `sync/merge.mergeGalaxyScanConfig`). Separate key for the same reasons as
- * `fsRoutesTsKeyFor`: it is sync metadata (not config), and it must be
+ * `dailyRunRoutesTsKeyFor`: it is sync metadata (not config), and it must be
  * visible across both editing origins.
  */
 export const GALAXY_SCAN_CONFIG_TS_BASE = 'oge_galaxyScanConfigTs';
@@ -70,7 +70,7 @@ export const galaxyScanConfigTsKeyFor = (universeId) =>
 /**
  * Resolve the chrome.storage.local key for the current tab's universe.
  * Falls back to the bare suffix in non-DOM test environments (mirrors
- * `state/fsRoutes.js:currentFsRoutesKey`).
+ * `state/dailyRunRoutes.js:currentDailyRunRoutesKey`).
  *
  * @returns {string}
  */
@@ -202,7 +202,7 @@ export const flushGalaxyScanConfigStore = () =>
  * round-trip treats this device's config as freshest (whole-universe
  * newest-wins, see `sync/merge.mergeGalaxyScanConfig`). Flushes the value
  * first to close the debounce race (same rationale as
- * `state/fsRoutes.stampFsRoutesChanged`). The dashboard writes the same key
+ * `state/dailyRunRoutes.stampDailyRunRoutesChanged`). The dashboard writes the same key
  * directly on save.
  *
  * @returns {Promise<void>}

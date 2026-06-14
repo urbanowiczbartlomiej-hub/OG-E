@@ -5,7 +5,7 @@
 // from the player's own planets/moons (captured in-game into the per-universe
 // `<universeId>:oge_bodies` snapshot by `features/planetBarCapture`), so a
 // coordinate can never be mistyped. The same per-universe
-// `<universeId>:oge_fsRoutes` key the in-game fsCollect feature consumes is
+// `<universeId>:oge_fsRoutes` key the in-game dailyRun feature consumes is
 // read/written here; the in-game-set collect target is preserved on save.
 //
 // A route = one or more SOURCE bodies (planets and/or moons) sharing one
@@ -20,20 +20,20 @@
 // Installed like the reminders tab: the host passes a `getUniverseId` getter
 // and calls the returned `refresh()` whenever the selected universe changes.
 //
-// @see ../../domain/fsRoutes.js — Route shape, DSL parse/format, migrate.
+// @see ../../domain/dailyRunRoutes.js — Route shape, DSL parse/format, migrate.
 // @see ../../domain/bodies.js — Body shape + sort.
-// @see ../../state/bodies.js / ../../state/fsRoutes.js — per-universe keys.
+// @see ../../state/bodies.js / ../../state/dailyRunRoutes.js — per-universe keys.
 
 import { chromeStore } from '../../lib/storage.js';
-import { fsRoutesKeyFor, fsRoutesTsKeyFor } from '../../state/fsRoutes.js';
+import { dailyRunRoutesKeyFor, dailyRunRoutesTsKeyFor } from '../../state/dailyRunRoutes.js';
 import { bodiesKeyFor } from '../../state/bodies.js';
 import { syncRequestKeyFor } from '../../sync/scheduler.js';
 import {
   parseRoutesDsl,
   formatRoutesDsl,
-  migrateFsRoutes,
+  migrateDailyRunRoutes,
   coordTypeKey,
-} from '../../domain/fsRoutes.js';
+} from '../../domain/dailyRunRoutes.js';
 import { sortBodies } from '../../domain/bodies.js';
 import {
   TARGET_MOON,
@@ -42,8 +42,8 @@ import {
   SHIP_PATHFINDER,
 } from '../../domain/rules.js';
 
-/** @typedef {import('../../domain/fsRoutes.js').TargetCoord} TargetCoord */
-/** @typedef {import('../../domain/fsRoutes.js').Route} Route */
+/** @typedef {import('../../domain/dailyRunRoutes.js').TargetCoord} TargetCoord */
+/** @typedef {import('../../domain/dailyRunRoutes.js').Route} Route */
 /** @typedef {import('../../domain/bodies.js').Body} Body */
 
 /** Ship choices offered in the per-route fleet dropdown. */
@@ -387,10 +387,10 @@ export const installRoutes = ({ getUniverseId }) => {
       return;
     }
     const [storedRoutes, storedBodies] = await Promise.all([
-      chromeStore.get(fsRoutesKeyFor(uni)),
+      chromeStore.get(dailyRunRoutesKeyFor(uni)),
       chromeStore.get(bodiesKeyFor(uni)),
     ]);
-    const { routes, collectTarget } = migrateFsRoutes(storedRoutes);
+    const { routes, collectTarget } = migrateDailyRunRoutes(storedRoutes);
     const bodies = Array.isArray(/** @type {any} */ (storedBodies)?.bodies)
       ? /** @type {Body[]} */ (/** @type {any} */ (storedBodies).bodies)
       : [];
@@ -409,13 +409,13 @@ export const installRoutes = ({ getUniverseId }) => {
     const clean = model.routes.filter((r) => r.sources.length > 0 && r.targets.length > 0);
     const dropped = model.routes.length - clean.length;
     // Preserve the in-game-set collect target; we only own `routes` here.
-    const stored = await chromeStore.get(fsRoutesKeyFor(uni));
-    const { collectTarget } = migrateFsRoutes(stored);
-    await chromeStore.set(fsRoutesKeyFor(uni), { routes: clean, collectTarget });
+    const stored = await chromeStore.get(dailyRunRoutesKeyFor(uni));
+    const { collectTarget } = migrateDailyRunRoutes(stored);
+    await chromeStore.set(dailyRunRoutesKeyFor(uni), { routes: clean, collectTarget });
     // Stamp the cross-device sync clock (whole-universe newest-wins) and poke
     // any open game tab to push the change to the gist (same tombstone the
     // "Sync now" button uses). Harmless no-op when cloud sync is off.
-    await chromeStore.set(fsRoutesTsKeyFor(uni), Date.now());
+    await chromeStore.set(dailyRunRoutesTsKeyFor(uni), Date.now());
     await chromeStore.set(syncRequestKeyFor(uni), Date.now());
     model.routes = clean;
     baseline = JSON.stringify(clean);

@@ -1,7 +1,7 @@
-// Unit tests for the fsRoutes state store.
+// Unit tests for the dailyRunRoutes state store.
 //
 // Like `state/scans.js`, the store is a thin `createStore` wrapper; the
-// behaviour worth testing is the lazy persist wiring (`initFsRoutesStore`
+// behaviour worth testing is the lazy persist wiring (`initDailyRunRoutesStore`
 // hydrates from chrome.storage.local and subscribes a debounced
 // write-through). We mock `lib/storage.js` before importing the module so
 // every chromeStore call is an assertable vi.fn. Node env — no DOM.
@@ -21,15 +21,15 @@ vi.mock('../../src/lib/storage.js', () => ({
 
 import { chromeStore } from '../../src/lib/storage.js';
 import {
-  FS_ROUTES_KEY_BASE,
-  FS_ROUTES_TS_BASE,
-  fsRoutesKeyFor,
-  fsRoutesStore,
-  initFsRoutesStore,
-  disposeFsRoutesStore,
-  stampFsRoutesChanged,
-} from '../../src/state/fsRoutes.js';
-import { migrateFsRoutes } from '../../src/domain/fsRoutes.js';
+  DAILY_RUN_ROUTES_KEY_BASE,
+  DAILY_RUN_ROUTES_TS_BASE,
+  dailyRunRoutesKeyFor,
+  dailyRunRoutesStore,
+  initDailyRunRoutesStore,
+  disposeDailyRunRoutesStore,
+  stampDailyRunRoutesChanged,
+} from '../../src/state/dailyRunRoutes.js';
+import { migrateDailyRunRoutes } from '../../src/domain/dailyRunRoutes.js';
 
 /**
  * @type {{
@@ -42,8 +42,8 @@ import { migrateFsRoutes } from '../../src/domain/fsRoutes.js';
 const mockStore = /** @type {any} */ (chromeStore);
 
 const resetAll = () => {
-  disposeFsRoutesStore();
-  fsRoutesStore.set({ routes: [], collectTarget: null });
+  disposeDailyRunRoutesStore();
+  dailyRunRoutesStore.set({ routes: [], collectTarget: null });
   mockStore.get.mockReset();
   mockStore.set.mockReset();
   mockStore.remove.mockReset();
@@ -57,20 +57,20 @@ const flushMicrotasks = async () => {
   for (let i = 0; i < 5; i++) await Promise.resolve();
 };
 
-describe('fsRoutesStore — defaults and basic ops', () => {
+describe('dailyRunRoutesStore — defaults and basic ops', () => {
   beforeEach(resetAll);
-  afterEach(disposeFsRoutesStore);
+  afterEach(disposeDailyRunRoutesStore);
 
   it('starts as an empty config when persist has not been initialised', () => {
-    expect(fsRoutesStore.get()).toEqual({ routes: [], collectTarget: null });
+    expect(dailyRunRoutesStore.get()).toEqual({ routes: [], collectTarget: null });
   });
 
   it('exports the expected key suffix', () => {
-    expect(FS_ROUTES_KEY_BASE).toBe('oge_fsRoutes');
+    expect(DAILY_RUN_ROUTES_KEY_BASE).toBe('oge_fsRoutes');
   });
 
-  it('fsRoutesKeyFor composes a per-universe namespaced key', () => {
-    expect(fsRoutesKeyFor('s163-pl')).toBe('s163-pl:oge_fsRoutes');
+  it('dailyRunRoutesKeyFor composes a per-universe namespaced key', () => {
+    expect(dailyRunRoutesKeyFor('s163-pl')).toBe('s163-pl:oge_fsRoutes');
   });
 
   it('round-trips set/get without persist wiring', () => {
@@ -84,37 +84,37 @@ describe('fsRoutesStore — defaults and basic ops', () => {
       ],
       collectTarget: { galaxy: 4, system: 472, position: 15, type: 3 },
     };
-    fsRoutesStore.set(/** @type {any} */ (cfg));
-    expect(fsRoutesStore.get()).toEqual(cfg);
+    dailyRunRoutesStore.set(/** @type {any} */ (cfg));
+    expect(dailyRunRoutesStore.get()).toEqual(cfg);
   });
 
   it('notifies subscribers on set', () => {
     const sub = vi.fn();
-    const unsub = fsRoutesStore.subscribe(sub);
-    fsRoutesStore.set(/** @type {any} */ ({ routes: [], collectTarget: null }));
+    const unsub = dailyRunRoutesStore.subscribe(sub);
+    dailyRunRoutesStore.set(/** @type {any} */ ({ routes: [], collectTarget: null }));
     expect(sub).toHaveBeenCalledTimes(1);
     unsub();
   });
 });
 
-describe('stampFsRoutesChanged — flushes before stamping (debounce race)', () => {
+describe('stampDailyRunRoutesChanged — flushes before stamping (debounce race)', () => {
   beforeEach(resetAll);
-  afterEach(disposeFsRoutesStore);
+  afterEach(disposeDailyRunRoutesStore);
 
   it('flushes the routes value, THEN writes the timestamp', async () => {
     // A current in-memory edit that the debounce has not yet persisted.
-    fsRoutesStore.set(
+    dailyRunRoutesStore.set(
       /** @type {any} */ ({ routes: [{ id: 'r1' }], collectTarget: null }),
     );
     mockStore.set.mockClear();
 
-    await stampFsRoutesChanged();
+    await stampDailyRunRoutesChanged();
 
     // Exactly two writes, in order: routes value first (flush), then the
     // timestamp — so the clock can never claim "changed" before the value
     // is on disk.
     const keys = mockStore.set.mock.calls.map((c) => c[0]);
-    expect(keys).toEqual([FS_ROUTES_KEY_BASE, FS_ROUTES_TS_BASE]);
+    expect(keys).toEqual([DAILY_RUN_ROUTES_KEY_BASE, DAILY_RUN_ROUTES_TS_BASE]);
     expect(mockStore.set.mock.calls[0][1]).toEqual({
       routes: [{ id: 'r1' }],
       collectTarget: null,
@@ -123,12 +123,12 @@ describe('stampFsRoutesChanged — flushes before stamping (debounce race)', () 
   });
 });
 
-describe('fsRoutesStore — hydration via initFsRoutesStore', () => {
+describe('dailyRunRoutesStore — hydration via initDailyRunRoutesStore', () => {
   beforeEach(resetAll);
-  afterEach(disposeFsRoutesStore);
+  afterEach(disposeDailyRunRoutesStore);
 
   it('calls chromeStore.get with the bare key in a non-DOM env', () => {
-    initFsRoutesStore();
+    initDailyRunRoutesStore();
     expect(mockStore.get).toHaveBeenCalledTimes(1);
     expect(mockStore.get).toHaveBeenCalledWith('oge_fsRoutes');
   });
@@ -145,10 +145,10 @@ describe('fsRoutesStore — hydration via initFsRoutesStore', () => {
       collectTarget: null,
     };
     mockStore.get.mockResolvedValueOnce(stored);
-    initFsRoutesStore();
-    expect(fsRoutesStore.get()).toEqual({ routes: [], collectTarget: null });
+    initDailyRunRoutesStore();
+    expect(dailyRunRoutesStore.get()).toEqual({ routes: [], collectTarget: null });
     await flushMicrotasks();
-    expect(fsRoutesStore.get()).toEqual(stored);
+    expect(dailyRunRoutesStore.get()).toEqual(stored);
   });
 
   it('MIGRATES a legacy moon-keyed Record on hydrate into the source-array shape', async () => {
@@ -163,10 +163,10 @@ describe('fsRoutesStore — hydration via initFsRoutesStore', () => {
       collectTarget: { galaxy: 4, system: 472, position: 15, type: 3 },
     };
     mockStore.get.mockResolvedValueOnce(legacy);
-    initFsRoutesStore();
+    initDailyRunRoutesStore();
     await flushMicrotasks();
 
-    expect(fsRoutesStore.get()).toEqual({
+    expect(dailyRunRoutesStore.get()).toEqual({
       routes: [
         {
           // legacy key lifted to a single MOON source (type 3)
@@ -180,21 +180,21 @@ describe('fsRoutesStore — hydration via initFsRoutesStore', () => {
   });
 
   it('is idempotent — a second init does not re-register', () => {
-    const dispose1 = initFsRoutesStore();
-    const dispose2 = initFsRoutesStore();
+    const dispose1 = initDailyRunRoutesStore();
+    const dispose2 = initDailyRunRoutesStore();
     expect(dispose1).toBe(dispose2);
     expect(mockStore.get).toHaveBeenCalledTimes(1);
   });
 });
 
-describe('migrateFsRoutes (pure)', () => {
+describe('migrateDailyRunRoutes (pure)', () => {
   it('passes a current-shape array through, dropping malformed routes', () => {
     const ok = {
       sources: [{ galaxy: 1, system: 1, position: 1, type: 3 }],
       targets: [{ galaxy: 1, system: 1, position: 2, type: 1 }],
       microFleet: { shipId: 203, count: 10 },
     };
-    const result = migrateFsRoutes({
+    const result = migrateDailyRunRoutes({
       routes: [
         ok,
         { sources: [], targets: [{}], microFleet: { shipId: 1, count: 1 } }, // no sources
@@ -207,7 +207,7 @@ describe('migrateFsRoutes (pure)', () => {
   });
 
   it('converts the legacy moon-keyed Record into single-moon-source routes', () => {
-    const result = migrateFsRoutes({
+    const result = migrateDailyRunRoutes({
       routes: {
         '4:472:15': {
           targets: [{ galaxy: 4, system: 475, position: 14, type: 1 }],
@@ -239,19 +239,19 @@ describe('migrateFsRoutes (pure)', () => {
       routes: { '4:472:15': { targets: [{ galaxy: 4, system: 475, position: 14, type: 1 }], microFleet: { shipId: 203, count: 15000 } } },
       collectTarget: null,
     };
-    const once = migrateFsRoutes(legacy);
-    const twice = migrateFsRoutes(once);
+    const once = migrateDailyRunRoutes(legacy);
+    const twice = migrateDailyRunRoutes(once);
     expect(twice).toEqual(once);
   });
 
   it('defaults to an empty route list + null target for junk / missing input', () => {
-    expect(migrateFsRoutes(null)).toEqual({ routes: [], collectTarget: null });
-    expect(migrateFsRoutes({})).toEqual({ routes: [], collectTarget: null });
-    expect(migrateFsRoutes({ routes: 42 })).toEqual({ routes: [], collectTarget: null });
+    expect(migrateDailyRunRoutes(null)).toEqual({ routes: [], collectTarget: null });
+    expect(migrateDailyRunRoutes({})).toEqual({ routes: [], collectTarget: null });
+    expect(migrateDailyRunRoutes({ routes: 42 })).toEqual({ routes: [], collectTarget: null });
   });
 
   it('preserves an existing collectTarget', () => {
     const ct = { galaxy: 4, system: 472, position: 15, type: 3 };
-    expect(migrateFsRoutes({ routes: [], collectTarget: ct }).collectTarget).toEqual(ct);
+    expect(migrateDailyRunRoutes({ routes: [], collectTarget: ct }).collectTarget).toEqual(ct);
   });
 });

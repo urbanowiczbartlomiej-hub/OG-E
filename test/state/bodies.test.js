@@ -1,6 +1,6 @@
 // Unit tests for the body-inventory state store.
 //
-// Like `state/fsRoutes.js`, the store is a thin `createStore` wrapper; the
+// Like `state/dailyRunRoutes.js`, the store is a thin `createStore` wrapper; the
 // behaviour worth testing is the lazy persist wiring (`initBodiesStore`
 // hydrates from chrome.storage.local and subscribes a write-through) plus
 // the `narrowInventory` guard. We mock `lib/storage.js` before importing so

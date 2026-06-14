@@ -53,7 +53,7 @@ import { safeLS } from '../../lib/storage.js';
 // ─── Shared stacking order (last-touched on top) ────────────────────────
 //
 // As the number of floating buttons grows (sendExp, sendCol, and the two
-// fsCollect buttons) they increasingly overlap. To keep the one the user
+// dailyRun buttons) they increasingly overlap. To keep the one the user
 // is reaching for usable, every drag/tap START raises that element above
 // the others: a single module-wide monotonic counter hands out
 // ever-larger z-index values, so the most-recently-touched button always

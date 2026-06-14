@@ -65,7 +65,7 @@ import { initHistoryStore } from './state/history.js';
 import { initScansStore } from './state/scans.js';
 import { initRegistryStore } from './state/registry.js';
 import { initSettingsStore } from './state/settings.js';
-import { initFsRoutesStore } from './state/fsRoutes.js';
+import { initDailyRunRoutesStore } from './state/dailyRunRoutes.js';
 import { initGalaxyScanConfigStore } from './state/galaxyScanConfig.js';
 import { initBodiesStore } from './state/bodies.js';
 import { migrateLegacyStorageKeys } from './state/migrate.js';
@@ -76,7 +76,7 @@ import { installBadges } from './features/badges.js';
 import { installSendExp } from './features/sendExp/index.js';
 import { installSendCol } from './features/sendCol/index.js';
 import { installSendLifeform } from './features/sendLifeform/index.js';
-import { installFsCollect } from './features/fsCollect/index.js';
+import { installDailyRun } from './features/dailyRun/index.js';
 import { installAbandonOverview } from './features/abandon/overview.js';
 import { installFreshPlanetDetector } from './features/freshPlanetDetector.js';
 import { installSettingsUi } from './features/settingsUi/index.js';
@@ -111,9 +111,9 @@ initRegistryStore();
   initHistoryStore();
   initScansStore();
   // Fleet-save routes (per-universe, chrome.storage). Without this the
-  // in-game fsCollect buttons never see routes authored in the dashboard
+  // in-game dailyRun buttons never see routes authored in the dashboard
   // and the ad-hoc collect target wouldn't survive a page reload.
-  initFsRoutesStore();
+  initDailyRunRoutesStore();
   // Galaxy-Scan config (per-universe, chrome.storage). Hydrated here so the
   // Scan button reads the user's positions + rescan policy, and edits made
   // in the dashboard (a different origin) reach the in-game button. On first
@@ -178,7 +178,7 @@ const installDomFeatures = () => {
   // discoveries, one system per tap. Independent of Send-Col.
   installSendLifeform();
   // Unified Daily Transport button (Send micro-fleets + Collect).
-  installFsCollect();
+  installDailyRun();
 
   // Standalone overlay on overview for fresh-small colonies.
   // Independent from sendCol; reuses `abandonPlanet()` from

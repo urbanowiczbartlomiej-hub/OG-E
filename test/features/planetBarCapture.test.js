@@ -20,7 +20,7 @@ import {
   readPlanetBar,
 } from '../../src/features/planetBarCapture.js';
 import { bodiesStore, disposeBodiesStore } from '../../src/state/bodies.js';
-import { fsRoutesStore, disposeFsRoutesStore } from '../../src/state/fsRoutes.js';
+import { dailyRunRoutesStore, disposeDailyRunRoutesStore } from '../../src/state/dailyRunRoutes.js';
 import { TARGET_PLANET, TARGET_MOON } from '../../src/domain/rules.js';
 
 const HOST = 'https://s163-pl.ogame.gameforge.com/game/index.php';
@@ -68,16 +68,16 @@ beforeEach(() => {
   document.body.innerHTML = '';
   disposeBodiesStore();
   bodiesStore.set({ bodies: [], capturedAt: 0 });
-  disposeFsRoutesStore();
-  fsRoutesStore.set({ routes: [], collectTarget: null });
+  disposeDailyRunRoutesStore();
+  dailyRunRoutesStore.set({ routes: [], collectTarget: null });
   _resetPlanetBarCaptureForTest();
 });
 
 afterEach(() => {
   disposeBodiesStore();
   bodiesStore.set({ bodies: [], capturedAt: 0 });
-  disposeFsRoutesStore();
-  fsRoutesStore.set({ routes: [], collectTarget: null });
+  disposeDailyRunRoutesStore();
+  dailyRunRoutesStore.set({ routes: [], collectTarget: null });
   _resetPlanetBarCaptureForTest();
 });
 
@@ -182,44 +182,44 @@ describe('installPlanetBarCapture — route reconciliation', () => {
   ]);
 
   it('prunes a route target whose body is gone from the bar', async () => {
-    fsRoutesStore.set({
+    dailyRunRoutesStore.set({
       routes: [{ sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8), planet(9, 9, 9)], microFleet: fleet }],
       collectTarget: null,
     });
     fullBar();
     installPlanetBarCapture();
     await flush();
-    const routes = fsRoutesStore.get().routes;
+    const routes = dailyRunRoutesStore.get().routes;
     expect(routes).toHaveLength(1);
     expect(routes[0].targets).toEqual([planet(5, 172, 8)]); // 9:9:9 pruned
   });
 
   it('removes a route whose only source no longer exists', async () => {
-    fsRoutesStore.set({
+    dailyRunRoutesStore.set({
       routes: [{ sources: [moon(6, 6, 6)], targets: [planet(5, 172, 8)], microFleet: fleet }],
       collectTarget: null,
     });
     fullBar();
     installPlanetBarCapture();
     await flush();
-    expect(fsRoutesStore.get().routes).toEqual([]);
+    expect(dailyRunRoutesStore.get().routes).toEqual([]);
   });
 
   it('leaves routes untouched (same reference) when every endpoint still exists', async () => {
     const routes = [{ sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8)], microFleet: fleet }];
-    fsRoutesStore.set({ routes, collectTarget: null });
+    dailyRunRoutesStore.set({ routes, collectTarget: null });
     fullBar();
     installPlanetBarCapture();
     await flush();
-    expect(fsRoutesStore.get().routes[0]).toBe(routes[0]);
+    expect(dailyRunRoutesStore.get().routes[0]).toBe(routes[0]);
   });
 
   it('does not touch routes when the capture is empty (no bar)', async () => {
     const routes = [{ sources: [moon(6, 6, 6)], targets: [planet(9, 9, 9)], microFleet: fleet }];
-    fsRoutesStore.set({ routes, collectTarget: null });
+    dailyRunRoutesStore.set({ routes, collectTarget: null });
     setupBar(null); // no inventory captured → reconcile must not run
     installPlanetBarCapture();
     await flush();
-    expect(fsRoutesStore.get().routes).toBe(routes); // untouched, dead endpoints kept
+    expect(dailyRunRoutesStore.get().routes).toBe(routes); // untouched, dead endpoints kept
   });
 });

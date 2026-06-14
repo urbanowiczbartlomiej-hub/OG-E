@@ -19,7 +19,7 @@
 //   - The dashboard route editor (extension origin) composes a key via
 //     {@link bodiesKeyFor} for the selected universe and renders a
 //     clickable planet/moon picker from `bodies`.
-//   - `domain/fsRoutes.reconcileRoutes` uses `bodies` to prune routes
+//   - `domain/dailyRunRoutes.reconcileRoutes` uses `bodies` to prune routes
 //     whose source/target endpoints no longer exist.
 //
 // # Why the hydrate gate ({@link whenBodiesHydrated})

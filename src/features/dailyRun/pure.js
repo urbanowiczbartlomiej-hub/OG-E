@@ -4,7 +4,7 @@
 // (The old fleetdispatch URL builders are gone: with bare-URL entry the
 // fleet courier sets ships+target in-page, so no URL is built here.) The
 // coordinate shapes, key helpers, and the dashboard routes DSL live in
-// `domain/fsRoutes.js` (shared with the dashboard tab, which a feature may
+// `domain/dailyRunRoutes.js` (shared with the dashboard tab, which a feature may
 // not import directly); this module re-exports them so the feature's own
 // call-sites + tests keep one import path.
 //
@@ -12,10 +12,10 @@
 // `location` reads. The impure orchestrator (`./index.js`) reads the page
 // and hands plain data here.
 //
-// @see ../../domain/fsRoutes.js — coord keys + routes DSL (shared).
+// @see ../../domain/dailyRunRoutes.js — coord keys + routes DSL (shared).
 // @see ./domHelpers.js — impure readers producing the `inFlightKeys` set.
 
-import { coordTypeKey } from '../../domain/fsRoutes.js';
+import { coordTypeKey } from '../../domain/dailyRunRoutes.js';
 
 // Re-export the shared domain helpers so existing importers
 // (`./index.js`, tests) keep importing from this module.
@@ -25,10 +25,10 @@ export {
   findRouteForBody,
   parseRoutesDsl,
   formatRoutesDsl,
-} from '../../domain/fsRoutes.js';
+} from '../../domain/dailyRunRoutes.js';
 
 /**
- * @typedef {import('../../domain/fsRoutes.js').TargetCoord} TargetCoord
+ * @typedef {import('../../domain/dailyRunRoutes.js').TargetCoord} TargetCoord
  */
 
 /**
