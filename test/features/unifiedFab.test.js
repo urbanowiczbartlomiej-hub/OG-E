@@ -27,6 +27,8 @@ import {
   orbDiameter,
   orbitRadius,
   handleDiameter,
+  aimAngle,
+  handleOffset,
 } from '../../src/features/shared/unifiedFabPure.js';
 import { settingsStore } from '../../src/state/settings.js';
 
@@ -154,6 +156,53 @@ describe('orbitLayout', () => {
   });
 });
 
+// ─── pure: aimAngle + handleOffset ────────────────────────────────────────
+
+describe('aimAngle', () => {
+  const vp = { vw: 1000, vh: 1000 };
+
+  it('points from the FAB toward the viewport centre', () => {
+    // FAB on the left edge, mid-height → centre is due east → ~0 rad.
+    expect(aimAngle({ ...vp, cx: 0, cy: 500 })).toBeCloseTo(0);
+    // FAB on the right edge → centre is due west → ±π rad.
+    expect(Math.abs(aimAngle({ ...vp, cx: 1000, cy: 500 }))).toBeCloseTo(Math.PI);
+    // FAB top-centre → centre is due south (y grows down) → +π/2.
+    expect(aimAngle({ ...vp, cx: 500, cy: 0 })).toBeCloseTo(Math.PI / 2);
+  });
+
+  it('falls back to the down-right diagonal at the exact centre', () => {
+    expect(aimAngle({ ...vp, cx: 500, cy: 500 })).toBeCloseTo(Math.PI / 4);
+  });
+});
+
+describe('handleOffset', () => {
+  const common = { fabSize: 100, handleSize: 20, vw: 1000, vh: 1000 };
+  // The FAB centre's local coord is fabSize/2 (50); a centred handle would
+  // sit at 50 - handleSize/2 = 40. Past-centre FABs push the handle below
+  // that line, before-centre FABs above it.
+  const CENTRE_LINE = 40;
+
+  it('rides the FAB edge on the side facing the viewport centre', () => {
+    // FAB well past centre (bottom-right) → handle on its top-left edge.
+    const br = handleOffset({ ...common, cx: 900, cy: 900 });
+    expect(br.left).toBeLessThan(CENTRE_LINE);
+    expect(br.top).toBeLessThan(CENTRE_LINE);
+    // FAB before centre (top-left) → handle on its bottom-right edge.
+    const tl = handleOffset({ ...common, cx: 100, cy: 100 });
+    expect(tl.left).toBeGreaterThan(CENTRE_LINE);
+    expect(tl.top).toBeGreaterThan(CENTRE_LINE);
+  });
+
+  it('keeps the handle centre exactly on the FAB edge (radius = fabSize/2)', () => {
+    const { left, top } = handleOffset({ ...common, cx: 100, cy: 500 });
+    // Re-add handleSize/2 to recover the handle centre, then measure its
+    // distance from the FAB centre (50,50) — must equal the FAB radius.
+    const dx = left + common.handleSize / 2 - common.fabSize / 2;
+    const dy = top + common.handleSize / 2 - common.fabSize / 2;
+    expect(Math.hypot(dx, dy)).toBeCloseTo(common.fabSize / 2);
+  });
+});
+
 // ─── shell: wrapper + visibility ──────────────────────────────────────────
 
 describe('unified FAB shell', () => {
@@ -204,6 +253,16 @@ describe('unified FAB shell', () => {
     settingsStore.update((s) => ({ ...s, fabBtnSize: 200 }));
     expect(wrap()?.style.width).toBe('200px');
     expect(wrap()?.style.height).toBe('200px');
+  });
+
+  it('positions the +/× handle inline so it rides the FAB edge (not a fixed corner)', () => {
+    makeModule('exp', 'Expeditions');
+    // The handle no longer hard-codes right/bottom; positionHandle() writes
+    // explicit left/top derived from the FAB's position toward screen centre.
+    expect(handle()?.style.left).not.toBe('');
+    expect(handle()?.style.top).not.toBe('');
+    expect(handle()?.style.right).toBe('');
+    expect(handle()?.style.bottom).toBe('');
   });
 
   it('tears the shell down when the last module unregisters', () => {

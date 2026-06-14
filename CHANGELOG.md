@@ -39,6 +39,12 @@ version numbers follow [Semantic Versioning](https://semver.org).
   "+" (which still rotates to a "×" while the picker is open) — instead of
   tinting to the active module's colour. The picker orbs keep their per-module
   colours as identity.
+- **The FAB's "+"/"×" handle now tracks the screen centre too.** It used to
+  sit on a fixed bottom-right corner of the floating button; now it rides the
+  FAB edge on the side facing the viewport centre — the same direction the
+  picker orbs already fan toward — and re-aims live as you drag the button or
+  the window resizes. So the handle and the menu it opens always point the
+  same way, into free screen space, wherever the FAB is parked.
 
 ### Fixed
 

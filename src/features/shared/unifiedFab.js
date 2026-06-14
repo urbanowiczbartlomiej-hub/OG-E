@@ -39,6 +39,7 @@ import {
   orbDiameter,
   orbitRadius,
   handleDiameter,
+  handleOffset,
 } from './unifiedFabPure.js';
 
 export { FAB_POS_KEY, FAB_ACTIVE_KEY };
@@ -79,7 +80,9 @@ const LABEL_GAP_PX = 12;
  */
 const FAB_CSS = [
   `#${FAB_HANDLE_ID}{`,
-  'position:absolute;right:2%;bottom:2%;z-index:3;border-radius:50%;border:none;',
+  // left/top are set inline by positionHandle() so the +/× rides the FAB
+  // edge facing the viewport centre; only the static chrome lives here.
+  'position:absolute;z-index:3;border-radius:50%;border:none;',
   'background:radial-gradient(circle at 38% 30%,#16202f,#0b1220 80%);color:#e8b870;',
   'display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;',
   'box-shadow:0 0 0 1.5px #d89a3e,0 0 0 2.6px rgba(120,70,20,.5),',
@@ -117,6 +120,7 @@ const registry = new Map();
  *   handle: HTMLButtonElement,
  *   drag: { wasDrag: () => boolean, resetDrag: () => void },
  *   unsubSettings: () => void,
+ *   onResize: () => void,
  * } | null}
  */
 let shell = null;
@@ -132,6 +136,35 @@ const onMenuKeydown = (e) => {
 
 /** Current FAB diameter (settings-driven). @returns {number} */
 const currentSize = () => settingsStore.get().fabBtnSize;
+
+/**
+ * Place the +/× handle on the FAB edge facing the viewport centre — the
+ * same ray the picker fans along — so it tracks the FAB wherever it is
+ * dragged (and re-aims on resize / size change). Re-measures the wrapper
+ * each call so it works whether the FAB is right/bottom-anchored (default)
+ * or left/top-positioned (after a drag). happy-dom reports a zero rect, in
+ * which case the handle simply lands on the down-right diagonal — harmless
+ * for tests, and corrected the first time the FAB is laid out for real.
+ *
+ * @returns {void}
+ */
+const positionHandle = () => {
+  if (!shell) return;
+  const size = currentSize();
+  const r = shell.wrap.getBoundingClientRect();
+  const cx = r.left + (r.width || size) / 2;
+  const cy = r.top + (r.height || size) / 2;
+  const { left, top } = handleOffset({
+    cx,
+    cy,
+    fabSize: size,
+    handleSize: handleDiameter(size),
+    vw: window.innerWidth,
+    vh: window.innerHeight,
+  });
+  shell.handle.style.left = `${left}px`;
+  shell.handle.style.top = `${top}px`;
+};
 
 /** Inject the picker stylesheet once. @returns {void} */
 const ensureCss = () => {
@@ -303,7 +336,7 @@ const ensureShell = () => {
   wrap.appendChild(handle);
   document.body.appendChild(wrap);
 
-  const drag = installDrag({ element: wrap, posKey: FAB_POS_KEY });
+  const drag = installDrag({ element: wrap, posKey: FAB_POS_KEY, onMove: positionHandle });
   handle.addEventListener('click', (e) => {
     if (drag.wasDrag()) {
       drag.resetDrag();
@@ -323,10 +356,20 @@ const ensureShell = () => {
     const hs = handleDiameter(next.fabBtnSize);
     handle.style.width = hs + 'px';
     handle.style.height = hs + 'px';
+    positionHandle();
     closeMenu();
   });
 
-  shell = { wrap, handle, drag, unsubSettings };
+  // Re-aim the handle when the viewport reflows (the centre it points at
+  // moved). An open picker's geometry is now stale, so dismiss it too.
+  const onResize = () => {
+    positionHandle();
+    closeMenu();
+  };
+  window.addEventListener('resize', onResize);
+
+  shell = { wrap, handle, drag, unsubSettings, onResize };
+  positionHandle();
 };
 
 /** Tear the shell down once the last module is gone. @returns {void} */
@@ -334,6 +377,7 @@ const maybeTeardown = () => {
   if (!shell || registry.size > 0) return;
   closeMenu();
   shell.unsubSettings();
+  window.removeEventListener('resize', shell.onResize);
   shell.wrap.remove();
   shell = null;
 };
@@ -387,6 +431,7 @@ export const _resetUnifiedFabForTest = () => {
   registry.clear();
   if (shell) {
     shell.unsubSettings();
+    window.removeEventListener('resize', shell.onResize);
     shell.wrap.remove();
     shell = null;
   }

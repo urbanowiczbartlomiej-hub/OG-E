@@ -23,6 +23,53 @@ const ORBIT_SPREAD_RAD = Math.PI * 0.62;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 /**
+ * Angle (radians) pointing from the FAB centre `(cx, cy)` toward the
+ * viewport centre — the single ray everything orients along: the picker
+ * fans symmetrically about it AND the +/× handle rides the FAB edge on it,
+ * so both track wherever the FAB is dragged. Degenerate when the FAB sits
+ * exactly at the viewport centre (both deltas zero); there we pick the
+ * down-right diagonal so the handle has a stable home instead of snapping
+ * to `atan2(0,0)`'s 0 rad.
+ *
+ * @param {object} o
+ * @param {number} o.cx  FAB centre x (viewport px).
+ * @param {number} o.cy  FAB centre y.
+ * @param {number} o.vw  viewport width.
+ * @param {number} o.vh  viewport height.
+ * @returns {number}
+ */
+export const aimAngle = ({ cx, cy, vw, vh }) => {
+  const dx = vw / 2 - cx;
+  const dy = vh / 2 - cy;
+  return dx === 0 && dy === 0 ? Math.PI / 4 : Math.atan2(dy, dx);
+};
+
+/**
+ * Wrap-local top-left px for the picker handle so its centre rides the FAB's
+ * circular edge on the side facing the viewport centre (the {@link aimAngle}
+ * ray). Half the handle overhangs the edge (orbit anchor radius =
+ * `fabSize / 2`), matching the visual overhang of the old fixed corner
+ * placement.
+ *
+ * @param {object} o
+ * @param {number} o.cx          FAB centre x (viewport px).
+ * @param {number} o.cy          FAB centre y.
+ * @param {number} o.fabSize     FAB diameter.
+ * @param {number} o.handleSize  handle diameter — see {@link handleDiameter}.
+ * @param {number} o.vw          viewport width.
+ * @param {number} o.vh          viewport height.
+ * @returns {{ left: number, top: number }}
+ */
+export const handleOffset = ({ cx, cy, fabSize, handleSize, vw, vh }) => {
+  const a = aimAngle({ cx, cy, vw, vh });
+  const r = fabSize / 2;
+  return {
+    left: r + Math.cos(a) * r - handleSize / 2,
+    top: r + Math.sin(a) * r - handleSize / 2,
+  };
+};
+
+/**
  * Pick the module the FAB should currently show: the stored id when it is
  * actually registered, else the first registered module (covers a missing
  * key, a stale id from an older version, and test runs that mount a single
@@ -87,7 +134,7 @@ export const orbitLayout = ({ cx, cy, count, radius, orbSize, labelGap, vw, vh }
   /** @type {OrbitItemPos[]} */
   const items = [];
   if (count <= 0) return items;
-  const base = Math.atan2(vh / 2 - cy, vw / 2 - cx);
+  const base = aimAngle({ cx, cy, vw, vh });
   const start = base - ORBIT_SPREAD_RAD / 2;
   const orbMargin = orbSize / 2 + 8;
   const labelRadius = radius + orbSize / 2 + labelGap;

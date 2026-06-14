@@ -139,9 +139,13 @@ const bringToFront = (element) => {
  * @param {HTMLElement} opts.element  The draggable element (the wrap div for split buttons).
  * @param {string} opts.posKey  localStorage key for `{ x, y }`.
  * @param {number} [opts.dragThreshold=8]  px before a gesture counts as drag.
+ * @param {() => void} [opts.onMove]  fired after each position update (once a
+ *   drag has tripped the threshold), so callers can re-derive layout that
+ *   depends on the element's live position — e.g. the unified FAB's handle,
+ *   which rides the edge facing the viewport centre.
  * @returns {{ wasDrag: () => boolean, resetDrag: () => void }}
  */
-export const installDrag = ({ element, posKey, dragThreshold = 8 }) => {
+export const installDrag = ({ element, posKey, dragThreshold = 8, onMove }) => {
   let isDragging = false;
   let hasMoved = false;
   let startX = 0;
@@ -168,7 +172,7 @@ export const installDrag = ({ element, posKey, dragThreshold = 8 }) => {
   };
 
   /** @param {number} cx @param {number} cy */
-  const onMove = (cx, cy) => {
+  const applyMove = (cx, cy) => {
     if (!isDragging) return;
     const dx = cx - startX;
     const dy = cy - startY;
@@ -192,6 +196,7 @@ export const installDrag = ({ element, posKey, dragThreshold = 8 }) => {
     );
     element.style.left = newX + 'px';
     element.style.top = newY + 'px';
+    onMove?.();
   };
 
   const onEnd = () => {
@@ -219,7 +224,7 @@ export const installDrag = ({ element, posKey, dragThreshold = 8 }) => {
     (e) => {
       const t = e.touches[0];
       if (!t) return;
-      onMove(t.clientX, t.clientY);
+      applyMove(t.clientX, t.clientY);
       if (hasMoved) e.preventDefault();
     },
     { passive: false },
@@ -230,7 +235,7 @@ export const installDrag = ({ element, posKey, dragThreshold = 8 }) => {
   element.addEventListener('mousedown', (e) => {
     onStart(e.clientX, e.clientY);
     /** @param {MouseEvent} ev */
-    const mv = (ev) => onMove(ev.clientX, ev.clientY);
+    const mv = (ev) => applyMove(ev.clientX, ev.clientY);
     const up = () => {
       onEnd();
       document.removeEventListener('mousemove', mv);
