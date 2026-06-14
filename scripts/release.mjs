@@ -60,7 +60,6 @@ import { createHmac, randomUUID } from 'node:crypto';
 const ROOT = resolve(import.meta.dirname, '..');
 const AMO_BASE = 'https://addons.mozilla.org/api/v5';
 const ADDON_GUID = 'og-e@ogame-extensions'; // manifest browser_specific_settings.gecko.id
-const CHANNEL = 'listed';
 const POLL_TIMEOUT_MS = 5 * 60_000;
 const POLL_INTERVAL_MS = 5_000;
 
@@ -85,6 +84,10 @@ const positional = argv.filter((a) => !a.startsWith('--'));
 // npm-passable escape hatch; the flags work when run directly with node.
 const DRY = flags.has('--preview') || flags.has('--dry-run') || process.env.RELEASE_PREVIEW === '1';
 const SKIP_TESTS = flags.has('--skip-tests');
+// --unlisted: upload to the unlisted AMO channel (signed but not publicly
+// visible and not offered as an update to existing users).
+const UNLISTED = flags.has('--unlisted');
+const CHANNEL = UNLISTED ? 'unlisted' : 'listed';
 
 function die(msg) {
   console.error(`release: ${msg}`);
