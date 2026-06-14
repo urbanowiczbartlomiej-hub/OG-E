@@ -67,7 +67,7 @@ import {
 import { injectStyle } from '../../lib/dom.js';
 import { debounce } from '../../lib/debounce.js';
 import { readPending, lastAdhocIntent, lastWaveIntent } from './pending.js';
-import { readFsCancel, pruneFsCancel } from './fsCancel.js';
+import { readFleetSaveCancel, pruneFleetSaveCancel } from './fleetSaveCancel.js';
 import { GAME } from '../../lib/gameDom.js';
 
 /** @typedef {import('../../sync/reminders.js').ReminderState} ReminderState */
@@ -348,7 +348,7 @@ const render = () => {
   const fsById = new Map((snapshot?.fleetSave || []).map((e) => [e.id, e]));
   // Local, not-yet-synced FS slot cancellations (read-only here; the producer
   // owns the writes). Keyed by reminder id → suppressed offsets.
-  const fsCancel = pruneFsCancel(readFsCancel(universeId), now);
+  const fsCancel = pruneFleetSaveCancel(readFleetSaveCancel(universeId), now);
 
   for (const row of rows) {
     const cell = /** @type {HTMLElement | null} */ (row.querySelector('td.arrivalTime'));
@@ -488,7 +488,7 @@ export const installEventListReminders = ({
       const now = Math.floor(Date.now() / 1000);
       const rawFs = (snapshot?.fleetSave || []).find((e) => e.id === id);
       if (rawFs) {
-        const fs = effectiveFs(rawFs, pruneFsCancel(readFsCancel(universeId), now)[id]?.offsets);
+        const fs = effectiveFs(rawFs, pruneFleetSaveCancel(readFleetSaveCancel(universeId), now)[id]?.offsets);
         const slot = nearestCancellableSlot(fs, now);
         if (slot) {
           const offsets = fsOffsetsToCancel(fs.offsetsSec, slot.offset);

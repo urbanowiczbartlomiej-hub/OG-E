@@ -31,7 +31,7 @@
 //      that paints a banner for the first freshly-colonized planet
 //      (`usedFields === 0`, no persisted state, see
 //      `freshPlanetDetector.js`). readabilityBoost is CSS-only and runs
-//      at the very top of the file next to blackBg — both inject a
+//      at the very top of the file next to antiFlickerBackground — both inject a
 //      stylesheet and need no DOM beyond `documentElement`.
 //
 //   4. Sync scheduler — top-frame only. Gist calls are HTTP requests
@@ -54,10 +54,10 @@
 //                             triggers `abandonPlanet()`. Independent
 //                             from sendCol.
 
-import { installBlackBackground } from './features/blackBg.js';
+import { installAntiFlickerBackground } from './features/antiFlickerBackground.js';
 import { installReadabilityBoost } from './features/readabilityBoost.js';
 
-installBlackBackground();
+installAntiFlickerBackground();
 installReadabilityBoost();
 
 import { parseUniverseId } from './lib/universeId.js';

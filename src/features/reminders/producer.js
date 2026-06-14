@@ -55,7 +55,7 @@ import { clusterWaves, DEFAULT_CLUSTER_GAP_SECONDS } from '../../domain/waves.js
 /** @typedef {import('../../domain/waves.js').WaveCandidate} WaveCandidate */
 /** @typedef {import('../../domain/waves.js').Wave} Wave */
 /** @typedef {import('../../domain/adhoc.js').AdhocReminder} AdhocReminder */
-import { extractFleetSaveCandidates } from './fsScan.js';
+import { extractFleetSaveCandidates } from './fleetSaveScan.js';
 import { parseFsOffsets } from '../../domain/fleetSave.js';
 import { NTFY_MAX_DELAY_SEC } from '../../sync/ntfyReconciler.js';
 import { settingsStore } from '../../state/settings.js';
@@ -68,7 +68,7 @@ import { EVENT_BOX_LOADED_EVENT } from '../../lib/ogeEvents.js';
 import {
   readPending, writePending, pushPending, applyAdhocCmds, applyWaveCmds,
 } from './pending.js';
-import { addFsCancel, fsCancelOffsets } from './fsCancel.js';
+import { addFleetSaveCancel, fleetSaveCancelOffsets } from './fleetSaveCancel.js';
 
 /**
  * Selector for expedition return-flight rows. Identical predicate to the
@@ -308,7 +308,7 @@ export const installReminderProducer = (opts = {}) => {
 
     // Durable per-slot FS cancellations (self-expiring; survives re-detection
     // of the still-in-flight fleet, unlike the once-drained pending queue).
-    const fsCancelById = fsCancelOffsets(universeId, now);
+    const fsCancelById = fleetSaveCancelOffsets(universeId, now);
 
     try {
       const res = await syncReminders(
@@ -349,7 +349,7 @@ export const installReminderProducer = (opts = {}) => {
   const resendWave = (waveId) => { pushPending(universeId, { kind: 'resendWave', waveId }); force(); };
   /** @param {string} id @param {number[]} offsets @param {number} expiresAt */
   const cancelFsSlot = (id, offsets, expiresAt) => {
-    addFsCancel(universeId, id, offsets, expiresAt, Math.floor(Date.now() / 1000));
+    addFleetSaveCancel(universeId, id, offsets, expiresAt, Math.floor(Date.now() / 1000));
     force();
   };
 

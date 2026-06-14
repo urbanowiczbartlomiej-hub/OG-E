@@ -25,32 +25,37 @@
 import { safeLS } from '../../lib/storage.js';
 
 /**
- * @typedef {{ offsets: number[], expiresAt: number }} FsCancelRecord
- * @typedef {Record<string, FsCancelRecord>} FsCancelMap
+ * @typedef {{ offsets: number[], expiresAt: number }} FleetSaveCancelRecord
+ * @typedef {Record<string, FleetSaveCancelRecord>} FleetSaveCancelMap
  */
 
-/** @param {string} universeId @returns {string} */
+/**
+ * @param {string} universeId @returns {string}
+ * NOTE: the `oge_fsCancel_` key string is HISTORICAL — frozen on the
+ * fleet-save rename (the JS API moved to `fleetSaveCancel*`, the persisted
+ * key did not). Do not change it without a storage migration.
+ */
 const keyFor = (universeId) => `oge_fsCancel_${universeId}`;
 
 /**
  * Read the raw suppression map for a universe (always an object).
  *
  * @param {string} universeId
- * @returns {FsCancelMap}
+ * @returns {FleetSaveCancelMap}
  */
-export const readFsCancel = (universeId) => {
+export const readFleetSaveCancel = (universeId) => {
   const v = safeLS.json(keyFor(universeId), {});
-  return v && typeof v === 'object' && !Array.isArray(v) ? /** @type {FsCancelMap} */ (v) : {};
+  return v && typeof v === 'object' && !Array.isArray(v) ? /** @type {FleetSaveCancelMap} */ (v) : {};
 };
 
 /**
  * Replace the map, removing the key entirely when empty.
  *
  * @param {string} universeId
- * @param {FsCancelMap} map
+ * @param {FleetSaveCancelMap} map
  * @returns {void}
  */
-export const writeFsCancel = (universeId, map) => {
+export const writeFleetSaveCancel = (universeId, map) => {
   if (Object.keys(map).length) safeLS.setJSON(keyFor(universeId), map);
   else safeLS.remove(keyFor(universeId));
 };
@@ -58,12 +63,12 @@ export const writeFsCancel = (universeId, map) => {
 /**
  * Drop expired records (`expiresAt <= now`). Pure.
  *
- * @param {FsCancelMap} map
+ * @param {FleetSaveCancelMap} map
  * @param {number} now Epoch SECONDS.
- * @returns {FsCancelMap}
+ * @returns {FleetSaveCancelMap}
  */
-export const pruneFsCancel = (map, now) => {
-  /** @type {FsCancelMap} */
+export const pruneFleetSaveCancel = (map, now) => {
+  /** @type {FleetSaveCancelMap} */
   const out = {};
   for (const id of Object.keys(map)) {
     if (map[id] && map[id].expiresAt > now) out[id] = map[id];
@@ -75,13 +80,13 @@ export const pruneFsCancel = (map, now) => {
  * Merge a cancellation into the map: union the offsets onto any existing
  * record for the id and keep the later `expiresAt`. Pure.
  *
- * @param {FsCancelMap} map
+ * @param {FleetSaveCancelMap} map
  * @param {string} id
  * @param {number[]} offsets
  * @param {number} expiresAt
- * @returns {FsCancelMap}
+ * @returns {FleetSaveCancelMap}
  */
-export const mergeFsCancel = (map, id, offsets, expiresAt) => {
+export const mergeFleetSaveCancel = (map, id, offsets, expiresAt) => {
   const prev = map[id];
   const union = prev ? [...new Set([...prev.offsets, ...offsets])] : [...offsets];
   return { ...map, [id]: { offsets: union, expiresAt: Math.max(prev?.expiresAt ?? 0, expiresAt) } };
@@ -98,8 +103,8 @@ export const mergeFsCancel = (map, id, offsets, expiresAt) => {
  * @param {number} now Epoch SECONDS.
  * @returns {void}
  */
-export const addFsCancel = (universeId, id, offsets, expiresAt, now) => {
-  writeFsCancel(universeId, mergeFsCancel(pruneFsCancel(readFsCancel(universeId), now), id, offsets, expiresAt));
+export const addFleetSaveCancel = (universeId, id, offsets, expiresAt, now) => {
+  writeFleetSaveCancel(universeId, mergeFleetSaveCancel(pruneFleetSaveCancel(readFleetSaveCancel(universeId), now), id, offsets, expiresAt));
 };
 
 /**
@@ -111,9 +116,9 @@ export const addFsCancel = (universeId, id, offsets, expiresAt, now) => {
  * @param {number} now Epoch SECONDS.
  * @returns {Record<string, number[]>}
  */
-export const fsCancelOffsets = (universeId, now) => {
-  const pruned = pruneFsCancel(readFsCancel(universeId), now);
-  writeFsCancel(universeId, pruned);
+export const fleetSaveCancelOffsets = (universeId, now) => {
+  const pruned = pruneFleetSaveCancel(readFleetSaveCancel(universeId), now);
+  writeFleetSaveCancel(universeId, pruned);
   /** @type {Record<string, number[]>} */
   const out = {};
   for (const id of Object.keys(pruned)) out[id] = pruned[id].offsets;

@@ -222,7 +222,7 @@ let installed = null;
  * entry exists in history (dedup by cp) or once the page has navigated
  * away (location.search check). No cleanup is necessary for
  * correctness; the dispose is there for API symmetry with other
- * features (blackBg, expeditionRedirect, ...).
+ * features (antiFlickerBackground, expeditionRedirect, ...).
  *
  * @returns {() => void} Dispose handle — currently just flips the
  *   module-scope `installed` sentinel back to `null`.

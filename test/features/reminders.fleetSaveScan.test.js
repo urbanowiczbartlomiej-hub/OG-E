@@ -9,8 +9,8 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  shipCountOf, isOwnFleet, fsLabelFor, extractFleetSaveCandidates,
-} from '../../src/features/reminders/fsScan.js';
+  shipCountOf, isOwnFleet, fleetSaveLabelFor, extractFleetSaveCandidates,
+} from '../../src/features/reminders/fleetSaveScan.js';
 
 /**
  * Build one `#eventContent` row.
@@ -61,14 +61,14 @@ describe('isOwnFleet', () => {
   });
 });
 
-describe('fsLabelFor', () => {
+describe('fleetSaveLabelFor', () => {
   it('labels an outbound leg with its destination coords', () => {
-    expect(fsLabelFor(paint(row({ id: '1', arrival: '1', ships: '1', ret: 'false', dest: '4:478:14' }))))
+    expect(fleetSaveLabelFor(paint(row({ id: '1', arrival: '1', ships: '1', ret: 'false', dest: '4:478:14' }))))
       .toBe('Deployment → [4:478:14]');
   });
 
   it('labels a return leg with its origin coords (where it lands)', () => {
-    expect(fsLabelFor(paint(row({ id: '1', mission: '15', ret: 'true', arrival: '1', ships: '1', origin: '7:281:15' }))))
+    expect(fleetSaveLabelFor(paint(row({ id: '1', mission: '15', ret: 'true', arrival: '1', ships: '1', origin: '7:281:15' }))))
       .toBe('Expedition → [7:281:15]');
   });
 });

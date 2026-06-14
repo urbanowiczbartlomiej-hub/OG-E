@@ -55,7 +55,7 @@ import { settingsStore } from '../state/settings.js';
 // `<style id="oge-readability-boost">` with `!important` declarations
 // is the simplest way — re-installs dedupe on the stable id and return
 // the existing dispose without rewriting the stylesheet. Mirrors the
-// shape of {@link ../features/blackBg.js}.
+// shape of {@link ../features/antiFlickerBackground.js}.
 
 /** Stable id so repeated installs collapse to a no-op. */
 const STYLE_ID = 'oge-readability-boost';

@@ -58,7 +58,7 @@ export const isOwnFleet = (row) => Boolean(row.querySelector('.friendly'));
  * @param {Element} row
  * @returns {string}
  */
-export const fsLabelFor = (row) => {
+export const fleetSaveLabelFor = (row) => {
   const mt = row.getAttribute('data-mission-type') || '';
   const mission = MISSION_NAMES[mt] || 'Fleet';
   const isReturn = row.getAttribute('data-return-flight') === 'true';
@@ -96,7 +96,7 @@ export const extractFleetSaveCandidates = (root = document) => {
     const arrivalAt = arrivalAttr ? Number.parseInt(arrivalAttr, 10) : NaN;
     const shipCount = shipCountOf(row);
     if (id && Number.isFinite(arrivalAt) && Number.isFinite(shipCount)) {
-      out.push({ id, arrivalAt, shipCount, label: fsLabelFor(row) });
+      out.push({ id, arrivalAt, shipCount, label: fleetSaveLabelFor(row) });
     }
   }
   return out;

@@ -15,7 +15,7 @@
 // Zero dependencies. Safe to call once per document (guarded by an id
 // on the injected <style>).
 
-const STYLE_ID = 'oge-black-bg';
+const STYLE_ID = 'oge-anti-flicker-bg';
 const CLEANUP_DELAY_MS = 300;
 
 /**
@@ -23,7 +23,7 @@ const CLEANUP_DELAY_MS = 300;
  * Must be called synchronously from the content-script entry, BEFORE
  * anything else that might throw. Idempotent per document.
  */
-export const installBlackBackground = () => {
+export const installAntiFlickerBackground = () => {
   if (document.getElementById(STYLE_ID)) return;
 
   const style = document.createElement('style');

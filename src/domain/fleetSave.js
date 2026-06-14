@@ -68,7 +68,7 @@ import { parseDurationList } from './duration.js';
 
 /**
  * One fleet leg as read from the event list, before the threshold test.
- * DOM-derived (see `features/reminders/fsScan.js`) but a plain data shape so
+ * DOM-derived (see `features/reminders/fleetSaveScan.js`) but a plain data shape so
  * this module stays DOM-free and Node-testable.
  *
  * @typedef {object} FleetSaveCandidate
