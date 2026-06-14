@@ -244,20 +244,22 @@ function bumpVersionFile(file) {
   console.log(`release: bumped ${file} → ${VERSION}`);
 }
 
+// phase 3 — bump (idempotent: writes the same version on a resume)
+bumpVersionFile('package.json');
+bumpVersionFile('manifest.json');
+
+// phase 4 — ALWAYS package. The AMO upload needs dist.zip/source.zip, and a
+// CI checkout doesn't persist them between runs — so we rebuild even when the
+// tag already exists (resume after a failed upload, or a second channel).
+run('npm run package');
+for (const f of ['dist.zip', 'source.zip']) {
+  if (!existsSync(resolve(ROOT, f))) die(`${f} was not produced by npm run package.`);
+}
+
+// phase 5 — local commit + tag, skipped on resume (tag already exists).
 if (tagExists) {
-  console.log(`release: ${TAG} already exists — resuming at AMO upload (skipping bump/package/commit/tag).`);
+  console.log(`release: ${TAG} already exists — re-packaged, skipping commit/tag.`);
 } else {
-  // phase 3
-  bumpVersionFile('package.json');
-  bumpVersionFile('manifest.json');
-
-  // phase 4
-  run('npm run package');
-  for (const f of ['dist.zip', 'source.zip']) {
-    if (!existsSync(resolve(ROOT, f))) die(`${f} was not produced by npm run package.`);
-  }
-
-  // phase 5 (local commit + tag)
   run('git add CHANGELOG.md package.json manifest.json');
   // --allow-empty handles the CI case where CHANGELOG + version files are
   // already committed (the script still creates the release marker commit).
@@ -397,7 +399,13 @@ function resolveRemote() {
 
 const remote = resolveRemote();
 run(`git push ${remote} HEAD`);
-// Push the lightweight tag explicitly — --follow-tags only pushes annotated tags.
-run(`git push ${remote} ${TAG}`);
+// Push the lightweight tag explicitly — --follow-tags only pushes annotated
+// tags. Skip if it already exists on the remote (resume / second channel).
+const tagOnRemote = capture(`git ls-remote --tags ${remote} ${TAG}`).trim() !== '';
+if (tagOnRemote) {
+  console.log(`release: ${TAG} already on ${remote} — skipping tag push.`);
+} else {
+  run(`git push ${remote} ${TAG}`);
+}
 
 console.log(`\nrelease: ${TAG} done — uploaded to AMO and pushed.`);
