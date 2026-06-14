@@ -240,7 +240,9 @@ if (tagExists) {
 
   // phase 5 (local commit + tag)
   run('git add CHANGELOG.md package.json manifest.json');
-  run(`git commit -m "chore(release): ${VERSION}"`);
+  // --allow-empty handles the CI case where CHANGELOG + version files are
+  // already committed (the script still creates the release marker commit).
+  run(`git commit --allow-empty -m "chore(release): ${VERSION}"`);
   run(`git tag ${TAG}`);
 }
 
