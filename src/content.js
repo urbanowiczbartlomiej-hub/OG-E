@@ -17,7 +17,7 @@
 //      the target positions + rescan policy, edited from the dashboard
 //      (extension origin) and read in-game by the Scan button.
 //
-//   3. Feature installs — colonyRecorder, badges, sendExp, sendCol,
+//   3. Feature installs — colonyRecorder, badges, sendExpedition, sendColony,
 //      abandonOverview, freshPlanetDetector, settingsUi, agrLogo,
 //      readabilityBoost.
 //      Each is a standalone `install*` function that hooks into the DOM
@@ -52,7 +52,7 @@
 //   - `abandon/overview.js` — the UI entry point: a big red overlay on
 //                             the `#planet` div on overview pages that
 //                             triggers `abandonPlanet()`. Independent
-//                             from sendCol.
+//                             from sendColony.
 
 import { installAntiFlickerBackground } from './features/antiFlickerBackground.js';
 import { installReadabilityBoost } from './features/readabilityBoost.js';
@@ -71,8 +71,8 @@ import { initBodiesStore } from './state/bodies.js';
 import { installColonyRecorder } from './features/colonyRecorder.js';
 import { installPlanetBarCapture } from './features/planetBarCapture.js';
 import { installBadges } from './features/badges.js';
-import { installSendExp } from './features/sendExp/index.js';
-import { installSendCol } from './features/sendCol/index.js';
+import { installSendExpedition } from './features/sendExpedition/index.js';
+import { installSendColony } from './features/sendColony/index.js';
 import { installSendLifeform } from './features/sendLifeform/index.js';
 import { installDailyRun } from './features/dailyRun/index.js';
 import { installAbandonOverview } from './features/abandon/overview.js';
@@ -158,8 +158,8 @@ const installDomFeatures = () => {
   // (features/shared/unifiedFab.js). All gated on the single fabMode
   // setting; exactly one is visible at a time and the FAB's orbital
   // picker switches between them. Install order = picker order only.
-  installSendExp();
-  installSendCol();
+  installSendExpedition();
+  installSendColony();
   // Lifeforms (system-discovery) button — walks the galaxy firing lifeform
   // discoveries, one system per tap. Independent of Send-Col.
   installSendLifeform();
@@ -167,7 +167,7 @@ const installDomFeatures = () => {
   installDailyRun();
 
   // Standalone overlay on overview for fresh-small colonies.
-  // Independent from sendCol; reuses `abandonPlanet()` from
+  // Independent from sendColony; reuses `abandonPlanet()` from
   // `features/abandon/index.js`.
   installAbandonOverview();
 

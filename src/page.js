@@ -47,7 +47,7 @@ installDeployRedirect();
 // isolated-world content scripts can read it. See that module's header
 // for the cross-realm access problem it solves.
 installFleetDispatcherSnapshot();
-// Observe the eventbox refresh XHR so the isolated-world sendExp button
+// Observe the eventbox refresh XHR so the isolated-world sendExpedition button
 // can gate its click handler on a "fresh eventbox" signal — without
 // this, a user tapping immediately on fleetdispatch enters Phase 2
 // polling against a half-hydrated DOM and locks the button for 15 s.

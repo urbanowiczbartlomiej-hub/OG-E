@@ -1,5 +1,5 @@
 // Shared "OGame-native" visual chrome for the three floating draggable
-// buttons: sendExp (`#oge-send-exp`), sendCol (`#oge-send-col`) and
+// buttons: sendExpedition (`#oge-send-exp`), sendColony (`#oge-send-col`) and
 // dailyRun (`#oge-fs-unified`).
 //
 // Two things live here:
@@ -18,7 +18,7 @@
 // of that paint logic changes. The decorative children are appended to a
 // STABLE host (the wrap for the split buttons; the button itself for the
 // single one) so frequent label repaints never wipe them — which is why
-// sendExp paints its label into a dedicated `.oge-exp-label` span rather
+// sendExpedition paints its label into a dedicated `.oge-exp-label` span rather
 // than clobbering the button's textContent.
 //
 // Lives in features/shared/ because it injects into `document`; the CSS

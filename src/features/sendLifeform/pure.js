@@ -1,7 +1,7 @@
 // @ts-check
 
 // Pure compute core of `features/sendLifeform/index.js` — the lifeform
-// "discover system" button. Mirrors the `sendCol/pure.js` split: this file
+// "discover system" button. Mirrors the `sendColony/pure.js` split: this file
 // owns the pure pipeline (`derive` → `render`), the target-picking helpers,
 // and every constant / typedef they touch. NO DOM, NO timers, NO storage,
 // NO event listeners, NO module-local mutable state.
@@ -30,7 +30,7 @@
 //
 // @see ./index.js      — impure orchestrator that consumes this.
 // @see ./domHelpers.js — DOM readers + the discover-button click.
-// @see ../sendCol/pure.js — the parallel colonization pure core.
+// @see ../sendColony/pure.js — the parallel colonization pure core.
 
 import { buildGalaxyOrder } from '../../domain/positions.js';
 import { COL_MAX_SYSTEM, COL_MAX_GALAXY } from '../../domain/rules.js';
@@ -52,7 +52,7 @@ import { COL_MAX_SYSTEM, COL_MAX_GALAXY } from '../../domain/rules.js';
 export const LF_RESCAN_MS = 7 * 24 * 3600 * 1000;
 
 // ─── Colours (violet / purple family) ─────────────────────────────────────
-// Seeded from the planted TODO in `sendCol/pure.js`. Distinct hue from the
+// Seeded from the planted TODO in `sendColony/pure.js`. Distinct hue from the
 // cyan Send-Col / amber-wait palette so the three buttons read apart.
 
 /** Rim colour — idle / "Discover" (violet). */
@@ -71,7 +71,7 @@ export const BG_LF_ERROR = '#fb7185';
 /**
  * Safety cap for the post-click cooldown. Normally the lock lifts
  * event-driven (on `oge:systemDiscoveryResult`); this covers a silently
- * dropped response. Matches `sendCol`'s `SCAN_COOLDOWN_MS`.
+ * dropped response. Matches `sendColony`'s `SCAN_COOLDOWN_MS`.
  */
 export const DISCOVERY_COOLDOWN_MS = 8000;
 
@@ -201,7 +201,7 @@ export const maxLfScannedAt = (scans) => {
  * Count systems across every galaxy that still need a discovery. Cheap
  * full-universe pass (7 × 499 hash lookups), run from the 1 Hz refresh for
  * the button's progress label — same pattern as
- * `sendCol/pure.js countScansRemaining`.
+ * `sendColony/pure.js countScansRemaining`.
  *
  * @param {GalaxyScans} scans
  * @param {number} now
@@ -295,7 +295,7 @@ export const buildLfResearchUrl = (href) =>
  */
 
 /**
- * Single-zone paint instruction (same shape sendCol uses).
+ * Single-zone paint instruction (same shape sendColony uses).
  *
  * @typedef {{ text: string, bg: string, subtext?: string, hint?: string, dim?: boolean }} Paint
  */

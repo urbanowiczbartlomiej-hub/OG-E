@@ -145,7 +145,7 @@ export const isMissionAllowed = (orders, mission) =>
 /**
  * Whether every GENERAL fleet slot is in use (the game's "Floty: 37/37"
  * pair) — no fleet of any kind can launch until one returns. Pure over a
- * snapshot-shaped object so the courier, sendExp and tests share one
+ * snapshot-shaped object so the courier, sendExpedition and tests share one
  * definition. `null`/absent snapshot ⇒ `false` (the gate is opt-in via
  * the bridge populating it), and `maxFleetCount > 0` guards the
  * uninitialised all-zeros snapshot from reading as "cap reached".

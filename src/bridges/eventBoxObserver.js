@@ -8,7 +8,7 @@
 // On `component=fleetdispatch`, OGame asynchronously fetches the
 // fleet-event list (`?page=componentOnly&component=eventList&...`) a
 // short moment after the page itself finishes loading. Until that
-// response arrives, several DOM nodes the sendExp click handler reads
+// response arrives, several DOM nodes the sendExpedition click handler reads
 // are absent or stale (`#eventContent tr.eventFleet`,
 // `#ago_routine_7 .ago_routine_check_3`, ...). A user who taps the
 // floating "Send Exp" button before the eventbox lands therefore
@@ -34,7 +34,7 @@
 //   - The event is a bare notification — `detail` is intentionally
 //     absent. No data needs to flow; consumers only care about timing.
 //
-// @see ../features/sendExp/index.js — primary consumer; gates the
+// @see ../features/sendExpedition/index.js — primary consumer; gates the
 //   click handler until this event arrives.
 
 import { observeXHR } from './xhrObserver.js';

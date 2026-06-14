@@ -29,7 +29,7 @@
 // # Location mocking
 //
 // `location.search` is assignable directly on happy-dom's Location, so
-// we just set it per test (same pattern as sendExp / sendCol tests).
+// we just set it per test (same pattern as sendExpedition / sendColony tests).
 // No getter/setter override needed — only `location.href` requires
 // that trick, and we don't navigate here.
 //

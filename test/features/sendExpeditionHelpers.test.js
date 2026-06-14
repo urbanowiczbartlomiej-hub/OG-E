@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 //
-// Unit tests for sendExp's impure DOM readers (`domHelpers.js`) — the
+// Unit tests for sendExpedition's impure DOM readers (`domHelpers.js`) — the
 // expedition-cap walk over the planet list + event box. Mirrors
-// `sendColHelpers.test.js`: the orchestrator's click flow / lifecycle is
-// covered by `sendExp.test.js`; here we drive the readers directly against
+// `sendColonyHelpers.test.js`: the orchestrator's click flow / lifecycle is
+// covered by `sendExpedition.test.js`; here we drive the readers directly against
 // hand-built fixtures.
 //
 // Coverage:
@@ -18,7 +18,7 @@ import {
   getActivePlanetCoords,
   countActiveExpeditions,
   findPlanetWithExpSlot,
-} from '../../src/features/sendExp/domHelpers.js';
+} from '../../src/features/sendExpedition/domHelpers.js';
 import { ACTIVE_PLANET_CLASS } from '../../src/lib/gameDom.js';
 import { settingsStore, SETTINGS_SCHEMA } from '../../src/state/settings.js';
 

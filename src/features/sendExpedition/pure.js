@@ -1,6 +1,6 @@
 // @ts-check
 
-// Pure helpers + constants for sendExp. The orchestrator (`./index.js`)
+// Pure helpers + constants for sendExpedition. The orchestrator (`./index.js`)
 // consumes these for its initial-label decision, the global-cap gates,
 // the URL builder, and the various visual constants.
 //
@@ -13,8 +13,8 @@
 // `index.js` focused on side effects and gives tests a small, mock-free
 // surface for the decision functions.
 //
-// Mirrors the layout of `features/sendCol/{pure,domHelpers}.js`, with
-// one less file because sendExp's DOM readers are tightly coupled to
+// Mirrors the layout of `features/sendColony/{pure,domHelpers}.js`, with
+// one less file because sendExpedition's DOM readers are tightly coupled to
 // the orchestrator's settings reads and live there instead.
 //
 // # What this file does NOT own

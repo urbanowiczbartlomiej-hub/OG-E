@@ -141,7 +141,7 @@ export const GAME = {
   AGO_TYPE_MOON: '#ago_type .moon',
 
   // ── Galaxy view (the system-browser form) ──────────────────────────
-  // Read by `features/sendCol` (Scan half) and `features/sendLifeform`
+  // Read by `features/sendColony` (Scan half) and `features/sendLifeform`
   // (system-discovery navigation) — hence centralized here. The submit
   // control AGR/OGame render carries an `onclick="submitForm()"`; the
   // `#galaxyHeader .btn_blue` fallback covers layouts where that handler

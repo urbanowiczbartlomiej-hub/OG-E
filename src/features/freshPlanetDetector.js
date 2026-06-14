@@ -10,7 +10,7 @@ import { GAME } from '../lib/gameDom.js';
 // paints a top-of-screen banner pointing to the first one. Clicking
 // the banner navigates to that planet's overview, where
 // `abandon/overview.js` takes over with the red abandon overlay. The
-// banner is draggable (same drag helper as sendExp/sendCol) and its
+// banner is draggable (same drag helper as sendExpedition/sendColony) and its
 // position is persisted, so the user can park it anywhere on screen
 // and only the first arrival-load needs a conscious placement.
 //
@@ -202,7 +202,7 @@ const showBanner = (planet) => {
     'cursor:pointer',
     'text-align:center',
     // `touch-action: none` keeps touch gestures from scrolling the
-    // page while the user drags the banner. Matches sendExp/sendCol.
+    // page while the user drags the banner. Matches sendExpedition/sendColony.
     'touch-action:none',
   ].join(';');
 

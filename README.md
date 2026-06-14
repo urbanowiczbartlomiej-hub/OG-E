@@ -113,7 +113,7 @@ src/
 ├── domain/        pure logic: scans, positions, registry, scheduling
 ├── state/         observable stores + persistence wiring
 ├── bridges/       MAIN-world XHR observers → DOM events
-├── features/      UI modules: sendExp, sendCol, badges, abandon, reminders...
+├── features/      UI modules: sendExpedition, sendColony, badges, abandon, reminders...
 └── sync/          gist round-trip (gzip + debounce + anti-loop) and
                    the ntfy reminder scheduler
 ```

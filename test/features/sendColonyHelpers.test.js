@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 //
-// Unit tests for sendCol's helper modules — the pure helpers in
+// Unit tests for sendColony's helper modules — the pure helpers in
 // `pure.js` and the impure DOM/store readers in `domHelpers.js` that
-// the sendCol orchestrator builds on.
+// the sendColony orchestrator builds on.
 //
 // Coverage breakdown:
 //   - findNextScanSystem — pure target picker (pure.js).
@@ -17,8 +17,8 @@
 // # What we do NOT cover
 //
 // - UI click flow, button lifecycle, reactors — those are the
-//   orchestrator's job and live in sendCol.test.js.
-// - `derive` / `render` from `pure.js` — also covered by sendCol.test.js
+//   orchestrator's job and live in sendColony.test.js.
+// - `derive` / `render` from `pure.js` — also covered by sendColony.test.js
 //   via the orchestrator's integration paths.
 //
 // @ts-check
@@ -29,12 +29,12 @@ import {
   findNextColonizeTarget,
   pickCandidateInView,
   buildGalaxyUrl,
-} from '../../src/features/sendCol/pure.js';
+} from '../../src/features/sendColony/pure.js';
 import {
   getColonizeWaitTime,
   readHomePlanet,
   parseCurrentGalaxyView,
-} from '../../src/features/sendCol/domHelpers.js';
+} from '../../src/features/sendColony/domHelpers.js';
 import {
   settingsStore,
   SETTINGS_SCHEMA,

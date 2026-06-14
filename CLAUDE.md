@@ -53,7 +53,7 @@ bridges → lib + domain (MAIN-world; must NOT import state/features/sync)
 **The pure-core rule.** A feature big enough to have non-trivial logic
 splits it into a `pure.js` (the axiom there: *no DOM reads/writes, no
 timers, no listeners*) so the logic is testable without happy-dom. See
-`features/sendCol/pure.js` / `features/sendExp/pure.js`. Don't grow an
+`features/sendColony/pure.js` / `features/sendExpedition/pure.js`. Don't grow an
 orchestrator past ~400 lines of mixed logic+DOM without extracting a
 pure core.
 

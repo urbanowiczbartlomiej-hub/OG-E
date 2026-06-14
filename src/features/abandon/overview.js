@@ -20,7 +20,7 @@
 //     button, whose colonize module is what makes `colonyMinFields` a
 //     meaningful signal)
 //   - {@link checkAbandonState} returns truthy (overview + fresh +
-//     below threshold — same gate `sendCol` historically used, now
+//     below threshold — same gate `sendColony` historically used, now
 //     owned by this feature)
 //   - `#planet` div exists in the DOM
 //

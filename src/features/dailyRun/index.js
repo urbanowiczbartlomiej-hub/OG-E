@@ -100,7 +100,7 @@ const FLASH_MS = 1500;
 const SENT_LOCK_MS = 3000;
 const LONG_PRESS_MS = 2000;
 
-// Colours — distinct from sendExp (blue #4aa8ff) / sendCol (cyan #13d1de).
+// Colours — distinct from sendExpedition (blue #4aa8ff) / sendColony (cyan #13d1de).
 // Daily Run uses pure green: micro & collect both in green family (minimal difference).
 const BG_MICRO = '#34d96e';   // green rim (micro zone)
 const BG_COLLECT = '#43cf72'; // green rim (collect zone, slightly brighter)
@@ -117,7 +117,7 @@ const BG_COLLECT = '#43cf72'; // green rim (collect zone, slightly brighter)
 // loaded after hydration), the `oge:eventBoxLoaded` bridge signal arrives,
 // or the safety timeout expires (degrade to the pre-gate behaviour rather
 // than wait forever on a changed game URL).
-const BG_WAIT = '#fbbf24'; // amber — same wait colour as sendCol/sendExp
+const BG_WAIT = '#fbbf24'; // amber — same wait colour as sendColony/sendExpedition
 const EVENTBOX_SAFETY_TIMEOUT_MS = 6000;
 // The bridge's XHR 'load' signal can precede the game's own success
 // handler inserting the rows — repaint once more after a settle delay.
@@ -254,7 +254,7 @@ const collectPlanetEmpty = () => {
  * Paint a zone with up to three lines: main text, optional subtitle below,
  * optional micro-hint at the bottom. Renders through the SHARED
  * {@link renderLines} + {@link labelLines} so this button reads exactly
- * like sendCol / sendExp (one source of truth for the font sizes).
+ * like sendColony / sendExpedition (one source of truth for the font sizes).
  *
  * @param {HTMLElement | null} el
  * @param {string} big
@@ -471,7 +471,7 @@ const handleZone = async (mode) => {
     if (!r.ok) {
       clearRedirectStash();
       // Belt-and-braces: the gate above already vetted ownership, but keep
-      // the courier's own refusal mapped to the same recovery as sendCol.
+      // the courier's own refusal mapped to the same recovery as sendColony.
       if (r.reason === 'foreign') {
         location.href = bareFleetdispatchUrl();
         return;
@@ -725,7 +725,7 @@ export const installDailyRun = () => {
       title: 'Daily Run',
       ringId: 'oge-ring-fs',
       size,
-      // Matches sendCol so identical `em` labels render at identical px.
+      // Matches sendColony so identical `em` labels render at identical px.
       fontScale: 0.12,
       module: { id: 'fs', name: 'Daily Run', color: BG_MICRO, glyph: PLANET_ARROW_GLYPH },
       focusKey: FOCUS_KEY,
@@ -836,5 +836,5 @@ export const _resetDailyRunForTest = () => {
 };
 
 // Re-export the pure pipeline pieces some tests import via the feature
-// entry point (mirrors sendCol re-exporting derive/render).
+// entry point (mirrors sendColony re-exporting derive/render).
 export { refresh as _refreshForTest };

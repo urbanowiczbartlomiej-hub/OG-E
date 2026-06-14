@@ -6,7 +6,7 @@
 // (`derive`, `render`, target pickers) lives in `./pure.js`.
 //
 // These coord readers are deliberately LOCAL copies of the equivalents in
-// `sendCol/domHelpers.js` rather than a shared import: CLAUDE.md's layering
+// `sendColony/domHelpers.js` rather than a shared import: CLAUDE.md's layering
 // forbids one feature importing another. The fragile bit — the GAME
 // SELECTORS — is centralized in `lib/gameDom.js` (so a game rename is a
 // one-line fix); only the thin wrapper functions are duplicated, which the
@@ -50,7 +50,7 @@ export const readHomePlanet = () => {
  * Read the galaxy view's current `(galaxy, system)` when the user is on it,
  * else `null`. Prefers the live form inputs (which track in-page submits)
  * over `location.search` (which stays at the initial-load coords) — same
- * reasoning as `sendCol/domHelpers.js parseCurrentGalaxyView`.
+ * reasoning as `sendColony/domHelpers.js parseCurrentGalaxyView`.
  *
  * @returns {{ galaxy: number, system: number } | null}
  */

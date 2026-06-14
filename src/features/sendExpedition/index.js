@@ -147,7 +147,7 @@ const onFleetDispatcherSnapshot = (e) => {
 
 /**
  * Module-scope install handle. Holds the dispose fn between install
- * and dispose; `null` otherwise. Used to make `installSendExp`
+ * and dispose; `null` otherwise. Used to make `installSendExpedition`
  * idempotent (second call returns the same dispose without touching
  * DOM) and to let the settings subscriber exit early once disposed.
  *
@@ -173,13 +173,13 @@ let installed = null;
  *   4. Returns a dispose fn that removes the button (if present) and
  *      unsubscribes from settings.
  *
- * Idempotent: calling `installSendExp()` a second time while already
+ * Idempotent: calling `installSendExpedition()` a second time while already
  * installed returns the SAME dispose fn as the first call without
  * re-rendering.
  *
  * @returns {() => void} Dispose handle.
  */
-export const installSendExp = () => {
+export const installSendExpedition = () => {
   if (installed) return installed.dispose;
 
   // Fleet2 ownership (T5): the Phase-1 dispatch gate below reads the
@@ -565,7 +565,7 @@ export const installSendExp = () => {
   // the cache. Chrome MV3 isolated scripts get undefined here; we rely
   // on the bridge event (`oge:fleetDispatcher` from
   // `bridges/fleetDispatcherSnapshot.js`) to populate it asynchronously
-  // in production. Pattern mirrors `features/sendCol/index.js:installSendCol`.
+  // in production. Pattern mirrors `features/sendColony/index.js:installSendColony`.
   if (!fleetDispatcherSnapshot) {
     const liveFd = /** @type {any} */ (window).fleetDispatcher;
     if (liveFd && typeof liveFd === 'object') {
@@ -649,7 +649,7 @@ export const installSendExp = () => {
  *
  * @returns {void}
  */
-export const _resetSendExpForTest = () => {
+export const _resetSendExpeditionForTest = () => {
   if (installed) {
     installed.dispose();
     installed = null;
@@ -665,6 +665,6 @@ export const _resetSendExpForTest = () => {
  *
  * @returns {void}
  */
-export const _resetFleetDispatcherSnapshotForSendExpTest = () => {
+export const _resetFleetDispatcherSnapshotForSendExpeditionTest = () => {
   fleetDispatcherSnapshot = null;
 };

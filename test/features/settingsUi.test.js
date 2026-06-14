@@ -24,7 +24,7 @@
 //
 // The `settingsStore` is a module-singleton that survives across tests.
 // We reset it to schema defaults in `beforeEach` (same pattern as the
-// sendExp / badges tests) so every case starts from a known baseline.
+// sendExpedition / badges tests) so every case starts from a known baseline.
 //
 // @ts-check
 
@@ -64,7 +64,7 @@ const setupAGR = () => {
 
 /**
  * Reset the settings store to schema defaults. Mirrors the pattern
- * used by the sendExp / badges test suites.
+ * used by the sendExpedition / badges test suites.
  *
  * @returns {void}
  */

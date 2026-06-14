@@ -1,8 +1,8 @@
 // @ts-check
 
 // Config-driven floating button — the single structural home for the look
-// and gestures shared by the dashboard's command buttons (sendExp,
-// sendCol, dailyRun/Daily Run). It owns ONLY the view + input gestures:
+// and gestures shared by the dashboard's command buttons (sendExpedition,
+// sendColony, dailyRun/Daily Run). It owns ONLY the view + input gestures:
 //
 //   • structure: one circular button (1 zone) or a vertically split
 //     circle (2+ stacked zones), with the shared geometry/shadow/position;

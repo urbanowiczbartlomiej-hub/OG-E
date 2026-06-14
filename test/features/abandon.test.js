@@ -47,7 +47,7 @@ import { scansStore } from '../../src/state/scans.js';
 /**
  * Reset {@link settingsStore} to the schema defaults so cases start
  * from a clean baseline. Same pattern as
- * `test/features/sendExp.test.js::resetSettingsToDefaults`.
+ * `test/features/sendExpedition.test.js::resetSettingsToDefaults`.
  *
  * @returns {void}
  */

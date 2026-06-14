@@ -1,6 +1,6 @@
 // @ts-check
 
-// Impure helpers for sendCol — DOM readers + the min-gap wait
+// Impure helpers for sendColony — DOM readers + the min-gap wait
 // computation. Every export here touches the live page (DOM, settings
 // store, registry store, or `localStorage`); the pure compute core
 // (`derive`, `render`, target pickers, URL builders) lives in

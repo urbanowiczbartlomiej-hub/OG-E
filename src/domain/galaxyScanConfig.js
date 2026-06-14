@@ -14,7 +14,7 @@
 //     by `chrome.storage`, the only store both origins see (see
 //     `state/galaxyScanConfig.js`, modelled on `state/dailyRunRoutes.js`);
 //   - synced per-universe via the gist pipeline (whole-slot newest-wins);
-//   - read in-game by `features/sendCol` and on the dashboard by the
+//   - read in-game by `features/sendColony` and on the dashboard by the
 //     galaxy renderer.
 //
 // Everything here is PURE: no DOM, no storage, no clock. The shape, its

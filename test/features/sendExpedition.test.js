@@ -32,10 +32,10 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
-  installSendExp,
-  _resetSendExpForTest,
-  _resetFleetDispatcherSnapshotForSendExpTest,
-} from '../../src/features/sendExp/index.js';
+  installSendExpedition,
+  _resetSendExpeditionForTest,
+  _resetFleetDispatcherSnapshotForSendExpeditionTest,
+} from '../../src/features/sendExpedition/index.js';
 import { _resetFleetOwnershipForTest } from '../../src/features/shared/fleetOwnership.js';
 import {
   settingsStore,
@@ -46,7 +46,7 @@ import {
  * Publish a fleetDispatcher snapshot into the module's event listener
  * AND assign to `window.fleetDispatcher` so the install-time bootstrap
  * reads it regardless of whether the test dispatches before or after
- * `installSendExp()`. Mirrors the helper in `sendCol.test.js`.
+ * `installSendExpedition()`. Mirrors the helper in `sendColony.test.js`.
  *
  * @param {{
  *   expeditionCount?: number,
@@ -237,8 +237,8 @@ const labelOf = (btn = getBtn()) =>
   btn?.querySelector('.oge-btn-label')?.textContent;
 
 beforeEach(() => {
-  _resetSendExpForTest();
-  _resetFleetDispatcherSnapshotForSendExpTest();
+  _resetSendExpeditionForTest();
+  _resetFleetDispatcherSnapshotForSendExpeditionTest();
   _resetFleetOwnershipForTest(); // drop any T5 session/checkTarget leakage
   localStorage.clear();
   document.body.innerHTML = '';
@@ -249,8 +249,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  _resetSendExpForTest();
-  _resetFleetDispatcherSnapshotForSendExpTest();
+  _resetSendExpeditionForTest();
+  _resetFleetDispatcherSnapshotForSendExpeditionTest();
   document.body.innerHTML = '';
   resetSettingsToDefaults();
   delete (/** @type {any} */ (window)).fleetDispatcher;
@@ -262,16 +262,16 @@ afterEach(() => {
 // Visibility gating via fabMode
 // ──────────────────────────────────────────────────────────────────
 
-describe('installSendExp — visibility via fabMode', () => {
+describe('installSendExpedition — visibility via fabMode', () => {
   it('does not render a button when fabMode is off', () => {
     setupScene({ fabMode: false });
-    installSendExp();
+    installSendExpedition();
     expect(getBtn()).toBeNull();
   });
 
   it('renders the button with the correct id + text when fabMode is on', () => {
     setupScene({ fabMode: true });
-    installSendExp();
+    installSendExpedition();
     const btn = getBtn();
     expect(btn).not.toBeNull();
     expect(labelOf(btn)).toBe('Explore');
@@ -284,10 +284,10 @@ describe('installSendExp — visibility via fabMode', () => {
 // Size from settings
 // ──────────────────────────────────────────────────────────────────
 
-describe('installSendExp — size from settings', () => {
+describe('installSendExpedition — size from settings', () => {
   it('applies fabBtnSize to width and height', () => {
     setupScene({ fabBtnSize: 400 });
-    installSendExp();
+    installSendExpedition();
     const btn = getBtn();
     expect(btn).not.toBeNull();
     expect(btn?.style.width).toBe('400px');
@@ -301,10 +301,10 @@ describe('installSendExp — size from settings', () => {
 // Click handler — three scenarios
 // ──────────────────────────────────────────────────────────────────
 
-describe('installSendExp — click navigation', () => {
+describe('installSendExpedition — click navigation', () => {
   it('on overview → navigates to fleetdispatch (no mission param; AGR assigns it)', () => {
     setupScene({ onFleetdispatch: false, activeCp: 99 });
-    installSendExp();
+    installSendExpedition();
     getBtn()?.click();
 
     expect(navTarget).not.toBeNull();
@@ -348,7 +348,7 @@ describe('installSendExp — click navigation', () => {
 
   it('on fleetdispatch with no fleet panel and no routine yet → Phase 2 "Wait...", no nav', () => {
     setupScene({ onFleetdispatch: true, mission: 7, activeCp: 42 });
-    installSendExp();
+    installSendExpedition();
     document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
     const btn = getBtn();
     btn?.click();
@@ -358,7 +358,7 @@ describe('installSendExp — click navigation', () => {
 
   it('Phase 1: fleet panel + #dispatchFleet present → clicks dispatch, paints "Sent!"', () => {
     setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
-    installSendExp();
+    installSendExpedition();
     document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
     // Ownership gate (T5): with no session, a loaded fleet panel is only
     // dispatchable when the last checkTarget matches the expedition profile
@@ -385,7 +385,7 @@ describe('installSendExp — click navigation', () => {
 
   it('Phase 2: routine ready (check_3) → clicks it, panel hydrates, label flips to "Send!"', async () => {
     setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
-    installSendExp();
+    installSendExpedition();
     document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
     mountRoutine('ago_routine_check_3', /* hydrateOnClick */ true);
     const btn = getBtn();
@@ -397,7 +397,7 @@ describe('installSendExp — click navigation', () => {
 
   it('Phase 2: routine reports no ships (check_1) and no other planet → "All maxed!", no nav', async () => {
     setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
-    installSendExp();
+    installSendExpedition();
     document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
     mountRoutine('ago_routine_check_1');
     const btn = getBtn();
@@ -412,14 +412,14 @@ describe('installSendExp — click navigation', () => {
 // Max-exp guard
 // ──────────────────────────────────────────────────────────────────
 
-describe('installSendExp — max expedition guard', () => {
+describe('installSendExpedition — max expedition guard', () => {
   it('paints "All maxed!" and does NOT navigate when every planet is at the limit', () => {
     // Single-planet fixture: that planet is maxed, no other planets
     // to fall back to → `findPlanetWithExpSlot` returns null, we
     // paint the transient "All maxed!" warning and stay put.
     vi.useFakeTimers();
     setupScene({ maxExpeditionsPerPlanet: 1, activeExpeditions: 1 });
-    installSendExp();
+    installSendExpedition();
     const btn = getBtn();
     expect(btn).not.toBeNull();
 
@@ -442,7 +442,7 @@ describe('installSendExp — max expedition guard', () => {
       onFleetdispatch: false,
       activeCp: 7,
     });
-    installSendExp();
+    installSendExpedition();
     getBtn()?.click();
 
     expect(navTarget).not.toBeNull();
@@ -457,13 +457,13 @@ describe('installSendExp — max expedition guard', () => {
 // Button position
 // ──────────────────────────────────────────────────────────────────
 
-describe('installSendExp — position (unified FAB wrapper)', () => {
+describe('installSendExpedition — position (unified FAB wrapper)', () => {
   it('restores the FAB position from localStorage when oge_fabPos is set', () => {
     // Position now lives on the unified-FAB wrapper, shared by all four
     // modules. Need to set BEFORE install; setupScene only writes settings.
     localStorage.setItem('oge_fabPos', JSON.stringify({ x: 50, y: 60 }));
     setupScene({});
-    installSendExp();
+    installSendExpedition();
     const wrap = document.getElementById('oge-fab-wrap');
     expect(getBtn()).not.toBeNull();
     expect(wrap?.style.left).toBe('50px');
@@ -472,7 +472,7 @@ describe('installSendExp — position (unified FAB wrapper)', () => {
 
   it('uses bottom-right default when no saved position is present', () => {
     setupScene({});
-    installSendExp();
+    installSendExpedition();
     const wrap = document.getElementById('oge-fab-wrap');
     expect(getBtn()).not.toBeNull();
     expect(wrap?.style.right).toBe('20px');
@@ -487,10 +487,10 @@ describe('installSendExp — position (unified FAB wrapper)', () => {
 // Live settings updates
 // ──────────────────────────────────────────────────────────────────
 
-describe('installSendExp — live settings updates', () => {
+describe('installSendExpedition — live settings updates', () => {
   it('removes the button when fabMode is toggled off after install', () => {
     setupScene({ fabMode: true });
-    installSendExp();
+    installSendExpedition();
     expect(getBtn()).not.toBeNull();
 
     settingsStore.update((s) => ({ ...s, fabMode: false }));
@@ -499,7 +499,7 @@ describe('installSendExp — live settings updates', () => {
 
   it('creates the button when fabMode is toggled on after install', () => {
     setupScene({ fabMode: false });
-    installSendExp();
+    installSendExpedition();
     expect(getBtn()).toBeNull();
 
     settingsStore.update((s) => ({ ...s, fabMode: true }));
@@ -508,7 +508,7 @@ describe('installSendExp — live settings updates', () => {
 
   it('resizes the button when fabBtnSize changes live', () => {
     setupScene({ fabBtnSize: 560 });
-    installSendExp();
+    installSendExpedition();
     const btn = getBtn();
     expect(btn?.style.width).toBe('560px');
 
@@ -524,12 +524,12 @@ describe('installSendExp — live settings updates', () => {
 // Focus persistence
 // ──────────────────────────────────────────────────────────────────
 
-describe('installSendExp — focus persistence', () => {
+describe('installSendExpedition — focus persistence', () => {
   it('restores focus to the button 50ms after install when focus marker is present', () => {
     vi.useFakeTimers();
     localStorage.setItem('oge_focusedBtn', 'send-exp');
     setupScene({});
-    installSendExp();
+    installSendExpedition();
     const btn = getBtn();
     expect(btn).not.toBeNull();
     // Focus restore is deferred to a 50ms setTimeout.
@@ -546,10 +546,10 @@ describe('installSendExp — focus persistence', () => {
 // Dispose
 // ──────────────────────────────────────────────────────────────────
 
-describe('installSendExp — dispose', () => {
+describe('installSendExpedition — dispose', () => {
   it('dispose removes the button and settings updates no longer resurrect it', () => {
     setupScene({ fabMode: true });
-    const dispose = installSendExp();
+    const dispose = installSendExpedition();
     expect(getBtn()).not.toBeNull();
 
     dispose();
@@ -568,11 +568,11 @@ describe('installSendExp — dispose', () => {
 // Idempotency + edge cases
 // ──────────────────────────────────────────────────────────────────
 
-describe('installSendExp — idempotency + edges', () => {
+describe('installSendExpedition — idempotency + edges', () => {
   it('second install returns the same dispose handle without duplicating the button', () => {
     setupScene({});
-    const d1 = installSendExp();
-    const d2 = installSendExp();
+    const d1 = installSendExpedition();
+    const d2 = installSendExpedition();
     expect(d2).toBe(d1);
 
     // Only one button in the DOM.
@@ -581,7 +581,7 @@ describe('installSendExp — idempotency + edges', () => {
 
   it('click is a safe no-op when there is no active planet', () => {
     setupScene({ activeCp: null });
-    installSendExp();
+    installSendExpedition();
     // getBtn works because fabMode is on — but with no .hightlightPlanet
     // the click handler short-circuits and never navigates.
     getBtn()?.click();
@@ -593,7 +593,7 @@ describe('installSendExp — idempotency + edges', () => {
 // fleetDispatcher snapshot — global-cap short-circuits
 // ──────────────────────────────────────────────────────────────────
 
-describe('installSendExp — fleetDispatcher snapshot gates', () => {
+describe('installSendExpedition — fleetDispatcher snapshot gates', () => {
   it('snapshot at max (14/14) → "All maxed!" painted, no nav', () => {
     // Global expedition cap already reached per the game — we should
     // short-circuit the DOM walk entirely and paint the transient
@@ -601,7 +601,7 @@ describe('installSendExp — fleetDispatcher snapshot gates', () => {
     // page so without the snapshot the default flow would navigate.
     vi.useFakeTimers();
     setupScene({ onFleetdispatch: false, activeCp: 42, activeExpeditions: 0 });
-    installSendExp();
+    installSendExpedition();
     setFleetDispatcher({ expeditionCount: 14, maxExpeditionCount: 14 });
 
     const btn = getBtn();
@@ -625,7 +625,7 @@ describe('installSendExp — fleetDispatcher snapshot gates', () => {
       onFleetdispatch: false,
       activeCp: 7,
     });
-    installSendExp();
+    installSendExpedition();
     setFleetDispatcher({ expeditionCount: 5, maxExpeditionCount: 14 });
 
     getBtn()?.click();
@@ -649,7 +649,7 @@ describe('installSendExp — fleetDispatcher snapshot gates', () => {
       maxExpeditionsPerPlanet: 1,
       activeExpeditions: 1,
     });
-    installSendExp();
+    installSendExpedition();
     document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
     setFleetDispatcher({ expeditionCount: 13, maxExpeditionCount: 14 });
 
@@ -667,7 +667,7 @@ describe('installSendExp — fleetDispatcher snapshot gates', () => {
   it('snapshot at general fleet cap (18/18) → "All fleets!" painted, no nav', () => {
     vi.useFakeTimers();
     setupScene({ onFleetdispatch: false, activeCp: 42, activeExpeditions: 0 });
-    installSendExp();
+    installSendExpedition();
     setFleetDispatcher({ expeditionCount: 3, maxExpeditionCount: 14, fleetCount: 18, maxFleetCount: 18 });
 
     const btn = getBtn();
@@ -683,7 +683,7 @@ describe('installSendExp — fleetDispatcher snapshot gates', () => {
 
   it('fleet cap not reached (17/18) → expedition check runs normally', () => {
     setupScene({ onFleetdispatch: false, activeCp: 7, activeExpeditions: 0, maxExpeditionsPerPlanet: 2 });
-    installSendExp();
+    installSendExpedition();
     setFleetDispatcher({ expeditionCount: 3, maxExpeditionCount: 14, fleetCount: 17, maxFleetCount: 18 });
 
     getBtn()?.click();
@@ -697,7 +697,7 @@ describe('installSendExp — fleetDispatcher snapshot gates', () => {
 // Eventbox-readiness gate (added 1.0.1)
 // ──────────────────────────────────────────────────────────────────
 
-describe('installSendExp — eventbox readiness gate', () => {
+describe('installSendExpedition — eventbox readiness gate', () => {
   it('on fleetdispatch, click before eventbox loads paints "Wait..." and bails (no nav, busy stays false)', () => {
     // Pre-1.0.1 a tap on fleetdispatch immediately after navigation
     // entered Phase 2 against a half-hydrated DOM and locked the button
@@ -706,7 +706,7 @@ describe('installSendExp — eventbox readiness gate', () => {
     // but NOT setting busy, so the user can simply tap again once the page settles.
     vi.useFakeTimers();
     setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
-    installSendExp();
+    installSendExpedition();
     // Note: NO `oge:eventBoxLoaded` dispatched here — that's the whole
     // point of this case.
 
@@ -728,7 +728,7 @@ describe('installSendExp — eventbox readiness gate', () => {
     // eventbox refresh XHR shouldn't gate clicks against an event that
     // will never arrive.
     setupScene({ onFleetdispatch: false, activeCp: 11 });
-    installSendExp();
+    installSendExpedition();
     // Deliberately no event dispatched — overview page doesn't depend
     // on it.
     getBtn()?.click();
@@ -742,7 +742,7 @@ describe('installSendExp — eventbox readiness gate', () => {
     // fleet panel in the DOM the click enters Phase 2 (locks + "Wait...")
     // rather than being suppressed by the gate.
     setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
-    installSendExp();
+    installSendExpedition();
     document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
 
     const btn = getBtn();

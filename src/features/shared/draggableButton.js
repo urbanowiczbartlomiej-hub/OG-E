@@ -1,5 +1,5 @@
 // Shared drag + focus-persistence helpers used by the floating mobile
-// buttons (sendExp, sendCol) and the fresh-planet banner
+// buttons (sendExpedition, sendColony) and the fresh-planet banner
 // (freshPlanetDetector). The two button features previously open-coded
 // the same touch/mouse drag wiring with an 8-px threshold and the same
 // `oge_focusedBtn`-based focus persistence; freshPlanetDetector grew
@@ -35,15 +35,15 @@
 //
 // # Why a single helper for three features
 //
-// sendCol's container wraps two halves; the drag/focus logic still
+// sendColony's container wraps two halves; the drag/focus logic still
 // lives on the OUTER `wrap`, and the focus persistence wires on each
 // half independently — which we model by calling `installFocusPersist`
-// twice (once per half) with different `focusValue`s. sendExp uses a
+// twice (once per half) with different `focusValue`s. sendExpedition uses a
 // single button so calls both helpers once. freshPlanetDetector calls
 // only `installDrag` — the banner has no focus state to persist.
 //
-// @see ../sendCol/index.js          — caller for the colonize button.
-// @see ../sendExp/index.js          — caller for the expedition button.
+// @see ../sendColony/index.js          — caller for the colonize button.
+// @see ../sendExpedition/index.js          — caller for the expedition button.
 // @see ../freshPlanetDetector.js    — drag-only caller for the banner.
 
 /** @ts-check */
@@ -52,7 +52,7 @@ import { safeLS } from '../../lib/storage.js';
 
 // ─── Shared stacking order (last-touched on top) ────────────────────────
 //
-// As the number of floating buttons grows (sendExp, sendCol, and the two
+// As the number of floating buttons grows (sendExpedition, sendColony, and the two
 // dailyRun buttons) they increasingly overlap. To keep the one the user
 // is reaching for usable, every drag/tap START raises that element above
 // the others: a single module-wide monotonic counter hands out

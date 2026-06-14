@@ -46,7 +46,7 @@ afterEach(() => {
 
 /**
  * Register a module button the way the features do. `split: true` builds a
- * two-zone host (like sendCol / dailyRun).
+ * two-zone host (like sendColony / dailyRun).
  *
  * @param {string} id
  * @param {string} name

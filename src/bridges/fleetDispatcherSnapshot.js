@@ -33,28 +33,28 @@
 //     `true` when colonize is a valid mission for the current target)
 //   - `shipsOnPlanet` — array of `{ id, number }` (filtered to what the
 //     user has on the active planet)
-//   - `expeditionCount` / `maxExpeditionCount` — read by sendExp's
+//   - `expeditionCount` / `maxExpeditionCount` — read by sendExpedition's
 //     `isGlobalExpeditionCapReached` / `…AfterNextSend` helpers (in
-//     `features/sendExp/pure.js`) to bail before any DOM walk when the
+//     `features/sendExpedition/pure.js`) to bail before any DOM walk when the
 //     game reports every expedition slot in use (14/14), and to skip
 //     the per-planet hop when the pending send would tip us over the
 //     cap (13/14).
 //   - `fleetCount` / `maxFleetCount` — the GENERAL fleet-slot counters
 //     (the "Floty: 18/37" pair the game renders in `#slots`). Read via
 //     `domain/fleetPlan.js isFleetCapReached` by the shared courier and
-//     the sendExp click gate so every fleetdispatch button can report
+//     the sendExpedition click gate so every fleetdispatch button can report
 //     "all fleet slots used" instead of walking into the game's
 //     error 612.
 //
 // Not published: fleet helper config, planet list, cargo settings, loca
 // strings, API data blobs, fleet templates. These are accessible via
 // the snapshot on MAIN side if ever needed, but the isolated consumers
-// (sendCol, sendExp) only need the fields above.
+// (sendColony, sendExpedition) only need the fields above.
 //
 // @see ./checkTargetObserver.js — emits `oge:checkTargetResult`; this
 //   module emits a sibling event with complementary data.
-// @see ../features/sendCol/index.js — primary consumer of the snapshot.
-// @see ../features/sendExp/index.js — second consumer; reads the
+// @see ../features/sendColony/index.js — primary consumer of the snapshot.
+// @see ../features/sendExpedition/index.js — second consumer; reads the
 //   expedition cap fields via pure.js helpers.
 
 import { observeXHR } from './xhrObserver.js';

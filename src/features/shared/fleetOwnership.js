@@ -5,7 +5,7 @@
 // Pure decisions live in domain/fleetOwnership.js; this module owns the two
 // pieces of page-scoped state they need:
 //   • the active ownership session — claimed by whoever performs the
-//     fleet1→fleet2 transition (the courier's select(), or sendExp when it
+//     fleet1→fleet2 transition (the courier's select(), or sendExpedition when it
 //     clicks AGR's routine-7), and
 //   • the last checkTarget observation (coords + fleet composition), fed by
 //     the oge:checkTargetResult bridge event.
@@ -28,7 +28,7 @@ let onCheckTarget = null;
 
 /**
  * Start observing checkTarget results. Idempotent; safe to call from every
- * consumer's install (the courier, sendExp) — only the first call attaches.
+ * consumer's install (the courier, sendExpedition) — only the first call attaches.
  *
  * @returns {void}
  */

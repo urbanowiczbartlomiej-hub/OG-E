@@ -68,12 +68,12 @@
 //   - Pure helpers live in `./pure.js`; impure DOM helpers in
 //     `./domHelpers.js` — target-picking, URL builders, coord readers.
 //   - Drag + focus reuse `shared/draggableButton.js` (same `oge_focusedBtn`
-//     key as sendExp).
+//     key as sendExpedition).
 //   - Abandon overlay is `features/abandon/overview.js` — orthogonal.
 //
 // @see ./pure.js — pure helpers this orchestrator consumes.
 // @see ../abandon/overview.js — the abandon-on-overview feature.
-// @see ../sendExp/index.js — parallel mobile-button feature (reference pattern).
+// @see ../sendExpedition/index.js — parallel mobile-button feature (reference pattern).
 
 /** @ts-check */
 
@@ -151,7 +151,7 @@ const SCAN_HALF_ID = 'oge-col-scan';
 
 // ─── Storage keys ──────────────────────────────────────────────────────
 
-/** Shared focus-persist key with sendExp. */
+/** Shared focus-persist key with sendExpedition. */
 const FOCUS_KEY = 'oge_focusedBtn';
 /** Focus-persist value written when the sendHalf holds focus. */
 const FOCUS_SEND = 'col-send';
@@ -167,7 +167,7 @@ const FOCUS_SCAN = 'col-scan';
 // fallbacks (e.g. "None available" flash) and the fleetdispatch URL
 // sniff.
 
-/** Delay before restoring focus on install (matches sendExp). */
+/** Delay before restoring focus on install (matches sendExpedition). */
 const FOCUS_RESTORE_DELAY_MS = 50;
 /** Repaint ticker period in ms. */
 const REPAINT_TICK_MS = 1000;
@@ -227,7 +227,7 @@ let waitTotalSecs = 0;
 /**
  * Paint one zone of the button from a {@link Paint}. `subtext` → two
  * stacked lines (big primary on top, small caption below — matching the
- * dailyRun / sendExp layout so all three buttons read the same way);
+ * dailyRun / sendExpedition layout so all three buttons read the same way);
  * otherwise a single line. Always writes the background and the dim
  * (greyed-out) flag. No-op while unmounted.
  *
@@ -517,12 +517,12 @@ const onScanClick = () => {
   //      via the galaxy form. Cooldown is event-driven (locks until
   //      `oge:galaxyScanned` arrives, hard cap 8 s).
   const home = readHomePlanet();
-  if (safeLS.bool('oge_debugSendCol', false)) {
+  if (safeLS.bool('oge_debugSendColony', false)) {
     const view = parseCurrentGalaxyView();
     const policy = buildRescanPolicy(galaxyScanConfigStore.get().rescan);
     const next = home ? findNextScanSystem(scansStore.get(), home, view, policy) : null;
     // eslint-disable-next-line no-console
-    console.debug('[OG-E sendCol] onScanClick', {
+    console.debug('[OG-E sendColony] onScanClick', {
       home,
       view,
       nextScanSystem: next,
@@ -829,7 +829,7 @@ const onSendHold = () => {
 
 /**
  * Module-scope install handle. Holds the dispose fn between install
- * and dispose; `null` otherwise. Makes `installSendCol` idempotent.
+ * and dispose; `null` otherwise. Makes `installSendColony` idempotent.
  *
  * @type {{ dispose: () => void } | null}
  */
@@ -855,7 +855,7 @@ let installed = null;
  *
  * @returns {() => void} Dispose handle.
  */
-export const installSendCol = () => {
+export const installSendColony = () => {
   if (installed) return installed.dispose;
 
   // Cache the fleetDispatcher snapshot (colony-ship availability) so the
@@ -1026,7 +1026,7 @@ export const installSendCol = () => {
 /** Exposed only for unit-tests — do not call from production code. */
 export const _onSendHoldForTest = onSendHold;
 
-export const _resetSendColForTest = () => {
+export const _resetSendColonyForTest = () => {
   if (installed) {
     installed.dispose();
     installed = null;

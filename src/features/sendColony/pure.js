@@ -1,6 +1,6 @@
 ﻿// @ts-check
 
-// Pure compute core of `features/sendCol/index.js` — `derive(env)`,
+// Pure compute core of `features/sendColony/index.js` — `derive(env)`,
 // `render(ctx)`, the pure helpers they call (target pickers, URL
 // builders), plus every typedef / constant they reference.
 //
@@ -18,7 +18,7 @@
 // (`lastNavToFleetdispatchAt`, `lastScanSubmitAt`, `lastScanEventAt`,
 // `lastCheckTargetError`, `waitStartAt`, `waitSeconds`) plus two direct
 // DOM reads (`readHomePlanet`, `parseCurrentGalaxyView`). Tests worked
-// around those impurities by relying on `_resetSendColForTest` zeroing
+// around those impurities by relying on `_resetSendColonyForTest` zeroing
 // the lets between cases — fragile coupling. Extracting the pure core
 // makes the dependencies explicit: every field `derive` needs arrives
 // through `env`, every field `render` needs arrives through `ctx`.

@@ -1,20 +1,20 @@
 // @ts-check
 
-// Impure DOM readers for sendExp — the expedition-cap walk over the
+// Impure DOM readers for sendExpedition — the expedition-cap walk over the
 // planet list + event box. Every export here touches the live page (the
 // `#planetList` rows, the `#eventContent` fleet table, and the settings
 // store); the pure compute core (constants, `stripBrackets`, URL builder,
 // cap checks, initial-label decision) lives in `./pure.js` instead.
 //
 // Why a sibling file instead of inlining into `./index.js` (mirrors
-// `sendCol/domHelpers.js` + `sendLifeform/domHelpers.js`):
+// `sendColony/domHelpers.js` + `sendLifeform/domHelpers.js`):
 //   - `index.js` is the orchestrator (install/dispose, the click-handler
 //     state machine, the eventbox gate, the fleetDispatcher snapshot
 //     listener). Mixing the DOM readers in blurs "wire-up" vs "data
 //     extraction".
 //   - Each reader here has a single, easily-testable concern and a small
 //     surface — they fit naturally as standalone exports (and now carry
-//     their own focused coverage in `test/features/sendExpHelpers.test.js`).
+//     their own focused coverage in `test/features/sendExpeditionHelpers.test.js`).
 //
 // Purity classification (what these readers touch):
 //   - `getActivePlanetCoords`: reads `#planetList .hightlightPlanet`
@@ -27,7 +27,7 @@
 //     `countActiveExpeditions` per planet.
 //
 // The `#eventContent tr.eventFleet[data-mission-type="15"]` selector is
-// single-feature (only sendExp filters in-flight expeditions this way), so
+// single-feature (only sendExpedition filters in-flight expeditions this way), so
 // per `gameDom.js`'s scope rules it stays local here rather than hoisted.
 //
 // @see ./pure.js  — pure compute core (`stripBrackets`, URL builder, caps).

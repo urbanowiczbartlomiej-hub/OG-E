@@ -3,7 +3,7 @@
 // Floating "Lifeforms" button — the lifeform system-discovery automator.
 // Single-zone sibling of the two command buttons: the lifecycle (mount /
 // dispose / drag / focus / settings reactions / 1 Hz ticker) follows
-// `sendExp/index.js`; the galaxy-walk + scansStore marking follows the
+// `sendExpedition/index.js`; the galaxy-walk + scansStore marking follows the
 // Send-Col Scan half. The pure compute pipeline lives in `./pure.js`, the
 // DOM readers + game-button click in `./domHelpers.js`.
 //
@@ -64,7 +64,7 @@ import {
 } from './domHelpers.js';
 
 // Re-export the pure pipeline so the test file can import derive/render
-// from this module (matches the sendCol convention).
+// from this module (matches the sendColony convention).
 export { derive, render } from './pure.js';
 
 /**
@@ -76,7 +76,7 @@ export { derive, render } from './pure.js';
 // ─── DOM ids / storage keys ───────────────────────────────────────────────
 
 const BUTTON_ID = 'oge-send-lf';
-/** Shared focus-persist key (same as sendExp / sendCol). */
+/** Shared focus-persist key (same as sendExpedition / sendColony). */
 const FOCUS_KEY = 'oge_focusedBtn';
 const FOCUS_VALUE = 'lf-main';
 

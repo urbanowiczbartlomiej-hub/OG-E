@@ -23,7 +23,7 @@ import {
 } from '../../src/state/dailyRunRoutes.js';
 import { TARGET_PLANET, TARGET_MOON, SHIP_LARGE_CARGO } from '../../src/domain/rules.js';
 
-// ── location.href spy (mirrors sendExp.test.js) ──────────────────────────
+// ── location.href spy (mirrors sendExpedition.test.js) ──────────────────────────
 let navTarget = /** @type {string | null} */ (null);
 const mockLocationHref = () => {
   const proto = Object.getPrototypeOf(window.location);

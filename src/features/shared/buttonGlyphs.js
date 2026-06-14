@@ -17,7 +17,7 @@
 // centred glyph reads cleanly on a 1-zone circle, so split buttons only
 // carry one on the zone where it actually means something.
 
-/** Expedition — comet with a tail and two sparks (sendExp). */
+/** Expedition — comet with a tail and two sparks (sendExpedition). */
 export const COMET_GLYPH = [
   '<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" transform="translate(32,32) scale(1.15) translate(-32,-32)">',
   '<line x1="35" y1="29" x2="10" y2="54"/>',
@@ -29,7 +29,7 @@ export const COMET_GLYPH = [
   '</g>',
 ].join('');
 
-/** Colonization — a landing craft with legs and feet (sendCol). */
+/** Colonization — a landing craft with legs and feet (sendColony). */
 export const LANDER_GLYPH = [
   '<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">',
   '<path d="M20 41 V27 a12 12 0 0 1 24 0 V41 Z"/>',
