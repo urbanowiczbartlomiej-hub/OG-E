@@ -10,9 +10,9 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
-  installDiscoveryHook,
-  _resetDiscoveryHookForTest,
-} from '../../src/bridges/discoveryHook.js';
+  installSystemDiscoveryObserver,
+  _resetSystemDiscoveryObserverForTest,
+} from '../../src/bridges/systemDiscoveryObserver.js';
 import { SYSTEM_DISCOVERY_RESULT_EVENT } from '../../src/lib/ogeEvents.js';
 import { _resetObserversForTest } from '../../src/bridges/xhrObserver.js';
 import { fakeXHR as fakeXhrRoundTrip } from '../helpers/fakeXhr.js';
@@ -49,17 +49,17 @@ const cap = (e) => { captured = /** @type {CustomEvent} */ (e).detail; };
 beforeEach(() => {
   captured = null;
   _resetObserversForTest();
-  _resetDiscoveryHookForTest();
+  _resetSystemDiscoveryObserverForTest();
   document.addEventListener(SYSTEM_DISCOVERY_RESULT_EVENT, cap);
-  installDiscoveryHook();
+  installSystemDiscoveryObserver();
 });
 afterEach(() => {
   document.removeEventListener(SYSTEM_DISCOVERY_RESULT_EVENT, cap);
-  _resetDiscoveryHookForTest();
+  _resetSystemDiscoveryObserverForTest();
   _resetObserversForTest();
 });
 
-describe('discoveryHook', () => {
+describe('systemDiscoveryObserver', () => {
   it('publishes a successful discovery (HAR sample: 15 ships, all positions)', async () => {
     await fakeXHR('galaxy=4&system=472&token=abc', {
       response: {

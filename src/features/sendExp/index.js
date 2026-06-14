@@ -205,7 +205,7 @@ export const installSendExp = () => {
   // are stale, and a click handed to runPhase2 polls a half-hydrated DOM
   // for the full 15 s POLL_TIMEOUT_MS window before recovering. We gate
   // clicks on the bridge's `oge:eventBoxLoaded` signal (see
-  // `bridges/eventBoxHook.js`) and fall back to a safety timeout so a
+  // `bridges/eventBoxObserver.js`) and fall back to a safety timeout so a
   // missed XHR (run_at race, future URL change, …) doesn't lock the
   // button forever — 8 s is well past the typical eventbox load (~1 s)
   // but a fraction of the 15 s Phase 2 timeout we'd otherwise hit. Pages

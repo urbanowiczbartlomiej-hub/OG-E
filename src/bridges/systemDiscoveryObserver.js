@@ -62,7 +62,7 @@ let unsubscribeFn = null;
  *
  * @returns {() => void} unsubscribe
  */
-export const installDiscoveryHook = () => {
+export const installSystemDiscoveryObserver = () => {
   if (unsubscribeFn) return unsubscribeFn;
 
   const unsub = observeXHR({
@@ -136,7 +136,7 @@ export const installDiscoveryHook = () => {
 };
 
 /** Test-only reset. @returns {void} */
-export const _resetDiscoveryHookForTest = () => {
+export const _resetSystemDiscoveryObserverForTest = () => {
   if (unsubscribeFn) unsubscribeFn();
   unsubscribeFn = null;
 };

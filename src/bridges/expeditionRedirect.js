@@ -17,7 +17,7 @@
 //   default is `true`, so the feature works out of the box and users
 //   who want the old behaviour flip the toggle off.
 //
-// Why this bridge is SPECIAL (differs from galaxyHook / checkTargetHook):
+// Why this bridge is SPECIAL (differs from galaxyHook / checkTargetObserver):
 //   Other bridges are strict observers — they read the response, dispatch
 //   a CustomEvent, and never touch what the game sees. This one is a
 //   response REWRITER: we override `xhr.responseText` via
@@ -243,7 +243,7 @@ const overrideResponseText = (xhr, responseTextDescriptor) => {
 /**
  * Idempotency sentinel. Holds the unsubscribe returned by `observeXHR`
  * so a second install call is a no-op that hands back the same teardown.
- * Mirrors the pattern in galaxyHook / checkTargetHook.
+ * Mirrors the pattern in galaxyHook / checkTargetObserver.
  *
  * @type {(() => void) | null}
  */

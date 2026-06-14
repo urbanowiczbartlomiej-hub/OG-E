@@ -51,7 +51,7 @@
 // the snapshot on MAIN side if ever needed, but the isolated consumers
 // (sendCol, sendExp) only need the fields above.
 //
-// @see ./checkTargetHook.js — emits `oge:checkTargetResult`; this
+// @see ./checkTargetObserver.js — emits `oge:checkTargetResult`; this
 //   module emits a sibling event with complementary data.
 // @see ../features/sendCol/index.js — primary consumer of the snapshot.
 // @see ../features/sendExp/index.js — second consumer; reads the

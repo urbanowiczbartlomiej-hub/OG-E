@@ -13,7 +13,7 @@
 //   2. On galaxy, viewed system needs discovery + the game's
 //      `#discoverSystemBtn` is present → click it. The GAME issues
 //      `sendSystemDiscoveryFleet`; we never originate it. The
-//      `bridges/discoveryHook.js` observer republishes the result as
+//      `bridges/systemDiscoveryObserver.js` observer republishes the result as
 //      `oge:systemDiscoveryResult`, which we use to mark the system.
 //   3. On galaxy, viewed system already covered → in-page hop to the
 //      NEAREST system that still needs discovery (wrap-aware).
@@ -32,7 +32,7 @@
 // fleet-cap rejection ("Maksymalna liczba flot") marks nothing.
 //
 // @see ./pure.js — derive/render + target pickers consumed here.
-// @see ../../bridges/discoveryHook.js — the result observer this listens to.
+// @see ../../bridges/systemDiscoveryObserver.js — the result observer this listens to.
 
 import { settingsStore } from '../../state/settings.js';
 import { scansStore, flushScansStore } from '../../state/scans.js';
@@ -311,13 +311,13 @@ const markSystemDiscovered = (galaxy, system, sent) => {
 };
 
 /**
- * React to `oge:systemDiscoveryResult` from `bridges/discoveryHook.js`.
+ * React to `oge:systemDiscoveryResult` from `bridges/systemDiscoveryObserver.js`.
  *
  * @param {Event} e
  * @returns {void}
  */
 const onDiscoveryResult = (e) => {
-  const detail = /** @type {CustomEvent<import('../../bridges/discoveryHook.js').SystemDiscoveryResultDetail>} */ (
+  const detail = /** @type {CustomEvent<import('../../bridges/systemDiscoveryObserver.js').SystemDiscoveryResultDetail>} */ (
     e
   ).detail;
   if (!detail) return;

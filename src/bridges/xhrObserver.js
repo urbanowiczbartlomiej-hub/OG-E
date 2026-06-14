@@ -7,7 +7,7 @@
 //   game traffic ourselves (TOS-critical), so hooking XHR is how OG-E
 //   "sees" what the game is doing in passive observer mode.
 //
-//   Each individual bridge (galaxyHook, checkTargetHook, sendFleetHook,
+//   Each individual bridge (galaxyHook, checkTargetObserver, sendFleetHook,
 //   expeditionRedirect) wants to attach some logic to a URL pattern at
 //   either "just before send" or "when the response lands". Patching
 //   XMLHttpRequest.prototype directly from each bridge would double-wrap

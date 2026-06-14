@@ -92,7 +92,7 @@ const parseFormBody = (body) => {
 };
 
 /**
- * Track the installed unsubscribe so repeated `installCheckTargetHook`
+ * Track the installed unsubscribe so repeated `installCheckTargetObserver`
  * calls are no-ops that return the same tear-down function. Under normal
  * content-script lifecycle this is installed exactly once, but module
  * hot-reload paths (Firefox temporary add-ons reload the whole page) can
@@ -123,7 +123,7 @@ let unsubscribeFn = null;
  * @returns {() => void} Unsubscribe function. Calling it detaches the
  *   observer; subsequent checkTarget responses no longer dispatch.
  */
-export const installCheckTargetHook = () => {
+export const installCheckTargetObserver = () => {
   if (unsubscribeFn) return unsubscribeFn;
 
   const unsub = observeXHR({
@@ -223,7 +223,7 @@ export const installCheckTargetHook = () => {
  *
  * @returns {void}
  */
-export const _resetCheckTargetHookForTest = () => {
+export const _resetCheckTargetObserverForTest = () => {
   if (unsubscribeFn) unsubscribeFn();
   unsubscribeFn = null;
 };

@@ -23,7 +23,7 @@
 //      policy lives in the feature, not here).
 //
 // @see ../features/shared/fleetCourier.js — the impure form driver.
-// @see ../bridges/checkTargetHook.js       — source of the error codes.
+// @see ../bridges/checkTargetObserver.js       — source of the error codes.
 // @see ../bridges/fleetDispatcherSnapshot.js — source of orders/shipsOnPlanet.
 
 /** checkTarget error: target has no moon (e.g. moon-only mission). */

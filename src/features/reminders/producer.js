@@ -6,7 +6,7 @@
 // # What it does
 //
 // Whenever OGame's event box refreshes (`oge:eventBoxLoaded`, fired by
-// `bridges/eventBoxHook.js`), this module reads `#eventContent` — exactly
+// `bridges/eventBoxObserver.js`), this module reads `#eventContent` — exactly
 // the passive DOM read the badge feature does (see `features/badges.js`),
 // no traffic to the game — and hands `sync/reminders.syncReminders`:
 //

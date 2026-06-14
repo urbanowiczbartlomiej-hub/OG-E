@@ -2,7 +2,7 @@
 //
 // Tests for the sendFleet-result bridge: it observes every action=sendFleet
 // response and dispatches oge:sendFleetResult { success, errorCode, mission }.
-// Drives a fake XHR through happy-dom (same pattern as checkTargetHook.test).
+// Drives a fake XHR through happy-dom (same pattern as checkTargetObserver.test).
 //
 // @ts-check
 

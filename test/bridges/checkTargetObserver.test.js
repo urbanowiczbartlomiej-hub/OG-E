@@ -6,16 +6,16 @@
 // CustomEvent the hook dispatches after it processes the response.
 //
 // Each test installs the hook, fires a fake XHR, and (optionally) checks
-// the captured event detail. `_resetCheckTargetHookForTest` tears the
+// the captured event detail. `_resetCheckTargetObserverForTest` tears the
 // module's single-slot registration down between cases;
 // `_resetObserversForTest` clears the underlying xhrObserver registry so
 // leftover observers from earlier tests don't match our URLs.
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
-  installCheckTargetHook,
-  _resetCheckTargetHookForTest,
-} from '../../src/bridges/checkTargetHook.js';
+  installCheckTargetObserver,
+  _resetCheckTargetObserverForTest,
+} from '../../src/bridges/checkTargetObserver.js';
 import { _resetObserversForTest } from '../../src/bridges/xhrObserver.js';
 import { fakeXHR as fakeXhrRoundTrip } from '../helpers/fakeXhr.js';
 
@@ -58,19 +58,19 @@ const captureListener = (e) => {
 beforeEach(() => {
   captured = null;
   _resetObserversForTest();
-  _resetCheckTargetHookForTest();
+  _resetCheckTargetObserverForTest();
   document.addEventListener('oge:checkTargetResult', captureListener);
 });
 
 afterEach(() => {
   document.removeEventListener('oge:checkTargetResult', captureListener);
-  _resetCheckTargetHookForTest();
+  _resetCheckTargetObserverForTest();
   _resetObserversForTest();
 });
 
-describe('installCheckTargetHook — happy path', () => {
+describe('installCheckTargetObserver — happy path', () => {
   it('dispatches oge:checkTargetResult with coords + null errorCode on success', async () => {
-    installCheckTargetHook();
+    installCheckTargetObserver();
 
     await fakeCheckTargetXHR('galaxy=4&system=30&position=8&type=1', {
       status: 'success',
@@ -97,13 +97,13 @@ describe('installCheckTargetHook — happy path', () => {
   });
 });
 
-describe('installCheckTargetHook — response gating', () => {
+describe('installCheckTargetObserver — response gating', () => {
   it('DOES dispatch on failure response, surfacing first errorCode', async () => {
     // Dispatching on both success AND failure is the contract so
     // consumers can read the error code for reserved-slot detection
     // (140016) and other edge cases. Simplified shape exposes a single
     // `errorCode` field.
-    installCheckTargetHook();
+    installCheckTargetObserver();
     await fakeCheckTargetXHR('galaxy=4&system=30&position=8&type=1', {
       status: 'error',
       targetOk: false,
@@ -115,7 +115,7 @@ describe('installCheckTargetHook — response gating', () => {
   });
 
   it('errorCode is first code when errors[] has multiple entries', async () => {
-    installCheckTargetHook();
+    installCheckTargetObserver();
     await fakeCheckTargetXHR('galaxy=4&system=30&position=8&type=1', {
       status: 'error',
       errors: [
@@ -128,7 +128,7 @@ describe('installCheckTargetHook — response gating', () => {
   });
 
   it('errorCode is null when errors[] is empty or missing', async () => {
-    installCheckTargetHook();
+    installCheckTargetObserver();
     // errors[] missing entirely (typical success response)
     await fakeCheckTargetXHR('galaxy=4&system=30&position=8&type=1', {
       status: 'success',
@@ -146,21 +146,21 @@ describe('installCheckTargetHook — response gating', () => {
   });
 
   it('does NOT dispatch when response is not valid JSON', async () => {
-    installCheckTargetHook();
+    installCheckTargetObserver();
     await fakeCheckTargetXHR('galaxy=4&system=30&position=8&type=1', '__INVALID_JSON__');
     expect(captured).toBeNull();
   });
 
   it('does NOT dispatch when response is null', async () => {
-    installCheckTargetHook();
+    installCheckTargetObserver();
     await fakeCheckTargetXHR('galaxy=4&system=30&position=8&type=1', null);
     expect(captured).toBeNull();
   });
 });
 
-describe('installCheckTargetHook — body gating', () => {
+describe('installCheckTargetObserver — body gating', () => {
   it('does NOT dispatch when body is not a string', async () => {
-    installCheckTargetHook();
+    installCheckTargetObserver();
     await fakeCheckTargetXHR(null, {
       status: 'success',
       targetOk: true,
@@ -171,7 +171,7 @@ describe('installCheckTargetHook — body gating', () => {
   });
 
   it('does NOT dispatch when body is missing galaxy/system/position', async () => {
-    installCheckTargetHook();
+    installCheckTargetObserver();
     await fakeCheckTargetXHR('type=1&foo=bar', {
       status: 'success',
       targetOk: true,
@@ -182,7 +182,7 @@ describe('installCheckTargetHook — body gating', () => {
   });
 
   it('does NOT dispatch when a coord is zero (parseInt falsy)', async () => {
-    installCheckTargetHook();
+    installCheckTargetObserver();
     // position=0 is not a valid OGame slot; the hook rejects it.
     await fakeCheckTargetXHR('galaxy=4&system=30&position=0&type=1', {
       status: 'success',
@@ -194,7 +194,7 @@ describe('installCheckTargetHook — body gating', () => {
   });
 
   it('decodes `+`-encoded spaces and percent-escapes in body values', async () => {
-    installCheckTargetHook();
+    installCheckTargetObserver();
     // We don't rely on any of these fields in the detail — the test is
     // that the parser doesn't choke on `+` and still extracts coords.
     await fakeCheckTargetXHR(
@@ -215,9 +215,9 @@ describe('installCheckTargetHook — body gating', () => {
   });
 });
 
-describe('installCheckTargetHook — errorCode defensive parsing', () => {
+describe('installCheckTargetObserver — errorCode defensive parsing', () => {
   it('skips malformed error entries (non-number .error field)', async () => {
-    installCheckTargetHook();
+    installCheckTargetObserver();
     await fakeCheckTargetXHR('galaxy=4&system=30&position=8&type=1', {
       status: 'error',
       errors: [
@@ -230,7 +230,7 @@ describe('installCheckTargetHook — errorCode defensive parsing', () => {
   });
 
   it('errorCode is null when `errors` field is not an array', async () => {
-    installCheckTargetHook();
+    installCheckTargetObserver();
     await fakeCheckTargetXHR('galaxy=4&system=30&position=8&type=1', {
       status: 'error',
       errors: 'not an array',
@@ -239,9 +239,9 @@ describe('installCheckTargetHook — errorCode defensive parsing', () => {
   });
 });
 
-describe('installCheckTargetHook — URL filter', () => {
+describe('installCheckTargetObserver — URL filter', () => {
   it('does NOT fire on unrelated XHRs (no action=checkTarget in URL)', async () => {
-    installCheckTargetHook();
+    installCheckTargetObserver();
     await fakeCheckTargetXHR(
       'galaxy=4&system=30&position=8&type=1',
       {
@@ -256,10 +256,10 @@ describe('installCheckTargetHook — URL filter', () => {
   });
 });
 
-describe('installCheckTargetHook — idempotency', () => {
+describe('installCheckTargetObserver — idempotency', () => {
   it('returns the same unsubscribe on repeated install and does not double-dispatch', async () => {
-    const unsub1 = installCheckTargetHook();
-    const unsub2 = installCheckTargetHook();
+    const unsub1 = installCheckTargetObserver();
+    const unsub2 = installCheckTargetObserver();
     expect(unsub1).toBe(unsub2);
 
     await fakeCheckTargetXHR('galaxy=4&system=30&position=8&type=1', {
@@ -290,7 +290,7 @@ describe('installCheckTargetHook — idempotency', () => {
   });
 
   it('unsubscribe stops further dispatches', async () => {
-    const unsub = installCheckTargetHook();
+    const unsub = installCheckTargetObserver();
 
     await fakeCheckTargetXHR('galaxy=4&system=30&position=8&type=1', {
       status: 'success',
@@ -313,9 +313,9 @@ describe('installCheckTargetHook — idempotency', () => {
   });
 });
 
-describe('installCheckTargetHook — ships from the request body (T5)', () => {
+describe('installCheckTargetObserver — ships from the request body (T5)', () => {
   it('projects am<id>=<count> pairs into detail.ships', async () => {
-    installCheckTargetHook();
+    installCheckTargetObserver();
     await fakeCheckTargetXHR(
       'am203=12433&am219=1&galaxy=5&system=172&position=16&type=1&union=0&token=abc',
       { status: 'success', targetOk: true, orders: { 15: true } },
@@ -325,7 +325,7 @@ describe('installCheckTargetHook — ships from the request body (T5)', () => {
   });
 
   it('drops zero / malformed counts and yields null when no am* pair exists', async () => {
-    installCheckTargetHook();
+    installCheckTargetObserver();
     await fakeCheckTargetXHR(
       'am204=0&am205=xyz&galaxy=4&system=30&position=8&type=1',
       { status: 'success', targetOk: true, orders: {} },
@@ -344,7 +344,7 @@ describe('installCheckTargetHook — ships from the request body (T5)', () => {
   });
 
   it('does not confuse non-ship fields that merely start with am', async () => {
-    installCheckTargetHook();
+    installCheckTargetObserver();
     await fakeCheckTargetXHR(
       'ambush=5&am=7&galaxy=4&system=30&position=8&type=1',
       { status: 'success', targetOk: true, orders: {} },

@@ -7,7 +7,7 @@
 // only passive hooks on response handling (per TOS).
 //
 // Each hook is installed exactly once at module eval. `galaxyHook`,
-// `checkTargetHook`, `sendFleetHook`, and `expeditionRedirect`'s
+// `checkTargetObserver`, `sendFleetHook`, and `expeditionRedirect`'s
 // trigger all route through the shared `observeXHR` helper, which
 // patches `XMLHttpRequest.prototype.open`/`send` once. The first three
 // are pure observers — they read the response and dispatch `oge:*`
@@ -23,19 +23,19 @@
 // inside its own handler.
 
 import { installGalaxyHook } from './bridges/galaxyHook.js';
-import { installCheckTargetHook } from './bridges/checkTargetHook.js';
+import { installCheckTargetObserver } from './bridges/checkTargetObserver.js';
 import { installSendFleetHook } from './bridges/sendFleetHook.js';
 import { installExpeditionRedirect } from './bridges/expeditionRedirect.js';
 import { installDeployRedirect } from './bridges/deployRedirect.js';
 import { installFleetDispatcherSnapshot } from './bridges/fleetDispatcherSnapshot.js';
-import { installEventBoxHook } from './bridges/eventBoxHook.js';
+import { installEventBoxObserver } from './bridges/eventBoxObserver.js';
 import { installTraderActionHook } from './bridges/traderActionHook.js';
 import { installFleetExecutor } from './bridges/fleetExecutor.js';
 import { installSendFleetResultHook } from './bridges/sendFleetResultHook.js';
-import { installDiscoveryHook } from './bridges/discoveryHook.js';
+import { installSystemDiscoveryObserver } from './bridges/systemDiscoveryObserver.js';
 
 installGalaxyHook();
-installCheckTargetHook();
+installCheckTargetObserver();
 installSendFleetHook();
 installExpeditionRedirect();
 // Rewrite the post-send redirect for fleet-save deployment sends. Unlike
@@ -51,7 +51,7 @@ installFleetDispatcherSnapshot();
 // can gate its click handler on a "fresh eventbox" signal — without
 // this, a user tapping immediately on fleetdispatch enters Phase 2
 // polling against a half-hydrated DOM and locks the button for 15 s.
-installEventBoxHook();
+installEventBoxObserver();
 // Observe the two daily Trader actions (auctioneer bid / import trade) so
 // the isolated-world trader highlight can clear the matching glow only
 // when the player actually performs the action — not on a mere menu open.
@@ -67,4 +67,4 @@ installSendFleetResultHook();
 // Observe the lifeform system-discovery send (sendSystemDiscoveryFleet) so
 // the isolated-world Lifeforms button can mark the discovered system with a
 // 7-day retention and read shipsSent / the fleet-cap rejection message.
-installDiscoveryHook();
+installSystemDiscoveryObserver();

@@ -49,7 +49,7 @@ let installed = null;
  *
  * @returns {() => void} Unsubscribe — detaches the XHR observer.
  */
-export const installEventBoxHook = () => {
+export const installEventBoxObserver = () => {
   if (installed) return installed;
 
   // OGame has shipped several URL forms for the eventbox refresh over
@@ -80,7 +80,7 @@ export const installEventBoxHook = () => {
  *
  * @returns {void}
  */
-export const _resetEventBoxHookForTest = () => {
+export const _resetEventBoxObserverForTest = () => {
   if (installed) installed();
   installed = null;
 };
