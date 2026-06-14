@@ -197,10 +197,22 @@ export const createButton = (cfg) => {
     ? ['position:absolute', 'left:0', 'top:0']
     : ['position:fixed', 'z-index:99999'];
 
-  /** @type {Map<string, HTMLElement>} zone key → zone element. */
+  /** @type {Map<string, HTMLElement>} zone key → zone element (click target). */
   const zoneEls = new Map();
   /** @type {Map<string, HTMLElement>} zone key → label span. */
   const labelEls = new Map();
+  /**
+   * Zone key → the greyable FILL element: the busy/disabled dim (and the
+   * label that rides it) target THIS, never the host — so the rim, ring SVG
+   * and brand-node lens stay vivid while a zone is dimmed. Split zones ARE
+   * their own fill (`.zone`); a single button gets a dedicated `.oge-surface`
+   * layer so dimming it doesn't drag the chrome down with it. Keeping the
+   * label inside the fill means one element greys both, identically for 1-
+   * and 2-zone buttons.
+   *
+   * @type {Map<string, HTMLElement>}
+   */
+  const fillEls = new Map();
 
   // ── structure ──────────────────────────────────────────────────────────
   /** @type {HTMLElement} */
@@ -227,8 +239,16 @@ export const createButton = (cfg) => {
       `font-size:${base}`,
     ].join(';');
     btn.style.setProperty('--rim', z.bg);
+    // Dedicated fill layer so the busy/disabled dim greys only the painted
+    // surface + label, never the rim/ring/lens chrome (z-index:auto keeps it
+    // below the ring and out of its own stacking context, so the label's
+    // z-index still resolves above the ring). The host now carries only chrome.
+    const surface = document.createElement('span');
+    surface.className = 'oge-surface';
+    btn.appendChild(surface);
     outer = btn;
     zoneEls.set(z.key, btn);
+    fillEls.set(z.key, surface);
   } else {
     const wrap = document.createElement('div');
     wrap.id = cfg.id;
@@ -269,6 +289,8 @@ export const createButton = (cfg) => {
       half.style.setProperty('--rim', z.bg);
       wrap.appendChild(half);
       zoneEls.set(z.key, half);
+      // A split half IS its own fill — it sits below the host's ring/lens.
+      fillEls.set(z.key, half);
     }
     outer = wrap;
   }
@@ -278,7 +300,7 @@ export const createButton = (cfg) => {
   // optional per-zone `labelShiftY` nudges the whole label toward centre;
   // it rides on the span so it survives every repaint.
   for (const z of cfg.zones) {
-    const el = /** @type {HTMLElement} */ (zoneEls.get(z.key));
+    const el = /** @type {HTMLElement} */ (fillEls.get(z.key));
     const span = document.createElement('span');
     span.className = LABEL_CLASS;
     if (z.labelShiftY) span.style.transform = `translateY(${z.labelShiftY}px)`;
@@ -449,7 +471,9 @@ export const createButton = (cfg) => {
       if (key === cfg.zones[0].key) outer.style.setProperty('--rim', rim);
     },
     setDim: (key, dim) => {
-      const el = zoneEls.get(key);
+      // Dim the FILL (split half / single surface), not the host — keeps the
+      // rim, ring and brand lens at full strength while the zone greys out.
+      const el = fillEls.get(key);
       if (el) el.style.opacity = dim ? '0.5' : '1';
     },
     setProgress: (pct) => {

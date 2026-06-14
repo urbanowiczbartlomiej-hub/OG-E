@@ -68,15 +68,28 @@ describe('single-zone button', () => {
     expect(btn.querySelector('.oge-ring')).not.toBeNull();
   });
 
-  it('setDim toggles opacity on the host; setBg updates --rim', () => {
+  it('setDim greys the fill layer (not the host chrome); setBg updates --rim', () => {
     const ctl = make();
     const btn = /** @type {HTMLElement} */ (document.getElementById('oge-test-single'));
+    const surface = /** @type {HTMLElement} */ (btn.querySelector('.oge-surface'));
+    expect(surface).not.toBeNull();
     ctl.setDim('main', true);
-    expect(btn.style.opacity).toBe('0.5');
+    // The dim lands on the fill, leaving the host (rim/ring/lens) untouched.
+    expect(surface.style.opacity).toBe('0.5');
+    expect(btn.style.opacity).toBe('');
     ctl.setDim('main', false);
-    expect(btn.style.opacity).toBe('1');
+    expect(surface.style.opacity).toBe('1');
     ctl.setBg('main', '#38bdf8');
     expect(btn.style.getPropertyValue('--rim')).toBe('#38bdf8');
+  });
+
+  it('keeps the label and glyph lens inside/above the fill so the dim greys the label too', () => {
+    const ctl = make();
+    const btn = /** @type {HTMLElement} */ (document.getElementById('oge-test-single'));
+    // Label rides the fill layer (so one dim greys both); the lens does not.
+    expect(btn.querySelector('.oge-surface .' + LABEL_CLASS)).not.toBeNull();
+    ctl.setText('main', 'Go');
+    expect(labelOf(btn)).toBe('Go');
   });
 
   it('resize updates diameter and font-size', () => {

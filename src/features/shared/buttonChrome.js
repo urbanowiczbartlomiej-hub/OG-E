@@ -63,9 +63,15 @@ export const BUTTON_CHROME_CSS = [
   '0 18px 36px -12px rgba(0,0,0,.72),',
   '0 4px 12px -2px rgba(0,0,0,.5);}',
 
-  // ── Single-zone: radial gradient tinted by rim ──────────────────────────
-  '.oge-host.single{',
-  'background:radial-gradient(125% 125% at 50% 16%,',
+  // ── Single-zone: rim-tinted fill on a dedicated layer ───────────────────
+  // The host keeps only the chrome (rim shadow + ring + lens); the painted
+  // fill lives in .oge-surface so the busy/disabled dim can grey the fill
+  // (and the label nested in it) without touching the chrome. z-index:auto
+  // keeps the surface below the ring(2)/lens(5) and avoids forming its own
+  // stacking context, so the label's z-index:3 still resolves above the ring.
+  '.oge-host.single{background:var(--surface);}',
+  '.oge-host.single .oge-surface{position:absolute;inset:0;border-radius:50%;',
+  'pointer-events:none;background:radial-gradient(125% 125% at 50% 16%,',
   'color-mix(in oklab,var(--rim) 26%,var(--surface)) 0%,',
   'var(--surface) 62%);}',
 
@@ -120,7 +126,8 @@ export const BUTTON_CHROME_CSS = [
   '.oge-btn-label{display:flex;align-items:center;justify-content:center;',
   'width:100%;pointer-events:none;z-index:3;text-shadow:0 1px 2px rgba(0,0,6,.45);}',
   // Nudged down so the label clears the upper glass lens (see .oge-lens).
-  '.oge-host.single>.oge-btn-label{position:absolute;inset:0;padding-top:14%;}',
+  // Now nested in .oge-surface (not a direct host child) — match on descendant.
+  '.oge-host.single .oge-btn-label{position:absolute;inset:0;padding-top:14%;}',
 
   // ── Ring: band, charge arc, progress arc, title, brand ──────────────────
   '.oge-ring{position:absolute;inset:0;width:100%;height:100%;',
@@ -246,9 +253,15 @@ export const BUTTON_CHROME_CSS = [
   '0 0 34px -2px var(--rim),0 18px 36px -12px rgba(0,0,0,.72),0 4px 12px -2px rgba(0,0,0,.5);}}',
 
   // ── Disabled ─────────────────────────────────────────────────────────────
-  '.oge-host[aria-disabled="true"]{cursor:not-allowed;filter:grayscale(.55) brightness(.72);',
-  'box-shadow:inset 0 0 0 1px rgba(148,163,184,.25),',
-  '0 16px 30px -14px rgba(0,0,0,.7);animation:none;}',
+  // Greys ONLY the fill + label (the .zone / .oge-surface layer), leaving the
+  // rim, ring and brand lens at full strength — same treatment the busy dim
+  // uses, so a disabled button reads consistently for 1- and 2-zone. Taps are
+  // also swallowed in JS (the click handler checks the disabled flag); the
+  // pointer-events guard is the belt-and-braces for split halves in a real
+  // browser.
+  '.oge-host[aria-disabled="true"]{cursor:not-allowed;animation:none;}',
+  '.oge-host[aria-disabled="true"] .zone,',
+  '.oge-host[aria-disabled="true"] .oge-surface{opacity:.5;}',
   '.oge-host[aria-disabled="true"] .zone{pointer-events:none;}',
 
   // ── Reduced motion ────────────────────────────────────────────────────────
