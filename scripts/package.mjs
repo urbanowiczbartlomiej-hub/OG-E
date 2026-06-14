@@ -41,14 +41,15 @@ if (existsSync(ZIP)) {
 }
 
 // Windows 10 1803+ ships bsdtar (libarchive) as tar.exe in System32.
-// Git's GNU tar appears earlier in PATH in some environments and
-// mis-treats the drive letter in "C:\…" as a remote hostname.
-// Use the absolute System32 path on Windows to guarantee bsdtar.
-// `tar -a` picks the format from the extension (.zip → zip) and
-// writes forward-slash entries on every platform.
-const TAR = process.platform === 'win32' ? 'C:\\Windows\\System32\\tar.exe' : 'tar';
+// bsdtar's `-a` flag auto-selects format from extension (.zip → zip).
+// GNU tar (Linux/macOS) does NOT support zip via `-a`, so we use the
+// `zip` CLI there instead (standard on all POSIX platforms).
 try {
-  execSync(`"${TAR}" -a -c -f "${ZIP}" -C "${DIST}" .`, { stdio: 'inherit' });
+  if (process.platform === 'win32') {
+    execSync(`"C:\\Windows\\System32\\tar.exe" -a -c -f "${ZIP}" -C "${DIST}" .`, { stdio: 'inherit' });
+  } else {
+    execSync(`zip -r "${ZIP}" .`, { cwd: DIST, stdio: 'inherit' });
+  }
 } catch (err) {
   console.error('package: archive command failed');
   console.error(err instanceof Error ? err.message : err);

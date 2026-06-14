@@ -61,8 +61,11 @@ try {
     cpSync(resolve(ROOT, entry), join(STAGE, entry), { recursive: true });
   }
 
-  const TAR = process.platform === 'win32' ? 'C:\\Windows\\System32\\tar.exe' : 'tar';
-  execSync(`"${TAR}" -a -c -f "${ZIP}" -C "${STAGE}" .`, { stdio: 'inherit' });
+  if (process.platform === 'win32') {
+    execSync(`"C:\\Windows\\System32\\tar.exe" -a -c -f "${ZIP}" -C "${STAGE}" .`, { stdio: 'inherit' });
+  } else {
+    execSync(`zip -r "${ZIP}" .`, { cwd: STAGE, stdio: 'inherit' });
+  }
 } catch (err) {
   console.error('package-source: archive command failed');
   console.error(err instanceof Error ? err.message : err);
