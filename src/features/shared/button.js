@@ -30,7 +30,7 @@
 // @see ./buttonChrome.js     — the engraved ring + ripple decoration.
 // @see ./draggableButton.js  — the drag + focus-persistence primitives.
 
-import { decorateButton, appendGlyph, appendCenterDisc } from './buttonChrome.js';
+import { decorateButton, appendLens } from './buttonChrome.js';
 import {
   installDrag,
   installFocusPersist,
@@ -65,9 +65,9 @@ export const LABEL_CLASS = 'oge-btn-label';
  * @property {string} bg                   initial rim/state colour (used as CSS --rim).
  * @property {(ev: MouseEvent) => void} onTap
  * @property {() => void} [onHold]         present ⇒ enables long-press on this zone.
- * @property {string} [glyph]              inner SVG markup of a faint
- *                                         background watermark glyph (see
- *                                         buttonGlyphs.js); omitted ⇒ no art.
+ * @property {string} [glyph]              inner SVG markup of the glass node
+ *                                         lens glyph (see buttonGlyphs.js);
+ *                                         omitted ⇒ no lens.
  * @property {string} [focusValue]         present ⇒ persist focus under `focusKey`.
  * @property {number} [focusRestoreDelay]
  * @property {number} [labelShiftY]        px to nudge this zone's label
@@ -75,7 +75,7 @@ export const LABEL_CLASS = 'oge-btn-label';
  *                                         Split buttons push labels AWAY from
  *                                         centre (-up on the top zone, +down on
  *                                         the bottom one) to clear the central
- *                                         node disc. Applied to the label span.
+ *                                         glass lens. Applied to the label span.
  */
 
 /**
@@ -279,22 +279,21 @@ export const createButton = (cfg) => {
   // it rides on the span so it survives every repaint.
   for (const z of cfg.zones) {
     const el = /** @type {HTMLElement} */ (zoneEls.get(z.key));
-    // Glyph placement is structural: a SINGLE button paints it as a faint
-    // full-bleed watermark behind its label; a SPLIT button hosts it centred
-    // on the seam in a node disc (appended to the wrap after this loop).
-    if (single && z.glyph) appendGlyph(el, z.glyph);
     const span = document.createElement('span');
     span.className = LABEL_CLASS;
     if (z.labelShiftY) span.style.transform = `translateY(${z.labelShiftY}px)`;
     el.appendChild(span);
     labelEls.set(z.key, span);
   }
-  // Split buttons carry ONE central node disc (the first zone declaring a
-  // glyph), mounted on the stable wrap so label repaints never wipe it.
-  if (!single) {
-    const withGlyph = cfg.zones.find((z) => z.glyph);
-    if (withGlyph?.glyph) appendCenterDisc(outer, withGlyph.glyph);
-  }
+  // One shared glass node lens carries the command glyph. CSS parks it in
+  // the upper section on a single-zone button and centred on the seam on a
+  // split one; it mounts on the stable host so label repaints never wipe it.
+  // A single button uses its only zone's glyph; a split one takes the first
+  // zone that declares one.
+  const lensGlyph = single
+    ? cfg.zones[0]?.glyph
+    : cfg.zones.find((z) => z.glyph)?.glyph;
+  if (lensGlyph) appendLens(outer, lensGlyph);
 
   // ── mount + drag ────────────────────────────────────────────────────────
   // Unified-FAB members are mounted into (and dragged via) the shared shell;

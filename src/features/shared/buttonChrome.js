@@ -82,7 +82,7 @@ export const BUTTON_CHROME_CSS = [
   'color-mix(in oklab,var(--rim) 12%,var(--surface)));',
   'transition:filter .12s ease;}',
   // Seam runs INVERTED: brightest at the two outer ends, fading to nothing
-  // in the centre — so it threads into the central node disc (see .oge-disc)
+  // in the centre — so it threads into the central glass lens (see .oge-lens)
   // from both halves instead of cutting across it. (The old build was the
   // mirror: bright centre, fading to the sides.)
   '.oge-host .zone+.zone::before{',
@@ -119,7 +119,8 @@ export const BUTTON_CHROME_CSS = [
   // ── Label container ─────────────────────────────────────────────────────
   '.oge-btn-label{display:flex;align-items:center;justify-content:center;',
   'width:100%;pointer-events:none;z-index:3;text-shadow:0 1px 2px rgba(0,0,6,.45);}',
-  '.oge-host.single>.oge-btn-label{position:absolute;inset:0;}',
+  // Nudged down so the label clears the upper glass lens (see .oge-lens).
+  '.oge-host.single>.oge-btn-label{position:absolute;inset:0;padding-top:14%;}',
 
   // ── Ring: band, charge arc, progress arc, title, brand ──────────────────
   '.oge-ring{position:absolute;inset:0;width:100%;height:100%;',
@@ -138,38 +139,51 @@ export const BUTTON_CHROME_CSS = [
   'text-transform:uppercase;letter-spacing:.4px;',
   'paint-order:stroke;stroke:rgba(2,6,16,.55);stroke-width:.6px;}',
 
-  // ── Background watermark glyph (single-zone only) ───────────────────────
-  // SINGLE buttons paint the glyph as a faint rim-tinted watermark BEHIND the
-  // label (z-index 0: above the gradient fill, below ripple(1), ring(2),
-  // label(3)); it tints via currentColor and fades with --art-opacity. SPLIT
-  // buttons don't use this layer — their glyph lives in the central node disc
-  // (see .oge-disc below). Never reacts to hold/charge.
+  // ── Watermark glyph layer (FAB picker orbs only) ────────────────────────
+  // The flat rim-tinted glyph layer behind a label, z-index 0 (above the
+  // gradient fill, below ripple(1), ring(2), label(3)); tints via
+  // currentColor, fades with --art-opacity. The command buttons no longer
+  // use it — their glyph lives in the glass lens (see .oge-lens). It survives
+  // only because the unifiedFab orbs reuse it (with --art-opacity cranked up)
+  // to paint each module's identity glyph.
   '.oge-art{position:absolute;inset:0;z-index:0;pointer-events:none;',
   'display:flex;align-items:center;justify-content:center;',
   'color:var(--rim);opacity:var(--art-opacity,.1);}',
   '.oge-art svg{width:60%;height:60%;overflow:visible;}',
-  // 1-zone: half-size glyph tucked into the upper part (label sits below it).
-  '.oge-host.single .oge-art{align-items:flex-start;padding-top:13%;}',
-  '.oge-host.single .oge-art svg{width:30%;height:30%;}',
   '@media (prefers-reduced-motion:reduce){.oge-art{transition:none;}}',
 
-  // ── Central node disc (split buttons) ───────────────────────────────────
-  // The command glyph, sharp and centred ON the seam, sitting in a calm
-  // recessed "core" that the inverted seam threads into from both halves.
-  // Deliberately SUBTLE: a faint rim hairline + dark recess, no glow — it
-  // reads as a node, not an ornament. z-index 5 keeps it above the seam(4),
-  // label(3), ring(2). Labels are nudged AWAY from centre (ZoneConfig.
-  // labelShiftY) so they clear it.
-  '.oge-disc{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);',
-  'width:33%;height:33%;border-radius:50%;z-index:5;pointer-events:none;',
-  'display:flex;align-items:center;justify-content:center;',
-  'color:color-mix(in oklab,var(--rim) 58%,var(--label));',
-  'background:radial-gradient(120% 120% at 50% 30%,',
-  'color-mix(in oklab,var(--rim) 12%,var(--surface)),var(--surface) 82%);',
-  'box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--rim) 34%,transparent),',
-  '0 1px 3px rgba(0,0,0,.45);}',
-  '.oge-disc svg{width:62%;height:62%;overflow:visible;opacity:.82;',
-  'filter:drop-shadow(0 1px 2px rgba(0,0,6,.5));}',
+  // ── Glass node lens (the "oczko") ───────────────────────────────────────
+  // A small, convex glass cabochon carrying the command glyph — the one
+  // shared accent that unifies single- and split-zone buttons. Deliberately
+  // SMALL: the action label is the priority, the lens is a glanceability
+  // accent, not the centrepiece. It reads convex via a top sheen + bright
+  // inner highlight, a dark recessed bottom, a faint rim-tinted refraction
+  // bounce and a soft top-left specular (::after). z-index 5 keeps it above
+  // the seam(4), label(3), ring(2). Positioned per shape below: SINGLE parks
+  // it in the upper section (label nudged below); SPLIT centres it on the
+  // seam, which the inverted divider threads into.
+  '.oge-lens{position:absolute;left:50%;border-radius:50%;z-index:5;',
+  'pointer-events:none;display:flex;align-items:center;justify-content:center;',
+  'color:color-mix(in oklab,var(--rim) 62%,var(--label));',
+  'background:',
+  'radial-gradient(130% 110% at 50% 16%,rgba(255,255,255,.14),transparent 44%),',
+  'radial-gradient(120% 120% at 50% 34%,',
+  'color-mix(in oklab,var(--rim) 16%,var(--surface)),var(--surface) 80%);',
+  'box-shadow:',
+  'inset 0 1.5px 2px rgba(255,255,255,.22),',
+  'inset 0 -4px 7px rgba(0,0,6,.5),',
+  'inset 0 -2px 5px color-mix(in oklab,var(--rim) 20%,transparent),',
+  'inset 0 0 0 1px color-mix(in oklab,var(--rim) 38%,transparent),',
+  '0 2px 4px rgba(0,0,0,.5);}',
+  '.oge-lens::after{content:"";position:absolute;left:21%;top:13%;',
+  'width:40%;height:28%;border-radius:50%;transform:rotate(-10deg);',
+  'background:radial-gradient(closest-side,rgba(255,255,255,.4),transparent 78%);}',
+  '.oge-lens svg{width:56%;height:56%;overflow:visible;opacity:.86;',
+  'filter:drop-shadow(0 1px 1px rgba(0,0,6,.5));}',
+  // SINGLE: small accent parked up top.
+  '.oge-host.single .oge-lens{top:27%;width:23%;height:23%;transform:translate(-50%,-50%);}',
+  // SPLIT: small node centred on the seam.
+  '.oge-host.split .oge-lens{top:50%;width:21%;height:21%;transform:translate(-50%,-50%);}',
 
   // ── Tap ripple (rim-coloured wave from the touch point) ─────────────────
   '.oge-deco-layer{position:absolute;inset:0;border-radius:50%;',
@@ -372,11 +386,13 @@ const buildRing = (title, ringId, progress = null) => {
 };
 
 /**
- * Append the faint background watermark glyph to a zone element (idempotent
- * per element). `inner` is the inner markup of a `0 0 64 64` SVG using
- * `currentColor` so it tints to the zone's `--rim`. The wrapping `.oge-art`
- * layer parents an SVG; built via innerHTML so the namespaced children parse
- * correctly without per-node createElementNS plumbing.
+ * Append the flat watermark glyph layer to an element (idempotent per
+ * element). Used by the FAB picker orbs to paint each module's identity
+ * glyph (the command buttons use the glass lens instead — see
+ * {@link appendLens}). `inner` is the inner markup of a `0 0 64 64` SVG using
+ * `currentColor` so it tints to the element's `--rim`. The wrapping
+ * `.oge-art` layer parents an SVG; built via innerHTML so the namespaced
+ * children parse correctly without per-node createElementNS plumbing.
  *
  * @param {HTMLElement} zone
  * @param {string} inner  inner SVG markup (paths/lines/circles, currentColor).
@@ -395,27 +411,26 @@ export const appendGlyph = (zone, inner) => {
 };
 
 /**
- * Append the central node disc carrying the command glyph to a SPLIT
- * button's host (idempotent per host). Unlike the single-zone watermark
- * (see {@link appendGlyph}), this is a sharp, centred glyph on the seam — the
- * inverted divider threads into it from both halves. `inner` is the inner
- * markup of a `0 0 64 64` SVG using `currentColor` so it tints to `--rim`
- * (styled by the `.oge-disc` rules above).
+ * Append the glass node lens carrying the command glyph to a button host
+ * (idempotent per host). The one shared accent for both shapes: the
+ * `.oge-lens` rules park it in the upper section on a single-zone host and
+ * centred on the seam on a split host. `inner` is the inner markup of a
+ * `0 0 64 64` SVG using `currentColor` so it tints to `--rim`.
  *
- * @param {HTMLElement} host  Stable outer element (the split wrap).
+ * @param {HTMLElement} host  Stable outer element (the button or split wrap).
  * @param {string} inner      Inner SVG markup (paths/lines/circles, currentColor).
  * @returns {void}
  */
-export const appendCenterDisc = (host, inner) => {
-  if (!host || !inner || host.querySelector('.oge-disc')) return;
-  const disc = document.createElement('span');
-  disc.className = 'oge-disc';
-  disc.setAttribute('aria-hidden', 'true');
-  disc.innerHTML =
+export const appendLens = (host, inner) => {
+  if (!host || !inner || host.querySelector('.oge-lens')) return;
+  const lens = document.createElement('span');
+  lens.className = 'oge-lens';
+  lens.setAttribute('aria-hidden', 'true');
+  lens.innerHTML =
     '<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" focusable="false">' +
     inner +
     '</svg>';
-  host.appendChild(disc);
+  host.appendChild(lens);
 };
 
 /**

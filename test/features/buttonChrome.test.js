@@ -14,7 +14,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   installButtonChrome,
   decorateButton,
-  appendCenterDisc,
+  appendLens,
   CHROME_STYLE_ID,
   BUTTON_CHROME_CSS,
 } from '../../src/features/shared/buttonChrome.js';
@@ -48,25 +48,25 @@ describe('shared button chrome stylesheet', () => {
     expect(BUTTON_CHROME_CSS).toContain('.oge-ring-brand');
     expect(BUTTON_CHROME_CSS).toContain('@keyframes oge-ripple-kf');
     expect(BUTTON_CHROME_CSS).toContain('.oge-tap-active');
-    expect(BUTTON_CHROME_CSS).toContain('.oge-disc');
+    expect(BUTTON_CHROME_CSS).toContain('.oge-lens');
   });
 });
 
-describe('appendCenterDisc', () => {
-  it('appends one central disc carrying the glyph svg (idempotent per host)', () => {
+describe('appendLens', () => {
+  it('appends one glass lens carrying the glyph svg (idempotent per host)', () => {
     const host = document.createElement('div');
     document.body.appendChild(host);
-    appendCenterDisc(host, '<circle r="10"/>');
-    appendCenterDisc(host, '<circle r="10"/>');
-    const discs = host.querySelectorAll('.oge-disc');
-    expect(discs).toHaveLength(1);
-    expect(discs[0].querySelector('svg')).not.toBeNull();
+    appendLens(host, '<circle r="10"/>');
+    appendLens(host, '<circle r="10"/>');
+    const lenses = host.querySelectorAll('.oge-lens');
+    expect(lenses).toHaveLength(1);
+    expect(lenses[0].querySelector('svg')).not.toBeNull();
   });
 
   it('is a no-op without inner markup', () => {
     const host = document.createElement('div');
-    appendCenterDisc(host, '');
-    expect(host.querySelector('.oge-disc')).toBeNull();
+    appendLens(host, '');
+    expect(host.querySelector('.oge-lens')).toBeNull();
   });
 });
 

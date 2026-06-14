@@ -102,7 +102,7 @@ describe('single-zone button', () => {
     expect(document.getElementById('oge-test-single')).toBeNull();
   });
 
-  it('paints a glyph as a watermark layer, not a central disc', () => {
+  it('carries the glyph in a glass lens (not a flat watermark)', () => {
     createButton({
       id: 'oge-test-wm',
       title: 'Exp',
@@ -115,8 +115,9 @@ describe('single-zone button', () => {
       ],
     });
     const btn = /** @type {HTMLElement} */ (document.getElementById('oge-test-wm'));
-    expect(btn.querySelector('.oge-art svg')).not.toBeNull();
-    expect(btn.querySelector('.oge-disc')).toBeNull();
+    expect(btn.querySelector('.oge-lens svg')).not.toBeNull();
+    // The flat watermark layer belongs to the picker orbs now, not buttons.
+    expect(btn.querySelector('.oge-art')).toBeNull();
   });
 });
 
@@ -183,7 +184,7 @@ describe('two-zone button', () => {
     expect(document.getElementById('oge-test-bottom')?.style.fontSize).toBe(expected);
   });
 
-  it('hosts a glyph as a central node disc, not a per-zone watermark', () => {
+  it('hosts the glyph in one central glass lens on the wrap', () => {
     createButton({
       id: 'oge-test-disc',
       title: 'Daily',
@@ -203,9 +204,9 @@ describe('two-zone button', () => {
       ],
     });
     const wrap = /** @type {HTMLElement} */ (document.getElementById('oge-test-disc'));
-    const disc = wrap.querySelector('.oge-disc');
-    expect(disc).not.toBeNull();
-    expect(disc?.querySelector('svg')).not.toBeNull();
+    const lens = wrap.querySelector('.oge-lens');
+    expect(lens).not.toBeNull();
+    expect(lens?.querySelector('svg')).not.toBeNull();
     // Split buttons carry no per-zone watermark — the glyph moved to centre.
     expect(wrap.querySelector('.oge-art')).toBeNull();
   });
