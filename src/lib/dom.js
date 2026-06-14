@@ -164,3 +164,36 @@ export const injectStyle = (id, css) => {
   const parent = document.head ?? document.documentElement;
   parent.appendChild(style);
 };
+
+/**
+ * Parse a trusted, static SVG markup string into a live `<svg>` element via
+ * `DOMParser`, so callers can append real namespaced nodes WITHOUT assigning
+ * to `innerHTML`.
+ *
+ * # Why this exists
+ *
+ * Inline SVG needs the SVG namespace on every node; the ergonomic way to get
+ * that from a markup string is `el.innerHTML = '<svg>…</svg>'`, but AMO's
+ * add-on linter flags every `innerHTML` write as "Unsafe assignment" (it
+ * can't statically prove the value is constant). Building each node by hand
+ * with `createElementNS` is the alternative, but that's unworkable when the
+ * markup is an open-ended blob of paths/circles.
+ *
+ * We parse via `DOMParser` as `text/html`: the HTML parser treats `<svg>` as
+ * foreign content and builds the subtree in the SVG namespace, so the root
+ * lands as `body.firstElementChild` — a real `SVGElement` ready to append,
+ * with no `innerHTML` write anywhere. (`image/svg+xml` would be the obvious
+ * type, but happy-dom — our test DOM — doesn't implement it, while both it
+ * and every browser handle inline `<svg>` through the HTML path.)
+ *
+ * SECURITY: pass ONLY developer-authored, constant markup. This is a
+ * namespace/lint convenience for our own inline SVG, NOT a sanitizer — no
+ * caller routes user data through it.
+ *
+ * @param {string} markup  Static `<svg>…</svg>` source (single root element).
+ * @returns {Element} The parsed root `<svg>` node, ready to append.
+ */
+export const parseSvg = (markup) => {
+  const doc = new DOMParser().parseFromString(markup, 'text/html');
+  return /** @type {Element} */ (doc.body.firstElementChild);
+};

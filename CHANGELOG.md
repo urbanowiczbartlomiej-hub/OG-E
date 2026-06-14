@@ -6,6 +6,38 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.18.1] — 2026-06-14
+
+First public (listed) build of the 1.18 line — same features as the 1.18.0
+test build, plus packaging and lint fixes.
+
+### Added
+
+- **Configurable Galaxy-Scan strategy (dashboard → Galaxy Observations).**
+  Per-status freshness windows for the Scan button — e.g. `6h`, `5d`, or `0`
+  (never re-scan). The target-positions list and "prefer neighbouring
+  galaxies" preference moved here too. Per-universe and cloud-synced.
+
+### Changed
+
+- **OG-E mark on floating buttons.** Each button's glyph now sits in a small
+  gold "glass node" framed by the OG-E orbit symbol; the rim still carries the
+  live state colour.
+- **Gold FAB handle** that rides the FAB edge facing the screen centre and
+  re-aims live as you drag or resize; picker orbs keep their per-module
+  colours.
+- **Buttons wait for page load before responding** — all four (Expeditions,
+  Colonization, Daily Run, Lifeforms), not just Expeditions — with a
+  consistent disabled look across single and split shapes.
+
+### Fixed
+
+- **Fleet-send buttons no longer fire someone else's fleet.** Each button
+  tracks ownership of the fleet1→fleet2 transition it started and routes to a
+  fresh dispatch page if step 2 is already claimed by a manual send or AGR.
+- Inline SVG is now built without `innerHTML`, clearing the add-on linter's
+  "unsafe assignment" warnings.
+
 ## [1.18.0] — 2026-06-14
 
 ### Added

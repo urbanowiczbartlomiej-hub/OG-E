@@ -33,6 +33,7 @@ import {
 } from '../../state/settings.js';
 import { installDrag, restorePosition } from './draggableButton.js';
 import { appendGlyph } from './buttonChrome.js';
+import { parseSvg } from '../../lib/dom.js';
 import {
   resolveActiveId,
   orbitLayout,
@@ -332,7 +333,11 @@ const ensureShell = () => {
   const handleSize = handleDiameter(size);
   handle.style.width = handleSize + 'px';
   handle.style.height = handleSize + 'px';
-  handle.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+  handle.appendChild(
+    parseSvg(
+      '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
+    ),
+  );
   wrap.appendChild(handle);
   document.body.appendChild(wrap);
 

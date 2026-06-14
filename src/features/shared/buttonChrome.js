@@ -31,6 +31,8 @@
 
 /** @ts-check */
 
+import { parseSvg } from '../../lib/dom.js';
+
 /** Id of the singleton <style> element this module injects. */
 export const CHROME_STYLE_ID = 'oge-btn-chrome';
 
@@ -420,10 +422,13 @@ export const appendGlyph = (zone, inner) => {
   const art = document.createElement('span');
   art.className = 'oge-art';
   art.setAttribute('aria-hidden', 'true');
-  art.innerHTML =
-    '<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" focusable="false">' +
-    inner +
-    '</svg>';
+  art.appendChild(
+    parseSvg(
+      '<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" focusable="false">' +
+        inner +
+        '</svg>',
+    ),
+  );
   zone.appendChild(art);
 };
 
@@ -437,7 +442,7 @@ export const ORBIT_DEFS_ID = 'oge-orbit-defs';
  * lens as its frame — the beads land on the dome's rim.
  */
 const ORBIT_MARK =
-  '<svg class="oge-lens-orbit" viewBox="0 0 300 300" focusable="false" aria-hidden="true">' +
+  '<svg class="oge-lens-orbit" viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg" focusable="false" aria-hidden="true">' +
   '<g fill="none" stroke="url(#oge-orbit-arc)" stroke-width="9" stroke-linecap="round">' +
   '<path d="M 170.79 52.19 A 100 100 0 0 1 245.11 180.90"/>' +
   '<path d="M 224.31 216.91 A 100 100 0 0 1 75.69 216.91"/>' +
@@ -463,19 +468,22 @@ export const ensureOrbitDefs = () => {
   holder.id = ORBIT_DEFS_ID;
   holder.setAttribute('aria-hidden', 'true');
   holder.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;';
-  holder.innerHTML =
-    '<svg width="0" height="0" focusable="false"><defs>' +
-    '<linearGradient id="oge-orbit-arc" x1="0" y1="0" x2="1" y2="1">' +
-    '<stop offset="0%" stop-color="#E8A23D"/>' +
-    '<stop offset="50%" stop-color="#C77B2B"/>' +
-    '<stop offset="100%" stop-color="#9C5A1E"/>' +
-    '</linearGradient>' +
-    '<radialGradient id="oge-orbit-ball" cx="35%" cy="30%" r="75%">' +
-    '<stop offset="0%" stop-color="#F4C66B"/>' +
-    '<stop offset="55%" stop-color="#D08A33"/>' +
-    '<stop offset="100%" stop-color="#8F4F1B"/>' +
-    '</radialGradient>' +
-    '</defs></svg>';
+  holder.appendChild(
+    parseSvg(
+      '<svg width="0" height="0" xmlns="http://www.w3.org/2000/svg" focusable="false"><defs>' +
+        '<linearGradient id="oge-orbit-arc" x1="0" y1="0" x2="1" y2="1">' +
+        '<stop offset="0%" stop-color="#E8A23D"/>' +
+        '<stop offset="50%" stop-color="#C77B2B"/>' +
+        '<stop offset="100%" stop-color="#9C5A1E"/>' +
+        '</linearGradient>' +
+        '<radialGradient id="oge-orbit-ball" cx="35%" cy="30%" r="75%">' +
+        '<stop offset="0%" stop-color="#F4C66B"/>' +
+        '<stop offset="55%" stop-color="#D08A33"/>' +
+        '<stop offset="100%" stop-color="#8F4F1B"/>' +
+        '</radialGradient>' +
+        '</defs></svg>',
+    ),
+  );
   document.body.appendChild(holder);
 };
 
@@ -497,11 +505,14 @@ export const appendLens = (host, inner) => {
   const lens = document.createElement('span');
   lens.className = 'oge-lens';
   lens.setAttribute('aria-hidden', 'true');
-  lens.innerHTML =
-    '<svg class="oge-lens-glyph" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" focusable="false">' +
-    inner +
-    '</svg>' +
-    ORBIT_MARK;
+  lens.appendChild(
+    parseSvg(
+      '<svg class="oge-lens-glyph" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" focusable="false">' +
+        inner +
+        '</svg>',
+    ),
+  );
+  lens.appendChild(parseSvg(ORBIT_MARK));
   host.appendChild(lens);
 };
 
