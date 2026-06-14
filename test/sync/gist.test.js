@@ -42,7 +42,7 @@ import {
   setGistId,
   gh,
   conciseErrorBody,
-  ensureGistV3,
+  ensureGist,
   fetchGistData,
   writeGistData,
   clearGistScans,
@@ -50,14 +50,11 @@ import {
   _resetGistStateForTest,
   TOKEN_KEY,
   GIST_ID_KEY,
-  LEGACY_GIST_ID_KEY,
   LAST_UP_KEY,
   LAST_DOWN_KEY,
   LAST_ERR_KEY,
   GIST_FILENAME,
   GIST_DESCRIPTION,
-  GIST_FILENAME_V2,
-  GIST_DESCRIPTION_V2,
   API_BASE,
 } from '../../src/sync/gist.js';
 import { gzipEncode } from '../../src/lib/gzip.js';
@@ -230,11 +227,11 @@ describe('conciseErrorBody', () => {
   });
 });
 
-describe('ensureGistV3', () => {
+describe('ensureGist', () => {
   it('returns the cached gist id without any network call', async () => {
     setGistId('cached-id-abc');
     const fetchMock = mockFetch(makeResponse());
-    const id = await ensureGistV3();
+    const id = await ensureGist();
     expect(id).toBe('cached-id-abc');
     // Zero fetches: the whole point of the cache is to skip discovery.
     expect(fetchMock).not.toHaveBeenCalled();
@@ -253,7 +250,7 @@ describe('ensureGistV3', () => {
       }),
     );
     vi.stubGlobal('fetch', fetchMock);
-    const id = await ensureGistV3();
+    const id = await ensureGist();
     expect(id).toBe('current-existing');
     expect(getGistId()).toBe('current-existing');
     // Exactly one call — the listing. No GET on the specific gist,
@@ -261,61 +258,7 @@ describe('ensureGistV3', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('migrates from a legacy gist: reads, copies payload, creates current, cleans LEGACY key', async () => {
-    localStorage.removeItem(GIST_ID_KEY);
-    // Simulate a prior install leaving a legacy gist id cached — we
-    // want to see it cleaned up on successful migration.
-    localStorage.setItem(LEGACY_GIST_ID_KEY, 'old-legacy-cache');
-
-    const legacyPayload = {
-      version: 3,
-      updatedAt: '2024-01-01T00:00:00.000Z',
-      galaxyScans: { '4:30': { scannedAt: 111, positions: {} } },
-      colonyHistory: [{ cp: 1, fields: 200, coords: '[1:1:1]', position: 1, timestamp: 1 }],
-    };
-    const legacyCompressed = await gzipEncode(JSON.stringify(legacyPayload));
-
-    const fetchMock = vi
-      .fn()
-      // 1) Listing gists.
-      .mockResolvedValueOnce(
-        makeResponse({
-          body: [{ id: 'legacy-id', description: GIST_DESCRIPTION_V2 }],
-        }),
-      )
-      // 2) GET the legacy gist to read the content.
-      .mockResolvedValueOnce(
-        makeResponse({
-          body: {
-            id: 'legacy-id',
-            files: { [GIST_FILENAME_V2]: { content: legacyCompressed, truncated: false } },
-          },
-        }),
-      )
-      // 3) POST the new gist.
-      .mockResolvedValueOnce(
-        makeResponse({ body: { id: 'new-current-id' } }),
-      );
-    vi.stubGlobal('fetch', fetchMock);
-
-    const id = await ensureGistV3();
-    expect(id).toBe('new-current-id');
-    // Legacy cache cleared.
-    expect(localStorage.getItem(LEGACY_GIST_ID_KEY)).toBeNull();
-    // The POST body (call index 2) must carry the current description
-    // and filename, with the migrated galaxyScans wrapped into a
-    // compressed payload. We don't assert the exact ciphertext — just
-    // that the POST went out with the right metadata.
-    const [, init] = fetchMock.mock.calls[2];
-    expect(init.method).toBe('POST');
-    const body = JSON.parse(/** @type {string} */ (init.body));
-    expect(body.description).toBe(GIST_DESCRIPTION);
-    expect(body.public).toBe(false);
-    expect(body.files[GIST_FILENAME]).toBeDefined();
-    expect(typeof body.files[GIST_FILENAME].content).toBe('string');
-  });
-
-  it('creates an empty gist when no current or legacy gist exists', async () => {
+  it('creates an empty gist when none exists', async () => {
     localStorage.removeItem(GIST_ID_KEY);
     const fetchMock = vi
       .fn()
@@ -324,57 +267,22 @@ describe('ensureGistV3', () => {
       // 2) POST the new gist.
       .mockResolvedValueOnce(makeResponse({ body: { id: 'brand-new-id' } }));
     vi.stubGlobal('fetch', fetchMock);
-    const id = await ensureGistV3();
+    const id = await ensureGist();
     expect(id).toBe('brand-new-id');
-    // Two calls: listing + POST. No GET on any legacy gist because
-    // there was nothing to migrate from.
+    // Two calls: listing + POST.
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const postCall = fetchMock.mock.calls[1][1];
     const body = JSON.parse(/** @type {string} */ (postCall.body));
     expect(body.description).toBe(GIST_DESCRIPTION);
     expect(body.files[GIST_FILENAME]).toBeDefined();
   });
-
-  it('falls back to an empty gist when the legacy payload fails to decode', async () => {
-    localStorage.removeItem(GIST_ID_KEY);
-    const fetchMock = vi
-      .fn()
-      // 1) Listing: only a legacy gist.
-      .mockResolvedValueOnce(
-        makeResponse({
-          body: [{ id: 'legacy-id', description: GIST_DESCRIPTION_V2 }],
-        }),
-      )
-      // 2) GET legacy: file is present but content is nonsense (not
-      //    valid base64/gzip). gzipDecode throws; our catch path logs
-      //    a warning and falls through.
-      .mockResolvedValueOnce(
-        makeResponse({
-          body: {
-            id: 'legacy-id',
-            files: { [GIST_FILENAME_V2]: { content: '!!!not base64!!!', truncated: false } },
-          },
-        }),
-      )
-      // 3) POST the new gist with empty payload.
-      .mockResolvedValueOnce(makeResponse({ body: { id: 'fresh-gist' } }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    const id = await ensureGistV3();
-    expect(id).toBe('fresh-gist');
-    // POST body: empty galaxyScans, empty colonyHistory (because the
-    // migration read bombed and we created a blank payload).
-    const postBody = JSON.parse(/** @type {string} */ (fetchMock.mock.calls[2][1].body));
-    expect(postBody.description).toBe(GIST_DESCRIPTION);
-    expect(postBody.files[GIST_FILENAME]).toBeDefined();
-  });
 });
 
 describe('fetchGistData', () => {
-  it('decompresses and returns a well-formed v3 payload', async () => {
+  it('decompresses and returns a well-formed current-schema payload', async () => {
     setGistId('cached-fetch-id');
     const payload = {
-      version: 3,
+      version: 1,
       updatedAt: '2025-01-01T00:00:00.000Z',
       galaxyScans: { '1:1': { scannedAt: 999, positions: {} } },
       colonyHistory: [
@@ -382,7 +290,7 @@ describe('fetchGistData', () => {
       ],
     };
     const compressed = await gzipEncode(JSON.stringify(payload));
-    // ensureGistV3 returns the cached id (no network), so the only
+    // ensureGist returns the cached id (no network), so the only
     // fetch is the GET on /gists/:id.
     mockFetch(
       makeResponse({
@@ -421,7 +329,7 @@ describe('writeGistData', () => {
     const fetchMock = mockFetch(makeResponse({ body: { id: 'cached-write-id' } }));
     /** @type {import('../../src/sync/gist.js').GistPayload} */
     const data = {
-      version: 3,
+      version: 1,
       updatedAt: '2025-02-02T02:02:02.000Z',
       galaxyScans: { '2:2': { scannedAt: 5, positions: {} } },
       colonyHistory: [{ cp: 7, fields: 100, coords: '[2:2:2]', position: 2, timestamp: 3 }],
@@ -445,7 +353,7 @@ describe('clearGistScans', () => {
   it('preserves colonyHistory while emptying galaxyScans', async () => {
     setGistId('cached-clear-id');
     const existing = {
-      version: 3,
+      version: 1,
       updatedAt: '2025-03-03T03:03:03.000Z',
       galaxyScans: { '4:30': { scannedAt: 1, positions: {} } },
       colonyHistory: [
@@ -464,7 +372,7 @@ describe('clearGistScans', () => {
           },
         }),
       )
-      // 2) PATCH (writeGistData -> ensureGistV3 short-circuits on cached id).
+      // 2) PATCH (writeGistData -> ensureGist short-circuits on cached id).
       .mockResolvedValueOnce(makeResponse({ body: { id: 'cached-clear-id' } }));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -479,7 +387,7 @@ describe('clearGistScans', () => {
     const compressedOut = patchBody.files[GIST_FILENAME].content;
     const { gzipDecode } = await import('../../src/lib/gzip.js');
     const decoded = JSON.parse(await gzipDecode(compressedOut));
-    expect(decoded.version).toBe(3);
+    expect(decoded.version).toBe(1);
     expect(decoded.galaxyScans).toEqual({});
     expect(decoded.colonyHistory).toEqual(existing.colonyHistory);
   });
@@ -487,7 +395,7 @@ describe('clearGistScans', () => {
   it('stamps LAST_UP_KEY with an ISO timestamp on success', async () => {
     setGistId('cached-clear-id');
     const existing = {
-      version: 3,
+      version: 1,
       updatedAt: 'x',
       galaxyScans: {},
       colonyHistory: [],

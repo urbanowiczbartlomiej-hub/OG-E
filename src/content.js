@@ -60,7 +60,6 @@ import { installReadabilityBoost } from './features/readabilityBoost.js';
 installAntiFlickerBackground();
 installReadabilityBoost();
 
-import { parseUniverseId } from './lib/universeId.js';
 import { initHistoryStore } from './state/history.js';
 import { initScansStore } from './state/scans.js';
 import { initRegistryStore } from './state/registry.js';
@@ -68,7 +67,6 @@ import { initSettingsStore } from './state/settings.js';
 import { initDailyRunRoutesStore } from './state/dailyRunRoutes.js';
 import { initGalaxyScanConfigStore } from './state/galaxyScanConfig.js';
 import { initBodiesStore } from './state/bodies.js';
-import { migrateLegacyStorageKeys } from './state/migrate.js';
 
 import { installColonyRecorder } from './features/colonyRecorder.js';
 import { installPlanetBarCapture } from './features/planetBarCapture.js';
@@ -89,55 +87,43 @@ import { installReminders } from './features/reminders/index.js';
 
 import { installSync } from './sync/scheduler.js';
 
-// Localstorage-backed stores hydrate synchronously and need no migration
-// (`localStorage` is already per-origin, so settings and registry are
-// naturally isolated per OGame server).
-initSettingsStore();
-initRegistryStore();
-
-// chrome.storage-backed wiring runs AFTER a one-shot legacy-key
-// migration. The migration lifts pre-v1.1.0 un-namespaced data
-// (`oge_colonyHistory`, `oge_galaxyScans`) into the per-universe slot
-// for `location.host`. Without this ordering the persist `load` would
-// hydrate from the empty namespaced slot while the legacy data sat
-// orphaned. The first server opened post-upgrade wins ownership —
-// see `state/migrate.js` for the rationale.
+// All stores hydrate synchronously. localStorage is per-origin and the
+// chrome.storage stores are namespaced per-universe (keyed on
+// `location.host`), so settings/registry/history/scans are naturally
+// isolated per OGame server.
 //
 // `initScansStore` also auto-installs the `oge:galaxyScanned` MAIN-world
 // bridge listener internally (see `state/scans.js`), so nothing extra
 // is needed here to hook the galaxy XHR observer up to the store.
-(async () => {
-  await migrateLegacyStorageKeys(parseUniverseId(location.host));
-  initHistoryStore();
-  initScansStore();
-  // Fleet-save routes (per-universe, chrome.storage). Without this the
-  // in-game dailyRun buttons never see routes authored in the dashboard
-  // and the ad-hoc collect target wouldn't survive a page reload.
-  initDailyRunRoutesStore();
-  // Galaxy-Scan config (per-universe, chrome.storage). Hydrated here so the
-  // Scan button reads the user's positions + rescan policy, and edits made
-  // in the dashboard (a different origin) reach the in-game button. On first
-  // run after the upgrade, its hydrate seeds positions/preference from the
-  // legacy AGR settings keys (see `state/galaxyScanConfig.js`).
-  initGalaxyScanConfigStore();
-  // Body inventory (per-universe, chrome.storage). Hydrated here so the
-  // planet-bar capture below can gate its first write on the hydrate and
-  // the dashboard route editor can read a snapshot of owned planets/moons.
-  initBodiesStore();
+initSettingsStore();
+initRegistryStore();
+initHistoryStore();
+initScansStore();
+// Daily-Run routes (per-universe, chrome.storage). Without this the
+// in-game dailyRun buttons never see routes authored in the dashboard
+// and the ad-hoc collect target wouldn't survive a page reload.
+initDailyRunRoutesStore();
+// Galaxy-Scan config (per-universe, chrome.storage). Hydrated here so the
+// Scan button reads the user's positions + rescan policy, and edits made
+// in the dashboard (a different origin) reach the in-game button.
+initGalaxyScanConfigStore();
+// Body inventory (per-universe, chrome.storage). Hydrated here so the
+// planet-bar capture below can gate its first write on the hydrate and
+// the dashboard route editor can read a snapshot of owned planets/moons.
+initBodiesStore();
 
-  // Reminder config lives in `settings.js` (regular localStorage Settings,
-  // authored in the in-game OG-E settings panel). Nothing extra to wire
-  // here — initSettingsStore was hydrated synchronously above.
+// Reminder config lives in `settings.js` (regular localStorage Settings,
+// authored in the in-game OG-E settings panel). Nothing extra to wire
+// here — initSettingsStore was hydrated synchronously above.
 
-  // Top-frame-only: sync scheduler. OGame embeds several iframes;
-  // running the gist round-trip in each would multiply API traffic
-  // for no gain (the data is identical across frames). Sync doesn't
-  // touch the DOM (only chrome.storage + HTTP + store subscriptions),
-  // so it's safe to install before DOMContentLoaded.
-  if (window.top === window.self) {
-    installSync();
-  }
-})();
+// Top-frame-only: sync scheduler. OGame embeds several iframes;
+// running the gist round-trip in each would multiply API traffic
+// for no gain (the data is identical across frames). Sync doesn't
+// touch the DOM (only chrome.storage + HTTP + store subscriptions),
+// so it's safe to install before DOMContentLoaded.
+if (window.top === window.self) {
+  installSync();
+}
 
 // Every feature below touches the DOM on install — at `document_start`
 // the HTML parser hasn't produced `<body>` yet, so e.g. badges.js's

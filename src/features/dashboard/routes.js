@@ -31,7 +31,7 @@ import { syncRequestKeyFor } from '../../sync/scheduler.js';
 import {
   parseRoutesDsl,
   formatRoutesDsl,
-  migrateDailyRunRoutes,
+  parseDailyRunRoutes,
   coordTypeKey,
 } from '../../domain/dailyRunRoutes.js';
 import { sortBodies } from '../../domain/bodies.js';
@@ -390,7 +390,7 @@ export const installRoutes = ({ getUniverseId }) => {
       chromeStore.get(dailyRunRoutesKeyFor(uni)),
       chromeStore.get(bodiesKeyFor(uni)),
     ]);
-    const { routes, collectTarget } = migrateDailyRunRoutes(storedRoutes);
+    const { routes, collectTarget } = parseDailyRunRoutes(storedRoutes);
     const bodies = Array.isArray(/** @type {any} */ (storedBodies)?.bodies)
       ? /** @type {Body[]} */ (/** @type {any} */ (storedBodies).bodies)
       : [];
@@ -410,7 +410,7 @@ export const installRoutes = ({ getUniverseId }) => {
     const dropped = model.routes.length - clean.length;
     // Preserve the in-game-set collect target; we only own `routes` here.
     const stored = await chromeStore.get(dailyRunRoutesKeyFor(uni));
-    const { collectTarget } = migrateDailyRunRoutes(stored);
+    const { collectTarget } = parseDailyRunRoutes(stored);
     await chromeStore.set(dailyRunRoutesKeyFor(uni), { routes: clean, collectTarget });
     // Stamp the cross-device sync clock (whole-universe newest-wins) and poke
     // any open game tab to push the change to the gist (same tombstone the

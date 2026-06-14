@@ -25,11 +25,8 @@ import {
   settingsStore,
   initSettingsStore,
   disposeSettingsStore,
-  migrateLegacyButtonSettings,
   SETTINGS_SCHEMA,
   SETTINGS_PREFIX,
-  FAB_ACTIVE_KEY,
-  FAB_POS_KEY,
 } from '../../src/state/settings.js';
 
 /** @typedef {import('../../src/state/settings.js').Settings} Settings */
@@ -424,62 +421,5 @@ describe('initSettingsStore — idempotent', () => {
     // Second init should be a no-op: it must NOT re-hydrate from '30'.
     initSettingsStore();
     expect(settingsStore.get().colMinGap).toBe(77);
-  });
-});
-
-describe('migrateLegacyButtonSettings (pre-unified-FAB upgrade)', () => {
-  it('is a no-op on a fresh install (no legacy keys, no fab keys written)', () => {
-    initSettingsStore();
-    expect(localStorage.getItem('oge_fabMode')).toBeNull();
-    expect(localStorage.getItem(FAB_ACTIVE_KEY)).toBeNull();
-    // Schema defaults still apply through hydration.
-    expect(settingsStore.get().fabMode).toBe(true);
-    expect(settingsStore.get().fabBtnSize).toBe(320);
-  });
-
-  it('disables the FAB when every legacy button was disabled', () => {
-    localStorage.setItem('oge_mobileMode', 'false');
-    localStorage.setItem('oge_colonizeMode', 'false');
-    localStorage.setItem('oge_lifeformMode', 'false');
-    // dailyRunMode absent → legacy default false.
-    initSettingsStore();
-    expect(localStorage.getItem('oge_fabMode')).toBe('false');
-    expect(settingsStore.get().fabMode).toBe(false);
-  });
-
-  it('adopts the first legacy-enabled module: size, active id and position', () => {
-    localStorage.setItem('oge_mobileMode', 'false');
-    localStorage.setItem('oge_colonizeMode', 'true');
-    localStorage.setItem('oge_colBtnSize', '200');
-    localStorage.setItem('oge_colBtnPos', JSON.stringify({ x: 11, y: 22 }));
-    initSettingsStore();
-    const state = settingsStore.get();
-    expect(state.fabMode).toBe(true);
-    expect(state.fabBtnSize).toBe(200);
-    expect(localStorage.getItem(FAB_ACTIVE_KEY)).toBe('col');
-    expect(JSON.parse(/** @type {string} */ (localStorage.getItem(FAB_POS_KEY)))).toEqual({
-      x: 11,
-      y: 22,
-    });
-  });
-
-  it('falls back to legacy mode defaults when only a size key exists', () => {
-    // mobileMode default was true → 'exp' is the first enabled module even
-    // though no mode key was ever written; its stored size is adopted.
-    localStorage.setItem('oge_enterBtnSize', '480');
-    initSettingsStore();
-    expect(settingsStore.get().fabMode).toBe(true);
-    expect(settingsStore.get().fabBtnSize).toBe(480);
-    expect(localStorage.getItem(FAB_ACTIVE_KEY)).toBe('exp');
-  });
-
-  it('never overwrites already-written fab keys (one-shot)', () => {
-    localStorage.setItem('oge_fabMode', 'false');
-    localStorage.setItem('oge_colonizeMode', 'true');
-    localStorage.setItem('oge_colBtnSize', '200');
-    migrateLegacyButtonSettings();
-    expect(localStorage.getItem('oge_fabMode')).toBe('false');
-    expect(localStorage.getItem('oge_fabBtnSize')).toBeNull();
-    expect(localStorage.getItem(FAB_ACTIVE_KEY)).toBeNull();
   });
 });

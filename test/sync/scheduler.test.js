@@ -115,7 +115,7 @@ const payload = ({
   settings,
   settingsPerUniverse,
 } = {}) => ({
-  version: 3,
+  version: 1,
   updatedAt: '2025-01-01T00:00:00.000Z',
   galaxyScans,
   colonyHistory,
@@ -344,7 +344,7 @@ describe('upload', () => {
       '1:1',
       '4:30',
     ]);
-    expect(sentPayload.version).toBe(3);
+    expect(sentPayload.version).toBe(1);
     // `up` stamp recorded.
     expect(setStatus).toHaveBeenCalledWith('up', expect.any(String));
   });

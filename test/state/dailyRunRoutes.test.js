@@ -29,7 +29,7 @@ import {
   disposeDailyRunRoutesStore,
   stampDailyRunRoutesChanged,
 } from '../../src/state/dailyRunRoutes.js';
-import { migrateDailyRunRoutes } from '../../src/domain/dailyRunRoutes.js';
+import { parseDailyRunRoutes } from '../../src/domain/dailyRunRoutes.js';
 
 /**
  * @type {{
@@ -151,34 +151,6 @@ describe('dailyRunRoutesStore — hydration via initDailyRunRoutesStore', () => 
     expect(dailyRunRoutesStore.get()).toEqual(stored);
   });
 
-  it('MIGRATES a legacy moon-keyed Record on hydrate into the source-array shape', async () => {
-    // Legacy shape: routes keyed by source-moon coords, type-less.
-    const legacy = {
-      routes: {
-        '4:472:15': {
-          targets: [{ galaxy: 4, system: 475, position: 14, type: 1 }],
-          microFleet: { shipId: 203, count: 15000 },
-        },
-      },
-      collectTarget: { galaxy: 4, system: 472, position: 15, type: 3 },
-    };
-    mockStore.get.mockResolvedValueOnce(legacy);
-    initDailyRunRoutesStore();
-    await flushMicrotasks();
-
-    expect(dailyRunRoutesStore.get()).toEqual({
-      routes: [
-        {
-          // legacy key lifted to a single MOON source (type 3)
-          sources: [{ galaxy: 4, system: 472, position: 15, type: 3 }],
-          targets: [{ galaxy: 4, system: 475, position: 14, type: 1 }],
-          microFleet: { shipId: 203, count: 15000 },
-        },
-      ],
-      collectTarget: { galaxy: 4, system: 472, position: 15, type: 3 },
-    });
-  });
-
   it('is idempotent — a second init does not re-register', () => {
     const dispose1 = initDailyRunRoutesStore();
     const dispose2 = initDailyRunRoutesStore();
@@ -187,14 +159,14 @@ describe('dailyRunRoutesStore — hydration via initDailyRunRoutesStore', () => 
   });
 });
 
-describe('migrateDailyRunRoutes (pure)', () => {
+describe('parseDailyRunRoutes (pure)', () => {
   it('passes a current-shape array through, dropping malformed routes', () => {
     const ok = {
       sources: [{ galaxy: 1, system: 1, position: 1, type: 3 }],
       targets: [{ galaxy: 1, system: 1, position: 2, type: 1 }],
       microFleet: { shipId: 203, count: 10 },
     };
-    const result = migrateDailyRunRoutes({
+    const result = parseDailyRunRoutes({
       routes: [
         ok,
         { sources: [], targets: [{}], microFleet: { shipId: 1, count: 1 } }, // no sources
@@ -206,52 +178,14 @@ describe('migrateDailyRunRoutes (pure)', () => {
     expect(result.routes).toEqual([ok]);
   });
 
-  it('converts the legacy moon-keyed Record into single-moon-source routes', () => {
-    const result = migrateDailyRunRoutes({
-      routes: {
-        '4:472:15': {
-          targets: [{ galaxy: 4, system: 475, position: 14, type: 1 }],
-          microFleet: { shipId: 203, count: 15000 },
-        },
-        '5:120:6': {
-          targets: [{ galaxy: 5, system: 120, position: 7, type: 1 }],
-          microFleet: { shipId: 202, count: 500 },
-        },
-      },
-      collectTarget: null,
-    });
-    expect(result.routes).toEqual([
-      {
-        sources: [{ galaxy: 4, system: 472, position: 15, type: 3 }],
-        targets: [{ galaxy: 4, system: 475, position: 14, type: 1 }],
-        microFleet: { shipId: 203, count: 15000 },
-      },
-      {
-        sources: [{ galaxy: 5, system: 120, position: 6, type: 3 }],
-        targets: [{ galaxy: 5, system: 120, position: 7, type: 1 }],
-        microFleet: { shipId: 202, count: 500 },
-      },
-    ]);
-  });
-
-  it('is idempotent — migrating an already-migrated value is a no-op', () => {
-    const legacy = {
-      routes: { '4:472:15': { targets: [{ galaxy: 4, system: 475, position: 14, type: 1 }], microFleet: { shipId: 203, count: 15000 } } },
-      collectTarget: null,
-    };
-    const once = migrateDailyRunRoutes(legacy);
-    const twice = migrateDailyRunRoutes(once);
-    expect(twice).toEqual(once);
-  });
-
   it('defaults to an empty route list + null target for junk / missing input', () => {
-    expect(migrateDailyRunRoutes(null)).toEqual({ routes: [], collectTarget: null });
-    expect(migrateDailyRunRoutes({})).toEqual({ routes: [], collectTarget: null });
-    expect(migrateDailyRunRoutes({ routes: 42 })).toEqual({ routes: [], collectTarget: null });
+    expect(parseDailyRunRoutes(null)).toEqual({ routes: [], collectTarget: null });
+    expect(parseDailyRunRoutes({})).toEqual({ routes: [], collectTarget: null });
+    expect(parseDailyRunRoutes({ routes: 42 })).toEqual({ routes: [], collectTarget: null });
   });
 
   it('preserves an existing collectTarget', () => {
     const ct = { galaxy: 4, system: 472, position: 15, type: 3 };
-    expect(migrateDailyRunRoutes({ routes: [], collectTarget: ct }).collectTarget).toEqual(ct);
+    expect(parseDailyRunRoutes({ routes: [], collectTarget: ct }).collectTarget).toEqual(ct);
   });
 });

@@ -44,39 +44,6 @@
 // hit 403/429 re-arms it within milliseconds, so the only real cost
 // of not persisting is one wasted round-trip per reload.
 //
-// # Legacy-gist migration
-//
-// The current gist and a legacy gist share the gzip+base64 payload
-// shape (schema version 3) but intentionally live in **separate
-// gists**: different description ({@link GIST_DESCRIPTION} vs
-// {@link GIST_DESCRIPTION_V2}) and different filename
-// ({@link GIST_FILENAME} vs {@link GIST_FILENAME_V2}). The reason is
-// rollback safety: if a user switches between an OG-E build that
-// writes the current gist and one that writes the legacy gist, each
-// build must remain able to read its own data. Sharing one gist would
-// mean a write from the current build (which may carry newer fields)
-// would confuse the legacy reader, and a legacy write would strip
-// anything the legacy build doesn't know about.
-//
-// The one-time migration path (see {@link ensureGistV3}) therefore:
-//
-//   1. Looks for the current gist (description matches {@link GIST_DESCRIPTION}).
-//      If found, cache its id and we're done.
-//   2. If absent, looks for the legacy gist (description matches
-//      {@link GIST_DESCRIPTION_V2}). If found, READ its content, COPY
-//      `galaxyScans` + `colonyHistory` into a fresh payload, CREATE a
-//      new current-gist. The legacy gist is **never** modified or
-//      deleted — the user can roll back and find their legacy data
-//      exactly where they left it.
-//   3. If neither exists, create an empty current-gist.
-//
-// The migration is idempotent: a subsequent boot skips steps 2/3
-// because step 1 now succeeds. If step 2 fails mid-flight (parse
-// error, network, gzip-decode exception), we log a warning and fall
-// through to creating an empty current-gist — the user's legacy data
-// is still safe on GitHub, and a later merge round can still reconcile
-// from either side once the user fixes whatever broke the read.
-//
 // # Why gzip + base64 for the payload
 //
 // A fully-scanned account's JSON is roughly 2 MB, dominated by
@@ -116,7 +83,6 @@
 
 import { gzipEncode, gzipDecode } from '../lib/gzip.js';
 import { safeLS } from '../lib/storage.js';
-import { logger } from '../lib/logger.js';
 import { SYNC_STATUS_EVENT } from '../lib/ogeEvents.js';
 import { clearScans, clearGalaxyScans } from './merge.js';
 
@@ -145,10 +111,10 @@ import { clearScans, clearGalaxyScans } from './merge.js';
  * into the file's `content` field.
  *
  * @typedef {object} GistPayload
- * @property {3} version
- *   Schema version. Pinned to 3 — readers reject anything else via
+ * @property {1} version
+ *   Schema version. Pinned to 1 — readers reject anything else via
  *   {@link fetchGistData}'s schema guard, which keeps us from
- *   accidentally interpreting an older-schema blob as the current
+ *   accidentally interpreting an off-schema blob as the current
  *   shape if the user ever edits the gist by hand.
  * @property {string} updatedAt
  *   ISO timestamp stamped by the writer at the moment it chose to
@@ -202,22 +168,8 @@ import { clearScans, clearGalaxyScans } from './merge.js';
  */
 export const TOKEN_KEY = 'oge_gistToken';
 
-/**
- * localStorage key caching our gist id once discovered/created. Named
- * `oge_gist` (not `oge_gistId`) specifically so it does NOT collide
- * with {@link LEGACY_GIST_ID_KEY} — the pre-v1 legacy install used
- * `oge_gistId` for the same purpose, and we want the legacy-migration
- * path to be able to tell its cached value apart from ours.
- */
+/** localStorage key caching our gist id once discovered/created. */
 export const GIST_ID_KEY = 'oge_gist';
-
-/**
- * localStorage key the pre-v1 legacy install wrote its gist id to. We
- * clean this up after a successful migration — not because it hurts
- * to leave it (the key lives alongside its matching token, unread by
- * us) but because stripping it gives support a cleaner storage dump.
- */
-export const LEGACY_GIST_ID_KEY = 'oge_gistId';
 
 /** localStorage key holding the ISO timestamp of the last successful upload. */
 export const LAST_UP_KEY = 'oge_lastSyncAt';
@@ -241,16 +193,10 @@ export const GIST_FILENAME = 'oge-data.json.gz.b64';
 /** Description GitHub shows for the current gist; also used as the discovery predicate. */
 export const GIST_DESCRIPTION = 'OG-E sync data (compressed) — do not edit manually';
 
-/** Legacy-gist filename — read-only during legacy-migration, never written. */
-export const GIST_FILENAME_V2 = 'oge-data.json.gz.b64';
-
-/** Legacy-gist description — matched during legacy-migration discovery. */
-export const GIST_DESCRIPTION_V2 = 'OG-E sync data v3 (compressed) — do not edit manually';
-
 // ── Protocol constants ──────────────────────────────────────────────
 
 /** Schema version baked into every written payload. See file header. */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 1;
 
 /** GitHub REST API base URL. All {@link gh} calls are built on top. */
 export const API_BASE = 'https://api.github.com';
@@ -297,7 +243,7 @@ export const getToken = () => sanitizeToken(safeLS.get(TOKEN_KEY) || '');
 
 /**
  * Read the cached gist id from localStorage, or `''` when not yet
- * discovered. {@link ensureGistV3} promotes this to a full id on first
+ * discovered. {@link ensureGist} promotes this to a full id on first
  * successful discovery or creation.
  *
  * @returns {string}
@@ -306,7 +252,7 @@ export const getGistId = () => safeLS.get(GIST_ID_KEY) || '';
 
 /**
  * Cache the gist id in localStorage. Normally called by
- * {@link ensureGistV3}; exposed for tests and settings flows that want
+ * {@link ensureGist}; exposed for tests and settings flows that want
  * to override the cached value (e.g. user paste of a pre-existing
  * gist id).
  *
@@ -468,8 +414,7 @@ export const gh = async (path, options = {}) => {
  *   Gist JSON as returned by `GET /gists/:id`. `any` because the full
  *   GitHub schema isn't worth typing for our one-field access.
  * @param {string} filename
- *   Exact filename to read (either {@link GIST_FILENAME} or, during
- *   migration, {@link GIST_FILENAME_V2}).
+ *   Exact filename to read (normally {@link GIST_FILENAME}).
  * @returns {Promise<string | null>}
  */
 const readGistFile = async (gist, filename) => {
@@ -482,36 +427,26 @@ const readGistFile = async (gist, filename) => {
   return file.content;
 };
 
-// ── Gist discovery + creation (with legacy-gist migration) ────────────
+// ── Gist discovery + creation ─────────────────────────────────────────
 
 /**
  * Return the id of the current gist, discovering or creating one as needed.
  *
- * Four-step resolution:
+ * Three-step resolution:
  *
  *   1. **Cached id** — if {@link GIST_ID_KEY} is populated, return it
  *      without a network call.
- *   2. **Existing current gist** — list the user's gists (one page of 100;
+ *   2. **Existing gist** — list the user's gists (one page of 100;
  *      enough for any real account), match `description ===
  *      {@link GIST_DESCRIPTION}`. If found, cache and return its id.
- *   3. **Legacy migration** — if no current gist but a legacy gist
- *      (`description === {@link GIST_DESCRIPTION_V2}`) exists, read and
- *      decode its content. Copy `galaxyScans` + `colonyHistory` into
- *      the initial payload. The legacy gist is **never** modified.
- *   4. **Fresh create** — POST a new gist with the initial payload
- *      (migrated from legacy if step 3 succeeded, empty otherwise). On
- *      success, cache the new id and clean up {@link LEGACY_GIST_ID_KEY}.
- *
- * Migration failures (bad base64, corrupt gzip, JSON parse error) are
- * logged via {@link logger.warn} and swallowed — we fall through to
- * creating an empty gist so the user isn't blocked forever on a
- * corrupted legacy payload.
+ *   3. **Fresh create** — POST a new gist with an empty payload. On
+ *      success, cache the new id and return it.
  *
  * @returns {Promise<string>} The gist id.
  * @throws When the underlying {@link gh} calls fail (no token, rate
  *   limited, network error on gist creation).
  */
-export const ensureGistV3 = async () => {
+export const ensureGist = async () => {
   const cached = getGistId();
   if (cached) return cached;
 
@@ -523,48 +458,19 @@ export const ensureGistV3 = async () => {
   /** @type {Array<{ id: string, description: string }>} */
   const list = gists || [];
 
-  const v3 = list.find((g) => g.description === GIST_DESCRIPTION);
-  if (v3) {
-    setGistId(v3.id);
-    return v3.id;
+  const existing = list.find((g) => g.description === GIST_DESCRIPTION);
+  if (existing) {
+    setGistId(existing.id);
+    return existing.id;
   }
 
   /** @type {GistPayload} */
-  let initialPayload = {
+  const initialPayload = {
     version: SCHEMA_VERSION,
     updatedAt: new Date().toISOString(),
     galaxyScans: /** @type {GalaxyScans} */ ({}),
     colonyHistory: /** @type {ColonyHistory} */ ([]),
   };
-
-  const v2 = list.find((g) => g.description === GIST_DESCRIPTION_V2);
-  if (v2) {
-    try {
-      const v2Gist = await gh(`/gists/${v2.id}`);
-      const content = await readGistFile(v2Gist, GIST_FILENAME_V2);
-      if (content) {
-        const json = await gzipDecode(content);
-        const parsed = JSON.parse(json);
-        // Only adopt the legacy payload when it carries the same
-        // schema version we understand. An older-schema blob with a
-        // different `version` is skipped; we'd rather create an empty
-        // gist and let the merge engine rehydrate from local state.
-        if (parsed && parsed.version === SCHEMA_VERSION) {
-          initialPayload = {
-            version: SCHEMA_VERSION,
-            updatedAt: new Date().toISOString(),
-            galaxyScans: parsed.galaxyScans || {},
-            colonyHistory: parsed.colonyHistory || [],
-          };
-        }
-      }
-    } catch (err) {
-      // Best-effort migration. The legacy gist is still on GitHub for
-      // rollback; the user can try again next boot. We don't rethrow
-      // because a migration failure mustn't block boot.
-      logger.warn('[gist] v2→v3 migration read failed:', /** @type {Error} */ (err).message);
-    }
-  }
 
   const compressed = await gzipEncode(JSON.stringify(initialPayload));
   const created = await gh('/gists', {
@@ -576,10 +482,6 @@ export const ensureGistV3 = async () => {
     }),
   });
   setGistId(created.id);
-  // Clean up the legacy cache pointer. The legacy gist itself stays on
-  // GitHub; we only drop the localStorage reference because we never
-  // read it again.
-  safeLS.remove(LEGACY_GIST_ID_KEY);
   return created.id;
 };
 
@@ -598,17 +500,17 @@ export const ensureGistV3 = async () => {
  * @returns {Promise<GistPayload | null>}
  */
 export const fetchGistData = async () => {
-  const id = await ensureGistV3();
+  const id = await ensureGist();
   const gist = await gh(`/gists/${id}`);
   const content = await readGistFile(gist, GIST_FILENAME);
   if (!content) return null;
   try {
     const json = await gzipDecode(content);
     const parsed = JSON.parse(json);
-    // `parsed.version || 1` treats payloads that pre-date explicit
-    // versioning as schema version 1, which is rejected — same as
-    // anything labelled with a version we don't understand.
-    if (!parsed || (parsed.version || 1) !== SCHEMA_VERSION) return null;
+    // Reject anything whose version isn't exactly the schema we write —
+    // a missing/unknown version means a hand-edited or off-schema blob,
+    // which we treat as empty and overwrite on the next upload.
+    if (!parsed || parsed.version !== SCHEMA_VERSION) return null;
     return /** @type {GistPayload} */ (parsed);
   } catch {
     return null;
@@ -627,7 +529,7 @@ export const fetchGistData = async () => {
  * @returns {Promise<void>}
  */
 export const writeGistData = async (data) => {
-  const id = await ensureGistV3();
+  const id = await ensureGist();
   const compressed = await gzipEncode(JSON.stringify(data));
   await gh(`/gists/${id}`, {
     method: 'PATCH',
@@ -648,7 +550,7 @@ export const writeGistData = async (data) => {
  * @returns {Promise<void>}
  */
 export const clearGistScans = async () => {
-  const id = await ensureGistV3();
+  const id = await ensureGist();
   const gist = await gh(`/gists/${id}`);
   const content = await readGistFile(gist, GIST_FILENAME);
   let parsed = null;
@@ -682,7 +584,7 @@ export const clearGistScans = async () => {
  * @returns {Promise<void>}
  */
 export const clearGistScansForGalaxy = async (galaxy) => {
-  const id = await ensureGistV3();
+  const id = await ensureGist();
   const gist = await gh(`/gists/${id}`);
   const content = await readGistFile(gist, GIST_FILENAME);
   let parsed = null;

@@ -20,7 +20,7 @@
 
 import { createStore } from '../lib/createStore.js';
 import { persist } from '../lib/persist.js';
-import { chromeStore, safeLS } from '../lib/storage.js';
+import { chromeStore } from '../lib/storage.js';
 import {
   defaultGalaxyScanConfig,
   normalizeGalaxyScanConfig,
@@ -81,44 +81,6 @@ const currentKey = () =>
 const DEBOUNCE_MS = 200;
 
 /**
- * Legacy AGR-settings localStorage keys whose values moved into this config
- * when the Galaxy-Scan editor relocated from the AGR settings panel to the
- * dashboard. Read once during {@link initGalaxyScanConfigStore}'s hydrate to
- * seed `positions` / `preferOtherGalaxies` so the move is transparent for an
- * upgrading user. The keys are intentionally NOT removed (a downgrade keeps
- * working); they are simply no longer the source of truth.
- */
-const LEGACY_POSITIONS_KEY = 'oge_colPositions';
-const LEGACY_PREFER_KEY = 'oge_colPreferOtherGalaxies';
-
-/**
- * One-time seed from the legacy AGR settings keys. Returns a complete config
- * built on the default preset with `positions` / `preferOtherGalaxies` taken
- * from localStorage when present, or `null` when neither legacy key exists
- * (a fresh install, or the extension/dashboard origin — which can't see the
- * game origin's localStorage). Returning `null` tells `persist` to keep the
- * default preset without a migration write.
- *
- * NB: the seeded config is written through to chrome.storage but its sync
- * timestamp is left at 0, so it does not clobber a remote config from another
- * device; the migrated positions begin syncing once the user first edits the
- * config in the dashboard (which stamps the clock).
- *
- * @returns {GalaxyScanConfig | null}
- */
-const seedFromLegacySettings = () => {
-  const pos = safeLS.get(LEGACY_POSITIONS_KEY);
-  const prefRaw = safeLS.get(LEGACY_PREFER_KEY);
-  if (pos === null && prefRaw === null) return null;
-  const cfg = defaultGalaxyScanConfig();
-  if (pos !== null) cfg.positions = pos;
-  if (prefRaw !== null) {
-    cfg.preferOtherGalaxies = safeLS.bool(LEGACY_PREFER_KEY, cfg.preferOtherGalaxies);
-  }
-  return cfg;
-};
-
-/**
  * The Galaxy-Scan config store. Initial value is the built-in "free
  * positions" preset (so the Scan button has sane behaviour before the async
  * hydrate lands), replaced by the persisted value once
@@ -176,10 +138,8 @@ export const initGalaxyScanConfigStore = () => {
     load: async () => {
       const raw = await chromeStore.get(currentKey());
       if (raw !== null && raw !== undefined) return normalizeGalaxyScanConfig(raw);
-      // Nothing in chrome.storage yet: first run after the upgrade (game
-      // origin) seeds from the legacy AGR settings keys; a fresh install /
-      // the dashboard origin gets null → keeps the default preset, no write.
-      return seedFromLegacySettings();
+      // Nothing in chrome.storage yet → keep the default preset, no write.
+      return null;
     },
     save: (value) => chromeStore.set(currentKey(), value),
     debounceMs: DEBOUNCE_MS,

@@ -10,10 +10,9 @@
 //
 //   - `routes` — an ARRAY of {@link Route}. Each route has one or more
 //     SOURCE bodies (planets and/or moons), one ordered target list, and
-//     one micro-fleet; standing on any source fires it. Legacy configs
-//     keyed routes by a single source-moon coord — {@link migrateDailyRunRoutes}
-//     lifts that `Record<coordKey, …>` form into the source-array shape on
-//     hydrate (and the migrated value is written straight back).
+//     one micro-fleet; standing on any source fires it. Stored values are
+//     normalised on hydrate by {@link parseDailyRunRoutes} (well-formed
+//     routes only).
 //   - `collectTarget` — the single ad-hoc destination the COLLECT action
 //     sends everything back to. Set by clicking "set target" while on the
 //     staging moon; `null` until chosen. Carries `type` because the
@@ -35,7 +34,7 @@ import { createStore } from '../lib/createStore.js';
 import { persist } from '../lib/persist.js';
 import { chromeStore } from '../lib/storage.js';
 import { DAILY_RUN_REDIRECT_KEY } from '../lib/storageKeys.js';
-import { migrateDailyRunRoutes } from '../domain/dailyRunRoutes.js';
+import { parseDailyRunRoutes } from '../domain/dailyRunRoutes.js';
 import { currentUniverseKey } from './universeKey.js';
 
 /**
@@ -54,7 +53,7 @@ import { currentUniverseKey } from './universeKey.js';
  *
  * @typedef {object} DailyRunRoutes
  * @property {Route[]} routes  All micro-fleet routes (each with its own
- *   source/target lists). See {@link migrateDailyRunRoutes} for the legacy shape.
+ *   source/target lists). See {@link parseDailyRunRoutes} for normalisation.
  * @property {TargetCoord | null} collectTarget  Ad-hoc collect destination.
  */
 
@@ -197,12 +196,11 @@ export const initDailyRunRoutesStore = () => {
     store: dailyRunRoutesStore,
     load: async () => {
       const raw = await chromeStore.get(currentDailyRunRoutesKey());
-      // Nothing stored yet → keep the empty initial (no migration write).
+      // Nothing stored yet → keep the empty initial.
       if (raw === null || raw === undefined) return null;
-      // Normalise + migrate the legacy moon-keyed shape. The migrated value
-      // is what gets `store.set`, so the write-through persists it back in
-      // the current shape — a one-time, transparent upgrade.
-      return /** @type {DailyRunRoutes} */ (migrateDailyRunRoutes(raw));
+      // Normalise the stored value (drops malformed routes) before it
+      // reaches `store.set`.
+      return /** @type {DailyRunRoutes} */ (parseDailyRunRoutes(raw));
     },
     save: (value) => chromeStore.set(currentDailyRunRoutesKey(), value),
     debounceMs: DEBOUNCE_MS,

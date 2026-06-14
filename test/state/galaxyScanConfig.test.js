@@ -2,10 +2,9 @@
 //
 // Like state/dailyRunRoutes.js, this is a thin createStore wrapper; the behaviour
 // worth testing is the lazy persist wiring (init hydrates from
-// chrome.storage.local, with a one-time legacy-settings seed) and the
-// per-universe stamp helper. We mock lib/storage.js (chromeStore + safeLS)
-// before importing the module. Node env — no DOM (currentUniverseKey falls
-// back to the bare suffix).
+// chrome.storage.local) and the per-universe stamp helper. We mock
+// lib/storage.js (chromeStore) before importing the module. Node env — no DOM
+// (currentUniverseKey falls back to the bare suffix).
 //
 // @ts-check
 
@@ -18,13 +17,9 @@ vi.mock('../../src/lib/storage.js', () => ({
     remove: vi.fn(),
     onChanged: vi.fn(),
   },
-  safeLS: {
-    get: vi.fn(),
-    bool: vi.fn(),
-  },
 }));
 
-import { chromeStore, safeLS } from '../../src/lib/storage.js';
+import { chromeStore } from '../../src/lib/storage.js';
 import {
   GALAXY_SCAN_CONFIG_KEY_BASE,
   GALAXY_SCAN_CONFIG_TS_BASE,
@@ -38,20 +33,14 @@ import {
 import { defaultGalaxyScanConfig } from '../../src/domain/galaxyScanConfig.js';
 
 const mockStore = /** @type {any} */ (chromeStore);
-const mockLS = /** @type {any} */ (safeLS);
 
 const resetAll = () => {
   disposeGalaxyScanConfigStore();
   galaxyScanConfigStore.set(defaultGalaxyScanConfig());
   mockStore.get.mockReset();
   mockStore.set.mockReset();
-  mockLS.get.mockReset();
-  mockLS.bool.mockReset();
   mockStore.get.mockResolvedValue(undefined);
   mockStore.set.mockResolvedValue(undefined);
-  // No legacy AGR keys by default.
-  mockLS.get.mockReturnValue(null);
-  mockLS.bool.mockImplementation((/** @type {string} */ _k, /** @type {boolean} */ d) => d);
 };
 
 const flushMicrotasks = async () => {
@@ -91,32 +80,11 @@ describe('galaxyScanConfig store — hydration', () => {
     expect(cfg.rescan.occupied).toBe(30 * 86400); // filled from default
   });
 
-  it('keeps the default preset and does NOT write when nothing is stored and no legacy keys exist', async () => {
+  it('keeps the default preset and does NOT write when nothing is stored', async () => {
     initGalaxyScanConfigStore();
     await flushMicrotasks();
     expect(galaxyScanConfigStore.get()).toEqual(defaultGalaxyScanConfig());
     expect(mockStore.set).not.toHaveBeenCalled();
-  });
-
-  it('seeds positions/preference from the legacy AGR settings keys on first run', async () => {
-    // chrome.storage empty, but the game origin still has the old keys.
-    mockLS.get.mockImplementation((/** @type {string} */ key) => {
-      if (key === 'oge_colPositions') return '9,10';
-      if (key === 'oge_colPreferOtherGalaxies') return 'false';
-      return null;
-    });
-    mockLS.bool.mockReturnValue(false);
-
-    initGalaxyScanConfigStore();
-    await flushMicrotasks();
-
-    const cfg = galaxyScanConfigStore.get();
-    expect(cfg.positions).toBe('9,10');
-    expect(cfg.preferOtherGalaxies).toBe(false);
-    // Rescan stays at defaults — only positions/preference migrate.
-    expect(cfg.rescan.inactive).toBe(5 * 86400);
-    // (The write-through to chrome.storage is debounced 200ms; we assert the
-    // in-memory hydrate here, not the deferred persist.)
   });
 });
 

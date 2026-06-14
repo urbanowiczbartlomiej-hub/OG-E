@@ -1,7 +1,7 @@
 // Unit tests for `domain/dailyRunRoutes.reconcileRoutes` — pruning route endpoints
 // against the captured body inventory. Node env — pure functions only. (The
 // DSL parse/format + findRouteForBody are covered via the dailyRun pure
-// suite; migrateDailyRunRoutes via the dailyRunRoutes state suite.)
+// suite; parseDailyRunRoutes via the dailyRunRoutes state suite.)
 //
 // @ts-check
 

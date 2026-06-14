@@ -69,7 +69,7 @@
 
 /* global fetch */
 
-import { gh, ensureGistV3, getToken, getGistId } from './gist.js';
+import { gh, ensureGist, getToken, getGistId } from './gist.js';
 import { chromeStore } from '../lib/storage.js';
 import { reconcileWaves, pruneNotifyState } from '../domain/waves.js';
 import { reconcileAdhoc, pruneAdhocNotify } from '../domain/adhoc.js';
@@ -279,7 +279,7 @@ export const REMINDER_NTFY_TOKEN_KEY = 'oge_reminderNtfyTokenMirror';
  * @returns {Promise<ReminderState | null>}
  */
 export const readReminderState = async (universeId) => {
-  const id = await ensureGistV3();
+  const id = await ensureGist();
   const gist = await gh(`/gists/${id}`);
   const file = gist?.files?.[reminderFilenameFor(universeId)];
   if (!file) return null;
@@ -306,14 +306,14 @@ export const readReminderState = async (universeId) => {
 
 /**
  * Write this universe's reminder file (plain JSON, pretty-printed).
- * Creates / discovers the gist as needed via {@link ensureGistV3}.
+ * Creates / discovers the gist as needed via {@link ensureGist}.
  *
  * @param {string} universeId
  * @param {ReminderState} state
  * @returns {Promise<void>}
  */
 export const writeReminderState = async (universeId, state) => {
-  const id = await ensureGistV3();
+  const id = await ensureGist();
   await gh(`/gists/${id}`, {
     method: 'PATCH',
     body: JSON.stringify({

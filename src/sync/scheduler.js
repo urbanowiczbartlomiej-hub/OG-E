@@ -94,7 +94,7 @@ import {
   galaxyScanConfigKeyFor,
   galaxyScanConfigTsKeyFor,
 } from '../state/galaxyScanConfig.js';
-import { migrateDailyRunRoutes } from '../domain/dailyRunRoutes.js';
+import { parseDailyRunRoutes } from '../domain/dailyRunRoutes.js';
 import { normalizeGalaxyScanConfig } from '../domain/galaxyScanConfig.js';
 import {
   mergeScans,
@@ -260,7 +260,7 @@ const readLocalRoutesSlot = async () => {
     chromeStore.get(dailyRunRoutesKeyFor(routesUniverseId)),
     chromeStore.get(dailyRunRoutesTsKeyFor(routesUniverseId)),
   ]);
-  const { routes, collectTarget } = migrateDailyRunRoutes(raw);
+  const { routes, collectTarget } = parseDailyRunRoutes(raw);
   return { routes, collectTarget, updatedAt: typeof ts === 'number' ? ts : 0 };
 };
 
@@ -670,7 +670,7 @@ const upload = async () => {
       })
     ) {
       await writeGistData({
-        version: 3,
+        version: 1,
         updatedAt: new Date().toISOString(),
         galaxyScans: scansResult.merged,
         colonyHistory: histResult.merged,

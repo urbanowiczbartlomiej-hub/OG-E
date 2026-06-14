@@ -45,9 +45,7 @@ import {
  * and/or moons) sharing ONE ordered target list and ONE micro-fleet.
  * Standing on ANY of the sources fires the route. Source matching uses
  * {@link coordTypeKey}, so a planet and the moon at the same slot are
- * distinct sources — which is why each source carries its own `type`
- * (older configs, where a source was always a moon, are lifted to
- * `type === 3` by {@link migrateDailyRunRoutes}).
+ * distinct sources — which is why each source carries its own `type`.
  *
  * No synthetic `id`: a route's identity IS its source set (a body belongs
  * to at most one route), and dropping the field keeps the DSL round-trip
@@ -77,27 +75,6 @@ export const coordKey = ({ galaxy, system, position }) =>
  */
 export const coordTypeKey = ({ galaxy, system, position, type }) =>
   `${galaxy}:${system}:${position}:${type}`;
-
-/**
- * Build a {@link TargetCoord} from a type-less coord key (`"g:s:p"`) and a
- * `type`. Returns `null` when the key isn't a bare `g:s:p` triple. Used by
- * {@link migrateDailyRunRoutes} to lift legacy moon-keyed routes into the
- * source-array shape.
- *
- * @param {string} key
- * @param {number} type
- * @returns {TargetCoord | null}
- */
-export const coordFromKey = (key, type) => {
-  const m = String(key).match(/^(\d+):(\d+):(\d+)$/);
-  if (!m) return null;
-  return {
-    galaxy: parseInt(m[1], 10),
-    system: parseInt(m[2], 10),
-    position: parseInt(m[3], 10),
-    type,
-  };
-};
 
 /**
  * Find the route whose `sources` contain the body you're standing on, or
@@ -329,22 +306,17 @@ export const formatRoutesDsl = (routes) => {
 };
 
 /**
- * Normalise a stored {@link import('../state/dailyRunRoutes.js').DailyRunRoutes} value
- * into the current shape (`routes: Route[]`), migrating the legacy
- * `routes: Record<coordKey, { targets, microFleet }>` form on the way.
- *
- * Legacy keys were source MOONS (type-less coords), so each becomes a
- * single-source route with `type === 3` ({@link TARGET_MOON}). Already-array
- * input is filtered to well-formed routes (drops anything missing a source
- * list, target list, or micro-fleet). Anything unrecognisable yields an
- * empty route list. `collectTarget` passes through (or `null`).
- *
- * Pure + idempotent — `migrate(migrate(x))` equals `migrate(x)`.
+ * Normalise a stored {@link import('../state/dailyRunRoutes.js').DailyRunRoutes}
+ * value into the canonical shape: a well-formed `routes: Route[]` plus the
+ * `collectTarget`. Array input is filtered to well-formed routes (drops
+ * anything missing a source list, target list, or micro-fleet); any
+ * non-array / junk input yields an empty route list. `collectTarget` passes
+ * through (or `null`).
  *
  * @param {unknown} stored
  * @returns {{ routes: Route[], collectTarget: TargetCoord | null }}
  */
-export const migrateDailyRunRoutes = (stored) => {
+export const parseDailyRunRoutes = (stored) => {
   const obj = stored && typeof stored === 'object' ? /** @type {any} */ (stored) : {};
   /** @type {TargetCoord | null} */
   const collectTarget = obj.collectTarget ?? null;
@@ -354,22 +326,7 @@ export const migrateDailyRunRoutes = (stored) => {
   const isWellFormed = (r) =>
     r && Array.isArray(r.sources) && r.sources.length > 0 && Array.isArray(r.targets) && r.microFleet;
 
-  if (Array.isArray(raw)) {
-    return { routes: raw.filter(isWellFormed), collectTarget };
-  }
-
-  /** @type {Route[]} */
-  const routes = [];
-  if (raw && typeof raw === 'object') {
-    for (const key of Object.keys(raw)) {
-      const r = raw[key];
-      if (!r || !Array.isArray(r.targets) || !r.microFleet) continue;
-      const src = coordFromKey(key, TARGET_MOON);
-      if (!src) continue;
-      routes.push({ sources: [src], targets: r.targets, microFleet: r.microFleet });
-    }
-  }
-  return { routes, collectTarget };
+  return { routes: Array.isArray(raw) ? raw.filter(isWellFormed) : [], collectTarget };
 };
 
 /**
