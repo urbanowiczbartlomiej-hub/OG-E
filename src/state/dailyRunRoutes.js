@@ -1,10 +1,7 @@
 // Daily Run route config — reactive store for the `features/dailyRun`
-// micro-fleet workflow (the "Daily Run" the user sees in the UI; once called
-// "fleet-save collect" internally). Persisted to `chrome.storage.local` under
-// a per-universe key (`<universeId>:oge_fsRoutes`, see
-// {@link dailyRunRoutesKeyFor}). The `oge_fs*` key strings are HISTORICAL
-// names, deliberately frozen — only the JS symbols were renamed; changing a
-// literal would require a storage migration.
+// micro-fleet workflow (the "Daily Run" the user sees in the UI). Persisted
+// to `chrome.storage.local` under a per-universe key
+// (`<universeId>:oge_dailyRunRoutes`, see {@link dailyRunRoutesKeyFor}).
 //
 // # What it holds
 //
@@ -49,7 +46,7 @@ import { currentUniverseKey } from './universeKey.js';
  */
 
 /**
- * Full route config persisted under `<universeId>:oge_fsRoutes`.
+ * Full route config persisted under `<universeId>:oge_dailyRunRoutes`.
  *
  * @typedef {object} DailyRunRoutes
  * @property {Route[]} routes  All micro-fleet routes (each with its own
@@ -63,7 +60,7 @@ import { currentUniverseKey } from './universeKey.js';
  * Exported so the dashboard (extension origin) can compose a key for an
  * arbitrary selected universe.
  */
-export const DAILY_RUN_ROUTES_KEY_BASE = 'oge_fsRoutes'; // historical name — do not change without migration
+export const DAILY_RUN_ROUTES_KEY_BASE = 'oge_dailyRunRoutes';
 
 /**
  * localStorage handoff key between the isolated-world dailyRun
@@ -83,13 +80,13 @@ export { DAILY_RUN_REDIRECT_KEY };
  * Compose the full chrome.storage.local key for a given universe id.
  *
  * @param {string} universeId  e.g. `'s163-pl'` from {@link parseUniverseId}.
- * @returns {string} The namespaced key, e.g. `'s163-pl:oge_fsRoutes'`.
+ * @returns {string} The namespaced key, e.g. `'s163-pl:oge_dailyRunRoutes'`.
  */
 export const dailyRunRoutesKeyFor = (universeId) => `${universeId}:${DAILY_RUN_ROUTES_KEY_BASE}`;
 
 /**
  * Suffix of the per-universe "routes last changed" timestamp key
- * (`<universeId>:oge_fsRoutesTs`). The cross-device sync engine uses this
+ * (`<universeId>:oge_dailyRunRoutesTs`). The cross-device sync engine uses this
  * epoch-ms value for whole-universe newest-wins merging (see
  * `sync/merge.mergeDailyRunRoutes`).
  *
@@ -104,13 +101,13 @@ export const dailyRunRoutesKeyFor = (universeId) => `${universeId}:${DAILY_RUN_R
  *     origins see. Every writer (dashboard save, in-game prune / set-target)
  *     stamps it via {@link stampDailyRunRoutesChanged} / the dashboard's own write.
  */
-export const DAILY_RUN_ROUTES_TS_BASE = 'oge_fsRoutesTs'; // historical name — do not change without migration
+export const DAILY_RUN_ROUTES_TS_BASE = 'oge_dailyRunRoutesTs';
 
 /**
  * Compose the per-universe routes-timestamp key.
  *
  * @param {string} universeId
- * @returns {string} e.g. `'s163-pl:oge_fsRoutesTs'`.
+ * @returns {string} e.g. `'s163-pl:oge_dailyRunRoutesTs'`.
  */
 export const dailyRunRoutesTsKeyFor = (universeId) => `${universeId}:${DAILY_RUN_ROUTES_TS_BASE}`;
 
@@ -135,7 +132,7 @@ const DEBOUNCE_MS = 200;
 const emptyConfig = () => ({ routes: [], collectTarget: null });
 
 /**
- * The fleet-save route store. Initial value is empty; hydration is async
+ * The Daily Run route store. Initial value is empty; hydration is async
  * (chromeStore returns a Promise) and lands once {@link initDailyRunRoutesStore}
  * resolves the load.
  *
@@ -171,8 +168,8 @@ let hydratedPromise = Promise.resolve();
 
 /**
  * Resolves once the {@link dailyRunRoutesStore} hydrate phase has settled (the
- * stored value — migrated if legacy — has been applied, or the load found
- * nothing). The planet-bar capture gates route RECONCILIATION on this so it
+ * stored value has been applied, or the load found nothing). The planet-bar
+ * capture gates route RECONCILIATION on this so it
  * never prunes against not-yet-hydrated (empty) routes. Call as a function,
  * not captured at import — the binding changes across init/dispose.
  *
@@ -182,7 +179,7 @@ export const whenDailyRunRoutesHydrated = () => hydratedPromise;
 
 /**
  * Wire the store to chrome.storage.local: hydrate from
- * `<universeId>:oge_fsRoutes` and write every change back (debounced).
+ * `<universeId>:oge_dailyRunRoutes` and write every change back (debounced).
  * Idempotent — subsequent calls return the same dispose handle without
  * double-registering.
  *

@@ -66,11 +66,11 @@ describe('dailyRunRoutesStore — defaults and basic ops', () => {
   });
 
   it('exports the expected key suffix', () => {
-    expect(DAILY_RUN_ROUTES_KEY_BASE).toBe('oge_fsRoutes');
+    expect(DAILY_RUN_ROUTES_KEY_BASE).toBe('oge_dailyRunRoutes');
   });
 
   it('dailyRunRoutesKeyFor composes a per-universe namespaced key', () => {
-    expect(dailyRunRoutesKeyFor('s163-pl')).toBe('s163-pl:oge_fsRoutes');
+    expect(dailyRunRoutesKeyFor('s163-pl')).toBe('s163-pl:oge_dailyRunRoutes');
   });
 
   it('round-trips set/get without persist wiring', () => {
@@ -130,7 +130,7 @@ describe('dailyRunRoutesStore — hydration via initDailyRunRoutesStore', () => 
   it('calls chromeStore.get with the bare key in a non-DOM env', () => {
     initDailyRunRoutesStore();
     expect(mockStore.get).toHaveBeenCalledTimes(1);
-    expect(mockStore.get).toHaveBeenCalledWith('oge_fsRoutes');
+    expect(mockStore.get).toHaveBeenCalledWith('oge_dailyRunRoutes');
   });
 
   it('hydrates the store when chromeStore.get resolves with a current-shape value', async () => {

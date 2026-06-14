@@ -337,7 +337,7 @@ describe('collect send — navigation + dispatch (bottom zone)', () => {
     return { clicks: () => clicks };
   };
 
-  it('two taps: arms its own fleet2, stashes oge_fsRedirect and dispatches on a successful send', async () => {
+  it('two taps: arms its own fleet2, stashes oge_dailyRunRedirect and dispatches on a successful send', async () => {
     enable();
     installDailyRun();
     openEventBoxGate();

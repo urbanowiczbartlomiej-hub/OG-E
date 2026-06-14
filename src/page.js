@@ -40,7 +40,7 @@ installSendFleetHook();
 installExpeditionRedirect();
 // Rewrite the post-send redirect for fleet-save deployment sends. Unlike
 // expeditionRedirect it computes nothing — the isolated-world dailyRun
-// orchestrator hands it a precomputed URL via the `oge_fsRedirect`
+// orchestrator hands it a precomputed URL via the `oge_dailyRunRedirect`
 // localStorage key. See that module's header for the handoff contract.
 installDeployRedirect();
 // Publish window.fleetDispatcher state across the world boundary so

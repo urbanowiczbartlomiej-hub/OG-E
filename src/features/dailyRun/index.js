@@ -26,7 +26,7 @@
 //   - first tap → (collect: select all ships) → click Continue,
 //     wait for step 2.
 //   - second tap → (collect: load all resources) → stash the post-send
-//     redirect URL in `oge_fsRedirect` → click the native dispatch button.
+//     redirect URL in `oge_dailyRunRedirect` → click the native dispatch button.
 // The only server-visible action a tap originates is the final dispatch.
 //
 // # Post-send redirect (asymmetric — see deployRedirect bridge)
@@ -41,7 +41,7 @@
 //
 // @see ./pure.js — URL builders, target picking, the routes DSL.
 // @see ./domHelpers.js — DOM readers + fleet-step drivers.
-// @see ../../bridges/deployRedirect.js — consumes `oge_fsRedirect`.
+// @see ../../bridges/deployRedirect.js — consumes `oge_dailyRunRedirect`.
 // @see ../shared/draggableButton.js — drag + focus persistence.
 
 import { settingsStore } from '../../state/settings.js';

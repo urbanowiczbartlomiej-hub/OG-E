@@ -5,7 +5,7 @@
 // from the player's own planets/moons (captured in-game into the per-universe
 // `<universeId>:oge_bodies` snapshot by `features/planetBarCapture`), so a
 // coordinate can never be mistyped. The same per-universe
-// `<universeId>:oge_fsRoutes` key the in-game dailyRun feature consumes is
+// `<universeId>:oge_dailyRunRoutes` key the in-game dailyRun feature consumes is
 // read/written here; the in-game-set collect target is preserved on save.
 //
 // A route = one or more SOURCE bodies (planets and/or moons) sharing one
@@ -20,7 +20,7 @@
 // Installed like the reminders tab: the host passes a `getUniverseId` getter
 // and calls the returned `refresh()` whenever the selected universe changes.
 //
-// @see ../../domain/dailyRunRoutes.js — Route shape, DSL parse/format, migrate.
+// @see ../../domain/dailyRunRoutes.js — Route shape, DSL parse/format, parse.
 // @see ../../domain/bodies.js — Body shape + sort.
 // @see ../../state/bodies.js / ../../state/dailyRunRoutes.js — per-universe keys.
 

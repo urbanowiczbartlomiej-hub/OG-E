@@ -18,9 +18,9 @@
 // native dispatch button. This bridge just reads that precomputed URL and
 // swaps it into the response the game is about to navigate to.
 //
-// # The handoff contract (`oge_fsRedirect`)
+// # The handoff contract (`oge_dailyRunRedirect`)
 //
-//   - The orchestrator writes `oge_fsRedirect` = an absolute URL string
+//   - The orchestrator writes `oge_dailyRunRedirect` = an absolute URL string
 //     immediately before clicking `#dispatchFleet`.
 //   - This bridge CONSUMES it on the sendFleet `send` phase (reads then
 //     removes it), capturing the URL in a closure. Consuming at send time
@@ -38,7 +38,7 @@
 //
 // @see ./expeditionRedirect.js — the planet-hopping sibling (computes its
 //   own next target; this one is told).
-// @see ../features/dailyRun/index.js — writes `oge_fsRedirect`.
+// @see ../features/dailyRun/index.js — writes `oge_dailyRunRedirect`.
 
 /** @ts-check */
 
@@ -126,7 +126,7 @@ let unsubscribeFn = null;
  * Install the deployment-redirect observer. Idempotent.
  *
  * The observer fires on `send` for any `action=sendFleet`. It bails unless
- * the mission is deployment AND a `oge_fsRedirect` handoff URL is present.
+ * the mission is deployment AND a `oge_dailyRunRedirect` handoff URL is present.
  * When both hold it CONSUMES the handoff (reads + removes it) and installs
  * the `responseText` override carrying the captured URL.
  *

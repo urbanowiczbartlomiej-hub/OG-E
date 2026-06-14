@@ -38,7 +38,7 @@ describe('read / write / add (localStorage)', () => {
     writeFleetSaveCancel(U, { a: { offsets: [-60], expiresAt: 999 } });
     expect(readFleetSaveCancel(U)).toEqual({ a: { offsets: [-60], expiresAt: 999 } });
     writeFleetSaveCancel(U, {});
-    expect(localStorage.getItem('oge_fsCancel_s1')).toBeNull();
+    expect(localStorage.getItem('oge_fleetSaveCancel_s1')).toBeNull();
     expect(readFleetSaveCancel(U)).toEqual({});
   });
 

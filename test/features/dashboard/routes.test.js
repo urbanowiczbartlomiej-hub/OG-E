@@ -27,7 +27,7 @@ const mockStore = /** @type {{ get: import('vitest').Mock, set: import('vitest')
 );
 
 const UNI = 's163-pl';
-const ROUTES_KEY = `${UNI}:oge_fsRoutes`;
+const ROUTES_KEY = `${UNI}:oge_dailyRunRoutes`;
 const BODIES_KEY = `${UNI}:oge_bodies`;
 
 /** @type {Map<string, unknown>} */
@@ -143,7 +143,7 @@ describe('build a route by clicking', () => {
     expect($('#routesStatus').textContent).toContain('Saved 1 route');
     // Save also stamps the cross-device sync clock and pokes any open game
     // tab to push to the gist (whole-universe newest-wins).
-    expect(typeof store.get(`${UNI}:oge_fsRoutesTs`)).toBe('number');
+    expect(typeof store.get(`${UNI}:oge_dailyRunRoutesTs`)).toBe('number');
     expect(store.has(`${UNI}:oge_syncRequestAt`)).toBe(true);
   });
 

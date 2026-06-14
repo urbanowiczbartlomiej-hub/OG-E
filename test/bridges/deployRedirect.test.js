@@ -2,7 +2,7 @@
 //
 // Tests for the deployment-redirect bridge — a "dumb rewriter" that swaps
 // the game's post-send `redirectUrl` for a precomputed URL the isolated
-// world stashed in `oge_fsRedirect`.
+// world stashed in `oge_dailyRunRedirect`.
 //
 // Strategy mirrors expeditionRedirect.test.js: unit-test the helpers
 // directly via `_internalsForTest`, drive `overrideResponseText` against a

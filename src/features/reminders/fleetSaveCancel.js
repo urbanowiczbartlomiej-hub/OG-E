@@ -31,11 +31,8 @@ import { safeLS } from '../../lib/storage.js';
 
 /**
  * @param {string} universeId @returns {string}
- * NOTE: the `oge_fsCancel_` key string is HISTORICAL — frozen on the
- * fleet-save rename (the JS API moved to `fleetSaveCancel*`, the persisted
- * key did not). Do not change it without a storage migration.
  */
-const keyFor = (universeId) => `oge_fsCancel_${universeId}`;
+const keyFor = (universeId) => `oge_fleetSaveCancel_${universeId}`;
 
 /**
  * Read the raw suppression map for a universe (always an object).

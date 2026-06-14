@@ -21,13 +21,9 @@
 export const REGISTRY_KEY = 'oge_colonizationRegistry';
 
 /**
- * localStorage key for the one-shot fleetsave redirect hint. A transient,
+ * localStorage key for the one-shot Daily Run redirect hint. A transient,
  * non-namespaced value the isolated world writes before dispatch and
  * `bridges/deployRedirect.js` consumes to rewrite the post-send redirect.
  * Owned (and re-exported) by `state/dailyRunRoutes.js`.
- *
- * NOTE: the string value `'oge_fsRedirect'` is a HISTORICAL name (the Daily
- * Run workflow was once called "fleet-save collect"). Do NOT change the
- * literal without a storage migration — only the JS symbol was renamed.
  */
-export const DAILY_RUN_REDIRECT_KEY = 'oge_fsRedirect';
+export const DAILY_RUN_REDIRECT_KEY = 'oge_dailyRunRedirect';
