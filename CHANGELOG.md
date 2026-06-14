@@ -34,6 +34,11 @@ version numbers follow [Semantic Versioning](https://semver.org).
   threads into the node from both sides; each half's label is nudged outward
   to clear it. On the single buttons (Expeditions, Lifeforms) the node sits in
   the upper section with the label below.
+- **Gold FAB menu handle.** The little handle that opens the floating-button
+  picker now wears the same gold brand thread — a gold ring around a gold
+  "+" (which still rotates to a "×" while the picker is open) — instead of
+  tinting to the active module's colour. The picker orbs keep their per-module
+  colours as identity.
 
 ### Fixed
 

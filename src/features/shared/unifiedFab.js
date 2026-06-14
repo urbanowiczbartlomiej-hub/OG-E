@@ -80,9 +80,10 @@ const LABEL_GAP_PX = 12;
 const FAB_CSS = [
   `#${FAB_HANDLE_ID}{`,
   'position:absolute;right:2%;bottom:2%;z-index:3;border-radius:50%;border:none;',
-  'background:#0b1220;color:#e2e8f0;display:flex;align-items:center;justify-content:center;',
-  'cursor:pointer;padding:0;',
-  'box-shadow:0 0 0 1.5px color-mix(in oklab,var(--mod,#38bdf8) 60%,transparent),0 3px 10px rgba(0,0,0,.6);}',
+  'background:radial-gradient(circle at 38% 30%,#16202f,#0b1220 80%);color:#e8b870;',
+  'display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;',
+  'box-shadow:0 0 0 1.5px #d89a3e,0 0 0 2.6px rgba(120,70,20,.5),',
+  '0 0 10px -2px rgba(216,154,62,.5),0 3px 10px rgba(0,0,0,.6);}',
   `#${FAB_HANDLE_ID} svg{width:55%;height:55%;fill:none;stroke:currentColor;`,
   'stroke-width:2.4;stroke-linecap:round;transition:transform .2s ease;}',
   `.oge-fab-open #${FAB_HANDLE_ID} svg{transform:rotate(45deg);}`,
@@ -142,9 +143,10 @@ const ensureCss = () => {
 };
 
 /**
- * Show the active module's host, hide the rest, tint the handle to the
- * active colour. Falls back to the first registered module when the
- * stored id is missing or stale — see {@link resolveActiveId}.
+ * Show the active module's host, hide the rest. Falls back to the first
+ * registered module when the stored id is missing or stale — see
+ * {@link resolveActiveId}. The handle wears the constant gold brand mark,
+ * not the active module's colour, so nothing to tint here.
  *
  * @returns {void}
  */
@@ -155,8 +157,6 @@ const applyActive = () => {
   for (const [id, entry] of registry) {
     entry.host.style.display = id === active ? '' : 'none';
   }
-  const meta = active !== null ? registry.get(active)?.meta : undefined;
-  if (meta) shell.handle.style.setProperty('--mod', meta.color);
 };
 
 /**
