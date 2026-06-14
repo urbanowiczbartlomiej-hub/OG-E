@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Oczko z ramką-orbitą (znak OG-E) — kierunek B</title>
+<style>
+  :root{ color-scheme:dark; }
+  body{
+    margin:0; padding:22px 16px 48px;
+    background:radial-gradient(120% 90% at 20% 0%, #15233b, #0a111e 60%), #070c16;
+    color:#cbd5e1; font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  h1{ font-size:18px; color:#e2e8f0; margin:0 0 4px; }
+  p.lead{ max-width:820px; margin:0 0 14px; color:#94a3b8; }
+  .controls{ margin:8px 0 20px; display:flex; gap:18px; align-items:center; flex-wrap:wrap; }
+  .grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:24px 14px; max-width:1000px; }
+  .colhead{ text-align:center; font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:#7c8aa0; font-weight:700; }
+  .cell{ display:flex; flex-direction:column; align-items:center; gap:9px; }
+  .cap{ font-size:11px; color:#8696ad; text-align:center; }
+  .section{ grid-column:1/-1; margin-top:10px; color:#cbd5e1; font-weight:700; font-size:13px;
+    border-top:1px solid #1e2a3e; padding-top:14px; }
+
+  /* ── PRODUCTION CHROME (kopia) ── */
+  .oge-host{
+    --surface:#0b1220; --rim:#38bdf8; --glow:1; --label:#f8fafc;
+    position:relative; border-radius:50%; isolation:isolate;
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Verdana,sans-serif;
+    font-weight:700; color:var(--label);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.07),
+      inset 0 0 0 1.5px color-mix(in oklab,var(--rim) 55%,transparent),
+      0 0 calc(24px * var(--glow)) -6px var(--rim),
+      0 18px 36px -12px rgba(0,0,0,.72), 0 4px 12px -2px rgba(0,0,0,.5);
+    width:var(--d); height:var(--d); --fs:calc(var(--d)*0.12);
+  }
+  .oge-host.single{ background:radial-gradient(125% 125% at 50% 16%,
+    color-mix(in oklab,var(--rim) 26%,var(--surface)) 0%, var(--surface) 62%); }
+  .oge-host.split{ overflow:hidden; display:flex; flex-direction:column; background:var(--surface);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.12),
+      inset 0 0 0 1.5px color-mix(in oklab,var(--rim) 72%,transparent),
+      inset 0 0 0 3px rgba(0,0,0,.45),
+      0 0 calc(24px * var(--glow)) -6px var(--rim),
+      0 18px 36px -12px rgba(0,0,0,.72), 0 4px 12px -2px rgba(0,0,0,.5); }
+  .oge-host .zone{ flex:1; border:none; color:var(--label); font-weight:700;
+    display:flex; align-items:center; justify-content:center; text-align:center; position:relative;
+    background:radial-gradient(150% 150% at 50% 0%,
+      color-mix(in oklab,var(--rim) 30%,var(--surface)),
+      color-mix(in oklab,var(--rim) 12%,var(--surface))); }
+  .oge-host .zone+.zone::before{ content:""; position:absolute; left:14%; right:14%; top:-.5px; height:1.5px; z-index:4;
+    background:linear-gradient(90deg, color-mix(in oklab,var(--rim) 60%,#fff), transparent, color-mix(in oklab,var(--rim) 60%,#fff)); opacity:.55; }
+  .oge-btn-label{ display:flex; align-items:center; justify-content:center; width:100%;
+    pointer-events:none; z-index:3; text-shadow:0 1px 2px rgba(0,0,6,.45); font-size:var(--fs); }
+  .oge-host.single>.oge-btn-label{ position:absolute; inset:0; padding-top:14%; }
+  .lbl{ display:flex; flex-direction:column; align-items:center; line-height:1.1; }
+  .lbl .m{ font-size:1em; } .lbl .s{ font-size:.5em; opacity:.85; margin-top:2px; }
+  .zone.top .oge-btn-label{ transform:translateY(-14px); }
+  .zone.bot .oge-btn-label{ transform:translateY(14px); }
+
+  /* ── BAZOWE OCZKO (szkło A, jak na produkcji) ── */
+  .oge-lens{ position:absolute; left:50%; border-radius:50%; z-index:5; pointer-events:none;
+    display:flex; align-items:center; justify-content:center;
+    color:color-mix(in oklab,var(--rim) 62%,var(--label));
+    background:
+      radial-gradient(130% 110% at 50% 16%, rgba(255,255,255,.14), transparent 44%),
+      radial-gradient(120% 120% at 50% 34%, color-mix(in oklab,var(--rim) 16%,var(--surface)), var(--surface) 80%);
+    box-shadow:
+      inset 0 1.5px 2px rgba(255,255,255,.22),
+      inset 0 -4px 7px rgba(0,0,6,.5),
+      inset 0 -2px 5px color-mix(in oklab,var(--rim) 20%,transparent),
+      inset 0 0 0 1px color-mix(in oklab,var(--rim) 38%,transparent),
+      0 2px 4px rgba(0,0,0,.5);
+  }
+  .oge-lens .glyph{ width:56%; height:56%; overflow:visible; opacity:.86; filter:drop-shadow(0 1px 1px rgba(0,0,6,.5)); }
+  .oge-host.single .oge-lens{ top:27%; width:23%; height:23%; transform:translate(-50%,-50%); }
+  .oge-host.split  .oge-lens{ top:50%; width:21%; height:21%; transform:translate(-50%,-50%); }
+  /* specular tylko dla wariantów bez orbity (orbita i tak go zasłoni) */
+  .now .oge-lens::after,.gold .oge-lens::after{ content:""; position:absolute; left:21%; top:13%;
+    width:40%; height:28%; border-radius:50%; transform:rotate(-10deg);
+    background:radial-gradient(closest-side, rgba(255,255,255,.4), transparent 78%); }
+
+  /* ── A: ZŁOTY RANT (krawędź oczka w kolorze logo) ── */
+  .gold .oge-lens{
+    box-shadow:
+      inset 0 1.5px 2px rgba(255,255,255,.22),
+      inset 0 -4px 7px rgba(0,0,6,.5),
+      inset 0 -2px 5px rgba(208,138,51,.35),
+      inset 0 0 0 1.2px #d89a3e,
+      inset 0 0 0 2.2px rgba(120,70,20,.55),
+      0 2px 4px rgba(0,0,0,.5);
+  }
+
+  /* ── B: RAMKA = ORBITA OG-E ── */
+  /* orbita jest nieco większa niż kopuła, by kulki siadły na rancie */
+  .orbit{ position:absolute; left:-26%; top:-26%; width:152%; height:152%; overflow:visible; z-index:6; }
+  /* w wariancie B glif schodzi mniejszy, by nie dotykał pierścienia */
+  .borbit .oge-lens .glyph{ width:46%; height:46%; }
+  /* B2: glif też złoty (w pełni „znakowy" węzeł) */
+  .borbit-gold .oge-lens{ color:#e8b870; }
+  .borbit-gold .oge-lens .glyph{ opacity:.95; }
+
+  /* legenda kolorów stanu */
+  .swatches{ display:flex; gap:8px; align-items:center; font-size:11px; color:#8696ad; }
+  .sw{ width:12px; height:12px; border-radius:50%; display:inline-block; }
+</style>
+</head>
+<body>
+  <h1>Kierunek B — ramką oczka jest znak orbity OG-E</h1>
+  <p class="lead">Oczko zachowuje szklaną kopułę, ale jego <b>krawędź</b> to znak z logo:
+  trzy złote łuki + trzy kulki. Glif komendy zostaje w środku. Kolumny: <b>Obecne</b> (czysta
+  szklana krawędź) · <b>A — złoty rant</b> · <b>B — orbita</b> · <b>B2 — orbita + złoty glif</b>.
+  Niżej ten sam wariant B w różnych kolorach stanu, by sprawdzić zgodność złota z cyanem/zielenią/czerwienią/bursztynem.</p>
+  <div class="controls">
+    <label>rozmiar <input type="range" id="size" min="120" max="360" step="4" value="280"> <b id="sizeVal">280 px</b></label>
+  </div>
+
+  <!-- współdzielone gradienty orbity -->
+  <svg width="0" height="0" style="position:absolute"><defs>
+    <linearGradient id="goldArc" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#E8A23D"/><stop offset="50%" stop-color="#C77B2B"/><stop offset="100%" stop-color="#9C5A1E"/>
+    </linearGradient>
+    <radialGradient id="goldBall" cx="35%" cy="30%" r="75%">
+      <stop offset="0%" stop-color="#F4C66B"/><stop offset="55%" stop-color="#D08A33"/><stop offset="100%" stop-color="#8F4F1B"/>
+    </radialGradient>
+  </defs></svg>
+
+  <div class="grid" id="grid"></div>
+
+<script>
+const GLYPH = {
+  comet:'<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" transform="translate(32,32) scale(1.15) translate(-32,-32)"><line x1="35" y1="29" x2="10" y2="54"/><line x1="40" y1="35" x2="24" y2="51"/><line x1="29" y1="24" x2="17" y2="36"/><circle cx="44" cy="20" r="9" fill="currentColor"/><path d="M55 40 v6 M52 43 h6"/><path d="M14 16 v5 M11.5 18.5 h5"/></g>',
+  planet:'<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="45" r="11"/><path d="M12.5 41.5 Q18 39 23.5 41.5" stroke-width="2.5"/><path d="M29.5 36 Q39 34 44 21"/><path d="M45.5 28 L44 21 L38.1 25.2"/><circle cx="52" cy="11" r="6" fill="currentColor"/></g>',
+};
+const glyphSvg = (k)=>`<svg class="glyph" viewBox="0 0 64 64">${GLYPH[k]}</svg>`;
+const ORBIT = `<svg class="orbit" viewBox="0 0 300 300">
+  <g fill="none" stroke="url(#goldArc)" stroke-width="9" stroke-linecap="round">
+    <path d="M 170.79 52.19 A 100 100 0 0 1 245.11 180.90"/>
+    <path d="M 224.31 216.91 A 100 100 0 0 1 75.69 216.91"/>
+    <path d="M 54.89 180.90 A 100 100 0 0 1 129.21 52.19"/>
+  </g>
+  <g fill="url(#goldBall)" stroke="rgba(60,30,8,.5)" stroke-width="1.5">
+    <circle cx="150" cy="50" r="15"/><circle cx="236.60" cy="200" r="15"/><circle cx="63.40" cy="200" r="15"/>
+  </g></svg>`;
+const lbl = (m,s)=>`<span class="oge-btn-label"><span class="lbl"><span class="m">${m}</span>${s?`<span class="s">${s}</span>`:''}</span></span>`;
+
+function single(variant, rim){
+  const orbit = variant.includes('orbit') ? ORBIT : '';
+  const lens = `<span class="oge-lens lens-single">${glyphSvg('comet')}${orbit}</span>`;
+  return `<div class="oge-host single ${variant}" style="--rim:${rim}">${lens}${lbl('Send','Expedition')}</div>`;
+}
+function split(variant, rim){
+  const orbit = variant.includes('orbit') ? ORBIT : '';
+  const top = `<button class="zone top">${lbl('Dispatch','6:74:8')}</button>`;
+  const bot = `<button class="zone bot">${lbl('Collect','+5')}</button>`;
+  const lens = `<span class="oge-lens lens-split">${glyphSvg('planet')}${orbit}</span>`;
+  return `<div class="oge-host split ${variant}" style="--rim:${rim}">${top}${bot}${lens}</div>`;
+}
+
+const grid = document.getElementById('grid');
+const cols = [
+  {h:'Obecne (szkło)', v:'now'},
+  {h:'A — złoty rant', v:'gold'},
+  {h:'B — orbita', v:'borbit'},
+  {h:'B2 — orbita + złoty glif', v:'borbit borbit-gold'},
+];
+let html = cols.map(c=>`<div class="colhead">${c.h}</div>`).join('');
+html += cols.map(c=>`<div class="cell">${single(c.v,'#38bdf8')}<div class="cap">1-zone · Wyprawy</div></div>`).join('');
+html += cols.map(c=>`<div class="cell">${split(c.v,'#34d399')}<div class="cap">2-zone · Daily Run</div></div>`).join('');
+
+// Sekcja: wariant B w kolorach stanu
+html += `<div class="section">Wariant B w kolorach stanu (złoto stałe niezależnie od stanu)</div>`;
+const states = [['#38bdf8','idle (cyan)'],['#34d399','ready (zielony)'],['#f87171','error (czerwony)'],['#fbbf24','wait (bursztyn)']];
+html += states.map(([c,n])=>`<div class="cell">${single('borbit',c)}<div class="cap">${n}</div></div>`).join('');
+grid.innerHTML = html;
+
+const size=document.getElementById('size'), sizeVal=document.getElementById('sizeVal');
+function applySize(){ document.documentElement.style.setProperty('--d', size.value+'px'); sizeVal.textContent=size.value+' px'; }
+size.addEventListener('input',applySize); applySize();
+</script>
+</body>
+</html>

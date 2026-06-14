@@ -153,18 +153,22 @@ export const BUTTON_CHROME_CSS = [
   '@media (prefers-reduced-motion:reduce){.oge-art{transition:none;}}',
 
   // ── Glass node lens (the "oczko") ───────────────────────────────────────
-  // A small, convex glass cabochon carrying the command glyph — the one
-  // shared accent that unifies single- and split-zone buttons. Deliberately
-  // SMALL: the action label is the priority, the lens is a glanceability
-  // accent, not the centrepiece. It reads convex via a top sheen + bright
-  // inner highlight, a dark recessed bottom, a faint rim-tinted refraction
-  // bounce and a soft top-left specular (::after). z-index 5 keeps it above
-  // the seam(4), label(3), ring(2). Positioned per shape below: SINGLE parks
-  // it in the upper section (label nudged below); SPLIT centres it on the
-  // seam, which the inverted divider threads into.
+  // A small, convex glass cabochon carrying the command glyph, FRAMED by the
+  // OG-E orbit mark (three gold arcs + three beads — the logo's symbol) so
+  // every button reads as a branded "OG-E node". The one shared accent that
+  // unifies single- and split-zone buttons. Deliberately SMALL: the action
+  // label is the priority, the lens is a glanceability + brand cue, not the
+  // centrepiece. The dome reads convex via a top sheen + a dark recessed
+  // bottom; the glyph is gold (full-gold "medallion") while the dome keeps a
+  // faint state tint. The orbit ring stays GOLD in every state — gold is the
+  // constant brand thread; the button's big rim carries the state colour.
+  // z-index 5 keeps the lens above the seam(4), label(3), ring(2); the orbit
+  // overlay sits at 6 (above the glyph). Positioned per shape below: SINGLE
+  // parks it in the upper section (label nudged below); SPLIT centres it on
+  // the seam, which the inverted divider threads into.
   '.oge-lens{position:absolute;left:50%;border-radius:50%;z-index:5;',
   'pointer-events:none;display:flex;align-items:center;justify-content:center;',
-  'color:color-mix(in oklab,var(--rim) 62%,var(--label));',
+  'color:#e8b870;',
   'background:',
   'radial-gradient(130% 110% at 50% 16%,rgba(255,255,255,.14),transparent 44%),',
   'radial-gradient(120% 120% at 50% 34%,',
@@ -175,11 +179,11 @@ export const BUTTON_CHROME_CSS = [
   'inset 0 -2px 5px color-mix(in oklab,var(--rim) 20%,transparent),',
   'inset 0 0 0 1px color-mix(in oklab,var(--rim) 38%,transparent),',
   '0 2px 4px rgba(0,0,0,.5);}',
-  '.oge-lens::after{content:"";position:absolute;left:21%;top:13%;',
-  'width:40%;height:28%;border-radius:50%;transform:rotate(-10deg);',
-  'background:radial-gradient(closest-side,rgba(255,255,255,.4),transparent 78%);}',
-  '.oge-lens svg{width:56%;height:56%;overflow:visible;opacity:.86;',
+  '.oge-lens-glyph{width:46%;height:46%;overflow:visible;opacity:.95;',
   'filter:drop-shadow(0 1px 1px rgba(0,0,6,.5));}',
+  // Orbit mark: sits slightly proud of the dome so its beads land on the rim.
+  '.oge-lens-orbit{position:absolute;left:-26%;top:-26%;width:152%;height:152%;',
+  'overflow:visible;z-index:6;}',
   // SINGLE: small accent parked up top.
   '.oge-host.single .oge-lens{top:27%;width:23%;height:23%;transform:translate(-50%,-50%);}',
   // SPLIT: small node centred on the seam.
@@ -410,12 +414,65 @@ export const appendGlyph = (zone, inner) => {
   zone.appendChild(art);
 };
 
+/** Id of the hidden singleton SVG holding the orbit-mark gradients. */
+export const ORBIT_DEFS_ID = 'oge-orbit-defs';
+
 /**
- * Append the glass node lens carrying the command glyph to a button host
- * (idempotent per host). The one shared accent for both shapes: the
- * `.oge-lens` rules park it in the upper section on a single-zone host and
- * centred on the seam on a split host. `inner` is the inner markup of a
- * `0 0 64 64` SVG using `currentColor` so it tints to `--rim`.
+ * The OG-E orbit mark (the logo's symbol): three gold arcs with gaps + three
+ * beads at the gaps, on a `0 0 300 300` viewBox (ring r=100, centred). Drawn
+ * via shared gradient refs (see {@link ensureOrbitDefs}). Overlaid on the
+ * lens as its frame — the beads land on the dome's rim.
+ */
+const ORBIT_MARK =
+  '<svg class="oge-lens-orbit" viewBox="0 0 300 300" focusable="false" aria-hidden="true">' +
+  '<g fill="none" stroke="url(#oge-orbit-arc)" stroke-width="9" stroke-linecap="round">' +
+  '<path d="M 170.79 52.19 A 100 100 0 0 1 245.11 180.90"/>' +
+  '<path d="M 224.31 216.91 A 100 100 0 0 1 75.69 216.91"/>' +
+  '<path d="M 54.89 180.90 A 100 100 0 0 1 129.21 52.19"/>' +
+  '</g>' +
+  '<g fill="url(#oge-orbit-ball)" stroke="rgba(60,30,8,.5)" stroke-width="1.5">' +
+  '<circle cx="150" cy="50" r="15"/>' +
+  '<circle cx="236.60" cy="200" r="15"/>' +
+  '<circle cx="63.40" cy="200" r="15"/>' +
+  '</g></svg>';
+
+/**
+ * Inject the singleton SVG carrying the orbit-mark gradients (idempotent).
+ * The mark references them by id (`url(#oge-orbit-*)`), so they must exist
+ * once in the document. Built via innerHTML on a hidden holder (the same
+ * inline-SVG-through-HTML-parser path the glyph layers use).
+ *
+ * @returns {void}
+ */
+export const ensureOrbitDefs = () => {
+  if (typeof document === 'undefined' || document.getElementById(ORBIT_DEFS_ID)) return;
+  const holder = document.createElement('div');
+  holder.id = ORBIT_DEFS_ID;
+  holder.setAttribute('aria-hidden', 'true');
+  holder.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;';
+  holder.innerHTML =
+    '<svg width="0" height="0" focusable="false"><defs>' +
+    '<linearGradient id="oge-orbit-arc" x1="0" y1="0" x2="1" y2="1">' +
+    '<stop offset="0%" stop-color="#E8A23D"/>' +
+    '<stop offset="50%" stop-color="#C77B2B"/>' +
+    '<stop offset="100%" stop-color="#9C5A1E"/>' +
+    '</linearGradient>' +
+    '<radialGradient id="oge-orbit-ball" cx="35%" cy="30%" r="75%">' +
+    '<stop offset="0%" stop-color="#F4C66B"/>' +
+    '<stop offset="55%" stop-color="#D08A33"/>' +
+    '<stop offset="100%" stop-color="#8F4F1B"/>' +
+    '</radialGradient>' +
+    '</defs></svg>';
+  document.body.appendChild(holder);
+};
+
+/**
+ * Append the glass node lens to a button host (idempotent per host): a glass
+ * dome carrying the command glyph (gold), framed by the OG-E orbit mark so
+ * the button reads as a branded node. The one shared accent for both shapes —
+ * the `.oge-lens` rules park it in the upper section on a single-zone host
+ * and centred on the seam on a split host. `inner` is the inner markup of a
+ * `0 0 64 64` SVG using `currentColor` (tints to the gold lens colour).
  *
  * @param {HTMLElement} host  Stable outer element (the button or split wrap).
  * @param {string} inner      Inner SVG markup (paths/lines/circles, currentColor).
@@ -423,13 +480,15 @@ export const appendGlyph = (zone, inner) => {
  */
 export const appendLens = (host, inner) => {
   if (!host || !inner || host.querySelector('.oge-lens')) return;
+  ensureOrbitDefs();
   const lens = document.createElement('span');
   lens.className = 'oge-lens';
   lens.setAttribute('aria-hidden', 'true');
   lens.innerHTML =
-    '<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" focusable="false">' +
+    '<svg class="oge-lens-glyph" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" focusable="false">' +
     inner +
-    '</svg>';
+    '</svg>' +
+    ORBIT_MARK;
   host.appendChild(lens);
 };
 

@@ -15,6 +15,7 @@ import {
   installButtonChrome,
   decorateButton,
   appendLens,
+  ORBIT_DEFS_ID,
   CHROME_STYLE_ID,
   BUTTON_CHROME_CSS,
 } from '../../src/features/shared/buttonChrome.js';
@@ -49,18 +50,31 @@ describe('shared button chrome stylesheet', () => {
     expect(BUTTON_CHROME_CSS).toContain('@keyframes oge-ripple-kf');
     expect(BUTTON_CHROME_CSS).toContain('.oge-tap-active');
     expect(BUTTON_CHROME_CSS).toContain('.oge-lens');
+    expect(BUTTON_CHROME_CSS).toContain('.oge-lens-orbit');
   });
 });
 
 describe('appendLens', () => {
-  it('appends one glass lens carrying the glyph svg (idempotent per host)', () => {
+  it('appends one glass lens with the glyph + orbit mark (idempotent per host)', () => {
     const host = document.createElement('div');
     document.body.appendChild(host);
     appendLens(host, '<circle r="10"/>');
     appendLens(host, '<circle r="10"/>');
     const lenses = host.querySelectorAll('.oge-lens');
     expect(lenses).toHaveLength(1);
-    expect(lenses[0].querySelector('svg')).not.toBeNull();
+    // The glyph SVG and the OG-E orbit-mark frame both live in the lens.
+    expect(lenses[0].querySelector('.oge-lens-glyph')).not.toBeNull();
+    expect(lenses[0].querySelector('.oge-lens-orbit')).not.toBeNull();
+  });
+
+  it('injects the orbit-mark gradient defs exactly once', () => {
+    const a = document.createElement('div');
+    const b = document.createElement('div');
+    document.body.append(a, b);
+    appendLens(a, '<circle r="10"/>');
+    appendLens(b, '<circle r="10"/>');
+    expect(document.querySelectorAll(`#${ORBIT_DEFS_ID}`)).toHaveLength(1);
+    expect(document.getElementById(ORBIT_DEFS_ID)?.querySelector('linearGradient')).not.toBeNull();
   });
 
   it('is a no-op without inner markup', () => {

@@ -115,7 +115,9 @@ describe('single-zone button', () => {
       ],
     });
     const btn = /** @type {HTMLElement} */ (document.getElementById('oge-test-wm'));
-    expect(btn.querySelector('.oge-lens svg')).not.toBeNull();
+    expect(btn.querySelector('.oge-lens .oge-lens-glyph')).not.toBeNull();
+    // Framed by the OG-E orbit mark, the shared brand cue.
+    expect(btn.querySelector('.oge-lens .oge-lens-orbit')).not.toBeNull();
     // The flat watermark layer belongs to the picker orbs now, not buttons.
     expect(btn.querySelector('.oge-art')).toBeNull();
   });

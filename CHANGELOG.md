@@ -22,15 +22,17 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ### Changed
 
-- **Floating buttons share one glass-node icon.** Every command button now
-  carries its glyph in the same small, convex "glass lens" — a subtle domed
-  cabochon with a soft top highlight — instead of the old flat watermark.
-  It's a deliberately small accent: the action label stays the focus. On the
-  split buttons (Colonization, Daily Run) the lens sits centred on the seam,
-  and the dividing line is inverted to suit — bright at the outer edges,
-  fading to nothing in the middle — so it threads into the lens from both
-  sides instead of cutting across it; each half's label is nudged outward to
-  clear it. On the single buttons (Expeditions, Lifeforms) the lens sits in
+- **Floating buttons carry the OG-E mark.** Every command button now shows
+  its glyph in the same small "glass node" — a convex glass cabochon framed
+  by the OG-E orbit symbol from the logo (three gold arcs + three beads), with
+  the glyph itself in gold. It turns each button into a recognisable branded
+  node while staying a small accent: the action label stays the focus, and
+  the gold mark is constant in every state (the button's outer rim still
+  carries the live state colour). On the split buttons (Colonization, Daily
+  Run) the node sits centred on the seam, and the dividing line is inverted to
+  suit — bright at the outer edges, fading to nothing in the middle — so it
+  threads into the node from both sides; each half's label is nudged outward
+  to clear it. On the single buttons (Expeditions, Lifeforms) the node sits in
   the upper section with the label below.
 
 ### Fixed
