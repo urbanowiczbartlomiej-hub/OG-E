@@ -43,6 +43,40 @@ zdarzeń w `lib/ogeEvents.js` (stała JS ≠ string `oge:*` na drucie).
 
 ---
 
+## 1a. Dziennik postępu (aktualizowany co sesję)
+
+**Sesja 1 — Faza 1 (częściowa) — ZROBIONE:**
+- ✅ **poz. 5** `blackBg.js` → `antiFlickerBackground.js` (+ `installBlackBackground`
+  → `installAntiFlickerBackground`, `STYLE_ID` `oge-black-bg` → `oge-anti-flicker-bg`).
+- ✅ **poz. 4** `reminders/fsScan.js` → `fleetSaveScan.js` (`fsLabelFor` →
+  `fleetSaveLabelFor`); `reminders/fsCancel.js` → `fleetSaveCancel.js` (eksporty
+  `*FsCancel*`/`fsCancelOffsets` → `*FleetSaveCancel*`/`fleetSaveCancelOffsets`).
+  Klucz LS `oge_fsCancel_` **zamrożony** (komentarz „historyczny" w pliku).
+- Bramki zielone: typecheck + lint + 1443 testy. Bez zmian zachowania.
+
+**Korekty planu wykryte podczas Sesji 1 (ważne dla kolejnych sesji):**
+- ⚠️ **poz. 11/12 PRZENIESIONE do Fazy 3 (Kategoria B).** Założenie planu, że
+  pole `Settings` jest odłączone od trwałego stringa, jest prawdziwe **tylko**
+  dla klucza LS (`SETTINGS_SCHEMA.key`). `sync/settingsSync.js` używa
+  **nazwy pola jako klucza na drucie gista** (`UNIVERSE_SCOPED_SETTINGS` =
+  `Set(['colMinGap','colPassword',…])`; `pickSyncedValues` iteruje
+  `Object.keys(settings)`; mapy ts są kluczowane nazwą pola). Rename pola
+  synchronizowanego = breaking change cross-device → wymaga shimu pole↔wire
+  lub migracji. Dotyczy wszystkich pól poza `EXCLUDED_SETTINGS`.
+- ⏭️ **poz. 6 `freeStreak` POMINIĘTE — już zgodne z UI.** Dashboard używa słowa
+  „streak" wprost (`perfect streak`, `Longest streak`, sekcja „Colony Scout —
+  settlement area analysis`), a domenowa funkcja to już `findLongestStreaks`.
+  Rename oddaliłby kod od języka UI.
+- ⏭️ **poz. 7 `rewardingWatcher` POMINIĘTE — żargon gry trzymany dosłownie.**
+  Śledzi własną stronę OGame „rewarding"; brak etykiety UI w OG-E do wyrównania.
+  Per CLAUDE.md (carve-out) wiedza o grze zostaje verbatim. Klucz
+  `REWARDING_DONE_KEY='oge-rewarding-done-day'` i tak jest trwały.
+
+**Pozostało w Fazie 1:** nic bezpiecznego (Kat. A) ponad powyższe. Kolejna sesja
+zaczyna **Fazę 2** (`fsCollect` → „Daily Run").
+
+---
+
 ## 2. Metodyka researchu
 
 Zestawiono **słownik biznesowy** (dokładne etykiety UI: panel ustawień, zakładki
@@ -93,13 +127,13 @@ identyfikator wewnętrzny, ale w pobliżu są klucze trwałe do zamrożenia.
 | 3 | `domain/fleetSave.js` | „Fleet-save reminders" | `fleetSave.js` (zostaw — zgodne) lub pełne `fleetSaveReminder` | nie | 2 |
 | 4 | `reminders/fsScan.js`, `reminders/fsCancel.js` | skan/anulowanie fleet-save | `fleetSaveScan.js`, `fleetSaveCancel.js` | nie | 1 |
 | 5 | `features/blackBg.js` | anti-flicker tła (UX) | `antiFlickerBackground.js` | nie | 1 |
-| 6 | `domain/freeStreak.js`, `features/dashboard/freeStreak.js` | „Free Positions"/najdłuższe puste serie | `freePositions.js` / `emptyRunFinder.js` | nie | 1 |
-| 7 | `features/rewardingWatcher.js` | detekcja ukończenia zadań dziennych | `dailyTasksWatcher.js` | nie | 1 |
+| 6 | `domain/freeStreak.js`, `features/dashboard/freeStreak.js` | „Free Positions"/najdłuższe puste serie | ⏭️ **POMINIĘTE** — UI używa „streak", już zgodne | nie | — |
+| 7 | `features/rewardingWatcher.js` | detekcja ukończenia zadań dziennych | ⏭️ **POMINIĘTE** — żargon gry („rewarding" page) verbatim | nie | — |
 | 8 | `bridges/eventBoxHook.js` | obserwator XHR listy zdarzeń | `eventBoxObserver.js`² | nie | 1 |
 | 9 | `bridges/discoveryHook.js` | obserwator XHR odkryć systemów | `systemDiscoveryObserver.js`² | nie | 1 |
 | 10 | `bridges/checkTargetHook.js` | obserwator XHR walidacji celu | `checkTargetObserver.js`² | nie | 1 |
-| 11 | pola `Settings`: `colMinGap`, `colMinFields`, `colPassword` | Kolonizacja | `colonyMinGap`, `colonyMinFields`, `colonyPassword` (klucz LS zamrożony) | nie³ | 1 |
-| 12 | pola `Settings`: `expeditionBadges`, `maxExpPerPlanet` | Ekspedycje | już czytelne; ewent. `maxExpeditionsPerPlanet` | nie³ | 1 |
+| 11 | pola `Settings`: `colMinGap`, `colMinFields`, `colPassword` | Kolonizacja | `colonyMinGap`, `colonyMinFields`, `colonyPassword` | **STRING³** | **3** |
+| 12 | pola `Settings`: `expeditionBadges`, `maxExpPerPlanet` | Ekspedycje | `maxExpeditionsPerPlanet` | **STRING³** | **3** |
 | 13 | `sendCol/`, `sendExp/`, `sendLifeform/` (dir) | „Colonize"/„Explore"/„Discover" | opcjonalnie `sendColony/`… (niski zysk) | nie | 1 (opc.) |
 | 14 | klucze LS `oge_col*`, `oge_exp*`, `oge_fs*` | — | **NIE ruszać bez migracji** | **STRING** | 3 |
 | 15 | pola gist: `galaxyScans`, `colonyHistory`, `waves`, `adhocReminders`, `fleetSaveReminders`, `notifyState` | — | **NIE ruszać bez bumpa schematu** | **STRING** | 3 |
@@ -109,8 +143,11 @@ identyfikator wewnętrzny, ale w pobliżu są klucze trwałe do zamrożenia.
 ² Konwencja repo to dziś sufiks `*Hook` dla obserwatorów MAIN-world — jeśli
 chcesz ją zachować jako celowy żargon architektoniczny, **pomiń poz. 8–10**
 (to świadoma decyzja, nie dług). Sufiks jest spójny wewnętrznie.
-³ Bezpieczne dzięki rozdziałowi pole↔`key` w `SETTINGS_SCHEMA` — zmieniamy nazwę
-pola JS, **zostawiamy `key: SETTINGS_PREFIX + 'colMinGap'` bez zmian**.
+³ **KOREKTA (Sesja 1):** NIE jest bezpieczne. Rozdział pole↔`key` dotyczy tylko
+klucza localStorage. `sync/settingsSync.js` używa **nazwy pola jako klucza w
+payloadzie gista** (`UNIVERSE_SCOPED_SETTINGS`, `pickSyncedValues`, mapy ts),
+więc rename pola synchronizowanego łamie sync cross-device → Kategoria B
+(shim pole↔wire lub migracja). Przeniesione do Fazy 3.
 
 ---
 
@@ -124,7 +161,9 @@ pola JS, **zostawiamy `key: SETTINGS_PREFIX + 'colMinGap'` bez zmian**.
   gist pozostają literalnie identyczne.
 
 ### Faza 1 — rename czysto wewnętrzny (Kategoria A) — **1 sesja, niskie ryzyko**
-Zakres: poz. 4–12 (oraz opcjonalnie 13) z tabeli.
+Zakres pierwotny: poz. 4–12. **Zrealizowano poz. 4 + 5** (patrz §1a); poz. 6/7
+pominięte (już zgodne / żargon gry); poz. 11/12 przeniesione do Fazy 3 po
+odkryciu, że nazwa pola jest kluczem na drucie gista. Faza 1 zamknięta.
 - Mechaniczny rename plików + aktualizacja `import`/`export` i `content.js`.
 - Rename funkcji/zmiennych + ich użyć (w tym `_reset*ForTest`, nazwy `install*`).
 - Rename pól `Settings` **z zamrożeniem `key`** (zero migracji LS).
@@ -147,7 +186,7 @@ Zakres: poz. 1–3.
 - Średnie ryzyko, bo dotyka warstwy `state` + DSL współdzielony z dashboardem.
 
 ### Faza 3 — stringi trwałe (Kategoria B) — **osobna sesja / opcjonalna / POMIŃ**
-Zakres: poz. 14–15.
+Zakres: poz. 11, 12 (pola `Settings` synchronizowane przez gist), 14, 15.
 - Wymaga: kod migracji w `state/migrate.js` + `state/settings.js` (wzorzec
   `migrateLegacyButtonSettings`), bump wersji schematu payloadu gist, ścieżka
   kompatybilności wstecznej przy odczycie zdalnego gista, testy fresh-install
