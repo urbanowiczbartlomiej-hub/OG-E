@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "OG-E",
-  "version": "1.17.0",
+  "version": "1.18.0",
   "description": "UI helper for OGame: easier expeditions, finding big colonies, fleet-landing phone reminders. Requires AntiGameReborn. Unofficial.",
   "browser_specific_settings": {
     "gecko": {
