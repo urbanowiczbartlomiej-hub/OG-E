@@ -421,8 +421,8 @@ export const installBadges = () => {
 
   // React to settings toggles. The settings store is the whole panel,
   // so we diff against the previous `expeditionBadges` value to avoid
-  // re-applying visibility on unrelated field changes (colMinGap
-  // edits, colPassword edits, ...).
+  // re-applying visibility on unrelated field changes (colonyMinGap
+  // edits, colonyPassword edits, ...).
   let prevEnabled = settingsStore.get().expeditionBadges;
   const unsubSettings = settingsStore.subscribe((next) => {
     if (next.expeditionBadges !== prevEnabled) {

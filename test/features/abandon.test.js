@@ -116,7 +116,7 @@ afterEach(() => {
 
 describe('checkAbandonState', () => {
   it('returns the parsed triple for a fresh small colony', () => {
-    // Default `colMinFields` is 320; max=100 is below threshold.
+    // Default `colonyMinFields` is 320; max=100 is below threshold.
     setupOverviewScene({ usedFields: 0, maxFields: 100 });
     const result = checkAbandonState();
     expect(result).toEqual({ used: 0, max: 100, minFields: 320 });
@@ -163,7 +163,7 @@ describe('makeInjectedButton (via abandonPlanet Click-1 work)', () => {
    */
   const setupFullPopupScene = () => {
     setupOverviewScene({ usedFields: 0, maxFields: 100 });
-    settingsStore.set({ ...settingsStore.get(), colPassword: 'secret' });
+    settingsStore.set({ ...settingsStore.get(), colonyPassword: 'secret' });
     const scaffold = document.createElement('div');
     scaffold.innerHTML = `
       <a class="openPlanetRenameGiveupBox" href="#"></a>
@@ -230,15 +230,15 @@ describe('abandonPlanet — pre-flight gates', () => {
   it('returns false when checkAbandonState is not valid', async () => {
     // Not on overview → first gate rejects.
     setupOverviewScene({ isOverview: false });
-    settingsStore.set({ ...settingsStore.get(), colPassword: 'secret' });
+    settingsStore.set({ ...settingsStore.get(), colonyPassword: 'secret' });
     const result = await abandonPlanet();
     expect(result).toBe(false);
   });
 
-  it('returns false when no colPassword is configured', async () => {
+  it('returns false when no colonyPassword is configured', async () => {
     // All other gates satisfied; password is empty (schema default).
     setupOverviewScene({ usedFields: 0, maxFields: 100 });
-    expect(settingsStore.get().colPassword).toBe('');
+    expect(settingsStore.get().colonyPassword).toBe('');
     const result = await abandonPlanet();
     expect(result).toBe(false);
   });
@@ -251,7 +251,7 @@ describe('abandonPlanet — pre-flight gates', () => {
       maxFields: 100,
       coords: 'not coords',
     });
-    settingsStore.set({ ...settingsStore.get(), colPassword: 'secret' });
+    settingsStore.set({ ...settingsStore.get(), colonyPassword: 'secret' });
     const result = await abandonPlanet();
     expect(result).toBe(false);
   });
@@ -277,7 +277,7 @@ describe('abandonPlanet — mid-flow aborts', () => {
       maxFields: 100,
       coords: '[4:30:8]',
     });
-    settingsStore.set({ ...settingsStore.get(), colPassword: 'secret' });
+    settingsStore.set({ ...settingsStore.get(), colonyPassword: 'secret' });
     const scaffold = document.createElement('div');
     scaffold.innerHTML = `
       <a class="openPlanetRenameGiveupBox" href="#"></a>
@@ -301,7 +301,7 @@ describe('abandonPlanet — mid-flow aborts', () => {
     // user to click the proxy Submit; then call abandonPlanet again
     // and assert it short-circuits to false immediately.
     setupOverviewScene({ usedFields: 0, maxFields: 100 });
-    settingsStore.set({ ...settingsStore.get(), colPassword: 'secret' });
+    settingsStore.set({ ...settingsStore.get(), colonyPassword: 'secret' });
     const scaffold = document.createElement('div');
     scaffold.innerHTML = `
       <a class="openPlanetRenameGiveupBox" href="#"></a>

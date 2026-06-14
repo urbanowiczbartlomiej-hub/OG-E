@@ -583,11 +583,11 @@ describe('getColonizeWaitTime', () => {
     vi.useRealTimers();
   });
 
-  it('custom colMinGap overrides the default for conflict detection', () => {
+  it('custom colonyMinGap overrides the default for conflict detection', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
     paintDuration('0:01:00');
-    settingsStore.set({ ...settingsStore.get(), colMinGap: 60 });
+    settingsStore.set({ ...settingsStore.get(), colonyMinGap: 60 });
     const now = Date.now();
     // gap 30s → with minGap 60s → conflict, wait = 30s.
     registryStore.set([

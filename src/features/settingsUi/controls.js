@@ -573,7 +573,7 @@ const CONTROL_BUILDERS = {
  *
  * Text fields for fields that are numeric in the Settings typedef
  * auto-coerce via `parseInt`: typing a non-numeric string into e.g.
- * `colMinGap` keeps the previous numeric value (so the schema never
+ * `colonyMinGap` keeps the previous numeric value (so the schema never
  * drifts into a string-typed field via UI input).
  *
  * @param {SettingsOption} opt

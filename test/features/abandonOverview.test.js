@@ -70,7 +70,7 @@ import {
 
 /**
  * Reset the settings store to schema defaults, plus the overrides
- * relevant to this feature (`fabMode`, `colMinFields`). `fabMode`
+ * relevant to this feature (`fabMode`, `colonyMinFields`). `fabMode`
  * defaults to `false` in the schema, so this helper flips it on by
  * default — every test that wants the overlay to render needs it.
  *
@@ -89,7 +89,7 @@ const resetSettings = (overrides = {}) => {
     /** @type {unknown} */ ({
       ...defaults,
       fabMode: true,
-      colMinFields: 200,
+      colonyMinFields: 200,
       ...overrides,
     })
   );
@@ -247,12 +247,12 @@ describe('installAbandonOverview — overlay content', () => {
 // ──────────────────────────────────────────────────────────────────
 
 describe('installAbandonOverview — click handoff', () => {
-  it('click on overlay calls abandonPlanet() when colPassword is set', () => {
+  it('click on overlay calls abandonPlanet() when colonyPassword is set', () => {
     setupOverviewScene();
     // Password is required — without it the overlay shows a "set
     // password" hint and does not fire abandonPlanet. Mirror the real
     // user setup by setting it in settings first.
-    settingsStore.set({ ...settingsStore.get(), colPassword: 'secret' });
+    settingsStore.set({ ...settingsStore.get(), colonyPassword: 'secret' });
     vi.mocked(checkAbandonState).mockReturnValue({
       used: 0,
       max: 145,
@@ -269,10 +269,10 @@ describe('installAbandonOverview — click handoff', () => {
     expect(vi.mocked(abandonPlanet)).toHaveBeenCalledTimes(1);
   });
 
-  it('click with colPassword EMPTY shows hint and skips abandonPlanet', () => {
+  it('click with colonyPassword EMPTY shows hint and skips abandonPlanet', () => {
     setupOverviewScene();
     // Default password is empty — simulate that.
-    settingsStore.set({ ...settingsStore.get(), colPassword: '' });
+    settingsStore.set({ ...settingsStore.get(), colonyPassword: '' });
     vi.mocked(checkAbandonState).mockReturnValue({
       used: 0,
       max: 145,
@@ -335,7 +335,7 @@ describe('installAbandonOverview — lifecycle', () => {
     expect(getOverlay()).toBeNull();
 
     // After dispose, a settings change must NOT re-mount the overlay.
-    settingsStore.set({ ...settingsStore.get(), colMinFields: 500 });
+    settingsStore.set({ ...settingsStore.get(), colonyMinFields: 500 });
     expect(getOverlay()).toBeNull();
   });
 
@@ -365,7 +365,7 @@ describe('installAbandonOverview — lifecycle', () => {
     dispose2();
   });
 
-  it('settings change (colMinFields bump) triggers refresh and unmounts when no longer warranted', () => {
+  it('settings change (colonyMinFields bump) triggers refresh and unmounts when no longer warranted', () => {
     setupOverviewScene();
     // Start with abandon warranted.
     vi.mocked(checkAbandonState).mockReturnValue({
@@ -377,11 +377,11 @@ describe('installAbandonOverview — lifecycle', () => {
     installAbandonOverview();
     expect(getOverlay()).not.toBeNull();
 
-    // Simulate: user bumps colMinFields DOWN below max, so the colony
+    // Simulate: user bumps colonyMinFields DOWN below max, so the colony
     // no longer qualifies as "too small". Our mock now returns null to
     // mirror what real `checkAbandonState` would do.
     vi.mocked(checkAbandonState).mockReturnValue(null);
-    settingsStore.set({ ...settingsStore.get(), colMinFields: 50 });
+    settingsStore.set({ ...settingsStore.get(), colonyMinFields: 50 });
 
     expect(getOverlay()).toBeNull();
   });

@@ -1,11 +1,11 @@
 // Rose HUD overlay on #planet div — prompts the user to abandon a fresh
-// small colony that sits below their `colMinFields` threshold.
+// small colony that sits below their `colonyMinFields` threshold.
 //
 // # Role
 //
 // On the OGame overview page, when the currently-displayed planet is a
 // freshly-colonized slot (`usedFields === 0`) AND its `maxFields` is
-// below the user's keep threshold (`settings.colMinFields`), we paint
+// below the user's keep threshold (`settings.colonyMinFields`), we paint
 // a rose-rimmed HUD panel (shared `panelChrome` styling) over the
 // `#planet` graphic with an "ABANDON" call to action. Click on the overlay hands off to the
 // existing {@link abandonPlanet} flow in `./index.js` — which owns
@@ -17,7 +17,7 @@
 //
 //   - `location.search` contains `component=overview`
 //   - `settings.fabMode === true` (user opted into the unified floating
-//     button, whose colonize module is what makes `colMinFields` a
+//     button, whose colonize module is what makes `colonyMinFields` a
 //     meaningful signal)
 //   - {@link checkAbandonState} returns truthy (overview + fresh +
 //     below threshold — same gate `sendCol` historically used, now
@@ -98,7 +98,7 @@ const readCoordsText = () => {
  * Lifecycle:
  *   1. Runs `refresh()` once synchronously — mounts the overlay if
  *      the current page already satisfies all preconditions.
- *   2. Subscribes to `settingsStore` so `colMinFields` / `fabMode`
+ *   2. Subscribes to `settingsStore` so `colonyMinFields` / `fabMode`
  *      edits re-evaluate the mount state live.
  *   3. Installs a `MutationObserver` on `document.body` (childList +
  *      subtree). OGame AJAX-swaps the overview content when the user
@@ -188,7 +188,7 @@ export const installAbandonOverview = () => {
 
     // The decisive metric for "abandon yes/no" — maxFields. Paint it
     // biggest so it dominates the overlay at a glance. User eyeballs
-    // this number against their `colMinFields` threshold and either
+    // this number against their `colonyMinFields` threshold and either
     // confirms or closes.
     const sizeLine = document.createElement('div');
     sizeLine.textContent = `${info.max} fields`;
@@ -222,7 +222,7 @@ export const installAbandonOverview = () => {
     // session-level hand-off, not a permanent disable.
     overlay.addEventListener('click', async () => {
       const s = settingsStore.get();
-      if (!s.colPassword) {
+      if (!s.colonyPassword) {
         hintLine.textContent = '\u26A0 Set password in OG-E settings first';
         hintLine.style.color = '#fecdd3';
         return;
@@ -278,7 +278,7 @@ export const installAbandonOverview = () => {
   // settings change.
   refresh();
 
-  // React to settings edits — `colMinFields` bump or `fabMode`
+  // React to settings edits — `colonyMinFields` bump or `fabMode`
   // toggle should flip the overlay in-place.
   const unsubSettings = settingsStore.subscribe(refresh);
 

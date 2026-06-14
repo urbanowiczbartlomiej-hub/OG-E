@@ -139,7 +139,7 @@ import { clearScans, clearGalaxyScans } from './merge.js';
  *   OPTIONAL, additive: game-logic settings keyed by universe id. Each slot
  *   uses the same `{ values, ts }` shape as `settings` but carries only the
  *   keys listed in `UNIVERSE_SCOPED_SETTINGS` (see `sync/settingsSync.js`).
- *   Per-universe because these parameters (fsThreshold, colPassword, …)
+ *   Per-universe because these parameters (fsThreshold, colonyPassword, …)
  *   depend on which OGame server the user is playing and must not leak across
  *   universes. The top-level `settings` field retains only global preferences.
  * @property {Record<string, import('../state/dailyActions.js').DailyState>} [dailyStatePerUniverse]

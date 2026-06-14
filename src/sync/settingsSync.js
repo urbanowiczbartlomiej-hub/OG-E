@@ -17,7 +17,7 @@
 //     timestamp map under `SETTINGS_TS_KEY`.
 //
 //   - UNIVERSE_SCOPED: game-logic parameters that are meaningful only on a
-//     specific server (fsThreshold, colPassword, reminderNtfyToken, …).
+//     specific server (fsThreshold, colonyPassword, reminderNtfyToken, …).
 //     Stored in `settingsPerUniverse[universeId]` and in a per-universe
 //     chrome.storage timestamp map under `<universeId>:oge_settingsTs`.
 //
@@ -51,10 +51,10 @@ export const EXCLUDED_SETTINGS = new Set(['fabBtnSize', 'gistToken']);
  * @type {Set<string>}
  */
 export const UNIVERSE_SCOPED_SETTINGS = new Set([
-  'colPassword',
-  'colMinGap',
-  'colMinFields',
-  'maxExpPerPlanet',
+  'colonyPassword',
+  'colonyMinGap',
+  'colonyMinFields',
+  'maxExpeditionsPerPlanet',
   'fsEnabled',
   'fsThreshold',
   'fsOffsets',

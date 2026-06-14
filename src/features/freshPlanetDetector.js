@@ -16,7 +16,7 @@ import { GAME } from '../lib/gameDom.js';
 //
 // # Why the criterion is strictly `used === 0`
 //
-// Triggering the banner for any planet below `colMinFields` would
+// Triggering the banner for any planet below `colonyMinFields` would
 // produce false positives: a colony with ~100 fields built
 // (legitimately kept, mid-build) falls under the threshold and keeps
 // flashing the banner on every page load. The signal the user

@@ -515,7 +515,7 @@ describe('settings sync', () => {
   });
 
   it('applies a remote UNIVERSE-SCOPED setting via settingsPerUniverse on download', async () => {
-    // colMinGap is universe-scoped; remote carries it in settingsPerUniverse
+    // colonyMinGap is universe-scoped; remote carries it in settingsPerUniverse
     // (the new dedicated slot). Since routesUniverseId = parseUniverseId(location.host)
     // in this happy-dom env, we use that same key for the slot.
     const uid = /** @type {string} */ (
@@ -525,11 +525,11 @@ describe('settings sync', () => {
           : location.host
         : ''
     );
-    settingsStore.set({ ...settingsStore.get(), colMinGap: 20 });
+    settingsStore.set({ ...settingsStore.get(), colonyMinGap: 20 });
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(
       payload({
         settingsPerUniverse: {
-          [uid]: { values: { colMinGap: 99 }, ts: { colMinGap: 200 } },
+          [uid]: { values: { colonyMinGap: 99 }, ts: { colonyMinGap: 200 } },
         },
       }),
     );
@@ -537,10 +537,10 @@ describe('settings sync', () => {
     installSync();
     await tick(0);
 
-    expect(settingsStore.get().colMinGap).toBe(99);
-    // Global ts map is NOT touched (colMinGap is universe-scoped).
+    expect(settingsStore.get().colonyMinGap).toBe(99);
+    // Global ts map is NOT touched (colonyMinGap is universe-scoped).
     expect(
-      'colMinGap' in JSON.parse(localStorage.getItem('oge_settingsTs') || '{}'),
+      'colonyMinGap' in JSON.parse(localStorage.getItem('oge_settingsTs') || '{}'),
     ).toBe(false);
   });
 

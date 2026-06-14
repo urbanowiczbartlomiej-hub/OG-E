@@ -30,7 +30,7 @@ talks to the game server on your behalf.
   the moment you build a single field the banner disappears. No state
   to sync, no "known planets" database.
 - **Abandon overlay** — on a colony's overview page, if it's under
-  your `colMinFields` threshold, a big red overlay offers abandon in
+  your `colonyMinFields` threshold, a big red overlay offers abandon in
   three clicks. The buttons are injected inside the game's own popups
   for mobile safety.
 - **OG-E Dashboard** — extension page with four tabs:

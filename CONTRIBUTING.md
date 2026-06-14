@@ -99,7 +99,7 @@ Before merging anything that touches DOM behaviour:
 - Send Col floating button visible, Scan subtext shows remaining count.
 - Galaxy scan persists across reloads; histogram page shows pixels.
 - Fresh-planet banner appears on a `usedFields === 0` colony.
-- Abandon overlay appears on a colony under `colMinFields`.
+- Abandon overlay appears on a colony under `colonyMinFields`.
 - AGR settings menu contains the OG-E tab and it expands.
 - Readability boost toggle flips the event-box styling on/off.
 

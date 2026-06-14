@@ -23,7 +23,7 @@
 //   - `countActiveExpeditions`: reads the in-flight expedition rows in
 //     `#eventContent` (mission-type 15) and their `.coordsOrigin` cells.
 //   - `findPlanetWithExpSlot`: walks `#planetList .smallplanet`, reads
-//     `settingsStore.get().maxExpPerPlanet`, and delegates to
+//     `settingsStore.get().maxExpeditionsPerPlanet`, and delegates to
 //     `countActiveExpeditions` per planet.
 //
 // The `#eventContent tr.eventFleet[data-mission-type="15"]` selector is
@@ -82,7 +82,7 @@ export const countActiveExpeditions = (originCoords) => {
 /**
  * Walk `#planetList .smallplanet` starting from the active planet and
  * return the `cp` of the first planet that has room for another
- * expedition (`count < settings.maxExpPerPlanet`).
+ * expedition (`count < settings.maxExpeditionsPerPlanet`).
  *
  * Wraps around the planet list, so a player whose active planet is the
  * last in the list still finds room on earlier entries. `null` when
@@ -94,7 +94,7 @@ export const countActiveExpeditions = (originCoords) => {
  * @returns {number | null} `cp` of the first planet with room, or `null`.
  */
 export const findPlanetWithExpSlot = (skipCurrent) => {
-  const max = settingsStore.get().maxExpPerPlanet;
+  const max = settingsStore.get().maxExpeditionsPerPlanet;
   const planets = Array.from(
     document.querySelectorAll(GAME.SMALL_PLANET),
   );

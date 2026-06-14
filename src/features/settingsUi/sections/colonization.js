@@ -29,8 +29,8 @@ const colLocked = (s) => !s.fabMode;
 export const colonizationSection = {
   section: 'Colonization',
   options: [
-    { id: 'colMinGap', label: 'Min gap between arrivals (sec)', type: 'text', placeholder: 'e.g. 20', disabledWhen: colLocked },
-    { id: 'colMinFields', label: 'Min fields to keep colony', type: 'text', placeholder: 'e.g. 200', disabledWhen: colLocked },
-    { id: 'colPassword', label: 'Account password (for abandon)', type: 'password', disabledWhen: colLocked },
+    { id: 'colonyMinGap', label: 'Min gap between arrivals (sec)', type: 'text', placeholder: 'e.g. 20', disabledWhen: colLocked },
+    { id: 'colonyMinFields', label: 'Min fields to keep colony', type: 'text', placeholder: 'e.g. 200', disabledWhen: colLocked },
+    { id: 'colonyPassword', label: 'Account password (for abandon)', type: 'password', disabledWhen: colLocked },
   ],
 };

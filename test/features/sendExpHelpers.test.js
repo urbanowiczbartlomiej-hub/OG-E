@@ -41,7 +41,7 @@ const resetSettingsToDefaults = () => {
 
 /** @param {number} n */
 const setMaxExpPerPlanet = (n) => {
-  settingsStore.set({ ...settingsStore.get(), maxExpPerPlanet: n });
+  settingsStore.set({ ...settingsStore.get(), maxExpeditionsPerPlanet: n });
 };
 
 // ── Fixtures ────────────────────────────────────────────────────────

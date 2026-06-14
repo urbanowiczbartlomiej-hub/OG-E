@@ -15,6 +15,6 @@ export const expeditionsSection = {
   options: [
     { id: 'expeditionBadges', label: 'Expedition badges on planets', type: 'checkbox' },
     { id: 'autoRedirectExpedition', label: 'After sending expedition, open the next planet', type: 'checkbox' },
-    { id: 'maxExpPerPlanet', label: 'Max expeditions per planet', type: 'range', min: 1, max: 20, step: 1 },
+    { id: 'maxExpeditionsPerPlanet', label: 'Max expeditions per planet', type: 'range', min: 1, max: 20, step: 1 },
   ],
 };

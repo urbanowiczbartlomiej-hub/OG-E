@@ -290,32 +290,32 @@ describe('installSettingsUi — text + password', () => {
     expect(settingsStore.get().reminderSchedule).toBe('0m, 5m');
   });
 
-  it('text change coerces to Number for numeric fields (colMinGap)', async () => {
+  it('text change coerces to Number for numeric fields (colonyMinGap)', async () => {
     setupAGR();
     installSettingsUi();
     await flushWaitFor();
 
     const input = /** @type {HTMLInputElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'colMinGap')
+      document.getElementById(INPUT_PREFIX + 'colonyMinGap')
     );
     expect(input).not.toBeNull();
     if (input) {
       input.value = '30';
       input.dispatchEvent(new Event('change'));
     }
-    const next = settingsStore.get().colMinGap;
+    const next = settingsStore.get().colonyMinGap;
     expect(next).toBe(30);
     expect(typeof next).toBe('number');
   });
 
   it('non-numeric text on a numeric field keeps the previous value', async () => {
-    settingsStore.set({ ...settingsStore.get(), colMinGap: 20 });
+    settingsStore.set({ ...settingsStore.get(), colonyMinGap: 20 });
     setupAGR();
     installSettingsUi();
     await flushWaitFor();
 
     const input = /** @type {HTMLInputElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'colMinGap')
+      document.getElementById(INPUT_PREFIX + 'colonyMinGap')
     );
     expect(input).not.toBeNull();
     if (input) {
@@ -323,7 +323,7 @@ describe('installSettingsUi — text + password', () => {
       input.dispatchEvent(new Event('change'));
     }
     // Previous value (20) is retained — no schema drift into strings.
-    expect(settingsStore.get().colMinGap).toBe(20);
+    expect(settingsStore.get().colonyMinGap).toBe(20);
   });
 
   it('password field uses type="password"', async () => {

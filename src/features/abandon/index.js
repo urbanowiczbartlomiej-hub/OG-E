@@ -4,7 +4,7 @@
 //
 // On the OGame overview page, when the current planet is freshly
 // colonized (usedFields === 0) and below the user's keep threshold
-// (settings.colMinFields), we relay each of the user's three taps to
+// (settings.colonyMinFields), we relay each of the user's three taps to
 // exactly ONE native game action, with a DOM-level safety check between
 // every step. The flow closes with a local scansStore update and a
 // page reload.
@@ -54,7 +54,7 @@
 //
 //   1. `checkAbandonState()` must hold on entry — we're on the
 //      overview page, `usedFields === 0`, and `maxFields` is below
-//      the user's `colMinFields` threshold.
+//      the user's `colonyMinFields` threshold.
 //   2. After click 1, `#giveupCoordinates` text must equal the
 //      coordinates we captured from `#positionContentField` on entry.
 //      A mismatch here would mean the popup was opened for a
@@ -196,7 +196,7 @@ let abandonInProgress = false;
  *   - `location.search` includes `component=overview`
  *   - `#diameterContentField` exists and matches `(used/max)`
  *   - `used === 0` (no buildings yet — definitely fresh)
- *   - `max < settings.colMinFields` (below the user's threshold)
+ *   - `max < settings.colonyMinFields` (below the user's threshold)
  *
  * @param {Settings} [settings]  Optional settings snapshot; defaults
  *   to the current `settingsStore.get()` value. Passing it in makes
@@ -214,8 +214,8 @@ export const checkAbandonState = (settings) => {
   const used = parseInt(m[1], 10);
   const max = parseInt(m[2], 10);
   if (used !== 0) return null;
-  if (max >= s.colMinFields) return null;
-  return { used, max, minFields: s.colMinFields };
+  if (max >= s.colonyMinFields) return null;
+  return { used, max, minFields: s.colonyMinFields };
 };
 
 /**
@@ -248,7 +248,7 @@ export const abandonPlanet = async () => {
   const expectedCoords = `[${galaxy}:${system}:${position}]`;
 
   // ── Safety 3: password configured ──────────────────────────────
-  if (!settings.colPassword) return false;
+  if (!settings.colonyPassword) return false;
 
   abandonInProgress = true;
   try {
@@ -289,7 +289,7 @@ export const abandonPlanet = async () => {
 
     // Autofill password (no HTTP); fire input + change events so any
     // framework listeners bound to the field see the update.
-    pwField.value = settings.colPassword;
+    pwField.value = settings.colonyPassword;
     pwField.dispatchEvent(new Event('input', { bubbles: true }));
     pwField.dispatchEvent(new Event('change', { bubbles: true }));
 

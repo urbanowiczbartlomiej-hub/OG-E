@@ -88,9 +88,9 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
         'adhocOffsetSec',
         'autoRedirectExpedition',
         'cloudSync',
-        'colMinFields',
-        'colMinGap',
-        'colPassword',
+        'colonyMinFields',
+        'colonyMinGap',
+        'colonyPassword',
         'eventMenuHighlight',
         'expeditionBadges',
         'fabBtnSize',
@@ -100,7 +100,7 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
         'fsOffsets',
         'fsThreshold',
         'gistToken',
-        'maxExpPerPlanet',
+        'maxExpeditionsPerPlanet',
         'readabilityBoost',
         'remindersMasterEnabled',
         'reminderEnabled',
@@ -126,10 +126,10 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
       default: 320,
       key: 'oge_fabBtnSize',
     });
-    expect(SETTINGS_SCHEMA.colPassword).toEqual({
+    expect(SETTINGS_SCHEMA.colonyPassword).toEqual({
       type: 'string',
       default: '',
-      key: 'oge_colPassword',
+      key: 'oge_colonyPassword',
     });
     expect(SETTINGS_SCHEMA.fsEnabled).toEqual({
       type: 'bool',
@@ -163,10 +163,10 @@ describe('settingsStore — initial state (pre-init)', () => {
     expect(state.expeditionBadges).toBe(true);
     expect(state.autoRedirectExpedition).toBe(true);
     expect(state.fabBtnSize).toBe(320);
-    expect(state.colMinGap).toBe(15);
-    expect(state.colMinFields).toBe(320);
-    expect(state.colPassword).toBe('');
-    expect(state.maxExpPerPlanet).toBe(1);
+    expect(state.colonyMinGap).toBe(15);
+    expect(state.colonyMinFields).toBe(320);
+    expect(state.colonyPassword).toBe('');
+    expect(state.maxExpeditionsPerPlanet).toBe(1);
     expect(state.readabilityBoost).toBe(true);
     expect(state.cloudSync).toBe(false);
     expect(state.gistToken).toBe('');
@@ -187,15 +187,15 @@ describe('initSettingsStore — hydration', () => {
   });
 
   it('hydrates an int field from localStorage', () => {
-    localStorage.setItem('oge_colMinGap', '45');
+    localStorage.setItem('oge_colonyMinGap', '45');
     initSettingsStore();
-    expect(settingsStore.get().colMinGap).toBe(45);
+    expect(settingsStore.get().colonyMinGap).toBe(45);
   });
 
   it('hydrates a string field from localStorage', () => {
-    localStorage.setItem('oge_colPassword', 'secret123');
+    localStorage.setItem('oge_colonyPassword', 'secret123');
     initSettingsStore();
-    expect(settingsStore.get().colPassword).toBe('secret123');
+    expect(settingsStore.get().colonyPassword).toBe('secret123');
   });
 
   it('treats an empty string as a legitimate stored value (not missing)', () => {
@@ -218,23 +218,23 @@ describe('initSettingsStore — hydration', () => {
 
   it('falls back to default when an int value is unparseable', () => {
     // safeLS.int returns the default when parseInt fails entirely.
-    localStorage.setItem('oge_colMinGap', 'not-a-number');
+    localStorage.setItem('oge_colonyMinGap', 'not-a-number');
     initSettingsStore();
-    expect(settingsStore.get().colMinGap).toBe(15);
+    expect(settingsStore.get().colonyMinGap).toBe(15);
   });
 
   it('hydrates a mix of fields at once in a single store update', () => {
     localStorage.setItem('oge_fabMode', 'false');
-    localStorage.setItem('oge_colMinGap', '30');
-    localStorage.setItem('oge_colPassword', 'pw7,8');
+    localStorage.setItem('oge_colonyMinGap', '30');
+    localStorage.setItem('oge_colonyPassword', 'pw7,8');
     localStorage.setItem('oge_gistToken', 'ghp_abc123');
 
     initSettingsStore();
 
     const state = settingsStore.get();
     expect(state.fabMode).toBe(false);
-    expect(state.colMinGap).toBe(30);
-    expect(state.colPassword).toBe('pw7,8');
+    expect(state.colonyMinGap).toBe(30);
+    expect(state.colonyPassword).toBe('pw7,8');
     expect(state.gistToken).toBe('ghp_abc123');
     // Untouched fields stay at defaults.
     expect(state.autoRedirectExpedition).toBe(true);
@@ -251,27 +251,27 @@ describe('initSettingsStore — write-through (per-key diff)', () => {
 
   it('writes a changed int field to its own localStorage key', () => {
     initSettingsStore();
-    settingsStore.update((s) => ({ ...s, colMinGap: 30 }));
-    expect(localStorage.getItem('oge_colMinGap')).toBe('30');
+    settingsStore.update((s) => ({ ...s, colonyMinGap: 30 }));
+    expect(localStorage.getItem('oge_colonyMinGap')).toBe('30');
   });
 
   it('writes a changed string field to its own localStorage key', () => {
     initSettingsStore();
-    settingsStore.update((s) => ({ ...s, colPassword: 'pw789' }));
-    expect(localStorage.getItem('oge_colPassword')).toBe('pw789');
+    settingsStore.update((s) => ({ ...s, colonyPassword: 'pw789' }));
+    expect(localStorage.getItem('oge_colonyPassword')).toBe('pw789');
   });
 
   it('writes multiple changed fields in the same set/update call', () => {
     initSettingsStore();
     settingsStore.update((s) => ({
       ...s,
-      colMinGap: 30,
-      colPassword: 'pw7',
+      colonyMinGap: 30,
+      colonyPassword: 'pw7',
       fabMode: false,
     }));
 
-    expect(localStorage.getItem('oge_colMinGap')).toBe('30');
-    expect(localStorage.getItem('oge_colPassword')).toBe('pw7');
+    expect(localStorage.getItem('oge_colonyMinGap')).toBe('30');
+    expect(localStorage.getItem('oge_colonyPassword')).toBe('pw7');
     expect(localStorage.getItem('oge_fabMode')).toBe('false');
   });
 
@@ -279,16 +279,16 @@ describe('initSettingsStore — write-through (per-key diff)', () => {
     // Pre-seed a sentinel value under a key the test will NOT modify.
     // The hydrate will read it as an int (parseInt('SENTINEL') → NaN →
     // default 320) but the LS string itself remains untouched unless
-    // the store writes back. Since we only mutate `colMinGap`, the
+    // the store writes back. Since we only mutate `colonyMinGap`, the
     // sentinel must survive — proving the diff write-through.
     localStorage.setItem('oge_fabBtnSize', 'SENTINEL');
 
     initSettingsStore();
 
-    // Change only colMinGap.
-    settingsStore.update((s) => ({ ...s, colMinGap: 30 }));
+    // Change only colonyMinGap.
+    settingsStore.update((s) => ({ ...s, colonyMinGap: 30 }));
 
-    expect(localStorage.getItem('oge_colMinGap')).toBe('30');
+    expect(localStorage.getItem('oge_colonyMinGap')).toBe('30');
     // fabBtnSize key was not written because the store value (320,
     // hydrated as default) did not change from its hydrated state.
     expect(localStorage.getItem('oge_fabBtnSize')).toBe('SENTINEL');
@@ -315,14 +315,14 @@ describe('initSettingsStore — write-through (per-key diff)', () => {
     // If the user had a non-default value and resets it, we still write
     // the default string to LS — per-key diff compares to the PREVIOUS
     // state, not to the schema default.
-    localStorage.setItem('oge_colMinGap', '60');
+    localStorage.setItem('oge_colonyMinGap', '60');
     initSettingsStore();
-    expect(settingsStore.get().colMinGap).toBe(60);
+    expect(settingsStore.get().colonyMinGap).toBe(60);
 
     // Reset to the default.
-    settingsStore.update((s) => ({ ...s, colMinGap: 15 }));
+    settingsStore.update((s) => ({ ...s, colonyMinGap: 15 }));
 
-    expect(localStorage.getItem('oge_colMinGap')).toBe('15');
+    expect(localStorage.getItem('oge_colonyMinGap')).toBe('15');
   });
 });
 
@@ -332,8 +332,8 @@ describe('initSettingsStore — persistence round-trip', () => {
     settingsStore.update((s) => ({
       ...s,
       fabMode: false,
-      colMinGap: 45,
-      colPassword: 'pw789',
+      colonyMinGap: 45,
+      colonyPassword: 'pw789',
       gistToken: 'ghp_roundtrip',
     }));
     disposeSettingsStore();
@@ -347,8 +347,8 @@ describe('initSettingsStore — persistence round-trip', () => {
 
     const state = settingsStore.get();
     expect(state.fabMode).toBe(false);
-    expect(state.colMinGap).toBe(45);
-    expect(state.colPassword).toBe('pw789');
+    expect(state.colonyMinGap).toBe(45);
+    expect(state.colonyPassword).toBe('pw789');
     expect(state.gistToken).toBe('ghp_roundtrip');
   });
 });
@@ -356,15 +356,15 @@ describe('initSettingsStore — persistence round-trip', () => {
 describe('disposeSettingsStore', () => {
   it('prevents further writes to localStorage', () => {
     initSettingsStore();
-    settingsStore.update((s) => ({ ...s, colMinGap: 30 }));
-    expect(localStorage.getItem('oge_colMinGap')).toBe('30');
+    settingsStore.update((s) => ({ ...s, colonyMinGap: 30 }));
+    expect(localStorage.getItem('oge_colonyMinGap')).toBe('30');
 
     disposeSettingsStore();
 
-    settingsStore.update((s) => ({ ...s, colMinGap: 99 }));
+    settingsStore.update((s) => ({ ...s, colonyMinGap: 99 }));
 
     // LS value is frozen at pre-dispose state.
-    expect(localStorage.getItem('oge_colMinGap')).toBe('30');
+    expect(localStorage.getItem('oge_colonyMinGap')).toBe('30');
   });
 
   it('is safe to call when never initialized', () => {
@@ -392,34 +392,34 @@ describe('initSettingsStore — idempotent', () => {
     initSettingsStore();
     initSettingsStore();
 
-    settingsStore.update((s) => ({ ...s, colMinGap: 50 }));
-    expect(localStorage.getItem('oge_colMinGap')).toBe('50');
+    settingsStore.update((s) => ({ ...s, colonyMinGap: 50 }));
+    expect(localStorage.getItem('oge_colonyMinGap')).toBe('50');
 
     disposeSettingsStore();
 
-    settingsStore.update((s) => ({ ...s, colMinGap: 99 }));
+    settingsStore.update((s) => ({ ...s, colonyMinGap: 99 }));
 
     // If a duplicate subscription existed, we'd see '99' here.
-    expect(localStorage.getItem('oge_colMinGap')).toBe('50');
+    expect(localStorage.getItem('oge_colonyMinGap')).toBe('50');
   });
 
   it('a second init does not re-run hydration (in-memory changes survive)', () => {
-    localStorage.setItem('oge_colMinGap', '30');
+    localStorage.setItem('oge_colonyMinGap', '30');
     initSettingsStore();
-    expect(settingsStore.get().colMinGap).toBe(30);
+    expect(settingsStore.get().colonyMinGap).toBe(30);
 
     // Mutate in memory without touching LS — but write-through will fire.
     // The point of the test is: if re-init re-hydrated, it would clobber
     // this mutation back to the LS value. We prove it does not.
-    settingsStore.update((s) => ({ ...s, colMinGap: 77 }));
+    settingsStore.update((s) => ({ ...s, colonyMinGap: 77 }));
     // LS is now '77' thanks to write-through.
-    expect(localStorage.getItem('oge_colMinGap')).toBe('77');
+    expect(localStorage.getItem('oge_colonyMinGap')).toBe('77');
 
     // Manually stomp LS as if an external writer changed it.
-    localStorage.setItem('oge_colMinGap', '30');
+    localStorage.setItem('oge_colonyMinGap', '30');
 
     // Second init should be a no-op: it must NOT re-hydrate from '30'.
     initSettingsStore();
-    expect(settingsStore.get().colMinGap).toBe(77);
+    expect(settingsStore.get().colonyMinGap).toBe(77);
   });
 });

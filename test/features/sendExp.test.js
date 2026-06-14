@@ -5,7 +5,7 @@
 // The module reads three things from the page:
 //   - `settings.fabMode` gates visibility,
 //   - `settings.fabBtnSize` drives diameter + font scaling,
-//   - `settings.maxExpPerPlanet` gates the click handler.
+//   - `settings.maxExpeditionsPerPlanet` gates the click handler.
 // ... and writes the button to `document.body`, plus JSON position to
 // `oge_enterBtnPos` and focus marker to `oge_focusedBtn`.
 //
@@ -156,7 +156,7 @@ const resetSettingsToDefaults = () => {
  * @param {{
  *   fabMode?: boolean,
  *   fabBtnSize?: number,
- *   maxExpPerPlanet?: number,
+ *   maxExpeditionsPerPlanet?: number,
  *   onFleetdispatch?: boolean,
  *   mission?: number | null,
  *   activeCp?: number | null,
@@ -166,7 +166,7 @@ const resetSettingsToDefaults = () => {
 const setupScene = ({
   fabMode = true,
   fabBtnSize = 560,
-  maxExpPerPlanet = 1,
+  maxExpeditionsPerPlanet = 1,
   onFleetdispatch = false,
   mission = null,
   activeCp = 12345,
@@ -176,7 +176,7 @@ const setupScene = ({
     ...settingsStore.get(),
     fabMode,
     fabBtnSize,
-    maxExpPerPlanet,
+    maxExpeditionsPerPlanet,
   });
 
   if (onFleetdispatch) {
@@ -418,7 +418,7 @@ describe('installSendExp — max expedition guard', () => {
     // to fall back to → `findPlanetWithExpSlot` returns null, we
     // paint the transient "All maxed!" warning and stay put.
     vi.useFakeTimers();
-    setupScene({ maxExpPerPlanet: 1, activeExpeditions: 1 });
+    setupScene({ maxExpeditionsPerPlanet: 1, activeExpeditions: 1 });
     installSendExp();
     const btn = getBtn();
     expect(btn).not.toBeNull();
@@ -437,7 +437,7 @@ describe('installSendExp — max expedition guard', () => {
 
   it('navigates normally when active expeditions are below the limit', () => {
     setupScene({
-      maxExpPerPlanet: 2,
+      maxExpeditionsPerPlanet: 2,
       activeExpeditions: 1,
       onFleetdispatch: false,
       activeCp: 7,
@@ -620,7 +620,7 @@ describe('installSendExp — fleetDispatcher snapshot gates', () => {
     // identical to the no-snapshot case — navigate to the active
     // planet's fleetdispatch URL.
     setupScene({
-      maxExpPerPlanet: 2,
+      maxExpeditionsPerPlanet: 2,
       activeExpeditions: 0,
       onFleetdispatch: false,
       activeCp: 7,
@@ -646,7 +646,7 @@ describe('installSendExp — fleetDispatcher snapshot gates', () => {
       onFleetdispatch: true,
       mission: 15,
       activeCp: 42,
-      maxExpPerPlanet: 1,
+      maxExpeditionsPerPlanet: 1,
       activeExpeditions: 1,
     });
     installSendExp();
@@ -682,7 +682,7 @@ describe('installSendExp — fleetDispatcher snapshot gates', () => {
   });
 
   it('fleet cap not reached (17/18) → expedition check runs normally', () => {
-    setupScene({ onFleetdispatch: false, activeCp: 7, activeExpeditions: 0, maxExpPerPlanet: 2 });
+    setupScene({ onFleetdispatch: false, activeCp: 7, activeExpeditions: 0, maxExpeditionsPerPlanet: 2 });
     installSendExp();
     setFleetDispatcher({ expeditionCount: 3, maxExpeditionCount: 14, fleetCount: 17, maxFleetCount: 18 });
 

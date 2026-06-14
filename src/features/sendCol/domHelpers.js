@@ -67,7 +67,7 @@ export const getColonizeWaitTime = () => {
 
   const now = Date.now();
   const ourArrival = now + durSec * 1000;
-  const minGapMs = settingsStore.get().colMinGap * 1000;
+  const minGapMs = settingsStore.get().colonyMinGap * 1000;
   const registry = registryStore.get();
   const conflict = findConflict(registry, ourArrival, minGapMs);
 

@@ -147,7 +147,7 @@ describe('findFirstFreshPlanet', () => {
 
   it('skips a planet with ANY built field (used > 0)', () => {
     // Regression guard for the previous bug: the earlier detector
-    // fired for any `used < colMinFields`, which flashed the banner
+    // fired for any `used < colonyMinFields`, which flashed the banner
     // on legitimately-in-progress colonies. Now only pristine
     // (`used === 0`) planets qualify.
     setupPlanetList([

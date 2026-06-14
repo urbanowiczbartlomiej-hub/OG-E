@@ -33,7 +33,7 @@
 //
 // # Max-expedition guard
 //
-// If `#eventContent` already shows `maxExpPerPlanet` expedition fleets
+// If `#eventContent` already shows `maxExpeditionsPerPlanet` expedition fleets
 // we paint a transient "All maxed!" label on the button for 2 seconds
 // and abort the dispatch. We do NOT auto-advance to a different
 // planet — that is what `bridges/expeditionRedirect.js` does on
@@ -48,7 +48,7 @@
 //                   while invisible, so actual removal is correct).
 //   - `fabBtnSize`  resizes the circle and scales the font to ~23%.
 //                   Updates apply live.
-//   - `maxExpPerPlanet` gates the click handler. Read per click, so
+//   - `maxExpeditionsPerPlanet` gates the click handler. Read per click, so
 //                   panel edits take effect on the very next tap.
 //
 // # Unified FAB + focus persistence
@@ -444,7 +444,7 @@ export const installSendExp = () => {
 
     // On fleetdispatch — current-planet cap: full ⇒ jump to the next free
     // planet (unless the next send would hit the global cap anyway).
-    const max = settingsStore.get().maxExpPerPlanet;
+    const max = settingsStore.get().maxExpeditionsPerPlanet;
     if (countActiveExpeditions(getActivePlanetCoords()) >= max) {
       if (isGlobalExpeditionCapReachedAfterNextSend(fleetDispatcherSnapshot)) {
         paintAllMaxed(btn);
@@ -592,7 +592,7 @@ export const installSendExp = () => {
 
   // Subscribe for live changes. We react ONLY to the two fields we
   // care about (fabMode, fabBtnSize) — the settings store carries
-  // the whole panel so unrelated edits (colMinGap, colPassword, ...)
+  // the whole panel so unrelated edits (colonyMinGap, colonyPassword, ...)
   // would otherwise spam this callback.
   let prevFabMode = initial.fabMode;
   let prevFabBtnSize = initial.fabBtnSize;
