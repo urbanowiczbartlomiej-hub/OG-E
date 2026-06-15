@@ -66,6 +66,7 @@ import { initRegistryStore } from './state/registry.js';
 import { initSettingsStore } from './state/settings.js';
 import { initDailyRunRoutesStore } from './state/dailyRunRoutes.js';
 import { initGalaxyScanConfigStore } from './state/galaxyScanConfig.js';
+import { initReminderGlobalConfigStore } from './state/reminderGlobalConfig.js';
 import { initBodiesStore } from './state/bodies.js';
 
 import { installColonyRecorder } from './features/colonyRecorder.js';
@@ -107,14 +108,21 @@ initDailyRunRoutesStore();
 // Scan button reads the user's positions + rescan policy, and edits made
 // in the dashboard (a different origin) reach the in-game button.
 initGalaxyScanConfigStore();
+// Global reminder config (wave enable + schedule, ad-hoc lead time;
+// chrome.storage, NOT per-universe). Hydrated here so the in-game reminder
+// producer + event-list badges read the user's cadence, and edits made in
+// the dashboard (a different origin) reach the in-game features.
+initReminderGlobalConfigStore();
 // Body inventory (per-universe, chrome.storage). Hydrated here so the
 // planet-bar capture below can gate its first write on the hydrate and
 // the dashboard route editor can read a snapshot of owned planets/moons.
 initBodiesStore();
 
-// Reminder config lives in `settings.js` (regular localStorage Settings,
-// authored in the in-game OG-E settings panel). Nothing extra to wire
-// here — initSettingsStore was hydrated synchronously above.
+// The reminders master switch + ntfy token live in `settings.js` (regular
+// localStorage Settings, authored in the in-game OG-E settings panel) — wired
+// by initSettingsStore above. The detailed reminder config moved to the
+// dashboard: per-server fleet-save knobs in galaxyScanConfig (B3b), the global
+// wave/ad-hoc knobs in reminderGlobalConfig (B3c) — both inited above.
 
 // Top-frame-only: sync scheduler. OGame embeds several iframes;
 // running the gist round-trip in each would multiply API traffic

@@ -23,6 +23,7 @@ import { chromeStore } from '../../../src/lib/storage.js';
 import { installReminderConfig } from '../../../src/features/dashboard/reminderConfig.js';
 import { installScanConfig } from '../../../src/features/dashboard/scanConfig.js';
 import { defaultGalaxyScanConfig } from '../../../src/domain/galaxyScanConfig.js';
+import { defaultReminderGlobalConfig } from '../../../src/domain/reminderGlobalConfig.js';
 
 const mockStore = /** @type {{ get: import('vitest').Mock, set: import('vitest').Mock }} */ (
   /** @type {any} */ (chromeStore)
@@ -32,6 +33,9 @@ const UNI = 's163-pl';
 const CFG_KEY = `${UNI}:oge_galaxyScanConfig`;
 const TS_KEY = `${UNI}:oge_galaxyScanConfigTs`;
 const SYNC_KEY = `${UNI}:oge_syncRequestAt`;
+// Global reminder config (NOT per-universe — see B3c).
+const GLOBAL_KEY = 'oge_reminderGlobalConfig';
+const GLOBAL_TS_KEY = 'oge_reminderGlobalConfigTs';
 
 /** @type {Map<string, unknown>} */
 const store = new Map();
@@ -166,5 +170,75 @@ describe('Reminders fleet-save config editor', () => {
     expect($('#remCfgFsThreshold').value).toBe(String(defaultGalaxyScanConfig().fsThreshold));
     // Reset alone does not persist — the stored value is unchanged.
     expect(/** @type {any} */ (store.get(CFG_KEY)).fsThreshold).toBe(50000);
+  });
+});
+
+describe('Reminders GLOBAL (wave + ad-hoc) config editor', () => {
+  it('fills the global fields from defaults when nothing is stored', async () => {
+    install().refresh();
+    await flush();
+    const d = defaultReminderGlobalConfig();
+    expect($('#remCfgWaveEnabled').checked).toBe(d.reminderEnabled);
+    expect($('#remCfgWaveSchedule').value).toBe(d.reminderSchedule);
+    expect($('#remCfgAdhoc').value).toBe('1m'); // 60 s
+  });
+
+  it('hydrates the global fields from the stored global config', async () => {
+    store.set(GLOBAL_KEY, { reminderEnabled: true, reminderSchedule: '5m, 15m', adhocOffsetSec: 120 });
+    install().refresh();
+    await flush();
+    expect($('#remCfgWaveEnabled').checked).toBe(true);
+    expect($('#remCfgWaveSchedule').value).toBe('5m, 15m');
+    expect($('#remCfgAdhoc').value).toBe('2m');
+  });
+
+  it('saves the global config to its own slot + timestamp (and pokes sync)', async () => {
+    install().refresh();
+    await flush();
+
+    $('#remCfgWaveEnabled').checked = true;
+    $('#remCfgWaveSchedule').value = '0m, 20m';
+    $('#remCfgAdhoc').value = '90s';
+    $('#remCfgSave').dispatchEvent(new Event('click'));
+    await flush();
+
+    const saved = /** @type {any} */ (store.get(GLOBAL_KEY));
+    expect(saved.reminderEnabled).toBe(true);
+    expect(saved.reminderSchedule).toBe('0m, 20m');
+    expect(saved.adhocOffsetSec).toBe(90);
+    expect(typeof store.get(GLOBAL_TS_KEY)).toBe('number');
+    // One poke triggers a full round-trip covering BOTH slots.
+    expect(typeof store.get(SYNC_KEY)).toBe('number');
+  });
+
+  it('a save writes BOTH the per-server fs slot AND the global slot', async () => {
+    install().refresh();
+    await flush();
+    $('#remCfgFsEnabled').checked = true;
+    $('#remCfgWaveEnabled').checked = true;
+    $('#remCfgSave').dispatchEvent(new Event('click'));
+    await flush();
+    expect(/** @type {any} */ (store.get(CFG_KEY)).fsEnabled).toBe(true);
+    expect(/** @type {any} */ (store.get(GLOBAL_KEY)).reminderEnabled).toBe(true);
+  });
+
+  it('rejects an unparseable ad-hoc lead time and does not save', async () => {
+    install().refresh();
+    await flush();
+    $('#remCfgAdhoc').value = 'whenever';
+    $('#remCfgSave').dispatchEvent(new Event('click'));
+    await flush();
+    expect(store.has(GLOBAL_KEY)).toBe(false);
+    expect(store.has(CFG_KEY)).toBe(false); // the whole save aborted
+    expect($('#remCfgStatus').textContent || '').toMatch(/lead time/i);
+  });
+
+  it('allows an empty wave schedule (no wave pings)', async () => {
+    install().refresh();
+    await flush();
+    $('#remCfgWaveSchedule').value = '   ';
+    $('#remCfgSave').dispatchEvent(new Event('click'));
+    await flush();
+    expect(/** @type {any} */ (store.get(GLOBAL_KEY)).reminderSchedule).toBe('');
   });
 });

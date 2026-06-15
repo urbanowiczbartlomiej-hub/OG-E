@@ -15,27 +15,22 @@
 //
 //   1. Reminders — master switch. With no (valid) token there is no push
 //      channel, so the credential + its status lead the section.
-//   2. ntfy.sh — access token. The PREREQUISITE for everything below: the
-//      topic is derived from it, the producer skips scheduling without it.
+//   2. ntfy.sh — access token. The PREREQUISITE for everything: the topic is
+//      derived from it, the producer skips scheduling without it.
 //   3. ntfy.sh — account status. Async probe of `/v1/account`: confirms the
 //      token is accepted and shows today's message usage vs the daily
 //      limit. Turns a wrong token (previously silent) into explicit
 //      feedback. Manual "Check now" re-runs the probe.
 //   3b. ntfy.sh — your topic. The push topic derived from the token; what
 //      you subscribe to in the ntfy app on your phone. Read-only.
-//   4. Expedition-wave reminders — enable / schedule. Detect a returning
-//      expedition wave and schedule a reminder SERIES. The schedule is a
-//      free-form minutes-first list of offsets AFTER the wave returns
-//      (e.g. `0m, 10m, 30m, 60m`).
-//   5. Ad-hoc reminders — lead time. Always on: the event-list badges arm a
-//      per-fleet ping; lead time is how long before arrival it fires
-//      (captured per reminder at arm time).
 //
-// Fleet-save reminders (enable / ship threshold / min flight time / schedule)
-// used to live here too, but they are SERVER-SCOPED — moved to the dashboard's
-// Reminders tab, backed by the per-universe galaxyScanConfig store (see
-// REFRESH-PLAN.md B3). The topic is automatic (derived from the token); it's
-// shown read-only both here (row 3b) and on that dashboard tab.
+// That's the whole AGR section now: master switch + required credential + its
+// read-only status rows. The DETAILED reminder config moved to the dashboard's
+// Reminders tab (see REFRESH-PLAN.md B3): the per-server fleet-save knobs to
+// the per-universe galaxyScanConfig store (B3b), and the GLOBAL wave
+// enable/schedule + ad-hoc lead time to the reminderGlobalConfig store (B3c).
+// The token must stay here (it's the required credential); a one-line signpost
+// under the master switch points at the Dashboard for the rest.
 
 import { isValidNtfyToken, deriveNtfyTopic } from '../../../sync/reminders.js';
 import { fetchNtfyAccount } from '../../../sync/ntfyAccount.js';
@@ -52,29 +47,6 @@ import { NTFY_CHECK_NOW_EVENT } from '../../../lib/ogeEvents.js';
 // master row's "Sync now" drives the status line through an event rather than
 // a direct call, so the trigger and the line it refreshes can live on
 // different rows.
-
-/**
- * The reminder sub-options (wave, ad-hoc, fleet-save) are locked until the
- * section is switched on AND a valid token is entered — the token is the
- * credential everything rides on. Used as each sub-option's `disabledWhen`.
- *
- * @param {import('../../../state/settings.js').Settings} s
- * @returns {boolean}
- */
-const sectionLocked = (s) => !s.remindersMasterEnabled || !isValidNtfyToken(s.reminderNtfyToken);
-
-/**
- * Each reminder group (wave / ad-hoc / fleet-save) has its own `enable`
- * checkbox above its option rows. A group's options lock when the SECTION is
- * locked OR that group's own enable is off — so unchecking "… — enable" greys
- * just that group's schedule/threshold/offset rows, while the enable
- * checkbox itself stays governed by `sectionLocked` alone. Used as each
- * sub-option's `disabledWhen`.
- *
- * @param {import('../../../state/settings.js').Settings} s
- * @returns {boolean}
- */
-const waveLocked = (s) => sectionLocked(s) || !s.reminderEnabled;
 
 /** @type {SettingsSection} */
 export const remindersSection = {
@@ -95,6 +67,15 @@ export const remindersSection = {
       buttonText: 'Check now',
       onclick: () => document.dispatchEvent(new CustomEvent(NTFY_CHECK_NOW_EVENT)),
       buttonDisabledWhen: (s) => !s.remindersMasterEnabled,
+    },
+    {
+      // Signpost: the schedules + fleet-save config moved to the Dashboard
+      // (B3). Only the master switch + token (the required credential) stay
+      // here. Not a Settings field — `static`, DOM-only id.
+      id: 'remindersDashboardHint',
+      label: 'Reminders — configuration',
+      type: 'static',
+      getText: () => 'Schedules + fleet-save config live in the OG-E Dashboard → Reminders.',
     },
     {
       id: 'reminderNtfyToken',
@@ -137,34 +118,6 @@ export const remindersSection = {
         isValidNtfyToken(s.reminderNtfyToken)
           ? await deriveNtfyTopic(s.reminderNtfyToken)
           : '— (enter a valid token first)',
-    },
-    {
-      id: 'reminderEnabled',
-      label: 'Expedition-wave reminders — enable',
-      type: 'checkbox',
-      disabledWhen: sectionLocked,
-    },
-    {
-      // Free-form schedule: comma-separated minutes-first offsets AFTER the
-      // wave returns (e.g. `0m, 10m, 30m, 60m`). Resolved by
-      // `offsetsForSchedule`; negatives are dropped (can't fire before the
-      // wave is back). The explicit series lives in the read-only row below.
-      id: 'reminderSchedule',
-      label: 'Expedition-wave reminders — schedule',
-      type: 'text',
-      placeholder: '0m, 10m, 30m, 60m',
-      disabledWhen: waveLocked,
-    },
-    {
-      // How long before arrival an ad-hoc ping fires. Minutes-first; default
-      // 60 s (shown as `1m`). Captured per reminder at arm time, so changing
-      // it here only affects reminders armed afterwards. Ad-hoc reminders are
-      // always on (no enable toggle); this row only locks with the section.
-      id: 'adhocOffsetSec',
-      label: 'Ad-hoc reminders — lead time',
-      type: 'duration',
-      placeholder: '1m',
-      disabledWhen: sectionLocked,
     },
   ],
 };

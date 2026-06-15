@@ -269,31 +269,11 @@ describe('installSettingsUi — range', () => {
 // ──────────────────────────────────────────────────────────────────
 
 describe('installSettingsUi — text + password', () => {
-  it('text change writes string value back to settings for string fields', async () => {
-    setupAGR();
-    installSettingsUi();
-    await flushWaitFor();
-
-    // reminderSchedule is a representative string ('text') field — its
-    // change handler writes the raw string straight back (no Number coercion,
-    // unlike the int 'text' fields). (colPositions, the field this previously
-    // used, moved to the dashboard's per-universe Galaxy-Scan config.)
-    const input = /** @type {HTMLInputElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'reminderSchedule')
-    );
-    expect(input).not.toBeNull();
-    expect(input?.type).toBe('text');
-    if (input) {
-      input.value = '0m, 5m';
-      input.dispatchEvent(new Event('change'));
-    }
-    expect(settingsStore.get().reminderSchedule).toBe('0m, 5m');
-  });
-
-  // The numeric-text coercion tests previously targeted `fsThreshold`, which
-  // moved to the dashboard Reminders tab (B3); no int-typed 'text' field
-  // remains in the AGR panel. The dashboard editor validates its own numeric
-  // fields — see test/features/dashboard/reminderConfig.test.js.
+  // The 'text' / 'duration' string + numeric fields (reminderSchedule,
+  // adhocOffsetSec, fsThreshold, colPositions) all moved out of the AGR panel
+  // to the dashboard (B2/B3); only the password fields (gistToken,
+  // reminderNtfyToken) remain. The dashboard editors validate their own
+  // numeric/duration fields — see test/features/dashboard/{scanConfig,reminderConfig}.test.js.
 
   it('password field uses type="password"', async () => {
     setupAGR();
@@ -309,74 +289,10 @@ describe('installSettingsUi — text + password', () => {
 });
 
 // ──────────────────────────────────────────────────────────────────
-// Reminders section: free-form schedule (text), duration + asyncStatus
+// Reminders section: asyncStatus (ntfy account). The free-form wave
+// schedule (text) + ad-hoc lead time (duration) moved to the dashboard's
+// Reminders tab (B3c) — see test/features/dashboard/reminderConfig.test.js.
 // ──────────────────────────────────────────────────────────────────
-
-describe('installSettingsUi — wave schedule (free-form text)', () => {
-  it('renders the wave schedule as a text input at its default', async () => {
-    setupAGR();
-    installSettingsUi();
-    await flushWaitFor();
-
-    const inp = /** @type {HTMLInputElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'reminderSchedule')
-    );
-    expect(inp).not.toBeNull();
-    expect(inp?.tagName).toBe('INPUT');
-    expect(inp?.value).toBe('0m, 10m, 30m, 60m');
-  });
-
-  it('change writes the typed schedule string back to settings', async () => {
-    setupAGR();
-    installSettingsUi();
-    await flushWaitFor();
-
-    const inp = /** @type {HTMLInputElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'reminderSchedule')
-    );
-    if (inp) {
-      inp.value = '5m, 15m';
-      inp.dispatchEvent(new Event('change'));
-    }
-    expect(settingsStore.get().reminderSchedule).toBe('5m, 15m');
-  });
-});
-
-describe('installSettingsUi — duration control', () => {
-  it('shows the ad-hoc lead time in minutes-first form and writes back seconds', async () => {
-    setupAGR();
-    installSettingsUi();
-    await flushWaitFor();
-
-    const inp = /** @type {HTMLInputElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'adhocOffsetSec')
-    );
-    expect(inp).not.toBeNull();
-    expect(inp?.value).toBe('1m'); // default 60 s
-    if (inp) {
-      inp.value = '2m';
-      inp.dispatchEvent(new Event('change'));
-    }
-    expect(settingsStore.get().adhocOffsetSec).toBe(120);
-    expect(inp?.value).toBe('2m'); // re-rendered canonical form
-  });
-
-  it('reverts to the stored value when the typed token is garbage', async () => {
-    setupAGR();
-    installSettingsUi();
-    await flushWaitFor();
-
-    const inp = /** @type {HTMLInputElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'adhocOffsetSec')
-    );
-    if (inp) {
-      inp.value = 'oops';
-      inp.dispatchEvent(new Event('change'));
-    }
-    expect(settingsStore.get().adhocOffsetSec).toBe(60); // unchanged
-    expect(inp?.value).toBe('1m');
-  });
-});
 
 describe('installSettingsUi — asyncStatus (ntfy account)', () => {
   it('renders the account-status row read-only (the "Check now" button moved to the master row)', async () => {
@@ -509,50 +425,10 @@ describe('installSettingsUi — checkbox inline button', () => {
   });
 });
 
-// ──────────────────────────────────────────────────────────────────
-// Per-group gating: each group's options lock when its own `enable` is off,
-// even with the section fully unlocked (master on + valid token).
-// ──────────────────────────────────────────────────────────────────
-
-describe('installSettingsUi — per-group enable gates its own options', () => {
-  // A syntactically valid ntfy token (`tk_` + ≥20 alphanumerics) so the
-  // section is unlocked and only the group enable decides the sub-options.
-  const VALID_TOKEN = 'tk_' + 'a'.repeat(24);
-
-  /** Master on + valid token + every group enabled. */
-  const unlockSection = () =>
-    settingsStore.update((s) => ({
-      ...s,
-      remindersMasterEnabled: true,
-      reminderNtfyToken: VALID_TOKEN,
-      reminderEnabled: true,
-    }));
-
-  /** @param {string} id */
-  const isDisabled = (id) =>
-    /** @type {HTMLInputElement | null} */ (
-      document.getElementById(INPUT_PREFIX + id)
-    )?.disabled;
-
-  it.each([
-    // The fleet-save group (fsEnabled → fsThreshold/fsMinFlightSec/fsOffsets)
-    // moved to the dashboard Reminders tab (B3); only the wave group remains
-    // in the AGR panel.
-    ['reminderEnabled', ['reminderSchedule']],
-  ])('%s gates its group options', async (enableId, optionIds) => {
-    setupAGR();
-    installSettingsUi();
-    await flushWaitFor();
-
-    unlockSection();
-    // With the group enabled, its options are live…
-    for (const id of optionIds) expect(isDisabled(id)).toBe(false);
-
-    // …and unchecking the group's own enable greys exactly those options.
-    settingsStore.update((s) => ({ ...s, [enableId]: false }));
-    for (const id of optionIds) expect(isDisabled(id)).toBe(true);
-  });
-});
+// Per-group enable gating (each group's options lock when its own `enable`
+// is off) used to be tested here, but BOTH reminder groups moved to the
+// dashboard: the wave group (B3c) and the fleet-save group (B3b). The AGR
+// panel now keeps only the reminders master switch + token + status rows.
 
 // ──────────────────────────────────────────────────────────────────
 // Static status rendering

@@ -203,11 +203,20 @@ lives in `src/domain/fleetSave.js`.
     (`features/dashboard/reminderConfig.js`). Both that editor and the scan-config
     editor read-modify-write the shared slot so neither clobbers the other. Sync
     rides the existing whole-slot merge for free. Tests + typecheck + lint green.
-  - **B3c — Global fields. ⏳ NEXT.** `reminderEnabled`, `reminderSchedule`
-    (`reminderWaveOffsets`), `adhocOffsetSec` → a NEW global `chrome.storage`
-    store wired into the GLOBAL gist-sync path (`sync/settingsSync.js` global
-    bucket + a merge). Rewire `producer.js` / `eventList.js`; remove from
-    `settings.js` + the AGR wave/ad-hoc rows. Add the dashboard wave/ad-hoc rows.
+  - **B3c — Global fields. ✅ DONE.** `reminderEnabled`, `reminderSchedule`,
+    `adhocOffsetSec` moved to a NEW global (non-universe) `chrome.storage` store
+    `state/reminderGlobalConfig.js` (pure shape/defaults/normalize in
+    `domain/reminderGlobalConfig.js`), wired into the gist-sync path as its own
+    SINGLE-slot newest-wins field (`sync/merge.mergeReminderGlobalConfig`,
+    `GistPayload.reminderGlobalConfig`, scheduler read/write/merge in BOTH
+    download + upload + `gistIsCurrent`/slot-has-data guard). Removed the three
+    fields from `settings.js` + `SETTINGS_SCHEMA`; rewired `producer.js` /
+    `eventList.js` to read + subscribe to `reminderGlobalConfigStore`; removed
+    the AGR wave-enable / wave-schedule / ad-hoc rows (AGR now keeps only master
+    + token + status, plus a one-line "configure in the Dashboard" signpost —
+    most of B4). Added the wave/ad-hoc rows to the dashboard `reminderConfig.js`
+    (a `save()` that writes BOTH the per-universe fs slot AND the global slot,
+    each with its own ts + one shared sync poke). Tests + typecheck + lint green.
   - **B3d — Friendly offset editor.** Replace the plain offset text fields (fs +
     wave) with per-entry rows showing a `humanizeOffset` impact preview.
   - Update the Reminders-tab intro copy (deferred from Workstream A). *(Partly
@@ -260,61 +269,34 @@ settings live" note + the tab name wait on B.
 1. **A** — dashboard copy review. ✅ done.
 2. **C** — README refresh (minus the settings-location note). ✅ done.
 3. **B** — the settings split. B1 reverted; **B2 ✅ done; B3 in progress
-   (B3a + B3b ✅ done, B3c NEXT)**, then B4.
+   (B3a + B3b + B3c ✅ done, B3d NEXT)**, then B4.
 4. **C follow-up** — fill in the "where settings live" note after B4.
 5. *(Later, out of scope here)* AMO listing copy + screenshots.
 
 ## Where a fresh session should start
 
-**B3c** (global reminder fields → a NEW global-synced `chrome.storage` store).
-B3a (humanize helper) and B3b (per-universe `fs*` fold) are done; this is the
-sync-critical piece, deliberately left as its own unit. Concrete plan, fully
-scoped from reading the scheduler:
+**B3d** (friendly offset editor). B3a–B3c are done — all reminder config now
+lives in the dashboard's Reminders tab (per-server `fs*` in `galaxyScanConfig`,
+global wave/ad-hoc in the new `reminderGlobalConfig` store), and AGR keeps only
+the master switch + token + status rows. The plain offset TEXT fields are the
+last rough edge:
 
-1. **`domain/reminderGlobalConfig.js`** — pure shape + `defaultReminderGlobalConfig()`
-   + `normalizeReminderGlobalConfig()` for the three globals: `reminderEnabled`
-   (bool, false), `reminderSchedule` (string, `'0m, 10m, 30m, 60m'`),
-   `adhocOffsetSec` (int, 60).
-2. **`state/reminderGlobalConfig.js`** — a GLOBAL chrome.storage store modelled
-   on `state/galaxyScanConfig.js` but with NO universe prefix: key
-   `oge_reminderGlobalConfig`, ts key `oge_reminderGlobalConfigTs`, plus
-   `init*` / `dispose*` / `flush*` / `stamp*Changed` / `when*Hydrated`.
-3. **`sync/merge.js`** — `mergeReminderGlobalConfig(local, remote)`, whole-slot
-   newest-wins on `{ config, updatedAt }` (copy `mergeGalaxyScanConfig`, but the
-   gist field is a SINGLE slot, not a per-universe map).
-4. **`sync/gist.js`** — add `reminderGlobalConfig?: ReminderGlobalConfigSlot` to
-   the `GistPayload` typedef.
-5. **`sync/scheduler.js`** — add `readLocal…Slot` / `writeLocal…Slot` helpers
-   (mirror the galaxy-config ones), then merge `remote.reminderGlobalConfig` in
-   BOTH `downloadAndMerge` and `upload`, contribute it to the payload, and add
-   it to the `gistIsCurrent(...)` comparison.
-6. **`state/settings.js` + `sync/settingsSync.js`** — drop the three fields from
-   `SETTINGS_SCHEMA` + the `Settings` typedef (they were GLOBAL-synced via the
-   `settings` slot; removing them from the schema removes them from
-   `pickSyncedValues` automatically). No migration (single user). Update the
-   `settingsSync` / `scheduler` / `settings` tests that use `adhocOffsetSec` /
-   `reminderSchedule` as representative global keys → swap to another global key
-   (e.g. `readabilityBoost`).
-7. **`features/reminders/producer.js` + `eventList.js`** — read the three fields
-   from `reminderGlobalConfigStore` (not `settingsStore`) and subscribe to it
-   (mirror the `galaxyScanConfigStore` wiring B3b added).
-8. **`features/settingsUi/sections/reminders.js`** — remove the wave-enable,
-   wave-schedule, and ad-hoc lead-time rows. AGR then keeps ONLY master + token
-   + the read-only account/topic rows (this is also most of B4).
-9. **`features/dashboard/reminderConfig.js`** — add the wave-enable / wave-schedule
-   / ad-hoc-lead-time rows. NOTE: these write the GLOBAL store, while the fs*
-   rows write the per-universe `galaxyScanConfig` slot — so `save()` must write
-   BOTH targets (each with its own ts + a sync poke). Keep the read-modify-write
-   discipline for the per-universe slot.
-10. **Tests** — new `domain/reminderGlobalConfig`, `state` store, `sync/merge`
-    case, a scheduler round-trip for the new slot, and extend the dashboard
-    `reminderConfig.test.js` for the global rows.
+1. Replace the dashboard `reminderConfig.js` plain offset text inputs — the
+   fleet-save `fsOffsets` (`-10m, 0m, 10m`) and the wave `reminderSchedule`
+   (`0m, 10m, 30m, 60m`) — with a **per-entry row editor**: one row per offset
+   with a human-readable impact preview, driven by the existing pure
+   `domain/duration.humanizeOffset` (B3a) so the preview text matches the push
+   body verbatim. The fs offsets are landing-relative (before/at/after); the
+   wave offsets are after-return (so the preview wording differs slightly —
+   reuse `humanizeOffset` where it fits, add a thin wrapper if not).
+2. Behavioural tests: drive add/remove/edit of a row and assert the stored
+   offset string + the preview text.
 
-Then **B3d** (friendly offset editor: replace the plain fs + wave offset text
-fields with per-entry rows showing a `humanizeOffset` preview) and **B4** (final
-AGR slim annotation "Configure schedules in the Dashboard → Reminders" + verify
-nothing in AGR reads a moved key + the Reminders-tab intro copy + the README
-"where settings live" note).
+Then **B4** (residual): the AGR slim + signpost is mostly done (B3c added the
+"Configure schedules in the Dashboard → Reminders" static row and removed every
+moved row); finish by verifying nothing in AGR still reads a moved key, refresh
+the Reminders-tab intro copy in `dashboard.html`, and fill in the README "where
+settings live" note (Workstream C follow-up).
 
 ## Open questions to resolve before the relevant step
 

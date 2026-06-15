@@ -11,9 +11,11 @@
 // testing through the real substrate matches how users and the AGR panel
 // see the data.
 //
-// `adhocOffsetSec` (int) and `reminderNtfyToken` (string) stand in as the
+// `fabBtnSize` (int) and `reminderNtfyToken` (string) stand in as the
 // generic int / string field examples — the colonization fields that used
-// to play that role moved to the per-universe galaxyScanConfig store (B2).
+// to play that role moved to the per-universe galaxyScanConfig store (B2),
+// and the reminder schedule / ad-hoc lead time moved to the global
+// reminderGlobalConfig store (B3c).
 //
 // Setup order in beforeEach mirrors state/registry.test.js:
 //   1. disposeSettingsStore() — cut any leftover subscription.
@@ -69,18 +71,11 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
   });
 
   it('every schema key is prefixed with SETTINGS_PREFIX + field name', () => {
-    // reminderSchedule points at a DIFFERENT LS key than its field name:
-    // v1.11.0 repointed the wave schedule to a fresh key so the old
-    // incompatible stored value is orphaned (a deliberate reset, not a
-    // migration — see SETTINGS_SCHEMA). Its key is pinned explicitly in the
-    // "correct types" test below.
-    const REMAPPED = new Set(['reminderSchedule']);
+    // Every remaining field's LS key is just the prefix + field name. (The one
+    // historical exception, the remapped reminderSchedule key, moved out to the
+    // global reminderGlobalConfig store in B3c.)
     for (const [field, schema] of Object.entries(SETTINGS_SCHEMA)) {
-      if (REMAPPED.has(field)) {
-        expect(schema.key.startsWith(SETTINGS_PREFIX)).toBe(true);
-      } else {
-        expect(schema.key).toBe(SETTINGS_PREFIX + field);
-      }
+      expect(schema.key).toBe(SETTINGS_PREFIX + field);
     }
   });
 
@@ -88,7 +83,6 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
     // Pinned so adding/removing a preference is an obvious diff.
     expect(Object.keys(SETTINGS_SCHEMA).sort()).toEqual(
       [
-        'adhocOffsetSec',
         'autoRedirectExpedition',
         'cloudSync',
         'eventMenuHighlight',
@@ -99,18 +93,10 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
         'maxExpeditionsPerPlanet',
         'readabilityBoost',
         'remindersMasterEnabled',
-        'reminderEnabled',
         'reminderNtfyToken',
-        'reminderSchedule',
         'traderMenuHighlight',
       ].sort(),
     );
-
-    expect(SETTINGS_SCHEMA.reminderSchedule).toEqual({
-      type: 'string',
-      default: '0m, 10m, 30m, 60m',
-      key: 'oge_reminderWaveOffsets',
-    });
 
     expect(SETTINGS_SCHEMA.fabMode).toEqual({
       type: 'bool',
@@ -139,7 +125,7 @@ describe('settingsStore — initial state (pre-init)', () => {
     expect(state.expeditionBadges).toBe(true);
     expect(state.autoRedirectExpedition).toBe(true);
     expect(state.fabBtnSize).toBe(320);
-    expect(state.adhocOffsetSec).toBe(60);
+    expect(state.remindersMasterEnabled).toBe(false);
     expect(state.reminderNtfyToken).toBe('');
     expect(state.maxExpeditionsPerPlanet).toBe(1);
     expect(state.readabilityBoost).toBe(true);
@@ -162,25 +148,15 @@ describe('initSettingsStore — hydration', () => {
   });
 
   it('hydrates an int field from localStorage', () => {
-    localStorage.setItem('oge_adhocOffsetSec', '45');
+    localStorage.setItem('oge_fabBtnSize', '45');
     initSettingsStore();
-    expect(settingsStore.get().adhocOffsetSec).toBe(45);
+    expect(settingsStore.get().fabBtnSize).toBe(45);
   });
 
   it('hydrates a string field from localStorage', () => {
     localStorage.setItem('oge_reminderNtfyToken', 'secret123');
     initSettingsStore();
     expect(settingsStore.get().reminderNtfyToken).toBe('secret123');
-  });
-
-  it('treats an empty string as a legitimate stored value (not missing)', () => {
-    // Users can explicitly blank out e.g. the reminder schedule — that must
-    // hydrate as '' not fall through to the (non-empty) default via the
-    // "missing" path. reminderSchedule has a non-empty default, so '' here
-    // proves the distinction. (Its LS key is the remapped reminderWaveOffsets.)
-    localStorage.setItem('oge_reminderWaveOffsets', '');
-    initSettingsStore();
-    expect(settingsStore.get().reminderSchedule).toBe('');
   });
 
   it('falls back to default when a bool value is unparseable', () => {
@@ -193,14 +169,14 @@ describe('initSettingsStore — hydration', () => {
 
   it('falls back to default when an int value is unparseable', () => {
     // safeLS.int returns the default when parseInt fails entirely.
-    localStorage.setItem('oge_adhocOffsetSec', 'not-a-number');
+    localStorage.setItem('oge_fabBtnSize', 'not-a-number');
     initSettingsStore();
-    expect(settingsStore.get().adhocOffsetSec).toBe(60);
+    expect(settingsStore.get().fabBtnSize).toBe(320);
   });
 
   it('hydrates a mix of fields at once in a single store update', () => {
     localStorage.setItem('oge_fabMode', 'false');
-    localStorage.setItem('oge_adhocOffsetSec', '30');
+    localStorage.setItem('oge_fabBtnSize', '30');
     localStorage.setItem('oge_reminderNtfyToken', 'tk_abc');
     localStorage.setItem('oge_gistToken', 'ghp_abc123');
 
@@ -208,7 +184,7 @@ describe('initSettingsStore — hydration', () => {
 
     const state = settingsStore.get();
     expect(state.fabMode).toBe(false);
-    expect(state.adhocOffsetSec).toBe(30);
+    expect(state.fabBtnSize).toBe(30);
     expect(state.reminderNtfyToken).toBe('tk_abc');
     expect(state.gistToken).toBe('ghp_abc123');
     // Untouched fields stay at defaults.
@@ -226,8 +202,8 @@ describe('initSettingsStore — write-through (per-key diff)', () => {
 
   it('writes a changed int field to its own localStorage key', () => {
     initSettingsStore();
-    settingsStore.update((s) => ({ ...s, adhocOffsetSec: 30 }));
-    expect(localStorage.getItem('oge_adhocOffsetSec')).toBe('30');
+    settingsStore.update((s) => ({ ...s, fabBtnSize: 30 }));
+    expect(localStorage.getItem('oge_fabBtnSize')).toBe('30');
   });
 
   it('writes a changed string field to its own localStorage key', () => {
@@ -240,12 +216,12 @@ describe('initSettingsStore — write-through (per-key diff)', () => {
     initSettingsStore();
     settingsStore.update((s) => ({
       ...s,
-      adhocOffsetSec: 30,
+      fabBtnSize: 30,
       reminderNtfyToken: 'tk_7',
       fabMode: false,
     }));
 
-    expect(localStorage.getItem('oge_adhocOffsetSec')).toBe('30');
+    expect(localStorage.getItem('oge_fabBtnSize')).toBe('30');
     expect(localStorage.getItem('oge_reminderNtfyToken')).toBe('tk_7');
     expect(localStorage.getItem('oge_fabMode')).toBe('false');
   });
@@ -253,20 +229,20 @@ describe('initSettingsStore — write-through (per-key diff)', () => {
   it('does NOT touch localStorage keys for fields that did not change', () => {
     // Pre-seed a sentinel value under a key the test will NOT modify.
     // The hydrate will read it as an int (parseInt('SENTINEL') → NaN →
-    // default 320) but the LS string itself remains untouched unless
-    // the store writes back. Since we only mutate `adhocOffsetSec`, the
+    // default 1) but the LS string itself remains untouched unless
+    // the store writes back. Since we only mutate `fabBtnSize`, the
     // sentinel must survive — proving the diff write-through.
-    localStorage.setItem('oge_fabBtnSize', 'SENTINEL');
+    localStorage.setItem('oge_maxExpeditionsPerPlanet', 'SENTINEL');
 
     initSettingsStore();
 
-    // Change only adhocOffsetSec.
-    settingsStore.update((s) => ({ ...s, adhocOffsetSec: 30 }));
+    // Change only fabBtnSize.
+    settingsStore.update((s) => ({ ...s, fabBtnSize: 30 }));
 
-    expect(localStorage.getItem('oge_adhocOffsetSec')).toBe('30');
-    // fabBtnSize key was not written because the store value (320,
+    expect(localStorage.getItem('oge_fabBtnSize')).toBe('30');
+    // maxExpeditionsPerPlanet key was not written because the store value (1,
     // hydrated as default) did not change from its hydrated state.
-    expect(localStorage.getItem('oge_fabBtnSize')).toBe('SENTINEL');
+    expect(localStorage.getItem('oge_maxExpeditionsPerPlanet')).toBe('SENTINEL');
   });
 
   it('coerces values via String(): true → "true", 42 → "42"', () => {
@@ -290,14 +266,14 @@ describe('initSettingsStore — write-through (per-key diff)', () => {
     // If the user had a non-default value and resets it, we still write
     // the default string to LS — per-key diff compares to the PREVIOUS
     // state, not to the schema default.
-    localStorage.setItem('oge_adhocOffsetSec', '90');
+    localStorage.setItem('oge_fabBtnSize', '90');
     initSettingsStore();
-    expect(settingsStore.get().adhocOffsetSec).toBe(90);
+    expect(settingsStore.get().fabBtnSize).toBe(90);
 
     // Reset to the default.
-    settingsStore.update((s) => ({ ...s, adhocOffsetSec: 60 }));
+    settingsStore.update((s) => ({ ...s, fabBtnSize: 320 }));
 
-    expect(localStorage.getItem('oge_adhocOffsetSec')).toBe('60');
+    expect(localStorage.getItem('oge_fabBtnSize')).toBe('320');
   });
 });
 
@@ -307,7 +283,7 @@ describe('initSettingsStore — persistence round-trip', () => {
     settingsStore.update((s) => ({
       ...s,
       fabMode: false,
-      adhocOffsetSec: 45,
+      fabBtnSize: 45,
       reminderNtfyToken: 'tk_789',
       gistToken: 'ghp_roundtrip',
     }));
@@ -322,7 +298,7 @@ describe('initSettingsStore — persistence round-trip', () => {
 
     const state = settingsStore.get();
     expect(state.fabMode).toBe(false);
-    expect(state.adhocOffsetSec).toBe(45);
+    expect(state.fabBtnSize).toBe(45);
     expect(state.reminderNtfyToken).toBe('tk_789');
     expect(state.gistToken).toBe('ghp_roundtrip');
   });
@@ -331,15 +307,15 @@ describe('initSettingsStore — persistence round-trip', () => {
 describe('disposeSettingsStore', () => {
   it('prevents further writes to localStorage', () => {
     initSettingsStore();
-    settingsStore.update((s) => ({ ...s, adhocOffsetSec: 30 }));
-    expect(localStorage.getItem('oge_adhocOffsetSec')).toBe('30');
+    settingsStore.update((s) => ({ ...s, fabBtnSize: 30 }));
+    expect(localStorage.getItem('oge_fabBtnSize')).toBe('30');
 
     disposeSettingsStore();
 
-    settingsStore.update((s) => ({ ...s, adhocOffsetSec: 99 }));
+    settingsStore.update((s) => ({ ...s, fabBtnSize: 99 }));
 
     // LS value is frozen at pre-dispose state.
-    expect(localStorage.getItem('oge_adhocOffsetSec')).toBe('30');
+    expect(localStorage.getItem('oge_fabBtnSize')).toBe('30');
   });
 
   it('is safe to call when never initialized', () => {
@@ -367,34 +343,34 @@ describe('initSettingsStore — idempotent', () => {
     initSettingsStore();
     initSettingsStore();
 
-    settingsStore.update((s) => ({ ...s, adhocOffsetSec: 50 }));
-    expect(localStorage.getItem('oge_adhocOffsetSec')).toBe('50');
+    settingsStore.update((s) => ({ ...s, fabBtnSize: 50 }));
+    expect(localStorage.getItem('oge_fabBtnSize')).toBe('50');
 
     disposeSettingsStore();
 
-    settingsStore.update((s) => ({ ...s, adhocOffsetSec: 99 }));
+    settingsStore.update((s) => ({ ...s, fabBtnSize: 99 }));
 
     // If a duplicate subscription existed, we'd see '99' here.
-    expect(localStorage.getItem('oge_adhocOffsetSec')).toBe('50');
+    expect(localStorage.getItem('oge_fabBtnSize')).toBe('50');
   });
 
   it('a second init does not re-run hydration (in-memory changes survive)', () => {
-    localStorage.setItem('oge_adhocOffsetSec', '30');
+    localStorage.setItem('oge_fabBtnSize', '30');
     initSettingsStore();
-    expect(settingsStore.get().adhocOffsetSec).toBe(30);
+    expect(settingsStore.get().fabBtnSize).toBe(30);
 
     // Mutate in memory without touching LS — but write-through will fire.
     // The point of the test is: if re-init re-hydrated, it would clobber
     // this mutation back to the LS value. We prove it does not.
-    settingsStore.update((s) => ({ ...s, adhocOffsetSec: 77 }));
+    settingsStore.update((s) => ({ ...s, fabBtnSize: 77 }));
     // LS is now '77' thanks to write-through.
-    expect(localStorage.getItem('oge_adhocOffsetSec')).toBe('77');
+    expect(localStorage.getItem('oge_fabBtnSize')).toBe('77');
 
     // Manually stomp LS as if an external writer changed it.
-    localStorage.setItem('oge_adhocOffsetSec', '30');
+    localStorage.setItem('oge_fabBtnSize', '30');
 
     // Second init should be a no-op: it must NOT re-hydrate from '30'.
     initSettingsStore();
-    expect(settingsStore.get().adhocOffsetSec).toBe(77);
+    expect(settingsStore.get().fabBtnSize).toBe(77);
   });
 });

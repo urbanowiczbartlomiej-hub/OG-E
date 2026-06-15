@@ -497,21 +497,21 @@ describe('inFlight lock', () => {
 
 describe('settings sync', () => {
   it('applies a remote GLOBAL setting with a newer ts on download', async () => {
-    // Local adhocOffsetSec=20 stamped at ts 100; remote has 99 at ts 200
-    // (newer). adhocOffsetSec is a global setting → goes through the top-level
+    // Local readabilityBoost=false stamped at ts 100; remote has true at ts 200
+    // (newer). readabilityBoost is a global setting → goes through the top-level
     // `settings` slot and the localStorage ts map.
-    settingsStore.set({ ...settingsStore.get(), adhocOffsetSec: 20 });
-    localStorage.setItem('oge_settingsTs', JSON.stringify({ adhocOffsetSec: 100 }));
+    settingsStore.set({ ...settingsStore.get(), readabilityBoost: false });
+    localStorage.setItem('oge_settingsTs', JSON.stringify({ readabilityBoost: 100 }));
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(
-      payload({ settings: { values: { adhocOffsetSec: 99 }, ts: { adhocOffsetSec: 200 } } }),
+      payload({ settings: { values: { readabilityBoost: true }, ts: { readabilityBoost: 200 } } }),
     );
 
     installSync();
     await tick(0);
 
-    expect(settingsStore.get().adhocOffsetSec).toBe(99);
+    expect(settingsStore.get().readabilityBoost).toBe(true);
     // The remote timestamp is carried into the local global ts map.
-    expect(JSON.parse(localStorage.getItem('oge_settingsTs') || '{}').adhocOffsetSec).toBe(200);
+    expect(JSON.parse(localStorage.getItem('oge_settingsTs') || '{}').readabilityBoost).toBe(200);
   });
 
   it('applies a remote UNIVERSE-SCOPED setting via settingsPerUniverse on download', async () => {
@@ -546,19 +546,19 @@ describe('settings sync', () => {
   });
 
   it('uploads a locally-changed GLOBAL setting (stamped) inside the payload', async () => {
-    // adhocOffsetSec is global → appears in settings.values (not settingsPerUniverse).
+    // readabilityBoost is global → appears in settings.values (not settingsPerUniverse).
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(payload());
     installSync();
     await tick(0);
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(payload());
 
-    settingsStore.set({ ...settingsStore.get(), adhocOffsetSec: 42 });
+    settingsStore.set({ ...settingsStore.get(), readabilityBoost: false });
     await tick(15_000);
 
     expect(writeGistData).toHaveBeenCalledWith(
       expect.objectContaining({
         settings: expect.objectContaining({
-          values: expect.objectContaining({ adhocOffsetSec: 42 }),
+          values: expect.objectContaining({ readabilityBoost: false }),
         }),
       }),
     );
@@ -570,13 +570,15 @@ describe('settings sync', () => {
     await tick(0);
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(payload());
 
-    // adhocOffsetSec is global → goes to settings.values; excluded keys must not appear.
-    settingsStore.set({ ...settingsStore.get(), fabBtnSize: 123, adhocOffsetSec: 7 });
+    // eventMenuHighlight is global → goes to settings.values; excluded keys must
+    // not appear. (A global key NOT touched by the sibling tests above, so its
+    // true→false flip is always a real change that schedules the upload.)
+    settingsStore.set({ ...settingsStore.get(), fabBtnSize: 123, eventMenuHighlight: false });
     await tick(15_000);
 
     const call = /** @type {import('vitest').Mock} */ (writeGistData).mock.calls.at(-1);
     const values = call?.[0]?.settings?.values ?? {};
-    expect(values.adhocOffsetSec).toBe(7);
+    expect(values.eventMenuHighlight).toBe(false);
     expect('fabBtnSize' in values).toBe(false);
     expect('gistToken' in values).toBe(false);
   });

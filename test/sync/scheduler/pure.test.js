@@ -13,6 +13,7 @@ import {
   slotHasData,
   dailyStateHasData,
   galaxyConfigSlotHasData,
+  reminderGlobalConfigSlotHasData,
   sameJSON,
   gistIsCurrent,
 } from '../../../src/sync/scheduler/pure.js';
@@ -95,6 +96,16 @@ describe('galaxyConfigSlotHasData', () => {
   });
 });
 
+describe('reminderGlobalConfigSlotHasData', () => {
+  it('is false until the config has been edited (ts 0)', () => {
+    expect(reminderGlobalConfigSlotHasData(/** @type {any} */ ({ config: {}, updatedAt: 0 }))).toBe(false);
+  });
+
+  it('is true once the slot carries a real timestamp', () => {
+    expect(reminderGlobalConfigSlotHasData(/** @type {any} */ ({ config: {}, updatedAt: 5 }))).toBe(true);
+  });
+});
+
 describe('dailyStateHasData', () => {
   it('is false for an all-empty record', () => {
     expect(dailyStateHasData({})).toBe(false);
@@ -142,6 +153,7 @@ describe('gistIsCurrent', () => {
     settingsPerUniverse: undefined,
     dailyStatePerUniverse: undefined,
     galaxyScanConfig: undefined,
+    reminderGlobalConfig: undefined,
   };
 
   it('is true when every synced field matches (skip the PATCH)', () => {
@@ -165,6 +177,18 @@ describe('gistIsCurrent', () => {
       galaxyScanConfig: { 's1-pl': { config: { positions: '9' }, updatedAt: 7 } },
     });
     // merged has galaxyScanConfig: undefined → differs → PATCH needed.
+    expect(gistIsCurrent(remote, merged)).toBe(false);
+  });
+
+  it('is false when only the reminderGlobalConfig slot differs', () => {
+    const remote = /** @type {any} */ ({
+      galaxyScans: { '1:1:1': { t: 1 } },
+      colonyHistory: [{ id: 'a' }],
+      settings: { values: { x: 1 }, ts: { x: 10 } },
+      dailyRunRoutes: { 's1-pl': { routes: [], collectTarget: null, updatedAt: 5 } },
+      reminderGlobalConfig: { config: { reminderEnabled: true }, updatedAt: 7 },
+    });
+    // merged has reminderGlobalConfig: undefined → differs → PATCH needed.
     expect(gistIsCurrent(remote, merged)).toBe(false);
   });
 

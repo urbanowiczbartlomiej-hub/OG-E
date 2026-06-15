@@ -417,6 +417,40 @@ export const mergeGalaxyScanConfig = (local, remote) => {
 };
 
 /**
+ * @typedef {object} ReminderGlobalConfigSlot
+ * @property {import('../domain/reminderGlobalConfig.js').ReminderGlobalConfig} config
+ *   The full global reminder config (wave enable + schedule, ad-hoc lead time).
+ * @property {number} updatedAt  Epoch-ms of the last local edit (0 = never).
+ */
+
+/**
+ * Merge the GLOBAL reminder config slot, whole-slot newest-`updatedAt`-wins —
+ * identical strategy to {@link mergeGalaxyScanConfig}, but a SINGLE slot rather
+ * than a per-universe map (the wave cadence / ad-hoc lead time apply to every
+ * server). The newer side wins the entire config; ties and a missing/0 remote
+ * timestamp keep local (the anti-loop no-write path).
+ *
+ * `changed` is `true` only when remote strictly displaced local — the caller
+ * writes the merged slot back to local storage only then (anti-loop).
+ *
+ * @param {ReminderGlobalConfigSlot} local
+ * @param {Partial<ReminderGlobalConfigSlot> | undefined | null} remote
+ * @returns {{ merged: ReminderGlobalConfigSlot, changed: boolean }}
+ */
+export const mergeReminderGlobalConfig = (local, remote) => {
+  if (!remote || typeof remote !== 'object') return { merged: local, changed: false };
+  const lT = Number(local?.updatedAt) || 0;
+  const rT = Number(remote.updatedAt) || 0;
+  if (rT > lT && remote.config && typeof remote.config === 'object') {
+    return {
+      merged: { config: remote.config, updatedAt: rT },
+      changed: true,
+    };
+  }
+  return { merged: local, changed: false };
+};
+
+/**
  * Pure: build the data slice of a gist payload that has every scan
  * wiped while preserving `colonyHistory`. Used by the "clear scan
  * data" UI action — `mergeScans` is a UNION, so a local wipe alone

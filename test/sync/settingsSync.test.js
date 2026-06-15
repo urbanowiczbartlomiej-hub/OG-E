@@ -166,22 +166,22 @@ describe('readTsMap / writeTsMap', () => {
 describe('seedSettingsTsIfAbsent', () => {
   it('seeds only GLOBAL non-default keys once, then no-ops', () => {
     // maxExpeditionsPerPlanet is universe-scoped — must NOT appear in the
-    // global ts map. adhocOffsetSec (default 60) is global — customised value
-    // 99 is stamped.
+    // global ts map. readabilityBoost (default true) is global — customised
+    // value false is stamped.
     const seeded = seedSettingsTsIfAbsent(
-      { fabMode: true, maxExpeditionsPerPlanet: 2, adhocOffsetSec: 99 },
+      { fabMode: true, maxExpeditionsPerPlanet: 2, readabilityBoost: false },
       1234,
     );
     expect(seeded).toBe(true);
     const ts = readTsMap();
-    // adhocOffsetSec is global + customised → stamped.
-    expect(ts.adhocOffsetSec).toBe(1234);
+    // readabilityBoost is global + customised → stamped.
+    expect(ts.readabilityBoost).toBe(1234);
     // maxExpeditionsPerPlanet is universe-scoped → must NOT be in the global ts map.
     expect('maxExpeditionsPerPlanet' in ts).toBe(false);
 
     // Second call is a no-op (map already present).
     expect(seedSettingsTsIfAbsent({ fabMode: false }, 9999)).toBe(false);
-    expect(readTsMap().adhocOffsetSec).toBe(1234);
+    expect(readTsMap().readabilityBoost).toBe(1234);
   });
 });
 

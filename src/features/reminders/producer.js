@@ -60,6 +60,7 @@ import { parseFsOffsets } from '../../domain/fleetSave.js';
 import { NTFY_MAX_DELAY_SEC } from '../../sync/ntfyReconciler.js';
 import { settingsStore } from '../../state/settings.js';
 import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
+import { reminderGlobalConfigStore } from '../../state/reminderGlobalConfig.js';
 import { syncReminders, REMINDER_NTFY_TOKEN_KEY, isValidNtfyToken } from '../../sync/reminders.js';
 import { parseUniverseId } from '../../lib/universeId.js';
 import { debounce } from '../../lib/debounce.js';
@@ -258,18 +259,20 @@ export const installReminderProducer = (opts = {}) => {
     const force = forceSettings || pending.length > 0;
 
     const s = settingsStore.get();
-    // Fleet-save knobs are per-universe (B3) — read from the galaxyScanConfig
-    // store, not Settings.
+    // Fleet-save knobs are per-universe (B3b) — read from the galaxyScanConfig
+    // store. The wave enable + schedule are GLOBAL (B3c) — read from the
+    // reminderGlobalConfig store. Only the master switch + token stay in Settings.
     const g = galaxyScanConfigStore.get();
+    const r = reminderGlobalConfigStore.get();
     const config = {
       masterEnabled: s.remindersMasterEnabled,
-      enabled: s.reminderEnabled,
+      enabled: r.reminderEnabled,
       fsEnabled: g.fsEnabled,
       fsThreshold: g.fsThreshold,
       fsOffsets: g.fsOffsets,
       fsMinFlightSec: g.fsMinFlightSec,
       ntfyToken: s.reminderNtfyToken,
-      schedule: s.reminderSchedule,
+      schedule: r.reminderSchedule,
     };
 
     // Refresh the dashboard's push-topic mirror on EVERY run, BEFORE the gates
@@ -370,19 +373,33 @@ export const installReminderProducer = (opts = {}) => {
   const onEventBox = () => scheduleRun();
   document.addEventListener(EVENT_BOX_LOADED_EVENT, onEventBox);
 
-  // Force a push on any reminder-setting change so toggle/token edits in
-  // the in-game Settings panel propagate immediately.
+  // Force a push on any reminder-setting change so master/token edits in
+  // the in-game Settings panel propagate immediately. The wave enable +
+  // schedule moved to the reminderGlobalConfig store (B3c) — watched below.
   /** @param {ReturnType<typeof settingsStore.get>} s */
   const pickReminderSig = (s) =>
     JSON.stringify({
-      m: s.remindersMasterEnabled,
-      e: s.reminderEnabled, t: s.reminderNtfyToken, s: s.reminderSchedule,
+      m: s.remindersMasterEnabled, t: s.reminderNtfyToken,
     });
   let prevReminderSig = pickReminderSig(settingsStore.get());
   const unsubConfig = settingsStore.subscribe((next) => {
     const sig = pickReminderSig(next);
     if (sig === prevReminderSig) return;
     prevReminderSig = sig;
+    force();
+  });
+
+  // The wave enable + schedule are GLOBAL (B3c) — watch the reminderGlobalConfig
+  // store (including its async hydrate) so a dashboard edit to either propagates
+  // without a reload.
+  /** @param {ReturnType<typeof reminderGlobalConfigStore.get>} r */
+  const pickGlobalSig = (r) =>
+    JSON.stringify({ e: r.reminderEnabled, s: r.reminderSchedule });
+  let prevGlobalSig = pickGlobalSig(reminderGlobalConfigStore.get());
+  const unsubGlobalConfig = reminderGlobalConfigStore.subscribe((next) => {
+    const sig = pickGlobalSig(next);
+    if (sig === prevGlobalSig) return;
+    prevGlobalSig = sig;
     force();
   });
 
@@ -410,6 +427,7 @@ export const installReminderProducer = (opts = {}) => {
       document.removeEventListener(EVENT_BOX_LOADED_EVENT, onEventBox);
       unsubConfig();
       unsubScanConfig();
+      unsubGlobalConfig();
       installed = null;
     },
     armAdhoc,

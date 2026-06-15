@@ -153,6 +153,11 @@ import { clearScans, clearGalaxyScans } from './merge.js';
  *   by universe id. Each slot is whole-universe newest-wins (see
  *   {@link import('./merge.js').mergeGalaxyScanConfig}). Per-universe because
  *   the scan strategy depends on which OGame server is being played.
+ * @property {import('./merge.js').ReminderGlobalConfigSlot} [reminderGlobalConfig]
+ *   OPTIONAL, additive: GLOBAL reminder config (wave enable + schedule, ad-hoc
+ *   lead time). A SINGLE slot, not a per-universe map — these knobs apply to
+ *   every server — whole-slot newest-wins (see
+ *   {@link import('./merge.js').mergeReminderGlobalConfig}).
  */
 
 /**

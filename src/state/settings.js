@@ -85,16 +85,15 @@ export const SETTINGS_PREFIX = 'oge_';
  *   traderMenuHighlight     true  — time-aware pulse on the Trader (Handlarz) entry
  *   remindersMasterEnabled  false — master switch for the whole reminders section; with
  *                                   a valid token, gates both wave + ad-hoc reminders
- *   reminderEnabled         false — auto-schedule ntfy.sh pushes for expedition return waves
  *   reminderNtfyToken       ''    — ntfy.sh access token (Bearer) for publish/cancel
- *   reminderSchedule        '0m, 10m, 30m, 60m' — free-form wave cadence: minutes-first
- *                                   offset list AFTER the wave returns (LS key reminderWaveOffsets)
- *   adhocOffsetSec          60    — fire an ad-hoc reminder this many seconds before arrival
- *                                   (ad-hoc reminders are always on — no enable flag)
  *   (The fleet-save knobs — fsEnabled / fsThreshold / fsMinFlightSec / fsOffsets —
  *    moved OUT of Settings into the per-universe Galaxy-Scan config (server-scoped,
  *    edited in the dashboard's Reminders tab), see `state/galaxyScanConfig.js`
  *    and REFRESH-PLAN.md B3.)
+ *   (The GLOBAL reminder knobs — reminderEnabled / reminderSchedule / adhocOffsetSec —
+ *    moved OUT of Settings into the global Galaxy-Scan-style reminder config
+ *    (server-independent, edited in the dashboard's Reminders tab), see
+ *    `state/reminderGlobalConfig.js` and REFRESH-PLAN.md B3c.)
  *
  * @typedef {object} Settings
  * @property {boolean} fabMode
@@ -108,10 +107,7 @@ export const SETTINGS_PREFIX = 'oge_';
  * @property {boolean} eventMenuHighlight
  * @property {boolean} traderMenuHighlight
  * @property {boolean} remindersMasterEnabled
- * @property {boolean} reminderEnabled
  * @property {string}  reminderNtfyToken
- * @property {string}  reminderSchedule
- * @property {number}  adhocOffsetSec
  */
 
 /**
@@ -161,15 +157,7 @@ export const SETTINGS_SCHEMA = {
   eventMenuHighlight:     { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'eventMenuHighlight' },
   traderMenuHighlight:    { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'traderMenuHighlight' },
   remindersMasterEnabled: { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'remindersMasterEnabled' },
-  reminderEnabled:        { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'reminderEnabled' },
   reminderNtfyToken:      { type: 'string', default: '',    key: SETTINGS_PREFIX + 'reminderNtfyToken' },
-  // v1.11.0 moved the wave schedule + FS offsets from fixed presets / raw
-  // seconds to a free-form, minutes-first duration list (`0m, 10m, …`). The
-  // old stored formats are incompatible (a preset KEY, or seconds read as
-  // minutes), so these point at NEW keys — the old values are orphaned and
-  // every player lands on the new default. Deliberate: no migration.
-  reminderSchedule:       { type: 'string', default: '0m, 10m, 30m, 60m', key: SETTINGS_PREFIX + 'reminderWaveOffsets' },
-  adhocOffsetSec:         { type: 'int',    default: 60,    key: SETTINGS_PREFIX + 'adhocOffsetSec' },
 };
 
 // ─────────────────────────────────────────────────────────────────────────

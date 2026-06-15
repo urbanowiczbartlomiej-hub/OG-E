@@ -94,8 +94,14 @@ import {
   galaxyScanConfigKeyFor,
   galaxyScanConfigTsKeyFor,
 } from '../state/galaxyScanConfig.js';
+import {
+  reminderGlobalConfigStore,
+  REMINDER_GLOBAL_CONFIG_KEY,
+  REMINDER_GLOBAL_CONFIG_TS_KEY,
+} from '../state/reminderGlobalConfig.js';
 import { parseDailyRunRoutes } from '../domain/dailyRunRoutes.js';
 import { normalizeGalaxyScanConfig } from '../domain/galaxyScanConfig.js';
+import { normalizeReminderGlobalConfig } from '../domain/reminderGlobalConfig.js';
 import {
   mergeScans,
   mergeHistory,
@@ -103,6 +109,7 @@ import {
   mergeDailyRunRoutes,
   mergeDailyState,
   mergeGalaxyScanConfig,
+  mergeReminderGlobalConfig,
 } from './merge.js';
 import {
   fetchGistData,
@@ -133,6 +140,7 @@ import {
   slotHasData,
   dailyStateHasData,
   galaxyConfigSlotHasData,
+  reminderGlobalConfigSlotHasData,
   gistIsCurrent,
 } from './scheduler/pure.js';
 
@@ -233,6 +241,14 @@ let applyingRoutesFromSync = false;
  * config subscriber doesn't re-stamp and schedule a redundant upload.
  */
 let applyingGalaxyConfigFromSync = false;
+
+/**
+ * Anti-loop flag for GLOBAL REMINDER CONFIG sync, mirroring
+ * {@link applyingGalaxyConfigFromSync}. Raised while we write a merged remote
+ * config back into chrome.storage + {@link reminderGlobalConfigStore} so the
+ * config subscriber doesn't re-stamp and schedule a redundant upload.
+ */
+let applyingReminderGlobalConfigFromSync = false;
 
 /**
  * In-memory cache of the per-universe settings timestamp map, loaded from
@@ -336,6 +352,49 @@ const writeLocalGalaxyConfigSlot = async (slot) => {
     galaxyScanConfigStore.set(config);
   } finally {
     applyingGalaxyConfigFromSync = false;
+  }
+};
+
+/**
+ * Read the local GLOBAL reminder config slot from chrome.storage — NOT from
+ * {@link reminderGlobalConfigStore} in memory (same cross-origin reason as
+ * {@link readLocalGalaxyConfigSlot}: the dashboard edits a different origin).
+ * The raw value is normalised so a partial/legacy blob still yields a complete
+ * config. `updatedAt` comes from the separate timestamp key. No universe key —
+ * this slot is global.
+ *
+ * @returns {Promise<import('./merge.js').ReminderGlobalConfigSlot>}
+ */
+const readLocalReminderGlobalConfigSlot = async () => {
+  const [raw, ts] = await Promise.all([
+    chromeStore.get(REMINDER_GLOBAL_CONFIG_KEY),
+    chromeStore.get(REMINDER_GLOBAL_CONFIG_TS_KEY),
+  ]);
+  const config = raw === null || raw === undefined
+    ? reminderGlobalConfigStore.get()
+    : normalizeReminderGlobalConfig(raw);
+  return { config, updatedAt: typeof ts === 'number' ? ts : 0 };
+};
+
+/**
+ * Write a merged remote GLOBAL reminder config slot back to local: the config
+ * value + its timestamp into chrome.storage, and the in-memory
+ * {@link reminderGlobalConfigStore} so the current game session reflects the
+ * adopted config without a reload. Guarded by
+ * {@link applyingReminderGlobalConfigFromSync}.
+ *
+ * @param {import('./merge.js').ReminderGlobalConfigSlot} slot
+ * @returns {Promise<void>}
+ */
+const writeLocalReminderGlobalConfigSlot = async (slot) => {
+  applyingReminderGlobalConfigFromSync = true;
+  try {
+    const config = normalizeReminderGlobalConfig(slot.config);
+    await chromeStore.set(REMINDER_GLOBAL_CONFIG_KEY, config);
+    await chromeStore.set(REMINDER_GLOBAL_CONFIG_TS_KEY, slot.updatedAt);
+    reminderGlobalConfigStore.set(config);
+  } finally {
+    applyingReminderGlobalConfigFromSync = false;
   }
 };
 
@@ -506,6 +565,14 @@ const downloadAndMerge = async () => {
       if (dailyResult.changed) writeDailyState(dailyResult.merged);
     }
 
+    // Global reminder config: a SINGLE slot (not per-universe), whole-slot
+    // newest-wins. Adopt remote only when it's newer.
+    const remGlobalResult = mergeReminderGlobalConfig(
+      await readLocalReminderGlobalConfigSlot(),
+      remote.reminderGlobalConfig,
+    );
+    if (remGlobalResult.changed) await writeLocalReminderGlobalConfigSlot(remGlobalResult.merged);
+
     setStatus('down', new Date().toISOString());
     setStatus('err', null);
   } catch (err) {
@@ -654,6 +721,19 @@ const upload = async () => {
       ? mergedDailyPerUniverse
       : undefined;
 
+    // Global reminder config: a SINGLE slot, whole-slot newest-wins. Adopt
+    // remote locally if newer, then contribute it to the payload only once it
+    // carries data (a never-edited config, ts 0, must NOT write a slot that
+    // would differ from the gist's absent field and force a no-op PATCH).
+    const remGlobalResult = mergeReminderGlobalConfig(
+      await readLocalReminderGlobalConfigSlot(),
+      remote?.reminderGlobalConfig,
+    );
+    if (remGlobalResult.changed) await writeLocalReminderGlobalConfigSlot(remGlobalResult.merged);
+    const mergedReminderGlobalConfigOut = reminderGlobalConfigSlotHasData(remGlobalResult.merged)
+      ? remGlobalResult.merged
+      : undefined;
+
     // Skip the PATCH when the gist already matches the merged state.
     // This is the common case when upload fires right after a download
     // from another device and both sides already agree — PATCHing
@@ -667,6 +747,7 @@ const upload = async () => {
         settingsPerUniverse: mergedPerUniverseOut,
         dailyStatePerUniverse: mergedDailyPerUniverseOut,
         galaxyScanConfig: mergedGalaxyConfigOut,
+        reminderGlobalConfig: mergedReminderGlobalConfigOut,
       })
     ) {
       await writeGistData({
@@ -679,6 +760,7 @@ const upload = async () => {
         settingsPerUniverse: mergedPerUniverseOut,
         dailyStatePerUniverse: mergedDailyPerUniverseOut,
         galaxyScanConfig: mergedGalaxyConfigOut,
+        reminderGlobalConfig: mergedReminderGlobalConfigOut,
       });
       setStatus('up', new Date().toISOString());
     }
@@ -804,6 +886,17 @@ export const installSync = () => {
     scheduleUpload();
   };
   const unsubGalaxyConfig = galaxyScanConfigStore.subscribe(onGalaxyConfigChange);
+
+  // Global reminder config: an in-game change (a settings-panel edit, until
+  // B4 removes those rows) flips the store → schedule an upload. Dashboard
+  // edits arrive via the `oge_syncRequestAt` tombstone (onForceSync) like the
+  // galaxy config; the sync-applied writes are skipped via the anti-loop flag.
+  const onReminderGlobalConfigChange = () => {
+    if (!shouldScheduleUpload({ cloudSync: settingsStore.get().cloudSync, applying: applyingReminderGlobalConfigFromSync }))
+      return;
+    scheduleUpload();
+  };
+  const unsubReminderGlobalConfig = reminderGlobalConfigStore.subscribe(onReminderGlobalConfigChange);
 
   // Settings sync: stamp the keys that changed since the last tick with
   // `now`, then schedule an upload. `applyingSettingsFromSync` skips
@@ -966,6 +1059,7 @@ export const installSync = () => {
       unsubSettings();
       unsubRoutes();
       unsubGalaxyConfig();
+      unsubReminderGlobalConfig();
       document.removeEventListener(SYNC_FORCE_EVENT, onForceSync);
       document.removeEventListener(DAILY_STATE_CHANGED_EVENT, onDailyStateChanged);
       unsubStorage();
@@ -994,6 +1088,7 @@ export const _resetSchedulerForTest = () => {
   applyingSettingsFromSync = false;
   applyingRoutesFromSync = false;
   applyingGalaxyConfigFromSync = false;
+  applyingReminderGlobalConfigFromSync = false;
   routesUniverseId = '';
   localUniverseTsMap = {};
 };

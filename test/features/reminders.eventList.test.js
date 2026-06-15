@@ -11,6 +11,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { settingsStore, SETTINGS_SCHEMA } from '../../src/state/settings.js';
 import { galaxyScanConfigStore } from '../../src/state/galaxyScanConfig.js';
 import { defaultGalaxyScanConfig } from '../../src/domain/galaxyScanConfig.js';
+import { reminderGlobalConfigStore } from '../../src/state/reminderGlobalConfig.js';
+import { defaultReminderGlobalConfig } from '../../src/domain/reminderGlobalConfig.js';
 import { parseUniverseId } from '../../src/lib/universeId.js';
 import { writePending } from '../../src/features/reminders/pending.js';
 import { REMINDER_MIRROR_KEY } from '../../src/sync/reminders.js';
@@ -66,6 +68,15 @@ const setSettings = (over = {}) => {
  */
 const setFsEnabled = (on) => galaxyScanConfigStore.set({ ...defaultGalaxyScanConfig(), fsEnabled: on });
 
+/**
+ * Wave enable + ad-hoc lead time are GLOBAL (B3c) — they live in the
+ * reminderGlobalConfig store, not Settings. Set them (defaulting the rest).
+ *
+ * @param {Partial<import('../../src/domain/reminderGlobalConfig.js').ReminderGlobalConfig>} [over]
+ */
+const setGlobalConfig = (over = {}) =>
+  reminderGlobalConfigStore.set({ ...defaultReminderGlobalConfig(), ...over });
+
 /** Paint one outbound fleet row with a real arrivalTime cell. @param {number} arrival */
 const paintRow = (arrival) => {
   document.body.innerHTML = `
@@ -90,8 +101,9 @@ beforeEach(() => {
   installChromeStub();
   localStorage.clear();
   document.body.innerHTML = '';
-  setSettings({ remindersMasterEnabled: true, reminderEnabled: false, reminderNtfyToken: VALID_TOKEN, adhocOffsetSec: 60 });
+  setSettings({ remindersMasterEnabled: true, reminderNtfyToken: VALID_TOKEN });
   galaxyScanConfigStore.set(defaultGalaxyScanConfig());
+  setGlobalConfig();
 });
 
 afterEach(() => {
@@ -141,7 +153,7 @@ describe('event-list badges', () => {
   });
 
   it('shows no badge when the ntfy token is missing', async () => {
-    setSettings({ remindersMasterEnabled: true, reminderEnabled: false, reminderNtfyToken: '', adhocOffsetSec: 60 });
+    setSettings({ remindersMasterEnabled: true, reminderNtfyToken: '' });
     const cell = paintRow(Math.floor(Date.now() / 1000) + 3600);
     installEventListReminders(stubApi());
     await tick();
@@ -150,7 +162,7 @@ describe('event-list badges', () => {
   });
 
   it('shows no badge when the master switch is off (token present)', async () => {
-    setSettings({ remindersMasterEnabled: false, reminderEnabled: false, reminderNtfyToken: VALID_TOKEN, adhocOffsetSec: 60 });
+    setSettings({ remindersMasterEnabled: false, reminderNtfyToken: VALID_TOKEN });
     const cell = paintRow(Math.floor(Date.now() / 1000) + 3600);
     installEventListReminders(stubApi());
     await tick();
@@ -169,8 +181,7 @@ describe('event-list badges', () => {
 
   it('stamps a passive, non-clickable 🛡 badge for a leg the mirror marks as a fleet-save', async () => {
     setSettings({
-      remindersMasterEnabled: true, reminderEnabled: false,
-      reminderNtfyToken: VALID_TOKEN,
+      remindersMasterEnabled: true, reminderNtfyToken: VALID_TOKEN,
     });
     setFsEnabled(true);
     const base = Math.floor(Date.now() / 1000) + 3600;
@@ -204,8 +215,7 @@ describe('event-list badges', () => {
 
   it('shows the bare auto hint (no times) for a fleet-save still beyond the 3-day cap', async () => {
     setSettings({
-      remindersMasterEnabled: true, reminderEnabled: false,
-      reminderNtfyToken: VALID_TOKEN,
+      remindersMasterEnabled: true, reminderNtfyToken: VALID_TOKEN,
     });
     setFsEnabled(true);
     const far = Math.floor(Date.now() / 1000) + 5 * 24 * 3600; // 5 days out
@@ -240,8 +250,7 @@ describe('event-list badges', () => {
 
   it('does NOT flag a leg the mirror omits (stays an ad-hoc idle badge — short hops never get a 🛡)', async () => {
     setSettings({
-      remindersMasterEnabled: true, reminderEnabled: false,
-      reminderNtfyToken: VALID_TOKEN, adhocOffsetSec: 60,
+      remindersMasterEnabled: true, reminderNtfyToken: VALID_TOKEN,
     });
     setFsEnabled(true);
     seedMirror([]); // producer classified nothing as a save (e.g. a short hop)
@@ -280,8 +289,7 @@ describe('event-list badges', () => {
   const fsApi = () => ({ ...stubApi(), cancelFsSlot: vi.fn() });
   const enableFs = () => {
     setSettings({
-      remindersMasterEnabled: true, reminderEnabled: false,
-      reminderNtfyToken: VALID_TOKEN,
+      remindersMasterEnabled: true, reminderNtfyToken: VALID_TOKEN,
     });
     setFsEnabled(true);
   };
