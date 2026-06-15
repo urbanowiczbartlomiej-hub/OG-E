@@ -6,6 +6,14 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.19.1] — 2026-06-15
+
+### Changed
+
+- **Larger button node.** The "oczko" inside each command button is ~20%
+  bigger for better glanceability. On single-zone buttons it's nudged slightly
+  up so the larger node grows upward and keeps clear of the label below.
+
 ## [1.19.0] — 2026-06-15
 
 ### Changed

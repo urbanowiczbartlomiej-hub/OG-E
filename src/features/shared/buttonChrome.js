@@ -201,9 +201,11 @@ export const BUTTON_CHROME_CSS = [
   '.oge-lens-orbit{position:absolute;left:-26%;top:-26%;width:152%;height:152%;',
   'overflow:visible;z-index:6;}',
   // SINGLE: small node parked up top (label cleared below). SPLIT: centred on
-  // the seam. Slightly smaller than the old gold lens so the action label leads.
-  '.oge-host.single .oge-lens{top:26%;width:21%;height:21%;transform:translate(-50%,-50%);}',
-  '.oge-host.split .oge-lens{top:50%;width:19%;height:19%;transform:translate(-50%,-50%);}',
+  // the seam. ~20% larger than the original gold lens; SINGLE is nudged up so
+  // the larger node grows upward (its bottom edge stays put) and never crowds
+  // the label below.
+  '.oge-host.single .oge-lens{top:24%;width:25%;height:25%;transform:translate(-50%,-50%);}',
+  '.oge-host.split .oge-lens{top:50%;width:23%;height:23%;transform:translate(-50%,-50%);}',
 
   // ── Brand node: FAB satellite orb + the in-button "oczko" (one shared look) ─
   // Declared AFTER .oge-lens so it wins on the `.oge-lens.oge-node` oczko. The
