@@ -65,6 +65,13 @@ The descriptions are mostly purposeful and current. Confirmed concrete fixes:
 - The **Reminders tab** intro (`src/dashboard.html:346-352`) says setup
   "lives in the OG-E settings panel inside the game." After B this is partly
   false (config moves here) — update as part of B3, not now.
+- **Surface the list/range syntax for positions.** The fields where users
+  type planet positions (Galaxy-Scan config "Target positions"; Colony Scout
+  "Slots") accept a comma list AND ranges — but the hint lives only in the
+  tooltip today (`scanConfig.js` "A list or range, e.g. 8,10-12,15"; Colony
+  Scout "Slots" "a list or range like 8 or 12-15"). Promote a short visible
+  hint next to the field/placeholder, e.g. `e.g. 7-9, 15`, and keep the
+  wording consistent across both fields.
 - Pass over every intro paragraph and tooltip for references to
   features/labels since renamed; fix verbatim.
 
