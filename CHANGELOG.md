@@ -6,6 +6,8 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.19.0] — 2026-06-15
+
 ### Changed
 
 - **Floating-button menu is always on.** The FAB's module picker is no longer
@@ -21,6 +23,10 @@ version numbers follow [Semantic Versioning](https://semver.org).
   button's chrome edge now glows instead of sitting dim.
 - **Tidier labels.** Tighter line spacing keeps a two-line primary (e.g. "All
   maxed") clear of the node, and the split-button labels sit closer to centre.
+- **Simpler Reminders settings.** Dropped the read-only "fires at" preview
+  rows (the schedule fields already carry the offsets). Ad-hoc per-fleet
+  reminders are now always on — the enable toggle is gone; the lead-time field
+  stays.
 
 ## [1.18.1] — 2026-06-14
 
