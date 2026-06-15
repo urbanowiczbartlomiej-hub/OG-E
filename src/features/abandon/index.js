@@ -69,15 +69,11 @@
 //
 // @ts-check
 
-import { settingsStore } from '../../state/settings.js';
+import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
 import { scansStore } from '../../state/scans.js';
 import { safeClick, waitFor } from '../../lib/dom.js';
 import { GAME } from '../../lib/gameDom.js';
 import { installPanelChrome, PANEL_CLASS } from '../shared/panelChrome.js';
-
-/**
- * @typedef {import('../../state/settings.js').Settings} Settings
- */
 
 /**
  * Expand the jQuery-UI `.ui-dialog` that encloses `el` to at least
@@ -196,16 +192,16 @@ let abandonInProgress = false;
  *   - `location.search` includes `component=overview`
  *   - `#diameterContentField` exists and matches `(used/max)`
  *   - `used === 0` (no buildings yet — definitely fresh)
- *   - `max < settings.colonyMinFields` (below the user's threshold)
+ *   - `max < config.colonyMinFields` (below the user's threshold)
  *
- * @param {Settings} [settings]  Optional settings snapshot; defaults
- *   to the current `settingsStore.get()` value. Passing it in makes
- *   the function pure w.r.t. the store, which simplifies testing.
+ * @param {{ colonyMinFields: number }} [config]  Optional config snapshot;
+ *   defaults to the current per-universe `galaxyScanConfigStore.get()`.
+ *   Passing it in makes the function pure w.r.t. the store, simplifying tests.
  * @returns {{ used: number, max: number, minFields: number } | null}
  *   Triple of parsed values when abandon is warranted, else `null`.
  */
-export const checkAbandonState = (settings) => {
-  const s = settings ?? settingsStore.get();
+export const checkAbandonState = (config) => {
+  const s = config ?? galaxyScanConfigStore.get();
   if (!location.search.includes('component=overview')) return null;
   const diameterEl = document.querySelector(GAME.DIAMETER_FIELD);
   if (!diameterEl) return null;
@@ -233,10 +229,10 @@ export const checkAbandonState = (settings) => {
 export const abandonPlanet = async () => {
   if (abandonInProgress) return false;
 
-  const settings = settingsStore.get();
+  const config = galaxyScanConfigStore.get();
 
   // ── Safety 1: abandon state still valid on entry ───────────────
-  if (!checkAbandonState(settings)) return false;
+  if (!checkAbandonState(config)) return false;
 
   // ── Safety 2: capture planet coords for mid-flow verification ──
   const posEl = document.querySelector(GAME.POSITION_FIELD_LINK);
@@ -248,7 +244,7 @@ export const abandonPlanet = async () => {
   const expectedCoords = `[${galaxy}:${system}:${position}]`;
 
   // ── Safety 3: password configured ──────────────────────────────
-  if (!settings.colonyPassword) return false;
+  if (!config.colonyPassword) return false;
 
   abandonInProgress = true;
   try {
@@ -289,7 +285,7 @@ export const abandonPlanet = async () => {
 
     // Autofill password (no HTTP); fire input + change events so any
     // framework listeners bound to the field see the update.
-    pwField.value = settings.colonyPassword;
+    pwField.value = config.colonyPassword;
     pwField.dispatchEvent(new Event('input', { bubbles: true }));
     pwField.dispatchEvent(new Event('change', { bubbles: true }));
 

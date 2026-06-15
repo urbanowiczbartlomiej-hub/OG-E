@@ -58,6 +58,9 @@ describe('Galaxy-Scan config editor', () => {
     await flush();
     expect($('#scanCfgPositions').value).toBe('8');
     expect($('#scanCfgPrefer').checked).toBe(true);
+    expect($('#scanCfgColonyMinGap').value).toBe('15');
+    expect($('#scanCfgColonyMinFields').value).toBe('320');
+    expect($('#scanCfgColonyPassword').value).toBe('');
     expect($('#scanCfgAbandoned').checked).toBe(true);
     expect(rescanInput('inactive').value).toBe('5d');
     expect(rescanInput('empty').value).toBe('0'); // never, by default
@@ -78,6 +81,9 @@ describe('Galaxy-Scan config editor', () => {
 
     $('#scanCfgPositions').value = '9,10';
     $('#scanCfgPrefer').checked = false;
+    $('#scanCfgColonyMinGap').value = '25';
+    $('#scanCfgColonyMinFields').value = '250';
+    $('#scanCfgColonyPassword').value = 'hunter2';
     rescanInput('occupied').value = '12h';
     rescanInput('empty').value = '2d';
     $('#scanCfgAbandoned').checked = false;
@@ -88,6 +94,9 @@ describe('Galaxy-Scan config editor', () => {
     const saved = /** @type {any} */ (store.get(CFG_KEY));
     expect(saved.positions).toBe('9,10');
     expect(saved.preferOtherGalaxies).toBe(false);
+    expect(saved.colonyMinGap).toBe(25);
+    expect(saved.colonyMinFields).toBe(250);
+    expect(saved.colonyPassword).toBe('hunter2');
     expect(saved.rescan.occupied).toBe(12 * 3600);
     expect(saved.rescan.empty).toBe(2 * 86400);
     expect(saved.rescan.abandonedEnabled).toBe(false);

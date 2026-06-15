@@ -68,6 +68,12 @@ import { parseDuration } from './duration.js';
  *   region" and which the colonize button targets (one shared value).
  * @property {boolean} preferOtherGalaxies  Prefer neighbouring galaxies for
  *   colonization (was `colPreferOtherGalaxies`).
+ * @property {number} colonyMinGap  Min seconds between colonize arrivals (the
+ *   min-gap scheduling guard read by `features/sendColony`).
+ * @property {number} colonyMinFields  Abandon-eligibility floor: a fresh
+ *   colony under this many fields is offered for abandon.
+ * @property {string} colonyPassword  Account password the abandon flow
+ *   autofills into the game's give-up confirmation form.
  * @property {GalaxyScanRescan} rescan  Per-status rescan policy inputs.
  */
 
@@ -106,6 +112,9 @@ const D = 86400;
 export const defaultGalaxyScanConfig = () => ({
   positions: '8',
   preferOtherGalaxies: true,
+  colonyMinGap: 15,
+  colonyMinFields: 320,
+  colonyPassword: '',
   rescan: {
     emptySent: 4 * H,        // 4h
     empty: 0,                // never (opt-in for aggressive play)
@@ -170,6 +179,12 @@ export const normalizeGalaxyScanConfig = (raw) => {
       typeof r.preferOtherGalaxies === 'boolean'
         ? r.preferOtherGalaxies
         : d.preferOtherGalaxies,
+    // colonyMinGap / colonyMinFields are non-negative ints; coerceSeconds
+    // does exactly that integer coercion (the "seconds" name is incidental).
+    colonyMinGap: coerceSeconds(r.colonyMinGap, d.colonyMinGap),
+    colonyMinFields: coerceSeconds(r.colonyMinFields, d.colonyMinFields),
+    colonyPassword:
+      typeof r.colonyPassword === 'string' ? r.colonyPassword : d.colonyPassword,
     rescan,
   };
 };

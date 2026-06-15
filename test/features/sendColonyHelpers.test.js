@@ -39,6 +39,8 @@ import {
   settingsStore,
   SETTINGS_SCHEMA,
 } from '../../src/state/settings.js';
+import { galaxyScanConfigStore } from '../../src/state/galaxyScanConfig.js';
+import { defaultGalaxyScanConfig } from '../../src/domain/galaxyScanConfig.js';
 import { registryStore } from '../../src/state/registry.js';
 
 // ── Location.href mocking ────────────────────────────────────────────
@@ -89,6 +91,8 @@ beforeEach(() => {
   localStorage.clear();
   document.body.innerHTML = '';
   resetSettingsToDefaults();
+  // colonyMinGap now lives in the per-universe galaxy-scan config.
+  galaxyScanConfigStore.set(defaultGalaxyScanConfig());
   registryStore.set([]);
   navTarget = null;
   mockLocationHref();
@@ -97,6 +101,7 @@ beforeEach(() => {
 afterEach(() => {
   document.body.innerHTML = '';
   resetSettingsToDefaults();
+  galaxyScanConfigStore.set(defaultGalaxyScanConfig());
   registryStore.set([]);
   unmockLocationHref();
   navTarget = null;
@@ -587,7 +592,7 @@ describe('getColonizeWaitTime', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
     paintDuration('0:01:00');
-    settingsStore.set({ ...settingsStore.get(), colonyMinGap: 60 });
+    galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), colonyMinGap: 60 });
     const now = Date.now();
     // gap 30s → with minGap 60s → conflict, wait = 30s.
     registryStore.set([

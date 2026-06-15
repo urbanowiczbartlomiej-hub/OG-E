@@ -40,6 +40,8 @@ import {
   _resetAbandonForTest,
 } from '../../src/features/abandon/index.js';
 import { settingsStore, SETTINGS_SCHEMA } from '../../src/state/settings.js';
+import { galaxyScanConfigStore } from '../../src/state/galaxyScanConfig.js';
+import { defaultGalaxyScanConfig } from '../../src/domain/galaxyScanConfig.js';
 import { scansStore } from '../../src/state/scans.js';
 
 // ── Scene helpers ────────────────────────────────────────────────────
@@ -97,6 +99,10 @@ const setupOverviewScene = ({
 
 beforeEach(() => {
   resetSettingsToDefaults();
+  // colonyMinFields / colonyPassword now live in the per-universe galaxy-scan
+  // config; reset it so each case starts from the defaults (minFields 320,
+  // empty password).
+  galaxyScanConfigStore.set(defaultGalaxyScanConfig());
   scansStore.set({});
   document.body.innerHTML = '';
   location.search = '';
@@ -163,7 +169,7 @@ describe('makeInjectedButton (via abandonPlanet Click-1 work)', () => {
    */
   const setupFullPopupScene = () => {
     setupOverviewScene({ usedFields: 0, maxFields: 100 });
-    settingsStore.set({ ...settingsStore.get(), colonyPassword: 'secret' });
+    galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), colonyPassword: 'secret' });
     const scaffold = document.createElement('div');
     scaffold.innerHTML = `
       <a class="openPlanetRenameGiveupBox" href="#"></a>
@@ -230,7 +236,7 @@ describe('abandonPlanet — pre-flight gates', () => {
   it('returns false when checkAbandonState is not valid', async () => {
     // Not on overview → first gate rejects.
     setupOverviewScene({ isOverview: false });
-    settingsStore.set({ ...settingsStore.get(), colonyPassword: 'secret' });
+    galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), colonyPassword: 'secret' });
     const result = await abandonPlanet();
     expect(result).toBe(false);
   });
@@ -238,7 +244,7 @@ describe('abandonPlanet — pre-flight gates', () => {
   it('returns false when no colonyPassword is configured', async () => {
     // All other gates satisfied; password is empty (schema default).
     setupOverviewScene({ usedFields: 0, maxFields: 100 });
-    expect(settingsStore.get().colonyPassword).toBe('');
+    expect(galaxyScanConfigStore.get().colonyPassword).toBe('');
     const result = await abandonPlanet();
     expect(result).toBe(false);
   });
@@ -251,7 +257,7 @@ describe('abandonPlanet — pre-flight gates', () => {
       maxFields: 100,
       coords: 'not coords',
     });
-    settingsStore.set({ ...settingsStore.get(), colonyPassword: 'secret' });
+    galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), colonyPassword: 'secret' });
     const result = await abandonPlanet();
     expect(result).toBe(false);
   });
@@ -277,7 +283,7 @@ describe('abandonPlanet — mid-flow aborts', () => {
       maxFields: 100,
       coords: '[4:30:8]',
     });
-    settingsStore.set({ ...settingsStore.get(), colonyPassword: 'secret' });
+    galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), colonyPassword: 'secret' });
     const scaffold = document.createElement('div');
     scaffold.innerHTML = `
       <a class="openPlanetRenameGiveupBox" href="#"></a>
@@ -301,7 +307,7 @@ describe('abandonPlanet — mid-flow aborts', () => {
     // user to click the proxy Submit; then call abandonPlanet again
     // and assert it short-circuits to false immediately.
     setupOverviewScene({ usedFields: 0, maxFields: 100 });
-    settingsStore.set({ ...settingsStore.get(), colonyPassword: 'secret' });
+    galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), colonyPassword: 'secret' });
     const scaffold = document.createElement('div');
     scaffold.innerHTML = `
       <a class="openPlanetRenameGiveupBox" href="#"></a>

@@ -65,6 +65,8 @@ import {
   settingsStore,
   SETTINGS_SCHEMA,
 } from '../../src/state/settings.js';
+import { galaxyScanConfigStore } from '../../src/state/galaxyScanConfig.js';
+import { defaultGalaxyScanConfig } from '../../src/domain/galaxyScanConfig.js';
 
 // ── Scene helpers ────────────────────────────────────────────────────
 
@@ -122,6 +124,8 @@ beforeEach(() => {
   _resetAbandonOverviewForTest();
   document.body.innerHTML = '';
   resetSettings();
+  // colonyPassword now lives in the per-universe galaxy-scan config.
+  galaxyScanConfigStore.set(defaultGalaxyScanConfig());
   location.search = '';
   vi.mocked(checkAbandonState).mockReset();
   vi.mocked(checkAbandonState).mockReturnValue(null);
@@ -251,8 +255,8 @@ describe('installAbandonOverview — click handoff', () => {
     setupOverviewScene();
     // Password is required — without it the overlay shows a "set
     // password" hint and does not fire abandonPlanet. Mirror the real
-    // user setup by setting it in settings first.
-    settingsStore.set({ ...settingsStore.get(), colonyPassword: 'secret' });
+    // user setup by setting it in the (per-universe) config first.
+    galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), colonyPassword: 'secret' });
     vi.mocked(checkAbandonState).mockReturnValue({
       used: 0,
       max: 145,
@@ -272,7 +276,7 @@ describe('installAbandonOverview — click handoff', () => {
   it('click with colonyPassword EMPTY shows hint and skips abandonPlanet', () => {
     setupOverviewScene();
     // Default password is empty — simulate that.
-    settingsStore.set({ ...settingsStore.get(), colonyPassword: '' });
+    galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), colonyPassword: '' });
     vi.mocked(checkAbandonState).mockReturnValue({
       used: 0,
       max: 145,
@@ -334,8 +338,8 @@ describe('installAbandonOverview — lifecycle', () => {
     dispose();
     expect(getOverlay()).toBeNull();
 
-    // After dispose, a settings change must NOT re-mount the overlay.
-    settingsStore.set({ ...settingsStore.get(), colonyMinFields: 500 });
+    // After dispose, a config change must NOT re-mount the overlay.
+    galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), colonyMinFields: 500 });
     expect(getOverlay()).toBeNull();
   });
 
@@ -379,9 +383,10 @@ describe('installAbandonOverview — lifecycle', () => {
 
     // Simulate: user bumps colonyMinFields DOWN below max, so the colony
     // no longer qualifies as "too small". Our mock now returns null to
-    // mirror what real `checkAbandonState` would do.
+    // mirror what real `checkAbandonState` would do. The bump lives on the
+    // galaxy-scan config now, which overview.js also subscribes to.
     vi.mocked(checkAbandonState).mockReturnValue(null);
-    settingsStore.set({ ...settingsStore.get(), colonyMinFields: 50 });
+    galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), colonyMinFields: 50 });
 
     expect(getOverlay()).toBeNull();
   });

@@ -60,7 +60,7 @@ describe('isSyncedSetting / EXCLUDED_SETTINGS', () => {
   it('excludes exactly the per-device keys', () => {
     expect([...EXCLUDED_SETTINGS].sort()).toEqual(['fabBtnSize', 'gistToken']);
     expect(isSyncedSetting('reminderNtfyToken')).toBe(true);
-    expect(isSyncedSetting('colonyPassword')).toBe(true);
+    expect(isSyncedSetting('fsThreshold')).toBe(true);
     expect(isSyncedSetting('gistToken')).toBe(false);
     expect(isSyncedSetting('fabBtnSize')).toBe(false);
   });
@@ -68,10 +68,11 @@ describe('isSyncedSetting / EXCLUDED_SETTINGS', () => {
 
 describe('isUniverseScopedSetting / UNIVERSE_SCOPED_SETTINGS', () => {
   it('marks the universe-scoped keys', () => {
-    // colPositions / colPreferOtherGalaxies moved OUT to the per-universe
-    // Galaxy-Scan config store (synced via the gist's galaxyScanConfig slot).
-    expect(UNIVERSE_SCOPED_SETTINGS.size).toBe(9);
-    expect(isUniverseScopedSetting('colonyPassword')).toBe(true);
+    // colPositions / colPreferOtherGalaxies and the colony* knobs moved OUT
+    // to the per-universe Galaxy-Scan config store (synced via the gist's
+    // galaxyScanConfig slot).
+    expect(UNIVERSE_SCOPED_SETTINGS.size).toBe(6);
+    expect(isUniverseScopedSetting('colonyPassword')).toBe(false);
     expect(isUniverseScopedSetting('fsThreshold')).toBe(true);
     expect(isUniverseScopedSetting('reminderNtfyToken')).toBe(true);
     expect(isUniverseScopedSetting('colPositions')).toBe(false);
@@ -104,10 +105,10 @@ describe('pickSyncedValues', () => {
 
   it('scope=universe keeps only universe-scoped keys', () => {
     const out = pickSyncedValues(
-      { fabMode: true, fsThreshold: 50000, colonyPassword: 'abc', fabBtnSize: 320 },
+      { fabMode: true, fsThreshold: 50000, fsOffsets: '-5m', fabBtnSize: 320 },
       'universe',
     );
-    expect(out).toEqual({ fsThreshold: 50000, colonyPassword: 'abc' });
+    expect(out).toEqual({ fsThreshold: 50000, fsOffsets: '-5m' });
   });
 });
 
@@ -163,18 +164,18 @@ describe('readTsMap / writeTsMap', () => {
 
 describe('seedSettingsTsIfAbsent', () => {
   it('seeds only GLOBAL non-default keys once, then no-ops', () => {
-    // colonyMinGap is now universe-scoped — must NOT appear in the global ts map.
+    // fsThreshold is universe-scoped — must NOT appear in the global ts map.
     // adhocOffsetSec (default 60) is global — customised value 99 is stamped.
     const seeded = seedSettingsTsIfAbsent(
-      { fabMode: true, colonyMinGap: 99, adhocOffsetSec: 99 },
+      { fabMode: true, fsThreshold: 99, adhocOffsetSec: 99 },
       1234,
     );
     expect(seeded).toBe(true);
     const ts = readTsMap();
     // adhocOffsetSec is global + customised → stamped.
     expect(ts.adhocOffsetSec).toBe(1234);
-    // colonyMinGap is universe-scoped → must NOT be in the global ts map.
-    expect('colonyMinGap' in ts).toBe(false);
+    // fsThreshold is universe-scoped → must NOT be in the global ts map.
+    expect('fsThreshold' in ts).toBe(false);
 
     // Second call is a no-op (map already present).
     expect(seedSettingsTsIfAbsent({ fabMode: false }, 9999)).toBe(false);

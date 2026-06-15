@@ -67,7 +67,6 @@ import { initSettingsStore } from './state/settings.js';
 import { initDailyRunRoutesStore } from './state/dailyRunRoutes.js';
 import { initGalaxyScanConfigStore } from './state/galaxyScanConfig.js';
 import { initBodiesStore } from './state/bodies.js';
-import { initSharedSettingsStore } from './state/sharedSettings.js';
 
 import { installColonyRecorder } from './features/colonyRecorder.js';
 import { installPlanetBarCapture } from './features/planetBarCapture.js';
@@ -112,11 +111,6 @@ initGalaxyScanConfigStore();
 // planet-bar capture below can gate its first write on the hydrate and
 // the dashboard route editor can read a snapshot of owned planets/moons.
 initBodiesStore();
-// Shared settings (GLOBAL, chrome.storage). The dashboard-editable subset of
-// preferences (colonization thresholds, reminder schedules — see
-// REFRESH-PLAN.md). Hydrated here so in-game features read the same values the
-// dashboard writes, across the origin boundary localStorage can't cross.
-initSharedSettingsStore();
 
 // Reminder config lives in `settings.js` (regular localStorage Settings,
 // authored in the in-game OG-E settings panel). Nothing extra to wire

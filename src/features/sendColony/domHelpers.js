@@ -19,8 +19,9 @@
 //
 // Purity classification (mirrors `./pure.js`'s "what we don't do" rule):
 //   - `getColonizeWaitTime`: reads `#durationOneWay` from the DOM,
-//     `settingsStore`, `registryStore`, and `safeLS` (for the opt-in
-//     debug flag). Returns whole seconds to wait.
+//     `galaxyScanConfigStore` (the per-universe colonyMinGap),
+//     `registryStore`, and `safeLS` (for the opt-in debug flag). Returns
+//     whole seconds to wait.
 //   - `readHomePlanet`: reads `#planetList .hightlightPlanet` (the
 //     game's CSS-class typo is intentional — that's the actual class).
 //   - `parseCurrentGalaxyView`: reads `#galaxy_input` / `#system_input`
@@ -30,7 +31,7 @@
 //                    readers help build.
 // @see ./index.js — orchestrator; `captureEnv()` is the bridge.
 
-import { settingsStore } from '../../state/settings.js';
+import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
 import { registryStore } from '../../state/registry.js';
 import { safeLS } from '../../lib/storage.js';
 import { findConflict } from '../../domain/registry.js';
@@ -67,7 +68,7 @@ export const getColonizeWaitTime = () => {
 
   const now = Date.now();
   const ourArrival = now + durSec * 1000;
-  const minGapMs = settingsStore.get().colonyMinGap * 1000;
+  const minGapMs = galaxyScanConfigStore.get().colonyMinGap * 1000;
   const registry = registryStore.get();
   const conflict = findConflict(registry, ourArrival, minGapMs);
 

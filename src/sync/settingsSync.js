@@ -17,7 +17,7 @@
 //     timestamp map under `SETTINGS_TS_KEY`.
 //
 //   - UNIVERSE_SCOPED: game-logic parameters that are meaningful only on a
-//     specific server (fsThreshold, colonyPassword, reminderNtfyToken, …).
+//     specific server (fsThreshold, fsOffsets, reminderNtfyToken, …).
 //     Stored in `settingsPerUniverse[universeId]` and in a per-universe
 //     chrome.storage timestamp map under `<universeId>:oge_settingsTs`.
 //
@@ -51,9 +51,9 @@ export const EXCLUDED_SETTINGS = new Set(['fabBtnSize', 'gistToken']);
  * @type {Set<string>}
  */
 export const UNIVERSE_SCOPED_SETTINGS = new Set([
-  'colonyPassword',
-  'colonyMinGap',
-  'colonyMinFields',
+  // colonyPassword / colonyMinGap / colonyMinFields moved to the
+  // per-universe galaxyScanConfig store (which syncs on its own slot) —
+  // see REFRESH-PLAN.md B2.
   'maxExpeditionsPerPlanet',
   'fsEnabled',
   'fsThreshold',

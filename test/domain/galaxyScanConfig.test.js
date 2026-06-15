@@ -35,6 +35,13 @@ describe('defaultGalaxyScanConfig', () => {
     a.rescan.empty = 999;
     expect(b.rescan.empty).toBe(0);
   });
+
+  it('carries the colonization knobs (moved here from settingsStore)', () => {
+    const d = defaultGalaxyScanConfig();
+    expect(d.colonyMinGap).toBe(15);
+    expect(d.colonyMinFields).toBe(320);
+    expect(d.colonyPassword).toBe('');
+  });
 });
 
 describe('buildRescanPolicy', () => {
@@ -99,6 +106,22 @@ describe('normalizeGalaxyScanConfig', () => {
     for (const { field } of RESCAN_FIELDS) {
       expect(typeof out.rescan[field]).toBe('number');
     }
+  });
+
+  it('keeps / coerces the colonization knobs', () => {
+    const d = defaultGalaxyScanConfig();
+    const out = normalizeGalaxyScanConfig({
+      colonyMinGap: '30',
+      colonyMinFields: 'bad',
+      colonyPassword: 'hunter2',
+    });
+    expect(out.colonyMinGap).toBe(30);           // coerced from string
+    expect(out.colonyMinFields).toBe(d.colonyMinFields); // NaN → default
+    expect(out.colonyPassword).toBe('hunter2');
+    // Missing → defaults.
+    const bare = normalizeGalaxyScanConfig({});
+    expect(bare.colonyMinGap).toBe(d.colonyMinGap);
+    expect(bare.colonyPassword).toBe('');
   });
 });
 

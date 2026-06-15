@@ -54,6 +54,7 @@
 // @ts-check
 
 import { settingsStore } from '../../state/settings.js';
+import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
 import { logger } from '../../lib/logger.js';
 import { checkAbandonState, abandonPlanet } from './index.js';
 import { GAME } from '../../lib/gameDom.js';
@@ -98,8 +99,8 @@ const readCoordsText = () => {
  * Lifecycle:
  *   1. Runs `refresh()` once synchronously — mounts the overlay if
  *      the current page already satisfies all preconditions.
- *   2. Subscribes to `settingsStore` so `colonyMinFields` / `fabMode`
- *      edits re-evaluate the mount state live.
+ *   2. Subscribes to `settingsStore` (`fabMode`) and `galaxyScanConfigStore`
+ *      (`colonyMinFields`) so edits re-evaluate the mount state live.
  *   3. Installs a `MutationObserver` on `document.body` (childList +
  *      subtree). OGame AJAX-swaps the overview content when the user
  *      switches planets via the planet list; the observer catches
@@ -221,9 +222,8 @@ export const installAbandonOverview = () => {
     // re-mounting the overlay if conditions still hold. So this is a
     // session-level hand-off, not a permanent disable.
     overlay.addEventListener('click', async () => {
-      const s = settingsStore.get();
-      if (!s.colonyPassword) {
-        hintLine.textContent = '\u26A0 Set password in OG-E settings first';
+      if (!galaxyScanConfigStore.get().colonyPassword) {
+        hintLine.textContent = '\u26A0 Set password in the dashboard first';
         hintLine.style.color = '#fecdd3';
         return;
       }
@@ -265,7 +265,9 @@ export const installAbandonOverview = () => {
       unmount();
       return;
     }
-    const info = checkAbandonState(settings);
+    // colonyMinFields now lives in the per-universe galaxy-scan config;
+    // checkAbandonState() reads it from galaxyScanConfigStore by default.
+    const info = checkAbandonState();
     if (!info) {
       unmount();
       return;
@@ -278,9 +280,11 @@ export const installAbandonOverview = () => {
   // settings change.
   refresh();
 
-  // React to settings edits — `colonyMinFields` bump or `fabMode`
-  // toggle should flip the overlay in-place.
+  // React to config edits — a `fabMode` toggle (settingsStore) or a
+  // `colonyMinFields` bump (galaxyScanConfigStore, edited in the dashboard)
+  // should flip the overlay in-place.
   const unsubSettings = settingsStore.subscribe(refresh);
+  const unsubConfig = galaxyScanConfigStore.subscribe(refresh);
 
   // OGame AJAX-swaps overview content when the user switches planets
   // via `#planetList`. childList + subtree catches both the `#planet`
@@ -293,6 +297,7 @@ export const installAbandonOverview = () => {
     dispose: () => {
       unmount();
       unsubSettings();
+      unsubConfig();
       observer.disconnect();
       installed = null;
     },

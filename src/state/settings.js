@@ -25,8 +25,8 @@
 //      each preference under its own key. Bundling everything into one
 //      JSON blob would break AGR's view/edit flow.
 //   2. DevTools debuggability — one preference per key gives a flat,
-//      human-readable view in the Application panel (`oge_colonyMinGap = 20`
-//      beats `oge_settings = {"...":20,...}` when you are tracing a bug).
+//      human-readable view in the Application panel (`oge_fabBtnSize = 320`
+//      beats `oge_settings = {"...":320,...}` when you are tracing a bug).
 //
 // # Algorithm
 //
@@ -69,10 +69,11 @@ export const SETTINGS_PREFIX = 'oge_';
  *   fabBtnSize              320   — unified floating button size in px
  *   expeditionBadges        true  — ekspedycje dot on planet list
  *   autoRedirectExpedition  true  — redirect to next planet after expedition
- *   colonyMinGap               15    — seconds between colonize arrivals
- *   colonyMinFields            320   — abandon threshold (fields)
- *   colonyPassword             ''    — autofill value for the abandon form
  *   maxExpeditionsPerPlanet         1     — simultaneous expeditions per planet
+ *
+ *   (colonyMinGap / colonyMinFields / colonyPassword moved OUT of Settings
+ *    into the per-universe Galaxy-Scan config — edited in the dashboard,
+ *    see `state/galaxyScanConfig.js`.)
  *   cloudSync               false — enable Gist-based cross-device sync
  *
  *   (Target positions + "prefer other galaxies" + the galaxy-scan rescan
@@ -103,9 +104,6 @@ export const SETTINGS_PREFIX = 'oge_';
  * @property {number}  fabBtnSize
  * @property {boolean} expeditionBadges
  * @property {boolean} autoRedirectExpedition
- * @property {number}  colonyMinGap
- * @property {number}  colonyMinFields
- * @property {string}  colonyPassword
  * @property {number}  maxExpeditionsPerPlanet
  * @property {boolean} cloudSync
  * @property {string}  gistToken
@@ -163,9 +161,6 @@ export const SETTINGS_SCHEMA = {
   fabBtnSize:             { type: 'int',    default: 320,   key: SETTINGS_PREFIX + 'fabBtnSize' },
   expeditionBadges:       { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'expeditionBadges' },
   autoRedirectExpedition: { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'autoRedirectExpedition' },
-  colonyMinGap:              { type: 'int',    default: 15,    key: SETTINGS_PREFIX + 'colonyMinGap' },
-  colonyMinFields:           { type: 'int',    default: 320,   key: SETTINGS_PREFIX + 'colonyMinFields' },
-  colonyPassword:            { type: 'string', default: '',    key: SETTINGS_PREFIX + 'colonyPassword' },
   maxExpeditionsPerPlanet:        { type: 'int',    default: 1,     key: SETTINGS_PREFIX + 'maxExpeditionsPerPlanet' },
   cloudSync:              { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'cloudSync' },
   gistToken:              { type: 'string', default: '',    key: SETTINGS_PREFIX + 'gistToken' },

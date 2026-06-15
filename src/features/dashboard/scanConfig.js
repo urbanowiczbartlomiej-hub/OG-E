@@ -76,6 +76,33 @@ export const installScanConfig = ({ getUniverseId }) => {
   abandonedInput.type = 'checkbox';
   abandonedInput.id = 'scanCfgAbandoned';
 
+  // Colonization knobs (moved here from the in-game AGR settings panel so
+  // they live in one per-universe, cross-device-synced config — see
+  // REFRESH-PLAN.md B2). min-gap drives the Send-Col scheduling guard;
+  // min-fields + password drive the abandon-overview flow.
+  const colonyMinGapInput = /** @type {HTMLInputElement} */ (mk('input'));
+  colonyMinGapInput.type = 'text';
+  colonyMinGapInput.id = 'scanCfgColonyMinGap';
+  colonyMinGapInput.size = 8;
+  colonyMinGapInput.placeholder = 'e.g. 20';
+  colonyMinGapInput.title =
+    'Minimum seconds between two colony-ship arrivals — the Send-Col button waits out this gap to avoid stacking arrivals.';
+
+  const colonyMinFieldsInput = /** @type {HTMLInputElement} */ (mk('input'));
+  colonyMinFieldsInput.type = 'text';
+  colonyMinFieldsInput.id = 'scanCfgColonyMinFields';
+  colonyMinFieldsInput.size = 8;
+  colonyMinFieldsInput.placeholder = 'e.g. 200';
+  colonyMinFieldsInput.title =
+    'A fresh colony with fewer than this many fields is offered for abandon on its overview page.';
+
+  const colonyPasswordInput = /** @type {HTMLInputElement} */ (mk('input'));
+  colonyPasswordInput.type = 'password';
+  colonyPasswordInput.id = 'scanCfgColonyPassword';
+  colonyPasswordInput.size = 14;
+  colonyPasswordInput.title =
+    'Account password, autofilled into the game’s give-up confirmation form during the abandon flow.';
+
   /** @type {Map<string, HTMLInputElement>} rescan field id → text input */
   const rescanInputs = new Map();
 
@@ -99,6 +126,11 @@ export const installScanConfig = ({ getUniverseId }) => {
 
   body.appendChild(row('Target positions', positionsInput, 'list or range, e.g. 7-9, 15'));
   body.appendChild(row('Prefer neighbouring galaxies', preferInput, 'more predictable arrival times'));
+
+  body.appendChild(mk('div', 'margin:10px 0 4px;color:#4a9eff;font-size:13px;font-weight:bold;', 'Colonization'));
+  body.appendChild(row('Min gap between arrivals (sec)', colonyMinGapInput));
+  body.appendChild(row('Min fields to keep colony', colonyMinFieldsInput));
+  body.appendChild(row('Account password (for abandon)', colonyPasswordInput));
 
   body.appendChild(mk('div', 'margin:10px 0 4px;color:#4a9eff;font-size:13px;font-weight:bold;', 'Re-scan after (0 = never):'));
 
@@ -142,6 +174,9 @@ export const installScanConfig = ({ getUniverseId }) => {
   const fill = (cfg) => {
     positionsInput.value = cfg.positions;
     preferInput.checked = cfg.preferOtherGalaxies;
+    colonyMinGapInput.value = String(cfg.colonyMinGap);
+    colonyMinFieldsInput.value = String(cfg.colonyMinFields);
+    colonyPasswordInput.value = cfg.colonyPassword;
     abandonedInput.checked = cfg.rescan.abandonedEnabled;
     for (const { field } of RESCAN_FIELDS) {
       const input = rescanInputs.get(field);
@@ -187,6 +222,9 @@ export const installScanConfig = ({ getUniverseId }) => {
     return normalizeGalaxyScanConfig({
       positions: positionsInput.value.trim(),
       preferOtherGalaxies: preferInput.checked,
+      colonyMinGap: parseInt(colonyMinGapInput.value, 10),
+      colonyMinFields: parseInt(colonyMinFieldsInput.value, 10),
+      colonyPassword: colonyPasswordInput.value,
       rescan,
     });
   };

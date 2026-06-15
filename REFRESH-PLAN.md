@@ -122,24 +122,35 @@ Tests/typecheck/lint green.
 
 Net: **10 fields move** into 2 existing tabs; AGR keeps the 11 essentials.
 
-### Core technical constraint (the reason this is the big lift)
+### Core technical constraint + the storage model (DECIDED)
 
 `state/settings.js` persists every field to **`localStorage` under the
 `oge_` prefix** — in the content script that's the **game-page origin's**
 localStorage. The Dashboard is a separate extension page with its **own**
-localStorage; it cannot see those keys (it doesn't even import the settings
-store). That's why per-universe config (`galaxyScanConfig`, `scans`,
-`bodies`, `dailyRunRoutes`) already lives in **`chrome.storage.local`** — the
-only backing shared across both worlds.
+localStorage; it cannot see those keys. That's why per-universe config
+(`galaxyScanConfig`, `scans`, `bodies`, `dailyRunRoutes`) already lives in
+**`chrome.storage.local`** — the only backing shared across both worlds.
 
-**Therefore every MOVED setting must live in `chrome.storage.local`**, with:
+The moved settings are ALSO **synced across devices** today (via
+`sync/settingsSync.js`): some **per-universe** (colony*, `fs*`,
+`reminderNtfyToken`…), some **global** (`reminderSchedule`, `reminderEnabled`,
+`adhocOffsetSec`…). **Decision: preserve that — per-server stays per-server,
+synced stays synced (no regression).** Consequence on the storage model:
 
-- no migration of the old `oge_*` localStorage value (single user — see the
-  "No data migration" decision above): the new store starts at defaults;
-- consuming features switching from synchronous `safeLS` reads to the
-  **async-init store pattern already used by `scanConfig`** (tolerate the
-  pre-hydrate default for one tick);
-- moved settings stay **global** (no `<universeId>:` prefix).
+- **Per-universe moved settings → fold into a per-universe `chrome.storage`
+  store that is ALREADY dashboard-edited AND gist-synced**, i.e.
+  `state/galaxyScanConfig.js`. Its gist merge is whole-slot newest-wins
+  (`sync/merge.mergeGalaxyScanConfig`), so new fields ride along with **zero**
+  sync wiring. This is exactly what B2 did for the colony* fields.
+- **Global moved settings (reminder schedules/enables) → need a GLOBAL
+  `chrome.storage` store wired into the GLOBAL gist sync path.** No such store
+  exists yet; B3 must build it (or fold the global reminder fields into an
+  existing global-synced surface). This is the genuinely new plumbing.
+- **A global, UNSYNCED store is the wrong model** — an earlier B1 attempt
+  built one (`state/sharedSettings.js`) and it was **reverted** because it
+  fit nothing under this decision.
+- No localStorage→chrome.storage migration (single user — see "No data
+  migration"): moved fields start at defaults and get re-set once.
 
 Settings that **STAY** in AGR are untouched (still localStorage). No mirror,
 no dual-write.
@@ -157,23 +168,46 @@ lives in `src/domain/fleetSave.js`.
 
 ### Phasing for B
 
-- **B1 — shared-settings store. ✅ DONE.** Global store backed by
-  `chrome.storage.local` (`state/sharedSettings.js` + pure
-  `domain/sharedSettings.js`), mirroring the `scanConfig` shape; hydrated at
-  content-script boot. No migration. Unit + behavioral tests green.
-- **B2 — Colonization config (Galaxy Observations tab).** Add a "Colonization
-  config" sub-section; move min-gap / min-fields / password onto the B1 store;
-  rewire the `sendColony` and `abandon` consumers to the async store. Update
-  the tab's intro copy.
-- **B3 — Reminders tab config.** Move sub-enables / schedules / thresholds
-  onto the B1 store; build the friendly offset editor + extract the shared
-  humanization helper; update the Reminders-tab intro (the A item deferred to
-  here). Behavioral tests (edit → store → persisted value, and a fired push
-  still reads correctly).
-- **B4 — Slim the AGR panel.** Remove the 10 moved fields from their AGR
-  sections; under the reminders master switch add a one-line "Configure
-  schedules in the Dashboard → Reminders" annotation; keep the token. Verify
-  nothing in AGR still reads a moved key.
+- **B1 — global shared-settings store. ❌ REVERTED.** Built a global, unsynced
+  `chrome.storage` store (`domain/sharedSettings.js` + `state/sharedSettings.js`);
+  removed once the "per-server + sync, no regression" decision landed (it fit
+  nothing). Git history keeps it if a global-synced store ever wants a head
+  start. The **`radio` control type** added alongside it survives (used by Max
+  expeditions per planet).
+- **B2 — Colonization config (Galaxy Observations tab). ✅ DONE.** Folded
+  `colonyMinGap` / `colonyMinFields` / `colonyPassword` into the per-universe
+  `galaxyScanConfig` (domain shape + defaults + normalize); added a
+  "Colonization" sub-section to the dashboard scan-config editor
+  (`features/dashboard/scanConfig.js`); rewired consumers
+  (`sendColony/domHelpers.js`, `abandon/index.js`, `abandon/overview.js` —
+  `checkAbandonState()` now reads `galaxyScanConfigStore`, overview subscribes
+  to it too); removed the fields from `settings.js`, `settingsSync.js`
+  (`UNIVERSE_SCOPED_SETTINGS`), and the AGR `colonization` section (deleted —
+  it was only those three). Sync rides the existing whole-slot merge for free.
+  Tests + typecheck + lint green.
+- **B3 — Reminders tab config. ⏳ NEXT.** The hard one: the moved reminder
+  fields split by scope (see the storage-model decision above).
+  - **Per-universe `fs*` fields** (`fsEnabled`, `fsThreshold`, `fsMinFlightSec`,
+    `fsReminderOffsets`) — fold into `galaxyScanConfig` the same way B2 did the
+    colony fields (per-universe, sync for free), OR a sibling per-universe
+    store. They're currently in `UNIVERSE_SCOPED_SETTINGS`.
+  - **Global fields** (`reminderEnabled`, `reminderWaveOffsets`,
+    `adhocOffsetSec`) — need a NEW global `chrome.storage` store wired into the
+    GLOBAL gist-sync path (`sync/settingsSync.js` global bucket + a merge). This
+    is the new plumbing B1 didn't provide.
+  - Build the **friendly offset editor** in the Reminders tab: per-entry rows
+    with a human-readable impact preview. Extract the humanization that already
+    exists for the push payload (`sync/ntfyReconciler.js:660-661` —
+    `min before landing` / `…after landing` / `landing now`) into a pure
+    `domain/` helper shared by both. Offset parsing: `domain/fleetSave.js`.
+  - Rewire the reminders feature consumers; remove the moved fields from
+    `settings.js` + the AGR reminders section sub-rows (keep master + token).
+  - Update the Reminders-tab intro copy (deferred from Workstream A).
+- **B4 — Slim the AGR panel + signposts.** After B3, the AGR reminders section
+  should be just the master switch + token (+ the read-only status rows). Add a
+  one-line "Configure schedules in the Dashboard → Reminders" annotation under
+  the master switch. Verify nothing in AGR still reads a moved key. (Colonization
+  AGR rows already gone in B2.)
 
 Each B-step is its own `feat:`/`refactor:` commit; `npm run test` +
 `typecheck` + `lint` green before each (architecture invariants: stores own
@@ -216,12 +250,23 @@ settings live" note + the tab name wait on B.
 
 1. **A** — dashboard copy review. ✅ done.
 2. **C** — README refresh (minus the settings-location note). ✅ done.
-3. **B1 → B4** — the settings split. B1 ✅ done; B2 next.
+3. **B** — the settings split. B1 reverted; **B2 ✅ done; B3 is NEXT**, then B4.
 4. **C follow-up** — fill in the "where settings live" note after B4.
 5. *(Later, out of scope here)* AMO listing copy + screenshots.
 
+## Where a fresh session should start
+
+**B3** (reminders config → Reminders tab). Read the storage-model decision and
+the B3 bullet above first — the global-vs-per-universe split is the crux, and
+the global reminder fields need NEW global-synced `chrome.storage` plumbing
+that B2 did not need. B2's colony-field fold into `galaxyScanConfig` is the
+worked example to copy for the per-universe `fs*` fields.
+
 ## Open questions to resolve before the relevant step
 
+- **B3 global-fields plumbing:** build a dedicated global `chrome.storage`
+  store wired into `sync/settingsSync.js`'s global bucket, or fold the global
+  reminder fields into an existing global-synced surface? Decide at B3 start.
 - Within the Colonization config sub-section, do min-fields / password
   (abandon config) sit alongside min-gap, or grouped as an "Abandon small
   colonies" sub-block? Lean: one *Colonization config* block, abandon
