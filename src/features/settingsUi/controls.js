@@ -44,13 +44,14 @@ import { parseDuration, formatDuration } from '../../domain/duration.js';
  * @typedef {object} SettingsOption
  * @property {string} id Option identifier — matches `Settings` field for data-bound types.
  * @property {string} label Human-readable row label.
- * @property {'checkbox' | 'range' | 'text' | 'password' | 'button' | 'static' | 'select' | 'duration' | 'asyncStatus'} type Control flavour.
+ * @property {'checkbox' | 'range' | 'text' | 'password' | 'button' | 'static' | 'select' | 'radio' | 'duration' | 'asyncStatus'} type Control flavour.
  * @property {number} [min] Slider minimum (range only).
  * @property {number} [max] Slider maximum (range only).
  * @property {number} [step] Slider step (range only; defaults to 1).
  * @property {string} [unit] Slider display unit suffix (range only, e.g. `'px'`).
  * @property {string} [placeholder] Input placeholder (text / password / duration only).
  * @property {{ value: string, label: string }[]} [selectOptions] Choices (select only).
+ * @property {{ value: number, label: string }[]} [radioOptions] Choices for a horizontal radio group (radio only; values are written to the store as numbers).
  * @property {string} [buttonText] Button label. `button`: label override (defaults to `label`). `asyncStatus`: renders a manual-refresh button. `static`: with `onclick`, renders an inline action button beside the text.
  * @property {() => void} [onclick] Button click handler (`button`, or `static` with `buttonText`).
  * @property {() => string} [getText] Dynamic text producer (static only).
@@ -94,6 +95,9 @@ const RANGE_WRAP_STYLE =
   'display:inline-flex;align-items:center;gap:6px;width:100%';
 const RANGE_DISPLAY_STYLE =
   'min-width:50px;text-align:right;font-size:11px;color:#848484;';
+const RADIO_WRAP_STYLE = 'display:inline-flex;align-items:center;gap:16px;';
+const RADIO_LABEL_STYLE =
+  'display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:12px;color:#ccc;';
 const BUTTON_STYLE =
   'padding:4px 14px;background:#1a2a3a;border:1px solid #2a4a5a;' +
   'color:#4a9eff;border-radius:4px;font-size:12px;cursor:pointer;font-weight:bold;';
@@ -389,6 +393,41 @@ const buildSelectControl = (opt, valueCell) => {
 };
 
 /**
+ * Render the radio (horizontal choice group) flavour. Data-bound like
+ * select, but renders inline radios and writes the chosen value back as a
+ * NUMBER (the few fields that use it are small integer caps, e.g. the
+ * per-planet expedition limit). The wrapper carries the option id so
+ * {@link syncInputsFromState} can re-check the matching radio.
+ *
+ * @param {SettingsOption} opt
+ * @param {HTMLTableCellElement} valueCell
+ * @returns {void}
+ */
+const buildRadioControl = (opt, valueCell) => {
+  const wrap = document.createElement('span');
+  wrap.id = INPUT_ID_PREFIX + opt.id;
+  wrap.style.cssText = RADIO_WRAP_STYLE;
+  const name = INPUT_ID_PREFIX + opt.id;
+  const current = Number(readSetting(opt.id));
+  for (const choice of opt.radioOptions ?? []) {
+    const lbl = document.createElement('label');
+    lbl.style.cssText = RADIO_LABEL_STYLE;
+    const radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = name;
+    radio.value = String(choice.value);
+    radio.checked = choice.value === current;
+    radio.addEventListener('change', () => {
+      if (radio.checked) writeSetting(opt.id, choice.value);
+    });
+    lbl.appendChild(radio);
+    lbl.appendChild(document.createTextNode(choice.label));
+    wrap.appendChild(lbl);
+  }
+  valueCell.appendChild(wrap);
+};
+
+/**
  * Render the button flavour — not data-bound, just fires `opt.onclick`.
  * @param {SettingsOption} opt
  * @param {HTMLTableCellElement} valueCell
@@ -553,6 +592,7 @@ const CONTROL_BUILDERS = {
   text: buildInputControl,
   password: buildInputControl,
   select: buildSelectControl,
+  radio: buildRadioControl,
   button: buildButtonControl,
   static: buildStaticControl,
   duration: buildDurationControl,
@@ -671,6 +711,12 @@ export const syncInputsFromState = () => {
         /** @type {HTMLInputElement} */ (el).value = v == null ? '' : String(v);
       } else if (opt.type === 'select') {
         /** @type {HTMLSelectElement} */ (el).value = String(readSetting(opt.id) ?? '');
+      } else if (opt.type === 'radio') {
+        const current = Number(readSetting(opt.id));
+        const sel = /** @type {HTMLInputElement | null} */ (
+          el.querySelector(`input[value="${current}"]`)
+        );
+        if (sel) sel.checked = true;
       } else if (opt.type === 'duration') {
         // Re-render the canonical minutes-first form from stored seconds.
         /** @type {HTMLInputElement} */ (el).value = formatDuration(Number(readSetting(opt.id)));

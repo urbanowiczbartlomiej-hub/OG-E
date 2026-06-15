@@ -15,6 +15,8 @@ export const expeditionsSection = {
   options: [
     { id: 'expeditionBadges', label: 'Expedition badges on planets', type: 'checkbox' },
     { id: 'autoRedirectExpedition', label: 'After sending expedition, open the next planet', type: 'checkbox' },
-    { id: 'maxExpeditionsPerPlanet', label: 'Max expeditions per planet', type: 'range', min: 1, max: 20, step: 1 },
+    // Capped at 2 on purpose: as a rule you shouldn't run more than two
+    // expeditions from a single planet, so a 1/2 radio beats a 1–20 slider.
+    { id: 'maxExpeditionsPerPlanet', label: 'Max expeditions per planet', type: 'radio', radioOptions: [{ value: 1, label: '1' }, { value: 2, label: '2' }] },
   ],
 };
