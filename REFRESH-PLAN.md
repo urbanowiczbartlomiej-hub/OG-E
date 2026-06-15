@@ -13,22 +13,39 @@ drifted from what the code actually does.
 
 1. **Dashboard copy review** — trim stale/redundant descriptions, fix
    what's drifted.
-2. **Settings clean split** — give every setting exactly ONE home. AGR keeps
-   quick in-game essentials + credentials; config-heavy options move to a new
-   Dashboard *Settings* tab.
+2. **Settings clean split** — give every setting exactly ONE home.
 3. **README marketing refresh** — benefit-led, user-facing, every
    user-visible feature covered; dev sections kept but pushed lower.
 
-## Decisions locked (2026-06-15 session)
+## Decisions locked
 
-- **Settings model:** *clean split, one home each.* No option editable in
-  two places.
-- **Stays in AGR (quick essentials + credentials):** floating button
-  (on/off + size), credentials (gist PAT, ntfy token), master switches
-  (cloud-sync, reminders), display toggles (readability, event/trader
-  highlights).
-- **README:** keep everything in one file; lead with marketing, dev
-  sections lower down. (No move to CONTRIBUTING.md.)
+**Settings model: clean split, one home each.** No option editable in two
+places.
+
+**Guiding rule (refined):** only the *absolutely necessary* lives in AGR —
+master on/off switches, required credentials (tokens), and any option that
+has **no natural home tab** in the Dashboard. Everything that's an *add-on
+with a sensible default* moves to the **thematically-relevant existing
+Dashboard tab**. **There is NO separate "Settings" tab in the Dashboard** —
+moved options join the tab they belong to.
+
+**Where moved options land:**
+
+- **Reminders config → Reminders tab** (it already shows the queue; config +
+  observability finally live together).
+- **Colonization config → the Galaxy Observations tab**, which gets
+  **renamed toward colonization** (scans were and still are mostly done for
+  colonization; Colony Scout is a secondary use of the same data). Final name
+  TBD — lean *"Colonization"*.
+
+**Stays in AGR** (no home tab, or absolutely necessary): floating button
+(on/off + size), display toggles (readability, event/trader highlights),
+**all expedition settings** (no expeditions tab exists), cloud-sync master +
+gist token, reminders **master** switch + **ntfy token** (token is required,
+so it stays; add an annotation that the rest is configured in the Dashboard).
+
+**README:** keep everything in one file; lead with marketing, dev sections
+lower down.
 
 ---
 
@@ -43,17 +60,16 @@ The descriptions are mostly purposeful and current. Confirmed concrete fixes:
   (`src/dashboard.html:270`).
 - The "target positions / position filter" concept is explained in three
   places (Galaxy Observations intro, Galaxy-Scan config intro, filter-bar
-  label). Keep all three — they're at different context depths — but make
-  sure wording agrees after the settings split (Workstream B may relabel).
-- Audit the **Reminders tab** intro (`src/dashboard.html:346-352`): today it
-  says setup "lives in the OG-E settings panel inside the game." After B this
-  becomes partly false (schedules/thresholds move here) — update copy as part
-  of B6, not now.
-- Pass over every intro paragraph and tooltip for residual references to
-  features/labels that have since been renamed; fix verbatim.
+  label). Keep all three — different context depths — but make wording agree
+  after the rename/moves in B.
+- The **Reminders tab** intro (`src/dashboard.html:346-352`) says setup
+  "lives in the OG-E settings panel inside the game." After B this is partly
+  false (config moves here) — update as part of B3, not now.
+- Pass over every intro paragraph and tooltip for references to
+  features/labels since renamed; fix verbatim.
 
-**Deliverable:** one `docs:`/`fix:` commit touching `dashboard.html` +
-`features/dashboard/*` strings. No logic change. Tests/typecheck/lint green.
+**Deliverable:** one `docs:`/`fix:` commit, strings only, no logic change.
+Tests/typecheck/lint green.
 
 ---
 
@@ -61,85 +77,85 @@ The descriptions are mostly purposeful and current. Confirmed concrete fixes:
 
 ### Stay vs. move (the 21 AGR fields)
 
-| Field (storage key) | Today | Decision |
-|---|---|---|
-| `oge_fabMode` | AGR | **STAY** (FAB essential) |
-| `oge_fabBtnSize` | AGR | **STAY** |
-| `oge_cloudSync` (master) | AGR | **STAY** |
-| `oge_gistToken` (credential) | AGR | **STAY** |
-| sync status (read-only) | AGR | **STAY** (also already surfaced) |
-| `oge_remindersMasterEnabled` | AGR | **STAY** (master) |
-| `oge_reminderNtfyToken` (credential) | AGR | **STAY** |
-| ntfy account status + topic (read-only) | AGR | **STAY** |
-| `oge_readabilityBoost` | AGR | **STAY** (display) |
-| `oge_eventMenuHighlight` | AGR | **STAY** (display) |
-| `oge_traderMenuHighlight` | AGR | **STAY** (display) |
-| `oge_expeditionBadges` | AGR | **MOVE → Dashboard** |
-| `oge_autoRedirectExpedition` | AGR | **MOVE** |
-| `oge_maxExpeditionsPerPlanet` | AGR | **MOVE** |
-| `oge_colonyMinGap` | AGR | **MOVE** |
-| `oge_colonyMinFields` | AGR | **MOVE** |
-| `oge_colonyPassword` | AGR | **OPEN** — it's a password (credential). Lean **STAY** in AGR with the other credentials; confirm before B3. |
-| `oge_reminderEnabled` (exp-wave sub-enable) | AGR | **MOVE → Reminders tab** |
-| `oge_reminderWaveOffsets` (schedule) | AGR | **MOVE → Reminders tab** |
-| `oge_adhocOffsetSec` | AGR | **MOVE → Reminders tab** |
-| `oge_fsEnabled` | AGR | **MOVE → Reminders tab** |
-| `oge_fsThreshold` | AGR | **MOVE → Reminders tab** |
-| `oge_fsMinFlightSec` | AGR | **MOVE → Reminders tab** |
-| `oge_fsReminderOffsets` (schedule) | AGR | **MOVE → Reminders tab** |
+| Field (storage key) | Decision |
+|---|---|
+| `oge_fabMode`, `oge_fabBtnSize` | **STAY** (FAB; no home tab) |
+| `oge_readabilityBoost` | **STAY** (display; no home tab) |
+| `oge_eventMenuHighlight` | **STAY** (display; no home tab) |
+| `oge_traderMenuHighlight` | **STAY** (display; no home tab) |
+| `oge_expeditionBadges` | **STAY** (no expeditions tab) |
+| `oge_autoRedirectExpedition` | **STAY** (no expeditions tab) |
+| `oge_maxExpeditionsPerPlanet` | **STAY** (no expeditions tab) |
+| `oge_cloudSync` (master) | **STAY** |
+| `oge_gistToken` (credential) | **STAY** |
+| `oge_remindersMasterEnabled` (master) | **STAY** + annotation "configure in Dashboard → Reminders" |
+| `oge_reminderNtfyToken` (credential) | **STAY** (required) |
+| sync status / ntfy status + topic (read-only) | **STAY** |
+| `oge_colonyMinGap` | **MOVE → Colonization tab** |
+| `oge_colonyMinFields` | **MOVE → Colonization tab** |
+| `oge_colonyPassword` | **MOVE → Colonization tab** (abandon-of-small-colonies config) |
+| `oge_reminderEnabled` (exp-wave sub-enable) | **MOVE → Reminders tab** |
+| `oge_reminderWaveOffsets` (schedule) | **MOVE → Reminders tab** |
+| `oge_adhocOffsetSec` | **MOVE → Reminders tab** |
+| `oge_fsEnabled` | **MOVE → Reminders tab** |
+| `oge_fsThreshold` | **MOVE → Reminders tab** |
+| `oge_fsMinFlightSec` | **MOVE → Reminders tab** |
+| `oge_fsReminderOffsets` (schedule) | **MOVE → Reminders tab** |
 
-Net effect: **AGR shrinks to** FAB (2) + sync master+token+status +
-reminders master+token+status + 3 display toggles (+ maybe colony password)
-— i.e. "turn features on, paste credentials." All *tuning* lives in the
-Dashboard. The Reminders tab gains its own config (it already shows the
-queue, so config + observability finally live together).
+Net: **10 fields move** into 2 existing tabs; AGR keeps the 11 essentials.
 
 ### Core technical constraint (the reason this is the big lift)
 
 `state/settings.js` persists every field to **`localStorage` under the
-`oge_` prefix** — and in the content script that's the **game-page origin's**
+`oge_` prefix** — in the content script that's the **game-page origin's**
 localStorage. The Dashboard is a separate extension page with its **own**
 localStorage; it cannot see those keys (it doesn't even import the settings
-store today). This is exactly why per-universe config (`galaxyScanConfig`,
-`scans`, `bodies`, `dailyRunRoutes`) already lives in **`chrome.storage.local`**
-— that's the only backing shared across both the content script and the
-Dashboard page.
+store). That's why per-universe config (`galaxyScanConfig`, `scans`,
+`bodies`, `dailyRunRoutes`) already lives in **`chrome.storage.local`** — the
+only backing shared across both worlds.
 
 **Therefore every MOVED setting must migrate `localStorage` →
 `chrome.storage.local`**, with:
 
-- a one-time migration that reads the old `oge_*` localStorage value and
-  seeds the new chrome.storage key (then the old key can be ignored/cleared);
+- a seed-once migration reading the old `oge_*` localStorage value into the
+  new chrome.storage key;
 - consuming features switching from synchronous `safeLS` reads to the
-  **async-init store pattern already used by `scanConfig`** (init returns a
-  promise / store hydrates async; features must tolerate the pre-hydrate
-  default for one tick);
-- moved settings stay **global** (not universe-scoped) — chrome.storage keys
-  without the `<universeId>:` prefix.
+  **async-init store pattern already used by `scanConfig`** (tolerate the
+  pre-hydrate default for one tick);
+- moved settings stay **global** (no `<universeId>:` prefix).
 
 Settings that **STAY** in AGR are untouched (still localStorage). No mirror,
 no dual-write.
 
+### Reminders config UX (Reminders tab)
+
+Build a **friendly offset editor** instead of a raw `-10m, 0m, 15m` text
+field: per-entry rows with a human-readable impact preview ("10 min **before**
+landing", "**at** landing", "15 min **after**"). The humanization already
+exists for the push payload in `src/sync/ntfyReconciler.js:660-661`
+(`min before landing` / `min after landing` / `landing now`) — **extract it
+into a small pure `domain/` helper** and share it between the push text and
+the editor preview (single source of truth, unit-testable). Offset parsing
+lives in `src/domain/fleetSave.js`.
+
 ### Phasing for B
 
-- **B1 — migration infra.** A small global-settings store backed by
-  `chrome.storage.local` (mirror the `scanConfig` store shape) + a
-  localStorage→chrome.storage seed-once migration. Unit + behavioral tests.
-- **B2 — Expeditions category.** Move the 3 expedition settings onto B1's
-  store; switch `badges` / `sendExpedition` consumers to the async store;
-  drop those fields from the AGR expeditions section.
-- **B3 — Colonization category.** Same for min-gap / min-fields (resolve the
-  `colonyPassword` open question first).
-- **B4 — Reminders detail.** Move sub-enables + schedules + fleet-save
-  thresholds; keep master + token in AGR.
-- **B5 — Dashboard *Settings* tab.** New tab in `dashboard.html` /
-  `features/dashboard/` rendering the moved settings (Expeditions /
-  Colonization groups) + fold reminder config into the existing Reminders
-  tab. Behavioral tests for the editor (write → store → persisted value).
-- **B6 — Slim the AGR panel + signposts.** Remove moved fields from AGR
-  sections; where useful leave a one-line "Configured in the Dashboard →"
-  link. Update the Reminders-tab intro copy (the Workstream-A item deferred
-  to here).
+- **B1 — migration infra.** A global-settings store backed by
+  `chrome.storage.local` (mirror the `scanConfig` store shape) + the
+  seed-once localStorage→chrome.storage migration. Unit + behavioral tests.
+- **B2 — Colonization tab.** Rename *Galaxy Observations* toward
+  colonization; move min-gap / min-fields / password onto the B1 store;
+  rewire the `sendColony` and `abandon` consumers to the async store. Update
+  the tab's intro copy.
+- **B3 — Reminders tab config.** Move sub-enables / schedules / thresholds
+  onto the B1 store; build the friendly offset editor + extract the shared
+  humanization helper; update the Reminders-tab intro (the A item deferred to
+  here). Behavioral tests (edit → store → persisted value, and a fired push
+  still reads correctly).
+- **B4 — Slim the AGR panel.** Remove the 10 moved fields from their AGR
+  sections; under the reminders master switch add a one-line "Configure
+  schedules in the Dashboard → Reminders" annotation; keep the token. Verify
+  nothing in AGR still reads a moved key.
 
 Each B-step is its own `feat:`/`refactor:` commit; `npm run test` +
 `typecheck` + `lint` green before each (architecture invariants: stores own
@@ -151,47 +167,47 @@ persistence; features stay independent; no cross-feature imports).
 
 Keep one file. Target structure:
 
-1. **Hook** (keep the "calm UI + zero automation" framing — it's good).
-2. **Features — benefit-led.** One line per feature: *the problem it solves*,
-   not the implementation. Cover the currently-missing user-visible ones:
-   **Send Lifeforms**, **Daily Run / fleet-save**, **event & trader menu
-   highlights**, **expedition badges**, **fleet-dispatch keyboard shortcut**.
-   Keep passive/internal modules (planet-bar capture, colony recorder,
-   rewarding watcher, anti-flicker) out of the headline list or mention
-   lightly.
+1. **Hook** — keep the "calm UI + zero automation" framing.
+2. **Features — benefit-led.** One line per feature: the *problem it solves*.
+   Add the currently-missing user-visible ones: **Send Lifeforms**, **Daily
+   Run / fleet-save**, **event & trader menu highlights**, **expedition
+   badges**, **fleet-dispatch keyboard shortcut**. Keep passive/internal
+   modules (planet-bar capture, colony recorder, rewarding watcher,
+   anti-flicker) out of the headline list or mention lightly.
 3. **De-jargon pass:** `499-pixel maps` → "galaxy preview maps";
-   `checkTarget`/`colPositions`/`usedFields` → plain language; "gist" →
-   "your own private GitHub gist (cross-device sync)"; "ntfy topic" → "a push
+   `checkTarget`/`colPositions`/`usedFields` → plain language; "gist" → "your
+   own private GitHub gist (cross-device sync)"; "ntfy topic" → "a push
    notification to your phone."
-4. **Fix the stale Dashboard description:** tabs are Colony Sizes / Galaxy
-   Observations (incl. Colony Scout) / Reminders / **Daily Run** — current
-   text lists "Free Positions" and omits Daily Run.
-5. **"Where settings live"** short note — finalize AFTER B lands: AGR =
-   essentials + credentials, Dashboard = detailed config. (Draft a
-   placeholder now; fill in once B6 is merged.)
+4. **Fix the stale Dashboard description:** tabs are Colony Sizes /
+   <renamed-colonization-tab> (incl. Colony Scout) / Reminders / **Daily
+   Run** — current text lists "Free Positions" and omits Daily Run.
+5. **"Where settings live"** short note — finalize AFTER B: AGR = enable
+   switches + required tokens; the Dashboard tabs hold the detailed config
+   (Reminders schedules in the Reminders tab, colonize/abandon thresholds in
+   the Colonization tab). Draft a placeholder now; fill in after B4.
 6. **Dev sections** (Install / Development / Debug flags / Architecture) —
-   keep, but below the user-facing content.
+   keep, below the user-facing content.
 7. Leave a marker for screenshots (AMO assets are a later, separate effort).
 
-**Deliverable:** one `docs:` commit. Can mostly proceed independently of B;
-only the "where settings live" note waits on B6.
+**Deliverable:** one `docs:` commit. Mostly independent of B; only the "where
+settings live" note + the tab name wait on B.
 
 ---
 
 ## Suggested path order
 
 1. **A** — dashboard copy review (quick win, no deps).
-2. **C** — README refresh, minus the settings-location note (independent).
-3. **B1 → B6** — the settings split, one category per commit.
-4. **C follow-up** — fill in the "where settings live" note after B6.
+2. **C** — README refresh, minus the settings-location note + final tab name.
+3. **B1 → B4** — the settings split.
+4. **C follow-up** — fill in the "where settings live" note + tab name after B4.
 5. *(Later, out of scope here)* AMO listing copy + screenshots.
 
 ## Open questions to resolve before the relevant step
 
-- **`colonyPassword`** — stay in AGR (credential) or move with colonization?
-  Lean stay. *(Blocks B3.)*
-- Should the Dashboard *Settings* tab and the Reminders-tab config be **two
-  surfaces** or should all moved settings sit under one *Settings* tab with
-  the Reminders tab staying read-only? Current lean: reminder *config* folds
-  into the Reminders tab (config + queue together); everything else under a
-  new *Settings* tab. *(Blocks B5.)*
+- **Colonization tab name** — *"Colonization"* vs *"Galaxy / Colonization"*
+  vs keeping "Galaxy Observations" with a colonization sub-heading. Lean
+  *"Colonization"*. *(Blocks B2.)*
+- Within the Colonization tab, do min-fields / password (abandon config) sit
+  alongside min-gap, or visually grouped as an "Abandon small colonies"
+  sub-block? Lean: one *Colonization config* block, abandon settings grouped
+  under their own sub-heading. *(Cosmetic; resolve during B2.)*
