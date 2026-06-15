@@ -78,6 +78,40 @@ commit touching `src/` — see General rules below.
 
 ## Release checklist (now one command)
 
+### Releasing via GitHub Actions (DEFAULT — the AMO creds live ONLY in CI)
+
+`AMO_JWT_ISSUER` / `AMO_JWT_SECRET` are stored as **GitHub repo secrets**, not
+in the local/agent environment — so a session usually CANNOT upload to AMO
+directly (`npm run release` would fail at the AMO step). The publish runs
+through a manual GitHub Actions workflow instead. **When the user asks to bump
+the version and publish, this is the path:**
+
+1. Land code + tests on the default branch (`main`), gates green
+   (`test` / `typecheck` / `lint`).
+2. **Add the dated `## [X.Y.Z] — YYYY-MM-DD` section to `CHANGELOG.md` and
+   COMMIT + PUSH it to `main`.** (This differs from the local flow below,
+   which leaves it uncommitted: the Actions runner checks out the *committed*
+   tree, and `release.mjs` reads the section from there + sends it verbatim as
+   the public AMO release notes.) A clean tree is fine — `release.mjs` only
+   needs the section present, then it bumps `package.json`/`manifest.json` and
+   makes the `chore(release)` commit + `vX.Y.Z` tag itself, in CI.
+3. Trigger the workflow: **GitHub → Actions → "Release to AMO (listed)" → Run
+   workflow → enter `X.Y.Z`.** (`skip_tests: true` only if already verified
+   green.) An agent with the GitHub MCP tools can dispatch it via
+   `actions_run_trigger` — but a **listed** release is public and
+   auto-updates existing users, so confirm with the user first.
+   - **"Release to AMO (unlisted)"** is the owner-only test channel (Mozilla
+     signs it, you get a direct URL, existing users are NOT offered the
+     update). Use it to smoke-test a build before the listed release.
+4. The workflow runs `node scripts/release.mjs X.Y.Z` (`--unlisted` for the
+   unlisted job) with the secrets, uploads to AMO, and pushes the commit + tag.
+
+Workflows: `.github/workflows/release-amo-listed.yml` /
+`release-amo-unlisted.yml`. Both are `workflow_dispatch` (manual) — there is no
+tag-triggered release.
+
+### Running `release.mjs` locally (only with creds in `.env`)
+
 `npm run release X.Y.Z` runs the whole checklist (`scripts/release.mjs`):
 validates the CHANGELOG, bumps `package.json` + `manifest.json`, runs
 tests + typecheck, `npm run package`, commits, tags, uploads to AMO

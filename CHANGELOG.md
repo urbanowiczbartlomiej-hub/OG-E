@@ -6,6 +6,28 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.19.5] — 2026-06-15
+
+### Changed
+
+- **Configuration moved into the Dashboard.** The in-game settings panel now
+  holds only the essentials — the on/off switches, your sync + ntfy tokens,
+  the display toggles, and the expedition options. The detailed config lives in
+  the OG-E Dashboard now, next to the data it shapes:
+  - **Galaxy Observations tab** — the colonization knobs (arrival gap, the
+    abandon field-threshold, and the abandon password) join the per-universe
+    scan settings.
+  - **Reminders tab** — the expedition-wave + ad-hoc schedules and the
+    per-server fleet-save thresholds/offsets, edited through a friendly
+    per-entry offset editor that shows each reminder in plain language
+    ("10 min before landing", "at landing", …).
+
+  Nothing is editable in two places any more. *After updating, set these once
+  in the Dashboard* — they start at defaults (no automatic carry-over from the
+  old in-game values).
+- **Max expeditions per planet is now a simple 1 / 2 choice** instead of a
+  1–20 slider — as a rule you shouldn't send more than two from one planet.
+
 ## [1.19.4] — 2026-06-15
 
 ### Changed
