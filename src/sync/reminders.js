@@ -502,29 +502,15 @@ const adhocBody = (e) => {
  * @returns {Promise<{ ok: boolean, reason?: string, changed?: boolean, scheduled?: number, cancelled?: number }>}
  */
 export const syncReminders = async (config, dom, now, universeId) => {
+  if (!getToken()) return { ok: false, reason: 'no-token' };
+
+  const { waveCandidates, present, adhocMutate, waveMutate, fleetSaveCandidates = [], fsCancelById = {} } = dom;
+
   // Token resolution: prefer per-origin localStorage value; fall back
   // to the global chrome.storage mirror so a universe that hasn't been
   // configured manually still works once any other universe has set
   // its ntfy token.
   const ntfyToken = await resolveNtfyToken(config.ntfyToken);
-
-  // Mirror the ntfy token for the dashboard BEFORE the cloud-sync (gist) gate
-  // below. The dashboard derives its push topic purely from this mirror, so it
-  // must not be coupled to a GitHub gist token — otherwise a setup with ntfy
-  // configured but cloud sync off (or a transient missing gist PAT) shows "no
-  // topic set" on the dashboard even though pushes work. State + the per-wave
-  // cards still legitimately need the gist (that's where wave state lives).
-  if (isValidNtfyToken(ntfyToken)) {
-    try {
-      await chromeStore.set(REMINDER_NTFY_TOKEN_KEY, ntfyToken);
-    } catch {
-      // Best-effort mirror — never let it break a sync.
-    }
-  }
-
-  if (!getToken()) return { ok: false, reason: 'no-token' };
-
-  const { waveCandidates, present, adhocMutate, waveMutate, fleetSaveCandidates = [], fsCancelById = {} } = dom;
 
   const existing = await readReminderState(universeId);
   const prevWaves = existing?.waves ?? [];

@@ -6,6 +6,18 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.19.3] — 2026-06-15
+
+### Fixed
+
+- **Dashboard Reminders topic really shows now.** The 1.19.2 fix wrote the
+  ntfy-token mirror inside the reminder sync, but that sync is skipped on an
+  ordinary page reload when the event list hasn't changed — so the dashboard
+  still read "set your ntfy.sh access token". The push-topic mirror is now
+  refreshed on every producer pass, before that short-circuit, so the topic
+  appears whenever ntfy is configured in-game. (Per-wave cards still come from
+  cloud sync.)
+
 ## [1.19.2] — 2026-06-15
 
 ### Fixed

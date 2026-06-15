@@ -59,10 +59,10 @@ import { extractFleetSaveCandidates } from './fleetSaveScan.js';
 import { parseFsOffsets } from '../../domain/fleetSave.js';
 import { NTFY_MAX_DELAY_SEC } from '../../sync/ntfyReconciler.js';
 import { settingsStore } from '../../state/settings.js';
-import { syncReminders } from '../../sync/reminders.js';
+import { syncReminders, REMINDER_NTFY_TOKEN_KEY, isValidNtfyToken } from '../../sync/reminders.js';
 import { parseUniverseId } from '../../lib/universeId.js';
 import { debounce } from '../../lib/debounce.js';
-import { safeLS } from '../../lib/storage.js';
+import { safeLS, chromeStore } from '../../lib/storage.js';
 import { GAME } from '../../lib/gameDom.js';
 import { EVENT_BOX_LOADED_EVENT } from '../../lib/ogeEvents.js';
 import {
@@ -267,6 +267,17 @@ export const installReminderProducer = (opts = {}) => {
       ntfyToken: s.reminderNtfyToken,
       schedule: s.reminderSchedule,
     };
+
+    // Refresh the dashboard's push-topic mirror on EVERY run, BEFORE the gates
+    // below. The dashboard derives its topic from this mirror alone, and the
+    // full sync (which also mirrors it) is skipped when the event list is
+    // unchanged — so without this an ordinary reload leaves the dashboard
+    // showing "no token set" even though reminders are configured and pushes
+    // are live. Decoupled from cloud sync too (no gist token needed).
+    if (isValidNtfyToken(config.ntfyToken)) {
+      void chromeStore.set(REMINDER_NTFY_TOKEN_KEY, config.ntfyToken);
+    }
+
     // Dormant unless the master switch is on — or something forces a push (a
     // settings toggle we must act on, e.g. the master just went off and we
     // must sweep, or a queued user action). Ad-hoc reminders are always on, so
