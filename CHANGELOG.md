@@ -6,6 +6,25 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.19.2] — 2026-06-15
+
+### Fixed
+
+- **Dashboard shows your ntfy topic without cloud sync.** The Reminders tab
+  could read "set your ntfy.sh access token" even with a valid token set
+  in-game, because the topic mirror was written only after the cloud-sync
+  (gist) step. The token is now mirrored independently, so the topic appears
+  whenever ntfy is configured. (Per-wave preview cards still need cloud sync —
+  that's where wave state lives.)
+
+### Changed
+
+- **Brighter button edge.** The outermost pixels of each command button now
+  carry a crisp, vivid state-coloured edge (like the FAB menu orbs), instead of
+  fading into the dim fill gradient — single- and split-zone alike.
+- **Larger colonization glyph.** The lander now fills its node / menu orb to
+  match the other glyphs (it read small and sat low before).
+
 ## [1.19.1] — 2026-06-15
 
 ### Changed

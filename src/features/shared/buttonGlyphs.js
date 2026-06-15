@@ -31,7 +31,10 @@ export const COMET_GLYPH = [
 
 /** Colonization — a landing craft with legs and feet (sendColony). */
 export const LANDER_GLYPH = [
-  '<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">',
+  // Native art sits low (y≈27–53) and narrow, so it read smaller than the
+  // other glyphs. Scale up ~1.3 about its own bbox centre (32,40) and recentre
+  // on the 64-grid so it fills the node / menu orb like the rest.
+  '<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" transform="translate(32,32) scale(1.3) translate(-32,-40)">',
   '<path d="M20 41 V27 a12 12 0 0 1 24 0 V41 Z"/>',
   '<circle cx="32" cy="29" r="4.5" fill="currentColor"/>',
   '<line x1="23" y1="41" x2="15" y2="53"/>',

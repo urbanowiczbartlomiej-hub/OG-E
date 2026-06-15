@@ -5,9 +5,10 @@
 // Two things live here:
 //
 //   1. installButtonChrome() — injects ONE `<style id="oge-btn-chrome">`
-//      (idempotent) with the rules every button shares: an inset edge
-//      vignette + top sheen drawn via `::after`, the engraved title-ring
-//      styling, the tap-ripple keyframes and the per-zone press feedback.
+//      (idempotent) with the rules every button shares: the rim glow + inset
+//      filament, a crisp vivid edge ring on the outermost pixels (drawn via
+//      `::after`), the engraved title-ring styling, the tap-ripple keyframes
+//      and the per-zone press feedback.
 //
 //   2. decorateButton({ host, zones, title, ringId }) — appends the
 //      per-button DOM the stylesheet styles: a persistent ripple layer
@@ -68,6 +69,18 @@ export const BUTTON_CHROME_CSS = [
   '0 0 calc(26px * var(--glow)) -6px var(--rim),',
   '0 18px 36px -12px rgba(0,0,0,.72),',
   '0 4px 12px -2px rgba(0,0,0,.5);}',
+
+  // ── Crisp bright edge (the outermost pixels) ────────────────────────────
+  // The zone/surface gradient reaches the rounded rim, so the inset chrome
+  // filament never quite paints the LAST pixels of the edge — that band stays
+  // the dim gradient colour. This pseudo-ring lays a vivid, SHARP state-coloured
+  // line right on the perimeter (like the FAB menu orbs' edge), single and split
+  // alike. border-box keeps it inside the split wrap's overflow:hidden; z-index 6
+  // sits it above the fill(0) + seam(4), and it's the perimeter so it never
+  // crowds the central node(5).
+  '.oge-host::after{content:"";position:absolute;inset:0;border-radius:50%;',
+  'pointer-events:none;z-index:6;box-sizing:border-box;',
+  'border:1.5px solid color-mix(in oklab,var(--rim) 88%,#fff 12%);}',
 
   // ── Single-zone: rim-tinted fill on a dedicated layer ───────────────────
   // The host keeps only the chrome (rim shadow + ring + lens); the painted
