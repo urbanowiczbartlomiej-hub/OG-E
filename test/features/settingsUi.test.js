@@ -557,7 +557,6 @@ describe('installSettingsUi — per-group enable gates its own options', () => {
       remindersMasterEnabled: true,
       reminderNtfyToken: VALID_TOKEN,
       reminderEnabled: true,
-      adhocEnabled: true,
       fsEnabled: true,
     }));
 
@@ -569,7 +568,6 @@ describe('installSettingsUi — per-group enable gates its own options', () => {
 
   it.each([
     ['reminderEnabled', ['reminderSchedule']],
-    ['adhocEnabled', ['adhocOffsetSec']],
     ['fsEnabled', ['fsThreshold', 'fsMinFlightSec', 'fsOffsets']],
   ])('%s gates its group options', async (enableId, optionIds) => {
     setupAGR();

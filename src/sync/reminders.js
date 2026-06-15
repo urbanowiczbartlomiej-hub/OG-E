@@ -99,8 +99,6 @@ import {
  *   When false, NEITHER kind is queued (everything is swept) regardless of
  *   the per-kind flags. Absent ⇒ treated as on (back-compat for direct callers).
  * @property {boolean} enabled       Auto expedition-WAVE reminders on/off.
- * @property {boolean} [adhocEnabled] Ad-hoc per-fleet reminders on/off. When
- *   false, armed entries are kept in state but nothing is queued on ntfy.
  * @property {boolean} [fsEnabled]   Fleet-save auto-detection on/off. When
  *   false, detected entries are kept in state but nothing is queued on ntfy.
  * @property {number} [fsThreshold]   Minimum total ships to classify as a save.
@@ -562,7 +560,8 @@ export const syncReminders = async (config, dom, now, universeId) => {
   // Master switch gates every kind; absent ⇒ on (direct-caller back-compat).
   const master = config.masterEnabled !== false;
   const waveActive = master && config.enabled;
-  const adhocActive = master && Boolean(config.adhocEnabled);
+  // Ad-hoc per-fleet reminders are always on; the master switch is their only gate.
+  const adhocActive = master;
   const fsActive = master && Boolean(config.fsEnabled);
 
   if (ntfyToken && topic) {

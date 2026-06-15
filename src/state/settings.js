@@ -88,8 +88,8 @@ export const SETTINGS_PREFIX = 'oge_';
  *   reminderNtfyToken       ''    — ntfy.sh access token (Bearer) for publish/cancel
  *   reminderSchedule        '0m, 10m, 30m, 60m' — free-form wave cadence: minutes-first
  *                                   offset list AFTER the wave returns (LS key reminderWaveOffsets)
- *   adhocEnabled            true  — allow per-fleet ad-hoc reminders from the event list
  *   adhocOffsetSec          60    — fire an ad-hoc reminder this many seconds before arrival
+ *                                   (ad-hoc reminders are always on — no enable flag)
  *   fsEnabled               false — auto-detect fleet-saves (big own fleets) in the event list
  *   fsThreshold             100000 — minimum total ships for a leg to count as a fleet-save
  *   fsOffsets               '-10m, 0m, 10m' — FS reminder offsets relative to arrival,
@@ -116,7 +116,6 @@ export const SETTINGS_PREFIX = 'oge_';
  * @property {boolean} reminderEnabled
  * @property {string}  reminderNtfyToken
  * @property {string}  reminderSchedule
- * @property {boolean} adhocEnabled
  * @property {number}  adhocOffsetSec
  * @property {boolean} fsEnabled
  * @property {number}  fsThreshold
@@ -182,7 +181,6 @@ export const SETTINGS_SCHEMA = {
   // minutes), so these point at NEW keys — the old values are orphaned and
   // every player lands on the new default. Deliberate: no migration.
   reminderSchedule:       { type: 'string', default: '0m, 10m, 30m, 60m', key: SETTINGS_PREFIX + 'reminderWaveOffsets' },
-  adhocEnabled:           { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'adhocEnabled' },
   adhocOffsetSec:         { type: 'int',    default: 60,    key: SETTINGS_PREFIX + 'adhocOffsetSec' },
   fsEnabled:              { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'fsEnabled' },
   fsThreshold:            { type: 'int',    default: 100000, key: SETTINGS_PREFIX + 'fsThreshold' },

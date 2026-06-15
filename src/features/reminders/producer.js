@@ -260,7 +260,6 @@ export const installReminderProducer = (opts = {}) => {
     const config = {
       masterEnabled: s.remindersMasterEnabled,
       enabled: s.reminderEnabled,
-      adhocEnabled: s.adhocEnabled,
       fsEnabled: s.fsEnabled,
       fsThreshold: s.fsThreshold,
       fsOffsets: s.fsOffsets,
@@ -268,11 +267,11 @@ export const installReminderProducer = (opts = {}) => {
       ntfyToken: s.reminderNtfyToken,
       schedule: s.reminderSchedule,
     };
-    // Dormant unless the master switch is on AND at least one kind is — or
-    // something forces a push (a settings toggle we must act on, e.g. the
-    // master just went off and we must sweep, or a queued user action).
-    const anyActive = config.masterEnabled
-      && (config.enabled || config.adhocEnabled || config.fsEnabled);
+    // Dormant unless the master switch is on — or something forces a push (a
+    // settings toggle we must act on, e.g. the master just went off and we
+    // must sweep, or a queued user action). Ad-hoc reminders are always on, so
+    // the master switch alone makes the section active.
+    const anyActive = config.masterEnabled;
     if (!anyActive && !force) return;
 
     const now = Math.floor(Date.now() / 1000);
@@ -363,7 +362,6 @@ export const installReminderProducer = (opts = {}) => {
     JSON.stringify({
       m: s.remindersMasterEnabled,
       e: s.reminderEnabled, t: s.reminderNtfyToken, s: s.reminderSchedule,
-      a: s.adhocEnabled,
       f: s.fsEnabled, ft: s.fsThreshold, fo: s.fsOffsets, fm: s.fsMinFlightSec,
     });
   let prevReminderSig = pickReminderSig(settingsStore.get());

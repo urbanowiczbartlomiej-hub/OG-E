@@ -312,7 +312,7 @@ const clearFsFlipTimer = () => {
 const render = () => {
   const s = settingsStore.get();
   const sectionOn = s.remindersMasterEnabled && isValidNtfyToken(s.reminderNtfyToken);
-  const adhocOn = sectionOn && s.adhocEnabled;
+  const adhocOn = sectionOn; // ad-hoc reminders are always on when the section is
   const waveOn = sectionOn && s.reminderEnabled;
   const fsOn = sectionOn && s.fsEnabled;
   const now = Math.floor(Date.now() / 1000);
@@ -559,7 +559,7 @@ export const installEventListReminders = ({
 /** @param {ReturnType<typeof settingsStore.get>} s @returns {string} */
 const pickSig = (s) =>
   JSON.stringify({
-    a: s.adhocEnabled, t: s.reminderNtfyToken, o: s.adhocOffsetSec, e: s.reminderEnabled,
+    t: s.reminderNtfyToken, o: s.adhocOffsetSec, e: s.reminderEnabled,
     m: s.remindersMasterEnabled, f: s.fsEnabled,
   });
 
