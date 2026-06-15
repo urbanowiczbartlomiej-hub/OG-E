@@ -18,6 +18,16 @@
 // slot, so the fleet-save save read-modify-writes it: each surface overlays
 // only the fields it owns, so neither clobbers the other.
 //
+// # Offset schedules: a per-entry row editor (B3d)
+//
+// The wave schedule and the fleet-save offsets are still STORED as a
+// comma-separated minutes-first string (the producer parses it the same way),
+// but the surface is a per-entry row editor instead of one raw text field:
+// each row is a single duration with a live plain-English impact preview
+// (`domain/duration.humanize*Offset`), plus add/remove buttons. The preview
+// text is the SAME pure helper the fleet-save push body uses, so the editor and
+// the push can never drift.
+//
 // Master switch + ntfy token stay in AGR (the credential is required there).
 // All parsing/formatting lives in `domain/duration.js`.
 
@@ -41,6 +51,7 @@ import {
 } from '../../domain/reminderGlobalConfig.js';
 import {
   parseDuration, formatDuration, parseDurationList,
+  humanizeOffset, humanizeReturnOffset,
 } from '../../domain/duration.js';
 
 /**
@@ -57,6 +68,100 @@ const mk = (tag, css, text) => {
   if (css) el.style.cssText = css;
   if (text != null) el.textContent = text;
   return el;
+};
+
+/**
+ * @typedef {object} OffsetEditor
+ * @property {HTMLElement} element  The editor container (rows + add button).
+ * @property {(str: string) => void} setFromString  Reload the rows from a stored list.
+ * @property {() => string | null} collect  Canonical comma string, or null if any
+ *   row holds an unparseable / wrong-signed token (the caller surfaces the error).
+ */
+
+/**
+ * Build a per-entry offset list editor. One row per offset (a small duration
+ * input + a live preview + a remove button), plus an "Add" button. The value
+ * round-trips through `parseDurationList`/`formatDuration` so it stays a
+ * canonical minutes-first comma string — purely a friendlier surface than one
+ * raw text field. Pure DOM (no store access); the host wires load/save.
+ *
+ * @param {object} o
+ * @param {string} o.idBase  id prefix — container is `idBase`, add button
+ *   `idBase + 'Add'`; row inputs/previews/removes carry stable classes.
+ * @param {boolean} o.signed  Allow negative offsets (fleet-save, landing-relative)
+ *   or drop them (wave, after-return).
+ * @param {(sec: number) => string} o.preview  Pure phrase for one offset's impact.
+ * @param {string} o.placeholder
+ * @returns {OffsetEditor}
+ */
+const makeOffsetEditor = ({ idBase, signed, preview, placeholder }) => {
+  const wrap = mk('div', 'display:flex;flex-direction:column;gap:4px;');
+  wrap.id = idBase;
+  const rowsBox = mk('div', 'display:flex;flex-direction:column;gap:4px;');
+  wrap.appendChild(rowsBox);
+
+  /** Append one row pre-filled with `value`; returns its input. @param {string} [value] */
+  const addRow = (value = '') => {
+    const r = mk('div', 'display:flex;align-items:center;gap:6px;');
+    r.className = 'oge-offset-row';
+    const inp = /** @type {HTMLInputElement} */ (mk('input'));
+    inp.type = 'text';
+    inp.className = 'oge-offset-input';
+    inp.size = 6;
+    inp.placeholder = placeholder;
+    inp.value = value;
+    const prev = mk('span', 'color:#888;font-size:12px;flex:1;');
+    prev.className = 'oge-offset-preview';
+    const rm = /** @type {HTMLButtonElement} */ (mk('button', undefined, '✕'));
+    rm.type = 'button';
+    rm.className = 'oge-offset-remove';
+    rm.title = 'Remove this reminder';
+
+    const refreshPreview = () => {
+      const t = inp.value.trim();
+      const sec = parseDuration(t);
+      const valid = sec !== null && (signed || sec >= 0);
+      inp.style.borderColor = t === '' || valid ? '' : '#e66';
+      prev.textContent = t === '' ? '' : valid ? preview(/** @type {number} */ (sec)) : 'invalid';
+    };
+    inp.addEventListener('input', refreshPreview);
+    rm.addEventListener('click', () => { r.remove(); });
+
+    r.append(inp, prev, rm);
+    rowsBox.appendChild(r);
+    refreshPreview();
+    return inp;
+  };
+
+  const addBtn = /** @type {HTMLButtonElement} */ (mk('button', 'align-self:flex-start;', '+ Add reminder'));
+  addBtn.type = 'button';
+  addBtn.id = idBase + 'Add';
+  addBtn.addEventListener('click', () => addRow().focus());
+  wrap.appendChild(addBtn);
+
+  return {
+    element: wrap,
+    setFromString: (str) => {
+      rowsBox.textContent = '';
+      for (const sec of parseDurationList(str, { signed })) addRow(formatDuration(sec));
+    },
+    collect: () => {
+      const inputs = /** @type {HTMLInputElement[]} */ (
+        [...rowsBox.querySelectorAll('.oge-offset-input')]
+      );
+      /** @type {number[]} */
+      const secs = [];
+      for (const inp of inputs) {
+        const t = inp.value.trim();
+        if (t === '') continue;
+        const sec = parseDuration(t);
+        if (sec === null || (!signed && sec < 0)) return null;
+        secs.push(sec);
+      }
+      // Canonicalise: dedupe + sort ascending, render minutes-first. Empty ⇒ ''.
+      return [...new Set(secs)].sort((a, b) => a - b).map(formatDuration).join(', ');
+    },
+  };
 };
 
 /**
@@ -79,13 +184,12 @@ export const installReminderConfig = ({ getUniverseId }) => {
   waveEnabledInput.type = 'checkbox';
   waveEnabledInput.id = 'remCfgWaveEnabled';
 
-  const waveScheduleInput = /** @type {HTMLInputElement} */ (mk('input'));
-  waveScheduleInput.type = 'text';
-  waveScheduleInput.id = 'remCfgWaveSchedule';
-  waveScheduleInput.size = 16;
-  waveScheduleInput.placeholder = '0m, 10m, 30m, 60m';
-  waveScheduleInput.title =
-    'Reminder cadence AFTER a wave returns — a minutes-first list. e.g. 0m, 10m, 30m, 60m.';
+  const waveEditor = makeOffsetEditor({
+    idBase: 'remCfgWaveEditor',
+    signed: false,
+    preview: humanizeReturnOffset,
+    placeholder: '10m',
+  });
 
   const adhocInput = /** @type {HTMLInputElement} */ (mk('input'));
   adhocInput.type = 'text';
@@ -116,13 +220,12 @@ export const installReminderConfig = ({ getUniverseId }) => {
   minFlightInput.title =
     'Excludes short planet⇄moon hops. Minutes-first (10m, 90s, 1h). 0 disables the gate.';
 
-  const offsetsInput = /** @type {HTMLInputElement} */ (mk('input'));
-  offsetsInput.type = 'text';
-  offsetsInput.id = 'remCfgFsOffsets';
-  offsetsInput.size = 16;
-  offsetsInput.placeholder = '-10m, 0m, 10m';
-  offsetsInput.title =
-    'Reminder offsets relative to landing — a minutes-first list. Negative = before landing, 0 = at landing, positive = after. e.g. -10m, 0m, 10m.';
+  const fsEditor = makeOffsetEditor({
+    idBase: 'remCfgFsOffsets',
+    signed: true,
+    preview: humanizeOffset,
+    placeholder: '-10m',
+  });
 
   // ── layout ───────────────────────────────────────────────────────────
   body.textContent = '';
@@ -134,11 +237,13 @@ export const installReminderConfig = ({ getUniverseId }) => {
    * @returns {HTMLElement}
    */
   const row = (labelText, control, hint) => {
-    const r = mk('div', 'display:flex;align-items:center;gap:8px;margin-bottom:6px;');
-    const lbl = mk('label', 'min-width:230px;color:#ccc;font-size:13px;', labelText);
+    const r = mk('div', 'display:flex;align-items:flex-start;gap:8px;margin-bottom:6px;');
+    const lbl = mk('label', 'min-width:230px;color:#ccc;font-size:13px;padding-top:3px;', labelText);
     r.appendChild(lbl);
-    r.appendChild(control);
-    if (hint) r.appendChild(mk('span', 'color:#666;font-size:12px;', hint));
+    const col = mk('div', 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;');
+    col.appendChild(control);
+    if (hint) col.appendChild(mk('span', 'color:#666;font-size:12px;', hint));
+    r.appendChild(col);
     return r;
   };
 
@@ -148,14 +253,14 @@ export const installReminderConfig = ({ getUniverseId }) => {
 
   body.appendChild(groupHeading('Expedition waves & ad-hoc (all servers)'));
   body.appendChild(row('Expedition-wave reminders — enable', waveEnabledInput, 'auto-detect a returning wave + schedule a series'));
-  body.appendChild(row('Wave reminder schedule', waveScheduleInput, 'after the wave returns, e.g. 0m, 10m, 30m, 60m'));
+  body.appendChild(row('Wave reminder schedule', waveEditor.element, 'each reminder fires this long after the wave returns'));
   body.appendChild(row('Ad-hoc reminders — lead time', adhocInput, 'before arrival, e.g. 1m'));
 
   body.appendChild(groupHeading('Fleet-save (this server)'));
   body.appendChild(row('Fleet-save reminders — enable', enabledInput, 'flag big own fleets 🛡 + ping before landing'));
   body.appendChild(row('Ship threshold', thresholdInput, 'total ships that count as a "big" fleet'));
   body.appendChild(row('Min flight time', minFlightInput, 'minutes-first, e.g. 10m · 0 = off'));
-  body.appendChild(row('Reminder schedule', offsetsInput, 'relative to landing, e.g. -10m, 0m, 10m'));
+  body.appendChild(row('Reminder schedule', fsEditor.element, 'each reminder relative to landing (− before, 0 at, + after)'));
 
   const statusEl = mk('span', 'margin-left:12px;font-size:13px;');
   statusEl.id = 'remCfgStatus';
@@ -186,13 +291,13 @@ export const installReminderConfig = ({ getUniverseId }) => {
     enabledInput.checked = cfg.fsEnabled;
     thresholdInput.value = String(cfg.fsThreshold);
     minFlightInput.value = formatDuration(cfg.fsMinFlightSec);
-    offsetsInput.value = cfg.fsOffsets;
+    fsEditor.setFromString(cfg.fsOffsets);
   };
 
   /** Populate the global widgets. @param {import('../../domain/reminderGlobalConfig.js').ReminderGlobalConfig} cfg */
   const fillGlobal = (cfg) => {
     waveEnabledInput.checked = cfg.reminderEnabled;
-    waveScheduleInput.value = cfg.reminderSchedule;
+    waveEditor.setFromString(cfg.reminderSchedule);
     adhocInput.value = formatDuration(cfg.adhocOffsetSec);
   };
 
@@ -215,8 +320,8 @@ export const installReminderConfig = ({ getUniverseId }) => {
   /**
    * Read the per-server fleet-save widgets into a partial config, validating
    * the numeric/duration fields. Returns null + sets an error status on a bad
-   * value. The offsets string is stored verbatim (the producer parses it with
-   * the same grammar); an empty list is allowed (no fleet-save pings).
+   * value. The offsets come from the row editor (already validated per-row); an
+   * empty list is allowed (no fleet-save pings).
    *
    * @returns {Pick<import('../../domain/galaxyScanConfig.js').GalaxyScanConfig, 'fsEnabled' | 'fsThreshold' | 'fsMinFlightSec' | 'fsOffsets'> | null}
    */
@@ -231,9 +336,9 @@ export const installReminderConfig = ({ getUniverseId }) => {
       setStatus('Min flight time — use e.g. 10m, 90s, 1h, or 0.', '#e66');
       return null;
     }
-    const offsets = offsetsInput.value.trim();
-    if (offsets !== '' && parseDurationList(offsets, { signed: true }).length === 0) {
-      setStatus('Fleet-save schedule — use a list like -10m, 0m, 10m (or leave empty).', '#e66');
+    const offsets = fsEditor.collect();
+    if (offsets === null) {
+      setStatus('Fleet-save schedule — each reminder must be a duration like -10m, 0m, 10m.', '#e66');
       return null;
     }
     return {
@@ -247,15 +352,15 @@ export const installReminderConfig = ({ getUniverseId }) => {
   /**
    * Read the global widgets into a complete {@link import('../../domain/reminderGlobalConfig.js').ReminderGlobalConfig},
    * validating the schedule + lead-time durations. Returns null + sets an error
-   * on a bad value. The wave schedule is stored verbatim (the producer parses
-   * it the same way); an empty list is allowed (no wave pings).
+   * on a bad value. The wave schedule comes from the row editor (per-row
+   * validated); an empty list is allowed (no wave pings).
    *
    * @returns {import('../../domain/reminderGlobalConfig.js').ReminderGlobalConfig | null}
    */
   const collectGlobal = () => {
-    const schedule = waveScheduleInput.value.trim();
-    if (schedule !== '' && parseDurationList(schedule).length === 0) {
-      setStatus('Wave schedule — use a list like 0m, 10m, 30m (or leave empty).', '#e66');
+    const schedule = waveEditor.collect();
+    if (schedule === null) {
+      setStatus('Wave schedule — each reminder must be a duration like 0m, 10m, 30m.', '#e66');
       return null;
     }
     const adhoc = parseDuration(adhocInput.value);

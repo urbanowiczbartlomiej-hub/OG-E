@@ -120,3 +120,27 @@ export const humanizeOffset = (sec) => {
   const m = Math.round(Math.abs(n) / 60);
   return n < 0 ? `${m} min before landing` : `${m} min after landing`;
 };
+
+/**
+ * Humanize a wave-reminder offset (whole seconds AFTER the wave returns;
+ * negatives are dropped before they reach here, so non-positive ⇒ "at return")
+ * into the plain-English impact phrase for the Reminders-tab wave-schedule
+ * editor preview:
+ *
+ *      0 ⇒ "when the wave returns"
+ *    600 ⇒ "10 min after the wave returns"
+ *
+ * Counterpart to {@link humanizeOffset} for the wave reference point — the
+ * wave push body ("Expeditions back (HH:MM) …") states the absolute time, so
+ * the relative phrasing lives only here, but keeping it next to
+ * {@link humanizeOffset} keeps the two reference points in one place.
+ *
+ * @param {number} sec  Offset from the wave's return, in seconds.
+ * @returns {string}
+ */
+export const humanizeReturnOffset = (sec) => {
+  const n = Number.isFinite(sec) ? Math.round(sec) : 0;
+  if (n <= 0) return 'when the wave returns';
+  const m = Math.round(n / 60);
+  return `${m} min after the wave returns`;
+};

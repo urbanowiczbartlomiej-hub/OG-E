@@ -1,7 +1,7 @@
 // @ts-check
 
 import { describe, it, expect } from 'vitest';
-import { parseDuration, parseDurationList, formatDuration, humanizeOffset } from '../../src/domain/duration.js';
+import { parseDuration, parseDurationList, formatDuration, humanizeOffset, humanizeReturnOffset } from '../../src/domain/duration.js';
 
 describe('parseDuration', () => {
   it('treats a bare number as minutes', () => {
@@ -115,5 +115,25 @@ describe('humanizeOffset', () => {
   it('treats non-finite input as zero', () => {
     expect(humanizeOffset(NaN)).toBe('landing now');
     expect(humanizeOffset(/** @type {number} */ (/** @type {unknown} */ (undefined)))).toBe('landing now');
+  });
+});
+
+describe('humanizeReturnOffset', () => {
+  it('renders "when the wave returns" for zero (and non-positive)', () => {
+    expect(humanizeReturnOffset(0)).toBe('when the wave returns');
+    expect(humanizeReturnOffset(-60)).toBe('when the wave returns');
+  });
+
+  it('renders "N min after the wave returns" for positive offsets', () => {
+    expect(humanizeReturnOffset(600)).toBe('10 min after the wave returns');
+    expect(humanizeReturnOffset(1800)).toBe('30 min after the wave returns');
+  });
+
+  it('rounds magnitude to the nearest whole minute', () => {
+    expect(humanizeReturnOffset(90)).toBe('2 min after the wave returns');
+  });
+
+  it('treats non-finite input as zero', () => {
+    expect(humanizeReturnOffset(NaN)).toBe('when the wave returns');
   });
 });

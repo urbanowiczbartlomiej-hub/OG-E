@@ -45,6 +45,37 @@ const install = () => installReminderConfig({ getUniverseId: () => UNI });
 
 const $ = (/** @type {string} */ sel) => /** @type {HTMLInputElement} */ (document.querySelector(sel));
 
+// ── per-entry offset editor (B3d) helpers ─────────────────────────────────
+// Each offset list is now a row editor (container id + `${id}Add` button, rows
+// with `.oge-offset-input` / `.oge-offset-remove` / `.oge-offset-preview`).
+
+/** Canonical comma string of an editor's row values. @param {string} id */
+const readEditor = (id) =>
+  [.../** @type {NodeListOf<HTMLInputElement>} */ (
+    document.querySelectorAll(`#${id} .oge-offset-input`)
+  )].map((i) => i.value).join(', ');
+
+/** Preview phrases of an editor's rows, in order. @param {string} id */
+const previewsOf = (id) =>
+  [...document.querySelectorAll(`#${id} .oge-offset-preview`)].map((s) => s.textContent);
+
+/** Remove every row of an editor. @param {string} id */
+const clearEditor = (id) =>
+  document.querySelectorAll(`#${id} .oge-offset-remove`).forEach((b) => b.dispatchEvent(new Event('click')));
+
+/** Replace an editor's rows with `tokens`. @param {string} id @param {string[]} tokens */
+const setEditor = (id, tokens) => {
+  clearEditor(id);
+  const addBtn = /** @type {HTMLButtonElement} */ (document.getElementById(`${id}Add`));
+  for (const t of tokens) {
+    addBtn.dispatchEvent(new Event('click'));
+    const inputs = document.querySelectorAll(`#${id} .oge-offset-input`);
+    const last = /** @type {HTMLInputElement} */ (inputs[inputs.length - 1]);
+    last.value = t;
+    last.dispatchEvent(new Event('input'));
+  }
+};
+
 beforeEach(() => {
   store.clear();
   mockStore.get.mockReset();
@@ -64,7 +95,7 @@ describe('Reminders fleet-save config editor', () => {
     expect($('#remCfgFsEnabled').checked).toBe(false);
     expect($('#remCfgFsThreshold').value).toBe('100000');
     expect($('#remCfgFsMinFlight').value).toBe('10m');
-    expect($('#remCfgFsOffsets').value).toBe('-10m, 0m, 10m');
+    expect(readEditor('remCfgFsOffsets')).toBe('-10m, 0m, 10m');
   });
 
   it('hydrates fields from a stored config', async () => {
@@ -74,7 +105,16 @@ describe('Reminders fleet-save config editor', () => {
     expect($('#remCfgFsEnabled').checked).toBe(true);
     expect($('#remCfgFsThreshold').value).toBe('50000');
     expect($('#remCfgFsMinFlight').value).toBe('15m');
-    expect($('#remCfgFsOffsets').value).toBe('-5m, 0m');
+    expect(readEditor('remCfgFsOffsets')).toBe('-5m, 0m');
+  });
+
+  it('renders a landing-relative impact preview per fleet-save offset row (B3d)', async () => {
+    store.set(CFG_KEY, { fsOffsets: '-10m, 0m, 15m' });
+    install().refresh();
+    await flush();
+    expect(previewsOf('remCfgFsOffsets')).toEqual([
+      '10 min before landing', 'landing now', '15 min after landing',
+    ]);
   });
 
   it('saves the fs config + timestamp + syncRequest, parsing the duration units', async () => {
@@ -84,7 +124,7 @@ describe('Reminders fleet-save config editor', () => {
     $('#remCfgFsEnabled').checked = true;
     $('#remCfgFsThreshold').value = '250000';
     $('#remCfgFsMinFlight').value = '5m';
-    $('#remCfgFsOffsets').value = '-20m, 0m';
+    setEditor('remCfgFsOffsets', ['-20m', '0m']);
     $('#remCfgSave').dispatchEvent(new Event('click'));
     await flush();
 
@@ -120,10 +160,20 @@ describe('Reminders fleet-save config editor', () => {
   it('allows an empty offset schedule (no fleet-save pings)', async () => {
     install().refresh();
     await flush();
-    $('#remCfgFsOffsets').value = '   ';
+    clearEditor('remCfgFsOffsets');
     $('#remCfgSave').dispatchEvent(new Event('click'));
     await flush();
     expect(/** @type {any} */ (store.get(CFG_KEY)).fsOffsets).toBe('');
+  });
+
+  it('rejects an unparseable fleet-save offset row and does not save', async () => {
+    install().refresh();
+    await flush();
+    setEditor('remCfgFsOffsets', ['-10m', 'soon']);
+    $('#remCfgSave').dispatchEvent(new Event('click'));
+    await flush();
+    expect(store.has(CFG_KEY)).toBe(false);
+    expect($('#remCfgStatus').textContent || '').toMatch(/fleet-save schedule/i);
   });
 
   // The crux: the Reminders editor and the scan-config editor write the SAME
@@ -179,7 +229,7 @@ describe('Reminders GLOBAL (wave + ad-hoc) config editor', () => {
     await flush();
     const d = defaultReminderGlobalConfig();
     expect($('#remCfgWaveEnabled').checked).toBe(d.reminderEnabled);
-    expect($('#remCfgWaveSchedule').value).toBe(d.reminderSchedule);
+    expect(readEditor('remCfgWaveEditor')).toBe(d.reminderSchedule);
     expect($('#remCfgAdhoc').value).toBe('1m'); // 60 s
   });
 
@@ -188,8 +238,17 @@ describe('Reminders GLOBAL (wave + ad-hoc) config editor', () => {
     install().refresh();
     await flush();
     expect($('#remCfgWaveEnabled').checked).toBe(true);
-    expect($('#remCfgWaveSchedule').value).toBe('5m, 15m');
+    expect(readEditor('remCfgWaveEditor')).toBe('5m, 15m');
     expect($('#remCfgAdhoc').value).toBe('2m');
+  });
+
+  it('renders a return-relative impact preview per wave offset row (B3d)', async () => {
+    store.set(GLOBAL_KEY, { reminderSchedule: '0m, 10m' });
+    install().refresh();
+    await flush();
+    expect(previewsOf('remCfgWaveEditor')).toEqual([
+      'when the wave returns', '10 min after the wave returns',
+    ]);
   });
 
   it('saves the global config to its own slot + timestamp (and pokes sync)', async () => {
@@ -197,7 +256,7 @@ describe('Reminders GLOBAL (wave + ad-hoc) config editor', () => {
     await flush();
 
     $('#remCfgWaveEnabled').checked = true;
-    $('#remCfgWaveSchedule').value = '0m, 20m';
+    setEditor('remCfgWaveEditor', ['0m', '20m']);
     $('#remCfgAdhoc').value = '90s';
     $('#remCfgSave').dispatchEvent(new Event('click'));
     await flush();
@@ -236,9 +295,19 @@ describe('Reminders GLOBAL (wave + ad-hoc) config editor', () => {
   it('allows an empty wave schedule (no wave pings)', async () => {
     install().refresh();
     await flush();
-    $('#remCfgWaveSchedule').value = '   ';
+    clearEditor('remCfgWaveEditor');
     $('#remCfgSave').dispatchEvent(new Event('click'));
     await flush();
     expect(/** @type {any} */ (store.get(GLOBAL_KEY)).reminderSchedule).toBe('');
+  });
+
+  it('rejects an unparseable wave offset row and does not save', async () => {
+    install().refresh();
+    await flush();
+    setEditor('remCfgWaveEditor', ['0m', 'later']);
+    $('#remCfgSave').dispatchEvent(new Event('click'));
+    await flush();
+    expect(store.has(GLOBAL_KEY)).toBe(false);
+    expect($('#remCfgStatus').textContent || '').toMatch(/wave schedule/i);
   });
 });

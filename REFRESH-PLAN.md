@@ -185,7 +185,7 @@ lives in `src/domain/fleetSave.js`.
   (`UNIVERSE_SCOPED_SETTINGS`), and the AGR `colonization` section (deleted —
   it was only those three). Sync rides the existing whole-slot merge for free.
   Tests + typecheck + lint green.
-- **B3 — Reminders tab config. ⏳ IN PROGRESS.** The hard one: the moved reminder
+- **B3 — Reminders tab config. ✅ DONE.** The hard one: the moved reminder
   fields split by scope (see the storage-model decision above). Decided at start:
   per-universe `fs*` **fold into `galaxyScanConfig`** (B2 worked example);
   global fields → a **new global synced `chrome.storage` store** (nothing global
@@ -217,15 +217,23 @@ lives in `src/domain/fleetSave.js`.
     most of B4). Added the wave/ad-hoc rows to the dashboard `reminderConfig.js`
     (a `save()` that writes BOTH the per-universe fs slot AND the global slot,
     each with its own ts + one shared sync poke). Tests + typecheck + lint green.
-  - **B3d — Friendly offset editor.** Replace the plain offset text fields (fs +
-    wave) with per-entry rows showing a `humanizeOffset` impact preview.
-  - Update the Reminders-tab intro copy (deferred from Workstream A). *(Partly
-    done in B3b — intro now mentions the fs config + token-stays-in-game.)*
-- **B4 — Slim the AGR panel + signposts.** After B3, the AGR reminders section
-  should be just the master switch + token (+ the read-only status rows). Add a
-  one-line "Configure schedules in the Dashboard → Reminders" annotation under
-  the master switch. Verify nothing in AGR still reads a moved key. (Colonization
-  AGR rows already gone in B2.)
+  - **B3d — Friendly offset editor. ✅ DONE.** Replaced the plain wave + fleet-save
+    offset text fields with a per-entry ROW editor (`makeOffsetEditor` in
+    `features/dashboard/reminderConfig.js`): one duration input per offset with a
+    live plain-English impact preview, plus add/remove. The value still stores as
+    a canonical minutes-first comma string. Previews use the pure
+    `domain/duration.humanizeOffset` (landing-relative, fleet-save) and the new
+    `humanizeReturnOffset` (after-return, wave) — same helpers the push body uses.
+    Tests + typecheck + lint green.
+  - Reminders-tab intro copy (deferred from Workstream A) — ✅ updated in B3c to
+    say every schedule is configured in the Dashboard, only master+token in-game.
+- **B4 — Slim the AGR panel + signposts. ✅ DONE (in B3c).** The AGR reminders
+  section is now just the master switch + token + the read-only status rows, plus
+  the one-line "Schedules + fleet-save config live in the OG-E Dashboard →
+  Reminders" static signpost under the master switch. Nothing in AGR still reads a
+  moved key (verified: `settings.js` no longer declares them; the only readers are
+  the dashboard editor + the producer/eventList, which read the new stores).
+  (Colonization AGR rows already gone in B2.)
 
 Each B-step is its own `feat:`/`refactor:` commit; `npm run test` +
 `typecheck` + `lint` green before each (architecture invariants: stores own
@@ -268,39 +276,33 @@ settings live" note + the tab name wait on B.
 
 1. **A** — dashboard copy review. ✅ done.
 2. **C** — README refresh (minus the settings-location note). ✅ done.
-3. **B** — the settings split. B1 reverted; **B2 ✅ done; B3 in progress
-   (B3a + B3b + B3c ✅ done, B3d NEXT)**, then B4.
-4. **C follow-up** — fill in the "where settings live" note after B4.
+3. **B** — the settings split. B1 reverted; **B2 + B3 (B3a–B3d) + B4 ✅ done.**
+4. **C follow-up** — fill in the "where settings live" README note. ⏳ NEXT.
 5. *(Later, out of scope here)* AMO listing copy + screenshots.
 
 ## Where a fresh session should start
 
-**B3d** (friendly offset editor). B3a–B3c are done — all reminder config now
-lives in the dashboard's Reminders tab (per-server `fs*` in `galaxyScanConfig`,
-global wave/ad-hoc in the new `reminderGlobalConfig` store), and AGR keeps only
-the master switch + token + status rows. The plain offset TEXT fields are the
-last rough edge:
+**Workstream C follow-up — the README "where settings live" note.** This is the
+only thing left in this plan; once it lands, DELETE `REFRESH-PLAN.md` (its cycle
+is closed — git keeps the history; see CLAUDE.md §Documentation hygiene).
 
-1. Replace the dashboard `reminderConfig.js` plain offset text inputs — the
-   fleet-save `fsOffsets` (`-10m, 0m, 10m`) and the wave `reminderSchedule`
-   (`0m, 10m, 30m, 60m`) — with a **per-entry row editor**: one row per offset
-   with a human-readable impact preview, driven by the existing pure
-   `domain/duration.humanizeOffset` (B3a) so the preview text matches the push
-   body verbatim. The fs offsets are landing-relative (before/at/after); the
-   wave offsets are after-return (so the preview wording differs slightly —
-   reuse `humanizeOffset` where it fits, add a thin wrapper if not).
-2. Behavioural tests: drive add/remove/edit of a row and assert the stored
-   offset string + the preview text.
+The settings split is finished: AGR now holds only master on/off switches +
+required credentials (gist token, ntfy token) + display toggles + all expedition
+settings; every detailed config lives in the Dashboard tabs:
 
-Then **B4** (residual): the AGR slim + signpost is mostly done (B3c added the
-"Configure schedules in the Dashboard → Reminders" static row and removed every
-moved row); finish by verifying nothing in AGR still reads a moved key, refresh
-the Reminders-tab intro copy in `dashboard.html`, and fill in the README "where
-settings live" note (Workstream C follow-up).
+- **Reminders tab** — wave enable/schedule + ad-hoc lead time (global, in
+  `reminderGlobalConfig`) and the per-server fleet-save knobs (in
+  `galaxyScanConfig`), both via the per-entry offset editor.
+- **Galaxy Observations tab** — target positions + rescan policy + the
+  colonize/abandon thresholds (per-server, in `galaxyScanConfig`).
 
-## Open questions to resolve before the relevant step
+Concretely: write the short **"Where settings live"** section in `README.md`
+(point 5 of Workstream C — AGR = enable switches + required tokens; the Dashboard
+tabs hold the detailed config), then delete this plan doc. Nothing else in B/C
+remains.
 
-- Within the Colonization config sub-section, do min-fields / password
-  (abandon config) sit alongside min-gap, or grouped as an "Abandon small
-  colonies" sub-block? Lean: one *Colonization config* block, abandon
-  settings under their own sub-heading. *(Cosmetic; resolve during B2.)*
+## Open questions — resolved
+
+- Within the Colonization config sub-section, abandon settings (min-fields /
+  password) sit under their own sub-heading inside one *Colonization config*
+  block. *(Resolved in B2.)*
