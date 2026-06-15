@@ -115,7 +115,7 @@ describe('single-zone button', () => {
     expect(document.getElementById('oge-test-single')).toBeNull();
   });
 
-  it('carries the glyph in a glass lens (not a flat watermark)', () => {
+  it('carries the glyph in a brand node (the module-coloured oczko)', () => {
     createButton({
       id: 'oge-test-wm',
       title: 'Exp',
@@ -128,11 +128,14 @@ describe('single-zone button', () => {
       ],
     });
     const btn = /** @type {HTMLElement} */ (document.getElementById('oge-test-wm'));
-    expect(btn.querySelector('.oge-lens .oge-lens-glyph')).not.toBeNull();
-    // Framed by the OG-E orbit mark, the shared brand cue.
-    expect(btn.querySelector('.oge-lens .oge-lens-orbit')).not.toBeNull();
-    // The flat watermark layer belongs to the picker orbs now, not buttons.
-    expect(btn.querySelector('.oge-art')).toBeNull();
+    // The oczko is the same `.oge-node` dome the FAB satellite orbs wear,
+    // carrying the glyph in the shared `.oge-art` layer.
+    const node = btn.querySelector('.oge-lens.oge-node');
+    expect(node).not.toBeNull();
+    expect(node?.querySelector('.oge-art svg')).not.toBeNull();
+    // The gold orbit mark is retired from command buttons (now on the
+    // dashboard button only).
+    expect(btn.querySelector('.oge-lens-orbit')).toBeNull();
   });
 });
 
@@ -199,7 +202,7 @@ describe('two-zone button', () => {
     expect(document.getElementById('oge-test-bottom')?.style.fontSize).toBe(expected);
   });
 
-  it('hosts the glyph in one central glass lens on the wrap', () => {
+  it('hosts the glyph in one central brand node on the wrap', () => {
     createButton({
       id: 'oge-test-disc',
       title: 'Daily',
@@ -219,11 +222,12 @@ describe('two-zone button', () => {
       ],
     });
     const wrap = /** @type {HTMLElement} */ (document.getElementById('oge-test-disc'));
-    const lens = wrap.querySelector('.oge-lens');
+    const lens = wrap.querySelector('.oge-lens.oge-node');
     expect(lens).not.toBeNull();
-    expect(lens?.querySelector('svg')).not.toBeNull();
-    // Split buttons carry no per-zone watermark — the glyph moved to centre.
-    expect(wrap.querySelector('.oge-art')).toBeNull();
+    // One central node carrying the glyph (in the shared `.oge-art` layer);
+    // the split zones carry no per-zone watermark of their own.
+    expect(lens?.querySelector('.oge-art svg')).not.toBeNull();
+    expect(wrap.querySelectorAll('.oge-art')).toHaveLength(1);
   });
 
   it('setProgress drives the progress arc stroke-dashoffset (0 = empty, 1 = full)', () => {

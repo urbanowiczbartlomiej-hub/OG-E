@@ -740,7 +740,7 @@ export const installDailyRun = () => {
           glyph: PLANET_ARROW_GLYPH,
           onTap: onMicroClick,
           focusValue: 'fs-unified-micro',
-          labelShiftY: -14,
+          labelShiftY: -8,
         },
         {
           // TAP collects; LONG-PRESS (onHold) sets the collect target.
@@ -752,7 +752,7 @@ export const installDailyRun = () => {
           onTap: onCollectClick,
           onHold: onSetTargetClick,
           focusValue: 'fs-unified-collect',
-          labelShiftY: 14,
+          labelShiftY: 6,
         },
       ],
     });

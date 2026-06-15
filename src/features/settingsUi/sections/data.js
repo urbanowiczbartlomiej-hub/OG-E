@@ -6,6 +6,21 @@
 // Dashboard-page URL resolver because it's the only consumer.
 
 import { parseUniverseId } from '../../../lib/universeId.js';
+import { appendLens, installButtonChrome } from '../../shared/buttonChrome.js';
+
+/**
+ * A small bar-chart glyph for the dashboard button's gold node — the OG-E
+ * gold cabochon + orbit mark, retired from the command buttons (they now wear
+ * the module-coloured node), reused here as the panel's primary-CTA brand mark.
+ * Inner markup of a `0 0 64 64` SVG using `currentColor` (the gold lens tint).
+ */
+const DASHBOARD_GLYPH = [
+  '<g fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">',
+  '<line x1="17" y1="45" x2="17" y2="31"/>',
+  '<line x1="32" y1="45" x2="32" y2="19"/>',
+  '<line x1="47" y1="45" x2="47" y2="36"/>',
+  '</g>',
+].join('');
 
 /**
  * URL of the OG-E Dashboard extension page, resolved once at module eval
@@ -44,9 +59,23 @@ export const buildDashboardButton = () => {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.id = 'oge-open-dashboard';
-  btn.textContent = '📊 Open OG-E Dashboard';
   btn.title = 'Colony stats + galaxy observations';
-  btn.style.cssText = BUTTON_STYLE;
+  btn.style.cssText =
+    BUTTON_STYLE + 'display:inline-flex;align-items:center;justify-content:center;gap:9px;';
+
+  // Lead with the OG-E gold node (cabochon + orbit mark) instead of an emoji.
+  installButtonChrome();
+  const icon = document.createElement('span');
+  icon.setAttribute('aria-hidden', 'true');
+  icon.style.cssText = 'position:relative;display:inline-flex;width:24px;height:24px;flex:none;';
+  appendLens(icon, DASHBOARD_GLYPH);
+  // The `.oge-lens` base is absolutely positioned for a circular FAB; here it
+  // fills the inline icon box instead.
+  const lens = /** @type {HTMLElement | null} */ (icon.querySelector('.oge-lens'));
+  if (lens) lens.style.cssText += ';position:absolute;left:0;top:0;width:100%;height:100%;transform:none;';
+  const label = document.createElement('span');
+  label.textContent = 'Open OG-E Dashboard';
+  btn.append(icon, label);
   btn.addEventListener('click', () => {
     if (!DASHBOARD_URL) return;
     // Pass the current tab's universe id as `?host=` so the dashboard

@@ -6,6 +6,22 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Changed
+
+- **Floating-button menu is always on.** The FAB's module picker is no longer
+  hidden behind a +/× handle — the other modules now ride permanently as small
+  satellite orbs around the button. Tap one to switch; the picked module flies
+  into the button and the previous one drops back into orbit. Orb captions are
+  gone (the glyph speaks for itself).
+- **Button "oczko" matches its orb.** The node inside each command button now
+  wears the same module-coloured dome as that module's satellite orb (no more
+  gold medallion), so switching reads as the orb sliding into the button. The
+  retired gold node now marks the settings "Open Dashboard" button.
+- **Brighter rim filament.** The thin state-coloured thread just inside each
+  button's chrome edge now glows instead of sitting dim.
+- **Tidier labels.** Tighter line spacing keeps a two-line primary (e.g. "All
+  maxed") clear of the node, and the split-button labels sit closer to centre.
+
 ## [1.18.1] — 2026-06-14
 
 First public (listed) build of the 1.18 line — same features as the 1.18.0

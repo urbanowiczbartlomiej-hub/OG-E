@@ -1,19 +1,17 @@
 // @ts-check
 
 // Pure geometry + selection logic for the unified floating button's
-// orbital module picker. No DOM, no timers, no storage — everything here
-// is plain math over plain data so the layout can be unit tested without
-// happy-dom (the pure-core rule from CLAUDE.md). The DOM shell that
-// consumes these lives in ./unifiedFab.js.
+// always-visible satellite menu. No DOM, no timers, no storage —
+// everything here is plain math over plain data so the layout can be unit
+// tested without happy-dom (the pure-core rule from CLAUDE.md). The DOM
+// shell that consumes these lives in ./unifiedFab.js.
 
 /**
- * Position of one orbit item (orb centre) and its caption, in viewport px.
+ * Position of one orbit item (orb centre), in viewport px.
  *
  * @typedef {object} OrbitItemPos
- * @property {number} x       orb centre x.
- * @property {number} y       orb centre y.
- * @property {number} labelX  caption centre x (further out along the same ray).
- * @property {number} labelY  caption centre y.
+ * @property {number} x  orb centre x.
+ * @property {number} y  orb centre y.
  */
 
 /** Arc the orbit items fan across, in radians (~112°). */
@@ -24,12 +22,11 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 /**
  * Angle (radians) pointing from the FAB centre `(cx, cy)` toward the
- * viewport centre — the single ray everything orients along: the picker
- * fans symmetrically about it AND the +/× handle rides the FAB edge on it,
- * so both track wherever the FAB is dragged. Degenerate when the FAB sits
- * exactly at the viewport centre (both deltas zero); there we pick the
- * down-right diagonal so the handle has a stable home instead of snapping
- * to `atan2(0,0)`'s 0 rad.
+ * viewport centre — the ray the satellite orbs fan symmetrically about, so
+ * wherever the user drags the FAB the menu opens into free screen space.
+ * Degenerate when the FAB sits exactly at the viewport centre (both deltas
+ * zero); there we pick the down-right diagonal for a stable home instead of
+ * snapping to `atan2(0,0)`'s 0 rad.
  *
  * @param {object} o
  * @param {number} o.cx  FAB centre x (viewport px).
@@ -42,31 +39,6 @@ export const aimAngle = ({ cx, cy, vw, vh }) => {
   const dx = vw / 2 - cx;
   const dy = vh / 2 - cy;
   return dx === 0 && dy === 0 ? Math.PI / 4 : Math.atan2(dy, dx);
-};
-
-/**
- * Wrap-local top-left px for the picker handle so its centre rides the FAB's
- * circular edge on the side facing the viewport centre (the {@link aimAngle}
- * ray). Half the handle overhangs the edge (orbit anchor radius =
- * `fabSize / 2`), matching the visual overhang of the old fixed corner
- * placement.
- *
- * @param {object} o
- * @param {number} o.cx          FAB centre x (viewport px).
- * @param {number} o.cy          FAB centre y.
- * @param {number} o.fabSize     FAB diameter.
- * @param {number} o.handleSize  handle diameter — see {@link handleDiameter}.
- * @param {number} o.vw          viewport width.
- * @param {number} o.vh          viewport height.
- * @returns {{ left: number, top: number }}
- */
-export const handleOffset = ({ cx, cy, fabSize, handleSize, vw, vh }) => {
-  const a = aimAngle({ cx, cy, vw, vh });
-  const r = fabSize / 2;
-  return {
-    left: r + Math.cos(a) * r - handleSize / 2,
-    top: r + Math.sin(a) * r - handleSize / 2,
-  };
 };
 
 /**
@@ -85,9 +57,9 @@ export const resolveActiveId = (storedId, registeredIds) => {
 };
 
 /**
- * Diameter of one orbit orb for a FAB of diameter `fabSize` — proportional
- * but clamped so tiny FABs stay tappable and huge ones don't fill the
- * screen with the picker.
+ * Diameter of one satellite orb for a FAB of diameter `fabSize` —
+ * proportional but clamped so tiny FABs stay tappable and huge ones don't
+ * fill the screen with the menu.
  *
  * @param {number} fabSize
  * @returns {number}
@@ -105,46 +77,34 @@ export const orbDiameter = (fabSize) => clamp(Math.round(fabSize * 0.42), 56, 15
 export const orbitRadius = (fabSize, orbSize) => fabSize / 2 + orbSize / 2 + 14;
 
 /**
- * Diameter of the small picker handle riding the FAB's edge.
- *
- * @param {number} fabSize
- * @returns {number}
- */
-export const handleDiameter = (fabSize) => clamp(Math.round(fabSize * 0.18), 24, 48);
-
-/**
- * Lay `count` orbit items on an arc around the FAB centre `(cx, cy)`. The
+ * Lay `count` satellite orbs on an arc around the FAB centre `(cx, cy)`. The
  * arc always opens TOWARD the viewport centre, so wherever the user has
- * dragged the FAB the picker fans into free screen space instead of off
- * the edge; each position is additionally clamped to the viewport as a
- * belt-and-braces guard. Captions sit further out along the same ray.
+ * dragged the FAB the menu fans into free screen space instead of off the
+ * edge; each position is additionally clamped to the viewport as a
+ * belt-and-braces guard.
  *
  * @param {object} opts
- * @param {number} opts.cx        FAB centre x (viewport px).
- * @param {number} opts.cy        FAB centre y.
- * @param {number} opts.count     number of items (0 ⇒ empty result).
- * @param {number} opts.radius    orbit radius — see {@link orbitRadius}.
- * @param {number} opts.orbSize   orb diameter — see {@link orbDiameter}.
- * @param {number} opts.labelGap  px between an orb's edge and its caption.
- * @param {number} opts.vw        viewport width.
- * @param {number} opts.vh        viewport height.
+ * @param {number} opts.cx       FAB centre x (viewport px).
+ * @param {number} opts.cy       FAB centre y.
+ * @param {number} opts.count    number of items (0 ⇒ empty result).
+ * @param {number} opts.radius   orbit radius — see {@link orbitRadius}.
+ * @param {number} opts.orbSize  orb diameter — see {@link orbDiameter}.
+ * @param {number} opts.vw       viewport width.
+ * @param {number} opts.vh       viewport height.
  * @returns {OrbitItemPos[]}
  */
-export const orbitLayout = ({ cx, cy, count, radius, orbSize, labelGap, vw, vh }) => {
+export const orbitLayout = ({ cx, cy, count, radius, orbSize, vw, vh }) => {
   /** @type {OrbitItemPos[]} */
   const items = [];
   if (count <= 0) return items;
   const base = aimAngle({ cx, cy, vw, vh });
   const start = base - ORBIT_SPREAD_RAD / 2;
   const orbMargin = orbSize / 2 + 8;
-  const labelRadius = radius + orbSize / 2 + labelGap;
   for (let i = 0; i < count; i++) {
     const a = count === 1 ? base : start + ORBIT_SPREAD_RAD * (i / (count - 1));
     items.push({
       x: clamp(cx + Math.cos(a) * radius, orbMargin, vw - orbMargin),
       y: clamp(cy + Math.sin(a) * radius, orbMargin, vh - orbMargin),
-      labelX: clamp(cx + Math.cos(a) * labelRadius, 30, vw - 30),
-      labelY: clamp(cy + Math.sin(a) * labelRadius, 12, vh - 12),
     });
   }
   return items;

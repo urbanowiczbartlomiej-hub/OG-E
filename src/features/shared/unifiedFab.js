@@ -2,13 +2,16 @@
 
 // Unified floating button ("FAB") shell — ONE draggable wrapper that hosts
 // all four command buttons (sendExpedition / sendColony / sendLifeform / dailyRun)
-// and shows exactly one of them at a time. A small "handle" satellite on
-// the FAB's edge opens an orbital picker: every registered module rendered
-// as a single-piece orb (split buttons too — the orb is identity only:
-// module colour + glyph + a small caption), arcing toward the viewport
-// centre so it never leaves the screen. Tapping an orb only SWITCHES the
-// active module (it never fires the module's action — the next tap on the
-// FAB does that, with the module's full zone/hold behaviour intact).
+// and shows exactly one of them at a time (the ACTIVE module). The other
+// registered modules are rendered as small, ALWAYS-VISIBLE satellite orbs
+// arcing from the FAB toward the viewport centre (so the menu never leaves
+// the screen). Each orb is a single-piece node — the module's colour + glyph,
+// the same look the active module wears in its in-button "oczko" (the glass
+// node lens) — so tapping an orb reads as that node flying INTO the button.
+// Tapping an orb only SWITCHES the active module (it never fires the module's
+// action — the next tap on the FAB does that, with the module's full
+// zone/hold behaviour intact); the previously active module immediately takes
+// the freed orbit slot.
 //
 // Layering: lives in features/shared because it touches document, safeLS
 // and settingsStore. The four features never import each other — each one
@@ -19,8 +22,8 @@
 //
 // Lifecycle: the shell is created lazily by the first registration and
 // torn down when the last module unregisters (all four features dispose
-// their buttons when `settings.fabMode` flips off, so the wrapper, handle
-// and any open picker disappear with them).
+// their buttons when `settings.fabMode` flips off, so the wrapper and the
+// satellite orbs disappear with them).
 //
 // @see ./unifiedFabPure.js — the testable orbit geometry + active-id logic.
 // @see ./button.js         — builds the per-module hosts and registers them.
@@ -32,82 +35,53 @@ import {
   FAB_ACTIVE_KEY,
 } from '../../state/settings.js';
 import { installDrag, restorePosition } from './draggableButton.js';
-import { appendGlyph } from './buttonChrome.js';
-import { parseSvg } from '../../lib/dom.js';
+import { appendGlyph, installButtonChrome } from './buttonChrome.js';
 import {
   resolveActiveId,
   orbitLayout,
   orbDiameter,
   orbitRadius,
-  handleDiameter,
-  handleOffset,
 } from './unifiedFabPure.js';
 
 export { FAB_POS_KEY, FAB_ACTIVE_KEY };
 
 /** Outer draggable wrapper (OG-E's own surface, not a game contract). */
 export const FAB_WRAP_ID = 'oge-fab-wrap';
-/** The picker-opening satellite button on the FAB's edge. */
-export const FAB_HANDLE_ID = 'oge-fab-handle';
-/** Full-screen dismiss layer behind an open picker. */
-export const FAB_OVERLAY_ID = 'oge-fab-overlay';
-/** One picker orb per registered module. */
+/** One always-visible satellite orb per NON-active registered module. */
 export const FAB_ORB_CLASS = 'oge-fab-orb';
-/** The small caption next to each orb. */
-export const FAB_ORB_LABEL_CLASS = 'oge-fab-orb-label';
 
 /** Id of the singleton <style> element this module injects. */
 const STYLE_ID = 'oge-fab-style';
 /** Bottom-right inset used when no dragged position is stored. */
 const EDGE_OFFSET_PX = 20;
-/** Gap between an orb's edge and its caption. */
-const LABEL_GAP_PX = 12;
 
 /**
- * Identity of one FAB module, shown verbatim in the picker.
+ * Identity of one FAB module, shown verbatim as its satellite orb.
  *
  * @typedef {object} FabModuleMeta
  * @property {string} id     stable module id ('exp' | 'col' | 'lf' | 'fs').
- * @property {string} name   caption next to the orb (e.g. 'Expeditions').
- * @property {string} color  the module's signature rim colour.
+ * @property {string} name   accessible label for the orb (e.g. 'Expeditions').
+ * @property {string} color  the module's signature colour (orb + oczko `--mod`).
  * @property {string} glyph  inner SVG markup (see buttonGlyphs.js).
  */
 
 /**
- * The picker chrome. The orbs reuse `.oge-art` (buttonChrome's watermark
- * layer) for the glyph but crank `--art-opacity` up — in the picker the
- * glyph IS the identity, not a watermark. `color-mix` keeps every shadow
- * derived from the module colour without a second palette.
+ * Satellite-orb chrome. The dome look itself (gradient + rim + glow + glyph)
+ * is the shared `.oge-node` rule from buttonChrome.js, so an orb and the
+ * active module's in-button oczko are pixel-identical — only the SIZE and
+ * POSITIONING differ and live here. `--mod` (set per orb) drives the colour.
  */
 const FAB_CSS = [
-  `#${FAB_HANDLE_ID}{`,
-  // left/top are set inline by positionHandle() so the +/× rides the FAB
-  // edge facing the viewport centre; only the static chrome lives here.
-  'position:absolute;z-index:3;border-radius:50%;border:none;',
-  'background:radial-gradient(circle at 38% 30%,#16202f,#0b1220 80%);color:#e8b870;',
-  'display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;',
-  'box-shadow:0 0 0 1.5px #d89a3e,0 0 0 2.6px rgba(120,70,20,.5),',
-  '0 0 10px -2px rgba(216,154,62,.5),0 3px 10px rgba(0,0,0,.6);}',
-  `#${FAB_HANDLE_ID} svg{width:55%;height:55%;fill:none;stroke:currentColor;`,
-  'stroke-width:2.4;stroke-linecap:round;transition:transform .2s ease;}',
-  `.oge-fab-open #${FAB_HANDLE_ID} svg{transform:rotate(45deg);}`,
-  `#${FAB_OVERLAY_ID}{position:fixed;inset:0;background:rgba(2,6,12,.55);}`,
-  `.${FAB_ORB_CLASS}{position:fixed;transform:translate(-50%,-50%);border-radius:50%;`,
-  'border:none;cursor:pointer;padding:0;color:#e2e8f0;',
-  'background:radial-gradient(circle at 35% 28%,color-mix(in oklab,var(--mod) 30%,#0b1220) 0%,#0b1220 75%);',
-  'box-shadow:0 0 0 1.5px color-mix(in oklab,var(--mod) 60%,transparent),',
-  '0 0 18px color-mix(in oklab,var(--mod) 35%,transparent),0 8px 22px rgba(0,0,0,.7);}',
-  `.${FAB_ORB_CLASS}.is-active{box-shadow:0 0 0 2.5px var(--mod),`,
-  '0 0 26px color-mix(in oklab,var(--mod) 65%,transparent),0 8px 22px rgba(0,0,0,.7);}',
-  `.${FAB_ORB_LABEL_CLASS}{position:fixed;transform:translate(-50%,-50%);pointer-events:none;`,
-  'font:700 10px/1 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Verdana,sans-serif;',
-  'letter-spacing:.14em;text-transform:uppercase;white-space:nowrap;color:#cbd5e1;',
-  'text-shadow:0 1px 4px #000;}',
+  // Position/size only — the dome look comes from the shared `.oge-node`. No
+  // left/top transition: the orbs must stay glued to the FAB while it's
+  // dragged (a transition would make them lag behind the cursor).
+  `.${FAB_ORB_CLASS}{position:fixed;transform:translate(-50%,-50%);`,
+  'border-radius:50%;border:none;cursor:pointer;padding:0;}',
 ].join('');
 
 /**
  * Registered modules, id → meta + host element. Insertion order is the
- * picker order (= feature install order in content.js — not load-bearing).
+ * menu order (= feature install order in content.js — not load-bearing).
  *
  * @type {Map<string, { meta: FabModuleMeta, host: HTMLElement }>}
  */
@@ -118,7 +92,6 @@ const registry = new Map();
  *
  * @type {{
  *   wrap: HTMLElement,
- *   handle: HTMLButtonElement,
  *   drag: { wasDrag: () => boolean, resetDrag: () => void },
  *   unsubSettings: () => void,
  *   onResize: () => void,
@@ -126,48 +99,13 @@ const registry = new Map();
  */
 let shell = null;
 
-/** Elements of the currently open picker (empty when closed). @type {HTMLElement[]} */
-let menuEls = [];
-let menuOpen = false;
-
-/** @param {KeyboardEvent} e */
-const onMenuKeydown = (e) => {
-  if (e.key === 'Escape') closeMenu();
-};
+/** The live satellite orbs (one per non-active module). @type {HTMLElement[]} */
+let orbEls = [];
 
 /** Current FAB diameter (settings-driven). @returns {number} */
 const currentSize = () => settingsStore.get().fabBtnSize;
 
-/**
- * Place the +/× handle on the FAB edge facing the viewport centre — the
- * same ray the picker fans along — so it tracks the FAB wherever it is
- * dragged (and re-aims on resize / size change). Re-measures the wrapper
- * each call so it works whether the FAB is right/bottom-anchored (default)
- * or left/top-positioned (after a drag). happy-dom reports a zero rect, in
- * which case the handle simply lands on the down-right diagonal — harmless
- * for tests, and corrected the first time the FAB is laid out for real.
- *
- * @returns {void}
- */
-const positionHandle = () => {
-  if (!shell) return;
-  const size = currentSize();
-  const r = shell.wrap.getBoundingClientRect();
-  const cx = r.left + (r.width || size) / 2;
-  const cy = r.top + (r.height || size) / 2;
-  const { left, top } = handleOffset({
-    cx,
-    cy,
-    fabSize: size,
-    handleSize: handleDiameter(size),
-    vw: window.innerWidth,
-    vh: window.innerHeight,
-  });
-  shell.handle.style.left = `${left}px`;
-  shell.handle.style.top = `${top}px`;
-};
-
-/** Inject the picker stylesheet once. @returns {void} */
+/** Inject the satellite-orb stylesheet once. @returns {void} */
 const ensureCss = () => {
   if (document.getElementById(STYLE_ID)) return;
   const style = document.createElement('style');
@@ -177,10 +115,78 @@ const ensureCss = () => {
 };
 
 /**
- * Show the active module's host, hide the rest. Falls back to the first
- * registered module when the stored id is missing or stale — see
- * {@link resolveActiveId}. The handle wears the constant gold brand mark,
- * not the active module's colour, so nothing to tint here.
+ * Re-measure the FAB and lay the live orbs on the arc toward the viewport
+ * centre, also (re)applying each orb's size. Cheap enough to call on every
+ * drag-move / resize. getBoundingClientRect is authoritative in production
+ * (handles the right/bottom-anchored default position); happy-dom returns
+ * all zeros, in which case the orbit simply fans from the top-left.
+ *
+ * @returns {void}
+ */
+const positionOrbs = () => {
+  if (!shell || orbEls.length === 0) return;
+  const size = currentSize();
+  const r = shell.wrap.getBoundingClientRect();
+  const cx = r.left + (r.width || size) / 2;
+  const cy = r.top + (r.height || size) / 2;
+  const orbSize = orbDiameter(size);
+  const items = orbitLayout({
+    cx,
+    cy,
+    count: orbEls.length,
+    radius: orbitRadius(size, orbSize),
+    orbSize,
+    vw: window.innerWidth,
+    vh: window.innerHeight,
+  });
+  orbEls.forEach((orb, i) => {
+    orb.style.width = `${orbSize}px`;
+    orb.style.height = `${orbSize}px`;
+    orb.style.left = `${items[i].x}px`;
+    orb.style.top = `${items[i].y}px`;
+  });
+};
+
+/** Drop every live satellite orb from the DOM. @returns {void} */
+const clearOrbs = () => {
+  for (const orb of orbEls) orb.remove();
+  orbEls = [];
+};
+
+/**
+ * (Re)build the satellite orbs to match the current NON-active module set
+ * (the active module lives in the FAB itself, never in the menu) and lay
+ * them out. Called whenever the active id or the registration set changes.
+ *
+ * @returns {void}
+ */
+const buildOrbs = () => {
+  if (!shell) return;
+  clearOrbs();
+  const ids = [...registry.keys()];
+  const active = resolveActiveId(safeLS.get(FAB_ACTIVE_KEY), ids);
+  const wrapZ = parseInt(shell.wrap.style.zIndex, 10) || 99999;
+  for (const [id, { meta }] of registry) {
+    if (id === active) continue;
+    const orb = document.createElement('button');
+    orb.type = 'button';
+    orb.className = `${FAB_ORB_CLASS} oge-node`;
+    orb.setAttribute('aria-label', `Switch to ${meta.name}`);
+    orb.title = meta.name;
+    orb.style.zIndex = String(wrapZ - 1);
+    orb.style.setProperty('--mod', meta.color);
+    appendGlyph(orb, meta.glyph);
+    orb.addEventListener('click', () => setActiveFabModule(id));
+    document.body.appendChild(orb);
+    orbEls.push(orb);
+  }
+  positionOrbs();
+};
+
+/**
+ * Show the active module's host, hide the rest, and rebuild the satellite
+ * menu (the freed/taken orbit slot). Falls back to the first registered
+ * module when the stored id is missing or stale — see {@link resolveActiveId}.
  *
  * @returns {void}
  */
@@ -191,11 +197,13 @@ const applyActive = () => {
   for (const [id, entry] of registry) {
     entry.host.style.display = id === active ? '' : 'none';
   }
+  buildOrbs();
 };
 
 /**
- * Persist + apply a new active module. Public so tests (and a future
- * keyboard shortcut) can switch without the picker.
+ * Persist + apply a new active module — the tapped orb's module flies into
+ * the FAB and the previously active one drops into its orbit slot. Public so
+ * tests (and a future keyboard shortcut) can switch without the menu.
  *
  * @param {string} id
  * @returns {void}
@@ -205,112 +213,21 @@ export const setActiveFabModule = (id) => {
   applyActive();
 };
 
-/** @returns {void} */
-const closeMenu = () => {
-  if (!menuOpen) return;
-  menuOpen = false;
-  for (const el of menuEls) el.remove();
-  menuEls = [];
-  document.removeEventListener('keydown', onMenuKeydown);
-  if (shell) {
-    shell.wrap.classList.remove('oge-fab-open');
-    shell.handle.setAttribute('aria-expanded', 'false');
-  }
-};
-
 /**
- * Build and show the orbital picker around the FAB's current position.
- * Every registered module gets one single-piece orb (its colour + glyph,
- * `.is-active` ring on the current one) plus a small caption. Clicking an
- * orb switches the active module and closes; overlay click / Escape just
- * close.
- *
- * @returns {void}
- */
-const openMenu = () => {
-  if (!shell || menuOpen) return;
-  const size = currentSize();
-  // getBoundingClientRect is authoritative in production (handles the
-  // right/bottom-anchored default position); happy-dom returns all zeros,
-  // in which case the orbit simply fans from the viewport's top-left.
-  const r = shell.wrap.getBoundingClientRect();
-  const cx = r.left + (r.width || size) / 2;
-  const cy = r.top + (r.height || size) / 2;
-  const orbSize = orbDiameter(size);
-  const items = orbitLayout({
-    cx,
-    cy,
-    count: registry.size,
-    radius: orbitRadius(size, orbSize),
-    orbSize,
-    labelGap: LABEL_GAP_PX,
-    vw: window.innerWidth,
-    vh: window.innerHeight,
-  });
-
-  const wrapZ = parseInt(shell.wrap.style.zIndex, 10) || 99999;
-  const overlay = document.createElement('div');
-  overlay.id = FAB_OVERLAY_ID;
-  overlay.style.zIndex = String(wrapZ - 2);
-  overlay.addEventListener('click', closeMenu);
-  menuEls.push(overlay);
-
-  const activeId = resolveActiveId(safeLS.get(FAB_ACTIVE_KEY), [...registry.keys()]);
-  let i = 0;
-  for (const [id, { meta }] of registry) {
-    const pos = items[i];
-    i += 1;
-    const orb = document.createElement('button');
-    orb.type = 'button';
-    orb.className = FAB_ORB_CLASS + (id === activeId ? ' is-active' : '');
-    orb.setAttribute('aria-label', `Switch to ${meta.name}`);
-    orb.title = meta.name;
-    orb.style.cssText = [
-      `left:${pos.x}px`,
-      `top:${pos.y}px`,
-      `width:${orbSize}px`,
-      `height:${orbSize}px`,
-      `z-index:${wrapZ - 1}`,
-    ].join(';');
-    orb.style.setProperty('--mod', meta.color);
-    // In the picker the glyph is the identity, not a watermark.
-    orb.style.setProperty('--art-opacity', '0.9');
-    appendGlyph(orb, meta.glyph);
-    orb.addEventListener('click', () => {
-      if (id !== activeId) setActiveFabModule(id);
-      closeMenu();
-    });
-    menuEls.push(orb);
-
-    const label = document.createElement('div');
-    label.className = FAB_ORB_LABEL_CLASS;
-    label.textContent = meta.name;
-    label.style.cssText = [
-      `left:${pos.labelX}px`,
-      `top:${pos.labelY}px`,
-      `z-index:${wrapZ - 1}`,
-    ].join(';');
-    menuEls.push(label);
-  }
-
-  for (const el of menuEls) document.body.appendChild(el);
-  menuOpen = true;
-  document.addEventListener('keydown', onMenuKeydown);
-  shell.wrap.classList.add('oge-fab-open');
-  shell.handle.setAttribute('aria-expanded', 'true');
-};
-
-/**
- * Create the wrapper + handle on first registration. The wrapper owns the
- * shared drag (one `{x,y}` for every module) and reacts live to
- * `fabBtnSize` (the hosts resize themselves via their own features'
- * subscriptions; an open picker is closed because its layout went stale).
+ * Create the wrapper on first registration. The wrapper owns the shared drag
+ * (one `{x,y}` for every module) and reacts live to `fabBtnSize` (the hosts
+ * resize themselves via their own features' subscriptions; the orbs resize +
+ * relayout here).
  *
  * @returns {void}
  */
 const ensureShell = () => {
   if (shell) return;
   ensureCss();
+  // The satellite orbs reuse the shared `.oge-node` dome look, which lives in
+  // the button-chrome stylesheet — ensure it exists even before the first
+  // command button decorates itself.
+  installButtonChrome();
   const size = currentSize();
 
   const wrap = document.createElement('div');
@@ -324,33 +241,9 @@ const ensureShell = () => {
     `height:${size}px`,
   ].join(';');
   restorePosition({ element: wrap, posKey: FAB_POS_KEY, size, edgeOffset: EDGE_OFFSET_PX });
-
-  const handle = document.createElement('button');
-  handle.type = 'button';
-  handle.id = FAB_HANDLE_ID;
-  handle.setAttribute('aria-label', 'Switch floating button module');
-  handle.setAttribute('aria-expanded', 'false');
-  const handleSize = handleDiameter(size);
-  handle.style.width = handleSize + 'px';
-  handle.style.height = handleSize + 'px';
-  handle.appendChild(
-    parseSvg(
-      '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
-    ),
-  );
-  wrap.appendChild(handle);
   document.body.appendChild(wrap);
 
-  const drag = installDrag({ element: wrap, posKey: FAB_POS_KEY, onMove: positionHandle });
-  handle.addEventListener('click', (e) => {
-    if (drag.wasDrag()) {
-      drag.resetDrag();
-      return;
-    }
-    e.stopPropagation();
-    if (menuOpen) closeMenu();
-    else openMenu();
-  });
+  const drag = installDrag({ element: wrap, posKey: FAB_POS_KEY, onMove: positionOrbs });
 
   let prevSize = size;
   const unsubSettings = settingsStore.subscribe((next) => {
@@ -358,29 +251,21 @@ const ensureShell = () => {
     prevSize = next.fabBtnSize;
     wrap.style.width = next.fabBtnSize + 'px';
     wrap.style.height = next.fabBtnSize + 'px';
-    const hs = handleDiameter(next.fabBtnSize);
-    handle.style.width = hs + 'px';
-    handle.style.height = hs + 'px';
-    positionHandle();
-    closeMenu();
+    positionOrbs();
   });
 
-  // Re-aim the handle when the viewport reflows (the centre it points at
-  // moved). An open picker's geometry is now stale, so dismiss it too.
-  const onResize = () => {
-    positionHandle();
-    closeMenu();
-  };
+  // Re-aim the orbs when the viewport reflows (the centre they fan toward,
+  // and the FAB's own anchored position, both moved).
+  const onResize = () => positionOrbs();
   window.addEventListener('resize', onResize);
 
-  shell = { wrap, handle, drag, unsubSettings, onResize };
-  positionHandle();
+  shell = { wrap, drag, unsubSettings, onResize };
 };
 
 /** Tear the shell down once the last module is gone. @returns {void} */
 const maybeTeardown = () => {
   if (!shell || registry.size > 0) return;
-  closeMenu();
+  clearOrbs();
   shell.unsubSettings();
   window.removeEventListener('resize', shell.onResize);
   shell.wrap.remove();
@@ -390,8 +275,8 @@ const maybeTeardown = () => {
 /**
  * Mount a module's host element into the unified FAB. Called by
  * `createButton` when its config carries `module` metadata; features never
- * call this directly. The host is inserted UNDER the handle (so the handle
- * always stays tappable) and immediately shown/hidden per the active id.
+ * call this directly. The host is inserted into the wrapper and immediately
+ * shown/hidden per the active id (with the satellite menu rebuilt to match).
  *
  * @param {object} opts
  * @param {FabModuleMeta} opts.meta
@@ -407,12 +292,7 @@ export const registerFabModule = ({ meta, host }) => {
   ensureShell();
   const s = /** @type {NonNullable<typeof shell>} */ (shell);
   registry.set(meta.id, { meta, host });
-  s.wrap.insertBefore(host, s.handle);
-  // Touching the FAB itself (tap or drag-start) dismisses an open picker —
-  // its layout is about to go stale, and the user is clearly acting on the
-  // active module. The handle is excluded so its toggle still works.
-  host.addEventListener('mousedown', closeMenu);
-  host.addEventListener('touchstart', closeMenu, { passive: true });
+  s.wrap.appendChild(host);
   applyActive();
   return {
     drag: s.drag,
@@ -426,13 +306,13 @@ export const registerFabModule = ({ meta, host }) => {
 };
 
 /**
- * Test-only reset: drop every registration, the shell DOM and the picker.
+ * Test-only reset: drop every registration, the shell DOM and the orbs.
  * Mirrors the `_reset*ForTest` convention of the features.
  *
  * @returns {void}
  */
 export const _resetUnifiedFabForTest = () => {
-  closeMenu();
+  clearOrbs();
   registry.clear();
   if (shell) {
     shell.unsubSettings();

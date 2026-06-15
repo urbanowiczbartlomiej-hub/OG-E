@@ -57,11 +57,15 @@ export const BUTTON_CHROME_CSS = [
   'transition:transform .16s cubic-bezier(.2,.7,.3,1),box-shadow .2s ease,filter .12s ease;}',
 
   // ── Elevation + state rim border + glow ─────────────────────────────────
+  // The 1.5px rim-coloured thread that rides just inside the chrome edge is
+  // the button's one spot of pure state colour — kept BRIGHT (82%) with a soft
+  // same-colour inner glow so it reads as a glowing filament, not a dim line.
   '.oge-host{',
   'box-shadow:',
   'inset 0 1px 0 rgba(255,255,255,.07),',
-  'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) 55%,transparent),',
-  '0 0 calc(24px * var(--glow)) -6px var(--rim),',
+  'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) 82%,transparent),',
+  'inset 0 0 8px -1px color-mix(in oklab,var(--rim) 50%,transparent),',
+  '0 0 calc(26px * var(--glow)) -6px var(--rim),',
   '0 18px 36px -12px rgba(0,0,0,.72),',
   '0 4px 12px -2px rgba(0,0,0,.5);}',
 
@@ -110,16 +114,18 @@ export const BUTTON_CHROME_CSS = [
   '.oge-host.split{',
   'box-shadow:',
   'inset 0 1px 0 rgba(255,255,255,.12),',
-  'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) 72%,transparent),',
+  'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) 88%,transparent),',
   'inset 0 0 0 3px rgba(0,0,0,.45),',
-  '0 0 calc(24px * var(--glow)) -6px var(--rim),',
+  'inset 0 0 9px -1px color-mix(in oklab,var(--rim) 48%,transparent),',
+  '0 0 calc(26px * var(--glow)) -6px var(--rim),',
   '0 18px 36px -12px rgba(0,0,0,.72),',
   '0 4px 12px -2px rgba(0,0,0,.5);}',
   '.oge-host.split:hover{',
   'box-shadow:',
   'inset 0 1px 0 rgba(255,255,255,.14),',
-  'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) 85%,transparent),',
+  'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) 95%,transparent),',
   'inset 0 0 0 3px rgba(0,0,0,.40),',
+  'inset 0 0 11px -1px color-mix(in oklab,var(--rim) 55%,transparent),',
   '0 0 calc(30px * var(--glow)) -4px var(--rim),',
   '0 22px 40px -12px rgba(0,0,0,.74),',
   '0 4px 12px -2px rgba(0,0,0,.5);}',
@@ -148,55 +154,75 @@ export const BUTTON_CHROME_CSS = [
   'text-transform:uppercase;letter-spacing:.4px;',
   'paint-order:stroke;stroke:rgba(2,6,16,.55);stroke-width:.6px;}',
 
-  // ── Watermark glyph layer (FAB picker orbs only) ────────────────────────
-  // The flat rim-tinted glyph layer behind a label, z-index 0 (above the
-  // gradient fill, below ripple(1), ring(2), label(3)); tints via
-  // currentColor, fades with --art-opacity. The command buttons no longer
-  // use it — their glyph lives in the glass lens (see .oge-lens). It survives
-  // only because the unifiedFab orbs reuse it (with --art-opacity cranked up)
-  // to paint each module's identity glyph.
+  // ── Glyph layer (the brand node's identity glyph) ───────────────────────
+  // The flat tinted glyph layer, z-index 0 (above the gradient fill, below
+  // ripple(1), ring(2), label(3)); tints via currentColor, fades with
+  // --art-opacity. Shared by the FAB's satellite orbs AND the in-button node
+  // oczko — both `.oge-node`, which cranks --art-opacity up and recolours the
+  // glyph light so it reads on the module-coloured dome (see .oge-node below).
   '.oge-art{position:absolute;inset:0;z-index:0;pointer-events:none;',
   'display:flex;align-items:center;justify-content:center;',
   'color:var(--rim);opacity:var(--art-opacity,.1);}',
   '.oge-art svg{width:60%;height:60%;overflow:visible;}',
   '@media (prefers-reduced-motion:reduce){.oge-art{transition:none;}}',
 
-  // ── Glass node lens (the "oczko") ───────────────────────────────────────
-  // A small, convex glass cabochon carrying the command glyph, FRAMED by the
-  // OG-E orbit mark (three gold arcs + three beads — the logo's symbol) so
-  // every button reads as a branded "OG-E node". The one shared accent that
-  // unifies single- and split-zone buttons. Deliberately SMALL: the action
-  // label is the priority, the lens is a glanceability + brand cue, not the
-  // centrepiece. The dome reads convex via a top sheen + a dark recessed
-  // bottom; the glyph is gold (full-gold "medallion") while the dome keeps a
-  // faint state tint. The orbit ring stays GOLD in every state — gold is the
-  // constant brand thread; the button's big rim carries the state colour.
-  // z-index 5 keeps the lens above the seam(4), label(3), ring(2); the orbit
-  // overlay sits at 6 (above the glyph). Positioned per shape below: SINGLE
-  // parks it in the upper section (label nudged below); SPLIT centres it on
-  // the seam, which the inverted divider threads into.
+  // ── The "oczko" (node lens) + its gold-lens ancestor ────────────────────
+  // The small node parked inside every command button. It used to be a gold
+  // cabochon framed by the OG-E orbit mark; it is now the SAME module-coloured
+  // dome the FAB's satellite orbs wear (`.oge-node`, below), so the active
+  // module's oczko and its orb are one and the same — tapping an orb reads as
+  // that node flying into the button. Deliberately SMALL: the action label is
+  // the priority, the node is a glanceability + brand cue, not the centrepiece.
+  // z-index 5 keeps it above the seam(4), label(3), ring(2). Placement per
+  // shape below: SINGLE parks it in the upper section (label cleared below);
+  // SPLIT centres it on the seam, which the inverted divider threads into.
+  // Gold glass cabochon + orbit mark — the placement (left/top/size) is shared
+  // with the node oczko below; the gold VISUAL here is only the base. The
+  // command buttons override it with `.oge-node` (declared last, so it wins on
+  // the `.oge-lens.oge-node` oczko); the gold look survives for OG-E's own UI
+  // (appendLens → the settings dashboard button). `--surface` falls back so it
+  // renders outside a command button too.
   '.oge-lens{position:absolute;left:50%;border-radius:50%;z-index:5;',
   'pointer-events:none;display:flex;align-items:center;justify-content:center;',
   'color:#e8b870;',
   'background:',
   'radial-gradient(130% 110% at 50% 16%,rgba(255,255,255,.14),transparent 44%),',
   'radial-gradient(120% 120% at 50% 34%,',
-  'color-mix(in oklab,var(--rim) 16%,var(--surface)),var(--surface) 80%);',
+  'color-mix(in oklab,var(--rim,#e8b870) 16%,var(--surface,#0b1220)),var(--surface,#0b1220) 80%);',
   'box-shadow:',
   'inset 0 1.5px 2px rgba(255,255,255,.22),',
   'inset 0 -4px 7px rgba(0,0,6,.5),',
-  'inset 0 -2px 5px color-mix(in oklab,var(--rim) 20%,transparent),',
-  'inset 0 0 0 1px color-mix(in oklab,var(--rim) 38%,transparent),',
+  'inset 0 -2px 5px color-mix(in oklab,var(--rim,#e8b870) 20%,transparent),',
+  'inset 0 0 0 1px color-mix(in oklab,var(--rim,#e8b870) 38%,transparent),',
   '0 2px 4px rgba(0,0,0,.5);}',
   '.oge-lens-glyph{width:46%;height:46%;overflow:visible;opacity:.95;',
   'filter:drop-shadow(0 1px 1px rgba(0,0,6,.5));}',
   // Orbit mark: sits slightly proud of the dome so its beads land on the rim.
   '.oge-lens-orbit{position:absolute;left:-26%;top:-26%;width:152%;height:152%;',
   'overflow:visible;z-index:6;}',
-  // SINGLE: small accent parked up top.
-  '.oge-host.single .oge-lens{top:27%;width:23%;height:23%;transform:translate(-50%,-50%);}',
-  // SPLIT: small node centred on the seam.
-  '.oge-host.split .oge-lens{top:50%;width:21%;height:21%;transform:translate(-50%,-50%);}',
+  // SINGLE: small node parked up top (label cleared below). SPLIT: centred on
+  // the seam. Slightly smaller than the old gold lens so the action label leads.
+  '.oge-host.single .oge-lens{top:26%;width:21%;height:21%;transform:translate(-50%,-50%);}',
+  '.oge-host.split .oge-lens{top:50%;width:19%;height:19%;transform:translate(-50%,-50%);}',
+
+  // ── Brand node: FAB satellite orb + the in-button "oczko" (one shared look) ─
+  // Declared AFTER .oge-lens so it wins on the `.oge-lens.oge-node` oczko. The
+  // SAME dome the FAB's satellite orbs wear, so tapping an orb reads as that
+  // node flying into the button. Module colour rides `--mod`; the glyph is the
+  // faint `.oge-art` layer tinted light so it reads on the coloured dome. No
+  // position here — the oczko gets it from `.oge-lens`, the orbs from
+  // `.oge-fab-orb` (unifiedFab.js).
+  '.oge-node{border-radius:50%;display:flex;align-items:center;justify-content:center;',
+  'color:#eaf0f8;--art-opacity:.92;',
+  'background:radial-gradient(circle at 35% 28%,',
+  'color-mix(in oklab,var(--mod) 34%,#0b1220) 0%,#0b1220 76%);',
+  'box-shadow:',
+  'inset 0 1px 1px rgba(255,255,255,.18),',
+  '0 0 0 1.5px color-mix(in oklab,var(--mod) 62%,transparent),',
+  '0 0 15px color-mix(in oklab,var(--mod) 34%,transparent),',
+  '0 4px 12px rgba(0,0,0,.55);}',
+  // Light glyph (overrides .oge-art's --rim tint) so it reads on the dome.
+  '.oge-node .oge-art{color:inherit;}',
 
   // ── Tap ripple (rim-coloured wave from the touch point) ─────────────────
   '.oge-deco-layer{position:absolute;inset:0;border-radius:50%;',
@@ -215,7 +241,8 @@ export const BUTTON_CHROME_CSS = [
   '.oge-host:hover{transform:translateY(-1px);',
   'box-shadow:',
   'inset 0 1px 0 rgba(255,255,255,.09),',
-  'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) 70%,transparent),',
+  'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) 92%,transparent),',
+  'inset 0 0 10px -1px color-mix(in oklab,var(--rim) 55%,transparent),',
   '0 0 calc(30px * var(--glow)) -4px var(--rim),',
   '0 22px 40px -12px rgba(0,0,0,.74),',
   '0 4px 12px -2px rgba(0,0,0,.5);}',
@@ -228,7 +255,8 @@ export const BUTTON_CHROME_CSS = [
   'transform:scale(calc(1 + .045*var(--charge,0)));',
   'box-shadow:',
   'inset 0 1px 0 rgba(255,255,255,.1),',
-  'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) calc(55% + 35%*var(--charge,0)),transparent),',
+  'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) calc(82% + 13%*var(--charge,0)),transparent),',
+  'inset 0 0 calc(8px + 6px*var(--charge,0)) -1px color-mix(in oklab,var(--rim) 52%,transparent),',
   '0 0 calc(22px + 30px*var(--charge,0)) -6px var(--rim),',
   '0 18px 36px -12px rgba(0,0,0,.72),0 4px 12px -2px rgba(0,0,0,.5);}',
   '.oge-host.oge-fired{animation:oge-fire .45s ease-out;}',
@@ -247,11 +275,13 @@ export const BUTTON_CHROME_CSS = [
   '@keyframes oge-alert{',
   '0%,100%{box-shadow:',
   'inset 0 1px 0 rgba(255,255,255,.07),',
-  'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) 55%,transparent),',
+  'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) 78%,transparent),',
+  'inset 0 0 8px -1px color-mix(in oklab,var(--rim) 48%,transparent),',
   '0 0 22px -8px var(--rim),0 18px 36px -12px rgba(0,0,0,.72),0 4px 12px -2px rgba(0,0,0,.5);}',
   '50%{box-shadow:',
   'inset 0 1px 0 rgba(255,255,255,.1),',
-  'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) 80%,transparent),',
+  'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) 95%,transparent),',
+  'inset 0 0 11px -1px color-mix(in oklab,var(--rim) 58%,transparent),',
   '0 0 34px -2px var(--rim),0 18px 36px -12px rgba(0,0,0,.72),0 4px 12px -2px rgba(0,0,0,.5);}}',
 
   // ── Disabled ─────────────────────────────────────────────────────────────
@@ -405,13 +435,14 @@ const buildRing = (title, ringId, progress = null) => {
 };
 
 /**
- * Append the flat watermark glyph layer to an element (idempotent per
- * element). Used by the FAB picker orbs to paint each module's identity
- * glyph (the command buttons use the glass lens instead — see
- * {@link appendLens}). `inner` is the inner markup of a `0 0 64 64` SVG using
- * `currentColor` so it tints to the element's `--rim`. The wrapping
- * `.oge-art` layer parents an SVG; built via innerHTML so the namespaced
- * children parse correctly without per-node createElementNS plumbing.
+ * Append the flat glyph layer to an element (idempotent per element). Shared
+ * by the FAB's satellite orbs AND the in-button node oczko (both `.oge-node`
+ * — see {@link appendNode}) to paint each module's identity glyph. `inner` is
+ * the inner markup of a `0 0 64 64` SVG using `currentColor` so it tints to
+ * the element's text colour (`.oge-node` sets a light tint; elsewhere it
+ * follows `--rim`). The wrapping `.oge-art` layer parents an SVG; built via
+ * innerHTML so the namespaced children parse correctly without per-node
+ * createElementNS plumbing.
  *
  * @param {HTMLElement} zone
  * @param {string} inner  inner SVG markup (paths/lines/circles, currentColor).
@@ -488,12 +519,35 @@ export const ensureOrbitDefs = () => {
 };
 
 /**
- * Append the glass node lens to a button host (idempotent per host): a glass
- * dome carrying the command glyph (gold), framed by the OG-E orbit mark so
- * the button reads as a branded node. The one shared accent for both shapes —
- * the `.oge-lens` rules park it in the upper section on a single-zone host
- * and centred on the seam on a split host. `inner` is the inner markup of a
- * `0 0 64 64` SVG using `currentColor` (tints to the gold lens colour).
+ * Append the brand NODE (the "oczko") to a command button host (idempotent
+ * per host): the SAME module-coloured dome the FAB's satellite orbs wear (see
+ * the `.oge-node` rules — both render `appendGlyph`'s `.oge-art` layer on a
+ * `--mod`-tinted dome). The `.oge-lens` class parks it in the upper section on
+ * a single-zone host and centred on the seam on a split host; the module
+ * colour rides `--mod`, set on the host by `createButton`. `inner` is the inner
+ * markup of a `0 0 64 64` SVG using `currentColor` (the light node glyph tint).
+ *
+ * @param {HTMLElement} host  Stable outer element (the button or split wrap).
+ * @param {string} inner      Inner SVG markup (paths/lines/circles, currentColor).
+ * @returns {void}
+ */
+export const appendNode = (host, inner) => {
+  if (!host || !inner || host.querySelector('.oge-lens')) return;
+  const node = document.createElement('span');
+  node.className = 'oge-lens oge-node';
+  node.setAttribute('aria-hidden', 'true');
+  appendGlyph(node, inner);
+  host.appendChild(node);
+};
+
+/**
+ * Append the GOLD glass lens to a host (idempotent per host): a gold glass
+ * cabochon carrying `inner`'s glyph, framed by the OG-E orbit mark (three gold
+ * arcs + three beads). No longer used by the command buttons (they wear
+ * `.oge-node` via {@link appendNode}); kept for OG-E's own UI accents — e.g.
+ * the settings "Open Dashboard" button. The `.oge-lens` rules size it inside a
+ * command button; standalone callers set size/position inline. `inner` is the
+ * inner markup of a `0 0 64 64` SVG using `currentColor` (the gold glyph tint).
  *
  * @param {HTMLElement} host  Stable outer element (the button or split wrap).
  * @param {string} inner      Inner SVG markup (paths/lines/circles, currentColor).

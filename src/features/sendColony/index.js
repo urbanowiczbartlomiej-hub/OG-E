@@ -894,7 +894,7 @@ export const installSendColony = () => {
           onHold: onSendHold,
           focusValue: FOCUS_SEND,
           focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,
-          labelShiftY: -14,
+          labelShiftY: -8,
         },
         {
           key: 'scan',
@@ -904,7 +904,7 @@ export const installSendColony = () => {
           onTap: onScanClick,
           focusValue: FOCUS_SCAN,
           focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,
-          labelShiftY: 14,
+          labelShiftY: 6,
         },
       ],
     });

@@ -30,7 +30,7 @@
 // @see ./buttonChrome.js     — the engraved ring + ripple decoration.
 // @see ./draggableButton.js  — the drag + focus-persistence primitives.
 
-import { decorateButton, appendLens } from './buttonChrome.js';
+import { decorateButton, appendNode } from './buttonChrome.js';
 import {
   installDrag,
   installFocusPersist,
@@ -140,9 +140,11 @@ const DEFAULTS = {
 export const renderLines = (span, lines) => {
   span.textContent = '';
   const col = document.createElement('div');
+  // Tight line-height so a primary that wraps to two lines (e.g. "All maxed")
+  // stays clear of the node oczko parked just above it.
   col.style.cssText =
     'display:flex;flex-direction:column;align-items:center;' +
-    'justify-content:center;line-height:1.1;width:100%;';
+    'justify-content:center;line-height:1.0;width:100%;';
   for (const line of lines) {
     const div = document.createElement('div');
     div.textContent = line.text;
@@ -315,7 +317,10 @@ export const createButton = (cfg) => {
     el.appendChild(span);
     labelEls.set(z.key, span);
   }
-  // One shared glass node lens carries the command glyph. CSS parks it in
+  // The module colour drives the node oczko (and matches the module's FAB
+  // satellite orb) independent of the live state `--rim`.
+  if (cfg.module) outer.style.setProperty('--mod', cfg.module.color);
+  // One shared brand node ("oczko") carries the command glyph. CSS parks it in
   // the upper section on a single-zone button and centred on the seam on a
   // split one; it mounts on the stable host so label repaints never wipe it.
   // A single button uses its only zone's glyph; a split one takes the first
@@ -323,7 +328,7 @@ export const createButton = (cfg) => {
   const lensGlyph = single
     ? cfg.zones[0]?.glyph
     : cfg.zones.find((z) => z.glyph)?.glyph;
-  if (lensGlyph) appendLens(outer, lensGlyph);
+  if (lensGlyph) appendNode(outer, lensGlyph);
 
   // ── mount + drag ────────────────────────────────────────────────────────
   // Unified-FAB members are mounted into (and dragged via) the shared shell;
