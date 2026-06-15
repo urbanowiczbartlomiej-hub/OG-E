@@ -33,16 +33,27 @@ moved options join the tab they belong to.
 
 - **Reminders config → Reminders tab** (it already shows the queue; config +
   observability finally live together).
-- **Colonization config → the Galaxy Observations tab**, which gets
-  **renamed toward colonization** (scans were and still are mostly done for
-  colonization; Colony Scout is a secondary use of the same data). Final name
-  TBD — lean *"Colonization"*.
+- **Colonization config → the Galaxy Observations tab** (scans are mostly
+  done for colonization; Colony Scout is a secondary use of the same data).
+  **Tab name stays "Galaxy Observations"** (decided) — colonization options
+  enter as a *"Colonization config"* sub-section, not a rename.
 
 **Stays in AGR** (no home tab, or absolutely necessary): floating button
 (on/off + size), display toggles (readability, event/trader highlights),
 **all expedition settings** (no expeditions tab exists), cloud-sync master +
 gist token, reminders **master** switch + **ntfy token** (token is required,
 so it stays; add an annotation that the rest is configured in the Dashboard).
+
+**No data migration (decided).** OG-E has a single user today, so the moved
+settings are NOT migrated from their old localStorage keys — on first run
+after the move they fall back to defaults and get re-set once from the
+Dashboard. Drops the seed-once migration code and its dashboard-first-write
+race entirely.
+
+**Max expeditions per planet → 1/2 radio (done).** Stays in AGR; the old
+1–20 slider is replaced by a horizontal 1/2 radio — as a rule you shouldn't
+run more than two from one planet. (New reusable `radio` control type in
+`features/settingsUi/controls.js`.)
 
 **README:** keep everything in one file; lead with marketing, dev sections
 lower down.
@@ -121,11 +132,10 @@ store). That's why per-universe config (`galaxyScanConfig`, `scans`,
 `bodies`, `dailyRunRoutes`) already lives in **`chrome.storage.local`** — the
 only backing shared across both worlds.
 
-**Therefore every MOVED setting must migrate `localStorage` →
-`chrome.storage.local`**, with:
+**Therefore every MOVED setting must live in `chrome.storage.local`**, with:
 
-- a seed-once migration reading the old `oge_*` localStorage value into the
-  new chrome.storage key;
+- no migration of the old `oge_*` localStorage value (single user — see the
+  "No data migration" decision above): the new store starts at defaults;
 - consuming features switching from synchronous `safeLS` reads to the
   **async-init store pattern already used by `scanConfig`** (tolerate the
   pre-hydrate default for one tick);
@@ -147,11 +157,12 @@ lives in `src/domain/fleetSave.js`.
 
 ### Phasing for B
 
-- **B1 — migration infra.** A global-settings store backed by
-  `chrome.storage.local` (mirror the `scanConfig` store shape) + the
-  seed-once localStorage→chrome.storage migration. Unit + behavioral tests.
-- **B2 — Colonization tab.** Rename *Galaxy Observations* toward
-  colonization; move min-gap / min-fields / password onto the B1 store;
+- **B1 — shared-settings store. ✅ DONE.** Global store backed by
+  `chrome.storage.local` (`state/sharedSettings.js` + pure
+  `domain/sharedSettings.js`), mirroring the `scanConfig` shape; hydrated at
+  content-script boot. No migration. Unit + behavioral tests green.
+- **B2 — Colonization config (Galaxy Observations tab).** Add a "Colonization
+  config" sub-section; move min-gap / min-fields / password onto the B1 store;
   rewire the `sendColony` and `abandon` consumers to the async store. Update
   the tab's intro copy.
 - **B3 — Reminders tab config.** Move sub-enables / schedules / thresholds
@@ -203,18 +214,15 @@ settings live" note + the tab name wait on B.
 
 ## Suggested path order
 
-1. **A** — dashboard copy review (quick win, no deps).
-2. **C** — README refresh, minus the settings-location note + final tab name.
-3. **B1 → B4** — the settings split.
-4. **C follow-up** — fill in the "where settings live" note + tab name after B4.
+1. **A** — dashboard copy review. ✅ done.
+2. **C** — README refresh (minus the settings-location note). ✅ done.
+3. **B1 → B4** — the settings split. B1 ✅ done; B2 next.
+4. **C follow-up** — fill in the "where settings live" note after B4.
 5. *(Later, out of scope here)* AMO listing copy + screenshots.
 
 ## Open questions to resolve before the relevant step
 
-- **Colonization tab name** — *"Colonization"* vs *"Galaxy / Colonization"*
-  vs keeping "Galaxy Observations" with a colonization sub-heading. Lean
-  *"Colonization"*. *(Blocks B2.)*
-- Within the Colonization tab, do min-fields / password (abandon config) sit
-  alongside min-gap, or visually grouped as an "Abandon small colonies"
-  sub-block? Lean: one *Colonization config* block, abandon settings grouped
-  under their own sub-heading. *(Cosmetic; resolve during B2.)*
+- Within the Colonization config sub-section, do min-fields / password
+  (abandon config) sit alongside min-gap, or grouped as an "Abandon small
+  colonies" sub-block? Lean: one *Colonization config* block, abandon
+  settings under their own sub-heading. *(Cosmetic; resolve during B2.)*
