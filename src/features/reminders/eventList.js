@@ -56,6 +56,7 @@
 // @see ./pending.js  — the reload-safe intent queue we read for "syncing".
 
 import { settingsStore } from '../../state/settings.js';
+import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
 import { chromeStore } from '../../lib/storage.js';
 import { REMINDER_MIRROR_KEY, isValidNtfyToken } from '../../sync/reminders.js';
 import { NTFY_MAX_DELAY_SEC, offsetsForSchedule } from '../../sync/ntfyReconciler.js';
@@ -314,7 +315,8 @@ const render = () => {
   const sectionOn = s.remindersMasterEnabled && isValidNtfyToken(s.reminderNtfyToken);
   const adhocOn = sectionOn; // ad-hoc reminders are always on when the section is
   const waveOn = sectionOn && s.reminderEnabled;
-  const fsOn = sectionOn && s.fsEnabled;
+  // Fleet-save enable is per-universe (B3) — read from the galaxyScanConfig store.
+  const fsOn = sectionOn && galaxyScanConfigStore.get().fsEnabled;
   const now = Math.floor(Date.now() / 1000);
   const universeId = parseUniverseId(location.host);
   const pending = readPending(universeId);
@@ -531,6 +533,16 @@ export const installEventListReminders = ({
     scheduleRender();
   });
 
+  // Fleet-save enable is per-universe (B3): re-render when it (or the async
+  // hydrate of the galaxyScanConfig store) flips so the 🛡 badges appear/clear
+  // without a reload.
+  let prevFsEnabled = galaxyScanConfigStore.get().fsEnabled;
+  const unsubScanConfig = galaxyScanConfigStore.subscribe((next) => {
+    if (next.fsEnabled === prevFsEnabled) return;
+    prevFsEnabled = next.fsEnabled;
+    scheduleRender();
+  });
+
   // Re-read the mirror + render. The poll refreshes the SNAPSHOT (not just
   // re-render) so a confirmed state can't get stuck behind a stale snapshot
   // if a storage event is missed.
@@ -547,6 +559,7 @@ export const installEventListReminders = ({
       clearInterval(safetyPoll);
       clearFsFlipTimer();
       unsubSettings();
+      unsubScanConfig();
       document.getElementById(STYLE_ID)?.remove();
       document.querySelectorAll(`.${BADGE_CLASS}`).forEach((el) => clearCell(/** @type {HTMLElement} */ (el)));
       installed = null;
@@ -560,7 +573,7 @@ export const installEventListReminders = ({
 const pickSig = (s) =>
   JSON.stringify({
     t: s.reminderNtfyToken, o: s.adhocOffsetSec, e: s.reminderEnabled,
-    m: s.remindersMasterEnabled, f: s.fsEnabled,
+    m: s.remindersMasterEnabled,
   });
 
 /**

@@ -9,6 +9,8 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { settingsStore, SETTINGS_SCHEMA } from '../../src/state/settings.js';
+import { galaxyScanConfigStore } from '../../src/state/galaxyScanConfig.js';
+import { defaultGalaxyScanConfig } from '../../src/domain/galaxyScanConfig.js';
 import { parseUniverseId } from '../../src/lib/universeId.js';
 import { writePending } from '../../src/features/reminders/pending.js';
 import { REMINDER_MIRROR_KEY } from '../../src/sync/reminders.js';
@@ -56,6 +58,14 @@ const setSettings = (over = {}) => {
   settingsStore.set(/** @type {any} */ ({ ...d, ...over }));
 };
 
+/**
+ * Fleet-save enable is per-universe (B3) — it lives in the galaxyScanConfig
+ * store, not Settings. Set it (resetting the rest of the config to defaults).
+ *
+ * @param {boolean} on
+ */
+const setFsEnabled = (on) => galaxyScanConfigStore.set({ ...defaultGalaxyScanConfig(), fsEnabled: on });
+
 /** Paint one outbound fleet row with a real arrivalTime cell. @param {number} arrival */
 const paintRow = (arrival) => {
   document.body.innerHTML = `
@@ -81,6 +91,7 @@ beforeEach(() => {
   localStorage.clear();
   document.body.innerHTML = '';
   setSettings({ remindersMasterEnabled: true, reminderEnabled: false, reminderNtfyToken: VALID_TOKEN, adhocOffsetSec: 60 });
+  galaxyScanConfigStore.set(defaultGalaxyScanConfig());
 });
 
 afterEach(() => {
@@ -159,8 +170,9 @@ describe('event-list badges', () => {
   it('stamps a passive, non-clickable 🛡 badge for a leg the mirror marks as a fleet-save', async () => {
     setSettings({
       remindersMasterEnabled: true, reminderEnabled: false,
-      reminderNtfyToken: VALID_TOKEN, fsEnabled: true,
+      reminderNtfyToken: VALID_TOKEN,
     });
+    setFsEnabled(true);
     const base = Math.floor(Date.now() / 1000) + 3600;
     seedMirror([{
       id: 'eventRow-42', arrivalAt: base, shipCount: 8256872, label: 'Deployment → [4:478:14]',
@@ -193,8 +205,9 @@ describe('event-list badges', () => {
   it('shows the bare auto hint (no times) for a fleet-save still beyond the 3-day cap', async () => {
     setSettings({
       remindersMasterEnabled: true, reminderEnabled: false,
-      reminderNtfyToken: VALID_TOKEN, fsEnabled: true,
+      reminderNtfyToken: VALID_TOKEN,
     });
+    setFsEnabled(true);
     const far = Math.floor(Date.now() / 1000) + 5 * 24 * 3600; // 5 days out
     seedMirror([{
       id: 'eventRow-42', arrivalAt: far, shipCount: 8256872, label: 'Deployment → [4:478:14]',
@@ -228,8 +241,9 @@ describe('event-list badges', () => {
   it('does NOT flag a leg the mirror omits (stays an ad-hoc idle badge — short hops never get a 🛡)', async () => {
     setSettings({
       remindersMasterEnabled: true, reminderEnabled: false,
-      reminderNtfyToken: VALID_TOKEN, fsEnabled: true, adhocOffsetSec: 60,
+      reminderNtfyToken: VALID_TOKEN, adhocOffsetSec: 60,
     });
+    setFsEnabled(true);
     seedMirror([]); // producer classified nothing as a save (e.g. a short hop)
     const cell = paintRow(Math.floor(Date.now() / 1000) + 3600);
     installEventListReminders(stubApi());
@@ -264,10 +278,13 @@ describe('event-list badges', () => {
 
   /** Settings with FS on, plus a click-capable api carrying cancelFsSlot. */
   const fsApi = () => ({ ...stubApi(), cancelFsSlot: vi.fn() });
-  const enableFs = () => setSettings({
-    remindersMasterEnabled: true, reminderEnabled: false,
-    reminderNtfyToken: VALID_TOKEN, fsEnabled: true,
-  });
+  const enableFs = () => {
+    setSettings({
+      remindersMasterEnabled: true, reminderEnabled: false,
+      reminderNtfyToken: VALID_TOKEN,
+    });
+    setFsEnabled(true);
+  };
 
   it('makes the 🛡 badge clickable inside a slot\'s final 3 min and cancels just that slot', async () => {
     enableFs();

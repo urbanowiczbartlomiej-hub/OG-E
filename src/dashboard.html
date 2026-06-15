@@ -346,14 +346,21 @@
 <section id="remindersSection" class="tab-section">
   <h1>Reminders</h1>
   <p class="rem-intro">
-    Read-only view of the push reminders OG-E has queued on ntfy.sh —
-    auto expedition waves and ad-hoc fleet reminders alike. Setup (access
-    token + toggles) lives in the
-    <strong>OG-E settings panel inside the game</strong>, alongside the
-    cloud-sync token — this tab is just a look at what's pending.
+    Push reminders OG-E queues on ntfy.sh — auto expedition waves, ad-hoc
+    fleet reminders, and fleet-save pings. The master switch + ntfy access
+    token live in the <strong>OG-E settings panel inside the game</strong>
+    (the token is required there); the per-server <strong>fleet-save</strong>
+    config is below, and the queue preview shows what's currently pending.
   </p>
 
-  <div class="rem-card">
+  <div class="rem-card" style="margin-top:14px">
+    <div class="rem-row" style="margin-bottom:8px">
+      <h2 style="margin:0;color:#4a9eff;font-size:16px;flex:1">Fleet-save reminders (this server)</h2>
+    </div>
+    <div id="reminderConfigBody"></div>
+  </div>
+
+  <div class="rem-card" style="margin-top:14px">
     <div class="rem-row">
       <label>Your ntfy topic (subscribe to this on your phone)</label>
       <span id="remTopic" class="rem-mono">—</span>

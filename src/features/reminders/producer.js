@@ -59,6 +59,7 @@ import { extractFleetSaveCandidates } from './fleetSaveScan.js';
 import { parseFsOffsets } from '../../domain/fleetSave.js';
 import { NTFY_MAX_DELAY_SEC } from '../../sync/ntfyReconciler.js';
 import { settingsStore } from '../../state/settings.js';
+import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
 import { syncReminders, REMINDER_NTFY_TOKEN_KEY, isValidNtfyToken } from '../../sync/reminders.js';
 import { parseUniverseId } from '../../lib/universeId.js';
 import { debounce } from '../../lib/debounce.js';
@@ -257,13 +258,16 @@ export const installReminderProducer = (opts = {}) => {
     const force = forceSettings || pending.length > 0;
 
     const s = settingsStore.get();
+    // Fleet-save knobs are per-universe (B3) — read from the galaxyScanConfig
+    // store, not Settings.
+    const g = galaxyScanConfigStore.get();
     const config = {
       masterEnabled: s.remindersMasterEnabled,
       enabled: s.reminderEnabled,
-      fsEnabled: s.fsEnabled,
-      fsThreshold: s.fsThreshold,
-      fsOffsets: s.fsOffsets,
-      fsMinFlightSec: s.fsMinFlightSec,
+      fsEnabled: g.fsEnabled,
+      fsThreshold: g.fsThreshold,
+      fsOffsets: g.fsOffsets,
+      fsMinFlightSec: g.fsMinFlightSec,
       ntfyToken: s.reminderNtfyToken,
       schedule: s.reminderSchedule,
     };
@@ -373,13 +377,27 @@ export const installReminderProducer = (opts = {}) => {
     JSON.stringify({
       m: s.remindersMasterEnabled,
       e: s.reminderEnabled, t: s.reminderNtfyToken, s: s.reminderSchedule,
-      f: s.fsEnabled, ft: s.fsThreshold, fo: s.fsOffsets, fm: s.fsMinFlightSec,
     });
   let prevReminderSig = pickReminderSig(settingsStore.get());
   const unsubConfig = settingsStore.subscribe((next) => {
     const sig = pickReminderSig(next);
     if (sig === prevReminderSig) return;
     prevReminderSig = sig;
+    force();
+  });
+
+  // The fleet-save knobs are per-universe, so they live in the galaxyScanConfig
+  // store (B3) — watch it too, including the async hydrate that swaps the
+  // initial default for the persisted/synced config, so a dashboard edit to a
+  // threshold/offset propagates without a reload.
+  /** @param {ReturnType<typeof galaxyScanConfigStore.get>} g */
+  const pickFsSig = (g) =>
+    JSON.stringify({ f: g.fsEnabled, ft: g.fsThreshold, fo: g.fsOffsets, fm: g.fsMinFlightSec });
+  let prevFsSig = pickFsSig(galaxyScanConfigStore.get());
+  const unsubScanConfig = galaxyScanConfigStore.subscribe((next) => {
+    const sig = pickFsSig(next);
+    if (sig === prevFsSig) return;
+    prevFsSig = sig;
     force();
   });
 
@@ -391,6 +409,7 @@ export const installReminderProducer = (opts = {}) => {
     dispose: () => {
       document.removeEventListener(EVENT_BOX_LOADED_EVENT, onEventBox);
       unsubConfig();
+      unsubScanConfig();
       installed = null;
     },
     armAdhoc,

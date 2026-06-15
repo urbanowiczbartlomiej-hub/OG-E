@@ -60,7 +60,7 @@ describe('isSyncedSetting / EXCLUDED_SETTINGS', () => {
   it('excludes exactly the per-device keys', () => {
     expect([...EXCLUDED_SETTINGS].sort()).toEqual(['fabBtnSize', 'gistToken']);
     expect(isSyncedSetting('reminderNtfyToken')).toBe(true);
-    expect(isSyncedSetting('fsThreshold')).toBe(true);
+    expect(isSyncedSetting('maxExpeditionsPerPlanet')).toBe(true);
     expect(isSyncedSetting('gistToken')).toBe(false);
     expect(isSyncedSetting('fabBtnSize')).toBe(false);
   });
@@ -68,12 +68,13 @@ describe('isSyncedSetting / EXCLUDED_SETTINGS', () => {
 
 describe('isUniverseScopedSetting / UNIVERSE_SCOPED_SETTINGS', () => {
   it('marks the universe-scoped keys', () => {
-    // colPositions / colPreferOtherGalaxies and the colony* knobs moved OUT
-    // to the per-universe Galaxy-Scan config store (synced via the gist's
-    // galaxyScanConfig slot).
-    expect(UNIVERSE_SCOPED_SETTINGS.size).toBe(6);
+    // colPositions / colPreferOtherGalaxies, the colony* knobs (B2) and the
+    // fleet-save fs* knobs (B3) moved OUT to the per-universe Galaxy-Scan
+    // config store (synced via the gist's galaxyScanConfig slot).
+    expect(UNIVERSE_SCOPED_SETTINGS.size).toBe(2);
     expect(isUniverseScopedSetting('colonyPassword')).toBe(false);
-    expect(isUniverseScopedSetting('fsThreshold')).toBe(true);
+    expect(isUniverseScopedSetting('fsThreshold')).toBe(false);
+    expect(isUniverseScopedSetting('maxExpeditionsPerPlanet')).toBe(true);
     expect(isUniverseScopedSetting('reminderNtfyToken')).toBe(true);
     expect(isUniverseScopedSetting('colPositions')).toBe(false);
     expect(isUniverseScopedSetting('colPreferOtherGalaxies')).toBe(false);
@@ -97,7 +98,7 @@ describe('pickSyncedValues', () => {
 
   it('scope=global keeps only non-universe-scoped synced keys', () => {
     const out = pickSyncedValues(
-      { fabMode: true, fsThreshold: 50000, fabBtnSize: 320 },
+      { fabMode: true, maxExpeditionsPerPlanet: 2, fabBtnSize: 320 },
       'global',
     );
     expect(out).toEqual({ fabMode: true });
@@ -105,10 +106,10 @@ describe('pickSyncedValues', () => {
 
   it('scope=universe keeps only universe-scoped keys', () => {
     const out = pickSyncedValues(
-      { fabMode: true, fsThreshold: 50000, fsOffsets: '-5m', fabBtnSize: 320 },
+      { fabMode: true, maxExpeditionsPerPlanet: 2, reminderNtfyToken: 'tk_x', fabBtnSize: 320 },
       'universe',
     );
-    expect(out).toEqual({ fsThreshold: 50000, fsOffsets: '-5m' });
+    expect(out).toEqual({ maxExpeditionsPerPlanet: 2, reminderNtfyToken: 'tk_x' });
   });
 });
 
@@ -164,18 +165,19 @@ describe('readTsMap / writeTsMap', () => {
 
 describe('seedSettingsTsIfAbsent', () => {
   it('seeds only GLOBAL non-default keys once, then no-ops', () => {
-    // fsThreshold is universe-scoped — must NOT appear in the global ts map.
-    // adhocOffsetSec (default 60) is global — customised value 99 is stamped.
+    // maxExpeditionsPerPlanet is universe-scoped — must NOT appear in the
+    // global ts map. adhocOffsetSec (default 60) is global — customised value
+    // 99 is stamped.
     const seeded = seedSettingsTsIfAbsent(
-      { fabMode: true, fsThreshold: 99, adhocOffsetSec: 99 },
+      { fabMode: true, maxExpeditionsPerPlanet: 2, adhocOffsetSec: 99 },
       1234,
     );
     expect(seeded).toBe(true);
     const ts = readTsMap();
     // adhocOffsetSec is global + customised → stamped.
     expect(ts.adhocOffsetSec).toBe(1234);
-    // fsThreshold is universe-scoped → must NOT be in the global ts map.
-    expect('fsThreshold' in ts).toBe(false);
+    // maxExpeditionsPerPlanet is universe-scoped → must NOT be in the global ts map.
+    expect('maxExpeditionsPerPlanet' in ts).toBe(false);
 
     // Second call is a no-op (map already present).
     expect(seedSettingsTsIfAbsent({ fabMode: false }, 9999)).toBe(false);
@@ -189,9 +191,9 @@ describe('per-universe chrome.storage wrappers', () => {
   });
 
   it('readUniverseTsMap / writeUniverseTsMap round-trip via chromeStore', async () => {
-    await writeUniverseTsMap('s163-pl', { fsThreshold: 42 });
+    await writeUniverseTsMap('s163-pl', { maxExpeditionsPerPlanet: 42 });
     const loaded = await readUniverseTsMap('s163-pl');
-    expect(loaded).toEqual({ fsThreshold: 42 });
+    expect(loaded).toEqual({ maxExpeditionsPerPlanet: 42 });
   });
 
   it('readUniverseTsMap returns {} when absent', async () => {
@@ -199,33 +201,33 @@ describe('per-universe chrome.storage wrappers', () => {
   });
 
   it('seedUniverseTsIfAbsent stamps customised universe-scoped keys, returns seeded map', async () => {
-    // fsThreshold default=100000; custom value 50000 should be stamped.
+    // maxExpeditionsPerPlanet default=1; custom value 2 should be stamped.
     // fabMode is global → must NOT appear in universe ts map.
     const result = await seedUniverseTsIfAbsent(
       's163-pl',
-      { fabMode: true, fsThreshold: 50000, colonyPassword: '' },
+      { fabMode: true, maxExpeditionsPerPlanet: 2, reminderNtfyToken: '' },
       777,
     );
     expect(result).not.toBeNull();
-    // fsThreshold customised → stamped
-    expect(result?.fsThreshold).toBe(777);
-    // colonyPassword is at default ('') → not stamped
-    expect('colonyPassword' in (result ?? {})).toBe(false);
+    // maxExpeditionsPerPlanet customised → stamped
+    expect(result?.maxExpeditionsPerPlanet).toBe(777);
+    // reminderNtfyToken is at default ('') → not stamped
+    expect('reminderNtfyToken' in (result ?? {})).toBe(false);
     // fabMode is global → not stamped in universe map
     expect('fabMode' in (result ?? {})).toBe(false);
 
     // Persisted to chromeStore
     const stored = await readUniverseTsMap('s163-pl');
-    expect(stored.fsThreshold).toBe(777);
+    expect(stored.maxExpeditionsPerPlanet).toBe(777);
 
     // Second call: already exists → returns null (no-op)
     const result2 = await seedUniverseTsIfAbsent(
       's163-pl',
-      { fsThreshold: 99999 },
+      { maxExpeditionsPerPlanet: 5 },
       9999,
     );
     expect(result2).toBeNull();
     // Map unchanged
-    expect((await readUniverseTsMap('s163-pl')).fsThreshold).toBe(777);
+    expect((await readUniverseTsMap('s163-pl')).maxExpeditionsPerPlanet).toBe(777);
   });
 });

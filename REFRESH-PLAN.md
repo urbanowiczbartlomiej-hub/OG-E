@@ -185,24 +185,33 @@ lives in `src/domain/fleetSave.js`.
   (`UNIVERSE_SCOPED_SETTINGS`), and the AGR `colonization` section (deleted —
   it was only those three). Sync rides the existing whole-slot merge for free.
   Tests + typecheck + lint green.
-- **B3 — Reminders tab config. ⏳ NEXT.** The hard one: the moved reminder
-  fields split by scope (see the storage-model decision above).
-  - **Per-universe `fs*` fields** (`fsEnabled`, `fsThreshold`, `fsMinFlightSec`,
-    `fsReminderOffsets`) — fold into `galaxyScanConfig` the same way B2 did the
-    colony fields (per-universe, sync for free), OR a sibling per-universe
-    store. They're currently in `UNIVERSE_SCOPED_SETTINGS`.
-  - **Global fields** (`reminderEnabled`, `reminderWaveOffsets`,
-    `adhocOffsetSec`) — need a NEW global `chrome.storage` store wired into the
-    GLOBAL gist-sync path (`sync/settingsSync.js` global bucket + a merge). This
-    is the new plumbing B1 didn't provide.
-  - Build the **friendly offset editor** in the Reminders tab: per-entry rows
-    with a human-readable impact preview. Extract the humanization that already
-    exists for the push payload (`sync/ntfyReconciler.js:660-661` —
-    `min before landing` / `…after landing` / `landing now`) into a pure
-    `domain/` helper shared by both. Offset parsing: `domain/fleetSave.js`.
-  - Rewire the reminders feature consumers; remove the moved fields from
-    `settings.js` + the AGR reminders section sub-rows (keep master + token).
-  - Update the Reminders-tab intro copy (deferred from Workstream A).
+- **B3 — Reminders tab config. ⏳ IN PROGRESS.** The hard one: the moved reminder
+  fields split by scope (see the storage-model decision above). Decided at start:
+  per-universe `fs*` **fold into `galaxyScanConfig`** (B2 worked example);
+  global fields → a **new global synced `chrome.storage` store** (nothing global
+  to fold into). Landing as coherent green sub-commits:
+  - **B3a — `humanizeOffset` helper. ✅ DONE.** Extracted the landing-relative
+    impact phrasing (`min before landing` / `landing now` / `…after landing`)
+    from `ntfyReconciler.fsBody` into a pure `domain/duration.js` helper, shared
+    by the push body and the upcoming offset-editor preview. Output unchanged.
+  - **B3b — Per-universe `fs*` fold. ✅ DONE.** Folded `fsEnabled` / `fsThreshold`
+    / `fsMinFlightSec` / `fsOffsets` into `galaxyScanConfig` (domain shape +
+    defaults + normalize); removed from `settings.js` + `UNIVERSE_SCOPED_SETTINGS`;
+    rewired the reminders consumers (`producer.js`, `eventList.js` now read +
+    subscribe to `galaxyScanConfigStore`); removed the four AGR reminder sub-rows;
+    added a plain `fs*` editor to the dashboard **Reminders tab**
+    (`features/dashboard/reminderConfig.js`). Both that editor and the scan-config
+    editor read-modify-write the shared slot so neither clobbers the other. Sync
+    rides the existing whole-slot merge for free. Tests + typecheck + lint green.
+  - **B3c — Global fields. ⏳ NEXT.** `reminderEnabled`, `reminderSchedule`
+    (`reminderWaveOffsets`), `adhocOffsetSec` → a NEW global `chrome.storage`
+    store wired into the GLOBAL gist-sync path (`sync/settingsSync.js` global
+    bucket + a merge). Rewire `producer.js` / `eventList.js`; remove from
+    `settings.js` + the AGR wave/ad-hoc rows. Add the dashboard wave/ad-hoc rows.
+  - **B3d — Friendly offset editor.** Replace the plain offset text fields (fs +
+    wave) with per-entry rows showing a `humanizeOffset` impact preview.
+  - Update the Reminders-tab intro copy (deferred from Workstream A). *(Partly
+    done in B3b — intro now mentions the fs config + token-stays-in-game.)*
 - **B4 — Slim the AGR panel + signposts.** After B3, the AGR reminders section
   should be just the master switch + token (+ the read-only status rows). Add a
   one-line "Configure schedules in the Dashboard → Reminders" annotation under
@@ -250,7 +259,8 @@ settings live" note + the tab name wait on B.
 
 1. **A** — dashboard copy review. ✅ done.
 2. **C** — README refresh (minus the settings-location note). ✅ done.
-3. **B** — the settings split. B1 reverted; **B2 ✅ done; B3 is NEXT**, then B4.
+3. **B** — the settings split. B1 reverted; **B2 ✅ done; B3 in progress
+   (B3a + B3b ✅ done, B3c NEXT)**, then B4.
 4. **C follow-up** — fill in the "where settings live" note after B4.
 5. *(Later, out of scope here)* AMO listing copy + screenshots.
 

@@ -3,6 +3,13 @@
 // Galaxy-Scan configuration — the user-tunable strategy that drives the
 // Scan button and the dashboard's stale/free-region views.
 //
+// It is ALSO the per-universe home for the colonize/abandon knobs (B2) and
+// the fleet-save reminder knobs (`fs*`, B3): those are all server-scoped
+// settings edited from the dashboard, so folding them into this one
+// per-universe `chrome.storage` slot lets them ride its whole-slot
+// newest-wins gist sync for free — see REFRESH-PLAN.md. The fields are
+// otherwise unrelated to scanning; they share the store, not the concept.
+//
 // # Why this is its own domain module (and its own store)
 //
 // Historically the "which positions" knobs lived in `settingsStore`
@@ -74,6 +81,14 @@ import { parseDuration } from './duration.js';
  *   colony under this many fields is offered for abandon.
  * @property {string} colonyPassword  Account password the abandon flow
  *   autofills into the game's give-up confirmation form.
+ * @property {boolean} fsEnabled  Fleet-save auto-detection on/off (per-server:
+ *   the "big fleet" cutoff is speed-dependent, so it lives here, not global).
+ * @property {number} fsThreshold  Minimum total ships for a leg to count as a
+ *   fleet-save.
+ * @property {number} fsMinFlightSec  Minimum flight time (s) for a leg to count
+ *   as a fleet-save — excludes short planet⇄moon hops. Server-speed dependent.
+ * @property {string} fsOffsets  Fleet-save reminder offsets relative to landing
+ *   (comma-separated, minutes-first; negative = before, 0 = at, + = after).
  * @property {GalaxyScanRescan} rescan  Per-status rescan policy inputs.
  */
 
@@ -115,6 +130,10 @@ export const defaultGalaxyScanConfig = () => ({
   colonyMinGap: 15,
   colonyMinFields: 320,
   colonyPassword: '',
+  fsEnabled: false,
+  fsThreshold: 100000,
+  fsMinFlightSec: 600,
+  fsOffsets: '-10m, 0m, 10m',
   rescan: {
     emptySent: 4 * H,        // 4h
     empty: 0,                // never (opt-in for aggressive play)
@@ -185,6 +204,13 @@ export const normalizeGalaxyScanConfig = (raw) => {
     colonyMinFields: coerceSeconds(r.colonyMinFields, d.colonyMinFields),
     colonyPassword:
       typeof r.colonyPassword === 'string' ? r.colonyPassword : d.colonyPassword,
+    // fs* are the fleet-save reminder knobs (B3). Threshold / min-flight are
+    // non-negative ints (coerceSeconds does that coercion); offsets is a
+    // free-form duration-list string; enabled is a boolean.
+    fsEnabled: typeof r.fsEnabled === 'boolean' ? r.fsEnabled : d.fsEnabled,
+    fsThreshold: coerceSeconds(r.fsThreshold, d.fsThreshold),
+    fsMinFlightSec: coerceSeconds(r.fsMinFlightSec, d.fsMinFlightSec),
+    fsOffsets: typeof r.fsOffsets === 'string' ? r.fsOffsets : d.fsOffsets,
     rescan,
   };
 };

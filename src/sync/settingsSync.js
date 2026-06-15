@@ -51,14 +51,11 @@ export const EXCLUDED_SETTINGS = new Set(['fabBtnSize', 'gistToken']);
  * @type {Set<string>}
  */
 export const UNIVERSE_SCOPED_SETTINGS = new Set([
-  // colonyPassword / colonyMinGap / colonyMinFields moved to the
-  // per-universe galaxyScanConfig store (which syncs on its own slot) —
-  // see REFRESH-PLAN.md B2.
+  // colonyPassword / colonyMinGap / colonyMinFields (B2) and the fleet-save
+  // knobs fsEnabled / fsThreshold / fsOffsets / fsMinFlightSec (B3) moved to
+  // the per-universe galaxyScanConfig store (which syncs on its own slot) —
+  // see REFRESH-PLAN.md.
   'maxExpeditionsPerPlanet',
-  'fsEnabled',
-  'fsThreshold',
-  'fsOffsets',
-  'fsMinFlightSec',
   'reminderNtfyToken',
 ]);
 

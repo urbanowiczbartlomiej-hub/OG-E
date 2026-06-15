@@ -30,13 +30,12 @@
 //   5. Ad-hoc reminders — lead time. Always on: the event-list badges arm a
 //      per-fleet ping; lead time is how long before arrival it fires
 //      (captured per reminder at arm time).
-//   6. Fleet-save reminders — enable / ship threshold / min flight time /
-//      schedule. Auto-detect a big own fleet and schedule a series RELATIVE
-//      to landing (negative = before, 0 = at, positive = after). Min flight
-//      time excludes short planet⇄moon hops.
 //
-// The topic is automatic (derived from the token); it's shown read-only
-// both here (row 3b) and on the OG-E Dashboard's Reminders tab.
+// Fleet-save reminders (enable / ship threshold / min flight time / schedule)
+// used to live here too, but they are SERVER-SCOPED — moved to the dashboard's
+// Reminders tab, backed by the per-universe galaxyScanConfig store (see
+// REFRESH-PLAN.md B3). The topic is automatic (derived from the token); it's
+// shown read-only both here (row 3b) and on that dashboard tab.
 
 import { isValidNtfyToken, deriveNtfyTopic } from '../../../sync/reminders.js';
 import { fetchNtfyAccount } from '../../../sync/ntfyAccount.js';
@@ -76,8 +75,6 @@ const sectionLocked = (s) => !s.remindersMasterEnabled || !isValidNtfyToken(s.re
  * @returns {boolean}
  */
 const waveLocked = (s) => sectionLocked(s) || !s.reminderEnabled;
-/** @param {import('../../../state/settings.js').Settings} s @returns {boolean} */
-const fsLocked = (s) => sectionLocked(s) || !s.fsEnabled;
 
 /** @type {SettingsSection} */
 export const remindersSection = {
@@ -168,45 +165,6 @@ export const remindersSection = {
       type: 'duration',
       placeholder: '1m',
       disabledWhen: sectionLocked,
-    },
-    {
-      // Fleet-save auto-detection: any of your own fleets whose total ship
-      // count crosses the threshold is flagged 🛡 in the event list and gets
-      // a reminder series. Auto-detected (never armed by hand); each slot can
-      // only be cancelled from its badge in its final 2 minutes.
-      id: 'fsEnabled',
-      label: 'Fleet-save reminders — enable',
-      type: 'checkbox',
-      disabledWhen: sectionLocked,
-    },
-    {
-      // The "big fleet" cutoff (a ship COUNT, not a duration). Default 100 000.
-      id: 'fsThreshold',
-      label: 'Fleet-save reminders — ship threshold',
-      type: 'text',
-      placeholder: '100000',
-      disabledWhen: fsLocked,
-    },
-    {
-      // Second gate: exclude short planet⇄moon hops. A big fleet on a short
-      // flight is a logistics shuffle, not a save. Server-speed dependent,
-      // so configurable. Default 600 s (`10m`). 0 disables the gate.
-      id: 'fsMinFlightSec',
-      label: 'Fleet-save reminders — min flight time',
-      type: 'duration',
-      placeholder: '10m',
-      disabledWhen: fsLocked,
-    },
-    {
-      // Free-form reminder schedule, RELATIVE to arrival (comma-separated
-      // minutes-first offsets; negative = before landing, 0 = at landing,
-      // positive = after). e.g. `-10m, 0m, 10m` ⇒ 10 min before, at, and
-      // 10 min after.
-      id: 'fsOffsets',
-      label: 'Fleet-save reminders — schedule',
-      type: 'text',
-      placeholder: '-10m, 0m, 10m',
-      disabledWhen: fsLocked,
     },
   ],
 };

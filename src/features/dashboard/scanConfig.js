@@ -199,11 +199,16 @@ export const installScanConfig = ({ getUniverseId }) => {
   };
 
   /**
-   * Read every widget into a config, rejecting an unparseable rescan field
-   * (keeps the user honest about the `6h`/`5d`/`0` grammar). Returns null +
-   * sets an error status when any field is invalid.
+   * Read every widget this editor owns into a partial config, rejecting an
+   * unparseable rescan field (keeps the user honest about the `6h`/`5d`/`0`
+   * grammar). Returns null + sets an error status when any field is invalid.
    *
-   * @returns {import('../../domain/galaxyScanConfig.js').GalaxyScanConfig | null}
+   * The fleet-save knobs (`fs*`) live in the SAME per-universe slot but are
+   * edited from the Reminders tab (REFRESH-PLAN.md B3), so they are
+   * deliberately NOT in this partial — {@link save} merges it over the stored
+   * config so a scan-config save never clobbers them.
+   *
+   * @returns {Partial<import('../../domain/galaxyScanConfig.js').GalaxyScanConfig> | null}
    */
   const collect = () => {
     /** @type {Record<string, number | boolean>} */
@@ -218,22 +223,25 @@ export const installScanConfig = ({ getUniverseId }) => {
       rescan[field] = secs;
     }
     rescan.abandonedEnabled = abandonedInput.checked;
-    // normalizeGalaxyScanConfig fills any field we didn't set and coerces.
-    return normalizeGalaxyScanConfig({
+    return {
       positions: positionsInput.value.trim(),
       preferOtherGalaxies: preferInput.checked,
       colonyMinGap: parseInt(colonyMinGapInput.value, 10),
       colonyMinFields: parseInt(colonyMinFieldsInput.value, 10),
       colonyPassword: colonyPasswordInput.value,
-      rescan,
-    });
+      rescan: /** @type {import('../../domain/galaxyScanConfig.js').GalaxyScanRescan} */ (rescan),
+    };
   };
 
   const save = async () => {
     const uni = getUniverseId();
     if (!uni) { setStatus('No universe selected.', '#e66'); return; }
-    const cfg = collect();
-    if (!cfg) return;
+    const owned = collect();
+    if (!owned) return;
+    // Read-modify-write so the per-universe fleet-save knobs (edited from the
+    // Reminders tab) survive a scan-config save — both surfaces share one slot.
+    const stored = normalizeGalaxyScanConfig(await chromeStore.get(galaxyScanConfigKeyFor(uni)));
+    const cfg = normalizeGalaxyScanConfig({ ...stored, ...owned });
     await chromeStore.set(galaxyScanConfigKeyFor(uni), cfg);
     // Stamp the whole-slot newest-wins clock and poke any open game tab to
     // push to the gist — same trio the routes editor writes on save.

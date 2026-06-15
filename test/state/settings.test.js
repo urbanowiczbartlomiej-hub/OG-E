@@ -69,12 +69,12 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
   });
 
   it('every schema key is prefixed with SETTINGS_PREFIX + field name', () => {
-    // A handful of fields point at a DIFFERENT LS key than their field name:
-    // v1.11.0 repointed the wave schedule + FS offsets to fresh keys so the
-    // old incompatible stored values are orphaned (a deliberate reset, not a
-    // migration — see SETTINGS_SCHEMA). Their keys are pinned explicitly in
-    // the "correct types" test below.
-    const REMAPPED = new Set(['reminderSchedule', 'fsOffsets']);
+    // reminderSchedule points at a DIFFERENT LS key than its field name:
+    // v1.11.0 repointed the wave schedule to a fresh key so the old
+    // incompatible stored value is orphaned (a deliberate reset, not a
+    // migration — see SETTINGS_SCHEMA). Its key is pinned explicitly in the
+    // "correct types" test below.
+    const REMAPPED = new Set(['reminderSchedule']);
     for (const [field, schema] of Object.entries(SETTINGS_SCHEMA)) {
       if (REMAPPED.has(field)) {
         expect(schema.key.startsWith(SETTINGS_PREFIX)).toBe(true);
@@ -95,10 +95,6 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
         'expeditionBadges',
         'fabBtnSize',
         'fabMode',
-        'fsEnabled',
-        'fsMinFlightSec',
-        'fsOffsets',
-        'fsThreshold',
         'gistToken',
         'maxExpeditionsPerPlanet',
         'readabilityBoost',
@@ -130,26 +126,6 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
       type: 'string',
       default: '',
       key: 'oge_reminderNtfyToken',
-    });
-    expect(SETTINGS_SCHEMA.fsEnabled).toEqual({
-      type: 'bool',
-      default: false,
-      key: 'oge_fsEnabled',
-    });
-    expect(SETTINGS_SCHEMA.fsThreshold).toEqual({
-      type: 'int',
-      default: 100000,
-      key: 'oge_fsThreshold',
-    });
-    expect(SETTINGS_SCHEMA.fsOffsets).toEqual({
-      type: 'string',
-      default: '-10m, 0m, 10m',
-      key: 'oge_fsReminderOffsets',
-    });
-    expect(SETTINGS_SCHEMA.fsMinFlightSec).toEqual({
-      type: 'int',
-      default: 600,
-      key: 'oge_fsMinFlightSec',
     });
   });
 });

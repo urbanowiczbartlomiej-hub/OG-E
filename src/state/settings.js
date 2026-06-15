@@ -91,13 +91,10 @@ export const SETTINGS_PREFIX = 'oge_';
  *                                   offset list AFTER the wave returns (LS key reminderWaveOffsets)
  *   adhocOffsetSec          60    — fire an ad-hoc reminder this many seconds before arrival
  *                                   (ad-hoc reminders are always on — no enable flag)
- *   fsEnabled               false — auto-detect fleet-saves (big own fleets) in the event list
- *   fsThreshold             100000 — minimum total ships for a leg to count as a fleet-save
- *   fsOffsets               '-10m, 0m, 10m' — FS reminder offsets relative to arrival,
- *                                   minutes-first (negative = before landing, 0 = at, + = after;
- *                                   LS key fsReminderOffsets)
- *   fsMinFlightSec          600   — minimum flight time (sec) for a leg to count as a fleet-save;
- *                                   excludes short planet⇄moon hops. Server-speed dependent.
+ *   (The fleet-save knobs — fsEnabled / fsThreshold / fsMinFlightSec / fsOffsets —
+ *    moved OUT of Settings into the per-universe Galaxy-Scan config (server-scoped,
+ *    edited in the dashboard's Reminders tab), see `state/galaxyScanConfig.js`
+ *    and REFRESH-PLAN.md B3.)
  *
  * @typedef {object} Settings
  * @property {boolean} fabMode
@@ -115,10 +112,6 @@ export const SETTINGS_PREFIX = 'oge_';
  * @property {string}  reminderNtfyToken
  * @property {string}  reminderSchedule
  * @property {number}  adhocOffsetSec
- * @property {boolean} fsEnabled
- * @property {number}  fsThreshold
- * @property {string}  fsOffsets
- * @property {number}  fsMinFlightSec
  */
 
 /**
@@ -177,10 +170,6 @@ export const SETTINGS_SCHEMA = {
   // every player lands on the new default. Deliberate: no migration.
   reminderSchedule:       { type: 'string', default: '0m, 10m, 30m, 60m', key: SETTINGS_PREFIX + 'reminderWaveOffsets' },
   adhocOffsetSec:         { type: 'int',    default: 60,    key: SETTINGS_PREFIX + 'adhocOffsetSec' },
-  fsEnabled:              { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'fsEnabled' },
-  fsThreshold:            { type: 'int',    default: 100000, key: SETTINGS_PREFIX + 'fsThreshold' },
-  fsOffsets:              { type: 'string', default: '-10m, 0m, 10m', key: SETTINGS_PREFIX + 'fsReminderOffsets' },
-  fsMinFlightSec:         { type: 'int',    default: 600,   key: SETTINGS_PREFIX + 'fsMinFlightSec' },
 };
 
 // ─────────────────────────────────────────────────────────────────────────

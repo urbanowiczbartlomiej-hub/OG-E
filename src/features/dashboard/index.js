@@ -77,6 +77,7 @@ import {
 import { installReminders, _resetRemindersForTest } from './reminders.js';
 import { installRoutes } from './routes.js';
 import { installScanConfig } from './scanConfig.js';
+import { installReminderConfig } from './reminderConfig.js';
 
 /**
  * @typedef {import('../../state/history.js').ColonyEntry} ColonyEntry
@@ -144,6 +145,15 @@ let routesApi = null;
  * @type {{ refresh: () => void } | null}
  */
 let scanConfigApi = null;
+
+/**
+ * Handle to the fleet-save reminder config editor's refresh entrypoint, set by
+ * `installReminderConfig` at boot. Called from the universe-selector change
+ * handler so the fleet-save fields reload for the newly-selected server.
+ *
+ * @type {{ refresh: () => void } | null}
+ */
+let reminderConfigApi = null;
 
 /** @type {ColonyEntry[]} */
 let history = [];
@@ -232,6 +242,7 @@ const boot = async () => {
   remindersApi = installReminders({ getUniverseId: () => selectedUniverseId });
   routesApi = installRoutes({ getUniverseId: () => selectedUniverseId });
   scanConfigApi = installScanConfig({ getUniverseId: () => selectedUniverseId });
+  reminderConfigApi = installReminderConfig({ getUniverseId: () => selectedUniverseId });
 
   const universes = await discoverUniverses();
   selectedUniverseId = resolveInitialUniverse(universes);
@@ -245,6 +256,7 @@ const boot = async () => {
   remindersApi?.refresh();
   routesApi?.refresh();
   scanConfigApi?.refresh();
+  reminderConfigApi?.refresh();
   wireListeners();
 
   // Restore Colony Scout preferences from previous session.
@@ -788,6 +800,7 @@ const wireListeners = () => {
     remindersApi?.refresh();
     routesApi?.refresh();
     scanConfigApi?.refresh();
+    reminderConfigApi?.refresh();
   });
 
   clearScansBtn?.addEventListener('click', async () => {
@@ -825,6 +838,7 @@ export const _resetDashboardForTest = () => {
   remindersApi = null;
   routesApi = null;
   scanConfigApi = null;
+  reminderConfigApi = null;
   history = [];
   scans = {};
   galaxyConfig = defaultGalaxyScanConfig();

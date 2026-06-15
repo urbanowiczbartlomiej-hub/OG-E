@@ -290,41 +290,10 @@ describe('installSettingsUi — text + password', () => {
     expect(settingsStore.get().reminderSchedule).toBe('0m, 5m');
   });
 
-  it('text change coerces to Number for numeric fields (fsThreshold)', async () => {
-    setupAGR();
-    installSettingsUi();
-    await flushWaitFor();
-
-    const input = /** @type {HTMLInputElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'fsThreshold')
-    );
-    expect(input).not.toBeNull();
-    if (input) {
-      input.value = '30';
-      input.dispatchEvent(new Event('change'));
-    }
-    const next = settingsStore.get().fsThreshold;
-    expect(next).toBe(30);
-    expect(typeof next).toBe('number');
-  });
-
-  it('non-numeric text on a numeric field keeps the previous value', async () => {
-    settingsStore.set({ ...settingsStore.get(), fsThreshold: 20 });
-    setupAGR();
-    installSettingsUi();
-    await flushWaitFor();
-
-    const input = /** @type {HTMLInputElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'fsThreshold')
-    );
-    expect(input).not.toBeNull();
-    if (input) {
-      input.value = 'not-a-number';
-      input.dispatchEvent(new Event('change'));
-    }
-    // Previous value (20) is retained — no schema drift into strings.
-    expect(settingsStore.get().fsThreshold).toBe(20);
-  });
+  // The numeric-text coercion tests previously targeted `fsThreshold`, which
+  // moved to the dashboard Reminders tab (B3); no int-typed 'text' field
+  // remains in the AGR panel. The dashboard editor validates its own numeric
+  // fields — see test/features/dashboard/reminderConfig.test.js.
 
   it('password field uses type="password"', async () => {
     setupAGR();
@@ -557,7 +526,6 @@ describe('installSettingsUi — per-group enable gates its own options', () => {
       remindersMasterEnabled: true,
       reminderNtfyToken: VALID_TOKEN,
       reminderEnabled: true,
-      fsEnabled: true,
     }));
 
   /** @param {string} id */
@@ -567,8 +535,10 @@ describe('installSettingsUi — per-group enable gates its own options', () => {
     )?.disabled;
 
   it.each([
+    // The fleet-save group (fsEnabled → fsThreshold/fsMinFlightSec/fsOffsets)
+    // moved to the dashboard Reminders tab (B3); only the wave group remains
+    // in the AGR panel.
     ['reminderEnabled', ['reminderSchedule']],
-    ['fsEnabled', ['fsThreshold', 'fsMinFlightSec', 'fsOffsets']],
   ])('%s gates its group options', async (enableId, optionIds) => {
     setupAGR();
     installSettingsUi();

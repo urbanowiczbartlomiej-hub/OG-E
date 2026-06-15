@@ -42,6 +42,14 @@ describe('defaultGalaxyScanConfig', () => {
     expect(d.colonyMinFields).toBe(320);
     expect(d.colonyPassword).toBe('');
   });
+
+  it('carries the fleet-save reminder knobs (moved here from settingsStore, B3)', () => {
+    const d = defaultGalaxyScanConfig();
+    expect(d.fsEnabled).toBe(false);
+    expect(d.fsThreshold).toBe(100000);
+    expect(d.fsMinFlightSec).toBe(600);
+    expect(d.fsOffsets).toBe('-10m, 0m, 10m');
+  });
 });
 
 describe('buildRescanPolicy', () => {
@@ -122,6 +130,28 @@ describe('normalizeGalaxyScanConfig', () => {
     const bare = normalizeGalaxyScanConfig({});
     expect(bare.colonyMinGap).toBe(d.colonyMinGap);
     expect(bare.colonyPassword).toBe('');
+  });
+
+  it('keeps / coerces the fleet-save reminder knobs (B3)', () => {
+    const d = defaultGalaxyScanConfig();
+    const out = normalizeGalaxyScanConfig({
+      fsEnabled: true,
+      fsThreshold: '50000',
+      fsMinFlightSec: -5,
+      fsOffsets: '-5m, 0m',
+    });
+    expect(out.fsEnabled).toBe(true);
+    expect(out.fsThreshold).toBe(50000);            // coerced from string
+    expect(out.fsMinFlightSec).toBe(d.fsMinFlightSec); // negative → default
+    expect(out.fsOffsets).toBe('-5m, 0m');
+    // Non-boolean enable / non-string offsets fall back to defaults.
+    const bad = normalizeGalaxyScanConfig({ fsEnabled: 'yes', fsOffsets: 42 });
+    expect(bad.fsEnabled).toBe(false);
+    expect(bad.fsOffsets).toBe(d.fsOffsets);
+    // Missing → defaults.
+    const bare = normalizeGalaxyScanConfig({});
+    expect(bare.fsEnabled).toBe(false);
+    expect(bare.fsThreshold).toBe(d.fsThreshold);
   });
 });
 

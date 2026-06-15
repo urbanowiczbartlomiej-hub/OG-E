@@ -515,9 +515,10 @@ describe('settings sync', () => {
   });
 
   it('applies a remote UNIVERSE-SCOPED setting via settingsPerUniverse on download', async () => {
-    // fsThreshold is universe-scoped; remote carries it in settingsPerUniverse
-    // (the new dedicated slot). Since routesUniverseId = parseUniverseId(location.host)
-    // in this happy-dom env, we use that same key for the slot.
+    // maxExpeditionsPerPlanet is universe-scoped; remote carries it in
+    // settingsPerUniverse (the dedicated slot). Since routesUniverseId =
+    // parseUniverseId(location.host) in this happy-dom env, we use that same
+    // key for the slot.
     const uid = /** @type {string} */ (
       typeof location !== 'undefined'
         ? location.host.match(/^(s\d+-[a-z]{2,4})\./)
@@ -525,11 +526,11 @@ describe('settings sync', () => {
           : location.host
         : ''
     );
-    settingsStore.set({ ...settingsStore.get(), fsThreshold: 20 });
+    settingsStore.set({ ...settingsStore.get(), maxExpeditionsPerPlanet: 1 });
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(
       payload({
         settingsPerUniverse: {
-          [uid]: { values: { fsThreshold: 99 }, ts: { fsThreshold: 200 } },
+          [uid]: { values: { maxExpeditionsPerPlanet: 2 }, ts: { maxExpeditionsPerPlanet: 200 } },
         },
       }),
     );
@@ -537,10 +538,10 @@ describe('settings sync', () => {
     installSync();
     await tick(0);
 
-    expect(settingsStore.get().fsThreshold).toBe(99);
-    // Global ts map is NOT touched (fsThreshold is universe-scoped).
+    expect(settingsStore.get().maxExpeditionsPerPlanet).toBe(2);
+    // Global ts map is NOT touched (maxExpeditionsPerPlanet is universe-scoped).
     expect(
-      'fsThreshold' in JSON.parse(localStorage.getItem('oge_settingsTs') || '{}'),
+      'maxExpeditionsPerPlanet' in JSON.parse(localStorage.getItem('oge_settingsTs') || '{}'),
     ).toBe(false);
   });
 
