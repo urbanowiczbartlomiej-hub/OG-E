@@ -88,12 +88,11 @@ export const SETTINGS_PREFIX = 'oge_';
  *   reminderNtfyToken       ''    — ntfy.sh access token (Bearer) for publish/cancel
  *   (The fleet-save knobs — fsEnabled / fsThreshold / fsMinFlightSec / fsOffsets —
  *    moved OUT of Settings into the per-universe Galaxy-Scan config (server-scoped,
- *    edited in the dashboard's Reminders tab), see `state/galaxyScanConfig.js`
- *    and REFRESH-PLAN.md B3.)
+ *    edited in the dashboard's Reminders tab), see `state/galaxyScanConfig.js`.)
  *   (The GLOBAL reminder knobs — reminderEnabled / reminderSchedule / adhocOffsetSec —
  *    moved OUT of Settings into the global Galaxy-Scan-style reminder config
  *    (server-independent, edited in the dashboard's Reminders tab), see
- *    `state/reminderGlobalConfig.js` and REFRESH-PLAN.md B3c.)
+ *    `state/reminderGlobalConfig.js`.)
  *
  * @typedef {object} Settings
  * @property {boolean} fabMode

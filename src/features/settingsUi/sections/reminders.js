@@ -26,11 +26,11 @@
 //
 // That's the whole AGR section now: master switch + required credential + its
 // read-only status rows. The DETAILED reminder config moved to the dashboard's
-// Reminders tab (see REFRESH-PLAN.md B3): the per-server fleet-save knobs to
-// the per-universe galaxyScanConfig store (B3b), and the GLOBAL wave
-// enable/schedule + ad-hoc lead time to the reminderGlobalConfig store (B3c).
-// The token must stay here (it's the required credential); a one-line signpost
-// under the master switch points at the Dashboard for the rest.
+// Reminders tab: the per-server fleet-save knobs to the per-universe
+// galaxyScanConfig store, and the GLOBAL wave enable/schedule + ad-hoc lead
+// time to the reminderGlobalConfig store. The token must stay here (it's the
+// required credential); a one-line signpost under the master switch points at
+// the Dashboard for the rest.
 
 import { isValidNtfyToken, deriveNtfyTopic } from '../../../sync/reminders.js';
 import { fetchNtfyAccount } from '../../../sync/ntfyAccount.js';

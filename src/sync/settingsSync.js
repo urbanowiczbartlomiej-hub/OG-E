@@ -18,7 +18,7 @@
 //     ad-hoc lead time — moved to their own `reminderGlobalConfig` slot, B3c.)
 //
 //   - UNIVERSE_SCOPED: game-logic parameters that are meaningful only on a
-//     specific server (fsThreshold, fsOffsets, reminderNtfyToken, …).
+//     specific server (reminderNtfyToken, maxExpeditionsPerPlanet).
 //     Stored in `settingsPerUniverse[universeId]` and in a per-universe
 //     chrome.storage timestamp map under `<universeId>:oge_settingsTs`.
 //
@@ -44,7 +44,7 @@ export const EXCLUDED_SETTINGS = new Set(['fabBtnSize', 'gistToken']);
  * Settings keys that are synced PER-UNIVERSE (one slot per server in the
  * gist's `settingsPerUniverse` map). These are game-logic parameters whose
  * correct value depends on which OGame server you're playing — the same
- * user's `fsThreshold` on s163 and s201 may legitimately differ.
+ * user's `reminderNtfyToken` or expedition cap may legitimately differ.
  *
  * Only keys NOT in this set (and not in {@link EXCLUDED_SETTINGS}) go into
  * the global `settings` slot.
@@ -52,10 +52,10 @@ export const EXCLUDED_SETTINGS = new Set(['fabBtnSize', 'gistToken']);
  * @type {Set<string>}
  */
 export const UNIVERSE_SCOPED_SETTINGS = new Set([
-  // colonyPassword / colonyMinGap / colonyMinFields (B2) and the fleet-save
-  // knobs fsEnabled / fsThreshold / fsOffsets / fsMinFlightSec (B3) moved to
-  // the per-universe galaxyScanConfig store (which syncs on its own slot) —
-  // see REFRESH-PLAN.md.
+  // colonyPassword / colonyMinGap / colonyMinFields and the fleet-save knobs
+  // fsEnabled / fsThreshold / fsOffsets / fsMinFlightSec moved to the
+  // per-universe galaxyScanConfig store (which syncs on its own slot); the
+  // global wave/ad-hoc knobs moved to the reminderGlobalConfig slot.
   'maxExpeditionsPerPlanet',
   'reminderNtfyToken',
 ]);

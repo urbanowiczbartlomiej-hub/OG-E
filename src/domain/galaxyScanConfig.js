@@ -4,11 +4,11 @@
 // Scan button and the dashboard's stale/free-region views.
 //
 // It is ALSO the per-universe home for the colonize/abandon knobs (B2) and
-// the fleet-save reminder knobs (`fs*`, B3): those are all server-scoped
+// the fleet-save reminder knobs (`fs*`): those are all server-scoped
 // settings edited from the dashboard, so folding them into this one
 // per-universe `chrome.storage` slot lets them ride its whole-slot
-// newest-wins gist sync for free — see REFRESH-PLAN.md. The fields are
-// otherwise unrelated to scanning; they share the store, not the concept.
+// newest-wins gist sync for free. The fields are otherwise unrelated to
+// scanning; they share the store, not the concept.
 //
 // # Why this is its own domain module (and its own store)
 //

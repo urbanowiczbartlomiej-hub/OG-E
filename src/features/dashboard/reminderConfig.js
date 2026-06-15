@@ -1,15 +1,15 @@
 // @ts-check
 
 // Reminders config editor — the dashboard surface for the reminder knobs that
-// moved out of the in-game AGR settings panel (see REFRESH-PLAN.md B3). It
-// edits TWO stores with different scopes:
+// moved out of the in-game AGR settings panel. It edits TWO stores with
+// different scopes:
 //
 //   - GLOBAL (all servers): expedition-wave enable + schedule, and the ad-hoc
 //     lead time. Backed by the global `reminderGlobalConfig` chrome.storage
-//     slot (B3c). These apply to every universe.
+//     slot. These apply to every universe.
 //   - PER-SERVER (this server): fleet-save enable / ship threshold / min flight
 //     time / landing-relative offset schedule. Backed by the per-universe
-//     `galaxyScanConfig` slot (B3b) — the "big fleet" cutoff + flight-time gate
+//     `galaxyScanConfig` slot — the "big fleet" cutoff + flight-time gate
 //     are speed-dependent, so they're server-scoped.
 //
 // Both chrome.storage surfaces are visible to the game origin AND this

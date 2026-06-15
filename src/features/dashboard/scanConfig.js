@@ -77,9 +77,9 @@ export const installScanConfig = ({ getUniverseId }) => {
   abandonedInput.id = 'scanCfgAbandoned';
 
   // Colonization knobs (moved here from the in-game AGR settings panel so
-  // they live in one per-universe, cross-device-synced config — see
-  // REFRESH-PLAN.md B2). min-gap drives the Send-Col scheduling guard;
-  // min-fields + password drive the abandon-overview flow.
+  // they live in one per-universe, cross-device-synced config). min-gap drives
+  // the Send-Col scheduling guard; min-fields + password drive the
+  // abandon-overview flow.
   const colonyMinGapInput = /** @type {HTMLInputElement} */ (mk('input'));
   colonyMinGapInput.type = 'text';
   colonyMinGapInput.id = 'scanCfgColonyMinGap';
@@ -204,9 +204,9 @@ export const installScanConfig = ({ getUniverseId }) => {
    * grammar). Returns null + sets an error status when any field is invalid.
    *
    * The fleet-save knobs (`fs*`) live in the SAME per-universe slot but are
-   * edited from the Reminders tab (REFRESH-PLAN.md B3), so they are
-   * deliberately NOT in this partial — {@link save} merges it over the stored
-   * config so a scan-config save never clobbers them.
+   * edited from the Reminders tab, so they are deliberately NOT in this
+   * partial — {@link save} merges it over the stored config so a scan-config
+   * save never clobbers them.
    *
    * @returns {Partial<import('../../domain/galaxyScanConfig.js').GalaxyScanConfig> | null}
    */
