@@ -150,68 +150,78 @@ const BID_SNOOZE_MS = 30 * 60 * 1000;
 
 const CSS = `
 @keyframes oge-trader-yellow-bg {
-  0%, 100% {
-    box-shadow: inset 0 0 4px rgba(255, 235, 80, 0.20),
-                0 0 2px rgba(255, 220, 60, 0.10);
+  0%, 70%, 100% {
+    box-shadow: inset 0 0 6px rgba(255, 235, 80, 0.32),
+                0 0 3px rgba(255, 220, 60, 0.16);
   }
-  50% {
-    box-shadow: inset 0 0 12px rgba(255, 230, 70, 0.55),
-                0 0 9px rgba(255, 215, 50, 0.35);
+  85% {
+    box-shadow: inset 0 0 18px rgba(255, 230, 70, 0.85),
+                0 0 14px rgba(255, 215, 50, 0.55),
+                0 0 28px rgba(255, 210, 40, 0.28);
   }
 }
 @keyframes oge-trader-yellow-text {
-  0%, 100% { color: #ffe680; text-shadow: 0 0 3px rgba(255, 220, 80, 0.25); }
-  50%      { color: #fff2a8; text-shadow: 0 0 6px rgba(255, 225, 90, 0.50); }
+  0%, 70%, 100% { color: #ffe680; text-shadow: 0 0 3px rgba(255, 220, 80, 0.30); }
+  85%           { color: #fff2a8; text-shadow: 0 0 7px rgba(255, 225, 90, 0.60); }
 }
 @keyframes oge-trader-red-bg {
-  0%, 100% {
-    box-shadow: inset 0 0 6px rgba(255, 60, 40, 0.35),
-                0 0 4px rgba(255, 40, 20, 0.20);
+  0%, 70%, 100% {
+    box-shadow: inset 0 0 7px rgba(255, 60, 40, 0.40),
+                0 0 4px rgba(255, 40, 20, 0.22);
   }
-  50% {
-    box-shadow: inset 0 0 20px rgba(255, 70, 50, 0.85),
-                0 0 16px rgba(255, 40, 20, 0.65),
-                0 0 30px rgba(255, 30, 10, 0.30);
+  85% {
+    box-shadow: inset 0 0 22px rgba(255, 70, 50, 0.92),
+                0 0 16px rgba(255, 40, 20, 0.68),
+                0 0 34px rgba(255, 30, 10, 0.36);
   }
 }
 @keyframes oge-trader-red-text {
-  0%, 100% { color: #ff9080; text-shadow: 0 0 4px rgba(255, 60, 40, 0.40); }
-  50%      { color: #ffd0c0; text-shadow: 0 0 9px rgba(255, 80, 50, 0.75); }
+  0%, 70%, 100% { color: #ff9080; text-shadow: 0 0 4px rgba(255, 60, 40, 0.45); }
+  85%           { color: #ffd0c0; text-shadow: 0 0 9px rgba(255, 80, 50, 0.78); }
 }
-/* Menu-only pulses — deliberately gentler than the tile keyframes above
- * (the menu button is small and sits in a busy sidebar, so a softer frame
- * reads better). The tiles keep the stronger pulse. */
+/* Menu-only pulses. Still a touch softer than the tiles (the button is small
+ * and sits in a busy sidebar), but now use the same punchy flash profile as
+ * eventMenuHighlight so the Trader entry reads as clearly as an event entry —
+ * the old version was nearly invisible. */
 @keyframes oge-trader-menu-yellow-bg {
-  0%, 70%, 100% { box-shadow: inset 0 0 3px rgba(255, 235, 80, 0.15); }
+  0%, 70%, 100% {
+    box-shadow: inset 0 0 6px rgba(255, 235, 80, 0.30),
+                0 0 3px rgba(255, 215, 50, 0.15);
+  }
   85% {
-    box-shadow: inset 0 0 7px rgba(255, 230, 70, 0.40),
-                0 0 4px rgba(255, 215, 50, 0.20);
+    box-shadow: inset 0 0 16px rgba(255, 230, 70, 0.78),
+                0 0 12px rgba(255, 215, 50, 0.50),
+                0 0 24px rgba(255, 210, 40, 0.24);
   }
 }
 @keyframes oge-trader-menu-red-bg {
-  0%, 70%, 100% { box-shadow: inset 0 0 4px rgba(255, 60, 40, 0.25); }
+  0%, 70%, 100% {
+    box-shadow: inset 0 0 6px rgba(255, 60, 40, 0.34),
+                0 0 3px rgba(255, 40, 20, 0.18);
+  }
   85% {
-    box-shadow: inset 0 0 10px rgba(255, 70, 50, 0.55),
-                0 0 7px rgba(255, 40, 20, 0.30);
+    box-shadow: inset 0 0 18px rgba(255, 70, 50, 0.85),
+                0 0 14px rgba(255, 40, 20, 0.60),
+                0 0 28px rgba(255, 30, 10, 0.28);
   }
 }
 .${HIGHLIGHT_CLASS} {
   border-radius: 3px;
 }
 .${HIGHLIGHT_CLASS}.${YELLOW_CLASS} {
-  animation: oge-trader-yellow-bg 4s ease-in-out infinite;
+  animation: oge-trader-yellow-bg 4s linear infinite;
 }
 .${HIGHLIGHT_CLASS}.${YELLOW_CLASS} span,
 .${HIGHLIGHT_CLASS}.${YELLOW_CLASS} h2 {
-  animation: oge-trader-yellow-text 4s ease-in-out infinite;
+  animation: oge-trader-yellow-text 4s linear infinite;
   font-weight: bold;
 }
 .${HIGHLIGHT_CLASS}.${RED_CLASS} {
-  animation: oge-trader-red-bg 4s ease-in-out infinite;
+  animation: oge-trader-red-bg 4s linear infinite;
 }
 .${HIGHLIGHT_CLASS}.${RED_CLASS} span,
 .${HIGHLIGHT_CLASS}.${RED_CLASS} h2 {
-  animation: oge-trader-red-text 4s ease-in-out infinite;
+  animation: oge-trader-red-text 4s linear infinite;
   font-weight: bold;
 }
 /* TILES keep their pulse on hover on purpose: OGame only swaps their
@@ -219,40 +229,42 @@ const CSS = `
  * hover declarations in the cascade, so the glow survives (we never touch
  * the background property — the swapped image and our glow coexist).
  *
- * The MENU button is different. It carries ${MENU_CLASS} and a gentler
- * pulse, and on :hover / :active / selected (.on) it stops pulsing and
+ * The MENU button is different. It carries ${MENU_CLASS} and a (slightly)
+ * softer pulse, and on :hover / :active / selected (.on) it stops pulsing and
  * shows a STEADY glow — mirroring eventMenuHighlight. A running pulse
- * would smother OGame's own hover/selected styling; a steady, softer glow
- * lets that native state read through while still marking the item. */
+ * would smother OGame's own hover/selected styling; a steady, strong glow
+ * lets that native state read through while still clearly marking the item. */
 .${MENU_CLASS}.${YELLOW_CLASS} { animation-name: oge-trader-menu-yellow-bg; animation-timing-function: linear; }
 .${MENU_CLASS}.${RED_CLASS} { animation-name: oge-trader-menu-red-bg; animation-timing-function: linear; }
 .${MENU_CLASS}.${YELLOW_CLASS}:hover,
 .${MENU_CLASS}.${YELLOW_CLASS}:active,
 .${MENU_CLASS}.${YELLOW_CLASS}.on {
   animation-name: none;
-  box-shadow: inset 0 0 8px rgba(255, 230, 70, 0.45),
-              0 0 5px rgba(255, 215, 50, 0.25);
+  box-shadow: inset 0 0 14px rgba(255, 230, 70, 0.65),
+              0 0 9px rgba(255, 215, 50, 0.40),
+              0 0 20px rgba(255, 210, 40, 0.22);
 }
 .${MENU_CLASS}.${YELLOW_CLASS}:hover span,
 .${MENU_CLASS}.${YELLOW_CLASS}:active span,
 .${MENU_CLASS}.${YELLOW_CLASS}.on span {
   animation-name: none;
   color: #fff2a8;
-  text-shadow: 0 0 6px rgba(255, 225, 90, 0.50);
+  text-shadow: 0 0 7px rgba(255, 225, 90, 0.55);
 }
 .${MENU_CLASS}.${RED_CLASS}:hover,
 .${MENU_CLASS}.${RED_CLASS}:active,
 .${MENU_CLASS}.${RED_CLASS}.on {
   animation-name: none;
-  box-shadow: inset 0 0 10px rgba(255, 70, 50, 0.55),
-              0 0 7px rgba(255, 40, 20, 0.30);
+  box-shadow: inset 0 0 16px rgba(255, 70, 50, 0.75),
+              0 0 11px rgba(255, 40, 20, 0.45),
+              0 0 26px rgba(255, 30, 10, 0.26);
 }
 .${MENU_CLASS}.${RED_CLASS}:hover span,
 .${MENU_CLASS}.${RED_CLASS}:active span,
 .${MENU_CLASS}.${RED_CLASS}.on span {
   animation-name: none;
   color: #ffd0c0;
-  text-shadow: 0 0 8px rgba(255, 80, 50, 0.65);
+  text-shadow: 0 0 9px rgba(255, 80, 50, 0.72);
 }
 `;
 

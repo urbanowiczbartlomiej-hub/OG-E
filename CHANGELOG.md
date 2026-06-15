@@ -6,6 +6,15 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.19.4] — 2026-06-15
+
+### Changed
+
+- **Stronger Trader highlight.** The Trader menu entry and the Auctioneer /
+  Import-Export overview tiles now pulse with the same punchy glow as the event
+  highlight — the previous outline was so faint it was easy to miss. (Event
+  highlights are unchanged.)
+
 ## [1.19.3] — 2026-06-15
 
 ### Fixed
