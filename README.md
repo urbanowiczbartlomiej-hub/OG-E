@@ -68,12 +68,29 @@ the buttons:
 - **Galaxy Observations** — galaxy preview maps of everywhere you've
   scanned, plus the **Colony Scout** settlement-area analysis and the
   per-universe scan settings.
-- **Reminders** — a live look at every push reminder currently queued.
+- **Reminders** — a live look at every push reminder currently queued,
+  plus the schedule editor for expedition waves and fleet-save alerts.
 - **Daily Run** — point-and-click editor for your collection routes
   (pick sources and targets from your own planets and moons — nothing to
   type).
 
 Export / import everything as JSON. No telemetry, no accounts.
+
+### Where settings live
+
+Two homes, one rule: nothing is editable in two places.
+
+- **In-game (AGR settings panel)** — only the essentials: the master
+  on/off switches, the required tokens (your gist token for cloud sync,
+  your ntfy token for push reminders), the display toggles (readability,
+  event/trader highlights), and all expedition options. These either have
+  no natural Dashboard tab or are the switch that turns a feature on.
+- **In the Dashboard tabs** — the detailed config, next to the data it
+  shapes. **Reminders tab:** the expedition-wave and ad-hoc reminder
+  schedules, plus the per-universe fleet-save thresholds and offsets,
+  edited through a friendly per-entry offset editor. **Galaxy
+  Observations tab:** the per-universe target positions, rescan policy,
+  and the colonize / abandon thresholds.
 
 ---
 
