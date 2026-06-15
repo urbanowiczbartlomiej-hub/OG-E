@@ -266,17 +266,58 @@ settings live" note + the tab name wait on B.
 
 ## Where a fresh session should start
 
-**B3** (reminders config → Reminders tab). Read the storage-model decision and
-the B3 bullet above first — the global-vs-per-universe split is the crux, and
-the global reminder fields need NEW global-synced `chrome.storage` plumbing
-that B2 did not need. B2's colony-field fold into `galaxyScanConfig` is the
-worked example to copy for the per-universe `fs*` fields.
+**B3c** (global reminder fields → a NEW global-synced `chrome.storage` store).
+B3a (humanize helper) and B3b (per-universe `fs*` fold) are done; this is the
+sync-critical piece, deliberately left as its own unit. Concrete plan, fully
+scoped from reading the scheduler:
+
+1. **`domain/reminderGlobalConfig.js`** — pure shape + `defaultReminderGlobalConfig()`
+   + `normalizeReminderGlobalConfig()` for the three globals: `reminderEnabled`
+   (bool, false), `reminderSchedule` (string, `'0m, 10m, 30m, 60m'`),
+   `adhocOffsetSec` (int, 60).
+2. **`state/reminderGlobalConfig.js`** — a GLOBAL chrome.storage store modelled
+   on `state/galaxyScanConfig.js` but with NO universe prefix: key
+   `oge_reminderGlobalConfig`, ts key `oge_reminderGlobalConfigTs`, plus
+   `init*` / `dispose*` / `flush*` / `stamp*Changed` / `when*Hydrated`.
+3. **`sync/merge.js`** — `mergeReminderGlobalConfig(local, remote)`, whole-slot
+   newest-wins on `{ config, updatedAt }` (copy `mergeGalaxyScanConfig`, but the
+   gist field is a SINGLE slot, not a per-universe map).
+4. **`sync/gist.js`** — add `reminderGlobalConfig?: ReminderGlobalConfigSlot` to
+   the `GistPayload` typedef.
+5. **`sync/scheduler.js`** — add `readLocal…Slot` / `writeLocal…Slot` helpers
+   (mirror the galaxy-config ones), then merge `remote.reminderGlobalConfig` in
+   BOTH `downloadAndMerge` and `upload`, contribute it to the payload, and add
+   it to the `gistIsCurrent(...)` comparison.
+6. **`state/settings.js` + `sync/settingsSync.js`** — drop the three fields from
+   `SETTINGS_SCHEMA` + the `Settings` typedef (they were GLOBAL-synced via the
+   `settings` slot; removing them from the schema removes them from
+   `pickSyncedValues` automatically). No migration (single user). Update the
+   `settingsSync` / `scheduler` / `settings` tests that use `adhocOffsetSec` /
+   `reminderSchedule` as representative global keys → swap to another global key
+   (e.g. `readabilityBoost`).
+7. **`features/reminders/producer.js` + `eventList.js`** — read the three fields
+   from `reminderGlobalConfigStore` (not `settingsStore`) and subscribe to it
+   (mirror the `galaxyScanConfigStore` wiring B3b added).
+8. **`features/settingsUi/sections/reminders.js`** — remove the wave-enable,
+   wave-schedule, and ad-hoc lead-time rows. AGR then keeps ONLY master + token
+   + the read-only account/topic rows (this is also most of B4).
+9. **`features/dashboard/reminderConfig.js`** — add the wave-enable / wave-schedule
+   / ad-hoc-lead-time rows. NOTE: these write the GLOBAL store, while the fs*
+   rows write the per-universe `galaxyScanConfig` slot — so `save()` must write
+   BOTH targets (each with its own ts + a sync poke). Keep the read-modify-write
+   discipline for the per-universe slot.
+10. **Tests** — new `domain/reminderGlobalConfig`, `state` store, `sync/merge`
+    case, a scheduler round-trip for the new slot, and extend the dashboard
+    `reminderConfig.test.js` for the global rows.
+
+Then **B3d** (friendly offset editor: replace the plain fs + wave offset text
+fields with per-entry rows showing a `humanizeOffset` preview) and **B4** (final
+AGR slim annotation "Configure schedules in the Dashboard → Reminders" + verify
+nothing in AGR reads a moved key + the Reminders-tab intro copy + the README
+"where settings live" note).
 
 ## Open questions to resolve before the relevant step
 
-- **B3 global-fields plumbing:** build a dedicated global `chrome.storage`
-  store wired into `sync/settingsSync.js`'s global bucket, or fold the global
-  reminder fields into an existing global-synced surface? Decide at B3 start.
 - Within the Colonization config sub-section, do min-fields / password
   (abandon config) sit alongside min-gap, or grouped as an "Abandon small
   colonies" sub-block? Lean: one *Colonization config* block, abandon
