@@ -1,7 +1,7 @@
 // @ts-check
 
 import { describe, it, expect } from 'vitest';
-import { parseDuration, parseDurationList, formatDuration } from '../../src/domain/duration.js';
+import { parseDuration, parseDurationList, formatDuration, humanizeOffset } from '../../src/domain/duration.js';
 
 describe('parseDuration', () => {
   it('treats a bare number as minutes', () => {
@@ -97,5 +97,23 @@ describe('formatDuration', () => {
     for (const sec of [0, 60, 90, 600, 1800, 3600, -600]) {
       expect(parseDuration(formatDuration(sec))).toBe(sec);
     }
+  });
+});
+
+describe('humanizeOffset', () => {
+  it('renders before / at / after landing', () => {
+    expect(humanizeOffset(-600)).toBe('10 min before landing');
+    expect(humanizeOffset(0)).toBe('landing now');
+    expect(humanizeOffset(900)).toBe('15 min after landing');
+  });
+
+  it('rounds magnitude to the nearest whole minute', () => {
+    expect(humanizeOffset(-90)).toBe('2 min before landing');
+    expect(humanizeOffset(30)).toBe('1 min after landing');
+  });
+
+  it('treats non-finite input as zero', () => {
+    expect(humanizeOffset(NaN)).toBe('landing now');
+    expect(humanizeOffset(/** @type {number} */ (/** @type {unknown} */ (undefined)))).toBe('landing now');
   });
 });

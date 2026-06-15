@@ -83,7 +83,7 @@
 // is mirrored from chrome.storage by the histogram tab and passed in
 // here as a parameter; this module never reads storage directly.
 
-import { parseDurationList } from '../domain/duration.js';
+import { parseDurationList, humanizeOffset } from '../domain/duration.js';
 import { logger } from '../lib/logger.js';
 
 /* global fetch */
@@ -655,11 +655,7 @@ export const fsTitleFor = (universeId) => `[${universeId}] Fleet save`;
  */
 const fsBody = (label, arrivalAt, fireAt) => {
   const when = new Date(arrivalAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const dm = Math.round(Math.abs(fireAt - arrivalAt) / 60);
-  const rel = fireAt < arrivalAt
-    ? `${dm} min before landing`
-    : fireAt > arrivalAt ? `${dm} min after landing` : 'landing now';
-  return `Fleet save: ${label} — lands ${when} (${rel}).`;
+  return `Fleet save: ${label} — lands ${when} (${humanizeOffset(fireAt - arrivalAt)}).`;
 };
 
 /**

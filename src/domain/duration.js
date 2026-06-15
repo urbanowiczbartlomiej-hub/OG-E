@@ -95,3 +95,28 @@ export const formatDuration = (sec) => {
   if (a % 60 === 0) return `${sign}${a / 60}m`;
   return `${sign}${a}s`;
 };
+
+/**
+ * Humanize a landing-relative offset (whole seconds; negative = BEFORE
+ * landing, positive = AFTER, zero = at landing) into the plain-English
+ * impact phrase shared by the fleet-save push body and the Reminders-tab
+ * offset editor preview:
+ *
+ *   -600 ⇒ "10 min before landing"
+ *      0 ⇒ "landing now"
+ *    900 ⇒ "15 min after landing"
+ *
+ * Magnitude is rounded to the nearest WHOLE MINUTE — matching the push's
+ * coarseness (the ntfy app shows whole minutes) and the minutes-first
+ * grammar users type in. Single source of truth so the push text and the
+ * editor preview can never drift.
+ *
+ * @param {number} sec  Offset relative to landing, in seconds.
+ * @returns {string}
+ */
+export const humanizeOffset = (sec) => {
+  const n = Number.isFinite(sec) ? Math.round(sec) : 0;
+  if (n === 0) return 'landing now';
+  const m = Math.round(Math.abs(n) / 60);
+  return n < 0 ? `${m} min before landing` : `${m} min after landing`;
+};
