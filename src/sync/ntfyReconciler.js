@@ -212,8 +212,10 @@ const iconUrl = (file) =>
 /** Default OG-E notification icon. */
 const OGE_ICON_URL = iconUrl('icon128.png');
 
-/** Red variant for max-priority (player-armed) reminders — reads as urgent. */
-const OGE_ICON_RED_URL = iconUrl('icon_red.png');
+// (A standalone red-icon constant used to live here for auto-applying an
+// urgent icon to max-priority reminders. It's gone now that the red icon is a
+// selectable template preset — `resolveIconUrl(template.icon)` resolves it via
+// `iconFileFor`, so per-kind icon choice covers the urgent case.)
 
 /**
  * Resolve a template's preset icon id to its public https URL. The id→file

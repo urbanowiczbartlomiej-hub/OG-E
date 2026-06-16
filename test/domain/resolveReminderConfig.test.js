@@ -5,10 +5,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { resolveReminderConfig } from '../../src/domain/resolveReminderConfig.js';
-import {
-  defaultReminderGlobalConfig,
-  normalizeReminderGlobalConfig,
-} from '../../src/domain/reminderGlobalConfig.js';
+import { normalizeReminderGlobalConfig } from '../../src/domain/reminderGlobalConfig.js';
 import { defaultGalaxyScanConfig } from '../../src/domain/galaxyScanConfig.js';
 
 const global = normalizeReminderGlobalConfig({
