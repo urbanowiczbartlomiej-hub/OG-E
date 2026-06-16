@@ -6,6 +6,8 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.21.0] — 2026-06-16
+
 ### Changed
 
 - **Reminders are now per-server.** Expedition-wave cadence, ad-hoc lead time,
@@ -21,6 +23,12 @@ version numbers follow [Semantic Versioning](https://semver.org).
 - **In-game settings panel slimmed.** The Dashboard launcher is now its own
   named section, and the redundant reminders signpost row was removed — enable +
   token + topic is the whole minimum; the rest is discoverable in the Dashboard.
+- **Polished, responsive settings.** The ⚙ Settings panels (Colonizations,
+  Galaxy Observations, Reminders) now share one clean input / select / chip
+  style, and the Reminders settings split into three sub-tabs — Expedition
+  waves, Ad-hoc, Fleet-save. Lays out cleanly on narrow screens too.
+- **New abandon icon.** The Abandon button now shows a snapped colony flag —
+  a clearer "this place is being let go" than the old lift-off rocket.
 
 ### Added
 
@@ -36,6 +44,8 @@ version numbers follow [Semantic Versioning](https://semver.org).
   stored per server, but it synced as one shared blob — so on a second device
   the data landed under the wrong server and the histogram looked empty. History
   now syncs per server, matching where it is stored and shown.
+- **The floating button's progress / charge ring no longer leaves a stray dot**
+  when empty (a Chrome round line-cap artifact).
 
 ## [1.20.0] — 2026-06-16
 
