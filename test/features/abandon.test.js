@@ -1,42 +1,24 @@
 // @vitest-environment happy-dom
 //
-// Unit tests for the 3-click abandon feature.
+// Unit tests for the abandon stepper (`createAbandonFlow`) + `checkAbandonState`.
 //
 // # What we cover
 //
-// The module splits into two layers:
-//
-//   1. Pure DOM helpers — `checkAbandonState` and the proxy-button /
-//      dialog-expand helpers exercised through integration tests.
-//      These are easy to test: seed the DOM, call, assert.
-//
-//   2. `abandonPlanet` — a 3-click async state machine. Fully exercising
-//      it would require synthesising popup-close races, jQuery UI focus
-//      semantics, and the game's hidden→shown #validate transition.
-//      happy-dom can't replicate the game's jQuery UI behavior, so we
-//      cover the observable pre-flight gates (state invalid, coords
-//      mismatch, missing password, re-entry guard) and the DOM side-
-//      effects of Click-1 work via a happy-path integration that uses
-//      fake timers to drive `waitFor` polls.
-//
-// # Simplifications (documented)
-//
-//   - We do NOT assert the `location.reload()` call at the end of a
-//     happy path. Driving the flow all the way through both user clicks
-//     requires firing a synthetic click on a DOM node that appears mid-
-//     flow; the click fires synchronously but the subsequent `waitFor`
-//     polls are easier to cover with dedicated pre-flight tests.
-//   - We do NOT assert `expandEnclosingDialog` via ui-dialog centering
-//     math beyond the three unit tests below — the production path runs
-//     inside a real jQuery-UI-wrapped dialog; we trust the unit-level
-//     width/left assertions plus manual QA.
+//   1. `checkAbandonState` — pure DOM gate (overview + used===0 + small).
+//   2. `createAbandonFlow` entry gates — returns null on a bad state, a
+//      missing password, malformed coords, or while another flow is active.
+//   3. The 3-step flow — `advance()` walks opened → submitted → done, with the
+//      coords-match safety gate aborting a mismatched popup. happy-dom can't
+//      replicate OGame's jQuery UI, so we stage the popup DOM the stepper reads
+//      and drive `waitFor` polls with fake timers (same approach the previous
+//      injected-button flow used).
 //
 // @ts-check
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   checkAbandonState,
-  abandonPlanet,
+  createAbandonFlow,
   _resetAbandonForTest,
 } from '../../src/features/abandon/index.js';
 import { settingsStore, SETTINGS_SCHEMA } from '../../src/state/settings.js';
@@ -44,42 +26,19 @@ import { galaxyScanConfigStore } from '../../src/state/galaxyScanConfig.js';
 import { defaultGalaxyScanConfig } from '../../src/domain/galaxyScanConfig.js';
 import { scansStore } from '../../src/state/scans.js';
 
-// ── Scene helpers ────────────────────────────────────────────────────
-
-/**
- * Reset {@link settingsStore} to the schema defaults so cases start
- * from a clean baseline. Same pattern as
- * `test/features/sendExpedition.test.js::resetSettingsToDefaults`.
- *
- * @returns {void}
- */
 const resetSettingsToDefaults = () => {
   /** @type {Record<string, unknown>} */
   const defaults = {};
-  for (const key of /** @type {Array<keyof typeof SETTINGS_SCHEMA>} */ (
-    Object.keys(SETTINGS_SCHEMA)
-  )) {
+  for (const key of /** @type {Array<keyof typeof SETTINGS_SCHEMA>} */ (Object.keys(SETTINGS_SCHEMA))) {
     defaults[key] = SETTINGS_SCHEMA[key].default;
   }
-  settingsStore.set(
-    /** @type {import('../../src/state/settings.js').Settings} */ (
-      /** @type {unknown} */ (defaults)
-    ),
-  );
+  settingsStore.set(/** @type {any} */ (defaults));
 };
 
 /**
- * Paint the overview page: the pieces `checkAbandonState` reads and
- * the coords anchor that `abandonPlanet` parses on entry. Leaves the
- * abandon-popup scaffolding (`.openPlanetRenameGiveupBox`, `#abandonplanet`,
- * etc.) to individual tests.
+ * Paint the overview page bits `checkAbandonState` + the flow read on entry.
  *
- * @param {{
- *   isOverview?: boolean,
- *   usedFields?: number,
- *   maxFields?: number,
- *   coords?: string,
- * }} [opts]
+ * @param {{ isOverview?: boolean, usedFields?: number, maxFields?: number, coords?: string }} [opts]
  * @returns {void}
  */
 const setupOverviewScene = ({
@@ -97,11 +56,43 @@ const setupOverviewScene = ({
   `;
 };
 
+/** Set the per-universe colony password. @param {string} pw */
+const setPassword = (pw) =>
+  galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), colonyPassword: pw });
+
+/**
+ * Append the giveup popup scaffold (coords + #block + visible #validate with
+ * password/submit inputs) the first step reads.
+ *
+ * @param {string} [coords]
+ * @returns {void}
+ */
+const stageGiveupPopup = (coords = '[4:30:8]') => {
+  const scaffold = document.createElement('div');
+  scaffold.innerHTML = `
+    <a class="openPlanetRenameGiveupBox" href="#"></a>
+    <div id="abandonplanet">
+      <span id="giveupCoordinates">${coords}</span>
+      <button id="block"></button>
+      <div id="validate">
+        <input type="password" />
+        <input type="submit" />
+      </div>
+    </div>
+  `;
+  document.body.appendChild(scaffold);
+};
+
+/** Append the confirm dialog the second step waits for. @param {string} [coords] */
+const stageConfirmDialog = (coords = '[4:30:8]') => {
+  const box = document.createElement('div');
+  box.id = 'errorBoxDecision';
+  box.innerHTML = `<div>Really give up ${coords}?</div><button class="yes">Yes</button>`;
+  document.body.appendChild(box);
+};
+
 beforeEach(() => {
   resetSettingsToDefaults();
-  // colonyMinFields / colonyPassword now live in the per-universe galaxy-scan
-  // config; reset it so each case starts from the defaults (minFields 320,
-  // empty password).
   galaxyScanConfigStore.set(defaultGalaxyScanConfig());
   scansStore.set({});
   document.body.innerHTML = '';
@@ -116,224 +107,100 @@ afterEach(() => {
   location.search = '';
 });
 
-// ──────────────────────────────────────────────────────────────────
-// checkAbandonState
-// ──────────────────────────────────────────────────────────────────
-
 describe('checkAbandonState', () => {
   it('returns the parsed triple for a fresh small colony', () => {
-    // Default `colonyMinFields` is 320; max=100 is below threshold.
     setupOverviewScene({ usedFields: 0, maxFields: 100 });
-    const result = checkAbandonState();
-    expect(result).toEqual({ used: 0, max: 100, minFields: 320 });
+    expect(checkAbandonState()).toEqual({ used: 0, max: 100, minFields: 320 });
   });
 
-  it('returns null when the page is not the overview', () => {
+  it('returns null when not on the overview', () => {
     setupOverviewScene({ isOverview: false });
     expect(checkAbandonState()).toBeNull();
   });
 
   it('returns null when max fields is at or above minFields', () => {
-    // Boundary case — `max === minFields` is also "big enough".
     setupOverviewScene({ usedFields: 0, maxFields: 350 });
     expect(checkAbandonState()).toBeNull();
   });
 
   it('returns null when the planet is already built (usedFields > 0)', () => {
-    // Any non-zero usedFields means the planet is not "fresh" and
-    // therefore not a candidate for the abandon flow.
     setupOverviewScene({ usedFields: 5, maxFields: 100 });
     expect(checkAbandonState()).toBeNull();
   });
 });
 
-// ──────────────────────────────────────────────────────────────────
-// makeInjectedButton — exercised via abandonPlanet injecting it
-// ──────────────────────────────────────────────────────────────────
-
-describe('makeInjectedButton (via abandonPlanet Click-1 work)', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  /**
-   * Paint every DOM node that abandonPlanet's Click-1 path needs so
-   * we can reach the point where our SUBMIT PASSWORD proxy is
-   * injected. The password input is deliberately left without a
-   * value — the feature fills it.
-   *
-   * @returns {void}
-   */
-  const setupFullPopupScene = () => {
-    setupOverviewScene({ usedFields: 0, maxFields: 100 });
-    galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), colonyPassword: 'secret' });
-    const scaffold = document.createElement('div');
-    scaffold.innerHTML = `
-      <a class="openPlanetRenameGiveupBox" href="#"></a>
-      <div id="abandonplanet">
-        <span id="giveupCoordinates">[4:30:8]</span>
-        <button id="block"></button>
-        <div id="validate">
-          <input type="password" />
-          <input type="submit" />
-        </div>
-      </div>
-    `;
-    document.body.appendChild(scaffold);
-  };
-
-  it('injects an overlay-style SUBMIT PASSWORD button covering the popup content', async () => {
-    // The button sits on top of the whole popup content via
-    // `position: absolute; inset: 0`, so the user sees only our big
-    // action button and not the native password field / game-supplied
-    // text underneath.
-    setupFullPopupScene();
-    const promise = abandonPlanet();
-    // Drive the two `waitFor` polls (giveupCoordinates is already
-    // present, #validate is visible in happy-dom even without
-    // jQuery show() — offsetParent is non-null for a div whose
-    // only chain up is `body`).
-    await vi.advanceTimersByTimeAsync(200);
-
-    const injected = /** @type {HTMLButtonElement | null} */ (
-      document.getElementById('oge-abandon-proxy-submit')
-    );
-    expect(injected).not.toBeNull();
-    if (!injected) return; // narrow for TS — expect above already failed.
-    expect(injected.textContent).toBe('SUBMIT PASSWORD');
-    expect(injected.style.position).toBe('absolute');
-    // `inset: 0` in cssText — happy-dom doesn't always expose the
-    // shorthand via `style.inset`, so read the raw cssText instead.
-    expect(injected.style.cssText).toContain('inset');
-    // T9 panel redesign: the state colour no longer lives in
-    // `style.background` — the button carries the shared panel chrome
-    // class and its amber rim via the `--rim` custom property.
-    expect(injected.classList.contains('oge-panel')).toBe(true);
-    expect(injected.style.cssText.toLowerCase()).toMatch(/--rim:\s*#f59e0b/);
-    // The host was prepared with `position:relative` + min-height so
-    // the overlay has a concrete bounding box to anchor to.
-    const host = document.getElementById('abandonplanet');
-    expect(host?.style.position).toBe('relative');
-    expect(host?.style.minHeight).toBe('200px');
-
-    // Close the flow so the finally-block clears abandonInProgress.
-    injected.remove();
-    await vi.advanceTimersByTimeAsync(800);
-    await promise;
-  });
-});
-
-
-
-// ──────────────────────────────────────────────────────────────────
-// abandonPlanet — pre-flight safety gates (the easy-to-reach aborts)
-// ──────────────────────────────────────────────────────────────────
-
-describe('abandonPlanet — pre-flight gates', () => {
-  it('returns false when checkAbandonState is not valid', async () => {
-    // Not on overview → first gate rejects.
+describe('createAbandonFlow — entry gates', () => {
+  it('returns null when checkAbandonState is invalid (not overview)', () => {
     setupOverviewScene({ isOverview: false });
-    galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), colonyPassword: 'secret' });
-    const result = await abandonPlanet();
-    expect(result).toBe(false);
+    setPassword('secret');
+    expect(createAbandonFlow()).toBeNull();
   });
 
-  it('returns false when no colonyPassword is configured', async () => {
-    // All other gates satisfied; password is empty (schema default).
+  it('returns null when no colonyPassword is configured', () => {
     setupOverviewScene({ usedFields: 0, maxFields: 100 });
     expect(galaxyScanConfigStore.get().colonyPassword).toBe('');
-    const result = await abandonPlanet();
-    expect(result).toBe(false);
+    expect(createAbandonFlow()).toBeNull();
   });
 
-  it('returns false when the coords anchor is missing / malformed', async () => {
-    // Fresh small colony DOM, password set, but coords anchor is
-    // not a bracketed triple — Safety #2 rejects.
-    setupOverviewScene({
-      usedFields: 0,
-      maxFields: 100,
-      coords: 'not coords',
-    });
-    galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), colonyPassword: 'secret' });
-    const result = await abandonPlanet();
-    expect(result).toBe(false);
+  it('returns null when the coords anchor is missing / malformed', () => {
+    setupOverviewScene({ usedFields: 0, maxFields: 100, coords: 'not coords' });
+    setPassword('secret');
+    expect(createAbandonFlow()).toBeNull();
+  });
+
+  it('blocks a second concurrent flow until the first is cancelled', () => {
+    setupOverviewScene({ usedFields: 0, maxFields: 100 });
+    setPassword('secret');
+    const first = createAbandonFlow();
+    expect(first).not.toBeNull();
+    expect(createAbandonFlow()).toBeNull(); // re-entry blocked
+    first?.cancel();
+    expect(createAbandonFlow()).not.toBeNull(); // freed
   });
 });
 
-// ──────────────────────────────────────────────────────────────────
-// abandonPlanet — mid-flow aborts that need fake timers
-// ──────────────────────────────────────────────────────────────────
+describe('createAbandonFlow — the 3-step flow', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
 
-describe('abandonPlanet — mid-flow aborts', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
+  it('walks opened → submitted → done, autofilling the password and recording the slot', async () => {
+    setupOverviewScene({ usedFields: 0, maxFields: 100, coords: '[4:30:8]' });
+    setPassword('secret');
+    stageGiveupPopup('[4:30:8]');
+    const flow = /** @type {NonNullable<ReturnType<typeof createAbandonFlow>>} */ (createAbandonFlow());
+    expect(flow).not.toBeNull();
 
-  it('aborts when #giveupCoordinates shows a different planet', async () => {
-    // Overview shows [4:30:8], but our staged popup lies and says
-    // [9:99:1] — Safety gate 2 rejects.
-    setupOverviewScene({
-      usedFields: 0,
-      maxFields: 100,
-      coords: '[4:30:8]',
-    });
-    galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), colonyPassword: 'secret' });
-    const scaffold = document.createElement('div');
-    scaffold.innerHTML = `
-      <a class="openPlanetRenameGiveupBox" href="#"></a>
-      <div id="abandonplanet">
-        <span id="giveupCoordinates">[9:99:1]</span>
-      </div>
-    `;
-    document.body.appendChild(scaffold);
-
-    const promise = abandonPlanet();
+    // Step 1 — open + autofill.
+    const p1 = flow.advance();
     await vi.advanceTimersByTimeAsync(200);
-    const result = await promise;
+    expect(await p1).toEqual({ phase: 'opened' });
+    const pw = /** @type {HTMLInputElement} */ (document.querySelector('#validate input[type="password"]'));
+    expect(pw.value).toBe('secret');
 
-    expect(result).toBe(false);
-    // No Submit proxy injected — we bailed before the injection step.
-    expect(document.getElementById('oge-abandon-proxy-submit')).toBeNull();
+    // Step 2 — submit; the confirm dialog is up.
+    stageConfirmDialog('[4:30:8]');
+    const p2 = flow.advance();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(await p2).toEqual({ phase: 'submitted' });
+
+    // Step 3 — confirm; slot recorded as abandoned.
+    const p3 = flow.advance();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(await p3).toEqual({ phase: 'done' });
+    const recorded = /** @type {any} */ (scansStore.get())['4:30'];
+    expect(recorded.positions[8].status).toBe('abandoned');
   });
 
-  it('blocks re-entry while a flow is in progress', async () => {
-    // Start one flow at a state where it will hang waiting for the
-    // user to click the proxy Submit; then call abandonPlanet again
-    // and assert it short-circuits to false immediately.
-    setupOverviewScene({ usedFields: 0, maxFields: 100 });
-    galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), colonyPassword: 'secret' });
-    const scaffold = document.createElement('div');
-    scaffold.innerHTML = `
-      <a class="openPlanetRenameGiveupBox" href="#"></a>
-      <div id="abandonplanet">
-        <span id="giveupCoordinates">[4:30:8]</span>
-        <button id="block"></button>
-        <div id="validate">
-          <input type="password" />
-          <input type="submit" />
-        </div>
-      </div>
-    `;
-    document.body.appendChild(scaffold);
+  it('aborts step 1 when the popup opens for a different planet (coords mismatch)', async () => {
+    setupOverviewScene({ usedFields: 0, maxFields: 100, coords: '[4:30:8]' });
+    setPassword('secret');
+    stageGiveupPopup('[9:99:1]'); // popup lies about the planet
+    const flow = /** @type {NonNullable<ReturnType<typeof createAbandonFlow>>} */ (createAbandonFlow());
 
-    const first = abandonPlanet();
+    const p1 = flow.advance();
     await vi.advanceTimersByTimeAsync(200);
-    // Proxy Submit is injected → the first flow is parked in the
-    // Click-2 waiter; now a second call must bounce.
-    expect(document.getElementById('oge-abandon-proxy-submit')).not.toBeNull();
-
-    const second = await abandonPlanet();
-    expect(second).toBe(false);
-
-    // Close the first flow so the test doesn't leave a promise dangling.
-    document.getElementById('oge-abandon-proxy-submit')?.remove();
-    await vi.advanceTimersByTimeAsync(800);
-    await first;
+    expect(await p1).toEqual({ phase: 'aborted' });
+    // A subsequent advance stays aborted (flow is dead).
+    expect(await flow.advance()).toEqual({ phase: 'aborted' });
   });
 });

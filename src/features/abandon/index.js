@@ -1,71 +1,51 @@
-// 3-click abandon flow — porzucanie za małych fresh kolonii (mobile-safe).
+// Abandon flow (stepper) — porzucanie za małych fresh kolonii, sterowane z FAB.
 //
 // # What it does
 //
-// On the OGame overview page, when the current planet is freshly
-// colonized (usedFields === 0) and below the user's keep threshold
-// (settings.colonyMinFields), we relay each of the user's three taps to
-// exactly ONE native game action, with a DOM-level safety check between
-// every step. The flow closes with a local scansStore update and a
-// page reload.
+// On the OGame overview page, when the current planet is freshly colonized
+// (usedFields === 0) and below the user's keep threshold
+// (config.colonyMinFields), the unified FAB's colony module relays each of the
+// user's three taps to exactly ONE native game action, with a DOM-level safety
+// check between every step. The flow closes with a local scansStore update and
+// a page reload.
 //
-// Strict 1:1 user-click → game-HTTP-request mapping (TOS):
+// Strict 1:1 user-tap → game-HTTP-request mapping (TOS) — one FAB tap per
+// `advance()` call, one game request per `advance()`:
 //
-//   Click 1 (external — feature caller invokes `abandonPlanet()`):
+//   Tap 1 (`advance()` #1):
 //     safeClick(.openPlanetRenameGiveupBox)  → GAME: GET /planetlayer
 //     + pure-DOM: click #block, autofill password (no HTTP)
-//     + inject our big "SUBMIT PASSWORD" button WEWNĄTRZ popup
-//
-//   Click 2 (user taps injected Submit):
+//   Tap 2 (`advance()` #2):
 //     safeClick(nativeSubmit)                → GAME: POST /confirmPlanetGiveup
-//     + inject "CONFIRM DELETE" button WEWNĄTRZ the spawned confirm dialog
-//
-//   Click 3 (user taps injected Confirm):
+//   Tap 3 (`advance()` #3):
 //     safeClick(yesBtn)                       → GAME: POST /planetGiveup
 //     + cleanup scansStore + reload
 //
-// # Why injected buttons WEWNĄTRZ popup DOM
+// # Why a stepper driven by the FAB (and the close guard)
 //
-// jQuery UI dialog's focus manager treats "click on element outside the
-// dialog" as a focus-leave and hides the popup. On mobile — where a tap
-// briefly fires focus events before the click — this closed the popup
-// between clicks 1 and 2 of the flow (or 2 and 3), silently aborting.
-// The fix: our proxy buttons are appended INSIDE the `#abandonplanet`
-// content div and inside the `#errorBoxDecision`/`.errorBox` confirm
-// dialog. Clicks on them count as clicks inside the dialog scope,
-// focus never leaves, and the popup stays open until we safeClick()
-// the native submit/yes element that dispatches the real HTTP request.
+// Earlier this flow injected proxy buttons INSIDE the game popup so a tap
+// counted as "inside the dialog" (jQuery UI's focus manager hides the dialog on
+// a focus-leave / outside click). The unified design drives every tap from the
+// FAB instead; `features/abandon/colonyFab.js` installs a close guard for the
+// duration of the flow that stops the FAB's pointer/focus events from reaching
+// the game's document-level close handlers and keeps focus in the dialog. This
+// module stays pure flow + safety; the guard + button state live in the FAB.
 //
 // # Why we do NOT touch historyStore
 //
-// `historyStore` is the size-histogram dataset — every fresh
-// observation of a newly-colonized planet (including ones we are
-// about to abandon) is a valid data point for the planet-size
-// distribution at the user's preferred positions. Abandoned planets
-// are in fact the MOST important data points (they are by definition
-// the small ones; without them the histogram's left tail disappears).
-// `cleanupAbandonedPlanet` therefore only updates `scansStore` (so
-// the galaxy view doesn't re-suggest the slot) and deliberately
-// leaves the history record alone.
+// `historyStore` is the size-histogram dataset — abandoned planets are its most
+// important left-tail data points. `cleanupAbandonedPlanet` only updates
+// `scansStore` (so the galaxy view doesn't re-suggest the slot).
 //
-// # Safety gates
+// # Safety gates (unchanged from the previous flow)
 //
-// Three independent checks guard against deleting a built-up planet:
+//   1. `checkAbandonState()` must hold on entry (overview + used===0 + max
+//      below threshold).
+//   2. After tap 1, `#giveupCoordinates` must equal the coords captured from
+//      `#positionContentField` on entry (else a different planet → abort).
+//   3. After tap 2, the confirm dialog text must include the captured coords.
 //
-//   1. `checkAbandonState()` must hold on entry — we're on the
-//      overview page, `usedFields === 0`, and `maxFields` is below
-//      the user's `colonyMinFields` threshold.
-//   2. After click 1, `#giveupCoordinates` text must equal the
-//      coordinates we captured from `#positionContentField` on entry.
-//      A mismatch here would mean the popup was opened for a
-//      different planet (race with manual navigation) → hard abort.
-//   3. After click 2, the confirm dialog text must include the
-//      captured coordinates. OGame echoes the planet's coords inside
-//      the dialog body; if ours aren't there, we're looking at the
-//      wrong dialog → hard abort.
-//
-// Plus a module-level `abandonInProgress` flag prevents re-entry
-// from accidental double-invocation.
+// Plus a module-level guard prevents two concurrent flows.
 //
 // @ts-check
 
@@ -73,85 +53,11 @@ import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
 import { scansStore } from '../../state/scans.js';
 import { safeClick, waitFor } from '../../lib/dom.js';
 import { GAME } from '../../lib/gameDom.js';
-import { installPanelChrome, PANEL_CLASS } from '../shared/panelChrome.js';
 
 /**
- * Expand the jQuery-UI `.ui-dialog` that encloses `el` to at least
- * `desiredWidthPx`, capping at `window.innerWidth - 20` to leave a
- * breathing margin on narrow mobile viewports. If the dialog's current
- * `left` would place the right edge past the screen, re-positions it
- * so the full width fits.
- *
- * No-op when `el` is not inside a `.ui-dialog` (e.g. tests mounting
- * our target div at the document root without the jQuery UI wrapper).
- *
- * @param {Element} el   Any element inside the dialog we want widened.
- * @param {number} [desiredWidthPx]  Preferred width in px. Defaults 600.
- * @returns {void}
- */
-/**
- * Create one of our big proxy action buttons — full-popup overlay
- * style. The button is `position: absolute; inset: 0` so it covers
- * the WHOLE content area of its parent: the user sees only our
- * orange/red action button, every native field/text the game rendered
- * is hidden underneath. The caller is responsible for giving the
- * parent `position: relative` and a sensible min-height (the game's
- * content might collapse to zero otherwise) — see
- * {@link makeInjectedButtonHost}.
- *
- * The native form fields stay in the DOM, so `safeClick(nativeSubmit)`
- * still fires their click — visibility is not required for that.
- *
- * @param {string} text    Button label.
- * @param {string} rim     State colour for the panel chrome's `--rim`.
- * @param {string} id      DOM id (used by the click watchdogs to
- *                         detect popup-close between steps).
- * @param {string} [flag]  Optional `data-flag` pulse (`'error'`/`'wait'`).
- * @returns {HTMLButtonElement}  Unattached `<button type="button">`.
- */
-const makeInjectedButton = (text, rim, id, flag) => {
-  installPanelChrome();
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.id = id;
-  btn.textContent = text;
-  // Surface/elevation/state colour come from the shared panel chrome
-  // (same HUD family as the floating buttons); only layout stays inline.
-  btn.className = PANEL_CLASS;
-  if (flag) btn.dataset.flag = flag;
-  btn.style.cssText = [
-    '--rim:' + rim,
-    'position:absolute', 'inset:0',
-    'display:flex', 'align-items:center', 'justify-content:center',
-    'box-sizing:border-box', 'padding:16px',
-    'font-size:22px', 'text-align:center', 'letter-spacing:1px',
-    'border-radius:10px',
-    'cursor:pointer', 'touch-action:manipulation',
-    'z-index:9999',
-  ].join(';');
-  return btn;
-};
-
-/**
- * Prepare a parent element to host an overlay-style injected button.
- * Sets `position: relative` (so the button's `inset: 0` is anchored
- * to it) and a min-height so the parent doesn't collapse and hide
- * our overlay along with itself.
- *
- * @param {HTMLElement} parent
- * @returns {void}
- */
-const makeInjectedButtonHost = (parent) => {
-  parent.style.position = 'relative';
-  if (!parent.style.minHeight) parent.style.minHeight = '200px';
-};
-
-/**
- * Mark a galaxy slot as abandoned in {@link scansStore} so the galaxy
- * overlay does not suggest it as a colonize target in future picks.
- *
- * Deliberately does NOT touch `historyStore` — see module header for
- * the rationale (histogram preservation).
+ * Mark a galaxy slot as abandoned in {@link scansStore} so the galaxy overlay
+ * does not suggest it as a colonize target in future picks. Deliberately does
+ * NOT touch `historyStore` (see module header).
  *
  * @param {number} galaxy
  * @param {number} system
@@ -178,27 +84,14 @@ const cleanupAbandonedPlanet = (galaxy, system, position) => {
 };
 
 /**
- * Re-entry guard. Flipped to `true` when a flow enters Click-1 work
- * and back to `false` in the `finally` of {@link abandonPlanet}. A
- * second concurrent call returns `false` immediately.
- */
-let abandonInProgress = false;
-
-/**
- * Sync DOM read: is the current overview page a fresh colony that is
- * below the user's keep threshold?
- *
- * Conditions (all must hold):
- *   - `location.search` includes `component=overview`
- *   - `#diameterContentField` exists and matches `(used/max)`
- *   - `used === 0` (no buildings yet — definitely fresh)
- *   - `max < config.colonyMinFields` (below the user's threshold)
+ * Sync DOM read: is the current overview page a fresh colony below the user's
+ * keep threshold? All must hold: `component=overview` in the URL,
+ * `#diameterContentField` matches `(used/max)`, `used === 0`, and
+ * `max < config.colonyMinFields`.
  *
  * @param {{ colonyMinFields: number }} [config]  Optional config snapshot;
  *   defaults to the current per-universe `galaxyScanConfigStore.get()`.
- *   Passing it in makes the function pure w.r.t. the store, simplifying tests.
  * @returns {{ used: number, max: number, minFields: number } | null}
- *   Triple of parsed values when abandon is warranted, else `null`.
  */
 export const checkAbandonState = (config) => {
   const s = config ?? galaxyScanConfigStore.get();
@@ -215,185 +108,169 @@ export const checkAbandonState = (config) => {
 };
 
 /**
- * Run the 3-click abandon flow end-to-end. Returns `true` on
- * successful completion (local cleanup done, reload scheduled),
- * `false` on any abort — missing safety gate, coords mismatch,
- * timeout waiting for a game response, or user closing a popup
- * mid-flow. Uses the module-level {@link abandonInProgress} flag
- * to block re-entry.
+ * One step's outcome. `phase` tells the FAB how to repaint the button:
+ *   - `opened`    popup is up + password autofilled; next tap submits.
+ *   - `submitted` confirm dialog is up; next tap confirms the delete.
+ *   - `done`      delete fired; cleanup done + reload scheduled.
+ *   - `aborted`   a safety gate failed / a wait timed out — flow is dead.
  *
- * See file header for the 1:1 click-to-HTTP mapping.
- *
- * @returns {Promise<boolean>}
+ * @typedef {{ phase: 'opened' | 'submitted' | 'done' | 'aborted' }} AdvanceResult
  */
-export const abandonPlanet = async () => {
-  if (abandonInProgress) return false;
 
-  const config = galaxyScanConfigStore.get();
+/** Re-entry guard: at most one abandon flow may exist at a time. */
+let flowActive = false;
 
-  // ── Safety 1: abandon state still valid on entry ───────────────
-  if (!checkAbandonState(config)) return false;
+/**
+ * Build a single-use abandon flow. Each {@link AbandonFlow.advance} call
+ * performs the next game request (a 1:1 map to a user tap) and resolves with
+ * the new {@link AdvanceResult}. The flow is dead after a `done`/`aborted`
+ * result; the FAB discards it and rebuilds on the next entry.
+ *
+ * Returns `null` when the entry gate fails (not a fresh small colony, no
+ * password, or a flow is already active) so the caller can leave the button in
+ * its idle state.
+ *
+ * @param {{ colonyMinFields: number, colonyPassword: string }} [config]
+ *   Optional config snapshot (defaults to the per-universe store) — passing it
+ *   makes the flow pure w.r.t. the store for tests.
+ * @returns {AbandonFlow | null}
+ *
+ * @typedef {object} AbandonFlow
+ * @property {() => Promise<AdvanceResult>} advance  Drive the next step.
+ * @property {() => void} cancel  Release the re-entry guard without acting.
+ */
+export const createAbandonFlow = (config) => {
+  if (flowActive) return null;
+  const cfg = config ?? galaxyScanConfigStore.get();
 
-  // ── Safety 2: capture planet coords for mid-flow verification ──
+  // Entry gate (Safety 1): fresh small colony on the overview.
+  if (!checkAbandonState(cfg)) return null;
+
+  // Capture the planet coords for the mid-flow verification gates (Safety 2/3).
   const posEl = document.querySelector(GAME.POSITION_FIELD_LINK);
   const coordsMatch = posEl?.textContent?.trim()?.match(/\[(\d+):(\d+):(\d+)\]/);
-  if (!coordsMatch) return false;
+  if (!coordsMatch) return null;
   const galaxy = parseInt(coordsMatch[1], 10);
   const system = parseInt(coordsMatch[2], 10);
   const position = parseInt(coordsMatch[3], 10);
   const expectedCoords = `[${galaxy}:${system}:${position}]`;
 
-  // ── Safety 3: password configured ──────────────────────────────
-  if (!config.colonyPassword) return false;
+  // Safety 3 (password configured) — without it the game form can't submit.
+  if (!cfg.colonyPassword) return null;
 
-  abandonInProgress = true;
-  try {
-    // ═══ Click 1: open giveup popup ═════════════════════════════
-    const giveupLink = document.querySelector('.openPlanetRenameGiveupBox');
-    if (!giveupLink) return false;
-    safeClick(giveupLink); // HTTP: GET /planetlayer
+  flowActive = true;
+  let step = 0;
+  let busy = false;
+  let dead = false;
+  /** @type {HTMLInputElement | null} */
+  let nativeSubmit = null;
+  /** @type {Element | null} */
+  let yesBtn = null;
 
-    // Wait for the popup and verify it opened for OUR planet.
-    const giveupCoordsEl = await waitFor(() => {
-      const el = document.getElementById('giveupCoordinates');
-      return el?.textContent?.trim() ? el : null;
-    }, { timeoutMs: 5000 });
-    if (!giveupCoordsEl) return false;
-    if (giveupCoordsEl.textContent?.trim() !== expectedCoords) {
-      // Coords mismatch — hard abort; never delete the wrong planet.
-      return false;
+  /** @param {AdvanceResult['phase']} phase @returns {AdvanceResult} */
+  const finish = (phase) => {
+    if (phase === 'done' || phase === 'aborted') {
+      dead = true;
+      flowActive = false;
     }
+    return { phase };
+  };
 
-    // Pure-DOM: click #block to reveal password form (no HTTP).
-    const blockBtn = document.getElementById('block');
-    if (!blockBtn) return false;
-    safeClick(blockBtn);
+  const advance = async () => {
+    if (dead || busy) return /** @type {AdvanceResult} */ ({ phase: 'aborted' });
+    busy = true;
+    try {
+      // ═══ Tap 1: open giveup popup + reveal + autofill ═══════════════════
+      if (step === 0) {
+        const giveupLink = document.querySelector('.openPlanetRenameGiveupBox');
+        if (!giveupLink) return finish('aborted');
+        safeClick(giveupLink); // HTTP: GET /planetlayer
 
-    const validateDiv = await waitFor(() => {
-      const el = document.getElementById('validate');
-      return el && el.offsetParent !== null ? el : null;
-    }, { timeoutMs: 3000 });
-    if (!validateDiv) return false;
+        const giveupCoordsEl = await waitFor(() => {
+          const el = document.getElementById('giveupCoordinates');
+          return el?.textContent?.trim() ? el : null;
+        }, { timeoutMs: 5000 });
+        if (!giveupCoordsEl) return finish('aborted');
+        // Safety 2: the popup opened for OUR planet.
+        if (giveupCoordsEl.textContent?.trim() !== expectedCoords) return finish('aborted');
 
-    const pwField = /** @type {HTMLInputElement | null} */ (
-      validateDiv.querySelector('input[type="password"]')
-    );
-    const nativeSubmit = /** @type {HTMLInputElement | null} */ (
-      validateDiv.querySelector('input[type="submit"]')
-    );
-    if (!pwField || !nativeSubmit) return false;
+        // Pure-DOM: reveal the password form (no HTTP).
+        const blockBtn = document.getElementById('block');
+        if (!blockBtn) return finish('aborted');
+        safeClick(blockBtn);
 
-    // Autofill password (no HTTP); fire input + change events so any
-    // framework listeners bound to the field see the update.
-    pwField.value = config.colonyPassword;
-    pwField.dispatchEvent(new Event('input', { bubbles: true }));
-    pwField.dispatchEvent(new Event('change', { bubbles: true }));
+        const validateDiv = await waitFor(() => {
+          const el = document.getElementById('validate');
+          return el && el.offsetParent !== null ? el : null;
+        }, { timeoutMs: 3000 });
+        if (!validateDiv) return finish('aborted');
 
-    // Overlay the big "SUBMIT PASSWORD" button on top of the WHOLE
-    // popup content. jQuery UI's focus manager keeps the dialog open
-    // as long as the click is inside the dialog
-    // scope; our absolutely-positioned button sits inside that
-    // scope so it qualifies. The native password field + submit
-    // button remain in the DOM beneath — `safeClick(nativeSubmit)`
-    // fires them programmatically, no visibility required.
-    const abandonContent = document.getElementById('abandonplanet');
-    if (!abandonContent) return false;
-    makeInjectedButtonHost(abandonContent);
-    const proxySubmit = makeInjectedButton(
-      'SUBMIT PASSWORD',
-      '#f59e0b',
-      'oge-abandon-proxy-submit',
-    );
-    abandonContent.appendChild(proxySubmit);
+        const pwField = /** @type {HTMLInputElement | null} */ (
+          validateDiv.querySelector('input[type="password"]')
+        );
+        nativeSubmit = /** @type {HTMLInputElement | null} */ (
+          validateDiv.querySelector('input[type="submit"]')
+        );
+        if (!pwField || !nativeSubmit) return finish('aborted');
 
-    // ═══ Click 2: user taps our Submit proxy ════════════════════
-    const submitOk = await new Promise(
-      /** @param {(value: boolean) => void} resolve */
-      (resolve) => {
-        proxySubmit.addEventListener('click', () => {
-          clearInterval(watchdog);
-          proxySubmit.disabled = true;
-          proxySubmit.textContent = 'Submitting…';
-          safeClick(nativeSubmit); // HTTP: POST /confirmPlanetGiveup
-          resolve(true);
-        }, { once: true });
-        // Auto-abort if the popup closes under us (user tapped X).
-        const watchdog = setInterval(() => {
-          if (!document.getElementById('oge-abandon-proxy-submit')) {
-            clearInterval(watchdog);
-            resolve(false);
-          }
-        }, 500);
-      },
-    );
-    if (!submitOk) return false;
+        // Autofill (no HTTP); fire input + change so framework listeners see it.
+        pwField.value = cfg.colonyPassword;
+        pwField.dispatchEvent(new Event('input', { bubbles: true }));
+        pwField.dispatchEvent(new Event('change', { bubbles: true }));
 
-    // Wait for confirm dialog; verify it references our planet.
-    const yesBtn = await waitFor(() => {
-      const btn = document.querySelector('#errorBoxDecision .yes')
-        ?? document.querySelector('.errorBox .yes');
-      if (!btn) return null;
-      const dialog = document.querySelector('#errorBoxDecision')
-        ?? document.querySelector('.errorBox');
-      const text = dialog?.textContent ?? '';
-      if (!text.includes(expectedCoords)) return null;
-      return btn;
-    }, { timeoutMs: 5000 });
-    if (!yesBtn) return false;
+        step = 1;
+        return finish('opened');
+      }
 
-    const confirmDialog = /** @type {HTMLElement | null} */ (
-      document.getElementById('errorBoxDecision')
-      ?? document.querySelector('.errorBox')
-    );
-    if (!confirmDialog) return false;
+      // ═══ Tap 2: submit the password ═════════════════════════════════════
+      if (step === 1) {
+        if (!nativeSubmit) return finish('aborted');
+        safeClick(nativeSubmit); // HTTP: POST /confirmPlanetGiveup
 
-    makeInjectedButtonHost(confirmDialog);
-    const proxyConfirm = makeInjectedButton(
-      '⚠ CONFIRM DELETE ⚠',
-      '#fb7185',
-      'oge-abandon-proxy-confirm',
-      'error',
-    );
-    confirmDialog.appendChild(proxyConfirm);
+        yesBtn = await waitFor(() => {
+          const btn = document.querySelector('#errorBoxDecision .yes')
+            ?? document.querySelector('.errorBox .yes');
+          if (!btn) return null;
+          const dialog = document.querySelector('#errorBoxDecision')
+            ?? document.querySelector('.errorBox');
+          const text = dialog?.textContent ?? '';
+          // Safety 3: the confirm dialog references our planet.
+          if (!text.includes(expectedCoords)) return null;
+          return btn;
+        }, { timeoutMs: 5000 });
+        if (!yesBtn) return finish('aborted');
 
-    // ═══ Click 3: user taps our Confirm proxy ═══════════════════
-    const confirmOk = await new Promise(
-      /** @param {(value: boolean) => void} resolve */
-      (resolve) => {
-        proxyConfirm.addEventListener('click', () => {
-          clearInterval(watchdog);
-          proxyConfirm.disabled = true;
-          proxyConfirm.textContent = 'Deleting…';
-          safeClick(yesBtn); // HTTP: POST /planetGiveup
-          resolve(true);
-        }, { once: true });
-        const watchdog = setInterval(() => {
-          if (!document.getElementById('oge-abandon-proxy-confirm')) {
-            clearInterval(watchdog);
-            resolve(false);
-          }
-        }, 500);
-      },
-    );
-    if (!confirmOk) return false;
+        step = 2;
+        return finish('submitted');
+      }
 
-    // Post-abandon: brief settle, then scansStore cleanup + reload.
-    await new Promise((r) => setTimeout(r, 800));
-    cleanupAbandonedPlanet(galaxy, system, position);
-    setTimeout(() => location.reload(), 800);
-    return true;
-  } finally {
-    abandonInProgress = false;
-  }
+      // ═══ Tap 3: confirm the delete ══════════════════════════════════════
+      if (step === 2) {
+        if (!yesBtn) return finish('aborted');
+        safeClick(yesBtn); // HTTP: POST /planetGiveup
+        cleanupAbandonedPlanet(galaxy, system, position);
+        setTimeout(() => location.reload(), 800);
+        return finish('done');
+      }
+
+      return finish('aborted');
+    } finally {
+      busy = false;
+    }
+  };
+
+  return {
+    advance,
+    cancel: () => { if (!dead) { dead = true; flowActive = false; } },
+  };
 };
 
 /**
- * Test-only hook: reset the module-level {@link abandonInProgress}
- * re-entry guard. Production code never needs to call this — the
- * `finally` block in {@link abandonPlanet} always clears the flag.
+ * Test-only reset: clears the module-level re-entry guard so each case starts
+ * fresh. Prefixed with `_` to signal "do not import from production code".
  *
  * @returns {void}
  */
 export const _resetAbandonForTest = () => {
-  abandonInProgress = false;
+  flowActive = false;
 };

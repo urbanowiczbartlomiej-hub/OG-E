@@ -124,10 +124,9 @@ export const installScanConfig = ({ getUniverseId }) => {
     return r;
   };
 
+  body.appendChild(mk('div', 'margin:10px 0 4px;color:#4a9eff;font-size:13px;font-weight:bold;', 'Colonization'));
   body.appendChild(row('Target positions', positionsInput, 'list or range, e.g. 7-9, 15'));
   body.appendChild(row('Prefer neighbouring galaxies', preferInput, 'more predictable arrival times'));
-
-  body.appendChild(mk('div', 'margin:10px 0 4px;color:#4a9eff;font-size:13px;font-weight:bold;', 'Colonization'));
   body.appendChild(row('Min gap between arrivals (sec)', colonyMinGapInput));
   body.appendChild(row('Min fields to keep colony', colonyMinFieldsInput));
   body.appendChild(row('Account password (for abandon)', colonyPasswordInput));

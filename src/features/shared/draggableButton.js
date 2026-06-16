@@ -1,11 +1,9 @@
 // Shared drag + focus-persistence helpers used by the floating mobile
-// buttons (sendExpedition, sendColony) and the fresh-planet banner
-// (freshPlanetDetector). The two button features previously open-coded
-// the same touch/mouse drag wiring with an 8-px threshold and the same
-// `oge_focusedBtn`-based focus persistence; freshPlanetDetector grew
-// the same drag wiring independently. This module factors that out so
-// changes (e.g. adjusting the drag threshold, tweaking restore timing)
-// land in one place instead of three near-identical copies.
+// buttons (sendExpedition, sendColony, and the unified FAB shell). The button
+// features previously open-coded the same touch/mouse drag wiring with an 8-px
+// threshold and the same `oge_focusedBtn`-based focus persistence. This module
+// factors that out so changes (e.g. adjusting the drag threshold, tweaking
+// restore timing) land in one place instead of near-identical copies.
 //
 // Lives in `features/shared/` rather than `lib/` because it touches
 // `window`, `document`, and `safeLS` — `lib/` is the pure-helpers
@@ -33,18 +31,18 @@
 //   - Click behaviour — caller wires its own `'click'` listener; this
 //     helper exposes a `wasDrag()` predicate the listener checks first.
 //
-// # Why a single helper for three features
+// # Why a single helper
 //
 // sendColony's container wraps two halves; the drag/focus logic still
 // lives on the OUTER `wrap`, and the focus persistence wires on each
 // half independently — which we model by calling `installFocusPersist`
 // twice (once per half) with different `focusValue`s. sendExpedition uses a
-// single button so calls both helpers once. freshPlanetDetector calls
-// only `installDrag` — the banner has no focus state to persist.
+// single button so calls both helpers once. The unified FAB shell calls only
+// `installDrag` on its wrapper — focus state is per-module, not shared.
 //
 // @see ../sendColony/index.js          — caller for the colonize button.
 // @see ../sendExpedition/index.js          — caller for the expedition button.
-// @see ../freshPlanetDetector.js    — drag-only caller for the banner.
+// @see ./unifiedFab.js                 — drag-only caller for the FAB wrapper.
 
 /** @ts-check */
 

@@ -18,19 +18,17 @@
 //      (extension origin) and read in-game by the Scan button.
 //
 //   3. Feature installs — colonyRecorder, badges, sendExpedition, sendColony,
-//      abandonOverview, freshPlanetDetector, settingsUi, agrLogo,
-//      readabilityBoost.
+//      colonyFab, settingsUi, agrLogo, readabilityBoost.
 //      Each is a standalone `install*` function that hooks into the DOM
 //      / events it needs. Order is not load-bearing today — none of
 //      these features depend on each other's DOM — but we follow the
 //      "passive data → visible UI" mental grouping: colonyRecorder
 //      (observes overview) and badges (observes planet list) first,
 //      then the user-facing buttons, then the settings panel that
-//      controls them all. The small-planet banner sits with the
-//      user-facing overlays — it is a pure tooltip read on `#planetList`
-//      that paints a banner for the first freshly-colonized planet
-//      (`usedFields === 0`, no persisted state, see
-//      `freshPlanetDetector.js`). readabilityBoost is CSS-only and runs
+//      controls them all. The colony FAB module sits with the other FAB
+//      buttons — it reads `#planetList` (`usedFields === 0`) + the overview
+//      diameter to switch between "new colony" and "abandon" states (see
+//      `features/abandon/colonyFab.js`). readabilityBoost is CSS-only and runs
 //      at the very top of the file next to antiFlickerBackground — both inject a
 //      stylesheet and need no DOM beyond `documentElement`.
 //
@@ -44,15 +42,13 @@
 //      branch in theory; in practice the early return is what keeps
 //      runtime simple).
 //
-// Note: the abandon flow is split across two files inside
-// `features/abandon/`:
-//   - `abandon/index.js`    — the 3-click flow with overlay buttons
-//                             injected inside game popups. Exports
-//                             `abandonPlanet()` + `checkAbandonState()`.
-//   - `abandon/overview.js` — the UI entry point: a big red overlay on
-//                             the `#planet` div on overview pages that
-//                             triggers `abandonPlanet()`. Independent
-//                             from sendColony.
+// Note: the colony detect + abandon flow lives in `features/abandon/`:
+//   - `abandon/detect.js`   — pure `#planetList` detection helpers
+//                             (`findFirstFreshPlanet`, overview-cp/url).
+//   - `abandon/index.js`    — the 3-step abandon stepper + safety gates
+//                             (`createAbandonFlow()` + `checkAbandonState()`).
+//   - `abandon/colonyFab.js`— the unified FAB module (navigate ↔ abandon
+//                             states) that drives both; `installColonyFab()`.
 
 import { installAntiFlickerBackground } from './features/antiFlickerBackground.js';
 import { installReadabilityBoost } from './features/readabilityBoost.js';
@@ -76,8 +72,7 @@ import { installSendExpedition } from './features/sendExpedition/index.js';
 import { installSendColony } from './features/sendColony/index.js';
 import { installSendLifeform } from './features/sendLifeform/index.js';
 import { installDailyRun } from './features/dailyRun/index.js';
-import { installAbandonOverview } from './features/abandon/overview.js';
-import { installFreshPlanetDetector } from './features/freshPlanetDetector.js';
+import { installColonyFab } from './features/abandon/colonyFab.js';
 import { installSettingsUi } from './features/settingsUi/index.js';
 import { installAgrLogo } from './features/agrLogo.js';
 import { installFleetdispatchShortcut } from './features/fleetdispatchShortcut.js';
@@ -174,18 +169,13 @@ const installDomFeatures = () => {
   // Unified Daily Transport button (Send micro-fleets + Collect).
   installDailyRun();
 
-  // Standalone overlay on overview for fresh-small colonies.
-  // Independent from sendColony; reuses `abandonPlanet()` from
-  // `features/abandon/index.js`.
-  installAbandonOverview();
-
-  // Top-center banner for a freshly-colonized planet (usedFields === 0
-  // in the planetList tooltip). Stateless: one pass at mount. The
-  // banner disappears the moment the user builds anything on that
-  // planet (next reload will see usedFields > 0). Independent from
-  // abandonOverview — both overlays can coexist (banner on planetList
-  // pages, abandon overlay on the opened planet's overview).
-  installFreshPlanetDetector();
+  // Unified FAB colony module — folds the old fresh-planet banner and the
+  // red abandon overlay into ONE button on the FAB: a fresh colony elsewhere
+  // shows a "new colony" button that navigates to it; on that colony's
+  // overview the button becomes "abandon" and its taps drive the flow
+  // (features/abandon/colonyFab.js + abandon/index.js). Gated on fabMode
+  // internally (like the other FAB modules).
+  installColonyFab();
 
   // Keyboard shortcut on fleetdispatch — desktop users press
   // ArrowRight to advance through AGR/OGame's send panels.

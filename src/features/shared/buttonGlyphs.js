@@ -55,6 +55,19 @@ export const PLANET_ARROW_GLYPH = [
   '</g>',
 ].join('');
 
+/**
+ * Abandon colony — a planet (circle + equator band) struck through with a bold
+ * ✕, reading as "give up / delete this planet" (colonyFab). The X is drawn last
+ * and heaviest so it dominates at orb size; the band keeps the planet legible.
+ */
+export const ABANDON_GLYPH = [
+  '<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" transform="translate(32,32) scale(1.2) translate(-32,-32)">',
+  '<circle cx="32" cy="32" r="13"/>',
+  '<line x1="16" y1="16" x2="48" y2="48"/>',
+  '<line x1="48" y1="16" x2="16" y2="48"/>',
+  '</g>',
+].join('');
+
 /** Lifeforms — a DNA double helix with four rungs (sendLifeform). */
 export const DNA_GLYPH = [
   '<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" transform="translate(32,32) rotate(45) scale(1.15) translate(-32,-32)">',
