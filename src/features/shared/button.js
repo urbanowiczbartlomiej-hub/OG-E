@@ -383,10 +383,13 @@ export const createButton = (cfg) => {
       sweepRaf = null;
     }
     chargeArc?.setAttribute('stroke-dashoffset', '100');
+    // Hide again so the round line-cap doesn't leave a stray dot (Chrome).
+    if (chargeArc) chargeArc.style.visibility = 'hidden';
   };
   /** @param {HTMLElement} _zone */
   const startSweep = (_zone) => {
     stopSweep();
+    if (chargeArc) chargeArc.style.visibility = 'visible';
     const t0 = performance.now();
     const tick = () => {
       const pct = Math.min((performance.now() - t0) / holdMs, 1);
@@ -506,10 +509,10 @@ export const createButton = (cfg) => {
       else outer.removeAttribute('aria-disabled');
     },
     setProgress: (pct) => {
-      progressArc?.setAttribute(
-        'stroke-dashoffset',
-        String((1 - Math.max(0, Math.min(1, pct))) * 100),
-      );
+      const clamped = Math.max(0, Math.min(1, pct));
+      progressArc?.setAttribute('stroke-dashoffset', String((1 - clamped) * 100));
+      // Empty → hide so the round cap doesn't leave a permanent dot (Chrome).
+      if (progressArc) progressArc.style.visibility = clamped > 0 ? 'visible' : 'hidden';
     },
     resize: (size) => {
       outer.style.width = size + 'px';

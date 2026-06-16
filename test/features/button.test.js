@@ -251,6 +251,18 @@ describe('two-zone button', () => {
     ctl.setProgress(-1);
     expect(arc?.getAttribute('stroke-dashoffset')).toBe('100');
   });
+
+  it('hides the progress arc while empty so the round cap leaves no stray dot', () => {
+    const ctl = make();
+    const arc = /** @type {SVGElement} */ (document.querySelector('.oge-ring-progress'));
+    // Empty by default: no inline override (the stylesheet hides it, so the
+    // round line-cap can't leave a stray dot in Chrome).
+    expect(arc.style.visibility).not.toBe('visible');
+    ctl.setProgress(0.5);
+    expect(arc.style.visibility).toBe('visible');
+    ctl.setProgress(0);
+    expect(arc.style.visibility).toBe('hidden');
+  });
 });
 
 describe('long-press (hold) gesture on a zone', () => {

@@ -154,10 +154,14 @@ export const BUTTON_CHROME_CSS = [
   '.oge-ring{position:absolute;inset:0;width:100%;height:100%;',
   'pointer-events:none;overflow:visible;z-index:2;}',
   '.oge-ring-band{fill:none;stroke:rgba(148,163,184,.22);stroke-width:6;}',
+  // Both arcs start hidden: with stroke-linecap:round, Chrome paints the
+  // rounded cap as a stray dot even when the dash is fully offset (empty),
+  // so an "empty" arc would show a permanent ~1% mark. visibility:hidden
+  // kills it; JS flips to visible only while the arc is actually filling.
   '.oge-ring-progress{fill:none;stroke:var(--rim);stroke-width:6;stroke-linecap:round;',
-  'filter:drop-shadow(0 0 2.5px var(--rim));transition:stroke-dashoffset .4s ease;}',
+  'visibility:hidden;filter:drop-shadow(0 0 2.5px var(--rim));transition:stroke-dashoffset .4s ease;}',
   '.oge-ring-charge{fill:none;stroke:var(--rim);stroke-width:6.5;stroke-linecap:round;',
-  'filter:drop-shadow(0 0 5px var(--rim));}',
+  'visibility:hidden;filter:drop-shadow(0 0 5px var(--rim));}',
   '.oge-ring-title{fill:var(--label);font-weight:700;',
   'font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Verdana,sans-serif;',
   'text-transform:uppercase;',
@@ -381,6 +385,9 @@ const buildRing = (title, ringId, progress = null) => {
   prog.setAttribute('stroke-dasharray', '100');
   prog.setAttribute('stroke-dashoffset',
     progress != null ? String(100 - Math.max(0, Math.min(1, progress)) * 100) : '100');
+  // Reveal only when there's an actual initial fill (CSS hides it by default
+  // so the round cap doesn't leave a stray dot while empty — see styles).
+  if (progress != null && progress > 0) prog.style.visibility = 'visible';
   prog.setAttribute('transform', 'rotate(-90 50 50)');
   svg.appendChild(prog);
 
