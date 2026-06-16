@@ -32,6 +32,10 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 - **Floating button size now applies to the Abandon button live**, like the
   other FAB modules, when you change the size in settings.
+- **Colony histogram now syncs to your other devices.** Colony-size history is
+  stored per server, but it synced as one shared blob — so on a second device
+  the data landed under the wrong server and the histogram looked empty. History
+  now syncs per server, matching where it is stored and shown.
 
 ## [1.20.0] — 2026-06-16
 

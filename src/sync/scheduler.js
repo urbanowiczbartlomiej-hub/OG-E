@@ -512,10 +512,8 @@ const downloadAndMerge = async () => {
     }
 
     const localScans = scansStore.get();
-    const localHistory = historyStore.get();
 
     const scansResult = mergeScans(localScans, remote.galaxyScans);
-    const histResult = mergeHistory(localHistory, remote.colonyHistory);
     // Global settings: merge only global-scoped keys against the gist's
     // top-level `settings` slot.
     const setResult = mergeSettings(
@@ -536,7 +534,6 @@ const downloadAndMerge = async () => {
     // feedback loop at its source. Settings have their own value-level
     // anti-loop flag inside applyMergedSettings / writeLocalUniverseSettingsSlot.
     if (scansResult.changed) scansStore.set(scansResult.merged);
-    if (histResult.changed) historyStore.set(histResult.merged);
     if (setResult.changed) applyMergedSettings(setResult.merged);
     if (uniResult.changed) await writeLocalUniverseSettingsSlot(uniResult.merged);
 
@@ -555,6 +552,17 @@ const downloadAndMerge = async () => {
         remote.galaxyScanConfig?.[routesUniverseId],
       );
       if (cfgResult.changed) await writeLocalGalaxyConfigSlot(cfgResult.merged);
+    }
+
+    // Colony history: per-universe union (dedup by cp), keyed by universe — the
+    // histogram is per-server, so the old single global list let one server's
+    // observations land under another server's key on a second device.
+    if (routesUniverseId) {
+      const histResult = mergeHistory(
+        historyStore.get(),
+        remote.colonyHistoryPerUniverse?.[routesUniverseId],
+      );
+      if (histResult.changed) historyStore.set(histResult.merged);
     }
 
     // Daily-action state: per-universe, field-by-field max-wins.
@@ -617,7 +625,6 @@ const upload = async () => {
   inFlight = true;
   try {
     const localScans = scansStore.get();
-    const localHistory = historyStore.get();
 
     // Pre-merge: read remote and combine with local BEFORE writing, so
     // a concurrent write from another device isn't clobbered. A thrown
@@ -633,7 +640,6 @@ const upload = async () => {
     }
 
     const scansResult = mergeScans(localScans, remote?.galaxyScans);
-    const histResult = mergeHistory(localHistory, remote?.colonyHistory);
     // Global settings: merge only global-scoped keys.
     const setResult = mergeSettings(
       { values: pickSyncedValues(settingsStore.get(), 'global'), ts: readTsMap() },
@@ -651,7 +657,6 @@ const upload = async () => {
     // subscription would fire on every upload-round and re-schedule
     // indefinitely.
     if (scansResult.changed) scansStore.set(scansResult.merged);
-    if (histResult.changed) historyStore.set(histResult.merged);
     if (setResult.changed) applyMergedSettings(setResult.merged);
     if (uniResult.changed) await writeLocalUniverseSettingsSlot(uniResult.merged);
 
@@ -690,6 +695,22 @@ const upload = async () => {
     }
     const mergedGalaxyConfigOut = Object.keys(mergedGalaxyConfig).length
       ? mergedGalaxyConfig
+      : undefined;
+
+    // Colony history: per-universe union (dedup by cp), same contribution
+    // guard as the config slots (only our universe's list, only once it has
+    // entries — an empty list would differ from the gist's absent field).
+    const mergedColonyHistory = { ...(remote?.colonyHistoryPerUniverse || {}) };
+    if (routesUniverseId) {
+      const histResult = mergeHistory(
+        historyStore.get(),
+        remote?.colonyHistoryPerUniverse?.[routesUniverseId],
+      );
+      if (histResult.changed) historyStore.set(histResult.merged);
+      if (histResult.merged.length) mergedColonyHistory[routesUniverseId] = histResult.merged;
+    }
+    const mergedColonyHistoryOut = Object.keys(mergedColonyHistory).length
+      ? mergedColonyHistory
       : undefined;
 
     // Build the per-universe settings map for the payload — preserving every
@@ -747,7 +768,7 @@ const upload = async () => {
     if (
       !gistIsCurrent(remote, {
         galaxyScans: scansResult.merged,
-        colonyHistory: histResult.merged,
+        colonyHistoryPerUniverse: mergedColonyHistoryOut,
         settings: setResult.merged,
         dailyRunRoutes: mergedDailyRunRoutesOut,
         settingsPerUniverse: mergedPerUniverseOut,
@@ -760,7 +781,7 @@ const upload = async () => {
         version: 1,
         updatedAt: new Date().toISOString(),
         galaxyScans: scansResult.merged,
-        colonyHistory: histResult.merged,
+        colonyHistoryPerUniverse: mergedColonyHistoryOut,
         settings: setResult.merged,
         dailyRunRoutes: mergedDailyRunRoutesOut,
         settingsPerUniverse: mergedPerUniverseOut,

@@ -332,7 +332,7 @@ describe('writeGistData', () => {
       version: 1,
       updatedAt: '2025-02-02T02:02:02.000Z',
       galaxyScans: { '2:2': { scannedAt: 5, positions: {} } },
-      colonyHistory: [{ cp: 7, fields: 100, coords: '[2:2:2]', position: 2, timestamp: 3 }],
+      colonyHistoryPerUniverse: { 's2-pl': [{ cp: 7, fields: 100, coords: '[2:2:2]', position: 2, timestamp: 3 }] },
     };
     await writeGistData(data);
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -350,15 +350,15 @@ describe('writeGistData', () => {
 });
 
 describe('clearGistScans', () => {
-  it('preserves colonyHistory while emptying galaxyScans', async () => {
+  it('preserves colonyHistoryPerUniverse while emptying galaxyScans', async () => {
     setGistId('cached-clear-id');
     const existing = {
       version: 1,
       updatedAt: '2025-03-03T03:03:03.000Z',
       galaxyScans: { '4:30': { scannedAt: 1, positions: {} } },
-      colonyHistory: [
-        { cp: 99, fields: 200, coords: '[3:3:3]', position: 3, timestamp: 10 },
-      ],
+      colonyHistoryPerUniverse: {
+        's3-pl': [{ cp: 99, fields: 200, coords: '[3:3:3]', position: 3, timestamp: 10 }],
+      },
     };
     const compressed = await gzipEncode(JSON.stringify(existing));
     const fetchMock = vi
@@ -379,7 +379,7 @@ describe('clearGistScans', () => {
     await clearGistScans();
 
     // The PATCH is the second call. Its body must carry the preserved
-    // colonyHistory and an empty galaxyScans map. We decode via
+    // colonyHistoryPerUniverse and an empty galaxyScans map. We decode via
     // gzipDecode to inspect — much more precise than "is the string
     // non-empty".
     const patchCall = fetchMock.mock.calls[1];
@@ -389,7 +389,7 @@ describe('clearGistScans', () => {
     const decoded = JSON.parse(await gzipDecode(compressedOut));
     expect(decoded.version).toBe(1);
     expect(decoded.galaxyScans).toEqual({});
-    expect(decoded.colonyHistory).toEqual(existing.colonyHistory);
+    expect(decoded.colonyHistoryPerUniverse).toEqual(existing.colonyHistoryPerUniverse);
   });
 
   it('stamps LAST_UP_KEY with an ISO timestamp on success', async () => {
@@ -398,7 +398,7 @@ describe('clearGistScans', () => {
       version: 1,
       updatedAt: 'x',
       galaxyScans: {},
-      colonyHistory: [],
+      colonyHistoryPerUniverse: {},
     };
     const compressed = await gzipEncode(JSON.stringify(existing));
     const fetchMock = vi

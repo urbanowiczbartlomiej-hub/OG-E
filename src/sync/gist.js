@@ -122,8 +122,13 @@ import { clearScans, clearGalaxyScans } from './merge.js';
  *   (`scannedAt`, history `timestamp`) to decide merges, not this.
  * @property {GalaxyScans} galaxyScans
  *   Full galaxy-scan map. See {@link GalaxyScans}.
- * @property {ColonyHistory} colonyHistory
- *   Full colony-history list. See {@link ColonyHistory}.
+ * @property {Record<string, ColonyHistory>} [colonyHistoryPerUniverse]
+ *   OPTIONAL, additive: per-universe colony-history observations keyed by
+ *   universe id. Each slot is a {@link ColonyHistory} list merged by union
+ *   (dedup by `cp`, local-wins — see {@link import('./merge.js').mergeHistory}).
+ *   Per-universe because the histogram is per-server: a single global list let
+ *   one server's observations land under another server's key on a second
+ *   device, leaving the histogram empty there.
  * @property {SyncedSettings} [settings]
  *   OPTIONAL, additive (no version bump): synced user preferences. Absent
  *   on gists written before this feature; new readers treat absence as
@@ -475,7 +480,6 @@ export const ensureGist = async () => {
     version: SCHEMA_VERSION,
     updatedAt: new Date().toISOString(),
     galaxyScans: /** @type {GalaxyScans} */ ({}),
-    colonyHistory: /** @type {ColonyHistory} */ ([]),
   };
 
   const compressed = await gzipEncode(JSON.stringify(initialPayload));

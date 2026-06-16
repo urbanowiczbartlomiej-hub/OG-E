@@ -147,7 +147,7 @@ describe('sameJSON', () => {
 describe('gistIsCurrent', () => {
   const merged = {
     galaxyScans: { '1:1:1': { t: 1 } },
-    colonyHistory: [{ id: 'a' }],
+    colonyHistoryPerUniverse: [{ id: 'a' }],
     settings: { values: { x: 1 }, ts: { x: 10 } },
     dailyRunRoutes: { 's1-pl': { routes: [], collectTarget: null, updatedAt: 5 } },
     settingsPerUniverse: undefined,
@@ -159,7 +159,7 @@ describe('gistIsCurrent', () => {
   it('is true when every synced field matches (skip the PATCH)', () => {
     const remote = /** @type {any} */ ({
       galaxyScans: { '1:1:1': { t: 1 } },
-      colonyHistory: [{ id: 'a' }],
+      colonyHistoryPerUniverse: [{ id: 'a' }],
       settings: { values: { x: 1 }, ts: { x: 10 } },
       dailyRunRoutes: { 's1-pl': { routes: [], collectTarget: null, updatedAt: 5 } },
       // settingsPerUniverse / dailyStatePerUniverse / galaxyScanConfig absent
@@ -171,7 +171,7 @@ describe('gistIsCurrent', () => {
   it('is false when only the galaxyScanConfig slot differs', () => {
     const remote = /** @type {any} */ ({
       galaxyScans: { '1:1:1': { t: 1 } },
-      colonyHistory: [{ id: 'a' }],
+      colonyHistoryPerUniverse: [{ id: 'a' }],
       settings: { values: { x: 1 }, ts: { x: 10 } },
       dailyRunRoutes: { 's1-pl': { routes: [], collectTarget: null, updatedAt: 5 } },
       galaxyScanConfig: { 's1-pl': { config: { positions: '9' }, updatedAt: 7 } },
@@ -183,7 +183,7 @@ describe('gistIsCurrent', () => {
   it('is false when only the reminderConfigPerUniverse slot differs', () => {
     const remote = /** @type {any} */ ({
       galaxyScans: { '1:1:1': { t: 1 } },
-      colonyHistory: [{ id: 'a' }],
+      colonyHistoryPerUniverse: [{ id: 'a' }],
       settings: { values: { x: 1 }, ts: { x: 10 } },
       dailyRunRoutes: { 's1-pl': { routes: [], collectTarget: null, updatedAt: 5 } },
       reminderConfigPerUniverse: { config: { reminderEnabled: true }, updatedAt: 7 },
@@ -195,7 +195,7 @@ describe('gistIsCurrent', () => {
   it('is false when any single field differs (PATCH needed)', () => {
     const remote = /** @type {any} */ ({
       galaxyScans: { '1:1:1': { t: 2 } }, // differs
-      colonyHistory: [{ id: 'a' }],
+      colonyHistoryPerUniverse: [{ id: 'a' }],
       settings: { values: { x: 1 }, ts: { x: 10 } },
       dailyRunRoutes: { 's1-pl': { routes: [], collectTarget: null, updatedAt: 5 } },
     });

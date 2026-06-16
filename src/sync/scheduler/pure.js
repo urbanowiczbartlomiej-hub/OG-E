@@ -142,7 +142,7 @@ export const sameJSON = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b
  * @param {import('../gist.js').GistPayload | null | undefined} remote
  * @param {object} merged                         The state we'd write.
  * @param {unknown} merged.galaxyScans
- * @param {unknown} merged.colonyHistory
+ * @param {unknown} merged.colonyHistoryPerUniverse
  * @param {unknown} merged.settings
  * @param {unknown} merged.dailyRunRoutes
  * @param {unknown} merged.settingsPerUniverse
@@ -153,7 +153,7 @@ export const sameJSON = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b
  */
 export const gistIsCurrent = (remote, merged) =>
   sameJSON(remote?.galaxyScans, merged.galaxyScans) &&
-  sameJSON(remote?.colonyHistory, merged.colonyHistory) &&
+  sameJSON(remote?.colonyHistoryPerUniverse, merged.colonyHistoryPerUniverse) &&
   sameJSON(remote?.settings, merged.settings) &&
   sameJSON(remote?.dailyRunRoutes, merged.dailyRunRoutes) &&
   sameJSON(remote?.settingsPerUniverse, merged.settingsPerUniverse) &&

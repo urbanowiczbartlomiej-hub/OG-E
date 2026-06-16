@@ -368,43 +368,43 @@ describe('mergeHistory', () => {
 });
 
 describe('clearScans', () => {
-  it('returns empty galaxyScans and preserves colonyHistory by reference', () => {
-    /** @type {ColonyHistory} */
-    const colonyHistory = [entry(1), entry(2)];
+  it('returns empty galaxyScans and preserves colonyHistoryPerUniverse by reference', () => {
+    /** @type {Record<string, ColonyHistory>} */
+    const colonyHistoryPerUniverse = { 's1-pl': [entry(1), entry(2)] };
     /** @type {GalaxyScans} */
     const galaxyScans = { '4:30': scan(1000), '5:1': scan(2000) };
-    const result = clearScans({ version: 3, updatedAt: 'x', galaxyScans, colonyHistory });
+    const result = clearScans({ version: 3, updatedAt: 'x', galaxyScans, colonyHistoryPerUniverse });
     expect(result.galaxyScans).toEqual({});
-    // Reference equality on colonyHistory — no allocation needed when
-    // the input array is the source of truth.
-    expect(result.colonyHistory).toBe(colonyHistory);
+    // Reference equality — no allocation needed when the input map is the
+    // source of truth.
+    expect(result.colonyHistoryPerUniverse).toBe(colonyHistoryPerUniverse);
   });
 
   it('returns empty defaults for a null payload', () => {
     const result = clearScans(null);
-    expect(result).toEqual({ galaxyScans: {}, colonyHistory: [] });
+    expect(result).toEqual({ galaxyScans: {}, colonyHistoryPerUniverse: {} });
   });
 
   it('returns empty defaults for an undefined payload', () => {
     const result = clearScans(undefined);
-    expect(result).toEqual({ galaxyScans: {}, colonyHistory: [] });
+    expect(result).toEqual({ galaxyScans: {}, colonyHistoryPerUniverse: {} });
   });
 
-  it('falls back to [] when colonyHistory is not an array', () => {
-    const result = clearScans({ colonyHistory: 'not-an-array' });
-    expect(result.colonyHistory).toEqual([]);
+  it('falls back to {} when colonyHistoryPerUniverse is not an object', () => {
+    const result = clearScans({ colonyHistoryPerUniverse: 'not-an-object' });
+    expect(result.colonyHistoryPerUniverse).toEqual({});
   });
 
-  it('falls back to [] when colonyHistory is missing', () => {
+  it('falls back to {} when colonyHistoryPerUniverse is missing', () => {
     const result = clearScans({ galaxyScans: { '1:1': scan(1) } });
-    expect(result.colonyHistory).toEqual([]);
+    expect(result.colonyHistoryPerUniverse).toEqual({});
   });
 });
 
 describe('clearGalaxyScans', () => {
-  it('drops only the requested galaxy keys; preserves others and colonyHistory', () => {
-    /** @type {ColonyHistory} */
-    const colonyHistory = [entry(7)];
+  it('drops only the requested galaxy keys; preserves others and colonyHistoryPerUniverse', () => {
+    /** @type {Record<string, ColonyHistory>} */
+    const colonyHistoryPerUniverse = { 's1-pl': [entry(7)] };
     const keep1 = scan(1000);
     const keep2 = scan(2000);
     /** @type {GalaxyScans} */
@@ -414,23 +414,23 @@ describe('clearGalaxyScans', () => {
       '5:1': keep1,      // kept (different galaxy)
       '6:1': keep2,      // kept
     };
-    const result = clearGalaxyScans({ galaxyScans, colonyHistory }, 4);
+    const result = clearGalaxyScans({ galaxyScans, colonyHistoryPerUniverse }, 4);
     expect(result.galaxyScans).toEqual({ '5:1': keep1, '6:1': keep2 });
-    expect(result.colonyHistory).toBe(colonyHistory);
+    expect(result.colonyHistoryPerUniverse).toBe(colonyHistoryPerUniverse);
   });
 
   it('returns empty galaxyScans when input galaxyScans is missing', () => {
-    const result = clearGalaxyScans({ colonyHistory: [entry(1)] }, 4);
+    const result = clearGalaxyScans({ colonyHistoryPerUniverse: { 's1-pl': [entry(1)] } }, 4);
     expect(result.galaxyScans).toEqual({});
   });
 
   it('returns empty defaults for a null payload', () => {
     const result = clearGalaxyScans(null, 4);
-    expect(result).toEqual({ galaxyScans: {}, colonyHistory: [] });
+    expect(result).toEqual({ galaxyScans: {}, colonyHistoryPerUniverse: {} });
   });
 
   it('returns empty galaxyScans when input galaxyScans is not an object', () => {
-    const result = clearGalaxyScans({ galaxyScans: 'nope', colonyHistory: [] }, 4);
+    const result = clearGalaxyScans({ galaxyScans: 'nope', colonyHistoryPerUniverse: {} }, 4);
     expect(result.galaxyScans).toEqual({});
   });
 

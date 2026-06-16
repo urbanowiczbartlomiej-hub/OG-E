@@ -467,16 +467,18 @@ export const mergeReminderConfig = (local, remote) => {
  *   The decoded remote gist payload (output of
  *   `JSON.parse(gzipDecode(content))`), or `null` if the read or parse
  *   failed.
- * @returns {{ galaxyScans: GalaxyScans, colonyHistory: ColonyHistory }}
+ * @returns {{ galaxyScans: GalaxyScans, colonyHistoryPerUniverse: Record<string, ColonyHistory> }}
  */
 export const clearScans = (payload) => {
-  /** @type {ColonyHistory} */
-  let colonyHistory = [];
+  /** @type {Record<string, ColonyHistory>} */
+  let colonyHistoryPerUniverse = {};
   if (payload && typeof payload === 'object') {
-    const ch = /** @type {{ colonyHistory?: unknown }} */ (payload).colonyHistory;
-    if (Array.isArray(ch)) colonyHistory = /** @type {ColonyHistory} */ (ch);
+    const ch = /** @type {{ colonyHistoryPerUniverse?: unknown }} */ (payload).colonyHistoryPerUniverse;
+    if (ch && typeof ch === 'object' && !Array.isArray(ch)) {
+      colonyHistoryPerUniverse = /** @type {Record<string, ColonyHistory>} */ (ch);
+    }
   }
-  return { galaxyScans: {}, colonyHistory };
+  return { galaxyScans: {}, colonyHistoryPerUniverse };
 };
 
 /**
@@ -493,17 +495,18 @@ export const clearScans = (payload) => {
  *
  * @param {unknown} payload
  * @param {number} galaxy
- * @returns {{ galaxyScans: GalaxyScans, colonyHistory: ColonyHistory }}
+ * @returns {{ galaxyScans: GalaxyScans, colonyHistoryPerUniverse: Record<string, ColonyHistory> }}
  */
 export const clearGalaxyScans = (payload, galaxy) => {
-  /** @type {ColonyHistory} */
-  let colonyHistory = [];
+  /** @type {Record<string, ColonyHistory>} */
+  let colonyHistoryPerUniverse = {};
   /** @type {GalaxyScans} */
   let galaxyScans = {};
   if (payload && typeof payload === 'object') {
-    const p = /** @type {{ colonyHistory?: unknown, galaxyScans?: unknown }} */ (payload);
-    if (Array.isArray(p.colonyHistory)) {
-      colonyHistory = /** @type {ColonyHistory} */ (p.colonyHistory);
+    const p = /** @type {{ colonyHistoryPerUniverse?: unknown, galaxyScans?: unknown }} */ (payload);
+    if (p.colonyHistoryPerUniverse && typeof p.colonyHistoryPerUniverse === 'object'
+      && !Array.isArray(p.colonyHistoryPerUniverse)) {
+      colonyHistoryPerUniverse = /** @type {Record<string, ColonyHistory>} */ (p.colonyHistoryPerUniverse);
     }
     if (p.galaxyScans && typeof p.galaxyScans === 'object') {
       galaxyScans = /** @type {GalaxyScans} */ (p.galaxyScans);
@@ -515,7 +518,7 @@ export const clearGalaxyScans = (payload, galaxy) => {
   for (const key of /** @type {(keyof GalaxyScans)[]} */ (Object.keys(galaxyScans))) {
     if (!key.startsWith(prefix)) filtered[key] = galaxyScans[key];
   }
-  return { galaxyScans: filtered, colonyHistory };
+  return { galaxyScans: filtered, colonyHistoryPerUniverse };
 };
 
 /**

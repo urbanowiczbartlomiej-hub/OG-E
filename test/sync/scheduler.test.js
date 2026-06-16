@@ -104,21 +104,21 @@ const tick = async (ms) => {
  *
  * @param {object} [opts]
  * @param {GalaxyScans} [opts.galaxyScans]
- * @param {ColonyHistory} [opts.colonyHistory]
+ * @param {Record<string, ColonyHistory>} [opts.colonyHistoryPerUniverse]
  * @param {import('../../src/sync/gist.js').SyncedSettings} [opts.settings]
  * @param {Record<string, import('../../src/sync/gist.js').SyncedSettings>} [opts.settingsPerUniverse]
  * @returns {import('../../src/sync/gist.js').GistPayload}
  */
 const payload = ({
   galaxyScans = {},
-  colonyHistory = [],
+  colonyHistoryPerUniverse,
   settings,
   settingsPerUniverse,
 } = {}) => ({
   version: 1,
   updatedAt: '2025-01-01T00:00:00.000Z',
   galaxyScans,
-  colonyHistory,
+  ...(colonyHistoryPerUniverse ? { colonyHistoryPerUniverse } : {}),
   ...(settings ? { settings } : {}),
   ...(settingsPerUniverse ? { settingsPerUniverse } : {}),
 });
@@ -581,5 +581,54 @@ describe('settings sync', () => {
     expect(values.eventMenuHighlight).toBe(false);
     expect('fabBtnSize' in values).toBe(false);
     expect('gistToken' in values).toBe(false);
+  });
+});
+
+describe('colony history — per-universe sync (regression: empty histogram on 2nd device)', () => {
+  // Mirror the universe-scoped settings test's derivation so the slot key
+  // matches the scheduler's routesUniverseId = parseUniverseId(location.host).
+  const uid = /** @type {string} */ (
+    typeof location !== 'undefined'
+      ? location.host.match(/^(s\d+-[a-z]{2,4})\./)
+        ? location.host.match(/^(s\d+-[a-z]{2,4})\./)?.[1]
+        : location.host
+      : ''
+  );
+  /** @param {number} cp @returns {import('../../src/state/history.js').ColonyEntry} */
+  const entry = (cp) => ({ cp, fields: 100 + cp, coords: `[${cp}:${cp}:${cp}]`, position: 1, timestamp: cp });
+
+  it('download adopts THIS server\'s slot only — never another server\'s entries', async () => {
+    // The bug: a single global colonyHistory landed another server's
+    // observations under this device's universe key. With the per-universe
+    // slot, only THIS universe's list is adopted.
+    /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(
+      payload({
+        colonyHistoryPerUniverse: {
+          [uid]: [entry(1)],
+          'sX-zz-99': [entry(2)],
+        },
+      }),
+    );
+    installSync();
+    await tick(0);
+    const cps = historyStore.get().map((e) => e.cp);
+    expect(cps).toContain(1); // our universe's observation lands locally
+    expect(cps).not.toContain(2); // the other server's never leaks in
+  });
+
+  it('upload writes local history into the per-universe slot keyed by THIS server', async () => {
+    /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(payload());
+    installSync();
+    await tick(0);
+    // A local observation after boot schedules a debounced upload.
+    historyStore.set([entry(7)]);
+    await tick(15_000);
+    expect(writeGistData).toHaveBeenCalledWith(
+      expect.objectContaining({
+        colonyHistoryPerUniverse: expect.objectContaining({
+          [uid]: expect.arrayContaining([expect.objectContaining({ cp: 7 })]),
+        }),
+      }),
+    );
   });
 });
