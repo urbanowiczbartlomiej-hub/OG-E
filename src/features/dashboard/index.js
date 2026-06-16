@@ -76,7 +76,7 @@ import {
 } from './io.js';
 import { installReminders, _resetRemindersForTest } from './reminders.js';
 import { installRoutes } from './routes.js';
-import { installScanConfig } from './scanConfig.js';
+import { installColonizationConfig, installScanRescanConfig } from './scanConfig.js';
 import { installReminderConfig } from './reminderConfig.js';
 
 /**
@@ -138,13 +138,17 @@ let remindersApi = null;
 let routesApi = null;
 
 /**
- * Handle to the Galaxy-Scan config editor's refresh entrypoint, set by
- * `installScanConfig` at boot. Called from the universe-selector change
- * handler so the config fields reload for the newly-selected server.
+ * Handles to the two scan/colonization config editors' refresh entrypoints,
+ * set by `installColonizationConfig` / `installScanRescanConfig` at boot. Both
+ * share the per-universe galaxyScanConfig slot but render on different tabs
+ * (Colonizations / Galaxy Observations); the universe-selector change handler
+ * refreshes both so their fields reload for the newly-selected server.
  *
  * @type {{ refresh: () => void } | null}
  */
-let scanConfigApi = null;
+let colonizationConfigApi = null;
+/** @type {{ refresh: () => void } | null} */
+let scanRescanConfigApi = null;
 
 /**
  * Handle to the fleet-save reminder config editor's refresh entrypoint, set by
@@ -241,7 +245,8 @@ const boot = async () => {
   // handler calls `remindersApi.refresh()` to repaint.
   remindersApi = installReminders({ getUniverseId: () => selectedUniverseId });
   routesApi = installRoutes({ getUniverseId: () => selectedUniverseId });
-  scanConfigApi = installScanConfig({ getUniverseId: () => selectedUniverseId });
+  colonizationConfigApi = installColonizationConfig({ getUniverseId: () => selectedUniverseId });
+  scanRescanConfigApi = installScanRescanConfig({ getUniverseId: () => selectedUniverseId });
   reminderConfigApi = installReminderConfig({ getUniverseId: () => selectedUniverseId });
 
   const universes = await discoverUniverses();
@@ -255,7 +260,8 @@ const boot = async () => {
   // active universe. Repaint now that it's known.
   remindersApi?.refresh();
   routesApi?.refresh();
-  scanConfigApi?.refresh();
+  colonizationConfigApi?.refresh();
+  scanRescanConfigApi?.refresh();
   reminderConfigApi?.refresh();
   wireListeners();
 
@@ -799,7 +805,8 @@ const wireListeners = () => {
     void loadAll().then(renderAll);
     remindersApi?.refresh();
     routesApi?.refresh();
-    scanConfigApi?.refresh();
+    colonizationConfigApi?.refresh();
+    scanRescanConfigApi?.refresh();
     reminderConfigApi?.refresh();
   });
 
@@ -837,7 +844,8 @@ export const _resetDashboardForTest = () => {
   selectedUniverseId = '';
   remindersApi = null;
   routesApi = null;
-  scanConfigApi = null;
+  colonizationConfigApi = null;
+  scanRescanConfigApi = null;
   reminderConfigApi = null;
   history = [];
   scans = {};

@@ -146,6 +146,20 @@
   }
   .weight-reset:hover { border-color: #4a9eff; color: #ccc; }
 
+  /* Collapsible "⚙ Settings" panel — one per tab, configuration tucked at the
+     bottom (collapsed by default) so the data view leads and the options don't
+     overwhelm. One uniform look across every tab. */
+  details.settings-panel { margin-top: 24px; border-top: 1px solid #1a2a3a; padding-top: 12px; }
+  details.settings-panel > summary {
+    cursor: pointer; color: #4a9eff; font-size: 14px; font-weight: bold;
+    user-select: none; list-style: none; display: inline-block; padding: 4px 0;
+  }
+  details.settings-panel > summary::-webkit-details-marker { display: none; }
+  details.settings-panel > summary::before { content: '\25B8\00A0'; }
+  details.settings-panel[open] > summary::before { content: '\25BE\00A0'; }
+  .settings-panel .settings-body { margin-top: 10px; }
+  .settings-panel .settings-desc { color: #888; font-size: 13px; margin: 4px 0 12px; line-height: 1.5; }
+
   /* Reminders tab — preview-only surface. Setup form lives in the
      in-game Settings panel, so this tab is intentionally compact. */
   .rem-intro { color: #aaa; font-size: 13px; margin-bottom: 14px; line-height: 1.5; }
@@ -207,7 +221,7 @@
 
 <div class="top-bar">
   <div class="tabs" role="tablist">
-    <button class="tab-btn" data-tab="colony" role="tab">Colony Sizes</button>
+    <button class="tab-btn" data-tab="colony" role="tab">Colonizations</button>
     <button class="tab-btn" data-tab="galaxy" role="tab">Galaxy Observations</button>
     <button class="tab-btn" data-tab="reminders" role="tab">Reminders</button>
     <button class="tab-btn" data-tab="routes" role="tab">Daily Run</button>
@@ -223,7 +237,7 @@
 </div>
 
 <section id="colonySection" class="tab-section">
-  <h1>Colony Size Histogram</h1>
+  <h1>Colonizations</h1>
   <p style="color:#888;font-size:13px;margin-bottom:16px;">
     Field sizes of planets you have personally visited (recorded the first time you opened each overview page).
     No new data is requested — this is a read-only view of data already stored locally on this device.
@@ -238,6 +252,17 @@
 
   <div class="stats" id="statsContainer"></div>
   <div class="chart-container"><div class="chart" id="chart"></div></div>
+
+  <details class="settings-panel">
+    <summary>⚙ Settings</summary>
+    <div class="settings-body">
+      <p class="settings-desc">
+        Colonization targets and abandon rules — they drive the in-game Scan / Colonize / Abandon
+        buttons. Per-universe and synced across your devices.
+      </p>
+      <div id="colonizationConfigBody"></div>
+    </div>
+  </details>
 </section>
 
 <section id="galaxySection" class="tab-section">
@@ -245,22 +270,9 @@
   <p style="color:#888;font-size:13px;margin-bottom:16px;">
     Per-system summary of positions you have navigated past in the in-game galaxy view.
     Data was recorded only for galaxy pages you yourself opened. Filtered by the target
-    positions list in the Galaxy-Scan config below (only those positions count toward the
-    stats below).
+    positions list (set under Colonizations → Settings) — only those positions count toward
+    the stats below.
   </p>
-
-  <div class="sub-section" id="scanConfigContainer">
-    <h2>⚙ Galaxy-Scan &amp; Colonization config</h2>
-    <p style="color:#888;font-size:13px;margin-bottom:12px;">
-      Tune how the in-game <strong style="color:#ccc;">Scan</strong> button picks targets and how
-      often it revisits a system, plus the <strong style="color:#ccc;">Colonization</strong> knobs
-      (arrival gap, abandon threshold, abandon password). These settings are per-universe and sync
-      across your devices. Re-scan times accept free units like <code style="color:#4a9eff;">6h</code>
-      or <code style="color:#4a9eff;">5d</code>; <code style="color:#4a9eff;">0</code> means never
-      re-scan that status.
-    </p>
-    <div id="scanConfigBody"></div>
-  </div>
 
   <div class="controls">
     <button id="clearScansBtn" class="danger">Clear observation data</button>
@@ -341,6 +353,19 @@
     </details>
     <div id="freeContainer"></div>
   </div>
+
+  <details class="settings-panel">
+    <summary>⚙ Settings</summary>
+    <div class="settings-body">
+      <p class="settings-desc">
+        How the in-game <strong style="color:#ccc;">Scan</strong> button revisits systems. Re-scan
+        times accept free units like <code style="color:#4a9eff;">6h</code> or
+        <code style="color:#4a9eff;">5d</code>; <code style="color:#4a9eff;">0</code> means never
+        re-scan that status. Per-universe and synced across your devices.
+      </p>
+      <div id="scanRescanBody"></div>
+    </div>
+  </details>
 </section>
 
 <section id="remindersSection" class="tab-section">

@@ -21,7 +21,7 @@ vi.mock('../../../src/lib/storage.js', () => ({
 
 import { chromeStore } from '../../../src/lib/storage.js';
 import { installReminderConfig } from '../../../src/features/dashboard/reminderConfig.js';
-import { installScanConfig } from '../../../src/features/dashboard/scanConfig.js';
+import { installColonizationConfig } from '../../../src/features/dashboard/scanConfig.js';
 import { defaultGalaxyScanConfig } from '../../../src/domain/galaxyScanConfig.js';
 import { defaultReminderGlobalConfig } from '../../../src/domain/reminderGlobalConfig.js';
 import { defaultReminderTemplates } from '../../../src/domain/reminderTemplates.js';
@@ -86,7 +86,7 @@ beforeEach(() => {
     store.set(k, v);
     return Promise.resolve();
   });
-  document.body.innerHTML = '<div id="reminderConfigBody"></div><div id="scanConfigBody"></div>';
+  document.body.innerHTML = '<div id="reminderConfigBody"></div><div id="colonizationConfigBody"></div>';
 });
 
 describe('Reminders fleet-save config editor', () => {
@@ -197,10 +197,12 @@ describe('Reminders fleet-save config editor', () => {
 
   it('scan-config save preserves the fs fields (the reverse direction)', async () => {
     store.set(CFG_KEY, { fsEnabled: true, fsThreshold: 333000, fsOffsets: '-7m' });
-    installScanConfig({ getUniverseId: () => UNI }).refresh();
+    installColonizationConfig({ getUniverseId: () => UNI }).refresh();
     await flush();
     $('#scanCfgPositions').value = '9';
-    $('#scanCfgSave').dispatchEvent(new Event('click'));
+    /** @type {HTMLElement} */ (
+      document.querySelector('#colonizationConfigBody .scanCfgSave')
+    ).dispatchEvent(new Event('click'));
     await flush();
     const saved = /** @type {any} */ (store.get(CFG_KEY));
     expect(saved.positions).toBe('9');
