@@ -61,21 +61,31 @@ export const PLANET_ARROW_GLYPH = [
 ].join('');
 
 /**
- * Abandon colony — a landing craft LIFTING OFF (thrust plume beneath it),
- * leaving a small, distant planet far below (colonyFab). Mirrors the
- * {@link LANDER_GLYPH} touch-down so the two FAB faces read as opposites:
- * settle here vs. leave this place. Scaled ~1.15 about its bbox centre.
+ * Abandon colony — broken colony flag.
+ * The lower planted part remains to the left, while the upper flag section
+ * is shifted slightly right and rotated clockwise to suggest a snapped,
+ * irreversibly abandoned marker.
  */
 export const ABANDON_GLYPH = [
-  '<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" transform="translate(32,32) scale(1.15) translate(-32,-35)">',
-  '<path d="M22 30 V22 a10 10 0 0 1 20 0 V30 Z"/>',
-  '<circle cx="32" cy="21" r="4" fill="currentColor"/>',
-  '<path d="M24 30 L18 38"/>',
-  '<path d="M40 30 L46 38"/>',
-  '<path d="M32 31 V38"/>',
-  '<path d="M28 31 L26 37"/>',
-  '<path d="M36 31 L38 37"/>',
-  '<circle cx="32" cy="50" r="6.5"/>',
+  '<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">',
+  '<g transform="translate(32,32) scale(1.08) translate(-32,-32)">',
+
+  // Upper broken piece: shifted right and rotated clockwise.
+  '<g transform="translate(2.5,0) rotate(11 31 28)">',
+  '<line x1="31" y1="14" x2="30" y2="28.5"/>',
+  '<path d="M31 16 C36 15.5 40.5 16.5 45.5 18.5 L41.5 20.8 L45.8 23 L41.2 25 L44.2 27 C39.5 27 35.5 25.5 30 25.2"/>',
+  '</g>',
+
+  // Lower broken piece: shifted left.
+  '<line x1="27.5" y1="34" x2="26.5" y2="46"/>',
+
+  // Base.
+  '<path d="M23.5 46 h8 l2 4 h-12 z"/>',
+
+  // Planetary horizon.
+  '<path d="M4 56 Q32 48 60 56"/>',
+
+  '</g>',
   '</g>',
 ].join('');
 
