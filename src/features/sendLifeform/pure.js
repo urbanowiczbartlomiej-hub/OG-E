@@ -78,6 +78,17 @@ export const DISCOVERY_COOLDOWN_MS = 8000;
 // ─── Artifact cap ──────────────────────────────────────────────────────────
 
 /**
+ * How many discoveries we let fire AFTER the last counter reading before the
+ * off-galaxy tap detours through lfresearch to refresh it. The counter is in
+ * no request — the only way to read it is to land on the lfresearch page — so
+ * we re-read it periodically rather than after every single send (which forced
+ * a research-page visit on every wave) or never (which let it drift stale).
+ * The cap is NEVER a hard block: discoveries keep going past `max`; this only
+ * governs how often we bother refreshing the number we display.
+ */
+export const ARTIFACT_REFRESH_EVERY = 10;
+
+/**
  * Extract the artifact counter from the lfresearch header slot text, e.g.
  * `"Zebrane artefakty: 3609 / 3600"`. Locale-independent: the label text
  * varies per language, so we only look for the first `N / M` number pair
@@ -183,9 +194,6 @@ const systemsAtDistance = (center, d) => {
  * timestamp of the last discovery send. Returns `null` when nothing has
  * ever been sent (no system has `lfScannedAt` set).
  *
- * Used by `derive` to detect sessions where a wave was sent after the last
- * artifact-counter reading (so the counter may have grown since then).
- *
  * @param {GalaxyScans} scans
  * @returns {number | null}
  */
@@ -195,6 +203,25 @@ export const maxLfScannedAt = (scans) => {
     if (scan.lfScannedAt && scan.lfScannedAt > max) max = scan.lfScannedAt;
   }
   return max > 0 ? max : null;
+};
+
+/**
+ * Count systems discovered (their `lfScannedAt` stamped) strictly AFTER the
+ * given epoch-ms — a proxy for "how many discoveries since the last artifact
+ * reading", which drives the {@link ARTIFACT_REFRESH_EVERY} refresh detour.
+ * `since === null` (never read) ⇒ 0, so a fresh install never force-detours.
+ *
+ * @param {GalaxyScans} scans
+ * @param {number | null} since  epoch-ms of the last counter reading.
+ * @returns {number}
+ */
+export const countLfSentSince = (scans, since) => {
+  if (since === null) return 0;
+  let n = 0;
+  for (const scan of Object.values(scans)) {
+    if (scan.lfScannedAt && scan.lfScannedAt > since) n++;
+  }
+  return n;
 };
 
 /**
@@ -242,8 +269,8 @@ export const buildGalaxySystemUrl = (href, { galaxy, system }) =>
 
 /**
  * Lifeform-research page URL (current origin) — the artifact counter lives
- * in its header. Used by the `artifactsFull` tap and the hourly background
- * counter refetch.
+ * in its header. Used by the `checkArtifacts` tap (the periodic counter
+ * refresh detour).
  *
  * @param {string} href  `location.href`.
  * @returns {string}
@@ -256,16 +283,13 @@ export const buildLfResearchUrl = (href) =>
 /**
  * The button's computed state.
  *
- *   - `artifactsFull` — the artifact cap is reached (last lfresearch
- *                    reading has `current >= max`); discoveries can't yield
- *                    anything, so sending is pointless. One tap navigates
- *                    to the lfresearch page (where artifacts are spent —
- *                    and where the counter re-reads itself). Outranks every
- *                    other phase.
- *   - `checkArtifacts` — we have a prior lfresearch reading AND at least one
- *                    discovery was sent AFTER that reading (the count may have
- *                    climbed since then). One tap navigates to lfresearch to
- *                    refresh the counter before the session starts.
+ *   - `checkArtifacts` — we have a prior lfresearch reading AND at least
+ *                    {@link ARTIFACT_REFRESH_EVERY} discoveries were sent
+ *                    AFTER it (the displayed count has drifted). One tap
+ *                    navigates to lfresearch to refresh the counter. Only
+ *                    raised OFF galaxy so an in-progress run is never
+ *                    interrupted. Reaching the cap NEVER blocks sending —
+ *                    `cap` (below) just rides along as a badge.
  *   - `offGalaxy`  — not on the galaxy component; one tap navigates there.
  *   - `discover`   — on galaxy, the viewed system needs discovery AND the
  *                    game's discover button is present (and clickable).
@@ -283,21 +307,26 @@ export const buildLfResearchUrl = (href) =>
  * rides along for the label. `target` is the nearest stale system in the
  * `navigate` phase (and the viewed system in `discover` / `blocked`).
  *
+ * `cap` rides on EVERY phase: `{ current, max }` when the last reading is at
+ * or over the artifact cap, else `null`. It is a non-blocking SIGNAL only —
+ * the phase still drives a real send; render paints a badge over it.
+ *
+ * @typedef {{ current: number, max: number } | null} ArtifactCap
+ *
  * @typedef {(
- *   | { kind: 'artifactsFull', current: number, max: number, scansRemaining: number }
- *   | { kind: 'checkArtifacts', scansRemaining: number }
- *   | { kind: 'offGalaxy', scansRemaining: number }
- *   | { kind: 'discover', target: SystemCoords, cooldown: boolean, scansRemaining: number }
- *   | { kind: 'blocked', target: SystemCoords, scansRemaining: number }
- *   | { kind: 'navigate', target: SystemCoords, cooldown: boolean, scansRemaining: number }
- *   | { kind: 'allDone', cooldown: boolean, scansRemaining: number }
+ *   | { kind: 'checkArtifacts', scansRemaining: number, cap: ArtifactCap }
+ *   | { kind: 'offGalaxy', scansRemaining: number, cap: ArtifactCap }
+ *   | { kind: 'discover', target: SystemCoords, cooldown: boolean, scansRemaining: number, cap: ArtifactCap }
+ *   | { kind: 'blocked', target: SystemCoords, scansRemaining: number, cap: ArtifactCap }
+ *   | { kind: 'navigate', target: SystemCoords, cooldown: boolean, scansRemaining: number, cap: ArtifactCap }
+ *   | { kind: 'allDone', cooldown: boolean, scansRemaining: number, cap: ArtifactCap }
  * )} LfContext
  */
 
 /**
  * Single-zone paint instruction (same shape sendColony uses).
  *
- * @typedef {{ text: string, bg: string, subtext?: string, hint?: string, dim?: boolean }} Paint
+ * @typedef {{ text: string, bg: string, subtext?: string, hint?: string, dim?: boolean, capDot?: boolean }} Paint
  */
 
 /**
@@ -318,10 +347,7 @@ export const buildLfResearchUrl = (href) =>
  * @property {boolean} cooldown             post-click lock active?
  * @property {import('../../state/lifeformArtifacts.js').ArtifactReading | null} [artifacts]
  *   Last persisted artifact-counter reading, or null/absent when never read
- *   (absent ⇒ no cap gating — degrade to today's behaviour).
- * @property {number | null} [lastLfSentAt]
- *   Most recent `lfScannedAt` across all systems — epoch-ms of the last
- *   discovery send, or null when nothing has ever been sent.
+ *   (absent ⇒ no cap badge and no refresh detour — the counter is unknown).
  */
 
 // ─── derive ─────────────────────────────────────────────────────────────────
@@ -335,26 +361,23 @@ export const buildLfResearchUrl = (href) =>
 export const derive = (env) => {
   const scansRemaining = countLfRemaining(env.scans, env.now);
 
-  // Artifact cap reached: the game can't yield more artifacts, so every
-  // other phase is moot — gate the whole button until a fresh reading
-  // (lfresearch visit or the hourly background refetch) drops below max.
-  const a = env.artifacts;
-  if (a && a.current >= a.max) {
-    return { kind: 'artifactsFull', current: a.current, max: a.max, scansRemaining };
-  }
+  // Non-blocking cap signal. Reaching `max` no longer gates anything — the
+  // user keeps discovering past the cap on purpose (the game just overshoots,
+  // e.g. 3609/3600); we only carry the numbers so render can badge them.
+  const a = env.artifacts ?? null;
+  /** @type {ArtifactCap} */
+  const cap = a && a.current >= a.max ? { current: a.current, max: a.max } : null;
 
-  // Off galaxy: either navigate to lfresearch first (if a send happened after
-  // the last counter reading — the wave may have brought artifacts), or go
-  // directly to the galaxy component. The lfresearch redirect requires a
-  // prior reading: without one we have no baseline, and forcing an lfresearch
-  // visit on every fresh install would be annoying.
+  // Off galaxy: detour through lfresearch to refresh the counter only once
+  // enough discoveries have piled up since the last reading (the counter is
+  // in no request — landing on that page is the only way to read it). A fresh
+  // install (no reading) never force-detours. Otherwise go to the galaxy.
   if (!env.search.includes('component=galaxy')) {
-    const lastSent = env.lastLfSentAt ?? null;
-    const readAt = env.artifacts?.readAt ?? null;
-    if (lastSent !== null && readAt !== null && lastSent > readAt) {
-      return { kind: 'checkArtifacts', scansRemaining };
+    const readAt = a?.readAt ?? null;
+    if (a && countLfSentSince(env.scans, readAt) >= ARTIFACT_REFRESH_EVERY) {
+      return { kind: 'checkArtifacts', scansRemaining, cap };
     }
-    return { kind: 'offGalaxy', scansRemaining };
+    return { kind: 'offGalaxy', scansRemaining, cap };
   }
 
   // On galaxy: prefer discovering the system the user is already looking at.
@@ -364,23 +387,23 @@ export const derive = (env) => {
       // (all fleet slots used / other game-side blocker). Surface it
       // instead of arming a click that cannot go anywhere.
       if (env.discoverBtnDisabled === true) {
-        return { kind: 'blocked', target: env.view, scansRemaining };
+        return { kind: 'blocked', target: env.view, scansRemaining, cap };
       }
-      return { kind: 'discover', target: env.view, cooldown: env.cooldown, scansRemaining };
+      return { kind: 'discover', target: env.view, cooldown: env.cooldown, scansRemaining, cap };
     }
     // Stale but the game's discover control isn't in the DOM yet — treat as
     // a navigate to the same system so the button stays actionable (the
     // in-page submit re-renders the view + its discover button).
-    return { kind: 'navigate', target: env.view, cooldown: env.cooldown, scansRemaining };
+    return { kind: 'navigate', target: env.view, cooldown: env.cooldown, scansRemaining, cap };
   }
 
   // Viewed system is fresh (or unknown view) — find the nearest stale one.
   const anchor = env.view ?? env.home;
   const target = anchor ? findNextLfSystem(env.scans, anchor, env.now) : null;
   if (target) {
-    return { kind: 'navigate', target, cooldown: env.cooldown, scansRemaining };
+    return { kind: 'navigate', target, cooldown: env.cooldown, scansRemaining, cap };
   }
-  return { kind: 'allDone', cooldown: env.cooldown, scansRemaining };
+  return { kind: 'allDone', cooldown: env.cooldown, scansRemaining, cap };
 };
 
 /**
@@ -402,22 +425,36 @@ const systemScan = (scans, c) =>
  * @returns {Paint}
  */
 export const render = (ctx) => {
-  // No "N left" hint: for lifeforms there are always thousands of stale
-  // systems, so the count carries no signal — it's just noise on the button.
+  const base = renderPhase(ctx);
+  // Non-blocking cap badge laid over whatever the phase shows: a dot (capDot)
+  // plus the cap number, so the user KNOWS they're maxed while the button
+  // still fires real sends. The "N+" reads "max reached, possibly over".
+  // The number rides the bottom hint line when the phase already owns the
+  // subtext (e.g. a `[g:s]` target); otherwise it takes the subtext itself.
+  if (ctx.cap) {
+    const label = `${ctx.cap.max}+`;
+    base.capDot = true;
+    if (base.subtext) base.hint = label;
+    else base.subtext = label;
+  }
+  return base;
+};
+
+/**
+ * The phase's base paint, before the cap badge overlay. Split out so {@link
+ * render} can layer the non-blocking cap signal on top uniformly.
+ *
+ * No "N left" hint: for lifeforms there are always thousands of stale
+ * systems, so the count carries no signal — it's just noise on the button.
+ *
+ * @param {LfContext} ctx
+ * @returns {Paint}
+ */
+const renderPhase = (ctx) => {
   switch (ctx.kind) {
-    case 'artifactsFull':
-      // Dim + muted: a "nothing to do" state, not an error. The hint tells
-      // the user the tap is still useful (jump to research to spend).
-      return {
-        text: 'Full',
-        subtext: `${ctx.current} / ${ctx.max}`,
-        hint: 'artifacts — tap: research',
-        bg: BG_LF_DONE,
-        dim: true,
-      };
     case 'checkArtifacts':
-      // A discovery was sent after the last counter reading: the wave may
-      // have brought the count near or over the cap. Tap → lfresearch.
+      // Enough discoveries have fired since the last reading that the shown
+      // count has drifted — tap detours to lfresearch to refresh it.
       return {
         text: 'Discover',
         subtext: 'check artifacts',

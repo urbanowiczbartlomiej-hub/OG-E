@@ -29,18 +29,23 @@ export const COMET_GLYPH = [
   '</g>',
 ].join('');
 
-/** Colonization — a landing craft with legs and feet (sendColony). */
+/**
+ * Colonization — a landing craft touching down over a near, broad horizon
+ * (sendColony / fresh-colony detect). The lander is scaled up ~1.3 about its
+ * own bbox centre (32,40) and recentred on the 64-grid so it fills the node /
+ * menu orb; the ground arc underneath reads as "settle HERE".
+ */
 export const LANDER_GLYPH = [
-  // Native art sits low (y≈27–53) and narrow, so it read smaller than the
-  // other glyphs. Scale up ~1.3 about its own bbox centre (32,40) and recentre
-  // on the 64-grid so it fills the node / menu orb like the rest.
-  '<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" transform="translate(32,32) scale(1.3) translate(-32,-40)">',
+  '<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">',
+  '<g transform="translate(32,32) scale(1.3) translate(-32,-40)">',
   '<path d="M20 41 V27 a12 12 0 0 1 24 0 V41 Z"/>',
   '<circle cx="32" cy="29" r="4.5" fill="currentColor"/>',
   '<line x1="23" y1="41" x2="15" y2="53"/>',
   '<line x1="41" y1="41" x2="49" y2="53"/>',
   '<line x1="10" y1="53" x2="20" y2="53"/>',
   '<line x1="44" y1="53" x2="54" y2="53"/>',
+  '</g>',
+  '<path d="M3 58 Q32 50 61 58"/>',
   '</g>',
 ].join('');
 
@@ -56,15 +61,21 @@ export const PLANET_ARROW_GLYPH = [
 ].join('');
 
 /**
- * Abandon colony — a planet (circle + equator band) struck through with a bold
- * ✕, reading as "give up / delete this planet" (colonyFab). The X is drawn last
- * and heaviest so it dominates at orb size; the band keeps the planet legible.
+ * Abandon colony — a landing craft LIFTING OFF (thrust plume beneath it),
+ * leaving a small, distant planet far below (colonyFab). Mirrors the
+ * {@link LANDER_GLYPH} touch-down so the two FAB faces read as opposites:
+ * settle here vs. leave this place. Scaled ~1.15 about its bbox centre.
  */
 export const ABANDON_GLYPH = [
-  '<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" transform="translate(32,32) scale(1.2) translate(-32,-32)">',
-  '<circle cx="32" cy="32" r="13"/>',
-  '<line x1="16" y1="16" x2="48" y2="48"/>',
-  '<line x1="48" y1="16" x2="16" y2="48"/>',
+  '<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" transform="translate(32,32) scale(1.15) translate(-32,-35)">',
+  '<path d="M22 30 V22 a10 10 0 0 1 20 0 V30 Z"/>',
+  '<circle cx="32" cy="21" r="4" fill="currentColor"/>',
+  '<path d="M24 30 L18 38"/>',
+  '<path d="M40 30 L46 38"/>',
+  '<path d="M32 31 V38"/>',
+  '<path d="M28 31 L26 37"/>',
+  '<path d="M36 31 L38 37"/>',
+  '<circle cx="32" cy="50" r="6.5"/>',
   '</g>',
 ].join('');
 

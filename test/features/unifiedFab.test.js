@@ -92,10 +92,11 @@ describe('resolveActiveId', () => {
 // ─── pure: sizes ──────────────────────────────────────────────────────────
 
 describe('orb sizing', () => {
-  it('orbDiameter is proportional but clamped to [56, 150]', () => {
-    expect(orbDiameter(320)).toBe(134); // 0.42 × 320
-    expect(orbDiameter(40)).toBe(56); // floor
-    expect(orbDiameter(560)).toBe(150); // ceiling
+  it('orbDiameter stays proportional across the whole fabBtnSize range', () => {
+    expect(orbDiameter(320)).toBe(134); // 0.42 × 320 (the default)
+    expect(orbDiameter(560)).toBe(235); // 0.42 × 560 — no 150 ceiling any more
+    expect(orbDiameter(100)).toBe(42); // 0.42 × 100
+    expect(orbDiameter(40)).toBe(36); // floor — 0.42 × 40 ≈ 17 is too small to tap
   });
 
   it('orbitRadius clears the FAB edge plus the orb radius', () => {

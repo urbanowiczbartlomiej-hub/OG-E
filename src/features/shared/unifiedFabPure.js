@@ -57,14 +57,18 @@ export const resolveActiveId = (storedId, registeredIds) => {
 };
 
 /**
- * Diameter of one satellite orb for a FAB of diameter `fabSize` —
- * proportional but clamped so tiny FABs stay tappable and huge ones don't
- * fill the screen with the menu.
+ * Diameter of one satellite orb for a FAB of diameter `fabSize` — a fixed
+ * proportion of the FAB so the orbs grow and shrink WITH it across the whole
+ * `fabBtnSize` range (40–560). The only clamp is a 36 px floor that keeps the
+ * orb tappable on a tiny FAB (0.42 × fabSize is always smaller than the FAB,
+ * so no upper rail is needed). A previous hard 150 px ceiling froze the orbs
+ * once the FAB passed ~357 px — the default is 320 — so enlarging the FAB
+ * appeared to leave the menu untouched.
  *
  * @param {number} fabSize
  * @returns {number}
  */
-export const orbDiameter = (fabSize) => clamp(Math.round(fabSize * 0.42), 56, 150);
+export const orbDiameter = (fabSize) => Math.max(36, Math.round(fabSize * 0.42));
 
 /**
  * Distance from the FAB centre to each orb centre: just past the FAB's own

@@ -9,6 +9,8 @@ import {
   isSystemLfStale,
   findNextLfSystem,
   countLfRemaining,
+  countLfSentSince,
+  ARTIFACT_REFRESH_EVERY,
   derive,
   render,
   BG_LF_IDLE,
@@ -112,6 +114,16 @@ describe('countLfRemaining', () => {
   });
 });
 
+describe('countLfSentSince', () => {
+  it('is 0 when never read (since === null)', () => {
+    expect(countLfSentSince(scansWithLf({ '1:1': NOW, '1:2': NOW }), null)).toBe(0);
+  });
+  it('counts only systems stamped strictly after the reading', () => {
+    const scans = scansWithLf({ '1:1': NOW - 100, '1:2': NOW + 50, '1:3': NOW + 80 });
+    expect(countLfSentSince(scans, NOW)).toBe(2);
+  });
+});
+
 describe('derive', () => {
   const base = { scans: {}, now: NOW, home: { galaxy: 4, system: 250 }, view: null, hasDiscoverBtn: false, cooldown: false };
 
@@ -172,27 +184,27 @@ describe('derive', () => {
 
 describe('render', () => {
   it('discover → "Discover [g:s]" in the active violet', () => {
-    const p = render({ kind: 'discover', target: { galaxy: 4, system: 250 }, cooldown: false, scansRemaining: 5 });
+    const p = render({ kind: 'discover', target: { galaxy: 4, system: 250 }, cooldown: false, scansRemaining: 5, cap: null });
     expect(p).toMatchObject({ text: 'Discover', subtext: '[4:250]', bg: BG_LF_ACTIVE });
   });
   it('discover dims while cooling down', () => {
-    const p = render({ kind: 'discover', target: { galaxy: 4, system: 250 }, cooldown: true, scansRemaining: 5 });
+    const p = render({ kind: 'discover', target: { galaxy: 4, system: 250 }, cooldown: true, scansRemaining: 5, cap: null });
     expect(p.dim).toBe(true);
   });
   it('navigate → "Next [g:s]"', () => {
-    const p = render({ kind: 'navigate', target: { galaxy: 5, system: 1 }, cooldown: false, scansRemaining: 5 });
+    const p = render({ kind: 'navigate', target: { galaxy: 5, system: 1 }, cooldown: false, scansRemaining: 5, cap: null });
     expect(p).toMatchObject({ text: 'Next', subtext: '[5:1]' });
   });
   it('offGalaxy → "Discover" (idle violet)', () => {
-    const p = render({ kind: 'offGalaxy', scansRemaining: 10 });
+    const p = render({ kind: 'offGalaxy', scansRemaining: 10, cap: null });
     expect(p).toMatchObject({ text: 'Discover', bg: BG_LF_IDLE });
   });
   it('allDone → "All discovered!"', () => {
-    const p = render({ kind: 'allDone', cooldown: false, scansRemaining: 0 });
+    const p = render({ kind: 'allDone', cooldown: false, scansRemaining: 0, cap: null });
     expect(p).toMatchObject({ text: 'All discovered!', bg: BG_LF_DONE });
   });
   it('blocked → "Max fleets" in error red, dimmed, with system subtext', () => {
-    const p = render({ kind: 'blocked', target: { galaxy: 4, system: 250 }, scansRemaining: 3 });
+    const p = render({ kind: 'blocked', target: { galaxy: 4, system: 250 }, scansRemaining: 3, cap: null });
     expect(p).toMatchObject({ text: 'Max fleets', subtext: '[4:250]', bg: BG_LF_ERROR, dim: true });
   });
 });
@@ -232,5 +244,124 @@ describe('derive — blocked', () => {
       discoverBtnDisabled: true,
     });
     expect(ctx.kind).toBe('navigate');
+  });
+});
+
+describe('derive — artifact cap (non-blocking)', () => {
+  const base = { scans: {}, now: NOW, home: { galaxy: 4, system: 250 }, view: null, hasDiscoverBtn: false, cooldown: false };
+  const capped = { current: 3609, max: 3600, readAt: NOW };
+
+  it('at cap, on galaxy → still discovers (cap never blocks), with cap rider', () => {
+    const ctx = derive({
+      ...base,
+      search: '?page=ingame&component=galaxy',
+      view: { galaxy: 4, system: 250 },
+      hasDiscoverBtn: true,
+      artifacts: capped,
+    });
+    expect(ctx.kind).toBe('discover');
+    expect(ctx.cap).toEqual({ current: 3609, max: 3600 });
+  });
+
+  it('at cap, off galaxy with few recent sends → offGalaxy (no forced detour), with cap', () => {
+    const ctx = derive({
+      ...base,
+      search: '?page=ingame&component=overview',
+      artifacts: capped,
+      scans: scansWithLf({ '1:1': NOW + 1 }), // 1 send since reading, < threshold
+    });
+    expect(ctx.kind).toBe('offGalaxy');
+    expect(ctx.cap).toEqual({ current: 3609, max: 3600 });
+  });
+
+  it('below cap → cap rider is null', () => {
+    const ctx = derive({
+      ...base,
+      search: '?page=ingame&component=overview',
+      artifacts: { current: 669, max: 3600, readAt: NOW },
+    });
+    expect(ctx.kind).toBe('offGalaxy');
+    expect(ctx.cap).toBeNull();
+  });
+});
+
+describe('derive — counter refresh detour (every N sends)', () => {
+  const base = { scans: {}, now: NOW, home: { galaxy: 4, system: 250 }, view: null, hasDiscoverBtn: false, cooldown: false };
+
+  /**
+   * N systems stamped just after `readAt`.
+   * @param {number} n
+   * @param {number} readAt
+   */
+  const sentSince = (n, readAt) => {
+    /** @type {Record<string, number>} */
+    const e = {};
+    for (let i = 1; i <= n; i++) e[`1:${i}`] = readAt + 1;
+    return scansWithLf(e);
+  };
+
+  it('off galaxy, ≥ threshold sends since reading → checkArtifacts', () => {
+    const ctx = derive({
+      ...base,
+      search: '?page=ingame&component=overview',
+      artifacts: { current: 669, max: 3600, readAt: NOW },
+      scans: sentSince(ARTIFACT_REFRESH_EVERY, NOW),
+    });
+    expect(ctx.kind).toBe('checkArtifacts');
+  });
+
+  it('off galaxy, below threshold → offGalaxy (no detour)', () => {
+    const ctx = derive({
+      ...base,
+      search: '?page=ingame&component=overview',
+      artifacts: { current: 669, max: 3600, readAt: NOW },
+      scans: sentSince(ARTIFACT_REFRESH_EVERY - 1, NOW),
+    });
+    expect(ctx.kind).toBe('offGalaxy');
+  });
+
+  it('no prior reading → never detours, even with many sends', () => {
+    const ctx = derive({
+      ...base,
+      search: '?page=ingame&component=overview',
+      scans: sentSince(ARTIFACT_REFRESH_EVERY + 5, NOW),
+    });
+    expect(ctx.kind).toBe('offGalaxy');
+  });
+
+  it('on galaxy, even past threshold → discovers, never detours mid-run', () => {
+    const ctx = derive({
+      ...base,
+      search: '?page=ingame&component=galaxy',
+      view: { galaxy: 4, system: 250 },
+      hasDiscoverBtn: true,
+      artifacts: { current: 669, max: 3600, readAt: NOW },
+      scans: { ...sentSince(ARTIFACT_REFRESH_EVERY, NOW) },
+    });
+    expect(ctx.kind).toBe('discover');
+  });
+});
+
+describe('render — artifact cap badge', () => {
+  it('overlays a dot + "max+" hint, keeping the phase subtext', () => {
+    const p = render({
+      kind: 'discover',
+      target: { galaxy: 4, system: 250 },
+      cooldown: false,
+      scansRemaining: 5,
+      cap: { current: 3609, max: 3600 },
+    });
+    expect(p).toMatchObject({ text: 'Discover', subtext: '[4:250]', hint: '3600+', capDot: true });
+  });
+
+  it('with no phase subtext, the cap takes the subtext line', () => {
+    const p = render({ kind: 'offGalaxy', scansRemaining: 9, cap: { current: 3600, max: 3600 } });
+    expect(p).toMatchObject({ text: 'Discover', subtext: '3600+', capDot: true });
+  });
+
+  it('no cap → no dot, no badge', () => {
+    const p = render({ kind: 'offGalaxy', scansRemaining: 9, cap: null });
+    expect(p.capDot).toBeUndefined();
+    expect(p.subtext).toBeUndefined();
   });
 });

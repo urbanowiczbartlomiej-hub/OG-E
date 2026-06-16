@@ -46,7 +46,6 @@ import {
   buildGalaxyUrl,
   buildGalaxySystemUrl,
   buildLfResearchUrl,
-  maxLfScannedAt,
   DISCOVERY_COOLDOWN_MS,
   BG_LF_IDLE,
   BG_LF_WAIT,
@@ -91,6 +90,15 @@ const TRANSIENT_MS = 1800;
 
 /** @type {import('../shared/button.js').Button | null} */
 let controller = null;
+/**
+ * The artifact-cap badge: a small rose dot parked INSIDE the circle (the host
+ * is `overflow:hidden`, so an outside-corner badge would be clipped). Shown
+ * whenever the live paint carries `capDot`. OG-E's own chrome — lives next to
+ * the code that toggles it, percentage-sized so it tracks `fabBtnSize` resizes.
+ *
+ * @type {HTMLElement | null}
+ */
+let capDotEl = null;
 /** Post-click cooldown: locked between a discover click and its result. */
 let busy = false;
 /** Safety timer that lifts `busy` if no result event arrives. */
@@ -119,6 +127,31 @@ const paint = (p) => {
   }
   controller.setBg('main', p.bg);
   controller.setDim('main', p.dim === true);
+  if (capDotEl) capDotEl.style.display = p.capDot === true ? '' : 'none';
+};
+
+/** Singleton <style> id for the artifact-cap badge dot. */
+const CAP_DOT_STYLE_ID = 'oge-lf-cap-dot-style';
+/** OG-E's own class for the badge dot (not a game contract). */
+const CAP_DOT_CLASS = 'oge-lf-cap-dot';
+
+/**
+ * Inject the cap-dot stylesheet once. Percentage geometry keeps the dot
+ * proportional as the FAB resizes; it sits at the inner upper-right of the
+ * circle (clear of the centred label and the upper node "oczko").
+ *
+ * @returns {void}
+ */
+const ensureCapDotCss = () => {
+  if (document.getElementById(CAP_DOT_STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = CAP_DOT_STYLE_ID;
+  style.textContent =
+    `.${CAP_DOT_CLASS}{position:absolute;top:16%;right:16%;width:13%;height:13%;` +
+    `border-radius:50%;background:${BG_LF_ERROR};` +
+    'box-shadow:0 0 0 2px rgba(0,0,0,0.4),0 0 6px rgba(251,113,133,0.9);' +
+    'pointer-events:none;z-index:6;}';
+  document.head.appendChild(style);
 };
 
 /**
@@ -138,7 +171,6 @@ const captureEnv = () => {
     discoverBtnDisabled: isDiscoverButtonDisabled(),
     cooldown: busy,
     artifacts: readLfArtifacts(),
-    lastLfSentAt: maxLfScannedAt(scans),
   };
 };
 
@@ -204,11 +236,10 @@ const onClick = () => {
   const ctx = derive(captureEnv());
 
   switch (ctx.kind) {
-    case 'artifactsFull':
     case 'checkArtifacts':
-      // Cap reached OR stale counter after a send — navigate to lfresearch.
-      // The visit harvests a fresh reading; if the count is below max,
-      // checkArtifacts dissolves on the next tap (offGalaxy or discover).
+      // The displayed counter has drifted (≥ ARTIFACT_REFRESH_EVERY sends
+      // since the last reading) — detour to lfresearch. The visit harvests a
+      // fresh reading; checkArtifacts then dissolves on the next tap.
       location.href = buildLfResearchUrl(location.href);
       return;
 
@@ -395,12 +426,19 @@ export const installSendLifeform = () => {
     if (!controller) return;
     // Violet glow (the planted TODO's intended look).
     controller.el.style.setProperty('--glow', '1.15');
+    // Artifact-cap badge — hidden until a `capDot` paint reveals it.
+    ensureCapDotCss();
+    capDotEl = document.createElement('span');
+    capDotEl.className = CAP_DOT_CLASS;
+    capDotEl.style.display = 'none';
+    controller.el.appendChild(capDotEl);
     refresh();
   };
 
   const removeButton = () => {
     controller?.dispose();
     controller = null;
+    capDotEl = null;
   };
 
   /** @param {number} size */
