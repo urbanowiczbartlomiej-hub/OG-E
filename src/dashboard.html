@@ -160,6 +160,67 @@
   .settings-panel .settings-body { margin-top: 10px; }
   .settings-panel .settings-desc { color: #888; font-size: 13px; margin: 4px 0 12px; line-height: 1.5; }
 
+  /* ── Settings-panel form controls — one shared look, matching the Daily
+     Run dark input/select aesthetic, applied across every tab's ⚙ Settings
+     (Colonizations, Galaxy Observations, Reminders). ── */
+  .settings-panel input[type="text"],
+  .settings-panel input[type="password"],
+  .settings-panel input[type="number"],
+  .settings-panel select,
+  .settings-panel textarea {
+    background: #0d1620; color: #cfe; border: 1px solid #2a4a5a;
+    border-radius: 6px; padding: 6px 10px; font-size: 13px;
+    font-family: inherit; max-width: 100%;
+  }
+  .settings-panel textarea { width: 100%; font-family: 'Consolas', 'Courier New', monospace; line-height: 1.5; }
+  .settings-panel input:focus,
+  .settings-panel select:focus,
+  .settings-panel textarea:focus {
+    outline: none; border-color: #4a9eff; box-shadow: 0 0 0 2px rgba(74,158,255,0.2);
+  }
+  .settings-panel input[type="checkbox"] { width: 16px; height: 16px; accent-color: #4a9eff; cursor: pointer; }
+  .settings-panel button {
+    background: #1a2a3a; border: 1px solid #2a4a5a; color: #ccc;
+    padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer;
+  }
+  .settings-panel button:hover { background: #2a4a6a; color: #fff; }
+
+  /* Labelled config rows (cfg-row label + field) — RWD: stack on narrow. */
+  .cfg-row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+  .cfg-label { flex: 0 0 220px; max-width: 220px; color: #ccc; font-size: 13px; padding-top: 6px; }
+  .cfg-field { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1 1 220px; min-width: 0; }
+  .cfg-hint { color: #6b7785; font-size: 12px; }
+  .cfg-group { color: #4a9eff; font-size: 14px; font-weight: bold; margin: 14px 0 8px; }
+  .cfg-group:first-child { margin-top: 0; }
+  .cfg-sub { color: #9cf; font-size: 12px; font-weight: bold; margin: 10px 0 4px; }
+
+  /* Offset-list editor rows as chips (à la Daily Run endpoint chips). */
+  .oge-offset-row { display: inline-flex; align-items: center; gap: 8px; margin: 0 6px 6px 0;
+    padding: 4px 6px 4px 12px; background: #16252f; border: 1px solid #2a4a5a; border-radius: 16px; }
+  .settings-panel .oge-offset-input { width: 58px; background: transparent; border: none;
+    border-radius: 0; padding: 2px 0; color: #cfe; }
+  .settings-panel .oge-offset-input:focus { box-shadow: none; border: none; }
+  .oge-offset-preview { color: #8aa3ad; font-size: 12px; }
+  .settings-panel .oge-offset-remove { background: none; border: none; color: #c47070;
+    padding: 0 4px; font-size: 13px; line-height: 1; }
+  .settings-panel .oge-offset-remove:hover { background: none; color: #ff9090; }
+  .oge-tpl-preview { color: #9fd0ff; font-size: 12px; margin-top: 4px; }
+  .oge-tpl-warn { color: #ffb454; font-size: 12px; margin-top: 2px; }
+
+  /* Reminders ⚙ Settings sub-tabs (Expedition waves / Ad-hoc / Fleet-save). */
+  .rem-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 14px; border-bottom: 1px solid #2a4a5a; }
+  .rem-tab { background: transparent; border: 1px solid transparent; border-bottom: none;
+    color: #888; padding: 6px 14px; font-size: 13px; cursor: pointer; border-radius: 6px 6px 0 0; }
+  .rem-tab:hover { color: #ccc; background: #1a2a3a; }
+  .rem-tab.active { color: #fff; background: #16252f; border-color: #2a4a5a; font-weight: bold; }
+  .rem-tabpane { display: none; }
+  .rem-tabpane.active { display: block; }
+
+  @media (max-width: 620px) {
+    .cfg-label { flex-basis: 100%; max-width: 100%; padding-top: 0; }
+    .cfg-field { flex-basis: 100%; }
+  }
+
   /* Reminders tab — preview-only surface. Setup form lives in the
      in-game Settings panel, so this tab is intentionally compact. */
   .rem-intro { color: #aaa; font-size: 13px; margin-bottom: 14px; line-height: 1.5; }

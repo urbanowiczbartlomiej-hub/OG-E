@@ -61,17 +61,29 @@ const mk = (tag, css, text) => {
  * @returns {HTMLElement}
  */
 const row = (labelText, control, hint) => {
-  const r = mk('div', 'display:flex;align-items:center;gap:8px;margin-bottom:6px;');
-  const lbl = mk('label', 'min-width:230px;color:#ccc;font-size:13px;', labelText);
+  const r = mk('div');
+  r.className = 'cfg-row';
+  const lbl = mk('label', undefined, labelText);
+  lbl.className = 'cfg-label';
   r.appendChild(lbl);
-  r.appendChild(control);
-  if (hint) r.appendChild(mk('span', 'color:#666;font-size:12px;', hint));
+  const field = mk('div');
+  field.className = 'cfg-field';
+  field.appendChild(control);
+  if (hint) {
+    const h = mk('span', undefined, hint);
+    h.className = 'cfg-hint';
+    field.appendChild(h);
+  }
+  r.appendChild(field);
   return r;
 };
 
 /** A blue sub-group heading inside an editor body. @param {string} text @returns {HTMLElement} */
-const groupHeading = (text) =>
-  mk('div', 'margin:10px 0 4px;color:#4a9eff;font-size:13px;font-weight:bold;', text);
+const groupHeading = (text) => {
+  const el = mk('div', undefined, text);
+  el.className = 'cfg-group';
+  return el;
+};
 
 /**
  * @typedef {import('../../domain/galaxyScanConfig.js').GalaxyScanConfig} GalaxyScanConfig

@@ -354,40 +354,83 @@ export const installReminderConfig = ({ getUniverseId }) => {
    * @returns {HTMLElement}
    */
   const row = (labelText, control, hint) => {
-    const r = mk('div', 'display:flex;align-items:flex-start;gap:8px;margin-bottom:6px;');
-    const lbl = mk('label', 'min-width:230px;color:#ccc;font-size:13px;padding-top:3px;', labelText);
+    const r = mk('div');
+    r.className = 'cfg-row';
+    const lbl = mk('label', undefined, labelText);
+    lbl.className = 'cfg-label';
     r.appendChild(lbl);
-    const col = mk('div', 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;');
-    col.appendChild(control);
-    if (hint) col.appendChild(mk('span', 'color:#666;font-size:12px;', hint));
-    r.appendChild(col);
+    const field = mk('div');
+    field.className = 'cfg-field';
+    field.appendChild(control);
+    if (hint) {
+      const h = mk('span', undefined, hint);
+      h.className = 'cfg-hint';
+      field.appendChild(h);
+    }
+    r.appendChild(field);
     return r;
   };
 
   /** @param {string} text @returns {HTMLElement} */
-  const groupHeading = (text) =>
-    mk('div', 'color:#4a9eff;font-size:13px;font-weight:600;margin:4px 0 8px;', text);
+  const subHeading = (text) => {
+    const el = mk('div', undefined, text);
+    el.className = 'cfg-sub';
+    return el;
+  };
 
-  /** @param {string} text @returns {HTMLElement} */
-  const subHeading = (text) =>
-    mk('div', 'color:#9cf;font-size:12px;font-weight:600;margin:8px 0 2px;', text);
+  // Three sub-tabs (Expedition waves / Ad-hoc / Fleet-save) so each kind's
+  // knobs + message editor live on their own pane instead of one long form.
+  // All widgets stay mounted (inactive panes are display:none) so a single
+  // Save below persists every tab at once.
+  const tabBar = mk('div');
+  tabBar.className = 'rem-tabs';
+  /** @type {{ btn: HTMLButtonElement, pane: HTMLElement }[]} */
+  const tabs = [];
+  /** @param {string} label @returns {HTMLElement} the pane to fill */
+  const addTab = (label) => {
+    const btn = /** @type {HTMLButtonElement} */ (mk('button', undefined, label));
+    btn.type = 'button';
+    btn.className = 'rem-tab';
+    const pane = mk('div');
+    pane.className = 'rem-tabpane';
+    btn.addEventListener('click', () => {
+      for (const t of tabs) {
+        const on = t.btn === btn;
+        t.btn.classList.toggle('active', on);
+        t.pane.classList.toggle('active', on);
+      }
+    });
+    tabBar.appendChild(btn);
+    tabs.push({ btn, pane });
+    return pane;
+  };
 
-  body.appendChild(groupHeading('Expedition waves & ad-hoc'));
-  body.appendChild(row('Expedition-wave reminders — enable', waveEnabledInput, 'auto-detect a returning wave + schedule a series'));
-  body.appendChild(row('Wave reminder schedule', waveEditor.element, 'each reminder fires this long after the wave returns'));
-  body.appendChild(subHeading('Wave message'));
-  body.appendChild(waveTplEditor.element);
-  body.appendChild(row('Ad-hoc reminders — lead time', adhocInput, 'before arrival, e.g. 1m'));
-  body.appendChild(subHeading('Ad-hoc message'));
-  body.appendChild(adhocTplEditor.element);
+  const wavePane = addTab('Expedition waves');
+  wavePane.appendChild(row('Reminders — enable', waveEnabledInput, 'auto-detect a returning wave + schedule a series'));
+  wavePane.appendChild(row('Reminder schedule', waveEditor.element, 'each reminder fires this long after the wave returns'));
+  wavePane.appendChild(subHeading('Message'));
+  wavePane.appendChild(waveTplEditor.element);
 
-  body.appendChild(groupHeading('Fleet-save'));
-  body.appendChild(row('Fleet-save reminders — enable', enabledInput, 'flag big own fleets 🛡 + ping before landing'));
-  body.appendChild(row('Ship threshold', thresholdInput, 'total ships that count as a "big" fleet'));
-  body.appendChild(row('Min flight time', minFlightInput, 'minutes-first, e.g. 10m · 0 = off'));
-  body.appendChild(row('Reminder schedule', fsEditor.element, 'each reminder relative to landing (− before, 0 at, + after)'));
-  body.appendChild(subHeading('Fleet-save message'));
-  body.appendChild(fsTplEditor.element);
+  const adhocPane = addTab('Ad-hoc');
+  adhocPane.appendChild(row('Lead time', adhocInput, 'before arrival, e.g. 1m'));
+  adhocPane.appendChild(subHeading('Message'));
+  adhocPane.appendChild(adhocTplEditor.element);
+
+  const fsPane = addTab('Fleet-save');
+  fsPane.appendChild(row('Reminders — enable', enabledInput, 'flag big own fleets 🛡 + ping before landing'));
+  fsPane.appendChild(row('Ship threshold', thresholdInput, 'total ships that count as a "big" fleet'));
+  fsPane.appendChild(row('Min flight time', minFlightInput, 'minutes-first, e.g. 10m · 0 = off'));
+  fsPane.appendChild(row('Reminder schedule', fsEditor.element, 'each reminder relative to landing (− before, 0 at, + after)'));
+  fsPane.appendChild(subHeading('Message'));
+  fsPane.appendChild(fsTplEditor.element);
+
+  body.appendChild(tabBar);
+  body.appendChild(wavePane);
+  body.appendChild(adhocPane);
+  body.appendChild(fsPane);
+  // Open the first tab by default.
+  tabs[0].btn.classList.add('active');
+  tabs[0].pane.classList.add('active');
 
   const statusEl = mk('span', 'margin-left:12px;font-size:13px;');
   statusEl.id = 'remCfgStatus';
