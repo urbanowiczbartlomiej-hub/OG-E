@@ -16,7 +16,10 @@
 //   1. Reminders — master switch. With no (valid) token there is no push
 //      channel, so the credential + its status lead the section.
 //   2. ntfy.sh — access token. The PREREQUISITE for everything: the topic is
-//      derived from it, the producer skips scheduling without it.
+//      derived from it, the producer skips scheduling without it. Enabling
+//      reminders + setting the token + subscribing to the topic IS the whole
+//      minimum setup; anything more (schedules, fleet-save) is discoverable
+//      in the Dashboard, so the panel deliberately carries no signpost text.
 //   3. ntfy.sh — account status. Async probe of `/v1/account`: confirms the
 //      token is accepted and shows today's message usage vs the daily
 //      limit. Turns a wrong token (previously silent) into explicit
@@ -25,12 +28,12 @@
 //      you subscribe to in the ntfy app on your phone. Read-only.
 //
 // That's the whole AGR section now: master switch + required credential + its
-// read-only status rows. The DETAILED reminder config moved to the dashboard's
-// Reminders tab: the per-server fleet-save knobs to the per-universe
-// galaxyScanConfig store, and the GLOBAL wave enable/schedule + ad-hoc lead
-// time to the reminderGlobalConfig store. The token must stay here (it's the
-// required credential); a one-line signpost under the master switch points at
-// the Dashboard for the rest.
+// read-only status rows. The DETAILED reminder config lives on the dashboard's
+// Reminders tab: the per-server fleet-save knobs in the per-universe
+// galaxyScanConfig store, and the wave enable/schedule + ad-hoc lead time in
+// the reminder config. The token must stay here (it's the required
+// credential); the rest is left for the user to discover in the Dashboard
+// rather than spelled out with signpost text that bloats the panel.
 
 import { isValidNtfyToken, deriveNtfyTopic } from '../../../sync/reminders.js';
 import { fetchNtfyAccount } from '../../../sync/ntfyAccount.js';
@@ -67,15 +70,6 @@ export const remindersSection = {
       buttonText: 'Check now',
       onclick: () => document.dispatchEvent(new CustomEvent(NTFY_CHECK_NOW_EVENT)),
       buttonDisabledWhen: (s) => !s.remindersMasterEnabled,
-    },
-    {
-      // Signpost: the schedules + fleet-save config moved to the Dashboard
-      // (B3). Only the master switch + token (the required credential) stay
-      // here. Not a Settings field — `static`, DOM-only id.
-      id: 'remindersDashboardHint',
-      label: 'Reminders — configuration',
-      type: 'static',
-      getText: () => 'Schedules + fleet-save config live in the OG-E Dashboard → Reminders.',
     },
     {
       id: 'reminderNtfyToken',

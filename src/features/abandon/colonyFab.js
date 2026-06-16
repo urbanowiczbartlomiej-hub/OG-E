@@ -312,7 +312,19 @@ export const installColonyFab = () => {
   // React to config edits (fabMode toggle, colonyMinFields bump) and to OGame
   // AJAX overview swaps (planet switch via #planetList). The observer is
   // inert while a flow runs (see refresh()).
-  const unsubSettings = settingsStore.subscribe(refresh);
+  //
+  // `fabBtnSize` is handled separately from `refresh()`: a size change does
+  // NOT change the desired state, so refresh() would early-return and leave
+  // the live button at its old size. Resize the mounted controller in place
+  // instead — matching the other FAB modules' `prevFabBtnSize` handling.
+  let prevFabBtnSize = settingsStore.get().fabBtnSize;
+  const unsubSettings = settingsStore.subscribe((next) => {
+    if (next.fabBtnSize !== prevFabBtnSize) {
+      prevFabBtnSize = next.fabBtnSize;
+      controller?.resize(next.fabBtnSize);
+    }
+    refresh();
+  });
   const unsubConfig = galaxyScanConfigStore.subscribe(refresh);
   const observer = new MutationObserver(refresh);
   if (document.body) observer.observe(document.body, { childList: true, subtree: true });

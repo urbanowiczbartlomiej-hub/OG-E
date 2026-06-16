@@ -1,9 +1,9 @@
 // @ts-check
 
-// Dashboard launch button. Rendered at the TOP of the OG-E settings tab
-// (right under the header) rather than as a labelled row at the bottom —
-// it's the panel's primary call-to-action, so it leads. Owns the
-// Dashboard-page URL resolver because it's the only consumer.
+// Dashboard launch button. The panel's primary call-to-action, so it leads:
+// the caller (settingsUi/index.js) drops it into a full-width cell under its
+// own "Dashboard" section header, first in the tab. Owns the Dashboard-page
+// URL resolver because it's the only consumer.
 
 import { parseUniverseId } from '../../../lib/universeId.js';
 import { appendLens, installButtonChrome } from '../../shared/buttonChrome.js';
@@ -46,9 +46,9 @@ const BUTTON_STYLE =
   'color:#4a9eff;border-radius:4px;font-size:13px;cursor:pointer;font-weight:bold;';
 
 /**
- * Build the standalone "Open OG-E Dashboard" button (wrapped so it spans
- * the panel width). Not a `SettingsSection` — the caller drops it in above
- * the section tables.
+ * Build the "OG-E Dashboard" launch button (wrapped so it spans the panel
+ * width). Not a `SettingsSection` — the caller drops it into a full-width
+ * cell under its own "Dashboard" section header.
  *
  * @returns {HTMLElement}
  */
@@ -74,7 +74,7 @@ export const buildDashboardButton = () => {
   const lens = /** @type {HTMLElement | null} */ (icon.querySelector('.oge-lens'));
   if (lens) lens.style.cssText += ';position:absolute;left:0;top:0;width:100%;height:100%;transform:none;';
   const label = document.createElement('span');
-  label.textContent = 'Open OG-E Dashboard';
+  label.textContent = 'OG-E Dashboard';
   btn.append(icon, label);
   btn.addEventListener('click', () => {
     if (!DASHBOARD_URL) return;

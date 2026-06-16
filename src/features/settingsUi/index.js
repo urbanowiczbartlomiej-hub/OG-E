@@ -114,15 +114,54 @@ const applyCollapse = (tab, collapse) => {
     if (child === headerChild) continue;
     const el = /** @type {HTMLElement} */ (child);
     // `setProperty(..., 'important')` is the one hammer that works even
-    // against `!important` rules shipped by AGR's stylesheet. Section
-    // tables want `table`; the Dashboard-button wrapper (a div) wants
-    // `block`, so pick by tag rather than forcing every child to `table`.
+    // against `!important` rules shipped by AGR's stylesheet. Every child
+    // is now an `.ago_menu_section` table (the Dashboard launcher included),
+    // so they all want `display:table`; the ternary stays as a defensive
+    // fallback for any non-table child.
     const shown = el.tagName === 'TABLE' ? 'table' : 'block';
     el.style.setProperty('display', collapse ? 'none' : shown, 'important');
   }
   if (arrowClose) arrowClose.style.display = collapse ? '' : 'none';
   if (arrowOpen) arrowOpen.style.display = collapse ? 'none' : '';
   tab.classList.toggle('ago_menu_tab_open', !collapse);
+};
+
+/**
+ * Build an empty `.ago_menu_section` table — fixed layout, the shared
+ * 434/220 colgroup (so inputs align across every section), and the gold
+ * section-title header row. Callers append their own rows (for the
+ * Dashboard section, a single full-width cell) and then the table itself.
+ *
+ * @param {string} title  The section header text.
+ * @returns {HTMLTableElement}
+ */
+const createSectionTable = (title) => {
+  const table = document.createElement('table');
+  table.className = 'ago_menu_section';
+  // Fixed layout + explicit 434/220 colgroup so inputs align between
+  // sections (without this, Expeditions labels pushed their inputs further
+  // right than Colonization). Free-value inputs stretch to fill the value
+  // column (FULL_WIDTH_STYLE in controls.js), so 220px stays roomy.
+  table.style.tableLayout = 'fixed';
+  const colgroup = document.createElement('colgroup');
+  const col1 = document.createElement('col');
+  col1.style.width = '434px';
+  const col2 = document.createElement('col');
+  col2.style.width = '220px';
+  colgroup.appendChild(col1);
+  colgroup.appendChild(col2);
+  table.appendChild(colgroup);
+
+  const sectionRow = document.createElement('tr');
+  sectionRow.className = 'ago_menu_section_header';
+  const sectionCell = document.createElement('th');
+  sectionCell.className = 'ago_menu_section_title';
+  sectionCell.colSpan = 2;
+  sectionCell.textContent = title;
+  sectionRow.appendChild(sectionCell);
+  table.appendChild(sectionRow);
+
+  return table;
 };
 
 /**
@@ -175,43 +214,27 @@ const buildTab = () => {
   header.appendChild(labelSpan);
   tab.appendChild(header);
 
-  // Primary call-to-action up top, before the section tables: a full-width
-  // "Open OG-E Dashboard" button (no label row — it speaks for itself).
-  tab.appendChild(buildDashboardButton());
+  // Dashboard launcher as its own named section, first — so it reads like
+  // every other group instead of a loose full-width button. The button
+  // spans both columns (it speaks for itself; no label row).
+  const dashTable = createSectionTable('Dashboard');
+  const dashRow = document.createElement('tr');
+  const dashCell = document.createElement('td');
+  dashCell.colSpan = 2;
+  dashCell.appendChild(buildDashboardButton());
+  dashRow.appendChild(dashCell);
+  dashTable.appendChild(dashRow);
+  tab.appendChild(dashTable);
 
   let primaryTableSet = false;
   for (const section of SECTIONS) {
-    const table = document.createElement('table');
-    table.className = 'ago_menu_section';
-    // Fixed layout + explicit 434/220 colgroup so inputs align between
-    // sections (without this, Expeditions labels pushed their inputs
-    // further right than Colonization). Free-value inputs are stretched to
-    // fill the value column (see FULL_WIDTH_STYLE in controls.js), so even
-    // at 220px the token / duration-list fields are roomy — no need to
-    // steal width from the (long) label column.
-    table.style.tableLayout = 'fixed';
-    const colgroup = document.createElement('colgroup');
-    const col1 = document.createElement('col');
-    col1.style.width = '434px';
-    const col2 = document.createElement('col');
-    col2.style.width = '220px';
-    colgroup.appendChild(col1);
-    colgroup.appendChild(col2);
-    table.appendChild(colgroup);
+    const table = createSectionTable(section.section);
+    // The first SECTIONS table carries the stable id used by tests/teardown
+    // (the Dashboard launcher above is presentation-only — no bound inputs).
     if (!primaryTableSet) {
       table.id = TABLE_ID;
       primaryTableSet = true;
     }
-
-    const sectionRow = document.createElement('tr');
-    sectionRow.className = 'ago_menu_section_header';
-    const sectionCell = document.createElement('th');
-    sectionCell.className = 'ago_menu_section_title';
-    sectionCell.colSpan = 2;
-    sectionCell.textContent = section.section;
-    sectionRow.appendChild(sectionCell);
-    table.appendChild(sectionRow);
-
     for (const opt of section.options) {
       table.appendChild(buildRow(opt));
     }
