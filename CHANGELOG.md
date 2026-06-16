@@ -6,6 +6,35 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.20.0] — 2026-06-16
+
+### Added
+
+- **Custom reminder messages.** In the Dashboard's Reminders tab you can now
+  shape the push for each of the three reminder kinds — expedition waves,
+  ad-hoc fleet, and fleet-save — choosing the message text, the icon, and the
+  priority. Drop in wildcards like server, time, mission, coordinates or ship
+  count (click a chip to insert one) and watch a live preview update as you
+  type. Defaults match the previous built-in messages, so nothing changes
+  until you edit it.
+- **Per-server reminder scope.** Expedition-wave and ad-hoc reminders were
+  global before; now a server can override the whole group (enable, schedule,
+  lead time, and the messages) just for itself, with an "all servers / this
+  server" toggle.
+
+### Changed
+
+- **Colony abandon is now one button on the floating action button.** The
+  separate "new planet" banner and the red abandon overlay are gone. Instead,
+  a freshly-colonized colony that's too small to keep surfaces a red **Abandon**
+  button on the FAB (with its field count read straight from the planet list);
+  tapping it jumps to that colony, and on its overview the same button walks
+  the give-up steps one tap at a time. If no abandon password is set yet, the
+  button opens the Dashboard so you can set it.
+- **Dashboard tidy-up.** *Target positions* and *Prefer neighbouring galaxies*
+  moved into the Colonization section of the Galaxy Observations tab, next to
+  the rest of the colonize settings.
+
 ## [1.19.5] — 2026-06-15
 
 ### Changed
