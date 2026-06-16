@@ -40,15 +40,10 @@
 // on/off (`abandonedEnabled`) rather than a duration.
 
 import { parseDuration } from './duration.js';
-import {
-  defaultReminderGlobalConfig,
-  normalizeReminderGlobalConfig,
-} from './reminderGlobalConfig.js';
 
 /**
  * @typedef {import('./scans.js').PositionStatus} PositionStatus
  * @typedef {import('./scheduling.js').RescanPolicy} RescanPolicy
- * @typedef {import('./reminderGlobalConfig.js').ReminderGlobalConfig} ReminderGlobalConfig
  */
 
 /**
@@ -94,15 +89,6 @@ import {
  *   as a fleet-save — excludes short planet⇄moon hops. Server-speed dependent.
  * @property {string} fsOffsets  Fleet-save reminder offsets relative to landing
  *   (comma-separated, minutes-first; negative = before, 0 = at, + = after).
- * @property {boolean} reminderOverrideEnabled  When true, THIS universe uses
- *   its own {@link reminderOverride} for expedition-wave + ad-hoc reminders
- *   instead of the global config (whole-group override — see
- *   `domain/resolveReminderConfig`).
- * @property {ReminderGlobalConfig} reminderOverride  Per-server snapshot of the
- *   wave/ad-hoc config (enable, schedule, lead time, message templates). Same
- *   shape as the global config so it normalises with the same code; its
- *   `templates.fleetSave` is carried but ignored (FS presentation stays
- *   global). Only consulted when {@link reminderOverrideEnabled} is true.
  * @property {GalaxyScanRescan} rescan  Per-status rescan policy inputs.
  */
 
@@ -148,8 +134,6 @@ export const defaultGalaxyScanConfig = () => ({
   fsThreshold: 100000,
   fsMinFlightSec: 600,
   fsOffsets: '-10m, 0m, 10m',
-  reminderOverrideEnabled: false,
-  reminderOverride: defaultReminderGlobalConfig(),
   rescan: {
     emptySent: 4 * H,        // 4h
     empty: 0,                // never (opt-in for aggressive play)
@@ -227,13 +211,6 @@ export const normalizeGalaxyScanConfig = (raw) => {
     fsThreshold: coerceSeconds(r.fsThreshold, d.fsThreshold),
     fsMinFlightSec: coerceSeconds(r.fsMinFlightSec, d.fsMinFlightSec),
     fsOffsets: typeof r.fsOffsets === 'string' ? r.fsOffsets : d.fsOffsets,
-    // Per-server wave/ad-hoc override: a boolean gate + a full reminder-config
-    // snapshot (normalised with the shared global-config code).
-    reminderOverrideEnabled:
-      typeof r.reminderOverrideEnabled === 'boolean'
-        ? r.reminderOverrideEnabled
-        : d.reminderOverrideEnabled,
-    reminderOverride: normalizeReminderGlobalConfig(r.reminderOverride),
     rescan,
   };
 };

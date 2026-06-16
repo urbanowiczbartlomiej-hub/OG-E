@@ -89,10 +89,9 @@ export const SETTINGS_PREFIX = 'oge_';
  *   (The fleet-save knobs — fsEnabled / fsThreshold / fsMinFlightSec / fsOffsets —
  *    moved OUT of Settings into the per-universe Galaxy-Scan config (server-scoped,
  *    edited in the dashboard's Reminders tab), see `state/galaxyScanConfig.js`.)
- *   (The GLOBAL reminder knobs — reminderEnabled / reminderSchedule / adhocOffsetSec —
- *    moved OUT of Settings into the global Galaxy-Scan-style reminder config
- *    (server-independent, edited in the dashboard's Reminders tab), see
- *    `state/reminderGlobalConfig.js`.)
+ *   (The reminder knobs — reminderEnabled / reminderSchedule / adhocOffsetSec —
+ *    moved OUT of Settings into the per-universe reminder config (server-scoped,
+ *    edited in the dashboard's Reminders tab), see `state/reminderConfig.js`.)
  *
  * @typedef {object} Settings
  * @property {boolean} fabMode

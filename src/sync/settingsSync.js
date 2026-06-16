@@ -14,8 +14,8 @@
 //   - GLOBAL: UI / behaviour preferences that apply identically on every
 //     OGame server (fabMode, readabilityBoost, …). Stored in the gist's
 //     top-level `settings` field and in a localStorage timestamp map under
-//     `SETTINGS_TS_KEY`. (The global reminder knobs — wave enable/schedule,
-//     ad-hoc lead time — moved to their own `reminderGlobalConfig` slot, B3c.)
+//     `SETTINGS_TS_KEY`. (The reminder knobs — wave enable/schedule, ad-hoc
+//     lead time, templates — live in the per-universe `reminderConfig` slot.)
 //
 //   - UNIVERSE_SCOPED: game-logic parameters that are meaningful only on a
 //     specific server (reminderNtfyToken, maxExpeditionsPerPlanet).
@@ -55,7 +55,7 @@ export const UNIVERSE_SCOPED_SETTINGS = new Set([
   // colonyPassword / colonyMinGap / colonyMinFields and the fleet-save knobs
   // fsEnabled / fsThreshold / fsOffsets / fsMinFlightSec moved to the
   // per-universe galaxyScanConfig store (which syncs on its own slot); the
-  // global wave/ad-hoc knobs moved to the reminderGlobalConfig slot.
+  // wave/ad-hoc knobs live in the per-universe reminderConfig slot.
   'maxExpeditionsPerPlanet',
   'reminderNtfyToken',
 ]);

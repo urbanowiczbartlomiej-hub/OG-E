@@ -11,8 +11,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { settingsStore, SETTINGS_SCHEMA } from '../../src/state/settings.js';
 import { galaxyScanConfigStore } from '../../src/state/galaxyScanConfig.js';
 import { defaultGalaxyScanConfig } from '../../src/domain/galaxyScanConfig.js';
-import { reminderGlobalConfigStore } from '../../src/state/reminderGlobalConfig.js';
-import { defaultReminderGlobalConfig } from '../../src/domain/reminderGlobalConfig.js';
+import { reminderConfigStore } from '../../src/state/reminderConfig.js';
+import { defaultReminderConfig } from '../../src/domain/reminderConfig.js';
 import { parseUniverseId } from '../../src/lib/universeId.js';
 import { writePending } from '../../src/features/reminders/pending.js';
 import { REMINDER_MIRROR_KEY } from '../../src/sync/reminders.js';
@@ -69,13 +69,13 @@ const setSettings = (over = {}) => {
 const setFsEnabled = (on) => galaxyScanConfigStore.set({ ...defaultGalaxyScanConfig(), fsEnabled: on });
 
 /**
- * Wave enable + ad-hoc lead time are GLOBAL (B3c) — they live in the
- * reminderGlobalConfig store, not Settings. Set them (defaulting the rest).
+ * Wave enable + ad-hoc lead time are per-universe — they live in the
+ * reminderConfig store, not Settings. Set them (defaulting the rest).
  *
- * @param {Partial<import('../../src/domain/reminderGlobalConfig.js').ReminderGlobalConfig>} [over]
+ * @param {Partial<import('../../src/domain/reminderConfig.js').ReminderConfig>} [over]
  */
 const setGlobalConfig = (over = {}) =>
-  reminderGlobalConfigStore.set({ ...defaultReminderGlobalConfig(), ...over });
+  reminderConfigStore.set({ ...defaultReminderConfig(), ...over });
 
 /** Paint one outbound fleet row with a real arrivalTime cell. @param {number} arrival */
 const paintRow = (arrival) => {

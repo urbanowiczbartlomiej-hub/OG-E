@@ -57,7 +57,7 @@
 
 import { settingsStore } from '../../state/settings.js';
 import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
-import { reminderGlobalConfigStore } from '../../state/reminderGlobalConfig.js';
+import { reminderConfigStore } from '../../state/reminderConfig.js';
 import { chromeStore } from '../../lib/storage.js';
 import { REMINDER_MIRROR_KEY, isValidNtfyToken } from '../../sync/reminders.js';
 import { NTFY_MAX_DELAY_SEC, offsetsForSchedule } from '../../sync/ntfyReconciler.js';
@@ -313,9 +313,9 @@ const clearFsFlipTimer = () => {
  */
 const render = () => {
   const s = settingsStore.get();
-  // Wave enable + schedule + ad-hoc lead time are GLOBAL (B3c) — read from the
-  // reminderGlobalConfig store; only master + token stay in Settings.
-  const r = reminderGlobalConfigStore.get();
+  // Wave enable + schedule + ad-hoc lead time are per-universe — read from the
+  // reminderConfig store; only master + token stay in Settings.
+  const r = reminderConfigStore.get();
   const sectionOn = s.remindersMasterEnabled && isValidNtfyToken(s.reminderNtfyToken);
   const adhocOn = sectionOn; // ad-hoc reminders are always on when the section is
   const waveOn = sectionOn && r.reminderEnabled;
@@ -505,7 +505,7 @@ export const installEventListReminders = ({
     } else if (act === 'arm') {
       const arrivalAt = parseInt(row.getAttribute('data-arrival-time') || '', 10);
       if (!Number.isFinite(arrivalAt)) return;
-      const offsetSec = reminderGlobalConfigStore.get().adhocOffsetSec;
+      const offsetSec = reminderConfigStore.get().adhocOffsetSec;
       const fleetId = row.querySelector('.recallFleet')?.getAttribute('data-fleet-id') || undefined;
       armAdhoc({
         id, arrivalAt, offsetSec, fireAt: fireAtFor(arrivalAt, offsetSec),
@@ -547,14 +547,14 @@ export const installEventListReminders = ({
     scheduleRender();
   });
 
-  // Wave enable + schedule + ad-hoc lead time are GLOBAL (B3c): re-render when
-  // they (or the async hydrate of the reminderGlobalConfig store) change so the
-  // wave badges + ad-hoc fire-time tooltips reflect a dashboard edit live.
-  let prevGlobalSig = pickGlobalSig(reminderGlobalConfigStore.get());
-  const unsubGlobalConfig = reminderGlobalConfigStore.subscribe((next) => {
-    const sig = pickGlobalSig(next);
-    if (sig === prevGlobalSig) return;
-    prevGlobalSig = sig;
+  // Wave enable + schedule + ad-hoc lead time are per-universe: re-render when
+  // they (or the async hydrate of the reminderConfig store) change so the wave
+  // badges + ad-hoc fire-time tooltips reflect a dashboard edit live.
+  let prevReminderConfigSig = pickReminderConfigSig(reminderConfigStore.get());
+  const unsubReminderConfig = reminderConfigStore.subscribe((next) => {
+    const sig = pickReminderConfigSig(next);
+    if (sig === prevReminderConfigSig) return;
+    prevReminderConfigSig = sig;
     scheduleRender();
   });
 
@@ -575,7 +575,7 @@ export const installEventListReminders = ({
       clearFsFlipTimer();
       unsubSettings();
       unsubScanConfig();
-      unsubGlobalConfig();
+      unsubReminderConfig();
       document.getElementById(STYLE_ID)?.remove();
       document.querySelectorAll(`.${BADGE_CLASS}`).forEach((el) => clearCell(/** @type {HTMLElement} */ (el)));
       installed = null;
@@ -591,8 +591,8 @@ const pickSig = (s) =>
     t: s.reminderNtfyToken, m: s.remindersMasterEnabled,
   });
 
-/** @param {ReturnType<typeof reminderGlobalConfigStore.get>} r @returns {string} */
-const pickGlobalSig = (r) =>
+/** @param {ReturnType<typeof reminderConfigStore.get>} r @returns {string} */
+const pickReminderConfigSig = (r) =>
   JSON.stringify({ o: r.adhocOffsetSec, e: r.reminderEnabled });
 
 /**

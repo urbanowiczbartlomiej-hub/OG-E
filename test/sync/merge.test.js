@@ -15,7 +15,7 @@ import {
   mergeSettings,
   mergeDailyRunRoutes,
   mergeGalaxyScanConfig,
-  mergeReminderGlobalConfig,
+  mergeReminderConfig,
   clearScans,
   clearGalaxyScans,
 } from '../../src/sync/merge.js';
@@ -583,35 +583,35 @@ describe('mergeGalaxyScanConfig', () => {
   });
 });
 
-describe('mergeReminderGlobalConfig', () => {
-  // A SINGLE global slot (not a per-universe map), same whole-slot
-  // newest-wins strategy as mergeGalaxyScanConfig.
+describe('mergeReminderConfig', () => {
+  // A per-universe slot, same whole-slot newest-wins strategy as
+  // mergeGalaxyScanConfig.
   const cfgA = /** @type {any} */ ({ reminderEnabled: false, reminderSchedule: '0m', adhocOffsetSec: 60 });
   const cfgB = /** @type {any} */ ({ reminderEnabled: true, reminderSchedule: '5m, 15m', adhocOffsetSec: 120 });
 
   it('keeps local when remote is missing / not an object', () => {
     const local = { config: cfgA, updatedAt: 5 };
-    expect(mergeReminderGlobalConfig(local, null).changed).toBe(false);
-    expect(mergeReminderGlobalConfig(local, undefined).merged).toBe(local);
-    expect(mergeReminderGlobalConfig(local, /** @type {any} */ ('x')).changed).toBe(false);
+    expect(mergeReminderConfig(local, null).changed).toBe(false);
+    expect(mergeReminderConfig(local, undefined).merged).toBe(local);
+    expect(mergeReminderConfig(local, /** @type {any} */ ('x')).changed).toBe(false);
   });
 
   it('adopts remote when its updatedAt is strictly newer', () => {
     const local = { config: cfgA, updatedAt: 5 };
-    const r = mergeReminderGlobalConfig(local, { config: cfgB, updatedAt: 9 });
+    const r = mergeReminderConfig(local, { config: cfgB, updatedAt: 9 });
     expect(r.changed).toBe(true);
     expect(r.merged).toEqual({ config: cfgB, updatedAt: 9 });
   });
 
   it('keeps local on a tie or older remote (anti-loop no-write)', () => {
     const local = { config: cfgA, updatedAt: 9 };
-    expect(mergeReminderGlobalConfig(local, { config: cfgB, updatedAt: 9 }).changed).toBe(false);
-    expect(mergeReminderGlobalConfig(local, { config: cfgB, updatedAt: 3 }).changed).toBe(false);
+    expect(mergeReminderConfig(local, { config: cfgB, updatedAt: 9 }).changed).toBe(false);
+    expect(mergeReminderConfig(local, { config: cfgB, updatedAt: 3 }).changed).toBe(false);
   });
 
   it('ignores a newer remote that carries no usable config', () => {
     const local = { config: cfgA, updatedAt: 1 };
-    const r = mergeReminderGlobalConfig(local, /** @type {any} */ ({ updatedAt: 9 }));
+    const r = mergeReminderConfig(local, /** @type {any} */ ({ updatedAt: 9 }));
     expect(r.changed).toBe(false);
     expect(r.merged).toBe(local);
   });

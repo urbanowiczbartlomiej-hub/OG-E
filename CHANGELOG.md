@@ -6,6 +6,33 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Changed
+
+- **Reminders are now per-server.** Expedition-wave cadence, ad-hoc lead time,
+  and the message templates are configured per OGame server (the server comes
+  from the Dashboard's top switcher), matching fleet-save. The brief
+  "all servers / this server" override toggle is gone — every server simply has
+  its own reminder config.
+- **Dashboard restructure.** The "Colony Sizes" tab is now **Colonizations**,
+  and every tab follows one pattern: the data view leads, with its options
+  tucked into a collapsed **⚙ Settings** panel at the bottom. The colonization
+  knobs (target positions, prefer neighbouring, arrival gap, abandon threshold,
+  abandon password) moved from Galaxy Observations into Colonizations → Settings.
+- **In-game settings panel slimmed.** The Dashboard launcher is now its own
+  named section, and the redundant reminders signpost row was removed — enable +
+  token + topic is the whole minimum; the rest is discoverable in the Dashboard.
+
+### Added
+
+- **Lifeform artifact-cap badge.** The lifeform discovery button no longer
+  blocks at the artifact cap — it keeps discovering and shows a small badge,
+  refreshing its counter only when it has drifted.
+
+### Fixed
+
+- **Floating button size now applies to the Abandon button live**, like the
+  other FAB modules, when you change the size in settings.
+
 ## [1.20.0] — 2026-06-16
 
 ### Added

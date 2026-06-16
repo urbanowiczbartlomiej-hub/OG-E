@@ -104,16 +104,16 @@ export const dailyStateHasData = (ds) =>
 export const galaxyConfigSlotHasData = (slot) => slot.updatedAt > 0;
 
 /**
- * Whether the GLOBAL reminder config slot is worth contributing to the gist.
- * Same no-op-PATCH guard as {@link galaxyConfigSlotHasData}: a never-edited
- * config (ts 0, still at the local default/hydrate seed) must NOT write a slot
- * that would differ from the gist's absent field. Once the user edits it the
- * stamp bumps `updatedAt` and the slot starts syncing.
+ * Whether a per-universe reminder config slot is worth contributing to the
+ * gist. Same no-op-PATCH guard as {@link galaxyConfigSlotHasData}: a
+ * never-edited universe (ts 0, still at the local default/hydrate seed) must
+ * NOT write a slot that would differ from the gist's absent field. Once the
+ * user edits it the stamp bumps `updatedAt` and the slot starts syncing.
  *
- * @param {import('../merge.js').ReminderGlobalConfigSlot} slot
+ * @param {import('../merge.js').ReminderConfigSlot} slot
  * @returns {boolean}
  */
-export const reminderGlobalConfigSlotHasData = (slot) => slot.updatedAt > 0;
+export const reminderConfigSlotHasData = (slot) => slot.updatedAt > 0;
 
 /**
  * Compare two values by JSON structural equality. Cheap and good enough
@@ -148,7 +148,7 @@ export const sameJSON = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b
  * @param {unknown} merged.settingsPerUniverse
  * @param {unknown} merged.dailyStatePerUniverse
  * @param {unknown} merged.galaxyScanConfig
- * @param {unknown} merged.reminderGlobalConfig
+ * @param {unknown} merged.reminderConfigPerUniverse
  * @returns {boolean}
  */
 export const gistIsCurrent = (remote, merged) =>
@@ -159,4 +159,4 @@ export const gistIsCurrent = (remote, merged) =>
   sameJSON(remote?.settingsPerUniverse, merged.settingsPerUniverse) &&
   sameJSON(remote?.dailyStatePerUniverse, merged.dailyStatePerUniverse) &&
   sameJSON(remote?.galaxyScanConfig, merged.galaxyScanConfig) &&
-  sameJSON(remote?.reminderGlobalConfig, merged.reminderGlobalConfig);
+  sameJSON(remote?.reminderConfigPerUniverse, merged.reminderConfigPerUniverse);

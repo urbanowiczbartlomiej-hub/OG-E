@@ -371,20 +371,11 @@
 <section id="remindersSection" class="tab-section">
   <h1>Reminders</h1>
   <p class="rem-intro">
-    Push reminders OG-E queues on ntfy.sh — auto expedition waves, ad-hoc
-    fleet reminders, and fleet-save pings. Only the master switch + ntfy access
-    token live in the <strong>OG-E settings panel inside the game</strong>
-    (the token is required there); every schedule is configured below — the
-    wave cadence + ad-hoc lead time (all servers) and the per-server
-    <strong>fleet-save</strong> knobs. The queue preview shows what's pending.
+    Push reminders OG-E queues on ntfy.sh — auto expedition waves, ad-hoc fleet
+    reminders, and fleet-save pings. The master switch + ntfy token live in the
+    <strong>OG-E settings panel inside the game</strong>; the schedules are in
+    ⚙ Settings below. The queue preview shows what's pending.
   </p>
-
-  <div class="rem-card" style="margin-top:14px">
-    <div class="rem-row" style="margin-bottom:8px">
-      <h2 style="margin:0;color:#4a9eff;font-size:16px;flex:1">Reminder schedules &amp; fleet-save</h2>
-    </div>
-    <div id="reminderConfigBody"></div>
-  </div>
 
   <div class="rem-card" style="margin-top:14px">
     <div class="rem-row">
@@ -407,6 +398,16 @@
     </div>
     <div id="remPreview"></div>
   </div>
+
+  <details class="settings-panel">
+    <summary>⚙ Settings</summary>
+    <div class="settings-body">
+      <p class="settings-desc">
+        Expedition-wave cadence, ad-hoc lead time, and fleet-save — all per-server.
+      </p>
+      <div id="reminderConfigBody"></div>
+    </div>
+  </details>
 </section>
 
 <section id="routesSection" class="tab-section">

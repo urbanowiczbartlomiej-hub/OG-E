@@ -60,8 +60,7 @@ import { parseFsOffsets } from '../../domain/fleetSave.js';
 import { NTFY_MAX_DELAY_SEC } from '../../sync/ntfyReconciler.js';
 import { settingsStore } from '../../state/settings.js';
 import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
-import { reminderGlobalConfigStore } from '../../state/reminderGlobalConfig.js';
-import { resolveReminderConfig } from '../../domain/resolveReminderConfig.js';
+import { reminderConfigStore } from '../../state/reminderConfig.js';
 import { syncReminders, REMINDER_NTFY_TOKEN_KEY, isValidNtfyToken } from '../../sync/reminders.js';
 import { parseUniverseId } from '../../lib/universeId.js';
 import { debounce } from '../../lib/debounce.js';
@@ -260,16 +259,14 @@ export const installReminderProducer = (opts = {}) => {
     const force = forceSettings || pending.length > 0;
 
     const s = settingsStore.get();
-    // Fleet-save knobs are per-universe (B3b) — read from the galaxyScanConfig
-    // store. The wave enable + schedule are GLOBAL (B3c) — read from the
-    // reminderGlobalConfig store. Only the master switch + token stay in Settings.
+    // Fleet-save knobs are per-universe — read from the galaxyScanConfig store.
+    // The wave enable + schedule are per-universe too — read from the
+    // reminderConfig store. Only the master switch + token stay in Settings.
     const g = galaxyScanConfigStore.get();
-    const r = reminderGlobalConfigStore.get();
-    // Wave/ad-hoc config (incl. message templates) defaults to the global
-    // slot, unless THIS universe enabled a whole-group override (B-scope) —
-    // see `domain/resolveReminderConfig`. Fleet-save knobs are always
-    // per-universe and read straight from `g`.
-    const eff = resolveReminderConfig(r, g);
+    // Wave/ad-hoc config (incl. message templates) is per-universe — read from
+    // the reminderConfig store. Fleet-save knobs are also per-universe and read
+    // straight from `g`.
+    const eff = reminderConfigStore.get();
     const config = {
       masterEnabled: s.remindersMasterEnabled,
       enabled: eff.reminderEnabled,
@@ -382,7 +379,7 @@ export const installReminderProducer = (opts = {}) => {
 
   // Force a push on any reminder-setting change so master/token edits in
   // the in-game Settings panel propagate immediately. The wave enable +
-  // schedule moved to the reminderGlobalConfig store (B3c) — watched below.
+  // schedule live in the per-universe reminderConfig store — watched below.
   /** @param {ReturnType<typeof settingsStore.get>} s */
   const pickReminderSig = (s) =>
     JSON.stringify({
@@ -396,17 +393,17 @@ export const installReminderProducer = (opts = {}) => {
     force();
   });
 
-  // The wave enable + schedule are GLOBAL (B3c) — watch the reminderGlobalConfig
-  // store (including its async hydrate) so a dashboard edit to either propagates
-  // without a reload.
-  /** @param {ReturnType<typeof reminderGlobalConfigStore.get>} r */
-  const pickGlobalSig = (r) =>
+  // The wave enable + schedule + templates are per-universe — watch the
+  // reminderConfig store (including its async hydrate) so a dashboard edit to
+  // any of them propagates without a reload.
+  /** @param {ReturnType<typeof reminderConfigStore.get>} r */
+  const pickReminderConfigSig = (r) =>
     JSON.stringify({ e: r.reminderEnabled, s: r.reminderSchedule, t: r.templates });
-  let prevGlobalSig = pickGlobalSig(reminderGlobalConfigStore.get());
-  const unsubGlobalConfig = reminderGlobalConfigStore.subscribe((next) => {
-    const sig = pickGlobalSig(next);
-    if (sig === prevGlobalSig) return;
-    prevGlobalSig = sig;
+  let prevReminderConfigSig = pickReminderConfigSig(reminderConfigStore.get());
+  const unsubReminderConfig = reminderConfigStore.subscribe((next) => {
+    const sig = pickReminderConfigSig(next);
+    if (sig === prevReminderConfigSig) return;
+    prevReminderConfigSig = sig;
     force();
   });
 
@@ -418,9 +415,6 @@ export const installReminderProducer = (opts = {}) => {
   const pickFsSig = (g) =>
     JSON.stringify({
       f: g.fsEnabled, ft: g.fsThreshold, fo: g.fsOffsets, fm: g.fsMinFlightSec,
-      // The per-server wave/ad-hoc override changes the EFFECTIVE wave/ad-hoc
-      // config + templates, so a change to it must force a re-sync too.
-      ro: g.reminderOverrideEnabled, rov: g.reminderOverride,
     });
   let prevFsSig = pickFsSig(galaxyScanConfigStore.get());
   const unsubScanConfig = galaxyScanConfigStore.subscribe((next) => {
@@ -439,7 +433,7 @@ export const installReminderProducer = (opts = {}) => {
       document.removeEventListener(EVENT_BOX_LOADED_EVENT, onEventBox);
       unsubConfig();
       unsubScanConfig();
-      unsubGlobalConfig();
+      unsubReminderConfig();
       installed = null;
     },
     armAdhoc,

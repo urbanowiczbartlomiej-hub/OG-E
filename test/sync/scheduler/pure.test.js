@@ -13,7 +13,7 @@ import {
   slotHasData,
   dailyStateHasData,
   galaxyConfigSlotHasData,
-  reminderGlobalConfigSlotHasData,
+  reminderConfigSlotHasData,
   sameJSON,
   gistIsCurrent,
 } from '../../../src/sync/scheduler/pure.js';
@@ -96,13 +96,13 @@ describe('galaxyConfigSlotHasData', () => {
   });
 });
 
-describe('reminderGlobalConfigSlotHasData', () => {
+describe('reminderConfigSlotHasData', () => {
   it('is false until the config has been edited (ts 0)', () => {
-    expect(reminderGlobalConfigSlotHasData(/** @type {any} */ ({ config: {}, updatedAt: 0 }))).toBe(false);
+    expect(reminderConfigSlotHasData(/** @type {any} */ ({ config: {}, updatedAt: 0 }))).toBe(false);
   });
 
   it('is true once the slot carries a real timestamp', () => {
-    expect(reminderGlobalConfigSlotHasData(/** @type {any} */ ({ config: {}, updatedAt: 5 }))).toBe(true);
+    expect(reminderConfigSlotHasData(/** @type {any} */ ({ config: {}, updatedAt: 5 }))).toBe(true);
   });
 });
 
@@ -153,7 +153,7 @@ describe('gistIsCurrent', () => {
     settingsPerUniverse: undefined,
     dailyStatePerUniverse: undefined,
     galaxyScanConfig: undefined,
-    reminderGlobalConfig: undefined,
+    reminderConfigPerUniverse: undefined,
   };
 
   it('is true when every synced field matches (skip the PATCH)', () => {
@@ -180,15 +180,15 @@ describe('gistIsCurrent', () => {
     expect(gistIsCurrent(remote, merged)).toBe(false);
   });
 
-  it('is false when only the reminderGlobalConfig slot differs', () => {
+  it('is false when only the reminderConfigPerUniverse slot differs', () => {
     const remote = /** @type {any} */ ({
       galaxyScans: { '1:1:1': { t: 1 } },
       colonyHistory: [{ id: 'a' }],
       settings: { values: { x: 1 }, ts: { x: 10 } },
       dailyRunRoutes: { 's1-pl': { routes: [], collectTarget: null, updatedAt: 5 } },
-      reminderGlobalConfig: { config: { reminderEnabled: true }, updatedAt: 7 },
+      reminderConfigPerUniverse: { config: { reminderEnabled: true }, updatedAt: 7 },
     });
-    // merged has reminderGlobalConfig: undefined → differs → PATCH needed.
+    // merged has reminderConfigPerUniverse: undefined → differs → PATCH needed.
     expect(gistIsCurrent(remote, merged)).toBe(false);
   });
 
