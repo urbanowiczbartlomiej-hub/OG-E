@@ -9,6 +9,7 @@ import {
   defaultReminderGlobalConfig,
   normalizeReminderGlobalConfig,
 } from '../../src/domain/reminderGlobalConfig.js';
+import { defaultReminderTemplates } from '../../src/domain/reminderTemplates.js';
 
 describe('defaultReminderGlobalConfig', () => {
   it('matches the values the knobs carried as settings.js defaults', () => {
@@ -16,6 +17,7 @@ describe('defaultReminderGlobalConfig', () => {
       reminderEnabled: false,
       reminderSchedule: '0m, 10m, 30m, 60m',
       adhocOffsetSec: 60,
+      templates: defaultReminderTemplates(),
     });
   });
 
@@ -52,6 +54,7 @@ describe('normalizeReminderGlobalConfig', () => {
       reminderEnabled: true,
       reminderSchedule: '5m, 15m',
       adhocOffsetSec: 120,
+      templates: defaultReminderTemplates(),
     });
   });
 
@@ -70,5 +73,15 @@ describe('normalizeReminderGlobalConfig', () => {
     const cfg = normalizeReminderGlobalConfig({ reminderEnabled: 'yes', reminderSchedule: 123 });
     expect(cfg.reminderEnabled).toBe(false);
     expect(cfg.reminderSchedule).toBe('0m, 10m, 30m, 60m');
+  });
+
+  it('fills templates with defaults when absent, and deep-normalises a partial one', () => {
+    // Absent → full default map.
+    expect(normalizeReminderGlobalConfig({}).templates).toEqual(defaultReminderTemplates());
+    // A partial wave body is kept; its sibling fields + the other kinds fill.
+    const cfg = normalizeReminderGlobalConfig({ templates: { wave: { body: 'Back!' } } });
+    expect(cfg.templates.wave.body).toBe('Back!');
+    expect(cfg.templates.wave.priority).toBe(3); // default
+    expect(cfg.templates.adhoc).toEqual(defaultReminderTemplates().adhoc);
   });
 });

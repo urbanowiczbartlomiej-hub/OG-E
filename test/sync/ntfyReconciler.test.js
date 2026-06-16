@@ -322,7 +322,7 @@ describe('reconcileAdhocQueue', () => {
     dispatchReconcile([]);
     const { idsByEntry, posted, cancelled } = await reconcileAdhocQueue({
       ...base, now: 1000,
-      entries: [{ id: 'eventRow-42', fireAt: 5000, body: 'Ekspedycja → [4:467:16] o 20:23' }],
+      entries: [{ id: 'eventRow-42', fireAt: 5000, arrivalAt: 5060, label: 'Ekspedycja → [4:467:16]' }],
     });
 
     expect(posted).toBe(1);
@@ -337,15 +337,16 @@ describe('reconcileAdhocQueue', () => {
     expect(post?.[1].headers['X-Delay']).toBe('5000');
     // Max-priority pushes carry the RED icon variant.
     expect(post?.[1].headers.Icon).toMatch(/^https:\/\/raw\.githubusercontent\.com\/.+\/icons\/icon_red\.png$/);
-    // Max-priority (player-armed) bodies get a trailing 🔥 flare.
-    expect(post?.[1].body).toBe('Ekspedycja → [4:467:16] o 20:23 🔥');
+    // Body rendered from the default ad-hoc template: label + arrival clock +
+    // the trailing 🔥 (now baked into the default template, not a flare step).
+    expect(post?.[1].body).toMatch(/^Ekspedycja → \[4:467:16\] — arrives \d{1,2}:\d{2}(?:\s?[AP]M)?\. 🔥$/);
   });
 
   it('is idempotent: an already-queued entry posts nothing and reuses the id', async () => {
     dispatchReconcile([ourAdhoc('q0', 5000)]);
     const { idsByEntry, posted } = await reconcileAdhocQueue({
       ...base, now: 1000,
-      entries: [{ id: 'eventRow-42', fireAt: 5000, body: 'x' }],
+      entries: [{ id: 'eventRow-42', fireAt: 5000, arrivalAt: 5000, label: 'x' }],
     });
     expect(posted).toBe(0);
     expect(idsByEntry['eventRow-42']).toEqual(['q0']);

@@ -50,6 +50,12 @@ import {
   normalizeReminderGlobalConfig,
 } from '../../domain/reminderGlobalConfig.js';
 import {
+  TEMPLATE_FIELDS,
+  PRESET_ICONS,
+  renderTemplate,
+  unknownTokens,
+} from '../../domain/reminderTemplates.js';
+import {
   parseDuration, formatDuration, parseDurationList,
   humanizeOffset, humanizeReturnOffset,
 } from '../../domain/duration.js';
@@ -165,6 +171,114 @@ const makeOffsetEditor = ({ idBase, signed, preview, placeholder }) => {
 };
 
 /**
+ * @typedef {object} TemplateEditor
+ * @property {HTMLElement} element  The editor container (body + chips + selects + preview).
+ * @property {(t: import('../../domain/reminderTemplates.js').ReminderTemplate) => void} setFromTemplate
+ * @property {() => import('../../domain/reminderTemplates.js').ReminderTemplate} collect
+ */
+
+/**
+ * Build a per-kind MESSAGE editor: a body textarea with `{wildcard}` chips
+ * (click to insert at the caret), an icon picker, a priority picker, and a
+ * LIVE preview rendered from the kind's sample context (so the user sees a
+ * realistic push, not raw tokens) plus an unknown-token warning. Pure DOM; the
+ * host wires load/save. Title is intentionally not editable (see
+ * `domain/reminderTemplates` header — the title is the ntfy queue filter).
+ *
+ * @param {object} o
+ * @param {import('../../domain/reminderTemplates.js').ReminderKind} o.kind
+ * @param {string} o.idBase  id prefix for this kind's controls.
+ * @returns {TemplateEditor}
+ */
+const makeTemplateEditor = ({ kind, idBase }) => {
+  const fields = TEMPLATE_FIELDS[kind];
+  const sampleCtx = Object.fromEntries(fields.map((f) => [f.token, f.sample]));
+
+  const wrap = mk('div', 'display:flex;flex-direction:column;gap:6px;flex:1;min-width:280px;');
+  wrap.id = idBase;
+
+  const body = /** @type {HTMLTextAreaElement} */ (mk('textarea',
+    'width:100%;min-height:46px;resize:vertical;font:inherit;font-size:13px;' +
+    'background:#0d1620;color:#cfe;border:1px solid #244;border-radius:4px;padding:6px;box-sizing:border-box;'));
+  body.id = idBase + 'Body';
+
+  // Wildcard chips — click to insert the token at the caret.
+  const chips = mk('div', 'display:flex;flex-wrap:wrap;gap:4px;');
+  for (const f of fields) {
+    const chip = /** @type {HTMLButtonElement} */ (mk('button',
+      'font-size:11px;padding:1px 6px;background:#16252f;color:#9cf;border:1px solid #2a4a5a;border-radius:10px;cursor:pointer;',
+      `{${f.token}}`));
+    chip.type = 'button';
+    chip.title = f.label;
+    chip.addEventListener('click', () => {
+      const start = body.selectionStart ?? body.value.length;
+      const end = body.selectionEnd ?? body.value.length;
+      const tok = `{${f.token}}`;
+      body.value = body.value.slice(0, start) + tok + body.value.slice(end);
+      const caret = start + tok.length;
+      body.setSelectionRange(caret, caret);
+      body.focus();
+      body.dispatchEvent(new Event('input'));
+    });
+    chips.appendChild(chip);
+  }
+
+  // Icon + priority selects on one row.
+  const selRow = mk('div', 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;color:#aaa;');
+  const iconSel = /** @type {HTMLSelectElement} */ (mk('select'));
+  iconSel.id = idBase + 'Icon';
+  for (const p of PRESET_ICONS) {
+    const opt = /** @type {HTMLOptionElement} */ (mk('option', undefined, p.label));
+    opt.value = p.id;
+    iconSel.appendChild(opt);
+  }
+  const prioSel = /** @type {HTMLSelectElement} */ (mk('select'));
+  prioSel.id = idBase + 'Priority';
+  for (const n of [1, 2, 3, 4, 5]) {
+    const opt = /** @type {HTMLOptionElement} */ (mk('option', undefined,
+      n === 5 ? '5 (max)' : n === 1 ? '1 (min)' : String(n)));
+    opt.value = String(n);
+    prioSel.appendChild(opt);
+  }
+  const iconLabel = mk('label', undefined, 'Icon: ');
+  iconLabel.appendChild(iconSel);
+  const prioLabel = mk('label', undefined, 'Priority: ');
+  prioLabel.appendChild(prioSel);
+  selRow.append(iconLabel, prioLabel);
+
+  // Live preview + unknown-token warning.
+  const preview = mk('div',
+    'font-size:12px;color:#cfe;background:#0d1117;border:1px solid #233;border-radius:4px;padding:6px;min-height:16px;');
+  preview.className = 'oge-tpl-preview';
+  const warn = mk('div', 'font-size:12px;color:#e6a23c;');
+  warn.className = 'oge-tpl-warn';
+
+  const refreshPreview = () => {
+    preview.textContent = renderTemplate(body.value, sampleCtx) || '(empty)';
+    const unk = unknownTokens(body.value, kind);
+    warn.textContent = unk.length ? `Unknown wildcard${unk.length > 1 ? 's' : ''}: ${unk.map((t) => `{${t}}`).join(', ')}` : '';
+  };
+  body.addEventListener('input', refreshPreview);
+
+  wrap.append(body, chips, selRow, preview, warn);
+
+  return {
+    element: wrap,
+    setFromTemplate: (t) => {
+      body.value = t.body;
+      iconSel.value = t.icon;
+      prioSel.value = String(t.priority);
+      refreshPreview();
+    },
+    collect: () => ({
+      body: body.value,
+      icon: iconSel.value,
+      priority: parseInt(prioSel.value, 10),
+    }),
+  };
+};
+
+/**
  * Install the reminder config editor into `#reminderConfigBody`. Idempotent
  * per call site (the host installs once at boot); returns a `refresh()` the
  * host calls on universe change so the per-server fields reload for the
@@ -227,6 +341,18 @@ export const installReminderConfig = ({ getUniverseId }) => {
     placeholder: '-10m',
   });
 
+  // ── per-server scope override for the wave/ad-hoc group ───────────────
+  // When checked, the wave + ad-hoc fields (incl. their message templates)
+  // are saved to THIS universe's override instead of the global slot.
+  const overrideInput = /** @type {HTMLInputElement} */ (mk('input'));
+  overrideInput.type = 'checkbox';
+  overrideInput.id = 'remCfgOverride';
+
+  // ── message template editors (one per kind) ──────────────────────────
+  const waveTplEditor = makeTemplateEditor({ kind: 'wave', idBase: 'remCfgTplWave' });
+  const adhocTplEditor = makeTemplateEditor({ kind: 'adhoc', idBase: 'remCfgTplAdhoc' });
+  const fsTplEditor = makeTemplateEditor({ kind: 'fleetSave', idBase: 'remCfgTplFs' });
+
   // ── layout ───────────────────────────────────────────────────────────
   body.textContent = '';
 
@@ -251,16 +377,35 @@ export const installReminderConfig = ({ getUniverseId }) => {
   const groupHeading = (text) =>
     mk('div', 'color:#4a9eff;font-size:13px;font-weight:600;margin:4px 0 8px;', text);
 
-  body.appendChild(groupHeading('Expedition waves & ad-hoc (all servers)'));
+  /** @param {string} text @returns {HTMLElement} */
+  const subHeading = (text) =>
+    mk('div', 'color:#9cf;font-size:12px;font-weight:600;margin:8px 0 2px;', text);
+
+  const waveAdhocHeading = groupHeading('Expedition waves & ad-hoc');
+  body.appendChild(waveAdhocHeading);
+  body.appendChild(row('Scope', overrideInput, 'override these for THIS server only (otherwise: all servers)'));
   body.appendChild(row('Expedition-wave reminders — enable', waveEnabledInput, 'auto-detect a returning wave + schedule a series'));
   body.appendChild(row('Wave reminder schedule', waveEditor.element, 'each reminder fires this long after the wave returns'));
+  body.appendChild(subHeading('Wave message'));
+  body.appendChild(waveTplEditor.element);
   body.appendChild(row('Ad-hoc reminders — lead time', adhocInput, 'before arrival, e.g. 1m'));
+  body.appendChild(subHeading('Ad-hoc message'));
+  body.appendChild(adhocTplEditor.element);
 
   body.appendChild(groupHeading('Fleet-save (this server)'));
   body.appendChild(row('Fleet-save reminders — enable', enabledInput, 'flag big own fleets 🛡 + ping before landing'));
   body.appendChild(row('Ship threshold', thresholdInput, 'total ships that count as a "big" fleet'));
   body.appendChild(row('Min flight time', minFlightInput, 'minutes-first, e.g. 10m · 0 = off'));
   body.appendChild(row('Reminder schedule', fsEditor.element, 'each reminder relative to landing (− before, 0 at, + after)'));
+  body.appendChild(subHeading('Fleet-save message (all servers)'));
+  body.appendChild(fsTplEditor.element);
+
+  // Reflect the scope in the group heading so it's obvious which slot is edited.
+  const applyScopeHeading = () => {
+    waveAdhocHeading.textContent = overrideInput.checked
+      ? 'Expedition waves & ad-hoc (this server)'
+      : 'Expedition waves & ad-hoc (all servers)';
+  };
 
   const statusEl = mk('span', 'margin-left:12px;font-size:13px;');
   statusEl.id = 'remCfgStatus';
@@ -294,26 +439,52 @@ export const installReminderConfig = ({ getUniverseId }) => {
     fsEditor.setFromString(cfg.fsOffsets);
   };
 
-  /** Populate the global widgets. @param {import('../../domain/reminderGlobalConfig.js').ReminderGlobalConfig} cfg */
-  const fillGlobal = (cfg) => {
+  /**
+   * Populate the wave + ad-hoc widgets (incl. their message templates) from a
+   * reminder config — the global slot or this server's override snapshot,
+   * depending on the scope toggle.
+   * @param {import('../../domain/reminderGlobalConfig.js').ReminderGlobalConfig} cfg
+   */
+  const fillWaveAdhoc = (cfg) => {
     waveEnabledInput.checked = cfg.reminderEnabled;
     waveEditor.setFromString(cfg.reminderSchedule);
     adhocInput.value = formatDuration(cfg.adhocOffsetSec);
+    waveTplEditor.setFromTemplate(cfg.templates.wave);
+    adhocTplEditor.setFromTemplate(cfg.templates.adhoc);
   };
 
+  // Cached stored configs so the scope toggle can swap the wave/ad-hoc source
+  // without a re-read. The fleet-save template always tracks the global slot.
+  let cachedGlobal = defaultReminderGlobalConfig();
+  let cachedGsc = defaultGalaxyScanConfig();
+
+  /** Load the wave/ad-hoc widgets from the slot the scope toggle selects. */
+  const applyScope = () => {
+    applyScopeHeading();
+    fillWaveAdhoc(overrideInput.checked ? cachedGsc.reminderOverride : cachedGlobal);
+  };
+  overrideInput.addEventListener('change', applyScope);
+
   const refresh = async () => {
-    // Global config is universe-independent — always load it.
-    const storedGlobal = await chromeStore.get(REMINDER_GLOBAL_CONFIG_KEY);
-    fillGlobal(normalizeReminderGlobalConfig(storedGlobal));
+    cachedGlobal = normalizeReminderGlobalConfig(await chromeStore.get(REMINDER_GLOBAL_CONFIG_KEY));
+    // The fleet-save message is server-independent — always from the global slot.
+    fsTplEditor.setFromTemplate(cachedGlobal.templates.fleetSave);
 
     const uni = getUniverseId();
     if (!uni) {
+      cachedGsc = defaultGalaxyScanConfig();
+      overrideInput.checked = false;
+      overrideInput.disabled = true;
       fillFs(defaultGalaxyScanConfig());
-      setStatus('No universe selected — fleet-save config is per-server.', '#e6a23c');
+      applyScope();
+      setStatus('No universe selected — fleet-save + per-server override are per-server.', '#e6a23c');
       return;
     }
-    const stored = await chromeStore.get(galaxyScanConfigKeyFor(uni));
-    fillFs(normalizeGalaxyScanConfig(stored));
+    overrideInput.disabled = false;
+    cachedGsc = normalizeGalaxyScanConfig(await chromeStore.get(galaxyScanConfigKeyFor(uni)));
+    overrideInput.checked = cachedGsc.reminderOverrideEnabled;
+    fillFs(cachedGsc);
+    applyScope();
     setStatus('');
   };
 
@@ -350,14 +521,16 @@ export const installReminderConfig = ({ getUniverseId }) => {
   };
 
   /**
-   * Read the global widgets into a complete {@link import('../../domain/reminderGlobalConfig.js').ReminderGlobalConfig},
-   * validating the schedule + lead-time durations. Returns null + sets an error
-   * on a bad value. The wave schedule comes from the row editor (per-row
-   * validated); an empty list is allowed (no wave pings).
+   * Read the wave + ad-hoc widgets (enable / schedule / lead time + the two
+   * message templates), validating the schedule + lead-time durations. Returns
+   * null + sets an error on a bad value. The wave schedule comes from the row
+   * editor (per-row validated); an empty list is allowed (no wave pings). The
+   * message bodies may be empty (a deliberate blank); unknown wildcards are a
+   * non-blocking warning shown live in the editor.
    *
-   * @returns {import('../../domain/reminderGlobalConfig.js').ReminderGlobalConfig | null}
+   * @returns {{ reminderEnabled: boolean, reminderSchedule: string, adhocOffsetSec: number, waveTpl: import('../../domain/reminderTemplates.js').ReminderTemplate, adhocTpl: import('../../domain/reminderTemplates.js').ReminderTemplate } | null}
    */
-  const collectGlobal = () => {
+  const collectWaveAdhoc = () => {
     const schedule = waveEditor.collect();
     if (schedule === null) {
       setStatus('Wave schedule — each reminder must be a duration like 0m, 10m, 30m.', '#e66');
@@ -372,43 +545,77 @@ export const installReminderConfig = ({ getUniverseId }) => {
       reminderEnabled: waveEnabledInput.checked,
       reminderSchedule: schedule,
       adhocOffsetSec: adhoc,
+      waveTpl: waveTplEditor.collect(),
+      adhocTpl: adhocTplEditor.collect(),
     };
   };
 
   const save = async () => {
-    const global = collectGlobal();
-    if (!global) return;
+    const wa = collectWaveAdhoc();
+    if (!wa) return;
     const ownedFs = collectFs();
     if (!ownedFs) return;
 
     const uni = getUniverseId();
-    if (!uni) { setStatus('No universe selected — pick a server to save fleet-save config.', '#e66'); return; }
+    if (!uni) { setStatus('No universe selected — pick a server to save reminder config.', '#e66'); return; }
 
-    // Per-server fleet-save: read-modify-write so the scan-config fields (edited
-    // from the Galaxy Observations tab) survive — both surfaces share one slot.
-    const stored = normalizeGalaxyScanConfig(await chromeStore.get(galaxyScanConfigKeyFor(uni)));
-    const cfg = normalizeGalaxyScanConfig({ ...stored, ...ownedFs });
-    await chromeStore.set(galaxyScanConfigKeyFor(uni), cfg);
-    await chromeStore.set(galaxyScanConfigTsKeyFor(uni), Date.now());
+    const fsTpl = fsTplEditor.collect();
+    const overrideOn = overrideInput.checked;
 
-    // Global config: a complete slot of its own (no other fields to preserve),
-    // its own whole-slot newest-wins timestamp.
-    const globalCfg = normalizeReminderGlobalConfig(global);
+    // The wave/ad-hoc snapshot the user just edited, as a full reminder config.
+    // Its fleetSave template mirrors the global one so the snapshot stays
+    // self-consistent, though `resolveReminderConfig` always reads FS from global.
+    const waSnapshot = normalizeReminderGlobalConfig({
+      reminderEnabled: wa.reminderEnabled,
+      reminderSchedule: wa.reminderSchedule,
+      adhocOffsetSec: wa.adhocOffsetSec,
+      templates: { wave: wa.waveTpl, adhoc: wa.adhocTpl, fleetSave: fsTpl },
+    });
+
+    // ── Global slot (read-modify-write) ──────────────────────────────────
+    // FleetSave template is ALWAYS global. The wave/ad-hoc portion lands here
+    // only when NOT overriding this server (otherwise the global wave/ad-hoc is
+    // left untouched and the edits go to the per-server override below).
+    const storedGlobal = normalizeReminderGlobalConfig(await chromeStore.get(REMINDER_GLOBAL_CONFIG_KEY));
+    const globalCfg = normalizeReminderGlobalConfig(overrideOn
+      ? { ...storedGlobal, templates: { ...storedGlobal.templates, fleetSave: fsTpl } }
+      : { ...waSnapshot, templates: { ...waSnapshot.templates, fleetSave: fsTpl } });
     await chromeStore.set(REMINDER_GLOBAL_CONFIG_KEY, globalCfg);
     await chromeStore.set(REMINDER_GLOBAL_CONFIG_TS_KEY, Date.now());
+
+    // ── Per-server slot (read-modify-write) ──────────────────────────────
+    // FS knobs always; the wave/ad-hoc override snapshot only when overriding.
+    // The scan-config editor shares this slot, so overlay only our fields.
+    const stored = normalizeGalaxyScanConfig(await chromeStore.get(galaxyScanConfigKeyFor(uni)));
+    const cfg = normalizeGalaxyScanConfig({
+      ...stored,
+      ...ownedFs,
+      reminderOverrideEnabled: overrideOn,
+      ...(overrideOn ? { reminderOverride: waSnapshot } : {}),
+    });
+    await chromeStore.set(galaxyScanConfigKeyFor(uni), cfg);
+    await chromeStore.set(galaxyScanConfigTsKeyFor(uni), Date.now());
 
     // One poke is enough — onForceSync runs a full round-trip that pushes BOTH
     // the per-universe galaxy-config slot AND the global reminder-config slot.
     await chromeStore.set(syncRequestKeyFor(uni), Date.now());
 
+    cachedGlobal = globalCfg;
+    cachedGsc = cfg;
     fillFs(cfg);
-    fillGlobal(globalCfg);
+    fsTplEditor.setFromTemplate(globalCfg.templates.fleetSave);
+    applyScope();
     setStatus('Saved.', '#67c23a');
   };
 
   saveBtn.addEventListener('click', () => { void save(); });
   resetBtn.addEventListener('click', () => {
-    fillGlobal(defaultReminderGlobalConfig());
+    const d = defaultReminderGlobalConfig();
+    overrideInput.checked = false;
+    cachedGlobal = d;
+    fsTplEditor.setFromTemplate(d.templates.fleetSave);
+    fillWaveAdhoc(d);
+    applyScopeHeading();
     fillFs(defaultGalaxyScanConfig());
     setStatus('Defaults loaded — click Save to apply.', '#e6a23c');
   });

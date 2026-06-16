@@ -111,6 +111,11 @@ import {
  * @property {string} [schedule]  Free-form wave reminder schedule — a
  *   minutes-first duration list (see `ntfyReconciler.offsetsForSchedule`).
  *   Falls back to the default cadence when absent / empty. Waves only.
+ * @property {Record<import('../domain/reminderTemplates.js').ReminderKind, import('../domain/reminderTemplates.js').ReminderTemplate>} [templates]
+ *   Per-kind message customisation (body / icon / priority). The EFFECTIVE
+ *   templates for this universe (already resolved against any per-server
+ *   override by the producer). Absent ⇒ each reconcile uses its built-in
+ *   default (reproduces the historical message).
  */
 
 /**
@@ -438,20 +443,6 @@ const resolveNtfyToken = async (configToken) => {
 };
 
 /**
- * Body line for an ad-hoc fleet reminder. The `label` (direction + coords
- * + mission, built at arm time by the UI) carries the "what"; we append
- * the actual arrival clock time. The ping itself fires `offsetSec` earlier
- * (see {@link AdhocReminder}), so stating the arrival is the honest cue.
- *
- * @param {AdhocReminder} e
- * @returns {string}
- */
-const adhocBody = (e) => {
-  const when = new Date(e.arrivalAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  return `${e.label} — arrives ${when}.`;
-};
-
-/**
  * The core extension-side round-trip — the SINGLE writer of this
  * universe's reminder file. Reconciles BOTH notification kinds (auto
  * expedition waves + player-armed ad-hoc fleets) in one read-modify-write,
@@ -580,7 +571,7 @@ export const syncReminders = async (config, dom, now, universeId) => {
       : [];
     const waveRes = await reconcileWaveQueue({
       waves: liveWaves, topic, token: ntfyToken, now, universeId,
-      offsetsSec: offsetsForSchedule(config.schedule), queue,
+      offsetsSec: offsetsForSchedule(config.schedule), template: config.templates?.wave, queue,
     });
 
     // Rebuild notifyState from the reconciler's authoritative id sets so
@@ -597,10 +588,11 @@ export const syncReminders = async (config, dom, now, universeId) => {
     const liveAdhoc = adhocActive
       ? adhoc
           .filter((e) => e.fireAt <= now + NTFY_MAX_DELAY_SEC)
-          .map((e) => ({ id: e.id, fireAt: e.fireAt, body: adhocBody(e) }))
+          .map((e) => ({ id: e.id, fireAt: e.fireAt, arrivalAt: e.arrivalAt, label: e.label }))
       : [];
     const adhocRes = await reconcileAdhocQueue({
-      entries: liveAdhoc, topic, token: ntfyToken, now, universeId, queue,
+      entries: liveAdhoc, topic, token: ntfyToken, now, universeId,
+      template: config.templates?.adhoc, queue,
     });
 
     adhocNotify = {};
@@ -618,7 +610,8 @@ export const syncReminders = async (config, dom, now, universeId) => {
     // in-game" behaviour.
     const liveFs = fsActive ? fleetSave : [];
     const fsRes = await reconcileFleetSaveQueue({
-      entries: liveFs, topic, token: ntfyToken, now, universeId, queue,
+      entries: liveFs, topic, token: ntfyToken, now, universeId,
+      template: config.templates?.fleetSave, queue,
     });
 
     fsNotify = {};

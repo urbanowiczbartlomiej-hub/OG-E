@@ -84,6 +84,12 @@
 // here as a parameter; this module never reads storage directly.
 
 import { parseDurationList, humanizeOffset } from '../domain/duration.js';
+import {
+  renderTemplate,
+  iconFileFor,
+  splitLabel,
+  defaultReminderTemplates,
+} from '../domain/reminderTemplates.js';
 import { logger } from '../lib/logger.js';
 
 /* global fetch */
@@ -208,6 +214,26 @@ const OGE_ICON_URL = iconUrl('icon128.png');
 
 /** Red variant for max-priority (player-armed) reminders — reads as urgent. */
 const OGE_ICON_RED_URL = iconUrl('icon_red.png');
+
+/**
+ * Resolve a template's preset icon id to its public https URL. The id→file
+ * mapping is the pure {@link iconFileFor}; the URL wrapping (release ref)
+ * lives here. Used by every kind so a custom icon choice reaches ntfy.
+ *
+ * @param {string} iconId  a `PRESET_ICONS` id.
+ * @returns {string}
+ */
+const resolveIconUrl = (iconId) => iconUrl(iconFileFor(iconId));
+
+/**
+ * Format an epoch second as a locale `HH:MM` clock — the `{returnTime}` /
+ * `{arrivalTime}` / `{landTime}` wildcard value.
+ *
+ * @param {number} epochSec
+ * @returns {string}
+ */
+const clock = (epochSec) =>
+  new Date(epochSec * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 /**
  * The ntfy push title for a universe. Doubles as the per-universe filter
@@ -343,25 +369,9 @@ export const WAVE_PRIORITY = 3;
 export const ADHOC_PRIORITY = 5;
 
 /**
- * Flare appended to the BODY of a top-priority push so the urgency reads
- * at a glance. We dropped ntfy `Tags` entirely — on Android they only
- * render as extra emoji prepended to the title (the same glance value, in
- * a place the player ignores), and on the web/desktop client they show as
- * a separate metadata row that just adds noise. A trailing 🔥 on the body
- * of the max-priority (player-armed) reminders is the one signal worth
- * keeping; wave nudges stay plain.
- *
- * @param {number} priority  ntfy priority (1–5).
- * @param {string} body
- * @returns {string}  `body`, with the flare appended at max priority.
- */
-const flarePriorityBody = (priority, body) =>
-  priority >= ADHOC_PRIORITY ? `${body} 🔥` : body;
-
-/**
  * Publish one message at `fireAt`. Generic over notification kind: the
  * caller supplies the `title` (which doubles as the per-kind queue filter
- * — see {@link reconcileQueue}), `body`, and `priority`.
+ * — see {@link reconcileQueue}), `body`, `priority`, and `icon` URL.
  *
  * Splits the immediate vs delayed path: ntfy rejects `X-Delay` values
  * below {@link NTFY_MIN_DELAY_SEC}, so within that window we publish
@@ -375,22 +385,23 @@ const flarePriorityBody = (priority, body) =>
  * @param {string} args.title     Push title (also the per-kind queue filter).
  * @param {string} args.body      Notification body, baked in at post time.
  * @param {number} args.priority  ntfy priority (1–5).
+ * @param {string} [args.icon]    Icon URL; defaults to the standard OG-E icon.
  * @returns {Promise<string>}     ntfy message id (the cancellation handle).
  */
-const postMessage = async ({ topic, token, fireAt, now, title, body, priority }) => {
+const postMessage = async ({ topic, token, fireAt, now, title, body, priority, icon }) => {
   const delay = fireAt - now;
   /** @type {Record<string, string>} */
   const headers = {
     Title: title,
     Priority: String(priority),
-    Icon: priority >= ADHOC_PRIORITY ? OGE_ICON_RED_URL : OGE_ICON_URL,
+    Icon: icon || OGE_ICON_URL,
   };
   if (delay >= NTFY_MIN_DELAY_SEC) headers['X-Delay'] = String(fireAt);
 
   const res = await fetch(`https://ntfy.sh/${topic}?${ntfyAuthParam(token)}`, {
     method: 'POST',
     headers,
-    body: flarePriorityBody(priority, body),
+    body,
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
@@ -420,6 +431,8 @@ const postMessage = async ({ topic, token, fireAt, now, title, body, priority })
  * @property {number} fireAt    Absolute epoch SECONDS to deliver at.
  * @property {string} body      Notification body (baked in at post time).
  * @property {number} priority  ntfy priority (1–5).
+ * @property {string} [icon]    Icon URL (baked in at post time); optional —
+ *   {@link postMessage} falls back to the standard OG-E icon.
  *
  * @typedef {object} QueueSeries
  * @property {string}     id     Identity; the reconcile keys returned ids by it.
@@ -505,7 +518,7 @@ export const reconcileQueue = async ({ series, topic, token, now, title, queue }
       if (!id) {
         id = await postMessage({
           topic, token, fireAt: slot.fireAt, now,
-          title, body: slot.body, priority: slot.priority,
+          title, body: slot.body, priority: slot.priority, icon: slot.icon,
         });
         queuedByTime.set(slot.fireAt, id);
         posted++;
@@ -522,22 +535,25 @@ export const reconcileQueue = async ({ series, topic, token, now, title, queue }
 };
 
 /**
- * Body line for an expedition-wave reminder, baked in at post time (the
- * ntfy app shows it verbatim). We can't list fleet count / origins: the
- * schedule is queued the instant the FIRST expedition of a wave is
- * detected — before the rest of the burst is sent — precisely so a
- * browser close mid-send still leaves reminders queued. So `baseAt` (when
- * the wave returns) is the only detail we can state honestly.
+ * Render context for one expedition-wave slot. We can't expose fleet count /
+ * origins: the schedule is queued the instant the FIRST expedition of a wave
+ * is detected — before the rest of the burst is sent — precisely so a browser
+ * close mid-send still leaves reminders queued. So `{returnTime}` (when the
+ * wave returns) plus the slot index are the only details we can state
+ * honestly (see `domain/reminderTemplates.TEMPLATE_FIELDS.wave`).
  *
+ * @param {string} universeId
  * @param {number} baseAt  Wave's locked schedule anchor (epoch s).
  * @param {number} i       Zero-based slot index.
  * @param {number} total   Total slots in this wave's schedule.
- * @returns {string}
+ * @returns {Record<string, string | number>}
  */
-const waveBody = (baseAt, i, total) => {
-  const when = new Date(baseAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  return `Expeditions back (${when}) — reminder #${i + 1}/${total}.`;
-};
+const waveCtx = (universeId, baseAt, i, total) => ({
+  server: universeId,
+  returnTime: clock(baseAt),
+  index: i + 1,
+  total,
+});
 
 /**
  * Reconcile this universe's EXPEDITION-WAVE slice of the queue. Thin
@@ -562,6 +578,9 @@ const waveBody = (baseAt, i, total) => {
  * @param {number[]} [args.offsetsSec]  Reminder offsets (seconds from each wave's
  *   `baseAt`) for the active schedule. Defaults to
  *   {@link DEFAULT_WAVE_OFFSETS_SEC} so callers/tests get the default cadence.
+ * @param {import('../domain/reminderTemplates.js').ReminderTemplate} [args.template]
+ *   The wave message customisation (body / icon / priority). Defaults to the
+ *   built-in wave template (reproduces the historical message).
  * @param {Array<{ id: string, time: number, title?: string }>} [args.queue]
  *   Pre-fetched queue snapshot (see {@link reconcileQueue}) — lets the
  *   caller share one poll across kinds.
@@ -570,15 +589,20 @@ const waveBody = (baseAt, i, total) => {
 export const reconcileWaveQueue = async ({
   waves, topic, token, now, universeId,
   offsetsSec = DEFAULT_WAVE_OFFSETS_SEC,
+  template = defaultReminderTemplates().wave,
   queue,
 }) => {
+  const icon = resolveIconUrl(template.icon);
   /** @type {QueueSeries[]} */
   const series = waves.map((w) => {
     const times = reminderFireTimes(w.baseAt, offsetsSec);
     return {
       id: w.id,
       slots: times.map((fireAt, i) => ({
-        fireAt, body: waveBody(w.baseAt, i, times.length), priority: WAVE_PRIORITY,
+        fireAt,
+        body: renderTemplate(template.body, waveCtx(universeId, w.baseAt, i, times.length)),
+        priority: template.priority,
+        icon,
       })),
     };
   });
@@ -601,31 +625,43 @@ export const adhocTitleFor = (universeId) => `[${universeId}] Fleet`;
 
 /**
  * Reconcile this universe's AD-HOC slice of the queue. Each armed entry is
- * a single-slot series fired at its `fireAt`, at flat {@link ADHOC_PRIORITY}
- * (max — the player marked it on purpose). The body is built by the caller
- * (it needs domain detail this module doesn't carry) and passed in.
+ * a single-slot series fired at its `fireAt`. The body is rendered here from
+ * the ad-hoc {@link import('../domain/reminderTemplates.js').ReminderTemplate}
+ * against the entry's detail (`{label}`, `{mission}`, `{coords}`,
+ * `{arrivalTime}`, `{server}`); priority + icon come from the template.
  *
  * Same idempotent reconcile as waves, under the ad-hoc title, so arming on
  * mobile survives the send-reload and the queue self-heals. Pass
  * `entries: []` to cancel every ad-hoc reminder queued for this universe.
  *
  * @param {object} args
- * @param {Array<{ id: string, fireAt: number, body: string }>} args.entries  Armed entries.
+ * @param {Array<{ id: string, fireAt: number, arrivalAt: number, label: string }>} args.entries
+ *   Armed entries (the label is the `${mission} → [${coords}]` string).
  * @param {string} args.topic
  * @param {string} args.token
  * @param {number} args.now         Epoch SECONDS.
  * @param {string} args.universeId
+ * @param {import('../domain/reminderTemplates.js').ReminderTemplate} [args.template]
+ *   Ad-hoc message customisation; defaults to the built-in ad-hoc template.
  * @param {Array<{ id: string, time: number, title?: string }>} [args.queue]
  *   Pre-fetched queue snapshot (see {@link reconcileQueue}) — lets the
  *   caller share one poll across kinds.
  * @returns {Promise<{ idsByEntry: Record<string, string[]>, posted: number, cancelled: number }>}
  */
-export const reconcileAdhocQueue = async ({ entries, topic, token, now, universeId, queue }) => {
+export const reconcileAdhocQueue = async ({
+  entries, topic, token, now, universeId,
+  template = defaultReminderTemplates().adhoc,
+  queue,
+}) => {
+  const icon = resolveIconUrl(template.icon);
   /** @type {QueueSeries[]} */
-  const series = entries.map((e) => ({
-    id: e.id,
-    slots: [{ fireAt: e.fireAt, body: e.body, priority: ADHOC_PRIORITY }],
-  }));
+  const series = entries.map((e) => {
+    const { mission, coords } = splitLabel(e.label);
+    const body = renderTemplate(template.body, {
+      server: universeId, label: e.label, mission, coords, arrivalTime: clock(e.arrivalAt),
+    });
+    return { id: e.id, slots: [{ fireAt: e.fireAt, body, priority: template.priority, icon }] };
+  });
   const { idsBySeries, posted, cancelled } = await reconcileQueue({
     series, topic, token, now, title: adhocTitleFor(universeId), queue,
   });
@@ -644,18 +680,27 @@ export const reconcileAdhocQueue = async ({ entries, topic, token, now, universe
 export const fsTitleFor = (universeId) => `[${universeId}] Fleet save`;
 
 /**
- * Body for one fleet-save slot, baked in at post time (the ntfy app shows
- * it verbatim). States where/when the fleet lands and whether THIS slot is
- * before / at / after landing, so the push reads honestly on its own.
+ * Render context for one fleet-save slot. States where/when the fleet lands,
+ * its ship count, and whether THIS slot is before / at / after landing
+ * (`{offset}`), so the push reads honestly on its own. Ship count is
+ * locale-formatted for readability when the template references `{shipCount}`.
  *
- * @param {string} label     Direction + landing coords, built by the caller.
- * @param {number} arrivalAt Epoch SECONDS the fleet lands.
+ * @param {string} universeId
+ * @param {{ label: string, arrivalAt: number, shipCount?: number }} e
  * @param {number} fireAt    Epoch SECONDS this slot fires.
- * @returns {string}
+ * @returns {Record<string, string | number>}
  */
-const fsBody = (label, arrivalAt, fireAt) => {
-  const when = new Date(arrivalAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  return `Fleet save: ${label} — lands ${when} (${humanizeOffset(fireAt - arrivalAt)}).`;
+const fsCtx = (universeId, e, fireAt) => {
+  const { mission, coords } = splitLabel(e.label);
+  return {
+    server: universeId,
+    label: e.label,
+    mission,
+    coords,
+    shipCount: Number.isFinite(e.shipCount) ? Number(e.shipCount).toLocaleString() : '',
+    landTime: clock(e.arrivalAt),
+    offset: humanizeOffset(fireAt - e.arrivalAt),
+  };
 };
 
 /**
@@ -671,23 +716,35 @@ const fsBody = (label, arrivalAt, fireAt) => {
  * Pass `entries: []` to cancel every FS reminder queued for this universe.
  *
  * @param {object} args
- * @param {Array<{ id: string, arrivalAt: number, label: string, fireAts: number[] }>} args.entries
+ * @param {Array<{ id: string, arrivalAt: number, label: string, shipCount?: number, fireAts: number[] }>} args.entries
  * @param {string} args.topic
  * @param {string} args.token
  * @param {number} args.now         Epoch SECONDS.
  * @param {string} args.universeId
+ * @param {import('../domain/reminderTemplates.js').ReminderTemplate} [args.template]
+ *   Fleet-save message customisation; defaults to the built-in FS template.
  * @param {Array<{ id: string, time: number, title?: string }>} [args.queue]
  *   Pre-fetched queue snapshot (see {@link reconcileQueue}) — lets the caller
  *   share one poll across kinds.
  * @returns {Promise<{ idsByEntry: Record<string, string[]>, posted: number, cancelled: number }>}
  */
-export const reconcileFleetSaveQueue = async ({ entries, topic, token, now, universeId, queue }) => {
+export const reconcileFleetSaveQueue = async ({
+  entries, topic, token, now, universeId,
+  template = defaultReminderTemplates().fleetSave,
+  queue,
+}) => {
+  const icon = resolveIconUrl(template.icon);
   /** @type {QueueSeries[]} */
   const series = entries.map((e) => ({
     id: e.id,
     slots: e.fireAts
       .filter((fireAt) => fireAt <= now + NTFY_MAX_DELAY_SEC)
-      .map((fireAt) => ({ fireAt, body: fsBody(e.label, e.arrivalAt, fireAt), priority: ADHOC_PRIORITY })),
+      .map((fireAt) => ({
+        fireAt,
+        body: renderTemplate(template.body, fsCtx(universeId, e, fireAt)),
+        priority: template.priority,
+        icon,
+      })),
   }));
   const { idsBySeries, posted, cancelled } = await reconcileQueue({
     series, topic, token, now, title: fsTitleFor(universeId), queue,

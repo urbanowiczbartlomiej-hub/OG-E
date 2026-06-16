@@ -24,6 +24,7 @@ import { installReminderConfig } from '../../../src/features/dashboard/reminderC
 import { installScanConfig } from '../../../src/features/dashboard/scanConfig.js';
 import { defaultGalaxyScanConfig } from '../../../src/domain/galaxyScanConfig.js';
 import { defaultReminderGlobalConfig } from '../../../src/domain/reminderGlobalConfig.js';
+import { defaultReminderTemplates } from '../../../src/domain/reminderTemplates.js';
 
 const mockStore = /** @type {{ get: import('vitest').Mock, set: import('vitest').Mock }} */ (
   /** @type {any} */ (chromeStore)
@@ -309,5 +310,106 @@ describe('Reminders GLOBAL (wave + ad-hoc) config editor', () => {
     await flush();
     expect(store.has(GLOBAL_KEY)).toBe(false);
     expect($('#remCfgStatus').textContent || '').toMatch(/wave schedule/i);
+  });
+});
+
+describe('Reminders message templates', () => {
+  /** @param {string} sel */
+  const ta = (sel) => /** @type {HTMLTextAreaElement} */ (document.querySelector(sel));
+
+  it('fills the template editors from the default templates', async () => {
+    install().refresh();
+    await flush();
+    const d = defaultReminderTemplates();
+    expect(ta('#remCfgTplWaveBody').value).toBe(d.wave.body);
+    expect($('#remCfgTplAdhocIcon').value).toBe(d.adhoc.icon);
+    expect($('#remCfgTplFsPriority').value).toBe(String(d.fleetSave.priority));
+  });
+
+  it('renders a live preview from the kind sample context and warns on unknown wildcards', async () => {
+    install().refresh();
+    await flush();
+    const body = ta('#remCfgTplWaveBody');
+    body.value = 'Back {returnTime} #{index}/{total}';
+    body.dispatchEvent(new Event('input'));
+    expect(document.querySelector('#remCfgTplWave .oge-tpl-preview')?.textContent)
+      .toBe('Back 14:32 #1/4');
+    // {coords} is not a wave wildcard → warning.
+    body.value = '{coords}';
+    body.dispatchEvent(new Event('input'));
+    expect(document.querySelector('#remCfgTplWave .oge-tpl-warn')?.textContent || '')
+      .toMatch(/coords/);
+  });
+
+  it('saves edited wave body / icon / priority into the global slot', async () => {
+    install().refresh();
+    await flush();
+    ta('#remCfgTplWaveBody').value = 'Wave back at {returnTime}!';
+    $('#remCfgTplWaveIcon').value = 'urgent';
+    $('#remCfgTplWavePriority').value = '4';
+    $('#remCfgSave').dispatchEvent(new Event('click'));
+    await flush();
+    const saved = /** @type {any} */ (store.get(GLOBAL_KEY));
+    expect(saved.templates.wave).toEqual({ body: 'Wave back at {returnTime}!', icon: 'urgent', priority: 4 });
+  });
+
+  it('always saves the fleet-save template to the GLOBAL slot (presentation is server-independent)', async () => {
+    install().refresh();
+    await flush();
+    ta('#remCfgTplFsBody').value = 'FS: {label}';
+    $('#remCfgSave').dispatchEvent(new Event('click'));
+    await flush();
+    expect(/** @type {any} */ (store.get(GLOBAL_KEY)).templates.fleetSave.body).toBe('FS: {label}');
+  });
+});
+
+describe('Reminders per-server override (this-server scope)', () => {
+  /** @param {string} sel */
+  const ta = (sel) => /** @type {HTMLTextAreaElement} */ (document.querySelector(sel));
+
+  it('saves wave/ad-hoc edits to the per-server override, leaving the global wave intact', async () => {
+    install().refresh();
+    await flush();
+    const ov = $('#remCfgOverride');
+    ov.checked = true;
+    ov.dispatchEvent(new Event('change'));
+    $('#remCfgWaveEnabled').checked = true;
+    ta('#remCfgTplWaveBody').value = 'SERVER wave';
+    $('#remCfgSave').dispatchEvent(new Event('click'));
+    await flush();
+
+    const gsc = /** @type {any} */ (store.get(CFG_KEY));
+    expect(gsc.reminderOverrideEnabled).toBe(true);
+    expect(gsc.reminderOverride.reminderEnabled).toBe(true);
+    expect(gsc.reminderOverride.templates.wave.body).toBe('SERVER wave');
+    // The GLOBAL wave template is untouched by an override save.
+    const global = /** @type {any} */ (store.get(GLOBAL_KEY));
+    expect(global.templates.wave.body).toBe(defaultReminderTemplates().wave.body);
+  });
+
+  it('clears the override gate when the toggle is off (edits go to global)', async () => {
+    store.set(CFG_KEY, { reminderOverrideEnabled: true, reminderOverride: { reminderSchedule: '5m' } });
+    install().refresh();
+    await flush();
+    // Toggle override OFF, then save.
+    const ov = $('#remCfgOverride');
+    expect(ov.checked).toBe(true); // hydrated from the stored gate
+    ov.checked = false;
+    ov.dispatchEvent(new Event('change'));
+    $('#remCfgSave').dispatchEvent(new Event('click'));
+    await flush();
+    expect(/** @type {any} */ (store.get(CFG_KEY)).reminderOverrideEnabled).toBe(false);
+  });
+
+  it('hydrates the override fields + gate from the stored per-server snapshot', async () => {
+    store.set(CFG_KEY, {
+      reminderOverrideEnabled: true,
+      reminderOverride: { reminderSchedule: '7m', templates: { wave: { body: 'OV body' } } },
+    });
+    install().refresh();
+    await flush();
+    expect($('#remCfgOverride').checked).toBe(true);
+    expect(readEditor('remCfgWaveEditor')).toBe('7m');
+    expect(ta('#remCfgTplWaveBody').value).toBe('OV body');
   });
 });

@@ -153,6 +153,25 @@ describe('normalizeGalaxyScanConfig', () => {
     expect(bare.fsEnabled).toBe(false);
     expect(bare.fsThreshold).toBe(d.fsThreshold);
   });
+
+  it('normalises the per-server reminder override fields', () => {
+    const d = defaultGalaxyScanConfig();
+    // Defaults: override off, snapshot = the global default config.
+    expect(d.reminderOverrideEnabled).toBe(false);
+    expect(d.reminderOverride.reminderEnabled).toBe(false);
+    // A partial override is deep-normalised through the global-config code.
+    const out = normalizeGalaxyScanConfig({
+      reminderOverrideEnabled: true,
+      reminderOverride: { reminderSchedule: '5m', templates: { wave: { priority: 1 } } },
+    });
+    expect(out.reminderOverrideEnabled).toBe(true);
+    expect(out.reminderOverride.reminderSchedule).toBe('5m');
+    expect(out.reminderOverride.templates.wave.priority).toBe(1);
+    // Non-boolean gate → default; absent snapshot → full default config.
+    const bad = normalizeGalaxyScanConfig({ reminderOverrideEnabled: 'yes' });
+    expect(bad.reminderOverrideEnabled).toBe(false);
+    expect(bad.reminderOverride).toEqual(d.reminderOverride);
+  });
 });
 
 describe('parseRescanDuration', () => {

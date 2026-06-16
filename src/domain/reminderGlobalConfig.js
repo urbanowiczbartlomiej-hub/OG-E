@@ -1,5 +1,10 @@
 // @ts-check
 
+import {
+  defaultReminderTemplates,
+  normalizeReminderTemplates,
+} from './reminderTemplates.js';
+
 // Global reminder configuration — the GLOBAL (server-independent) reminder
 // knobs that drive expedition-wave auto-reminders and the ad-hoc lead time.
 //
@@ -33,6 +38,12 @@
  *   minutes-first offset list AFTER the wave returns (e.g. `"0m, 10m, 30m, 60m"`).
  * @property {number} adhocOffsetSec  Ad-hoc reminder lead time: seconds BEFORE
  *   arrival a one-shot ad-hoc ping fires (captured per reminder at arm time).
+ * @property {Record<import('./reminderTemplates.js').ReminderKind, import('./reminderTemplates.js').ReminderTemplate>} templates
+ *   Per-kind message customisation (body / icon / priority). The message
+ *   PRESENTATION is server-independent, so all three kinds' templates live in
+ *   this one global slot — even fleet-save, whose *behavioural* knobs stay
+ *   per-universe in `galaxyScanConfig`. A per-server override may replace the
+ *   wave/ad-hoc portion (see `domain/resolveReminderConfig`).
  */
 
 /**
@@ -47,6 +58,7 @@ export const defaultReminderGlobalConfig = () => ({
   reminderEnabled: false,
   reminderSchedule: '0m, 10m, 30m, 60m',
   adhocOffsetSec: 60,
+  templates: defaultReminderTemplates(),
 });
 
 /**
@@ -82,5 +94,6 @@ export const normalizeReminderGlobalConfig = (raw) => {
     reminderSchedule:
       typeof r.reminderSchedule === 'string' ? r.reminderSchedule : d.reminderSchedule,
     adhocOffsetSec: coerceSeconds(r.adhocOffsetSec, d.adhocOffsetSec),
+    templates: normalizeReminderTemplates(r.templates),
   };
 };
