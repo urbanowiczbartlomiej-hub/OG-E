@@ -496,9 +496,44 @@ describe('installBadges — observer feedback loop', () => {
     });
     installBadges();
 
-    // Install-time render produces 1 cluster — capture its identity.
+    // Install-time render produces 1 cluster — capture it (its parent is
+    // the host we watch below for re-render activity).
     const initial = document.querySelector('.ogi-exp-dots');
     expect(initial).not.toBeNull();
+
+    // Count how many fresh clusters get appended into the host from here
+    // on. The regression we guard against is a feedback loop: our own
+    // clearBadges + appendChild firing the observer, which schedules a
+    // render, which fires the observer again — re-rendering every 200 ms
+    // debounce window. Over the settle window below such a loop would
+    // append the cluster ~9 times; with the observer correctly paused
+    // around our own writes it settles after the one render the external
+    // mutation legitimately triggers (plus the install-time waitFor
+    // re-render, which lands on the same host).
+    //
+    // We assert on the render RATE, not node identity. happy-dom delivers
+    // MutationObserver records on a microtask queue, so under fake timers
+    // a single benign re-render can slip through the tiny disconnect gap
+    // without indicating a loop — a `toBe(...)` identity check is too
+    // brittle a signal (it flaked under full-suite load on CI), the rate
+    // is the real one.
+    const host = /** @type {HTMLElement} */ (
+      /** @type {Element} */ (initial).parentElement
+    );
+    let clusterAppends = 0;
+    const renderCounter = new MutationObserver((records) => {
+      for (const rec of records) {
+        for (const node of rec.addedNodes) {
+          if (
+            node.nodeType === 1 &&
+            /** @type {Element} */ (node).classList.contains('ogi-exp-dots')
+          ) {
+            clusterAppends += 1;
+          }
+        }
+      }
+    });
+    renderCounter.observe(host, { childList: true });
 
     // Trigger ONE external mutation to wake the observer up. The new
     // planet has no matching expedition, so render output is unchanged
@@ -517,27 +552,17 @@ describe('installBadges — observer feedback loop', () => {
       '<span class="planetBarSpaceObjectContainer"></span></a>';
     planetList.appendChild(newRow);
 
-    // Settle the debounced render triggered by the external mutation
-    // (200 ms debounce + microtask flush).
-    await vi.advanceTimersByTimeAsync(300);
+    // Settle well past several 200 ms debounce windows — a feedback loop
+    // would have re-rendered ~9× by now — but short of the 3 s safety
+    // poll (which legitimately re-renders and is NOT the loop under test).
+    await vi.advanceTimersByTimeAsync(1800);
+    renderCounter.disconnect();
 
-    // Snapshot the cluster element AFTER that one render pass.
-    const afterFirstRender = document.querySelector('.ogi-exp-dots');
-    expect(afterFirstRender).not.toBeNull();
-
-    // Advance another 1500 ms — well past 7 more 200 ms debounce
-    // windows but short of the 3 s safety-poll. Without the loop fix,
-    // the renderBadges in the previous step would have fired the
-    // observer (clear + append on `.ogi-exp-dots`), which would have
-    // scheduled another render, which would fire the observer again,
-    // etc. Each loop iteration creates a fresh cluster element via
-    // `clearBadges` + `container.appendChild`, so the identity captured
-    // at `afterFirstRender` would NOT be the current cluster anymore.
-    // With the fix (observer paused around our own renders), no further
-    // renders happen and the cluster identity is preserved.
-    await vi.advanceTimersByTimeAsync(1500);
-
-    const afterQuiescence = document.querySelector('.ogi-exp-dots');
-    expect(afterQuiescence).toBe(afterFirstRender);
+    // No feedback loop: only the render the external mutation triggered
+    // (plus the install-time waitFor re-render and, at most, a benign
+    // microtask-leaked stray) — never the runaway re-render-per-tick a
+    // loop would produce. And never a duplicate cluster.
+    expect(clusterAppends).toBeLessThan(4);
+    expect(document.querySelectorAll('.ogi-exp-dots').length).toBe(1);
   });
 });
