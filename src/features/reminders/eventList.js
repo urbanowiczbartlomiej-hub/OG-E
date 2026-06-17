@@ -267,7 +267,10 @@ const fsTitle = (fs, now, mode) => {
         ? 'Cancellable now — click to cancel this + the landing/after reminders'
         : live.length
           ? `Set automatically — the next reminder is cancellable in its final ${FS_CANCEL_WINDOW_MIN} min`
-          : 'Set automatically';
+          // No live slot yet: every fire time is still beyond ntfy's 3-day cap,
+          // so NOTHING is queued. Say so instead of the misleading "Set
+          // automatically" (which read as already-armed).
+          : 'Too far out to schedule yet — reminders set automatically once it\'s within 3 days of landing';
   return live.length ? `Fleet-save reminders at: ${live.join(', ')}\n${hint}` : hint;
 };
 
@@ -401,11 +404,23 @@ const render = () => {
             // Open window: next flip is the slot firing (badge drops back).
             nextFsFlipAt = Math.min(nextFsFlipAt, slot.fireAt);
           } else {
-            stamp(cell, 'fs', '', '', fsTitle(fs, now, 'passive'));
-            // Closed window: next flip is the window opening for the
-            // nearest upcoming slot.
-            const nextFireAt = Math.min(...fs.fireAts.filter((t) => Number.isFinite(t) && t > now));
-            nextFsFlipAt = Math.min(nextFsFlipAt, nextFireAt - FS_CANCEL_WINDOW_SEC);
+            // No cancellable slot now. Split "scheduled, waiting for its
+            // cancel window" from "still beyond ntfy's 3-day cap, so NOTHING
+            // is queued yet" — the latter must NOT look armed, so it's dimmed.
+            const liveSlots = fs.fireAts.filter(
+              (t) => Number.isFinite(t) && t > now && t <= now + NTFY_MAX_DELAY_SEC,
+            );
+            if (liveSlots.length) {
+              stamp(cell, 'fs', '', '', fsTitle(fs, now, 'passive'));
+              // Closed window: next flip is the window opening for the
+              // nearest scheduled slot.
+              nextFsFlipAt = Math.min(nextFsFlipAt, Math.min(...liveSlots) - FS_CANCEL_WINDOW_SEC);
+            } else {
+              // Far future: detected but unschedulable until it enters the cap.
+              stamp(cell, 'fs disabled', '', '', fsTitle(fs, now, 'passive'));
+              const earliest = Math.min(...fs.fireAts.filter((t) => Number.isFinite(t) && t > now));
+              nextFsFlipAt = Math.min(nextFsFlipAt, earliest - NTFY_MAX_DELAY_SEC);
+            }
           }
           continue;
         }

@@ -13,7 +13,11 @@
 
 import { describe, it, expect } from 'vitest';
 import { reconcileWaves } from '../../../src/domain/waves.js';
-import { collectOurMessageIds } from '../../../src/features/dashboard/reminders.js';
+import {
+  collectOurMessageIds,
+  isFleetSaveTooFarOut,
+} from '../../../src/features/dashboard/reminders.js';
+import { NTFY_MAX_DELAY_SEC } from '../../../src/sync/ntfyReconciler.js';
 
 describe('collectOurMessageIds — orphan-sweep claims every reminder kind', () => {
   // Partial ReminderState shapes — only the notify maps matter here, so we
@@ -62,6 +66,34 @@ const computeSweepGuard = (updatedAt, nowSec) => {
     : Infinity;
   return { shouldSweep: gistAge > 120, gistAge };
 };
+
+describe('isFleetSaveTooFarOut — "> 3 days out" badge criterion', () => {
+  const NOW = 1_748_000_000;
+  const within = NOW + NTFY_MAX_DELAY_SEC - 3600; // 1 h inside the cap
+  const beyond = NOW + NTFY_MAX_DELAY_SEC + 3600; // 1 h past the cap
+
+  it('is true when nothing is scheduled and every fire time is beyond the 3-day cap', () => {
+    expect(isFleetSaveTooFarOut({ fireAts: [beyond, beyond + 600] }, 0, NOW)).toBe(true);
+  });
+
+  it('is false once anything has been scheduled (even if still far out)', () => {
+    expect(isFleetSaveTooFarOut({ fireAts: [beyond] }, 2, NOW)).toBe(false);
+  });
+
+  it('is false when the earliest upcoming slot is already within the cap', () => {
+    expect(isFleetSaveTooFarOut({ fireAts: [within, beyond] }, 0, NOW)).toBe(false);
+  });
+
+  it('falls back to arrivalAt when fireAts is missing (pre-v5 gist file)', () => {
+    expect(isFleetSaveTooFarOut({ arrivalAt: beyond }, 0, NOW)).toBe(true);
+    expect(isFleetSaveTooFarOut({ arrivalAt: within }, 0, NOW)).toBe(false);
+  });
+
+  it('ignores already-past fire times when picking the earliest upcoming slot', () => {
+    // A past slot must not be treated as "the earliest" and make it look in-cap.
+    expect(isFleetSaveTooFarOut({ fireAts: [NOW - 600, beyond] }, 0, NOW)).toBe(true);
+  });
+});
 
 describe('dashboard orphan sweep freshness guard', () => {
   const BASE = 1_748_000_000; // arbitrary epoch seconds

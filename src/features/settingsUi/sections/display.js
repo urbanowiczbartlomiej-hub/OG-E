@@ -24,7 +24,7 @@ export const displaySection = {
     },
     {
       id: 'traderMenuHighlight',
-      label: 'Trader reminder (auctioneer + import/export glow)',
+      label: 'Trader reminder (pulse menu button)',
       type: 'checkbox',
     },
   ],

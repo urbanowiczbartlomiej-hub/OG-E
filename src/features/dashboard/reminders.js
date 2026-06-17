@@ -34,7 +34,11 @@ import {
   reminderFilenameFor,
   deriveNtfyTopic,
 } from '../../sync/reminders.js';
-import { fetchScheduledMessages, cancelWaveReminders } from '../../sync/ntfyReconciler.js';
+import {
+  fetchScheduledMessages,
+  cancelWaveReminders,
+  NTFY_MAX_DELAY_SEC,
+} from '../../sync/ntfyReconciler.js';
 
 /**
  * @typedef {import('../../sync/reminders.js').ReminderState} ReminderState
@@ -205,6 +209,30 @@ export const collectOurMessageIds = (states) => {
 };
 
 /**
+ * Whether a fleet-save is "too far out": nothing has been scheduled on ntfy
+ * for it yet AND every upcoming fire time is still beyond ntfy's 3-day cap
+ * ({@link NTFY_MAX_DELAY_SEC}). That's a deferred-not-failed state — the queue
+ * fills automatically once the fleet comes within 3 days of landing — so the
+ * badge says "> 3 days out" rather than the bare "not scheduled". Pure; the
+ * `fireAts` fallback to `arrivalAt` covers pre-v5 gist files that lack it.
+ *
+ * @param {{ fireAts?: number[], arrivalAt?: number }} fs
+ * @param {number} scheduledCount  ntfy messages already scheduled for this save.
+ * @param {number} nowSec
+ * @returns {boolean}
+ */
+export const isFleetSaveTooFarOut = (fs, scheduledCount, nowSec) => {
+  if (scheduledCount > 0) return false;
+  const upcoming = (Array.isArray(fs.fireAts) ? fs.fireAts : []).filter(
+    (t) => Number.isFinite(t) && t > nowSec,
+  );
+  const earliest = upcoming.length
+    ? Math.min(...upcoming)
+    : (Number.isFinite(fs.arrivalAt) ? /** @type {number} */ (fs.arrivalAt) : Infinity);
+  return earliest > nowSec + NTFY_MAX_DELAY_SEC;
+};
+
+/**
  * Fetch all per-universe gist states + the ntfy.sh queue in parallel,
  * then render one section per universe with the same per-wave card
  * layout as before. Falls back to the chrome.storage mirror dict when
@@ -280,13 +308,21 @@ const refreshPreview = async () => {
     }
 
     renderPreviewMulti(states, ntfyMap);
-    const queued = ntfyMap.size;
+    // Scope the count to the SELECTED server (which is all the preview shows).
+    // The ntfy topic is shared across the account's universes, so the whole
+    // queue size would over-report what THIS server actually has pending.
+    const active = getActiveUniverseId();
+    const activeState = active ? states[active] : null;
+    let queued = 0;
+    if (activeState) {
+      const ids = collectOurMessageIds({ [active]: activeState });
+      for (const id of ids) if (ntfyMap.has(id)) queued += 1;
+    }
     const sweepNote = orphansCancelled > 0
       ? ` · cleaned ${orphansCancelled} orphan${orphansCancelled === 1 ? '' : 's'}`
       : '';
-    const universes = Object.keys(states).length;
     setPreviewStatus(
-      `live · ${new Date().toLocaleTimeString()} · ${universes} universe${universes === 1 ? '' : 's'} · ${queued} message${queued === 1 ? '' : 's'} queued on ntfy${sweepNote}`,
+      `live · ${new Date().toLocaleTimeString()} · ${queued} message${queued === 1 ? '' : 's'} queued on ntfy${sweepNote}`,
       'ok',
     );
   } catch (err) {
@@ -370,7 +406,8 @@ const renderPreviewMulti = (states, ntfyMap) => {
   }
 
   const section = node('section', { class: 'rem-universe' });
-  section.appendChild(node('h3', { class: 'rem-universe-head', text: active }));
+  // Server name intentionally omitted — it's already shown (and chosen) in the
+  // page-wide Server selector at the top of the page; repeating it is noise.
   renderWavesInto(section, active, state, ntfyMap);
   renderAdhocInto(section, active, state, ntfyMap);
   renderFleetSavesInto(section, state, ntfyMap);
@@ -669,6 +706,7 @@ const renderFleetSavesInto = (section, state, ntfyMap) => {
   section.appendChild(node('h4', { class: 'rem-universe-head', text: 'Fleet-save reminders' }));
 
   const notify = state.fleetSaveNotify || {};
+  const nowSec = Math.floor(Date.now() / 1000);
   const sorted = entries.slice().sort((a, b) => a.arrivalAt - b.arrivalAt);
   for (const e of sorted) {
     const ids = notify[e.id]?.scheduledMessageIds ?? [];
@@ -679,6 +717,11 @@ const renderFleetSavesInto = (section, state, ntfyMap) => {
       .sort((a, b) => a.time - b.time);
     const queued = stillQueued.length > 0;
 
+    // Detected but the queue is deferred until the fleet is within ntfy's
+    // 3-day cap — distinguish that from a plain "not scheduled" (no token /
+    // sync pending) so the badge explains the wait.
+    const tooFar = isFleetSaveTooFarOut(e, totalScheduled, nowSec);
+
     const card = node('div', { class: 'rem-wave' + (queued ? '' : ' cancelled') });
 
     const head = node('div', { class: 'wave-head' });
@@ -686,7 +729,13 @@ const renderFleetSavesInto = (section, state, ntfyMap) => {
       class: 'wave-when',
       text: new Date(e.arrivalAt * 1000).toLocaleString(),
     }));
-    const badgeText = queued ? 'queued' : (totalScheduled > 0 ? 'fired' : 'not scheduled');
+    const badgeText = queued
+      ? 'queued'
+      : totalScheduled > 0
+        ? 'fired'
+        : tooFar
+          ? '> 3 days out'
+          : 'not scheduled';
     head.appendChild(node('span', { class: 'rem-badge' + (queued ? '' : ' cancelled'), text: badgeText }));
     card.appendChild(head);
 
@@ -702,6 +751,15 @@ const renderFleetSavesInto = (section, state, ntfyMap) => {
       }
     }
     card.appendChild(node('div', { class: 'wave-meta', text: metaText }));
+
+    if (tooFar) {
+      const note = node('div', {
+        class: 'wave-meta',
+        text: 'ntfy schedules at most 3 days ahead — reminders queue automatically once this is within 3 days of landing.',
+      });
+      note.style.color = '#888';
+      card.appendChild(note);
+    }
 
     if (queued) {
       const firesAt = node('div', { class: 'wave-fires' });

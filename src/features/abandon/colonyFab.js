@@ -191,7 +191,7 @@ export const installColonyFab = () => {
   const paint = (phase, info) => {
     if (!controller) return;
     if (phase === 'opened') {
-      controller.paintLines('go', labelLines({ main: 'Submit', sub: 'password', hint: 'tap' }));
+      controller.paintLines('go', labelLines({ main: 'Submit', sub: 'password' }));
     } else if (phase === 'submitted') {
       controller.paintLines('go', labelLines({ main: '⚠ DELETE ⚠', hint: 'tap to confirm' }));
     } else if (phase === 'done') {
@@ -264,7 +264,7 @@ export const installColonyFab = () => {
         }],
       });
       if (!controller) return;
-      controller.paintLines('go', labelLines({ main: 'Abandon', sub: `${fresh.max} fields`, hint: 'tap to open' }));
+      controller.paintLines('go', labelLines({ main: 'Abandon', sub: `${fresh.max} fields`, hint: 'too small' }));
       currentState = 'navigate';
       setActiveFabModule(MODULE_ID);
     } else if (state === 'abandon') {
@@ -283,7 +283,7 @@ export const installColonyFab = () => {
         }],
       });
       if (!controller) return;
-      controller.paintLines('go', labelLines({ main: 'Abandon', sub: `${info.max} fields`, hint: 'tap to start' }));
+      controller.paintLines('go', labelLines({ main: 'Abandon', sub: `${info.max} fields`, hint: 'too small' }));
       currentState = 'abandon';
       setActiveFabModule(MODULE_ID);
     }

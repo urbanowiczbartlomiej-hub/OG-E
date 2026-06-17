@@ -213,7 +213,7 @@ describe('event-list badges', () => {
     expect(title).not.toContain('ships');
   });
 
-  it('shows the bare auto hint (no times) for a fleet-save still beyond the 3-day cap', async () => {
+  it('dims the 🛡 badge and explains the wait for a fleet-save still beyond the 3-day cap', async () => {
     setSettings({
       remindersMasterEnabled: true, reminderNtfyToken: VALID_TOKEN,
     });
@@ -227,7 +227,13 @@ describe('event-list badges', () => {
     installEventListReminders(stubApi());
     await tick();
     expect(cell.classList.contains('fs')).toBe(true);
-    expect(cell.getAttribute('title')).toBe('Set automatically');
+    // Nothing is queued yet → dimmed, and the tooltip says why instead of the
+    // old misleading "Set automatically".
+    expect(cell.classList.contains('disabled')).toBe(true);
+    const title = cell.getAttribute('title') || '';
+    expect(title).toContain('Too far out');
+    expect(title).toContain('within 3 days');
+    expect(title).not.toContain('Fleet-save reminders at:'); // no times — none scheduled
   });
 
   it('shows the fire time on an armed ad-hoc badge', async () => {
