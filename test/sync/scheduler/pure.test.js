@@ -115,6 +115,7 @@ describe('dailyStateHasData', () => {
         traderImportDay: '',
         traderAuctionBidAt: 0,
         traderAuctionQuietUntil: 0,
+        artifactShopDoneUntil: 0,
       }),
     ).toBe(false);
   });
@@ -124,6 +125,7 @@ describe('dailyStateHasData', () => {
     expect(dailyStateHasData({ traderImportDay: '2026-06-13' })).toBe(true);
     expect(dailyStateHasData({ traderAuctionBidAt: 123 })).toBe(true);
     expect(dailyStateHasData({ traderAuctionQuietUntil: 456 })).toBe(true);
+    expect(dailyStateHasData({ artifactShopDoneUntil: 789 })).toBe(true);
   });
 });
 

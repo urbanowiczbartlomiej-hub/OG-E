@@ -16,6 +16,7 @@ import {
   mergeDailyRunRoutes,
   mergeGalaxyScanConfig,
   mergeReminderConfig,
+  mergeDailyState,
   clearScans,
   clearGalaxyScans,
 } from '../../src/sync/merge.js';
@@ -614,5 +615,33 @@ describe('mergeReminderConfig', () => {
     const r = mergeReminderConfig(local, /** @type {any} */ ({ updatedAt: 9 }));
     expect(r.changed).toBe(false);
     expect(r.merged).toBe(local);
+  });
+});
+
+describe('mergeDailyState', () => {
+  /** Full local DailyState with every field at a baseline value. */
+  const base = () => ({
+    rewardingDoneDay: '2026-06-10',
+    traderImportDay: '2026-06-10',
+    traderAuctionBidAt: 100,
+    traderAuctionQuietUntil: 100,
+    artifactShopDoneUntil: 100,
+  });
+
+  it('keeps local (no-write) when remote is missing or not an object', () => {
+    const local = base();
+    expect(mergeDailyState(local, null).changed).toBe(false);
+    expect(mergeDailyState(local, undefined).merged).toBe(local);
+  });
+
+  it('adopts a strictly larger remote artifactShopDoneUntil', () => {
+    const r = mergeDailyState(base(), { artifactShopDoneUntil: 200 });
+    expect(r.changed).toBe(true);
+    expect(r.merged.artifactShopDoneUntil).toBe(200);
+  });
+
+  it('keeps the local artifactShopDoneUntil when remote is older or absent', () => {
+    expect(mergeDailyState(base(), { artifactShopDoneUntil: 50 }).changed).toBe(false);
+    expect(mergeDailyState(base(), {}).merged.artifactShopDoneUntil).toBe(100);
   });
 });

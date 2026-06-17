@@ -142,20 +142,33 @@ const CSS = `
 const REFRESH_DEBOUNCE_MS = 150;
 
 /**
+ * Return the menu item's href — the element itself if it's an `<a>`, else its
+ * first `<a>` descendant (OGame wraps menu items in anchor tags inside `<li>`
+ * buttons). Empty string when neither carries one.
+ *
+ * @param {Element} el
+ * @returns {string}
+ */
+const hrefOf = (el) =>
+  (el instanceof HTMLAnchorElement ? el.getAttribute('href') : null) ??
+  el.querySelector('a')?.getAttribute('href') ??
+  '';
+
+/**
  * Return true when the element's href leads to the Rewarding component.
- * Checks the element itself first (if it's an `<a>`), then its first `<a>`
- * descendant (OGame wraps menu items in anchor tags inside `<li>` buttons).
  *
  * @param {Element} el
  * @returns {boolean}
  */
-const isRewardingButton = (el) => {
-  const href =
-    (el instanceof HTMLAnchorElement ? el.getAttribute('href') : null) ??
-    el.querySelector('a')?.getAttribute('href') ??
-    '';
-  return href.includes('component=rewarding');
-};
+const isRewardingButton = (el) => hrefOf(el).includes('component=rewarding');
+
+/**
+ * Return true when the element's href leads to the Artifact-Shop component.
+ *
+ * @param {Element} el
+ * @returns {boolean}
+ */
+const isArtifactShopButton = (el) => hrefOf(el).includes('component=artifactshop');
 
 /**
  * Return all ephemeral event menu entries: `.menubutton.premiumHighligt`
@@ -165,17 +178,23 @@ const isRewardingButton = (el) => {
  * Rewarding buttons are excluded for the rest of the current game-day
  * (14:00 reset) once `rewardingDoneDay` in localStorage matches today.
  *
+ * Artifact-Shop buttons are excluded while `artifactShopDoneUntil` (epoch ms,
+ * the running event's end time, stamped once every rank is claimed) is still
+ * in the future — see `features/artifactShopWatcher.js`.
+ *
  * @returns {Element[]}
  */
 const findEventItems = () => {
   const today = gameDayKey(new Date());
-  const { rewardingDoneDay } = readDailyState();
+  const { rewardingDoneDay, artifactShopDoneUntil } = readDailyState();
   const rewardingDone = rewardingDoneDay === today;
+  const artifactShopDone = artifactShopDoneUntil > Date.now();
 
   return [...document.querySelectorAll(`${GAME.MENU_TABLE} .menubutton.premiumHighligt`)].filter(
     (el) => {
       if (PERMANENT_HINTS.has(/** @type {HTMLElement} */ (el).dataset.ipiHint ?? '')) return false;
       if (rewardingDone && isRewardingButton(el)) return false;
+      if (artifactShopDone && isArtifactShopButton(el)) return false;
       return true;
     },
   );

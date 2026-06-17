@@ -17,6 +17,20 @@ import { safeLS } from '../lib/storage.js';
 /** game-day key (YYYY-MM-DD, 14:00 reset) when all rewarding tasks were done. */
 export const REWARDING_DONE_KEY = 'oge-rewarding-done-day';
 
+/**
+ * Epoch-ms until which the Artifact-Shop menu highlight is suppressed.
+ *
+ * Unlike the daily rewarding marker, the Artifact Shop is a multi-day EVENT:
+ * once every reward rank is claimed there is nothing left to do for the rest
+ * of that event's run, yet the event (and its pulsing menu button) keeps
+ * going. We stamp the event's own end time so the highlight stays suppressed
+ * for exactly that window and AUTO-clears when the next event begins — the
+ * menu has no event identity to compare against, so a self-expiring timestamp
+ * is what lets a fresh event light up again without any extra bookkeeping.
+ * 0 = not suppressed.
+ */
+export const ARTIFACT_SHOP_DONE_KEY = 'oge-artifactshop-done-until';
+
 /** Calendar-day key (YYYY-MM-DD) when the daily trader import was taken. */
 export const TRADER_IMPORT_KEY = 'oge-trader-import-traded-day';
 
@@ -32,6 +46,7 @@ export const TRADER_AUCTION_QUIET_KEY = 'oge-trader-auction-quiet-until';
  * @property {string} traderImportDay    Calendar-day key or "" when not traded.
  * @property {number} traderAuctionBidAt Epoch-ms of last bid, 0 when absent.
  * @property {number} traderAuctionQuietUntil Epoch-ms quiet window, 0 when absent.
+ * @property {number} artifactShopDoneUntil Epoch-ms suppress window, 0 when absent.
  */
 
 /** @returns {DailyState} */
@@ -40,6 +55,7 @@ export const readDailyState = () => ({
   traderImportDay: safeLS.get(TRADER_IMPORT_KEY) ?? '',
   traderAuctionBidAt: safeLS.int(TRADER_AUCTION_BID_KEY, 0),
   traderAuctionQuietUntil: safeLS.int(TRADER_AUCTION_QUIET_KEY, 0),
+  artifactShopDoneUntil: safeLS.int(ARTIFACT_SHOP_DONE_KEY, 0),
 });
 
 /**
@@ -56,4 +72,6 @@ export const writeDailyState = (state) => {
     safeLS.set(TRADER_AUCTION_BID_KEY, state.traderAuctionBidAt);
   if (state.traderAuctionQuietUntil != null)
     safeLS.set(TRADER_AUCTION_QUIET_KEY, state.traderAuctionQuietUntil);
+  if (state.artifactShopDoneUntil != null)
+    safeLS.set(ARTIFACT_SHOP_DONE_KEY, state.artifactShopDoneUntil);
 };

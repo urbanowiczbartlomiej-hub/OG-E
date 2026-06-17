@@ -558,13 +558,18 @@ export const mergeDailyState = (local, remote) => {
       local.traderAuctionQuietUntil,
       remote.traderAuctionQuietUntil ?? 0,
     ),
+    artifactShopDoneUntil: maxNum(
+      local.artifactShopDoneUntil,
+      remote.artifactShopDoneUntil ?? 0,
+    ),
   };
 
   const changed =
     merged.rewardingDoneDay !== local.rewardingDoneDay ||
     merged.traderImportDay !== local.traderImportDay ||
     merged.traderAuctionBidAt !== local.traderAuctionBidAt ||
-    merged.traderAuctionQuietUntil !== local.traderAuctionQuietUntil;
+    merged.traderAuctionQuietUntil !== local.traderAuctionQuietUntil ||
+    merged.artifactShopDoneUntil !== local.artifactShopDoneUntil;
 
   return { merged, changed };
 };

@@ -79,6 +79,7 @@ import { installFleetdispatchShortcut } from './features/fleetdispatchShortcut.j
 import { installEventMenuHighlight } from './features/eventMenuHighlight.js';
 import { installTraderMenuHighlight } from './features/traderMenuHighlight.js';
 import { installRewardingWatcher } from './features/rewardingWatcher.js';
+import { installArtifactShopWatcher } from './features/artifactShopWatcher.js';
 import { installReminders } from './features/reminders/index.js';
 
 import { installSync } from './sync/scheduler.js';
@@ -147,6 +148,7 @@ const installDomFeatures = () => {
   installEventMenuHighlight();
   installTraderMenuHighlight();
   installRewardingWatcher();
+  installArtifactShopWatcher();
 
   // Reminders — the producer reads expedition return-flights + present
   // fleet legs from #eventContent and reconciles both wave and ad-hoc

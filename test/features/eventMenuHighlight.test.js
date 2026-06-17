@@ -15,6 +15,7 @@
 //   9. Settings off → applyHighlights is a no-op.
 //  10. Settings toggled back on → highlights restored.
 //  11. No banner is ever injected (the loud central banner was removed in v1.3.6).
+//  12. Artifact-Shop button suppressed while its done-until window is active.
 //
 // @ts-check
 
@@ -25,6 +26,7 @@ import {
   _resetEventMenuHighlightForTest,
 } from '../../src/features/eventMenuHighlight.js';
 import { settingsStore } from '../../src/state/settings.js';
+import { ARTIFACT_SHOP_DONE_KEY } from '../../src/state/dailyActions.js';
 
 const STYLE_ID = 'oge-event-highlight-style';
 const HIGHLIGHT_CLASS = 'oge-event-highlight';
@@ -58,6 +60,7 @@ describe('eventMenuHighlight', () => {
   beforeEach(() => {
     _resetEventMenuHighlightForTest();
     settingsStore.update((s) => ({ ...s, eventMenuHighlight: true }));
+    localStorage.removeItem(ARTIFACT_SHOP_DONE_KEY);
     document.getElementById(STYLE_ID)?.remove();
     document.getElementById('menuTable')?.remove();
 
@@ -74,6 +77,7 @@ describe('eventMenuHighlight', () => {
   afterEach(() => {
     _resetEventMenuHighlightForTest();
     settingsStore.update((s) => ({ ...s, eventMenuHighlight: true }));
+    localStorage.removeItem(ARTIFACT_SHOP_DONE_KEY);
     document.getElementById(STYLE_ID)?.remove();
     document.getElementById('menuTable')?.remove();
   });
@@ -198,5 +202,45 @@ describe('eventMenuHighlight', () => {
 
     expect(document.getElementById(STYLE_ID)).toBeNull();
     expect(document.querySelectorAll(`.${HIGHLIGHT_CLASS}`).length).toBe(0);
+  });
+
+  // ── Artifact-Shop suppression ──────────────────────────────────────────
+
+  /** Rebuild the menu with an Artifact-Shop event button (no permanent hint). */
+  const buildArtifactShopMenu = () => {
+    document.getElementById('menuTable')?.remove();
+    const menu = buildMenu([
+      { hint: 'ipiToolbarTrader', premium: true, label: 'Handlarz' },
+      {
+        hint: '',
+        premium: true,
+        label: 'Sklep z artefaktami',
+        href: '/game/index.php?page=ingame&component=artifactshop',
+      },
+    ]);
+    document.body.appendChild(menu);
+    return /** @type {HTMLAnchorElement} */ (
+      menu.querySelector('a[href*="component=artifactshop"]')
+    );
+  };
+
+  it('highlights the Artifact-Shop button when no done-until window is set', () => {
+    const btn = buildArtifactShopMenu();
+    installEventMenuHighlight();
+    expect(btn.classList.contains(HIGHLIGHT_CLASS)).toBe(true);
+  });
+
+  it('suppresses the Artifact-Shop button while the done-until window is in the future', () => {
+    const btn = buildArtifactShopMenu();
+    localStorage.setItem(ARTIFACT_SHOP_DONE_KEY, String(Date.now() + 60 * 60 * 1000));
+    installEventMenuHighlight();
+    expect(btn.classList.contains(HIGHLIGHT_CLASS)).toBe(false);
+  });
+
+  it('highlights the Artifact-Shop button again once the window has expired', () => {
+    const btn = buildArtifactShopMenu();
+    localStorage.setItem(ARTIFACT_SHOP_DONE_KEY, String(Date.now() - 60 * 60 * 1000));
+    installEventMenuHighlight();
+    expect(btn.classList.contains(HIGHLIGHT_CLASS)).toBe(true);
   });
 });
