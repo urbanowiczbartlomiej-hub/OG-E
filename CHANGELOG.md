@@ -6,6 +6,41 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.22.0] — 2026-06-17
+
+### Added
+
+- **Hold the Explore button to skip a planet.** Long-pressing the floating
+  expedition button (a 2-second hold, with the ring filling as you press) jumps
+  to the next planet still under the per-planet cap *without* sending — for
+  deliberately passing over the planet you're on. The round-robin walk then
+  carries on from there.
+
+### Changed
+
+- **Artifact Shop event highlight stops once you're done.** The pulsing
+  left-menu highlight for the Artifact Shop event now switches off as soon as
+  every reward rank is claimed — even though the event keeps running for days
+  afterwards. It lights up again automatically when the next Artifact Shop
+  event begins.
+- **Expedition auto-redirect spreads sends evenly (round-robin).** With "Max
+  expeditions per planet" set to 2, the after-send hop now tops every planet up
+  to one expedition first, then comes back round for the second — instead of
+  stopping after a single pass once every planet had one. It still skips
+  planets that have reached the cap and continues to the nearest one that
+  hasn't, so manually skipping a planet just moves on. (No change at the
+  default of 1.)
+- **Clearer "not scheduled yet" fleet-save reminders.** A fleet-save more than
+  3 days out can't be queued yet (ntfy schedules at most 3 days ahead). The
+  in-game event-list badge now dims and explains it'll be set automatically
+  once the fleet is within 3 days of landing, and the dashboard's Reminders
+  queue shows "> 3 days out" with the same note — instead of a bare,
+  unexplained "Set automatically" / "not scheduled".
+- **Dashboard Reminders & Daily Run polish.** The Reminders queue drops the
+  redundant server name (it's already chosen in the Server selector) and its
+  status line now reflects the selected server; the stale ntfy setup hint was
+  trimmed. The Daily Run description matches the button's current labels.
+
 ## [1.21.0] — 2026-06-16
 
 ### Changed
