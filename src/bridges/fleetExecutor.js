@@ -32,6 +32,10 @@
 //                  coord inputs + click the planet/moon type span (AGR
 //                  action:42). AGR applies the target and fires the game's
 //                  checkTarget XHR; the courier awaits oge:checkTargetResult.
+//   setTargetNative { galaxy, system, position } → edit the game's OWN fleet2
+//                  target inputs (td.targetCoords) for an in-place retarget;
+//                  fires the game's checkTarget XHR. Used on a discrete fleet2
+//                  click (AGR doesn't re-clobber a settled-fleet2 edit).
 //   selectMission{ mission } → selectMission iff available; data { available }
 //
 // @ts-check
@@ -204,6 +208,23 @@ const runCommand = async (fd, cmd) => {
       fireInput(GAME.AGO_SYSTEM, system);
       fireInput(GAME.AGO_POSITION, position);
       if (type != null) setTargetType(type);
+      return { ok: true };
+    }
+
+    case 'setTargetNative': {
+      const { galaxy, system, position } = args;
+      // Edit the game's OWN fleet2 target inputs (td.targetCoords), NOT AGR's
+      // fleet1 row. This is the in-place retarget path: the colonize button
+      // calls it on a discrete user click while already on fleet2, where AGR
+      // no longer re-applies its own target — so the edit sticks. The full
+      // keystroke sequence (fireInput) drives the game's own coord handler,
+      // which fires the checkTarget XHR the courier awaits. `fd.updateTarget`
+      // is a guarded nudge for builds that debounce programmatic input edits;
+      // absent on others, where the events above already trigger the re-check.
+      fireInput(GAME.FD_TARGET_GALAXY, galaxy);
+      fireInput(GAME.FD_TARGET_SYSTEM, system);
+      fireInput(GAME.FD_TARGET_POSITION, position);
+      if (typeof fd.updateTarget === 'function') fd.updateTarget();
       return { ok: true };
     }
 

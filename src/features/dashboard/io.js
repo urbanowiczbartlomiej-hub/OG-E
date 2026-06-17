@@ -44,7 +44,6 @@ import { historyKeyFor } from '../../state/history.js';
 import { scansKeyFor } from '../../state/scans.js';
 import {
   syncRequestKeyFor,
-  clearRemoteKeyFor,
   resetGalaxyKeyFor,
 } from '../../sync/scheduler.js';
 
@@ -332,18 +331,6 @@ export const exportColonyCsv = (entries, universeId) => {
  */
 export const triggerSync = (universeId) =>
   chromeStore.set(syncRequestKeyFor(universeId), Date.now());
-
-/**
- * Request a remote-clear operation for the given universe. Writes a
- * timestamp to that universe's namespaced clear-remote tombstone; the
- * sync scheduler uses this to wipe the Gist payload without letting
- * local state re-upload the now-deleted scans.
- *
- * @param {string} universeId
- * @returns {Promise<void>}
- */
-export const triggerClearRemote = (universeId) =>
-  chromeStore.set(clearRemoteKeyFor(universeId), Date.now());
 
 /**
  * Request a remote-side reset for a single galaxy within the given

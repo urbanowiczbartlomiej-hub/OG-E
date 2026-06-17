@@ -16,8 +16,6 @@
     padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer;
   }
   .controls button:hover { background: #2a4a6a; }
-  .controls button.danger { background: #4a2a2a; border-color: #6a3a3a; color: #ff8888; }
-  .controls button.danger:hover { background: #6a3a3a; }
 
   /* Single horizontal top bar: tabs on the left as primary navigation,
      tools (server selector + Export/Import) on the right as technical
@@ -47,9 +45,9 @@
   .tab-section { display: none; }
   .tab-section.active { display: block; }
 
-  /* In-tab sub-section (e.g. the settlement-regions block folded into
-     Galaxy Observations) — visually separated, one heading size down. */
-  .sub-section { margin-top: 28px; border-top: 1px solid #2a4a5a; padding-top: 18px; }
+  /* In-tab sub-section (the Colony Scout block in its Galaxy Observations
+     sub-tab) — one heading size down. No top separator: the sub-tab bar
+     already delimits it from the Scanned-data pane. */
   .sub-section h2 { color: #4a9eff; font-size: 17px; margin-bottom: 10px; }
   .controls input {
     background: #1a2a3a; border: 1px solid #2a4a5a; color: #ccc;
@@ -193,28 +191,47 @@
   .cfg-group { color: #4a9eff; font-size: 14px; font-weight: bold; margin: 14px 0 8px; }
   .cfg-group:first-child { margin-top: 0; }
   .cfg-sub { color: #9cf; font-size: 12px; font-weight: bold; margin: 10px 0 4px; }
+  /* Compact label+input rows laid out in responsive columns (1 → 2 → 3). */
+  .cfg-grid { display: grid; grid-template-columns: 1fr; column-gap: 20px; }
+  @media (min-width: 700px)  { .cfg-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (min-width: 1040px) { .cfg-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 
-  /* Offset-list editor rows as chips (à la Daily Run endpoint chips). */
-  .oge-offset-row { display: inline-flex; align-items: center; gap: 8px; margin: 0 6px 6px 0;
+  /* Offset-list editor as chips (à la Daily Run endpoint chips): the chips
+     flow horizontally and wrap, the flex container owns the gap. */
+  .oge-offset-row { display: inline-flex; align-items: center; gap: 6px; margin: 0;
     padding: 4px 6px 4px 12px; background: #16252f; border: 1px solid #2a4a5a; border-radius: 16px; }
-  .settings-panel .oge-offset-input { width: 58px; background: transparent; border: none;
+  .oge-offset-row.invalid { background: #3a1f1f; border-color: #a44; }
+  .oge-offset-row.invalid .oge-offset-preview,
+  .oge-offset-row.invalid .oge-offset-input { color: #f3b0b0; }
+  .settings-panel .oge-offset-input { width: 46px; background: transparent; border: none;
     border-radius: 0; padding: 2px 0; color: #cfe; }
   .settings-panel .oge-offset-input:focus { box-shadow: none; border: none; }
   .oge-offset-preview { color: #8aa3ad; font-size: 12px; }
   .settings-panel .oge-offset-remove { background: none; border: none; color: #c47070;
-    padding: 0 4px; font-size: 13px; line-height: 1; }
+    padding: 0 2px; font-size: 13px; line-height: 1; }
   .settings-panel .oge-offset-remove:hover { background: none; color: #ff9090; }
+  /* "Add" trails the chip row as a matching pill (overrides the boxy default). */
+  .settings-panel .oge-offset-add { background: #16252f; color: #9cf; border: 1px solid #2a4a5a;
+    border-radius: 16px; padding: 4px 12px; font-size: 12px; }
+  .settings-panel .oge-offset-add:hover { background: #1f3445; color: #bfe3ff; }
   .oge-tpl-preview { color: #9fd0ff; font-size: 12px; margin-top: 4px; }
   .oge-tpl-warn { color: #ffb454; font-size: 12px; margin-top: 2px; }
 
-  /* Reminders ⚙ Settings sub-tabs (Expedition waves / Ad-hoc / Fleet-save). */
-  .rem-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 14px; border-bottom: 1px solid #2a4a5a; }
-  .rem-tab { background: transparent; border: 1px solid transparent; border-bottom: none;
+  /* Generic in-section sub-tabs — shared by the Reminders ⚙ Settings
+     sub-panes (Expedition waves / Ad-hoc / Fleet-save) and the Galaxy
+     Observations tabs (Scanned data / Colony Scout). */
+  .subtabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 14px; border-bottom: 1px solid #2a4a5a; }
+  .subtab { background: transparent; border: 1px solid transparent; border-bottom: none;
     color: #888; padding: 6px 14px; font-size: 13px; cursor: pointer; border-radius: 6px 6px 0 0; }
-  .rem-tab:hover { color: #ccc; background: #1a2a3a; }
-  .rem-tab.active { color: #fff; background: #16252f; border-color: #2a4a5a; font-weight: bold; }
-  .rem-tabpane { display: none; }
-  .rem-tabpane.active { display: block; }
+  .subtab:hover { color: #ccc; background: #1a2a3a; }
+  .subtab.active { color: #fff; background: #16252f; border-color: #2a4a5a; font-weight: bold; }
+  .subtabpane { display: none; }
+  .subtabpane.active { display: block; }
+  /* Each pane splits into Settings | Message columns; stacks on narrow. */
+  .rem-pane-grid { display: grid; grid-template-columns: 1fr; gap: 0 32px; align-items: start; }
+  .rem-pane-grid .cfg-sub:first-child { margin-top: 0; }
+  .cfg-block-label { color: #ccc; font-size: 13px; margin-bottom: 6px; }
+  @media (min-width: 860px) { .rem-pane-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
 
   @media (max-width: 620px) {
     .cfg-label { flex-basis: 100%; max-width: 100%; padding-top: 0; }
@@ -328,19 +345,24 @@
 
 <section id="galaxySection" class="tab-section">
   <h1>Galaxy Observations</h1>
-  <p style="color:#888;font-size:13px;margin-bottom:16px;">
-    Per-system summary of positions you have navigated past in the in-game galaxy view.
-    Data was recorded only for galaxy pages you yourself opened. Filtered by the target
-    positions list (set under Colonizations → Settings) — only those positions count toward
-    the stats below.
-  </p>
 
-  <div class="controls">
-    <button id="clearScansBtn" class="danger">Clear observation data</button>
+  <div class="subtabs" id="galaxySubtabs" role="tablist">
+    <button type="button" class="subtab active" data-subtab="scans" role="tab">Scanned data</button>
+    <button type="button" class="subtab" data-subtab="scout" role="tab">Colony Scout</button>
   </div>
-  <div id="scansContainer"></div>
 
-  <div class="sub-section">
+  <div class="subtabpane active" data-subtab="scans">
+    <p style="color:#888;font-size:13px;margin-bottom:16px;">
+      Per-system summary of positions you have navigated past in the in-game galaxy view.
+      Data was recorded only for galaxy pages you yourself opened. Filtered by the target
+      positions list (set under Colonizations → Settings) — only those positions count toward
+      the stats below.
+    </p>
+    <div id="scansContainer"></div>
+  </div>
+
+  <div class="subtabpane" data-subtab="scout">
+    <div class="sub-section">
     <h2>🔭 Colony Scout — settlement area analysis</h2>
     <p style="color:#888;font-size:13px;margin-bottom:16px;">
       For each scanned galaxy, the best contiguous run of systems whose target slots are all
@@ -413,6 +435,7 @@
       <button id="freeWeightsReset" class="weight-reset">↺ Reset to selected preset</button>
     </details>
     <div id="freeContainer"></div>
+    </div>
   </div>
 
   <details class="settings-panel">
@@ -463,7 +486,7 @@
     <summary>⚙ Settings</summary>
     <div class="settings-body">
       <p class="settings-desc">
-        Expedition-wave cadence, ad-hoc lead time, and fleet-save — all per-server.
+        Expedition-wave cadence, ad-hoc lead time, and fleet-save.
       </p>
       <div id="reminderConfigBody"></div>
     </div>

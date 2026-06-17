@@ -16,15 +16,17 @@
 // save read-modify-writes it: each surface overlays only the fields it owns,
 // so neither clobbers the other.
 //
-// # Offset schedules: a per-entry row editor (B3d)
+// # Offset schedules: a per-entry chip editor (B3d)
 //
 // The wave schedule and the fleet-save offsets are still STORED as a
 // comma-separated minutes-first string (the producer parses it the same way),
-// but the surface is a per-entry row editor instead of one raw text field:
-// each row is a single duration with a live plain-English impact preview
-// (`domain/duration.humanize*Offset`), plus add/remove buttons. The preview
-// text is the SAME pure helper the fleet-save push body uses, so the editor and
-// the push can never drift.
+// but the surface is a row of CHIPS that flow horizontally and wrap (like the
+// Daily Run endpoint chips) instead of one raw text field: each chip is a
+// single duration input + a COMPACT impact phrase (`humanize*OffsetShort`),
+// with the reference point stated once in the section hint. The chip's hover
+// title carries the full `humanize*Offset` phrase — the SAME pure helper the
+// fleet-save push body renders `{offset}` from — so the long-form phrasing
+// stays the single source of truth and the editor / push can never drift.
 //
 // Master switch + ntfy token stay in AGR (the credential is required there).
 // All parsing/formatting lives in `domain/duration.js`.
@@ -56,6 +58,7 @@ import {
 import {
   parseDuration, formatDuration, parseDurationList,
   humanizeOffset, humanizeReturnOffset,
+  humanizeOffsetShort, humanizeReturnOffsetShort,
 } from '../../domain/duration.js';
 
 /**
@@ -83,30 +86,39 @@ const mk = (tag, css, text) => {
  */
 
 /**
- * Build a per-entry offset list editor. One row per offset (a small duration
- * input + a live preview + a remove button), plus an "Add" button. The value
- * round-trips through `parseDurationList`/`formatDuration` so it stays a
- * canonical minutes-first comma string — purely a friendlier surface than one
- * raw text field. Pure DOM (no store access); the host wires load/save.
+ * Build a per-entry offset list editor as a row of removable CHIPS that flow
+ * horizontally and wrap (à la the Daily Run endpoint chips) — each chip is a
+ * small duration input + a compact impact phrase, with an "Add" chip trailing
+ * the row. The value round-trips through `parseDurationList`/`formatDuration`
+ * so it stays a canonical minutes-first comma string. Pure DOM (no store
+ * access); the host wires load/save.
  *
  * @param {object} o
  * @param {string} o.idBase  id prefix — container is `idBase`, add button
  *   `idBase + 'Add'`; row inputs/previews/removes carry stable classes.
  * @param {boolean} o.signed  Allow negative offsets (fleet-save, landing-relative)
  *   or drop them (wave, after-return).
- * @param {(sec: number) => string} o.preview  Pure phrase for one offset's impact.
+ * @param {(sec: number) => string} o.preview  Compact phrase shown ON the chip
+ *   (reference point lives once in the section hint).
+ * @param {(sec: number) => string} o.previewLong  Full phrase used as the chip's
+ *   hover title (the long-form single source of truth shared with the push).
  * @param {string} o.placeholder
  * @returns {OffsetEditor}
  */
-const makeOffsetEditor = ({ idBase, signed, preview, placeholder }) => {
-  const wrap = mk('div', 'display:flex;flex-direction:column;gap:4px;');
+const makeOffsetEditor = ({ idBase, signed, preview, previewLong, placeholder }) => {
+  // The container IS the wrapping chip row; the "Add" chip is its last child so
+  // setFromString can clear the value chips without disturbing it.
+  const wrap = mk('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:6px;');
   wrap.id = idBase;
-  const rowsBox = mk('div', 'display:flex;flex-direction:column;gap:4px;');
-  wrap.appendChild(rowsBox);
 
-  /** Append one row pre-filled with `value`; returns its input. @param {string} [value] */
+  const addBtn = /** @type {HTMLButtonElement} */ (mk('button', undefined, '+ Add reminder'));
+  addBtn.type = 'button';
+  addBtn.id = idBase + 'Add';
+  addBtn.className = 'oge-offset-add';
+
+  /** Insert one chip (before the Add button) pre-filled with `value`; returns its input. @param {string} [value] */
   const addRow = (value = '') => {
-    const r = mk('div', 'display:flex;align-items:center;gap:6px;');
+    const r = mk('div');
     r.className = 'oge-offset-row';
     const inp = /** @type {HTMLInputElement} */ (mk('input'));
     inp.type = 'text';
@@ -114,7 +126,7 @@ const makeOffsetEditor = ({ idBase, signed, preview, placeholder }) => {
     inp.size = 6;
     inp.placeholder = placeholder;
     inp.value = value;
-    const prev = mk('span', 'color:#888;font-size:12px;flex:1;');
+    const prev = mk('span');
     prev.className = 'oge-offset-preview';
     const rm = /** @type {HTMLButtonElement} */ (mk('button', undefined, '✕'));
     rm.type = 'button';
@@ -125,33 +137,34 @@ const makeOffsetEditor = ({ idBase, signed, preview, placeholder }) => {
       const t = inp.value.trim();
       const sec = parseDuration(t);
       const valid = sec !== null && (signed || sec >= 0);
-      inp.style.borderColor = t === '' || valid ? '' : '#e66';
+      const bad = t !== '' && !valid;
+      r.classList.toggle('invalid', bad);
       prev.textContent = t === '' ? '' : valid ? preview(/** @type {number} */ (sec)) : 'invalid';
+      // Full phrase on hover — the chip face stays compact, the meaning is one
+      // hover away, and the push body shares the same long-form helper.
+      r.title = valid && t !== '' ? previewLong(/** @type {number} */ (sec)) : '';
     };
     inp.addEventListener('input', refreshPreview);
     rm.addEventListener('click', () => { r.remove(); });
 
     r.append(inp, prev, rm);
-    rowsBox.appendChild(r);
+    wrap.insertBefore(r, addBtn);
     refreshPreview();
     return inp;
   };
 
-  const addBtn = /** @type {HTMLButtonElement} */ (mk('button', 'align-self:flex-start;', '+ Add reminder'));
-  addBtn.type = 'button';
-  addBtn.id = idBase + 'Add';
   addBtn.addEventListener('click', () => addRow().focus());
   wrap.appendChild(addBtn);
 
   return {
     element: wrap,
     setFromString: (str) => {
-      rowsBox.textContent = '';
+      wrap.querySelectorAll('.oge-offset-row').forEach((el) => el.remove());
       for (const sec of parseDurationList(str, { signed })) addRow(formatDuration(sec));
     },
     collect: () => {
       const inputs = /** @type {HTMLInputElement[]} */ (
-        [...rowsBox.querySelectorAll('.oge-offset-input')]
+        [...wrap.querySelectorAll('.oge-offset-input')]
       );
       /** @type {number[]} */
       const secs = [];
@@ -299,7 +312,8 @@ export const installReminderConfig = ({ getUniverseId }) => {
   const waveEditor = makeOffsetEditor({
     idBase: 'remCfgWaveEditor',
     signed: false,
-    preview: humanizeReturnOffset,
+    preview: humanizeReturnOffsetShort,
+    previewLong: humanizeReturnOffset,
     placeholder: '10m',
   });
 
@@ -335,7 +349,8 @@ export const installReminderConfig = ({ getUniverseId }) => {
   const fsEditor = makeOffsetEditor({
     idBase: 'remCfgFsOffsets',
     signed: true,
-    preview: humanizeOffset,
+    preview: humanizeOffsetShort,
+    previewLong: humanizeOffset,
     placeholder: '-10m',
   });
 
@@ -378,21 +393,66 @@ export const installReminderConfig = ({ getUniverseId }) => {
     return el;
   };
 
+  /**
+   * A full-width "label + hint over control" block — used for the chip-style
+   * schedule editor, which wants the column's whole width to flow its chips
+   * (so it is NOT squeezed beside a 220px `cfg-label` like the scalar rows).
+   *
+   * @param {string} labelText
+   * @param {HTMLElement} control
+   * @param {string} [hint]
+   * @returns {HTMLElement}
+   */
+  const block = (labelText, control, hint) => {
+    const b = mk('div', 'margin-bottom:10px;');
+    const head = mk('div');
+    head.className = 'cfg-block-label';
+    head.appendChild(mk('span', undefined, labelText));
+    if (hint) {
+      const h = mk('span', 'margin-left:6px;', hint);
+      h.className = 'cfg-hint';
+      head.appendChild(h);
+    }
+    b.append(head, control);
+    return b;
+  };
+
+  /**
+   * Lay a pane out as two responsive columns: a "Settings" column (the knobs)
+   * and a "Message" column (that kind's template editor). Collapses to one
+   * column on narrow widths (see `.rem-pane-grid`).
+   *
+   * @param {HTMLElement} pane
+   * @param {HTMLElement[]} settings  the knob rows/blocks, in order
+   * @param {HTMLElement} message  the template editor element
+   * @returns {void}
+   */
+  const twoCol = (pane, settings, message) => {
+    const grid = mk('div');
+    grid.className = 'rem-pane-grid';
+    const left = mk('div');
+    left.append(subHeading('Settings'), ...settings);
+    const right = mk('div');
+    right.append(subHeading('Message'), message);
+    grid.append(left, right);
+    pane.appendChild(grid);
+  };
+
   // Three sub-tabs (Expedition waves / Ad-hoc / Fleet-save) so each kind's
   // knobs + message editor live on their own pane instead of one long form.
   // All widgets stay mounted (inactive panes are display:none) so a single
   // Save below persists every tab at once.
   const tabBar = mk('div');
-  tabBar.className = 'rem-tabs';
+  tabBar.className = 'subtabs';
   /** @type {{ btn: HTMLButtonElement, pane: HTMLElement }[]} */
   const tabs = [];
   /** @param {string} label @returns {HTMLElement} the pane to fill */
   const addTab = (label) => {
     const btn = /** @type {HTMLButtonElement} */ (mk('button', undefined, label));
     btn.type = 'button';
-    btn.className = 'rem-tab';
+    btn.className = 'subtab';
     const pane = mk('div');
-    pane.className = 'rem-tabpane';
+    pane.className = 'subtabpane';
     btn.addEventListener('click', () => {
       for (const t of tabs) {
         const on = t.btn === btn;
@@ -406,23 +466,23 @@ export const installReminderConfig = ({ getUniverseId }) => {
   };
 
   const wavePane = addTab('Expedition waves');
-  wavePane.appendChild(row('Reminders — enable', waveEnabledInput, 'auto-detect a returning wave + schedule a series'));
-  wavePane.appendChild(row('Reminder schedule', waveEditor.element, 'each reminder fires this long after the wave returns'));
-  wavePane.appendChild(subHeading('Message'));
-  wavePane.appendChild(waveTplEditor.element);
+  twoCol(wavePane, [
+    row('Reminders — enable', waveEnabledInput, 'auto-detect a returning wave + schedule a series'),
+    block('Reminder schedule', waveEditor.element, 'each fires relative to the wave’s return'),
+  ], waveTplEditor.element);
 
   const adhocPane = addTab('Ad-hoc');
-  adhocPane.appendChild(row('Lead time', adhocInput, 'before arrival, e.g. 1m'));
-  adhocPane.appendChild(subHeading('Message'));
-  adhocPane.appendChild(adhocTplEditor.element);
+  twoCol(adhocPane, [
+    row('Lead time', adhocInput, 'before arrival, e.g. 1m'),
+  ], adhocTplEditor.element);
 
   const fsPane = addTab('Fleet-save');
-  fsPane.appendChild(row('Reminders — enable', enabledInput, 'flag big own fleets 🛡 + ping before landing'));
-  fsPane.appendChild(row('Ship threshold', thresholdInput, 'total ships that count as a "big" fleet'));
-  fsPane.appendChild(row('Min flight time', minFlightInput, 'minutes-first, e.g. 10m · 0 = off'));
-  fsPane.appendChild(row('Reminder schedule', fsEditor.element, 'each reminder relative to landing (− before, 0 at, + after)'));
-  fsPane.appendChild(subHeading('Message'));
-  fsPane.appendChild(fsTplEditor.element);
+  twoCol(fsPane, [
+    row('Reminders — enable', enabledInput, 'auto-detect a returning Fleet-save + schedule a series'),
+    row('Ship threshold', thresholdInput, 'total ships that count as a "big" fleet'),
+    row('Min flight time', minFlightInput, 'minutes-first, e.g. 10m · 0 = off'),
+    block('Reminder schedule', fsEditor.element, 'each relative to landing (− before, 0 at, + after)'),
+  ], fsTplEditor.element);
 
   body.appendChild(tabBar);
   body.appendChild(wavePane);

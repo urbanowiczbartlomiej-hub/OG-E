@@ -12,11 +12,15 @@ import {
   step,
   readyToDispatch,
   select,
+  retarget,
   dispatch,
   installFleetCourier,
   _resetFleetCourierForTest,
 } from '../../src/features/shared/fleetCourier.js';
-import { _resetFleetOwnershipForTest } from '../../src/features/shared/fleetOwnership.js';
+import {
+  claimFleet2,
+  _resetFleetOwnershipForTest,
+} from '../../src/features/shared/fleetOwnership.js';
 import { OWNER_COL, OWNER_FS } from '../../src/domain/fleetOwnership.js';
 
 /** @param {string} tag @param {string} id */
@@ -242,6 +246,106 @@ describe('select — failures', () => {
   });
 });
 
+
+describe('retarget — in-place fleet2 retarget', () => {
+  /**
+   * Stand up a settled fleet2 (dispatch present, not ready) + an executor that,
+   * on `setTargetNative`, fires the game's checkTarget for the NEW coords —
+   * mirroring an in-place target edit. selectMission clears the dispatch `.off`.
+   *
+   * @param {{ errorCode?: number|null, orders?: Record<string,boolean>, missionOk?: boolean }} [opts]
+   */
+  const buildFleet2 = (opts = {}) => {
+    document.body.innerHTML = '';
+    const disp = el('a', 'dispatchFleet');
+    disp.className = 'off';
+    document.body.appendChild(disp);
+    const onCmd = (/** @type {any} */ e) => {
+      const { id, op, args } = /** @type {any} */ (e).detail;
+      /** @type {any} */ let res = { id, ok: true };
+      if (op === 'setTargetNative') {
+        document.dispatchEvent(
+          new CustomEvent('oge:checkTargetResult', {
+            detail: {
+              galaxy: args.galaxy, system: args.system, position: args.position,
+              errorCode: opts.errorCode ?? null,
+              orders: opts.orders ?? { 7: true },
+            },
+          }),
+        );
+      } else if (op === 'selectMission') {
+        const ok = opts.missionOk ?? true;
+        res = { id, ok, data: { available: ok } };
+        if (ok) setTimeout(() => document.getElementById('dispatchFleet')?.classList.remove('off'), 0);
+      }
+      document.dispatchEvent(new CustomEvent('oge:fd:res', { detail: res }));
+    };
+    document.addEventListener('oge:fd:cmd', onCmd);
+    return () => document.removeEventListener('oge:fd:cmd', onCmd);
+  };
+
+  const NEW_TARGET = { galaxy: 3, system: 265, position: 9, type: 1 };
+
+  it('noFleet2 when not on step 2', async () => {
+    unhook = buildFleet2();
+    document.body.innerHTML = ''; // tear the fleet2 DOM down → step() = off
+    const r = await retarget({ spec: { kind: 'all' }, target: NEW_TARGET, mission: 7 });
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('noFleet2');
+  });
+
+  it('aims at the new coords, re-arms the mission and reaches ready', async () => {
+    unhook = buildFleet2({ orders: { 7: true }, missionOk: true });
+    claimFleet2(OWNER_COL); // we own this fleet2 (a prior select() would have)
+    const r = await retarget({
+      spec: { kind: 'all' }, target: NEW_TARGET, mission: 7, owner: OWNER_COL,
+    });
+    expect(r.ok).toBe(true);
+    expect(readyToDispatch()).toBe(true);
+  });
+
+  it('returns mission when the new target is not colonizable', async () => {
+    unhook = buildFleet2({ orders: { 7: false }, missionOk: false });
+    claimFleet2(OWNER_COL);
+    const r = await retarget({
+      spec: { kind: 'all' }, target: NEW_TARGET, mission: 7, owner: OWNER_COL,
+    });
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('mission');
+  });
+
+  it('surfaces a checkTarget error (e.g. 140016 reserved)', async () => {
+    unhook = buildFleet2({ errorCode: 140016 });
+    claimFleet2(OWNER_COL);
+    const r = await retarget({
+      spec: { kind: 'all' }, target: NEW_TARGET, mission: 7, owner: OWNER_COL,
+    });
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('reserved');
+    expect(r.errorCode).toBe(140016);
+  });
+
+  it('surfaces a generic target-side error (e.g. 140008 player on vacation)', async () => {
+    unhook = buildFleet2({ errorCode: 140008 });
+    claimFleet2(OWNER_COL);
+    const r = await retarget({
+      spec: { kind: 'all' }, target: NEW_TARGET, mission: 7, owner: OWNER_COL,
+    });
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('generic');
+    expect(r.errorCode).toBe(140008);
+  });
+
+  it('refuses a foreign fleet2 (owner mismatch)', async () => {
+    unhook = buildFleet2();
+    claimFleet2(OWNER_FS); // someone else owns it
+    const r = await retarget({
+      spec: { kind: 'all' }, target: NEW_TARGET, mission: 7, owner: OWNER_COL,
+    });
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('foreign');
+  });
+});
 
 describe('dispatch — tap 2', () => {
   it('does not click and resolves notReady when not ready', async () => {

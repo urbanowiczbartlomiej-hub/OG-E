@@ -61,9 +61,9 @@
 //
 // # Force-sync event
 //
-// The Settings UI's "Sync now" button and the histogram's "Clear"
-// action need to trigger a full round-trip immediately, bypassing the
-// debounce. They dispatch a `CustomEvent('oge:syncForce')` on
+// The Settings UI's "Sync now" button needs to trigger a full round-trip
+// immediately, bypassing the debounce. It dispatches a
+// `CustomEvent('oge:syncForce')` on
 // `document` and this module's listener runs
 // {@link downloadAndMerge} + {@link upload} back-to-back. Using a DOM
 // event (rather than a direct function import) keeps the cross-
@@ -116,7 +116,6 @@ import {
   writeGistData,
   setStatus,
   getToken,
-  clearGistScans,
   clearGistScansForGalaxy,
 } from './gist.js';
 import {
@@ -158,7 +157,6 @@ import {
  * tooling can compose the same keys without redeclaring the suffix.
  */
 export const SYNC_REQUEST_KEY_BASE = 'oge_syncRequestAt';
-export const CLEAR_REMOTE_KEY_BASE = 'oge_clearRemoteAt';
 
 /**
  * Per-galaxy reset tombstone suffix. Value is `"<galaxy>:<timestamp>"`
@@ -171,9 +169,6 @@ export const RESET_GALAXY_KEY_BASE = 'oge_resetGalaxyAt';
 /** @param {string} universeId */
 export const syncRequestKeyFor = (universeId) =>
   `${universeId}:${SYNC_REQUEST_KEY_BASE}`;
-/** @param {string} universeId */
-export const clearRemoteKeyFor = (universeId) =>
-  `${universeId}:${CLEAR_REMOTE_KEY_BASE}`;
 /** @param {string} universeId */
 export const resetGalaxyKeyFor = (universeId) =>
   `${universeId}:${RESET_GALAXY_KEY_BASE}`;
@@ -513,7 +508,14 @@ const downloadAndMerge = async () => {
 
     const localScans = scansStore.get();
 
-    const scansResult = mergeScans(localScans, remote.galaxyScans);
+    // Scans are per-universe in the gist (`galaxyScansPerUniverse[id]`). We
+    // merge ONLY our own universe's slot — never the legacy global field —
+    // so another server's scans can't bleed into this universe's colonize
+    // candidates. Off a known universe (`routesUniverseId === ''`) we keep
+    // local untouched rather than guess a slot.
+    const scansResult = routesUniverseId
+      ? mergeScans(localScans, remote.galaxyScansPerUniverse?.[routesUniverseId])
+      : { changed: false, merged: localScans };
     // Global settings: merge only global-scoped keys against the gist's
     // top-level `settings` slot.
     const setResult = mergeSettings(
@@ -639,7 +641,9 @@ const upload = async () => {
       // just the local snapshot when the gist read fails.
     }
 
-    const scansResult = mergeScans(localScans, remote?.galaxyScans);
+    const scansResult = routesUniverseId
+      ? mergeScans(localScans, remote?.galaxyScansPerUniverse?.[routesUniverseId])
+      : { changed: false, merged: localScans };
     // Global settings: merge only global-scoped keys.
     const setResult = mergeSettings(
       { values: pickSyncedValues(settingsStore.get(), 'global'), ts: readTsMap() },
@@ -659,6 +663,18 @@ const upload = async () => {
     if (scansResult.changed) scansStore.set(scansResult.merged);
     if (setResult.changed) applyMergedSettings(setResult.merged);
     if (uniResult.changed) await writeLocalUniverseSettingsSlot(uniResult.merged);
+
+    // Scans: per-universe map for the payload — PRESERVE every OTHER universe's
+    // slot; contribute ours only when it carries data (an empty map must not
+    // write an empty slot that would differ from the gist's absent field and
+    // force a perpetual no-op PATCH).
+    const mergedGalaxyScansPerUniverse = { ...(remote?.galaxyScansPerUniverse || {}) };
+    if (routesUniverseId && Object.keys(scansResult.merged).length > 0) {
+      mergedGalaxyScansPerUniverse[routesUniverseId] = scansResult.merged;
+    }
+    const mergedGalaxyScansPerUniverseOut = Object.keys(mergedGalaxyScansPerUniverse).length
+      ? mergedGalaxyScansPerUniverse
+      : undefined;
 
     // Routes: per-universe newest-wins. Adopt remote locally if newer, then
     // build the merged `dailyRunRoutes` map for the payload — PRESERVING every
@@ -767,7 +783,7 @@ const upload = async () => {
     // anyway would burn a request and produce a no-op revision.
     if (
       !gistIsCurrent(remote, {
-        galaxyScans: scansResult.merged,
+        galaxyScansPerUniverse: mergedGalaxyScansPerUniverseOut,
         colonyHistoryPerUniverse: mergedColonyHistoryOut,
         settings: setResult.merged,
         dailyRunRoutes: mergedDailyRunRoutesOut,
@@ -780,7 +796,7 @@ const upload = async () => {
       await writeGistData({
         version: 1,
         updatedAt: new Date().toISOString(),
-        galaxyScans: scansResult.merged,
+        galaxyScansPerUniverse: mergedGalaxyScansPerUniverseOut,
         colonyHistoryPerUniverse: mergedColonyHistoryOut,
         settings: setResult.merged,
         dailyRunRoutes: mergedDailyRunRoutesOut,
@@ -991,9 +1007,6 @@ export const installSync = () => {
   const syncKey = universeId
     ? syncRequestKeyFor(universeId)
     : SYNC_REQUEST_KEY_BASE;
-  const clearKey = universeId
-    ? clearRemoteKeyFor(universeId)
-    : CLEAR_REMOTE_KEY_BASE;
   const resetKey = universeId
     ? resetGalaxyKeyFor(universeId)
     : RESET_GALAXY_KEY_BASE;
@@ -1002,34 +1015,18 @@ export const installSync = () => {
    * Bridge from the extension-origin histogram page to this scheduler.
    * The histogram writes `<universeId>:oge_syncRequestAt = Date.now()`
    * for the selected universe's "Sync now" button and
-   * `<universeId>:oge_clearRemoteAt = Date.now()` for its
-   * "Clear observation data" action. chrome.storage.onChanged fires in
-   * THIS origin (game), so we observe and act on the tombstones whose
-   * key matches our universe — the histogram may have selected a
-   * different server in the dropdown, in which case its tombstone has
-   * a different prefix and we ignore it.
+   * `<universeId>:oge_resetGalaxyAt = "<galaxy>:<ts>"` for a per-galaxy
+   * "Reset" button. chrome.storage.onChanged fires in THIS origin
+   * (game), so we observe and act on the tombstones whose key matches
+   * our universe — the histogram may have selected a different server
+   * in the dropdown, in which case its tombstone has a different prefix
+   * and we ignore it.
    *
    * @param {Record<string, unknown>} changes
    */
   const onStorageChange = (changes) => {
     if (syncKey in changes) {
       void onForceSync();
-    }
-    if (clearKey in changes) {
-      // The histogram wiped `chrome.storage.local` before writing this
-      // tombstone — but scansStore IN MEMORY on the game tab still
-      // holds every scan. Without a symmetric in-memory wipe, the next
-      // scheduled upload would merge local-in-memory with the now-empty
-      // remote (union) and push everything back up. Do the in-memory
-      // wipe first, THEN clear the gist.
-      scansStore.set(/** @type {import('./merge.js').GalaxyScans} */ ({}));
-      (async () => {
-        try {
-          await clearGistScans();
-        } catch (err) {
-          setStatus('err', `clear-remote: ${/** @type {Error} */ (err).message}`);
-        }
-      })();
     }
     if (resetKey in changes) {
       // Value shape is `"<galaxy>:<timestamp>"`; we only care about the
@@ -1059,7 +1056,7 @@ export const installSync = () => {
         }
         (async () => {
           try {
-            await clearGistScansForGalaxy(galaxy);
+            await clearGistScansForGalaxy(galaxy, routesUniverseId);
           } catch (err) {
             setStatus(
               'err',

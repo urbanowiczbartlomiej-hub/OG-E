@@ -45,7 +45,6 @@ import {
   ensureGist,
   fetchGistData,
   writeGistData,
-  clearGistScans,
   setStatus,
   _resetGistStateForTest,
   TOKEN_KEY,
@@ -331,7 +330,7 @@ describe('writeGistData', () => {
     const data = {
       version: 1,
       updatedAt: '2025-02-02T02:02:02.000Z',
-      galaxyScans: { '2:2': { scannedAt: 5, positions: {} } },
+      galaxyScansPerUniverse: { 's2-pl': { '2:2': { scannedAt: 5, positions: {} } } },
       colonyHistoryPerUniverse: { 's2-pl': [{ cp: 7, fields: 100, coords: '[2:2:2]', position: 2, timestamp: 3 }] },
     };
     await writeGistData(data);
@@ -346,81 +345,6 @@ describe('writeGistData', () => {
     expect(body.files[GIST_FILENAME]).toBeDefined();
     expect(typeof body.files[GIST_FILENAME].content).toBe('string');
     expect(body.files[GIST_FILENAME].content.length).toBeGreaterThan(0);
-  });
-});
-
-describe('clearGistScans', () => {
-  it('preserves colonyHistoryPerUniverse while emptying galaxyScans', async () => {
-    setGistId('cached-clear-id');
-    const existing = {
-      version: 1,
-      updatedAt: '2025-03-03T03:03:03.000Z',
-      galaxyScans: { '4:30': { scannedAt: 1, positions: {} } },
-      colonyHistoryPerUniverse: {
-        's3-pl': [{ cp: 99, fields: 200, coords: '[3:3:3]', position: 3, timestamp: 10 }],
-      },
-    };
-    const compressed = await gzipEncode(JSON.stringify(existing));
-    const fetchMock = vi
-      .fn()
-      // 1) GET existing gist.
-      .mockResolvedValueOnce(
-        makeResponse({
-          body: {
-            id: 'cached-clear-id',
-            files: { [GIST_FILENAME]: { content: compressed, truncated: false } },
-          },
-        }),
-      )
-      // 2) PATCH (writeGistData -> ensureGist short-circuits on cached id).
-      .mockResolvedValueOnce(makeResponse({ body: { id: 'cached-clear-id' } }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    await clearGistScans();
-
-    // The PATCH is the second call. Its body must carry the preserved
-    // colonyHistoryPerUniverse and an empty galaxyScans map. We decode via
-    // gzipDecode to inspect — much more precise than "is the string
-    // non-empty".
-    const patchCall = fetchMock.mock.calls[1];
-    const patchBody = JSON.parse(/** @type {string} */ (patchCall[1].body));
-    const compressedOut = patchBody.files[GIST_FILENAME].content;
-    const { gzipDecode } = await import('../../src/lib/gzip.js');
-    const decoded = JSON.parse(await gzipDecode(compressedOut));
-    expect(decoded.version).toBe(1);
-    expect(decoded.galaxyScans).toEqual({});
-    expect(decoded.colonyHistoryPerUniverse).toEqual(existing.colonyHistoryPerUniverse);
-  });
-
-  it('stamps LAST_UP_KEY with an ISO timestamp on success', async () => {
-    setGistId('cached-clear-id');
-    const existing = {
-      version: 1,
-      updatedAt: 'x',
-      galaxyScans: {},
-      colonyHistoryPerUniverse: {},
-    };
-    const compressed = await gzipEncode(JSON.stringify(existing));
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        makeResponse({
-          body: {
-            id: 'cached-clear-id',
-            files: { [GIST_FILENAME]: { content: compressed, truncated: false } },
-          },
-        }),
-      )
-      .mockResolvedValueOnce(makeResponse({ body: { id: 'cached-clear-id' } }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    // Sanity: no timestamp before the call.
-    expect(localStorage.getItem(LAST_UP_KEY)).toBeNull();
-    await clearGistScans();
-    // After: the stamped string parses as a valid ISO date.
-    const stamped = localStorage.getItem(LAST_UP_KEY);
-    expect(stamped).not.toBeNull();
-    expect(Number.isNaN(Date.parse(/** @type {string} */ (stamped)))).toBe(false);
   });
 });
 

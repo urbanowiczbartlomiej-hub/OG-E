@@ -71,7 +71,6 @@ import {
   exportAllData,
   importAllData,
   exportColonyCsv,
-  triggerClearRemote,
   triggerResetGalaxy,
 } from './io.js';
 import { installReminders, _resetRemindersForTest } from './reminders.js';
@@ -238,6 +237,7 @@ const boot = async () => {
   wireDom();
   loadExpanded();
   wireTabs();
+  wireGalaxySubtabs();
 
   // Reminders tab filters by the active universe (same UX as the other
   // tabs). The host passes a getter so reminders never has to import
@@ -497,6 +497,32 @@ const wireTabs = () => {
 };
 
 /**
+ * Wire the Galaxy Observations sub-tabs ("Scanned data" / "Colony Scout").
+ * Both panes stay mounted (the inactive one is `display:none`) so the
+ * galaxy-map and Colony-Scout renderers keep painting into their containers
+ * regardless of which tab is showing — clicking only flips the `active`
+ * classes. Purely presentational; no persistence (always opens on the first
+ * tab), matching the Reminders settings sub-tabs.
+ *
+ * @returns {void}
+ */
+const wireGalaxySubtabs = () => {
+  const buttons = document.querySelectorAll('#galaxySubtabs .subtab');
+  const panes = document.querySelectorAll('#galaxySection .subtabpane');
+  for (const btn of buttons) {
+    btn.addEventListener('click', () => {
+      const key = /** @type {HTMLElement} */ (btn).dataset.subtab;
+      for (const b of buttons) {
+        b.classList.toggle('active', b === btn);
+      }
+      for (const pane of panes) {
+        pane.classList.toggle('active', /** @type {HTMLElement} */ (pane).dataset.subtab === key);
+      }
+    });
+  }
+};
+
+/**
  * Restore previously-expanded galaxy IDs from localStorage. Tolerates
  * a malformed stored value by silently skipping non-numeric entries.
  *
@@ -584,9 +610,6 @@ const renderAll = () => {
     policy: buildRescanPolicy(galaxyConfig.rescan),
     onToggleExpand: () => { persistExpanded(); },
     onResetGalaxy: (g) => { void resetGalaxy(g); },
-    // onClearAll is wired from the HTML-level "Clear observation data"
-    // button in wireListeners; galaxy.js only holds the signature.
-    onClearAll: () => {},
   });
 
   // Settlement-regions block (inside the galaxy tab) — runs over the
@@ -716,7 +739,6 @@ const wireListeners = () => {
     document.getElementById('importFile')
   );
   const exportCsvBtn = document.getElementById('exportCsvBtn');
-  const clearScansBtn = document.getElementById('clearScansBtn');
 
   exportBtn?.addEventListener('click', () => {
     if (!selectedUniverseId) {
@@ -808,17 +830,6 @@ const wireListeners = () => {
     colonizationConfigApi?.refresh();
     scanRescanConfigApi?.refresh();
     reminderConfigApi?.refresh();
-  });
-
-  clearScansBtn?.addEventListener('click', async () => {
-    if (!selectedUniverseId) return;
-    if (!confirm(
-      'Clear all galaxy observation data for ' + selectedUniverseId + '?\n\n'
-      + 'This removes data from this device AND your cloud sync '
-      + '(so it does not come back on the next page load).',
-    )) return;
-    await chromeStore.remove(scansKeyFor(selectedUniverseId));
-    await triggerClearRemote(selectedUniverseId);
   });
 
   // Re-render on window resize so the colony chart's adaptive binning

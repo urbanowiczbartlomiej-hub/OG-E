@@ -122,6 +122,20 @@ export const GAME = {
   /** "Select all ships" control (step 1 fallback to `.send_all a`). */
   FD_SEND_ALL: '#sendall',
 
+  // ── Native fleet2 target coord inputs (`td.targetCoords`) ──────────────
+  // The game's OWN target row on step 2. We normally aim via AGR's fleet1
+  // controls (AGO_* below) because AGR clobbers these at the fleet1→fleet2
+  // transition — but a DELIBERATE edit made while already settled on fleet2
+  // (on a discrete user click) is NOT re-clobbered, which is exactly how the
+  // colonize button retargets to the next free slot in place. Written by the
+  // `setTargetNative` op in bridges/fleetExecutor.js.
+  /** Native galaxy coord input (fleet2 target row). */
+  FD_TARGET_GALAXY: '#galaxy',
+  /** Native system coord input (fleet2 target row). */
+  FD_TARGET_SYSTEM: '#system',
+  /** Native position coord input (fleet2 target row). */
+  FD_TARGET_POSITION: '#position',
+
   // ── AGR fleet1 target interface (the dedicated coord row AGR injects) ─
   // The target (coords + planet/moon type) is set HERE, on fleet1, not on
   // the native fleet2 inputs — AGR clobbers fleet2's target with its own,

@@ -24,6 +24,7 @@ describe('defaultGalaxyScanConfig', () => {
     const d = defaultGalaxyScanConfig();
     expect(d.positions).toBe('8');
     expect(d.preferOtherGalaxies).toBe(true);
+    expect(d.preferFarthestSystems).toBe(true); // historical behaviour
     expect(d.rescan.abandonedEnabled).toBe(true);
     expect(d.rescan.empty).toBe(0); // never, by default
   });
@@ -94,9 +95,15 @@ describe('normalizeGalaxyScanConfig', () => {
     });
     expect(out.positions).toBe('12-15');
     expect(out.preferOtherGalaxies).toBe(true);         // default
+    expect(out.preferFarthestSystems).toBe(true);       // default
     expect(out.rescan.inactive).toBe(99);
     expect(out.rescan.occupied).toBe(30 * 86400);       // default
     expect(out.rescan.abandonedEnabled).toBe(true);     // default
+  });
+
+  it('keeps an explicit preferFarthestSystems:false but coerces garbage to the default', () => {
+    expect(normalizeGalaxyScanConfig({ preferFarthestSystems: false }).preferFarthestSystems).toBe(false);
+    expect(normalizeGalaxyScanConfig({ preferFarthestSystems: 'yes' }).preferFarthestSystems).toBe(true);
   });
 
   it('coerces negative / NaN durations back to the default', () => {

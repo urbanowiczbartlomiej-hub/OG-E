@@ -15,9 +15,8 @@
 //     to change events, re-invokes `renderGalaxyMap`).
 //   - `expandedGalaxies` accordion-state persistence (the Set is mutated
 //     here on toggle; the caller persists it via onToggleExpand).
-//   - The top-level "Clear observation data" button, wired in the HTML
-//     page — not rendered here. `onClearAll` is accepted in the opts
-//     signature so the consumer contract stays stable across phases.
+//   - Per-galaxy "Reset" buttons (the ✕ in each galaxy header) call back
+//     via onResetGalaxy; the actual wipe + remote-clear lives in index.js.
 //
 // @see ./palette.js              — STATUS_COLORS / STATUS_LABELS / tooltips
 // @see ../../domain/histogram.js — STATUS_PRIORITY / bestStatusInSystem / collectGalaxyStats
@@ -78,7 +77,6 @@ const MAX_SYS = 499;
  *   expandedGalaxies: Set<number>,
  *   onToggleExpand: (galaxy: number, expanded: boolean) => void,
  *   onResetGalaxy: (galaxy: number) => void,
- *   onClearAll: () => void,
  *   policy?: import('../../domain/scheduling.js').RescanPolicy,
  * }} opts
  *   `policy` is the user's Galaxy-Scan rescan policy (from the per-universe
@@ -95,11 +93,6 @@ export const renderGalaxyMap = (opts) => {
     onResetGalaxy,
     policy,
   } = opts;
-  // `onClearAll` is intentionally unread: the top-level "Clear observation
-  // data" button lives in dashboard.html and is wired by index.js, not
-  // here. Keeping the parameter in the signature preserves a stable
-  // consumer contract — see module header.
-  void opts.onClearAll;
 
   containerEl.textContent = '';
 

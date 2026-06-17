@@ -201,6 +201,12 @@ const buildColonizationFields = (body) => {
   preferInput.type = 'checkbox';
   preferInput.id = 'scanCfgPrefer';
 
+  const preferFarthestInput = /** @type {HTMLInputElement} */ (mk('input'));
+  preferFarthestInput.type = 'checkbox';
+  preferFarthestInput.id = 'scanCfgPreferFarthest';
+  preferFarthestInput.title =
+    'Within your home galaxy, propose the farthest free system first (spreads colony-ship arrival times). Uncheck to propose the nearest free system first.';
+
   const colonyMinGapInput = /** @type {HTMLInputElement} */ (mk('input'));
   colonyMinGapInput.type = 'text';
   colonyMinGapInput.id = 'scanCfgColonyMinGap';
@@ -226,6 +232,7 @@ const buildColonizationFields = (body) => {
 
   body.appendChild(row('Target positions', positionsInput, 'list or range, e.g. 7-9, 15'));
   body.appendChild(row('Prefer neighbouring galaxies', preferInput, 'more predictable arrival times'));
+  body.appendChild(row('Prefer farthest systems first', preferFarthestInput, 'better arrival spread; off = nearest first'));
   body.appendChild(row('Min gap between arrivals (sec)', colonyMinGapInput));
   body.appendChild(row('Min fields to keep colony', colonyMinFieldsInput));
   body.appendChild(row('Account password (for abandon)', colonyPasswordInput));
@@ -234,6 +241,7 @@ const buildColonizationFields = (body) => {
     fill: (cfg) => {
       positionsInput.value = cfg.positions;
       preferInput.checked = cfg.preferOtherGalaxies;
+      preferFarthestInput.checked = cfg.preferFarthestSystems;
       colonyMinGapInput.value = String(cfg.colonyMinGap);
       colonyMinFieldsInput.value = String(cfg.colonyMinFields);
       colonyPasswordInput.value = cfg.colonyPassword;
@@ -241,6 +249,7 @@ const buildColonizationFields = (body) => {
     collect: () => ({
       positions: positionsInput.value.trim(),
       preferOtherGalaxies: preferInput.checked,
+      preferFarthestSystems: preferFarthestInput.checked,
       colonyMinGap: parseInt(colonyMinGapInput.value, 10),
       colonyMinFields: parseInt(colonyMinFieldsInput.value, 10),
       colonyPassword: colonyPasswordInput.value,
@@ -265,6 +274,10 @@ const buildScanRescanFields = (body, setStatus) => {
   const rescanInputs = new Map();
 
   body.appendChild(groupHeading('Re-scan after (0 = never):'));
+  // The eight rescan fields are short label+input pairs, so they read better
+  // packed into a responsive grid (1 → 2 → 3 columns) than as one tall column.
+  const grid = mk('div');
+  grid.className = 'cfg-grid';
   for (const { field, label } of RESCAN_FIELDS) {
     const input = /** @type {HTMLInputElement} */ (mk('input'));
     input.type = 'text';
@@ -272,8 +285,9 @@ const buildScanRescanFields = (body, setStatus) => {
     input.dataset.field = field;
     input.title = `How long a "${label}" slot stays fresh before Scan revisits it. Free units: 6h, 5d, 90m. 0 = never.`;
     rescanInputs.set(field, input);
-    body.appendChild(row(label, input));
+    grid.appendChild(row(label, input));
   }
+  body.appendChild(grid);
   body.appendChild(row('Re-scan abandoned (3 AM sweep)', abandonedInput, 'dynamic 25-47h timing'));
 
   return {

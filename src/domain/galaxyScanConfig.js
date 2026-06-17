@@ -75,6 +75,10 @@ import { parseDuration } from './duration.js';
  *   region" and which the colonize button targets (one shared value).
  * @property {boolean} preferOtherGalaxies  Prefer neighbouring galaxies for
  *   colonization (was `colPreferOtherGalaxies`).
+ * @property {boolean} preferFarthestSystems  Within the home galaxy, propose the
+ *   FARTHEST free system first (better arrival spread — the historical default).
+ *   Off ⇒ nearest free system first. Only affects home-galaxy ordering; other
+ *   galaxies stay linear.
  * @property {number} colonyMinGap  Min seconds between colonize arrivals (the
  *   min-gap scheduling guard read by `features/sendColony`).
  * @property {number} colonyMinFields  Abandon-eligibility floor: a fresh
@@ -127,6 +131,7 @@ const D = 86400;
 export const defaultGalaxyScanConfig = () => ({
   positions: '8',
   preferOtherGalaxies: true,
+  preferFarthestSystems: true,
   colonyMinGap: 15,
   colonyMinFields: 320,
   colonyPassword: '',
@@ -198,6 +203,10 @@ export const normalizeGalaxyScanConfig = (raw) => {
       typeof r.preferOtherGalaxies === 'boolean'
         ? r.preferOtherGalaxies
         : d.preferOtherGalaxies,
+    preferFarthestSystems:
+      typeof r.preferFarthestSystems === 'boolean'
+        ? r.preferFarthestSystems
+        : d.preferFarthestSystems,
     // colonyMinGap / colonyMinFields are non-negative ints; coerceSeconds
     // does exactly that integer coercion (the "seconds" name is incidental).
     colonyMinGap: coerceSeconds(r.colonyMinGap, d.colonyMinGap),

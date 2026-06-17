@@ -148,7 +148,7 @@ describe('sameJSON', () => {
 
 describe('gistIsCurrent', () => {
   const merged = {
-    galaxyScans: { '1:1:1': { t: 1 } },
+    galaxyScansPerUniverse: { '1:1:1': { t: 1 } },
     colonyHistoryPerUniverse: [{ id: 'a' }],
     settings: { values: { x: 1 }, ts: { x: 10 } },
     dailyRunRoutes: { 's1-pl': { routes: [], collectTarget: null, updatedAt: 5 } },
@@ -160,7 +160,7 @@ describe('gistIsCurrent', () => {
 
   it('is true when every synced field matches (skip the PATCH)', () => {
     const remote = /** @type {any} */ ({
-      galaxyScans: { '1:1:1': { t: 1 } },
+      galaxyScansPerUniverse: { '1:1:1': { t: 1 } },
       colonyHistoryPerUniverse: [{ id: 'a' }],
       settings: { values: { x: 1 }, ts: { x: 10 } },
       dailyRunRoutes: { 's1-pl': { routes: [], collectTarget: null, updatedAt: 5 } },
@@ -172,7 +172,7 @@ describe('gistIsCurrent', () => {
 
   it('is false when only the galaxyScanConfig slot differs', () => {
     const remote = /** @type {any} */ ({
-      galaxyScans: { '1:1:1': { t: 1 } },
+      galaxyScansPerUniverse: { '1:1:1': { t: 1 } },
       colonyHistoryPerUniverse: [{ id: 'a' }],
       settings: { values: { x: 1 }, ts: { x: 10 } },
       dailyRunRoutes: { 's1-pl': { routes: [], collectTarget: null, updatedAt: 5 } },
@@ -184,7 +184,7 @@ describe('gistIsCurrent', () => {
 
   it('is false when only the reminderConfigPerUniverse slot differs', () => {
     const remote = /** @type {any} */ ({
-      galaxyScans: { '1:1:1': { t: 1 } },
+      galaxyScansPerUniverse: { '1:1:1': { t: 1 } },
       colonyHistoryPerUniverse: [{ id: 'a' }],
       settings: { values: { x: 1 }, ts: { x: 10 } },
       dailyRunRoutes: { 's1-pl': { routes: [], collectTarget: null, updatedAt: 5 } },
@@ -196,7 +196,7 @@ describe('gistIsCurrent', () => {
 
   it('is false when any single field differs (PATCH needed)', () => {
     const remote = /** @type {any} */ ({
-      galaxyScans: { '1:1:1': { t: 2 } }, // differs
+      galaxyScansPerUniverse: { '1:1:1': { t: 2 } }, // differs
       colonyHistoryPerUniverse: [{ id: 'a' }],
       settings: { values: { x: 1 }, ts: { x: 10 } },
       dailyRunRoutes: { 's1-pl': { routes: [], collectTarget: null, updatedAt: 5 } },

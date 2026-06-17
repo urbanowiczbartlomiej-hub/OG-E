@@ -34,12 +34,12 @@ import {
 // hoisting catches the scheduler's static import. Every public API
 // the scheduler touches is stubbed — fetchGistData / writeGistData
 // drive the sync round-trip, setStatus records timestamps + errors,
-// getToken gates the "sync disabled" short-circuit, clearGistScans
-// is imported only for contract symmetry and never called here.
+// getToken gates the "sync disabled" short-circuit, clearGistScansForGalaxy
+// backs the per-galaxy reset tombstone (not exercised here).
 vi.mock('../../src/sync/gist.js', () => ({
   fetchGistData: vi.fn(),
   writeGistData: vi.fn(),
-  clearGistScans: vi.fn(),
+  clearGistScansForGalaxy: vi.fn(),
   getToken: vi.fn(() => 'ghp_testtoken'),
   setStatus: vi.fn(),
 }));
@@ -76,6 +76,17 @@ import { pickSyncedValues } from '../../src/sync/settingsSync.js';
  * @returns {SystemScan}
  */
 const scan = (scannedAt) => ({ scannedAt, positions: {} });
+
+/**
+ * The universe id the scheduler derives from `location.host` in this happy-dom
+ * env — computed exactly as `parseUniverseId(location.host)` does, so the
+ * per-universe gist slots we build line up with the scheduler's
+ * `routesUniverseId`.
+ */
+const UNI =
+  typeof location !== 'undefined'
+    ? location.host.match(/^(s\d+-[a-z]{2,4})\./)?.[1] ?? location.host
+    : '';
 
 /**
  * Advance fake timers and let queued microtasks settle. The
@@ -117,7 +128,14 @@ const payload = ({
 } = {}) => ({
   version: 1,
   updatedAt: '2025-01-01T00:00:00.000Z',
-  galaxyScans,
+  // Scans are per-universe in the gist now: a `galaxyScans` arg is sugar for
+  // "this universe's slot", since the scheduler reads
+  // `galaxyScansPerUniverse[routesUniverseId]` (and UNI === routesUniverseId
+  // in this happy-dom env). Omitted when empty so an absent-slot gist is
+  // representable.
+  ...(Object.keys(galaxyScans).length
+    ? { galaxyScansPerUniverse: { [UNI]: galaxyScans } }
+    : {}),
   ...(colonyHistoryPerUniverse ? { colonyHistoryPerUniverse } : {}),
   ...(settings ? { settings } : {}),
   ...(settingsPerUniverse ? { settingsPerUniverse } : {}),
@@ -336,17 +354,57 @@ describe('upload', () => {
     scansStore.set({ '4:30': scan(9001) });
     await tick(15_000);
     expect(writeGistData).toHaveBeenCalledTimes(1);
-    // Inspect the PATCH body's galaxyScans to confirm merge happened.
+    // Inspect the PATCH body's per-universe scan slot to confirm merge happened.
     const [[sentPayload]] = /** @type {import('vitest').Mock} */ (
       writeGistData
     ).mock.calls;
-    expect(Object.keys(sentPayload.galaxyScans).sort()).toEqual([
+    expect(Object.keys(sentPayload.galaxyScansPerUniverse[UNI]).sort()).toEqual([
       '1:1',
       '4:30',
     ]);
     expect(sentPayload.version).toBe(1);
     // `up` stamp recorded.
     expect(setStatus).toHaveBeenCalledWith('up', expect.any(String));
+  });
+
+  it('does NOT bleed a SIBLING universe slot into this universe (cross-server isolation)', async () => {
+    // THE regression: a different server's scans must never merge into this
+    // universe's scan DB (it feeds the colonize candidate finder). Only
+    // galaxyScansPerUniverse[ourUniverse] is ours; a sibling's `3:265` —
+    // empty on their server, inhabited on ours — must stay out.
+    scansStore.set({});
+    /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue({
+      version: 1,
+      updatedAt: '2025-01-01T00:00:00.000Z',
+      galaxyScansPerUniverse: { 'sOTHER-xx': { '3:265': scan(9999) } },
+    });
+    installSync();
+    await tick(0);
+    expect(scansStore.get()['3:265']).toBeUndefined();
+    expect(Object.keys(scansStore.get())).toHaveLength(0);
+  });
+
+  it('upload contributes only our slot and PRESERVES sibling universes', async () => {
+    scansStore.set({});
+    const remote = {
+      version: 1,
+      updatedAt: '2025-01-01T00:00:00.000Z',
+      galaxyScansPerUniverse: { 'sOTHER-xx': { '1:1': scan(5) } },
+    };
+    /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(remote);
+    installSync();
+    await tick(0);
+    /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(remote);
+    /** @type {import('vitest').Mock} */ (writeGistData).mockResolvedValue(undefined);
+    // Local scan on OUR universe triggers an upload.
+    scansStore.set({ '4:30': scan(100) });
+    await tick(15_000);
+    const [[sent]] = /** @type {import('vitest').Mock} */ (writeGistData).mock.calls;
+    // Sibling slot survives untouched; ours is contributed under our id.
+    expect(sent.galaxyScansPerUniverse['sOTHER-xx']).toEqual({ '1:1': scan(5) });
+    expect(sent.galaxyScansPerUniverse[UNI]).toEqual({ '4:30': scan(100) });
+    // The legacy global `galaxyScans` field is gone — no contamination vector.
+    expect(sent.galaxyScans).toBeUndefined();
   });
 
   it('skips writeGistData when gist already matches the merged state (sameJSON)', async () => {

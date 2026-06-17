@@ -37,7 +37,6 @@ import {
   importAllData,
   exportColonyCsv,
   triggerSync,
-  triggerClearRemote,
   triggerResetGalaxy,
 } from '../../../src/features/dashboard/io.js';
 import { chromeStore } from '../../../src/lib/storage.js';
@@ -45,7 +44,6 @@ import { historyKeyFor } from '../../../src/state/history.js';
 import { scansKeyFor } from '../../../src/state/scans.js';
 import {
   syncRequestKeyFor,
-  clearRemoteKeyFor,
   resetGalaxyKeyFor,
 } from '../../../src/sync/scheduler.js';
 
@@ -251,11 +249,6 @@ describe('sync tombstone triggers', () => {
   it('triggerSync writes a numeric timestamp to the per-universe sync key', async () => {
     await triggerSync(UNI);
     expect(chromeStore.set).toHaveBeenCalledWith(syncRequestKeyFor(UNI), expect.any(Number));
-  });
-
-  it('triggerClearRemote writes to the per-universe clear-remote key', async () => {
-    await triggerClearRemote(UNI);
-    expect(chromeStore.set).toHaveBeenCalledWith(clearRemoteKeyFor(UNI), expect.any(Number));
   });
 
   it('triggerResetGalaxy writes "<galaxy>:<ts>" so repeats fire fresh onChanged', async () => {

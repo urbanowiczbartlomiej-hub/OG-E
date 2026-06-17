@@ -144,3 +144,44 @@ export const humanizeReturnOffset = (sec) => {
   const m = Math.round(n / 60);
   return `${m} min after the wave returns`;
 };
+
+/**
+ * Compact form of {@link humanizeOffset} for the chip-style schedule editor:
+ * the distinctive part only, with the reference point ("landing") stated ONCE
+ * in the editor's section hint instead of repeated on every chip.
+ *
+ *     -600 ⇒ "10m before"
+ *        0 ⇒ "at landing"
+ *      900 ⇒ "15m after"
+ *
+ * Display-only: the chip keeps the full {@link humanizeOffset} phrase as its
+ * hover title, and the push body renders `{offset}` via {@link humanizeOffset},
+ * so the long phrasing stays the single source of truth — the two never drift.
+ *
+ * @param {number} sec
+ * @returns {string}
+ */
+export const humanizeOffsetShort = (sec) => {
+  const n = Number.isFinite(sec) ? Math.round(sec) : 0;
+  if (n === 0) return 'at landing';
+  const m = Math.round(Math.abs(n) / 60);
+  return n < 0 ? `${m}m before` : `${m}m after`;
+};
+
+/**
+ * Compact form of {@link humanizeReturnOffset} for the chip-style schedule
+ * editor (reference point — "the wave's return" — stated once in the section
+ * hint). Display-only counterpart to {@link humanizeOffsetShort}.
+ *
+ *        0 ⇒ "at return"
+ *      600 ⇒ "10m after"
+ *
+ * @param {number} sec
+ * @returns {string}
+ */
+export const humanizeReturnOffsetShort = (sec) => {
+  const n = Number.isFinite(sec) ? Math.round(sec) : 0;
+  if (n <= 0) return 'at return';
+  const m = Math.round(n / 60);
+  return `${m}m after`;
+};

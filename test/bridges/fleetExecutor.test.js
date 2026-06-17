@@ -169,6 +169,40 @@ describe('fleetExecutor', () => {
     expect(planetClicked).toBe(0);
   });
 
+  it('setTargetNative writes the native fleet2 coord inputs and nudges updateTarget', async () => {
+    // The in-place retarget path: edit the game's OWN target row (td.targetCoords),
+    // not AGR's fleet1 controls. fireInput drives the keystroke sequence the game
+    // listens to; fd.updateTarget is the guarded re-validate nudge.
+    const fd = makeFakeFd();
+    /** @type {any} */ (window).fleetDispatcher = fd;
+    document.body.innerHTML = `
+      <td class="targetCoords">
+        <input name="galaxy" id="galaxy" type="text" value="">
+        <input name="system" id="system" type="text" value="">
+        <input name="position" id="position" type="text" value="">
+      </td>`;
+
+    const res = await command('setTargetNative', { galaxy: 3, system: 265, position: 9 });
+    expect(res.ok).toBe(true);
+    expect(/** @type {HTMLInputElement} */ (document.getElementById('galaxy')).value).toBe('3');
+    expect(/** @type {HTMLInputElement} */ (document.getElementById('system')).value).toBe('265');
+    expect(/** @type {HTMLInputElement} */ (document.getElementById('position')).value).toBe('9');
+    expect(fd.calls).toContainEqual(['updateTarget']);
+  });
+
+  it('setTargetNative tolerates a fleetDispatcher without updateTarget', async () => {
+    // The nudge is guarded — a build lacking the method must not throw; the
+    // input events alone trigger the game's re-check.
+    /** @type {any} */ (window).fleetDispatcher = makeFakeFd({ updateTarget: undefined });
+    document.body.innerHTML = `
+      <td class="targetCoords">
+        <input id="galaxy" value=""><input id="system" value=""><input id="position" value="">
+      </td>`;
+    const res = await command('setTargetNative', { galaxy: 1, system: 2, position: 3 });
+    expect(res.ok).toBe(true);
+    expect(/** @type {HTMLInputElement} */ (document.getElementById('position')).value).toBe('3');
+  });
+
   it('setTargetType clicks the moon span and is independent of setTarget', async () => {
     /** @type {any} */ (window).fleetDispatcher = makeFakeFd();
     buildAgoRow();

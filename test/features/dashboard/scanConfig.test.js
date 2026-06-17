@@ -81,11 +81,12 @@ describe('Colonization config editor', () => {
   });
 
   it('hydrates fields from a stored config', async () => {
-    store.set(CFG_KEY, { positions: '12-15', preferOtherGalaxies: false });
+    store.set(CFG_KEY, { positions: '12-15', preferOtherGalaxies: false, preferFarthestSystems: false });
     installCol().refresh();
     await flush();
     expect($('#scanCfgPositions').value).toBe('12-15');
     expect($('#scanCfgPrefer').checked).toBe(false);
+    expect($('#scanCfgPreferFarthest').checked).toBe(false);
   });
 
   it('saves the colonization fields + timestamp + syncRequest', async () => {
@@ -94,6 +95,7 @@ describe('Colonization config editor', () => {
 
     $('#scanCfgPositions').value = '9,10';
     $('#scanCfgPrefer').checked = false;
+    $('#scanCfgPreferFarthest').checked = false;
     $('#scanCfgColonyMinGap').value = '25';
     $('#scanCfgColonyMinFields').value = '250';
     $('#scanCfgColonyPassword').value = 'hunter2';
@@ -104,6 +106,7 @@ describe('Colonization config editor', () => {
     const saved = /** @type {any} */ (store.get(CFG_KEY));
     expect(saved.positions).toBe('9,10');
     expect(saved.preferOtherGalaxies).toBe(false);
+    expect(saved.preferFarthestSystems).toBe(false);
     expect(saved.colonyMinGap).toBe(25);
     expect(saved.colonyMinFields).toBe(250);
     expect(saved.colonyPassword).toBe('hunter2');

@@ -307,6 +307,23 @@ describe('findNextColonizeTarget', () => {
     // sysDist(250, 30) = 220 > sysDist(31, 30) = 1 → farthest wins.
     expect(t?.system).toBe(250);
   });
+
+  it('with farthestFirst=false, home galaxy systems are searched nearest-first', () => {
+    /** @type {import('../../src/state/scans.js').GalaxyScans} */
+    const scans = {
+      '4:31': {
+        scannedAt: Date.now(),
+        positions: { 8: { status: 'empty' } },
+      },
+      '4:250': {
+        scannedAt: Date.now(),
+        positions: { 8: { status: 'empty' } },
+      },
+    };
+    const t = findNextColonizeTarget(scans, [], home, [8], false, false);
+    // sysDist(31, 30) = 1 < sysDist(250, 30) = 220 → nearest wins.
+    expect(t?.system).toBe(31);
+  });
 });
 
 // ──────────────────────────────────────────────────────────────────

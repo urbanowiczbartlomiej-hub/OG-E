@@ -214,14 +214,17 @@ export const countScansRemaining = (scans, policy = DEFAULT_RESCAN_POLICY) => {
  *   - `preferOther=true`: move home to the end — trades fast home
  *     sends for predictable min-gap timing across galaxies.
  *
- * Within a galaxy, the home galaxy is searched farthest-first (better
- * arrival spread), other galaxies are linear 1..499.
+ * Within the home galaxy, systems are searched farthest-first by default
+ * (better arrival spread); set `farthestFirst=false` to flip it to
+ * nearest-first. Other galaxies are always linear 1..499.
  *
  * @param {GalaxyScans} scans
  * @param {RegistryEntry[]} registry
  * @param {{ galaxy: number, system: number }} home
  * @param {number[]} targets  user's parsed `colPositions` list
  * @param {boolean} preferOther  move home galaxy to end of order
+ * @param {boolean} [farthestFirst]  home-galaxy system order: farthest free
+ *   system first (default, true) vs. nearest first (false).
  * @returns {{ galaxy: number, system: number, position: number, link: string } | null}
  */
 export const findNextColonizeTarget = (
@@ -230,6 +233,7 @@ export const findNextColonizeTarget = (
   home,
   targets,
   preferOther,
+  farthestFirst = true,
 ) => {
   if (targets.length === 0) return null;
 
@@ -244,11 +248,14 @@ export const findNextColonizeTarget = (
   }
 
   for (const g of order) {
-    // Home galaxy — farthest first; others — sequential 1..N.
+    // Home galaxy — farthest- or nearest-first per `farthestFirst`; other
+    // galaxies — sequential 1..N.
     const systems =
       g === home.galaxy
-        ? Array.from({ length: COL_MAX_SYSTEM }, (_, i) => i + 1).sort(
-            (a, b) => sysDist(b, home.system) - sysDist(a, home.system),
+        ? Array.from({ length: COL_MAX_SYSTEM }, (_, i) => i + 1).sort((a, b) =>
+            farthestFirst
+              ? sysDist(b, home.system) - sysDist(a, home.system)
+              : sysDist(a, home.system) - sysDist(b, home.system),
           )
         : Array.from({ length: COL_MAX_SYSTEM }, (_, i) => i + 1);
 
@@ -422,6 +429,9 @@ export const buildGalaxyUrl = ({ galaxy, system }) => {
  * @property {RegistryEntry[]} registry
  * @property {number[]} targets Parsed target positions (Galaxy-Scan config).
  * @property {boolean} preferOther `preferOtherGalaxies` (Galaxy-Scan config).
+ * @property {boolean} [farthestFirst] `preferFarthestSystems` (Galaxy-Scan
+ *   config). Home-galaxy system order; defaults to true (farthest-first) when
+ *   omitted (keeps older tests/callers on the historical behaviour).
  * @property {import('../../domain/scheduling.js').RescanPolicy} [policy]
  *   Rescan policy from the Galaxy-Scan config; defaults to the built-in
  *   preset when omitted (keeps older tests/callers working).
@@ -458,6 +468,7 @@ export const derive = (env) => {
   const view = env.view ?? null;
   const lastScanSubmitAt = env.lastScanSubmitAt ?? 0;
   const lastScanEventAt = env.lastScanEventAt ?? 0;
+  const farthestFirst = env.farthestFirst ?? true;
 
   // Universal scan state — user can Scan from any page (idle / galaxy /
   // fleetdispatch). Cooldown is event-driven (unlocks on
@@ -498,6 +509,7 @@ export const derive = (env) => {
         home,
         env.targets,
         env.preferOther,
+        farthestFirst,
       );
       if (global) {
         candidate = {
@@ -520,6 +532,7 @@ export const derive = (env) => {
       home,
       env.targets,
       env.preferOther,
+      farthestFirst,
     );
     if (global) {
       candidate = {

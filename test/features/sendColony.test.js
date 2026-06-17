@@ -609,6 +609,89 @@ describe('onSendClick — fleetdispatch branch', () => {
     expect(clicks).toBe(0);
     unhook();
   });
+
+  it('dead target → marks it + next tap retargets IN PLACE on fleet2 (no nav)', async () => {
+    // The soft-lock regression: a candidate the DB still shows 'empty' that the
+    // game reports un-colonizable. Tap 1 detects it (Stale) and the reactor
+    // marks it; tap 2 must edit the native fleet2 coords to the NEXT free slot
+    // instead of re-checking the same dead target or navigating away.
+    setupScene({ onFleetdispatch: true });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), positions: '8' });
+    // Two empty candidates; the farther system (4:31) is picked first.
+    scansStore.set({
+      '4:31': { scannedAt: Date.now(), positions: { 8: { status: 'empty' } } },
+      '4:30': { scannedAt: Date.now(), positions: { 8: { status: 'empty' } } },
+    });
+    installSendColony();
+    document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded')); // open the gate
+
+    // Fake form: fleet1 + a continue control that drops to fleet2 (dispatch
+    // present) and fires the game's checkTarget for the transitioned target —
+    // which comes back un-colonizable (orders 7 = false).
+    document.body.insertAdjacentHTML('beforeend', '<div id="fleet1"></div>');
+    let lastTarget = /** @type {any} */ (null);
+    const cont = document.createElement('a');
+    cont.id = 'continueToFleet2';
+    cont.className = 'off';
+    cont.addEventListener('click', () => {
+      document.getElementById('fleet1')?.remove();
+      const d = document.createElement('a');
+      d.id = 'dispatchFleet';
+      d.className = 'off';
+      document.body.appendChild(d);
+      const t = lastTarget || {};
+      document.dispatchEvent(new CustomEvent('oge:checkTargetResult', {
+        detail: {
+          galaxy: t.galaxy, system: t.system, position: t.position,
+          errorCode: null, orders: { 7: false },
+        },
+      }));
+    });
+    document.body.appendChild(cont);
+    document.dispatchEvent(new CustomEvent('oge:fleetDispatcher', {
+      detail: { shipsOnPlanet: [{ id: 208, number: 1 }], orders: {} },
+    }));
+
+    const onCmd = (/** @type {any} */ e) => {
+      const { id, op, args } = e.detail;
+      /** @type {any} */ let res = { id, ok: true };
+      if (op === 'setTarget') {
+        lastTarget = args;
+        setTimeout(() => document.getElementById('continueToFleet2')?.classList.remove('off'), 0);
+      } else if (op === 'setTargetNative') {
+        // In-place retarget: the freshly aimed slot IS colonizable.
+        document.dispatchEvent(new CustomEvent('oge:checkTargetResult', {
+          detail: {
+            galaxy: args.galaxy, system: args.system, position: args.position,
+            errorCode: null, orders: { 7: true },
+          },
+        }));
+      } else if (op === 'selectMission') {
+        res = { id, ok: true, data: { available: true } };
+        setTimeout(() => document.getElementById('dispatchFleet')?.classList.remove('off'), 0);
+      }
+      document.dispatchEvent(new CustomEvent('oge:fd:res', { detail: res }));
+    };
+    document.addEventListener('oge:fd:cmd', onCmd);
+
+    // Tap 1 — select() to 4:31:8; the game reports it un-colonizable.
+    getSend()?.click();
+    await settle();
+    expect(scansStore.get()['4:31']?.positions?.[8]?.status).toBe('abandoned');
+    expect(getSend()?.textContent).toContain('Stale');
+
+    // Tap 2 — retarget IN PLACE to the next free slot (4:30:8). No navigation,
+    // no re-check of the dead target.
+    getSend()?.click();
+    await settle();
+    expect(navTarget).toBeNull();
+    expect(getSend()?.textContent).toContain('Send!');
+    expect(getSend()?.textContent).toContain('4:30:8');
+    expect(scansStore.get()['4:30']?.positions?.[8]?.status).toBe('empty');
+
+    document.removeEventListener('oge:fd:cmd', onCmd);
+  });
 });
 
 // ──────────────────────────────────────────────────────────────────
@@ -765,13 +848,20 @@ describe('onScanClick', () => {
 // ──────────────────────────────────────────────────────────────────
 
 describe('oge:checkTargetResult reactor', () => {
-  it('matching coords + errorCodes[0]=140016 → marks the slot Reserved', () => {
+  // The reactor downgrades an EXISTING 'empty' colonize candidate from the
+  // checkTarget DETAIL alone — never the fleetDispatcher snapshot (which is one
+  // checkTarget behind this synchronous handler). Each case seeds the slot as
+  // 'empty' first, since the reactor only ever downgrades, never creates.
+  /** @param {number} [pos] */
+  const seedEmpty = (pos = 8) =>
+    scansStore.set({
+      '4:30': { scannedAt: 1000, positions: { [pos]: { status: 'empty' } } },
+    });
+
+  it('errorCodes[0]=140016 on an empty candidate → marks it Reserved', () => {
     setupScene({ onFleetdispatch: true, mission: 7 });
     settingsStore.set({ ...settingsStore.get(), fabMode: true });
-    setFleetDispatcher(makeFleetDispatcher({
-      canColonize: false,
-      hasColonizer: true,
-    }));
+    seedEmpty();
     installSendColony();
     document.dispatchEvent(
       new CustomEvent('oge:checkTargetResult', {
@@ -779,6 +869,89 @@ describe('oge:checkTargetResult reactor', () => {
       }),
     );
     expect(scansStore.get()['4:30']?.positions?.[8]?.status).toBe('reserved');
+    // Original scannedAt preserved (downgrade in place, not a fresh entry).
+    expect(scansStore.get()['4:30']?.scannedAt).toBe(1000);
+  });
+
+  it('orders["7"]=false (inhabited, no errorCode) on an empty candidate → Abandoned', () => {
+    // This is the soft-lock case: the DB still shows the slot 'empty' but the
+    // game reports colonize is not allowed (someone lives there now). The
+    // reactor reads orders straight from the detail and downgrades the slot so
+    // findNextColonizeTarget stops proposing it.
+    setupScene({ onFleetdispatch: true, mission: 7 });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    seedEmpty();
+    installSendColony();
+    document.dispatchEvent(
+      new CustomEvent('oge:checkTargetResult', {
+        detail: {
+          galaxy: 4, system: 30, position: 8,
+          errorCode: null, orders: { 7: false },
+        },
+      }),
+    );
+    expect(scansStore.get()['4:30']?.positions?.[8]?.status).toBe('abandoned');
+  });
+
+  it('marks from the DETAIL even when the snapshot is a stale, different target', () => {
+    // Regression guard for the soft-lock root cause: the fleetDispatcher
+    // snapshot is published one microtask AFTER this synchronous handler, so it
+    // always lags by one checkTarget. The OLD code read coords/orders from it
+    // and bailed on the coord mismatch (snapshot still on the PREVIOUS target),
+    // so the dead candidate was never marked → wait→Stale→nothing forever. The
+    // detail is authoritative for its own coords, so we mark from it regardless.
+    setupScene({ onFleetdispatch: true, mission: 7 });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    seedEmpty(); // 4:30:8 empty — the candidate we just tried
+    // Snapshot still describes the PREVIOUS target (4:31:8), reported colonizable.
+    setFleetDispatcher(makeFleetDispatcher({
+      target: { galaxy: 4, system: 31, position: 8 },
+      canColonize: true,
+    }));
+    installSendColony();
+    document.dispatchEvent(
+      new CustomEvent('oge:checkTargetResult', {
+        detail: {
+          galaxy: 4, system: 30, position: 8,
+          errorCode: null, orders: { 7: false },
+        },
+      }),
+    );
+    expect(scansStore.get()['4:30']?.positions?.[8]?.status).toBe('abandoned');
+  });
+
+  it('orders["7"]=true (colonizable) → leaves the empty candidate alone', () => {
+    setupScene({ onFleetdispatch: true, mission: 7 });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    seedEmpty();
+    installSendColony();
+    document.dispatchEvent(
+      new CustomEvent('oge:checkTargetResult', {
+        detail: {
+          galaxy: 4, system: 30, position: 8,
+          errorCode: null, orders: { 7: true },
+        },
+      }),
+    );
+    expect(scansStore.get()['4:30']?.positions?.[8]?.status).toBe('empty');
+  });
+
+  it('errorCode 140008 (player on vacation, no orders) → marks Abandoned', () => {
+    // A checkTarget FAILURE: status "failure", errors:[{error:140008}], NO
+    // orders map. Earlier this fell through every branch (not 140016, not a
+    // success-with-orders) → unmarked → retarget rewrote the same coords →
+    // the game deduped checkTarget → wait→timeout forever. Now any target-side
+    // error (≠140035) downgrades the slot so the next tap moves on.
+    setupScene({ onFleetdispatch: true, mission: 7 });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    seedEmpty();
+    installSendColony();
+    document.dispatchEvent(
+      new CustomEvent('oge:checkTargetResult', {
+        detail: { galaxy: 4, system: 30, position: 8, errorCode: 140008 },
+      }),
+    );
+    expect(scansStore.get()['4:30']?.positions?.[8]?.status).toBe('abandoned');
   });
 
   it('errorCode 140035 (no colony ship) → does NOT mark the slot', () => {
@@ -786,32 +959,32 @@ describe('oge:checkTargetResult reactor', () => {
     // reactor leaves the DB alone (the user can build/move a ship and retry).
     setupScene({ onFleetdispatch: true, mission: 7 });
     settingsStore.set({ ...settingsStore.get(), fabMode: true });
-    setFleetDispatcher(makeFleetDispatcher({
-      canColonize: false,
-      hasColonizer: true,
-    }));
+    seedEmpty();
     installSendColony();
     document.dispatchEvent(
       new CustomEvent('oge:checkTargetResult', {
-        detail: { galaxy: 4, system: 30, position: 8, errorCode: 140035 },
+        detail: {
+          galaxy: 4, system: 30, position: 8,
+          errorCode: 140035, orders: { 7: false },
+        },
       }),
     );
-    expect(scansStore.get()['4:30']).toBeUndefined();
+    expect(scansStore.get()['4:30']?.positions?.[8]?.status).toBe('empty');
   });
 
-  it('non-matching coords against fleetDispatcher.targetPlanet → ignored', () => {
+  it('un-colonizable result on a slot with no empty candidate → no phantom entry', () => {
+    // The reactor only ever DOWNGRADES an existing 'empty' candidate. A result
+    // for a slot we never proposed (not in scans) must not create an entry —
+    // that would falsely mark the whole system scan-fresh.
     setupScene({ onFleetdispatch: true, mission: 7 });
     settingsStore.set({ ...settingsStore.get(), fabMode: true });
-    setFleetDispatcher(makeFleetDispatcher({
-      target: { galaxy: 4, system: 30, position: 8 },
-      canColonize: true,
-      hasColonizer: true,
-    }));
     installSendColony();
-    // A stale response for a different target must not touch the DB.
     document.dispatchEvent(
       new CustomEvent('oge:checkTargetResult', {
-        detail: { galaxy: 9, system: 9, position: 9, errorCodes: [140016] },
+        detail: {
+          galaxy: 9, system: 9, position: 9,
+          errorCode: null, orders: { 7: false },
+        },
       }),
     );
     expect(scansStore.get()['9:9']).toBeUndefined();

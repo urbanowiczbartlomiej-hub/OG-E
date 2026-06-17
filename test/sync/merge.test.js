@@ -17,7 +17,6 @@ import {
   mergeGalaxyScanConfig,
   mergeReminderConfig,
   mergeDailyState,
-  clearScans,
   clearGalaxyScans,
 } from '../../src/sync/merge.js';
 
@@ -368,71 +367,46 @@ describe('mergeHistory', () => {
   });
 });
 
-describe('clearScans', () => {
-  it('returns empty galaxyScans and preserves colonyHistoryPerUniverse by reference', () => {
-    /** @type {Record<string, ColonyHistory>} */
-    const colonyHistoryPerUniverse = { 's1-pl': [entry(1), entry(2)] };
-    /** @type {GalaxyScans} */
-    const galaxyScans = { '4:30': scan(1000), '5:1': scan(2000) };
-    const result = clearScans({ version: 3, updatedAt: 'x', galaxyScans, colonyHistoryPerUniverse });
-    expect(result.galaxyScans).toEqual({});
-    // Reference equality — no allocation needed when the input map is the
-    // source of truth.
-    expect(result.colonyHistoryPerUniverse).toBe(colonyHistoryPerUniverse);
-  });
-
-  it('returns empty defaults for a null payload', () => {
-    const result = clearScans(null);
-    expect(result).toEqual({ galaxyScans: {}, colonyHistoryPerUniverse: {} });
-  });
-
-  it('returns empty defaults for an undefined payload', () => {
-    const result = clearScans(undefined);
-    expect(result).toEqual({ galaxyScans: {}, colonyHistoryPerUniverse: {} });
-  });
-
-  it('falls back to {} when colonyHistoryPerUniverse is not an object', () => {
-    const result = clearScans({ colonyHistoryPerUniverse: 'not-an-object' });
-    expect(result.colonyHistoryPerUniverse).toEqual({});
-  });
-
-  it('falls back to {} when colonyHistoryPerUniverse is missing', () => {
-    const result = clearScans({ galaxyScans: { '1:1': scan(1) } });
-    expect(result.colonyHistoryPerUniverse).toEqual({});
-  });
-});
-
 describe('clearGalaxyScans', () => {
-  it('drops only the requested galaxy keys; preserves others and colonyHistoryPerUniverse', () => {
+  const UNI = 's1-pl';
+
+  it('drops only the requested galaxy keys in OUR universe; preserves others + colonyHistory', () => {
     /** @type {Record<string, ColonyHistory>} */
     const colonyHistoryPerUniverse = { 's1-pl': [entry(7)] };
     const keep1 = scan(1000);
     const keep2 = scan(2000);
+    const otherUni = scan(3000);
     /** @type {GalaxyScans} */
-    const galaxyScans = {
+    const ourSlot = {
       '4:1': scan(500),  // dropped (galaxy 4)
       '4:30': scan(600), // dropped (galaxy 4)
       '5:1': keep1,      // kept (different galaxy)
       '6:1': keep2,      // kept
     };
-    const result = clearGalaxyScans({ galaxyScans, colonyHistoryPerUniverse }, 4);
-    expect(result.galaxyScans).toEqual({ '5:1': keep1, '6:1': keep2 });
+    const result = clearGalaxyScans(
+      { galaxyScansPerUniverse: { [UNI]: ourSlot, 's2-en': { '4:1': otherUni } }, colonyHistoryPerUniverse },
+      4,
+      UNI,
+    );
+    expect(result.galaxyScansPerUniverse[UNI]).toEqual({ '5:1': keep1, '6:1': keep2 });
+    // A DIFFERENT universe's slot is untouched even though it has a 4:* key.
+    expect(result.galaxyScansPerUniverse['s2-en']).toEqual({ '4:1': otherUni });
     expect(result.colonyHistoryPerUniverse).toBe(colonyHistoryPerUniverse);
   });
 
-  it('returns empty galaxyScans when input galaxyScans is missing', () => {
-    const result = clearGalaxyScans({ colonyHistoryPerUniverse: { 's1-pl': [entry(1)] } }, 4);
-    expect(result.galaxyScans).toEqual({});
+  it('returns the map unchanged when our universe has no slot', () => {
+    const result = clearGalaxyScans({ colonyHistoryPerUniverse: { 's1-pl': [entry(1)] } }, 4, UNI);
+    expect(result.galaxyScansPerUniverse).toEqual({});
   });
 
   it('returns empty defaults for a null payload', () => {
-    const result = clearGalaxyScans(null, 4);
-    expect(result).toEqual({ galaxyScans: {}, colonyHistoryPerUniverse: {} });
+    const result = clearGalaxyScans(null, 4, UNI);
+    expect(result).toEqual({ galaxyScansPerUniverse: {}, colonyHistoryPerUniverse: {} });
   });
 
-  it('returns empty galaxyScans when input galaxyScans is not an object', () => {
-    const result = clearGalaxyScans({ galaxyScans: 'nope', colonyHistoryPerUniverse: {} }, 4);
-    expect(result.galaxyScans).toEqual({});
+  it('returns empty defaults when galaxyScansPerUniverse is not an object', () => {
+    const result = clearGalaxyScans({ galaxyScansPerUniverse: 'nope', colonyHistoryPerUniverse: {} }, 4, UNI);
+    expect(result.galaxyScansPerUniverse).toEqual({});
   });
 
   it('matches by exact "${galaxy}:" prefix — galaxy 1 does NOT drop "10:*" keys', () => {
@@ -443,25 +417,28 @@ describe('clearGalaxyScans', () => {
     const k10 = scan(2);
     const k11 = scan(3);
     /** @type {GalaxyScans} */
-    const galaxyScans = {
+    const ourSlot = {
       '1:1': scan(1),  // dropped (galaxy 1)
       '10:1': k10,     // kept (galaxy 10)
       '11:1': k11,     // kept (galaxy 11)
     };
-    const result = clearGalaxyScans({ galaxyScans, colonyHistory: [] }, 1);
-    expect(result.galaxyScans).toEqual({ '10:1': k10, '11:1': k11 });
+    const result = clearGalaxyScans({ galaxyScansPerUniverse: { [UNI]: ourSlot } }, 1, UNI);
+    expect(result.galaxyScansPerUniverse[UNI]).toEqual({ '10:1': k10, '11:1': k11 });
   });
 
-  it('leaves galaxyScans untouched when the target galaxy has no keys', () => {
+  it('leaves the slot untouched when the target galaxy has no keys', () => {
     const k = scan(1);
     /** @type {GalaxyScans} */
-    const galaxyScans = { '5:1': k };
-    const result = clearGalaxyScans({ galaxyScans, colonyHistory: [] }, 9);
-    // Same value, but a fresh object — the function copies into a new
-    // record, so reference equality on the map is intentionally not
-    // promised; only the value mapping is.
-    expect(result.galaxyScans).toEqual({ '5:1': k });
-    expect(result.galaxyScans['5:1']).toBe(k);
+    const ourSlot = { '5:1': k };
+    const result = clearGalaxyScans({ galaxyScansPerUniverse: { [UNI]: ourSlot } }, 9, UNI);
+    expect(result.galaxyScansPerUniverse[UNI]).toEqual({ '5:1': k });
+    expect(result.galaxyScansPerUniverse[UNI]['5:1']).toBe(k);
+  });
+
+  it('empty universeId touches nothing', () => {
+    const k = scan(1);
+    const result = clearGalaxyScans({ galaxyScansPerUniverse: { [UNI]: { '4:1': k } } }, 4, '');
+    expect(result.galaxyScansPerUniverse[UNI]).toEqual({ '4:1': k });
   });
 });
 

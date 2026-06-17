@@ -529,7 +529,7 @@ const renderWavesInto = (section, universeId, state, ntfyMap) => {
     return;
   }
 
-  section.appendChild(node('h4', { class: 'rem-universe-head', text: 'Currently queued' }));
+  section.appendChild(node('h4', { class: 'rem-universe-head', text: 'Expedition waves' }));
 
   const nowSec = Math.floor(Date.now() / 1000);
   const notify = state.notifyState || {};

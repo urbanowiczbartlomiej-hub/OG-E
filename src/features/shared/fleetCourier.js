@@ -434,9 +434,20 @@ export const select = async (order) => {
     }
   }
 
-  // Arm the mission by clicking its icon (via the executor). checkTarget has
-  // confirmed it's allowed, so the icon is `on`; a short retry covers the
-  // brief render lag between the XHR landing and AGR painting the icon.
+  return armMissionAndWaitReady(order);
+};
+
+/**
+ * Shared tail for {@link select} and {@link retarget}: with checkTarget already
+ * confirming the mission is allowed for the current target, arm the mission
+ * icon (via the executor — a short retry covers the render lag between the XHR
+ * landing and AGR painting the icon), optionally load all resources, and wait
+ * for the native dispatch control to clear its `.off` not-ready class.
+ *
+ * @param {FleetOrder} order
+ * @returns {Promise<SelectResult>}
+ */
+const armMissionAndWaitReady = async (order) => {
   /** @type {{ ok: boolean, data?: any, error?: string } | null} */
   let m = null;
   const missionTries = Math.max(1, Math.ceil(MISSION_ARM_TIMEOUT_MS / POLL_MS));
@@ -456,6 +467,57 @@ export const select = async (order) => {
   if (!ready) return { ok: false, reason: 'notReady' };
 
   return { ok: true };
+};
+
+/**
+ * In-place retarget on step 2 — point the CURRENT fleet2 (ships already
+ * selected by a prior {@link select}) at a NEW target without walking fleet1
+ * again. Edits the game's own fleet2 coord inputs (`setTargetNative`), awaits
+ * the fresh checkTarget, gates the mission, and re-arms to a ready dispatch.
+ *
+ * Why a separate path (not a second select()): select() is fleet1-centric — on
+ * fleet2 it skips the ship/target block and relies on the target AGR is already
+ * holding, so it cannot aim somewhere new. retarget() is the colonize button's
+ * "this candidate is dead, try the next free slot" move: cheaper than a full
+ * fleet1 restart and visibly stays on fleet2. Driven by a discrete user click,
+ * so AGR (which only clobbers the fleet1→fleet2 transition) leaves the edit be.
+ *
+ * Coords MUST differ from the current target (callers pass a fresh candidate) —
+ * the game deduplicates checkTarget for unchanged coords, so a same-coord
+ * retarget would just time out.
+ *
+ * @param {FleetOrder} order
+ * @returns {Promise<SelectResult>}
+ */
+export const retarget = async (order) => {
+  if (step() !== 'fleet2') return { ok: false, reason: 'noFleet2' };
+
+  // Same ownership gate as select(): never retarget — and so never re-arm a
+  // mission on — a fleet2 another initiator prepared.
+  if (order.owner) {
+    const own = mayCompleteFleet2(order.owner);
+    if (!own.allowed) return { ok: false, reason: 'foreign' };
+  }
+
+  // Arm the listener BEFORE editing so we catch the checkTarget the edit fires.
+  const ctPromise = awaitCheckTarget(order.target);
+  const r = await rpc('setTargetNative', order.target);
+  if (!r || !r.ok) return { ok: false, reason: 'selectFailed' };
+
+  // Coords changed, so the game WILL fire checkTarget (no dedup) — wait the
+  // full window rather than the re-entry fallback select() uses.
+  const ct = await ctPromise;
+  if (!ct) return { ok: false, reason: 'timeout' };
+
+  const tag = classifyTargetError(ct.errorCode);
+  if (tag !== 'ok') {
+    return { ok: false, reason: tag, ...(ct.errorCode != null ? { errorCode: ct.errorCode } : {}) };
+  }
+  if (ct.orders && !isMissionAllowed(ct.orders, order.mission)) {
+    return { ok: false, reason: 'mission' };
+  }
+
+  return armMissionAndWaitReady(order);
 };
 
 /**

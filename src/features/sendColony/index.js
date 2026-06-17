@@ -42,9 +42,6 @@
 //     the `derive()` phase flips to `timeout`.
 //   - `lastScanSubmitAt` — when we last fired an in-page galaxy submit.
 //     Used only for the 1 s anti-spam cooldown on the Scan half.
-//   - `lastCheckTargetError` — error code from the most recent
-//     checkTarget response (or null). Used by `derive()` to pick the
-//     right sub-phase (reserved = 140016, noShip = 140035, else stale).
 //   - `waitStartAt` / `waitSeconds` — min-gap countdown start + total.
 //     Ticker reads these to derive the remaining `waitGap` phase.
 //
@@ -88,6 +85,7 @@ import { createButton as makeButton, labelLines } from '../shared/button.js';
 import { LANDER_GLYPH } from '../shared/buttonGlyphs.js';
 import {
   select as courierSelect,
+  retarget as courierRetarget,
   dispatch as courierDispatch,
   step as courierStep,
   readyToDispatch,
@@ -189,8 +187,6 @@ const HOLD_SKIP_MS = 2000;
 let lastScanEventAt = 0;
 /** Timestamp of the last in-page galaxy submit — anti-spam cooldown. */
 let lastScanSubmitAt = 0;
-/** Error code from the most recent matching checkTarget response. */
-let lastCheckTargetError = /** @type {number | null} */ (null);
 /** Epoch-ms when the current waitGap countdown started. */
 /**
  * Cached snapshot of `window.fleetDispatcher` published by the MAIN-world
@@ -283,6 +279,7 @@ const captureEnv = () => {
     registry: registryStore.get(),
     targets: parsePositions(cfg.positions),
     preferOther: cfg.preferOtherGalaxies,
+    farthestFirst: cfg.preferFarthestSystems,
     policy: buildRescanPolicy(cfg.rescan),
     now: Date.now(),
     // Previously read directly by `derive`; now snapshotted here so the
@@ -382,6 +379,10 @@ const colErrorPaint = (reason, c) => {
       return { text: 'Reserved', subtext: coords, bg: BG_SEND_STALE };
     case 'mission':
     case 'stale':
+    case 'generic':
+      // 'generic' = a target-side checkTarget failure (vacation, strong-player
+      // protection, bashing limit, …). The slot was just marked for skip by
+      // onCheckTargetResult, so this is the "moving on" state, not a hard error.
       return { text: 'Stale', subtext: coords, bg: BG_SEND_STALE };
     case 'timeout':
       return { text: 'Timeout', subtext: coords, bg: BG_SEND_STALE };
@@ -448,10 +449,54 @@ const onSendClick = async () => {
         home,
         /** @type {number[]} */ (parsePositions(cfg.positions)),
         cfg.preferOtherGalaxies,
+        cfg.preferFarthestSystems,
       )
     : null;
   if (!candidate) {
     paintZone('send', { text: 'No more candidates', bg: BG_SEND_IDLE });
+    return;
+  }
+
+  // Already on a fleet2 whose armed target turned out dead (we'd have taken
+  // the dispatch branch above if it were still armed) → retarget IN PLACE to
+  // the next free candidate instead of dispatching. `findNextColonizeTarget`
+  // already skipped the slot the previous attempt marked, so `candidate` is a
+  // fresh one. Done on this discrete click so AGR doesn't re-clobber the edit
+  // (it only overwrites the fleet1→fleet2 transition, not a settled fleet2).
+  if (s === 'fleet2') {
+    busy = true;
+    colReady = false;
+    paintZone('send', { text: 'Wait…', bg: BG_SEND_WAIT, dim: true });
+    const r = await courierRetarget({
+      spec: { kind: 'list', ships: [{ id: SHIP_COLONY, qty: 1, frac: 1 }] },
+      target: {
+        galaxy: candidate.galaxy,
+        system: candidate.system,
+        position: candidate.position,
+        type: TARGET_PLANET,
+      },
+      mission: MISSION_COLONIZE,
+      owner: OWNER_COL,
+    });
+    busy = false;
+    if (!r.ok) {
+      // Lost ownership of fleet2 between taps → bail to a clean fleet1.
+      if (r.reason === 'foreign') {
+        location.href = bareFleetdispatchUrl();
+        return;
+      }
+      // Dead again — onCheckTargetResult marked this slot too, so the next
+      // tap retargets to whatever is still free.
+      paintZone('send', colErrorPaint(r.reason, candidate));
+      return;
+    }
+    colReady = true;
+    colTarget = candidate;
+    paintZone('send', {
+      text: 'Send!',
+      subtext: `[${candidate.galaxy}:${candidate.system}:${candidate.position}]`,
+      bg: BG_SEND_READY,
+    });
     return;
   }
 
@@ -619,9 +664,41 @@ const extractErrorCode = (detail) => {
 };
 
 /**
- * React to `oge:checkTargetResult`. Cross-check the event's coords
- * against `window.fleetDispatcher.targetPlanet` — an old response from
- * an earlier target must not poison the current derive().
+ * React to `oge:checkTargetResult` by recording, in `scansStore`, that a
+ * colonize candidate the game just reported as un-colonizable should stop
+ * being proposed. THE authority here is the event's own `detail` — its
+ * coords, its `orders` map, its `errorCode` — never the fleetDispatcher
+ * snapshot.
+ *
+ * Why not the snapshot: it is published by a SEPARATE bridge one microtask
+ * AFTER this synchronous `oge:checkTargetResult` dispatch, so at this instant
+ * it is always one checkTarget behind the event we're handling. Reading
+ * `fd.targetPlanet` / `fd.orders` here (the old code) therefore compared the
+ * fresh response against the PREVIOUS target — bailing on the coord guard, or
+ * misjudging `canColonize` from stale orders — and silently skipped the mark.
+ * The dead slot stayed `empty`, so `findNextColonizeTarget` re-proposed it on
+ * the next tap → the wait→Stale→nothing soft-lock. The `detail` carries the
+ * same authoritative `orders` the courier reads, so we use it directly.
+ *
+ * Marking is deliberately a DOWNGRADE of an existing `empty` candidate only —
+ * never a phantom create (which would also mark the whole system scan-fresh
+ * and starve the Scan half) and never a touch on a non-empty slot. That scopes
+ * the reactor to exactly the soft-lock case and leaves unrelated checkTargets
+ * (expeditions, manual sends) alone.
+ *
+ *   - errorCode 140016 (reserved for planet-move) → 'reserved' (24 h cooldown).
+ *   - errorCode 140035 (no colony ship aboard) → NO mark: the slot is fine,
+ *     we just lack a ship (build/move one and retry). This is the SOLE error
+ *     about us rather than the target.
+ *   - ANY other checkTarget failure errorCode (player on vacation 140008,
+ *     strong-player / bashing-limit / noob protection, …) → 'abandoned': the
+ *     slot is not a usable target right now, so stop proposing it. A later scan
+ *     reclassifies it (e.g. to 'vacation'); meanwhile it sits out the ~day
+ *     cooldown. Skipping these is what breaks the wait→timeout loop, since a
+ *     same-coord retry would just hit the game's checkTarget dedup.
+ *   - success (no error) with orders present and `orders['7'] !== true` →
+ *     'abandoned' too (slot inhabited / taken). 'abandoned' is a generic
+ *     player-less marker — we have no player block to record here.
  *
  * @param {Event} e
  * @returns {void}
@@ -637,69 +714,44 @@ const onCheckTargetResult = (e) => {
   ) {
     return;
   }
-  // Coord match against the cached fleetDispatcher snapshot — skip
-  // ancient responses that arrived after the user moved on. When the
-  // snapshot isn't yet populated (first event race), accept the result.
-  const tp = fleetDispatcherSnapshot && fleetDispatcherSnapshot.targetPlanet;
-  if (
-    tp &&
-    (tp.galaxy !== galaxy || tp.system !== system || tp.position !== position)
-  ) {
+  const errorCode = extractErrorCode(detail);
+  const orders =
+    detail.orders && typeof detail.orders === 'object' ? detail.orders : null;
+  const canColonize = !!orders && orders[String(MISSION_COLONIZE)] === true;
+
+  /** @type {import('../../domain/scans.js').Position | null} */
+  let newPos = null;
+  if (errorCode === 140016) {
+    newPos = { status: 'reserved' };
+  } else if (errorCode != null && errorCode !== 140035) {
+    // Any target-side checkTarget failure other than "no colony ship".
+    newPos = { status: 'abandoned', flags: { hasAbandonedPlanet: true } };
+  } else if (errorCode == null && orders && !canColonize) {
+    // Success response, but colonize is not permitted on this target.
+    newPos = { status: 'abandoned', flags: { hasAbandonedPlanet: true } };
+  }
+  if (!newPos) {
+    refresh();
     return;
   }
-  lastCheckTargetError = extractErrorCode(detail);
 
-  // Proactively mark the slot in `scansStore` so `findNextColonizeTarget`
-  // stops proposing it. This matters because stale-retry's response is
-  // a full-page NAVIGATION to the system's galaxy view — the game
-  // server-renders that view without firing `fetchGalaxyContent`, so
-  // our galaxyHook observes NOTHING and the DB stays wrong unless we
-  // mark here. A later user-driven scan (AJAX in-page submit) refreshes
-  // the slot's real status.
-  //
-  //   - error 140016 (reserved for planet-move) → status 'reserved',
-  //     RESCAN_AFTER 24 h (planet-move cooldown).
-  //   - error 140035 (no colonization ship) → NO mark: slot is fine,
-  //     we just lack a ship. Changing active planet (or building one)
-  //     lets us send later.
-  //   - everything else (`!canColonize` without the above codes) →
-  //     treat as generic stale: mark as 'abandoned' with
-  //     `hasAbandonedPlanet` flag so it sits out the ~day cooldown
-  //     and a later scan reclassifies.
-  const fd = fleetDispatcherSnapshot;
-  const stillMatching =
-    !fd || !fd.targetPlanet ||
-    (fd.targetPlanet.galaxy === galaxy &&
-      fd.targetPlanet.system === system &&
-      fd.targetPlanet.position === position);
-  if (stillMatching) {
-    const canColonize = fd && fd.orders && fd.orders['7'] === true;
-    /** @type {import('../../domain/scans.js').Position | null} */
-    let newPos = null;
-    if (lastCheckTargetError === 140016) {
-      newPos = { status: 'reserved' };
-    } else if (
-      lastCheckTargetError !== 140035 &&
-      !canColonize
-    ) {
-      newPos = {
-        status: 'abandoned',
-        flags: { hasAbandonedPlanet: true },
+  // Only ever downgrade an EXISTING 'empty' colonize candidate (preserving its
+  // original scannedAt) — see the doc comment for why we never create here.
+  const key = /** @type {`${number}:${number}`} */ (`${galaxy}:${system}`);
+  const cur = scansStore.get()[key];
+  if (cur?.positions?.[position]?.status === 'empty') {
+    const p = newPos;
+    scansStore.update((prev) => {
+      const existing = prev[key];
+      if (existing?.positions?.[position]?.status !== 'empty') return prev;
+      return {
+        ...prev,
+        [key]: {
+          ...existing,
+          positions: { ...existing.positions, [position]: p },
+        },
       };
-    }
-    if (newPos) {
-      const key = /** @type {`${number}:${number}`} */ (`${galaxy}:${system}`);
-      const p = newPos;
-      scansStore.update((prev) => {
-        const existing = prev[key] ?? { scannedAt: Date.now(), positions: {} };
-        /** @type {Record<number, import('../../domain/scans.js').Position>} */
-        const newPositions = { ...existing.positions, [position]: p };
-        return {
-          ...prev,
-          [key]: { scannedAt: Date.now(), positions: newPositions },
-        };
-      });
-    }
+    });
   }
 
   refresh();
@@ -1034,7 +1086,6 @@ export const _resetSendColonyForTest = () => {
   }
   lastScanSubmitAt = 0;
   lastScanEventAt = 0;
-  lastCheckTargetError = null;
   fleetDispatcherSnapshot = null;
   busy = false;
   colReady = false;

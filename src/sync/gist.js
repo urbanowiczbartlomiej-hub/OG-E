@@ -84,7 +84,7 @@
 import { gzipEncode, gzipDecode } from '../lib/gzip.js';
 import { safeLS } from '../lib/storage.js';
 import { SYNC_STATUS_EVENT } from '../lib/ogeEvents.js';
-import { clearScans, clearGalaxyScans } from './merge.js';
+import { clearGalaxyScans } from './merge.js';
 
 /**
  * @typedef {import('../state/scans.js').GalaxyScans} GalaxyScans
@@ -120,8 +120,17 @@ import { clearScans, clearGalaxyScans } from './merge.js';
  *   ISO timestamp stamped by the writer at the moment it chose to
  *   upload. Informational — consumers use per-record timestamps
  *   (`scannedAt`, history `timestamp`) to decide merges, not this.
- * @property {GalaxyScans} galaxyScans
- *   Full galaxy-scan map. See {@link GalaxyScans}.
+ * @property {Record<string, GalaxyScans>} [galaxyScansPerUniverse]
+ *   OPTIONAL, additive: galaxy-scan maps keyed by universe id. Each slot is a
+ *   {@link GalaxyScans} merged per-system, newer-`scannedAt`-wins (see
+ *   {@link import('./merge.js').mergeScans}). Per-universe because a scan is
+ *   server-specific — `3:265` on one universe is a different planet than on
+ *   another — so the old single global `galaxyScans` field let one server's
+ *   scans bleed into another's colonize candidates on a second device. New
+ *   readers do NOT fall back to that legacy field: it is contaminated by
+ *   construction (a union of every universe), so adopting it would re-pollute.
+ *   Absent on gists written before this migration → treated as "no remote
+ *   scans for this universe yet", keeping local.
  * @property {Record<string, ColonyHistory>} [colonyHistoryPerUniverse]
  *   OPTIONAL, additive: per-universe colony-history observations keyed by
  *   universe id. Each slot is a {@link ColonyHistory} list merged by union
@@ -479,7 +488,6 @@ export const ensureGist = async () => {
   const initialPayload = {
     version: SCHEMA_VERSION,
     updatedAt: new Date().toISOString(),
-    galaxyScans: /** @type {GalaxyScans} */ ({}),
   };
 
   const compressed = await gzipEncode(JSON.stringify(initialPayload));
@@ -550,50 +558,20 @@ export const writeGistData = async (data) => {
 };
 
 /**
- * Empty the remote `galaxyScans` map while preserving `colonyHistory`.
- * The "Clear scan data" UI action needs a matching remote wipe —
- * merge logic alone can't distinguish "user cleared" from "device
- * hasn't seen this".
- *
- * Stamps {@link LAST_UP_KEY} with the current ISO time on success.
- *
- * @returns {Promise<void>}
- */
-export const clearGistScans = async () => {
-  const id = await ensureGist();
-  const gist = await gh(`/gists/${id}`);
-  const content = await readGistFile(gist, GIST_FILENAME);
-  let parsed = null;
-  if (content) {
-    try {
-      parsed = JSON.parse(await gzipDecode(content));
-    } catch {
-      // Corrupt payload: `clearScans` falls back to empty defaults,
-      // which is the correct "clear scans" semantics — history will
-      // re-populate from local on the next upload.
-    }
-  }
-  await writeGistData({
-    version: SCHEMA_VERSION,
-    updatedAt: new Date().toISOString(),
-    ...clearScans(parsed),
-  });
-  setStatus('up', new Date().toISOString());
-};
-
-/**
- * Drop every `${galaxy}:*` entry from the remote `galaxyScans` map
- * while preserving `colonyHistory`, the other galaxies' scans, and any
- * tombstones. Counterpart to the histogram's per-galaxy "Reset" button:
- * without this, a local-only delete would be undone by the next sync
- * round-trip (`mergeScans` is a UNION).
+ * Drop every `${galaxy}:*` entry from the given universe's
+ * `galaxyScansPerUniverse` slot while preserving that slot's other galaxies,
+ * every OTHER universe's slot, and `colonyHistoryPerUniverse`. Counterpart to
+ * the histogram's per-galaxy "Reset" button: without this, a local-only delete
+ * would be undone by the next sync round-trip (`mergeScans` is a UNION).
  *
  * Stamps {@link LAST_UP_KEY} on success.
  *
  * @param {number} galaxy
+ * @param {string} universeId  Which universe's slot to clear (the caller's
+ *   current server). Empty string ⇒ no slot is touched.
  * @returns {Promise<void>}
  */
-export const clearGistScansForGalaxy = async (galaxy) => {
+export const clearGistScansForGalaxy = async (galaxy, universeId) => {
   const id = await ensureGist();
   const gist = await gh(`/gists/${id}`);
   const content = await readGistFile(gist, GIST_FILENAME);
@@ -609,7 +587,7 @@ export const clearGistScansForGalaxy = async (galaxy) => {
   await writeGistData({
     version: SCHEMA_VERSION,
     updatedAt: new Date().toISOString(),
-    ...clearGalaxyScans(parsed, galaxy),
+    ...clearGalaxyScans(parsed, galaxy, universeId),
   });
   setStatus('up', new Date().toISOString());
 };

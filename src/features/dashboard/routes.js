@@ -235,8 +235,8 @@ export const installRoutes = ({ getUniverseId }) => {
     const head = mk('div', 'display:flex;align-items:center;margin-bottom:8px;');
     head.appendChild(mk('strong', 'flex:1;color:#4a9eff;font-size:14px;', `Route ${idx + 1}`));
     // Inline-styled (it lives inside #routesList, so the dashboard's
-    // `.controls button` CSS doesn't reach it). Danger palette matching
-    // dashboard.html's `.controls button.danger`.
+    // `.controls button` CSS doesn't reach it). Shares the danger palette
+    // (#4a2a2a / #6a3a3a / #ff8888) used by the per-galaxy reset button.
     const del = /** @type {HTMLButtonElement} */ (
       mk(
         'button',

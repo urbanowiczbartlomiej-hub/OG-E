@@ -111,12 +111,12 @@ describe('Reminders fleet-save config editor', () => {
     expect(readEditor('remCfgFsOffsets')).toBe('-5m, 0m');
   });
 
-  it('renders a landing-relative impact preview per fleet-save offset row', async () => {
+  it('renders a compact landing-relative impact preview per fleet-save offset chip', async () => {
     store.set(CFG_KEY, { fsOffsets: '-10m, 0m, 15m' });
     install().refresh();
     await flush();
     expect(previewsOf('remCfgFsOffsets')).toEqual([
-      '10 min before landing', 'landing now', '15 min after landing',
+      '10m before', 'at landing', '15m after',
     ]);
   });
 
@@ -247,12 +247,12 @@ describe('Reminders wave + ad-hoc config editor', () => {
     expect($('#remCfgAdhoc').value).toBe('2m');
   });
 
-  it('renders a return-relative impact preview per wave offset row', async () => {
+  it('renders a compact return-relative impact preview per wave offset chip', async () => {
     store.set(REMINDER_KEY, { reminderSchedule: '0m, 10m' });
     install().refresh();
     await flush();
     expect(previewsOf('remCfgWaveEditor')).toEqual([
-      'when the wave returns', '10 min after the wave returns',
+      'at return', '10m after',
     ]);
   });
 
