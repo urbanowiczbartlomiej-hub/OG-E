@@ -4,7 +4,100 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
-## [Unreleased]
+## [1.24.0] — 2026-06-18
+
+### Added
+
+- **Colony Scout reads far more about your neighbours.** As you scan the galaxy,
+  OG-E now keeps a per-server player roster (de-duplicated by player id) holding
+  the signals the galaxy view exposes but the per-system map dropped — active vs
+  merely on-vacation, strong, newbie, buddy, outlaw, alliance rank, and whether a
+  player is in **your** alliance. Colony Scout surfaces these in the Top-region
+  summary and the per-region tooltip (e.g. "2 strong · 1 active-on-vac · 1
+  outlaw") and folds them into the strategy ranking: the **Peaceful settler** /
+  **Farmer** presets now avoid strong and "active-on-vacation" neighbours (a live
+  player hiding behind vacation mode, not a safe farm), and the PvP presets prefer
+  outlaws (fair-game targets). Older scans are unaffected; the data fills in as you
+  re-scan.
+- **Neighbour ranks are now shown relative to you.** OG-E reads your own highscore
+  rank off the in-game header bar, so the Top-region card annotates the strongest
+  neighbour as e.g. "#11 (239 above you)" instead of a bare number — instantly
+  telling you whether the area's top player out-guns you or not.
+- **Reminder pushes can carry far more fleet detail — one shared wildcard set.**
+  Ad-hoc and fleet-save message templates now expose the SAME `{wildcard}` set,
+  read from the event list when the reminder is armed / detected: alongside
+  `{mission}` / `{coords}` you can now use `{origin}` / `{originName}` (the
+  launching planet or moon), `{target}` / `{targetName}` (the mission target),
+  and `{shipCount}` (ad-hoc gained it; fleet-save already had it). Expedition-wave
+  reminders keep their series wildcards (`{returnTime}` / `{index}` / `{total}`) —
+  a wave's pushes are queued before the burst's makeup is known.
+- **Reminder schedules now print a plain-language summary.** Under the offset
+  chips, OG-E spells out what the whole schedule adds up to — e.g. "15m & 5m
+  before landing · at landing · 20m after landing" — so you can sanity-check the
+  set at a glance instead of decoding each chip.
+- **Your ntfy topic is now explained and protected.** The Reminders tab shows how
+  the topic is derived (a one-way hash of your access token — unguessable and not
+  listable) and how to lock it down further; the topic is masked by default
+  behind a show/hide toggle and treated as the secret it is. The in-game Settings
+  panel carries the same masked topic plus a short privacy note.
+
+### Changed
+
+- **Galaxy Observations folded into the Colonizations tab.** The dashboard now
+  has a single **Colonizations** tab with three sub-tabs — **Planet sizes** (the
+  field-size histogram), **Scanned data**, and **Colony Scout** — mirroring the
+  one in-game Colonizations button that both scans positions and colonizes.
+  The two separate ⚙ Settings panels (colonization / abandon knobs + scan
+  re-scan policy) are now one combined panel below the sub-tabs, with a single
+  Save / Reset.
+- **Colony Scout "Top region" graphic now matches the rest of the dashboard.**
+  The region strip used its own ad-hoc colours that disagreed with the galaxy
+  map (empty looked like debris, "fleet sent" looked free, etc.). It now uses
+  the canonical status palette, gains a **legend**, draws a thin divider
+  **between systems**, and each cell's hover shows the **full per-slot
+  breakdown** (status, flags, owner with rank + alliance tag) instead of just
+  the system number. The summary line also reports distance to your nearest
+  colony. The sub-tab is now tagged **experimental** while its scoring
+  heuristics and neighbourhood intel keep evolving.
+- **The Colony Scout "Ally tag" field is gone — alliance proximity is automatic
+  now.** You no longer type your alliance tag: the galaxy view already tells OG-E
+  which neighbours are in *your* alliance, so the proximity bonus applies on its
+  own (and self-corrects when alliances change, no re-typing). The "Longest
+  streak" preset stays pure length; the other strategies gain the auto bonus.
+- **Reminder schedule chips are slimmer; the icon & priority pickers are
+  redesigned.** The offset chips dropped their redundant inline phrase (the value
+  already reads as text), so they hug their content like the Daily Run chips. The
+  message **icon** is now picked from real-image swatches — you see the actual
+  push icon, not a dropdown label — and **priority** is a 1–5 segmented control
+  with a calm→alarm colour ramp and the level's name.
+- **"Currently queued" badges describe the ntfy state and sit by the date.** They
+  now read one consistent vocabulary across waves / ad-hoc / fleet-save — queued
+  / fired / scheduled / not scheduled / cancelled / "> 3 days out" — instead of
+  the wave-only "in flight" / "overdue", and sit next to the date (the cancel ✕
+  moved to the right) rather than stranded in the middle of the row.
+
+### Fixed
+
+- **"Set password" from the abandon flow now opens the right tab.** It used to
+  deep-link to the old Galaxy Observations tab, which never held the password
+  field; it now opens the Colonizations tab, whose ⚙ Settings hold the abandon
+  password.
+- **Colony Scout no longer shows "nothing" when free slots are scattered.**
+  Typing a single slot (e.g. `8`) returned no results unless five+ systems in
+  a row had it free — common to never happen once you start colonising that
+  slot. When no such region exists, Colony Scout now lists every **individual
+  free system** (scored and strategy-ranked), with a clear note explaining why.
+- **The dashboard Copy-topic button no longer sticks on "Copied!".** It used to
+  overwrite the topic field with its own feedback and then read that back on the
+  next click, jamming the display; the feedback now lives on the button and copy
+  always uses the real topic.
+- **The "Urgent" reminder icon now shows in the dashboard picker.** Its image was
+  never bundled into the built extension, so the swatch came up blank; it now
+  ships alongside the other icons.
+- **The in-game Settings ntfy rows no longer overflow their column.** The masked
+  topic plus its show/hide and Copy buttons used to spill past the narrow value
+  column into a horizontal scroll, and the topic-privacy note was squeezed into a
+  sliver; both rows now span the full panel width with the label as a heading.
 
 ## [1.23.0] — 2026-06-17
 
