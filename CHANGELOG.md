@@ -6,6 +6,53 @@ version numbers follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [1.23.0] — 2026-06-17
+
+### Added
+
+- **"Prefer farthest systems first" colonization toggle.** A new per-server
+  switch (Galaxy Observations → ⚙ Settings) controls how the Colonize button
+  orders free systems *within your home galaxy*. On (the default, unchanged
+  behaviour) it proposes the farthest free system first, spreading colony-ship
+  arrival times; turn it off to colonize the nearest free system first. Other
+  galaxies stay in their usual order.
+
+### Changed
+
+- **Galaxy Observations split into two sub-tabs.** The per-system scan summary
+  ("Scanned data") and the Colony Scout settlement analysis now live on
+  separate sub-tabs instead of one long stacked page.
+- **Reminder schedules shown as compact chips.** Expedition-wave and Fleet-save
+  reminder offsets now render as a wrapping row of labelled chips (e.g.
+  "10m before", "at landing", "15m after") — full description on hover, invalid
+  entries flagged in red — instead of stacked rows of long inline text. Each
+  reminder sub-tab also lays its settings beside its message template on wider
+  screens (stacking on narrow ones).
+- **Galaxy rescan-timing fields packed into a responsive grid** (1–3 columns)
+  instead of one tall single-column list.
+
+### Fixed
+
+- **Colonize button no longer gets stuck on a planet it can't settle.** When the
+  next free coordinates turn out to be un-colonizable — the slot is now
+  occupied, the player is on vacation, it's reserved for a planet-move, or the
+  server refuses for any other reason — the button marks that spot, drops it
+  from future picks, and on your next tap retargets to the next free slot in
+  place (without leaving the fleet screen) instead of looping forever on
+  "Wait… / Stale".
+- **Galaxy scans no longer bleed between servers when Cloud Sync is on.** With
+  sync enabled and more than one universe on the same account, each server's
+  scan database is now kept separate. Before, scans from one server could merge
+  into another, so the Colonize button could propose coordinates that were empty
+  on a different universe but already taken on yours. (Existing mixed data heals
+  itself as you re-scan; nothing is deleted.)
+
+### Removed
+
+- **"Clear observation data" button.** The bulk button that wiped all galaxy
+  observation data for the current server has been removed; clear per galaxy
+  with the per-galaxy ✕ reset buttons instead.
+
 ## [1.22.0] — 2026-06-17
 
 ### Added
