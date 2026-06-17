@@ -38,6 +38,13 @@
 //   --preview / --dry-run     validate + preview, mutate nothing
 //   RELEASE_PREVIEW=1 (env)   same as --preview
 //   --skip-tests              skip the test + typecheck phase
+//   --no-push                 skip phase 7 (git push). For the tag-triggered
+//                             CI workflow: the tag is already on the remote,
+//                             so just validate → package → upload to AMO.
+//   --no-upload               skip phase 6 (AMO upload) + don't require creds.
+//                             The "cut locally, let CI publish" path: bump,
+//                             commit, tag and push vX.Y.Z with no AMO tokens;
+//                             the listed-on-tag workflow does the upload.
 //
 // IMPORTANT — how to PREVIEW safely. This npm eats EVERY `--flag` as its own
 // config even after the `--` separator (you'll see "Unknown env config …"),
@@ -88,6 +95,16 @@ const SKIP_TESTS = flags.has('--skip-tests');
 // visible and not offered as an update to existing users).
 const UNLISTED = flags.has('--unlisted');
 const CHANNEL = UNLISTED ? 'unlisted' : 'listed';
+// --no-push: skip phase 7 (the git push). Used by the tag-triggered CI
+// workflow, where the tag that started the run is ALREADY on the remote and
+// HEAD is detached — a push would either be a no-op or fail ("not on a
+// branch"). With this flag the script only validates → packages → uploads.
+const NO_PUSH = flags.has('--no-push');
+// --no-upload: skip phase 6 (the AMO upload) and don't require AMO creds.
+// This is the "cut the release locally, let CI publish" path: it bumps,
+// commits, tags and pushes vX.Y.Z, then the tag-triggered listed workflow
+// does the AMO upload. No tokens needed on the dev machine.
+const NO_UPLOAD = flags.has('--no-upload');
 
 function die(msg) {
   console.error(`release: ${msg}`);
@@ -179,7 +196,9 @@ if (!reviewerNotes) die('amo-reviewer-notes.txt is empty.');
 
 const JWT_ISSUER = process.env.AMO_JWT_ISSUER;
 const JWT_SECRET = process.env.AMO_JWT_SECRET;
-if (!JWT_ISSUER || !JWT_SECRET) {
+// Creds are only needed for the upload. The --no-upload "prepare" path (cut +
+// push the tag, let CI publish) must run on a machine with no AMO tokens.
+if (!NO_UPLOAD && (!JWT_ISSUER || !JWT_SECRET)) {
   die('set AMO_JWT_ISSUER and AMO_JWT_SECRET (see .env.example).');
 }
 
@@ -381,11 +400,21 @@ async function uploadToAmo() {
   console.log('release: attached source.zip.');
 }
 
-await uploadToAmo();
+if (NO_UPLOAD) {
+  console.log('release: skipping AMO upload (--no-upload) — CI will publish the tag.');
+} else {
+  await uploadToAmo();
+}
 
 // ---------------------------------------------------------------------------
 // phase 7 — publish the branch + tag
 // ---------------------------------------------------------------------------
+
+if (NO_PUSH) {
+  console.log(`release: skipping git push (--no-push) — ${TAG} is already on the remote.`);
+  console.log(`\nrelease: ${TAG} done — uploaded to AMO.`);
+  process.exit(0);
+}
 
 // Resolve the remote from the branch's upstream (the remote is not always
 // "origin" here). Fall back to the first configured remote.

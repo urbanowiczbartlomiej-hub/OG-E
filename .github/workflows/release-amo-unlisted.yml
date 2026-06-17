@@ -2,7 +2,16 @@ name: Release to AMO (unlisted)
 
 # Experimental release workflow — uploads a signed but unlisted version to AMO.
 # Unlisted = Mozilla signs it, you get a direct URL, existing users are NOT
-# offered the update. Designed for owner-only testing before a public release.
+# offered the update. Designed for owner-only smoke-testing a build BEFORE the
+# public (listed) release.
+#
+# Manual on purpose (workflow_dispatch): you pick the version to test.
+#
+# Note on versioning: AMO version numbers are globally unique per add-on, so a
+# number uploaded here as "unlisted" can never later be released as "listed".
+# Use a throwaway/pre-release number for smoke tests, not the number you intend
+# to ship. This job runs with --no-push precisely so it does NOT create a
+# vX.Y.Z tag on the remote (which would otherwise trigger the listed workflow).
 #
 # How to use:
 #   1. Add AMO_JWT_ISSUER and AMO_JWT_SECRET to repo → Settings → Secrets
@@ -26,8 +35,6 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write  # needed to push the release commit + tag
 
     steps:
       - uses: actions/checkout@v4
@@ -40,17 +47,6 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
-      - name: Configure git identity
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Configure git identity and auth
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
-
       - name: Install dependencies
         run: npm ci
 
@@ -58,9 +54,12 @@ jobs:
         env:
           AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        # --no-push: a smoke test must not leave a vX.Y.Z tag on the remote
+        # (that would fire the listed workflow). The local tag release.mjs
+        # creates is discarded with the runner.
         run: |
           SKIP=""
           if [ "${{ inputs.skip_tests }}" = "true" ]; then
             SKIP="--skip-tests"
           fi
-          node scripts/release.mjs ${{ inputs.version }} --unlisted $SKIP
+          node scripts/release.mjs ${{ inputs.version }} --unlisted --no-push $SKIP

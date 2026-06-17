@@ -78,37 +78,45 @@ commit touching `src/` — see General rules below.
 
 ## Release checklist (now one command)
 
-### Releasing via GitHub Actions (DEFAULT — the AMO creds live ONLY in CI)
+### Releasing via GitHub Actions (DEFAULT — push a `vX.Y.Z` tag)
 
 `AMO_JWT_ISSUER` / `AMO_JWT_SECRET` are stored as **GitHub repo secrets**, not
 in the local/agent environment — so a session usually CANNOT upload to AMO
-directly (`npm run release` would fail at the AMO step). The publish runs
-through a manual GitHub Actions workflow instead. **When the user asks to bump
-the version and publish, this is the path:**
+directly (`npm run release` would fail at the AMO step). Instead, the listed
+publish is **tag-triggered**: pushing a `vX.Y.Z` tag to the remote runs
+`release-amo-listed.yml`, which uploads that version to AMO. **When the user
+asks to bump the version and publish, this is the path:**
 
 1. Land code + tests on the default branch (`main`), gates green
    (`test` / `typecheck` / `lint`).
 2. **Add the dated `## [X.Y.Z] — YYYY-MM-DD` section to `CHANGELOG.md` and
-   COMMIT + PUSH it to `main`.** (This differs from the local flow below,
-   which leaves it uncommitted: the Actions runner checks out the *committed*
-   tree, and `release.mjs` reads the section from there + sends it verbatim as
-   the public AMO release notes.) A clean tree is fine — `release.mjs` only
-   needs the section present, then it bumps `package.json`/`manifest.json` and
-   makes the `chore(release)` commit + `vX.Y.Z` tag itself, in CI.
-3. Trigger the workflow: **GitHub → Actions → "Release to AMO (listed)" → Run
-   workflow → enter `X.Y.Z`.** (`skip_tests: true` only if already verified
-   green.) An agent with the GitHub MCP tools can dispatch it via
-   `actions_run_trigger` — but a **listed** release is public and
-   auto-updates existing users, so confirm with the user first.
-   - **"Release to AMO (unlisted)"** is the owner-only test channel (Mozilla
-     signs it, you get a direct URL, existing users are NOT offered the
-     update). Use it to smoke-test a build before the listed release.
-4. The workflow runs `node scripts/release.mjs X.Y.Z` (`--unlisted` for the
-   unlisted job) with the secrets, uploads to AMO, and pushes the commit + tag.
+   COMMIT it to `main`** (the runner checks out the *committed* tag tree, and
+   `release.mjs` reads the section from there + sends it verbatim as the public
+   AMO release notes).
+3. **Cut + push the `vX.Y.Z` tag** with no AMO creds needed:
+   ```
+   node scripts/release.mjs X.Y.Z --no-upload
+   ```
+   This bumps `package.json`/`manifest.json`, makes the `chore(release)` commit
+   + `vX.Y.Z` tag, and pushes both — but skips the AMO upload. Pushing the tag
+   is what triggers the listed workflow, which does the upload. Because pushing
+   a tag = a **public** release that auto-updates existing users, confirm with
+   the user before pushing.
+   - If you instead have `.env` creds locally, `npm run release -- X.Y.Z`
+     uploads from your machine AND pushes the tag; the triggered CI run then
+     no-ops on AMO (version already present). Same end state.
+4. The workflow checks out the tag, derives the version from its name, and runs
+   `node scripts/release.mjs <ver> --no-push` with the secrets — validate →
+   package → upload (`--no-push` because the tag is already on the remote).
 
-Workflows: `.github/workflows/release-amo-listed.yml` /
-`release-amo-unlisted.yml`. Both are `workflow_dispatch` (manual) — there is no
-tag-triggered release.
+The **unlisted** workflow (`release-amo-unlisted.yml`) stays `workflow_dispatch`
+(manual, owner-only smoke-test channel): Mozilla signs it, you get a direct URL,
+existing users are NOT offered the update. It runs with `--no-push` so it never
+creates a `vX.Y.Z` tag (which would otherwise fire the listed workflow). An
+agent with the GitHub MCP tools can dispatch it via `actions_run_trigger`.
+
+Workflows: `.github/workflows/release-amo-listed.yml` (tag-triggered) /
+`release-amo-unlisted.yml` (manual).
 
 ### Running `release.mjs` locally (only with creds in `.env`)
 

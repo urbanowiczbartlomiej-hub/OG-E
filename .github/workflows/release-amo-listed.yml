@@ -1,31 +1,33 @@
 name: Release to AMO (listed)
 
-# Public release workflow — uploads a signed, listed version to AMO.
-# Listed = publicly visible on addons.mozilla.org; existing users ARE
-# offered the update automatically. Use for actual public releases.
+# Public release workflow — fires automatically when a vX.Y.Z tag is pushed.
+# Listed = publicly visible on addons.mozilla.org; existing users ARE offered
+# the update automatically. So pushing a vX.Y.Z tag = a real public release.
 #
-# How to use:
-#   1. Ensure AMO_JWT_ISSUER and AMO_JWT_SECRET are in repo → Settings → Secrets
-#   2. Go to Actions → "Release to AMO (listed)" → Run workflow
+# How a release happens now (tag-triggered):
+#   1. Land code + tests on main, gates green.
+#   2. Add the dated "## [X.Y.Z] — YYYY-MM-DD" section to CHANGELOG.md and
+#      commit it (release.mjs reads it as the public AMO release notes).
+#   3. Cut + push the tag, EITHER:
+#        • node scripts/release.mjs X.Y.Z --no-upload   (no AMO tokens needed;
+#          bumps versions, commits, tags vX.Y.Z, pushes — CI then publishes), OR
+#        • npm run release -- X.Y.Z                      (if you have .env creds:
+#          uploads locally AND pushes the tag; this CI run then no-ops on AMO
+#          because the version is already there).
+#   4. This workflow checks out the tag and runs the AMO upload.
+#
+# Requires AMO_JWT_ISSUER / AMO_JWT_SECRET in repo → Settings → Secrets.
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version to release (must match [X.Y.Z] entry in CHANGELOG.md)'
-        required: true
-        default: '1.18.0'
-      skip_tests:
-        description: 'Skip test + typecheck phase (use when already verified green)'
-        required: false
-        default: 'false'
-        type: boolean
+  push:
+    tags:
+      - 'v*'
 
 jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # needed to push the release commit + tag
+      contents: read  # the tag already exists on the remote — nothing to push
 
     steps:
       - uses: actions/checkout@v4
@@ -38,22 +40,19 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
-      - name: Configure git identity and auth
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+      - name: Derive version from tag
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Release (listed)
+      - name: Release (listed) from tag
         env:
           AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
-        run: |
-          SKIP=""
-          if [ "${{ inputs.skip_tests }}" = "true" ]; then
-            SKIP="--skip-tests"
-          fi
-          node scripts/release.mjs ${{ inputs.version }} $SKIP
+        # --no-push: the tag that triggered us is already on the remote and
+        # HEAD is detached. release.mjs is idempotent — it skips the commit/tag
+        # (tag exists) and the upload (if the version is already on AMO), so a
+        # tag pushed by a local `npm run release` simply finishes as a no-op.
+        run: node scripts/release.mjs "${{ steps.ver.outputs.version }}" --no-push
