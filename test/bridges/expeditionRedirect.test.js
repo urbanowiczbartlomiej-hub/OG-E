@@ -4,7 +4,7 @@
 //
 // Strategy:
 //   - Unit-test the pure helpers (`getMissionFromBody`, `buildRedirectUrl`,
-//     `isEnabled`, `findNextPlanetWithoutExpedition`) directly through
+//     `isEnabled`, `findNextPlanetWithFreeSlot`) directly through
 //     the `_internalsForTest` export. Small inputs, clean assertions,
 //     failures pinpoint the exact helper at fault.
 //   - Unit-test `overrideResponseText` by calling it on a handcrafted
@@ -31,7 +31,7 @@ import {
 } from '../../src/bridges/expeditionRedirect.js';
 import { _resetObserversForTest } from '../../src/bridges/xhrObserver.js';
 
-const { isEnabled, getMissionFromBody, findNextPlanetWithoutExpedition, buildRedirectUrl, overrideResponseText, ENABLED_KEY } =
+const { isEnabled, getMissionFromBody, findNextPlanetWithFreeSlot, buildRedirectUrl, overrideResponseText, ENABLED_KEY, MAX_PER_PLANET_KEY } =
   _internalsForTest;
 
 const SEND_FLEET_URL =
@@ -54,9 +54,13 @@ afterEach(() => {
 });
 
 /**
- * Build a planet list fixture.
+ * Build a planet list fixture. Each planet's expedition tally is rendered the
+ * way the badges feature does it: an `.ogi-exp-dots` cluster with ONE child
+ * dot per in-flight expedition (the bridge counts those children against the
+ * cap). `expeditions` sets the count explicitly; the legacy `hasExpedition`
+ * boolean is shorthand for one (1) expedition.
  *
- * @param {Array<{ id: string, current?: boolean, hasExpedition?: boolean }>} entries
+ * @param {Array<{ id: string, current?: boolean, hasExpedition?: boolean, expeditions?: number }>} entries
  * @returns {void}
  */
 const setPlanetList = (entries) => {
@@ -67,9 +71,11 @@ const setPlanetList = (entries) => {
     planet.classList.add('smallplanet');
     if (entry.current) planet.classList.add('hightlightPlanet');
     planet.id = 'planet-' + entry.id;
-    if (entry.hasExpedition) {
+    const count = entry.expeditions ?? (entry.hasExpedition ? 1 : 0);
+    if (count > 0) {
       const dots = document.createElement('span');
       dots.classList.add('ogi-exp-dots');
+      for (let i = 0; i < count; i++) dots.appendChild(document.createElement('span'));
       planet.appendChild(dots);
     }
     list.appendChild(planet);
@@ -156,17 +162,17 @@ describe('isEnabled', () => {
 });
 
 // ──────────────────────────────────────────────────────────────────
-// findNextPlanetWithoutExpedition
+// findNextPlanetWithFreeSlot — default cap (1)
 // ──────────────────────────────────────────────────────────────────
 
-describe('findNextPlanetWithoutExpedition', () => {
+describe('findNextPlanetWithFreeSlot — default cap (1)', () => {
   it('returns the next planet after the current one when it lacks .ogi-exp-dots', () => {
     setPlanetList([
       { id: '111', current: true, hasExpedition: true },
       { id: '222', hasExpedition: false },
       { id: '333', hasExpedition: false },
     ]);
-    expect(findNextPlanetWithoutExpedition()).toBe('222');
+    expect(findNextPlanetWithFreeSlot()).toBe('222');
   });
 
   it('skips planets with active expeditions and picks the first clear one', () => {
@@ -175,7 +181,7 @@ describe('findNextPlanetWithoutExpedition', () => {
       { id: '222', hasExpedition: true },
       { id: '333', hasExpedition: false },
     ]);
-    expect(findNextPlanetWithoutExpedition()).toBe('333');
+    expect(findNextPlanetWithFreeSlot()).toBe('333');
   });
 
   it('wraps around to the start of the list when current is the last entry', () => {
@@ -184,7 +190,7 @@ describe('findNextPlanetWithoutExpedition', () => {
       { id: '222', hasExpedition: true },
       { id: '333', current: true, hasExpedition: true },
     ]);
-    expect(findNextPlanetWithoutExpedition()).toBe('111');
+    expect(findNextPlanetWithFreeSlot()).toBe('111');
   });
 
   it('returns null when every OTHER planet already has an expedition', () => {
@@ -193,12 +199,12 @@ describe('findNextPlanetWithoutExpedition', () => {
       { id: '222', hasExpedition: true },
       { id: '333', hasExpedition: true },
     ]);
-    expect(findNextPlanetWithoutExpedition()).toBeNull();
+    expect(findNextPlanetWithFreeSlot()).toBeNull();
   });
 
   it('returns null when there are fewer than 2 planets', () => {
     setPlanetList([{ id: '111', current: true, hasExpedition: false }]);
-    expect(findNextPlanetWithoutExpedition()).toBeNull();
+    expect(findNextPlanetWithFreeSlot()).toBeNull();
   });
 
   it('returns null when no planet is highlighted (edge case)', () => {
@@ -206,11 +212,68 @@ describe('findNextPlanetWithoutExpedition', () => {
       { id: '111', hasExpedition: false },
       { id: '222', hasExpedition: false },
     ]);
-    expect(findNextPlanetWithoutExpedition()).toBeNull();
+    expect(findNextPlanetWithFreeSlot()).toBeNull();
   });
 
   it('returns null when #planetList is missing entirely', () => {
-    expect(findNextPlanetWithoutExpedition()).toBeNull();
+    expect(findNextPlanetWithFreeSlot()).toBeNull();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// findNextPlanetWithFreeSlot — cap > 1 (round-robin)
+// ──────────────────────────────────────────────────────────────────
+
+describe('findNextPlanetWithFreeSlot — cap of 2 (round-robin)', () => {
+  beforeEach(() => {
+    localStorage.setItem(MAX_PER_PLANET_KEY, '2');
+  });
+
+  it('still picks a planet that already has ONE expedition (under the cap of 2)', () => {
+    setPlanetList([
+      { id: '111', current: true, expeditions: 1 },
+      { id: '222', expeditions: 1 },
+    ]);
+    expect(findNextPlanetWithFreeSlot()).toBe('222');
+  });
+
+  it('walks in list order, NOT to the emptiest planet (true round-robin)', () => {
+    // B has one expedition, C has none — but B comes first in the wrap from A,
+    // so the next pass tops B up before reaching the emptier C.
+    setPlanetList([
+      { id: '111', current: true, expeditions: 1 },
+      { id: '222', expeditions: 1 },
+      { id: '333', expeditions: 0 },
+    ]);
+    expect(findNextPlanetWithFreeSlot()).toBe('222');
+  });
+
+  it('skips a planet already at the cap and picks the next under it', () => {
+    setPlanetList([
+      { id: '111', current: true, expeditions: 1 },
+      { id: '222', expeditions: 2 },
+      { id: '333', expeditions: 1 },
+    ]);
+    expect(findNextPlanetWithFreeSlot()).toBe('333');
+  });
+
+  it('returns null when every OTHER planet has reached the cap', () => {
+    setPlanetList([
+      { id: '111', current: true, expeditions: 0 },
+      { id: '222', expeditions: 2 },
+      { id: '333', expeditions: 2 },
+    ]);
+    expect(findNextPlanetWithFreeSlot()).toBeNull();
+  });
+
+  it('treats a missing / non-positive stored cap as 1', () => {
+    localStorage.setItem(MAX_PER_PLANET_KEY, '0');
+    setPlanetList([
+      { id: '111', current: true, expeditions: 1 },
+      { id: '222', expeditions: 1 },
+    ]);
+    // Clamped to 1 ⇒ a planet with one expedition is already full.
+    expect(findNextPlanetWithFreeSlot()).toBeNull();
   });
 });
 

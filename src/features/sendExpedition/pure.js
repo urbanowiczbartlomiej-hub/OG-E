@@ -71,6 +71,13 @@ export const DRAG_THRESHOLD = 8;
 export const MAX_LABEL_MS = 2000;
 
 /**
+ * Hold duration (ms) for the long-press "skip this planet" gesture. Matches
+ * sendColony's skip hold — a deliberate 2 s press (with the shared button's
+ * radial charge arc as live feedback) so an ordinary tap can never trip it.
+ */
+export const HOLD_SKIP_MS = 2000;
+
+/**
  * Timeout for waiting on AGR's routine element / fleet panel hydration.
  * 15 s is long enough for a slow phone on a cold cache to receive the
  * async fleet-panel assets, short enough that an obviously-broken page

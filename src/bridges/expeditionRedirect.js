@@ -40,13 +40,26 @@
 //   - Originate any request. Zero network traffic from us, ever. We only
 //     rewrite what the game is already reading. (This is the TOS-critical
 //     boundary.)
-//   - Redirect when no suitable target exists. If all the user's planets
-//     already have expeditions in flight, the original `redirectUrl`
-//     (game's own choice) stays intact — the user sees exactly what the
-//     game intended, no surprise.
+//   - Redirect when no suitable target exists. If every planet has already
+//     reached the per-planet expedition cap (`maxExpeditionsPerPlanet`), the
+//     original `redirectUrl` (game's own choice) stays intact — the user sees
+//     exactly what the game intended, no surprise.
 //   - Detect expedition state itself. We rely on the `.ogi-exp-dots`
 //     badge that the isolated-world UI layer renders next to planets
-//     with active expeditions — DOM signal, no network.
+//     with active expeditions — DOM signal, no network. The badge draws
+//     ONE dot per in-flight expedition, so its child count IS the planet's
+//     current expedition tally, which we compare against the cap.
+//
+// # Round-robin, not fill-to-max
+//
+// The cap (`maxExpeditionsPerPlanet`, default 1) is honoured by COUNTING the
+// badge dots, not by mere presence. So with the cap at 2 the hop lands on the
+// next planet still UNDER its cap — visiting 1×A, 1×B, 1×C, then 2×A, 2×B …
+// (the current planet is always skipped by position, so the wrap naturally
+// spreads sends evenly) rather than draining one planet to its cap before
+// moving on, or — the pre-cap bug — stopping after a single pass because every
+// planet already had one expedition. At the default cap of 1 this reduces to
+// the original "skip any planet that already has an expedition".
 
 /** @ts-check */
 
@@ -70,6 +83,40 @@ const ENABLED_KEY = 'oge_autoRedirectExpedition';
  * @returns {boolean}
  */
 const isEnabled = () => safeLS.bool(ENABLED_KEY, true);
+
+/**
+ * localStorage key for the per-planet expedition cap. Owned by the settings
+ * store (`state/settings.js`, field `maxExpeditionsPerPlanet`); mirrored here
+ * as a bare string for the SAME reason as {@link ENABLED_KEY} — this is a
+ * MAIN-world bridge and must not drag in the isolated-world `state/` store.
+ * localStorage is per-origin, so this reads the value for the current server.
+ *
+ * @type {string}
+ */
+const MAX_PER_PLANET_KEY = 'oge_maxExpeditionsPerPlanet';
+
+/**
+ * Read the per-planet expedition cap. Missing / non-positive → 1 (the
+ * settings default), so the redirect never treats a planet as having
+ * unlimited room.
+ *
+ * @returns {number}
+ */
+const readMaxExpeditionsPerPlanet = () => {
+  const raw = safeLS.int(MAX_PER_PLANET_KEY, 1);
+  return raw > 0 ? raw : 1;
+};
+
+/**
+ * Count a planet's in-flight expeditions from its `.ogi-exp-dots` badge.
+ * The badge (rendered by the isolated-world badges feature) draws one dot
+ * child per expedition, so the child count is the tally. No badge → 0.
+ *
+ * @param {Element} planet  A `#planetList .smallplanet` element.
+ * @returns {number}
+ */
+const countPlanetExpeditions = (planet) =>
+  planet.querySelector('.ogi-exp-dots')?.childElementCount ?? 0;
 
 /**
  * Extract the `mission` field from a form-encoded sendFleet body.
@@ -105,13 +152,17 @@ const getMissionFromBody = (body) => {
 };
 
 /**
- * Find the cp (planet id) of the next planet in `#planetList` order that
- * doesn't currently have an active expedition in flight.
+ * Find the cp (planet id) of the next planet in `#planetList` order that is
+ * still UNDER the per-planet expedition cap (`maxExpeditionsPerPlanet`).
  *
  * "Next" is defined as: the first planet after the currently highlighted
  * one (the `.hightlightPlanet` — yes, the game's CSS class is spelled
- * that way) that lacks a `.ogi-exp-dots` badge, wrapping around to the
- * start of the list if necessary.
+ * that way) whose in-flight expedition count (its `.ogi-exp-dots` child
+ * count) is below the cap, wrapping around to the start of the list if
+ * necessary. Always walking forward from the active planet and skipping it
+ * is what makes the loop ROUND-ROBIN: each pass tops every planet up by one
+ * before any planet receives its next expedition. At the default cap of 1
+ * this is exactly "the first planet that has no expedition yet".
  *
  * The `.ogi-exp-dots` badge is rendered by the isolated-world UI layer
  * next to every planet with an expedition in flight. Using the DOM as
@@ -125,14 +176,15 @@ const getMissionFromBody = (body) => {
  *   - The currently active planet can't be found (edge case; the game
  *     always marks exactly one planet highlighted, but a race between
  *     our observer and the DOM rebuild could theoretically hit it).
- *   - Every other planet already has a `.ogi-exp-dots` badge — i.e. the
- *     user has saturated their expedition slots across all planets and
- *     there's genuinely no next target.
+ *   - Every other planet has already reached the cap — i.e. the user has
+ *     saturated their expedition budget across all planets and there's
+ *     genuinely no next target.
  *
  * @returns {string | null} The cp id as a string (what the game's URL
  *   param format expects), or `null` when no suitable target exists.
  */
-const findNextPlanetWithoutExpedition = () => {
+const findNextPlanetWithFreeSlot = () => {
+  const max = readMaxExpeditionsPerPlanet();
   const planets = /** @type {HTMLElement[]} */ (
     [...document.querySelectorAll(GAME.SMALL_PLANET)]
   );
@@ -142,12 +194,13 @@ const findNextPlanetWithoutExpedition = () => {
   if (currentIdx === -1) return null;
 
   // Wrap-around scan: we skip offset 0 (that's the current planet, which
-  // just finished sending an expedition so it definitely has — or is
-  // about to have — the dots badge) and walk forward, wrapping to the
-  // start when we fall off the end.
+  // just finished sending an expedition — its badge hasn't caught up yet,
+  // and we don't want to immediately bounce back to it) and walk forward,
+  // wrapping to the start when we fall off the end. The first planet still
+  // under the cap wins.
   for (let i = 1; i < planets.length; i++) {
     const planet = planets[(currentIdx + i) % planets.length];
-    if (!planet.querySelector('.ogi-exp-dots')) {
+    if (countPlanetExpeditions(planet) < max) {
       const cpId = planet.id.replace('planet-', '');
       if (cpId) return cpId;
     }
@@ -170,7 +223,7 @@ const findNextPlanetWithoutExpedition = () => {
  * helps reuse.
  *
  * @param {string} cpId The target planet id (output of
- *   {@link findNextPlanetWithoutExpedition}).
+ *   {@link findNextPlanetWithFreeSlot}).
  * @returns {string} An absolute URL suitable for `location.href = ...`.
  */
 const buildRedirectUrl = (cpId) =>
@@ -193,7 +246,7 @@ const buildRedirectUrl = (cpId) =>
  *   - If `resp.success` is falsy or there's no `redirectUrl` → return
  *     raw (failed dispatch; we have nothing to rewrite and shouldn't
  *     navigate anyway).
- *   - If `findNextPlanetWithoutExpedition` returns null → return raw
+ *   - If `findNextPlanetWithFreeSlot` returns null → return raw
  *     (no suitable target; game's own redirect stays in effect).
  *
  * Any of these fallbacks keeps the cache unset, so a subsequent read
@@ -224,7 +277,7 @@ const overrideResponseText = (xhr, responseTextDescriptor) => {
       try {
         const resp = JSON.parse(raw);
         if (resp && resp.success && resp.redirectUrl) {
-          const nextCp = findNextPlanetWithoutExpedition();
+          const nextCp = findNextPlanetWithFreeSlot();
           if (nextCp) {
             resp.redirectUrl = buildRedirectUrl(nextCp);
             cached = JSON.stringify(resp);
@@ -329,8 +382,9 @@ export const _resetExpeditionRedirectForTest = () => {
 export const _internalsForTest = {
   isEnabled,
   getMissionFromBody,
-  findNextPlanetWithoutExpedition,
+  findNextPlanetWithFreeSlot,
   buildRedirectUrl,
   overrideResponseText,
   ENABLED_KEY,
+  MAX_PER_PLANET_KEY,
 };

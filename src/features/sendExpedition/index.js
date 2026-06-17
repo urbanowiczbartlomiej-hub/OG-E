@@ -31,6 +31,16 @@
 // and we lean on AGR (which every player runs) rather than driving the
 // native form ourselves — AGR overwrites the fleet2 target anyway.
 //
+// # Long-press = skip this planet
+//
+// A long-press ({@link HOLD_SKIP_MS} ms, with the shared button's radial
+// charge arc as feedback) navigates to the next planet still UNDER
+// `maxExpeditionsPerPlanet` WITHOUT sending — the manual counterpart to the
+// auto-redirect's round-robin hop (`bridges/expeditionRedirect.js`). It lets
+// the player deliberately pass over the planet they're on; the walk just
+// continues from the destination. Paints "All maxed!" when no OTHER planet
+// has a free slot. This is navigation only — still zero server actions.
+//
 // # Max-expedition guard
 //
 // If `#eventContent` already shows `maxExpeditionsPerPlanet` expedition fleets
@@ -86,6 +96,7 @@ import {
   FOCUS_KEY,
   FOCUS_VALUE,
   MAX_LABEL_MS,
+  HOLD_SKIP_MS,
   POLL_TIMEOUT_MS,
   POLL_INTERVAL_MS,
   FOCUS_RESTORE_DELAY_MS,
@@ -152,6 +163,15 @@ const onFleetDispatcherSnapshot = (e) => {
  * @type {{ dispose: () => void } | null}
  */
 let installed = null;
+
+/**
+ * Module-scope handle to the live install's `handleSkip` (the long-press
+ * action), so {@link _onSkipForTest} can invoke it directly. Reset to a no-op
+ * on dispose. Default no-op covers the "not installed" case.
+ *
+ * @type {() => void}
+ */
+let skipForTest = () => {};
 
 /**
  * Install the floating Send Exp button.
@@ -442,6 +462,34 @@ export const installSendExpedition = () => {
   };
 
   /**
+   * Long-press (hold) the button → SKIP the current planet: navigate to the
+   * next planet still under the per-planet cap WITHOUT sending, so the
+   * round-robin walk continues from there. The manual counterpart to the
+   * auto-redirect's hop — for deliberately passing over the planet you're on.
+   * Paints "All maxed!" when no OTHER planet has a free slot.
+   *
+   * Navigation only: it issues no server action, so unlike {@link handleClick}
+   * it skips the fleet-cap / global-cap gates (those guard sends, not hops).
+   *
+   * @returns {void}
+   */
+  const handleSkip = () => {
+    if (busy) return;
+    const nextCp = findPlanetWithExpSlot(true);
+    if (nextCp !== null) {
+      location.href = buildFleetdispatchUrl(nextCp);
+      return;
+    }
+    paintAllMaxed(/** @type {HTMLButtonElement} */ (controller?.el));
+  };
+
+  // Exposed to the test-only handle below; reset on dispose. Lets tests drive
+  // the skip outcome directly (mirrors sendColony's `_onSendHoldForTest`)
+  // without synthesising the pointer-hold gesture — same rationale as this
+  // file's "drag testing is NOT covered" note.
+  skipForTest = handleSkip;
+
+  /**
    * Create and mount the button via the shared {@link makeButton}
    * controller (geometry, placement, engraved ring, drag, click + focus
    * persistence). Idempotent: {@link makeButton} returns `null` when the
@@ -464,6 +512,7 @@ export const installSendExpedition = () => {
       module: { id: 'exp', name: 'Expeditions', color: BG_IDLE, glyph: COMET_GLYPH },
       gateUntilEventBox: true,
       focusKey: FOCUS_KEY,
+      holdMs: HOLD_SKIP_MS,
       zones: [
         {
           key: 'main',
@@ -472,6 +521,7 @@ export const installSendExpedition = () => {
           bg: BG_IDLE,
           glyph: COMET_GLYPH,
           onTap: () => void handleClick(/** @type {HTMLButtonElement} */ (controller?.el)),
+          onHold: handleSkip,
           focusValue: FOCUS_VALUE,
           focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,
         },
@@ -574,6 +624,7 @@ export const installSendExpedition = () => {
         FLEET_DISPATCHER_EVENT,
         onFleetDispatcherSnapshot,
       );
+      skipForTest = () => {};
       installed = null;
     },
   };
@@ -607,3 +658,13 @@ export const _resetSendExpeditionForTest = () => {
 export const _resetFleetDispatcherSnapshotForSendExpeditionTest = () => {
   fleetDispatcherSnapshot = null;
 };
+
+/**
+ * Test-only: invoke the live install's long-press "skip" action directly.
+ * Mirrors sendColony's `_onSendHoldForTest` — drives the skip OUTCOME without
+ * synthesising the pointer-hold gesture (the shared button owns the gesture
+ * mechanics + charge arc). No-op when not installed.
+ *
+ * @returns {void}
+ */
+export const _onSkipForTest = () => skipForTest();

@@ -35,6 +35,7 @@ import {
   installSendExpedition,
   _resetSendExpeditionForTest,
   _resetFleetDispatcherSnapshotForSendExpeditionTest,
+  _onSkipForTest,
 } from '../../src/features/sendExpedition/index.js';
 import { _resetFleetOwnershipForTest } from '../../src/features/shared/fleetOwnership.js';
 import {
@@ -450,6 +451,115 @@ describe('installSendExpedition — max expedition guard', () => {
     // No `mission` param — AGR assigns it after the user taps its
     // expedition routine on the fleetdispatch page.
     expect(navTarget).not.toContain('mission=');
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// Long-press skip
+// ──────────────────────────────────────────────────────────────────
+
+describe('installSendExpedition — long-press skip', () => {
+  /**
+   * Build a multi-planet scene: one `#planetList` row per entry (the
+   * `current` one carries `hightlightPlanet`) plus matching expedition rows
+   * in `#eventContent` so `countActiveExpeditions` tallies each planet by its
+   * coords. Drives the skip via `_onSkipForTest()` (the gesture mechanics live
+   * in the shared button — see this file's "drag testing is NOT covered" note).
+   *
+   * @param {{ maxExpeditionsPerPlanet?: number, planets: Array<{ cp: number, coords: string, current?: boolean, expeditions?: number }> }} opts
+   */
+  const setupMultiPlanetScene = ({ maxExpeditionsPerPlanet = 1, planets }) => {
+    settingsStore.set({
+      ...settingsStore.get(),
+      fabMode: true,
+      maxExpeditionsPerPlanet,
+    });
+    const current = planets.find((p) => p.current) ?? planets[0];
+    location.search = `?page=ingame&component=overview&cp=${current.cp}`;
+
+    const planetRows = planets
+      .map(
+        (p) =>
+          `<div class="smallplanet${p.current ? ' hightlightPlanet' : ''}" id="planet-${p.cp}">
+             <a class="planetlink"><span class="planet-koords">[${p.coords}]</span></a>
+           </div>`,
+      )
+      .join('');
+
+    const expRows = planets
+      .flatMap((p) =>
+        Array(p.expeditions ?? 0)
+          .fill(0)
+          .map(
+            () =>
+              `<tr class="eventFleet" data-mission-type="15" data-return-flight="true">
+                 <td class="originFleet">X</td>
+                 <td class="coordsOrigin">[${p.coords}]</td>
+                 <td class="detailsFleet"><span>1</span></td>
+               </tr>`,
+          ),
+      )
+      .join('');
+
+    document.body.innerHTML = `
+      <div id="planetList">${planetRows}</div>
+      <div id="eventContent"><table><tbody>${expRows}</tbody></table></div>
+    `;
+  };
+
+  it('skips the current planet and navigates to the next one under the cap', () => {
+    setupMultiPlanetScene({
+      maxExpeditionsPerPlanet: 1,
+      planets: [
+        { cp: 100, coords: '1:1:1', current: true, expeditions: 0 },
+        { cp: 200, coords: '1:1:2', expeditions: 0 },
+      ],
+    });
+    installSendExpedition();
+
+    _onSkipForTest();
+
+    expect(navTarget).not.toBeNull();
+    expect(navTarget).toContain('cp=200');
+    // Skip is navigation only — no send, so no mission param.
+    expect(navTarget).not.toContain('mission=');
+  });
+
+  it('skips planets already at the cap and lands on the next under it (round-robin)', () => {
+    setupMultiPlanetScene({
+      maxExpeditionsPerPlanet: 2,
+      planets: [
+        { cp: 100, coords: '1:1:1', current: true, expeditions: 1 },
+        { cp: 200, coords: '1:1:2', expeditions: 2 }, // at cap → skipped
+        { cp: 300, coords: '1:1:3', expeditions: 1 }, // under cap → target
+      ],
+    });
+    installSendExpedition();
+
+    _onSkipForTest();
+
+    expect(navTarget).toContain('cp=300');
+  });
+
+  it('paints "All maxed!" and does not navigate when no OTHER planet has room', () => {
+    vi.useFakeTimers();
+    // Only the current planet exists → skipping it leaves nowhere to go.
+    setupMultiPlanetScene({
+      maxExpeditionsPerPlanet: 1,
+      planets: [{ cp: 100, coords: '1:1:1', current: true, expeditions: 0 }],
+    });
+    installSendExpedition();
+    const btn = getBtn();
+
+    _onSkipForTest();
+
+    expect(navTarget).toBeNull();
+    expect(labelOf(btn)).toBe('All maxed!');
+
+    // After 2s the transient label reverts.
+    vi.advanceTimersByTime(2000);
+    expect(labelOf(btn)).toBe('Explore');
+    vi.useRealTimers();
   });
 });
 
