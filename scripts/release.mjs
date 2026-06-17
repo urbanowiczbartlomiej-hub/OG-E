@@ -185,7 +185,32 @@ function extractChangelogSection(version) {
   return { date, body };
 }
 
-const { date: changelogDate, body: releaseNotes } = extractChangelogSection(VERSION);
+// AMO caps the `release_notes` field at 3000 characters and 400s the version
+// POST if the body is longer. The CHANGELOG section is the full permanent
+// record (a big release easily runs past 3000), so we keep it intact and cap
+// only the copy SENT to AMO — cut at a line boundary (never mid-bullet) and
+// append a pointer so the truncation is visible. Pure string math; nothing on
+// disk changes.
+const AMO_RELEASE_NOTES_MAX = 3000;
+
+function capReleaseNotes(notes, max = AMO_RELEASE_NOTES_MAX) {
+  if (notes.length <= max) return notes;
+  const footer = '\n\n…(truncated — see the full CHANGELOG on GitHub.)';
+  let cut = notes.slice(0, max - footer.length);
+  const lastBreak = cut.lastIndexOf('\n');
+  if (lastBreak > 0) cut = cut.slice(0, lastBreak);
+  return cut.trimEnd() + footer;
+}
+
+const { date: changelogDate, body: rawReleaseNotes } = extractChangelogSection(VERSION);
+const releaseNotes = capReleaseNotes(rawReleaseNotes);
+if (releaseNotes !== rawReleaseNotes) {
+  console.warn(
+    `release: CHANGELOG section is ${rawReleaseNotes.length} chars — over AMO's ` +
+      `${AMO_RELEASE_NOTES_MAX}-char release_notes limit; sending a truncated copy ` +
+      '(the CHANGELOG keeps the full text).',
+  );
+}
 
 const reviewerNotesPath = resolve(ROOT, 'amo-reviewer-notes.txt');
 if (!existsSync(reviewerNotesPath)) {
