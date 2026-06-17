@@ -77,6 +77,10 @@ import { parseDurationList } from './duration.js';
  * @property {number} shipCount  Total ships on the leg (from `detailsFleet`).
  * @property {string} label      Human description for the push body
  *   (e.g. `"Deployment → [4:478:14]"`), built at scan time from the row.
+ * @property {string} [origin]      Launch coords, bracketed (push `{origin}`).
+ * @property {string} [originName]  Launch body name (push `{originName}`).
+ * @property {string} [target]      Mission-target coords (push `{target}`).
+ * @property {string} [targetName]  Mission-target body name (push `{targetName}`).
  */
 
 /**
@@ -92,6 +96,10 @@ import { parseDurationList } from './duration.js';
  *   negative = before arrival, 0 = at arrival, positive = after. Sorted asc.
  * @property {number[]} fireAts   Derived absolute fire times (`arrivalAt + o`
  *   for each offset, same order). Stored so the scheduler doesn't recompute.
+ * @property {string} [origin]      Launch coords, bracketed (push `{origin}`).
+ * @property {string} [originName]  Launch body name (push `{originName}`).
+ * @property {string} [target]      Mission-target coords (push `{target}`).
+ * @property {string} [targetName]  Mission-target body name (push `{targetName}`).
  */
 
 /**
@@ -206,6 +214,12 @@ export const reconcileFleetSaves = (
       arrivalAt: c.arrivalAt,
       shipCount: c.shipCount,
       label: c.label,
+      // Per-leg push metadata refreshed from the DOM each scan (the row is the
+      // source of truth); overrides any stale locked value.
+      origin: c.origin ?? '',
+      originName: c.originName ?? '',
+      target: c.target ?? '',
+      targetName: c.targetName ?? '',
       offsetsSec: eff,
       fireAts: eff.map((o) => c.arrivalAt + o),
     });

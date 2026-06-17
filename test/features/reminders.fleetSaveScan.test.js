@@ -9,7 +9,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  shipCountOf, isOwnFleet, fleetSaveLabelFor, extractFleetSaveCandidates,
+  shipCountOf, isOwnFleet, fleetSaveLabelFor, extractFleetSaveCandidates, fleetRowMeta,
 } from '../../src/features/reminders/fleetSaveScan.js';
 
 /**
@@ -24,15 +24,22 @@ import {
  * @param {boolean} [o.own]    `friendly` (own) vs `hostile` (incoming).
  * @param {string} [o.dest]
  * @param {string} [o.origin]
+ * @param {string} [o.originName]
+ * @param {string} [o.destName]
  * @returns {string}
  */
-const row = ({ id, mission = '4', ret = 'false', arrival, ships, own = true, dest = '4:478:14', origin = '7:281:15' }) => `
+const row = ({
+  id, mission = '4', ret = 'false', arrival, ships, own = true,
+  dest = '4:478:14', origin = '7:281:15', originName = 'P1', destName = 'Deep space',
+}) => `
   <tr class="eventFleet" id="eventRow-${id}"
       data-mission-type="${mission}" data-return-flight="${ret}"
       data-arrival-time="${arrival}">
     <td class="countDown"><span class="${own ? 'friendly' : 'hostile'} textBeefy">x</span></td>
     <td class="detailsFleet"><span>${ships}</span></td>
+    <td class="originFleet"><figure class="planetIcon planet"></figure>${originName}</td>
     <td class="coordsOrigin"><a>[${origin}]</a></td>
+    <td class="destFleet"><span class="tooltip" title="${destName}"><figure></figure>${destName.slice(0, 6)}...</span></td>
     <td class="destCoords"><a>[${dest}]</a></td>
   </tr>`;
 
@@ -73,11 +80,37 @@ describe('fleetSaveLabelFor', () => {
   });
 });
 
+describe('fleetRowMeta', () => {
+  it('captures launch/target coords + names and ship count', () => {
+    const r = paint(row({
+      id: '1', arrival: '1', ships: '4.323',
+      origin: '4:467:15', originName: 'P1', dest: '4:467:16', destName: 'Deep space',
+    }));
+    expect(fleetRowMeta(r)).toEqual({
+      origin: '[4:467:15]', originName: 'P1',
+      target: '[4:467:16]', targetName: 'Deep space', shipCount: 4323,
+    });
+  });
+
+  it('omits shipCount when unparseable; missing cells yield empty strings', () => {
+    document.body.innerHTML =
+      '<table id="eventContent"><tbody>' +
+      '<tr class="eventFleet" id="eventRow-1"><td class="coordsOrigin"><a>[1:2:3]</a></td></tr>' +
+      '</tbody></table>';
+    const r = /** @type {HTMLElement} */ (document.querySelector('tr.eventFleet'));
+    expect(fleetRowMeta(r)).toEqual({ origin: '[1:2:3]', originName: '', target: '', targetName: '' });
+  });
+});
+
 describe('extractFleetSaveCandidates', () => {
-  it('reads own legs as { id, arrivalAt, shipCount, label }', () => {
+  it('reads own legs with the full per-fleet metadata', () => {
     paint(row({ id: '100', arrival: '1780230414', ships: '8.256.872', dest: '4:478:14' }));
     expect(extractFleetSaveCandidates()).toEqual([
-      { id: 'eventRow-100', arrivalAt: 1780230414, shipCount: 8256872, label: 'Deployment → [4:478:14]' },
+      {
+        id: 'eventRow-100', arrivalAt: 1780230414, shipCount: 8256872,
+        label: 'Deployment → [4:478:14]',
+        origin: '[7:281:15]', originName: 'P1', target: '[4:478:14]', targetName: 'Deep space',
+      },
     ]);
   });
 

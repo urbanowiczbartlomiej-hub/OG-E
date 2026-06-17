@@ -1,17 +1,19 @@
 // @ts-check
 
-// Per-universe scan/colonization config — split across TWO dashboard tabs but
-// backed by ONE shared `chrome.storage.local` slot (`<uni>:oge_galaxyScanConfig`):
+// Per-universe scan/colonization config — ONE editor on the Colonizations tab,
+// backed by ONE shared `chrome.storage.local` slot (`<uni>:oge_galaxyScanConfig`).
+// It carries two groups of fields:
 //
 //   - Colonization knobs (target positions, prefer-other-galaxies, arrival gap,
-//     abandon threshold, abandon password) live on the Colonizations tab.
-//   - Scan / re-scan policy (per-status rescan times + the abandoned sweep)
-//     lives on the Galaxy Observations tab.
+//     abandon threshold, abandon password).
+//   - Scan / re-scan policy (per-status rescan times + the abandoned sweep).
 //
-// Both are built by the same generic {@link installConfigEditor}. Each editor
-// owns only its subset of fields and saves via read-modify-write merge, so the
-// two surfaces (and the Reminders tab's fleet-save knobs, which share the same
-// slot) never clobber each other.
+// The two field groups were once split across the Colonizations and (retired)
+// Galaxy Observations tabs; they're now one form under a single ⚙ Settings panel
+// with one Save/Reset. Each group is still built by its own field-builder and
+// composed by {@link buildScanColonyFields}, and Save is read-modify-write so the
+// fields it does NOT own (the Reminders tab's fleet-save `fs*` knobs, which share
+// the same slot) are never clobbered.
 //
 // Saving writes three keys, mirroring `dashboard/routes.js`:
 //   1. `<uni>:oge_galaxyScanConfig`   — the config value
@@ -230,12 +232,18 @@ const buildColonizationFields = (body) => {
   colonyPasswordInput.title =
     'Account password, autofilled into the game’s give-up confirmation form during the abandon flow.';
 
-  body.appendChild(row('Target positions', positionsInput, 'list or range, e.g. 7-9, 15'));
-  body.appendChild(row('Prefer neighbouring galaxies', preferInput, 'more predictable arrival times'));
-  body.appendChild(row('Prefer farthest systems first', preferFarthestInput, 'better arrival spread; off = nearest first'));
-  body.appendChild(row('Min gap between arrivals (sec)', colonyMinGapInput));
-  body.appendChild(row('Min fields to keep colony', colonyMinFieldsInput));
-  body.appendChild(row('Account password (for abandon)', colonyPasswordInput));
+  // Packed into the same responsive grid (1 → 2 → 3 columns) the rescan
+  // fields use, so both groups of the combined editor read as columns rather
+  // than one tall single-column stack.
+  const grid = mk('div');
+  grid.className = 'cfg-grid';
+  grid.appendChild(row('Target positions', positionsInput, 'list or range, e.g. 7-9, 15'));
+  grid.appendChild(row('Prefer neighbouring galaxies', preferInput, 'more predictable arrival times'));
+  grid.appendChild(row('Prefer farthest systems first', preferFarthestInput, 'better arrival spread; off = nearest first'));
+  grid.appendChild(row('Min gap between arrivals (sec)', colonyMinGapInput));
+  grid.appendChild(row('Min fields to keep colony', colonyMinFieldsInput));
+  grid.appendChild(row('Account password (for abandon)', colonyPasswordInput));
+  body.appendChild(grid);
 
   return {
     fill: (cfg) => {
@@ -321,30 +329,46 @@ const buildScanRescanFields = (body, setStatus) => {
 };
 
 /**
- * Install the Colonization config editor into `#colonizationConfigBody`
- * (Colonizations tab). Returns a `refresh()` the host calls on universe change.
+ * Compose the Colonizations-tab config form: the colonization & abandon group
+ * followed by the scan / re-scan policy group, in one body with a single
+ * Save/Reset. Merges the two builders' `fill`/`collect`; an invalid rescan
+ * field makes the whole collect fail (so nothing saves), with the status set by
+ * {@link buildScanRescanFields}.
+ *
+ * `buildScanRescanFields` emits its own "Re-scan after…" group heading, so it
+ * needs no extra heading here — only the colonization group gets one.
+ *
+ * @param {HTMLElement} body
+ * @param {(msg: string, color?: string) => void} setStatus
+ * @returns {EditorFields}
+ */
+const buildScanColonyFields = (body, setStatus) => {
+  body.appendChild(groupHeading('Colonization & abandon'));
+  const colonization = buildColonizationFields(body);
+  const rescan = buildScanRescanFields(body, setStatus);
+  return {
+    fill: (cfg) => { colonization.fill(cfg); rescan.fill(cfg); },
+    collect: () => {
+      const colonyOwned = colonization.collect();
+      if (!colonyOwned) return null;
+      const rescanOwned = rescan.collect();
+      if (!rescanOwned) return null;
+      return { ...colonyOwned, ...rescanOwned };
+    },
+  };
+};
+
+/**
+ * Install the combined scan/colonization config editor into
+ * `#colonizationConfigBody` (Colonizations tab's ⚙ Settings). Returns a
+ * `refresh()` the host calls on universe change.
  *
  * @param {{ getUniverseId: () => string }} opts
  * @returns {{ refresh: () => void }}
  */
-export const installColonizationConfig = ({ getUniverseId }) =>
+export const installScanColonyConfig = ({ getUniverseId }) =>
   installConfigEditor({
     getUniverseId,
     containerId: 'colonizationConfigBody',
-    build: buildColonizationFields,
-  });
-
-/**
- * Install the Scan re-scan config editor into `#scanRescanBody`
- * (Galaxy Observations tab). Returns a `refresh()` the host calls on universe
- * change.
- *
- * @param {{ getUniverseId: () => string }} opts
- * @returns {{ refresh: () => void }}
- */
-export const installScanRescanConfig = ({ getUniverseId }) =>
-  installConfigEditor({
-    getUniverseId,
-    containerId: 'scanRescanBody',
-    build: buildScanRescanFields,
+    build: buildScanColonyFields,
   });

@@ -104,14 +104,38 @@ export const remindersSection = {
       // re-derives whenever the token changes. Painted on load (not only
       // after a token edit) so the topic is always there, ready to copy.
       // Also shown on the OG-E Dashboard's Reminders tab.
+      //
+      // `secret: true` — the topic is a capability secret (anyone who learns it
+      // can read these reminders), so the control masks it behind an eye toggle
+      // and offers a Copy button instead of printing it in the clear.
       id: 'ntfyTopic',
       label: 'ntfy.sh — your topic (subscribe on phone)',
       type: 'asyncStatus',
+      // Spans both columns: the masked value + reveal + copy buttons don't fit
+      // the narrow 220px value column (they overflowed into a horizontal scroll).
+      fullWidth: true,
+      secret: true,
       refreshKey: (s) => s.reminderNtfyToken,
       fetchText: async (s) =>
         isValidNtfyToken(s.reminderNtfyToken)
           ? await deriveNtfyTopic(s.reminderNtfyToken)
           : '— (enter a valid token first)',
+    },
+    {
+      // One-line privacy note for the topic. The FULL explainer (how the topic
+      // is derived, what to do on a leak, how to lock it to your account) lives
+      // on the Dashboard ▸ Reminders tab — kept there as the single source of
+      // truth (DRY); this row just states the essence + points to it. DOM-only
+      // id (not a Settings field), like the status/topic rows above it.
+      id: 'ntfyTopicPrivacy',
+      label: 'ntfy.sh — topic privacy',
+      type: 'static',
+      // Spans both columns: a paragraph reads as a sliver in the 220px column.
+      fullWidth: true,
+      getText: () =>
+        'Treat your topic like a password — never share it. If it leaks, change '
+        + 'the token above to mint a new one. How it’s generated and how to lock '
+        + 'it to your account: OG-E Dashboard ▸ Reminders.',
     },
   ],
 };

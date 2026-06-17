@@ -53,6 +53,11 @@
  *   so the scheduler doesn't recompute it.
  * @property {string} label      Human description for the push body, built at
  *   arm time from the row (e.g. `"Expedition → [4:467:16]"`). Display only.
+ * @property {string} [origin]      Launch coords, bracketed (push `{origin}`).
+ * @property {string} [originName]  Launch body name (push `{originName}`).
+ * @property {string} [target]      Mission-target coords (push `{target}`).
+ * @property {string} [targetName]  Mission-target body name (push `{targetName}`).
+ * @property {number} [shipCount]   Total ships on the leg (push `{shipCount}`).
  * @property {string} [fleetId]  OGame fleet id (`data-fleet-id`) — shared by a
  *   fleet's legs. Stored for future leg-linking / fleetSave auto-detect; not
  *   used for identity today.

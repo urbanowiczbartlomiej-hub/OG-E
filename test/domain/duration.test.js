@@ -1,7 +1,7 @@
 // @ts-check
 
 import { describe, it, expect } from 'vitest';
-import { parseDuration, parseDurationList, formatDuration, humanizeOffset, humanizeReturnOffset, humanizeOffsetShort, humanizeReturnOffsetShort } from '../../src/domain/duration.js';
+import { parseDuration, parseDurationList, formatDuration, humanizeOffset, humanizeReturnOffset, humanizeOffsetShort, humanizeReturnOffsetShort, summarizeSchedule } from '../../src/domain/duration.js';
 
 describe('parseDuration', () => {
   it('treats a bare number as minutes', () => {
@@ -168,5 +168,27 @@ describe('humanizeReturnOffsetShort', () => {
 
   it('treats non-finite input as zero', () => {
     expect(humanizeReturnOffsetShort(NaN)).toBe('at return');
+  });
+});
+
+describe('summarizeSchedule', () => {
+  it('groups before / at / after, chronological within each group (landing)', () => {
+    // before listed furthest-first, after nearest-first.
+    expect(summarizeSchedule([-300, -900, 0, 1200, -600], 'landing'))
+      .toBe('15m, 10m & 5m before landing · at landing · 20m after landing');
+  });
+
+  it('omits empty groups', () => {
+    expect(summarizeSchedule([600, 1800], 'return')).toBe('10m & 30m after return');
+    expect(summarizeSchedule([0], 'landing')).toBe('at landing');
+    expect(summarizeSchedule([-600], 'landing')).toBe('10m before landing');
+  });
+
+  it('collapses duplicates and ignores non-finite values', () => {
+    expect(summarizeSchedule([-600, -600, NaN], 'landing')).toBe('10m before landing');
+  });
+
+  it('returns the empty string for no offsets', () => {
+    expect(summarizeSchedule([], 'return')).toBe('');
   });
 });

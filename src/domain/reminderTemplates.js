@@ -17,15 +17,21 @@
 // so the three kinds never sweep each other). A user-editable title would
 // break that routing, so the title stays system-managed.
 //
-// # Wildcards are kind-specific and degrade gracefully
+// # Wildcards: one shared per-fleet set, plus what each kind honestly knows
 //
-// Each kind exposes only the tokens that are HONESTLY known at post time.
-// Expedition-wave bodies, in particular, cannot name fleet count / origins:
-// the series is queued the instant the FIRST expedition of a wave is
-// detected — before the burst finishes — so a browser close mid-send still
-// leaves reminders queued (see `sync/ntfyReconciler.waveBody`). Any token
-// the renderer is handed without a value collapses to the empty string, so
-// a template never leaks a literal `{coords}` into a push.
+// Ad-hoc and fleet-save both derive from ONE event-list row at arm/detect
+// time, so they share the SAME per-fleet set ({@link FLEET_FIELDS}: label /
+// mission / coords / origin / originName / target / targetName / shipCount /
+// arrivalTime) — the two editors read identically. Each kind then adds only
+// what it alone knows: fleet-save the schedule-relative `{offset}`, waves the
+// series `{index}`/`{total}` + `{returnTime}`.
+//
+// Expedition-wave bodies, by contrast, canNOT name a single fleet's count /
+// coords / origin: the series is queued the instant the FIRST expedition of a
+// wave is detected — before the burst finishes — so a browser close mid-send
+// still leaves reminders queued (see `sync/ntfyReconciler.waveBody`). Any
+// token the renderer is handed without a value collapses to the empty string,
+// so a template never leaks a literal `{coords}` into a push.
 
 /**
  * The three notification kinds, in render order. Stable ids used as the keys
@@ -91,6 +97,26 @@ const COMMON_FIELDS = Object.freeze([
 ]);
 
 /**
+ * Per-fleet tokens shared by ad-hoc + fleet-save (both derive from one
+ * event-list row, so they expose the SAME set in the SAME order). `coords` is
+ * where THIS leg lands; `origin`/`target` are its fixed launch + mission target
+ * (see `features/reminders/fleetSaveScan.fleetRowMeta`).
+ *
+ * @type {ReadonlyArray<TemplateField>}
+ */
+const FLEET_FIELDS = Object.freeze([
+  { token: 'label', label: 'Fleet label', sample: 'Expedition → [4:467:16]' },
+  { token: 'mission', label: 'Mission', sample: 'Expedition' },
+  { token: 'coords', label: 'Landing coords', sample: '[4:467:16]' },
+  { token: 'origin', label: 'Origin coords', sample: '[4:467:15]' },
+  { token: 'originName', label: 'Origin name', sample: 'P1' },
+  { token: 'target', label: 'Target coords', sample: '[4:467:16]' },
+  { token: 'targetName', label: 'Target name', sample: 'Deep space' },
+  { token: 'shipCount', label: 'Ship count', sample: '4,323' },
+  { token: 'arrivalTime', label: 'Arrival time', sample: '14:32' },
+]);
+
+/**
  * The wildcard catalogue per kind — the tokens each body may reference and
  * the values the live preview substitutes. The renderer accepts ANY token
  * present in its context; this list is what the UI advertises and what
@@ -99,27 +125,22 @@ const COMMON_FIELDS = Object.freeze([
  * @type {Readonly<Record<ReminderKind, ReadonlyArray<TemplateField>>>}
  */
 export const TEMPLATE_FIELDS = Object.freeze({
-  // Waves: NO count / coords / mission — unknown when the series is queued.
+  // Waves: NO per-fleet fields — the series is queued on the FIRST expedition,
+  // before the burst (count / origins / coords) is known. Series + return only.
   wave: Object.freeze([
     ...COMMON_FIELDS,
     { token: 'returnTime', label: 'Return time', sample: '14:32' },
     { token: 'index', label: 'Reminder # (1-based)', sample: '1' },
     { token: 'total', label: 'Total reminders', sample: '4' },
   ]),
-  adhoc: Object.freeze([
-    ...COMMON_FIELDS,
-    { token: 'label', label: 'Fleet label', sample: 'Expedition → [4:467:16]' },
-    { token: 'mission', label: 'Mission', sample: 'Expedition' },
-    { token: 'coords', label: 'Coords', sample: '[4:467:16]' },
-    { token: 'arrivalTime', label: 'Arrival time', sample: '14:32' },
-  ]),
+  adhoc: Object.freeze([...COMMON_FIELDS, ...FLEET_FIELDS]),
+  // Fleet-save = the shared per-fleet set + the schedule-relative offset.
+  // `landTime` stays as a back-compat alias of `arrivalTime` (the default body
+  // and any saved body still reference it).
   fleetSave: Object.freeze([
     ...COMMON_FIELDS,
-    { token: 'label', label: 'Fleet label', sample: 'Deployment → [4:478:14]' },
-    { token: 'mission', label: 'Mission', sample: 'Deployment' },
-    { token: 'coords', label: 'Coords', sample: '[4:478:14]' },
-    { token: 'shipCount', label: 'Ship count', sample: '125,000' },
-    { token: 'landTime', label: 'Landing time', sample: '14:32' },
+    ...FLEET_FIELDS,
+    { token: 'landTime', label: 'Landing time (= arrivalTime)', sample: '14:32' },
     { token: 'offset', label: 'When (before/at/after)', sample: '10 min before' },
   ]),
 });

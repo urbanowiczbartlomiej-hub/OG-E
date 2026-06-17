@@ -30,6 +30,7 @@
 import { settingsStore } from '../../state/settings.js';
 import { SECTIONS } from './sections/index.js';
 import { parseDuration, formatDuration } from '../../domain/duration.js';
+import { maskTopic } from '../../sync/reminders.js';
 
 /**
  * Shape of a single option in the SECTIONS config. Each `type` is
@@ -67,6 +68,17 @@ import { parseDuration, formatDuration } from '../../domain/duration.js';
  *   re-runs the row's text producer (`fetchText` / `getText`). Lets an
  *   external producer (e.g. the sync layer after a sync settles) push a
  *   fresh status into the row without a settings-store change.
+ * @property {boolean} [secret]
+ *   `asyncStatus` only: the produced value is a capability secret (the ntfy
+ *   topic). Render it MASKED behind an eye reveal toggle, plus a Copy button.
+ *   The full value is stashed on the span's `dataset.full`; the buttons act on
+ *   that, so Copy works while masked and a re-mask never loses the value.
+ * @property {boolean} [fullWidth]
+ *   Render the row as a single cell spanning BOTH columns, with the label as a
+ *   heading above the control instead of the 434/220 label-value split. For
+ *   rows whose content doesn't fit the narrow 220px value column — the ntfy
+ *   topic (masked value + reveal/copy buttons overflowed into a horizontal
+ *   scroll) and the topic-privacy note (a paragraph squeezed into a sliver).
  * @property {(s: import('../../state/settings.js').Settings) => boolean} [disabledWhen]
  *   Optional predicate over current settings; when it returns true the
  *   control is rendered disabled (greyed). Re-evaluated on every store
@@ -188,11 +200,29 @@ const refreshAsyncStatus = (opt, force = false) => {
   span.textContent = 'Checking…';
   Promise.resolve(opt.fetchText(settingsStore.get()))
     .then((txt) => {
-      if (st.seq === seq) span.textContent = txt;
+      if (st.seq !== seq) return;
+      if (opt.secret) paintSecretValue(span, txt);
+      else span.textContent = txt;
     })
     .catch(() => {
       if (st.seq === seq) span.textContent = '✗ check failed';
     });
+};
+
+/**
+ * Paint a `secret` row's value: stash the full string on the span's dataset and
+ * display it masked unless the row is currently revealed. The eye/copy buttons
+ * read `dataset.full`, so they always act on the true value (Copy works while
+ * masked; a re-probe re-mask never loses it). A non-topic value (placeholder)
+ * passes through {@link maskTopic} unchanged.
+ *
+ * @param {HTMLElement} span
+ * @param {string} txt
+ * @returns {void}
+ */
+const paintSecretValue = (span, txt) => {
+  span.dataset.full = txt;
+  span.textContent = span.dataset.revealed === '1' ? txt : maskTopic(txt);
 };
 
 /**
@@ -562,6 +592,53 @@ const buildAsyncStatusControl = (opt, valueCell) => {
     wrap.appendChild(btn);
   }
 
+  // Secret rows (the ntfy topic) get an eye reveal toggle + a Copy button.
+  // Both read the full value off the span's dataset, so they keep working while
+  // the line is masked. The span is found by id at click time (it's already in
+  // `span` here, but re-finding keeps these robust across any future rebuild).
+  if (opt.secret) {
+    const eye = document.createElement('button');
+    eye.type = 'button';
+    eye.id = INPUT_ID_PREFIX + opt.id + '-eye';
+    eye.textContent = '👁';
+    eye.title = 'Show';
+    eye.setAttribute('aria-label', 'Show topic');
+    eye.setAttribute('aria-pressed', 'false');
+    eye.style.cssText = BUTTON_STYLE;
+    eye.addEventListener('click', () => {
+      const revealed = span.dataset.revealed === '1';
+      span.dataset.revealed = revealed ? '0' : '1';
+      const full = span.dataset.full || '';
+      span.textContent = revealed ? maskTopic(full) : full;
+      eye.title = revealed ? 'Show' : 'Hide';
+      eye.setAttribute('aria-label', revealed ? 'Show topic' : 'Hide topic');
+      eye.setAttribute('aria-pressed', String(!revealed));
+    });
+    wrap.appendChild(eye);
+
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.id = INPUT_ID_PREFIX + opt.id + '-copy';
+    copy.textContent = 'Copy';
+    copy.style.cssText = BUTTON_STYLE;
+    let copyTimer = 0;
+    copy.addEventListener('click', async () => {
+      // Copy the REAL value, never the (masked) display text.
+      const full = span.dataset.full || '';
+      if (!full.startsWith('oge-')) return;
+      let ok = true;
+      try {
+        await navigator.clipboard.writeText(full);
+      } catch {
+        ok = false;
+      }
+      copy.textContent = ok ? 'Copied!' : 'Copy failed';
+      if (copyTimer) clearTimeout(copyTimer);
+      copyTimer = setTimeout(() => { copy.textContent = 'Copy'; copyTimer = 0; }, 1200);
+    });
+    wrap.appendChild(copy);
+  }
+
   valueCell.appendChild(wrap);
   // Initial probe (lastKey starts undefined, so this always runs once).
   refreshAsyncStatus(opt);
@@ -621,6 +698,26 @@ const CONTROL_BUILDERS = {
  */
 export const buildRow = (opt) => {
   const tr = document.createElement('tr');
+
+  // Full-width rows: the 220px value column is too cramped for this row's
+  // content, so it spans both columns with the label as a heading above the
+  // control. The control builders just append into whatever cell they're
+  // given, so the same builder fills a wide cell unchanged.
+  if (opt.fullWidth) {
+    const cell = document.createElement('td');
+    cell.colSpan = 2;
+    const labelEl = document.createElement('div');
+    // Reuse AGR's label class for the bullet + colour; force block display so
+    // its (table-cell-oriented) styling stacks above the control as a heading.
+    labelEl.className = 'ago_menu_label_bullet';
+    labelEl.style.cssText = 'display:block;margin-bottom:4px;';
+    labelEl.textContent = opt.label;
+    cell.appendChild(labelEl);
+    const buildFull = CONTROL_BUILDERS[opt.type];
+    if (buildFull) buildFull(opt, cell);
+    tr.appendChild(cell);
+    return tr;
+  }
 
   const labelCell = document.createElement('td');
   labelCell.className = 'ago_menu_label_bullet';

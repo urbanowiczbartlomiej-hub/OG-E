@@ -58,6 +58,7 @@ installReadabilityBoost();
 
 import { initHistoryStore } from './state/history.js';
 import { initScansStore } from './state/scans.js';
+import { initPlayersStore } from './state/players.js';
 import { initRegistryStore } from './state/registry.js';
 import { initSettingsStore } from './state/settings.js';
 import { initDailyRunRoutesStore } from './state/dailyRunRoutes.js';
@@ -67,6 +68,7 @@ import { initBodiesStore } from './state/bodies.js';
 
 import { installColonyRecorder } from './features/colonyRecorder.js';
 import { installPlanetBarCapture } from './features/planetBarCapture.js';
+import { installOwnProfile } from './features/ownProfile.js';
 import { installBadges } from './features/badges.js';
 import { installSendExpedition } from './features/sendExpedition/index.js';
 import { installSendColony } from './features/sendColony/index.js';
@@ -96,6 +98,11 @@ initSettingsStore();
 initRegistryStore();
 initHistoryStore();
 initScansStore();
+// Player-metadata cache (per-universe, chrome.storage). Subscribes to the
+// same `oge:galaxyScanned` event as the scans store and de-duplicates the
+// richer per-player signals (active / strong / newbie / buddy / alliance
+// member / outlaw / alliance rank) by playerId for Colony Scout analysis.
+initPlayersStore();
 // Daily-Run routes (per-universe, chrome.storage). Without this the
 // in-game dailyRun buttons never see routes authored in the dashboard
 // and the ad-hoc collect target wouldn't survive a page reload.
@@ -144,6 +151,10 @@ const installDomFeatures = () => {
   // identical across OGame's iframes, so sub-frame captures would just
   // multiply storage writes.
   if (window.top === window.self) installPlanetBarCapture();
+  // Own profile — scrape our rank / honour class off the header bar once so
+  // Colony Scout can score neighbours relative to us. Top-frame only (the
+  // header bar lives there; one write per page load suffices).
+  if (window.top === window.self) installOwnProfile();
   installBadges();
   installEventMenuHighlight();
   installTraderMenuHighlight();

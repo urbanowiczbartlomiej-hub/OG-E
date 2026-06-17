@@ -52,13 +52,13 @@ import {
 import {
   TEMPLATE_FIELDS,
   PRESET_ICONS,
+  DEFAULT_ICON_ID,
   renderTemplate,
   unknownTokens,
 } from '../../domain/reminderTemplates.js';
 import {
   parseDuration, formatDuration, parseDurationList,
-  humanizeOffset, humanizeReturnOffset,
-  humanizeOffsetShort, humanizeReturnOffsetShort,
+  humanizeOffset, humanizeReturnOffset, summarizeSchedule,
 } from '../../domain/duration.js';
 
 /**
@@ -98,14 +98,14 @@ const mk = (tag, css, text) => {
  *   `idBase + 'Add'`; row inputs/previews/removes carry stable classes.
  * @param {boolean} o.signed  Allow negative offsets (fleet-save, landing-relative)
  *   or drop them (wave, after-return).
- * @param {(sec: number) => string} o.preview  Compact phrase shown ON the chip
- *   (reference point lives once in the section hint).
  * @param {(sec: number) => string} o.previewLong  Full phrase used as the chip's
  *   hover title (the long-form single source of truth shared with the push).
  * @param {string} o.placeholder
+ * @param {'landing' | 'return'} o.reference  Point the combined summary line
+ *   below the chips measures from ("… before/after landing|return").
  * @returns {OffsetEditor}
  */
-const makeOffsetEditor = ({ idBase, signed, preview, previewLong, placeholder }) => {
+const makeOffsetEditor = ({ idBase, signed, previewLong, placeholder, reference }) => {
   // The container IS the wrapping chip row; the "Add" chip is its last child so
   // setFromString can clear the value chips without disturbing it.
   const wrap = mk('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:6px;');
@@ -123,44 +123,65 @@ const makeOffsetEditor = ({ idBase, signed, preview, previewLong, placeholder })
     const inp = /** @type {HTMLInputElement} */ (mk('input'));
     inp.type = 'text';
     inp.className = 'oge-offset-input';
-    inp.size = 6;
     inp.placeholder = placeholder;
     inp.value = value;
-    const prev = mk('span');
-    prev.className = 'oge-offset-preview';
     const rm = /** @type {HTMLButtonElement} */ (mk('button', undefined, '✕'));
     rm.type = 'button';
     rm.className = 'oge-offset-remove';
     rm.title = 'Remove this reminder';
 
-    const refreshPreview = () => {
+    const refresh = () => {
       const t = inp.value.trim();
       const sec = parseDuration(t);
       const valid = sec !== null && (signed || sec >= 0);
-      const bad = t !== '' && !valid;
-      r.classList.toggle('invalid', bad);
-      prev.textContent = t === '' ? '' : valid ? preview(/** @type {number} */ (sec)) : 'invalid';
-      // Full phrase on hover — the chip face stays compact, the meaning is one
-      // hover away, and the push body shares the same long-form helper.
+      r.classList.toggle('invalid', t !== '' && !valid);
+      // The chip face is JUST the (borderless) value — no separate phrase span,
+      // which is what made these chips bulky next to Daily Run's. The full
+      // impact phrase lives on hover (same long-form helper the push body uses)
+      // and the reference point ("return" / "landing") is stated once in the
+      // section hint. Size the field to its content so the pill hugs the value.
       r.title = valid && t !== '' ? previewLong(/** @type {number} */ (sec)) : '';
+      inp.size = Math.max(2, (t || placeholder || '').length);
+      updateSummary();
     };
-    inp.addEventListener('input', refreshPreview);
-    rm.addEventListener('click', () => { r.remove(); });
+    inp.addEventListener('input', refresh);
+    rm.addEventListener('click', () => { r.remove(); updateSummary(); });
 
-    r.append(inp, prev, rm);
+    r.append(inp, rm);
     wrap.insertBefore(r, addBtn);
-    refreshPreview();
+    refresh();
     return inp;
   };
 
-  addBtn.addEventListener('click', () => addRow().focus());
+  addBtn.addEventListener('click', () => { addRow().focus(); updateSummary(); });
   wrap.appendChild(addBtn);
 
+  // Combined readout BELOW the chips: the whole schedule in one sentence
+  // ("15m & 5m before landing · at landing · 20m after landing"), so the user
+  // can sanity-check what every chip adds up to without decoding each pill.
+  const summary = mk('div');
+  summary.className = 'oge-offset-summary';
+  const root = mk('div');
+  root.append(wrap, summary);
+
+  const updateSummary = () => {
+    /** @type {number[]} */
+    const secs = [];
+    for (const inp of /** @type {HTMLInputElement[]} */ (
+      [...wrap.querySelectorAll('.oge-offset-input')]
+    )) {
+      const sec = parseDuration(inp.value.trim());
+      if (sec !== null && (signed || sec >= 0)) secs.push(sec);
+    }
+    summary.textContent = summarizeSchedule(secs, reference);
+  };
+
   return {
-    element: wrap,
+    element: root,
     setFromString: (str) => {
       wrap.querySelectorAll('.oge-offset-row').forEach((el) => el.remove());
       for (const sec of parseDurationList(str, { signed })) addRow(formatDuration(sec));
+      updateSummary();
     },
     collect: () => {
       const inputs = /** @type {HTMLInputElement[]} */ (
@@ -177,6 +198,135 @@ const makeOffsetEditor = ({ idBase, signed, preview, previewLong, placeholder })
       }
       // Canonicalise: dedupe + sort ascending, render minutes-first. Empty ⇒ ''.
       return [...new Set(secs)].sort((a, b) => a - b).map(formatDuration).join(', ');
+    },
+  };
+};
+
+/**
+ * Resolve a packaged icon asset to a URL usable from the dashboard page.
+ * Prefers the WebExtension runtime (`browser`/`chrome.runtime.getURL`); falls
+ * back to a path relative to the dashboard document (also the test path, where
+ * no runtime exists). Mirrors the resolution in `features/agrLogo.js`.
+ *
+ * @param {string} file  asset filename under `icons/`.
+ * @returns {string}
+ */
+const iconAssetUrl = (file) => {
+  const g = /** @type {any} */ (globalThis);
+  return (
+    g.browser?.runtime?.getURL?.('icons/' + file) ||
+    g.chrome?.runtime?.getURL?.('icons/' + file) ||
+    'icons/' + file
+  );
+};
+
+/**
+ * @typedef {object} PickerControl
+ * @property {HTMLElement} element  The control container.
+ * @property {() => any} get        Current value.
+ * @property {(v: any) => void} set Set the value + repaint.
+ */
+
+/**
+ * Icon picker — one clickable swatch per {@link PRESET_ICONS} entry showing the
+ * REAL icon image (a native `<option>` can't hold an `<img>`). With only a
+ * couple of presets this reads better than a dropdown. The selected swatch
+ * carries `.selected`; `get`/`set` round-trip the stored icon id and an unknown
+ * id falls back to {@link DEFAULT_ICON_ID}.
+ *
+ * @param {string} id  container id (so collect + tests find this control).
+ * @returns {PickerControl}
+ */
+const makeIconPicker = (id) => {
+  const wrap = mk('div', 'display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap;');
+  wrap.id = id;
+  let value = DEFAULT_ICON_ID;
+  /** @type {HTMLButtonElement[]} */
+  const swatches = [];
+  const paint = () =>
+    swatches.forEach((b) => b.classList.toggle('selected', b.dataset.icon === value));
+  for (const p of PRESET_ICONS) {
+    const b = /** @type {HTMLButtonElement} */ (mk('button'));
+    b.type = 'button';
+    b.className = 'oge-icon-swatch';
+    b.dataset.icon = p.id;
+    b.title = p.label;
+    b.setAttribute('aria-label', p.label);
+    const img = /** @type {HTMLImageElement} */ (document.createElement('img'));
+    img.src = iconAssetUrl(p.file);
+    img.alt = p.label;
+    b.appendChild(img);
+    b.addEventListener('click', () => { value = p.id; paint(); });
+    swatches.push(b);
+    wrap.appendChild(b);
+  }
+  return {
+    element: wrap,
+    get: () => value,
+    set: (v) => { value = PRESET_ICONS.some((p) => p.id === v) ? v : DEFAULT_ICON_ID; paint(); },
+  };
+};
+
+/**
+ * ntfy priority levels (1–5): human name + a calm→alarm colour. Colours are
+ * applied inline (per segment) so the ramp needs no per-level CSS rule.
+ */
+const PRIORITY_META = [
+  { v: 1, name: 'Min', color: '#5b6b78' },
+  { v: 2, name: 'Low', color: '#4a78b5' },
+  { v: 3, name: 'Default', color: '#4a9e8a' },
+  { v: 4, name: 'High', color: '#e6a23c' },
+  { v: 5, name: 'Max', color: '#e0524a' },
+];
+
+/**
+ * Priority picker — a 1–5 segmented control. Each segment wears its level's
+ * colour (a low→high ramp), the selected one is filled, and the active level's
+ * name shows beside it. Clearer than a dropdown or a bare slider for five
+ * discrete, ordered levels. `get`/`set` round-trip the clamped int (1–5).
+ *
+ * @param {string} id  container id (so collect + tests find this control).
+ * @returns {PickerControl}
+ */
+const makePriorityPicker = (id) => {
+  const wrap = mk('div', 'display:inline-flex;gap:8px;align-items:center;');
+  wrap.id = id;
+  let value = 3;
+  const segs = mk('div', 'display:inline-flex;gap:3px;');
+  const name = mk('span', 'font-size:12px;font-weight:bold;min-width:52px;');
+  /** @type {HTMLButtonElement[]} */
+  const btns = [];
+  const paint = () => {
+    for (const b of btns) {
+      const m = PRIORITY_META[Number(b.dataset.prio) - 1];
+      const on = Number(b.dataset.prio) === value;
+      b.classList.toggle('selected', on);
+      b.style.background = on ? m.color : 'transparent';
+      b.style.borderColor = m.color;
+      b.style.color = on ? '#0d1117' : '#9fb3c0';
+    }
+    const meta = PRIORITY_META[value - 1];
+    name.textContent = meta.name;
+    name.style.color = meta.color;
+  };
+  for (const m of PRIORITY_META) {
+    const b = /** @type {HTMLButtonElement} */ (mk('button', undefined, String(m.v)));
+    b.type = 'button';
+    b.className = 'oge-prio-seg';
+    b.dataset.prio = String(m.v);
+    b.title = `${m.v} — ${m.name}`;
+    b.addEventListener('click', () => { value = m.v; paint(); });
+    btns.push(b);
+    segs.appendChild(b);
+  }
+  wrap.append(segs, name);
+  return {
+    element: wrap,
+    get: () => value,
+    set: (v) => {
+      const n = Math.round(Number(v));
+      value = Number.isFinite(n) ? Math.min(5, Math.max(1, n)) : 3;
+      paint();
     },
   };
 };
@@ -234,27 +384,17 @@ const makeTemplateEditor = ({ kind, idBase }) => {
     chips.appendChild(chip);
   }
 
-  // Icon + priority selects on one row.
-  const selRow = mk('div', 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;color:#aaa;');
-  const iconSel = /** @type {HTMLSelectElement} */ (mk('select'));
-  iconSel.id = idBase + 'Icon';
-  for (const p of PRESET_ICONS) {
-    const opt = /** @type {HTMLOptionElement} */ (mk('option', undefined, p.label));
-    opt.value = p.id;
-    iconSel.appendChild(opt);
-  }
-  const prioSel = /** @type {HTMLSelectElement} */ (mk('select'));
-  prioSel.id = idBase + 'Priority';
-  for (const n of [1, 2, 3, 4, 5]) {
-    const opt = /** @type {HTMLOptionElement} */ (mk('option', undefined,
-      n === 5 ? '5 (max)' : n === 1 ? '1 (min)' : String(n)));
-    opt.value = String(n);
-    prioSel.appendChild(opt);
-  }
-  const iconLabel = mk('label', undefined, 'Icon: ');
-  iconLabel.appendChild(iconSel);
-  const prioLabel = mk('label', undefined, 'Priority: ');
-  prioLabel.appendChild(prioSel);
+  // Icon + priority pickers on one row. Both are custom controls, not <select>:
+  // the icon picker shows the ACTUAL icon images as swatches (a native <option>
+  // can't render an <img>), and priority is a 1–5 segmented control with a
+  // calm→alarm colour ramp so the chosen level reads at a glance.
+  const selRow = mk('div', 'display:flex;align-items:center;gap:18px;flex-wrap:wrap;font-size:12px;color:#aaa;');
+  const iconPick = makeIconPicker(idBase + 'Icon');
+  const prioPick = makePriorityPicker(idBase + 'Priority');
+  const iconLabel = mk('label', 'display:inline-flex;align-items:center;gap:8px;', 'Icon');
+  iconLabel.appendChild(iconPick.element);
+  const prioLabel = mk('label', 'display:inline-flex;align-items:center;gap:8px;', 'Priority');
+  prioLabel.appendChild(prioPick.element);
   selRow.append(iconLabel, prioLabel);
 
   // Live preview + unknown-token warning.
@@ -277,14 +417,14 @@ const makeTemplateEditor = ({ kind, idBase }) => {
     element: wrap,
     setFromTemplate: (t) => {
       body.value = t.body;
-      iconSel.value = t.icon;
-      prioSel.value = String(t.priority);
+      iconPick.set(t.icon);
+      prioPick.set(t.priority);
       refreshPreview();
     },
     collect: () => ({
       body: body.value,
-      icon: iconSel.value,
-      priority: parseInt(prioSel.value, 10),
+      icon: iconPick.get(),
+      priority: prioPick.get(),
     }),
   };
 };
@@ -312,9 +452,9 @@ export const installReminderConfig = ({ getUniverseId }) => {
   const waveEditor = makeOffsetEditor({
     idBase: 'remCfgWaveEditor',
     signed: false,
-    preview: humanizeReturnOffsetShort,
     previewLong: humanizeReturnOffset,
     placeholder: '10m',
+    reference: 'return',
   });
 
   const adhocInput = /** @type {HTMLInputElement} */ (mk('input'));
@@ -349,9 +489,9 @@ export const installReminderConfig = ({ getUniverseId }) => {
   const fsEditor = makeOffsetEditor({
     idBase: 'remCfgFsOffsets',
     signed: true,
-    preview: humanizeOffsetShort,
     previewLong: humanizeOffset,
     placeholder: '-10m',
+    reference: 'landing',
   });
 
   // ── message template editors (one per kind) ──────────────────────────

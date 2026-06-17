@@ -37,6 +37,7 @@ import {
   settingsStore,
   SETTINGS_SCHEMA,
 } from '../../src/state/settings.js';
+import { deriveNtfyTopic } from '../../src/sync/reminders.js';
 
 /** AGR container id selector — mirrors the production constant. */
 const AGR_ID = 'ago_menu_content';
@@ -359,6 +360,53 @@ describe('installSettingsUi — asyncStatus (ntfy account)', () => {
     expect(document.getElementById(INPUT_PREFIX + 'ntfyTopic-btn')).toBeNull();
   });
 
+  it('renders the topic masked, behind an eye toggle + a Copy button', async () => {
+    // A token UNIQUE to this case: the asyncStatus `lastKey` cache is
+    // module-scoped, so reusing another test's token would make that test's
+    // in-DOM re-probe a no-op (the very bug the next test guards against).
+    const token = 'tk_secrettopictest0000000000';
+    settingsStore.update((s) => ({
+      ...s, remindersMasterEnabled: true, reminderNtfyToken: token,
+    }));
+    const topic = await deriveNtfyTopic(token);
+
+    setupAGR();
+    installSettingsUi();
+
+    const span = /** @type {HTMLElement} */ (document.getElementById(INPUT_PREFIX + 'ntfyTopic'));
+    // Wait until the async derivation has painted the secret onto the row.
+    // `vi.waitFor` THROWS on timeout, so a late SubtleCrypto resolution (under
+    // machine load) fails loudly instead of falling through to assert against
+    // a still-blank `dataset.full`.
+    await vi.waitFor(() => {
+      expect(span.dataset.full).toBe(topic);
+    }, { timeout: 4000, interval: 20 });
+
+    // Masked on screen, real value stashed for the buttons to act on.
+    expect(span.dataset.full).toBe(topic);
+    expect(span.textContent).toBe('oge-' + '•'.repeat(topic.length - 4));
+    expect(span.textContent).not.toBe(topic);
+
+    const eye = /** @type {HTMLElement} */ (document.getElementById(INPUT_PREFIX + 'ntfyTopic-eye'));
+    const copy = /** @type {HTMLButtonElement} */ (document.getElementById(INPUT_PREFIX + 'ntfyTopic-copy'));
+    expect(eye).not.toBeNull();
+    expect(copy).not.toBeNull();
+
+    // Eye reveals the full topic.
+    eye.click();
+    expect(span.textContent).toBe(topic);
+
+    // Copy writes the REAL topic to the clipboard, not the masked text.
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    copy.click();
+    // The clipboard write settles a microtask after the click handler runs;
+    // wait deterministically (throws on timeout) rather than polling silently.
+    await vi.waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(topic);
+    }, { timeout: 4000, interval: 20 });
+  });
+
   it('paints the topic row on load, without waiting for a token change (regression)', async () => {
     // A returning user already has a token in the store. The derived topic
     // must show on first render — the bug left the asyncStatus rows blank
@@ -374,8 +422,13 @@ describe('installSettingsUi — asyncStatus (ntfy account)', () => {
     const topic = document.getElementById(INPUT_PREFIX + 'ntfyTopic');
     const status = document.getElementById(INPUT_PREFIX + 'ntfyAccountStatus');
     // Painted (resolved text, "Checking…", or an error line) — never blank.
-    expect(topic?.textContent).toBeTruthy();
-    expect(status?.textContent).toBeTruthy();
+    // The rows fill via the async asyncStatus path, which can land a tick late
+    // under load; `vi.waitFor` throws on timeout so a never-painted row fails
+    // loudly instead of flaking on a fixed microtask budget.
+    await vi.waitFor(() => {
+      expect(topic?.textContent).toBeTruthy();
+      expect(status?.textContent).toBeTruthy();
+    }, { timeout: 4000, interval: 20 });
   });
 });
 

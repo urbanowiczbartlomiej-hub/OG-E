@@ -70,6 +70,7 @@ import { injectStyle } from '../../lib/dom.js';
 import { debounce } from '../../lib/debounce.js';
 import { readPending, lastAdhocIntent, lastWaveIntent } from './pending.js';
 import { readFleetSaveCancel, pruneFleetSaveCancel } from './fleetSaveCancel.js';
+import { fleetRowMeta } from './fleetSaveScan.js';
 import { GAME } from '../../lib/gameDom.js';
 
 /** @typedef {import('../../sync/reminders.js').ReminderState} ReminderState */
@@ -525,6 +526,9 @@ export const installEventListReminders = ({
       armAdhoc({
         id, arrivalAt, offsetSec, fireAt: fireAtFor(arrivalAt, offsetSec),
         label: labelFor(row),
+        // Per-leg push metadata (origin/target coords + names, ship count) so
+        // ad-hoc bodies share the same wildcard set as fleet-save.
+        ...fleetRowMeta(row),
         ...(fleetId ? { fleetId } : {}),
         createdAt: Math.floor(Date.now() / 1000),
       });

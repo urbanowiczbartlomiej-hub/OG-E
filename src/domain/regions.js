@@ -43,6 +43,8 @@
 /**
  * @typedef {import('../state/scans.js').GalaxyScans} GalaxyScans
  * @typedef {import('./scans.js').PositionStatus} PositionStatus
+ * @typedef {import('./players.js').PlayerMeta} PlayerMeta
+ * @typedef {Record<number, PlayerMeta>} PlayerCache
  */
 
 /**
@@ -83,6 +85,21 @@
  *   `honored === 0`). Mirrors `banditMaxLevel`.
  * @property {number} honoredTierSum Sum of all honored tier values. Mirrors
  *   `banditTierSum` for the honor-fighter population.
+ * @property {number} strong   Distinct players flagged `isStrong` (player cache
+ *   only) — outside your noob-protection bracket; attacking is allowed but
+ *   they out-gun a fresh colony. A danger signal. `0` without a player cache.
+ * @property {number} newbie   Distinct players flagged `isNewbie` — noob-protected,
+ *   cannot be raided, so they offer no farm value. `0` without a player cache.
+ * @property {number} buddy    Distinct players on your buddy list (`isBuddy`) —
+ *   friends, never targets. `0` without a player cache.
+ * @property {number} outlaw   Distinct players flagged `isOutlaw` — have lost
+ *   protection by raiding the weak; sanctioned / fair-game targets. `0` without
+ *   a player cache.
+ * @property {number} activeOnVacation Distinct players in `vacation` status that
+ *   are ALSO flagged `isActive` — NOT a safe farm: a live player hiding behind
+ *   vacation mode who will return. `0` without a player cache. A player who
+ *   ALSO owns an `occupied` colony in range is counted as occupied instead
+ *   (one status per id; occupied wins) — they already read as "live".
  * @property {number} allianceCount Distinct alliance tags seen in range.
  * @property {number} allyNearby  Distinct players whose alliance tag matches
  *   the caller's `ownAllyTag`. 0 when no tag was supplied to
@@ -130,6 +147,10 @@
  *   The caller's own alliance TAG. When supplied, {@link scoreRegion} counts
  *   allied neighbours in `RegionScore.allyNearby` — fed by the UI's optional
  *   "Ally tag" text field and used by the alliance proximity modifier.
+ * @property {PlayerCache} [players]
+ *   Player-metadata cache forwarded to {@link scoreRegion} for the
+ *   strong/newbie/buddy/outlaw/active-on-vacation signals and game-truth
+ *   `allyNearby`. Optional — omit to score from scan data alone.
  */
 
 /**
@@ -160,6 +181,13 @@ const regionSystems = ({ start, end }, galaxyMax) => {
  *   Pre-computed list of systems in this galaxy that contain a `mine` position.
  *   When provided, `scoreRegion` skips its own full-scan-map pass — pass this
  *   when calling from a loop over many candidates to avoid O(N×M) work.
+ * @property {PlayerCache} [players]
+ *   The per-universe player-metadata cache (`state/players.js`), keyed by id.
+ *   When provided, scoreRegion joins region players by id to derive the
+ *   strong/newbie/buddy/outlaw/active-on-vacation counts, and computes
+ *   `allyNearby` from the game-truth `isAllianceMember` flag rather than the
+ *   `ownAllyTag` text match. Omit to skip those signals (counts stay 0;
+ *   `allyNearby` falls back to the legacy tag match).
  */
 
 /**
@@ -269,6 +297,32 @@ export const scoreRegion = (region, scans, opts = {}) => {
     }
   }
 
+  // Cache-derived per-player signals (2b). Joined by id against the player
+  // cache so a player with several colonies in range counts once. With no
+  // cache these stay 0 and `allyNearby` falls back to the ownAllyTag match
+  // computed above — older scans / callers without a cache are unaffected.
+  const cache = opts.players;
+  let strong = 0;
+  let newbie = 0;
+  let buddy = 0;
+  let outlaw = 0;
+  let activeOnVacation = 0;
+  let allyMembers = 0;
+  if (cache) {
+    for (const [id, st] of playerStatus) {
+      const f = cache[id]?.flags;
+      if (!f) continue;
+      if (f.strong) strong++;
+      if (f.newbie) newbie++;
+      if (f.buddy) buddy++;
+      if (f.outlaw) outlaw++;
+      if (f.allianceMember) allyMembers++;
+      // A vacation-status owner who is ALSO flagged active is a live player
+      // hiding behind vacation, not a dormant farm — surface separately.
+      if (f.active && st === 'vacation') activeOnVacation++;
+    }
+  }
+
   return {
     systemCount: systems.length,
     scanned,
@@ -282,8 +336,13 @@ export const scoreRegion = (region, scans, opts = {}) => {
     honored,
     honoredMaxLevel,
     honoredTierSum,
+    strong,
+    newbie,
+    buddy,
+    outlaw,
+    activeOnVacation,
     allianceCount: alliances.size,
-    allyNearby: allyPlayerIds.size,
+    allyNearby: cache ? allyMembers : allyPlayerIds.size,
     mineMinDist,
   };
 };
@@ -317,6 +376,10 @@ export const scoreRegion = (region, scans, opts = {}) => {
  * @property {number} [occupied] Active-player density. Positive = want PvP; negative = want quiet.
  * @property {number} [bandit]   Bandit-threat factor. Negative = penalise; positive = seek.
  * @property {number} [honored]  Honored-presence factor. Positive = seek; negative = avoid.
+ * @property {number} [strong]   Strong + active-on-vacation density (player cache).
+ *   Negative = avoid (a fresh colony gets crushed); positive = seek fights.
+ * @property {number} [outlaw]   Outlaw (sanctioned-target) density (player cache).
+ *   Positive = prefer fair-game targets.
  * @property {number} [length]   Small length tiebreaker (0–1 over 499 systems).
  */
 
@@ -335,23 +398,23 @@ export const STRATEGIES = {
   },
   peaceful: {
     label: 'Peaceful settler',
-    hint: 'Mining / expeditions — quiet zone; bandits strongly penalised, honored moderately; inactive farm targets welcome',
-    weights: { free: 1, inactive: 0.5, occupied: -0.3, bandit: -3, honored: -1.5, length: 0.1 },
+    hint: 'Mining / expeditions — quiet zone; bandits & strong/returning players strongly penalised, honored moderately; inactive farm targets welcome',
+    weights: { free: 1, inactive: 0.5, occupied: -0.3, bandit: -3, honored: -1.5, strong: -1.5, length: 0.1 },
   },
   farmer: {
     label: 'Farmer',
-    hint: 'Maximise inactive farm targets; bandits penalised (they raid farmers back)',
-    weights: { free: 0.7, inactive: 2.5, bandit: -1.5, honored: -0.3, length: 0.1 },
+    hint: 'Maximise inactive farm targets; bandits & strong players penalised, outlaws (fair game) welcome',
+    weights: { free: 0.7, inactive: 2.5, bandit: -1.5, honored: -0.3, strong: -0.5, outlaw: 0.5, length: 0.1 },
   },
   honor_pvp: {
     label: 'Honor PvP',
-    hint: 'Seek honored fighters — attacking them earns positive honour; avoid bandits',
-    weights: { free: 0.5, occupied: 0.8, honored: 2.5, bandit: -1, length: 0.1 },
+    hint: 'Seek honored fighters — attacking them earns positive honour; outlaws are fair game; avoid bandits',
+    weights: { free: 0.5, occupied: 0.8, honored: 2.5, bandit: -1, outlaw: 0.5, length: 0.1 },
   },
   aggressive: {
     label: 'Aggressive PvP',
-    hint: 'Max active players of any honour rank — target density over colour',
-    weights: { free: 0.5, occupied: 2, inactive: 0.5, bandit: 0.3, honored: 0.5, length: 0.1 },
+    hint: 'Max active players of any honour rank — target density over colour; outlaws & strong players welcome',
+    weights: { free: 0.5, occupied: 2, inactive: 0.5, bandit: 0.3, honored: 0.5, strong: 0.5, outlaw: 0.5, length: 0.1 },
   },
 };
 
@@ -414,6 +477,11 @@ const scoreForStrategy = (region, weights, mods = {}) => {
     // banditTierSum / (n×3): normalised 0–1; bandit3 scores 3× bandit1
     (weights.bandit   ?? 0) * (s.banditTierSum  / (n * 3)) +
     (weights.honored  ?? 0) * (s.honoredTierSum / (n * 3)) +
+    // strong + active-on-vacation share one threat rate (both "live and
+    // dangerous to a fresh colony"). outlaw is a separate opportunity rate.
+    // Both are 0 unless a player cache was supplied to scoreRegion.
+    (weights.strong   ?? 0) * ((s.strong + s.activeOnVacation) / n) +
+    (weights.outlaw   ?? 0) * (s.outlaw / n) +
     (weights.length   ?? 0) * (region.length / 499)
   );
   // Placement modifier — orthogonal to base strategy
@@ -458,8 +526,13 @@ export const sortRegionsByStrategy = (regions, strategyKey, opts = {}) => {
   );
 };
 
-/** Minimum region length worth reporting. Shorter spans aren't useful. */
-const MIN_REGION_LENGTH = 5;
+/**
+ * Minimum region length worth reporting. Shorter spans aren't useful as a
+ * settlement *row*. Exported so the UI can name the threshold in its
+ * "no region ≥ N" fallback copy ({@link findFreeSystems}) without a
+ * hard-coded literal drifting from this value.
+ */
+export const MIN_REGION_LENGTH = 5;
 
 /** Non-overlapping regions to extract per galaxy before global ranking. */
 const MAX_REGIONS_PER_GALAXY = 5;
@@ -537,23 +610,27 @@ const findGalaxyRegions = (arr, maxGaps, galaxyMax, maxRegions) => {
 };
 
 /**
- * Find the best regions across all galaxies — up to MAX_REGIONS_PER_GALAXY
- * non-overlapping regions per galaxy, scored and ranked globally.
+ * Shared first pass over the scan map, run by BOTH region finders. Walks
+ * every `"galaxy:system"` entry exactly once and produces, per galaxy:
+ *
+ *   - `matchesByGalaxy` — systems where EVERY requested position holds
+ *     `status` (a confirmed match; unknown/wrong is never a match), and
+ *   - `minesByGalaxy`   — systems that contain at least one `'mine'` slot.
+ *     Passing this to {@link scoreRegion} lets it skip its own
+ *     O(all scans) own-colony search for every candidate region.
+ *
+ * Pure: reads `scans`, allocates fresh Maps, mutates nothing external —
+ * the `domain/` contract.
  *
  * @param {GalaxyScans} scans Full per-system scan map, keys `"galaxy:system"`.
- * @param {FindRegionsOptions} opts
- * @returns {Region[]} Sorted by `length` desc, then `gaps` asc, then
- *   `galaxy` asc. Galaxies with zero matching systems do not appear.
+ * @param {{ positions: number[], status: PositionStatus, galaxyMax: number }} opts
+ *   `positions` must already be de-duplicated and finite (callers clean it
+ *   before calling); `status` and `galaxyMax` are likewise resolved.
+ * @returns {{ matchesByGalaxy: Map<number, number[]>, minesByGalaxy: Map<number, number[]> }}
+ *   Systems within each galaxy are in scan-iteration order; callers that
+ *   need them sorted sort the per-galaxy arrays themselves.
  */
-export const findBestRegions = (scans, opts) => {
-  const positions = [...new Set(opts.positions)].filter((p) => Number.isFinite(p));
-  const status = opts.status ?? 'empty';
-  const maxGaps = Math.max(0, opts.maxGaps ?? 0);
-  const galaxyMax = opts.galaxyMax ?? 499;
-  if (positions.length === 0) return [];
-
-  // One pass over the scan map: build matchesByGalaxy AND minesByGalaxy so
-  // scoreRegion can skip its own O(all scans) mine-search for every candidate.
+const collectMatchesAndMines = (scans, { positions, status, galaxyMax }) => {
   /** @type {Map<number, number[]>} */
   const matchesByGalaxy = new Map();
   /** @type {Map<number, number[]>} galaxy → systems that have a 'mine' slot */
@@ -585,6 +662,29 @@ export const findBestRegions = (scans, opts) => {
     arr.push(system);
   }
 
+  return { matchesByGalaxy, minesByGalaxy };
+};
+
+/**
+ * Find the best regions across all galaxies — up to MAX_REGIONS_PER_GALAXY
+ * non-overlapping regions per galaxy, scored and ranked globally.
+ *
+ * @param {GalaxyScans} scans Full per-system scan map, keys `"galaxy:system"`.
+ * @param {FindRegionsOptions} opts
+ * @returns {Region[]} Sorted by `length` desc, then `gaps` asc, then
+ *   `galaxy` asc. Galaxies with zero matching systems do not appear.
+ */
+export const findBestRegions = (scans, opts) => {
+  const positions = [...new Set(opts.positions)].filter((p) => Number.isFinite(p));
+  const status = opts.status ?? 'empty';
+  const maxGaps = Math.max(0, opts.maxGaps ?? 0);
+  const galaxyMax = opts.galaxyMax ?? 499;
+  if (positions.length === 0) return [];
+
+  // One pass over the scan map: matching systems AND mine systems per galaxy,
+  // so scoreRegion can skip its own O(all scans) mine-search per candidate.
+  const { matchesByGalaxy, minesByGalaxy } = collectMatchesAndMines(scans, { positions, status, galaxyMax });
+
   /** @type {Region[]} */
   const results = [];
   for (const [galaxy, arr] of matchesByGalaxy) {
@@ -600,11 +700,79 @@ export const findBestRegions = (scans, opts) => {
         matched: c.matched,
         gaps: c.gaps,
       });
-      region.score = scoreRegion(region, scans, { galaxyMax, ownAllyTag: opts.ownAllyTag, mineSystemsInGalaxy });
+      region.score = scoreRegion(region, scans, {
+        galaxyMax, ownAllyTag: opts.ownAllyTag, mineSystemsInGalaxy, players: opts.players,
+      });
       results.push(region);
     }
   }
 
   results.sort((a, b) => b.length - a.length || a.gaps - b.gaps || a.galaxy - b.galaxy);
+  return results;
+};
+
+/**
+ * List EVERY system whose requested positions are ALL `status`, as
+ * length-1 {@link Region}s carrying the same neighbourhood {@link RegionScore}.
+ *
+ * # Why this exists (the "I typed 8 and got nothing" trap)
+ *
+ * {@link findBestRegions} windows matching systems into CONTIGUOUS spans of
+ * length ≥ {@link MIN_REGION_LENGTH} (and caps at {@link MAX_REGIONS_PER_GALAXY}
+ * per galaxy) — exactly right for planning a settlement ROW, but it returns
+ * NOTHING when the free systems are scattered (no run of five). That is the
+ * common case for a single colonise slot: the very act of colonising slot 8
+ * turns those slots `mine`/`empty_sent`, fragmenting any run, so a galaxy
+ * full of individually-free "8"s yields zero regions.
+ *
+ * For single-slot colonisation the user wants the free systems themselves,
+ * adjacency be damned. This returns one scored region per matching system
+ * (`length: 1`, `start === end`), with NO minimum length and NO per-galaxy
+ * cap. The result is a plain `Region[]`, so it sorts and renders through the
+ * exact same {@link sortRegionsByStrategy} / table code as real regions.
+ *
+ * @param {GalaxyScans} scans
+ * @param {Omit<FindRegionsOptions, 'maxGaps'>} opts  `positions` (required),
+ *   `status` (default `'empty'`), `galaxyMax`, `ownAllyTag` — same grammar as
+ *   {@link findBestRegions}, minus the gap tolerance (a single system has no
+ *   gaps to tolerate).
+ * @returns {Region[]} One length-1 region per matching system, ordered by
+ *   galaxy then system (insertion order). The caller sorts by strategy.
+ */
+export const findFreeSystems = (scans, opts) => {
+  const positions = [...new Set(opts.positions)].filter((p) => Number.isFinite(p));
+  const status = opts.status ?? 'empty';
+  const galaxyMax = opts.galaxyMax ?? 499;
+  if (positions.length === 0) return [];
+
+  // One pass: matching systems per galaxy AND mine systems per galaxy, so
+  // scoreRegion can skip its own O(all scans) own-colony search per system
+  // (shared with findBestRegions via collectMatchesAndMines).
+  const { matchesByGalaxy, minesByGalaxy } = collectMatchesAndMines(scans, { positions, status, galaxyMax });
+
+  /** @type {Region[]} */
+  const results = [];
+  for (const [galaxy, arr] of matchesByGalaxy) {
+    arr.sort((a, b) => a - b);
+    const mineSystemsInGalaxy = minesByGalaxy.get(galaxy) ?? [];
+    for (const system of arr) {
+      const region = /** @type {Region} */ ({
+        galaxy,
+        start: system,
+        end: system,
+        length: 1,
+        matched: 1,
+        gaps: 0,
+      });
+      region.score = scoreRegion(region, scans, {
+        galaxyMax,
+        ownAllyTag: opts.ownAllyTag,
+        mineSystemsInGalaxy,
+        players: opts.players,
+      });
+      results.push(region);
+    }
+  }
+
   return results;
 };

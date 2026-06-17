@@ -45,10 +45,18 @@
   .tab-section { display: none; }
   .tab-section.active { display: block; }
 
-  /* In-tab sub-section (the Colony Scout block in its Galaxy Observations
+  /* In-tab sub-section (the Colony Scout block in its Colonizations
      sub-tab) — one heading size down. No top separator: the sub-tab bar
      already delimits it from the Scanned-data pane. */
   .sub-section h2 { color: #4a9eff; font-size: 17px; margin-bottom: 10px; }
+  /* Modest "experimental" marker — the Colony Scout heuristics (scoring,
+     strategies, neighbourhood intel) are still evolving and feedback-driven. */
+  .exp-badge {
+    margin-left: 8px; padding: 1px 7px; border-radius: 10px;
+    font-size: 10px; font-weight: bold; letter-spacing: .04em; text-transform: uppercase;
+    color: #ffd84d; background: rgba(255,216,77,.10); border: 1px solid rgba(255,216,77,.4);
+    vertical-align: middle;
+  }
   .controls input {
     background: #1a2a3a; border: 1px solid #2a4a5a; color: #ccc;
     padding: 6px 12px; border-radius: 6px; font-size: 13px;
@@ -118,8 +126,13 @@
   .streak-record .label { color: #888; font-size: 12px; }
   .streak-record .value { color: #4a9eff; font-weight: bold; }
   .streak-score { color: #aaa; font-size: 11px; margin-top: 6px; line-height: 1.5; }
-  .region-strip { display: flex; height: 10px; margin-top: 8px; border-radius: 3px; overflow: hidden; }
-  .strip-cell { flex: 1; min-width: 1px; }
+  .region-strip { display: flex; height: 12px; margin-top: 8px; border-radius: 3px; overflow: hidden; }
+  /* Inset right divider draws a 1px line BETWEEN systems without changing
+     cell width (a real border/gap would on flex:1 + 1px-min cells), so even
+     long regions stay legible system-by-system. */
+  .strip-cell { flex: 1; min-width: 2px; box-shadow: inset -1px 0 0 rgba(0,0,0,.45); }
+  .strip-cell:last-child { box-shadow: none; }
+  .region-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; font-size: 11px; }
   /* Custom weight panel */
   details.weight-panel { margin-top: 10px; }
   details.weight-panel > summary {
@@ -160,7 +173,7 @@
 
   /* ── Settings-panel form controls — one shared look, matching the Daily
      Run dark input/select aesthetic, applied across every tab's ⚙ Settings
-     (Colonizations, Galaxy Observations, Reminders). ── */
+     (Colonizations, Reminders). ── */
   .settings-panel input[type="text"],
   .settings-panel input[type="password"],
   .settings-panel input[type="number"],
@@ -198,28 +211,41 @@
 
   /* Offset-list editor as chips (à la Daily Run endpoint chips): the chips
      flow horizontally and wrap, the flex container owns the gap. */
-  .oge-offset-row { display: inline-flex; align-items: center; gap: 6px; margin: 0;
-    padding: 4px 6px 4px 12px; background: #16252f; border: 1px solid #2a4a5a; border-radius: 16px; }
+  .oge-offset-row { display: inline-flex; align-items: center; gap: 2px; margin: 0;
+    padding: 2px 6px 2px 10px; background: #16252f; border: 1px solid #2a4a5a; border-radius: 14px; }
   .oge-offset-row.invalid { background: #3a1f1f; border-color: #a44; }
-  .oge-offset-row.invalid .oge-offset-preview,
   .oge-offset-row.invalid .oge-offset-input { color: #f3b0b0; }
-  .settings-panel .oge-offset-input { width: 46px; background: transparent; border: none;
-    border-radius: 0; padding: 2px 0; color: #cfe; }
+  .settings-panel .oge-offset-input { width: auto; background: transparent; border: none;
+    border-radius: 0; padding: 2px 0; color: #cfe; text-align: center; }
   .settings-panel .oge-offset-input:focus { box-shadow: none; border: none; }
-  .oge-offset-preview { color: #8aa3ad; font-size: 12px; }
   .settings-panel .oge-offset-remove { background: none; border: none; color: #c47070;
     padding: 0 2px; font-size: 13px; line-height: 1; }
   .settings-panel .oge-offset-remove:hover { background: none; color: #ff9090; }
   /* "Add" trails the chip row as a matching pill (overrides the boxy default). */
   .settings-panel .oge-offset-add { background: #16252f; color: #9cf; border: 1px solid #2a4a5a;
-    border-radius: 16px; padding: 4px 12px; font-size: 12px; }
+    border-radius: 14px; padding: 3px 12px; font-size: 12px; }
   .settings-panel .oge-offset-add:hover { background: #1f3445; color: #bfe3ff; }
+  /* Combined plain-language readout of the whole schedule, under the chips. */
+  .oge-offset-summary { color: #8aa3ad; font-size: 12px; margin-top: 8px; line-height: 1.5; }
+  .oge-offset-summary:empty { display: none; }
+
+  /* Icon picker — real-image swatches (a native <option> can't hold an <img>). */
+  .settings-panel .oge-icon-swatch { padding: 3px; background: #0d1620; border: 1px solid #2a4a5a;
+    border-radius: 8px; cursor: pointer; line-height: 0; }
+  .settings-panel .oge-icon-swatch:hover { border-color: #4a9eff; background: #0d1620; }
+  .settings-panel .oge-icon-swatch.selected { border-color: #4a9eff; box-shadow: 0 0 0 2px rgba(74,158,255,0.35); }
+  .oge-icon-swatch img { width: 26px; height: 26px; display: block; border-radius: 4px; }
+  /* Priority — 1–5 segmented control; per-level colours are set inline (JS). */
+  .settings-panel .oge-prio-seg { width: 26px; height: 26px; padding: 0; border: 1px solid;
+    border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px; background: transparent; }
+  .settings-panel .oge-prio-seg.selected { box-shadow: 0 0 0 2px rgba(0,0,0,0.3) inset; }
+
   .oge-tpl-preview { color: #9fd0ff; font-size: 12px; margin-top: 4px; }
   .oge-tpl-warn { color: #ffb454; font-size: 12px; margin-top: 2px; }
 
   /* Generic in-section sub-tabs — shared by the Reminders ⚙ Settings
-     sub-panes (Expedition waves / Ad-hoc / Fleet-save) and the Galaxy
-     Observations tabs (Scanned data / Colony Scout). */
+     sub-panes (Expedition waves / Ad-hoc / Fleet-save) and the Colonizations
+     sub-tabs (Planet sizes / Scanned data / Colony Scout). */
   .subtabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 14px; border-bottom: 1px solid #2a4a5a; }
   .subtab { background: transparent; border: 1px solid transparent; border-bottom: none;
     color: #888; padding: 6px 14px; font-size: 13px; cursor: pointer; border-radius: 6px 6px 0 0; }
@@ -252,7 +278,27 @@
     padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;
   }
   .rem-row button:hover { background: #2a4a6a; }
+  .rem-row button:disabled { opacity: 0.4; cursor: default; }
+  /* Eye reveal/hide toggle. When the topic is shown, a diagonal slash is
+     drawn over the eye glyph (an "eye-off" look) so the button face shows the
+     action's current state without swapping glyphs across platforms. */
+  .rem-eye { position: relative; line-height: 1; padding: 5px 9px; }
+  .rem-eye.revealed::after {
+    content: ''; position: absolute; left: 6px; right: 6px; top: 50%;
+    height: 2px; background: #cfe; transform: rotate(-20deg);
+    border-radius: 2px; box-shadow: 0 -1px 0 #111820;
+  }
   .rem-hint { color: #6b7785; font-size: 12px; margin-top: 8px; line-height: 1.5; }
+  .rem-privacy { margin-top: 10px; }
+  .rem-privacy > summary {
+    cursor: pointer; color: #4a9eff; font-size: 12px; list-style: none; user-select: none;
+  }
+  .rem-privacy > summary::-webkit-details-marker { display: none; }
+  .rem-privacy > summary::before { content: '▸ '; }
+  .rem-privacy[open] > summary::before { content: '▾ '; }
+  .rem-privacy > summary:hover { color: #6ab4ff; }
+  .rem-privacy ol { margin: 6px 0 0 18px; padding: 0; }
+  .rem-privacy ol li { color: #6b7785; font-size: 12px; line-height: 1.5; margin-bottom: 3px; }
   .rem-mono {
     flex: 1; min-width: 160px;
     font-family: 'Consolas', 'Courier New', monospace; font-size: 12px;
@@ -272,7 +318,10 @@
     border: 1px solid #2a4a5a; border-radius: 6px; padding: 10px 12px;
     margin-bottom: 8px; background: #0d1117;
   }
-  .rem-wave .wave-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  /* Badge sits right next to the date; the cancel ✕ is pushed to the far right
+     (see .rem-cancel margin-left), instead of space-between stranding the badge
+     in the middle of the row. */
+  .rem-wave .wave-head { display: flex; align-items: center; justify-content: flex-start; gap: 8px; flex-wrap: wrap; }
   .rem-wave .wave-when { color: #4a9eff; font-weight: bold; font-size: 14px; }
   .rem-wave .wave-meta { color: #888; font-size: 12px; margin-top: 2px; }
   .rem-wave .wave-origins { color: #6b7785; font-size: 11px; margin-top: 4px; word-break: break-all; }
@@ -284,9 +333,15 @@
     display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 10px;
     background: #2a4a6a; color: #cfe6ff;
   }
-  .rem-badge.due { background: #6a5a2a; color: #ffe2a8; }
+  /* ntfy-queue state colours — one vocabulary across waves / ad-hoc / FS. */
+  .rem-badge.queued { background: #2a4a6a; color: #cfe6ff; }
+  .rem-badge.fired { background: #26323a; color: #8aa3ad; }
+  .rem-badge.scheduled { background: #2a3b4a; color: #bcd6e6; }
+  .rem-badge.none { background: #5a4a2a; color: #ffe2a8; }
+  .rem-badge.far { background: #3a3a5a; color: #cfcfff; }
   .rem-badge.cancelled { background: #3a3a3a; color: #aaa; }
   .rem-cancel {
+    margin-left: auto;
     background: transparent; color: #c47070; border: 1px solid #5a2a2a;
     border-radius: 4px; font-size: 14px; line-height: 1; padding: 0 7px;
     cursor: pointer; font-family: inherit;
@@ -300,7 +355,6 @@
 <div class="top-bar">
   <div class="tabs" role="tablist">
     <button class="tab-btn" data-tab="colony" role="tab">Colonizations</button>
-    <button class="tab-btn" data-tab="galaxy" role="tab">Galaxy Observations</button>
     <button class="tab-btn" data-tab="reminders" role="tab">Reminders</button>
     <button class="tab-btn" data-tab="routes" role="tab">Daily Run</button>
   </div>
@@ -316,46 +370,33 @@
 
 <section id="colonySection" class="tab-section">
   <h1>Colonizations</h1>
-  <p style="color:#888;font-size:13px;margin-bottom:16px;">
-    Field sizes of planets you have personally visited (recorded the first time you opened each overview page).
-    No new data is requested — this is a read-only view of data already stored locally on this device.
-  </p>
 
-  <div class="controls">
-    <label>Position filter:</label>
-    <select id="posFilter"><option value="all">All positions</option></select>
-    <button id="exportCsvBtn">Export CSV</button>
-    <span id="countInfo" style="color:#888;font-size:13px;margin-left:auto;"></span>
-  </div>
-
-  <div class="stats" id="statsContainer"></div>
-  <div class="chart-container"><div class="chart" id="chart"></div></div>
-
-  <details class="settings-panel">
-    <summary>⚙ Settings</summary>
-    <div class="settings-body">
-      <p class="settings-desc">
-        Colonization targets and abandon rules — they drive the in-game Scan / Colonize / Abandon
-        buttons. Per-universe and synced across your devices.
-      </p>
-      <div id="colonizationConfigBody"></div>
-    </div>
-  </details>
-</section>
-
-<section id="galaxySection" class="tab-section">
-  <h1>Galaxy Observations</h1>
-
-  <div class="subtabs" id="galaxySubtabs" role="tablist">
-    <button type="button" class="subtab active" data-subtab="scans" role="tab">Scanned data</button>
+  <div class="subtabs" id="colonySubtabs" role="tablist">
+    <button type="button" class="subtab active" data-subtab="histogram" role="tab">Planet sizes</button>
+    <button type="button" class="subtab" data-subtab="scans" role="tab">Scanned data</button>
     <button type="button" class="subtab" data-subtab="scout" role="tab">Colony Scout</button>
   </div>
 
-  <div class="subtabpane active" data-subtab="scans">
+  <div class="subtabpane active" data-subtab="histogram">
+    <p style="color:#888;font-size:13px;margin-bottom:16px;">
+      Field sizes of planets you have personally visited (recorded the first time you opened each overview page).
+      No new data is requested — this is a read-only view of data already stored locally on this device.
+    </p>
+    <div class="controls">
+      <label>Position filter:</label>
+      <select id="posFilter"><option value="all">All positions</option></select>
+      <button id="exportCsvBtn">Export CSV</button>
+      <span id="countInfo" style="color:#888;font-size:13px;margin-left:auto;"></span>
+    </div>
+    <div class="stats" id="statsContainer"></div>
+    <div class="chart-container"><div class="chart" id="chart"></div></div>
+  </div>
+
+  <div class="subtabpane" data-subtab="scans">
     <p style="color:#888;font-size:13px;margin-bottom:16px;">
       Per-system summary of positions you have navigated past in the in-game galaxy view.
       Data was recorded only for galaxy pages you yourself opened. Filtered by the target
-      positions list (set under Colonizations → Settings) — only those positions count toward
+      positions list (set under ⚙ Settings below) — only those positions count toward
       the stats below.
     </p>
     <div id="scansContainer"></div>
@@ -363,7 +404,7 @@
 
   <div class="subtabpane" data-subtab="scout">
     <div class="sub-section">
-    <h2>🔭 Colony Scout — settlement area analysis</h2>
+    <h2>🔭 Colony Scout — systems analysis<span class="exp-badge" title="The scoring, strategies and neighbourhood intel here are still evolving — expect changes, and feedback is welcome.">experimental</span></h2>
     <p style="color:#888;font-size:13px;margin-bottom:16px;">
       For each scanned galaxy, the best contiguous run of systems whose target slots are all
       confirmed <code style="color:#4a9eff;">empty</code> — scored and ranked by how well the
@@ -404,9 +445,6 @@
         <option value="2">Spread out</option>
         <option value="-2">Cluster near base</option>
       </select>
-      <label>Ally tag:</label>
-      <input id="freeAllyInput" value="" size="7" placeholder="e.g. FORM"
-        title="Your alliance tag. When set, regions with allied neighbours score higher (alliance proximity bonus). Leave empty to skip.">
       <span id="freeCountInfo" style="color:#888;font-size:13px;margin-left:auto;"></span>
     </div>
     <details class="weight-panel">
@@ -442,12 +480,14 @@
     <summary>⚙ Settings</summary>
     <div class="settings-body">
       <p class="settings-desc">
-        How the in-game <strong style="color:#ccc;">Scan</strong> button revisits systems. Re-scan
-        times accept free units like <code style="color:#4a9eff;">6h</code> or
-        <code style="color:#4a9eff;">5d</code>; <code style="color:#4a9eff;">0</code> means never
-        re-scan that status. Per-universe and synced across your devices.
+        Colonization targets, abandon rules, and how the in-game
+        <strong style="color:#ccc;">Scan</strong> button revisits systems — they drive the in-game
+        Scan / Colonize / Abandon buttons. Re-scan times accept free units like
+        <code style="color:#4a9eff;">6h</code> or <code style="color:#4a9eff;">5d</code>;
+        <code style="color:#4a9eff;">0</code> means never re-scan that status.
+        Per-universe and synced across your devices.
       </p>
-      <div id="scanRescanBody"></div>
+      <div id="colonizationConfigBody"></div>
     </div>
   </details>
 </section>
@@ -465,12 +505,45 @@
     <div class="rem-row">
       <label>Your ntfy topic (subscribe to this on your phone)</label>
       <span id="remTopic" class="rem-mono">—</span>
-      <button id="remCopyTopic">Copy</button>
+      <button id="remRevealTopic" class="rem-eye" type="button"
+        title="Show topic" aria-label="Show topic" aria-pressed="false">👁</button>
+      <button id="remCopyTopic" type="button">Copy</button>
     </div>
     <p class="rem-hint">
       In the ntfy.sh app — signed in to the account whose token you pasted in OG-E settings —
       tap + and subscribe to this exact topic to receive the pushes.
     </p>
+    <details class="rem-privacy">
+      <summary>Is this private? How your topic is protected</summary>
+      <p class="rem-hint">
+        OG-E derives this topic from your ntfy <strong>access token</strong> (SHA-256, 88
+        random bits). Nobody can guess it — that's roughly 3×10²⁶ possibilities — and ntfy.sh
+        does not let anyone list or browse topics, so it can only be found if you reveal it.
+        Treat it like a password: it is a <strong>secret URL</strong>, and anyone who learns it
+        can read your fleet reminders and inject fake ones. Never share or post it.
+      </p>
+      <p class="rem-hint">
+        <strong>Worried someone got hold of it?</strong> Change your ntfy access token in the
+        in-game OG-E settings. That instantly derives a brand-new topic — the old one goes
+        silent on its own, no other cleanup needed.
+      </p>
+      <p class="rem-hint">
+        <strong>Want absolute certainty that only you can read it?</strong> Lock the topic to
+        your account so even someone who knows its name is shut out:
+      </p>
+      <ol>
+        <li>On ntfy.sh (web), reserve this exact topic and set its access to
+          <em>“deny everyone else”</em> (only you).</li>
+        <li>On your phone, <strong>delete the current subscription</strong> to this topic, then
+          add it again.</li>
+        <li>This time, sign in to the ntfy app with your ntfy username and password.</li>
+      </ol>
+      <p class="rem-hint">
+        After that the topic is access-controlled: only your logged-in account can read or
+        publish to it. (Reserving a topic is a paid ntfy.sh feature, or free on your own
+        self-hosted ntfy server.)
+      </p>
+    </details>
   </div>
 
   <div class="rem-card" style="margin-top:14px">

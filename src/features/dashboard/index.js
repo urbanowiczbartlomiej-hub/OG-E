@@ -58,6 +58,8 @@ import {
   SCANS_KEY_BASE,
   scansKeyFor,
 } from '../../state/scans.js';
+import { playersKeyFor } from '../../state/players.js';
+import { readOwnProfile, ownProfileKeyFor } from '../../state/ownProfile.js';
 import {
   GALAXY_SCAN_CONFIG_KEY_BASE,
   galaxyScanConfigKeyFor,
@@ -75,7 +77,7 @@ import {
 } from './io.js';
 import { installReminders, _resetRemindersForTest } from './reminders.js';
 import { installRoutes } from './routes.js';
-import { installColonizationConfig, installScanRescanConfig } from './scanConfig.js';
+import { installScanColonyConfig } from './scanConfig.js';
 import { installReminderConfig } from './reminderConfig.js';
 
 /**
@@ -92,11 +94,11 @@ const SCOUT_PREFS_KEY = 'oge_colonyScoutPrefs';
 
 // localStorage key for the active dashboard tab. Per-device UI prefs.
 // Possible values are the `data-tab` attributes from dashboard.html:
-// `'colony'`, `'galaxy'`, `'reminders'`, `'routes'`. Anything
-// unrecognised — including the retired `'free'` (its content folded into
-// the galaxy tab) — falls back to `'colony'` (the page's first tab). The
-// key keeps its legacy `oge_histogram` name so the saved preference
-// survives the rename.
+// `'colony'`, `'reminders'`, `'routes'`. Anything unrecognised — including the
+// retired `'free'` and `'galaxy'` (whose content folded into the Colonizations
+// tab's sub-tabs) — falls back to `'colony'` (the page's first tab). The key
+// keeps its legacy `oge_histogram` name so the saved preference survives the
+// rename.
 const ACTIVE_TAB_LS_KEY = 'oge_histogramTab';
 const DEFAULT_TAB = 'colony';
 
@@ -137,17 +139,15 @@ let remindersApi = null;
 let routesApi = null;
 
 /**
- * Handles to the two scan/colonization config editors' refresh entrypoints,
- * set by `installColonizationConfig` / `installScanRescanConfig` at boot. Both
- * share the per-universe galaxyScanConfig slot but render on different tabs
- * (Colonizations / Galaxy Observations); the universe-selector change handler
- * refreshes both so their fields reload for the newly-selected server.
+ * Handle to the combined scan/colonization config editor's refresh entrypoint,
+ * set by `installScanColonyConfig` at boot. It owns the per-universe
+ * galaxyScanConfig slot (colonization knobs + scan re-scan policy) under the
+ * Colonizations tab's ⚙ Settings; the universe-selector change handler refreshes
+ * it so its fields reload for the newly-selected server.
  *
  * @type {{ refresh: () => void } | null}
  */
-let colonizationConfigApi = null;
-/** @type {{ refresh: () => void } | null} */
-let scanRescanConfigApi = null;
+let scanColonyConfigApi = null;
 
 /**
  * Handle to the fleet-save reminder config editor's refresh entrypoint, set by
@@ -163,6 +163,22 @@ let history = [];
 
 /** @type {GalaxyScans} */
 let scans = {};
+
+/**
+ * Per-universe player-metadata cache (`state/players.js`), loaded alongside
+ * `scans` and forwarded to Colony Scout so neighbourhood scoring can use the
+ * richer strong/newbie/buddy/outlaw/ally signals. `{}` until a universe loads.
+ * @type {import('../../state/players.js').PlayerCache}
+ */
+let players = {};
+
+/**
+ * Our own standing on the selected server (`state/ownProfile.js`), read from
+ * the in-game header bar. `rank` anchors Colony Scout's relative-strength
+ * display ("#11 (239 above you)"). `{}` until a universe loads.
+ * @type {import('../../state/ownProfile.js').OwnProfile}
+ */
+let ownProfile = {};
 
 /** @type {Set<number>} */
 let targetPositions = parseTargetPositions(DEFAULT_COL_POSITIONS);
@@ -196,7 +212,6 @@ const expandedGalaxies = new Set();
 /** @type {HTMLSelectElement} */ let freeGapsSelect;
 /** @type {HTMLSelectElement} */ let freeStrategySelect;
 /** @type {HTMLSelectElement} */ let freeExpansionSelect;
-/** @type {HTMLInputElement} */ let freeAllyInput;
 /** @type {HTMLElement} */ let freeContainer;
 /** @type {HTMLElement | null} */ let freeCountInfoEl;
 
@@ -237,7 +252,7 @@ const boot = async () => {
   wireDom();
   loadExpanded();
   wireTabs();
-  wireGalaxySubtabs();
+  wireColonySubtabs();
 
   // Reminders tab filters by the active universe (same UX as the other
   // tabs). The host passes a getter so reminders never has to import
@@ -245,8 +260,7 @@ const boot = async () => {
   // handler calls `remindersApi.refresh()` to repaint.
   remindersApi = installReminders({ getUniverseId: () => selectedUniverseId });
   routesApi = installRoutes({ getUniverseId: () => selectedUniverseId });
-  colonizationConfigApi = installColonizationConfig({ getUniverseId: () => selectedUniverseId });
-  scanRescanConfigApi = installScanRescanConfig({ getUniverseId: () => selectedUniverseId });
+  scanColonyConfigApi = installScanColonyConfig({ getUniverseId: () => selectedUniverseId });
   reminderConfigApi = installReminderConfig({ getUniverseId: () => selectedUniverseId });
 
   const universes = await discoverUniverses();
@@ -260,8 +274,7 @@ const boot = async () => {
   // active universe. Repaint now that it's known.
   remindersApi?.refresh();
   routesApi?.refresh();
-  colonizationConfigApi?.refresh();
-  scanRescanConfigApi?.refresh();
+  scanColonyConfigApi?.refresh();
   reminderConfigApi?.refresh();
   wireListeners();
 
@@ -273,9 +286,6 @@ const boot = async () => {
   if (scoutPrefs.expansion !== undefined
     && freeExpansionSelect.querySelector(`[value="${String(scoutPrefs.expansion)}"]`)) {
     freeExpansionSelect.value = String(scoutPrefs.expansion);
-  }
-  if (typeof scoutPrefs.allyTag === 'string') {
-    freeAllyInput.value = scoutPrefs.allyTag;
   }
   applyPresetToSliders(freeStrategySelect.value);
 
@@ -289,6 +299,8 @@ const boot = async () => {
     const keysToWatch = [
       historyKeyFor(selectedUniverseId),
       scansKeyFor(selectedUniverseId),
+      playersKeyFor(selectedUniverseId),
+      ownProfileKeyFor(selectedUniverseId),
       galaxyScanConfigKeyFor(selectedUniverseId),
     ];
     if (keysToWatch.some((k) => k in changes)) {
@@ -421,7 +433,6 @@ const wireDom = () => {
   freeGapsSelect = /** @type {HTMLSelectElement} */ (document.getElementById('freeGapsSelect'));
   freeStrategySelect = /** @type {HTMLSelectElement} */ (document.getElementById('freeStrategySelect'));
   freeExpansionSelect = /** @type {HTMLSelectElement} */ (document.getElementById('freeExpansionSelect'));
-  freeAllyInput = /** @type {HTMLInputElement} */ (document.getElementById('freeAllyInput'));
   freeContainer = /** @type {HTMLElement} */ (document.getElementById('freeContainer'));
   freeCountInfoEl = document.getElementById('freeCountInfo');
   for (const k of WEIGHT_FIELDS) {
@@ -497,18 +508,21 @@ const wireTabs = () => {
 };
 
 /**
- * Wire the Galaxy Observations sub-tabs ("Scanned data" / "Colony Scout").
- * Both panes stay mounted (the inactive one is `display:none`) so the
- * galaxy-map and Colony-Scout renderers keep painting into their containers
- * regardless of which tab is showing — clicking only flips the `active`
- * classes. Purely presentational; no persistence (always opens on the first
- * tab), matching the Reminders settings sub-tabs.
+ * Wire the Colonizations sub-tabs ("Planet sizes" / "Scanned data" /
+ * "Colony Scout"). All panes stay mounted (the inactive ones are
+ * `display:none`) so the histogram, galaxy-map and Colony-Scout renderers keep
+ * painting into their containers regardless of which sub-tab is showing —
+ * clicking only flips the `active` classes. (The histogram tolerates being
+ * hidden at render time: its width-based binning falls back to a viewport
+ * estimate when `clientWidth` is 0 — see colony.js `estimateChartWidth`.)
+ * Purely presentational; no persistence (always opens on the first sub-tab),
+ * matching the Reminders settings sub-tabs.
  *
  * @returns {void}
  */
-const wireGalaxySubtabs = () => {
-  const buttons = document.querySelectorAll('#galaxySubtabs .subtab');
-  const panes = document.querySelectorAll('#galaxySection .subtabpane');
+const wireColonySubtabs = () => {
+  const buttons = document.querySelectorAll('#colonySubtabs .subtab');
+  const panes = document.querySelectorAll('#colonySection .subtabpane');
   for (const btn of buttons) {
     btn.addEventListener('click', () => {
       const key = /** @type {HTMLElement} */ (btn).dataset.subtab;
@@ -559,17 +573,25 @@ const loadAll = async () => {
   if (!selectedUniverseId) {
     history = [];
     scans = {};
+    players = {};
+    ownProfile = {};
     galaxyConfig = defaultGalaxyScanConfig();
     targetPositions = parseTargetPositions(galaxyConfig.positions);
     return;
   }
-  const [h, s, c] = await Promise.all([
+  const [h, s, c, p, op] = await Promise.all([
     chromeStore.get(historyKeyFor(selectedUniverseId)),
     chromeStore.get(scansKeyFor(selectedUniverseId)),
     chromeStore.get(galaxyScanConfigKeyFor(selectedUniverseId)),
+    chromeStore.get(playersKeyFor(selectedUniverseId)),
+    readOwnProfile(selectedUniverseId),
   ]);
   history = Array.isArray(h) ? /** @type {ColonyEntry[]} */ (h) : [];
   scans = s && typeof s === 'object' ? /** @type {GalaxyScans} */ (s) : {};
+  players = p && typeof p === 'object'
+    ? /** @type {import('../../state/players.js').PlayerCache} */ (p)
+    : {};
+  ownProfile = op;
   galaxyConfig = normalizeGalaxyScanConfig(c);
   targetPositions = parseTargetPositions(galaxyConfig.positions);
 };
@@ -674,7 +696,6 @@ const applyPresetToSliders = (strategyKey) => {
 
 /** Repaint ONLY the settlement-regions block from current controls. */
 const repaintFreeRegions = () => {
-  const allyTag = freeAllyInput.value.trim();
   renderFreeRegions({
     containerEl: freeContainer,
     countInfoEl: freeCountInfoEl,
@@ -683,8 +704,9 @@ const repaintFreeRegions = () => {
     maxGaps: parseInt(freeGapsSelect.value, 10) || 0,
     strategy: freeStrategySelect.value || 'longest',
     expansion: parseInt(freeExpansionSelect.value, 10) || 0,
-    allyTag,
     customWeights: readCustomWeights(),
+    players,
+    ownRank: ownProfile.rank,
   });
 };
 
@@ -796,7 +818,6 @@ const wireListeners = () => {
     safeLS.setJSON(SCOUT_PREFS_KEY, {
       strategy: freeStrategySelect.value,
       expansion: freeExpansionSelect.value,
-      allyTag: freeAllyInput.value.trim(),
     });
   };
 
@@ -806,7 +827,6 @@ const wireListeners = () => {
     repaintFreeRegions();
   });
   freeExpansionSelect.addEventListener('change', () => { saveScoutPrefs(); repaintFreeRegions(); });
-  freeAllyInput.addEventListener('change', () => { saveScoutPrefs(); repaintFreeRegions(); });
 
   for (const k of WEIGHT_FIELDS) {
     weightSliders[k]?.addEventListener('input', () => {
@@ -827,8 +847,7 @@ const wireListeners = () => {
     void loadAll().then(renderAll);
     remindersApi?.refresh();
     routesApi?.refresh();
-    colonizationConfigApi?.refresh();
-    scanRescanConfigApi?.refresh();
+    scanColonyConfigApi?.refresh();
     reminderConfigApi?.refresh();
   });
 
@@ -855,8 +874,7 @@ export const _resetDashboardForTest = () => {
   selectedUniverseId = '';
   remindersApi = null;
   routesApi = null;
-  colonizationConfigApi = null;
-  scanRescanConfigApi = null;
+  scanColonyConfigApi = null;
   reminderConfigApi = null;
   history = [];
   scans = {};
@@ -876,7 +894,6 @@ export const _resetDashboardForTest = () => {
     freeGapsSelect =
     freeStrategySelect =
     freeExpansionSelect =
-    freeAllyInput =
     freeContainer =
     freeCountInfoEl =
       /** @type {any} */ (undefined);

@@ -629,16 +629,21 @@ export const adhocTitleFor = (universeId) => `[${universeId}] Fleet`;
  * Reconcile this universe's AD-HOC slice of the queue. Each armed entry is
  * a single-slot series fired at its `fireAt`. The body is rendered here from
  * the ad-hoc {@link import('../domain/reminderTemplates.js').ReminderTemplate}
- * against the entry's detail (`{label}`, `{mission}`, `{coords}`,
- * `{arrivalTime}`, `{server}`); priority + icon come from the template.
+ * against the entry's detail (the shared per-fleet wildcard set: `{label}`,
+ * `{mission}`, `{coords}`, `{origin}`, `{originName}`, `{target}`,
+ * `{targetName}`, `{shipCount}`, `{arrivalTime}`, `{server}`); priority + icon
+ * come from the template.
  *
  * Same idempotent reconcile as waves, under the ad-hoc title, so arming on
  * mobile survives the send-reload and the queue self-heals. Pass
  * `entries: []` to cancel every ad-hoc reminder queued for this universe.
  *
  * @param {object} args
- * @param {Array<{ id: string, fireAt: number, arrivalAt: number, label: string }>} args.entries
- *   Armed entries (the label is the `${mission} → [${coords}]` string).
+ * @param {Array<{ id: string, fireAt: number, arrivalAt: number, label: string,
+ *   origin?: string, originName?: string, target?: string, targetName?: string,
+ *   shipCount?: number }>} args.entries
+ *   Armed entries (the label is the `${mission} → [${coords}]` string; the
+ *   origin/target/ship metadata feeds the matching wildcards).
  * @param {string} args.topic
  * @param {string} args.token
  * @param {number} args.now         Epoch SECONDS.
@@ -660,7 +665,11 @@ export const reconcileAdhocQueue = async ({
   const series = entries.map((e) => {
     const { mission, coords } = splitLabel(e.label);
     const body = renderTemplate(template.body, {
-      server: universeId, label: e.label, mission, coords, arrivalTime: clock(e.arrivalAt),
+      server: universeId, label: e.label, mission, coords,
+      origin: e.origin ?? '', originName: e.originName ?? '',
+      target: e.target ?? '', targetName: e.targetName ?? '',
+      shipCount: Number.isFinite(e.shipCount) ? Number(e.shipCount).toLocaleString() : '',
+      arrivalTime: clock(e.arrivalAt),
     });
     return { id: e.id, slots: [{ fireAt: e.fireAt, body, priority: template.priority, icon }] };
   });
@@ -688,7 +697,8 @@ export const fsTitleFor = (universeId) => `[${universeId}] Fleet save`;
  * locale-formatted for readability when the template references `{shipCount}`.
  *
  * @param {string} universeId
- * @param {{ label: string, arrivalAt: number, shipCount?: number }} e
+ * @param {{ label: string, arrivalAt: number, shipCount?: number,
+ *   origin?: string, originName?: string, target?: string, targetName?: string }} e
  * @param {number} fireAt    Epoch SECONDS this slot fires.
  * @returns {Record<string, string | number>}
  */
@@ -699,7 +709,14 @@ const fsCtx = (universeId, e, fireAt) => {
     label: e.label,
     mission,
     coords,
+    origin: e.origin ?? '',
+    originName: e.originName ?? '',
+    target: e.target ?? '',
+    targetName: e.targetName ?? '',
     shipCount: Number.isFinite(e.shipCount) ? Number(e.shipCount).toLocaleString() : '',
+    // `arrivalTime` is the unified name shared with ad-hoc; `landTime` stays as
+    // a back-compat alias (the default FS template + any saved body use it).
+    arrivalTime: clock(e.arrivalAt),
     landTime: clock(e.arrivalAt),
     offset: humanizeOffset(fireAt - e.arrivalAt),
   };

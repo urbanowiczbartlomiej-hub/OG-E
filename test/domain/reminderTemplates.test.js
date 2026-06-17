@@ -144,4 +144,29 @@ describe('templateTokens / unknownTokens', () => {
   it('TEMPLATE_FIELDS covers the three kinds', () => {
     expect(Object.keys(TEMPLATE_FIELDS).sort()).toEqual([...REMINDER_KINDS].sort());
   });
+
+  it('ad-hoc and fleet-save share the same per-fleet tokens (unified set)', () => {
+    const tokensOf = (/** @type {'wave'|'adhoc'|'fleetSave'} */ kind) =>
+      TEMPLATE_FIELDS[kind].map((f) => f.token);
+    const shared = ['label', 'mission', 'coords', 'origin', 'originName', 'target', 'targetName', 'shipCount', 'arrivalTime'];
+    for (const t of shared) {
+      expect(tokensOf('adhoc')).toContain(t);
+      expect(tokensOf('fleetSave')).toContain(t);
+    }
+    // The new per-fleet tokens are accepted (no "unknown wildcard") for both.
+    const body = '{origin} {originName} {target} {targetName} {shipCount}';
+    expect(unknownTokens(body, 'adhoc')).toEqual([]);
+    expect(unknownTokens(body, 'fleetSave')).toEqual([]);
+    // …but waves don't carry per-fleet data, so they stay flagged there.
+    expect(unknownTokens('{origin}', 'wave')).toEqual(['origin']);
+  });
+
+  it('renders the new per-fleet tokens from a context', () => {
+    const body = '{mission} from {originName} {origin} → {target} · {shipCount} ships, {arrivalTime}';
+    const ctx = {
+      mission: 'Expedition', originName: 'P1', origin: '[4:467:15]',
+      target: '[4:467:16]', shipCount: '4,323', arrivalTime: '14:32',
+    };
+    expect(renderTemplate(body, ctx)).toBe('Expedition from P1 [4:467:15] → [4:467:16] · 4,323 ships, 14:32');
+  });
 });

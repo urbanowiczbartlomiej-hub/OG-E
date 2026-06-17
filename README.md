@@ -63,11 +63,11 @@ tap per intention:
 A full-page companion (one OGame universe at a time) for the data behind
 the buttons:
 
-- **Colony Sizes** — a histogram of the field sizes you've personally
-  visited.
-- **Galaxy Observations** — galaxy preview maps of everywhere you've
-  scanned, plus the **Colony Scout** settlement-area analysis and the
-  per-universe scan settings.
+- **Colonizations** — three sub-tabs in one place: **Planet sizes** (a
+  histogram of the field sizes you've personally visited), **Scanned data**
+  (galaxy preview maps of everywhere you've scanned), and the **Colony Scout**
+  settlement-area analysis. Its ⚙ Settings hold the per-universe scan +
+  colonize config.
 - **Reminders** — a live look at every push reminder currently queued,
   plus the schedule editor for expedition waves and fleet-save alerts.
 - **Daily Run** — point-and-click editor for your collection routes
@@ -88,9 +88,9 @@ Two homes, one rule: nothing is editable in two places.
 - **In the Dashboard tabs** — the detailed config, next to the data it
   shapes. **Reminders tab:** the expedition-wave and ad-hoc reminder
   schedules, plus the per-universe fleet-save thresholds and offsets,
-  edited through a friendly per-entry offset editor. **Galaxy
-  Observations tab:** the per-universe target positions, rescan policy,
-  and the colonize / abandon thresholds.
+  edited through a friendly per-entry offset editor. **Colonizations
+  tab:** the per-universe target positions, rescan policy, and the
+  colonize / abandon thresholds.
 
 ---
 

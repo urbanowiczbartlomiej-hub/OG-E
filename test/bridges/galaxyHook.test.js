@@ -159,6 +159,52 @@ describe('installGalaxyHook — event detail', () => {
     expect(detail.positions).toBeTypeOf('object');
   });
 
+  it('emits a de-duplicated players map (sentinel + empty slots excluded)', async () => {
+    installGalaxyHook();
+    const { events } = trackCleanup(captureGalaxyEvents());
+
+    const payload = JSON.stringify({
+      system: {
+        galaxy: 1,
+        system: 100,
+        galaxyContent: [
+          // Empty slot with the deep-space sentinel — excluded.
+          makeEntry({ position: 1, player: { playerId: 99999, playerName: 'Bezgraniczna' } }),
+          // Long-inactive neighbour.
+          makeEntry({
+            position: 3,
+            planets: [{ planetType: 1 }],
+            player: {
+              playerId: 120577, playerName: 'Czar',
+              isInactive: true, isLongInactive: true, highscorePositionPlayer: 1390,
+            },
+          }),
+          // Rank-11 starlord, active but on vacation, with an alliance tag.
+          makeEntry({
+            position: 8,
+            planets: [{ planetType: 1 }],
+            player: {
+              playerId: 119875, playerName: 'UP4DLY',
+              isActive: true, isOnVacation: true, allianceTag: '2040',
+              highscorePositionPlayer: 11, highscorePositionAlliance: 4,
+              rank: { hasRank: true, rankClass: 'rank_starlord1' },
+            },
+          }),
+        ],
+      },
+    });
+    await fakeXHR('/x?action=fetchGalaxyContent', payload);
+
+    const { players } = events[0];
+    expect(Object.keys(players).sort()).toEqual(['119875', '120577']);
+    expect(players[119875]).toMatchObject({
+      id: 119875, rank: 11, rankClass: 'rank_starlord1',
+      ally: { tag: '2040', rank: 4 },
+      flags: { active: true, vacation: true },
+    });
+    expect(players[120577].flags).toMatchObject({ inactive: true, longInactive: true });
+  });
+
   it('produces empty positions map when galaxyContent is []', async () => {
     installGalaxyHook();
     const { events } = trackCleanup(captureGalaxyEvents());

@@ -3,7 +3,8 @@
 //
 //   manifest.json       → dist/manifest.json
 //   src/dashboard.html  → dist/dashboard.html
-//   icons/icon{16,48,128}.png → dist/icons/…
+//   icons/icon{16,48,128}.png → dist/icons/…  (manifest-referenced)
+//   icons/icon_red.png        → dist/icons/…  (dashboard reminder-icon swatch)
 //
 // One unified manifest.json serves both Chrome and Firefox. Firefox
 // reads `browser_specific_settings.gecko` for its id +
@@ -37,4 +38,8 @@ copy('src/dashboard.html', 'dist/dashboard.html');
 copy('icons/icon16.png', 'dist/icons/icon16.png');
 copy('icons/icon48.png', 'dist/icons/icon48.png');
 copy('icons/icon128.png', 'dist/icons/icon128.png');
+// Preset reminder icons the dashboard template editor shows as swatches
+// (the ntfy push itself fetches these from a GitHub raw URL, but the
+// in-dashboard <img> swatch needs the file bundled alongside dashboard.html).
+copy('icons/icon_red.png', 'dist/icons/icon_red.png');
 console.log('copy-static: done.');

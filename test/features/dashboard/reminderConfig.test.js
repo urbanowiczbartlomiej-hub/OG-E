@@ -23,7 +23,7 @@ vi.mock('../../../src/lib/storage.js', () => ({
 
 import { chromeStore } from '../../../src/lib/storage.js';
 import { installReminderConfig } from '../../../src/features/dashboard/reminderConfig.js';
-import { installColonizationConfig } from '../../../src/features/dashboard/scanConfig.js';
+import { installScanColonyConfig } from '../../../src/features/dashboard/scanConfig.js';
 import { defaultGalaxyScanConfig } from '../../../src/domain/galaxyScanConfig.js';
 import { defaultReminderConfig } from '../../../src/domain/reminderConfig.js';
 import { defaultReminderTemplates } from '../../../src/domain/reminderTemplates.js';
@@ -50,7 +50,8 @@ const $ = (/** @type {string} */ sel) => /** @type {HTMLInputElement} */ (docume
 
 // ── per-entry offset editor helpers ───────────────────────────────────────
 // Each offset list is a row editor (container id + `${id}Add` button, rows with
-// `.oge-offset-input` / `.oge-offset-remove` / `.oge-offset-preview`).
+// `.oge-offset-input` / `.oge-offset-remove`; the full impact phrase is the
+// chip's hover `title`).
 
 /** Canonical comma string of an editor's row values. @param {string} id */
 const readEditor = (id) =>
@@ -58,9 +59,9 @@ const readEditor = (id) =>
     document.querySelectorAll(`#${id} .oge-offset-input`)
   )].map((i) => i.value).join(', ');
 
-/** Preview phrases of an editor's rows, in order. @param {string} id */
+/** Hover-title impact phrases of an editor's chips, in order. @param {string} id */
 const previewsOf = (id) =>
-  [...document.querySelectorAll(`#${id} .oge-offset-preview`)].map((s) => s.textContent);
+  [...document.querySelectorAll(`#${id} .oge-offset-row`)].map((r) => r.getAttribute('title'));
 
 /** Remove every row of an editor. @param {string} id */
 const clearEditor = (id) =>
@@ -116,8 +117,17 @@ describe('Reminders fleet-save config editor', () => {
     install().refresh();
     await flush();
     expect(previewsOf('remCfgFsOffsets')).toEqual([
-      '10m before', 'at landing', '15m after',
+      '10 min before landing', 'landing now', '15 min after landing',
     ]);
+  });
+
+  it('shows a combined plain-language summary under the fleet-save chips', async () => {
+    store.set(CFG_KEY, { fsOffsets: '-15m, -5m, 0m, 20m' });
+    install().refresh();
+    await flush();
+    const wrap = document.getElementById('remCfgFsOffsets');
+    const summary = wrap?.parentElement?.querySelector('.oge-offset-summary');
+    expect(summary?.textContent).toBe('15m & 5m before landing · at landing · 20m after landing');
   });
 
   it('saves the fs config + timestamp + syncRequest, parsing the duration units', async () => {
@@ -199,7 +209,7 @@ describe('Reminders fleet-save config editor', () => {
 
   it('scan-config save preserves the fs fields (the reverse direction)', async () => {
     store.set(CFG_KEY, { fsEnabled: true, fsThreshold: 333000, fsOffsets: '-7m' });
-    installColonizationConfig({ getUniverseId: () => UNI }).refresh();
+    installScanColonyConfig({ getUniverseId: () => UNI }).refresh();
     await flush();
     $('#scanCfgPositions').value = '9';
     /** @type {HTMLElement} */ (
@@ -252,7 +262,7 @@ describe('Reminders wave + ad-hoc config editor', () => {
     install().refresh();
     await flush();
     expect(previewsOf('remCfgWaveEditor')).toEqual([
-      'at return', '10m after',
+      'when the wave returns', '10 min after the wave returns',
     ]);
   });
 
@@ -326,8 +336,11 @@ describe('Reminders message templates', () => {
     await flush();
     const d = defaultReminderTemplates();
     expect(ta('#remCfgTplWaveBody').value).toBe(d.wave.body);
-    expect($('#remCfgTplAdhocIcon').value).toBe(d.adhoc.icon);
-    expect($('#remCfgTplFsPriority').value).toBe(String(d.fleetSave.priority));
+    // Icon picker → the selected swatch's data-icon; priority → selected segment.
+    expect(document.querySelector('#remCfgTplAdhocIcon .oge-icon-swatch.selected')
+      ?.getAttribute('data-icon')).toBe(d.adhoc.icon);
+    expect(document.querySelector('#remCfgTplFsPriority .oge-prio-seg.selected')
+      ?.getAttribute('data-prio')).toBe(String(d.fleetSave.priority));
   });
 
   it('renders a live preview from the kind sample context and warns on unknown wildcards', async () => {
@@ -349,8 +362,10 @@ describe('Reminders message templates', () => {
     install().refresh();
     await flush();
     ta('#remCfgTplWaveBody').value = 'Wave back at {returnTime}!';
-    $('#remCfgTplWaveIcon').value = 'urgent';
-    $('#remCfgTplWavePriority').value = '4';
+    /** @type {HTMLElement} */ (document.querySelector('#remCfgTplWaveIcon .oge-icon-swatch[data-icon="urgent"]'))
+      .dispatchEvent(new Event('click'));
+    /** @type {HTMLElement} */ (document.querySelector('#remCfgTplWavePriority .oge-prio-seg[data-prio="4"]'))
+      .dispatchEvent(new Event('click'));
     $('#remCfgSave').dispatchEvent(new Event('click'));
     await flush();
     const saved = /** @type {any} */ (store.get(REMINDER_KEY));

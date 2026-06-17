@@ -14,7 +14,7 @@
 // wrong channel.
 
 import { describe, it, expect } from 'vitest';
-import { deriveNtfyTopic } from '../../src/sync/reminders.js';
+import { deriveNtfyTopic, maskTopic } from '../../src/sync/reminders.js';
 
 describe('deriveNtfyTopic', () => {
   it('returns an empty string for an empty token', async () => {
@@ -46,6 +46,27 @@ describe('deriveNtfyTopic', () => {
     const token = 'tk_tbqdljrkz4ivlgagxwewjz17k26gw';
     const expected = 'oge-' + (await sha256Hex(token)).slice(0, 22);
     expect(await deriveNtfyTopic(token)).toBe(expected);
+  });
+});
+
+describe('maskTopic', () => {
+  it('masks the random remainder but keeps the non-secret oge- label', async () => {
+    const topic = await deriveNtfyTopic('tk_tbqdljrkz4ivlgagxwewjz17k26gw');
+    const masked = maskTopic(topic);
+    expect(masked).toBe('oge-' + '•'.repeat(topic.length - 4));
+    expect(masked.startsWith('oge-')).toBe(true);
+    // The secret hex is gone — no original character survives past the label.
+    expect(masked.slice(4)).not.toContain(topic.slice(4, 5));
+  });
+
+  it('preserves length so the masked form reads like a real topic', async () => {
+    const topic = await deriveNtfyTopic('tk_tbqdljrkz4ivlgagxwewjz17k26gw');
+    expect(maskTopic(topic).length).toBe(topic.length);
+  });
+
+  it('passes non-topic strings through unchanged (empty + placeholder)', () => {
+    expect(maskTopic('')).toBe('');
+    expect(maskTopic('— (enter a valid token first)')).toBe('— (enter a valid token first)');
   });
 });
 

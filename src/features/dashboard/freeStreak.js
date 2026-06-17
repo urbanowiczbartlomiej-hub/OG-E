@@ -1,9 +1,9 @@
 // @ts-check
 
 // Settlement-regions renderer — paints the "Free positions" block that
-// lives INSIDE the Galaxy Observations tab (it was a tab of its own up
-// to 1.17.0; folded in so the mobile tab bar fits one line). Shows a
-// top-N table of the best confirmed-empty regions per galaxy and a
+// lives INSIDE the Colonizations → "Colony Scout" sub-tab (it was a tab of
+// its own up to 1.17.0; folded in so the mobile tab bar fits one line). Shows
+// a top-N table of the best confirmed-empty regions per galaxy and a
 // record-line summary with neighbourhood intel.
 //
 // Pure DOM module. Every node is built with `document.createElement`,
@@ -37,7 +37,17 @@
 //
 // @see ../../domain/regions.js — findBestRegions / scoreRegion (pure)
 
-import { findBestRegions, sortRegionsByStrategy, STRATEGIES } from '../../domain/regions.js';
+import {
+  findBestRegions,
+  findFreeSystems,
+  sortRegionsByStrategy,
+  STRATEGIES,
+  MIN_REGION_LENGTH,
+} from '../../domain/regions.js';
+import { STRIP_PRIORITY, bestStatusInSystem } from '../../domain/histogram.js';
+import { STATUS_COLORS, STATUS_LABELS, UNSCANNED_COLOR } from './palette.js';
+import { buildSystemTooltip } from './systemTooltip.js';
+import { makeLegendSwatch } from './legend.js';
 
 /**
  * @typedef {import('../../state/scans.js').GalaxyScans} GalaxyScans
@@ -54,28 +64,50 @@ import { findBestRegions, sortRegionsByStrategy, STRATEGIES } from '../../domain
 const TOP_N = 20;
 
 /**
- * Map a system's position map to a background colour for the strip.
- * Priority: mine > occupied > inactive/long_inactive > vacation > unscanned >
- * empty. Called once per system cell.
+ * Enumerate the system numbers a region spans, honouring wrap-around at the
+ * 499 → 1 boundary. Shared by the strip and its legend so they always
+ * describe the exact same systems.
  *
- * @param {Region['score']} _score unused (reserved for future per-cell rank tint)
- * @param {import('../../state/scans.js').SystemScan['positions'] | undefined} positions
- * @returns {string} CSS colour string.
+ * @param {Region} region
+ * @param {number} [galaxyMax]
+ * @returns {number[]}
  */
-const systemColor = (_score, positions) => {
-  if (!positions) return '#1e1e1e'; // unscanned — dark neutral
-  const statuses = Object.values(positions).map((p) => p.status);
-  if (statuses.includes('mine')) return '#4466cc';           // our colony — blue
-  if (statuses.includes('occupied')) return '#b83010';       // active player — red
-  if (statuses.some((s) => s === 'inactive' || s === 'long_inactive')) return '#775500'; // dormant — amber
-  if (statuses.includes('vacation')) return '#1a4477';       // vacation — navy
-  return '#0a4420';                                          // empty/abandoned — dark green
+const regionSystems = (region, galaxyMax = 499) => {
+  /** @type {number[]} */
+  const out = [];
+  if (region.end >= region.start) {
+    for (let s = region.start; s <= region.end; s++) out.push(s);
+  } else {
+    for (let s = region.start; s <= galaxyMax; s++) out.push(s);
+    for (let s = 1; s <= region.end; s++) out.push(s);
+  }
+  return out;
 };
 
 /**
- * Build a pixel-strip `<div>` visualising every system in the region.
- * One cell per system, coloured by dominant status. Long regions (100+
- * systems) use 1px-min cells so the strip never overflows its container.
+ * All 15 slots. The strip colours a system by the most interesting status
+ * across EVERY slot (who lives in the area), not just the target ones.
+ */
+const ALL_SLOTS = new Set(Array.from({ length: 15 }, (_, i) => i + 1));
+
+/**
+ * The single status that colours a system's strip cell: the most
+ * interesting one across all 15 slots, ranked threat/occupant-first by
+ * {@link STRIP_PRIORITY}. `null` for a never-scanned system.
+ *
+ * @param {import('../../state/scans.js').SystemScan['positions'] | undefined} positions
+ * @returns {import('../../domain/scans.js').PositionStatus | null}
+ */
+const stripCellStatus = (positions) =>
+  positions ? bestStatusInSystem(positions, ALL_SLOTS, STRIP_PRIORITY) : null;
+
+/**
+ * Build the pixel-strip `<div>` visualising every system in the region —
+ * one cell per system, coloured from the CANONICAL {@link STATUS_COLORS}
+ * palette (the same key the galaxy pixel map and dashboard legend use) so
+ * the strip never tells a different colour story than the rest of the app.
+ * Each cell's hover is the full per-system breakdown
+ * ({@link buildSystemTooltip}), not just the bare system number.
  *
  * @param {Region} region
  * @param {GalaxyScans} scans
@@ -85,25 +117,51 @@ const buildStrip = (region, scans) => {
   const el = document.createElement('div');
   el.className = 'region-strip';
 
-  const galaxyMax = 499;
-  const systems = [];
-  if (region.end >= region.start) {
-    for (let s = region.start; s <= region.end; s++) systems.push(s);
-  } else {
-    for (let s = region.start; s <= galaxyMax; s++) systems.push(s);
-    for (let s = 1; s <= region.end; s++) systems.push(s);
-  }
-
-  for (const sys of systems) {
+  for (const sys of regionSystems(region)) {
     const sysData = scans[`${region.galaxy}:${sys}`];
+    const st = stripCellStatus(sysData?.positions);
     const cell = document.createElement('span');
     cell.className = 'strip-cell';
-    cell.style.backgroundColor = systemColor(region.score, sysData?.positions);
-    cell.title = `S${sys}`;
+    cell.style.backgroundColor = st ? STATUS_COLORS[st] : UNSCANNED_COLOR;
+    cell.title = buildSystemTooltip(region.galaxy, sys, sysData);
     el.appendChild(cell);
   }
 
   return el;
+};
+
+/**
+ * Build the legend for a region strip: one swatch per status actually
+ * painted in THIS region (plus "Not scanned" when any cell is blank), in
+ * {@link STRIP_PRIORITY} order. Without it the unified palette is just
+ * unlabelled colours; with it the strip reads on its own — directly
+ * addressing the "the colours don't say much" feedback.
+ *
+ * @param {Region} region
+ * @param {GalaxyScans} scans
+ * @returns {HTMLElement}
+ */
+const buildStripLegend = (region, scans) => {
+  /** @type {Set<string>} */
+  const present = new Set();
+  let anyUnscanned = false;
+  for (const sys of regionSystems(region)) {
+    const st = stripCellStatus(scans[`${region.galaxy}:${sys}`]?.positions);
+    if (st) present.add(st);
+    else anyUnscanned = true;
+  }
+
+  const legend = document.createElement('div');
+  legend.className = 'region-legend';
+  for (const st of STRIP_PRIORITY) {
+    if (present.has(st)) {
+      legend.appendChild(makeLegendSwatch(STATUS_COLORS[st], STATUS_LABELS[st]));
+    }
+  }
+  if (anyUnscanned) {
+    legend.appendChild(makeLegendSwatch(UNSCANNED_COLOR, 'Not scanned', { border: true }));
+  }
+  return legend;
 };
 
 /**
@@ -123,6 +181,18 @@ const buildNbrsTip = (s) => {
   if (s.honored) {
     parts.push(`${s.honored} honored, max tier ${s.honoredMaxLevel}/3`);
   }
+  if (s.strong || s.activeOnVacation) {
+    const t = [];
+    if (s.strong) t.push(`${s.strong} strong`);
+    if (s.activeOnVacation) t.push(`${s.activeOnVacation} active-on-vacation`);
+    parts.push(`⚠ ${t.join(', ')}`);
+  }
+  const social = [];
+  if (s.allyNearby) social.push(`${s.allyNearby} allied`);
+  if (s.buddy) social.push(`${s.buddy} buddy`);
+  if (s.outlaw) social.push(`${s.outlaw} outlaw`);
+  if (s.newbie) social.push(`${s.newbie} newbie (protected)`);
+  if (social.length) parts.push(social.join(', '));
   return parts.join('\n');
 };
 
@@ -198,9 +268,11 @@ const buildTable = (results) => {
  *
  * @param {Region} record
  * @param {GalaxyScans} scans
+ * @param {number} [ownRank] Our own highscore rank, for the relative-strength
+ *   annotation on the top neighbour ("#11 (239 above you)").
  * @returns {HTMLElement}
  */
-const buildRecord = (record, scans) => {
+const buildRecord = (record, scans, ownRank) => {
   const el = document.createElement('div');
   el.className = 'streak-record';
 
@@ -252,13 +324,44 @@ const buildRecord = (record, scans) => {
       }
       parts.push(honor.join(', '));
     }
+    // Threats the player cache surfaces that the status colour alone hides:
+    // strong neighbours and "active on vacation" (a live player, not a farm).
+    const threats = [];
+    if (s.strong) threats.push(`${s.strong} strong`);
+    if (s.activeOnVacation) threats.push(`${s.activeOnVacation} active-on-vac`);
+    if (threats.length) parts.push(threats.join(', '));
+    // Social signals: allied neighbours (game-truth), buddies, outlaws
+    // (fair game), newbies (protected, no farm value).
+    const social = [];
+    if (s.allyNearby) social.push(`${s.allyNearby} ally`);
+    if (s.buddy) social.push(`${s.buddy} buddy`);
+    if (s.outlaw) social.push(`${s.outlaw} outlaw`);
+    if (s.newbie) social.push(`${s.newbie} newbie`);
+    if (social.length) parts.push(social.join(', '));
     if (s.ranks.length) {
-      parts.push(`top neighbour rank #${s.ranks[0]}`);
+      const top = s.ranks[0];
+      // Relative to us: a LOWER rank number is a STRONGER player, so
+      // ownRank - top > 0 means the neighbour outranks (is above) us.
+      let rel = '';
+      if (typeof ownRank === 'number' && ownRank > 0) {
+        const d = ownRank - top;
+        rel = d > 0 ? ` (${d} above you)` : d < 0 ? ` (${-d} below you)` : ' (your rank)';
+      }
+      parts.push(`top neighbour rank #${top}${rel}`);
+    }
+    // Distance to our nearest colony in this galaxy — context for whether
+    // the region is fresh territory or backyard expansion. Infinity means
+    // we hold nothing in this galaxy yet, so we say so rather than "∞ sys".
+    if (Number.isFinite(s.mineMinDist)) {
+      parts.push(`${s.mineMinDist} sys to nearest colony`);
+    } else {
+      parts.push('no colony in this galaxy yet');
     }
     scoreLine.textContent = parts.join(' · ');
     el.appendChild(scoreLine);
 
     el.appendChild(buildStrip(record, scans));
+    el.appendChild(buildStripLegend(record, scans));
   }
 
   return el;
@@ -286,12 +389,18 @@ const buildRecord = (record, scans) => {
  * @property {number} [expansion]
  *   Placement modifier: `> 0` = spread (prefer 100+ sys from own colonies);
  *   `< 0` = cluster (prefer near own colonies); `0` = no preference.
- * @property {string} [allyTag]
- *   Own alliance TAG. When non-empty, `findBestRegions` computes
- *   `allyNearby` per region and the sort rewards allied neighbours.
  * @property {import('../../domain/regions.js').StrategyWeights} [customWeights]
  *   When set, overrides the named strategy's weights with user-customised
  *   values from the weight sliders.
+ * @property {import('../../domain/regions.js').PlayerCache} [players]
+ *   Per-universe player-metadata cache (`state/players.js`). Forwarded to the
+ *   region finders → `scoreRegion` to enrich neighbourhood scoring with the
+ *   strong/newbie/buddy/outlaw/active-on-vacation signals and game-truth
+ *   `allyNearby`. Omit to score from scan data alone.
+ * @property {number} [ownRank]
+ *   Our own highscore rank (`state/ownProfile.js`). When set, the Top-region
+ *   record shows the strongest neighbour's rank RELATIVE to us
+ *   ("#11 (239 above you)"). Omit to show the bare rank.
  */
 
 /**
@@ -302,41 +411,78 @@ const buildRecord = (record, scans) => {
  * @param {RenderFreeRegionsOptions} opts
  * @returns {void}
  */
-export const renderFreeRegions = ({ containerEl, countInfoEl, scans, positions, maxGaps, strategy, expansion, allyTag, customWeights }) => {
+export const renderFreeRegions = ({ containerEl, countInfoEl, scans, positions, maxGaps, strategy, expansion, customWeights, players, ownRank }) => {
   containerEl.innerHTML = '';
 
-  const ownAllyTag = allyTag?.trim() ?? '';
-  const raw = findBestRegions(scans, { positions, status: 'empty', maxGaps, ownAllyTag });
-  const allyBonus = ownAllyTag ? 1.5 : 0;
-  const results = sortRegionsByStrategy(raw, strategy ?? 'longest', {
-    expansion: expansion ?? 0,
-    allyBonus,
-    customWeights,
-  });
+  const stratKey = strategy ?? 'longest';
+  // Alliance-proximity bonus is now AUTOMATIC: the player cache carries the
+  // game-truth `isAllianceMember` (→ RegionScore.allyNearby), so the old manual
+  // "Ally tag" field is gone. Applied only when a cache is present, and skipped
+  // for 'longest' so that preset stays pure free-slot length.
+  const allyBonus = players && stratKey !== 'longest' ? 1.5 : 0;
+  /** @param {Region[]} list @returns {Region[]} */
+  const sortByStrategy = (list) =>
+    sortRegionsByStrategy(list, stratKey, { expansion: expansion ?? 0, allyBonus, customWeights });
+  const stratLabel = stratKey !== 'longest' && STRATEGIES[stratKey]
+    ? ` · ${STRATEGIES[stratKey].label}` : '';
   const posLabel = positions.join(', ');
+  /** @param {number} n @returns {string} */
+  const galaxiesLabel = (n) => `${n} galax${n === 1 ? 'y' : 'ies'}`;
 
-  if (countInfoEl) {
-    const galaxyCount = new Set(results.map((r) => r.galaxy)).size;
-    const stratLabel = strategy && strategy !== 'longest' && STRATEGIES[strategy]
-      ? ` · ${STRATEGIES[strategy].label}` : '';
-    const showingLabel = results.length > TOP_N ? ` (showing top ${TOP_N})` : '';
-    countInfoEl.textContent = results.length === 0
-      ? 'No confirmed empty regions yet for these slots.'
-      : `${results.length} region${results.length === 1 ? '' : 's'} across `
-        + `${galaxyCount} galax${galaxyCount === 1 ? 'y' : 'ies'}${stratLabel}${showingLabel}`;
-  }
+  const results = sortByStrategy(
+    findBestRegions(scans, { positions, status: 'empty', maxGaps, players }),
+  );
 
-  if (results.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'empty';
-    empty.textContent =
-      'Nothing to show yet. Scan more galaxy pages with slot'
-      + (positions.length === 1 ? '' : 's') + ' ' + posLabel
-      + ' empty, then come back here.';
-    containerEl.appendChild(empty);
+  // Happy path: contiguous regions of length ≥ MIN_REGION_LENGTH exist.
+  if (results.length > 0) {
+    if (countInfoEl) {
+      const galaxyCount = new Set(results.map((r) => r.galaxy)).size;
+      const showingLabel = results.length > TOP_N ? ` (showing top ${TOP_N})` : '';
+      countInfoEl.textContent =
+        `${results.length} region${results.length === 1 ? '' : 's'} across `
+        + `${galaxiesLabel(galaxyCount)}${stratLabel}${showingLabel}`;
+    }
+    containerEl.appendChild(buildTable(results));
+    containerEl.appendChild(buildRecord(results[0], scans, ownRank));
     return;
   }
 
-  containerEl.appendChild(buildTable(results));
-  containerEl.appendChild(buildRecord(results[0], scans));
+  // Fallback: no run of MIN_REGION_LENGTH, but individual free systems may
+  // still exist — the common single-slot-colonisation case (scattered free
+  // "8"s never form a streak; see findFreeSystems). List them, scored and
+  // strategy-ranked, instead of a bare "nothing here".
+  const freeSystems = sortByStrategy(
+    findFreeSystems(scans, { positions, status: 'empty', players }),
+  );
+  if (freeSystems.length > 0) {
+    if (countInfoEl) {
+      const galaxyCount = new Set(freeSystems.map((r) => r.galaxy)).size;
+      const showingLabel = freeSystems.length > TOP_N ? ` (showing top ${TOP_N})` : '';
+      countInfoEl.textContent =
+        `No region ≥${MIN_REGION_LENGTH} — ${freeSystems.length} individual free `
+        + `system${freeSystems.length === 1 ? '' : 's'} across `
+        + `${galaxiesLabel(galaxyCount)}${stratLabel}${showingLabel}`;
+    }
+    const note = document.createElement('div');
+    note.className = 'empty';
+    note.textContent =
+      `No run of ${MIN_REGION_LENGTH}+ systems has slot${positions.length === 1 ? '' : 's'} `
+      + `${posLabel} all free — here are the individual free systems instead `
+      + '(best neighbourhood first):';
+    containerEl.appendChild(note);
+    containerEl.appendChild(buildTable(freeSystems));
+    return;
+  }
+
+  // Truly nothing for these slots yet.
+  if (countInfoEl) {
+    countInfoEl.textContent = 'No confirmed empty regions yet for these slots.';
+  }
+  const empty = document.createElement('div');
+  empty.className = 'empty';
+  empty.textContent =
+    'Nothing to show yet. Scan more galaxy pages with slot'
+    + (positions.length === 1 ? '' : 's') + ' ' + posLabel
+    + ' empty, then come back here.';
+  containerEl.appendChild(empty);
 };

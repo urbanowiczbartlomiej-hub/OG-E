@@ -81,8 +81,8 @@ const DASHBOARD_URL = (() => {
 })();
 
 /**
- * Open the Dashboard's Galaxy Observations tab (which holds the Colonization
- * section + the abandon password) in a new tab, pre-selecting the current
+ * Open the Dashboard's Colonizations tab (whose ⚙ Settings hold the colonization
+ * config + the abandon password) in a new tab, pre-selecting the current
  * universe. No-op (returns false) when the runtime URL is unavailable so the
  * caller can fall back to an in-place hint.
  *
@@ -92,7 +92,7 @@ const openDashboardColony = () => {
   if (!DASHBOARD_URL) return false;
   const universeId = parseUniverseId(location.host);
   const url = DASHBOARD_URL
-    + (universeId ? `?host=${encodeURIComponent(universeId)}&tab=galaxy` : '?tab=galaxy');
+    + (universeId ? `?host=${encodeURIComponent(universeId)}&tab=colony` : '?tab=colony');
   window.open(url, '_blank');
   return true;
 };
@@ -213,9 +213,9 @@ export const installColonyFab = () => {
     if (!controller) return;
     if (!flow) {
       if (!galaxyScanConfigStore.get().colonyPassword) {
-        // No abandon password yet — open the dashboard's Colonization section
-        // (Galaxy Observations tab) so the user can set it; fall back to an
-        // in-place hint when the runtime URL isn't available.
+        // No abandon password yet — open the dashboard's Colonizations tab
+        // (its ⚙ Settings hold the password) so the user can set it; fall back
+        // to an in-place hint when the runtime URL isn't available.
         const opened = openDashboardColony();
         controller.paintLines('go', labelLines({ main: 'Set password', sub: opened ? 'opening dashboard…' : 'in dashboard', hint: '' }));
         return;

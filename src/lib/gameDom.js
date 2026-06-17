@@ -89,6 +89,13 @@ export const GAME = {
   COORDS_DEST: '.destCoords',
   /** Fleet-details cell (ship counts / mission text). */
   DETAILS_FLEET: '.detailsFleet',
+  /** Origin body cell — planet/moon icon + short name (e.g. `K4`). Read by the
+   *  reminders fleet-row parser and the FS-badge origin labeller. */
+  ORIGIN_FLEET: '.originFleet',
+  /** Destination body cell — icon + name; the full name lives in the span
+   *  `title` (the visible text is truncated). Read by the reminders fleet-row
+   *  parser; `features/dailyRun` reads `.destFleet figure` for the moon icon. */
+  DEST_FLEET: '.destFleet',
 
   // ── Planet detail panel ────────────────────────────────────────────
   /** Anchor holding the current planet's coords, e.g. "[4:30:8]". */

@@ -33,12 +33,14 @@ import {
   REMINDER_FILENAME_RE,
   reminderFilenameFor,
   deriveNtfyTopic,
+  maskTopic,
 } from '../../sync/reminders.js';
 import {
   fetchScheduledMessages,
   cancelWaveReminders,
   NTFY_MAX_DELAY_SEC,
 } from '../../sync/ntfyReconciler.js';
+import { reminderBadge } from '../../domain/reminderBadge.js';
 
 /**
  * @typedef {import('../../sync/reminders.js').ReminderState} ReminderState
@@ -49,6 +51,22 @@ const el = {};
 
 /** Idempotency — the tab is wired exactly once. */
 let wired = false;
+
+/**
+ * The real derived topic (a capability secret). Held here so the copy + reveal
+ * controls always read the true value, never the (possibly masked or
+ * "Copied!"-flashed) DOM text. `''` means "no token set yet".
+ */
+let currentTopic = '';
+
+/** Whether the topic is currently shown in full (false ⇒ masked behind ••••). */
+let topicRevealed = false;
+
+/** Pending "Copied!" → "Copy" button-label restore, so re-clicks can reset it. */
+let copyResetTimer = 0;
+
+/** Shown in the topic slot before any ntfy token is configured. */
+const NO_TOPIC_TEXT = '— (set your ntfy.sh access token in OG-E settings first)';
 
 /**
  * Callback handed in by the host page (`features/dashboard/index.js`)
@@ -86,23 +104,48 @@ export const installReminders = (opts = {}) => {
   if (wired) return { refresh: () => { void refreshPreview(); } };
   wired = true;
 
-  for (const id of ['remTopic', 'remCopyTopic', 'remPreview', 'remPreviewStatus', 'remRefresh']) {
+  for (const id of [
+    'remTopic', 'remRevealTopic', 'remCopyTopic',
+    'remPreview', 'remPreviewStatus', 'remRefresh',
+  ]) {
     el[id] = byId(id);
   }
 
+  // Reveal/hide toggle — the topic is a secret, so it renders masked by
+  // default and this flips it. Copy still works while masked (it reads the
+  // real value, not the display text), so revealing is purely for eyeballing.
+  el.remRevealTopic?.addEventListener('click', () => {
+    if (!currentTopic) return;
+    topicRevealed = !topicRevealed;
+    renderTopic();
+  });
+
   el.remCopyTopic?.addEventListener('click', async () => {
-    const topic = el.remTopic?.textContent || '';
-    if (!topic || topic === '—') return;
+    // Always copy the REAL topic, never the on-screen text — that's what made
+    // a double-click stick on "Copied!" before (it re-copied the flash label).
+    if (!currentTopic) return;
+    const btn = /** @type {HTMLButtonElement} */ (el.remCopyTopic);
+    let ok = true;
     try {
-      await navigator.clipboard.writeText(topic);
-      const orig = el.remTopic?.textContent;
-      if (el.remTopic) {
-        el.remTopic.textContent = 'copied!';
-        setTimeout(() => { if (el.remTopic) el.remTopic.textContent = orig ?? '—'; }, 900);
-      }
+      await navigator.clipboard.writeText(currentTopic);
     } catch {
-      // Clipboard denied — user can select manually.
+      ok = false;
     }
+    // Feedback lives on the BUTTON, leaving the topic slot untouched. A single
+    // shared timer means rapid clicks just reset the countdown, never corrupt
+    // the label.
+    btn.textContent = ok ? 'Copied!' : 'Copy failed';
+    if (!ok) {
+      // Clipboard blocked (denied / insecure context) — reveal so the user can
+      // select the value and copy by hand.
+      topicRevealed = true;
+      renderTopic();
+    }
+    if (copyResetTimer) clearTimeout(copyResetTimer);
+    copyResetTimer = setTimeout(() => {
+      btn.textContent = 'Copy';
+      copyResetTimer = 0;
+    }, 1200);
   });
 
   el.remRefresh?.addEventListener('click', () => { void refreshPreview(); });
@@ -118,14 +161,41 @@ export const installReminders = (opts = {}) => {
   return { refresh: () => { void refreshPreview(); } };
 };
 
-/** Recompute and paint the derived topic from the mirrored ntfy token. */
+/**
+ * Paint the topic slot + its reveal/copy buttons from {@link currentTopic} and
+ * {@link topicRevealed}. The slot shows the masked form (or full, when
+ * revealed); both buttons grey out until a topic exists.
+ */
+const renderTopic = () => {
+  const has = Boolean(currentTopic);
+  if (el.remTopic) {
+    el.remTopic.textContent = !has
+      ? NO_TOPIC_TEXT
+      : topicRevealed ? currentTopic : maskTopic(currentTopic);
+  }
+  if (el.remRevealTopic) {
+    const btn = /** @type {HTMLButtonElement} */ (el.remRevealTopic);
+    btn.disabled = !has;
+    btn.classList.toggle('revealed', topicRevealed);
+    const action = topicRevealed ? 'Hide topic' : 'Show topic';
+    btn.title = action;
+    btn.setAttribute('aria-label', action);
+    btn.setAttribute('aria-pressed', String(topicRevealed));
+  }
+  if (el.remCopyTopic) {
+    /** @type {HTMLButtonElement} */ (el.remCopyTopic).disabled = !has;
+  }
+};
+
+/** Recompute the derived topic from the mirrored ntfy token, then repaint. */
 const updateTopic = async () => {
   const ntfyToken = await chromeStore.get(REMINDER_NTFY_TOKEN_KEY);
-  if (el.remTopic) {
-    el.remTopic.textContent = typeof ntfyToken === 'string' && ntfyToken
-      ? await deriveNtfyTopic(ntfyToken)
-      : '— (set your ntfy.sh access token in OG-E settings first)';
-  }
+  currentTopic = typeof ntfyToken === 'string' && ntfyToken
+    ? await deriveNtfyTopic(ntfyToken)
+    : '';
+  // A token change re-masks (don't keep a previous token's value revealed).
+  topicRevealed = false;
+  renderTopic();
 };
 
 /**
@@ -557,9 +627,13 @@ const renderWavesInto = (section, universeId, state, ntfyMap) => {
       class: 'wave-when',
       text: new Date(w.nextWaveAt * 1000).toLocaleString(),
     }));
-    const badgeText = cancelled ? 'cancelled' : due ? 'overdue' : 'in flight';
-    const badgeClass = 'rem-badge' + (cancelled ? ' cancelled' : due ? ' due' : '');
-    head.appendChild(node('span', { class: badgeClass, text: badgeText }));
+    const badge = reminderBadge({
+      cancelled,
+      scheduledCount: totalScheduled,
+      pendingCount: stillQueued.length,
+      hasNtfyData: ntfyMap.size > 0,
+    });
+    head.appendChild(node('span', { class: 'rem-badge ' + badge.cls, text: badge.text }));
 
     // Cancel button: only useful while the wave still has something to
     // tear down (pending ntfy ids the user actually wants killed). Hide
@@ -643,8 +717,12 @@ const renderAdhocInto = (section, universeId, state, ntfyMap) => {
       class: 'wave-when',
       text: new Date(e.arrivalAt * 1000).toLocaleString(),
     }));
-    const badgeText = queued ? 'queued' : (ids.length > 0 ? 'fired' : 'not scheduled');
-    head.appendChild(node('span', { class: 'rem-badge' + (queued ? '' : ' cancelled'), text: badgeText }));
+    const badge = reminderBadge({
+      scheduledCount: ids.length,
+      pendingCount: stillQueued.length,
+      hasNtfyData: ntfyMap.size > 0,
+    });
+    head.appendChild(node('span', { class: 'rem-badge ' + badge.cls, text: badge.text }));
 
     // Cancel only while something is still queued to tear down. Unlike a
     // wave (DOM-derived, so tombstoned), an ad-hoc entry is intent-only and
@@ -729,14 +807,13 @@ const renderFleetSavesInto = (section, state, ntfyMap) => {
       class: 'wave-when',
       text: new Date(e.arrivalAt * 1000).toLocaleString(),
     }));
-    const badgeText = queued
-      ? 'queued'
-      : totalScheduled > 0
-        ? 'fired'
-        : tooFar
-          ? '> 3 days out'
-          : 'not scheduled';
-    head.appendChild(node('span', { class: 'rem-badge' + (queued ? '' : ' cancelled'), text: badgeText }));
+    const badge = reminderBadge({
+      scheduledCount: totalScheduled,
+      pendingCount: stillQueued.length,
+      hasNtfyData: ntfyMap.size > 0,
+      tooFar,
+    });
+    head.appendChild(node('span', { class: 'rem-badge ' + badge.cls, text: badge.text }));
     card.appendChild(head);
 
     /** @param {number} n */
@@ -869,5 +946,8 @@ const cancelAdhocFromDashboard = async (universeId, entryId) => {
 export const _resetRemindersForTest = () => {
   wired = false;
   getActiveUniverseId = () => '';
+  currentTopic = '';
+  topicRevealed = false;
+  if (copyResetTimer) { clearTimeout(copyResetTimer); copyResetTimer = 0; }
   for (const k of Object.keys(el)) delete el[k];
 };

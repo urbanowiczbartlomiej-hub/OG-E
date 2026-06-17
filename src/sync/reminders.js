@@ -186,6 +186,12 @@ const READABLE_SCHEMA_VERSIONS = new Set([3, 4, 5]);
  *     token's, i.e. `min(88, entropy(token))`. A ntfy `tk_…` token is
  *     high-entropy random, so in practice the full 88 bits hold — but a
  *     weak hand-picked token would yield a weak topic, hash or no hash.
+ *     Keeping the FIRST 22 of the 64 hex digits is a plain truncation, and
+ *     that is safe: every SHA-256 output bit is independently pseudorandom,
+ *     so the retained 88 bits carry full entropy (there is no "weak end" —
+ *     truncating a hash is standard practice and never weakens the kept
+ *     bits). Exposing only 88 of 256 bits also strengthens preimage
+ *     resistance — the public topic can't be walked back to the token.
  *
  * # Security model — the topic IS the secret
  *
@@ -226,6 +232,25 @@ export const deriveNtfyTopic = async (ntfyToken) => {
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
   return 'oge-' + hex.slice(0, 22);
+};
+
+/**
+ * Mask a derived topic for display. The topic is a capability secret (see the
+ * security note on {@link deriveNtfyTopic}) — treat it like a password — so the
+ * dashboard and the settings panel show it masked by default behind a reveal
+ * toggle. The non-secret `oge-` label stays visible (it's public scaffolding,
+ * recognisable in the ntfy app); the random remainder becomes bullets. Pure.
+ *
+ * Anything that isn't one of our topics (the empty string, a `— (no token…)`
+ * placeholder) passes through unchanged, so callers can mask whatever the
+ * topic field currently holds without special-casing the placeholder.
+ *
+ * @param {string} topic
+ * @returns {string}
+ */
+export const maskTopic = (topic) => {
+  if (typeof topic !== 'string' || !topic.startsWith('oge-')) return topic;
+  return 'oge-' + '•'.repeat(topic.length - 'oge-'.length);
 };
 
 /** chrome.storage.local key holding the last-written reminder state (preview). */

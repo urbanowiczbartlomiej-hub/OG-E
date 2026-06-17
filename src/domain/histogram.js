@@ -70,6 +70,39 @@ export const STATUS_PRIORITY = [
 ];
 
 /**
+ * Status interest order for the Top-region STRIP (`freeStreak.js`). The
+ * strip colours each system in a region by the single most interesting
+ * status across ALL its slots — and a region is, by construction, mostly
+ * empty, so the question the strip answers is the opposite of the pixel
+ * map's: not "is my target slot free here?" but "WHO lives in this
+ * otherwise-free stretch?".
+ *
+ * Hence the order is THREAT/occupant-first (the inverse end of
+ * {@link STATUS_PRIORITY}): a live active player dominates the cell, then
+ * the dormant/farmable tiers, with a fully-empty system falling through to
+ * the green baseline. `mine` ranks just above `empty` so our own colonies
+ * stay visible in the strip without masking neighbours.
+ *
+ * Covers all eleven {@link PositionStatus} values so no slot ever falls
+ * through to "no colour".
+ *
+ * @type {PositionStatus[]}
+ */
+export const STRIP_PRIORITY = [
+  'occupied',
+  'long_inactive',
+  'inactive',
+  'vacation',
+  'banned',
+  'admin',
+  'reserved',
+  'abandoned',
+  'empty_sent',
+  'mine',
+  'empty',
+];
+
+/**
  * Parse a target-position string (e.g. `"8"`, `"8,10-12"`) into a Set.
  *
  * Thin wrapper around {@link parsePositions} that drops the ordered-array

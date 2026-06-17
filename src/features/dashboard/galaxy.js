@@ -2,7 +2,7 @@
 
 // Galaxy-observations renderer — builds the filter bar, global stats row,
 // legend, and per-galaxy accordion (header + progress bar + 499-pixel
-// system map) for the histogram page's "Galaxy Observations" section.
+// system map) for the dashboard's Colonizations → "Scanned data" sub-tab.
 //
 // Pure DOM module. Every node is produced with `document.createElement`
 // and styled via `style.cssText` inline; the `.stat-card` / `.empty`
@@ -40,6 +40,9 @@ import {
 
 import { isSystemStale } from '../../domain/scheduling.js';
 
+import { buildSystemTooltip } from './systemTooltip.js';
+import { makeLegendSwatch } from './legend.js';
+
 /**
  * @typedef {import('../../state/scans.js').GalaxyScans} GalaxyScans
  * @typedef {import('../../state/scans.js').SystemScan} SystemScan
@@ -57,7 +60,7 @@ const MAX_GAL = 7;
 const MAX_SYS = 499;
 
 /**
- * Render the whole Galaxy Observations section into `containerEl`.
+ * Render the whole Scanned-data (galaxy observations) section into `containerEl`.
  *
  * Idempotent: call again after data changes and the DOM re-renders from
  * scratch (we blank `containerEl` first). Accordion open/closed state is
@@ -181,13 +184,13 @@ export const renderGalaxyMap = (opts) => {
   for (const status of STATUS_PRIORITY) {
     if (!global[status]) continue;
     legend.appendChild(
-      makeLegendItem(STATUS_COLORS[status], STATUS_LABELS[status], false),
+      makeLegendSwatch(STATUS_COLORS[status], STATUS_LABELS[status]),
     );
   }
   // "Not scanned" is always in the legend — the pixel map always shows
   // unscanned systems (gap between 1..MAX_SYS and the actually-scanned
   // subset), so a user looking at the key should always find it.
-  legend.appendChild(makeLegendItem(UNSCANNED_COLOR, 'Not scanned', true));
+  legend.appendChild(makeLegendSwatch(UNSCANNED_COLOR, 'Not scanned', { border: true }));
   // "Stale" is always shown too — any scanned system eventually ages
   // past its rescan threshold, and the user needs a key for the amber
   // inset ring that appears around those pixels.
@@ -255,37 +258,6 @@ const makeStatCard = (color, value, label) => {
   card.appendChild(labEl);
 
   return card;
-};
-
-/**
- * Build one legend entry: coloured swatch + text. The `withBorder` flag
- * adds a subtle 1px border around the swatch — used for the "Not
- * scanned" entry whose colour is close to the page background.
- *
- * @param {string} color
- * @param {string} label
- * @param {boolean} withBorder
- * @returns {HTMLSpanElement}
- */
-const makeLegendItem = (color, label, withBorder) => {
-  const item = document.createElement('span');
-  item.style.cssText = 'display:flex;align-items:center;gap:4px;';
-
-  const dot = document.createElement('span');
-  const border = withBorder ? ';border:1px solid #333' : '';
-  dot.style.cssText =
-    'width:10px;height:10px;border-radius:2px;background:' +
-    color +
-    border +
-    ';display:inline-block;';
-
-  const txt = document.createElement('span');
-  txt.style.color = '#888';
-  txt.textContent = label;
-
-  item.appendChild(dot);
-  item.appendChild(txt);
-  return item;
 };
 
 /**
@@ -519,37 +491,7 @@ const renderSystemPixel = (g, s, scans, targetPositions, policy) => {
       ring +
       ';';
 
-    /** @type {string[]} */
-    const lines = [];
-    if (stale) {
-      // Prepend a clear "STALE" marker so the tooltip tells the same
-      // story as the amber ring — users who hover before they learn
-      // the colour code still understand the call to action.
-      lines.push('[' + g + ':' + s + '] STALE — rescan recommended');
-    }
-    lines.push(
-      '[' + g + ':' + s + '] scanned ' + new Date(scan.scannedAt).toLocaleString(),
-    );
-    for (let pos = 1; pos <= 15; pos++) {
-      const p = scan.positions[pos];
-      if (!p) continue;
-      // Flag serialisation: comma-join only the keys whose values are
-      // truthy. `PositionFlags` only ever stores `true`, but the filter
-      // is cheap and keeps the renderer robust against future shape
-      // drift.
-      const flagStr = p.flags
-        ? ' (' +
-          Object.keys(p.flags)
-            .filter((f) => /** @type {Record<string, unknown>} */ (p.flags)[f])
-            .join(',') +
-          ')'
-        : '';
-      const playerStr = p.player ? ' [' + p.player.name + ']' : '';
-      lines.push(
-        '  ' + String(pos).padStart(2, ' ') + ': ' + p.status + flagStr + playerStr,
-      );
-    }
-    px.title = lines.join('\n');
+    px.title = buildSystemTooltip(g, s, scan, { stale });
   } else {
     px.style.cssText =
       'width:8px;height:8px;border-radius:1px;cursor:pointer;background:' +
@@ -557,7 +499,7 @@ const renderSystemPixel = (g, s, scans, targetPositions, policy) => {
       ';border:' +
       UNSCANNED_BORDER +
       ';';
-    px.title = '[' + g + ':' + s + '] not scanned';
+    px.title = buildSystemTooltip(g, s, null);
   }
 
   return px;

@@ -29,6 +29,7 @@
 
 import { observeXHR } from './xhrObserver.js';
 import { classifyPosition } from '../domain/scans.js';
+import { extractPlayerMeta } from '../domain/players.js';
 import { GALAXY_SCANNED_EVENT } from '../lib/ogeEvents.js';
 
 /**
@@ -55,6 +56,11 @@ const MISSION_COLONIZE = 7;
  *   Keys are position numbers 1..15. Values produced by
  *   {@link classifyPosition}. Positions outside 1..15 (shouldn't exist
  *   in a well-formed response, but we guard anyway) are silently dropped.
+ * @property {Record<number, import('../domain/players.js').PlayerMeta>} players
+ *   Richer per-player metadata for every occupied slot in this system, keyed
+ *   by `playerId` and de-duplicated within the system. Built via
+ *   {@link extractPlayerMeta}; the deep-space sentinel (id 99999) and empty
+ *   slots are excluded. Consumed by `state/players.js` (the player cache).
  * @property {boolean} canColonize
  *   Does the currently-active planet hold at least one colonizer right
  *   now? Consumed by the Send-Col UI label. See
@@ -146,6 +152,8 @@ const analyzeResponse = (data) => {
 
   /** @type {Record<number, import('../domain/scans.js').Position>} */
   const positions = {};
+  /** @type {Record<number, import('../domain/players.js').PlayerMeta>} */
+  const players = {};
   for (const entry of content) {
     const pos = entry.position;
     // Drop malformed entries silently. The game is the source of truth
@@ -153,6 +161,12 @@ const analyzeResponse = (data) => {
     // single bad record from blowing up `classifyPosition`.
     if (typeof pos !== 'number' || pos < 1 || pos > 15) continue;
     positions[pos] = classifyPosition(entry, ownPlayerId);
+    // Richer player projection for the de-duplicated player cache. Null for
+    // empty / sentinel slots; otherwise keyed by id (a player with two
+    // colonies in this system collapses to one entry — last write wins,
+    // they're identical).
+    const meta = extractPlayerMeta(entry.player);
+    if (meta) players[meta.id] = meta;
   }
 
   // `canColonize` on the response is the authoritative field when the
@@ -165,7 +179,7 @@ const analyzeResponse = (data) => {
       ? Boolean(data.system.canColonize)
       : derivesCanColonize(content);
 
-  return { galaxy, system, positions, canColonize };
+  return { galaxy, system, positions, players, canColonize };
 };
 
 /**

@@ -22,6 +22,57 @@ const MISSION_NAMES = /** @type {Record<string, string>} */ ({
 /** @param {string | null | undefined} s @returns {string} dense `g:s:p` */
 const denseCoords = (s) => (s || '').replace(/[\s[\]]/g, '');
 
+/** @param {Element} row @param {string} sel @returns {string} bracketed dense coords, or ''. */
+const coordsFieldOf = (row, sel) => {
+  const d = denseCoords(row.querySelector(sel)?.textContent);
+  return d ? `[${d}]` : '';
+};
+
+/**
+ * Body name out of an origin/dest cell. The visible text is truncated
+ * (`"Bezgranic..."`), so prefer the full name carried in the inner span's
+ * `title` (`"Bezgraniczna dal"`); fall back to the trimmed text (origin cells
+ * are short — `"K4"` — and carry no title).
+ *
+ * @param {Element | null} cell
+ * @returns {string}
+ */
+const bodyNameOf = (cell) => {
+  if (!cell) return '';
+  const titled = cell.querySelector('span[title]');
+  const title = titled && titled.getAttribute('title');
+  return (title || cell.textContent || '').trim();
+};
+
+/**
+ * Per-leg metadata shared by the ad-hoc and fleet-save push contexts — the
+ * fields both kinds now expose as the unified `{origin}` / `{originName}` /
+ * `{target}` / `{targetName}` / `{shipCount}` wildcards. `origin`/`target` are
+ * the leg's LAUNCH (`.coordsOrigin`) and MISSION TARGET (`.destCoords`) — fixed
+ * across both legs — so they stay distinct from the landing point that the
+ * label (and `{coords}`) already carries (origin on a return, dest outbound).
+ *
+ * @typedef {object} FleetRowMeta
+ * @property {string} origin      Launch coords, bracketed (`[g:s:p]`), or ''.
+ * @property {string} originName  Launch body name (e.g. `P1`, `K4`), or ''.
+ * @property {string} target      Mission-target coords, bracketed, or ''.
+ * @property {string} targetName  Mission-target body name, or ''.
+ * @property {number} [shipCount] Total ships on the leg, when parseable.
+ *
+ * @param {Element} row
+ * @returns {FleetRowMeta}
+ */
+export const fleetRowMeta = (row) => {
+  const ships = shipCountOf(row);
+  return {
+    origin: coordsFieldOf(row, GAME.COORDS_ORIGIN),
+    originName: bodyNameOf(row.querySelector(GAME.ORIGIN_FLEET)),
+    target: coordsFieldOf(row, GAME.COORDS_DEST),
+    targetName: bodyNameOf(row.querySelector(GAME.DEST_FLEET)),
+    ...(Number.isFinite(ships) ? { shipCount: ships } : {}),
+  };
+};
+
 /**
  * Total ship count of a fleet-leg row, parsed from the `detailsFleet` cell
  * (OGame renders the fleet's total ships there as a locale-formatted
@@ -96,7 +147,7 @@ export const extractFleetSaveCandidates = (root = document) => {
     const arrivalAt = arrivalAttr ? Number.parseInt(arrivalAttr, 10) : NaN;
     const shipCount = shipCountOf(row);
     if (id && Number.isFinite(arrivalAt) && Number.isFinite(shipCount)) {
-      out.push({ id, arrivalAt, shipCount, label: fleetSaveLabelFor(row) });
+      out.push({ id, arrivalAt, shipCount, label: fleetSaveLabelFor(row), ...fleetRowMeta(row) });
     }
   }
   return out;

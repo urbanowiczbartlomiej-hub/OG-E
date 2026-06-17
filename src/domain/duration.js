@@ -185,3 +185,37 @@ export const humanizeReturnOffsetShort = (sec) => {
   const m = Math.round(n / 60);
   return `${m}m after`;
 };
+
+/**
+ * One-line plain-English summary of a WHOLE reminder schedule — the combined
+ * readout shown under the chip row so the user sees, at a glance, what the set
+ * of chips actually adds up to (e.g. `"15m, 10m & 5m before landing · at
+ * landing · 5m & 20m after landing"`).
+ *
+ * The offsets are grouped into before / at / after the reference point;
+ * `before` is listed FURTHEST-first and `after` NEAREST-first, so both read in
+ * the chronological order the pushes fire. Duplicates collapse. Empty input (or
+ * all-unparseable) ⇒ `''`. Pure.
+ *
+ * @param {number[]} secs   Signed offset seconds (neg = before, 0 = at, pos = after).
+ * @param {'landing' | 'return'} reference  Point the offsets are measured from.
+ * @returns {string}
+ */
+export const summarizeSchedule = (secs, reference) => {
+  const uniq = [...new Set(secs.filter((s) => Number.isFinite(s)))];
+  const before = uniq.filter((s) => s < 0).map((s) => -s).sort((a, b) => b - a);
+  const at = uniq.some((s) => s === 0);
+  const after = uniq.filter((s) => s > 0).sort((a, b) => a - b);
+  /** @param {number[]} arr */
+  const list = (arr) => {
+    const parts = arr.map(formatDuration);
+    return parts.length <= 1
+      ? parts[0] ?? ''
+      : `${parts.slice(0, -1).join(', ')} & ${parts[parts.length - 1]}`;
+  };
+  const out = [];
+  if (before.length) out.push(`${list(before)} before ${reference}`);
+  if (at) out.push(`at ${reference}`);
+  if (after.length) out.push(`${list(after)} after ${reference}`);
+  return out.join(' · ');
+};
