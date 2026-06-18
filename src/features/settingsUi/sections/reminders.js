@@ -111,9 +111,10 @@ export const remindersSection = {
       id: 'ntfyTopic',
       label: 'ntfy.sh — your topic (subscribe on phone)',
       type: 'asyncStatus',
-      // Spans both columns: the masked value + reveal + copy buttons don't fit
-      // the narrow 220px value column (they overflowed into a horizontal scroll).
-      fullWidth: true,
+      // A normal label-left / value-right row: the secret control stacks the
+      // reveal + copy buttons ABOVE the masked value (see buildSecretStack), so
+      // the value fits the 220px column without the horizontal scroll the old
+      // inline layout caused — no full-width span needed.
       secret: true,
       refreshKey: (s) => s.reminderNtfyToken,
       fetchText: async (s) =>
@@ -128,7 +129,10 @@ export const remindersSection = {
       // truth (DRY); this row just states the essence + points to it. DOM-only
       // id (not a Settings field), like the status/topic rows above it.
       id: 'ntfyTopicPrivacy',
-      label: 'ntfy.sh — topic privacy',
+      // No label — this reads as a standalone note tucked under the topic row,
+      // not its own labelled setting. An empty label drops the heading entirely
+      // (see buildRow); the paragraph still spans both columns.
+      label: '',
       type: 'static',
       // Spans both columns: a paragraph reads as a sliver in the 220px column.
       fullWidth: true,

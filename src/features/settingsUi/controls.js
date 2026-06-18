@@ -563,83 +563,115 @@ const buildDurationControl = (opt, valueCell) => {
 };
 
 /**
+ * Build the vertical stack for a `secret` asyncStatus row: a right-aligned
+ * button bar (eye reveal toggle + Copy) above the masked value span. Both
+ * buttons act on the span's `dataset.full`, so Copy works while masked and a
+ * re-probe re-mask never loses the value. Appends the whole stack to `valueCell`.
+ *
+ * @param {SettingsOption} opt
+ * @param {HTMLElement} span The (already-styled) value span, with its id set.
+ * @param {HTMLTableCellElement} valueCell
+ * @returns {void}
+ */
+const buildSecretStack = (opt, span, valueCell) => {
+  const col = document.createElement('span');
+  col.style.cssText =
+    'display:flex;flex-direction:column;align-items:flex-end;gap:4px;width:100%;';
+
+  const bar = document.createElement('span');
+  bar.style.cssText = 'display:inline-flex;align-items:center;gap:8px;';
+
+  const eye = document.createElement('button');
+  eye.type = 'button';
+  eye.id = INPUT_ID_PREFIX + opt.id + '-eye';
+  eye.textContent = '👁';
+  eye.title = 'Show';
+  eye.setAttribute('aria-label', 'Show topic');
+  eye.setAttribute('aria-pressed', 'false');
+  eye.style.cssText = BUTTON_STYLE;
+  eye.addEventListener('click', () => {
+    const revealed = span.dataset.revealed === '1';
+    span.dataset.revealed = revealed ? '0' : '1';
+    const full = span.dataset.full || '';
+    span.textContent = revealed ? maskTopic(full) : full;
+    eye.title = revealed ? 'Show' : 'Hide';
+    eye.setAttribute('aria-label', revealed ? 'Show topic' : 'Hide topic');
+    eye.setAttribute('aria-pressed', String(!revealed));
+  });
+  bar.appendChild(eye);
+
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.id = INPUT_ID_PREFIX + opt.id + '-copy';
+  copy.textContent = 'Copy';
+  copy.style.cssText = BUTTON_STYLE;
+  let copyTimer = 0;
+  copy.addEventListener('click', async () => {
+    // Copy the REAL value, never the (masked) display text.
+    const full = span.dataset.full || '';
+    if (!full.startsWith('oge-')) return;
+    let ok = true;
+    try {
+      await navigator.clipboard.writeText(full);
+    } catch {
+      ok = false;
+    }
+    copy.textContent = ok ? 'Copied!' : 'Copy failed';
+    if (copyTimer) clearTimeout(copyTimer);
+    copyTimer = setTimeout(() => { copy.textContent = 'Copy'; copyTimer = 0; }, 1200);
+  });
+  bar.appendChild(copy);
+
+  col.appendChild(bar);
+  col.appendChild(span);
+  valueCell.appendChild(col);
+};
+
+/**
  * Render the asyncStatus flavour — a read-only line whose text is produced
  * by an ASYNC `fetchText` (e.g. an ntfy account probe), plus an optional
  * manual-refresh button. Not data-bound; the producer reads settings
  * itself. Refresh policy lives in {@link refreshAsyncStatus}: auto on
  * `refreshKey` change (and once at build), on demand via the button.
  *
+ * Secret rows (the ntfy topic) delegate their layout to {@link buildSecretStack}.
+ *
  * @param {SettingsOption} opt
  * @param {HTMLTableCellElement} valueCell
  * @returns {void}
  */
 const buildAsyncStatusControl = (opt, valueCell) => {
-  const wrap = document.createElement('span');
-  wrap.style.cssText = STATUS_WRAP_STYLE;
-
   const span = document.createElement('span');
   span.id = INPUT_ID_PREFIX + opt.id;
-  span.style.cssText = STATIC_STYLE + 'flex:1;';
-  wrap.appendChild(span);
 
-  if (opt.buttonText) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.id = INPUT_ID_PREFIX + opt.id + '-btn';
-    btn.textContent = opt.buttonText;
-    btn.style.cssText = BUTTON_STYLE;
-    btn.addEventListener('click', () => refreshAsyncStatus(opt, true));
-    wrap.appendChild(btn);
-  }
-
-  // Secret rows (the ntfy topic) get an eye reveal toggle + a Copy button.
-  // Both read the full value off the span's dataset, so they keep working while
-  // the line is masked. The span is found by id at click time (it's already in
-  // `span` here, but re-finding keeps these robust across any future rebuild).
   if (opt.secret) {
-    const eye = document.createElement('button');
-    eye.type = 'button';
-    eye.id = INPUT_ID_PREFIX + opt.id + '-eye';
-    eye.textContent = '👁';
-    eye.title = 'Show';
-    eye.setAttribute('aria-label', 'Show topic');
-    eye.setAttribute('aria-pressed', 'false');
-    eye.style.cssText = BUTTON_STYLE;
-    eye.addEventListener('click', () => {
-      const revealed = span.dataset.revealed === '1';
-      span.dataset.revealed = revealed ? '0' : '1';
-      const full = span.dataset.full || '';
-      span.textContent = revealed ? maskTopic(full) : full;
-      eye.title = revealed ? 'Show' : 'Hide';
-      eye.setAttribute('aria-label', revealed ? 'Show topic' : 'Hide topic');
-      eye.setAttribute('aria-pressed', String(!revealed));
-    });
-    wrap.appendChild(eye);
+    // Secret rows (the ntfy topic) lay the value out as a VERTICAL stack: a
+    // right-aligned [reveal][copy] button bar ABOVE the masked value, so it
+    // reads label-on-the-left / value-on-the-right with the controls sitting
+    // over the value (mirrors how the master row's "Check now" sits above the
+    // token row). The narrow 220px value column couldn't fit value + two
+    // buttons on one line — that inline layout overflowed into a scroll.
+    span.style.cssText = STATIC_STYLE + 'text-align:right;overflow-wrap:anywhere;';
+    buildSecretStack(opt, span, valueCell);
+  } else {
+    const wrap = document.createElement('span');
+    wrap.style.cssText = STATUS_WRAP_STYLE;
+    span.style.cssText = STATIC_STYLE + 'flex:1;';
+    wrap.appendChild(span);
 
-    const copy = document.createElement('button');
-    copy.type = 'button';
-    copy.id = INPUT_ID_PREFIX + opt.id + '-copy';
-    copy.textContent = 'Copy';
-    copy.style.cssText = BUTTON_STYLE;
-    let copyTimer = 0;
-    copy.addEventListener('click', async () => {
-      // Copy the REAL value, never the (masked) display text.
-      const full = span.dataset.full || '';
-      if (!full.startsWith('oge-')) return;
-      let ok = true;
-      try {
-        await navigator.clipboard.writeText(full);
-      } catch {
-        ok = false;
-      }
-      copy.textContent = ok ? 'Copied!' : 'Copy failed';
-      if (copyTimer) clearTimeout(copyTimer);
-      copyTimer = setTimeout(() => { copy.textContent = 'Copy'; copyTimer = 0; }, 1200);
-    });
-    wrap.appendChild(copy);
+    if (opt.buttonText) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.id = INPUT_ID_PREFIX + opt.id + '-btn';
+      btn.textContent = opt.buttonText;
+      btn.style.cssText = BUTTON_STYLE;
+      btn.addEventListener('click', () => refreshAsyncStatus(opt, true));
+      wrap.appendChild(btn);
+    }
+
+    valueCell.appendChild(wrap);
   }
 
-  valueCell.appendChild(wrap);
   // Initial probe (lastKey starts undefined, so this always runs once).
   refreshAsyncStatus(opt);
 
@@ -706,13 +738,18 @@ export const buildRow = (opt) => {
   if (opt.fullWidth) {
     const cell = document.createElement('td');
     cell.colSpan = 2;
-    const labelEl = document.createElement('div');
-    // Reuse AGR's label class for the bullet + colour; force block display so
-    // its (table-cell-oriented) styling stacks above the control as a heading.
-    labelEl.className = 'ago_menu_label_bullet';
-    labelEl.style.cssText = 'display:block;margin-bottom:4px;';
-    labelEl.textContent = opt.label;
-    cell.appendChild(labelEl);
+    // An empty label drops the heading entirely (no bullet, no gap) — used by
+    // the topic-privacy note, which reads as a standalone paragraph under the
+    // topic row rather than its own labelled row.
+    if (opt.label) {
+      const labelEl = document.createElement('div');
+      // Reuse AGR's label class for the bullet + colour; force block display so
+      // its (table-cell-oriented) styling stacks above the control as a heading.
+      labelEl.className = 'ago_menu_label_bullet';
+      labelEl.style.cssText = 'display:block;margin-bottom:4px;';
+      labelEl.textContent = opt.label;
+      cell.appendChild(labelEl);
+    }
     const buildFull = CONTROL_BUILDERS[opt.type];
     if (buildFull) buildFull(opt, cell);
     tr.appendChild(cell);
