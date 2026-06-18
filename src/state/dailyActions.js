@@ -41,6 +41,27 @@ export const TRADER_AUCTION_BID_KEY = 'oge-trader-auction-bid-at';
 export const TRADER_AUCTION_QUIET_KEY = 'oge-trader-auction-quiet-until';
 
 /**
+ * Calendar-day key (YYYY-MM-DD) on which the "import refreshes 6× today" event
+ * was detected (from the in-game news message). While it equals today the
+ * import nudge ignores both the 14:00 gate and the once-per-day clear — the
+ * offer returns several times, so it re-arms off {@link TRADER_IMPORT_NEXT_KEY}
+ * instead. Self-expires at local midnight (a new day ≠ this key ⇒ normal mode).
+ *
+ * Single-day and read on demand by the trader feature only, so — like the bid/
+ * quiet timestamps — it is NOT part of the synced {@link DailyState}; it lives
+ * here purely to keep every trader localStorage key in one place.
+ */
+export const TRADER_IMPORT_EVENT_KEY = 'oge-trader-import-event-day';
+
+/**
+ * Epoch-ms of the next Import/Export refresh during the 6×-today event, parsed
+ * from the page's "come back at HH:MM" overlay. The import (red) glow stays
+ * suppressed until this moment, then re-arms. 0/absent ⇒ an offer is waiting
+ * now. Meaningful only while {@link TRADER_IMPORT_EVENT_KEY} is today.
+ */
+export const TRADER_IMPORT_NEXT_KEY = 'oge-trader-import-next-at';
+
+/**
  * @typedef {object} DailyState
  * @property {string} rewardingDoneDay   Game-day key or "" when not yet done.
  * @property {string} traderImportDay    Calendar-day key or "" when not traded.

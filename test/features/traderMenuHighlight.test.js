@@ -29,6 +29,8 @@ import {
   AUCTION_BID_KEY,
   IMPORT_TRADED_KEY,
   AUCTION_QUIET_KEY,
+  IMPORT_EVENT_KEY,
+  IMPORT_NEXT_KEY,
 } from '../../src/features/traderMenuHighlight.js';
 import { settingsStore } from '../../src/state/settings.js';
 
@@ -151,6 +153,42 @@ describe('traderGlows', () => {
     const elapsed = { ...blank, auctionQuietUntil: now.getTime() - 1000 };
     expect(traderGlows(now, elapsed).auctionPending).toBe(true); // window passed
   });
+
+  // ── 6×-today Import/Export event ──────────────────────────────────────
+
+  it('event day: red lights BEFORE 14:00 (gate bypassed) when no next-refresh is known', () => {
+    const now = at('2026-05-28T08:00:00'); // morning — normally no red
+    const ev = { ...blank, importEventDay: localDayKey(now), importNextAt: null };
+    const g = traderGlows(now, ev);
+    expect(g.importPending).toBe(true);
+    expect(g.menu).toBe('red'); // red > yellow on the menu
+  });
+
+  it('event day: a future next-refresh suppresses red; once past it returns', () => {
+    const now = at('2026-05-28T10:00:00');
+    const future = { ...blank, importEventDay: localDayKey(now), importNextAt: now.getTime() + 60 * 60 * 1000 };
+    expect(traderGlows(now, future).importPending).toBe(false); // waiting for 11:00
+    const passed = { ...blank, importEventDay: localDayKey(now), importNextAt: now.getTime() - 1000 };
+    expect(traderGlows(now, passed).importPending).toBe(true); // refresh time reached
+  });
+
+  it('event day ignores the once-daily clear (importTradedDay is irrelevant)', () => {
+    const now = at('2026-05-28T15:00:00');
+    const traded = {
+      ...blank,
+      importTradedDay: localDayKey(now),
+      importEventDay: localDayKey(now),
+      importNextAt: null,
+    };
+    expect(traderGlows(now, traded).importPending).toBe(true); // more offers today
+  });
+
+  it("yesterday's event does NOT bypass the 14:00 gate today", () => {
+    const now = at('2026-05-28T08:00:00');
+    const stale = { ...blank, importEventDay: localDayKey(at('2026-05-27T08:00:00')), importNextAt: null };
+    const g = traderGlows(now, stale);
+    expect(g.importPending).toBe(false); // back to normal: no red before 14:00
+  });
 });
 
 // ── DOM lifecycle ────────────────────────────────────────────────────
@@ -162,6 +200,8 @@ describe('installTraderMenuHighlight', () => {
     localStorage.removeItem(AUCTION_BID_KEY);
     localStorage.removeItem(IMPORT_TRADED_KEY);
     localStorage.removeItem(AUCTION_QUIET_KEY);
+    localStorage.removeItem(IMPORT_EVENT_KEY);
+    localStorage.removeItem(IMPORT_NEXT_KEY);
     document.getElementById(STYLE_ID)?.remove();
     document.body.innerHTML = '';
     vi.useFakeTimers();
@@ -177,6 +217,8 @@ describe('installTraderMenuHighlight', () => {
     localStorage.removeItem(AUCTION_BID_KEY);
     localStorage.removeItem(IMPORT_TRADED_KEY);
     localStorage.removeItem(AUCTION_QUIET_KEY);
+    localStorage.removeItem(IMPORT_EVENT_KEY);
+    localStorage.removeItem(IMPORT_NEXT_KEY);
     document.getElementById(STYLE_ID)?.remove();
     document.body.innerHTML = '';
     vi.useRealTimers();
@@ -311,6 +353,8 @@ describe('installTraderMenuHighlight — sub-page scanning', () => {
     localStorage.removeItem(AUCTION_BID_KEY);
     localStorage.removeItem(IMPORT_TRADED_KEY);
     localStorage.removeItem(AUCTION_QUIET_KEY);
+    localStorage.removeItem(IMPORT_EVENT_KEY);
+    localStorage.removeItem(IMPORT_NEXT_KEY);
     document.getElementById(STYLE_ID)?.remove();
     document.body.innerHTML = '';
     vi.useFakeTimers();
@@ -324,6 +368,8 @@ describe('installTraderMenuHighlight — sub-page scanning', () => {
     localStorage.removeItem(AUCTION_BID_KEY);
     localStorage.removeItem(IMPORT_TRADED_KEY);
     localStorage.removeItem(AUCTION_QUIET_KEY);
+    localStorage.removeItem(IMPORT_EVENT_KEY);
+    localStorage.removeItem(IMPORT_NEXT_KEY);
     document.getElementById(STYLE_ID)?.remove();
     document.body.innerHTML = '';
     vi.useRealTimers();
@@ -368,6 +414,67 @@ describe('installTraderMenuHighlight — sub-page scanning', () => {
     buildImportPage('none');
     installTraderMenuHighlight();
     expect(localStorage.getItem(IMPORT_TRADED_KEY)).toBeNull();
+    expect(importTile().classList.contains(RED_CLASS)).toBe(true);
+  });
+
+  // ── 6×-today event detection + re-arm parsing ────────────────────────
+
+  /** Build the news-message image that announces the 6× event. */
+  const buildEventMessage = () => {
+    const img = document.createElement('img');
+    img.src = 'https://image.board.gameforge.com/uploads/ecdn/news_importexport_6.jpg';
+    document.body.appendChild(img);
+  };
+
+  /** Build the import "done" overlay carrying a "come back at HH:MM" line. */
+  const buildImportPageWithText = (/** @type {string} */ text) => {
+    const div = document.createElement('div');
+    div.id = 'div_traderImportExport';
+    const overlay = document.createElement('div');
+    overlay.className = 'bargain_overlay';
+    overlay.style.display = 'block';
+    const p = document.createElement('p');
+    p.className = 'bargain_text';
+    p.textContent = text;
+    overlay.appendChild(p);
+    div.appendChild(overlay);
+    document.body.appendChild(div);
+  };
+
+  it('the 6× news message stamps the event day and lights red before 14:00', () => {
+    vi.setSystemTime(new Date('2026-05-28T08:00:00')); // morning: no red normally
+    buildEventMessage();
+    installTraderMenuHighlight();
+    expect(localStorage.getItem(IMPORT_EVENT_KEY)).toBe(localDayKey(new Date()));
+    // Gate bypassed: import tile glows red even though it's only 08:00.
+    expect(importTile().classList.contains(RED_CLASS)).toBe(true);
+  });
+
+  it('event day: "come back at 12:00" sets the next-refresh stamp and drops red until then', () => {
+    vi.setSystemTime(new Date('2026-05-28T10:00:00'));
+    localStorage.setItem(IMPORT_EVENT_KEY, localDayKey(new Date())); // event already detected
+    buildImportPageWithText('Obecnie nie ma ofert. Wróć o godz. 12:00.');
+    installTraderMenuHighlight();
+
+    const expected = new Date('2026-05-28T12:00:00').getTime();
+    expect(Number(localStorage.getItem(IMPORT_NEXT_KEY))).toBe(expected);
+    // The once-daily clear must NOT be stamped during the event.
+    expect(localStorage.getItem(IMPORT_TRADED_KEY)).toBeNull();
+    // 12:00 is still ahead → red is suppressed for now.
+    expect(importTile().classList.contains(RED_CLASS)).toBe(false);
+  });
+
+  it('event day: red returns once the next-refresh time passes (safety-poll re-eval)', () => {
+    vi.setSystemTime(new Date('2026-05-28T11:59:00'));
+    localStorage.setItem(IMPORT_EVENT_KEY, localDayKey(new Date()));
+    buildImportPageWithText('Wróć o godz. 12:00.');
+    installTraderMenuHighlight();
+    expect(importTile().classList.contains(RED_CLASS)).toBe(false);
+
+    // Cross 12:00; remove the page so the re-scan can't re-stamp a new time.
+    document.getElementById('div_traderImportExport')?.remove();
+    vi.setSystemTime(new Date('2026-05-28T12:00:30'));
+    vi.advanceTimersByTime(60_000);
     expect(importTile().classList.contains(RED_CLASS)).toBe(true);
   });
 

@@ -34,6 +34,12 @@
 //            activate only after 14:00 — nudging import before 14 risks the
 //            player "burning" their one daily import before such a quest
 //            appears. Cleared by a successful trade; re-arms next local day.
+//            EXCEPTION — the occasional "import refreshes 6× today" event
+//            (detected from its news message, see `IMPORT_EVENT_IMG_SEL`):
+//            for that local day the 14:00 gate and once-daily clear are
+//            dropped, and the glow re-arms off the page's "come back at HH:MM"
+//            overlay instead of next midnight, so each of the day's several
+//            offers gets nudged. Reverts to the normal rule next local day.
 //
 // Surfaces:
 //   - Menu button (`#menuTable [data-ipi-hint=ipiToolbarTrader]`): one
@@ -78,10 +84,13 @@ import { safeLS } from '../lib/storage.js';
 import { settingsStore } from '../state/settings.js';
 import { GAME } from '../lib/gameDom.js';
 import { parseTraderCountdown } from '../domain/traderCountdown.js';
+import { parseClockTime, nextDailyOccurrence } from '../domain/traderClock.js';
 import {
   TRADER_AUCTION_BID_KEY,
   TRADER_IMPORT_KEY,
   TRADER_AUCTION_QUIET_KEY,
+  TRADER_IMPORT_EVENT_KEY,
+  TRADER_IMPORT_NEXT_KEY,
 } from '../state/dailyActions.js';
 import {
   DAILY_STATE_CHANGED_EVENT,
@@ -119,6 +128,8 @@ const IMPORT_HINT = 'ipiTraderImportExport';
 export const AUCTION_BID_KEY = TRADER_AUCTION_BID_KEY;
 export const IMPORT_TRADED_KEY = TRADER_IMPORT_KEY;
 export const AUCTION_QUIET_KEY = TRADER_AUCTION_QUIET_KEY;
+export const IMPORT_EVENT_KEY = TRADER_IMPORT_EVENT_KEY;
+export const IMPORT_NEXT_KEY = TRADER_IMPORT_NEXT_KEY;
 
 /**
  * Trader sub-page selectors (game DOM — fragile, locale-independent where
@@ -131,8 +142,18 @@ export const AUCTION_QUIET_KEY = TRADER_AUCTION_QUIET_KEY;
  *     auction live right now", which is when we may push the quiet window.
  */
 const IMPORT_DONE_OVERLAY_SEL = '#div_traderImportExport .bargain_overlay';
+const IMPORT_DONE_TEXT_SEL = '#div_traderImportExport .bargain_overlay .bargain_text';
 const AUCTION_NEXT_COUNTDOWN_SEL = '#nextAuction';
 const AUCTION_NO_AUCTION_OVERLAY_SEL = '.noAuctionOverlay';
+
+/**
+ * The "import refreshes 6× today" event is announced by an in-game news
+ * message whose body carries this image. Matching the filename substring is
+ * locale-independent — the message TEXT is translated, the asset name is not.
+ * Seeing it anywhere in the document (the message list / open message) is our
+ * signal that today is a 6×-import day.
+ */
+const IMPORT_EVENT_IMG_SEL = 'img[src*="importexport_6"]';
 
 /** Auction hours — yellow shows in `[start, end)` local time. */
 const AUCTION_START_HOUR = 6;
@@ -294,6 +315,11 @@ export const localDayKey = (d) => {
  * @property {number | null} [auctionQuietUntil] Epoch ms until which the
  *   yellow glow is suppressed (from the Auctioneer "next auction in"
  *   countdown), `null`/absent if none.
+ * @property {string | null} [importEventDay] Local day-key on which the
+ *   "import refreshes 6× today" event was detected, or `null`/absent if not.
+ * @property {number | null} [importNextAt] Epoch ms of the next import refresh
+ *   during that event (from the "come back at HH:MM" overlay); `null`/absent
+ *   means an offer is waiting now. Used only while `importEventDay` is today.
  */
 
 /**
@@ -316,6 +342,8 @@ export const traderGlows = (now, state) => {
   const auctionBidAt = state?.auctionBidAt ?? null;
   const importTradedDay = state?.importTradedDay ?? null;
   const auctionQuietUntil = state?.auctionQuietUntil ?? null;
+  const importEventDay = state?.importEventDay ?? null;
+  const importNextAt = state?.importNextAt ?? null;
 
   // Yellow (Licytator): auction hours, suppressed while EITHER the ~30-min
   // post-bid snooze is active OR the "next auction" quiet window (read off
@@ -327,9 +355,16 @@ export const traderGlows = (now, state) => {
     auctionQuietUntil !== null && now.getTime() < auctionQuietUntil;
   const auctionPending = inAuctionWindow && !bidSnoozed && !quietActive;
 
-  // Red (Import/Eksport): 14:00 onward, until taken today.
-  const inImportWindow = hour >= IMPORT_START_HOUR;
-  const importPending = inImportWindow && importTradedDay !== localDayKey(now);
+  // Red (Import/Eksport). Two modes:
+  //   - 6×-today EVENT (importEventDay is today): the import isn't once-daily
+  //     and the 14:00 gate doesn't apply — an offer can be waiting at any hour.
+  //     Pending whenever we're past the parsed "come back at HH:MM" time (or no
+  //     such time is known yet, i.e. right after detection / between refreshes).
+  //   - NORMAL day: 14:00 onward, until taken today.
+  const eventActive = importEventDay !== null && importEventDay === localDayKey(now);
+  const importPending = eventActive
+    ? importNextAt === null || now.getTime() >= importNextAt
+    : hour >= IMPORT_START_HOUR && importTradedDay !== localDayKey(now);
 
   // Menu button is a single element — red wins over yellow when both pend.
   const menu = importPending ? 'red' : auctionPending ? 'yellow' : 'off';
@@ -363,6 +398,18 @@ const readAuctionQuietUntil = () => {
 };
 
 /**
+ * Read the stored next-import timestamp, or `null` when missing / unparseable.
+ *
+ * @returns {number | null}
+ */
+const readImportNextAt = () => {
+  const raw = safeLS.get(IMPORT_NEXT_KEY);
+  if (raw === null) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+};
+
+/**
  * Assemble the persisted state from localStorage.
  *
  * @returns {TraderState}
@@ -371,6 +418,8 @@ const readState = () => ({
   auctionBidAt: readAuctionBidAt(),
   importTradedDay: safeLS.get(IMPORT_TRADED_KEY),
   auctionQuietUntil: readAuctionQuietUntil(),
+  importEventDay: safeLS.get(IMPORT_EVENT_KEY),
+  importNextAt: readImportNextAt(),
 });
 
 /**
@@ -449,11 +498,16 @@ const applyHighlight = () => {
  * Read the Trader sub-pages (if the player is on them) and stamp storage
  * from what they show — the passive counterpart to the action XHR events:
  *
- *   - Import/Export: a visible "done for today" overlay means today's
- *     container is already taken (or there are no more offers), so stamp
- *     today's import day-key — same end-state as `oge:traderImportTraded`.
- *     Lets the red glow clear from merely visiting the page, not only from
- *     trading through it in this session.
+ *   - Import/Export EVENT detection: an in-game news message carrying the
+ *     `importexport_6` image means today is a "refreshes 6× today" day. Stamp
+ *     the event day-key (and clear any stale next-refresh stamp) so the import
+ *     glow lights immediately, ignoring the 14:00 gate and the once-daily clear.
+ *   - Import/Export: a visible "done for today" overlay. During the 6× event it
+ *     carries a "come back at HH:MM" time — parse that (digits only, never the
+ *     localised words) into the next-refresh stamp so the glow re-arms exactly
+ *     then. On a NORMAL day it just means the daily container is taken, so we
+ *     stamp today's import day-key — same end-state as `oge:traderImportTraded`,
+ *     letting the red glow clear from merely visiting the page.
  *   - Auctioneer: between auctions the page shows a live `#nextAuction`
  *     countdown behind a visible `.noAuctionOverlay`. Convert the countdown
  *     to an absolute quiet-until so the yellow glow returns exactly when the
@@ -468,10 +522,36 @@ const applyHighlight = () => {
  * @returns {void}
  */
 const scanTraderSubpages = (now) => {
-  // Import/Export — daily container taken / no more offers today.
+  const today = localDayKey(now);
+
+  // Event detection — the 6×-today news message is open/listed somewhere.
+  // Stamp the event day once; clearing the next-refresh stamp re-arms the
+  // glow immediately ("mark Import/Export now"). Idempotent: only the first
+  // sighting of the day writes.
+  if (document.querySelector(IMPORT_EVENT_IMG_SEL) && safeLS.get(IMPORT_EVENT_KEY) !== today) {
+    safeLS.set(IMPORT_EVENT_KEY, today);
+    safeLS.remove(IMPORT_NEXT_KEY);
+  }
+
+  const eventActive = safeLS.get(IMPORT_EVENT_KEY) === today;
+
+  // Import/Export — a visible overlay means no offer is currently available.
   if (isShown(document.querySelector(IMPORT_DONE_OVERLAY_SEL))) {
-    const today = localDayKey(now);
-    if (safeLS.get(IMPORT_TRADED_KEY) !== today) safeLS.set(IMPORT_TRADED_KEY, today);
+    if (eventActive) {
+      // 6× event: re-arm at the parsed "come back at HH:MM"; never stamp the
+      // once-daily clear (more offers are coming). Only move the stamp forward
+      // so re-scans on the same overlay don't churn.
+      const time = parseClockTime(
+        document.querySelector(IMPORT_DONE_TEXT_SEL)?.textContent ?? '',
+      );
+      if (time !== null) {
+        const target = nextDailyOccurrence(now, time);
+        const stored = readImportNextAt();
+        if (stored === null || target > stored) safeLS.set(IMPORT_NEXT_KEY, String(target));
+      }
+    } else if (safeLS.get(IMPORT_TRADED_KEY) !== today) {
+      safeLS.set(IMPORT_TRADED_KEY, today);
+    }
   }
 
   // Auctioneer — no auction live; push the quiet window to the next auction.
