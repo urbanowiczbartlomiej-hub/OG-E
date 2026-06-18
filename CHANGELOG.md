@@ -4,6 +4,20 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.24.1] — 2026-06-18
+
+### Fixed
+
+- **Daily Run now reliably aims at the planet vs the moon you picked.** The
+  first fleet you sent on a freshly-opened fleet dispatch page could ignore the
+  chosen target type — firing at the planet when you wanted the moon, or the
+  moon when you wanted the planet — because the game's AGR helper wasn't ready
+  yet when OG-E set the type, and a single attempt was silently dropped.
+  Going back to step 1 and tapping again worked around it. OG-E now confirms
+  the type actually switched and retries until it sticks (in both directions),
+  instead of waiting a fixed moment — so the first send goes to the right body.
+  Most noticeable on mobile, where the page settles more slowly.
+
 ## [1.24.0] — 2026-06-18
 
 ### Added
