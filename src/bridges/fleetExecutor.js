@@ -43,14 +43,19 @@
 import { FD_CMD_EVENT as CMD_EVENT, FD_RES_EVENT as RES_EVENT } from '../lib/fleetProtocol.js';
 import { GAME } from '../lib/gameDom.js';
 
-// Gap between the two `primeAgr*` clicks in `setTarget`. On a fresh
-// fleetdispatch page (the first tap right after navigation) AGR's shortcuts
-// handler may not be fully wired when the first prime fires, so that click is
-// dropped; the second prime — after this settle delay — is what actually lands
-// the planet/moon flag. Observed on mobile: a 1ms gap was too short under CPU
-// contention (first send went to the planet; a manual back-to-fleet1 + re-tap
-// then worked), so we yield a fuller event-loop turn here.
-const AGR_PRIME_SETTLE_MS = 10;
+// Priming AGR's planet/moon flag is timing-sensitive: on a fresh fleetdispatch
+// page (the first tap right after navigation) AGR's shortcuts handler may not
+// be wired when the first prime click fires, so it's silently dropped, and how
+// long until it IS wired varies by device (worse on mobile under CPU
+// contention). Observed: a fixed-delay double-tap missed the window and the
+// first send went to the planet; a manual back-to-fleet1 + re-tap then worked.
+// Rather than guess a delay, we re-prime on an interval and CONFIRM the flag
+// landed by polling AGR's `#ago_type` span `.selected` class — self-tuning to
+// device speed. POLL is the gap between attempts; TIMEOUT bounds the wait so a
+// genuinely impossible target (e.g. no moon) still falls through to the later
+// setTargetType / fd.setTargetType safety net instead of hanging.
+const AGR_PRIME_POLL_MS = 12;
+const AGR_PRIME_TIMEOUT_MS = 360;
 
 /**
  * Write `value` into every input matching `sel` and fire the full event
@@ -147,6 +152,45 @@ const primeAgrPlanet = () => {
 };
 
 /**
+ * Whether AGR's `#ago_type` row currently marks `type` as the active one.
+ * AGR reflects its internal planet/moon flag in the `.selected` class on the
+ * matching span — the same signal `setTargetType` guards on — so this is our
+ * confirmation that a prime actually took.
+ *
+ * @param {number} type  1 planet · 3 moon
+ * @returns {boolean}
+ */
+const typeFlagSelected = (type) => {
+  const sel = type === 3 ? GAME.AGO_TYPE_MOON : GAME.AGO_TYPE_PLANET;
+  const el = /** @type {HTMLElement | null} */ (document.querySelector(sel));
+  return !!el && el.classList.contains('selected');
+};
+
+/**
+ * Prime AGR's planet/moon flag and CONFIRM it landed, re-priming on an interval
+ * until `#ago_type` reflects the wanted type (or {@link AGR_PRIME_TIMEOUT_MS}
+ * elapses). Replaces the old blind fixed-delay double-tap: the first prime
+ * right after navigation is often dropped because AGR isn't wired yet, and the
+ * settle time before it is varies by device — so we verify instead of guessing.
+ * Returns once selected; on timeout it returns anyway (the caller's later
+ * setTargetType + fd.setTargetType remain the fallback, and checkTarget reports
+ * a genuinely unusable target as noMoon).
+ *
+ * @param {number} type  1 planet · 3 moon
+ * @returns {Promise<void>}
+ */
+const primeTypeConfirmed = async (type) => {
+  const prime = type === 3 ? primeAgrMoon : primeAgrPlanet;
+  const deadline = Date.now() + AGR_PRIME_TIMEOUT_MS;
+  prime();
+  while (!typeFlagSelected(type)) {
+    if (Date.now() >= deadline) return;
+    await new Promise((r) => setTimeout(r, AGR_PRIME_POLL_MS));
+    prime();
+  }
+};
+
+/**
  * @typedef {object} FdCommand
  * @property {number} id
  * @property {string} op
@@ -200,18 +244,14 @@ const runCommand = async (fd, cmd) => {
       // the game's checkTarget XHR (the courier awaits the result). The type
       // span is only clicked when switching planet↔moon — see setTargetType.
       //
-      // For moon targets, prime AGR's moon flag via the shortcuts panel BEFORE
-      // writing coords — that element does not enforce isTrusted so a synthetic
-      // click works. After priming, writing coords keeps the moon type because
-      // we skip the planet-span click.
-      if (type === 3) {
-        primeAgrMoon();
-        await new Promise((r) => setTimeout(r, AGR_PRIME_SETTLE_MS));
-        primeAgrMoon();
-      } else if (type === 1) {
-        primeAgrPlanet();
-        await new Promise((r) => setTimeout(r, AGR_PRIME_SETTLE_MS));
-        primeAgrPlanet();
+      // Prime AGR's planet/moon flag via the shortcuts panel BEFORE writing
+      // coords — that element does not enforce isTrusted so a synthetic click
+      // works, and writing coords afterwards keeps the type because we never
+      // click the opposite span. primeTypeConfirmed re-primes until AGR's
+      // #ago_type row reflects the wanted type, so a dropped first click on a
+      // freshly-loaded page no longer leaves the send aimed at the planet.
+      if (type === 3 || type === 1) {
+        await primeTypeConfirmed(type);
       }
       fireInput(GAME.AGO_GALAXY, galaxy);
       fireInput(GAME.AGO_SYSTEM, system);
