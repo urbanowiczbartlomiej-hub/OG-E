@@ -4,6 +4,27 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.25.3] — 2026-06-18
+
+### Changed
+
+- **Event box and fleet-movement link: readability rework.** The next-event
+  countdown is now larger and carries a dark outline so it stays legible even
+  when it overlaps the mission-type text. Both surfaces are restyled to
+  OGame's own colour palette (gold countdown, green/red fleet status) and the
+  mission counts now show both the own- and friendly-event tallies. The whole
+  event-box card was repositioned and re-spaced to sit cleanly in the top bar.
+- **Fleet-movement link shows short, language-independent labels.** Whatever
+  locale OGame renders ("Floty:" / "Ekspedycje:", "Flotten:", …), the link now
+  reads `Fleets: x/y` and `Expos: a/b`, bigger and bolder, so the counts stay
+  readable when OGame is zoomed out on a phone.
+
+### Fixed
+
+- **Lifeform "Max fleets" state shows the system coordinates.** When discovery
+  is blocked by the fleet cap, the button's subtext now carries the viewed
+  system `[g:s]`, matching the discover/navigate states.
+
 ## [1.25.2] — 2026-06-18
 
 ### Added
