@@ -68,13 +68,29 @@ anyone — keep them next to the code that emits them; (3) the game's
 misspellings (`hightlightPlanet`, `planet-koords`) are kept verbatim,
 documented in `gameDom.js`.
 
-**Testing bar.** Pure/domain/state/sync logic is expected to be unit
-tested. New bridge logic (XHR projection, event gating) and dashboard
-I/O (import/merge, tombstone writes) need *behavioral* tests — drive a
-fake XHR / `File` through happy-dom and assert the observable output
-(dispatched event, stored value), not internals. `npm run test` and
-`npm run typecheck` (test files included) must both be green before any
-commit touching `src/` — see General rules below.
+**How we work (build-and-verify first, tests at release).** Day-to-day the
+loop is: change the code → `npm run build` → the user verifies it in the
+browser → iterate on their feedback until they approve. **Do NOT write or run
+the unit-test suite during this loop** — it's wasted churn while the design is
+still moving. Commits may land with the suite untouched (even red). `npm run
+typecheck` + `npm run lint` stay a cheap pre-commit sanity check (they catch
+real errors without authoring any test); the test SUITE is deliberately
+deferred.
+
+**Tests are reconciled once, at release time** — when the user asks to publish
+(push a `vX.Y.Z` tag / upload to AMO). Only THEN do we add/fix tests for
+everything the session changed, and bring `npm run test` back to green. The
+release script runs `npm run test` + `npm run typecheck` as a hard gate before
+the AMO upload, so a red suite blocks the publish — that gate is the backstop
+that makes deferring safe.
+
+**What the tests should cover (when you do write them).** Pure/domain/state/
+sync logic gets unit tests. Bridge logic (XHR projection, event gating) and
+dashboard I/O (import/merge, tombstone writes) get *behavioral* tests — drive a
+fake XHR / `File` through happy-dom and assert the observable output (dispatched
+event, stored value), not internals. Tests are hermetic: no real network (the
+shared `test/setup.js` neuters `fetch` + `XMLHttpRequest.send`), so stub any
+request the code under test makes.
 
 ## Release checklist (one flagless command, two ways to run it)
 
@@ -95,8 +111,12 @@ the tag exists; push skipped when HEAD is detached). The two paths:
   `npm run release` (it bumps/commits/tags/pushes, skipping the upload when no
   creds are present) and CI publishes it.
 
-Either way, do this first (the one manual step): add the dated
-`## [X.Y.Z] — YYYY-MM-DD` section to `CHANGELOG.md`. Leave it uncommitted — the
+Before releasing, do the two prep steps. **First, reconcile the tests** — this
+is the moment the session's deferred test work happens: add/fix tests for
+everything that changed and get `npm run test` green (the release script's gate
+will block the publish otherwise). **Second** (the one manual content step): add
+the dated `## [X.Y.Z] — YYYY-MM-DD` section to `CHANGELOG.md`. Leave it
+uncommitted — the
 script commits it together with the version bump into the single
 `chore(release): X.Y.Z` commit the tag points at, and sends it verbatim as the
 public AMO release notes. The script refuses to run without it, requires a
@@ -123,8 +143,10 @@ simply skipped — the bump/commit/tag/push still run.
 - Patch bump (`1.0.x`) for bug fixes; minor (`1.x.0`) for new
   user-visible features; major (`x.0.0`) for breaking changes to
   stored data formats or required AGR version.
-- `npm run test` must be green before any commit that touches `src/`.
 - `npm run typecheck` and `npm run lint` must both exit 0 before any commit.
+- The unit-test suite is NOT a per-commit gate (see "How we work" above):
+  build + manual verification drives the session; `npm run test` is brought
+  green once, at release time, and enforced there by the release script.
 - Follow Conventional Commits: `fix:` / `feat:` / `refactor:` /
   `chore:` / `test:` / `docs:`.
 - **Documentation hygiene (DRY).** Each topic has ONE source of truth;
