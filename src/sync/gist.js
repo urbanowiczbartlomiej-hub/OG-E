@@ -216,7 +216,7 @@ export const GIST_DESCRIPTION = 'OG-E sync data (compressed) — do not edit man
 // ── Protocol constants ──────────────────────────────────────────────
 
 /** Schema version baked into every written payload. See file header. */
-export const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 1;
 
 /** GitHub REST API base URL. All {@link gh} calls are built on top. */
 export const API_BASE = 'https://api.github.com';
@@ -227,7 +227,7 @@ export const API_BASE = 'https://api.github.com';
  * GitHub documents and is conservative enough that we stop hammering
  * the API while still recovering automatically.
  */
-export const DEFAULT_BACKOFF_MS = 5 * 60 * 1000;
+const DEFAULT_BACKOFF_MS = 5 * 60 * 1000;
 
 // ── Module-local state ──────────────────────────────────────────────
 

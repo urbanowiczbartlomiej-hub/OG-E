@@ -389,6 +389,26 @@ export const mergeDailyRunRoutes = (local, remote) => {
  */
 
 /**
+ * Whole-universe newest-`updatedAt`-wins for a `{ config, updatedAt }` slot —
+ * the shared core of {@link mergeGalaxyScanConfig} and {@link mergeReminderConfig}.
+ * Newer side wins the whole config; ties / missing-or-0 remote ts keep local.
+ *
+ * @template T
+ * @param {{ config: T, updatedAt: number }} local
+ * @param {Partial<{ config: T, updatedAt: number }> | undefined | null} remote
+ * @returns {{ merged: { config: T, updatedAt: number }, changed: boolean }}
+ */
+const mergeNewestConfigSlot = (local, remote) => {
+  if (!remote || typeof remote !== 'object') return { merged: local, changed: false };
+  const lT = Number(local?.updatedAt) || 0;
+  const rT = Number(remote.updatedAt) || 0;
+  if (rT > lT && remote.config && typeof remote.config === 'object') {
+    return { merged: { config: remote.config, updatedAt: rT }, changed: true };
+  }
+  return { merged: local, changed: false };
+};
+
+/**
  * Merge one universe's Galaxy-Scan config slot, WHOLE-UNIVERSE
  * newest-`updatedAt`-wins — identical strategy to {@link mergeDailyRunRoutes}
  * (the config is a single edited unit per universe, edited rarely by one
@@ -403,18 +423,7 @@ export const mergeDailyRunRoutes = (local, remote) => {
  * @param {Partial<GalaxyScanConfigSlot> | undefined | null} remote
  * @returns {{ merged: GalaxyScanConfigSlot, changed: boolean }}
  */
-export const mergeGalaxyScanConfig = (local, remote) => {
-  if (!remote || typeof remote !== 'object') return { merged: local, changed: false };
-  const lT = Number(local?.updatedAt) || 0;
-  const rT = Number(remote.updatedAt) || 0;
-  if (rT > lT && remote.config && typeof remote.config === 'object') {
-    return {
-      merged: { config: remote.config, updatedAt: rT },
-      changed: true,
-    };
-  }
-  return { merged: local, changed: false };
-};
+export const mergeGalaxyScanConfig = (local, remote) => mergeNewestConfigSlot(local, remote);
 
 /**
  * @typedef {object} ReminderConfigSlot
@@ -438,18 +447,7 @@ export const mergeGalaxyScanConfig = (local, remote) => {
  * @param {Partial<ReminderConfigSlot> | undefined | null} remote
  * @returns {{ merged: ReminderConfigSlot, changed: boolean }}
  */
-export const mergeReminderConfig = (local, remote) => {
-  if (!remote || typeof remote !== 'object') return { merged: local, changed: false };
-  const lT = Number(local?.updatedAt) || 0;
-  const rT = Number(remote.updatedAt) || 0;
-  if (rT > lT && remote.config && typeof remote.config === 'object') {
-    return {
-      merged: { config: remote.config, updatedAt: rT },
-      changed: true,
-    };
-  }
-  return { merged: local, changed: false };
-};
+export const mergeReminderConfig = (local, remote) => mergeNewestConfigSlot(local, remote);
 
 /**
  * Pure: build the data slice of a gist payload that drops every

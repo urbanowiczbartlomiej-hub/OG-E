@@ -167,7 +167,7 @@ export const offsetsForSchedule = (schedule) => {
 };
 
 /** ntfy's documented minimum `X-Delay` value (anything smaller would be rejected). */
-export const NTFY_MIN_DELAY_SEC = 10;
+const NTFY_MIN_DELAY_SEC = 10;
 
 /**
  * ntfy's documented MAXIMUM `X-Delay` — three days. A reminder whose fire
@@ -492,7 +492,7 @@ const postMessage = async ({ topic, token, fireAt, now, title, body, priority, i
  * @returns {Promise<{ idsBySeries: Record<string, string[]>, posted: number, cancelled: number }>}
  *   `idsBySeries` maps each series id to its slot message ids in fire order.
  */
-export const reconcileQueue = async ({ series, topic, token, now, title, queue }) => {
+const reconcileQueue = async ({ series, topic, token, now, title, queue }) => {
   const all = queue ?? await fetchScheduledMessages({ topic, token, now });
   const ours = all.filter((m) => m.title === title);
 

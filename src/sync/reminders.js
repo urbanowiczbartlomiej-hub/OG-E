@@ -306,7 +306,7 @@ export const REMINDER_NTFY_TOKEN_KEY = 'oge_reminderNtfyTokenMirror';
  * @param {string} universeId
  * @returns {Promise<ReminderState | null>}
  */
-export const readReminderState = async (universeId) => {
+const readReminderState = async (universeId) => {
   const id = await ensureGist();
   const gist = await gh(`/gists/${id}`);
   const file = gist?.files?.[reminderFilenameFor(universeId)];
@@ -340,7 +340,7 @@ export const readReminderState = async (universeId) => {
  * @param {ReminderState} state
  * @returns {Promise<void>}
  */
-export const writeReminderState = async (universeId, state) => {
+const writeReminderState = async (universeId, state) => {
   const id = await ensureGist();
   await gh(`/gists/${id}`, {
     method: 'PATCH',

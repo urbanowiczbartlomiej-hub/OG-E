@@ -156,7 +156,7 @@ import {
  * Exported so `features/dashboard/io.js` (the writer) and any future
  * tooling can compose the same keys without redeclaring the suffix.
  */
-export const SYNC_REQUEST_KEY_BASE = 'oge_syncRequestAt';
+const SYNC_REQUEST_KEY_BASE = 'oge_syncRequestAt';
 
 /**
  * Per-galaxy reset tombstone suffix. Value is `"<galaxy>:<timestamp>"`
@@ -164,7 +164,7 @@ export const SYNC_REQUEST_KEY_BASE = 'oge_syncRequestAt';
  * changes (chrome.storage.onChanged only fires when the value actually
  * changes).
  */
-export const RESET_GALAXY_KEY_BASE = 'oge_resetGalaxyAt';
+const RESET_GALAXY_KEY_BASE = 'oge_resetGalaxyAt';
 
 /** @param {string} universeId */
 export const syncRequestKeyFor = (universeId) =>
@@ -467,6 +467,27 @@ const applyMergedSettings = (merged) => {
 };
 
 /**
+ * Merge the global + per-universe settings slots for one sync round — the
+ * shared core of {@link downloadAndMerge} and {@link upload}. `remote` may be
+ * null (upload before any gist exists); optional chaining covers both.
+ *
+ * @param {*} remote  Parsed remote gist payload (or null).
+ * @param {string} routesUniverseId  Current universe id ('' when unknown).
+ * @returns {{ setResult: { changed: boolean, merged: * }, uniResult: { changed: boolean, merged: * } }}
+ */
+const mergeSyncSettings = (remote, routesUniverseId) => {
+  const setResult = mergeSettings(
+    { values: pickSyncedValues(settingsStore.get(), 'global'), ts: readTsMap() },
+    remote?.settings,
+  );
+  const remoteUniSlot = remote?.settingsPerUniverse?.[routesUniverseId] ?? remote?.settings;
+  const uniResult = routesUniverseId
+    ? mergeSettings(readLocalUniverseSettingsSlot(), remoteUniSlot)
+    : { changed: false, merged: readLocalUniverseSettingsSlot() };
+  return { setResult, uniResult };
+};
+
+/**
  * Pull the remote payload, merge it with local, and conditionally
  * write the merged result back to the local stores.
  *
@@ -516,20 +537,8 @@ const downloadAndMerge = async () => {
     const scansResult = routesUniverseId
       ? mergeScans(localScans, remote.galaxyScansPerUniverse?.[routesUniverseId])
       : { changed: false, merged: localScans };
-    // Global settings: merge only global-scoped keys against the gist's
-    // top-level `settings` slot.
-    const setResult = mergeSettings(
-      { values: pickSyncedValues(settingsStore.get(), 'global'), ts: readTsMap() },
-      remote.settings,
-    );
-    // Universe-scoped settings: prefer the per-universe slot; fall back to
-    // the top-level `settings` on the first sync after the feature is enabled
-    // (one-time migration: old gist has everything in `settings.values`).
-    const remoteUniSlot =
-      remote.settingsPerUniverse?.[routesUniverseId] ?? remote.settings;
-    const uniResult = routesUniverseId
-      ? mergeSettings(readLocalUniverseSettingsSlot(), remoteUniSlot)
-      : { changed: false, merged: readLocalUniverseSettingsSlot() };
+    // Global + per-universe settings merge (shared with upload()).
+    const { setResult, uniResult } = mergeSyncSettings(remote, routesUniverseId);
 
     // Anti-loop: see file header. `changed === false` means merge is a
     // structural no-op; skipping the write breaks the subscription
@@ -644,18 +653,8 @@ const upload = async () => {
     const scansResult = routesUniverseId
       ? mergeScans(localScans, remote?.galaxyScansPerUniverse?.[routesUniverseId])
       : { changed: false, merged: localScans };
-    // Global settings: merge only global-scoped keys.
-    const setResult = mergeSettings(
-      { values: pickSyncedValues(settingsStore.get(), 'global'), ts: readTsMap() },
-      remote?.settings,
-    );
-    // Universe-scoped settings: prefer per-universe slot, fall back to old
-    // top-level `settings` for one-time migration (same as downloadAndMerge).
-    const remoteUniSlot =
-      remote?.settingsPerUniverse?.[routesUniverseId] ?? remote?.settings;
-    const uniResult = routesUniverseId
-      ? mergeSettings(readLocalUniverseSettingsSlot(), remoteUniSlot)
-      : { changed: false, merged: readLocalUniverseSettingsSlot() };
+    // Global + per-universe settings merge (shared with downloadAndMerge()).
+    const { setResult, uniResult } = mergeSyncSettings(remote, routesUniverseId);
 
     // Same anti-loop guard as downloadAndMerge. Without this, a store
     // subscription would fire on every upload-round and re-schedule
