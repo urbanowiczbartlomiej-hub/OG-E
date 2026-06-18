@@ -5,15 +5,11 @@
 //
 // Outputs are single-file IIFE — manifest content_scripts load them directly.
 // No CommonJS, no node resolution: OG-E has zero runtime dependencies.
-//
-// @rollup/plugin-replace injects the manifest version as `__OGE_VERSION__`
-// so the source never hardcodes a version number.
+// Production builds (NODE_ENV=production) are minified with terser; dev builds
+// keep sourcemaps.
 
-import replace from '@rollup/plugin-replace';
 import terser from '@rollup/plugin-terser';
-import { readFileSync } from 'node:fs';
 
-const manifest = JSON.parse(readFileSync('./manifest.json', 'utf-8'));
 const isProd = process.env.NODE_ENV === 'production';
 
 /** @param {string} input  @param {string} file */
@@ -24,26 +20,14 @@ const bundle = (input, file) => ({
     format: 'iife',
     sourcemap: !isProd,
   },
-  plugins: [
-    replace({
-      preventAssignment: true,
-      values: {
-        __OGE_VERSION__: JSON.stringify(manifest.version),
-      },
-    }),
-    ...(isProd
-      ? [
-          terser({
-            compress: {
-              drop_console: true,
-              drop_debugger: true,
-              passes: 2,
-            },
-            format: { comments: false },
-          }),
-        ]
-      : []),
-  ],
+  plugins: isProd
+    ? [
+        terser({
+          compress: { drop_console: true, drop_debugger: true, passes: 2 },
+          format: { comments: false },
+        }),
+      ]
+    : [],
 });
 
 export default [
