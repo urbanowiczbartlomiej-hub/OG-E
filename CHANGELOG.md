@@ -4,6 +4,15 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.25.4] — 2026-06-18
+
+### Fixed
+
+- **Lifeform "Max fleets" state no longer shows system coordinates.** The
+  fleet cap is account-global, so the viewed system `[g:s]` was noise on the
+  blocked discovery button; it has been dropped (it had slipped back in during
+  1.25.3).
+
 ## [1.25.3] — 2026-06-18
 
 ### Changed
