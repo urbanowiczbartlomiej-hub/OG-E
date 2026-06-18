@@ -538,17 +538,25 @@ const scanTraderSubpages = (now) => {
   // Import/Export — a visible overlay means no offer is currently available.
   if (isShown(document.querySelector(IMPORT_DONE_OVERLAY_SEL))) {
     if (eventActive) {
-      // 6× event: re-arm at the parsed "come back at HH:MM"; never stamp the
-      // once-daily clear (more offers are coming). Only move the stamp forward
-      // so re-scans on the same overlay don't churn.
+      // 6× event, overlay up = no offer right now. Two sub-cases, told apart by
+      // whether the overlay carries a clock time:
+      //   - "come back at HH:MM" → another offer is coming TODAY; re-arm then.
+      //   - "come back tomorrow" (no time) → the day's offers are EXHAUSTED;
+      //     re-arm at next local midnight, after which `eventActive` flips off
+      //     on its own and the normal once-daily rule resumes. Without this the
+      //     glow stayed stuck red after the last container (importNextAt held a
+      //     now-past time, so `now >= importNextAt` kept it pending).
+      // Never stamp the once-daily clear here (the event ignores it). Only move
+      // the stamp forward so re-scans on the same overlay don't churn.
       const time = parseClockTime(
         document.querySelector(IMPORT_DONE_TEXT_SEL)?.textContent ?? '',
       );
-      if (time !== null) {
-        const target = nextDailyOccurrence(now, time);
-        const stored = readImportNextAt();
-        if (stored === null || target > stored) safeLS.set(IMPORT_NEXT_KEY, String(target));
-      }
+      const target =
+        time !== null
+          ? nextDailyOccurrence(now, time)
+          : nextDailyOccurrence(now, { hours: 0, minutes: 0 });
+      const stored = readImportNextAt();
+      if (stored === null || target > stored) safeLS.set(IMPORT_NEXT_KEY, String(target));
     } else if (safeLS.get(IMPORT_TRADED_KEY) !== today) {
       safeLS.set(IMPORT_TRADED_KEY, today);
     }

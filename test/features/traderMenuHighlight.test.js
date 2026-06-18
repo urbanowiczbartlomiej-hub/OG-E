@@ -464,6 +464,22 @@ describe('installTraderMenuHighlight — sub-page scanning', () => {
     expect(importTile().classList.contains(RED_CLASS)).toBe(false);
   });
 
+  it('event day: "come back tomorrow" (no time) re-arms at next midnight and drops red', () => {
+    vi.setSystemTime(new Date('2026-05-28T22:00:00'));
+    localStorage.setItem(IMPORT_EVENT_KEY, localDayKey(new Date())); // event already detected
+    // Last container taken: the overlay no longer carries an HH:MM, just
+    // "no more offers today, come back tomorrow".
+    buildImportPageWithText('Dzisiaj nie ma już więcej ofert. Wróć jutro.');
+    installTraderMenuHighlight();
+
+    // Exhausted for the day → re-arm at the next local midnight (after which the
+    // event flips off on its own), NOT a now-past time that would keep red stuck.
+    const expected = new Date('2026-05-29T00:00:00').getTime();
+    expect(Number(localStorage.getItem(IMPORT_NEXT_KEY))).toBe(expected);
+    expect(localStorage.getItem(IMPORT_TRADED_KEY)).toBeNull(); // still event mode
+    expect(importTile().classList.contains(RED_CLASS)).toBe(false); // red off for the rest of today
+  });
+
   it('event day: red returns once the next-refresh time passes (safety-poll re-eval)', () => {
     vi.setSystemTime(new Date('2026-05-28T11:59:00'));
     localStorage.setItem(IMPORT_EVENT_KEY, localDayKey(new Date()));
