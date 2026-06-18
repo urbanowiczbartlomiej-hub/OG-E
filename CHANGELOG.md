@@ -4,6 +4,25 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.25.0] — 2026-06-18
+
+### Added
+
+- **Trader reminder follows the "import refreshes 6× today" event.** On the
+  special days when the Import/Export offer renews several times instead of
+  once, OG-E detects the event from its in-game news message and lights the
+  Trader reminder right away — no waiting until 14:00. After you take a
+  container, it reads the page's "come back at HH:MM" time and re-lights the
+  Trader menu exactly when the next offer is due, for each of the day's
+  refreshes. Reverts to the normal once-daily behaviour the next day.
+
+### Changed
+
+- **Settings ▸ Reminders: tidier topic row.** "ntfy.sh — your topic" now shows
+  the masked topic on the right with its Reveal and Copy buttons stacked neatly
+  above it, and the separate "topic privacy" label is gone — its note now reads
+  as a plain caption under the topic.
+
 ## [1.24.1] — 2026-06-18
 
 ### Fixed
