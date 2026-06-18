@@ -4,6 +4,41 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.25.2] — 2026-06-18
+
+### Added
+
+- **Ad-hoc fleet reminders now follow a full schedule, not just one ping.**
+  The Dashboard ▸ Reminders ▸ Ad-hoc tab gains the same chip-style schedule
+  editor as fleet-save: a list of offsets relative to the fleet's arrival
+  (`−` before, `0` at, `+` after). Arming a leg in the event list schedules
+  every slot in that schedule, and editing the schedule re-times all
+  already-armed reminders. Your previous single ad-hoc lead time carries over
+  automatically.
+- **More reminder wildcards.** Ad-hoc and fleet-save message bodies gain
+  `{direction}` (outbound / return), `{index}` and `{total}` (this reminder #
+  of how many), and ad-hoc also gains `{offset}` (before / at / after arrival)
+  — so the two kinds now share one identical wildcard set.
+- **"Currently queued" shows the exact message.** Each still-queued reminder
+  on the Dashboard ▸ Reminders tab now lists its fire time alongside the
+  precise push text that was registered, slot by slot.
+
+### Fixed
+
+- **Ad-hoc push bodies now fill their fleet wildcards.** `{origin}`,
+  `{target}`, `{targetName}`, `{shipCount}` and `{direction}` were rendering
+  blank in ad-hoc reminders because the per-leg metadata wasn't reaching the
+  message renderer; they now resolve correctly.
+
+### Changed
+
+- **Floating command buttons: visual polish.** A single-zone button now dims
+  its centre node along with the rest when it goes busy/disabled (no more lone
+  bright "island"); long two-word labels (e.g. "All maxed!") wrap to two lines
+  instead of crowding the rim; the Expeditions label size now matches the other
+  buttons; bottom-zone labels on split buttons sit a touch higher; and a couple
+  of redundant hint lines were removed.
+
 ## [1.25.1] — 2026-06-18
 
 ### Changed
