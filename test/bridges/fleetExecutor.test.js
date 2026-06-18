@@ -179,6 +179,37 @@ describe('fleetExecutor', () => {
     expect(moonClicked).toBe(0);
   });
 
+  it('setTarget re-primes the planet flag until AGR marks #ago_type .planet selected', async () => {
+    // Inverse of the moon race: AGR boots with moon selected by default but we
+    // want a planet target. Same mechanism — re-prime until #ago_type reflects
+    // planet — so the send isn't aimed at the moon. The flag only flips on the
+    // 2nd prime here, modelling the first dropped click.
+    /** @type {any} */ (window).fleetDispatcher = makeFakeFd();
+    buildAgoRow();
+    const planetTypeSpan = /** @type {HTMLElement} */ (document.querySelector('#ago_type .planet'));
+    const moonTypeSpan = /** @type {HTMLElement} */ (document.querySelector('#ago_type .moon'));
+    moonTypeSpan.classList.add('selected'); // AGR default: moon active.
+    const shortcuts = document.createElement('td');
+    shortcuts.className = 'ago_shortcuts_own';
+    shortcuts.innerHTML = '<span class="ago_shortcuts_coords"></span>';
+    document.body.appendChild(shortcuts);
+    let primeClicks = 0;
+    /** @type {HTMLElement} */ (shortcuts.querySelector('.ago_shortcuts_coords')).addEventListener(
+      'click', () => {
+        primeClicks += 1;
+        if (primeClicks >= 2) {
+          moonTypeSpan.classList.remove('selected');
+          planetTypeSpan.classList.add('selected');
+        }
+      });
+
+    const res = await command('setTarget', { galaxy: 1, system: 2, position: 3, type: 1 });
+    expect(res.ok).toBe(true);
+    expect(primeClicks).toBeGreaterThanOrEqual(2);
+    expect(planetTypeSpan.classList.contains('selected')).toBe(true);
+    expect(moonTypeSpan.classList.contains('selected')).toBe(false);
+  });
+
   it('setTarget does NOT re-click the type span when the wanted type is already selected', async () => {
     // AGR auto-applies coords from the inputs; re-clicking the already-active
     // type span re-fires action:42 and can stomp the just-applied target.
