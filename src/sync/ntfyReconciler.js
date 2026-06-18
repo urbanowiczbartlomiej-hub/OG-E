@@ -229,7 +229,7 @@ const resolveIconUrl = (iconId) => iconUrl(iconFileFor(iconId));
 
 /**
  * Format an epoch second as a locale `HH:MM` clock — the `{returnTime}` /
- * `{arrivalTime}` / `{landTime}` wildcard value.
+ * `{arrivalTime}` (and its `{landTime}` alias) wildcard value.
  *
  * @param {number} epochSec
  * @returns {string}
@@ -552,6 +552,9 @@ export const reconcileQueue = async ({ series, topic, token, now, title, queue }
  */
 const waveCtx = (universeId, baseAt, i, total) => ({
   server: universeId,
+  // A wave is always an Expedition series; exposing `{mission}` keeps the
+  // three editors uniform (see `domain/reminderTemplates` COMMON_FIELDS).
+  mission: 'Expedition',
   returnTime: clock(baseAt),
   index: i + 1,
   total,
@@ -629,10 +632,11 @@ export const adhocTitleFor = (universeId) => `[${universeId}] Fleet`;
  * Reconcile this universe's AD-HOC slice of the queue. Each armed entry is
  * a single-slot series fired at its `fireAt`. The body is rendered here from
  * the ad-hoc {@link import('../domain/reminderTemplates.js').ReminderTemplate}
- * against the entry's detail (the shared per-fleet wildcard set: `{label}`,
+ * against the entry's detail (the shared wildcard set: `{server}`,
  * `{mission}`, `{coords}`, `{origin}`, `{originName}`, `{target}`,
- * `{targetName}`, `{shipCount}`, `{arrivalTime}`, `{server}`); priority + icon
- * come from the template.
+ * `{targetName}`, `{shipCount}`, `{arrivalTime}`); priority + icon come from
+ * the template. `{label}` stays in context as an unadvertised back-compat
+ * alias for bodies saved before the wildcard cleanup.
  *
  * Same idempotent reconcile as waves, under the ad-hoc title, so arming on
  * mobile survives the send-reload and the queue self-heals. Pass
@@ -714,8 +718,9 @@ const fsCtx = (universeId, e, fireAt) => {
     target: e.target ?? '',
     targetName: e.targetName ?? '',
     shipCount: Number.isFinite(e.shipCount) ? Number(e.shipCount).toLocaleString() : '',
-    // `arrivalTime` is the unified name shared with ad-hoc; `landTime` stays as
-    // a back-compat alias (the default FS template + any saved body use it).
+    // `arrivalTime` is the unified, advertised name shared with ad-hoc;
+    // `landTime` stays as an UNADVERTISED back-compat alias so a body saved
+    // before the wildcard cleanup still renders (it's no longer a chip).
     arrivalTime: clock(e.arrivalAt),
     landTime: clock(e.arrivalAt),
     offset: humanizeOffset(fireAt - e.arrivalAt),

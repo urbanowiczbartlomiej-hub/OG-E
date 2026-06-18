@@ -17,14 +17,25 @@
 // so the three kinds never sweep each other). A user-editable title would
 // break that routing, so the title stays system-managed.
 //
-// # Wildcards: one shared per-fleet set, plus what each kind honestly knows
+// # Wildcards: a shared common set, one per-fleet set, plus what each kind adds
+//
+// `{server}` + `{mission}` are COMMON to all three kinds (a wave's mission is
+// always "Expedition", but exposing it keeps the three editors uniform).
 //
 // Ad-hoc and fleet-save both derive from ONE event-list row at arm/detect
-// time, so they share the SAME per-fleet set ({@link FLEET_FIELDS}: label /
-// mission / coords / origin / originName / target / targetName / shipCount /
-// arrivalTime) — the two editors read identically. Each kind then adds only
-// what it alone knows: fleet-save the schedule-relative `{offset}`, waves the
-// series `{index}`/`{total}` + `{returnTime}`.
+// time, so they share the SAME per-fleet set ({@link FLEET_FIELDS}: coords /
+// origin / originName / target / targetName / shipCount / arrivalTime) — the
+// two editors read IDENTICALLY except for fleet-save's one extra
+// schedule-relative `{offset}`. Note `{coords}` (where THIS leg lands) is NOT
+// redundant with `{origin}`/`{target}` (the fixed launch + mission target): on
+// a return leg it equals origin, on an outbound leg it equals target. Waves
+// add the series `{index}`/`{total}` + `{returnTime}`.
+//
+// `{label}` (= `{mission} → {coords}`) and `{landTime}` (= `{arrivalTime}`)
+// are NO LONGER advertised — the composite and the alias were redundant. The
+// renderer still substitutes them (the sync layer keeps both in context) so
+// any body saved before this cleanup keeps rendering, they just don't appear
+// as chips.
 //
 // Expedition-wave bodies, by contrast, canNOT name a single fleet's count /
 // coords / origin: the series is queued the instant the FIRST expedition of a
@@ -91,9 +102,13 @@ export const iconFileFor = (iconId) => {
  * @property {string} sample  representative value for the live preview.
  */
 
-/** Tokens every kind shares. */
+/**
+ * Tokens every kind shares. `{mission}` is common because a wave's mission is
+ * always "Expedition" — exposing it anyway keeps the three editors uniform.
+ */
 const COMMON_FIELDS = Object.freeze([
   { token: 'server', label: 'Server id', sample: '123' },
+  { token: 'mission', label: 'Mission', sample: 'Expedition' },
 ]);
 
 /**
@@ -105,8 +120,6 @@ const COMMON_FIELDS = Object.freeze([
  * @type {ReadonlyArray<TemplateField>}
  */
 const FLEET_FIELDS = Object.freeze([
-  { token: 'label', label: 'Fleet label', sample: 'Expedition → [4:467:16]' },
-  { token: 'mission', label: 'Mission', sample: 'Expedition' },
   { token: 'coords', label: 'Landing coords', sample: '[4:467:16]' },
   { token: 'origin', label: 'Origin coords', sample: '[4:467:15]' },
   { token: 'originName', label: 'Origin name', sample: 'P1' },
@@ -134,13 +147,10 @@ export const TEMPLATE_FIELDS = Object.freeze({
     { token: 'total', label: 'Total reminders', sample: '4' },
   ]),
   adhoc: Object.freeze([...COMMON_FIELDS, ...FLEET_FIELDS]),
-  // Fleet-save = the shared per-fleet set + the schedule-relative offset.
-  // `landTime` stays as a back-compat alias of `arrivalTime` (the default body
-  // and any saved body still reference it).
+  // Fleet-save = the SAME set as ad-hoc + the one schedule-relative `{offset}`.
   fleetSave: Object.freeze([
     ...COMMON_FIELDS,
     ...FLEET_FIELDS,
-    { token: 'landTime', label: 'Landing time (= arrivalTime)', sample: '14:32' },
     { token: 'offset', label: 'When (before/at/after)', sample: '10 min before' },
   ]),
 });
@@ -176,12 +186,12 @@ export const defaultReminderTemplates = () => ({
     priority: 3,
   },
   adhoc: {
-    body: '{label} — arrives {arrivalTime}. 🔥',
+    body: '{mission} → {coords} — arrives {arrivalTime}. 🔥',
     icon: 'urgent',
     priority: 5,
   },
   fleetSave: {
-    body: 'Fleet save: {label} — lands {landTime} ({offset}). 🔥',
+    body: 'Fleet save: {mission} → {coords} — lands {arrivalTime} ({offset}). 🔥',
     icon: 'urgent',
     priority: 5,
   },

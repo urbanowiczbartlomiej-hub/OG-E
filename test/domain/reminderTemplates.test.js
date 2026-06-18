@@ -27,12 +27,12 @@ describe('defaultReminderTemplates', () => {
       priority: 3,
     });
     expect(d.adhoc).toEqual({
-      body: '{label} — arrives {arrivalTime}. 🔥',
+      body: '{mission} → {coords} — arrives {arrivalTime}. 🔥',
       icon: 'urgent',
       priority: 5,
     });
     expect(d.fleetSave).toEqual({
-      body: 'Fleet save: {label} — lands {landTime} ({offset}). 🔥',
+      body: 'Fleet save: {mission} → {coords} — lands {arrivalTime} ({offset}). 🔥',
       icon: 'urgent',
       priority: 5,
     });
@@ -148,11 +148,17 @@ describe('templateTokens / unknownTokens', () => {
   it('ad-hoc and fleet-save share the same per-fleet tokens (unified set)', () => {
     const tokensOf = (/** @type {'wave'|'adhoc'|'fleetSave'} */ kind) =>
       TEMPLATE_FIELDS[kind].map((f) => f.token);
-    const shared = ['label', 'mission', 'coords', 'origin', 'originName', 'target', 'targetName', 'shipCount', 'arrivalTime'];
+    const shared = ['mission', 'coords', 'origin', 'originName', 'target', 'targetName', 'shipCount', 'arrivalTime'];
     for (const t of shared) {
       expect(tokensOf('adhoc')).toContain(t);
       expect(tokensOf('fleetSave')).toContain(t);
     }
+    // Ad-hoc and fleet-save advertise an IDENTICAL set except fleet-save's one
+    // extra schedule-relative {offset}.
+    expect(tokensOf('fleetSave')).toEqual([...tokensOf('adhoc'), 'offset']);
+    // The retired composite/alias tokens are no longer advertised on either.
+    expect(tokensOf('adhoc')).not.toContain('label');
+    expect(tokensOf('fleetSave')).not.toContain('landTime');
     // The new per-fleet tokens are accepted (no "unknown wildcard") for both.
     const body = '{origin} {originName} {target} {targetName} {shipCount}';
     expect(unknownTokens(body, 'adhoc')).toEqual([]);
