@@ -34,8 +34,9 @@ invariants).
 ## 3. JSDoc + `@ts-check`
 
 We ship vanilla JS, but every source file opens with `// @ts-check`
-and every public function has `@param` / `@returns`. `npm run
-typecheck` must exit 0 before each commit.
+and every public function has `@param` / `@returns`. `npm run typecheck`
+must exit 0 before each commit — and so must `npm run lint`, which
+mechanically enforces the import-layering rules (§2).
 
 TypeScript is not required. Types are.
 
@@ -50,6 +51,11 @@ TypeScript is not required. Types are.
 
 We don't chase 100 % coverage. We chase **regression killers** and
 **contract locks**.
+
+Day-to-day, commits are *not* gated on the suite — a change is driven by the
+build plus a manual in-game check, and the unit suite is reconciled to green
+once, at release (the release script enforces it as a hard gate). The
+per-commit gates are `npm run typecheck` + `npm run lint`.
 
 ## 5. Commit format
 
@@ -95,11 +101,12 @@ production build (`npm run build:prod` → `dist/`) is documented in
 
 Before merging anything that touches DOM behaviour:
 
-- Send Exp floating button visible, draggable, click dispatches.
-- Send Col floating button visible, Scan subtext shows remaining count.
+- Unified floating action button visible + draggable; its module orbs
+  switch between Send Exp / Send Col / Send Lifeform.
+- Send Col mode: Scan subtext shows the remaining scan count.
 - Galaxy scan persists across reloads; histogram page shows pixels.
-- Fresh-planet banner appears on a `usedFields === 0` colony.
-- Abandon overlay appears on a colony under `colonyMinFields`.
+- On a colony below `colonyMinFields`, the FAB offers the one-tap Abandon
+  action (this is where the old fresh-planet banner + abandon overlay went).
 - AGR settings menu contains the OG-E tab and it expands.
 - Readability boost toggle flips the event-box styling on/off.
 

@@ -49,11 +49,10 @@ tap per intention:
   OGame's tiny top-bar labels so the numbers that matter pop on a small
   screen — the countdown to your next mission, how many missions are in
   flight, and your free expedition slots.
-- **Spot fresh planets.** A draggable banner flags a freshly colonized
-  planet (zero buildings) so you can decide whether to keep it; it
-  vanishes the moment you build a single field.
-- **Drop the duds.** On a colony below your size threshold, a big,
-  mobile-safe overlay offers a three-tap abandon.
+- **Prune weak colonies.** On a colony below your size threshold, the
+  floating action button offers a one-tap, mobile-safe **Abandon** (with
+  confirm) — folding in what used to be a separate fresh-planet banner and
+  red abandon overlay.
 - **Your data, synced your way.** Opt-in **cloud sync** mirrors your scan
   database and colony history through *your own* private GitHub gist —
   no OG-E server, ever.
@@ -131,15 +130,10 @@ For a packaged release, see [`CONTRIBUTING.md`](CONTRIBUTING.md)
 
 ## Development
 
-```bash
-npm install
-npm run dev           # rollup watch, rebuilds dist/ on save
-npm run test          # vitest
-npm run typecheck     # tsc --noEmit, JSDoc-as-types
-```
-
-The reproducible production build (`npm run build:prod`) and how its
-output maps to the uploaded extension are documented in
+The contributor dev loop (`npm run dev` / `test` / `typecheck` / `lint`) is
+documented in [`CONTRIBUTING.md`](CONTRIBUTING.md) (§Dev workflow) — its
+canonical home. The reproducible production build (`npm run build:prod`) and
+how its output maps to the uploaded extension are documented in
 [`REVIEWERS.md`](REVIEWERS.md).
 
 **Debug flags** (set in DevTools Console):
@@ -167,6 +161,12 @@ src/
 └── sync/          gist round-trip (gzip + debounce + anti-loop) and
                    the ntfy reminder scheduler
 ```
+
+**Build wiring.** Those three top files are the rollup entry points — each
+bundles in everything it imports (one self-contained IIFE per execution
+context). `content.js` is the isolated-world boot and calls every feature's
+`install*()` (order is not load-bearing); `page.js` installs the MAIN-world
+bridges; `dashboard.js` boots the Dashboard page.
 
 **Data flow.** Bridges (MAIN world) observe the game's XHRs and dispatch
 custom DOM events (`oge:galaxyScanned`, `oge:checkTargetResult`, …).

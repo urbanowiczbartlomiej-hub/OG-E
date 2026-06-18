@@ -6,8 +6,8 @@ uploaded `dist.zip` from this archive requires only Node.js.
 
 ## Environment
 
-- Node.js **≥ 20** (any LTS line — tested on 20.x and 22.x)
-- npm **≥ 10** (ships with Node 20+)
+- Node.js **≥ 22** (matches `.nvmrc`; any current LTS line)
+- npm **≥ 10** (ships with Node 22)
 - No native toolchain. Pure JavaScript build.
 
 ## Steps
