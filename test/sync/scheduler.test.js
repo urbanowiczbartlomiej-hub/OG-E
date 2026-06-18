@@ -57,6 +57,7 @@ import {
 } from '../../src/sync/gist.js';
 import { scansStore } from '../../src/state/scans.js';
 import { historyStore } from '../../src/state/history.js';
+import { playersStore } from '../../src/state/players.js';
 import { settingsStore } from '../../src/state/settings.js';
 import { pickSyncedValues } from '../../src/sync/settingsSync.js';
 
@@ -152,6 +153,7 @@ beforeEach(() => {
   // Fresh store state per test: empty scans, empty history, cloudSync on.
   scansStore.set({});
   historyStore.set([]);
+  playersStore.set({});
   settingsStore.set({ ...settingsStore.get(), cloudSync: true });
   // Settings-sync seeds a per-key timestamp map on first install; clear it
   // so each test starts from a known "no map yet" state (installSync re-seeds
@@ -365,6 +367,39 @@ describe('upload', () => {
     expect(sentPayload.version).toBe(1);
     // `up` stamp recorded.
     expect(setStatus).toHaveBeenCalledWith('up', expect.any(String));
+  });
+
+  it('C6: a THROWN pre-merge fetch aborts the upload — no PATCH, error stamped', async () => {
+    // Regression guard for the silent multi-universe wipe: a failed pre-merge
+    // GET must NOT proceed to build a payload from remote=null (which would
+    // PATCH only this universe's slot and drop every other universe's).
+    scansStore.set(/** @type {GalaxyScans} */ ({ '4:30': scan(9000) }));
+    /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(null); // boot
+    installSync();
+    await tick(0);
+    // The upload's pre-merge read throws (network / HTTP / rate-limit).
+    /** @type {import('vitest').Mock} */ (fetchGistData).mockRejectedValue(
+      new Error('HTTP 500: boom'),
+    );
+    /** @type {import('vitest').Mock} */ (writeGistData).mockResolvedValue(undefined);
+    scansStore.set({ '4:30': scan(9001) });
+    await tick(15_000);
+    expect(writeGistData).not.toHaveBeenCalled();
+    expect(setStatus).toHaveBeenCalledWith('err', expect.stringContaining('upload:'));
+  });
+
+  it('contributes the player cache to the PATCH (full player sync)', async () => {
+    /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(null);
+    /** @type {import('vitest').Mock} */ (writeGistData).mockResolvedValue(undefined);
+    installSync();
+    await tick(0);
+    /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(null);
+    // A galaxy scan grew the player roster → schedules an upload.
+    playersStore.set({ 7: { id: 7, name: 'Foe', rank: 12, seenAt: 5000 } });
+    await tick(15_000);
+    expect(writeGistData).toHaveBeenCalledTimes(1);
+    const [[sent]] = /** @type {import('vitest').Mock} */ (writeGistData).mock.calls;
+    expect(sent.playersPerUniverse[UNI][7]).toEqual({ id: 7, name: 'Foe', rank: 12, seenAt: 5000 });
   });
 
   it('does NOT bleed a SIBLING universe slot into this universe (cross-server isolation)', async () => {

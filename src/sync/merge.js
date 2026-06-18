@@ -52,6 +52,9 @@
  * @typedef {import('../state/scans.js').SystemScan} SystemScan
  * @typedef {import('../state/history.js').ColonyEntry} ColonyEntry
  * @typedef {import('../state/history.js').ColonyHistory} ColonyHistory
+ * @typedef {import('../state/players.js').PlayerCache} PlayerCache
+ * @typedef {import('../domain/players.js').PlayerMeta} PlayerMeta
+ * @typedef {import('../state/ownProfile.js').OwnProfile} OwnProfile
  */
 
 /**
@@ -280,6 +283,63 @@ export const mergeHistory = (local, remote) => {
 };
 
 /**
+ * Merge local + remote player caches, PER `playerId`, newest-`seenAt` wins.
+ *
+ * A player record is global to the account (rank, alliance, honour, and the
+ * strong/newbie/buddy flags are not per-colony), so — exactly like
+ * {@link import('../domain/players.js').mergePlayerMeta} — a strictly-newer
+ * sighting replaces the WHOLE record rather than field-merging. Ids union: a
+ * player only one side has seen survives.
+ *
+ * `changed` is the anti-loop hint (see file header): `true` iff remote
+ * contributed a new id OR a strictly-newer record for a shared id. Ties (equal
+ * `seenAt`) and a missing/0 remote `seenAt` keep local (the no-write path), and
+ * on no change `merged` is the local reference so the caller can skip the write.
+ *
+ * @param {PlayerCache} local
+ * @param {PlayerCache | undefined | null} remote
+ * @returns {{ merged: PlayerCache, changed: boolean }}
+ */
+export const mergePlayers = (local, remote) => {
+  if (!remote || typeof remote !== 'object') return { merged: local, changed: false };
+  /** @type {PlayerCache} */
+  const merged = { ...local };
+  let changed = false;
+  for (const key of Object.keys(remote)) {
+    const id = Number(key);
+    const r = remote[id];
+    if (!r) continue;
+    const l = merged[id];
+    const lSeen = Number(l?.seenAt) || 0;
+    const rSeen = Number(r.seenAt) || 0;
+    if (!l || rSeen > lSeen) {
+      merged[id] = r;
+      changed = true;
+    }
+  }
+  return { merged: changed ? merged : local, changed };
+};
+
+/**
+ * Merge local + remote own-profile slot, WHOLE-record newest-`updatedAt` wins.
+ * Our standing (rank, name, honour class) is one snapshot the in-game header
+ * reader overwrites each load, so the grain is the whole record and the
+ * tie-breaker its `updatedAt`. Remote must be STRICTLY newer to displace local;
+ * ties and a missing/0 remote timestamp keep local (the anti-loop no-write path).
+ *
+ * @param {OwnProfile} local
+ * @param {OwnProfile | undefined | null} remote
+ * @returns {{ merged: OwnProfile, changed: boolean }}
+ */
+export const mergeOwnProfile = (local, remote) => {
+  if (!remote || typeof remote !== 'object') return { merged: local, changed: false };
+  const lT = Number(local?.updatedAt) || 0;
+  const rT = Number(remote.updatedAt) || 0;
+  if (rT > lT) return { merged: remote, changed: true };
+  return { merged: local, changed: false };
+};
+
+/**
  * Merge local + remote synced settings, PER KEY, newer-`ts`-wins.
  *
  * Unlike scans/history (additive collections), settings are a scalar bag
@@ -288,15 +348,20 @@ export const mergeHistory = (local, remote) => {
  * (`ts`), not a collection union.
  *
  * Behaviour:
- *   - Iterates LOCAL's keys only. Local always holds the full current
- *     schema (minus the per-device exclusions the caller already stripped),
- *     so it's authoritative for WHICH keys exist; a key present only on a
- *     stale remote is ignored (and a remote-only excluded key can never
- *     leak in, because the caller never puts excluded keys in `local`).
+ *   - Iterates the UNION of local + remote keys. Local keys reconcile by
+ *     timestamp (below). A key present only on REMOTE — a setting a
+ *     newer-version peer knows but this build's schema doesn't yet — is
+ *     adopted when it carries a real (>0) timestamp, so it survives the
+ *     round-trip instead of being silently dropped (which would also delete
+ *     it from the gist on our next upload). It is the CALLER's job to strip
+ *     excluded / out-of-scope keys from `remote` first (as it already does
+ *     for `local`), so a remote-only `gistToken` or cross-scope key can never
+ *     leak into `values` here.
  *   - For each key, the side with the strictly greater `ts` wins. Ties (and
  *     missing/0 timestamps) go to LOCAL — that's the anti-loop no-write
  *     path and the reason a key nobody has explicitly changed (ts 0 both
- *     sides) keeps the local value.
+ *     sides) keeps the local value. A remote-only key with ts 0 is skipped
+ *     (nothing meaningful to adopt).
  *
  * The `changed` flag is the caller's anti-loop hint (see file header):
  * `true` iff remote strictly displaced at least one key with a newer
@@ -317,14 +382,21 @@ export const mergeSettings = (local, remote) => {
   /** @type {Record<string, number>} */
   const ts = {};
   let changed = false;
-  for (const key of Object.keys(lv)) {
+  const keys = new Set([...Object.keys(lv), ...Object.keys(rv)]);
+  for (const key of keys) {
+    const hasLocal = key in lv;
     const lTime = Number(lt[key]) || 0;
     const rTime = Number(rt[key]) || 0;
-    if (key in rv && rTime > lTime) {
+    // Remote wins a SHARED key on a strictly-newer ts, and adopts a
+    // remote-ONLY key only when it carries a real (>0) ts (forward-compat for
+    // a newer peer's setting). A remote-only key with ts 0 falls through and,
+    // having no local value either, is simply not emitted.
+    const remoteWins = key in rv && rTime > lTime && (hasLocal || rTime > 0);
+    if (remoteWins) {
       values[key] = rv[key];
       ts[key] = rTime;
       changed = true;
-    } else {
+    } else if (hasLocal) {
       values[key] = lv[key];
       // Keep the ts map SPARSE — only carry a real (>0) timestamp. Emitting
       // an explicit 0 for every untouched key would bloat the map and, worse,

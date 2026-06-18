@@ -87,6 +87,7 @@
 
 import { scansStore } from '../state/scans.js';
 import { historyStore } from '../state/history.js';
+import { playersStore } from '../state/players.js';
 import { settingsStore } from '../state/settings.js';
 import { dailyRunRoutesStore, dailyRunRoutesKeyFor, dailyRunRoutesTsKeyFor } from '../state/dailyRunRoutes.js';
 import {
@@ -110,6 +111,8 @@ import {
   mergeDailyState,
   mergeGalaxyScanConfig,
   mergeReminderConfig,
+  mergePlayers,
+  mergeOwnProfile,
 } from './merge.js';
 import {
   fetchGistData,
@@ -132,6 +135,7 @@ import { debounce } from '../lib/debounce.js';
 import { chromeStore } from '../lib/storage.js';
 import { parseUniverseId } from '../lib/universeId.js';
 import { readDailyState, writeDailyState } from '../state/dailyActions.js';
+import { readOwnProfile, writeOwnProfileFor } from '../state/ownProfile.js';
 import { SYNC_FORCE_EVENT, DAILY_STATE_CHANGED_EVENT } from '../lib/ogeEvents.js';
 import {
   canStartSync,
@@ -140,6 +144,8 @@ import {
   dailyStateHasData,
   galaxyConfigSlotHasData,
   reminderConfigSlotHasData,
+  playersSlotHasData,
+  ownProfileHasData,
   gistIsCurrent,
 } from './scheduler/pure.js';
 
@@ -476,13 +482,28 @@ const applyMergedSettings = (merged) => {
  * @returns {{ setResult: { changed: boolean, merged: * }, uniResult: { changed: boolean, merged: * } }}
  */
 const mergeSyncSettings = (remote, routesUniverseId) => {
+  // Scope-filter the remote slot symmetrically with how `local` is built
+  // (pickSyncedValues). Two jobs: (1) strip per-device EXCLUDED keys
+  // (gistToken, fabBtnSize) so mergeSettings' key-union can never leak them
+  // from a corrupt/hand-edited gist; (2) keep each scope's keys in their own
+  // slot. Unknown future GLOBAL keys are not universe-scoped, so they survive
+  // the 'global' filter (forward-compat); the 'universe' filter keeps only the
+  // declared universe-scoped keys.
+  /**
+   * @param {{ values?: Record<string, unknown>, ts?: Record<string, number> } | undefined | null} slot
+   * @param {'global' | 'universe'} scope
+   */
+  const scopeRemote = (slot, scope) =>
+    slot && slot.values
+      ? { values: pickSyncedValues(slot.values, scope), ts: slot.ts }
+      : slot;
   const setResult = mergeSettings(
     { values: pickSyncedValues(settingsStore.get(), 'global'), ts: readTsMap() },
-    remote?.settings,
+    scopeRemote(remote?.settings, 'global'),
   );
   const remoteUniSlot = remote?.settingsPerUniverse?.[routesUniverseId] ?? remote?.settings;
   const uniResult = routesUniverseId
-    ? mergeSettings(readLocalUniverseSettingsSlot(), remoteUniSlot)
+    ? mergeSettings(readLocalUniverseSettingsSlot(), scopeRemote(remoteUniSlot, 'universe'))
     : { changed: false, merged: readLocalUniverseSettingsSlot() };
   return { setResult, uniResult };
 };
@@ -594,6 +615,30 @@ const downloadAndMerge = async () => {
       if (remCfgResult.changed) await writeLocalReminderConfigSlot(remCfgResult.merged);
     }
 
+    // Players cache: per-universe, per-`playerId` union (newest `seenAt` wins).
+    // Like scans/history this needs no `applying*FromSync` flag — there is no
+    // timestamp to re-stamp, so the `changed` guard plus the gistIsCurrent skip
+    // on the follow-up upload already break the loop.
+    if (routesUniverseId) {
+      const playersResult = mergePlayers(
+        playersStore.get(),
+        remote.playersPerUniverse?.[routesUniverseId],
+      );
+      if (playersResult.changed) playersStore.set(playersResult.merged);
+    }
+
+    // Own profile: per-universe, whole newest-`updatedAt` wins. Plain key-owner
+    // (no store, nothing subscribes), so read the cross-origin source of truth
+    // and apply via writeOwnProfileFor — which keeps the merged `updatedAt`
+    // rather than re-stamping `now` (that would churn the next merge).
+    if (routesUniverseId) {
+      const ownResult = mergeOwnProfile(
+        await readOwnProfile(routesUniverseId),
+        remote.ownProfilePerUniverse?.[routesUniverseId],
+      );
+      if (ownResult.changed) await writeOwnProfileFor(routesUniverseId, ownResult.merged);
+    }
+
     setStatus('down', new Date().toISOString());
     setStatus('err', null);
   } catch (err) {
@@ -614,9 +659,11 @@ const downloadAndMerge = async () => {
  *   4. Pre-merge: {@link fetchGistData} gives us what the gist
  *      currently contains. Merging local with remote BEFORE we write
  *      ensures we don't clobber another device's recent writes. A
- *      thrown fetch (network blip, rate limit) is swallowed — we fall
- *      through with `remote = null`, which the merge functions treat
- *      as "nothing to merge in, keep local as-is".
+ *      thrown fetch (network / HTTP / rate-limit) is NOT swallowed — it
+ *      aborts the round via the outer catch (error status, no PATCH), so
+ *      we never rebuild the payload from a null remote and wipe other
+ *      universes' slots. A returned `null` (genuinely empty gist) is the
+ *      first-upload path and proceeds normally.
  *   5. Same anti-loop write as {@link downloadAndMerge}: only call
  *      `store.set(merged)` when `changed === true`.
  *   6. Skip the PATCH when `sameJSON(remote, merged)` on both sides —
@@ -624,7 +671,7 @@ const downloadAndMerge = async () => {
  *      local and remote are already in agreement. Saves one API call
  *      and avoids a no-op gist revision on GitHub's end.
  *   7. When we do PATCH: build the full {@link GistPayload} (version
- *      3, fresh `updatedAt`, merged scans+history), call
+ *      1, fresh `updatedAt`, the merged per-universe slots), call
  *      {@link writeGistData}, stamp `up` on success.
  *   8. Stamp `err` with a human-readable message on exception.
  *
@@ -635,20 +682,26 @@ const upload = async () => {
     return;
   inFlight = true;
   try {
-    const localScans = scansStore.get();
-
-    // Pre-merge: read remote and combine with local BEFORE writing, so
-    // a concurrent write from another device isn't clobbered. A thrown
-    // fetch is NOT fatal — we proceed with remote = null and merge
-    // treats that as "nothing to merge", yielding merged === local.
+    // Pre-merge: read remote and combine with local BEFORE writing, so a
+    // concurrent write from another device isn't clobbered. Two "no remote"
+    // cases are NOT the same and must be told apart:
+    //   - fetchGistData() RETURNS null → the gist is genuinely empty (first
+    //     upload / off-schema blob). Proceed: build the payload from local and
+    //     seed the gist. Safe — there is nothing to clobber.
+    //   - fetchGistData() THROWS (network / HTTP / rate-limit) → we have NO
+    //     view of the remote at all. If we swallowed it and proceeded with
+    //     remote = null, every OTHER universe's slot would be rebuilt from `{}`
+    //     and the PATCH would WIPE them (and stamp a false success). So we do
+    //     NOT catch here: the throw aborts this round via the outer try/catch
+    //     (error status, no PATCH); the next round pre-merges cleanly.
     /** @type {import('./gist.js').GistPayload | null} */
-    let remote = null;
-    try {
-      remote = await fetchGistData();
-    } catch {
-      // Swallow: see above. We still want to attempt an upload with
-      // just the local snapshot when the gist read fails.
-    }
+    const remote = await fetchGistData();
+
+    // Snapshot scans AFTER the awaited fetch. Taken earlier (before the
+    // network round-trip) a scan landing mid-fetch would be silently dropped
+    // by the `scansStore.set(scansResult.merged)` below; no `await` sits
+    // between this read and that set, so nothing can interleave from here on.
+    const localScans = scansStore.get();
 
     const scansResult = routesUniverseId
       ? mergeScans(localScans, remote?.galaxyScansPerUniverse?.[routesUniverseId])
@@ -776,6 +829,37 @@ const upload = async () => {
       ? mergedReminderConfig
       : undefined;
 
+    // Players cache: per-universe union (newest `seenAt`). Preserve every OTHER
+    // universe's slot; contribute ours only when the roster carries data.
+    const mergedPlayers = { ...(remote?.playersPerUniverse || {}) };
+    if (routesUniverseId) {
+      const playersResult = mergePlayers(
+        playersStore.get(),
+        remote?.playersPerUniverse?.[routesUniverseId],
+      );
+      if (playersResult.changed) playersStore.set(playersResult.merged);
+      if (playersSlotHasData(playersResult.merged)) {
+        mergedPlayers[routesUniverseId] = playersResult.merged;
+      }
+    }
+    const mergedPlayersOut = Object.keys(mergedPlayers).length ? mergedPlayers : undefined;
+
+    // Own profile: per-universe whole newest-wins. Read the cross-origin source
+    // of truth (chrome.storage), adopt remote if newer (verbatim, no re-stamp),
+    // and contribute ours when present.
+    const mergedOwnProfile = { ...(remote?.ownProfilePerUniverse || {}) };
+    if (routesUniverseId) {
+      const ownResult = mergeOwnProfile(
+        await readOwnProfile(routesUniverseId),
+        remote?.ownProfilePerUniverse?.[routesUniverseId],
+      );
+      if (ownResult.changed) await writeOwnProfileFor(routesUniverseId, ownResult.merged);
+      if (ownProfileHasData(ownResult.merged)) {
+        mergedOwnProfile[routesUniverseId] = ownResult.merged;
+      }
+    }
+    const mergedOwnProfileOut = Object.keys(mergedOwnProfile).length ? mergedOwnProfile : undefined;
+
     // Skip the PATCH when the gist already matches the merged state.
     // This is the common case when upload fires right after a download
     // from another device and both sides already agree — PATCHing
@@ -790,6 +874,8 @@ const upload = async () => {
         dailyStatePerUniverse: mergedDailyPerUniverseOut,
         galaxyScanConfig: mergedGalaxyConfigOut,
         reminderConfigPerUniverse: mergedReminderConfigOut,
+        playersPerUniverse: mergedPlayersOut,
+        ownProfilePerUniverse: mergedOwnProfileOut,
       })
     ) {
       await writeGistData({
@@ -803,6 +889,8 @@ const upload = async () => {
         dailyStatePerUniverse: mergedDailyPerUniverseOut,
         galaxyScanConfig: mergedGalaxyConfigOut,
         reminderConfigPerUniverse: mergedReminderConfigOut,
+        playersPerUniverse: mergedPlayersOut,
+        ownProfilePerUniverse: mergedOwnProfileOut,
       });
       setStatus('up', new Date().toISOString());
     }
@@ -890,7 +978,12 @@ export const installSync = () => {
         settingsStore.get(),
         Date.now(),
       );
-      localUniverseTsMap = seeded ?? (await readUniverseTsMap(routesUniverseId));
+      // Merge UNDER any stamps a user edit added during this async window: a
+      // late `=` overwrite would revert that edit's fresh timestamp back to the
+      // seed's stale value, letting an older remote win the next merge (C5).
+      // The current in-memory map (already-stamped edits) wins per key.
+      const base = seeded ?? (await readUniverseTsMap(routesUniverseId));
+      localUniverseTsMap = { ...base, ...localUniverseTsMap };
     })();
   }
 
@@ -904,6 +997,9 @@ export const installSync = () => {
 
   const unsubScans = scansStore.subscribe(onStoreChange);
   const unsubHistory = historyStore.subscribe(onStoreChange);
+  // Player cache: an `oge:galaxyScanned` event grows the roster → schedule an
+  // upload, same path as scans/history (no stamping, so no anti-loop flag).
+  const unsubPlayers = playersStore.subscribe(onStoreChange);
 
   // Fleet-save routes: an in-game change (route pruning, set-collect-target)
   // flips dailyRunRoutesStore → schedule an upload. Skip sync-origin writes (those
@@ -1079,6 +1175,7 @@ export const installSync = () => {
     dispose: () => {
       unsubScans();
       unsubHistory();
+      unsubPlayers();
       unsubSettings();
       unsubRoutes();
       unsubGalaxyConfig();

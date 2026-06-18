@@ -14,6 +14,8 @@ import {
   dailyStateHasData,
   galaxyConfigSlotHasData,
   reminderConfigSlotHasData,
+  playersSlotHasData,
+  ownProfileHasData,
   sameJSON,
   gistIsCurrent,
 } from '../../../src/sync/scheduler/pure.js';
@@ -204,8 +206,48 @@ describe('gistIsCurrent', () => {
     expect(gistIsCurrent(remote, merged)).toBe(false);
   });
 
+  it('is false when only the playersPerUniverse slot differs', () => {
+    const remote = /** @type {any} */ ({
+      galaxyScansPerUniverse: { '1:1:1': { t: 1 } },
+      colonyHistoryPerUniverse: [{ id: 'a' }],
+      settings: { values: { x: 1 }, ts: { x: 10 } },
+      dailyRunRoutes: { 's1-pl': { routes: [], collectTarget: null, updatedAt: 5 } },
+      playersPerUniverse: { 's1-pl': { 7: { id: 7, name: 'x', seenAt: 1 } } },
+    });
+    // merged has no playersPerUniverse (undefined) → differs → PATCH needed.
+    expect(gistIsCurrent(remote, merged)).toBe(false);
+  });
+
+  it('is false when only the ownProfilePerUniverse slot differs', () => {
+    const remote = /** @type {any} */ ({
+      galaxyScansPerUniverse: { '1:1:1': { t: 1 } },
+      colonyHistoryPerUniverse: [{ id: 'a' }],
+      settings: { values: { x: 1 }, ts: { x: 10 } },
+      dailyRunRoutes: { 's1-pl': { routes: [], collectTarget: null, updatedAt: 5 } },
+      ownProfilePerUniverse: { 's1-pl': { rank: 1, updatedAt: 9 } },
+    });
+    expect(gistIsCurrent(remote, merged)).toBe(false);
+  });
+
   it('treats a null/undefined remote as not-current (first upload)', () => {
     expect(gistIsCurrent(null, merged)).toBe(false);
     expect(gistIsCurrent(undefined, merged)).toBe(false);
+  });
+});
+
+describe('playersSlotHasData', () => {
+  it('is true for a non-empty roster, false for empty / undefined', () => {
+    expect(playersSlotHasData({ 7: { id: 7, name: 'x', seenAt: 1 } })).toBe(true);
+    expect(playersSlotHasData({})).toBe(false);
+    expect(playersSlotHasData(undefined)).toBe(false);
+  });
+});
+
+describe('ownProfileHasData', () => {
+  it('is true only when the profile carries a real updatedAt', () => {
+    expect(ownProfileHasData({ rank: 1, updatedAt: 5 })).toBe(true);
+    expect(ownProfileHasData({})).toBe(false); // {} from readOwnProfile = never written
+    expect(ownProfileHasData(undefined)).toBe(false);
+    expect(ownProfileHasData({ rank: 1 })).toBe(false); // no updatedAt
   });
 });

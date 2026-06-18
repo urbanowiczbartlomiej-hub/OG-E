@@ -18,6 +18,8 @@ import {
   mergeReminderConfig,
   mergeDailyState,
   clearGalaxyScans,
+  mergePlayers,
+  mergeOwnProfile,
 } from '../../src/sync/merge.js';
 
 /**
@@ -468,12 +470,26 @@ describe('mergeSettings', () => {
     expect(merged.ts).toEqual({});
   });
 
-  it('iterates local keys only — a remote-only key is ignored', () => {
-    const local = { values: { a: 1 }, ts: {} };
-    const remote = { values: { a: 1, gistToken: 'leak' }, ts: { gistToken: 999 } };
-    const { merged } = mergeSettings(local, remote);
+  it('adopts a remote-ONLY key carrying a real ts (forward-compat for a newer peer)', () => {
+    // A setting a newer-version peer knows but this build's schema doesn't yet:
+    // it survives the round-trip instead of being dropped (and thereby deleted
+    // from the gist on our next upload). Excluded-key protection is the caller's
+    // job (mergeSyncSettings scope-filters remote) — not this pure unit's.
+    const local = { values: { a: 1 }, ts: { a: 100 } };
+    const remote = { values: { a: 1, newKey: 'fromNewerPeer' }, ts: { a: 100, newKey: 200 } };
+    const { merged, changed } = mergeSettings(local, remote);
+    expect(changed).toBe(true);
+    expect(merged.values).toEqual({ a: 1, newKey: 'fromNewerPeer' });
+    expect(merged.ts).toEqual({ a: 100, newKey: 200 });
+  });
+
+  it('ignores a remote-only key with no real ts (nothing meaningful to adopt)', () => {
+    const local = { values: { a: 1 }, ts: { a: 100 } };
+    const remote = { values: { a: 1, dflt: 'x' }, ts: { a: 100 } }; // dflt unstamped (ts 0)
+    const { merged, changed } = mergeSettings(local, remote);
+    expect(changed).toBe(false);
+    expect('dflt' in merged.values).toBe(false);
     expect(merged.values).toEqual({ a: 1 });
-    expect('gistToken' in merged.values).toBe(false);
   });
 
   it('is identity when remote is absent / has no values', () => {
@@ -620,5 +636,73 @@ describe('mergeDailyState', () => {
   it('keeps the local artifactShopDoneUntil when remote is older or absent', () => {
     expect(mergeDailyState(base(), { artifactShopDoneUntil: 50 }).changed).toBe(false);
     expect(mergeDailyState(base(), {}).merged.artifactShopDoneUntil).toBe(100);
+  });
+});
+
+describe('mergePlayers — per-playerId union, newest-seenAt', () => {
+  /** @param {number} id @param {number} seenAt @param {object} [extra] */
+  const p = (id, seenAt, extra = {}) => ({ id, name: `P${id}`, seenAt, ...extra });
+
+  it('adopts a player id local has never seen', () => {
+    const local = { 1: p(1, 100) };
+    const { merged, changed } = mergePlayers(local, { 2: p(2, 50) });
+    expect(changed).toBe(true);
+    expect(merged[1]).toEqual(p(1, 100));
+    expect(merged[2]).toEqual(p(2, 50));
+  });
+
+  it('replaces a shared id WHOLE on a strictly-newer remote seenAt (not field-merged)', () => {
+    const local = { 1: p(1, 100, { rank: 500 }) };
+    const { merged, changed } = mergePlayers(local, { 1: p(1, 200, { rank: 480 }) });
+    expect(changed).toBe(true);
+    expect(merged[1]).toEqual(p(1, 200, { rank: 480 }));
+  });
+
+  it('keeps local on a tie / older remote seenAt (anti-loop, same ref)', () => {
+    const local = { 1: p(1, 200) };
+    expect(mergePlayers(local, { 1: p(1, 200, { rank: 9 }) })).toEqual({ merged: local, changed: false });
+    expect(mergePlayers(local, { 1: p(1, 100) }).changed).toBe(false);
+  });
+
+  it('keeps a local-only id untouched while adding fresh remote ids', () => {
+    const local = { 1: p(1, 100) };
+    const { merged, changed } = mergePlayers(local, { 2: p(2, 100) });
+    expect(changed).toBe(true);
+    expect(merged[1]).toEqual(p(1, 100));
+  });
+
+  it('is identity when remote is absent / empty / not an object', () => {
+    const local = { 1: p(1, 100) };
+    expect(mergePlayers(local, null)).toEqual({ merged: local, changed: false });
+    expect(mergePlayers(local, undefined)).toEqual({ merged: local, changed: false });
+    expect(mergePlayers(local, {})).toEqual({ merged: local, changed: false });
+  });
+});
+
+describe('mergeOwnProfile — whole-record newest-updatedAt', () => {
+  it('adopts remote when its updatedAt is strictly newer', () => {
+    const local = { rank: 250, updatedAt: 100 };
+    const remote = { rank: 240, updatedAt: 200 };
+    expect(mergeOwnProfile(local, remote)).toEqual({ merged: remote, changed: true });
+  });
+
+  it('keeps local on a tie / older / missing remote ts (anti-loop)', () => {
+    const local = { rank: 250, updatedAt: 200 };
+    expect(mergeOwnProfile(local, { rank: 1, updatedAt: 200 })).toEqual({ merged: local, changed: false });
+    expect(mergeOwnProfile(local, { rank: 1, updatedAt: 100 }).changed).toBe(false);
+    expect(mergeOwnProfile(local, /** @type {any} */ ({ rank: 1 })).changed).toBe(false);
+  });
+
+  it('a fresh device (empty local) adopts any remote with a real ts', () => {
+    expect(mergeOwnProfile({}, { rank: 5, updatedAt: 50 })).toEqual({
+      merged: { rank: 5, updatedAt: 50 },
+      changed: true,
+    });
+  });
+
+  it('is identity when remote is absent / not an object', () => {
+    const local = { rank: 9, updatedAt: 5 };
+    expect(mergeOwnProfile(local, null)).toEqual({ merged: local, changed: false });
+    expect(mergeOwnProfile(local, undefined)).toEqual({ merged: local, changed: false });
   });
 });

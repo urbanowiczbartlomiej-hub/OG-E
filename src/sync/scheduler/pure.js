@@ -118,6 +118,27 @@ export const galaxyConfigSlotHasData = (slot) => slot.updatedAt > 0;
 export const reminderConfigSlotHasData = (slot) => slot.updatedAt > 0;
 
 /**
+ * Whether a player-cache slot is worth contributing to the gist. Same
+ * no-op-PATCH guard as the others: an empty roster ({}) must NOT write a slot
+ * that would differ from the gist's absent field.
+ *
+ * @param {import('../../state/players.js').PlayerCache | undefined} players
+ * @returns {boolean}
+ */
+export const playersSlotHasData = (players) =>
+  Boolean(players && Object.keys(players).length > 0);
+
+/**
+ * Whether an own-profile slot is worth contributing to the gist. `readOwnProfile`
+ * returns `{}` when nothing is stored; only a profile actually written by the
+ * header reader carries `updatedAt > 0`, so that is the no-op-PATCH guard.
+ *
+ * @param {import('../../state/ownProfile.js').OwnProfile | undefined} profile
+ * @returns {boolean}
+ */
+export const ownProfileHasData = (profile) => Boolean(profile && Number(profile.updatedAt) > 0);
+
+/**
  * Compare two values by JSON structural equality. Cheap and good enough
  * for the "is the gist already current?" check — both sides are plain JSON
  * (nested records / arrays of primitives), no Dates, no cycles, no functions.
@@ -151,6 +172,8 @@ export const sameJSON = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b
  * @param {unknown} merged.dailyStatePerUniverse
  * @param {unknown} merged.galaxyScanConfig
  * @param {unknown} merged.reminderConfigPerUniverse
+ * @param {unknown} [merged.playersPerUniverse]
+ * @param {unknown} [merged.ownProfilePerUniverse]
  * @returns {boolean}
  */
 export const gistIsCurrent = (remote, merged) =>
@@ -161,4 +184,6 @@ export const gistIsCurrent = (remote, merged) =>
   sameJSON(remote?.settingsPerUniverse, merged.settingsPerUniverse) &&
   sameJSON(remote?.dailyStatePerUniverse, merged.dailyStatePerUniverse) &&
   sameJSON(remote?.galaxyScanConfig, merged.galaxyScanConfig) &&
-  sameJSON(remote?.reminderConfigPerUniverse, merged.reminderConfigPerUniverse);
+  sameJSON(remote?.reminderConfigPerUniverse, merged.reminderConfigPerUniverse) &&
+  sameJSON(remote?.playersPerUniverse, merged.playersPerUniverse) &&
+  sameJSON(remote?.ownProfilePerUniverse, merged.ownProfilePerUniverse);

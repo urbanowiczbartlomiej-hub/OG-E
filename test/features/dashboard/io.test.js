@@ -164,6 +164,24 @@ describe('importAllData — scan merge (newer scannedAt wins)', () => {
   });
 });
 
+describe('importAllData — scan merge preserves lifeform markers (canonical merge)', () => {
+  it('keeps a local lifeform discovery when a newer plain rescan is imported', async () => {
+    // Local has a lifeform discovery; the imported file is a newer PLAIN rescan
+    // (no LF fields). The old per-file merge would replace the whole entry and
+    // erase the discovery; the canonical mergeScans reconciles LF independently.
+    store.set(SKEY, { '1:2': { scannedAt: 100, lfScannedAt: 999, lfPositions: { 3: 999 } } });
+    const res = await importAllData(
+      jsonFile({ version: 1, galaxyScans: { '1:2': { scannedAt: 200 } } }),
+      UNI,
+    );
+    expect(res.scans).toBe(1);
+    const merged = store.get(SKEY);
+    expect(merged['1:2'].scannedAt).toBe(200); // newer base scan wins
+    expect(merged['1:2'].lfScannedAt).toBe(999); // discovery NOT erased
+    expect(merged['1:2'].lfPositions).toEqual({ 3: 999 });
+  });
+});
+
 describe('importAllData — partial & unknown fields', () => {
   it('imports colonyHistory only, leaving scans untouched', async () => {
     const res = await importAllData(

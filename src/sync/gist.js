@@ -173,6 +173,18 @@ import { clearGalaxyScans } from './merge.js';
  *   whole-universe newest-wins (see
  *   {@link import('./merge.js').mergeReminderConfig}). Per-universe because the
  *   reminder cadence is configured per server.
+ * @property {Record<string, import('../state/players.js').PlayerCache>} [playersPerUniverse]
+ *   OPTIONAL, additive: per-universe player-metadata cache (rank, alliance,
+ *   honour, flags) keyed by universe id. Each slot is a
+ *   {@link import('../state/players.js').PlayerCache} merged per-`playerId`,
+ *   newest-`seenAt`-wins (see {@link import('./merge.js').mergePlayers}).
+ *   Per-universe because a roster is server-specific. Feeds Colony Scout
+ *   neighbourhood scoring on a device that hasn't itself rescanned the galaxy.
+ * @property {Record<string, import('../state/ownProfile.js').OwnProfile>} [ownProfilePerUniverse]
+ *   OPTIONAL, additive: our own standing (rank, name, honour class) keyed by
+ *   universe id. Whole-record newest-`updatedAt`-wins (see
+ *   {@link import('./merge.js').mergeOwnProfile}). Per-universe because our rank
+ *   differs per server; it anchors relative-strength scoring of neighbours.
  */
 
 /**
@@ -199,6 +211,15 @@ export const LAST_DOWN_KEY = 'oge_lastDownAt';
 
 /** localStorage key holding the last error message, or absent on success. */
 export const LAST_ERR_KEY = 'oge_lastSyncErr';
+
+/**
+ * localStorage key holding the epoch-ms until which API calls are backing off
+ * after a 403/429 (see {@link gh}). Written when backoff arms so the Settings
+ * "Sync status" row can show a "rate-limited — retry after HH:MM" line instead
+ * of a bare error. A past value is simply ignored by the reader, so no explicit
+ * clear is needed when the window lifts.
+ */
+export const BACKOFF_KEY = 'oge_syncBackoffUntil';
 
 // SYNC_STATUS_EVENT (lib/ogeEvents.js) fires after any sync-status write (see
 // {@link setStatus}), so a live status display can re-read immediately. The
@@ -403,6 +424,10 @@ export const gh = async (path, options = {}) => {
       else if (reset > 0) waitMs = Math.max(0, reset * 1000 - Date.now());
       else waitMs = DEFAULT_BACKOFF_MS;
       backoffUntil = Date.now() + waitMs;
+      // Mirror to localStorage so the Settings status row can show the
+      // retry-after countdown. The throw below routes through the caller's
+      // setStatus('err', …), which fires SYNC_STATUS_EVENT and repaints it.
+      safeLS.set(BACKOFF_KEY, String(backoffUntil));
     }
     // Truncate the body to keep the thrown message Settings-UI-sized.
     // `.catch` makes the read defensive: some error bodies aren't text
@@ -412,6 +437,25 @@ export const gh = async (path, options = {}) => {
     throw new Error(`HTTP ${res.status}: ${conciseErrorBody(text) || res.statusText}`);
   }
   return res.json();
+};
+
+/**
+ * Probe whether the configured token is currently valid, for the Settings
+ * "Token" row. Calls the lightweight `/user` endpoint (which 401s fast on a
+ * bad / expired / wrong-scope PAT) and NEVER throws — it returns a short,
+ * display-ready line so the asyncStatus control can paint it verbatim.
+ *
+ * @returns {Promise<string>}
+ */
+export const validateToken = async () => {
+  if (!getToken()) return '✗ No token set';
+  try {
+    const user = await gh('/user');
+    const login = user && typeof user.login === 'string' ? user.login : '?';
+    return `✓ Valid — ${login}`;
+  } catch (err) {
+    return `✗ ${/** @type {Error} */ (err).message}`;
+  }
 };
 
 // ── Gist file reader (truncation-aware) ─────────────────────────────

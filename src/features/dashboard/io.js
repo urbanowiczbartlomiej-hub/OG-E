@@ -27,11 +27,14 @@
 //     galaxyScans:   GalaxyScans
 //   }
 //
-// Merge semantics (kept consistent with `sync/merge.js` for the same
-// data so Export → Import round-trip is idempotent and matches Gist
-// sync):
+// Merge semantics: this REUSES the canonical `mergeScans` / `mergeHistory`
+// from `sync/merge.js` rather than re-implementing them, so an Export → Import
+// round-trip behaves EXACTLY like Gist sync — including lifeform-marker
+// reconciliation, which a separate copy here previously dropped (a newer plain
+// rescan would erase a discovery recorded earlier). The merge:
 //   - colonyHistory: union by `cp`, local entry WINS on duplicate.
-//   - galaxyScans:   per key, newer `scannedAt` wins.
+//   - galaxyScans:   per key, newer `scannedAt` wins; lifeform markers
+//                    (`lfScannedAt`/`lfPositions`) reconcile independently.
 //
 // Old export files may include a `deletedColonies` field; it is
 // silently ignored on import (only `version` is validated). The
@@ -46,6 +49,7 @@ import {
   syncRequestKeyFor,
   resetGalaxyKeyFor,
 } from '../../sync/scheduler.js';
+import { mergeScans, mergeHistory } from '../../sync/merge.js';
 
 /**
  * @typedef {import('../../state/history.js').ColonyEntry} ColonyEntry
@@ -150,53 +154,6 @@ export const exportAllData = async (universeId) => {
 };
 
 /**
- * Merge local and imported colony histories. Local entries WIN on cp
- * collisions so a bad/older import cannot overwrite freshly recorded
- * local observations. Returns the merged list plus the count of newly
- * added entries (not the final size).
- *
- * @param {ColonyHistory} local
- * @param {ColonyHistory} imported
- * @returns {{ merged: ColonyHistory, added: number }}
- */
-const mergeHistory = (local, imported) => {
-  const byCp = new Map(local.map((e) => [e.cp, e]));
-  let added = 0;
-  for (const entry of imported) {
-    if (!byCp.has(entry.cp)) {
-      byCp.set(entry.cp, entry);
-      added += 1;
-    }
-  }
-  return { merged: [...byCp.values()], added };
-};
-
-/**
- * Merge local and imported galaxy-scan maps, keyed by `"galaxy:system"`.
- * An imported entry wins iff local has nothing for that key OR the
- * imported `scannedAt` is strictly newer. Returns the merged map plus
- * the number of systems added or updated.
- *
- * @param {GalaxyScans} local
- * @param {GalaxyScans} imported
- * @returns {{ merged: GalaxyScans, changed: number }}
- */
-const mergeScans = (local, imported) => {
-  /** @type {GalaxyScans} */
-  const merged = { ...local };
-  let changed = 0;
-  for (const key of /** @type {(keyof GalaxyScans)[]} */ (Object.keys(imported))) {
-    const next = imported[key];
-    const existing = merged[key];
-    if (!existing || existing.scannedAt < next.scannedAt) {
-      merged[key] = next;
-      changed += 1;
-    }
-  }
-  return { merged, changed };
-};
-
-/**
  * Parse a user-uploaded JSON file and merge it into the selected
  * universe's slot in `chrome.storage.local`. Each field is
  * independently optional — a file may contain only `colonyHistory`,
@@ -242,12 +199,13 @@ export const importAllData = async (file, universeId) => {
     const local = /** @type {ColonyHistory} */ (
       Array.isArray(localRaw) ? localRaw : []
     );
-    const { merged, added } = mergeHistory(
+    const { merged, changed } = mergeHistory(
       local,
       /** @type {ColonyHistory} */ (imported.colonyHistory),
     );
-    if (added > 0) await chromeStore.set(historyKey, merged);
-    colonies = added;
+    if (changed) await chromeStore.set(historyKey, merged);
+    // Union dedups by cp (local-wins), so the size delta is the # of new cps.
+    colonies = merged.length - local.length;
   }
 
   if (imported.galaxyScans && typeof imported.galaxyScans === 'object') {
@@ -259,8 +217,22 @@ export const importAllData = async (file, universeId) => {
       local,
       /** @type {GalaxyScans} */ (imported.galaxyScans),
     );
-    if (changed > 0) await chromeStore.set(scansKey, merged);
-    scans = changed;
+    if (changed) await chromeStore.set(scansKey, merged);
+    // Count systems added or refreshed (new key, or an advanced scan / LF
+    // timestamp) for the user-facing import summary.
+    if (changed) {
+      for (const key of /** @type {(keyof GalaxyScans)[]} */ (Object.keys(merged))) {
+        const before = local[key];
+        const after = merged[key];
+        if (
+          !before ||
+          before.scannedAt !== after.scannedAt ||
+          (before.lfScannedAt ?? 0) !== (after.lfScannedAt ?? 0)
+        ) {
+          scans += 1;
+        }
+      }
+    }
   }
 
   return { colonies, scans };
