@@ -105,12 +105,11 @@ Before merging anything that touches DOM behaviour:
 
 ## Release workflow
 
-The whole release is one idempotent command (`npm run release -- X.Y.Z`)
-with a short by-hand prep (a dated `CHANGELOG.md` section left
-uncommitted; `AMO_JWT_*` secrets in a gitignored `.env`). The
-authoritative, step-by-step procedure — including the `--preview` footgun
-that once caused an accidental real release — lives in
-[`CLAUDE.md`](CLAUDE.md) (§Release checklist). Follow and update it there;
+The whole release is one flagless command (`npm run release X.Y.Z`) with a
+short by-hand prep (a dated `CHANGELOG.md` section left uncommitted;
+`AMO_JWT_*` secrets in a gitignored `.env`, or push a `vX.Y.Z` tag and let
+the GitHub Action publish). The authoritative, step-by-step procedure lives
+in [`CLAUDE.md`](CLAUDE.md) (§Release checklist). Follow and update it there;
 don't restate it here.
 
 Before releasing anything that touches DOM behaviour, spot-check the

@@ -7,7 +7,7 @@ description of what each file does (descriptions rot; invariants don't).
 If a change would violate one of these, that's a design smell — stop and
 reconsider, don't paper over it. The layering below is the reason this
 extension stays testable and survives OGame updates. It is mechanically
-enforced by ESLint (`eslint.config.mjs`; see Phase 0/G1) — not
+enforced by ESLint (`eslint.config.mjs`'s import zones) — not
 honor-system — so `npm run lint` catches a layering violation directly.
 
 **Dependency direction (one-way, no cycles):**
@@ -131,9 +131,9 @@ simply skipped — the bump/commit/tag/push still run.
   every other mention *links* to it instead of restating it. Canonical
   homes: build steps → `REVIEWERS.md`; release workflow → `CLAUDE.md`;
   architecture invariants → `CLAUDE.md`; privacy/permissions → `PRIVACY.md`;
-  user-visible changes → `CHANGELOG.md`. Plan docs (e.g. `REFACTOR.md`) have a
-  lifecycle — delete them once their cycle closes (git keeps the history);
-  they are not permanent. **Carve-out:** this rule governs the standalone
+  user-visible changes → `CHANGELOG.md`. Plan docs (a transient `REFACTOR.md`
+  and the like) have a lifecycle — delete them once their cycle closes (git
+  keeps the history); they are not permanent. **Carve-out:** this rule governs the standalone
   `.md`/`.txt` docs ONLY — it does **not** apply to in-code comments. Those
   are reverse-engineered game knowledge with no other home (OG-E has no access
   to OGame's source/docs); never trim them under a "DRY" banner.
