@@ -1,63 +1,49 @@
-// Release orchestrator for AMO (addons.mozilla.org) listed submissions.
+// Release orchestrator for AMO (addons.mozilla.org) — ONE flagless command,
+// TWO ways to invoke it. There is nothing to remember beyond the version:
 //
-// One command runs the whole non-negotiable checklist from CLAUDE.md:
+//   npm run release 1.25.1
 //
-//   npm run release 1.10.0
+// The same script serves both release paths because it auto-detects its
+// situation instead of taking flags:
+//
+//   • MANUAL (local, with .env creds): run on the `main` branch. Bumps the
+//     version, commits + tags vX.Y.Z, uploads to AMO via the API, and pushes
+//     the branch + tag. The whole release, from your machine.
+//
+//   • OFFICIAL (GitHub Action, on a vX.Y.Z tag): the workflow checks out the
+//     tag and runs this same script. HEAD is detached and the tag already
+//     exists, so it SKIPS the commit/tag and the push, and just uploads.
+//
+// The two paths never collide: an upload is skipped if the version is already
+// on AMO, the commit/tag is skipped if the tag exists, and the push is skipped
+// when HEAD is detached (CI) — all detected, no flags. So a local release that
+// pushes its tag simply makes the triggered CI run a no-op, and a tag pushed
+// on its own (version bumped + committed first) gets published by CI.
 //
 // Phases (each guarded so a re-run after a failure resumes cleanly):
-//   0. parse version, require a clean tree EXCEPT CHANGELOG/package/manifest
-//      (those are the release's own edits — they ride in the release commit)
-//   1. validate CHANGELOG section exists (+ date); extract it as the
-//      public release notes; require AMO credentials in the env
-//   2. npm run test + npm run typecheck            (skip with --skip-tests)
+//   0. parse version; require a clean tree EXCEPT CHANGELOG/package/manifest
+//      (those are the release's own edits) — only when creating the tag
+//   1. validate the dated CHANGELOG section; extract it as the public release
+//      notes; read the reviewer notes
+//   2. npm run test + npm run typecheck
 //   3. write the version into package.json AND manifest.json
-//   4. npm run package  → dist.zip + source.zip    (hard-assert both)
+//   4. npm run package → dist.zip + source.zip (hard-assert both)
 //   5. git commit (CHANGELOG + package + manifest) + tag vX.Y.Z, LOCAL
-//   6. upload to AMO: dist.zip + release notes + reviewer notes + source.zip
-//   7. git push --tags                             (only AFTER AMO accepts)
+//      (skipped if the tag already exists)
+//   6. upload to AMO (skipped if no creds, or the version is already there)
+//   7. git push branch + tag (skipped when HEAD is detached / tag on remote)
 //
-// Why git stays local until AMO accepts (step 5 before 6, push in 7):
-// if AMO rejects the archive we must not have a pushed tag pointing at a
-// release that does not exist. Everything is reversible locally until the
-// network step in 6 succeeds.
+// Why git stays local until AMO accepts (5 before 6, push in 7): if AMO
+// rejects the archive we must not leave a pushed tag pointing at a release
+// that does not exist. Everything is reversible locally until the upload in 6.
 //
-// Idempotent re-run: if tag vX.Y.Z already exists, steps 3–5 are skipped;
-// if the version already exists on AMO, step 6 is skipped. So re-running
-// after a half-finished release simply finishes it.
-//
-// Zero runtime dependencies — JWT via node:crypto, multipart via the
-// global FormData/Blob/fetch (Node ≥ 20), same spirit as package.mjs.
-//
-// Secrets (never in the repo — see .gitignore):
+// Secrets (never in the repo — see .gitignore / .env.example):
 //   AMO_JWT_ISSUER  — "JWT issuer" from the AMO API-key page
 //   AMO_JWT_SECRET  — "JWT secret" from the same page
-// Load them however you like; `node --env-file=.env scripts/release.mjs`
-// works if you keep a local .env (already gitignored).
-//
-// Flags / env:
-//   --preview / --dry-run     validate + preview, mutate nothing
-//   RELEASE_PREVIEW=1 (env)   same as --preview
-//   --skip-tests              skip the test + typecheck phase
-//   --no-push                 skip phase 7 (git push). For the tag-triggered
-//                             CI workflow: the tag is already on the remote,
-//                             so just validate → package → upload to AMO.
-//   --no-upload               skip phase 6 (AMO upload) + don't require creds.
-//                             The "cut locally, let CI publish" path: bump,
-//                             commit, tag and push vX.Y.Z with no AMO tokens;
-//                             the listed-on-tag workflow does the upload.
-//
-// IMPORTANT — how to PREVIEW safely. This npm eats EVERY `--flag` as its own
-// config even after the `--` separator (you'll see "Unknown env config …"),
-// so `npm run release -- X.Y.Z --preview` reaches this script with NO flag
-// and performs a REAL release. Only the positional version forwards. So:
-//
-//   • Real release (no flags):   npm run release -- X.Y.Z
-//   • Preview, the robust way:   node --env-file-if-exists=.env \
-//                                  scripts/release.mjs X.Y.Z --preview
-//   • Preview via npm (env):     RELEASE_PREVIEW=1 npm run release -- X.Y.Z
-//     (PowerShell: $env:RELEASE_PREVIEW=1; npm run release -- X.Y.Z)
-//
-// This bit us once: a `--dry-run` meant as a preview published 1.9.1.
+// `npm run release` loads a local .env automatically (--env-file-if-exists);
+// the GitHub Action injects them from repo secrets. With neither present the
+// upload is skipped (the bump/commit/tag/push still run) — so a credential-less
+// machine can still cut the tag and let CI publish it.
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -70,42 +56,14 @@ const ADDON_GUID = 'og-e@ogame-extensions'; // manifest browser_specific_setting
 const POLL_TIMEOUT_MS = 5 * 60_000;
 const POLL_INTERVAL_MS = 5_000;
 
-// The files the release itself writes + commits (phase 3 + 5). A pending
-// edit to any of these is EXPECTED — the CHANGELOG section is the one manual
-// step and the two version files are bumped here — so they're excluded from
-// the clean-tree gate. The result: code + tests live in their own commit(s),
-// and the CHANGELOG entry lands together with the version bump in the single
-// `chore(release)` commit the tag points at (the standard-version shape), with
-// no transient commit where the CHANGELOG and the version disagree.
+// The files the release itself writes + commits (phases 3 + 5). A pending edit
+// to any of these is EXPECTED — the CHANGELOG section is the one manual step
+// and the two version files are bumped here — so they're excluded from the
+// clean-tree gate. Code + tests live in their own commit(s); the CHANGELOG
+// entry lands together with the version bump in the single `chore(release)`
+// commit the tag points at (no transient commit where the two disagree).
 const RELEASE_FILES = new Set(['CHANGELOG.md', 'package.json', 'manifest.json']);
-
-// ---------------------------------------------------------------------------
-// helpers
-// ---------------------------------------------------------------------------
-
-const argv = process.argv.slice(2);
-const flags = new Set(argv.filter((a) => a.startsWith('--')));
-const positional = argv.filter((a) => !a.startsWith('--'));
-// npm swallows --flags even after `--` (see header), so a flag alone can't be
-// trusted for preview when invoked via npm. RELEASE_PREVIEW=1 is the
-// npm-passable escape hatch; the flags work when run directly with node.
-const DRY = flags.has('--preview') || flags.has('--dry-run') || process.env.RELEASE_PREVIEW === '1';
-const SKIP_TESTS = flags.has('--skip-tests');
-// Every release is a public, listed submission — existing users are offered the
-// update automatically. There is no second channel (the unlisted smoke-test
-// path was removed: it added a parallel workflow + version-number bookkeeping
-// for little gain, and "simple and reliable" beats it).
-const CHANNEL = 'listed';
-// --no-push: skip phase 7 (the git push). Used by the tag-triggered CI
-// workflow, where the tag that started the run is ALREADY on the remote and
-// HEAD is detached — a push would either be a no-op or fail ("not on a
-// branch"). With this flag the script only validates → packages → uploads.
-const NO_PUSH = flags.has('--no-push');
-// --no-upload: skip phase 6 (the AMO upload) and don't require AMO creds.
-// This is the "cut the release locally, let CI publish" path: it bumps,
-// commits, tags and pushes vX.Y.Z, then the tag-triggered listed workflow
-// does the AMO upload. No tokens needed on the dev machine.
-const NO_UPLOAD = flags.has('--no-upload');
+const AMO_RELEASE_NOTES_MAX = 3000; // AMO 400s a version POST with a longer body
 
 function die(msg) {
   console.error(`release: ${msg}`);
@@ -127,24 +85,20 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // phase 0 — version + clean tree (clean EXCEPT the release files)
 // ---------------------------------------------------------------------------
 
-const VERSION = positional[0];
-if (!VERSION) die('usage: npm run release -- <X.Y.Z> [--preview] [--skip-tests]');
+const VERSION = process.argv.slice(2).find((a) => !a.startsWith('--'));
+if (!VERSION) die('usage: npm run release -- <X.Y.Z>');
 if (!/^\d+\.\d+\.\d+$/.test(VERSION)) die(`not a semver version: "${VERSION}"`);
 const TAG = `v${VERSION}`;
 
 const tagExists = capture(`git tag -l ${TAG}`) === TAG;
 
-if (!DRY && !tagExists) {
+if (!tagExists) {
   // `git status --porcelain` lines are "XY <path>"; the path starts at col 3.
   // A pending edit to a RELEASE_FILES entry is expected (we commit it below);
-  // anything ELSE dirty means the code/tests aren't committed yet — refuse,
-  // so the release commit stays a clean CHANGELOG + version bump.
-  //
-  // NOTE: read the status RAW, not via capture() — capture() trims the whole
-  // output, which eats the leading space of the first porcelain line (an
-  // unstaged " M CHANGELOG.md"), shifting slice(3) to "HANGELOG.md" and
-  // flagging the one expected file as stray. This bites every normal release
-  // (CHANGELOG is the sole dirty file). Only strip the trailing newline.
+  // anything else dirty means the code/tests aren't committed yet — refuse, so
+  // the release commit stays a clean CHANGELOG + version bump. Read RAW (not
+  // capture(), which trims the leading space of " M CHANGELOG.md" and shifts
+  // the path), splitting only on newlines.
   const stray = execSync('git status --porcelain', { cwd: ROOT })
     .toString()
     .split(/\r?\n/)
@@ -162,12 +116,12 @@ if (!DRY && !tagExists) {
 }
 
 // ---------------------------------------------------------------------------
-// phase 1 — CHANGELOG + credentials
+// phase 1 — CHANGELOG + reviewer notes + credentials
 // ---------------------------------------------------------------------------
 
 function extractChangelogSection(version) {
   const text = readFileSync(resolve(ROOT, 'CHANGELOG.md'), 'utf8');
-  // Header: "## [1.10.0] — 2026-05-31" (em-dash). Body runs to the next "## ".
+  // Header: "## [1.25.0] — 2026-06-18" (em-dash). Body runs to the next "## ".
   const escaped = version.replace(/\./g, '\\.');
   const re = new RegExp(
     `^## \\[${escaped}\\]\\s+—\\s+(\\d{4}-\\d{2}-\\d{2})\\s*$([\\s\\S]*?)(?=^## )`,
@@ -180,24 +134,18 @@ function extractChangelogSection(version) {
         '       Write the release notes there first (this is the one manual step).',
     );
   }
-  const date = m[1];
   const body = m[2].trim();
   if (!body) die(`CHANGELOG section for ${version} is empty.`);
-  return { date, body };
+  return { date: m[1], body };
 }
 
-// AMO caps the `release_notes` field at 3000 characters and 400s the version
-// POST if the body is longer. The CHANGELOG section is the full permanent
-// record (a big release easily runs past 3000), so we keep it intact and cap
-// only the copy SENT to AMO — cut at a line boundary (never mid-bullet) and
-// append a pointer so the truncation is visible. Pure string math; nothing on
-// disk changes.
-const AMO_RELEASE_NOTES_MAX = 3000;
-
-function capReleaseNotes(notes, max = AMO_RELEASE_NOTES_MAX) {
-  if (notes.length <= max) return notes;
+// The CHANGELOG section is the full permanent record (a big release can run
+// past AMO's 3000-char release_notes cap). Keep it intact on disk; cap only the
+// copy SENT to AMO, cut at a line boundary (never mid-bullet) with a pointer.
+function capReleaseNotes(notes) {
+  if (notes.length <= AMO_RELEASE_NOTES_MAX) return notes;
   const footer = '\n\n…(truncated — see the full CHANGELOG on GitHub.)';
-  let cut = notes.slice(0, max - footer.length);
+  let cut = notes.slice(0, AMO_RELEASE_NOTES_MAX - footer.length);
   const lastBreak = cut.lastIndexOf('\n');
   if (lastBreak > 0) cut = cut.slice(0, lastBreak);
   return cut.trimEnd() + footer;
@@ -208,8 +156,7 @@ const releaseNotes = capReleaseNotes(rawReleaseNotes);
 if (releaseNotes !== rawReleaseNotes) {
   console.warn(
     `release: CHANGELOG section is ${rawReleaseNotes.length} chars — over AMO's ` +
-      `${AMO_RELEASE_NOTES_MAX}-char release_notes limit; sending a truncated copy ` +
-      '(the CHANGELOG keeps the full text).',
+      `${AMO_RELEASE_NOTES_MAX}-char limit; sending a truncated copy.`,
   );
 }
 
@@ -222,97 +169,51 @@ if (!reviewerNotes) die('amo-reviewer-notes.txt is empty.');
 
 const JWT_ISSUER = process.env.AMO_JWT_ISSUER;
 const JWT_SECRET = process.env.AMO_JWT_SECRET;
-// Creds are only needed for the upload. The --no-upload "prepare" path (cut +
-// push the tag, let CI publish) must run on a machine with no AMO tokens.
-if (!NO_UPLOAD && (!JWT_ISSUER || !JWT_SECRET)) {
-  die('set AMO_JWT_ISSUER and AMO_JWT_SECRET (see .env.example).');
-}
+const haveCreds = !!(JWT_ISSUER && JWT_SECRET);
 
 console.log(`release: ${TAG}  (CHANGELOG dated ${changelogDate})`);
-
-// Warn if any CHANGELOG version lacks a git tag — symptom of a manual AMO
-// upload that bypassed this script. A missing tag means the release is
-// unreproducible and the channel/version checks above can't be trusted.
-{
-  const clText = readFileSync(resolve(ROOT, 'CHANGELOG.md'), 'utf8');
-  const untagged = [...clText.matchAll(/^## \[(\d+\.\d+\.\d+)\]/gm)]
-    .map((m) => m[1])
-    .filter((v) => capture(`git tag -l v${v}`).trim() !== `v${v}`);
-  if (untagged.length) {
-    console.warn(
-      `release: WARNING — CHANGELOG versions without a git tag: ${untagged.join(', ')}.\n` +
-        '         These were likely uploaded to AMO manually (bypassing this script).\n' +
-        '         If any of those are in the wrong channel, the channel-mismatch guard\n' +
-        '         above will catch it when you try to re-release them.',
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// dry run stops here — preview only, nothing mutated
-// ---------------------------------------------------------------------------
-
-if (DRY) {
-  console.log('\n--- DRY RUN — no files written, nothing uploaded or pushed ---\n');
-  console.log('Public release notes (release_notes) would be:\n');
-  console.log(releaseNotes);
-  console.log('\nReviewer notes (approval_notes) would be:\n');
-  console.log(reviewerNotes);
-  console.log(`\nWould bump package.json + manifest.json to ${VERSION},`);
-  console.log(`package, commit, tag ${TAG}, upload to AMO, then push --tags.`);
-  if (tagExists) console.log(`\nNote: ${TAG} already exists — a real run would resume at AMO upload.`);
-  process.exit(0);
-}
 
 // ---------------------------------------------------------------------------
 // phase 2 — tests
 // ---------------------------------------------------------------------------
 
-if (SKIP_TESTS) {
-  console.log('release: skipping tests (--skip-tests)');
-} else {
-  run('npm run test');
-  run('npm run typecheck');
-}
+run('npm run test');
+run('npm run typecheck');
 
 // ---------------------------------------------------------------------------
-// phases 3–5 — bump, package, local git (skipped if the tag already exists)
+// phases 3–5 — bump, package, local git (commit/tag skipped if tag exists)
 // ---------------------------------------------------------------------------
 
 function bumpVersionFile(file) {
   const path = resolve(ROOT, file);
   const text = readFileSync(path, 'utf8');
   if (!/"version":\s*"/.test(text)) die(`could not find a "version" field to bump in ${file}`);
-  const next = text.replace(/("version":\s*")[^"]+(")/, `$1${VERSION}$2`);
-  writeFileSync(path, next);
+  writeFileSync(path, text.replace(/("version":\s*")[^"]+(")/, `$1${VERSION}$2`));
   console.log(`release: bumped ${file} → ${VERSION}`);
 }
 
-// phase 3 — bump (idempotent: writes the same version on a resume)
+// phase 3 — bump (idempotent: writes the same version on a resume / in CI)
 bumpVersionFile('package.json');
 bumpVersionFile('manifest.json');
 
-// phase 4 — ALWAYS package. The AMO upload needs dist.zip/source.zip, and a
-// CI checkout doesn't persist them between runs — so we rebuild even when the
-// tag already exists (resume after a failed upload, or a second channel).
+// phase 4 — ALWAYS package. The AMO upload needs dist.zip/source.zip, and a CI
+// checkout doesn't persist them between runs — so rebuild even when resuming.
 run('npm run package');
 for (const f of ['dist.zip', 'source.zip']) {
   if (!existsSync(resolve(ROOT, f))) die(`${f} was not produced by npm run package.`);
 }
 
-// phase 5 — local commit + tag, skipped on resume (tag already exists).
+// phase 5 — local commit + tag, skipped on resume / in CI (tag already exists).
 if (tagExists) {
   console.log(`release: ${TAG} already exists — re-packaged, skipping commit/tag.`);
 } else {
   run('git add CHANGELOG.md package.json manifest.json');
-  // --allow-empty handles the CI case where CHANGELOG + version files are
-  // already committed (the script still creates the release marker commit).
   run(`git commit --allow-empty -m "chore(release): ${VERSION}"`);
   run(`git tag ${TAG}`);
 }
 
 // ---------------------------------------------------------------------------
-// phase 6 — AMO upload
+// phase 6 — AMO upload (skipped without creds, or if the version is on AMO)
 // ---------------------------------------------------------------------------
 
 function b64url(buf) {
@@ -322,9 +223,7 @@ function b64url(buf) {
 function makeJwt() {
   const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const iat = Math.floor(Date.now() / 1000);
-  const payload = b64url(
-    JSON.stringify({ iss: JWT_ISSUER, jti: randomUUID(), iat, exp: iat + 60 }),
-  );
+  const payload = b64url(JSON.stringify({ iss: JWT_ISSUER, jti: randomUUID(), iat, exp: iat + 60 }));
   const sig = b64url(createHmac('sha256', JWT_SECRET).update(`${header}.${payload}`).digest());
   return `${header}.${payload}.${sig}`;
 }
@@ -357,22 +256,9 @@ function fileBlob(name) {
 async function versionAlreadyOnAmo() {
   try {
     const data = await amo(`/addons/addon/${ADDON_GUID}/versions/?filter=all_with_unlisted`);
-    const existing = (data.results || []).find((v) => v.version === VERSION);
-    if (!existing) return false;
-    // A number left on the historical "unlisted" channel can never be reused as
-    // listed — AMO version numbers are globally unique per add-on (it would
-    // 409). Fail early with a clear message instead of blowing up mid-upload.
-    if (existing.channel !== CHANNEL) {
-      die(
-        `version ${VERSION} already exists on AMO in the "${existing.channel}" channel. ` +
-          `AMO version numbers are unique per add-on, so it cannot be reused for ` +
-          `"${CHANNEL}" — bump to a new version number.`,
-      );
-    }
-    return true;
-  } catch (e) {
-    if (e.message?.startsWith('release:')) throw e; // re-throw die() calls
-    return false; // network error / 404 → version not on AMO yet
+    return (data.results || []).some((v) => v.version === VERSION);
+  } catch {
+    return false; // network error / 404 → treat as "not there yet"
   }
 }
 
@@ -385,7 +271,7 @@ async function uploadToAmo() {
   // 6a — upload the built bundle
   const fd = new FormData();
   fd.append('upload', fileBlob('dist.zip'), 'dist.zip');
-  fd.append('channel', CHANNEL);
+  fd.append('channel', 'listed');
   const { uuid } = await amo('/addons/upload/', { method: 'POST', body: fd });
   console.log(`release: AMO upload uuid ${uuid} — waiting for validation…`);
 
@@ -420,24 +306,28 @@ async function uploadToAmo() {
   console.log('release: attached source.zip.');
 }
 
-if (NO_UPLOAD) {
-  console.log('release: skipping AMO upload (--no-upload) — CI will publish the tag.');
-} else {
+if (haveCreds) {
   await uploadToAmo();
+} else {
+  console.log('release: no AMO creds in the env — skipping upload (push the tag and CI will publish).');
 }
 
 // ---------------------------------------------------------------------------
-// phase 7 — publish the branch + tag
+// phase 7 — publish branch + tag (skipped when HEAD is detached, e.g. in CI)
 // ---------------------------------------------------------------------------
 
-if (NO_PUSH) {
-  console.log(`release: skipping git push (--no-push) — ${TAG} is already on the remote.`);
-  console.log(`\nrelease: ${TAG} done — uploaded to AMO.`);
+// In CI the tag is checked out with a detached HEAD, so there is no branch to
+// push and the tag is already on the remote — nothing to publish. Locally we
+// are on `main`, so push it.
+const branch = capture('git rev-parse --abbrev-ref HEAD');
+if (branch === 'HEAD') {
+  console.log(`release: detached HEAD — skipping push (${TAG} is already on the remote).`);
+  console.log(`\nrelease: ${TAG} done${haveCreds ? ' — uploaded to AMO.' : '.'}`);
   process.exit(0);
 }
 
-// Resolve the remote from the branch's upstream (the remote is not always
-// "origin" here). Fall back to the first configured remote.
+// Resolve the remote from the branch's upstream (not always "origin"); fall
+// back to the first configured remote.
 function resolveRemote() {
   try {
     return capture('git rev-parse --abbrev-ref --symbolic-full-name @{u}').split('/')[0];
@@ -450,13 +340,12 @@ function resolveRemote() {
 
 const remote = resolveRemote();
 run(`git push ${remote} HEAD`);
-// Push the lightweight tag explicitly — --follow-tags only pushes annotated
-// tags. Skip if it already exists on the remote (resume / second channel).
-const tagOnRemote = capture(`git ls-remote --tags ${remote} ${TAG}`).trim() !== '';
-if (tagOnRemote) {
+// Push the lightweight tag explicitly (--follow-tags only pushes annotated
+// ones). Skip if already on the remote (resume).
+if (capture(`git ls-remote --tags ${remote} ${TAG}`).trim() !== '') {
   console.log(`release: ${TAG} already on ${remote} — skipping tag push.`);
 } else {
   run(`git push ${remote} ${TAG}`);
 }
 
-console.log(`\nrelease: ${TAG} done — uploaded to AMO and pushed.`);
+console.log(`\nrelease: ${TAG} done — ${haveCreds ? 'uploaded to AMO and ' : ''}pushed (CI publishes the tag).`);
