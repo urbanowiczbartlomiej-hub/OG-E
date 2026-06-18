@@ -18,7 +18,7 @@
 
 import { existsSync, rmSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { execSync } from 'node:child_process';
+import { zipDir } from './zip.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const DIST = resolve(ROOT, 'dist');
@@ -40,16 +40,8 @@ if (existsSync(ZIP)) {
   console.log('package: removed stale dist.zip');
 }
 
-// Windows 10 1803+ ships bsdtar (libarchive) as tar.exe in System32.
-// bsdtar's `-a` flag auto-selects format from extension (.zip → zip).
-// GNU tar (Linux/macOS) does NOT support zip via `-a`, so we use the
-// `zip` CLI there instead (standard on all POSIX platforms).
 try {
-  if (process.platform === 'win32') {
-    execSync(`"C:\\Windows\\System32\\tar.exe" -a -c -f "${ZIP}" -C "${DIST}" .`, { stdio: 'inherit' });
-  } else {
-    execSync(`zip -r "${ZIP}" .`, { cwd: DIST, stdio: 'inherit' });
-  }
+  zipDir(DIST, ZIP);
 } catch (err) {
   console.error('package: archive command failed');
   console.error(err instanceof Error ? err.message : err);

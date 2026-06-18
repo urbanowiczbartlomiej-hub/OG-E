@@ -20,7 +20,7 @@
 import { existsSync, rmSync, mkdtempSync, cpSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { execSync } from 'node:child_process';
+import { zipDir } from './zip.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const ZIP = resolve(ROOT, 'source.zip');
@@ -61,11 +61,7 @@ try {
     cpSync(resolve(ROOT, entry), join(STAGE, entry), { recursive: true });
   }
 
-  if (process.platform === 'win32') {
-    execSync(`"C:\\Windows\\System32\\tar.exe" -a -c -f "${ZIP}" -C "${STAGE}" .`, { stdio: 'inherit' });
-  } else {
-    execSync(`zip -r "${ZIP}" .`, { cwd: STAGE, stdio: 'inherit' });
-  }
+  zipDir(STAGE, ZIP);
 } catch (err) {
   console.error('package-source: archive command failed');
   console.error(err instanceof Error ? err.message : err);

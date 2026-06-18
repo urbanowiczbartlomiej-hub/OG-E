@@ -48,13 +48,10 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { execSync } from 'node:child_process';
-import { createHmac, randomUUID } from 'node:crypto';
+import { uploadToAmo } from './amo.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
-const AMO_BASE = 'https://addons.mozilla.org/api/v5';
 const ADDON_GUID = 'og-e@ogame-extensions'; // manifest browser_specific_settings.gecko.id
-const POLL_TIMEOUT_MS = 5 * 60_000;
-const POLL_INTERVAL_MS = 5_000;
 
 // The files the release itself writes + commits (phases 3 + 5). A pending edit
 // to any of these is EXPECTED — the CHANGELOG section is the one manual step
@@ -78,8 +75,6 @@ function run(cmd) {
 function capture(cmd) {
   return execSync(cmd, { cwd: ROOT }).toString().trim();
 }
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------------------------------------------------------------------------
 // phase 0 — version + clean tree (clean EXCEPT the release files)
@@ -213,101 +208,27 @@ if (tagExists) {
 }
 
 // ---------------------------------------------------------------------------
-// phase 6 — AMO upload (skipped without creds, or if the version is on AMO)
+// phase 6 — AMO upload (skipped without creds, or if the version is on AMO).
+// The API client lives in ./amo.mjs; here we just wire the creds + artifacts
+// in and turn a thrown failure into a clean abort BEFORE the push in phase 7.
 // ---------------------------------------------------------------------------
 
-function b64url(buf) {
-  return Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-function makeJwt() {
-  const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const iat = Math.floor(Date.now() / 1000);
-  const payload = b64url(JSON.stringify({ iss: JWT_ISSUER, jti: randomUUID(), iat, exp: iat + 60 }));
-  const sig = b64url(createHmac('sha256', JWT_SECRET).update(`${header}.${payload}`).digest());
-  return `${header}.${payload}.${sig}`;
-}
-
-async function amo(path, { method = 'GET', body, json } = {}) {
-  const headers = { Authorization: `JWT ${makeJwt()}` };
-  let payload = body;
-  if (json !== undefined) {
-    headers['Content-Type'] = 'application/json';
-    payload = JSON.stringify(json);
-  }
-  const res = await fetch(`${AMO_BASE}${path}`, { method, headers, body: payload });
-  const text = await res.text();
-  let data;
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    data = { raw: text };
-  }
-  if (!res.ok) {
-    throw new Error(`AMO ${method} ${path} → ${res.status}\n${JSON.stringify(data, null, 2)}`);
-  }
-  return data;
-}
-
-function fileBlob(name) {
-  return new Blob([readFileSync(resolve(ROOT, name))]);
-}
-
-async function versionAlreadyOnAmo() {
-  try {
-    const data = await amo(`/addons/addon/${ADDON_GUID}/versions/?filter=all_with_unlisted`);
-    return (data.results || []).some((v) => v.version === VERSION);
-  } catch {
-    return false; // network error / 404 → treat as "not there yet"
-  }
-}
-
-async function uploadToAmo() {
-  if (await versionAlreadyOnAmo()) {
-    console.log(`release: version ${VERSION} already on AMO — skipping upload.`);
-    return;
-  }
-
-  // 6a — upload the built bundle
-  const fd = new FormData();
-  fd.append('upload', fileBlob('dist.zip'), 'dist.zip');
-  fd.append('channel', 'listed');
-  const { uuid } = await amo('/addons/upload/', { method: 'POST', body: fd });
-  console.log(`release: AMO upload uuid ${uuid} — waiting for validation…`);
-
-  // 6b — poll until validated
-  const deadline = Date.now() + POLL_TIMEOUT_MS;
-  let status;
-  do {
-    await sleep(POLL_INTERVAL_MS);
-    status = await amo(`/addons/upload/${uuid}/`);
-    if (Date.now() > deadline) die('AMO validation timed out.');
-  } while (!status.processed);
-  if (!status.valid) {
-    die(`AMO validation failed:\n${JSON.stringify(status.validation?.messages ?? status, null, 2)}`);
-  }
-  console.log('release: AMO validation passed.');
-
-  // 6c — create the version with both note fields
-  const version = await amo(`/addons/addon/${ADDON_GUID}/versions/`, {
-    method: 'POST',
-    json: {
-      upload: uuid,
-      release_notes: { 'en-US': releaseNotes },
-      approval_notes: reviewerNotes,
-    },
-  });
-  console.log(`release: created AMO version ${version.version} (id ${version.id}).`);
-
-  // 6d — attach the source archive (separate multipart PATCH)
-  const sfd = new FormData();
-  sfd.append('source', fileBlob('source.zip'), 'source.zip');
-  await amo(`/addons/addon/${ADDON_GUID}/versions/${version.id}/`, { method: 'PATCH', body: sfd });
-  console.log('release: attached source.zip.');
-}
-
 if (haveCreds) {
-  await uploadToAmo();
+  try {
+    await uploadToAmo({
+      guid: ADDON_GUID,
+      version: VERSION,
+      issuer: JWT_ISSUER,
+      secret: JWT_SECRET,
+      distZip: resolve(ROOT, 'dist.zip'),
+      sourceZip: resolve(ROOT, 'source.zip'),
+      releaseNotes,
+      reviewerNotes,
+      log: (m) => console.log(`release: ${m}`),
+    });
+  } catch (e) {
+    die(e instanceof Error ? e.message : String(e));
+  }
 } else {
   console.log('release: no AMO creds in the env — skipping upload (push the tag and CI will publish).');
 }
