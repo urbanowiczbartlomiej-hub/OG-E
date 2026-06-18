@@ -23,10 +23,16 @@ import { settingsStore } from '../state/settings.js';
 // the gap under AGR's header and then collapse every label's font-size
 // to 0 so only the compact payload bits remain:
 //   - `.undermark` → the "17 x własna" chip (first row)
-//   - `.countdown` → the big yellow time-to-next-event
-//   - `.friendly` / `.hostile` / `.neutral` → the mission-type name
-// Game's own layout + theme colours are preserved; no background
-// override, no flex, no positioning hacks.
+//   - `.countdown` → the big yellow time-to-next-event; the idle "done"
+//     word collapses to a short locale-agnostic "Done" (see
+//     `formatCountdownDisplay`) so it fits the gutter at full size
+//   - `.friendly` / `.hostile` / `.neutral` → the mission-type name,
+//     clamped + ellipsized so a long localized name can't slide under
+//     the absolute countdown
+// The card becomes a subtle themed OG-E surface with the countdown
+// absolute-anchored full-size to the right; the mission counts + type
+// flow in a left column behind a reserved right gutter that clears it.
+// Theme colours stay the game's own.
 //
 // # Movement link (`a.ago_movement.tooltip.ago_color_lightgreen`)
 //
@@ -106,6 +112,38 @@ export const stripCountdownUnitSuffix = (text) => {
   // `min.` / `min` / `Min.` → `m`. Global + case-insensitive so every
   // minute marker in a multi-unit countdown compresses uniformly.
   return withoutSeconds.replace(/min\.?/gi, 'm');
+};
+
+/**
+ * Short label shown in place of OGame's locale "done" word
+ * ("wykonano" PL / "completed" EN / …) when no live countdown is running.
+ */
+export const COUNTDOWN_DONE_LABEL = 'Done';
+
+/**
+ * Decide what the event-box countdown should DISPLAY.
+ *
+ * A live countdown ALWAYS contains a digit — it is a time value. OGame's
+ * idle state instead renders a locale word with no digit ("wykonano",
+ * "completed", …). We discriminate on "does it contain a digit?" rather
+ * than matching any specific word, so the rule holds across every locale
+ * OGame ships. A live value is compacted by {@link stripCountdownUnitSuffix};
+ * the idle word collapses to a short {@link COUNTDOWN_DONE_LABEL} ("Done")
+ * — short enough to sit in the countdown gutter at full size instead of a
+ * long locale word sprawling across the box. An empty string passes
+ * through untouched: the box is only `#eventboxFilled` when there ARE
+ * events, so a blank means "between renders", not "done".
+ *
+ * Exported so tests can pin the classification without mounting a DOM.
+ *
+ * @param {string} raw
+ * @returns {string}
+ */
+export const formatCountdownDisplay = (raw) => {
+  const text = raw ?? '';
+  if (/\d/.test(text)) return stripCountdownUnitSuffix(text);
+  if (text.trim() === '') return text;
+  return COUNTDOWN_DONE_LABEL;
 };
 
 /**
@@ -233,6 +271,17 @@ const CSS = `/* OG-E: readability boost — event box + fleet movement link */
 #eventboxFilled .next_event .neutral {
   font-size: 18px !important;
   font-weight: 700 !important;
+  /* Clamp the mission-type to the left column so a long localized name
+     ("Wyszukaj formy życia (R)") ellipsizes at the gutter instead of
+     sliding under the absolute countdown. inline-block so max-width /
+     overflow apply; max-width:100% resolves against the <p> content box,
+     whose right edge IS the reserved countdown gutter (padding-right). */
+  display: inline-block !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  vertical-align: bottom !important;
 }
 /* Mission-type colours mirror OGame's own event palette
    (#eventz tr.friendly/.neutral/.hostile) so they read as native. */
@@ -247,7 +296,7 @@ const CSS = `/* OG-E: readability boost — event box + fleet movement link */
    jittering as it ticks. */
 #eventboxFilled .next_event .countdown {
   position: absolute !important;
-  right: 5px !important;
+  right: 1px !important;
   top: 50% !important;
   transform: translateY(-50%) !important;
   font-size: 52px !important;
@@ -398,10 +447,11 @@ export const installReadabilityBoost = () => {
   //
   // `#eventboxFilled .countdown` is refreshed once per second by
   // OGame. A MutationObserver catches every refresh and re-applies
-  // `stripCountdownUnitSuffix`. When the observer's own write fires a
-  // mutation, the regex is idempotent on the already-stripped text,
-  // so we don't loop. The trimmer shares the `readabilityBoost`
-  // toggle — start on enable, disconnect on disable.
+  // `formatCountdownDisplay` — compacting a live value's unit suffixes
+  // and collapsing the locale "done" word to a short "Done". When the
+  // observer's own write fires a mutation, the transform is idempotent
+  // on its own output, so we don't loop. The trimmer shares the
+  // `readabilityBoost` toggle — start on enable, disconnect on disable.
 
   /** @type {MutationObserver | null} */
   let countdownObserver = null;
@@ -410,8 +460,8 @@ export const installReadabilityBoost = () => {
     const cd = document.querySelector('#eventboxFilled .countdown');
     if (!cd) return;
     const raw = cd.textContent ?? '';
-    const stripped = stripCountdownUnitSuffix(raw);
-    if (stripped !== raw) cd.textContent = stripped;
+    const text = formatCountdownDisplay(raw);
+    if (text !== raw) cd.textContent = text;
   };
 
   const startCountdownTrimmer = () => {
