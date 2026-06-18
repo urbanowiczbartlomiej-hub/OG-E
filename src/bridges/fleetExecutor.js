@@ -43,6 +43,15 @@
 import { FD_CMD_EVENT as CMD_EVENT, FD_RES_EVENT as RES_EVENT } from '../lib/fleetProtocol.js';
 import { GAME } from '../lib/gameDom.js';
 
+// Gap between the two `primeAgr*` clicks in `setTarget`. On a fresh
+// fleetdispatch page (the first tap right after navigation) AGR's shortcuts
+// handler may not be fully wired when the first prime fires, so that click is
+// dropped; the second prime — after this settle delay — is what actually lands
+// the planet/moon flag. Observed on mobile: a 1ms gap was too short under CPU
+// contention (first send went to the planet; a manual back-to-fleet1 + re-tap
+// then worked), so we yield a fuller event-loop turn here.
+const AGR_PRIME_SETTLE_MS = 10;
+
 /**
  * Write `value` into every input matching `sel` and fire the full event
  * sequence a real keystroke produces — including `keydown`/`keyup` as real
@@ -197,11 +206,11 @@ const runCommand = async (fd, cmd) => {
       // we skip the planet-span click.
       if (type === 3) {
         primeAgrMoon();
-        await new Promise((r) => setTimeout(r, 1));
+        await new Promise((r) => setTimeout(r, AGR_PRIME_SETTLE_MS));
         primeAgrMoon();
       } else if (type === 1) {
         primeAgrPlanet();
-        await new Promise((r) => setTimeout(r, 1));
+        await new Promise((r) => setTimeout(r, AGR_PRIME_SETTLE_MS));
         primeAgrPlanet();
       }
       fireInput(GAME.AGO_GALAXY, galaxy);
