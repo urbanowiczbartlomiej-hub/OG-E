@@ -109,14 +109,11 @@ asks to bump the version and publish, this is the path:**
    `node scripts/release.mjs <ver> --no-push` with the secrets — validate →
    package → upload (`--no-push` because the tag is already on the remote).
 
-The **unlisted** workflow (`release-amo-unlisted.yml`) stays `workflow_dispatch`
-(manual, owner-only smoke-test channel): Mozilla signs it, you get a direct URL,
-existing users are NOT offered the update. It runs with `--no-push` so it never
-creates a `vX.Y.Z` tag (which would otherwise fire the listed workflow). An
-agent with the GitHub MCP tools can dispatch it via `actions_run_trigger`.
+There is exactly ONE release path: push a `vX.Y.Z` tag → the listed workflow
+uploads it to AMO. No unlisted/smoke-test channel exists (removed for
+simplicity — one tag-triggered workflow, nothing manual to remember).
 
-Workflows: `.github/workflows/release-amo-listed.yml` (tag-triggered) /
-`release-amo-unlisted.yml` (manual).
+Workflow: `.github/workflows/release-amo-listed.yml` (tag-triggered).
 
 ### Running `release.mjs` locally (only with creds in `.env`)
 

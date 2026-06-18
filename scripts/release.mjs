@@ -91,10 +91,11 @@ const positional = argv.filter((a) => !a.startsWith('--'));
 // npm-passable escape hatch; the flags work when run directly with node.
 const DRY = flags.has('--preview') || flags.has('--dry-run') || process.env.RELEASE_PREVIEW === '1';
 const SKIP_TESTS = flags.has('--skip-tests');
-// --unlisted: upload to the unlisted AMO channel (signed but not publicly
-// visible and not offered as an update to existing users).
-const UNLISTED = flags.has('--unlisted');
-const CHANNEL = UNLISTED ? 'unlisted' : 'listed';
+// Every release is a public, listed submission — existing users are offered the
+// update automatically. There is no second channel (the unlisted smoke-test
+// path was removed: it added a parallel workflow + version-number bookkeeping
+// for little gain, and "simple and reliable" beats it).
+const CHANNEL = 'listed';
 // --no-push: skip phase 7 (the git push). Used by the tag-triggered CI
 // workflow, where the tag that started the run is ALREADY on the remote and
 // HEAD is detached — a push would either be a no-op or fail ("not on a
@@ -228,7 +229,6 @@ if (!NO_UPLOAD && (!JWT_ISSUER || !JWT_SECRET)) {
 }
 
 console.log(`release: ${TAG}  (CHANGELOG dated ${changelogDate})`);
-if (UNLISTED) console.log('release: channel = unlisted (not offered as update to existing users)');
 
 // Warn if any CHANGELOG version lacks a git tag — symptom of a manual AMO
 // upload that bypassed this script. A missing tag means the release is
@@ -359,15 +359,10 @@ async function versionAlreadyOnAmo() {
     const data = await amo(`/addons/addon/${ADDON_GUID}/versions/?filter=all_with_unlisted`);
     const existing = (data.results || []).find((v) => v.version === VERSION);
     if (!existing) return false;
-    // Guard against silently skipping when the same version number was already
-    // uploaded to the WRONG channel (e.g. released as "listed" manually, then
-    // re-run with --unlisted). Same channel → idempotent skip is safe; wrong
-    // channel → hard stop so the caller picks a different version number.
+    // A number left on the historical "unlisted" channel can never be reused as
+    // listed — AMO version numbers are globally unique per add-on (it would
+    // 409). Fail early with a clear message instead of blowing up mid-upload.
     if (existing.channel !== CHANNEL) {
-      // AMO version numbers are GLOBALLY UNIQUE per add-on — the same number
-      // cannot exist in both channels. So a version already on the other
-      // channel can never be uploaded here (AMO would 409). Fail early with a
-      // clear message instead of letting the upload blow up late.
       die(
         `version ${VERSION} already exists on AMO in the "${existing.channel}" channel. ` +
           `AMO version numbers are unique per add-on, so it cannot be reused for ` +

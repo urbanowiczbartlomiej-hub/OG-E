@@ -1,19 +1,16 @@
 name: Release to AMO (listed)
 
-# Public release workflow — fires automatically when a vX.Y.Z tag is pushed.
-# Listed = publicly visible on addons.mozilla.org; existing users ARE offered
-# the update automatically. So pushing a vX.Y.Z tag = a real public release.
+# The one and only release workflow — fires automatically when a vX.Y.Z tag is
+# pushed. The release is always LISTED: publicly visible on addons.mozilla.org,
+# offered to existing users automatically. So pushing a vX.Y.Z tag = a real
+# public release.
 #
-# How a release happens now (tag-triggered):
+# How a release happens (tag-triggered):
 #   1. Land code + tests on main, gates green.
 #   2. Add the dated "## [X.Y.Z] — YYYY-MM-DD" section to CHANGELOG.md and
 #      commit it (release.mjs reads it as the public AMO release notes).
-#   3. Cut + push the tag, EITHER:
-#        • node scripts/release.mjs X.Y.Z --no-upload   (no AMO tokens needed;
-#          bumps versions, commits, tags vX.Y.Z, pushes — CI then publishes), OR
-#        • npm run release -- X.Y.Z                      (if you have .env creds:
-#          uploads locally AND pushes the tag; this CI run then no-ops on AMO
-#          because the version is already there).
+#   3. Cut + push the tag:  node scripts/release.mjs X.Y.Z --no-upload
+#      (no AMO tokens needed locally — bumps versions, commits, tags, pushes).
 #   4. This workflow checks out the tag and runs the AMO upload.
 #
 # Requires AMO_JWT_ISSUER / AMO_JWT_SECRET in repo → Settings → Secrets.
