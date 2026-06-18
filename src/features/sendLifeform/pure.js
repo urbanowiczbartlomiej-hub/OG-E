@@ -456,7 +456,8 @@ const renderPhase = (ctx) => {
     case 'blocked':
       // Same copy as the post-send fleet-cap transient ("Max fleets") so
       // the two faces of the condition read as one state. Dim — nothing
-      // to do here; the ticker re-enables when the game does.
+      // to do here; the ticker re-enables when the game does. Carries the
+      // viewed system as subtext, mirroring discover/navigate.
       return {
         text: 'Max fleets',
         subtext: `[${ctx.target.galaxy}:${ctx.target.system}]`,
