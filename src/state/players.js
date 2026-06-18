@@ -37,7 +37,7 @@ import { mergePlayerMeta } from '../domain/players.js';
  * `<universeId>:<PLAYERS_KEY_BASE>` — see {@link playersKeyFor}. Exported so
  * the dashboard can compose a key for an arbitrary selected universe.
  */
-export const PLAYERS_KEY_BASE = 'oge_players';
+const PLAYERS_KEY_BASE = 'oge_players';
 
 /**
  * Compose the full chrome.storage.local key for a universe id.
@@ -85,13 +85,6 @@ export const initPlayersStore = () => {
   installPlayersListener();
   return disposeFn;
 };
-
-/**
- * Bypass the debounce and write the current value immediately — call before
- * navigating away so an in-flight merge isn't lost on unload.
- * @returns {Promise<void>}
- */
-export const flushPlayersStore = () => chromeStore.set(currentPlayersKey(), playersStore.get());
 
 /**
  * Tear down the persist wiring + listener. Idempotent.

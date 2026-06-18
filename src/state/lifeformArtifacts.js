@@ -14,7 +14,7 @@
 import { safeLS } from '../lib/storage.js';
 
 /** localStorage key holding the JSON-serialized {@link ArtifactReading}. */
-export const LF_ARTIFACTS_KEY = 'oge-lf-artifacts';
+const LF_ARTIFACTS_KEY = 'oge-lf-artifacts';
 
 /**
  * One observation of the artifact counter. `current` may legitimately

@@ -34,7 +34,7 @@ import { currentUniverseKey } from './universeKey.js';
  */
 
 /** Suffix of the per-universe chrome.storage.local key. */
-export const OWN_PROFILE_KEY_BASE = 'oge_ownProfile';
+const OWN_PROFILE_KEY_BASE = 'oge_ownProfile';
 
 /**
  * Compose the full key for a universe id. Used by the dashboard (which knows

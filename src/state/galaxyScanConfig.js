@@ -98,31 +98,6 @@ export const galaxyScanConfigStore = createStore(defaultGalaxyScanConfig());
 let disposeFn = null;
 
 /**
- * Resolver for {@link hydratedPromise}, re-bound on every
- * {@link initGalaxyScanConfigStore} call.
- *
- * @type {() => void}
- */
-let resolveHydrated = () => {};
-
-/**
- * Pre-resolved until {@link initGalaxyScanConfigStore} swaps it for a pending
- * one, so tests that bypass init don't hang awaiting a hydrate.
- *
- * @type {Promise<void>}
- */
-let hydratedPromise = Promise.resolve();
-
-/**
- * Resolves once the hydrate phase has settled (the stored value applied, or
- * the load found nothing). Call as a function — the binding changes across
- * init/dispose.
- *
- * @returns {Promise<void>}
- */
-export const whenGalaxyScanConfigHydrated = () => hydratedPromise;
-
-/**
  * Wire the store to chrome.storage.local: hydrate from
  * `<universeId>:oge_galaxyScanConfig` (normalised, so a partial/legacy blob
  * is filled to a complete config) and write every change back (debounced).
@@ -132,7 +107,6 @@ export const whenGalaxyScanConfigHydrated = () => hydratedPromise;
  */
 export const initGalaxyScanConfigStore = () => {
   if (disposeFn) return disposeFn;
-  hydratedPromise = new Promise((resolve) => { resolveHydrated = resolve; });
   disposeFn = persist({
     store: galaxyScanConfigStore,
     load: async () => {
@@ -143,7 +117,6 @@ export const initGalaxyScanConfigStore = () => {
     },
     save: (value) => chromeStore.set(currentKey(), value),
     debounceMs: DEBOUNCE_MS,
-    onHydrate: () => { resolveHydrated(); },
   });
   return disposeFn;
 };
@@ -154,7 +127,7 @@ export const initGalaxyScanConfigStore = () => {
  *
  * @returns {Promise<void>}
  */
-export const flushGalaxyScanConfigStore = () =>
+const flushGalaxyScanConfigStore = () =>
   chromeStore.set(currentKey(), galaxyScanConfigStore.get());
 
 /**
@@ -185,6 +158,4 @@ export const disposeGalaxyScanConfigStore = () => {
     disposeFn();
     disposeFn = null;
   }
-  hydratedPromise = Promise.resolve();
-  resolveHydrated = () => {};
 };

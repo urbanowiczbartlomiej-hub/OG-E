@@ -98,31 +98,6 @@ export const reminderConfigStore = createStore(defaultReminderConfig());
 let disposeFn = null;
 
 /**
- * Resolver for {@link hydratedPromise}, re-bound on every
- * {@link initReminderConfigStore} call.
- *
- * @type {() => void}
- */
-let resolveHydrated = () => {};
-
-/**
- * Pre-resolved until {@link initReminderConfigStore} swaps it for a pending
- * one, so tests that bypass init don't hang awaiting a hydrate.
- *
- * @type {Promise<void>}
- */
-let hydratedPromise = Promise.resolve();
-
-/**
- * Resolves once the hydrate phase has settled (the stored value applied, or
- * the load found nothing). Call as a function — the binding changes across
- * init/dispose.
- *
- * @returns {Promise<void>}
- */
-export const whenReminderConfigHydrated = () => hydratedPromise;
-
-/**
  * Wire the store to chrome.storage.local: hydrate from
  * `<universeId>:oge_reminderConfig` (normalised, so a partial/legacy blob is
  * filled to a complete config) and write every change back (debounced).
@@ -132,7 +107,6 @@ export const whenReminderConfigHydrated = () => hydratedPromise;
  */
 export const initReminderConfigStore = () => {
   if (disposeFn) return disposeFn;
-  hydratedPromise = new Promise((resolve) => { resolveHydrated = resolve; });
   disposeFn = persist({
     store: reminderConfigStore,
     load: async () => {
@@ -143,7 +117,6 @@ export const initReminderConfigStore = () => {
     },
     save: (value) => chromeStore.set(currentKey(), value),
     debounceMs: DEBOUNCE_MS,
-    onHydrate: () => { resolveHydrated(); },
   });
   return disposeFn;
 };
@@ -154,7 +127,7 @@ export const initReminderConfigStore = () => {
  *
  * @returns {Promise<void>}
  */
-export const flushReminderConfigStore = () =>
+const flushReminderConfigStore = () =>
   chromeStore.set(currentKey(), reminderConfigStore.get());
 
 /**
@@ -184,6 +157,4 @@ export const disposeReminderConfigStore = () => {
     disposeFn();
     disposeFn = null;
   }
-  hydratedPromise = Promise.resolve();
-  resolveHydrated = () => {};
 };
