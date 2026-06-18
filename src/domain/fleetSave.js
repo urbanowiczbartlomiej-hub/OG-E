@@ -118,7 +118,7 @@ import { parseDurationList } from './duration.js';
  *
  * @type {Set<string>}
  */
-export const ONE_WAY_MISSIONS = new Set(['4', '7']);
+const ONE_WAY_MISSIONS = new Set(['4', '7']);
 
 /**
  * Whether a fleet leg is the one whose arrival a fleet-save reminder should

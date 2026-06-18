@@ -1,8 +1,8 @@
-// Settlement-region finder — the generalisation of `domain/freeStreak.js`.
+// Settlement-region finder — generalises the classic "longest free streak".
 //
 // # What and why
 //
-// `findLongestStreaks` answers "longest PERFECT run of systems whose slot N
+// The classic search answered "longest PERFECT run of systems whose slot N
 // is empty". Real colonisation planning wants something softer (see the
 // post-1.17.0 feedback): a REGION may span several slots at once
 // ("positions 12-15 all free"), and a single unscanned or occupied system
@@ -18,10 +18,9 @@
 //     never pad the edges).
 //
 // With `positions: [p]` and `maxGaps: 0` the result is exactly the
-// classic streak — the old module remains for its callers/tests, but new
-// UI should come here.
+// classic single-slot streak.
 //
-// # Strictness inherited from freeStreak
+// # Strictness
 //
 // An unscanned system is a NON-MATCH (it may consume gap tolerance, but
 // is never silently assumed free). Reported regions are therefore a lower
@@ -432,7 +431,7 @@ export const STRATEGIES = {
  * @param {number} mineMinDist
  * @returns {number}
  */
-export const expansionFactor = (mineMinDist) => {
+const expansionFactor = (mineMinDist) => {
   if (!Number.isFinite(mineMinDist)) return 1;
   return Math.min(1, Math.max(0, mineMinDist - 50) / 150);
 };

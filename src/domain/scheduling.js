@@ -150,7 +150,7 @@ export const DEFAULT_RESCAN_POLICY = Object.freeze({
  *   // day after (47h total).
  *   abandonedCleanupDeadline(new Date('2026-01-01T04:00:00').getTime());
  */
-export const abandonedCleanupDeadline = (scannedAt) => {
+const abandonedCleanupDeadline = (scannedAt) => {
   const earliest = scannedAt + 24 * 3600 * 1000;
   const d = new Date(earliest);
   // Roll forward to 3 AM the same local day. If we're already past
