@@ -508,7 +508,9 @@ export const installSendExpedition = () => {
       title: 'Expeditions',
       ringId: 'oge-ring-exp',
       size,
-      fontScale: 0.23,
+      // Matches sendLifeform's scale so short labels ("Send" / "Prepare" /
+      // "Discover") read at the same size across the 1-zone command buttons.
+      fontScale: 0.18,
       module: { id: 'exp', name: 'Expeditions', color: BG_IDLE, glyph: COMET_GLYPH },
       gateUntilEventBox: true,
       focusKey: FOCUS_KEY,

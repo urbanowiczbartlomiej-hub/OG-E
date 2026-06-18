@@ -276,6 +276,7 @@ export const installReminderProducer = (opts = {}) => {
       fsMinFlightSec: g.fsMinFlightSec,
       ntfyToken: s.reminderNtfyToken,
       schedule: eff.reminderSchedule,
+      adhocSchedule: eff.adhocSchedule,
       templates: eff.templates,
     };
 

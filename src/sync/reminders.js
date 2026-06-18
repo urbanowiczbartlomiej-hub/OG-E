@@ -72,11 +72,13 @@
 import { gh, ensureGist, getToken, getGistId } from './gist.js';
 import { chromeStore } from '../lib/storage.js';
 import { reconcileWaves, pruneNotifyState } from '../domain/waves.js';
-import { reconcileAdhoc, pruneAdhocNotify } from '../domain/adhoc.js';
+import {
+  reconcileAdhoc, pruneAdhocNotify, parseAdhocOffsets, adhocFireTimes,
+} from '../domain/adhoc.js';
 import { reconcileFleetSaves, pruneFsNotify, parseFsOffsets } from '../domain/fleetSave.js';
 import {
   reconcileWaveQueue, reconcileAdhocQueue, reconcileFleetSaveQueue,
-  offsetsForSchedule, NTFY_MAX_DELAY_SEC, fetchScheduledMessages,
+  offsetsForSchedule, fetchScheduledMessages,
 } from './ntfyReconciler.js';
 
 /**
@@ -111,6 +113,9 @@ import {
  * @property {string} [schedule]  Free-form wave reminder schedule — a
  *   minutes-first duration list (see `ntfyReconciler.offsetsForSchedule`).
  *   Falls back to the default cadence when absent / empty. Waves only.
+ * @property {string} [adhocSchedule]  Free-form ad-hoc reminder schedule — a
+ *   minutes-first SIGNED offset list relative to arrival (see
+ *   `domain/adhoc.parseAdhocOffsets`). Applied live to every armed entry.
  * @property {Record<import('../domain/reminderTemplates.js').ReminderKind, import('../domain/reminderTemplates.js').ReminderTemplate>} [templates]
  *   Per-kind message customisation (body / icon / priority). The EFFECTIVE
  *   templates for this universe (already resolved against any per-server
@@ -608,12 +613,25 @@ export const syncReminders = async (config, dom, now, universeId) => {
     }
 
     // ── Ad-hoc fleets ──────────────────────────────────────────────────
-    // One ping per armed entry, within ntfy's 3-day cap. Disabled ⇒ no
-    // live entries ⇒ messages swept (entries themselves stay in state).
+    // A multi-slot series per armed entry: the per-universe ad-hoc schedule
+    // (signed offsets relative to arrival) resolved live against each leg's
+    // arrival, with the per-leg push metadata forwarded so the body's
+    // {origin}/{target}/{direction}/{shipCount} wildcards fill. The 3-day cap
+    // is applied inside reconcileAdhocQueue. Disabled ⇒ no live entries ⇒
+    // messages swept (entries themselves stay in state).
+    const adhocOffsets = parseAdhocOffsets(config.adhocSchedule ?? '');
     const liveAdhoc = adhocActive
-      ? adhoc
-          .filter((e) => e.fireAt <= now + NTFY_MAX_DELAY_SEC)
-          .map((e) => ({ id: e.id, fireAt: e.fireAt, arrivalAt: e.arrivalAt, label: e.label }))
+      ? adhoc.map((e) => ({
+          id: e.id,
+          arrivalAt: e.arrivalAt,
+          label: e.label,
+          origin: e.origin,
+          originName: e.originName,
+          target: e.target,
+          targetName: e.targetName,
+          shipCount: e.shipCount,
+          fireAts: adhocFireTimes(e.arrivalAt, adhocOffsets),
+        }))
       : [];
     const adhocRes = await reconcileAdhocQueue({
       entries: liveAdhoc, topic, token: ntfyToken, now, universeId,

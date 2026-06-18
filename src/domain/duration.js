@@ -146,6 +146,31 @@ export const humanizeReturnOffset = (sec) => {
 };
 
 /**
+ * Humanize an ARRIVAL-relative offset (whole seconds; negative = BEFORE
+ * arrival, positive = AFTER, zero = at arrival) into the plain-English impact
+ * phrase shared by the ad-hoc push body (`{offset}`) and the ad-hoc schedule
+ * editor preview:
+ *
+ *   -600 ⇒ "10 min before arrival"
+ *      0 ⇒ "at arrival"
+ *    900 ⇒ "15 min after arrival"
+ *
+ * Ad-hoc's counterpart to {@link humanizeOffset} — same signed convention and
+ * whole-minute coarseness, but worded for a leg's ARRIVAL (a fleet "arrives";
+ * "landing" is the fleet-save reference). Single source of truth so the ad-hoc
+ * push text and its editor preview can never drift.
+ *
+ * @param {number} sec  Offset relative to arrival, in seconds.
+ * @returns {string}
+ */
+export const humanizeArrivalOffset = (sec) => {
+  const n = Number.isFinite(sec) ? Math.round(sec) : 0;
+  if (n === 0) return 'at arrival';
+  const m = Math.round(Math.abs(n) / 60);
+  return n < 0 ? `${m} min before arrival` : `${m} min after arrival`;
+};
+
+/**
  * Compact form of {@link humanizeOffset} for the chip-style schedule editor:
  * the distinctive part only, with the reference point ("landing") stated ONCE
  * in the editor's section hint instead of repeated on every chip.
@@ -198,7 +223,7 @@ export const humanizeReturnOffsetShort = (sec) => {
  * all-unparseable) ⇒ `''`. Pure.
  *
  * @param {number[]} secs   Signed offset seconds (neg = before, 0 = at, pos = after).
- * @param {'landing' | 'return'} reference  Point the offsets are measured from.
+ * @param {'landing' | 'return' | 'arrival'} reference  Point the offsets are measured from.
  * @returns {string}
  */
 export const summarizeSchedule = (secs, reference) => {

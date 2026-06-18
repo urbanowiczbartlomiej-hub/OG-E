@@ -16,7 +16,7 @@ describe('defaultReminderConfig', () => {
     expect(defaultReminderConfig()).toEqual({
       reminderEnabled: false,
       reminderSchedule: '0m, 10m, 30m, 60m',
-      adhocOffsetSec: 60,
+      adhocSchedule: '-1m',
       templates: defaultReminderTemplates(),
     });
   });
@@ -41,19 +41,19 @@ describe('normalizeReminderConfig', () => {
     const cfg = normalizeReminderConfig({ reminderEnabled: true });
     expect(cfg.reminderEnabled).toBe(true);
     expect(cfg.reminderSchedule).toBe('0m, 10m, 30m, 60m'); // default
-    expect(cfg.adhocOffsetSec).toBe(60); // default
+    expect(cfg.adhocSchedule).toBe('-1m'); // default
   });
 
-  it('keeps an explicitly-set custom schedule string and lead time', () => {
+  it('keeps an explicitly-set custom schedule string and ad-hoc schedule', () => {
     const cfg = normalizeReminderConfig({
       reminderEnabled: true,
       reminderSchedule: '5m, 15m',
-      adhocOffsetSec: 120,
+      adhocSchedule: '-10m, 0m, +5m',
     });
     expect(cfg).toEqual({
       reminderEnabled: true,
       reminderSchedule: '5m, 15m',
-      adhocOffsetSec: 120,
+      adhocSchedule: '-10m, 0m, +5m',
       templates: defaultReminderTemplates(),
     });
   });
@@ -62,11 +62,22 @@ describe('normalizeReminderConfig', () => {
     expect(normalizeReminderConfig({ reminderSchedule: '' }).reminderSchedule).toBe('');
   });
 
-  it('coerces a garbage / negative lead time back to the default', () => {
-    expect(normalizeReminderConfig({ adhocOffsetSec: 'soon' }).adhocOffsetSec).toBe(60);
-    expect(normalizeReminderConfig({ adhocOffsetSec: -5 }).adhocOffsetSec).toBe(60);
-    // A finite non-negative value floors to a whole second.
-    expect(normalizeReminderConfig({ adhocOffsetSec: 90.7 }).adhocOffsetSec).toBe(90);
+  it('migrates a legacy adhocOffsetSec to a signed adhocSchedule string', () => {
+    // 60s before arrival ⇒ "-1m".
+    expect(normalizeReminderConfig({ adhocOffsetSec: 60 }).adhocSchedule).toBe('-1m');
+    // 120s ⇒ "-2m".
+    expect(normalizeReminderConfig({ adhocOffsetSec: 120 }).adhocSchedule).toBe('-2m');
+  });
+
+  it('falls back to the default ad-hoc schedule for garbage / no legacy value', () => {
+    expect(normalizeReminderConfig({ adhocOffsetSec: 'soon' }).adhocSchedule).toBe('-1m');
+    expect(normalizeReminderConfig({ adhocOffsetSec: -5 }).adhocSchedule).toBe('-1m');
+    expect(normalizeReminderConfig({}).adhocSchedule).toBe('-1m');
+  });
+
+  it('keeps a present adhocSchedule string over any legacy adhocOffsetSec', () => {
+    const cfg = normalizeReminderConfig({ adhocSchedule: '-30m', adhocOffsetSec: 60 });
+    expect(cfg.adhocSchedule).toBe('-30m');
   });
 
   it('coerces a non-boolean enable / non-string schedule back to defaults', () => {

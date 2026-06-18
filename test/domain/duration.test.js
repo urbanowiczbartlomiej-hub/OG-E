@@ -1,7 +1,7 @@
 // @ts-check
 
 import { describe, it, expect } from 'vitest';
-import { parseDuration, parseDurationList, formatDuration, humanizeOffset, humanizeReturnOffset, humanizeOffsetShort, humanizeReturnOffsetShort, summarizeSchedule } from '../../src/domain/duration.js';
+import { parseDuration, parseDurationList, formatDuration, humanizeOffset, humanizeArrivalOffset, humanizeReturnOffset, humanizeOffsetShort, humanizeReturnOffsetShort, summarizeSchedule } from '../../src/domain/duration.js';
 
 describe('parseDuration', () => {
   it('treats a bare number as minutes', () => {
@@ -118,6 +118,23 @@ describe('humanizeOffset', () => {
   });
 });
 
+describe('humanizeArrivalOffset', () => {
+  it('renders before / at / after arrival', () => {
+    expect(humanizeArrivalOffset(-600)).toBe('10 min before arrival');
+    expect(humanizeArrivalOffset(0)).toBe('at arrival');
+    expect(humanizeArrivalOffset(900)).toBe('15 min after arrival');
+  });
+
+  it('rounds magnitude to the nearest whole minute', () => {
+    expect(humanizeArrivalOffset(-90)).toBe('2 min before arrival');
+    expect(humanizeArrivalOffset(30)).toBe('1 min after arrival');
+  });
+
+  it('treats non-finite input as zero', () => {
+    expect(humanizeArrivalOffset(NaN)).toBe('at arrival');
+  });
+});
+
 describe('humanizeReturnOffset', () => {
   it('renders "when the wave returns" for zero (and non-positive)', () => {
     expect(humanizeReturnOffset(0)).toBe('when the wave returns');
@@ -190,5 +207,10 @@ describe('summarizeSchedule', () => {
 
   it('returns the empty string for no offsets', () => {
     expect(summarizeSchedule([], 'return')).toBe('');
+  });
+
+  it('accepts an "arrival" reference point', () => {
+    expect(summarizeSchedule([-60, 0, 300], 'arrival'))
+      .toBe('1m before arrival · at arrival · 5m after arrival');
   });
 });

@@ -1,7 +1,12 @@
 // @ts-check
 
 import { describe, it, expect } from 'vitest';
-import { fireAtFor, reconcileAdhoc, pruneAdhocNotify } from '../../src/domain/adhoc.js';
+import {
+  parseAdhocOffsets,
+  adhocFireTimes,
+  reconcileAdhoc,
+  pruneAdhocNotify,
+} from '../../src/domain/adhoc.js';
 
 /**
  * @param {Partial<import('../../src/domain/adhoc.js').AdhocReminder> & { id: string }} o
@@ -9,16 +14,27 @@ import { fireAtFor, reconcileAdhoc, pruneAdhocNotify } from '../../src/domain/ad
  */
 const entry = (o) => ({
   arrivalAt: 2000,
-  offsetSec: 60,
-  fireAt: 1940,
   label: 'Expedition → [4:467:16]',
   ...o,
 });
 
-describe('fireAtFor', () => {
-  it('fires offsetSec before arrival', () => {
-    expect(fireAtFor(2000, 60)).toBe(1940);
-    expect(fireAtFor(2000, 0)).toBe(2000);
+describe('parseAdhocOffsets', () => {
+  it('parses a signed offset list (before / at / after arrival)', () => {
+    expect(parseAdhocOffsets('-1m, 0, +5m')).toEqual([-60, 0, 300]);
+  });
+
+  it('returns empty for garbage', () => {
+    expect(parseAdhocOffsets('nonsense')).toEqual([]);
+  });
+});
+
+describe('adhocFireTimes', () => {
+  it('resolves offsets to absolute fire times against the arrival anchor', () => {
+    expect(adhocFireTimes(2000, [-60, 0, 300])).toEqual([1940, 2000, 2300]);
+  });
+
+  it('returns an empty array for no offsets', () => {
+    expect(adhocFireTimes(2000, [])).toEqual([]);
   });
 });
 
@@ -31,16 +47,15 @@ describe('reconcileAdhoc', () => {
     expect(entries[0]).toBe(a); // unchanged → same reference
   });
 
-  it('reschedules when the arrival time changed, preserving id/offset/label', () => {
-    const a = entry({ id: 'eventRow-1', arrivalAt: 2000, offsetSec: 60, fireAt: 1940 });
+  it('reschedules when the arrival time changed, preserving id/label (no fireAt)', () => {
+    const a = entry({ id: 'eventRow-1', arrivalAt: 2000 });
     const { entries } = reconcileAdhoc([a], [{ id: 'eventRow-1', arrivalAt: 2500 }]);
     expect(entries[0]).toMatchObject({
       id: 'eventRow-1',
       arrivalAt: 2500,
-      offsetSec: 60,
-      fireAt: 2440, // 2500 - 60
       label: 'Expedition → [4:467:16]',
     });
+    expect(entries[0]).not.toHaveProperty('fireAt');
     expect(a.arrivalAt).toBe(2000); // input not mutated
   });
 
@@ -52,8 +67,8 @@ describe('reconcileAdhoc', () => {
   });
 
   it('handles a mix: keep one, reschedule one, drop one', () => {
-    const keep = entry({ id: 'a', arrivalAt: 1000, fireAt: 940 });
-    const move = entry({ id: 'b', arrivalAt: 2000, offsetSec: 60, fireAt: 1940 });
+    const keep = entry({ id: 'a', arrivalAt: 1000 });
+    const move = entry({ id: 'b', arrivalAt: 2000 });
     const gone = entry({ id: 'c', arrivalAt: 3000 });
     const { entries, droppedIds } = reconcileAdhoc(
       [keep, move, gone],
@@ -61,7 +76,7 @@ describe('reconcileAdhoc', () => {
     );
     expect(droppedIds).toEqual(['c']);
     expect(entries.find((e) => e.id === 'a')).toBe(keep);
-    expect(entries.find((e) => e.id === 'b')).toMatchObject({ arrivalAt: 2200, fireAt: 2140 });
+    expect(entries.find((e) => e.id === 'b')).toMatchObject({ arrivalAt: 2200 });
   });
 
   it('drops everything when the live list is empty (nothing in flight)', () => {

@@ -639,7 +639,7 @@ const refresh = () => {
         if (short) {
           // Not enough ships for the micro-fleet — say so persistently
           // (and buildOrder blocks the tap with the same message).
-          setLabel(microZone, 'No ships', `${short.have}/${short.want}`, '(micro-fleet short)');
+          setLabel(microZone, 'No ships', `${short.have}/${short.want}`);
         } else {
           const left = countRemainingMicroTargets(route.targets, inflight);
           setLabel(microZone, 'Send', collectTargetLabel(next), `${left} left`);
@@ -659,7 +659,7 @@ const refresh = () => {
       // Nothing to take here — propose the jump; the tap performs it
       // (see handleZone). Mirrors the post-send "advance to the next
       // planet" flow, just without a send.
-      setLabel(collectZone, 'Empty', '→ next planet', '(tap to jump)');
+      setLabel(collectZone, 'Empty', '→ next planet');
     } else {
       setLabel(collectZone, 'Send All', collectTargetLabel(t), '(hold to change)');
     }
@@ -752,7 +752,7 @@ export const installDailyRun = () => {
           onTap: onCollectClick,
           onHold: onSetTargetClick,
           focusValue: 'fs-unified-collect',
-          labelShiftY: 6,
+          labelShiftY: 3,
         },
       ],
     });

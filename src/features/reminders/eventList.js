@@ -30,9 +30,10 @@
 //     flagged. Takes precedence over the ad-hoc toggle on the same row
 //     (wave > fleet-save > ad-hoc).
 //   - **Ad-hoc.** Every other leg (outbound, non-expedition, or a return
-//     not part of a scheduled wave) is an ad-hoc toggle: click to arm a
-//     one-shot reminder `adhocOffsetSec` before arrival, click again to
-//     cancel. Legs past ntfy's 3-day cap show disabled.
+//     not part of a scheduled wave) is an ad-hoc toggle: click to arm the
+//     per-universe ad-hoc schedule (signed offsets relative to arrival, like
+//     fleet-save) against this leg, click again to cancel. Legs whose every
+//     slot is past ntfy's 3-day cap show disabled.
 //
 // # Honest "syncing" state (OGame is not an SPA)
 //
@@ -62,7 +63,7 @@ import { chromeStore } from '../../lib/storage.js';
 import { REMINDER_MIRROR_KEY, isValidNtfyToken } from '../../sync/reminders.js';
 import { NTFY_MAX_DELAY_SEC, offsetsForSchedule } from '../../sync/ntfyReconciler.js';
 import { parseUniverseId } from '../../lib/universeId.js';
-import { fireAtFor } from '../../domain/adhoc.js';
+import { parseAdhocOffsets, adhocFireTimes } from '../../domain/adhoc.js';
 import {
   nearestCancellableSlot, fsOffsetsToCancel, hasUpcomingFsSlot, FS_CANCEL_WINDOW_SEC,
 } from '../../domain/fleetSave.js';
@@ -432,17 +433,23 @@ const render = () => {
       const pa = lastAdhocIntent(pending, id);
       const armed = pa ? pa === 'arm' : armedSet.has(id);
       const syncing = pa !== null ? ' syncing' : '';
+      // The cadence is the LIVE per-universe schedule resolved against this
+      // leg's arrival (the entry stores no offsets), so the badge always
+      // reflects the current config. `earliest` is the soonest slot — what
+      // decides schedulability against ntfy's 3-day cap.
+      const fireAts = adhocFireTimes(arrivalAt, parseAdhocOffsets(r.adhocSchedule)).sort((a, b) => a - b);
+      const earliest = fireAts.length ? fireAts[0] : null;
       if (armed) {
-        const entry = (snapshot?.adhoc || []).find((e) => e.id === id);
-        const fireAt = entry?.fireAt ?? fireAtFor(arrivalAt, r.adhocOffsetSec);
-        stamp(cell, `armed${syncing}`, 'disarm', '', `Reminder at ${fmtClock(fireAt)} — click to cancel`);
+        const title = earliest === null
+          ? 'Reminders armed — click to cancel'
+          : fireAts.length === 1
+            ? `Reminder at ${fmtClock(earliest)} — click to cancel`
+            : `Reminders: ${fireAts.length} · first at ${fmtClock(earliest)} — click to cancel`;
+        stamp(cell, `armed${syncing}`, 'disarm', '', title);
+      } else if (earliest !== null && earliest - now > NTFY_MAX_DELAY_SEC) {
+        stamp(cell, 'disabled', '', '', 'Too far ahead to remind (ntfy limit is 3 days)');
       } else {
-        const fireAt = fireAtFor(arrivalAt, r.adhocOffsetSec);
-        if (fireAt - now > NTFY_MAX_DELAY_SEC) {
-          stamp(cell, 'disabled', '', '', 'Too far ahead to remind (ntfy limit is 3 days)');
-        } else {
-          stamp(cell, `idle${syncing}`, 'arm', '', 'Click to get a push reminder before this arrives');
-        }
+        stamp(cell, `idle${syncing}`, 'arm', '', 'Click to get push reminders for this fleet');
       }
       continue;
     }
@@ -521,13 +528,13 @@ export const installEventListReminders = ({
     } else if (act === 'arm') {
       const arrivalAt = parseInt(row.getAttribute('data-arrival-time') || '', 10);
       if (!Number.isFinite(arrivalAt)) return;
-      const offsetSec = reminderConfigStore.get().adhocOffsetSec;
       const fleetId = row.querySelector('.recallFleet')?.getAttribute('data-fleet-id') || undefined;
       armAdhoc({
-        id, arrivalAt, offsetSec, fireAt: fireAtFor(arrivalAt, offsetSec),
+        id, arrivalAt,
         label: labelFor(row),
         // Per-leg push metadata (origin/target coords + names, ship count) so
-        // ad-hoc bodies share the same wildcard set as fleet-save.
+        // ad-hoc bodies share the same wildcard set as fleet-save. The fire
+        // cadence is the LIVE per-universe schedule, not frozen on the entry.
         ...fleetRowMeta(row),
         ...(fleetId ? { fleetId } : {}),
         createdAt: Math.floor(Date.now() / 1000),
@@ -612,7 +619,7 @@ const pickSig = (s) =>
 
 /** @param {ReturnType<typeof reminderConfigStore.get>} r @returns {string} */
 const pickReminderConfigSig = (r) =>
-  JSON.stringify({ o: r.adhocOffsetSec, e: r.reminderEnabled });
+  JSON.stringify({ o: r.adhocSchedule, e: r.reminderEnabled });
 
 /**
  * Test-only reset.

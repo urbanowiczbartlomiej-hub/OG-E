@@ -322,7 +322,7 @@ describe('reconcileAdhocQueue', () => {
     dispatchReconcile([]);
     const { idsByEntry, posted, cancelled } = await reconcileAdhocQueue({
       ...base, now: 1000,
-      entries: [{ id: 'eventRow-42', fireAt: 5000, arrivalAt: 5060, label: 'Ekspedycja → [4:467:16]' }],
+      entries: [{ id: 'eventRow-42', fireAts: [5000], arrivalAt: 5060, label: 'Ekspedycja → [4:467:16]' }],
     });
 
     expect(posted).toBe(1);
@@ -346,10 +346,56 @@ describe('reconcileAdhocQueue', () => {
     dispatchReconcile([ourAdhoc('q0', 5000)]);
     const { idsByEntry, posted } = await reconcileAdhocQueue({
       ...base, now: 1000,
-      entries: [{ id: 'eventRow-42', fireAt: 5000, arrivalAt: 5000, label: 'x' }],
+      entries: [{ id: 'eventRow-42', fireAts: [5000], arrivalAt: 5000, label: 'x' }],
     });
     expect(posted).toBe(0);
     expect(idsByEntry['eventRow-42']).toEqual(['q0']);
+  });
+
+  it('posts a MULTI-slot series for an entry with several fireAts (index/total, arrival wording)', async () => {
+    dispatchReconcile([]);
+    const { idsByEntry, posted } = await reconcileAdhocQueue({
+      ...base, now: 1000,
+      entries: [{
+        id: 'eventRow-7', arrivalAt: 5000, label: 'Expedition → [4:467:16]',
+        fireAts: [4400, 5000, 5600], // before / at / after arrival
+      }],
+    });
+
+    expect(posted).toBe(3);
+    expect(idsByEntry['eventRow-7']).toEqual(['post-0', 'post-1', 'post-2']);
+
+    const bodies = fetchMock.mock.calls
+      .filter((c) => c[1]?.method === 'POST')
+      .map((c) => c[1].body);
+    expect(bodies).toHaveLength(3);
+    // Default ad-hoc body has no {offset}/{index}/{total}; assert the bodies
+    // all render under the ad-hoc title and the same arrival clock — the
+    // multi-slot wiring is proven by the 3 posts + sequential ids above.
+    for (const b of bodies) {
+      expect(b).toMatch(/^Expedition → \[4:467:16\] — arrives \d{1,2}:\d{2}(?:\s?[AP]M)?\. 🔥$/);
+    }
+  });
+
+  it('renders {offset} (arrival wording), {index} and {total} for a custom ad-hoc template', async () => {
+    dispatchReconcile([]);
+    await reconcileAdhocQueue({
+      ...base, now: 1000,
+      template: { body: '{offset} — #{index}/{total}', icon: 'urgent', priority: 5 },
+      entries: [{
+        id: 'eventRow-8', arrivalAt: 5000, label: 'x',
+        fireAts: [4400, 5000, 5600], // -10m / at / +10m
+      }],
+    });
+
+    const bodies = fetchMock.mock.calls
+      .filter((c) => c[1]?.method === 'POST')
+      .map((c) => c[1].body);
+    expect(bodies).toEqual([
+      '10 min before arrival — #1/3',
+      'at arrival — #2/3',
+      '10 min after arrival — #3/3',
+    ]);
   });
 
   it('sweeps ad-hoc messages with no live entry, and cancels all when entries is empty', async () => {

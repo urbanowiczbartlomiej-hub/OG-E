@@ -83,11 +83,12 @@
 // is mirrored from chrome.storage by the histogram tab and passed in
 // here as a parameter; this module never reads storage directly.
 
-import { parseDurationList, humanizeOffset } from '../domain/duration.js';
+import { parseDurationList, humanizeOffset, humanizeArrivalOffset } from '../domain/duration.js';
 import {
   renderTemplate,
   iconFileFor,
   splitLabel,
+  legDirection,
   defaultReminderTemplates,
 } from '../domain/reminderTemplates.js';
 import { logger } from '../lib/logger.js';
@@ -629,21 +630,73 @@ export const reconcileWaveQueue = async ({
 export const adhocTitleFor = (universeId) => `[${universeId}] Fleet`;
 
 /**
- * Reconcile this universe's AD-HOC slice of the queue. Each armed entry is
- * a single-slot series fired at its `fireAt`. The body is rendered here from
- * the ad-hoc {@link import('../domain/reminderTemplates.js').ReminderTemplate}
- * against the entry's detail (the shared wildcard set: `{server}`,
- * `{mission}`, `{coords}`, `{origin}`, `{originName}`, `{target}`,
- * `{targetName}`, `{shipCount}`, `{arrivalTime}`); priority + icon come from
- * the template. `{label}` stays in context as an unadvertised back-compat
- * alias for bodies saved before the wildcard cleanup.
+ * Shared render context for one fleet LEG — ad-hoc and fleet-save expose the
+ * IDENTICAL per-fleet wildcard set, so the common fields live here. Splits the
+ * label into `{mission}`/`{coords}`, names the leg via {@link legDirection},
+ * and locale-formats `{shipCount}`. The per-slot timing (`{offset}`,
+ * `{index}`, `{total}`) is layered on by each caller (their reference points
+ * differ: ad-hoc words it for "arrival", fleet-save for "landing").
  *
- * Same idempotent reconcile as waves, under the ad-hoc title, so arming on
- * mobile survives the send-reload and the queue self-heals. Pass
- * `entries: []` to cancel every ad-hoc reminder queued for this universe.
+ * @param {string} universeId
+ * @param {{ label: string, arrivalAt: number, shipCount?: number,
+ *   origin?: string, originName?: string, target?: string, targetName?: string }} e
+ * @returns {Record<string, string | number>}
+ */
+const legCtxBase = (universeId, e) => {
+  const { mission, coords } = splitLabel(e.label);
+  return {
+    server: universeId,
+    label: e.label,
+    mission,
+    coords,
+    origin: e.origin ?? '',
+    originName: e.originName ?? '',
+    target: e.target ?? '',
+    targetName: e.targetName ?? '',
+    direction: legDirection(coords, e.origin ?? '', e.target ?? ''),
+    shipCount: Number.isFinite(e.shipCount) ? Number(e.shipCount).toLocaleString() : '',
+    arrivalTime: clock(e.arrivalAt),
+  };
+};
+
+/**
+ * Render context for one AD-HOC slot: the shared leg base plus this slot's
+ * arrival-relative `{offset}` (worded for "arrival" — see
+ * {@link humanizeArrivalOffset}) and its position in the scheduled series.
+ *
+ * @param {string} universeId
+ * @param {Parameters<typeof legCtxBase>[1]} e
+ * @param {number} fireAt  Epoch SECONDS this slot fires.
+ * @param {number} i       Zero-based slot index within the scheduled series.
+ * @param {number} total   Count of slots actually scheduled for this entry.
+ * @returns {Record<string, string | number>}
+ */
+const adhocCtx = (universeId, e, fireAt, i, total) => ({
+  ...legCtxBase(universeId, e),
+  offset: humanizeArrivalOffset(fireAt - e.arrivalAt),
+  index: i + 1,
+  total,
+});
+
+/**
+ * Reconcile this universe's AD-HOC slice of the queue. Each armed entry is a
+ * MULTI-slot series fired at each of its `fireAts` (the per-universe ad-hoc
+ * schedule resolved against the leg's arrival — see `domain/adhoc.js`). The
+ * body is rendered from the ad-hoc
+ * {@link import('../domain/reminderTemplates.js').ReminderTemplate} against the
+ * shared wildcard set (`{server}`, `{mission}`, `{coords}`, `{origin}`,
+ * `{originName}`, `{target}`, `{targetName}`, `{direction}`, `{shipCount}`,
+ * `{arrivalTime}`, `{offset}`, `{index}`, `{total}`); priority + icon come from
+ * the template. `{label}` stays in context as an unadvertised back-compat alias.
+ *
+ * Same idempotent reconcile as waves/fleet-save, under the ad-hoc title, so
+ * arming on mobile survives the send-reload and the queue self-heals. Slots
+ * beyond ntfy's 3-day cap are dropped here (so `{total}` counts the queued
+ * series, not the raw schedule). Pass `entries: []` to cancel every ad-hoc
+ * reminder queued for this universe.
  *
  * @param {object} args
- * @param {Array<{ id: string, fireAt: number, arrivalAt: number, label: string,
+ * @param {Array<{ id: string, fireAts: number[], arrivalAt: number, label: string,
  *   origin?: string, originName?: string, target?: string, targetName?: string,
  *   shipCount?: number }>} args.entries
  *   Armed entries (the label is the `${mission} → [${coords}]` string; the
@@ -667,15 +720,18 @@ export const reconcileAdhocQueue = async ({
   const icon = resolveIconUrl(template.icon);
   /** @type {QueueSeries[]} */
   const series = entries.map((e) => {
-    const { mission, coords } = splitLabel(e.label);
-    const body = renderTemplate(template.body, {
-      server: universeId, label: e.label, mission, coords,
-      origin: e.origin ?? '', originName: e.originName ?? '',
-      target: e.target ?? '', targetName: e.targetName ?? '',
-      shipCount: Number.isFinite(e.shipCount) ? Number(e.shipCount).toLocaleString() : '',
-      arrivalTime: clock(e.arrivalAt),
-    });
-    return { id: e.id, slots: [{ fireAt: e.fireAt, body, priority: template.priority, icon }] };
+    // Filter to the slots we'll actually schedule FIRST (3-day cap), so
+    // `{index}`/`{total}` count the queued series — mirrors fleet-save.
+    const slots = e.fireAts.filter((fireAt) => fireAt <= now + NTFY_MAX_DELAY_SEC);
+    return {
+      id: e.id,
+      slots: slots.map((fireAt, i) => ({
+        fireAt,
+        body: renderTemplate(template.body, adhocCtx(universeId, e, fireAt, i, slots.length)),
+        priority: template.priority,
+        icon,
+      })),
+    };
   });
   const { idsBySeries, posted, cancelled } = await reconcileQueue({
     series, topic, token, now, title: adhocTitleFor(universeId), queue,
@@ -695,37 +751,27 @@ export const reconcileAdhocQueue = async ({
 export const fsTitleFor = (universeId) => `[${universeId}] Fleet save`;
 
 /**
- * Render context for one fleet-save slot. States where/when the fleet lands,
- * its ship count, and whether THIS slot is before / at / after landing
- * (`{offset}`), so the push reads honestly on its own. Ship count is
- * locale-formatted for readability when the template references `{shipCount}`.
+ * Render context for one fleet-save slot: the shared leg base plus this slot's
+ * landing-relative `{offset}` (before / at / after landing — see
+ * {@link humanizeOffset}) and its position in the scheduled series, so the push
+ * reads honestly on its own.
  *
  * @param {string} universeId
- * @param {{ label: string, arrivalAt: number, shipCount?: number,
- *   origin?: string, originName?: string, target?: string, targetName?: string }} e
+ * @param {Parameters<typeof legCtxBase>[1]} e
  * @param {number} fireAt    Epoch SECONDS this slot fires.
+ * @param {number} i         Zero-based slot index within the scheduled series.
+ * @param {number} total     Count of slots actually scheduled for this save.
  * @returns {Record<string, string | number>}
  */
-const fsCtx = (universeId, e, fireAt) => {
-  const { mission, coords } = splitLabel(e.label);
-  return {
-    server: universeId,
-    label: e.label,
-    mission,
-    coords,
-    origin: e.origin ?? '',
-    originName: e.originName ?? '',
-    target: e.target ?? '',
-    targetName: e.targetName ?? '',
-    shipCount: Number.isFinite(e.shipCount) ? Number(e.shipCount).toLocaleString() : '',
-    // `arrivalTime` is the unified, advertised name shared with ad-hoc;
-    // `landTime` stays as an UNADVERTISED back-compat alias so a body saved
-    // before the wildcard cleanup still renders (it's no longer a chip).
-    arrivalTime: clock(e.arrivalAt),
-    landTime: clock(e.arrivalAt),
-    offset: humanizeOffset(fireAt - e.arrivalAt),
-  };
-};
+const fsCtx = (universeId, e, fireAt, i, total) => ({
+  ...legCtxBase(universeId, e),
+  // `landTime` stays as an UNADVERTISED back-compat alias (= `arrivalTime`) so a
+  // body saved before the wildcard cleanup still renders (it's no longer a chip).
+  landTime: clock(e.arrivalAt),
+  offset: humanizeOffset(fireAt - e.arrivalAt),
+  index: i + 1,
+  total,
+});
 
 /**
  * Reconcile this universe's FLEET-SAVE slice of the queue. Each detected FS
@@ -759,17 +805,21 @@ export const reconcileFleetSaveQueue = async ({
 }) => {
   const icon = resolveIconUrl(template.icon);
   /** @type {QueueSeries[]} */
-  const series = entries.map((e) => ({
-    id: e.id,
-    slots: e.fireAts
-      .filter((fireAt) => fireAt <= now + NTFY_MAX_DELAY_SEC)
-      .map((fireAt) => ({
+  const series = entries.map((e) => {
+    // Filter to the slots we'll actually schedule FIRST, so `{index}`/`{total}`
+    // count the queued series — not the raw offset list (slots beyond ntfy's
+    // 3-day cap are dropped, and would otherwise inflate `{total}`).
+    const slots = e.fireAts.filter((fireAt) => fireAt <= now + NTFY_MAX_DELAY_SEC);
+    return {
+      id: e.id,
+      slots: slots.map((fireAt, i) => ({
         fireAt,
-        body: renderTemplate(template.body, fsCtx(universeId, e, fireAt)),
+        body: renderTemplate(template.body, fsCtx(universeId, e, fireAt, i, slots.length)),
         priority: template.priority,
         icon,
       })),
-  }));
+    };
+  });
   const { idsBySeries, posted, cancelled } = await reconcileQueue({
     series, topic, token, now, title: fsTitleFor(universeId), queue,
   });

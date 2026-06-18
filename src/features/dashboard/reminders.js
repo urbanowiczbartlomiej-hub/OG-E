@@ -328,7 +328,7 @@ const refreshPreview = async () => {
   }
 
   const nowSec = Math.floor(Date.now() / 1000);
-  /** @type {Promise<Map<string, { id: string, time: number }>>} */
+  /** @type {Promise<Map<string, { id: string, time: number, message?: string }>>} */
   const ntfyP = (async () => {
     if (typeof ntfyToken !== 'string' || !ntfyToken) return new Map();
     const topic = await deriveNtfyTopic(typeof ntfyToken === 'string' ? ntfyToken : '');
@@ -436,7 +436,7 @@ const node = (tag, o = {}) => {
  * `innerHTML`.
  *
  * @param {Record<string, ReminderState>} states
- * @param {Map<string, { id: string, time: number }>} ntfyMap
+ * @param {Map<string, { id: string, time: number, message?: string }>} ntfyMap
  * @returns {void}
  */
 const renderPreviewMulti = (states, ntfyMap) => {
@@ -597,22 +597,47 @@ const buildReminderCard = (whenSec, cardClass) => {
 };
 
 /**
- * Append the "Fires at: hh:mm, …" line listing every still-queued ping in
- * chronological order. No-op when nothing is queued (shared by all three
- * reminder lists).
+ * Append the "Fires at" line listing every still-queued ping in chronological
+ * order. No-op when nothing is queued (shared by all three reminder lists).
+ *
+ * When ntfy hands back the message body for the queued slots (it does for
+ * scheduled-but-unfired pushes — see {@link fetchScheduledMessages}) we render
+ * one `hh:mm — <exact message>` row per ping, so the user sees the precise text
+ * that was registered (and how it differs slot-to-slot via `{index}`/`{offset}`
+ * wildcards). With no bodies available (already fired / queued elsewhere) we
+ * fall back to the compact comma-joined times.
  *
  * @param {HTMLElement} card
- * @param {Array<{ id: string, time: number }>} stillQueued
+ * @param {Array<{ id: string, time: number, message?: string }>} stillQueued
  * @returns {void}
  */
 const appendFiresAtLine = (card, stillQueued) => {
   if (stillQueued.length === 0) return;
   const firesAt = node('div', { class: 'wave-fires' });
-  firesAt.appendChild(node('span', { text: 'Fires at: ' }));
-  firesAt.appendChild(node('span', {
-    class: 'wave-times',
-    text: stillQueued.map((m) => new Date(m.time * 1000).toLocaleTimeString()).join(', '),
-  }));
+
+  const haveMessages = stillQueued.some((m) => Boolean(m.message));
+  if (!haveMessages) {
+    firesAt.appendChild(node('span', { text: 'Fires at: ' }));
+    firesAt.appendChild(node('span', {
+      class: 'wave-times',
+      text: stillQueued.map((m) => new Date(m.time * 1000).toLocaleTimeString()).join(', '),
+    }));
+    card.appendChild(firesAt);
+    return;
+  }
+
+  firesAt.appendChild(node('span', { text: 'Fires at:' }));
+  const list = node('ul', { class: 'wave-msg-list' });
+  for (const m of stillQueued) {
+    const li = node('li', { class: 'wave-msg-row' });
+    li.appendChild(node('span', {
+      class: 'wave-times',
+      text: new Date(m.time * 1000).toLocaleTimeString(),
+    }));
+    if (m.message) li.appendChild(node('span', { class: 'wave-msg', text: ' — ' + m.message }));
+    list.appendChild(li);
+  }
+  firesAt.appendChild(list);
   card.appendChild(firesAt);
 };
 
@@ -625,7 +650,7 @@ const appendFiresAtLine = (card, stillQueued) => {
  * @param {string} universeId  Which universe these waves belong to —
  *   needed so the per-card cancel button knows which gist file to PATCH.
  * @param {ReminderState} state
- * @param {Map<string, { id: string, time: number }>} ntfyMap
+ * @param {Map<string, { id: string, time: number, message?: string }>} ntfyMap
  * @returns {void}
  */
 const renderWavesInto = (section, universeId, state, ntfyMap) => {
@@ -655,7 +680,7 @@ const renderWavesInto = (section, universeId, state, ntfyMap) => {
     // of the queue endpoint, so this count shrinks over time.
     const stillQueued = ids
       .map((id) => ntfyMap.get(id))
-      .filter(/** @returns {m is { id: string, time: number }} */ (m) => Boolean(m))
+      .filter(/** @returns {m is { id: string, time: number, message?: string }} */ (m) => Boolean(m))
       .sort((a, b) => a.time - b.time);
 
     const cardClass = 'rem-wave' + (cancelled ? ' cancelled' : due ? ' due' : '');
@@ -717,7 +742,7 @@ const renderWavesInto = (section, universeId, state, ntfyMap) => {
  * @param {HTMLElement} section
  * @param {string} universeId
  * @param {ReminderState} state
- * @param {Map<string, { id: string, time: number }>} ntfyMap
+ * @param {Map<string, { id: string, time: number, message?: string }>} ntfyMap
  * @returns {void}
  */
 const renderAdhocInto = (section, universeId, state, ntfyMap) => {
@@ -727,12 +752,15 @@ const renderAdhocInto = (section, universeId, state, ntfyMap) => {
   section.appendChild(node('h4', { class: 'rem-universe-head', text: 'Ad-hoc fleet reminders' }));
 
   const notify = state.adhocNotify || {};
-  const sorted = entries.slice().sort((a, b) => a.fireAt - b.fireAt);
+  // Sort by arrival — ad-hoc entries no longer carry a single fireAt (the
+  // schedule is a live multi-slot series); each card's "fires at" list comes
+  // from the still-queued ntfy slots below.
+  const sorted = entries.slice().sort((a, b) => a.arrivalAt - b.arrivalAt);
   for (const e of sorted) {
     const ids = notify[e.id]?.scheduledMessageIds ?? [];
     const stillQueued = ids
       .map((id) => ntfyMap.get(id))
-      .filter(/** @returns {m is { id: string, time: number }} */ (m) => Boolean(m));
+      .filter(/** @returns {m is { id: string, time: number, message?: string }} */ (m) => Boolean(m));
     const queued = stillQueued.length > 0;
 
     const { card, head } = buildReminderCard(e.arrivalAt, 'rem-wave' + (queued ? '' : ' cancelled'));
@@ -785,7 +813,7 @@ const renderAdhocInto = (section, universeId, state, ntfyMap) => {
  *
  * @param {HTMLElement} section
  * @param {ReminderState} state
- * @param {Map<string, { id: string, time: number }>} ntfyMap
+ * @param {Map<string, { id: string, time: number, message?: string }>} ntfyMap
  * @returns {void}
  */
 const renderFleetSavesInto = (section, state, ntfyMap) => {
@@ -802,7 +830,7 @@ const renderFleetSavesInto = (section, state, ntfyMap) => {
     const totalScheduled = ids.length;
     const stillQueued = ids
       .map((id) => ntfyMap.get(id))
-      .filter(/** @returns {m is { id: string, time: number }} */ (m) => Boolean(m))
+      .filter(/** @returns {m is { id: string, time: number, message?: string }} */ (m) => Boolean(m))
       .sort((a, b) => a.time - b.time);
     const queued = stillQueued.length > 0;
 

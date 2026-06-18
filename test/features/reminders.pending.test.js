@@ -13,7 +13,7 @@ import {
 /** @typedef {import('../../src/features/reminders/pending.js').PendingCommand} PendingCommand */
 
 /** @param {string} id @param {Partial<import('../../src/domain/adhoc.js').AdhocReminder>} [o] */
-const entry = (id, o = {}) => ({ id, arrivalAt: 2000, offsetSec: 60, fireAt: 1940, label: 'x', ...o });
+const entry = (id, o = {}) => ({ id, arrivalAt: 2000, label: 'x', ...o });
 
 /** @param {PendingCommand[]} cmds @returns {PendingCommand[]} */
 const cmds = (cmds) => cmds;
@@ -30,10 +30,10 @@ describe('applyAdhocCmds', () => {
   });
 
   it('arm replaces an existing entry with the same id (re-arm)', () => {
-    const before = [entry('a', { offsetSec: 60 })];
-    const after = applyAdhocCmds(before, cmds([{ kind: 'arm', entry: entry('a', { offsetSec: 120, fireAt: 1880 }) }]));
+    const before = [entry('a', { arrivalAt: 2000 })];
+    const after = applyAdhocCmds(before, cmds([{ kind: 'arm', entry: entry('a', { arrivalAt: 3000 }) }]));
     expect(after).toHaveLength(1);
-    expect(after[0].offsetSec).toBe(120);
+    expect(after[0].arrivalAt).toBe(3000);
   });
 
   it('disarm removes by id', () => {

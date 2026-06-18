@@ -293,8 +293,8 @@ describe('installSendExpedition — size from settings', () => {
     expect(btn).not.toBeNull();
     expect(btn?.style.width).toBe('400px');
     expect(btn?.style.height).toBe('400px');
-    // font-size is ~23% of size, less 1px for single-zone → 92 - 1.
-    expect(btn?.style.fontSize).toBe('91px');
+    // font-size is ~18% of size, less 1px for single-zone → 72 - 1.
+    expect(btn?.style.fontSize).toBe('71px');
   });
 });
 
@@ -625,8 +625,8 @@ describe('installSendExpedition — live settings updates', () => {
     settingsStore.update((s) => ({ ...s, fabBtnSize: 300 }));
     expect(btn?.style.width).toBe('300px');
     expect(btn?.style.height).toBe('300px');
-    // 300 * 0.23 = 69, less 1px for single-zone.
-    expect(btn?.style.fontSize).toBe('68px');
+    // 300 * 0.18 = 54, less 1px for single-zone.
+    expect(btn?.style.fontSize).toBe('53px');
   });
 });
 

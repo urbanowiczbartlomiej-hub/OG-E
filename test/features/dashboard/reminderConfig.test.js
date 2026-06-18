@@ -245,16 +245,17 @@ describe('Reminders wave + ad-hoc config editor', () => {
     const d = defaultReminderConfig();
     expect($('#remCfgWaveEnabled').checked).toBe(d.reminderEnabled);
     expect(readEditor('remCfgWaveEditor')).toBe(d.reminderSchedule);
-    expect($('#remCfgAdhoc').value).toBe('1m'); // 60 s
+    // The ad-hoc lead time is now a signed chip editor; default '-1m'.
+    expect(readEditor('remCfgAdhocOffsets')).toBe(d.adhocSchedule);
   });
 
   it('hydrates the fields from the stored per-universe reminder config', async () => {
-    store.set(REMINDER_KEY, { reminderEnabled: true, reminderSchedule: '5m, 15m', adhocOffsetSec: 120 });
+    store.set(REMINDER_KEY, { reminderEnabled: true, reminderSchedule: '5m, 15m', adhocSchedule: '-10m, 0m' });
     install().refresh();
     await flush();
     expect($('#remCfgWaveEnabled').checked).toBe(true);
     expect(readEditor('remCfgWaveEditor')).toBe('5m, 15m');
-    expect($('#remCfgAdhoc').value).toBe('2m');
+    expect(readEditor('remCfgAdhocOffsets')).toBe('-10m, 0m');
   });
 
   it('renders a compact return-relative impact preview per wave offset chip', async () => {
@@ -272,14 +273,14 @@ describe('Reminders wave + ad-hoc config editor', () => {
 
     $('#remCfgWaveEnabled').checked = true;
     setEditor('remCfgWaveEditor', ['0m', '20m']);
-    $('#remCfgAdhoc').value = '90s';
+    setEditor('remCfgAdhocOffsets', ['-90s', '0m']);
     $('#remCfgSave').dispatchEvent(new Event('click'));
     await flush();
 
     const saved = /** @type {any} */ (store.get(REMINDER_KEY));
     expect(saved.reminderEnabled).toBe(true);
     expect(saved.reminderSchedule).toBe('0m, 20m');
-    expect(saved.adhocOffsetSec).toBe(90);
+    expect(saved.adhocSchedule).toBe('-90s, 0m');
     expect(typeof store.get(REMINDER_TS_KEY)).toBe('number');
     // One poke triggers a full round-trip covering BOTH slots.
     expect(typeof store.get(SYNC_KEY)).toBe('number');
@@ -299,12 +300,12 @@ describe('Reminders wave + ad-hoc config editor', () => {
   it('rejects an unparseable ad-hoc lead time and does not save', async () => {
     install().refresh();
     await flush();
-    $('#remCfgAdhoc').value = 'whenever';
+    setEditor('remCfgAdhocOffsets', ['whenever']);
     $('#remCfgSave').dispatchEvent(new Event('click'));
     await flush();
     expect(store.has(REMINDER_KEY)).toBe(false);
     expect(store.has(CFG_KEY)).toBe(false); // the whole save aborted
-    expect($('#remCfgStatus').textContent || '').toMatch(/lead time/i);
+    expect($('#remCfgStatus').textContent || '').toMatch(/ad-hoc schedule/i);
   });
 
   it('allows an empty wave schedule (no wave pings)', async () => {

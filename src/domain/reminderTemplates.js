@@ -24,12 +24,17 @@
 //
 // Ad-hoc and fleet-save both derive from ONE event-list row at arm/detect
 // time, so they share the SAME per-fleet set ({@link FLEET_FIELDS}: coords /
-// origin / originName / target / targetName / shipCount / arrivalTime) — the
-// two editors read IDENTICALLY except for fleet-save's one extra
-// schedule-relative `{offset}`. Note `{coords}` (where THIS leg lands) is NOT
-// redundant with `{origin}`/`{target}` (the fixed launch + mission target): on
-// a return leg it equals origin, on an outbound leg it equals target. Waves
-// add the series `{index}`/`{total}` + `{returnTime}`.
+// origin / originName / target / targetName / direction / shipCount /
+// arrivalTime / offset) — the two editors now read IDENTICALLY, both adding the
+// series {@link SERIES_FIELDS} (`{index}`/`{total}`) on top. Note `{coords}`
+// (where THIS leg lands) is NOT redundant with `{origin}`/`{target}` (the fixed
+// launch + mission target): on a return leg it equals origin, on an outbound
+// leg it equals target — and `{direction}` names which it is ("outbound" /
+// "return"), derived from exactly that comparison (see {@link legDirection}).
+// `{offset}` reads the slot's position relative to arrival ("10 min before" /
+// "at landing"); it's a single "before" lead on ad-hoc, the full landing-
+// relative phrase on fleet-save. Waves add `{returnTime}` + the same series
+// `{index}`/`{total}`.
 //
 // `{label}` (= `{mission} → {coords}`) and `{landTime}` (= `{arrivalTime}`)
 // are NO LONGER advertised — the composite and the alias were redundant. The
@@ -115,7 +120,9 @@ const COMMON_FIELDS = Object.freeze([
  * Per-fleet tokens shared by ad-hoc + fleet-save (both derive from one
  * event-list row, so they expose the SAME set in the SAME order). `coords` is
  * where THIS leg lands; `origin`/`target` are its fixed launch + mission target
- * (see `features/reminders/fleetSaveScan.fleetRowMeta`).
+ * (see `features/reminders/fleetSaveScan.fleetRowMeta`). `direction` names the
+ * leg ("outbound"/"return") and `offset` the slot's timing relative to arrival
+ * — both kinds carry them now, so the two editors are fully aligned.
  *
  * @type {ReadonlyArray<TemplateField>}
  */
@@ -125,8 +132,24 @@ const FLEET_FIELDS = Object.freeze([
   { token: 'originName', label: 'Origin name', sample: 'P1' },
   { token: 'target', label: 'Target coords', sample: '[4:467:16]' },
   { token: 'targetName', label: 'Target name', sample: 'Deep space' },
+  { token: 'direction', label: 'Leg (outbound/return)', sample: 'return' },
   { token: 'shipCount', label: 'Ship count', sample: '4,323' },
   { token: 'arrivalTime', label: 'Arrival time', sample: '14:32' },
+  { token: 'offset', label: 'When (before/at/after)', sample: '10 min before' },
+]);
+
+/**
+ * Series tokens: which reminder in a kind's schedule this push is, of how many.
+ * Shared by all three kinds — waves are an offset series, fleet-save fires a
+ * landing-relative series, and ad-hoc is a single-slot "1 of 1" today but is
+ * slated to grow its own schedule (so it carries the pair for forward-uniformity
+ * rather than rendering a misleading bare value later).
+ *
+ * @type {ReadonlyArray<TemplateField>}
+ */
+const SERIES_FIELDS = Object.freeze([
+  { token: 'index', label: 'Reminder # (1-based)', sample: '1' },
+  { token: 'total', label: 'Total reminders', sample: '4' },
 ]);
 
 /**
@@ -143,16 +166,12 @@ export const TEMPLATE_FIELDS = Object.freeze({
   wave: Object.freeze([
     ...COMMON_FIELDS,
     { token: 'returnTime', label: 'Return time', sample: '14:32' },
-    { token: 'index', label: 'Reminder # (1-based)', sample: '1' },
-    { token: 'total', label: 'Total reminders', sample: '4' },
+    ...SERIES_FIELDS,
   ]),
-  adhoc: Object.freeze([...COMMON_FIELDS, ...FLEET_FIELDS]),
-  // Fleet-save = the SAME set as ad-hoc + the one schedule-relative `{offset}`.
-  fleetSave: Object.freeze([
-    ...COMMON_FIELDS,
-    ...FLEET_FIELDS,
-    { token: 'offset', label: 'When (before/at/after)', sample: '10 min before' },
-  ]),
+  // Ad-hoc and fleet-save expose the IDENTICAL catalogue now: the shared
+  // per-fleet set plus the series pair.
+  adhoc: Object.freeze([...COMMON_FIELDS, ...FLEET_FIELDS, ...SERIES_FIELDS]),
+  fleetSave: Object.freeze([...COMMON_FIELDS, ...FLEET_FIELDS, ...SERIES_FIELDS]),
 });
 
 /**
@@ -283,6 +302,30 @@ export const splitLabel = (label) => {
   const i = s.indexOf(' → ');
   if (i === -1) return { mission: s.trim(), coords: '' };
   return { mission: s.slice(0, i).trim(), coords: s.slice(i + 3).trim() };
+};
+
+/**
+ * Name the leg from where it lands: `'return'` when the landing `coords` match
+ * the launch `origin`, `'outbound'` when they match the mission `target`. All
+ * three are the SAME bracketed dense `[g:s:p]` format (see
+ * `features/reminders/fleetSaveScan`), so an exact string compare is reliable.
+ * Returns `''` when undecidable — coords missing, or origin === target so the
+ * match is ambiguous — which the renderer then collapses to an empty token.
+ * Pure.
+ *
+ * @param {string} coords  Landing coords (where THIS leg arrives).
+ * @param {string} origin  Launch coords (fixed).
+ * @param {string} target  Mission-target coords (fixed).
+ * @returns {'' | 'outbound' | 'return'}
+ */
+export const legDirection = (coords, origin, target) => {
+  const c = String(coords ?? '');
+  if (!c) return '';
+  const isReturn = c === String(origin ?? '');
+  const isOutbound = c === String(target ?? '');
+  if (isReturn && !isOutbound) return 'return';
+  if (isOutbound && !isReturn) return 'outbound';
+  return '';
 };
 
 /**

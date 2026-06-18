@@ -411,6 +411,22 @@ export const createButton = (cfg) => {
   // greyed look comes from `aria-disabled` on the host (see buttonChrome.js).
   let disabled = false;
 
+  // The brand node ("oczko") stays lit only while the button has a LIVE zone.
+  // The busy/disabled dim greys the fill + label but not the chrome — fine on a
+  // 2-zone button (only one half dims, the node + the other half stay lit), but
+  // on a 1-zone button the lone bright node reads as an isolated island once its
+  // only zone greys. So: when EVERY zone is dimmed (a single-zone button greyed
+  // on tap, or any button fully disabled by the gate) the node greys with them;
+  // otherwise it stays vivid. One rule, consistent for 1- and 2-zone.
+  const nodeLens = /** @type {HTMLElement | null} */ (outer.querySelector('.oge-lens'));
+  /** @type {Set<string>} zone keys currently dimmed via setDim. */
+  const dimmedZones = new Set();
+  const syncNodeDim = () => {
+    if (!nodeLens) return;
+    const allDim = cfg.zones.every((z) => dimmedZones.has(z.key));
+    nodeLens.style.opacity = disabled || allDim ? '0.5' : '1';
+  };
+
   // ── per-zone wiring ──────────────────────────────────────────────────────
   for (const z of cfg.zones) {
     const el = /** @type {HTMLElement} */ (zoneEls.get(z.key));
@@ -499,14 +515,19 @@ export const createButton = (cfg) => {
     },
     setDim: (key, dim) => {
       // Dim the FILL (split half / single surface), not the host — keeps the
-      // rim, ring and brand lens at full strength while the zone greys out.
+      // rim and ring at full strength while the zone greys out. The brand node
+      // follows the aggregate (see syncNodeDim): lit unless EVERY zone is dim.
       const el = fillEls.get(key);
       if (el) el.style.opacity = dim ? '0.5' : '1';
+      if (dim) dimmedZones.add(key);
+      else dimmedZones.delete(key);
+      syncNodeDim();
     },
     setDisabled: (d) => {
       disabled = d;
       if (d) outer.setAttribute('aria-disabled', 'true');
       else outer.removeAttribute('aria-disabled');
+      syncNodeDim();
     },
     setProgress: (pct) => {
       const clamped = Math.max(0, Math.min(1, pct));

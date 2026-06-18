@@ -135,7 +135,10 @@ describe('event-list badges', () => {
     cell.click();
 
     expect(api.armAdhoc).toHaveBeenCalledTimes(1);
-    expect(api.armAdhoc.mock.calls[0][0]).toMatchObject({ id: 'eventRow-42', offsetSec: 60 });
+    expect(api.armAdhoc.mock.calls[0][0]).toMatchObject({ id: 'eventRow-42' });
+    // The armed entry carries identity + arrival anchor, NOT a frozen offset.
+    expect(api.armAdhoc.mock.calls[0][0]).not.toHaveProperty('offsetSec');
+    expect(api.armAdhoc.mock.calls[0][0]).not.toHaveProperty('fireAt');
     // render() ran inside the click handler, re-found the cell (arrivalTime
     // intact) and reflected the queued intent.
     expect(cell.classList.contains('arrivalTime')).toBe(true);
@@ -241,7 +244,7 @@ describe('event-list badges', () => {
     chromeStoreData[REMINDER_MIRROR_KEY] = {
       [parseUniverseId(location.host)]: {
         version: 5, waves: [], notifyState: {},
-        adhoc: [{ id: 'eventRow-42', arrivalAt: base, offsetSec: 60, fireAt: base - 60 }],
+        adhoc: [{ id: 'eventRow-42', arrivalAt: base, label: 'x' }],
         adhocNotify: {}, fleetSave: [], fleetSaveNotify: {},
       },
     };

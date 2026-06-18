@@ -75,7 +75,7 @@ describe('reminderConfig store — hydration', () => {
     const cfg = reminderConfigStore.get();
     expect(cfg.reminderEnabled).toBe(true);
     expect(cfg.reminderSchedule).toBe('5m');
-    expect(cfg.adhocOffsetSec).toBe(60); // filled from default
+    expect(cfg.adhocSchedule).toBe('-1m'); // filled from default
   });
 
   it('keeps the defaults and does NOT write when nothing is stored', async () => {

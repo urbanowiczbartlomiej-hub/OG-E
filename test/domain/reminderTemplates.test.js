@@ -16,6 +16,7 @@ import {
   renderTemplate,
   templateTokens,
   unknownTokens,
+  legDirection,
 } from '../../src/domain/reminderTemplates.js';
 
 describe('defaultReminderTemplates', () => {
@@ -153,18 +154,35 @@ describe('templateTokens / unknownTokens', () => {
       expect(tokensOf('adhoc')).toContain(t);
       expect(tokensOf('fleetSave')).toContain(t);
     }
-    // Ad-hoc and fleet-save advertise an IDENTICAL set except fleet-save's one
-    // extra schedule-relative {offset}.
-    expect(tokensOf('fleetSave')).toEqual([...tokensOf('adhoc'), 'offset']);
+    // Ad-hoc and fleet-save now advertise an IDENTICAL set (same tokens,
+    // same order) — including {direction}, {offset}, {index}, {total}.
+    expect(tokensOf('fleetSave')).toEqual(tokensOf('adhoc'));
+    for (const t of ['direction', 'offset', 'index', 'total']) {
+      expect(tokensOf('adhoc')).toContain(t);
+      expect(tokensOf('fleetSave')).toContain(t);
+    }
     // The retired composite/alias tokens are no longer advertised on either.
     expect(tokensOf('adhoc')).not.toContain('label');
     expect(tokensOf('fleetSave')).not.toContain('landTime');
     // The new per-fleet tokens are accepted (no "unknown wildcard") for both.
-    const body = '{origin} {originName} {target} {targetName} {shipCount}';
+    const body = '{origin} {originName} {target} {targetName} {shipCount} {direction} {offset}';
     expect(unknownTokens(body, 'adhoc')).toEqual([]);
     expect(unknownTokens(body, 'fleetSave')).toEqual([]);
     // …but waves don't carry per-fleet data, so they stay flagged there.
     expect(unknownTokens('{origin}', 'wave')).toEqual(['origin']);
+  });
+
+  it('legDirection names the leg from where it lands', () => {
+    // coords === origin only ⇒ return.
+    expect(legDirection('[4:467:15]', '[4:467:15]', '[4:467:16]')).toBe('return');
+    // coords === target only ⇒ outbound.
+    expect(legDirection('[4:467:16]', '[4:467:15]', '[4:467:16]')).toBe('outbound');
+    // matches neither ⇒ '' (undecidable).
+    expect(legDirection('[4:467:99]', '[4:467:15]', '[4:467:16]')).toBe('');
+    // missing coords ⇒ ''.
+    expect(legDirection('', '[4:467:15]', '[4:467:16]')).toBe('');
+    // ambiguous (origin === target, both match) ⇒ ''.
+    expect(legDirection('[4:467:15]', '[4:467:15]', '[4:467:15]')).toBe('');
   });
 
   it('renders the new per-fleet tokens from a context', () => {

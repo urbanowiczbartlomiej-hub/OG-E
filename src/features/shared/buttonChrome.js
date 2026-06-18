@@ -148,7 +148,14 @@ export const BUTTON_CHROME_CSS = [
   'width:100%;pointer-events:none;z-index:3;text-shadow:0 1px 2px rgba(0,0,6,.45);}',
   // Nudged down so the label clears the upper glass lens (see .oge-lens).
   // Now nested in .oge-surface (not a direct host child) — match on descendant.
-  '.oge-host.single .oge-btn-label{position:absolute;inset:0;padding-top:14%;}',
+  // Horizontal inset narrows the label's working width well inside the round
+  // rim, so a MULTI-word primary (e.g. "All maxed!") wraps at its space onto two
+  // lines instead of being forced into one line that collides with the chrome —
+  // the two-line case the tight line-height above already anticipates. Single
+  // unbreakable words ("Discover" / "Prepare") have no break point, so they stay
+  // on one line regardless. box-sizing:border-box keeps the padding inside inset:0.
+  '.oge-host.single .oge-btn-label{position:absolute;inset:0;box-sizing:border-box;',
+  'padding-top:12%;padding-left:16%;padding-right:16%;}',
 
   // ── Ring: band, charge arc, progress arc, title, brand ──────────────────
   '.oge-ring{position:absolute;inset:0;width:100%;height:100%;',

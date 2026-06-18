@@ -58,7 +58,7 @@ import {
 } from '../../domain/reminderTemplates.js';
 import {
   parseDuration, formatDuration, parseDurationList,
-  humanizeOffset, humanizeReturnOffset, summarizeSchedule,
+  humanizeOffset, humanizeReturnOffset, humanizeArrivalOffset, summarizeSchedule,
 } from '../../domain/duration.js';
 
 /**
@@ -101,8 +101,8 @@ const mk = (tag, css, text) => {
  * @param {(sec: number) => string} o.previewLong  Full phrase used as the chip's
  *   hover title (the long-form single source of truth shared with the push).
  * @param {string} o.placeholder
- * @param {'landing' | 'return'} o.reference  Point the combined summary line
- *   below the chips measures from ("… before/after landing|return").
+ * @param {'landing' | 'return' | 'arrival'} o.reference  Point the combined
+ *   summary line below the chips measures from ("… before/after landing|return|arrival").
  * @returns {OffsetEditor}
  */
 const makeOffsetEditor = ({ idBase, signed, previewLong, placeholder, reference }) => {
@@ -457,13 +457,13 @@ export const installReminderConfig = ({ getUniverseId }) => {
     reference: 'return',
   });
 
-  const adhocInput = /** @type {HTMLInputElement} */ (mk('input'));
-  adhocInput.type = 'text';
-  adhocInput.id = 'remCfgAdhoc';
-  adhocInput.size = 8;
-  adhocInput.placeholder = '1m';
-  adhocInput.title =
-    'How long before arrival an ad-hoc ping fires. Minutes-first (1m, 90s, 2h).';
+  const adhocEditor = makeOffsetEditor({
+    idBase: 'remCfgAdhocOffsets',
+    signed: true,
+    previewLong: humanizeArrivalOffset,
+    placeholder: '-1m',
+    reference: 'arrival',
+  });
 
   // ── per-server (fleet-save) field widgets ────────────────────────────
   const enabledInput = /** @type {HTMLInputElement} */ (mk('input'));
@@ -613,7 +613,7 @@ export const installReminderConfig = ({ getUniverseId }) => {
 
   const adhocPane = addTab('Ad-hoc');
   twoCol(adhocPane, [
-    row('Lead time', adhocInput, 'before arrival, e.g. 1m'),
+    block('Reminder schedule', adhocEditor.element, 'each relative to arrival (− before, 0 at, + after)'),
   ], adhocTplEditor.element);
 
   const fsPane = addTab('Fleet-save');
@@ -672,7 +672,7 @@ export const installReminderConfig = ({ getUniverseId }) => {
   const fillReminder = (cfg) => {
     waveEnabledInput.checked = cfg.reminderEnabled;
     waveEditor.setFromString(cfg.reminderSchedule);
-    adhocInput.value = formatDuration(cfg.adhocOffsetSec);
+    adhocEditor.setFromString(cfg.adhocSchedule);
     waveTplEditor.setFromTemplate(cfg.templates.wave);
     adhocTplEditor.setFromTemplate(cfg.templates.adhoc);
     fsTplEditor.setFromTemplate(cfg.templates.fleetSave);
@@ -740,15 +740,15 @@ export const installReminderConfig = ({ getUniverseId }) => {
       setStatus('Wave schedule — each reminder must be a duration like 0m, 10m, 30m.', '#e66');
       return null;
     }
-    const adhoc = parseDuration(adhocInput.value);
-    if (adhoc === null || adhoc < 0) {
-      setStatus('Ad-hoc lead time — use e.g. 1m, 90s, 2h.', '#e66');
+    const adhocSchedule = adhocEditor.collect();
+    if (adhocSchedule === null) {
+      setStatus('Ad-hoc schedule — each reminder must be a duration like -10m, 0m, 10m.', '#e66');
       return null;
     }
     return normalizeReminderConfig({
       reminderEnabled: waveEnabledInput.checked,
       reminderSchedule: schedule,
-      adhocOffsetSec: adhoc,
+      adhocSchedule,
       templates: {
         wave: waveTplEditor.collect(),
         adhoc: adhocTplEditor.collect(),

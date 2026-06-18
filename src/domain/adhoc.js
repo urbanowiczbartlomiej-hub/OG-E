@@ -1,5 +1,7 @@
 // @ts-check
 
+import { parseDurationList } from './duration.js';
+
 // Ad-hoc fleet-reminder domain logic — pure, no DOM, no storage, no
 // `Date.now()`. Tests run in Node with zero mocks. Sibling of
 // `domain/waves.js`; where waves are auto-detected expedition clusters,
@@ -15,24 +17,36 @@
 // the event-row id, so the player marks a single LEG: "ping me when this
 // fleet reaches its target" and "…when it gets home" are two separate,
 // independently-armable rows. `data-arrival-time` on the row is the leg's
-// arrival epoch; the reminder fires `offsetSec` BEFORE it.
+// arrival epoch — the anchor every reminder slot is measured from.
+//
+// # The schedule is per-server and applied LIVE (not frozen at arm time)
+//
+// Each armed entry stores only its IDENTITY + arrival anchor + the per-leg
+// push metadata captured off the row (label / origin / target / ship count).
+// The reminder CADENCE is the per-universe `adhocSchedule` — a signed
+// offset list relative to arrival, in the SAME convention as fleet-save
+// (`-` before, `0` at, `+` after arrival; `fireAt = arrivalAt + offset`).
+// The producer resolves the schedule against each entry's `arrivalAt` on
+// every scan ({@link adhocFireTimes}), so editing the schedule re-times all
+// armed reminders — matching how waves and fleet-save read their offsets
+// live. Nothing about the offsets is persisted on the entry.
 //
 // # Auto-cleanup when the row vanishes
 //
 // The player can't un-mark a row that's gone (recalled fleet, changed
 // plan). So {@link reconcileAdhoc} drops any armed entry whose event id is
-// no longer present in the live list. This is safe precisely because the
-// fire time is at-or-before arrival (`offsetSec >= 0`):
+// no longer present in the live list:
 //
-//   - the leg ARRIVED → its row disappears at arrival, by which point the
-//     ping (at arrival − offset) has already fired. Dropping cancels
-//     nothing still pending.
-//   - the leg was RECALLED early → its row disappears before arrival, so
-//     the still-future ping SHOULD be cancelled. Dropping does exactly
-//     that (the ntfy reconcile sweeps the now-unwanted message).
+//   - the leg ARRIVED → its row disappears at arrival. Before/at pings have
+//     already fired; any AFTER-arrival pings already scheduled on ntfy still
+//     fire if the player is away, and are swept if they're back in-game when
+//     the row vanishes — exactly the fleet-save post-landing behaviour.
+//   - the leg was RECALLED early → its row disappears before arrival, so the
+//     still-future pings (before AND after) SHOULD be cancelled. Dropping
+//     does exactly that (the ntfy reconcile sweeps the now-unwanted slots).
 //
 // Either way "absent ⇒ drop" is correct, and no grace window is needed
-// (unlike waves, whose multi-ping schedule outlives the landing moment).
+// (unlike waves, whose schedule is anchored to a return time we keep).
 //
 // The caller must only feed an AUTHORITATIVE present-set (a real, parsed
 // event-list read — see the producer's `oge:eventBoxLoaded` gate). An
@@ -41,18 +55,17 @@
 // and the producer must not call us in that state.
 
 /**
- * One armed ad-hoc reminder, as persisted per-universe in the gist.
+ * One armed ad-hoc reminder, as persisted per-universe in the gist. Holds the
+ * leg's identity + arrival anchor + the per-leg push metadata captured off the
+ * row at arm time; the fire cadence is NOT stored here — it's the live
+ * `adhocSchedule`, resolved against `arrivalAt` each scan ({@link adhocFireTimes}).
  *
  * @typedef {object} AdhocReminder
  * @property {string} id         Event-row identity (`eventRow-<n>`); the key.
- * @property {number} arrivalAt  Epoch SECONDS the leg arrives (`data-arrival-time`).
- * @property {number} offsetSec  Seconds BEFORE arrival to fire (>= 0). Captured
- *   at arm time so a later change to the global default doesn't move
- *   already-armed reminders.
- * @property {number} fireAt     Derived anchor: `arrivalAt - offsetSec`. Stored
- *   so the scheduler doesn't recompute it.
+ * @property {number} arrivalAt  Epoch SECONDS the leg arrives (`data-arrival-time`);
+ *   the anchor every schedule offset is measured from.
  * @property {string} label      Human description for the push body, built at
- *   arm time from the row (e.g. `"Expedition → [4:467:16]"`). Display only.
+ *   arm time from the row (e.g. `"Expedition → [4:467:16]"`). Display + body.
  * @property {string} [origin]      Launch coords, bracketed (push `{origin}`).
  * @property {string} [originName]  Launch body name (push `{originName}`).
  * @property {string} [target]      Mission-target coords (push `{target}`).
@@ -74,24 +87,36 @@
  */
 
 /**
- * Recompute the fire anchor for an arrival + offset. Pure.
+ * Parse the per-universe ad-hoc schedule string into signed second offsets
+ * relative to arrival (negative = before, 0 = at, positive = after). Same
+ * grammar + convention as `domain/fleetSave.parseFsOffsets`. Pure.
  *
- * @param {number} arrivalAt
- * @param {number} offsetSec
- * @returns {number}
+ * @param {string} str
+ * @returns {number[]}  Sorted unique whole-second offsets.
  */
-export const fireAtFor = (arrivalAt, offsetSec) => arrivalAt - offsetSec;
+export const parseAdhocOffsets = (str) => parseDurationList(str, { signed: true });
+
+/**
+ * Resolve a schedule (signed arrival-relative offsets) to absolute fire times
+ * for one entry: `arrivalAt + offset` for each offset. Pure — window clamping
+ * (ntfy's 3-day cap) and past-slot skipping happen in the scheduler, not here.
+ *
+ * @param {number} arrivalAt    Epoch SECONDS the leg arrives.
+ * @param {number[]} offsetsSec Signed offsets (see {@link parseAdhocOffsets}).
+ * @returns {number[]}
+ */
+export const adhocFireTimes = (arrivalAt, offsetsSec) =>
+  offsetsSec.map((o) => arrivalAt + o);
 
 /**
  * Reconcile the armed ad-hoc reminders against the fleets currently
  * present in the event list.
  *
  *   - **present, same arrival** → keep unchanged.
- *   - **present, arrival changed** → reschedule: `fireAt =
- *     newArrival - offsetSec` (the player kept the same intent on a fleet
- *     whose timing moved — e.g. a redirect). `arrivalAt` is updated too.
- *   - **absent** → drop (landed: ping already fired; or recalled: ping
- *     should be cancelled — see the module header).
+ *   - **present, arrival changed** → update `arrivalAt` (a redirect moved the
+ *     leg; the live schedule re-resolves against the new anchor downstream).
+ *   - **absent** → drop (landed: before/at pings already fired; or recalled:
+ *     still-future pings should be cancelled — see the module header).
  *
  * Pure: returns fresh objects, never mutates the input. No `now` needed —
  * presence, not time, decides survival. The schedulable-window (ntfy's
@@ -120,7 +145,7 @@ export const reconcileAdhoc = (prev, present) => {
     if (arrivalAt === e.arrivalAt) {
       entries.push(e);
     } else {
-      entries.push({ ...e, arrivalAt, fireAt: fireAtFor(arrivalAt, e.offsetSec) });
+      entries.push({ ...e, arrivalAt });
     }
   }
 

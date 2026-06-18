@@ -4,6 +4,7 @@ import {
   defaultReminderTemplates,
   normalizeReminderTemplates,
 } from './reminderTemplates.js';
+import { formatDuration } from './duration.js';
 
 // Reminder configuration — the PER-UNIVERSE knobs that drive expedition-wave
 // auto-reminders and the ad-hoc lead time, plus the per-kind message templates.
@@ -34,8 +35,10 @@ import {
  * @property {boolean} reminderEnabled  Expedition-wave auto-reminders on/off.
  * @property {string} reminderSchedule  Wave reminder cadence — a free-form
  *   minutes-first offset list AFTER the wave returns (e.g. `"0m, 10m, 30m, 60m"`).
- * @property {number} adhocOffsetSec  Ad-hoc reminder lead time: seconds BEFORE
- *   arrival a one-shot ad-hoc ping fires (captured per reminder at arm time).
+ * @property {string} adhocSchedule  Ad-hoc reminder cadence — a free-form
+ *   minutes-first SIGNED offset list relative to arrival, same convention as
+ *   the fleet-save schedule (`-` before, `0` at, `+` after; e.g.
+ *   `"-1h, -10m, 0m"`). Applied live to every armed entry (see `domain/adhoc.js`).
  * @property {Record<import('./reminderTemplates.js').ReminderKind, import('./reminderTemplates.js').ReminderTemplate>} templates
  *   Per-kind message customisation (body / icon / priority) for wave, ad-hoc,
  *   and fleet-save. The fleet-save BEHAVIOURAL knobs (`fs*`) stay in
@@ -52,21 +55,27 @@ import {
 export const defaultReminderConfig = () => ({
   reminderEnabled: false,
   reminderSchedule: '0m, 10m, 30m, 60m',
-  adhocOffsetSec: 60,
+  // 1 minute before arrival — reproduces the historical single 60s lead time.
+  adhocSchedule: '-1m',
   templates: defaultReminderTemplates(),
 });
 
 /**
- * Coerce one stored value to a finite, non-negative integer number of
- * seconds, falling back to `fallback` for garbage / negatives.
+ * Resolve the ad-hoc schedule string, MIGRATING the legacy single
+ * `adhocOffsetSec` (seconds BEFORE arrival) to the new signed offset list
+ * (before = negative). A present `adhocSchedule` string wins; otherwise a
+ * finite legacy lead time becomes a one-entry "before" schedule
+ * (`60 ⇒ "-1m"`); otherwise the default. Total.
  *
- * @param {unknown} v
- * @param {number} fallback
- * @returns {number}
+ * @param {{ adhocSchedule?: unknown, adhocOffsetSec?: unknown }} r
+ * @param {string} fallback
+ * @returns {string}
  */
-const coerceSeconds = (v, fallback) => {
-  const n = Math.floor(Number(v));
-  return Number.isFinite(n) && n >= 0 ? n : fallback;
+const adhocScheduleOf = (r, fallback) => {
+  if (typeof r.adhocSchedule === 'string') return r.adhocSchedule;
+  const legacy = Math.floor(Number(r.adhocOffsetSec));
+  if (Number.isFinite(legacy) && legacy >= 0) return formatDuration(-legacy);
+  return fallback;
 };
 
 /**
@@ -88,7 +97,7 @@ export const normalizeReminderConfig = (raw) => {
       typeof r.reminderEnabled === 'boolean' ? r.reminderEnabled : d.reminderEnabled,
     reminderSchedule:
       typeof r.reminderSchedule === 'string' ? r.reminderSchedule : d.reminderSchedule,
-    adhocOffsetSec: coerceSeconds(r.adhocOffsetSec, d.adhocOffsetSec),
+    adhocSchedule: adhocScheduleOf(r, d.adhocSchedule),
     templates: normalizeReminderTemplates(r.templates),
   };
 };
