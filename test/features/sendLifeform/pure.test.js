@@ -203,9 +203,12 @@ describe('render', () => {
     const p = render({ kind: 'allDone', cooldown: false, scansRemaining: 0, cap: null });
     expect(p).toMatchObject({ text: 'All discovered!', bg: BG_LF_DONE });
   });
-  it('blocked → "Max fleets" in error red, dimmed, with system subtext', () => {
+  it('blocked → "Max fleets" in error red, dimmed, with NO subtext', () => {
+    // The fleet cap is account-global, so the viewed system's coords are
+    // noise here — the blocked state deliberately carries no subtext.
     const p = render({ kind: 'blocked', target: { galaxy: 4, system: 250 }, scansRemaining: 3, cap: null });
-    expect(p).toMatchObject({ text: 'Max fleets', subtext: '[4:250]', bg: BG_LF_ERROR, dim: true });
+    expect(p).toMatchObject({ text: 'Max fleets', bg: BG_LF_ERROR, dim: true });
+    expect(p).not.toHaveProperty('subtext');
   });
 });
 
