@@ -50,17 +50,7 @@ export const FOCUS_KEY = 'oge_focusedBtn';
 /** Focus-persist value written/read by this feature. */
 export const FOCUS_VALUE = 'send-exp';
 
-/** localStorage key — holds `{ x: number, y: number }` dragged position. */
-export const POS_KEY = 'oge_enterBtnPos';
-
 // ─── Visual / interaction constants ──────────────────────────────────
-
-/**
- * Movement threshold in pixels before a pointer gesture counts as a
- * drag. Anything below this (jitter from thumb contact, touch-start
- * micro-moves) still fires as a click.
- */
-export const DRAG_THRESHOLD = 8;
 
 /**
  * How long the "All maxed!" warning label stays on the button when the
@@ -87,9 +77,6 @@ export const POLL_TIMEOUT_MS = 15_000;
 
 /** Poll interval for AGR-readiness checks. */
 export const POLL_INTERVAL_MS = 300;
-
-/** Default offset from the bottom-right corner when no saved pos. */
-export const DEFAULT_EDGE_OFFSET_PX = 20;
 
 /** Delay before restoring focus on install. */
 export const FOCUS_RESTORE_DELAY_MS = 50;

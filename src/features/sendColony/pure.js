@@ -184,7 +184,7 @@ export const findNextScanSystem = (scans, home, currentView, policy = DEFAULT_RE
  * @returns {number} number of systems that would return a hit from
  *   {@link findNextScanSystem}. Zero means "everything fresh".
  */
-export const countScansRemaining = (scans, policy = DEFAULT_RESCAN_POLICY) => {
+const countScansRemaining = (scans, policy = DEFAULT_RESCAN_POLICY) => {
   let remaining = 0;
   for (let g = 1; g <= COL_MAX_GALAXY; g++) {
     for (let s = 1; s <= COL_MAX_SYSTEM; s++) {

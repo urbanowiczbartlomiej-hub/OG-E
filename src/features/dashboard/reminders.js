@@ -578,6 +578,45 @@ const cancelWaveFromDashboard = async (universeId, waveId) => {
 };
 
 /**
+ * Build the shared reminder-card shell: a `rem-wave` card plus its head with
+ * the formatted arrival/fire time. Each render function appends its own badge,
+ * cancel button, and meta after this.
+ *
+ * @param {number} whenSec  Epoch-seconds shown as the card's "when".
+ * @param {string} cardClass  Full class string (callers vary the modifier).
+ * @returns {{ card: HTMLElement, head: HTMLElement }}
+ */
+const buildReminderCard = (whenSec, cardClass) => {
+  const card = node('div', { class: cardClass });
+  const head = node('div', { class: 'wave-head' });
+  head.appendChild(node('span', {
+    class: 'wave-when',
+    text: new Date(whenSec * 1000).toLocaleString(),
+  }));
+  return { card, head };
+};
+
+/**
+ * Append the "Fires at: hh:mm, …" line listing every still-queued ping in
+ * chronological order. No-op when nothing is queued (shared by all three
+ * reminder lists).
+ *
+ * @param {HTMLElement} card
+ * @param {Array<{ id: string, time: number }>} stillQueued
+ * @returns {void}
+ */
+const appendFiresAtLine = (card, stillQueued) => {
+  if (stillQueued.length === 0) return;
+  const firesAt = node('div', { class: 'wave-fires' });
+  firesAt.appendChild(node('span', { text: 'Fires at: ' }));
+  firesAt.appendChild(node('span', {
+    class: 'wave-times',
+    text: stillQueued.map((m) => new Date(m.time * 1000).toLocaleTimeString()).join(', '),
+  }));
+  card.appendChild(firesAt);
+};
+
+/**
  * Render one universe's wave cards into `section`. Extracted from the
  * old renderPreview so the multi-universe wrapper can call it once per
  * universe with no duplication.
@@ -620,13 +659,7 @@ const renderWavesInto = (section, universeId, state, ntfyMap) => {
       .sort((a, b) => a.time - b.time);
 
     const cardClass = 'rem-wave' + (cancelled ? ' cancelled' : due ? ' due' : '');
-    const card = node('div', { class: cardClass });
-
-    const head = node('div', { class: 'wave-head' });
-    head.appendChild(node('span', {
-      class: 'wave-when',
-      text: new Date(w.nextWaveAt * 1000).toLocaleString(),
-    }));
+    const { card, head } = buildReminderCard(w.nextWaveAt, cardClass);
     const badge = reminderBadge({
       cancelled,
       scheduledCount: totalScheduled,
@@ -660,15 +693,7 @@ const renderWavesInto = (section, universeId, state, ntfyMap) => {
     }
     card.appendChild(node('div', { class: 'wave-meta', text: metaText }));
 
-    if (stillQueued.length > 0) {
-      const timesText = stillQueued
-        .map((m) => new Date(m.time * 1000).toLocaleTimeString())
-        .join(', ');
-      const firesAt = node('div', { class: 'wave-fires' });
-      firesAt.appendChild(node('span', { text: 'Fires at: ' }));
-      firesAt.appendChild(node('span', { class: 'wave-times', text: timesText }));
-      card.appendChild(firesAt);
-    }
+    appendFiresAtLine(card, stillQueued);
 
     card.appendChild(node('div', {
       class: 'wave-origins',
@@ -710,13 +735,7 @@ const renderAdhocInto = (section, universeId, state, ntfyMap) => {
       .filter(/** @returns {m is { id: string, time: number }} */ (m) => Boolean(m));
     const queued = stillQueued.length > 0;
 
-    const card = node('div', { class: 'rem-wave' + (queued ? '' : ' cancelled') });
-
-    const head = node('div', { class: 'wave-head' });
-    head.appendChild(node('span', {
-      class: 'wave-when',
-      text: new Date(e.arrivalAt * 1000).toLocaleString(),
-    }));
+    const { card, head } = buildReminderCard(e.arrivalAt, 'rem-wave' + (queued ? '' : ' cancelled'));
     const badge = reminderBadge({
       scheduledCount: ids.length,
       pendingCount: stillQueued.length,
@@ -741,15 +760,7 @@ const renderAdhocInto = (section, universeId, state, ntfyMap) => {
 
     card.appendChild(node('div', { class: 'wave-meta', text: e.label || 'Fleet reminder' }));
 
-    if (queued) {
-      const firesAt = node('div', { class: 'wave-fires' });
-      firesAt.appendChild(node('span', { text: 'Fires at: ' }));
-      firesAt.appendChild(node('span', {
-        class: 'wave-times',
-        text: stillQueued.map((m) => new Date(m.time * 1000).toLocaleTimeString()).join(', '),
-      }));
-      card.appendChild(firesAt);
-    }
+    appendFiresAtLine(card, stillQueued);
 
     section.appendChild(card);
   }
@@ -800,13 +811,7 @@ const renderFleetSavesInto = (section, state, ntfyMap) => {
     // sync pending) so the badge explains the wait.
     const tooFar = isFleetSaveTooFarOut(e, totalScheduled, nowSec);
 
-    const card = node('div', { class: 'rem-wave' + (queued ? '' : ' cancelled') });
-
-    const head = node('div', { class: 'wave-head' });
-    head.appendChild(node('span', {
-      class: 'wave-when',
-      text: new Date(e.arrivalAt * 1000).toLocaleString(),
-    }));
+    const { card, head } = buildReminderCard(e.arrivalAt, 'rem-wave' + (queued ? '' : ' cancelled'));
     const badge = reminderBadge({
       scheduledCount: totalScheduled,
       pendingCount: stillQueued.length,
@@ -838,15 +843,7 @@ const renderFleetSavesInto = (section, state, ntfyMap) => {
       card.appendChild(note);
     }
 
-    if (queued) {
-      const firesAt = node('div', { class: 'wave-fires' });
-      firesAt.appendChild(node('span', { text: 'Fires at: ' }));
-      firesAt.appendChild(node('span', {
-        class: 'wave-times',
-        text: stillQueued.map((m) => new Date(m.time * 1000).toLocaleTimeString()).join(', '),
-      }));
-      card.appendChild(firesAt);
-    }
+    appendFiresAtLine(card, stillQueued);
 
     section.appendChild(card);
   }

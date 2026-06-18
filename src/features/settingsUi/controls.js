@@ -99,7 +99,7 @@ import { maskTopic } from '../../sync/reminders.js';
  */
 
 /** Id prefix for input elements — used to find controls by option id on sync. */
-export const INPUT_ID_PREFIX = 'oge-setting-';
+const INPUT_ID_PREFIX = 'oge-setting-';
 
 // ─── Style constants ─────────────────────────────────────────────────────
 

@@ -835,7 +835,3 @@ export const _resetDailyRunForTest = () => {
   busy = false;
   eventBoxReady = true;
 };
-
-// Re-export the pure pipeline pieces some tests import via the feature
-// entry point (mirrors sendColony re-exporting derive/render).
-export { refresh as _refreshForTest };

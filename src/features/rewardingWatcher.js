@@ -50,11 +50,7 @@
 
 import { debounce } from '../lib/debounce.js';
 import { gameDayKey } from '../domain/gameDayKey.js';
-import {
-  REWARDING_DONE_KEY,
-  writeDailyState,
-  readDailyState,
-} from '../state/dailyActions.js';
+import { writeDailyState, readDailyState } from '../state/dailyActions.js';
 import { DAILY_STATE_CHANGED_EVENT } from '../lib/ogeEvents.js';
 
 /** Selectors local to this feature — only the Rewarding page uses them. */
@@ -158,5 +154,3 @@ export const _resetRewardingWatcherForTest = () => {
     installed = null;
   }
 };
-
-export { REWARDING_DONE_KEY };

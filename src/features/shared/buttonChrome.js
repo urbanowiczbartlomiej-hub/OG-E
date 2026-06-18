@@ -515,7 +515,7 @@ const ORBIT_MARK =
  *
  * @returns {void}
  */
-export const ensureOrbitDefs = () => {
+const ensureOrbitDefs = () => {
   if (typeof document === 'undefined' || document.getElementById(ORBIT_DEFS_ID)) return;
   const holder = document.createElement('div');
   holder.id = ORBIT_DEFS_ID;

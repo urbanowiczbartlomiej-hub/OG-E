@@ -62,11 +62,7 @@
 /* global document, CustomEvent, location */
 
 import { debounce } from '../lib/debounce.js';
-import {
-  ARTIFACT_SHOP_DONE_KEY,
-  writeDailyState,
-  readDailyState,
-} from '../state/dailyActions.js';
+import { writeDailyState, readDailyState } from '../state/dailyActions.js';
 import { DAILY_STATE_CHANGED_EVENT } from '../lib/ogeEvents.js';
 
 // ── Game-DOM contract (local — only this feature reads it) ─────────────────
@@ -224,5 +220,3 @@ export const _resetArtifactShopWatcherForTest = () => {
     installed = null;
   }
 };
-
-export { ARTIFACT_SHOP_DONE_KEY };

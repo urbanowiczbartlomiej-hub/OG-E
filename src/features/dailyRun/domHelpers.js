@@ -38,7 +38,7 @@ const SEL_META_TYPE = 'meta[name="ogame-planet-type"]';
  * @param {string | null | undefined} txt
  * @returns {{ galaxy: number, system: number, position: number } | null}
  */
-export const parseCoordsText = (txt) => {
+const parseCoordsText = (txt) => {
   if (!txt) return null;
   const m = String(txt).match(/(\d+):(\d+):(\d+)/);
   if (!m) return null;

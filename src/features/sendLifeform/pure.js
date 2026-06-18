@@ -190,22 +190,6 @@ const systemsAtDistance = (center, d) => {
 };
 
 /**
- * Most recent `lfScannedAt` across all scanned systems — the epoch-ms
- * timestamp of the last discovery send. Returns `null` when nothing has
- * ever been sent (no system has `lfScannedAt` set).
- *
- * @param {GalaxyScans} scans
- * @returns {number | null}
- */
-export const maxLfScannedAt = (scans) => {
-  let max = 0;
-  for (const scan of Object.values(scans)) {
-    if (scan.lfScannedAt && scan.lfScannedAt > max) max = scan.lfScannedAt;
-  }
-  return max > 0 ? max : null;
-};
-
-/**
  * Count systems discovered (their `lfScannedAt` stamped) strictly AFTER the
  * given epoch-ms — a proxy for "how many discoveries since the last artifact
  * reading", which drives the {@link ARTIFACT_REFRESH_EVERY} refresh detour.

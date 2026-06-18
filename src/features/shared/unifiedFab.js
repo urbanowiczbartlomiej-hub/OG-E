@@ -43,7 +43,7 @@ import {
   orbitRadius,
 } from './unifiedFabPure.js';
 
-export { FAB_POS_KEY, FAB_ACTIVE_KEY };
+export { FAB_ACTIVE_KEY };
 
 /** Outer draggable wrapper (OG-E's own surface, not a game contract). */
 export const FAB_WRAP_ID = 'oge-fab-wrap';

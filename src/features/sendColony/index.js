@@ -243,17 +243,6 @@ const paintZone = (key, p) => {
   controller.setDim(key, p.dim === true);
 };
 
-/**
- * Apply a {@link RenderResult} to the mounted button. No-op when unmounted.
- *
- * @param {RenderResult} result
- * @returns {void}
- */
-export const paint = (result) => {
-  paintZone('send', result.send);
-  paintZone('scan', result.scan);
-};
-
 // ─── captureEnv + refresh ──────────────────────────────────────────────
 
 /**

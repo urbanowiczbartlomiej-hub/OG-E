@@ -62,10 +62,6 @@ import {
   readArtifactCounter,
 } from './domHelpers.js';
 
-// Re-export the pure pipeline so the test file can import derive/render
-// from this module (matches the sendColony convention).
-export { derive, render } from './pure.js';
-
 /**
  * @typedef {import('./pure.js').Paint} Paint
  * @typedef {import('./pure.js').LfContext} LfContext

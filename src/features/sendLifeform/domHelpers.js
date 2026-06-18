@@ -25,7 +25,7 @@ import { parseArtifactCounter } from './pure.js';
  * originate it. Single-feature selector, so it stays local (per gameDom's
  * scope rules) rather than in `lib/gameDom.js`.
  */
-export const DISCOVER_BTN_ID = 'discoverSystemBtn';
+const DISCOVER_BTN_ID = 'discoverSystemBtn';
 
 /**
  * Read the active planet's `(galaxy, system)` from
