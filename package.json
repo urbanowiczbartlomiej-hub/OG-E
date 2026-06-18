@@ -5,12 +5,12 @@
   "type": "module",
   "private": true,
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "clean": "node scripts/clean.mjs",
     "build": "npm run clean && rollup -c && node scripts/copy-static.mjs",
-    "build:prod": "npm run clean && cross-env NODE_ENV=production rollup -c && node scripts/copy-static.mjs",
+    "build:prod": "npm run clean && rollup -c --environment NODE_ENV:production && node scripts/copy-static.mjs",
     "dev": "rollup -c -w",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
@@ -18,15 +18,14 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "package": "npm run build:prod && node scripts/package.mjs && node scripts/package-source.mjs",
-    "package:source": "node scripts/package-source.mjs",
     "release": "node --env-file-if-exists=.env scripts/release.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
     "@rollup/plugin-terser": "^1.0.0",
-    "cross-env": "^10.1.0",
     "eslint": "^9.39.4",
     "eslint-plugin-import": "^2.32.0",
+    "globals": "^14.0.0",
     "happy-dom": "^14.12.0",
     "rollup": "^4.18.0",
     "typescript": "^5.5.0",
