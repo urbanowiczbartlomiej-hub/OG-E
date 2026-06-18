@@ -23,6 +23,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   installReadabilityBoost,
   stripCountdownUnitSuffix,
+  relabelStatusLine,
+  MOVEMENT_LINK_LABELS,
   _resetReadabilityBoostForTest,
 } from '../../src/features/readabilityBoost.js';
 import { settingsStore } from '../../src/state/settings.js';
@@ -84,7 +86,7 @@ describe('readabilityBoost', () => {
     // Guard against accidental deletion of the bold override on the
     // movement anchor — that bold is what makes the small-screen
     // stacked lines readable.
-    expect(css).toContain('font-weight: bold');
+    expect(css).toContain('font-weight: 700');
   });
 
   it('eventbox countdown is large, bold, and yellow (primary focal point)', () => {
@@ -99,7 +101,7 @@ describe('readabilityBoost', () => {
     );
     expect(countdownRule).not.toBeNull();
     const body = countdownRule?.[1] ?? '';
-    expect(body).toMatch(/color:\s*#ffe04b/);
+    expect(body).toMatch(/color:\s*#fcce00/);
     // Countdown must be DISTINCTLY larger than the mission-type
     // payload — the asymmetry is the whole point. We don't pin the
     // exact px so the design can be re-tuned without a test update,
@@ -213,6 +215,40 @@ describe('readabilityBoost', () => {
     });
   });
 
+  // ── relabelStatusLine — pure helper ─────────────────────────────
+
+  describe('relabelStatusLine', () => {
+    it('replaces the locale label but keeps the used/total counts', () => {
+      expect(relabelStatusLine('Floty: 35/37', MOVEMENT_LINK_LABELS.fleets))
+        .toBe('Fleets: 35/37');
+      expect(
+        relabelStatusLine('Ekspedycje: 15/15', MOVEMENT_LINK_LABELS.expeditions),
+      ).toBe('Expos: 15/15');
+    });
+
+    it('is locale-agnostic — parses only the trailing count pair', () => {
+      expect(relabelStatusLine('Flotten: 1/12', MOVEMENT_LINK_LABELS.fleets))
+        .toBe('Fleets: 1/12');
+      expect(relabelStatusLine('Флот: 9/11', MOVEMENT_LINK_LABELS.fleets))
+        .toBe('Fleets: 9/11');
+    });
+
+    it('tolerates spaces around the slash', () => {
+      expect(relabelStatusLine('Floty: 3 / 9', MOVEMENT_LINK_LABELS.fleets))
+        .toBe('Fleets: 3/9');
+    });
+
+    it('is idempotent on already-relabelled text', () => {
+      const once = relabelStatusLine('Floty: 35/37', MOVEMENT_LINK_LABELS.fleets);
+      expect(relabelStatusLine(once, MOVEMENT_LINK_LABELS.fleets)).toBe(once);
+    });
+
+    it('returns the input untouched when no count pair is present', () => {
+      expect(relabelStatusLine('Floty: brak', MOVEMENT_LINK_LABELS.fleets))
+        .toBe('Floty: brak');
+    });
+  });
+
   it('movement-link rule stacks vertically regardless of AGR colour modifier', () => {
     // Layout (flex column + bold + bigger font) is applied to the bare
     // `a.ago_movement.tooltip` selector so the rule fires for BOTH the
@@ -241,10 +277,10 @@ describe('readabilityBoost', () => {
     // case, but it does NOT carry layout — only the colour. Same
     // multi-selector shape: step-1 anchor + step-2 wrapper anchor.
     expect(css).toMatch(
-      /a\.ago_movement\.tooltip\.ago_color_lightgreen\s*,[^{]*\{[^}]*color:\s*#a0ff60/,
+      /a\.ago_movement\.tooltip\.ago_color_lightgreen\s*,[^{]*\{[^}]*color:\s*#4af74d/,
     );
     expect(css).toMatch(
-      /#ago_summary_fleets\s*>\s*a\.tooltip\.ago_color_lightgreen[^{]*\{[^}]*color:\s*#a0ff60/,
+      /#ago_summary_fleets\s*>\s*a\.tooltip\.ago_color_lightgreen[^{]*\{[^}]*color:\s*#4af74d/,
     );
     // No universal-child rule cascading colour into descendants — if
     // one reappears, the red "Ekspedycje: 14/14" span loses its tint.

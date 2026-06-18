@@ -36,9 +36,21 @@ import { settingsStore } from '../state/settings.js';
 // onto every descendant via `a.xxx *`, which destroyed the native red
 // "max reached" indicator. The new rule applies the green to the anchor
 // ONLY (text nodes inherit, explicit `ago_color_palered` child keeps
-// its red). We also reshape the anchor as a column flex container so
-// the two status lines stack vertically, left-aligned, and bump the
-// font to 15 px so small-screen users can read them at a glance.
+// its red). We stack the two status lines vertically in a subtle themed
+// card. The host header is a FIXED 40px box, so the font is capped (~19px,
+// tight line-height) to keep BOTH lines inside it — push it larger and the
+// second line drops behind the component below (see the CSS size budget).
+//
+// On top of the CSS we FORCE the labels. OGame/AGR render the prefixes
+// in the account locale ("Floty:" / "Ekspedycje:" PL, "Flotten:" RU/DE,
+// …), which are long and uneven. A small MutationObserver-driven
+// relabeller rewrites each line to our own short, fixed labels
+// ("Fleets:" / "Expos:") while preserving the live "used/total" counts —
+// locale-agnostic because it parses only the trailing `\d+/\d+` pair,
+// never the label. Short fixed labels keep the inline line compact. The
+// relabeller shares the
+// `readabilityBoost` toggle and re-applies on every AGR re-render (count
+// changes on fleet send/return), with guarded writes so it never loops.
 //
 // AGR renders the same status link in two distinct DOM shells across
 // the two fleetdispatch steps:
@@ -97,6 +109,38 @@ export const stripCountdownUnitSuffix = (text) => {
 };
 
 /**
+ * Forced, language-independent labels for the fleetdispatch movement
+ * link. We discard whatever prefix OGame/AGR emit per locale and keep
+ * only the numeric "used/total" pair behind these short, equal-width
+ * labels. Exported so tests can pin the exact strings.
+ */
+export const MOVEMENT_LINK_LABELS = { fleets: 'Fleets:', expeditions: 'Expos:' };
+
+/**
+ * Rewrite one movement-link status line ("<locale label> 18/37") to a
+ * forced label while preserving the live "used/total" counts. Locale-
+ * agnostic: it parses only the trailing `\d+/\d+` pair, so PL "Floty:",
+ * DE "Flotten:", RU "Флот:", … all collapse to the same output.
+ *
+ * Returns the input untouched when no count pair is present — a future
+ * AGR shell without counts degrades to its native text instead of losing
+ * information. Idempotent on already-relabelled text (it rebuilds the
+ * same string from the counts), which is what lets the observer's own
+ * write settle without looping.
+ *
+ * Exported so tests can pin the transform without mounting a DOM.
+ *
+ * @param {string} text
+ * @param {string} label  one of {@link MOVEMENT_LINK_LABELS}.
+ * @returns {string}
+ */
+export const relabelStatusLine = (text, label) => {
+  const m = text.match(/(\d+)\s*\/\s*(\d+)/);
+  if (!m) return text;
+  return `${label} ${m[1]}/${m[2]}`;
+};
+
+/**
  * The override rules. Kept as a module-level constant so tests can
  * assert on the exact selectors + `!important` presence without
  * reaching into internals.
@@ -104,93 +148,125 @@ export const stripCountdownUnitSuffix = (text) => {
 const CSS = `/* OG-E: readability boost — event box + fleet movement link */
 
 /* ===== Event box container =====
-   Three pieces of information sit inside this box: the mission count
-   summary ("17 Misje: 17 x własna"), the countdown to the next event,
-   and the mission-type name. OGame renders them across two <p> tags
-   at small default text. Our reshape keeps the game's background /
-   border / theme colour / position untouched and only:
-     1. Makes the container a positioning context for the countdown.
-     2. Reserves enough right-padding for the countdown to float on
-        top without overlapping the left column text. */
+   Three pieces of information sit inside this box, across two <p> tags:
+   p1 = mission counts ("35 Misje: 19 x własna, 16 przyjazny"), p2 = the
+   countdown + the mission-type name.
+
+   Layout: the countdown is the headline and lives absolute-anchored to
+   the RIGHT of the card at full size; the mission counts (top) and
+   mission-type (below) flow in the left column. We reserve a right
+   gutter (padding-right) so the left text never slides under the
+   countdown. The card itself is a subtle OG-E surface in the game's own
+   palette. */
 #eventboxFilled {
   position: relative !important;
-  padding-right: 130px !important;
+  /* Left value hugs the left edge; right value is the countdown gutter.
+     Top/bottom split (10/7) nudges the left-column text down a touch
+     while keeping the SAME total vertical padding — so the box height
+     and the absolute-centred countdown stay exactly put. */
+  padding: 10px 150px 7px 5px !important;
   height: auto !important;
   min-height: 0 !important;
   max-height: none !important;
   overflow: visible !important;
+  /* Nudge the whole card up 12px: the top message bar clips the card's
+     bottom against the content component below it, so we pull it clear. */
+  margin-top: -12px !important;
+  /* Widen the card ~10px to the left: a negative left margin pushes the
+     left edge out while the (auto-width) right edge stays put. */
+  margin-left: -10px !important;
+  /* …and ~5px to the right the same way. */
+  margin-right: -5px !important;
+  /* Subtle themed card so the box reads as a distinct OG-E surface.
+     Palette is OGame's own: dark panel + thin cyan accent border. */
+  background: rgba(15, 20, 26, 0.72) !important;
+  border: 1px solid rgba(64, 196, 193, 0.45) !important;
+  border-radius: 6px !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55) !important;
 }
 
-/* Row 1 (left column, top): hide the verbose "N Misje:" prefix — the
-   compact "N x type" span (.undermark) carries the same information
-   at half the width. */
+/* Row 1 (left column, top) — mission counts. Hide the verbose
+   "N Misje:" prefix; the compact count chips (.undermark / .middlemark)
+   carry the payload. */
 #eventboxFilled > p.event_list:first-child {
   font-size: 0 !important;
   margin: 0 !important;
-  line-height: 1.2 !important;
+  line-height: 1.1 !important;
 }
 #eventboxFilled > p.event_list:first-child .undermark {
-  font-size: 13px !important;
+  font-size: 12px !important;
   font-weight: 700 !important;
-  color: #7ecfff !important;
+  color: #40c4c1 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.3px !important;
+}
+/* Friendly-mission count chip (".middlemark", e.g. "16 przyjazny"). The
+   game's comma separator between the chips sits in the parent text at
+   font-size:0, so re-introduce the gap with an explicit margin. Renders
+   only when there are friendly events; absent otherwise. */
+#eventboxFilled > p.event_list:first-child .middlemark {
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  color: #4af74d !important;
+  margin-left: 10px !important;
 }
 
-/* Row 2 (left column, bottom + absolute right): the second <p>
-   contains BOTH .next_event spans — the one wrapping the countdown
-   and the one wrapping the mission-type name. We hide the parent
-   font-size so the "Następna:" / "Rodzaj:" prefixes vanish; the
-   nested payload re-appears via its own explicit font-size. */
+/* Row 2 (left column, bottom + absolute-right countdown): the second
+   <p> holds BOTH .next_event spans (countdown wrapper + mission-type
+   wrapper). Hide the parent font-size so the "Następna:" / "Rodzaj:"
+   prefixes vanish; the nested payload re-appears via its own size. */
 #eventboxFilled > p.event_list:nth-child(2) {
   font-size: 0 !important;
   margin: 0 !important;
-  line-height: 1.2 !important;
+  line-height: 1.1 !important;
 }
-
-/* Reset the block override we used to carry from a previous revision
-   — both .next_event spans flow inline again, which is what lets the
-   mission-type sit naturally on its line in the left column. The
-   countdown escapes the flow via the absolute rule below. */
 #eventboxFilled .next_event {
   font-size: 0 !important;
   display: inline !important;
+  width: auto !important;
 }
 
-/* Mission-type (friendly/hostile/neutral): small but readable, left
-   column, right under the undermark chip. */
+/* Mission-type (friendly/hostile/neutral): readable, in the left column
+   under the count chips. */
 #eventboxFilled .next_event .friendly,
 #eventboxFilled .next_event .hostile,
 #eventboxFilled .next_event .neutral {
-  font-size: 20px !important;
-  font-weight: bold !important;
+  font-size: 18px !important;
+  font-weight: 700 !important;
 }
-#eventboxFilled .friendly { color: #55e87a !important; }
-#eventboxFilled .hostile  { color: #ff4d4d !important; }
-#eventboxFilled .neutral  { color: #ffaa33 !important; }
+/* Mission-type colours mirror OGame's own event palette
+   (#eventz tr.friendly/.neutral/.hostile) so they read as native. */
+#eventboxFilled .friendly { color: #4af74d !important; }
+#eventboxFilled .hostile  { color: #d43635 !important; }
+#eventboxFilled .neutral  { color: #fcce00 !important; }
 
-/* Countdown: escapes the left column via absolute positioning so it
-   can grow arbitrarily large without pushing the mission-type line
-   around. Right-anchored to the container, vertically centred.
-   Inset-right matches the container's 130px padding reservation
-   minus ~110px for the countdown width — keeps it just inside the
-   box's right edge. */
+/* Countdown — the headline number, absolute-anchored to the right of
+   the card and vertically centred so it stays put regardless of the
+   left column's height. The container's right gutter (padding-right)
+   keeps it clear of the left text; tabular-nums stops the digits
+   jittering as it ticks. */
 #eventboxFilled .next_event .countdown {
   position: absolute !important;
-  right: 0 !important;
-  /* Vertical centre on the geometric midpoint of the container, then
-     nudged 5 px up: with line 1 (undermark, 13 px) and line 2
-     (mission-type, 20 px) the visual mass leans toward line 2, so
-     pure 50 % centring reads ~5 px low. Pulling the countdown up by
-     5 px via the translateY offset rebalances without risking
-     overflow at the container's top edge — anchoring at top: 70 %
-     dropped the 50 px countdown clean below the box. */
+  right: 5px !important;
   top: 50% !important;
-  transform: translateY(calc(-50% - 5px)) !important;
-  font-size: 50px !important;
+  transform: translateY(-50%) !important;
+  font-size: 52px !important;
   font-weight: 900 !important;
-  color: #ffe04b !important;
+  color: #fcce00 !important;
+  /* Dark outline + halo so the gold countdown always stands out, even
+     when it overlaps the mission-type text. paint-order draws the stroke
+     BEHIND the fill so the digits don't thin out; the soft black shadow
+     separates them from anything behind, the faint gold glow keeps the
+     OG-E look. */
+  -webkit-text-stroke: 1.2px #05070a !important;
+  paint-order: stroke fill !important;
+  text-shadow:
+    0 0 6px rgba(0, 0, 0, 0.85),
+    0 0 11px rgba(252, 206, 0, 0.35) !important;
   letter-spacing: 0.5px !important;
   line-height: 1 !important;
   white-space: nowrap !important;
+  font-variant-numeric: tabular-nums !important;
 }
 
 /* AGR's expand/collapse toggles are irrelevant to the compact view. */
@@ -200,32 +276,45 @@ const CSS = `/* OG-E: readability boost — event box + fleet movement link */
 }
 
 /* ===== Movement link (fleetdispatch header) =====
-   Stack "Floty: X/Y" on top of "Ekspedycje: X/Y" left-aligned. AGR
-   swaps the anchor's status colour between ago_color_lightgreen
-   (slots free) and ago_color_palered (37/37 — fleets capped), so
-   the LAYOUT rule must match ANY movement anchor, regardless of
-   the colour modifier. The colour override is opt-in via the
-   lightgreen sibling rule below — when AGR has already swapped to
-   palered we leave the native red alone. height:auto cancels any
-   inline workaround the user might have left behind.
+   Stack "Floty: X/Y" on top of "Ekspedycje: X/Y" left-aligned in a
+   subtle themed card. AGR swaps the anchor's status colour between
+   ago_color_lightgreen (slots free) and ago_color_palered (37/37 —
+   fleets capped); the colour override below is opt-in to the lightgreen
+   variant only, so when AGR has already swapped to palered we leave the
+   native red alone. The expeditions span keeps its own native colour
+   (we tint the anchor only — no universal-child cascade).
 
-   Two selectors here cover the two fleetdispatch steps: step 1
-   carries the ago_movement class on the anchor itself, step 2
-   wraps the (otherwise identical) anchor in #ago_summary_fleets
-   and drops the class. We pair them so the same layout + colour
-   land on both. */
+   HARD SIZE BUDGET. The host header (#planet.shortHeader) is a FIXED
+   40px box (game CSS, !important). Two stacked lines must stay within
+   it or the second line ("Ekspedycje") drops out of sight behind the
+   component below. At 21px / line-height 1.05 each line is ~22px (2 ≈
+   44px) + 0 vertical padding + 2px border ≈ 46px — about the largest
+   that still shows both lines in practice. Push the font higher only by
+   tightening line-height/padding to keep the total ≈46px, else the
+   second line vanishes.
+
+   Two selectors cover the two fleetdispatch steps: step 1 carries the
+   ago_movement class on the anchor itself, step 2 wraps the (otherwise
+   identical) anchor in #ago_summary_fleets and drops the class. */
 a.ago_movement.tooltip,
 #ago_summary_fleets > a.tooltip {
-  font-size: 18px !important;
-  font-weight: bold !important;
+  font-size: 21px !important;
+  font-weight: 700 !important;
   display: inline-flex !important;
   flex-direction: column !important;
   align-items: flex-start !important;
-  line-height: 1.2 !important;
+  line-height: 1.05 !important;
+  gap: 0 !important;
   width: auto !important;
   height: auto !important;
-  padding: 2px 0 !important;
-  gap: 1px !important;
+  padding: 0 9px !important;
+  letter-spacing: 0.2px !important;
+  font-variant-numeric: tabular-nums !important;
+  text-decoration: none !important;
+  box-sizing: border-box !important;
+  background: rgba(15, 20, 26, 0.72) !important;
+  border: 1px solid rgba(64, 196, 193, 0.35) !important;
+  border-radius: 6px !important;
 }
 
 /* Colour override for the green ("slots free") variant only. The
@@ -235,7 +324,7 @@ a.ago_movement.tooltip,
    child cascade. */
 a.ago_movement.tooltip.ago_color_lightgreen,
 #ago_summary_fleets > a.tooltip.ago_color_lightgreen {
-  color: #a0ff60 !important;
+  color: #4af74d !important;
 }
 `;
 
@@ -345,15 +434,80 @@ export const installReadabilityBoost = () => {
     }
   };
 
-  // At document_start `#eventboxFilled` doesn't exist yet. Start once
-  // now (no-op if absent) and once on DOMContentLoaded.
-  const onDomReady = () => startCountdownTrimmer();
+  // ─── Movement-link relabeller ─────────────────────────────────────
+  //
+  // Force our short, locale-independent labels onto the fleet-movement
+  // status link (see the header comment). AGR owns the counts and
+  // re-renders the link on every fleet send/return, so we re-apply on
+  // each mutation. Writes are guarded (only when the text changes), so
+  // our own write can't drive an infinite loop and a re-pass is a no-op.
+
+  /** @type {MutationObserver | null} */
+  let movementObserver = null;
+
+  const relabelMovementLinks = () => {
+    const anchors = document.querySelectorAll(
+      'a.ago_movement.tooltip, #ago_summary_fleets > a.tooltip',
+    );
+    const labels = [MOVEMENT_LINK_LABELS.fleets, MOVEMENT_LINK_LABELS.expeditions];
+    for (const a of anchors) {
+      // The two status lines, in document order: fleets first,
+      // expeditions second. We key off ORDER rather than the locale
+      // label or the child nodeType, so the rule survives AGR wrapping
+      // either count in a span — today the fleets count is a bare text
+      // node on the anchor and the expeditions count sits in its own
+      // `.ago_color_palered` span (whose colour class we leave intact;
+      // `textContent` touches text, not attributes).
+      let i = 0;
+      for (const node of a.childNodes) {
+        if (i >= labels.length) break;
+        const raw = node.textContent ?? '';
+        if (!/\d+\s*\/\s*\d+/.test(raw)) continue; // skip whitespace / non-count nodes
+        const next = relabelStatusLine(raw, labels[i]);
+        if (next !== raw) node.textContent = next;
+        i += 1;
+      }
+    }
+  };
+
+  const startMovementRelabel = () => {
+    if (movementObserver) return;
+    // The link lives in `#planet` (step 1) or `#ago_summary_fleets`
+    // (step 2, created after load), with no single stable ancestor
+    // across both, so we observe the body. The callback is cheap (one
+    // querySelectorAll + guarded writes) and only mutates on a real
+    // label change, so a broad observation is acceptable here.
+    const root = document.body || document.documentElement;
+    if (!root) return; // document_start: no body yet — retried on DOMContentLoaded
+    relabelMovementLinks();
+    movementObserver = new MutationObserver(relabelMovementLinks);
+    movementObserver.observe(root, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+    });
+  };
+
+  const stopMovementRelabel = () => {
+    if (movementObserver) {
+      movementObserver.disconnect();
+      movementObserver = null;
+    }
+  };
+
+  // At document_start `#eventboxFilled` / the movement link don't exist
+  // yet. Start once now (no-op if absent) and once on DOMContentLoaded.
+  const onDomReady = () => {
+    startCountdownTrimmer();
+    startMovementRelabel();
+  };
 
   // Initial paint: inject unconditionally so nothing flashes between
   // `document_start` and the first settings-store tick. The subscription
   // below reconciles to the hydrated preference on the next microtask.
   inject();
   startCountdownTrimmer();
+  startMovementRelabel();
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', onDomReady, { once: true });
   }
@@ -369,9 +523,11 @@ export const installReadabilityBoost = () => {
     if (prev) {
       inject();
       startCountdownTrimmer();
+      startMovementRelabel();
     } else {
       retract();
       stopCountdownTrimmer();
+      stopMovementRelabel();
     }
   });
 
@@ -380,6 +536,7 @@ export const installReadabilityBoost = () => {
       unsubscribe();
       retract();
       stopCountdownTrimmer();
+      stopMovementRelabel();
       document.removeEventListener('DOMContentLoaded', onDomReady);
       installed = null;
     },
