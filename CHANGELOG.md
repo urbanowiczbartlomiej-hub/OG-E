@@ -4,6 +4,42 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.26.0] — 2026-06-18
+
+### Added
+
+- **Player intel now syncs across devices.** The player data behind galaxy
+  scans — ranks, alliance, and the active / inactive / strong / newbie / …
+  flags — plus your own rank and profile now travel with the rest of your
+  cloud sync, per universe. A device that hasn't itself re-scanned the galaxy
+  sees the same neighbour rankings and relative-strength scoring as the device
+  that recorded them. (Until now only the raw scans synced; the player
+  metadata stayed on the device that captured it, so rankings looked stale or
+  empty elsewhere.)
+- **The Multi-device sync settings now explain themselves.** A note spells out
+  exactly what is synced (and what stays on each device), a **Validate** button
+  checks your GitHub token on the spot, and hitting GitHub's rate limit shows a
+  "retry after HH:MM" countdown instead of a bare error.
+
+### Fixed
+
+- **Import/Export nudge clears once the day's offers are used up.** During a
+  "6× per day" Import/Export event, taking the last container now stops the
+  prompt from nagging for the rest of the day — it had stayed lit because the
+  "come back tomorrow" message carries no time for it to re-arm against.
+- **Cloud sync no longer risks data loss on a flaky connection.** If the
+  pre-upload read of your gist fails (network blip, rate limit), the upload now
+  aborts and retries instead of pushing a partial snapshot — which on a
+  multi-universe account could overwrite another server's data — and the status
+  row reports the failure rather than a false "synced". A galaxy scan that
+  lands mid-sync is no longer dropped.
+- **A setting introduced by a newer version is no longer lost when an older
+  device syncs.** Cross-version syncs now keep settings the older build doesn't
+  recognise yet, instead of quietly dropping them from the shared gist.
+- **Dashboard Export → Import keeps lifeform discoveries.** The import path now
+  uses the same merge as cloud sync, so re-importing a backup no longer erases a
+  lifeform marker that a later plain rescan had overwritten.
+
 ## [1.25.4] — 2026-06-18
 
 ### Fixed
