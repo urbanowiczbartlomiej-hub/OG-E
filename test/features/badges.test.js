@@ -22,7 +22,7 @@
 // @ts-check
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { installBadges, _resetBadgesForTest } from '../../src/features/badges.js';
+import { installBadges, _resetBadgesForTest } from '../../src/features/badges/index.js';
 import { settingsStore, SETTINGS_SCHEMA } from '../../src/state/settings.js';
 
 /**

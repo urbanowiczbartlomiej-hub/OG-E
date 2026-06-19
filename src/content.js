@@ -69,7 +69,7 @@ import { initBodiesStore } from './state/bodies.js';
 import { installColonyRecorder } from './features/colonyRecorder.js';
 import { installPlanetBarCapture } from './features/planetBarCapture.js';
 import { installOwnProfile } from './features/ownProfile.js';
-import { installBadges } from './features/badges.js';
+import { installBadges } from './features/badges/index.js';
 import { installSendExpedition } from './features/sendExpedition/index.js';
 import { installSendColony } from './features/sendColony/index.js';
 import { installSendLifeform } from './features/sendLifeform/index.js';
