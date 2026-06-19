@@ -187,6 +187,32 @@ describe('select — happy path', () => {
     expect(order.indexOf('setTargetType')).toBeGreaterThan(order.indexOf('setTarget'));
     expect(order.indexOf('setTargetType')).toBeLessThan(order.indexOf('selectMission'));
   });
+
+  it('verifies the native target type on fleet2 — dispatches ensureTargetType with the order type', async () => {
+    // The fleet2 safety net: once checkTarget has resolved on fleet2, the
+    // courier asks the executor to confirm the game's OWN target-type icon and
+    // click it if a fleet1 prime didn't take. Assert the call fires with the
+    // order's type and lands after setTargetType but before the mission is armed.
+    buildFleet1();
+    /** @type {Array<{ op: string, args: any }>} */
+    const cmds = [];
+    const rec = (/** @type {any} */ e) => cmds.push({ op: e.detail.op, args: e.detail.args });
+    document.addEventListener('oge:fd:cmd', rec);
+    const unhookExec = fakeExecutor({ errorCode: null, missionOk: true });
+    unhook = () => { document.removeEventListener('oge:fd:cmd', rec); unhookExec(); };
+    snapshot([{ id: 203, number: 100 }], { 4: true });
+
+    const r = await select({
+      spec: { kind: 'all' },
+      target: { galaxy: 4, system: 472, position: 15, type: 3 },
+      mission: 4,
+    });
+    expect(r.ok).toBe(true);
+    const ops = cmds.map((c) => c.op);
+    expect(cmds.find((c) => c.op === 'ensureTargetType')?.args.type).toBe(3);
+    expect(ops.indexOf('ensureTargetType')).toBeGreaterThan(ops.indexOf('setTargetType'));
+    expect(ops.indexOf('ensureTargetType')).toBeLessThan(ops.indexOf('selectMission'));
+  });
 });
 
 describe('select — failures', () => {

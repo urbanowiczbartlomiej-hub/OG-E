@@ -286,6 +286,47 @@ describe('fleetExecutor', () => {
     expect(moonClicked).toBe(0);
   });
 
+  /** Build the game's OWN fleet2 target-type row (td.targetType .targetIcons). */
+  const buildTargetTypeRow = (/** @type {1 | 3} */ selected) => {
+    document.body.innerHTML = `
+      <td class="targetType"><div class="targetIcons">
+        <a class="targetIcon planet${selected === 1 ? ' selected' : ''}" data-type="1"></a>
+        <a class="targetIcon moon${selected === 3 ? ' selected' : ''}" data-type="3"></a>
+        <a class="targetIcon debris" data-type="2"></a>
+      </div></td>`;
+  };
+
+  it('ensureTargetType clicks the native moon icon when the planet icon is the selected one', async () => {
+    // The fleet2 safety net: a fleet1 prime that didn't take leaves the planet
+    // icon selected; ensureTargetType clicks the moon icon so the send isn't
+    // aimed at the planet.
+    /** @type {any} */ (window).fleetDispatcher = makeFakeFd();
+    buildTargetTypeRow(1);
+    let moonClicks = 0;
+    let planetClicks = 0;
+    /** @type {HTMLElement} */ (document.querySelector('.targetIcon.moon'))
+      .addEventListener('click', () => { moonClicks += 1; });
+    /** @type {HTMLElement} */ (document.querySelector('.targetIcon.planet'))
+      .addEventListener('click', () => { planetClicks += 1; });
+
+    const res = await command('ensureTargetType', { type: 3 });
+    expect(res.ok).toBe(true);
+    expect(moonClicks).toBe(1);
+    expect(planetClicks).toBe(0);
+  });
+
+  it('ensureTargetType is a no-op when the wanted native icon is already selected', async () => {
+    /** @type {any} */ (window).fleetDispatcher = makeFakeFd();
+    buildTargetTypeRow(3);
+    let moonClicks = 0;
+    /** @type {HTMLElement} */ (document.querySelector('.targetIcon.moon'))
+      .addEventListener('click', () => { moonClicks += 1; });
+
+    const res = await command('ensureTargetType', { type: 3 });
+    expect(res.ok).toBe(true);
+    expect(moonClicks).toBe(0);
+  });
+
   it('selectMission clicks the available mission icon, reports unavailable otherwise', async () => {
     /** @type {any} */ (window).fleetDispatcher = makeFakeFd();
     // mission4 is available ("on"); mission7 is present but not allowed.

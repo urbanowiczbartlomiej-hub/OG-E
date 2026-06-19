@@ -36,6 +36,9 @@
 //                  target inputs (td.targetCoords) for an in-place retarget;
 //                  fires the game's checkTarget XHR. Used on a discrete fleet2
 //                  click (AGR doesn't re-clobber a settled-fleet2 edit).
+//   ensureTargetType { type } → fleet2 guard: click the game's OWN target-type
+//                  icon (td.targetType, 1 planet · 3 moon) iff it isn't already
+//                  selected. Last resort when a fleet1 type-prime didn't take.
 //   selectMission{ mission } → selectMission iff available; data { available }
 //
 // @ts-check
@@ -191,6 +194,31 @@ const primeTypeConfirmed = async (type) => {
 };
 
 /**
+ * Fleet2 native target-type safety net. Unlike {@link setTargetType} (which
+ * drives AGR's fleet1 `#ago_type` spans), this acts on the game's OWN
+ * `td.targetType` icons — the authoritative planet/moon selector once on
+ * fleet2. AGR's fleet1 priming + setTargetType usually lands the right body,
+ * but a dropped synthetic click can leave fleet2 still showing the wrong one,
+ * and the send would then go to the planet instead of the moon. We click the
+ * wanted icon ONLY when it isn't already `.selected`; clicking it runs the
+ * game's own handler (which re-fires checkTarget and moves the marker), exactly
+ * like the mission-icon path — so we do NOT also poke `fd.setTargetType` (that
+ * updates the controller without moving the visible selection). A no-op when
+ * the icon is absent (off fleet2) or already correct.
+ *
+ * @param {number} type  1 planet · 3 moon
+ * @returns {void}
+ */
+const ensureNativeTargetType = (type) => {
+  const icon = /** @type {HTMLElement | null} */ (
+    document.querySelector(`${GAME.FD_TARGET_TYPE_ICON}[data-type="${type}"]`)
+  );
+  if (icon && !icon.classList.contains('selected')) {
+    icon.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  }
+};
+
+/**
  * @typedef {object} FdCommand
  * @property {number} id
  * @property {string} op
@@ -296,6 +324,16 @@ const runCommand = async (fd, cmd) => {
         setTargetType(t);
         if (typeof fd.setTargetType === 'function') fd.setTargetType(t);
       }
+      return { ok: true };
+    }
+
+    case 'ensureTargetType': {
+      // Fleet2 last-resort guard: verify the game's OWN target-type icon and
+      // click the correct one if it disagrees. Called by the courier after
+      // checkTarget settles on fleet2, covering the rare case where the fleet1
+      // prime + setTargetType didn't take. See {@link ensureNativeTargetType}.
+      const t = args.type != null ? Number(args.type) : null;
+      if (t === 1 || t === 3) ensureNativeTargetType(t);
       return { ok: true };
     }
 

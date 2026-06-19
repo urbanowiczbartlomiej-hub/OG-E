@@ -434,6 +434,18 @@ export const select = async (order) => {
     }
   }
 
+  // Fleet2 native type safety net. Even after the fleet1 prime + setTargetType,
+  // a dropped synthetic click can leave fleet2 showing the wrong body — the
+  // send would then go to the planet instead of the moon. Now that we're
+  // settled on fleet2 and checkTarget has resolved, have the executor verify
+  // the game's OWN target-type icon and click the correct one if it disagrees.
+  // Belt-and-braces over the fleet1 priming: cheap, and a no-op when the type
+  // is already right. The corrective click re-fires checkTarget; the dispatch
+  // readiness poll in armMissionAndWaitReady absorbs that re-validation.
+  if (order.target.type != null) {
+    await rpc('ensureTargetType', { type: order.target.type });
+  }
+
   return armMissionAndWaitReady(order);
 };
 

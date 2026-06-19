@@ -142,6 +142,15 @@ export const GAME = {
   FD_TARGET_SYSTEM: '#system',
   /** Native position coord input (fleet2 target row). */
   FD_TARGET_POSITION: '#position',
+  /**
+   * Native fleet2 target-type icons (`td.targetType .targetIcons a.targetIcon`).
+   * The game's OWN planet/moon/debris selector on step 2 — authoritative once
+   * AGR has handed the form off. `data-type` distinguishes them (1 planet ·
+   * 3 moon · 2 debris) and the active one carries `.selected`. The fleet
+   * executor's `ensureTargetType` op appends `[data-type="N"]` and clicks the
+   * right one as a last-resort guard when a fleet1 type-prime didn't take.
+   */
+  FD_TARGET_TYPE_ICON: 'td.targetType .targetIcons a.targetIcon',
 
   // ── AGR fleet1 target interface (the dedicated coord row AGR injects) ─
   // The target (coords + planet/moon type) is set HERE, on fleet1, not on
