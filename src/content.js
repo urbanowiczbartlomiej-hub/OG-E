@@ -80,6 +80,7 @@ import { installAgrLogo } from './features/agrLogo.js';
 import { installFleetdispatchShortcut } from './features/fleetdispatchShortcut.js';
 import { installEventMenuHighlight } from './features/eventMenuHighlight.js';
 import { installTraderMenuHighlight } from './features/traderMenuHighlight.js';
+import { installAttackAlarm } from './features/attackAlarm/index.js';
 import { installRewardingWatcher } from './features/rewardingWatcher.js';
 import { installArtifactShopWatcher } from './features/artifactShopWatcher.js';
 import { installReminders } from './features/reminders/index.js';
@@ -158,6 +159,10 @@ const installDomFeatures = () => {
   installBadges();
   installEventMenuHighlight();
   installTraderMenuHighlight();
+  // Loud under-attack alert (opt-in via Display settings). Top-frame only:
+  // the `#attack_alert` flag + event box live there, and a single overlay
+  // must not be multiplied across OGame's embedded iframes.
+  if (window.top === window.self) installAttackAlarm();
   installRewardingWatcher();
   installArtifactShopWatcher();
 
