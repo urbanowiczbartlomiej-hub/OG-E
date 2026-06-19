@@ -359,6 +359,32 @@
   }
   .rem-cancel:hover { background: #3a1a1a; color: #ff9090; }
   .rem-cancel[disabled] { opacity: 0.4; cursor: wait; }
+
+  /* ── Sync tab — per-universe diagnostics cards ─────────────────────── */
+  .sync-intro { color: #888; font-size: 13px; margin-bottom: 16px; line-height: 1.5; max-width: 640px; }
+  .sync-empty { color: #888; font-size: 14px; }
+  .sync-card {
+    background: #0d1620; border: 1px solid #1a2a3a; border-radius: 6px;
+    padding: 12px 14px; margin-bottom: 14px; max-width: 560px;
+  }
+  .sync-card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .sync-universe { color: #4a9eff; font-weight: bold; font-size: 15px; }
+  .sync-chip {
+    margin-left: auto; font-size: 12px; font-weight: 600; line-height: 1;
+    padding: 3px 8px; border-radius: 10px; white-space: nowrap;
+  }
+  .sync-chip-ok      { background: #14361a; color: #4af74d; }
+  .sync-chip-stale   { background: #2f2a14; color: #d9c24a; }
+  .sync-chip-error   { background: #3a1a1a; color: #ff8a89; }
+  .sync-chip-backoff { background: #3a2f14; color: #fcce00; }
+  .sync-chip-never   { background: #26262e; color: #999; }
+  .sync-status-line { display: flex; gap: 18px; color: #aaa; font-size: 13px; margin-bottom: 6px; }
+  .sync-err { color: #ff8a89; font-size: 12px; margin-bottom: 6px; word-break: break-word; }
+  .sync-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 4px; }
+  .sync-table th, .sync-table td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #15212c; }
+  .sync-table th { color: #888; font-weight: 600; font-size: 12px; }
+  .sync-table td.num, .sync-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .sync-table tfoot td { color: #ccc; font-weight: 600; border-bottom: none; border-top: 1px solid #2a4a5a; }
 </style>
 </head>
 <body>
@@ -368,6 +394,7 @@
     <button class="tab-btn" data-tab="colony" role="tab">Colonizations</button>
     <button class="tab-btn" data-tab="reminders" role="tab">Reminders</button>
     <button class="tab-btn" data-tab="routes" role="tab">Daily Run</button>
+    <button class="tab-btn" data-tab="sync" role="tab">Sync</button>
   </div>
   <div class="tools">
     <span class="label">Server</span>
@@ -606,6 +633,16 @@
       </p>
     </div>
   </details>
+</section>
+
+<section id="syncSection" class="tab-section">
+  <h1>Sync</h1>
+  <p class="sync-intro">
+    What's stored on this device and when each universe last synced with the
+    cloud. Every universe syncs independently — this is the place to check why a
+    second device might be showing different data.
+  </p>
+  <div id="syncBody"></div>
 </section>
 
 <script src="dashboard.js"></script>

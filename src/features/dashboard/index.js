@@ -79,6 +79,7 @@ import { installReminders, _resetRemindersForTest } from './reminders.js';
 import { installRoutes } from './routes.js';
 import { installScanColonyConfig } from './scanConfig.js';
 import { installReminderConfig } from './reminderConfig.js';
+import { installSync } from './sync.js';
 
 /**
  * @typedef {import('../../state/history.js').ColonyEntry} ColonyEntry
@@ -262,6 +263,10 @@ const boot = async () => {
   routesApi = installRoutes({ getUniverseId: () => selectedUniverseId });
   scanColonyConfigApi = installScanColonyConfig({ getUniverseId: () => selectedUniverseId });
   reminderConfigApi = installReminderConfig({ getUniverseId: () => selectedUniverseId });
+  // Sync tab is cross-universe (ignores the selector) and self-subscribes to
+  // chrome.storage changes, so it needs no universe getter and no post-load
+  // repaint — one install wires it for good.
+  installSync();
 
   const universes = await discoverUniverses();
   selectedUniverseId = resolveInitialUniverse(universes);

@@ -82,7 +82,8 @@
 /* global fetch */
 
 import { gzipEncode, gzipDecode } from '../lib/gzip.js';
-import { safeLS } from '../lib/storage.js';
+import { safeLS, chromeStore } from '../lib/storage.js';
+import { parseUniverseId } from '../lib/universeId.js';
 import { SYNC_STATUS_EVENT } from '../lib/ogeEvents.js';
 import { clearGalaxyScans } from './merge.js';
 
@@ -329,6 +330,44 @@ export const setStatus = (kind, value) => {
   if (typeof document !== 'undefined') {
     document.dispatchEvent(new CustomEvent(SYNC_STATUS_EVENT));
   }
+  // Mirror the snapshot for the extension-origin Dashboard's Sync view (it
+  // can't read this game origin's localStorage). Covers the backoff case too:
+  // the rate-limit path arms BACKOFF_KEY then throws, which routes through a
+  // caller's setStatus('err', …) — this read picks the fresh BACKOFF_KEY up.
+  mirrorSyncStatusToChrome();
+};
+
+/**
+ * chrome.storage.local key base for the per-universe sync-status mirror, read
+ * by the OG-E Dashboard's Sync view. Full key: `<universeId>:oge_syncStatus`
+ * (same namespace convention as the data slices — see state/universeKey.js).
+ */
+export const SYNC_STATUS_MIRROR_BASE = 'oge_syncStatus';
+
+/**
+ * Mirror this origin's current sync-status snapshot into chrome.storage.local
+ * under `<universeId>:oge_syncStatus`, so the extension-origin Dashboard can
+ * render each universe's ↑/↓ times + error/backoff in one cross-universe view.
+ *
+ * Best-effort and fire-and-forget — a mirror failure must never disturb a
+ * sync. Reads localStorage (the source of truth) at call time, so it always
+ * reflects whatever {@link setStatus} / the backoff path just wrote. A
+ * dedicated per-universe key (not a shared dict) means no cross-origin
+ * read-modify-write race. game-origin only — setStatus is never called at the
+ * extension origin, where `location.host` wouldn't parse to a universe.
+ *
+ * @returns {void}
+ */
+const mirrorSyncStatusToChrome = () => {
+  if (typeof location === 'undefined') return;
+  const key = `${parseUniverseId(location.host)}:${SYNC_STATUS_MIRROR_BASE}`;
+  const snapshot = {
+    up: safeLS.get(LAST_UP_KEY),
+    down: safeLS.get(LAST_DOWN_KEY),
+    err: safeLS.get(LAST_ERR_KEY),
+    backoffUntil: safeLS.int(BACKOFF_KEY, 0),
+  };
+  void chromeStore.set(key, snapshot).catch(() => {});
 };
 
 // ── GitHub API client ───────────────────────────────────────────────
