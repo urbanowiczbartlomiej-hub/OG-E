@@ -192,35 +192,26 @@ const CSS = `/* OG-E: readability boost — event box + fleet movement link */
 
    Layout: the countdown is the headline and lives absolute-anchored to
    the RIGHT of the card at full size; the mission counts (top) and
-   mission-type (below) flow in the left column. We reserve a right
-   gutter (padding-right) so the left text never slides under the
-   countdown. The card itself is a subtle OG-E surface in the game's own
-   palette. */
+   mission-type (below) flow in the left column. The card itself is a
+   flat, full-width OG-E surface in the game's own palette (top/bottom
+   border only — left/right borders dropped so it reads edge-to-edge). */
 #eventboxFilled {
   position: relative !important;
-  /* Left value hugs the left edge; right value is the countdown gutter.
-     Top/bottom split (10/7) nudges the left-column text down a touch
-     while keeping the SAME total vertical padding — so the box height
-     and the absolute-centred countdown stay exactly put. */
-  padding: 10px 150px 7px 5px !important;
-  height: auto !important;
-  min-height: 0 !important;
-  max-height: none !important;
-  overflow: visible !important;
-  /* Nudge the whole card up 12px: the top message bar clips the card's
-     bottom against the content component below it, so we pull it clear. */
-  margin-top: -12px !important;
-  /* Widen the card ~10px to the left: a negative left margin pushes the
-     left edge out while the (auto-width) right edge stays put. */
-  margin-left: -10px !important;
-  /* …and ~5px to the right the same way. */
-  margin-right: -5px !important;
-  /* Subtle themed card so the box reads as a distinct OG-E surface.
-     Palette is OGame's own: dark panel + thin cyan accent border. */
-  background: rgba(15, 20, 26, 0.72) !important;
-  border: 1px solid rgba(64, 196, 193, 0.45) !important;
-  border-radius: 6px !important;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55) !important;
+  /* Near-zero padding: hug the edges, with a small bottom pad so the
+     left-column rows clear the box's bottom edge. */
+  padding: 0px 1px 9px 1px !important;
+  /* Pull the card up and widen it past its container on both sides so it
+     spans edge-to-edge (left/right borders dropped below). */
+  margin-top: -5px !important;
+  margin-left: -15px !important;
+  margin-right: -10px !important;
+  /* Flat dark panel in OGame's own palette; top/bottom border only
+     (left/right widths zeroed) so it reads as a full-width strip. */
+  background: rgba(15, 20, 26, 0.62) !important;
+  border: 1px solid rgb(39 43 54) !important;
+  box-shadow: 0 2px 6px rgba(1, 1, 1, 1) !important;
+  border-right-width: 0px !important;
+  border-left-width: 0px !important;
 }
 
 /* Row 1 (left column, top) — mission counts. Hide the verbose
