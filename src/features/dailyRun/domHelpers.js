@@ -15,7 +15,8 @@
 // meta tags are missing we fall back to the highlighted planet-row coords
 // (type assumed planet) so coord lookups still work.
 
-import { GAME, ACTIVE_PLANET_CLASS } from '../../lib/gameDom.js';
+import { GAME } from '../../lib/gameDom.js';
+import { findNextPlanetInList } from '../shared/planetList.js';
 import { TARGET_PLANET, TARGET_MOON } from '../../domain/rules.js';
 import { coordKey } from './pure.js';
 
@@ -152,26 +153,15 @@ export const readDeployLegs = () => {
  *   target body (skip it as a source).
  * @returns {string | null} cp id, or `null`.
  */
-export const findNextCollectPlanetCp = (collectedOriginKeys, targetCoordKey) => {
-  const planets = /** @type {HTMLElement[]} */ (
-    [...document.querySelectorAll(GAME.SMALL_PLANET)]
+export const findNextCollectPlanetCp = (collectedOriginKeys, targetCoordKey) =>
+  findNextPlanetInList(
+    (p) => {
+      const coords = parseCoordsText(
+        p.querySelector(GAME.PLANET_KOORDS)?.textContent,
+      );
+      if (!coords) return false;
+      const key = coordKey(coords);
+      return key !== targetCoordKey && !collectedOriginKeys.has(key);
+    },
+    { active: 'last' },
   );
-  if (planets.length === 0) return null;
-  const currentIdx = planets.findIndex((p) =>
-    p.classList.contains(ACTIVE_PLANET_CLASS),
-  );
-  const start = currentIdx < 0 ? 0 : currentIdx;
-  for (let i = 1; i <= planets.length; i++) {
-    const p = planets[(start + i) % planets.length];
-    const coords = parseCoordsText(p.querySelector(GAME.PLANET_KOORDS)?.textContent);
-    if (!coords) continue;
-    const key = coordKey(coords);
-    if (key === targetCoordKey) continue;
-    if (collectedOriginKeys.has(key)) continue;
-    const id = p.id || '';
-    if (!id.startsWith('planet-')) continue;
-    const cp = id.slice('planet-'.length);
-    if (cp) return cp;
-  }
-  return null;
-};

@@ -80,7 +80,6 @@
 import { settingsStore } from '../../state/settings.js';
 import { safeClick, waitFor } from '../../lib/dom.js';
 import { GAME } from '../../lib/gameDom.js';
-import { FLEET_DISPATCHER_EVENT } from '../../lib/ogeEvents.js';
 import { createButton as makeButton, LABEL_CLASS } from '../shared/button.js';
 import { COMET_GLYPH } from '../shared/buttonGlyphs.js';
 import { OWNER_EXP } from '../../domain/fleetOwnership.js';
@@ -91,6 +90,8 @@ import {
   mayCompleteFleet2,
 } from '../shared/fleetOwnership.js';
 import { bareFleetdispatchUrl } from '../shared/fleetCourier.js';
+import { installFabSettingsLifecycle } from '../shared/fabSettingsLifecycle.js';
+import { createFleetDispatcherCache } from '../shared/fleetDispatcherCache.js';
 import {
   BUTTON_ID,
   FOCUS_KEY,
@@ -116,41 +117,18 @@ import {
   findPlanetWithExpSlot,
 } from './domHelpers.js';
 
-/**
- * @typedef {import('../../bridges/fleetDispatcherSnapshot.js').FleetDispatcherSnapshot} FleetDispatcherSnapshot
- */
-
-
 // ── Module-level snapshot of `window.fleetDispatcher` ────────────────
 
 /**
- * Cached snapshot of `window.fleetDispatcher` published by the MAIN-world
- * bridge `bridges/fleetDispatcherSnapshot.js`. `null` until the first
- * `oge:fleetDispatcher` event arrives (initial publish deferred to
- * DOMContentLoaded + microtask). On fleetdispatch, the click handler
- * consults this to short-circuit the per-planet DOM walk when the game
- * already reports the GLOBAL expedition cap is reached (14/14), and to
- * skip the post-send auto-redirect when the send we're about to issue
- * tips us over the cap.
- *
- * @type {FleetDispatcherSnapshot | null}
+ * Cached snapshot of `window.fleetDispatcher`, published by the MAIN-world
+ * bridge `bridges/fleetDispatcherSnapshot.js` (Chrome MV3 isolated scripts
+ * can't read it directly). On fleetdispatch, the click handler consults
+ * `fdCache.get()` to short-circuit the per-planet DOM walk when the game
+ * already reports the GLOBAL expedition cap is reached (14/14), and to skip
+ * the post-send auto-redirect when the send we're about to issue tips us
+ * over the cap. Bootstrap + bridge wiring live in the shared cache.
  */
-let fleetDispatcherSnapshot = null;
-
-/**
- * React to `oge:fleetDispatcher` — MAIN-world bridge publishing a fresh
- * snapshot of `window.fleetDispatcher`. Stash it so subsequent clicks
- * consult the GLOBAL expeditionCount / maxExpeditionCount numbers rather
- * than the per-planet DOM scan alone.
- *
- * @param {Event} e
- * @returns {void}
- */
-const onFleetDispatcherSnapshot = (e) => {
-  const detail = /** @type {CustomEvent} */ (e).detail;
-  if (!detail || typeof detail !== 'object') return;
-  fleetDispatcherSnapshot = /** @type {FleetDispatcherSnapshot} */ (detail);
-};
+const fdCache = createFleetDispatcherCache();
 
 // ── Install / dispose ────────────────────────────────────────────────
 
@@ -388,13 +366,13 @@ export const installSendExpedition = () => {
     // General fleet-slot gate (T11) — every fleet slot in use ⇒ NO fleet
     // of any kind can launch. Broader than the expedition cap below, so it
     // is checked first and gets its own label.
-    if (isFleetCapReached(fleetDispatcherSnapshot)) {
+    if (isFleetCapReached(fdCache.get())) {
       paintCapLabel(btn, ALL_FLEETS_LABEL);
       return;
     }
 
     // Global-cap gate — every expedition slot in use ⇒ nowhere to send.
-    if (isGlobalExpeditionCapReached(fleetDispatcherSnapshot)) {
+    if (isGlobalExpeditionCapReached(fdCache.get())) {
       paintAllMaxed(btn);
       return;
     }
@@ -416,7 +394,7 @@ export const installSendExpedition = () => {
     // planet (unless the next send would hit the global cap anyway).
     const max = settingsStore.get().maxExpeditionsPerPlanet;
     if (countActiveExpeditions(getActivePlanetCoords()) >= max) {
-      if (isGlobalExpeditionCapReachedAfterNextSend(fleetDispatcherSnapshot)) {
+      if (isGlobalExpeditionCapReachedAfterNextSend(fdCache.get())) {
         paintAllMaxed(btn);
         return;
       }
@@ -562,70 +540,30 @@ export const installSendExpedition = () => {
    */
   const updateButtonSize = (size) => controller?.resize(size);
 
-  // Bootstrap snapshot BEFORE first mount — so the initial click can
-  // see the right phase. If `window.fleetDispatcher` happens to be
-  // readable right now (Firefox Xray, tests assigning directly), seed
-  // the cache. Chrome MV3 isolated scripts get undefined here; we rely
-  // on the bridge event (`oge:fleetDispatcher` from
-  // `bridges/fleetDispatcherSnapshot.js`) to populate it asynchronously
-  // in production. Pattern mirrors `features/sendColony/index.js:installSendColony`.
-  if (!fleetDispatcherSnapshot) {
-    const liveFd = /** @type {any} */ (window).fleetDispatcher;
-    if (liveFd && typeof liveFd === 'object') {
-      fleetDispatcherSnapshot = /** @type {FleetDispatcherSnapshot} */ (liveFd);
-    }
-  }
+  // Bootstrap snapshot BEFORE first mount — so the initial click can see
+  // the right phase (seeds from a live `window.fleetDispatcher` when one is
+  // readable; otherwise the bridge event populates it asynchronously).
+  fdCache.bootstrap();
 
-  // Initial render based on current settings.
-  const initial = settingsStore.get();
-  if (initial.fabMode) {
-    if (document.body) {
-      createButton();
-    } else {
-      document.addEventListener(
-        'DOMContentLoaded',
-        () => {
-          // Re-check in case dispose ran before DOMContentLoaded fired.
-          if (installed && settingsStore.get().fabMode) createButton();
-        },
-        { once: true },
-      );
-    }
-  }
-
-  // Subscribe for live changes. We react ONLY to the two fields we
-  // care about (fabMode, fabBtnSize) — the settings store carries
-  // the whole panel so unrelated edits (colonyMinGap, colonyPassword, ...)
-  // would otherwise spam this callback.
-  let prevFabMode = initial.fabMode;
-  let prevFabBtnSize = initial.fabBtnSize;
-  const unsubSettings = settingsStore.subscribe((next) => {
-    if (next.fabMode !== prevFabMode) {
-      if (next.fabMode) {
-        if (document.body) createButton();
-      } else {
-        removeButton();
-      }
-      prevFabMode = next.fabMode;
-    }
-    if (next.fabBtnSize !== prevFabBtnSize) {
-      updateButtonSize(next.fabBtnSize);
-      prevFabBtnSize = next.fabBtnSize;
-    }
+  // Settings-driven mount/teardown + live resize — the wiring shared by
+  // every send* FAB feature.
+  const unsubSettings = installFabSettingsLifecycle({
+    settingsStore,
+    mount: createButton,
+    removeButton,
+    updateButtonSize,
+    isInstalled: () => installed !== null,
   });
 
-  // Bridge event listener: keeps `fleetDispatcherSnapshot` fresh across
-  // checkTarget XHRs and subsequent publishes from the MAIN-world bridge.
-  document.addEventListener(FLEET_DISPATCHER_EVENT, onFleetDispatcherSnapshot);
+  // Keep the snapshot fresh across checkTarget XHRs and subsequent
+  // publishes from the MAIN-world bridge.
+  fdCache.attach();
 
   installed = {
     dispose: () => {
       removeButton();
       unsubSettings();
-      document.removeEventListener(
-        FLEET_DISPATCHER_EVENT,
-        onFleetDispatcherSnapshot,
-      );
+      fdCache.detach();
       skipForTest = () => {};
       installed = null;
     },
@@ -658,7 +596,7 @@ export const _resetSendExpeditionForTest = () => {
  * @returns {void}
  */
 export const _resetFleetDispatcherSnapshotForSendExpeditionTest = () => {
-  fleetDispatcherSnapshot = null;
+  fdCache.reset();
 };
 
 /**

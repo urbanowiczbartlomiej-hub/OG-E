@@ -22,9 +22,10 @@
 //     centralized as `GAME.ACTIVE_PLANET`) and its `.planet-koords` child.
 //   - `countActiveExpeditions`: reads the in-flight expedition rows in
 //     `#eventContent` (mission-type 15) and their `.coordsOrigin` cells.
-//   - `findPlanetWithExpSlot`: walks `#planetList .smallplanet`, reads
-//     `settingsStore.get().maxExpeditionsPerPlanet`, and delegates to
-//     `countActiveExpeditions` per planet.
+//   - `findPlanetWithExpSlot`: reads
+//     `settingsStore.get().maxExpeditionsPerPlanet` and tests each planet
+//     with `countActiveExpeditions`; the `#planetList` walk itself is the
+//     shared `findNextPlanetInList` (`features/shared/planetList.js`).
 //
 // The `#eventContent tr.eventFleet[data-mission-type="15"]` selector is
 // single-feature (only sendExpedition filters in-flight expeditions this way), so
@@ -34,7 +35,8 @@
 // @see ./index.js — orchestrator; the click handler consumes these readers.
 
 import { settingsStore } from '../../state/settings.js';
-import { GAME, ACTIVE_PLANET_CLASS } from '../../lib/gameDom.js';
+import { GAME } from '../../lib/gameDom.js';
+import { findNextPlanetInList } from '../shared/planetList.js';
 import { stripBrackets } from './pure.js';
 
 /**
@@ -95,25 +97,16 @@ export const countActiveExpeditions = (originCoords) => {
  */
 export const findPlanetWithExpSlot = (skipCurrent) => {
   const max = settingsStore.get().maxExpeditionsPerPlanet;
-  const planets = Array.from(
-    document.querySelectorAll(GAME.SMALL_PLANET),
+  const cp = findNextPlanetInList(
+    (p) => {
+      const coords = stripBrackets(
+        p.querySelector(GAME.PLANET_KOORDS)?.textContent,
+      );
+      return !!coords && countActiveExpeditions(coords) < max;
+    },
+    { active: skipCurrent ? 'skip' : 'first' },
   );
-  if (planets.length === 0) return null;
-  const activeIdx = planets.findIndex((p) =>
-    p.classList.contains(ACTIVE_PLANET_CLASS),
-  );
-  const start = activeIdx < 0 ? 0 : activeIdx;
-  const startOffset = skipCurrent ? 1 : 0;
-  for (let i = startOffset; i < planets.length; i++) {
-    const idx = (start + i) % planets.length;
-    const p = planets[idx];
-    const coords = stripBrackets(p.querySelector(GAME.PLANET_KOORDS)?.textContent);
-    if (!coords) continue;
-    if (countActiveExpeditions(coords) >= max) continue;
-    const id = p.id;
-    if (!id || !id.startsWith('planet-')) continue;
-    const cp = parseInt(id.slice('planet-'.length), 10);
-    if (Number.isFinite(cp) && cp > 0) return cp;
-  }
-  return null;
+  if (cp === null) return null;
+  const n = parseInt(cp, 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
 };

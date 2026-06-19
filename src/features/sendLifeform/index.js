@@ -39,6 +39,7 @@ import { scansStore, flushScansStore } from '../../state/scans.js';
 import { readLfArtifacts, writeLfArtifacts } from '../../state/lifeformArtifacts.js';
 import { createButton as makeButton, labelLines } from '../shared/button.js';
 import { DNA_GLYPH } from '../shared/buttonGlyphs.js';
+import { installFabSettingsLifecycle } from '../shared/fabSettingsLifecycle.js';
 import { SYSTEM_DISCOVERY_RESULT_EVENT } from '../../lib/ogeEvents.js';
 import {
   derive,
@@ -455,36 +456,14 @@ export const installSendLifeform = () => {
     );
   }
 
-  const initial = settingsStore.get();
-  if (initial.fabMode) {
-    if (document.body) {
-      mount();
-    } else {
-      document.addEventListener(
-        'DOMContentLoaded',
-        () => {
-          if (installed && settingsStore.get().fabMode) mount();
-        },
-        { once: true },
-      );
-    }
-  }
-
-  let prevFabMode = initial.fabMode;
-  let prevFabBtnSize = initial.fabBtnSize;
-  const unsubSettings = settingsStore.subscribe((next) => {
-    if (next.fabMode !== prevFabMode) {
-      if (next.fabMode) {
-        if (document.body) mount();
-      } else {
-        removeButton();
-      }
-      prevFabMode = next.fabMode;
-    }
-    if (next.fabBtnSize !== prevFabBtnSize) {
-      updateButtonSize(next.fabBtnSize);
-      prevFabBtnSize = next.fabBtnSize;
-    }
+  // Settings-driven mount/teardown + live resize — the wiring shared by
+  // every send* FAB feature.
+  const unsubSettings = installFabSettingsLifecycle({
+    settingsStore,
+    mount,
+    removeButton,
+    updateButtonSize,
+    isInstalled: () => installed !== null,
   });
 
   const unsubScans = scansStore.subscribe(() => refresh());

@@ -116,11 +116,12 @@ import { SHIP_COLONY, TARGET_PLANET } from '../../domain/rules.js';
 import { OWNER_COL } from '../../domain/fleetOwnership.js';
 import { GAME } from '../../lib/gameDom.js';
 import {
-  FLEET_DISPATCHER_EVENT,
   CHECK_TARGET_RESULT_EVENT,
   GALAXY_SCANNED_EVENT,
   COLONIZE_SENT_EVENT,
 } from '../../lib/ogeEvents.js';
+import { installFabSettingsLifecycle } from '../shared/fabSettingsLifecycle.js';
+import { createFleetDispatcherCache } from '../shared/fleetDispatcherCache.js';
 
 // Re-export the pure pipeline so existing call-sites (e.g. the test
 // file which imports `derive` + `render` from this module) keep
@@ -135,7 +136,6 @@ export { derive, render } from './pure.js';
  * @typedef {import('./pure.js').Paint} Paint
  * @typedef {import('./pure.js').RenderResult} RenderResult
  * @typedef {import('./pure.js').DeriveEnv} DeriveEnv
- * @typedef {import('../../bridges/fleetDispatcherSnapshot.js').FleetDispatcherSnapshot} FleetDispatcherSnapshot
  */
 
 // ─── DOM ids ───────────────────────────────────────────────────────────
@@ -189,15 +189,13 @@ let lastScanEventAt = 0;
 let lastScanSubmitAt = 0;
 /** Epoch-ms when the current waitGap countdown started. */
 /**
- * Cached snapshot of `window.fleetDispatcher` published by the MAIN-world
- * bridge `bridges/fleetDispatcherSnapshot.js`. `null` until the first
- * `oge:fleetDispatcher` event arrives (initial publish deferred to
- * DOMContentLoaded + microtask). On fleetdispatch, `derive()` reads
- * targetPlanet/orders/shipsOnPlanet from here.
- *
- * @type {import('../../bridges/fleetDispatcherSnapshot.js').FleetDispatcherSnapshot | null}
+ * Cached snapshot of `window.fleetDispatcher`, published by the MAIN-world
+ * bridge `bridges/fleetDispatcherSnapshot.js` (the isolated content script
+ * can't read it directly). On fleetdispatch, `derive()` reads
+ * targetPlanet/orders/shipsOnPlanet from `fdCache.get()`; a fresh snapshot
+ * repaints the button immediately via `onUpdate`.
  */
-let fleetDispatcherSnapshot = null;
+const fdCache = createFleetDispatcherCache({ onUpdate: () => refresh() });
 
 /**
  * The shared {@link makeButton} controller (view + gestures). `null` until
@@ -263,7 +261,7 @@ const captureEnv = () => {
     // published by `bridges/fleetDispatcherSnapshot.js` (MAIN world) via
     // `oge:fleetDispatcher` event. `fleetDispatcherSnapshot` below is
     // the cached latest snapshot, `null` until first event arrives.
-    fleetDispatcher: fleetDispatcherSnapshot,
+    fleetDispatcher: fdCache.get(),
     scans: scansStore.get(),
     registry: registryStore.get(),
     targets: parsePositions(cfg.positions),
@@ -747,22 +745,6 @@ const onCheckTargetResult = (e) => {
 };
 
 /**
- * React to `oge:fleetDispatcher` — MAIN-world bridge publishing a fresh
- * snapshot of `window.fleetDispatcher`. Stash it and refresh so the
- * button reflects the new target/orders/ship inventory immediately.
- *
- * @param {Event} e
- * @returns {void}
- */
-const onFleetDispatcherSnapshot = (e) => {
-  const detail = /** @type {CustomEvent} */ (e).detail;
-  if (!detail || typeof detail !== 'object') return;
-  fleetDispatcherSnapshot =
-    /** @type {FleetDispatcherSnapshot} */ (detail);
-  refresh();
-};
-
-/**
  * React to `oge:galaxyScanned`. Three things happen:
  *
  *   1. Timestamp — record that the game answered. `scanCooldown` goes
@@ -974,54 +956,21 @@ export const installSendColony = () => {
    */
   const updateButtonSize = (size) => controller?.resize(size);
 
-  // Bootstrap snapshot BEFORE first mount — so the initial paint sees
-  // the right phase. If `window.fleetDispatcher` happens to be readable
-  // right now (Firefox Xray, tests assigning directly), seed the cache.
-  // Chrome MV3 isolated scripts get undefined here; we rely on the
-  // bridge event (`oge:fleetDispatcher` from `bridges/fleetDispatcherSnapshot.js`)
-  // to populate it asynchronously in production.
-  if (!fleetDispatcherSnapshot) {
-    const liveFd = /** @type {any} */ (window).fleetDispatcher;
-    if (liveFd && typeof liveFd === 'object') {
-      fleetDispatcherSnapshot = /** @type {FleetDispatcherSnapshot} */ (liveFd);
-    }
-  }
+  // Bootstrap snapshot BEFORE first mount — so the initial paint sees the
+  // right phase (seeds from a live `window.fleetDispatcher` when readable;
+  // otherwise the bridge event populates it asynchronously).
+  fdCache.bootstrap();
 
-  // Initial render based on current settings.
-  const initial = settingsStore.get();
-  if (initial.fabMode) {
-    if (document.body) {
-      mount();
-    } else {
-      document.addEventListener(
-        'DOMContentLoaded',
-        () => {
-          if (installed && settingsStore.get().fabMode) mount();
-        },
-        { once: true },
-      );
-    }
-  }
-
-  // Live settings reactions.
-  let prevFabMode = initial.fabMode;
-  let prevFabBtnSize = initial.fabBtnSize;
-  const unsubSettings = settingsStore.subscribe((next) => {
-    if (next.fabMode !== prevFabMode) {
-      if (next.fabMode) {
-        if (document.body) mount();
-      } else {
-        removeButton();
-      }
-      prevFabMode = next.fabMode;
-    }
-    if (next.fabBtnSize !== prevFabBtnSize) {
-      updateButtonSize(next.fabBtnSize);
-      prevFabBtnSize = next.fabBtnSize;
-    }
-    // Any other settings change can flip the candidate, so refresh on
-    // every settings notification.
-    refresh();
+  // Settings-driven mount/teardown + live resize — the wiring shared by
+  // every send* FAB feature. Any settings change can flip the candidate,
+  // so repaint on every notification via `onSettingsChange`.
+  const unsubSettings = installFabSettingsLifecycle({
+    settingsStore,
+    mount,
+    removeButton,
+    updateButtonSize,
+    isInstalled: () => installed !== null,
+    onSettingsChange: refresh,
   });
 
   // Galaxy-Scan config (positions / preference / rescan policy) drives both
@@ -1032,7 +981,7 @@ export const installSendColony = () => {
   const unsubRegistry = registryStore.subscribe(() => refresh());
 
   // Bridge event listeners.
-  document.addEventListener(FLEET_DISPATCHER_EVENT, onFleetDispatcherSnapshot);
+  fdCache.attach();
   document.addEventListener(CHECK_TARGET_RESULT_EVENT, onCheckTargetResult);
   document.addEventListener(GALAXY_SCANNED_EVENT, onGalaxyScanned);
   document.addEventListener(COLONIZE_SENT_EVENT, onColonizeSent);
@@ -1048,7 +997,7 @@ export const installSendColony = () => {
       unsubGalaxyConfig();
       unsubScans();
       unsubRegistry();
-      document.removeEventListener(FLEET_DISPATCHER_EVENT, onFleetDispatcherSnapshot);
+      fdCache.detach();
       document.removeEventListener(CHECK_TARGET_RESULT_EVENT, onCheckTargetResult);
       document.removeEventListener(GALAXY_SCANNED_EVENT, onGalaxyScanned);
       document.removeEventListener(COLONIZE_SENT_EVENT, onColonizeSent);
@@ -1075,7 +1024,7 @@ export const _resetSendColonyForTest = () => {
   }
   lastScanSubmitAt = 0;
   lastScanEventAt = 0;
-  fleetDispatcherSnapshot = null;
+  fdCache.reset();
   busy = false;
   colReady = false;
   colTarget = null;
