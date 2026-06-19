@@ -4,6 +4,43 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.26.1] — 2026-06-19
+
+### Added
+
+- **Daily Run routes now have a far richer editor.** A route can be paused
+  without deleting it, carry a multi-ship fleet instead of a single ship type,
+  pick its own mission, and aim at an arbitrary external coordinate (not just
+  one of your own planets/moons). The per-ship picker lists the full mobile-ship
+  catalogue, and the "already sent today" guard is now mission-aware. Your
+  existing routes migrate automatically the first time the new build loads —
+  nothing to redo.
+
+### Changed
+
+- **"Sync now" now validates your token too, and the sync status reads as one
+  block.** The standalone **Validate** button is gone: "Sync now" runs the token
+  check first and shows the result, then syncs. The token result and the
+  ↑ upload / ↓ download times now sit together under a single **Sync status**
+  label instead of in two separate rows.
+- **Daily Run routes are edited entirely through the controls now.** The old
+  free-text "Advanced" route syntax has been retired in favour of the visual
+  editor (routes are stored as plain JSON under the hood).
+- **Custom Daily Run targets lost their pin icon.** External targets are
+  recognisable by their lack of an inventory name, so the pin glyph on the chips
+  and on the inline add-coords form was dropped as visual noise.
+- **A placeholder Settings panel appears on the Daily Run tab.** A collapsible
+  "⚙ Settings" section is in place for future per-tab options; there is nothing
+  to configure there yet.
+
+### Fixed
+
+- **A fleet send can no longer slip to the planet instead of the moon (or the
+  other way round).** When OG-E advances to the second fleet step it now
+  re-checks the game's own planet/moon selector and corrects it if an earlier
+  click didn't register — closing a rare race where the wrong body type could be
+  armed at launch.
+
 ## [1.26.0] — 2026-06-18
 
 ### Added
