@@ -47,9 +47,9 @@ export const TRADER_AUCTION_QUIET_KEY = 'oge-trader-auction-quiet-until';
  * offer returns several times, so it re-arms off {@link TRADER_IMPORT_NEXT_KEY}
  * instead. Self-expires at local midnight (a new day ≠ this key ⇒ normal mode).
  *
- * Single-day and read on demand by the trader feature only, so — like the bid/
- * quiet timestamps — it is NOT part of the synced {@link DailyState}; it lives
- * here purely to keep every trader localStorage key in one place.
+ * Part of the synced {@link DailyState} (newest day-key wins, like
+ * {@link TRADER_IMPORT_KEY}): the 6× event is server-wide for the universe, so a
+ * device that never read the in-game news message still enters event mode.
  */
 export const TRADER_IMPORT_EVENT_KEY = 'oge-trader-import-event-day';
 
@@ -58,6 +58,11 @@ export const TRADER_IMPORT_EVENT_KEY = 'oge-trader-import-event-day';
  * from the page's "come back at HH:MM" overlay. The import (red) glow stays
  * suppressed until this moment, then re-arms. 0/absent ⇒ an offer is waiting
  * now. Meaningful only while {@link TRADER_IMPORT_EVENT_KEY} is today.
+ *
+ * Part of the synced {@link DailyState}, max-merged (latest refresh wins) to
+ * mirror the feature's own local "keep the larger target" rule. A value left
+ * over from a previous event day is always in the past once a new event day
+ * starts, so it harmlessly reads as "offer waiting now".
  */
 export const TRADER_IMPORT_NEXT_KEY = 'oge-trader-import-next-at';
 
@@ -68,6 +73,8 @@ export const TRADER_IMPORT_NEXT_KEY = 'oge-trader-import-next-at';
  * @property {number} traderAuctionBidAt Epoch-ms of last bid, 0 when absent.
  * @property {number} traderAuctionQuietUntil Epoch-ms quiet window, 0 when absent.
  * @property {number} artifactShopDoneUntil Epoch-ms suppress window, 0 when absent.
+ * @property {string} traderImportEventDay 6×-event day-key or "" when no event.
+ * @property {number} traderImportNextAt   Epoch-ms next refresh, 0 when absent.
  */
 
 /** @returns {DailyState} */
@@ -77,6 +84,8 @@ export const readDailyState = () => ({
   traderAuctionBidAt: safeLS.int(TRADER_AUCTION_BID_KEY, 0),
   traderAuctionQuietUntil: safeLS.int(TRADER_AUCTION_QUIET_KEY, 0),
   artifactShopDoneUntil: safeLS.int(ARTIFACT_SHOP_DONE_KEY, 0),
+  traderImportEventDay: safeLS.get(TRADER_IMPORT_EVENT_KEY) ?? '',
+  traderImportNextAt: safeLS.int(TRADER_IMPORT_NEXT_KEY, 0),
 });
 
 /**
@@ -95,4 +104,8 @@ export const writeDailyState = (state) => {
     safeLS.set(TRADER_AUCTION_QUIET_KEY, state.traderAuctionQuietUntil);
   if (state.artifactShopDoneUntil != null)
     safeLS.set(ARTIFACT_SHOP_DONE_KEY, state.artifactShopDoneUntil);
+  if (state.traderImportEventDay != null)
+    safeLS.set(TRADER_IMPORT_EVENT_KEY, state.traderImportEventDay);
+  if (state.traderImportNextAt != null)
+    safeLS.set(TRADER_IMPORT_NEXT_KEY, state.traderImportNextAt);
 };

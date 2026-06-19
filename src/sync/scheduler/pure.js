@@ -81,7 +81,9 @@ export const dailyStateHasData = (ds) =>
       ds.traderImportDay ||
       ds.traderAuctionBidAt ||
       ds.traderAuctionQuietUntil ||
-      ds.artifactShopDoneUntil,
+      ds.artifactShopDoneUntil ||
+      ds.traderImportEventDay ||
+      ds.traderImportNextAt,
   );
 
 /**
@@ -91,6 +93,8 @@ export const dailyStateHasData = (ds) =>
  * @property {unknown} [traderAuctionBidAt]
  * @property {unknown} [traderAuctionQuietUntil]
  * @property {unknown} [artifactShopDoneUntil]
+ * @property {unknown} [traderImportEventDay]
+ * @property {unknown} [traderImportNextAt]
  */
 
 /**

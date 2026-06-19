@@ -619,6 +619,8 @@ describe('mergeDailyState', () => {
     traderAuctionBidAt: 100,
     traderAuctionQuietUntil: 100,
     artifactShopDoneUntil: 100,
+    traderImportEventDay: '2026-06-10',
+    traderImportNextAt: 100,
   });
 
   it('keeps local (no-write) when remote is missing or not an object', () => {
