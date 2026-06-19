@@ -80,6 +80,7 @@ import { installRoutes } from './routes.js';
 import { installScanColonyConfig } from './scanConfig.js';
 import { installReminderConfig } from './reminderConfig.js';
 import { installSync } from './sync.js';
+import { installSettingsControls } from './settingsControls.js';
 
 /**
  * @typedef {import('../../state/history.js').ColonyEntry} ColonyEntry
@@ -267,6 +268,9 @@ const boot = async () => {
   // chrome.storage changes, so it needs no universe getter and no post-load
   // repaint — one install wires it for good.
   installSync();
+  // The Multi-device-sync + reminders master/token controls (moved out of the
+  // in-game panel) — they read/write the shared-settings chrome.storage dict.
+  installSettingsControls();
 
   const universes = await discoverUniverses();
   selectedUniverseId = resolveInitialUniverse(universes);

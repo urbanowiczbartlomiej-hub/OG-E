@@ -107,6 +107,19 @@ const parsePerUniverseKey = (key) => {
 };
 
 /**
+ * Whether a base is sync PLUMBING rather than stored data: the `…Ts`
+ * conflict-resolution timestamps that sit beside each synced slot, and the
+ * command-channel keys the dashboard/scheduler use to signal one another
+ * (`oge_syncRequestAt`, `oge_resetGalaxyAt`). These are internal bookkeeping —
+ * a few bytes each — so they're kept out of the "what's stored" inventory.
+ *
+ * @param {string} base
+ * @returns {boolean}
+ */
+const isPlumbingBase = (base) =>
+  base.endsWith('Ts') || base === 'oge_syncRequestAt' || base === 'oge_resetGalaxyAt';
+
+/**
  * Build the per-universe inventory + status list from a flat
  * chrome.storage.local snapshot. Universes are discovered from ANY
  * `<id>:oge_*` key (including a lone status mirror), so a universe that
@@ -139,6 +152,7 @@ export const buildSyncInventory = (all) => {
           : null;
       continue;
     }
+    if (isPlumbingBase(parsed.base)) continue;
     const bytes = sizeOf(value);
     u.categories.push({
       base: parsed.base,

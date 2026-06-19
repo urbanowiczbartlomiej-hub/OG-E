@@ -361,11 +361,20 @@
   .rem-cancel[disabled] { opacity: 0.4; cursor: wait; }
 
   /* ── Sync tab — per-universe diagnostics cards ─────────────────────── */
-  .sync-intro { color: #888; font-size: 13px; margin-bottom: 16px; line-height: 1.5; max-width: 640px; }
+  .sync-intro { color: #888; font-size: 13px; margin-bottom: 16px; line-height: 1.5; }
   .sync-empty { color: #888; font-size: 14px; }
+  /* Per-universe inventory: a responsive grid so wide screens show several
+     cards per row instead of one tall column. Collapses to a single column
+     below ~320px-per-card. */
+  #syncBody {
+    display: grid; gap: 14px; align-items: start; justify-content: start;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 440px));
+  }
+  .sync-subhead { color: #4a9eff; font-size: 16px; margin: 0 0 12px; }
+  .sync-controls-card { margin-bottom: 20px; }
   .sync-card {
     background: #0d1620; border: 1px solid #1a2a3a; border-radius: 6px;
-    padding: 12px 14px; margin-bottom: 14px; max-width: 560px;
+    padding: 12px 14px;
   }
   .sync-card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
   .sync-universe { color: #4a9eff; font-weight: bold; font-size: 15px; }
@@ -385,6 +394,21 @@
   .sync-table th { color: #888; font-weight: 600; font-size: 12px; }
   .sync-table td.num, .sync-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .sync-table tfoot td { color: #ccc; font-weight: 600; border-bottom: none; border-top: 1px solid #2a4a5a; }
+
+  /* ── Moved settings controls (Sync + Reminders tabs) ───────────────── */
+  .rem-master-row { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: #ccc; cursor: pointer; margin-top: 2px; }
+  .rem-master-row input { width: 16px; height: 16px; accent-color: #4a9eff; cursor: pointer; }
+  .rem-card input.rem-mono { width: auto; }
+  .rem-card input.rem-mono:focus { outline: none; border-color: #4a9eff; }
+  /* Equal-width action buttons (Validate / Copy / Sync now) so the token and
+     topic value fields end at the same x and line up across rows. */
+  .rem-row button:not(.rem-eye) { min-width: 92px; }
+  /* Sub-line under a value field (token status, topic hint) — aligned under the
+     value via an empty label, like the ✓ Valid line sits under the token. */
+  .rem-substatus { font-size: 12px; color: #6b7785; }
+  .rem-status-head { font-size: 12px; }
+  .rem-status-head.ok { color: #5fd08a; }
+  .rem-status-head.err { color: #ff8a89; }
 </style>
 </head>
 <body>
@@ -534,21 +558,41 @@
   <h1>Reminders</h1>
   <p class="rem-intro">
     Push reminders OG-E queues on ntfy.sh — auto expedition waves, ad-hoc fleet
-    reminders, and fleet-save pings. The master switch + ntfy token live in the
-    <strong>OG-E settings panel inside the game</strong>; the schedules are in
-    ⚙ Settings below. The queue preview shows what's pending.
+    reminders, and fleet-save pings. Flip them on and paste your ntfy token
+    below (it applies to all your universes); the schedules are in ⚙ Settings
+    further down. The queue preview shows what's pending.
   </p>
 
+  <label class="rem-master-row">
+    <input type="checkbox" id="remMasterToggle"> Enable reminders
+  </label>
+
+  <div id="remBody">
   <div class="rem-card" style="margin-top:14px">
     <div class="rem-row">
-      <label>Your ntfy topic (subscribe to this on your phone)</label>
+      <label>ntfy.sh access token</label>
+      <input id="remNtfyToken" class="rem-mono" type="password" autocomplete="off" spellcheck="false" placeholder="tk_…">
+      <button id="remRevealNtfy" class="rem-eye" type="button"
+        title="Show token" aria-label="Show token" aria-pressed="false">👁</button>
+      <button id="remValidateBtn" type="button">Validate</button>
+    </div>
+    <div class="rem-row" style="margin-top:6px; align-items:flex-start">
+      <label></label>
+      <div id="remTokenStatus" class="rem-status">—</div>
+    </div>
+    <div class="rem-row" style="margin-top:12px">
+      <label>Your ntfy topic</label>
       <span id="remTopic" class="rem-mono">—</span>
       <button id="remRevealTopic" class="rem-eye" type="button"
         title="Show topic" aria-label="Show topic" aria-pressed="false">👁</button>
       <button id="remCopyTopic" type="button">Copy</button>
     </div>
+    <div class="rem-row" style="margin-top:6px">
+      <label></label>
+      <span class="rem-substatus">Subscribe to this on your phone.</span>
+    </div>
     <p class="rem-hint">
-      In the ntfy.sh app — signed in to the account whose token you pasted in OG-E settings —
+      In the ntfy.sh app — signed in to the account whose token you pasted above —
       tap + and subscribe to this exact topic to receive the pushes.
     </p>
     <details class="rem-privacy">
@@ -561,9 +605,9 @@
         can read your fleet reminders and inject fake ones. Never share or post it.
       </p>
       <p class="rem-hint">
-        <strong>Worried someone got hold of it?</strong> Change your ntfy access token in the
-        in-game OG-E settings. That instantly derives a brand-new topic — the old one goes
-        silent on its own, no other cleanup needed.
+        <strong>Worried someone got hold of it?</strong> Change your ntfy access token above.
+        That instantly derives a brand-new topic — the old one goes silent on its own, no
+        other cleanup needed.
       </p>
       <p class="rem-hint">
         <strong>Want absolute certainty that only you can read it?</strong> Lock the topic to
@@ -602,6 +646,7 @@
       <div id="reminderConfigBody"></div>
     </div>
   </details>
+  </div>
 </section>
 
 <section id="routesSection" class="tab-section">
@@ -636,12 +681,38 @@
 </section>
 
 <section id="syncSection" class="tab-section">
-  <h1>Sync</h1>
+  <h1>Multi-device sync</h1>
   <p class="sync-intro">
-    What's stored on this device and when each universe last synced with the
-    cloud. Every universe syncs independently — this is the place to check why a
-    second device might be showing different data.
+    Cross-device sync through a private GitHub gist, plus a per-universe breakdown
+    of what's stored on this device and when it last synced.
   </p>
+
+  <div class="rem-card sync-controls-card">
+    <label class="rem-master-row">
+      <input type="checkbox" id="syncCloudToggle"> Sync across devices
+    </label>
+    <div id="syncControlsBody">
+      <div class="rem-row" style="margin-top:12px">
+        <label>GitHub token (gist scope)</label>
+        <input id="syncGistToken" class="rem-mono" type="password" autocomplete="off" spellcheck="false" placeholder="ghp_…">
+        <button id="syncRevealGist" class="rem-eye" type="button"
+          title="Show token" aria-label="Show token" aria-pressed="false">👁</button>
+        <button id="syncNowBtn" type="button">Sync now</button>
+      </div>
+      <div class="rem-row" style="margin-top:6px">
+        <label></label>
+        <span id="syncTokenStatus" class="rem-status">—</span>
+      </div>
+      <p class="rem-hint">
+        Synced per-universe: galaxy scans, colony history, player cache + ranks,
+        your own profile, settings, fleet routes &amp; configs. The token is kept in
+        this browser's private extension storage and shared across all your
+        universes — set it once here. Per-device UI sizes stay on each device.
+      </p>
+    </div>
+  </div>
+
+  <h2 class="sync-subhead">Stored on this device</h2>
   <div id="syncBody"></div>
 </section>
 

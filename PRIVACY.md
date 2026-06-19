@@ -9,30 +9,37 @@ until you turn them on.
 ## Stored locally
 
 - Galaxy scan database and colony history (`chrome.storage.local`).
-- UI preferences and settings (`localStorage`).
+- Sync + reminder credentials and switches — the GitHub token, ntfy
+  token, and the sync / reminders master switches (`chrome.storage.local`,
+  so one entry covers every universe).
+- Other UI preferences and per-device settings (`localStorage`).
 - An in-memory diagnostic log buffer — only when you enable the
   logger toggle, never persisted, gone when the tab closes.
 
 ## Sent to GitHub (only if you turn sync on)
 
-If you paste a GitHub Personal Access Token into the sync section:
+If you paste a GitHub Personal Access Token into the OG-E Dashboard's
+Sync tab:
 
 - OG-E reads from / writes to a single private gist that **you own**.
   Payload is your scan database + colony history, gzip-compressed.
 - Requests go to `https://api.github.com` only, authenticated with
-  your PAT. The PAT is stored in `localStorage` and is sent only as
-  the `Authorization` header on those gist requests.
+  your PAT. The PAT is stored in `chrome.storage.local` (extension-private,
+  not reachable by any web page) so a single entry applies to all your
+  universes; it is sent only as the `Authorization` header on those gist
+  requests.
 - OG-E has no infrastructure to send your data to. No copy is kept
   outside GitHub and your devices.
-- Remove the PAT from settings → sync stops. Revoke the PAT on
+- Remove the PAT in the Dashboard → sync stops. Revoke the PAT on
   GitHub → existing requests fail until you supply a new one.
 
 ## Sent to ntfy.sh (only if you turn reminders on)
 
 Fleet-landing reminders deliver a phone notification shortly before a
 fleet returns. They are off by default; the master reminders switch must
-be enabled and you must paste an ntfy access token. When armed, OG-E
-talks to the public push service [ntfy.sh](https://ntfy.sh):
+be enabled and you must paste an ntfy access token (both in the OG-E
+Dashboard's Reminders tab). When armed, OG-E talks to the public push
+service [ntfy.sh](https://ntfy.sh):
 
 - Requests go to `https://ntfy.sh/<topic>` only (POST to schedule a
   notification, GET to reconcile the queue, DELETE to cancel). No other
@@ -45,10 +52,10 @@ talks to the public push service [ntfy.sh](https://ntfy.sh):
   fleet-save reminders) the ship count. **Treat the topic as a secret:**
   anyone who learns it can read these notifications. This is an accepted
   trade-off for convenience — do not enable reminders if that bothers you.
-- The token is stored in `localStorage` (and mirrored into
-  `chrome.storage.local` so the extension page can show the queue).
-  Clearing the token, or turning the master switch off, stops all ntfy
-  traffic.
+- The token is stored in `chrome.storage.local` (extension-private, not
+  reachable by any web page) so one entry applies to all your universes
+  and the extension page can show the queue. Clearing the token, or
+  turning the master switch off, stops all ntfy traffic.
 - Notification icons are referenced by a `raw.githubusercontent.com`
   URL inside the push; your phone's ntfy app fetches them, not OG-E.
 

@@ -61,6 +61,7 @@ import { initScansStore } from './state/scans.js';
 import { initPlayersStore } from './state/players.js';
 import { initRegistryStore } from './state/registry.js';
 import { initSettingsStore } from './state/settings.js';
+import { initSharedSettings } from './state/sharedSettings.js';
 import { initDailyRunRoutesStore } from './state/dailyRunRoutes.js';
 import { initGalaxyScanConfigStore } from './state/galaxyScanConfig.js';
 import { initReminderConfigStore } from './state/reminderConfig.js';
@@ -96,6 +97,11 @@ import { installSync } from './sync/scheduler.js';
 // bridge listener internally (see `state/scans.js`), so nothing extra
 // is needed here to hook the galaxy XHR observer up to the store.
 initSettingsStore();
+// Bridge the four dashboard-owned shared settings (cloudSync / gistToken /
+// reminders master + ntfy token) from chrome.storage into the just-hydrated
+// settings store. Async (chrome.storage), fire-and-forget — every consumer
+// keeps reading settingsStore, which this keeps current. See state/sharedSettings.js.
+void initSharedSettings();
 initRegistryStore();
 initHistoryStore();
 initScansStore();

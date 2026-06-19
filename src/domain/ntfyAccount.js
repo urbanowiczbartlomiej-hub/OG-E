@@ -29,6 +29,7 @@
  * @property {number} [remaining]  Messages still allowed in the period.
  * @property {number} [limit]      Period message cap.
  * @property {string} [tier]       Account tier / role name, when present.
+ * @property {string} [username]   Signed-in account login, when present.
  */
 
 /**
@@ -68,4 +69,32 @@ export const formatNtfyAccountStatus = (r) => {
   }
   // 2xx but the body lacked the usage fields (schema drift / unlimited tier).
   return '✓ Token valid';
+};
+
+/**
+ * Richer multi-line variant for the OG-E Dashboard's Reminders tab, where the
+ * value column is wide enough to show the account login + tier and the message
+ * usage UNDER a `✓ Valid` head. A failure reuses {@link formatNtfyAccountStatus}'s
+ * error ladder as the head, with no detail lines. Pure — feed it a result,
+ * assert the head + lines.
+ *
+ * @param {NtfyAccountResult} r
+ * @returns {{ ok: boolean, head: string, detail: string[] }}
+ */
+export const formatNtfyAccountLines = (r) => {
+  if (!r || !r.ok) return { ok: false, head: formatNtfyAccountStatus(r), detail: [] };
+  /** @param {unknown} n */
+  const num = (n) => typeof n === 'number' && Number.isFinite(n);
+  /** @type {string[]} */
+  const detail = [];
+  const who = typeof r.username === 'string' ? r.username : '';
+  const tier = typeof r.tier === 'string' ? r.tier : '';
+  if (who && tier) detail.push(`${who} · ${tier}`);
+  else if (who) detail.push(who);
+  else if (tier) detail.push(tier);
+  if (num(r.used) && num(r.limit)) {
+    const left = num(r.remaining) ? ` · ${r.remaining} left` : '';
+    detail.push(`${r.used} / ${r.limit} messages${left}`);
+  }
+  return { ok: true, head: '✓ Valid', detail };
 };

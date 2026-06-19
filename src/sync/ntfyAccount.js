@@ -37,7 +37,7 @@ const ACCOUNT_URL = 'https://ntfy.sh/v1/account';
  *   - fetch rejected (offline/CORS) → `{ ok:false, error:'network' }`
  *   - non-2xx                       → `{ ok:false, error:'http', status }`
  *   - 2xx but unparseable body      → `{ ok:false, error:'parse', status }`
- *   - 2xx OK                        → `{ ok:true, used, remaining, limit, tier }`
+ *   - 2xx OK                        → `{ ok:true, used, remaining, limit, tier, username }`
  *
  * @param {string} token  ntfy.sh access token (`tk_…`).
  * @returns {Promise<import('../domain/ntfyAccount.js').NtfyAccountResult>}
@@ -82,5 +82,6 @@ export const fetchNtfyAccount = async (token) => {
       (typeof body?.tier?.name === 'string' && body.tier.name) ||
       (typeof body?.role === 'string' && body.role) ||
       undefined,
+    username: typeof body?.username === 'string' ? body.username : undefined,
   };
 };
