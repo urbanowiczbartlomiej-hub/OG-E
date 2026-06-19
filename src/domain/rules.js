@@ -48,6 +48,32 @@ export const MISSION_COLONIZE = 7;
  */
 export const MISSION_DEPLOYMENT = 4;
 
+/** Game's `mission` parameter for attack sends. */
+export const MISSION_ATTACK = 1;
+/** Game's `mission` parameter for transport sends (drop cargo, fleet returns). */
+export const MISSION_TRANSPORT = 3;
+/** Game's `mission` parameter for espionage-probe sends. */
+export const MISSION_ESPIONAGE = 6;
+/** Game's `mission` parameter for debris-field harvest (recycle) sends. */
+export const MISSION_HARVEST = 8;
+
+/**
+ * Missions a Daily Run route may fly, in display order (deployment — the
+ * park-the-fleet default — first). The game still validates each mission
+ * against the chosen target via checkTarget, so an illegal pick surfaces as
+ * "Bad target" rather than being blocked here. `id` is the `mission=` param;
+ * `name` labels the dashboard dropdown.
+ *
+ * @type {ReadonlyArray<{ id: number, name: string }>}
+ */
+export const ROUTE_MISSION_CATALOG = [
+  { id: MISSION_DEPLOYMENT, name: 'Deployment' },
+  { id: MISSION_TRANSPORT, name: 'Transport' },
+  { id: MISSION_ATTACK, name: 'Attack' },
+  { id: MISSION_ESPIONAGE, name: 'Espionage' },
+  { id: MISSION_HARVEST, name: 'Harvest' },
+];
+
 /**
  * Target-type ids used in the fleetdispatch URL `type=` param and the
  * galaxy-row target icons (`.targetIcons a[data-type]`). A moon shares
@@ -73,3 +99,32 @@ export const SHIP_LARGE_CARGO = 203;
 export const SHIP_PATHFINDER = 219;
 /** Colony ship (Statek kolonizacyjny) — the one a colonize mission needs. */
 export const SHIP_COLONY = 208;
+
+/**
+ * Mobile ships selectable for a Daily Run route fleet, in display order
+ * (the everyday transport ships first). Immobile units — Solar Satellite
+ * (212) and Crawler (217) — are intentionally absent: they cannot fly a
+ * mission. `id` is the OGame technology id used both to preselect ships via
+ * the `am<id>=count` param and to read on-planet availability. `name` is the
+ * canonical English ship name; the dashboard runs on the extension origin
+ * and can't read the game's localized labels, so the catalog is static.
+ *
+ * @type {ReadonlyArray<{ id: number, name: string }>}
+ */
+export const SHIP_CATALOG = [
+  { id: SHIP_SMALL_CARGO, name: 'Small Cargo' },
+  { id: SHIP_LARGE_CARGO, name: 'Large Cargo' },
+  { id: SHIP_PATHFINDER, name: 'Pathfinder' },
+  { id: 209, name: 'Recycler' },
+  { id: 210, name: 'Espionage Probe' },
+  { id: SHIP_COLONY, name: 'Colony Ship' },
+  { id: 204, name: 'Light Fighter' },
+  { id: 205, name: 'Heavy Fighter' },
+  { id: 206, name: 'Cruiser' },
+  { id: 207, name: 'Battleship' },
+  { id: 215, name: 'Battlecruiser' },
+  { id: 211, name: 'Bomber' },
+  { id: 213, name: 'Destroyer' },
+  { id: 214, name: 'Deathstar' },
+  { id: 218, name: 'Reaper' },
+];

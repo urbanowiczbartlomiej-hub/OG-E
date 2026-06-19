@@ -3,7 +3,8 @@
 // Unit tests for the `features/dailyRun` pure core.
 //
 // Pure functions — no DOM, no timers, no `location`. Plain Node, no
-// happy-dom. Covers coord keys, the two URL builders, and target picking.
+// happy-dom. Covers coord keys, route lookup (incl. the enabled gate), and
+// target picking.
 
 import { describe, it, expect } from 'vitest';
 import {
@@ -12,15 +13,12 @@ import {
   findRouteForBody,
   findNextMicroTarget,
   countRemainingMicroTargets,
-  parseRoutesDsl,
-  formatRoutesDsl,
 } from '../../src/features/dailyRun/pure.js';
 import {
   TARGET_PLANET,
   TARGET_MOON,
   SHIP_SMALL_CARGO,
   SHIP_LARGE_CARGO,
-  SHIP_PATHFINDER,
 } from '../../src/domain/rules.js';
 
 /**
@@ -81,132 +79,17 @@ describe('countRemainingMicroTargets', () => {
   });
 });
 
-describe('parseRoutesDsl', () => {
-  it('parses a single-source route with alias ship and mixed planet/moon targets', () => {
-    const { routes, errors } = parseRoutesDsl(
-      '4:472:15m = DT x15000 -> 4:475:14, 4:480:8m, 5:120:6',
-    );
-    expect(errors).toEqual([]);
-    expect(routes).toEqual([
-      {
-        sources: [tgt(4, 472, 15, TARGET_MOON)],
-        targets: [
-          tgt(4, 475, 14, TARGET_PLANET),
-          tgt(4, 480, 8, TARGET_MOON),
-          tgt(5, 120, 6, TARGET_PLANET),
-        ],
-        microFleet: { shipId: SHIP_LARGE_CARGO, count: 15000 },
-      },
-    ]);
-  });
-
-  it('parses MULTIPLE sources (planets and moons) sharing one fleet + targets', () => {
-    const { routes, errors } = parseRoutesDsl(
-      '4:472:15m, 4:473:15m, 5:120:6 = DT x15000 -> 4:475:14',
-    );
-    expect(errors).toEqual([]);
-    expect(routes[0].sources).toEqual([
-      tgt(4, 472, 15, TARGET_MOON),
-      tgt(4, 473, 15, TARGET_MOON),
-      tgt(5, 120, 6, TARGET_PLANET),
-    ]);
-    expect(routes[0].targets).toEqual([tgt(4, 475, 14, TARGET_PLANET)]);
-  });
-
-  it('parses a bare (no-m) source as a PLANET', () => {
-    const { routes } = parseRoutesDsl('4:472:15 = DT x10 -> 1:1:1');
-    expect(routes[0].sources).toEqual([tgt(4, 472, 15, TARGET_PLANET)]);
-  });
-
-  it('accepts a raw numeric ship id and the k count suffix', () => {
-    const { routes } = parseRoutesDsl('1:2:3 = 202x25k -> 1:2:4');
-    expect(routes[0].microFleet).toEqual({ shipId: SHIP_SMALL_CARGO, count: 25000 });
-  });
-
-  it('ignores blank lines and # comments', () => {
-    const { routes, errors } = parseRoutesDsl('# header\n\n1:1:1 = PIO x100000 -> 1:1:2\n');
-    expect(errors).toEqual([]);
-    expect(routes).toHaveLength(1);
-    expect(routes[0].microFleet.shipId).toBe(SHIP_PATHFINDER);
-  });
-
-  it('reports a malformed line but keeps the good ones', () => {
-    const { routes, errors } = parseRoutesDsl('garbage line\n1:1:1 = DT x10 -> 1:1:2');
-    expect(routes).toHaveLength(1);
-    expect(routes[0].sources).toEqual([tgt(1, 1, 1, TARGET_PLANET)]);
-    expect(errors).toHaveLength(1);
-    expect(errors[0].line).toBe(1);
-  });
-
-  it('reports a bad ship, a bad target, and a bad source', () => {
-    expect(parseRoutesDsl('1:1:1 = XYZ x10 -> 1:1:2').errors[0].message).toMatch(/micro-fleet/);
-    expect(parseRoutesDsl('1:1:1 = DT x10 -> nope').errors[0].message).toMatch(/target/);
-    expect(parseRoutesDsl('nope = DT x10 -> 1:1:2').errors[0].message).toMatch(/source/);
-  });
-
-  it('is null-safe on non-string input', () => {
-    // @ts-expect-error intentional bad input
-    expect(parseRoutesDsl(null)).toEqual({ routes: [], errors: [] });
-  });
-});
-
-describe('formatRoutesDsl round-trip', () => {
-  it('round-trips parse(format(parse(x))) to the same routes (incl. multi-source + moon sources)', () => {
-    const text =
-      '4:472:15m, 4:473:15m = DT x15000 -> 4:475:14, 4:480:8m\n1:2:3 = PIO x100000 -> 1:2:4';
-    const once = parseRoutesDsl(text).routes;
-    const reparsed = parseRoutesDsl(formatRoutesDsl(once)).routes;
-    expect(reparsed).toEqual(once);
-  });
-
-  it('renders known ship ids as English aliases (SC/LC/PF) and moons with the m suffix', () => {
-    const out = formatRoutesDsl([
-      {
-        sources: [tgt(4, 472, 15, TARGET_MOON)],
-        targets: [tgt(4, 475, 14, TARGET_PLANET), tgt(4, 480, 8, TARGET_MOON)],
-        microFleet: { shipId: SHIP_LARGE_CARGO, count: 15000 },
-      },
-    ]);
-    expect(out).toBe('4:472:15m = LCx15000 -> 4:475:14, 4:480:8m');
-  });
-
-  it('is null-safe / empty on a non-array', () => {
-    // @ts-expect-error intentional bad input
-    expect(formatRoutesDsl({})).toBe('');
-  });
-});
-
-describe('ship aliases — English canonical + legacy Polish input', () => {
-  it('parses the canonical English codes SC / LC / PF (case-insensitive)', () => {
-    expect(parseRoutesDsl('1:1:1 = SC x10 -> 1:1:2').routes[0].microFleet.shipId).toBe(SHIP_SMALL_CARGO);
-    expect(parseRoutesDsl('1:1:1 = lc x10 -> 1:1:2').routes[0].microFleet.shipId).toBe(SHIP_LARGE_CARGO);
-    expect(parseRoutesDsl('1:1:1 = PF x10 -> 1:1:2').routes[0].microFleet.shipId).toBe(SHIP_PATHFINDER);
-  });
-
-  it('still ACCEPTS the legacy Polish codes MT / DT / PIO on input', () => {
-    expect(parseRoutesDsl('1:1:1 = MT x10 -> 1:1:2').routes[0].microFleet.shipId).toBe(SHIP_SMALL_CARGO);
-    expect(parseRoutesDsl('1:1:1 = DT x10 -> 1:1:2').routes[0].microFleet.shipId).toBe(SHIP_LARGE_CARGO);
-    expect(parseRoutesDsl('1:1:1 = PIO x10 -> 1:1:2').routes[0].microFleet.shipId).toBe(SHIP_PATHFINDER);
-  });
-
-  it('NORMALISES legacy input to the English alias on format', () => {
-    // Parse a legacy-DT line, re-format → it comes back as LC (never DT).
-    const { routes } = parseRoutesDsl('1:1:1 = DT x10 -> 1:1:2');
-    expect(formatRoutesDsl(routes)).toBe('1:1:1 = LCx10 -> 1:1:2');
-  });
-});
-
 describe('findRouteForBody', () => {
   const routes = [
     {
       sources: [tgt(4, 472, 15, TARGET_MOON), tgt(4, 473, 15, TARGET_MOON)],
       targets: [tgt(4, 475, 14, TARGET_PLANET)],
-      microFleet: { shipId: SHIP_LARGE_CARGO, count: 15000 },
+      fleet: [{ shipId: SHIP_LARGE_CARGO, count: 15000 }],
     },
     {
       sources: [tgt(5, 120, 6, TARGET_PLANET)],
       targets: [tgt(5, 120, 7, TARGET_PLANET)],
-      microFleet: { shipId: SHIP_SMALL_CARGO, count: 1000 },
+      fleet: [{ shipId: SHIP_SMALL_CARGO, count: 1000 }],
     },
   ];
 
@@ -217,6 +100,21 @@ describe('findRouteForBody', () => {
 
   it('does not match when the type differs (planet at a moon source slot)', () => {
     expect(findRouteForBody(routes, tgt(4, 472, 15, TARGET_PLANET))).toBeNull();
+  });
+
+  it('skips a disabled route — a paused route is invisible to firing', () => {
+    const paused = [
+      {
+        enabled: false,
+        sources: [tgt(4, 472, 15, TARGET_MOON)],
+        targets: [tgt(4, 475, 14, TARGET_PLANET)],
+        fleet: [{ shipId: SHIP_LARGE_CARGO, count: 1 }],
+      },
+    ];
+    expect(findRouteForBody(paused, tgt(4, 472, 15, TARGET_MOON))).toBeNull();
+    // enabled:true (and an absent flag) still match.
+    paused[0].enabled = true;
+    expect(findRouteForBody(paused, tgt(4, 472, 15, TARGET_MOON))).toBe(paused[0]);
   });
 
   it('returns null for an unknown body / null body / non-array routes', () => {

@@ -77,9 +77,11 @@ describe('dailyRunRoutesStore — defaults and basic ops', () => {
     const cfg = {
       routes: [
         {
+          enabled: true,
           sources: [{ galaxy: 4, system: 472, position: 15, type: 3 }],
           targets: [{ galaxy: 4, system: 475, position: 14, type: 1 }],
-          microFleet: { shipId: 203, count: 15000 },
+          fleet: [{ shipId: 203, count: 15000 }],
+          mission: 4,
         },
       ],
       collectTarget: { galaxy: 4, system: 472, position: 15, type: 3 },
@@ -139,7 +141,7 @@ describe('dailyRunRoutesStore — hydration via initDailyRunRoutesStore', () => 
         {
           sources: [{ galaxy: 1, system: 2, position: 3, type: 3 }],
           targets: [{ galaxy: 1, system: 2, position: 4, type: 1 }],
-          microFleet: { shipId: 219, count: 100000 },
+          fleet: [{ shipId: 219, count: 100000 }],
         },
       ],
       collectTarget: null,
@@ -148,7 +150,19 @@ describe('dailyRunRoutesStore — hydration via initDailyRunRoutesStore', () => 
     initDailyRunRoutesStore();
     expect(dailyRunRoutesStore.get()).toEqual({ routes: [], collectTarget: null });
     await flushMicrotasks();
-    expect(dailyRunRoutesStore.get()).toEqual(stored);
+    // Hydrate normalises through parseDailyRunRoutes → explicit enabled + mission.
+    expect(dailyRunRoutesStore.get()).toEqual({
+      routes: [
+        {
+          enabled: true,
+          sources: [{ galaxy: 1, system: 2, position: 3, type: 3 }],
+          targets: [{ galaxy: 1, system: 2, position: 4, type: 1 }],
+          fleet: [{ shipId: 219, count: 100000 }],
+          mission: 4,
+        },
+      ],
+      collectTarget: null,
+    });
   });
 
   it('is idempotent — a second init does not re-register', () => {
@@ -164,18 +178,83 @@ describe('parseDailyRunRoutes (pure)', () => {
     const ok = {
       sources: [{ galaxy: 1, system: 1, position: 1, type: 3 }],
       targets: [{ galaxy: 1, system: 1, position: 2, type: 1 }],
-      microFleet: { shipId: 203, count: 10 },
+      fleet: [{ shipId: 203, count: 10 }],
     };
     const result = parseDailyRunRoutes({
       routes: [
         ok,
-        { sources: [], targets: [{}], microFleet: { shipId: 1, count: 1 } }, // no sources
-        { sources: [{}], microFleet: { shipId: 1, count: 1 } }, // no targets array
-        { sources: [{}], targets: [] }, // no microFleet
+        { sources: [], targets: [{}], fleet: [{ shipId: 1, count: 1 }] }, // no sources
+        { sources: [{}], fleet: [{ shipId: 1, count: 1 }] }, // no targets array
+        { sources: [{}], targets: [] }, // no fleet
       ],
       collectTarget: null,
     });
-    expect(result.routes).toEqual([ok]);
+    // Normalised: explicit enabled + mission added to the survivor.
+    expect(result.routes).toEqual([
+      { enabled: true, sources: ok.sources, targets: ok.targets, fleet: ok.fleet, mission: 4 },
+    ]);
+  });
+
+  it('migrates a legacy single-ship route (microFleet → fleet[]) and fills defaults', () => {
+    const { routes } = parseDailyRunRoutes({
+      routes: [
+        {
+          sources: [{ galaxy: 1, system: 1, position: 1, type: 3 }],
+          targets: [{ galaxy: 1, system: 1, position: 2, type: 1 }],
+          microFleet: { shipId: 203, count: 15000 },
+        },
+      ],
+      collectTarget: null,
+    });
+    expect(routes).toEqual([
+      {
+        enabled: true,
+        sources: [{ galaxy: 1, system: 1, position: 1, type: 3 }],
+        targets: [{ galaxy: 1, system: 1, position: 2, type: 1 }],
+        fleet: [{ shipId: 203, count: 15000 }],
+        mission: 4,
+      },
+    ]);
+  });
+
+  it('preserves enabled:false, a non-default mission, and a custom target flag', () => {
+    const { routes } = parseDailyRunRoutes({
+      routes: [
+        {
+          enabled: false,
+          mission: 3,
+          sources: [{ galaxy: 1, system: 1, position: 1, type: 3 }],
+          targets: [{ galaxy: 9, system: 9, position: 9, type: 1, custom: true }],
+          fleet: [{ shipId: 203, count: 1 }, { shipId: 219, count: 2 }],
+        },
+      ],
+      collectTarget: null,
+    });
+    expect(routes[0].enabled).toBe(false);
+    expect(routes[0].mission).toBe(3);
+    expect(routes[0].fleet).toEqual([{ shipId: 203, count: 1 }, { shipId: 219, count: 2 }]);
+    expect(routes[0].targets[0].custom).toBe(true);
+  });
+
+  it('drops unusable fleet entries and the route when none remain', () => {
+    const { routes } = parseDailyRunRoutes({
+      routes: [
+        {
+          sources: [{ galaxy: 1, system: 1, position: 1, type: 3 }],
+          targets: [{ galaxy: 1, system: 1, position: 2, type: 1 }],
+          fleet: [{ shipId: 203, count: 0 }, { shipId: 219, count: 5 }, { count: 9 }],
+        },
+        {
+          sources: [{ galaxy: 2, system: 2, position: 2, type: 1 }],
+          targets: [{ galaxy: 2, system: 2, position: 3, type: 1 }],
+          fleet: [{ shipId: 203, count: -1 }],
+        },
+      ],
+      collectTarget: null,
+    });
+    // First route keeps only the usable entry; second has no usable fleet → dropped.
+    expect(routes).toHaveLength(1);
+    expect(routes[0].fleet).toEqual([{ shipId: 219, count: 5 }]);
   });
 
   it('defaults to an empty route list + null target for junk / missing input', () => {

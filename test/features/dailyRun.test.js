@@ -172,7 +172,7 @@ describe('micro send — navigation (top zone)', () => {
         {
           sources: [{ galaxy: 4, system: 472, position: 15, type: TARGET_MOON }],
           targets: [{ galaxy: 4, system: 475, position: 14, type: TARGET_PLANET }],
-          microFleet: { shipId: SHIP_LARGE_CARGO, count: 15000 },
+          fleet: [{ shipId: SHIP_LARGE_CARGO, count: 15000 }],
         },
       ],
       collectTarget: null,
@@ -192,7 +192,7 @@ describe('micro send — navigation (top zone)', () => {
         {
           sources: [{ galaxy: 4, system: 472, position: 15, type: TARGET_MOON }],
           targets: [{ galaxy: 4, system: 475, position: 14, type: TARGET_PLANET }],
-          microFleet: { shipId: SHIP_LARGE_CARGO, count: 15000 },
+          fleet: [{ shipId: SHIP_LARGE_CARGO, count: 15000 }],
         },
       ],
       collectTarget: null,
@@ -211,6 +211,38 @@ describe('micro send — navigation (top zone)', () => {
     micro.click();
     expect(navTarget).toBeNull();
     expect(micro.textContent).toContain('All sent');
+  });
+
+  it('mission-scoped guard: a transport route ignores a deployment leg to its target', () => {
+    enable();
+    installDailyRun();
+    setBodyMeta('4:472:15', 'moon');
+    dailyRunRoutesStore.set({
+      routes: [
+        {
+          sources: [{ galaxy: 4, system: 472, position: 15, type: TARGET_MOON }],
+          targets: [{ galaxy: 4, system: 475, position: 14, type: TARGET_PLANET }],
+          fleet: [{ shipId: SHIP_LARGE_CARGO, count: 15000 }],
+          mission: 3, // transport — NOT deployment
+        },
+      ],
+      collectTarget: null,
+    });
+    // An inbound DEPLOYMENT (mission 4) to the same target must NOT count as
+    // "already sent" for a transport (mission 3) route.
+    document.body.insertAdjacentHTML('beforeend', `
+      <table id="eventContent"><tbody>
+        <tr class="eventFleet" data-mission-type="4" data-return-flight="false">
+          <td class="coordsOrigin"><a>[4:472:15]</a></td>
+          <td class="destFleet"><figure class="planetIcon planet"></figure></td>
+          <td class="destCoords"><a>[4:475:14]</a></td>
+        </tr>
+      </tbody></table>`);
+    openEventBoxGate();
+    const micro = /** @type {HTMLElement} */ (document.getElementById('oge-fs-micro-zone'));
+    micro.click();
+    // Target still considered available → navigates to a bare fleetdispatch.
+    expect(navTarget).toContain('component=fleetdispatch');
   });
 
   it('does not navigate when no route matches the current body', () => {

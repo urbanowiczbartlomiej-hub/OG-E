@@ -173,7 +173,7 @@ describe('installPlanetBarCapture — route reconciliation', () => {
     ({ galaxy: g, system: s, position: p, type: TARGET_MOON });
   const planet = (/** @type {number} */ g, /** @type {number} */ s, /** @type {number} */ p) =>
     ({ galaxy: g, system: s, position: p, type: TARGET_PLANET });
-  const fleet = { shipId: 203, count: 15000 };
+  const fleet = [{ shipId: 203, count: 15000 }];
 
   // Bar: planet+moon at 4:467:15, planet at 5:172:8.
   const fullBar = () => setupBar([
@@ -183,7 +183,7 @@ describe('installPlanetBarCapture — route reconciliation', () => {
 
   it('prunes a route target whose body is gone from the bar', async () => {
     dailyRunRoutesStore.set({
-      routes: [{ sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8), planet(9, 9, 9)], microFleet: fleet }],
+      routes: [{ sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8), planet(9, 9, 9)], fleet }],
       collectTarget: null,
     });
     fullBar();
@@ -196,7 +196,7 @@ describe('installPlanetBarCapture — route reconciliation', () => {
 
   it('removes a route whose only source no longer exists', async () => {
     dailyRunRoutesStore.set({
-      routes: [{ sources: [moon(6, 6, 6)], targets: [planet(5, 172, 8)], microFleet: fleet }],
+      routes: [{ sources: [moon(6, 6, 6)], targets: [planet(5, 172, 8)], fleet }],
       collectTarget: null,
     });
     fullBar();
@@ -206,7 +206,7 @@ describe('installPlanetBarCapture — route reconciliation', () => {
   });
 
   it('leaves routes untouched (same reference) when every endpoint still exists', async () => {
-    const routes = [{ sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8)], microFleet: fleet }];
+    const routes = [{ sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8)], fleet }];
     dailyRunRoutesStore.set({ routes, collectTarget: null });
     fullBar();
     installPlanetBarCapture();
@@ -215,7 +215,7 @@ describe('installPlanetBarCapture — route reconciliation', () => {
   });
 
   it('does not touch routes when the capture is empty (no bar)', async () => {
-    const routes = [{ sources: [moon(6, 6, 6)], targets: [planet(9, 9, 9)], microFleet: fleet }];
+    const routes = [{ sources: [moon(6, 6, 6)], targets: [planet(9, 9, 9)], fleet }];
     dailyRunRoutesStore.set({ routes, collectTarget: null });
     setupBar(null); // no inventory captured → reconcile must not run
     installPlanetBarCapture();

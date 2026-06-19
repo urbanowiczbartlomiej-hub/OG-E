@@ -1,26 +1,25 @@
 // @ts-check
 
 // Dashboard "Daily Transport" tab — a CLICKABLE editor for the daily-transport
-// micro-fleet routes, per selected universe. Sources and targets are picked
-// from the player's own planets/moons (captured in-game into the per-universe
-// `<universeId>:oge_bodies` snapshot by `features/planetBarCapture`), so a
-// coordinate can never be mistyped. The same per-universe
+// micro-fleet routes, per selected universe. Sources and OWN-body targets are
+// picked from the player's own planets/moons (captured in-game into the
+// per-universe `<universeId>:oge_bodies` snapshot by `features/planetBarCapture`),
+// so a coordinate can never be mistyped; EXTERNAL targets are typed by hand via
+// the inline 📍 custom-coords form. The same per-universe
 // `<universeId>:oge_dailyRunRoutes` key the in-game dailyRun feature consumes is
 // read/written here; the in-game-set collect target is preserved on save.
 //
 // A route = one or more SOURCE bodies (planets and/or moons) sharing one
-// ordered TARGET list and one micro-fleet (ship + count). Endpoints whose
-// body is missing from the captured inventory are flagged ⚠ "stale" (only
-// once an inventory actually exists) and can be removed in one click.
-//
-// The legacy text DSL lives on under a collapsed "Advanced" section for
-// import/export and as the cross-device sync format — `Apply` parses it back
-// into the cards.
+// ordered TARGET list, a FLEET (one or more ship+count entries, all selected
+// together) and a MISSION. A route can be paused (Enabled toggle) without
+// deleting it. Own-body endpoints missing from the captured inventory are
+// flagged ⚠ "stale" and removable in one click; custom targets are never
+// stale (and the in-game reconcile never prunes them).
 //
 // Installed like the reminders tab: the host passes a `getUniverseId` getter
 // and calls the returned `refresh()` whenever the selected universe changes.
 //
-// @see ../../domain/dailyRunRoutes.js — Route shape, DSL parse/format, parse.
+// @see ../../domain/dailyRunRoutes.js — Route shape + store normalisation.
 // @see ../../domain/bodies.js — Body shape + sort.
 // @see ../../state/bodies.js / ../../state/dailyRunRoutes.js — per-universe keys.
 
@@ -29,29 +28,27 @@ import { dailyRunRoutesKeyFor, dailyRunRoutesTsKeyFor } from '../../state/dailyR
 import { bodiesKeyFor } from '../../state/bodies.js';
 import { syncRequestKeyFor } from '../../sync/scheduler.js';
 import {
-  parseRoutesDsl,
-  formatRoutesDsl,
   parseDailyRunRoutes,
   coordTypeKey,
 } from '../../domain/dailyRunRoutes.js';
 import { sortBodies } from '../../domain/bodies.js';
 import {
   TARGET_MOON,
-  SHIP_SMALL_CARGO,
+  SHIP_CATALOG,
   SHIP_LARGE_CARGO,
-  SHIP_PATHFINDER,
+  ROUTE_MISSION_CATALOG,
+  MISSION_DEPLOYMENT,
 } from '../../domain/rules.js';
 
 /** @typedef {import('../../domain/dailyRunRoutes.js').TargetCoord} TargetCoord */
 /** @typedef {import('../../domain/dailyRunRoutes.js').Route} Route */
 /** @typedef {import('../../domain/bodies.js').Body} Body */
 
-/** Ship choices offered in the per-route fleet dropdown. */
-const SHIP_OPTIONS = [
-  { id: SHIP_SMALL_CARGO, label: 'Small cargo (202)' },
-  { id: SHIP_LARGE_CARGO, label: 'Large cargo (203)' },
-  { id: SHIP_PATHFINDER, label: 'Pathfinder (219)' },
-];
+/** Ship choices offered in the per-route fleet dropdown (from the shared catalog). */
+const SHIP_OPTIONS = SHIP_CATALOG.map((s) => ({ id: s.id, label: `${s.name} (${s.id})` }));
+
+/** Mission choices offered per route (from the shared catalog). */
+const MISSION_OPTIONS = ROUTE_MISSION_CATALOG.map((m) => ({ id: m.id, label: m.name }));
 
 // ── tiny DOM helpers ─────────────────────────────────────────────────────
 
@@ -88,9 +85,6 @@ export const installRoutes = ({ getUniverseId }) => {
   const addBtn = document.getElementById('routesAddBtn');
   const saveBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById('routesSaveBtn'));
   const status = document.getElementById('routesStatus');
-  const dsl = /** @type {HTMLTextAreaElement | null} */ (document.getElementById('routesDsl'));
-  const dslApply = document.getElementById('routesDslApply');
-  const dslStatus = document.getElementById('routesDslStatus');
   // Defensive: if the markup is absent (older dashboard.html), no-op so a
   // missing tab never throws during boot.
   if (!list) return { refresh: () => {} };
@@ -123,12 +117,15 @@ export const installRoutes = ({ getUniverseId }) => {
   /** @param {unknown} v @returns {any} */
   const clone = (v) => JSON.parse(JSON.stringify(v));
 
-  /** @param {TargetCoord} coord @returns {boolean} True if no captured body matches. */
-  const isStale = (coord) => model.hasInventory && !model.bodyByKey.has(coordTypeKey(coord));
+  /** @param {TargetCoord} coord @returns {boolean} True if an OWN-body coord
+   *  has no captured match. Custom (external) coords are never stale. */
+  const isStale = (coord) => !coord.custom && model.hasInventory && !model.bodyByKey.has(coordTypeKey(coord));
 
   /** @param {TargetCoord} coord @returns {string} Human label for a chip. */
   const labelForCoord = (coord) => {
     const icon = isMoon(coord) ? '🌙' : '🪐';
+    // Custom (external) coords have no inventory name — show a pin + coords.
+    if (coord.custom) return `📍 ${icon} [${short(coord)}]`;
     const b = model.bodyByKey.get(coordTypeKey(coord));
     return b ? `${icon} ${b.name} [${short(coord)}]` : `${icon} [${short(coord)}]`;
   };
@@ -218,6 +215,65 @@ export const installRoutes = ({ getUniverseId }) => {
     return sel;
   };
 
+  /**
+   * A compact inline form for adding an EXTERNAL (custom) target — a
+   * coordinate that isn't one of the player's own bodies (an ally hub, a
+   * deep-space slot, …). Three g/s/p number inputs, a planet/moon select and
+   * an Add button; on Add it validates the coords are positive and calls
+   * `onAdd` with a `custom`-flagged {@link TargetCoord}.
+   *
+   * @param {(coord: TargetCoord) => void} onAdd
+   * @returns {HTMLElement}
+   */
+  const customForm = (onAdd) => {
+    const wrap = mk(
+      'span',
+      'display:inline-flex;align-items:center;gap:4px;margin:3px;padding:4px 8px;border-radius:14px;background:#1a2433;border:1px dashed #3a5a7a;',
+    );
+    wrap.appendChild(mk('span', 'color:#9bd;font-size:12px;', '📍'));
+    /** @param {string} ph @param {number} w @returns {HTMLInputElement} */
+    const numInput = (ph, w) => {
+      const i = /** @type {HTMLInputElement} */ (
+        mk('input', `width:${w}px;background:#0d1620;color:#cfe;border:1px solid #244;border-radius:5px;padding:3px 4px;font-size:12px;text-align:center;`)
+      );
+      i.type = 'number';
+      i.min = '1';
+      i.placeholder = ph;
+      return i;
+    };
+    const g = numInput('G', 30);
+    const s = numInput('S', 40);
+    const p = numInput('P', 30);
+    const colon = () => mk('span', 'color:#667;font-size:12px;', ':');
+    wrap.appendChild(g);
+    wrap.appendChild(colon());
+    wrap.appendChild(s);
+    wrap.appendChild(colon());
+    wrap.appendChild(p);
+    const typeSel = /** @type {HTMLSelectElement} */ (
+      mk('select', 'background:#0d1620;color:#cfe;border:1px solid #244;border-radius:5px;padding:3px 4px;font-size:12px;')
+    );
+    for (const [val, lab] of [['1', '🪐 planet'], ['3', '🌙 moon']]) {
+      const o = /** @type {HTMLOptionElement} */ (mk('option', '', lab));
+      o.value = val;
+      typeSel.appendChild(o);
+    }
+    wrap.appendChild(typeSel);
+    const add = /** @type {HTMLButtonElement} */ (
+      mk('button', 'background:#16252f;border:1px solid #2a4a5a;color:#9bd;border-radius:5px;padding:3px 8px;font-size:12px;cursor:pointer;', 'Add')
+    );
+    add.dataset.role = 'add-custom-target';
+    add.addEventListener('click', () => {
+      const gg = parseInt(g.value, 10);
+      const ss = parseInt(s.value, 10);
+      const pp = parseInt(p.value, 10);
+      if (!(gg > 0) || !(ss > 0) || !(pp > 0)) return;
+      onAdd({ galaxy: gg, system: ss, position: pp, type: parseInt(typeSel.value, 10), custom: true });
+    });
+    wrap.appendChild(add);
+    return wrap;
+  };
+
   // ── route card ───────────────────────────────────────────────────────
 
   /**
@@ -231,9 +287,27 @@ export const installRoutes = ({ getUniverseId }) => {
       'background:#0f1a24;border:1px solid #233;border-radius:8px;padding:12px;margin-bottom:12px;',
     );
 
-    // Header: title + remove route.
-    const head = mk('div', 'display:flex;align-items:center;margin-bottom:8px;');
-    head.appendChild(mk('strong', 'flex:1;color:#4a9eff;font-size:14px;', `Route ${idx + 1}`));
+    // A paused route stays in the editor but dims and is skipped in-game.
+    const enabled = route.enabled !== false;
+    if (!enabled) card.style.opacity = '0.6';
+
+    // Header: title + enable toggle + remove route.
+    const head = mk('div', 'display:flex;align-items:center;gap:10px;margin-bottom:8px;');
+    head.appendChild(
+      mk('strong', 'flex:1;color:#4a9eff;font-size:14px;', `Route ${idx + 1}${enabled ? '' : ' — paused'}`),
+    );
+
+    // Enable / pause toggle.
+    const toggleLabel = mk('label', 'display:inline-flex;align-items:center;gap:5px;color:#8aa;font-size:12px;cursor:pointer;');
+    const toggle = /** @type {HTMLInputElement} */ (mk('input'));
+    toggle.type = 'checkbox';
+    toggle.checked = enabled;
+    toggle.dataset.role = 'enabled';
+    toggle.addEventListener('change', () => { route.enabled = toggle.checked; render(); });
+    toggleLabel.appendChild(toggle);
+    toggleLabel.appendChild(mk('span', '', 'Enabled'));
+    head.appendChild(toggleLabel);
+
     // Inline-styled (it lives inside #routesList, so the dashboard's
     // `.controls button` CSS doesn't reach it). Shares the danger palette
     // (#4a2a2a / #6a3a3a / #ff8888) used by the per-galaxy reset button.
@@ -257,43 +331,87 @@ export const installRoutes = ({ getUniverseId }) => {
     srcWrap.appendChild(picker(route.sources, (coord) => { route.sources.push(coord); render(); }, '+ add source', 'add-source'));
     card.appendChild(srcWrap);
 
-    // Fleet.
-    const fleetWrap = mk('div', 'display:flex;align-items:center;gap:8px;margin:10px 0;');
-    fleetWrap.appendChild(mk('span', 'color:#8aa;font-size:12px;', 'Fleet'));
-    const shipSel = /** @type {HTMLSelectElement} */ (
+    // Fleet — one or more ship types, all selected together for the send.
+    card.appendChild(mk('div', 'color:#8aa;font-size:12px;margin:8px 0 4px;', 'Fleet (all ships selected together)'));
+    const fleetWrap = mk('div', 'display:flex;flex-direction:column;gap:6px;align-items:flex-start;');
+    const fleetIds = SHIP_OPTIONS.map((o) => o.id);
+    route.fleet.forEach((f, j) => {
+      const row = mk('div', 'display:flex;align-items:center;gap:8px;');
+      const shipSel = /** @type {HTMLSelectElement} */ (
+        mk('select', 'background:#0d1620;color:#cfe;border:1px solid #244;border-radius:6px;padding:4px 6px;font-size:12px;')
+      );
+      shipSel.dataset.role = 'ship';
+      for (const o of SHIP_OPTIONS) {
+        const opt = /** @type {HTMLOptionElement} */ (mk('option', '', o.label));
+        opt.value = String(o.id);
+        shipSel.appendChild(opt);
+      }
+      // Unknown raw id (e.g. synced from a newer build) → keep an option so it round-trips.
+      if (!fleetIds.includes(f.shipId)) {
+        const opt = /** @type {HTMLOptionElement} */ (mk('option', '', `Ship ${f.shipId}`));
+        opt.value = String(f.shipId);
+        shipSel.appendChild(opt);
+      }
+      shipSel.value = String(f.shipId);
+      shipSel.addEventListener('change', () => { f.shipId = parseInt(shipSel.value, 10); updateSaveState(); });
+      row.appendChild(shipSel);
+
+      const countInput = /** @type {HTMLInputElement} */ (
+        mk('input', 'width:110px;background:#0d1620;color:#cfe;border:1px solid #244;border-radius:6px;padding:4px 6px;font-size:12px;')
+      );
+      countInput.type = 'number';
+      countInput.min = '1';
+      countInput.value = String(f.count);
+      countInput.addEventListener('input', () => {
+        const n = parseInt(countInput.value, 10);
+        f.count = Number.isFinite(n) && n > 0 ? n : 0;
+        updateSaveState();
+      });
+      row.appendChild(countInput);
+      row.appendChild(mk('span', 'color:#667;font-size:12px;', 'ships'));
+      // A route must keep ≥1 ship — only offer removal when there's more than one.
+      if (route.fleet.length > 1) {
+        row.appendChild(iconBtn('×', `Remove ship ${f.shipId}`, () => { route.fleet.splice(j, 1); render(); }));
+      }
+      fleetWrap.appendChild(row);
+    });
+    const addShipBtn = /** @type {HTMLButtonElement} */ (
+      mk('button', 'background:#16252f;border:1px solid #2a4a5a;color:#9bd;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;', '+ add ship')
+    );
+    addShipBtn.dataset.role = 'add-ship';
+    addShipBtn.addEventListener('click', () => {
+      const used = new Set(route.fleet.map((f) => f.shipId));
+      const next = SHIP_OPTIONS.find((o) => !used.has(o.id)) || SHIP_OPTIONS[0];
+      route.fleet.push({ shipId: next.id, count: 1 });
+      render();
+    });
+    fleetWrap.appendChild(addShipBtn);
+    card.appendChild(fleetWrap);
+
+    // Mission. The game validates the mission against each target on send,
+    // so an illegal combo surfaces in-game as "Bad target" rather than here.
+    const missionWrap = mk('div', 'display:flex;align-items:center;gap:8px;margin:10px 0;');
+    missionWrap.appendChild(mk('span', 'color:#8aa;font-size:12px;', 'Mission'));
+    const missionSel = /** @type {HTMLSelectElement} */ (
       mk('select', 'background:#0d1620;color:#cfe;border:1px solid #244;border-radius:6px;padding:4px 6px;font-size:12px;')
     );
-    shipSel.dataset.role = 'ship';
-    const ids = SHIP_OPTIONS.map((o) => o.id);
-    for (const o of SHIP_OPTIONS) {
+    missionSel.dataset.role = 'mission';
+    const curMission = route.mission ?? MISSION_DEPLOYMENT;
+    for (const o of MISSION_OPTIONS) {
       const opt = /** @type {HTMLOptionElement} */ (mk('option', '', o.label));
       opt.value = String(o.id);
-      shipSel.appendChild(opt);
+      missionSel.appendChild(opt);
     }
-    // Unknown raw id → add an option so it round-trips.
-    if (!ids.includes(route.microFleet.shipId)) {
-      const opt = /** @type {HTMLOptionElement} */ (mk('option', '', `Ship ${route.microFleet.shipId}`));
-      opt.value = String(route.microFleet.shipId);
-      shipSel.appendChild(opt);
+    // Unknown mission id (e.g. synced from a newer build) → keep an option.
+    if (!MISSION_OPTIONS.some((o) => o.id === curMission)) {
+      const opt = /** @type {HTMLOptionElement} */ (mk('option', '', `Mission ${curMission}`));
+      opt.value = String(curMission);
+      missionSel.appendChild(opt);
     }
-    shipSel.value = String(route.microFleet.shipId);
-    shipSel.addEventListener('change', () => { route.microFleet.shipId = parseInt(shipSel.value, 10); updateSaveState(); });
-    fleetWrap.appendChild(shipSel);
-
-    const countInput = /** @type {HTMLInputElement} */ (
-      mk('input', 'width:110px;background:#0d1620;color:#cfe;border:1px solid #244;border-radius:6px;padding:4px 6px;font-size:12px;')
-    );
-    countInput.type = 'number';
-    countInput.min = '1';
-    countInput.value = String(route.microFleet.count);
-    countInput.addEventListener('input', () => {
-      const n = parseInt(countInput.value, 10);
-      route.microFleet.count = Number.isFinite(n) && n > 0 ? n : 0;
-      updateSaveState();
-    });
-    fleetWrap.appendChild(countInput);
-    fleetWrap.appendChild(mk('span', 'color:#667;font-size:12px;', 'ships'));
-    card.appendChild(fleetWrap);
+    missionSel.value = String(curMission);
+    missionSel.addEventListener('change', () => { route.mission = parseInt(missionSel.value, 10); updateSaveState(); });
+    missionWrap.appendChild(missionSel);
+    card.appendChild(missionWrap);
 
     // Targets (ordered).
     card.appendChild(mk('div', 'color:#8aa;font-size:12px;margin:4px 0;', 'Targets (sent in this order)'));
@@ -315,6 +433,7 @@ export const installRoutes = ({ getUniverseId }) => {
       tgtWrap.appendChild(chip(t, () => { route.targets.splice(j, 1); render(); }, lead));
     });
     tgtWrap.appendChild(picker(route.targets, (coord) => { route.targets.push(coord); render(); }, '+ add target', 'add-target'));
+    tgtWrap.appendChild(customForm((coord) => { route.targets.push(coord); render(); }));
     card.appendChild(tgtWrap);
 
     return card;
@@ -343,10 +462,6 @@ export const installRoutes = ({ getUniverseId }) => {
     } else {
       model.routes.forEach((r, i) => list.appendChild(buildCard(r, i)));
     }
-
-    // Keep the Advanced DSL mirror in sync (export view).
-    if (dsl) dsl.value = formatRoutesDsl(model.routes);
-    if (dslStatus) dslStatus.textContent = '';
 
     updateSaveState();
   };
@@ -406,7 +521,9 @@ export const installRoutes = ({ getUniverseId }) => {
     if (!uni) { setStatus('No universe selected.', '#e66'); return; }
     // A route needs ≥1 source and ≥1 target to do anything in-game — drop
     // incomplete ones on save and tell the user how many.
-    const clean = model.routes.filter((r) => r.sources.length > 0 && r.targets.length > 0);
+    const clean = model.routes.filter(
+      (r) => r.sources.length > 0 && r.targets.length > 0 && r.fleet.some((f) => f.count > 0),
+    );
     const dropped = model.routes.length - clean.length;
     // Preserve the in-game-set collect target; we only own `routes` here.
     const stored = await chromeStore.get(dailyRunRoutesKeyFor(uni));
@@ -429,25 +546,10 @@ export const installRoutes = ({ getUniverseId }) => {
   };
 
   addBtn?.addEventListener('click', () => {
-    model.routes.push({ sources: [], targets: [], microFleet: { shipId: SHIP_LARGE_CARGO, count: 15000 } });
+    model.routes.push({ sources: [], targets: [], fleet: [{ shipId: SHIP_LARGE_CARGO, count: 15000 }] });
     render();
   });
   saveBtn?.addEventListener('click', () => void save());
-  dslApply?.addEventListener('click', () => {
-    if (!dsl) return;
-    const { routes, errors } = parseRoutesDsl(dsl.value);
-    model.routes = routes;
-    render();
-    if (dslStatus) {
-      if (errors.length) {
-        dslStatus.textContent = `Applied ${routes.length} route(s); ${errors.length} line(s) skipped (L${errors[0].line}: ${errors[0].message}).`;
-        dslStatus.style.color = '#e6a23c';
-      } else {
-        dslStatus.textContent = `Applied ${routes.length} route(s) to the editor — press Save to persist.`;
-        dslStatus.style.color = '#67c23a';
-      }
-    }
-  });
 
   return { refresh: () => void refresh() };
 };

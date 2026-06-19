@@ -196,6 +196,14 @@
   }
   .settings-panel button:hover { background: #2a4a6a; color: #fff; }
 
+  /* ── Daily Transport route editor — strip the native <input type=number>
+     spinners. The custom-coords g/s/p fields are only ~30px wide, so the
+     up/down arrows would cover the whole field; drop them on the ship-count
+     field too for a consistent look. ── */
+  #routesList input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+  #routesList input[type="number"]::-webkit-outer-spin-button,
+  #routesList input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
   /* Labelled config rows (cfg-row label + field) — RWD: stack on narrow. */
   .cfg-row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
   .cfg-label { flex: 0 0 220px; max-width: 220px; color: #ccc; font-size: 13px; padding-top: 6px; }
@@ -588,25 +596,6 @@
     <button id="routesSaveBtn">Save routes</button>
     <span id="routesStatus" style="color:#888;font-size:13px;margin-left:12px;"></span>
   </div>
-
-  <details id="routesAdvanced" style="margin-top:18px;">
-    <summary style="cursor:pointer;color:#4a9eff;font-size:13px;">Advanced — text import / export (DSL)</summary>
-    <p style="color:#888;font-size:12px;margin:8px 0;">
-      One route per line:
-      <code style="color:#4a9eff;">&lt;src&gt;, … = &lt;ship&gt;x&lt;count&gt; -&gt; &lt;target&gt;, …</code> — ship is an alias
-      (<code style="color:#4a9eff;">SC</code>/<code style="color:#4a9eff;">LC</code>/<code style="color:#4a9eff;">PF</code> —
-      Small&nbsp;cargo / Large&nbsp;cargo / Pathfinder)
-      or raw id; count takes a <code style="color:#4a9eff;">k</code> suffix (×1000); a trailing
-      <code style="color:#4a9eff;">m</code> marks a moon (on either side). Editing here and pressing
-      <em>Apply</em> replaces the cards above. This text is what syncs across devices.
-    </p>
-    <textarea id="routesDsl" spellcheck="false"
-      style="width:100%;min-height:160px;box-sizing:border-box;background:#0d1620;color:#cfe;border:1px solid #244;border-radius:6px;padding:10px;font-family:monospace;font-size:13px;line-height:1.5;"></textarea>
-    <div class="controls" style="margin-top:8px;">
-      <button id="routesDslApply">Apply DSL to editor</button>
-      <span id="routesDslStatus" style="color:#888;font-size:12px;margin-left:12px;"></span>
-    </div>
-  </details>
 </section>
 
 <script src="dashboard.js"></script>

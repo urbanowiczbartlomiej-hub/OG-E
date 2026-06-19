@@ -3,16 +3,16 @@
 // Pure core of the fleet-save micro-fleet feature — route target picking.
 // (The old fleetdispatch URL builders are gone: with bare-URL entry the
 // fleet courier sets ships+target in-page, so no URL is built here.) The
-// coordinate shapes, key helpers, and the dashboard routes DSL live in
-// `domain/dailyRunRoutes.js` (shared with the dashboard tab, which a feature may
-// not import directly); this module re-exports them so the feature's own
-// call-sites + tests keep one import path.
+// coordinate shapes and key helpers live in `domain/dailyRunRoutes.js`
+// (shared with the dashboard tab, which a feature may not import directly);
+// this module re-exports them so the feature's own call-sites + tests keep
+// one import path.
 //
 // Axiom (same as sibling pure cores): NO DOM, NO timers, NO listeners, NO
 // `location` reads. The impure orchestrator (`./index.js`) reads the page
 // and hands plain data here.
 //
-// @see ../../domain/dailyRunRoutes.js — coord keys + routes DSL (shared).
+// @see ../../domain/dailyRunRoutes.js — coord keys + route shapes (shared).
 // @see ./domHelpers.js — impure readers producing the `inFlightKeys` set.
 
 import { coordTypeKey } from '../../domain/dailyRunRoutes.js';
@@ -23,8 +23,6 @@ export {
   coordKey,
   coordTypeKey,
   findRouteForBody,
-  parseRoutesDsl,
-  formatRoutesDsl,
 } from '../../domain/dailyRunRoutes.js';
 
 /**

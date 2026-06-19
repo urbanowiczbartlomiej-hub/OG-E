@@ -501,8 +501,8 @@ describe('mergeSettings', () => {
 });
 
 describe('mergeDailyRunRoutes — whole-universe newest-wins', () => {
-  const routeA = { sources: [{ galaxy: 4, system: 472, position: 15, type: 3 }], targets: [{ galaxy: 4, system: 475, position: 14, type: 1 }], microFleet: { shipId: 203, count: 15000 } };
-  const routeB = { sources: [{ galaxy: 5, system: 120, position: 6, type: 1 }], targets: [{ galaxy: 5, system: 120, position: 7, type: 1 }], microFleet: { shipId: 202, count: 500 } };
+  const routeA = { sources: [{ galaxy: 4, system: 472, position: 15, type: 3 }], targets: [{ galaxy: 4, system: 475, position: 14, type: 1 }], fleet: [{ shipId: 203, count: 15000 }] };
+  const routeB = { sources: [{ galaxy: 5, system: 120, position: 6, type: 1 }], targets: [{ galaxy: 5, system: 120, position: 7, type: 1 }], fleet: [{ shipId: 202, count: 500 }] };
 
   it('adopts the remote slot WHOLE when remote.updatedAt is strictly newer', () => {
     const local = { routes: [routeA], collectTarget: null, updatedAt: 100 };

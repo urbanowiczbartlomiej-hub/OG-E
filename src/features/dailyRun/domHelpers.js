@@ -22,9 +22,10 @@ import { coordKey } from './pure.js';
 
 // ─── Feature-local selectors / ids ──────────────────────────────────────
 
-/** Inbound deployment fleet rows in the event ticker. */
-const SEL_DEPLOY_ROWS =
-  '#eventContent tr.eventFleet[data-mission-type="4"][data-return-flight="false"]';
+/** Inbound (non-return) fleet rows in the event ticker, ANY mission type.
+ *  Callers filter by `data-mission-type` (read per row in {@link readInboundLegs}). */
+const SEL_INBOUND_ROWS =
+  '#eventContent tr.eventFleet[data-return-flight="false"]';
 /** OGame per-page meta tags for the active body. */
 const SEL_META_COORDS = 'meta[name="ogame-planet-coordinates"]';
 const SEL_META_TYPE = 'meta[name="ogame-planet-type"]';
@@ -115,20 +116,25 @@ export const bodyNameByCoord = (coord) => {
 };
 
 /**
- * Read every inbound deployment leg from the event ticker as
- * `{ origin, dest }`. `origin` is `{g,s,p}` (or `null` when unreadable);
- * `dest` is a full {@link TargetCoord} (type from the dest icon —
- * `.destFleet figure.moon` ⇒ moon).
+ * Read every inbound (non-return) fleet leg from the event ticker as
+ * `{ origin, dest, mission }`. `origin` is `{g,s,p}` (or `null` when
+ * unreadable); `dest` is a full {@link TargetCoord} (type from the dest
+ * icon — `.destFleet figure.moon` ⇒ moon); `mission` is the row's
+ * `data-mission-type` as a number (0 when absent/unparseable). Callers
+ * filter by `mission` so a route's "already sent" guard matches that
+ * route's own mission (deployment for collect, the route's mission for
+ * micro) and isn't fooled by an unrelated inbound fleet.
  *
  * @returns {Array<{
  *   origin: { galaxy: number, system: number, position: number } | null,
  *   dest: TargetCoord,
+ *   mission: number,
  * }>}
  */
-export const readDeployLegs = () => {
-  /** @type {Array<{ origin: any, dest: TargetCoord }>} */
+export const readInboundLegs = () => {
+  /** @type {Array<{ origin: any, dest: TargetCoord, mission: number }>} */
   const legs = [];
-  const rows = document.querySelectorAll(SEL_DEPLOY_ROWS);
+  const rows = document.querySelectorAll(SEL_INBOUND_ROWS);
   for (const row of rows) {
     const dest = parseCoordsText(row.querySelector(GAME.COORDS_DEST)?.textContent);
     if (!dest) continue;
@@ -136,7 +142,8 @@ export const readDeployLegs = () => {
     const destType =
       fig && fig.classList.contains('moon') ? TARGET_MOON : TARGET_PLANET;
     const origin = parseCoordsText(row.querySelector(GAME.COORDS_ORIGIN)?.textContent);
-    legs.push({ origin, dest: { ...dest, type: destType } });
+    const mission = parseInt(row.getAttribute('data-mission-type') || '', 10) || 0;
+    legs.push({ origin, dest: { ...dest, type: destType }, mission });
   }
   return legs;
 };

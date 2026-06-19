@@ -3,8 +3,8 @@
 // Behavioural tests for the dashboard FS Routes clickable editor. We mock
 // chrome.storage with a Map-backed fake, inject the tab's markup, then drive
 // real clicks / select-changes and assert the observable output: rendered
-// cards, the inventory hint, the saved chrome.storage payload, DSL apply, and
-// revert.
+// cards, the inventory hint, the saved chrome.storage payload, and the
+// dirty-Save state.
 //
 // @ts-check
 
@@ -20,7 +20,7 @@ vi.mock('../../../src/lib/storage.js', () => ({
 
 import { chromeStore } from '../../../src/lib/storage.js';
 import { installRoutes } from '../../../src/features/dashboard/routes.js';
-import { TARGET_PLANET, TARGET_MOON, SHIP_LARGE_CARGO, SHIP_SMALL_CARGO } from '../../../src/domain/rules.js';
+import { TARGET_PLANET, TARGET_MOON, SHIP_LARGE_CARGO, SHIP_SMALL_CARGO, MISSION_TRANSPORT } from '../../../src/domain/rules.js';
 
 const mockStore = /** @type {{ get: import('vitest').Mock, set: import('vitest').Mock }} */ (
   /** @type {any} */ (chromeStore)
@@ -38,12 +38,7 @@ const MARKUP = `
   <div id="routesList"></div>
   <button id="routesAddBtn"></button>
   <button id="routesSaveBtn"></button>
-  <span id="routesStatus"></span>
-  <details>
-    <textarea id="routesDsl"></textarea>
-    <button id="routesDslApply"></button>
-    <span id="routesDslStatus"></span>
-  </details>`;
+  <span id="routesStatus"></span>`;
 
 const planet = (/** @type {number} */ g, /** @type {number} */ s, /** @type {number} */ p) =>
   ({ galaxy: g, system: s, position: p, type: TARGET_PLANET });
@@ -87,7 +82,7 @@ describe('render from storage', () => {
       { cp: 200, name: 'P2', ...planet(5, 172, 8) },
     ]);
     seedRoutes([
-      { sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8), planet(9, 9, 9)], microFleet: { shipId: SHIP_LARGE_CARGO, count: 15000 } },
+      { sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8), planet(9, 9, 9)], fleet: [{ shipId: SHIP_LARGE_CARGO, count: 15000 }] },
     ]);
     install().refresh();
     await flush();
@@ -103,7 +98,7 @@ describe('render from storage', () => {
 
   it('shows the "open the game" hint and disables pickers when no inventory exists', async () => {
     seedBodies([]);
-    seedRoutes([{ sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8)], microFleet: { shipId: SHIP_LARGE_CARGO, count: 1 } }]);
+    seedRoutes([{ sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8)], fleet: [{ shipId: SHIP_LARGE_CARGO, count: 1 }] }]);
     install().refresh();
     await flush();
 
@@ -135,7 +130,7 @@ describe('build a route by clicking', () => {
         {
           sources: [moon(4, 467, 15)],
           targets: [planet(5, 172, 8)],
-          microFleet: { shipId: SHIP_LARGE_CARGO, count: 15000 },
+          fleet: [{ shipId: SHIP_LARGE_CARGO, count: 15000 }],
         },
       ],
       collectTarget: moon(4, 472, 15),
@@ -168,7 +163,7 @@ describe('build a route by clicking', () => {
       { cp: 200, name: 'P2', ...planet(5, 172, 8) },
       { cp: 300, name: 'P3', ...planet(6, 100, 8) },
     ]);
-    seedRoutes([{ sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8), planet(6, 100, 8)], microFleet: { shipId: SHIP_LARGE_CARGO, count: 1 } }]);
+    seedRoutes([{ sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8), planet(6, 100, 8)], fleet: [{ shipId: SHIP_LARGE_CARGO, count: 1 }] }]);
     install().refresh();
     await flush();
 
@@ -184,22 +179,97 @@ describe('build a route by clicking', () => {
   });
 });
 
-describe('advanced DSL + dirty Save', () => {
-  it('Apply parses the DSL into editor cards', async () => {
-    seedBodies([]);
+describe('new route options — multi-ship / mission / pause / custom target', () => {
+  it('adds a second ship to the fleet and saves both entries', async () => {
+    seedBodies([
+      { cp: 101, name: 'K1', ...moon(4, 467, 15) },
+      { cp: 200, name: 'P2', ...planet(5, 172, 8) },
+    ]);
     seedRoutes([]);
     install().refresh();
     await flush();
 
-    /** @type {HTMLTextAreaElement} */ ($('#routesDsl')).value =
-      '4:472:15m = DT x15000 -> 4:475:14, 4:480:8m';
-    $('#routesDslApply').click();
+    $('#routesAddBtn').click();
+    pick('add-source', '4:467:15:3');
+    pick('add-target', '5:172:8:1');
+    /** @type {HTMLButtonElement} */ (list().querySelector('[data-role="add-ship"]')).click();
+    expect(list().querySelectorAll('[data-role="ship"]').length).toBe(2);
+    $('#routesSaveBtn').click();
+    await flush();
 
-    expect(list().textContent).toContain('4:472:15');
-    expect(list().textContent).toContain('4:475:14');
-    expect($('#routesDslStatus').textContent).toContain('Applied 1 route');
+    const saved = /** @type {any} */ (store.get(ROUTES_KEY)).routes[0];
+    expect(saved.fleet).toHaveLength(2);
+    // addBtn seeds Large Cargo; the add-ship button auto-picks the next
+    // unused catalog ship for the second row.
+    expect(saved.fleet[0].shipId).toBe(SHIP_LARGE_CARGO);
   });
 
+  it('saves a non-default mission chosen from the dropdown', async () => {
+    seedBodies([
+      { cp: 101, name: 'K1', ...moon(4, 467, 15) },
+      { cp: 200, name: 'P2', ...planet(5, 172, 8) },
+    ]);
+    seedRoutes([]);
+    install().refresh();
+    await flush();
+
+    $('#routesAddBtn').click();
+    pick('add-source', '4:467:15:3');
+    pick('add-target', '5:172:8:1');
+    pick('mission', String(MISSION_TRANSPORT));
+    $('#routesSaveBtn').click();
+    await flush();
+
+    expect(/** @type {any} */ (store.get(ROUTES_KEY)).routes[0].mission).toBe(MISSION_TRANSPORT);
+  });
+
+  it('pauses a route via the Enabled toggle and persists enabled:false', async () => {
+    seedBodies([
+      { cp: 101, name: 'K1', ...moon(4, 467, 15) },
+      { cp: 200, name: 'P2', ...planet(5, 172, 8) },
+    ]);
+    seedRoutes([
+      { sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8)], fleet: [{ shipId: SHIP_LARGE_CARGO, count: 1 }] },
+    ]);
+    install().refresh();
+    await flush();
+
+    const toggle = /** @type {HTMLInputElement} */ (list().querySelector('[data-role="enabled"]'));
+    expect(toggle.checked).toBe(true);
+    toggle.checked = false;
+    toggle.dispatchEvent(new Event('change'));
+    $('#routesSaveBtn').click();
+    await flush();
+
+    expect(/** @type {any} */ (store.get(ROUTES_KEY)).routes[0].enabled).toBe(false);
+  });
+
+  it('adds a custom external target via the 📍 form, flagged custom', async () => {
+    seedBodies([{ cp: 101, name: 'K1', ...moon(4, 467, 15) }]);
+    seedRoutes([]);
+    install().refresh();
+    await flush();
+
+    $('#routesAddBtn').click();
+    pick('add-source', '4:467:15:3');
+    // Fill the custom-coords form (its own g/s/p number inputs) and Add.
+    const addCustom = /** @type {HTMLButtonElement} */ (list().querySelector('[data-role="add-custom-target"]'));
+    const form = /** @type {HTMLElement} */ (addCustom.parentElement);
+    const nums = form.querySelectorAll('input[type="number"]');
+    /** @type {HTMLInputElement} */ (nums[0]).value = '1';
+    /** @type {HTMLInputElement} */ (nums[1]).value = '99';
+    /** @type {HTMLInputElement} */ (nums[2]).value = '4';
+    addCustom.click();
+    $('#routesSaveBtn').click();
+    await flush();
+
+    expect(/** @type {any} */ (store.get(ROUTES_KEY)).routes[0].targets).toEqual([
+      { galaxy: 1, system: 99, position: 4, type: TARGET_PLANET, custom: true },
+    ]);
+  });
+});
+
+describe('dirty Save', () => {
   it('marks Save dirty on an edit and clears it after saving', async () => {
     seedBodies([
       { cp: 101, name: 'K1', ...moon(4, 467, 15) },
@@ -235,7 +305,7 @@ describe('advanced DSL + dirty Save', () => {
       { cp: 200, name: 'P2', ...planet(5, 172, 8) },
     ]);
     seedRoutes([
-      { sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8)], microFleet: { shipId: SHIP_LARGE_CARGO, count: 15000 } },
+      { sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8)], fleet: [{ shipId: SHIP_LARGE_CARGO, count: 15000 }] },
     ]);
     install().refresh();
     await flush();
@@ -255,7 +325,7 @@ describe('advanced DSL + dirty Save', () => {
       { cp: 200, name: 'P2', ...planet(5, 172, 8) },
     ]);
     seedRoutes([
-      { sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8)], microFleet: { shipId: SHIP_LARGE_CARGO, count: 15000 } },
+      { sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8)], fleet: [{ shipId: SHIP_LARGE_CARGO, count: 15000 }] },
     ]);
     install().refresh();
     await flush();

@@ -83,7 +83,7 @@ import {
 } from './pure.js';
 import {
   readCurrentBody,
-  readDeployLegs,
+  readInboundLegs,
   findNextCollectPlanetCp,
   bodyNameByCoord,
 } from './domHelpers.js';
@@ -181,14 +181,19 @@ const openDashboardRoutes = () => {
 };
 
 /**
- * Set of {@link coordTypeKey}s that currently have a deployment inbound —
- * the "already sent a micro-fleet here" guard.
+ * Set of {@link coordTypeKey}s that already have an inbound fleet of
+ * `mission` — the "already sent a micro-fleet here" guard, scoped to the
+ * route's own mission so a transport route isn't fooled by a deployment leg
+ * (or vice-versa) to the same target.
  *
+ * @param {number} mission
  * @returns {Set<string>}
  */
-const microInFlightKeys = () => {
+const microInFlightKeys = (mission) => {
   const set = new Set();
-  for (const leg of readDeployLegs()) set.add(coordTypeKey(leg.dest));
+  for (const leg of readInboundLegs()) {
+    if (leg.mission === mission) set.add(coordTypeKey(leg.dest));
+  }
   return set;
 };
 
@@ -204,8 +209,10 @@ const collectedOriginKeys = (target) => {
   const set = new Set();
   if (!target) return set;
   const tkt = coordTypeKey(target);
-  for (const leg of readDeployLegs()) {
-    if (leg.origin && coordTypeKey(leg.dest) === tkt) {
+  // Collect always deploys (parks everything on the target), so the "already
+  // collected" guard only counts inbound DEPLOYMENT legs.
+  for (const leg of readInboundLegs()) {
+    if (leg.mission === MISSION_DEPLOYMENT && leg.origin && coordTypeKey(leg.dest) === tkt) {
       set.add(coordKey(leg.origin));
     }
   }
@@ -220,20 +227,19 @@ const collectedOriginKeys = (target) => {
  * fleetdispatch page / no snapshot yet), so the off-page tap still
  * navigates instead of false-flagging "no ships".
  *
- * @param {{ microFleet: { shipId: number | string, count: number | string } }} route
+ * @param {{ fleet: Array<{ shipId: number | string, count: number | string }> }} route
  * @returns {{ have: number, want: number } | null}
  */
 const microShortfall = (route) => {
   const avail = shipAvailability();
   if (!avail) return null;
-  const f = route.microFleet;
   const sel = resolveSelection(
-    { kind: 'list', ships: [{ id: Number(f.shipId), qty: Number(f.count), frac: 1 }] },
+    { kind: 'list', ships: route.fleet.map((f) => ({ id: Number(f.shipId), qty: Number(f.count), frac: 1 })) },
     avail,
   );
   if (sel.ok) return null;
   const s = sel.shortfalls[0];
-  return { have: s?.have ?? 0, want: s?.want ?? Number(f.count) };
+  return { have: s?.have ?? 0, want: s?.want ?? 0 };
 };
 
 /**
@@ -376,18 +382,21 @@ const buildOrder = (mode) => {
   if (mode === 'micro') {
     const route = findRouteForBody(dailyRunRoutesStore.get().routes, readCurrentBody());
     if (!route) return { flash: 'No route', openDash: true };
-    const next = findNextMicroTarget(route.targets, microInFlightKeys());
+    const mission = route.mission ?? MISSION_DEPLOYMENT;
+    const next = findNextMicroTarget(route.targets, microInFlightKeys(mission));
     if (!next) return { flash: 'All sent' };
     // Hard gate BEFORE any courier action: a micro-fleet that can't be
     // filled must never start the select→continue walk (the label already
     // says why — see refresh()).
     if (microShortfall(route)) return { flash: 'No ships' };
-    const f = route.microFleet;
     return {
       order: {
-        spec: { kind: 'list', ships: [{ id: Number(f.shipId), qty: Number(f.count), frac: 1 }] },
+        spec: {
+          kind: 'list',
+          ships: route.fleet.map((f) => ({ id: Number(f.shipId), qty: Number(f.count), frac: 1 })),
+        },
         target: next,
-        mission: MISSION_DEPLOYMENT,
+        mission,
         owner: OWNER_FS,
       },
     };
@@ -630,7 +639,7 @@ const refresh = () => {
     } else if (onF2Ready && pending && pending.mode === 'micro') {
       setLabel(microZone, 'Send', collectTargetLabel(pending.target), '(tap to send)');
     } else {
-      const inflight = microInFlightKeys();
+      const inflight = microInFlightKeys(route.mission ?? MISSION_DEPLOYMENT);
       const next = findNextMicroTarget(route.targets, inflight);
       if (!next) {
         setLabel(microZone, 'Done', undefined, 'all sent');
