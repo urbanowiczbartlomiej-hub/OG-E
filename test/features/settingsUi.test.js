@@ -462,8 +462,12 @@ describe('installSettingsUi — checkbox inline button', () => {
     expect(btn?.disabled).toBe(false);
     btn?.click();
 
+    // "Sync now" now validates the token FIRST (async) and dispatches syncForce
+    // inside the .then — so the event lands a tick later, not synchronously.
+    await vi.waitFor(() => {
+      expect(received).toContain('oge:syncForce');
+    }, { timeout: 4000, interval: 20 });
     document.removeEventListener('oge:syncForce', handler);
-    expect(received).toContain('oge:syncForce');
   });
 
   it('disables the "Sync now" button while cloudSync is off', async () => {
@@ -484,43 +488,37 @@ describe('installSettingsUi — checkbox inline button', () => {
 // panel now keeps only the reminders master switch + token + status rows.
 
 // ──────────────────────────────────────────────────────────────────
-// Static status rendering
+// Sync status row (asyncStatus: token-validation line + ↑/↓ times)
 // ──────────────────────────────────────────────────────────────────
 
-describe('installSettingsUi — static status', () => {
-  it('renders formatSyncStatus output populated from localStorage timestamps', async () => {
+describe('installSettingsUi — Sync status row', () => {
+  it('renders the ↑/↓ times from localStorage timestamps', async () => {
     const iso = '2026-01-02T03:04:05.000Z';
     localStorage.setItem('oge_lastSyncAt', iso);
     localStorage.setItem('oge_lastDownAt', iso);
     setupAGR();
     installSettingsUi();
     await flushWaitFor();
+    // Force a deterministic (re)paint — the sync layer emits this after every
+    // settle, and force=true bypasses the module-global asyncStatus key-cache,
+    // so the assertion doesn't depend on what earlier cases primed.
+    document.dispatchEvent(new CustomEvent('oge:syncStatus'));
 
     const span = document.getElementById(INPUT_PREFIX + 'syncStatus');
     expect(span).not.toBeNull();
-    // The string format includes both the up/down arrows. We don't
-    // assert the exact locale rendering of the date because it depends
-    // on the happy-dom locale, but we can assert the arrows + that
-    // both "—" are replaced (i.e. some locale string is present).
+    // happy-dom locale-dependent date text — assert only the arrows + that the
+    // em-dashes are replaced (real ISO values supplied), not the exact render.
+    await vi.waitFor(() => {
+      const text = span?.textContent ?? '';
+      expect(text).toContain('↑');
+      expect(text).toContain('↓');
+    }, { timeout: 4000, interval: 20 });
     const text = span?.textContent ?? '';
-    expect(text).toContain('↑');
-    expect(text).toContain('↓');
-    // Not em-dashes because we supplied both ISO values.
     expect(text).not.toContain('↑ —');
     expect(text).not.toContain('↓ —');
   });
 
-  it('includes error line when oge_lastSyncErr is set', async () => {
-    localStorage.setItem('oge_lastSyncErr', 'rate limited');
-    setupAGR();
-    installSettingsUi();
-    await flushWaitFor();
-
-    const span = document.getElementById(INPUT_PREFIX + 'syncStatus');
-    expect(span?.textContent).toContain('⚠ rate limited');
-  });
-
-  it('repaints the status row when oge:syncStatus fires (sync-layer push)', async () => {
+  it('repaints the status row with the error line when oge:syncStatus fires (sync-layer push)', async () => {
     setupAGR();
     installSettingsUi();
     await flushWaitFor();
@@ -530,21 +528,65 @@ describe('installSettingsUi — static status', () => {
     document.dispatchEvent(new CustomEvent('oge:syncStatus'));
 
     const span = document.getElementById(INPUT_PREFIX + 'syncStatus');
-    expect(span?.textContent).toContain('⚠ HTTP 401: Bad credentials');
+    await vi.waitFor(() => {
+      expect(span?.textContent).toContain('⚠ HTTP 401: Bad credentials');
+    }, { timeout: 4000, interval: 20 });
   });
 
-  it('paints "Syncing…" immediately when the master "Sync now" is clicked', async () => {
+  it('shows the token-validation line ABOVE the ↑/↓ times (merged Token + Sync status rows)', async () => {
+    // A returning user with sync on: the row probes the token on build and
+    // renders the result as its first line, the times beneath — one labelled
+    // "Sync status" row (the old standalone "Token" row is gone). No token is
+    // configured in the test, so validateToken resolves deterministically
+    // ("✗ No token set") with no network.
+    localStorage.setItem('oge_lastSyncAt', '2026-01-02T03:04:05.000Z');
+    settingsStore.update((s) => ({ ...s, cloudSync: true }));
+    setupAGR();
+    installSettingsUi();
+    await flushWaitFor();
+
+    const span = document.getElementById(INPUT_PREFIX + 'syncStatus');
+    await vi.waitFor(() => {
+      const lines = (span?.textContent ?? '').split('\n');
+      expect(lines[0]).toBe('✗ No token set');
+      expect(lines[1]).toContain('↑');
+    }, { timeout: 4000, interval: 20 });
+  });
+
+  it('no longer renders a separate Token row or a Validate button (folded into Sync status)', async () => {
+    setupAGR();
+    installSettingsUi();
+    await flushWaitFor();
+    // The old `tokenStatus` row is gone...
+    expect(document.getElementById(INPUT_PREFIX + 'tokenStatus')).toBeNull();
+    // ...and the merged Sync status row carries no inline button (Validate removed).
+    expect(document.getElementById(INPUT_PREFIX + 'syncStatus-btn')).toBeNull();
+  });
+
+  it('validates first, then paints "Syncing…", when the master "Sync now" is clicked', async () => {
     setupAGR();
     installSettingsUi();
     await flushWaitFor();
     settingsStore.update((s) => ({ ...s, cloudSync: true }));
 
+    const span = document.getElementById(INPUT_PREFIX + 'syncStatus');
+    // Let the cloudSync-on re-probe settle first so it doesn't race the click.
+    await vi.waitFor(() => {
+      expect(span?.textContent).toContain('✗ No token set');
+    }, { timeout: 4000, interval: 20 });
+
     const btn = /** @type {HTMLButtonElement | null} */ (
       document.getElementById(INPUT_PREFIX + 'cloudSync-btn')
     );
-    btn?.click(); // no scheduler in this test → status stays at the optimistic paint
-    const span = document.getElementById(INPUT_PREFIX + 'syncStatus');
-    expect(span?.textContent).toBe('Syncing…');
+    btn?.click();
+    // Optimistic preliminary paint: the token check runs before the round-trip.
+    expect(span?.textContent).toBe('Validating…');
+    // No scheduler in this test → after validation the row settles on the
+    // "<validation line>\nSyncing…" optimistic state and stays there.
+    await vi.waitFor(() => {
+      expect(span?.textContent).toContain('Syncing…');
+    }, { timeout: 4000, interval: 20 });
+    expect(span?.textContent).toContain('✗ No token set');
   });
 });
 

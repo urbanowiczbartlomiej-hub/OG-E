@@ -1,12 +1,13 @@
 // @ts-check
 
 // Cloud sync section. Co-locates the `formatSyncStatus` helper because
-// the syncStatus row's `getText` is the only consumer; keeping the
+// the Sync status row's text producer is the only consumer; keeping the
 // `oge_lastSyncAt` / `oge_lastDownAt` / `oge_lastSyncErr` localStorage
 // keys near the field that displays them is easier to audit than
 // scattering them across the orchestrator.
 
 import { safeLS } from '../../../lib/storage.js';
+import { settingsStore } from '../../../state/settings.js';
 import { SYNC_STATUS_EVENT, SYNC_FORCE_EVENT } from '../../../lib/ogeEvents.js';
 import { validateToken } from '../../../sync/gist.js';
 
@@ -17,6 +18,7 @@ const SYNC_STATUS_SPAN_ID = 'oge-setting-syncStatus';
 
 /**
  * @typedef {import('../controls.js').SettingsSection} SettingsSection
+ * @typedef {import('../../../state/settings.js').Settings} Settings
  */
 
 /** localStorage keys written by sync code, read here for the status display. */
@@ -80,27 +82,75 @@ const formatSyncStatus = () => {
   return lines.join('\n');
 };
 
+// ─── token validation (the Sync status row's FIRST line) ───────────────────
+
+/**
+ * Cached token-validation line. The Sync status row renders it above the ↑/↓
+ * times. Cached against the master+token key so a repaint on SYNC_STATUS_EVENT
+ * (fired after every sync) refreshes the TIMES without re-hitting GitHub's
+ * `/user` — we only re-probe when the token (or the master switch) actually
+ * changes, or when the user clicks "Sync now" (which forces a fresh probe).
+ *
+ * @type {{ key: string | null, text: string }}
+ */
+let tokenLineCache = { key: null, text: '—' };
+
+/**
+ * The master+token signature; the validation re-probes only when it changes.
+ *
+ * @param {Settings} s
+ * @returns {string}
+ */
+const tokenKey = (s) => `${s.cloudSync ? '1' : '0'}:${s.gistToken}`;
+
+/**
+ * Resolve the token-validation line. (Re)probes GitHub's `/user` only when the
+ * key changed or `force` is set; otherwise returns the cached line. With the
+ * master switch off it short-circuits to an em-dash (no probe). Never rejects —
+ * {@link validateToken} maps failures to a `✗ …` string.
+ *
+ * @param {Settings} s
+ * @param {boolean} [force]
+ * @returns {Promise<string>}
+ */
+const tokenStatusLine = async (s, force = false) => {
+  const key = tokenKey(s);
+  if (!s.cloudSync) {
+    tokenLineCache = { key, text: '—' };
+  } else if (force || tokenLineCache.key !== key) {
+    tokenLineCache = { key, text: await validateToken() };
+  }
+  return tokenLineCache.text;
+};
+
 /** @type {SettingsSection} */
 export const syncSection = {
   section: 'Multi-device sync',
   options: [
     {
       // Master switch for the whole section + the manual "Sync now" trigger
-      // on its right. When off, the token + status rows grey out (like the
-      // Reminders master). The button greys too (syncing is a no-op while
-      // off) but the master checkbox itself always stays live.
+      // on its right. When off, the PAT input greys out (like the Reminders
+      // master) and the Sync status line collapses to an em-dash. The button
+      // greys too (syncing is a no-op while off) but the master checkbox
+      // itself always stays live.
       id: 'cloudSync',
       label: 'Sync across devices',
       type: 'checkbox',
       buttonText: 'Sync now',
       onclick: () => {
-        // Immediate feedback: paint "Syncing…" before the async round-trip,
-        // mirroring the ntfy "Check now" UX. The sync layer's setStatus
-        // fires SYNC_STATUS_EVENT when it settles, which repaints the row
-        // with the real result (times or a one-line error).
+        // "Sync now" folds in the old standalone "Validate": probe the token
+        // FIRST (painted before the slower gist round-trip), then kick the
+        // sync. The forced probe is cached under the current token key, so the
+        // post-sync repaint (SYNC_STATUS_EVENT → the Sync status row's
+        // fetchText) reuses it instead of firing a second `/user` call. When
+        // the sync settles, setStatus fires SYNC_STATUS_EVENT and the row
+        // repaints with the validation line + real times (or a one-line error).
         const span = document.getElementById(SYNC_STATUS_SPAN_ID);
-        if (span) span.textContent = 'Syncing…';
-        document.dispatchEvent(new CustomEvent(SYNC_FORCE_EVENT));
+        if (span) span.textContent = 'Validating…';
+        tokenStatusLine(settingsStore.get(), true).then((line) => {
+          if (span) span.textContent = `${line}\nSyncing…`;
+          document.dispatchEvent(new CustomEvent(SYNC_FORCE_EVENT));
+        });
       },
       buttonDisabledWhen: (s) => !s.cloudSync,
     },
@@ -111,28 +161,20 @@ export const syncSection = {
       disabledWhen: (s) => !s.cloudSync,
     },
     {
-      // Proactive token check: probes GitHub's `/user` endpoint (401s fast on
-      // a bad / expired / wrong-scope PAT). Auto-runs when the token (or the
-      // master switch) changes and on demand via the button — so a wrong paste
-      // surfaces here instead of only failing on the next background sync.
-      id: 'tokenStatus',
-      label: 'Token',
-      type: 'asyncStatus',
-      buttonText: 'Validate',
-      fetchText: (s) => (s.cloudSync ? validateToken() : Promise.resolve('—')),
-      refreshKey: (s) => `${s.cloudSync ? '1' : '0'}:${s.gistToken}`,
-      disabledWhen: (s) => !s.cloudSync,
-    },
-    {
-      // Status line on its own full-width row (the trigger moved up to the
-      // master row, freeing the horizontal space). Read-only + synchronous
-      // (reads localStorage), but `refreshEvent` re-runs getText on every
-      // SYNC_STATUS_EVENT the sync layer emits — so a manual "Sync now"
-      // (or any background sync) repaints the line the moment it settles.
+      // Combined status line — the token-validation result on the FIRST line,
+      // the ↑ upload / ↓ download times beneath, all under one "Sync status"
+      // label (the old "Token" row + its "Validate" button are gone; "Sync
+      // now" runs the check). Auto-probes the token on open and whenever it
+      // (or the master switch) changes (refreshKey) — so a wrong paste still
+      // surfaces here rather than only failing on the next background sync.
+      // `refreshEvent` repaints the TIMES on every SYNC_STATUS_EVENT the sync
+      // layer emits WITHOUT re-probing GitHub: tokenStatusLine serves the
+      // cached validation unless the key changed (see its cache note).
       id: 'syncStatus',
       label: 'Sync status',
-      type: 'static',
-      getText: () => formatSyncStatus(),
+      type: 'asyncStatus',
+      fetchText: async (s) => `${await tokenStatusLine(s)}\n${formatSyncStatus()}`,
+      refreshKey: tokenKey,
       refreshEvent: SYNC_STATUS_EVENT,
     },
     {
