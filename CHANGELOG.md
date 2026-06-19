@@ -4,6 +4,22 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.27.0] — 2026-06-19
+
+### Added
+
+- **Attack alarm — a loud, full-screen alert the moment you come under
+  attack.** When OGame flags an incoming attack, OG-E can throw a pulsing red
+  frame around the whole screen plus a top banner that names how many hostile
+  fleets are inbound, when the soonest one lands, and which planet it targets —
+  read live from the event list. It also blinks the browser-tab title and swaps
+  in a red tab icon, so you notice even when you're on another tab or in another
+  app. The red frame is click-through, so you can jump straight to defending
+  without dismissing anything first; dismissing the banner mutes it until the
+  attack actually changes (a new or faster wave re-fires it). It is **off by
+  default** — switch it on under Settings → Display, where a "Preview" button
+  shows you exactly what it looks like before you commit.
+
 ## [1.26.1] — 2026-06-19
 
 ### Added
