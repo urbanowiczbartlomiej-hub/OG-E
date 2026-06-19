@@ -244,7 +244,7 @@ describe('new route options — multi-ship / mission / pause / custom target', (
     expect(/** @type {any} */ (store.get(ROUTES_KEY)).routes[0].enabled).toBe(false);
   });
 
-  it('adds a custom external target via the 📍 form, flagged custom', async () => {
+  it('adds a custom external target via the custom-coords form, flagged custom', async () => {
     seedBodies([{ cp: 101, name: 'K1', ...moon(4, 467, 15) }]);
     seedRoutes([]);
     install().refresh();

@@ -5,7 +5,7 @@
 // picked from the player's own planets/moons (captured in-game into the
 // per-universe `<universeId>:oge_bodies` snapshot by `features/planetBarCapture`),
 // so a coordinate can never be mistyped; EXTERNAL targets are typed by hand via
-// the inline 📍 custom-coords form. The same per-universe
+// the inline custom-coords form. The same per-universe
 // `<universeId>:oge_dailyRunRoutes` key the in-game dailyRun feature consumes is
 // read/written here; the in-game-set collect target is preserved on save.
 //
@@ -124,8 +124,8 @@ export const installRoutes = ({ getUniverseId }) => {
   /** @param {TargetCoord} coord @returns {string} Human label for a chip. */
   const labelForCoord = (coord) => {
     const icon = isMoon(coord) ? '🌙' : '🪐';
-    // Custom (external) coords have no inventory name — show a pin + coords.
-    if (coord.custom) return `📍 ${icon} [${short(coord)}]`;
+    // Custom (external) coords have no inventory name — show just icon + coords.
+    if (coord.custom) return `${icon} [${short(coord)}]`;
     const b = model.bodyByKey.get(coordTypeKey(coord));
     return b ? `${icon} ${b.name} [${short(coord)}]` : `${icon} [${short(coord)}]`;
   };
@@ -230,7 +230,6 @@ export const installRoutes = ({ getUniverseId }) => {
       'span',
       'display:inline-flex;align-items:center;gap:4px;margin:3px;padding:4px 8px;border-radius:14px;background:#1a2433;border:1px dashed #3a5a7a;',
     );
-    wrap.appendChild(mk('span', 'color:#9bd;font-size:12px;', '📍'));
     /** @param {string} ph @param {number} w @returns {HTMLInputElement} */
     const numInput = (ph, w) => {
       const i = /** @type {HTMLInputElement} */ (
