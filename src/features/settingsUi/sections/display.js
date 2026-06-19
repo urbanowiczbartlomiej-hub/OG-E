@@ -20,6 +20,14 @@ export const displaySection = {
       type: 'checkbox',
     },
     {
+      // `id` is the legacy persisted key (was "Expedition badges") — kept so
+      // existing users' saved toggle survives; only the label/home moved now
+      // that the markers cover every fleet mission, not just expeditions.
+      id: 'expeditionBadges',
+      label: 'Fleet status markers on planets',
+      type: 'checkbox',
+    },
+    {
       id: 'eventMenuHighlight',
       label: 'Event reminder (pulse menu button)',
       type: 'checkbox',

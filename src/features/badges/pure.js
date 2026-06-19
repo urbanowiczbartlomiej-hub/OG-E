@@ -1,94 +1,76 @@
 // @ts-check
 
-// Pure classification + grouping for the planet mission badges. No DOM, no
-// timers, no storage — plain functions over plain data, Node-testable.
+// Pure classification for the planet status MARKERS. No DOM, no timers, no
+// storage — plain functions over plain data, Node-testable.
 //
-// # The model (why this is simple)
+// # The model: one marker per CATEGORY, on the body where a leg LANDS
 //
-// OGame's event list (`#eventContent`) is consistent about its two coord
-// cells regardless of leg direction:
+// OGame's event list gives every fleet leg a direction-stable origin (the
+// launcher) + dest (the target) and a `return-flight` flag. We attach a marker
+// to the body where the leg LANDS — an outbound leg lands at `dest`, a return
+// leg lands back at `origin` (home) — and only when that landing body is mine.
+// A leg landing on a foreign body is not ours to mark; for a round trip the
+// OTHER leg lands on one of my bodies, so nothing relevant is lost.
 //
-//   • `.coordsOrigin` is ALWAYS the fleet's launcher (its home body),
-//   • `.destCoords`   is ALWAYS the mission TARGET,
-//   • `data-return-flight` is the direction flag (false = flying out toward
-//     the target, true = flying back home).
+// This is the key to the "fleet-save caught" glance: my FS lands at its
+// destination, and an incoming attack targets that SAME body, so both markers
+// land together on one planet.
 //
-// So an incoming hostile attack on me has origin = the attacker's body and
-// dest = MY body; one of my own attacks has origin = MY body and dest = the
-// foreign target. We therefore classify a leg purely by which of its two
-// endpoints I own — `myKeys` is the set of my body identities — and never by
-// the noisy `.friendly`/`.hostile` class alone (an ally's ACS-defend fleet
-// is `.friendly` yet its origin is NOT mine).
+// # Categories (priority high → low), at most {@link MAX_MARKERS} per body
 //
-// # The three shapes a leg can take
+//   threat     — a FOREIGN aggressive fleet arriving at my body (attack / ACS
+//                attack / espionage / moon destruction). The danger.
+//   fs         — my fleet the reminders producer flagged as a fleet-save.
+//   aggro      — MY aggressive fleet (same mission set, my own); shown on home
+//                via its return leg ("I'm attacking out from here").
+//   explore    — my expedition.
+//   logistics  — my transport / deployment / ACS defend.
+//   economy    — my recycle.
 //
-//   1. origin mine, dest NOT mine  → my fleet flying into the unknown
-//      (attack / spy / recycle / colonise / ACS / transport-to-foreign).
-//      The outbound AND the return leg both carry origin = my home, so they
-//      collapse onto ONE round-trip tile (`kind:'rt'`) keyed by (home, type).
-//      This is the de-dup the user asked for: "lecę z P1 w nieznane i wracam
-//      do P1 — pokaż jako 1".
+// Each present category renders ONE marker (no counts, no directions — the
+// marker is a subtle status dot, per-fleet detail lives in the click popover).
+// Per body we keep the distinct categories present, ordered by priority, capped
+// at {@link MAX_MARKERS}; lower-priority overflow is dropped.
 //
-//   2. both endpoints mine → internal movement (transport / deployment
-//      between my own bodies). Shown on BOTH ends per the user's request:
-//      an arriving tile (`kind:'in'`) on wherever the leg currently LANDS
-//      and a departing tile (`kind:'out'`) on where it left. Landing flips
-//      with the return flag (outbound lands at dest, return lands at origin).
-//
-//   3. origin NOT mine, dest mine → someone flying at me. Only the APPROACH
-//      matters (`!isReturn`); the attacker's later return leg leaves my body
-//      and is ignored. Coloured by hostility (`kind:'in'`, `hostile`).
-//
-// Expeditions (`missionType '15'`) are deliberately NOT handled here — their
-// detection lives untouched in `index.js::collectActiveExpeditions` and is
-// merged into the render as a round-trip tile. We skip type 15 so we never
-// double-count it.
+// Excluded entirely: colonisation (7) and discovery (18) — sent in bulk, pure
+// noise — and any FOREIGN non-aggressive arrival (e.g. an ally's transport).
 
 import { TARGET_PLANET, TARGET_MOON } from '../../domain/rules.js';
-import { isFleetSaveLeg } from '../../domain/fleetSave.js';
+
+/** Max markers rendered on one body (priority-ordered; the rest are dropped). */
+export const MAX_MARKERS = 3;
 
 /**
- * Background-position X of each mission's icon in the game's mission sprite,
- * expressed at the sprite's native 40px cell scale (the value you'd use with
- * `background-size: 440px`). The renderer scales these down to the badge tile
- * size. Columns are fixed per mission (the sprite's row encodes hover/selected
- * state, which we don't use). Derived from AGR's `.missionSelection
- * .missionIcon.missionN` rules — kept here as plain data so the position math
- * stays testable and a sprite-layout change is a one-table edit.
+ * Category ids in priority order — first = highest priority, also the render
+ * order top-to-bottom in a body's column.
  *
- * @type {Record<string, number>}
+ * @type {readonly string[]}
  */
-export const MISSION_SPRITE_X = {
-  1: -320, // Attack
-  2: -400, // ACS attack
-  3: -200, // Transport
-  4: -120, // Deployment / station
-  5: -280, // ACS defend / hold
-  6: -240, // Espionage
-  7: -80, // Colonisation
-  8: -160, // Recycle / harvest
-  9: -360, // Moon destruction
-  15: 0, // Expedition
-};
+export const MARKER_ORDER = ['threat', 'fs', 'aggro', 'explore', 'logistics', 'economy'];
 
 /**
- * Human label per mission type, for the click/tap detail popover. English to
- * match the rest of the extension's UI strings.
+ * Human label per category, for the click popover header + native tooltip.
  *
  * @type {Record<string, string>}
  */
-export const MISSION_LABEL = {
-  1: 'Attack',
-  2: 'ACS attack',
-  3: 'Transport',
-  4: 'Deployment',
-  5: 'ACS defend',
-  6: 'Espionage',
-  7: 'Colonisation',
-  8: 'Recycle',
-  9: 'Moon destruction',
-  15: 'Expedition',
+export const MARKER_LABEL = {
+  threat: 'Incoming attack',
+  fs: 'Fleet-save',
+  aggro: 'My attack',
+  explore: 'Expedition',
+  logistics: 'Logistics',
+  economy: 'Recycle',
 };
+
+/** Aggressive missions: attack, ACS attack, espionage, moon destruction. */
+const AGGRESSIVE = new Set(['1', '2', '6', '9']);
+/** My logistics: transport, deployment, ACS defend. */
+const LOGISTICS = new Set(['3', '4', '5']);
+/** My exploration: expedition. */
+const EXPLORE = new Set(['15']);
+/** My economy: recycle. */
+const ECONOMY = new Set(['8']);
+// Excluded (never a marker): colonisation '7', discovery '18' — sent in bulk.
 
 /**
  * Identity of a body for matching a leg endpoint against the player's own
@@ -111,7 +93,7 @@ export const bodyKey = (coords, type) => `${coords}:${type}`;
  * One fleet leg read out of the event list, normalised to plain data.
  *
  * @typedef {object} BadgeLeg
- * @property {string} id           Row id (`eventRow-<n>`) — the de-dup key.
+ * @property {string} id           Row id (`eventRow-<n>`).
  * @property {string} missionType  `data-mission-type` value (string).
  * @property {boolean} isReturn    `data-return-flight === 'true'`.
  * @property {boolean} isHostile   Row carries the `.hostile` class.
@@ -122,7 +104,7 @@ export const bodyKey = (coords, type) => `${coords}:${type}`;
  */
 
 /**
- * One fleet's contribution to a tile's detail list (for the popover).
+ * One fleet's contribution to a marker's detail list (for the popover).
  *
  * @typedef {object} TileFleet
  * @property {string} origin    Launcher coords.
@@ -133,135 +115,101 @@ export const bodyKey = (coords, type) => `${coords}:${type}`;
  */
 
 /**
- * A rendered badge: one mission type + direction on one body.
+ * A rendered marker: one category on one body, plus its fleets for the popover.
  *
- * @typedef {object} Tile
- * @property {string} coords      Anchor body coords.
- * @property {number} type        Anchor body type (1/3).
- * @property {string} missionType Mission type string.
- * @property {'rt'|'in'|'out'} kind Round-trip / arriving / departing.
- * @property {boolean} hostile    Incoming hostile (red).
- * @property {number} count       Number of distinct fleets aggregated.
+ * @typedef {object} Marker
+ * @property {string} category One of {@link MARKER_ORDER}.
  * @property {TileFleet[]} fleets Per-fleet detail for the popover.
  */
 
 /**
- * Group fleet legs into per-body tiles. Returns a Map keyed by the anchor
- * body identity ({@link bodyKey}) → array of tiles on that body. Expedition
- * legs (type 15) are skipped — they are merged in by the caller from the
- * untouched expedition detector.
+ * Sort one fleet leg into a (landing body, category), or null when it is not
+ * ours to mark (lands on a foreign body, or an excluded / foreign-friendly
+ * mission).
  *
- * Pure: no DOM, no clock. `arrivalAt` is carried through verbatim; the
- * renderer turns it into a countdown at paint time.
+ * @param {BadgeLeg} leg
+ * @param {Set<string>} myKeys Set of {@link bodyKey} for the player's bodies.
+ * @param {Set<string>} fsIds  Row-ids flagged as a detected fleet-save.
+ * @returns {{ key: string, category: string } | null}
+ */
+const classifyLeg = (leg, myKeys, fsIds) => {
+  // Where this leg LANDS: a return leg lands back home (origin), an outbound
+  // leg lands at its target (dest).
+  const landing = leg.isReturn ? leg.origin : leg.dest;
+  if (!landing.coords) return null;
+  const key = bodyKey(landing.coords, landing.type);
+  if (!myKeys.has(key)) return null;
+
+  const originMine = myKeys.has(bodyKey(leg.origin.coords, leg.origin.type));
+  /** @type {string | null} */
+  let category = null;
+  if (!originMine) {
+    // A foreign fleet arriving at my body — only aggression earns a marker;
+    // an ally's friendly transport/defend is noise.
+    if (AGGRESSIVE.has(leg.missionType)) category = 'threat';
+  } else if (leg.id && fsIds.has(leg.id)) {
+    category = 'fs';
+  } else if (AGGRESSIVE.has(leg.missionType)) {
+    category = 'aggro';
+  } else if (LOGISTICS.has(leg.missionType)) {
+    category = 'logistics';
+  } else if (EXPLORE.has(leg.missionType)) {
+    category = 'explore';
+  } else if (ECONOMY.has(leg.missionType)) {
+    category = 'economy';
+  }
+  return category ? { key, category } : null;
+};
+
+/**
+ * Group fleet legs into per-body markers. Returns a Map keyed by the landing
+ * body identity ({@link bodyKey}) → markers on that body, each present category
+ * once, ordered by {@link MARKER_ORDER} and capped at {@link MAX_MARKERS}.
+ *
+ * Pure: no DOM, no clock. `arrivalAt` is carried through verbatim; the renderer
+ * turns it into a countdown at paint time.
  *
  * @param {BadgeLeg[]} legs
  * @param {Set<string>} myKeys Set of {@link bodyKey} for the player's bodies.
- * @returns {Map<string, Tile[]>}
+ * @param {Set<string>} [fsIds] Row-ids the reminders producer flagged as a
+ *   detected fleet-save; such a leg becomes the `fs` category.
+ * @returns {Map<string, Marker[]>}
  */
-export const groupTiles = (legs, myKeys) => {
-  /** @type {Map<string, Tile>} */
-  const tiles = new Map();
-  /** @type {Map<string, Set<string>>} per-tile seen fleet ids (de-dup). */
-  const seen = new Map();
-
-  /**
-   * @param {string} coords
-   * @param {number} type
-   * @param {string} missionType
-   * @param {'rt'|'in'|'out'} kind
-   * @param {boolean} hostile
-   * @param {BadgeLeg} leg
-   */
-  const add = (coords, type, missionType, kind, hostile, leg) => {
-    if (!coords) return;
-    const key = `${coords}:${type}|${missionType}|${kind}|${hostile ? 1 : 0}`;
-    let tile = tiles.get(key);
-    if (!tile) {
-      tile = { coords, type, missionType, kind, hostile, count: 0, fleets: [] };
-      tiles.set(key, tile);
-      seen.set(key, new Set());
+export const groupMarkers = (legs, myKeys, fsIds = /** @type {Set<string>} */ (new Set())) => {
+  /** @type {Map<string, Map<string, TileFleet[]>>} body → category → fleets. */
+  const byBody = new Map();
+  for (const leg of legs) {
+    const c = classifyLeg(leg, myKeys, fsIds);
+    if (!c) continue;
+    let cats = byBody.get(c.key);
+    if (!cats) {
+      cats = new Map();
+      byBody.set(c.key, cats);
     }
-    const ids = /** @type {Set<string>} */ (seen.get(key));
-    if (leg.id && ids.has(leg.id)) return;
-    if (leg.id) ids.add(leg.id);
-    tile.count += 1;
-    tile.fleets.push({
+    let fleets = cats.get(c.category);
+    if (!fleets) {
+      fleets = [];
+      cats.set(c.category, fleets);
+    }
+    fleets.push({
       origin: leg.origin.coords,
       dest: leg.dest.coords,
       isReturn: leg.isReturn,
       arrivalAt: leg.arrivalAt,
       shipCount: leg.shipCount,
     });
-  };
-
-  for (const leg of legs) {
-    if (leg.missionType === '15') continue; // expeditions: handled elsewhere
-    const oMine = myKeys.has(bodyKey(leg.origin.coords, leg.origin.type));
-    const dMine = myKeys.has(bodyKey(leg.dest.coords, leg.dest.type));
-
-    if (oMine && dMine) {
-      // Internal movement (transport / deployment between my bodies). A
-      // round-trip mission lists its outbound AND return leg at once, so we
-      // count each fleet exactly once via the same leg-pick the fleet-save
-      // scanner uses, then mark the SOURCE (origin) departing and the TARGET
-      // (dest) arriving. origin/dest are direction-stable in OGame's list
-      // (origin = launcher, dest = target), so this reads right regardless of
-      // which leg we counted — "i tu i tu", per the user's request.
-      if (!isFleetSaveLeg(leg.missionType, leg.isReturn)) continue;
-      add(leg.origin.coords, leg.origin.type, leg.missionType, 'out', false, leg);
-      add(leg.dest.coords, leg.dest.type, leg.missionType, 'in', false, leg);
-    } else if (oMine && !dMine) {
-      // My fleet into the unknown — outbound + return collapse onto one home
-      // tile. Count the fleet once (return leg of round-trips, the sole
-      // outbound of one-way missions) so "5 attacks" reads ×5, not ×10.
-      if (!isFleetSaveLeg(leg.missionType, leg.isReturn)) continue;
-      add(leg.origin.coords, leg.origin.type, leg.missionType, 'rt', false, leg);
-    } else if (!oMine && dMine) {
-      // Someone flying at me — only the inbound APPROACH is relevant; their
-      // later return leg leaves my body and is ignored.
-      if (leg.isReturn) continue;
-      add(leg.dest.coords, leg.dest.type, leg.missionType, 'in', leg.isHostile, leg);
-    }
-    // else: neither endpoint mine (e.g. an enemy's leg between two foreign
-    // bodies that happens to appear) — not ours to badge.
   }
 
-  /** @type {Map<string, Tile[]>} */
-  const byAnchor = new Map();
-  for (const tile of tiles.values()) {
-    const k = bodyKey(tile.coords, tile.type);
-    const arr = byAnchor.get(k);
-    if (arr) arr.push(tile);
-    else byAnchor.set(k, [tile]);
+  /** @type {Map<string, Marker[]>} */
+  const out = new Map();
+  for (const [key, cats] of byBody) {
+    const markers = MARKER_ORDER.filter((cat) => cats.has(cat))
+      .slice(0, MAX_MARKERS)
+      .map((cat) => ({ category: cat, fleets: /** @type {TileFleet[]} */ (cats.get(cat)) }));
+    out.set(key, markers);
   }
-  return byAnchor;
+  return out;
 };
-
-/**
- * Display priority of a tile within a body's column: threats first, then
- * other arrivals, round-trips, departures. Ties broken by mission type so
- * the order is stable across renders.
- *
- * @param {Tile} t
- * @returns {number}
- */
-export const tileRank = (t) => {
-  if (t.kind === 'in' && t.hostile) return 0;
-  if (t.kind === 'in') return 1;
-  if (t.kind === 'rt') return 2;
-  return 3; // 'out'
-};
-
-/**
- * Stable sort of a body's tiles by {@link tileRank}. Returns a new array.
- *
- * @param {Tile[]} tiles
- * @returns {Tile[]}
- */
-export const sortTiles = (tiles) =>
-  [...tiles].sort(
-    (a, b) => tileRank(a) - tileRank(b) || Number(a.missionType) - Number(b.missionType),
-  );
 
 // Re-exported so the renderer and tests share one definition of the two
 // body-type constants without reaching into domain/rules directly.

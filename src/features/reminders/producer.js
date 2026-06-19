@@ -61,6 +61,7 @@ import { NTFY_MAX_DELAY_SEC } from '../../sync/ntfyReconciler.js';
 import { settingsStore } from '../../state/settings.js';
 import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
 import { reminderConfigStore } from '../../state/reminderConfig.js';
+import { writeFleetSaveIds } from '../../state/fleetSaveSet.js';
 import { syncReminders, REMINDER_NTFY_TOKEN_KEY, isValidNtfyToken } from '../../sync/reminders.js';
 import { parseUniverseId } from '../../lib/universeId.js';
 import { debounce } from '../../lib/debounce.js';
@@ -341,6 +342,10 @@ export const installReminderProducer = (opts = {}) => {
       if (res.ok) {
         lastSig = sig;
         safeLS.set(sigKeyFor(universeId), sig);
+        // Republish the detected FS ids for the planet-badge feature (it marks
+        // FS fleets without importing reminders). `fsOn` gates it so a disabled
+        // FS leaves no stale markers; the value persists for the next reload.
+        writeFleetSaveIds(fsOn ? (res.fleetSave ?? []).map((e) => e.id) : []);
         // Drop the commands we applied; keep any the user queued meanwhile.
         writePending(universeId, readPending(universeId).slice(pending.length));
       } else {

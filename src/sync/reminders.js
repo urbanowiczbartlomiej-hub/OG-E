@@ -520,7 +520,11 @@ const resolveNtfyToken = async (configToken) => {
  *   from that save's series so the queue reconcile sweeps just those slots.
  * @param {number} now             Epoch SECONDS, injected by the caller.
  * @param {string} universeId      OGame server id; ntfy push title prefix.
- * @returns {Promise<{ ok: boolean, reason?: string, changed?: boolean, scheduled?: number, cancelled?: number }>}
+ * @returns {Promise<{ ok: boolean, reason?: string, changed?: boolean, scheduled?: number, cancelled?: number, fleetSave?: FleetSaveReminder[] }>}
+ *   `fleetSave` is the reconciled (locked) FS set for this scan — surfaced so
+ *   the caller can republish the ids for passive consumers (the planet-badge
+ *   feature marks FS fleets without importing reminders). Absent on early
+ *   `{ ok: false }` returns.
  */
 export const syncReminders = async (config, dom, now, universeId) => {
   if (!getToken()) return { ok: false, reason: 'no-token' };
@@ -686,5 +690,5 @@ export const syncReminders = async (config, dom, now, universeId) => {
   const changed = !sameState(existing, next);
   if (changed) await writeReminderState(universeId, next);
   await mirrorForPreview(universeId, next, ntfyToken);
-  return { ok: true, changed, scheduled, cancelled };
+  return { ok: true, changed, scheduled, cancelled, fleetSave };
 };

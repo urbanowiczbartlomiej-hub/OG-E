@@ -1,106 +1,85 @@
-// Planet mission badges — render a column of mission-type icons to the LEFT
-// of each `#planetList` body, replacing the old single green expedition dot.
+// Planet status markers — paint a tiny column of subtle status dots beside each
+// `#planetList` body (LEFT of a planet, RIGHT of its moon so the two columns
+// never collide), replacing the old single green expedition dot.
 //
 // # What it shows
 //
-// One small icon per (mission type + direction) group on each planet/moon,
-// drawn from OGame's own mission sprite so it reads native. A count bubble
-// aggregates many fleets of the same kind; a direction marker distinguishes
-// arriving (►) / departing (◄) / round-trip (↻); an incoming HOSTILE fleet
-// gets a red ring. Click / tap a tile for the per-fleet detail (targets +
-// ETA) — pointer-friendly on desktop and mobile alike.
+// At most three small markers per body, one per CATEGORY present, ordered by
+// priority (see `./pure.js`):
 //
-// The classification (which body a fleet badges, and how its outbound+return
-// legs collapse) is pure and lives in `./pure.js`. This module is the DOM
-// half: it scans `#eventContent` + `#planetList`, paints the columns, and
-// owns the observer / settings / popover lifecycle.
+//   🟥 red SQUARE  — incoming attack (a foreign aggressive fleet at me) — danger
+//   🔴 red circle  — my own aggression flying out
+//   🟡 yellow      — a detected fleet-save
+//   💙 teal HEART  — my expedition
+//   🟢 green       — my logistics (transport / deploy / ACS defend)
+//   🔵 blue        — my recycle
+//
+// Mine are round (+ a heart for expeditions); the external THREAT is the odd
+// square. No counts, no direction arrows — the marker is a glanceable status
+// dot, not a readout. Click / tap a marker for the per-fleet detail (targets +
+// ETA). The whole point is to tell, at a glance, that the fleets are well
+// positioned WITHOUT burying the planet skins under our own clutter.
 //
 // # Why this is purely passive
 //
 // Every byte comes from DOM the game itself renders into `#eventContent` and
 // `#planetList`. We never fire our own XHR/fetch — we mirror the game's own
-// event ticker onto the planet list. No parallel request stream, no polling
-// the server: just styling. That is what keeps OG-E on the right side of the
-// TOS.
+// event ticker onto the planet list. The fleet-save flags come from the
+// reminders producer via `state/fleetSaveSet.js` (no feature-to-feature import).
+// No parallel request stream, no polling the server: just styling.
 //
-// # Expedition detection is untouched
+// The classification (which body a leg marks, and as which category) is pure
+// and lives in `./pure.js`. This module is the DOM half: it scans
+// `#eventContent` + `#planetList`, paints the columns, and owns the observer /
+// settings / popover / optimistic-cache lifecycle.
 //
-// `collectActiveExpeditions` is carried over verbatim from the old badge
-// feature (mission 15, return-flight, grouped by origin coords / fleet name).
-// `pure.js` skips type 15 so we never double-count; the expedition group is
-// merged back in here as a round-trip tile. The DETECTION did not change —
-// only the rendering did.
-//
-// @see ./pure.js — the pure grouping/classification core.
-// @see ../../state/settings.js — where `expeditionBadges` lives.
+// @see ./pure.js — the pure landing-classification core.
+// @see ../../state/fleetSaveSet.js — the FS id channel the producer publishes.
+// @see ../../state/badgeCache.js — the optimistic pre-XHR paint cache.
 
 /** @ts-check */
 
 import { settingsStore } from '../../state/settings.js';
+import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
+import { readFleetSaveIds } from '../../state/fleetSaveSet.js';
+import { readBadgeCache, writeBadgeCache, clearBadgeCache } from '../../state/badgeCache.js';
 import { injectStyle, waitFor } from '../../lib/dom.js';
 import { debounce } from '../../lib/debounce.js';
 import { GAME } from '../../lib/gameDom.js';
-import { groupTiles, sortTiles, bodyKey, MISSION_SPRITE_X, MISSION_LABEL } from './pure.js';
+import { EVENT_BOX_LOADED_EVENT } from '../../lib/ogeEvents.js';
+import { groupMarkers, bodyKey, MARKER_LABEL } from './pure.js';
 
 // ── OG-E-owned ids/classes (NOT a DOM contract — ours to rename freely) ──
 
 const STYLE_ID = 'oge-badges-style';
 const HIDE_STYLE_ID = 'oge-badges-hide-style';
-/** The vertical icon column appended to each body's pic container. */
+/** The vertical marker column appended to each body's pic container. */
 const COL_CLASS = 'oge-mb-col';
-/** One mission tile inside a column. */
-const TILE_CLASS = 'oge-mb-tile';
-/** Aggregation count bubble. */
-const CNT_CLASS = 'oge-mb-cnt';
+/** Modifier on a moon's column: anchor it to the RIGHT of the moon, not left. */
+const MOON_COL_CLASS = 'oge-mb-col-moon';
+/** One status marker inside a column (category class added alongside). */
+const DOT_CLASS = 'oge-mb-dot';
 /** Shared click/tap detail popover (one per page, parked on <body>). */
 const POP_ID = 'oge-mb-pop';
-
-/** Mission-type value OGame writes for expeditions (string — it's an attr). */
-const MISSION_EXPEDITION = '15';
-
-/**
- * The game's mission-icon sprite (the one AGR's `#ago_fleet2
- * .missionSelection .missionIcon` slices). FRAGILE external asset: the CDN
- * filename is content-hashed, so a game art update changes it and the icons
- * go blank until this one line is refreshed. Kept as a single named constant
- * for exactly that reason. We reference the game CDN rather than bundling the
- * image (no redistribution of game art).
- */
-const SPRITE_URL = 'https://gf2.geo.gfsrv.net/cdn14/f45a18b5e55d2d38e7bdc3151b1fee.jpg';
-
-/** Rendered tile edge in px. The sprite cell is 40px at `background-size:440px`. */
-const TILE_PX = 22;
-const SPRITE_SCALE = TILE_PX / 40;
-/** Scaled sprite width (the game uses 440px for the 11-column strip). */
-const SPRITE_BG = Math.round(440 * SPRITE_SCALE);
-/** Y of the coloured, gold-bordered icon row (`-40px` at native scale). */
-const SPRITE_ROW_Y = Math.round(-40 * SPRITE_SCALE);
 
 const REFRESH_DEBOUNCE_MS = 200;
 
 /**
- * Per-tile detail for the popover, attached weakly so re-renders (which
- * recreate the tile elements) don't leak. Keyed by the tile element.
+ * Per-marker detail for the popover, attached weakly so re-renders (which
+ * recreate the marker elements) don't leak. Keyed by the marker element.
  *
- * @type {WeakMap<Element, TileDetail>}
+ * @type {WeakMap<Element, MarkerDetail>}
  */
-const tileDetail = new WeakMap();
+const markerDetail = new WeakMap();
 
 /**
- * @typedef {object} TileDetail
- * @property {string} title
- * @property {'rt'|'in'|'out'} kind
- * @property {boolean} hostile
- * @property {string} missionType
- * @property {number} count
+ * @typedef {object} MarkerDetail
+ * @property {string} label    Category label (popover header).
+ * @property {string} category Category id.
  * @property {import('./pure.js').TileFleet[]} fleets
- * @property {string} [note] Standalone summary line (expedition tiles).
  */
 
 // ── DOM read helpers (feature layer — pure.js stays DOM-free) ─────────────
-
-/** @param {string | null | undefined} s @returns {string} */
-const trim = (s) => (s || '').replace(/\s+/g, ' ').trim();
 
 /** @param {string | null | undefined} s @returns {string} dense `g:s:p`. */
 const denseCoords = (s) => (s || '').replace(/[\s[\]]/g, '');
@@ -126,9 +105,7 @@ const figureType = (cell) => {
 
 /**
  * Read every fleet leg out of `#eventContent` as plain {@link
- * import('./pure.js').BadgeLeg} data. Expedition rows are kept in the scan
- * but `groupTiles` skips them; the expedition tile comes from
- * {@link collectActiveExpeditions} instead.
+ * import('./pure.js').BadgeLeg} data for {@link groupMarkers} to classify.
  *
  * @returns {import('./pure.js').BadgeLeg[]}
  */
@@ -163,15 +140,14 @@ const scanLegs = () => {
  * @typedef {object} OwnBody
  * @property {string} coords Dense `g:s:p`.
  * @property {number} type   1 = planet, 3 = moon.
- * @property {string} name   Display name (for the expedition name fallback).
  * @property {HTMLElement} container The body's `.planetBarSpaceObjectContainer`.
  */
 
 /**
  * Walk `#planetList` and collect the player's bodies plus the DOM container
- * each badge column attaches to. A planet and its moon live in the same
- * `.smallplanet` row and share coords; the moon entry uses the moon link's
- * own pic container so a moon mission badges the moon, not the planet.
+ * each marker column attaches to. A planet and its moon live in the same
+ * `.smallplanet` row and share coords; the moon entry uses the moon link's own
+ * pic container so a moon's markers attach to the moon, not the planet.
  *
  * @returns {OwnBody[]}
  */
@@ -185,127 +161,56 @@ const scanOwnBodies = () => {
     if (!coords) continue;
     const planetContainer = planetLink.querySelector('.planetBarSpaceObjectContainer');
     if (planetContainer) {
-      bodies.push({
-        coords,
-        type: 1,
-        name: trim(planetLink.querySelector(GAME.PLANET_NAME)?.textContent),
-        container: /** @type {HTMLElement} */ (planetContainer),
-      });
+      bodies.push({ coords, type: 1, container: /** @type {HTMLElement} */ (planetContainer) });
     }
     const moonLink = row.querySelector(GAME.MOON_LINK);
     const moonContainer = moonLink?.querySelector('.planetBarSpaceObjectContainer');
     if (moonContainer) {
-      bodies.push({
-        coords,
-        type: 3,
-        name: trim(moonLink?.querySelector('img.icon-moon')?.getAttribute('alt')),
-        container: /** @type {HTMLElement} */ (moonContainer),
-      });
+      bodies.push({ coords, type: 3, container: /** @type {HTMLElement} */ (moonContainer) });
     }
   }
   return bodies;
 };
 
-/**
- * @typedef {object} ExpeditionInfo
- * @property {number} count
- * @property {number} ships
- * @property {string} name
- * @property {string} coords
- */
-
-/**
- * Scan `#eventContent` for returning expedition fleets, grouped by origin
- * coords (fleet name as fallback). Carried over verbatim from the previous
- * green-dot feature — expedition DETECTION is intentionally unchanged.
- *
- * @returns {Map<string, ExpeditionInfo>}
- */
-const collectActiveExpeditions = () => {
-  /** @type {Map<string, ExpeditionInfo>} */
-  const map = new Map();
-  const rows = document.querySelectorAll(
-    `#eventContent tr.eventFleet[data-mission-type="${MISSION_EXPEDITION}"][data-return-flight="true"]`,
-  );
-  for (const row of rows) {
-    const name = trim(row.querySelector('.originFleet')?.textContent);
-    const coords = denseCoords(row.querySelector(GAME.COORDS_ORIGIN)?.textContent);
-    const ships = shipCountOf(row.querySelector(`${GAME.DETAILS_FLEET} span`)?.textContent);
-    const key = coords || (name ? `name:${name}` : '');
-    if (!key) continue;
-    const entry = map.get(key) || { count: 0, ships: 0, name, coords };
-    entry.count += 1;
-    entry.ships += Number.isFinite(ships) ? ships : 0;
-    map.set(key, entry);
-  }
-  return map;
-};
-
 // ── CSS ──────────────────────────────────────────────────────────────────
 
-const buildCss = () => {
-  const missionRules = Object.entries(MISSION_SPRITE_X)
-    .map(
-      ([mt, x]) =>
-        `.${TILE_CLASS}.oge-mb-m${mt}{background-position:${Math.round(x * SPRITE_SCALE)}px ${SPRITE_ROW_Y}px;}`,
-    )
-    .join('\n');
-  return `
+const buildCss = () => `
 .${COL_CLASS}{
   position:absolute;
   top:50%;
-  right:calc(100% + 2px);
+  right:calc(100% + 7px);
   transform:translateY(-50%);
   display:flex;
   flex-direction:column;
+  align-items:center;
   gap:3px;
   z-index:30;
 }
-.${TILE_CLASS}{
-  position:relative;
-  width:${TILE_PX}px;
-  height:${TILE_PX}px;
-  background-image:url("${SPRITE_URL}");
-  background-repeat:no-repeat;
-  background-size:${SPRITE_BG}px;
-  border-radius:4px;
-  cursor:pointer;
-  box-shadow:0 0 2px rgba(0,0,0,.85);
+.${MOON_COL_CLASS}{
+  right:auto;
+  left:calc(100% + 3px);
 }
-.${TILE_CLASS}.host{outline:1.5px solid #e24b4a;outline-offset:-1px;}
-${missionRules}
-.${CNT_CLASS}{
-  position:absolute;
-  top:-5px;
-  left:-5px;
-  min-width:13px;
-  height:13px;
-  padding:0 2px;
+.${DOT_CLASS}{
+  width:7px;
+  height:7px;
   box-sizing:border-box;
-  border-radius:7px;
-  background:#5a3a0b;
-  color:#ffe9c7;
-  font:500 9px/13px Verdana,sans-serif;
-  text-align:center;
-  pointer-events:none;
+  border-radius:50%;
+  cursor:pointer;
+  box-shadow:0 0 2px rgba(0,0,0,.9);
 }
-.${CNT_CLASS}.host{background:#a32d2d;color:#fde8e8;}
-.oge-mb-dir{position:absolute;width:0;height:0;pointer-events:none;}
-.oge-mb-dir.in{
-  right:-7px;top:50%;transform:translateY(-50%);
-  border-top:4px solid transparent;border-bottom:4px solid transparent;
-  border-left:6px solid #5dcaa5;
-}
-.oge-mb-dir.in.host{border-left-color:#e24b4a;}
-.oge-mb-dir.out{
-  left:-7px;top:50%;transform:translateY(-50%);
-  border-top:4px solid transparent;border-bottom:4px solid transparent;
-  border-right:6px solid #8aa3b5;
-}
-.oge-mb-rt{
-  position:absolute;right:-6px;bottom:-6px;
-  font:9px/1 Verdana,sans-serif;color:#bfe0f0;
-  text-shadow:0 0 2px #000,0 0 2px #000;pointer-events:none;
+/* Mine = round; the external THREAT is the odd square. */
+.oge-mb-threat{background:#e24b4a;border-radius:1px;}
+.oge-mb-aggro{background:#e24b4a;}
+.oge-mb-fs{background:#f0c23c;}
+.oge-mb-logistics{background:#4caf6a;}
+.oge-mb-economy{background:#3d7fd0;}
+/* Expedition heart — the expeditor's pride. A glyph, not a filled dot. */
+.oge-mb-explore{
+  width:auto;height:auto;
+  background:none;box-shadow:none;border-radius:0;
+  color:#3fb6c8;
+  font:9px/1 Verdana,sans-serif;
+  text-shadow:0 0 2px #000,0 0 1px #000;
 }
 #${POP_ID}{
   position:fixed;
@@ -326,7 +231,6 @@ ${missionRules}
 #${POP_ID} .r .e{color:#9fb8c9;}
 #${POP_ID} .more{color:#9fb8c9;margin-top:3px;}
 `;
-};
 
 const HIDE_CSS = `.${COL_CLASS}{display:none!important;}`;
 
@@ -357,20 +261,13 @@ const fmtEta = (arrivalAt) => {
   return `${s}s`;
 };
 
-/** @param {TileDetail} d @returns {DocumentFragment} */
+/** @param {MarkerDetail} d @returns {DocumentFragment} */
 const buildPopContent = (d) => {
   const frag = document.createDocumentFragment();
   const h = document.createElement('div');
   h.className = 'h';
-  h.textContent = d.title;
+  h.textContent = d.label;
   frag.appendChild(h);
-
-  if (d.note) {
-    const n = document.createElement('div');
-    n.textContent = d.note;
-    frag.appendChild(n);
-    return frag;
-  }
 
   const MAX = 12;
   d.fleets.slice(0, MAX).forEach((f) => {
@@ -394,15 +291,15 @@ const buildPopContent = (d) => {
 };
 
 /**
- * @param {Element} tileEl
- * @param {TileDetail} detail
+ * @param {Element} markerEl
+ * @param {MarkerDetail} detail
  * @returns {void}
  */
-const openPopover = (tileEl, detail) => {
+const openPopover = (markerEl, detail) => {
   if (!popEl) return;
   popEl.replaceChildren(buildPopContent(detail));
   popEl.classList.add('open');
-  const r = tileEl.getBoundingClientRect();
+  const r = markerEl.getBoundingClientRect();
   const pw = popEl.offsetWidth;
   const ph = popEl.offsetHeight;
   // Prefer the space to the LEFT of the planet bar; fall back to the right.
@@ -425,105 +322,143 @@ const clearColumns = () => {
 };
 
 /**
- * Short title for both the native `title` tooltip and the popover header.
- *
- * @param {{ missionType: string, count: number, kind: 'rt'|'in'|'out', hostile: boolean }} t
- * @returns {string}
- */
-const tileTitle = (t) => {
-  const label = MISSION_LABEL[t.missionType] || 'Mission';
-  const kind =
-    t.kind === 'in' ? (t.hostile ? 'incoming' : 'arriving') : t.kind === 'rt' ? 'round trip' : 'departing';
-  return `${label}${t.count > 1 ? ` ×${t.count}` : ''} · ${kind}`;
-};
-
-/**
- * @param {import('./pure.js').Tile & { note?: string }} t
+ * @param {import('./pure.js').Marker} m
  * @returns {HTMLElement}
  */
-const buildTile = (t) => {
-  const el = document.createElement('div');
-  el.className = `${TILE_CLASS} oge-mb-m${t.missionType}`;
-  const hostileIn = t.kind === 'in' && t.hostile;
-  if (hostileIn) el.classList.add('host');
-
-  if (t.count > 1) {
-    const cnt = document.createElement('span');
-    cnt.className = `${CNT_CLASS}${hostileIn ? ' host' : ''}`;
-    cnt.textContent = t.count > 99 ? '99+' : String(t.count);
-    el.appendChild(cnt);
-  }
-
-  const dir = document.createElement('span');
-  if (t.kind === 'rt') {
-    dir.className = 'oge-mb-rt';
-    dir.textContent = '↻';
-  } else {
-    dir.className = `oge-mb-dir ${t.kind}${hostileIn ? ' host' : ''}`;
-  }
-  el.appendChild(dir);
-
-  const title = tileTitle(t);
-  el.title = title;
-  tileDetail.set(el, {
-    title,
-    kind: t.kind,
-    hostile: t.hostile,
-    missionType: t.missionType,
-    count: t.count,
-    fleets: t.fleets,
-    ...(t.note ? { note: t.note } : {}),
-  });
+const buildMarker = (m) => {
+  const el = document.createElement('span');
+  el.className = `${DOT_CLASS} oge-mb-${m.category}`;
+  if (m.category === 'explore') el.textContent = '♥';
+  const label = MARKER_LABEL[m.category] || 'Fleet';
+  el.title = label;
+  markerDetail.set(el, { label, category: m.category, fleets: m.fleets });
   return el;
 };
 
 /**
- * One render pass: wipe old columns, read the current event + planet state,
- * group it, merge the (untouched) expedition detection, and paint one icon
- * column per body that has activity.
+ * Flipped true once OGame's event-list XHR has populated `#eventContent` (the
+ * `oge:eventBoxLoaded` bridge signal). Until then a render with no legs is
+ * AMBIGUOUS — "no activity" vs "data not here yet" — so we must not let an
+ * empty live pass overwrite the optimistic cache paint.
+ */
+let eventBoxReady = false;
+
+/**
+ * Whether the event list is loaded, so an empty render is authoritative. The
+ * presence of any event row is a sufficient signal on its own; the flag
+ * additionally covers the loaded-but-idle (zero fleets) case.
+ *
+ * @returns {boolean}
+ */
+const eventBoxLoaded = () => eventBoxReady || document.querySelector(GAME.EVENT_FLEET_ROWS) != null;
+
+/**
+ * The detected fleet-save row-ids to mark — but only while reminders' master
+ * switch AND the per-universe FS toggle are both on, so a stale published set
+ * never paints FS markers after the feature is turned off.
+ *
+ * @returns {Set<string>}
+ */
+const fsIdSet = () => {
+  const on = settingsStore.get().remindersMasterEnabled && galaxyScanConfigStore.get().fsEnabled;
+  return new Set(on ? readFleetSaveIds() : []);
+};
+
+/**
+ * Paint one body's marker column. Shared by the live render and the optimistic
+ * cache render so both produce identical DOM.
+ *
+ * @param {OwnBody} body
+ * @param {import('./pure.js').Marker[]} markers
+ * @returns {void}
+ */
+const paintBody = (body, markers) => {
+  if (markers.length === 0) return;
+  // Defensive: make the pic container the positioning context so the column
+  // anchors to its edge (the green dot relied on this too).
+  if (getComputedStyle(body.container).position === 'static') {
+    body.container.style.position = 'relative';
+  }
+  const col = document.createElement('div');
+  col.className = body.type === 3 ? `${COL_CLASS} ${MOON_COL_CLASS}` : COL_CLASS;
+  for (const m of markers) col.appendChild(buildMarker(m));
+  body.container.appendChild(col);
+};
+
+/**
+ * Slim the painted markers to the cache shape (just the ordered category ids —
+ * the optimistic paint needs nothing else; per-fleet detail is re-derived live).
+ *
+ * @param {Record<string, import('./pure.js').Marker[]>} snapshot
+ * @returns {Record<string, string[]>}
+ */
+const slimSnapshot = (snapshot) => {
+  /** @type {Record<string, string[]>} */
+  const out = {};
+  for (const [key, markers] of Object.entries(snapshot)) {
+    out[key] = markers.map((m) => m.category);
+  }
+  return out;
+};
+
+/**
+ * One LIVE render pass: read the current event + planet state, classify it into
+ * per-body markers, paint one column per active body, and refresh the
+ * optimistic cache.
  *
  * @returns {void}
  */
 const renderColumns = () => {
+  const ready = eventBoxLoaded();
+  // Pre-XHR window: keep the optimistic cache paint rather than wiping it with
+  // an empty live pass. Once the event box has loaded, the live result is
+  // authoritative and replaces it.
+  if (!ready && document.querySelector(`.${COL_CLASS}`)) return;
+
   clearColumns();
   const bodies = scanOwnBodies();
   if (bodies.length === 0) return;
-  const expeditions = collectActiveExpeditions();
   const myKeys = new Set(bodies.map((b) => bodyKey(b.coords, b.type)));
-  const byAnchor = groupTiles(scanLegs(), myKeys);
+  const byBody = groupMarkers(scanLegs(), myKeys, fsIdSet());
 
+  /** @type {Record<string, import('./pure.js').Marker[]>} */
+  const snapshot = {};
   for (const body of bodies) {
-    /** @type {(import('./pure.js').Tile & { note?: string })[]} */
-    const tiles = [...(byAnchor.get(bodyKey(body.coords, body.type)) || [])];
+    const key = bodyKey(body.coords, body.type);
+    const markers = byBody.get(key);
+    if (!markers || markers.length === 0) continue;
+    paintBody(body, markers);
+    snapshot[key] = markers;
+  }
 
-    // Expeditions launch from a planet's link container — merge the existing
-    // detector's result as a round-trip tile, matched by coords or name.
-    if (body.type === 1) {
-      const exp = expeditions.get(body.coords) || (body.name ? expeditions.get(`name:${body.name}`) : undefined);
-      if (exp) {
-        tiles.push({
-          coords: body.coords,
-          type: 1,
-          missionType: MISSION_EXPEDITION,
-          kind: 'rt',
-          hostile: false,
-          count: exp.count,
-          fleets: [],
-          note: `${exp.count} expedition${exp.count === 1 ? '' : 's'} · ${exp.ships.toLocaleString('en-US')} ships`,
-        });
-      }
-    }
+  // Persist for the next reload's instant paint. Overwrite with an EMPTY result
+  // only when the event list is genuinely loaded-and-idle — never in the
+  // pre-XHR gap (handled by the early-return above).
+  if (Object.keys(snapshot).length > 0) writeBadgeCache(slimSnapshot(snapshot));
+  else if (ready) clearBadgeCache();
+};
 
-    if (tiles.length === 0) continue;
-    // Defensive: make the pic container the positioning context so the
-    // column anchors to its left edge (the green dot relied on this too).
-    if (getComputedStyle(body.container).position === 'static') {
-      body.container.style.position = 'relative';
-    }
-    const col = document.createElement('div');
-    col.className = COL_CLASS;
-    for (const t of sortTiles(tiles)) col.appendChild(buildTile(t));
-    body.container.appendChild(col);
+/**
+ * Optimistic paint from the previous page's cached markers, so the badges show
+ * instantly on load — before the event-list XHR (which {@link renderColumns}
+ * computes everything from) has even arrived. The live render replaces it.
+ * Cached markers carry no fleets, so their popover is empty until the live pass.
+ *
+ * @returns {void}
+ */
+const renderFromCache = () => {
+  const cache = readBadgeCache();
+  if (!cache) return;
+  const bodies = scanOwnBodies();
+  if (bodies.length === 0) return;
+  clearColumns();
+  for (const body of bodies) {
+    const cats = cache[bodyKey(body.coords, body.type)];
+    if (!cats || cats.length === 0) continue;
+    paintBody(
+      body,
+      cats.map((category) => ({ category, fleets: [] })),
+    );
   }
 };
 
@@ -549,11 +484,10 @@ const attachObserver = (observer) => {
 };
 
 /**
- * Install the planet mission badges. Idempotent: a second call while
- * installed returns the same dispose handle. The dispose fn disconnects the
- * observer, clears the safety poll, unsubscribes from settings, removes every
- * column + the popover + both style nodes, and detaches the document click
- * handler.
+ * Install the planet status markers. Idempotent: a second call while installed
+ * returns the same dispose handle. The dispose fn disconnects the observer,
+ * clears the safety poll, unsubscribes from settings, removes every column +
+ * the popover + both style nodes, and detaches the document handlers.
  *
  * @returns {() => void}
  */
@@ -569,21 +503,27 @@ export const installBadges = () => {
   /** @type {MutationObserver | null} */
   let observer = null;
 
-  // Run a render with the observer paused so our own DOM writes don't feed
-  // back into a refresh loop (the writes would otherwise re-trigger it).
-  const renderGuarded = () => {
+  // Run a paint with the observer paused so our own DOM writes don't feed back
+  // into a refresh loop (the writes would otherwise re-trigger it).
+  /** @param {() => void} fn */
+  const guarded = (fn) => {
     if (observer) observer.disconnect();
     try {
-      renderColumns();
+      fn();
     } finally {
       if (observer) attachObserver(observer);
     }
   };
+  const renderGuarded = () => guarded(renderColumns);
 
   /** @param {boolean} enabled @returns {void} */
   const applyVisibility = (enabled) => {
     if (enabled) {
       document.getElementById(HIDE_STYLE_ID)?.remove();
+      // Instant optimistic paint from the previous load's cache, BEFORE the
+      // live render — so the markers show while the event XHR is still in
+      // flight. The live pass then preserves it (pre-XHR) or replaces it.
+      guarded(renderFromCache);
       renderGuarded();
       // Post-reload race: containers exist but are empty until OGame's inline
       // scripts populate them. Poll until the planet list has rows, then
@@ -615,23 +555,31 @@ export const installBadges = () => {
     }
   });
 
-  // Click / tap: open a tile's detail, or close the popover on an outside
-  // click. Capture phase + preventDefault so a tile click never navigates the
+  // Click / tap: open a marker's detail, or close the popover on an outside
+  // click. Capture phase + preventDefault so a marker click never navigates the
   // planet link it sits inside.
   /** @param {MouseEvent} e */
   const onClick = (e) => {
     const target = /** @type {Element | null} */ (e.target);
-    const tileEl = target?.closest?.(`.${TILE_CLASS}`);
-    if (tileEl) {
+    const markerEl = target?.closest?.(`.${DOT_CLASS}`);
+    if (markerEl) {
       e.preventDefault();
       e.stopPropagation();
-      const detail = tileDetail.get(tileEl);
-      if (detail) openPopover(tileEl, detail);
+      const detail = markerDetail.get(markerEl);
+      if (detail) openPopover(markerEl, detail);
       return;
     }
     if (popEl && !popEl.contains(/** @type {Node} */ (e.target))) closePopover();
   };
   document.addEventListener('click', onClick, true);
+
+  // The event-list XHR landing is our authority for "an empty render is real".
+  // Mark it ready and refresh so a loaded-but-idle list clears the cache.
+  const onEventBox = () => {
+    eventBoxReady = true;
+    scheduleRefresh();
+  };
+  document.addEventListener(EVENT_BOX_LOADED_EVENT, onEventBox);
 
   observer = new MutationObserver(() => scheduleRefresh());
   attachObserver(observer);
@@ -649,6 +597,8 @@ export const installBadges = () => {
       clearInterval(safetyPoll);
       unsubSettings();
       document.removeEventListener('click', onClick, true);
+      document.removeEventListener(EVENT_BOX_LOADED_EVENT, onEventBox);
+      eventBoxReady = false;
       clearColumns();
       popEl?.remove();
       popEl = null;
