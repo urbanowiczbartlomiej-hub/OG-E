@@ -4,6 +4,50 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.28.0] — 2026-06-20
+
+### Added
+
+- **Planet status markers — a glanceable column of status dots beside every
+  planet and moon**, replacing the old single green expedition dot. Each fleet
+  in your event list now leaves a small marker on the body it lands on: a red
+  square for an incoming attack, a red dot for your own attack heading out, a
+  yellow dot for a detected fleet-save, a teal heart for an expedition, green
+  for logistics (transport / deploy / ACS defend), and blue for a recycle. At
+  most three per body, highest-priority first — and click or tap any marker for
+  the per-fleet detail (where each fleet is going and when it arrives). The
+  whole point is to tell at a glance that your fleets are well positioned
+  without burying the planet skins under clutter. Toggle it under Settings →
+  Display ("Fleet status markers on planets"); your old "Expedition badges"
+  setting carries over.
+- **A cross-universe Sync diagnostics view in the OG-E Dashboard.** A new "Sync"
+  tab answers "what's synced where" at a glance: for every universe it shows a
+  freshness chip (just synced / stale / rate-limited / failed), the last
+  ↑ upload and ↓ download times, and an inventory of what's stored per category
+  with approximate sizes — so it's obvious why, say, one device has fewer galaxy
+  scans than another.
+
+### Changed
+
+- **Multi-device sync and reminder settings moved into the OG-E Dashboard, and
+  now apply to every universe at once.** The sync master switch + GitHub token
+  moved to the Dashboard's Sync tab, and the reminders master switch + ntfy
+  token + your push topic moved to the Reminders tab. A token entered there is
+  shared across all your universes, so there's no more retyping it on each
+  server. The in-game Settings panel now just points you to the Dashboard.
+  Existing per-universe tokens are lifted up automatically the first time this
+  build runs — nothing to redo.
+- **The readability-boost event box is now a full-width, edge-to-edge strip**
+  rather than a narrower inset box, so the upcoming-event countdown reads more
+  cleanly across the bar.
+
+### Fixed
+
+- **The merchant 6×-event timing now travels with multi-device sync.** The
+  trader import-event day and next-due time are included in the synced daily
+  state, so the Import/Export menu highlight stays consistent across all your
+  devices instead of re-appearing on a second machine.
+
 ## [1.27.0] — 2026-06-19
 
 ### Added
