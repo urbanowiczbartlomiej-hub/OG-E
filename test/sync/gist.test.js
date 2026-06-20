@@ -56,7 +56,10 @@ import {
   GIST_FILENAME,
   GIST_DESCRIPTION,
   API_BASE,
+  BACKOFF_KEY,
+  SYNC_STATUS_MIRROR_BASE,
 } from '../../src/sync/gist.js';
+import { chromeStore } from '../../src/lib/storage.js';
 import { gzipEncode } from '../../src/lib/gzip.js';
 
 /**
@@ -381,5 +384,32 @@ describe('setStatus', () => {
     // And 'down' is the mirror of 'up' for download timestamps.
     setStatus('down', '2025-04-04T05:05:05.000Z');
     expect(localStorage.getItem(LAST_DOWN_KEY)).toBe('2025-04-04T05:05:05.000Z');
+  });
+
+  it('mirrors the current status snapshot into chrome.storage for the Dashboard', () => {
+    // Spy on the real chromeStore (this file does not mock storage.js); the
+    // mirror is fire-and-forget, so a resolved no-op is enough to assert the
+    // call shape. Seed the four source keys, then trigger a status write.
+    const setSpy = vi.spyOn(chromeStore, 'set').mockResolvedValue(undefined);
+    try {
+      localStorage.setItem(LAST_DOWN_KEY, '2025-04-04T05:05:05.000Z');
+      localStorage.setItem(BACKOFF_KEY, '1700000000000');
+      setStatus('up', '2025-04-04T04:04:04.000Z');
+
+      // The most recent mirror call carries the per-universe key
+      // `<universeId>:oge_syncStatus` and a snapshot read live from localStorage.
+      const lastCall = setSpy.mock.calls.at(-1);
+      expect(lastCall).toBeTruthy();
+      const [key, snapshot] = /** @type {[string, any]} */ (lastCall);
+      expect(key).toMatch(new RegExp(`:${SYNC_STATUS_MIRROR_BASE}$`));
+      expect(snapshot).toEqual({
+        up: '2025-04-04T04:04:04.000Z',
+        down: '2025-04-04T05:05:05.000Z',
+        err: null,
+        backoffUntil: 1700000000000,
+      });
+    } finally {
+      setSpy.mockRestore();
+    }
   });
 });

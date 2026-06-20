@@ -37,7 +37,6 @@ import {
   settingsStore,
   SETTINGS_SCHEMA,
 } from '../../src/state/settings.js';
-import { deriveNtfyTopic } from '../../src/sync/reminders.js';
 
 /** AGR container id selector — mirrors the production constant. */
 const AGR_ID = 'ago_menu_content';
@@ -266,327 +265,50 @@ describe('installSettingsUi — range', () => {
 });
 
 // ──────────────────────────────────────────────────────────────────
-// Text / password rendering + binding
+// Static signpost rows + the Display section's fleet-status checkbox.
+//
+// The editable sync/reminders controls (master switches, the ntfy token —
+// the only `type:'password'` field — the account-status / derived-topic
+// rows, the "Sync now"/"Check now" inline buttons, and the Sync status
+// readout) all MOVED to the OG-E Dashboard. The AGR panel keeps only a
+// static signpost note per section; their dashboard equivalents are tested
+// separately under test/features/dashboard/.
 // ──────────────────────────────────────────────────────────────────
 
-describe('installSettingsUi — text + password', () => {
-  // The 'text' / 'duration' string + numeric fields (reminderSchedule,
-  // adhocOffsetSec, fsThreshold, colPositions) all moved out of the AGR panel
-  // to the dashboard (B2/B3); only the password fields (gistToken,
-  // reminderNtfyToken) remain. The dashboard editors validate their own
-  // numeric/duration fields — see test/features/dashboard/{scanConfig,reminderConfig}.test.js.
-
-  it('password field uses type="password"', async () => {
+describe('installSettingsUi — static signpost rows', () => {
+  it('renders the multi-device-sync signpost note', async () => {
     setupAGR();
     installSettingsUi();
     await flushWaitFor();
 
-    const input = /** @type {HTMLInputElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'gistToken')
-    );
-    expect(input).not.toBeNull();
-    expect(input?.type).toBe('password');
-  });
-});
-
-// ──────────────────────────────────────────────────────────────────
-// Reminders section: asyncStatus (ntfy account). The free-form wave
-// schedule (text) + ad-hoc lead time (duration) moved to the dashboard's
-// Reminders tab (B3c) — see test/features/dashboard/reminderConfig.test.js.
-// ──────────────────────────────────────────────────────────────────
-
-describe('installSettingsUi — asyncStatus (ntfy account)', () => {
-  it('renders the account-status row read-only (the "Check now" button moved to the master row)', async () => {
-    setupAGR();
-    installSettingsUi();
-    await flushWaitFor();
-
-    const span = document.getElementById(INPUT_PREFIX + 'ntfyAccountStatus');
+    const span = document.getElementById(INPUT_PREFIX + 'syncMovedNote');
     expect(span).not.toBeNull();
-    // The manual re-probe trigger now lives on the master row, not here.
-    expect(document.getElementById(INPUT_PREFIX + 'ntfyAccountStatus-btn')).toBeNull();
+    expect(span?.textContent).toContain('OG-E Dashboard');
+    // The note is purely informational — no inline button.
+    expect(document.getElementById(INPUT_PREFIX + 'syncMovedNote-btn')).toBeNull();
   });
 
-  it('the master row\'s "Check now" button dispatches oge:ntfyCheckNow', async () => {
-    setupAGR();
-    installSettingsUi();
-    await flushWaitFor();
-    // Disabled while the section is off (default) — turn the master on so the
-    // button is clickable. The store subscriber re-runs syncInputsFromState.
-    settingsStore.update((s) => ({ ...s, remindersMasterEnabled: true }));
-
-    /** @type {string[]} */
-    const received = [];
-    /** @type {EventListener} */
-    const handler = (e) => {
-      received.push(e.type);
-    };
-    document.addEventListener('oge:ntfyCheckNow', handler);
-
-    const btn = /** @type {HTMLButtonElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'remindersMasterEnabled-btn')
-    );
-    expect(btn).not.toBeNull();
-    expect(btn?.textContent).toBe('Check now');
-    expect(btn?.disabled).toBe(false);
-    btn?.click();
-
-    document.removeEventListener('oge:ntfyCheckNow', handler);
-    expect(received).toContain('oge:ntfyCheckNow');
-  });
-
-  it('disables the master row\'s "Check now" button while the section is off', async () => {
-    setupAGR();
-    installSettingsUi();
-    await flushWaitFor();
-    settingsStore.update((s) => ({ ...s, remindersMasterEnabled: false }));
-    const btn = /** @type {HTMLButtonElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'remindersMasterEnabled-btn')
-    );
-    expect(btn?.disabled).toBe(true);
-  });
-
-  it('renders the derived-topic row (read-only, no button) with the no-token hint', async () => {
+  it('renders the reminders signpost note', async () => {
     setupAGR();
     installSettingsUi();
     await flushWaitFor();
 
-    const span = document.getElementById(INPUT_PREFIX + 'ntfyTopic');
+    const span = document.getElementById(INPUT_PREFIX + 'remindersMovedNote');
     expect(span).not.toBeNull();
-    // No manual button on this row — it's purely informational (read-only
-    // derived topic). The text resolves asynchronously via the same
-    // asyncStatus path the account row uses; its content is exercised by
-    // the deriveNtfyTopic + formatter tests, so here we pin the structure.
-    expect(document.getElementById(INPUT_PREFIX + 'ntfyTopic-btn')).toBeNull();
+    expect(span?.textContent).toContain('OG-E Dashboard');
+    expect(document.getElementById(INPUT_PREFIX + 'remindersMovedNote-btn')).toBeNull();
   });
 
-  it('renders the topic masked, behind an eye toggle + a Copy button', async () => {
-    // A token UNIQUE to this case: the asyncStatus `lastKey` cache is
-    // module-scoped, so reusing another test's token would make that test's
-    // in-DOM re-probe a no-op (the very bug the next test guards against).
-    const token = 'tk_secrettopictest0000000000';
-    settingsStore.update((s) => ({
-      ...s, remindersMasterEnabled: true, reminderNtfyToken: token,
-    }));
-    const topic = await deriveNtfyTopic(token);
-
-    setupAGR();
-    installSettingsUi();
-
-    const span = /** @type {HTMLElement} */ (document.getElementById(INPUT_PREFIX + 'ntfyTopic'));
-    // Wait until the async derivation has painted the secret onto the row.
-    // `vi.waitFor` THROWS on timeout, so a late SubtleCrypto resolution (under
-    // machine load) fails loudly instead of falling through to assert against
-    // a still-blank `dataset.full`.
-    await vi.waitFor(() => {
-      expect(span.dataset.full).toBe(topic);
-    }, { timeout: 4000, interval: 20 });
-
-    // Masked on screen, real value stashed for the buttons to act on.
-    expect(span.dataset.full).toBe(topic);
-    expect(span.textContent).toBe('oge-' + '•'.repeat(topic.length - 4));
-    expect(span.textContent).not.toBe(topic);
-
-    const eye = /** @type {HTMLElement} */ (document.getElementById(INPUT_PREFIX + 'ntfyTopic-eye'));
-    const copy = /** @type {HTMLButtonElement} */ (document.getElementById(INPUT_PREFIX + 'ntfyTopic-copy'));
-    expect(eye).not.toBeNull();
-    expect(copy).not.toBeNull();
-
-    // Eye reveals the full topic.
-    eye.click();
-    expect(span.textContent).toBe(topic);
-
-    // Copy writes the REAL topic to the clipboard, not the masked text.
-    const writeText = vi.fn(() => Promise.resolve());
-    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
-    copy.click();
-    // The clipboard write settles a microtask after the click handler runs;
-    // wait deterministically (throws on timeout) rather than polling silently.
-    await vi.waitFor(() => {
-      expect(writeText).toHaveBeenCalledWith(topic);
-    }, { timeout: 4000, interval: 20 });
-  });
-
-  it('paints the topic row on load, without waiting for a token change (regression)', async () => {
-    // A returning user already has a token in the store. The derived topic
-    // must show on first render — the bug left the asyncStatus rows blank
-    // until the token changed, because the build-time probe (fired while the
-    // row was still detached) recorded the refreshKey and made the later
-    // in-DOM refresh a no-op.
-    settingsStore.update((s) => ({
-      ...s, remindersMasterEnabled: true, reminderNtfyToken: 'tk_' + 'a'.repeat(24),
-    }));
+  it('renders the Display section\'s fleet-status-markers checkbox', async () => {
     setupAGR();
     installSettingsUi();
     await flushWaitFor();
-    const topic = document.getElementById(INPUT_PREFIX + 'ntfyTopic');
-    const status = document.getElementById(INPUT_PREFIX + 'ntfyAccountStatus');
-    // Painted (resolved text, "Checking…", or an error line) — never blank.
-    // The rows fill via the async asyncStatus path, which can land a tick late
-    // under load; `vi.waitFor` throws on timeout so a never-painted row fails
-    // loudly instead of flaking on a fixed microtask budget.
-    await vi.waitFor(() => {
-      expect(topic?.textContent).toBeTruthy();
-      expect(status?.textContent).toBeTruthy();
-    }, { timeout: 4000, interval: 20 });
-  });
-});
 
-// ──────────────────────────────────────────────────────────────────
-// Checkbox inline action button (sync master row "Sync now") + click
-// ──────────────────────────────────────────────────────────────────
-
-describe('installSettingsUi — checkbox inline button', () => {
-  it('the "Sync now" button (inline on the cloudSync master row) dispatches oge:syncForce', async () => {
-    setupAGR();
-    installSettingsUi();
-    await flushWaitFor();
-    // The button is disabled while cloudSync is off (default) — a disabled
-    // button never fires click — so turn the master on first. The store
-    // subscriber re-runs syncInputsFromState and un-disables it.
-    settingsStore.update((s) => ({ ...s, cloudSync: true }));
-
-    /** @type {string[]} */
-    const received = [];
-    /** @type {EventListener} */
-    const handler = (e) => {
-      received.push(e.type);
-    };
-    document.addEventListener('oge:syncForce', handler);
-
-    const btn = /** @type {HTMLButtonElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'cloudSync-btn')
+    const cb = /** @type {HTMLInputElement | null} */ (
+      document.getElementById(INPUT_PREFIX + 'expeditionBadges')
     );
-    expect(btn).not.toBeNull();
-    expect(btn?.textContent).toBe('Sync now');
-    expect(btn?.disabled).toBe(false);
-    btn?.click();
-
-    // "Sync now" now validates the token FIRST (async) and dispatches syncForce
-    // inside the .then — so the event lands a tick later, not synchronously.
-    await vi.waitFor(() => {
-      expect(received).toContain('oge:syncForce');
-    }, { timeout: 4000, interval: 20 });
-    document.removeEventListener('oge:syncForce', handler);
-  });
-
-  it('disables the "Sync now" button while cloudSync is off', async () => {
-    setupAGR();
-    installSettingsUi();
-    await flushWaitFor();
-    settingsStore.update((s) => ({ ...s, cloudSync: false }));
-    const btn = /** @type {HTMLButtonElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'cloudSync-btn')
-    );
-    expect(btn?.disabled).toBe(true);
-  });
-});
-
-// Per-group enable gating (each group's options lock when its own `enable`
-// is off) used to be tested here, but BOTH reminder groups moved to the
-// dashboard: the wave group (B3c) and the fleet-save group (B3b). The AGR
-// panel now keeps only the reminders master switch + token + status rows.
-
-// ──────────────────────────────────────────────────────────────────
-// Sync status row (asyncStatus: token-validation line + ↑/↓ times)
-// ──────────────────────────────────────────────────────────────────
-
-describe('installSettingsUi — Sync status row', () => {
-  it('renders the ↑/↓ times from localStorage timestamps', async () => {
-    const iso = '2026-01-02T03:04:05.000Z';
-    localStorage.setItem('oge_lastSyncAt', iso);
-    localStorage.setItem('oge_lastDownAt', iso);
-    setupAGR();
-    installSettingsUi();
-    await flushWaitFor();
-    // Force a deterministic (re)paint — the sync layer emits this after every
-    // settle, and force=true bypasses the module-global asyncStatus key-cache,
-    // so the assertion doesn't depend on what earlier cases primed.
-    document.dispatchEvent(new CustomEvent('oge:syncStatus'));
-
-    const span = document.getElementById(INPUT_PREFIX + 'syncStatus');
-    expect(span).not.toBeNull();
-    // happy-dom locale-dependent date text — assert only the arrows + that the
-    // em-dashes are replaced (real ISO values supplied), not the exact render.
-    await vi.waitFor(() => {
-      const text = span?.textContent ?? '';
-      expect(text).toContain('↑');
-      expect(text).toContain('↓');
-    }, { timeout: 4000, interval: 20 });
-    const text = span?.textContent ?? '';
-    expect(text).not.toContain('↑ —');
-    expect(text).not.toContain('↓ —');
-  });
-
-  it('repaints the status row with the error line when oge:syncStatus fires (sync-layer push)', async () => {
-    setupAGR();
-    installSettingsUi();
-    await flushWaitFor();
-
-    // Simulate the sync layer writing a fresh error + emitting the event.
-    localStorage.setItem('oge_lastSyncErr', 'HTTP 401: Bad credentials');
-    document.dispatchEvent(new CustomEvent('oge:syncStatus'));
-
-    const span = document.getElementById(INPUT_PREFIX + 'syncStatus');
-    await vi.waitFor(() => {
-      expect(span?.textContent).toContain('⚠ HTTP 401: Bad credentials');
-    }, { timeout: 4000, interval: 20 });
-  });
-
-  it('shows the token-validation line ABOVE the ↑/↓ times (merged Token + Sync status rows)', async () => {
-    // A returning user with sync on: the row probes the token on build and
-    // renders the result as its first line, the times beneath — one labelled
-    // "Sync status" row (the old standalone "Token" row is gone). No token is
-    // configured in the test, so validateToken resolves deterministically
-    // ("✗ No token set") with no network.
-    localStorage.setItem('oge_lastSyncAt', '2026-01-02T03:04:05.000Z');
-    settingsStore.update((s) => ({ ...s, cloudSync: true }));
-    setupAGR();
-    installSettingsUi();
-    await flushWaitFor();
-
-    const span = document.getElementById(INPUT_PREFIX + 'syncStatus');
-    await vi.waitFor(() => {
-      const lines = (span?.textContent ?? '').split('\n');
-      expect(lines[0]).toBe('✗ No token set');
-      expect(lines[1]).toContain('↑');
-    }, { timeout: 4000, interval: 20 });
-  });
-
-  it('no longer renders a separate Token row or a Validate button (folded into Sync status)', async () => {
-    setupAGR();
-    installSettingsUi();
-    await flushWaitFor();
-    // The old `tokenStatus` row is gone...
-    expect(document.getElementById(INPUT_PREFIX + 'tokenStatus')).toBeNull();
-    // ...and the merged Sync status row carries no inline button (Validate removed).
-    expect(document.getElementById(INPUT_PREFIX + 'syncStatus-btn')).toBeNull();
-  });
-
-  it('validates first, then paints "Syncing…", when the master "Sync now" is clicked', async () => {
-    setupAGR();
-    installSettingsUi();
-    await flushWaitFor();
-    settingsStore.update((s) => ({ ...s, cloudSync: true }));
-
-    const span = document.getElementById(INPUT_PREFIX + 'syncStatus');
-    // Let the cloudSync-on re-probe settle first so it doesn't race the click.
-    await vi.waitFor(() => {
-      expect(span?.textContent).toContain('✗ No token set');
-    }, { timeout: 4000, interval: 20 });
-
-    const btn = /** @type {HTMLButtonElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'cloudSync-btn')
-    );
-    btn?.click();
-    // Optimistic preliminary paint: the token check runs before the round-trip.
-    expect(span?.textContent).toBe('Validating…');
-    // No scheduler in this test → after validation the row settles on the
-    // "<validation line>\nSyncing…" optimistic state and stays there.
-    await vi.waitFor(() => {
-      expect(span?.textContent).toContain('Syncing…');
-    }, { timeout: 4000, interval: 20 });
-    expect(span?.textContent).toContain('✗ No token set');
+    expect(cb).not.toBeNull();
+    expect(cb?.type).toBe('checkbox');
   });
 });
 

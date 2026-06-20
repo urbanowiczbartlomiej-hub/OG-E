@@ -1,79 +1,97 @@
 // @vitest-environment happy-dom
 //
-// Unit tests for the expedition-badge feature.
+// Unit tests for the planet status MARKERS feature (the DOM half,
+// `src/features/badges/index.js`). The pure landing-classification core is
+// covered separately in `test/features/badges/pure.test.js`.
 //
-// The module reads two scopes of DOM:
-//   - `#eventContent` rows of the form
-//       `tr.eventFleet[data-mission-type="15"][data-return-flight="true"]`
-//     with `.originFleet`, `.coordsOrigin`, `.detailsFleet span` cells,
+// The module reads two scopes of game DOM:
+//   - `#eventContent` rows `tr.eventFleet[id^="eventRow-"]` carrying
+//     `data-mission-type` / `data-return-flight`, with `.coordsOrigin`,
+//     `.destCoords`, `.originFleet`, `.destFleet`, `.detailsFleet` cells (and a
+//     `figure.moon` inside the origin/dest body cell for a moon endpoint),
 //   - `#planetList .smallplanet` entries with an inner `a.planetlink`
-//     containing `.planet-name`, `.planet-koords`, and a
-//     `.planetBarSpaceObjectContainer` host for the dot cluster.
+//     containing `.planet-koords` + a `.planetBarSpaceObjectContainer` host,
+//     and optionally `a.moonlink` with its own container for the moon.
 //
-// Tests use happy-dom, a shared `setupGameDOM` helper to paint a
-// canonical game scene, and reset both the settings store and the
-// module-scope `installed` sentinel between cases via
-// `_resetBadgesForTest`. The MutationObserver-driven cases use fake
-// timers to advance the debounce window deterministically — happy-dom
-// fires MutationObserver callbacks on a microtask queue, so
-// `await Promise.resolve()` (chained via `vi.advanceTimersByTimeAsync`)
-// lets the observer flush before we check the debounced render.
+// It paints a `div.oge-mb-col` column of `span.oge-mb-dot oge-mb-<category>`
+// markers into each body's `.planetBarSpaceObjectContainer`. Matching is by
+// LANDING body identity `coords:type`, never by fleet name.
+//
+// The feature also reads an optimistic localStorage cache (`state/badgeCache`)
+// and the FS id channel (`state/fleetSaveSet`), so we clear localStorage around
+// every case to keep them hermetic.
 //
 // @ts-check
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { installBadges, _resetBadgesForTest } from '../../src/features/badges/index.js';
 import { settingsStore, SETTINGS_SCHEMA } from '../../src/state/settings.js';
+import { galaxyScanConfigStore } from '../../src/state/galaxyScanConfig.js';
+import { writeFleetSaveIds } from '../../src/state/fleetSaveSet.js';
+import { EVENT_BOX_LOADED_EVENT } from '../../src/lib/ogeEvents.js';
 
 /**
- * @typedef {object} ExpeditionFixture
- * @property {string}  coords    Origin coords text, e.g. `'1:2:3'`.
- * @property {string}  name      Origin fleet name text.
- * @property {number}  ships     Number rendered in `.detailsFleet span`.
- * @property {boolean} returning Whether `data-return-flight` is `true`.
- * @property {string}  [missionType] Override for `data-mission-type`
- *   (default `'15'`; used by the non-expedition test).
- */
-
-/**
- * @typedef {object} PlanetFixture
- * @property {number} cp      Planet id — becomes element id `planet-${cp}`.
- * @property {string} name    Rendered `.planet-name` text.
- * @property {string} coords  Rendered `.planet-koords` text.
- */
-
-/**
- * Paint the document to look like an in-game page with
- * `#planetList` + `#eventContent`. Each argument maps to one row in
- * the corresponding container. Defaults are empty arrays so every
- * test is explicit about what it expects to be there.
+ * One event-list fleet leg fixture.
  *
- * @param {{ expeditions?: ExpeditionFixture[], planets?: PlanetFixture[] }} [opts]
+ * @typedef {object} LegFixture
+ * @property {number}  id           Row number → element id `eventRow-${id}`.
+ * @property {string}  [mission]    `data-mission-type` (default `'15'`).
+ * @property {boolean} [returning]  `data-return-flight` (default false).
+ * @property {string}  origin       Origin coords text, e.g. `'1:2:3'`.
+ * @property {string}  dest         Dest coords text, e.g. `'4:5:6'`.
+ * @property {boolean} [originMoon] Origin body is a moon (figure.moon).
+ * @property {boolean} [destMoon]   Dest body is a moon (figure.moon).
+ * @property {number}  [ships]      `.detailsFleet` number (default 1).
+ */
+
+/**
+ * One planet-bar body fixture (a planet, optionally with a moon).
+ *
+ * @typedef {object} BodyFixture
+ * @property {number}  cp     Planet id → element id `planet-${cp}`.
+ * @property {string}  coords Rendered `.planet-koords` text, e.g. `'[1:2:3]'`.
+ * @property {boolean} [moon] Add a moon link with its own marker container.
+ */
+
+/** @param {boolean} isMoon @returns {string} */
+const figure = (isMoon) => `<figure class="${isMoon ? 'planetIcon moon' : 'planetIcon planet'}"></figure>`;
+
+/**
+ * Paint the document like an in-game page with `#planetList` + `#eventContent`.
+ *
+ * @param {{ legs?: LegFixture[], bodies?: BodyFixture[] }} [opts]
  * @returns {void}
  */
-const setupGameDOM = ({ expeditions = [], planets = [] } = {}) => {
-  const eventRows = expeditions
+const setupGameDOM = ({ legs = [], bodies = [] } = {}) => {
+  const eventRows = legs
     .map(
-      (e) => `
-    <tr class="eventFleet" data-mission-type="${e.missionType ?? '15'}" data-return-flight="${e.returning ? 'true' : 'false'}">
-      <td class="originFleet">${e.name}</td>
-      <td class="coordsOrigin">${e.coords}</td>
-      <td class="detailsFleet"><span>${e.ships}</span></td>
-    </tr>
-  `,
+      (l) => `
+    <tr class="eventFleet" id="eventRow-${l.id}"
+        data-mission-type="${l.mission ?? '15'}"
+        data-return-flight="${l.returning ? 'true' : 'false'}">
+      <td class="originFleet">${figure(Boolean(l.originMoon))}</td>
+      <td class="coordsOrigin">${l.origin}</td>
+      <td class="destFleet">${figure(Boolean(l.destMoon))}</td>
+      <td class="destCoords">${l.dest}</td>
+      <td class="detailsFleet"><span>${l.ships ?? 1}</span></td>
+    </tr>`,
     )
     .join('');
-  const planetRows = planets
+
+  const planetRows = bodies
     .map(
-      (p) => `
-    <div class="smallplanet" id="planet-${p.cp}">
+      (b) => `
+    <div class="smallplanet" id="planet-${b.cp}">
       <a class="planetlink">
-        <span class="planet-name">${p.name}</span>
-        <span class="planet-koords">${p.coords}</span>
+        <span class="planet-koords">${b.coords}</span>
         <span class="planetBarSpaceObjectContainer"></span>
       </a>
-    </div>
-  `,
+      ${
+        b.moon
+          ? `<a class="moonlink"><span class="planetBarSpaceObjectContainer"></span></a>`
+          : ''
+      }
+    </div>`,
     )
     .join('');
 
@@ -84,28 +102,37 @@ const setupGameDOM = ({ expeditions = [], planets = [] } = {}) => {
 };
 
 /**
- * Count the number of `.ogi-exp-dot` children inside the
- * `.ogi-exp-dots` cluster of a given planet. Returns 0 when the
- * planet has no cluster yet (the common "not matched" state).
+ * The marker column for a planet (`type` 1) or its moon (`type` 3).
  *
  * @param {number} cp
- * @returns {number}
+ * @param {1 | 3} [type]
+ * @returns {Element | null}
  */
-const dotsOn = (cp) => {
+const colOf = (cp, type = 1) => {
   const planet = document.getElementById(`planet-${cp}`);
-  if (!planet) return 0;
-  const cluster = planet.querySelector('.ogi-exp-dots');
-  if (!cluster) return 0;
-  return cluster.querySelectorAll('.ogi-exp-dot').length;
+  if (!planet) return null;
+  const link =
+    type === 3 ? planet.querySelector('a.moonlink') : planet.querySelector('a.planetlink');
+  return link?.querySelector('.oge-mb-col') ?? null;
 };
 
 /**
- * Reset the settings store to schema defaults (rather than leaving
- * whatever the previous test left behind). Mirrors the pattern used
- * by `test/state/settings.test.js`.
+ * Marker category classes on a body's column, in DOM order.
  *
- * @returns {void}
+ * @param {number} cp
+ * @param {1 | 3} [type]
+ * @returns {string[]}
  */
+const markersOn = (cp, type = 1) => {
+  const col = colOf(cp, type);
+  if (!col) return [];
+  return [...col.querySelectorAll('.oge-mb-dot')].map((el) => {
+    const cls = [...el.classList].find((c) => c.startsWith('oge-mb-') && c !== 'oge-mb-dot');
+    return cls ? cls.replace('oge-mb-', '') : '';
+  });
+};
+
+/** Reset the settings store to schema defaults. @returns {void} */
 const resetSettingsToDefaults = () => {
   /** @type {Record<string, unknown>} */
   const defaults = {};
@@ -124,12 +151,14 @@ const resetSettingsToDefaults = () => {
 beforeEach(() => {
   _resetBadgesForTest();
   document.body.innerHTML = '';
+  localStorage.clear();
   resetSettingsToDefaults();
 });
 
 afterEach(() => {
   _resetBadgesForTest();
   document.body.innerHTML = '';
+  localStorage.clear();
   resetSettingsToDefaults();
 });
 
@@ -138,147 +167,198 @@ afterEach(() => {
 // ──────────────────────────────────────────────────────────────────
 
 describe('installBadges — style injection', () => {
-  it('injects the badge CSS with id oge-badges-style on install', () => {
+  it('injects the marker CSS with id oge-badges-style on install', () => {
     setupGameDOM();
     installBadges();
 
     const styleEl = document.getElementById('oge-badges-style');
     expect(styleEl).not.toBeNull();
-    expect(styleEl?.textContent).toContain('.ogi-exp-dots');
-    expect(styleEl?.textContent).toContain('.ogi-exp-dot');
-    // Sanity: the colour and positioning rules from the brief are there.
-    expect(styleEl?.textContent).toContain('rgba(0, 255, 0, 0.9)');
-    expect(styleEl?.textContent).toContain('position: absolute');
+    expect(styleEl?.textContent).toContain('.oge-mb-col');
+    expect(styleEl?.textContent).toContain('.oge-mb-dot');
+    // Category + popover rules are present.
+    expect(styleEl?.textContent).toContain('.oge-mb-threat');
+    expect(styleEl?.textContent).toContain('#oge-mb-pop');
+    // A popover element is parked on <body>.
+    expect(document.getElementById('oge-mb-pop')).not.toBeNull();
   });
 });
 
 // ──────────────────────────────────────────────────────────────────
-// Render gating
+// Rendering
 // ──────────────────────────────────────────────────────────────────
 
-describe('installBadges — render gating', () => {
-  it('renders no dots when there are no expeditions', () => {
+describe('installBadges — rendering', () => {
+  it('renders no columns when no leg lands on any of my bodies', () => {
     setupGameDOM({
-      expeditions: [],
-      planets: [{ cp: 1, name: 'Alpha', coords: '[1:1:1]' }],
+      // An expedition heading OUT to 7:8:9 (not mine); landing body foreign.
+      legs: [{ id: 1, mission: '15', returning: false, origin: '1:2:3', dest: '7:8:9' }],
+      bodies: [{ cp: 1, coords: '[1:2:3]' }],
     });
     installBadges();
 
-    expect(document.querySelectorAll('.ogi-exp-dots').length).toBe(0);
+    expect(document.querySelectorAll('.oge-mb-col').length).toBe(0);
   });
 
-  it('renders one dot when a single returning expedition matches a planet by coords', () => {
+  it('renders one marker for a returning expedition landing home', () => {
     setupGameDOM({
-      expeditions: [
-        { coords: '1:2:3', name: 'Attacker', ships: 100, returning: true },
-      ],
-      planets: [{ cp: 1, name: 'Home', coords: '[1:2:3]' }],
+      legs: [{ id: 1, mission: '15', returning: true, origin: '1:2:3', dest: '7:8:9' }],
+      bodies: [{ cp: 1, coords: '[1:2:3]' }],
     });
     installBadges();
 
-    expect(document.querySelectorAll('.ogi-exp-dots').length).toBe(1);
-    expect(dotsOn(1)).toBe(1);
+    expect(document.querySelectorAll('.oge-mb-col').length).toBe(1);
+    expect(markersOn(1)).toEqual(['explore']);
   });
 
-  it('stacks dots when the same origin has multiple returning expeditions', () => {
+  it('stacks several categories on one body in priority order', () => {
+    // All my own returns landing home at 1:2:3: economy(8), explore(15),
+    // logistics(3) — rendered in MARKER_ORDER (explore, logistics, economy).
     setupGameDOM({
-      expeditions: [
-        { coords: '1:2:3', name: 'Alpha', ships: 100, returning: true },
-        { coords: '1:2:3', name: 'Alpha', ships: 200, returning: true },
-        { coords: '1:2:3', name: 'Alpha', ships: 300, returning: true },
+      legs: [
+        { id: 1, mission: '8', returning: true, origin: '1:2:3', dest: '4:4:4' },
+        { id: 2, mission: '15', returning: true, origin: '1:2:3', dest: '5:5:5' },
+        { id: 3, mission: '3', returning: true, origin: '1:2:3', dest: '6:6:6' },
       ],
-      planets: [{ cp: 1, name: 'Home', coords: '[1:2:3]' }],
+      bodies: [{ cp: 1, coords: '[1:2:3]' }],
     });
     installBadges();
 
-    // Exactly one cluster, with three dots inside it.
-    expect(document.querySelectorAll('.ogi-exp-dots').length).toBe(1);
-    expect(dotsOn(1)).toBe(3);
+    expect(document.querySelectorAll('.oge-mb-col').length).toBe(1);
+    expect(markersOn(1)).toEqual(['explore', 'logistics', 'economy']);
   });
 
-  it('renders dots on every matching planet independently', () => {
+  it('renders markers on independent bodies', () => {
     setupGameDOM({
-      expeditions: [
-        { coords: '1:2:3', name: 'A', ships: 10, returning: true },
-        { coords: '4:5:6', name: 'B', ships: 20, returning: true },
-        { coords: '4:5:6', name: 'B', ships: 30, returning: true },
+      legs: [
+        { id: 1, mission: '15', returning: true, origin: '1:2:3', dest: '9:9:9' },
+        { id: 2, mission: '3', returning: true, origin: '4:5:6', dest: '9:9:9' },
       ],
-      planets: [
-        { cp: 1, name: 'Home', coords: '[1:2:3]' },
-        { cp: 2, name: 'Away', coords: '[4:5:6]' },
-        // Planet 3 has no matching expedition — must stay bare.
-        { cp: 3, name: 'Lonely', coords: '[7:8:9]' },
+      bodies: [
+        { cp: 1, coords: '[1:2:3]' },
+        { cp: 2, coords: '[4:5:6]' },
+        { cp: 3, coords: '[7:8:9]' }, // no leg lands here → bare
       ],
     });
     installBadges();
 
-    expect(dotsOn(1)).toBe(1);
-    expect(dotsOn(2)).toBe(2);
-    expect(dotsOn(3)).toBe(0);
+    expect(markersOn(1)).toEqual(['explore']);
+    expect(markersOn(2)).toEqual(['logistics']);
+    expect(markersOn(3)).toEqual([]);
   });
 
-  it('skips expedition rows whose data-return-flight is false', () => {
+  it('skips excluded missions (colonisation / discovery)', () => {
     setupGameDOM({
-      expeditions: [
-        { coords: '1:2:3', name: 'Outbound', ships: 100, returning: false },
+      legs: [
+        { id: 1, mission: '7', returning: true, origin: '1:2:3', dest: '9:9:9' },
+        { id: 2, mission: '18', returning: true, origin: '1:2:3', dest: '9:9:9' },
       ],
-      planets: [{ cp: 1, name: 'Home', coords: '[1:2:3]' }],
+      bodies: [{ cp: 1, coords: '[1:2:3]' }],
     });
     installBadges();
 
-    expect(document.querySelectorAll('.ogi-exp-dots').length).toBe(0);
+    expect(document.querySelectorAll('.oge-mb-col').length).toBe(0);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// Threat (foreign aggressive arrival) vs own-fleet categories
+// ──────────────────────────────────────────────────────────────────
+
+describe('installBadges — threat vs own categories', () => {
+  it('marks a foreign aggressive arrival at my body as threat', () => {
+    // Outbound attack from a foreign 9:9:9 landing on my planet 1:2:3.
+    setupGameDOM({
+      legs: [{ id: 1, mission: '1', returning: false, origin: '9:9:9', dest: '1:2:3' }],
+      bodies: [{ cp: 1, coords: '[1:2:3]' }],
+    });
+    installBadges();
+
+    expect(markersOn(1)).toEqual(['threat']);
   });
 
-  it('skips non-expedition mission types even when returning', () => {
-    // mission=15 is expedition; anything else (e.g. 3 = transport) must
-    // be ignored regardless of the return-flight flag.
+  it('ignores a foreign non-aggressive arrival', () => {
+    // A foreign transport (mission 3) arriving at my planet → no marker.
     setupGameDOM({
-      expeditions: [
-        {
-          coords: '1:2:3',
-          name: 'Cargo',
-          ships: 100,
-          returning: true,
-          missionType: '3',
-        },
-      ],
-      planets: [{ cp: 1, name: 'Home', coords: '[1:2:3]' }],
+      legs: [{ id: 1, mission: '3', returning: false, origin: '9:9:9', dest: '1:2:3' }],
+      bodies: [{ cp: 1, coords: '[1:2:3]' }],
     });
     installBadges();
 
-    expect(document.querySelectorAll('.ogi-exp-dots').length).toBe(0);
+    expect(document.querySelectorAll('.oge-mb-col').length).toBe(0);
   });
 
-  it('falls back to matching by fleet name when coords are missing', () => {
-    // Empty coordsOrigin forces the grouping key to `name:<name>`, and
-    // the planet's `.planet-name` must match for a dot to land. We use
-    // `coords=''` here AND set the planet's `.planet-koords` to
-    // something that would not match, to prove the name-path works.
+  it("marks my own outgoing attack's return leg as aggro", () => {
+    // My attack flying home (return leg) lands at my origin 1:2:3.
     setupGameDOM({
-      expeditions: [
-        { coords: '', name: 'FleetA', ships: 100, returning: true },
-      ],
-      planets: [{ cp: 7, name: 'FleetA', coords: '[9:9:9]' }],
+      legs: [{ id: 1, mission: '1', returning: true, origin: '1:2:3', dest: '9:9:9' }],
+      bodies: [{ cp: 1, coords: '[1:2:3]' }],
     });
     installBadges();
 
-    expect(dotsOn(7)).toBe(1);
+    expect(markersOn(1)).toEqual(['aggro']);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// Moon column
+// ──────────────────────────────────────────────────────────────────
+
+describe('installBadges — moon body', () => {
+  it('attaches the moon column with the moon modifier class to the moon link', () => {
+    // My fleet lands on the MOON at 1:2:3 (dest figure.moon).
+    setupGameDOM({
+      legs: [
+        { id: 1, mission: '15', returning: true, origin: '1:2:3', originMoon: true, dest: '9:9:9' },
+      ],
+      bodies: [{ cp: 1, coords: '[1:2:3]', moon: true }],
+    });
+    installBadges();
+
+    // Marker on the MOON column, not the planet column.
+    expect(markersOn(1, 3)).toEqual(['explore']);
+    expect(markersOn(1, 1)).toEqual([]);
+    const moonCol = colOf(1, 3);
+    expect(moonCol?.classList.contains('oge-mb-col-moon')).toBe(true);
+    // The planet column (if any) must NOT carry the moon modifier.
+    const planetCol = colOf(1, 1);
+    expect(planetCol).toBeNull();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// Fleet-save (fs) category — end to end
+// ──────────────────────────────────────────────────────────────────
+
+describe('installBadges — fleet-save category', () => {
+  it('marks a published FS row-id as fs when both gates are on', () => {
+    settingsStore.update((s) => ({ ...s, remindersMasterEnabled: true }));
+    galaxyScanConfigStore.update((c) => ({ ...c, fsEnabled: true }));
+    writeFleetSaveIds(['eventRow-1']);
+
+    // My logistics fleet flying home — would normally be 'logistics', but the
+    // FS flag promotes it to 'fs'.
+    setupGameDOM({
+      legs: [{ id: 1, mission: '3', returning: true, origin: '1:2:3', dest: '9:9:9' }],
+      bodies: [{ cp: 1, coords: '[1:2:3]' }],
+    });
+    installBadges();
+
+    expect(markersOn(1)).toEqual(['fs']);
   });
 
-  it('writes a tooltip summarising count and ships', () => {
+  it('does not mark fs when the per-universe gate is off', () => {
+    settingsStore.update((s) => ({ ...s, remindersMasterEnabled: true }));
+    galaxyScanConfigStore.update((c) => ({ ...c, fsEnabled: false }));
+    writeFleetSaveIds(['eventRow-1']);
+
     setupGameDOM({
-      expeditions: [
-        { coords: '1:2:3', name: 'X', ships: 100, returning: true },
-        { coords: '1:2:3', name: 'X', ships: 200, returning: true },
-      ],
-      planets: [{ cp: 1, name: 'Home', coords: '[1:2:3]' }],
+      legs: [{ id: 1, mission: '3', returning: true, origin: '1:2:3', dest: '9:9:9' }],
+      bodies: [{ cp: 1, coords: '[1:2:3]' }],
     });
     installBadges();
 
-    const cluster = document.querySelector('.ogi-exp-dots');
-    expect(cluster).not.toBeNull();
-    // 100 + 200 = 300; en-US locale writes it plain as "300" (no thousand sep).
-    expect(cluster?.getAttribute('title')).toBe('Expeditions: 2 | Ships: 300');
+    // Falls back to its base category.
+    expect(markersOn(1)).toEqual(['logistics']);
   });
 });
 
@@ -290,56 +370,48 @@ describe('installBadges — visibility via settings', () => {
   it('injects a hide-CSS override when expeditionBadges starts disabled', () => {
     settingsStore.update((s) => ({ ...s, expeditionBadges: false }));
     setupGameDOM({
-      expeditions: [{ coords: '1:2:3', name: 'A', ships: 100, returning: true }],
-      planets: [{ cp: 1, name: 'Home', coords: '[1:2:3]' }],
+      legs: [{ id: 1, mission: '15', returning: true, origin: '1:2:3', dest: '9:9:9' }],
+      bodies: [{ cp: 1, coords: '[1:2:3]' }],
     });
     installBadges();
 
     const hideEl = document.getElementById('oge-badges-hide-style');
     expect(hideEl).not.toBeNull();
-    expect(hideEl?.textContent).toContain('display: none');
-    expect(hideEl?.textContent).toContain('.ogi-exp-dots');
+    expect(hideEl?.textContent).toContain('.oge-mb-col{display:none!important;}');
   });
 
-  it('hides dots when expeditionBadges toggles off after install', () => {
+  it('hides columns (CSS, not removal) when toggled off after install', () => {
     setupGameDOM({
-      expeditions: [{ coords: '1:2:3', name: 'A', ships: 100, returning: true }],
-      planets: [{ cp: 1, name: 'Home', coords: '[1:2:3]' }],
+      legs: [{ id: 1, mission: '15', returning: true, origin: '1:2:3', dest: '9:9:9' }],
+      bodies: [{ cp: 1, coords: '[1:2:3]' }],
     });
     installBadges();
 
-    // Dots are there initially.
-    expect(dotsOn(1)).toBe(1);
+    expect(markersOn(1)).toEqual(['explore']);
     expect(document.getElementById('oge-badges-hide-style')).toBeNull();
 
-    // Toggle off — hide CSS must appear.
     settingsStore.update((s) => ({ ...s, expeditionBadges: false }));
 
     expect(document.getElementById('oge-badges-hide-style')).not.toBeNull();
-    // The dots are still in the DOM (CSS-hidden, not removed) — the
-    // feature keeps them so toggling back on is instant. We assert the
-    // node is still present via querySelector rather than getting
-    // computed style from happy-dom, which is unreliable for `!important`.
-    expect(document.querySelectorAll('.ogi-exp-dots').length).toBe(1);
+    // Column kept in the DOM (hidden via CSS), so toggling back on is instant.
+    expect(document.querySelectorAll('.oge-mb-col').length).toBe(1);
   });
 
-  it('shows dots again when expeditionBadges toggles back on', () => {
+  it('shows columns again when toggled back on', () => {
     settingsStore.update((s) => ({ ...s, expeditionBadges: false }));
     setupGameDOM({
-      expeditions: [{ coords: '1:2:3', name: 'A', ships: 100, returning: true }],
-      planets: [{ cp: 1, name: 'Home', coords: '[1:2:3]' }],
+      legs: [{ id: 1, mission: '15', returning: true, origin: '1:2:3', dest: '9:9:9' }],
+      bodies: [{ cp: 1, coords: '[1:2:3]' }],
     });
     installBadges();
 
-    // Starting state: hidden, no dots rendered yet.
     expect(document.getElementById('oge-badges-hide-style')).not.toBeNull();
-    expect(document.querySelectorAll('.ogi-exp-dots').length).toBe(0);
+    expect(document.querySelectorAll('.oge-mb-col').length).toBe(0);
 
-    // Toggle on — hide CSS removed, dots rendered from current DOM.
     settingsStore.update((s) => ({ ...s, expeditionBadges: true }));
 
     expect(document.getElementById('oge-badges-hide-style')).toBeNull();
-    expect(dotsOn(1)).toBe(1);
+    expect(markersOn(1)).toEqual(['explore']);
   });
 });
 
@@ -356,56 +428,51 @@ describe('installBadges — MutationObserver refresh', () => {
     vi.useRealTimers();
   });
 
-  it('re-renders dots when a new expedition row appears in #eventContent', async () => {
+  it('re-renders when a new matching leg appears in #eventContent', async () => {
     setupGameDOM({
-      expeditions: [],
-      planets: [{ cp: 1, name: 'Home', coords: '[1:2:3]' }],
+      // Start with one (non-matching) event row so the live render is
+      // authoritative (event-box loaded) and nothing lands on planet 1 yet.
+      legs: [{ id: 9, mission: '15', returning: false, origin: '1:2:3', dest: '7:8:9' }],
+      bodies: [{ cp: 1, coords: '[1:2:3]' }],
     });
     installBadges();
-    expect(dotsOn(1)).toBe(0);
+    expect(markersOn(1)).toEqual([]);
 
-    // Inject a new expedition row into the already-observed
-    // #eventContent. The observer should fire, the 200ms debounce
-    // should elapse, and the render should pick up the new fleet.
     const tbody = document.querySelector('#eventContent tbody');
-    expect(tbody).not.toBeNull();
     const row = document.createElement('tr');
     row.className = 'eventFleet';
+    row.id = 'eventRow-1';
     row.setAttribute('data-mission-type', '15');
     row.setAttribute('data-return-flight', 'true');
     row.innerHTML = `
-      <td class="originFleet">Incoming</td>
+      <td class="originFleet">${figure(false)}</td>
       <td class="coordsOrigin">1:2:3</td>
-      <td class="detailsFleet"><span>150</span></td>
-    `;
+      <td class="destFleet">${figure(false)}</td>
+      <td class="destCoords">9:9:9</td>
+      <td class="detailsFleet"><span>5</span></td>`;
     tbody?.appendChild(row);
 
-    // Happy-dom delivers MutationObserver callbacks on a microtask;
-    // advancing the debounce timer past 200ms also flushes pending
-    // microtasks, which is what we want.
     await vi.advanceTimersByTimeAsync(250);
 
-    expect(dotsOn(1)).toBe(1);
+    expect(markersOn(1)).toEqual(['explore']);
   });
 
-  it('removes dots when the corresponding expedition row is deleted', async () => {
+  it('removes the column when the matching leg is deleted', async () => {
     setupGameDOM({
-      expeditions: [{ coords: '1:2:3', name: 'A', ships: 100, returning: true }],
-      planets: [{ cp: 1, name: 'Home', coords: '[1:2:3]' }],
+      legs: [{ id: 1, mission: '15', returning: true, origin: '1:2:3', dest: '9:9:9' }],
+      bodies: [{ cp: 1, coords: '[1:2:3]' }],
     });
     installBadges();
-    expect(dotsOn(1)).toBe(1);
+    expect(markersOn(1)).toEqual(['explore']);
 
-    // Drop the expedition row — the observer must notice and re-render
-    // with an empty expedition map, which (per `renderBadges`) calls
-    // clearBadges and then no-ops because the map is size 0.
-    const row = document.querySelector('#eventContent tr.eventFleet');
-    row?.remove();
+    // Remove the only leg, then signal the event box has (re)loaded so the
+    // empty render is authoritative and clears the column.
+    document.querySelector('#eventContent tr.eventFleet')?.remove();
+    document.dispatchEvent(new CustomEvent(EVENT_BOX_LOADED_EVENT));
 
     await vi.advanceTimersByTimeAsync(250);
 
-    expect(dotsOn(1)).toBe(0);
-    expect(document.querySelectorAll('.ogi-exp-dots').length).toBe(0);
+    expect(document.querySelectorAll('.oge-mb-col').length).toBe(0);
   });
 });
 
@@ -414,26 +481,26 @@ describe('installBadges — MutationObserver refresh', () => {
 // ──────────────────────────────────────────────────────────────────
 
 describe('installBadges — dispose', () => {
-  it('dispose removes all dots and style nodes', () => {
+  it('removes all columns, the popover, and style nodes', () => {
     setupGameDOM({
-      expeditions: [{ coords: '1:2:3', name: 'A', ships: 100, returning: true }],
-      planets: [{ cp: 1, name: 'Home', coords: '[1:2:3]' }],
+      legs: [{ id: 1, mission: '15', returning: true, origin: '1:2:3', dest: '9:9:9' }],
+      bodies: [{ cp: 1, coords: '[1:2:3]' }],
     });
     const dispose = installBadges();
 
-    // Sanity: dots and main style are there.
-    expect(document.querySelectorAll('.ogi-exp-dots').length).toBe(1);
+    expect(document.querySelectorAll('.oge-mb-col').length).toBe(1);
     expect(document.getElementById('oge-badges-style')).not.toBeNull();
+    expect(document.getElementById('oge-mb-pop')).not.toBeNull();
 
     dispose();
 
-    // After dispose: no dots, no style nodes owned by the feature.
-    expect(document.querySelectorAll('.ogi-exp-dots').length).toBe(0);
+    expect(document.querySelectorAll('.oge-mb-col').length).toBe(0);
     expect(document.getElementById('oge-badges-style')).toBeNull();
     expect(document.getElementById('oge-badges-hide-style')).toBeNull();
+    expect(document.getElementById('oge-mb-pop')).toBeNull();
   });
 
-  it('dispose also removes the hide-style when it was installed', () => {
+  it('also removes the hide-style when it was installed', () => {
     settingsStore.update((s) => ({ ...s, expeditionBadges: false }));
     setupGameDOM();
     const dispose = installBadges();
@@ -451,25 +518,22 @@ describe('installBadges — dispose', () => {
 describe('installBadges — idempotency', () => {
   it('a second install returns the same dispose handle without duplicating state', () => {
     setupGameDOM({
-      expeditions: [{ coords: '1:2:3', name: 'A', ships: 100, returning: true }],
-      planets: [{ cp: 1, name: 'Home', coords: '[1:2:3]' }],
+      legs: [{ id: 1, mission: '15', returning: true, origin: '1:2:3', dest: '9:9:9' }],
+      bodies: [{ cp: 1, coords: '[1:2:3]' }],
     });
 
     const dispose1 = installBadges();
-    expect(dotsOn(1)).toBe(1);
+    expect(markersOn(1)).toEqual(['explore']);
 
     const dispose2 = installBadges();
     const dispose3 = installBadges();
 
-    // Same handle every time.
     expect(dispose2).toBe(dispose1);
     expect(dispose3).toBe(dispose1);
 
-    // Still exactly one cluster / one dot — no duplicate render.
-    expect(document.querySelectorAll('.ogi-exp-dots').length).toBe(1);
-    expect(dotsOn(1)).toBe(1);
-
-    // Still exactly one style node — injectStyle is idempotent by id.
+    // Still exactly one column / one marker — no duplicate render.
+    expect(document.querySelectorAll('.oge-mb-col').length).toBe(1);
+    expect(markersOn(1)).toEqual(['explore']);
     expect(document.querySelectorAll('#oge-badges-style').length).toBe(1);
   });
 });
@@ -487,82 +551,57 @@ describe('installBadges — observer feedback loop', () => {
     vi.useRealTimers();
   });
 
-  it('does not feedback-loop on its own DOM mutations (regression for "DOM skacze")', async () => {
+  it('does not feedback-loop on its own DOM mutations', async () => {
     setupGameDOM({
-      expeditions: [
-        { coords: '1:2:3', name: 'P1', ships: 1, returning: true },
-      ],
-      planets: [{ cp: 1, name: 'P1', coords: '[1:2:3]' }],
+      legs: [{ id: 1, mission: '15', returning: true, origin: '1:2:3', dest: '9:9:9' }],
+      bodies: [{ cp: 1, coords: '[1:2:3]' }],
     });
     installBadges();
 
-    // Install-time render produces 1 cluster — capture it (its parent is
-    // the host we watch below for re-render activity).
-    const initial = document.querySelector('.ogi-exp-dots');
+    const initial = document.querySelector('.oge-mb-col');
     expect(initial).not.toBeNull();
 
-    // Count how many fresh clusters get appended into the host from here
-    // on. The regression we guard against is a feedback loop: our own
-    // clearBadges + appendChild firing the observer, which schedules a
-    // render, which fires the observer again — re-rendering every 200 ms
-    // debounce window. Over the settle window below such a loop would
-    // append the cluster ~9 times; with the observer correctly paused
-    // around our own writes it settles after the one render the external
-    // mutation legitimately triggers (plus the install-time waitFor
-    // re-render, which lands on the same host).
-    //
-    // We assert on the render RATE, not node identity. happy-dom delivers
-    // MutationObserver records on a microtask queue, so under fake timers
-    // a single benign re-render can slip through the tiny disconnect gap
-    // without indicating a loop — a `toBe(...)` identity check is too
-    // brittle a signal (it flaked under full-suite load on CI), the rate
-    // is the real one.
+    // Count how many fresh columns get appended into the host. A feedback loop
+    // (our own clearColumns + appendChild firing the observer, scheduling a
+    // render, firing the observer again) would re-append ~9× over the settle
+    // window; with the observer correctly paused around our writes it settles
+    // after the one render the external mutation legitimately triggers. We
+    // assert on RATE, not node identity (happy-dom delivers records on a
+    // microtask, so an occasional benign stray can slip the disconnect gap).
     const host = /** @type {HTMLElement} */ (
       /** @type {Element} */ (initial).parentElement
     );
-    let clusterAppends = 0;
-    const renderCounter = new MutationObserver((records) => {
+    let appends = 0;
+    const counter = new MutationObserver((records) => {
       for (const rec of records) {
         for (const node of rec.addedNodes) {
           if (
             node.nodeType === 1 &&
-            /** @type {Element} */ (node).classList.contains('ogi-exp-dots')
+            /** @type {Element} */ (node).classList.contains('oge-mb-col')
           ) {
-            clusterAppends += 1;
+            appends += 1;
           }
         }
       }
     });
-    renderCounter.observe(host, { childList: true });
+    counter.observe(host, { childList: true });
 
-    // Trigger ONE external mutation to wake the observer up. The new
-    // planet has no matching expedition, so render output is unchanged
-    // (still exactly one cluster on planet-1); we're testing whether
-    // the observer-driven render STAYS quiescent or feedback-loops on
-    // its own clearBadges + appendChild mutations.
-    const planetList = /** @type {HTMLElement} */ (
-      document.getElementById('planetList')
-    );
+    // One external mutation that does NOT change the render output (a new
+    // planet with no leg landing on it) to wake the observer.
+    const planetList = /** @type {HTMLElement} */ (document.getElementById('planetList'));
     const newRow = document.createElement('div');
     newRow.className = 'smallplanet';
     newRow.id = 'planet-2';
     newRow.innerHTML =
-      '<a class="planetlink"><span class="planet-name">P2</span>' +
-      '<span class="planet-koords">[4:5:6]</span>' +
+      '<a class="planetlink"><span class="planet-koords">[4:5:6]</span>' +
       '<span class="planetBarSpaceObjectContainer"></span></a>';
     planetList.appendChild(newRow);
 
-    // Settle well past several 200 ms debounce windows — a feedback loop
-    // would have re-rendered ~9× by now — but short of the 3 s safety
-    // poll (which legitimately re-renders and is NOT the loop under test).
+    // Settle past several 200ms debounce windows, short of the 3s safety poll.
     await vi.advanceTimersByTimeAsync(1800);
-    renderCounter.disconnect();
+    counter.disconnect();
 
-    // No feedback loop: only the render the external mutation triggered
-    // (plus the install-time waitFor re-render and, at most, a benign
-    // microtask-leaked stray) — never the runaway re-render-per-tick a
-    // loop would produce. And never a duplicate cluster.
-    expect(clusterAppends).toBeLessThan(4);
-    expect(document.querySelectorAll('.ogi-exp-dots').length).toBe(1);
+    expect(appends).toBeLessThan(4);
+    expect(document.querySelectorAll('.oge-mb-col').length).toBe(1);
   });
 });
