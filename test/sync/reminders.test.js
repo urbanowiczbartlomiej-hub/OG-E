@@ -45,12 +45,14 @@ describe('reminder file constants', () => {
     expect(REMINDER_FILENAME_RE.exec('README.md')).toBeNull();
   });
 
-  it('is at schema version 5', () => {
+  it('is at schema version 6', () => {
     // v1.5.0 bumped to v3 (per-universe files). v1.8.0 bumped to v4,
     // adding the ad-hoc reminder blocks. v1.9.0 bumped to v5, adding the
-    // fleet-save blocks; v3/v4 are read forward (additive migration),
+    // fleet-save blocks. v1.29.0 bumped to v6, adding the `landedFleetSave`
+    // block (landed fleet-saves kept on a TTL so planet markers flag the
+    // still-exposed fleet); v3/v4/v5 are read forward (additive migration),
     // older versions treated as absent.
-    expect(REMINDER_SCHEMA_VERSION).toBe(5);
+    expect(REMINDER_SCHEMA_VERSION).toBe(6);
   });
 
   it('exposes distinct chrome.storage mirror keys for the dashboard preview', () => {

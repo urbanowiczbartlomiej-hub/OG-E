@@ -4,6 +4,48 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.29.0] — 2026-06-20
+
+### Added
+
+- **Bare-fleet guardian — a warning when a fleet-save lands and is left sitting
+  exposed.** When one of your fleet-saves touches down with nothing covering it,
+  OG-E now flags it so you don't leave a fleet parked and vulnerable: an orange
+  "!" button appears on the floating menu — tap it to jump straight to the planet
+  or moon, hold it to dismiss. If you use OG-E's push reminders, the guardian
+  also sends an escalating ntfy notification a set number of minutes after
+  landing and keeps nudging until the fleet is safe. Switch it on and set the
+  interval under Reminders. A built-in safeguard guarantees a fleet-save reminder
+  still reaches you even if you never re-open the game after the fleet lands.
+- **A legend for the planet status markers.** A small "?" chip now sits at the
+  top of the planet list; hover it for a key that explains every marker — the
+  swatches are the real markers, so the legend always matches what's on screen.
+- **A heads-up when AntiGameReborn isn't detected.** OG-E relies on AGR for the
+  game data it reads, so if AGR is missing or disabled you now get a clear notice
+  instead of features quietly doing nothing.
+
+### Changed
+
+- **The incoming-attack marker is now a bold red "!!!"** instead of the small
+  red square — an attack heading at one of your planets is impossible to miss.
+- **The expedition marker is now a plain blue heart**, cleaner and easier to tell
+  apart from the other status dots.
+- **Everything that refreshes on a timer now shares one visibility-aware clock.**
+  OG-E's periodic re-paints and safety re-checks used to each run their own
+  forever-ticking timer; they now ride a single clock that pauses while the tab
+  is hidden and snaps every countdown and marker up to date the instant you
+  switch back — quieter in the background, identical when you're looking at it.
+- **The merchant 6× import-event highlight now lasts the whole multi-day event.**
+  It's recognised from two distinct sightings on the same day, so the
+  Import/Export highlight stays put across the full run instead of dropping out
+  on a second device.
+
+### Fixed
+
+- **The Daily Run button's label and its enabled state can no longer disagree.**
+  Both are now driven by the same "event box ready" gate, so the button never
+  shows an active label while it's still waiting (or the reverse).
+
 ## [1.28.0] — 2026-06-20
 
 ### Added

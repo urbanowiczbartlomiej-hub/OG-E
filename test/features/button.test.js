@@ -329,7 +329,18 @@ describe('long-press (hold) gesture on a zone', () => {
 describe('eventbox readiness gate (gateUntilEventBox)', () => {
   afterEach(() => {
     location.search = '';
+    delete (/** @type {any} */ (document)).readyState;
   });
+
+  // The real content script installs at run_at=document_start, so readyState is
+  // 'loading' when the gate arms. happy-dom reports 'complete', which would trip
+  // the gate's late-install fast-path and open it immediately; force the
+  // production value so the gate actually holds.
+  const pretendLoading = () =>
+    Object.defineProperty(document, 'readyState', {
+      configurable: true,
+      get: () => 'loading',
+    });
 
   /** @returns {{ taps: () => number, btn: HTMLElement }} */
   const make = () => {
@@ -352,6 +363,7 @@ describe('eventbox readiness gate (gateUntilEventBox)', () => {
 
   it('on fleetdispatch starts disabled and swallows taps until oge:eventBoxLoaded', () => {
     location.search = '?page=ingame&component=fleetdispatch';
+    pretendLoading();
     const { taps, btn } = make();
     expect(btn.getAttribute('aria-disabled')).toBe('true');
     btn.click();

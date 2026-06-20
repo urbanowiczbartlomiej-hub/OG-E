@@ -17,8 +17,21 @@ import {
 
 afterEach(() => {
   location.search = '';
+  // Drop any per-test readyState override so the next test sees happy-dom's
+  // native value again.
+  delete (/** @type {any} */ (document)).readyState;
   vi.useRealTimers();
 });
+
+// happy-dom reports document.readyState === 'complete' the moment the document
+// exists, which would trip whenEventBoxReady's "already past window 'load'"
+// fast-path and fire onReady synchronously. The waiting-path tests below need
+// the page to look mid-hydration, so force 'loading' for them.
+const pretendLoading = () =>
+  Object.defineProperty(document, 'readyState', {
+    configurable: true,
+    get: () => 'loading',
+  });
 
 describe('isFleetdispatchPage', () => {
   it('is true only when the component is fleetdispatch', () => {
@@ -40,6 +53,7 @@ describe('whenEventBoxReady', () => {
 
   it('on fleetdispatch waits, then fires once on oge:eventBoxLoaded', () => {
     location.search = '?component=fleetdispatch';
+    pretendLoading();
     let ready = 0;
     whenEventBoxReady(() => (ready += 1));
     expect(ready).toBe(0); // still waiting
@@ -54,6 +68,7 @@ describe('whenEventBoxReady', () => {
   it('on fleetdispatch opens via the safety timeout if no signal arrives', () => {
     vi.useFakeTimers();
     location.search = '?component=fleetdispatch';
+    pretendLoading();
     let ready = 0;
     whenEventBoxReady(() => (ready += 1));
     expect(ready).toBe(0);
@@ -63,6 +78,7 @@ describe('whenEventBoxReady', () => {
 
   it('teardown detaches the listener so a later signal does nothing', () => {
     location.search = '?component=fleetdispatch';
+    pretendLoading();
     let ready = 0;
     const stop = whenEventBoxReady(() => (ready += 1));
     stop();

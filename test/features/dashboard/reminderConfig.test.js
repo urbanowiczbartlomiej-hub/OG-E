@@ -138,6 +138,9 @@ describe('Reminders fleet-save config editor', () => {
     $('#remCfgFsThreshold').value = '250000';
     $('#remCfgFsMinFlight').value = '5m';
     setEditor('remCfgFsOffsets', ['-20m', '0m']);
+    // Guardian off so the offsets pass through verbatim (its "never-enters net"
+    // would otherwise inject a post-landing chip — covered by its own tests).
+    $('#remCfgGuardianEnabled').checked = false;
     $('#remCfgSave').dispatchEvent(new Event('click'));
     await flush();
 
@@ -174,9 +177,49 @@ describe('Reminders fleet-save config editor', () => {
     install().refresh();
     await flush();
     clearEditor('remCfgFsOffsets');
+    // Guardian off, else it injects a post-landing chip into the empty list.
+    $('#remCfgGuardianEnabled').checked = false;
     $('#remCfgSave').dispatchEvent(new Event('click'));
     await flush();
     expect(/** @type {any} */ (store.get(CFG_KEY)).fsOffsets).toBe('');
+  });
+
+  it('guardian on: injects a post-landing offset at the guardian interval', async () => {
+    // "Never-enters net" — the guardian arms on ENTRY, so a player who never
+    // re-enters after landing would otherwise get no ping. When no offset
+    // fires at or after the guardian interval, save auto-adds one (and reflects
+    // it in the editor) so the classic fleet-save reminder still reaches them.
+    install().refresh();
+    await flush();
+    $('#remCfgFsEnabled').checked = true;
+    $('#remCfgFsThreshold').value = '0';
+    $('#remCfgFsMinFlight').value = '0';
+    setEditor('remCfgFsOffsets', ['-20m', '0m']);
+    $('#remCfgGuardianEnabled').checked = true;
+    $('#remCfgGuardianInterval').value = '20';
+    $('#remCfgSave').dispatchEvent(new Event('click'));
+    await flush();
+
+    const saved = /** @type {any} */ (store.get(CFG_KEY));
+    expect(saved.guardianEnabled).toBe(true);
+    expect(saved.guardianIntervalMin).toBe(20);
+    expect(saved.fsOffsets).toBe('-20m, 0m, 20m'); // 20m chip injected
+  });
+
+  it('guardian on: does NOT inject when an offset already covers the interval', async () => {
+    install().refresh();
+    await flush();
+    $('#remCfgFsEnabled').checked = true;
+    $('#remCfgFsThreshold').value = '0';
+    $('#remCfgFsMinFlight').value = '0';
+    setEditor('remCfgFsOffsets', ['0m', '30m']);
+    $('#remCfgGuardianEnabled').checked = true;
+    $('#remCfgGuardianInterval').value = '20';
+    $('#remCfgSave').dispatchEvent(new Event('click'));
+    await flush();
+
+    // 30m ≥ the 20m interval already guarantees a post-landing ping — no inject.
+    expect(/** @type {any} */ (store.get(CFG_KEY)).fsOffsets).toBe('0m, 30m');
   });
 
   it('rejects an unparseable fleet-save offset row and does not save', async () => {

@@ -109,6 +109,9 @@ describe('extractFleetSaveCandidates', () => {
       {
         id: 'eventRow-100', arrivalAt: 1780230414, shipCount: 8256872,
         label: 'Deployment → [4:478:14]',
+        // Landing body key (g:s:p:type) — outbound leg lands at the dest planet.
+        // Byte-identical to badges/pure.js::bodyKey so the landed-FS flag aligns.
+        landingKey: '4:478:14:1',
         origin: '[7:281:15]', originName: 'P1', target: '[4:478:14]', targetName: 'Deep space',
       },
     ]);

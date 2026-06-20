@@ -175,11 +175,11 @@ describe('installBadges — style injection', () => {
     expect(styleEl).not.toBeNull();
     expect(styleEl?.textContent).toContain('.oge-mb-col');
     expect(styleEl?.textContent).toContain('.oge-mb-dot');
-    // Category + popover rules are present.
+    // Category + legend rules are present.
     expect(styleEl?.textContent).toContain('.oge-mb-threat');
-    expect(styleEl?.textContent).toContain('#oge-mb-pop');
-    // A popover element is parked on <body>.
-    expect(document.getElementById('oge-mb-pop')).not.toBeNull();
+    expect(styleEl?.textContent).toContain('.oge-mb-legend');
+    // The "?" legend chip is mounted at the top of the planet list.
+    expect(document.querySelector('.oge-mb-help')).not.toBeNull();
   });
 });
 
@@ -377,7 +377,9 @@ describe('installBadges — visibility via settings', () => {
 
     const hideEl = document.getElementById('oge-badges-hide-style');
     expect(hideEl).not.toBeNull();
-    expect(hideEl?.textContent).toContain('.oge-mb-col{display:none!important;}');
+    // The override hides the marker columns (and the "?" legend chip alongside).
+    expect(hideEl?.textContent).toContain('.oge-mb-col');
+    expect(hideEl?.textContent).toContain('display:none!important;');
   });
 
   it('hides columns (CSS, not removal) when toggled off after install', () => {
@@ -481,7 +483,7 @@ describe('installBadges — MutationObserver refresh', () => {
 // ──────────────────────────────────────────────────────────────────
 
 describe('installBadges — dispose', () => {
-  it('removes all columns, the popover, and style nodes', () => {
+  it('removes all columns, the legend chip, and style nodes', () => {
     setupGameDOM({
       legs: [{ id: 1, mission: '15', returning: true, origin: '1:2:3', dest: '9:9:9' }],
       bodies: [{ cp: 1, coords: '[1:2:3]' }],
@@ -490,14 +492,14 @@ describe('installBadges — dispose', () => {
 
     expect(document.querySelectorAll('.oge-mb-col').length).toBe(1);
     expect(document.getElementById('oge-badges-style')).not.toBeNull();
-    expect(document.getElementById('oge-mb-pop')).not.toBeNull();
+    expect(document.querySelector('.oge-mb-help')).not.toBeNull();
 
     dispose();
 
     expect(document.querySelectorAll('.oge-mb-col').length).toBe(0);
     expect(document.getElementById('oge-badges-style')).toBeNull();
     expect(document.getElementById('oge-badges-hide-style')).toBeNull();
-    expect(document.getElementById('oge-mb-pop')).toBeNull();
+    expect(document.querySelector('.oge-mb-help')).toBeNull();
   });
 
   it('also removes the hide-style when it was installed', () => {

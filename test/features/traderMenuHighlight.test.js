@@ -298,15 +298,16 @@ describe('installTraderMenuHighlight', () => {
     expect(findMenu()?.classList.contains(YELLOW_CLASS)).toBe(true);
   });
 
-  it('yellow returns after the bid snooze expires (safety-poll re-eval)', () => {
+  it('yellow returns after the bid snooze boundary fires', () => {
     vi.setSystemTime(new Date('2026-05-28T08:00:00'));
     installTraderMenuHighlight();
     document.dispatchEvent(new CustomEvent('oge:traderBidPlaced'));
     expect(findMenu()?.classList.contains(HIGHLIGHT_CLASS)).toBe(false);
 
-    // Past the 30-min snooze; the 60s poll re-evaluates.
-    vi.setSystemTime(new Date('2026-05-28T08:31:00'));
-    vi.advanceTimersByTime(60_000);
+    // The bid arms a single boundary wake at bid + 30-min snooze (no more 60s
+    // poll). Crossing it fires the scheduled timeout, which re-evaluates from
+    // fresh state — the snooze has lapsed, so yellow returns.
+    vi.advanceTimersByTime(31 * 60_000);
 
     expect(findMenu()?.classList.contains(YELLOW_CLASS)).toBe(true);
   });

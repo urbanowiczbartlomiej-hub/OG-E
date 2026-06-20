@@ -256,6 +256,8 @@ afterEach(() => {
   resetSettingsToDefaults();
   delete (/** @type {any} */ (window)).fleetDispatcher;
   unmockLocationHref();
+  // Drop any per-test readyState override (see the eventbox-gate test below).
+  delete (/** @type {any} */ (document)).readyState;
   navTarget = null;
 });
 
@@ -815,6 +817,14 @@ describe('installSendExpedition — eventbox readiness gate', () => {
     // (aria-disabled, greyed fill) until OGame's eventbox refresh XHR fires;
     // taps in that window are swallowed outright (no nav, no label change).
     setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
+    // The real content script installs at run_at=document_start, so readyState
+    // is 'loading' when the gate arms. happy-dom reports 'complete', which would
+    // trip the gate's late-install fast-path and open it immediately; force the
+    // production value so the gate actually holds.
+    Object.defineProperty(document, 'readyState', {
+      configurable: true,
+      get: () => 'loading',
+    });
     installSendExpedition();
     // Note: NO `oge:eventBoxLoaded` dispatched yet — that's the whole point.
 
