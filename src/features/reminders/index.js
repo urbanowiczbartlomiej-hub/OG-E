@@ -43,6 +43,7 @@ export const installReminders = () => {
   // dismiss routes back through producer.guardianDismiss.
   const guardian = installGuardian({
     dismiss: producer.guardianDismiss,
+    ack: producer.guardianAck,
     universeId: producer.universeId,
   });
   installed = () => {

@@ -25,8 +25,9 @@
 
 import { EVENT_BOX_LOADED_EVENT } from '../../lib/ogeEvents.js';
 import { GAME } from '../../lib/gameDom.js';
-import { createButton } from '../shared/button.js';
+import { createButton, labelLines } from '../shared/button.js';
 import { installButtonChrome } from '../shared/buttonChrome.js';
+import { settingsStore } from '../../state/settings.js';
 import { readLandedFs } from '../../state/fleetSaveSet.js';
 import { guardianDismissedLandings } from './guardianDismiss.js';
 
@@ -63,15 +64,23 @@ let btn = null;
 let bare = [];
 /** Producer command: cancel a body's ntfy push + persist the dismissal. */
 let dismissFn = /** @type {(bodyKey: string, landedAt: number) => void} */ (() => {});
+/** Producer command: snooze a body's push by the interval (the "I'm on it" ack). */
+let ackFn = /** @type {(bodyKey: string) => void} */ (() => {});
 /** This universe's id, for reading the persisted dismiss store. */
 let universeId = '';
+/** Whether the unified FAB is active — the guardian rides it like the command buttons. */
+let fabOn = false;
+/** Current FAB diameter (settings-driven), shared with the command modules. */
+let fabSize = 56;
 
 /** @param {string|null|undefined} s @returns {string} dense `g:s:p` */
 const dense = (s) => (s || '').replace(/[\s[\]]/g, '');
 
 /**
- * Navigate to the bare fleet's body via the left planet list — moon vs planet
- * picked from `type` (the badge bodyKey convention: 3 = moon, else planet).
+ * Navigate to the bare fleet's body's FLEET-DISPATCH page (ready to re-save) via
+ * the left planet list — moon vs planet picked from `type` (3 = moon, else
+ * planet). Reuses the planet-list link's own `cp` + base URL and swaps the
+ * component to `fleetdispatch`; falls back to the plain link if it carries no `cp`.
  *
  * @param {BareFleet} t
  * @returns {void}
@@ -82,18 +91,27 @@ const navigateToBody = (t) => {
     const href = sp
       .querySelector(t.type === 3 ? GAME.MOON_LINK : GAME.PLANET_LINK)
       ?.getAttribute('href');
-    if (href) {
+    if (!href) return;
+    const u = new URL(href, location.href);
+    if (u.searchParams.get('cp')) {
+      u.searchParams.set('page', 'ingame');
+      u.searchParams.set('component', 'fleetdispatch');
+      window.location.href = u.href;
+    } else {
       window.location.href = href;
-      return;
     }
+    return;
   }
 };
 
-/** Repaint the button face for the current bare set (small landing coords). */
+/**
+ * Repaint the button face: "Re-Save" primary, the landing coords as subtitle, and
+ * a "hold to dismiss" hint — the shared 3-line command-button label.
+ */
 const paint = () => {
   if (!btn || bare.length === 0) return;
   const sub = bare.length > 1 ? `${bare[0].coords} +${bare.length - 1}` : bare[0].coords;
-  btn.paintLines('g', [{ text: sub, em: '0.42em', opacity: 0.95 }]);
+  btn.paintLines('g', labelLines({ main: 'Re-Save', sub, hint: 'hold to dismiss' }));
 };
 
 /**
@@ -107,29 +125,37 @@ const dismissPrimary = () => {
   refresh();
 };
 
-/** Show / repaint / hide the button to match the bare set. */
+/**
+ * Show / repaint / hide the button to match the bare set. The guardian rides the
+ * unified FAB as its own module (like the command buttons), so it only mounts
+ * when a fleet is bare AND the FAB is enabled; the shell owns its position/drag.
+ */
 const render = () => {
-  if (bare.length > 0) {
+  if (bare.length > 0 && fabOn) {
     if (!btn) {
       installButtonChrome();
       btn = createButton({
         id: BTN_ID,
-        title: 'Goła flota — kliknij, by przejść; przytrzymaj, by odrzucić',
+        title: 'Bare fleet',
         ringId: 'oge-guardian-ring',
-        size: 64,
-        fontScale: 0.45,
-        posKey: 'oge_guardianBtnPos',
+        size: fabSize,
+        // Match the 1-zone command buttons (sendExpedition / sendLifeform) so the
+        // label reads at the same size across the FAB cluster.
+        fontScale: 0.18,
+        module: { id: 'guard', name: 'Bare fleet', color: RIM, glyph: BANG_GLYPH },
         holdMs: DISMISS_HOLD_MS,
         zones: [
           {
             key: 'g',
             id: 'oge-guardian-z',
-            ariaLabel: 'Goła flota',
+            ariaLabel: 'Bare fleet',
             bg: RIM,
             glyph: BANG_GLYPH,
-            labelShiftY: 9,
             onTap: () => {
-              if (bare[0]) navigateToBody(bare[0]);
+              const t = bare[0];
+              if (!t) return;
+              ackFn(t.bodyKey); // tapping = "I'm on it" → snooze the push
+              navigateToBody(t);
             },
             onHold: dismissPrimary,
           },
@@ -177,24 +203,48 @@ let installed = null;
  * @param {object} [opts]
  * @param {(bodyKey: string, landedAt: number) => void} [opts.dismiss]  Producer
  *   command that cancels a body's ntfy push + persists the dismissal.
- * @param {string} [opts.universeId]  This universe's id (persisted dismiss store).
+ * @param {(bodyKey: string) => void} [opts.ack]  Producer command that snoozes a
+ *   body's push by the interval (the tap = "I'm on it" ack).
+ * @param {string} [opts.universeId]  This universe's id (persisted dismiss/ack store).
  * @returns {() => void} dispose
  */
-export const installGuardian = ({ dismiss, universeId: uid } = {}) => {
+export const installGuardian = ({ dismiss, ack, universeId: uid } = {}) => {
   if (installed) return installed;
   dismissFn = typeof dismiss === 'function' ? dismiss : () => {};
+  ackFn = typeof ack === 'function' ? ack : () => {};
   universeId = uid || '';
+
+  // Ride the unified FAB: mirror the command buttons' fabMode visibility +
+  // fabBtnSize live-resize, so the guardian appears/sizes with the cluster.
+  const s0 = settingsStore.get();
+  fabOn = s0.fabMode;
+  fabSize = s0.fabBtnSize;
+  let prevSize = fabSize;
+  const unsubSettings = settingsStore.subscribe((next) => {
+    if (next.fabMode !== fabOn) {
+      fabOn = next.fabMode;
+      render();
+    }
+    if (next.fabBtnSize !== prevSize) {
+      prevSize = fabSize = next.fabBtnSize;
+      if (btn) btn.resize(fabSize);
+    }
+  });
+
   document.addEventListener(EVENT_BOX_LOADED_EVENT, refresh);
   refresh();
   installed = () => {
     document.removeEventListener(EVENT_BOX_LOADED_EVENT, refresh);
+    unsubSettings();
     if (btn) {
       btn.dispose();
       btn = null;
     }
     bare = [];
     dismissFn = () => {};
+    ackFn = () => {};
     universeId = '';
+    fabOn = false;
     installed = null;
   };
   return installed;

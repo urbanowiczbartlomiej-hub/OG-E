@@ -48,14 +48,16 @@ const writeGuardianDismiss = (universeId, map) => {
 };
 
 /**
- * Drop expired records (`expiresAt <= now`). Pure.
+ * Drop expired records (`expiresAt <= now`). Pure. Generic so both the dismiss
+ * and ack stores (which share the `expiresAt` shape) reuse it.
  *
- * @param {GuardianDismissMap} map
+ * @template {{ expiresAt: number }} T
+ * @param {Record<string, T>} map
  * @param {number} now Epoch SECONDS.
- * @returns {GuardianDismissMap}
+ * @returns {Record<string, T>}
  */
 const prune = (map, now) => {
-  /** @type {GuardianDismissMap} */
+  /** @type {Record<string, T>} */
   const out = {};
   for (const k of Object.keys(map)) {
     if (map[k] && map[k].expiresAt > now) out[k] = map[k];
@@ -95,5 +97,66 @@ export const guardianDismissedLandings = (universeId, now) => {
   /** @type {Record<string, number>} */
   const out = {};
   for (const k of Object.keys(pruned)) out[k] = pruned[k].landedAt;
+  return out;
+};
+
+// ── Ack (snooze) — the light "I'm on it" tap, sibling of dismiss ───────────
+// Tapping the button bumps the body's push to `ackedAt + interval` (the player
+// is clearly present and dealing with it), without the full dismiss. Same
+// durable, self-expiring, single-device, per-universe store.
+
+/**
+ * @typedef {{ ackedAt: number, expiresAt: number }} GuardianAckRecord
+ * @typedef {Record<string, GuardianAckRecord>} GuardianAckMap
+ */
+
+/** @param {string} universeId @returns {string} */
+const ackKeyFor = (universeId) => `oge_guardianAck_${universeId}`;
+
+/** @param {string} universeId @returns {GuardianAckMap} */
+const readGuardianAck = (universeId) => {
+  const v = safeLS.json(ackKeyFor(universeId), {});
+  return v && typeof v === 'object' && !Array.isArray(v) ? /** @type {GuardianAckMap} */ (v) : {};
+};
+
+/** @param {string} universeId @param {GuardianAckMap} map @returns {void} */
+const writeGuardianAck = (universeId, map) => {
+  if (Object.keys(map).length) safeLS.setJSON(ackKeyFor(universeId), map);
+  else safeLS.remove(ackKeyFor(universeId));
+};
+
+/**
+ * Record a guardian ACK (the player tapped "I'm on it"). Synchronous — must
+ * land before the tap navigates away.
+ *
+ * @param {string} universeId
+ * @param {string} bodyKey
+ * @param {number} ackedAt
+ * @param {number} expiresAt
+ * @param {number} now Epoch SECONDS.
+ * @returns {void}
+ */
+export const addGuardianAck = (universeId, bodyKey, ackedAt, expiresAt, now) => {
+  const map = prune(readGuardianAck(universeId), now);
+  map[bodyKey] = { ackedAt, expiresAt: Math.max(map[bodyKey]?.expiresAt ?? 0, expiresAt) };
+  writeGuardianAck(universeId, map);
+};
+
+/**
+ * Live (non-expired) acks as `{ bodyKey: ackedAt }`. The scheduler fires the
+ * push at `max(landedAt, ackedAt) + interval`, so a stale ack from a previous
+ * landing (ackedAt < the new landedAt) is naturally ignored. Prunes as a side
+ * effect (self-cleaning).
+ *
+ * @param {string} universeId
+ * @param {number} now Epoch SECONDS.
+ * @returns {Record<string, number>}
+ */
+export const guardianAckedLandings = (universeId, now) => {
+  const pruned = prune(readGuardianAck(universeId), now);
+  writeGuardianAck(universeId, pruned);
+  /** @type {Record<string, number>} */
+  const out = {};
+  for (const k of Object.keys(pruned)) out[k] = pruned[k].ackedAt;
   return out;
 };

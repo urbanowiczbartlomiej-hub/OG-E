@@ -113,6 +113,9 @@ import {
  * @property {number} [fsMinFlightSec] Minimum flight time (s) for a NEW save —
  *   excludes short planet⇄moon hops. The gate runs once, then the save is
  *   locked (see `domain/fleetSave.reconcileFleetSaves`).
+ * @property {boolean} [guardianEnabled]  Bare-fleet guardian push on/off.
+ * @property {number} [guardianIntervalSec]  Seconds after landing the guardian
+ *   push fires (falls back to GUARDIAN_INTERVAL_SEC when absent).
  * @property {string} ntfyToken
  * @property {string} [schedule]  Free-form wave reminder schedule — a
  *   minutes-first duration list (see `ntfyReconciler.offsetsForSchedule`).
@@ -533,6 +536,8 @@ const resolveNtfyToken = async (configToken) => {
  *   fleets are leaving this scan — feeds the landed-FS early-clear.
  * @param {Record<string, number>} [dom.guardianDismissed]  Dismissed guardian
  *   landings as `bodyKey → landedAt`; suppresses that body's guardian push.
+ * @param {Record<string, number>} [dom.guardianAcked]  Acked guardian landings as
+ *   `bodyKey → ackedAt`; bumps the push to `max(landedAt, ackedAt) + interval`.
  * @param {number} now             Epoch SECONDS, injected by the caller.
  * @param {string} universeId      OGame server id; ntfy push title prefix.
  * @returns {Promise<{ ok: boolean, reason?: string, changed?: boolean, scheduled?: number, cancelled?: number, fleetSave?: FleetSaveReminder[], landedFleetSave?: LandedFleetSave[] }>}
@@ -547,7 +552,7 @@ export const syncReminders = async (config, dom, now, universeId) => {
   const {
     waveCandidates, present, adhocMutate, waveMutate,
     fleetSaveCandidates = [], fsCancelById = {}, departingKeys = new Set(),
-    guardianDismissed = {},
+    guardianDismissed = {}, guardianAcked = {},
   } = dom;
 
   // Token resolution: prefer per-origin localStorage value; fall back
@@ -706,13 +711,14 @@ export const syncReminders = async (config, dom, now, universeId) => {
     // longer a live entry. Reconciled under its own title, so it never sweeps
     // the other kinds. State-free in the gist: the queue itself is the source of
     // truth — only the local dismiss store persists.
-    const liveGuardian = fsActive
+    const guardianIntervalSec = config.guardianIntervalSec ?? GUARDIAN_INTERVAL_SEC;
+    const liveGuardian = fsActive && Boolean(config.guardianEnabled)
       ? landedFleetSave
           .filter((l) => guardianDismissed[l.bodyKey] !== l.landedAt)
           .map((l) => ({
             bodyKey: l.bodyKey,
             coords: l.bodyKey.split(':').slice(0, 3).join(':'),
-            fireAt: l.landedAt + GUARDIAN_INTERVAL_SEC,
+            fireAt: Math.max(l.landedAt, guardianAcked[l.bodyKey] ?? 0) + guardianIntervalSec,
           }))
       : [];
     const guardianRes = await reconcileGuardianQueue({

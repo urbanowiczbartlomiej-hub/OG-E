@@ -494,6 +494,18 @@ export const installReminderConfig = ({ getUniverseId }) => {
     reference: 'landing',
   });
 
+  const guardianEnableInput = /** @type {HTMLInputElement} */ (mk('input'));
+  guardianEnableInput.type = 'checkbox';
+  guardianEnableInput.id = 'remCfgGuardianEnabled';
+
+  const guardianIntervalInput = /** @type {HTMLInputElement} */ (mk('input'));
+  guardianIntervalInput.type = 'text';
+  guardianIntervalInput.id = 'remCfgGuardianInterval';
+  guardianIntervalInput.size = 8;
+  guardianIntervalInput.placeholder = 'e.g. 20';
+  guardianIntervalInput.title =
+    'Minutes after a fleet-save lands that the guardian push fires if it is still sitting bare.';
+
   // ── message template editors (one per kind) ──────────────────────────
   const waveTplEditor = makeTemplateEditor({ kind: 'wave', idBase: 'remCfgTplWave' });
   const adhocTplEditor = makeTemplateEditor({ kind: 'adhoc', idBase: 'remCfgTplAdhoc' });
@@ -622,6 +634,8 @@ export const installReminderConfig = ({ getUniverseId }) => {
     row('Ship threshold', thresholdInput, 'total ships that count as a "big" fleet'),
     row('Min flight time', minFlightInput, 'minutes-first, e.g. 10m · 0 = off'),
     block('Reminder schedule', fsEditor.element, 'each relative to landing (− before, 0 at, + after)'),
+    row('Guardian — enable', guardianEnableInput, 'push when a landed fleet-save sits exposed'),
+    row('Guardian interval', guardianIntervalInput, 'minutes after landing to fire if still bare'),
   ], fsTplEditor.element);
 
   body.appendChild(tabBar);
@@ -662,6 +676,8 @@ export const installReminderConfig = ({ getUniverseId }) => {
     thresholdInput.value = String(cfg.fsThreshold);
     minFlightInput.value = formatDuration(cfg.fsMinFlightSec);
     fsEditor.setFromString(cfg.fsOffsets);
+    guardianEnableInput.checked = cfg.guardianEnabled;
+    guardianIntervalInput.value = String(cfg.guardianIntervalMin);
   };
 
   /**
@@ -697,7 +713,7 @@ export const installReminderConfig = ({ getUniverseId }) => {
    * value. The offsets come from the row editor (already validated per-row); an
    * empty list is allowed (no fleet-save pings).
    *
-   * @returns {Pick<import('../../domain/galaxyScanConfig.js').GalaxyScanConfig, 'fsEnabled' | 'fsThreshold' | 'fsMinFlightSec' | 'fsOffsets'> | null}
+   * @returns {Pick<import('../../domain/galaxyScanConfig.js').GalaxyScanConfig, 'fsEnabled' | 'fsThreshold' | 'fsMinFlightSec' | 'fsOffsets' | 'guardianEnabled' | 'guardianIntervalMin'> | null}
    */
   const collectFs = () => {
     const threshold = parseInt(thresholdInput.value, 10);
@@ -715,11 +731,32 @@ export const installReminderConfig = ({ getUniverseId }) => {
       setStatus('Fleet-save schedule — each reminder must be a duration like -10m, 0m, 10m.', '#e66');
       return null;
     }
+    const guardianIntervalMin = parseInt(guardianIntervalInput.value, 10);
+    if (!Number.isFinite(guardianIntervalMin) || guardianIntervalMin < 1) {
+      setStatus('Guardian interval must be a whole number of minutes (≥ 1).', '#e66');
+      return null;
+    }
+    // Never-enters net: the guardian arms on ENTRY, so a player who never
+    // re-enters after landing would get no warning at all. With the guardian on,
+    // guarantee the classic FS reminder still pings them — auto-add a post-landing
+    // reminder at the guardian interval if none already fires at or after it. The
+    // injected chip shows in the editor so the change is visible.
+    let fsOffsets = offsets;
+    if (guardianEnableInput.checked) {
+      const need = guardianIntervalMin * 60;
+      const parsed = parseDurationList(offsets, { signed: true });
+      if (!parsed.some((o) => o >= need)) {
+        fsOffsets = [...new Set([...parsed, need])].sort((a, b) => a - b).map(formatDuration).join(', ');
+        fsEditor.setFromString(fsOffsets);
+      }
+    }
     return {
       fsEnabled: enabledInput.checked,
       fsThreshold: threshold,
       fsMinFlightSec: minFlight,
-      fsOffsets: offsets,
+      fsOffsets,
+      guardianEnabled: guardianEnableInput.checked,
+      guardianIntervalMin,
     };
   };
 

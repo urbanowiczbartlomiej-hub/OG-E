@@ -93,6 +93,10 @@ import { parseDuration } from './duration.js';
  *   as a fleet-save — excludes short planet⇄moon hops. Server-speed dependent.
  * @property {string} fsOffsets  Fleet-save reminder offsets relative to landing
  *   (comma-separated, minutes-first; negative = before, 0 = at, + = after).
+ * @property {boolean} guardianEnabled  Bare-fleet guardian on/off: an escalation
+ *   ntfy push when a landed fleet-save sits exposed (no re-save). Per-universe.
+ * @property {number} guardianIntervalMin  Minutes after landing the guardian push
+ *   fires if the fleet is still sitting bare.
  * @property {GalaxyScanRescan} rescan  Per-status rescan policy inputs.
  */
 
@@ -139,6 +143,8 @@ export const defaultGalaxyScanConfig = () => ({
   fsThreshold: 100000,
   fsMinFlightSec: 600,
   fsOffsets: '-10m, 0m, 10m',
+  guardianEnabled: true,
+  guardianIntervalMin: 20,
   rescan: {
     emptySent: 4 * H,        // 4h
     empty: 0,                // never (opt-in for aggressive play)
@@ -220,6 +226,9 @@ export const normalizeGalaxyScanConfig = (raw) => {
     fsThreshold: coerceSeconds(r.fsThreshold, d.fsThreshold),
     fsMinFlightSec: coerceSeconds(r.fsMinFlightSec, d.fsMinFlightSec),
     fsOffsets: typeof r.fsOffsets === 'string' ? r.fsOffsets : d.fsOffsets,
+    guardianEnabled:
+      typeof r.guardianEnabled === 'boolean' ? r.guardianEnabled : d.guardianEnabled,
+    guardianIntervalMin: coerceSeconds(r.guardianIntervalMin, d.guardianIntervalMin),
     rescan,
   };
 };
