@@ -67,8 +67,9 @@
 //   1. `installTraderMenuHighlight()` injects the stylesheet once.
 //   2. `applyHighlight()` runs immediately, on every debounced
 //      MutationObserver tick (catches AJAX menu rebuilds and the overview
-//      rendering), and on a 60-second safety-poll (catches window/day
-//      boundaries and bid-snooze expiry while idle).
+//      rendering), and — for purely time-based crossings while idle (window
+//      edges, midnight, snooze expiry) — when a single `clock.scheduleAt`
+//      timer fires at the next boundary (see `nextTraderBoundary`).
 //   3. Document-level listeners for `oge:traderBidPlaced` /
 //      `oge:traderImportTraded` stamp storage and re-render immediately.
 //   4. settingsStore subscription reacts to the on/off toggle.
@@ -85,6 +86,7 @@ import { settingsStore } from '../state/settings.js';
 import { GAME } from '../lib/gameDom.js';
 import { parseTraderCountdown } from '../domain/traderCountdown.js';
 import { parseClockTime, nextDailyOccurrence } from '../domain/traderClock.js';
+import { clock } from '../lib/clock.js';
 import {
   TRADER_AUCTION_BID_KEY,
   TRADER_IMPORT_KEY,
@@ -315,7 +317,6 @@ const CSS = `
 `;
 
 const REFRESH_DEBOUNCE_MS = 150;
-const SAFETY_POLL_MS = 60_000;
 
 /**
  * Local calendar-day key (`YYYY-MM-DD`) for the given moment. Used to
@@ -395,6 +396,39 @@ export const traderGlows = (now, state) => {
   const menu = importPending ? 'red' : auctionPending ? 'yellow' : 'off';
 
   return { menu, auctionPending, importPending };
+};
+
+/**
+ * The next epoch-ms at which {@link traderGlows} could change its verdict for
+ * the given `state` — the soonest of: the auction window edges (open at
+ * {@link AUCTION_START_HOUR}, close at {@link AUCTION_END_HOUR}), the import
+ * gate ({@link IMPORT_START_HOUR}), local midnight (day rollover), the
+ * post-bid snooze expiry, the auctioneer quiet-until, and the event-mode
+ * "come back at" time. Lets the feature wake EXACTLY at the next boundary
+ * instead of polling. The daily hour/midnight terms guarantee a future
+ * result; `null` only if nothing is computable.
+ *
+ * @param {Date} now
+ * @param {TraderState} state
+ * @returns {number | null}
+ */
+export const nextTraderBoundary = (now, state) => {
+  const nowMs = now.getTime();
+  const candidates = [
+    nextDailyOccurrence(now, { hours: AUCTION_START_HOUR, minutes: 0 }),
+    nextDailyOccurrence(now, { hours: AUCTION_END_HOUR, minutes: 0 }),
+    nextDailyOccurrence(now, { hours: IMPORT_START_HOUR, minutes: 0 }),
+    nextDailyOccurrence(now, { hours: 0, minutes: 0 }), // local midnight
+  ];
+  const bidAt = state?.auctionBidAt ?? null;
+  if (bidAt !== null) candidates.push(bidAt + BID_SNOOZE_MS);
+  const quietUntil = state?.auctionQuietUntil ?? null;
+  if (quietUntil !== null) candidates.push(quietUntil);
+  const importNextAt = state?.importNextAt ?? null;
+  if (importNextAt !== null) candidates.push(importNextAt);
+
+  const future = candidates.filter((t) => t > nowMs);
+  return future.length ? Math.min(...future) : null;
 };
 
 /**
@@ -532,6 +566,9 @@ const applyHighlight = () => {
   paint(findMenuAnchor(), menu, true);
   paint(findByHint(AUCTION_HINT), auctionPending ? 'yellow' : 'off');
   paint(findByHint(IMPORT_HINT), importPending ? 'red' : 'off');
+  // Re-arm the boundary wake from fresh state — covers every repaint path
+  // (refresh after a scan, bid placed, import traded).
+  boundary?.reschedule();
 };
 
 /**
@@ -676,6 +713,9 @@ const teardownDom = () => {
 /** @type {{ dispose: () => void } | null} */
 let installed = null;
 
+/** @type {{ reschedule: () => void, dispose: () => void } | null} */
+let boundary = null;
+
 /**
  * Install the Trader highlight feature. Idempotent.
  *
@@ -685,6 +725,13 @@ export const installTraderMenuHighlight = () => {
   if (installed) return installed.dispose;
 
   injectStyle(STYLE_ID, CSS);
+  // Wake exactly at the next policy boundary (window edges, midnight, snooze
+  // expiry, the event "come back at" time) instead of polling. Re-armed by
+  // every `applyHighlight()`; the initial `refresh()` below makes the first arm.
+  boundary = clock.scheduleAt(
+    () => nextTraderBoundary(new Date(), readState()),
+    applyHighlight,
+  );
   refresh();
 
   const scheduleRefresh = debounce(() => {
@@ -698,12 +745,6 @@ export const installTraderMenuHighlight = () => {
   // 150 ms debounce coalesces bursts.
   const observer = new MutationObserver(scheduleRefresh);
   observer.observe(document.body, { childList: true, subtree: true });
-
-  // 60-second safety-poll: covers idle crossings of the auction/import
-  // window boundaries, local midnight, and bid-snooze expiry.
-  const safetyPoll = setInterval(() => {
-    if (installed) refresh();
-  }, SAFETY_POLL_MS);
 
   document.addEventListener(TRADER_BID_PLACED_EVENT, onBidPlaced);
   document.addEventListener(TRADER_IMPORT_TRADED_EVENT, onImportTraded);
@@ -723,7 +764,8 @@ export const installTraderMenuHighlight = () => {
   installed = {
     dispose: () => {
       observer.disconnect();
-      clearInterval(safetyPoll);
+      boundary?.dispose();
+      boundary = null;
       document.removeEventListener(TRADER_BID_PLACED_EVENT, onBidPlaced);
       document.removeEventListener(TRADER_IMPORT_TRADED_EVENT, onImportTraded);
       unsubSettings();

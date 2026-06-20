@@ -56,6 +56,8 @@ const EPS_MS = BASE_MS / 2;
  * @property {() => number} [now]                     Defaults to `Date.now`.
  * @property {(fn: () => void, ms: number) => unknown} [setInterval]
  * @property {(id: unknown) => void} [clearInterval]
+ * @property {(fn: () => void, ms: number) => unknown} [setTimeout]
+ * @property {(id: unknown) => void} [clearTimeout]
  * @property {{ hidden: boolean,
  *   addEventListener: (t: string, h: () => void) => void,
  *   removeEventListener: (t: string, h: () => void) => void } | undefined} [doc]
@@ -72,12 +74,15 @@ const EPS_MS = BASE_MS / 2;
  *
  * @param {ClockDeps} [deps]
  * @returns {{ subscribe: (cb: () => void, opts?: { everyMs?: number, whileHidden?: boolean }) => () => void,
+ *   scheduleAt: (getNextWakeTs: (nowTs: number) => number | null, cb: () => void) => { reschedule: () => void, dispose: () => void },
  *   _dispose: () => void }}
  */
 export const createClock = (deps = {}) => {
   const now = deps.now ?? (() => Date.now());
   const setIv = deps.setInterval ?? ((fn, ms) => globalThis.setInterval(fn, ms));
   const clearIv = deps.clearInterval ?? ((id) => globalThis.clearInterval(/** @type {number} */ (id)));
+  const setTo = deps.setTimeout ?? ((fn, ms) => globalThis.setTimeout(fn, ms));
+  const clearTo = deps.clearTimeout ?? ((id) => globalThis.clearTimeout(/** @type {number} */ (id)));
   const doc = deps.doc ?? (typeof document !== 'undefined' ? document : undefined);
 
   /** @type {Set<Subscription>} */
@@ -170,6 +175,43 @@ export const createClock = (deps = {}) => {
         ensureRunning();
         if (subs.size === 0) unbindVis();
       };
+    },
+
+    /**
+     * Schedule a single callback for an absolute future instant, re-derived
+     * on demand. Unlike `subscribe`, this is NOT a poll and NOT visibility-
+     * gated: it arms exactly ONE timeout for the next wake and fires `cb`
+     * when it elapses. It does NOT auto-rearm — the caller re-arms by calling
+     * `reschedule()` (typically from within `cb`, and on any out-of-band
+     * change that moves the next wake time). This turns "poll every N s to
+     * catch a time boundary" into "sleep precisely until the boundary".
+     *
+     * @param {(nowTs: number) => number | null} getNextWakeTs Next wake as an
+     *   absolute epoch-ms, or `null` to stay unarmed. A past time fires on
+     *   the next macrotask (delay clamped to 0).
+     * @param {() => void} cb Invoked once when the armed time elapses.
+     * @returns {{ reschedule: () => void, dispose: () => void }}
+     */
+    scheduleAt: (getNextWakeTs, cb) => {
+      /** @type {unknown} */
+      let timer = null;
+      const clear = () => {
+        if (timer !== null) {
+          clearTo(timer);
+          timer = null;
+        }
+      };
+      const reschedule = () => {
+        clear();
+        const t = now();
+        const next = getNextWakeTs(t);
+        if (next === null) return;
+        timer = setTo(() => {
+          timer = null;
+          cb();
+        }, Math.max(0, next - t));
+      };
+      return { reschedule, dispose: clear };
     },
 
     /** Stop everything and forget all subscribers. For test resets. */
