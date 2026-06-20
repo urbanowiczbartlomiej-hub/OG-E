@@ -361,8 +361,20 @@ export const installReminderProducer = (opts = {}) => {
         // planet markers (which mark FS fleets without importing reminders).
         // `fsOn` gates both so a disabled FS leaves no stale markers; the values
         // persist for the next reload.
+        //
+        // The landed set is DISMISS-PRUNED before publishing so `readLandedFs()`
+        // is the single dismiss-aware channel both passive surfaces share. The
+        // badge can't read the local guardian-dismiss store directly (it lives in
+        // THIS feature, and a feature may not import another), so without this a
+        // hold-to-dismiss would clear the button + push yet leave the orange "FS"
+        // badge lit for the full TTL. We prune the PUBLISHED copy only — the gist
+        // `landedFleetSave` stays raw — so dismiss remains a LOCAL, un-synced act,
+        // in step with `guardianDismiss.js`.
         writeFleetSaveIds(fsOn ? (res.fleetSave ?? []).map((e) => e.id) : []);
-        writeLandedFs(fsOn ? (res.landedFleetSave ?? []) : []);
+        const liveLanded = (res.landedFleetSave ?? []).filter(
+          (l) => guardianDismissed[l.bodyKey] !== l.landedAt,
+        );
+        writeLandedFs(fsOn ? liveLanded : []);
         // Drop the commands we applied; keep any the user queued meanwhile.
         writePending(universeId, readPending(universeId).slice(pending.length));
       } else {
