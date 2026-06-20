@@ -112,12 +112,11 @@ Before merging anything that touches DOM behaviour:
 
 ## Release workflow
 
-The whole release is one flagless command (`npm run release X.Y.Z`) with a
-short by-hand prep (a dated `CHANGELOG.md` section left uncommitted;
-`AMO_JWT_*` secrets in a gitignored `.env`, or push a `vX.Y.Z` tag and let
-the GitHub Action publish). The authoritative, step-by-step procedure lives
-in [`CLAUDE.md`](CLAUDE.md) (§Release checklist). Follow and update it there;
-don't restate it here.
+Releases are automatic: bump the version in `package.json` + `manifest.json`,
+add a dated `CHANGELOG.md` section, and push that `chore(release): X.Y.Z`
+commit to `main` — CI tags it and publishes to AMO (we never push tags by
+hand). The authoritative, step-by-step procedure lives in [`CLAUDE.md`](CLAUDE.md)
+(§Release checklist). Follow and update it there; don't restate it here.
 
 Before releasing anything that touches DOM behaviour, spot-check the
 in-game checklist above on both Firefox and Chrome.

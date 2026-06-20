@@ -92,43 +92,39 @@ event, stored value), not internals. Tests are hermetic: no real network (the
 shared `test/setup.js` neuters `fetch` + `XMLHttpRequest.send`), so stub any
 request the code under test makes.
 
-## Release checklist (one flagless command, two ways to run it)
+## Release checklist (one path: bump the version, push to `main`)
 
-`scripts/release.mjs` takes ONLY a version — no flags. It auto-detects its
-situation, so the SAME command serves both release paths and they never
-collide (upload skipped if the version is already on AMO; commit/tag skipped if
-the tag exists; push skipped when HEAD is detached). The two paths:
+There is exactly ONE way to publish, and **we never cut a `vX.Y.Z` tag by
+hand** — `.github/workflows/release.yml` mints it. You bump the version and
+push to `main`; CI does everything else (tags, tests, packages, uploads to AMO).
 
-- **Manual (local, with `.env` creds):** `npm run release 1.25.1` on `main`.
-  Validates the CHANGELOG, runs tests + typecheck, bumps `package.json` +
-  `manifest.json`, packages, commits + tags `vX.Y.Z`, **uploads to AMO via the
-  API**, then pushes the branch + tag. (Pushing the tag fires the workflow,
-  which then no-ops because the version is already on AMO.)
-- **Official (GitHub Action, on a `vX.Y.Z` tag):** `.github/workflows/release.yml`
-  checks out the tag and runs the same `node scripts/release.mjs <ver>` with the
-  repo secrets. HEAD is detached + the tag exists, so it skips commit/tag/push
-  and just uploads. Use this when you have no local creds: cut the tag with
-  `npm run release` (it bumps/commits/tags/pushes, skipping the upload when no
-  creds are present) and CI publishes it.
+The procedure:
 
-Before releasing, do the two prep steps. **First, reconcile the tests** — this
-is the moment the session's deferred test work happens: add/fix tests for
-everything that changed and get `npm run test` green (the release script's gate
-will block the publish otherwise). **Second** (the one manual content step): add
-the dated `## [X.Y.Z] — YYYY-MM-DD` section to `CHANGELOG.md`. Leave it
-uncommitted — the
-script commits it together with the version bump into the single
-`chore(release): X.Y.Z` commit the tag points at, and sends it verbatim as the
-public AMO release notes. The script refuses to run without it, requires a
-clean tree EXCEPT the three release files (`CHANGELOG.md` / `package.json` /
-`manifest.json`), and hard-asserts `dist.zip` + `source.zip` before uploading.
-Git stays local until AMO accepts the archive. Because a tag push = a **public**
-release that auto-updates existing users, confirm with the user before pushing.
+1. **Reconcile the tests** — this is the moment the session's deferred test
+   work happens: add/fix tests for everything that changed and get
+   `npm run test` green. (CI re-runs `npm run test` + `npm run typecheck` as a
+   hard gate inside `scripts/release.mjs`, so a red suite blocks the publish.)
+2. **Add the dated `## [X.Y.Z] — YYYY-MM-DD` section to `CHANGELOG.md`** (the
+   one manual content step). It is sent verbatim as the public AMO release
+   notes *and* it is the trigger — CI publishes only a version whose CHANGELOG
+   section exists.
+3. **Bump `"version"` in `package.json` AND `manifest.json`** to `X.Y.Z`.
+4. **Commit all three together** as `chore(release): X.Y.Z` and **push to
+   `main`**. Because that push = a **public** release that auto-updates existing
+   users, confirm with the user before pushing.
 
-`AMO_JWT_ISSUER` / `AMO_JWT_SECRET` live as GitHub repo secrets (for the
-Action) and in a gitignored local `.env` (loaded automatically by
-`npm run release`; see `.env.example`). With neither present the upload is
-simply skipped — the bump/commit/tag/push still run.
+On that push, `release.yml` sees the new, documented version, mints + pushes the
+`vX.Y.Z` tag, checks it out (detached HEAD) and runs `scripts/release.mjs` —
+which validates the CHANGELOG, runs the test + typecheck gate, packages
+`dist.zip` + `source.zip` (hard-asserting both), and uploads to AMO. The script
+auto-detects this CI situation (tag present + detached HEAD) and skips its own
+commit/tag/push, so it only uploads.
+
+`AMO_JWT_ISSUER` / `AMO_JWT_SECRET` are GitHub repo secrets the Action injects;
+the workflow also needs **Settings → Actions → Workflow permissions = "Read and
+write"** to push the tag. (`scripts/release.mjs` still accepts `.env` creds and
+can be run locally as a break-glass fallback — it bumps, commits, tags, uploads,
+and pushes — but the push-to-`main` path above is the only one we use.)
 
 ## AMO note fields (sent automatically by the script)
 

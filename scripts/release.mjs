@@ -10,15 +10,17 @@
 //     version, commits + tags vX.Y.Z, uploads to AMO via the API, and pushes
 //     the branch + tag. The whole release, from your machine.
 //
-//   • OFFICIAL (GitHub Action, on a vX.Y.Z tag): the workflow checks out the
-//     tag and runs this same script. HEAD is detached and the tag already
-//     exists, so it SKIPS the commit/tag and the push, and just uploads.
+//   • CI (GitHub Action, on push to main): release.yml mints + pushes the
+//     vX.Y.Z tag, checks it out, and runs this same script. HEAD is detached
+//     and the tag already exists, so it SKIPS the commit/tag and the push, and
+//     just uploads. This is the path we actually use — we never push tags by
+//     hand; the local path above is a break-glass fallback.
 //
 // The two paths never collide: an upload is skipped if the version is already
 // on AMO, the commit/tag is skipped if the tag exists, and the push is skipped
-// when HEAD is detached (CI) — all detected, no flags. So a local release that
-// pushes its tag simply makes the triggered CI run a no-op, and a tag pushed
-// on its own (version bumped + committed first) gets published by CI.
+// when HEAD is detached (CI) — all detected, no flags. So if a break-glass
+// local release publishes first, the push-to-main that lands the same commit
+// makes CI's run a clean no-op (the tag already exists → release.yml skips).
 //
 // Phases (each guarded so a re-run after a failure resumes cleanly):
 //   0. parse version; require a clean tree EXCEPT CHANGELOG/package/manifest
