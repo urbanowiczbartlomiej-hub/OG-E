@@ -9,7 +9,8 @@
 //
 //   🟥 red SQUARE  — incoming attack (a foreign aggressive fleet at me) — danger
 //   🔴 red circle  — my own aggression flying out
-//   🟡 yellow      — a detected fleet-save
+//   "FS" yellow    — a detected fleet-save in motion (a text tag, not a dot)
+//   "FS" orange    — a fleet-save that LANDED and sits exposed (synced, TTL'd)
 //   💙 teal HEART  — my expedition
 //   🟢 green       — my logistics (transport / deploy / ACS defend)
 //   🔵 blue        — my recycle
@@ -41,7 +42,7 @@
 
 import { settingsStore } from '../../state/settings.js';
 import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
-import { readFleetSaveIds } from '../../state/fleetSaveSet.js';
+import { readFleetSaveIds, readLandedFs } from '../../state/fleetSaveSet.js';
 import { readBadgeCache, writeBadgeCache, clearBadgeCache } from '../../state/badgeCache.js';
 import { injectStyle, waitFor } from '../../lib/dom.js';
 import { debounce } from '../../lib/debounce.js';
@@ -188,7 +189,7 @@ const buildCss = () => `
 }
 .${MOON_COL_CLASS}{
   right:auto;
-  left:calc(100% + 3px);
+  left:calc(100% - 12px);
 }
 .${DOT_CLASS}{
   width:7px;
@@ -201,17 +202,18 @@ const buildCss = () => `
 /* Mine = round; the external THREAT is the odd square. */
 .oge-mb-threat{background:#e24b4a;border-radius:1px;}
 .oge-mb-aggro{background:#e24b4a;}
-.oge-mb-fs{background:#f0c23c;}
 .oge-mb-logistics{background:#4caf6a;}
 .oge-mb-economy{background:#3d7fd0;}
-/* Expedition heart — the expeditor's pride. A glyph, not a filled dot. */
-.oge-mb-explore{
+/* Glyph markers (not filled dots): the expedition heart and the "FS" tag. */
+.oge-mb-explore,.oge-mb-fs{
   width:auto;height:auto;
   background:none;box-shadow:none;border-radius:0;
-  color:#3fb6c8;
-  font:9px/1 Verdana,sans-serif;
   text-shadow:0 0 2px #000,0 0 1px #000;
 }
+.oge-mb-explore{color:#3fb6c8;font:9px/1 Verdana,sans-serif;}
+.oge-mb-fs{color:#f0c23c;font:700 8px/1 Verdana,sans-serif;letter-spacing:-.5px;}
+/* Landed fleet-save: same "FS" tag, orange = sitting exposed after touchdown. */
+.oge-mb-fs.landed{color:#e8902e;}
 #${POP_ID}{
   position:fixed;
   z-index:99999;
@@ -327,9 +329,10 @@ const clearColumns = () => {
  */
 const buildMarker = (m) => {
   const el = document.createElement('span');
-  el.className = `${DOT_CLASS} oge-mb-${m.category}`;
+  el.className = `${DOT_CLASS} oge-mb-${m.category}${m.landed ? ' landed' : ''}`;
   if (m.category === 'explore') el.textContent = '♥';
-  const label = MARKER_LABEL[m.category] || 'Fleet';
+  else if (m.category === 'fs') el.textContent = 'FS';
+  const label = m.landed ? 'Fleet-save · landed (exposed)' : MARKER_LABEL[m.category] || 'Fleet';
   el.title = label;
   markerDetail.set(el, { label, category: m.category, fleets: m.fleets });
   return el;
@@ -365,6 +368,20 @@ const fsIdSet = () => {
 };
 
 /**
+ * Body keys with a LANDED (exposed) fleet-save, filtered to the still-unexpired
+ * ones (the producer publishes `expiresAt`; we drop the rest here so the orange
+ * flag self-clears even between syncs). Gated like {@link fsIdSet}.
+ *
+ * @returns {Set<string>}
+ */
+const landedFsKeySet = () => {
+  const on = settingsStore.get().remindersMasterEnabled && galaxyScanConfigStore.get().fsEnabled;
+  const now = Date.now() / 1000;
+  const keys = on ? readLandedFs().filter((e) => Number(e.expiresAt) > now).map((e) => e.bodyKey) : [];
+  return new Set(keys);
+};
+
+/**
  * Paint one body's marker column. Shared by the live render and the optimistic
  * cache render so both produce identical DOM.
  *
@@ -396,7 +413,9 @@ const slimSnapshot = (snapshot) => {
   /** @type {Record<string, string[]>} */
   const out = {};
   for (const [key, markers] of Object.entries(snapshot)) {
-    out[key] = markers.map((m) => m.category);
+    // Encode a landed FS as a distinct token so the optimistic paint keeps its
+    // orange variant across a reload.
+    out[key] = markers.map((m) => (m.category === 'fs' && m.landed ? 'fsLanded' : m.category));
   }
   return out;
 };
@@ -419,7 +438,7 @@ const renderColumns = () => {
   const bodies = scanOwnBodies();
   if (bodies.length === 0) return;
   const myKeys = new Set(bodies.map((b) => bodyKey(b.coords, b.type)));
-  const byBody = groupMarkers(scanLegs(), myKeys, fsIdSet());
+  const byBody = groupMarkers(scanLegs(), myKeys, fsIdSet(), landedFsKeySet());
 
   /** @type {Record<string, import('./pure.js').Marker[]>} */
   const snapshot = {};
@@ -457,7 +476,11 @@ const renderFromCache = () => {
     if (!cats || cats.length === 0) continue;
     paintBody(
       body,
-      cats.map((category) => ({ category, fleets: [] })),
+      cats.map((cat) =>
+        cat === 'fsLanded'
+          ? { category: 'fs', landed: true, fleets: [] }
+          : { category: cat, landed: false, fleets: [] },
+      ),
     );
   }
 };

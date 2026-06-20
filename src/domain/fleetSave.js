@@ -81,6 +81,9 @@ import { parseDurationList } from './duration.js';
  * @property {string} [originName]  Launch body name (push `{originName}`).
  * @property {string} [target]      Mission-target coords (push `{target}`).
  * @property {string} [targetName]  Mission-target body name (push `{targetName}`).
+ * @property {string} [landingKey]  Landing body identity (`g:s:p:type`) — where
+ *   the leg lands (origin on a return, dest outbound). Feeds the landed-FS
+ *   tracker so a vanished save can be flagged on the right body.
  */
 
 /**
@@ -100,6 +103,8 @@ import { parseDurationList } from './duration.js';
  * @property {string} [originName]  Launch body name (push `{originName}`).
  * @property {string} [target]      Mission-target coords (push `{target}`).
  * @property {string} [targetName]  Mission-target body name (push `{targetName}`).
+ * @property {string} [landingKey]  Landing body identity (`g:s:p:type`) — where
+ *   the fleet lands; carried so the landed-FS tracker knows which body to flag.
  */
 
 /**
@@ -220,6 +225,7 @@ export const reconcileFleetSaves = (
       originName: c.originName ?? '',
       target: c.target ?? '',
       targetName: c.targetName ?? '',
+      landingKey: c.landingKey ?? locked?.landingKey ?? '',
       offsetsSec: eff,
       fireAts: eff.map((o) => c.arrivalAt + o),
     });
@@ -310,4 +316,87 @@ export const pruneFsNotify = (notify, entries) => {
     if (live.has(id)) next[id] = notify[id];
   }
   return next;
+};
+
+/**
+ * How long a LANDED fleet-save stays flagged after touchdown. Once the row
+ * vanishes we go blind (the fleet may have been moved, sold, or lost), so the
+ * "sitting exposed" flag self-expires rather than lingering forever.
+ */
+export const FS_LANDED_TTL_SEC = 120 * 60;
+
+/**
+ * A fleet-save that has LANDED — its event row is gone but we keep flagging the
+ * body it sits on, exposed, until {@link FS_LANDED_TTL_SEC} elapses.
+ *
+ * @typedef {object} LandedFleetSave
+ * @property {string} bodyKey   Landing body identity (`g:s:p:type`).
+ * @property {number} landedAt  Epoch SECONDS the fleet landed (its `arrivalAt`).
+ * @property {number} expiresAt Epoch SECONDS the flag self-clears (`landedAt + ttl`).
+ */
+
+/**
+ * Track fleet-saves that have just LANDED, so a passive consumer (the planet
+ * markers) can flag "your fleet is sitting here, exposed" for a while AFTER the
+ * row vanishes from the event list — the most dangerous moment, and the one we
+ * otherwise lose all sight of. Pure; the caller injects `now`.
+ *
+ *   - A previously-known FS ({@link FleetSaveReminder}) that is ABSENT from the
+ *     current candidates and whose `arrivalAt <= now` just landed → recorded at
+ *     its `landingKey` with `expiresAt = arrivalAt + ttlSec`.
+ *   - Existing landed entries are carried forward until `now >= expiresAt`.
+ *   - A body that now has a LIVE candidate landing there is in motion again →
+ *     dropped (the live/"saving" state wins).
+ *   - EARLY-CLEAR: a body in `departingKeys` (an own outbound leg left it this
+ *     scan) is dropped at once — the fleet visibly moved on.
+ *
+ * Keyed by body — one (latest) landed entry per body.
+ *
+ * @param {LandedFleetSave[]} prevLanded   Previously-persisted landed set.
+ * @param {FleetSaveReminder[]} prevFs      Previous live FS set (disappearance source).
+ * @param {FleetSaveCandidate[]} candidates FS candidates present this scan.
+ * @param {object} opts
+ * @param {number} opts.now         Epoch SECONDS.
+ * @param {number} opts.ttlSec      Seconds a landed flag survives after touchdown.
+ * @param {Set<string>} [opts.departingKeys] Body keys with an own outbound leg now.
+ * @returns {LandedFleetSave[]}
+ */
+export const reconcileLandedFleetSaves = (
+  prevLanded,
+  prevFs,
+  candidates,
+  { now, ttlSec, departingKeys = new Set() },
+) => {
+  const liveIds = new Set(candidates.map((c) => c.id));
+  const liveLandingKeys = new Set(
+    candidates.map((c) => c.landingKey).filter((k) => typeof k === 'string' && k !== ''),
+  );
+  /** @type {Map<string, LandedFleetSave>} */
+  const byBody = new Map();
+
+  // Carry forward unexpired entries.
+  for (const e of prevLanded) {
+    if (Number.isFinite(e.expiresAt) && e.expiresAt > now) byBody.set(e.bodyKey, e);
+  }
+
+  // Newly-landed: a known FS gone from candidates whose arrival is past. Keep
+  // the latest landing per body.
+  for (const fs of prevFs) {
+    if (!fs.landingKey || liveIds.has(fs.id)) continue;
+    if (!Number.isFinite(fs.arrivalAt) || fs.arrivalAt > now) continue;
+    const expiresAt = fs.arrivalAt + ttlSec;
+    if (expiresAt <= now) continue;
+    const cur = byBody.get(fs.landingKey);
+    if (!cur || fs.arrivalAt > cur.landedAt) {
+      byBody.set(fs.landingKey, { bodyKey: fs.landingKey, landedAt: fs.arrivalAt, expiresAt });
+    }
+  }
+
+  // A body that is live again (an FS landing there now) or that the fleet
+  // visibly departed from is no longer a "landed, sitting" body.
+  for (const key of [...byBody.keys()]) {
+    if (liveLandingKeys.has(key) || departingKeys.has(key)) byBody.delete(key);
+  }
+
+  return [...byBody.values()];
 };

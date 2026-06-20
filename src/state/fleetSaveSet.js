@@ -20,6 +20,9 @@ import { safeLS } from '../lib/storage.js';
 /** localStorage key holding the JSON array of detected FS row-ids. */
 export const FLEET_SAVE_SET_KEY = 'oge-fleetsave-set';
 
+/** localStorage key holding the JSON array of LANDED fleet-saves (exposed). */
+export const FLEET_SAVE_LANDED_KEY = 'oge-fleetsave-landed';
+
 /**
  * The currently-detected FS fleets as their event-row ids (`eventRow-<n>`),
  * the same identity {@link import('../features/badges/pure.js').BadgeLeg} reads
@@ -42,4 +45,25 @@ export const readFleetSaveIds = () => {
  */
 export const writeFleetSaveIds = (ids) => {
   safeLS.setJSON(FLEET_SAVE_SET_KEY, Array.isArray(ids) ? ids : []);
+};
+
+/**
+ * Landed fleet-saves (row gone, fleet sitting exposed) the producer published,
+ * each carrying the body it landed on and when the flag self-clears. The
+ * consumer still filters on `expiresAt` at read time, so a stale entry never
+ * outlives its TTL even between syncs.
+ *
+ * @returns {import('../domain/fleetSave.js').LandedFleetSave[]}
+ */
+export const readLandedFs = () => {
+  const v = safeLS.json(FLEET_SAVE_LANDED_KEY, []);
+  return Array.isArray(v) ? v.filter((e) => e && typeof e.bodyKey === 'string') : [];
+};
+
+/**
+ * @param {import('../domain/fleetSave.js').LandedFleetSave[]} entries
+ * @returns {void}
+ */
+export const writeLandedFs = (entries) => {
+  safeLS.setJSON(FLEET_SAVE_LANDED_KEY, Array.isArray(entries) ? entries : []);
 };

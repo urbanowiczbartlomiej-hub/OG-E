@@ -55,13 +55,13 @@ import { clusterWaves, DEFAULT_CLUSTER_GAP_SECONDS } from '../../domain/waves.js
 /** @typedef {import('../../domain/waves.js').WaveCandidate} WaveCandidate */
 /** @typedef {import('../../domain/waves.js').Wave} Wave */
 /** @typedef {import('../../domain/adhoc.js').AdhocReminder} AdhocReminder */
-import { extractFleetSaveCandidates } from './fleetSaveScan.js';
+import { extractFleetSaveCandidates, extractDepartingBodyKeys } from './fleetSaveScan.js';
 import { parseFsOffsets } from '../../domain/fleetSave.js';
 import { NTFY_MAX_DELAY_SEC } from '../../sync/ntfyReconciler.js';
 import { settingsStore } from '../../state/settings.js';
 import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
 import { reminderConfigStore } from '../../state/reminderConfig.js';
-import { writeFleetSaveIds } from '../../state/fleetSaveSet.js';
+import { writeFleetSaveIds, writeLandedFs } from '../../state/fleetSaveSet.js';
 import { syncReminders, REMINDER_NTFY_TOKEN_KEY, isValidNtfyToken } from '../../sync/reminders.js';
 import { parseUniverseId } from '../../lib/universeId.js';
 import { debounce } from '../../lib/debounce.js';
@@ -312,6 +312,9 @@ export const installReminderProducer = (opts = {}) => {
     // badge-only forever. A threshold/offset/min-flight edit still forces a
     // run via the settings subscriber.
     const fleetSaveCandidates = extractFleetSaveCandidates();
+    // Bodies the player's fleets are LEAVING this scan — feeds the landed-FS
+    // early-clear (a fleet that departs a body can't be "sitting landed" there).
+    const departingKeys = extractDepartingBodyKeys();
     const fsOn = config.masterEnabled !== false && Boolean(config.fsEnabled);
     const capReadyIds = fsOn
       ? fsCapReadyIds(fleetSaveCandidates, parseFsOffsets(config.fsOffsets ?? ''), now)
@@ -336,16 +339,18 @@ export const installReminderProducer = (opts = {}) => {
     try {
       const res = await syncReminders(
         config,
-        { waveCandidates: candidates, present, adhocMutate, waveMutate, fleetSaveCandidates, fsCancelById },
+        { waveCandidates: candidates, present, adhocMutate, waveMutate, fleetSaveCandidates, fsCancelById, departingKeys },
         now, universeId,
       );
       if (res.ok) {
         lastSig = sig;
         safeLS.set(sigKeyFor(universeId), sig);
-        // Republish the detected FS ids for the planet-badge feature (it marks
-        // FS fleets without importing reminders). `fsOn` gates it so a disabled
-        // FS leaves no stale markers; the value persists for the next reload.
+        // Republish the detected FS ids + the landed (exposed) set for the
+        // planet markers (which mark FS fleets without importing reminders).
+        // `fsOn` gates both so a disabled FS leaves no stale markers; the values
+        // persist for the next reload.
         writeFleetSaveIds(fsOn ? (res.fleetSave ?? []).map((e) => e.id) : []);
+        writeLandedFs(fsOn ? (res.landedFleetSave ?? []) : []);
         // Drop the commands we applied; keep any the user queued meanwhile.
         writePending(universeId, readPending(universeId).slice(pending.length));
       } else {

@@ -12,6 +12,7 @@
 
 import { installReminderProducer } from './producer.js';
 import { installEventListReminders } from './eventList.js';
+import { installGuardian } from './guardian.js';
 
 /** @type {(() => void) | null} */
 let installed = null;
@@ -36,9 +37,14 @@ export const installReminders = () => {
     cancelFsSlot: producer.cancelFsSlot,
   });
   uiRefresh = ui.refresh;
+  // The post-landing guardian (Etap 1: DOM-only). Consumes the producer's
+  // published landed-FS set (state/fleetSaveSet.readLandedFs) and shows the
+  // warning button (tap = go re-save, long-press = dismiss).
+  const guardian = installGuardian();
   installed = () => {
     ui.dispose();
     producer.dispose();
+    guardian();
     installed = null;
   };
   return installed;

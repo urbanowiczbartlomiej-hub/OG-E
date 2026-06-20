@@ -75,7 +75,9 @@ import { reconcileWaves, pruneNotifyState } from '../domain/waves.js';
 import {
   reconcileAdhoc, pruneAdhocNotify, parseAdhocOffsets, adhocFireTimes,
 } from '../domain/adhoc.js';
-import { reconcileFleetSaves, pruneFsNotify, parseFsOffsets } from '../domain/fleetSave.js';
+import {
+  reconcileFleetSaves, reconcileLandedFleetSaves, pruneFsNotify, parseFsOffsets, FS_LANDED_TTL_SEC,
+} from '../domain/fleetSave.js';
 import {
   reconcileWaveQueue, reconcileAdhocQueue, reconcileFleetSaveQueue,
   offsetsForSchedule, fetchScheduledMessages,
@@ -88,6 +90,7 @@ import {
  * @typedef {import('../domain/adhoc.js').PresentFleet} PresentFleet
  * @typedef {import('../domain/fleetSave.js').FleetSaveReminder} FleetSaveReminder
  * @typedef {import('../domain/fleetSave.js').FleetSaveCandidate} FleetSaveCandidate
+ * @typedef {import('../domain/fleetSave.js').LandedFleetSave} LandedFleetSave
  */
 
 /**
@@ -173,11 +176,14 @@ export const REMINDER_FILENAME_RE = /^oge-reminders-([^/]+)\.json$/;
  *   - v5: adds the fleet-save auto-detection blocks (`fleetSave` +
  *     `fleetSaveNotify`). Migration from v3/v4 is ADDITIVE — older files
  *     read forward with the new blocks defaulted empty.
+ *   - v6: adds `landedFleetSave` — fleet-saves whose row has vanished
+ *     (landed), kept for a TTL so the planet markers flag the still-exposed
+ *     fleet. Migration from v3/v4/v5 is ADDITIVE — defaults to empty.
  */
-export const REMINDER_SCHEMA_VERSION = 5;
+export const REMINDER_SCHEMA_VERSION = 6;
 
 /** Schema versions we can read (and normalise forward). */
-const READABLE_SCHEMA_VERSIONS = new Set([3, 4, 5]);
+const READABLE_SCHEMA_VERSIONS = new Set([3, 4, 5, 6]);
 
 /**
  * Derive the ntfy.sh topic deterministically from the ntfy access
@@ -294,6 +300,8 @@ export const REMINDER_NTFY_TOKEN_KEY = 'oge_reminderNtfyTokenMirror';
  * @property {FleetSaveReminder[]} fleetSave  Auto-detected fleet-save reminders.
  * @property {Record<string, NotifyEntry>} fleetSaveNotify  Per-FS bookkeeping
  *   (scheduled ntfy.sh message ids), keyed by event-row id.
+ * @property {LandedFleetSave[]} [landedFleetSave]  Fleet-saves that have landed
+ *   (row gone), kept for a TTL so the planet markers flag the exposed fleet.
  */
 
 /**
@@ -331,6 +339,7 @@ const readReminderState = async (universeId) => {
       adhocNotify: parsed.adhocNotify ?? {},
       fleetSave: parsed.fleetSave ?? [],
       fleetSaveNotify: parsed.fleetSaveNotify ?? {},
+      landedFleetSave: parsed.landedFleetSave ?? [],
     };
   } catch {
     return null;
@@ -373,6 +382,7 @@ const sameState = (a, b) => {
     waves: s.waves, notifyState: s.notifyState,
     adhoc: s.adhoc, adhocNotify: s.adhocNotify,
     fleetSave: s.fleetSave, fleetSaveNotify: s.fleetSaveNotify,
+    landedFleetSave: s.landedFleetSave ?? [],
   });
   return pick(a) === pick(b);
 };
@@ -518,18 +528,23 @@ const resolveNtfyToken = async (configToken) => {
  * @param {Record<string, number[]>} [dom.fsCancelById]  Per-fleet-save offsets
  *   the player cancelled (see `domain/fleetSave.fsOffsetsToCancel`); dropped
  *   from that save's series so the queue reconcile sweeps just those slots.
+ * @param {Set<string>} [dom.departingKeys]  Body keys (`g:s:p:type`) the player's
+ *   fleets are leaving this scan — feeds the landed-FS early-clear.
  * @param {number} now             Epoch SECONDS, injected by the caller.
  * @param {string} universeId      OGame server id; ntfy push title prefix.
- * @returns {Promise<{ ok: boolean, reason?: string, changed?: boolean, scheduled?: number, cancelled?: number, fleetSave?: FleetSaveReminder[] }>}
- *   `fleetSave` is the reconciled (locked) FS set for this scan — surfaced so
- *   the caller can republish the ids for passive consumers (the planet-badge
- *   feature marks FS fleets without importing reminders). Absent on early
- *   `{ ok: false }` returns.
+ * @returns {Promise<{ ok: boolean, reason?: string, changed?: boolean, scheduled?: number, cancelled?: number, fleetSave?: FleetSaveReminder[], landedFleetSave?: LandedFleetSave[] }>}
+ *   `fleetSave` is the reconciled (locked) FS set for this scan and
+ *   `landedFleetSave` the just-landed-and-exposed set — both surfaced so the
+ *   caller can republish them for passive consumers (the planet markers, which
+ *   never import reminders). Absent on early `{ ok: false }` returns.
  */
 export const syncReminders = async (config, dom, now, universeId) => {
   if (!getToken()) return { ok: false, reason: 'no-token' };
 
-  const { waveCandidates, present, adhocMutate, waveMutate, fleetSaveCandidates = [], fsCancelById = {} } = dom;
+  const {
+    waveCandidates, present, adhocMutate, waveMutate,
+    fleetSaveCandidates = [], fsCancelById = {}, departingKeys = new Set(),
+  } = dom;
 
   // Token resolution: prefer per-origin localStorage value; fall back
   // to the global chrome.storage mirror so a universe that hasn't been
@@ -544,6 +559,7 @@ export const syncReminders = async (config, dom, now, universeId) => {
   const prevAdhocNotify = existing?.adhocNotify ?? {};
   const prevFs = existing?.fleetSave ?? [];
   const prevFsNotify = existing?.fleetSaveNotify ?? {};
+  const prevLanded = existing?.landedFleetSave ?? [];
 
   const prevWavesMutated = waveMutate ? waveMutate(prevWaves) : prevWaves;
   const { waves } = reconcileWaves(prevWavesMutated, waveCandidates, now);
@@ -588,6 +604,17 @@ export const syncReminders = async (config, dom, now, universeId) => {
   // Ad-hoc per-fleet reminders are always on; the master switch is their only gate.
   const adhocActive = master;
   const fsActive = master && Boolean(config.fsEnabled);
+
+  // Landed fleet-saves: which of the just-vanished FS rows touched down and
+  // are now sitting exposed (kept for a TTL). Purely derived — never scheduled
+  // — so it lives outside the ntfy block. Cleared when FS is off.
+  const landedFleetSave = fsActive
+    ? reconcileLandedFleetSaves(prevLanded, prevFs, fleetSaveCandidates, {
+        now,
+        ttlSec: FS_LANDED_TTL_SEC,
+        departingKeys,
+      })
+    : [];
 
   if (ntfyToken && topic) {
     // One queue poll, shared by both kinds — OGame reloads (and re-runs
@@ -685,10 +712,11 @@ export const syncReminders = async (config, dom, now, universeId) => {
     adhocNotify,
     fleetSave,
     fleetSaveNotify: fsNotify,
+    landedFleetSave,
   };
 
   const changed = !sameState(existing, next);
   if (changed) await writeReminderState(universeId, next);
   await mirrorForPreview(universeId, next, ntfyToken);
-  return { ok: true, changed, scheduled, cancelled, fleetSave };
+  return { ok: true, changed, scheduled, cancelled, fleetSave, landedFleetSave };
 };

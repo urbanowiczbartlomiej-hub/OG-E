@@ -22,6 +22,30 @@ const MISSION_NAMES = /** @type {Record<string, string>} */ ({
 /** @param {string | null | undefined} s @returns {string} dense `g:s:p` */
 const denseCoords = (s) => (s || '').replace(/[\s[\]]/g, '');
 
+/**
+ * Body type of an origin/dest cell: a moon carries `figure.moon`, everything
+ * else is a planet. Matches the badge feature's `bodyKey` type (1/3).
+ *
+ * @param {Element | null} cell
+ * @returns {number} 1 = planet, 3 = moon.
+ */
+const figureType = (cell) => (cell?.querySelector('figure')?.classList.contains('moon') ? 3 : 1);
+
+/**
+ * Body identity (`g:s:p:type`) of where a row's leg LANDS — origin on a return,
+ * dest outbound. Byte-identical to `features/badges/pure.js::bodyKey`, so the
+ * landed-FS flag lands on the right planet/moon. '' when unreadable.
+ *
+ * @param {Element} row
+ * @returns {string}
+ */
+const landingBodyKeyOf = (row) => {
+  const isReturn = row.getAttribute('data-return-flight') === 'true';
+  const coords = denseCoords(row.querySelector(isReturn ? GAME.COORDS_ORIGIN : GAME.COORDS_DEST)?.textContent);
+  if (!coords) return '';
+  return `${coords}:${figureType(row.querySelector(isReturn ? GAME.ORIGIN_FLEET : GAME.DEST_FLEET))}`;
+};
+
 /** @param {Element} row @param {string} sel @returns {string} bracketed dense coords, or ''. */
 const coordsFieldOf = (row, sel) => {
   const d = denseCoords(row.querySelector(sel)?.textContent);
@@ -147,8 +171,33 @@ export const extractFleetSaveCandidates = (root = document) => {
     const arrivalAt = arrivalAttr ? Number.parseInt(arrivalAttr, 10) : NaN;
     const shipCount = shipCountOf(row);
     if (id && Number.isFinite(arrivalAt) && Number.isFinite(shipCount)) {
-      out.push({ id, arrivalAt, shipCount, label: fleetSaveLabelFor(row), ...fleetRowMeta(row) });
+      out.push({
+        id, arrivalAt, shipCount,
+        label: fleetSaveLabelFor(row),
+        landingKey: landingBodyKeyOf(row),
+        ...fleetRowMeta(row),
+      });
     }
   }
   return out;
+};
+
+/**
+ * Body keys (`g:s:p:type`) the player's fleets are LEAVING this scan — the
+ * origin of every own OUTBOUND leg. Feeds the landed-FS early-clear: a fleet
+ * that visibly departs a body can no longer be "sitting landed" there.
+ *
+ * @param {ParentNode} [root=document]
+ * @returns {Set<string>}
+ */
+export const extractDepartingBodyKeys = (root = document) => {
+  /** @type {Set<string>} */
+  const keys = new Set();
+  for (const row of root.querySelectorAll(GAME.EVENT_FLEET_ROWS)) {
+    if (!isOwnFleet(row)) continue;
+    if (row.getAttribute('data-return-flight') === 'true') continue; // outbound only = a departure
+    const coords = denseCoords(row.querySelector(GAME.COORDS_ORIGIN)?.textContent);
+    if (coords) keys.add(`${coords}:${figureType(row.querySelector(GAME.ORIGIN_FLEET))}`);
+  }
+  return keys;
 };

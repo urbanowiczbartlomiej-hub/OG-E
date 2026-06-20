@@ -73,6 +73,21 @@ const ECONOMY = new Set(['8']);
 // Excluded (never a marker): colonisation '7', discovery '18' — sent in bulk.
 
 /**
+ * System position 16 — "boundless space", the expedition slot. No player can
+ * sit there and it CAN'T be phalanxed (like a moon), so the game allows only
+ * expedition or espionage to it. Both are covert deep-space moves, NEVER
+ * aggression (there is nobody to attack) — a small espionage to 16 is a
+ * phalanx-proof fleet shuffle, not a hostile scout.
+ */
+const DEEP_SPACE_POSITION = '16';
+
+/**
+ * @param {string} coords Dense `g:s:p`.
+ * @returns {boolean} Whether the coords point at position 16 (deep space).
+ */
+const isDeepSpace = (coords) => coords.split(':')[2] === DEEP_SPACE_POSITION;
+
+/**
  * Identity of a body for matching a leg endpoint against the player's own
  * bodies. A planet and its moon share `g:s:p`, so the `type` (1 planet /
  * 3 moon) is part of the key — byte-identical to `domain/bodies` identity.
@@ -119,6 +134,8 @@ export const bodyKey = (coords, type) => `${coords}:${type}`;
  *
  * @typedef {object} Marker
  * @property {string} category One of {@link MARKER_ORDER}.
+ * @property {boolean} landed  An `fs` marker for a LANDED (exposed) save — no
+ *   live leg, rendered as the orange variant. Always false for other categories.
  * @property {TileFleet[]} fleets Per-fleet detail for the popover.
  */
 
@@ -149,12 +166,17 @@ const classifyLeg = (leg, myKeys, fsIds) => {
     if (AGGRESSIVE.has(leg.missionType)) category = 'threat';
   } else if (leg.id && fsIds.has(leg.id)) {
     category = 'fs';
-  } else if (AGGRESSIVE.has(leg.missionType)) {
-    category = 'aggro';
-  } else if (LOGISTICS.has(leg.missionType)) {
-    category = 'logistics';
   } else if (EXPLORE.has(leg.missionType)) {
     category = 'explore';
+  } else if (AGGRESSIVE.has(leg.missionType)) {
+    // Espionage to position 16 (boundless space, no player) is a covert,
+    // phalanx-proof fleet-save in spirit — flag it `fs` even below the FS
+    // auto-detect threshold; the badge shows the maneuver while reminders and
+    // the landed (orange) state stay threshold-gated. Real-target aggression
+    // stays `aggro`. The heart stays reserved strictly for expeditions.
+    category = isDeepSpace(leg.dest.coords) ? 'fs' : 'aggro';
+  } else if (LOGISTICS.has(leg.missionType)) {
+    category = 'logistics';
   } else if (ECONOMY.has(leg.missionType)) {
     category = 'economy';
   }
@@ -173,9 +195,17 @@ const classifyLeg = (leg, myKeys, fsIds) => {
  * @param {Set<string>} myKeys Set of {@link bodyKey} for the player's bodies.
  * @param {Set<string>} [fsIds] Row-ids the reminders producer flagged as a
  *   detected fleet-save; such a leg becomes the `fs` category.
+ * @param {Set<string>} [landedFsKeys] Body keys with a LANDED fleet-save (no
+ *   live leg) — each gets an injected `fs` marker (rendered as the landed
+ *   variant) unless that body already shows a live FS.
  * @returns {Map<string, Marker[]>}
  */
-export const groupMarkers = (legs, myKeys, fsIds = /** @type {Set<string>} */ (new Set())) => {
+export const groupMarkers = (
+  legs,
+  myKeys,
+  fsIds = /** @type {Set<string>} */ (new Set()),
+  landedFsKeys = /** @type {Set<string>} */ (new Set()),
+) => {
   /** @type {Map<string, Map<string, TileFleet[]>>} body → category → fleets. */
   const byBody = new Map();
   for (const leg of legs) {
@@ -200,12 +230,27 @@ export const groupMarkers = (legs, myKeys, fsIds = /** @type {Set<string>} */ (n
     });
   }
 
+  // Inject a landed-FS marker (empty fleets ⇒ the landed/orange variant) on each
+  // flagged body that isn't already showing a LIVE fleet-save.
+  for (const key of landedFsKeys) {
+    if (!myKeys.has(key)) continue;
+    let cats = byBody.get(key);
+    if (!cats) {
+      cats = new Map();
+      byBody.set(key, cats);
+    }
+    if (!cats.has('fs')) cats.set('fs', []);
+  }
+
   /** @type {Map<string, Marker[]>} */
   const out = new Map();
   for (const [key, cats] of byBody) {
     const markers = MARKER_ORDER.filter((cat) => cats.has(cat))
       .slice(0, MAX_MARKERS)
-      .map((cat) => ({ category: cat, fleets: /** @type {TileFleet[]} */ (cats.get(cat)) }));
+      .map((cat) => {
+        const fleets = /** @type {TileFleet[]} */ (cats.get(cat));
+        return { category: cat, landed: cat === 'fs' && fleets.length === 0, fleets };
+      });
     out.set(key, markers);
   }
   return out;
