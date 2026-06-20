@@ -155,6 +155,31 @@ const AUCTION_NO_AUCTION_OVERLAY_SEL = '.noAuctionOverlay';
  */
 const IMPORT_EVENT_IMG_SEL = 'img[src*="importexport_6"]';
 
+/**
+ * Device-local detection scratchpad — the last Import/Export "come back at
+ * HH:MM" refresh we recorded, tagged with the local day it was seen, stored as
+ * `"YYYY-MM-DD|<epochMs>"`. NOT synced (unlike the keys re-exported above).
+ *
+ * Why it exists: a multi-day "import refreshes 6× today" event only announces
+ * itself ONCE — the news message on day 1. On day 2+ that message is gone, so
+ * without another signal the import nudge silently falls back to the normal
+ * once-daily / 14:00-gate rule even though the event is still running. The one
+ * signal that is locale-independent AND needs no knowledge of what a normal
+ * day's overlay shows: TWO DISTINCT intraday come-back times on the SAME local
+ * day. A normal day has at most one daily reset, so it can NEVER show two
+ * different same-day come-back times — only a >1×/day refresh can. Seeing the
+ * second distinct time re-confirms the event for that day (re-stamping
+ * {@link IMPORT_EVENT_KEY}); the event thus self-sustains across midnight for
+ * as long as it actually runs, and lapses on its own the first normal day
+ * (which cannot produce the second distinct time → no false positive, ever).
+ *
+ * Local-only on purpose: each device observes its own Trader visits, and the
+ * CONFIRMATION it yields ({@link IMPORT_EVENT_KEY}) is the part that syncs. A
+ * max-merge of two devices' distinct same-day times would erase the very
+ * distinctness this detection depends on.
+ */
+const IMPORT_SEEN_KEY = 'oge-trader-import-seen-today';
+
 /** Auction hours — yellow shows in `[start, end)` local time. */
 const AUCTION_START_HOUR = 6;
 const AUCTION_END_HOUR = 23;
@@ -410,6 +435,21 @@ const readImportNextAt = () => {
 };
 
 /**
+ * Parse the {@link IMPORT_SEEN_KEY} scratchpad (`"YYYY-MM-DD|<epochMs>"`).
+ *
+ * @param {string | null} raw
+ * @returns {{ day: string, target: number } | null} `null` when absent/garbage.
+ */
+const parseSeenRefresh = (raw) => {
+  if (typeof raw !== 'string') return null;
+  const bar = raw.indexOf('|');
+  if (bar < 0) return null;
+  const day = raw.slice(0, bar);
+  const target = Number(raw.slice(bar + 1));
+  return day !== '' && Number.isFinite(target) ? { day, target } : null;
+};
+
+/**
  * Assemble the persisted state from localStorage.
  *
  * @returns {TraderState}
@@ -537,27 +577,48 @@ const scanTraderSubpages = (now) => {
 
   // Import/Export — a visible overlay means no offer is currently available.
   if (isShown(document.querySelector(IMPORT_DONE_OVERLAY_SEL))) {
-    if (eventActive) {
-      // 6× event, overlay up = no offer right now. Two sub-cases, told apart by
-      // whether the overlay carries a clock time:
-      //   - "come back at HH:MM" → another offer is coming TODAY; re-arm then.
-      //   - "come back tomorrow" (no time) → the day's offers are EXHAUSTED;
-      //     re-arm at next local midnight, after which `eventActive` flips off
-      //     on its own and the normal once-daily rule resumes. Without this the
-      //     glow stayed stuck red after the last container (importNextAt held a
-      //     now-past time, so `now >= importNextAt` kept it pending).
-      // Never stamp the once-daily clear here (the event ignores it). Only move
-      // the stamp forward so re-scans on the same overlay don't churn.
-      const time = parseClockTime(
-        document.querySelector(IMPORT_DONE_TEXT_SEL)?.textContent ?? '',
-      );
-      const target =
-        time !== null
-          ? nextDailyOccurrence(now, time)
-          : nextDailyOccurrence(now, { hours: 0, minutes: 0 });
+    let eventNow = eventActive;
+
+    // Parse the (locale-independent) "come back at HH:MM" the overlay may
+    // carry: present → another offer is coming at that wall-clock time today;
+    // absent ("come back tomorrow") → the day's offers are exhausted.
+    const time = parseClockTime(
+      document.querySelector(IMPORT_DONE_TEXT_SEL)?.textContent ?? '',
+    );
+    const target = time !== null ? nextDailyOccurrence(now, time) : null;
+
+    // Self-sustaining event detection (no news message needed): a SECOND,
+    // DISTINCT intraday come-back time on the same local day can only happen
+    // when the import refreshes more than once a day → the 6× event. A normal
+    // day has a single daily reset, so it can never show two different same-day
+    // come-back times — which is why this needs no knowledge of what a normal
+    // day's overlay looks like, and never false-positives on one. Re-confirm
+    // the event for today so a multi-day event survives past midnight without
+    // re-reading the (once-only) news message. See {@link IMPORT_SEEN_KEY}.
+    if (target !== null) {
+      const seen = parseSeenRefresh(safeLS.get(IMPORT_SEEN_KEY));
+      if (!eventNow && seen !== null && seen.day === today && seen.target !== target) {
+        safeLS.set(IMPORT_EVENT_KEY, today);
+        eventNow = true;
+      }
+      safeLS.set(IMPORT_SEEN_KEY, `${today}|${target}`);
+    }
+
+    if (eventNow) {
+      // 6× event: re-arm at the parsed refresh time, or — when the overlay
+      // carries no time (offers EXHAUSTED for the day) — at next local
+      // midnight, after which `eventActive` flips off on its own and the normal
+      // once-daily rule resumes. Without the midnight fallback the glow stayed
+      // stuck red after the last container (importNextAt held a now-past time,
+      // so `now >= importNextAt` kept it pending). Never stamp the once-daily
+      // clear here (the event ignores it); only move the stamp FORWARD so
+      // re-scans of the same overlay don't churn.
+      const arm =
+        target !== null ? target : nextDailyOccurrence(now, { hours: 0, minutes: 0 });
       const stored = readImportNextAt();
-      if (stored === null || target > stored) safeLS.set(IMPORT_NEXT_KEY, String(target));
+      if (stored === null || arm > stored) safeLS.set(IMPORT_NEXT_KEY, String(arm));
     } else if (safeLS.get(IMPORT_TRADED_KEY) !== today) {
+      // Normal day: the single daily import was taken.
       safeLS.set(IMPORT_TRADED_KEY, today);
     }
   }
