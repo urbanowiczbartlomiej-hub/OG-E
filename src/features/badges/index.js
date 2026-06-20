@@ -184,8 +184,14 @@ const buildCss = () => `
   border-radius:50%;
   box-shadow:0 0 2px rgba(0,0,0,.9);
 }
-/* Mine = round; the external THREAT is the odd square. */
-.oge-mb-threat{background:#e24b4a;border-radius:1px;}
+/* Mine = round dots; the external THREAT is a loud red "!!!" glyph — the
+   noisiest marker, for the highest-priority category (text, not a filled dot). */
+.oge-mb-threat{
+  width:auto;height:auto;
+  background:none;box-shadow:none;border-radius:0;
+  color:#e24b4a;font:700 10px/1 Verdana,sans-serif;letter-spacing:-1px;
+  text-shadow:0 0 2px #000,0 0 1px #000;
+}
 .oge-mb-aggro{background:#e24b4a;}
 .oge-mb-logistics{background:#4caf6a;}
 .oge-mb-economy{background:#3d7fd0;}
@@ -273,6 +279,7 @@ const buildLegend = () => {
     const mk = document.createElement('span');
     mk.className = `${DOT_CLASS} oge-mb-${row.category}${row.landed ? ' landed' : ''}`;
     if (row.category === 'fs') mk.textContent = 'FS';
+    else if (row.category === 'threat') mk.textContent = '!!!';
     sw.appendChild(mk);
     const lb = document.createElement('span');
     lb.textContent = row.label;
@@ -282,7 +289,7 @@ const buildLegend = () => {
   const note = document.createElement('div');
   note.className = 'note';
   note.textContent =
-    'Shown where each fleet lands; max 3 per body, by priority. Square = a threat from outside, round = yours.';
+    'Shown where each fleet lands; max 3 per body, by priority. The red "!!!" flags an incoming attack; the rest are your own fleets.';
   panel.appendChild(note);
   return panel;
 };
@@ -319,8 +326,10 @@ const clearColumns = () => {
 const buildMarker = (m) => {
   const el = document.createElement('span');
   el.className = `${DOT_CLASS} oge-mb-${m.category}${m.landed ? ' landed' : ''}`;
-  // explore renders via a CSS background SVG (a heart); only the FS tag is text.
+  // explore renders via a CSS background SVG (a heart); the FS + threat tags are
+  // text ("FS" / "!!!"), everything else a filled dot.
   if (m.category === 'fs') el.textContent = 'FS';
+  else if (m.category === 'threat') el.textContent = '!!!';
   el.title = m.landed ? 'Fleet-save · landed (exposed)' : MARKER_LABEL[m.category] || 'Fleet';
   return el;
 };
