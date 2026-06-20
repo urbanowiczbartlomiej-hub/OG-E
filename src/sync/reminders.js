@@ -76,11 +76,12 @@ import {
   reconcileAdhoc, pruneAdhocNotify, parseAdhocOffsets, adhocFireTimes,
 } from '../domain/adhoc.js';
 import {
-  reconcileFleetSaves, reconcileLandedFleetSaves, pruneFsNotify, parseFsOffsets, FS_LANDED_TTL_SEC,
+  reconcileFleetSaves, reconcileLandedFleetSaves, pruneFsNotify, parseFsOffsets,
+  FS_LANDED_TTL_SEC, GUARDIAN_INTERVAL_SEC,
 } from '../domain/fleetSave.js';
 import {
   reconcileWaveQueue, reconcileAdhocQueue, reconcileFleetSaveQueue,
-  offsetsForSchedule, fetchScheduledMessages,
+  reconcileGuardianQueue, offsetsForSchedule, fetchScheduledMessages,
 } from './ntfyReconciler.js';
 
 /**
@@ -530,6 +531,8 @@ const resolveNtfyToken = async (configToken) => {
  *   from that save's series so the queue reconcile sweeps just those slots.
  * @param {Set<string>} [dom.departingKeys]  Body keys (`g:s:p:type`) the player's
  *   fleets are leaving this scan — feeds the landed-FS early-clear.
+ * @param {Record<string, number>} [dom.guardianDismissed]  Dismissed guardian
+ *   landings as `bodyKey → landedAt`; suppresses that body's guardian push.
  * @param {number} now             Epoch SECONDS, injected by the caller.
  * @param {string} universeId      OGame server id; ntfy push title prefix.
  * @returns {Promise<{ ok: boolean, reason?: string, changed?: boolean, scheduled?: number, cancelled?: number, fleetSave?: FleetSaveReminder[], landedFleetSave?: LandedFleetSave[] }>}
@@ -544,6 +547,7 @@ export const syncReminders = async (config, dom, now, universeId) => {
   const {
     waveCandidates, present, adhocMutate, waveMutate,
     fleetSaveCandidates = [], fsCancelById = {}, departingKeys = new Set(),
+    guardianDismissed = {},
   } = dom;
 
   // Token resolution: prefer per-origin localStorage value; fall back
@@ -694,8 +698,29 @@ export const syncReminders = async (config, dom, now, universeId) => {
       fsNotify[e.id] = { scheduledMessageIds: ids };
     }
 
-    scheduled = waveRes.posted + adhocRes.posted + fsRes.posted;
-    cancelled = waveRes.cancelled + adhocRes.cancelled + fsRes.cancelled;
+    // ── Bare-fleet guardian ────────────────────────────────────────────
+    // ONE escalation push per landed (exposed) fleet-save, fired
+    // GUARDIAN_INTERVAL_SEC after touchdown. Driven by the just-computed
+    // landedFleetSave (minus dismissed landings); auto-swept the instant a body
+    // leaves landedFleetSave (re-saved / departed / TTL), since it's then no
+    // longer a live entry. Reconciled under its own title, so it never sweeps
+    // the other kinds. State-free in the gist: the queue itself is the source of
+    // truth — only the local dismiss store persists.
+    const liveGuardian = fsActive
+      ? landedFleetSave
+          .filter((l) => guardianDismissed[l.bodyKey] !== l.landedAt)
+          .map((l) => ({
+            bodyKey: l.bodyKey,
+            coords: l.bodyKey.split(':').slice(0, 3).join(':'),
+            fireAt: l.landedAt + GUARDIAN_INTERVAL_SEC,
+          }))
+      : [];
+    const guardianRes = await reconcileGuardianQueue({
+      entries: liveGuardian, topic, token: ntfyToken, now, universeId, queue,
+    });
+
+    scheduled = waveRes.posted + adhocRes.posted + fsRes.posted + guardianRes.posted;
+    cancelled = waveRes.cancelled + adhocRes.cancelled + fsRes.cancelled + guardianRes.cancelled;
     if (scheduled > 0 || cancelled > 0) {
       // eslint-disable-next-line no-console
       console.log(`[oge] reminders reconciled: +${scheduled} queued, -${cancelled} cancelled`);

@@ -56,7 +56,7 @@ import { clusterWaves, DEFAULT_CLUSTER_GAP_SECONDS } from '../../domain/waves.js
 /** @typedef {import('../../domain/waves.js').Wave} Wave */
 /** @typedef {import('../../domain/adhoc.js').AdhocReminder} AdhocReminder */
 import { extractFleetSaveCandidates, extractDepartingBodyKeys } from './fleetSaveScan.js';
-import { parseFsOffsets } from '../../domain/fleetSave.js';
+import { parseFsOffsets, FS_LANDED_TTL_SEC } from '../../domain/fleetSave.js';
 import { NTFY_MAX_DELAY_SEC } from '../../sync/ntfyReconciler.js';
 import { settingsStore } from '../../state/settings.js';
 import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
@@ -72,6 +72,7 @@ import {
   readPending, writePending, pushPending, applyAdhocCmds, applyWaveCmds,
 } from './pending.js';
 import { addFleetSaveCancel, fleetSaveCancelOffsets } from './fleetSaveCancel.js';
+import { addGuardianDismiss, guardianDismissedLandings } from './guardianDismiss.js';
 
 /**
  * Selector for expedition return-flight rows. Identical predicate to the
@@ -216,6 +217,9 @@ const sigKeyFor = (/** @type {string} */ universeId) => `oge_reminderSig_${unive
  * @property {(waveId: string) => void} resendWave        Re-schedule a tombstoned wave's series.
  * @property {(id: string, offsets: number[], expiresAt: number) => void} cancelFsSlot
  *   Suppress the given fleet-save offsets for `id` until `expiresAt` (epoch s).
+ * @property {(bodyKey: string, landedAt: number) => void} guardianDismiss
+ *   Cancel a landed body's guardian push + persist the dismissal.
+ * @property {string} universeId  This producer's universe id (for consumers).
  */
 
 /** Idempotency sentinel — holds the producer handle while installed. */
@@ -335,11 +339,12 @@ export const installReminderProducer = (opts = {}) => {
     // Durable per-slot FS cancellations (self-expiring; survives re-detection
     // of the still-in-flight fleet, unlike the once-drained pending queue).
     const fsCancelById = fleetSaveCancelOffsets(universeId, now);
+    const guardianDismissed = guardianDismissedLandings(universeId, now);
 
     try {
       const res = await syncReminders(
         config,
-        { waveCandidates: candidates, present, adhocMutate, waveMutate, fleetSaveCandidates, fsCancelById, departingKeys },
+        { waveCandidates: candidates, present, adhocMutate, waveMutate, fleetSaveCandidates, fsCancelById, departingKeys, guardianDismissed },
         now, universeId,
       );
       if (res.ok) {
@@ -382,6 +387,12 @@ export const installReminderProducer = (opts = {}) => {
   /** @param {string} id @param {number[]} offsets @param {number} expiresAt */
   const cancelFsSlot = (id, offsets, expiresAt) => {
     addFleetSaveCancel(universeId, id, offsets, expiresAt, Math.floor(Date.now() / 1000));
+    force();
+  };
+  /** @param {string} bodyKey @param {number} landedAt */
+  const guardianDismiss = (bodyKey, landedAt) => {
+    const now = Math.floor(Date.now() / 1000);
+    addGuardianDismiss(universeId, bodyKey, landedAt, landedAt + FS_LANDED_TTL_SEC, now);
     force();
   };
 
@@ -452,6 +463,8 @@ export const installReminderProducer = (opts = {}) => {
     cancelWave,
     resendWave,
     cancelFsSlot,
+    guardianDismiss,
+    universeId,
   };
   return installed;
 };

@@ -28,6 +28,7 @@ import { GAME } from '../../lib/gameDom.js';
 import { createButton } from '../shared/button.js';
 import { installButtonChrome } from '../shared/buttonChrome.js';
 import { readLandedFs } from '../../state/fleetSaveSet.js';
+import { guardianDismissedLandings } from './guardianDismiss.js';
 
 /** OG-E's own button id (not a game contract). */
 const BTN_ID = 'oge-guardian-btn';
@@ -60,8 +61,10 @@ const BANG_GLYPH = [
 let btn = null;
 /** @type {BareFleet[]} The current bare set; the button's handlers read it live. */
 let bare = [];
-/** In-memory dismissed landings (`bodyKey@landedAt`) — the Etap-1 back-door. */
-const dismissed = new Set();
+/** Producer command: cancel a body's ntfy push + persist the dismissal. */
+let dismissFn = /** @type {(bodyKey: string, landedAt: number) => void} */ (() => {});
+/** This universe's id, for reading the persisted dismiss store. */
+let universeId = '';
 
 /** @param {string|null|undefined} s @returns {string} dense `g:s:p` */
 const dense = (s) => (s || '').replace(/[\s[\]]/g, '');
@@ -93,11 +96,14 @@ const paint = () => {
   btn.paintLines('g', [{ text: sub, em: '0.42em', opacity: 0.95 }]);
 };
 
-/** Dismiss the primary bare fleet's landing (the long-press back-door). */
+/**
+ * Dismiss the primary bare fleet's landing (the long-press back-door): cancel
+ * its ntfy push + persist the suppression (via the producer), then repaint.
+ */
 const dismissPrimary = () => {
   const t = bare[0];
   if (!t) return;
-  dismissed.add(`${t.bodyKey}@${t.landedAt}`);
+  dismissFn(t.bodyKey, t.landedAt);
   refresh();
 };
 
@@ -147,8 +153,9 @@ const render = () => {
  */
 const refresh = () => {
   const now = Math.floor(Date.now() / 1000);
+  const dismissed = universeId ? guardianDismissedLandings(universeId, now) : {};
   bare = readLandedFs()
-    .filter((e) => Number(e.expiresAt) > now && !dismissed.has(`${e.bodyKey}@${e.landedAt}`))
+    .filter((e) => Number(e.expiresAt) > now && dismissed[e.bodyKey] !== e.landedAt)
     .map((e) => {
       const parts = String(e.bodyKey).split(':');
       return {
@@ -167,10 +174,16 @@ let installed = null;
 /**
  * Install the fleet guardian. Idempotent.
  *
+ * @param {object} [opts]
+ * @param {(bodyKey: string, landedAt: number) => void} [opts.dismiss]  Producer
+ *   command that cancels a body's ntfy push + persists the dismissal.
+ * @param {string} [opts.universeId]  This universe's id (persisted dismiss store).
  * @returns {() => void} dispose
  */
-export const installGuardian = () => {
+export const installGuardian = ({ dismiss, universeId: uid } = {}) => {
   if (installed) return installed;
+  dismissFn = typeof dismiss === 'function' ? dismiss : () => {};
+  universeId = uid || '';
   document.addEventListener(EVENT_BOX_LOADED_EVENT, refresh);
   refresh();
   installed = () => {
@@ -180,6 +193,8 @@ export const installGuardian = () => {
       btn = null;
     }
     bare = [];
+    dismissFn = () => {};
+    universeId = '';
     installed = null;
   };
   return installed;
@@ -193,5 +208,4 @@ export const installGuardian = () => {
 export const _resetGuardianForTest = () => {
   if (installed) installed();
   installed = null;
-  dismissed.clear();
 };

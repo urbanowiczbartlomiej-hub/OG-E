@@ -326,6 +326,13 @@ export const pruneFsNotify = (notify, entries) => {
 export const FS_LANDED_TTL_SEC = 120 * 60;
 
 /**
+ * How long after a fleet-save touches down its GUARDIAN escalation push fires,
+ * if the fleet is still sitting exposed (no re-save, not dismissed). Hardcoded
+ * for now — the fleet-save subtab will make it per-universe in a later step.
+ */
+export const GUARDIAN_INTERVAL_SEC = 20 * 60;
+
+/**
  * A fleet-save that has LANDED — its event row is gone but we keep flagging the
  * body it sits on, exposed, until {@link FS_LANDED_TTL_SEC} elapses.
  *

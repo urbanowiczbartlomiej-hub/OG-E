@@ -825,3 +825,54 @@ export const reconcileFleetSaveQueue = async ({
   });
   return { idsByEntry: idsBySeries, posted, cancelled };
 };
+
+/**
+ * Universe-scoped title for the bare-fleet GUARDIAN push. Distinct from the
+ * other kinds so they never sweep each other on the shared topic, and prefixed
+ * with the universe id so other servers' guardian pushes stay invisible here.
+ *
+ * @param {string} universeId
+ * @returns {string}
+ */
+export const guardianTitleFor = (universeId) => `[${universeId}] Bare fleet`;
+
+/**
+ * Reconcile this universe's GUARDIAN slice of the queue: ONE single-slot push
+ * per landed (exposed) fleet-save, fired at `fireAt` (= touchdown + interval).
+ * Same idempotent reconcile as the other kinds, under a distinct title, so a
+ * send-reload self-heals. Slots beyond ntfy's 3-day cap are dropped here;
+ * past / too-soon slots are skipped inside {@link reconcileQueue}. Pass
+ * `entries: []` to cancel every guardian push queued for this universe.
+ *
+ * @param {object} args
+ * @param {Array<{ bodyKey: string, coords: string, fireAt: number }>} args.entries
+ * @param {string} args.topic
+ * @param {string} args.token
+ * @param {number} args.now         Epoch SECONDS.
+ * @param {string} args.universeId
+ * @param {Array<{ id: string, time: number, title?: string }>} [args.queue]
+ *   Pre-fetched queue snapshot — lets the caller share one poll across kinds.
+ * @returns {Promise<{ idsByEntry: Record<string, string[]>, posted: number, cancelled: number }>}
+ */
+export const reconcileGuardianQueue = async ({ entries, topic, token, now, universeId, queue }) => {
+  const icon = resolveIconUrl(defaultReminderTemplates().fleetSave.icon);
+  /** @type {QueueSeries[]} */
+  const series = entries.map((e) => ({
+    id: e.bodyKey,
+    slots:
+      e.fireAt <= now + NTFY_MAX_DELAY_SEC
+        ? [
+            {
+              fireAt: e.fireAt,
+              body: `Bare fleet exposed at [${e.coords}] — re-save it.`,
+              priority: 5,
+              icon,
+            },
+          ]
+        : [],
+  }));
+  const { idsBySeries, posted, cancelled } = await reconcileQueue({
+    series, topic, token, now, title: guardianTitleFor(universeId), queue,
+  });
+  return { idsByEntry: idsBySeries, posted, cancelled };
+};

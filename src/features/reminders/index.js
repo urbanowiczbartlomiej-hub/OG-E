@@ -37,10 +37,14 @@ export const installReminders = () => {
     cancelFsSlot: producer.cancelFsSlot,
   });
   uiRefresh = ui.refresh;
-  // The post-landing guardian (Etap 1: DOM-only). Consumes the producer's
-  // published landed-FS set (state/fleetSaveSet.readLandedFs) and shows the
-  // warning button (tap = go re-save, long-press = dismiss).
-  const guardian = installGuardian();
+  // The post-landing guardian. Reads the producer's published landed-FS set
+  // (state/fleetSaveSet.readLandedFs) for its warning button; the producer
+  // schedules/cancels the guardian's ntfy push, and the button's long-press
+  // dismiss routes back through producer.guardianDismiss.
+  const guardian = installGuardian({
+    dismiss: producer.guardianDismiss,
+    universeId: producer.universeId,
+  });
   installed = () => {
     ui.dispose();
     producer.dispose();
