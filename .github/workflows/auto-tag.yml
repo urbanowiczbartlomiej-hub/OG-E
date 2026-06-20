@@ -1,0 +1,93 @@
+name: Auto-tag release on main
+
+# The AUTOMATED tag path. Pushing a vX.Y.Z tag by hand is blocked in some
+# environments (proxies that 403 tag pushes), so instead of pushing the tag
+# from a workstation we let CI mint it: every push to `main` is inspected and,
+# when the committed version is genuinely new + documented, this workflow
+# creates the tag and publishes it.
+#
+# The guard (all three must hold, else the run is a clean no-op):
+#   1. package.json's "version" has a dated "## [X.Y.Z] — YYYY-MM-DD" section
+#      in CHANGELOG.md  — i.e. this commit is a real, documented release;
+#   2. the tag vX.Y.Z does not already exist on the remote.
+# In practice only the `chore(release): X.Y.Z` commit bumps the version AND
+# adds the CHANGELOG section, so ordinary commits to main never tag anything.
+#
+# Why this workflow also UPLOADS (instead of just pushing the tag and letting
+# release.yml fire): a tag pushed with the default GITHUB_TOKEN does NOT trigger
+# other workflows (GitHub's loop-guard). So after minting the tag we check it
+# out (detached HEAD) and run the exact same scripts/release.mjs the official
+# tag path runs — the release LOGIC stays single-sourced in that script. The
+# manual `release.yml` (push: tags) still works unchanged for hand-pushed tags.
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  auto-tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # mint + push the vX.Y.Z tag
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need full history + all tags for the guard
+
+      - name: Decide whether this commit is a new, documented release
+        id: guard
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          TAG="v$VERSION"
+
+          # 1. dated CHANGELOG section for exactly this version?
+          ESC=$(printf '%s' "$VERSION" | sed 's/\./\\./g')
+          if ! grep -qE "^## \[$ESC\] — [0-9]{4}-[0-9]{2}-[0-9]{2}" CHANGELOG.md; then
+            echo "release: no dated CHANGELOG section for $VERSION — skipping."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # 2. tag must not already exist on the remote
+          if [ -n "$(git ls-remote --tags origin "refs/tags/$TAG")" ]; then
+            echo "release: $TAG already on the remote — skipping."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "release: $TAG is new and documented — will tag + publish."
+          echo "release=true" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push the tag
+        if: steps.guard.outputs.release == 'true'
+        run: |
+          TAG="v${{ steps.guard.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$TAG"
+          git push origin "$TAG"
+
+      - name: Check out the tag (detached HEAD, mirrors the official path)
+        if: steps.guard.outputs.release == 'true'
+        run: git checkout "v${{ steps.guard.outputs.version }}"
+
+      - name: Set up Node.js
+        if: steps.guard.outputs.release == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        if: steps.guard.outputs.release == 'true'
+        run: npm ci
+
+      - name: Release to AMO from the freshly-minted tag
+        if: steps.guard.outputs.release == 'true'
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: node scripts/release.mjs "${{ steps.guard.outputs.version }}"
