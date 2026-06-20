@@ -49,7 +49,7 @@
 //
 // Event-driven refresh calls happen on every relevant change
 // (settings / scans / registry / bridge events + user clicks). One 1 Hz
-// `setInterval` at mount feeds the waitGap countdown and the timeout
+// tick on the shared `clock` feeds the waitGap countdown and the timeout
 // detection — zero other timers (no scanUnlock, no checkTargetWatchdog,
 // no countdown-setInterval).
 //
@@ -122,6 +122,7 @@ import {
 } from '../../lib/ogeEvents.js';
 import { installFabSettingsLifecycle } from '../shared/fabSettingsLifecycle.js';
 import { createFleetDispatcherCache } from '../shared/fleetDispatcherCache.js';
+import { clock } from '../../lib/clock.js';
 
 // Re-export the pure pipeline so existing call-sites (e.g. the test
 // file which imports `derive` + `render` from this module) keep
@@ -987,11 +988,11 @@ export const installSendColony = () => {
   document.addEventListener(COLONIZE_SENT_EVENT, onColonizeSent);
 
   // 1 Hz repaint ticker — the only timer in the whole feature.
-  const tickerHandle = setInterval(refresh, REPAINT_TICK_MS);
+  const unsubTicker = clock.subscribe(refresh, { everyMs: REPAINT_TICK_MS });
 
   installed = {
     dispose: () => {
-      clearInterval(tickerHandle);
+      unsubTicker();
       removeButton();
       unsubSettings();
       unsubGalaxyConfig();

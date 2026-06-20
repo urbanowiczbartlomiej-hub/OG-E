@@ -73,6 +73,7 @@ import { OWNER_FS } from '../../domain/fleetOwnership.js';
 import { mayCompleteFleet2 } from '../shared/fleetOwnership.js';
 import { EVENT_BOX_LOADED_EVENT } from '../../lib/ogeEvents.js';
 import { whenEventBoxReady } from '../shared/eventBoxGate.js';
+import { clock } from '../../lib/clock.js';
 import { resolveSelection } from '../../domain/fleetPlan.js';
 import {
   coordKey,
@@ -817,14 +818,14 @@ export const installDailyRun = () => {
 
   // 1 Hz repaint ticker — keeps "N left" counter in sync even if OGame populates
   // #eventContent after our initial refresh.
-  const tickerHandle = setInterval(refresh, 1000);
+  const unsubTicker = clock.subscribe(refresh, { everyMs: 1000 });
 
   installed = {
     dispose: () => {
       removeButton();
       unsubSettings();
       unsubRoutes();
-      clearInterval(tickerHandle);
+      unsubTicker();
       document.removeEventListener(EVENT_BOX_LOADED_EVENT, onEventBoxLoaded);
       stopGate();
       if (settleTimer) clearTimeout(settleTimer);

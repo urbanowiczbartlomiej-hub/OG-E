@@ -49,7 +49,7 @@
 //   1. `installArtifactShopWatcher()` is a no-op on every other page.
 //   2. A MutationObserver on `document.body` re-checks on every DOM change
 //      (debounced 200 ms) — covers claiming the final rank in-place.
-//   3. A 3-second safety-poll covers observer gaps after a server re-render.
+//   3. A 5-second safety-poll covers observer gaps after a server re-render.
 //   4. `checkCompletion` short-circuits while the stored window is still in
 //      the future (`cur > now`) — self-limiting, so no write churn and no
 //      window creep across repeat visits.
@@ -64,6 +64,7 @@
 import { debounce } from '../lib/debounce.js';
 import { writeDailyState, readDailyState } from '../state/dailyActions.js';
 import { DAILY_STATE_CHANGED_EVENT } from '../lib/ogeEvents.js';
+import { clock } from '../lib/clock.js';
 
 // ── Game-DOM contract (local — only this feature reads it) ─────────────────
 // Verbatim OGame selectors/classes for the Artifact-Shop rank scrollbar.
@@ -195,14 +196,16 @@ export const installArtifactShopWatcher = () => {
   const observer = new MutationObserver(scheduleCheck);
   observer.observe(document.body, { childList: true, subtree: true });
 
-  const safetyPoll = setInterval(() => {
+  // Backstop for a missed observer tick, on the shared visibility-aware
+  // clock — pauses while the tab is hidden, snaps once on return.
+  const unsubPoll = clock.subscribe(() => {
     if (installed) checkCompletion();
-  }, 3000);
+  }, { everyMs: 5000 });
 
   installed = {
     dispose: () => {
       observer.disconnect();
-      clearInterval(safetyPoll);
+      unsubPoll();
       installed = null;
     },
   };

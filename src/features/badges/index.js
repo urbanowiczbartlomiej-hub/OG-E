@@ -49,6 +49,7 @@ import { injectStyle, waitFor } from '../../lib/dom.js';
 import { debounce } from '../../lib/debounce.js';
 import { GAME } from '../../lib/gameDom.js';
 import { EVENT_BOX_LOADED_EVENT } from '../../lib/ogeEvents.js';
+import { clock } from '../../lib/clock.js';
 import { groupMarkers, bodyKey, MARKER_LABEL } from './pure.js';
 
 // ── OG-E-owned ids/classes (NOT a DOM contract — ours to rename freely) ──
@@ -571,16 +572,17 @@ export const installBadges = () => {
   attachObserver(observer);
 
   // Safety net: OGame refreshes #eventContent on a ~30s AJAX tick and has
-  // historically dodged scoped observers. 3s is far tighter than that and the
-  // re-render is O(#planets) — practically free. Gated on the setting.
-  const safetyPoll = setInterval(() => {
+  // historically dodged scoped observers. 5s is still far tighter than that
+  // and the re-render is O(#planets) — practically free. On the shared,
+  // visibility-aware clock; gated on the setting.
+  const unsubPoll = clock.subscribe(() => {
     if (settingsStore.get().expeditionBadges) renderGuarded();
-  }, 3000);
+  }, { everyMs: 5000 });
 
   installed = {
     dispose: () => {
       observer?.disconnect();
-      clearInterval(safetyPoll);
+      unsubPoll();
       unsubSettings();
       document.removeEventListener(EVENT_BOX_LOADED_EVENT, onEventBox);
       eventBoxReady = false;

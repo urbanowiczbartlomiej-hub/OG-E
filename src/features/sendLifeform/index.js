@@ -41,6 +41,7 @@ import { createButton as makeButton, labelLines } from '../shared/button.js';
 import { DNA_GLYPH } from '../shared/buttonGlyphs.js';
 import { installFabSettingsLifecycle } from '../shared/fabSettingsLifecycle.js';
 import { SYSTEM_DISCOVERY_RESULT_EVENT } from '../../lib/ogeEvents.js';
+import { clock } from '../../lib/clock.js';
 import {
   derive,
   render,
@@ -469,11 +470,11 @@ export const installSendLifeform = () => {
   const unsubScans = scansStore.subscribe(() => refresh());
   document.addEventListener(SYSTEM_DISCOVERY_RESULT_EVENT, onDiscoveryResult);
 
-  const tickerHandle = setInterval(refresh, REPAINT_TICK_MS);
+  const unsubTicker = clock.subscribe(refresh, { everyMs: REPAINT_TICK_MS });
 
   installed = {
     dispose: () => {
-      clearInterval(tickerHandle);
+      unsubTicker();
       endCooldown();
       removeButton();
       unsubSettings();

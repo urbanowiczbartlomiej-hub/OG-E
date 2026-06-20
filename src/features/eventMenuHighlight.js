@@ -38,8 +38,9 @@
 //      (idempotent: guarded by stable style-element id).
 //   2. `applyHighlights()` runs immediately, then on every debounced
 //      MutationObserver tick in case OGame AJAX-rebuilds the toolbar.
-//   3. A 3-second safety-poll re-applies, guarding against observer
-//      gaps (same safety-net pattern as `badges.js`).
+//   3. A 5-second safety-poll on the shared, visibility-aware `clock`
+//      re-applies, guarding against observer gaps (pauses while the tab
+//      is hidden, snaps once on return; same pattern as `badges.js`).
 //   4. A `settingsStore` subscription reacts immediately when the feature
 //      is toggled: off → strip everything; on → re-inject and re-apply.
 //   5. Dispose strips the animation class, removes the style element,
@@ -66,6 +67,7 @@ import { settingsStore } from '../state/settings.js';
 import { GAME } from '../lib/gameDom.js';
 import { gameDayKey } from '../domain/gameDayKey.js';
 import { readDailyState } from '../state/dailyActions.js';
+import { clock } from '../lib/clock.js';
 
 const STYLE_ID = 'oge-event-highlight-style';
 
@@ -252,9 +254,9 @@ export const installEventMenuHighlight = () => {
   const target = document.getElementById('menuTable') ?? document.body;
   observer.observe(target, { childList: true, subtree: true });
 
-  const safetyPoll = setInterval(() => {
+  const unsubPoll = clock.subscribe(() => {
     if (installed) applyHighlights();
-  }, 3000);
+  }, { everyMs: 5000 });
 
   // React to settings changes — same diff-guarded pattern as readabilityBoost.
   let prevEnabled = settingsStore.get().eventMenuHighlight;
@@ -272,7 +274,7 @@ export const installEventMenuHighlight = () => {
   installed = {
     dispose: () => {
       observer.disconnect();
-      clearInterval(safetyPoll);
+      unsubPoll();
       unsubSettings();
       teardownDom();
       installed = null;

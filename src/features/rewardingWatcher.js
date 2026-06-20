@@ -35,7 +35,7 @@
 //      Rewarding page.
 //   2. On the Rewarding page a MutationObserver on `document.body` runs
 //      `checkCompletion()` on every DOM change (debounced 200 ms).
-//   3. A 3-second safety-poll covers the case where OGame re-renders the
+//   3. A 5-second safety-poll covers the case where OGame re-renders the
 //      list after a task is stamped server-side.
 //   4. Once a done-day is written it is not re-written unnecessarily —
 //      `checkCompletion` short-circuits when the stored key already matches
@@ -52,6 +52,7 @@ import { debounce } from '../lib/debounce.js';
 import { gameDayKey } from '../domain/gameDayKey.js';
 import { writeDailyState, readDailyState } from '../state/dailyActions.js';
 import { DAILY_STATE_CHANGED_EVENT } from '../lib/ogeEvents.js';
+import { clock } from '../lib/clock.js';
 
 /** Selectors local to this feature — only the Rewarding page uses them. */
 const REWARDINGS_SEL = '#rewardings';
@@ -129,14 +130,16 @@ export const installRewardingWatcher = () => {
   const observer = new MutationObserver(scheduleCheck);
   observer.observe(document.body, { childList: true, subtree: true });
 
-  const safetyPoll = setInterval(() => {
+  // Backstop for a missed observer tick, on the shared visibility-aware
+  // clock — pauses while the tab is hidden, snaps once on return.
+  const unsubPoll = clock.subscribe(() => {
     if (installed) checkCompletion();
-  }, 3000);
+  }, { everyMs: 5000 });
 
   installed = {
     dispose: () => {
       observer.disconnect();
-      clearInterval(safetyPoll);
+      unsubPoll();
       installed = null;
     },
   };

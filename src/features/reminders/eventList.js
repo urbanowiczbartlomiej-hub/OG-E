@@ -73,6 +73,7 @@ import { readPending, lastAdhocIntent, lastWaveIntent } from './pending.js';
 import { readFleetSaveCancel, pruneFleetSaveCancel } from './fleetSaveCancel.js';
 import { fleetRowMeta } from './fleetSaveScan.js';
 import { GAME } from '../../lib/gameDom.js';
+import { clock } from '../../lib/clock.js';
 
 /** @typedef {import('../../sync/reminders.js').ReminderState} ReminderState */
 /** @typedef {import('../../domain/adhoc.js').AdhocReminder} AdhocReminder */
@@ -589,7 +590,7 @@ export const installEventListReminders = ({
   // if a storage event is missed.
   const refresh = () => { void refreshSnapshot().then(() => { if (installed) render(); }); };
 
-  const safetyPoll = setInterval(refresh, 3000);
+  const unsubPoll = clock.subscribe(refresh, { everyMs: 5000 });
 
   refresh();
 
@@ -597,7 +598,7 @@ export const installEventListReminders = ({
     dispose: () => {
       document.removeEventListener('click', onClick, true);
       observer.disconnect();
-      clearInterval(safetyPoll);
+      unsubPoll();
       clearFsFlipTimer();
       unsubSettings();
       unsubScanConfig();
