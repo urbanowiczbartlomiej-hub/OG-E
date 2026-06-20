@@ -11,7 +11,7 @@
 //   🔴 red circle  — my own aggression flying out
 //   "FS" yellow    — a detected fleet-save in motion (a text tag, not a dot)
 //   "FS" orange    — a fleet-save that LANDED and sits exposed (synced, TTL'd)
-//   💙 heart + "E" — my expedition (a small blue heart-with-E SVG)
+//   💙 blue heart  — my expedition (a small SVG)
 //   🟢 green       — my logistics (transport / deploy / ACS defend)
 //   🔵 blue        — my recycle
 //
@@ -197,12 +197,12 @@ const buildCss = () => `
 }
 /* Landed fleet-save: same "FS" tag, orange = sitting exposed after touchdown. */
 .oge-mb-fs.landed{color:#e8902e;}
-/* Expedition — a small blue heart with an "E" (the expeditor's own badge),
-   inline SVG so it stays crisp at any size. */
+/* Expedition — a small blue heart (the expeditor's own badge), inline SVG so
+   it stays crisp at any size. */
 .oge-mb-explore{
   width:10px;height:10px;
   border-radius:0;box-shadow:none;
-  background:url("data:image/svg+xml,<svg viewBox='0 0 32 32' xmlns='http://www.w3.org/2000/svg'><path d='M16 28C16 28 4 18.5 4 10.8C4 7 6.9 4 10.6 4C13 4 15.1 5.4 16 7.6C16.9 5.4 19 4 21.4 4C25.1 4 28 7 28 10.8C28 18.5 16 28 16 28Z' fill='%232C9FE0'/><path d='M11.5 7.5H20.5V10.2H14.4V13H19.5V15.6H14.4V17.7H20.5V20.5H11.5Z' fill='%23ffffff'/></svg>") center/contain no-repeat;
+  background:url("data:image/svg+xml,<svg viewBox='0 0 32 32' xmlns='http://www.w3.org/2000/svg'><path d='M16 29C16 29 2.5 19 2.5 11C2.5 6.8 6 4 9.5 4C12.5 4 15 6 16 9C17 6 19.5 4 22.5 4C26 4 29.5 6.8 29.5 11C29.5 19 16 29 16 29Z' fill='%232C9FE0'/></svg>") center/contain no-repeat;
   filter:drop-shadow(0 0 1px rgba(0,0,0,.9));
 }
 /* "?" help chip at the top of the planet list → hover reveals the legend. */
@@ -318,7 +318,7 @@ const clearColumns = () => {
 const buildMarker = (m) => {
   const el = document.createElement('span');
   el.className = `${DOT_CLASS} oge-mb-${m.category}${m.landed ? ' landed' : ''}`;
-  // explore renders via a CSS background SVG (heart + "E"); only the FS tag is text.
+  // explore renders via a CSS background SVG (a heart); only the FS tag is text.
   if (m.category === 'fs') el.textContent = 'FS';
   el.title = m.landed ? 'Fleet-save · landed (exposed)' : MARKER_LABEL[m.category] || 'Fleet';
   return el;
