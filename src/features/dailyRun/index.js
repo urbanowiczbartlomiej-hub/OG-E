@@ -71,8 +71,8 @@ import {
 import { MISSION_DEPLOYMENT } from '../../domain/rules.js';
 import { OWNER_FS } from '../../domain/fleetOwnership.js';
 import { mayCompleteFleet2 } from '../shared/fleetOwnership.js';
-import { GAME } from '../../lib/gameDom.js';
 import { EVENT_BOX_LOADED_EVENT } from '../../lib/ogeEvents.js';
+import { whenEventBoxReady } from '../shared/eventBoxGate.js';
 import { resolveSelection } from '../../domain/fleetPlan.js';
 import {
   coordKey,
@@ -107,20 +107,22 @@ const BG_COLLECT = '#43cf72'; // green rim (collect zone, slightly brighter)
 
 // ─── Eventbox readiness gate ────────────────────────────────────────────
 // OGame fetches the fleet-event list asynchronously, up to a few seconds
-// AFTER page load. Until that XHR lands, `#eventContent` has no rows, so
-// the DISPATCH label's "next target / N left" would be computed against an
-// EMPTY in-flight set — confidently wrong, self-correcting only once the
-// rows appear. While the gate is closed the WHOLE button sits in an amber
-// "Wait…" (wait pulse, taps just flash) — a micro send picked off stale
-// data could duplicate an in-flight deployment, so blocking beats guessing.
-// The gate opens when: `#eventContent` already exists at install (we
-// loaded after hydration), the `oge:eventBoxLoaded` bridge signal arrives,
-// or the safety timeout expires (degrade to the pre-gate behaviour rather
-// than wait forever on a changed game URL).
+// AFTER page load. Until that XHR lands, `#eventContent` has no ROWS — the
+// container itself is server-rendered and present from the start, so its
+// mere PRESENCE is NOT a freshness signal. Computed against that empty list
+// the DISPATCH label's "next target / N left" is confidently wrong, self-
+// correcting only once the rows appear.
+//
+// So readiness is driven by a real SIGNAL (`whenEventBoxReady`), never by DOM
+// presence — and it is the SAME gate the shared button uses for its visual
+// disable. One source of truth means the label can never paint a confident
+// count while the button is (or has just become) enabled on a half-loaded
+// list: enable and compute open together. While not-ready the WHOLE button
+// sits amber "Wait…" (taps just flash) — a micro send off stale data could
+// duplicate an in-flight deployment, so blocking beats guessing.
 const BG_WAIT = '#fbbf24'; // amber — same wait colour as sendColony/sendExpedition
-const EVENTBOX_SAFETY_TIMEOUT_MS = 6000;
-// The bridge's XHR 'load' signal can precede the game's own success
-// handler inserting the rows — repaint once more after a settle delay.
+// The XHR 'load' signal can precede the game's own success handler inserting
+// the rows — repaint once more after a settle delay.
 const EVENTBOX_SETTLE_MS = 150;
 
 // ─── helpers (impure env reads) ─────────────────────────────────────────
@@ -694,26 +696,28 @@ export const installDailyRun = () => {
   // availability) so select() can resolve the fleet.
   installFleetCourier();
 
-  // Eventbox readiness gate — see the constants block for the rationale.
-  // `#eventContent` already present means the list hydrated before we
-  // installed; otherwise wait for the bridge signal (every eventbox
-  // refresh also re-fires it — a free instant repaint) or the safety net.
-  eventBoxReady = !!document.querySelector(GAME.EVENT_CONTENT);
+  // Eventbox readiness — the SINGLE gate (shared with the button's own visual
+  // disable; see the constants block). Starts not-ready on fleetdispatch and
+  // opens on the first of the eventList XHR, window load, or the safety net;
+  // off fleetdispatch it opens synchronously (nothing to wait for). At that
+  // one moment we flip the flag and repaint with a real count — so the label
+  // is ready at-or-before the instant the button becomes enabled.
+  eventBoxReady = false;
   /** @type {ReturnType<typeof setTimeout> | null} */
   let settleTimer = null;
-  const onEventBoxLoaded = () => {
+  const stopGate = whenEventBoxReady(() => {
     eventBoxReady = true;
     refresh();
+    // The XHR 'load' can precede the game inserting the rows — repaint once
+    // more after a short settle so a just-landed list shows immediately.
     if (settleTimer) clearTimeout(settleTimer);
     settleTimer = setTimeout(refresh, EVENTBOX_SETTLE_MS);
-  };
+  });
+  // Permanent repaint on EVERY later eventbox refresh — keeps "N left" prompt
+  // (and corrects a count first painted when the gate opened via the fallback
+  // before the first XHR landed) without waiting on the 1 Hz ticker.
+  const onEventBoxLoaded = () => refresh();
   document.addEventListener(EVENT_BOX_LOADED_EVENT, onEventBoxLoaded);
-  const safetyTimer = setTimeout(() => {
-    if (!eventBoxReady) {
-      eventBoxReady = true;
-      refresh();
-    }
-  }, EVENTBOX_SAFETY_TIMEOUT_MS);
 
   /**
    * The shared {@link makeButton} controller — owns geometry, placement,
@@ -822,7 +826,7 @@ export const installDailyRun = () => {
       unsubRoutes();
       clearInterval(tickerHandle);
       document.removeEventListener(EVENT_BOX_LOADED_EVENT, onEventBoxLoaded);
-      clearTimeout(safetyTimer);
+      stopGate();
       if (settleTimer) clearTimeout(settleTimer);
       installed = null;
     },

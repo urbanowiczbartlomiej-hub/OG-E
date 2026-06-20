@@ -67,6 +67,17 @@ export const whenEventBoxReady = (onReady) => {
     return () => {};
   }
 
+  // Already past window 'load' (a late install — we mounted after the page,
+  // and very likely after the post-load eventbox XHR, already settled): the
+  // `load` listener below would never fire, so don't sit on the safety
+  // timeout. Treat 'complete' as ready now, exactly as the `load` fallback
+  // would. (Same fallback-grade guarantee: a consumer painting a count
+  // repaints again when the next eventbox XHR lands.)
+  if (document.readyState === 'complete') {
+    onReady();
+    return () => {};
+  }
+
   let done = false;
   /** @type {ReturnType<typeof setTimeout> | null} */
   let timer = null;
