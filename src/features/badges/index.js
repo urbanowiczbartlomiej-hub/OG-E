@@ -11,15 +11,16 @@
 //   🔴 red circle  — my own aggression flying out
 //   "FS" yellow    — a detected fleet-save in motion (a text tag, not a dot)
 //   "FS" orange    — a fleet-save that LANDED and sits exposed (synced, TTL'd)
-//   💙 teal HEART  — my expedition
+//   💙 heart + "E" — my expedition (a small blue heart-with-E SVG)
 //   🟢 green       — my logistics (transport / deploy / ACS defend)
 //   🔵 blue        — my recycle
 //
 // Mine are round (+ a heart for expeditions); the external THREAT is the odd
-// square. No counts, no direction arrows — the marker is a glanceable status
-// dot, not a readout. Click / tap a marker for the per-fleet detail (targets +
-// ETA). The whole point is to tell, at a glance, that the fleets are well
-// positioned WITHOUT burying the planet skins under our own clutter.
+// square. No counts, no direction arrows, no click target — the marker is a
+// glanceable status dot, not a readout (it is far too small to click). A "?"
+// icon at the top of the planet list reveals the legend on hover. The whole
+// point is to tell, at a glance, that the fleets are well positioned WITHOUT
+// burying the planet skins under our own clutter.
 //
 // # Why this is purely passive
 //
@@ -60,25 +61,8 @@ const COL_CLASS = 'oge-mb-col';
 const MOON_COL_CLASS = 'oge-mb-col-moon';
 /** One status marker inside a column (category class added alongside). */
 const DOT_CLASS = 'oge-mb-dot';
-/** Shared click/tap detail popover (one per page, parked on <body>). */
-const POP_ID = 'oge-mb-pop';
 
 const REFRESH_DEBOUNCE_MS = 200;
-
-/**
- * Per-marker detail for the popover, attached weakly so re-renders (which
- * recreate the marker elements) don't leak. Keyed by the marker element.
- *
- * @type {WeakMap<Element, MarkerDetail>}
- */
-const markerDetail = new WeakMap();
-
-/**
- * @typedef {object} MarkerDetail
- * @property {string} label    Category label (popover header).
- * @property {string} category Category id.
- * @property {import('./pure.js').TileFleet[]} fleets
- */
 
 // ── DOM read helpers (feature layer — pure.js stays DOM-free) ─────────────
 
@@ -192,11 +176,11 @@ const buildCss = () => `
   left:calc(100% - 12px);
 }
 .${DOT_CLASS}{
+  display:inline-block;
   width:7px;
   height:7px;
   box-sizing:border-box;
   border-radius:50%;
-  cursor:pointer;
   box-shadow:0 0 2px rgba(0,0,0,.9);
 }
 /* Mine = round; the external THREAT is the odd square. */
@@ -204,117 +188,121 @@ const buildCss = () => `
 .oge-mb-aggro{background:#e24b4a;}
 .oge-mb-logistics{background:#4caf6a;}
 .oge-mb-economy{background:#3d7fd0;}
-/* Glyph markers (not filled dots): the expedition heart and the "FS" tag. */
-.oge-mb-explore,.oge-mb-fs{
+/* "FS" text tag (a glyph, not a filled dot). */
+.oge-mb-fs{
   width:auto;height:auto;
   background:none;box-shadow:none;border-radius:0;
+  color:#f0c23c;font:700 8px/1 Verdana,sans-serif;letter-spacing:-.5px;
   text-shadow:0 0 2px #000,0 0 1px #000;
 }
-.oge-mb-explore{color:#3fb6c8;font:9px/1 Verdana,sans-serif;}
-.oge-mb-fs{color:#f0c23c;font:700 8px/1 Verdana,sans-serif;letter-spacing:-.5px;}
 /* Landed fleet-save: same "FS" tag, orange = sitting exposed after touchdown. */
 .oge-mb-fs.landed{color:#e8902e;}
-#${POP_ID}{
-  position:fixed;
-  z-index:99999;
-  max-width:240px;
-  display:none;
-  background:#0d1a24;
-  border:1px solid #2c5470;
-  border-radius:6px;
-  padding:8px 10px;
-  color:#cfe6f5;
-  font:12px/1.45 Verdana,sans-serif;
-  box-shadow:0 2px 10px rgba(0,0,0,.6);
+/* Expedition — a small blue heart with an "E" (the expeditor's own badge),
+   inline SVG so it stays crisp at any size. */
+.oge-mb-explore{
+  width:10px;height:10px;
+  border-radius:0;box-shadow:none;
+  background:url("data:image/svg+xml,<svg viewBox='0 0 32 32' xmlns='http://www.w3.org/2000/svg'><path d='M16 28C16 28 4 18.5 4 10.8C4 7 6.9 4 10.6 4C13 4 15.1 5.4 16 7.6C16.9 5.4 19 4 21.4 4C25.1 4 28 7 28 10.8C28 18.5 16 28 16 28Z' fill='%232C9FE0'/><path d='M11.5 7.5H20.5V10.2H14.4V13H19.5V15.6H14.4V17.7H20.5V20.5H11.5Z' fill='%23ffffff'/></svg>") center/contain no-repeat;
+  filter:drop-shadow(0 0 1px rgba(0,0,0,.9));
 }
-#${POP_ID}.open{display:block;}
-#${POP_ID} .h{margin:0 0 5px;font-weight:700;color:#fff;}
-#${POP_ID} .r{white-space:nowrap;}
-#${POP_ID} .r .e{color:#9fb8c9;}
-#${POP_ID} .more{color:#9fb8c9;margin-top:3px;}
+/* "?" help chip at the top of the planet list → hover reveals the legend. */
+.oge-mb-help{
+  position:relative;
+  display:flex;align-items:center;justify-content:center;
+  width:14px;height:14px;margin:3px auto;
+  border-radius:50%;
+  background:#142230;color:#9fc0d6;
+  border:1px solid #2c5470;
+  font:700 10px/1 Verdana,sans-serif;
+  cursor:help;
+  z-index:31;
+}
+.oge-mb-legend{
+  display:none;
+  position:absolute;top:-4px;left:calc(100% + 8px);
+  z-index:99999;
+  width:max-content;max-width:280px;
+  background:#0d1a24;border:1px solid #2c5470;border-radius:6px;
+  padding:9px 11px;
+  color:#cfe6f5;font:11px/1.5 Verdana,sans-serif;
+  box-shadow:0 2px 12px rgba(0,0,0,.65);
+  text-align:left;
+}
+.oge-mb-help:hover .oge-mb-legend,
+.oge-mb-help:focus-within .oge-mb-legend{display:block;}
+.oge-mb-legend .lt{font-weight:700;color:#fff;margin:0 0 7px;}
+.oge-mb-legend-row{display:flex;align-items:center;gap:9px;margin:4px 0;white-space:nowrap;}
+.oge-mb-legend-row .sw{flex:0 0 18px;display:flex;align-items:center;justify-content:center;}
+.oge-mb-legend .note{margin-top:7px;color:#9fb8c9;white-space:normal;}
 `;
 
-const HIDE_CSS = `.${COL_CLASS}{display:none!important;}`;
+const HIDE_CSS = `.${COL_CLASS},.oge-mb-help{display:none!important;}`;
 
-// ── Popover ────────────────────────────────────────────────────────────────
-
-/** @type {HTMLElement | null} */
-let popEl = null;
-
-/** @param {string} c @returns {string} */
-const brk = (c) => (c ? `[${c}]` : '?');
+// ── Legend ("?" help chip) ───────────────────────────────────────────────
 
 /**
- * Format an arrival epoch (seconds) as a short countdown. Clock read happens
- * here in the feature layer; `pure.js` never touches the clock.
+ * Legend rows — each renders the REAL marker visual (same classes as the live
+ * markers) next to its meaning, so the key always matches what's on screen.
  *
- * @param {number} arrivalAt
- * @returns {string}
+ * @type {{ category: string, landed?: boolean, label: string }[]}
  */
-const fmtEta = (arrivalAt) => {
-  if (!Number.isFinite(arrivalAt)) return '—';
-  const r = Math.round(arrivalAt - Date.now() / 1000);
-  if (r <= 0) return 'now';
-  const h = Math.floor(r / 3600);
-  const m = Math.floor((r % 3600) / 60);
-  const s = r % 60;
-  if (h) return `${h}h ${m}m`;
-  if (m) return `${m}m ${s}s`;
-  return `${s}s`;
-};
+const LEGEND_ROWS = [
+  { category: 'threat', label: 'Incoming attack (foreign fleet at you)' },
+  { category: 'fs', label: 'Fleet-save — in motion (safe)' },
+  { category: 'fs', landed: true, label: 'Fleet-save — landed, exposed (≤2h)' },
+  { category: 'aggro', label: 'Your attack / spy on a player' },
+  { category: 'explore', label: 'Your expedition' },
+  { category: 'logistics', label: 'Logistics (transport / deploy / defend)' },
+  { category: 'economy', label: 'Recycle' },
+];
 
-/** @param {MarkerDetail} d @returns {DocumentFragment} */
-const buildPopContent = (d) => {
-  const frag = document.createDocumentFragment();
-  const h = document.createElement('div');
-  h.className = 'h';
-  h.textContent = d.label;
-  frag.appendChild(h);
-
-  const MAX = 12;
-  d.fleets.slice(0, MAX).forEach((f) => {
-    const row = document.createElement('div');
-    row.className = 'r';
-    const route = document.createElement('span');
-    route.textContent = `${brk(f.origin)} → ${brk(f.dest)}${f.isReturn ? ' ↩' : ''} `;
-    const eta = document.createElement('span');
-    eta.className = 'e';
-    eta.textContent = `· ${fmtEta(f.arrivalAt)}`;
-    row.append(route, eta);
-    frag.appendChild(row);
-  });
-  if (d.fleets.length > MAX) {
-    const more = document.createElement('div');
-    more.className = 'more';
-    more.textContent = `…${d.fleets.length - MAX} more`;
-    frag.appendChild(more);
+/** @returns {HTMLElement} The legend panel (child of the "?" chip). */
+const buildLegend = () => {
+  const panel = document.createElement('div');
+  panel.className = 'oge-mb-legend';
+  const title = document.createElement('div');
+  title.className = 'lt';
+  title.textContent = 'Planet markers';
+  panel.appendChild(title);
+  for (const row of LEGEND_ROWS) {
+    const r = document.createElement('div');
+    r.className = 'oge-mb-legend-row';
+    const sw = document.createElement('span');
+    sw.className = 'sw';
+    const mk = document.createElement('span');
+    mk.className = `${DOT_CLASS} oge-mb-${row.category}${row.landed ? ' landed' : ''}`;
+    if (row.category === 'fs') mk.textContent = 'FS';
+    sw.appendChild(mk);
+    const lb = document.createElement('span');
+    lb.textContent = row.label;
+    r.append(sw, lb);
+    panel.appendChild(r);
   }
-  return frag;
+  const note = document.createElement('div');
+  note.className = 'note';
+  note.textContent =
+    'Shown where each fleet lands; max 3 per body, by priority. Square = a threat from outside, round = yours.';
+  panel.appendChild(note);
+  return panel;
 };
 
 /**
- * @param {Element} markerEl
- * @param {MarkerDetail} detail
+ * Idempotently place the "?" help chip at the top of `#planetList` (OGame
+ * AJAX-swaps the list, so the render path re-adds it). Hover reveals the legend
+ * — there is no click target, the markers themselves being too small to hit.
+ *
  * @returns {void}
  */
-const openPopover = (markerEl, detail) => {
-  if (!popEl) return;
-  popEl.replaceChildren(buildPopContent(detail));
-  popEl.classList.add('open');
-  const r = markerEl.getBoundingClientRect();
-  const pw = popEl.offsetWidth;
-  const ph = popEl.offsetHeight;
-  // Prefer the space to the LEFT of the planet bar; fall back to the right.
-  let left = r.left - pw - 6;
-  if (left < 4) left = r.right + 6;
-  let top = r.top + r.height / 2 - ph / 2;
-  top = Math.max(4, Math.min(top, window.innerHeight - ph - 4));
-  popEl.style.left = `${Math.round(left)}px`;
-  popEl.style.top = `${Math.round(top)}px`;
-};
-
-const closePopover = () => {
-  if (popEl) popEl.classList.remove('open');
+const ensureHelpIcon = () => {
+  const list = document.getElementById('planetList');
+  if (!list || list.querySelector('.oge-mb-help')) return;
+  const help = document.createElement('div');
+  help.className = 'oge-mb-help';
+  help.textContent = '?';
+  help.tabIndex = 0;
+  help.setAttribute('aria-label', 'Planet markers legend');
+  help.appendChild(buildLegend());
+  list.insertBefore(help, list.firstChild);
 };
 
 // ── Render ─────────────────────────────────────────────────────────────────
@@ -330,11 +318,9 @@ const clearColumns = () => {
 const buildMarker = (m) => {
   const el = document.createElement('span');
   el.className = `${DOT_CLASS} oge-mb-${m.category}${m.landed ? ' landed' : ''}`;
-  if (m.category === 'explore') el.textContent = '♥';
-  else if (m.category === 'fs') el.textContent = 'FS';
-  const label = m.landed ? 'Fleet-save · landed (exposed)' : MARKER_LABEL[m.category] || 'Fleet';
-  el.title = label;
-  markerDetail.set(el, { label, category: m.category, fleets: m.fleets });
+  // explore renders via a CSS background SVG (heart + "E"); only the FS tag is text.
+  if (m.category === 'fs') el.textContent = 'FS';
+  el.title = m.landed ? 'Fleet-save · landed (exposed)' : MARKER_LABEL[m.category] || 'Fleet';
   return el;
 };
 
@@ -428,6 +414,7 @@ const slimSnapshot = (snapshot) => {
  * @returns {void}
  */
 const renderColumns = () => {
+  ensureHelpIcon();
   const ready = eventBoxLoaded();
   // Pre-XHR window: keep the optimistic cache paint rather than wiping it with
   // an empty live pass. Once the event box has loaded, the live result is
@@ -461,7 +448,6 @@ const renderColumns = () => {
  * Optimistic paint from the previous page's cached markers, so the badges show
  * instantly on load — before the event-list XHR (which {@link renderColumns}
  * computes everything from) has even arrived. The live render replaces it.
- * Cached markers carry no fleets, so their popover is empty until the live pass.
  *
  * @returns {void}
  */
@@ -510,7 +496,7 @@ const attachObserver = (observer) => {
  * Install the planet status markers. Idempotent: a second call while installed
  * returns the same dispose handle. The dispose fn disconnects the observer,
  * clears the safety poll, unsubscribes from settings, removes every column +
- * the popover + both style nodes, and detaches the document handlers.
+ * the "?" help chip + both style nodes, and detaches the event-box handler.
  *
  * @returns {() => void}
  */
@@ -518,10 +504,6 @@ export const installBadges = () => {
   if (installed) return installed.dispose;
 
   injectStyle(STYLE_ID, buildCss());
-
-  popEl = document.createElement('div');
-  popEl.id = POP_ID;
-  document.body.appendChild(popEl);
 
   /** @type {MutationObserver | null} */
   let observer = null;
@@ -558,7 +540,6 @@ export const installBadges = () => {
         if (installed && settingsStore.get().expeditionBadges) renderGuarded();
       });
     } else {
-      closePopover();
       injectStyle(HIDE_STYLE_ID, HIDE_CSS);
     }
   };
@@ -577,24 +558,6 @@ export const installBadges = () => {
       prevEnabled = next.expeditionBadges;
     }
   });
-
-  // Click / tap: open a marker's detail, or close the popover on an outside
-  // click. Capture phase + preventDefault so a marker click never navigates the
-  // planet link it sits inside.
-  /** @param {MouseEvent} e */
-  const onClick = (e) => {
-    const target = /** @type {Element | null} */ (e.target);
-    const markerEl = target?.closest?.(`.${DOT_CLASS}`);
-    if (markerEl) {
-      e.preventDefault();
-      e.stopPropagation();
-      const detail = markerDetail.get(markerEl);
-      if (detail) openPopover(markerEl, detail);
-      return;
-    }
-    if (popEl && !popEl.contains(/** @type {Node} */ (e.target))) closePopover();
-  };
-  document.addEventListener('click', onClick, true);
 
   // The event-list XHR landing is our authority for "an empty render is real".
   // Mark it ready and refresh so a loaded-but-idle list clears the cache.
@@ -619,12 +582,10 @@ export const installBadges = () => {
       observer?.disconnect();
       clearInterval(safetyPoll);
       unsubSettings();
-      document.removeEventListener('click', onClick, true);
       document.removeEventListener(EVENT_BOX_LOADED_EVENT, onEventBox);
       eventBoxReady = false;
       clearColumns();
-      popEl?.remove();
-      popEl = null;
+      document.querySelectorAll('.oge-mb-help').forEach((el) => el.remove());
       document.getElementById(STYLE_ID)?.remove();
       document.getElementById(HIDE_STYLE_ID)?.remove();
       installed = null;

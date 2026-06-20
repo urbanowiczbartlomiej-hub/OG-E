@@ -34,6 +34,10 @@
 //
 // Excluded entirely: colonisation (7) and discovery (18) — sent in bulk, pure
 // noise — and any FOREIGN non-aggressive arrival (e.g. an ally's transport).
+//
+// Game-rule background (phalanx, position 16, recall, the FS technique) lives
+// in docs/ogame-fleet-mechanics.md — the single home for the reverse-engineered
+// OGame knowledge this classification rests on.
 
 import { TARGET_PLANET, TARGET_MOON } from '../../domain/rules.js';
 

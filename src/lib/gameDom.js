@@ -170,6 +170,14 @@ export const GAME = {
   /** AGR moon target-type span (ago-data type:3, action:42). */
   AGO_TYPE_MOON: '#ago_type .moon',
 
+  // ── AGR presence probe (top-bar chrome) ────────────────────────────
+  // AGR injects its menu-toggle button into OGame's top bar on every game
+  // page; its presence is the canonical "is AGR loaded?" signal. Read by
+  // `features/agrLogo` (clicks it to open AGR's menu) and `features/agrGuard`
+  // (times out waiting for it → warns AGR is missing). AGR-owned id, verbatim.
+  /** AGR menu-toggle button — the AGR-present probe. */
+  AGO_MENU_BUTTON: '#ago_menubutton',
+
   // ── Galaxy view (the system-browser form) ──────────────────────────
   // Read by `features/sendColony` (Scan half) and `features/sendLifeform`
   // (system-discovery navigation) — hence centralized here. The submit

@@ -78,6 +78,7 @@ import { installDailyRun } from './features/dailyRun/index.js';
 import { installColonyFab } from './features/abandon/colonyFab.js';
 import { installSettingsUi } from './features/settingsUi/index.js';
 import { installAgrLogo } from './features/agrLogo.js';
+import { installAgrGuard } from './features/agrGuard.js';
 import { installFleetdispatchShortcut } from './features/fleetdispatchShortcut.js';
 import { installEventMenuHighlight } from './features/eventMenuHighlight.js';
 import { installTraderMenuHighlight } from './features/traderMenuHighlight.js';
@@ -214,6 +215,13 @@ const installDomFeatures = () => {
   // OG-E icon and make a click open AGR's menu + auto-expand our
   // settings tab. Same silent-no-op-without-AGR behaviour as settingsUi.
   installAgrLogo();
+
+  // AGR-missing guard — OG-E hard-depends on AGR; if it never hydrates,
+  // show a dismissible top-of-page banner prompting the user to install
+  // it. The notice can't live in the settings panel (that panel lives
+  // inside AGR's menu, which is exactly what's absent). Top-frame only:
+  // one banner, not one per OGame iframe.
+  if (window.top === window.self) installAgrGuard();
 };
 
 if (document.readyState === 'loading') {

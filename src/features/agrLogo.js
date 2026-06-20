@@ -58,12 +58,10 @@
 /** @ts-check */
 
 import { waitFor, safeClick } from '../lib/dom.js';
+import { GAME } from '../lib/gameDom.js';
 
 /** DOM id of the AGR menu-logo anchor. Idle by default; we hijack it. */
 const LOGO_ID = 'ago_menubutton_logo';
-
-/** DOM id of the AGR menu toggle button. Clicking it opens the AGR options menu. */
-const MENU_BUTTON_ID = 'ago_menubutton';
 
 /**
  * DOM id of our own settings-tab header inside the AGR menu — must match
@@ -227,7 +225,7 @@ export const installAgrLogo = () => {
     clickListener = (e) => {
       e.preventDefault();
       e.stopImmediatePropagation();
-      const menuBtn = document.getElementById(MENU_BUTTON_ID);
+      const menuBtn = document.querySelector(GAME.AGO_MENU_BUTTON);
       // safeClick (not bare .click()) — AGR's menu button and tab
       // headers ship as `<a href="javascript:...">` anchors; bare
       // .click() would navigate to the javascript: URL and the page

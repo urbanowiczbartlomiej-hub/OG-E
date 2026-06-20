@@ -149,7 +149,9 @@ and pushes — but the push-to-`main` path above is the only one we use.)
   every other mention *links* to it instead of restating it. Canonical
   homes: build steps → `REVIEWERS.md`; release workflow → `CLAUDE.md`;
   architecture invariants → `CLAUDE.md`; privacy/permissions → `PRIVACY.md`;
-  user-visible changes → `CHANGELOG.md`. Plan docs (a transient `REFACTOR.md`
+  user-visible changes → `CHANGELOG.md`; reverse-engineered OGame game rules
+  (fleet movement, phalanx, fleet-save) → `docs/ogame-fleet-mechanics.md`.
+  Plan docs (a transient `REFACTOR.md`
   and the like) have a lifecycle — delete them once their cycle closes (git
   keeps the history); they are not permanent. **Carve-out:** this rule governs the standalone
   `.md`/`.txt` docs ONLY — it does **not** apply to in-code comments. Those
