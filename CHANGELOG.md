@@ -4,6 +4,20 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.30.1] — 2026-06-21
+
+### Fixed
+
+- **Colonization decisions now reliably reach your other devices.** A position you
+  blocked on one device — a colonizer you sent (even one you sent and recalled) or
+  a target you skipped by hand — could fail to register as taken on another device,
+  so the two disagreed on how many free positions were left. OG-E now pushes these
+  decisions right after a page loads instead of only after a quiet pause — the
+  game reloads the page the instant you send a fleet, which used to cut that pause
+  short and drop the update. An already-open game tab now also re-syncs on its own
+  about once a minute and the moment you switch back to it, so a second device
+  catches up on its own without a manual refresh.
+
 ## [1.30.0] — 2026-06-21
 
 ### Added
