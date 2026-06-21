@@ -6,7 +6,9 @@
 // The guardian is the loud half of the post-landing watch: while the producer
 // reports any landed-but-unsaved fleet via `state/fleetSaveSet.readLandedFs()`,
 // the guardian floats ONE warning button on the unified FAB —
-//   • tap       → ack ("I'm on it") + navigate to the body to re-save;
+//   • tap        → off a fleetdispatch screen this is two-step: the 1st tap
+//                  ACKs ("I'm here" — silences the pulse, stays put) and the
+//                  2nd navigates to the body to re-save;
 //   • long-press → dismiss this landing.
 // It also rides the FAB's `fabMode` / `fabBtnSize` settings live.
 //
@@ -115,6 +117,11 @@ const paintPlanetList = ({ coords, planetHref, moonHref }) => {
 
 beforeEach(() => {
   document.body.innerHTML = '';
+  // Reset the URL query: a prior tap test navigates to a gameforge
+  // fleetdispatch URL, and that lingering `component=fleetdispatch` would push
+  // later cases onto the guardian's on-dispatch branch. (happy-dom 14 honours a
+  // direct `location.search =` write — the same workaround the recorder test uses.)
+  location.search = '';
   readLandedFs.mockReturnValue([]);
   installButtonChrome.mockClear();
   buttonMock.created.length = 0;
@@ -166,9 +173,9 @@ describe('installGuardian — label', () => {
     installGuardian({ universeId: UID });
     const lines = lastBtn().paintLines.mock.calls.at(-1)[1];
     const texts = lines.map(/** @param {{ text: string }} l */ (l) => l.text);
-    expect(texts).toContain('Re-Save');
+    expect(texts).toContain('Watch');
     expect(texts).toContain('4:115:8');
-    expect(texts).toContain('hold to dismiss');
+    expect(texts).toContain('(hold to dismiss)');
   });
 
   it('summarises the overflow as "coords +N" for multiple bare fleets', () => {
@@ -194,9 +201,13 @@ describe('installGuardian — tap (ack + navigate)', () => {
     readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
     installGuardian({ ack, universeId: UID });
 
+    // First tap ACKs only — silences the pulse, snoozes the push, stays put.
     zone().onTap();
-
     expect(ack).toHaveBeenCalledWith('1:2:3:1');
+    expect(window.location.href).not.toContain('component=fleetdispatch');
+
+    // Second tap (while still armed) navigates to the body's fleetdispatch.
+    zone().onTap();
     expect(window.location.href).toContain('component=fleetdispatch');
     expect(window.location.href).toContain('cp=33');
   });
@@ -211,6 +222,8 @@ describe('installGuardian — tap (ack + navigate)', () => {
     readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:3' })]);
     installGuardian({ ack, universeId: UID });
 
+    // First tap ACKs; the second navigates — to the MOON link for a type-3 body.
+    zone().onTap();
     zone().onTap();
 
     expect(window.location.href).toContain('cp=44');

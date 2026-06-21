@@ -405,21 +405,21 @@ describe('installColonyRecorder — hydration race regression', () => {
 
     // The save trace MUST reflect the full 3-row payload by the end —
     // anything shorter means a write-through fired while the store was
-    // mid-race. We don't pin the exact call count (the hydrate echo
-    // also fires a save with the 2-row stored snapshot) but the last
-    // observed payload must include the new colony. We also don't pin
-    // the exact storage KEY — under happy-dom `location.host` is
-    // `'localhost'` and the per-universe namespace puts the data under
-    // `'localhost:oge_colonyHistory'` here; under a real Gameforge tab
-    // it would be `'s163-pl:oge_colonyHistory'`. Reading the single
-    // value out of the payload sidesteps that.
+    // mid-race. We don't pin the exact call count: the hydrate echo also
+    // fires a save with the 2-row stored snapshot, AND recording a fresh
+    // colony now additionally stamps a colonizeDecisions "mine" marker — a
+    // non-array map under its own key, which can be the very last raw chrome
+    // write. Select the last HISTORY write by its array shape; that also
+    // sidesteps pinning the per-universe storage KEY (`localhost:oge_colonyHistory`
+    // under happy-dom vs `s163-pl:oge_colonyHistory` on a real Gameforge tab).
     expect(setSpy).toHaveBeenCalled();
-    const lastCall = setSpy.mock.calls[setSpy.mock.calls.length - 1];
-    /** @type {Record<string, ColonyEntry[]>} */
-    const lastPayload = lastCall[0];
-    const values = Object.values(lastPayload);
-    expect(values).toHaveLength(1);
-    expect(values[0].map((e) => e.cp)).toEqual([11111, 22222, 33333]);
+    const historyWrites = setSpy.mock.calls
+      .map((c) => Object.values(c[0])[0])
+      .filter((v) => Array.isArray(v));
+    expect(historyWrites.length).toBeGreaterThan(0);
+    const lastHistory = historyWrites[historyWrites.length - 1];
+    expect(lastHistory.map((/** @type {ColonyEntry} */ e) => e.cp))
+      .toEqual([11111, 22222, 33333]);
   });
 
   it('skips the write when the in-flight hydrate already contains this cp', async () => {

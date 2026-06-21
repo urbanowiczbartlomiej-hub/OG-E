@@ -346,7 +346,9 @@ describe('derive — counter refresh detour (every N sends)', () => {
 });
 
 describe('render — artifact cap badge', () => {
-  it('overlays a dot + "max+" hint, keeping the phase subtext', () => {
+  // 1.30.0 dropped the `capDot` flag from the Paint shape — the cap signal is
+  // now just the `N+` number riding the hint/subtext, no separate dot field.
+  it('overlays a "max+" hint, keeping the phase subtext', () => {
     const p = render({
       kind: 'discover',
       target: { galaxy: 4, system: 250 },
@@ -354,17 +356,19 @@ describe('render — artifact cap badge', () => {
       scansRemaining: 5,
       cap: { current: 3609, max: 3600 },
     });
-    expect(p).toMatchObject({ text: 'Discover', subtext: '[4:250]', hint: '3600+', capDot: true });
+    expect(p).toMatchObject({ text: 'Discover', subtext: '[4:250]', hint: '3600+' });
+    expect(p).not.toHaveProperty('capDot');
   });
 
   it('with no phase subtext, the cap takes the subtext line', () => {
     const p = render({ kind: 'offGalaxy', scansRemaining: 9, cap: { current: 3600, max: 3600 } });
-    expect(p).toMatchObject({ text: 'Discover', subtext: '3600+', capDot: true });
+    expect(p).toMatchObject({ text: 'Discover', subtext: '3600+' });
+    expect(p).not.toHaveProperty('capDot');
   });
 
-  it('no cap → no dot, no badge', () => {
+  it('no cap → no badge (and never a capDot field)', () => {
     const p = render({ kind: 'offGalaxy', scansRemaining: 9, cap: null });
-    expect(p.capDot).toBeUndefined();
+    expect(p).not.toHaveProperty('capDot');
     expect(p.subtext).toBeUndefined();
   });
 });

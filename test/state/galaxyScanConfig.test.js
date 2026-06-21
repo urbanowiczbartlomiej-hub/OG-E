@@ -70,14 +70,15 @@ describe('galaxyScanConfig store — hydration', () => {
   beforeEach(resetAll);
   afterEach(disposeGalaxyScanConfigStore);
 
-  it('hydrates (and normalises) a stored config', async () => {
+  it('hydrates (and normalises) a stored config, ignoring a legacy rescan field', async () => {
+    // The legacy `rescan` field is dropped by normalizeGalaxyScanConfig (§5d).
     mockStore.get.mockResolvedValue({ positions: '12-15', rescan: { inactive: 99 } });
     initGalaxyScanConfigStore();
     await flushMicrotasks();
     const cfg = galaxyScanConfigStore.get();
     expect(cfg.positions).toBe('12-15');
-    expect(cfg.rescan.inactive).toBe(99);
-    expect(cfg.rescan.occupied).toBe(30 * 86400); // filled from default
+    expect(/** @type {any} */ (cfg).rescan).toBeUndefined();
+    expect(cfg.preferOtherGalaxies).toBe(true); // filled from default
   });
 
   it('keeps the default preset and does NOT write when nothing is stored', async () => {

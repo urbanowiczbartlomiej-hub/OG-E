@@ -3,11 +3,18 @@
 // Unit tests for the sync scheduler.
 //
 // The scheduler is the orchestration layer — it calls the real
-// {@link scansStore}/{@link historyStore}/{@link settingsStore}, runs
-// the real {@link mergeScans}/{@link mergeHistory}, and hands
+// {@link colonizeDecisionsStore}/{@link historyStore}/{@link settingsStore},
+// runs the real {@link mergeColonizeDecisions}/{@link mergeHistory}, and hands
 // already-compressed-and-base64'd bytes off to the gist client. To
 // keep tests fast and hermetic we mock the gist client's public API
 // surface so no fetch ever fires. Everything else runs for real.
+//
+// §4b note: galaxy scans, the player roster, and our own profile are NO LONGER
+// synced — occupancy + neighbour rank are re-derived from the OGame public API
+// per device. The only colonization state that crosses devices now is the
+// colonization DECISION log (`colonizeDecisionsPerUniverse`), and the stores
+// the scheduler subscribes for upload triggers are history + decisions (+
+// routes / settings / configs). `scansStore`/`playersStore` are untouched here.
 //
 // Why fake timers: the scheduler debounces uploads by 15 s. Real
 // timers would make each test a 15-second wait; fake timers let us
@@ -34,12 +41,11 @@ import {
 // hoisting catches the scheduler's static import. Every public API
 // the scheduler touches is stubbed — fetchGistData / writeGistData
 // drive the sync round-trip, setStatus records timestamps + errors,
-// getToken gates the "sync disabled" short-circuit, clearGistScansForGalaxy
-// backs the per-galaxy reset tombstone (not exercised here).
+// getToken gates the "sync disabled" short-circuit. (§4b removed the
+// per-galaxy gist-scan clear; the reset-galaxy path is now LOCAL-only.)
 vi.mock('../../src/sync/gist.js', () => ({
   fetchGistData: vi.fn(),
   writeGistData: vi.fn(),
-  clearGistScansForGalaxy: vi.fn(),
   getToken: vi.fn(() => 'ghp_testtoken'),
   setStatus: vi.fn(),
 }));
@@ -55,28 +61,28 @@ import {
   setStatus,
   getToken,
 } from '../../src/sync/gist.js';
-import { scansStore } from '../../src/state/scans.js';
 import { historyStore } from '../../src/state/history.js';
-import { playersStore } from '../../src/state/players.js';
+import { colonizeDecisionsStore } from '../../src/state/colonizeDecisions.js';
 import { settingsStore } from '../../src/state/settings.js';
 import { pickSyncedValues } from '../../src/sync/settingsSync.js';
 
 /**
- * @typedef {import('../../src/state/scans.js').GalaxyScans} GalaxyScans
- * @typedef {import('../../src/state/scans.js').SystemScan} SystemScan
  * @typedef {import('../../src/state/history.js').ColonyEntry} ColonyEntry
  * @typedef {import('../../src/state/history.js').ColonyHistory} ColonyHistory
+ * @typedef {import('../../src/domain/colonizeDecisions.js').Decision} Decision
+ * @typedef {import('../../src/domain/colonizeDecisions.js').DecisionMap} DecisionMap
  */
 
 /**
- * Build a compact {@link SystemScan} for test fixtures. Only
- * `scannedAt` matters to the merger; `positions` is stubbed so
- * equality checks work predictably.
+ * Build a compact colonization {@link Decision} for test fixtures. Defaults to
+ * a terminal `mine` (s=2) so it never regresses under the monotonic merge and
+ * equality checks stay predictable; `ts` is the LWW key.
  *
- * @param {number} scannedAt
- * @returns {SystemScan}
+ * @param {number} ts
+ * @param {1|2|3|4|5} [s]
+ * @returns {Decision}
  */
-const scan = (scannedAt) => ({ scannedAt, positions: {} });
+const dec = (ts, s = 2) => ({ s, ts });
 
 /**
  * The universe id the scheduler derives from `location.host` in this happy-dom
@@ -97,7 +103,7 @@ const UNI =
  *
  * `advanceTimersByTimeAsync` already pumps microtasks, but we follow
  * with explicit `await Promise.resolve()` to be extra-defensive when
- * a chain of awaits is needed (fetchGistData → mergeScans → writeGistData).
+ * a chain of awaits is needed (fetchGistData → merge → writeGistData).
  *
  * @param {number} ms
  * @returns {Promise<void>}
@@ -115,27 +121,27 @@ const tick = async (ms) => {
  * supply what they care about.
  *
  * @param {object} [opts]
- * @param {GalaxyScans} [opts.galaxyScans]
+ * @param {DecisionMap} [opts.decisions]
  * @param {Record<string, ColonyHistory>} [opts.colonyHistoryPerUniverse]
  * @param {import('../../src/sync/gist.js').SyncedSettings} [opts.settings]
  * @param {Record<string, import('../../src/sync/gist.js').SyncedSettings>} [opts.settingsPerUniverse]
  * @returns {import('../../src/sync/gist.js').GistPayload}
  */
 const payload = ({
-  galaxyScans = {},
+  decisions = {},
   colonyHistoryPerUniverse,
   settings,
   settingsPerUniverse,
 } = {}) => ({
   version: 1,
   updatedAt: '2025-01-01T00:00:00.000Z',
-  // Scans are per-universe in the gist now: a `galaxyScans` arg is sugar for
+  // Decisions are per-universe in the gist: a `decisions` arg is sugar for
   // "this universe's slot", since the scheduler reads
-  // `galaxyScansPerUniverse[routesUniverseId]` (and UNI === routesUniverseId
-  // in this happy-dom env). Omitted when empty so an absent-slot gist is
-  // representable.
-  ...(Object.keys(galaxyScans).length
-    ? { galaxyScansPerUniverse: { [UNI]: galaxyScans } }
+  // `colonizeDecisionsPerUniverse[routesUniverseId]` (and UNI ===
+  // routesUniverseId in this happy-dom env). Omitted when empty so an
+  // absent-slot gist is representable.
+  ...(Object.keys(decisions).length
+    ? { colonizeDecisionsPerUniverse: { [UNI]: decisions } }
     : {}),
   ...(colonyHistoryPerUniverse ? { colonyHistoryPerUniverse } : {}),
   ...(settings ? { settings } : {}),
@@ -150,10 +156,9 @@ beforeEach(() => {
   /** @type {import('vitest').Mock} */ (getToken).mockReturnValue(
     'ghp_testtoken',
   );
-  // Fresh store state per test: empty scans, empty history, cloudSync on.
-  scansStore.set({});
+  // Fresh store state per test: empty decisions, empty history, cloudSync on.
+  colonizeDecisionsStore.set({});
   historyStore.set([]);
-  playersStore.set({});
   settingsStore.set({ ...settingsStore.get(), cloudSync: true });
   // Settings-sync seeds a per-key timestamp map on first install; clear it
   // so each test starts from a known "no map yet" state (installSync re-seeds
@@ -219,8 +224,9 @@ describe('scheduleUpload — debounce behaviour', () => {
     // before we start counting the debounce window.
     await tick(0);
     // Flip local state — this notifies scheduler's onStoreChange,
-    // which schedules an upload 15 s out.
-    scansStore.set({ '4:30': scan(1000) });
+    // which schedules an upload 15 s out. (Decisions are a synced store;
+    // scans are not, so we trigger via the decision log now.)
+    colonizeDecisionsStore.set({ '4:30:5': dec(1000) });
     // Less than 15 s: still no upload.
     await tick(14_000);
     expect(writeGistData).not.toHaveBeenCalled();
@@ -235,7 +241,7 @@ describe('scheduleUpload — debounce behaviour', () => {
     );
     installSync();
     await tick(0);
-    scansStore.set({ '4:30': scan(1000) });
+    colonizeDecisionsStore.set({ '4:30:5': dec(1000) });
     // Full debounce window elapses → debounced callback fires.
     await tick(15_000);
     // Upload pre-merges (another fetch) then PATCHes.
@@ -252,11 +258,11 @@ describe('scheduleUpload — debounce behaviour', () => {
     installSync();
     await tick(0);
     // Three bursts within 15 s — each resets the debounce timer.
-    scansStore.set({ '4:30': scan(1000) });
+    colonizeDecisionsStore.set({ '4:30:5': dec(1000) });
     await tick(5_000);
-    scansStore.set({ '4:30': scan(2000) });
+    colonizeDecisionsStore.set({ '4:30:5': dec(2000) });
     await tick(5_000);
-    scansStore.set({ '4:30': scan(3000) });
+    colonizeDecisionsStore.set({ '4:30:5': dec(3000) });
     // At t=10s from last change, timer is still armed, no upload yet.
     await tick(14_999);
     expect(writeGistData).not.toHaveBeenCalled();
@@ -274,29 +280,31 @@ describe('downloadAndMerge', () => {
       null,
     );
     // Seed local state so we can assert it survives untouched.
-    const localScans = { '1:1': scan(500) };
-    scansStore.set(localScans);
+    const localDecisions = /** @type {DecisionMap} */ ({ '1:1:1': dec(500) });
+    colonizeDecisionsStore.set(localDecisions);
     installSync();
     await tick(0);
     // Reference equality: local state is not reassigned.
-    expect(scansStore.get()).toBe(localScans);
+    expect(colonizeDecisionsStore.get()).toBe(localDecisions);
     // Error status cleared (happy-ish path even though payload is null).
     expect(setStatus).toHaveBeenCalledWith('err', null);
   });
 
-  it('writes to scansStore when remote contributed a new key (changed === true)', async () => {
-    // Local has '4:30'; remote has '1:1'. Merge yields both keys ⇒
-    // changed === true ⇒ scansStore.set runs.
-    const localScans = /** @type {GalaxyScans} */ ({ '4:30': scan(1000) });
-    scansStore.set(localScans);
+  it('writes to colonizeDecisionsStore when remote contributed a new coord (changed === true)', async () => {
+    // Local has '4:30:5'; remote has '1:1:1'. Merge yields both coords ⇒
+    // changed === true ⇒ colonizeDecisionsStore.set runs. This is the
+    // cross-device handoff that lets a 2nd device continue only the
+    // remaining free positions.
+    const localDecisions = /** @type {DecisionMap} */ ({ '4:30:5': dec(1000) });
+    colonizeDecisionsStore.set(localDecisions);
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(
-      payload({ galaxyScans: { '1:1': scan(2000) } }),
+      payload({ decisions: { '1:1:1': dec(2000) } }),
     );
     installSync();
     await tick(0);
-    const merged = scansStore.get();
-    // Both keys present.
-    expect(Object.keys(merged).sort()).toEqual(['1:1', '4:30']);
+    const merged = colonizeDecisionsStore.get();
+    // Both coords present.
+    expect(Object.keys(merged).sort()).toEqual(['1:1:1', '4:30:5']);
     // `down` stamped with a valid ISO string.
     const downCalls = /** @type {import('vitest').Mock} */ (
       setStatus
@@ -306,41 +314,41 @@ describe('downloadAndMerge', () => {
   });
 
   it('does NOT write to stores when merge is a no-op (anti-loop protection)', async () => {
-    // Same key on both sides with same `scannedAt` — merge yields
+    // Same coord on both sides with identical decision — merge yields
     // the local reference unchanged (`changed === false`). The
     // scheduler MUST NOT call store.set, or the subscription would
     // fire and schedule yet another upload ⇒ loop.
-    const shared = scan(5000);
-    const localScans = /** @type {GalaxyScans} */ ({ '4:30': shared });
-    scansStore.set(localScans);
+    const shared = dec(5000);
+    const localDecisions = /** @type {DecisionMap} */ ({ '4:30:5': shared });
+    colonizeDecisionsStore.set(localDecisions);
     // Track store writes by subscribing — the initial install
     // already subscribed the scheduler, so count only the changes
     // that happen after our hook.
     let setCount = 0;
-    scansStore.subscribe(() => {
+    colonizeDecisionsStore.subscribe(() => {
       setCount++;
     });
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(
-      payload({ galaxyScans: { '4:30': shared } }),
+      payload({ decisions: { '4:30:5': shared } }),
     );
     installSync();
     await tick(0);
     // No extra writes past what the test itself did (0).
     expect(setCount).toBe(0);
     // Reference identity: local is exactly what we seeded.
-    expect(scansStore.get()).toBe(localScans);
+    expect(colonizeDecisionsStore.get()).toBe(localDecisions);
   });
 });
 
 describe('upload', () => {
-  it('pre-merges with remote and PATCHes with the merged payload', async () => {
-    // Local has a newer scan for '4:30'; remote has a different key
-    // '1:1'. Upload must PATCH with both keys present so another
-    // device's recent write isn't clobbered.
-    const localScans = /** @type {GalaxyScans} */ ({ '4:30': scan(9000) });
-    scansStore.set(localScans);
+  it('pre-merges decisions with remote and PATCHes with the merged payload', async () => {
+    // Local has a decision for '4:30:5'; remote has a different coord
+    // '1:1:1'. Upload must PATCH with both coords present so another
+    // device's recent decision isn't clobbered.
+    const localDecisions = /** @type {DecisionMap} */ ({ '4:30:5': dec(9000) });
+    colonizeDecisionsStore.set(localDecisions);
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(
-      payload({ galaxyScans: { '1:1': scan(100) } }),
+      payload({ decisions: { '1:1:1': dec(100) } }),
     );
     /** @type {import('vitest').Mock} */ (writeGistData).mockResolvedValue(
       undefined,
@@ -350,21 +358,24 @@ describe('upload', () => {
     await tick(0);
     // Queue a second fetch response for the upload's pre-merge read.
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(
-      payload({ galaxyScans: { '1:1': scan(100) } }),
+      payload({ decisions: { '1:1:1': dec(100) } }),
     );
-    // Trigger an upload: bump local to something different.
-    scansStore.set({ '4:30': scan(9001) });
+    // Trigger an upload: add a different local decision.
+    colonizeDecisionsStore.set({ '4:30:5': dec(9000), '2:2:2': dec(9001) });
     await tick(15_000);
     expect(writeGistData).toHaveBeenCalledTimes(1);
-    // Inspect the PATCH body's per-universe scan slot to confirm merge happened.
+    // Inspect the PATCH body's per-universe decision slot to confirm merge.
     const [[sentPayload]] = /** @type {import('vitest').Mock} */ (
       writeGistData
     ).mock.calls;
-    expect(Object.keys(sentPayload.galaxyScansPerUniverse[UNI]).sort()).toEqual([
-      '1:1',
-      '4:30',
+    expect(Object.keys(sentPayload.colonizeDecisionsPerUniverse[UNI]).sort()).toEqual([
+      '1:1:1',
+      '2:2:2',
+      '4:30:5',
     ]);
     expect(sentPayload.version).toBe(1);
+    // Galaxy scans are no longer synced — the field must be absent (§4b).
+    expect(sentPayload.galaxyScansPerUniverse).toBeUndefined();
     // `up` stamp recorded.
     expect(setStatus).toHaveBeenCalledWith('up', expect.any(String));
   });
@@ -373,7 +384,7 @@ describe('upload', () => {
     // Regression guard for the silent multi-universe wipe: a failed pre-merge
     // GET must NOT proceed to build a payload from remote=null (which would
     // PATCH only this universe's slot and drop every other universe's).
-    scansStore.set(/** @type {GalaxyScans} */ ({ '4:30': scan(9000) }));
+    colonizeDecisionsStore.set(/** @type {DecisionMap} */ ({ '4:30:5': dec(9000) }));
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(null); // boot
     installSync();
     await tick(0);
@@ -382,64 +393,70 @@ describe('upload', () => {
       new Error('HTTP 500: boom'),
     );
     /** @type {import('vitest').Mock} */ (writeGistData).mockResolvedValue(undefined);
-    scansStore.set({ '4:30': scan(9001) });
+    colonizeDecisionsStore.set({ '4:30:5': dec(9000), '2:2:2': dec(9001) });
     await tick(15_000);
     expect(writeGistData).not.toHaveBeenCalled();
     expect(setStatus).toHaveBeenCalledWith('err', expect.stringContaining('upload:'));
   });
 
-  it('contributes the player cache to the PATCH (full player sync)', async () => {
+  it('contributes the colonization decision log to the PATCH', async () => {
+    // §4b: the decision log is the cross-device colonization handoff. A send /
+    // checkTarget-refusal / colony / abandon writes the log → schedules an
+    // upload; the PATCH body carries our slot under the universe id.
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(null);
     /** @type {import('vitest').Mock} */ (writeGistData).mockResolvedValue(undefined);
     installSync();
     await tick(0);
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(null);
-    // A galaxy scan grew the player roster → schedules an upload.
-    playersStore.set({ 7: { id: 7, name: 'Foe', rank: 12, seenAt: 5000 } });
+    // A send wrote a `sent` (s=1) decision with an arrival time → upload.
+    colonizeDecisionsStore.set({ '7:8:9': { s: 1, ts: 5000, aa: 9999 } });
     await tick(15_000);
     expect(writeGistData).toHaveBeenCalledTimes(1);
     const [[sent]] = /** @type {import('vitest').Mock} */ (writeGistData).mock.calls;
-    expect(sent.playersPerUniverse[UNI][7]).toEqual({ id: 7, name: 'Foe', rank: 12, seenAt: 5000 });
+    expect(sent.colonizeDecisionsPerUniverse[UNI]['7:8:9']).toEqual({ s: 1, ts: 5000, aa: 9999 });
+    // Player roster + own profile are no longer synced (§4b).
+    expect(sent.playersPerUniverse).toBeUndefined();
+    expect(sent.ownProfilePerUniverse).toBeUndefined();
   });
 
-  it('does NOT bleed a SIBLING universe slot into this universe (cross-server isolation)', async () => {
-    // THE regression: a different server's scans must never merge into this
-    // universe's scan DB (it feeds the colonize candidate finder). Only
-    // galaxyScansPerUniverse[ourUniverse] is ours; a sibling's `3:265` —
-    // empty on their server, inhabited on ours — must stay out.
-    scansStore.set({});
+  it('does NOT bleed a SIBLING universe decision slot into this universe (cross-server isolation)', async () => {
+    // A different server's decisions must never merge into this universe's
+    // decision log (it feeds the colonize candidate finder). Only
+    // colonizeDecisionsPerUniverse[ourUniverse] is ours; a sibling's coord —
+    // taken on their server, free on ours — must stay out.
+    colonizeDecisionsStore.set({});
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue({
       version: 1,
       updatedAt: '2025-01-01T00:00:00.000Z',
-      galaxyScansPerUniverse: { 'sOTHER-xx': { '3:265': scan(9999) } },
+      colonizeDecisionsPerUniverse: { 'sOTHER-xx': { '3:265:8': dec(9999) } },
     });
     installSync();
     await tick(0);
-    expect(scansStore.get()['3:265']).toBeUndefined();
-    expect(Object.keys(scansStore.get())).toHaveLength(0);
+    expect(colonizeDecisionsStore.get()['3:265:8']).toBeUndefined();
+    expect(Object.keys(colonizeDecisionsStore.get())).toHaveLength(0);
   });
 
-  it('upload contributes only our slot and PRESERVES sibling universes', async () => {
-    scansStore.set({});
+  it('upload contributes only our decision slot and PRESERVES sibling universes', async () => {
+    colonizeDecisionsStore.set({});
     const remote = {
       version: 1,
       updatedAt: '2025-01-01T00:00:00.000Z',
-      galaxyScansPerUniverse: { 'sOTHER-xx': { '1:1': scan(5) } },
+      colonizeDecisionsPerUniverse: { 'sOTHER-xx': { '1:1:1': dec(5) } },
     };
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(remote);
     installSync();
     await tick(0);
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(remote);
     /** @type {import('vitest').Mock} */ (writeGistData).mockResolvedValue(undefined);
-    // Local scan on OUR universe triggers an upload.
-    scansStore.set({ '4:30': scan(100) });
+    // Local decision on OUR universe triggers an upload.
+    colonizeDecisionsStore.set({ '4:30:5': dec(100) });
     await tick(15_000);
     const [[sent]] = /** @type {import('vitest').Mock} */ (writeGistData).mock.calls;
     // Sibling slot survives untouched; ours is contributed under our id.
-    expect(sent.galaxyScansPerUniverse['sOTHER-xx']).toEqual({ '1:1': scan(5) });
-    expect(sent.galaxyScansPerUniverse[UNI]).toEqual({ '4:30': scan(100) });
-    // The legacy global `galaxyScans` field is gone — no contamination vector.
-    expect(sent.galaxyScans).toBeUndefined();
+    expect(sent.colonizeDecisionsPerUniverse['sOTHER-xx']).toEqual({ '1:1:1': dec(5) });
+    expect(sent.colonizeDecisionsPerUniverse[UNI]).toEqual({ '4:30:5': dec(100) });
+    // Galaxy scans are gone from the payload entirely (§4b) — no leak vector.
+    expect(sent.galaxyScansPerUniverse).toBeUndefined();
   });
 
   it('skips writeGistData when gist already matches the merged state (sameJSON)', async () => {
@@ -447,8 +464,8 @@ describe('upload', () => {
     // yields local unchanged and the sameJSON check passes, so
     // upload must NOT PATCH (saves an API call + avoids a no-op gist
     // revision).
-    const shared = /** @type {GalaxyScans} */ ({ '4:30': scan(5000) });
-    scansStore.set(shared);
+    const shared = /** @type {DecisionMap} */ ({ '4:30:5': dec(5000) });
+    colonizeDecisionsStore.set(shared);
     // Pre-seed an EMPTY ts map so installSync skips seeding. The remote
     // settings slot must deep-equal what local would upload (global-only
     // keys) and settingsPerUniverse must be absent (no universe-scoped
@@ -456,16 +473,16 @@ describe('upload', () => {
     localStorage.setItem('oge_settingsTs', '{}');
     const settings = { values: pickSyncedValues(settingsStore.get(), 'global'), ts: {} };
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(
-      payload({ galaxyScans: shared, settings }),
+      payload({ decisions: shared, settings }),
     );
     installSync();
     await tick(0);
     // Second fetch for the upload pre-merge.
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(
-      payload({ galaxyScans: shared, settings }),
+      payload({ decisions: shared, settings }),
     );
     // Nudge the store (same value, but set() still notifies).
-    scansStore.set(shared);
+    colonizeDecisionsStore.set({ ...shared });
     await tick(15_000);
     expect(writeGistData).not.toHaveBeenCalled();
     // Error status still cleared — the "skip" path is a success.
@@ -476,7 +493,7 @@ describe('upload', () => {
     // The upload path surfaces network / HTTP errors via setStatus,
     // not via throw — the debounced callback is fire-and-forget from
     // the store-subscription's perspective.
-    scansStore.set({ '4:30': scan(1000) });
+    colonizeDecisionsStore.set({ '4:30:5': dec(1000) });
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(
       payload(),
     );
@@ -485,7 +502,7 @@ describe('upload', () => {
     );
     installSync();
     await tick(0);
-    scansStore.set({ '4:30': scan(2000) });
+    colonizeDecisionsStore.set({ '4:30:5': dec(1000), '2:2:2': dec(2000) });
     await tick(15_000);
     // setStatus('err', 'upload: HTTP 500: boom') — prefix matters so
     // the Settings UI can tell download and upload failures apart.
@@ -501,7 +518,7 @@ describe('upload', () => {
 describe('force-sync event', () => {
   it('dispatching oge:syncForce triggers downloadAndMerge + upload', async () => {
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(
-      payload({ galaxyScans: { '1:1': scan(100) } }),
+      payload({ decisions: { '1:1:1': dec(100) } }),
     );
     /** @type {import('vitest').Mock} */ (writeGistData).mockResolvedValue(
       undefined,
@@ -515,8 +532,8 @@ describe('force-sync event', () => {
     // Queue two fetch responses: one for the forced downloadAndMerge,
     // one for the forced upload's pre-merge.
     /** @type {import('vitest').Mock} */ (fetchGistData)
-      .mockResolvedValueOnce(payload({ galaxyScans: { '1:1': scan(100) } }))
-      .mockResolvedValueOnce(payload({ galaxyScans: { '1:1': scan(100) } }));
+      .mockResolvedValueOnce(payload({ decisions: { '1:1:1': dec(100) } }))
+      .mockResolvedValueOnce(payload({ decisions: { '1:1:1': dec(100) } }));
 
     document.dispatchEvent(new CustomEvent(SYNC_FORCE_EVENT));
     // Let the async chain run. No debounce on the force path —
@@ -526,7 +543,7 @@ describe('force-sync event', () => {
 
     // Both operations fired: 2 fetches + 1 PATCH (if there is
     // something to upload). The upload's PATCH runs when gist !==
-    // merged; here local is empty and remote has '1:1', so after
+    // merged; here local is empty and remote has '1:1:1', so after
     // download merges, local === remote → upload skips the PATCH.
     // Either way the download fetch is guaranteed.
     expect(
@@ -545,8 +562,9 @@ describe('dispose', () => {
     dispose();
     /** @type {import('vitest').Mock} */ (writeGistData).mockClear();
     // Store change AFTER dispose — scheduler's subscription was
-    // removed, so no debounced upload should be armed.
-    scansStore.set({ '4:30': scan(1000) });
+    // removed, so no debounced upload should be armed. (Use a synced
+    // store; scans aren't subscribed at all post-§4b.)
+    colonizeDecisionsStore.set({ '4:30:5': dec(1000) });
     await tick(30_000);
     expect(writeGistData).not.toHaveBeenCalled();
   });

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 //
 // Unit tests for state/badgeCache — the optimistic planet-marker cache, a plain
-// key-owner over safeLS with a versioned envelope `{version:2, bodies}`.
+// key-owner over safeLS with a versioned envelope `{version:3, bodies, expiresAt?}`.
 //
 // happy-dom provides a real localStorage; we wipe it between cases and drive the
 // public read/write/clear surface against the wire (matching settings.test.js).
@@ -35,11 +35,17 @@ describe('badgeCache', () => {
     expect(readBadgeCache()).toEqual(bodies);
   });
 
-  it('writes a version:2 envelope', () => {
+  it('writes a version:3 envelope', () => {
     writeBadgeCache({ 'p:1:2:3': ['attack'] });
     const raw = JSON.parse(/** @type {string} */ (localStorage.getItem(BADGE_CACHE_KEY)));
-    expect(raw.version).toBe(2);
+    expect(raw.version).toBe(3);
     expect(raw.bodies).toEqual({ 'p:1:2:3': ['attack'] });
+  });
+
+  it('carries an optional expiresAt when supplied', () => {
+    writeBadgeCache({ 'p:1:2:3': ['attack'] }, 5_000);
+    const raw = JSON.parse(/** @type {string} */ (localStorage.getItem(BADGE_CACHE_KEY)));
+    expect(raw.expiresAt).toBe(5_000);
   });
 
   it('returns null when the key is absent', () => {
@@ -57,13 +63,25 @@ describe('badgeCache', () => {
   });
 
   it('returns null when bodies is missing', () => {
-    localStorage.setItem(BADGE_CACHE_KEY, JSON.stringify({ version: 2 }));
+    localStorage.setItem(BADGE_CACHE_KEY, JSON.stringify({ version: 3 }));
     expect(readBadgeCache()).toBeNull();
   });
 
   it('returns null when bodies is not an object', () => {
-    localStorage.setItem(BADGE_CACHE_KEY, JSON.stringify({ version: 2, bodies: 'x' }));
+    localStorage.setItem(BADGE_CACHE_KEY, JSON.stringify({ version: 3, bodies: 'x' }));
     expect(readBadgeCache()).toBeNull();
+  });
+
+  it('self-expires (and drops) an envelope whose expiresAt has passed', () => {
+    // expiresAt strictly in the past → read returns null AND clears the key.
+    writeBadgeCache({ 'p:1:2:3': ['attack'] }, Date.now() - 1);
+    expect(readBadgeCache()).toBeNull();
+    expect(localStorage.getItem(BADGE_CACHE_KEY)).toBeNull();
+  });
+
+  it('keeps an envelope whose expiresAt is still in the future', () => {
+    writeBadgeCache({ 'p:1:2:3': ['attack'] }, Date.now() + 60_000);
+    expect(readBadgeCache()).toEqual({ 'p:1:2:3': ['attack'] });
   });
 
   it('clearBadgeCache removes the key (subsequent read → null)', () => {

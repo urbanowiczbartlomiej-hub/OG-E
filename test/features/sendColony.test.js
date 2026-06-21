@@ -21,8 +21,9 @@
 // - Real drag gestures (same trade-off as sendExpedition.test.js).
 // - Focus-persistence across happy-dom reloads (the shared helper has
 //   its own tests in lib/).
-// - The 1 Hz ticker running live — instead we test the behaviour its
-//   firing produces (waitGap remaining decrements) using `vi.useFakeTimers`.
+// - The live waitGap countdown (dropped with the courier migration — min-gap
+//   now shows a static "Wait Ns" the user re-taps past, so there is no
+//   fake-timer countdown to drive here).
 //
 // # Navigation testing
 //
@@ -32,7 +33,7 @@
 //
 // @ts-check
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   installSendColony,
   _resetSendColonyForTest,
@@ -48,6 +49,11 @@ import { scansStore } from '../../src/state/scans.js';
 import { registryStore } from '../../src/state/registry.js';
 import { galaxyScanConfigStore } from '../../src/state/galaxyScanConfig.js';
 import { defaultGalaxyScanConfig } from '../../src/domain/galaxyScanConfig.js';
+import {
+  colonizeDecisionsStore,
+  disposeColonizeDecisionsStore,
+} from '../../src/state/colonizeDecisions.js';
+import { blockingCoords, DEC_TAKEN } from '../../src/domain/colonizeDecisions.js';
 
 // ── Location.href mocking ────────────────────────────────────────────
 
@@ -129,9 +135,13 @@ const setupScene = ({
 
 const getWrap = () =>
   /** @type {HTMLElement | null} */ (document.getElementById('oge-send-col'));
+// The colonize button is now a SINGLE-zone button (the Scan half was removed in
+// §2d), so the clickable host element IS `oge-send-col` — it carries the click
+// handler and the painted label text. There is no separate `oge-col-send` half
+// any more (that only existed in the old split layout).
 const getSend = () =>
   /** @type {HTMLButtonElement | null} */ (
-    document.getElementById('oge-col-send')
+    document.getElementById('oge-send-col')
   );
 // ── courier two-click harness ─────────────────────────────────────────
 // A fake MAIN executor + a step-1→step-2 DOM, so a tap-1 select() can
@@ -185,11 +195,6 @@ const armCourier = (opts = {}) => {
 
 const settle = () => new Promise((r) => setTimeout(r, 500));
 
-const getScan = () =>
-  /** @type {HTMLButtonElement | null} */ (
-    document.getElementById('oge-col-scan')
-  );
-
 /**
  * Build a fleetDispatcher stub. `orders[7]` is `canColonize`; ship id 208
  * is the colonizer.
@@ -234,6 +239,19 @@ const setFleetDispatcher = (snap) => {
   );
 };
 
+/**
+ * Reset the colonization decision log between tests. The picker
+ * (`findNextColonizeTarget`) subtracts these blocking coords, and the reactor /
+ * skip handlers WRITE to this store — so a decision recorded by one test (e.g.
+ * a `taken`/`sent` mark on 4:30:8) would otherwise leak and silently block the
+ * same candidate in a later test. Dispose the persist wiring (if any) then
+ * reset the in-memory value to the empty map, per the store reset convention.
+ */
+const resetDecisions = () => {
+  disposeColonizeDecisionsStore();
+  colonizeDecisionsStore.set({});
+};
+
 beforeEach(() => {
   _resetSendColonyForTest();
   localStorage.clear();
@@ -242,6 +260,7 @@ beforeEach(() => {
   galaxyScanConfigStore.set(defaultGalaxyScanConfig());
   scansStore.set({});
   registryStore.set([]);
+  resetDecisions();
   delete (/** @type {any} */ (window)).fleetDispatcher;
   navTarget = null;
   mockLocationHref();
@@ -253,6 +272,7 @@ afterEach(() => {
   resetSettingsToDefaults();
   scansStore.set({});
   registryStore.set([]);
+  resetDecisions();
   delete (/** @type {any} */ (window)).fleetDispatcher;
   unmockLocationHref();
   navTarget = null;
@@ -271,13 +291,12 @@ describe('installSendColony — lifecycle', () => {
     expect(getWrap()).toBeNull();
   });
 
-  it('renders both halves when fabMode is on', () => {
+  it('renders the single Send zone when fabMode is on', () => {
     setupScene();
     settingsStore.set({ ...settingsStore.get(), fabMode: true });
     installSendColony();
     expect(getWrap()).not.toBeNull();
     expect(getSend()).not.toBeNull();
-    expect(getScan()).not.toBeNull();
   });
 
   it('applies fabBtnSize from settings', () => {
@@ -360,7 +379,7 @@ describe('derive — idle branch', () => {
 });
 
 describe('derive — galaxy branch', () => {
-  it('returns galaxy kind with nextScan + scanCooldown=false', () => {
+  it('returns galaxy kind with no candidate when scans is empty', () => {
     setupScene({ onGalaxy: true, galaxyG: 4, galaxyS: 42 });
     const ctx = derive({
       search: '?page=ingame&component=galaxy&galaxy=4&system=42',
@@ -375,8 +394,11 @@ describe('derive — galaxy branch', () => {
     });
     expect(ctx.kind).toBe('galaxy');
     if (ctx.kind === 'galaxy') {
-      expect(ctx.nextScan).toEqual({ galaxy: 4, system: 43 });
-      expect(ctx.scanCooldown).toBe(false);
+      expect(ctx.candidate).toBeNull();
+      // The Scan half is gone (§2d); the only fields are the candidate +
+      // the "N free" stat inputs. No API index here → freeUniverse is null.
+      expect(ctx.freeUniverse).toBeNull();
+      expect(ctx.targetPositions).toEqual([8]);
     }
   });
 
@@ -422,31 +444,23 @@ describe('derive — galaxy branch', () => {
 // ──────────────────────────────────────────────────────────────────
 
 describe('render — pure paint instructions', () => {
-  // Common scan/cooldown fields shared by all tests — the render output
-  // for scan is driven purely by nextScan + scanCooldown regardless of
-  // ctx.kind.
-  const noScan = { nextScan: null, scanCooldown: false };
-  const freshScan = {
-    nextScan: { galaxy: 4, system: 31 },
-    scanCooldown: false,
-  };
+  // The Scan half is gone (§2d): render now returns ONLY a Send zone. Primary
+  // stays "Colonize"; a candidate is reflected via the brighter "ready" rim,
+  // not extra text. Configured target positions add a "(positions)" hint and,
+  // when the API "N free" stat is available, an "N free" sub-label.
 
-  it('idle without candidate → plain "Colonize"', () => {
-    const r = render({ kind: 'idle', candidate: null, ...noScan });
+  it('idle without candidate or targets → plain "Colonize", no sub-lines', () => {
+    const r = render({ kind: 'idle', candidate: null });
     expect(r.send.text).toBe('Colonize');
     expect(r.send.subtext).toBeUndefined();
-    expect(r.scan.text).toBe('All scanned!');
+    expect(r.send.hint).toBeUndefined();
   });
 
-  it('idle with candidate -> plain "Colonize" (coords/hint only after tap)', () => {
-    // The idle view stays minimal now: coordinates and the hold hint are
-    // shown only once the user has tapped (step 2). A candidate is still
-    // reflected — via the brighter "ready" rim, not extra text lines.
-    const idle = render({ kind: 'idle', candidate: null, ...noScan });
+  it('a candidate brightens the rim but adds no text lines', () => {
+    const idle = render({ kind: 'idle', candidate: null });
     const r = render({
       kind: 'idle',
       candidate: { galaxy: 4, system: 30, position: 8 },
-      ...noScan,
     });
     expect(r.send.text).toBe('Colonize');
     expect(r.send.subtext).toBeUndefined();
@@ -454,27 +468,33 @@ describe('render — pure paint instructions', () => {
     expect(r.send.bg).not.toBe(idle.send.bg); // ready rim ≠ idle rim
   });
 
-  it('galaxy with nextScan=null → "All scanned!"', () => {
+  it('configured target positions add a "(positions)" hint', () => {
+    const r = render({
+      kind: 'idle',
+      candidate: null,
+      freeUniverse: null,
+      targetPositions: [8, 10, 11, 12],
+    });
+    // No freeUniverse yet → no "N free" sub-label, but the hint still shows.
+    expect(r.send.subtext).toBeUndefined();
+    expect(r.send.hint).toBe('(8·10-12)');
+  });
+
+  it('freeUniverse present → "N free" sub-label (grouped thousands)', () => {
     const r = render({
       kind: 'galaxy',
       candidate: null,
-      ...noScan,
+      freeUniverse: 38421,
+      targetPositions: [8],
     });
-    expect(r.scan.text).toBe('All scanned!');
+    // The thousands separator is a narrow no-break space (U+202F), not a
+    // plain space — strip any non-digit/non-letter grouping char before
+    // asserting so the test doesn't hard-code the exotic codepoint.
+    expect(r.send.subtext).toBeDefined();
+    expect((r.send.subtext ?? '').replace(/[^\d]/g, '')).toBe('38421');
+    expect((r.send.subtext ?? '').endsWith('free')).toBe(true);
+    expect(r.send.hint).toBe('(8)');
   });
-
-  it('galaxy with nextScan -> "Scan" main + [g:s] subtext', () => {
-    const r = render({
-      kind: 'galaxy',
-      candidate: null,
-      ...freshScan,
-    });
-    expect(r.scan.text).toBe('Scan');
-    expect(r.scan.subtext).toBe('[4:31]');
-  });
-
-  // (render's "fleetdispatch" kind was removed with the courier migration —
-  // the Send half on fleetdispatch is painted by the handler now, not render.)
 });
 
 // ──────────────────────────────────────────────────────────────────
@@ -501,7 +521,9 @@ describe('onSendClick — idle/galaxy branch', () => {
     settingsStore.set({ ...settingsStore.get(), fabMode: true });
     installSendColony();
     getSend()?.click();
-    expect(getSend()?.textContent).toBe('No more candidates');
+    // The single-zone host's textContent also carries the lens glyph + title
+    // chrome ("…COLONIZATIONOG-E"), so match on substring, not exact equality.
+    expect(getSend()?.textContent).toContain('No more candidates');
     expect(navTarget).toBeNull();
   });
 });
@@ -694,154 +716,9 @@ describe('onSendClick — fleetdispatch branch', () => {
   });
 });
 
-// ──────────────────────────────────────────────────────────────────
-// onScanClick — integration
-// ──────────────────────────────────────────────────────────────────
-
-describe('onScanClick', () => {
-  it('non-galaxy → "to Galaxy" nav (bare URL, no specific system)', () => {
-    // Off-galaxy scan click always hops to the bare galaxy URL
-    // regardless of next-unscanned coords. The first system load on
-    // a galaxy page is server-rendered (no AJAX), so we'd miss it if
-    // we targeted it via full nav. Better to let the user arrive on
-    // galaxy and drive subsequent scans via AJAX-observed submits.
-    setupScene();
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
-    installSendColony();
-    getScan()?.click();
-    expect(navTarget).toContain('component=galaxy');
-    // No galaxy/system params in the URL.
-    expect(navTarget).not.toContain('galaxy=');
-    expect(navTarget).not.toContain('system=');
-  });
-
-  it('on-galaxy + all-scanned → paints "All scanned!", no nav', () => {
-    setupScene({ onGalaxy: true, galaxyG: 4, galaxyS: 42 });
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
-    /** @type {import('../../src/state/scans.js').GalaxyScans} */
-    const scans = {};
-    for (let g = 1; g <= 7; g++) {
-      for (let s = 1; s <= 499; s++) {
-        scans[/** @type {`${number}:${number}`} */ (`${g}:${s}`)] = {
-          scannedAt: Date.now(),
-          positions: { 8: { status: 'empty' } },
-        };
-      }
-    }
-    scansStore.set(scans);
-    installSendColony();
-    getScan()?.click();
-    expect(getScan()?.textContent).toBe('All scanned!');
-    expect(navTarget).toBeNull();
-  });
-
-  /**
-   * Add the in-page galaxy form: galaxy + system inputs and a submit
-   * button reachable via the `#galaxyHeader .btn_blue` fallback selector
-   * (avoids the `onclick` attribute path so happy-dom doesn't try to eval
-   * the legacy inline `submitForm(...)` handler).
-   *
-   * @returns {{ galaxyInput: HTMLInputElement, systemInput: HTMLInputElement, submitBtn: HTMLButtonElement }}
-   */
-  const installGalaxyForm = () => {
-    const gi = document.createElement('input');
-    gi.id = 'galaxy_input';
-    gi.value = '4';
-    const si = document.createElement('input');
-    si.id = 'system_input';
-    si.value = '42';
-    const header = document.createElement('div');
-    header.id = 'galaxyHeader';
-    const btn = document.createElement('button');
-    btn.className = 'btn_blue';
-    header.appendChild(btn);
-    document.body.appendChild(gi);
-    document.body.appendChild(si);
-    document.body.appendChild(header);
-    return { galaxyInput: gi, systemInput: si, submitBtn: btn };
-  };
-
-  it('galaxy view → in-page submit when submit button exists', () => {
-    setupScene({ onGalaxy: true, galaxyG: 4, galaxyS: 42 });
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
-    const { systemInput, submitBtn } = installGalaxyForm();
-    let clicked = false;
-    submitBtn.addEventListener('click', () => {
-      clicked = true;
-    });
-    installSendColony();
-    getScan()?.click();
-    expect(clicked).toBe(true);
-    expect(systemInput.value).toBe('43');
-    // No full navigation occurred.
-    expect(navTarget).toBeNull();
-  });
-
-  it('cooldown: second click ignored until oge:galaxyScanned arrives', () => {
-    // Event-driven cooldown: Scan locks when we submit and unlocks as
-    // soon as the game's galaxy response lands. Spamming Scan while a
-    // response is outstanding is a no-op; once the event fires, the
-    // next click submits again.
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-    setupScene({ onGalaxy: true, galaxyG: 4, galaxyS: 42 });
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
-    const { submitBtn } = installGalaxyForm();
-    let clicks = 0;
-    submitBtn.addEventListener('click', () => {
-      clicks++;
-    });
-    installSendColony();
-    getScan()?.click();
-    expect(clicks).toBe(1);
-
-    // No event yet — second click ignored.
-    vi.advanceTimersByTime(500);
-    getScan()?.click();
-    expect(clicks).toBe(1);
-
-    // Simulate game response (galaxyHook dispatches this after XHR load).
-    document.dispatchEvent(
-      new CustomEvent('oge:galaxyScanned', {
-        detail: { galaxy: 4, system: 42, positions: {}, canColonize: true },
-      }),
-    );
-
-    // Now the cooldown is cleared event-driven; next click fires.
-    getScan()?.click();
-    expect(clicks).toBe(2);
-    vi.useRealTimers();
-  });
-
-  it('cooldown: safety cap unlocks after 8s even if galaxy event never arrives', () => {
-    // Escape hatch: if the game never answers (AGR swallowed the XHR,
-    // network died), the Scan half still becomes clickable after the
-    // hard timeout so the user isn't stuck.
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-    setupScene({ onGalaxy: true, galaxyG: 4, galaxyS: 42 });
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
-    const { submitBtn } = installGalaxyForm();
-    let clicks = 0;
-    submitBtn.addEventListener('click', () => {
-      clicks++;
-    });
-    installSendColony();
-    getScan()?.click();
-    expect(clicks).toBe(1);
-
-    // 7s later — still within safety cap → ignored.
-    vi.advanceTimersByTime(7_000);
-    getScan()?.click();
-    expect(clicks).toBe(1);
-
-    // After the 8s cap → unlocks.
-    vi.advanceTimersByTime(1_500);
-    getScan()?.click();
-    expect(clicks).toBe(2);
-    vi.useRealTimers();
-  });
-});
+// (The onScanClick integration suite was removed with the Scan half (§2d):
+// there is no second zone, no in-page galaxy-submit, and no scan cooldown —
+// galaxy occupancy is now sourced from the OGame public API.)
 
 // ──────────────────────────────────────────────────────────────────
 // Event reactors
@@ -1038,10 +915,12 @@ describe('onSendHold — manual skip', () => {
     expect(Object.keys(scansStore.get())).toHaveLength(0);
   });
 
-  it('marks the ARMED candidate empty_sent without dispatching a fleet', async () => {
+  it('skips the ARMED candidate via a taken decision without dispatching', async () => {
     // The skip is only available after tap 1 armed a target (in the idle
     // state the hold is a no-op — no visible hint, no known target). Arm
-    // [4:30:9] through the courier, then hold to skip it.
+    // [4:30:9] through the courier, then hold to skip it. The skip now records
+    // a durable `taken` DECISION (not the old scansStore empty_sent write) so
+    // it also blocks API-only candidates that have no scan entry.
     setupScene({ onFleetdispatch: true });
     settingsStore.set({ ...settingsStore.get(), fabMode: true });
     galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), positions: '9' });
@@ -1058,7 +937,9 @@ describe('onSendHold — manual skip', () => {
     let clicks = 0;
     document.getElementById('dispatchFleet')?.addEventListener('click', () => (clicks += 1));
     _onSendHoldForTest();
-    expect(scansStore.get()['4:30']?.positions[9]?.status).toBe('empty_sent');
+    // The decision log now blocks 4:30:9 (taken), so the picker stops proposing it.
+    expect(colonizeDecisionsStore.get()['4:30:9']?.s).toBe(DEC_TAKEN);
+    expect(blockingCoords(colonizeDecisionsStore.get(), Date.now()).has('4:30:9')).toBe(true);
     expect(clicks).toBe(0); // skipped, not dispatched
     unhook();
   });

@@ -1,7 +1,8 @@
 // Unit tests for the shared per-system tooltip text. Pure string output
 // (no DOM), so the default node env is fine. Covers the not-scanned line,
 // the per-slot breakdown with flags + owner (incl. rank/ally enrichment),
-// the STALE banner, and that empty slots produce no line.
+// and that empty slots produce no line. (The STALE banner / `opts.stale`
+// argument was dropped in 1.30.0 — the signature is now `(g, s, scan)`.)
 //
 // @ts-check
 
@@ -44,11 +45,12 @@ describe('buildSystemTooltip', () => {
     expect(lines).toContain('   5: occupied [Bob]');
   });
 
-  it('prepends a STALE banner when opts.stale is set', () => {
+  it('leads with the scanned line (no STALE banner) regardless of any extra arg', () => {
+    // The 4th `opts` arg is gone; passing one must be inert, not crash.
     const scan = { scannedAt: 0, positions: { 8: { status: 'empty' } } };
-    const lines = buildSystemTooltip(2, 5, /** @type {any} */ (scan), { stale: true }).split('\n');
-    expect(lines[0]).toBe('[2:5] STALE — rescan recommended');
-    expect(lines[1]).toMatch(/^\[2:5\] scanned /);
+    const lines = buildSystemTooltip(2, 5, /** @type {any} */ (scan)).split('\n');
+    expect(lines[0]).toMatch(/^\[2:5\] scanned /);
+    expect(lines.some((l) => l.includes('STALE'))).toBe(false);
   });
 
   it('skips slots with no observation', () => {

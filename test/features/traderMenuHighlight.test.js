@@ -164,12 +164,17 @@ describe('traderGlows', () => {
     expect(g.menu).toBe('red'); // red > yellow on the menu
   });
 
-  it('event day: a future next-refresh suppresses red; once past it returns', () => {
+  it('event day: taking the CURRENT 4h slot suppresses red; a fresh slot re-lights it', () => {
+    // `importNextAt` is the START of the last-taken 4-hour slot. At 10:00 the
+    // current slot started at 08:00 (00/04/08/12/16/20 cadence).
     const now = at('2026-05-28T10:00:00');
-    const future = { ...blank, importEventDay: localDayKey(now), importNextAt: now.getTime() + 60 * 60 * 1000 };
-    expect(traderGlows(now, future).importPending).toBe(false); // waiting for 11:00
-    const passed = { ...blank, importEventDay: localDayKey(now), importNextAt: now.getTime() - 1000 };
-    expect(traderGlows(now, passed).importPending).toBe(true); // refresh time reached
+    const slotStart = at('2026-05-28T08:00:00').getTime();
+    const taken = { ...blank, importEventDay: localDayKey(now), importNextAt: slotStart };
+    expect(traderGlows(now, taken).importPending).toBe(false); // this slot's offer is gone
+    // A slot taken earlier (the 04:00 slot) is older than the current start →
+    // the 08:00 offer is waiting, so red re-lights.
+    const prevSlot = { ...blank, importEventDay: localDayKey(now), importNextAt: at('2026-05-28T04:00:00').getTime() };
+    expect(traderGlows(now, prevSlot).importPending).toBe(true); // a fresh slot's offer waits
   });
 
   it('event day ignores the once-daily clear (importTradedDay is irrelevant)', () => {
@@ -358,6 +363,9 @@ describe('installTraderMenuHighlight — sub-page scanning', () => {
     localStorage.removeItem(IMPORT_NEXT_KEY);
     document.getElementById(STYLE_ID)?.remove();
     document.body.innerHTML = '';
+    // Neutral page: the event-detection scan is gated on `component=messages`,
+    // so default it OFF — only the event tests opt in.
+    location.search = '?page=ingame&component=traderOverview';
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-05-28T18:00:00')); // afternoon: both windows open
     buildMenu();
@@ -373,6 +381,7 @@ describe('installTraderMenuHighlight — sub-page scanning', () => {
     localStorage.removeItem(IMPORT_NEXT_KEY);
     document.getElementById(STYLE_ID)?.remove();
     document.body.innerHTML = '';
+    location.search = ''; // don't leak the messages-page gate into other files
     vi.useRealTimers();
   });
 
@@ -420,75 +429,86 @@ describe('installTraderMenuHighlight — sub-page scanning', () => {
 
   // ── 6×-today event detection + re-arm parsing ────────────────────────
 
-  /** Build the news-message image that announces the 6× event. */
-  const buildEventMessage = () => {
+  /**
+   * Build a message-list row announcing the 6× event: the `importexport_6`
+   * image plus the hidden `.rawMessageData` block whose `data-raw-timestamp`
+   * (epoch SECONDS) dates the event. The feature reads that timestamp — not the
+   * mere presence of the image — so the event window can span the whole run.
+   *
+   * @param {number} startMs Server start time of the announcement, epoch ms.
+   */
+  const buildEventMessage = (startMs) => {
+    const row = document.createElement('li');
+    row.className = 'msg';
     const img = document.createElement('img');
     img.src = 'https://image.board.gameforge.com/uploads/ecdn/news_importexport_6.jpg';
-    document.body.appendChild(img);
+    row.appendChild(img);
+    const raw = document.createElement('span');
+    raw.className = 'rawMessageData';
+    raw.setAttribute('data-raw-timestamp', String(Math.floor(startMs / 1000)));
+    row.appendChild(raw);
+    document.body.appendChild(row);
   };
 
-  /** Build the import "done" overlay carrying a "come back at HH:MM" line. */
-  const buildImportPageWithText = (/** @type {string} */ text) => {
-    const div = document.createElement('div');
-    div.id = 'div_traderImportExport';
-    const overlay = document.createElement('div');
-    overlay.className = 'bargain_overlay';
-    overlay.style.display = 'block';
-    const p = document.createElement('p');
-    p.className = 'bargain_text';
-    p.textContent = text;
-    overlay.appendChild(p);
-    div.appendChild(overlay);
-    document.body.appendChild(div);
-  };
-
-  it('the 6× news message stamps the event day and lights red before 14:00', () => {
+  it('the 6× news message (on the messages page) stamps the event window and lights red before 14:00', () => {
     vi.setSystemTime(new Date('2026-05-28T08:00:00')); // morning: no red normally
-    buildEventMessage();
+    location.search = '?page=messages&component=messages'; // event scan is gated here
+    // Announced today; the event self-expires 3 days after its own start, so the
+    // stored day is the LAST day covered (start + 3 days), and today is inside it.
+    const startMs = new Date('2026-05-28T08:00:00').getTime();
+    buildEventMessage(startMs);
     installTraderMenuHighlight();
-    expect(localStorage.getItem(IMPORT_EVENT_KEY)).toBe(localDayKey(new Date()));
+    const lastDay = localDayKey(new Date(startMs + 3 * 24 * 60 * 60 * 1000));
+    expect(localStorage.getItem(IMPORT_EVENT_KEY)).toBe(lastDay); // covers today..+3d
+    expect(lastDay >= localDayKey(new Date())).toBe(true); // sanity: today is covered
     // Gate bypassed: import tile glows red even though it's only 08:00.
     expect(importTile().classList.contains(RED_CLASS)).toBe(true);
   });
 
-  it('event day: "come back at 12:00" sets the next-refresh stamp and drops red until then', () => {
-    vi.setSystemTime(new Date('2026-05-28T10:00:00'));
+  it('the 6× image is ignored off the messages page (no event stamp)', () => {
+    vi.setSystemTime(new Date('2026-05-28T08:00:00'));
+    location.search = '?page=ingame&component=traderOverview'; // NOT the inbox
+    buildEventMessage(new Date('2026-05-28T08:00:00').getTime());
+    installTraderMenuHighlight();
+    expect(localStorage.getItem(IMPORT_EVENT_KEY)).toBeNull();
+    expect(importTile().classList.contains(RED_CLASS)).toBe(false); // no red before 14:00
+  });
+
+  it('a long-expired 6× message cannot re-arm the event (its window is already past)', () => {
+    vi.setSystemTime(new Date('2026-05-28T08:00:00'));
+    location.search = '?page=messages&component=messages';
+    // Announced 10 days ago → start + 3 days is well in the past → no stamp.
+    buildEventMessage(new Date('2026-05-18T08:00:00').getTime());
+    installTraderMenuHighlight();
+    expect(localStorage.getItem(IMPORT_EVENT_KEY)).toBeNull();
+    expect(importTile().classList.contains(RED_CLASS)).toBe(false);
+  });
+
+  it('event day: a visible overlay stamps the CURRENT 4h slot and drops red for the rest of it', () => {
+    vi.setSystemTime(new Date('2026-05-28T10:00:00')); // 08:00 slot
     localStorage.setItem(IMPORT_EVENT_KEY, localDayKey(new Date())); // event already detected
-    buildImportPageWithText('Obecnie nie ma ofert. Wróć o godz. 12:00.');
+    buildImportPage('block'); // "offer gone" overlay visible → current slot taken
     installTraderMenuHighlight();
 
-    const expected = new Date('2026-05-28T12:00:00').getTime();
+    // The slot stamp is the START of the containing 4h slot (08:00), not the
+    // localised overlay text — the come-back parsing is gone.
+    const expected = new Date('2026-05-28T08:00:00').getTime();
     expect(Number(localStorage.getItem(IMPORT_NEXT_KEY))).toBe(expected);
     // The once-daily clear must NOT be stamped during the event.
     expect(localStorage.getItem(IMPORT_TRADED_KEY)).toBeNull();
-    // 12:00 is still ahead → red is suppressed for now.
+    // Current slot's offer is gone → red suppressed for the rest of the slot.
     expect(importTile().classList.contains(RED_CLASS)).toBe(false);
   });
 
-  it('event day: "come back tomorrow" (no time) re-arms at next midnight and drops red', () => {
-    vi.setSystemTime(new Date('2026-05-28T22:00:00'));
-    localStorage.setItem(IMPORT_EVENT_KEY, localDayKey(new Date())); // event already detected
-    // Last container taken: the overlay no longer carries an HH:MM, just
-    // "no more offers today, come back tomorrow".
-    buildImportPageWithText('Dzisiaj nie ma już więcej ofert. Wróć jutro.');
-    installTraderMenuHighlight();
-
-    // Exhausted for the day → re-arm at the next local midnight (after which the
-    // event flips off on its own), NOT a now-past time that would keep red stuck.
-    const expected = new Date('2026-05-29T00:00:00').getTime();
-    expect(Number(localStorage.getItem(IMPORT_NEXT_KEY))).toBe(expected);
-    expect(localStorage.getItem(IMPORT_TRADED_KEY)).toBeNull(); // still event mode
-    expect(importTile().classList.contains(RED_CLASS)).toBe(false); // red off for the rest of today
-  });
-
-  it('event day: red returns once the next-refresh time passes (safety-poll re-eval)', () => {
-    vi.setSystemTime(new Date('2026-05-28T11:59:00'));
+  it('event day: red returns at the next 4h slot boundary (boundary wake re-eval)', () => {
+    vi.setSystemTime(new Date('2026-05-28T11:59:00')); // late in the 08:00 slot
     localStorage.setItem(IMPORT_EVENT_KEY, localDayKey(new Date()));
-    buildImportPageWithText('Wróć o godz. 12:00.');
+    buildImportPage('block'); // 08:00 slot taken
     installTraderMenuHighlight();
     expect(importTile().classList.contains(RED_CLASS)).toBe(false);
 
-    // Cross 12:00; remove the page so the re-scan can't re-stamp a new time.
+    // Cross into the 12:00 slot; remove the page so the re-scan can't re-stamp
+    // the new slot. The fresh slot's offer is waiting → red re-lights.
     document.getElementById('div_traderImportExport')?.remove();
     vi.setSystemTime(new Date('2026-05-28T12:00:30'));
     vi.advanceTimersByTime(60_000);

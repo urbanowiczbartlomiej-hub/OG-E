@@ -5,14 +5,15 @@
 // the sendColony orchestrator builds on.
 //
 // Coverage breakdown:
-//   - findNextScanSystem — pure target picker (pure.js).
 //   - findNextColonizeTarget — pure colonize picker (pure.js).
 //   - pickCandidateInView — current-view priority target picker (pure.js).
 //   - getColonizeWaitTime — DOM + store-aware min-gap wait (domHelpers.js).
 //   - readHomePlanet — DOM coord reader (domHelpers.js).
 //   - parseCurrentGalaxyView — DOM + URL coord reader (domHelpers.js).
-//   - buildFleetdispatchUrl — URL builder (pure.js).
-//   - buildGalaxyUrl — URL builder (pure.js).
+//
+// (§2d removed the Scan half: the manual galaxy-scan frontier picker
+// `findNextScanSystem` and the `buildGalaxyUrl` / `buildFleetdispatchUrl`
+// URL builders are gone — galaxy occupancy now comes from the OGame API.)
 //
 // # What we do NOT cover
 //
@@ -25,10 +26,8 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
-  findNextScanSystem,
   findNextColonizeTarget,
   pickCandidateInView,
-  buildGalaxyUrl,
 } from '../../src/features/sendColony/pure.js';
 import {
   getColonizeWaitTime,
@@ -106,93 +105,6 @@ afterEach(() => {
   unmockLocationHref();
   navTarget = null;
   location.search = '';
-});
-
-// ──────────────────────────────────────────────────────────────────
-// findNextScanSystem — pure
-// ──────────────────────────────────────────────────────────────────
-
-describe('findNextScanSystem', () => {
-  const home = { galaxy: 4, system: 30 };
-
-  it('returns home+1 when scans is empty and no currentView', () => {
-    expect(findNextScanSystem({}, home, null)).toEqual({
-      galaxy: 4,
-      system: 31,
-    });
-  });
-
-  it('continues past currentView when on galaxy view', () => {
-    expect(findNextScanSystem({}, home, { galaxy: 4, system: 100 })).toEqual({
-      galaxy: 4,
-      system: 101,
-    });
-  });
-
-  it('skips a fresh scan at home+1 and returns home+2', () => {
-    /** @type {import('../../src/state/scans.js').GalaxyScans} */
-    const scans = {
-      '4:31': {
-        scannedAt: Date.now(),
-        positions: { 8: { status: 'empty' } },
-      },
-    };
-    expect(findNextScanSystem(scans, home, null)).toEqual({
-      galaxy: 4,
-      system: 32,
-    });
-  });
-
-  it('returns a stale scan position (does not skip it)', () => {
-    // 72h ago is past any day's 3 AM regardless of current wall-clock,
-    // so `abandoned` is always stale at that age.
-    /** @type {import('../../src/state/scans.js').GalaxyScans} */
-    const scans = {
-      '4:31': {
-        scannedAt: Date.now() - 72 * 3600_000,
-        positions: { 8: { status: 'abandoned' } },
-      },
-    };
-    expect(findNextScanSystem(scans, home, null)).toEqual({
-      galaxy: 4,
-      system: 31,
-    });
-  });
-
-  it('wraps within the same galaxy when starting near the top', () => {
-    expect(findNextScanSystem({}, home, { galaxy: 4, system: 499 })).toEqual({
-      galaxy: 4,
-      system: 1,
-    });
-  });
-
-  it('advances to the next galaxy when the home galaxy is all fresh', () => {
-    /** @type {import('../../src/state/scans.js').GalaxyScans} */
-    const scans = {};
-    for (let s = 1; s <= 499; s++) {
-      scans[/** @type {`${number}:${number}`} */ (`4:${s}`)] = {
-        scannedAt: Date.now(),
-        positions: { 8: { status: 'empty' } },
-      };
-    }
-    const next = findNextScanSystem(scans, home, null);
-    // Next galaxy in `buildGalaxyOrder(4)` is 5.
-    expect(next).toEqual({ galaxy: 5, system: 1 });
-  });
-
-  it('returns null when every galaxy is fresh', () => {
-    /** @type {import('../../src/state/scans.js').GalaxyScans} */
-    const scans = {};
-    for (let g = 1; g <= 7; g++) {
-      for (let s = 1; s <= 499; s++) {
-        scans[/** @type {`${number}:${number}`} */ (`${g}:${s}`)] = {
-          scannedAt: Date.now(),
-          positions: { 8: { status: 'empty' } },
-        };
-      }
-    }
-    expect(findNextScanSystem(scans, home, null)).toBeNull();
-  });
 });
 
 // ──────────────────────────────────────────────────────────────────
@@ -788,42 +700,7 @@ describe('parseCurrentGalaxyView', () => {
   });
 });
 
-// (buildFleetdispatchUrl was removed with the courier migration — colonize
-// now uses bare-URL entry + in-page selection; see fleetCourier.)
-
-// ──────────────────────────────────────────────────────────────────
-// buildGalaxyUrl
-// ──────────────────────────────────────────────────────────────────
-
-describe('buildGalaxyUrl', () => {
-  it('builds the expected URL with galaxy + system', () => {
-    const url = buildGalaxyUrl({ galaxy: 4, system: 30 });
-    expect(url).toContain('page=ingame');
-    expect(url).toContain('component=galaxy');
-    expect(url).toContain('galaxy=4');
-    expect(url).toContain('system=30');
-  });
-
-  it('does not include position / mission params', () => {
-    const url = buildGalaxyUrl({ galaxy: 4, system: 30 });
-    expect(url).not.toContain('position=');
-    expect(url).not.toContain('mission=');
-    expect(url).not.toContain('type=');
-    expect(url).not.toContain('am208=');
-  });
-
-  it('produces the exact format of the design spec', () => {
-    navTarget = 'https://example.com/game/index.php';
-    const url = buildGalaxyUrl({ galaxy: 2, system: 77 });
-    expect(url).toBe(
-      'https://example.com/game/index.php?page=ingame&component=galaxy' +
-        '&galaxy=2&system=77',
-    );
-  });
-
-  it('preserves origin from location.href', () => {
-    navTarget = 'https://s2-pl.ogame.gameforge.com/game/index.php';
-    const url = buildGalaxyUrl({ galaxy: 1, system: 1 });
-    expect(url.startsWith('https://s2-pl.ogame.gameforge.com/game/index.php?')).toBe(true);
-  });
-});
+// (The URL builders buildFleetdispatchUrl / buildGalaxyUrl were removed with
+// the courier migration + §2d Scan-half removal — colonize now uses bare-URL
+// entry + in-page selection (see fleetCourier) and there is no manual galaxy
+// scan to navigate to.)

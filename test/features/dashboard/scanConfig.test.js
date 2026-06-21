@@ -1,14 +1,16 @@
 // @vitest-environment happy-dom
 //
-// Behavioural tests for the dashboard's combined scan/colonization config
-// editor. The colonization knobs and the scan re-scan policy are two field
-// groups in ONE editor over ONE shared per-universe slot, on the Colonizations
-// tab. We mock chrome.storage with a Map-backed fake, inject the tab's
-// container, drive real input edits + a Save click, and assert the observable
-// output: rendered field values, the three chrome.storage writes (config value,
-// newest-wins timestamp, syncRequest poke), and — crucially — that a save never
-// clobbers fields the editor does NOT own (the Reminders tab's fleet-save `fs*`
-// knobs, which share the same slot — read-modify-write merge).
+// Behavioural tests for the dashboard's colonization config editor. Since §5d
+// removed the per-status "Re-scan after" policy (occupancy freshness now comes
+// from the OGame API; colonization state from the decision log with its own
+// horizons), the editor is just the colonization & abandon group over ONE
+// shared per-universe slot, on the Colonizations tab. We mock chrome.storage
+// with a Map-backed fake, inject the tab's container, drive real input edits +
+// a Save click, and assert the observable output: rendered field values, the
+// three chrome.storage writes (config value, newest-wins timestamp, syncRequest
+// poke), and — crucially — that a save never clobbers fields the editor does
+// NOT own (the Reminders tab's fleet-save `fs*` knobs, which share the same
+// slot — read-modify-write merge).
 //
 // @ts-check
 
@@ -42,15 +44,11 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
 const install = () => installScanColonyConfig({ getUniverseId: () => UNI });
 
 const $ = (/** @type {string} */ sel) => /** @type {HTMLInputElement} */ (document.querySelector(sel));
-const rescanInput = (/** @type {string} */ field) =>
-  /** @type {HTMLInputElement} */ (document.querySelector(`[data-field="${field}"]`));
 // Save / Reset / status are class hooks (not ids); scope to the editor body.
 const save = () =>
   document.querySelector('#colonizationConfigBody .scanCfgSave')?.dispatchEvent(new Event('click'));
 const reset = () =>
   document.querySelector('#colonizationConfigBody .scanCfgReset')?.dispatchEvent(new Event('click'));
-const status = () =>
-  /** @type {HTMLElement} */ (document.querySelector('#colonizationConfigBody .scanCfgStatus'));
 
 beforeEach(() => {
   store.clear();
@@ -64,38 +62,32 @@ beforeEach(() => {
   document.body.innerHTML = '<div id="colonizationConfigBody"></div>';
 });
 
-describe('Combined scan/colonization config editor', () => {
-  it('fills both field groups from the default preset when nothing is stored', async () => {
+describe('Colonization config editor', () => {
+  it('fills the colonization fields from the default preset when nothing is stored', async () => {
     install().refresh();
     await flush();
-    // Colonization group.
     expect($('#scanCfgPositions').value).toBe('8');
     expect($('#scanCfgPrefer').checked).toBe(true);
+    expect($('#scanCfgPreferFarthest').checked).toBe(true);
     expect($('#scanCfgColonyMinGap').value).toBe('15');
     expect($('#scanCfgColonyMinFields').value).toBe('320');
     expect($('#scanCfgColonyPassword').value).toBe('');
-    // Scan re-scan group.
-    expect($('#scanCfgAbandoned').checked).toBe(true);
-    expect(rescanInput('inactive').value).toBe('5d');
-    expect(rescanInput('empty').value).toBe('0'); // never, by default
   });
 
-  it('hydrates both field groups from a stored config', async () => {
+  it('hydrates the colonization fields from a stored config', async () => {
     store.set(CFG_KEY, {
       positions: '12-15',
       preferOtherGalaxies: false,
       preferFarthestSystems: false,
-      rescan: { occupied: 6 * 3600 },
     });
     install().refresh();
     await flush();
     expect($('#scanCfgPositions').value).toBe('12-15');
     expect($('#scanCfgPrefer').checked).toBe(false);
     expect($('#scanCfgPreferFarthest').checked).toBe(false);
-    expect(rescanInput('occupied').value).toBe('6h');
   });
 
-  it('saves both field groups + timestamp + syncRequest, parsing the durable-text units', async () => {
+  it('saves the colonization fields + timestamp + syncRequest', async () => {
     install().refresh();
     await flush();
 
@@ -105,9 +97,6 @@ describe('Combined scan/colonization config editor', () => {
     $('#scanCfgColonyMinGap').value = '25';
     $('#scanCfgColonyMinFields').value = '250';
     $('#scanCfgColonyPassword').value = 'hunter2';
-    rescanInput('occupied').value = '12h';
-    rescanInput('empty').value = '2d';
-    $('#scanCfgAbandoned').checked = false;
 
     save();
     await flush();
@@ -119,9 +108,6 @@ describe('Combined scan/colonization config editor', () => {
     expect(saved.colonyMinGap).toBe(25);
     expect(saved.colonyMinFields).toBe(250);
     expect(saved.colonyPassword).toBe('hunter2');
-    expect(saved.rescan.occupied).toBe(12 * 3600);
-    expect(saved.rescan.empty).toBe(2 * 86400);
-    expect(saved.rescan.abandonedEnabled).toBe(false);
     expect(typeof store.get(TS_KEY)).toBe('number');
     expect(typeof store.get(SYNC_KEY)).toBe('number');
   });
@@ -136,18 +122,6 @@ describe('Combined scan/colonization config editor', () => {
     expect($('#scanCfgPositions').value).toBe(defaultGalaxyScanConfig().positions);
     // Reset alone does not persist — the stored value is unchanged.
     expect(/** @type {any} */ (store.get(CFG_KEY)).positions).toBe('12-15');
-  });
-
-  it('rejects an unparseable re-scan time and does not save', async () => {
-    install().refresh();
-    await flush();
-
-    rescanInput('inactive').value = 'soon';
-    save();
-    await flush();
-
-    expect(store.has(CFG_KEY)).toBe(false);
-    expect(status().textContent || '').toMatch(/Invalid time/);
   });
 
   it('saving preserves fields the editor does NOT own (fleet-save knobs in the shared slot)', async () => {

@@ -126,11 +126,22 @@ describe('scansStore — hydration via initScansStore', () => {
     expect(mockStore.get).toHaveBeenCalledWith('oge_galaxyScans');
   });
 
-  it('hydrates the store when chromeStore.get resolves with a value', async () => {
-    /** @type {import('../../src/state/scans.js').GalaxyScans} */
+  it('hydrates ONLY the lifeform markers, stripping the heavy positions (§5)', async () => {
+    // What's on disk: full colonization scans (scannedAt + positions) PLUS
+    // lifeform-discovery markers on `1:5`. Hydration must keep only the slim
+    // lf markers — positions are ephemeral now and never come back from disk.
+    /** @type {any} */
     const stored = {
-      '4:30': { scannedAt: 1700000000, positions: {} },
-      '1:5': { scannedAt: 1700000500, positions: {} },
+      // No lf markers → dropped entirely on hydrate.
+      '4:30': { scannedAt: 1700000000, positions: { 3: { status: 'empty' } } },
+      // Carries lf markers → survives, but only the lf fields (scannedAt reset
+      // to 0, positions emptied).
+      '1:5': {
+        scannedAt: 1700000500,
+        positions: { 7: { status: 'empty' } },
+        lfScannedAt: 1700000600,
+        lfPositions: { 7: 1700000600 },
+      },
     };
     mockStore.get.mockResolvedValueOnce(stored);
 
@@ -145,7 +156,14 @@ describe('scansStore — hydration via initScansStore', () => {
     // but we loop a few times for safety against library-version quirks.
     for (let i = 0; i < 5; i++) await Promise.resolve();
 
-    expect(scansStore.get()).toEqual(stored);
+    expect(scansStore.get()).toEqual({
+      '1:5': {
+        scannedAt: 0,
+        positions: {},
+        lfScannedAt: 1700000600,
+        lfPositions: { 7: 1700000600 },
+      },
+    });
   });
 
   it('leaves the store alone when chromeStore.get resolves with undefined', async () => {
@@ -173,12 +191,14 @@ describe('scansStore — write-through (debounced 200ms)', () => {
     await mockStore.get.mock.results[0].value;
     await Promise.resolve();
 
-    /** @type {import('../../src/state/scans.js').SystemScan} */
-    const a = { scannedAt: 1, positions: {} };
-    /** @type {import('../../src/state/scans.js').SystemScan} */
-    const b = { scannedAt: 2, positions: {} };
-    /** @type {import('../../src/state/scans.js').SystemScan} */
-    const c = { scannedAt: 3, positions: {} };
+    // Each entry carries an lf marker so it survives stripToLfMarkers on save;
+    // positions are emptied + scannedAt reset to 0 in the persisted blob (§5).
+    /** @type {any} */
+    const a = { scannedAt: 1, positions: {}, lfScannedAt: 11 };
+    /** @type {any} */
+    const b = { scannedAt: 2, positions: {}, lfScannedAt: 12 };
+    /** @type {any} */
+    const c = { scannedAt: 3, positions: {}, lfScannedAt: 13 };
     scansStore.set(/** @type {any} */ ({ '4:30': a }));
     scansStore.set(/** @type {any} */ ({ '4:30': b }));
     scansStore.set(/** @type {any} */ ({ '4:30': c }));
@@ -189,7 +209,10 @@ describe('scansStore — write-through (debounced 200ms)', () => {
     vi.advanceTimersByTime(200);
 
     expect(mockStore.set).toHaveBeenCalledTimes(1);
-    expect(mockStore.set).toHaveBeenCalledWith('oge_galaxyScans', { '4:30': c });
+    // Only the latest value (c), slimmed to its lf marker, is persisted.
+    expect(mockStore.set).toHaveBeenCalledWith('oge_galaxyScans', {
+      '4:30': { scannedAt: 0, positions: {}, lfScannedAt: 13 },
+    });
   });
 
   it('does NOT fire save before the full 200ms has elapsed', async () => {

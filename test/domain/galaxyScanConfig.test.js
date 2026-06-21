@@ -1,23 +1,20 @@
 // @ts-check
 
-// Unit tests for the pure Galaxy-Scan config domain module: defaults,
-// normalisation of partial/legacy blobs, the RescanPolicy projection (the
-// bridge to isSystemStale), and the durable-text duration grammar.
+// Unit tests for the pure Galaxy-Scan config domain module: defaults and the
+// normalisation of partial / legacy / garbage blobs.
 //
-// Node env, no DOM. A key invariant verified here: the default config's
-// rescan policy equals the historical `RESCAN_AFTER` constant — locking the
-// new configurable path to the old hard-coded behaviour.
+// Node env, no DOM. §5d removed the per-status "Re-scan after" policy (the
+// `rescan` field + buildRescanPolicy / parse·formatRescanDuration / RESCAN_FIELDS
+// and the whole scheduling.js staleness machinery): galaxy occupancy is now
+// re-derived from the OGame API and colonization state lives in the decision
+// log with its own built-in horizons. A legacy `rescan` field on a stored blob
+// is now simply ignored.
 
 import { describe, it, expect } from 'vitest';
 import {
   defaultGalaxyScanConfig,
   normalizeGalaxyScanConfig,
-  buildRescanPolicy,
-  parseRescanDuration,
-  formatRescanDuration,
-  RESCAN_FIELDS,
 } from '../../src/domain/galaxyScanConfig.js';
-import { RESCAN_AFTER } from '../../src/domain/scheduling.js';
 
 describe('defaultGalaxyScanConfig', () => {
   it('returns the "free positions" preset (positions 8, prefer-other on)', () => {
@@ -25,16 +22,14 @@ describe('defaultGalaxyScanConfig', () => {
     expect(d.positions).toBe('8');
     expect(d.preferOtherGalaxies).toBe(true);
     expect(d.preferFarthestSystems).toBe(true); // historical behaviour
-    expect(d.rescan.abandonedEnabled).toBe(true);
-    expect(d.rescan.empty).toBe(0); // never, by default
   });
 
   it('returns a fresh object each call (no shared mutable literal)', () => {
     const a = defaultGalaxyScanConfig();
     const b = defaultGalaxyScanConfig();
     expect(a).not.toBe(b);
-    a.rescan.empty = 999;
-    expect(b.rescan.empty).toBe(0);
+    a.positions = '999';
+    expect(b.positions).toBe('8');
   });
 
   it('carries the colonization knobs (moved here from settingsStore)', () => {
@@ -51,33 +46,12 @@ describe('defaultGalaxyScanConfig', () => {
     expect(d.fsMinFlightSec).toBe(600);
     expect(d.fsOffsets).toBe('-10m, 0m, 10m');
   });
-});
 
-describe('buildRescanPolicy', () => {
-  it('reproduces RESCAN_AFTER exactly from the default config', () => {
-    const policy = buildRescanPolicy(defaultGalaxyScanConfig().rescan);
-    // The default `empty` is 0 (never) so it is absent — matching the
-    // historical map, which never listed empty/mine/admin.
-    expect(policy.rescanAfter).toEqual(RESCAN_AFTER);
-    expect(policy.abandonedEnabled).toBe(true);
-  });
-
-  it('drops 0-second fields (never) and converts the rest to ms', () => {
-    const policy = buildRescanPolicy({
-      emptySent: 0,        // never → absent
-      empty: 6 * 3600,     // 6h → included (aggressive play)
-      reserved: 0,
-      inactive: 2 * 86400, // 2d
-      longInactive: 0,
-      occupied: 0,
-      vacation: 0,
-      banned: 0,
-      abandonedEnabled: false,
-    });
-    expect(policy.rescanAfter.empty_sent).toBeUndefined();
-    expect(policy.rescanAfter.empty).toBe(6 * 3600 * 1000);
-    expect(policy.rescanAfter.inactive).toBe(2 * 86400 * 1000);
-    expect(policy.abandonedEnabled).toBe(false);
+  it('carries the bare-fleet guardian knobs', () => {
+    const d = defaultGalaxyScanConfig();
+    expect(d.guardianEnabled).toBe(true);
+    expect(d.guardianIntervalMin).toBe(20);
+    expect(d.guardianAckIntervalMin).toBe(3);
   });
 });
 
@@ -89,16 +63,21 @@ describe('normalizeGalaxyScanConfig', () => {
   });
 
   it('keeps valid fields and fills missing ones from defaults', () => {
+    const out = normalizeGalaxyScanConfig({ positions: '12-15' });
+    expect(out.positions).toBe('12-15');
+    expect(out.preferOtherGalaxies).toBe(true);   // default
+    expect(out.preferFarthestSystems).toBe(true); // default
+  });
+
+  it('ignores a legacy `rescan` field (§5d removed it)', () => {
     const out = normalizeGalaxyScanConfig({
       positions: '12-15',
       rescan: { inactive: 99 },
     });
     expect(out.positions).toBe('12-15');
-    expect(out.preferOtherGalaxies).toBe(true);         // default
-    expect(out.preferFarthestSystems).toBe(true);       // default
-    expect(out.rescan.inactive).toBe(99);
-    expect(out.rescan.occupied).toBe(30 * 86400);       // default
-    expect(out.rescan.abandonedEnabled).toBe(true);     // default
+    expect(/** @type {any} */ (out).rescan).toBeUndefined();
+    // The normalised config has exactly the surviving keys.
+    expect(out).toEqual({ ...defaultGalaxyScanConfig(), positions: '12-15' });
   });
 
   it('keeps an explicit preferFarthestSystems:false but coerces garbage to the default', () => {
@@ -106,21 +85,9 @@ describe('normalizeGalaxyScanConfig', () => {
     expect(normalizeGalaxyScanConfig({ preferFarthestSystems: 'yes' }).preferFarthestSystems).toBe(true);
   });
 
-  it('coerces negative / NaN durations back to the default', () => {
-    const d = defaultGalaxyScanConfig();
-    const out = normalizeGalaxyScanConfig({
-      rescan: { reserved: -5, vacation: 'x', emptySent: 0 },
-    });
-    expect(out.rescan.reserved).toBe(d.rescan.reserved);
-    expect(out.rescan.vacation).toBe(d.rescan.vacation);
-    expect(out.rescan.emptySent).toBe(0); // explicit 0 is valid (never)
-  });
-
-  it('covers every RESCAN_FIELDS key with a number', () => {
-    const out = normalizeGalaxyScanConfig({});
-    for (const { field } of RESCAN_FIELDS) {
-      expect(typeof out.rescan[field]).toBe('number');
-    }
+  it('keeps an explicit preferOtherGalaxies:false but coerces garbage to the default', () => {
+    expect(normalizeGalaxyScanConfig({ preferOtherGalaxies: false }).preferOtherGalaxies).toBe(false);
+    expect(normalizeGalaxyScanConfig({ preferOtherGalaxies: 'yes' }).preferOtherGalaxies).toBe(true);
   });
 
   it('keeps / coerces the colonization knobs', () => {
@@ -130,13 +97,18 @@ describe('normalizeGalaxyScanConfig', () => {
       colonyMinFields: 'bad',
       colonyPassword: 'hunter2',
     });
-    expect(out.colonyMinGap).toBe(30);           // coerced from string
+    expect(out.colonyMinGap).toBe(30);                   // coerced from string
     expect(out.colonyMinFields).toBe(d.colonyMinFields); // NaN → default
     expect(out.colonyPassword).toBe('hunter2');
     // Missing → defaults.
     const bare = normalizeGalaxyScanConfig({});
     expect(bare.colonyMinGap).toBe(d.colonyMinGap);
     expect(bare.colonyPassword).toBe('');
+  });
+
+  it('coerces negative colonyMinGap back to the default', () => {
+    const d = defaultGalaxyScanConfig();
+    expect(normalizeGalaxyScanConfig({ colonyMinGap: -5 }).colonyMinGap).toBe(d.colonyMinGap);
   });
 
   it('keeps / coerces the fleet-save reminder knobs (B3)', () => {
@@ -148,7 +120,7 @@ describe('normalizeGalaxyScanConfig', () => {
       fsOffsets: '-5m, 0m',
     });
     expect(out.fsEnabled).toBe(true);
-    expect(out.fsThreshold).toBe(50000);            // coerced from string
+    expect(out.fsThreshold).toBe(50000);               // coerced from string
     expect(out.fsMinFlightSec).toBe(d.fsMinFlightSec); // negative → default
     expect(out.fsOffsets).toBe('-5m, 0m');
     // Non-boolean enable / non-string offsets fall back to defaults.
@@ -161,45 +133,15 @@ describe('normalizeGalaxyScanConfig', () => {
     expect(bare.fsThreshold).toBe(d.fsThreshold);
   });
 
-});
-
-describe('parseRescanDuration', () => {
-  it('treats a bare number as hours', () => {
-    expect(parseRescanDuration('6')).toBe(6 * 3600);
-    expect(parseRescanDuration(' 24 ')).toBe(24 * 3600);
-  });
-
-  it('honours explicit d / h / m units', () => {
-    expect(parseRescanDuration('5d')).toBe(5 * 86400);
-    expect(parseRescanDuration('6h')).toBe(6 * 3600);
-    expect(parseRescanDuration('90m')).toBe(90 * 60);
-  });
-
-  it('maps 0 (any unit) to "never"', () => {
-    expect(parseRescanDuration('0')).toBe(0);
-    expect(parseRescanDuration('0d')).toBe(0);
-  });
-
-  it('rejects garbage and negatives with null', () => {
-    expect(parseRescanDuration('')).toBeNull();
-    expect(parseRescanDuration('abc')).toBeNull();
-    expect(parseRescanDuration('-5d')).toBeNull();
-    expect(parseRescanDuration('5x')).toBeNull();
-  });
-});
-
-describe('formatRescanDuration', () => {
-  it('prefers the largest whole unit; 0 renders as "0"', () => {
-    expect(formatRescanDuration(0)).toBe('0');
-    expect(formatRescanDuration(5 * 86400)).toBe('5d');
-    expect(formatRescanDuration(6 * 3600)).toBe('6h');
-    expect(formatRescanDuration(90 * 60)).toBe('90m');
-    expect(formatRescanDuration(45)).toBe('45s');
-  });
-
-  it('round-trips through parseRescanDuration for canonical units', () => {
-    for (const secs of [0, 6 * 3600, 24 * 3600, 5 * 86400, 30 * 86400]) {
-      expect(parseRescanDuration(formatRescanDuration(secs))).toBe(secs);
-    }
+  it('keeps / coerces the guardian knobs', () => {
+    const d = defaultGalaxyScanConfig();
+    const out = normalizeGalaxyScanConfig({
+      guardianEnabled: false,
+      guardianIntervalMin: '45',
+      guardianAckIntervalMin: -1,
+    });
+    expect(out.guardianEnabled).toBe(false);
+    expect(out.guardianIntervalMin).toBe(45);                       // coerced from string
+    expect(out.guardianAckIntervalMin).toBe(d.guardianAckIntervalMin); // negative → default
   });
 });

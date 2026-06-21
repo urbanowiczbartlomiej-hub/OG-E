@@ -11,6 +11,8 @@ import {
   reconcileFleetSaveQueue,
   adhocTitleFor,
   fsTitleFor,
+  guardianTitleFor,
+  isGuardianTitle,
   reminderFireTimes,
   titleFor,
   cancelWaveReminders,
@@ -422,6 +424,38 @@ describe('fsTitleFor', () => {
     expect(fsTitleFor('s163-pl')).toBe('[s163-pl] Fleet save');
     expect(fsTitleFor('s163-pl')).not.toBe(titleFor('s163-pl'));
     expect(fsTitleFor('s163-pl')).not.toBe(adhocTitleFor('s163-pl'));
+  });
+});
+
+describe('guardianTitleFor', () => {
+  it('prefixes the universe id and differs from the other kinds', () => {
+    expect(guardianTitleFor('s163-pl')).toBe('[s163-pl] Bare fleet');
+    expect(guardianTitleFor('s163-pl')).not.toBe(titleFor('s163-pl'));
+    expect(guardianTitleFor('s163-pl')).not.toBe(fsTitleFor('s163-pl'));
+  });
+});
+
+describe('isGuardianTitle', () => {
+  // Guards the dashboard's cross-kind orphan sweep: guardian pushes are
+  // state-free in the gist, so the sweep must recognise + skip them by title
+  // (the pattern has to stay in lock-step with guardianTitleFor's format).
+  it('matches a guardian title for any universe id', () => {
+    expect(isGuardianTitle(guardianTitleFor('s163-pl'))).toBe(true);
+    expect(isGuardianTitle(guardianTitleFor('uni-77'))).toBe(true);
+    expect(isGuardianTitle('[] Bare fleet')).toBe(true); // empty id still matches
+  });
+
+  it('rejects the other reminder kinds and near-misses', () => {
+    expect(isGuardianTitle(titleFor('s163-pl'))).toBe(false);
+    expect(isGuardianTitle(adhocTitleFor('s163-pl'))).toBe(false);
+    expect(isGuardianTitle(fsTitleFor('s163-pl'))).toBe(false);
+    expect(isGuardianTitle('[s163-pl] Bare fleets')).toBe(false); // trailing char
+    expect(isGuardianTitle('woot [s163-pl] Bare fleet')).toBe(false); // not anchored
+  });
+
+  it('treats a missing or empty title as not-guardian (no throw)', () => {
+    expect(isGuardianTitle(undefined)).toBe(false);
+    expect(isGuardianTitle('')).toBe(false);
   });
 });
 
