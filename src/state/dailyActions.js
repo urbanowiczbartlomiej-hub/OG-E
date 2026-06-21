@@ -41,11 +41,14 @@ export const TRADER_AUCTION_BID_KEY = 'oge-trader-auction-bid-at';
 export const TRADER_AUCTION_QUIET_KEY = 'oge-trader-auction-quiet-until';
 
 /**
- * Calendar-day key (YYYY-MM-DD) on which the "import refreshes 6× today" event
- * was detected (from the in-game news message). While it equals today the
- * import nudge ignores both the 14:00 gate and the once-per-day clear — the
- * offer returns several times, so it re-arms off {@link TRADER_IMPORT_NEXT_KEY}
- * instead. Self-expires at local midnight (a new day ≠ this key ⇒ normal mode).
+ * Calendar-day key (YYYY-MM-DD) of the LAST local day covered by the active
+ * "import refreshes 6× today" event. Derived from the announcing news message's
+ * own timestamp (start + a fixed run length), so a single sighting covers the
+ * whole multi-day event. While `today ≤ this key` the import nudge runs in event
+ * mode: it ignores the 14:00 gate and the once-per-day clear, and re-arms on the
+ * fixed 4-hour offer cadence (00/04/08/12/16/20) tracked via
+ * {@link TRADER_IMPORT_NEXT_KEY}. Self-expires the first local day past the
+ * window (`today > this key` ⇒ normal mode).
  *
  * Part of the synced {@link DailyState} (newest day-key wins, like
  * {@link TRADER_IMPORT_KEY}): the 6× event is server-wide for the universe, so a
@@ -54,15 +57,16 @@ export const TRADER_AUCTION_QUIET_KEY = 'oge-trader-auction-quiet-until';
 export const TRADER_IMPORT_EVENT_KEY = 'oge-trader-import-event-day';
 
 /**
- * Epoch-ms of the next Import/Export refresh during the 6×-today event, parsed
- * from the page's "come back at HH:MM" overlay. The import (red) glow stays
- * suppressed until this moment, then re-arms. 0/absent ⇒ an offer is waiting
- * now. Meaningful only while {@link TRADER_IMPORT_EVENT_KEY} is today.
+ * Epoch-ms of the START of the most recent 4-hour offer slot (00/04/08/12/16/20)
+ * for which the player has already taken the Import/Export container. The import
+ * (red) glow stays suppressed until the next slot boundary, then re-arms.
+ * 0/absent ⇒ the current slot's offer is still waiting. Meaningful only while
+ * {@link TRADER_IMPORT_EVENT_KEY} still covers today.
  *
- * Part of the synced {@link DailyState}, max-merged (latest refresh wins) to
- * mirror the feature's own local "keep the larger target" rule. A value left
- * over from a previous event day is always in the past once a new event day
- * starts, so it harmlessly reads as "offer waiting now".
+ * Part of the synced {@link DailyState}, max-merged (latest slot wins) so taking
+ * the offer on one device clears the nudge on another. A value left over from a
+ * previous event is always before the current slot, so it harmlessly reads as
+ * "offer waiting now".
  */
 export const TRADER_IMPORT_NEXT_KEY = 'oge-trader-import-next-at';
 
@@ -73,8 +77,8 @@ export const TRADER_IMPORT_NEXT_KEY = 'oge-trader-import-next-at';
  * @property {number} traderAuctionBidAt Epoch-ms of last bid, 0 when absent.
  * @property {number} traderAuctionQuietUntil Epoch-ms quiet window, 0 when absent.
  * @property {number} artifactShopDoneUntil Epoch-ms suppress window, 0 when absent.
- * @property {string} traderImportEventDay 6×-event day-key or "" when no event.
- * @property {number} traderImportNextAt   Epoch-ms next refresh, 0 when absent.
+ * @property {string} traderImportEventDay Last local day covered by the 6× event, or "" when no event.
+ * @property {number} traderImportNextAt   Epoch-ms start of the last taken 4h slot, 0 when absent.
  */
 
 /** @returns {DailyState} */
