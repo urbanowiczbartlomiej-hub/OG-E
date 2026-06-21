@@ -116,6 +116,20 @@ const tick = async (ms) => {
 };
 
 /**
+ * Reset the gist spies to a clean post-boot baseline. The on-install kick is a
+ * full round-trip (download + catch-up upload), so a test that asserts an exact
+ * fetch/write count or inspects `mock.calls[0]` would otherwise also see the
+ * boot's reads / catch-up PATCH. Mock IMPLEMENTATIONS (mockResolvedValue) are
+ * preserved — only call history is cleared. Call right after the boot settles.
+ *
+ * @returns {void}
+ */
+const clearSyncSpies = () => {
+  /** @type {import('vitest').Mock} */ (fetchGistData).mockClear();
+  /** @type {import('vitest').Mock} */ (writeGistData).mockClear();
+};
+
+/**
  * Build a minimal {@link import('../../src/sync/gist.js').GistPayload}
  * for fetchGistData mocks. Default values are empty so tests only
  * supply what they care about.
@@ -185,17 +199,26 @@ describe('installSync — initial boot', () => {
     expect(() => dispose()).not.toThrow();
   });
 
-  it('triggers a single downloadAndMerge on install when cloudSync is enabled', async () => {
+  it('boot runs a full round-trip — download then a catch-up upload of stranded local state', async () => {
+    // The on-install kick is now download + catch-up upload (was download-only):
+    // a decision written on a prior page whose 15 s debounced upload was killed
+    // by the game's forced post-send reload would otherwise sit unsynced. Seed
+    // such a decision; the gist has neither it nor our settings yet.
+    colonizeDecisionsStore.set({ '4:30:5': dec(100) });
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(
       payload(),
     );
+    /** @type {import('vitest').Mock} */ (writeGistData).mockResolvedValue(
+      undefined,
+    );
     installSync();
-    // Initial boot fires fetchGistData once, fire-and-forget. Flush
-    // the microtask the scheduler enqueued.
     await tick(0);
-    expect(fetchGistData).toHaveBeenCalledTimes(1);
-    // writeGistData NOT called — initial boot is download-only.
-    expect(writeGistData).not.toHaveBeenCalled();
+    // Two reads: the initial download and the catch-up upload's pre-merge.
+    expect(fetchGistData).toHaveBeenCalledTimes(2);
+    // The catch-up upload PATCHes — local carries a decision the gist lacks.
+    expect(writeGistData).toHaveBeenCalledTimes(1);
+    const [[sent]] = /** @type {import('vitest').Mock} */ (writeGistData).mock.calls;
+    expect(sent.colonizeDecisionsPerUniverse[UNI]['4:30:5']).toEqual(dec(100));
   });
 
   it('is idempotent — a second installSync returns the same dispose and does not double-subscribe', async () => {
@@ -205,9 +228,9 @@ describe('installSync — initial boot', () => {
     const dispose1 = installSync();
     const dispose2 = installSync();
     await tick(0);
-    // Second install must reuse the first handle, so we see exactly
-    // one initial download, not two.
-    expect(fetchGistData).toHaveBeenCalledTimes(1);
+    // Second install must reuse the first handle: exactly ONE boot round-trip
+    // (download + catch-up upload = 2 reads), not two installs' worth.
+    expect(fetchGistData).toHaveBeenCalledTimes(2);
     // Dispose references are the same function — the second install
     // returned the cached handle.
     expect(dispose2).toBe(dispose1);
@@ -220,9 +243,10 @@ describe('scheduleUpload — debounce behaviour', () => {
       payload(),
     );
     installSync();
-    // Let the initial download settle so fetchGistData is done
-    // before we start counting the debounce window.
+    // Let the boot round-trip (download + catch-up upload) settle, then reset
+    // the spies so we count only what the store change triggers.
     await tick(0);
+    clearSyncSpies();
     // Flip local state — this notifies scheduler's onStoreChange,
     // which schedules an upload 15 s out. (Decisions are a synced store;
     // scans are not, so we trigger via the decision log now.)
@@ -241,6 +265,7 @@ describe('scheduleUpload — debounce behaviour', () => {
     );
     installSync();
     await tick(0);
+    clearSyncSpies();
     colonizeDecisionsStore.set({ '4:30:5': dec(1000) });
     // Full debounce window elapses → debounced callback fires.
     await tick(15_000);
@@ -257,6 +282,7 @@ describe('scheduleUpload — debounce behaviour', () => {
     );
     installSync();
     await tick(0);
+    clearSyncSpies();
     // Three bursts within 15 s — each resets the debounce timer.
     colonizeDecisionsStore.set({ '4:30:5': dec(1000) });
     await tick(5_000);
@@ -354,8 +380,10 @@ describe('upload', () => {
       undefined,
     );
     installSync();
-    // Let initial download complete (the fetch above is consumed by it).
+    // Let the boot round-trip complete, then reset the spies so the PATCH we
+    // assert below is the debounced upload's, not the boot catch-up upload's.
     await tick(0);
+    clearSyncSpies();
     // Queue a second fetch response for the upload's pre-merge read.
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(
       payload({ decisions: { '1:1:1': dec(100) } }),
@@ -388,6 +416,7 @@ describe('upload', () => {
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(null); // boot
     installSync();
     await tick(0);
+    clearSyncSpies();
     // The upload's pre-merge read throws (network / HTTP / rate-limit).
     /** @type {import('vitest').Mock} */ (fetchGistData).mockRejectedValue(
       new Error('HTTP 500: boom'),
@@ -407,6 +436,7 @@ describe('upload', () => {
     /** @type {import('vitest').Mock} */ (writeGistData).mockResolvedValue(undefined);
     installSync();
     await tick(0);
+    clearSyncSpies();
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(null);
     // A send wrote a `sent` (s=1) decision with an arrival time → upload.
     colonizeDecisionsStore.set({ '7:8:9': { s: 1, ts: 5000, aa: 9999 } });
@@ -446,6 +476,7 @@ describe('upload', () => {
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(remote);
     installSync();
     await tick(0);
+    clearSyncSpies();
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(remote);
     /** @type {import('vitest').Mock} */ (writeGistData).mockResolvedValue(undefined);
     // Local decision on OUR universe triggers an upload.

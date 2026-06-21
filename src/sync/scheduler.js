@@ -71,15 +71,32 @@
 // scheduler module exists, and tests can simulate user clicks with a
 // plain `document.dispatchEvent`.
 //
-// # Initial boot
+// # Initial boot — download THEN catch-up upload
 //
-// On install, we fire exactly one {@link downloadAndMerge} (fire-
-// and-forget, we don't await). That catches up this device with
-// whatever another device uploaded while we were offline. Local
-// writes that happen DURING the initial download are still safe
-// because the lock serialises them: any store change during the boot
-// download queues a debounced upload, and that upload pre-merges with
-// remote at its own call site.
+// On install we fire exactly one full round-trip (download + upload, fire-and-
+// forget, we don't await). The download catches this device up with whatever
+// another device uploaded while we were offline. The trailing upload is the
+// catch-up PUSH: OGame force-reloads the page after every fleet send, which
+// destroys the JS context — and with it any 15-s debounced upload still
+// pending for the decision that very send just wrote. So a `sent`/`taken`
+// decision can land in chrome.storage (flushed synchronously) yet never reach
+// the gist, because its upload timer died with the page. Pushing once right
+// after the boot download guarantees such a stranded write leaves on the next
+// page load instead of waiting for a fragile 15-s idle window. `upload()` self-
+// skips via `gistIsCurrent` when local + gist already agree, so a fully-synced
+// boot pays at most one extra no-op GET. Local writes that happen DURING the
+// boot round-trip are still safe — the lock serialises them and each upload
+// pre-merges with remote at its own call site.
+//
+// # Periodic backstop
+//
+// Uploads are otherwise purely event-driven (store change → debounce) and
+// downloads happen only on boot / force-sync, so a tab left OPEN never learns
+// of another device's changes, and a local write whose debounce was killed by
+// navigation (without a reload to re-arm it) stays unsynced. A visibility-gated
+// `clock` tick runs a full round-trip every {@link PERIODIC_SYNC_MS} to cover
+// both. It pauses while the tab is hidden (no background API burn) and fires
+// once on regaining visibility, so refocusing a stale tab syncs immediately.
 //
 // @ts-check
 
@@ -129,6 +146,7 @@ import {
   seedUniverseTsIfAbsent,
 } from './settingsSync.js';
 import { debounce } from '../lib/debounce.js';
+import { clock } from '../lib/clock.js';
 import { chromeStore } from '../lib/storage.js';
 import { parseUniverseId } from '../lib/universeId.js';
 import { readDailyState, writeDailyState } from '../state/dailyActions.js';
@@ -180,6 +198,19 @@ export const resetGalaxyKeyFor = (universeId) =>
  * trade-off).
  */
 const DEBOUNCE_MS = 15_000;
+
+/**
+ * Cadence (ms) of the periodic backstop sync — a clock-driven full round-trip
+ * (download + upload). Deliberately longer than {@link DEBOUNCE_MS}: this is a
+ * safety net, NOT the primary push path. The fast paths are the store-change
+ * debounce (a fresh write) and the on-install catch-up kick (a write stranded
+ * by a prior page's reload). The backstop exists for the two cases neither
+ * covers: pulling another device's changes into an ALREADY-OPEN tab (no reload),
+ * and flushing a local write whose debounce was killed by navigation before the
+ * page reloaded. The clock pauses while the tab is hidden, so this costs nothing
+ * in the background; at ~2 GitHub GETs per tick it stays far under 5000 req/h.
+ */
+const PERIODIC_SYNC_MS = 60_000;
 
 // SYNC_FORCE_EVENT (lib/ogeEvents.js) is dispatched on `document` by the
 // Settings UI and histogram to request an immediate sync round-trip; this
@@ -1026,10 +1057,12 @@ export const installSync = () => {
   const unsubSettings = settingsStore.subscribe(onSettingsChange);
 
   const onForceSync = async () => {
-    // Force-sync is an explicit user action (settings "Sync now" or
-    // histogram "Refresh"). Run a full round-trip back-to-back,
-    // bypassing the debounce entirely. Each operation has its own
-    // in-flight guard; they serialise naturally via the shared lock.
+    // A full round-trip (download THEN upload), back-to-back, bypassing the
+    // upload debounce. THREE callers share it: the user's explicit force-sync
+    // (settings "Sync now" / histogram "Refresh"), the on-install catch-up kick
+    // (A), and the periodic clock backstop (B). Each operation has its own
+    // in-flight guard; they serialise naturally via the shared lock, and each
+    // self-skips when cloudSync is off / no token / already current.
     await downloadAndMerge();
     await upload();
   };
@@ -1100,12 +1133,26 @@ export const installSync = () => {
   };
   const unsubStorage = chromeStore.onChanged(onStorageChange);
 
-  // Kick off the initial download fire-and-forget. We do not await —
-  // the content-script bootstrap shouldn't block waiting for network.
-  // Local writes that land during this download still upload correctly
-  // because onStoreChange schedules the debounced upload, and the
-  // in-flight lock serialises the two operations.
-  void downloadAndMerge();
+  // Kick off the initial round-trip fire-and-forget (download THEN upload). We
+  // do not await — the content-script bootstrap shouldn't block on the network.
+  // The trailing upload is the catch-up push (A): a decision written on a prior
+  // page whose 15-s debounced upload was killed by the game's forced post-send
+  // reload would otherwise sit unsynced until the next chance 15 s idle window;
+  // pushing right after the initial download guarantees it leaves on THIS page
+  // load. `upload()` self-skips via gistIsCurrent when local + gist already
+  // agree, so this adds at most one no-op GET on a fully-synced load.
+  void onForceSync();
+
+  // Periodic backstop round-trip (B): a visibility-gated clock tick runs a full
+  // download+upload every PERIODIC_SYNC_MS. It covers the two cases the
+  // debounce + on-install catch-up don't: pulling another device's changes into
+  // an ALREADY-OPEN tab (no reload needed), and flushing a local write whose
+  // debounce was killed by navigation before the page reloaded. The clock pauses
+  // while hidden (zero background API burn) and fires once on regaining
+  // visibility — so refocusing a stale tab also triggers an immediate sync.
+  const unsubClock = clock.subscribe(() => { void onForceSync(); }, {
+    everyMs: PERIODIC_SYNC_MS,
+  });
 
   installed = {
     dispose: () => {
@@ -1115,6 +1162,7 @@ export const installSync = () => {
       unsubRoutes();
       unsubGalaxyConfig();
       unsubReminderConfig();
+      unsubClock();
       document.removeEventListener(SYNC_FORCE_EVENT, onForceSync);
       document.removeEventListener(DAILY_STATE_CHANGED_EVENT, onDailyStateChanged);
       unsubStorage();
