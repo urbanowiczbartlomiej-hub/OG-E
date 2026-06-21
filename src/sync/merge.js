@@ -567,10 +567,6 @@ export const mergeDailyState = (local, remote) => {
       local.artifactShopDoneUntil,
       remote.artifactShopDoneUntil ?? 0,
     ),
-    traderImportEventDay: maxStr(
-      local.traderImportEventDay,
-      remote.traderImportEventDay ?? '',
-    ),
     traderImportNextAt: maxNum(local.traderImportNextAt, remote.traderImportNextAt ?? 0),
   };
 
@@ -580,7 +576,6 @@ export const mergeDailyState = (local, remote) => {
     merged.traderAuctionBidAt !== local.traderAuctionBidAt ||
     merged.traderAuctionQuietUntil !== local.traderAuctionQuietUntil ||
     merged.artifactShopDoneUntil !== local.artifactShopDoneUntil ||
-    merged.traderImportEventDay !== local.traderImportEventDay ||
     merged.traderImportNextAt !== local.traderImportNextAt;
 
   return { merged, changed };

@@ -29,8 +29,11 @@ import {
   AUCTION_BID_KEY,
   IMPORT_TRADED_KEY,
   AUCTION_QUIET_KEY,
-  IMPORT_EVENT_KEY,
+  IMPORT_MODE_KEY,
+  IMPORT_EVENT_SEEN_KEY,
   IMPORT_NEXT_KEY,
+  MODE_DAILY,
+  MODE_6X,
 } from '../../src/features/traderMenuHighlight.js';
 import { settingsStore } from '../../src/state/settings.js';
 
@@ -154,45 +157,46 @@ describe('traderGlows', () => {
     expect(traderGlows(now, elapsed).auctionPending).toBe(true); // window passed
   });
 
-  // ── 6×-today Import/Export event ──────────────────────────────────────
+  // ── 6× ("event") import mode ──────────────────────────────────────────
 
-  it('event day: red lights BEFORE 14:00 (gate bypassed) when no next-refresh is known', () => {
+  it('6× mode: red lights BEFORE 14:00 (gate bypassed) when no slot has been taken', () => {
     const now = at('2026-05-28T08:00:00'); // morning — normally no red
-    const ev = { ...blank, importEventDay: localDayKey(now), importNextAt: null };
+    const ev = { ...blank, mode: MODE_6X, importNextAt: null };
     const g = traderGlows(now, ev);
     expect(g.importPending).toBe(true);
     expect(g.menu).toBe('red'); // red > yellow on the menu
   });
 
-  it('event day: taking the CURRENT 4h slot suppresses red; a fresh slot re-lights it', () => {
+  it('6× mode: taking the CURRENT 4h slot suppresses red; a fresh slot re-lights it', () => {
     // `importNextAt` is the START of the last-taken 4-hour slot. At 10:00 the
     // current slot started at 08:00 (00/04/08/12/16/20 cadence).
     const now = at('2026-05-28T10:00:00');
     const slotStart = at('2026-05-28T08:00:00').getTime();
-    const taken = { ...blank, importEventDay: localDayKey(now), importNextAt: slotStart };
+    const taken = { ...blank, mode: MODE_6X, importNextAt: slotStart };
     expect(traderGlows(now, taken).importPending).toBe(false); // this slot's offer is gone
     // A slot taken earlier (the 04:00 slot) is older than the current start →
     // the 08:00 offer is waiting, so red re-lights.
-    const prevSlot = { ...blank, importEventDay: localDayKey(now), importNextAt: at('2026-05-28T04:00:00').getTime() };
+    const prevSlot = { ...blank, mode: MODE_6X, importNextAt: at('2026-05-28T04:00:00').getTime() };
     expect(traderGlows(now, prevSlot).importPending).toBe(true); // a fresh slot's offer waits
   });
 
-  it('event day ignores the once-daily clear (importTradedDay is irrelevant)', () => {
+  it('6× mode ignores the once-daily clear (importTradedDay is irrelevant)', () => {
     const now = at('2026-05-28T15:00:00');
     const traded = {
       ...blank,
       importTradedDay: localDayKey(now),
-      importEventDay: localDayKey(now),
+      mode: MODE_6X,
       importNextAt: null,
     };
     expect(traderGlows(now, traded).importPending).toBe(true); // more offers today
   });
 
-  it("yesterday's event does NOT bypass the 14:00 gate today", () => {
+  it('daily mode (the default) still honours the 14:00 gate', () => {
     const now = at('2026-05-28T08:00:00');
-    const stale = { ...blank, importEventDay: localDayKey(at('2026-05-27T08:00:00')), importNextAt: null };
-    const g = traderGlows(now, stale);
-    expect(g.importPending).toBe(false); // back to normal: no red before 14:00
+    const daily = { ...blank, mode: MODE_DAILY, importNextAt: null };
+    expect(traderGlows(now, daily).importPending).toBe(false); // no red before 14:00
+    // An absent mode behaves as daily, too.
+    expect(traderGlows(now, { ...blank, importNextAt: null }).importPending).toBe(false);
   });
 });
 
@@ -205,7 +209,8 @@ describe('installTraderMenuHighlight', () => {
     localStorage.removeItem(AUCTION_BID_KEY);
     localStorage.removeItem(IMPORT_TRADED_KEY);
     localStorage.removeItem(AUCTION_QUIET_KEY);
-    localStorage.removeItem(IMPORT_EVENT_KEY);
+    localStorage.removeItem(IMPORT_MODE_KEY);
+    localStorage.removeItem(IMPORT_EVENT_SEEN_KEY);
     localStorage.removeItem(IMPORT_NEXT_KEY);
     document.getElementById(STYLE_ID)?.remove();
     document.body.innerHTML = '';
@@ -222,7 +227,8 @@ describe('installTraderMenuHighlight', () => {
     localStorage.removeItem(AUCTION_BID_KEY);
     localStorage.removeItem(IMPORT_TRADED_KEY);
     localStorage.removeItem(AUCTION_QUIET_KEY);
-    localStorage.removeItem(IMPORT_EVENT_KEY);
+    localStorage.removeItem(IMPORT_MODE_KEY);
+    localStorage.removeItem(IMPORT_EVENT_SEEN_KEY);
     localStorage.removeItem(IMPORT_NEXT_KEY);
     document.getElementById(STYLE_ID)?.remove();
     document.body.innerHTML = '';
@@ -359,7 +365,8 @@ describe('installTraderMenuHighlight — sub-page scanning', () => {
     localStorage.removeItem(AUCTION_BID_KEY);
     localStorage.removeItem(IMPORT_TRADED_KEY);
     localStorage.removeItem(AUCTION_QUIET_KEY);
-    localStorage.removeItem(IMPORT_EVENT_KEY);
+    localStorage.removeItem(IMPORT_MODE_KEY);
+    localStorage.removeItem(IMPORT_EVENT_SEEN_KEY);
     localStorage.removeItem(IMPORT_NEXT_KEY);
     document.getElementById(STYLE_ID)?.remove();
     document.body.innerHTML = '';
@@ -377,7 +384,8 @@ describe('installTraderMenuHighlight — sub-page scanning', () => {
     localStorage.removeItem(AUCTION_BID_KEY);
     localStorage.removeItem(IMPORT_TRADED_KEY);
     localStorage.removeItem(AUCTION_QUIET_KEY);
-    localStorage.removeItem(IMPORT_EVENT_KEY);
+    localStorage.removeItem(IMPORT_MODE_KEY);
+    localStorage.removeItem(IMPORT_EVENT_SEEN_KEY);
     localStorage.removeItem(IMPORT_NEXT_KEY);
     document.getElementById(STYLE_ID)?.remove();
     document.body.innerHTML = '';
@@ -427,13 +435,13 @@ describe('installTraderMenuHighlight — sub-page scanning', () => {
     expect(importTile().classList.contains(RED_CLASS)).toBe(true);
   });
 
-  // ── 6×-today event detection + re-arm parsing ────────────────────────
+  // ── 6× auto-switch detection + slot re-arm parsing ───────────────────
 
   /**
    * Build a message-list row announcing the 6× event: the `importexport_6`
    * image plus the hidden `.rawMessageData` block whose `data-raw-timestamp`
-   * (epoch SECONDS) dates the event. The feature reads that timestamp — not the
-   * mere presence of the image — so the event window can span the whole run.
+   * (epoch SECONDS) dates the event. The feature reads that timestamp — only a
+   * RECENT message (within the recency window) auto-switches the mode to 6×.
    *
    * @param {number} startMs Server start time of the announcement, epoch ms.
    */
@@ -450,43 +458,41 @@ describe('installTraderMenuHighlight — sub-page scanning', () => {
     document.body.appendChild(row);
   };
 
-  it('the 6× news message (on the messages page) stamps the event window and lights red before 14:00', () => {
+  it('a RECENT 6× message (on the messages page) auto-switches to 6× and lights red before 14:00', () => {
     vi.setSystemTime(new Date('2026-05-28T08:00:00')); // morning: no red normally
     location.search = '?page=messages&component=messages'; // event scan is gated here
-    // Announced today; the event self-expires 3 days after its own start, so the
-    // stored day is the LAST day covered (start + 3 days), and today is inside it.
     const startMs = new Date('2026-05-28T08:00:00').getTime();
     buildEventMessage(startMs);
     installTraderMenuHighlight();
-    const lastDay = localDayKey(new Date(startMs + 3 * 24 * 60 * 60 * 1000));
-    expect(localStorage.getItem(IMPORT_EVENT_KEY)).toBe(lastDay); // covers today..+3d
-    expect(lastDay >= localDayKey(new Date())).toBe(true); // sanity: today is covered
+    // Mode flipped to 6×, keyed on the message's own start (one switch per msg).
+    expect(localStorage.getItem(IMPORT_MODE_KEY)).toBe(MODE_6X);
+    expect(localStorage.getItem(IMPORT_EVENT_SEEN_KEY)).toBe(String(startMs));
     // Gate bypassed: import tile glows red even though it's only 08:00.
     expect(importTile().classList.contains(RED_CLASS)).toBe(true);
   });
 
-  it('the 6× image is ignored off the messages page (no event stamp)', () => {
+  it('the 6× image is ignored off the messages page (no auto-switch)', () => {
     vi.setSystemTime(new Date('2026-05-28T08:00:00'));
     location.search = '?page=ingame&component=traderOverview'; // NOT the inbox
     buildEventMessage(new Date('2026-05-28T08:00:00').getTime());
     installTraderMenuHighlight();
-    expect(localStorage.getItem(IMPORT_EVENT_KEY)).toBeNull();
+    expect(localStorage.getItem(IMPORT_MODE_KEY)).toBeNull(); // still daily (default)
     expect(importTile().classList.contains(RED_CLASS)).toBe(false); // no red before 14:00
   });
 
-  it('a long-expired 6× message cannot re-arm the event (its window is already past)', () => {
+  it('a long-expired 6× message cannot auto-switch the mode (outside the recency window)', () => {
     vi.setSystemTime(new Date('2026-05-28T08:00:00'));
     location.search = '?page=messages&component=messages';
-    // Announced 10 days ago → start + 3 days is well in the past → no stamp.
+    // Announced 10 days ago → older than the 3-day recency window → no switch.
     buildEventMessage(new Date('2026-05-18T08:00:00').getTime());
     installTraderMenuHighlight();
-    expect(localStorage.getItem(IMPORT_EVENT_KEY)).toBeNull();
+    expect(localStorage.getItem(IMPORT_MODE_KEY)).toBeNull();
     expect(importTile().classList.contains(RED_CLASS)).toBe(false);
   });
 
-  it('event day: a visible overlay stamps the CURRENT 4h slot and drops red for the rest of it', () => {
+  it('6× mode: a visible overlay stamps the CURRENT 4h slot and drops red for the rest of it', () => {
     vi.setSystemTime(new Date('2026-05-28T10:00:00')); // 08:00 slot
-    localStorage.setItem(IMPORT_EVENT_KEY, localDayKey(new Date())); // event already detected
+    localStorage.setItem(IMPORT_MODE_KEY, MODE_6X); // player picked 6× mode
     buildImportPage('block'); // "offer gone" overlay visible → current slot taken
     installTraderMenuHighlight();
 
@@ -500,9 +506,9 @@ describe('installTraderMenuHighlight — sub-page scanning', () => {
     expect(importTile().classList.contains(RED_CLASS)).toBe(false);
   });
 
-  it('event day: red returns at the next 4h slot boundary (boundary wake re-eval)', () => {
+  it('6× mode: red returns at the next 4h slot boundary (boundary wake re-eval)', () => {
     vi.setSystemTime(new Date('2026-05-28T11:59:00')); // late in the 08:00 slot
-    localStorage.setItem(IMPORT_EVENT_KEY, localDayKey(new Date()));
+    localStorage.setItem(IMPORT_MODE_KEY, MODE_6X);
     buildImportPage('block'); // 08:00 slot taken
     installTraderMenuHighlight();
     expect(importTile().classList.contains(RED_CLASS)).toBe(false);

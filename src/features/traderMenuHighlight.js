@@ -28,23 +28,27 @@
 //            their exact times are unknowable without polling — which TOS
 //            forbids), then it returns to nag about the next auction.
 //
-//   RED    — Import/Eksport. Shown ONLY from 14:00 onward (not earlier):
-//            the daily import is once-per-day and resets at local midnight,
-//            but in-game quests that require a once-daily import purchase
-//            activate only after 14:00 — nudging import before 14 risks the
-//            player "burning" their one daily import before such a quest
-//            appears. Cleared by a successful trade; re-arms next local day.
-//            EXCEPTION — the occasional "import refreshes 6× today" event
-//            (announced by a news message, see `IMPORT_EVENT_IMG_SEL`): the
-//            offer then refreshes every 4 hours from local midnight
-//            (00/04/08/12/16/20). For the whole multi-day run the 14:00 gate
-//            and once-daily clear are dropped; instead the glow tracks the
-//            fixed 4-hour SLOTS — it lights whenever the current slot's offer
-//            has not yet been taken and clears for the rest of that slot once
-//            it is. The event window is derived from the announcing message's
-//            own timestamp (start + a fixed run length), so a single sighting
-//            of the message covers every day of the event; on the first day
-//            past the window the normal once-daily rule resumes.
+//   RED    — Import/Eksport. Two player-chosen MODES, switched with the chips
+//            OG-E injects on the Import/Export page (see `renderTraderModeChips`):
+//              • DAILY (default) — the once-per-day container. Shown ONLY from
+//                14:00 onward (not earlier): it resets at local midnight, but
+//                in-game quests that require a once-daily import purchase
+//                activate only after 14:00 — nudging before 14 risks the player
+//                "burning" their one daily import before such a quest appears.
+//                Cleared by a successful trade; re-arms next local day.
+//              • 6× ("event") — during the occasional "import refreshes 6×
+//                today" event the offer refreshes every 4 hours from local
+//                midnight (00/04/08/12/16/20). The 14:00 gate and once-daily
+//                clear are dropped; the glow tracks the fixed 4-hour SLOTS — it
+//                lights whenever the current slot's offer has not yet been taken
+//                and clears for the rest of that slot once it is (all six slots
+//                nudge, including the night ones).
+//            We deliberately do NOT auto-detect which mode applies — that proved
+//            unreliable (the event is announced inconsistently), so the PLAYER
+//            picks it. As a convenience we auto-switch INTO 6× (once, never back)
+//            when a RECENT "6× today" news message is seen in the inbox; the
+//            player switches back to DAILY when the event ends. The mode is a
+//            per-device preference (local, not synced).
 //
 // Surfaces:
 //   - Menu button (`#menuTable [data-ipi-hint=ipiToolbarTrader]`): one
@@ -96,7 +100,6 @@ import {
   TRADER_AUCTION_BID_KEY,
   TRADER_IMPORT_KEY,
   TRADER_AUCTION_QUIET_KEY,
-  TRADER_IMPORT_EVENT_KEY,
   TRADER_IMPORT_NEXT_KEY,
 } from '../state/dailyActions.js';
 import {
@@ -122,6 +125,21 @@ const RED_CLASS = 'oge-trader-red';
 const MENU_CLASS = 'oge-trader-menu';
 
 /**
+ * OG-E's own mode-chooser chips, injected at the top of the Import/Export panel.
+ * These are OUR ids/classes (not a game contract), so they live next to the code
+ * that emits them. `CHIP_MODE_ATTR` tags each chip with the {@link MODE_DAILY} /
+ * {@link MODE_6X} value it selects.
+ */
+const CHIPS_CLASS = 'oge-trader-mode-chips';
+const CHIP_CLASS = 'oge-chip';
+const CHIP_ON_CLASS = 'oge-chip-on';
+const CHIP_LABEL_CLASS = 'oge-chip-label';
+const CHIP_MODE_ATTR = 'data-oge-mode';
+
+/** The Import/Export panel we prepend the chips to (game DOM — fragile, local). */
+const IMPORT_PANEL_SEL = '#div_traderImportExport';
+
+/**
  * `data-ipi-hint` values — OGame's locale-independent element identifiers.
  * `ipiToolbarTrader` is the global menu button; the two `ipiTrader*` hints
  * are the Auctioneer / Import-Export tiles on the Trader overview.
@@ -135,8 +153,31 @@ const IMPORT_HINT = 'ipiTraderImportExport';
 export const AUCTION_BID_KEY = TRADER_AUCTION_BID_KEY;
 export const IMPORT_TRADED_KEY = TRADER_IMPORT_KEY;
 export const AUCTION_QUIET_KEY = TRADER_AUCTION_QUIET_KEY;
-export const IMPORT_EVENT_KEY = TRADER_IMPORT_EVENT_KEY;
 export const IMPORT_NEXT_KEY = TRADER_IMPORT_NEXT_KEY;
+
+/**
+ * Player's chosen Import/Export reminder mode. PER-DEVICE and NOT synced — it's
+ * a preference, not server-wide state (see the header note): each device shows
+ * its own chips and is auto-switched independently when its own inbox is read.
+ */
+export const IMPORT_MODE_KEY = 'oge-trader-import-mode';
+
+/**
+ * Epoch-ms START time of the "6× today" message we last auto-switched INTO 6×
+ * for. One auto-switch per distinct message: this lets a manual switch-BACK to
+ * daily stick (re-reading the inbox won't undo it) and stops a long-expired
+ * message from re-arming 6× mode. Local, not synced.
+ */
+export const IMPORT_EVENT_SEEN_KEY = 'oge-trader-import-event-seen';
+
+/**
+ * Import/Export reminder modes (the values persisted in {@link IMPORT_MODE_KEY}).
+ * Cast to their literal types so the exported symbols stay `'daily'`/`'6x'` (not
+ * widened to `string`) for every consumer — the {@link TraderState} `mode` union
+ * depends on it.
+ */
+export const MODE_DAILY = /** @type {'daily'} */ ('daily');
+export const MODE_6X = /** @type {'6x'} */ ('6x');
 
 /**
  * Trader sub-page selectors (game DOM — fragile, locale-independent where
@@ -173,12 +214,12 @@ const MSG_RAW_DATA_SEL = '.rawMessageData';
 const MSG_TIMESTAMP_ATTR = 'data-raw-timestamp';
 
 /**
- * How long one "refreshes 6× today" announcement keeps the event active,
- * measured from the message's own start timestamp. The event typically runs
- * ~3 days; we have no end-of-event signal, so the window self-expires after
- * this span (at most ~1 day of slop on the tail, which simply self-heals).
+ * Recency window for the 6× AUTO-switch: an "import refreshes 6× today" inbox
+ * message older than this (events run ~3 days) no longer flips the mode to 6×,
+ * so a stale announcement reopened weeks later can't re-arm event mode. Only the
+ * auto-switch is time-bounded — the player's manual choice never expires.
  */
-const EVENT_DURATION_MS = 3 * 24 * 60 * 60 * 1000;
+const EVENT_RECENCY_MS = 3 * 24 * 60 * 60 * 1000;
 
 /**
  * Offer cadence during the event: the Import/Export container refreshes every
@@ -319,6 +360,46 @@ const CSS = `
   color: #ffd0c0;
   text-shadow: 0 0 9px rgba(255, 80, 50, 0.72);
 }
+/* OG-E mode-chooser chips on the Import/Export page. A compact pill row in
+ * OGame's dark palette: the active mode reads in the accent blue, the inactive
+ * one is muted. Our own UI — no game contract — so styled freely. */
+.${CHIPS_CLASS} {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  background: rgba(20, 30, 40, 0.55);
+  border: 1px solid #2a4a5a;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.${CHIPS_CLASS} .${CHIP_LABEL_CLASS} {
+  color: #9fb3c8;
+  margin-right: 2px;
+}
+.${CHIPS_CLASS} button.${CHIP_CLASS} {
+  padding: 3px 10px;
+  border: 1px solid #2a4a5a;
+  border-radius: 12px;
+  background: #16222e;
+  color: #9fb3c8;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.5;
+  font-family: inherit;
+}
+.${CHIPS_CLASS} button.${CHIP_CLASS}:hover {
+  border-color: #4a9eff;
+  color: #cfe3f7;
+}
+.${CHIPS_CLASS} button.${CHIP_CLASS}.${CHIP_ON_CLASS} {
+  background: #1a2a3a;
+  border-color: #4a9eff;
+  color: #4a9eff;
+  font-weight: bold;
+}
 `;
 
 const REFRESH_DEBOUNCE_MS = 300;
@@ -346,12 +427,12 @@ export const localDayKey = (d) => {
  * @property {number | null} [auctionQuietUntil] Epoch ms until which the
  *   yellow glow is suppressed (from the Auctioneer "next auction in"
  *   countdown), `null`/absent if none.
- * @property {string | null} [importEventDay] Last local day-key covered by the
- *   "import refreshes 6× today" event, or `null`/absent if no event. Event mode
- *   is active while `localDayKey(now) <= importEventDay`.
+ * @property {'daily' | '6x'} [mode] Player-chosen Import/Export reminder mode.
+ *   `'6x'` runs the 4-hour-slot event cadence; `'daily'` (default) the
+ *   once-a-day 14:00 rule.
  * @property {number | null} [importNextAt] Epoch ms of the START of the last
  *   4-hour slot whose offer was taken; `null`/absent means the current slot's
- *   offer is still waiting. Used only while the event covers today.
+ *   offer is still waiting. Used only in `'6x'` mode.
  */
 
 /**
@@ -374,7 +455,7 @@ export const traderGlows = (now, state) => {
   const auctionBidAt = state?.auctionBidAt ?? null;
   const importTradedDay = state?.importTradedDay ?? null;
   const auctionQuietUntil = state?.auctionQuietUntil ?? null;
-  const importEventDay = state?.importEventDay ?? null;
+  const mode = state?.mode ?? MODE_DAILY;
   const importNextAt = state?.importNextAt ?? null;
 
   // Yellow (Licytator): auction hours, suppressed while EITHER the ~30-min
@@ -387,15 +468,14 @@ export const traderGlows = (now, state) => {
     auctionQuietUntil !== null && now.getTime() < auctionQuietUntil;
   const auctionPending = inAuctionWindow && !bidSnoozed && !quietActive;
 
-  // Red (Import/Eksport). Two modes:
-  //   - 6× EVENT (importEventDay still covers today): the import isn't
-  //     once-daily and the 14:00 gate doesn't apply. The offer refreshes every
-  //     4 h from midnight; pending whenever the CURRENT slot's offer has not yet
-  //     been taken — i.e. the last taken slot (`importNextAt`) is older than the
-  //     current slot's start (or nothing taken yet). All six slots nudge,
-  //     including the 00:00 / 04:00 night slots.
-  //   - NORMAL day: 14:00 onward, until taken today.
-  const eventActive = importEventDay !== null && localDayKey(now) <= importEventDay;
+  // Red (Import/Eksport). Two player-chosen modes:
+  //   - 6× (mode === '6x'): the import isn't once-daily and the 14:00 gate
+  //     doesn't apply. The offer refreshes every 4 h from midnight; pending
+  //     whenever the CURRENT slot's offer has not yet been taken — i.e. the last
+  //     taken slot (`importNextAt`) is older than the current slot's start (or
+  //     nothing taken yet). All six slots nudge, incl. the 00:00 / 04:00 night.
+  //   - DAILY (default): 14:00 onward, until taken today.
+  const eventActive = mode === MODE_6X;
   const importPending = eventActive
     ? importNextAt === null || importNextAt < slotStartMs(now, EVENT_SLOT_HOURS)
     : hour >= IMPORT_START_HOUR && importTradedDay !== localDayKey(now);
@@ -410,10 +490,9 @@ export const traderGlows = (now, state) => {
  * The next epoch-ms at which {@link traderGlows} could change its verdict for
  * the given `state` — the soonest of: the auction window edges (open at
  * {@link AUCTION_START_HOUR}, close at {@link AUCTION_END_HOUR}), the import
- * gate ({@link IMPORT_START_HOUR}), local midnight (day rollover, which also
- * expires the event window), the post-bid snooze expiry, the auctioneer
- * quiet-until, and — while the event covers today — the next 4-hour slot
- * boundary. Lets the feature wake EXACTLY at the next boundary instead of
+ * gate ({@link IMPORT_START_HOUR}), local midnight (day rollover), the post-bid
+ * snooze expiry, the auctioneer quiet-until, and — in 6× mode — the next 4-hour
+ * slot boundary. Lets the feature wake EXACTLY at the next boundary instead of
  * polling. The daily hour/midnight terms guarantee a future result; `null`
  * only if nothing is computable.
  *
@@ -433,10 +512,9 @@ export const nextTraderBoundary = (now, state) => {
   if (bidAt !== null) candidates.push(bidAt + BID_SNOOZE_MS);
   const quietUntil = state?.auctionQuietUntil ?? null;
   if (quietUntil !== null) candidates.push(quietUntil);
-  // Event mode: wake at the next 4-hour slot boundary so the red glow re-arms
-  // for each fresh offer without needing a Trader-page visit.
-  const importEventDay = state?.importEventDay ?? null;
-  if (importEventDay !== null && localDayKey(now) <= importEventDay) {
+  // 6× mode: wake at the next 4-hour slot boundary so the red glow re-arms for
+  // each fresh offer without needing a Trader-page visit.
+  if ((state?.mode ?? MODE_DAILY) === MODE_6X) {
     candidates.push(nextSlotStartMs(now, EVENT_SLOT_HOURS));
   }
 
@@ -483,6 +561,37 @@ const readImportNextAt = () => {
 };
 
 /**
+ * The player's chosen Import/Export mode, defaulting to {@link MODE_DAILY} for
+ * any missing / unrecognised value.
+ *
+ * @returns {'daily' | '6x'}
+ */
+const readMode = () => (safeLS.get(IMPORT_MODE_KEY) === MODE_6X ? MODE_6X : MODE_DAILY);
+
+/**
+ * Persist the chosen Import/Export mode (normalised to one of the two values).
+ *
+ * @param {'daily' | '6x'} mode
+ * @returns {void}
+ */
+const writeMode = (mode) =>
+  safeLS.set(IMPORT_MODE_KEY, mode === MODE_6X ? MODE_6X : MODE_DAILY);
+
+/**
+ * The start-ms of the 6× message we last auto-switched for, or `null` when none
+ * / unparseable. Compared against the newest inbox announcement so each distinct
+ * message triggers at most one auto-switch (see {@link IMPORT_EVENT_SEEN_KEY}).
+ *
+ * @returns {number | null}
+ */
+const readEventSeen = () => {
+  const raw = safeLS.get(IMPORT_EVENT_SEEN_KEY);
+  if (raw === null) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+};
+
+/**
  * Assemble the persisted state from localStorage.
  *
  * @returns {TraderState}
@@ -491,7 +600,7 @@ const readState = () => ({
   auctionBidAt: readAuctionBidAt(),
   importTradedDay: safeLS.get(IMPORT_TRADED_KEY),
   auctionQuietUntil: readAuctionQuietUntil(),
-  importEventDay: safeLS.get(IMPORT_EVENT_KEY),
+  mode: readMode(),
   importNextAt: readImportNextAt(),
 });
 
@@ -609,10 +718,10 @@ const readNewestEventStartMs = () => {
 };
 
 /**
- * Record that the Import/Export container was just taken at `now`. During an
- * active 6× event stamp the CURRENT 4-hour slot (suppresses red until the next
- * boundary); otherwise stamp today's once-daily clear. Only ever moves the slot
- * stamp forward, so repeated calls within a slot don't churn. Shared by the
+ * Record that the Import/Export container was just taken at `now`. In 6× mode
+ * stamp the CURRENT 4-hour slot (suppresses red until the next boundary);
+ * otherwise stamp today's once-daily clear. Only ever moves the slot stamp
+ * forward, so repeated calls within a slot don't churn. Shared by the
  * `oge:traderImportTraded` XHR signal and the passive "overlay shown" scan.
  *
  * @param {Date} now
@@ -620,8 +729,7 @@ const readNewestEventStartMs = () => {
  */
 const markImportTaken = (now) => {
   const today = localDayKey(now);
-  const eventDay = safeLS.get(IMPORT_EVENT_KEY);
-  if (eventDay !== null && today <= eventDay) {
+  if (readMode() === MODE_6X) {
     const slot = slotStartMs(now, EVENT_SLOT_HOURS);
     const stored = readImportNextAt();
     if (stored === null || slot > stored) safeLS.set(IMPORT_NEXT_KEY, String(slot));
@@ -635,11 +743,11 @@ const markImportTaken = (now) => {
  * stamp storage from what they show — the passive counterpart to the action
  * XHR events:
  *
- *   - Import/Export EVENT detection (message inbox only): from the newest
- *     `importexport_6` announcement's own timestamp, derive the last local day
- *     the event covers ({@link EVENT_DURATION_MS} after its start) and store it.
- *     A single inbox visit thus covers every day of the multi-day run; a stale,
- *     long-expired message can't re-arm it (its window is already past).
+ *   - 6× AUTO-switch (message inbox only): a RECENT `importexport_6`
+ *     announcement (within {@link EVENT_RECENCY_MS} of its own timestamp) flips
+ *     the mode to 6×, once per distinct message (see {@link IMPORT_EVENT_SEEN_KEY}).
+ *     A stale, long-expired message can't re-arm it, and a manual switch-back to
+ *     daily is never undone by re-reading the inbox.
  *   - Import/Export: a visible "offer gone" overlay means the current container
  *     was taken — record it via {@link markImportTaken} (current 4h slot during
  *     the event, today's once-daily clear otherwise), so the red glow clears
@@ -659,18 +767,20 @@ const markImportTaken = (now) => {
  * @returns {void}
  */
 const scanTraderSubpages = (now) => {
-  // Event detection — only on the messages page (keeps the attribute-substring
-  // image scan off the hot Trader / Auctioneer paths). Extend the covered-until
-  // day forward; never shorten it (max-wins, like the sync merge).
+  // 6× auto-switch — only on the messages page (keeps the attribute-substring
+  // image scan off the hot Trader / Auctioneer paths). A RECENT "import refreshes
+  // 6× today" announcement flips the mode to 6× ONCE per distinct message (keyed
+  // on its own start time): re-reading the inbox won't undo a manual switch-back,
+  // and a stale/old message can't re-arm it. Switching back to daily is manual.
   if (location.search.includes('component=messages')) {
     const startMs = readNewestEventStartMs();
-    if (startMs !== null) {
-      const coverUntilMs = startMs + EVENT_DURATION_MS;
-      if (coverUntilMs > now.getTime()) {
-        const lastDay = localDayKey(new Date(coverUntilMs));
-        const stored = safeLS.get(IMPORT_EVENT_KEY);
-        if (stored === null || lastDay > stored) safeLS.set(IMPORT_EVENT_KEY, lastDay);
-      }
+    if (
+      startMs !== null &&
+      now.getTime() - startMs < EVENT_RECENCY_MS &&
+      readEventSeen() !== startMs
+    ) {
+      safeLS.set(IMPORT_EVENT_SEEN_KEY, String(startMs));
+      writeMode(MODE_6X);
     }
   }
 
@@ -696,16 +806,116 @@ const scanTraderSubpages = (now) => {
 };
 
 /**
- * Scan the Trader sub-pages, then re-render. The single refresh path used
- * by the MutationObserver, the safety-poll, and install. No-op when the
- * feature is toggled off (so navigating the Trader pages with it disabled
- * neither stamps storage nor paints).
+ * The two mode chips, as `[mode, label, tooltip]` rows. Labels stay in OG-E's
+ * own English (matching the settings panel); the cadence + start hour are baked
+ * into each label so the choice is self-explanatory.
+ *
+ * @type {ReadonlyArray<readonly ['daily' | '6x', string, string]>}
+ */
+const MODE_CHIPS = [
+  [
+    MODE_DAILY,
+    '1×/day · from 14:00',
+    'One reminder per day, from 14:00 (the normal once-a-day import).',
+  ],
+  [
+    MODE_6X,
+    '6×/day · every 4 h',
+    'Six reminders per day on the 4-hour event slots ' +
+      '(00/04/08/12/16/20). Auto-enabled when a "refreshes 6× today" ' +
+      'message is seen; switch back here when the event ends.',
+  ],
+];
+
+/**
+ * Apply the player's mode choice from a chip click: persist it and repaint both
+ * the chips (selected state) and the glows.
+ *
+ * @param {'daily' | '6x'} mode
+ * @returns {void}
+ */
+const onModeChipClick = (mode) => {
+  writeMode(mode);
+  renderTraderModeChips();
+  applyHighlight();
+};
+
+/**
+ * Build the chips bar (label + the two mode buttons). Each button stops event
+ * propagation so a click can't bubble into OGame's own panel handlers.
+ *
+ * @returns {HTMLDivElement}
+ */
+const buildModeChipsBar = () => {
+  const bar = document.createElement('div');
+  bar.className = CHIPS_CLASS;
+
+  const label = document.createElement('span');
+  label.className = CHIP_LABEL_CLASS;
+  label.textContent = 'OG-E reminder:';
+  bar.appendChild(label);
+
+  for (const [mode, text, tooltip] of MODE_CHIPS) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = CHIP_CLASS;
+    btn.setAttribute(CHIP_MODE_ATTR, mode);
+    btn.textContent = text;
+    btn.title = tooltip;
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onModeChipClick(mode);
+    });
+    bar.appendChild(btn);
+  }
+  return bar;
+};
+
+/**
+ * Inject (once) the mode chips at the top of the Import/Export panel and reflect
+ * the current mode on them. No-op when the panel isn't on screen (the player
+ * isn't on the Import/Export page). Idempotent: re-uses an existing bar and only
+ * flips a chip's selected class when it is actually wrong, so re-running on every
+ * MutationObserver tick neither duplicates the bar nor needlessly feeds the
+ * observer (which would loop).
+ *
+ * @returns {void}
+ */
+const renderTraderModeChips = () => {
+  const panel = document.querySelector(IMPORT_PANEL_SEL);
+  if (!panel) return;
+  let bar = panel.querySelector(`.${CHIPS_CLASS}`);
+  if (!bar) {
+    bar = buildModeChipsBar();
+    panel.insertBefore(bar, panel.firstChild);
+  }
+  const mode = readMode();
+  bar.querySelectorAll(`[${CHIP_MODE_ATTR}]`).forEach((btn) => {
+    const on = btn.getAttribute(CHIP_MODE_ATTR) === mode;
+    if (btn.classList.contains(CHIP_ON_CLASS) !== on) {
+      btn.classList.toggle(CHIP_ON_CLASS, on);
+    }
+  });
+};
+
+/** Remove the injected chips bar(s). Used by teardown / the disabled path. */
+const removeTraderModeChips = () => {
+  document.querySelectorAll(`.${CHIPS_CLASS}`).forEach((el) => el.remove());
+};
+
+/**
+ * Scan the Trader sub-pages, render the mode chips, then re-render the glows.
+ * The single refresh path used by the MutationObserver, the safety-poll, and
+ * install. No-op when the feature is toggled off (so navigating the Trader pages
+ * with it disabled neither stamps storage, injects chips, nor paints).
  *
  * @returns {void}
  */
 const refresh = () => {
   if (!settingsStore.get().traderMenuHighlight) return;
   scanTraderSubpages(new Date());
+  renderTraderModeChips();
   applyHighlight();
 };
 
@@ -724,9 +934,10 @@ const onImportTraded = () => {
   document.dispatchEvent(new CustomEvent(DAILY_STATE_CHANGED_EVENT));
 };
 
-/** Strip highlight + remove style — used when toggled off. */
+/** Strip highlight + chips + style — used when toggled off / on dispose. */
 const teardownDom = () => {
   stripHighlight();
+  removeTraderModeChips();
   document.getElementById(STYLE_ID)?.remove();
 };
 
@@ -746,8 +957,8 @@ export const installTraderMenuHighlight = () => {
 
   injectStyle(STYLE_ID, CSS);
   // Wake exactly at the next policy boundary (window edges, midnight, snooze
-  // expiry, the event "come back at" time) instead of polling. Re-armed by
-  // every `applyHighlight()`; the initial `refresh()` below makes the first arm.
+  // expiry, the next 6× slot) instead of polling. Re-armed by every
+  // `applyHighlight()`; the initial `refresh()` below makes the first arm.
   boundary = clock.scheduleAt(
     () => nextTraderBoundary(new Date(), readState()),
     applyHighlight,

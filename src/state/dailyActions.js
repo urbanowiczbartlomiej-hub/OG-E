@@ -41,27 +41,12 @@ export const TRADER_AUCTION_BID_KEY = 'oge-trader-auction-bid-at';
 export const TRADER_AUCTION_QUIET_KEY = 'oge-trader-auction-quiet-until';
 
 /**
- * Calendar-day key (YYYY-MM-DD) of the LAST local day covered by the active
- * "import refreshes 6× today" event. Derived from the announcing news message's
- * own timestamp (start + a fixed run length), so a single sighting covers the
- * whole multi-day event. While `today ≤ this key` the import nudge runs in event
- * mode: it ignores the 14:00 gate and the once-per-day clear, and re-arms on the
- * fixed 4-hour offer cadence (00/04/08/12/16/20) tracked via
- * {@link TRADER_IMPORT_NEXT_KEY}. Self-expires the first local day past the
- * window (`today > this key` ⇒ normal mode).
- *
- * Part of the synced {@link DailyState} (newest day-key wins, like
- * {@link TRADER_IMPORT_KEY}): the 6× event is server-wide for the universe, so a
- * device that never read the in-game news message still enters event mode.
- */
-export const TRADER_IMPORT_EVENT_KEY = 'oge-trader-import-event-day';
-
-/**
  * Epoch-ms of the START of the most recent 4-hour offer slot (00/04/08/12/16/20)
  * for which the player has already taken the Import/Export container. The import
  * (red) glow stays suppressed until the next slot boundary, then re-arms.
- * 0/absent ⇒ the current slot's offer is still waiting. Meaningful only while
- * {@link TRADER_IMPORT_EVENT_KEY} still covers today.
+ * 0/absent ⇒ the current slot's offer is still waiting. Meaningful only during
+ * the 4-hour-slot ("6×") import cadence (the mode is a per-device preference that
+ * lives in the feature, not here — see `features/traderMenuHighlight.js`).
  *
  * Part of the synced {@link DailyState}, max-merged (latest slot wins) so taking
  * the offer on one device clears the nudge on another. A value left over from a
@@ -77,7 +62,6 @@ export const TRADER_IMPORT_NEXT_KEY = 'oge-trader-import-next-at';
  * @property {number} traderAuctionBidAt Epoch-ms of last bid, 0 when absent.
  * @property {number} traderAuctionQuietUntil Epoch-ms quiet window, 0 when absent.
  * @property {number} artifactShopDoneUntil Epoch-ms suppress window, 0 when absent.
- * @property {string} traderImportEventDay Last local day covered by the 6× event, or "" when no event.
  * @property {number} traderImportNextAt   Epoch-ms start of the last taken 4h slot, 0 when absent.
  */
 
@@ -88,7 +72,6 @@ export const readDailyState = () => ({
   traderAuctionBidAt: safeLS.int(TRADER_AUCTION_BID_KEY, 0),
   traderAuctionQuietUntil: safeLS.int(TRADER_AUCTION_QUIET_KEY, 0),
   artifactShopDoneUntil: safeLS.int(ARTIFACT_SHOP_DONE_KEY, 0),
-  traderImportEventDay: safeLS.get(TRADER_IMPORT_EVENT_KEY) ?? '',
   traderImportNextAt: safeLS.int(TRADER_IMPORT_NEXT_KEY, 0),
 });
 
@@ -108,8 +91,6 @@ export const writeDailyState = (state) => {
     safeLS.set(TRADER_AUCTION_QUIET_KEY, state.traderAuctionQuietUntil);
   if (state.artifactShopDoneUntil != null)
     safeLS.set(ARTIFACT_SHOP_DONE_KEY, state.artifactShopDoneUntil);
-  if (state.traderImportEventDay != null)
-    safeLS.set(TRADER_IMPORT_EVENT_KEY, state.traderImportEventDay);
   if (state.traderImportNextAt != null)
     safeLS.set(TRADER_IMPORT_NEXT_KEY, state.traderImportNextAt);
 };

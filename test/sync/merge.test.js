@@ -543,7 +543,6 @@ describe('mergeDailyState', () => {
     traderAuctionBidAt: 100,
     traderAuctionQuietUntil: 100,
     artifactShopDoneUntil: 100,
-    traderImportEventDay: '2026-06-10',
     traderImportNextAt: 100,
   });
 
