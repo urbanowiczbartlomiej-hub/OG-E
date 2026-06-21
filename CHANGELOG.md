@@ -4,6 +4,80 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.30.0] — 2026-06-21
+
+### Added
+
+- **Colonization now sees the whole universe, not just what you've scanned.**
+  OG-E reads OGame's public statistics API for the current universe and
+  composites that server-wide occupancy with your live galaxy scans, so the
+  colonize button knows which positions are actually free everywhere — not only
+  in systems you happen to have scanned. A live **"N free"** sub-label shows how
+  many target positions remain open across the entire universe (your configured
+  slots in parentheses), and it updates the instant you send or skip one. Each
+  target is re-confirmed against the game the moment you arm a send, and the
+  colonize menu is now a single Send action — the separate Scan step is gone.
+- **Pick up colonizing where you left off — on any device.** OG-E keeps a compact
+  log of your colonization decisions (sent / mine / abandoned / taken / reserved)
+  and syncs just that, so a second device can continue the remaining free
+  positions without re-scanning the galaxy first.
+- **Mark a fleet-save by hand.** On the fleet-dispatch page a small "Mark FS" chip
+  lets you flag the current planet or moon as fleet-saved yourself — handy when a
+  save wasn't auto-detected. The mark sticks until you clear it and arms the
+  guardian straight away. If you use push reminders, a manual mark also schedules
+  the guardian's ntfy alert for that body — so a hand-marked fleet still reaches
+  you with the tab closed, even when automatic fleet-save detection is off.
+- **The guardian can now perform the fleet-save for you.** When a fleet is sitting
+  exposed, the guardian's button becomes a two-tap "Re-Save" that runs the
+  fleet-save through AntiGameReborn — no need to set it up by hand.
+- **A gentle "still watching?" nudge.** If a fleet is parked bare and you've gone
+  a few quiet minutes without touching the page, the guardian button now pulses
+  softly as an in-game presence check (no push needed). Off the fleet-dispatch
+  page its first tap just acknowledges — silencing the pulse and snoozing the
+  push without yanking you away — and a second tap navigates. Set the interval
+  under the guardian's row in the Dashboard.
+- **Daily Run now sends fleet 2 with empty holds at full speed.** The micro step
+  zeroes the cargo and forces 100% speed automatically, so the routine fleet goes
+  out exactly as intended.
+
+### Changed
+
+- **Sync is dramatically lighter.** Galaxy scans, the player list and your own
+  profile are no longer uploaded — every device re-derives them from the public
+  API on its own — so a universe's synced payload shrank from a couple of
+  megabytes of scan data to a few bytes. Only the things that genuinely need
+  sharing (colonization decisions, colony history and your configs) still travel
+  between devices.
+- **The guardian wears a lighthouse.** Its old "!" is now a lighthouse glyph — a
+  beacon that keeps watch and guides fleets home — and the in-game button and its
+  Dashboard rows are now labelled "Fleet guardian".
+- **The colonize button's label now matches the others** in size, with a short
+  hint of your configured target positions.
+- **Clearer "AGR isn't ready" feedback on the action buttons.** The expedition and
+  fleet-save buttons now say so plainly when AntiGameReborn's matching routine
+  isn't present, instead of looking like a generic timeout.
+- **The Lifeforms button dropped its red "cap" dot** — the "3600+" artifact label
+  already said everything it did.
+
+### Fixed
+
+- **Fleet status markers no longer linger after a fleet has finished.** The
+  optimistic marker cache had no expiry, so a dot for a fleet that completed while
+  the tab was closed could stay painted on every reload; markers now expire on
+  their own once the fleets they represent have arrived.
+- **The merchant 6× import highlight now survives the entire multi-day event.** It
+  keys off the announcing news message (a fixed multi-day run) instead of the day
+  it was first seen, and re-arms itself on a steady four-hour cadence without
+  needing a visit to the Trader page — so it no longer goes quiet on day two or on
+  a second device. The highlight also stopped flickering on the auctioneer's
+  one-second countdown.
+- **The "Mark FS" chip no longer disappears when you reach fleet dispatch from the
+  top menu.** It finds the current planet/moon from the page itself rather than
+  from the URL, so it's present however you navigate there.
+- **Skipping a colonization target now always sticks.** Holding to skip records a
+  durable "taken" decision, so it works even for universe-wide candidates you've
+  never live-scanned.
+
 ## [1.29.0] — 2026-06-20
 
 ### Added
