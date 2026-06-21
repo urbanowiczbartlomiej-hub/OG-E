@@ -9,9 +9,13 @@
 // the user dismissed and wants back). See `state/manualLandedFs.js`.
 //
 // Inline, not on the FAB: the mark is contextual to the body you're dispatching
-// from, so it belongs at the form. We anchor it after the first present of a
-// small ordered list (AGR's fleet1 target-type row, the native continue control,
-// then `#fleet1`) and a MutationObserver re-injects it if AGR rebuilds the form.
+// from, so it belongs at the form — by the native "Dalej"/continue control,
+// where your eyes already are when sending. We mount as the FIRST child of the
+// native `#allornone` block (which holds the continue button): that block is
+// stable, but its inner `.allornonewrap` is rebuilt by AGR on every live cargo/
+// coords refresh — so the chip must sit OUTSIDE that wrap or it gets wiped. A
+// MutationObserver re-injects it if AGR rebuilds the form. Fallbacks: AGR's
+// fleet1 target-type row, then `#fleet1`.
 //
 // The body it marks is resolved from the page's `cp` mapped onto the planet
 // list's planet/moon links — that yields coords AND the planet-vs-moon type
@@ -27,13 +31,27 @@ import { hasManualLandedFs, toggleManualLandedFs } from '../../state/manualLande
 const CHIP_ID = 'oge-mfs-chip';
 const STYLE_ID = 'oge-mfs-style';
 
-/** Anchors tried in order; the chip mounts after the first one present. */
-const ANCHORS = ['#ago_type', GAME.FD_CONTINUE, GAME.FD_FLEET1];
+/**
+ * Anchors tried in order; the chip mounts at the first one present, using that
+ * anchor's `pos`. Primary: the FIRST child of `#allornone` (the native block
+ * around the continue button) — a stable sibling BEFORE the volatile
+ * `.allornonewrap`, so AGR's live cargo/coords rebuilds don't wipe it. Floated
+ * right, it lands top-right above "Dalej". Fallbacks land after AGR's
+ * target-type row, then after `#fleet1` if neither is up yet.
+ *
+ * @type {ReadonlyArray<{ sel: string, pos: InsertPosition }>}
+ */
+const ANCHORS = [
+  { sel: '#allornone', pos: 'afterbegin' },
+  { sel: '#ago_type', pos: 'afterend' },
+  { sel: GAME.FD_FLEET1, pos: 'afterend' },
+];
 
 const CSS = `
 #${CHIP_ID}{
   display:inline-flex;align-items:center;gap:6px;
-  margin:6px 4px;padding:4px 9px;vertical-align:middle;
+  float:right;clear:right;
+  margin:6px 25px 6px 4px;padding:4px 9px;vertical-align:middle;
   border:1px solid #6b4a1f;border-radius:6px;
   background:#241a0c;color:#e8902e;
   font:700 11px/1 Verdana,sans-serif;cursor:pointer;user-select:none;
@@ -135,10 +153,19 @@ const sync = () => {
   }
   let chip = existing;
   if (!chip) {
-    const anchor = ANCHORS.map((s) => document.querySelector(s)).find(Boolean);
-    if (!anchor) return; // form not ready yet — the observer retries
+    let anchorEl = null;
+    let pos = /** @type {InsertPosition} */ ('afterend');
+    for (const a of ANCHORS) {
+      const el = document.querySelector(a.sel);
+      if (el) {
+        anchorEl = el;
+        pos = a.pos;
+        break;
+      }
+    }
+    if (!anchorEl) return; // form not ready yet — the observer retries
     chip = buildChip();
-    anchor.insertAdjacentElement('afterend', chip);
+    anchorEl.insertAdjacentElement(pos, chip);
   }
   paintChip(chip, body.bodyKey);
 };

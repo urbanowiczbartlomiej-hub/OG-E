@@ -77,7 +77,7 @@ import {
 } from '../domain/adhoc.js';
 import {
   reconcileFleetSaves, reconcileLandedFleetSaves, pruneFsNotify, parseFsOffsets,
-  FS_LANDED_TTL_SEC, GUARDIAN_INTERVAL_SEC,
+  GUARDIAN_INTERVAL_SEC,
 } from '../domain/fleetSave.js';
 import {
   reconcileWaveQueue, reconcileAdhocQueue, reconcileFleetSaveQueue,
@@ -181,8 +181,9 @@ export const REMINDER_FILENAME_RE = /^oge-reminders-([^/]+)\.json$/;
  *     `fleetSaveNotify`). Migration from v3/v4 is ADDITIVE — older files
  *     read forward with the new blocks defaulted empty.
  *   - v6: adds `landedFleetSave` — fleet-saves whose row has vanished
- *     (landed), kept for a TTL so the planet markers flag the still-exposed
- *     fleet. Migration from v3/v4/v5 is ADDITIVE — defaults to empty.
+ *     (landed), kept until re-saved/departed/dismissed so the planet markers
+ *     flag the still-exposed fleet. Migration from v3/v4/v5 is ADDITIVE —
+ *     defaults to empty.
  */
 export const REMINDER_SCHEMA_VERSION = 6;
 
@@ -305,7 +306,8 @@ export const REMINDER_NTFY_TOKEN_KEY = 'oge_reminderNtfyTokenMirror';
  * @property {Record<string, NotifyEntry>} fleetSaveNotify  Per-FS bookkeeping
  *   (scheduled ntfy.sh message ids), keyed by event-row id.
  * @property {LandedFleetSave[]} [landedFleetSave]  Fleet-saves that have landed
- *   (row gone), kept for a TTL so the planet markers flag the exposed fleet.
+ *   (row gone), kept until re-saved/departed/dismissed so the planet markers
+ *   flag the exposed fleet.
  */
 
 /**
@@ -620,14 +622,21 @@ export const syncReminders = async (config, dom, now, universeId) => {
   const adhocActive = master;
   const fsActive = master && Boolean(config.fsEnabled);
 
-  // Landed fleet-saves: which of the just-vanished FS rows touched down and
-  // are now sitting exposed (kept for a TTL). Purely derived — never scheduled
-  // — so it lives outside the ntfy block. Cleared when FS is off.
+  // Landed fleet-saves: which of the just-vanished FS rows touched down and are
+  // now sitting exposed. NO timer — an entry persists until the fleet visibly
+  // moves (re-save / departure) or the user dismisses it. A dismiss is fed in as
+  // `dismissedKeys` so the landing is dropped at the SOURCE (here), not just
+  // hidden downstream — otherwise it would re-arm once the local dismiss record
+  // is pruned. Purely derived — never scheduled — so it lives outside the ntfy
+  // block. Cleared when FS is off.
+  const dismissedKeys = new Set(
+    prevLanded.filter((e) => guardianDismissed[e.bodyKey] === e.landedAt).map((e) => e.bodyKey),
+  );
   const landedFleetSave = fsActive
     ? reconcileLandedFleetSaves(prevLanded, prevFs, fleetSaveCandidates, {
         now,
-        ttlSec: FS_LANDED_TTL_SEC,
         departingKeys,
+        dismissedKeys,
       })
     : [];
 
@@ -713,7 +722,7 @@ export const syncReminders = async (config, dom, now, universeId) => {
     // ONE escalation push per landed (exposed) fleet-save, fired
     // GUARDIAN_INTERVAL_SEC after touchdown. Driven by the just-computed
     // landedFleetSave (minus dismissed landings); auto-swept the instant a body
-    // leaves landedFleetSave (re-saved / departed / TTL), since it's then no
+    // leaves landedFleetSave (re-saved / departed / dismissed), since it's then no
     // longer a live entry. Reconciled under its own title, so it never sweeps
     // the other kinds. State-free in the gist: the queue itself is the source of
     // truth — only the local dismiss store persists.
@@ -722,7 +731,7 @@ export const syncReminders = async (config, dom, now, universeId) => {
     // MANUAL marks. Mirrors the in-game button's union (features/reminders/
     // guardian.js) so the loud surface and the offline push track the SAME set:
     // manual first, then auto OVERRIDES on a clash (it carries the real landing
-    // identity/TTL). Manual marks get no dismiss filter — a dismiss removes the
+    // identity). Manual marks get no dismiss filter — a dismiss removes the
     // mark itself — but an ack still snoozes them by the interval, like auto.
     //
     // Gated by the guardian switch alone (master + guardianEnabled), NOT by

@@ -49,9 +49,9 @@ describe('reminder file constants', () => {
     // v1.5.0 bumped to v3 (per-universe files). v1.8.0 bumped to v4,
     // adding the ad-hoc reminder blocks. v1.9.0 bumped to v5, adding the
     // fleet-save blocks. v1.29.0 bumped to v6, adding the `landedFleetSave`
-    // block (landed fleet-saves kept on a TTL so planet markers flag the
-    // still-exposed fleet); v3/v4/v5 are read forward (additive migration),
-    // older versions treated as absent.
+    // block (landed fleet-saves kept until re-saved/departed/dismissed so
+    // planet markers flag the still-exposed fleet); v3/v4/v5 are read forward
+    // (additive migration), older versions treated as absent.
     expect(REMINDER_SCHEMA_VERSION).toBe(6);
   });
 

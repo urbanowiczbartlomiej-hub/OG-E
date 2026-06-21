@@ -319,11 +319,15 @@ export const pruneFsNotify = (notify, entries) => {
 };
 
 /**
- * How long a LANDED fleet-save stays flagged after touchdown. Once the row
- * vanishes we go blind (the fleet may have been moved, sold, or lost), so the
- * "sitting exposed" flag self-expires rather than lingering forever.
+ * How long a guardian DISMISS / ACK suppression record is retained after the
+ * landing it silences. The exposed flag ITSELF has no timer — it clears only on
+ * re-save, departure, or an explicit dismiss (see
+ * {@link reconcileLandedFleetSaves}). This window merely bounds the local
+ * dismiss/ack stores: it must outlive the gap between the user's tap and the
+ * sync that drops the landing at the source, and (for ack) it snoozes the
+ * one-shot escalation push. A couple of hours is ample.
  */
-export const FS_LANDED_TTL_SEC = 120 * 60;
+export const GUARDIAN_SUPPRESS_TTL_SEC = 120 * 60;
 
 /**
  * How long after a fleet-save touches down its GUARDIAN escalation push fires,
@@ -334,12 +338,12 @@ export const GUARDIAN_INTERVAL_SEC = 20 * 60;
 
 /**
  * A fleet-save that has LANDED — its event row is gone but we keep flagging the
- * body it sits on, exposed, until {@link FS_LANDED_TTL_SEC} elapses.
+ * body it sits on, exposed, until the fleet visibly moves or the user dismisses
+ * it. There is deliberately NO expiry: the flag is durable, like a manual mark.
  *
  * @typedef {object} LandedFleetSave
  * @property {string} bodyKey   Landing body identity (`g:s:p:type`).
  * @property {number} landedAt  Epoch SECONDS the fleet landed (its `arrivalAt`).
- * @property {number} expiresAt Epoch SECONDS the flag self-clears (`landedAt + ttl`).
  */
 
 /**
@@ -350,12 +354,16 @@ export const GUARDIAN_INTERVAL_SEC = 20 * 60;
  *
  *   - A previously-known FS ({@link FleetSaveReminder}) that is ABSENT from the
  *     current candidates and whose `arrivalAt <= now` just landed → recorded at
- *     its `landingKey` with `expiresAt = arrivalAt + ttlSec`.
- *   - Existing landed entries are carried forward until `now >= expiresAt`.
+ *     its `landingKey`.
+ *   - Existing landed entries are carried forward indefinitely — there is NO
+ *     timer. An exposed flag is durable; it clears only on the explicit events
+ *     below, mirroring a manual mark.
  *   - A body that now has a LIVE candidate landing there is in motion again →
  *     dropped (the live/"saving" state wins).
- *   - EARLY-CLEAR: a body in `departingKeys` (an own outbound leg left it this
- *     scan) is dropped at once — the fleet visibly moved on.
+ *   - CLEAR: a body in `departingKeys` (an own outbound leg left it this scan)
+ *     OR in `dismissedKeys` (the user dismissed/acked this landing away) is
+ *     dropped at once. Dismissal drops it at the SOURCE so it never re-arms once
+ *     the local dismiss record is pruned.
  *
  * Keyed by body — one (latest) landed entry per body.
  *
@@ -364,15 +372,15 @@ export const GUARDIAN_INTERVAL_SEC = 20 * 60;
  * @param {FleetSaveCandidate[]} candidates FS candidates present this scan.
  * @param {object} opts
  * @param {number} opts.now         Epoch SECONDS.
- * @param {number} opts.ttlSec      Seconds a landed flag survives after touchdown.
  * @param {Set<string>} [opts.departingKeys] Body keys with an own outbound leg now.
+ * @param {Set<string>} [opts.dismissedKeys] Body keys the user dismissed this scan.
  * @returns {LandedFleetSave[]}
  */
 export const reconcileLandedFleetSaves = (
   prevLanded,
   prevFs,
   candidates,
-  { now, ttlSec, departingKeys = new Set() },
+  { now, departingKeys = new Set(), dismissedKeys = new Set() },
 ) => {
   const liveIds = new Set(candidates.map((c) => c.id));
   const liveLandingKeys = new Set(
@@ -381,28 +389,27 @@ export const reconcileLandedFleetSaves = (
   /** @type {Map<string, LandedFleetSave>} */
   const byBody = new Map();
 
-  // Carry forward unexpired entries.
-  for (const e of prevLanded) {
-    if (Number.isFinite(e.expiresAt) && e.expiresAt > now) byBody.set(e.bodyKey, e);
-  }
+  // Carry every previously-landed body forward — no timer. The drop pass below
+  // is the ONLY way out.
+  for (const e of prevLanded) byBody.set(e.bodyKey, { bodyKey: e.bodyKey, landedAt: e.landedAt });
 
   // Newly-landed: a known FS gone from candidates whose arrival is past. Keep
   // the latest landing per body.
   for (const fs of prevFs) {
     if (!fs.landingKey || liveIds.has(fs.id)) continue;
     if (!Number.isFinite(fs.arrivalAt) || fs.arrivalAt > now) continue;
-    const expiresAt = fs.arrivalAt + ttlSec;
-    if (expiresAt <= now) continue;
     const cur = byBody.get(fs.landingKey);
     if (!cur || fs.arrivalAt > cur.landedAt) {
-      byBody.set(fs.landingKey, { bodyKey: fs.landingKey, landedAt: fs.arrivalAt, expiresAt });
+      byBody.set(fs.landingKey, { bodyKey: fs.landingKey, landedAt: fs.arrivalAt });
     }
   }
 
-  // A body that is live again (an FS landing there now) or that the fleet
-  // visibly departed from is no longer a "landed, sitting" body.
+  // A body live again (an FS landing there now), one the fleet visibly departed
+  // from, or one the user dismissed is no longer a "landed, sitting" body.
   for (const key of [...byBody.keys()]) {
-    if (liveLandingKeys.has(key) || departingKeys.has(key)) byBody.delete(key);
+    if (liveLandingKeys.has(key) || departingKeys.has(key) || dismissedKeys.has(key)) {
+      byBody.delete(key);
+    }
   }
 
   return [...byBody.values()];

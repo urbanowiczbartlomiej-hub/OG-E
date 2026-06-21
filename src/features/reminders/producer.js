@@ -56,7 +56,7 @@ import { clusterWaves, DEFAULT_CLUSTER_GAP_SECONDS } from '../../domain/waves.js
 /** @typedef {import('../../domain/waves.js').Wave} Wave */
 /** @typedef {import('../../domain/adhoc.js').AdhocReminder} AdhocReminder */
 import { extractFleetSaveCandidates, extractDepartingBodyKeys } from './fleetSaveScan.js';
-import { parseFsOffsets, FS_LANDED_TTL_SEC } from '../../domain/fleetSave.js';
+import { parseFsOffsets, GUARDIAN_SUPPRESS_TTL_SEC } from '../../domain/fleetSave.js';
 import { NTFY_MAX_DELAY_SEC } from '../../sync/ntfyReconciler.js';
 import { settingsStore } from '../../state/settings.js';
 import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
@@ -371,9 +371,10 @@ export const installReminderProducer = (opts = {}) => {
         // badge can't read the local guardian-dismiss store directly (it lives in
         // THIS feature, and a feature may not import another), so without this a
         // hold-to-dismiss would clear the button + push yet leave the orange "FS"
-        // badge lit for the full TTL. We prune the PUBLISHED copy only — the gist
-        // `landedFleetSave` stays raw — so dismiss remains a LOCAL, un-synced act,
-        // in step with `guardianDismiss.js`.
+        // badge lit (there is no longer any TTL to clear it). The reconciler also
+        // drops dismissed landings at the source; this prunes the PUBLISHED copy
+        // belt-and-suspenders for the same-sync window before that lands, keeping
+        // dismiss a LOCAL, un-synced act in step with `guardianDismiss.js`.
         writeFleetSaveIds(fsOn ? (res.fleetSave ?? []).map((e) => e.id) : []);
         const liveLanded = (res.landedFleetSave ?? []).filter(
           (l) => guardianDismissed[l.bodyKey] !== l.landedAt,
@@ -415,13 +416,13 @@ export const installReminderProducer = (opts = {}) => {
   /** @param {string} bodyKey @param {number} landedAt */
   const guardianDismiss = (bodyKey, landedAt) => {
     const now = Math.floor(Date.now() / 1000);
-    addGuardianDismiss(universeId, bodyKey, landedAt, landedAt + FS_LANDED_TTL_SEC, now);
+    addGuardianDismiss(universeId, bodyKey, landedAt, landedAt + GUARDIAN_SUPPRESS_TTL_SEC, now);
     force();
   };
   /** @param {string} bodyKey */
   const guardianAck = (bodyKey) => {
     const now = Math.floor(Date.now() / 1000);
-    addGuardianAck(universeId, bodyKey, now, now + FS_LANDED_TTL_SEC, now);
+    addGuardianAck(universeId, bodyKey, now, now + GUARDIAN_SUPPRESS_TTL_SEC, now);
     force();
   };
 

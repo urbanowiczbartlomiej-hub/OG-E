@@ -5,7 +5,7 @@
 // Detection lives in the PRODUCER: it classifies a landed-but-unsaved
 // fleet-save (row gone, fleet sitting exposed, not yet departed) and publishes
 // it via `state/fleetSaveSet.readLandedFs()` as `{ bodyKey: 'g:s:p:type',
-// landedAt, expiresAt }` — the same channel the planet badges consume. This
+// landedAt }` — the same channel the planet badges consume. This
 // feature is purely the loud SURFACE on top: ONE floating warning button while
 // any tracked fleet sits bare —
 //
@@ -24,7 +24,7 @@
 // `ntfyReconciler.reconcileGuardianQueue`); the ack + dismiss taps delegate to
 // the producer's commands, which snooze or cancel it. Dismiss + ack are DURABLE,
 // self-expiring, single-device stores (`./guardianDismiss.js`); the bare set
-// follows the producer's TTL (`expiresAt`). A manual "Mark FS"
+// has no timer — it clears only on re-save, departure, or dismiss. A manual "Mark FS"
 // (`features/manualFsMark`) feeds the SAME union, arming both this button and
 // the push.
 //
@@ -346,16 +346,16 @@ const render = () => {
 const refresh = () => {
   const now = Math.floor(Date.now() / 1000);
   const dismissed = universeId ? guardianDismissedLandings(universeId, now) : {};
-  // Producer's auto set (TTL- + dismiss-filtered) ∪ the user's MANUAL marks (no
-  // TTL, no dismiss filter — an explicit override). Auto wins on a clash: it
-  // carries the real landing `landedAt`/TTL identity.
+  // Producer's auto set (dismiss-filtered, no timer) ∪ the user's MANUAL marks
+  // (no dismiss filter — an explicit override). Auto wins on a clash: it carries
+  // the real landing `landedAt` identity.
   /** @type {Map<string, { bodyKey: string, landedAt: number }>} */
   const byKey = new Map();
   for (const e of readManualLandedFs()) {
     byKey.set(e.bodyKey, { bodyKey: e.bodyKey, landedAt: e.markedAt });
   }
   for (const e of readLandedFs()) {
-    if (Number(e.expiresAt) > now && dismissed[e.bodyKey] !== e.landedAt) {
+    if (dismissed[e.bodyKey] !== e.landedAt) {
       byKey.set(e.bodyKey, { bodyKey: e.bodyKey, landedAt: e.landedAt });
     }
   }

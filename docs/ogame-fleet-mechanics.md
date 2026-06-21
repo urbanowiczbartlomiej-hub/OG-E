@@ -78,7 +78,7 @@ Authoritative logic lives in `pure.js`; this is the summary.
 |---|---|
 | 🟥 red **square** | incoming attack — a foreign aggressive fleet (attack / ACS-attack / espionage / moon-destroy) landing at you |
 | 🟡 "FS" (text) | fleet-save **in motion** — detected by ship-count + flight-time, OR any espionage → 16 |
-| 🟠 "FS" (text) | a detected fleet-save that **landed** and sits exposed — kept 120 min, synced cross-device, auto-clears (or earlier, when the fleet departs that body) |
+| 🟠 "FS" (text) | a detected fleet-save that **landed** and sits exposed — durable (no timer), synced cross-device; clears only when the fleet re-saves/departs that body or you dismiss the landing |
 | 🔴 red **circle** | your attack / spy on a real player |
 | 💙 blue heart | your expedition |
 | 🟢 green | logistics (transport / deploy / ACS defend) |

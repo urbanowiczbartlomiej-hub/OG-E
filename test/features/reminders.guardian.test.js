@@ -62,7 +62,7 @@ const installButtonChrome = vi.hoisted(() => vi.fn());
 vi.mock('../../src/features/shared/buttonChrome.js', () => ({ installButtonChrome }));
 
 // ── Mock the producer's landed-FS output ───────────────────────────────────
-/** @typedef {{ bodyKey: string, landedAt: number, expiresAt: number }} Landed */
+/** @typedef {{ bodyKey: string, landedAt: number }} Landed */
 const readLandedFs = vi.hoisted(() =>
   vi.fn(/** @returns {Landed[]} */ () => []),
 );
@@ -75,18 +75,18 @@ import { addGuardianDismiss } from '../../src/features/reminders/guardianDismiss
 
 const UID = 'uni-77';
 
-/** A far-future expiry (seconds) so TTL filtering never drops the entry. */
+/** A far-future timestamp (seconds), used for dismiss-record expiries. */
 const FUTURE = Math.floor(Date.now() / 1000) + 3600;
 
 /**
- * One landed-FS entry as the producer publishes it.
+ * One landed-FS entry as the producer publishes it. There is no `expiresAt` any
+ * more — the exposed flag is durable (clears only on re-save / departure /
+ * dismiss), so an entry carries just its body and landing time.
  *
- * @param {{ bodyKey: string, landedAt?: number, expiresAt?: number }} o
- * @returns {{ bodyKey: string, landedAt: number, expiresAt: number }}
+ * @param {{ bodyKey: string, landedAt?: number }} o
+ * @returns {{ bodyKey: string, landedAt: number }}
  */
-const landed = ({ bodyKey, landedAt = 1000, expiresAt = FUTURE }) => ({
-  bodyKey, landedAt, expiresAt,
-});
+const landed = ({ bodyKey, landedAt = 1000 }) => ({ bodyKey, landedAt });
 
 /** The most-recently created fake button (or null). */
 const lastBtn = () => buttonMock.last.value;
@@ -254,13 +254,6 @@ describe('installGuardian — long-press (dismiss)', () => {
 });
 
 describe('installGuardian — filtering', () => {
-  it('drops entries whose TTL has already passed', () => {
-    const past = Math.floor(Date.now() / 1000) - 10;
-    readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:1', expiresAt: past })]);
-    installGuardian({ universeId: UID });
-    expect(lastBtn()).toBeNull();
-  });
-
   it('suppresses a landing the user already dismissed (same landedAt)', () => {
     const now = Math.floor(Date.now() / 1000);
     addGuardianDismiss(UID, '1:2:3:1', 4242, FUTURE, now);

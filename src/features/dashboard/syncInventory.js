@@ -34,6 +34,8 @@ const CATEGORY_LABELS = {
   oge_bodies: 'Planet/moon sizes',
   oge_dailyRunRoutes: 'Daily Run routes',
   oge_reminderConfig: 'Reminder config',
+  oge_apiCache: 'API cache',
+  oge_colonizeDecisions: 'Colonization decisions',
 };
 
 /**

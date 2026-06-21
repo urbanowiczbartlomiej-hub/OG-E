@@ -49,9 +49,9 @@ export const writeFleetSaveIds = (ids) => {
 
 /**
  * Landed fleet-saves (row gone, fleet sitting exposed) the producer published,
- * each carrying the body it landed on and when the flag self-clears. The
- * consumer still filters on `expiresAt` at read time, so a stale entry never
- * outlives its TTL even between syncs.
+ * each carrying the body it landed on and when it landed. There is no timer: an
+ * entry persists until the producer drops it (the fleet re-saved, departed, or
+ * the user dismissed the landing).
  *
  * @returns {import('../domain/fleetSave.js').LandedFleetSave[]}
  */

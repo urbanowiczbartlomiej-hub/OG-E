@@ -10,7 +10,7 @@
 //   🟥 red SQUARE  — incoming attack (a foreign aggressive fleet at me) — danger
 //   🔴 red circle  — my own aggression flying out
 //   "FS" yellow    — a detected fleet-save in motion (a text tag, not a dot)
-//   "FS" orange    — a fleet-save that LANDED and sits exposed (synced, TTL'd)
+//   "FS" orange    — a fleet-save that LANDED and sits exposed (until re-saved/dismissed)
 //   💙 blue heart  — my expedition (a small SVG)
 //   🟢 green       — my logistics (transport / deploy / ACS defend)
 //   🔵 blue        — my recycle
@@ -279,7 +279,7 @@ const HIDE_CSS = `.${COL_CLASS},.oge-mb-help{display:none!important;}`;
 const LEGEND_ROWS = [
   { category: 'threat', label: 'Incoming attack (foreign fleet at you)' },
   { category: 'fs', label: 'Fleet-save — in motion (safe)' },
-  { category: 'fs', landed: true, label: 'Fleet-save — landed, exposed (≤2h)' },
+  { category: 'fs', landed: true, label: 'Fleet-save — landed, exposed (until re-saved)' },
   { category: 'aggro', label: 'Your attack / spy on a player' },
   { category: 'explore', label: 'Your expedition' },
   { category: 'logistics', label: 'Logistics (transport / deploy / defend)' },
@@ -387,19 +387,18 @@ const fsIdSet = () => {
 };
 
 /**
- * Body keys with a LANDED (exposed) fleet-save: the producer's auto set (filtered
- * to still-unexpired entries — it publishes `expiresAt`, we drop the rest here so
- * the orange flag self-clears even between syncs, gated like {@link fsIdSet}) in
- * UNION with the user's MANUAL marks. Manual marks are an explicit override — no
- * TTL, and NOT gated by the auto-FS toggles (the user asked for this body
- * specifically). See `state/manualLandedFs.js`.
+ * Body keys with a LANDED (exposed) fleet-save: the producer's auto set (already
+ * dismiss-pruned at the source, gated like {@link fsIdSet}) in UNION with the
+ * user's MANUAL marks. Neither carries a timer — an exposed flag clears only on
+ * re-save, departure, or an explicit dismiss. Manual marks are also NOT gated by
+ * the auto-FS toggles (the user asked for this body specifically). See
+ * `state/manualLandedFs.js`.
  *
  * @returns {Set<string>}
  */
 const landedFsKeySet = () => {
   const on = settingsStore.get().remindersMasterEnabled && galaxyScanConfigStore.get().fsEnabled;
-  const now = Date.now() / 1000;
-  const keys = on ? readLandedFs().filter((e) => Number(e.expiresAt) > now).map((e) => e.bodyKey) : [];
+  const keys = on ? readLandedFs().map((e) => e.bodyKey) : [];
   for (const e of readManualLandedFs()) keys.push(e.bodyKey);
   return new Set(keys);
 };
