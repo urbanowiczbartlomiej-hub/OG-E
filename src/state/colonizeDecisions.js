@@ -1,0 +1,101 @@
+// @ts-check
+
+// Colonization decision log — reactive store, keyed by `"g:s:p"`.
+//
+// The persistent home of the small "looks-free-but-isn't" correction set
+// (`domain/colonizeDecisions.js`): sent / mine / abandoned / taken / reserved.
+// Written by the colonize features (sendColony on send + checkTarget refusal;
+// later colonyRecorder on a fresh colony, abandon on give-up) and read by the
+// picker (which subtracts `blockingCoords`) and the dashboard Scout.
+//
+// Persisted to `chrome.storage.local` under a per-universe key
+// (`<universeId>:oge_colonizeDecisions`). This is the ONE colonization store
+// destined for gist sync (Stage 4) — small (bytes per colony) and the only
+// state the API can't reproduce. Mirrors `state/scans.js`: lazy init, uniform
+// dispose, plus a `flush*` for the synchronous save the post-send page reload
+// needs (a debounced write would be lost when the game navigates).
+//
+// Compaction (pruning expired sent/reserved/aged-taken) runs once on hydrate —
+// the picker's `blockingCoords` already ignores expired entries at read time,
+// so this is storage hygiene, not correctness.
+
+import { createStore } from '../lib/createStore.js';
+import { persist } from '../lib/persist.js';
+import { chromeStore } from '../lib/storage.js';
+import { currentUniverseKey } from './universeKey.js';
+import { compactDecisions } from '../domain/colonizeDecisions.js';
+
+/** @typedef {import('../domain/colonizeDecisions.js').DecisionMap} DecisionMap */
+
+/** Suffix of the per-universe chrome.storage.local key. Exported for the dashboard. */
+const COLONIZE_DECISIONS_KEY_BASE = 'oge_colonizeDecisions';
+
+/**
+ * Compose the full key for a universe id.
+ * @param {string} universeId e.g. `'s163-pl'`.
+ * @returns {string}
+ */
+export const colonizeDecisionsKeyFor = (universeId) =>
+  `${universeId}:${COLONIZE_DECISIONS_KEY_BASE}`;
+
+/** Resolve the key for the current tab's universe (falls back in node tests). */
+const currentKey = () => currentUniverseKey(COLONIZE_DECISIONS_KEY_BASE, colonizeDecisionsKeyFor);
+
+/** Write-through debounce window (bursty checkTarget refusals collapse to one save). */
+const DEBOUNCE_MS = 200;
+
+/**
+ * The decision-log store. Empty map initially; hydration is async via
+ * {@link initColonizeDecisionsStore}.
+ *
+ * @type {import('../lib/createStore.js').Store<DecisionMap>}
+ */
+export const colonizeDecisionsStore = createStore(/** @type {DecisionMap} */ ({}));
+
+/** @type {(() => void) | null} */
+let disposeFn = null;
+
+/**
+ * Wire the store to chrome.storage.local (hydrate + debounced write-through),
+ * compacting once after hydrate. Idempotent. Call once from the content-script
+ * bootstrap.
+ *
+ * @returns {() => void}
+ */
+export const initColonizeDecisionsStore = () => {
+  if (disposeFn) return disposeFn;
+  disposeFn = persist({
+    store: colonizeDecisionsStore,
+    load: async () => {
+      const raw = await chromeStore.get(currentKey());
+      return /** @type {DecisionMap | null | undefined} */ (raw);
+    },
+    save: (value) => chromeStore.set(currentKey(), value),
+    debounceMs: DEBOUNCE_MS,
+    onHydrate: () => {
+      const { map, changed } = compactDecisions(colonizeDecisionsStore.get(), Date.now());
+      if (changed) colonizeDecisionsStore.set(map);
+    },
+  });
+  return disposeFn;
+};
+
+/**
+ * Tear down the persist wiring. Idempotent.
+ * @returns {void}
+ */
+export const disposeColonizeDecisionsStore = () => {
+  if (disposeFn) {
+    disposeFn();
+    disposeFn = null;
+  }
+};
+
+/**
+ * Synchronously persist the current value, bypassing the debounce — used right
+ * after writing a `sent` decision so it survives the game's immediate post-send
+ * page reload (mirrors `flushScansStore`).
+ * @returns {Promise<void>}
+ */
+export const flushColonizeDecisionsStore = () =>
+  chromeStore.set(currentKey(), colonizeDecisionsStore.get());

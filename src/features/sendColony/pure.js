@@ -47,7 +47,6 @@ import {
   sysDist,
   buildGalaxyOrder,
 } from '../../domain/positions.js';
-import { isSystemStale, DEFAULT_RESCAN_POLICY } from '../../domain/scheduling.js';
 import {
   COL_MAX_SYSTEM,
   COL_MAX_GALAXY,
@@ -83,19 +82,10 @@ export const MISSION_COLONIZE = 7;
  */
 export const CHECK_TARGET_TIMEOUT_MS = 15_000;
 
-/**
- * Safety cap for the Scan half cooldown. Normally the cooldown lifts
- * event-driven (on `oge:galaxyScanned`); this is the escape hatch for
- * when the event never arrives (AGR swallow, network death, ...).
- */
-export const SCAN_COOLDOWN_MS = 8000;
-
 // ─── BG colors ───────────────────────────────────────────────────────────
 
 /** Rim colour for idle "Send" with no candidate yet (cyan). */
 export const BG_SEND_IDLE = '#12b3c2';
-/** Rim colour for idle "Scan" / "Skip" half (muted cyan — secondary zone). */
-export const BG_SCAN_IDLE = '#3a9fb0';
 /** Rim colour for active "Send!" / "Send Colony [g:s:p]" (bright cyan). */
 export const BG_SEND_READY = '#13d1de';
 
@@ -110,91 +100,6 @@ export const BG_SEND_ERROR = '#fb7185';
 export const BG_SEND_WAIT = '#fbbf24';
 
 // ─── Pure target selection ─────────────────────────────────────────────────
-
-/**
- * Find the next galaxy/system we should scan. Pure: inputs in, next
- * coord out, no DOM / storage / clock.
- *
- * Starting point:
- *   - when we are on the galaxy view → continue from current + 1
- *   - elsewhere                       → home.galaxy, home.system + 1
- *
- * Galaxy progression rolls through `buildGalaxyOrder(home.galaxy,
- * COL_MAX_GALAXY)` — home first, then outward — and within each galaxy
- * sweeps 1..COL_MAX_SYSTEM modularly. A system counts as "needs scan"
- * when there is no entry in `scans` for it OR the entry is stale per
- * {@link isSystemStale}.
- *
- * Returns `null` when every galaxy/system combination is already
- * scanned and fresh.
- *
- * @param {GalaxyScans} scans
- * @param {{ galaxy: number, system: number }} home
- * @param {{ galaxy: number, system: number } | null} currentView
- *   Current galaxy-view coords (null when the user isn't on the galaxy
- *   page — we then start from the home planet instead).
- * @param {import('../../domain/scheduling.js').RescanPolicy} [policy]
- *   Rescan policy from the user's Galaxy-Scan config (default = built-in
- *   "free positions" preset).
- * @returns {{ galaxy: number, system: number } | null}
- */
-export const findNextScanSystem = (scans, home, currentView, policy = DEFAULT_RESCAN_POLICY) => {
-  const startG = currentView ? currentView.galaxy : home.galaxy;
-  const startS = currentView ? currentView.system : home.system;
-
-  const galaxyOrder = buildGalaxyOrder(home.galaxy, COL_MAX_GALAXY);
-  const startGalaxyIdx = Math.max(0, galaxyOrder.indexOf(startG));
-
-  for (let gi = 0; gi < galaxyOrder.length; gi++) {
-    const g = galaxyOrder[(startGalaxyIdx + gi) % galaxyOrder.length];
-    // Current galaxy: start at startS+1 (and wrap). Others: start at 1.
-    const offset = gi === 0 ? startS : 0;
-    for (let i = 0; i < COL_MAX_SYSTEM; i++) {
-      const s = ((offset + i) % COL_MAX_SYSTEM) + 1;
-      const key = /** @type {`${number}:${number}`} */ (`${g}:${s}`);
-      const scan = scans[key];
-      if (!scan || isSystemStale(scan, undefined, policy)) {
-        return { galaxy: g, system: s };
-      }
-    }
-  }
-  return null;
-};
-
-/**
- * Count how many systems across every galaxy still need a (re)scan —
- * i.e. have no entry in `scans` OR their entry is stale per
- * {@link isSystemStale}. Used by the Scan button label so the user can
- * see at a glance how far the scan-fresh frontier is from covering the
- * whole universe.
- *
- * Scope is 1..COL_MAX_SYSTEM × every galaxy (COL_MAX_GALAXY total = 7 ×
- * 499 = 3493 checks). Each check is a hash lookup + a couple of
- * integer comparisons, so the whole pass is well under a millisecond
- * on modern hardware — cheap enough to run from the 1 Hz refresh
- * ticker without caching.
- *
- * Pure: no DOM, no storage, no clock reads beyond what
- * {@link isSystemStale} does via its default `now` parameter.
- *
- * @param {GalaxyScans} scans
- * @param {import('../../domain/scheduling.js').RescanPolicy} [policy]
- *   Rescan policy from the user's Galaxy-Scan config (default = built-in
- *   "free positions" preset).
- * @returns {number} number of systems that would return a hit from
- *   {@link findNextScanSystem}. Zero means "everything fresh".
- */
-const countScansRemaining = (scans, policy = DEFAULT_RESCAN_POLICY) => {
-  let remaining = 0;
-  for (let g = 1; g <= COL_MAX_GALAXY; g++) {
-    for (let s = 1; s <= COL_MAX_SYSTEM; s++) {
-      const key = /** @type {`${number}:${number}`} */ (`${g}:${s}`);
-      const scan = scans[key];
-      if (!scan || isSystemStale(scan, undefined, policy)) remaining++;
-    }
-  }
-  return remaining;
-};
 
 /**
  * Find the next colonization target in the local scan DB, respecting
@@ -218,6 +123,15 @@ const countScansRemaining = (scans, policy = DEFAULT_RESCAN_POLICY) => {
  * (better arrival spread); set `farthestFirst=false` to flip it to
  * nearest-first. Other galaxies are always linear 1..499.
  *
+ * Free-slot source (the "composite", §2c): a target slot counts as free when
+ *   - a LIVE scan exists for its system and observed that slot `empty`
+ *     (live always wins — it's fresher and knows what the weekly API can't), OR
+ *   - no live scan exists for the system AND the API occupancy `index` does not
+ *     list that coord as occupied (a provisional, server-wide candidate).
+ * A slot blocked by an in-flight registry entry OR present in `rejected` (coords
+ * the game's checkTarget just refused this session) is skipped. With no `index`
+ * the function degrades to the classic scan-only behaviour.
+ *
  * @param {GalaxyScans} scans
  * @param {RegistryEntry[]} registry
  * @param {{ galaxy: number, system: number }} home
@@ -225,6 +139,10 @@ const countScansRemaining = (scans, policy = DEFAULT_RESCAN_POLICY) => {
  * @param {boolean} preferOther  move home galaxy to end of order
  * @param {boolean} [farthestFirst]  home-galaxy system order: farthest free
  *   system first (default, true) vs. nearest first (false).
+ * @param {import('../../domain/apiOccupancy.js').OccupancyIndex | null} [index]
+ *   API occupancy index (whole-server breadth). Omit/`null` → scan-only.
+ * @param {Set<string> | null} [rejected]  `"g:s:p"` coords to skip (session
+ *   rejections from checkTarget for slots not in the scan map).
  * @returns {{ galaxy: number, system: number, position: number, link: string } | null}
  */
 export const findNextColonizeTarget = (
@@ -234,6 +152,8 @@ export const findNextColonizeTarget = (
   targets,
   preferOther,
   farthestFirst = true,
+  index = null,
+  rejected = null,
 ) => {
   if (targets.length === 0) return null;
 
@@ -262,13 +182,12 @@ export const findNextColonizeTarget = (
     for (const s of systems) {
       const key = /** @type {`${number}:${number}`} */ (`${g}:${s}`);
       const scan = scans[key];
-      if (!scan || !scan.positions) continue;
       for (const pos of targets) {
-        const p = scan.positions[pos];
-        if (!p || p.status !== 'empty') continue;
         const coordKey =
           /** @type {`${number}:${number}:${number}`} */ (`${g}:${s}:${pos}`);
         if (inFlight.has(coordKey)) continue;
+        if (rejected && rejected.has(coordKey)) continue;
+        if (!isFreeTarget(scan, index, coordKey, pos)) continue;
         const base = location.href.split('?')[0];
         const link =
           base +
@@ -280,6 +199,23 @@ export const findNextColonizeTarget = (
     }
   }
   return null;
+};
+
+/**
+ * Composite free-slot test (§2c). Live scan wins; otherwise the API index
+ * answers for never-scanned systems. Pure.
+ *
+ * @param {import('../../state/scans.js').SystemScan | undefined} scan
+ *   Live scan for the slot's system, if any.
+ * @param {import('../../domain/apiOccupancy.js').OccupancyIndex | null} index
+ * @param {string} coordKey  `"g:s:p"`.
+ * @param {number} pos
+ * @returns {boolean}
+ */
+const isFreeTarget = (scan, index, coordKey, pos) => {
+  const p = scan && scan.positions ? scan.positions[pos] : undefined;
+  if (p) return p.status === 'empty';
+  return !!(index && index.occupied && !index.occupied.has(coordKey));
 };
 
 /**
@@ -308,100 +244,61 @@ export const findNextColonizeTarget = (
  * @param {number[]} targets  user's parsed `colPositions` list
  * @param {{ galaxy: number, system: number }} view  current galaxy-view coords
  * @param {number} now  epoch-ms "now" for inFlight filtering
+ * @param {import('../../domain/apiOccupancy.js').OccupancyIndex | null} [index]
+ *   API occupancy index, so a free slot in view is found even before a live
+ *   scan lands (the live scan, once observed, overrides it).
+ * @param {Set<string> | null} [rejected]  session checkTarget rejections.
  * @returns {{ galaxy: number, system: number, position: number } | null}
  */
-export const pickCandidateInView = (scans, registry, targets, view, now) => {
+export const pickCandidateInView = (scans, registry, targets, view, now, index = null, rejected = null) => {
   if (targets.length === 0) return null;
   const key = /** @type {`${number}:${number}`} */ (
     `${view.galaxy}:${view.system}`
   );
   const scan = scans[key];
-  if (!scan || !scan.positions) return null;
 
   const inFlight = new Set(
     registry.filter((r) => (r.arrivalAt || 0) > now).map((r) => r.coords),
   );
 
   for (const pos of targets) {
-    const p = scan.positions[pos];
-    if (!p || p.status !== 'empty') continue;
     const coordKey =
       /** @type {`${number}:${number}:${number}`} */ (
         `${view.galaxy}:${view.system}:${pos}`
       );
     if (inFlight.has(coordKey)) continue;
+    if (rejected && rejected.has(coordKey)) continue;
+    if (!isFreeTarget(scan, index, coordKey, pos)) continue;
     return { galaxy: view.galaxy, system: view.system, position: pos };
   }
   return null;
 };
 
-// ─── URL builders ─────────────────────────────────────────────────────────
-//
-// The colonize fleetdispatch URL builder is gone: with bare-URL entry the
-// fleet courier sets the colony ship + target in-page (see
-// features/shared/fleetCourier.js), so no params are built here. Only the
-// galaxy-view builder (for the Scan half) remains.
-
-/**
- * Build the galaxy-view URL for a given `(galaxy, system)`: game origin
- * + `?page=ingame&component=galaxy&galaxy=X&system=Y`. Used by the Scan
- * handler for full-navigation fallback and by the stale-retry path.
- *
- * @param {{ galaxy: number, system: number }} coords
- * @returns {string}
- */
-export const buildGalaxyUrl = ({ galaxy, system }) => {
-  const base = location.href.split('?')[0];
-  return (
-    base +
-    `?page=ingame&component=galaxy` +
-    `&galaxy=${galaxy}&system=${system}`
-  );
-};
-
 // ─── Discriminated unions ────────────────────────────────────────────────
 
 /**
- * `nextScan` + `scanCooldown` + `scansRemaining` apply everywhere (user
- * can click Scan from idle / galaxy / fleetdispatch pages alike).
- * `candidate` / `target` / `phase` are page-kind specific.
+ * The single-zone colonize button state. `kind` distinguishes the galaxy view
+ * (current-view candidate priority) from everywhere else; `candidate` is the
+ * next colonization target the Send tap will aim at, or `null` when none is
+ * available. (The Scan half — and its `nextScan`/`scanCooldown`/`scansRemaining`
+ * fields — was removed in §2d: the API breadth layer means there's no manual
+ * galaxy-scanning frontier to drive any more.)
  *
- * `scansRemaining` is the count of systems that would match
- * {@link findNextScanSystem} if called repeatedly — i.e. how many scan
- * clicks it would take to make the DB fully fresh. Optional (derive
- * omits it only when a test passes an incomplete ButtonContext; render
- * treats missing/zero interchangeably).
- *
- * @typedef {(
- *   | {
- *       kind: 'idle',
- *       candidate: Coords | null,
- *       nextScan: { galaxy: number, system: number } | null,
- *       scanCooldown: boolean,
- *       scansRemaining?: number,
- *     }
- *   | {
- *       kind: 'galaxy',
- *       candidate: Coords | null,
- *       nextScan: { galaxy: number, system: number } | null,
- *       scanCooldown: boolean,
- *       scansRemaining?: number,
- *     }
- * )} ButtonContext
+ * @typedef {{ kind: 'idle' | 'galaxy', candidate: Coords | null }} ButtonContext
  */
 
 /**
- * Single-half paint instruction. `subtext` flips the caller to a
- * two-line render (small top line + big bottom line). `dim: true`
- * renders the half at reduced opacity (cooldown / disabled hint).
+ * Single-zone paint instruction. `subtext` flips the caller to a two-line
+ * render (big primary on top, small caption below). `dim: true` renders the
+ * zone at reduced opacity (disabled / waiting hint).
  *
  * @typedef {{ text: string, bg: string, subtext?: string, hint?: string, dim?: boolean }} Paint
  */
 
 /**
- * Full button render — one paint per half.
+ * Full button render — the single Send zone's paint.
  *
- * @typedef {{ send: Paint, scan: Paint }} RenderResult
+ * @typedef {{ send: Paint }} RenderResult
  */
 
 /**
@@ -416,10 +313,6 @@ export const buildGalaxyUrl = ({ galaxy, system }) => {
  * keeps the pure core DOM-free — `./index.js captureEnv()` makes the
  * reads in production, tests pass the values explicitly.
  *
- * The scan-timing fields (`lastScanSubmitAt` / `lastScanEventAt`)
- * previously lived as module-local `let`s on `./index.js` and are read
- * here to derive `scanCooldown`.
- *
  * @typedef {object} DeriveEnv
  * @property {string} search `location.search` (raw, including leading `?`).
  * @property {FleetDispatcherSnapshot | null} fleetDispatcher
@@ -432,31 +325,30 @@ export const buildGalaxyUrl = ({ galaxy, system }) => {
  * @property {boolean} [farthestFirst] `preferFarthestSystems` (Galaxy-Scan
  *   config). Home-galaxy system order; defaults to true (farthest-first) when
  *   omitted (keeps older tests/callers on the historical behaviour).
- * @property {import('../../domain/scheduling.js').RescanPolicy} [policy]
- *   Rescan policy from the Galaxy-Scan config; defaults to the built-in
- *   preset when omitted (keeps older tests/callers working).
  * @property {number} now Epoch-ms (tests pass a fixed value, production
  *   passes `Date.now()`).
  * @property {{ galaxy: number, system: number } | null} [home]
  *   Home-planet coords (from the active row in `#planetList`). `null`
  *   means `readHomePlanet` bailed (no live DOM, broken game state);
- *   callers then get `nextScan: null` and an empty-candidate idle/galaxy.
+ *   callers then get an empty-candidate idle/galaxy.
  * @property {{ galaxy: number, system: number } | null} [view]
  *   Current galaxy-view coords (from `#galaxy_input` / URL). `null`
  *   outside the galaxy component.
- * @property {number} [lastScanSubmitAt]
- *   Epoch-ms of the last in-page galaxy submit. Together with
- *   `lastScanEventAt` drives `scanCooldown`. Default 0.
- * @property {number} [lastScanEventAt]
- *   Epoch-ms of the last `oge:galaxyScanned` we observed. Default 0.
+ * @property {import('../../domain/apiOccupancy.js').OccupancyIndex | null} [index]
+ *   API occupancy index (whole-server breadth) from `features/apiContext` via
+ *   the shared handoff. Omit/`null` → the picker uses live scans only.
+ * @property {Set<string> | null} [rejected]
+ *   `"g:s:p"` coords the game's checkTarget refused this session (for slots not
+ *   in the scan map), so the picker stops re-proposing them.
  */
 
 // ─── Pure derive ──────────────────────────────────────────────────────────
 
 /**
- * Pure `env → ButtonContext` compute — fleetdispatch branch first
- * (the richest), galaxy branch second (with current-view priority),
- * idle branch last.
+ * Pure `env → ButtonContext` compute — galaxy branch (current-view priority)
+ * vs. everywhere else. Only computes the next colonize candidate now that the
+ * Scan half is gone; on fleetdispatch the Send label + action are owned by the
+ * courier-driven handler in index.js.
  *
  * @param {DeriveEnv} env
  * @returns {ButtonContext}
@@ -466,30 +358,12 @@ export const derive = (env) => {
   // so a legitimate `0` stays `0` rather than falling to the default.
   const home = env.home ?? null;
   const view = env.view ?? null;
-  const lastScanSubmitAt = env.lastScanSubmitAt ?? 0;
-  const lastScanEventAt = env.lastScanEventAt ?? 0;
   const farthestFirst = env.farthestFirst ?? true;
+  const index = env.index ?? null;
+  const rejected = env.rejected ?? null;
 
-  // Universal scan state — user can Scan from any page (idle / galaxy /
-  // fleetdispatch). Cooldown is event-driven (unlocks on
-  // `oge:galaxyScanned`) with a hard safety cap for silent failures.
-  const policy = env.policy ?? DEFAULT_RESCAN_POLICY;
-  const nextScan = home ? findNextScanSystem(env.scans, home, view, policy) : null;
-  const scanCooldown =
-    lastScanSubmitAt > lastScanEventAt &&
-    env.now - lastScanSubmitAt < SCAN_COOLDOWN_MS;
-  // Cheap full-universe count so the Scan button label can show the
-  // user how far the scan-fresh frontier is from covering everything.
-  const scansRemaining = countScansRemaining(env.scans, policy);
-
-  // NB: on fleetdispatch the Send half's label + action are owned by the
-  // courier-driven handler in index.js (the fleet courier sets the colony
-  // ship + target in-page on a bare URL). derive() therefore only computes
-  // the candidate (idle branch below) + the Scan half here — there is no
-  // dedicated "fleetdispatch" branch any more.
-
-  // Galaxy branch — current-view priority (§4) so the coords the user
-  // just scanned win over the global DB pick.
+  // Galaxy branch — current-view priority so the coords the user is looking at
+  // win over the global pick.
   if (env.search.includes('component=galaxy')) {
     /** @type {Coords | null} */
     let candidate = null;
@@ -500,6 +374,8 @@ export const derive = (env) => {
         env.targets,
         view,
         env.now,
+        index,
+        rejected,
       );
     }
     if (!candidate && home) {
@@ -510,6 +386,8 @@ export const derive = (env) => {
         env.targets,
         env.preferOther,
         farthestFirst,
+        index,
+        rejected,
       );
       if (global) {
         candidate = {
@@ -519,7 +397,7 @@ export const derive = (env) => {
         };
       }
     }
-    return { kind: 'galaxy', candidate, nextScan, scanCooldown, scansRemaining };
+    return { kind: 'galaxy', candidate };
   }
 
   // Idle branch — anywhere else (overview, galaxy-less research, ...).
@@ -533,6 +411,8 @@ export const derive = (env) => {
       env.targets,
       env.preferOther,
       farthestFirst,
+      index,
+      rejected,
     );
     if (global) {
       candidate = {
@@ -542,60 +422,24 @@ export const derive = (env) => {
       };
     }
   }
-  return { kind: 'idle', candidate, nextScan, scanCooldown, scansRemaining };
+  return { kind: 'idle', candidate };
 };
 
 // ─── Pure render ──────────────────────────────────────────────────────────
 
 /**
- * Render a `ctx` to paint instructions. Pure: no DOM, no window.
+ * Render a `ctx` to a paint instruction for the single Send zone. Pure: no DOM,
+ * no window. Plain "Colonize" either way — coordinates appear only once the user
+ * has tapped (the courier handler arms `colTarget`), keeping the idle view
+ * minimal. The brighter rim signals a candidate is ready to aim at.
  *
  * @param {ButtonContext} ctx
  * @returns {RenderResult}
  */
 export const render = (ctx) => {
-  // Scan paint:
-  //   - On galaxy view: two-line "Scan · N left / [g:s]" — one AJAX
-  //     click shrinks `scansRemaining` by (up to) 1 as the observer
-  //     writes the fresh scan into scansStore. The count is a useful
-  //     progress signal against the 3493-system scan universe.
-  //   - Anywhere else: "to Galaxy / N left" — clicking just hops the
-  //     user to the galaxy page. The first system is server-rendered
-  //     without an AJAX call, so we'd miss it from the isolated
-  //     content script; better to land the user on galaxy and let
-  //     them drive subsequent scans via AJAX.
-  //   - When the entire database is scanned fresh: "All scanned!"
-  //     (no count — zero remaining by definition).
-  const remaining = ctx.scansRemaining ?? 0;
-  /** @type {Paint} */
-  let scanPaint;
-  if (!ctx.nextScan) {
-    scanPaint = { text: 'All scanned!', bg: BG_SCAN_IDLE };
-  } else if (ctx.kind === 'galaxy') {
-    scanPaint = {
-      text: 'Scan',
-      subtext: `[${ctx.nextScan.galaxy}:${ctx.nextScan.system}]`,
-      hint: remaining > 0 ? `(${remaining} left)` : undefined,
-      bg: BG_SCAN_IDLE,
-      dim: ctx.scanCooldown,
-    };
-  } else {
-    scanPaint =
-      remaining > 0
-        ? {
-            text: 'To galaxy',
-            subtext: `${remaining} left`,
-            bg: BG_SCAN_IDLE,
-          }
-        : { text: 'To galaxy', bg: BG_SCAN_IDLE };
-
-  }
-  // idle + galaxy: plain "Colonize" — coordinates and hold hint are shown
-  // only once the user has tapped (step 2), keeping the idle view minimal.
   return {
     send: ctx.candidate
       ? { text: 'Colonize', bg: BG_SEND_READY }
       : { text: 'Colonize', bg: BG_SEND_IDLE },
-    scan: scanPaint,
   };
 };

@@ -25,20 +25,14 @@ import {
   STATUS_PRIORITY,
   bestStatusInSystem,
   collectGalaxyStats,
-  countStaleByGalaxy,
 } from '../../domain/histogram.js';
 
 import {
   STATUS_COLORS,
   STATUS_LABELS,
-  rescanTooltip,
   UNSCANNED_COLOR,
   UNSCANNED_BORDER,
-  STALE_COLOR,
-  STALE_LABEL,
 } from './palette.js';
-
-import { isSystemStale } from '../../domain/scheduling.js';
 
 import { buildSystemTooltip } from './systemTooltip.js';
 import { makeLegendSwatch } from './legend.js';
@@ -80,10 +74,7 @@ const MAX_SYS = 499;
  *   expandedGalaxies: Set<number>,
  *   onToggleExpand: (galaxy: number, expanded: boolean) => void,
  *   onResetGalaxy: (galaxy: number) => void,
- *   policy?: import('../../domain/scheduling.js').RescanPolicy,
  * }} opts
- *   `policy` is the user's Galaxy-Scan rescan policy (from the per-universe
- *   config); when omitted the built-in "free positions" preset is used.
  * @returns {void}
  */
 export const renderGalaxyMap = (opts) => {
@@ -94,7 +85,6 @@ export const renderGalaxyMap = (opts) => {
     expandedGalaxies,
     onToggleExpand,
     onResetGalaxy,
-    policy,
   } = opts;
 
   containerEl.textContent = '';
@@ -111,17 +101,12 @@ export const renderGalaxyMap = (opts) => {
     const msg = document.createElement('div');
     msg.className = 'empty';
     msg.textContent =
-      'No galaxy observations recorded yet. Open the galaxy view in the game and navigate through systems yourself — data is recorded as the game shows you each system.';
+      'No galaxy map yet. Open a game tab for this universe — OG-E fetches the server map from the OGame API and it appears here (your own live galaxy views overlay it).';
     containerEl.appendChild(msg);
     return;
   }
 
   const { global, byGalaxy } = collectGalaxyStats(scans, targetPositions);
-  // Per-galaxy stale-count drives the amber pill in each section
-  // header — same visual cue as the inset rings on stale pixels in the
-  // map below, so the user can spot "this galaxy needs attention"
-  // without expanding the accordion.
-  const staleByGalaxy = countStaleByGalaxy(scans, undefined, policy);
 
   // ── Filter bar ──────────────────────────────────────────────────────
   const filterBar = document.createElement('div');
@@ -144,16 +129,9 @@ export const renderGalaxyMap = (opts) => {
   filterHint.textContent =
     '(change in the Galaxy-Scan config below)';
 
-  const rescanHelp = document.createElement('span');
-  rescanHelp.textContent = ' ⓘ Rescan policy';
-  rescanHelp.style.cssText =
-    'margin-left:12px;cursor:help;color:#4a9eff;border-bottom:1px dotted #4a9eff;';
-  rescanHelp.title = rescanTooltip(policy);
-
   filterBar.appendChild(filterLabel);
   filterBar.appendChild(filterValue);
   filterBar.appendChild(filterHint);
-  filterBar.appendChild(rescanHelp);
   containerEl.appendChild(filterBar);
 
   // ── Global stats row ────────────────────────────────────────────────
@@ -191,10 +169,6 @@ export const renderGalaxyMap = (opts) => {
   // unscanned systems (gap between 1..MAX_SYS and the actually-scanned
   // subset), so a user looking at the key should always find it.
   legend.appendChild(makeLegendSwatch(UNSCANNED_COLOR, 'Not scanned', { border: true }));
-  // "Stale" is always shown too — any scanned system eventually ages
-  // past its rescan threshold, and the user needs a key for the amber
-  // inset ring that appears around those pixels.
-  legend.appendChild(makeStaleLegendItem());
   containerEl.appendChild(legend);
 
   // ── Per-galaxy sections ─────────────────────────────────────────────
@@ -219,13 +193,11 @@ export const renderGalaxyMap = (opts) => {
         galaxy: g,
         galCount,
         galStats,
-        staleCount: staleByGalaxy[g] ?? 0,
         scans,
         targetPositions,
         expandedGalaxies,
         onToggleExpand,
         onResetGalaxy,
-        policy,
       }),
     );
   }
@@ -261,38 +233,6 @@ const makeStatCard = (color, value, label) => {
 };
 
 /**
- * Build the legend entry for the "stale" marker. The swatch is styled
- * to match the real pixel treatment: a neutral fill with an inset
- * amber ring, so the user sees the exact visual cue they'll find on
- * the pixel map.
- *
- * @returns {HTMLSpanElement}
- */
-const makeStaleLegendItem = () => {
-  const item = document.createElement('span');
-  item.style.cssText = 'display:flex;align-items:center;gap:4px;';
-
-  const dot = document.createElement('span');
-  // Mid-green neutral fill under the amber ring — echoes the visual
-  // pattern users will encounter on a stale "empty" pixel (the most
-  // common stale case).
-  dot.style.cssText =
-    'width:10px;height:10px;border-radius:2px;background:' +
-    STATUS_COLORS.empty +
-    ';box-shadow:inset 0 0 0 1.5px ' +
-    STALE_COLOR +
-    ';display:inline-block;';
-
-  const txt = document.createElement('span');
-  txt.style.color = '#888';
-  txt.textContent = STALE_LABEL;
-
-  item.appendChild(dot);
-  item.appendChild(txt);
-  return item;
-};
-
-/**
  * @typedef {import('../../domain/histogram.js').StatusCounts} StatusCounts
  */
 
@@ -305,13 +245,11 @@ const makeStaleLegendItem = () => {
  *   galaxy: number,
  *   galCount: number,
  *   galStats: StatusCounts,
- *   staleCount: number,
  *   scans: GalaxyScans,
  *   targetPositions: Set<number>,
  *   expandedGalaxies: Set<number>,
  *   onToggleExpand: (galaxy: number, expanded: boolean) => void,
  *   onResetGalaxy: (galaxy: number) => void,
- *   policy?: import('../../domain/scheduling.js').RescanPolicy,
  * }} args
  * @returns {HTMLDivElement}
  */
@@ -320,13 +258,11 @@ const renderGalaxySection = (args) => {
     galaxy: g,
     galCount,
     galStats,
-    staleCount,
     scans,
     targetPositions,
     expandedGalaxies,
     onToggleExpand,
     onResetGalaxy,
-    policy,
   } = args;
 
   const section = document.createElement('div');
@@ -385,22 +321,6 @@ const renderGalaxySection = (args) => {
   miniStats.textContent = parts.join(', ');
   header.appendChild(miniStats);
 
-  // Stale-systems badge: amber to mirror the inset ring on stale
-  // pixels in the map below — same visual cue, same colour, so the
-  // user can spot "this galaxy needs attention" without expanding the
-  // accordion. Hidden when zero so the header stays uncluttered for
-  // galaxies that are fully fresh.
-  if (staleCount > 0) {
-    const stalePill = document.createElement('span');
-    stalePill.style.cssText =
-      'font-size:11px;color:' + STALE_COLOR + ';font-weight:bold;';
-    stalePill.textContent = staleCount + ' stale';
-    stalePill.title =
-      staleCount +
-      ' system(s) past their rescan threshold — see the amber ring on the pixel map below.';
-    header.appendChild(stalePill);
-  }
-
   const resetBtn = document.createElement('button');
   resetBtn.textContent = '✕';
   resetBtn.title = 'Reset all scans for Galaxy ' + g;
@@ -412,11 +332,9 @@ const renderGalaxySection = (args) => {
     ev.stopPropagation();
     if (
       !confirm(
-        'Reset all observation data for Galaxy ' +
+        'Clear your local live-scan overlay for Galaxy ' +
           g +
-          '?\n\nThis removes ' +
-          galCount +
-          ' recorded systems from this galaxy locally AND from your cloud sync.',
+          '?\n\nThe map keeps showing the API occupancy for this galaxy; only your own freshly-scanned overrides are dropped (locally — galaxy scans are no longer synced).',
       )
     )
       return;
@@ -436,7 +354,7 @@ const renderGalaxySection = (args) => {
   pixelMap.style.cssText = 'display:flex;flex-wrap:wrap;gap:1px;padding:4px;';
 
   for (let s = 1; s <= MAX_SYS; s++) {
-    pixelMap.appendChild(renderSystemPixel(g, s, scans, targetPositions, policy));
+    pixelMap.appendChild(renderSystemPixel(g, s, scans, targetPositions));
   }
 
   mapWrap.appendChild(pixelMap);
@@ -464,10 +382,9 @@ const renderGalaxySection = (args) => {
  * @param {number} s
  * @param {GalaxyScans} scans
  * @param {Set<number>} targetPositions
- * @param {import('../../domain/scheduling.js').RescanPolicy} [policy]
  * @returns {HTMLDivElement}
  */
-const renderSystemPixel = (g, s, scans, targetPositions, policy) => {
+const renderSystemPixel = (g, s, scans, targetPositions) => {
   const key = /** @type {`${number}:${number}`} */ (g + ':' + s);
   const scan = scans[key];
   const px = document.createElement('div');
@@ -475,23 +392,12 @@ const renderSystemPixel = (g, s, scans, targetPositions, policy) => {
   if (scan && scan.positions) {
     const best = bestStatusInSystem(scan.positions, targetPositions);
     const bg = best ? STATUS_COLORS[best] : UNSCANNED_COLOR;
-    // Stale = scanned, but one (or more) positions has aged past its
-    // `RESCAN_AFTER` threshold. We draw an amber inset ring via
-    // `box-shadow` so the pixel stays a crisp 8×8 (outer size unchanged;
-    // neighbouring pixels don't shift). The ring is 1.5px — thick enough
-    // to read at a glance, thin enough to leave the status colour
-    // visible as the dominant signal.
-    const stale = isSystemStale(scan, undefined, policy);
-    const ring = stale
-      ? ';box-shadow:inset 0 0 0 1.5px ' + STALE_COLOR
-      : '';
     px.style.cssText =
       'width:8px;height:8px;border-radius:1px;cursor:pointer;background:' +
       bg +
-      ring +
       ';';
 
-    px.title = buildSystemTooltip(g, s, scan, { stale });
+    px.title = buildSystemTooltip(g, s, scan);
   } else {
     px.style.cssText =
       'width:8px;height:8px;border-radius:1px;cursor:pointer;background:' +

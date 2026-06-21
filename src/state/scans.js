@@ -127,6 +127,43 @@ const currentScansKey = () => currentUniverseKey(SCANS_KEY_BASE, scansKeyFor);
 const DEBOUNCE_MS = 200;
 
 /**
+ * Reduce a scans map to ONLY its lifeform-discovery markers, dropping the heavy
+ * colonization scan (`scannedAt` + the 15-slot `positions`). §5: galaxy
+ * occupancy is now re-derived from the OGame public API per device and
+ * colonization state lives in the decision log, so the per-slot positions no
+ * longer PERSIST — they're an ephemeral in-session overlay. Only the small,
+ * 7-day lifeform markers (owned by `features/sendLifeform`) survive a reload.
+ * This is what shrinks the local blob from ~2.6 MB to a few hundred bytes.
+ *
+ * The kept entry keeps a valid {@link SystemScan} shape (empty `positions`), so
+ * the dashboard composite must overlay only positions-BEARING live scans (an
+ * empty-positions lf entry must not clobber the API occupancy for that system).
+ *
+ * @param {GalaxyScans | null | undefined} scans
+ * @returns {GalaxyScans}
+ */
+const stripToLfMarkers = (scans) => {
+  /** @type {GalaxyScans} */
+  const out = {};
+  if (!scans || typeof scans !== 'object') return out;
+  for (const key of /** @type {(keyof GalaxyScans)[]} */ (Object.keys(scans))) {
+    const s = scans[key];
+    if (!s) continue;
+    const hasLf =
+      s.lfScannedAt != null ||
+      (s.lfPositions && Object.keys(s.lfPositions).length > 0);
+    if (!hasLf) continue;
+    out[key] = /** @type {SystemScan} */ ({
+      scannedAt: 0,
+      positions: {},
+      ...(s.lfScannedAt != null ? { lfScannedAt: s.lfScannedAt } : {}),
+      ...(s.lfPositions ? { lfPositions: s.lfPositions } : {}),
+    });
+  }
+  return out;
+};
+
+/**
  * The galaxy-scan store.
  *
  * Initial value is an empty map: on module load we have no data yet, and
@@ -176,11 +213,16 @@ export const initScansStore = () => {
   // every load.
   disposeFn = persist({
     store: scansStore,
+    // Hydrate ONLY the lifeform markers — positions are ephemeral now (§5).
+    // Stripping on load means the very first write-through (the hydrate echo)
+    // rewrites the key as the slim lf-only blob, reclaiming the old fat ~2.6 MB
+    // immediately, and the in-memory store starts free of stale positions.
     load: async () => {
       const raw = await chromeStore.get(currentScansKey());
-      return /** @type {GalaxyScans | null | undefined} */ (raw);
+      return stripToLfMarkers(/** @type {GalaxyScans | null | undefined} */ (raw));
     },
-    save: (value) => chromeStore.set(currentScansKey(), value),
+    // Persist ONLY the lf markers; the heavy positions never hit disk again.
+    save: (value) => chromeStore.set(currentScansKey(), stripToLfMarkers(value)),
     debounceMs: DEBOUNCE_MS,
   });
 
@@ -205,7 +247,8 @@ export const initScansStore = () => {
  *
  * @returns {Promise<void>}
  */
-export const flushScansStore = () => chromeStore.set(currentScansKey(), scansStore.get());
+export const flushScansStore = () =>
+  chromeStore.set(currentScansKey(), stripToLfMarkers(scansStore.get()));
 
 /**
  * Tear down the persist wiring installed by {@link initScansStore}.

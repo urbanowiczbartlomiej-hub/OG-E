@@ -11,13 +11,10 @@
 // logic and vice versa.
 //
 // Constants are exported individually so tree-shaking can eliminate
-// unused ones in callers that, for example, only render the legend
-// (without needing the rescan tooltip text).
+// unused ones in callers that, for example, only render the legend.
 //
 // @see ../../domain/histogram.js — STATUS_PRIORITY (interest order)
 // @see ../../domain/scans.js     — PositionStatus enum
-
-import { formatRescanDuration } from '../../domain/galaxyScanConfig.js';
 
 /**
  * @typedef {import('../../domain/scans.js').PositionStatus} PositionStatus
@@ -75,54 +72,11 @@ export const STATUS_LABELS = {
 };
 
 /**
- * Tooltip text for the rescan-policy ⓘ icon next to the target-positions
- * filter bar. Multi-line plain text rendered through the native HTML
- * `title` attribute (which preserves `\n` on every browser worth caring
- * about).
- *
- * Generated from the ACTIVE per-universe rescan policy so the hover text
- * matches whatever thresholds the user configured (not a separately
- * maintained, possibly-stale rendering). A `0`/absent threshold renders as
- * "never"; `abandoned` reflects the on/off toggle.
- *
- * @param {import('../../domain/scheduling.js').RescanPolicy} [policy]
- *   The resolved policy (from `buildRescanPolicy`). When omitted, the
- *   caller's default policy is described via empty thresholds → defaults
- *   are still meaningful because callers always pass the active policy.
- * @returns {string}
- */
-export const rescanTooltip = (policy) => {
-  const after = policy?.rescanAfter ?? {};
-  /** @param {number | undefined} ms */
-  const fmt = (ms) => (ms && ms > 0 ? formatRescanDuration(ms / 1000) : 'never');
-  const abandoned = policy?.abandonedEnabled === false
-    ? 'never (disabled)'
-    : 'dynamic 25-47h (next 3 AM after 24h grace)';
-  return [
-    'Re-scan policy (when Scan will revisit a system with this status):',
-    '',
-    `  empty                    — ${fmt(after.empty)}`,
-    `  empty_sent (our fleet)   — ${fmt(after.empty_sent)}`,
-    `  abandoned (debris)       — ${abandoned}`,
-    `  inactive (i) 7-28d       — ${fmt(after.inactive)}`,
-    `  inactive (I) 28+d        — ${fmt(after.long_inactive)}`,
-    `  vacation                 — ${fmt(after.vacation)}`,
-    `  banned                   — ${fmt(after.banned)}`,
-    `  occupied (active player) — ${fmt(after.occupied)}`,
-    '  mine                     — never (we know the state)',
-    '  admin                    — never (untouchable)',
-    '  not scanned              — highest priority, immediate',
-    '',
-    'A system is eligible for re-scan as soon as ANY of its 15 positions',
-    'has exceeded its threshold. Edit these times below.',
-  ].join('\n');
-};
-
-/**
  * Colour for the "no data yet" pixel in the galaxy map and the legend
  * swatch beside the "Not scanned" label. Distinct from any
  * {@link STATUS_COLORS} value so an unscanned system is visually
- * unmistakable.
+ * unmistakable. (Rare now the map is API-derived — every system is known —
+ * but kept for the no-API-cache fallback.)
  */
 export const UNSCANNED_COLOR = '#1a1a2a';
 
@@ -131,19 +85,3 @@ export const UNSCANNED_COLOR = '#1a1a2a';
  * against the page background, which is a similar dark shade.
  */
 export const UNSCANNED_BORDER = '1px solid #222';
-
-/**
- * Colour of the "stale — due for rescan" inset ring drawn around
- * system pixels whose scan is older than the per-status threshold. A
- * warm amber that reads distinctly from every {@link STATUS_COLORS}
- * entry while leaning "attention, but not alarm" — stale scans are a
- * nudge, not a problem.
- */
-export const STALE_COLOR = '#ffd84d';
-
-/**
- * Label used next to the {@link STALE_COLOR} swatch in the galaxy-map
- * legend. Explicit about the recommended user action so hovering the
- * legend is enough — no secondary tooltip needed.
- */
-export const STALE_LABEL = 'Stale — rescan recommended';

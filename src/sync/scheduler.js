@@ -87,7 +87,7 @@
 
 import { scansStore } from '../state/scans.js';
 import { historyStore } from '../state/history.js';
-import { playersStore } from '../state/players.js';
+import { colonizeDecisionsStore } from '../state/colonizeDecisions.js';
 import { settingsStore } from '../state/settings.js';
 import { dailyRunRoutesStore, dailyRunRoutesKeyFor, dailyRunRoutesTsKeyFor } from '../state/dailyRunRoutes.js';
 import {
@@ -104,22 +104,19 @@ import { parseDailyRunRoutes } from '../domain/dailyRunRoutes.js';
 import { normalizeGalaxyScanConfig } from '../domain/galaxyScanConfig.js';
 import { normalizeReminderConfig } from '../domain/reminderConfig.js';
 import {
-  mergeScans,
   mergeHistory,
   mergeSettings,
   mergeDailyRunRoutes,
   mergeDailyState,
   mergeGalaxyScanConfig,
   mergeReminderConfig,
-  mergePlayers,
-  mergeOwnProfile,
+  mergeColonizeDecisions,
 } from './merge.js';
 import {
   fetchGistData,
   writeGistData,
   setStatus,
   getToken,
-  clearGistScansForGalaxy,
 } from './gist.js';
 import {
   pickSyncedValues,
@@ -135,7 +132,6 @@ import { debounce } from '../lib/debounce.js';
 import { chromeStore } from '../lib/storage.js';
 import { parseUniverseId } from '../lib/universeId.js';
 import { readDailyState, writeDailyState } from '../state/dailyActions.js';
-import { readOwnProfile, writeOwnProfileFor } from '../state/ownProfile.js';
 import { SYNC_FORCE_EVENT, DAILY_STATE_CHANGED_EVENT } from '../lib/ogeEvents.js';
 import {
   canStartSync,
@@ -144,8 +140,7 @@ import {
   dailyStateHasData,
   galaxyConfigSlotHasData,
   reminderConfigSlotHasData,
-  playersSlotHasData,
-  ownProfileHasData,
+  decisionsSlotHasData,
   gistIsCurrent,
 } from './scheduler/pure.js';
 
@@ -548,24 +543,16 @@ const downloadAndMerge = async () => {
       return;
     }
 
-    const localScans = scansStore.get();
-
-    // Scans are per-universe in the gist (`galaxyScansPerUniverse[id]`). We
-    // merge ONLY our own universe's slot — never the legacy global field —
-    // so another server's scans can't bleed into this universe's colonize
-    // candidates. Off a known universe (`routesUniverseId === ''`) we keep
-    // local untouched rather than guess a slot.
-    const scansResult = routesUniverseId
-      ? mergeScans(localScans, remote.galaxyScansPerUniverse?.[routesUniverseId])
-      : { changed: false, merged: localScans };
+    // Galaxy scans, the player roster, and our own profile are NO LONGER
+    // synced (§4b): occupancy + neighbour status/rank are re-derived from the
+    // OGame public API per device, and our rank is re-scraped from the header
+    // each load. Only the colonization DECISION log (below) carries
+    // cross-device colonization state now — the rest stays local.
     // Global + per-universe settings merge (shared with upload()).
     const { setResult, uniResult } = mergeSyncSettings(remote, routesUniverseId);
 
-    // Anti-loop: see file header. `changed === false` means merge is a
-    // structural no-op; skipping the write breaks the subscription
-    // feedback loop at its source. Settings have their own value-level
-    // anti-loop flag inside applyMergedSettings / writeLocalUniverseSettingsSlot.
-    if (scansResult.changed) scansStore.set(scansResult.merged);
+    // Anti-loop: see file header. Settings have their own value-level anti-loop
+    // flag inside applyMergedSettings / writeLocalUniverseSettingsSlot.
     if (setResult.changed) applyMergedSettings(setResult.merged);
     if (uniResult.changed) await writeLocalUniverseSettingsSlot(uniResult.merged);
 
@@ -615,28 +602,17 @@ const downloadAndMerge = async () => {
       if (remCfgResult.changed) await writeLocalReminderConfigSlot(remCfgResult.merged);
     }
 
-    // Players cache: per-universe, per-`playerId` union (newest `seenAt` wins).
-    // Like scans/history this needs no `applying*FromSync` flag — there is no
-    // timestamp to re-stamp, so the `changed` guard plus the gistIsCurrent skip
-    // on the follow-up upload already break the loop.
+    // Colonization decisions: per-universe, per-coord monotonic merge. Like
+    // scans/players it needs no `applying*FromSync` flag — there's no timestamp
+    // to re-stamp, so the `changed` guard plus the gistIsCurrent skip on the
+    // follow-up upload break the loop. This is the cross-device handoff that
+    // lets a second device continue with only the remaining free positions.
     if (routesUniverseId) {
-      const playersResult = mergePlayers(
-        playersStore.get(),
-        remote.playersPerUniverse?.[routesUniverseId],
+      const decResult = mergeColonizeDecisions(
+        colonizeDecisionsStore.get(),
+        remote.colonizeDecisionsPerUniverse?.[routesUniverseId] ?? {},
       );
-      if (playersResult.changed) playersStore.set(playersResult.merged);
-    }
-
-    // Own profile: per-universe, whole newest-`updatedAt` wins. Plain key-owner
-    // (no store, nothing subscribes), so read the cross-origin source of truth
-    // and apply via writeOwnProfileFor — which keeps the merged `updatedAt`
-    // rather than re-stamping `now` (that would churn the next merge).
-    if (routesUniverseId) {
-      const ownResult = mergeOwnProfile(
-        await readOwnProfile(routesUniverseId),
-        remote.ownProfilePerUniverse?.[routesUniverseId],
-      );
-      if (ownResult.changed) await writeOwnProfileFor(routesUniverseId, ownResult.merged);
+      if (decResult.changed) colonizeDecisionsStore.set(decResult.merged);
     }
 
     setStatus('down', new Date().toISOString());
@@ -697,36 +673,16 @@ const upload = async () => {
     /** @type {import('./gist.js').GistPayload | null} */
     const remote = await fetchGistData();
 
-    // Snapshot scans AFTER the awaited fetch. Taken earlier (before the
-    // network round-trip) a scan landing mid-fetch would be silently dropped
-    // by the `scansStore.set(scansResult.merged)` below; no `await` sits
-    // between this read and that set, so nothing can interleave from here on.
-    const localScans = scansStore.get();
-
-    const scansResult = routesUniverseId
-      ? mergeScans(localScans, remote?.galaxyScansPerUniverse?.[routesUniverseId])
-      : { changed: false, merged: localScans };
     // Global + per-universe settings merge (shared with downloadAndMerge()).
+    // Galaxy scans / players / own-profile are no longer synced (§4b) — their
+    // payload fields are omitted below, so the next PATCH drops them from the
+    // gist (the slim-down), and a stale field on an old gist compares "not
+    // current" against our `undefined`, triggering that one slimming PATCH.
     const { setResult, uniResult } = mergeSyncSettings(remote, routesUniverseId);
 
-    // Same anti-loop guard as downloadAndMerge. Without this, a store
-    // subscription would fire on every upload-round and re-schedule
-    // indefinitely.
-    if (scansResult.changed) scansStore.set(scansResult.merged);
+    // Same anti-loop guard as downloadAndMerge.
     if (setResult.changed) applyMergedSettings(setResult.merged);
     if (uniResult.changed) await writeLocalUniverseSettingsSlot(uniResult.merged);
-
-    // Scans: per-universe map for the payload — PRESERVE every OTHER universe's
-    // slot; contribute ours only when it carries data (an empty map must not
-    // write an empty slot that would differ from the gist's absent field and
-    // force a perpetual no-op PATCH).
-    const mergedGalaxyScansPerUniverse = { ...(remote?.galaxyScansPerUniverse || {}) };
-    if (routesUniverseId && Object.keys(scansResult.merged).length > 0) {
-      mergedGalaxyScansPerUniverse[routesUniverseId] = scansResult.merged;
-    }
-    const mergedGalaxyScansPerUniverseOut = Object.keys(mergedGalaxyScansPerUniverse).length
-      ? mergedGalaxyScansPerUniverse
-      : undefined;
 
     // Routes: per-universe newest-wins. Adopt remote locally if newer, then
     // build the merged `dailyRunRoutes` map for the payload — PRESERVING every
@@ -829,44 +785,32 @@ const upload = async () => {
       ? mergedReminderConfig
       : undefined;
 
-    // Players cache: per-universe union (newest `seenAt`). Preserve every OTHER
-    // universe's slot; contribute ours only when the roster carries data.
-    const mergedPlayers = { ...(remote?.playersPerUniverse || {}) };
+    // Colonization decisions: per-universe, per-coord monotonic merge. Preserve
+    // every OTHER universe's slot; contribute ours only when it carries data.
+    const mergedDecisions = { ...(remote?.colonizeDecisionsPerUniverse || {}) };
     if (routesUniverseId) {
-      const playersResult = mergePlayers(
-        playersStore.get(),
-        remote?.playersPerUniverse?.[routesUniverseId],
+      const decResult = mergeColonizeDecisions(
+        colonizeDecisionsStore.get(),
+        remote?.colonizeDecisionsPerUniverse?.[routesUniverseId] ?? {},
       );
-      if (playersResult.changed) playersStore.set(playersResult.merged);
-      if (playersSlotHasData(playersResult.merged)) {
-        mergedPlayers[routesUniverseId] = playersResult.merged;
+      if (decResult.changed) colonizeDecisionsStore.set(decResult.merged);
+      if (decisionsSlotHasData(decResult.merged)) {
+        mergedDecisions[routesUniverseId] = decResult.merged;
       }
     }
-    const mergedPlayersOut = Object.keys(mergedPlayers).length ? mergedPlayers : undefined;
-
-    // Own profile: per-universe whole newest-wins. Read the cross-origin source
-    // of truth (chrome.storage), adopt remote if newer (verbatim, no re-stamp),
-    // and contribute ours when present.
-    const mergedOwnProfile = { ...(remote?.ownProfilePerUniverse || {}) };
-    if (routesUniverseId) {
-      const ownResult = mergeOwnProfile(
-        await readOwnProfile(routesUniverseId),
-        remote?.ownProfilePerUniverse?.[routesUniverseId],
-      );
-      if (ownResult.changed) await writeOwnProfileFor(routesUniverseId, ownResult.merged);
-      if (ownProfileHasData(ownResult.merged)) {
-        mergedOwnProfile[routesUniverseId] = ownResult.merged;
-      }
-    }
-    const mergedOwnProfileOut = Object.keys(mergedOwnProfile).length ? mergedOwnProfile : undefined;
+    const mergedDecisionsOut = Object.keys(mergedDecisions).length ? mergedDecisions : undefined;
 
     // Skip the PATCH when the gist already matches the merged state.
     // This is the common case when upload fires right after a download
     // from another device and both sides already agree — PATCHing
     // anyway would burn a request and produce a no-op revision.
     if (
+      // galaxyScansPerUniverse / playersPerUniverse / ownProfilePerUniverse are
+      // intentionally OMITTED (left `undefined`) — §4b stopped syncing them.
+      // gistIsCurrent still compares them, so a gist that still carries those
+      // (a pre-slim or old-client upload) reads "not current" against our
+      // `undefined` and gets slimmed by this one PATCH.
       !gistIsCurrent(remote, {
-        galaxyScansPerUniverse: mergedGalaxyScansPerUniverseOut,
         colonyHistoryPerUniverse: mergedColonyHistoryOut,
         settings: setResult.merged,
         dailyRunRoutes: mergedDailyRunRoutesOut,
@@ -874,14 +818,12 @@ const upload = async () => {
         dailyStatePerUniverse: mergedDailyPerUniverseOut,
         galaxyScanConfig: mergedGalaxyConfigOut,
         reminderConfigPerUniverse: mergedReminderConfigOut,
-        playersPerUniverse: mergedPlayersOut,
-        ownProfilePerUniverse: mergedOwnProfileOut,
+        colonizeDecisionsPerUniverse: mergedDecisionsOut,
       })
     ) {
       await writeGistData({
         version: 1,
         updatedAt: new Date().toISOString(),
-        galaxyScansPerUniverse: mergedGalaxyScansPerUniverseOut,
         colonyHistoryPerUniverse: mergedColonyHistoryOut,
         settings: setResult.merged,
         dailyRunRoutes: mergedDailyRunRoutesOut,
@@ -889,8 +831,7 @@ const upload = async () => {
         dailyStatePerUniverse: mergedDailyPerUniverseOut,
         galaxyScanConfig: mergedGalaxyConfigOut,
         reminderConfigPerUniverse: mergedReminderConfigOut,
-        playersPerUniverse: mergedPlayersOut,
-        ownProfilePerUniverse: mergedOwnProfileOut,
+        colonizeDecisionsPerUniverse: mergedDecisionsOut,
       });
       setStatus('up', new Date().toISOString());
     }
@@ -995,11 +936,14 @@ export const installSync = () => {
     scheduleUpload();
   };
 
-  const unsubScans = scansStore.subscribe(onStoreChange);
+  // Colony history still syncs (the histogram is cross-device). Galaxy scans
+  // and the player roster do NOT (§4b — re-derived from the API per device), so
+  // their stores are no longer subscribed here.
   const unsubHistory = historyStore.subscribe(onStoreChange);
-  // Player cache: an `oge:galaxyScanned` event grows the roster → schedule an
-  // upload, same path as scans/history (no stamping, so no anti-loop flag).
-  const unsubPlayers = playersStore.subscribe(onStoreChange);
+  // Colonization decisions: a send / checkTarget-refusal / colony / abandon
+  // writes the decision log → schedule an upload (no stamping, so no anti-loop
+  // flag — the `changed` guard + gistIsCurrent skip break the loop).
+  const unsubDecisions = colonizeDecisionsStore.subscribe(onStoreChange);
 
   // Fleet-save routes: an in-game change (route pruning, set-collect-target)
   // flips dailyRunRoutesStore → schedule an upload. Skip sync-origin writes (those
@@ -1133,10 +1077,12 @@ export const installSync = () => {
       const str = typeof raw === 'string' ? raw : '';
       const galaxy = parseInt(str.split(':')[0], 10);
       if (Number.isFinite(galaxy) && galaxy > 0) {
-        // Drop the galaxy from scansStore IN MEMORY for the same
-        // merge-round-trip reason as CLEAR_REMOTE above — the
-        // histogram cleared chrome.storage but our in-memory copy
-        // would otherwise re-introduce the keys via union merge.
+        // Drop the galaxy from scansStore IN MEMORY (+ its write-through to
+        // chrome.storage). Galaxy scans are no longer synced (§4b), so this is
+        // now a purely LOCAL reset — there is no gist slot to wipe (and the old
+        // gist-clear path would have overwritten the gist with only the
+        // scans/history fields, dropping every other slice; removing it fixes
+        // that latent bug too).
         const current = scansStore.get();
         const prefix = galaxy + ':';
         /** @type {typeof current} */
@@ -1149,16 +1095,6 @@ export const installSync = () => {
         if (Object.keys(filtered).length !== Object.keys(current).length) {
           scansStore.set(filtered);
         }
-        (async () => {
-          try {
-            await clearGistScansForGalaxy(galaxy, routesUniverseId);
-          } catch (err) {
-            setStatus(
-              'err',
-              `reset-galaxy: ${/** @type {Error} */ (err).message}`,
-            );
-          }
-        })();
       }
     }
   };
@@ -1173,9 +1109,8 @@ export const installSync = () => {
 
   installed = {
     dispose: () => {
-      unsubScans();
       unsubHistory();
-      unsubPlayers();
+      unsubDecisions();
       unsubSettings();
       unsubRoutes();
       unsubGalaxyConfig();

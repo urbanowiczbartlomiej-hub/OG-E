@@ -66,6 +66,11 @@
 /** @ts-check */
 
 import { historyStore, whenHistoryHydrated } from '../state/history.js';
+import {
+  colonizeDecisionsStore,
+  flushColonizeDecisionsStore,
+} from '../state/colonizeDecisions.js';
+import { withDecision, DEC_MINE } from '../domain/colonizeDecisions.js';
 import { waitFor } from '../lib/dom.js';
 import { GAME } from '../lib/gameDom.js';
 
@@ -73,13 +78,13 @@ import { GAME } from '../lib/gameDom.js';
  * Parse the bracketed coord string OGame renders inside
  * `#positionContentField a`, e.g. `"[4:30:8]"`.
  *
- * Returns both the trimmed coord string (to preserve the game-DOM format
- * downstream consumers expect) and the integer `position` (slot number
- * 1..15). Anything that does not match the exact bracketed form is
- * treated as unparseable — we never record partial coords.
+ * Returns the trimmed coord string (to preserve the game-DOM format
+ * downstream consumers expect), the integer `galaxy`/`system`, and the integer
+ * `position` (slot number 1..15). Anything that does not match the exact
+ * bracketed form is treated as unparseable — we never record partial coords.
  *
  * @param {string | null | undefined} text
- * @returns {{ coords: string, position: number } | null}
+ * @returns {{ coords: string, galaxy: number, system: number, position: number } | null}
  */
 const parseCoords = (text) => {
   if (typeof text !== 'string') return null;
@@ -88,6 +93,8 @@ const parseCoords = (text) => {
   if (!match) return null;
   return {
     coords: trimmed,
+    galaxy: parseInt(match[1], 10),
+    system: parseInt(match[2], 10),
     position: parseInt(match[3], 10),
   };
 };
@@ -177,6 +184,19 @@ const tryCollect = () => {
       timestamp: Date.now(),
     },
   ]);
+
+  // This fresh colony is OURS — record a `mine` decision carrying its field
+  // count (`f`), the one datum the public API can never provide. It blocks the
+  // picker from re-proposing the slot in the lag window before universe.xml
+  // lists it, tells a second device "ours", and (Stage 4) carries the histogram
+  // value into the synced log. flush so it survives any immediate reload.
+  const ck = /** @type {`${number}:${number}:${number}`} */ (
+    `${parsed.galaxy}:${parsed.system}:${parsed.position}`
+  );
+  colonizeDecisionsStore.update((prev) =>
+    withDecision(prev, ck, { s: DEC_MINE, ts: Date.now(), f: diameter.maxFields }),
+  );
+  void flushColonizeDecisionsStore();
   return true;
 };
 

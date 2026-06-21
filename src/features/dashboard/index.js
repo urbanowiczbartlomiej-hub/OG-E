@@ -50,6 +50,8 @@ import { populatePositionFilter, renderColonyChart } from './colony.js';
 import { renderGalaxyMap } from './galaxy.js';
 import { renderFreeRegions } from './freeStreak.js';
 import { STRATEGIES } from '../../domain/regions.js';
+import { buildOccupancyIndex, buildScanMapFromIndex } from '../../domain/apiOccupancy.js';
+import { readApiCacheFor } from '../../state/apiCache.js';
 import {
   HISTORY_KEY_BASE,
   historyKeyFor,
@@ -67,7 +69,6 @@ import {
 import {
   defaultGalaxyScanConfig,
   normalizeGalaxyScanConfig,
-  buildRescanPolicy,
 } from '../../domain/galaxyScanConfig.js';
 import {
   exportAllData,
@@ -165,6 +166,24 @@ let history = [];
 
 /** @type {GalaxyScans} */
 let scans = {};
+
+/**
+ * Per-universe API occupancy index, built in `loadAll` from the local API cache
+ * (`state/apiCache.js`, populated in-game by `features/apiContext`). Gives the
+ * Colony Scout whole-server reach: the free-region finder runs over a composite
+ * of this (breadth) overlaid by `scans` (live freshness). `null` until a
+ * universe with cached API data loads — then the Scout falls back to live scans
+ * alone (today's behaviour).
+ * @type {import('../../domain/apiOccupancy.js').OccupancyIndex | null}
+ */
+let apiIndex = null;
+
+/**
+ * Grid bounds from the cached serverData, needed to enumerate fully-empty
+ * systems in the synthetic scan map. `{}` until API data loads.
+ * @type {{ galaxies?: number, systems?: number }}
+ */
+let apiBounds = {};
 
 /**
  * Per-universe player-metadata cache (`state/players.js`), loaded alongside
@@ -584,16 +603,19 @@ const loadAll = async () => {
     scans = {};
     players = {};
     ownProfile = {};
+    apiIndex = null;
+    apiBounds = {};
     galaxyConfig = defaultGalaxyScanConfig();
     targetPositions = parseTargetPositions(galaxyConfig.positions);
     return;
   }
-  const [h, s, c, p, op] = await Promise.all([
+  const [h, s, c, p, op, api] = await Promise.all([
     chromeStore.get(historyKeyFor(selectedUniverseId)),
     chromeStore.get(scansKeyFor(selectedUniverseId)),
     chromeStore.get(galaxyScanConfigKeyFor(selectedUniverseId)),
     chromeStore.get(playersKeyFor(selectedUniverseId)),
     readOwnProfile(selectedUniverseId),
+    readApiCacheFor(selectedUniverseId),
   ]);
   history = Array.isArray(h) ? /** @type {ColonyEntry[]} */ (h) : [];
   scans = s && typeof s === 'object' ? /** @type {GalaxyScans} */ (s) : {};
@@ -603,6 +625,25 @@ const loadAll = async () => {
   ownProfile = op;
   galaxyConfig = normalizeGalaxyScanConfig(c);
   targetPositions = parseTargetPositions(galaxyConfig.positions);
+
+  // Build the API occupancy index (breadth layer) for the Colony Scout. Empty
+  // when the in-game side hasn't populated the cache yet → Scout uses live
+  // scans alone. ownPlayerId flags our own colonies (excluded as occupied).
+  if (api && api.universe) {
+    apiIndex = buildOccupancyIndex({
+      universe: { planets: api.universe.planets, timestamp: api.universe.timestamp },
+      players: { players: api.players ? api.players.players : {} },
+      highscore: { ranks: api.total ? api.total.ranks : {} },
+      ownPlayerId: op.id,
+    });
+    apiBounds = {
+      galaxies: api.server ? api.server.data.galaxies : undefined,
+      systems: api.server ? api.server.data.systems : undefined,
+    };
+  } else {
+    apiIndex = null;
+    apiBounds = {};
+  }
 };
 
 /**
@@ -611,6 +652,25 @@ const loadAll = async () => {
  * @returns {string}
  */
 const getFilter = () => posFilter?.value ?? 'all';
+
+/**
+ * The live-scan overlay for the API composite: only systems whose positions
+ * were actually observed (this session). Excludes lf-only entries — after §5
+ * the persisted scans blob keeps only lifeform markers (empty `positions`), so
+ * a naive spread would clobber the API occupancy for those systems with blanks.
+ *
+ * @param {GalaxyScans} s
+ * @returns {GalaxyScans}
+ */
+const liveOverlay = (s) => {
+  /** @type {GalaxyScans} */
+  const out = {};
+  for (const k of /** @type {(keyof GalaxyScans)[]} */ (Object.keys(s))) {
+    const v = s[k];
+    if (v && v.positions && Object.keys(v.positions).length > 0) out[k] = v;
+  }
+  return out;
+};
 
 /**
  * Re-render both the colony section and the galaxy section from the
@@ -633,12 +693,25 @@ const renderAll = () => {
     filterLabel: filterValue,
   });
 
+  // Galaxy map now renders the WHOLE server from the API occupancy index
+  // (§5), with live scans overlaid (live wins per system). Falls back to raw
+  // local scans when the API cache isn't populated yet for this universe.
+  const mapScans =
+    apiIndex && apiBounds.galaxies && apiBounds.systems
+      ? /** @type {GalaxyScans} */ ({
+          ...buildScanMapFromIndex(apiIndex, {
+            galaxies: apiBounds.galaxies,
+            systems: apiBounds.systems,
+            targets: [...targetPositions],
+          }),
+          ...liveOverlay(scans),
+        })
+      : scans;
   renderGalaxyMap({
     containerEl: scansContainer,
-    scans,
+    scans: mapScans,
     targetPositions,
     expandedGalaxies,
-    policy: buildRescanPolicy(galaxyConfig.rescan),
     onToggleExpand: () => { persistExpanded(); },
     onResetGalaxy: (g) => { void resetGalaxy(g); },
   });
@@ -705,11 +778,28 @@ const applyPresetToSliders = (strategyKey) => {
 
 /** Repaint ONLY the settlement-regions block from current controls. */
 const repaintFreeRegions = () => {
+  const positions = freeRegionPositions();
+  // Composite the API breadth layer (whole-server occupancy) with the live
+  // scan map — live wins per system (fresher, carries honor rankClass /
+  // empty_sent). When there's no cached API data the composite is just the
+  // live scans (today's behaviour). The free-region finder is unchanged; it
+  // simply now sees the whole server.
+  const composite =
+    apiIndex && apiBounds.galaxies && apiBounds.systems
+      ? /** @type {GalaxyScans} */ ({
+          ...buildScanMapFromIndex(apiIndex, {
+            galaxies: apiBounds.galaxies,
+            systems: apiBounds.systems,
+            targets: positions,
+          }),
+          ...liveOverlay(scans),
+        })
+      : scans;
   renderFreeRegions({
     containerEl: freeContainer,
     countInfoEl: freeCountInfoEl,
-    scans,
-    positions: freeRegionPositions(),
+    scans: composite,
+    positions,
     maxGaps: parseInt(freeGapsSelect.value, 10) || 0,
     strategy: freeStrategySelect.value || 'longest',
     expansion: parseInt(freeExpansionSelect.value, 10) || 0,

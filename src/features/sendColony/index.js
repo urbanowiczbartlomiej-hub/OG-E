@@ -78,9 +78,19 @@ import { settingsStore } from '../../state/settings.js';
 import { scansStore, flushScansStore } from '../../state/scans.js';
 import { registryStore } from '../../state/registry.js';
 import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
-import { safeLS } from '../../lib/storage.js';
+import {
+  colonizeDecisionsStore,
+  flushColonizeDecisionsStore,
+} from '../../state/colonizeDecisions.js';
+import {
+  blockingCoords,
+  withDecision,
+  DEC_SENT,
+  DEC_TAKEN,
+  DEC_RESERVED,
+  RESERVE_HOLD_MS,
+} from '../../domain/colonizeDecisions.js';
 import { parsePositions } from '../../domain/positions.js';
-import { buildRescanPolicy } from '../../domain/galaxyScanConfig.js';
 import { createButton as makeButton, labelLines } from '../shared/button.js';
 import { LANDER_GLYPH } from '../shared/buttonGlyphs.js';
 import {
@@ -93,19 +103,15 @@ import {
   bareFleetdispatchUrl,
 } from '../shared/fleetCourier.js';
 import {
-  findNextScanSystem,
   findNextColonizeTarget,
-  buildGalaxyUrl,
   derive,
   render,
   MISSION_COLONIZE,
-  SCAN_COOLDOWN_MS,
   BG_SEND_IDLE,
   BG_SEND_READY,
   BG_SEND_ERROR,
   BG_SEND_STALE,
   BG_SEND_WAIT,
-  BG_SCAN_IDLE,
 } from './pure.js';
 import {
   getColonizeWaitTime,
@@ -114,7 +120,6 @@ import {
 } from './domHelpers.js';
 import { SHIP_COLONY, TARGET_PLANET } from '../../domain/rules.js';
 import { OWNER_COL } from '../../domain/fleetOwnership.js';
-import { GAME } from '../../lib/gameDom.js';
 import {
   CHECK_TARGET_RESULT_EVENT,
   GALAXY_SCANNED_EVENT,
@@ -122,6 +127,7 @@ import {
 } from '../../lib/ogeEvents.js';
 import { installFabSettingsLifecycle } from '../shared/fabSettingsLifecycle.js';
 import { createFleetDispatcherCache } from '../shared/fleetDispatcherCache.js';
+import { getApiContext } from '../shared/apiContextStore.js';
 import { clock } from '../../lib/clock.js';
 
 // Re-export the pure pipeline so existing call-sites (e.g. the test
@@ -141,21 +147,17 @@ export { derive, render } from './pure.js';
 
 // ─── DOM ids ───────────────────────────────────────────────────────────
 
-/** id of the wrap div that hosts both halves. */
+/** id of the wrap div that hosts the button. */
 const BUTTON_ID = 'oge-send-col';
-/** id of the Send (top) half. */
+/** id of the (single) Send zone. */
 const SEND_HALF_ID = 'oge-col-send';
-/** id of the Scan (bottom) half. */
-const SCAN_HALF_ID = 'oge-col-scan';
 
 // ─── Storage keys ──────────────────────────────────────────────────────
 
 /** Shared focus-persist key with sendExpedition. */
 const FOCUS_KEY = 'oge_focusedBtn';
-/** Focus-persist value written when the sendHalf holds focus. */
+/** Focus-persist value written when the Send zone holds focus. */
 const FOCUS_SEND = 'col-send';
-/** Focus-persist value written when the scanHalf holds focus. */
-const FOCUS_SCAN = 'col-scan';
 
 // ─── Tunables ──────────────────────────────────────────────────────────
 //
@@ -175,20 +177,6 @@ const HOLD_SKIP_MS = 2000;
 
 // ─── Module-local state (§3) ───────────────────────────────────────────
 
-/**
- * Timestamp of the last `oge:galaxyScanned` event we received. Used
- * together with {@link lastScanSubmitAt} to derive `scanCooldown`:
- * the Scan half is considered busy iff we submitted more recently than
- * we received a response (plus a hard safety cap for silent failures).
- *
- * Event-driven (vs. the earlier fixed-timer design) so the UI unlocks
- * the Scan button as soon as the game's response lands, not after some
- * arbitrary wait.
- */
-let lastScanEventAt = 0;
-/** Timestamp of the last in-page galaxy submit — anti-spam cooldown. */
-let lastScanSubmitAt = 0;
-/** Epoch-ms when the current waitGap countdown started. */
 /**
  * Cached snapshot of `window.fleetDispatcher`, published by the MAIN-world
  * bridge `bridges/fleetDispatcherSnapshot.js` (the isolated content script
@@ -268,17 +256,18 @@ const captureEnv = () => {
     targets: parsePositions(cfg.positions),
     preferOther: cfg.preferOtherGalaxies,
     farthestFirst: cfg.preferFarthestSystems,
-    policy: buildRescanPolicy(cfg.rescan),
     now: Date.now(),
     // Previously read directly by `derive`; now snapshotted here so the
     // pure core stays DOM-free. `readHomePlanet` → `#planetList`,
     // `parseCurrentGalaxyView` → `#galaxy_input` / URL.
     home: readHomePlanet(),
     view: parseCurrentGalaxyView(),
-    // Scan-cooldown timing (the only module-local state derive still reads;
-    // the Send half on fleetdispatch is courier-driven in the handler).
-    lastScanSubmitAt,
-    lastScanEventAt,
+    // API occupancy index (whole-server breadth) + the decision log's current
+    // blocking coords (sent/mine/abandoned/taken/reserved), so the picker
+    // offers — and skips — provisional candidates. The decision log is
+    // persistent + (Stage 4) synced, replacing the old transient reject set.
+    index: getApiContext()?.index ?? null,
+    rejected: blockingCoords(colonizeDecisionsStore.get(), Date.now()),
   };
 };
 
@@ -294,12 +283,9 @@ const captureEnv = () => {
 const refresh = () => {
   const ctx = derive(captureEnv());
   const result = render(ctx);
-  // Scan half is always derive-driven. The Send half is owned by the
-  // courier handler while a select()/dispatch() is in flight (busy) or once
-  // a send is armed-ready on step 2; otherwise it shows the derive-computed
-  // next-candidate label (which, on a bare fleetdispatch, is the idle-branch
-  // "[g:s:p] Send Colony").
-  paintZone('scan', result.scan);
+  // The Send zone is owned by the courier handler while a select()/dispatch()
+  // is in flight (busy) or once a send is armed-ready on step 2; otherwise it
+  // shows the derive-computed next-candidate label.
   if (busy) return;
   if (colReady && colTarget && courierStep() === 'fleet2') {
     // Armed and ready — but keep showing a live min-gap countdown if a
@@ -438,6 +424,8 @@ const onSendClick = async () => {
         /** @type {number[]} */ (parsePositions(cfg.positions)),
         cfg.preferOtherGalaxies,
         cfg.preferFarthestSystems,
+        getApiContext()?.index ?? null,
+        blockingCoords(colonizeDecisionsStore.get(), Date.now()),
       )
     : null;
   if (!candidate) {
@@ -530,107 +518,6 @@ const onSendClick = async () => {
   });
 };
 
-/**
- * Handle a click on the Scan half. Scan is independent from Send (axiom
- * #1): we pick the next system to scan and either navigate full-page
- * (outside galaxy view) or submit the in-page galaxy form.
- *
- * @returns {void}
- */
-const onScanClick = () => {
-  // Two behaviours:
-  //   1. NOT on galaxy view: "to Galaxy" — full-page nav to the bare
-  //      galaxy URL (no specific coords). The game serves whatever
-  //      its default system is, which it server-renders without an
-  //      AJAX call — meaning our hooks would miss it anyway. So we
-  //      don't try to scan a specific system from here; we just get
-  //      the user onto galaxy view, where every subsequent click
-  //      AJAX-submits and is observed.
-  //   2. ON galaxy view: find next unscanned system, in-page submit
-  //      via the galaxy form. Cooldown is event-driven (locks until
-  //      `oge:galaxyScanned` arrives, hard cap 8 s).
-  const home = readHomePlanet();
-  if (safeLS.bool('oge_debugSendColony', false)) {
-    const view = parseCurrentGalaxyView();
-    const policy = buildRescanPolicy(galaxyScanConfigStore.get().rescan);
-    const next = home ? findNextScanSystem(scansStore.get(), home, view, policy) : null;
-    // eslint-disable-next-line no-console
-    console.debug('[OG-E sendColony] onScanClick', {
-      home,
-      view,
-      nextScanSystem: next,
-      scansEntryCount: Object.keys(scansStore.get()).length,
-      lastScanSubmitAt,
-      lastScanEventAt,
-      now: Date.now(),
-    });
-  }
-  if (!home) return;
-
-  // Off galaxy view: hop to bare galaxy. No coord targeting (full-nav
-  // initial-system loads aren't AJAX-observed; would silently waste the
-  // user's click).
-  if (!location.search.includes('component=galaxy')) {
-    const base = location.href.split('?')[0];
-    location.href = `${base}?page=ingame&component=galaxy`;
-    return;
-  }
-
-  // On galaxy view: cooldown then in-page submit to next unscanned.
-  const now = Date.now();
-  if (lastScanSubmitAt > lastScanEventAt && now - lastScanSubmitAt < SCAN_COOLDOWN_MS) {
-    return;
-  }
-
-  const view = parseCurrentGalaxyView();
-  const policy = buildRescanPolicy(galaxyScanConfigStore.get().rescan);
-  const next = findNextScanSystem(scansStore.get(), home, view, policy);
-  if (!next) {
-    paintZone('scan', { text: 'All scanned!', bg: BG_SCAN_IDLE });
-    return;
-  }
-
-  lastScanSubmitAt = now;
-  if (navigateGalaxyInPage(next.galaxy, next.system)) {
-    refresh();  // repaint so cooldown dim applies immediately
-    return;
-  }
-  // Fallback: in-page submit failed (no form? AGR quirk?). Do a full
-  // nav — accepts the "first system not scanned" cost since it's the
-  // exception path.
-  location.href = buildGalaxyUrl(next);
-};
-
-/**
- * Update the galaxy-view form inputs and submit for a fast in-page nav.
- * Returns `true` when the submit button was found + clicked; `false` so
- * the caller can fall back to a full-page `location.href =` navigation.
- *
- * @param {number} galaxy
- * @param {number} system
- * @returns {boolean}
- */
-const navigateGalaxyInPage = (galaxy, system) => {
-  const galInput = /** @type {HTMLInputElement | null} */ (
-    document.querySelector(GAME.GALAXY_INPUT)
-  );
-  const sysInput = /** @type {HTMLInputElement | null} */ (
-    document.querySelector(GAME.SYSTEM_INPUT)
-  );
-  if (!sysInput) return false;
-  if (galInput) galInput.value = String(galaxy);
-  sysInput.value = String(system);
-  const submitBtn = /** @type {HTMLElement | null} */ (
-    document.querySelector(GAME.GALAXY_SUBMIT) ??
-      document.querySelector(GAME.GALAXY_SUBMIT_FALLBACK)
-  );
-  if (submitBtn) {
-    submitBtn.click();
-    return true;
-  }
-  return false;
-};
-
 // ─── Event reactors (§7) ───────────────────────────────────────────────
 
 /**
@@ -649,6 +536,24 @@ const extractErrorCode = (detail) => {
     return detail.errorCodes[0];
   }
   return null;
+};
+
+/**
+ * Record a colonization decision for a coord and flush synchronously so it
+ * survives the game's immediate post-send page reload (mirrors
+ * `flushScansStore`). Monotonic + persistent — this is the durable, Stage-4-
+ * syncable replacement for the old transient reject set.
+ *
+ * @param {number} galaxy
+ * @param {number} system
+ * @param {number} position
+ * @param {import('../../domain/colonizeDecisions.js').Decision} decision
+ * @returns {void}
+ */
+const recordDecision = (galaxy, system, position, decision) => {
+  const key = /** @type {`${number}:${number}:${number}`} */ (`${galaxy}:${system}:${position}`);
+  colonizeDecisionsStore.update((prev) => withDecision(prev, key, decision));
+  void flushColonizeDecisionsStore();
 };
 
 /**
@@ -723,6 +628,22 @@ const onCheckTargetResult = (e) => {
     return;
   }
 
+  // Persistently record the refusal in the decision log so the picker stops
+  // re-proposing it (and Stage 4 syncs it). 140016 = a temporary planet-move
+  // hold (reserved, expires after ~RESERVE_HOLD_MS); anything else here = the
+  // slot is occupied/blocked (taken). Covers API-only candidates that have no
+  // scan entry to downgrade below. (140035 "no colony ship" took the !newPos
+  // path above — it's about us, not the slot, so it is never recorded.)
+  const decNow = Date.now();
+  recordDecision(
+    galaxy,
+    system,
+    position,
+    errorCode === 140016
+      ? { s: DEC_RESERVED, ts: decNow, aa: decNow + RESERVE_HOLD_MS }
+      : { s: DEC_TAKEN, ts: decNow },
+  );
+
   // Only ever downgrade an EXISTING 'empty' colonize candidate (preserving its
   // original scannedAt) — see the doc comment for why we never create here.
   const key = /** @type {`${number}:${number}`} */ (`${galaxy}:${system}`);
@@ -746,20 +667,14 @@ const onCheckTargetResult = (e) => {
 };
 
 /**
- * React to `oge:galaxyScanned`. Three things happen:
- *
- *   1. Timestamp — record that the game answered. `scanCooldown` goes
- *      false on the next derive, dropping the Scan half dim. No more
- *      fixed-duration waiting: the UI unlocks exactly as fast as the
- *      game does.
- *   2. Store update — `state/scans.js` already merged the payload into
- *      `scansStore`; that fires its own subscribe → refresh path too.
- *   3. Refresh — repaint both halves with the new data.
+ * React to `oge:galaxyScanned`: a live scan just landed in `scansStore`
+ * (merged by `state/scans.js`). Repaint so the picker reflects the fresher
+ * data — a live scan overrides the API breadth layer in the composite (a slot
+ * the API thought empty but the scan sees taken, or vice-versa).
  *
  * @returns {void}
  */
 const onGalaxyScanned = () => {
-  lastScanEventAt = Date.now();
   refresh();
 };
 
@@ -804,16 +719,28 @@ const onColonizeSent = (e) => {
   // Bypass the 200 ms debounce so the mark survives a page reload that
   // the game triggers immediately after a successful sendFleet.
   flushScansStore();
+
+  // Also record a persistent + (Stage 4) syncable 'sent' decision so a second
+  // device knows this slot is in-flight and continues with only the remaining
+  // free positions. `aa` = arrival, so it stops blocking after arrival+grace if
+  // the colony never lands (recall/fail). Skip when arrivalAt is unknown (0) —
+  // the local empty_sent + registry still guard the same-device case.
+  if (typeof detail.arrivalAt === 'number' && detail.arrivalAt > 0) {
+    recordDecision(galaxy, system, position, {
+      s: DEC_SENT,
+      ts: Date.now(),
+      aa: detail.arrivalAt,
+    });
+  }
 };
 
 /**
- * Hold gesture (3 s) on the Send zone: manually skip the current candidate
- * by marking it `'empty_sent'` without dispatching a fleet. The slot returns
- * to requires-rescan after `RESCAN_AFTER.empty_sent` hours so the next scan
- * reveals what was blocking colonization.
+ * Hold gesture (3 s) on the Send zone: manually skip the current candidate by
+ * marking it `'empty_sent'` (in the ephemeral live-scan overlay) without
+ * dispatching a fleet, so the picker stops proposing it for this session.
  *
  * Intended for unhandled game-side blocks: the position can't be colonized
- * but our DB still shows it as a valid target, causing the button to stall.
+ * but our data still shows it as a valid target, causing the button to stall.
  * Hold lets the player move past it without losing progress.
  *
  * @returns {void}
@@ -918,17 +845,6 @@ export const installSendColony = () => {
           onHold: onSendHold,
           focusValue: FOCUS_SEND,
           focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,
-          labelShiftY: -8,
-        },
-        {
-          key: 'scan',
-          id: SCAN_HALF_ID,
-          ariaLabel: 'Scan next system',
-          bg: BG_SCAN_IDLE,
-          onTap: onScanClick,
-          focusValue: FOCUS_SCAN,
-          focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,
-          labelShiftY: 3,
         },
       ],
     });
@@ -1023,8 +939,6 @@ export const _resetSendColonyForTest = () => {
     installed.dispose();
     installed = null;
   }
-  lastScanSubmitAt = 0;
-  lastScanEventAt = 0;
   fdCache.reset();
   busy = false;
   colReady = false;

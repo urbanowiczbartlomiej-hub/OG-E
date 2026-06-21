@@ -57,6 +57,11 @@
  * @typedef {import('../state/ownProfile.js').OwnProfile} OwnProfile
  */
 
+// The colonization decision log's merge is pure domain logic (monotonic +
+// LWW, terminal states never regress); re-exported here so the sync scheduler
+// imports every reconciler from one place. See domain/colonizeDecisions.js.
+export { mergeColonizeDecisions } from '../domain/colonizeDecisions.js';
+
 /**
  * Whether two lifeform-position maps (slot → discovery epoch-ms) carry the
  * identical data. Missing maps are treated as empty. Used to decide when the

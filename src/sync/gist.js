@@ -186,6 +186,14 @@ import { clearGalaxyScans } from './merge.js';
  *   universe id. Whole-record newest-`updatedAt`-wins (see
  *   {@link import('./merge.js').mergeOwnProfile}). Per-universe because our rank
  *   differs per server; it anchors relative-strength scoring of neighbours.
+ * @property {Record<string, import('../domain/colonizeDecisions.js').DecisionMap>} [colonizeDecisionsPerUniverse]
+ *   OPTIONAL, additive: the colonization decision log keyed by universe id —
+ *   the small "looks-free-but-isn't" correction set (sent/mine/abandoned/
+ *   taken/reserved) the public API can't reproduce. Each slot is merged per
+ *   coord, monotonic + newest-`ts`-wins (terminal outcomes never regress; see
+ *   {@link import('../domain/colonizeDecisions.js').mergeColonizeDecisions}).
+ *   Per-universe because a coord is server-specific. This is the colonization
+ *   state that powers cross-device "continue only the remaining free positions".
  */
 
 /**

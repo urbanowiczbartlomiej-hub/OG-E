@@ -11,7 +11,7 @@
 // `title` attribute, which honours `\n` everywhere worth caring about).
 // No DOM, no storage, no clock beyond formatting the stored `scannedAt`.
 //
-// @see ./galaxy.js     — pixel-map consumer (passes `stale`)
+// @see ./galaxy.js     — pixel-map consumer
 // @see ./freeStreak.js — region-strip consumer
 
 /**
@@ -23,7 +23,6 @@
  *
  * Layout (each line):
  * ```
- *   [g:s] STALE — rescan recommended      (only when opts.stale)
  *   [g:s] scanned 17.06.2026, 22:07:08
  *     8: vacation (hasMoon) [UP4DLY #11 2040]
  *    10: long_inactive [Doltra]
@@ -37,18 +36,14 @@
  * @param {number} s  System.
  * @param {SystemScan | null | undefined} scan  The stored scan, or nullish
  *   for a never-scanned system (returns the single "not scanned" line).
- * @param {{ stale?: boolean }} [opts]  `stale` prepends the rescan banner —
- *   the caller (which already computed staleness for the pixel ring) passes
- *   it so the tooltip and the visual cue tell the same story.
  * @returns {string}
  */
-export const buildSystemTooltip = (g, s, scan, opts = {}) => {
+export const buildSystemTooltip = (g, s, scan) => {
   const coord = '[' + g + ':' + s + ']';
   if (!scan || !scan.positions) return coord + ' not scanned';
 
   /** @type {string[]} */
   const lines = [];
-  if (opts.stale) lines.push(coord + ' STALE — rescan recommended');
   lines.push(coord + ' scanned ' + new Date(scan.scannedAt).toLocaleString());
 
   for (let pos = 1; pos <= 15; pos++) {

@@ -66,6 +66,7 @@ import { initDailyRunRoutesStore } from './state/dailyRunRoutes.js';
 import { initGalaxyScanConfigStore } from './state/galaxyScanConfig.js';
 import { initReminderConfigStore } from './state/reminderConfig.js';
 import { initBodiesStore } from './state/bodies.js';
+import { initColonizeDecisionsStore } from './state/colonizeDecisions.js';
 
 import { installColonyRecorder } from './features/colonyRecorder.js';
 import { installPlanetBarCapture } from './features/planetBarCapture.js';
@@ -87,6 +88,7 @@ import { installAttackAlarm } from './features/attackAlarm/index.js';
 import { installRewardingWatcher } from './features/rewardingWatcher.js';
 import { installArtifactShopWatcher } from './features/artifactShopWatcher.js';
 import { installReminders } from './features/reminders/index.js';
+import { installApiContext } from './features/apiContext/index.js';
 
 import { installSync } from './sync/scheduler.js';
 
@@ -129,6 +131,11 @@ initReminderConfigStore();
 // planet-bar capture below can gate its first write on the hydrate and
 // the dashboard route editor can read a snapshot of owned planets/moons.
 initBodiesStore();
+// Colonization decision log (per-universe, chrome.storage). The small
+// "looks-free-but-isn't" correction set (sent/mine/abandoned/taken/reserved)
+// the picker subtracts and the Scout flags — and the only colonization state
+// destined for gist sync (it's what the public API can't reproduce).
+initColonizeDecisionsStore();
 
 // The reminders master switch + ntfy token live in `settings.js` (regular
 // localStorage Settings, authored in the in-game OG-E settings panel) — wired
@@ -173,6 +180,12 @@ const installDomFeatures = () => {
   if (window.top === window.self) installAttackAlarm();
   installRewardingWatcher();
   installArtifactShopWatcher();
+  // OGame public-API context (per-device occupancy breadth for colonization).
+  // Dormant unless the `oge_debugApi` flag is set (Stage 1 ships the data path
+  // only); later stages wire it into Colony Scout + the colonize picker.
+  // Top-frame only: universe.xml is multi-MB and identical across the game's
+  // iframes, so a per-frame fetch would just multiply traffic.
+  if (window.top === window.self) installApiContext();
 
   // Reminders — the producer reads expedition return-flights + present
   // fleet legs from #eventContent and reconciles both wave and ad-hoc

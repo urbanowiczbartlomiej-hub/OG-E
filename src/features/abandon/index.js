@@ -51,6 +51,11 @@
 
 import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
 import { scansStore } from '../../state/scans.js';
+import {
+  colonizeDecisionsStore,
+  flushColonizeDecisionsStore,
+} from '../../state/colonizeDecisions.js';
+import { withDecision, DEC_ABANDONED } from '../../domain/colonizeDecisions.js';
 import { safeClick, waitFor } from '../../lib/dom.js';
 import { GAME } from '../../lib/gameDom.js';
 
@@ -81,6 +86,19 @@ const cleanupAbandonedPlanet = (galaxy, system, position) => {
       [key]: { scannedAt: Date.now(), positions: newPositions },
     };
   });
+
+  // Durable 'abandoned' decision carrying the planet's (small) field count. The
+  // public API has NO size data and may still list this slot empty after the
+  // give-up, so this device-local fact — synced in Stage 4 — is what stops us
+  // (and other devices) from ever re-colonizing a known-too-small slot. Read
+  // the field count off the still-loaded overview; `f` is omitted if it's gone.
+  const m = document.querySelector(GAME.DIAMETER_FIELD)?.textContent?.match(/\((\d+)\/(\d+)\)/);
+  const f = m ? parseInt(m[2], 10) : undefined;
+  const ck = /** @type {`${number}:${number}:${number}`} */ (`${galaxy}:${system}:${position}`);
+  colonizeDecisionsStore.update((prev) =>
+    withDecision(prev, ck, { s: DEC_ABANDONED, ts: Date.now(), f }),
+  );
+  void flushColonizeDecisionsStore();
 };
 
 /**

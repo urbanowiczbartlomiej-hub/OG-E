@@ -143,6 +143,17 @@ export const playersSlotHasData = (players) =>
 export const ownProfileHasData = (profile) => Boolean(profile && Number(profile.updatedAt) > 0);
 
 /**
+ * Whether a colonization-decision slot is worth contributing to the gist.
+ * Same no-op-PATCH guard as the others: an empty decision map ({}) must NOT
+ * write a slot that would differ from the gist's absent field.
+ *
+ * @param {import('../../domain/colonizeDecisions.js').DecisionMap | undefined} decisions
+ * @returns {boolean}
+ */
+export const decisionsSlotHasData = (decisions) =>
+  Boolean(decisions && Object.keys(decisions).length > 0);
+
+/**
  * Compare two values by JSON structural equality. Cheap and good enough
  * for the "is the gist already current?" check — both sides are plain JSON
  * (nested records / arrays of primitives), no Dates, no cycles, no functions.
@@ -168,7 +179,8 @@ export const sameJSON = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b
  *
  * @param {import('../gist.js').GistPayload | null | undefined} remote
  * @param {object} merged                         The state we'd write.
- * @param {unknown} merged.galaxyScansPerUniverse
+ * @param {unknown} [merged.galaxyScansPerUniverse]  Omitted since §4b — left
+ *   `undefined` so a gist still carrying scans reads "not current" and slims.
  * @param {unknown} merged.colonyHistoryPerUniverse
  * @param {unknown} merged.settings
  * @param {unknown} merged.dailyRunRoutes
@@ -178,6 +190,7 @@ export const sameJSON = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b
  * @param {unknown} merged.reminderConfigPerUniverse
  * @param {unknown} [merged.playersPerUniverse]
  * @param {unknown} [merged.ownProfilePerUniverse]
+ * @param {unknown} [merged.colonizeDecisionsPerUniverse]
  * @returns {boolean}
  */
 export const gistIsCurrent = (remote, merged) =>
@@ -190,4 +203,5 @@ export const gistIsCurrent = (remote, merged) =>
   sameJSON(remote?.galaxyScanConfig, merged.galaxyScanConfig) &&
   sameJSON(remote?.reminderConfigPerUniverse, merged.reminderConfigPerUniverse) &&
   sameJSON(remote?.playersPerUniverse, merged.playersPerUniverse) &&
-  sameJSON(remote?.ownProfilePerUniverse, merged.ownProfilePerUniverse);
+  sameJSON(remote?.ownProfilePerUniverse, merged.ownProfilePerUniverse) &&
+  sameJSON(remote?.colonizeDecisionsPerUniverse, merged.colonizeDecisionsPerUniverse);
