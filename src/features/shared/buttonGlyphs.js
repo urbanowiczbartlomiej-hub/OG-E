@@ -100,3 +100,24 @@ export const DNA_GLYPH = [
   '<path d="M41 7 C41 20 23 24 23 32 C23 40 41 44 41 57"/>',
   '</g>',
 ].join('');
+
+/**
+ * Guardian — a lighthouse standing watch (features/reminders/guardian.js). It
+ * keeps vigil, warns, and guides a bare fleet back to safety: exactly the
+ * post-landing fleet-save prompt. A striped, tapered tower + lamp room casts a
+ * sweeping beam over a sea horizon; the beam tints to the guardian's orange
+ * `--rim`. Not the literal "!" — a sentinel that guides ships home.
+ */
+export const LIGHTHOUSE_GLYPH = [
+  '<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">',
+  '<path d="M5 52 Q32 48 59 52"/>', // sea horizon
+  '<path d="M26 48 L29 27 L35 27 L38 48 Z"/>', // tapered tower
+  '<path d="M27.3 40 H36.7" stroke-width="2.5"/>', // tower bands (lighthouse stripes)
+  '<path d="M28 34 H36" stroke-width="2.5"/>',
+  '<path d="M29 27 V20 H35 V27"/>', // lamp room
+  '<path d="M27.5 20 L32 14 L36.5 20 Z"/>', // roof
+  '<circle cx="32" cy="23.5" r="2" fill="currentColor" stroke="none"/>', // the light
+  '<path d="M36.5 22 L54 16" stroke-width="2.5"/>', // beam (upper)
+  '<path d="M36.5 25 L54 31" stroke-width="2.5"/>', // beam (lower)
+  '</g>',
+].join('');

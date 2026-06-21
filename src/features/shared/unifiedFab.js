@@ -77,6 +77,14 @@ const FAB_CSS = [
   // dragged (a transition would make them lag behind the cursor).
   `.${FAB_ORB_CLASS}{position:fixed;transform:translate(-50%,-50%);`,
   'border-radius:50%;border:none;cursor:pointer;padding:0;}',
+  // "Needs an ACK" pulse — a gentle, uniform glow only (a GLOW, never a
+  // transform: a scale would fight the orb's translate(-50%,-50%) positioning).
+  // Toggled via the `oge-fab-alert` class by setFabModuleAlert(); the glow
+  // colour comes from `--oge-pulse` (the module's signature colour).
+  '@keyframes oge-fab-pulse{',
+  '0%,100%{box-shadow:0 0 0 0 transparent;}',
+  '50%{box-shadow:0 0 9px 3px var(--oge-pulse,#e67e22);}}',
+  '.oge-fab-alert{animation:oge-fab-pulse 1.6s ease-in-out infinite;}',
 ].join('');
 
 /**
@@ -101,6 +109,49 @@ let shell = null;
 
 /** The live satellite orbs (one per non-active module). @type {HTMLElement[]} */
 let orbEls = [];
+
+/**
+ * Module ids currently flagged "needs an ACK" — they pulse on whichever
+ * representation is live (active host or satellite orb). Kept in a Set (not on
+ * the DOM) so the flag survives orb rebuilds: {@link buildOrbs} re-applies it.
+ *
+ * @type {Set<string>}
+ */
+const alerting = new Set();
+
+/**
+ * Apply the pulse class to a module's live nodes — the in-FAB host (always in
+ * the registry) and its satellite orb when one is built. The glow colour is set
+ * from the module's meta colour. Idempotent; safe when a node isn't built yet.
+ *
+ * @param {string} id
+ * @returns {void}
+ */
+const applyAlert = (id) => {
+  const on = alerting.has(id);
+  const entry = registry.get(id);
+  if (entry) {
+    entry.host.classList.toggle('oge-fab-alert', on);
+    entry.host.style.setProperty('--oge-pulse', entry.meta.color);
+  }
+  const orb = orbEls.find((o) => o.dataset.mod === id);
+  if (orb) orb.classList.toggle('oge-fab-alert', on);
+};
+
+/**
+ * Flag / unflag a module as "needs an ACK". The flagged module gently pulses on
+ * its live representation (active host or satellite orb). The guardian uses this
+ * to nudge the player after a quiet spell while a fleet sits bare.
+ *
+ * @param {string} id
+ * @param {boolean} on
+ * @returns {void}
+ */
+export const setFabModuleAlert = (id, on) => {
+  if (on) alerting.add(id);
+  else alerting.delete(id);
+  applyAlert(id);
+};
 
 /** Current FAB diameter (settings-driven). @returns {number} */
 const currentSize = () => settingsStore.get().fabBtnSize;
@@ -175,6 +226,9 @@ const buildOrbs = () => {
     orb.title = meta.name;
     orb.style.zIndex = String(wrapZ - 1);
     orb.style.setProperty('--mod', meta.color);
+    orb.style.setProperty('--oge-pulse', meta.color);
+    orb.dataset.mod = id;
+    if (alerting.has(id)) orb.classList.add('oge-fab-alert');
     appendGlyph(orb, meta.glyph);
     orb.addEventListener('click', () => setActiveFabModule(id));
     document.body.appendChild(orb);
@@ -313,6 +367,7 @@ export const registerFabModule = ({ meta, host }) => {
  */
 export const _resetUnifiedFabForTest = () => {
   clearOrbs();
+  alerting.clear();
   registry.clear();
   if (shell) {
     shell.unsubSettings();

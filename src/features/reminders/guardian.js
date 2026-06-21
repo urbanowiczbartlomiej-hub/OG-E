@@ -28,11 +28,15 @@
 
 import { EVENT_BOX_LOADED_EVENT, MANUAL_FS_CHANGED_EVENT } from '../../lib/ogeEvents.js';
 import { GAME } from '../../lib/gameDom.js';
+import { clock } from '../../lib/clock.js';
 import { createButton, labelLines } from '../shared/button.js';
 import { installButtonChrome } from '../shared/buttonChrome.js';
+import { LIGHTHOUSE_GLYPH } from '../shared/buttonGlyphs.js';
+import { setFabModuleAlert } from '../shared/unifiedFab.js';
 import { prepareViaRoutine, dispatchPrepared } from '../shared/agrRoutine.js';
 import { OWNER_FS } from '../../domain/fleetOwnership.js';
 import { settingsStore } from '../../state/settings.js';
+import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
 import { readLandedFs } from '../../state/fleetSaveSet.js';
 import { readManualLandedFs, removeManualLandedFs } from '../../state/manualLandedFs.js';
 import { guardianDismissedLandings } from './guardianDismiss.js';
@@ -45,18 +49,6 @@ const DISMISS_HOLD_MS = 1500;
 const RIM = '#e67e22';
 /** AGR's fleet-save routine id (the guardian's send action). */
 const FS_ROUTINE_ID = 6;
-
-/**
- * Simple exclamation-mark glyph — inner markup of a `0 0 64 64` SVG painted in
- * `currentColor` so it tints to the orange `--rim` (same convention as
- * `buttonGlyphs.js`). A bold bar + dot reads as "warning" at a glance.
- */
-const BANG_GLYPH = [
-  '<g fill="currentColor" stroke="currentColor" stroke-linecap="round">',
-  '<line x1="32" y1="16" x2="32" y2="38" stroke-width="9"/>',
-  '<circle cx="32" cy="50" r="5.5" stroke="none"/>',
-  '</g>',
-].join('');
 
 /**
  * @typedef {object} BareFleet
@@ -82,6 +74,22 @@ let fabOn = false;
 let fabSize = 56;
 /** Guard against re-entrant taps while a fleet-save send is in flight. */
 let busy = false;
+/**
+ * Epoch SECONDS of the current page's load — our presence proxy. Any page reload
+ * re-inits this module (back to "now"); an ack tap also resets it. The pulse
+ * arms once `now - activeAt` crosses the configured ACK interval.
+ */
+let activeAt = Math.floor(Date.now() / 1000);
+/** Whether the NEXT off-fleetdispatch tap should navigate (armed by a prior ack). */
+let navArmed = false;
+/** The pulse poll subscription — lives only while the button is mounted. */
+let unsubClock = /** @type {(() => void) | null} */ (null);
+/** Timer that disarms the two-step navigation and repaints to the idle face. */
+let navTimer = /** @type {ReturnType<typeof setTimeout> | null} */ (null);
+
+/** Configured "minutes idle before pulsing for an ACK", in seconds (min 60). */
+const ackIntervalSec = () =>
+  Math.max(60, (galaxyScanConfigStore.get().guardianAckIntervalMin || 3) * 60);
 
 /** @param {string|null|undefined} s @returns {string} dense `g:s:p` */
 const dense = (s) => (s || '').replace(/[\s[\]]/g, '');
@@ -115,13 +123,54 @@ const navigateToBody = (t) => {
 };
 
 /**
- * Repaint the button face: "Re-Save" primary, the landing coords as subtitle, and
- * a "hold to dismiss" hint — the shared 3-line command-button label.
+ * Repaint the idle button face. The primary word splits by context: off a
+ * fleetdispatch screen it's a passive "On watch" (a tap there only ACKs, never
+ * yanks you away); on the bare body's fleetdispatch it's the actionable
+ * "Re-Save". Subtitle = landing coords (`+n` for extras), hint = hold-to-dismiss.
  */
 const paint = () => {
   if (!btn || bare.length === 0) return;
   const sub = bare.length > 1 ? `${bare[0].coords} +${bare.length - 1}` : bare[0].coords;
-  btn.paintLines('g', labelLines({ main: 'Re-Save', sub, hint: '(hold to dismiss)' }));
+  const onDispatch = location.search.includes('component=fleetdispatch');
+  btn.paintLines('g', labelLines({
+    main: onDispatch ? 'Re-Save' : 'On watch',
+    sub,
+    hint: '(hold to dismiss)',
+  }));
+};
+
+/** ACK confirmed → invite the second (navigating) tap. @param {{ coords: string }} t */
+const paintAcked = (t) =>
+  btn?.paintLines('g', labelLines({ main: 'Got it ✓', sub: t.coords, hint: 'tap → go save' }));
+
+/**
+ * Re-evaluate the pulse. ON once we've gone the configured ACK interval with no
+ * page reload or ack (the player seems parked while a fleet sits bare); OFF
+ * otherwise. Visibility-gated by the shared clock, so a hidden tab never pulses.
+ *
+ * @returns {void}
+ */
+const pulseTick = () => {
+  if (!btn || bare.length === 0) {
+    setFabModuleAlert('guard', false);
+    return;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  setFabModuleAlert('guard', now - activeAt >= ackIntervalSec());
+};
+
+/**
+ * The light "I'm here" ack: reset the presence clock (silences the pulse) and
+ * snooze the body's ntfy push by the interval — WITHOUT leaving the page. Used by
+ * the first off-fleetdispatch tap; the second tap then navigates.
+ *
+ * @param {BareFleet} t
+ * @returns {void}
+ */
+const ackPresence = (t) => {
+  activeAt = Math.floor(Date.now() / 1000);
+  ackFn(t.bodyKey);
+  setFabModuleAlert('guard', false);
 };
 
 /**
@@ -131,6 +180,11 @@ const paint = () => {
 const dismissPrimary = () => {
   const t = bare[0];
   if (!t) return;
+  navArmed = false;
+  if (navTimer) {
+    clearTimeout(navTimer);
+    navTimer = null;
+  }
   dismissFn(t.bodyKey, t.landedAt);
   removeManualLandedFs(t.bodyKey); // hold = "it's gone" → drop a manual mark too
   refresh();
@@ -171,10 +225,23 @@ const handleGuardianTap = async () => {
   const t = bare[0];
   if (!t) return;
 
-  // Off a fleetdispatch screen → "I'm on it" + navigate to the primary bare body.
+  // Off a fleetdispatch screen → two-step, so the pulse never yanks the player
+  // away by reflex. FIRST tap = ACK only (silence the pulse, snooze the push,
+  // stay put). A SECOND tap (while armed) navigates to the bare body to save.
   if (!location.search.includes('component=fleetdispatch')) {
-    ackFn(t.bodyKey);
-    navigateToBody(t);
+    if (navArmed) {
+      navigateToBody(t);
+      return;
+    }
+    ackPresence(t);
+    navArmed = true;
+    paintAcked(t);
+    if (navTimer) clearTimeout(navTimer);
+    navTimer = setTimeout(() => {
+      navTimer = null;
+      navArmed = false;
+      paint();
+    }, 5000);
     return;
   }
 
@@ -232,7 +299,7 @@ const render = () => {
         // Match the 1-zone command buttons (sendExpedition / sendLifeform) so the
         // label reads at the same size across the FAB cluster.
         fontScale: 0.18,
-        module: { id: 'guard', name: 'Fleet save', color: RIM, glyph: BANG_GLYPH },
+        module: { id: 'guard', name: 'Fleet save', color: RIM, glyph: LIGHTHOUSE_GLYPH },
         holdMs: DISMISS_HOLD_MS,
         zones: [
           {
@@ -240,15 +307,23 @@ const render = () => {
             id: 'oge-guardian-z',
             ariaLabel: 'Fleet save',
             bg: RIM,
-            glyph: BANG_GLYPH,
+            glyph: LIGHTHOUSE_GLYPH,
             onTap: () => void handleGuardianTap(),
             onHold: dismissPrimary,
           },
         ],
       });
     }
+    // Poll for the "you've gone quiet" pulse only while the button is mounted.
+    if (!unsubClock) unsubClock = clock.subscribe(pulseTick, { everyMs: 15000 });
     paint();
+    pulseTick();
   } else if (btn) {
+    if (unsubClock) {
+      unsubClock();
+      unsubClock = null;
+    }
+    setFabModuleAlert('guard', false);
     btn.dispose();
     btn = null;
   }
@@ -309,6 +384,7 @@ export const installGuardian = ({ dismiss, ack, universeId: uid } = {}) => {
   dismissFn = typeof dismiss === 'function' ? dismiss : () => {};
   ackFn = typeof ack === 'function' ? ack : () => {};
   universeId = uid || '';
+  activeAt = Math.floor(Date.now() / 1000); // this page's load = fresh presence
 
   // Ride the unified FAB: mirror the command buttons' fabMode visibility +
   // fabBtnSize live-resize, so the guardian appears/sizes with the cluster.
@@ -336,6 +412,16 @@ export const installGuardian = ({ dismiss, ack, universeId: uid } = {}) => {
     document.removeEventListener(EVENT_BOX_LOADED_EVENT, refresh);
     document.removeEventListener(MANUAL_FS_CHANGED_EVENT, refresh);
     unsubSettings();
+    if (unsubClock) {
+      unsubClock();
+      unsubClock = null;
+    }
+    if (navTimer) {
+      clearTimeout(navTimer);
+      navTimer = null;
+    }
+    navArmed = false;
+    setFabModuleAlert('guard', false);
     if (btn) {
       btn.dispose();
       btn = null;

@@ -506,6 +506,14 @@ export const installReminderConfig = ({ getUniverseId }) => {
   guardianIntervalInput.title =
     'Minutes after a fleet-save lands that the guardian push fires if it is still sitting bare.';
 
+  const guardianAckIntervalInput = /** @type {HTMLInputElement} */ (mk('input'));
+  guardianAckIntervalInput.type = 'text';
+  guardianAckIntervalInput.id = 'remCfgGuardianAckInterval';
+  guardianAckIntervalInput.size = 8;
+  guardianAckIntervalInput.placeholder = 'e.g. 3';
+  guardianAckIntervalInput.title =
+    'Minutes with no page reload before the in-game button starts pulsing for an ACK (presence check). In-game only — no push.';
+
   // ── message template editors (one per kind) ──────────────────────────
   const waveTplEditor = makeTemplateEditor({ kind: 'wave', idBase: 'remCfgTplWave' });
   const adhocTplEditor = makeTemplateEditor({ kind: 'adhoc', idBase: 'remCfgTplAdhoc' });
@@ -636,6 +644,7 @@ export const installReminderConfig = ({ getUniverseId }) => {
     block('Reminder schedule', fsEditor.element, 'each relative to landing (− before, 0 at, + after)'),
     row('Guardian — enable', guardianEnableInput, 'push when a landed fleet-save sits exposed'),
     row('Guardian interval', guardianIntervalInput, 'minutes after landing to fire if still bare'),
+    row('Guardian — ACK interval', guardianAckIntervalInput, 'minutes idle (no reload) before the button pulses for an ACK'),
   ], fsTplEditor.element);
 
   body.appendChild(tabBar);
@@ -678,6 +687,7 @@ export const installReminderConfig = ({ getUniverseId }) => {
     fsEditor.setFromString(cfg.fsOffsets);
     guardianEnableInput.checked = cfg.guardianEnabled;
     guardianIntervalInput.value = String(cfg.guardianIntervalMin);
+    guardianAckIntervalInput.value = String(cfg.guardianAckIntervalMin);
   };
 
   /**
@@ -713,7 +723,7 @@ export const installReminderConfig = ({ getUniverseId }) => {
    * value. The offsets come from the row editor (already validated per-row); an
    * empty list is allowed (no fleet-save pings).
    *
-   * @returns {Pick<import('../../domain/galaxyScanConfig.js').GalaxyScanConfig, 'fsEnabled' | 'fsThreshold' | 'fsMinFlightSec' | 'fsOffsets' | 'guardianEnabled' | 'guardianIntervalMin'> | null}
+   * @returns {Pick<import('../../domain/galaxyScanConfig.js').GalaxyScanConfig, 'fsEnabled' | 'fsThreshold' | 'fsMinFlightSec' | 'fsOffsets' | 'guardianEnabled' | 'guardianIntervalMin' | 'guardianAckIntervalMin'> | null}
    */
   const collectFs = () => {
     const threshold = parseInt(thresholdInput.value, 10);
@@ -734,6 +744,11 @@ export const installReminderConfig = ({ getUniverseId }) => {
     const guardianIntervalMin = parseInt(guardianIntervalInput.value, 10);
     if (!Number.isFinite(guardianIntervalMin) || guardianIntervalMin < 1) {
       setStatus('Guardian interval must be a whole number of minutes (≥ 1).', '#e66');
+      return null;
+    }
+    const guardianAckIntervalMin = parseInt(guardianAckIntervalInput.value, 10);
+    if (!Number.isFinite(guardianAckIntervalMin) || guardianAckIntervalMin < 1) {
+      setStatus('Guardian ACK interval must be a whole number of minutes (≥ 1).', '#e66');
       return null;
     }
     // Never-enters net: the guardian arms on ENTRY, so a player who never
@@ -757,6 +772,7 @@ export const installReminderConfig = ({ getUniverseId }) => {
       fsOffsets,
       guardianEnabled: guardianEnableInput.checked,
       guardianIntervalMin,
+      guardianAckIntervalMin,
     };
   };
 

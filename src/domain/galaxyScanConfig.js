@@ -49,6 +49,10 @@
  *   ntfy push when a landed fleet-save sits exposed (no re-save). Per-universe.
  * @property {number} guardianIntervalMin  Minutes after landing the guardian push
  *   fires if the fleet is still sitting bare.
+ * @property {number} guardianAckIntervalMin  Minutes with no page reload before
+ *   the in-game guardian button starts pulsing to demand an ACK — the "are you
+ *   still watching?" presence nudge. In-game only (no ntfy); reset by any page
+ *   reload or an ack tap.
  */
 
 /**
@@ -72,6 +76,7 @@ export const defaultGalaxyScanConfig = () => ({
   fsOffsets: '-10m, 0m, 10m',
   guardianEnabled: true,
   guardianIntervalMin: 20,
+  guardianAckIntervalMin: 3,
 });
 
 /**
@@ -126,5 +131,6 @@ export const normalizeGalaxyScanConfig = (raw) => {
     guardianEnabled:
       typeof r.guardianEnabled === 'boolean' ? r.guardianEnabled : d.guardianEnabled,
     guardianIntervalMin: coerceInt(r.guardianIntervalMin, d.guardianIntervalMin),
+    guardianAckIntervalMin: coerceInt(r.guardianAckIntervalMin, d.guardianAckIntervalMin),
   };
 };
