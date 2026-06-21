@@ -266,8 +266,17 @@ const DEFAULT_BACKOFF_MS = 5 * 60 * 1000;
  * means "no active backoff". Armed by {@link gh} on 403/429. Cleared
  * implicitly when the clock moves past it. See file header for the
  * full strategy.
+ *
+ * SEEDED from the persisted {@link BACKOFF_KEY} at module load so the backoff
+ * SURVIVES A PAGE RELOAD (and is shared across same-origin tabs). OGame reloads
+ * the page constantly (every fleet send), and a fresh JS context would otherwise
+ * reset this to 0 and immediately re-hammer GitHub after one 403 — exhausting the
+ * 5000 req/h quota tab-by-tab. A stale past value is harmless: the `> now` check
+ * just lets the next call through. The `typeof` guard keeps this a no-op (0) when
+ * a test partially mocks `safeLS` without `int` — a module-load read must not
+ * throw during import for a suite that never touches the gist client.
  */
-let backoffUntil = 0;
+let backoffUntil = typeof safeLS.int === 'function' ? safeLS.int(BACKOFF_KEY, 0) : 0;
 
 // ── Small helpers (token + LS + status) ─────────────────────────────
 

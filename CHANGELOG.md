@@ -4,6 +4,25 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.30.4] — 2026-06-22
+
+### Fixed
+
+- **Two devices left open at once no longer burn through the GitHub sync quota.**
+  The periodic cross-device sync backstop used to run a full download+upload
+  every minute. With two tabs open, each tab's upload looked like a remote change
+  to the other, so the two devices ping-ponged and could exhaust GitHub's
+  5000-requests/hour limit between them. The backstop is now a **download only**,
+  every 5 minutes and paused while the tab is hidden — so an idle tab stays quiet
+  and two open devices can't trigger each other. Refocusing a stale tab still
+  pulls a peer's changes immediately.
+
+- **The GitHub rate-limit backoff now survives a page reload.** OGame reloads the
+  page on every fleet send; a fresh page used to forget that GitHub had asked us
+  to back off and retried right away, compounding the rate-limiting. The backoff
+  deadline is now persisted (and shared across same-origin tabs), so a 403/429 is
+  respected until it actually expires.
+
 ## [1.30.3] — 2026-06-21
 
 ### Changed

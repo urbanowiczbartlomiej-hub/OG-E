@@ -90,13 +90,17 @@
 //
 // # Periodic backstop
 //
-// Uploads are otherwise purely event-driven (store change → debounce) and
-// downloads happen only on boot / force-sync, so a tab left OPEN never learns
-// of another device's changes, and a local write whose debounce was killed by
-// navigation (without a reload to re-arm it) stays unsynced. A visibility-gated
-// `clock` tick runs a full round-trip every {@link PERIODIC_SYNC_MS} to cover
-// both. It pauses while the tab is hidden (no background API burn) and fires
-// once on regaining visibility, so refocusing a stale tab syncs immediately.
+// Downloads otherwise happen only on boot / force-sync, so a tab left OPEN never
+// learns of another device's changes. A visibility-gated `clock` DOWNLOAD every
+// {@link PERIODIC_SYNC_MS} closes that gap. It is download-ONLY on purpose:
+// uploads are covered by the on-install catch-up push + the store-change
+// debounce, so the backstop never PATCHes — which keeps an idle tab quiet and,
+// crucially, stops it ping-ponging with another open device (a download can't
+// change the gist, so it can't trigger the peer's "remote changed → upload";
+// the earlier 60 s full round-trip did exactly that and two open devices burned
+// the 5000 req/h quota). It pauses while hidden, and fires once on regaining
+// visibility — throttled to one run per interval so rapid tab-switching can't
+// burst requests — so refocusing a stale tab pulls immediately.
 //
 // @ts-check
 
@@ -200,17 +204,19 @@ export const resetGalaxyKeyFor = (universeId) =>
 const DEBOUNCE_MS = 15_000;
 
 /**
- * Cadence (ms) of the periodic backstop sync — a clock-driven full round-trip
- * (download + upload). Deliberately longer than {@link DEBOUNCE_MS}: this is a
- * safety net, NOT the primary push path. The fast paths are the store-change
- * debounce (a fresh write) and the on-install catch-up kick (a write stranded
- * by a prior page's reload). The backstop exists for the two cases neither
- * covers: pulling another device's changes into an ALREADY-OPEN tab (no reload),
- * and flushing a local write whose debounce was killed by navigation before the
- * page reloaded. The clock pauses while the tab is hidden, so this costs nothing
- * in the background; at ~2 GitHub GETs per tick it stays far under 5000 req/h.
+ * Cadence (ms) of the periodic backstop — a clock-driven DOWNLOAD that pulls a
+ * peer device's changes into an already-open tab. Deliberately a download, NOT a
+ * round-trip: uploads are already covered by the on-install catch-up push and
+ * the store-change debounce, so the backstop never PATCHes. That keeps an idle
+ * tab quiet (one GET per interval, nothing while hidden) AND — crucially — means
+ * it can't ping-pong with another open device, because a download doesn't change
+ * the gist, so it can never trigger the peer's "remote changed → upload" (the
+ * earlier 60 s full round-trip DID, and two open devices burned the 5000 req/h
+ * quota between them). Five minutes is a fine staleness bound for cross-device
+ * continuation; the clock's fire-on-visibility-regain still pulls immediately
+ * when you return to the tab.
  */
-const PERIODIC_SYNC_MS = 60_000;
+const PERIODIC_SYNC_MS = 5 * 60 * 1000;
 
 // SYNC_FORCE_EVENT (lib/ogeEvents.js) is dispatched on `document` by the
 // Settings UI and histogram to request an immediate sync round-trip; this
@@ -1143,16 +1149,20 @@ export const installSync = () => {
   // agree, so this adds at most one no-op GET on a fully-synced load.
   void onForceSync();
 
-  // Periodic backstop round-trip (B): a visibility-gated clock tick runs a full
-  // download+upload every PERIODIC_SYNC_MS. It covers the two cases the
-  // debounce + on-install catch-up don't: pulling another device's changes into
-  // an ALREADY-OPEN tab (no reload needed), and flushing a local write whose
-  // debounce was killed by navigation before the page reloaded. The clock pauses
-  // while hidden (zero background API burn) and fires once on regaining
-  // visibility — so refocusing a stale tab also triggers an immediate sync.
-  const unsubClock = clock.subscribe(() => { void onForceSync(); }, {
-    everyMs: PERIODIC_SYNC_MS,
-  });
+  // Periodic backstop (B): a visibility-gated clock DOWNLOAD every
+  // PERIODIC_SYNC_MS pulls a peer's changes into an ALREADY-OPEN tab — the case
+  // neither the debounce nor the on-install catch-up covers. Download-ONLY by
+  // design (see PERIODIC_SYNC_MS): it never PATCHes, so it can't ping-pong with
+  // another open device. The clock also fires once on regaining visibility, so
+  // refocusing a stale tab pulls immediately; we throttle that to one run per
+  // interval so rapid tab-switching can't burst GitHub requests.
+  let lastBackstopAt = 0;
+  const unsubClock = clock.subscribe(() => {
+    const t = Date.now();
+    if (t - lastBackstopAt < PERIODIC_SYNC_MS - 1000) return;
+    lastBackstopAt = t;
+    void downloadAndMerge();
+  }, { everyMs: PERIODIC_SYNC_MS });
 
   installed = {
     dispose: () => {
