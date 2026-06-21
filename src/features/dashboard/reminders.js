@@ -39,6 +39,7 @@ import {
   fetchScheduledMessages,
   cancelWaveReminders,
   isGuardianTitle,
+  guardianTitleFor,
   NTFY_MAX_DELAY_SEC,
 } from '../../sync/ntfyReconciler.js';
 import { reminderBadge } from '../../domain/reminderBadge.js';
@@ -489,6 +490,7 @@ const renderPreviewMulti = (states, ntfyMap) => {
   renderWavesInto(section, active, state, ntfyMap);
   renderAdhocInto(section, active, state, ntfyMap);
   renderFleetSavesInto(section, state, ntfyMap);
+  renderGuardianInto(section, active, ntfyMap);
   root.appendChild(section);
 };
 
@@ -881,6 +883,68 @@ const renderFleetSavesInto = (section, state, ntfyMap) => {
 
     appendFiresAtLine(card, stillQueued);
 
+    section.appendChild(card);
+  }
+};
+
+/**
+ * Select THIS universe's queued FLEET-GUARDIAN pushes from the ntfy queue map,
+ * sorted by fire time. Guardian pushes are state-free in the gist (the in-game
+ * `reconcileGuardianQueue` owns their lifecycle by title), so the ntfy queue is
+ * their only source of truth — there's no gist list to walk. We match by EXACT
+ * per-server title (`[<universeId>] Bare fleet`, via {@link guardianTitleFor})
+ * so a sibling server's pushes on the shared ntfy topic stay out. Exported and
+ * pure so it's unit-testable without a DOM (the render below is integration-level).
+ *
+ * @param {string} universeId
+ * @param {Map<string, { id: string, time: number, message?: string, title?: string }>} ntfyMap
+ * @returns {Array<{ id: string, time: number, message?: string, title?: string }>}
+ */
+export const guardianMessagesFor = (universeId, ntfyMap) => {
+  const wanted = guardianTitleFor(universeId);
+  /** @type {Array<{ id: string, time: number, message?: string, title?: string }>} */
+  const out = [];
+  for (const msg of ntfyMap.values()) {
+    if (msg.title === wanted) out.push(msg);
+  }
+  return out.sort((a, b) => a.time - b.time);
+};
+
+/**
+ * Render this universe's FLEET-GUARDIAN pushes into `section`, below the
+ * fleet-saves. Read-only BY DESIGN, and — unlike every other list here — NOT
+ * backed by gist state (see {@link guardianMessagesFor}): the queued ntfy
+ * messages ARE the source of truth. No cancel button: a dashboard delete would
+ * just be re-posted on the next in-game guardian reconcile while the fleet is
+ * still exposed. The orphan sweep deliberately leaves these in `ntfyMap` (it
+ * skips guardian titles), so they survive to here.
+ *
+ * @param {HTMLElement} section
+ * @param {string} universeId
+ * @param {Map<string, { id: string, time: number, message?: string, title?: string }>} ntfyMap
+ * @returns {void}
+ */
+const renderGuardianInto = (section, universeId, ntfyMap) => {
+  const mine = guardianMessagesFor(universeId, ntfyMap);
+  if (mine.length === 0) return;
+
+  section.appendChild(node('h4', { class: 'rem-universe-head', text: 'Fleet guardian reminders' }));
+
+  for (const m of mine) {
+    const { card, head } = buildReminderCard(m.time, 'rem-wave');
+    const badge = reminderBadge({
+      scheduledCount: 1,
+      pendingCount: 1,
+      hasNtfyData: ntfyMap.size > 0,
+    });
+    head.appendChild(node('span', { class: 'rem-badge ' + badge.cls, text: badge.text }));
+    card.appendChild(head);
+    // The body carries the exposed-fleet coords ("Bare fleet exposed at
+    // [g:s:p] — re-save it."); show it verbatim as the card's meta.
+    card.appendChild(node('div', {
+      class: 'wave-meta',
+      text: m.message || 'Bare fleet exposed — re-save it.',
+    }));
     section.appendChild(card);
   }
 };

@@ -16,8 +16,9 @@ import { reconcileWaves } from '../../../src/domain/waves.js';
 import {
   collectOurMessageIds,
   isFleetSaveTooFarOut,
+  guardianMessagesFor,
 } from '../../../src/features/dashboard/reminders.js';
-import { NTFY_MAX_DELAY_SEC } from '../../../src/sync/ntfyReconciler.js';
+import { NTFY_MAX_DELAY_SEC, guardianTitleFor } from '../../../src/sync/ntfyReconciler.js';
 
 describe('collectOurMessageIds — orphan-sweep claims every reminder kind', () => {
   // Partial ReminderState shapes — only the notify maps matter here, so we
@@ -126,6 +127,37 @@ describe('dashboard orphan sweep freshness guard', () => {
     const { shouldSweep, gistAge } = computeSweepGuard(undefined, BASE);
     expect(gistAge).toBe(Infinity);
     expect(shouldSweep).toBe(true);
+  });
+});
+
+describe('guardianMessagesFor — this server\'s queued guardian pushes only', () => {
+  const UNI = 's1-pl';
+  /**
+   * @param {string} id @param {number} time @param {string} title @param {string} [message]
+   * @returns {[string, { id: string, time: number, message?: string, title?: string }]}
+   */
+  const mk = (id, time, title, message) => [id, { id, time, title, message }];
+
+  it('returns only THIS universe\'s guardian pushes, sorted by fire time', () => {
+    const map = new Map([
+      mk('g-late', 200, guardianTitleFor(UNI), 'Bare fleet exposed at [1:2:3] — re-save it.'),
+      mk('g-early', 100, guardianTitleFor(UNI), 'Bare fleet exposed at [4:5:6] — re-save it.'),
+      // A sibling server's guardian push on the SHARED topic — must stay out.
+      mk('sibling', 150, guardianTitleFor('s2-en'), 'Bare fleet exposed at [9:9:9] — re-save it.'),
+      // A non-guardian message — must stay out.
+      mk('a-wave', 50, 'Expedition wave', 'unrelated'),
+    ]);
+    const res = guardianMessagesFor(UNI, map);
+    expect(res.map((m) => m.id)).toEqual(['g-early', 'g-late']);
+    expect(res[0].message).toContain('[4:5:6]');
+  });
+
+  it('returns empty when no guardian push targets this server', () => {
+    const map = new Map([
+      mk('sibling', 150, guardianTitleFor('s2-en'), 'x'),
+      mk('a-wave', 50, 'Expedition wave', 'y'),
+    ]);
+    expect(guardianMessagesFor(UNI, map)).toEqual([]);
   });
 });
 
