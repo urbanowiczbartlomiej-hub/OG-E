@@ -65,6 +65,14 @@ const DOT_CLASS = 'oge-mb-dot';
 
 const REFRESH_DEBOUNCE_MS = 200;
 
+/**
+ * Grace added to a cached snapshot's expiry, covering client/server clock skew
+ * (the event list itself ships a `timeDelta`) so a marker is never dropped a
+ * hair before its fleet actually lands. Generous on purpose — the only thing it
+ * delays is the disappearance of an already-stale optimistic paint.
+ */
+const CACHE_GRACE_MS = 5 * 60 * 1000;
+
 // ── DOM read helpers (feature layer — pure.js stays DOM-free) ─────────────
 
 /** @param {string | null | undefined} s @returns {string} dense `g:s:p`. */
@@ -202,8 +210,22 @@ const buildCss = () => `
   color:#f0c23c;font:700 8px/1 Verdana,sans-serif;letter-spacing:-.5px;
   text-shadow:0 0 2px #000,0 0 1px #000;
 }
-/* Landed fleet-save: same "FS" tag, orange = sitting exposed after touchdown. */
-.oge-mb-fs.landed{color:#e8902e;}
+/* Landed fleet-save: same "FS" tag, orange = sitting exposed after touchdown.
+   It PULSES (opacity breath + orange glow) — a landed FS is the dangerous
+   state, so it should grab the eye, not just sit there. Colour unchanged
+   (red is reserved for threat/aggro). In-motion (yellow) FS stays static. */
+.oge-mb-fs.landed{
+  color:#e8902e;
+  animation:oge-fs-pulse 1.4s ease-in-out infinite;
+}
+@keyframes oge-fs-pulse{
+  0%,100%{opacity:1;text-shadow:0 0 2px #000,0 0 1px #000;}
+  50%{opacity:.45;text-shadow:0 0 4px #e8902e,0 0 2px #000;}
+}
+/* Honour the OS "reduce motion" preference — fall back to the static tag. */
+@media (prefers-reduced-motion:reduce){
+  .oge-mb-fs.landed{animation:none;}
+}
 /* Expedition — a small blue heart (the expeditor's own badge), inline SVG so
    it stays crisp at any size. */
 .oge-mb-explore{
@@ -417,6 +439,24 @@ const slimSnapshot = (snapshot) => {
 };
 
 /**
+ * Epoch-ms after which a snapshot built from these legs is certainly stale: the
+ * latest in-flight fleet ARRIVAL (the event row's `data-arrival-time` is a
+ * server timestamp in SECONDS) plus {@link CACHE_GRACE_MS}. `undefined` when no
+ * leg carries a finite arrival (e.g. a landed-FS-only snapshot), which leaves
+ * the cache non-expiring — the live render reconciles those via their own TTL.
+ *
+ * @param {import('./pure.js').BadgeLeg[]} legs
+ * @returns {number | undefined}
+ */
+const cacheExpiry = (legs) => {
+  let maxSec = 0;
+  for (const leg of legs) {
+    if (Number.isFinite(leg.arrivalAt)) maxSec = Math.max(maxSec, leg.arrivalAt);
+  }
+  return maxSec > 0 ? maxSec * 1000 + CACHE_GRACE_MS : undefined;
+};
+
+/**
  * One LIVE render pass: read the current event + planet state, classify it into
  * per-body markers, paint one column per active body, and refresh the
  * optimistic cache.
@@ -435,7 +475,8 @@ const renderColumns = () => {
   const bodies = scanOwnBodies();
   if (bodies.length === 0) return;
   const myKeys = new Set(bodies.map((b) => bodyKey(b.coords, b.type)));
-  const byBody = groupMarkers(scanLegs(), myKeys, fsIdSet(), landedFsKeySet());
+  const legs = scanLegs();
+  const byBody = groupMarkers(legs, myKeys, fsIdSet(), landedFsKeySet());
 
   /** @type {Record<string, import('./pure.js').Marker[]>} */
   const snapshot = {};
@@ -449,8 +490,10 @@ const renderColumns = () => {
 
   // Persist for the next reload's instant paint. Overwrite with an EMPTY result
   // only when the event list is genuinely loaded-and-idle — never in the
-  // pre-XHR gap (handled by the early-return above).
-  if (Object.keys(snapshot).length > 0) writeBadgeCache(slimSnapshot(snapshot));
+  // pre-XHR gap (handled by the early-return above). The expiry lets a reload
+  // discard the paint once the cached fleets have all landed, so missions that
+  // complete while the tab is closed don't keep their markers forever.
+  if (Object.keys(snapshot).length > 0) writeBadgeCache(slimSnapshot(snapshot), cacheExpiry(legs));
   else if (ready) clearBadgeCache();
 };
 
