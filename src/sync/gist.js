@@ -85,7 +85,6 @@ import { gzipEncode, gzipDecode } from '../lib/gzip.js';
 import { safeLS, chromeStore } from '../lib/storage.js';
 import { parseUniverseId } from '../lib/universeId.js';
 import { SYNC_STATUS_EVENT } from '../lib/ogeEvents.js';
-import { clearGalaxyScans } from './merge.js';
 
 /**
  * @typedef {import('../state/scans.js').GalaxyScans} GalaxyScans
@@ -646,41 +645,6 @@ export const writeGistData = async (data) => {
       files: { [GIST_FILENAME]: { content: compressed } },
     }),
   });
-};
-
-/**
- * Drop every `${galaxy}:*` entry from the given universe's
- * `galaxyScansPerUniverse` slot while preserving that slot's other galaxies,
- * every OTHER universe's slot, and `colonyHistoryPerUniverse`. Counterpart to
- * the histogram's per-galaxy "Reset" button: without this, a local-only delete
- * would be undone by the next sync round-trip (`mergeScans` is a UNION).
- *
- * Stamps {@link LAST_UP_KEY} on success.
- *
- * @param {number} galaxy
- * @param {string} universeId  Which universe's slot to clear (the caller's
- *   current server). Empty string ⇒ no slot is touched.
- * @returns {Promise<void>}
- */
-export const clearGistScansForGalaxy = async (galaxy, universeId) => {
-  const id = await ensureGist();
-  const gist = await gh(`/gists/${id}`);
-  const content = await readGistFile(gist, GIST_FILENAME);
-  let parsed = null;
-  if (content) {
-    try {
-      parsed = JSON.parse(await gzipDecode(content));
-    } catch {
-      // Corrupt payload: `clearGalaxyScans` falls back to empty
-      // defaults — the next legit upload rebuilds everything from local.
-    }
-  }
-  await writeGistData({
-    version: SCHEMA_VERSION,
-    updatedAt: new Date().toISOString(),
-    ...clearGalaxyScans(parsed, galaxy, universeId),
-  });
-  setStatus('up', new Date().toISOString());
 };
 
 // ── Test affordances ────────────────────────────────────────────────

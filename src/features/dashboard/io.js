@@ -308,10 +308,11 @@ export const triggerSync = (universeId) =>
  * Request a remote-side reset for a single galaxy within the given
  * universe. Writes `"<galaxy>:<Date.now()>"` to that universe's
  * namespaced reset tombstone so back-to-back resets of the same galaxy
- * each fire a fresh `onChanged` event. The scheduler reads the galaxy
- * id and runs `clearGistScansForGalaxy`. Pair with the local
- * `chromeStore.set(scansKeyFor(universeId), ...)` that already dropped
- * the galaxy's keys on this device.
+ * each fire a fresh `onChanged` event. The scheduler reads the galaxy id and
+ * drops that galaxy's keys from the LOCAL scans store only — galaxy scans are no
+ * longer gist-synced (§4b), so there is no remote slot to clear. Pair with the
+ * local `chromeStore.set(scansKeyFor(universeId), ...)` that already dropped the
+ * galaxy's keys on this device.
  *
  * @param {number} galaxy
  * @param {string} universeId

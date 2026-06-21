@@ -17,7 +17,6 @@ import {
   mergeGalaxyScanConfig,
   mergeReminderConfig,
   mergeDailyState,
-  clearGalaxyScans,
   mergePlayers,
   mergeOwnProfile,
 } from '../../src/sync/merge.js';
@@ -366,81 +365,6 @@ describe('mergeHistory', () => {
     // AND the new cp is appended at the end in remote's order.
     expect(merged).toEqual([l1, l2, r3]);
     expect(changed).toBe(true);
-  });
-});
-
-describe('clearGalaxyScans', () => {
-  const UNI = 's1-pl';
-
-  it('drops only the requested galaxy keys in OUR universe; preserves others + colonyHistory', () => {
-    /** @type {Record<string, ColonyHistory>} */
-    const colonyHistoryPerUniverse = { 's1-pl': [entry(7)] };
-    const keep1 = scan(1000);
-    const keep2 = scan(2000);
-    const otherUni = scan(3000);
-    /** @type {GalaxyScans} */
-    const ourSlot = {
-      '4:1': scan(500),  // dropped (galaxy 4)
-      '4:30': scan(600), // dropped (galaxy 4)
-      '5:1': keep1,      // kept (different galaxy)
-      '6:1': keep2,      // kept
-    };
-    const result = clearGalaxyScans(
-      { galaxyScansPerUniverse: { [UNI]: ourSlot, 's2-en': { '4:1': otherUni } }, colonyHistoryPerUniverse },
-      4,
-      UNI,
-    );
-    expect(result.galaxyScansPerUniverse[UNI]).toEqual({ '5:1': keep1, '6:1': keep2 });
-    // A DIFFERENT universe's slot is untouched even though it has a 4:* key.
-    expect(result.galaxyScansPerUniverse['s2-en']).toEqual({ '4:1': otherUni });
-    expect(result.colonyHistoryPerUniverse).toBe(colonyHistoryPerUniverse);
-  });
-
-  it('returns the map unchanged when our universe has no slot', () => {
-    const result = clearGalaxyScans({ colonyHistoryPerUniverse: { 's1-pl': [entry(1)] } }, 4, UNI);
-    expect(result.galaxyScansPerUniverse).toEqual({});
-  });
-
-  it('returns empty defaults for a null payload', () => {
-    const result = clearGalaxyScans(null, 4, UNI);
-    expect(result).toEqual({ galaxyScansPerUniverse: {}, colonyHistoryPerUniverse: {} });
-  });
-
-  it('returns empty defaults when galaxyScansPerUniverse is not an object', () => {
-    const result = clearGalaxyScans({ galaxyScansPerUniverse: 'nope', colonyHistoryPerUniverse: {} }, 4, UNI);
-    expect(result.galaxyScansPerUniverse).toEqual({});
-  });
-
-  it('matches by exact "${galaxy}:" prefix — galaxy 1 does NOT drop "10:*" keys', () => {
-    // Regression-lock: a naive String.startsWith on the bare digit
-    // would conflate galaxies 1 and 10. The trailing ":" in the prefix
-    // is what prevents that — this test fails the moment someone
-    // simplifies the prefix construction.
-    const k10 = scan(2);
-    const k11 = scan(3);
-    /** @type {GalaxyScans} */
-    const ourSlot = {
-      '1:1': scan(1),  // dropped (galaxy 1)
-      '10:1': k10,     // kept (galaxy 10)
-      '11:1': k11,     // kept (galaxy 11)
-    };
-    const result = clearGalaxyScans({ galaxyScansPerUniverse: { [UNI]: ourSlot } }, 1, UNI);
-    expect(result.galaxyScansPerUniverse[UNI]).toEqual({ '10:1': k10, '11:1': k11 });
-  });
-
-  it('leaves the slot untouched when the target galaxy has no keys', () => {
-    const k = scan(1);
-    /** @type {GalaxyScans} */
-    const ourSlot = { '5:1': k };
-    const result = clearGalaxyScans({ galaxyScansPerUniverse: { [UNI]: ourSlot } }, 9, UNI);
-    expect(result.galaxyScansPerUniverse[UNI]).toEqual({ '5:1': k });
-    expect(result.galaxyScansPerUniverse[UNI]['5:1']).toBe(k);
-  });
-
-  it('empty universeId touches nothing', () => {
-    const k = scan(1);
-    const result = clearGalaxyScans({ galaxyScansPerUniverse: { [UNI]: { '4:1': k } } }, 4, '');
-    expect(result.galaxyScansPerUniverse[UNI]).toEqual({ '4:1': k });
   });
 });
 

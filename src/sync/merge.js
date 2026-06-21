@@ -527,60 +527,6 @@ export const mergeGalaxyScanConfig = (local, remote) => mergeNewestConfigSlot(lo
 export const mergeReminderConfig = (local, remote) => mergeNewestConfigSlot(local, remote);
 
 /**
- * Pure: build the data slice of a gist payload that drops every
- * `${galaxy}:*` key from the GIVEN universe's scan slot while preserving the
- * other galaxies' scans in that slot, every OTHER universe's slot, and
- * `colonyHistoryPerUniverse`. Counterpart to the histogram's per-galaxy
- * "Reset" button — `mergeScans` is a UNION, so a local wipe alone would be
- * undone on the next sync round-trip; the remote side has to be wiped too.
- *
- * Per-universe (`galaxyScansPerUniverse[universeId]`): galaxy scans are
- * server-specific — `3:265` on one universe is a different planet than on
- * another — so a single global map let one server's scans bleed into another
- * on a second device (the same bug class already fixed for colony history).
- *
- * Defensive: missing or malformed `payload`, `colonyHistoryPerUniverse`, or
- * `galaxyScansPerUniverse` fall back to the empty defaults. The caller composes
- * the full gist payload by stamping `version` and `updatedAt` on top of the
- * returned slice.
- *
- * @param {unknown} payload
- * @param {number} galaxy
- * @param {string} universeId  Which universe's slot to filter. Empty string ⇒
- *   nothing to filter (no slot), the map is returned untouched.
- * @returns {{ galaxyScansPerUniverse: Record<string, GalaxyScans>, colonyHistoryPerUniverse: Record<string, ColonyHistory> }}
- */
-export const clearGalaxyScans = (payload, galaxy, universeId) => {
-  /** @type {Record<string, ColonyHistory>} */
-  let colonyHistoryPerUniverse = {};
-  /** @type {Record<string, GalaxyScans>} */
-  let galaxyScansPerUniverse = {};
-  if (payload && typeof payload === 'object') {
-    const p = /** @type {{ colonyHistoryPerUniverse?: unknown, galaxyScansPerUniverse?: unknown }} */ (payload);
-    if (p.colonyHistoryPerUniverse && typeof p.colonyHistoryPerUniverse === 'object'
-      && !Array.isArray(p.colonyHistoryPerUniverse)) {
-      colonyHistoryPerUniverse = /** @type {Record<string, ColonyHistory>} */ (p.colonyHistoryPerUniverse);
-    }
-    if (p.galaxyScansPerUniverse && typeof p.galaxyScansPerUniverse === 'object'
-      && !Array.isArray(p.galaxyScansPerUniverse)) {
-      galaxyScansPerUniverse = /** @type {Record<string, GalaxyScans>} */ (p.galaxyScansPerUniverse);
-    }
-  }
-  // Filter only the target universe's slot; leave every other universe alone.
-  const slot = universeId ? galaxyScansPerUniverse[universeId] : undefined;
-  if (slot && typeof slot === 'object') {
-    const prefix = galaxy + ':';
-    /** @type {GalaxyScans} */
-    const filtered = {};
-    for (const key of /** @type {(keyof GalaxyScans)[]} */ (Object.keys(slot))) {
-      if (!key.startsWith(prefix)) filtered[key] = slot[key];
-    }
-    galaxyScansPerUniverse = { ...galaxyScansPerUniverse, [universeId]: filtered };
-  }
-  return { galaxyScansPerUniverse, colonyHistoryPerUniverse };
-};
-
-/**
  * @typedef {import('../state/dailyActions.js').DailyState} DailyState
  */
 
