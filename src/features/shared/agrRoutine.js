@@ -43,19 +43,29 @@ export const classifyRoutineFailure = (hasRoutineEl) =>
  * maps to its own labels.
  *
  *   - `'prepared'`   — fleet2 is up; the caller's next tap can dispatch.
- *   - `'noShips'`    — routine present but `_check_1`/`_check_2` (nothing to send).
+ *   - `'noShips'`    — routine present but `_check_1`/`_check_2` (nothing to
+ *     send). Only possible with `requireCheckReady` (expeditions).
  *   - `'routineOff'` — `#ago_routine_N` absent ⇒ the AGR routine is disabled.
  *   - `'timeout'`    — present but never became ready in time.
  *
- * @param {{ routineId: number, owner: string }} opts
+ * `requireCheckReady` (default true) gates the click on AGR's expedition-style
+ * `.ago_routine_check` widget reading `_check_3` (ready). Routines WITHOUT that
+ * widget — fleet save (6) — pass `false`: the routine is clickable as soon as
+ * its element exists, and whether AGR then transitions to fleet2 is the real
+ * readiness signal (a no-fleet body just never reaches fleet2 ⇒ `'timeout'`).
+ *
+ * @param {{ routineId: number, owner: string, requireCheckReady?: boolean }} opts
  * @returns {Promise<'prepared' | 'noShips' | 'routineOff' | 'timeout'>}
  */
-export const prepareViaRoutine = async ({ routineId, owner }) => {
+export const prepareViaRoutine = async ({ routineId, owner, requireCheckReady = true }) => {
   const id = `ago_routine_${routineId}`;
   const routine = await waitFor(
     () => {
       const el = document.getElementById(id);
-      return el?.querySelector('.ago_routine_check') ? el : null;
+      if (!el) return null;
+      // With the expedition-style check widget, wait for it to exist; without
+      // one (fleet save), the routine element's mere presence means "ready".
+      return requireCheckReady ? (el.querySelector('.ago_routine_check') ? el : null) : el;
     },
     { timeoutMs: ROUTINE_POLL_TIMEOUT_MS, intervalMs: ROUTINE_POLL_INTERVAL_MS },
   );
@@ -66,9 +76,11 @@ export const prepareViaRoutine = async ({ routineId, owner }) => {
       : 'timeout';
   }
 
-  const check = routine.querySelector('.ago_routine_check');
-  // Anything other than the "ready" state (`_check_3`) means no fillable fleet.
-  if (!check?.classList.contains('ago_routine_check_3')) return 'noShips';
+  if (requireCheckReady) {
+    const check = routine.querySelector('.ago_routine_check');
+    // Anything other than the "ready" state (`_check_3`) means no fillable fleet.
+    if (!check?.classList.contains('ago_routine_check_3')) return 'noShips';
+  }
 
   // Ready. Claim BEFORE the transition so the follow-up dispatch tap passes the
   // ownership gate. The 50 ms second click shakes loose a half-idled AGR.

@@ -121,7 +121,7 @@ const navigateToBody = (t) => {
 const paint = () => {
   if (!btn || bare.length === 0) return;
   const sub = bare.length > 1 ? `${bare[0].coords} +${bare.length - 1}` : bare[0].coords;
-  btn.paintLines('g', labelLines({ main: 'Re-Save', sub, hint: 'hold to dismiss' }));
+  btn.paintLines('g', labelLines({ main: 'Re-Save', sub, hint: '(hold to dismiss)' }));
 };
 
 /**
@@ -147,7 +147,7 @@ const paintBusy = () =>
   btn?.paintLines('g', labelLines({ main: 'Wait…', sub: bare[0]?.coords, hint: '' }));
 /** Prepared → invite the second tap. @param {{ coords: string }} t */
 const paintReady = (t) =>
-  btn?.paintLines('g', labelLines({ main: '→ Send FS', sub: t.coords, hint: 'tap to send' }));
+  btn?.paintLines('g', labelLines({ main: 'Send FS', sub: t.coords, hint: '' }));
 /** Dispatched. @param {{ coords: string }} t */
 const paintSent = (t) =>
   btn?.paintLines('g', labelLines({ main: 'Saved!', sub: t.coords, hint: '' }));
@@ -160,7 +160,7 @@ const paintFsOff = () =>
  *   - Off a bare body's fleetdispatch → ack ("I'm on it") + navigate to the
  *     primary bare body.
  *   - On a bare body's fleetdispatch, fleet2 NOT up yet → prepare AGR's
- *     fleet-save routine (6) and flip to "→ Send FS".
+ *     fleet-save routine (6) and flip to "Send FS".
  *   - On a bare body's fleetdispatch, fleet2 up → fire the dispatch, then drop
  *     the watch (the fleet is back in motion).
  *
@@ -171,16 +171,20 @@ const handleGuardianTap = async () => {
   const t = bare[0];
   if (!t) return;
 
-  const onFd = location.search.includes('component=fleetdispatch');
-  const here = onFd ? currentBodyCoords() : '';
-  const match = here ? bare.find((b) => b.coords === here) : undefined;
-
-  // Off a bare body's fleetdispatch → "I'm on it" + navigate to the primary.
-  if (!match) {
+  // Off a fleetdispatch screen → "I'm on it" + navigate to the primary bare body.
+  if (!location.search.includes('component=fleetdispatch')) {
     ackFn(t.bodyKey);
     navigateToBody(t);
     return;
   }
+
+  // On fleetdispatch → drive the fleet-save for the body we're on. Like the
+  // expedition button, being on fleetdispatch is enough to proceed — we do NOT
+  // gate on a coords match (AGR's routine itself is the real "is there a fleet
+  // here to save?" check). The active-body coords just pick WHICH bare entry to
+  // clear on success; fall back to the primary when they can't be read.
+  const here = currentBodyCoords();
+  const target = bare.find((b) => b.coords === here) || t;
 
   busy = true;
   try {
@@ -188,18 +192,24 @@ const handleGuardianTap = async () => {
     if (document.querySelector(GAME.FD_DISPATCH) && document.getElementById('ago_fleet2_main')) {
       const r = dispatchPrepared({ owner: OWNER_FS });
       if (r === 'sent') {
-        paintSent(match);
-        dismissFn(match.bodyKey, match.landedAt); // saved → drop the watch
-        removeManualLandedFs(match.bodyKey); // and clear a manual mark for it
+        paintSent(target);
+        dismissFn(target.bodyKey, target.landedAt); // saved → drop the watch
+        removeManualLandedFs(target.bodyKey); // and clear a manual mark for it
       }
       return; // 'foreign' / 'notReady' → leave the form be; the player can retry
     }
     // Phase 2 — click AGR's fleet-save routine and wait for the transition.
+    // Fleet save has no expedition-style "no ships" check states, so don't
+    // require `ago_routine_check_3` — clicking routine 6 when present is enough.
     paintBusy();
-    const state = await prepareViaRoutine({ routineId: FS_ROUTINE_ID, owner: OWNER_FS });
-    if (state === 'prepared') paintReady(match);
+    const state = await prepareViaRoutine({
+      routineId: FS_ROUTINE_ID,
+      owner: OWNER_FS,
+      requireCheckReady: false,
+    });
+    if (state === 'prepared') paintReady(target);
     else if (state === 'routineOff') paintFsOff();
-    else paint(); // 'noShips' (nothing to save here) / 'timeout' → idle face
+    else paint(); // 'timeout' → idle face
   } finally {
     busy = false;
   }
@@ -216,19 +226,19 @@ const render = () => {
       installButtonChrome();
       btn = createButton({
         id: BTN_ID,
-        title: 'Bare fleet',
+        title: 'Fleet save',
         ringId: 'oge-guardian-ring',
         size: fabSize,
         // Match the 1-zone command buttons (sendExpedition / sendLifeform) so the
         // label reads at the same size across the FAB cluster.
         fontScale: 0.18,
-        module: { id: 'guard', name: 'Bare fleet', color: RIM, glyph: BANG_GLYPH },
+        module: { id: 'guard', name: 'Fleet save', color: RIM, glyph: BANG_GLYPH },
         holdMs: DISMISS_HOLD_MS,
         zones: [
           {
             key: 'g',
             id: 'oge-guardian-z',
-            ariaLabel: 'Bare fleet',
+            ariaLabel: 'Fleet save',
             bg: RIM,
             glyph: BANG_GLYPH,
             onTap: () => void handleGuardianTap(),
