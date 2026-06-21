@@ -133,7 +133,7 @@ const paint = () => {
   const sub = bare.length > 1 ? `${bare[0].coords} +${bare.length - 1}` : bare[0].coords;
   const onDispatch = location.search.includes('component=fleetdispatch');
   btn.paintLines('g', labelLines({
-    main: onDispatch ? 'Re-Save' : 'On watch',
+    main: onDispatch ? 'Re-Save' : 'Watch',
     sub,
     hint: '(hold to dismiss)',
   }));
@@ -141,7 +141,7 @@ const paint = () => {
 
 /** ACK confirmed → invite the second (navigating) tap. @param {{ coords: string }} t */
 const paintAcked = (t) =>
-  btn?.paintLines('g', labelLines({ main: 'Got it ✓', sub: t.coords, hint: 'tap → go save' }));
+  btn?.paintLines('g', labelLines({ main: 'Acked!', sub: t.coords, hint: 'tap → go save' }));
 
 /**
  * Re-evaluate the pulse. ON once we've gone the configured ACK interval with no
@@ -293,19 +293,19 @@ const render = () => {
       installButtonChrome();
       btn = createButton({
         id: BTN_ID,
-        title: 'Fleet save',
+        title: 'Fleet guardian',
         ringId: 'oge-guardian-ring',
         size: fabSize,
         // Match the 1-zone command buttons (sendExpedition / sendLifeform) so the
         // label reads at the same size across the FAB cluster.
         fontScale: 0.18,
-        module: { id: 'guard', name: 'Fleet save', color: RIM, glyph: LIGHTHOUSE_GLYPH },
+        module: { id: 'guard', name: 'Fleet guardian', color: RIM, glyph: LIGHTHOUSE_GLYPH },
         holdMs: DISMISS_HOLD_MS,
         zones: [
           {
             key: 'g',
             id: 'oge-guardian-z',
-            ariaLabel: 'Fleet save',
+            ariaLabel: 'Fleet guardian',
             bg: RIM,
             glyph: LIGHTHOUSE_GLYPH,
             onTap: () => void handleGuardianTap(),

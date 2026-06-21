@@ -58,14 +58,25 @@ const cpOf = (href) => {
 
 /**
  * Resolve the body the fleetdispatch form dispatches FROM, as `g:s:p:type`.
- * Maps the page's `cp` onto the planet-list row whose planet- or moon-link
- * points at that same `cp` (the moon link carries its own cp) — giving coords
- * AND the planet/moon type. `null` off fleetdispatch or when unresolved.
+ * PRIMARY source: OGame's per-page `ogame-planet-coordinates` / `-type` meta
+ * tags — present on every ingame page, so the body resolves however you reached
+ * fleetdispatch. FALLBACK: map the page `cp` onto the planet-list row's
+ * planet/moon link — but the URL only carries `cp` when you arrive via a
+ * planet/moon link, NOT via the top "Fleet" menu (that empty-cp case is exactly
+ * why this used to silently show no chip). `null` off fleetdispatch or unresolved.
  *
  * @returns {{ bodyKey: string } | null}
  */
 const currentBody = () => {
   if (!location.search.includes('component=fleetdispatch')) return null;
+  const metaCoords = dense(
+    document.querySelector(GAME.META_PLANET_COORDS)?.getAttribute('content'),
+  );
+  if (/^\d+:\d+:\d+$/.test(metaCoords)) {
+    const isMoon =
+      document.querySelector(GAME.META_PLANET_TYPE)?.getAttribute('content') === 'moon';
+    return { bodyKey: `${metaCoords}:${isMoon ? 3 : 1}` };
+  }
   const cp = new URLSearchParams(location.search).get('cp') || '';
   if (!cp) return null;
   for (const row of document.querySelectorAll(GAME.SMALL_PLANET_ONLY)) {

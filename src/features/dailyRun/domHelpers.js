@@ -26,9 +26,8 @@ import { coordKey } from './pure.js';
  *  Callers filter by `data-mission-type` (read per row in {@link readInboundLegs}). */
 const SEL_INBOUND_ROWS =
   '#eventContent tr.eventFleet[data-return-flight="false"]';
-/** OGame per-page meta tags for the active body. */
-const SEL_META_COORDS = 'meta[name="ogame-planet-coordinates"]';
-const SEL_META_TYPE = 'meta[name="ogame-planet-type"]';
+// OGame per-page meta tags for the active body live in `lib/gameDom.js`
+// (GAME.META_PLANET_COORDS / GAME.META_PLANET_TYPE) — shared with manualFsMark.
 
 /**
  * @typedef {import('../../state/dailyRunRoutes.js').TargetCoord} TargetCoord
@@ -61,12 +60,12 @@ const parseCoordsText = (txt) => {
  */
 export const readCurrentBody = () => {
   const coordsMeta = document
-    .querySelector(SEL_META_COORDS)
+    .querySelector(GAME.META_PLANET_COORDS)
     ?.getAttribute('content');
   const c = parseCoordsText(coordsMeta);
   if (c) {
     const typeMeta = document
-      .querySelector(SEL_META_TYPE)
+      .querySelector(GAME.META_PLANET_TYPE)
       ?.getAttribute('content');
     const type = typeMeta === 'moon' ? TARGET_MOON : TARGET_PLANET;
     return { ...c, type };

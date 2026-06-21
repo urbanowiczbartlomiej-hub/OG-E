@@ -72,6 +72,16 @@ export const GAME = {
    */
   MOON_LINK: 'a.moonlink',
 
+  /**
+   * OGame's per-page meta tags for the body the player is currently on —
+   * present on EVERY ingame page regardless of how it was reached. Unlike the
+   * URL `cp` (which only the planet/moon links carry, NOT the top "Fleet" menu),
+   * these always identify the active body. Coordinates are `"g:s:p"`; type is
+   * `"planet"` | `"moon"`. Read by `features/dailyRun` and `features/manualFsMark`.
+   */
+  META_PLANET_COORDS: 'meta[name="ogame-planet-coordinates"]',
+  META_PLANET_TYPE: 'meta[name="ogame-planet-type"]',
+
   // ── Event list (`#eventContent`) ───────────────────────────────────
   EVENT_CONTENT: '#eventContent',
   /** One fleet movement row, keyed by its `eventRow-<n>` id. */

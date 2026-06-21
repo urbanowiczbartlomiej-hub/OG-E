@@ -642,9 +642,9 @@ export const installReminderConfig = ({ getUniverseId }) => {
     row('Ship threshold', thresholdInput, 'total ships that count as a "big" fleet'),
     row('Min flight time', minFlightInput, 'minutes-first, e.g. 10m · 0 = off'),
     block('Reminder schedule', fsEditor.element, 'each relative to landing (− before, 0 at, + after)'),
-    row('Guardian — enable', guardianEnableInput, 'push when a landed fleet-save sits exposed'),
-    row('Guardian interval', guardianIntervalInput, 'minutes after landing to fire if still bare'),
-    row('Guardian — ACK interval', guardianAckIntervalInput, 'minutes idle (no reload) before the button pulses for an ACK'),
+    row('Fleet guardian — enable', guardianEnableInput, 'push when a landed fleet-save sits exposed'),
+    row('Fleet guardian — interval', guardianIntervalInput, 'minutes after landing to fire if still bare'),
+    row('Fleet guardian — ACK interval', guardianAckIntervalInput, 'minutes idle (no reload) before the button pulses for an ACK'),
   ], fsTplEditor.element);
 
   body.appendChild(tabBar);
@@ -743,12 +743,12 @@ export const installReminderConfig = ({ getUniverseId }) => {
     }
     const guardianIntervalMin = parseInt(guardianIntervalInput.value, 10);
     if (!Number.isFinite(guardianIntervalMin) || guardianIntervalMin < 1) {
-      setStatus('Guardian interval must be a whole number of minutes (≥ 1).', '#e66');
+      setStatus('Fleet guardian interval must be a whole number of minutes (≥ 1).', '#e66');
       return null;
     }
     const guardianAckIntervalMin = parseInt(guardianAckIntervalInput.value, 10);
     if (!Number.isFinite(guardianAckIntervalMin) || guardianAckIntervalMin < 1) {
-      setStatus('Guardian ACK interval must be a whole number of minutes (≥ 1).', '#e66');
+      setStatus('Fleet guardian ACK interval must be a whole number of minutes (≥ 1).', '#e66');
       return null;
     }
     // Never-enters net: the guardian arms on ENTRY, so a player who never
