@@ -51,6 +51,7 @@ import {
   COL_MAX_SYSTEM,
   COL_MAX_GALAXY,
 } from '../../domain/rules.js';
+import { countFreeTargetSlots } from '../../domain/apiOccupancy.js';
 
 /**
  * @typedef {import('../../state/scans.js').GalaxyScans} GalaxyScans
@@ -274,6 +275,122 @@ export const pickCandidateInView = (scans, registry, targets, view, now, index =
   return null;
 };
 
+/**
+ * Compact human label for a target-position list: sort ascending and collapse
+ * consecutive runs into `a-b`, joined by `·`. Keeps the button hint terse even
+ * when the user configured a range (e.g. `[4,5,6,8,9,10,11,12]` → `4-6·8-12`;
+ * `[4,6,8,12]` → `4·6·8·12`). Pure; assumes a non-empty, already-deduped list.
+ *
+ * @param {number[]} positions
+ * @returns {string}
+ */
+export const formatTargetHint = (positions) => {
+  const sorted = [...positions].sort((a, b) => a - b);
+  /** @type {string[]} */
+  const runs = [];
+  let start = sorted[0];
+  let prev = sorted[0];
+  for (let i = 1; i <= sorted.length; i++) {
+    const n = sorted[i];
+    if (n === prev + 1) {
+      prev = n;
+      continue;
+    }
+    runs.push(start === prev ? `${start}` : `${start}-${prev}`);
+    start = n;
+    prev = n;
+  }
+  return runs.join('·');
+};
+
+/**
+ * Format a free-slot count for the sub-label. EXACT (never a `k` shorthand) so a
+ * single send / skip visibly drops it by one — the whole point of the live
+ * counter. Thousands are grouped with a narrow no-break space (`38 421`), the
+ * Polish/SI convention, kept non-breaking so the number never wraps mid-group.
+ *
+ * @param {number} n
+ * @returns {string}
+ */
+export const formatFreeCount = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+
+/**
+ * Position (last `:`-segment) of a `"g:s:p"` coord, or `null` if unparseable.
+ *
+ * @param {string} coord
+ * @returns {number | null}
+ */
+const posFromCoord = (coord) => {
+  const colon = coord.lastIndexOf(':');
+  if (colon < 0) return null;
+  const pos = Number(coord.slice(colon + 1));
+  return Number.isFinite(pos) ? pos : null;
+};
+
+/**
+ * How many locally-known-blocked target coords the weekly API snapshot still
+ * counts as FREE — the amount to subtract from {@link countFreeTargetSlots}'s
+ * total so the "N free" stat drops as we send / skip / discover-taken (the
+ * universe.xml feed lags up to 7 days and never sees our local actions).
+ *
+ * A coord is counted once (deduped across layers) when its position is a target
+ * AND the API snapshot doesn't already exclude it (absent from `index.occupied`)
+ * AND it is blocked by any local layer:
+ *   - the decision log (`rejected` = sent / mine / abandoned / taken / reserved),
+ *   - an in-flight registry fleet (`arrivalAt > now`),
+ *   - a live scan that observed the slot non-`empty` (fresher than the API).
+ *
+ * Note this only adjusts DOWNWARD. A slot the API marks occupied but a live scan
+ * now sees empty (API stale) is NOT added back — keeping the stat a safe
+ * lower-ish bound rather than risking an over-count. Pure.
+ *
+ * @param {import('../../domain/apiOccupancy.js').OccupancyIndex | null} index
+ * @param {number[]} targets
+ * @param {GalaxyScans} scans
+ * @param {RegistryEntry[]} registry
+ * @param {number} now  epoch-ms.
+ * @param {Set<string> | null} [rejected]  decision-log blocking coords.
+ * @returns {number}
+ */
+export const countLocalBlocksFreeInApi = (index, targets, scans, registry, now, rejected = null) => {
+  if (!index || !index.occupied) return 0;
+  if (!targets || targets.length === 0) return 0;
+  const targetSet = new Set(targets);
+  const occ = index.occupied;
+  /** @type {Set<string>} */
+  const blocked = new Set();
+  /** @param {string} coord @param {number} pos */
+  const consider = (coord, pos) => {
+    if (!targetSet.has(pos)) return;
+    if (occ.has(coord)) return; // API already excludes it from "free".
+    blocked.add(coord);
+  };
+
+  if (rejected) {
+    for (const coord of rejected) {
+      const pos = posFromCoord(coord);
+      if (pos != null) consider(coord, pos);
+    }
+  }
+  for (const r of registry) {
+    if ((r.arrivalAt || 0) <= now) continue;
+    const pos = posFromCoord(r.coords);
+    if (pos != null) consider(r.coords, pos);
+  }
+  for (const key of Object.keys(scans)) {
+    const scan = scans[/** @type {`${number}:${number}`} */ (key)];
+    const positions = scan && scan.positions;
+    if (!positions) continue;
+    for (const posStr of Object.keys(positions)) {
+      const pos = Number(posStr);
+      if (!targetSet.has(pos)) continue;
+      if (positions[pos]?.status === 'empty') continue;
+      consider(`${key}:${pos}`, pos);
+    }
+  }
+  return blocked.size;
+};
+
 // ─── Discriminated unions ────────────────────────────────────────────────
 
 /**
@@ -284,7 +401,16 @@ export const pickCandidateInView = (scans, registry, targets, view, now, index =
  * fields — was removed in §2d: the API breadth layer means there's no manual
  * galaxy-scanning frontier to drive any more.)
  *
- * @typedef {{ kind: 'idle' | 'galaxy', candidate: Coords | null }} ButtonContext
+ * `freeUniverse` is how many of the user's target positions are still free
+ * across the WHOLE universe per the API occupancy snapshot (drives the "N free"
+ * sub-label); `null` when the API index / server dims aren't available yet, so
+ * the render hides the stat rather than show a bogus zero. It is page-independent
+ * — the same on overview, galaxy or fleetdispatch — so the count is visible
+ * throughout the colonization workflow. `targetPositions` is the user's
+ * configured position list, surfaced so the render can show the terse "which
+ * positions" hint.
+ *
+ * @typedef {{ kind: 'idle' | 'galaxy', candidate: Coords | null, freeUniverse?: number | null, targetPositions?: number[] }} ButtonContext
  */
 
 /**
@@ -337,6 +463,10 @@ export const pickCandidateInView = (scans, registry, targets, view, now, index =
  * @property {import('../../domain/apiOccupancy.js').OccupancyIndex | null} [index]
  *   API occupancy index (whole-server breadth) from `features/apiContext` via
  *   the shared handoff. Omit/`null` → the picker uses live scans only.
+ * @property {{ galaxies?: number, systems?: number } | null} [serverDims]
+ *   Server grid bounds (serverData.galaxies / .systems) from the API context —
+ *   needed to turn `index.occupiedByPosition` into a whole-universe free-slot
+ *   count. Omit/`null` → the "N free" stat is hidden.
  * @property {Set<string> | null} [rejected]
  *   `"g:s:p"` coords the game's checkTarget refused this session (for slots not
  *   in the scan map), so the picker stops re-proposing them.
@@ -361,6 +491,24 @@ export const derive = (env) => {
   const farthestFirst = env.farthestFirst ?? true;
   const index = env.index ?? null;
   const rejected = env.rejected ?? null;
+
+  // Whole-universe free target-slot count from the API breadth snapshot, then
+  // adjusted DOWN by the local blocks the weekly feed can't see yet (colonies we
+  // just sent, slots we skipped, checkTarget-refused / in-flight coords) so the
+  // stat ticks down as we act. Page-independent (same on overview / galaxy /
+  // fleetdispatch), so it's computed once and returned by every branch.
+  let freeUniverse = countFreeTargetSlots(index, env.serverDims ?? null, env.targets);
+  if (freeUniverse != null) {
+    const blocks = countLocalBlocksFreeInApi(
+      index,
+      env.targets,
+      env.scans,
+      env.registry,
+      env.now,
+      rejected,
+    );
+    freeUniverse = Math.max(0, freeUniverse - blocks);
+  }
 
   // Galaxy branch — current-view priority so the coords the user is looking at
   // win over the global pick.
@@ -397,7 +545,7 @@ export const derive = (env) => {
         };
       }
     }
-    return { kind: 'galaxy', candidate };
+    return { kind: 'galaxy', candidate, freeUniverse, targetPositions: env.targets };
   }
 
   // Idle branch — anywhere else (overview, galaxy-less research, ...).
@@ -422,24 +570,36 @@ export const derive = (env) => {
       };
     }
   }
-  return { kind: 'idle', candidate };
+  return { kind: 'idle', candidate, freeUniverse, targetPositions: env.targets };
 };
 
 // ─── Pure render ──────────────────────────────────────────────────────────
 
 /**
  * Render a `ctx` to a paint instruction for the single Send zone. Pure: no DOM,
- * no window. Plain "Colonize" either way — coordinates appear only once the user
- * has tapped (the courier handler arms `colTarget`), keeping the idle view
- * minimal. The brighter rim signals a candidate is ready to aim at.
+ * no window. Primary stays "Colonize"; coordinates appear only once the user has
+ * tapped (the courier handler arms `colTarget`). The brighter rim signals a
+ * candidate is ready to aim at.
+ *
+ * Whenever target positions are configured we stack two lines under "Colonize":
+ * a "N free" sub-label — how many target slots are still open across the WHOLE
+ * universe per the API snapshot — and a terse hint listing the configured
+ * positions in parentheses. Both are page-independent, so they stay visible
+ * throughout the colonization workflow (overview, galaxy, fleetdispatch). The
+ * count line is dropped while the API context hasn't loaded (`freeUniverse ==
+ * null`), so we never flash a bogus "0 free"; the hint still shows.
  *
  * @param {ButtonContext} ctx
  * @returns {RenderResult}
  */
 export const render = (ctx) => {
-  return {
-    send: ctx.candidate
-      ? { text: 'Colonize', bg: BG_SEND_READY }
-      : { text: 'Colonize', bg: BG_SEND_IDLE },
-  };
+  const bg = ctx.candidate ? BG_SEND_READY : BG_SEND_IDLE;
+  /** @type {Paint} */
+  const send = { text: 'Colonize', bg };
+  const hasTargets = !!ctx.targetPositions && ctx.targetPositions.length > 0;
+  if (hasTargets) {
+    if (ctx.freeUniverse != null) send.subtext = `${formatFreeCount(ctx.freeUniverse)} free`;
+    send.hint = `(${formatTargetHint(/** @type {number[]} */ (ctx.targetPositions))})`;
+  }
+  return { send };
 };

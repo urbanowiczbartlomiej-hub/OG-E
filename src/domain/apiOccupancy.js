@@ -106,6 +106,10 @@
  * @typedef {object} OccupancyIndex
  * @property {Map<string, OccupiedSlot>} occupied   coordKey `"g:s:p"` → slot.
  * @property {Set<string>} ownColonies              Our own colony coords.
+ * @property {Record<number, number>} occupiedByPosition  position (1..15) →
+ *   how many planets the universe snapshot has at that position, server-wide.
+ *   Precomputed here so a whole-universe free-slot count is O(positions), not a
+ *   ~67k-cell grid scan, on the colonize button's 1 Hz repaint.
  * @property {number} [timestamp]                   universe.xml data timestamp (ms).
  */
 
@@ -310,11 +314,14 @@ export function buildOccupancyIndex(feeds = {}) {
   const occupied = new Map();
   /** @type {Set<string>} */
   const ownColonies = new Set();
+  /** @type {Record<number, number>} position (1..15) → server-wide planet count. */
+  const occupiedByPosition = {};
   const pmap = players && players.players ? players.players : {};
   const rmap = highscore && highscore.ranks ? highscore.ranks : {};
   const planets = universe && universe.planets ? universe.planets : [];
   for (const pl of planets) {
     if (!pl || !pl.coords) continue;
+    if (occupied.has(pl.coords)) continue; // dedup so the per-position tally can't double-count.
     const pid = pl.player;
     const meta = pid != null ? pmap[String(pid)] : undefined;
     const rank = pid != null ? rmap[String(pid)] : undefined;
@@ -325,9 +332,19 @@ export function buildOccupancyIndex(feeds = {}) {
       alliance: meta ? meta.alliance : undefined,
       rank: rank ? rank.position : undefined,
     });
+    // Tally the position (last `:`-segment of "g:s:p") for the whole-universe
+    // free-slot count.
+    const colon = pl.coords.lastIndexOf(':');
+    const pos = colon >= 0 ? parseInt(pl.coords.slice(colon + 1), 10) : NaN;
+    if (Number.isFinite(pos)) occupiedByPosition[pos] = (occupiedByPosition[pos] || 0) + 1;
     if (ownPlayerId != null && pid === ownPlayerId) ownColonies.add(pl.coords);
   }
-  return { occupied, ownColonies, timestamp: universe ? universe.timestamp : undefined };
+  return {
+    occupied,
+    ownColonies,
+    occupiedByPosition,
+    timestamp: universe ? universe.timestamp : undefined,
+  };
 }
 
 /**
@@ -355,6 +372,41 @@ export function isOccupied(index, coordKey) {
 export function emptyPositionsInSystem(index, galaxy, system, positions = ALL_POSITIONS) {
   const occ = index && index.occupied ? index.occupied : new Map();
   return positions.filter((p) => !occ.has(`${galaxy}:${system}:${p}`));
+}
+
+/**
+ * Count colonizable target slots still FREE across the WHOLE universe per the
+ * API occupancy snapshot: `galaxies × systems` slots exist at each target
+ * position, minus the ones the snapshot already shows occupied
+ * (`occupiedByPosition`). API-breadth only (weekly universe.xml) — it does NOT
+ * subtract our just-sent / in-flight colonies (a rounding error against a
+ * server-wide total, and not yet reflected in the weekly feed anyway).
+ *
+ * Returns `null` when the index or the server grid dimensions are unknown (so
+ * the caller can hide the stat rather than show a bogus zero), and `0` only when
+ * the target list is genuinely empty.
+ *
+ * @param {OccupancyIndex | null | undefined} index
+ * @param {{ galaxies?: number, systems?: number } | null | undefined} dims
+ *   Server grid bounds (serverData.galaxies / .systems).
+ * @param {number[]} targets   user's parsed target positions.
+ * @returns {number | null}
+ */
+export function countFreeTargetSlots(index, dims, targets) {
+  if (!index || !dims) return null;
+  const galaxies = Number(dims.galaxies);
+  const systems = Number(dims.systems);
+  if (!Number.isFinite(galaxies) || !Number.isFinite(systems) || galaxies <= 0 || systems <= 0) {
+    return null;
+  }
+  if (!targets || targets.length === 0) return 0;
+  const perPos = index.occupiedByPosition || {};
+  const slotsPerPosition = galaxies * systems;
+  let free = 0;
+  for (const p of targets) {
+    free += Math.max(0, slotsPerPosition - (perPos[p] || 0));
+  }
+  return free;
 }
 
 // --- synthetic scan map (lets domain/regions.js reason over whole-server) ---

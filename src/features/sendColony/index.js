@@ -243,6 +243,7 @@ const paintZone = (key, p) => {
  */
 const captureEnv = () => {
   const cfg = galaxyScanConfigStore.get();
+  const apiCtx = getApiContext();
   return {
     search: location.search,
     // `window.fleetDispatcher` lives in the page world and is NOT
@@ -266,7 +267,12 @@ const captureEnv = () => {
     // blocking coords (sent/mine/abandoned/taken/reserved), so the picker
     // offers — and skips — provisional candidates. The decision log is
     // persistent + (Stage 4) synced, replacing the old transient reject set.
-    index: getApiContext()?.index ?? null,
+    index: apiCtx?.index ?? null,
+    // Server grid bounds → lets derive turn occupiedByPosition into a whole-
+    // universe free-slot count for the "N free" sub-label.
+    serverDims: apiCtx?.server
+      ? { galaxies: apiCtx.server.galaxies, systems: apiCtx.server.systems }
+      : null,
     rejected: blockingCoords(colonizeDecisionsStore.get(), Date.now()),
   };
 };
@@ -735,13 +741,19 @@ const onColonizeSent = (e) => {
 };
 
 /**
- * Hold gesture (3 s) on the Send zone: manually skip the current candidate by
- * marking it `'empty_sent'` (in the ephemeral live-scan overlay) without
- * dispatching a fleet, so the picker stops proposing it for this session.
+ * Hold gesture on the Send zone: manually skip the current candidate so the
+ * picker stops proposing it (and the "N free" stat drops by one).
  *
- * Intended for unhandled game-side blocks: the position can't be colonized
- * but our data still shows it as a valid target, causing the button to stall.
- * Hold lets the player move past it without losing progress.
+ * Intended for unhandled game-side blocks: the position can't be colonized but
+ * our data still shows it as a valid target, causing the button to stall. Hold
+ * lets the player move past it without losing progress.
+ *
+ * Records a durable `taken` DECISION rather than the old `scansStore`
+ * empty_sent write. The scans-only path silently bailed for API-only candidates
+ * (systems never live-scanned have no `scans[key]` entry to mutate) — so skip
+ * appeared to do nothing on exactly the breadth-layer targets it's needed for.
+ * A decision blocks the coord regardless of any scan entry, persists, and (Stage
+ * 4) syncs. `refresh()` is explicit because the decisions store is what changed.
  *
  * @returns {void}
  */
@@ -752,28 +764,11 @@ const onSendHold = () => {
   const c = colReady && colTarget ? colTarget : null;
   if (!c) return;
 
-  const key = /** @type {`${number}:${number}`} */ (`${c.galaxy}:${c.system}`);
-  scansStore.update((prev) => {
-    const existing = prev[key];
-    if (!existing) return prev;
-    const pos = existing.positions?.[c.position];
-    if (!pos) return prev;
-    return {
-      ...prev,
-      [key]: {
-        ...existing,
-        positions: {
-          ...existing.positions,
-          [c.position]: { ...pos, status: 'empty_sent' },
-        },
-      },
-    };
-  });
-  // Bypass the 200 ms debounce — same reason as onColonizeSent.
-  flushScansStore();
+  recordDecision(c.galaxy, c.system, c.position, { s: DEC_TAKEN, ts: Date.now() });
 
   colReady = false;
   colTarget = null;
+  refresh();
 };
 
 // ─── Lifecycle ─────────────────────────────────────────────────────────
@@ -829,7 +824,9 @@ export const installSendColony = () => {
       title: 'Colonization',
       ringId: 'oge-ring-col',
       size,
-      fontScale: 0.12,
+      // Matches sendExpedition / sendLifeform so the single-word labels read at
+      // the same size across the 1-zone command buttons (was 0.12 — too small).
+      fontScale: 0.18,
       module: { id: 'col', name: 'Colonization', color: BG_SEND_IDLE, glyph: LANDER_GLYPH },
       gateUntilEventBox: true,
       focusKey: FOCUS_KEY,
@@ -896,6 +893,10 @@ export const installSendColony = () => {
   const unsubGalaxyConfig = galaxyScanConfigStore.subscribe(() => refresh());
   const unsubScans = scansStore.subscribe(() => refresh());
   const unsubRegistry = registryStore.subscribe(() => refresh());
+  // The "N free" stat subtracts decision-log blocks (sent / skipped / taken /
+  // reserved), so a decision change must repaint — e.g. a manual skip writes a
+  // `taken` decision and nothing else.
+  const unsubDecisions = colonizeDecisionsStore.subscribe(() => refresh());
 
   // Bridge event listeners.
   fdCache.attach();
@@ -914,6 +915,7 @@ export const installSendColony = () => {
       unsubGalaxyConfig();
       unsubScans();
       unsubRegistry();
+      unsubDecisions();
       fdCache.detach();
       document.removeEventListener(CHECK_TARGET_RESULT_EVENT, onCheckTargetResult);
       document.removeEventListener(GALAXY_SCANNED_EVENT, onGalaxyScanned);

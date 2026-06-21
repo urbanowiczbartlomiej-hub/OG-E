@@ -12,13 +12,24 @@
 // is `state/apiCache.js`).
 
 /** @typedef {import('../../domain/apiOccupancy.js').OccupancyIndex} OccupancyIndex */
+/** @typedef {import('../../domain/apiOccupancy.js').ServerData} ServerData */
 
-/** @type {{ index: OccupancyIndex } | null} */
+/**
+ * The slice of `features/apiContext`'s built context the picker reads. Typed
+ * with domain types only (no feature→feature type coupling): the occupancy
+ * index plus the server grid bounds (`server.galaxies` / `.systems`) the
+ * whole-universe free-slot count needs. The producer may attach more fields
+ * (military, builtAt, …) — they're simply not part of this read contract.
+ *
+ * @typedef {{ index: OccupancyIndex, server?: ServerData }} ApiContextHandoff
+ */
+
+/** @type {ApiContextHandoff | null} */
 let ctx = null;
 
 /**
  * Publish the latest built context (called by `features/apiContext`).
- * @param {{ index: OccupancyIndex } | null} next
+ * @param {ApiContextHandoff | null} next
  * @returns {void}
  */
 export const setApiContext = (next) => {
@@ -28,7 +39,7 @@ export const setApiContext = (next) => {
 /**
  * Read the latest built context, or `null` if none has been built yet (the
  * picker then falls back to live-scan-only — today's behaviour).
- * @returns {{ index: OccupancyIndex } | null}
+ * @returns {ApiContextHandoff | null}
  */
 export const getApiContext = () => ctx;
 
