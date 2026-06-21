@@ -62,12 +62,13 @@ import { settingsStore } from '../../state/settings.js';
 import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
 import { reminderConfigStore } from '../../state/reminderConfig.js';
 import { writeFleetSaveIds, writeLandedFs } from '../../state/fleetSaveSet.js';
+import { readManualLandedFs } from '../../state/manualLandedFs.js';
 import { syncReminders, REMINDER_NTFY_TOKEN_KEY, isValidNtfyToken } from '../../sync/reminders.js';
 import { parseUniverseId } from '../../lib/universeId.js';
 import { debounce } from '../../lib/debounce.js';
 import { safeLS, chromeStore } from '../../lib/storage.js';
 import { GAME } from '../../lib/gameDom.js';
-import { EVENT_BOX_LOADED_EVENT } from '../../lib/ogeEvents.js';
+import { EVENT_BOX_LOADED_EVENT, MANUAL_FS_CHANGED_EVENT } from '../../lib/ogeEvents.js';
 import {
   readPending, writePending, pushPending, applyAdhocCmds, applyWaveCmds,
 } from './pending.js';
@@ -347,11 +348,14 @@ export const installReminderProducer = (opts = {}) => {
     const fsCancelById = fleetSaveCancelOffsets(universeId, now);
     const guardianDismissed = guardianDismissedLandings(universeId, now);
     const guardianAcked = guardianAckedLandings(universeId, now);
+    // The user's manual "watch this" marks — unioned into the guardian push
+    // inside syncReminders so the offline push matches the in-game button.
+    const manualLanded = readManualLandedFs();
 
     try {
       const res = await syncReminders(
         config,
-        { waveCandidates: candidates, present, adhocMutate, waveMutate, fleetSaveCandidates, fsCancelById, departingKeys, guardianDismissed, guardianAcked },
+        { waveCandidates: candidates, present, adhocMutate, waveMutate, fleetSaveCandidates, fsCancelById, departingKeys, guardianDismissed, guardianAcked, manualLanded },
         now, universeId,
       );
       if (res.ok) {
@@ -424,6 +428,13 @@ export const installReminderProducer = (opts = {}) => {
   const onEventBox = () => scheduleRun();
   document.addEventListener(EVENT_BOX_LOADED_EVENT, onEventBox);
 
+  // A manual FS mark toggled on the fleetdispatch page must reach ntfy at once
+  // — schedule its guardian push, or sweep it on un-mark. Force a run past the
+  // signature short-circuit: manual marks aren't part of the scan signature, so
+  // an ordinary debounced run could no-op them away.
+  const onManualFs = () => force();
+  document.addEventListener(MANUAL_FS_CHANGED_EVENT, onManualFs);
+
   // Force a push on any reminder-setting change so master/token edits in
   // the in-game Settings panel propagate immediately. The wave enable +
   // schedule live in the per-universe reminderConfig store — watched below.
@@ -479,6 +490,7 @@ export const installReminderProducer = (opts = {}) => {
   installed = {
     dispose: () => {
       document.removeEventListener(EVENT_BOX_LOADED_EVENT, onEventBox);
+      document.removeEventListener(MANUAL_FS_CHANGED_EVENT, onManualFs);
       unsubConfig();
       unsubScanConfig();
       unsubReminderConfig();

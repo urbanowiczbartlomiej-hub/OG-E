@@ -538,6 +538,12 @@ const resolveNtfyToken = async (configToken) => {
  *   landings as `bodyKey → landedAt`; suppresses that body's guardian push.
  * @param {Record<string, number>} [dom.guardianAcked]  Acked guardian landings as
  *   `bodyKey → ackedAt`; bumps the push to `max(landedAt, ackedAt) + interval`.
+ * @param {Array<{ bodyKey: string, markedAt: number }>} [dom.manualLanded]  The
+ *   user's MANUAL "watch this fleet" marks (`state/manualLandedFs.js`). Unioned
+ *   into the guardian push set exactly as the in-game button unions them — an
+ *   explicit override that arms the offline push for the gaps auto-detection
+ *   can't see (a fleet that never flew; a watch the user wants back). `markedAt`
+ *   plays the `landedAt` role for the fire time.
  * @param {number} now             Epoch SECONDS, injected by the caller.
  * @param {string} universeId      OGame server id; ntfy push title prefix.
  * @returns {Promise<{ ok: boolean, reason?: string, changed?: boolean, scheduled?: number, cancelled?: number, fleetSave?: FleetSaveReminder[], landedFleetSave?: LandedFleetSave[] }>}
@@ -552,7 +558,7 @@ export const syncReminders = async (config, dom, now, universeId) => {
   const {
     waveCandidates, present, adhocMutate, waveMutate,
     fleetSaveCandidates = [], fsCancelById = {}, departingKeys = new Set(),
-    guardianDismissed = {}, guardianAcked = {},
+    guardianDismissed = {}, guardianAcked = {}, manualLanded = [],
   } = dom;
 
   // Token resolution: prefer per-origin localStorage value; fall back
@@ -712,15 +718,36 @@ export const syncReminders = async (config, dom, now, universeId) => {
     // the other kinds. State-free in the gist: the queue itself is the source of
     // truth — only the local dismiss store persists.
     const guardianIntervalSec = config.guardianIntervalSec ?? GUARDIAN_INTERVAL_SEC;
-    const liveGuardian = fsActive && Boolean(config.guardianEnabled)
-      ? landedFleetSave
-          .filter((l) => guardianDismissed[l.bodyKey] !== l.landedAt)
-          .map((l) => ({
-            bodyKey: l.bodyKey,
-            coords: l.bodyKey.split(':').slice(0, 3).join(':'),
-            fireAt: Math.max(l.landedAt, guardianAcked[l.bodyKey] ?? 0) + guardianIntervalSec,
-          }))
-      : [];
+    // Bodies to watch = auto-detected landed FS (dismiss-filtered) ∪ the user's
+    // MANUAL marks. Mirrors the in-game button's union (features/reminders/
+    // guardian.js) so the loud surface and the offline push track the SAME set:
+    // manual first, then auto OVERRIDES on a clash (it carries the real landing
+    // identity/TTL). Manual marks get no dismiss filter — a dismiss removes the
+    // mark itself — but an ack still snoozes them by the interval, like auto.
+    //
+    // Gated by the guardian switch alone (master + guardianEnabled), NOT by
+    // fsEnabled: a manual mark exists precisely to cover what auto-detection
+    // (which needs fsEnabled) can't, so it must arm even with FS detection off.
+    // Auto entries are still implicitly FS-gated — `landedFleetSave` is empty
+    // unless `fsActive` — so this widens the gate for manual marks only.
+    const guardianOn = master && Boolean(config.guardianEnabled);
+    /** @type {Map<string, { bodyKey: string, landedAt: number }>} */
+    const guardianByKey = new Map();
+    if (guardianOn) {
+      for (const m of manualLanded) {
+        guardianByKey.set(m.bodyKey, { bodyKey: m.bodyKey, landedAt: m.markedAt });
+      }
+      for (const l of landedFleetSave) {
+        if (guardianDismissed[l.bodyKey] !== l.landedAt) {
+          guardianByKey.set(l.bodyKey, { bodyKey: l.bodyKey, landedAt: l.landedAt });
+        }
+      }
+    }
+    const liveGuardian = [...guardianByKey.values()].map((e) => ({
+      bodyKey: e.bodyKey,
+      coords: e.bodyKey.split(':').slice(0, 3).join(':'),
+      fireAt: Math.max(e.landedAt, guardianAcked[e.bodyKey] ?? 0) + guardianIntervalSec,
+    }));
     const guardianRes = await reconcileGuardianQueue({
       entries: liveGuardian, topic, token: ntfyToken, now, universeId, queue,
     });

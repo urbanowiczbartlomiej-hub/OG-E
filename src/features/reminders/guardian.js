@@ -18,9 +18,15 @@
 //                  back-door); the shared button's charge-sweep makes the hold a
 //                  conscious act, not a reflex.
 //
-// In-game it stays DOM-only: zero ntfy, the dismiss is in-memory (per session),
-// and the bare set follows the producer's TTL (`expiresAt`). The offline push, a
-// persistent dismiss and the budget config are later stages.
+// This feature is the loud SURFACE only — it never talks to ntfy directly. The
+// matching OFFLINE push (one escalation per bare body, at landing + interval) is
+// driven by the producer (`producer.js` → `sync/reminders` →
+// `ntfyReconciler.reconcileGuardianQueue`); the ack + dismiss taps delegate to
+// the producer's commands, which snooze or cancel it. Dismiss + ack are DURABLE,
+// self-expiring, single-device stores (`./guardianDismiss.js`); the bare set
+// follows the producer's TTL (`expiresAt`). A manual "Mark FS"
+// (`features/manualFsMark`) feeds the SAME union, arming both this button and
+// the push.
 //
 // Lives INSIDE the reminders feature (installed by `./index.js`).
 //
@@ -207,7 +213,7 @@ const paintSent = (t) =>
   btn?.paintLines('g', labelLines({ main: 'Saved!', sub: t.coords, hint: '' }));
 /** AGR's fleet-save routine is disabled — tell the user where to enable it. */
 const paintFsOff = () =>
-  btn?.paintLines('g', labelLines({ main: 'AGR FS off', sub: 'enable Fleet', hint: 'Save in AGR' }));
+  btn?.paintLines('g', labelLines({ main: 'FS off', sub: 'enable Fleet', hint: 'Save in AGR' }));
 
 /**
  * Button TAP. Two-tap fleet-save flow, mirroring sendExpedition:

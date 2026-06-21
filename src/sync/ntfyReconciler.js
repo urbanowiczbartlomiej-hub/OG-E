@@ -837,6 +837,20 @@ export const reconcileFleetSaveQueue = async ({
 export const guardianTitleFor = (universeId) => `[${universeId}] Bare fleet`;
 
 /**
+ * Whether a queue message's title is a GUARDIAN push (for ANY universe). The
+ * dashboard's cross-kind orphan sweep uses this to LEAVE guardian messages
+ * alone: the guardian is state-free in the gist (no stored ids to match a
+ * message against), so the generic "cancel anything not in our id set" sweep
+ * would otherwise tear down a live guardian push as a phantom orphan. The
+ * in-game guardian reconcile owns these by title instead. Pattern must stay in
+ * sync with {@link guardianTitleFor}'s `[<id>] Bare fleet` format.
+ *
+ * @param {string} [title]
+ * @returns {boolean}
+ */
+export const isGuardianTitle = (title) => /^\[[^\]]*\] Bare fleet$/.test(title ?? '');
+
+/**
  * Reconcile this universe's GUARDIAN slice of the queue: ONE single-slot push
  * per landed (exposed) fleet-save, fired at `fireAt` (= touchdown + interval).
  * Same idempotent reconcile as the other kinds, under a distinct title, so a

@@ -38,6 +38,7 @@ import {
 import {
   fetchScheduledMessages,
   cancelWaveReminders,
+  isGuardianTitle,
   NTFY_MAX_DELAY_SEC,
 } from '../../sync/ntfyReconciler.js';
 import { reminderBadge } from '../../domain/reminderBadge.js';
@@ -328,7 +329,7 @@ const refreshPreview = async () => {
   }
 
   const nowSec = Math.floor(Date.now() / 1000);
-  /** @type {Promise<Map<string, { id: string, time: number, message?: string }>>} */
+  /** @type {Promise<Map<string, { id: string, time: number, message?: string, title?: string }>>} */
   const ntfyP = (async () => {
     if (typeof ntfyToken !== 'string' || !ntfyToken) return new Map();
     const topic = await deriveNtfyTopic(typeof ntfyToken === 'string' ? ntfyToken : '');
@@ -369,7 +370,14 @@ const refreshPreview = async () => {
       const topic = await deriveNtfyTopic(typeof ntfyToken === 'string' ? ntfyToken : '');
       if (topic) {
         const orphanIds = [];
-        for (const id of ntfyMap.keys()) if (!ours.has(id)) orphanIds.push(id);
+        for (const [id, msg] of ntfyMap) {
+          if (ours.has(id)) continue;
+          // Guardian pushes are state-free in the gist, so they're never in
+          // `ours` — skip them by title or the sweep would cancel a live push.
+          // The in-game guardian reconcile owns their lifecycle (by title).
+          if (isGuardianTitle(msg.title)) continue;
+          orphanIds.push(id);
+        }
         if (orphanIds.length > 0) {
           orphansCancelled = await cancelWaveReminders({ ids: orphanIds, topic, token: ntfyToken });
           for (const id of orphanIds) ntfyMap.delete(id);
