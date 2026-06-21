@@ -4,6 +4,17 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.30.2] — 2026-06-21
+
+### Fixed
+
+- **Fleet-guardian reminders now appear in the dashboard.** When the guardian
+  queues a phone push for an exposed ("bare") fleet, that push is now listed in
+  the reminders preview under its own **"Fleet guardian reminders"** heading —
+  with the fire time and the fleet's coordinates — alongside your expedition,
+  ad-hoc and fleet-save reminders. Previously the push was queued on ntfy but
+  never shown there.
+
 ## [1.30.1] — 2026-06-21
 
 ### Fixed
