@@ -78,17 +78,13 @@
 //   post-send `redirectUrl` so successive dispatches hop planets.
 
 import { settingsStore } from '../../state/settings.js';
-import { safeClick, waitFor } from '../../lib/dom.js';
+import { prepareViaRoutine, dispatchPrepared } from '../shared/agrRoutine.js';
 import { GAME } from '../../lib/gameDom.js';
 import { createButton as makeButton, LABEL_CLASS } from '../shared/button.js';
 import { COMET_GLYPH } from '../shared/buttonGlyphs.js';
 import { OWNER_EXP } from '../../domain/fleetOwnership.js';
 import { isFleetCapReached } from '../../domain/fleetPlan.js';
-import {
-  installFleetOwnership,
-  claimFleet2,
-  mayCompleteFleet2,
-} from '../shared/fleetOwnership.js';
+import { installFleetOwnership } from '../shared/fleetOwnership.js';
 import { bareFleetdispatchUrl } from '../shared/fleetCourier.js';
 import { installFabSettingsLifecycle } from '../shared/fabSettingsLifecycle.js';
 import { createFleetDispatcherCache } from '../shared/fleetDispatcherCache.js';
@@ -98,14 +94,16 @@ import {
   FOCUS_VALUE,
   MAX_LABEL_MS,
   HOLD_SKIP_MS,
-  POLL_TIMEOUT_MS,
-  POLL_INTERVAL_MS,
   FOCUS_RESTORE_DELAY_MS,
   BUTTON_TEXT,
   ALL_MAXED_LABEL,
   ALL_FLEETS_LABEL,
   BG_IDLE,
   BG_MAX,
+  BG_ERROR,
+  EXP_ROUTINE_OFF_LABEL,
+  EXP_ROUTINE_OFF_HINT,
+  ROUTINE_OFF_LABEL_MS,
   buildFleetdispatchUrl,
   isGlobalExpeditionCapReached,
   isGlobalExpeditionCapReachedAfterNextSend,
@@ -270,65 +268,60 @@ export const installSendExpedition = () => {
   const paintAllMaxed = (btn) => paintCapLabel(btn, ALL_MAXED_LABEL);
 
   /**
-   * Phase 2 (fleetdispatch, fleet panel NOT yet loaded): wait for AGR's
-   * `#ago_routine_7` to exist and inspect its `.ago_routine_check` child.
-   * Three outcomes:
+   * Error label (rose) painted when a Phase 2 dispatch can't proceed because
+   * AGR's Expeditions routine is disabled (routine 7 absent). Mirrors
+   * {@link paintCapLabel} but uses the error rim, a longer dwell, and a native
+   * tooltip with the fix. Restores the idle label + colour + tooltip after
+   * {@link ROUTINE_OFF_LABEL_MS}.
    *
-   *   - `ago_routine_check_3` (ready): click the routine element — AGR
-   *     renders `#ago_fleet2_main` + the native `#dispatchFleet` button.
-   *     Then wait for both and flip the label to "Send!" so the user's
-   *     next tap issues the real send.
-   *   - `ago_routine_check_1` / `_check_2` (no ships): no expedition is
-   *     possible from here. Navigate to the next planet that still has
-   *     slots, else paint "All maxed!".
-   *   - Routine never appears within {@link POLL_TIMEOUT_MS}: give up
-   *     quietly and restore the idle label. The user can retry.
+   * @param {HTMLButtonElement} btn
+   */
+  const paintRoutineOff = (btn) => {
+    const prevTitle = btn.title;
+    setLabel(btn, EXP_ROUTINE_OFF_LABEL);
+    btn.title = EXP_ROUTINE_OFF_HINT;
+    controller?.setBg('main', BG_ERROR);
+    setTimeout(() => {
+      setLabel(btn, BUTTON_TEXT);
+      btn.title = prevTitle;
+      controller?.setBg('main', BG_IDLE);
+    }, ROUTINE_OFF_LABEL_MS);
+  };
+
+  /**
+   * Phase 2 (fleetdispatch, fleet panel NOT yet loaded): drive AGR's
+   * expeditions routine (`#ago_routine_7`) via the shared
+   * {@link prepareViaRoutine}, then map its outcome to the expedition labels:
+   *   - `'prepared'`   → flip to "Send!" so the next tap issues the real send.
+   *   - `'noShips'`    → hop to the next planet with a slot, else "All maxed!".
+   *   - `'routineOff'` → paint the "enable Expeditions in AGR" error.
+   *   - `'timeout'`    → restore the idle label quietly; the user can retry.
    *
    * @param {HTMLButtonElement} btn
    * @returns {Promise<void>}
    */
   const runPhase2 = async (btn) => {
     setLabel(btn, 'Wait...');
+    const state = await prepareViaRoutine({ routineId: 7, owner: OWNER_EXP });
 
-    const routine = await waitFor(() => {
-      const el = document.getElementById('ago_routine_7');
-      return el?.querySelector('.ago_routine_check') ? el : null;
-    }, { timeoutMs: POLL_TIMEOUT_MS, intervalMs: POLL_INTERVAL_MS });
-
-    if (!routine) {
+    if (state === 'prepared') {
+      setLabel(btn, 'Send!');
+      unlock(btn);
+      return;
+    }
+    if (state === 'routineOff') {
+      paintRoutineOff(btn);
+      unlock(btn);
+      return;
+    }
+    if (state === 'timeout') {
       setLabel(btn, BUTTON_TEXT);
       unlock(btn);
       return;
     }
 
-    const check = routine.querySelector('.ago_routine_check');
-    if (check?.classList.contains('ago_routine_check_3')) {
-      // Routine is ready — AGR prep+fire. The 50 ms delayed second click
-      // shakes loose cases where one click left AGR half-idled.
-      // Clicking the routine initiates a fleet1→fleet2 transition: claim it,
-      // so the Phase-1 dispatch tap that follows passes the ownership gate
-      // and other OG-E buttons refuse to complete this expedition.
-      claimFleet2(OWNER_EXP);
-      safeClick(routine);
-      setTimeout(() => safeClick(routine), 50);
-      setLabel(btn, 'Wait...');
-
-      const ready = await waitFor(
-        () =>
-          document.querySelector(GAME.FD_DISPATCH)
-            && document.getElementById('ago_fleet2_main')
-            ? true
-            : null,
-        { timeoutMs: POLL_TIMEOUT_MS, intervalMs: POLL_INTERVAL_MS },
-      );
-
-      setLabel(btn, ready ? 'Send!' : BUTTON_TEXT);
-      unlock(btn);
-      return;
-    }
-
-    // `_check_1` or `_check_2` → no ships here. Look for a planet that CAN
-    // still send; navigate there. If none, paint "All maxed!".
+    // 'noShips' — no expedition possible here. Hop to the next planet that
+    // still has a slot; if none, paint "All maxed!".
     setLabel(btn, 'No ships');
     const nextCp = findPlanetWithExpSlot(true);
     if (nextCp !== null) {
@@ -416,23 +409,24 @@ export const installSendExpedition = () => {
     if (dispatch && fleetPanel) {
       // Ownership gate (T5): a loaded fleet panel is NOT proof this is our
       // expedition — the player may have armed a manual send, or another
-      // OG-E button's tap-1 prepared its own fleet2. Dispatch only when the
-      // session is ours (we clicked the routine on this page) or, with no
-      // session, when the last checkTarget matches the expedition profile
-      // (position 16 + Pathfinder — AGR's routine-7 run outside our flow).
-      // Anything foreign: leave it untouched, restart from a bare
-      // fleetdispatch.
-      if (!mayCompleteFleet2(OWNER_EXP).allowed) {
+      // OG-E button's tap-1 prepared its own fleet2. dispatchPrepared sends
+      // only when the session is ours (we clicked the routine on this page) or,
+      // with no session, the last checkTarget matches the expedition profile
+      // (position 16 + Pathfinder). Anything foreign: leave it untouched and
+      // restart from a bare fleetdispatch.
+      const r = dispatchPrepared({ owner: OWNER_EXP });
+      if (r === 'foreign') {
         location.href = bareFleetdispatchUrl();
         return;
       }
-      safeClick(dispatch);
-      setLabel(btn, 'Sent!');
-      // Lock while the game processes the dispatch + its post-send nav. In
-      // the happy path OGame reloads within ~1 s; the safety timeout covers
-      // the rare case where the dispatch fails and the page stays put.
-      lock(btn);
-      setTimeout(() => unlock(btn), 3000);
+      if (r === 'sent') {
+        setLabel(btn, 'Sent!');
+        // Lock while the game processes the dispatch + its post-send nav. In
+        // the happy path OGame reloads within ~1 s; the safety timeout covers
+        // the rare case where the dispatch fails and the page stays put.
+        lock(btn);
+        setTimeout(() => unlock(btn), 3000);
+      }
       return;
     }
     lock(btn);

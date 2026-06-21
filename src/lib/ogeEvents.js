@@ -50,6 +50,8 @@ export const NTFY_CHECK_NOW_EVENT = 'oge:ntfyCheckNow';
 export const ATTACK_ALARM_TEST_EVENT = 'oge:attackAlarmTest';
 /** Daily-action state changed (rewards / merchant claimed). */
 export const DAILY_STATE_CHANGED_EVENT = 'oge:dailyStateChanged';
+/** A manual landed-FS mark was toggled on the fleet1 screen. */
+export const MANUAL_FS_CHANGED_EVENT = 'oge:manualFsChanged';
 
 // ── Fleet-courier protocol (defined in fleetProtocol.js; re-exported here so
 //    callers have one import surface for every event name) ──────────────────

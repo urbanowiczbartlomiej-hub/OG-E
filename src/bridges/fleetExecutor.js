@@ -40,6 +40,10 @@
 //                  icon (td.targetType, 1 planet · 3 moon) iff it isn't already
 //                  selected. Last resort when a fleet1 type-prime didn't take.
 //   selectMission{ mission } → selectMission iff available; data { available }
+//   zeroResources{} → write 0 into AGR's metal/crystal/deuterium/food cargo
+//                  inputs so a micro probe carries nothing.
+//   setSpeed     { step } → click the native speed `div[data-value="step"]`
+//                  (10 = 100 %); data { selected }
 //
 // @ts-check
 
@@ -355,6 +359,31 @@ const runCommand = async (fd, cmd) => {
         icon.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
       }
       return { ok: available, data: { available } };
+    }
+
+    case 'zeroResources': {
+      // Micro probe: carry nothing. Write 0 into AGR's cargo inputs with the
+      // full keystroke sequence so AGR's reactivity registers the change.
+      // #ago_food only exists on lifeform universes — fireInput no-ops if absent.
+      fireInput(GAME.AGO_METAL, 0);
+      fireInput(GAME.AGO_CRYSTAL, 0);
+      fireInput(GAME.AGO_DEUTERIUM, 0);
+      fireInput(GAME.AGO_FOOD, 0);
+      return { ok: true };
+    }
+
+    case 'setSpeed': {
+      // Force fleet speed by clicking the native speed selector's value div
+      // (10 = 100 %). The active div carries `.selected`; report whether the
+      // wanted one exists so the courier can tell "set" from "not found".
+      const step = args.step != null ? Number(args.step) : 10;
+      const link = /** @type {HTMLElement | null} */ (
+        document.querySelector(`${GAME.FD_SPEED_LINKS} div[data-value="${step}"]`)
+      );
+      if (link) {
+        link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      }
+      return { ok: !!link, data: { selected: !!link } };
     }
 
     default:

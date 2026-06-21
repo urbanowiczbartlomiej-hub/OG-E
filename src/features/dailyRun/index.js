@@ -401,6 +401,8 @@ const buildOrder = (mode) => {
         target: next,
         mission,
         owner: OWNER_FS,
+        zeroResources: true,
+        speedStep: 10,
       },
     };
   }

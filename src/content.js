@@ -80,6 +80,7 @@ import { installSettingsUi } from './features/settingsUi/index.js';
 import { installAgrLogo } from './features/agrLogo.js';
 import { installAgrGuard } from './features/agrGuard.js';
 import { installFleetdispatchShortcut } from './features/fleetdispatchShortcut.js';
+import { installManualFsMark } from './features/manualFsMark/index.js';
 import { installEventMenuHighlight } from './features/eventMenuHighlight.js';
 import { installTraderMenuHighlight } from './features/traderMenuHighlight.js';
 import { installAttackAlarm } from './features/attackAlarm/index.js';
@@ -205,6 +206,12 @@ const installDomFeatures = () => {
   // Keyboard shortcut on fleetdispatch — desktop users press
   // ArrowRight to advance through AGR/OGame's send panels.
   installFleetdispatchShortcut();
+
+  // Manual landed-FS mark — an inline chip on fleet1 to flag the fleet sitting
+  // on this body as a fleet-save (lights the badge + arms the guardian). Top
+  // frame only: fleetdispatch is the top-level page, so the MutationObserver
+  // never needs to run in OGame's embedded iframes.
+  if (window.top === window.self) installManualFsMark();
 
   // Settings panel — hooks into AGR's options menu. AGR is a hard
   // dependency; if AGR isn't present the install skips silently

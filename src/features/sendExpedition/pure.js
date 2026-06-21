@@ -108,6 +108,27 @@ export const BG_IDLE = '#4aa8ff';
 /** Rim colour for the "All maxed!" state (amber). */
 export const BG_MAX = '#fbbf24';
 
+/** Rim colour for an error state (rose) — same value sendColony uses. */
+export const BG_ERROR = '#fb7185';
+
+// ─── Routine-off diagnosis ───────────────────────────────────────────
+
+/**
+ * Transient label when AGR's Expeditions routine is OFF (routine 7 absent),
+ * so the dispatch can't be driven. Short enough to fit the label span.
+ */
+export const EXP_ROUTINE_OFF_LABEL = 'AGR exp off';
+
+/** Native tooltip spelling out the fix for {@link EXP_ROUTINE_OFF_LABEL}. */
+export const EXP_ROUTINE_OFF_HINT = 'Enable Expeditions in AGR fleet settings';
+
+/** How long the routine-off error stays before restoring idle (ms). */
+export const ROUTINE_OFF_LABEL_MS = 4000;
+
+// The "why did the routine wait fail?" classifier moved to the shared
+// `features/shared/agrRoutine.js` (`classifyRoutineFailure`) — the guardian's
+// fleet-save routine needs the same absent-vs-timeout split.
+
 // ─── Pure helpers ────────────────────────────────────────────────────
 
 /**

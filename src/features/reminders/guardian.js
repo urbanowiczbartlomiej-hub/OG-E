@@ -9,26 +9,32 @@
 // feature is purely the loud SURFACE on top: ONE floating warning button while
 // any tracked fleet sits bare —
 //
-//   - TAP        → navigate to that body (go re-save it; moon vs planet picked
-//                  from the bodyKey `type`);
+//   - TAP        → off the bare body: navigate to it (moon vs planet picked
+//                  from the bodyKey `type`). On the bare body's fleetdispatch:
+//                  a two-tap AGR fleet-save (routine 6) mirroring the expedition
+//                  button — first tap prepares, second dispatches — then the
+//                  watch is dropped (the fleet is back in motion).
 //   - LONG-PRESS → dismiss this landing (the "fleet is gone / I've got it"
 //                  back-door); the shared button's charge-sweep makes the hold a
 //                  conscious act, not a reflex.
 //
-// Etap 1 is DOM-only: zero ntfy, the dismiss is in-memory (per session), and the
-// bare set follows the producer's TTL (`expiresAt`). The offline push, a
-// persistent dismiss and the budget config are Etap 2/3.
+// In-game it stays DOM-only: zero ntfy, the dismiss is in-memory (per session),
+// and the bare set follows the producer's TTL (`expiresAt`). The offline push, a
+// persistent dismiss and the budget config are later stages.
 //
 // Lives INSIDE the reminders feature (installed by `./index.js`).
 //
 // @see ../../state/fleetSaveSet.js — readLandedFs() (the producer's output).
 
-import { EVENT_BOX_LOADED_EVENT } from '../../lib/ogeEvents.js';
+import { EVENT_BOX_LOADED_EVENT, MANUAL_FS_CHANGED_EVENT } from '../../lib/ogeEvents.js';
 import { GAME } from '../../lib/gameDom.js';
 import { createButton, labelLines } from '../shared/button.js';
 import { installButtonChrome } from '../shared/buttonChrome.js';
+import { prepareViaRoutine, dispatchPrepared } from '../shared/agrRoutine.js';
+import { OWNER_FS } from '../../domain/fleetOwnership.js';
 import { settingsStore } from '../../state/settings.js';
 import { readLandedFs } from '../../state/fleetSaveSet.js';
+import { readManualLandedFs, removeManualLandedFs } from '../../state/manualLandedFs.js';
 import { guardianDismissedLandings } from './guardianDismiss.js';
 
 /** OG-E's own button id (not a game contract). */
@@ -37,6 +43,8 @@ const BTN_ID = 'oge-guardian-btn';
 const DISMISS_HOLD_MS = 1500;
 /** Warning rim/glow colour — orange (the dome gradient shades it). */
 const RIM = '#e67e22';
+/** AGR's fleet-save routine id (the guardian's send action). */
+const FS_ROUTINE_ID = 6;
 
 /**
  * Simple exclamation-mark glyph — inner markup of a `0 0 64 64` SVG painted in
@@ -72,6 +80,8 @@ let universeId = '';
 let fabOn = false;
 /** Current FAB diameter (settings-driven), shared with the command modules. */
 let fabSize = 56;
+/** Guard against re-entrant taps while a fleet-save send is in flight. */
+let busy = false;
 
 /** @param {string|null|undefined} s @returns {string} dense `g:s:p` */
 const dense = (s) => (s || '').replace(/[\s[\]]/g, '');
@@ -122,7 +132,77 @@ const dismissPrimary = () => {
   const t = bare[0];
   if (!t) return;
   dismissFn(t.bodyKey, t.landedAt);
+  removeManualLandedFs(t.bodyKey); // hold = "it's gone" → drop a manual mark too
   refresh();
+};
+
+/** Active body's coords on the current page (dense `g:s:p`), or '' if unknown. */
+const currentBodyCoords = () =>
+  dense(
+    document.querySelector(GAME.ACTIVE_PLANET)?.querySelector(GAME.PLANET_KOORDS)?.textContent,
+  );
+
+/** "Wait…" while AGR's routine is being driven. */
+const paintBusy = () =>
+  btn?.paintLines('g', labelLines({ main: 'Wait…', sub: bare[0]?.coords, hint: '' }));
+/** Prepared → invite the second tap. @param {{ coords: string }} t */
+const paintReady = (t) =>
+  btn?.paintLines('g', labelLines({ main: '→ Send FS', sub: t.coords, hint: 'tap to send' }));
+/** Dispatched. @param {{ coords: string }} t */
+const paintSent = (t) =>
+  btn?.paintLines('g', labelLines({ main: 'Saved!', sub: t.coords, hint: '' }));
+/** AGR's fleet-save routine is disabled — tell the user where to enable it. */
+const paintFsOff = () =>
+  btn?.paintLines('g', labelLines({ main: 'AGR FS off', sub: 'enable Fleet', hint: 'Save in AGR' }));
+
+/**
+ * Button TAP. Two-tap fleet-save flow, mirroring sendExpedition:
+ *   - Off a bare body's fleetdispatch → ack ("I'm on it") + navigate to the
+ *     primary bare body.
+ *   - On a bare body's fleetdispatch, fleet2 NOT up yet → prepare AGR's
+ *     fleet-save routine (6) and flip to "→ Send FS".
+ *   - On a bare body's fleetdispatch, fleet2 up → fire the dispatch, then drop
+ *     the watch (the fleet is back in motion).
+ *
+ * @returns {Promise<void>}
+ */
+const handleGuardianTap = async () => {
+  if (busy) return;
+  const t = bare[0];
+  if (!t) return;
+
+  const onFd = location.search.includes('component=fleetdispatch');
+  const here = onFd ? currentBodyCoords() : '';
+  const match = here ? bare.find((b) => b.coords === here) : undefined;
+
+  // Off a bare body's fleetdispatch → "I'm on it" + navigate to the primary.
+  if (!match) {
+    ackFn(t.bodyKey);
+    navigateToBody(t);
+    return;
+  }
+
+  busy = true;
+  try {
+    // Phase 1 — fleet2 already prepared → fire the fleet save.
+    if (document.querySelector(GAME.FD_DISPATCH) && document.getElementById('ago_fleet2_main')) {
+      const r = dispatchPrepared({ owner: OWNER_FS });
+      if (r === 'sent') {
+        paintSent(match);
+        dismissFn(match.bodyKey, match.landedAt); // saved → drop the watch
+        removeManualLandedFs(match.bodyKey); // and clear a manual mark for it
+      }
+      return; // 'foreign' / 'notReady' → leave the form be; the player can retry
+    }
+    // Phase 2 — click AGR's fleet-save routine and wait for the transition.
+    paintBusy();
+    const state = await prepareViaRoutine({ routineId: FS_ROUTINE_ID, owner: OWNER_FS });
+    if (state === 'prepared') paintReady(match);
+    else if (state === 'routineOff') paintFsOff();
+    else paint(); // 'noShips' (nothing to save here) / 'timeout' → idle face
+  } finally {
+    busy = false;
+  }
 };
 
 /**
@@ -151,12 +231,7 @@ const render = () => {
             ariaLabel: 'Bare fleet',
             bg: RIM,
             glyph: BANG_GLYPH,
-            onTap: () => {
-              const t = bare[0];
-              if (!t) return;
-              ackFn(t.bodyKey); // tapping = "I'm on it" → snooze the push
-              navigateToBody(t);
-            },
+            onTap: () => void handleGuardianTap(),
             onHold: dismissPrimary,
           },
         ],
@@ -180,17 +255,28 @@ const render = () => {
 const refresh = () => {
   const now = Math.floor(Date.now() / 1000);
   const dismissed = universeId ? guardianDismissedLandings(universeId, now) : {};
-  bare = readLandedFs()
-    .filter((e) => Number(e.expiresAt) > now && dismissed[e.bodyKey] !== e.landedAt)
-    .map((e) => {
-      const parts = String(e.bodyKey).split(':');
-      return {
-        bodyKey: e.bodyKey,
-        coords: parts.slice(0, 3).join(':'),
-        type: Number(parts[3]) || 1,
-        landedAt: e.landedAt,
-      };
-    });
+  // Producer's auto set (TTL- + dismiss-filtered) ∪ the user's MANUAL marks (no
+  // TTL, no dismiss filter — an explicit override). Auto wins on a clash: it
+  // carries the real landing `landedAt`/TTL identity.
+  /** @type {Map<string, { bodyKey: string, landedAt: number }>} */
+  const byKey = new Map();
+  for (const e of readManualLandedFs()) {
+    byKey.set(e.bodyKey, { bodyKey: e.bodyKey, landedAt: e.markedAt });
+  }
+  for (const e of readLandedFs()) {
+    if (Number(e.expiresAt) > now && dismissed[e.bodyKey] !== e.landedAt) {
+      byKey.set(e.bodyKey, { bodyKey: e.bodyKey, landedAt: e.landedAt });
+    }
+  }
+  bare = [...byKey.values()].map((e) => {
+    const parts = String(e.bodyKey).split(':');
+    return {
+      bodyKey: e.bodyKey,
+      coords: parts.slice(0, 3).join(':'),
+      type: Number(parts[3]) || 1,
+      landedAt: e.landedAt,
+    };
+  });
   render();
 };
 
@@ -232,9 +318,13 @@ export const installGuardian = ({ dismiss, ack, universeId: uid } = {}) => {
   });
 
   document.addEventListener(EVENT_BOX_LOADED_EVENT, refresh);
+  // A manual mark toggled on fleet1 should arm/disarm the guardian at once,
+  // not wait for the next event-box load (both ride the same fleetdispatch page).
+  document.addEventListener(MANUAL_FS_CHANGED_EVENT, refresh);
   refresh();
   installed = () => {
     document.removeEventListener(EVENT_BOX_LOADED_EVENT, refresh);
+    document.removeEventListener(MANUAL_FS_CHANGED_EVENT, refresh);
     unsubSettings();
     if (btn) {
       btn.dispose();

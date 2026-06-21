@@ -128,6 +128,12 @@ export const GAME = {
   FD_ALL_RESOURCES: '#allresources',
   /** "Select all ships" control (step 1 fallback to `.send_all a`). */
   FD_SEND_ALL: '#sendall',
+  /**
+   * Native fleet2 speed selector container — holds `div[data-value="1".."10"]`
+   * (10 = 100 %). Clicking a value div selects that speed and gives it
+   * `.selected`. Used to force a micro probe to full speed. Native OGame control.
+   */
+  FD_SPEED_LINKS: '#speedLinks',
 
   // ── Native fleet2 target coord inputs (`td.targetCoords`) ──────────────
   // The game's OWN target row on step 2. We normally aim via AGR's fleet1
@@ -169,6 +175,17 @@ export const GAME = {
   AGO_TYPE_PLANET: '#ago_type .planet',
   /** AGR moon target-type span (ago-data type:3, action:42). */
   AGO_TYPE_MOON: '#ago_type .moon',
+  // AGR fleet2 cargo inputs — written to 0 (with the keystroke sequence) so a
+  // micro probe carries nothing. `#ago_food` exists only on lifeform universes;
+  // the executor's setter no-ops when a selector matches nothing. AGR-owned ids.
+  /** AGR metal cargo input (fleet2). */
+  AGO_METAL: '#ago_metal',
+  /** AGR crystal cargo input (fleet2). */
+  AGO_CRYSTAL: '#ago_crystal',
+  /** AGR deuterium cargo input (fleet2). */
+  AGO_DEUTERIUM: '#ago_deuterium',
+  /** AGR food cargo input (fleet2; lifeform universes only). */
+  AGO_FOOD: '#ago_food',
 
   // ── AGR presence probe (top-bar chrome) ────────────────────────────
   // AGR injects its menu-toggle button into OGame's top bar on every game

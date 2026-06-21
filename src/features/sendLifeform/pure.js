@@ -310,7 +310,7 @@ export const buildLfResearchUrl = (href) =>
 /**
  * Single-zone paint instruction (same shape sendColony uses).
  *
- * @typedef {{ text: string, bg: string, subtext?: string, hint?: string, dim?: boolean, capDot?: boolean }} Paint
+ * @typedef {{ text: string, bg: string, subtext?: string, hint?: string, dim?: boolean }} Paint
  */
 
 /**
@@ -410,14 +410,13 @@ const systemScan = (scans, c) =>
  */
 export const render = (ctx) => {
   const base = renderPhase(ctx);
-  // Non-blocking cap badge laid over whatever the phase shows: a dot (capDot)
-  // plus the cap number, so the user KNOWS they're maxed while the button
-  // still fires real sends. The "N+" reads "max reached, possibly over".
-  // The number rides the bottom hint line when the phase already owns the
-  // subtext (e.g. a `[g:s]` target); otherwise it takes the subtext itself.
+  // Non-blocking cap signal laid over whatever the phase shows: just the cap
+  // number, so the user KNOWS they're maxed while the button still fires real
+  // sends. The "N+" reads "max reached, possibly over". It rides the bottom
+  // hint line when the phase already owns the subtext (e.g. a `[g:s]` target);
+  // otherwise it takes the subtext itself.
   if (ctx.cap) {
     const label = `${ctx.cap.max}+`;
-    base.capDot = true;
     if (base.subtext) base.hint = label;
     else base.subtext = label;
   }

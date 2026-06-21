@@ -44,6 +44,7 @@
 import { settingsStore } from '../../state/settings.js';
 import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
 import { readFleetSaveIds, readLandedFs } from '../../state/fleetSaveSet.js';
+import { readManualLandedFs } from '../../state/manualLandedFs.js';
 import { readBadgeCache, writeBadgeCache, clearBadgeCache } from '../../state/badgeCache.js';
 import { injectStyle, waitFor } from '../../lib/dom.js';
 import { debounce } from '../../lib/debounce.js';
@@ -386,9 +387,12 @@ const fsIdSet = () => {
 };
 
 /**
- * Body keys with a LANDED (exposed) fleet-save, filtered to the still-unexpired
- * ones (the producer publishes `expiresAt`; we drop the rest here so the orange
- * flag self-clears even between syncs). Gated like {@link fsIdSet}.
+ * Body keys with a LANDED (exposed) fleet-save: the producer's auto set (filtered
+ * to still-unexpired entries — it publishes `expiresAt`, we drop the rest here so
+ * the orange flag self-clears even between syncs, gated like {@link fsIdSet}) in
+ * UNION with the user's MANUAL marks. Manual marks are an explicit override — no
+ * TTL, and NOT gated by the auto-FS toggles (the user asked for this body
+ * specifically). See `state/manualLandedFs.js`.
  *
  * @returns {Set<string>}
  */
@@ -396,6 +400,7 @@ const landedFsKeySet = () => {
   const on = settingsStore.get().remindersMasterEnabled && galaxyScanConfigStore.get().fsEnabled;
   const now = Date.now() / 1000;
   const keys = on ? readLandedFs().filter((e) => Number(e.expiresAt) > now).map((e) => e.bodyKey) : [];
+  for (const e of readManualLandedFs()) keys.push(e.bodyKey);
   return new Set(keys);
 };
 

@@ -82,6 +82,10 @@ const POLL_MS = 100;
  * @property {Target} target
  * @property {number} mission
  * @property {'all'} [resources]  load all resources on step 2 when set.
+ * @property {boolean} [zeroResources]  zero the cargo inputs on step 2 (a micro
+ *   probe carries nothing). Best-effort via the executor.
+ * @property {number} [speedStep]  fleet speed step 1–10 (10 = 100 %) to force on
+ *   step 2. Best-effort via the executor.
  * @property {string} [owner]  OWNER_* id (domain/fleetOwnership.js) of the
  *   calling button. When set, select() refuses to complete a fleet2 state
  *   the owner did not create (reason `'foreign'`) and claims the ownership
@@ -471,6 +475,10 @@ const armMissionAndWaitReady = async (order) => {
   if (!m || !m.ok) return { ok: false, reason: 'mission' };
 
   if (order.resources === 'all') clickAllResources();
+  // Micro probe: carry nothing, fly full speed. Best-effort — a transient DOM
+  // miss must not block the dispatch (the readiness poll below still gates).
+  if (order.zeroResources) await rpc('zeroResources', {});
+  if (order.speedStep != null) await rpc('setSpeed', { step: order.speedStep });
 
   const ready = await waitFor(() => (readyToDispatch() ? true : null), {
     timeoutMs: READY_TIMEOUT_MS,
