@@ -4,6 +4,37 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.30.3] — 2026-06-21
+
+### Changed
+
+- **You now pick the Import/Export reminder mode instead of OG-E guessing it.**
+  The red Import/Export glow used to try to auto-detect the occasional "import
+  refreshes 6× today" event from an inbox message — which proved unreliable.
+  OG-E now shows two mode chips at the top of the Import/Export page: **1×/day ·
+  from 14:00** (the normal once-a-day import, the default) and **6×/day · every
+  4 h** (the event cadence on the 00/04/08/12/16/20 slots). When a recent "6×
+  today" message is seen in your inbox OG-E flips you into 6× automatically;
+  switch back to daily yourself when the event ends. The choice is per-device
+  and is not synced.
+
+- **An exposed ("bare") fleet-save now keeps nagging until it is actually safe.**
+  The orange **"FS"** planet marker for a fleet that landed and sits exposed used
+  to disappear on its own after two hours. It now stays — on the planet markers
+  and the floating guardian warning — until that fleet re-saves or leaves the
+  body, or you dismiss the landing yourself. No more silently going dark on a
+  fleet you forgot about.
+
+### Fixed
+
+- **The "Mark FS" chip no longer vanishes from the fleet-dispatch form.** It is
+  now pinned next to the **"Dalej"** / continue button in a spot that AGR's live
+  cargo- and coordinate-refreshes do not wipe out, so it stays put while you set
+  up a send.
+
+- Dashboard sync inventory now labels the **API cache** and **Colonization
+  decisions** categories (previously shown by their raw storage keys).
+
 ## [1.30.2] — 2026-06-21
 
 ### Fixed
