@@ -4,6 +4,31 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.30.5] — 2026-06-22
+
+### Fixed
+
+- **Reminder bookkeeping is no longer occasionally lost during rapid in-game
+  activity.** Two reminder syncs that overlapped — e.g. clicking quickly while
+  one was still talking to the cloud — could each save their own view of your
+  scheduled pushes, the later one silently overwriting the other's. Reminder
+  syncs now run strictly one at a time, so nothing is dropped.
+
+- **First-time cloud-sync setup can no longer create a duplicate sync file.** On
+  a fresh device the cloud-sync engine and the reminders engine could each
+  create their own GitHub gist at the same instant, orphaning a copy. They now
+  coordinate so exactly one is created (and converge on the oldest if two ever
+  existed).
+
+### Changed
+
+- Internal hardening with no user-visible behaviour change, listed for
+  source-review transparency: the sync scheduler is now table-driven (one slot
+  registry instead of eight hand-unrolled copies), the in-game `?page=ingame`
+  URLs are built from one shared helper, and the galaxy-view reader plus the
+  reminder-list section headers are de-duplicated. Plus opt-in test-coverage
+  tooling and a few dead-code/release-script cleanups.
+
 ## [1.30.4] — 2026-06-22
 
 ### Fixed
