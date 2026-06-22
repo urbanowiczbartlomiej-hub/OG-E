@@ -242,14 +242,33 @@ let installed = null;
 let inFlight = false;
 
 /**
- * Anti-loop flag for SETTINGS sync, mirroring the scans/history
- * `changed`-guard at the value level. Raised while we write merged remote
- * settings back into {@link settingsStore} (in {@link applyMergedSettings})
- * so the settings subscriber installed by {@link installSync} doesn't
- * re-stamp those keys with `now` (which would clobber the remote
- * timestamps) or schedule a redundant upload.
+ * Anti-loop suppressor for sync-origin writes, keyed by sync field. While we
+ * write a merged remote slot back into a local store, the corresponding store
+ * subscriber must treat it as a sync-origin write — NOT re-stamp the key with
+ * `now` (which would clobber the remote timestamp) nor schedule a redundant
+ * upload. A depth counter (not a bare boolean) keeps repeated/sequential
+ * applies of the same field correct; `isApplyingFromSync(key)` is what the
+ * subscribers gate on.
+ *
+ * Replaces the four former `applying*FromSync` booleans (settings, routes,
+ * galaxy config, reminder config) with one keyed map. Entities with no local
+ * timestamp to protect (history / dailyState / decisions) need NO suppressor —
+ * their `changed` guard plus the {@link gistIsCurrent} skip already break the
+ * subscription loop. Keys match each slot's gist payload field (plus the
+ * bespoke `'settings'`), so they can't drift from the registry below.
+ *
+ * @type {Map<string, number>}
  */
-let applyingSettingsFromSync = false;
+const applyDepth = new Map();
+/** @param {string} key */
+const bumpApplying = (key) => applyDepth.set(key, (applyDepth.get(key) || 0) + 1);
+/** @param {string} key */
+const dropApplying = (key) => applyDepth.set(key, Math.max(0, (applyDepth.get(key) || 0) - 1));
+/** @param {string} key @returns {boolean} */
+const isApplyingFromSync = (key) => (applyDepth.get(key) || 0) > 0;
+
+/** Suppressor key for the bespoke (non-registry) settings write-back. */
+const APPLY_SETTINGS = 'settings';
 
 /**
  * The universe id this scheduler instance owns (from `location.host`),
@@ -258,30 +277,6 @@ let applyingSettingsFromSync = false;
  * Empty string in non-DOM tests / when the host isn't a known universe.
  */
 let routesUniverseId = '';
-
-/**
- * Anti-loop flag for ROUTES sync, mirroring {@link applyingSettingsFromSync}.
- * Raised while we write a merged remote routes slot back into chrome.storage
- * + {@link dailyRunRoutesStore} so the dailyRunRoutes subscriber doesn't re-stamp the
- * change and schedule a redundant upload.
- */
-let applyingRoutesFromSync = false;
-
-/**
- * Anti-loop flag for GALAXY-SCAN CONFIG sync, mirroring
- * {@link applyingRoutesFromSync}. Raised while we write a merged remote
- * config slot back into chrome.storage + {@link galaxyScanConfigStore} so the
- * config subscriber doesn't re-stamp and schedule a redundant upload.
- */
-let applyingGalaxyConfigFromSync = false;
-
-/**
- * Anti-loop flag for REMINDER CONFIG sync, mirroring
- * {@link applyingGalaxyConfigFromSync}. Raised while we write a merged remote
- * config slot back into chrome.storage + {@link reminderConfigStore} so the
- * config subscriber doesn't re-stamp and schedule a redundant upload.
- */
-let applyingReminderConfigFromSync = false;
 
 /**
  * In-memory cache of the per-universe settings timestamp map, loaded from
@@ -317,15 +312,16 @@ const readLocalRoutesSlot = async () => {
  * Write a merged remote routes slot back to local: the routes value + its
  * timestamp into chrome.storage, and the in-memory {@link dailyRunRoutesStore} so
  * the current game session reflects the adopted config without a reload.
- * Guarded by {@link applyingRoutesFromSync} so the dailyRunRoutes subscriber treats
- * it as a sync-origin write (no re-stamp, no upload reschedule).
+ * Guarded by the keyed anti-loop suppressor (`'dailyRunRoutes'`) so the
+ * dailyRunRoutes subscriber treats it as a sync-origin write (no re-stamp, no
+ * upload reschedule).
  *
  * @param {import('./merge.js').DailyRunRoutesSlot} slot
  * @returns {Promise<void>}
  */
 const writeLocalRoutesSlot = async (slot) => {
   if (!routesUniverseId) return;
-  applyingRoutesFromSync = true;
+  bumpApplying('dailyRunRoutes');
   try {
     await chromeStore.set(dailyRunRoutesKeyFor(routesUniverseId), {
       routes: slot.routes,
@@ -339,7 +335,7 @@ const writeLocalRoutesSlot = async (slot) => {
       }),
     );
   } finally {
-    applyingRoutesFromSync = false;
+    dropApplying('dailyRunRoutes');
   }
 };
 
@@ -369,22 +365,22 @@ const readLocalGalaxyConfigSlot = async () => {
  * Write a merged remote Galaxy-Scan config slot back to local: the config
  * value + its timestamp into chrome.storage, and the in-memory
  * {@link galaxyScanConfigStore} so the current game session reflects the
- * adopted config without a reload. Guarded by
- * {@link applyingGalaxyConfigFromSync}.
+ * adopted config without a reload. Guarded by the keyed anti-loop suppressor
+ * (`'galaxyScanConfig'`).
  *
  * @param {import('./merge.js').GalaxyScanConfigSlot} slot
  * @returns {Promise<void>}
  */
 const writeLocalGalaxyConfigSlot = async (slot) => {
   if (!routesUniverseId) return;
-  applyingGalaxyConfigFromSync = true;
+  bumpApplying('galaxyScanConfig');
   try {
     const config = normalizeGalaxyScanConfig(slot.config);
     await chromeStore.set(galaxyScanConfigKeyFor(routesUniverseId), config);
     await chromeStore.set(galaxyScanConfigTsKeyFor(routesUniverseId), slot.updatedAt);
     galaxyScanConfigStore.set(config);
   } finally {
-    applyingGalaxyConfigFromSync = false;
+    dropApplying('galaxyScanConfig');
   }
 };
 
@@ -414,21 +410,22 @@ const readLocalReminderConfigSlot = async () => {
  * Write a merged remote reminder config slot back to local: the config value +
  * its timestamp into chrome.storage, and the in-memory
  * {@link reminderConfigStore} so the current game session reflects the adopted
- * config without a reload. Guarded by {@link applyingReminderConfigFromSync}.
+ * config without a reload. Guarded by the keyed anti-loop suppressor
+ * (`'reminderConfigPerUniverse'`).
  *
  * @param {import('./merge.js').ReminderConfigSlot} slot
  * @returns {Promise<void>}
  */
 const writeLocalReminderConfigSlot = async (slot) => {
   if (!routesUniverseId) return;
-  applyingReminderConfigFromSync = true;
+  bumpApplying('reminderConfigPerUniverse');
   try {
     const config = normalizeReminderConfig(slot.config);
     await chromeStore.set(reminderConfigKeyFor(routesUniverseId), config);
     await chromeStore.set(reminderConfigTsKeyFor(routesUniverseId), slot.updatedAt);
     reminderConfigStore.set(config);
   } finally {
-    applyingReminderConfigFromSync = false;
+    dropApplying('reminderConfigPerUniverse');
   }
 };
 
@@ -449,16 +446,16 @@ const readLocalUniverseSettingsSlot = () => ({
 /**
  * Write a merged per-universe settings result back to local: update the
  * in-memory timestamp cache, persist to chrome.storage, and spread the new
- * values into {@link settingsStore}. Guarded by
- * {@link applyingSettingsFromSync} so our own settings subscriber treats
- * this as a sync-origin write, not a user edit.
+ * values into {@link settingsStore}. Guarded by the keyed anti-loop suppressor
+ * ({@link APPLY_SETTINGS}) so our own settings subscriber treats this as a
+ * sync-origin write, not a user edit.
  *
  * @param {{ values: Record<string, unknown>, ts: Record<string, number> }} merged
  * @returns {Promise<void>}
  */
 const writeLocalUniverseSettingsSlot = async (merged) => {
   if (!routesUniverseId) return;
-  applyingSettingsFromSync = true;
+  bumpApplying(APPLY_SETTINGS);
   try {
     localUniverseTsMap = merged.ts;
     await writeUniverseTsMap(routesUniverseId, merged.ts);
@@ -472,22 +469,22 @@ const writeLocalUniverseSettingsSlot = async (merged) => {
       );
     });
   } finally {
-    applyingSettingsFromSync = false;
+    dropApplying(APPLY_SETTINGS);
   }
 };
 
 /**
  * Write a merged settings result back to local: persist the per-key ts map
  * and apply the values to {@link settingsStore} (excluded keys, absent from
- * `merged.values`, keep their current local value). Guarded by
- * {@link applyingSettingsFromSync} so our own settings subscriber treats
- * this as a sync-origin write, not a user edit.
+ * `merged.values`, keep their current local value). Guarded by the keyed
+ * anti-loop suppressor ({@link APPLY_SETTINGS}) so our own settings subscriber
+ * treats this as a sync-origin write, not a user edit.
  *
  * @param {{ values: Record<string, unknown>, ts: Record<string, number> }} merged
  * @returns {void}
  */
 const applyMergedSettings = (merged) => {
-  applyingSettingsFromSync = true;
+  bumpApplying(APPLY_SETTINGS);
   try {
     writeTsMap(merged.ts);
     settingsStore.update((cur) => {
@@ -500,7 +497,7 @@ const applyMergedSettings = (merged) => {
       );
     });
   } finally {
-    applyingSettingsFromSync = false;
+    dropApplying(APPLY_SETTINGS);
   }
 };
 
@@ -539,6 +536,82 @@ const mergeSyncSettings = (remote, routesUniverseId) => {
     : { changed: false, merged: readLocalUniverseSettingsSlot() };
   return { setResult, uniResult };
 };
+
+/**
+ * Per-universe sync slot registry. Each descriptor folds the
+ * read → merge → write-back → contribution-guard quadruple that
+ * {@link downloadAndMerge} and {@link upload} would otherwise hand-unroll once
+ * per entity (~15-20 near-identical lines each, twice). `payloadKey` is BOTH
+ * the gist payload field AND the remote read path (`remote[payloadKey][uni]`),
+ * so it can't drift between the two directions.
+ *
+ * Adding a synced per-universe entity = ONE entry here (+ its `merge`/`hasData`
+ * in the pure layer) instead of edits scattered across both round-trip
+ * functions and the anti-loop suppressor.
+ *
+ * `writeLocal` adopts a newer remote slot into local stores; the three config
+ * entities guard that write with the keyed anti-loop suppressor (inside their
+ * `writeLocal*Slot` helper), while history / dailyState / decisions carry no
+ * local timestamp to protect and rely on the `changed` guard + the
+ * {@link gistIsCurrent} skip to break the subscription loop. `remoteDefault`
+ * is what a slot merges against when the remote field is absent (decisions
+ * wants `{}`, the rest `undefined`).
+ *
+ * @typedef {object} SyncSlot
+ * @property {string} payloadKey
+ * @property {() => (Promise<*> | *)} readLocal
+ * @property {(merged: *) => (Promise<void> | void)} writeLocal
+ * @property {(local: *, remote: *) => { merged: *, changed: boolean }} merge
+ * @property {(merged: *) => boolean} hasData
+ * @property {*} [remoteDefault]
+ */
+
+/** @type {SyncSlot[]} */
+const SYNC_SLOTS = [
+  {
+    payloadKey: 'dailyRunRoutes',
+    readLocal: readLocalRoutesSlot,
+    writeLocal: writeLocalRoutesSlot,
+    merge: mergeDailyRunRoutes,
+    hasData: slotHasData,
+  },
+  {
+    payloadKey: 'galaxyScanConfig',
+    readLocal: readLocalGalaxyConfigSlot,
+    writeLocal: writeLocalGalaxyConfigSlot,
+    merge: mergeGalaxyScanConfig,
+    hasData: galaxyConfigSlotHasData,
+  },
+  {
+    payloadKey: 'colonyHistoryPerUniverse',
+    readLocal: () => historyStore.get(),
+    writeLocal: (merged) => historyStore.set(merged),
+    merge: mergeHistory,
+    hasData: (merged) => merged.length > 0,
+  },
+  {
+    payloadKey: 'dailyStatePerUniverse',
+    readLocal: readDailyState,
+    writeLocal: writeDailyState,
+    merge: mergeDailyState,
+    hasData: dailyStateHasData,
+  },
+  {
+    payloadKey: 'reminderConfigPerUniverse',
+    readLocal: readLocalReminderConfigSlot,
+    writeLocal: writeLocalReminderConfigSlot,
+    merge: mergeReminderConfig,
+    hasData: reminderConfigSlotHasData,
+  },
+  {
+    payloadKey: 'colonizeDecisionsPerUniverse',
+    readLocal: () => colonizeDecisionsStore.get(),
+    writeLocal: (merged) => colonizeDecisionsStore.set(merged),
+    merge: mergeColonizeDecisions,
+    hasData: decisionsSlotHasData,
+    remoteDefault: {},
+  },
+];
 
 /**
  * Pull the remote payload, merge it with local, and conditionally
@@ -593,63 +666,19 @@ const downloadAndMerge = async () => {
     if (setResult.changed) applyMergedSettings(setResult.merged);
     if (uniResult.changed) await writeLocalUniverseSettingsSlot(uniResult.merged);
 
-    // Routes: per-universe newest-wins. Read local from chrome.storage (the
-    // cross-origin source of truth) and adopt remote only when it's newer.
-    const routesResult = mergeDailyRunRoutes(
-      await readLocalRoutesSlot(),
-      remote.dailyRunRoutes?.[routesUniverseId],
-    );
-    if (routesResult.changed) await writeLocalRoutesSlot(routesResult.merged);
-
-    // Galaxy-Scan config: per-universe newest-wins, same shape as routes.
+    // Per-universe slots (routes, galaxy config, colony history, daily-action
+    // state, reminder config, colonization decisions): read local, merge our
+    // universe's remote slot, and adopt only when the merge says remote
+    // contributed (anti-loop: write back on `changed` only). One code path via
+    // the SYNC_SLOTS registry — see its doc for which entities need an anti-loop
+    // suppressor and which break the loop via the `changed` guard alone.
+    const remoteRec = /** @type {Record<string, any>} */ (remote);
     if (routesUniverseId) {
-      const cfgResult = mergeGalaxyScanConfig(
-        await readLocalGalaxyConfigSlot(),
-        remote.galaxyScanConfig?.[routesUniverseId],
-      );
-      if (cfgResult.changed) await writeLocalGalaxyConfigSlot(cfgResult.merged);
-    }
-
-    // Colony history: per-universe union (dedup by cp), keyed by universe — the
-    // histogram is per-server, so the old single global list let one server's
-    // observations land under another server's key on a second device.
-    if (routesUniverseId) {
-      const histResult = mergeHistory(
-        historyStore.get(),
-        remote.colonyHistoryPerUniverse?.[routesUniverseId],
-      );
-      if (histResult.changed) historyStore.set(histResult.merged);
-    }
-
-    // Daily-action state: per-universe, field-by-field max-wins.
-    if (routesUniverseId) {
-      const dailyResult = mergeDailyState(
-        readDailyState(),
-        remote.dailyStatePerUniverse?.[routesUniverseId],
-      );
-      if (dailyResult.changed) writeDailyState(dailyResult.merged);
-    }
-
-    // Reminder config: per-universe newest-wins, same shape as routes.
-    if (routesUniverseId) {
-      const remCfgResult = mergeReminderConfig(
-        await readLocalReminderConfigSlot(),
-        remote.reminderConfigPerUniverse?.[routesUniverseId],
-      );
-      if (remCfgResult.changed) await writeLocalReminderConfigSlot(remCfgResult.merged);
-    }
-
-    // Colonization decisions: per-universe, per-coord monotonic merge. Like
-    // scans/players it needs no `applying*FromSync` flag — there's no timestamp
-    // to re-stamp, so the `changed` guard plus the gistIsCurrent skip on the
-    // follow-up upload break the loop. This is the cross-device handoff that
-    // lets a second device continue with only the remaining free positions.
-    if (routesUniverseId) {
-      const decResult = mergeColonizeDecisions(
-        colonizeDecisionsStore.get(),
-        remote.colonizeDecisionsPerUniverse?.[routesUniverseId] ?? {},
-      );
-      if (decResult.changed) colonizeDecisionsStore.set(decResult.merged);
+      for (const s of SYNC_SLOTS) {
+        const remoteSlot = remoteRec[s.payloadKey]?.[routesUniverseId] ?? s.remoteDefault;
+        const { merged, changed } = s.merge(await s.readLocal(), remoteSlot);
+        if (changed) await s.writeLocal(merged);
+      }
     }
 
     setStatus('down', new Date().toISOString());
@@ -721,65 +750,31 @@ const upload = async () => {
     if (setResult.changed) applyMergedSettings(setResult.merged);
     if (uniResult.changed) await writeLocalUniverseSettingsSlot(uniResult.merged);
 
-    // Routes: per-universe newest-wins. Adopt remote locally if newer, then
-    // build the merged `dailyRunRoutes` map for the payload — PRESERVING every
-    // OTHER universe's slot (we only own ours).
-    const routesResult = mergeDailyRunRoutes(
-      await readLocalRoutesSlot(),
-      remote?.dailyRunRoutes?.[routesUniverseId],
-    );
-    if (routesResult.changed) await writeLocalRoutesSlot(routesResult.merged);
-    const mergedDailyRunRoutes = { ...(remote?.dailyRunRoutes || {}) };
-    // Only contribute our universe's slot when it actually carries data —
-    // a never-configured universe (no routes, no target, ts 0) must NOT
-    // write an empty slot, which would differ from the gist's absent field
-    // and force a perpetual no-op PATCH.
-    const slot = routesResult.merged;
-    if (routesUniverseId && slotHasData(slot)) mergedDailyRunRoutes[routesUniverseId] = slot;
-    // Normalise an empty map to `undefined` so a gist with no dailyRunRoutes field
-    // and our empty map compare equal (sameJSON(undefined, {}) is false) —
-    // otherwise we'd PATCH a no-op `dailyRunRoutes: {}` onto every upload.
-    const mergedDailyRunRoutesOut = Object.keys(mergedDailyRunRoutes).length ? mergedDailyRunRoutes : undefined;
-
-    // Galaxy-Scan config: per-universe newest-wins, same contribution guard
-    // as dailyRunRoutes (only our universe's slot, only once it carries data).
-    const mergedGalaxyConfig = { ...(remote?.galaxyScanConfig || {}) };
-    if (routesUniverseId) {
-      const cfgResult = mergeGalaxyScanConfig(
-        await readLocalGalaxyConfigSlot(),
-        remote?.galaxyScanConfig?.[routesUniverseId],
-      );
-      if (cfgResult.changed) await writeLocalGalaxyConfigSlot(cfgResult.merged);
-      if (galaxyConfigSlotHasData(cfgResult.merged)) {
-        mergedGalaxyConfig[routesUniverseId] = cfgResult.merged;
+    // Per-universe slots: drive read → merge → write-back → contribute →
+    // empty-normalise from the SYNC_SLOTS registry. For each entity: seed the
+    // payload map from remote (PRESERVING every OTHER universe's slot — we only
+    // own ours), merge our universe's slot and adopt-if-changed, contribute ours
+    // only when it carries data, then normalise an empty map to `undefined` (so a
+    // gist with no such field and our empty map compare equal and don't force a
+    // perpetual no-op PATCH).
+    const remoteRec = /** @type {Record<string, any> | null} */ (remote);
+    /** @type {Record<string, Record<string, any> | undefined>} */
+    const slotPayloads = {};
+    for (const s of SYNC_SLOTS) {
+      const map = { ...(remoteRec?.[s.payloadKey] || {}) };
+      if (routesUniverseId) {
+        const remoteSlot = remoteRec?.[s.payloadKey]?.[routesUniverseId] ?? s.remoteDefault;
+        const { merged, changed } = s.merge(await s.readLocal(), remoteSlot);
+        if (changed) await s.writeLocal(merged);
+        if (s.hasData(merged)) map[routesUniverseId] = merged;
       }
+      slotPayloads[s.payloadKey] = Object.keys(map).length ? map : undefined;
     }
-    const mergedGalaxyConfigOut = Object.keys(mergedGalaxyConfig).length
-      ? mergedGalaxyConfig
-      : undefined;
 
-    // Colony history: per-universe union (dedup by cp), same contribution
-    // guard as the config slots (only our universe's list, only once it has
-    // entries — an empty list would differ from the gist's absent field).
-    const mergedColonyHistory = { ...(remote?.colonyHistoryPerUniverse || {}) };
-    if (routesUniverseId) {
-      const histResult = mergeHistory(
-        historyStore.get(),
-        remote?.colonyHistoryPerUniverse?.[routesUniverseId],
-      );
-      if (histResult.changed) historyStore.set(histResult.merged);
-      if (histResult.merged.length) mergedColonyHistory[routesUniverseId] = histResult.merged;
-    }
-    const mergedColonyHistoryOut = Object.keys(mergedColonyHistory).length
-      ? mergedColonyHistory
-      : undefined;
-
-    // Build the per-universe settings map for the payload — preserving every
-    // OTHER universe's slot (same pattern as dailyRunRoutes). Only contribute ours
-    // when the ts map is non-empty: an empty ts means the user has never
-    // explicitly changed any universe-scoped setting (all at defaults), which
-    // is indistinguishable from "no slot" for another device and must not
-    // force a perpetual no-op PATCH.
+    // Per-universe settings map (bespoke — a two-scope merge, not a registry
+    // slot). Preserve every OTHER universe's slot; contribute ours only when the
+    // ts map is non-empty (an all-defaults universe is indistinguishable from
+    // "no slot" for another device and must not force a perpetual no-op PATCH).
     const mergedPerUniverse = { ...(remote?.settingsPerUniverse || {}) };
     if (routesUniverseId && Object.keys(uniResult.merged.ts).length > 0) {
       mergedPerUniverse[routesUniverseId] = uniResult.merged;
@@ -788,87 +783,32 @@ const upload = async () => {
       ? mergedPerUniverse
       : undefined;
 
-    // Daily-action state: per-universe, field-by-field max-wins. Only
-    // contribute our universe's slot when at least one field is non-empty —
-    // same no-op PATCH guard as dailyRunRoutes / settingsPerUniverse.
-    const mergedDailyPerUniverse = { ...(remote?.dailyStatePerUniverse || {}) };
-    if (routesUniverseId) {
-      const dailyResult = mergeDailyState(
-        readDailyState(),
-        remote?.dailyStatePerUniverse?.[routesUniverseId],
-      );
-      if (dailyResult.changed) writeDailyState(dailyResult.merged);
-      const ds = dailyResult.merged;
-      if (dailyStateHasData(ds)) mergedDailyPerUniverse[routesUniverseId] = ds;
-    }
-    const mergedDailyPerUniverseOut = Object.keys(mergedDailyPerUniverse).length
-      ? mergedDailyPerUniverse
-      : undefined;
+    // The full set of synced slots we would write — built ONCE and reused for
+    // both the already-current check and the PATCH (previously this field list
+    // was spelled out twice). galaxyScansPerUniverse / playersPerUniverse /
+    // ownProfilePerUniverse are intentionally omitted (left `undefined`) — §4b
+    // stopped syncing them; gistIsCurrent still compares them, so a gist that
+    // still carries those reads "not current" against our `undefined` and gets
+    // slimmed by this one PATCH.
+    const mergedSlots = {
+      colonyHistoryPerUniverse: slotPayloads.colonyHistoryPerUniverse,
+      settings: setResult.merged,
+      dailyRunRoutes: slotPayloads.dailyRunRoutes,
+      settingsPerUniverse: mergedPerUniverseOut,
+      dailyStatePerUniverse: slotPayloads.dailyStatePerUniverse,
+      galaxyScanConfig: slotPayloads.galaxyScanConfig,
+      reminderConfigPerUniverse: slotPayloads.reminderConfigPerUniverse,
+      colonizeDecisionsPerUniverse: slotPayloads.colonizeDecisionsPerUniverse,
+    };
 
-    // Reminder config: per-universe newest-wins, same contribution guard as
-    // galaxyScanConfig (only our universe's slot, only once it carries data).
-    const mergedReminderConfig = { ...(remote?.reminderConfigPerUniverse || {}) };
-    if (routesUniverseId) {
-      const remCfgResult = mergeReminderConfig(
-        await readLocalReminderConfigSlot(),
-        remote?.reminderConfigPerUniverse?.[routesUniverseId],
-      );
-      if (remCfgResult.changed) await writeLocalReminderConfigSlot(remCfgResult.merged);
-      if (reminderConfigSlotHasData(remCfgResult.merged)) {
-        mergedReminderConfig[routesUniverseId] = remCfgResult.merged;
-      }
-    }
-    const mergedReminderConfigOut = Object.keys(mergedReminderConfig).length
-      ? mergedReminderConfig
-      : undefined;
-
-    // Colonization decisions: per-universe, per-coord monotonic merge. Preserve
-    // every OTHER universe's slot; contribute ours only when it carries data.
-    const mergedDecisions = { ...(remote?.colonizeDecisionsPerUniverse || {}) };
-    if (routesUniverseId) {
-      const decResult = mergeColonizeDecisions(
-        colonizeDecisionsStore.get(),
-        remote?.colonizeDecisionsPerUniverse?.[routesUniverseId] ?? {},
-      );
-      if (decResult.changed) colonizeDecisionsStore.set(decResult.merged);
-      if (decisionsSlotHasData(decResult.merged)) {
-        mergedDecisions[routesUniverseId] = decResult.merged;
-      }
-    }
-    const mergedDecisionsOut = Object.keys(mergedDecisions).length ? mergedDecisions : undefined;
-
-    // Skip the PATCH when the gist already matches the merged state.
-    // This is the common case when upload fires right after a download
-    // from another device and both sides already agree — PATCHing
-    // anyway would burn a request and produce a no-op revision.
-    if (
-      // galaxyScansPerUniverse / playersPerUniverse / ownProfilePerUniverse are
-      // intentionally OMITTED (left `undefined`) — §4b stopped syncing them.
-      // gistIsCurrent still compares them, so a gist that still carries those
-      // (a pre-slim or old-client upload) reads "not current" against our
-      // `undefined` and gets slimmed by this one PATCH.
-      !gistIsCurrent(remote, {
-        colonyHistoryPerUniverse: mergedColonyHistoryOut,
-        settings: setResult.merged,
-        dailyRunRoutes: mergedDailyRunRoutesOut,
-        settingsPerUniverse: mergedPerUniverseOut,
-        dailyStatePerUniverse: mergedDailyPerUniverseOut,
-        galaxyScanConfig: mergedGalaxyConfigOut,
-        reminderConfigPerUniverse: mergedReminderConfigOut,
-        colonizeDecisionsPerUniverse: mergedDecisionsOut,
-      })
-    ) {
+    // Skip the PATCH when the gist already matches the merged state — the common
+    // case right after a download from another device. PATCHing anyway would
+    // burn a request and produce a no-op gist revision.
+    if (!gistIsCurrent(remote, mergedSlots)) {
       await writeGistData({
         version: 1,
         updatedAt: new Date().toISOString(),
-        colonyHistoryPerUniverse: mergedColonyHistoryOut,
-        settings: setResult.merged,
-        dailyRunRoutes: mergedDailyRunRoutesOut,
-        settingsPerUniverse: mergedPerUniverseOut,
-        dailyStatePerUniverse: mergedDailyPerUniverseOut,
-        galaxyScanConfig: mergedGalaxyConfigOut,
-        reminderConfigPerUniverse: mergedReminderConfigOut,
-        colonizeDecisionsPerUniverse: mergedDecisionsOut,
+        ...mergedSlots,
       });
       setStatus('up', new Date().toISOString());
     }
@@ -988,7 +928,7 @@ export const installSync = () => {
   // Dashboard edits (a different origin) instead arrive via the
   // `oge_syncRequestAt` tombstone handled in onStorageChange below.
   const onRoutesChange = () => {
-    if (!shouldScheduleUpload({ cloudSync: settingsStore.get().cloudSync, applying: applyingRoutesFromSync }))
+    if (!shouldScheduleUpload({ cloudSync: settingsStore.get().cloudSync, applying: isApplyingFromSync('dailyRunRoutes') }))
       return;
     scheduleUpload();
   };
@@ -1000,7 +940,7 @@ export const installSync = () => {
   // subscriber covers any future in-game writer and the sync-applied writes
   // (skipped via the anti-loop flag).
   const onGalaxyConfigChange = () => {
-    if (!shouldScheduleUpload({ cloudSync: settingsStore.get().cloudSync, applying: applyingGalaxyConfigFromSync }))
+    if (!shouldScheduleUpload({ cloudSync: settingsStore.get().cloudSync, applying: isApplyingFromSync('galaxyScanConfig') }))
       return;
     scheduleUpload();
   };
@@ -1011,14 +951,14 @@ export const installSync = () => {
   // like the galaxy config; the sync-applied writes are skipped via the
   // anti-loop flag.
   const onReminderConfigChange = () => {
-    if (!shouldScheduleUpload({ cloudSync: settingsStore.get().cloudSync, applying: applyingReminderConfigFromSync }))
+    if (!shouldScheduleUpload({ cloudSync: settingsStore.get().cloudSync, applying: isApplyingFromSync('reminderConfigPerUniverse') }))
       return;
     scheduleUpload();
   };
   const unsubReminderConfig = reminderConfigStore.subscribe(onReminderConfigChange);
 
   // Settings sync: stamp the keys that changed since the last tick with
-  // `now`, then schedule an upload. `applyingSettingsFromSync` skips
+  // `now`, then schedule an upload. The keyed suppressor (`'settings'`) skips
   // sync-origin writes (those carry remote timestamps we must keep), and
   // we also skip while cloudSync is off — but always advance `prev` so a
   // later edit diffs against the true last state, not a stale snapshot.
@@ -1029,7 +969,7 @@ export const installSync = () => {
   let prevSyncedSettings = pickSyncedValues(settingsStore.get());
   const onSettingsChange = () => {
     const next = pickSyncedValues(settingsStore.get());
-    if (!shouldScheduleUpload({ cloudSync: settingsStore.get().cloudSync, applying: applyingSettingsFromSync })) {
+    if (!shouldScheduleUpload({ cloudSync: settingsStore.get().cloudSync, applying: isApplyingFromSync(APPLY_SETTINGS) })) {
       prevSyncedSettings = next;
       return;
     }
@@ -1198,10 +1138,7 @@ export const _resetSchedulerForTest = () => {
     installed = null;
   }
   inFlight = false;
-  applyingSettingsFromSync = false;
-  applyingRoutesFromSync = false;
-  applyingGalaxyConfigFromSync = false;
-  applyingReminderConfigFromSync = false;
+  applyDepth.clear();
   routesUniverseId = '';
   localUniverseTsMap = {};
 };
