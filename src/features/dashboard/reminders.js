@@ -652,6 +652,32 @@ const appendFiresAtLine = (card, stillQueued) => {
 };
 
 /**
+ * Shared open for every per-universe reminder list (waves / ad-hoc / fleet-save
+ * / guardian). They all start the same way: bail when there are no items —
+ * appending a muted note first when one is given — otherwise append the
+ * standard `rem-universe-head` heading. Each list then loops `items` itself, as
+ * the per-item card differs by kind.
+ *
+ * @param {HTMLElement} section
+ * @param {readonly unknown[]} items   Already-sorted entries for this list.
+ * @param {string} title               Heading text.
+ * @param {string} [emptyMessage]      Muted note shown when there are no items (omit for a silent skip).
+ * @returns {boolean}  `true` when the heading was appended and the caller should render `items`.
+ */
+const beginReminderSection = (section, items, title, emptyMessage) => {
+  if (items.length === 0) {
+    if (emptyMessage) {
+      const p = node('p', { text: emptyMessage });
+      p.style.color = '#888';
+      section.appendChild(p);
+    }
+    return false;
+  }
+  section.appendChild(node('h4', { class: 'rem-universe-head', text: title }));
+  return true;
+};
+
+/**
  * Render one universe's wave cards into `section`. Extracted from the
  * old renderPreview so the multi-universe wrapper can call it once per
  * universe with no duplication.
@@ -664,20 +690,14 @@ const appendFiresAtLine = (card, stillQueued) => {
  * @returns {void}
  */
 const renderWavesInto = (section, universeId, state, ntfyMap) => {
-  if (!state || !Array.isArray(state.waves) || state.waves.length === 0) {
-    const p = node('p', {
-      text: 'No outstanding waves. Send an expedition burst in-game to queue reminders.',
-    });
-    p.style.color = '#888';
-    section.appendChild(p);
-    return;
-  }
-
-  section.appendChild(node('h4', { class: 'rem-universe-head', text: 'Expedition waves' }));
+  const sorted = (Array.isArray(state?.waves) ? state.waves : [])
+    .slice()
+    .sort((a, b) => a.nextWaveAt - b.nextWaveAt);
+  if (!beginReminderSection(section, sorted, 'Expedition waves',
+    'No outstanding waves. Send an expedition burst in-game to queue reminders.')) return;
 
   const nowSec = Math.floor(Date.now() / 1000);
   const notify = state.notifyState || {};
-  const sorted = state.waves.slice().sort((a, b) => a.nextWaveAt - b.nextWaveAt);
   for (const w of sorted) {
     const cancelled = w.cancelled === true;
     const due = nowSec >= w.nextWaveAt;
@@ -756,16 +776,15 @@ const renderWavesInto = (section, universeId, state, ntfyMap) => {
  * @returns {void}
  */
 const renderAdhocInto = (section, universeId, state, ntfyMap) => {
-  const entries = Array.isArray(state?.adhoc) ? state.adhoc : [];
-  if (entries.length === 0) return;
-
-  section.appendChild(node('h4', { class: 'rem-universe-head', text: 'Ad-hoc fleet reminders' }));
-
-  const notify = state.adhocNotify || {};
   // Sort by arrival — ad-hoc entries no longer carry a single fireAt (the
   // schedule is a live multi-slot series); each card's "fires at" list comes
   // from the still-queued ntfy slots below.
-  const sorted = entries.slice().sort((a, b) => a.arrivalAt - b.arrivalAt);
+  const sorted = (Array.isArray(state?.adhoc) ? state.adhoc : [])
+    .slice()
+    .sort((a, b) => a.arrivalAt - b.arrivalAt);
+  if (!beginReminderSection(section, sorted, 'Ad-hoc fleet reminders')) return;
+
+  const notify = state.adhocNotify || {};
   for (const e of sorted) {
     const ids = notify[e.id]?.scheduledMessageIds ?? [];
     const stillQueued = ids
@@ -827,14 +846,13 @@ const renderAdhocInto = (section, universeId, state, ntfyMap) => {
  * @returns {void}
  */
 const renderFleetSavesInto = (section, state, ntfyMap) => {
-  const entries = Array.isArray(state?.fleetSave) ? state.fleetSave : [];
-  if (entries.length === 0) return;
-
-  section.appendChild(node('h4', { class: 'rem-universe-head', text: 'Fleet-save reminders' }));
+  const sorted = (Array.isArray(state?.fleetSave) ? state.fleetSave : [])
+    .slice()
+    .sort((a, b) => a.arrivalAt - b.arrivalAt);
+  if (!beginReminderSection(section, sorted, 'Fleet-save reminders')) return;
 
   const notify = state.fleetSaveNotify || {};
   const nowSec = Math.floor(Date.now() / 1000);
-  const sorted = entries.slice().sort((a, b) => a.arrivalAt - b.arrivalAt);
   for (const e of sorted) {
     const ids = notify[e.id]?.scheduledMessageIds ?? [];
     const totalScheduled = ids.length;
@@ -926,9 +944,7 @@ export const guardianMessagesFor = (universeId, ntfyMap) => {
  */
 const renderGuardianInto = (section, universeId, ntfyMap) => {
   const mine = guardianMessagesFor(universeId, ntfyMap);
-  if (mine.length === 0) return;
-
-  section.appendChild(node('h4', { class: 'rem-universe-head', text: 'Fleet guardian reminders' }));
+  if (!beginReminderSection(section, mine, 'Fleet guardian reminders')) return;
 
   for (const m of mine) {
     const { card, head } = buildReminderCard(m.time, 'rem-wave');
