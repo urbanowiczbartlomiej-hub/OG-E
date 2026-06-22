@@ -52,6 +52,7 @@ import {
   COL_MAX_GALAXY,
 } from '../../domain/rules.js';
 import { countFreeTargetSlots } from '../../domain/apiOccupancy.js';
+import { ingameComponentUrl } from '../../domain/ogameUrl.js';
 
 /**
  * @typedef {import('../../state/scans.js').GalaxyScans} GalaxyScans
@@ -189,12 +190,14 @@ export const findNextColonizeTarget = (
         if (inFlight.has(coordKey)) continue;
         if (rejected && rejected.has(coordKey)) continue;
         if (!isFreeTarget(scan, index, coordKey, pos)) continue;
-        const base = location.href.split('?')[0];
-        const link =
-          base +
-          `?page=ingame&component=fleetdispatch` +
-          `&galaxy=${g}&system=${s}&position=${pos}` +
-          `&type=1&mission=${MISSION_COLONIZE}&am208=1`;
+        const link = ingameComponentUrl(location.href, 'fleetdispatch', {
+          galaxy: g,
+          system: s,
+          position: pos,
+          type: 1,
+          mission: MISSION_COLONIZE,
+          am208: 1,
+        });
         return { galaxy: g, system: s, position: pos, link };
       }
     }

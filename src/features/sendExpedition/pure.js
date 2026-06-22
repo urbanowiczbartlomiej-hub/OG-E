@@ -27,6 +27,8 @@
 //
 // @see ./index.js — orchestrator that consumes this.
 
+import { ingameComponentUrl } from '../../domain/ogameUrl.js';
+
 /**
  * @typedef {import('../../bridges/fleetDispatcherSnapshot.js').FleetDispatcherSnapshot} FleetDispatcherSnapshot
  */
@@ -157,10 +159,8 @@ export const stripBrackets = (raw) => (raw ?? '').trim().replace(/^\[|]$/g, '');
  * @param {number} cp
  * @returns {string}
  */
-export const buildFleetdispatchUrl = (cp) => {
-  const base = location.href.split('?')[0];
-  return `${base}?page=ingame&component=fleetdispatch&cp=${cp}`;
-};
+export const buildFleetdispatchUrl = (cp) =>
+  ingameComponentUrl(location.href, 'fleetdispatch', { cp });
 
 /**
  * Pure: snapshot reports every expedition slot in use

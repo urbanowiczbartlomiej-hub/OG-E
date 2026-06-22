@@ -1,6 +1,7 @@
 // @ts-check
 
 import { GAME } from '../../lib/gameDom.js';
+import { ingameComponentUrl } from '../../domain/ogameUrl.js';
 
 // Fresh-planet detection helpers — scan `#planetList` for a colony where
 // nothing has been built yet (`usedFields === 0`) and project the page's
@@ -123,7 +124,5 @@ export const getOverviewCp = () => {
  * @param {number} cp
  * @returns {string}
  */
-export const buildOverviewUrl = (cp) => {
-  const base = location.href.split('?')[0];
-  return `${base}?page=ingame&component=overview&cp=${cp}`;
-};
+export const buildOverviewUrl = (cp) =>
+  ingameComponentUrl(location.href, 'overview', { cp });

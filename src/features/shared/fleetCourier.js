@@ -43,6 +43,7 @@ import {
 } from '../../lib/ogeEvents.js';
 import { GAME } from '../../lib/gameDom.js';
 import { safeClick, waitFor } from '../../lib/dom.js';
+import { ingameComponentUrl } from '../../domain/ogameUrl.js';
 import {
   installFleetOwnership,
   claimFleet2,
@@ -128,9 +129,7 @@ let installed = false;
  * @returns {string}
  */
 export const bareFleetdispatchUrl = (cp) =>
-  location.href.split('?')[0]
-  + '?page=ingame&component=fleetdispatch'
-  + (cp ? `&cp=${cp}` : '');
+  ingameComponentUrl(location.href, 'fleetdispatch', cp ? { cp } : {});
 
 // ─── step / readiness (pure DOM reads) ─────────────────────────────────────
 

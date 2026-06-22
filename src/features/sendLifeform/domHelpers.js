@@ -5,12 +5,13 @@
 // Every export here touches the live page; the pure compute core
 // (`derive`, `render`, target pickers) lives in `./pure.js`.
 //
-// These coord readers are deliberately LOCAL copies of the equivalents in
-// `sendColony/domHelpers.js` rather than a shared import: CLAUDE.md's layering
-// forbids one feature importing another. The fragile bit — the GAME
-// SELECTORS — is centralized in `lib/gameDom.js` (so a game rename is a
-// one-line fix); only the thin wrapper functions are duplicated, which the
-// rule explicitly tolerates ("functions aren't the contract, selectors are").
+// `parseCurrentGalaxyView` is shared with sendColony via `features/shared/`
+// (the sanctioned cross-feature home — NOT "one feature importing another"); it
+// is re-exported below so this feature's consumers keep one import surface.
+// `readHomePlanet` stays a LOCAL copy on purpose: the two features read the
+// active body differently on MOON pages (sendColony falls back to
+// `.hightlightMoon` and returns the moon's coords; this one returns null), so
+// sharing it would silently change behaviour — see features/shared/galaxyView.js.
 //
 // @see ./pure.js  — pure core that consumes `home` / `view`.
 // @see ./index.js — orchestrator; `captureEnv()` is the bridge.
@@ -18,6 +19,9 @@
 import { safeClick } from '../../lib/dom.js';
 import { GAME } from '../../lib/gameDom.js';
 import { parseArtifactCounter } from './pure.js';
+
+// Shared galaxy-view reader (single source of truth in features/shared).
+export { parseCurrentGalaxyView } from '../shared/galaxyView.js';
 
 /**
  * Id of the game's "Discover system" control on the galaxy view. Clicking
@@ -44,34 +48,6 @@ export const readHomePlanet = () => {
   const m = (coords || '').match(/\[(\d+):(\d+):(\d+)\]/);
   if (!m) return null;
   return { galaxy: parseInt(m[1], 10), system: parseInt(m[2], 10) };
-};
-
-/**
- * Read the galaxy view's current `(galaxy, system)` when the user is on it,
- * else `null`. Prefers the live form inputs (which track in-page submits)
- * over `location.search` (which stays at the initial-load coords) — same
- * reasoning as `sendColony/domHelpers.js parseCurrentGalaxyView`.
- *
- * @returns {{ galaxy: number, system: number } | null}
- */
-export const parseCurrentGalaxyView = () => {
-  if (!location.search.includes('component=galaxy')) return null;
-  const galInput = /** @type {HTMLInputElement | null} */ (
-    document.querySelector(GAME.GALAXY_INPUT)
-  );
-  const sysInput = /** @type {HTMLInputElement | null} */ (
-    document.querySelector(GAME.SYSTEM_INPUT)
-  );
-  const inputG = galInput ? parseInt(galInput.value, 10) : NaN;
-  const inputS = sysInput ? parseInt(sysInput.value, 10) : NaN;
-  if (Number.isFinite(inputG) && Number.isFinite(inputS)) {
-    return { galaxy: inputG, system: inputS };
-  }
-  const params = new URLSearchParams(location.search);
-  const g = parseInt(params.get('galaxy') ?? '', 10);
-  const s = parseInt(params.get('system') ?? '', 10);
-  if (!Number.isFinite(g) || !Number.isFinite(s)) return null;
-  return { galaxy: g, system: s };
 };
 
 /**

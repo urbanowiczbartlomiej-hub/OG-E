@@ -66,6 +66,7 @@
 import { observeXHR } from './xhrObserver.js';
 import { safeLS } from '../lib/storage.js';
 import { MISSION_EXPEDITION } from '../domain/rules.js';
+import { ingameComponentUrl } from '../domain/ogameUrl.js';
 import { GAME, ACTIVE_PLANET_CLASS } from '../lib/gameDom.js';
 
 /**
@@ -227,7 +228,7 @@ const findNextPlanetWithFreeSlot = () => {
  * @returns {string} An absolute URL suitable for `location.href = ...`.
  */
 const buildRedirectUrl = (cpId) =>
-  location.href.split('?')[0] + '?page=ingame&component=fleetdispatch&cp=' + cpId;
+  ingameComponentUrl(location.href, 'fleetdispatch', { cp: cpId });
 
 /**
  * Install the `responseText` override on a single XHR instance. Called

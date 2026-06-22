@@ -34,6 +34,7 @@
 
 import { buildGalaxyOrder } from '../../domain/positions.js';
 import { COL_MAX_SYSTEM, COL_MAX_GALAXY } from '../../domain/rules.js';
+import { ingameComponentUrl } from '../../domain/ogameUrl.js';
 
 /**
  * @typedef {import('../../state/scans.js').GalaxyScans} GalaxyScans
@@ -237,8 +238,7 @@ export const countLfRemaining = (scans, now) => {
  * @param {string} href  `location.href`.
  * @returns {string}
  */
-export const buildGalaxyUrl = (href) =>
-  href.split('?')[0] + '?page=ingame&component=galaxy';
+export const buildGalaxyUrl = (href) => ingameComponentUrl(href, 'galaxy');
 
 /**
  * Galaxy-view URL for a specific `(galaxy, system)` — the full-nav fallback
@@ -249,7 +249,7 @@ export const buildGalaxyUrl = (href) =>
  * @returns {string}
  */
 export const buildGalaxySystemUrl = (href, { galaxy, system }) =>
-  `${href.split('?')[0]}?page=ingame&component=galaxy&galaxy=${galaxy}&system=${system}`;
+  ingameComponentUrl(href, 'galaxy', { galaxy, system });
 
 /**
  * Lifeform-research page URL (current origin) — the artifact counter lives
@@ -259,8 +259,7 @@ export const buildGalaxySystemUrl = (href, { galaxy, system }) =>
  * @param {string} href  `location.href`.
  * @returns {string}
  */
-export const buildLfResearchUrl = (href) =>
-  href.split('?')[0] + '?page=ingame&component=lfresearch';
+export const buildLfResearchUrl = (href) => ingameComponentUrl(href, 'lfresearch');
 
 // ─── Discriminated union ──────────────────────────────────────────────────
 

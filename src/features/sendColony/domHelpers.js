@@ -37,6 +37,12 @@ import { safeLS } from '../../lib/storage.js';
 import { findConflict } from '../../domain/registry.js';
 import { GAME } from '../../lib/gameDom.js';
 
+// `parseCurrentGalaxyView` is shared with sendLifeform — its single source of
+// truth lives in features/shared (re-exported here so this feature's consumers
+// keep importing it from one place). `readHomePlanet` below is NOT shared: the
+// two features read the active body differently on moon pages (see galaxyView.js).
+export { parseCurrentGalaxyView } from '../shared/galaxyView.js';
+
 // ─── Min-gap wait helper ──────────────────────────────────────────────────
 
 /**
@@ -127,39 +133,4 @@ export const readHomePlanet = () => {
   const m = (coords || '').match(/\[(\d+):(\d+):(\d+)\]/);
   if (!m) return null;
   return { galaxy: parseInt(m[1], 10), system: parseInt(m[2], 10) };
-};
-
-/**
- * Read the galaxy view's current `(galaxy, system)` from the DOM when
- * the user is on it, otherwise `null`.
- *
- * Prefer the live form inputs (`#galaxy_input`, `#system_input`) over
- * `location.search`. After AGR's in-page submit (`navigateGalaxyInPage`)
- * the URL stays at the initial-load coords, but the input values track
- * every subsequent scan target. Reading the URL here meant the second +
- * later scan clicks all picked up the same stale starting point and
- * looped.
- *
- * @returns {{ galaxy: number, system: number } | null}
- */
-export const parseCurrentGalaxyView = () => {
-  if (!location.search.includes('component=galaxy')) return null;
-  const galInput = /** @type {HTMLInputElement | null} */ (
-    document.querySelector(GAME.GALAXY_INPUT)
-  );
-  const sysInput = /** @type {HTMLInputElement | null} */ (
-    document.querySelector(GAME.SYSTEM_INPUT)
-  );
-  const inputG = galInput ? parseInt(galInput.value, 10) : NaN;
-  const inputS = sysInput ? parseInt(sysInput.value, 10) : NaN;
-  if (Number.isFinite(inputG) && Number.isFinite(inputS)) {
-    return { galaxy: inputG, system: inputS };
-  }
-  // Fallback to URL — covers the very first scan, before AGR has had
-  // a chance to render the form inputs.
-  const params = new URLSearchParams(location.search);
-  const g = parseInt(params.get('galaxy') ?? '', 10);
-  const s = parseInt(params.get('system') ?? '', 10);
-  if (!Number.isFinite(g) || !Number.isFinite(s)) return null;
-  return { galaxy: g, system: s };
 };
