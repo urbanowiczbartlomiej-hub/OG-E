@@ -257,8 +257,19 @@ export const installReminderProducer = (opts = {}) => {
   // Forces the next run past the signature short-circuit (settings edits;
   // a queued user action is detected separately, below).
   let pendingForce = false;
+  // Coarse in-flight guard. `doRun()` has several awaits (read state → poll
+  // ntfy → reconcile → PATCH the per-universe reminder gist file); two
+  // overlapping runs would both read+PATCH that file, last-write-wins, silently
+  // dropping one run's notifyState / landed-FS / ad-hoc bookkeeping. So
+  // serialize via the `run` wrapper below: while a run is in flight, remember a
+  // trigger arrived and re-run once for the whole burst. Mirrors the
+  // scheduler's `inFlight` lock (sync/scheduler.js). The guard lives OUTSIDE
+  // `doRun` so it fires before `doRun` reads `pendingForce` — an overlapped
+  // force intent therefore survives for the queued re-run.
+  let running = false;
+  let rerunQueued = false;
 
-  const run = async () => {
+  const doRun = async () => {
     const forceSettings = pendingForce;
     pendingForce = false;
 
@@ -393,6 +404,23 @@ export const installReminderProducer = (opts = {}) => {
       // Tell the UI to re-read the (possibly just-written) mirror — reliable
       // in-tab signal, independent of chrome.storage.onChanged.
       if (onSynced) onSynced();
+    }
+  };
+
+  // Serializing wrapper around `doRun` (see the `running`/`rerunQueued` note
+  // above). At most one `doRun` is ever in flight; a trigger that lands during
+  // a run is coalesced and drained once when the run finishes.
+  const run = async () => {
+    if (running) { rerunQueued = true; return; }
+    running = true;
+    try {
+      await doRun();
+    } finally {
+      running = false;
+      // Drain a coalesced mid-run trigger so its intent (a queued command /
+      // forced settings edit) is acted on. Re-arms the debounce, so a burst
+      // still collapses to a single extra run rather than spinning.
+      if (rerunQueued) { rerunQueued = false; scheduleRun(); }
     }
   };
 

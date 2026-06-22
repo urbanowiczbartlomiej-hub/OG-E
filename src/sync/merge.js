@@ -434,6 +434,14 @@ export const mergeSettings = (local, remote) => {
  * lost). Route configs are edited rarely by a single user, so this is
  * acceptable and far simpler than per-route id/timestamp reconciliation.
  *
+ * Clock-skew caveat: `updatedAt` is each device's own `Date.now()`, so a
+ * device with a fast/skewed clock always "wins" the LWW even when its edit is
+ * OLDER in real time. Bounded in practice — single-user, rarely-edited config;
+ * additive collections (history/decisions) use a monotonic union and are
+ * immune. If it ever bites, a Lamport counter or the gist's server-side
+ * `updatedAt` would remove the wall-clock dependency. The same caveat applies
+ * to {@link mergeNewestConfigSlot} (galaxy-scan + reminder config).
+ *
  * `changed` is `true` only when remote strictly displaced local — the caller
  * writes the merged slot back to local storage only then (anti-loop).
  *
@@ -469,6 +477,7 @@ export const mergeDailyRunRoutes = (local, remote) => {
  * Whole-universe newest-`updatedAt`-wins for a `{ config, updatedAt }` slot —
  * the shared core of {@link mergeGalaxyScanConfig} and {@link mergeReminderConfig}.
  * Newer side wins the whole config; ties / missing-or-0 remote ts keep local.
+ * (Same wall-clock LWW clock-skew caveat as {@link mergeDailyRunRoutes}.)
  *
  * @template T
  * @param {{ config: T, updatedAt: number }} local

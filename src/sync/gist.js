@@ -565,19 +565,46 @@ const readGistFile = async (gist, filename) => {
  * @throws When the underlying {@link gh} calls fail (no token, rate
  *   limited, network error on gist creation).
  */
+/**
+ * In-flight de-dupe for {@link ensureGist}. The scheduler (boot download) and
+ * the reminders producer run under INDEPENDENT locks and both reach ensureGist
+ * transitively; on a fresh device with no cached id, two concurrent callers
+ * could each list (find none) and POST a new gist — orphaning a duplicate and
+ * stranding whichever payload landed in the loser. Memoizing the in-progress
+ * resolution makes concurrent callers await the SAME discovery+create.
+ * @type {Promise<string> | null}
+ */
+let gistResolution = null;
+
 export const ensureGist = async () => {
   const cached = getGistId();
   if (cached) return cached;
+  if (gistResolution) return gistResolution;
+  gistResolution = resolveGist().finally(() => {
+    gistResolution = null;
+  });
+  return gistResolution;
+};
 
+/**
+ * The actual discover-or-create, run single-flight via {@link ensureGist}.
+ * @returns {Promise<string>}
+ */
+const resolveGist = async () => {
   // One page is enough: GitHub's default sort is updated-desc, and
   // nobody has more than 100 gists that would rank higher than their
   // OG-E gist.
   const gists = await gh('/gists?per_page=100');
 
-  /** @type {Array<{ id: string, description: string }>} */
+  /** @type {Array<{ id: string, description: string, created_at?: string }>} */
   const list = gists || [];
 
-  const existing = list.find((g) => g.description === GIST_DESCRIPTION);
+  // Pick the OLDEST matching gist deterministically (smallest created_at) so
+  // that if a cross-device first-boot race ever did create two, every device
+  // converges on the same one instead of flapping between them.
+  const existing = list
+    .filter((g) => g.description === GIST_DESCRIPTION)
+    .sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')))[0];
   if (existing) {
     setGistId(existing.id);
     return existing.id;
