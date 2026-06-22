@@ -442,15 +442,15 @@ const render = () => {
       const earliest = fireAts.length ? fireAts[0] : null;
       if (armed) {
         const title = earliest === null
-          ? 'Reminders armed — click to cancel'
+          ? 'Alarm set — click to cancel'
           : fireAts.length === 1
-            ? `Reminder at ${fmtClock(earliest)} — click to cancel`
-            : `Reminders: ${fireAts.length} · first at ${fmtClock(earliest)} — click to cancel`;
+            ? `Alarm at ${fmtClock(earliest)} — click to cancel`
+            : `Alarms: ${fireAts.length} · first at ${fmtClock(earliest)} — click to cancel`;
         stamp(cell, `armed${syncing}`, 'disarm', '', title);
       } else if (earliest !== null && earliest - now > NTFY_MAX_DELAY_SEC) {
-        stamp(cell, 'disabled', '', '', 'Too far ahead to remind (ntfy limit is 3 days)');
+        stamp(cell, 'disabled', '', '', 'Too far ahead to alarm (ntfy limit is 3 days)');
       } else {
-        stamp(cell, `idle${syncing}`, 'arm', '', 'Click to get push reminders for this fleet');
+        stamp(cell, `idle${syncing}`, 'arm', '', 'Click to set an alarm for this fleet');
       }
       continue;
     }

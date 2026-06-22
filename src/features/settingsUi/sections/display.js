@@ -38,11 +38,15 @@ export const displaySection = {
       type: 'checkbox',
     },
     {
-      // Loud full-screen alert while under attack. The inline button fires a
-      // 10s preview (works regardless of the checkbox, so the player can see
-      // it before opting in) — the alarm feature listens for the event.
+      // In-tab full-screen highlight while the open OGame tab shows an inbound
+      // attack — purely a louder rendering of what the game already displays to
+      // a player who is at the keyboard (no off-tab title/favicon signal, no
+      // push). The inline button fires a 10s preview (works regardless of the
+      // checkbox, so the player can see it before opting in) — the feature
+      // listens for the event. `id` stays the legacy persisted key so existing
+      // users' saved toggle survives the rename.
       id: 'attackAlarm',
-      label: 'Attack alarm (full-screen alert when under attack)',
+      label: 'Under-attack highlight (full-screen banner in the open tab)',
       type: 'checkbox',
       buttonText: 'Preview',
       onclick: () => document.dispatchEvent(new CustomEvent(ATTACK_ALARM_TEST_EVENT)),

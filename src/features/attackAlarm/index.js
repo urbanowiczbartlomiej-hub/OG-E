@@ -1,21 +1,29 @@
 // @ts-check
 //
-// Attack alarm — a deliberately LOUD, full-screen alert the instant OGame
-// flags an inbound attack. Off by default; opt-in from the Display settings
-// section, with a "Preview" button so the player can see what it looks like
-// before committing.
+// Under-attack highlight — a deliberately LOUD, full-screen banner inside the
+// OPEN OGame tab the instant OGame flags an inbound attack. Off by default;
+// opt-in from the Display settings section, with a "Preview" button so the
+// player can see what it looks like before committing.
 //
-// # Why a loud banner is justified here (it wasn't for events)
+// # Strictly an in-tab rendering — NOT an "attack alarm"
 //
-// `features/eventMenuHighlight.js` once painted a similar full-screen blinking
-// banner for ordinary event-ticker items and it was REMOVED in v1.3.6 for
-// being disruptive during normal play. The difference: that fired on every
-// expedition return; THIS fires only on a genuine incoming attack — rare and
-// genuinely critical. The design keeps the lesson in mind:
+// This feature only makes the attack info OGame ALREADY shows (the top-bar
+// flag) impossible to miss for a player who is looking at the open tab. It is
+// deliberately scoped to stay on the fair-play side of the line:
+//   - NO off-tab signal — it does not touch the browser tab title or favicon,
+//     and it sends NO push / notification of any kind. It cannot reach a player
+//     who is away from this tab, so it never tells anyone about an attack they
+//     wouldn't already see at the keyboard.
+//   - NOT wired to ntfy / the Alarm clock in any way.
 //   - default OFF (opt-in), so nobody gets it unasked;
 //   - the full-screen layer is `pointer-events:none`, so it NEVER blocks the
 //     clicks you need to defend yourself;
 //   - it is dismissible, and a dismissal only sticks until the attack changes.
+//
+// `features/eventMenuHighlight.js` once painted a similar full-screen banner for
+// ordinary event-ticker items and it was REMOVED in v1.3.6 for being disruptive
+// during normal play. The difference: that fired on every expedition return;
+// THIS fires only on a genuine incoming attack — rare and genuinely critical.
 //
 // # Detection (two signals)
 //
@@ -56,19 +64,6 @@ const PREVIEW_MS = 10000;
 
 /** Slow fallback re-check; the MutationObserver is the fast path. */
 const POLL_MS = 25000;
-
-/** Title shown (blinking) in the browser tab while the alarm is up. */
-const ALARM_TITLE = '🚨 UNDER ATTACK 🚨';
-
-/** Red "!" disc swapped into the favicon so a background tab is unmistakable. */
-const ALARM_FAVICON =
-  'data:image/svg+xml,' +
-  encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">' +
-      '<circle cx="8" cy="8" r="8" fill="#ff1f1f"/>' +
-      '<rect x="7" y="3" width="2" height="6" fill="#fff"/>' +
-      '<rect x="7" y="11" width="2" height="2" fill="#fff"/></svg>',
-  );
 
 const CSS = `
 @keyframes oge-attack-vig {
@@ -151,13 +146,7 @@ export const installAttackAlarm = () => {
   let visible = false; // any alarm (real OR preview) is currently on screen
   let previewActive = false;
   let previewTimer = 0;
-  let tick = 0; // 1s interval: blink tab title + refresh ETA countdown
-  let titleFlip = false;
-  let originalTitle = '';
-
-  /** @type {string | null} */ let savedFaviconHref = null;
-  let createdFavicon = false;
-  /** @type {HTMLLinkElement | null} */ let faviconEl = null;
+  let tick = 0; // 1s interval: refresh the in-banner ETA countdown
 
   // Fingerprint the user dismissed; '' = not muted. While muted with an
   // unchanged fingerprint we stay quiet; a new/earlier wave changes it and
@@ -168,35 +157,6 @@ export const installAttackAlarm = () => {
   let lastSummary = { count: 0, soonestArrivalAt: 0, targets: [] };
 
   /** @type {MutationObserver | null} */ let mo = null;
-
-  // ── favicon swap / restore ───────────────────────────────────────────────
-  const swapFavicon = () => {
-    faviconEl = /** @type {HTMLLinkElement | null} */ (
-      document.querySelector('link[rel~="icon"]')
-    );
-    if (faviconEl) {
-      if (savedFaviconHref === null) savedFaviconHref = faviconEl.getAttribute('href');
-      faviconEl.setAttribute('href', ALARM_FAVICON);
-    } else {
-      const link = document.createElement('link');
-      link.rel = 'icon';
-      link.href = ALARM_FAVICON;
-      (document.head ?? document.documentElement).appendChild(link);
-      faviconEl = link;
-      createdFavicon = true;
-    }
-  };
-
-  const restoreFavicon = () => {
-    if (createdFavicon && faviconEl) {
-      faviconEl.remove();
-    } else if (faviconEl && savedFaviconHref !== null) {
-      faviconEl.setAttribute('href', savedFaviconHref);
-    }
-    faviconEl = null;
-    createdFavicon = false;
-    savedFaviconHref = null;
-  };
 
   // ── event-list enrichment (signal B) ─────────────────────────────────────
   const parseEventList = () => {
@@ -240,8 +200,6 @@ export const installAttackAlarm = () => {
       visible = true;
       if (overlay) overlay.style.display = 'block';
       if (banner) banner.style.display = 'flex';
-      if (!originalTitle) originalTitle = document.title;
-      swapFavicon();
       if (!tick) tick = window.setInterval(onTick, 1000);
     }
     paintBanner();
@@ -256,18 +214,12 @@ export const installAttackAlarm = () => {
       clearInterval(tick);
       tick = 0;
     }
-    if (originalTitle) {
-      document.title = originalTitle;
-      originalTitle = '';
-    }
-    titleFlip = false;
-    restoreFavicon();
   };
 
+  // 1s tick — live-refresh the in-banner ETA countdown. Deliberately does NOT
+  // touch the tab title or favicon: this highlight is in-tab only.
   const onTick = () => {
-    titleFlip = !titleFlip;
-    document.title = titleFlip ? ALARM_TITLE : originalTitle;
-    paintBanner(); // live-refresh the ETA countdown
+    paintBanner();
   };
 
   // ── user actions on the banner ───────────────────────────────────────────
@@ -422,11 +374,6 @@ export const installAttackAlarm = () => {
     unsubSettings();
     document.removeEventListener(EVENT_BOX_LOADED_EVENT, onEventBox);
     document.removeEventListener(ATTACK_ALARM_TEST_EVENT, onTest);
-    if (originalTitle) {
-      document.title = originalTitle;
-      originalTitle = '';
-    }
-    restoreFavicon();
     if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
     if (banner && banner.parentNode) banner.parentNode.removeChild(banner);
     overlay = banner = bannerText = null;
