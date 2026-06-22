@@ -298,6 +298,46 @@ describe('ensureGist', () => {
     expect(body.description).toBe(GIST_DESCRIPTION);
     expect(body.files[GIST_FILENAME]).toBeDefined();
   });
+
+  it('single-flights concurrent first-boot callers into ONE create', async () => {
+    // The scheduler boot-download and the reminders producer both reach
+    // ensureGist under INDEPENDENT locks. On a fresh device (no cached id),
+    // without single-flighting they'd each list + POST, orphaning a duplicate
+    // gist. The in-progress promise must make the second caller await the first.
+    localStorage.removeItem(GIST_ID_KEY);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(makeResponse({ body: [] })) // listing (one, shared)
+      .mockResolvedValueOnce(makeResponse({ body: { id: 'created-once' } })); // POST (one)
+    vi.stubGlobal('fetch', fetchMock);
+
+    const [a, b] = await Promise.all([ensureGist(), ensureGist()]);
+
+    expect(a).toBe('created-once');
+    expect(b).toBe('created-once');
+    // Exactly one listing + one POST — the second caller awaited the first's
+    // in-progress promise rather than creating a second gist.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('adopts the OLDEST matching gist when several share the description', async () => {
+    // Cross-device convergence: if a first-boot race ever did create two, every
+    // device must pick the same one (smallest created_at) instead of flapping.
+    localStorage.removeItem(GIST_ID_KEY);
+    const fetchMock = mockFetch(
+      makeResponse({
+        body: [
+          { id: 'newer', description: GIST_DESCRIPTION, created_at: '2024-02-01T00:00:00Z' },
+          { id: 'oldest', description: GIST_DESCRIPTION, created_at: '2024-01-01T00:00:00Z' },
+        ],
+      }),
+    );
+    const id = await ensureGist();
+    expect(id).toBe('oldest');
+    expect(getGistId()).toBe('oldest');
+    // Listing only — a match was found, so no create.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('fetchGistData', () => {
