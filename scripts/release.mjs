@@ -118,10 +118,13 @@ if (!tagExists) {
 
 function extractChangelogSection(version) {
   const text = readFileSync(resolve(ROOT, 'CHANGELOG.md'), 'utf8');
-  // Header: "## [1.25.0] — 2026-06-18" (em-dash). Body runs to the next "## ".
+  // Header: "## [1.25.0] — 2026-06-18". Body runs to the next "## ". The
+  // separator accepts an em-dash (—), en-dash (–) or hyphen (-) so a dash-typo
+  // in the header can't silently abort the release (the CI guard in
+  // .github/workflows/release.yml mirrors this).
   const escaped = version.replace(/\./g, '\\.');
   const re = new RegExp(
-    `^## \\[${escaped}\\]\\s+—\\s+(\\d{4}-\\d{2}-\\d{2})\\s*$([\\s\\S]*?)(?=^## )`,
+    `^## \\[${escaped}\\]\\s+[—–-]\\s+(\\d{4}-\\d{2}-\\d{2})\\s*$([\\s\\S]*?)(?=^## )`,
     'm',
   );
   const m = text.match(re);

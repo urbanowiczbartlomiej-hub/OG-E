@@ -31,11 +31,13 @@ bridges → lib + domain (MAIN-world; must NOT import state/features/sync)
   an explicit `store.set(<initial>)` after disposing (no per-store
   `_reset*ForTest` helper; that affordance is for *features*, not stores).
   *Sanctioned exception — plain key-owner modules:* `state/dailyActions.js`
-  and `state/lifeformArtifacts.js` are plain `read*/write*` helpers over
-  `safeLS` with **no** `createStore`/`persist` and no reactive store. That's
-  deliberate: nothing subscribes to them (they're read on demand at the one
-  call site that needs them), so a reactive store would be pure overhead.
-  Add a store only if a real consumer needs to react to changes.
+  and `state/lifeformArtifacts.js` (over `safeLS`) and `state/ownProfile.js`
+  (over `chrome.storage`) are plain `read*/write*` helpers with **no**
+  `createStore`/`persist` and no reactive store. That's deliberate: nothing
+  subscribes to them (they're read on demand at the one call site that needs
+  them), so a reactive store would be pure overhead. Add a store only if a real
+  consumer needs to react to changes. (This is why `state/` has one more
+  `createStore` than `dispose*Store` export — these three own no store.)
 - **`features/`** may depend on `domain` + `state` + `lib`, but **no
   feature imports another feature.** Each `install*()` is independent and
   idempotent, and ships a `_reset*ForTest()` for the suite. Order in

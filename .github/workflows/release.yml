@@ -48,9 +48,11 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           TAG="v$VERSION"
 
-          # 1. dated CHANGELOG section for exactly this version?
+          # 1. dated CHANGELOG section for exactly this version? The separator
+          #    accepts em-dash / en-dash / hyphen so a dash-typo can't silently
+          #    skip the release (mirrors scripts/release.mjs extractChangelogSection).
           ESC=$(printf '%s' "$VERSION" | sed 's/\./\\./g')
-          if ! grep -qE "^## \[$ESC\] — [0-9]{4}-[0-9]{2}-[0-9]{2}" CHANGELOG.md; then
+          if ! grep -qE "^## \[$ESC\] [—–-] [0-9]{4}-[0-9]{2}-[0-9]{2}" CHANGELOG.md; then
             echo "release: no dated CHANGELOG section for $VERSION — skipping."
             echo "release=false" >> "$GITHUB_OUTPUT"
             exit 0

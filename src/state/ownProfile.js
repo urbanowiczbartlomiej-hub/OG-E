@@ -59,20 +59,6 @@ export const writeOwnProfile = (profile) => {
 };
 
 /**
- * Write a specific universe's own profile VERBATIM — preserving the given
- * `updatedAt` rather than re-stamping `now`. Used by the sync scheduler to
- * apply a merged remote profile without inflating its timestamp (which would
- * make it spuriously "newer" and churn the next merge). The in-game header
- * writer uses {@link writeOwnProfile} (which stamps now); sync uses this.
- *
- * @param {string} universeId
- * @param {OwnProfile} profile
- * @returns {Promise<void>}
- */
-export const writeOwnProfileFor = (universeId, profile) =>
-  chromeStore.set(ownProfileKeyFor(universeId), profile);
-
-/**
  * Read a given universe's own profile (called on the dashboard). Returns an
  * empty object when nothing is stored yet, so callers never null-check.
  *

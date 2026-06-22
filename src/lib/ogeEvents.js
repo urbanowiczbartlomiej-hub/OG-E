@@ -44,8 +44,6 @@ export const SYSTEM_DISCOVERY_RESULT_EVENT = 'oge:systemDiscoveryResult';
 export const SYNC_STATUS_EVENT = 'oge:syncStatus';
 /** A user-initiated "Sync now" request. */
 export const SYNC_FORCE_EVENT = 'oge:syncForce';
-/** A user-initiated "check ntfy account now" request. */
-export const NTFY_CHECK_NOW_EVENT = 'oge:ntfyCheckNow';
 /** A user-initiated "preview the attack alarm" request from settings. */
 export const ATTACK_ALARM_TEST_EVENT = 'oge:attackAlarmTest';
 /** Daily-action state changed (rewards / merchant claimed). */

@@ -181,8 +181,10 @@ const installDomFeatures = () => {
   installRewardingWatcher();
   installArtifactShopWatcher();
   // OGame public-API context (per-device occupancy breadth for colonization).
-  // Dormant unless the `oge_debugApi` flag is set (Stage 1 ships the data path
-  // only); later stages wire it into Colony Scout + the colonize picker.
+  // Warms the per-device occupancy cache on every load (cache-gated, so the
+  // multi-MB universe.xml is fetched at most weekly) and publishes the
+  // occupancy index to the shared handoff for the colonize picker + Colony
+  // Scout. The `oge_debugApi` flag swaps the silent build for a console probe.
   // Top-frame only: universe.xml is multi-MB and identical across the game's
   // iframes, so a per-frame fetch would just multiply traffic.
   if (window.top === window.self) installApiContext();

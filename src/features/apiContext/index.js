@@ -17,9 +17,11 @@
 // empty right now before a colony ship flies. (There is no documented ETag, so
 // cadence TTL — not HTTP 304 — is the cache mechanism.)
 //
-// STAGE 1 SCOPE: dormant by default. `getContext()` is the seam later stages
-// call; an opt-in console probe lets the data path be verified in the browser
-// before any UI or sync change.
+// SCOPE: on every in-game load `installApiContext()` warms the cache and
+// publishes the occupancy index (the silent build) so the in-game colonize
+// picker + dashboard Scout have data; `getContext()` is the seam they read.
+// The `oge_debugApi` flag swaps the silent build for an opt-in console probe
+// that logs the parsed occupancy for verification in the browser.
 //
 // Verify in the browser:
 //   localStorage.oge_debugApi = '1'               // opt into the fetch

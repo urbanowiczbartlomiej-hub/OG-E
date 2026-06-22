@@ -24,6 +24,12 @@ const bundle = (input, file) => ({
     ? [
         terser({
           compress: { drop_console: true, drop_debugger: true, passes: 2 },
+          // NB: `mangle:{toplevel:true}` was measured to be a no-op here — rollup
+          // wraps every module binding inside the output IIFE's function scope,
+          // which terser's default mangle already renames, so there are no real
+          // program-level names left to shorten. Property-mangle stays OFF on
+          // purpose: object/string keys encode external contracts (OGame DOM
+          // selectors, storage keys, oge:* event names) that must survive verbatim.
           format: { comments: false },
         }),
       ]

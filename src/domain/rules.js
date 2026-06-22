@@ -82,7 +82,8 @@ export const ROUTE_MISSION_CATALOG = [
  *   1 = planet, 2 = debris field, 3 = moon.
  */
 export const TARGET_PLANET = 1;
-export const TARGET_DEBRIS = 2;
+// 2 = debris field (see the enum above) — no OG-E flow targets debris, so no
+// const is exported for it; the gap between 1 and 3 is intentional.
 export const TARGET_MOON = 3;
 
 /**

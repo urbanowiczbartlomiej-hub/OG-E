@@ -2,6 +2,9 @@
 dist/
 *.zip
 
+# Test coverage report (npm run coverage)
+coverage/
+
 # Claude Code per-project state
 .claude/
 
