@@ -1,7 +1,7 @@
-// Reminder config store — the reactive, per-universe config behind expedition-
-// wave auto-reminders, the ad-hoc lead time, and the per-kind message
+// AlarmClock config store — the reactive, per-universe config behind expedition-
+// wave auto-alarmClock, the ad-hoc lead time, and the per-kind message
 // templates. Persisted to `chrome.storage.local` under
-// `<universeId>:oge_reminderConfig` (see {@link reminderConfigKeyFor}).
+// `<universeId>:oge_alarmClockConfig` (see {@link alarmClockConfigKeyFor}).
 //
 // # Why chrome.storage (not the localStorage settingsStore)
 //
@@ -13,7 +13,7 @@
 // sync, `stamp*` helper).
 //
 // The shape, defaults, and normalisation live in the pure
-// `domain/reminderConfig.js`; this module only owns persistence + the
+// `domain/alarmClockConfig.js`; this module only owns persistence + the
 // cross-device sync timestamp.
 //
 // @ts-check
@@ -22,50 +22,50 @@ import { createStore } from '../lib/createStore.js';
 import { persist } from '../lib/persist.js';
 import { chromeStore } from '../lib/storage.js';
 import {
-  defaultReminderConfig,
-  normalizeReminderConfig,
-} from '../domain/reminderConfig.js';
+  defaultAlarmClockConfig,
+  normalizeAlarmClockConfig,
+} from '../domain/alarmClockConfig.js';
 import { currentUniverseKey } from './universeKey.js';
 
 /**
- * @typedef {import('../domain/reminderConfig.js').ReminderConfig} ReminderConfig
+ * @typedef {import('../domain/alarmClockConfig.js').AlarmClockConfig} AlarmClockConfig
  */
 
 /**
  * Suffix portion of the chrome.storage.local key. The full key written is
- * `<universeId>:<REMINDER_CONFIG_KEY_BASE>` — see
- * {@link reminderConfigKeyFor}. Exported so the dashboard (extension origin)
+ * `<universeId>:<ALARM_CLOCK_CONFIG_KEY_BASE>` — see
+ * {@link alarmClockConfigKeyFor}. Exported so the dashboard (extension origin)
  * can compose a key for an arbitrary selected universe.
  */
-export const REMINDER_CONFIG_KEY_BASE = 'oge_reminderConfig';
+export const ALARM_CLOCK_CONFIG_KEY_BASE = 'oge_alarmClockConfig';
 
 /**
  * Compose the full chrome.storage.local key for a given universe id.
  *
  * @param {string} universeId  e.g. `'s163-pl'` from `parseUniverseId`.
- * @returns {string} e.g. `'s163-pl:oge_reminderConfig'`.
+ * @returns {string} e.g. `'s163-pl:oge_alarmClockConfig'`.
  */
-export const reminderConfigKeyFor = (universeId) =>
-  `${universeId}:${REMINDER_CONFIG_KEY_BASE}`;
+export const alarmClockConfigKeyFor = (universeId) =>
+  `${universeId}:${ALARM_CLOCK_CONFIG_KEY_BASE}`;
 
 /**
  * Suffix of the per-universe "config last changed" timestamp key
- * (`<universeId>:oge_reminderConfigTs`). The sync engine uses this epoch-ms
+ * (`<universeId>:oge_alarmClockConfigTs`). The sync engine uses this epoch-ms
  * value for whole-universe newest-wins merging (see
- * `sync/merge.mergeReminderConfig`). Separate key for the same reasons as
+ * `sync/merge.mergeAlarmClockConfig`). Separate key for the same reasons as
  * `galaxyScanConfigTsKeyFor`: it is sync metadata (not config), and it must be
  * visible across both editing origins.
  */
-export const REMINDER_CONFIG_TS_BASE = 'oge_reminderConfigTs';
+export const ALARM_CLOCK_CONFIG_TS_BASE = 'oge_alarmClockConfigTs';
 
 /**
  * Compose the per-universe config-timestamp key.
  *
  * @param {string} universeId
- * @returns {string} e.g. `'s163-pl:oge_reminderConfigTs'`.
+ * @returns {string} e.g. `'s163-pl:oge_alarmClockConfigTs'`.
  */
-export const reminderConfigTsKeyFor = (universeId) =>
-  `${universeId}:${REMINDER_CONFIG_TS_BASE}`;
+export const alarmClockConfigTsKeyFor = (universeId) =>
+  `${universeId}:${ALARM_CLOCK_CONFIG_TS_BASE}`;
 
 /**
  * Resolve the chrome.storage.local key for the current tab's universe. Falls
@@ -75,20 +75,20 @@ export const reminderConfigTsKeyFor = (universeId) =>
  * @returns {string}
  */
 const currentKey = () =>
-  currentUniverseKey(REMINDER_CONFIG_KEY_BASE, reminderConfigKeyFor);
+  currentUniverseKey(ALARM_CLOCK_CONFIG_KEY_BASE, alarmClockConfigKeyFor);
 
 /** Write-through debounce window (config edits are infrequent bursts). */
 const DEBOUNCE_MS = 200;
 
 /**
- * The reminder config store. Initial value is the built-in defaults (so
- * reminder consumers have sane behaviour before the async hydrate lands),
- * replaced by the persisted value once {@link initReminderConfigStore}
+ * The alarmClock config store. Initial value is the built-in defaults (so
+ * alarmClock consumers have sane behaviour before the async hydrate lands),
+ * replaced by the persisted value once {@link initAlarmClockConfigStore}
  * resolves the load.
  *
- * @type {import('../lib/createStore.js').Store<ReminderConfig>}
+ * @type {import('../lib/createStore.js').Store<AlarmClockConfig>}
  */
-export const reminderConfigStore = createStore(defaultReminderConfig());
+export const alarmClockConfigStore = createStore(defaultAlarmClockConfig());
 
 /**
  * The `persist` unsubscribe handle, or `null` before init / after dispose.
@@ -99,19 +99,19 @@ let disposeFn = null;
 
 /**
  * Wire the store to chrome.storage.local: hydrate from
- * `<universeId>:oge_reminderConfig` (normalised, so a partial/legacy blob is
+ * `<universeId>:oge_alarmClockConfig` (normalised, so a partial/legacy blob is
  * filled to a complete config) and write every change back (debounced).
  * Idempotent.
  *
  * @returns {() => void} Dispose function that unsubscribes write-through.
  */
-export const initReminderConfigStore = () => {
+export const initAlarmClockConfigStore = () => {
   if (disposeFn) return disposeFn;
   disposeFn = persist({
-    store: reminderConfigStore,
+    store: alarmClockConfigStore,
     load: async () => {
       const raw = await chromeStore.get(currentKey());
-      if (raw !== null && raw !== undefined) return normalizeReminderConfig(raw);
+      if (raw !== null && raw !== undefined) return normalizeAlarmClockConfig(raw);
       // Nothing in chrome.storage yet → keep the defaults, no write.
       return null;
     },
@@ -127,22 +127,22 @@ export const initReminderConfigStore = () => {
  *
  * @returns {Promise<void>}
  */
-const flushReminderConfigStore = () =>
-  chromeStore.set(currentKey(), reminderConfigStore.get());
+const flushAlarmClockConfigStore = () =>
+  chromeStore.set(currentKey(), alarmClockConfigStore.get());
 
 /**
  * Stamp "config changed just now" for the current universe so the next sync
  * round-trip treats this device's config as freshest (whole-universe
- * newest-wins, see `sync/merge.mergeReminderConfig`). Flushes the value first
+ * newest-wins, see `sync/merge.mergeAlarmClockConfig`). Flushes the value first
  * to close the debounce race (same rationale as `stampGalaxyScanConfigChanged`).
  * The dashboard writes the same key directly on save.
  *
  * @returns {Promise<void>}
  */
-export const stampReminderConfigChanged = async () => {
-  await flushReminderConfigStore();
+export const stampAlarmClockConfigChanged = async () => {
+  await flushAlarmClockConfigStore();
   await chromeStore.set(
-    currentUniverseKey(REMINDER_CONFIG_TS_BASE, reminderConfigTsKeyFor),
+    currentUniverseKey(ALARM_CLOCK_CONFIG_TS_BASE, alarmClockConfigTsKeyFor),
     Date.now(),
   );
 };
@@ -152,7 +152,7 @@ export const stampReminderConfigChanged = async () => {
  *
  * @returns {void}
  */
-export const disposeReminderConfigStore = () => {
+export const disposeAlarmClockConfigStore = () => {
   if (disposeFn) {
     disposeFn();
     disposeFn = null;

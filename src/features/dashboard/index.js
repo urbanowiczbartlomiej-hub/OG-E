@@ -76,10 +76,10 @@ import {
   exportColonyCsv,
   triggerResetGalaxy,
 } from './io.js';
-import { installReminders, _resetRemindersForTest } from './reminders.js';
+import { installAlarmClock, _resetAlarmClockForTest } from './alarmClock.js';
 import { installRoutes } from './routes.js';
 import { installScanColonyConfig } from './scanConfig.js';
-import { installReminderConfig } from './reminderConfig.js';
+import { installAlarmClockConfig } from './alarmClockConfig.js';
 import { installSync } from './sync.js';
 import { installSettingsControls } from './settingsControls.js';
 
@@ -97,7 +97,7 @@ const SCOUT_PREFS_KEY = 'oge_colonyScoutPrefs';
 
 // localStorage key for the active dashboard tab. Per-device UI prefs.
 // Possible values are the `data-tab` attributes from dashboard.html:
-// `'colony'`, `'reminders'`, `'routes'`. Anything unrecognised — including the
+// `'colony'`, `'alarmClock'`, `'routes'`. Anything unrecognised — including the
 // retired `'free'` and `'galaxy'` (whose content folded into the Colonizations
 // tab's sub-tabs) — falls back to `'colony'` (the page's first tab). The key
 // keeps its legacy `oge_histogram` name so the saved preference survives the
@@ -124,13 +124,13 @@ const DEFAULT_COL_POSITIONS = defaultGalaxyScanConfig().positions;
 let selectedUniverseId = '';
 
 /**
- * Handle to the reminders module's refresh entrypoint, set by
- * `installReminders` at boot. Called from the universe-selector change
- * handler so the reminders tab repaints with the newly-selected server.
+ * Handle to the alarmClock module's refresh entrypoint, set by
+ * `installAlarmClock` at boot. Called from the universe-selector change
+ * handler so the alarmClock tab repaints with the newly-selected server.
  *
  * @type {{ refresh: () => void } | null}
  */
-let remindersApi = null;
+let alarmClockApi = null;
 
 /**
  * Handle to the FS-routes tab's refresh entrypoint, set by
@@ -153,13 +153,13 @@ let routesApi = null;
 let scanColonyConfigApi = null;
 
 /**
- * Handle to the fleet-save reminder config editor's refresh entrypoint, set by
- * `installReminderConfig` at boot. Called from the universe-selector change
+ * Handle to the fleet-save alarmClock config editor's refresh entrypoint, set by
+ * `installAlarmClockConfig` at boot. Called from the universe-selector change
  * handler so the fleet-save fields reload for the newly-selected server.
  *
  * @type {{ refresh: () => void } | null}
  */
-let reminderConfigApi = null;
+let alarmClockConfigApi = null;
 
 /** @type {ColonyEntry[]} */
 let history = [];
@@ -275,19 +275,19 @@ const boot = async () => {
   wireTabs();
   wireColonySubtabs();
 
-  // Reminders tab filters by the active universe (same UX as the other
-  // tabs). The host passes a getter so reminders never has to import
+  // AlarmClock tab filters by the active universe (same UX as the other
+  // tabs). The host passes a getter so alarmClock never has to import
   // this module's module-scope state; the universe selector's change
-  // handler calls `remindersApi.refresh()` to repaint.
-  remindersApi = installReminders({ getUniverseId: () => selectedUniverseId });
+  // handler calls `alarmClockApi.refresh()` to repaint.
+  alarmClockApi = installAlarmClock({ getUniverseId: () => selectedUniverseId });
   routesApi = installRoutes({ getUniverseId: () => selectedUniverseId });
   scanColonyConfigApi = installScanColonyConfig({ getUniverseId: () => selectedUniverseId });
-  reminderConfigApi = installReminderConfig({ getUniverseId: () => selectedUniverseId });
+  alarmClockConfigApi = installAlarmClockConfig({ getUniverseId: () => selectedUniverseId });
   // Sync tab is cross-universe (ignores the selector) and self-subscribes to
   // chrome.storage changes, so it needs no universe getter and no post-load
   // repaint — one install wires it for good.
   installSync();
-  // The Multi-device-sync + reminders master/token controls (moved out of the
+  // The Multi-device-sync + alarmClock master/token controls (moved out of the
   // in-game panel) — they read/write the shared-settings chrome.storage dict.
   installSettingsControls();
 
@@ -297,13 +297,13 @@ const boot = async () => {
 
   await loadAll();
   renderAll();
-  // Reminders + routes tabs read `selectedUniverseId` via their getter
+  // AlarmClock + routes tabs read `selectedUniverseId` via their getter
   // when their initial paint ran inside install* — BEFORE we resolved the
   // active universe. Repaint now that it's known.
-  remindersApi?.refresh();
+  alarmClockApi?.refresh();
   routesApi?.refresh();
   scanColonyConfigApi?.refresh();
-  reminderConfigApi?.refresh();
+  alarmClockConfigApi?.refresh();
   wireListeners();
 
   // Restore Colony Scout preferences from previous session.
@@ -544,7 +544,7 @@ const wireTabs = () => {
  * hidden at render time: its width-based binning falls back to a viewport
  * estimate when `clientWidth` is 0 — see colony.js `estimateChartWidth`.)
  * Purely presentational; no persistence (always opens on the first sub-tab),
- * matching the Reminders settings sub-tabs.
+ * matching the AlarmClock settings sub-tabs.
  *
  * @returns {void}
  */
@@ -944,10 +944,10 @@ const wireListeners = () => {
   universeSelect.addEventListener('change', () => {
     selectedUniverseId = universeSelect.value;
     void loadAll().then(renderAll);
-    remindersApi?.refresh();
+    alarmClockApi?.refresh();
     routesApi?.refresh();
     scanColonyConfigApi?.refresh();
-    reminderConfigApi?.refresh();
+    alarmClockConfigApi?.refresh();
   });
 
   // Re-render on window resize so the colony chart's adaptive binning
@@ -971,10 +971,10 @@ const wireListeners = () => {
  */
 export const _resetDashboardForTest = () => {
   selectedUniverseId = '';
-  remindersApi = null;
+  alarmClockApi = null;
   routesApi = null;
   scanColonyConfigApi = null;
-  reminderConfigApi = null;
+  alarmClockConfigApi = null;
   history = [];
   scans = {};
   galaxyConfig = defaultGalaxyScanConfig();
@@ -998,5 +998,5 @@ export const _resetDashboardForTest = () => {
       /** @type {any} */ (undefined);
   for (const k of Object.keys(weightSliders)) delete weightSliders[/** @type {keyof typeof weightSliders} */ (k)];
   for (const k of Object.keys(weightValues)) delete weightValues[/** @type {keyof typeof weightValues} */ (k)];
-  _resetRemindersForTest();
+  _resetAlarmClockForTest();
 };

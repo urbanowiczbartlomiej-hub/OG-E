@@ -440,7 +440,7 @@ export const mergeSettings = (local, remote) => {
  * additive collections (history/decisions) use a monotonic union and are
  * immune. If it ever bites, a Lamport counter or the gist's server-side
  * `updatedAt` would remove the wall-clock dependency. The same caveat applies
- * to {@link mergeNewestConfigSlot} (galaxy-scan + reminder config).
+ * to {@link mergeNewestConfigSlot} (galaxy-scan + alarmClock config).
  *
  * `changed` is `true` only when remote strictly displaced local — the caller
  * writes the merged slot back to local storage only then (anti-loop).
@@ -475,7 +475,7 @@ export const mergeDailyRunRoutes = (local, remote) => {
 
 /**
  * Whole-universe newest-`updatedAt`-wins for a `{ config, updatedAt }` slot —
- * the shared core of {@link mergeGalaxyScanConfig} and {@link mergeReminderConfig}.
+ * the shared core of {@link mergeGalaxyScanConfig} and {@link mergeAlarmClockConfig}.
  * Newer side wins the whole config; ties / missing-or-0 remote ts keep local.
  * (Same wall-clock LWW clock-skew caveat as {@link mergeDailyRunRoutes}.)
  *
@@ -512,28 +512,28 @@ const mergeNewestConfigSlot = (local, remote) => {
 export const mergeGalaxyScanConfig = (local, remote) => mergeNewestConfigSlot(local, remote);
 
 /**
- * @typedef {object} ReminderConfigSlot
- * @property {import('../domain/reminderConfig.js').ReminderConfig} config
- *   The full per-universe reminder config (wave enable + schedule, ad-hoc lead
+ * @typedef {object} AlarmClockConfigSlot
+ * @property {import('../domain/alarmClockConfig.js').AlarmClockConfig} config
+ *   The full per-universe alarmClock config (wave enable + schedule, ad-hoc lead
  *   time, message templates).
  * @property {number} updatedAt  Epoch-ms of the last local edit (0 = never).
  */
 
 /**
- * Merge one universe's reminder config slot, WHOLE-UNIVERSE
+ * Merge one universe's alarmClock config slot, WHOLE-UNIVERSE
  * newest-`updatedAt`-wins — identical strategy to {@link mergeGalaxyScanConfig}
- * (the reminder config is a single edited unit per universe). The newer side
+ * (the alarmClock config is a single edited unit per universe). The newer side
  * wins the entire config; ties and a missing/0 remote timestamp keep local
  * (the anti-loop no-write path).
  *
  * `changed` is `true` only when remote strictly displaced local — the caller
  * writes the merged slot back to local storage only then (anti-loop).
  *
- * @param {ReminderConfigSlot} local
- * @param {Partial<ReminderConfigSlot> | undefined | null} remote
- * @returns {{ merged: ReminderConfigSlot, changed: boolean }}
+ * @param {AlarmClockConfigSlot} local
+ * @param {Partial<AlarmClockConfigSlot> | undefined | null} remote
+ * @returns {{ merged: AlarmClockConfigSlot, changed: boolean }}
  */
-export const mergeReminderConfig = (local, remote) => mergeNewestConfigSlot(local, remote);
+export const mergeAlarmClockConfig = (local, remote) => mergeNewestConfigSlot(local, remote);
 
 /**
  * @typedef {import('../state/dailyActions.js').DailyState} DailyState

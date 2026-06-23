@@ -1,4 +1,4 @@
-// Unit tests for domain/reminderTemplates — the pure message-template shape,
+// Unit tests for domain/alarmClockTemplates — the pure message-template shape,
 // defaults, normalisation, the wildcard renderer and its token linting.
 // Node env — pure data, no DOM.
 //
@@ -6,24 +6,24 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  REMINDER_KINDS,
+  ALARM_CLOCK_KINDS,
   PRESET_ICONS,
   iconFileFor,
   TEMPLATE_FIELDS,
-  defaultReminderTemplates,
-  normalizeReminderTemplate,
-  normalizeReminderTemplates,
+  defaultAlarmClockTemplates,
+  normalizeAlarmClockTemplate,
+  normalizeAlarmClockTemplates,
   renderTemplate,
   templateTokens,
   unknownTokens,
   legDirection,
-} from '../../src/domain/reminderTemplates.js';
+} from '../../src/domain/alarmClockTemplates.js';
 
-describe('defaultReminderTemplates', () => {
+describe('defaultAlarmClockTemplates', () => {
   it('reproduces the historical hardcoded bodies, icons and priorities', () => {
-    const d = defaultReminderTemplates();
+    const d = defaultAlarmClockTemplates();
     expect(d.wave).toEqual({
-      body: 'Expeditions back ({returnTime}) — reminder #{index}/{total}.',
+      body: 'Expeditions back ({returnTime}) — alarmClock #{index}/{total}.',
       icon: 'default',
       priority: 3,
     });
@@ -40,11 +40,11 @@ describe('defaultReminderTemplates', () => {
   });
 
   it('returns a fresh object each call', () => {
-    expect(defaultReminderTemplates()).not.toBe(defaultReminderTemplates());
+    expect(defaultAlarmClockTemplates()).not.toBe(defaultAlarmClockTemplates());
   });
 
   it('covers exactly the three kinds', () => {
-    expect(Object.keys(defaultReminderTemplates()).sort()).toEqual([...REMINDER_KINDS].sort());
+    expect(Object.keys(defaultAlarmClockTemplates()).sort()).toEqual([...ALARM_CLOCK_KINDS].sort());
   });
 });
 
@@ -60,47 +60,47 @@ describe('iconFileFor', () => {
   });
 });
 
-describe('normalizeReminderTemplate', () => {
-  const fb = defaultReminderTemplates().wave;
+describe('normalizeAlarmClockTemplate', () => {
+  const fb = defaultAlarmClockTemplates().wave;
 
   it('returns a copy of the fallback for null / non-object input', () => {
-    expect(normalizeReminderTemplate(null, fb)).toEqual(fb);
-    expect(normalizeReminderTemplate('x', fb)).toEqual(fb);
-    expect(normalizeReminderTemplate(undefined, fb)).not.toBe(fb);
+    expect(normalizeAlarmClockTemplate(null, fb)).toEqual(fb);
+    expect(normalizeAlarmClockTemplate('x', fb)).toEqual(fb);
+    expect(normalizeAlarmClockTemplate(undefined, fb)).not.toBe(fb);
   });
 
   it('keeps a valid body / icon / priority and fills the rest', () => {
-    const t = normalizeReminderTemplate({ body: 'Hi {server}', icon: 'urgent', priority: 4 }, fb);
+    const t = normalizeAlarmClockTemplate({ body: 'Hi {server}', icon: 'urgent', priority: 4 }, fb);
     expect(t).toEqual({ body: 'Hi {server}', icon: 'urgent', priority: 4 });
   });
 
   it('rejects an unknown icon back to the fallback', () => {
-    expect(normalizeReminderTemplate({ icon: 'rainbow' }, fb).icon).toBe(fb.icon);
+    expect(normalizeAlarmClockTemplate({ icon: 'rainbow' }, fb).icon).toBe(fb.icon);
   });
 
   it('clamps priority into [1,5] and rounds, falling back on garbage', () => {
-    expect(normalizeReminderTemplate({ priority: 0 }, fb).priority).toBe(1);
-    expect(normalizeReminderTemplate({ priority: 9 }, fb).priority).toBe(5);
-    expect(normalizeReminderTemplate({ priority: 3.6 }, fb).priority).toBe(4);
-    expect(normalizeReminderTemplate({ priority: 'loud' }, fb).priority).toBe(fb.priority);
+    expect(normalizeAlarmClockTemplate({ priority: 0 }, fb).priority).toBe(1);
+    expect(normalizeAlarmClockTemplate({ priority: 9 }, fb).priority).toBe(5);
+    expect(normalizeAlarmClockTemplate({ priority: 3.6 }, fb).priority).toBe(4);
+    expect(normalizeAlarmClockTemplate({ priority: 'loud' }, fb).priority).toBe(fb.priority);
   });
 
   it('accepts an explicit empty body (deliberately blank)', () => {
-    expect(normalizeReminderTemplate({ body: '' }, fb).body).toBe('');
+    expect(normalizeAlarmClockTemplate({ body: '' }, fb).body).toBe('');
   });
 });
 
-describe('normalizeReminderTemplates', () => {
+describe('normalizeAlarmClockTemplates', () => {
   it('fills every kind for null / non-object input', () => {
-    expect(normalizeReminderTemplates(null)).toEqual(defaultReminderTemplates());
-    expect(normalizeReminderTemplates(42)).toEqual(defaultReminderTemplates());
+    expect(normalizeAlarmClockTemplates(null)).toEqual(defaultAlarmClockTemplates());
+    expect(normalizeAlarmClockTemplates(42)).toEqual(defaultAlarmClockTemplates());
   });
 
   it('deep-normalises a partial map without touching the other kinds', () => {
-    const t = normalizeReminderTemplates({ fleetSave: { priority: 2 } });
+    const t = normalizeAlarmClockTemplates({ fleetSave: { priority: 2 } });
     expect(t.fleetSave.priority).toBe(2);
-    expect(t.fleetSave.body).toBe(defaultReminderTemplates().fleetSave.body);
-    expect(t.wave).toEqual(defaultReminderTemplates().wave);
+    expect(t.fleetSave.body).toBe(defaultAlarmClockTemplates().fleetSave.body);
+    expect(t.wave).toEqual(defaultAlarmClockTemplates().wave);
   });
 });
 
@@ -136,14 +136,14 @@ describe('templateTokens / unknownTokens', () => {
   });
 
   it('every default body references only catalogued tokens for its kind', () => {
-    const d = defaultReminderTemplates();
-    for (const kind of REMINDER_KINDS) {
+    const d = defaultAlarmClockTemplates();
+    for (const kind of ALARM_CLOCK_KINDS) {
       expect(unknownTokens(d[kind].body, kind)).toEqual([]);
     }
   });
 
   it('TEMPLATE_FIELDS covers the three kinds', () => {
-    expect(Object.keys(TEMPLATE_FIELDS).sort()).toEqual([...REMINDER_KINDS].sort());
+    expect(Object.keys(TEMPLATE_FIELDS).sort()).toEqual([...ALARM_CLOCK_KINDS].sort());
   });
 
   it('ad-hoc and fleet-save share the same per-fleet tokens (unified set)', () => {

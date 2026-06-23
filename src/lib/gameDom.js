@@ -92,7 +92,7 @@ export const GAME = {
   /**
    * Destination-coords cell of an event-ticker fleet row. The anchor's
    * href carries only `galaxy`+`system`, but its text is the full
-   * `[g:s:p]` — parse the position from the text. Read by the reminders
+   * `[g:s:p]` — parse the position from the text. Read by the alarmClock
    * feature (where an outbound leg lands) and by `features/dailyRun`
    * (which targets already have an inbound Deployment fleet).
    */
@@ -100,10 +100,10 @@ export const GAME = {
   /** Fleet-details cell (ship counts / mission text). */
   DETAILS_FLEET: '.detailsFleet',
   /** Origin body cell — planet/moon icon + short name (e.g. `K4`). Read by the
-   *  reminders fleet-row parser and the FS-badge origin labeller. */
+   *  alarmClock fleet-row parser and the FS-badge origin labeller. */
   ORIGIN_FLEET: '.originFleet',
   /** Destination body cell — icon + name; the full name lives in the span
-   *  `title` (the visible text is truncated). Read by the reminders fleet-row
+   *  `title` (the visible text is truncated). Read by the alarmClock fleet-row
    *  parser; `features/dailyRun` reads `.destFleet figure` for the moon icon. */
   DEST_FLEET: '.destFleet',
 

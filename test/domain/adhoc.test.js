@@ -9,8 +9,8 @@ import {
 } from '../../src/domain/adhoc.js';
 
 /**
- * @param {Partial<import('../../src/domain/adhoc.js').AdhocReminder> & { id: string }} o
- * @returns {import('../../src/domain/adhoc.js').AdhocReminder}
+ * @param {Partial<import('../../src/domain/adhoc.js').AdhocAlarmClock> & { id: string }} o
+ * @returns {import('../../src/domain/adhoc.js').AdhocAlarmClock}
  */
 const entry = (o) => ({
   arrivalAt: 2000,

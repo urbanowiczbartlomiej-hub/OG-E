@@ -31,7 +31,7 @@
 //     non-empty until the last expedition lands — same wave, same id.
 //   - Re-send: brand-new return-times (≥ one full round-trip later),
 //     zero overlap with any prev wave — brand-new wave, fresh id and
-//     fresh reminder schedule.
+//     fresh alarmClock schedule.
 //   - `nextWaveAt` drifts across scans (it's the earliest remaining
 //     return); since identity doesn't depend on it, drift is irrelevant.
 //
@@ -45,7 +45,7 @@
 // whenever a long gap between observations let `nextWaveAt` drift past
 // the 300 s tolerance — typically a page reload mid-wave — causing the
 // same wave to be treated as brand-new and getting a second six-
-// reminder schedule stacked on top of the original one still queued
+// alarmClock schedule stacked on top of the original one still queued
 // on ntfy. Identity by the FULL set of return-times closes that gap:
 // even one shared timestamp is enough to tie the scans together.
 
@@ -58,7 +58,7 @@
 export const DEFAULT_CLUSTER_GAP_SECONDS = 300;
 
 /**
- * After this many seconds past the wave's first reminder a matched
+ * After this many seconds past the wave's first alarmClock a matched
  * wave is TOMBSTONED (`cancelled: true`) if a brand-new wave shows up
  * in the same scan. The player has clearly re-sent, the wave's first
  * push already fired (or is about to), so the remaining pings are noise.
@@ -67,7 +67,7 @@ export const DEFAULT_CLUSTER_GAP_SECONDS = 300;
  * see the cleanup rule in {@link reconcileWaves} for why dropping would
  * let the wave resurrect with a fresh schedule on the next scan.
  *
- * 60 s also covers the "first reminder fires in <1 minute" case the
+ * 60 s also covers the "first alarmClock fires in <1 minute" case the
  * product owner asked about explicitly.
  */
 export const CLEANUP_GRACE_SEC = 60;
@@ -99,7 +99,7 @@ export const CLEANUP_GRACE_SEC = 60;
  * @property {boolean}  [cancelled] This wave is suppressed — the scheduler
  *   skips it for the rest of its life. Set either by the user dismissing
  *   it from the Dashboard OR by the brand-new cleanup rule (a re-send made
- *   its remaining reminders noise; see {@link reconcileWaves}). Carried
+ *   its remaining alarmClock noise; see {@link reconcileWaves}). Carried
  *   across matched scans so the flag sticks even as fleets land and
  *   `nextWaveAt` drifts. Naturally cleared when the wave falls out of
  *   `out` (DOM rows gone → unmatched prev) and a re-send from the same
@@ -107,14 +107,14 @@ export const CLEANUP_GRACE_SEC = 60;
  */
 
 /**
- * Per-wave reminder bookkeeping. Keyed by {@link Wave.id} in the gist's
+ * Per-wave alarmClock bookkeeping. Keyed by {@link Wave.id} in the gist's
  * `notifyState`. Stores the ids of the ntfy.sh messages we have queued
  * for that wave so a "player is back" event can cancel them before
  * delivery.
  *
  * @typedef {object} NotifyEntry
  * @property {number} [baseAt] Locked schedule anchor (epoch SECONDS). The
- *   wave's reminder slots are `baseAt + offsetsSec[i]` for the resolved
+ *   wave's alarmClock slots are `baseAt + offsetsSec[i]` for the resolved
  *   schedule (see `sync/ntfyReconciler.offsetsForSchedule`). Set the
  *   first time the wave is recorded and fed back unchanged on later scans,
  *   so the slot times stay stable as the earliest live return drifts.
@@ -239,13 +239,13 @@ const findBestOverlap = (prevWaves, cand, consumed) => {
  *   - **Brand-new triggers cleanup**: whenever at least one brand-new
  *     wave is detected, any matched prev wave whose `nextWaveAt` is
  *     within {@link CLEANUP_GRACE_SEC} of `now` (i.e. its first
- *     reminder already fired or fires in <1 min) is TOMBSTONED
+ *     alarmClock already fired or fires in <1 min) is TOMBSTONED
  *     (`cancelled: true`), NOT removed from the set. The player is
  *     clearly back in game; the rest of that wave's cycle is noise.
  *     Keeping the wave in the set (with the flag) is what stops it
  *     resurrecting: its fleets are still in flight, so their return-
  *     times keep matching it and carry the flag forward, instead of
- *     being re-clustered into a brand-new wave with a fresh six-reminder
+ *     being re-clustered into a brand-new wave with a fresh six-alarmClock
  *     schedule on the next scan. The caller excludes `cancelled` waves
  *     from the live set, so their queued messages are swept off ntfy.
  *     The tombstone exits naturally once every fleet lands (unmatched
@@ -298,7 +298,7 @@ export const reconcileWaves = (prevWaves, currentCandidates, now) => {
   const droppedIds = [];
 
   // Cleanup rule: a brand-new wave means the player is actively sending
-  // again. Any matched wave whose first reminder already fired (or fires
+  // again. Any matched wave whose first alarmClock already fired (or fires
   // in <CLEANUP_GRACE_SEC) is noise from this point on. TOMBSTONE it
   // (cancelled: true) rather than remove it from the set.
   //
@@ -306,7 +306,7 @@ export const reconcileWaves = (prevWaves, currentCandidates, now) => {
   // their return rows persist in the event list. If we dropped the wave
   // entirely, the very next scan would re-cluster those same return-
   // times, find no matching prev wave, and stamp them brand-new — handing
-  // the wave a fresh six-reminder schedule (resurrecting a wave the player
+  // the wave a fresh six-alarmClock schedule (resurrecting a wave the player
   // already re-sent past). Keeping it with cancelled:true lets the
   // overlap-match branch carry the flag forward every scan, so the caller
   // skips it (excluded from the live ntfy set → its queued messages are

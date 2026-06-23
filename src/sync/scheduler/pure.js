@@ -108,16 +108,16 @@ export const dailyStateHasData = (ds) =>
 export const galaxyConfigSlotHasData = (slot) => slot.updatedAt > 0;
 
 /**
- * Whether a per-universe reminder config slot is worth contributing to the
+ * Whether a per-universe alarmClock config slot is worth contributing to the
  * gist. Same no-op-PATCH guard as {@link galaxyConfigSlotHasData}: a
  * never-edited universe (ts 0, still at the local default/hydrate seed) must
  * NOT write a slot that would differ from the gist's absent field. Once the
  * user edits it the stamp bumps `updatedAt` and the slot starts syncing.
  *
- * @param {import('../merge.js').ReminderConfigSlot} slot
+ * @param {import('../merge.js').AlarmClockConfigSlot} slot
  * @returns {boolean}
  */
-export const reminderConfigSlotHasData = (slot) => slot.updatedAt > 0;
+export const alarmClockConfigSlotHasData = (slot) => slot.updatedAt > 0;
 
 /**
  * Whether a player-cache slot is worth contributing to the gist. Same
@@ -185,7 +185,7 @@ export const sameJSON = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b
  * @param {unknown} merged.settingsPerUniverse
  * @param {unknown} merged.dailyStatePerUniverse
  * @param {unknown} merged.galaxyScanConfig
- * @param {unknown} merged.reminderConfigPerUniverse
+ * @param {unknown} merged.alarmClockConfigPerUniverse
  * @param {unknown} [merged.playersPerUniverse]
  * @param {unknown} [merged.ownProfilePerUniverse]
  * @param {unknown} [merged.colonizeDecisionsPerUniverse]
@@ -199,7 +199,7 @@ export const gistIsCurrent = (remote, merged) =>
   sameJSON(remote?.settingsPerUniverse, merged.settingsPerUniverse) &&
   sameJSON(remote?.dailyStatePerUniverse, merged.dailyStatePerUniverse) &&
   sameJSON(remote?.galaxyScanConfig, merged.galaxyScanConfig) &&
-  sameJSON(remote?.reminderConfigPerUniverse, merged.reminderConfigPerUniverse) &&
+  sameJSON(remote?.alarmClockConfigPerUniverse, merged.alarmClockConfigPerUniverse) &&
   sameJSON(remote?.playersPerUniverse, merged.playersPerUniverse) &&
   sameJSON(remote?.ownProfilePerUniverse, merged.ownProfilePerUniverse) &&
   sameJSON(remote?.colonizeDecisionsPerUniverse, merged.colonizeDecisionsPerUniverse);

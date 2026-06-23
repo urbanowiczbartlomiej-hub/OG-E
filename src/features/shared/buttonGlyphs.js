@@ -102,7 +102,7 @@ export const DNA_GLYPH = [
 ].join('');
 
 /**
- * Guardian — a lighthouse standing watch (features/reminders/guardian.js). It
+ * Guardian — a lighthouse standing watch (features/alarmClock/guardian.js). It
  * keeps vigil, warns, and guides a bare fleet back to safety: exactly the
  * post-landing fleet-save prompt. A striped, tapered tower + lamp room casts a
  * sweeping beam over a sea horizon; the beam tints to the guardian's orange

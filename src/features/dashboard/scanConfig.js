@@ -9,7 +9,7 @@
 // editor: galaxy occupancy is now re-derived from the OGame API and
 // colonization state lives in the decision log with its own built-in horizons.)
 //
-// Save is read-modify-write so the fields it does NOT own (the Reminders tab's
+// Save is read-modify-write so the fields it does NOT own (the AlarmClock tab's
 // fleet-save `fs*` knobs, which share the same slot) are never clobbered.
 //
 // Saving writes three keys, mirroring `dashboard/routes.js`:
@@ -154,7 +154,7 @@ const installConfigEditor = ({ getUniverseId, containerId, build }) => {
     const owned = collect();
     if (!owned) return;
     // Read-modify-write so the fields owned by the OTHER editor (and the
-    // Reminders tab's fleet-save knobs) survive — all three share one slot.
+    // AlarmClock tab's fleet-save knobs) survive — all three share one slot.
     const stored = normalizeGalaxyScanConfig(await chromeStore.get(galaxyScanConfigKeyFor(uni)));
     const cfg = normalizeGalaxyScanConfig({ ...stored, ...owned });
     await chromeStore.set(galaxyScanConfigKeyFor(uni), cfg);

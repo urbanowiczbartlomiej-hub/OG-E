@@ -11,7 +11,7 @@
 // gates. This module owns only the AGR/native mechanics + the ownership claim.
 //
 // @see ../sendExpedition/index.js — routine 7 (expeditions).
-// @see ../reminders/guardian.js   — routine 6 (fleet save).
+// @see ../alarmClock/guardian.js   — routine 6 (fleet save).
 
 import { GAME } from '../../lib/gameDom.js';
 import { safeClick, waitFor } from '../../lib/dom.js';

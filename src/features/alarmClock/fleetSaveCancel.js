@@ -4,7 +4,7 @@
 //
 // # Why this exists (and isn't the pending queue)
 //
-// Ad-hoc reminders are USER-armed and live in the synced gist, so a `disarm`
+// Ad-hoc alarmClock are USER-armed and live in the synced gist, so a `disarm`
 // command applied once stays applied. Fleet-saves are different: they are
 // RE-DERIVED from the live event list on every producer run. So deleting a
 // slot's ntfy message is not enough — the very next scan re-detects the

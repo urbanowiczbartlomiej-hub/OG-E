@@ -331,7 +331,7 @@ describe('installBadges — moon body', () => {
 
 describe('installBadges — fleet-save category', () => {
   it('marks a published FS row-id as fs when both gates are on', () => {
-    settingsStore.update((s) => ({ ...s, remindersMasterEnabled: true }));
+    settingsStore.update((s) => ({ ...s, alarmClockMasterEnabled: true }));
     galaxyScanConfigStore.update((c) => ({ ...c, fsEnabled: true }));
     writeFleetSaveIds(['eventRow-1']);
 
@@ -347,7 +347,7 @@ describe('installBadges — fleet-save category', () => {
   });
 
   it('does not mark fs when the per-universe gate is off', () => {
-    settingsStore.update((s) => ({ ...s, remindersMasterEnabled: true }));
+    settingsStore.update((s) => ({ ...s, alarmClockMasterEnabled: true }));
     galaxyScanConfigStore.update((c) => ({ ...c, fsEnabled: false }));
     writeFleetSaveIds(['eventRow-1']);
 

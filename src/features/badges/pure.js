@@ -20,7 +20,7 @@
 //
 //   threat     — a FOREIGN aggressive fleet arriving at my body (attack / ACS
 //                attack / espionage / moon destruction). The danger.
-//   fs         — my fleet the reminders producer flagged as a fleet-save.
+//   fs         — my fleet the alarmClock producer flagged as a fleet-save.
 //   aggro      — MY aggressive fleet (same mission set, my own); shown on home
 //                via its return leg ("I'm attacking out from here").
 //   explore    — my expedition.
@@ -175,7 +175,7 @@ const classifyLeg = (leg, myKeys, fsIds) => {
   } else if (AGGRESSIVE.has(leg.missionType)) {
     // Espionage to position 16 (boundless space, no player) is a covert,
     // phalanx-proof fleet-save in spirit — flag it `fs` even below the FS
-    // auto-detect threshold; the badge shows the maneuver while reminders and
+    // auto-detect threshold; the badge shows the maneuver while alarmClock and
     // the landed (orange) state stay threshold-gated. Real-target aggression
     // stays `aggro`. The heart stays reserved strictly for expeditions.
     category = isDeepSpace(leg.dest.coords) ? 'fs' : 'aggro';
@@ -197,7 +197,7 @@ const classifyLeg = (leg, myKeys, fsIds) => {
  *
  * @param {BadgeLeg[]} legs
  * @param {Set<string>} myKeys Set of {@link bodyKey} for the player's bodies.
- * @param {Set<string>} [fsIds] Row-ids the reminders producer flagged as a
+ * @param {Set<string>} [fsIds] Row-ids the alarmClock producer flagged as a
  *   detected fleet-save; such a leg becomes the `fs` category.
  * @param {Set<string>} [landedFsKeys] Body keys with a LANDED fleet-save (no
  *   live leg) — each gets an injected `fs` marker (rendered as the landed

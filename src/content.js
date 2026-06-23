@@ -64,7 +64,7 @@ import { initSettingsStore } from './state/settings.js';
 import { initSharedSettings } from './state/sharedSettings.js';
 import { initDailyRunRoutesStore } from './state/dailyRunRoutes.js';
 import { initGalaxyScanConfigStore } from './state/galaxyScanConfig.js';
-import { initReminderConfigStore } from './state/reminderConfig.js';
+import { initAlarmClockConfigStore } from './state/alarmClockConfig.js';
 import { initBodiesStore } from './state/bodies.js';
 import { initColonizeDecisionsStore } from './state/colonizeDecisions.js';
 
@@ -87,7 +87,7 @@ import { installTraderMenuHighlight } from './features/traderMenuHighlight.js';
 import { installThreatHighlight } from './features/threatHighlight/index.js';
 import { installRewardingWatcher } from './features/rewardingWatcher.js';
 import { installArtifactShopWatcher } from './features/artifactShopWatcher.js';
-import { installReminders } from './features/reminders/index.js';
+import { installAlarmClock } from './features/alarmClock/index.js';
 import { installApiContext } from './features/apiContext/index.js';
 
 import { installSync } from './sync/scheduler.js';
@@ -102,7 +102,7 @@ import { installSync } from './sync/scheduler.js';
 // is needed here to hook the galaxy XHR observer up to the store.
 initSettingsStore();
 // Bridge the four dashboard-owned shared settings (cloudSync / gistToken /
-// reminders master + ntfy token) from chrome.storage into the just-hydrated
+// alarmClock master + ntfy token) from chrome.storage into the just-hydrated
 // settings store. Async (chrome.storage), fire-and-forget — every consumer
 // keeps reading settingsStore, which this keeps current. See state/sharedSettings.js.
 void initSharedSettings();
@@ -122,11 +122,11 @@ initDailyRunRoutesStore();
 // Scan button reads the user's positions + rescan policy, and edits made
 // in the dashboard (a different origin) reach the in-game button.
 initGalaxyScanConfigStore();
-// Reminder config (wave enable + schedule, ad-hoc lead time, message
+// AlarmClock config (wave enable + schedule, ad-hoc lead time, message
 // templates; per-universe, chrome.storage). Hydrated here so the in-game
-// reminder producer + event-list badges read the user's cadence, and edits
+// alarmClock producer + event-list badges read the user's cadence, and edits
 // made in the dashboard (a different origin) reach the in-game features.
-initReminderConfigStore();
+initAlarmClockConfigStore();
 // Body inventory (per-universe, chrome.storage). Hydrated here so the
 // planet-bar capture below can gate its first write on the hydrate and
 // the dashboard route editor can read a snapshot of owned planets/moons.
@@ -137,11 +137,11 @@ initBodiesStore();
 // destined for gist sync (it's what the public API can't reproduce).
 initColonizeDecisionsStore();
 
-// The reminders master switch + ntfy token live in `settings.js` (regular
+// The alarmClock master switch + ntfy token live in `settings.js` (regular
 // localStorage Settings, authored in the in-game OG-E settings panel) — wired
-// by initSettingsStore above. The detailed reminder config moved to the
+// by initSettingsStore above. The detailed alarmClock config moved to the
 // dashboard: per-server fleet-save knobs in galaxyScanConfig, the per-server
-// wave/ad-hoc knobs in reminderConfig — both inited above.
+// wave/ad-hoc knobs in alarmClockConfig — both inited above.
 
 // Top-frame-only: sync scheduler. OGame embeds several iframes;
 // running the gist round-trip in each would multiply API traffic
@@ -189,14 +189,14 @@ const installDomFeatures = () => {
   // iframes, so a per-frame fetch would just multiply traffic.
   if (window.top === window.self) installApiContext();
 
-  // Reminders — the producer reads expedition return-flights + present
+  // AlarmClock — the producer reads expedition return-flights + present
   // fleet legs from #eventContent and reconciles both wave and ad-hoc
-  // reminders on ntfy.sh (state cached in the gist), and the event-list
+  // alarmClock on ntfy.sh (state cached in the gist), and the event-list
   // badge UI drives the ad-hoc arming / wave cancelling. Top-frame only:
   // it does gist IO, and running it in OGame's embedded iframes would
   // multiply that API traffic for no gain (same reasoning as installSync).
   // The event box lives in the top frame.
-  if (window.top === window.self) installReminders();
+  if (window.top === window.self) installAlarmClock();
 
   // User-facing buttons — the four modules of the unified FAB
   // (features/shared/unifiedFab.js). All gated on the single fabMode

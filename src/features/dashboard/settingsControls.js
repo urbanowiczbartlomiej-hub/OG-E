@@ -2,14 +2,14 @@
 //
 // Dashboard-side controls for the four cross-universe shared settings that
 // moved out of the in-game panel: the Multi-device-sync switch + GitHub token
-// (Sync tab) and the reminders master switch + ntfy token (Reminders tab).
+// (Sync tab) and the alarmClock master switch + ntfy token (AlarmClock tab).
 //
 // All four live in the chrome.storage dict that state/sharedSettings.js bridges
 // into every game origin — the dashboard is the SOLE writer. This module reads
 // that dict to fill the inputs, writes edits straight back, drives "Sync now"
 // (via the per-universe syncRequest channel the scheduler already watches), and
 // runs live token validation. The inputs themselves live in dashboard.html
-// under #syncSection / #remindersSection; here we only wire them by id.
+// under #syncSection / #alarmClockSection; here we only wire them by id.
 
 /* global fetch */
 
@@ -18,13 +18,13 @@ import { SHARED_SETTINGS_KEY } from '../../state/sharedSettings.js';
 import { syncRequestKeyFor } from '../../sync/scheduler.js';
 import { fetchNtfyAccount } from '../../sync/ntfyAccount.js';
 import { formatNtfyAccountLines } from '../../domain/ntfyAccount.js';
-import { REMINDER_NTFY_TOKEN_KEY, isValidNtfyToken } from '../../sync/reminders.js';
+import { ALARM_CLOCK_NTFY_TOKEN_KEY, isValidNtfyToken } from '../../sync/alarmClock.js';
 import { SYNC_STATUS_BASE } from './syncInventory.js';
 
 /**
  * Read the shared-settings dict, normalised to the four known fields.
  *
- * @returns {Promise<{ cloudSync: boolean, gistToken: string, remindersMasterEnabled: boolean, reminderNtfyToken: string }>}
+ * @returns {Promise<{ cloudSync: boolean, gistToken: string, alarmClockMasterEnabled: boolean, alarmClockNtfyToken: string }>}
  */
 const readShared = async () => {
   const raw = await chromeStore.get(SHARED_SETTINGS_KEY);
@@ -34,16 +34,16 @@ const readShared = async () => {
   return {
     cloudSync: typeof o.cloudSync === 'boolean' ? o.cloudSync : false,
     gistToken: typeof o.gistToken === 'string' ? o.gistToken : '',
-    remindersMasterEnabled:
-      typeof o.remindersMasterEnabled === 'boolean' ? o.remindersMasterEnabled : false,
-    reminderNtfyToken: typeof o.reminderNtfyToken === 'string' ? o.reminderNtfyToken : '',
+    alarmClockMasterEnabled:
+      typeof o.alarmClockMasterEnabled === 'boolean' ? o.alarmClockMasterEnabled : false,
+    alarmClockNtfyToken: typeof o.alarmClockNtfyToken === 'string' ? o.alarmClockNtfyToken : '',
   };
 };
 
 /**
  * Read-modify-write a patch into the shared-settings dict.
  *
- * @param {Partial<{ cloudSync: boolean, gistToken: string, remindersMasterEnabled: boolean, reminderNtfyToken: string }>} patch
+ * @param {Partial<{ cloudSync: boolean, gistToken: string, alarmClockMasterEnabled: boolean, alarmClockNtfyToken: string }>} patch
  * @returns {Promise<void>}
  */
 const writeShared = async (patch) => {
@@ -109,7 +109,7 @@ export const installSettingsControls = () => {
   const syncControlsBody = document.getElementById('syncControlsBody');
 
   // The "Sync across devices" switch gates the credential controls, mirroring
-  // the reminders master switch: with sync off there's no token to configure,
+  // the alarmClock master switch: with sync off there's no token to configure,
   // so the token row + status + note collapse. (The per-universe inventory
   // below stays — it's local-data info, independent of the sync toggle.)
   const syncControlsVisibility = () => {
@@ -122,7 +122,7 @@ export const installSettingsControls = () => {
   const ntfyValidate = document.getElementById('remValidateBtn');
   const remBody = document.getElementById('remBody');
 
-  // The master switch gates the rest of the tab: with reminders off there's
+  // The master switch gates the rest of the tab: with alarmClock off there's
   // nothing to configure, so the whole body below it collapses out of view.
   const syncRemBodyVisibility = () => {
     if (remBody && master) remBody.style.display = master.checked ? '' : 'none';
@@ -152,8 +152,8 @@ export const installSettingsControls = () => {
     const active = document.activeElement;
     if (cloud && cloud !== active) cloud.checked = s.cloudSync;
     if (gist && gist !== active) gist.value = s.gistToken;
-    if (master && master !== active) master.checked = s.remindersMasterEnabled;
-    if (ntfy && ntfy !== active) ntfy.value = s.reminderNtfyToken;
+    if (master && master !== active) master.checked = s.alarmClockMasterEnabled;
+    if (ntfy && ntfy !== active) ntfy.value = s.alarmClockNtfyToken;
     syncRemBodyVisibility();
     syncControlsVisibility();
   };
@@ -173,7 +173,7 @@ export const installSettingsControls = () => {
     gistReveal.setAttribute('aria-pressed', String(reveal));
   });
   master?.addEventListener('change', () => {
-    void writeShared({ remindersMasterEnabled: master.checked });
+    void writeShared({ alarmClockMasterEnabled: master.checked });
     syncRemBodyVisibility();
   });
 
@@ -186,15 +186,15 @@ export const installSettingsControls = () => {
   ntfy?.addEventListener('change', () => {
     const t = ntfy.value.trim();
     ntfy.value = t;
-    void writeShared({ reminderNtfyToken: t });
-    // Keep the preview mirror (REMINDER_NTFY_TOKEN_KEY) in lockstep so the
-    // Reminders tab's derived topic + queue fetch update immediately, rather
+    void writeShared({ alarmClockNtfyToken: t });
+    // Keep the preview mirror (ALARM_CLOCK_NTFY_TOKEN_KEY) in lockstep so the
+    // AlarmClock tab's derived topic + queue fetch update immediately, rather
     // than only after a game tab's producer next mirrors it. Mirror only a
     // valid token (matching the producer's guard); clearing the token removes
-    // the mirror so "clear token = reminders off" takes effect at once instead
+    // the mirror so "clear token = alarmClock off" takes effect at once instead
     // of the stale mirror keeping the old topic alive.
-    if (isValidNtfyToken(t)) void chromeStore.set(REMINDER_NTFY_TOKEN_KEY, t);
-    else if (!t) void chromeStore.remove(REMINDER_NTFY_TOKEN_KEY);
+    if (isValidNtfyToken(t)) void chromeStore.set(ALARM_CLOCK_NTFY_TOKEN_KEY, t);
+    else if (!t) void chromeStore.remove(ALARM_CLOCK_NTFY_TOKEN_KEY);
     // The token changed — any earlier validation verdict is now stale.
     if (ntfyStatus) ntfyStatus.textContent = '—';
   });

@@ -2,7 +2,7 @@
 //
 // The durable, self-expiring guardian DISMISS + ACK suppression stores.
 // Both are localStorage-backed per-universe maps that share the `expiresAt`
-// prune shape. Sibling of `./reminders.fleetSaveCancel.test.js`.
+// prune shape. Sibling of `./alarmClock.fleetSaveCancel.test.js`.
 //
 // @ts-check
 
@@ -13,7 +13,7 @@ import {
   guardianDismissedLandings,
   addGuardianAck,
   guardianAckedLandings,
-} from '../../src/features/reminders/guardianDismiss.js';
+} from '../../src/features/alarmClock/guardianDismiss.js';
 
 const U = 's1';
 

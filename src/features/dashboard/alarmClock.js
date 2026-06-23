@@ -1,6 +1,6 @@
 // @ts-check
 
-// OG-E Dashboard — Expedition Reminders tab.
+// OG-E Dashboard — Expedition AlarmClock tab.
 //
 // Pure observability surface: shows which expedition waves currently
 // have notifications queued on ntfy.sh, plus a short explainer. The
@@ -18,34 +18,34 @@
 // the fallback when the live fetch can't run (no token yet, offline,
 // rate-limited).
 //
-// @see ../../sync/reminders.js — mirror keys + filename
+// @see ../../sync/alarmClock.js — mirror keys + filename
 // @see ../../sync/ntfyReconciler.js — offsetsForSchedule / DEFAULT_WAVE_OFFSETS_SEC
-// @see ./index.js — installReminders wired into the dashboard boot
+// @see ./index.js — installAlarmClock wired into the dashboard boot
 
 /* global fetch */
 
 import { chromeStore } from '../../lib/storage.js';
 import {
-  REMINDER_MIRROR_KEY,
-  REMINDER_GIST_ID_KEY,
-  REMINDER_TOKEN_KEY,
-  REMINDER_NTFY_TOKEN_KEY,
-  REMINDER_FILENAME_RE,
-  reminderFilenameFor,
+  ALARM_CLOCK_MIRROR_KEY,
+  ALARM_CLOCK_GIST_ID_KEY,
+  ALARM_CLOCK_TOKEN_KEY,
+  ALARM_CLOCK_NTFY_TOKEN_KEY,
+  ALARM_CLOCK_FILENAME_RE,
+  alarmClockFilenameFor,
   deriveNtfyTopic,
   maskTopic,
-} from '../../sync/reminders.js';
+} from '../../sync/alarmClock.js';
 import {
   fetchScheduledMessages,
-  cancelWaveReminders,
+  cancelWaveAlarmClock,
   isGuardianTitle,
   guardianTitleFor,
   NTFY_MAX_DELAY_SEC,
 } from '../../sync/ntfyReconciler.js';
-import { reminderBadge } from '../../domain/reminderBadge.js';
+import { alarmClockBadge } from '../../domain/alarmClockBadge.js';
 
 /**
- * @typedef {import('../../sync/reminders.js').ReminderState} ReminderState
+ * @typedef {import('../../sync/alarmClock.js').AlarmClockState} AlarmClockState
  */
 
 /** @type {Record<string, HTMLElement | null>} */
@@ -72,13 +72,13 @@ const NO_TOPIC_TEXT = '— (set your ntfy.sh access token in OG-E settings first
 
 /**
  * Callback handed in by the host page (`features/dashboard/index.js`)
- * so the reminders tab knows which universe is currently selected in
+ * so the alarmClock tab knows which universe is currently selected in
  * the page-wide universe selector. Returns `''` when no universe has
  * been resolved yet (e.g. the dashboard just booted, before
- * `discoverUniverses` ran). The reminders tab filters its render to
+ * `discoverUniverses` ran). The alarmClock tab filters its render to
  * this universe — same UX as the other tabs.
  *
- * Defaults to a stub returning `''` so calling `installReminders()`
+ * Defaults to a stub returning `''` so calling `installAlarmClock()`
  * without arguments stays valid for tests.
  *
  * @type {() => string}
@@ -89,19 +89,19 @@ let getActiveUniverseId = () => '';
 const byId = (id) => document.getElementById(id);
 
 /**
- * Wire the Reminders tab. Idempotent. Paints the initial topic +
+ * Wire the AlarmClock tab. Idempotent. Paints the initial topic +
  * preview, then re-renders whenever the game-origin sync writes a new
  * mirror snapshot.
  *
  * @param {{ getUniverseId?: () => string }} [opts]
  *   `getUniverseId` — host-provided getter for the current universe
- *   selected in the dashboard's selector. The reminders preview filters
+ *   selected in the dashboard's selector. The alarmClock preview filters
  *   to this universe. Omit only in tests; the dashboard always passes it.
  * @returns {{ refresh: () => void }}  `refresh()` forces a re-render
  *   without re-fetching state listeners — call it from the host's
  *   universe-selector change handler.
  */
-export const installReminders = (opts = {}) => {
+export const installAlarmClock = (opts = {}) => {
   if (opts.getUniverseId) getActiveUniverseId = opts.getUniverseId;
   if (wired) return { refresh: () => { void refreshPreview(); } };
   wired = true;
@@ -156,8 +156,8 @@ export const installReminders = (opts = {}) => {
   void refreshPreview();
 
   chromeStore.onChanged((changes) => {
-    if (REMINDER_NTFY_TOKEN_KEY in changes) void updateTopic();
-    if (REMINDER_MIRROR_KEY in changes) void refreshPreview();
+    if (ALARM_CLOCK_NTFY_TOKEN_KEY in changes) void updateTopic();
+    if (ALARM_CLOCK_MIRROR_KEY in changes) void refreshPreview();
   });
 
   return { refresh: () => { void refreshPreview(); } };
@@ -191,7 +191,7 @@ const renderTopic = () => {
 
 /** Recompute the derived topic from the mirrored ntfy token, then repaint. */
 const updateTopic = async () => {
-  const ntfyToken = await chromeStore.get(REMINDER_NTFY_TOKEN_KEY);
+  const ntfyToken = await chromeStore.get(ALARM_CLOCK_NTFY_TOKEN_KEY);
   currentTopic = typeof ntfyToken === 'string' && ntfyToken
     ? await deriveNtfyTopic(ntfyToken)
     : '';
@@ -201,30 +201,30 @@ const updateTopic = async () => {
 };
 
 /**
- * Coerce whatever lives under `REMINDER_MIRROR_KEY` into the v3 dict
- * shape `Record<universeId, ReminderState>`. v2 mirror was a plain
- * `ReminderState`; we treat that as "no data" to avoid rendering a
+ * Coerce whatever lives under `ALARM_CLOCK_MIRROR_KEY` into the v3 dict
+ * shape `Record<universeId, AlarmClockState>`. v2 mirror was a plain
+ * `AlarmClockState`; we treat that as "no data" to avoid rendering a
  * single phantom universe with the wrong id.
  *
  * @param {unknown} m
- * @returns {Record<string, ReminderState>}
+ * @returns {Record<string, AlarmClockState>}
  */
 const coerceMirror = (m) => {
   if (!m || typeof m !== 'object' || Array.isArray(m)) return {};
   // v2 leftover detection: top-level `version` + `waves` keys.
   if ('version' in m && 'waves' in m) return {};
-  return /** @type {Record<string, ReminderState>} */ (m);
+  return /** @type {Record<string, AlarmClockState>} */ (m);
 };
 
 /**
- * Fetch the gist and partition reminder files by universeId.
- * Returns one `ReminderState` per universe present in the gist.
+ * Fetch the gist and partition alarmClock files by universeId.
+ * Returns one `AlarmClockState` per universe present in the gist.
  *
  * @param {string} gistId
  * @param {string} gistToken
- * @returns {Promise<Record<string, ReminderState>>}
+ * @returns {Promise<Record<string, AlarmClockState>>}
  */
-const fetchAllReminderStates = async (gistId, gistToken) => {
+const fetchAllAlarmClockStates = async (gistId, gistToken) => {
   const res = await fetch(`https://api.github.com/gists/${gistId}`, {
     headers: {
       Authorization: `Bearer ${gistToken}`,
@@ -234,15 +234,15 @@ const fetchAllReminderStates = async (gistId, gistToken) => {
   if (!res.ok) throw new Error('HTTP ' + res.status);
   const gist = await res.json();
   const files = gist?.files ?? {};
-  /** @type {Record<string, ReminderState>} */
+  /** @type {Record<string, AlarmClockState>} */
   const out = {};
   for (const [filename, file] of Object.entries(files)) {
-    const m = REMINDER_FILENAME_RE.exec(filename);
+    const m = ALARM_CLOCK_FILENAME_RE.exec(filename);
     if (!m) continue;
     const f = /** @type {{ content?: string }} */ (file);
     if (!f?.content) continue;
     try {
-      const parsed = /** @type {ReminderState} */ (JSON.parse(f.content));
+      const parsed = /** @type {AlarmClockState} */ (JSON.parse(f.content));
       out[m[1]] = parsed;
     } catch {
       // Skip corrupt file; next write rebuilds it.
@@ -252,8 +252,8 @@ const fetchAllReminderStates = async (gistId, gistToken) => {
 };
 
 /**
- * Collect every ntfy message id that belongs to a LIVE reminder, unioned
- * across all universes and across all three reminder kinds: expedition
+ * Collect every ntfy message id that belongs to a LIVE alarmClock, unioned
+ * across all universes and across all three alarmClock kinds: expedition
  * waves (`notifyState`), ad-hoc fleets (`adhocNotify`) and auto-detected
  * fleet-saves (`fleetSaveNotify`).
  *
@@ -263,7 +263,7 @@ const fetchAllReminderStates = async (gistId, gistToken) => {
  * and cancel them — exactly the bug that left fleet-save pings silently
  * torn down from the dashboard side.
  *
- * @param {Record<string, ReminderState>} states
+ * @param {Record<string, AlarmClockState>} states
  * @returns {Set<string>}
  */
 export const collectOurMessageIds = (states) => {
@@ -313,10 +313,10 @@ export const isFleetSaveTooFarOut = (fs, scheduledCount, nowSec) => {
 const refreshPreview = async () => {
   setPreviewStatus('loading…', 'warn');
   const [gistId, gistToken, ntfyToken, mirrorRaw] = await Promise.all([
-    chromeStore.get(REMINDER_GIST_ID_KEY),
-    chromeStore.get(REMINDER_TOKEN_KEY),
-    chromeStore.get(REMINDER_NTFY_TOKEN_KEY),
-    chromeStore.get(REMINDER_MIRROR_KEY),
+    chromeStore.get(ALARM_CLOCK_GIST_ID_KEY),
+    chromeStore.get(ALARM_CLOCK_TOKEN_KEY),
+    chromeStore.get(ALARM_CLOCK_NTFY_TOKEN_KEY),
+    chromeStore.get(ALARM_CLOCK_MIRROR_KEY),
   ]);
   const mirror = coerceMirror(mirrorRaw);
 
@@ -347,7 +347,7 @@ const refreshPreview = async () => {
 
   try {
     const [states, ntfyMap] = await Promise.all([
-      fetchAllReminderStates(/** @type {string} */ (gistId), /** @type {string} */ (gistToken)),
+      fetchAllAlarmClockStates(/** @type {string} */ (gistId), /** @type {string} */ (gistToken)),
       ntfyP,
     ]);
 
@@ -380,7 +380,7 @@ const refreshPreview = async () => {
           orphanIds.push(id);
         }
         if (orphanIds.length > 0) {
-          orphansCancelled = await cancelWaveReminders({ ids: orphanIds, topic, token: ntfyToken });
+          orphansCancelled = await cancelWaveAlarmClock({ ids: orphanIds, topic, token: ntfyToken });
           for (const id of orphanIds) ntfyMap.delete(id);
         }
       }
@@ -435,7 +435,7 @@ const node = (tag, o = {}) => {
 };
 
 /**
- * Render the active universe's reminder state into the preview panel.
+ * Render the active universe's alarmClock state into the preview panel.
  * The dashboard's universe selector controls which universe is
  * "active" via {@link getActiveUniverseId}; everything else lives in
  * the gist but is hidden here, matching how the colony / galaxy /
@@ -444,7 +444,7 @@ const node = (tag, o = {}) => {
  * Built entirely with `document.createElement` + `textContent` — no
  * `innerHTML`.
  *
- * @param {Record<string, ReminderState>} states
+ * @param {Record<string, AlarmClockState>} states
  * @param {Map<string, { id: string, time: number, message?: string }>} ntfyMap
  * @returns {void}
  */
@@ -458,7 +458,7 @@ const renderPreviewMulti = (states, ntfyMap) => {
 
   if (universesInGist.length === 0) {
     const p = node('p', {
-      text: 'No data yet. Enable cloud sync + reminders in OG-E settings and send an expedition.',
+      text: 'No data yet. Enable cloud sync + alarmClock in OG-E settings and send an expedition.',
     });
     p.style.color = '#888';
     root.appendChild(p);
@@ -467,7 +467,7 @@ const renderPreviewMulti = (states, ntfyMap) => {
 
   if (!active) {
     const p = node('p', {
-      text: 'Pick a server in the selector above to see its expedition reminders.',
+      text: 'Pick a server in the selector above to see its expedition alarmClock.',
     });
     p.style.color = '#888';
     root.appendChild(p);
@@ -477,7 +477,7 @@ const renderPreviewMulti = (states, ntfyMap) => {
   const state = states[active];
   if (!state) {
     const p = node('p', {
-      text: `No reminder data for ${active} yet. Send an expedition burst in-game to queue reminders.`,
+      text: `No alarmClock data for ${active} yet. Send an expedition burst in-game to queue alarmClock.`,
     });
     p.style.color = '#888';
     root.appendChild(p);
@@ -505,7 +505,7 @@ const renderPreviewMulti = (states, ntfyMap) => {
  *
  * Direct GitHub PATCH from the extension origin: we already have the
  * mirrored gist token in `chrome.storage` (same one the live preview
- * fetch uses), so we don't route through `writeReminderState` (which
+ * fetch uses), so we don't route through `writeAlarmClockState` (which
  * reads the token from the game-origin `localStorage`).
  *
  * Best-effort: every failure mode is shown in the preview status line
@@ -517,19 +517,19 @@ const renderPreviewMulti = (states, ntfyMap) => {
  */
 const cancelWaveFromDashboard = async (universeId, waveId) => {
   const [gistId, gistToken, ntfyToken] = await Promise.all([
-    chromeStore.get(REMINDER_GIST_ID_KEY),
-    chromeStore.get(REMINDER_TOKEN_KEY),
-    chromeStore.get(REMINDER_NTFY_TOKEN_KEY),
+    chromeStore.get(ALARM_CLOCK_GIST_ID_KEY),
+    chromeStore.get(ALARM_CLOCK_TOKEN_KEY),
+    chromeStore.get(ALARM_CLOCK_NTFY_TOKEN_KEY),
   ]);
   if (typeof gistId !== 'string' || !gistId || typeof gistToken !== 'string' || !gistToken) {
     setPreviewStatus('cancel failed: gist not configured yet', 'err');
     return;
   }
 
-  /** @type {Record<string, ReminderState>} */
+  /** @type {Record<string, AlarmClockState>} */
   let states;
   try {
-    states = await fetchAllReminderStates(gistId, gistToken);
+    states = await fetchAllAlarmClockStates(gistId, gistToken);
   } catch (err) {
     setPreviewStatus('cancel failed: ' + /** @type {Error} */ (err).message, 'err');
     return;
@@ -550,7 +550,7 @@ const cancelWaveFromDashboard = async (universeId, waveId) => {
     const topic = await deriveNtfyTopic(ntfyToken);
     if (topic) {
       try {
-        await cancelWaveReminders({ ids, topic, token: ntfyToken });
+        await cancelWaveAlarmClock({ ids, topic, token: ntfyToken });
       } catch {
         // Per-message DELETE failures are already swallowed inside the
         // helper; this catch is for the rare "whole call threw" path.
@@ -558,7 +558,7 @@ const cancelWaveFromDashboard = async (universeId, waveId) => {
     }
   }
 
-  /** @type {ReminderState} */
+  /** @type {AlarmClockState} */
   const next = {
     ...state,
     updatedAt: new Date().toISOString(),
@@ -575,7 +575,7 @@ const cancelWaveFromDashboard = async (universeId, waveId) => {
     },
     body: JSON.stringify({
       files: {
-        [reminderFilenameFor(universeId)]: { content: JSON.stringify(next, null, 2) },
+        [alarmClockFilenameFor(universeId)]: { content: JSON.stringify(next, null, 2) },
       },
     }),
   });
@@ -588,7 +588,7 @@ const cancelWaveFromDashboard = async (universeId, waveId) => {
 };
 
 /**
- * Build the shared reminder-card shell: a `rem-wave` card plus its head with
+ * Build the shared alarmClock-card shell: a `rem-wave` card plus its head with
  * the formatted arrival/fire time. Each render function appends its own badge,
  * cancel button, and meta after this.
  *
@@ -596,7 +596,7 @@ const cancelWaveFromDashboard = async (universeId, waveId) => {
  * @param {string} cardClass  Full class string (callers vary the modifier).
  * @returns {{ card: HTMLElement, head: HTMLElement }}
  */
-const buildReminderCard = (whenSec, cardClass) => {
+const buildAlarmClockCard = (whenSec, cardClass) => {
   const card = node('div', { class: cardClass });
   const head = node('div', { class: 'wave-head' });
   head.appendChild(node('span', {
@@ -608,7 +608,7 @@ const buildReminderCard = (whenSec, cardClass) => {
 
 /**
  * Append the "Fires at" line listing every still-queued ping in chronological
- * order. No-op when nothing is queued (shared by all three reminder lists).
+ * order. No-op when nothing is queued (shared by all three alarmClock lists).
  *
  * When ntfy hands back the message body for the queued slots (it does for
  * scheduled-but-unfired pushes — see {@link fetchScheduledMessages}) we render
@@ -652,7 +652,7 @@ const appendFiresAtLine = (card, stillQueued) => {
 };
 
 /**
- * Shared open for every per-universe reminder list (waves / ad-hoc / fleet-save
+ * Shared open for every per-universe alarmClock list (waves / ad-hoc / fleet-save
  * / guardian). They all start the same way: bail when there are no items —
  * appending a muted note first when one is given — otherwise append the
  * standard `rem-universe-head` heading. Each list then loops `items` itself, as
@@ -664,7 +664,7 @@ const appendFiresAtLine = (card, stillQueued) => {
  * @param {string} [emptyMessage]      Muted note shown when there are no items (omit for a silent skip).
  * @returns {boolean}  `true` when the heading was appended and the caller should render `items`.
  */
-const beginReminderSection = (section, items, title, emptyMessage) => {
+const beginAlarmClockSection = (section, items, title, emptyMessage) => {
   if (items.length === 0) {
     if (emptyMessage) {
       const p = node('p', { text: emptyMessage });
@@ -685,7 +685,7 @@ const beginReminderSection = (section, items, title, emptyMessage) => {
  * @param {HTMLElement} section
  * @param {string} universeId  Which universe these waves belong to —
  *   needed so the per-card cancel button knows which gist file to PATCH.
- * @param {ReminderState} state
+ * @param {AlarmClockState} state
  * @param {Map<string, { id: string, time: number, message?: string }>} ntfyMap
  * @returns {void}
  */
@@ -693,8 +693,8 @@ const renderWavesInto = (section, universeId, state, ntfyMap) => {
   const sorted = (Array.isArray(state?.waves) ? state.waves : [])
     .slice()
     .sort((a, b) => a.nextWaveAt - b.nextWaveAt);
-  if (!beginReminderSection(section, sorted, 'Expedition waves',
-    'No outstanding waves. Send an expedition burst in-game to queue reminders.')) return;
+  if (!beginAlarmClockSection(section, sorted, 'Expedition waves',
+    'No outstanding waves. Send an expedition burst in-game to queue alarmClock.')) return;
 
   const nowSec = Math.floor(Date.now() / 1000);
   const notify = state.notifyState || {};
@@ -714,8 +714,8 @@ const renderWavesInto = (section, universeId, state, ntfyMap) => {
       .sort((a, b) => a.time - b.time);
 
     const cardClass = 'rem-wave' + (cancelled ? ' cancelled' : due ? ' due' : '');
-    const { card, head } = buildReminderCard(w.nextWaveAt, cardClass);
-    const badge = reminderBadge({
+    const { card, head } = buildAlarmClockCard(w.nextWaveAt, cardClass);
+    const badge = alarmClockBadge({
       cancelled,
       scheduledCount: totalScheduled,
       pendingCount: stillQueued.length,
@@ -729,7 +729,7 @@ const renderWavesInto = (section, universeId, state, ntfyMap) => {
     if (!cancelled && stillQueued.length > 0) {
       const btn = node('button', { class: 'rem-cancel', text: '×' });
       btn.setAttribute('type', 'button');
-      btn.setAttribute('title', 'Cancel this wave (delete pending ntfy reminders)');
+      btn.setAttribute('title', 'Cancel this wave (delete pending ntfy alarmClock)');
       btn.addEventListener('click', () => {
         btn.setAttribute('disabled', '');
         void cancelWaveFromDashboard(universeId, w.id);
@@ -740,7 +740,7 @@ const renderWavesInto = (section, universeId, state, ntfyMap) => {
 
     /** @param {number} n */
     const plural = (n) => (n === 1 ? '' : 's');
-    let metaText = `${w.fleetCount} expedition${plural(w.fleetCount)} · ${totalScheduled} reminder${plural(totalScheduled)} scheduled`;
+    let metaText = `${w.fleetCount} expedition${plural(w.fleetCount)} · ${totalScheduled} alarmClock${plural(totalScheduled)} scheduled`;
     if (ntfyMap.size > 0 && totalScheduled > 0) {
       const fired = totalScheduled - stillQueued.length;
       if (fired > 0) metaText += ` (${fired} fired, ${stillQueued.length} pending)`;
@@ -760,7 +760,7 @@ const renderWavesInto = (section, universeId, state, ntfyMap) => {
 };
 
 /**
- * Render one universe's AD-HOC fleet reminders into `section`, below the
+ * Render one universe's AD-HOC fleet alarmClock into `section`, below the
  * waves. Read-only: the cancel path lives in-game on the event-list badge
  * (a single game-side writer — a dashboard remove could be resurrected by
  * a concurrent game sync that still sees the entry, the same reason wave
@@ -771,7 +771,7 @@ const renderWavesInto = (section, universeId, state, ntfyMap) => {
  *
  * @param {HTMLElement} section
  * @param {string} universeId
- * @param {ReminderState} state
+ * @param {AlarmClockState} state
  * @param {Map<string, { id: string, time: number, message?: string }>} ntfyMap
  * @returns {void}
  */
@@ -782,7 +782,7 @@ const renderAdhocInto = (section, universeId, state, ntfyMap) => {
   const sorted = (Array.isArray(state?.adhoc) ? state.adhoc : [])
     .slice()
     .sort((a, b) => a.arrivalAt - b.arrivalAt);
-  if (!beginReminderSection(section, sorted, 'Ad-hoc fleet reminders')) return;
+  if (!beginAlarmClockSection(section, sorted, 'Ad-hoc fleet alarmClock')) return;
 
   const notify = state.adhocNotify || {};
   for (const e of sorted) {
@@ -792,8 +792,8 @@ const renderAdhocInto = (section, universeId, state, ntfyMap) => {
       .filter(/** @returns {m is { id: string, time: number, message?: string }} */ (m) => Boolean(m));
     const queued = stillQueued.length > 0;
 
-    const { card, head } = buildReminderCard(e.arrivalAt, 'rem-wave' + (queued ? '' : ' cancelled'));
-    const badge = reminderBadge({
+    const { card, head } = buildAlarmClockCard(e.arrivalAt, 'rem-wave' + (queued ? '' : ' cancelled'));
+    const badge = alarmClockBadge({
       scheduledCount: ids.length,
       pendingCount: stillQueued.length,
       hasNtfyData: ntfyMap.size > 0,
@@ -806,7 +806,7 @@ const renderAdhocInto = (section, universeId, state, ntfyMap) => {
     if (queued) {
       const btn = node('button', { class: 'rem-cancel', text: '×' });
       btn.setAttribute('type', 'button');
-      btn.setAttribute('title', 'Cancel this reminder (delete the pending ntfy push)');
+      btn.setAttribute('title', 'Cancel this alarmClock (delete the pending ntfy push)');
       btn.addEventListener('click', () => {
         btn.setAttribute('disabled', '');
         void cancelAdhocFromDashboard(universeId, e.id);
@@ -815,7 +815,7 @@ const renderAdhocInto = (section, universeId, state, ntfyMap) => {
     }
     card.appendChild(head);
 
-    card.appendChild(node('div', { class: 'wave-meta', text: e.label || 'Fleet reminder' }));
+    card.appendChild(node('div', { class: 'wave-meta', text: e.label || 'Fleet alarmClock' }));
 
     appendFiresAtLine(card, stillQueued);
 
@@ -824,7 +824,7 @@ const renderAdhocInto = (section, universeId, state, ntfyMap) => {
 };
 
 /**
- * Render one universe's auto-detected FLEET-SAVE reminders into `section`,
+ * Render one universe's auto-detected FLEET-SAVE alarmClock into `section`,
  * below the ad-hoc list. Read-only BY DESIGN: a fleet-save is never armed
  * or cancelled by the player — it is auto-detected from a large outbound/
  * return leg and self-cleans the moment its event row vanishes (the fleet
@@ -841,7 +841,7 @@ const renderAdhocInto = (section, universeId, state, ntfyMap) => {
  * legitimately has no fleet-save block.
  *
  * @param {HTMLElement} section
- * @param {ReminderState} state
+ * @param {AlarmClockState} state
  * @param {Map<string, { id: string, time: number, message?: string }>} ntfyMap
  * @returns {void}
  */
@@ -849,7 +849,7 @@ const renderFleetSavesInto = (section, state, ntfyMap) => {
   const sorted = (Array.isArray(state?.fleetSave) ? state.fleetSave : [])
     .slice()
     .sort((a, b) => a.arrivalAt - b.arrivalAt);
-  if (!beginReminderSection(section, sorted, 'Fleet-save reminders')) return;
+  if (!beginAlarmClockSection(section, sorted, 'Fleet-save alarmClock')) return;
 
   const notify = state.fleetSaveNotify || {};
   const nowSec = Math.floor(Date.now() / 1000);
@@ -867,8 +867,8 @@ const renderFleetSavesInto = (section, state, ntfyMap) => {
     // sync pending) so the badge explains the wait.
     const tooFar = isFleetSaveTooFarOut(e, totalScheduled, nowSec);
 
-    const { card, head } = buildReminderCard(e.arrivalAt, 'rem-wave' + (queued ? '' : ' cancelled'));
-    const badge = reminderBadge({
+    const { card, head } = buildAlarmClockCard(e.arrivalAt, 'rem-wave' + (queued ? '' : ' cancelled'));
+    const badge = alarmClockBadge({
       scheduledCount: totalScheduled,
       pendingCount: stillQueued.length,
       hasNtfyData: ntfyMap.size > 0,
@@ -882,7 +882,7 @@ const renderFleetSavesInto = (section, state, ntfyMap) => {
     let metaText = e.label || 'Fleet save';
     if (Number.isFinite(e.shipCount)) metaText += ` · ${e.shipCount} ship${plural(e.shipCount)}`;
     if (totalScheduled > 0) {
-      metaText += ` · ${totalScheduled} reminder${plural(totalScheduled)} scheduled`;
+      metaText += ` · ${totalScheduled} alarmClock${plural(totalScheduled)} scheduled`;
       if (ntfyMap.size > 0) {
         const fired = totalScheduled - stillQueued.length;
         metaText += fired > 0 ? ` (${fired} fired, ${stillQueued.length} pending)` : ' (all pending)';
@@ -893,7 +893,7 @@ const renderFleetSavesInto = (section, state, ntfyMap) => {
     if (tooFar) {
       const note = node('div', {
         class: 'wave-meta',
-        text: 'ntfy schedules at most 3 days ahead — reminders queue automatically once this is within 3 days of landing.',
+        text: 'ntfy schedules at most 3 days ahead — alarmClock queue automatically once this is within 3 days of landing.',
       });
       note.style.color = '#888';
       card.appendChild(note);
@@ -944,11 +944,11 @@ export const guardianMessagesFor = (universeId, ntfyMap) => {
  */
 const renderGuardianInto = (section, universeId, ntfyMap) => {
   const mine = guardianMessagesFor(universeId, ntfyMap);
-  if (!beginReminderSection(section, mine, 'Fleet guardian reminders')) return;
+  if (!beginAlarmClockSection(section, mine, 'Fleet guardian alarmClock')) return;
 
   for (const m of mine) {
-    const { card, head } = buildReminderCard(m.time, 'rem-wave');
-    const badge = reminderBadge({
+    const { card, head } = buildAlarmClockCard(m.time, 'rem-wave');
+    const badge = alarmClockBadge({
       scheduledCount: 1,
       pendingCount: 1,
       hasNtfyData: ntfyMap.size > 0,
@@ -966,7 +966,7 @@ const renderGuardianInto = (section, universeId, ntfyMap) => {
 };
 
 /**
- * Dashboard-side cancel of one ad-hoc reminder: DELETE its pending ntfy
+ * Dashboard-side cancel of one ad-hoc alarmClock: DELETE its pending ntfy
  * messages, then REMOVE the entry from `adhoc` + `adhocNotify` and PATCH
  * the gist. Unlike a wave we delete rather than tombstone — an ad-hoc
  * entry is only ever created by an explicit in-game arm (never derived
@@ -978,19 +978,19 @@ const renderGuardianInto = (section, universeId, ntfyMap) => {
  */
 const cancelAdhocFromDashboard = async (universeId, entryId) => {
   const [gistId, gistToken, ntfyToken] = await Promise.all([
-    chromeStore.get(REMINDER_GIST_ID_KEY),
-    chromeStore.get(REMINDER_TOKEN_KEY),
-    chromeStore.get(REMINDER_NTFY_TOKEN_KEY),
+    chromeStore.get(ALARM_CLOCK_GIST_ID_KEY),
+    chromeStore.get(ALARM_CLOCK_TOKEN_KEY),
+    chromeStore.get(ALARM_CLOCK_NTFY_TOKEN_KEY),
   ]);
   if (typeof gistId !== 'string' || !gistId || typeof gistToken !== 'string' || !gistToken) {
     setPreviewStatus('cancel failed: gist not configured yet', 'err');
     return;
   }
 
-  /** @type {Record<string, ReminderState>} */
+  /** @type {Record<string, AlarmClockState>} */
   let states;
   try {
-    states = await fetchAllReminderStates(gistId, gistToken);
+    states = await fetchAllAlarmClockStates(gistId, gistToken);
   } catch (err) {
     setPreviewStatus('cancel failed: ' + /** @type {Error} */ (err).message, 'err');
     return;
@@ -998,7 +998,7 @@ const cancelAdhocFromDashboard = async (universeId, entryId) => {
   const state = states[universeId];
   const entry = state?.adhoc?.find((e) => e.id === entryId);
   if (!state || !entry) {
-    setPreviewStatus('cancel failed: reminder already gone', 'warn');
+    setPreviewStatus('cancel failed: alarmClock already gone', 'warn');
     void refreshPreview();
     return;
   }
@@ -1009,7 +1009,7 @@ const cancelAdhocFromDashboard = async (universeId, entryId) => {
     const topic = await deriveNtfyTopic(ntfyToken);
     if (topic) {
       try {
-        await cancelWaveReminders({ ids, topic, token: ntfyToken });
+        await cancelWaveAlarmClock({ ids, topic, token: ntfyToken });
       } catch {
         // Per-message DELETE failures are swallowed inside the helper.
       }
@@ -1018,7 +1018,7 @@ const cancelAdhocFromDashboard = async (universeId, entryId) => {
 
   const nextNotify = { ...notify };
   delete nextNotify[entryId];
-  /** @type {ReminderState} */
+  /** @type {AlarmClockState} */
   const next = {
     ...state,
     updatedAt: new Date().toISOString(),
@@ -1035,7 +1035,7 @@ const cancelAdhocFromDashboard = async (universeId, entryId) => {
     },
     body: JSON.stringify({
       files: {
-        [reminderFilenameFor(universeId)]: { content: JSON.stringify(next, null, 2) },
+        [alarmClockFilenameFor(universeId)]: { content: JSON.stringify(next, null, 2) },
       },
     }),
   });
@@ -1048,7 +1048,7 @@ const cancelAdhocFromDashboard = async (universeId, entryId) => {
 };
 
 /**
- * Test-only reset: undo the one-time wiring so a fresh {@link installReminders}
+ * Test-only reset: undo the one-time wiring so a fresh {@link installAlarmClock}
  * in a new test starts clean instead of short-circuiting on the `wired` guard
  * (which would otherwise make a second install a silent no-op). Clears the
  * cached element refs and the universe getter too. `_`-prefixed: not for
@@ -1056,7 +1056,7 @@ const cancelAdhocFromDashboard = async (universeId, entryId) => {
  *
  * @returns {void}
  */
-export const _resetRemindersForTest = () => {
+export const _resetAlarmClockForTest = () => {
   wired = false;
   getActiveUniverseId = () => '';
   currentTopic = '';

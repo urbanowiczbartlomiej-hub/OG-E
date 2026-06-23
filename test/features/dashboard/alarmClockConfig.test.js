@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
 //
-// Behavioural tests for the dashboard Reminders-tab config editor. Same harness
+// Behavioural tests for the dashboard AlarmClock-tab config editor. Same harness
 // as scanConfig.test.js: a Map-backed chrome.storage fake, the tab container
 // injected, real input edits + a Save click, asserting the rendered values and
 // the chrome.storage writes. Everything is per-server now, split across two
 // per-universe slots: the wave/ad-hoc config + message templates in
-// `oge_reminderConfig`, and the fleet-save knobs in `oge_galaxyScanConfig`
+// `oge_alarmClockConfig`, and the fleet-save knobs in `oge_galaxyScanConfig`
 // (shared with the scan-config editor — the crux test is that neither editor
 // clobbers the other's fields, read-modify-write on save).
 //
@@ -15,18 +15,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../../src/lib/storage.js', () => ({
   chromeStore: { get: vi.fn(), set: vi.fn(), remove: vi.fn(), onChanged: vi.fn() },
-  // reminderConfig.js (like scanConfig.js) imports syncRequestKeyFor from
+  // alarmClockConfig.js (like scanConfig.js) imports syncRequestKeyFor from
   // sync/scheduler.js, which transitively pulls gist.js + logger.js — both
   // read safeLS at import time.
   safeLS: { bool: () => false, get: () => null, set: () => {}, remove: () => {}, json: () => null, setJSON: () => {} },
 }));
 
 import { chromeStore } from '../../../src/lib/storage.js';
-import { installReminderConfig } from '../../../src/features/dashboard/reminderConfig.js';
+import { installAlarmClockConfig } from '../../../src/features/dashboard/alarmClockConfig.js';
 import { installScanColonyConfig } from '../../../src/features/dashboard/scanConfig.js';
 import { defaultGalaxyScanConfig } from '../../../src/domain/galaxyScanConfig.js';
-import { defaultReminderConfig } from '../../../src/domain/reminderConfig.js';
-import { defaultReminderTemplates } from '../../../src/domain/reminderTemplates.js';
+import { defaultAlarmClockConfig } from '../../../src/domain/alarmClockConfig.js';
+import { defaultAlarmClockTemplates } from '../../../src/domain/alarmClockTemplates.js';
 
 const mockStore = /** @type {{ get: import('vitest').Mock, set: import('vitest').Mock }} */ (
   /** @type {any} */ (chromeStore)
@@ -36,15 +36,15 @@ const UNI = 's163-pl';
 const CFG_KEY = `${UNI}:oge_galaxyScanConfig`;
 const TS_KEY = `${UNI}:oge_galaxyScanConfigTs`;
 const SYNC_KEY = `${UNI}:oge_syncRequestAt`;
-// Per-universe reminder config (wave/ad-hoc + the three message templates).
-const REMINDER_KEY = `${UNI}:oge_reminderConfig`;
-const REMINDER_TS_KEY = `${UNI}:oge_reminderConfigTs`;
+// Per-universe alarmClock config (wave/ad-hoc + the three message templates).
+const ALARM_CLOCK_KEY = `${UNI}:oge_alarmClockConfig`;
+const ALARM_CLOCK_TS_KEY = `${UNI}:oge_alarmClockConfigTs`;
 
 /** @type {Map<string, unknown>} */
 const store = new Map();
 
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
-const install = () => installReminderConfig({ getUniverseId: () => UNI });
+const install = () => installAlarmClockConfig({ getUniverseId: () => UNI });
 
 const $ = (/** @type {string} */ sel) => /** @type {HTMLInputElement} */ (document.querySelector(sel));
 
@@ -89,10 +89,10 @@ beforeEach(() => {
     store.set(k, v);
     return Promise.resolve();
   });
-  document.body.innerHTML = '<div id="reminderConfigBody"></div><div id="colonizationConfigBody"></div>';
+  document.body.innerHTML = '<div id="alarmClockConfigBody"></div><div id="colonizationConfigBody"></div>';
 });
 
-describe('Reminders fleet-save config editor', () => {
+describe('AlarmClock fleet-save config editor', () => {
   it('fills fields from the default preset when nothing is stored', async () => {
     install().refresh();
     await flush();
@@ -188,7 +188,7 @@ describe('Reminders fleet-save config editor', () => {
     // "Never-enters net" — the guardian arms on ENTRY, so a player who never
     // re-enters after landing would otherwise get no ping. When no offset
     // fires at or after the guardian interval, save auto-adds one (and reflects
-    // it in the editor) so the classic fleet-save reminder still reaches them.
+    // it in the editor) so the classic fleet-save alarmClock still reaches them.
     install().refresh();
     await flush();
     $('#remCfgFsEnabled').checked = true;
@@ -232,7 +232,7 @@ describe('Reminders fleet-save config editor', () => {
     expect($('#remCfgStatus').textContent || '').toMatch(/fleet-save schedule/i);
   });
 
-  // The crux: the Reminders editor and the scan-config editor write the SAME
+  // The crux: the AlarmClock editor and the scan-config editor write the SAME
   // per-universe galaxyScanConfig slot. Each must read-modify-write so neither
   // resets the other's fields to defaults.
   it('preserves the scan-config fields when saving fs config', async () => {
@@ -281,19 +281,19 @@ describe('Reminders fleet-save config editor', () => {
   });
 });
 
-describe('Reminders wave + ad-hoc config editor', () => {
+describe('AlarmClock wave + ad-hoc config editor', () => {
   it('fills the fields from defaults when nothing is stored', async () => {
     install().refresh();
     await flush();
-    const d = defaultReminderConfig();
-    expect($('#remCfgWaveEnabled').checked).toBe(d.reminderEnabled);
-    expect(readEditor('remCfgWaveEditor')).toBe(d.reminderSchedule);
+    const d = defaultAlarmClockConfig();
+    expect($('#remCfgWaveEnabled').checked).toBe(d.alarmClockEnabled);
+    expect(readEditor('remCfgWaveEditor')).toBe(d.alarmClockSchedule);
     // The ad-hoc lead time is now a signed chip editor; default '-1m'.
     expect(readEditor('remCfgAdhocOffsets')).toBe(d.adhocSchedule);
   });
 
-  it('hydrates the fields from the stored per-universe reminder config', async () => {
-    store.set(REMINDER_KEY, { reminderEnabled: true, reminderSchedule: '5m, 15m', adhocSchedule: '-10m, 0m' });
+  it('hydrates the fields from the stored per-universe alarmClock config', async () => {
+    store.set(ALARM_CLOCK_KEY, { alarmClockEnabled: true, alarmClockSchedule: '5m, 15m', adhocSchedule: '-10m, 0m' });
     install().refresh();
     await flush();
     expect($('#remCfgWaveEnabled').checked).toBe(true);
@@ -302,7 +302,7 @@ describe('Reminders wave + ad-hoc config editor', () => {
   });
 
   it('renders a compact return-relative impact preview per wave offset chip', async () => {
-    store.set(REMINDER_KEY, { reminderSchedule: '0m, 10m' });
+    store.set(ALARM_CLOCK_KEY, { alarmClockSchedule: '0m, 10m' });
     install().refresh();
     await flush();
     expect(previewsOf('remCfgWaveEditor')).toEqual([
@@ -320,16 +320,16 @@ describe('Reminders wave + ad-hoc config editor', () => {
     $('#remCfgSave').dispatchEvent(new Event('click'));
     await flush();
 
-    const saved = /** @type {any} */ (store.get(REMINDER_KEY));
-    expect(saved.reminderEnabled).toBe(true);
-    expect(saved.reminderSchedule).toBe('0m, 20m');
+    const saved = /** @type {any} */ (store.get(ALARM_CLOCK_KEY));
+    expect(saved.alarmClockEnabled).toBe(true);
+    expect(saved.alarmClockSchedule).toBe('0m, 20m');
     expect(saved.adhocSchedule).toBe('-90s, 0m');
-    expect(typeof store.get(REMINDER_TS_KEY)).toBe('number');
+    expect(typeof store.get(ALARM_CLOCK_TS_KEY)).toBe('number');
     // One poke triggers a full round-trip covering BOTH slots.
     expect(typeof store.get(SYNC_KEY)).toBe('number');
   });
 
-  it('a save writes BOTH the fleet-save slot AND the reminder slot', async () => {
+  it('a save writes BOTH the fleet-save slot AND the alarmClock slot', async () => {
     install().refresh();
     await flush();
     $('#remCfgFsEnabled').checked = true;
@@ -337,7 +337,7 @@ describe('Reminders wave + ad-hoc config editor', () => {
     $('#remCfgSave').dispatchEvent(new Event('click'));
     await flush();
     expect(/** @type {any} */ (store.get(CFG_KEY)).fsEnabled).toBe(true);
-    expect(/** @type {any} */ (store.get(REMINDER_KEY)).reminderEnabled).toBe(true);
+    expect(/** @type {any} */ (store.get(ALARM_CLOCK_KEY)).alarmClockEnabled).toBe(true);
   });
 
   it('rejects an unparseable ad-hoc lead time and does not save', async () => {
@@ -346,7 +346,7 @@ describe('Reminders wave + ad-hoc config editor', () => {
     setEditor('remCfgAdhocOffsets', ['whenever']);
     $('#remCfgSave').dispatchEvent(new Event('click'));
     await flush();
-    expect(store.has(REMINDER_KEY)).toBe(false);
+    expect(store.has(ALARM_CLOCK_KEY)).toBe(false);
     expect(store.has(CFG_KEY)).toBe(false); // the whole save aborted
     expect($('#remCfgStatus').textContent || '').toMatch(/ad-hoc schedule/i);
   });
@@ -357,7 +357,7 @@ describe('Reminders wave + ad-hoc config editor', () => {
     clearEditor('remCfgWaveEditor');
     $('#remCfgSave').dispatchEvent(new Event('click'));
     await flush();
-    expect(/** @type {any} */ (store.get(REMINDER_KEY)).reminderSchedule).toBe('');
+    expect(/** @type {any} */ (store.get(ALARM_CLOCK_KEY)).alarmClockSchedule).toBe('');
   });
 
   it('rejects an unparseable wave offset row and does not save', async () => {
@@ -366,19 +366,19 @@ describe('Reminders wave + ad-hoc config editor', () => {
     setEditor('remCfgWaveEditor', ['0m', 'later']);
     $('#remCfgSave').dispatchEvent(new Event('click'));
     await flush();
-    expect(store.has(REMINDER_KEY)).toBe(false);
+    expect(store.has(ALARM_CLOCK_KEY)).toBe(false);
     expect($('#remCfgStatus').textContent || '').toMatch(/wave schedule/i);
   });
 });
 
-describe('Reminders message templates', () => {
+describe('AlarmClock message templates', () => {
   /** @param {string} sel */
   const ta = (sel) => /** @type {HTMLTextAreaElement} */ (document.querySelector(sel));
 
   it('fills the template editors from the default templates', async () => {
     install().refresh();
     await flush();
-    const d = defaultReminderTemplates();
+    const d = defaultAlarmClockTemplates();
     expect(ta('#remCfgTplWaveBody').value).toBe(d.wave.body);
     // Icon picker → the selected swatch's data-icon; priority → selected segment.
     expect(document.querySelector('#remCfgTplAdhocIcon .oge-icon-swatch.selected')
@@ -402,7 +402,7 @@ describe('Reminders message templates', () => {
       .toMatch(/coords/);
   });
 
-  it('saves edited wave body / icon / priority into the per-universe reminder slot', async () => {
+  it('saves edited wave body / icon / priority into the per-universe alarmClock slot', async () => {
     install().refresh();
     await flush();
     ta('#remCfgTplWaveBody').value = 'Wave back at {returnTime}!';
@@ -412,16 +412,16 @@ describe('Reminders message templates', () => {
       .dispatchEvent(new Event('click'));
     $('#remCfgSave').dispatchEvent(new Event('click'));
     await flush();
-    const saved = /** @type {any} */ (store.get(REMINDER_KEY));
+    const saved = /** @type {any} */ (store.get(ALARM_CLOCK_KEY));
     expect(saved.templates.wave).toEqual({ body: 'Wave back at {returnTime}!', icon: 'urgent', priority: 4 });
   });
 
-  it('saves the fleet-save template into the per-universe reminder slot', async () => {
+  it('saves the fleet-save template into the per-universe alarmClock slot', async () => {
     install().refresh();
     await flush();
     ta('#remCfgTplFsBody').value = 'FS: {label}';
     $('#remCfgSave').dispatchEvent(new Event('click'));
     await flush();
-    expect(/** @type {any} */ (store.get(REMINDER_KEY)).templates.fleetSave.body).toBe('FS: {label}');
+    expect(/** @type {any} */ (store.get(ALARM_CLOCK_KEY)).templates.fleetSave.body).toBe('FS: {label}');
   });
 });

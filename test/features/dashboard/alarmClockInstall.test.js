@@ -1,15 +1,15 @@
 // @vitest-environment happy-dom
 //
-// Install-idempotency + test-reset coverage for the dashboard reminders tab.
+// Install-idempotency + test-reset coverage for the dashboard alarmClock tab.
 // The tab wires its DOM exactly once (a module-level `wired` guard). Before
-// `_resetRemindersForTest` existed, that guard never reset, so a SECOND
+// `_resetAlarmClockForTest` existed, that guard never reset, so a SECOND
 // install in a fresh test was a silent no-op (the new DOM stayed unwired).
 // These tests pin both halves: install is idempotent while wired, and the
 // test-reset re-opens the gate so a clean re-install re-wires.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// reminders.js (and its transitive state imports) only touch chrome.storage at
+// alarmClock.js (and its transitive state imports) only touch chrome.storage at
 // runtime; stub it so install doesn't reach real storage. `get` resolves so
 // the fire-and-forget `updateTopic`/`refreshPreview` awaits settle cleanly.
 vi.mock('../../../src/lib/storage.js', () => ({
@@ -31,11 +31,11 @@ vi.mock('../../../src/lib/storage.js', () => ({
 }));
 
 import {
-  installReminders,
-  _resetRemindersForTest,
-} from '../../../src/features/dashboard/reminders.js';
+  installAlarmClock,
+  _resetAlarmClockForTest,
+} from '../../../src/features/dashboard/alarmClock.js';
 import { chromeStore } from '../../../src/lib/storage.js';
-import { deriveNtfyTopic, REMINDER_NTFY_TOKEN_KEY } from '../../../src/sync/reminders.js';
+import { deriveNtfyTopic, ALARM_CLOCK_NTFY_TOKEN_KEY } from '../../../src/sync/alarmClock.js';
 
 const HTML = `
   <span id="remTopic">—</span>
@@ -47,7 +47,7 @@ const HTML = `
 `;
 
 beforeEach(() => {
-  _resetRemindersForTest();
+  _resetAlarmClockForTest();
   document.body.innerHTML = HTML;
 });
 
@@ -55,7 +55,7 @@ beforeEach(() => {
  * Spin the event loop until `cond()` holds, FAILING LOUDLY on timeout.
  *
  * The old hand-rolled poller returned silently after a fixed 30 macrotask
- * ticks. The reminders topic is painted asynchronously (`deriveNtfyTopic`
+ * ticks. The alarmClock topic is painted asynchronously (`deriveNtfyTopic`
  * runs a SubtleCrypto digest); under machine load that paint can land after
  * 30 ticks, so the poller gave up, the assertion ran against a stale/blank
  * slot, and a clicked Copy early-returned on the still-empty `currentTopic` —
@@ -74,34 +74,34 @@ const waitFor = (cond, label = 'condition') =>
     { timeout: 4000, interval: 20 },
   );
 
-describe('installReminders — idempotency + test-reset', () => {
+describe('installAlarmClock — idempotency + test-reset', () => {
   it('wires the copy-topic listener once, skips a second install, re-wires after reset', () => {
     const copyBtn = /** @type {HTMLElement} */ (document.getElementById('remCopyTopic'));
     const spy = vi.spyOn(copyBtn, 'addEventListener');
 
-    installReminders();
+    installAlarmClock();
     expect(spy).toHaveBeenCalledTimes(1);
 
     // Already wired → second install short-circuits (no duplicate listener).
-    installReminders();
+    installAlarmClock();
     expect(spy).toHaveBeenCalledTimes(1);
 
     // The test-reset re-opens the `wired` gate so a fresh install re-wires
     // (the silent-no-op this reset exists to prevent).
-    _resetRemindersForTest();
-    installReminders();
+    _resetAlarmClockForTest();
+    installAlarmClock();
     expect(spy).toHaveBeenCalledTimes(2);
   });
 
   it('returns a refresh handle on every call (wired or not)', () => {
-    const first = installReminders();
-    const second = installReminders();
+    const first = installAlarmClock();
+    const second = installAlarmClock();
     expect(typeof first.refresh).toBe('function');
     expect(typeof second.refresh).toBe('function');
   });
 });
 
-describe('reminders topic — mask / reveal / copy', () => {
+describe('alarmClock topic — mask / reveal / copy', () => {
   const TOKEN = 'tk_tbqdljrkz4ivlgagxwewjz17k26gw';
   /** @type {any} */
   let writeText;
@@ -111,7 +111,7 @@ describe('reminders topic — mask / reveal / copy', () => {
     // undefined so refreshPreview short-circuits before any network fetch.
     /** @type {import('vitest').Mock} */ (chromeStore.get).mockImplementation(
       /** @param {string} key */ (key) =>
-        Promise.resolve(key === REMINDER_NTFY_TOKEN_KEY ? TOKEN : undefined));
+        Promise.resolve(key === ALARM_CLOCK_NTFY_TOKEN_KEY ? TOKEN : undefined));
     writeText = vi.fn(() => Promise.resolve());
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText }, configurable: true,
@@ -120,7 +120,7 @@ describe('reminders topic — mask / reveal / copy', () => {
 
   it('shows the topic masked, and the eye toggle reveals the real value', async () => {
     const topic = await deriveNtfyTopic(TOKEN);
-    installReminders();
+    installAlarmClock();
     const slot = /** @type {HTMLElement} */ (document.getElementById('remTopic'));
     await waitFor(() => (slot.textContent || '').includes('•'), 'topic painted (masked)');
 
@@ -137,7 +137,7 @@ describe('reminders topic — mask / reveal / copy', () => {
 
   it('Copy copies the real topic even while masked, and repeat clicks never corrupt the slot', async () => {
     const topic = await deriveNtfyTopic(TOKEN);
-    installReminders();
+    installAlarmClock();
     const slot = /** @type {HTMLElement} */ (document.getElementById('remTopic'));
     const copyBtn = /** @type {HTMLButtonElement} */ (document.getElementById('remCopyTopic'));
     // Gate on the async topic paint BEFORE clicking — `currentTopic` is what

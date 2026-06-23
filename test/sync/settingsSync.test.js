@@ -59,7 +59,7 @@ afterEach(() => {
 describe('isSyncedSetting / EXCLUDED_SETTINGS', () => {
   it('excludes exactly the per-device keys', () => {
     expect([...EXCLUDED_SETTINGS].sort()).toEqual(['fabBtnSize', 'gistToken']);
-    expect(isSyncedSetting('reminderNtfyToken')).toBe(true);
+    expect(isSyncedSetting('alarmClockNtfyToken')).toBe(true);
     expect(isSyncedSetting('maxExpeditionsPerPlanet')).toBe(true);
     expect(isSyncedSetting('gistToken')).toBe(false);
     expect(isSyncedSetting('fabBtnSize')).toBe(false);
@@ -75,7 +75,7 @@ describe('isUniverseScopedSetting / UNIVERSE_SCOPED_SETTINGS', () => {
     expect(isUniverseScopedSetting('colonyPassword')).toBe(false);
     expect(isUniverseScopedSetting('fsThreshold')).toBe(false);
     expect(isUniverseScopedSetting('maxExpeditionsPerPlanet')).toBe(true);
-    expect(isUniverseScopedSetting('reminderNtfyToken')).toBe(true);
+    expect(isUniverseScopedSetting('alarmClockNtfyToken')).toBe(true);
     expect(isUniverseScopedSetting('colPositions')).toBe(false);
     expect(isUniverseScopedSetting('colPreferOtherGalaxies')).toBe(false);
     expect(isUniverseScopedSetting('fabMode')).toBe(false);
@@ -91,9 +91,9 @@ describe('pickSyncedValues', () => {
       fabMode: true,
       fabBtnSize: 320,
       gistToken: 'ghp_x',
-      reminderNtfyToken: 'tk_x',
+      alarmClockNtfyToken: 'tk_x',
     });
-    expect(out).toEqual({ fabMode: true, reminderNtfyToken: 'tk_x' });
+    expect(out).toEqual({ fabMode: true, alarmClockNtfyToken: 'tk_x' });
   });
 
   it('scope=global keeps only non-universe-scoped synced keys', () => {
@@ -106,10 +106,10 @@ describe('pickSyncedValues', () => {
 
   it('scope=universe keeps only universe-scoped keys', () => {
     const out = pickSyncedValues(
-      { fabMode: true, maxExpeditionsPerPlanet: 2, reminderNtfyToken: 'tk_x', fabBtnSize: 320 },
+      { fabMode: true, maxExpeditionsPerPlanet: 2, alarmClockNtfyToken: 'tk_x', fabBtnSize: 320 },
       'universe',
     );
-    expect(out).toEqual({ maxExpeditionsPerPlanet: 2, reminderNtfyToken: 'tk_x' });
+    expect(out).toEqual({ maxExpeditionsPerPlanet: 2, alarmClockNtfyToken: 'tk_x' });
   });
 });
 
@@ -205,14 +205,14 @@ describe('per-universe chrome.storage wrappers', () => {
     // fabMode is global → must NOT appear in universe ts map.
     const result = await seedUniverseTsIfAbsent(
       's163-pl',
-      { fabMode: true, maxExpeditionsPerPlanet: 2, reminderNtfyToken: '' },
+      { fabMode: true, maxExpeditionsPerPlanet: 2, alarmClockNtfyToken: '' },
       777,
     );
     expect(result).not.toBeNull();
     // maxExpeditionsPerPlanet customised → stamped
     expect(result?.maxExpeditionsPerPlanet).toBe(777);
-    // reminderNtfyToken is at default ('') → not stamped
-    expect('reminderNtfyToken' in (result ?? {})).toBe(false);
+    // alarmClockNtfyToken is at default ('') → not stamped
+    expect('alarmClockNtfyToken' in (result ?? {})).toBe(false);
     // fabMode is global → not stamped in universe map
     expect('fabMode' in (result ?? {})).toBe(false);
 

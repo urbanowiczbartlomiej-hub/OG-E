@@ -17,13 +17,13 @@ import {
   collectOurMessageIds,
   isFleetSaveTooFarOut,
   guardianMessagesFor,
-} from '../../../src/features/dashboard/reminders.js';
+} from '../../../src/features/dashboard/alarmClock.js';
 import { NTFY_MAX_DELAY_SEC, guardianTitleFor } from '../../../src/sync/ntfyReconciler.js';
 
-describe('collectOurMessageIds — orphan-sweep claims every reminder kind', () => {
-  // Partial ReminderState shapes — only the notify maps matter here, so we
+describe('collectOurMessageIds — orphan-sweep claims every alarmClock kind', () => {
+  // Partial AlarmClockState shapes — only the notify maps matter here, so we
   // cast through `any` rather than build full states for each case.
-  /** @param {any} s @returns {Record<string, import('../../../src/sync/reminders.js').ReminderState>} */
+  /** @param {any} s @returns {Record<string, import('../../../src/sync/alarmClock.js').AlarmClockState>} */
   const asStates = (s) => s;
 
   it('unions wave, ad-hoc AND fleet-save ids (regression: FS were missed)', () => {
@@ -161,11 +161,11 @@ describe('guardianMessagesFor — this server\'s queued guardian pushes only', (
   });
 });
 
-describe('reconcileWaves — landed-wave drop feeds toCancel in syncReminderWaves', () => {
+describe('reconcileWaves — landed-wave drop feeds toCancel in syncAlarmClockWaves', () => {
   // Integration-level conceptual test: when a prev wave's fleet IDs
   // disappear from the current observation (all expeditions landed),
   // it falls into droppedIds — the caller pipes those into
-  // cancelWaveReminders.
+  // cancelWaveAlarmClock.
 
   /** @param {Partial<import('../../../src/domain/waves.js').Wave>} w
    *  @returns {import('../../../src/domain/waves.js').Wave} */

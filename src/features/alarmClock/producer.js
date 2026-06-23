@@ -1,20 +1,20 @@
 // @ts-check
 
-// Reminder producer — the single game-side writer of this universe's
-// reminder state, and the driver behind both notification kinds.
+// AlarmClock producer — the single game-side writer of this universe's
+// alarmClock state, and the driver behind both notification kinds.
 //
 // # What it does
 //
 // Whenever OGame's event box refreshes (`oge:eventBoxLoaded`, fired by
 // `bridges/eventBoxObserver.js`), this module reads `#eventContent` — exactly
 // the passive DOM read the badge feature does (see `features/badges.js`),
-// no traffic to the game — and hands `sync/reminders.syncReminders`:
+// no traffic to the game — and hands `sync/alarmClock.syncAlarmClock`:
 //
 //   - the clustered expedition return-flight WAVES (auto-detected), and
 //   - every present fleet leg (`{ id, arrivalAt }`), so the AD-HOC
-//     reconcile can drop reminders whose row has vanished.
+//     reconcile can drop alarmClock whose row has vanished.
 //
-// `syncReminders` reconciles the per-universe gist file AND this
+// `syncAlarmClock` reconciles the per-universe gist file AND this
 // universe's slice of the ntfy.sh queue (one message per future slot),
 // for both kinds, in a single read-modify-write. ntfy holds the delayed
 // pushes server-side; this module does NOT keep watch after the sync.
@@ -22,7 +22,7 @@
 // # Arm / disarm / cancel
 //
 // The event-list UI (`./eventList.js`) doesn't touch the gist itself — it
-// calls the {@link installReminderProducer} API (`armAdhoc`, `disarmAdhoc`,
+// calls the {@link installAlarmClockProducer} API (`armAdhoc`, `disarmAdhoc`,
 // `cancelWave`). Each enqueues a mutation and forces the next debounced
 // run, so EVERY gist write goes through this one producer: a single writer
 // means the wave and ad-hoc slices can never clobber each other. A
@@ -40,7 +40,7 @@
 //
 //   - `oge:eventBoxLoaded` — the main driver. Dormant only while BOTH
 //     kinds are disabled.
-//   - reminder-setting change — forces one sync so a toggle/token edit
+//   - alarmClock-setting change — forces one sync so a toggle/token edit
 //     reaches ntfy immediately.
 //   - arm/disarm/cancel — forces one sync carrying the mutation.
 //
@@ -48,22 +48,22 @@
 //
 // @see ../../domain/waves.js     — wave clustering (pure)
 // @see ../../domain/adhoc.js     — ad-hoc reconcile (pure)
-// @see ../../sync/reminders.js   — gist IO + reconcile + preview mirror
+// @see ../../sync/alarmClock.js   — gist IO + reconcile + preview mirror
 // @see ./eventList.js            — the event-list badge UI (API consumer)
 
 import { clusterWaves, DEFAULT_CLUSTER_GAP_SECONDS } from '../../domain/waves.js';
 /** @typedef {import('../../domain/waves.js').WaveCandidate} WaveCandidate */
 /** @typedef {import('../../domain/waves.js').Wave} Wave */
-/** @typedef {import('../../domain/adhoc.js').AdhocReminder} AdhocReminder */
+/** @typedef {import('../../domain/adhoc.js').AdhocAlarmClock} AdhocAlarmClock */
 import { extractFleetSaveCandidates, extractDepartingBodyKeys } from './fleetSaveScan.js';
 import { parseFsOffsets, GUARDIAN_SUPPRESS_TTL_SEC } from '../../domain/fleetSave.js';
 import { NTFY_MAX_DELAY_SEC } from '../../sync/ntfyReconciler.js';
 import { settingsStore } from '../../state/settings.js';
 import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
-import { reminderConfigStore } from '../../state/reminderConfig.js';
+import { alarmClockConfigStore } from '../../state/alarmClockConfig.js';
 import { writeFleetSaveIds, writeLandedFs } from '../../state/fleetSaveSet.js';
 import { readManualLandedFs } from '../../state/manualLandedFs.js';
-import { syncReminders, REMINDER_NTFY_TOKEN_KEY, isValidNtfyToken } from '../../sync/reminders.js';
+import { syncAlarmClock, ALARM_CLOCK_NTFY_TOKEN_KEY, isValidNtfyToken } from '../../sync/alarmClock.js';
 import { parseUniverseId } from '../../lib/universeId.js';
 import { debounce } from '../../lib/debounce.js';
 import { safeLS, chromeStore } from '../../lib/storage.js';
@@ -126,7 +126,7 @@ export const extractReturnEntries = (root = document) => {
  * Selector for every fleet leg currently in the event list — one
  * `<tr class="eventFleet" id="eventRow-<n>">` per in-flight leg (any
  * mission, any direction). The `eventRow-` id prefix is the stable
- * per-leg identity ad-hoc reminders key on; `data-arrival-time` is the
+ * per-leg identity ad-hoc alarmClock key on; `data-arrival-time` is the
  * leg's arrival epoch.
  */
 const PRESENT_ROW_SELECTOR = GAME.EVENT_FLEET_ROWS;
@@ -134,7 +134,7 @@ const PRESENT_ROW_SELECTOR = GAME.EVENT_FLEET_ROWS;
 /**
  * Extract every present fleet leg as `{ id, arrivalAt }` — the
  * authoritative "what exists right now" set the ad-hoc reconcile matches
- * armed reminders against (vanished ⇒ the reminder is dropped). Pure-ish
+ * armed alarmClock against (vanished ⇒ the alarmClock is dropped). Pure-ish
  * DOM read, same passive style as {@link extractReturnEntries}.
  *
  * @param {ParentNode} [root=document]
@@ -155,7 +155,7 @@ export const extractPresentFleets = (root = document) => {
 /**
  * Compact signature of one scan — the wave-candidate return-times, the
  * present fleet legs (id + arrival), and the ids of fleet-saves whose
- * earliest reminder slot has entered ntfy's 3-day schedulable window. Two
+ * earliest alarmClock slot has entered ntfy's 3-day schedulable window. Two
  * scans with the same signature need no gist round-trip (the reconcile
  * would be a no-op).
  *
@@ -184,7 +184,7 @@ export const signatureOf = (candidates, present, capReadyIds = []) =>
   });
 
 /**
- * Ids of fleet-save candidates whose EARLIEST reminder slot
+ * Ids of fleet-save candidates whose EARLIEST alarmClock slot
  * (`arrivalAt + min(offset)`) is at most {@link NTFY_MAX_DELAY_SEC} ahead of
  * `now` — i.e. close enough that ntfy will accept its `X-Delay`. Folded into
  * {@link signatureOf} so a long fleet-save first detected beyond the cap (all
@@ -205,16 +205,16 @@ export const fsCapReadyIds = (fsCandidates, offsetsSec, now) => {
 };
 
 /** localStorage key for the persisted last-successful scan signature. */
-const sigKeyFor = (/** @type {string} */ universeId) => `oge_reminderSig_${universeId}`;
+const sigKeyFor = (/** @type {string} */ universeId) => `oge_alarmClockSig_${universeId}`;
 
 /**
  * The producer's public handle: a dispose fn plus the event-list actions.
  * Each action persists its intent to localStorage (reload-safe, see
  * `./pending.js`) and forces the next sync.
  *
- * @typedef {object} ReminderProducer
+ * @typedef {object} AlarmClockProducer
  * @property {() => void} dispose
- * @property {(entry: AdhocReminder) => void} armAdhoc    Arm (or re-arm) a fleet leg.
+ * @property {(entry: AdhocAlarmClock) => void} armAdhoc    Arm (or re-arm) a fleet leg.
  * @property {(id: string) => void} disarmAdhoc           Cancel an armed leg.
  * @property {(waveId: string) => void} cancelWave        Tombstone an expedition wave.
  * @property {(waveId: string) => void} resendWave        Re-schedule a tombstoned wave's series.
@@ -228,20 +228,20 @@ const sigKeyFor = (/** @type {string} */ universeId) => `oge_reminderSig_${unive
  */
 
 /** Idempotency sentinel — holds the producer handle while installed. */
-/** @type {ReminderProducer | null} */
+/** @type {AlarmClockProducer | null} */
 let installed = null;
 
 /**
- * Install the reminder producer. Idempotent — a second call while
+ * Install the alarmClock producer. Idempotent — a second call while
  * installed returns the existing handle.
  *
  * @param {{ onSynced?: () => void }} [opts]  `onSynced` is called after every
  *   run (success or failure) — a reliable same-tab signal for the event-list
  *   UI to re-read the freshly-written mirror, instead of depending on
  *   `chrome.storage.onChanged` firing in the writer's own context.
- * @returns {ReminderProducer}
+ * @returns {AlarmClockProducer}
  */
-export const installReminderProducer = (opts = {}) => {
+export const installAlarmClockProducer = (opts = {}) => {
   if (installed) return installed;
   const onSynced = opts.onSynced;
 
@@ -258,7 +258,7 @@ export const installReminderProducer = (opts = {}) => {
   // a queued user action is detected separately, below).
   let pendingForce = false;
   // Coarse in-flight guard. `doRun()` has several awaits (read state → poll
-  // ntfy → reconcile → PATCH the per-universe reminder gist file); two
+  // ntfy → reconcile → PATCH the per-universe alarmClock gist file); two
   // overlapping runs would both read+PATCH that file, last-write-wins, silently
   // dropping one run's notifyState / landed-FS / ad-hoc bookkeeping. So
   // serialize via the `run` wrapper below: while a run is in flight, remember a
@@ -282,23 +282,23 @@ export const installReminderProducer = (opts = {}) => {
     const s = settingsStore.get();
     // Fleet-save knobs are per-universe — read from the galaxyScanConfig store.
     // The wave enable + schedule are per-universe too — read from the
-    // reminderConfig store. Only the master switch + token stay in Settings.
+    // alarmClockConfig store. Only the master switch + token stay in Settings.
     const g = galaxyScanConfigStore.get();
     // Wave/ad-hoc config (incl. message templates) is per-universe — read from
-    // the reminderConfig store. Fleet-save knobs are also per-universe and read
+    // the alarmClockConfig store. Fleet-save knobs are also per-universe and read
     // straight from `g`.
-    const eff = reminderConfigStore.get();
+    const eff = alarmClockConfigStore.get();
     const config = {
-      masterEnabled: s.remindersMasterEnabled,
-      enabled: eff.reminderEnabled,
+      masterEnabled: s.alarmClockMasterEnabled,
+      enabled: eff.alarmClockEnabled,
       fsEnabled: g.fsEnabled,
       fsThreshold: g.fsThreshold,
       fsOffsets: g.fsOffsets,
       fsMinFlightSec: g.fsMinFlightSec,
       guardianEnabled: g.guardianEnabled,
       guardianIntervalSec: g.guardianIntervalMin * 60,
-      ntfyToken: s.reminderNtfyToken,
-      schedule: eff.reminderSchedule,
+      ntfyToken: s.alarmClockNtfyToken,
+      schedule: eff.alarmClockSchedule,
       adhocSchedule: eff.adhocSchedule,
       templates: eff.templates,
     };
@@ -307,15 +307,15 @@ export const installReminderProducer = (opts = {}) => {
     // below. The dashboard derives its topic from this mirror alone, and the
     // full sync (which also mirrors it) is skipped when the event list is
     // unchanged — so without this an ordinary reload leaves the dashboard
-    // showing "no token set" even though reminders are configured and pushes
+    // showing "no token set" even though alarmClock are configured and pushes
     // are live. Decoupled from cloud sync too (no gist token needed).
     if (isValidNtfyToken(config.ntfyToken)) {
-      void chromeStore.set(REMINDER_NTFY_TOKEN_KEY, config.ntfyToken);
+      void chromeStore.set(ALARM_CLOCK_NTFY_TOKEN_KEY, config.ntfyToken);
     }
 
     // Dormant unless the master switch is on — or something forces a push (a
     // settings toggle we must act on, e.g. the master just went off and we
-    // must sweep, or a queued user action). Ad-hoc reminders are always on, so
+    // must sweep, or a queued user action). Ad-hoc alarmClock are always on, so
     // the master switch alone makes the section active.
     const anyActive = config.masterEnabled;
     if (!anyActive && !force) return;
@@ -326,7 +326,7 @@ export const installReminderProducer = (opts = {}) => {
 
     // Fleet-save CANDIDATES: every own leg with its ship count. The ship +
     // flight-time gates and the lock live in `reconcileFleetSaves` (inside
-    // syncReminders, which holds the persisted save set). We extract them
+    // syncAlarmClock, which holds the persisted save set). We extract them
     // AHEAD of the signature gate only so the signature can carry each
     // save's 3-day-cap readiness (`fsCapReadyIds`): a brand-new save first
     // seen beyond the cap has all its slots filtered, and nothing else about
@@ -348,7 +348,7 @@ export const installReminderProducer = (opts = {}) => {
     const adhocCmds = pending.filter((c) => c.kind === 'arm' || c.kind === 'disarm');
     const waveCmds = pending.filter((c) => c.kind === 'cancelWave' || c.kind === 'resendWave');
     const adhocMutate = adhocCmds.length
-      ? (/** @type {AdhocReminder[]} */ entries) => applyAdhocCmds(entries, adhocCmds)
+      ? (/** @type {AdhocAlarmClock[]} */ entries) => applyAdhocCmds(entries, adhocCmds)
       : undefined;
     const waveMutate = waveCmds.length
       ? (/** @type {Wave[]} */ waves) => applyWaveCmds(waves, waveCmds)
@@ -360,11 +360,11 @@ export const installReminderProducer = (opts = {}) => {
     const guardianDismissed = guardianDismissedLandings(universeId, now);
     const guardianAcked = guardianAckedLandings(universeId, now);
     // The user's manual "watch this" marks — unioned into the guardian push
-    // inside syncReminders so the offline push matches the in-game button.
+    // inside syncAlarmClock so the offline push matches the in-game button.
     const manualLanded = readManualLandedFs();
 
     try {
-      const res = await syncReminders(
+      const res = await syncAlarmClock(
         config,
         { waveCandidates: candidates, present, adhocMutate, waveMutate, fleetSaveCandidates, fsCancelById, departingKeys, guardianDismissed, guardianAcked, manualLanded },
         now, universeId,
@@ -373,7 +373,7 @@ export const installReminderProducer = (opts = {}) => {
         lastSig = sig;
         safeLS.set(sigKeyFor(universeId), sig);
         // Republish the detected FS ids + the landed (exposed) set for the
-        // planet markers (which mark FS fleets without importing reminders).
+        // planet markers (which mark FS fleets without importing alarmClock).
         // `fsOn` gates both so a disabled FS leaves no stale markers; the values
         // persist for the next reload.
         //
@@ -428,7 +428,7 @@ export const installReminderProducer = (opts = {}) => {
 
   const force = () => { pendingForce = true; scheduleRun(); };
 
-  /** @param {AdhocReminder} entry */
+  /** @param {AdhocAlarmClock} entry */
   const armAdhoc = (entry) => { pushPending(universeId, { kind: 'arm', entry }); force(); };
   /** @param {string} id */
   const disarmAdhoc = (id) => { pushPending(universeId, { kind: 'disarm', id }); force(); };
@@ -464,33 +464,33 @@ export const installReminderProducer = (opts = {}) => {
   const onManualFs = () => force();
   document.addEventListener(MANUAL_FS_CHANGED_EVENT, onManualFs);
 
-  // Force a push on any reminder-setting change so master/token edits in
+  // Force a push on any alarmClock-setting change so master/token edits in
   // the in-game Settings panel propagate immediately. The wave enable +
-  // schedule live in the per-universe reminderConfig store — watched below.
+  // schedule live in the per-universe alarmClockConfig store — watched below.
   /** @param {ReturnType<typeof settingsStore.get>} s */
-  const pickReminderSig = (s) =>
+  const pickAlarmClockSig = (s) =>
     JSON.stringify({
-      m: s.remindersMasterEnabled, t: s.reminderNtfyToken,
+      m: s.alarmClockMasterEnabled, t: s.alarmClockNtfyToken,
     });
-  let prevReminderSig = pickReminderSig(settingsStore.get());
+  let prevAlarmClockSig = pickAlarmClockSig(settingsStore.get());
   const unsubConfig = settingsStore.subscribe((next) => {
-    const sig = pickReminderSig(next);
-    if (sig === prevReminderSig) return;
-    prevReminderSig = sig;
+    const sig = pickAlarmClockSig(next);
+    if (sig === prevAlarmClockSig) return;
+    prevAlarmClockSig = sig;
     force();
   });
 
   // The wave enable + schedule + templates are per-universe — watch the
-  // reminderConfig store (including its async hydrate) so a dashboard edit to
+  // alarmClockConfig store (including its async hydrate) so a dashboard edit to
   // any of them propagates without a reload.
-  /** @param {ReturnType<typeof reminderConfigStore.get>} r */
-  const pickReminderConfigSig = (r) =>
-    JSON.stringify({ e: r.reminderEnabled, s: r.reminderSchedule, t: r.templates });
-  let prevReminderConfigSig = pickReminderConfigSig(reminderConfigStore.get());
-  const unsubReminderConfig = reminderConfigStore.subscribe((next) => {
-    const sig = pickReminderConfigSig(next);
-    if (sig === prevReminderConfigSig) return;
-    prevReminderConfigSig = sig;
+  /** @param {ReturnType<typeof alarmClockConfigStore.get>} r */
+  const pickAlarmClockConfigSig = (r) =>
+    JSON.stringify({ e: r.alarmClockEnabled, s: r.alarmClockSchedule, t: r.templates });
+  let prevAlarmClockConfigSig = pickAlarmClockConfigSig(alarmClockConfigStore.get());
+  const unsubAlarmClockConfig = alarmClockConfigStore.subscribe((next) => {
+    const sig = pickAlarmClockConfigSig(next);
+    if (sig === prevAlarmClockConfigSig) return;
+    prevAlarmClockConfigSig = sig;
     force();
   });
 
@@ -522,7 +522,7 @@ export const installReminderProducer = (opts = {}) => {
       document.removeEventListener(MANUAL_FS_CHANGED_EVENT, onManualFs);
       unsubConfig();
       unsubScanConfig();
-      unsubReminderConfig();
+      unsubAlarmClockConfig();
       installed = null;
     },
     armAdhoc,
@@ -542,7 +542,7 @@ export const installReminderProducer = (opts = {}) => {
  *
  * @returns {void}
  */
-export const _resetReminderProducerForTest = () => {
+export const _resetAlarmClockProducerForTest = () => {
   if (installed) installed.dispose();
   installed = null;
 };

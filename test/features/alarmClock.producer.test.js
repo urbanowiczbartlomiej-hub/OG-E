@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 //
-// Unit tests for the DOM extractors of the reminder producer. The
-// reminder logic itself (clustering / reconcile) is covered by the pure
+// Unit tests for the DOM extractors of the alarmClock producer. The
+// alarmClock logic itself (clustering / reconcile) is covered by the pure
 // `domain/waves` + `domain/adhoc` tests; here we only verify that we read
 // the right rows out of `#eventContent` and normalise their fields, using
 // a fixture shaped like the real event-list capture.
@@ -11,7 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   extractReturnEntries, extractPresentFleets, signatureOf, fsCapReadyIds,
-} from '../../src/features/reminders/producer.js';
+} from '../../src/features/alarmClock/producer.js';
 
 /**
  * Build one `#eventContent` row.

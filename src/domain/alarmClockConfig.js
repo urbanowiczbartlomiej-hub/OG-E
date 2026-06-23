@@ -1,45 +1,45 @@
 // @ts-check
 
 import {
-  defaultReminderTemplates,
-  normalizeReminderTemplates,
-} from './reminderTemplates.js';
+  defaultAlarmClockTemplates,
+  normalizeAlarmClockTemplates,
+} from './alarmClockTemplates.js';
 import { formatDuration } from './duration.js';
 
-// Reminder configuration — the PER-UNIVERSE knobs that drive expedition-wave
-// auto-reminders and the ad-hoc lead time, plus the per-kind message templates.
+// AlarmClock configuration — the PER-UNIVERSE knobs that drive expedition-wave
+// auto-alarmClock and the ad-hoc lead time, plus the per-kind message templates.
 //
 // # Why per-universe
 //
-// Reminder cadence, ad-hoc lead time, and message wording are configured per
+// AlarmClock cadence, ad-hoc lead time, and message wording are configured per
 // OGame server: the dashboard's top server-switcher already scopes everything
-// else per universe, so reminders follow suit (there is no global slot and no
+// else per universe, so alarmClock follow suit (there is no global slot and no
 // per-server "override" any more — every server simply has its own config).
 //
 // # Why chrome.storage (not the localStorage settingsStore)
 //
 // This config is edited from TWO origins: in-game (game origin) and the
-// dashboard's Reminders tab (extension origin). localStorage is per-origin, so
+// dashboard's AlarmClock tab (extension origin). localStorage is per-origin, so
 // it can't be shared; `chrome.storage.local` is the one store both origins see.
 // The per-universe slot syncs whole-slot newest-wins through the gist (see
-// `sync/merge.mergeReminderConfig`), exactly like `galaxyScanConfig`.
+// `sync/merge.mergeAlarmClockConfig`), exactly like `galaxyScanConfig`.
 //
 // Everything here is PURE: no DOM, no storage, no clock. The shape, its
 // defaults, and normalisation live here so they are unit-testable in Node and
 // shared verbatim across the game/dashboard origins.
 
 /**
- * The full per-universe reminder config.
+ * The full per-universe alarmClock config.
  *
- * @typedef {object} ReminderConfig
- * @property {boolean} reminderEnabled  Expedition-wave auto-reminders on/off.
- * @property {string} reminderSchedule  Wave reminder cadence — a free-form
+ * @typedef {object} AlarmClockConfig
+ * @property {boolean} alarmClockEnabled  Expedition-wave auto-alarmClock on/off.
+ * @property {string} alarmClockSchedule  Wave alarmClock cadence — a free-form
  *   minutes-first offset list AFTER the wave returns (e.g. `"0m, 10m, 30m, 60m"`).
- * @property {string} adhocSchedule  Ad-hoc reminder cadence — a free-form
+ * @property {string} adhocSchedule  Ad-hoc alarmClock cadence — a free-form
  *   minutes-first SIGNED offset list relative to arrival, same convention as
  *   the fleet-save schedule (`-` before, `0` at, `+` after; e.g.
  *   `"-1h, -10m, 0m"`). Applied live to every armed entry (see `domain/adhoc.js`).
- * @property {Record<import('./reminderTemplates.js').ReminderKind, import('./reminderTemplates.js').ReminderTemplate>} templates
+ * @property {Record<import('./alarmClockTemplates.js').AlarmClockKind, import('./alarmClockTemplates.js').AlarmClockTemplate>} templates
  *   Per-kind message customisation (body / icon / priority) for wave, ad-hoc,
  *   and fleet-save. The fleet-save BEHAVIOURAL knobs (`fs*`) stay in
  *   `galaxyScanConfig`; only its message presentation lives here.
@@ -50,14 +50,14 @@ import { formatDuration } from './duration.js';
  * mutate a shared literal; also the "reset to defaults" payload for the
  * dashboard button.
  *
- * @returns {ReminderConfig}
+ * @returns {AlarmClockConfig}
  */
-export const defaultReminderConfig = () => ({
-  reminderEnabled: false,
-  reminderSchedule: '0m, 10m, 30m, 60m',
+export const defaultAlarmClockConfig = () => ({
+  alarmClockEnabled: false,
+  alarmClockSchedule: '0m, 10m, 30m, 60m',
   // 1 minute before arrival — reproduces the historical single 60s lead time.
   adhocSchedule: '-1m',
-  templates: defaultReminderTemplates(),
+  templates: defaultAlarmClockTemplates(),
 });
 
 /**
@@ -80,24 +80,24 @@ const adhocScheduleOf = (r, fallback) => {
 
 /**
  * Normalise an arbitrary (possibly partial / legacy / null) stored value into
- * a complete {@link ReminderConfig}, filling every missing field from
- * {@link defaultReminderConfig}. Pure and total — always returns a valid
+ * a complete {@link AlarmClockConfig}, filling every missing field from
+ * {@link defaultAlarmClockConfig}. Pure and total — always returns a valid
  * config. The store's hydrate path runs this on load so consumers never have
  * to defend against holes.
  *
  * @param {unknown} raw
- * @returns {ReminderConfig}
+ * @returns {AlarmClockConfig}
  */
-export const normalizeReminderConfig = (raw) => {
-  const d = defaultReminderConfig();
+export const normalizeAlarmClockConfig = (raw) => {
+  const d = defaultAlarmClockConfig();
   if (!raw || typeof raw !== 'object') return d;
-  const r = /** @type {Partial<ReminderConfig>} */ (raw);
+  const r = /** @type {Partial<AlarmClockConfig>} */ (raw);
   return {
-    reminderEnabled:
-      typeof r.reminderEnabled === 'boolean' ? r.reminderEnabled : d.reminderEnabled,
-    reminderSchedule:
-      typeof r.reminderSchedule === 'string' ? r.reminderSchedule : d.reminderSchedule,
+    alarmClockEnabled:
+      typeof r.alarmClockEnabled === 'boolean' ? r.alarmClockEnabled : d.alarmClockEnabled,
+    alarmClockSchedule:
+      typeof r.alarmClockSchedule === 'string' ? r.alarmClockSchedule : d.alarmClockSchedule,
     adhocSchedule: adhocScheduleOf(r, d.adhocSchedule),
-    templates: normalizeReminderTemplates(r.templates),
+    templates: normalizeAlarmClockTemplates(r.templates),
   };
 };

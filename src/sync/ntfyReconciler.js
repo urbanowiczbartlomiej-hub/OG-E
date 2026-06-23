@@ -89,8 +89,8 @@ import {
   iconFileFor,
   splitLabel,
   legDirection,
-  defaultReminderTemplates,
-} from '../domain/reminderTemplates.js';
+  defaultAlarmClockTemplates,
+} from '../domain/alarmClockTemplates.js';
 import { logger } from '../lib/logger.js';
 
 /* global fetch */
@@ -136,9 +136,9 @@ export const ntfyAuthParam = (token) =>
   'auth=' + btoa('Bearer ' + token).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
 /**
- * Default wave reminder schedule, in seconds AFTER the wave returns —
+ * Default wave alarmClock schedule, in seconds AFTER the wave returns —
  * `0m, 10m, 30m, 60m`. Used when the (free-form) schedule setting is empty
- * or all-garbage. Must stay in sync with the `reminderSchedule` default in
+ * or all-garbage. Must stay in sync with the `alarmClockSchedule` default in
  * `state/settings.js`.
  *
  * Four nudges spanning an hour — long enough that an AFK player should
@@ -153,7 +153,7 @@ export const DEFAULT_WAVE_OFFSETS_SEC = [0, 600, 1800, 3600];
  * the wave's locked `baseAt`; slot i fires at `baseAt + offsetsSec[i]`. The
  * setting is a free-form, minutes-first duration list (e.g.
  * `"0m, 10m, 30m, 60m"`, parsed by {@link parseDurationList}); negatives are
- * dropped — a wave reminder can't fire before the wave is back. Falls back
+ * dropped — a wave alarmClock can't fire before the wave is back. Falls back
  * to {@link DEFAULT_WAVE_OFFSETS_SEC} when the parse yields nothing (empty /
  * all-garbage / a value left over from an older preset key). The number of
  * pushes per wave is the length of the list, and the escalation ladder is
@@ -171,7 +171,7 @@ export const offsetsForSchedule = (schedule) => {
 const NTFY_MIN_DELAY_SEC = 10;
 
 /**
- * ntfy's documented MAXIMUM `X-Delay` — three days. A reminder whose fire
+ * ntfy's documented MAXIMUM `X-Delay` — three days. A alarmClock whose fire
  * time is further out than this can't be scheduled, so the UI blocks
  * arming it and the orchestration excludes it from the queue (defense in
  * depth). Exported so the event-list badge can grey out far-future fleets.
@@ -214,7 +214,7 @@ const iconUrl = (file) =>
 const OGE_ICON_URL = iconUrl('icon128.png');
 
 // (A standalone red-icon constant used to live here for auto-applying an
-// urgent icon to max-priority reminders. It's gone now that the red icon is a
+// urgent icon to max-priority alarmClock. It's gone now that the red icon is a
 // selectable template preset — `resolveIconUrl(template.icon)` resolves it via
 // `iconFileFor`, so per-kind icon choice covers the urgent case.)
 
@@ -260,7 +260,7 @@ export const titleFor = (universeId) => `[${universeId}] Expeditions back`;
  * @param {number[]} [offsetsSec]  Offsets from `baseAt`, in seconds.
  * @returns {number[]}
  */
-export const reminderFireTimes = (
+export const alarmClockFireTimes = (
   baseAt,
   offsetsSec = DEFAULT_WAVE_OFFSETS_SEC,
 ) => offsetsSec.map((o) => baseAt + o);
@@ -268,7 +268,7 @@ export const reminderFireTimes = (
 /**
  * Fetch ntfy's currently-scheduled queue for `topic`. Each entry is one
  * undelivered scheduled message — i.e. `time` is strictly in the future.
- * Used by the OG-E Dashboard's Reminders tab to render the actual
+ * Used by the OG-E Dashboard's AlarmClock tab to render the actual
  * upcoming push times (cross-referenced against the gist's per-wave
  * `scheduledMessageIds`) and by the orphan-cleanup sweep.
  *
@@ -285,7 +285,7 @@ export const reminderFireTimes = (
  *
  * Each undelivered entry contains:
  *
- *   - `id`   — ntfy message id (matches what `scheduleWaveReminders`
+ *   - `id`   — ntfy message id (matches what `scheduleWaveAlarmClock`
  *              returned).
  *   - `time` — Unix epoch seconds the push will fire (for scheduled
  *              messages, this is the resolved `X-Delay` moment).
@@ -342,7 +342,7 @@ export const fetchScheduledMessages = async ({ topic, token, now }) => {
  * @param {string} args.token
  * @returns {Promise<number>}
  */
-export const cancelWaveReminders = async ({ ids, topic, token }) => {
+export const cancelWaveAlarmClock = async ({ ids, topic, token }) => {
   if (!ids || ids.length === 0) return 0;
   let ok = 0;
   for (const id of ids) {
@@ -362,10 +362,10 @@ export const cancelWaveReminders = async ({ ids, topic, token }) => {
 /**
  * Fixed ntfy priority per notification kind.
  *
- * Expedition-wave reminders stay at "default" (3) — they're background
+ * Expedition-wave alarmClock stay at "default" (3) — they're background
  * nudges. They used to escalate 3→4→5 across the series, but that
  * competed for attention with the notifications the player marks ON
- * PURPOSE. Those intentional marks are the ad-hoc fleet reminders, so
+ * PURPOSE. Those intentional marks are the ad-hoc fleet alarmClock, so
  * they ring at "max" (5). One flat priority per kind, no per-slot ladder.
  */
 export const WAVE_PRIORITY = 3;
@@ -470,7 +470,7 @@ const postMessage = async ({ topic, token, fireAt, now, title, body, priority, i
  * for this title.
  *
  * Per-message POST failures throw (the caller retries next tick); per-id
- * cancellation failures are swallowed inside {@link cancelWaveReminders}.
+ * cancellation failures are swallowed inside {@link cancelWaveAlarmClock}.
  *
  * Note: slots are matched to queued messages by fire TIME, so two slots
  * of the same kind sharing the exact same epoch second collapse to one
@@ -532,7 +532,7 @@ const reconcileQueue = async ({ series, topic, token, now, title, queue }) => {
   }
 
   const orphanIds = ours.filter((m) => !wantedTimes.has(m.time)).map((m) => m.id);
-  const cancelled = await cancelWaveReminders({ ids: orphanIds, topic, token });
+  const cancelled = await cancelWaveAlarmClock({ ids: orphanIds, topic, token });
 
   return { idsBySeries, posted, cancelled };
 };
@@ -541,9 +541,9 @@ const reconcileQueue = async ({ series, topic, token, now, title, queue }) => {
  * Render context for one expedition-wave slot. We can't expose fleet count /
  * origins: the schedule is queued the instant the FIRST expedition of a wave
  * is detected — before the rest of the burst is sent — precisely so a browser
- * close mid-send still leaves reminders queued. So `{returnTime}` (when the
+ * close mid-send still leaves alarmClock queued. So `{returnTime}` (when the
  * wave returns) plus the slot index are the only details we can state
- * honestly (see `domain/reminderTemplates.TEMPLATE_FIELDS.wave`).
+ * honestly (see `domain/alarmClockTemplates.TEMPLATE_FIELDS.wave`).
  *
  * @param {string} universeId
  * @param {number} baseAt  Wave's locked schedule anchor (epoch s).
@@ -554,7 +554,7 @@ const reconcileQueue = async ({ series, topic, token, now, title, queue }) => {
 const waveCtx = (universeId, baseAt, i, total) => ({
   server: universeId,
   // A wave is always an Expedition series; exposing `{mission}` keeps the
-  // three editors uniform (see `domain/reminderTemplates` COMMON_FIELDS).
+  // three editors uniform (see `domain/alarmClockTemplates` COMMON_FIELDS).
   mission: 'Expedition',
   returnTime: clock(baseAt),
   index: i + 1,
@@ -581,10 +581,10 @@ const waveCtx = (universeId, baseAt, i, total) => ({
  * @param {string} args.token
  * @param {number} args.now         Epoch SECONDS — injected for testability.
  * @param {string} args.universeId  OGame server id; the title prefix + queue filter.
- * @param {number[]} [args.offsetsSec]  Reminder offsets (seconds from each wave's
+ * @param {number[]} [args.offsetsSec]  AlarmClock offsets (seconds from each wave's
  *   `baseAt`) for the active schedule. Defaults to
  *   {@link DEFAULT_WAVE_OFFSETS_SEC} so callers/tests get the default cadence.
- * @param {import('../domain/reminderTemplates.js').ReminderTemplate} [args.template]
+ * @param {import('../domain/alarmClockTemplates.js').AlarmClockTemplate} [args.template]
  *   The wave message customisation (body / icon / priority). Defaults to the
  *   built-in wave template (reproduces the historical message).
  * @param {Array<{ id: string, time: number, title?: string }>} [args.queue]
@@ -595,13 +595,13 @@ const waveCtx = (universeId, baseAt, i, total) => ({
 export const reconcileWaveQueue = async ({
   waves, topic, token, now, universeId,
   offsetsSec = DEFAULT_WAVE_OFFSETS_SEC,
-  template = defaultReminderTemplates().wave,
+  template = defaultAlarmClockTemplates().wave,
   queue,
 }) => {
   const icon = resolveIconUrl(template.icon);
   /** @type {QueueSeries[]} */
   const series = waves.map((w) => {
-    const times = reminderFireTimes(w.baseAt, offsetsSec);
+    const times = alarmClockFireTimes(w.baseAt, offsetsSec);
     return {
       id: w.id,
       slots: times.map((fireAt, i) => ({
@@ -619,10 +619,10 @@ export const reconcileWaveQueue = async ({
 };
 
 /**
- * The ntfy push title for this universe's AD-HOC fleet reminders. Distinct
+ * The ntfy push title for this universe's AD-HOC fleet alarmClock. Distinct
  * from {@link titleFor} (the wave title) so the two kinds never sweep each
  * other on the shared topic, and prefixed with the universe id so other
- * servers' ad-hoc reminders stay invisible here too.
+ * servers' ad-hoc alarmClock stay invisible here too.
  *
  * @param {string} universeId
  * @returns {string}
@@ -683,7 +683,7 @@ const adhocCtx = (universeId, e, fireAt, i, total) => ({
  * MULTI-slot series fired at each of its `fireAts` (the per-universe ad-hoc
  * schedule resolved against the leg's arrival — see `domain/adhoc.js`). The
  * body is rendered from the ad-hoc
- * {@link import('../domain/reminderTemplates.js').ReminderTemplate} against the
+ * {@link import('../domain/alarmClockTemplates.js').AlarmClockTemplate} against the
  * shared wildcard set (`{server}`, `{mission}`, `{coords}`, `{origin}`,
  * `{originName}`, `{target}`, `{targetName}`, `{direction}`, `{shipCount}`,
  * `{arrivalTime}`, `{offset}`, `{index}`, `{total}`); priority + icon come from
@@ -693,7 +693,7 @@ const adhocCtx = (universeId, e, fireAt, i, total) => ({
  * arming on mobile survives the send-reload and the queue self-heals. Slots
  * beyond ntfy's 3-day cap are dropped here (so `{total}` counts the queued
  * series, not the raw schedule). Pass `entries: []` to cancel every ad-hoc
- * reminder queued for this universe.
+ * alarmClock queued for this universe.
  *
  * @param {object} args
  * @param {Array<{ id: string, fireAts: number[], arrivalAt: number, label: string,
@@ -705,7 +705,7 @@ const adhocCtx = (universeId, e, fireAt, i, total) => ({
  * @param {string} args.token
  * @param {number} args.now         Epoch SECONDS.
  * @param {string} args.universeId
- * @param {import('../domain/reminderTemplates.js').ReminderTemplate} [args.template]
+ * @param {import('../domain/alarmClockTemplates.js').AlarmClockTemplate} [args.template]
  *   Ad-hoc message customisation; defaults to the built-in ad-hoc template.
  * @param {Array<{ id: string, time: number, title?: string }>} [args.queue]
  *   Pre-fetched queue snapshot (see {@link reconcileQueue}) — lets the
@@ -714,7 +714,7 @@ const adhocCtx = (universeId, e, fireAt, i, total) => ({
  */
 export const reconcileAdhocQueue = async ({
   entries, topic, token, now, universeId,
-  template = defaultReminderTemplates().adhoc,
+  template = defaultAlarmClockTemplates().adhoc,
   queue,
 }) => {
   const icon = resolveIconUrl(template.icon);
@@ -740,10 +740,10 @@ export const reconcileAdhocQueue = async ({
 };
 
 /**
- * The ntfy push title for this universe's FLEET-SAVE reminders. Distinct
+ * The ntfy push title for this universe's FLEET-SAVE alarmClock. Distinct
  * from both {@link titleFor} (waves) and {@link adhocTitleFor} (ad-hoc) so
  * the three kinds never sweep each other on the shared topic, and prefixed
- * with the universe id so other servers' FS reminders stay invisible here.
+ * with the universe id so other servers' FS alarmClock stay invisible here.
  *
  * @param {string} universeId
  * @returns {string}
@@ -777,13 +777,13 @@ const fsCtx = (universeId, e, fireAt, i, total) => ({
  * Reconcile this universe's FLEET-SAVE slice of the queue. Each detected FS
  * is a MULTI-slot series fired at each of its `fireAts` (the relative-offset
  * schedule resolved against the leg's arrival), at flat {@link ADHOC_PRIORITY}
- * — an FS is high-value, so it rings as urgently as a player-armed reminder.
+ * — an FS is high-value, so it rings as urgently as a player-armed alarmClock.
  *
  * Same idempotent reconcile as waves/ad-hoc, under the distinct FS title, so
  * a send-reload on mobile self-heals. Slots beyond ntfy's 3-day cap are
  * dropped here (ntfy would reject the `X-Delay` and the producer would retry
  * forever); past / too-soon slots are skipped inside {@link reconcileQueue}.
- * Pass `entries: []` to cancel every FS reminder queued for this universe.
+ * Pass `entries: []` to cancel every FS alarmClock queued for this universe.
  *
  * @param {object} args
  * @param {Array<{ id: string, arrivalAt: number, label: string, shipCount?: number, fireAts: number[] }>} args.entries
@@ -791,7 +791,7 @@ const fsCtx = (universeId, e, fireAt, i, total) => ({
  * @param {string} args.token
  * @param {number} args.now         Epoch SECONDS.
  * @param {string} args.universeId
- * @param {import('../domain/reminderTemplates.js').ReminderTemplate} [args.template]
+ * @param {import('../domain/alarmClockTemplates.js').AlarmClockTemplate} [args.template]
  *   Fleet-save message customisation; defaults to the built-in FS template.
  * @param {Array<{ id: string, time: number, title?: string }>} [args.queue]
  *   Pre-fetched queue snapshot (see {@link reconcileQueue}) — lets the caller
@@ -800,7 +800,7 @@ const fsCtx = (universeId, e, fireAt, i, total) => ({
  */
 export const reconcileFleetSaveQueue = async ({
   entries, topic, token, now, universeId,
-  template = defaultReminderTemplates().fleetSave,
+  template = defaultAlarmClockTemplates().fleetSave,
   queue,
 }) => {
   const icon = resolveIconUrl(template.icon);
@@ -869,7 +869,7 @@ export const isGuardianTitle = (title) => /^\[[^\]]*\] Bare fleet$/.test(title ?
  * @returns {Promise<{ idsByEntry: Record<string, string[]>, posted: number, cancelled: number }>}
  */
 export const reconcileGuardianQueue = async ({ entries, topic, token, now, universeId, queue }) => {
-  const icon = resolveIconUrl(defaultReminderTemplates().fleetSave.icon);
+  const icon = resolveIconUrl(defaultAlarmClockTemplates().fleetSave.icon);
   /** @type {QueueSeries[]} */
   const series = entries.map((e) => ({
     id: e.bodyKey,

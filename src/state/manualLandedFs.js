@@ -2,7 +2,7 @@
 // IS a fleet-save, watch it" flag, set from the fleet1 dispatch screen.
 //
 // Why a SEPARATE store from `state/fleetSaveSet.js`'s landed set: that set is
-// single-writer — the reminders PRODUCER owns it and rewrites it from the
+// single-writer — the alarmClock PRODUCER owns it and rewrites it from the
 // in-flight event list on every sync. A manual mark has no event to derive
 // from, so feeding it into the producer's set would either be clobbered on the
 // next sync or force the producer to special-case sticky overrides. Instead this

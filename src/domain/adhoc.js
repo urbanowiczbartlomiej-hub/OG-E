@@ -2,10 +2,10 @@
 
 import { parseDurationList } from './duration.js';
 
-// Ad-hoc fleet-reminder domain logic — pure, no DOM, no storage, no
+// Ad-hoc fleet-alarmClock domain logic — pure, no DOM, no storage, no
 // `Date.now()`. Tests run in Node with zero mocks. Sibling of
 // `domain/waves.js`; where waves are auto-detected expedition clusters,
-// ad-hoc reminders are individual event-list rows the player marked ON
+// ad-hoc alarmClock are individual event-list rows the player marked ON
 // PURPOSE (any mission, any direction — outbound or return).
 //
 // # Identity = the event-row id
@@ -13,22 +13,22 @@ import { parseDurationList } from './duration.js';
 // OGame's event list renders one `<tr class="eventFleet" id="eventRow-<n>">`
 // per in-flight leg. That `<n>` is the *event* id — stable for the whole
 // life of that leg and distinct from the *fleet* id (`data-fleet-id`,
-// shared by a fleet's outbound + return legs). We key ad-hoc reminders by
+// shared by a fleet's outbound + return legs). We key ad-hoc alarmClock by
 // the event-row id, so the player marks a single LEG: "ping me when this
 // fleet reaches its target" and "…when it gets home" are two separate,
 // independently-armable rows. `data-arrival-time` on the row is the leg's
-// arrival epoch — the anchor every reminder slot is measured from.
+// arrival epoch — the anchor every alarmClock slot is measured from.
 //
 // # The schedule is per-server and applied LIVE (not frozen at arm time)
 //
 // Each armed entry stores only its IDENTITY + arrival anchor + the per-leg
 // push metadata captured off the row (label / origin / target / ship count).
-// The reminder CADENCE is the per-universe `adhocSchedule` — a signed
+// The alarmClock CADENCE is the per-universe `adhocSchedule` — a signed
 // offset list relative to arrival, in the SAME convention as fleet-save
 // (`-` before, `0` at, `+` after arrival; `fireAt = arrivalAt + offset`).
 // The producer resolves the schedule against each entry's `arrivalAt` on
 // every scan ({@link adhocFireTimes}), so editing the schedule re-times all
-// armed reminders — matching how waves and fleet-save read their offsets
+// armed alarmClock — matching how waves and fleet-save read their offsets
 // live. Nothing about the offsets is persisted on the entry.
 //
 // # Auto-cleanup when the row vanishes
@@ -55,12 +55,12 @@ import { parseDurationList } from './duration.js';
 // and the producer must not call us in that state.
 
 /**
- * One armed ad-hoc reminder, as persisted per-universe in the gist. Holds the
+ * One armed ad-hoc alarmClock, as persisted per-universe in the gist. Holds the
  * leg's identity + arrival anchor + the per-leg push metadata captured off the
  * row at arm time; the fire cadence is NOT stored here — it's the live
  * `adhocSchedule`, resolved against `arrivalAt` each scan ({@link adhocFireTimes}).
  *
- * @typedef {object} AdhocReminder
+ * @typedef {object} AdhocAlarmClock
  * @property {string} id         Event-row identity (`eventRow-<n>`); the key.
  * @property {number} arrivalAt  Epoch SECONDS the leg arrives (`data-arrival-time`);
  *   the anchor every schedule offset is measured from.
@@ -109,7 +109,7 @@ export const adhocFireTimes = (arrivalAt, offsetsSec) =>
   offsetsSec.map((o) => arrivalAt + o);
 
 /**
- * Reconcile the armed ad-hoc reminders against the fleets currently
+ * Reconcile the armed ad-hoc alarmClock against the fleets currently
  * present in the event list.
  *
  *   - **present, same arrival** → keep unchanged.
@@ -122,16 +122,16 @@ export const adhocFireTimes = (arrivalAt, offsetsSec) =>
  * presence, not time, decides survival. The schedulable-window (ntfy's
  * 3-day cap) is enforced by the scheduler/orchestration, not here.
  *
- * @param {AdhocReminder[]} prev
+ * @param {AdhocAlarmClock[]} prev
  * @param {PresentFleet[]} present
- * @returns {{ entries: AdhocReminder[], droppedIds: string[] }}
+ * @returns {{ entries: AdhocAlarmClock[], droppedIds: string[] }}
  */
 export const reconcileAdhoc = (prev, present) => {
   /** @type {Map<string, number>} */
   const arrivalById = new Map();
   for (const f of present) arrivalById.set(f.id, f.arrivalAt);
 
-  /** @type {AdhocReminder[]} */
+  /** @type {AdhocAlarmClock[]} */
   const entries = [];
   /** @type {string[]} */
   const droppedIds = [];
@@ -155,11 +155,11 @@ export const reconcileAdhoc = (prev, present) => {
 /**
  * Return a copy of `notify` containing only entries whose id still
  * appears in `entries`. Mirrors `domain/waves.pruneNotifyState` — keeps
- * the gist from accumulating dead bookkeeping for dropped reminders.
+ * the gist from accumulating dead bookkeeping for dropped alarmClock.
  *
  * @template T
  * @param {Record<string, T>} notify
- * @param {AdhocReminder[]} entries
+ * @param {AdhocAlarmClock[]} entries
  * @returns {Record<string, T>}
  */
 export const pruneAdhocNotify = (notify, entries) => {

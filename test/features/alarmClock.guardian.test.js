@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 //
 // Behavioral tests for the fleet GUARDIAN surface
-// (`src/features/reminders/guardian.js`).
+// (`src/features/alarmClock/guardian.js`).
 //
 // The guardian is the loud half of the post-landing watch: while the producer
 // reports any landed-but-unsaved fleet via `state/fleetSaveSet.readLandedFs()`,
@@ -68,10 +68,10 @@ const readLandedFs = vi.hoisted(() =>
 );
 vi.mock('../../src/state/fleetSaveSet.js', () => ({ readLandedFs }));
 
-import { installGuardian, _resetGuardianForTest } from '../../src/features/reminders/guardian.js';
+import { installGuardian, _resetGuardianForTest } from '../../src/features/alarmClock/guardian.js';
 import { EVENT_BOX_LOADED_EVENT } from '../../src/lib/ogeEvents.js';
 import { settingsStore } from '../../src/state/settings.js';
-import { addGuardianDismiss } from '../../src/features/reminders/guardianDismiss.js';
+import { addGuardianDismiss } from '../../src/features/alarmClock/guardianDismiss.js';
 
 const UID = 'uni-77';
 

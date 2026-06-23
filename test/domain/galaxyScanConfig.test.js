@@ -39,7 +39,7 @@ describe('defaultGalaxyScanConfig', () => {
     expect(d.colonyPassword).toBe('');
   });
 
-  it('carries the fleet-save reminder knobs (moved here from settingsStore, B3)', () => {
+  it('carries the fleet-save alarmClock knobs (moved here from settingsStore, B3)', () => {
     const d = defaultGalaxyScanConfig();
     expect(d.fsEnabled).toBe(false);
     expect(d.fsThreshold).toBe(100000);
@@ -111,7 +111,7 @@ describe('normalizeGalaxyScanConfig', () => {
     expect(normalizeGalaxyScanConfig({ colonyMinGap: -5 }).colonyMinGap).toBe(d.colonyMinGap);
   });
 
-  it('keeps / coerces the fleet-save reminder knobs (B3)', () => {
+  it('keeps / coerces the fleet-save alarmClock knobs (B3)', () => {
     const d = defaultGalaxyScanConfig();
     const out = normalizeGalaxyScanConfig({
       fsEnabled: true,

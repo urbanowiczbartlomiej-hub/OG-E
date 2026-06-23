@@ -72,7 +72,7 @@ export const formatNtfyAccountStatus = (r) => {
 };
 
 /**
- * Richer multi-line variant for the OG-E Dashboard's Reminders tab, where the
+ * Richer multi-line variant for the OG-E Dashboard's AlarmClock tab, where the
  * value column is wide enough to show the account login + tier and the message
  * usage UNDER a `✓ Valid` head. A failure reuses {@link formatNtfyAccountStatus}'s
  * error ladder as the head, with no detail lines. Pure — feed it a result,

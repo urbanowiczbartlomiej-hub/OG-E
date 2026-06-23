@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   readFleetSaveCancel, writeFleetSaveCancel, pruneFleetSaveCancel, mergeFleetSaveCancel, addFleetSaveCancel, fleetSaveCancelOffsets,
-} from '../../src/features/reminders/fleetSaveCancel.js';
+} from '../../src/features/alarmClock/fleetSaveCancel.js';
 
 const U = 's1';
 

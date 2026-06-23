@@ -1,12 +1,12 @@
 // @ts-check
 
-// Reload-safe pending-intent queue for the event-list reminder actions.
+// Reload-safe pending-intent queue for the event-list alarmClock actions.
 //
 // # The problem it solves
 //
 // OGame is not an SPA: every click hits the PHP server and reloads the
 // page, tearing down the content script. Our gist + ntfy round-trip takes
-// a few seconds, so a player who arms a reminder and immediately clicks
+// a few seconds, so a player who arms a alarmClock and immediately clicks
 // elsewhere would lose it — the async sync never finished before the
 // reload.
 //
@@ -30,14 +30,14 @@
 
 import { safeLS } from '../../lib/storage.js';
 
-/** @typedef {import('../../domain/adhoc.js').AdhocReminder} AdhocReminder */
+/** @typedef {import('../../domain/adhoc.js').AdhocAlarmClock} AdhocAlarmClock */
 /** @typedef {import('../../domain/waves.js').Wave} Wave */
 
 /**
  * One queued user action. Serialisable (survives localStorage + reload).
  *
  * @typedef {(
- *   { kind: 'arm', entry: AdhocReminder } |
+ *   { kind: 'arm', entry: AdhocAlarmClock } |
  *   { kind: 'disarm', id: string } |
  *   { kind: 'cancelWave', waveId: string } |
  *   { kind: 'resendWave', waveId: string }
@@ -45,7 +45,7 @@ import { safeLS } from '../../lib/storage.js';
  */
 
 /** @param {string} universeId @returns {string} */
-const keyFor = (universeId) => `oge_reminderPending_${universeId}`;
+const keyFor = (universeId) => `oge_alarmClockPending_${universeId}`;
 
 /**
  * Read the queued commands for a universe (always an array).
@@ -88,9 +88,9 @@ export const pushPending = (universeId, cmd) => {
 /**
  * Fold the ad-hoc commands (`arm` / `disarm`) into an entry list. Pure.
  *
- * @param {AdhocReminder[]} entries
+ * @param {AdhocAlarmClock[]} entries
  * @param {PendingCommand[]} cmds
- * @returns {AdhocReminder[]}
+ * @returns {AdhocAlarmClock[]}
  */
 export const applyAdhocCmds = (entries, cmds) => {
   let out = entries;

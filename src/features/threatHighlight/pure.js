@@ -11,7 +11,7 @@
  * destruction. Mirrors the set OGame's own top-bar `#attack_alert` flag
  * reacts to, so the event-list enrichment never disagrees with the flag by
  * counting an inbound spy probe as an attack. (Numbers match
- * `features/reminders/fleetSaveScan.js`'s MISSION_NAMES — reverse-engineered
+ * `features/alarmClock/fleetSaveScan.js`'s MISSION_NAMES — reverse-engineered
  * game knowledge, duplicated locally because features never import features.)
  *
  * @type {ReadonlySet<string>}

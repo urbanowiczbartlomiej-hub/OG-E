@@ -2,7 +2,7 @@
 
 // Alarm-clock section of the OG-E settings tab.
 //
-// "Alarm clock" is the user-facing name for the ntfy reminders: every alarm is
+// "Alarm clock" is the user-facing name for the ntfy alarmClock: every alarm is
 // a wake-up for a time the player already knows from their OWN action (an
 // expedition / fleet they sent, whose return time is computable) — like setting
 // a phone alarm, never a monitor for events the player couldn't predict.
@@ -21,12 +21,12 @@
  */
 
 /** @type {SettingsSection} */
-export const remindersSection = {
+export const alarmClockSection = {
   section: 'Alarm clock (ntfy.sh)',
   options: [
     {
       // DOM-only id (not a Settings field) — a standalone note, full width.
-      id: 'remindersMovedNote',
+      id: 'alarmClockMovedNote',
       label: '',
       type: 'static',
       fullWidth: true,

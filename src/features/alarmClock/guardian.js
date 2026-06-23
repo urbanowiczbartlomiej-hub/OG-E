@@ -20,7 +20,7 @@
 //
 // This feature is the loud SURFACE only — it never talks to ntfy directly. The
 // matching OFFLINE push (one escalation per bare body, at landing + interval) is
-// driven by the producer (`producer.js` → `sync/reminders` →
+// driven by the producer (`producer.js` → `sync/alarmClock` →
 // `ntfyReconciler.reconcileGuardianQueue`); the ack + dismiss taps delegate to
 // the producer's commands, which snooze or cancel it. Dismiss + ack are DURABLE,
 // self-expiring, single-device stores (`./guardianDismiss.js`); the bare set
@@ -28,7 +28,7 @@
 // (`features/manualFsMark`) feeds the SAME union, arming both this button and
 // the push.
 //
-// Lives INSIDE the reminders feature (installed by `./index.js`).
+// Lives INSIDE the alarmClock feature (installed by `./index.js`).
 //
 // @see ../../state/fleetSaveSet.js — readLandedFs() (the producer's output).
 

@@ -10,7 +10,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   shipCountOf, isOwnFleet, fleetSaveLabelFor, extractFleetSaveCandidates, fleetRowMeta,
-} from '../../src/features/reminders/fleetSaveScan.js';
+} from '../../src/features/alarmClock/fleetSaveScan.js';
 
 /**
  * Build one `#eventContent` row.

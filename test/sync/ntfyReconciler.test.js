@@ -13,9 +13,9 @@ import {
   fsTitleFor,
   guardianTitleFor,
   isGuardianTitle,
-  reminderFireTimes,
+  alarmClockFireTimes,
   titleFor,
-  cancelWaveReminders,
+  cancelWaveAlarmClock,
   fetchScheduledMessages,
   offsetsForSchedule,
   DEFAULT_WAVE_OFFSETS_SEC,
@@ -98,14 +98,14 @@ const TITLE = titleFor('s163-pl');
 const ourMsg = (id, time) =>
   JSON.stringify({ id, time, event: 'message', title: TITLE });
 
-describe('reminderFireTimes', () => {
+describe('alarmClockFireTimes', () => {
   it('defaults to the default wave schedule offsets', () => {
-    expect(reminderFireTimes(2000)).toEqual(DEFAULT_WAVE_OFFSETS_SEC.map((o) => 2000 + o));
-    expect(reminderFireTimes(2000)).toHaveLength(DEFAULT_WAVE_OFFSETS_SEC.length);
+    expect(alarmClockFireTimes(2000)).toEqual(DEFAULT_WAVE_OFFSETS_SEC.map((o) => 2000 + o));
+    expect(alarmClockFireTimes(2000)).toHaveLength(DEFAULT_WAVE_OFFSETS_SEC.length);
   });
 
   it('applies an explicit offset list relative to baseAt', () => {
-    expect(reminderFireTimes(2000, [0, 300, 900])).toEqual([2000, 2300, 2900]);
+    expect(alarmClockFireTimes(2000, [0, 300, 900])).toEqual([2000, 2300, 2900]);
   });
 });
 
@@ -116,7 +116,7 @@ describe('offsetsForSchedule', () => {
     expect(offsetsForSchedule('90s, 2m')).toEqual([90, 120]);
   });
 
-  it('drops negatives — a wave reminder cannot fire before the wave is back', () => {
+  it('drops negatives — a wave alarmClock cannot fire before the wave is back', () => {
     expect(offsetsForSchedule('-10m, 0m, 10m')).toEqual([0, 600]);
   });
 
@@ -161,7 +161,7 @@ describe('reconcileWaveQueue', () => {
       expect(init.headers.Authorization).toBeUndefined();
       expect(init.headers.Title).toBe(TITLE);
       expect(init.headers['X-Delay']).toBe(String(2000 + slot * WAVE_INTERVAL));
-      // Wave reminders are flat "default" priority now (3) — no escalation.
+      // Wave alarmClock are flat "default" priority now (3) — no escalation.
       expect(init.headers.Priority).toBe(String(WAVE_PRIORITY));
       // Tags were dropped entirely — no `Tags` header on any push.
       expect(init.headers.Tags).toBeUndefined();
@@ -170,7 +170,7 @@ describe('reconcileWaveQueue', () => {
       // Body states the wave's local return time + slot position; exact
       // clock string is TZ-dependent, so assert the shape. Wave nudges are
       // not max priority, so they carry no 🔥 flare.
-      expect(init.body).toMatch(/^Expeditions back \(\d{1,2}:\d{2}(?:\s?[AP]M)?\) — reminder #\d+\/6\.$/);
+      expect(init.body).toMatch(/^Expeditions back \(\d{1,2}:\d{2}(?:\s?[AP]M)?\) — alarmClock #\d+\/6\.$/);
     });
   });
 
@@ -226,7 +226,7 @@ describe('reconcileWaveQueue', () => {
   });
 
   it('is idempotent: a fully-queued wave posts nothing and reuses the queued ids', async () => {
-    const times = reminderFireTimes(2000, WAVE_OFFSETS);
+    const times = alarmClockFireTimes(2000, WAVE_OFFSETS);
     dispatchReconcile(times.map((t, i) => ourMsg(`q${i}`, t)));
     const { idsByWave, posted, cancelled } = await reconcileWaveQueue({
       ...base, now: 1000, waves: [{ id: 'w_2000', baseAt: 2000 }], offsetsSec: WAVE_OFFSETS,
@@ -239,7 +239,7 @@ describe('reconcileWaveQueue', () => {
   });
 
   it('fills only the gaps of a partial (reload-interrupted) schedule', async () => {
-    const times = reminderFireTimes(2000, WAVE_OFFSETS);
+    const times = alarmClockFireTimes(2000, WAVE_OFFSETS);
     // Only slots 0,1,2 made it onto the queue before the page reloaded.
     dispatchReconcile([ourMsg('q0', times[0]), ourMsg('q1', times[1]), ourMsg('q2', times[2])]);
     const { idsByWave, posted, cancelled } = await reconcileWaveQueue({
@@ -254,7 +254,7 @@ describe('reconcileWaveQueue', () => {
 
   it('sweeps our messages that belong to no live wave (landed / re-sent / drifted)', async () => {
     // A live wave at baseAt=2000 plus a stale message at 9999 (no wave).
-    const times = reminderFireTimes(2000, WAVE_OFFSETS);
+    const times = alarmClockFireTimes(2000, WAVE_OFFSETS);
     dispatchReconcile([...times.map((t, i) => ourMsg(`q${i}`, t)), ourMsg('stale', 9999)]);
     const { cancelled, posted } = await reconcileWaveQueue({
       ...base, now: 1000, waves: [{ id: 'w_2000', baseAt: 2000 }], offsetsSec: WAVE_OFFSETS,
@@ -267,7 +267,7 @@ describe('reconcileWaveQueue', () => {
   });
 
   it('cancels everything for the universe when no live waves are passed (feature off)', async () => {
-    const times = reminderFireTimes(2000, WAVE_OFFSETS);
+    const times = alarmClockFireTimes(2000, WAVE_OFFSETS);
     dispatchReconcile(times.map((t, i) => ourMsg(`q${i}`, t)));
     const { posted, cancelled } = await reconcileWaveQueue({ ...base, now: 1000, waves: [] });
 
@@ -291,7 +291,7 @@ describe('reconcileWaveQueue', () => {
     // baseAt=1005, now=1000 → slot 0 at 1005 is in the future but too soon
     // to (re)schedule. It must stay queued and must not be re-posted.
     const queuedImminent = ourMsg('q-soon', 1005);
-    const times = reminderFireTimes(1005, WAVE_OFFSETS); // [1005,1605,2205,2805,3405,4005]
+    const times = alarmClockFireTimes(1005, WAVE_OFFSETS); // [1005,1605,2205,2805,3405,4005]
     // Pre-queue slot 0 only; the rest are gaps to fill.
     dispatchReconcile([queuedImminent]);
     const { idsByWave, posted, cancelled } = await reconcileWaveQueue({
@@ -445,7 +445,7 @@ describe('isGuardianTitle', () => {
     expect(isGuardianTitle('[] Bare fleet')).toBe(true); // empty id still matches
   });
 
-  it('rejects the other reminder kinds and near-misses', () => {
+  it('rejects the other alarmClock kinds and near-misses', () => {
     expect(isGuardianTitle(titleFor('s163-pl'))).toBe(false);
     expect(isGuardianTitle(adhocTitleFor('s163-pl'))).toBe(false);
     expect(isGuardianTitle(fsTitleFor('s163-pl'))).toBe(false);
@@ -603,10 +603,10 @@ describe('fetchScheduledMessages', () => {
   });
 });
 
-describe('cancelWaveReminders', () => {
+describe('cancelWaveAlarmClock', () => {
   it('DELETEs each id via ?auth=… URL (no Authorization header)', async () => {
     fetchMock.mockResolvedValue(okResponse());
-    const ok = await cancelWaveReminders({
+    const ok = await cancelWaveAlarmClock({
       ids: ['a', 'b', 'c'], topic: 't', token: 'tk',
     });
     const expectedAuth = expectedAuthParam('tk');
@@ -625,16 +625,16 @@ describe('cancelWaveReminders', () => {
       .mockResolvedValueOnce(errResponse(404))
       .mockResolvedValueOnce(okResponse())
       .mockResolvedValueOnce(errResponse(500));
-    const ok = await cancelWaveReminders({
+    const ok = await cancelWaveAlarmClock({
       ids: ['x', 'y', 'z'], topic: 't', token: 'tk',
     });
     expect(ok).toBe(1);
   });
 
   it('is a no-op for an empty / missing id list', async () => {
-    expect(await cancelWaveReminders({ ids: [], topic: 't', token: 'tk' })).toBe(0);
+    expect(await cancelWaveAlarmClock({ ids: [], topic: 't', token: 'tk' })).toBe(0);
     // @ts-expect-error — defensive against undefined input
-    expect(await cancelWaveReminders({ ids: undefined, topic: 't', token: 'tk' })).toBe(0);
+    expect(await cancelWaveAlarmClock({ ids: undefined, topic: 't', token: 'tk' })).toBe(0);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

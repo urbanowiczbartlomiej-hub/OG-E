@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 //
-// DOM tests for the event-list reminder badges. Regression-locks the bug
+// DOM tests for the event-list alarmClock badges. Regression-locks the bug
 // where stamping a cell overwrote its className wholesale and stripped
 // OGame's `arrivalTime` class — after which `render` could no longer find
 // the cell (`td.arrivalTime`), so clicks only showed up after a reload.
@@ -11,20 +11,20 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { settingsStore, SETTINGS_SCHEMA } from '../../src/state/settings.js';
 import { galaxyScanConfigStore } from '../../src/state/galaxyScanConfig.js';
 import { defaultGalaxyScanConfig } from '../../src/domain/galaxyScanConfig.js';
-import { reminderConfigStore } from '../../src/state/reminderConfig.js';
-import { defaultReminderConfig } from '../../src/domain/reminderConfig.js';
+import { alarmClockConfigStore } from '../../src/state/alarmClockConfig.js';
+import { defaultAlarmClockConfig } from '../../src/domain/alarmClockConfig.js';
 import { parseUniverseId } from '../../src/lib/universeId.js';
-import { writePending } from '../../src/features/reminders/pending.js';
-import { REMINDER_MIRROR_KEY } from '../../src/sync/reminders.js';
+import { writePending } from '../../src/features/alarmClock/pending.js';
+import { ALARM_CLOCK_MIRROR_KEY } from '../../src/sync/alarmClock.js';
 import {
-  installEventListReminders, _resetEventListRemindersForTest,
-} from '../../src/features/reminders/eventList.js';
+  installEventListAlarmClock, _resetEventListAlarmClockForTest,
+} from '../../src/features/alarmClock/eventList.js';
 
 const VALID_TOKEN = 'tk_tbqdljrkz4ivlgagxwewjz17k26gw';
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 // In-memory chrome.storage.local stub — the event-list badge reads the
-// reminder mirror from it (fleet-save badges are mirror-driven). Empty by
+// alarmClock mirror from it (fleet-save badges are mirror-driven). Empty by
 // default ⇒ snapshot is null ⇒ behaves exactly as "no extension API".
 /** @type {Record<string, unknown>} */
 let chromeStoreData = {};
@@ -44,7 +44,7 @@ const installChromeStub = () => {
 
 /** Seed this universe's mirror slice with a fleet-save set. @param {object[]} fleetSave */
 const seedMirror = (fleetSave) => {
-  chromeStoreData[REMINDER_MIRROR_KEY] = {
+  chromeStoreData[ALARM_CLOCK_MIRROR_KEY] = {
     [parseUniverseId(location.host)]: {
       version: 5, waves: [], notifyState: {}, adhoc: [], adhocNotify: {},
       fleetSave, fleetSaveNotify: {},
@@ -70,12 +70,12 @@ const setFsEnabled = (on) => galaxyScanConfigStore.set({ ...defaultGalaxyScanCon
 
 /**
  * Wave enable + ad-hoc lead time are per-universe — they live in the
- * reminderConfig store, not Settings. Set them (defaulting the rest).
+ * alarmClockConfig store, not Settings. Set them (defaulting the rest).
  *
- * @param {Partial<import('../../src/domain/reminderConfig.js').ReminderConfig>} [over]
+ * @param {Partial<import('../../src/domain/alarmClockConfig.js').AlarmClockConfig>} [over]
  */
 const setGlobalConfig = (over = {}) =>
-  reminderConfigStore.set({ ...defaultReminderConfig(), ...over });
+  alarmClockConfigStore.set({ ...defaultAlarmClockConfig(), ...over });
 
 /** Paint one outbound fleet row with a real arrivalTime cell. @param {number} arrival */
 const paintRow = (arrival) => {
@@ -97,17 +97,17 @@ const stubApi = () => ({
 });
 
 beforeEach(() => {
-  _resetEventListRemindersForTest();
+  _resetEventListAlarmClockForTest();
   installChromeStub();
   localStorage.clear();
   document.body.innerHTML = '';
-  setSettings({ remindersMasterEnabled: true, reminderNtfyToken: VALID_TOKEN });
+  setSettings({ alarmClockMasterEnabled: true, alarmClockNtfyToken: VALID_TOKEN });
   galaxyScanConfigStore.set(defaultGalaxyScanConfig());
   setGlobalConfig();
 });
 
 afterEach(() => {
-  _resetEventListRemindersForTest();
+  _resetEventListAlarmClockForTest();
   delete (/** @type {any} */ (globalThis).chrome);
   localStorage.clear();
   document.body.innerHTML = '';
@@ -116,7 +116,7 @@ afterEach(() => {
 describe('event-list badges', () => {
   it('stamps an idle ad-hoc badge while KEEPING the arrivalTime class', async () => {
     const cell = paintRow(Math.floor(Date.now() / 1000) + 3600); // 1h ahead, schedulable
-    installEventListReminders(stubApi());
+    installEventListAlarmClock(stubApi());
     await tick();
 
     expect(cell.classList.contains('arrivalTime')).toBe(true); // foreign class survives
@@ -129,7 +129,7 @@ describe('event-list badges', () => {
   it('a click arms and the SAME cell flips to armed on the next render (regression)', async () => {
     const cell = paintRow(Math.floor(Date.now() / 1000) + 3600);
     const api = stubApi();
-    installEventListReminders(api);
+    installEventListAlarmClock(api);
     await tick();
 
     cell.click();
@@ -149,25 +149,25 @@ describe('event-list badges', () => {
 
   it('disables a leg whose fire time is past the 3-day cap', async () => {
     const cell = paintRow(Math.floor(Date.now() / 1000) + 10 * 24 * 3600); // 10 days
-    installEventListReminders(stubApi());
+    installEventListAlarmClock(stubApi());
     await tick();
     expect(cell.classList.contains('disabled')).toBe(true);
     expect(cell.getAttribute('data-oge-act')).toBeNull();
   });
 
   it('shows no badge when the ntfy token is missing', async () => {
-    setSettings({ remindersMasterEnabled: true, reminderNtfyToken: '' });
+    setSettings({ alarmClockMasterEnabled: true, alarmClockNtfyToken: '' });
     const cell = paintRow(Math.floor(Date.now() / 1000) + 3600);
-    installEventListReminders(stubApi());
+    installEventListAlarmClock(stubApi());
     await tick();
     expect(cell.classList.contains('oge-rem-badge')).toBe(false);
     expect(cell.classList.contains('arrivalTime')).toBe(true);
   });
 
   it('shows no badge when the master switch is off (token present)', async () => {
-    setSettings({ remindersMasterEnabled: false, reminderNtfyToken: VALID_TOKEN });
+    setSettings({ alarmClockMasterEnabled: false, alarmClockNtfyToken: VALID_TOKEN });
     const cell = paintRow(Math.floor(Date.now() / 1000) + 3600);
-    installEventListReminders(stubApi());
+    installEventListAlarmClock(stubApi());
     await tick();
     expect(cell.classList.contains('oge-rem-badge')).toBe(false);
     expect(cell.classList.contains('arrivalTime')).toBe(true);
@@ -176,7 +176,7 @@ describe('event-list badges', () => {
   it('labels an outbound leg with its DESTINATION coords', async () => {
     const cell = paintRow(Math.floor(Date.now() / 1000) + 3600);
     const api = stubApi();
-    installEventListReminders(api);
+    installEventListAlarmClock(api);
     await tick();
     cell.click();
     expect(api.armAdhoc.mock.calls[0][0].label).toBe('Expedition → [4:467:16]');
@@ -184,7 +184,7 @@ describe('event-list badges', () => {
 
   it('stamps a passive, non-clickable 🛡 badge for a leg the mirror marks as a fleet-save', async () => {
     setSettings({
-      remindersMasterEnabled: true, reminderNtfyToken: VALID_TOKEN,
+      alarmClockMasterEnabled: true, alarmClockNtfyToken: VALID_TOKEN,
     });
     setFsEnabled(true);
     const base = Math.floor(Date.now() / 1000) + 3600;
@@ -193,7 +193,7 @@ describe('event-list badges', () => {
       offsetsSec: [-600, 0, 600], fireAts: [base - 600, base, base + 600],
     }]);
     const cell = paintRow(base);
-    installEventListReminders(stubApi());
+    installEventListAlarmClock(stubApi());
     await tick();
 
     expect(cell.classList.contains('arrivalTime')).toBe(true); // foreign class survives
@@ -205,7 +205,7 @@ describe('event-list badges', () => {
     // Tooltip lists the registered ntfy times + the auto hint, and drops the
     // redundant mission / coords / ship-count the player already sees.
     const title = cell.getAttribute('title') || '';
-    expect(title.startsWith('Fleet-save reminders at:')).toBe(true);
+    expect(title.startsWith('Fleet-save alarmClock at:')).toBe(true);
     // Far from any slot's window → passive, but the tooltip now advertises the
     // last-3-min cancel affordance (T4: FS_CANCEL_WINDOW_SEC 120 → 180)
     // instead of the old "can't be cancelled".
@@ -218,7 +218,7 @@ describe('event-list badges', () => {
 
   it('dims the 🛡 badge and explains the wait for a fleet-save still beyond the 3-day cap', async () => {
     setSettings({
-      remindersMasterEnabled: true, reminderNtfyToken: VALID_TOKEN,
+      alarmClockMasterEnabled: true, alarmClockNtfyToken: VALID_TOKEN,
     });
     setFsEnabled(true);
     const far = Math.floor(Date.now() / 1000) + 5 * 24 * 3600; // 5 days out
@@ -227,7 +227,7 @@ describe('event-list badges', () => {
       offsetsSec: [-600, 0, 600], fireAts: [far - 600, far, far + 600],
     }]);
     const cell = paintRow(far);
-    installEventListReminders(stubApi());
+    installEventListAlarmClock(stubApi());
     await tick();
     expect(cell.classList.contains('fs')).toBe(true);
     // Nothing is queued yet → dimmed, and the tooltip says why instead of the
@@ -236,12 +236,12 @@ describe('event-list badges', () => {
     const title = cell.getAttribute('title') || '';
     expect(title).toContain('Too far out');
     expect(title).toContain('within 3 days');
-    expect(title).not.toContain('Fleet-save reminders at:'); // no times — none scheduled
+    expect(title).not.toContain('Fleet-save alarmClock at:'); // no times — none scheduled
   });
 
   it('shows the fire time on an armed ad-hoc badge', async () => {
     const base = Math.floor(Date.now() / 1000) + 3600;
-    chromeStoreData[REMINDER_MIRROR_KEY] = {
+    chromeStoreData[ALARM_CLOCK_MIRROR_KEY] = {
       [parseUniverseId(location.host)]: {
         version: 5, waves: [], notifyState: {},
         adhoc: [{ id: 'eventRow-42', arrivalAt: base, label: 'x' }],
@@ -249,22 +249,22 @@ describe('event-list badges', () => {
       },
     };
     const cell = paintRow(base);
-    installEventListReminders(stubApi());
+    installEventListAlarmClock(stubApi());
     await tick();
     expect(cell.classList.contains('armed')).toBe(true);
     const title = cell.getAttribute('title') || '';
-    expect(title.startsWith('Reminder at ')).toBe(true);
+    expect(title.startsWith('AlarmClock at ')).toBe(true);
     expect(title).toContain('click to cancel');
   });
 
   it('does NOT flag a leg the mirror omits (stays an ad-hoc idle badge — short hops never get a 🛡)', async () => {
     setSettings({
-      remindersMasterEnabled: true, reminderNtfyToken: VALID_TOKEN,
+      alarmClockMasterEnabled: true, alarmClockNtfyToken: VALID_TOKEN,
     });
     setFsEnabled(true);
     seedMirror([]); // producer classified nothing as a save (e.g. a short hop)
     const cell = paintRow(Math.floor(Date.now() / 1000) + 3600);
-    installEventListReminders(stubApi());
+    installEventListAlarmClock(stubApi());
     await tick();
     expect(cell.classList.contains('fs')).toBe(false);
     expect(cell.classList.contains('idle')).toBe(true);
@@ -286,7 +286,7 @@ describe('event-list badges', () => {
       </tbody></table>`;
     const cell = /** @type {HTMLElement} */ (document.querySelector('td.arrivalTime'));
     const api = stubApi();
-    installEventListReminders(api);
+    installEventListAlarmClock(api);
     await tick();
     cell.click();
     expect(api.armAdhoc.mock.calls[0][0].label).toBe('Expedition → [1:22:3]');
@@ -298,7 +298,7 @@ describe('event-list badges', () => {
   const fsApi = () => ({ ...stubApi(), cancelFsSlot: vi.fn() });
   const enableFs = () => {
     setSettings({
-      remindersMasterEnabled: true, reminderNtfyToken: VALID_TOKEN,
+      alarmClockMasterEnabled: true, alarmClockNtfyToken: VALID_TOKEN,
     });
     setFsEnabled(true);
   };
@@ -315,7 +315,7 @@ describe('event-list badges', () => {
     }]);
     const cell = paintRow(arrivalAt);
     const api = fsApi();
-    installEventListReminders(api);
+    installEventListAlarmClock(api);
     await tick();
 
     expect(cell.classList.contains('fs')).toBe(true);
@@ -325,7 +325,7 @@ describe('event-list badges', () => {
     // and the tooltip leads with "Cancellable now".
     expect(cell.classList.contains('fs-cancel')).toBe(true);
     expect(cell.getAttribute('title') || '').toContain(
-      'Cancellable now — click to cancel this reminder',
+      'Cancellable now — click to cancel this alarmClock',
     );
 
     cell.click();
@@ -338,7 +338,7 @@ describe('event-list badges', () => {
     enableFs();
     const now = Math.floor(Date.now() / 1000);
     // Nearest upcoming (−60, fires in 20 s) IS the last pre-landing slot, so
-    // the click also drops the at-landing (0) and after (+600) reminders.
+    // the click also drops the at-landing (0) and after (+600) alarmClock.
     const arrivalAt = now + 80;
     seedMirror([{
       id: 'eventRow-42', arrivalAt, shipCount: 8256872, label: 'Deployment → [4:478:14]',
@@ -346,7 +346,7 @@ describe('event-list badges', () => {
     }]);
     const cell = paintRow(arrivalAt);
     const api = fsApi();
-    installEventListReminders(api);
+    installEventListAlarmClock(api);
     await tick();
 
     expect(cell.getAttribute('data-oge-act')).toBe('cancelFs');
@@ -367,7 +367,7 @@ describe('event-list badges', () => {
     }]);
     const cell = paintRow(arrivalAt);
     const api = fsApi();
-    installEventListReminders(api);
+    installEventListAlarmClock(api);
     await tick();
 
     expect(cell.classList.contains('fs')).toBe(true);

@@ -4,7 +4,7 @@
 //
 // # The model
 //
-// Internally the whole reminder pipeline speaks SECONDS (ntfy's `X-Delay`
+// Internally the whole alarmClock pipeline speaks SECONDS (ntfy's `X-Delay`
 // is in seconds, as are its min/max bounds). The Settings UI, however, is
 // MINUTES-FIRST with an explicit unit suffix:
 //
@@ -99,7 +99,7 @@ export const formatDuration = (sec) => {
 /**
  * Humanize a landing-relative offset (whole seconds; negative = BEFORE
  * landing, positive = AFTER, zero = at landing) into the plain-English
- * impact phrase shared by the fleet-save push body and the Reminders-tab
+ * impact phrase shared by the fleet-save push body and the AlarmClock-tab
  * offset editor preview:
  *
  *   -600 ⇒ "10 min before landing"
@@ -122,9 +122,9 @@ export const humanizeOffset = (sec) => {
 };
 
 /**
- * Humanize a wave-reminder offset (whole seconds AFTER the wave returns;
+ * Humanize a wave-alarmClock offset (whole seconds AFTER the wave returns;
  * negatives are dropped before they reach here, so non-positive ⇒ "at return")
- * into the plain-English impact phrase for the Reminders-tab wave-schedule
+ * into the plain-English impact phrase for the AlarmClock-tab wave-schedule
  * editor preview:
  *
  *      0 ⇒ "when the wave returns"
@@ -212,7 +212,7 @@ export const humanizeReturnOffsetShort = (sec) => {
 };
 
 /**
- * One-line plain-English summary of a WHOLE reminder schedule — the combined
+ * One-line plain-English summary of a WHOLE alarmClock schedule — the combined
  * readout shown under the chip row so the user sees, at a glance, what the set
  * of chips actually adds up to (e.g. `"15m, 10m & 5m before landing · at
  * landing · 5m & 20m after landing"`).

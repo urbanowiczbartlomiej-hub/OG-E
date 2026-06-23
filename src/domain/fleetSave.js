@@ -40,7 +40,7 @@
 // We don't have the departure time in the event list, so flight time is
 // approximated by the time remaining at FIRST sight (`arrivalAt - now`): a
 // short hop reads as short however early we observe it, and a long flight
-// first observed late is the benign case (no prior reminder to keep, almost
+// first observed late is the benign case (no prior alarmClock to keep, almost
 // no time left to act).
 //
 // # The decision is LOCKED once made — never cancel a scheduled FS
@@ -49,7 +49,7 @@
 // {@link reconcileFleetSaves} carries an already-known FS forward unchanged,
 // so a long fleet-save observed again 2 minutes before landing — when the
 // remaining time is now tiny — is NEVER reclassified as a short hop and its
-// already-queued ntfy reminders are NEVER swept. The lock lives in the gist
+// already-queued ntfy alarmClock are NEVER swept. The lock lives in the gist
 // (the persisted `fleetSave` set), so it survives reloads and crosses
 // devices.
 //
@@ -68,7 +68,7 @@ import { parseDurationList } from './duration.js';
 
 /**
  * One fleet leg as read from the event list, before the threshold test.
- * DOM-derived (see `features/reminders/fleetSaveScan.js`) but a plain data shape so
+ * DOM-derived (see `features/alarmClock/fleetSaveScan.js`) but a plain data shape so
  * this module stays DOM-free and Node-testable.
  *
  * @typedef {object} FleetSaveCandidate
@@ -87,9 +87,9 @@ import { parseDurationList } from './duration.js';
  */
 
 /**
- * One detected fleet-save reminder, as persisted per-universe in the gist.
+ * One detected fleet-save alarmClock, as persisted per-universe in the gist.
  *
- * @typedef {object} FleetSaveReminder
+ * @typedef {object} FleetSaveAlarmClock
  * @property {string} id          Event-row identity (`eventRow-<n>`); the key.
  * @property {number} arrivalAt   Epoch SECONDS the leg arrives — the anchor the
  *   relative offsets are measured from.
@@ -109,7 +109,7 @@ import { parseDurationList } from './duration.js';
 
 /**
  * Missions that do NOT auto-return: the fleet STAYS at the destination, so
- * its OUTBOUND arrival is the vulnerable landing a fleet-save reminder must
+ * its OUTBOUND arrival is the vulnerable landing a fleet-save alarmClock must
  * track.
  *
  *   4 = Deployment (Stacjonuj) — the fleet stations and stays.
@@ -119,14 +119,14 @@ import { parseDurationList } from './duration.js';
  * return leg at send time (e.g. Transport, Espionage). For those the fleet
  * only flies THROUGH the destination and lands back home on the RETURN leg,
  * so the outbound leg must not be treated as a fleet-save — otherwise we'd
- * schedule a reminder for a stop-over the fleet never pauses at.
+ * schedule a alarmClock for a stop-over the fleet never pauses at.
  *
  * @type {Set<string>}
  */
 const ONE_WAY_MISSIONS = new Set(['4', '7']);
 
 /**
- * Whether a fleet leg is the one whose arrival a fleet-save reminder should
+ * Whether a fleet leg is the one whose arrival a fleet-save alarmClock should
  * track:
  *
  *   - a RETURN leg always lands the fleet back home → yes;
@@ -170,7 +170,7 @@ export const parseFsOffsets = (str) => parseDurationList(str, { signed: true });
  *     cancelling a scheduled save (see the module header). The lock also
  *     holds when EVERY offset has been cancelled: the entry is carried as
  *     an empty-series tombstone, so a cancelled, still-flying fleet can
- *     never be re-auto-classified and re-grow its reminders. (This is what
+ *     never be re-auto-classified and re-grow its alarmClock. (This is what
  *     lets the UI safely release such a row back to the ad-hoc toggle.)
  *   - **present, not yet FS** → classified now: kept only if
  *     `shipCount >= threshold` AND flight time `(arrivalAt - now) >=
@@ -178,7 +178,7 @@ export const parseFsOffsets = (str) => parseDurationList(str, { signed: true });
  *   - **absent** (`prev` id not among candidates) → dropped (landed /
  *     recalled), so its queue is swept.
  *
- * @param {FleetSaveReminder[]} prev  Previously-persisted FS set (the lock).
+ * @param {FleetSaveAlarmClock[]} prev  Previously-persisted FS set (the lock).
  * @param {FleetSaveCandidate[]} candidates  Own legs present this scan.
  * @param {object} opts
  * @param {number} opts.threshold    Minimum ship count to classify as FS.
@@ -191,7 +191,7 @@ export const parseFsOffsets = (str) => parseDurationList(str, { signed: true });
  *   messages while the rest of the series stays queued. Re-applied every scan
  *   (the suppression store outlives one sync), so a still-present fleet can't
  *   re-grow a cancelled slot.
- * @returns {FleetSaveReminder[]}
+ * @returns {FleetSaveAlarmClock[]}
  */
 export const reconcileFleetSaves = (
   prev,
@@ -199,7 +199,7 @@ export const reconcileFleetSaves = (
   { threshold, offsetsSec, minFlightSec, now, cancelledById = {} },
 ) => {
   const known = new Map(prev.map((e) => [e.id, e]));
-  /** @type {FleetSaveReminder[]} */
+  /** @type {FleetSaveAlarmClock[]} */
   const out = [];
   for (const c of candidates) {
     if (!Number.isFinite(c.arrivalAt) || !Number.isFinite(c.shipCount)) continue;
@@ -235,7 +235,7 @@ export const reconcileFleetSaves = (
 
 /**
  * How long before a fleet-save slot fires it becomes cancellable. The FS
- * reminder is a safety net, so cancelling is deliberately allowed only at the
+ * alarmClock is a safety net, so cancelling is deliberately allowed only at the
  * last moment — when the player is clearly attending to this very arrival —
  * not hours ahead by accident.
  */
@@ -280,9 +280,9 @@ export const nearestCancellableSlot = (fs, now) => {
 
 /**
  * Which offsets a single cancel click removes. Normally just the chosen slot;
- * but if it is the LAST reminder before landing (the largest negative offset
+ * but if it is the LAST alarmClock before landing (the largest negative offset
  * still in the series), the player is in-game seeing it now, so every
- * at/after-landing reminder (offset ≥ 0) is pointless — they collapse too.
+ * at/after-landing alarmClock (offset ≥ 0) is pointless — they collapse too.
  * Pure.
  *
  * @param {number[]} offsetsSec  The save's current offsets.
@@ -305,7 +305,7 @@ export const fsOffsetsToCancel = (offsetsSec, slotOffset) => {
  *
  * @template T
  * @param {Record<string, T>} notify
- * @param {FleetSaveReminder[]} entries
+ * @param {FleetSaveAlarmClock[]} entries
  * @returns {Record<string, T>}
  */
 export const pruneFsNotify = (notify, entries) => {
@@ -352,7 +352,7 @@ export const GUARDIAN_INTERVAL_SEC = 20 * 60;
  * row vanishes from the event list — the most dangerous moment, and the one we
  * otherwise lose all sight of. Pure; the caller injects `now`.
  *
- *   - A previously-known FS ({@link FleetSaveReminder}) that is ABSENT from the
+ *   - A previously-known FS ({@link FleetSaveAlarmClock}) that is ABSENT from the
  *     current candidates and whose `arrivalAt <= now` just landed → recorded at
  *     its `landingKey`.
  *   - Existing landed entries are carried forward indefinitely — there is NO
@@ -368,7 +368,7 @@ export const GUARDIAN_INTERVAL_SEC = 20 * 60;
  * Keyed by body — one (latest) landed entry per body.
  *
  * @param {LandedFleetSave[]} prevLanded   Previously-persisted landed set.
- * @param {FleetSaveReminder[]} prevFs      Previous live FS set (disappearance source).
+ * @param {FleetSaveAlarmClock[]} prevFs      Previous live FS set (disappearance source).
  * @param {FleetSaveCandidate[]} candidates FS candidates present this scan.
  * @param {object} opts
  * @param {number} opts.now         Epoch SECONDS.

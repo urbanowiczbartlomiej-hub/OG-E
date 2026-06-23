@@ -11,11 +11,11 @@
 // testing through the real substrate matches how users and the AGR panel
 // see the data.
 //
-// `fabBtnSize` (int) and `reminderNtfyToken` (string) stand in as the
+// `fabBtnSize` (int) and `alarmClockNtfyToken` (string) stand in as the
 // generic int / string field examples — the colonization fields that used
 // to play that role moved to the per-universe galaxyScanConfig store (B2),
-// and the reminder schedule / ad-hoc lead time moved to the global
-// reminderGlobalConfig store (B3c).
+// and the alarmClock schedule / ad-hoc lead time moved to the global
+// alarmClockGlobalConfig store (B3c).
 //
 // Setup order in beforeEach mirrors state/registry.test.js:
 //   1. disposeSettingsStore() — cut any leftover subscription.
@@ -72,8 +72,8 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
 
   it('every schema key is prefixed with SETTINGS_PREFIX + field name', () => {
     // Every remaining field's LS key is just the prefix + field name. (The one
-    // historical exception, the remapped reminderSchedule key, moved out to the
-    // global reminderGlobalConfig store in B3c.)
+    // historical exception, the remapped alarmClockSchedule key, moved out to the
+    // global alarmClockGlobalConfig store in B3c.)
     for (const [field, schema] of Object.entries(SETTINGS_SCHEMA)) {
       expect(schema.key).toBe(SETTINGS_PREFIX + field);
     }
@@ -93,8 +93,8 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
         'gistToken',
         'maxExpeditionsPerPlanet',
         'readabilityBoost',
-        'remindersMasterEnabled',
-        'reminderNtfyToken',
+        'alarmClockMasterEnabled',
+        'alarmClockNtfyToken',
         'traderMenuHighlight',
       ].sort(),
     );
@@ -109,10 +109,10 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
       default: 320,
       key: 'oge_fabBtnSize',
     });
-    expect(SETTINGS_SCHEMA.reminderNtfyToken).toEqual({
+    expect(SETTINGS_SCHEMA.alarmClockNtfyToken).toEqual({
       type: 'string',
       default: '',
-      key: 'oge_reminderNtfyToken',
+      key: 'oge_alarmClockNtfyToken',
     });
   });
 });
@@ -126,8 +126,8 @@ describe('settingsStore — initial state (pre-init)', () => {
     expect(state.expeditionBadges).toBe(true);
     expect(state.autoRedirectExpedition).toBe(true);
     expect(state.fabBtnSize).toBe(320);
-    expect(state.remindersMasterEnabled).toBe(false);
-    expect(state.reminderNtfyToken).toBe('');
+    expect(state.alarmClockMasterEnabled).toBe(false);
+    expect(state.alarmClockNtfyToken).toBe('');
     expect(state.maxExpeditionsPerPlanet).toBe(1);
     expect(state.readabilityBoost).toBe(true);
     expect(state.cloudSync).toBe(false);
@@ -155,9 +155,9 @@ describe('initSettingsStore — hydration', () => {
   });
 
   it('hydrates a string field from localStorage', () => {
-    localStorage.setItem('oge_reminderNtfyToken', 'secret123');
+    localStorage.setItem('oge_alarmClockNtfyToken', 'secret123');
     initSettingsStore();
-    expect(settingsStore.get().reminderNtfyToken).toBe('secret123');
+    expect(settingsStore.get().alarmClockNtfyToken).toBe('secret123');
   });
 
   it('falls back to default when a bool value is unparseable', () => {
@@ -178,7 +178,7 @@ describe('initSettingsStore — hydration', () => {
   it('hydrates a mix of fields at once in a single store update', () => {
     localStorage.setItem('oge_fabMode', 'false');
     localStorage.setItem('oge_fabBtnSize', '30');
-    localStorage.setItem('oge_reminderNtfyToken', 'tk_abc');
+    localStorage.setItem('oge_alarmClockNtfyToken', 'tk_abc');
     localStorage.setItem('oge_gistToken', 'ghp_abc123');
 
     initSettingsStore();
@@ -186,7 +186,7 @@ describe('initSettingsStore — hydration', () => {
     const state = settingsStore.get();
     expect(state.fabMode).toBe(false);
     expect(state.fabBtnSize).toBe(30);
-    expect(state.reminderNtfyToken).toBe('tk_abc');
+    expect(state.alarmClockNtfyToken).toBe('tk_abc');
     expect(state.gistToken).toBe('ghp_abc123');
     // Untouched fields stay at defaults.
     expect(state.autoRedirectExpedition).toBe(true);
@@ -209,8 +209,8 @@ describe('initSettingsStore — write-through (per-key diff)', () => {
 
   it('writes a changed string field to its own localStorage key', () => {
     initSettingsStore();
-    settingsStore.update((s) => ({ ...s, reminderNtfyToken: 'tk_789' }));
-    expect(localStorage.getItem('oge_reminderNtfyToken')).toBe('tk_789');
+    settingsStore.update((s) => ({ ...s, alarmClockNtfyToken: 'tk_789' }));
+    expect(localStorage.getItem('oge_alarmClockNtfyToken')).toBe('tk_789');
   });
 
   it('writes multiple changed fields in the same set/update call', () => {
@@ -218,12 +218,12 @@ describe('initSettingsStore — write-through (per-key diff)', () => {
     settingsStore.update((s) => ({
       ...s,
       fabBtnSize: 30,
-      reminderNtfyToken: 'tk_7',
+      alarmClockNtfyToken: 'tk_7',
       fabMode: false,
     }));
 
     expect(localStorage.getItem('oge_fabBtnSize')).toBe('30');
-    expect(localStorage.getItem('oge_reminderNtfyToken')).toBe('tk_7');
+    expect(localStorage.getItem('oge_alarmClockNtfyToken')).toBe('tk_7');
     expect(localStorage.getItem('oge_fabMode')).toBe('false');
   });
 
@@ -285,7 +285,7 @@ describe('initSettingsStore — persistence round-trip', () => {
       ...s,
       fabMode: false,
       fabBtnSize: 45,
-      reminderNtfyToken: 'tk_789',
+      alarmClockNtfyToken: 'tk_789',
       gistToken: 'ghp_roundtrip',
     }));
     disposeSettingsStore();
@@ -300,7 +300,7 @@ describe('initSettingsStore — persistence round-trip', () => {
     const state = settingsStore.get();
     expect(state.fabMode).toBe(false);
     expect(state.fabBtnSize).toBe(45);
-    expect(state.reminderNtfyToken).toBe('tk_789');
+    expect(state.alarmClockNtfyToken).toBe('tk_789');
     expect(state.gistToken).toBe('ghp_roundtrip');
   });
 });

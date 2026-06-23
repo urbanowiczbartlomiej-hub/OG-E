@@ -126,7 +126,7 @@ describe('traderGlows', () => {
     expect(traderGlows(now, staleBid).auctionPending).toBe(true); // snooze expired
   });
 
-  it('a bid does not affect the import (red) reminder', () => {
+  it('a bid does not affect the import (red) alarmClock', () => {
     const now = at('2026-05-28T15:00:00');
     const bid = { auctionBidAt: now.getTime(), importTradedDay: null };
     const g = traderGlows(now, bid);
@@ -283,7 +283,7 @@ describe('installTraderMenuHighlight', () => {
   });
 
   it('oge:traderBidPlaced stamps the bid time and clears yellow (snoozed)', () => {
-    // Morning so the menu is yellow-only (isolates the auction reminder).
+    // Morning so the menu is yellow-only (isolates the auction alarmClock).
     vi.setSystemTime(new Date('2026-05-28T08:00:00'));
     installTraderMenuHighlight();
     expect(findMenu()?.classList.contains(YELLOW_CLASS)).toBe(true);

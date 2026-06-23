@@ -1,8 +1,8 @@
 // @ts-check
 
-// Reminder MESSAGE TEMPLATES — the user-customisable body / icon / priority
+// AlarmClock MESSAGE TEMPLATES — the user-customisable body / icon / priority
 // for each of the three notification kinds (expedition waves, ad-hoc fleet
-// reminders, fleet-save). Everything here is PURE: no DOM, no storage, no
+// alarmClock, fleet-save). Everything here is PURE: no DOM, no storage, no
 // clock. The shape, its defaults, the wildcard catalogue, and the renderer
 // all live here so they are unit-testable in Node and shared verbatim across
 // the game/dashboard origins.
@@ -45,19 +45,19 @@
 // Expedition-wave bodies, by contrast, canNOT name a single fleet's count /
 // coords / origin: the series is queued the instant the FIRST expedition of a
 // wave is detected — before the burst finishes — so a browser close mid-send
-// still leaves reminders queued (see `sync/ntfyReconciler.waveBody`). Any
+// still leaves alarmClock queued (see `sync/ntfyReconciler.waveBody`). Any
 // token the renderer is handed without a value collapses to the empty string,
 // so a template never leaks a literal `{coords}` into a push.
 
 /**
  * The three notification kinds, in render order. Stable ids used as the keys
- * of {@link ReminderGlobalConfig.templates} and {@link TEMPLATE_FIELDS}.
+ * of {@link AlarmClockGlobalConfig.templates} and {@link TEMPLATE_FIELDS}.
  *
- * @typedef {'wave' | 'adhoc' | 'fleetSave'} ReminderKind
+ * @typedef {'wave' | 'adhoc' | 'fleetSave'} AlarmClockKind
  */
 
-/** @type {ReadonlyArray<ReminderKind>} */
-export const REMINDER_KINDS = Object.freeze(['wave', 'adhoc', 'fleetSave']);
+/** @type {ReadonlyArray<AlarmClockKind>} */
+export const ALARM_CLOCK_KINDS = Object.freeze(['wave', 'adhoc', 'fleetSave']);
 
 /**
  * Preset notification icons — the only icons the picker offers. Each `file`
@@ -120,7 +120,7 @@ const COMMON_FIELDS = Object.freeze([
  * Per-fleet tokens shared by ad-hoc + fleet-save (both derive from one
  * event-list row, so they expose the SAME set in the SAME order). `coords` is
  * where THIS leg lands; `origin`/`target` are its fixed launch + mission target
- * (see `features/reminders/fleetSaveScan.fleetRowMeta`). `direction` names the
+ * (see `features/alarmClock/fleetSaveScan.fleetRowMeta`). `direction` names the
  * leg ("outbound"/"return") and `offset` the slot's timing relative to arrival
  * — both kinds carry them now, so the two editors are fully aligned.
  *
@@ -139,7 +139,7 @@ const FLEET_FIELDS = Object.freeze([
 ]);
 
 /**
- * Series tokens: which reminder in a kind's schedule this push is, of how many.
+ * Series tokens: which alarmClock in a kind's schedule this push is, of how many.
  * Shared by all three kinds — waves are an offset series, fleet-save fires a
  * landing-relative series, and ad-hoc is a single-slot "1 of 1" today but is
  * slated to grow its own schedule (so it carries the pair for forward-uniformity
@@ -148,8 +148,8 @@ const FLEET_FIELDS = Object.freeze([
  * @type {ReadonlyArray<TemplateField>}
  */
 const SERIES_FIELDS = Object.freeze([
-  { token: 'index', label: 'Reminder # (1-based)', sample: '1' },
-  { token: 'total', label: 'Total reminders', sample: '4' },
+  { token: 'index', label: 'Alarm # (1-based)', sample: '1' },
+  { token: 'total', label: 'Total alarms', sample: '4' },
 ]);
 
 /**
@@ -158,7 +158,7 @@ const SERIES_FIELDS = Object.freeze([
  * present in its context; this list is what the UI advertises and what
  * {@link unknownTokens} validates against.
  *
- * @type {Readonly<Record<ReminderKind, ReadonlyArray<TemplateField>>>}
+ * @type {Readonly<Record<AlarmClockKind, ReadonlyArray<TemplateField>>>}
  */
 export const TEMPLATE_FIELDS = Object.freeze({
   // Waves: NO per-fleet fields — the series is queued on the FIRST expedition,
@@ -179,7 +179,7 @@ export const TEMPLATE_FIELDS = Object.freeze({
  * ntfy priority (1–5). Title is intentionally absent (system-managed — see
  * the module header).
  *
- * @typedef {object} ReminderTemplate
+ * @typedef {object} AlarmClockTemplate
  * @property {string} body      free text with `{token}` wildcards.
  * @property {string} icon      a {@link PRESET_ICONS} id.
  * @property {number} priority  ntfy priority, 1 (min) … 5 (max).
@@ -196,11 +196,11 @@ export const TEMPLATE_FIELDS = Object.freeze({
  * flare logic appended — folded into the default body now that the body is
  * the single source of truth.
  *
- * @returns {Record<ReminderKind, ReminderTemplate>}
+ * @returns {Record<AlarmClockKind, AlarmClockTemplate>}
  */
-export const defaultReminderTemplates = () => ({
+export const defaultAlarmClockTemplates = () => ({
   wave: {
-    body: 'Expeditions back ({returnTime}) — reminder #{index}/{total}.',
+    body: 'Expeditions back ({returnTime}) — alarmClock #{index}/{total}.',
     icon: 'default',
     priority: 3,
   },
@@ -232,16 +232,16 @@ const coercePriority = (v, fallback) => {
 
 /**
  * Normalise one (possibly partial / legacy / null) stored template into a
- * complete {@link ReminderTemplate}, filling holes from `fallback`. Pure and
+ * complete {@link AlarmClockTemplate}, filling holes from `fallback`. Pure and
  * total.
  *
  * @param {unknown} raw
- * @param {ReminderTemplate} fallback  the matching kind's default.
- * @returns {ReminderTemplate}
+ * @param {AlarmClockTemplate} fallback  the matching kind's default.
+ * @returns {AlarmClockTemplate}
  */
-export const normalizeReminderTemplate = (raw, fallback) => {
+export const normalizeAlarmClockTemplate = (raw, fallback) => {
   if (!raw || typeof raw !== 'object') return { ...fallback };
-  const r = /** @type {Partial<ReminderTemplate>} */ (raw);
+  const r = /** @type {Partial<AlarmClockTemplate>} */ (raw);
   return {
     body: typeof r.body === 'string' ? r.body : fallback.body,
     icon: PRESET_ICONS.some((p) => p.id === r.icon) ? /** @type {string} */ (r.icon) : fallback.icon,
@@ -251,19 +251,19 @@ export const normalizeReminderTemplate = (raw, fallback) => {
 
 /**
  * Normalise a whole `{ wave, adhoc, fleetSave }` template map, filling each
- * kind (and each kind's holes) from {@link defaultReminderTemplates}. Pure
+ * kind (and each kind's holes) from {@link defaultAlarmClockTemplates}. Pure
  * and total — always returns a valid, complete map.
  *
  * @param {unknown} raw
- * @returns {Record<ReminderKind, ReminderTemplate>}
+ * @returns {Record<AlarmClockKind, AlarmClockTemplate>}
  */
-export const normalizeReminderTemplates = (raw) => {
-  const d = defaultReminderTemplates();
+export const normalizeAlarmClockTemplates = (raw) => {
+  const d = defaultAlarmClockTemplates();
   const r = raw && typeof raw === 'object' ? /** @type {Record<string, unknown>} */ (raw) : {};
   return {
-    wave: normalizeReminderTemplate(r.wave, d.wave),
-    adhoc: normalizeReminderTemplate(r.adhoc, d.adhoc),
-    fleetSave: normalizeReminderTemplate(r.fleetSave, d.fleetSave),
+    wave: normalizeAlarmClockTemplate(r.wave, d.wave),
+    adhoc: normalizeAlarmClockTemplate(r.adhoc, d.adhoc),
+    fleetSave: normalizeAlarmClockTemplate(r.fleetSave, d.fleetSave),
   };
 };
 
@@ -286,11 +286,11 @@ export const renderTemplate = (template, ctx) =>
  * Split a push label of the form `"Mission → [g:s:p]"` into its `{mission}`
  * and `{coords}` parts — the inverse of the `${mission} → [${landing}]`
  * format the event-list / fleet-save labellers build (see
- * `features/reminders/eventList.labelFor` and `fleetSaveScan.fleetSaveLabelFor`).
+ * `features/alarmClock/eventList.labelFor` and `fleetSaveScan.fleetSaveLabelFor`).
  *
  * Deriving the two from the combined label here means the templating wildcards
  * `{mission}` / `{coords}` work WITHOUT persisting the parts separately (no
- * reminder-gist schema change). A label with no destination (just a mission
+ * alarmClock-gist schema change). A label with no destination (just a mission
  * name) yields an empty `coords`. Coords keep their `[...]` brackets — that's
  * how they read in a push. Pure.
  *
@@ -308,7 +308,7 @@ export const splitLabel = (label) => {
  * Name the leg from where it lands: `'return'` when the landing `coords` match
  * the launch `origin`, `'outbound'` when they match the mission `target`. All
  * three are the SAME bracketed dense `[g:s:p]` format (see
- * `features/reminders/fleetSaveScan`), so an exact string compare is reliable.
+ * `features/alarmClock/fleetSaveScan`), so an exact string compare is reliable.
  * Returns `''` when undecidable — coords missing, or origin === target so the
  * match is ambiguous — which the renderer then collapses to an empty token.
  * Pure.
@@ -353,7 +353,7 @@ export const templateTokens = (template) => {
  * Pure.
  *
  * @param {string} template
- * @param {ReminderKind} kind
+ * @param {AlarmClockKind} kind
  * @returns {string[]}
  */
 export const unknownTokens = (template, kind) => {

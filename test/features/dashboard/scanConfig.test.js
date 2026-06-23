@@ -9,7 +9,7 @@
 // a Save click, and assert the observable output: rendered field values, the
 // three chrome.storage writes (config value, newest-wins timestamp, syncRequest
 // poke), and — crucially — that a save never clobbers fields the editor does
-// NOT own (the Reminders tab's fleet-save `fs*` knobs, which share the same
+// NOT own (the AlarmClock tab's fleet-save `fs*` knobs, which share the same
 // slot — read-modify-write merge).
 //
 // @ts-check

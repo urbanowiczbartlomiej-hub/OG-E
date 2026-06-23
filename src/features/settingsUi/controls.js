@@ -30,7 +30,7 @@
 import { settingsStore } from '../../state/settings.js';
 import { SECTIONS } from './sections/index.js';
 import { parseDuration, formatDuration } from '../../domain/duration.js';
-import { maskTopic } from '../../sync/reminders.js';
+import { maskTopic } from '../../sync/alarmClock.js';
 
 /**
  * Shape of a single option in the SECTIONS config. Each `type` is
@@ -398,7 +398,7 @@ const buildInputControl = (opt, valueCell) => {
  * flavours: the current Settings value selects the matching `<option>`,
  * and a change writes the chosen value back through {@link writeSetting}.
  * Used for the few preferences that are an enumerated choice rather than
- * a free value (e.g. the reminder schedule preset).
+ * a free value (e.g. the alarmClock schedule preset).
  *
  * @param {SettingsOption} opt
  * @param {HTMLTableCellElement} valueCell
@@ -805,7 +805,7 @@ export const syncInputsFromState = () => {
         continue;
       }
       // Enable/disable a control from a predicate over current settings
-      // (e.g. the reminder sub-options are disabled until the master switch
+      // (e.g. the alarmClock sub-options are disabled until the master switch
       // is on AND a token is set). Applied ALWAYS — including during our own
       // UI write — so flipping the master switch greys/un-greys dependents
       // immediately. Toggling `.disabled` never resets a caret.
@@ -823,7 +823,7 @@ export const syncInputsFromState = () => {
             opt.buttonDisabledWhen(settingsStore.get());
         }
       }
-      // Static rows are read-only derived text (e.g. the reminder-series
+      // Static rows are read-only derived text (e.g. the alarmClock-series
       // times that depend on the schedule select). Refresh them ALWAYS —
       // same reasoning as above.
       if (opt.type === 'static') {

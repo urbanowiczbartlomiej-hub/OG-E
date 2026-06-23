@@ -29,12 +29,12 @@ export const displaySection = {
     },
     {
       id: 'eventMenuHighlight',
-      label: 'Event reminder (pulse menu button)',
+      label: 'Event alarmClock (pulse menu button)',
       type: 'checkbox',
     },
     {
       id: 'traderMenuHighlight',
-      label: 'Trader reminder (pulse menu button)',
+      label: 'Trader alarmClock (pulse menu button)',
       type: 'checkbox',
     },
     {

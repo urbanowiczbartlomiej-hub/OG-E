@@ -12,7 +12,7 @@
 // not the body forever. Local only (a single-device, in-game action); not synced.
 //
 // @see ./fleetSaveCancel.js — the same pattern for cancelled FS slots.
-// @see ../../sync/reminders.js — folds the live map into the guardian reconcile.
+// @see ../../sync/alarmClock.js — folds the live map into the guardian reconcile.
 
 import { safeLS } from '../../lib/storage.js';
 

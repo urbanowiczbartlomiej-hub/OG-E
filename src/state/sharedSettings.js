@@ -9,11 +9,11 @@
 // shared across all origins the extension runs on — is their canonical home,
 // and the dashboard is the SOLE writer.
 //
-//   cloudSync, gistToken, remindersMasterEnabled, reminderNtfyToken
+//   cloudSync, gistToken, alarmClockMasterEnabled, alarmClockNtfyToken
 //
 // On each game origin this module is a READER: it hydrates the four fields into
 // `settingsStore` from chrome.storage on init and on every change, so every
-// existing game-side consumer (gist `getToken`, the reminder producer, …) keeps
+// existing game-side consumer (gist `getToken`, the alarmClock producer, …) keeps
 // reading `settingsStore` / localStorage exactly as before — nothing downstream
 // has to know the value now originates in chrome.storage. The game side never
 // writes back, so there is no echo loop — EXCEPT a one-time migration that
@@ -30,8 +30,8 @@ export const SHARED_SETTINGS_KEY = 'oge_sharedSettings';
  * @typedef {object} SharedSettings
  * @property {boolean} cloudSync
  * @property {string}  gistToken
- * @property {boolean} remindersMasterEnabled
- * @property {string}  reminderNtfyToken
+ * @property {boolean} alarmClockMasterEnabled
+ * @property {string}  alarmClockNtfyToken
  */
 
 /**
@@ -43,8 +43,8 @@ export const SHARED_SETTINGS_KEY = 'oge_sharedSettings';
 export const pickShared = (s) => ({
   cloudSync: s.cloudSync,
   gistToken: s.gistToken,
-  remindersMasterEnabled: s.remindersMasterEnabled,
-  reminderNtfyToken: s.reminderNtfyToken,
+  alarmClockMasterEnabled: s.alarmClockMasterEnabled,
+  alarmClockNtfyToken: s.alarmClockNtfyToken,
 });
 
 /**
@@ -67,15 +67,15 @@ export const mergeShared = (raw, local) => {
     : {};
   return {
     cloudSync: typeof o.cloudSync === 'boolean' ? o.cloudSync : local.cloudSync,
-    remindersMasterEnabled:
-      typeof o.remindersMasterEnabled === 'boolean'
-        ? o.remindersMasterEnabled
-        : local.remindersMasterEnabled,
+    alarmClockMasterEnabled:
+      typeof o.alarmClockMasterEnabled === 'boolean'
+        ? o.alarmClockMasterEnabled
+        : local.alarmClockMasterEnabled,
     gistToken: typeof o.gistToken === 'string' && o.gistToken ? o.gistToken : local.gistToken,
-    reminderNtfyToken:
-      typeof o.reminderNtfyToken === 'string' && o.reminderNtfyToken
-        ? o.reminderNtfyToken
-        : local.reminderNtfyToken,
+    alarmClockNtfyToken:
+      typeof o.alarmClockNtfyToken === 'string' && o.alarmClockNtfyToken
+        ? o.alarmClockNtfyToken
+        : local.alarmClockNtfyToken,
   };
 };
 
@@ -109,7 +109,7 @@ export const initSharedSettings = async () => {
     if (!(SHARED_SETTINGS_KEY in changes)) return;
     // Re-read the value rather than trust the change record's shape (the
     // wrapper forwards the raw StorageChange); same pattern as the dashboard's
-    // reminder consumers.
+    // alarmClock consumers.
     void chromeStore.get(SHARED_SETTINGS_KEY).then((next) => {
       applyToStore(mergeShared(next, pickShared(settingsStore.get())));
     });

@@ -167,12 +167,12 @@ import { SYNC_STATUS_EVENT } from '../lib/ogeEvents.js';
  *   by universe id. Each slot is whole-universe newest-wins (see
  *   {@link import('./merge.js').mergeGalaxyScanConfig}). Per-universe because
  *   the scan strategy depends on which OGame server is being played.
- * @property {Record<string, import('./merge.js').ReminderConfigSlot>} [reminderConfigPerUniverse]
- *   OPTIONAL, additive: per-universe reminder config (wave enable + schedule,
+ * @property {Record<string, import('./merge.js').AlarmClockConfigSlot>} [alarmClockConfigPerUniverse]
+ *   OPTIONAL, additive: per-universe alarmClock config (wave enable + schedule,
  *   ad-hoc lead time, message templates) keyed by universe id. Each slot is
  *   whole-universe newest-wins (see
- *   {@link import('./merge.js').mergeReminderConfig}). Per-universe because the
- *   reminder cadence is configured per server.
+ *   {@link import('./merge.js').mergeAlarmClockConfig}). Per-universe because the
+ *   alarmClock cadence is configured per server.
  * @property {Record<string, import('../state/players.js').PlayerCache>} [playersPerUniverse]
  *   OPTIONAL, additive: per-universe player-metadata cache (rank, alliance,
  *   honour, flags) keyed by universe id. Each slot is a
@@ -567,7 +567,7 @@ const readGistFile = async (gist, filename) => {
  */
 /**
  * In-flight de-dupe for {@link ensureGist}. The scheduler (boot download) and
- * the reminders producer run under INDEPENDENT locks and both reach ensureGist
+ * the alarmClock producer run under INDEPENDENT locks and both reach ensureGist
  * transitively; on a fresh device with no cached id, two concurrent callers
  * could each list (find none) and POST a new gist — orphaning a duplicate and
  * stranding whichever payload landed in the loser. Memoizing the in-progress

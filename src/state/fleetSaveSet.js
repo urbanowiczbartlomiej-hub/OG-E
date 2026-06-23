@@ -1,5 +1,5 @@
-// Detected fleet-save (FS) row-ids — a one-way channel from the reminders
-// producer to passive consumers that must NOT import the reminders feature.
+// Detected fleet-save (FS) row-ids — a one-way channel from the alarmClock
+// producer to passive consumers that must NOT import the alarmClock feature.
 //
 // The producer owns FS detection (the ship-count + flight-time gates and the
 // gist lock live in `domain/fleetSave.reconcileFleetSaves`). After each sync it

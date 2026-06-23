@@ -300,7 +300,7 @@ describe('ensureGist', () => {
   });
 
   it('single-flights concurrent first-boot callers into ONE create', async () => {
-    // The scheduler boot-download and the reminders producer both reach
+    // The scheduler boot-download and the alarmClock producer both reach
     // ensureGist under INDEPENDENT locks. On a fresh device (no cached id),
     // without single-flighting they'd each list + POST, orphaning a duplicate
     // gist. The in-progress promise must make the second caller await the first.

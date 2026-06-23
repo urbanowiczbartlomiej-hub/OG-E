@@ -117,20 +117,20 @@ import {
   galaxyScanConfigTsKeyFor,
 } from '../state/galaxyScanConfig.js';
 import {
-  reminderConfigStore,
-  reminderConfigKeyFor,
-  reminderConfigTsKeyFor,
-} from '../state/reminderConfig.js';
+  alarmClockConfigStore,
+  alarmClockConfigKeyFor,
+  alarmClockConfigTsKeyFor,
+} from '../state/alarmClockConfig.js';
 import { parseDailyRunRoutes } from '../domain/dailyRunRoutes.js';
 import { normalizeGalaxyScanConfig } from '../domain/galaxyScanConfig.js';
-import { normalizeReminderConfig } from '../domain/reminderConfig.js';
+import { normalizeAlarmClockConfig } from '../domain/alarmClockConfig.js';
 import {
   mergeHistory,
   mergeSettings,
   mergeDailyRunRoutes,
   mergeDailyState,
   mergeGalaxyScanConfig,
-  mergeReminderConfig,
+  mergeAlarmClockConfig,
   mergeColonizeDecisions,
 } from './merge.js';
 import {
@@ -161,7 +161,7 @@ import {
   slotHasData,
   dailyStateHasData,
   galaxyConfigSlotHasData,
-  reminderConfigSlotHasData,
+  alarmClockConfigSlotHasData,
   decisionsSlotHasData,
   gistIsCurrent,
 } from './scheduler/pure.js';
@@ -251,7 +251,7 @@ let inFlight = false;
  * subscribers gate on.
  *
  * Replaces the four former `applying*FromSync` booleans (settings, routes,
- * galaxy config, reminder config) with one keyed map. Entities with no local
+ * galaxy config, alarmClock config) with one keyed map. Entities with no local
  * timestamp to protect (history / dailyState / decisions) need NO suppressor —
  * their `changed` guard plus the {@link gistIsCurrent} skip already break the
  * subscription loop. Keys match each slot's gist payload field (plus the
@@ -385,47 +385,47 @@ const writeLocalGalaxyConfigSlot = async (slot) => {
 };
 
 /**
- * Read this universe's local reminder config slot from chrome.storage — NOT
- * from {@link reminderConfigStore} in memory (same cross-origin reason as
+ * Read this universe's local alarmClock config slot from chrome.storage — NOT
+ * from {@link alarmClockConfigStore} in memory (same cross-origin reason as
  * {@link readLocalGalaxyConfigSlot}: the dashboard edits a different origin).
  * The raw value is normalised so a partial/legacy blob still yields a complete
  * config. `updatedAt` comes from the separate per-universe timestamp key.
  *
- * @returns {Promise<import('./merge.js').ReminderConfigSlot>}
+ * @returns {Promise<import('./merge.js').AlarmClockConfigSlot>}
  */
-const readLocalReminderConfigSlot = async () => {
-  const fallback = () => ({ config: reminderConfigStore.get(), updatedAt: 0 });
+const readLocalAlarmClockConfigSlot = async () => {
+  const fallback = () => ({ config: alarmClockConfigStore.get(), updatedAt: 0 });
   if (!routesUniverseId) return fallback();
   const [raw, ts] = await Promise.all([
-    chromeStore.get(reminderConfigKeyFor(routesUniverseId)),
-    chromeStore.get(reminderConfigTsKeyFor(routesUniverseId)),
+    chromeStore.get(alarmClockConfigKeyFor(routesUniverseId)),
+    chromeStore.get(alarmClockConfigTsKeyFor(routesUniverseId)),
   ]);
   const config = raw === null || raw === undefined
-    ? reminderConfigStore.get()
-    : normalizeReminderConfig(raw);
+    ? alarmClockConfigStore.get()
+    : normalizeAlarmClockConfig(raw);
   return { config, updatedAt: typeof ts === 'number' ? ts : 0 };
 };
 
 /**
- * Write a merged remote reminder config slot back to local: the config value +
+ * Write a merged remote alarmClock config slot back to local: the config value +
  * its timestamp into chrome.storage, and the in-memory
- * {@link reminderConfigStore} so the current game session reflects the adopted
+ * {@link alarmClockConfigStore} so the current game session reflects the adopted
  * config without a reload. Guarded by the keyed anti-loop suppressor
- * (`'reminderConfigPerUniverse'`).
+ * (`'alarmClockConfigPerUniverse'`).
  *
- * @param {import('./merge.js').ReminderConfigSlot} slot
+ * @param {import('./merge.js').AlarmClockConfigSlot} slot
  * @returns {Promise<void>}
  */
-const writeLocalReminderConfigSlot = async (slot) => {
+const writeLocalAlarmClockConfigSlot = async (slot) => {
   if (!routesUniverseId) return;
-  bumpApplying('reminderConfigPerUniverse');
+  bumpApplying('alarmClockConfigPerUniverse');
   try {
-    const config = normalizeReminderConfig(slot.config);
-    await chromeStore.set(reminderConfigKeyFor(routesUniverseId), config);
-    await chromeStore.set(reminderConfigTsKeyFor(routesUniverseId), slot.updatedAt);
-    reminderConfigStore.set(config);
+    const config = normalizeAlarmClockConfig(slot.config);
+    await chromeStore.set(alarmClockConfigKeyFor(routesUniverseId), config);
+    await chromeStore.set(alarmClockConfigTsKeyFor(routesUniverseId), slot.updatedAt);
+    alarmClockConfigStore.set(config);
   } finally {
-    dropApplying('reminderConfigPerUniverse');
+    dropApplying('alarmClockConfigPerUniverse');
   }
 };
 
@@ -597,11 +597,11 @@ const SYNC_SLOTS = [
     hasData: dailyStateHasData,
   },
   {
-    payloadKey: 'reminderConfigPerUniverse',
-    readLocal: readLocalReminderConfigSlot,
-    writeLocal: writeLocalReminderConfigSlot,
-    merge: mergeReminderConfig,
-    hasData: reminderConfigSlotHasData,
+    payloadKey: 'alarmClockConfigPerUniverse',
+    readLocal: readLocalAlarmClockConfigSlot,
+    writeLocal: writeLocalAlarmClockConfigSlot,
+    merge: mergeAlarmClockConfig,
+    hasData: alarmClockConfigSlotHasData,
   },
   {
     payloadKey: 'colonizeDecisionsPerUniverse',
@@ -667,7 +667,7 @@ const downloadAndMerge = async () => {
     if (uniResult.changed) await writeLocalUniverseSettingsSlot(uniResult.merged);
 
     // Per-universe slots (routes, galaxy config, colony history, daily-action
-    // state, reminder config, colonization decisions): read local, merge our
+    // state, alarmClock config, colonization decisions): read local, merge our
     // universe's remote slot, and adopt only when the merge says remote
     // contributed (anti-loop: write back on `changed` only). One code path via
     // the SYNC_SLOTS registry — see its doc for which entities need an anti-loop
@@ -797,7 +797,7 @@ const upload = async () => {
       settingsPerUniverse: mergedPerUniverseOut,
       dailyStatePerUniverse: slotPayloads.dailyStatePerUniverse,
       galaxyScanConfig: slotPayloads.galaxyScanConfig,
-      reminderConfigPerUniverse: slotPayloads.reminderConfigPerUniverse,
+      alarmClockConfigPerUniverse: slotPayloads.alarmClockConfigPerUniverse,
       colonizeDecisionsPerUniverse: slotPayloads.colonizeDecisionsPerUniverse,
     };
 
@@ -946,16 +946,16 @@ export const installSync = () => {
   };
   const unsubGalaxyConfig = galaxyScanConfigStore.subscribe(onGalaxyConfigChange);
 
-  // Reminder config: an in-game change flips the store → schedule an upload.
+  // AlarmClock config: an in-game change flips the store → schedule an upload.
   // Dashboard edits arrive via the `oge_syncRequestAt` tombstone (onForceSync)
   // like the galaxy config; the sync-applied writes are skipped via the
   // anti-loop flag.
-  const onReminderConfigChange = () => {
-    if (!shouldScheduleUpload({ cloudSync: settingsStore.get().cloudSync, applying: isApplyingFromSync('reminderConfigPerUniverse') }))
+  const onAlarmClockConfigChange = () => {
+    if (!shouldScheduleUpload({ cloudSync: settingsStore.get().cloudSync, applying: isApplyingFromSync('alarmClockConfigPerUniverse') }))
       return;
     scheduleUpload();
   };
-  const unsubReminderConfig = reminderConfigStore.subscribe(onReminderConfigChange);
+  const unsubAlarmClockConfig = alarmClockConfigStore.subscribe(onAlarmClockConfigChange);
 
   // Settings sync: stamp the keys that changed since the last tick with
   // `now`, then schedule an upload. The keyed suppressor (`'settings'`) skips
@@ -1111,7 +1111,7 @@ export const installSync = () => {
       unsubSettings();
       unsubRoutes();
       unsubGalaxyConfig();
-      unsubReminderConfig();
+      unsubAlarmClockConfig();
       unsubClock();
       document.removeEventListener(SYNC_FORCE_EVENT, onForceSync);
       document.removeEventListener(DAILY_STATE_CHANGED_EVENT, onDailyStateChanged);

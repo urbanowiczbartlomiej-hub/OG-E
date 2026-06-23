@@ -14,11 +14,11 @@
 //   - GLOBAL: UI / behaviour preferences that apply identically on every
 //     OGame server (fabMode, readabilityBoost, …). Stored in the gist's
 //     top-level `settings` field and in a localStorage timestamp map under
-//     `SETTINGS_TS_KEY`. (The reminder knobs — wave enable/schedule, ad-hoc
-//     lead time, templates — live in the per-universe `reminderConfig` slot.)
+//     `SETTINGS_TS_KEY`. (The alarmClock knobs — wave enable/schedule, ad-hoc
+//     lead time, templates — live in the per-universe `alarmClockConfig` slot.)
 //
 //   - UNIVERSE_SCOPED: game-logic parameters that are meaningful only on a
-//     specific server (reminderNtfyToken, maxExpeditionsPerPlanet).
+//     specific server (alarmClockNtfyToken, maxExpeditionsPerPlanet).
 //     Stored in `settingsPerUniverse[universeId]` and in a per-universe
 //     chrome.storage timestamp map under `<universeId>:oge_settingsTs`.
 //
@@ -44,7 +44,7 @@ export const EXCLUDED_SETTINGS = new Set(['fabBtnSize', 'gistToken']);
  * Settings keys that are synced PER-UNIVERSE (one slot per server in the
  * gist's `settingsPerUniverse` map). These are game-logic parameters whose
  * correct value depends on which OGame server you're playing — the same
- * user's `reminderNtfyToken` or expedition cap may legitimately differ.
+ * user's `alarmClockNtfyToken` or expedition cap may legitimately differ.
  *
  * Only keys NOT in this set (and not in {@link EXCLUDED_SETTINGS}) go into
  * the global `settings` slot.
@@ -55,9 +55,9 @@ export const UNIVERSE_SCOPED_SETTINGS = new Set([
   // colonyPassword / colonyMinGap / colonyMinFields and the fleet-save knobs
   // fsEnabled / fsThreshold / fsOffsets / fsMinFlightSec moved to the
   // per-universe galaxyScanConfig store (which syncs on its own slot); the
-  // wave/ad-hoc knobs live in the per-universe reminderConfig slot.
+  // wave/ad-hoc knobs live in the per-universe alarmClockConfig slot.
   'maxExpeditionsPerPlanet',
-  'reminderNtfyToken',
+  'alarmClockNtfyToken',
 ]);
 
 /** localStorage key holding the global per-key last-change timestamp map (JSON). */

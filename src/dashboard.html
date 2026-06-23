@@ -173,7 +173,7 @@
 
   /* ── Settings-panel form controls — one shared look, matching the Daily
      Run dark input/select aesthetic, applied across every tab's ⚙ Settings
-     (Colonizations, Reminders). ── */
+     (Colonizations, AlarmClock). ── */
   .settings-panel input[type="text"],
   .settings-panel input[type="password"],
   .settings-panel input[type="number"],
@@ -251,7 +251,7 @@
   .oge-tpl-preview { color: #9fd0ff; font-size: 12px; margin-top: 4px; }
   .oge-tpl-warn { color: #ffb454; font-size: 12px; margin-top: 2px; }
 
-  /* Generic in-section sub-tabs — shared by the Reminders ⚙ Settings
+  /* Generic in-section sub-tabs — shared by the AlarmClock ⚙ Settings
      sub-panes (Expedition waves / Ad-hoc / Fleet-save) and the Colonizations
      sub-tabs (Planet sizes / Scanned data / Colony Scout). */
   .subtabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 14px; border-bottom: 1px solid #2a4a5a; }
@@ -272,7 +272,7 @@
     .cfg-field { flex-basis: 100%; }
   }
 
-  /* Reminders tab — preview-only surface. Setup form lives in the
+  /* AlarmClock tab — preview-only surface. Setup form lives in the
      in-game Settings panel, so this tab is intentionally compact. */
   .rem-intro { color: #aaa; font-size: 13px; margin-bottom: 14px; line-height: 1.5; }
   .rem-card {
@@ -395,7 +395,7 @@
   .sync-table td.num, .sync-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .sync-table tfoot td { color: #ccc; font-weight: 600; border-bottom: none; border-top: 1px solid #2a4a5a; }
 
-  /* ── Moved settings controls (Sync + Reminders tabs) ───────────────── */
+  /* ── Moved settings controls (Sync + AlarmClock tabs) ───────────────── */
   .rem-master-row { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: #ccc; cursor: pointer; margin-top: 2px; }
   .rem-master-row input { width: 16px; height: 16px; accent-color: #4a9eff; cursor: pointer; }
   .rem-card input.rem-mono { width: auto; }
@@ -416,7 +416,7 @@
 <div class="top-bar">
   <div class="tabs" role="tablist">
     <button class="tab-btn" data-tab="colony" role="tab">Colonizations</button>
-    <button class="tab-btn" data-tab="reminders" role="tab">Alarm clock</button>
+    <button class="tab-btn" data-tab="alarmClock" role="tab">Alarm clock</button>
     <button class="tab-btn" data-tab="routes" role="tab">Daily Run</button>
     <button class="tab-btn" data-tab="sync" role="tab">Sync</button>
   </div>
@@ -554,7 +554,7 @@
   </details>
 </section>
 
-<section id="remindersSection" class="tab-section">
+<section id="alarmClockSection" class="tab-section">
   <h1>Alarm clock</h1>
   <p class="rem-intro">
     A wake-up alarm for fleets you sent yourself — auto expedition waves, ad-hoc
@@ -604,7 +604,7 @@
         random bits). Nobody can guess it — that's roughly 3×10²⁶ possibilities — and ntfy.sh
         does not let anyone list or browse topics, so it can only be found if you reveal it.
         Treat it like a password: it is a <strong>secret URL</strong>, and anyone who learns it
-        can read your fleet reminders and inject fake ones. Never share or post it.
+        can read your fleet alarmClock and inject fake ones. Never share or post it.
       </p>
       <p class="rem-hint">
         <strong>Worried someone got hold of it?</strong> Change your ntfy access token above.
@@ -645,7 +645,7 @@
       <p class="settings-desc">
         Expedition-wave cadence, ad-hoc lead time, and fleet-save.
       </p>
-      <div id="reminderConfigBody"></div>
+      <div id="alarmClockConfigBody"></div>
     </div>
   </details>
   </div>

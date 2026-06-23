@@ -22,7 +22,7 @@ import { chromeStore } from '../../../src/lib/storage.js';
 import { installSettingsControls } from '../../../src/features/dashboard/settingsControls.js';
 import { SHARED_SETTINGS_KEY } from '../../../src/state/sharedSettings.js';
 import { syncRequestKeyFor } from '../../../src/sync/scheduler.js';
-import { REMINDER_NTFY_TOKEN_KEY } from '../../../src/sync/reminders.js';
+import { ALARM_CLOCK_NTFY_TOKEN_KEY } from '../../../src/sync/alarmClock.js';
 
 const mockStore = /** @type {any} */ (chromeStore);
 
@@ -78,7 +78,7 @@ describe('populate()', () => {
   it('fills the toggles + inputs from the shared-settings dict', async () => {
     store.set(SHARED_SETTINGS_KEY, {
       cloudSync: true, gistToken: 'ghp_xyz',
-      remindersMasterEnabled: true, reminderNtfyToken: VALID_NTFY,
+      alarmClockMasterEnabled: true, alarmClockNtfyToken: VALID_NTFY,
     });
     installSettingsControls();
     await flush();
@@ -89,7 +89,7 @@ describe('populate()', () => {
   });
 
   it('hides remBody when master off and syncControlsBody when cloud off', async () => {
-    store.set(SHARED_SETTINGS_KEY, { cloudSync: false, remindersMasterEnabled: false });
+    store.set(SHARED_SETTINGS_KEY, { cloudSync: false, alarmClockMasterEnabled: false });
     installSettingsControls();
     await flush();
     expect($('remBody').style.display).toBe('none');
@@ -97,7 +97,7 @@ describe('populate()', () => {
   });
 
   it('shows both bodies when their toggles are on', async () => {
-    store.set(SHARED_SETTINGS_KEY, { cloudSync: true, remindersMasterEnabled: true });
+    store.set(SHARED_SETTINGS_KEY, { cloudSync: true, alarmClockMasterEnabled: true });
     installSettingsControls();
     await flush();
     expect($('remBody').style.display).toBe('');
@@ -122,7 +122,7 @@ describe('toggles', () => {
     $('remMasterToggle').checked = true;
     $('remMasterToggle').dispatchEvent(new Event('change'));
     await flush();
-    expect(/** @type {any} */ (store.get(SHARED_SETTINGS_KEY)).remindersMasterEnabled).toBe(true);
+    expect(/** @type {any} */ (store.get(SHARED_SETTINGS_KEY)).alarmClockMasterEnabled).toBe(true);
     expect($('remBody').style.display).toBe('');
   });
 });
@@ -138,7 +138,7 @@ describe('token editing', () => {
     expect(/** @type {any} */ (store.get(SHARED_SETTINGS_KEY)).gistToken).toBe('ghp_trimmed');
   });
 
-  it('a valid ntfy token writes the patch, mirrors REMINDER_NTFY_TOKEN_KEY, and resets status to —', async () => {
+  it('a valid ntfy token writes the patch, mirrors ALARM_CLOCK_NTFY_TOKEN_KEY, and resets status to —', async () => {
     installSettingsControls();
     await flush();
     $('remTokenStatus').textContent = 'old verdict';
@@ -146,20 +146,20 @@ describe('token editing', () => {
     $('remNtfyToken').dispatchEvent(new Event('change'));
     await flush();
     expect($('remNtfyToken').value).toBe(VALID_NTFY);
-    expect(/** @type {any} */ (store.get(SHARED_SETTINGS_KEY)).reminderNtfyToken).toBe(VALID_NTFY);
-    expect(store.get(REMINDER_NTFY_TOKEN_KEY)).toBe(VALID_NTFY);
+    expect(/** @type {any} */ (store.get(SHARED_SETTINGS_KEY)).alarmClockNtfyToken).toBe(VALID_NTFY);
+    expect(store.get(ALARM_CLOCK_NTFY_TOKEN_KEY)).toBe(VALID_NTFY);
     expect($('remTokenStatus').textContent).toBe('—');
   });
 
   it('clearing the ntfy token removes the mirror', async () => {
-    store.set(REMINDER_NTFY_TOKEN_KEY, VALID_NTFY);
+    store.set(ALARM_CLOCK_NTFY_TOKEN_KEY, VALID_NTFY);
     installSettingsControls();
     await flush();
     $('remNtfyToken').value = '';
     $('remNtfyToken').dispatchEvent(new Event('change'));
     await flush();
-    expect(/** @type {any} */ (store.get(SHARED_SETTINGS_KEY)).reminderNtfyToken).toBe('');
-    expect(store.has(REMINDER_NTFY_TOKEN_KEY)).toBe(false);
+    expect(/** @type {any} */ (store.get(SHARED_SETTINGS_KEY)).alarmClockNtfyToken).toBe('');
+    expect(store.has(ALARM_CLOCK_NTFY_TOKEN_KEY)).toBe(false);
   });
 
   it('an invalid ntfy token writes the patch but does not mirror', async () => {
@@ -168,8 +168,8 @@ describe('token editing', () => {
     $('remNtfyToken').value = 'not-a-token';
     $('remNtfyToken').dispatchEvent(new Event('change'));
     await flush();
-    expect(/** @type {any} */ (store.get(SHARED_SETTINGS_KEY)).reminderNtfyToken).toBe('not-a-token');
-    expect(store.has(REMINDER_NTFY_TOKEN_KEY)).toBe(false);
+    expect(/** @type {any} */ (store.get(SHARED_SETTINGS_KEY)).alarmClockNtfyToken).toBe('not-a-token');
+    expect(store.has(ALARM_CLOCK_NTFY_TOKEN_KEY)).toBe(false);
   });
 });
 

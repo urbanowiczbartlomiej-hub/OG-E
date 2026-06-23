@@ -27,7 +27,7 @@
 // Every byte comes from DOM the game itself renders into `#eventContent` and
 // `#planetList`. We never fire our own XHR/fetch — we mirror the game's own
 // event ticker onto the planet list. The fleet-save flags come from the
-// reminders producer via `state/fleetSaveSet.js` (no feature-to-feature import).
+// alarmClock producer via `state/fleetSaveSet.js` (no feature-to-feature import).
 // No parallel request stream, no polling the server: just styling.
 //
 // The classification (which body a leg marks, and as which category) is pure
@@ -375,14 +375,14 @@ let eventBoxReady = false;
 const eventBoxLoaded = () => eventBoxReady || document.querySelector(GAME.EVENT_FLEET_ROWS) != null;
 
 /**
- * The detected fleet-save row-ids to mark — but only while reminders' master
+ * The detected fleet-save row-ids to mark — but only while alarmClock' master
  * switch AND the per-universe FS toggle are both on, so a stale published set
  * never paints FS markers after the feature is turned off.
  *
  * @returns {Set<string>}
  */
 const fsIdSet = () => {
-  const on = settingsStore.get().remindersMasterEnabled && galaxyScanConfigStore.get().fsEnabled;
+  const on = settingsStore.get().alarmClockMasterEnabled && galaxyScanConfigStore.get().fsEnabled;
   return new Set(on ? readFleetSaveIds() : []);
 };
 
@@ -397,7 +397,7 @@ const fsIdSet = () => {
  * @returns {Set<string>}
  */
 const landedFsKeySet = () => {
-  const on = settingsStore.get().remindersMasterEnabled && galaxyScanConfigStore.get().fsEnabled;
+  const on = settingsStore.get().alarmClockMasterEnabled && galaxyScanConfigStore.get().fsEnabled;
   const keys = on ? readLandedFs().map((e) => e.bodyKey) : [];
   for (const e of readManualLandedFs()) keys.push(e.bodyKey);
   return new Set(keys);

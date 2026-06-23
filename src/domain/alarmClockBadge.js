@@ -1,10 +1,10 @@
 // @ts-check
 
-// Status badge for a reminder card on the Dashboard ▸ Reminders preview.
+// Status badge for a alarmClock card on the Dashboard ▸ AlarmClock preview.
 //
 // One vocabulary across all three kinds (expedition waves, ad-hoc fleets,
 // fleet-saves). The preview is titled "Currently queued", so the badge answers
-// the only question that matters there: *what is this reminder's state ON
+// the only question that matters there: *what is this alarmClock's state ON
 // ntfy?* — NOT where the fleet is. (The old wave badge said "in flight" /
 // "overdue", which described the mission's timing, not the push channel, and
 // read as noise — every mission is "in flight".)
@@ -24,14 +24,14 @@
 //   - fired          — every push has already gone out.
 
 /**
- * @typedef {object} ReminderBadge
+ * @typedef {object} AlarmClockBadge
  * @property {string} text  Human label shown in the pill.
  * @property {'queued'|'fired'|'scheduled'|'none'|'far'|'cancelled'} cls
  *   State key → maps to a `.rem-badge.<cls>` colour (see `dashboard.html`).
  */
 
 /**
- * Resolve a reminder's ntfy-queue state to its badge. Pure.
+ * Resolve a alarmClock's ntfy-queue state to its badge. Pure.
  *
  * @param {object} o
  * @param {boolean} [o.cancelled]    Tombstoned / deleted by the user.
@@ -41,9 +41,9 @@
  * @param {boolean} [o.hasNtfyData]   Whether the live ntfy queue was fetched
  *   (false ⇒ we can't tell pending from fired).
  * @param {boolean} [o.tooFar]        Deferred beyond ntfy's 3-day horizon.
- * @returns {ReminderBadge}
+ * @returns {AlarmClockBadge}
  */
-export const reminderBadge = ({
+export const alarmClockBadge = ({
   cancelled = false,
   scheduledCount = 0,
   pendingCount = 0,

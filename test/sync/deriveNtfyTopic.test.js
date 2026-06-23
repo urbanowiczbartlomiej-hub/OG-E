@@ -14,7 +14,7 @@
 // wrong channel.
 
 import { describe, it, expect } from 'vitest';
-import { deriveNtfyTopic, maskTopic } from '../../src/sync/reminders.js';
+import { deriveNtfyTopic, maskTopic } from '../../src/sync/alarmClock.js';
 
 describe('deriveNtfyTopic', () => {
   it('returns an empty string for an empty token', async () => {

@@ -84,15 +84,15 @@ export const SETTINGS_PREFIX = 'oge_';
  *   eventMenuHighlight      true  — animate ephemeral event entries in the left toolbar
  *   traderMenuHighlight     true  — time-aware pulse on the Trader (Handlarz) entry
  *   threatHighlight             false — loud full-screen alert while under attack (opt-in)
- *   remindersMasterEnabled  false — master switch for the whole reminders section; with
- *                                   a valid token, gates both wave + ad-hoc reminders
- *   reminderNtfyToken       ''    — ntfy.sh access token (Bearer) for publish/cancel
+ *   alarmClockMasterEnabled  false — master switch for the whole alarmClock section; with
+ *                                   a valid token, gates both wave + ad-hoc alarmClock
+ *   alarmClockNtfyToken       ''    — ntfy.sh access token (Bearer) for publish/cancel
  *   (The fleet-save knobs — fsEnabled / fsThreshold / fsMinFlightSec / fsOffsets —
  *    moved OUT of Settings into the per-universe Galaxy-Scan config (server-scoped,
- *    edited in the dashboard's Reminders tab), see `state/galaxyScanConfig.js`.)
- *   (The reminder knobs — reminderEnabled / reminderSchedule / adhocSchedule —
- *    moved OUT of Settings into the per-universe reminder config (server-scoped,
- *    edited in the dashboard's Reminders tab), see `state/reminderConfig.js`.)
+ *    edited in the dashboard's AlarmClock tab), see `state/galaxyScanConfig.js`.)
+ *   (The alarmClock knobs — alarmClockEnabled / alarmClockSchedule / adhocSchedule —
+ *    moved OUT of Settings into the per-universe alarmClock config (server-scoped,
+ *    edited in the dashboard's AlarmClock tab), see `state/alarmClockConfig.js`.)
  *
  * @typedef {object} Settings
  * @property {boolean} fabMode
@@ -106,8 +106,8 @@ export const SETTINGS_PREFIX = 'oge_';
  * @property {boolean} eventMenuHighlight
  * @property {boolean} traderMenuHighlight
  * @property {boolean} threatHighlight
- * @property {boolean} remindersMasterEnabled
- * @property {string}  reminderNtfyToken
+ * @property {boolean} alarmClockMasterEnabled
+ * @property {string}  alarmClockNtfyToken
  */
 
 /**
@@ -157,8 +157,8 @@ export const SETTINGS_SCHEMA = {
   eventMenuHighlight:     { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'eventMenuHighlight' },
   traderMenuHighlight:    { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'traderMenuHighlight' },
   threatHighlight:            { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'threatHighlight' },
-  remindersMasterEnabled: { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'remindersMasterEnabled' },
-  reminderNtfyToken:      { type: 'string', default: '',    key: SETTINGS_PREFIX + 'reminderNtfyToken' },
+  alarmClockMasterEnabled: { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'alarmClockMasterEnabled' },
+  alarmClockNtfyToken:      { type: 'string', default: '',    key: SETTINGS_PREFIX + 'alarmClockNtfyToken' },
 };
 
 // ─────────────────────────────────────────────────────────────────────────

@@ -24,7 +24,7 @@
 // network.
 
 import { ntfyAuthParam } from './ntfyReconciler.js';
-import { isValidNtfyToken } from './reminders.js';
+import { isValidNtfyToken } from './alarmClock.js';
 
 /** ntfy account endpoint. The token authorises it via the `auth` query param. */
 const ACCOUNT_URL = 'https://ntfy.sh/v1/account';

@@ -84,8 +84,8 @@ const flush = async () => {
 const local = () => ({
   cloudSync: false,
   gistToken: '',
-  remindersMasterEnabled: false,
-  reminderNtfyToken: '',
+  alarmClockMasterEnabled: false,
+  alarmClockNtfyToken: '',
 });
 
 beforeEach(() => {
@@ -102,8 +102,8 @@ describe('pickShared', () => {
     const full = {
       cloudSync: true,
       gistToken: 'gt',
-      remindersMasterEnabled: true,
-      reminderNtfyToken: 'nt',
+      alarmClockMasterEnabled: true,
+      alarmClockNtfyToken: 'nt',
       // noise that must NOT be carried over
       fabBtnSize: 42,
       somethingElse: 'x',
@@ -111,8 +111,8 @@ describe('pickShared', () => {
     expect(pickShared(/** @type {any} */ (full))).toEqual({
       cloudSync: true,
       gistToken: 'gt',
-      remindersMasterEnabled: true,
-      reminderNtfyToken: 'nt',
+      alarmClockMasterEnabled: true,
+      alarmClockNtfyToken: 'nt',
     });
   });
 });
@@ -120,7 +120,7 @@ describe('pickShared', () => {
 // ── pure: mergeShared ─────────────────────────────────────────────────────────
 describe('mergeShared', () => {
   it('falls back entirely to local when raw is null', () => {
-    const l = { cloudSync: true, gistToken: 'L', remindersMasterEnabled: true, reminderNtfyToken: 'N' };
+    const l = { cloudSync: true, gistToken: 'L', alarmClockMasterEnabled: true, alarmClockNtfyToken: 'N' };
     expect(mergeShared(null, l)).toEqual(l);
   });
 
@@ -132,32 +132,32 @@ describe('mergeShared', () => {
   });
 
   it('takes cloud booleans when present, including false', () => {
-    const l = { cloudSync: true, gistToken: '', remindersMasterEnabled: true, reminderNtfyToken: '' };
-    const merged = mergeShared({ cloudSync: false, remindersMasterEnabled: false }, l);
+    const l = { cloudSync: true, gistToken: '', alarmClockMasterEnabled: true, alarmClockNtfyToken: '' };
+    const merged = mergeShared({ cloudSync: false, alarmClockMasterEnabled: false }, l);
     expect(merged.cloudSync).toBe(false);
-    expect(merged.remindersMasterEnabled).toBe(false);
+    expect(merged.alarmClockMasterEnabled).toBe(false);
   });
 
   it('keeps local booleans when cloud value is not a boolean', () => {
-    const l = { cloudSync: true, gistToken: '', remindersMasterEnabled: true, reminderNtfyToken: '' };
-    const merged = mergeShared({ cloudSync: 'yes', remindersMasterEnabled: 1 }, l);
+    const l = { cloudSync: true, gistToken: '', alarmClockMasterEnabled: true, alarmClockNtfyToken: '' };
+    const merged = mergeShared({ cloudSync: 'yes', alarmClockMasterEnabled: 1 }, l);
     expect(merged.cloudSync).toBe(true);
-    expect(merged.remindersMasterEnabled).toBe(true);
+    expect(merged.alarmClockMasterEnabled).toBe(true);
   });
 
   it('takes cloud tokens only when a non-empty string, else local (back-fill)', () => {
-    const l = { cloudSync: false, gistToken: 'localG', remindersMasterEnabled: false, reminderNtfyToken: 'localN' };
+    const l = { cloudSync: false, gistToken: 'localG', alarmClockMasterEnabled: false, alarmClockNtfyToken: 'localN' };
     // cloud has a real gistToken → wins; cloud's ntfy is empty → local back-fills
-    const merged = mergeShared({ gistToken: 'cloudG', reminderNtfyToken: '' }, l);
+    const merged = mergeShared({ gistToken: 'cloudG', alarmClockNtfyToken: '' }, l);
     expect(merged.gistToken).toBe('cloudG');
-    expect(merged.reminderNtfyToken).toBe('localN');
+    expect(merged.alarmClockNtfyToken).toBe('localN');
   });
 
   it('keeps local token when cloud token is non-string', () => {
-    const l = { cloudSync: false, gistToken: 'localG', remindersMasterEnabled: false, reminderNtfyToken: 'localN' };
-    const merged = mergeShared({ gistToken: 123, reminderNtfyToken: null }, l);
+    const l = { cloudSync: false, gistToken: 'localG', alarmClockMasterEnabled: false, alarmClockNtfyToken: 'localN' };
+    const merged = mergeShared({ gistToken: 123, alarmClockNtfyToken: null }, l);
     expect(merged.gistToken).toBe('localG');
-    expect(merged.reminderNtfyToken).toBe('localN');
+    expect(merged.alarmClockNtfyToken).toBe('localN');
   });
 });
 
@@ -172,14 +172,14 @@ describe('initSharedSettings / disposeSharedSettings', () => {
 
   it('writes the merged dict when a local token migrates up (differs from raw)', async () => {
     // raw is empty; local has a token → merge differs → must write back.
-    settingsState.value = { cloudSync: false, gistToken: 'localG', remindersMasterEnabled: false, reminderNtfyToken: '' };
+    settingsState.value = { cloudSync: false, gistToken: 'localG', alarmClockMasterEnabled: false, alarmClockNtfyToken: '' };
     await initSharedSettings();
     expect(fakeChromeStore.set).toHaveBeenCalledTimes(1);
     expect(fakeChromeStore.set).toHaveBeenCalledWith(SHARED_SETTINGS_KEY, {
       cloudSync: false,
       gistToken: 'localG',
-      remindersMasterEnabled: false,
-      reminderNtfyToken: '',
+      alarmClockMasterEnabled: false,
+      alarmClockNtfyToken: '',
     });
   });
 
@@ -188,25 +188,25 @@ describe('initSharedSettings / disposeSharedSettings', () => {
     // the steady cloud value must be byte-identical to what mergeShared emits —
     // i.e. stored in mergeShared's own key order (a value a prior init wrote).
     const merged = mergeShared(
-      { cloudSync: true, gistToken: 'G', remindersMasterEnabled: true, reminderNtfyToken: 'N' },
+      { cloudSync: true, gistToken: 'G', alarmClockMasterEnabled: true, alarmClockNtfyToken: 'N' },
       local(),
     );
     cstore.set(SHARED_SETTINGS_KEY, merged);
-    settingsState.value = { cloudSync: true, gistToken: 'G', remindersMasterEnabled: true, reminderNtfyToken: 'N' };
+    settingsState.value = { cloudSync: true, gistToken: 'G', alarmClockMasterEnabled: true, alarmClockNtfyToken: 'N' };
     await initSharedSettings();
     expect(fakeChromeStore.set).not.toHaveBeenCalled();
   });
 
   it('applies the merged values onto settingsStore', async () => {
-    settingsState.value = { cloudSync: false, gistToken: '', remindersMasterEnabled: false, reminderNtfyToken: '', other: 'keep' };
-    cstore.set(SHARED_SETTINGS_KEY, { cloudSync: true, gistToken: 'cloudG', remindersMasterEnabled: true, reminderNtfyToken: 'cloudN' });
+    settingsState.value = { cloudSync: false, gistToken: '', alarmClockMasterEnabled: false, alarmClockNtfyToken: '', other: 'keep' };
+    cstore.set(SHARED_SETTINGS_KEY, { cloudSync: true, gistToken: 'cloudG', alarmClockMasterEnabled: true, alarmClockNtfyToken: 'cloudN' });
     await initSharedSettings();
     // merged overlay applied, pre-existing non-shared field preserved
     expect(settingsState.value).toMatchObject({
       cloudSync: true,
       gistToken: 'cloudG',
-      remindersMasterEnabled: true,
-      reminderNtfyToken: 'cloudN',
+      alarmClockMasterEnabled: true,
+      alarmClockNtfyToken: 'cloudN',
       other: 'keep',
     });
   });
@@ -215,14 +215,14 @@ describe('initSharedSettings / disposeSharedSettings', () => {
     settingsState.value = local();
     await initSharedSettings();
     // a new cloud value arrives
-    cstore.set(SHARED_SETTINGS_KEY, { cloudSync: true, gistToken: 'newG', remindersMasterEnabled: true, reminderNtfyToken: 'newN' });
+    cstore.set(SHARED_SETTINGS_KEY, { cloudSync: true, gistToken: 'newG', alarmClockMasterEnabled: true, alarmClockNtfyToken: 'newN' });
     emitChange({ [SHARED_SETTINGS_KEY]: { newValue: 'whatever' } });
     await flush();
     expect(settingsState.value).toMatchObject({
       cloudSync: true,
       gistToken: 'newG',
-      remindersMasterEnabled: true,
-      reminderNtfyToken: 'newN',
+      alarmClockMasterEnabled: true,
+      alarmClockNtfyToken: 'newN',
     });
   });
 
@@ -240,7 +240,7 @@ describe('initSharedSettings / disposeSharedSettings', () => {
     await initSharedSettings();
     disposeSharedSettings();
     fakeChromeStore.get.mockClear();
-    cstore.set(SHARED_SETTINGS_KEY, { cloudSync: true, gistToken: 'x', remindersMasterEnabled: true, reminderNtfyToken: 'y' });
+    cstore.set(SHARED_SETTINGS_KEY, { cloudSync: true, gistToken: 'x', alarmClockMasterEnabled: true, alarmClockNtfyToken: 'y' });
     emitChange({ [SHARED_SETTINGS_KEY]: { newValue: 'x' } });
     await flush();
     expect(fakeChromeStore.get).not.toHaveBeenCalled();

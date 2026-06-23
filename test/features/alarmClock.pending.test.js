@@ -8,11 +8,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   applyAdhocCmds, applyWaveCmds, lastAdhocIntent, lastWaveIntent,
-} from '../../src/features/reminders/pending.js';
+} from '../../src/features/alarmClock/pending.js';
 
-/** @typedef {import('../../src/features/reminders/pending.js').PendingCommand} PendingCommand */
+/** @typedef {import('../../src/features/alarmClock/pending.js').PendingCommand} PendingCommand */
 
-/** @param {string} id @param {Partial<import('../../src/domain/adhoc.js').AdhocReminder>} [o] */
+/** @param {string} id @param {Partial<import('../../src/domain/adhoc.js').AdhocAlarmClock>} [o] */
 const entry = (id, o = {}) => ({ id, arrivalAt: 2000, label: 'x', ...o });
 
 /** @param {PendingCommand[]} cmds @returns {PendingCommand[]} */

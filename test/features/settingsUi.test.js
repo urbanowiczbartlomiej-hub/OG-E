@@ -267,7 +267,7 @@ describe('installSettingsUi — range', () => {
 // ──────────────────────────────────────────────────────────────────
 // Static signpost rows + the Display section's fleet-status checkbox.
 //
-// The editable sync/reminders controls (master switches, the ntfy token —
+// The editable sync/alarmClock controls (master switches, the ntfy token —
 // the only `type:'password'` field — the account-status / derived-topic
 // rows, the "Sync now"/"Check now" inline buttons, and the Sync status
 // readout) all MOVED to the OG-E Dashboard. The AGR panel keeps only a
@@ -288,15 +288,15 @@ describe('installSettingsUi — static signpost rows', () => {
     expect(document.getElementById(INPUT_PREFIX + 'syncMovedNote-btn')).toBeNull();
   });
 
-  it('renders the reminders signpost note', async () => {
+  it('renders the alarmClock signpost note', async () => {
     setupAGR();
     installSettingsUi();
     await flushWaitFor();
 
-    const span = document.getElementById(INPUT_PREFIX + 'remindersMovedNote');
+    const span = document.getElementById(INPUT_PREFIX + 'alarmClockMovedNote');
     expect(span).not.toBeNull();
     expect(span?.textContent).toContain('OG-E Dashboard');
-    expect(document.getElementById(INPUT_PREFIX + 'remindersMovedNote-btn')).toBeNull();
+    expect(document.getElementById(INPUT_PREFIX + 'alarmClockMovedNote-btn')).toBeNull();
   });
 
   it('renders the Display section\'s fleet-status-markers checkbox', async () => {

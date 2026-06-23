@@ -1,20 +1,20 @@
 // @ts-check
 
-// Reminder-state gist IO — backing store for the expedition reminder
+// AlarmClock-state gist IO — backing store for the expedition alarmClock
 // feature.
 //
 // # The separate plain-JSON file
 //
 // The cross-device sync payload lives in `oge-data.json.gz.b64`
 // (gzip+base64, schema 3) and `fetchGistData` rejects anything that
-// isn't schema 3. The reminder state must NOT go there. Instead we keep
+// isn't schema 3. The alarmClock state must NOT go there. Instead we keep
 // it in separate files in the same gist, one per universe (see
-// {@link reminderFilenameFor}), as plain pretty-printed JSON.
+// {@link alarmClockFilenameFor}), as plain pretty-printed JSON.
 //
 // # What's stored
 //
 // One file per OGame universe per gist (multi-universe isolation, v3 —
-// see {@link REMINDER_FILENAME_PREFIX}). Two top-level blocks:
+// see {@link ALARM_CLOCK_FILENAME_PREFIX}). Two top-level blocks:
 //
 //   - `waves`       — the reconciled wave set (output of
 //                     `domain/waves.reconcileWaves`).
@@ -37,7 +37,7 @@
 // we record the wave and fed back unchanged on later scans, so the six
 // timestamps stay put even as the earliest live return drifts. Trade-off:
 // if a later send adds a fleet returning earlier than the first we saw,
-// the first reminder fires a minute late. In exchange the schedule is
+// the first alarmClock fires a minute late. In exchange the schedule is
 // immutable from creation to landing.
 //
 // Why reconcile instead of "schedule once, never touch again": on mobile,
@@ -50,7 +50,7 @@
 //
 // # OG-E Dashboard preview mirror
 //
-// The OG-E Dashboard's Reminders tab renders a live view of what's
+// The OG-E Dashboard's AlarmClock tab renders a live view of what's
 // queued. That page is at extension origin and cannot read the game
 // origin's localStorage (where the gist token lives), so on every
 // sync the game side mirrors the last-written state plus the gist
@@ -64,8 +64,8 @@
 // live preview is the concrete benefit.
 //
 // @see ../domain/waves.js — reconcileWaves / pruneNotifyState
-// @see ../state/settings.js — `reminderEnabled` / `reminderNtfyToken`
-// @see ../features/dashboard/reminders.js — the preview consumer
+// @see ../state/settings.js — `alarmClockEnabled` / `alarmClockNtfyToken`
+// @see ../features/dashboard/alarmClock.js — the preview consumer
 
 /* global fetch */
 
@@ -87,28 +87,28 @@ import {
 /**
  * @typedef {import('../domain/waves.js').Wave} Wave
  * @typedef {import('../domain/waves.js').NotifyEntry} NotifyEntry
- * @typedef {import('../domain/adhoc.js').AdhocReminder} AdhocReminder
+ * @typedef {import('../domain/adhoc.js').AdhocAlarmClock} AdhocAlarmClock
  * @typedef {import('../domain/adhoc.js').PresentFleet} PresentFleet
- * @typedef {import('../domain/fleetSave.js').FleetSaveReminder} FleetSaveReminder
+ * @typedef {import('../domain/fleetSave.js').FleetSaveAlarmClock} FleetSaveAlarmClock
  * @typedef {import('../domain/fleetSave.js').FleetSaveCandidate} FleetSaveCandidate
  * @typedef {import('../domain/fleetSave.js').LandedFleetSave} LandedFleetSave
  */
 
 /**
- * Minimal config shape the producer passes in. Mirrors the reminder
+ * Minimal config shape the producer passes in. Mirrors the alarmClock
  * fields of `Settings` so this module does not depend on the settings
  * typedef (any caller that yields the right shape works — useful for
  * tests).
  *
- * @typedef {object} ReminderConfig
+ * @typedef {object} AlarmClockConfig
  * @property {boolean} [masterEnabled] Master switch for the whole section.
  *   When false, NEITHER kind is queued (everything is swept) regardless of
  *   the per-kind flags. Absent ⇒ treated as on (back-compat for direct callers).
- * @property {boolean} enabled       Auto expedition-WAVE reminders on/off.
+ * @property {boolean} enabled       Auto expedition-WAVE alarmClock on/off.
  * @property {boolean} [fsEnabled]   Fleet-save auto-detection on/off. When
  *   false, detected entries are kept in state but nothing is queued on ntfy.
  * @property {number} [fsThreshold]   Minimum total ships to classify as a save.
- * @property {string} [fsOffsets]     FS reminder offsets relative to arrival
+ * @property {string} [fsOffsets]     FS alarmClock offsets relative to arrival
  *   (comma-separated minutes-first durations; see `domain/fleetSave.parseFsOffsets`).
  * @property {number} [fsMinFlightSec] Minimum flight time (s) for a NEW save —
  *   excludes short planet⇄moon hops. The gate runs once, then the save is
@@ -117,13 +117,13 @@ import {
  * @property {number} [guardianIntervalSec]  Seconds after landing the guardian
  *   push fires (falls back to GUARDIAN_INTERVAL_SEC when absent).
  * @property {string} ntfyToken
- * @property {string} [schedule]  Free-form wave reminder schedule — a
+ * @property {string} [schedule]  Free-form wave alarmClock schedule — a
  *   minutes-first duration list (see `ntfyReconciler.offsetsForSchedule`).
  *   Falls back to the default cadence when absent / empty. Waves only.
- * @property {string} [adhocSchedule]  Free-form ad-hoc reminder schedule — a
+ * @property {string} [adhocSchedule]  Free-form ad-hoc alarmClock schedule — a
  *   minutes-first SIGNED offset list relative to arrival (see
  *   `domain/adhoc.parseAdhocOffsets`). Applied live to every armed entry.
- * @property {Record<import('../domain/reminderTemplates.js').ReminderKind, import('../domain/reminderTemplates.js').ReminderTemplate>} [templates]
+ * @property {Record<import('../domain/alarmClockTemplates.js').AlarmClockKind, import('../domain/alarmClockTemplates.js').AlarmClockTemplate>} [templates]
  *   Per-kind message customisation (body / icon / priority). The EFFECTIVE
  *   templates for this universe (already resolved against any per-server
  *   override by the producer). Absent ⇒ each reconcile uses its built-in
@@ -131,19 +131,19 @@ import {
  */
 
 /**
- * Filename prefix of the per-universe reminder-state files inside the
- * OG-E gist. The full filename is `${REMINDER_FILENAME_PREFIX}${universeId}.json`.
+ * Filename prefix of the per-universe alarmClock-state files inside the
+ * OG-E gist. The full filename is `${ALARM_CLOCK_FILENAME_PREFIX}${universeId}.json`.
  *
  * Multi-universe isolation rule (v3): each OGame universe owns its OWN
  * file in the shared gist. Universe A's content script writes
- * `oge-reminders-s163-pl.json`, universe B's writes
- * `oge-reminders-s201-pl.json`. GitHub's gist PATCH operates per file,
+ * `oge-alarmClock-s163-pl.json`, universe B's writes
+ * `oge-alarmClock-s201-pl.json`. GitHub's gist PATCH operates per file,
  * so one universe never clobbers another's waves or notifyState. This
  * fixes the v2-era ping-pong where two universes sharing one file
  * cancelled each other's ntfy schedules repeatedly until ntfy.sh
  * rate-limited the account.
  */
-export const REMINDER_FILENAME_PREFIX = 'oge-reminders-';
+export const ALARM_CLOCK_FILENAME_PREFIX = 'oge-alarmClock-';
 
 /**
  * Build the gist filename for a universe.
@@ -151,31 +151,31 @@ export const REMINDER_FILENAME_PREFIX = 'oge-reminders-';
  * @param {string} universeId  e.g. `'s163-pl'`. See `lib/universeId.js`.
  * @returns {string}
  */
-export const reminderFilenameFor = (universeId) =>
-  `${REMINDER_FILENAME_PREFIX}${universeId}.json`;
+export const alarmClockFilenameFor = (universeId) =>
+  `${ALARM_CLOCK_FILENAME_PREFIX}${universeId}.json`;
 
 /**
- * Regex matching all per-universe reminder filenames in a gist.
+ * Regex matching all per-universe alarmClock filenames in a gist.
  * Capture group 1 is the universeId. Used by the dashboard to
  * enumerate every universe currently in the gist.
  */
-export const REMINDER_FILENAME_RE = /^oge-reminders-([^/]+)\.json$/;
+export const ALARM_CLOCK_FILENAME_RE = /^oge-alarmClock-([^/]+)\.json$/;
 
 /**
- * Schema version of the reminder file.
+ * Schema version of the alarmClock file.
  *
  *   - v1: time-based wave identity (pre-1.3.2). `Wave.id` was
  *     `'w_' + nextWaveAt`, with a 300 s drift tolerance in reconcile.
  *   - v2: return-time-set overlap identity, single shared file
- *     `oge-reminders.json` — broken in multi-universe setups.
+ *     `oge-alarmClock.json` — broken in multi-universe setups.
  *   - v3: same identity model as v2, but the file is now scoped per
- *     universe (`oge-reminders-<universeId>.json`). Mirror in
+ *     universe (`oge-alarmClock-<universeId>.json`). Mirror in
  *     chrome.storage is also keyed per universe. We do NOT migrate v2
  *     state — the next sync drops it and the orphan sweep cancels any
  *     v2-era ntfy messages still queued.
- *   - v4: adds the ad-hoc per-fleet reminder blocks (`adhoc` +
+ *   - v4: adds the ad-hoc per-fleet alarmClock blocks (`adhoc` +
  *     `adhocNotify`) alongside the existing wave blocks. Migration from
- *     v3 is ADDITIVE — `readReminderState` accepts v3 and defaults the
+ *     v3 is ADDITIVE — `readAlarmClockState` accepts v3 and defaults the
  *     new arrays empty, so existing wave schedules survive the upgrade.
  *   - v5: adds the fleet-save auto-detection blocks (`fleetSave` +
  *     `fleetSaveNotify`). Migration from v3/v4 is ADDITIVE — older files
@@ -185,7 +185,7 @@ export const REMINDER_FILENAME_RE = /^oge-reminders-([^/]+)\.json$/;
  *     flag the still-exposed fleet. Migration from v3/v4/v5 is ADDITIVE —
  *     defaults to empty.
  */
-export const REMINDER_SCHEMA_VERSION = 6;
+export const ALARM_CLOCK_SCHEMA_VERSION = 6;
 
 /** Schema versions we can read (and normalise forward). */
 const READABLE_SCHEMA_VERSIONS = new Set([3, 4, 5, 6]);
@@ -219,7 +219,7 @@ const READABLE_SCHEMA_VERSIONS = new Set([3, 4, 5, 6]);
  * channel's confidentiality rests entirely on the topic staying secret:
  * 88 unguessable bits defend against brute force, but anyone who LEARNS
  * the topic (it is a URL — it leaks into proxy logs, history, the ntfy
- * app UI) can read these reminders (fleet-movement intel) and inject
+ * app UI) can read these alarmClock (fleet-movement intel) and inject
  * fakes. This is an accepted trade-off for low-sensitivity data; for full
  * isolation the user should reserve the topic on their ntfy account.
  *
@@ -269,40 +269,40 @@ export const maskTopic = (topic) => {
   return 'oge-' + '•'.repeat(topic.length - 'oge-'.length);
 };
 
-/** chrome.storage.local key holding the last-written reminder state (preview). */
-export const REMINDER_MIRROR_KEY = 'oge_reminderMirror';
+/** chrome.storage.local key holding the last-written alarmClock state (preview). */
+export const ALARM_CLOCK_MIRROR_KEY = 'oge_alarmClockMirror';
 
 /** chrome.storage.local key holding the gist id (so the dashboard can fetch live). */
-export const REMINDER_GIST_ID_KEY = 'oge_reminderGistId';
+export const ALARM_CLOCK_GIST_ID_KEY = 'oge_alarmClockGistId';
 
 /** chrome.storage.local key holding the gist token (preview-fetch only). */
-export const REMINDER_TOKEN_KEY = 'oge_reminderToken';
+export const ALARM_CLOCK_TOKEN_KEY = 'oge_alarmClockToken';
 
 /**
  * chrome.storage.local key holding the ntfy.sh access token. Mirrored
- * from game-origin Settings (`oge_reminderNtfyToken` in localStorage)
+ * from game-origin Settings (`oge_alarmClockNtfyToken` in localStorage)
  * so the OG-E Dashboard, which runs at extension origin, can call
  * ntfy's queue endpoint without re-asking the user for the token.
  */
-export const REMINDER_NTFY_TOKEN_KEY = 'oge_reminderNtfyTokenMirror';
+export const ALARM_CLOCK_NTFY_TOKEN_KEY = 'oge_alarmClockNtfyTokenMirror';
 
 /**
- * Full shape of a per-universe reminder file (see {@link reminderFilenameFor}).
- * Reminder config lives in localStorage settings at the game origin (see
+ * Full shape of a per-universe alarmClock file (see {@link alarmClockFilenameFor}).
+ * AlarmClock config lives in localStorage settings at the game origin (see
  * `state/settings.js`). The gist is purely the wave list + per-wave
  * bookkeeping (`baseAt` anchor + queued `scheduledMessageIds`), a cache of
  * the ntfy queue that is durable across browser restarts.
  *
- * @typedef {object} ReminderState
+ * @typedef {object} AlarmClockState
  * @property {number} version
  * @property {string} updatedAt          ISO timestamp of the last write.
  * @property {Wave[]} waves              Reconciled wave set.
  * @property {Record<string, NotifyEntry>} notifyState  Per-wave bookkeeping
  *   (scheduled ntfy.sh message ids for cancellation).
- * @property {AdhocReminder[]} adhoc     Player-armed per-fleet reminders.
+ * @property {AdhocAlarmClock[]} adhoc     Player-armed per-fleet alarmClock.
  * @property {Record<string, NotifyEntry>} adhocNotify  Per-ad-hoc bookkeeping
  *   (scheduled ntfy.sh message ids), keyed by event-row id.
- * @property {FleetSaveReminder[]} fleetSave  Auto-detected fleet-save reminders.
+ * @property {FleetSaveAlarmClock[]} fleetSave  Auto-detected fleet-save alarmClock.
  * @property {Record<string, NotifyEntry>} fleetSaveNotify  Per-FS bookkeeping
  *   (scheduled ntfy.sh message ids), keyed by event-row id.
  * @property {LandedFleetSave[]} [landedFleetSave]  Fleet-saves that have landed
@@ -311,7 +311,7 @@ export const REMINDER_NTFY_TOKEN_KEY = 'oge_reminderNtfyTokenMirror';
  */
 
 /**
- * Read and parse this universe's reminder file from the gist. Returns
+ * Read and parse this universe's alarmClock file from the gist. Returns
  * `null` when the gist has no such file yet (first run) or the content
  * can't be parsed (hand-edited / corrupt — the next write rebuilds it).
  *
@@ -323,19 +323,19 @@ export const REMINDER_NTFY_TOKEN_KEY = 'oge_reminderNtfyTokenMirror';
  * messages).
  *
  * @param {string} universeId
- * @returns {Promise<ReminderState | null>}
+ * @returns {Promise<AlarmClockState | null>}
  */
-const readReminderState = async (universeId) => {
+const readAlarmClockState = async (universeId) => {
   const id = await ensureGist();
   const gist = await gh(`/gists/${id}`);
-  const file = gist?.files?.[reminderFilenameFor(universeId)];
+  const file = gist?.files?.[alarmClockFilenameFor(universeId)];
   if (!file) return null;
   const text =
     file.truncated && file.raw_url
       ? await (await fetch(file.raw_url)).text()
       : file.content;
   try {
-    const parsed = /** @type {ReminderState} */ (JSON.parse(text));
+    const parsed = /** @type {AlarmClockState} */ (JSON.parse(text));
     if (!READABLE_SCHEMA_VERSIONS.has(parsed?.version)) return null;
     return {
       ...parsed,
@@ -353,20 +353,20 @@ const readReminderState = async (universeId) => {
 };
 
 /**
- * Write this universe's reminder file (plain JSON, pretty-printed).
+ * Write this universe's alarmClock file (plain JSON, pretty-printed).
  * Creates / discovers the gist as needed via {@link ensureGist}.
  *
  * @param {string} universeId
- * @param {ReminderState} state
+ * @param {AlarmClockState} state
  * @returns {Promise<void>}
  */
-const writeReminderState = async (universeId, state) => {
+const writeAlarmClockState = async (universeId, state) => {
   const id = await ensureGist();
   await gh(`/gists/${id}`, {
     method: 'PATCH',
     body: JSON.stringify({
       files: {
-        [reminderFilenameFor(universeId)]: { content: JSON.stringify(state, null, 2) },
+        [alarmClockFilenameFor(universeId)]: { content: JSON.stringify(state, null, 2) },
       },
     }),
   });
@@ -377,13 +377,13 @@ const writeReminderState = async (universeId, state) => {
  * `updatedAt` (always changes) so an otherwise-identical state doesn't
  * trigger a pointless PATCH and a no-op gist revision.
  *
- * @param {ReminderState | null} a
- * @param {ReminderState} b
+ * @param {AlarmClockState | null} a
+ * @param {AlarmClockState} b
  * @returns {boolean}
  */
 const sameState = (a, b) => {
   if (!a) return false;
-  /** @param {ReminderState} s @returns {string} */
+  /** @param {AlarmClockState} s @returns {string} */
   const pick = (s) => JSON.stringify({
     waves: s.waves, notifyState: s.notifyState,
     adhoc: s.adhoc, adhocNotify: s.adhocNotify,
@@ -395,7 +395,7 @@ const sameState = (a, b) => {
 
 /**
  * Mirror the just-written state (plus the gist id + tokens) into
- * `chrome.storage.local` so the OG-E Dashboard's Reminders tab can
+ * `chrome.storage.local` so the OG-E Dashboard's AlarmClock tab can
  * render a live preview. Two GET calls the dashboard makes need the
  * mirrored credentials: the gist fetch (gist token) and the ntfy
  * queue fetch (ntfy token).
@@ -409,26 +409,26 @@ const sameState = (a, b) => {
  * let it break a wave write).
  *
  * @param {string} universeId
- * @param {ReminderState} state
+ * @param {AlarmClockState} state
  * @param {string} ntfyToken  Current ntfy access token from Settings.
  * @returns {Promise<void>}
  */
 const mirrorForPreview = async (universeId, state, ntfyToken) => {
   try {
-    const existing = await chromeStore.get(REMINDER_MIRROR_KEY);
-    /** @type {Record<string, ReminderState>} */
+    const existing = await chromeStore.get(ALARM_CLOCK_MIRROR_KEY);
+    /** @type {Record<string, AlarmClockState>} */
     const dict = (existing && typeof existing === 'object' && !Array.isArray(existing))
-      ? { .../** @type {Record<string, ReminderState>} */ (existing) }
+      ? { .../** @type {Record<string, AlarmClockState>} */ (existing) }
       : {};
     dict[universeId] = state;
     await Promise.all([
-      chromeStore.set(REMINDER_MIRROR_KEY, dict),
-      chromeStore.set(REMINDER_GIST_ID_KEY, getGistId()),
-      chromeStore.set(REMINDER_TOKEN_KEY, getToken()),
+      chromeStore.set(ALARM_CLOCK_MIRROR_KEY, dict),
+      chromeStore.set(ALARM_CLOCK_GIST_ID_KEY, getGistId()),
+      chromeStore.set(ALARM_CLOCK_TOKEN_KEY, getToken()),
       // ntfyToken is global — last writer wins, all universes share.
       // Only mirror a syntactically valid token, so garbage typed into
       // one universe's Settings can't poison the global mirror.
-      ...(isValidNtfyToken(ntfyToken) ? [chromeStore.set(REMINDER_NTFY_TOKEN_KEY, ntfyToken)] : []),
+      ...(isValidNtfyToken(ntfyToken) ? [chromeStore.set(ALARM_CLOCK_NTFY_TOKEN_KEY, ntfyToken)] : []),
     ]);
   } catch {
     // Best-effort — see above.
@@ -465,7 +465,7 @@ export const isValidNtfyToken = (token) =>
  * 401-triggering POSTs).
  *
  * Also logs a console hint when a malformed local token is overridden
- * by a valid mirrored one — the player otherwise sees "no reminders"
+ * by a valid mirrored one — the player otherwise sees "no alarmClock"
  * with no obvious cause.
  *
  * @param {string} configToken  `ntfyToken` as passed by the producer.
@@ -473,7 +473,7 @@ export const isValidNtfyToken = (token) =>
  */
 const resolveNtfyToken = async (configToken) => {
   if (isValidNtfyToken(configToken)) return configToken;
-  const mirrored = await chromeStore.get(REMINDER_NTFY_TOKEN_KEY);
+  const mirrored = await chromeStore.get(ALARM_CLOCK_NTFY_TOKEN_KEY);
   if (isValidNtfyToken(mirrored)) {
     if (configToken) {
       // eslint-disable-next-line no-console
@@ -490,7 +490,7 @@ const resolveNtfyToken = async (configToken) => {
 
 /**
  * The core extension-side round-trip — the SINGLE writer of this
- * universe's reminder file. Reconciles BOTH notification kinds (auto
+ * universe's alarmClock file. Reconciles BOTH notification kinds (auto
  * expedition waves + player-armed ad-hoc fleets) in one read-modify-write,
  * so the two never clobber each other's slice of the gist:
  *
@@ -511,14 +511,14 @@ const resolveNtfyToken = async (configToken) => {
  *      not queued (defense in depth; arming is already blocked past it).
  *   6. Persist the resulting id sets; refresh the dashboard mirror.
  *
- * @param {ReminderConfig} config  Current config (from the store).
+ * @param {AlarmClockConfig} config  Current config (from the store).
  * @param {object} dom             DOM-derived inputs for this scan.
  * @param {import('../domain/waves.js').WaveCandidate[]} dom.waveCandidates
  *   Freshly clustered expedition-return candidates (no id yet).
  * @param {PresentFleet[]} dom.present  Every fleet leg currently in the
  *   event list (id + arrivalAt) — the authoritative set ad-hoc cleanup
  *   matches against. MUST come from a real event-box read.
- * @param {(prev: AdhocReminder[]) => AdhocReminder[]} [dom.adhocMutate]
+ * @param {(prev: AdhocAlarmClock[]) => AdhocAlarmClock[]} [dom.adhocMutate]
  *   Optional user mutation applied before reconcile (arm adds an entry,
  *   disarm removes one). Omitted on the periodic event-box-driven pass.
  * @param {(prev: Wave[]) => Wave[]} [dom.waveMutate]
@@ -548,13 +548,13 @@ const resolveNtfyToken = async (configToken) => {
  *   plays the `landedAt` role for the fire time.
  * @param {number} now             Epoch SECONDS, injected by the caller.
  * @param {string} universeId      OGame server id; ntfy push title prefix.
- * @returns {Promise<{ ok: boolean, reason?: string, changed?: boolean, scheduled?: number, cancelled?: number, fleetSave?: FleetSaveReminder[], landedFleetSave?: LandedFleetSave[] }>}
+ * @returns {Promise<{ ok: boolean, reason?: string, changed?: boolean, scheduled?: number, cancelled?: number, fleetSave?: FleetSaveAlarmClock[], landedFleetSave?: LandedFleetSave[] }>}
  *   `fleetSave` is the reconciled (locked) FS set for this scan and
  *   `landedFleetSave` the just-landed-and-exposed set — both surfaced so the
  *   caller can republish them for passive consumers (the planet markers, which
- *   never import reminders). Absent on early `{ ok: false }` returns.
+ *   never import alarmClock). Absent on early `{ ok: false }` returns.
  */
-export const syncReminders = async (config, dom, now, universeId) => {
+export const syncAlarmClock = async (config, dom, now, universeId) => {
   if (!getToken()) return { ok: false, reason: 'no-token' };
 
   const {
@@ -569,7 +569,7 @@ export const syncReminders = async (config, dom, now, universeId) => {
   // its ntfy token.
   const ntfyToken = await resolveNtfyToken(config.ntfyToken);
 
-  const existing = await readReminderState(universeId);
+  const existing = await readAlarmClockState(universeId);
   const prevWaves = existing?.waves ?? [];
   const prevNotify = existing?.notifyState ?? {};
   const prevAdhoc = existing?.adhoc ?? [];
@@ -618,7 +618,7 @@ export const syncReminders = async (config, dom, now, universeId) => {
   // Master switch gates every kind; absent ⇒ on (direct-caller back-compat).
   const master = config.masterEnabled !== false;
   const waveActive = master && config.enabled;
-  // Ad-hoc per-fleet reminders are always on; the master switch is their only gate.
+  // Ad-hoc per-fleet alarmClock are always on; the master switch is their only gate.
   const adhocActive = master;
   const fsActive = master && Boolean(config.fsEnabled);
 
@@ -648,7 +648,7 @@ export const syncReminders = async (config, dom, now, universeId) => {
 
     // ── Expedition waves ───────────────────────────────────────────────
     // Live waves ntfy should keep queued. Dismissed waves and — when wave
-    // reminders are off (master off, or auto-wave off) — ALL waves are
+    // alarmClock are off (master off, or auto-wave off) — ALL waves are
     // excluded, so the reconciler sweeps their messages. Idempotent against
     // ntfy's own queue, so an interrupted prior run just converges.
     const liveWaves = waveActive
@@ -728,7 +728,7 @@ export const syncReminders = async (config, dom, now, universeId) => {
     // truth — only the local dismiss store persists.
     const guardianIntervalSec = config.guardianIntervalSec ?? GUARDIAN_INTERVAL_SEC;
     // Bodies to watch = auto-detected landed FS (dismiss-filtered) ∪ the user's
-    // MANUAL marks. Mirrors the in-game button's union (features/reminders/
+    // MANUAL marks. Mirrors the in-game button's union (features/alarmClock/
     // guardian.js) so the loud surface and the offline push track the SAME set:
     // manual first, then auto OVERRIDES on a clash (it carries the real landing
     // identity). Manual marks get no dismiss filter — a dismiss removes the
@@ -765,13 +765,13 @@ export const syncReminders = async (config, dom, now, universeId) => {
     cancelled = waveRes.cancelled + adhocRes.cancelled + fsRes.cancelled + guardianRes.cancelled;
     if (scheduled > 0 || cancelled > 0) {
       // eslint-disable-next-line no-console
-      console.log(`[oge] reminders reconciled: +${scheduled} queued, -${cancelled} cancelled`);
+      console.log(`[oge] alarmClock reconciled: +${scheduled} queued, -${cancelled} cancelled`);
     }
   }
 
-  /** @type {ReminderState} */
+  /** @type {AlarmClockState} */
   const next = {
-    version: REMINDER_SCHEMA_VERSION,
+    version: ALARM_CLOCK_SCHEMA_VERSION,
     updatedAt: new Date().toISOString(),
     waves,
     notifyState,
@@ -783,7 +783,7 @@ export const syncReminders = async (config, dom, now, universeId) => {
   };
 
   const changed = !sameState(existing, next);
-  if (changed) await writeReminderState(universeId, next);
+  if (changed) await writeAlarmClockState(universeId, next);
   await mirrorForPreview(universeId, next, ntfyToken);
   return { ok: true, changed, scheduled, cancelled, fleetSave, landedFleetSave };
 };

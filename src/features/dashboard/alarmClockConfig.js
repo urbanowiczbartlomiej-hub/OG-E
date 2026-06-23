@@ -1,11 +1,11 @@
 // @ts-check
 
-// Reminders config editor — the dashboard surface for the reminder knobs that
+// AlarmClock config editor — the dashboard surface for the alarmClock knobs that
 // moved out of the in-game AGR settings panel. Everything here is PER-SERVER
 // (the server comes from the dashboard's top switcher), spread across two
 // per-universe chrome.storage slots:
 //
-//   - `reminderConfig`: expedition-wave enable + schedule, ad-hoc lead time,
+//   - `alarmClockConfig`: expedition-wave enable + schedule, ad-hoc lead time,
 //     and the three message templates (wave / ad-hoc / fleet-save).
 //   - `galaxyScanConfig`: fleet-save enable / ship threshold / min flight time /
 //     landing-relative offset schedule (the behavioural fs* knobs).
@@ -37,25 +37,25 @@ import {
   galaxyScanConfigTsKeyFor,
 } from '../../state/galaxyScanConfig.js';
 import {
-  reminderConfigKeyFor,
-  reminderConfigTsKeyFor,
-} from '../../state/reminderConfig.js';
+  alarmClockConfigKeyFor,
+  alarmClockConfigTsKeyFor,
+} from '../../state/alarmClockConfig.js';
 import { syncRequestKeyFor } from '../../sync/scheduler.js';
 import {
   defaultGalaxyScanConfig,
   normalizeGalaxyScanConfig,
 } from '../../domain/galaxyScanConfig.js';
 import {
-  defaultReminderConfig,
-  normalizeReminderConfig,
-} from '../../domain/reminderConfig.js';
+  defaultAlarmClockConfig,
+  normalizeAlarmClockConfig,
+} from '../../domain/alarmClockConfig.js';
 import {
   TEMPLATE_FIELDS,
   PRESET_ICONS,
   DEFAULT_ICON_ID,
   renderTemplate,
   unknownTokens,
-} from '../../domain/reminderTemplates.js';
+} from '../../domain/alarmClockTemplates.js';
 import {
   parseDuration, formatDuration, parseDurationList,
   humanizeOffset, humanizeReturnOffset, humanizeArrivalOffset, summarizeSchedule,
@@ -111,7 +111,7 @@ const makeOffsetEditor = ({ idBase, signed, previewLong, placeholder, reference 
   const wrap = mk('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:6px;');
   wrap.id = idBase;
 
-  const addBtn = /** @type {HTMLButtonElement} */ (mk('button', undefined, '+ Add reminder'));
+  const addBtn = /** @type {HTMLButtonElement} */ (mk('button', undefined, '+ Add alarmClock'));
   addBtn.type = 'button';
   addBtn.id = idBase + 'Add';
   addBtn.className = 'oge-offset-add';
@@ -128,7 +128,7 @@ const makeOffsetEditor = ({ idBase, signed, previewLong, placeholder, reference 
     const rm = /** @type {HTMLButtonElement} */ (mk('button', undefined, '✕'));
     rm.type = 'button';
     rm.className = 'oge-offset-remove';
-    rm.title = 'Remove this reminder';
+    rm.title = 'Remove this alarmClock';
 
     const refresh = () => {
       const t = inp.value.trim();
@@ -334,8 +334,8 @@ const makePriorityPicker = (id) => {
 /**
  * @typedef {object} TemplateEditor
  * @property {HTMLElement} element  The editor container (body + chips + selects + preview).
- * @property {(t: import('../../domain/reminderTemplates.js').ReminderTemplate) => void} setFromTemplate
- * @property {() => import('../../domain/reminderTemplates.js').ReminderTemplate} collect
+ * @property {(t: import('../../domain/alarmClockTemplates.js').AlarmClockTemplate) => void} setFromTemplate
+ * @property {() => import('../../domain/alarmClockTemplates.js').AlarmClockTemplate} collect
  */
 
 /**
@@ -344,10 +344,10 @@ const makePriorityPicker = (id) => {
  * LIVE preview rendered from the kind's sample context (so the user sees a
  * realistic push, not raw tokens) plus an unknown-token warning. Pure DOM; the
  * host wires load/save. Title is intentionally not editable (see
- * `domain/reminderTemplates` header — the title is the ntfy queue filter).
+ * `domain/alarmClockTemplates` header — the title is the ntfy queue filter).
  *
  * @param {object} o
- * @param {import('../../domain/reminderTemplates.js').ReminderKind} o.kind
+ * @param {import('../../domain/alarmClockTemplates.js').AlarmClockKind} o.kind
  * @param {string} o.idBase  id prefix for this kind's controls.
  * @returns {TemplateEditor}
  */
@@ -430,7 +430,7 @@ const makeTemplateEditor = ({ kind, idBase }) => {
 };
 
 /**
- * Install the reminder config editor into `#reminderConfigBody`. Idempotent
+ * Install the alarmClock config editor into `#alarmClockConfigBody`. Idempotent
  * per call site (the host installs once at boot); returns a `refresh()` the
  * host calls on universe change so the fields reload for the newly-selected
  * server (everything here is per-server).
@@ -438,8 +438,8 @@ const makeTemplateEditor = ({ kind, idBase }) => {
  * @param {{ getUniverseId: () => string }} opts
  * @returns {{ refresh: () => void }}
  */
-export const installReminderConfig = ({ getUniverseId }) => {
-  const body = document.getElementById('reminderConfigBody');
+export const installAlarmClockConfig = ({ getUniverseId }) => {
+  const body = document.getElementById('alarmClockConfigBody');
   if (!body) return { refresh: () => {} };
 
   // ── wave / ad-hoc field widgets ──────────────────────────────────────
@@ -476,7 +476,7 @@ export const installReminderConfig = ({ getUniverseId }) => {
   thresholdInput.size = 8;
   thresholdInput.placeholder = 'e.g. 100000';
   thresholdInput.title =
-    'A fleet whose total ship count crosses this is flagged 🛡 and gets a reminder series.';
+    'A fleet whose total ship count crosses this is flagged 🛡 and gets a alarmClock series.';
 
   const minFlightInput = /** @type {HTMLInputElement} */ (mk('input'));
   minFlightInput.type = 'text';
@@ -627,21 +627,21 @@ export const installReminderConfig = ({ getUniverseId }) => {
 
   const wavePane = addTab('Expedition waves');
   twoCol(wavePane, [
-    row('Reminders — enable', waveEnabledInput, 'auto-detect a returning wave + schedule a series'),
-    block('Reminder schedule', waveEditor.element, 'each fires relative to the wave’s return'),
+    row('Alarm clock — enable', waveEnabledInput, 'auto-detect a returning wave + schedule a series'),
+    block('Alarm clock schedule', waveEditor.element, 'each fires relative to the wave’s return'),
   ], waveTplEditor.element);
 
   const adhocPane = addTab('Ad-hoc');
   twoCol(adhocPane, [
-    block('Reminder schedule', adhocEditor.element, 'each relative to arrival (− before, 0 at, + after)'),
+    block('Alarm clock schedule', adhocEditor.element, 'each relative to arrival (− before, 0 at, + after)'),
   ], adhocTplEditor.element);
 
   const fsPane = addTab('Fleet-save');
   twoCol(fsPane, [
-    row('Reminders — enable', enabledInput, 'auto-detect a returning Fleet-save + schedule a series'),
+    row('Alarm clock — enable', enabledInput, 'auto-detect a returning Fleet-save + schedule a series'),
     row('Ship threshold', thresholdInput, 'total ships that count as a "big" fleet'),
     row('Min flight time', minFlightInput, 'minutes-first, e.g. 10m · 0 = off'),
-    block('Reminder schedule', fsEditor.element, 'each relative to landing (− before, 0 at, + after)'),
+    block('Alarm clock schedule', fsEditor.element, 'each relative to landing (− before, 0 at, + after)'),
     row('Fleet guardian — enable', guardianEnableInput, 'push when a landed fleet-save sits exposed'),
     row('Fleet guardian — interval', guardianIntervalInput, 'minutes after landing to fire if still bare'),
     row('Fleet guardian — ACK interval', guardianAckIntervalInput, 'minutes idle (no reload) before the button pulses for an ACK'),
@@ -692,12 +692,12 @@ export const installReminderConfig = ({ getUniverseId }) => {
 
   /**
    * Populate the wave + ad-hoc widgets and all three message templates from a
-   * per-server reminder config.
-   * @param {import('../../domain/reminderConfig.js').ReminderConfig} cfg
+   * per-server alarmClock config.
+   * @param {import('../../domain/alarmClockConfig.js').AlarmClockConfig} cfg
    */
-  const fillReminder = (cfg) => {
-    waveEnabledInput.checked = cfg.reminderEnabled;
-    waveEditor.setFromString(cfg.reminderSchedule);
+  const fillAlarmClock = (cfg) => {
+    waveEnabledInput.checked = cfg.alarmClockEnabled;
+    waveEditor.setFromString(cfg.alarmClockSchedule);
     adhocEditor.setFromString(cfg.adhocSchedule);
     waveTplEditor.setFromTemplate(cfg.templates.wave);
     adhocTplEditor.setFromTemplate(cfg.templates.adhoc);
@@ -707,12 +707,12 @@ export const installReminderConfig = ({ getUniverseId }) => {
   const refresh = async () => {
     const uni = getUniverseId();
     if (!uni) {
-      fillReminder(defaultReminderConfig());
+      fillAlarmClock(defaultAlarmClockConfig());
       fillFs(defaultGalaxyScanConfig());
-      setStatus('No universe selected — pick a server to configure reminders.', '#e6a23c');
+      setStatus('No universe selected — pick a server to configure alarmClock.', '#e6a23c');
       return;
     }
-    fillReminder(normalizeReminderConfig(await chromeStore.get(reminderConfigKeyFor(uni))));
+    fillAlarmClock(normalizeAlarmClockConfig(await chromeStore.get(alarmClockConfigKeyFor(uni))));
     fillFs(normalizeGalaxyScanConfig(await chromeStore.get(galaxyScanConfigKeyFor(uni))));
     setStatus('');
   };
@@ -738,7 +738,7 @@ export const installReminderConfig = ({ getUniverseId }) => {
     }
     const offsets = fsEditor.collect();
     if (offsets === null) {
-      setStatus('Fleet-save schedule — each reminder must be a duration like -10m, 0m, 10m.', '#e66');
+      setStatus('Fleet-save schedule — each alarmClock must be a duration like -10m, 0m, 10m.', '#e66');
       return null;
     }
     const guardianIntervalMin = parseInt(guardianIntervalInput.value, 10);
@@ -753,8 +753,8 @@ export const installReminderConfig = ({ getUniverseId }) => {
     }
     // Never-enters net: the guardian arms on ENTRY, so a player who never
     // re-enters after landing would get no warning at all. With the guardian on,
-    // guarantee the classic FS reminder still pings them — auto-add a post-landing
-    // reminder at the guardian interval if none already fires at or after it. The
+    // guarantee the classic FS alarmClock still pings them — auto-add a post-landing
+    // alarmClock at the guardian interval if none already fires at or after it. The
     // injected chip shows in the editor so the change is visible.
     let fsOffsets = offsets;
     if (guardianEnableInput.checked) {
@@ -778,29 +778,29 @@ export const installReminderConfig = ({ getUniverseId }) => {
 
   /**
    * Read the wave + ad-hoc widgets (enable / schedule / lead time) and all
-   * three message templates into a complete per-server reminder config,
+   * three message templates into a complete per-server alarmClock config,
    * validating the schedule + lead-time durations. Returns null + sets an
    * error on a bad value. The wave schedule comes from the row editor (per-row
    * validated); an empty list is allowed (no wave pings). The message bodies
    * may be empty (a deliberate blank); unknown wildcards are a non-blocking
    * warning shown live in the editor.
    *
-   * @returns {import('../../domain/reminderConfig.js').ReminderConfig | null}
+   * @returns {import('../../domain/alarmClockConfig.js').AlarmClockConfig | null}
    */
-  const collectReminder = () => {
+  const collectAlarmClock = () => {
     const schedule = waveEditor.collect();
     if (schedule === null) {
-      setStatus('Wave schedule — each reminder must be a duration like 0m, 10m, 30m.', '#e66');
+      setStatus('Wave schedule — each alarmClock must be a duration like 0m, 10m, 30m.', '#e66');
       return null;
     }
     const adhocSchedule = adhocEditor.collect();
     if (adhocSchedule === null) {
-      setStatus('Ad-hoc schedule — each reminder must be a duration like -10m, 0m, 10m.', '#e66');
+      setStatus('Ad-hoc schedule — each alarmClock must be a duration like -10m, 0m, 10m.', '#e66');
       return null;
     }
-    return normalizeReminderConfig({
-      reminderEnabled: waveEnabledInput.checked,
-      reminderSchedule: schedule,
+    return normalizeAlarmClockConfig({
+      alarmClockEnabled: waveEnabledInput.checked,
+      alarmClockSchedule: schedule,
       adhocSchedule,
       templates: {
         wave: waveTplEditor.collect(),
@@ -811,17 +811,17 @@ export const installReminderConfig = ({ getUniverseId }) => {
   };
 
   const save = async () => {
-    const rc = collectReminder();
+    const rc = collectAlarmClock();
     if (!rc) return;
     const ownedFs = collectFs();
     if (!ownedFs) return;
 
     const uni = getUniverseId();
-    if (!uni) { setStatus('No universe selected — pick a server to save reminder config.', '#e66'); return; }
+    if (!uni) { setStatus('No universe selected — pick a server to save alarmClock config.', '#e66'); return; }
 
-    // Reminder config slot (per-universe): wave/ad-hoc + all three templates.
-    await chromeStore.set(reminderConfigKeyFor(uni), rc);
-    await chromeStore.set(reminderConfigTsKeyFor(uni), Date.now());
+    // AlarmClock config slot (per-universe): wave/ad-hoc + all three templates.
+    await chromeStore.set(alarmClockConfigKeyFor(uni), rc);
+    await chromeStore.set(alarmClockConfigTsKeyFor(uni), Date.now());
 
     // Galaxy-scan slot (per-universe, read-modify-write): the fleet-save knobs
     // only — the scan-config editor shares this slot, so overlay just ours.
@@ -833,14 +833,14 @@ export const installReminderConfig = ({ getUniverseId }) => {
     // One poke runs a full sync round-trip that pushes both per-universe slots.
     await chromeStore.set(syncRequestKeyFor(uni), Date.now());
 
-    fillReminder(rc);
+    fillAlarmClock(rc);
     fillFs(cfg);
     setStatus('Saved.', '#67c23a');
   };
 
   saveBtn.addEventListener('click', () => { void save(); });
   resetBtn.addEventListener('click', () => {
-    fillReminder(defaultReminderConfig());
+    fillAlarmClock(defaultAlarmClockConfig());
     fillFs(defaultGalaxyScanConfig());
     setStatus('Defaults loaded — click Save to apply.', '#e6a23c');
   });

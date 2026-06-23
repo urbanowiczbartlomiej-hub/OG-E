@@ -1,7 +1,7 @@
 // @ts-check
 
 // Galaxy-Scan configuration — the per-universe colonize/abandon knobs plus the
-// fleet-save reminder knobs (`fs*`) and the bare-fleet guardian knobs. These
+// fleet-save alarmClock knobs (`fs*`) and the bare-fleet guardian knobs. These
 // are all server-scoped settings edited from the dashboard, folded into ONE
 // per-universe `chrome.storage` slot (see `state/galaxyScanConfig.js`) so they
 // ride its whole-slot newest-wins gist sync for free. They share the store, not
@@ -43,7 +43,7 @@
  *   fleet-save.
  * @property {number} fsMinFlightSec  Minimum flight time (s) for a leg to count
  *   as a fleet-save — excludes short planet⇄moon hops. Server-speed dependent.
- * @property {string} fsOffsets  Fleet-save reminder offsets relative to landing
+ * @property {string} fsOffsets  Fleet-save alarmClock offsets relative to landing
  *   (comma-separated, minutes-first; negative = before, 0 = at, + = after).
  * @property {boolean} guardianEnabled  Bare-fleet guardian on/off: an escalation
  *   ntfy push when a landed fleet-save sits exposed (no re-save). Per-universe.
@@ -122,7 +122,7 @@ export const normalizeGalaxyScanConfig = (raw) => {
     colonyMinFields: coerceInt(r.colonyMinFields, d.colonyMinFields),
     colonyPassword:
       typeof r.colonyPassword === 'string' ? r.colonyPassword : d.colonyPassword,
-    // fs* are the fleet-save reminder knobs. Threshold / min-flight are
+    // fs* are the fleet-save alarmClock knobs. Threshold / min-flight are
     // non-negative ints; offsets is a free-form duration-list string.
     fsEnabled: typeof r.fsEnabled === 'boolean' ? r.fsEnabled : d.fsEnabled,
     fsThreshold: coerceInt(r.fsThreshold, d.fsThreshold),

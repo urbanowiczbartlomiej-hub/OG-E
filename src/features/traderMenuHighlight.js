@@ -1,4 +1,4 @@
-// Trader highlight — two independent daily-action reminders, drawn as
+// Trader highlight — two independent daily-action alarmClock, drawn as
 // coloured glows on the Trader menu button AND on the matching tiles of
 // the Trader overview, cleared by the player's ACTUAL action (not a mere
 // menu open).
@@ -14,7 +14,7 @@
 // The old design pulsed a single time-escalating glow and cleared it on a
 // click of the Trader MENU button. But opening the menu proves nothing —
 // the bid/trade button might be disabled, the server may reject, or the
-// player just looks and leaves. So the reminder must clear on the action,
+// player just looks and leaves. So the alarmClock must clear on the action,
 // and the two chores are independent things with different colours.
 //
 // # Solution
@@ -156,7 +156,7 @@ export const AUCTION_QUIET_KEY = TRADER_AUCTION_QUIET_KEY;
 export const IMPORT_NEXT_KEY = TRADER_IMPORT_NEXT_KEY;
 
 /**
- * Player's chosen Import/Export reminder mode. PER-DEVICE and NOT synced — it's
+ * Player's chosen Import/Export alarmClock mode. PER-DEVICE and NOT synced — it's
  * a preference, not server-wide state (see the header note): each device shows
  * its own chips and is auto-switched independently when its own inbox is read.
  */
@@ -171,7 +171,7 @@ export const IMPORT_MODE_KEY = 'oge-trader-import-mode';
 export const IMPORT_EVENT_SEEN_KEY = 'oge-trader-import-event-seen';
 
 /**
- * Import/Export reminder modes (the values persisted in {@link IMPORT_MODE_KEY}).
+ * Import/Export alarmClock modes (the values persisted in {@link IMPORT_MODE_KEY}).
  * Cast to their literal types so the exported symbols stay `'daily'`/`'6x'` (not
  * widened to `string`) for every consumer — the {@link TraderState} `mode` union
  * depends on it.
@@ -427,7 +427,7 @@ export const localDayKey = (d) => {
  * @property {number | null} [auctionQuietUntil] Epoch ms until which the
  *   yellow glow is suppressed (from the Auctioneer "next auction in"
  *   countdown), `null`/absent if none.
- * @property {'daily' | '6x'} [mode] Player-chosen Import/Export reminder mode.
+ * @property {'daily' | '6x'} [mode] Player-chosen Import/Export alarmClock mode.
  *   `'6x'` runs the 4-hour-slot event cadence; `'daily'` (default) the
  *   once-a-day 14:00 rule.
  * @property {number | null} [importNextAt] Epoch ms of the START of the last
@@ -816,12 +816,12 @@ const MODE_CHIPS = [
   [
     MODE_DAILY,
     '1×/day · from 14:00',
-    'One reminder per day, from 14:00 (the normal once-a-day import).',
+    'One alarmClock per day, from 14:00 (the normal once-a-day import).',
   ],
   [
     MODE_6X,
     '6×/day · every 4 h',
-    'Six reminders per day on the 4-hour event slots ' +
+    'Six alarmClock per day on the 4-hour event slots ' +
       '(00/04/08/12/16/20). Auto-enabled when a "refreshes 6× today" ' +
       'message is seen; switch back here when the event ends.',
   ],
@@ -852,7 +852,7 @@ const buildModeChipsBar = () => {
 
   const label = document.createElement('span');
   label.className = CHIP_LABEL_CLASS;
-  label.textContent = 'OG-E reminder:';
+  label.textContent = 'OG-E alarmClock:';
   bar.appendChild(label);
 
   for (const [mode, text, tooltip] of MODE_CHIPS) {

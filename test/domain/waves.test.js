@@ -196,8 +196,8 @@ describe('reconcileWaves', () => {
     expect(waves.map((w) => w.id)).toEqual(['w_' + (1779913212 + 5400)]);
   });
 
-  it('cleanup: brand-new TOMBSTONES (does not drop) matched waves whose first reminder is past or imminent', () => {
-    // Old wave has nextWaveAt = now - 5s (first reminder already fired
+  it('cleanup: brand-new TOMBSTONES (does not drop) matched waves whose first alarmClock is past or imminent', () => {
+    // Old wave has nextWaveAt = now - 5s (first alarmClock already fired
     // a few seconds ago, remaining ones queued at +10/20/30/40/50 min).
     // Player re-sends → brand-new appears → old wave is tombstoned, NOT
     // removed: its fleets are still in flight, so removing it would let
@@ -235,7 +235,7 @@ describe('reconcileWaves', () => {
     // The bug this guards: cleanup used to DROP the near-term wave. But
     // its fleets are still in flight, so the next scan re-clustered the
     // same return-times, found no matching prev wave, and stamped them
-    // brand-new — queuing a fresh six-reminder schedule for a wave the
+    // brand-new — queuing a fresh six-alarmClock schedule for a wave the
     // player had already re-sent past. Tombstoning keeps the wave in the
     // set so overlap-matching carries `cancelled` forward instead.
     const oldWave = wave({
@@ -274,7 +274,7 @@ describe('reconcileWaves', () => {
       .toEqual(['w_' + (NOW + 5400)]);
   });
 
-  it('cleanup: matched wave whose first reminder is still > 60s away is KEPT', () => {
+  it('cleanup: matched wave whose first alarmClock is still > 60s away is KEPT', () => {
     const oldReturn = NOW + 300;
     const oldWave = wave({
       id: 'w_old', returnAts: [oldReturn], nextWaveAt: oldReturn,
@@ -344,14 +344,14 @@ describe('reconcileWaves', () => {
     expect(waves[0].detectedAt).toBe(NOW - 60);
   });
 
-  it('CLEANUP_GRACE_SEC is 60 — first-reminder window', () => {
+  it('CLEANUP_GRACE_SEC is 60 — first-alarmClock window', () => {
     expect(CLEANUP_GRACE_SEC).toBe(60);
   });
 
   it('cancelled flag carries forward on overlap match', () => {
     // Dashboard tombstoned a wave. The next reconcile (game-side, after
     // the user clicked × in the dashboard) must keep `cancelled: true`
-    // so syncReminderWaves doesn't reschedule it.
+    // so syncAlarmClockWaves doesn't reschedule it.
     const prev = wave({
       id: 'w_orig', returnAts: [NOW + 300, NOW + 350], nextWaveAt: NOW + 300,
     });

@@ -16,7 +16,7 @@
 // flagged ⚠ "stale" and removable in one click; custom targets are never
 // stale (and the in-game reconcile never prunes them).
 //
-// Installed like the reminders tab: the host passes a `getUniverseId` getter
+// Installed like the alarmClock tab: the host passes a `getUniverseId` getter
 // and calls the returned `refresh()` whenever the selected universe changes.
 //
 // @see ../../domain/dailyRunRoutes.js — Route shape + store normalisation.
