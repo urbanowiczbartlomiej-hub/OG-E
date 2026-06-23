@@ -62,6 +62,7 @@
 /** @ts-check */
 
 import { injectStyle } from '../lib/dom.js';
+import { createVisibilityObserver } from '../lib/visibilityObserver.js';
 import { debounce } from '../lib/debounce.js';
 import { settingsStore } from '../state/settings.js';
 import { GAME } from '../lib/gameDom.js';
@@ -250,7 +251,7 @@ export const installEventMenuHighlight = () => {
     if (installed) applyHighlights();
   }, REFRESH_DEBOUNCE_MS);
 
-  const observer = new MutationObserver(scheduleRefresh);
+  const observer = createVisibilityObserver(scheduleRefresh);
   const target = document.getElementById('menuTable') ?? document.body;
   observer.observe(target, { childList: true, subtree: true });
 

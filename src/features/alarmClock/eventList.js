@@ -57,6 +57,7 @@
 // @see ./pending.js  — the reload-safe intent queue we read for "syncing".
 
 import { settingsStore } from '../../state/settings.js';
+import { createVisibilityObserver } from '../../lib/visibilityObserver.js';
 import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
 import { alarmClockConfigStore } from '../../state/alarmClockConfig.js';
 import { chromeStore } from '../../lib/storage.js';
@@ -548,7 +549,7 @@ export const installEventListAlarmClock = ({
   };
   document.addEventListener('click', onClick, true);
 
-  const observer = new MutationObserver(scheduleRender);
+  const observer = createVisibilityObserver(scheduleRender);
   observer.observe(document.body, { childList: true, subtree: true });
 
   const onMirror = (/** @type {Record<string, unknown>} */ changes) => {

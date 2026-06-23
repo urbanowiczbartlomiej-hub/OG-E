@@ -89,6 +89,7 @@
 /** @ts-check */
 
 import { injectStyle } from '../lib/dom.js';
+import { createVisibilityObserver } from '../lib/visibilityObserver.js';
 import { debounce } from '../lib/debounce.js';
 import { safeLS } from '../lib/storage.js';
 import { settingsStore } from '../state/settings.js';
@@ -974,7 +975,7 @@ export const installTraderMenuHighlight = () => {
   // navigation. We only watch childList/subtree — text-only mutations
   // (eventbox countdowns) don't fire it, so the cost stays low and the
   // 150 ms debounce coalesces bursts.
-  const observer = new MutationObserver(scheduleRefresh);
+  const observer = createVisibilityObserver(scheduleRefresh);
   observer.observe(document.body, { childList: true, subtree: true });
 
   document.addEventListener(TRADER_BID_PLACED_EVENT, onBidPlaced);

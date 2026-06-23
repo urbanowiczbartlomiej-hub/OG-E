@@ -49,6 +49,7 @@
 /* global document, CustomEvent, location */
 
 import { debounce } from '../lib/debounce.js';
+import { createVisibilityObserver } from '../lib/visibilityObserver.js';
 import { gameDayKey } from '../domain/gameDayKey.js';
 import { writeDailyState, readDailyState } from '../state/dailyActions.js';
 import { DAILY_STATE_CHANGED_EVENT } from '../lib/ogeEvents.js';
@@ -127,7 +128,7 @@ export const installRewardingWatcher = () => {
     if (installed) checkCompletion();
   }, 200);
 
-  const observer = new MutationObserver(scheduleCheck);
+  const observer = createVisibilityObserver(scheduleCheck);
   observer.observe(document.body, { childList: true, subtree: true });
 
   // Backstop for a missed observer tick, on the shared visibility-aware

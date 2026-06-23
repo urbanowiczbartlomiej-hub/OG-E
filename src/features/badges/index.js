@@ -42,6 +42,7 @@
 /** @ts-check */
 
 import { settingsStore } from '../../state/settings.js';
+import { createVisibilityObserver } from '../../lib/visibilityObserver.js';
 import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
 import { readFleetSaveIds, readLandedFs } from '../../state/fleetSaveSet.js';
 import { readManualLandedFs } from '../../state/manualLandedFs.js';
@@ -538,7 +539,7 @@ let installed = null;
  * always also observing `<body>` (OGame AJAX-swaps both containers, detaching
  * a scoped observer). Mirrors the previous badge feature's strategy.
  *
- * @param {MutationObserver} observer
+ * @param {import('../../lib/visibilityObserver.js').VisibilityObserver} observer
  * @returns {void}
  */
 const attachObserver = (observer) => {
@@ -562,7 +563,7 @@ export const installBadges = () => {
 
   injectStyle(STYLE_ID, buildCss());
 
-  /** @type {MutationObserver | null} */
+  /** @type {import('../../lib/visibilityObserver.js').VisibilityObserver | null} */
   let observer = null;
 
   // Run a paint with the observer paused so our own DOM writes don't feed back
@@ -624,7 +625,7 @@ export const installBadges = () => {
   };
   document.addEventListener(EVENT_BOX_LOADED_EVENT, onEventBox);
 
-  observer = new MutationObserver(() => scheduleRefresh());
+  observer = createVisibilityObserver(() => scheduleRefresh());
   attachObserver(observer);
 
   // Safety net: OGame refreshes #eventContent on a ~30s AJAX tick and has

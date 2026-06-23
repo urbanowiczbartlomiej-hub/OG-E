@@ -1,6 +1,7 @@
 // @ts-check
 
 import { settingsStore } from '../state/settings.js';
+import { createVisibilityObserver } from '../lib/visibilityObserver.js';
 
 // Contrast + legibility boost for two chronically painful AGR / OGame
 // surfaces: the fleet-event box at the top of the page and the
@@ -444,7 +445,7 @@ export const installReadabilityBoost = () => {
   // on its own output, so we don't loop. The trimmer shares the
   // `readabilityBoost` toggle — start on enable, disconnect on disable.
 
-  /** @type {MutationObserver | null} */
+  /** @type {import('../lib/visibilityObserver.js').VisibilityObserver | null} */
   let countdownObserver = null;
 
   const trimCountdown = () => {
@@ -460,7 +461,7 @@ export const installReadabilityBoost = () => {
     const box = document.getElementById('eventboxFilled');
     if (!box) return; // nothing to observe — eventbox only exists on some pages
     trimCountdown();
-    countdownObserver = new MutationObserver(trimCountdown);
+    countdownObserver = createVisibilityObserver(trimCountdown);
     countdownObserver.observe(box, {
       subtree: true,
       characterData: true,
@@ -483,7 +484,7 @@ export const installReadabilityBoost = () => {
   // each mutation. Writes are guarded (only when the text changes), so
   // our own write can't drive an infinite loop and a re-pass is a no-op.
 
-  /** @type {MutationObserver | null} */
+  /** @type {import('../lib/visibilityObserver.js').VisibilityObserver | null} */
   let movementObserver = null;
 
   const relabelMovementLinks = () => {
@@ -521,7 +522,7 @@ export const installReadabilityBoost = () => {
     const root = document.body || document.documentElement;
     if (!root) return; // document_start: no body yet — retried on DOMContentLoaded
     relabelMovementLinks();
-    movementObserver = new MutationObserver(relabelMovementLinks);
+    movementObserver = createVisibilityObserver(relabelMovementLinks);
     movementObserver.observe(root, {
       subtree: true,
       childList: true,
