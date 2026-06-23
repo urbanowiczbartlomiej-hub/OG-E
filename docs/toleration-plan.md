@@ -130,15 +130,17 @@ official PTS. So testing and submission share one home.
 
 ## Remaining work (next sessions)
 
-**Decisions first (block the rest):**
-- [~] **Reminders (RED) — consult-first chosen.** ToolDev consult **posted
-      2026-06-23** (forum thread #516; see [`toleration-consult.md`](toleration-consult.md)),
-      anonymous + forward-looking, leading with the own-action/no-monitoring
-      case. Awaiting ruling (a few days). Next: drop a short pointer in Discord
-      `#tooldevs-chat`. If declined → in-tab-only fallback (drop the `X-Delay`
-      push); ready to drop fleet-save + guardian if partially pushed.
-- [ ] **Under-attack highlight (YELLOW-C).** Remove, or keep default-off and get
-      an explicit ToolDev green-light + rename away from "alarm".
+**Decisions — RESOLVED.**
+- [x] **Reminders — APPROVED by ToolDevs (conditional), 2026-06-23.** Condition:
+      OG-E must never track the game while the player is away. **Implemented**
+      via presence-gating (Tier 1 `313545c` + Tier 2 `07268c7`); reminders kept.
+      See [`toleration-consult.md`](toleration-consult.md).
+- [x] **Renames done** for framing consistency: `reminders`→`alarmClock`
+      (`ddd1552`), `attackAlarm`→`threatHighlight` (`d35651d`). UI labels read
+      "Alarm clock"; genuine attack-detection vocabulary kept (it is truthful).
+- [x] **Under-attack highlight (now "threat highlight").** Kept, default-off,
+      renamed away from "alarm", and now presence-gated (does not observe the
+      attack flag while the tab is hidden). Off-tab signals already gone.
 
 **Code (after the decisions, via the build-and-verify loop):**
 - [ ] **Parity opt-out** for the daily-run deploy redirect (mirror

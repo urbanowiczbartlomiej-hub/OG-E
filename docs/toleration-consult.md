@@ -10,17 +10,22 @@
 - **Posted:** 2026-06-23 — forum thread **#516**, *Community Projects →
   Submissions/Development*:
   <https://forum.origin.ogame.gameforge.com/forum/thread/516-pre-submission-consult-is-a-fleet-return-alarm-clock-feature-within-fair-play/>
-- **Next:** drop a short pointer in the official **OGame Discord →
-  `#tooldevs-chat`** ([discord.gg/OGame](https://discord.gg/OGame)) linking the
-  thread (short blurb below). Then **wait a few days** for a ToolDev ruling — do
-  not bump.
-- **Framing:** deliberately **anonymous + forward-looking** ("we are considering
-  a feature, before we build it"). Does **not** reveal OG-E or the AGR
-  dependency — the question is about the *act itself*, not our specific tool.
-- **Decision it gates:** the reminders RED in `fair-play.md`. If ToolDevs say
-  no, we drop the off-game (ntfy `X-Delay`) push and keep **in-tab signalling
-  only**. We led with the strongest case (own-action, no monitoring); we are
-  ready to drop fleet-save + guardian if pressed.
+- **Outcome — APPROVED (conditional), 2026-06-23.** ToolDevs agreed the "alarm
+  clock" argument holds, while noting their intent is that players manage their
+  own time without tools, and that even a phone alarm is a soft edge; they also
+  flagged that ntfy may simply fail (offline / no signal / not registered),
+  which we should not present as a guarantee. Manual time-entry was floated but
+  **not** made a condition. **The one binding condition: OG-E must NEVER track
+  the game while the player is not present.** Reminders are **kept** (ntfy push
+  stays) — no need to drop fleet-save / guardian.
+- **Implemented (condition now true in code):** `313545c` (Tier 1 — alarmClock
+  producer + threatHighlight stop reading the game while `document.hidden`,
+  reconcile/snap on return) and `07268c7` (Tier 2 — every cosmetic game-DOM
+  observer gated via `lib/visibilityObserver.js`). Plus the framing renames
+  `reminders`→`alarmClock` (`ddd1552`) and `attackAlarm`→`threatHighlight`
+  (`d35651d`).
+- **Framing of the question:** deliberately **anonymous + forward-looking** — it
+  asked about the *act itself*, not OG-E specifically.
 
 ---
 

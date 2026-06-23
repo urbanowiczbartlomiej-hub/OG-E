@@ -66,7 +66,14 @@ C under-attack highlight). Everything else is GREEN.
 
 ---
 
-## 🔴 RED — off-device push reminders (rule 4)
+## 🔴 RED → ✅ approved (conditional) — off-device push reminders (rule 4)
+
+> **Resolved 2026-06-23.** ToolDevs **approved** the off-device "alarm clock"
+> push, conditional on OG-E **never tracking the game while the player is away**
+> — now implemented via presence-gating (Tier 1 `313545c`, Tier 2 `07268c7`).
+> Reminders kept (incl. fleet-save / guardian). Feature renamed
+> `reminders`→`alarmClock`. The assessment below stands as the original risk
+> analysis that drove the consult.
 
 **Root cause (one code path):** `sync/ntfyReconciler.js` POSTs to `ntfy.sh`
 with an `X-Delay` header, so the public push service holds the message and
