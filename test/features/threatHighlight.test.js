@@ -22,15 +22,15 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import {
-  installAttackAlarm,
-  _resetAttackAlarmForTest,
-} from '../../src/features/attackAlarm/index.js';
+  installThreatHighlight,
+  _resetThreatHighlightForTest,
+} from '../../src/features/threatHighlight/index.js';
 import { settingsStore } from '../../src/state/settings.js';
-import { EVENT_BOX_LOADED_EVENT, ATTACK_ALARM_TEST_EVENT } from '../../src/lib/ogeEvents.js';
+import { EVENT_BOX_LOADED_EVENT, THREAT_HIGHLIGHT_TEST_EVENT } from '../../src/lib/ogeEvents.js';
 
-const STYLE_ID = 'oge-attack-alarm-style';
-const OVERLAY_ID = 'oge-attack-overlay';
-const BANNER_ID = 'oge-attack-banner';
+const STYLE_ID = 'oge-threat-highlight-style';
+const OVERLAY_ID = 'oge-threat-overlay';
+const BANNER_ID = 'oge-threat-banner';
 
 /** Create/update the top-bar attack flag. */
 const setFlag = (/** @type {boolean} */ attacked) => {
@@ -83,10 +83,10 @@ const bannerText = () => document.getElementById(BANNER_ID)?.textContent ?? '';
 /** Future epoch-seconds arrival, so summaries report a finite soonest ETA. */
 const soonArrival = () => Math.floor(Date.now() / 1000) + 120;
 
-describe('attackAlarm', () => {
+describe('threatHighlight', () => {
   beforeEach(() => {
-    _resetAttackAlarmForTest();
-    settingsStore.update((s) => ({ ...s, attackAlarm: false }));
+    _resetThreatHighlightForTest();
+    settingsStore.update((s) => ({ ...s, threatHighlight: false }));
     document.getElementById('attack_alert')?.remove();
     document.getElementById('eventContent')?.remove();
     document.getElementById(STYLE_ID)?.remove();
@@ -95,35 +95,35 @@ describe('attackAlarm', () => {
   });
 
   afterEach(() => {
-    _resetAttackAlarmForTest();
-    settingsStore.update((s) => ({ ...s, attackAlarm: false }));
+    _resetThreatHighlightForTest();
+    settingsStore.update((s) => ({ ...s, threatHighlight: false }));
     vi.useRealTimers();
   });
 
   it('injects its <style> and is idempotent', () => {
-    const a = installAttackAlarm();
-    const b = installAttackAlarm();
+    const a = installThreatHighlight();
+    const b = installThreatHighlight();
     expect(a).toBe(b);
     expect(document.querySelectorAll(`#${STYLE_ID}`).length).toBe(1);
     const css = document.getElementById(STYLE_ID)?.textContent ?? '';
-    expect(css).toContain('@keyframes oge-attack-vig');
+    expect(css).toContain('@keyframes oge-threat-vig');
     expect(css).toContain('pointer-events: none');
   });
 
   it('does NOTHING for a live attack while the feature is off', () => {
     setFlag(true);
-    installAttackAlarm();
+    installThreatHighlight();
     expect(document.getElementById(OVERLAY_ID)).toBeNull();
     expect(document.getElementById(BANNER_ID)).toBeNull();
   });
 
   it('raises the alarm on install when the flag is already attacked', () => {
-    settingsStore.update((s) => ({ ...s, attackAlarm: true }));
+    settingsStore.update((s) => ({ ...s, threatHighlight: true }));
     setFlag(true);
     setEventRows([
       { missionType: '1', hostile: true, arrivalAt: soonArrival(), dest: '[1:2:3]' },
     ]);
-    installAttackAlarm();
+    installThreatHighlight();
     expect(overlayVisible()).toBe(true);
     expect(bannerText()).toContain('UNDER ATTACK');
     expect(bannerText()).toContain('1 hostile fleet');
@@ -131,9 +131,9 @@ describe('attackAlarm', () => {
   });
 
   it('hides the alarm once the flag clears', () => {
-    settingsStore.update((s) => ({ ...s, attackAlarm: true }));
+    settingsStore.update((s) => ({ ...s, threatHighlight: true }));
     setFlag(true);
-    installAttackAlarm();
+    installThreatHighlight();
     expect(overlayVisible()).toBe(true);
 
     setFlag(false);
@@ -142,15 +142,15 @@ describe('attackAlarm', () => {
   });
 
   it('dismiss mutes the current attack but re-fires when it escalates', () => {
-    settingsStore.update((s) => ({ ...s, attackAlarm: true }));
+    settingsStore.update((s) => ({ ...s, threatHighlight: true }));
     setFlag(true);
     setEventRows([{ missionType: '1', hostile: true, arrivalAt: soonArrival(), dest: '[1:2:3]' }]);
-    installAttackAlarm();
+    installThreatHighlight();
     expect(overlayVisible()).toBe(true);
 
     // Dismiss → hidden, and an unchanged re-check stays quiet.
     /** @type {HTMLButtonElement} */ (
-      document.querySelector(`#${BANNER_ID} .oge-attack-x`)
+      document.querySelector(`#${BANNER_ID} .oge-threat-x`)
     ).click();
     expect(overlayVisible()).toBe(false);
     document.dispatchEvent(new CustomEvent(EVENT_BOX_LOADED_EVENT));
@@ -167,20 +167,20 @@ describe('attackAlarm', () => {
   });
 
   it('hides the alarm when the setting is switched off mid-attack', () => {
-    settingsStore.update((s) => ({ ...s, attackAlarm: true }));
+    settingsStore.update((s) => ({ ...s, threatHighlight: true }));
     setFlag(true);
-    installAttackAlarm();
+    installThreatHighlight();
     expect(overlayVisible()).toBe(true);
 
-    settingsStore.update((s) => ({ ...s, attackAlarm: false }));
+    settingsStore.update((s) => ({ ...s, threatHighlight: false }));
     expect(overlayVisible()).toBe(false);
   });
 
   it('previews on demand regardless of the setting, then auto-clears', () => {
     vi.useFakeTimers();
     // Feature OFF and no attack — preview must still show.
-    installAttackAlarm();
-    document.dispatchEvent(new CustomEvent(ATTACK_ALARM_TEST_EVENT));
+    installThreatHighlight();
+    document.dispatchEvent(new CustomEvent(THREAT_HIGHLIGHT_TEST_EVENT));
     expect(overlayVisible()).toBe(true);
     expect(bannerText().toLowerCase()).toContain('preview');
 
@@ -189,9 +189,9 @@ describe('attackAlarm', () => {
   });
 
   it('dispose removes overlay, banner and style', () => {
-    settingsStore.update((s) => ({ ...s, attackAlarm: true }));
+    settingsStore.update((s) => ({ ...s, threatHighlight: true }));
     setFlag(true);
-    const dispose = installAttackAlarm();
+    const dispose = installThreatHighlight();
     expect(document.getElementById(OVERLAY_ID)).not.toBeNull();
 
     dispose();

@@ -44,8 +44,8 @@ export const SYSTEM_DISCOVERY_RESULT_EVENT = 'oge:systemDiscoveryResult';
 export const SYNC_STATUS_EVENT = 'oge:syncStatus';
 /** A user-initiated "Sync now" request. */
 export const SYNC_FORCE_EVENT = 'oge:syncForce';
-/** A user-initiated "preview the attack alarm" request from settings. */
-export const ATTACK_ALARM_TEST_EVENT = 'oge:attackAlarmTest';
+/** A user-initiated "preview the threat highlight" request from settings. */
+export const THREAT_HIGHLIGHT_TEST_EVENT = 'oge:threatHighlightTest';
 /** Daily-action state changed (rewards / merchant claimed). */
 export const DAILY_STATE_CHANGED_EVENT = 'oge:dailyStateChanged';
 /** A manual landed-FS mark was toggled on the fleet1 screen. */

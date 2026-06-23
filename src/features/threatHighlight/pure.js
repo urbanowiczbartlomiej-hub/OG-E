@@ -1,6 +1,6 @@
 // @ts-check
 //
-// Pure decision + summary logic for the attack alarm. No DOM, no timers,
+// Pure decision + summary logic for the threat highlight. No DOM, no timers,
 // no listeners — the orchestrator (./index.js) reads the page and feeds
 // these functions plain data, so the "are we under attack / how bad is it"
 // rules stay unit-testable without happy-dom (the pure-core rule in CLAUDE.md).

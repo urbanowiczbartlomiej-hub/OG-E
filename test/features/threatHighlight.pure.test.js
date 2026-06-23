@@ -10,11 +10,11 @@ import {
   summarizeAttacks,
   attackFingerprint,
   formatEta,
-} from '../../src/features/attackAlarm/pure.js';
+} from '../../src/features/threatHighlight/pure.js';
 
 /**
- * @param {Partial<import('../../src/features/attackAlarm/pure.js').HostileLeg>} [over]
- * @returns {import('../../src/features/attackAlarm/pure.js').HostileLeg}
+ * @param {Partial<import('../../src/features/threatHighlight/pure.js').HostileLeg>} [over]
+ * @returns {import('../../src/features/threatHighlight/pure.js').HostileLeg}
  */
 const leg = (over = {}) => ({
   missionType: '1',
@@ -25,7 +25,7 @@ const leg = (over = {}) => ({
   ...over,
 });
 
-describe('attackAlarm/pure — isUnderAttack', () => {
+describe('threatHighlight/pure — isUnderAttack', () => {
   it('treats a missing flag (null/undefined) as NOT under attack', () => {
     expect(isUnderAttack(null)).toBe(false);
     expect(isUnderAttack(undefined)).toBe(false);
@@ -49,7 +49,7 @@ describe('attackAlarm/pure — isUnderAttack', () => {
   });
 });
 
-describe('attackAlarm/pure — summarizeAttacks', () => {
+describe('threatHighlight/pure — summarizeAttacks', () => {
   it('returns the empty summary for no legs', () => {
     expect(summarizeAttacks([])).toEqual({ count: 0, soonestArrivalAt: 0, targets: [] });
   });
@@ -97,7 +97,7 @@ describe('attackAlarm/pure — summarizeAttacks', () => {
   });
 });
 
-describe('attackAlarm/pure — attackFingerprint', () => {
+describe('threatHighlight/pure — attackFingerprint', () => {
   it('combines count and soonest arrival into a stable string', () => {
     expect(attackFingerprint({ count: 3, soonestArrivalAt: 100, targets: [] })).toBe('3|100');
     expect(attackFingerprint({ count: 0, soonestArrivalAt: 0, targets: [] })).toBe('0|0');
@@ -110,7 +110,7 @@ describe('attackAlarm/pure — attackFingerprint', () => {
   });
 });
 
-describe('attackAlarm/pure — formatEta', () => {
+describe('threatHighlight/pure — formatEta', () => {
   it('collapses non-positive / non-finite to a dash', () => {
     expect(formatEta(0)).toBe('—');
     expect(formatEta(-10)).toBe('—');

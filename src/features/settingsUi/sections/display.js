@@ -4,7 +4,7 @@
 // readability-boost toggle. New visual-only toggles (event-box tweaks,
 // fleet-movement link styling, etc.) belong here.
 
-import { ATTACK_ALARM_TEST_EVENT } from '../../../lib/ogeEvents.js';
+import { THREAT_HIGHLIGHT_TEST_EVENT } from '../../../lib/ogeEvents.js';
 
 /**
  * @typedef {import('../controls.js').SettingsSection} SettingsSection
@@ -45,11 +45,11 @@ export const displaySection = {
       // checkbox, so the player can see it before opting in) — the feature
       // listens for the event. `id` stays the legacy persisted key so existing
       // users' saved toggle survives the rename.
-      id: 'attackAlarm',
+      id: 'threatHighlight',
       label: 'Under-attack highlight (full-screen banner in the open tab)',
       type: 'checkbox',
       buttonText: 'Preview',
-      onclick: () => document.dispatchEvent(new CustomEvent(ATTACK_ALARM_TEST_EVENT)),
+      onclick: () => document.dispatchEvent(new CustomEvent(THREAT_HIGHLIGHT_TEST_EVENT)),
     },
   ],
 };

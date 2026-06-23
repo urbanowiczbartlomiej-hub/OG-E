@@ -5,7 +5,7 @@
 // opt-in from the Display settings section, with a "Preview" button so the
 // player can see what it looks like before committing.
 //
-// # Strictly an in-tab rendering — NOT an "attack alarm"
+// # Strictly an in-tab rendering — NOT an "threat highlight"
 //
 // This feature only makes the attack info OGame ALREADY shows (the top-bar
 // flag) impossible to miss for a player who is looking at the open tab. It is
@@ -44,7 +44,7 @@
 import { injectStyle } from '../../lib/dom.js';
 import { GAME } from '../../lib/gameDom.js';
 import { settingsStore } from '../../state/settings.js';
-import { EVENT_BOX_LOADED_EVENT, ATTACK_ALARM_TEST_EVENT } from '../../lib/ogeEvents.js';
+import { EVENT_BOX_LOADED_EVENT, THREAT_HIGHLIGHT_TEST_EVENT } from '../../lib/ogeEvents.js';
 import {
   isUnderAttack,
   summarizeAttacks,
@@ -52,9 +52,9 @@ import {
   formatEta,
 } from './pure.js';
 
-const STYLE_ID = 'oge-attack-alarm-style';
-const OVERLAY_ID = 'oge-attack-overlay';
-const BANNER_ID = 'oge-attack-banner';
+const STYLE_ID = 'oge-threat-highlight-style';
+const OVERLAY_ID = 'oge-threat-overlay';
+const BANNER_ID = 'oge-threat-banner';
 
 /** OGame top-bar attack flag. Single-feature selector — kept local. */
 const ATTACK_ALERT_ID = 'attack_alert';
@@ -66,11 +66,11 @@ const PREVIEW_MS = 10000;
 const POLL_MS = 25000;
 
 const CSS = `
-@keyframes oge-attack-vig {
+@keyframes oge-threat-vig {
   0%, 100% { opacity: .35; }
   50% { opacity: 1; }
 }
-@keyframes oge-attack-ban {
+@keyframes oge-threat-ban {
   0%, 100% { background: #c20f0f; }
   50% { background: #6e0404; }
 }
@@ -82,7 +82,7 @@ const CSS = `
   pointer-events: none;
   border: 7px solid #ff1f1f;
   box-shadow: inset 0 0 70px 16px rgba(255, 20, 20, .7);
-  animation: oge-attack-vig 1.2s ease-in-out infinite;
+  animation: oge-threat-vig 1.2s ease-in-out infinite;
 }
 #${BANNER_ID} {
   display: none;
@@ -97,9 +97,9 @@ const CSS = `
   letter-spacing: .3px;
   cursor: pointer;
   box-shadow: 0 2px 12px rgba(0, 0, 0, .55);
-  animation: oge-attack-ban 1.2s ease-in-out infinite;
+  animation: oge-threat-ban 1.2s ease-in-out infinite;
 }
-#${BANNER_ID} .oge-attack-x {
+#${BANNER_ID} .oge-threat-x {
   flex: 0 0 auto;
   margin-left: auto;
   background: rgba(0, 0, 0, .25);
@@ -129,12 +129,12 @@ const denseCoords = (/** @type {string | null | undefined} */ s) =>
   (s || '').replace(/[\s[\]]/g, '');
 
 /**
- * Install the attack alarm. Idempotent — a second call returns the existing
+ * Install the threat highlight. Idempotent — a second call returns the existing
  * dispose fn. Top-frame only at the call site (`content.js`).
  *
  * @returns {() => void} dispose
  */
-export const installAttackAlarm = () => {
+export const installThreatHighlight = () => {
   if (installed) return installed.dispose;
 
   injectStyle(STYLE_ID, CSS);
@@ -264,7 +264,7 @@ export const installAttackAlarm = () => {
 
     const x = document.createElement('button');
     x.type = 'button';
-    x.className = 'oge-attack-x';
+    x.className = 'oge-threat-x';
     x.textContent = '✕';
     x.title = 'Dismiss (re-fires if the attack changes)';
     x.addEventListener('click', (e) => {
@@ -312,7 +312,7 @@ export const installAttackAlarm = () => {
       if (visible && !previewActive) hide();
       return;
     }
-    if (!settingsStore.get().attackAlarm) return; // feature off — ignore real attacks
+    if (!settingsStore.get().threatHighlight) return; // feature off — ignore real attacks
 
     parseEventList();
     const fp = attackFingerprint(lastSummary);
@@ -342,11 +342,11 @@ export const installAttackAlarm = () => {
   const onTest = () => runPreview();
 
   document.addEventListener(EVENT_BOX_LOADED_EVENT, onEventBox);
-  document.addEventListener(ATTACK_ALARM_TEST_EVENT, onTest);
+  document.addEventListener(THREAT_HIGHLIGHT_TEST_EVENT, onTest);
 
   const unsubSettings = settingsStore.subscribe(() => {
     if (previewActive) return;
-    if (!settingsStore.get().attackAlarm) {
+    if (!settingsStore.get().threatHighlight) {
       mutedFingerprint = '';
       if (visible) hide();
       return;
@@ -373,7 +373,7 @@ export const installAttackAlarm = () => {
     }
     unsubSettings();
     document.removeEventListener(EVENT_BOX_LOADED_EVENT, onEventBox);
-    document.removeEventListener(ATTACK_ALARM_TEST_EVENT, onTest);
+    document.removeEventListener(THREAT_HIGHLIGHT_TEST_EVENT, onTest);
     if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
     if (banner && banner.parentNode) banner.parentNode.removeChild(banner);
     overlay = banner = bannerText = null;
@@ -393,7 +393,7 @@ export const installAttackAlarm = () => {
  *
  * @returns {void}
  */
-export const _resetAttackAlarmForTest = () => {
+export const _resetThreatHighlightForTest = () => {
   if (installed) installed.dispose();
   installed = null;
 };
