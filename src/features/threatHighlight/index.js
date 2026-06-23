@@ -42,6 +42,7 @@
 // local here rather than in `lib/gameDom.js` (single-feature-selector rule).
 
 import { injectStyle } from '../../lib/dom.js';
+import { clock } from '../../lib/clock.js';
 import { GAME } from '../../lib/gameDom.js';
 import { settingsStore } from '../../state/settings.js';
 import { EVENT_BOX_LOADED_EVENT, THREAT_HIGHLIGHT_TEST_EVENT } from '../../lib/ogeEvents.js';
@@ -219,6 +220,7 @@ export const installThreatHighlight = () => {
   // 1s tick — live-refresh the in-banner ETA countdown. Deliberately does NOT
   // touch the tab title or favicon: this highlight is in-tab only.
   const onTick = () => {
+    if (document.hidden) return; // no repaint while the tab is hidden
     paintBanner();
   };
 
@@ -304,6 +306,10 @@ export const installThreatHighlight = () => {
 
   // ── core decision ────────────────────────────────────────────────────────
   const checkAttack = () => {
+    // Presence gate: never read the game's attack flag / event list while the
+    // player is away (the ToolDev toleration condition). The visibility-paused
+    // poll snaps and re-checks on return.
+    if (document.hidden) return;
     const el = document.getElementById(ATTACK_ALERT_ID);
     const under = isUnderAttack(el ? el.className : null);
 
@@ -333,16 +339,27 @@ export const installThreatHighlight = () => {
     mo.observe(el, { attributes: true, attributeFilter: ['class'] });
   };
 
-  const poll = window.setInterval(() => {
+  // Slow safety re-check on the shared visibility-aware clock: it PAUSES while
+  // the tab is hidden (zero background polling of the attack flag) and fires
+  // once on return — re-binding the observer and re-checking. POLL_MS rounds up
+  // to the clock's base grid.
+  const unsubPoll = clock.subscribe(() => {
     bindAlertObserver(); // re-bind if OGame replaced the node on an AJAX nav
     checkAttack();
-  }, POLL_MS);
+  }, { everyMs: POLL_MS });
 
   const onEventBox = () => checkAttack();
   const onTest = () => runPreview();
 
   document.addEventListener(EVENT_BOX_LOADED_EVENT, onEventBox);
   document.addEventListener(THREAT_HIGHLIGHT_TEST_EVENT, onTest);
+
+  // While hidden, stop observing the attack flag altogether (the clock already
+  // paused the poll); the snap-on-return re-binds it via the poll subscriber.
+  const onVisibility = () => {
+    if (document.hidden && mo) { mo.disconnect(); mo = null; }
+  };
+  document.addEventListener('visibilitychange', onVisibility);
 
   const unsubSettings = settingsStore.subscribe(() => {
     if (previewActive) return;
@@ -354,15 +371,20 @@ export const installThreatHighlight = () => {
     checkAttack();
   });
 
-  bindAlertObserver();
-  checkAttack();
+  // Bind + first check only if the player is actually here; if the tab loads
+  // hidden, the clock's snap-on-return binds + checks when they arrive.
+  if (!document.hidden) {
+    bindAlertObserver();
+    checkAttack();
+  }
 
   const dispose = () => {
     if (mo) {
       mo.disconnect();
       mo = null;
     }
-    clearInterval(poll);
+    unsubPoll();
+    document.removeEventListener('visibilitychange', onVisibility);
     if (tick) {
       clearInterval(tick);
       tick = 0;

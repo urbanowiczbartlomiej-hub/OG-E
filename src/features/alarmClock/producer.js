@@ -268,6 +268,12 @@ export const installAlarmClockProducer = (opts = {}) => {
   // force intent therefore survives for the queued re-run.
   let running = false;
   let rerunQueued = false;
+  // Presence gate. ToolDev toleration is conditional on NEVER reading the game
+  // while the player is away. When the tab is hidden we skip the entire run (no
+  // event-list read, no ntfy reconcile) and remember to reconcile ONCE on
+  // return. `document.hidden` covers tab-switch, minimise, and — crucial on
+  // mobile — app-switch / screen-lock.
+  let pendingVisible = false;
 
   const doRun = async () => {
     const forceSettings = pendingForce;
@@ -411,6 +417,8 @@ export const installAlarmClockProducer = (opts = {}) => {
   // above). At most one `doRun` is ever in flight; a trigger that lands during
   // a run is coalesced and drained once when the run finishes.
   const run = async () => {
+    // Away from the tab → do nothing (no game read, no ntfy). Reconcile on return.
+    if (document.hidden) { pendingVisible = true; return; }
     if (running) { rerunQueued = true; return; }
     running = true;
     try {
@@ -463,6 +471,13 @@ export const installAlarmClockProducer = (opts = {}) => {
   // an ordinary debounced run could no-op them away.
   const onManualFs = () => force();
   document.addEventListener(MANUAL_FS_CHANGED_EVENT, onManualFs);
+
+  // Reconcile once when the player returns to the tab — drains the run that
+  // bailed while hidden (see `run`). While hidden, nothing here touches the game.
+  const onVisibility = () => {
+    if (!document.hidden && pendingVisible) { pendingVisible = false; scheduleRun(); }
+  };
+  document.addEventListener('visibilitychange', onVisibility);
 
   // Force a push on any alarmClock-setting change so master/token edits in
   // the in-game Settings panel propagate immediately. The wave enable +
@@ -520,6 +535,7 @@ export const installAlarmClockProducer = (opts = {}) => {
     dispose: () => {
       document.removeEventListener(EVENT_BOX_LOADED_EVENT, onEventBox);
       document.removeEventListener(MANUAL_FS_CHANGED_EVENT, onManualFs);
+      document.removeEventListener('visibilitychange', onVisibility);
       unsubConfig();
       unsubScanConfig();
       unsubAlarmClockConfig();
