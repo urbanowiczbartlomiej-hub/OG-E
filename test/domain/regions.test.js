@@ -15,6 +15,9 @@ import { describe, it, expect } from 'vitest';
 import {
   findBestRegions,
   findFreeSystems,
+  findNeighbourhoodCandidates,
+  spaceOutCandidates,
+  systemIntentHeat,
   scoreRegion,
   sortRegionsByStrategy,
   MIN_REGION_LENGTH,
@@ -249,5 +252,107 @@ describe('sortRegionsByStrategy — strong penalty (2b)', () => {
     const sorted = sortRegionsByStrategy(free, 'peaceful');
     expect(sorted[0].start).toBe(2); // the strong-free system wins
     expect(sorted[1].start).toBe(1);
+  });
+});
+
+/**
+ * An occupied slot owned by `id` with a rank class (bandit/honored).
+ * @param {number} id @param {string} rankClass @param {number} [rank]
+ */
+const ranked = (id, rankClass, rank) => ({
+  status: 'occupied', player: { id, name: 'P' + id, rankClass, rank },
+});
+
+describe('scoreRegion — banned = eternal vacation', () => {
+  it('counts a banned bandit as vacation, never as a threat or a rank', () => {
+    const scans = scansOf({
+      '4:1': {
+        8: empty,
+        3: { status: 'banned', player: { id: 7, name: 'B', rank: 5, rankClass: 'rank_bandit3' } },
+      },
+    });
+    const sc = scoreRegion({ galaxy: 4, start: 1, end: 1 }, scans, { ...G10 });
+    expect(sc.vacation).toBe(1);     // folded into the protected bucket
+    expect(sc.bandits).toBe(0);      // NOT a bandit threat
+    expect(sc.banditTierSum).toBe(0);
+    expect(sc.ranks).toEqual([]);    // rank not recorded → not "above you"
+  });
+
+  it('does not let a banned strong player count via the cache', () => {
+    const scans = scansOf({
+      '4:1': { 8: empty, 3: { status: 'banned', player: { id: 9, name: 'S' } } },
+    });
+    /** @type {any} */
+    const players = { 9: { id: 9, name: 'S', flags: { strong: true } } };
+    const sc = scoreRegion({ galaxy: 4, start: 1, end: 1 }, scans, { players, ...G10 });
+    expect(sc.strong).toBe(0);
+  });
+});
+
+describe('systemIntentHeat', () => {
+  it('is 0 for an empty/quiet system', () => {
+    const scans = scansOf({ '4:1': { 8: empty } });
+    expect(systemIntentHeat(scans, 4, 1, { inactive: 2.5 })).toBe(0);
+  });
+
+  it('trends negative (red) for a bandit under a negative bandit weight', () => {
+    const scans = scansOf({ '4:1': { 3: ranked(1, 'rank_bandit3') } });
+    expect(systemIntentHeat(scans, 4, 1, { bandit: -3 })).toBeLessThan(0);
+  });
+
+  it('trends positive (green) for a farm under a positive inactive weight', () => {
+    const scans = scansOf({ '4:1': { 3: inact(2) } });
+    expect(systemIntentHeat(scans, 4, 1, { inactive: 2.5 })).toBeGreaterThan(0);
+  });
+});
+
+describe('findNeighbourhoodCandidates', () => {
+  it('windows [S-R, S+R] around each free-slot centre', () => {
+    const scans = scansOf({ '4:5': { 8: empty } });
+    const res = findNeighbourhoodCandidates(scans, { positions: [8], radius: 2, ...G10 });
+    expect(res).toHaveLength(1);
+    expect(res[0].center).toBe(5);
+    expect(res[0].start).toBe(3);
+    expect(res[0].end).toBe(7);
+    expect(res[0].length).toBe(5);
+  });
+
+  it('qualifies a centre on ANY free slot (not all, unlike streak mode)', () => {
+    const scans = scansOf({ '4:5': { 8: empty, 9: occ(1) } });
+    const res = findNeighbourhoodCandidates(scans, { positions: [8, 9], radius: 1, ...G10 });
+    expect(res).toHaveLength(1);
+    expect(res[0].center).toBe(5);
+  });
+
+  it('drops the N worst players from the score and reports them', () => {
+    const scans = scansOf({
+      '4:5': { 8: empty },
+      '4:6': { 3: ranked(9, 'rank_bandit3') },
+    });
+    const res = findNeighbourhoodCandidates(scans, {
+      positions: [8], radius: 2, excludeN: 1, weights: { bandit: -3 }, ...G10,
+    });
+    expect(res[0].excluded ?? []).toHaveLength(1);
+    expect(res[0].excluded?.[0]?.id).toBe(9);
+    expect(res[0].score?.bandits).toBe(0); // excluded → no longer a threat in the score
+  });
+});
+
+describe('spaceOutCandidates', () => {
+  /** @param {Partial<import('../../src/domain/regions.js').Region>} r */
+  const region = (r) => /** @type {any} */ ({ length: 5, matched: 1, gaps: 0, ...r });
+
+  it('suppresses an overlapping lower-ranked centre, keeps a distant one', () => {
+    const near = region({ galaxy: 4, center: 6, start: 4, end: 8 });
+    const far = region({ galaxy: 4, center: 9, start: 7, end: 1 });
+    // Input order = rank order (best first); centre 5 wins its overlap with 6.
+    const best = region({ galaxy: 4, center: 5, start: 3, end: 7 });
+    const out = spaceOutCandidates([best, near, far], 2, 10);
+    expect(out.map((r) => r.center)).toEqual([5, 9]);
+  });
+
+  it('passes non-neighbourhood regions (no center) straight through', () => {
+    const streak = region({ galaxy: 4, start: 1, end: 5 });
+    expect(spaceOutCandidates([streak], 2, 10)).toHaveLength(1);
   });
 });

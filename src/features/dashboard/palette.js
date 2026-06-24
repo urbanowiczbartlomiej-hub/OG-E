@@ -85,3 +85,31 @@ export const UNSCANNED_COLOR = '#1a1a2a';
  * against the page background, which is a similar dark shade.
  */
 export const UNSCANNED_BORDER = '1px solid #222';
+
+/**
+ * Map a Colony-Scout "intent heat" value (see `domain/regions.js`
+ * {@link systemIntentHeat}, range −1..+1) to a diverging colour:
+ *
+ *   −1  ───────────  0  ───────────  +1
+ *   red          neutral grey         green
+ *
+ * Unlike {@link STATUS_COLORS} (which says WHAT is in a system), this says how
+ * the system reads for the CURRENT strategy — a super-aggressor under "Peaceful"
+ * trends red, a cluster of farms under "Farmer" trends green, an empty/neutral
+ * system stays grey. Pure: a heat number in → an `rgb()` string out.
+ *
+ * @param {number} heat   −1..+1 (values outside are clamped).
+ * @returns {string} `rgb(r,g,b)`
+ */
+export const heatColor = (heat) => {
+  const h = Math.max(-1, Math.min(1, Number.isFinite(heat) ? heat : 0));
+  // Neutral mid-grey; saturate toward green (good) or red (bad).
+  const grey = [90, 96, 104];
+  const good = [54, 178, 84];
+  const bad = [202, 64, 56];
+  const t = Math.abs(h);
+  const target = h >= 0 ? good : bad;
+  /** @param {number} i */
+  const mix = (i) => Math.round(grey[i] + (target[i] - grey[i]) * t);
+  return `rgb(${mix(0)},${mix(1)},${mix(2)})`;
+};

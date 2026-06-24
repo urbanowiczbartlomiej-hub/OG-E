@@ -4,6 +4,43 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.30.11] — 2026-06-24
+
+### Changed
+
+- **Colony Scout: the play-style strategies now analyse the AREA around a colony
+  spot, not just a slot streak.** Picking Peaceful / Farmer / Honor PvP /
+  Aggressive switches to a new control set: a **Radius** slider (how far left and
+  right of the spot to weigh the neighbourhood) and an **Ignore worst** option
+  that drops the N most stat-ruining neighbours from the score — e.g. a top-tier
+  bandit ranked far above you — so one outlier no longer condemns an otherwise
+  great area (you'll just avoid that single system). Longest streak is unchanged
+  (Slots + Tolerance).
+- **Colony Scout: the result strip is now coloured by your intent.** Each system
+  is tinted red → grey → green by how well it fits the CURRENT strategy and its
+  weights (a super-aggressor reads red under Peaceful; farms read green under
+  Farmer), instead of by raw status. Move the weight sliders and the map
+  re-tints live.
+- **Colony Scout: the table is interactive.** Click any row to inspect that
+  candidate below (top row selected by default). Hovering a system pops a
+  friendly card with its occupants, ranks and free slots; click a cell to pin
+  it. Systems are clearly separated and the colony spot is ringed.
+- **Colony Scout: clearer neighbour read-out.** The "Nbrs" tooltip now always
+  spells out the bandits (with tier), strong/active players, honoured fighters
+  and **how many neighbours out-rank you** — the headline danger for a fresh
+  colony.
+- **Banned players are treated as an eternal vacation.** A banned account can
+  never attack, so it no longer counts as a bandit, a strong threat or a
+  "ranked above you" danger anywhere in the Scout — it's folded into the
+  protected/vacation tally instead.
+- **Scanned data: clearer per-position stats.** Dropped the confusing "systems
+  scanned" coverage number (with the full map it was always ~100%) and added a
+  heading that names the position the counts are for — so "Mine: 3" reads as
+  "3 of my colonies on slot 8", not "I only have 3 colonies".
+- **Alarm clock settings tidied.** The "Enable alarm clock" switch now lives
+  inside the token box (like the sync panel), and the topic hint points at the
+  token field right above it.
+
 ## [1.30.10] — 2026-06-24
 
 ### Changed

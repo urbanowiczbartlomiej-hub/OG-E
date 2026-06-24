@@ -133,6 +133,41 @@
   .strip-cell { flex: 1; min-width: 2px; box-shadow: inset -1px 0 0 rgba(0,0,0,.45); }
   .strip-cell:last-child { box-shadow: none; }
   .region-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; font-size: 11px; }
+  /* Interactive candidate table: a row click selects which candidate the
+     detail panel below describes (default = the top row). */
+  .streak-table tbody tr { cursor: pointer; }
+  .streak-table tbody tr.selected { background: #1c3346; box-shadow: inset 3px 0 0 #4a9eff; }
+  /* Heat strip (neighbourhood strategies): taller than the status strip, hard
+     BLACK separators between systems (gap over a black bg), the centre settle
+     system ringed white, the focused/hovered cell ringed blue. Coloured by
+     intent (palette.heatColor), not raw status. */
+  .region-strip.heat { height: 22px; gap: 1px; background: #000; border-radius: 4px; padding: 1px; overflow: visible; }
+  .region-strip.heat .strip-cell { min-width: 6px; box-shadow: none; cursor: pointer; border-radius: 1px; }
+  .region-strip.heat .strip-cell.center { outline: 2px solid #fff; outline-offset: -2px; }
+  .region-strip.heat .strip-cell.focus { outline: 2px solid #4a9eff; outline-offset: -2px; }
+  /* Friendly hover/pin popover over a strip cell (styled like the planet-badge
+     legend and the in-game "?" help). Anchored ABOVE the strip; `left` is set
+     per-cell in JS. pointer-events:none so it never blocks hovering the cells
+     beneath it — pinning is driven by clicking the cell. */
+  .region-strip-wrap { position: relative; margin-top: 8px; }
+  .region-pop {
+    display: none; position: absolute; bottom: calc(100% + 8px); left: 0;
+    z-index: 99999; width: max-content; max-width: 320px;
+    background: #0d1a24; border: 1px solid #2c5470; border-radius: 6px;
+    padding: 8px 11px; color: #cfe6f5; font-size: 11px; line-height: 1.5;
+    box-shadow: 0 2px 14px rgba(0,0,0,.7); text-align: left; pointer-events: none;
+  }
+  .region-pop.pinned { border-color: #4a9eff; box-shadow: 0 2px 14px rgba(74,158,255,.35); }
+  .region-pop .rp-head { font-weight: 700; color: #fff; margin: 0 0 4px; }
+  .region-pop .rp-time { color: #7f93a3; font-size: 10px; margin: 0 0 6px; }
+  .region-pop .rp-row { display: flex; align-items: center; gap: 8px; margin: 3px 0; white-space: nowrap; }
+  .region-pop .rp-dot { flex: 0 0 9px; width: 9px; height: 9px; border-radius: 2px; }
+  .region-pop .rp-free { color: #0c0; margin-top: 5px; }
+  .region-pop .rp-foot { margin-top: 7px; color: #7f93a3; font-size: 10px; }
+  .region-excluded { margin-top: 6px; font-size: 12px; color: #d9a441; }
+  .heat-legend { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 11px; color: #888; }
+  .heat-ramp { width: 120px; height: 10px; border-radius: 3px;
+    background: linear-gradient(to right, rgb(202,64,56), rgb(90,96,104), rgb(54,178,84)); }
   /* Custom weight panel */
   details.weight-panel { margin-top: 10px; }
   details.weight-panel > summary {
@@ -480,34 +515,52 @@
       profile: player density, honour ranks, farm targets, proximity to your existing colonies.
     </p>
     <div class="controls">
-      <label>Slots:</label>
-      <input id="freePosInput" value="15" size="8" placeholder="e.g. 7-9, 15"
-        title="Which planet slots to analyse — a list or range like 8 or 12-15. A system counts only when every listed slot is confirmed empty.">
-      <span style="color:#666;font-size:12px;">list or range, e.g. 7-9, 15</span>
-      <label>Tolerance:</label>
-      <select id="freeGapsSelect"
-        title="How many non-matching (occupied or unscanned) systems a region may bridge.">
-        <option value="0" selected>perfect streak</option>
-        <option value="1">allow 1 gap</option>
-        <option value="2">allow 2 gaps</option>
-      </select>
       <label>Strategy:</label>
       <select id="freeStrategySelect"
-        title="Re-ranks regions by neighbourhood profile. Affects sort order, not which regions are found.">
+        title="Longest streak hunts a long run of a free slot (Slots + Tolerance). The other strategies instead analyse the AREA around each settle spot (Radius + Ignore worst), ranked by how the neighbourhood fits your play style.">
         <option value="longest">Longest streak</option>
         <option value="peaceful">Peaceful settler</option>
         <option value="farmer">Farmer</option>
         <option value="honor_pvp">Honor PvP</option>
         <option value="aggressive">Aggressive PvP</option>
       </select>
-      <label>Placement:</label>
-      <select id="freeExpansionSelect"
-        title="Colony placement preference — combinable with any strategy above. 'Spread' favours regions 100+ systems from your existing colonies; 'Cluster' rewards regions near them (eco trade-routes, quick resupply).">
-        <option value="0" selected>No preference</option>
-        <option value="2">Spread out</option>
-        <option value="-2">Cluster near base</option>
-      </select>
+      <label>Slots:</label>
+      <input id="freePosInput" value="15" size="8" placeholder="e.g. 7-9, 15"
+        title="Which planet slots you'd settle on — a list or range like 8 or 12-15. In Longest streak EVERY listed slot must be empty; in the area strategies a system qualifies as a centre when ANY listed slot is free.">
+      <span style="color:#666;font-size:12px;">list or range, e.g. 7-9, 15</span>
+      <span id="streakOnlyControls">
+        <label>Tolerance:</label>
+        <select id="freeGapsSelect"
+          title="How many non-matching (occupied or unscanned) systems a region may bridge.">
+          <option value="0" selected>perfect streak</option>
+          <option value="1">allow 1 gap</option>
+          <option value="2">allow 2 gaps</option>
+        </select>
+      </span>
+      <span id="nbrOnlyControls" style="display:none;">
+        <label>Ignore worst:</label>
+        <select id="freeExcludeN"
+          title="Drop the N most stat-ruining neighbours from each window's score (e.g. a top-tier bandit ranked far above you) — you'll just avoid that one system. Rank-relative: the further above you, the more droppable.">
+          <option value="0" selected>none</option>
+          <option value="1">1 player</option>
+          <option value="2">2 players</option>
+          <option value="3">3 players</option>
+        </select>
+        <label>Placement:</label>
+        <select id="freeExpansionSelect"
+          title="Colony placement preference. 'Spread' favours areas 100+ systems from your existing colonies; 'Cluster' rewards areas near them (eco trade-routes, quick resupply).">
+          <option value="0" selected>No preference</option>
+          <option value="2">Spread out</option>
+          <option value="-2">Cluster near base</option>
+        </select>
+      </span>
       <span id="freeCountInfo" style="color:#888;font-size:13px;margin-left:auto;"></span>
+    </div>
+    <div id="freeRadiusRow" style="display:none; align-items:center; gap:10px; margin-top:8px;">
+      <label style="white-space:nowrap;">Radius ±<span id="freeRadiusVal">15</span>:</label>
+      <input type="range" id="freeRadius" class="weight-slider" style="flex:1;"
+        min="2" max="50" step="1" value="15"
+        title="Half-width of the analysed window: the area scored is [S−R, S+R] systems around each settle spot S, including all 15 positions of every system in it.">
     </div>
     <details class="weight-panel">
       <summary>⚙ Adjust weights</summary>
@@ -563,13 +616,12 @@
     ⚙ Settings further down. The queue preview shows what's pending.
   </p>
 
-  <label class="rem-master-row">
-    <input type="checkbox" id="remMasterToggle"> Enable alarm clock
-  </label>
-
-  <div id="remBody">
   <div class="rem-card" style="margin-top:14px">
-    <div class="rem-row">
+    <label class="rem-master-row">
+      <input type="checkbox" id="remMasterToggle"> Enable alarm clock
+    </label>
+    <div id="remBody">
+    <div class="rem-row" style="margin-top:12px">
       <label>ntfy.sh access token</label>
       <input id="remNtfyToken" class="rem-mono" type="password" autocomplete="off" spellcheck="false" placeholder="tk_…">
       <button id="remRevealNtfy" class="rem-eye" type="button"
@@ -626,6 +678,7 @@
         self-hosted ntfy server.)
       </p>
     </details>
+    </div>
   </div>
 
   <div class="rem-card" style="margin-top:14px">
@@ -646,7 +699,6 @@
       <div id="alarmClockConfigBody"></div>
     </div>
   </details>
-  </div>
 </section>
 
 <section id="routesSection" class="tab-section">

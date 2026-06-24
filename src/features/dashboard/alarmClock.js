@@ -68,7 +68,7 @@ let topicRevealed = false;
 let copyResetTimer = 0;
 
 /** Shown in the topic slot before any ntfy token is configured. */
-const NO_TOPIC_TEXT = '— (set your ntfy.sh access token in OG-E settings first)';
+const NO_TOPIC_TEXT = '— (set your ntfy.sh access token above first)';
 
 /**
  * Callback handed in by the host page (`features/dashboard/index.js`)

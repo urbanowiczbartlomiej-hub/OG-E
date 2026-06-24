@@ -134,16 +134,24 @@ export const renderGalaxyMap = (opts) => {
   filterBar.appendChild(filterHint);
   containerEl.appendChild(filterBar);
 
-  // ── Global stats row ────────────────────────────────────────────────
+  // ── Per-position breakdown ──────────────────────────────────────────
+  // No "how many systems scanned" coverage card: the API occupancy feed
+  // means every system is known, so that number is always ~100% and only
+  // ever misled (it read like a whole-empire total). What matters is WHAT
+  // sits on the user's TARGET position(s) — so caption the status cards
+  // with the exact slot(s) they're filtered to, killing the "I have 16
+  // colonies, why does it say 3?" confusion (those 3 are on slot 8).
+  const posCaption = document.createElement('div');
+  posCaption.style.cssText = 'font-size:12px;color:#9fb4c4;margin-bottom:8px;';
+  posCaption.textContent =
+    sortedTargets.length === 0
+      ? 'No target position selected — pick one in the Galaxy-Scan config below.'
+      : `On position${sortedTargets.length === 1 ? '' : 's'} ${sortedTargets.join(', ')}, across the whole map:`;
+  containerEl.appendChild(posCaption);
+
   const statsRow = document.createElement('div');
   statsRow.style.cssText =
     'display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;';
-
-  // Always-present "total" card first — it anchors the row and tells the
-  // user how much data the rest of the numbers are drawn from.
-  statsRow.appendChild(
-    makeStatCard('#4a9eff', global.total, 'Target positions scanned'),
-  );
   for (const status of STATUS_PRIORITY) {
     const count = global[status];
     // Hide zero-count statuses to keep the row compact; a row dense with
@@ -176,22 +184,21 @@ export const renderGalaxyMap = (opts) => {
     const galStats = byGalaxy[g];
     if (!galStats) continue;
 
-    // Count systems in THIS galaxy that have actually been scanned.
-    // `galStats.total` counts target-position observations (can be ≥
-    // number-of-systems), which is the wrong denominator for the
-    // "N/499" label. Iterate the scans dict directly instead.
-    let galCount = 0;
+    // Skip a galaxy with no data at all. (With the API occupancy feed this
+    // is rare — every galaxy is known — but the live-only fallback can still
+    // have empty galaxies.)
+    let hasData = false;
     for (const key of Object.keys(scans)) {
       if (key.startsWith(g + ':') && scans[/** @type {`${number}:${number}`} */ (key)]?.positions) {
-        galCount++;
+        hasData = true;
+        break;
       }
     }
-    if (galCount === 0) continue;
+    if (!hasData) continue;
 
     containerEl.appendChild(
       renderGalaxySection({
         galaxy: g,
-        galCount,
         galStats,
         scans,
         targetPositions,
@@ -243,7 +250,6 @@ const makeStatCard = (color, value, label) => {
  *
  * @param {{
  *   galaxy: number,
- *   galCount: number,
  *   galStats: StatusCounts,
  *   scans: GalaxyScans,
  *   targetPositions: Set<number>,
@@ -256,7 +262,6 @@ const makeStatCard = (color, value, label) => {
 const renderGalaxySection = (args) => {
   const {
     galaxy: g,
-    galCount,
     galStats,
     scans,
     targetPositions,
@@ -300,12 +305,6 @@ const renderGalaxySection = (args) => {
     }
   }
   header.appendChild(progressWrap);
-
-  const countLabel = document.createElement('span');
-  countLabel.style.cssText =
-    'font-size:12px;color:#888;min-width:70px;text-align:right;';
-  countLabel.textContent = galCount + '/' + MAX_SYS;
-  header.appendChild(countLabel);
 
   const miniStats = document.createElement('span');
   miniStats.style.cssText = 'font-size:11px;color:#666;';

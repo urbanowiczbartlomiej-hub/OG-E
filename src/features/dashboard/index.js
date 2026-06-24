@@ -233,6 +233,12 @@ const expandedGalaxies = new Set();
 /** @type {HTMLSelectElement} */ let freeGapsSelect;
 /** @type {HTMLSelectElement} */ let freeStrategySelect;
 /** @type {HTMLSelectElement} */ let freeExpansionSelect;
+/** @type {HTMLInputElement} */ let freeRadius;
+/** @type {HTMLElement | null} */ let freeRadiusVal;
+/** @type {HTMLSelectElement} */ let freeExcludeN;
+/** @type {HTMLElement | null} */ let streakOnlyControls;
+/** @type {HTMLElement | null} */ let nbrOnlyControls;
+/** @type {HTMLElement | null} */ let freeRadiusRow;
 /** @type {HTMLElement} */ let freeContainer;
 /** @type {HTMLElement | null} */ let freeCountInfoEl;
 
@@ -315,7 +321,16 @@ const boot = async () => {
     && freeExpansionSelect.querySelector(`[value="${String(scoutPrefs.expansion)}"]`)) {
     freeExpansionSelect.value = String(scoutPrefs.expansion);
   }
+  if (scoutPrefs.radius !== undefined && freeRadius) {
+    freeRadius.value = String(scoutPrefs.radius);
+    if (freeRadiusVal) freeRadiusVal.textContent = String(scoutPrefs.radius);
+  }
+  if (scoutPrefs.excludeN !== undefined
+    && freeExcludeN?.querySelector(`[value="${String(scoutPrefs.excludeN)}"]`)) {
+    freeExcludeN.value = String(scoutPrefs.excludeN);
+  }
   applyPresetToSliders(freeStrategySelect.value);
+  updateModeControls();
 
   chromeStore.onChanged((changes) => {
     // Filter: only re-render when one of the SELECTED universe's keys
@@ -461,6 +476,12 @@ const wireDom = () => {
   freeGapsSelect = /** @type {HTMLSelectElement} */ (document.getElementById('freeGapsSelect'));
   freeStrategySelect = /** @type {HTMLSelectElement} */ (document.getElementById('freeStrategySelect'));
   freeExpansionSelect = /** @type {HTMLSelectElement} */ (document.getElementById('freeExpansionSelect'));
+  freeRadius = /** @type {HTMLInputElement} */ (document.getElementById('freeRadius'));
+  freeRadiusVal = document.getElementById('freeRadiusVal');
+  freeExcludeN = /** @type {HTMLSelectElement} */ (document.getElementById('freeExcludeN'));
+  streakOnlyControls = document.getElementById('streakOnlyControls');
+  nbrOnlyControls = document.getElementById('nbrOnlyControls');
+  freeRadiusRow = document.getElementById('freeRadiusRow');
   freeContainer = /** @type {HTMLElement} */ (document.getElementById('freeContainer'));
   freeCountInfoEl = document.getElementById('freeCountInfo');
   for (const k of WEIGHT_FIELDS) {
@@ -776,6 +797,22 @@ const applyPresetToSliders = (strategyKey) => {
   }
 };
 
+/**
+ * Show the control set that matches the selected strategy: Longest streak hunts
+ * a free-slot run (Slots + Tolerance), the other strategies analyse the area
+ * around a settle spot (Radius + Ignore-worst + Placement). Keeping each mode's
+ * irrelevant controls hidden is what stops the "why pick a slot streak for
+ * Peaceful?" confusion. Idempotent; safe before the refs exist (tests).
+ */
+const updateModeControls = () => {
+  const streak = (freeStrategySelect?.value || 'longest') === 'longest';
+  if (streakOnlyControls) streakOnlyControls.style.display = streak ? '' : 'none';
+  if (nbrOnlyControls) nbrOnlyControls.style.display = streak ? 'none' : '';
+  // Radius lives on its own full-width row (the slider is long); flex so the
+  // slider stretches across it.
+  if (freeRadiusRow) freeRadiusRow.style.display = streak ? 'none' : 'flex';
+};
+
 /** Repaint ONLY the settlement-regions block from current controls. */
 const repaintFreeRegions = () => {
   const positions = freeRegionPositions();
@@ -803,6 +840,8 @@ const repaintFreeRegions = () => {
     maxGaps: parseInt(freeGapsSelect.value, 10) || 0,
     strategy: freeStrategySelect.value || 'longest',
     expansion: parseInt(freeExpansionSelect.value, 10) || 0,
+    radius: parseInt(freeRadius?.value, 10) || 15,
+    excludeN: parseInt(freeExcludeN?.value, 10) || 0,
     customWeights: readCustomWeights(),
     players,
     ownRank: ownProfile.rank,
@@ -917,15 +956,24 @@ const wireListeners = () => {
     safeLS.setJSON(SCOUT_PREFS_KEY, {
       strategy: freeStrategySelect.value,
       expansion: freeExpansionSelect.value,
+      radius: freeRadius?.value,
+      excludeN: freeExcludeN?.value,
     });
   };
 
   freeStrategySelect.addEventListener('change', () => {
     applyPresetToSliders(freeStrategySelect.value);
+    updateModeControls();
     saveScoutPrefs();
     repaintFreeRegions();
   });
   freeExpansionSelect.addEventListener('change', () => { saveScoutPrefs(); repaintFreeRegions(); });
+  freeRadius?.addEventListener('input', () => {
+    if (freeRadiusVal) freeRadiusVal.textContent = freeRadius.value;
+    saveScoutPrefs();
+    repaintFreeRegions();
+  });
+  freeExcludeN?.addEventListener('change', () => { saveScoutPrefs(); repaintFreeRegions(); });
 
   for (const k of WEIGHT_FIELDS) {
     weightSliders[k]?.addEventListener('input', () => {
@@ -993,6 +1041,12 @@ export const _resetDashboardForTest = () => {
     freeGapsSelect =
     freeStrategySelect =
     freeExpansionSelect =
+    freeRadius =
+    freeRadiusVal =
+    freeExcludeN =
+    streakOnlyControls =
+    nbrOnlyControls =
+    freeRadiusRow =
     freeContainer =
     freeCountInfoEl =
       /** @type {any} */ (undefined);

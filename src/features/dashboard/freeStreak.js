@@ -40,13 +40,15 @@
 import {
   findBestRegions,
   findFreeSystems,
+  findNeighbourhoodCandidates,
+  spaceOutCandidates,
+  systemIntentHeat,
   sortRegionsByStrategy,
   STRATEGIES,
   MIN_REGION_LENGTH,
 } from '../../domain/regions.js';
 import { STRIP_PRIORITY, bestStatusInSystem } from '../../domain/histogram.js';
-import { STATUS_COLORS, STATUS_LABELS, UNSCANNED_COLOR } from './palette.js';
-import { buildSystemTooltip } from './systemTooltip.js';
+import { STATUS_COLORS, STATUS_LABELS, UNSCANNED_COLOR, heatColor } from './palette.js';
 import { makeLegendSwatch } from './legend.js';
 
 /**
@@ -102,32 +104,161 @@ const stripCellStatus = (positions) =>
   positions ? bestStatusInSystem(positions, ALL_SLOTS, STRIP_PRIORITY) : null;
 
 /**
- * Build the pixel-strip `<div>` visualising every system in the region —
- * one cell per system, coloured from the CANONICAL {@link STATUS_COLORS}
- * palette (the same key the galaxy pixel map and dashboard legend use) so
- * the strip never tells a different colour story than the rest of the app.
- * Each cell's hover is the full per-system breakdown
- * ({@link buildSystemTooltip}), not just the bare system number.
+ * Build the friendly hover/pin CARD for one system — a styled popover (à la the
+ * in-game "?" help and the planet-badge legend) rather than a cramped one-liner.
+ * Header coords + scan time, one coloured row per OCCUPIED slot (status · owner
+ * · #rank · ally · flags), a "Free: …" line, and a pin hint. Pure DOM.
+ *
+ * @param {number} g
+ * @param {number} s
+ * @param {import('../../state/scans.js').SystemScan | null | undefined} scan
+ * @param {boolean} pinned
+ * @returns {HTMLElement}
+ */
+const buildSystemCard = (g, s, scan, pinned) => {
+  const card = document.createElement('div');
+  const head = document.createElement('div');
+  head.className = 'rp-head';
+  head.textContent = `[${g}:${s}]`;
+  card.appendChild(head);
+
+  if (!scan || !scan.positions) {
+    const e = document.createElement('div');
+    e.textContent = 'Not scanned.';
+    card.appendChild(e);
+  } else {
+    if (scan.scannedAt) {
+      const t = document.createElement('div');
+      t.className = 'rp-time';
+      t.textContent = 'scanned ' + new Date(scan.scannedAt).toLocaleString();
+      card.appendChild(t);
+    }
+    /** @type {number[]} */
+    const free = [];
+    let occupants = 0;
+    for (let pos = 1; pos <= 15; pos++) {
+      const p = scan.positions[pos];
+      if (!p) continue;
+      if (p.status === 'empty') { free.push(pos); continue; }
+      occupants++;
+      const row = document.createElement('div');
+      row.className = 'rp-row';
+      const dot = document.createElement('span');
+      dot.className = 'rp-dot';
+      dot.style.background = STATUS_COLORS[/** @type {keyof typeof STATUS_COLORS} */ (p.status)] || '#888';
+      row.appendChild(dot);
+      const flags = p.flags
+        ? ' (' + Object.keys(p.flags).filter((f) => /** @type {Record<string, unknown>} */ (p.flags)[f]).join(',') + ')'
+        : '';
+      const who = p.player
+        ? ` — ${p.player.name}${typeof p.player.rank === 'number' ? ' #' + p.player.rank : ''}${p.player.ally ? ' ' + p.player.ally : ''}`
+        : '';
+      const label = STATUS_LABELS[/** @type {keyof typeof STATUS_LABELS} */ (p.status)] || p.status;
+      const txt = document.createElement('span');
+      txt.textContent = `${pos}: ${label}${flags}${who}`;
+      row.appendChild(txt);
+      card.appendChild(row);
+    }
+    if (!occupants) {
+      const e = document.createElement('div');
+      e.textContent = 'No occupants — quiet system.';
+      card.appendChild(e);
+    }
+    if (free.length) {
+      const f = document.createElement('div');
+      f.className = 'rp-free';
+      f.textContent = 'Free: ' + free.join(', ');
+      card.appendChild(f);
+    }
+  }
+
+  const foot = document.createElement('div');
+  foot.className = 'rp-foot';
+  foot.textContent = pinned ? '📌 pinned — click the cell again to unpin' : 'click a cell to pin';
+  card.appendChild(foot);
+  return card;
+};
+
+/**
+ * Build the interactive per-system strip. One cell per system in the region;
+ * the colour story depends on the mode:
+ *
+ *   - `'streak'`        → canonical {@link STATUS_COLORS} (WHAT is in each system),
+ *                         same palette as the galaxy map and legend.
+ *   - `'neighbourhood'` → intent HEAT ({@link systemIntentHeat} → {@link heatColor}):
+ *                         green = good for the current strategy, red = bad, grey
+ *                         = neutral. The centre settle system is ringed.
+ *
+ * Hovering a cell pops a friendly {@link buildSystemCard} above it (no tooltip
+ * wait); clicking PINS it so it stays while you read / compare. Hovering other
+ * cells previews them; leaving the strip restores the pinned card (or hides).
  *
  * @param {Region} region
  * @param {GalaxyScans} scans
+ * @param {object} o
+ * @param {'streak'|'neighbourhood'} o.mode
+ * @param {import('../../domain/regions.js').StrategyWeights} [o.weights]
+ * @param {import('../../domain/regions.js').PlayerCache} [o.players]
  * @returns {HTMLElement}
  */
-const buildStrip = (region, scans) => {
-  const el = document.createElement('div');
-  el.className = 'region-strip';
+const buildInteractiveStrip = (region, scans, { mode, weights, players }) => {
+  const wrap = document.createElement('div');
+  wrap.className = 'region-strip-wrap';
+  const strip = document.createElement('div');
+  strip.className = mode === 'neighbourhood' ? 'region-strip heat' : 'region-strip';
+  const pop = document.createElement('div');
+  pop.className = 'region-pop';
+  const w = weights ?? {};
+
+  /** @type {Map<number, HTMLElement>} */
+  const cellBySys = new Map();
+  /** @type {number | null} */
+  let pinned = null;
+
+  /** @param {number} sys */
+  const showFor = (sys) => {
+    const cell = cellBySys.get(sys);
+    if (!cell) return;
+    pop.replaceChildren(buildSystemCard(region.galaxy, sys, scans[`${region.galaxy}:${sys}`], pinned === sys));
+    pop.classList.toggle('pinned', pinned === sys);
+    pop.style.display = 'block';
+    // Centre the card over the cell, clamped inside the strip's width.
+    const popW = pop.offsetWidth;
+    const maxLeft = Math.max(0, wrap.clientWidth - popW);
+    const left = cell.offsetLeft + cell.offsetWidth / 2 - popW / 2;
+    pop.style.left = Math.max(0, Math.min(left, maxLeft)) + 'px';
+  };
+  const restore = () => {
+    if (pinned != null) showFor(pinned);
+    else pop.style.display = 'none';
+  };
 
   for (const sys of regionSystems(region)) {
     const sysData = scans[`${region.galaxy}:${sys}`];
-    const st = stripCellStatus(sysData?.positions);
+    const scanned = !!sysData?.positions;
     const cell = document.createElement('span');
     cell.className = 'strip-cell';
-    cell.style.backgroundColor = st ? STATUS_COLORS[st] : UNSCANNED_COLOR;
-    cell.title = buildSystemTooltip(region.galaxy, sys, sysData);
-    el.appendChild(cell);
+    if (mode === 'neighbourhood') {
+      cell.style.backgroundColor = scanned
+        ? heatColor(systemIntentHeat(scans, region.galaxy, sys, w, { players }))
+        : UNSCANNED_COLOR;
+      if (sys === region.center) cell.classList.add('center');
+    } else {
+      const st = stripCellStatus(sysData?.positions);
+      cell.style.backgroundColor = st ? STATUS_COLORS[st] : UNSCANNED_COLOR;
+    }
+    cellBySys.set(sys, cell);
+    cell.addEventListener('mouseenter', () => showFor(sys));
+    cell.addEventListener('click', () => {
+      if (pinned === sys) { pinned = null; pop.style.display = 'none'; }
+      else { pinned = sys; showFor(sys); }
+    });
+    strip.appendChild(cell);
   }
+  strip.addEventListener('mouseleave', restore);
 
-  return el;
+  wrap.append(strip, pop);
+  return wrap;
 };
 
 /**
@@ -165,34 +296,55 @@ const buildStripLegend = (region, scans) => {
 };
 
 /**
- * Build the tooltip text for the "Nbrs" table cell.
- * Shows active/dormant split plus the highest bandit tier as a
- * quick danger indicator — a single bandit3 is more alarming than
- * three bandit1s, so the max level is surfaced explicitly.
+ * Build the tooltip text for the "Nbrs" table cell — the neighbourhood at a
+ * glance. Surfaces, in priority order: the population split, the danger lines
+ * (bandits with max tier, strong / active-on-vacation), honoured fighters, how
+ * many neighbours OUT-RANK you (stronger than you on the highscore), and the
+ * social signals. No "scanned coverage" line — with the API feed every system
+ * is known, so it was always "N/N" noise.
  *
  * @param {import('../../domain/regions.js').RegionScore} s
+ * @param {number} [ownRank]  Our highscore rank, to count "ranked above you".
  * @returns {string}
  */
-const buildNbrsTip = (s) => {
-  const parts = [`${s.occupied} active, ${s.inactive} farmable, ${s.vacation} vacation (${s.scanned}/${s.systemCount} scanned)`];
-  if (s.bandits) {
-    parts.push(`⚠ ${s.bandits} bandit${s.bandits > 1 ? 's' : ''}, max tier ${s.banditMaxLevel}/3`);
+const buildNbrsTip = (s, ownRank) => {
+  /** @type {string[]} */
+  const parts = [];
+  const pop = [];
+  if (s.occupied) pop.push(`${s.occupied} active`);
+  if (s.inactive) pop.push(`${s.inactive} farmable`);
+  if (s.vacation) pop.push(`${s.vacation} vacation`);
+  parts.push(pop.length ? pop.join(', ') : 'no players in range');
+
+  const threat = [];
+  if (s.bandits) threat.push(`${s.bandits} bandit${s.bandits > 1 ? 's' : ''} (max tier ${s.banditMaxLevel}/3)`);
+  if (s.strong) threat.push(`${s.strong} strong`);
+  if (s.activeOnVacation) threat.push(`${s.activeOnVacation} active-on-vacation`);
+  if (threat.length) parts.push('⚠ ' + threat.join(', '));
+
+  if (s.honored) parts.push(`${s.honored} honored (max tier ${s.honoredMaxLevel}/3)`);
+
+  // Rank-relative danger: how many neighbours sit ABOVE us (lower rank number =
+  // stronger). The headline reason a new colony gets farmed.
+  if (s.ranks.length) {
+    if (typeof ownRank === 'number' && ownRank > 0) {
+      const above = s.ranks.filter((r) => r < ownRank).length;
+      const top = s.ranks[0];
+      parts.push(above
+        ? `⚠ ${above} ranked above you (strongest #${top}, ${ownRank - top} above)`
+        : `none ranked above you (strongest #${top})`);
+    } else {
+      parts.push(`strongest neighbour #${s.ranks[0]}`);
+    }
   }
-  if (s.honored) {
-    parts.push(`${s.honored} honored, max tier ${s.honoredMaxLevel}/3`);
-  }
-  if (s.strong || s.activeOnVacation) {
-    const t = [];
-    if (s.strong) t.push(`${s.strong} strong`);
-    if (s.activeOnVacation) t.push(`${s.activeOnVacation} active-on-vacation`);
-    parts.push(`⚠ ${t.join(', ')}`);
-  }
+
   const social = [];
+  if (s.outlaw) social.push(`${s.outlaw} outlaw`);
   if (s.allyNearby) social.push(`${s.allyNearby} allied`);
   if (s.buddy) social.push(`${s.buddy} buddy`);
-  if (s.outlaw) social.push(`${s.outlaw} outlaw`);
   if (s.newbie) social.push(`${s.newbie} newbie (protected)`);
   if (social.length) parts.push(social.join(', '));
+
   return parts.join('\n');
 };
 
@@ -203,9 +355,10 @@ const buildNbrsTip = (s) => {
  * signal of how crowded the area is. '?' means no scan data in range.
  *
  * @param {Region[]} results
+ * @param {number} [ownRank]  Forwarded to the Nbrs tooltip for "ranked above you".
  * @returns {HTMLTableElement}
  */
-const buildTable = (results) => {
+const buildTable = (results, ownRank) => {
   const table = document.createElement('table');
   table.className = 'streak-table';
 
@@ -244,7 +397,7 @@ const buildTable = (results) => {
       [String(r.length), true, ''],
       [String(r.matched), true, ''],
       [r.gaps ? String(r.gaps) : '—', true, ''],
-      [nbrs, true, s ? buildNbrsTip(s) : 'No scan data in range'],
+      [nbrs, true, s ? buildNbrsTip(s, ownRank) : 'No scan data in range'],
     ];
     for (const [text, isNum, tip] of cells) {
       const td = document.createElement('td');
@@ -261,110 +414,262 @@ const buildTable = (results) => {
 };
 
 /**
- * Build the "record" summary card shown below the table — the single
- * best region across all galaxies, with its coordinates, span, blemish
- * count, neighbourhood stats and a pixel strip of the range. Not
- * appended when `results` is empty.
+ * One-line neighbourhood summary from a {@link RegionScore}. Shared by the
+ * streak record and the neighbourhood detail panel. `coverage` prepends the
+ * "N/M sys scanned" fragment — useful for a streak region (whose span is
+ * partly scanned) but noise for a neighbourhood window over API-complete data.
  *
- * @param {Region} record
- * @param {GalaxyScans} scans
- * @param {number} [ownRank] Our own highscore rank, for the relative-strength
- *   annotation on the top neighbour ("#11 (239 above you)").
+ * @param {RegionScore} s
+ * @param {number} [ownRank]
+ * @param {{ coverage?: boolean }} [o]
+ * @returns {string}
+ */
+const scoreLineText = (s, ownRank, { coverage = true } = {}) => {
+  const parts = [];
+  if (coverage) {
+    const cov = s.scanned === s.systemCount ? `all ${s.systemCount}` : `${s.scanned}/${s.systemCount}`;
+    parts.push(`${cov} sys scanned`);
+  }
+  if (s.occupied || s.inactive || s.vacation) {
+    const nbParts = [];
+    if (s.occupied) nbParts.push(`${s.occupied} active`);
+    if (s.inactive) nbParts.push(`${s.inactive} farmable`);
+    if (s.vacation) nbParts.push(`${s.vacation} vacation`);
+    parts.push(nbParts.join(' · '));
+  }
+  if (s.allianceCount) parts.push(`${s.allianceCount} alliance${s.allianceCount > 1 ? 's' : ''}`);
+  if (s.bandits || s.honored) {
+    const honor = [];
+    if (s.bandits) honor.push(`${s.bandits}× bandit${s.bandits > 1 ? 's' : ''} ${'★'.repeat(s.banditMaxLevel)}`);
+    if (s.honored) honor.push(`${s.honored}× honored ${'★'.repeat(s.honoredMaxLevel)}`);
+    parts.push(honor.join(', '));
+  }
+  const threats = [];
+  if (s.strong) threats.push(`${s.strong} strong`);
+  if (s.activeOnVacation) threats.push(`${s.activeOnVacation} active-on-vac`);
+  if (threats.length) parts.push(threats.join(', '));
+  const social = [];
+  if (s.allyNearby) social.push(`${s.allyNearby} ally`);
+  if (s.buddy) social.push(`${s.buddy} buddy`);
+  if (s.outlaw) social.push(`${s.outlaw} outlaw`);
+  if (s.newbie) social.push(`${s.newbie} newbie`);
+  if (social.length) parts.push(social.join(', '));
+  if (s.ranks.length) {
+    const top = s.ranks[0];
+    let rel = '';
+    if (typeof ownRank === 'number' && ownRank > 0) {
+      const d = ownRank - top;
+      rel = d > 0 ? ` (${d} above you)` : d < 0 ? ` (${-d} below you)` : ' (your rank)';
+    }
+    parts.push(`top neighbour rank #${top}${rel}`);
+  }
+  if (Number.isFinite(s.mineMinDist)) parts.push(`${s.mineMinDist} sys to nearest colony`);
+  else parts.push('no colony in this galaxy yet');
+  return parts.join(' · ');
+};
+
+/** The red↔grey↔green ramp legend for the heat strip. */
+const buildHeatLegend = () => {
+  const el = document.createElement('div');
+  el.className = 'heat-legend';
+  const bad = document.createElement('span');
+  bad.textContent = 'worse for strategy';
+  const ramp = document.createElement('span');
+  ramp.className = 'heat-ramp';
+  const good = document.createElement('span');
+  good.textContent = 'better';
+  el.append(bad, ramp, good);
+  return el;
+};
+
+/**
+ * "Ignoring N worst: …" line listing the players the window's score dropped,
+ * with their bandit tier and rank relative to us — so it's explicit WHAT the
+ * user is choosing to overlook.
+ *
+ * @param {NonNullable<Region['excluded']>} excluded
+ * @param {number} [ownRank]
  * @returns {HTMLElement}
  */
-const buildRecord = (record, scans, ownRank) => {
+const buildExcludedLine = (excluded, ownRank) => {
+  const el = document.createElement('div');
+  el.className = 'region-excluded';
+  const names = excluded.map((p) => {
+    const tier = p.rankClass && p.rankClass.startsWith('rank_bandit')
+      ? ` (bandit${p.rankClass.slice(-1)})` : '';
+    let rel = '';
+    if (typeof p.rank === 'number') {
+      if (typeof ownRank === 'number' && ownRank > 0) {
+        const d = ownRank - p.rank;
+        rel = d > 0 ? ` #${p.rank}, ${d} above you` : d < 0 ? ` #${p.rank}, ${-d} below you` : ` #${p.rank}`;
+      } else {
+        rel = ` #${p.rank}`;
+      }
+    }
+    return `${p.name || 'player ' + p.id}${tier}${rel}`;
+  });
+  el.textContent = `Ignoring ${excluded.length} worst: ${names.join('; ')}`;
+  return el;
+};
+
+/**
+ * Build the neighbourhood-mode candidate table: one row per scored settle area,
+ * each selecting the detail panel below when clicked. Columns differ from the
+ * streak table — there's no streak length / gaps, but there IS a centre system
+ * and an "ignored" count.
+ *
+ * @param {Region[]} results  Already sorted + spaced; rendered up to TOP_N.
+ * @param {number} [ownRank]  Forwarded to the Nbrs tooltip for "ranked above you".
+ * @returns {HTMLTableElement}
+ */
+const buildCandidateTable = (results, ownRank) => {
+  const table = document.createElement('table');
+  table.className = 'streak-table';
+
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  for (const [labelText, title] of [
+    ['#', ''],
+    ['Galaxy', ''],
+    ['System', 'Your favourite system to colonise — the free-slot system at the centre of the window'],
+    ['Window', 'Systems analysed around the settle spot'],
+    ['Nbrs', 'Players in the window (active + dormant)'],
+    ['Ignored', "Worst players dropped from this window's score"],
+  ]) {
+    const th = document.createElement('th');
+    th.textContent = labelText;
+    if (title) th.title = title;
+    if (labelText !== 'Galaxy') th.style.textAlign = 'right';
+    headRow.appendChild(th);
+  }
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  results.slice(0, TOP_N).forEach((r, i) => {
+    const tr = document.createElement('tr');
+    const s = r.score;
+    const nbrs = s ? String(s.occupied + s.inactive) : '?';
+    const ignored = r.excluded && r.excluded.length ? String(r.excluded.length) : '—';
+    /** @type {[string, boolean, string][]} */
+    const cells = [
+      [String(i + 1), true, ''],
+      [String(r.galaxy), false, ''],
+      [String(r.center ?? r.start), true, ''],
+      [`${r.start}–${r.end}`, true, r.end < r.start ? 'wraps across the 499 → 1 boundary' : ''],
+      [nbrs, true, s ? buildNbrsTip(s, ownRank) : 'No scan data in range'],
+      [ignored, true, ''],
+    ];
+    for (const [text, isNum, tip] of cells) {
+      const td = document.createElement('td');
+      td.textContent = text;
+      if (isNum) td.className = 'num';
+      if (tip) td.title = tip;
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+
+  return table;
+};
+
+/**
+ * Interactive detail panel for the SELECTED candidate (default = top row).
+ * Carries the coords, the one-line score summary, the per-system strip
+ * (status colours in streak mode, intent HEAT in neighbourhood mode) and an
+ * always-visible detail line that updates the instant a strip cell is
+ * hovered/clicked — defaulting to the centre/first system so there's never a
+ * blank "hover and wait" state. Neighbourhood mode also shows the heat legend
+ * and the "ignoring N worst" line.
+ *
+ * @param {Region} region
+ * @param {GalaxyScans} scans
+ * @param {object} o
+ * @param {'streak'|'neighbourhood'} o.mode
+ * @param {import('../../domain/regions.js').StrategyWeights} [o.weights]
+ * @param {import('../../domain/regions.js').PlayerCache} [o.players]
+ * @param {number} [o.ownRank]
+ * @returns {HTMLElement}
+ */
+const buildDetail = (region, scans, { mode, weights, players, ownRank }) => {
+  const nbr = mode === 'neighbourhood';
   const el = document.createElement('div');
   el.className = 'streak-record';
 
   const labelLine = document.createElement('div');
   const label = document.createElement('span');
   label.className = 'label';
-  label.textContent = 'Top region: ';
   const value = document.createElement('span');
   value.className = 'value';
-  value.textContent = `${record.length} systems`;
+  if (nbr) {
+    label.textContent = 'Selected area: ';
+    value.textContent = `G${region.galaxy}:${region.center} · ±${(region.length - 1) / 2} sys`;
+  } else {
+    label.textContent = 'Top region: ';
+    value.textContent = `${region.length} systems`;
+  }
   labelLine.append(label, value);
 
-  const detailLine = document.createElement('div');
-  detailLine.style.color = '#888';
-  detailLine.style.fontSize = '12px';
-  detailLine.style.marginTop = '4px';
-  detailLine.textContent =
-    `Galaxy ${record.galaxy}, system ${record.start} → ${record.end}`
-    + (record.gaps ? ` (${record.matched} free, ${record.gaps} gap${record.gaps === 1 ? '' : 's'})` : '')
-    + (record.end < record.start ? ' (wraps across the 499 → 1 boundary)' : '');
+  const coords = document.createElement('div');
+  coords.style.cssText = 'color:#888;font-size:12px;margin-top:4px;';
+  coords.textContent = nbr
+    ? `Galaxy ${region.galaxy}, colony at system ${region.center} · window ${region.start} → ${region.end}`
+      + (region.end < region.start ? ' (wraps 499 → 1)' : '')
+    : `Galaxy ${region.galaxy}, system ${region.start} → ${region.end}`
+      + (region.gaps ? ` (${region.matched} free, ${region.gaps} gap${region.gaps === 1 ? '' : 's'})` : '')
+      + (region.end < region.start ? ' (wraps across the 499 → 1 boundary)' : '');
+  el.append(labelLine, coords);
 
-  el.append(labelLine, detailLine);
-
-  const s = record.score;
+  const s = region.score;
   if (s) {
     const scoreLine = document.createElement('div');
     scoreLine.className = 'streak-score';
-    const coverage = s.scanned === s.systemCount ? `all ${s.systemCount}` : `${s.scanned}/${s.systemCount}`;
-    const parts = [`${coverage} sys scanned`];
-    if (s.occupied || s.inactive || s.vacation) {
-      const nbParts = [];
-      if (s.occupied) nbParts.push(`${s.occupied} active`);
-      if (s.inactive) nbParts.push(`${s.inactive} farmable`);
-      if (s.vacation) nbParts.push(`${s.vacation} vacation`);
-      parts.push(nbParts.join(' · '));
-    }
-    if (s.allianceCount) {
-      parts.push(`${s.allianceCount} alliance${s.allianceCount > 1 ? 's' : ''}`);
-    }
-    if (s.bandits || s.honored) {
-      const honor = [];
-      if (s.bandits) {
-        const lvl = '★'.repeat(s.banditMaxLevel);
-        honor.push(`${s.bandits}× bandit${s.bandits > 1 ? 's' : ''} ${lvl}`);
-      }
-      if (s.honored) {
-        const lvl = '★'.repeat(s.honoredMaxLevel);
-        honor.push(`${s.honored}× honored ${lvl}`);
-      }
-      parts.push(honor.join(', '));
-    }
-    // Threats the player cache surfaces that the status colour alone hides:
-    // strong neighbours and "active on vacation" (a live player, not a farm).
-    const threats = [];
-    if (s.strong) threats.push(`${s.strong} strong`);
-    if (s.activeOnVacation) threats.push(`${s.activeOnVacation} active-on-vac`);
-    if (threats.length) parts.push(threats.join(', '));
-    // Social signals: allied neighbours (game-truth), buddies, outlaws
-    // (fair game), newbies (protected, no farm value).
-    const social = [];
-    if (s.allyNearby) social.push(`${s.allyNearby} ally`);
-    if (s.buddy) social.push(`${s.buddy} buddy`);
-    if (s.outlaw) social.push(`${s.outlaw} outlaw`);
-    if (s.newbie) social.push(`${s.newbie} newbie`);
-    if (social.length) parts.push(social.join(', '));
-    if (s.ranks.length) {
-      const top = s.ranks[0];
-      // Relative to us: a LOWER rank number is a STRONGER player, so
-      // ownRank - top > 0 means the neighbour outranks (is above) us.
-      let rel = '';
-      if (typeof ownRank === 'number' && ownRank > 0) {
-        const d = ownRank - top;
-        rel = d > 0 ? ` (${d} above you)` : d < 0 ? ` (${-d} below you)` : ' (your rank)';
-      }
-      parts.push(`top neighbour rank #${top}${rel}`);
-    }
-    // Distance to our nearest colony in this galaxy — context for whether
-    // the region is fresh territory or backyard expansion. Infinity means
-    // we hold nothing in this galaxy yet, so we say so rather than "∞ sys".
-    if (Number.isFinite(s.mineMinDist)) {
-      parts.push(`${s.mineMinDist} sys to nearest colony`);
-    } else {
-      parts.push('no colony in this galaxy yet');
-    }
-    scoreLine.textContent = parts.join(' · ');
+    scoreLine.textContent = scoreLineText(s, ownRank, { coverage: !nbr });
     el.appendChild(scoreLine);
 
-    el.appendChild(buildStrip(record, scans));
-    el.appendChild(buildStripLegend(record, scans));
+    el.appendChild(buildInteractiveStrip(region, scans, { mode, weights, players }));
+
+    if (nbr) {
+      el.appendChild(buildHeatLegend());
+      if (region.excluded && region.excluded.length) {
+        el.appendChild(buildExcludedLine(region.excluded, ownRank));
+      }
+    } else {
+      el.appendChild(buildStripLegend(region, scans));
+    }
   }
 
   return el;
+};
+
+/**
+ * Wire a results table + detail panel into an interactive pair: clicking a row
+ * selects which candidate the panel describes (default = top row). Shared by
+ * both modes; `tableBuilder` differs (streak vs candidate columns).
+ *
+ * @param {HTMLElement} containerEl
+ * @param {Region[]} results
+ * @param {GalaxyScans} scans
+ * @param {{ mode: 'streak'|'neighbourhood', weights?: import('../../domain/regions.js').StrategyWeights, players?: import('../../domain/regions.js').PlayerCache, ownRank?: number }} detailOpts
+ * @param {(rows: Region[], ownRank?: number) => HTMLTableElement} tableBuilder
+ * @returns {void}
+ */
+const renderInteractive = (containerEl, results, scans, detailOpts, tableBuilder) => {
+  const shown = results.slice(0, TOP_N);
+  const table = tableBuilder(shown, detailOpts.ownRank);
+  const detailHost = document.createElement('div');
+  const rows = [...table.querySelectorAll('tbody tr')];
+  /** @param {number} i */
+  const select = (i) => {
+    rows.forEach((r, j) => r.classList.toggle('selected', j === i));
+    detailHost.textContent = '';
+    detailHost.appendChild(buildDetail(shown[i], scans, detailOpts));
+  };
+  rows.forEach((r, i) => r.addEventListener('click', () => select(i)));
+  containerEl.appendChild(table);
+  containerEl.appendChild(detailHost);
+  if (shown.length) select(0);
 };
 
 /**
@@ -389,6 +694,12 @@ const buildRecord = (record, scans, ownRank) => {
  * @property {number} [expansion]
  *   Placement modifier: `> 0` = spread (prefer 100+ sys from own colonies);
  *   `< 0` = cluster (prefer near own colonies); `0` = no preference.
+ * @property {number} [radius]
+ *   Neighbourhood strategies only: window half-width R (analysed band is
+ *   `[S−R, S+R]` around each settle spot). Default 15. Ignored for 'longest'.
+ * @property {number} [excludeN]
+ *   Neighbourhood strategies only: how many worst stat-ruining players to drop
+ *   from each window's score. Default 0. Ignored for 'longest'.
  * @property {import('../../domain/regions.js').StrategyWeights} [customWeights]
  *   When set, overrides the named strategy's weights with user-customised
  *   values from the weight sliders.
@@ -411,23 +722,57 @@ const buildRecord = (record, scans, ownRank) => {
  * @param {RenderFreeRegionsOptions} opts
  * @returns {void}
  */
-export const renderFreeRegions = ({ containerEl, countInfoEl, scans, positions, maxGaps, strategy, expansion, customWeights, players, ownRank }) => {
+export const renderFreeRegions = ({ containerEl, countInfoEl, scans, positions, maxGaps, strategy, expansion, radius, excludeN, customWeights, players, ownRank }) => {
   containerEl.innerHTML = '';
 
   const stratKey = strategy ?? 'longest';
+  const neighbourhood = stratKey !== 'longest';
+  // Effective weights drive BOTH the candidate ranking and the strip heat — a
+  // custom set (sliders moved) overrides the preset; else the preset's own.
+  const weights = customWeights ?? (STRATEGIES[stratKey]?.weights ?? {});
   // Alliance-proximity bonus is now AUTOMATIC: the player cache carries the
   // game-truth `isAllianceMember` (→ RegionScore.allyNearby), so the old manual
   // "Ally tag" field is gone. Applied only when a cache is present, and skipped
   // for 'longest' so that preset stays pure free-slot length.
-  const allyBonus = players && stratKey !== 'longest' ? 1.5 : 0;
+  const allyBonus = players && neighbourhood ? 1.5 : 0;
   /** @param {Region[]} list @returns {Region[]} */
   const sortByStrategy = (list) =>
     sortRegionsByStrategy(list, stratKey, { expansion: expansion ?? 0, allyBonus, customWeights });
-  const stratLabel = stratKey !== 'longest' && STRATEGIES[stratKey]
+  const stratLabel = neighbourhood && STRATEGIES[stratKey]
     ? ` · ${STRATEGIES[stratKey].label}` : '';
   const posLabel = positions.join(', ');
   /** @param {number} n @returns {string} */
   const galaxiesLabel = (n) => `${n} galax${n === 1 ? 'y' : 'ies'}`;
+
+  // ── Neighbourhood strategies: scored settle-area windows, not slot streaks ──
+  if (neighbourhood) {
+    const r = radius ?? 15;
+    const candidates = spaceOutCandidates(
+      sortByStrategy(findNeighbourhoodCandidates(scans, {
+        positions, status: 'empty', radius: r, players, ownRank, excludeN: excludeN ?? 0, weights,
+      })),
+      r,
+    );
+    if (candidates.length > 0) {
+      if (countInfoEl) {
+        const galaxyCount = new Set(candidates.map((c) => c.galaxy)).size;
+        const showingLabel = candidates.length > TOP_N ? ` (showing top ${TOP_N})` : '';
+        countInfoEl.textContent =
+          `${candidates.length} settle area${candidates.length === 1 ? '' : 's'} across `
+          + `${galaxiesLabel(galaxyCount)}${stratLabel}${showingLabel}`;
+      }
+      renderInteractive(containerEl, candidates, scans, { mode: 'neighbourhood', weights, players, ownRank }, buildCandidateTable);
+      return;
+    }
+    if (countInfoEl) countInfoEl.textContent = 'No settle areas yet for these slots.';
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.textContent =
+      `No system has slot${positions.length === 1 ? '' : 's'} ${posLabel} free yet. `
+      + 'Scan more galaxy pages (or widen the slots), then come back here.';
+    containerEl.appendChild(empty);
+    return;
+  }
 
   const results = sortByStrategy(
     findBestRegions(scans, { positions, status: 'empty', maxGaps, players }),
@@ -442,8 +787,7 @@ export const renderFreeRegions = ({ containerEl, countInfoEl, scans, positions, 
         `${results.length} region${results.length === 1 ? '' : 's'} across `
         + `${galaxiesLabel(galaxyCount)}${stratLabel}${showingLabel}`;
     }
-    containerEl.appendChild(buildTable(results));
-    containerEl.appendChild(buildRecord(results[0], scans, ownRank));
+    renderInteractive(containerEl, results, scans, { mode: 'streak', weights, players, ownRank }, buildTable);
     return;
   }
 
@@ -470,7 +814,7 @@ export const renderFreeRegions = ({ containerEl, countInfoEl, scans, positions, 
       + `${posLabel} all free — here are the individual free systems instead `
       + '(best neighbourhood first):';
     containerEl.appendChild(note);
-    containerEl.appendChild(buildTable(freeSystems));
+    renderInteractive(containerEl, freeSystems, scans, { mode: 'streak', weights, players, ownRank }, buildTable);
     return;
   }
 

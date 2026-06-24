@@ -51,9 +51,8 @@ describe('renderFreeRegions', () => {
     expect(containerEl.querySelector('.streak-record')).toBeTruthy();
     expect(containerEl.querySelectorAll('.region-strip .strip-cell')).toHaveLength(6);
     expect(containerEl.querySelector('.region-legend')).toBeTruthy();
-    // Rich tooltip wired through to strip cells (not the old bare "S{n}").
-    const firstCell = /** @type {HTMLElement} */ (containerEl.querySelector('.strip-cell'));
-    expect(firstCell.title).toContain('[4:');
+    // Rich per-system detail is now a hover/pin popover, not a native title.
+    expect(containerEl.querySelector('.region-strip-wrap .region-pop')).toBeTruthy();
     expect(countInfoEl.textContent).toMatch(/region/);
   });
 
@@ -102,8 +101,9 @@ describe('renderFreeRegions', () => {
     expect(note?.textContent).toMatch(/individual free system/);
     // The free systems are still listed in a table…
     expect(containerEl.querySelector('table.streak-table')).toBeTruthy();
-    // …but there is no "Top region" record card in the fallback.
-    expect(containerEl.querySelector('.streak-record')).toBeFalsy();
+    // …and the selected free system now gets the same interactive detail panel
+    // (the table rows + detail are a unified interactive pair across all paths).
+    expect(containerEl.querySelector('.streak-record')).toBeTruthy();
     expect(countInfoEl.textContent).toMatch(/individual free system/);
   });
 

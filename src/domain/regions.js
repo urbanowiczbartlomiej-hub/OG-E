@@ -58,8 +58,10 @@
  *   in the range. Active neighbours — shows how crowded the area is.
  * @property {number} inactive   Distinct players in `inactive | long_inactive`
  *   states. Actual farm targets — they cannot defend.
- * @property {number} vacation   Distinct players in `vacation` mode.
- *   Game-protected; cannot be attacked, so not a farm target.
+ * @property {number} vacation   Distinct players in `vacation` mode — PLUS banned
+ *   accounts, which are folded in as an "eternal vacation" (frozen, can never
+ *   attack). Game-protected; cannot be attacked, so not a farm target and not a
+ *   threat (banned players are also kept out of the bandit/honored/rank tallies).
  * @property {number[]} ranks    Highscore rank of every player seen in range,
  *   sorted ascending (rank 1 = #1 on highscore = strongest). Empty when no
  *   rank data was collected — the field was added in v1.17.x so older scans
@@ -126,6 +128,12 @@
  *   span (unscanned or wrong status). Always ≤ `maxGaps`.
  * @property {RegionScore} [score] Neighbourhood stats, present when
  *   `scans` were supplied to {@link findBestRegions}.
+ * @property {number} [center] Neighbourhood mode only: the settle system at the
+ *   window's centre (the system that qualified the window — has a free target
+ *   slot). `start`/`end` are then `center ± radius`.
+ * @property {Array<{ id: number, name?: string, rank?: number, rankClass?: string }>} [excluded]
+ *   Neighbourhood mode only: the players dropped from this window's score by the
+ *   "ignore N worst" feature, best-to-worst. Empty/absent when none were dropped.
  */
 
 /**
@@ -187,6 +195,12 @@ const regionSystems = ({ start, end }, galaxyMax) => {
  *   `allyNearby` from the game-truth `isAllianceMember` flag rather than the
  *   `ownAllyTag` text match. Omit to skip those signals (counts stay 0;
  *   `allyNearby` falls back to the legacy tag match).
+ * @property {Set<number>} [excludeIds]
+ *   Player ids to DROP from the neighbourhood aggregation entirely — as if
+ *   they weren't in range. Used by {@link findNeighbourhoodCandidates}'s
+ *   "ignore the N worst stat-ruining players" feature: a top-tier bandit far
+ *   above our own rank can be excluded so the region scores on the players we
+ *   would actually contend with. Omit (the common case) to count everyone.
  */
 
 /**
@@ -213,6 +227,8 @@ export const scoreRegion = (region, scans, opts = {}) => {
   const alliances = new Set();
   /** @type {Set<number>} ids of own-ally players seen in range */
   const allyPlayerIds = new Set();
+  /** @type {Set<number>} ids whose account is banned (treated as eternal vacation). */
+  const bannedIds = new Set();
 
   for (const sys of systems) {
     const sysData = scans[`${region.galaxy}:${sys}`];
@@ -222,16 +238,27 @@ export const scoreRegion = (region, scans, opts = {}) => {
       if (pos.status === 'mine') continue;
       const p = pos.player;
       if (!p) continue;
+      if (opts.excludeIds && opts.excludeIds.has(p.id)) continue;
+      // A banned account can never attack (frozen), so it is treated as an
+      // ETERNAL VACATION: counted as a protected, no-value neighbour but DROPPED
+      // from every threat tally — its rank/rankClass are not recorded (so a
+      // banned bandit3 stops reading as a danger or a "ranked above you") and
+      // the cache-flag loop below skips it.
+      const banned = pos.status === 'banned';
+      const effStatus = banned ? 'vacation' : pos.status;
+      if (banned) bannedIds.add(p.id);
       // First-seen status wins for the player. occupied overrides inactive
       // (the player may have colonies in both states in different systems).
-      if (!playerStatus.has(p.id) || pos.status === 'occupied') {
-        playerStatus.set(p.id, pos.status);
+      if (!playerStatus.has(p.id) || effStatus === 'occupied') {
+        playerStatus.set(p.id, effStatus);
       }
-      if (typeof p.rank === 'number' && !playerRank.has(p.id)) {
-        playerRank.set(p.id, p.rank);
-      }
-      if (typeof p.rankClass === 'string' && !playerRankClass.has(p.id)) {
-        playerRankClass.set(p.id, p.rankClass);
+      if (!banned) {
+        if (typeof p.rank === 'number' && !playerRank.has(p.id)) {
+          playerRank.set(p.id, p.rank);
+        }
+        if (typeof p.rankClass === 'string' && !playerRankClass.has(p.id)) {
+          playerRankClass.set(p.id, p.rankClass);
+        }
       }
       if (p.ally) alliances.add(p.ally);
       if (ownAllyTag && p.ally === ownAllyTag) allyPlayerIds.add(p.id);
@@ -309,6 +336,7 @@ export const scoreRegion = (region, scans, opts = {}) => {
   let allyMembers = 0;
   if (cache) {
     for (const [id, st] of playerStatus) {
+      if (bannedIds.has(id)) continue; // banned = eternal vacation, no threat/value
       const f = cache[id]?.flags;
       if (!f) continue;
       if (f.strong) strong++;
@@ -774,4 +802,311 @@ export const findFreeSystems = (scans, opts) => {
   }
 
   return results;
+};
+
+// ─── Neighbourhood mode (non-streak strategies) ─────────────────────────────
+//
+// A different question from the streak finder. There the slot+gap define the
+// SHAPE we hunt (a long run of a free slot). In the neighbourhood strategies
+// (peaceful / farmer / PvP) the user isn't planning a settlement ROW — they
+// want ONE good place to drop a colony and to understand the area AROUND it.
+// So here:
+//
+//   - the slot list picks CANDIDATE CENTRES: any system with ≥1 of those slots
+//     confirmed free is a place we could settle (the centre S),
+//   - the window is the symmetric band [S−radius, S+radius] (S included), and
+//     EVERY position 1..15 of every system in it feeds the neighbourhood score
+//     — left and right of S alike,
+//   - `excludeN` lets us ignore the N most stat-ruining players (a top-tier
+//     bandit ranked far above us) so one outlier in the band doesn't condemn an
+//     otherwise good area — we just accept we'll avoid that single system.
+//
+// Candidates are scored with the SAME strategy weights as everything else and
+// spaced out (a picked centre suppresses other centres within `radius`) so the
+// table lists distinct areas, not S / S+1 / S+2 near-duplicates.
+
+/**
+ * Circular system arithmetic: map any integer to 1..galaxyMax (wrap at the
+ * 499↔1 seam). Pure.
+ *
+ * @param {number} s
+ * @param {number} galaxyMax
+ * @returns {number}
+ */
+const wrapSystem = (s, galaxyMax) => ((((s - 1) % galaxyMax) + galaxyMax) % galaxyMax) + 1;
+
+/**
+ * Shortest circular distance between two systems in the same galaxy.
+ *
+ * @param {number} a
+ * @param {number} b
+ * @param {number} galaxyMax
+ * @returns {number}
+ */
+const circularDist = (a, b, galaxyMax) => {
+  const d = Math.abs(a - b);
+  return Math.min(d, galaxyMax - d);
+};
+
+/**
+ * Per-galaxy: systems that qualify as a window CENTRE (≥1 requested slot free)
+ * plus the `mine` systems (so scoring can skip its own own-colony search).
+ *
+ * @param {GalaxyScans} scans
+ * @param {{ positions: number[], status: PositionStatus, galaxyMax: number }} opts
+ * @returns {{ centresByGalaxy: Map<number, number[]>, minesByGalaxy: Map<number, number[]> }}
+ */
+const collectCentresAndMines = (scans, { positions, status, galaxyMax }) => {
+  /** @type {Map<number, number[]>} */
+  const centresByGalaxy = new Map();
+  /** @type {Map<number, number[]>} */
+  const minesByGalaxy = new Map();
+  for (const [key, sysData] of Object.entries(scans)) {
+    const colonIdx = key.indexOf(':');
+    if (colonIdx <= 0) continue;
+    const galaxy = parseInt(key.slice(0, colonIdx), 10);
+    const system = parseInt(key.slice(colonIdx + 1), 10);
+    if (!Number.isFinite(galaxy) || !Number.isFinite(system)) continue;
+    if (system < 1 || system > galaxyMax) continue;
+    const posMap = sysData?.positions;
+    if (!posMap) continue;
+
+    if (Object.values(posMap).some((p) => p.status === 'mine')) {
+      let mArr = minesByGalaxy.get(galaxy);
+      if (!mArr) { mArr = []; minesByGalaxy.set(galaxy, mArr); }
+      mArr.push(system);
+    }
+    // ANY requested slot free → a settle candidate (vs streak's ALL-free).
+    const free = positions.some(
+      (p) => posMap[/** @type {any} */ (String(p))]?.status === status,
+    );
+    if (!free) continue;
+    let arr = centresByGalaxy.get(galaxy);
+    if (!arr) { arr = []; centresByGalaxy.set(galaxy, arr); }
+    arr.push(system);
+  }
+  return { centresByGalaxy, minesByGalaxy };
+};
+
+/**
+ * Gather the distinct players present in a window, with the identity fields the
+ * exclusion ranking needs (rank + rankClass) and a display name. De-duplicated
+ * by id; `occupied` status wins over a dormant one (same rule as scoreRegion).
+ *
+ * @param {Pick<Region,'galaxy'|'start'|'end'>} region
+ * @param {GalaxyScans} scans
+ * @param {number} galaxyMax
+ * @returns {Array<{ id: number, name?: string, status: string, rank?: number, rankClass?: string }>}
+ */
+const gatherWindowPlayers = (region, scans, galaxyMax) => {
+  /** @type {Map<number, { id: number, name?: string, status: string, rank?: number, rankClass?: string }>} */
+  const byId = new Map();
+  for (const sys of regionSystems(region, galaxyMax)) {
+    const sysData = scans[`${region.galaxy}:${sys}`];
+    if (!sysData?.positions) continue;
+    for (const pos of Object.values(sysData.positions)) {
+      if (pos.status === 'mine') continue;
+      // Banned accounts are eternal vacation (can't attack), so they're never a
+      // stat-ruiner worth spending an "ignore worst" slot on — skip them.
+      if (pos.status === 'banned') continue;
+      const p = pos.player;
+      if (!p) continue;
+      const prev = byId.get(p.id);
+      if (!prev) {
+        byId.set(p.id, {
+          id: p.id, name: p.name, status: pos.status,
+          rank: p.rank, rankClass: p.rankClass,
+        });
+      } else {
+        if (pos.status === 'occupied') prev.status = 'occupied';
+        if (prev.rank == null && typeof p.rank === 'number') prev.rank = p.rank;
+        if (prev.rankClass == null && typeof p.rankClass === 'string') prev.rankClass = p.rankClass;
+        if (!prev.name && p.name) prev.name = p.name;
+      }
+    }
+  }
+  return [...byId.values()];
+};
+
+/**
+ * Rank-relative danger multiplier: a neighbour far ABOVE us (lower rank number =
+ * stronger) is worth excluding more than one below us. Saturates so a single
+ * monster can't dominate. Returns 1 when either rank is unknown.
+ *
+ * @param {number | undefined} ownRank
+ * @param {number | undefined} rank
+ * @returns {number}
+ */
+const rankAboveFactor = (ownRank, rank) => {
+  if (!ownRank || !rank) return 1;
+  return Math.max(0.5, Math.min(3, ownRank / rank));
+};
+
+/**
+ * How much a single player HURTS the current strategy score — the basis for
+ * "drop the N worst". Only counts dimensions the active weights PENALISE
+ * (negative weight): a bandit when `bandit < 0`, an active occupant when
+ * `occupied < 0`, a strong neighbour when `strong < 0`, an honoured fighter
+ * when `honored < 0`. Bandit/honoured harm scales with tier; all scale with
+ * {@link rankAboveFactor}. A player we don't penalise has harm 0 and is never
+ * excluded. Pure.
+ *
+ * @param {{ id: number, status: string, rank?: number, rankClass?: string }} p
+ * @param {StrategyWeights} weights
+ * @param {number | undefined} ownRank
+ * @param {PlayerCache} [cache]
+ * @returns {number}
+ */
+const playerHarm = (p, weights, ownRank, cache) => {
+  let h = 0;
+  const above = rankAboveFactor(ownRank, p.rank);
+  const rc = p.rankClass;
+  if (rc) {
+    const tier = parseInt(rc.slice(-1), 10) || 1;
+    if (rc.startsWith('rank_bandit')) {
+      if ((weights.bandit ?? 0) < 0) h += Math.abs(weights.bandit ?? 0) * tier * above;
+    } else if ((weights.honored ?? 0) < 0) {
+      h += Math.abs(weights.honored ?? 0) * tier * above;
+    }
+  }
+  if ((weights.occupied ?? 0) < 0 && p.status === 'occupied') {
+    h += Math.abs(weights.occupied ?? 0) * above;
+  }
+  const flags = cache?.[p.id]?.flags;
+  if (flags?.strong && (weights.strong ?? 0) < 0) {
+    h += Math.abs(weights.strong ?? 0) * above;
+  }
+  return h;
+};
+
+/**
+ * Find settlement candidates for the neighbourhood strategies: one scored
+ * window per free-slot system, spaced out and ranked. See the section header
+ * above for the model. Pure: reads `scans`, mutates nothing.
+ *
+ * @param {GalaxyScans} scans
+ * @param {object} opts
+ * @param {number[]} opts.positions   Settle-slot candidates (≥1 free → centre).
+ * @param {PositionStatus} [opts.status]  Free-slot status (default 'empty').
+ * @param {number} opts.radius        Window half-width R.
+ * @param {number} [opts.galaxyMax]
+ * @param {PlayerCache} [opts.players]
+ * @param {string} [opts.ownAllyTag]
+ * @param {number} [opts.ownRank]
+ * @param {number} [opts.excludeN]    Worst players to ignore per window (default 0).
+ * @param {StrategyWeights} [opts.weights]  Active weights (for the harm ranking).
+ * @returns {Region[]} Scored windows, centre-spaced; caller sorts by strategy.
+ */
+export const findNeighbourhoodCandidates = (scans, opts) => {
+  const positions = [...new Set(opts.positions)].filter((p) => Number.isFinite(p));
+  const status = opts.status ?? 'empty';
+  const galaxyMax = opts.galaxyMax ?? 499;
+  const radius = Math.max(1, Math.floor(opts.radius ?? 15));
+  const excludeN = Math.max(0, Math.floor(opts.excludeN ?? 0));
+  const weights = opts.weights ?? {};
+  if (positions.length === 0) return [];
+
+  const { centresByGalaxy, minesByGalaxy } = collectCentresAndMines(scans, { positions, status, galaxyMax });
+
+  /** @type {Region[]} */
+  const results = [];
+  for (const [galaxy, centresRaw] of centresByGalaxy) {
+    const centres = [...centresRaw].sort((a, b) => a - b);
+    const mineSystemsInGalaxy = minesByGalaxy.get(galaxy) ?? [];
+    for (const centre of centres) {
+      const region = /** @type {Region} */ ({
+        galaxy,
+        start: wrapSystem(centre - radius, galaxyMax),
+        end: wrapSystem(centre + radius, galaxyMax),
+        center: centre,
+        length: radius * 2 + 1,
+        matched: 1,
+        gaps: 0,
+      });
+
+      /** @type {Set<number>} */
+      let excludeIds = new Set();
+      if (excludeN > 0) {
+        const players = gatherWindowPlayers(region, scans, galaxyMax)
+          .map((p) => ({ p, harm: playerHarm(p, weights, opts.ownRank, opts.players) }))
+          .filter((x) => x.harm > 0)
+          .sort((a, b) => b.harm - a.harm)
+          .slice(0, excludeN);
+        excludeIds = new Set(players.map((x) => x.p.id));
+        region.excluded = players.map((x) => ({
+          id: x.p.id, name: x.p.name, rank: x.p.rank, rankClass: x.p.rankClass,
+        }));
+      }
+
+      region.score = scoreRegion(region, scans, {
+        galaxyMax, ownAllyTag: opts.ownAllyTag, mineSystemsInGalaxy,
+        players: opts.players, excludeIds,
+      });
+      results.push(region);
+    }
+  }
+  return results;
+};
+
+/**
+ * Suppress near-duplicate windows AFTER a strategy sort: walk the ranked list
+ * and keep a candidate only when its centre is ≥ `radius` systems from every
+ * already-kept centre in the same galaxy. Leaves a spread of DISTINCT areas
+ * instead of a cluster of overlapping windows around one hotspot. Pure; returns
+ * a new array. Non-neighbourhood regions (no `center`) pass through untouched.
+ *
+ * @param {Region[]} sorted   Already strategy-sorted, best first.
+ * @param {number} radius
+ * @param {number} [galaxyMax]
+ * @returns {Region[]}
+ */
+export const spaceOutCandidates = (sorted, radius, galaxyMax = 499) => {
+  /** @type {Map<number, number[]>} galaxy → kept centres */
+  const kept = new Map();
+  /** @type {Region[]} */
+  const out = [];
+  for (const r of sorted) {
+    const centre = r.center;
+    if (typeof centre !== 'number') { out.push(r); continue; }
+    const centres = kept.get(r.galaxy) ?? [];
+    if (centres.some((c) => circularDist(c, centre, galaxyMax) < radius)) continue;
+    centres.push(centre);
+    kept.set(r.galaxy, centres);
+    out.push(r);
+  }
+  return out;
+};
+
+/**
+ * Per-system "intent heat" for the strip colouring: the active strategy weights
+ * applied to ONE system's own occupants, squashed to (−1, +1). Positive (green)
+ * = the area reads GOOD for this strategy (e.g. farms under Farmer); negative
+ * (red) = BAD (e.g. a bandit under Peaceful); ~0 (grey) = neutral/empty. Because
+ * it uses the very weights that rank the candidates, the colour story always
+ * matches the user's chosen intent — tweak a slider, the map re-tints. Pure.
+ *
+ * @param {GalaxyScans} scans
+ * @param {number} galaxy
+ * @param {number} system
+ * @param {StrategyWeights} weights
+ * @param {{ players?: PlayerCache }} [opts]
+ * @returns {number} Heat in (−1, +1). 0 for an unscanned / empty system.
+ */
+export const systemIntentHeat = (scans, galaxy, system, weights, opts = {}) => {
+  const s = scoreRegion(
+    { galaxy, start: system, end: system },
+    scans,
+    { players: opts.players, mineSystemsInGalaxy: [] },
+  );
+  const w = weights;
+  const raw =
+    (w.inactive ?? 0) * s.inactive +
+    (w.occupied ?? 0) * s.occupied +
+    (w.bandit ?? 0) * s.banditTierSum +
+    (w.honored ?? 0) * s.honoredTierSum +
+    (w.strong ?? 0) * (s.strong + s.activeOnVacation) +
+    (w.outlaw ?? 0) * s.outlaw;
+  // tanh squashes any magnitude into (−1, 1); /3 makes a single tier-3 threat
+  // (raw ≈ ±9 under a ±3 weight) read as a near-saturated colour.
+  return Math.tanh(raw / 3);
 };
