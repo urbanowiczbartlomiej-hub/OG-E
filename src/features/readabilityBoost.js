@@ -221,7 +221,7 @@ const CSS = `/* OG-E: readability boost — event box + fleet movement link */
 #eventboxFilled > p.event_list:first-child {
   font-size: 0 !important;
   margin: 0 !important;
-  line-height: 1.1 !important;
+  line-height: 1.5 !important;
 }
 #eventboxFilled > p.event_list:first-child .undermark {
   font-size: 12px !important;
@@ -289,9 +289,9 @@ const CSS = `/* OG-E: readability boost — event box + fleet movement link */
 #eventboxFilled .next_event .countdown {
   position: absolute !important;
   right: 1px !important;
-  top: 50% !important;
+  top: 36% !important;
   transform: translateY(-50%) !important;
-  font-size: 52px !important;
+  font-size: 60px !important;
   font-weight: 900 !important;
   color: #fcce00 !important;
   /* Dark outline + halo so the gold countdown always stands out, even

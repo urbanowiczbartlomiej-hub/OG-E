@@ -4,6 +4,14 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.30.10] — 2026-06-24
+
+### Changed
+
+- **Event box: bigger, lower countdown.** The time-to-next-event number is a
+  touch larger and sits slightly higher in the card, with a bit more breathing
+  room above the mission-count row.
+
 ## [1.30.9] — 2026-06-24
 
 ### Changed
