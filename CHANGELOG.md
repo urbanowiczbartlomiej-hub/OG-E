@@ -4,6 +4,38 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.30.6] — 2026-06-24
+
+### Added
+
+- **Your manual fleet-save marks now sync across your devices.** Marking a
+  landed fleet as a fleet-save on one device now shows up on your others through
+  your own private cloud-sync gist. Unmarking or re-saving propagates too, so a
+  mark you clear on one device won't reappear from another.
+
+### Changed
+
+- **"Reminders" is now "Alarm clock", and the under-attack feature is the in-tab
+  "threat highlight".** The naming everywhere now matches what these features
+  actually are: an alarm clock you set for times you already know from your own
+  actions, and a louder rendering — inside the open tab only — of the attack
+  state the game already shows you.
+- **OG-E now does nothing while its tab is hidden.** When you switch tabs,
+  minimise, or (on mobile) leave the app or lock the screen, OG-E stops reading
+  the game entirely — no event-list scanning, no re-checks, no background
+  observers — and picks back up the moment you return. Lighter on battery, and
+  it never looks at the game while you're away.
+- **Fleet-guardian button wording.** Its states now read "You here?" / "Fleet
+  save" / "Snoozed" / "Save now" — clearer, and making plain the button is your
+  own prompt, not the game being watched.
+- **Daily Run button polish.** The two labels are nudged toward centre, and its
+  "waiting for the event list" state no longer shows a gold pulsing ring, so it
+  matches the other command buttons.
+- **Settings copy.** The Colonizations settings no longer mention a "Scan
+  button" / re-scan removed back in 1.30 (free positions come from OGame's public
+  API now); the Alarm clock settings now spell out that OG-E never watches the
+  game while you're away.
+
 ## [1.30.5] — 2026-06-22
 
 ### Fixed
