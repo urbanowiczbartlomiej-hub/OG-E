@@ -205,7 +205,7 @@ describe('event-list badges', () => {
     // Tooltip lists the registered ntfy times + the auto hint, and drops the
     // redundant mission / coords / ship-count the player already sees.
     const title = cell.getAttribute('title') || '';
-    expect(title.startsWith('Fleet-save alarmClock at:')).toBe(true);
+    expect(title.startsWith('Fleet-save reminders at:')).toBe(true);
     // Far from any slot's window → passive, but the tooltip now advertises the
     // last-3-min cancel affordance (T4: FS_CANCEL_WINDOW_SEC 120 → 180)
     // instead of the old "can't be cancelled".
@@ -236,7 +236,7 @@ describe('event-list badges', () => {
     const title = cell.getAttribute('title') || '';
     expect(title).toContain('Too far out');
     expect(title).toContain('within 3 days');
-    expect(title).not.toContain('Fleet-save alarmClock at:'); // no times — none scheduled
+    expect(title).not.toContain('Fleet-save reminders at:'); // no times — none scheduled
   });
 
   it('shows the fire time on an armed ad-hoc badge', async () => {
@@ -253,7 +253,7 @@ describe('event-list badges', () => {
     await tick();
     expect(cell.classList.contains('armed')).toBe(true);
     const title = cell.getAttribute('title') || '';
-    expect(title.startsWith('Alarm at ')).toBe(true);
+    expect(title.startsWith('Reminder at ')).toBe(true);
     expect(title).toContain('click to cancel');
   });
 
@@ -325,7 +325,7 @@ describe('event-list badges', () => {
     // and the tooltip leads with "Cancellable now".
     expect(cell.classList.contains('fs-cancel')).toBe(true);
     expect(cell.getAttribute('title') || '').toContain(
-      'Cancellable now — click to cancel this alarmClock',
+      'Cancellable now — click to cancel this reminder',
     );
 
     cell.click();

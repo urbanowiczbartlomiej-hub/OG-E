@@ -242,7 +242,7 @@ const clearCell = (cell) => {
 const waveTitle = (w, schedule, hint) => {
   const baseAt = snapshot?.notifyState?.[w.id]?.baseAt ?? w.nextWaveAt;
   const times = offsetsForSchedule(schedule).map((o) => fmtClock(baseAt + o)).join(', ');
-  return `Wave alarmClock at: ${times}\n${hint}`;
+  return `Wave reminders at: ${times}\n${hint}`;
 };
 
 /**
@@ -266,16 +266,16 @@ const fsTitle = (fs, now, mode) => {
     .map(fmtClock);
   const hint =
     mode === 'cancel'
-      ? 'Cancellable now — click to cancel this alarmClock'
+      ? 'Cancellable now — click to cancel this reminder'
       : mode === 'cancel-collapse'
-        ? 'Cancellable now — click to cancel this + the landing/after alarmClock'
+        ? 'Cancellable now — click to cancel this + the landing/after reminders'
         : live.length
-          ? `Set automatically — the next alarmClock is cancellable in its final ${FS_CANCEL_WINDOW_MIN} min`
-          // No live slot yet: every fire time is still beyond ntfy's 3-day cap,
-          // so NOTHING is queued. Say so instead of the misleading "Set
+          ? `Set automatically — the next reminder is cancellable in its final ${FS_CANCEL_WINDOW_MIN} min`
+          // No live slot yet: every ring time is still beyond ntfy's 3-day cap,
+          // so NOTHING is set. Say so instead of the misleading "Set
           // automatically" (which read as already-armed).
-          : 'Too far out to schedule yet — alarmClock set automatically once it\'s within 3 days of landing';
-  return live.length ? `Fleet-save alarmClock at: ${live.join(', ')}\n${hint}` : hint;
+          : 'Too far out to set yet — the reminder is set automatically once it\'s within 3 days of landing';
+  return live.length ? `Fleet-save reminders at: ${live.join(', ')}\n${hint}` : hint;
 };
 
 /**
@@ -385,7 +385,7 @@ const render = () => {
         }
       } else {
         stamp(cell, cancelled ? 'member-off' : 'member', '', '',
-          'Part of an expedition-wave alarmClock');
+          'Part of an expedition-wave reminder');
       }
       continue;
     }
@@ -443,15 +443,15 @@ const render = () => {
       const earliest = fireAts.length ? fireAts[0] : null;
       if (armed) {
         const title = earliest === null
-          ? 'Alarm set — click to cancel'
+          ? 'Reminder set — click to cancel'
           : fireAts.length === 1
-            ? `Alarm at ${fmtClock(earliest)} — click to cancel`
-            : `Alarms: ${fireAts.length} · first at ${fmtClock(earliest)} — click to cancel`;
+            ? `Reminder at ${fmtClock(earliest)} — click to cancel`
+            : `Reminders: ${fireAts.length} · first at ${fmtClock(earliest)} — click to cancel`;
         stamp(cell, `armed${syncing}`, 'disarm', '', title);
       } else if (earliest !== null && earliest - now > NTFY_MAX_DELAY_SEC) {
-        stamp(cell, 'disabled', '', '', 'Too far ahead to alarm (ntfy limit is 3 days)');
+        stamp(cell, 'disabled', '', '', 'Too far ahead to set a reminder (ntfy limit is 3 days)');
       } else {
-        stamp(cell, `idle${syncing}`, 'arm', '', 'Click to set an alarm for this fleet');
+        stamp(cell, `idle${syncing}`, 'arm', '', 'Click to set a reminder for this fleet');
       }
       continue;
     }

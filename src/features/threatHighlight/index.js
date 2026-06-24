@@ -268,7 +268,7 @@ export const installThreatHighlight = () => {
     x.type = 'button';
     x.className = 'oge-threat-x';
     x.textContent = '✕';
-    x.title = 'Dismiss (re-fires if the attack changes)';
+    x.title = 'Dismiss (re-appears if the attack changes)';
     x.addEventListener('click', (e) => {
       e.stopPropagation();
       onDismiss();

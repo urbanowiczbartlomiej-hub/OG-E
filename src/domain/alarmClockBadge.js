@@ -3,25 +3,33 @@
 // Status badge for a alarmClock card on the Dashboard ▸ AlarmClock preview.
 //
 // One vocabulary across all three kinds (expedition waves, ad-hoc fleets,
-// fleet-saves). The preview is titled "Currently queued", so the badge answers
-// the only question that matters there: *what is this alarmClock's state ON
-// ntfy?* — NOT where the fleet is. (The old wave badge said "in flight" /
-// "overdue", which described the mission's timing, not the push channel, and
-// read as noise — every mission is "in flight".)
+// fleet-saves). The preview is titled "Reminders set", so the badge answers the
+// only question that matters there: *is this reminder still going to ring?* —
+// NOT where the fleet is. (The old wave badge said "in flight" / "overdue",
+// which described the mission's timing, not the reminder, and read as noise —
+// every mission is "in flight".)
+//
+// IMPORTANT — wording is a fair-play contract (see docs/fair-play.md): the
+// player SETS each reminder at send time for a return time they already know;
+// the reminder RINGS at that time. OG-E does not "queue", "schedule", or "fire"
+// anything, and never watches the game while away. The device is the "alarm
+// clock"; an individual buzz is a "reminder" — never bare "alarm" (that reads
+// as the forbidden event-alert). The internal `cls` keys (queued/fired/…) are
+// just CSS colour hooks and stay as-is.
 //
 // States, in priority order:
 //
-//   - cancelled      — the user tore it down (waves tombstone; ad-hoc delete).
-//   - not scheduled  — nothing on ntfy: no token, or sync hasn't run yet.
-//   - > 3 days out   — detected but deferred: ntfy schedules at most 3 days
-//                      ahead, so the series queues once the fleet is within
-//                      range (fleet-save only).
-//   - scheduled      — we KNOW pushes are armed (the gist holds their ids) but
-//                      can't see the live queue (the ntfy poll failed / no
-//                      token at the dashboard origin). Honest "armed, state
-//                      unknown" rather than guessing fired vs pending.
-//   - queued         — at least one push is still pending on ntfy.
-//   - fired          — every push has already gone out.
+//   - cancelled    — the user tore it down (waves tombstone; ad-hoc delete).
+//   - not set      — nothing on ntfy: no token, or sync hasn't run yet.
+//   - > 3 days out — detected but deferred: ntfy delivers at most 3 days ahead,
+//                    so the reminder is set once the fleet is within range
+//                    (fleet-save only).
+//   - armed        — we KNOW the reminder is set (the gist holds its ids) but
+//                    can't see ntfy's live list (the poll failed / no token at
+//                    the dashboard origin). Honest "set, state unknown" rather
+//                    than guessing rang vs still-to-ring.
+//   - set          — at least one reminder is still going to ring.
+//   - rang         — every reminder has already gone off.
 
 /**
  * @typedef {object} AlarmClockBadge
@@ -54,10 +62,10 @@ export const alarmClockBadge = ({
   if (scheduledCount <= 0) {
     return tooFar
       ? { text: '> 3 days out', cls: 'far' }
-      : { text: 'not scheduled', cls: 'none' };
+      : { text: 'not set', cls: 'none' };
   }
-  if (!hasNtfyData) return { text: 'scheduled', cls: 'scheduled' };
+  if (!hasNtfyData) return { text: 'armed', cls: 'scheduled' };
   return pendingCount > 0
-    ? { text: 'queued', cls: 'queued' }
-    : { text: 'fired', cls: 'fired' };
+    ? { text: 'set', cls: 'queued' }
+    : { text: 'rang', cls: 'fired' };
 };

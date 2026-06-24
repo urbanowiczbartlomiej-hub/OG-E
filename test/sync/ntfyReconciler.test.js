@@ -170,7 +170,7 @@ describe('reconcileWaveQueue', () => {
       // Body states the wave's local return time + slot position; exact
       // clock string is TZ-dependent, so assert the shape. Wave nudges are
       // not max priority, so they carry no 🔥 flare.
-      expect(init.body).toMatch(/^Expeditions back \(\d{1,2}:\d{2}(?:\s?[AP]M)?\) — alarmClock #\d+\/6\.$/);
+      expect(init.body).toMatch(/^Expeditions back \(\d{1,2}:\d{2}(?:\s?[AP]M)?\) — reminder #\d+\/6\.$/);
     });
   });
 

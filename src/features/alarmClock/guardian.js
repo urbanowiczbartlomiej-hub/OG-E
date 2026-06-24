@@ -24,9 +24,9 @@
 // `ntfyReconciler.reconcileGuardianQueue`); the ack + dismiss taps delegate to
 // the producer's commands, which snooze or cancel it. Dismiss + ack are DURABLE,
 // self-expiring, single-device stores (`./guardianDismiss.js`); the bare set
-// has no timer — it clears only on re-save, departure, or dismiss. A manual "Mark FS"
-// (`features/manualFsMark`) feeds the SAME union, arming both this button and
-// the push.
+// has no timer — it clears only on re-save, departure, or dismiss. A manual "Set FR"
+// (Set Fleet reminder; `features/manualFsMark`) feeds the SAME union, arming
+// both this button and the push.
 //
 // Lives INSIDE the alarmClock feature (installed by `./index.js`).
 //
@@ -51,8 +51,9 @@ import { guardianDismissedLandings } from './guardianDismiss.js';
 const BTN_ID = 'oge-guardian-btn';
 /** A deliberate, hard-to-fat-finger hold to dismiss a landing. */
 const DISMISS_HOLD_MS = 1500;
-/** Warning rim/glow colour — orange (the dome gradient shades it). */
-const RIM = '#e67e22';
+/** Warning rim/glow colour — bright orange (the dome gradient shades it);
+ *  pumped up a notch so the guardian reads louder than the other FAB modules. */
+const RIM = '#f5851a';
 /** AGR's fleet-save routine id (the guardian's send action). */
 const FS_ROUTINE_ID = 6;
 
@@ -309,19 +310,19 @@ const render = () => {
       installButtonChrome();
       btn = createButton({
         id: BTN_ID,
-        title: 'Fleet guardian',
+        title: 'Fleet reminder',
         ringId: 'oge-guardian-ring',
         size: fabSize,
         // Match the 1-zone command buttons (sendExpedition / sendLifeform) so the
         // label reads at the same size across the FAB cluster.
         fontScale: 0.18,
-        module: { id: 'guard', name: 'Fleet guardian', color: RIM, glyph: LIGHTHOUSE_GLYPH },
+        module: { id: 'guard', name: 'Fleet reminder', color: RIM, glyph: LIGHTHOUSE_GLYPH },
         holdMs: DISMISS_HOLD_MS,
         zones: [
           {
             key: 'g',
             id: 'oge-guardian-z',
-            ariaLabel: 'Fleet guardian',
+            ariaLabel: 'Fleet reminder',
             bg: RIM,
             glyph: LIGHTHOUSE_GLYPH,
             onTap: () => void handleGuardianTap(),

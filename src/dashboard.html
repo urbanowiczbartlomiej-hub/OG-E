@@ -608,12 +608,14 @@
 <section id="alarmClockSection" class="tab-section">
   <h1>Alarm clock</h1>
   <p class="rem-intro">
-    A wake-up alarm for fleets you sent yourself — auto expedition waves, ad-hoc
-    fleet alarms, and fleet-save landings. Every alarm fires at a time you
-    already know from your own action (just like a phone alarm); OG-E never
-    watches the game for events you couldn't predict. Flip it on and paste your
-    ntfy token below (it applies to all your universes); the schedules are in
-    ⚙ Settings further down. The queue preview shows what's pending.
+    Wake-up reminders for fleets you sent yourself — auto expedition waves,
+    ad-hoc fleet reminders, and fleet-save landings. You set each reminder for a
+    time you already know from your own action — the return time the game showed
+    you when you sent the fleet, just like a phone reminder — and it rings at
+    that time; OG-E never watches the game for events you couldn't predict. Flip
+    it on and paste your ntfy token below (it applies to all your universes);
+    the reminder times are in ⚙ Settings further down. The preview shows the
+    reminders you've set.
   </p>
 
   <div class="rem-card" style="margin-top:14px">
@@ -654,7 +656,7 @@
         random bits). Nobody can guess it — that's roughly 3×10²⁶ possibilities — and ntfy.sh
         does not let anyone list or browse topics, so it can only be found if you reveal it.
         Treat it like a password: it is a <strong>secret URL</strong>, and anyone who learns it
-        can read your fleet alarmClock and inject fake ones. Never share or post it.
+        can read your fleet reminders and inject fake ones. Never share or post it.
       </p>
       <p class="rem-hint">
         <strong>Worried someone got hold of it?</strong> Change your ntfy access token above.
@@ -683,7 +685,7 @@
 
   <div class="rem-card" style="margin-top:14px">
     <div class="rem-row" style="margin-bottom:8px">
-      <h2 style="margin:0;color:#4a9eff;font-size:16px;flex:1">Currently queued</h2>
+      <h2 style="margin:0;color:#4a9eff;font-size:16px;flex:1">Reminders set</h2>
       <span id="remPreviewStatus" class="rem-status"></span>
       <button id="remRefresh">Refresh</button>
     </div>

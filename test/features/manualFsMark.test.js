@@ -116,9 +116,9 @@ describe('installManualFsMark — visibility gating', () => {
     setForm();
     installManualFsMark();
     expect(chip()).not.toBeNull();
-    // Unmarked initially: no `.on`, "Mark FS" label.
+    // Unmarked initially: no `.on`. The label is the constant "Set FR".
     expect(chip()?.classList.contains('on')).toBe(false);
-    expect(chip()?.querySelector('.lbl')?.textContent).toBe('Mark FS');
+    expect(chip()?.querySelector('.lbl')?.textContent).toBe('Set FR');
   });
 });
 
@@ -144,9 +144,9 @@ describe('installManualFsMark — toggle writes state + fires the event', () => 
     expect(stored).toHaveLength(1);
     expect(stored[0].bodyKey).toBe('1:2:3:1');
     expect(typeof stored[0].markedAt).toBe('number');
-    // Chip reflects the marked state.
+    // Chip reflects the marked state via the highlight; the label stays "Set FR".
     expect(chip()?.classList.contains('on')).toBe(true);
-    expect(chip()?.querySelector('.lbl')?.textContent).toBe('FS marked');
+    expect(chip()?.querySelector('.lbl')?.textContent).toBe('Set FR');
   });
 
   it('clicking again unmarks: clears storage, fires a second event, reverts the chip', () => {
@@ -162,7 +162,7 @@ describe('installManualFsMark — toggle writes state + fires the event', () => 
     expect(events).toBe(2);
     expect(readManualLandedFs()).toEqual([]);
     expect(chip()?.classList.contains('on')).toBe(false);
-    expect(chip()?.querySelector('.lbl')?.textContent).toBe('Mark FS');
+    expect(chip()?.querySelector('.lbl')?.textContent).toBe('Set FR');
   });
 
   it('reflects a pre-existing mark from storage on install (chip starts "on")', () => {
@@ -172,7 +172,23 @@ describe('installManualFsMark — toggle writes state + fires the event', () => 
     );
     installManualFsMark();
     expect(chip()?.classList.contains('on')).toBe(true);
-    expect(chip()?.querySelector('.lbl')?.textContent).toBe('FS marked');
+    expect(chip()?.querySelector('.lbl')?.textContent).toBe('Set FR');
+  });
+});
+
+describe('installManualFsMark — civil-grid tile anchor', () => {
+  it('mounts as a .tile in the #civil ship grid (the empty cell by the probe), with the lighthouse glyph', () => {
+    setSearch('?page=ingame&component=fleetdispatch');
+    setMeta({ coords: '1:2:3', type: 'planet' });
+    // #civil present → the primary anchor wins over the #fleet1 fallback.
+    document.body.innerHTML = '<ul id="civil"></ul><form id="fleet1"></form>';
+    installManualFsMark();
+    const c = chip();
+    expect(c).not.toBeNull();
+    expect(c?.parentElement?.id).toBe('civil');
+    expect(c?.classList.contains('tile')).toBe(true);
+    expect(c?.querySelector('.ico svg')).not.toBeNull(); // the lighthouse glyph
+    expect(c?.querySelector('.lbl')?.textContent).toBe('Set FR');
   });
 });
 

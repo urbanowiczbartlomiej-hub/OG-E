@@ -75,6 +75,49 @@ C under-attack highlight). Everything else is GREEN.
 > `reminders`→`alarmClock`. The assessment below stands as the original risk
 > analysis that drove the consult.
 
+### Wording discipline (binding — part of the approval condition)
+
+The push is permitted **only** as a player-set alarm clock, never a monitor. So
+the user-facing vocabulary must never imply that OG-E watches the game, runs
+while the player is away, or holds a notification it "fires" on a timer. Under
+rule 4 the *appearance* of an away-monitor is itself the risk, so this wording
+is part of staying inside the granted carve-out — it is not cosmetic.
+
+The mental model every string must reinforce: the player **sets** a reminder —
+at send time, for a return time the game already showed them — and the reminder
+**rings** at that time. OG-E's job ends the moment the reminder is set; the
+player can close the browser. ntfy (a generic push service, like a phone's clock
+app) **delivers** it.
+
+A deliberate noun split carries the fair-play meaning. The **device** is the
+"**alarm clock**" (= a *budzik* you set yourself — the exact phrase ToolDevs
+approved). An **individual buzz** is a "**reminder**". We never use bare
+"**alarm**" as the countable unit: standalone "alarm" reads as the *alert* rule
+4 forbids ("automated **alarms** … to alert a player to in-game events"),
+whereas "alarm clock" and "reminder" both read as player-set.
+
+- **Banned** in user-facing copy: *fires / fired / fires at*, *queue / queued /
+  currently queued / queued on ntfy*, *pending*, *live* (as a status line),
+  any "schedule/scheduled" **attributed to OG-E**, and **bare "alarm"** as a
+  noun (an *alarm* you'd "get" — use "reminder"; "alarm **clock**" the device is
+  fine).
+- **Use** instead: noun **"reminder"** for the unit, **"alarm clock"** for the
+  device/feature name, **"Reminder times"** for the offset list; verbs
+  *set / armed / rings / rang / rings at / to go / as of*; and describe ntfy as
+  **delivering**, never OG-E as dispatching.
+- **Exempt** (never shown to a player, so unchanged): internal identifiers —
+  variable/function names (`adhocFireTimes`, `reconcileWaveQueue`), CSS `cls`
+  hooks (`.rem-badge.queued`/`.scheduled`/`.fired`), gist filenames
+  (`oge-alarmClock-*.json`), and storage keys. Only **rendered** strings are
+  governed by this rule.
+
+Last reconciled in the alarm-clock vocabulary pass (2026-06-24): replaced
+"Fires at"→"Rings at", "Currently queued"→"Reminders set", the `live · … queued
+on ntfy` status line→`as of … N reminder(s) set`, badge
+`queued/fired/scheduled` labels→`set/rang/armed`, the countable unit
+"alarm"→"reminder" everywhere (keeping "alarm clock" the device name), and
+removed every `alarmClock` camelCase leak from rendered copy.
+
 **Root cause (one code path):** `sync/ntfyReconciler.js` POSTs to `ntfy.sh`
 with an `X-Delay` header, so the public push service holds the message and
 delivers it to the player's phone **at a future time, while they are away from

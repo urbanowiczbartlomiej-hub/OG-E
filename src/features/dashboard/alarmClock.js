@@ -401,12 +401,12 @@ const refreshPreview = async () => {
       ? ` · cleaned ${orphansCancelled} orphan${orphansCancelled === 1 ? '' : 's'}`
       : '';
     setPreviewStatus(
-      `live · ${new Date().toLocaleTimeString()} · ${queued} message${queued === 1 ? '' : 's'} queued on ntfy${sweepNote}`,
+      `as of ${new Date().toLocaleTimeString()} · ${queued} reminder${queued === 1 ? '' : 's'} set${sweepNote}`,
       'ok',
     );
   } catch (err) {
     renderPreviewMulti(mirror, new Map());
-    setPreviewStatus('live fetch failed (' + /** @type {Error} */ (err).message + ') — showing mirror', 'err');
+    setPreviewStatus('couldn\'t refresh (' + /** @type {Error} */ (err).message + ') — showing last known', 'err');
   }
 };
 
@@ -458,7 +458,7 @@ const renderPreviewMulti = (states, ntfyMap) => {
 
   if (universesInGist.length === 0) {
     const p = node('p', {
-      text: 'No data yet. Enable cloud sync + alarmClock in OG-E settings and send an expedition.',
+      text: 'No data yet. Enable cloud sync + the alarm clock in OG-E settings and send an expedition.',
     });
     p.style.color = '#888';
     root.appendChild(p);
@@ -467,7 +467,7 @@ const renderPreviewMulti = (states, ntfyMap) => {
 
   if (!active) {
     const p = node('p', {
-      text: 'Pick a server in the selector above to see its expedition alarmClock.',
+      text: 'Pick a server in the selector above to see its expedition reminders.',
     });
     p.style.color = '#888';
     root.appendChild(p);
@@ -477,7 +477,7 @@ const renderPreviewMulti = (states, ntfyMap) => {
   const state = states[active];
   if (!state) {
     const p = node('p', {
-      text: `No alarmClock data for ${active} yet. Send an expedition burst in-game to queue alarmClock.`,
+      text: `No reminders for ${active} yet. Send an expedition burst in-game to set reminders.`,
     });
     p.style.color = '#888';
     root.appendChild(p);
@@ -627,7 +627,7 @@ const appendFiresAtLine = (card, stillQueued) => {
 
   const haveMessages = stillQueued.some((m) => Boolean(m.message));
   if (!haveMessages) {
-    firesAt.appendChild(node('span', { text: 'Fires at: ' }));
+    firesAt.appendChild(node('span', { text: 'Rings at: ' }));
     firesAt.appendChild(node('span', {
       class: 'wave-times',
       text: stillQueued.map((m) => new Date(m.time * 1000).toLocaleTimeString()).join(', '),
@@ -636,7 +636,7 @@ const appendFiresAtLine = (card, stillQueued) => {
     return;
   }
 
-  firesAt.appendChild(node('span', { text: 'Fires at:' }));
+  firesAt.appendChild(node('span', { text: 'Rings at:' }));
   const list = node('ul', { class: 'wave-msg-list' });
   for (const m of stillQueued) {
     const li = node('li', { class: 'wave-msg-row' });
@@ -694,7 +694,7 @@ const renderWavesInto = (section, universeId, state, ntfyMap) => {
     .slice()
     .sort((a, b) => a.nextWaveAt - b.nextWaveAt);
   if (!beginAlarmClockSection(section, sorted, 'Expedition waves',
-    'No outstanding waves. Send an expedition burst in-game to queue alarmClock.')) return;
+    'No reminders set. Send an expedition burst in-game to set reminders.')) return;
 
   const nowSec = Math.floor(Date.now() / 1000);
   const notify = state.notifyState || {};
@@ -729,7 +729,7 @@ const renderWavesInto = (section, universeId, state, ntfyMap) => {
     if (!cancelled && stillQueued.length > 0) {
       const btn = node('button', { class: 'rem-cancel', text: '×' });
       btn.setAttribute('type', 'button');
-      btn.setAttribute('title', 'Cancel this wave (delete pending ntfy alarmClock)');
+      btn.setAttribute('title', 'Cancel this wave (turn off the reminders you set)');
       btn.addEventListener('click', () => {
         btn.setAttribute('disabled', '');
         void cancelWaveFromDashboard(universeId, w.id);
@@ -740,11 +740,11 @@ const renderWavesInto = (section, universeId, state, ntfyMap) => {
 
     /** @param {number} n */
     const plural = (n) => (n === 1 ? '' : 's');
-    let metaText = `${w.fleetCount} expedition${plural(w.fleetCount)} · ${totalScheduled} alarmClock${plural(totalScheduled)} scheduled`;
+    let metaText = `${w.fleetCount} expedition${plural(w.fleetCount)} · ${totalScheduled} reminder${plural(totalScheduled)} set`;
     if (ntfyMap.size > 0 && totalScheduled > 0) {
-      const fired = totalScheduled - stillQueued.length;
-      if (fired > 0) metaText += ` (${fired} fired, ${stillQueued.length} pending)`;
-      else metaText += ` (all pending)`;
+      const rang = totalScheduled - stillQueued.length;
+      if (rang > 0) metaText += ` (${rang} rang · ${stillQueued.length} to go)`;
+      else metaText += ` (none rung yet)`;
     }
     card.appendChild(node('div', { class: 'wave-meta', text: metaText }));
 
@@ -782,7 +782,7 @@ const renderAdhocInto = (section, universeId, state, ntfyMap) => {
   const sorted = (Array.isArray(state?.adhoc) ? state.adhoc : [])
     .slice()
     .sort((a, b) => a.arrivalAt - b.arrivalAt);
-  if (!beginAlarmClockSection(section, sorted, 'Ad-hoc fleet alarmClock')) return;
+  if (!beginAlarmClockSection(section, sorted, 'Ad-hoc fleet reminders')) return;
 
   const notify = state.adhocNotify || {};
   for (const e of sorted) {
@@ -806,7 +806,7 @@ const renderAdhocInto = (section, universeId, state, ntfyMap) => {
     if (queued) {
       const btn = node('button', { class: 'rem-cancel', text: '×' });
       btn.setAttribute('type', 'button');
-      btn.setAttribute('title', 'Cancel this alarmClock (delete the pending ntfy push)');
+      btn.setAttribute('title', 'Cancel this reminder (turn it off)');
       btn.addEventListener('click', () => {
         btn.setAttribute('disabled', '');
         void cancelAdhocFromDashboard(universeId, e.id);
@@ -815,7 +815,7 @@ const renderAdhocInto = (section, universeId, state, ntfyMap) => {
     }
     card.appendChild(head);
 
-    card.appendChild(node('div', { class: 'wave-meta', text: e.label || 'Fleet alarmClock' }));
+    card.appendChild(node('div', { class: 'wave-meta', text: e.label || 'Fleet reminder' }));
 
     appendFiresAtLine(card, stillQueued);
 
@@ -849,7 +849,7 @@ const renderFleetSavesInto = (section, state, ntfyMap) => {
   const sorted = (Array.isArray(state?.fleetSave) ? state.fleetSave : [])
     .slice()
     .sort((a, b) => a.arrivalAt - b.arrivalAt);
-  if (!beginAlarmClockSection(section, sorted, 'Fleet-save alarmClock')) return;
+  if (!beginAlarmClockSection(section, sorted, 'Fleet-save reminders')) return;
 
   const notify = state.fleetSaveNotify || {};
   const nowSec = Math.floor(Date.now() / 1000);
@@ -882,10 +882,10 @@ const renderFleetSavesInto = (section, state, ntfyMap) => {
     let metaText = e.label || 'Fleet save';
     if (Number.isFinite(e.shipCount)) metaText += ` · ${e.shipCount} ship${plural(e.shipCount)}`;
     if (totalScheduled > 0) {
-      metaText += ` · ${totalScheduled} alarmClock${plural(totalScheduled)} scheduled`;
+      metaText += ` · ${totalScheduled} reminder${plural(totalScheduled)} set`;
       if (ntfyMap.size > 0) {
-        const fired = totalScheduled - stillQueued.length;
-        metaText += fired > 0 ? ` (${fired} fired, ${stillQueued.length} pending)` : ' (all pending)';
+        const rang = totalScheduled - stillQueued.length;
+        metaText += rang > 0 ? ` (${rang} rang · ${stillQueued.length} to go)` : ' (none rung yet)';
       }
     }
     card.appendChild(node('div', { class: 'wave-meta', text: metaText }));
@@ -893,7 +893,7 @@ const renderFleetSavesInto = (section, state, ntfyMap) => {
     if (tooFar) {
       const note = node('div', {
         class: 'wave-meta',
-        text: 'ntfy schedules at most 3 days ahead — alarmClock queue automatically once this is within 3 days of landing.',
+        text: 'ntfy delivers at most 3 days ahead — the reminder is set automatically once this is within 3 days of landing.',
       });
       note.style.color = '#888';
       card.appendChild(note);
@@ -944,7 +944,7 @@ export const guardianMessagesFor = (universeId, ntfyMap) => {
  */
 const renderGuardianInto = (section, universeId, ntfyMap) => {
   const mine = guardianMessagesFor(universeId, ntfyMap);
-  if (!beginAlarmClockSection(section, mine, 'Fleet guardian alarmClock')) return;
+  if (!beginAlarmClockSection(section, mine, 'Landed-fleet reminders')) return;
 
   for (const m of mine) {
     const { card, head } = buildAlarmClockCard(m.time, 'rem-wave');
@@ -998,7 +998,7 @@ const cancelAdhocFromDashboard = async (universeId, entryId) => {
   const state = states[universeId];
   const entry = state?.adhoc?.find((e) => e.id === entryId);
   if (!state || !entry) {
-    setPreviewStatus('cancel failed: alarmClock already gone', 'warn');
+    setPreviewStatus('cancel failed: reminder already gone', 'warn');
     void refreshPreview();
     return;
   }

@@ -33,10 +33,10 @@ export const alarmClockSection = {
       getText: () =>
         'Alarm clock — the master switch, your ntfy token, the push topic to '
         + 'subscribe to, and all schedules now live in the OG-E Dashboard ▸ '
-        + 'Alarm clock tab (open it from the Dashboard button above). Each alarm '
-        + 'fires for a time you already know from your own action; OG-E never '
-        + 'watches the game while you\'re away. The token is shared across all '
-        + 'your universes.',
+        + 'Alarm clock tab (open it from the Dashboard button above). You set '
+        + 'each reminder for a time you already know from your own action, and '
+        + 'it rings at that time; OG-E never watches the game while you\'re away. '
+        + 'The token is shared across all your universes.',
     },
   ],
 };

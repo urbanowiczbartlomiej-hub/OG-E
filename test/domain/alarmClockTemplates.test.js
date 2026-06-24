@@ -23,7 +23,7 @@ describe('defaultAlarmClockTemplates', () => {
   it('reproduces the historical hardcoded bodies, icons and priorities', () => {
     const d = defaultAlarmClockTemplates();
     expect(d.wave).toEqual({
-      body: 'Expeditions back ({returnTime}) — alarmClock #{index}/{total}.',
+      body: 'Expeditions back ({returnTime}) — reminder #{index}/{total}.',
       icon: 'default',
       priority: 3,
     });

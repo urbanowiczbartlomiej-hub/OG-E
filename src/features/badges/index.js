@@ -212,17 +212,20 @@ const buildCss = () => `
   color:#f0c23c;font:700 8px/1 Verdana,sans-serif;letter-spacing:-.5px;
   text-shadow:0 0 2px #000,0 0 1px #000;
 }
-/* Landed fleet-save: same "FS" tag, orange = sitting exposed after touchdown.
-   It PULSES (opacity breath + orange glow) — a landed FS is the dangerous
-   state, so it should grab the eye, not just sit there. Colour unchanged
-   (red is reserved for threat/aggro). In-motion (yellow) FS stays static. */
+/* Landed fleet-save: the "FR" (Fleet reminder) tag, bright orange = sitting
+   exposed after touchdown. It PULSES harder than an in-motion FS — faster
+   breath, a deeper opacity dip, a stronger orange glow, and a hair larger — a
+   landed fleet is the dangerous state the guardian watches, so it should grab
+   the eye, not just sit there. Colour stays orange (red is reserved for
+   threat/aggro). In-motion (yellow) FS stays static. */
 .oge-mb-fs.landed{
-  color:#e8902e;
-  animation:oge-fs-pulse 1.4s ease-in-out infinite;
+  color:#ff8c1a;
+  font-size:9px;
+  animation:oge-fs-pulse 1.05s ease-in-out infinite;
 }
 @keyframes oge-fs-pulse{
   0%,100%{opacity:1;text-shadow:0 0 2px #000,0 0 1px #000;}
-  50%{opacity:.45;text-shadow:0 0 4px #e8902e,0 0 2px #000;}
+  50%{opacity:.3;text-shadow:0 0 6px #ff8c1a,0 0 3px #ff8c1a,0 0 2px #000;}
 }
 /* Honour the OS "reduce motion" preference — fall back to the static tag. */
 @media (prefers-reduced-motion:reduce){
@@ -282,7 +285,7 @@ const HIDE_CSS = `.${COL_CLASS},.oge-mb-help{display:none!important;}`;
 const LEGEND_ROWS = [
   { category: 'threat', label: 'Incoming attack (foreign fleet at you)' },
   { category: 'fs', label: 'Fleet-save — in motion (safe)' },
-  { category: 'fs', landed: true, label: 'Fleet-save — landed, exposed (until re-saved)' },
+  { category: 'fs', landed: true, label: 'Fleet reminder — landed fleet, exposed (until re-saved)' },
   { category: 'aggro', label: 'Your attack / spy on a player' },
   { category: 'explore', label: 'Your expedition' },
   { category: 'logistics', label: 'Logistics (transport / deploy / defend)' },
@@ -304,7 +307,7 @@ const buildLegend = () => {
     sw.className = 'sw';
     const mk = document.createElement('span');
     mk.className = `${DOT_CLASS} oge-mb-${row.category}${row.landed ? ' landed' : ''}`;
-    if (row.category === 'fs') mk.textContent = 'FS';
+    if (row.category === 'fs') mk.textContent = row.landed ? 'FR' : 'FS';
     else if (row.category === 'threat') mk.textContent = '!!!';
     sw.appendChild(mk);
     const lb = document.createElement('span');
@@ -354,9 +357,11 @@ const buildMarker = (m) => {
   el.className = `${DOT_CLASS} oge-mb-${m.category}${m.landed ? ' landed' : ''}`;
   // explore renders via a CSS background SVG (a heart); the FS + threat tags are
   // text ("FS" / "!!!"), everything else a filled dot.
-  if (m.category === 'fs') el.textContent = 'FS';
+  if (m.category === 'fs') el.textContent = m.landed ? 'FR' : 'FS';
   else if (m.category === 'threat') el.textContent = '!!!';
-  el.title = m.landed ? 'Fleet-save · landed (exposed)' : MARKER_LABEL[m.category] || 'Fleet';
+  el.title = m.landed
+    ? 'Fleet reminder · landed fleet (exposed)'
+    : MARKER_LABEL[m.category] || 'Fleet';
   return el;
 };
 

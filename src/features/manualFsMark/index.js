@@ -9,13 +9,17 @@
 // the user dismissed and wants back). See `state/manualLandedFs.js`.
 //
 // Inline, not on the FAB: the mark is contextual to the body you're dispatching
-// from, so it belongs at the form — by the native "Dalej"/continue control,
-// where your eyes already are when sending. We mount as the FIRST child of the
-// native `#allornone` block (which holds the continue button): that block is
-// stable, but its inner `.allornonewrap` is rebuilt by AGR on every live cargo/
-// coords refresh — so the chip must sit OUTSIDE that wrap or it gets wiped. A
-// MutationObserver re-injects it if AGR rebuilds the form. Fallbacks: AGR's
-// fleet1 target-type row, then `#fleet1`.
+// from, so it belongs at the fleet1 form, where your eyes already are when
+// sending. PRIMARY home: the empty grid cell that trails the espionage probe in
+// the civil-ships list (`#civil`). OGame's 5 civil ships (202/203/208/209/210)
+// wrap 3-to-a-row in an 80px-tile flex grid, so the last row is `209 210 ▢` —
+// one open cell right next to the probe. We drop an 80×80 tile there. That keeps
+// the mark clear of the "Dalej"/continue control, whose row reflows when the
+// player has no Fleet-Admiral premium (the old top-right chip crowded it and
+// shrank the button). FALLBACKS (non-fleet1 / gridless layouts): top-right of
+// the native `#allornone` block, then AGR's target-type row, then `#fleet1`. The
+// two homes are styled differently (`.tile` 80×80 vs the default inline chip).
+// A MutationObserver re-injects it if the game / AGR rebuilds the grid or form.
 //
 // The body it marks is resolved from the page's `cp` mapped onto the planet
 // list's planet/moon links — that yields coords AND the planet-vs-moon type
@@ -26,25 +30,33 @@ import { injectStyle } from '../../lib/dom.js';
 import { debounce } from '../../lib/debounce.js';
 import { MANUAL_FS_CHANGED_EVENT } from '../../lib/ogeEvents.js';
 import { hasManualLandedFs, toggleManualLandedFs } from '../../state/manualLandedFs.js';
+import { LIGHTHOUSE_GLYPH } from '../shared/buttonGlyphs.js';
 
 /** OG-E-owned ids (NOT a game contract — ours to rename). */
 const CHIP_ID = 'oge-mfs-chip';
 const STYLE_ID = 'oge-mfs-style';
 
+/** The guardian's lighthouse glyph, wrapped for inline use; tints to the chip's
+ *  `color` (the art paints with `currentColor`). Same mark as the FAB button so
+ *  the "Set FR" chip and the Fleet-reminder button read as one feature. */
+const GLYPH_SVG = `<svg viewBox="0 0 64 64" aria-hidden="true">${LIGHTHOUSE_GLYPH}</svg>`;
+
 /**
  * Anchors tried in order; the chip mounts at the first one present, using that
- * anchor's `pos`. Primary: the FIRST child of `#allornone` (the native block
- * around the continue button) — a stable sibling BEFORE the volatile
- * `.allornonewrap`, so AGR's live cargo/coords rebuilds don't wipe it. Floated
- * right, it lands top-right above "Dalej". Fallbacks land after AGR's
- * target-type row, then after `#fleet1` if neither is up yet.
+ * anchor's `pos` and `cls` (extra class controlling its look there). Primary:
+ * appended to `#civil` (the civil-ships flex grid), where it flows into the
+ * empty cell trailing the espionage probe as an 80×80 `.tile`. Fallbacks: the
+ * FIRST child of `#allornone` (a stable sibling BEFORE the volatile
+ * `.allornonewrap`, floated top-right above "Dalej"), then AGR's target-type
+ * row, then after `#fleet1`.
  *
- * @type {ReadonlyArray<{ sel: string, pos: InsertPosition }>}
+ * @type {ReadonlyArray<{ sel: string, pos: InsertPosition, cls: string }>}
  */
 const ANCHORS = [
-  { sel: '#allornone', pos: 'afterbegin' },
-  { sel: '#ago_type', pos: 'afterend' },
-  { sel: GAME.FD_FLEET1, pos: 'afterend' },
+  { sel: '#civil', pos: 'beforeend', cls: 'tile' },
+  { sel: '#allornone', pos: 'afterbegin', cls: '' },
+  { sel: '#ago_type', pos: 'afterend', cls: '' },
+  { sel: GAME.FD_FLEET1, pos: 'afterend', cls: '' },
 ];
 
 const CSS = `
@@ -57,9 +69,21 @@ const CSS = `
   font:700 11px/1 Verdana,sans-serif;cursor:pointer;user-select:none;
 }
 #${CHIP_ID}:hover{border-color:#e8902e;}
-#${CHIP_ID}.on{background:#3a2a10;border-color:#e8902e;}
-#${CHIP_ID} .dot{width:8px;height:8px;border-radius:50%;border:1px solid #e8902e;box-sizing:border-box;}
-#${CHIP_ID}.on .dot{background:#e8902e;}
+/* Active = marked. The label stays "Set FR"; this highlight (brighter fill,
+   lit border + glow) is what signals the on-state now that the text is fixed. */
+#${CHIP_ID}.on{background:#3a2a10;border-color:#e8902e;box-shadow:0 0 6px rgba(245,133,26,.55);}
+#${CHIP_ID} .ico{display:inline-flex;align-items:center;justify-content:center;}
+#${CHIP_ID} .ico svg{width:14px;height:14px;display:block;}
+/* Tile mode: fills the empty 80×80 cell next to the espionage probe in #civil.
+   margin-bottom matches the game's .technology.interactive so it lines up. The
+   lighthouse sits big over the label, a mini echo of the guardian FAB button. */
+#${CHIP_ID}.tile{
+  flex-direction:column;justify-content:center;text-align:center;gap:5px;
+  float:none;clear:none;
+  width:80px;height:80px;margin:0 0 30px;padding:4px;
+  box-sizing:border-box;border-width:2px;line-height:1.2;
+}
+#${CHIP_ID}.tile .ico svg{width:36px;height:36px;}
 `;
 
 /** @param {string|null|undefined} s @returns {string} dense `g:s:p` */
@@ -109,9 +133,10 @@ const currentBody = () => {
 };
 
 /**
- * Reflect the mark state onto the chip. Writes the label's text ONLY when it
- * changes — the install observer watches childList, so an unconditional rewrite
- * would re-trigger itself in a loop (class/title are attributes, not watched).
+ * Reflect the mark state onto the chip. Touches only the `on` class + `title`
+ * (both attributes, NOT watched by the install observer) — the label is the
+ * fixed "Set FR" set once at build, so the active state shows purely as the
+ * highlight, and there is no childList write that could re-trigger the observer.
  *
  * @param {HTMLElement} chip
  * @param {string} bodyKey
@@ -120,19 +145,19 @@ const paintChip = (chip, bodyKey) => {
   const on = hasManualLandedFs(bodyKey);
   chip.classList.toggle('on', on);
   chip.title = on
-    ? 'This body is marked as a landed fleet-save — tap to clear'
-    : 'Mark the fleet on this body as a landed fleet-save (badge + guardian)';
-  const label = chip.querySelector('.lbl');
-  const txt = on ? 'FS marked' : 'Mark FS';
-  if (label && label.textContent !== txt) label.textContent = txt;
+    ? 'Fleet reminder is set for this body — tap to clear'
+    : 'Set a Fleet reminder for the fleet on this body (FR badge + reminder push)';
 };
 
 /** Build the chip. It reads the body LIVE on click so it never goes stale. */
 const buildChip = () => {
   const chip = document.createElement('div');
   chip.id = CHIP_ID;
-  chip.innerHTML = '<span class="dot"></span><span class="lbl"></span>';
-  chip.addEventListener('click', () => {
+  chip.innerHTML = `<span class="ico">${GLYPH_SVG}</span><span class="lbl">Set FR</span>`;
+  chip.addEventListener('click', (e) => {
+    // In the #civil grid our tile sits among the game's ship cells; keep the
+    // click from bubbling into OGame's delegated ship-select handler.
+    e.stopPropagation();
     const b = currentBody();
     if (!b) return;
     toggleManualLandedFs(b.bodyKey, Math.floor(Date.now() / 1000));
@@ -155,16 +180,19 @@ const sync = () => {
   if (!chip) {
     let anchorEl = null;
     let pos = /** @type {InsertPosition} */ ('afterend');
+    let cls = '';
     for (const a of ANCHORS) {
       const el = document.querySelector(a.sel);
       if (el) {
         anchorEl = el;
         pos = a.pos;
+        cls = a.cls;
         break;
       }
     }
     if (!anchorEl) return; // form not ready yet — the observer retries
     chip = buildChip();
+    if (cls) chip.classList.add(cls);
     anchorEl.insertAdjacentElement(pos, chip);
   }
   paintChip(chip, body.bodyKey);

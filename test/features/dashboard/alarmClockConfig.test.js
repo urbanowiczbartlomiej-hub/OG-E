@@ -229,7 +229,7 @@ describe('AlarmClock fleet-save config editor', () => {
     $('#remCfgSave').dispatchEvent(new Event('click'));
     await flush();
     expect(store.has(CFG_KEY)).toBe(false);
-    expect($('#remCfgStatus').textContent || '').toMatch(/fleet-save schedule/i);
+    expect($('#remCfgStatus').textContent || '').toMatch(/fleet-save times/i);
   });
 
   // The crux: the AlarmClock editor and the scan-config editor write the SAME
@@ -348,7 +348,7 @@ describe('AlarmClock wave + ad-hoc config editor', () => {
     await flush();
     expect(store.has(ALARM_CLOCK_KEY)).toBe(false);
     expect(store.has(CFG_KEY)).toBe(false); // the whole save aborted
-    expect($('#remCfgStatus').textContent || '').toMatch(/ad-hoc schedule/i);
+    expect($('#remCfgStatus').textContent || '').toMatch(/ad-hoc times/i);
   });
 
   it('allows an empty wave schedule (no wave pings)', async () => {
@@ -367,7 +367,7 @@ describe('AlarmClock wave + ad-hoc config editor', () => {
     $('#remCfgSave').dispatchEvent(new Event('click'));
     await flush();
     expect(store.has(ALARM_CLOCK_KEY)).toBe(false);
-    expect($('#remCfgStatus').textContent || '').toMatch(/wave schedule/i);
+    expect($('#remCfgStatus').textContent || '').toMatch(/wave times/i);
   });
 });
 

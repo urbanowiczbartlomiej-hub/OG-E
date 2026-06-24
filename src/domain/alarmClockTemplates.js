@@ -148,8 +148,8 @@ const FLEET_FIELDS = Object.freeze([
  * @type {ReadonlyArray<TemplateField>}
  */
 const SERIES_FIELDS = Object.freeze([
-  { token: 'index', label: 'Alarm # (1-based)', sample: '1' },
-  { token: 'total', label: 'Total alarms', sample: '4' },
+  { token: 'index', label: 'Reminder # (1-based)', sample: '1' },
+  { token: 'total', label: 'Total reminders', sample: '4' },
 ]);
 
 /**
@@ -200,7 +200,7 @@ export const TEMPLATE_FIELDS = Object.freeze({
  */
 export const defaultAlarmClockTemplates = () => ({
   wave: {
-    body: 'Expeditions back ({returnTime}) — alarmClock #{index}/{total}.',
+    body: 'Expeditions back ({returnTime}) — reminder #{index}/{total}.',
     icon: 'default',
     priority: 3,
   },

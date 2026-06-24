@@ -4,6 +4,31 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.30.12] — 2026-06-25
+
+### Changed
+
+- **Clearer wording across the alarm clock / reminders.** Every reminder is one
+  *you* set the moment you send a fleet — for a return time the game already
+  shows you — and it rings on your phone like an alarm clock; OG-E never watches
+  the game while you're away. The dashboard now says so plainly: "Currently
+  queued" → **"Reminders set"**, "Fires at" → **"Rings at"**, and the badge
+  states read **set / armed / rang** instead of queued / fired / scheduled. No
+  behaviour change — only the labels.
+- **The landed-fleet watch is now "Fleet reminder" (FR) — the counterpart to FS
+  (Fleet save).** A fleet is safe while flying (FS); once it lands it sits
+  exposed, so the planet marker and the in-game button now read **FR**. The
+  landed marker is brighter and pulses harder, so an exposed fleet is easy to
+  catch at a glance.
+- **The in-game "mark this fleet" button moved into the empty ship tile next to
+  the espionage probe.** It used to sit above "Continue", where — without a
+  Fleet Admiral — it crowded that button and shrank it. Now it fills the unused
+  grid cell, shows a lighthouse icon and a steady **"Set FR"** label, and lights
+  up when active.
+- **A few toggles renamed** so they no longer read as "alarms": the event /
+  Merchant menu-pulse options are now "highlight", matching what they actually
+  do (in-tab emphasis, never an off-device notification).
+
 ## [1.30.11] — 2026-06-24
 
 ### Changed

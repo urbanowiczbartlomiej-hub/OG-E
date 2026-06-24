@@ -817,12 +817,12 @@ const MODE_CHIPS = [
   [
     MODE_DAILY,
     '1×/day · from 14:00',
-    'One alarmClock per day, from 14:00 (the normal once-a-day import).',
+    'One glow per day, from 14:00 (the normal once-a-day import).',
   ],
   [
     MODE_6X,
     '6×/day · every 4 h',
-    'Six alarmClock per day on the 4-hour event slots ' +
+    'Six glows per day on the 4-hour event slots ' +
       '(00/04/08/12/16/20). Auto-enabled when a "refreshes 6× today" ' +
       'message is seen; switch back here when the event ends.',
   ],
@@ -853,7 +853,7 @@ const buildModeChipsBar = () => {
 
   const label = document.createElement('span');
   label.className = CHIP_LABEL_CLASS;
-  label.textContent = 'OG-E alarmClock:';
+  label.textContent = 'OG-E trader:';
   bar.appendChild(label);
 
   for (const [mode, text, tooltip] of MODE_CHIPS) {

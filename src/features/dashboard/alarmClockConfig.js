@@ -128,7 +128,7 @@ const makeOffsetEditor = ({ idBase, signed, previewLong, placeholder, reference 
     const rm = /** @type {HTMLButtonElement} */ (mk('button', undefined, '✕'));
     rm.type = 'button';
     rm.className = 'oge-offset-remove';
-    rm.title = 'Remove this alarmClock';
+    rm.title = 'Remove this reminder';
 
     const refresh = () => {
       const t = inp.value.trim();
@@ -476,7 +476,7 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
   thresholdInput.size = 8;
   thresholdInput.placeholder = 'e.g. 100000';
   thresholdInput.title =
-    'A fleet whose total ship count crosses this is flagged 🛡 and gets a alarmClock series.';
+    'A fleet whose total ship count crosses this is flagged 🛡 and gets a reminder series.';
 
   const minFlightInput = /** @type {HTMLInputElement} */ (mk('input'));
   minFlightInput.type = 'text';
@@ -504,7 +504,7 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
   guardianIntervalInput.size = 8;
   guardianIntervalInput.placeholder = 'e.g. 20';
   guardianIntervalInput.title =
-    'Minutes after a fleet-save lands that the guardian push fires if it is still sitting bare.';
+    'Minutes after a fleet-save lands that the guardian reminder rings if it is still sitting bare.';
 
   const guardianAckIntervalInput = /** @type {HTMLInputElement} */ (mk('input'));
   guardianAckIntervalInput.type = 'text';
@@ -627,24 +627,24 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
 
   const wavePane = addTab('Expedition waves');
   twoCol(wavePane, [
-    row('Alarm clock — enable', waveEnabledInput, 'auto-detect a returning wave + schedule a series'),
-    block('Alarm clock schedule', waveEditor.element, 'each fires relative to the wave’s return'),
+    row('Alarm clock — enable', waveEnabledInput, 'auto-detect a returning wave + set a series of reminders'),
+    block('Reminder times', waveEditor.element, 'each rings relative to the wave’s return'),
   ], waveTplEditor.element);
 
   const adhocPane = addTab('Ad-hoc');
   twoCol(adhocPane, [
-    block('Alarm clock schedule', adhocEditor.element, 'each relative to arrival (− before, 0 at, + after)'),
+    block('Reminder times', adhocEditor.element, 'each relative to arrival (− before, 0 at, + after)'),
   ], adhocTplEditor.element);
 
   const fsPane = addTab('Fleet-save');
   twoCol(fsPane, [
-    row('Alarm clock — enable', enabledInput, 'auto-detect a returning Fleet-save + schedule a series'),
+    row('Alarm clock — enable', enabledInput, 'auto-detect a returning Fleet-save + set a series of reminders'),
     row('Ship threshold', thresholdInput, 'total ships that count as a "big" fleet'),
     row('Min flight time', minFlightInput, 'minutes-first, e.g. 10m · 0 = off'),
-    block('Alarm clock schedule', fsEditor.element, 'each relative to landing (− before, 0 at, + after)'),
-    row('Fleet guardian — enable', guardianEnableInput, 'a landing+interval reminder for your own bare fleet-save'),
-    row('Fleet guardian — interval', guardianIntervalInput, 'minutes after landing the reminder fires'),
-    row('Fleet guardian — ACK interval', guardianAckIntervalInput, 'minutes idle (no reload) before the button pulses for an ACK'),
+    block('Reminder times', fsEditor.element, 'each relative to landing (− before, 0 at, + after)'),
+    row('Landed-fleet reminder — enable', guardianEnableInput, 'a landing+interval reminder for your own bare fleet-save'),
+    row('Landed-fleet reminder — interval', guardianIntervalInput, 'minutes after landing the reminder rings'),
+    row('Landed-fleet reminder — ACK interval', guardianAckIntervalInput, 'minutes idle (no reload) before the button pulses for an ACK'),
   ], fsTplEditor.element);
 
   body.appendChild(tabBar);
@@ -709,7 +709,7 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
     if (!uni) {
       fillAlarmClock(defaultAlarmClockConfig());
       fillFs(defaultGalaxyScanConfig());
-      setStatus('No universe selected — pick a server to configure alarmClock.', '#e6a23c');
+      setStatus('No universe selected — pick a server to configure the alarm clock.', '#e6a23c');
       return;
     }
     fillAlarmClock(normalizeAlarmClockConfig(await chromeStore.get(alarmClockConfigKeyFor(uni))));
@@ -738,7 +738,7 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
     }
     const offsets = fsEditor.collect();
     if (offsets === null) {
-      setStatus('Fleet-save schedule — each alarmClock must be a duration like -10m, 0m, 10m.', '#e66');
+      setStatus('Fleet-save times — each reminder must be a duration like -10m, 0m, 10m.', '#e66');
       return null;
     }
     const guardianIntervalMin = parseInt(guardianIntervalInput.value, 10);
@@ -790,12 +790,12 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
   const collectAlarmClock = () => {
     const schedule = waveEditor.collect();
     if (schedule === null) {
-      setStatus('Wave schedule — each alarmClock must be a duration like 0m, 10m, 30m.', '#e66');
+      setStatus('Wave times — each reminder must be a duration like 0m, 10m, 30m.', '#e66');
       return null;
     }
     const adhocSchedule = adhocEditor.collect();
     if (adhocSchedule === null) {
-      setStatus('Ad-hoc schedule — each alarmClock must be a duration like -10m, 0m, 10m.', '#e66');
+      setStatus('Ad-hoc times — each reminder must be a duration like -10m, 0m, 10m.', '#e66');
       return null;
     }
     return normalizeAlarmClockConfig({
@@ -817,7 +817,7 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
     if (!ownedFs) return;
 
     const uni = getUniverseId();
-    if (!uni) { setStatus('No universe selected — pick a server to save alarmClock config.', '#e66'); return; }
+    if (!uni) { setStatus('No universe selected — pick a server to save alarm-clock config.', '#e66'); return; }
 
     // AlarmClock config slot (per-universe): wave/ad-hoc + all three templates.
     await chromeStore.set(alarmClockConfigKeyFor(uni), rc);
