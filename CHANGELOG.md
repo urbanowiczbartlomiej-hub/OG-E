@@ -4,6 +4,23 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.30.9] — 2026-06-24
+
+### Changed
+
+- **Fleet-movement status link: consistent font across devices.** The Fleets /
+  Expos counts now render in the same width on the phone as on desktop. They
+  used to inherit OGame's wide Verdana, which only exists on desktop — on
+  Android the text fell back to a much narrower font and looked shrunken. The
+  counts are also a touch larger and wider, with a lighter, borderless card.
+- **Fleet-movement status link: no more wrapped second step.** After preparing a
+  fleet-save, the count box is no longer squeezed into a fixed narrow width that
+  pushed the text onto extra lines and hid it behind the panel below — it now
+  sizes to its content like the first step.
+- **Notification bar: same cross-device font.** OGame's notification bar now
+  uses the same device-consistent typeface, so its text reads the same on phone
+  and desktop.
+
 ## [1.30.8] — 2026-06-24
 
 ### Changed

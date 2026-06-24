@@ -309,4 +309,41 @@ describe('readabilityBoost', () => {
     expect(css).toContain('#ago_summary_fleets > a.tooltip.ago_color_palered');
     expect(css).toContain('#ago_summary_fleets > a.tooltip .ago_color_palered');
   });
+
+  it('pins a cross-device font on the movement box so width matches phone vs desktop', () => {
+    // We inherit OGame's wide Verdana on desktop but Android falls back to
+    // the much narrower Roboto, so the label looked narrower on the phone.
+    // Pinning Roboto → Arial → sans-serif makes both platforms render a
+    // close-width typeface instead of diverging.
+    installReadabilityBoost();
+    const css = document.getElementById(STYLE_ID)?.textContent ?? '';
+    const layoutRule = css.match(/a\.ago_movement\.tooltip\s*,[^{]*\{([^}]*)\}/);
+    expect(layoutRule?.[1] ?? '').toMatch(
+      /font-family:\s*Roboto,\s*Arial,\s*sans-serif/,
+    );
+  });
+
+  it('pins the same cross-device font on the notification bar', () => {
+    installReadabilityBoost();
+    const css = document.getElementById(STYLE_ID)?.textContent ?? '';
+    // Component + its descendants (the nested message spans) get the font.
+    expect(css).toMatch(
+      /#notificationbarcomponent[^{]*\{[^}]*font-family:\s*Roboto,\s*Arial,\s*sans-serif/,
+    );
+    expect(css).toContain('#notificationbarcomponent *');
+  });
+
+  it('unpins AGR\'s fixed 185px width on the step-2 wrapper so the bigger font does not wrap', () => {
+    // #ago_fleet2 #ago_summary_fleets is sized to a fixed 185px by AGR; our
+    // larger font wraps inside it and the overflow hides under the component
+    // below. We override to width:auto (+ drop the margin) at matching
+    // two-ID specificity.
+    installReadabilityBoost();
+    const css = document.getElementById(STYLE_ID)?.textContent ?? '';
+    const rule = css.match(/#ago_fleet2\s+#ago_summary_fleets\s*\{([^}]*)\}/);
+    expect(rule).not.toBeNull();
+    const body = rule?.[1] ?? '';
+    expect(body).toMatch(/width:\s*auto\s*!important/);
+    expect(body).toMatch(/margin:\s*0\s*!important/);
+  });
 });

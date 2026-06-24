@@ -342,23 +342,33 @@ const CSS = `/* OG-E: readability boost — event box + fleet movement link */
    identical) anchor in #ago_summary_fleets and drops the class. */
 a.ago_movement.tooltip,
 #ago_summary_fleets > a.tooltip {
-  font-size: 24px !important;
+  /* Pin the font so the two counts read at a consistent WIDTH across
+     devices. Without this we inherit OGame's Verdana — a deliberately
+     WIDE screen font that ships on Windows/macOS but NOT Android, where
+     mobile Firefox falls back to the much narrower Roboto. Result: the
+     label looked noticeably narrower on the phone than on desktop. We
+     prefer Roboto (native on Android) then Arial (the Windows/macOS
+     fallback when Roboto is absent); Arial and Roboto are close in
+     width, so desktop and mobile now match closely instead of diverging
+     wide-Verdana vs narrow-Roboto. */
+  font-family: Roboto, Arial, sans-serif !important;
+  font-size: 28px !important;
   font-weight: 700 !important;
   display: inline-flex !important;
   flex-direction: column !important;
   align-items: flex-start !important;
-  line-height: 0.95 !important;
+  line-height: 1.05 !important;
   gap: 0 !important;
   width: auto !important;
   height: auto !important;
   margin: 2px 0 2px 9px !important;
-  letter-spacing: 0.4px !important;
+  letter-spacing: 1.0px !important;
   font-variant-numeric: tabular-nums !important;
   text-decoration: none !important;
   box-sizing: border-box !important;
-  background: rgba(15, 20, 26, 0.72) !important;
+  background: rgba(15, 20, 26, 0.62) !important;
   /* Keep mobile browsers from auto-inflating/shrinking the digits — the
-     box is sized off a fixed 24px, so let the authored size stand. */
+     box is sized off a fixed 28px, so let the authored size stand. */
   -webkit-text-size-adjust: 100% !important;
   text-size-adjust: 100% !important;
   /* Lift the thin coloured digits off the semi-transparent card so they
@@ -373,6 +383,17 @@ a.ago_movement.tooltip,
    (matching ID specificity, plus !important) so the box sits flush. */
 #fleet1 a.ago_movement.tooltip {
   padding: 0 !important;
+}
+
+/* Step 2 (fleet2 prepared) wraps the count in #ago_summary_fleets, which
+   AGR pins to a fixed width: 185px with a top/left margin. Our bigger
+   font no longer fits 185px, so each line wraps and the overflow hides
+   under the component below. Let it size to content and drop the margin
+   so step 2 lays out flush like step 1. Two-ID selector to match AGR's
+   own #ago_fleet2 #ago_summary_fleets specificity, plus !important. */
+#ago_fleet2 #ago_summary_fleets {
+  width: auto !important;
+  margin: 0 !important;
 }
 
 /* Colour override for the green ("slots free") variant only. The
@@ -394,6 +415,17 @@ a.ago_movement.tooltip.ago_color_palered,
 a.ago_movement.tooltip .ago_color_palered,
 #ago_summary_fleets > a.tooltip .ago_color_palered {
   color: #ff5d5d !important;
+}
+
+/* Same cross-device font pin as the movement link, on OGame's
+   notification bar: render its text in a typeface that exists on BOTH
+   platforms (Roboto on Android, Arial on desktop) instead of inheriting
+   the wide Verdana that ships only on desktop — so the bar reads at a
+   consistent width phone-vs-desktop. Font only for now (no size/layout).
+   The descendant selector pulls the nested message spans in with it. */
+#notificationbarcomponent,
+#notificationbarcomponent * {
+  font-family: Roboto, Arial, sans-serif !important;
 }
 `;
 
