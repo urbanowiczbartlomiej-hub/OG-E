@@ -4,6 +4,20 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.30.8] — 2026-06-24
+
+### Changed
+
+- **Fleet-movement status link: readable "capped" red.** When a slot count is
+  full (e.g. expeditions 15/15), the red now reads as a vivid, high-contrast
+  red instead of AGR's pale salmon — it was washing out on the dark card,
+  especially on small phone screens. The digits also gained a subtle shadow so
+  they stay legible over whatever shows through the card, and the text no longer
+  auto-rescales on mobile browsers.
+- **Fleet-movement status link: bigger, cleaner.** The Fleets / Expos counts are
+  larger and easier to read, and the box dropped its border and rounded corners
+  for a flatter, less boxed-in look that sits flush in the header.
+
 ## [1.30.7] — 2026-06-24
 
 ### Changed

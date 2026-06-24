@@ -288,4 +288,25 @@ describe('readabilityBoost', () => {
       /a\.ago_movement\.tooltip[^{]*\s+\*\s*\{/,
     );
   });
+
+  it('brightens AGR\'s pale-red "capped" variant for both anchor and inner span', () => {
+    // The native AGR salmon washes out on the dark card (barely legible on
+    // small mobile viewports), so we brighten it to a vivid red — for the
+    // anchor itself when the whole link is palered (fleets capped) AND for
+    // the inner palered span (expeditions capped). Still a warning colour,
+    // just readable.
+    installReadabilityBoost();
+    const css = document.getElementById(STYLE_ID)?.textContent ?? '';
+    // Anchor-level palered (fleets capped → bare fleets text node).
+    expect(css).toMatch(
+      /a\.ago_movement\.tooltip\.ago_color_palered[^{]*\{[^}]*color:\s*#ff5d5d/,
+    );
+    // Inner palered span (expeditions capped).
+    expect(css).toMatch(
+      /a\.ago_movement\.tooltip\s+\.ago_color_palered[^{]*\{[^}]*color:\s*#ff5d5d/,
+    );
+    // Both must also cover the step-2 wrapper anchor.
+    expect(css).toContain('#ago_summary_fleets > a.tooltip.ago_color_palered');
+    expect(css).toContain('#ago_summary_fleets > a.tooltip .ago_color_palered');
+  });
 });

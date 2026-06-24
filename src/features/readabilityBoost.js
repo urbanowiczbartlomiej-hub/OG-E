@@ -328,44 +328,72 @@ const CSS = `/* OG-E: readability boost — event box + fleet movement link */
    HARD SIZE BUDGET. The host header (#planet.shortHeader) is a FIXED
    40px box (game CSS, !important). Two stacked lines must stay within
    it or the second line ("Ekspedycje") drops out of sight behind the
-   component below. At 21px / line-height 1.05 each line is ~22px (2 ≈
-   44px) + 0 vertical padding + 2px border ≈ 46px — about the largest
-   that still shows both lines in practice. Push the font higher only by
-   tightening line-height/padding to keep the total ≈46px, else the
-   second line vanishes.
+   component below. At 24px / line-height 0.95 each line is ~23px (2 ≈
+   46px) + 0 vertical padding + 2px border ≈ 48px — about the largest
+   that still shows both lines in practice. (We tightened line-height
+   from 1.05 to 0.95 when bumping the font 21→24px so the taller text
+   stays within the same ≈46px vertical envelope — the recipe below for
+   going bigger still: raise the font only while tightening line-height/
+   padding to hold the total, else the second line vanishes. Safe here
+   because our forced "Fleets:" / "Expos:" labels carry no descenders.)
 
    Two selectors cover the two fleetdispatch steps: step 1 carries the
    ago_movement class on the anchor itself, step 2 wraps the (otherwise
    identical) anchor in #ago_summary_fleets and drops the class. */
 a.ago_movement.tooltip,
 #ago_summary_fleets > a.tooltip {
-  font-size: 21px !important;
+  font-size: 24px !important;
   font-weight: 700 !important;
   display: inline-flex !important;
   flex-direction: column !important;
   align-items: flex-start !important;
-  line-height: 1.05 !important;
+  line-height: 0.95 !important;
   gap: 0 !important;
   width: auto !important;
   height: auto !important;
-  padding: 0 9px !important;
-  letter-spacing: 0.2px !important;
+  margin: 2px 0 2px 9px !important;
+  letter-spacing: 0.4px !important;
   font-variant-numeric: tabular-nums !important;
   text-decoration: none !important;
   box-sizing: border-box !important;
   background: rgba(15, 20, 26, 0.72) !important;
-  border: 1px solid rgba(64, 196, 193, 0.35) !important;
-  border-radius: 6px !important;
+  /* Keep mobile browsers from auto-inflating/shrinking the digits — the
+     box is sized off a fixed 24px, so let the authored size stand. */
+  -webkit-text-size-adjust: 100% !important;
+  text-size-adjust: 100% !important;
+  /* Lift the thin coloured digits off the semi-transparent card so they
+     stay legible over whatever sits behind it (matters most on small
+     mobile viewports, where the native palered washed out). */
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65) !important;
+}
+
+/* AGR re-pads the link inside the step-1 fleetdispatch header via an
+   ID-specificity rule (#fleet1 .ago_movement { padding: 2px 4px }) that
+   the bare a.ago_movement.tooltip rule above can't outrank. Zero it
+   (matching ID specificity, plus !important) so the box sits flush. */
+#fleet1 a.ago_movement.tooltip {
+  padding: 0 !important;
 }
 
 /* Colour override for the green ("slots free") variant only. The
    palered variant keeps AGR's native red so 37/37 reads as a warning
-   at a glance. The child .ago_color_palered span keeps its red in
-   either case because we colour the anchor only — no universal-
-   child cascade. */
+   at a glance. */
 a.ago_movement.tooltip.ago_color_lightgreen,
 #ago_summary_fleets > a.tooltip.ago_color_lightgreen {
   color: #4af74d !important;
+}
+
+/* Brighten AGR's pale-red "capped" variant. AGR's native salmon is too
+   low-contrast on our dark card — barely legible on small mobile
+   viewports. We brighten it to a vivid red (still a warning at a glance,
+   just readable) for BOTH shapes the count takes: the anchor itself when
+   the whole link is palered (fleets capped → the bare fleets text node),
+   and the inner palered span (expeditions capped). */
+a.ago_movement.tooltip.ago_color_palered,
+#ago_summary_fleets > a.tooltip.ago_color_palered,
+a.ago_movement.tooltip .ago_color_palered,
+#ago_summary_fleets > a.tooltip .ago_color_palered {
+  color: #ff5d5d !important;
 }
 `;
 
