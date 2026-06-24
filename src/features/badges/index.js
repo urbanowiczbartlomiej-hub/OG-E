@@ -240,13 +240,15 @@ const buildCss = () => `
 .oge-mb-help{
   position:relative;
   display:flex;align-items:center;justify-content:center;
-  width:14px;height:14px;margin:3px auto;
+  width:14px;height:14px;
   border-radius:50%;
   background:#142230;color:#9fc0d6;
   border:1px solid #2c5470;
   font:700 10px/1 Verdana,sans-serif;
   cursor:help;
   z-index:31;
+  right:13px;top:-3px;
+  margin:-10px;
 }
 .oge-mb-legend{
   display:none;

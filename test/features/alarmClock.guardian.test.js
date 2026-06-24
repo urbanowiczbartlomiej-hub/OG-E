@@ -49,6 +49,7 @@ vi.mock('../../src/features/shared/button.js', () => ({
       cfg,
       el: document.createElement('div'),
       paintLines: vi.fn(),
+      setProgress: vi.fn(),
       resize: vi.fn(),
       dispose: vi.fn(),
     };
@@ -175,7 +176,7 @@ describe('installGuardian — label', () => {
     const texts = lines.map(/** @param {{ text: string }} l */ (l) => l.text);
     expect(texts).toContain('You here?');
     expect(texts).toContain('4:115:8');
-    expect(texts).toContain('(hold to dismiss)');
+    expect(texts).toContain('(hold to skip)');
   });
 
   it('summarises the overflow as "coords +N" for multiple bare fleets', () => {
@@ -301,6 +302,29 @@ describe('installGuardian — reactivity', () => {
     installGuardian({ universeId: UID });
     settingsStore.set({ ...settingsStore.get(), fabBtnSize: 96 });
     expect(lastBtn().resize).toHaveBeenCalledWith(96);
+  });
+});
+
+describe('installGuardian — progress arc', () => {
+  it('setProgress is called on mount with elapsed/interval fraction', () => {
+    readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
+    installGuardian({ universeId: UID });
+    // pulseTick fires immediately on render(); setProgress must have been called.
+    expect(lastBtn().setProgress).toHaveBeenCalled();
+    const [pct] = lastBtn().setProgress.mock.calls.at(-1);
+    expect(pct).toBeGreaterThanOrEqual(0);
+    expect(pct).toBeLessThanOrEqual(1);
+  });
+
+  it('resets progress to 0 when the player acks (taps off-fleetdispatch)', () => {
+    const ack = vi.fn();
+    paintPlanetList({ coords: '1:2:3', planetHref: 'https://s1.ogame.gameforge.com/?cp=1' });
+    readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
+    installGuardian({ ack, universeId: UID });
+
+    lastBtn().setProgress.mockClear();
+    zone().onTap(); // first tap = ackPresence
+    expect(lastBtn().setProgress).toHaveBeenCalledWith(0);
   });
 });
 

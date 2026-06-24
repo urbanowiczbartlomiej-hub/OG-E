@@ -148,7 +148,7 @@ export const renderLines = (span, lines) => {
   for (const line of lines) {
     const div = document.createElement('div');
     div.textContent = line.text;
-    let css = `font-size:${line.em || '1em'};`;
+    let css = `font-size:${line.em || '1em'};white-space:nowrap;`;
     if (line.opacity != null && line.opacity !== 1) css += `opacity:${line.opacity};`;
     if (line.marginTop) css += `margin-top:${line.marginTop}px;`;
     if (line.letterSpacing) css += `letter-spacing:${line.letterSpacing}px;`;

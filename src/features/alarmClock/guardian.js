@@ -144,7 +144,7 @@ const paint = () => {
   btn.paintLines('g', labelLines({
     main: onDispatch ? 'Fleet save' : 'You here?',
     sub,
-    hint: '(hold to dismiss)',
+    hint: '(hold to skip)',
   }));
 };
 
@@ -168,7 +168,10 @@ const pulseTick = () => {
     return;
   }
   const now = Math.floor(Date.now() / 1000);
-  setFabModuleAlert('guard', now - activeAt >= ackIntervalSec());
+  const elapsed = now - activeAt;
+  const interval = ackIntervalSec();
+  btn.setProgress(Math.min(elapsed / interval, 1));
+  setFabModuleAlert('guard', elapsed >= interval);
 };
 
 /**
@@ -183,6 +186,7 @@ const ackPresence = (t) => {
   activeAt = Math.floor(Date.now() / 1000);
   ackFn(t.bodyKey);
   setFabModuleAlert('guard', false);
+  btn?.setProgress(0);
 };
 
 /**
@@ -213,7 +217,7 @@ const paintBusy = () =>
   btn?.paintLines('g', labelLines({ main: 'Wait…', sub: bare[0]?.coords, hint: '' }));
 /** Prepared → invite the second tap. @param {{ coords: string }} t */
 const paintReady = (t) =>
-  btn?.paintLines('g', labelLines({ main: 'Save now', sub: t.coords, hint: '' }));
+  btn?.paintLines('g', labelLines({ main: 'Send FS', sub: t.coords, hint: '' }));
 /** Dispatched. @param {{ coords: string }} t */
 const paintSent = (t) =>
   btn?.paintLines('g', labelLines({ main: 'Saved!', sub: t.coords, hint: '' }));

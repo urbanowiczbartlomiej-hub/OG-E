@@ -4,6 +4,20 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.30.7] — 2026-06-24
+
+### Changed
+
+- **Fleet-guardian button: progress arc.** A ring on the button now fills up
+  over the configured ACK interval (default 3 minutes). When the arc reaches
+  full, the orange pulse fires — a heads-up that "You here?" is active before
+  the alert escalates. Tapping the button resets the arc to zero.
+- **Fleet-guardian button: "hold to skip" / "Send FS".** The hold hint now
+  reads "hold to skip" instead of "hold to dismiss". The ready-to-send state
+  reads "Send FS" instead of "Save now".
+- **Help chip (?) positioning.** The badge-list help chip is now positioned
+  closer to the header row so it no longer overlaps planet-list content.
+
 ## [1.30.6] — 2026-06-24
 
 ### Added
