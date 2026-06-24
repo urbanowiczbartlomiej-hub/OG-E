@@ -612,8 +612,9 @@ const paintEventBoxGate = (microZone, collectZone) => {
   const wait = !eventBoxReady;
   const host = document.getElementById(FS_UNIFIED_ID);
   if (host) {
-    if (wait) host.dataset.flag = 'wait';
-    else if (host.dataset.flag === 'wait') delete host.dataset.flag;
+    // No `data-flag='wait'` here: the other command buttons don't get a pulsing
+    // gold rim while busy, so the daily-run button shouldn't either — just tint
+    // the rim like a normal wait state, for one consistent look across the FAB.
     host.style.setProperty('--rim', wait ? BG_WAIT : BG_MICRO);
   }
   if (microZone) microZone.style.setProperty('--rim', wait ? BG_WAIT : BG_MICRO);
@@ -756,7 +757,7 @@ export const installDailyRun = () => {
           glyph: PLANET_ARROW_GLYPH,
           onTap: onMicroClick,
           focusValue: 'fs-unified-micro',
-          labelShiftY: -8,
+          labelShiftY: -6,
         },
         {
           // TAP collects; LONG-PRESS (onHold) sets the collect target.
@@ -768,7 +769,7 @@ export const installDailyRun = () => {
           onTap: onCollectClick,
           onHold: onSetTargetClick,
           focusValue: 'fs-unified-collect',
-          labelShiftY: 3,
+          labelShiftY: 1,
         },
       ],
     });

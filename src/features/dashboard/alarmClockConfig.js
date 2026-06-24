@@ -642,8 +642,8 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
     row('Ship threshold', thresholdInput, 'total ships that count as a "big" fleet'),
     row('Min flight time', minFlightInput, 'minutes-first, e.g. 10m · 0 = off'),
     block('Alarm clock schedule', fsEditor.element, 'each relative to landing (− before, 0 at, + after)'),
-    row('Fleet guardian — enable', guardianEnableInput, 'push when a landed fleet-save sits exposed'),
-    row('Fleet guardian — interval', guardianIntervalInput, 'minutes after landing to fire if still bare'),
+    row('Fleet guardian — enable', guardianEnableInput, 'a landing+interval reminder for your own bare fleet-save'),
+    row('Fleet guardian — interval', guardianIntervalInput, 'minutes after landing the reminder fires'),
     row('Fleet guardian — ACK interval', guardianAckIntervalInput, 'minutes idle (no reload) before the button pulses for an ACK'),
   ], fsTplEditor.element);
 
