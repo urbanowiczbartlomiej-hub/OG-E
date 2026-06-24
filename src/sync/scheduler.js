@@ -129,6 +129,7 @@ import {
   mergeSettings,
   mergeDailyRunRoutes,
   mergeDailyState,
+  mergeManualLandedFs,
   mergeGalaxyScanConfig,
   mergeAlarmClockConfig,
   mergeColonizeDecisions,
@@ -154,6 +155,7 @@ import { clock } from '../lib/clock.js';
 import { chromeStore } from '../lib/storage.js';
 import { parseUniverseId } from '../lib/universeId.js';
 import { readDailyState, writeDailyState } from '../state/dailyActions.js';
+import { readManualLandedFsSlot, writeManualLandedFsSlot } from '../state/manualLandedFs.js';
 import { SYNC_FORCE_EVENT, DAILY_STATE_CHANGED_EVENT } from '../lib/ogeEvents.js';
 import {
   canStartSync,
@@ -611,6 +613,15 @@ const SYNC_SLOTS = [
     hasData: decisionsSlotHasData,
     remoteDefault: {},
   },
+  {
+    payloadKey: 'manualLandedFsPerUniverse',
+    readLocal: readManualLandedFsSlot,
+    writeLocal: writeManualLandedFsSlot,
+    merge: mergeManualLandedFs,
+    // Keep an empty set with a non-zero updatedAt — it's the removal tombstone
+    // that lets an unmark / re-save propagate cross-device (last-writer-wins).
+    hasData: (merged) => (merged.updatedAt || 0) > 0,
+  },
 ];
 
 /**
@@ -799,6 +810,7 @@ const upload = async () => {
       galaxyScanConfig: slotPayloads.galaxyScanConfig,
       alarmClockConfigPerUniverse: slotPayloads.alarmClockConfigPerUniverse,
       colonizeDecisionsPerUniverse: slotPayloads.colonizeDecisionsPerUniverse,
+      manualLandedFsPerUniverse: slotPayloads.manualLandedFsPerUniverse,
     };
 
     // Skip the PATCH when the gist already matches the merged state — the common

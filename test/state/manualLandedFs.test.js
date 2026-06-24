@@ -16,6 +16,8 @@ import {
   hasManualLandedFs,
   removeManualLandedFs,
   toggleManualLandedFs,
+  readManualLandedFsSlot,
+  writeManualLandedFsSlot,
 } from '../../src/state/manualLandedFs.js';
 
 beforeEach(() => {
@@ -36,11 +38,12 @@ describe('manualLandedFs — key + round-trip', () => {
     expect(readManualLandedFs()).toEqual(entries);
   });
 
-  it('persists under the canonical key as JSON', () => {
-    writeManualLandedFs([{ bodyKey: '1:1:1:1', markedAt: 42 }]);
-    expect(JSON.parse(/** @type {string} */ (localStorage.getItem(MANUAL_LANDED_FS_KEY)))).toEqual([
-      { bodyKey: '1:1:1:1', markedAt: 42 },
-    ]);
+  it('persists under the canonical key as JSON (marks + sync clock)', () => {
+    writeManualLandedFs([{ bodyKey: '1:1:1:1', markedAt: 42 }], 99);
+    expect(JSON.parse(/** @type {string} */ (localStorage.getItem(MANUAL_LANDED_FS_KEY)))).toEqual({
+      marks: [{ bodyKey: '1:1:1:1', markedAt: 42 }],
+      updatedAt: 99,
+    });
   });
 });
 
@@ -79,13 +82,43 @@ describe('manualLandedFs — read edge cases', () => {
 });
 
 describe('manualLandedFs — write guard', () => {
-  it('stores [] when writeManualLandedFs gets a non-array argument', () => {
+  it('stores an empty mark set when writeManualLandedFs gets a non-array argument', () => {
     // @ts-expect-error — exercising the runtime guard with a bad type.
-    writeManualLandedFs('1:2:3:1');
+    writeManualLandedFs('1:2:3:1', 7);
     expect(readManualLandedFs()).toEqual([]);
-    expect(JSON.parse(/** @type {string} */ (localStorage.getItem(MANUAL_LANDED_FS_KEY)))).toEqual(
-      [],
+    expect(JSON.parse(/** @type {string} */ (localStorage.getItem(MANUAL_LANDED_FS_KEY)))).toEqual({
+      marks: [],
+      updatedAt: 7,
+    });
+  });
+});
+
+describe('manualLandedFs — sync slot (cross-device updatedAt)', () => {
+  it('round-trips marks + updatedAt through the slot helpers', () => {
+    writeManualLandedFsSlot({ marks: [{ bodyKey: '2:3:4:3', markedAt: 5 }], updatedAt: 100 });
+    expect(readManualLandedFsSlot()).toEqual({
+      marks: [{ bodyKey: '2:3:4:3', markedAt: 5 }],
+      updatedAt: 100,
+    });
+  });
+
+  it('adopts a legacy bare array with updatedAt 0', () => {
+    localStorage.setItem(
+      MANUAL_LANDED_FS_KEY,
+      JSON.stringify([{ bodyKey: '1:1:1:1', markedAt: 9 }]),
     );
+    expect(readManualLandedFsSlot()).toEqual({
+      marks: [{ bodyKey: '1:1:1:1', markedAt: 9 }],
+      updatedAt: 0,
+    });
+  });
+
+  it('toggle and remove bump the sync clock so a removal can propagate', () => {
+    toggleManualLandedFs('1:2:3:1', 50); // mark
+    expect(readManualLandedFsSlot().updatedAt).toBe(50);
+    removeManualLandedFs('1:2:3:1', 80); // unmark
+    expect(readManualLandedFs()).toEqual([]);
+    expect(readManualLandedFsSlot().updatedAt).toBe(80); // tombstone clock advanced
   });
 });
 

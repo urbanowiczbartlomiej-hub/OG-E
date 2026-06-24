@@ -162,6 +162,10 @@ import { SYNC_STATUS_EVENT } from '../lib/ogeEvents.js';
  *   Merge strategy: per-field max-wins (a later day string / higher timestamp
  *   always beats an earlier one). Per-universe because tasks are server-specific
  *   and must not leak across universes.
+ * @property {Record<string, import('../state/manualLandedFs.js').ManualLandedFsSlot>} [manualLandedFsPerUniverse]
+ *   OPTIONAL, additive: the user's manual fleet-save marks per universe. Merge
+ *   strategy: last-writer-wins on the whole set (keyed by `updatedAt`) so an
+ *   unmark / re-save propagates instead of being resurrected by another device.
  * @property {Record<string, import('./merge.js').GalaxyScanConfigSlot>} [galaxyScanConfig]
  *   OPTIONAL, additive: Galaxy-Scan config (positions + rescan policy) keyed
  *   by universe id. Each slot is whole-universe newest-wins (see

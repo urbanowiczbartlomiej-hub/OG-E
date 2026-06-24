@@ -129,25 +129,31 @@ const navigateToBody = (t) => {
 };
 
 /**
- * Repaint the idle button face. The primary word splits by context: off a
- * fleetdispatch screen it's a passive "On watch" (a tap there only ACKs, never
- * yanks you away); on the bare body's fleetdispatch it's the actionable
- * "Re-Save". Subtitle = landing coords (`+n` for extras), hint = hold-to-dismiss.
+ * Repaint the idle button face. OG-E does NOT watch the game — this button is
+ * here only because YOU landed a fleet yourself. The primary word splits by
+ * context: off a fleetdispatch screen it's "You here?" (a tap there only confirms
+ * you're present + snoozes — it never yanks you away); on the bare body's
+ * fleetdispatch it's the actionable "Fleet save". Subtitle = landing coords
+ * (`+n` for extras); hint = hold-to-dismiss.
  */
 const paint = () => {
   if (!btn || bare.length === 0) return;
-  const sub = bare.length > 1 ? `${bare[0].coords} +${bare.length - 1}` : bare[0].coords;
+  const t = bare[0];
+  const sub = bare.length > 1 ? `${t.coords} +${bare.length - 1}` : t.coords;
   const onDispatch = location.search.includes('component=fleetdispatch');
   btn.paintLines('g', labelLines({
-    main: onDispatch ? 'Re-Save' : 'Watch',
+    main: onDispatch ? 'Fleet save' : 'You here?',
     sub,
     hint: '(hold to dismiss)',
   }));
 };
 
-/** ACK confirmed → invite the second (navigating) tap. @param {{ coords: string }} t */
+/**
+ * ACK confirmed → you snoozed it by being here; invite the second (navigating)
+ * tap. @param {{ coords: string }} t
+ */
 const paintAcked = (t) =>
-  btn?.paintLines('g', labelLines({ main: 'Acked!', sub: t.coords, hint: 'tap → go save' }));
+  btn?.paintLines('g', labelLines({ main: 'Snoozed', sub: t.coords, hint: 'tap → save' }));
 
 /**
  * Re-evaluate the pulse. ON once we've gone the configured ACK interval with no
@@ -192,7 +198,7 @@ const dismissPrimary = () => {
     navTimer = null;
   }
   dismissFn(t.bodyKey, t.landedAt);
-  removeManualLandedFs(t.bodyKey); // hold = "it's gone" → drop a manual mark too
+  removeManualLandedFs(t.bodyKey, Math.floor(Date.now() / 1000)); // hold = "it's gone"
   refresh();
 };
 
@@ -207,7 +213,7 @@ const paintBusy = () =>
   btn?.paintLines('g', labelLines({ main: 'Wait…', sub: bare[0]?.coords, hint: '' }));
 /** Prepared → invite the second tap. @param {{ coords: string }} t */
 const paintReady = (t) =>
-  btn?.paintLines('g', labelLines({ main: 'Send FS', sub: t.coords, hint: '' }));
+  btn?.paintLines('g', labelLines({ main: 'Save now', sub: t.coords, hint: '' }));
 /** Dispatched. @param {{ coords: string }} t */
 const paintSent = (t) =>
   btn?.paintLines('g', labelLines({ main: 'Saved!', sub: t.coords, hint: '' }));
@@ -267,7 +273,7 @@ const handleGuardianTap = async () => {
       if (r === 'sent') {
         paintSent(target);
         dismissFn(target.bodyKey, target.landedAt); // saved → drop the watch
-        removeManualLandedFs(target.bodyKey); // and clear a manual mark for it
+        removeManualLandedFs(target.bodyKey, Math.floor(Date.now() / 1000)); // clear its mark
       }
       return; // 'foreign' / 'notReady' → leave the form be; the player can retry
     }

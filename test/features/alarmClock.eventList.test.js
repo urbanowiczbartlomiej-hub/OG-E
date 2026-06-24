@@ -253,7 +253,7 @@ describe('event-list badges', () => {
     await tick();
     expect(cell.classList.contains('armed')).toBe(true);
     const title = cell.getAttribute('title') || '';
-    expect(title.startsWith('AlarmClock at ')).toBe(true);
+    expect(title.startsWith('Alarm at ')).toBe(true);
     expect(title).toContain('click to cancel');
   });
 

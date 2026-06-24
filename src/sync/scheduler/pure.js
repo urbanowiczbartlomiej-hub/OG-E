@@ -189,6 +189,7 @@ export const sameJSON = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b
  * @param {unknown} [merged.playersPerUniverse]
  * @param {unknown} [merged.ownProfilePerUniverse]
  * @param {unknown} [merged.colonizeDecisionsPerUniverse]
+ * @param {unknown} [merged.manualLandedFsPerUniverse]
  * @returns {boolean}
  */
 export const gistIsCurrent = (remote, merged) =>
@@ -202,4 +203,5 @@ export const gistIsCurrent = (remote, merged) =>
   sameJSON(remote?.alarmClockConfigPerUniverse, merged.alarmClockConfigPerUniverse) &&
   sameJSON(remote?.playersPerUniverse, merged.playersPerUniverse) &&
   sameJSON(remote?.ownProfilePerUniverse, merged.ownProfilePerUniverse) &&
-  sameJSON(remote?.colonizeDecisionsPerUniverse, merged.colonizeDecisionsPerUniverse);
+  sameJSON(remote?.colonizeDecisionsPerUniverse, merged.colonizeDecisionsPerUniverse) &&
+  sameJSON(remote?.manualLandedFsPerUniverse, merged.manualLandedFsPerUniverse);

@@ -589,3 +589,34 @@ export const mergeDailyState = (local, remote) => {
 
   return { merged, changed };
 };
+
+/**
+ * @typedef {import('../state/manualLandedFs.js').ManualLandedFsSlot} ManualLandedFsSlot
+ */
+
+/**
+ * Cross-device merge for the user's manual fleet-save marks: LAST-WRITER-WINS on
+ * the WHOLE per-universe set, keyed by `updatedAt`. Whole-set (not a union) so a
+ * REMOVAL on one device propagates instead of being resurrected by another that
+ * still holds the mark; an empty set with a non-zero `updatedAt` is the tombstone
+ * that carries the removal (kept by the slot's `hasData: updatedAt > 0`).
+ *
+ * `changed` is `true` only when the remote set is strictly newer and we adopt it.
+ *
+ * @param {ManualLandedFsSlot} local
+ * @param {Partial<ManualLandedFsSlot> | undefined | null} remote
+ * @returns {{ merged: ManualLandedFsSlot, changed: boolean }}
+ */
+export const mergeManualLandedFs = (local, remote) => {
+  const remoteAt = (remote && typeof remote === 'object' && Number(remote.updatedAt)) || 0;
+  if (remoteAt > (local.updatedAt || 0)) {
+    return {
+      merged: {
+        marks: Array.isArray(remote?.marks) ? remote.marks : [],
+        updatedAt: remoteAt,
+      },
+      changed: true,
+    };
+  }
+  return { merged: local, changed: false };
+};

@@ -17,6 +17,7 @@ import {
   mergeGalaxyScanConfig,
   mergeAlarmClockConfig,
   mergeDailyState,
+  mergeManualLandedFs,
   mergePlayers,
   mergeOwnProfile,
 } from '../../src/sync/merge.js';
@@ -629,5 +630,25 @@ describe('mergeOwnProfile — whole-record newest-updatedAt', () => {
     const local = { rank: 9, updatedAt: 5 };
     expect(mergeOwnProfile(local, null)).toEqual({ merged: local, changed: false });
     expect(mergeOwnProfile(local, undefined)).toEqual({ merged: local, changed: false });
+  });
+});
+
+describe('mergeManualLandedFs (last-writer-wins, removal-propagating)', () => {
+  const local = { marks: [{ bodyKey: 'a:1:1:1', markedAt: 1 }], updatedAt: 100 };
+
+  it('keeps local when remote is older or absent', () => {
+    expect(mergeManualLandedFs(local, undefined)).toEqual({ merged: local, changed: false });
+    expect(mergeManualLandedFs(local, { marks: [], updatedAt: 50 }))
+      .toEqual({ merged: local, changed: false });
+  });
+
+  it('adopts a strictly-newer remote set', () => {
+    const remote = { marks: [{ bodyKey: 'b:2:2:3', markedAt: 9 }], updatedAt: 200 };
+    expect(mergeManualLandedFs(local, remote)).toEqual({ merged: remote, changed: true });
+  });
+
+  it('propagates a removal via an empty newer set (tombstone)', () => {
+    expect(mergeManualLandedFs(local, { marks: [], updatedAt: 300 }))
+      .toEqual({ merged: { marks: [], updatedAt: 300 }, changed: true });
   });
 });

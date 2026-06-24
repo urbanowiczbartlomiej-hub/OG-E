@@ -22,7 +22,9 @@ If you paste a GitHub Personal Access Token into the OG-E Dashboard's
 Sync tab:
 
 - OG-E reads from / writes to a single private gist that **you own**.
-  Payload is your scan database + colony history, gzip-compressed.
+  Payload is your colony history, colonization decisions, per-universe
+  preferences and schedules, Daily Run routes, and your manual fleet-save
+  marks — gzip-compressed.
 - Requests go to `https://api.github.com` only, authenticated with
   your PAT. The PAT is stored in `chrome.storage.local` (extension-private,
   not reachable by any web page) so a single entry applies to all your

@@ -173,7 +173,7 @@ describe('installGuardian — label', () => {
     installGuardian({ universeId: UID });
     const lines = lastBtn().paintLines.mock.calls.at(-1)[1];
     const texts = lines.map(/** @param {{ text: string }} l */ (l) => l.text);
-    expect(texts).toContain('Watch');
+    expect(texts).toContain('You here?');
     expect(texts).toContain('4:115:8');
     expect(texts).toContain('(hold to dismiss)');
   });
