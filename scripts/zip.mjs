@@ -10,22 +10,32 @@
 // tar (Linux/macOS) does NOT support zip via `-a`, hence `zip` there.
 
 import { execSync } from 'node:child_process';
+import { readdirSync } from 'node:fs';
 
 /**
  * Zip the CONTENTS of `srcDir` (not the directory itself — AMO rejects an
  * archive whose manifest.json is nested) into `zipPath`. Throws on failure;
  * the caller owns any staging cleanup + exit code.
  *
+ * We pass the top-level entries explicitly rather than `.`: handing tar a
+ * literal `.` makes it emit `./`-prefixed entry names (and a `./` root
+ * entry), which Windows Explorer renders as an EMPTY archive even though the
+ * files are present. Naming the entries directly drops the prefix while still
+ * writing forward-slash paths (the reason we use tar over Compress-Archive).
+ *
  * @param {string} srcDir   Absolute path whose contents become the archive root.
  * @param {string} zipPath  Absolute output `.zip` path (should not already exist).
  * @returns {void}
  */
 export function zipDir(srcDir, zipPath) {
+  const entries = readdirSync(srcDir);
   if (process.platform === 'win32') {
-    execSync(`"C:\\Windows\\System32\\tar.exe" -a -c -f "${zipPath}" -C "${srcDir}" .`, {
+    const list = entries.map((e) => `"${e}"`).join(' ');
+    execSync(`"C:\\Windows\\System32\\tar.exe" -a -c -f "${zipPath}" -C "${srcDir}" ${list}`, {
       stdio: 'inherit',
     });
   } else {
-    execSync(`zip -r "${zipPath}" .`, { cwd: srcDir, stdio: 'inherit' });
+    const list = entries.map((e) => `"${e}"`).join(' ');
+    execSync(`zip -r "${zipPath}" ${list}`, { cwd: srcDir, stdio: 'inherit' });
   }
 }
