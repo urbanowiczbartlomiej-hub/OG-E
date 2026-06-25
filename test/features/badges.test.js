@@ -514,6 +514,80 @@ describe('installBadges — dispose', () => {
 });
 
 // ──────────────────────────────────────────────────────────────────
+// Legend portal — the legend is a <body>-level singleton (NOT a child of
+// the "?" chip) so its z-index escapes #planetList's stacking context and
+// paints above OGame's left column. JS-driven show/hide replaces the old
+// CSS :hover rule.
+// ──────────────────────────────────────────────────────────────────
+
+describe('installBadges — legend portal', () => {
+  it('opens the legend on <body> (not inside the chip) on hover', () => {
+    setupGameDOM();
+    installBadges();
+    const chip = /** @type {HTMLElement} */ (document.querySelector('.oge-mb-help'));
+    expect(chip).not.toBeNull();
+    // Portaled: never a descendant of the chip, and not built until first shown.
+    expect(chip.querySelector('.oge-mb-legend')).toBeNull();
+    expect(document.querySelector('.oge-mb-legend')).toBeNull();
+
+    chip.dispatchEvent(new Event('mouseenter'));
+
+    const legend = /** @type {HTMLElement} */ (document.querySelector('.oge-mb-legend'));
+    expect(legend).not.toBeNull();
+    expect(legend.parentElement).toBe(document.body); // root stacking context
+    expect(legend.style.display).toBe('block');
+  });
+
+  it('hides the legend after the grace delay on mouseleave', () => {
+    vi.useFakeTimers();
+    setupGameDOM();
+    installBadges();
+    const chip = /** @type {HTMLElement} */ (document.querySelector('.oge-mb-help'));
+    chip.dispatchEvent(new Event('mouseenter'));
+    const legend = /** @type {HTMLElement} */ (document.querySelector('.oge-mb-legend'));
+    expect(legend.style.display).toBe('block');
+
+    chip.dispatchEvent(new Event('mouseleave'));
+    expect(legend.style.display).toBe('block'); // still up during the grace window
+    vi.advanceTimersByTime(200); // past the 160ms grace
+    expect(legend.style.display).toBe('none');
+    vi.useRealTimers();
+  });
+
+  it('removes the portaled legend from <body> on dispose', () => {
+    setupGameDOM();
+    const dispose = installBadges();
+    const chip = /** @type {HTMLElement} */ (document.querySelector('.oge-mb-help'));
+    chip.dispatchEvent(new Event('mouseenter'));
+    expect(document.querySelector('.oge-mb-legend')).not.toBeNull();
+
+    dispose();
+    expect(document.querySelector('.oge-mb-legend')).toBeNull();
+  });
+
+  it('resets a lingering legend when #planetList is rebuilt (AJAX swap)', async () => {
+    vi.useFakeTimers();
+    setupGameDOM();
+    installBadges();
+    const chip = /** @type {HTMLElement} */ (document.querySelector('.oge-mb-help'));
+    chip.dispatchEvent(new Event('mouseenter'));
+    const legend = /** @type {HTMLElement} */ (document.querySelector('.oge-mb-legend'));
+    expect(legend.style.display).toBe('block');
+
+    // Simulate the swap: the chip is destroyed with the old list, leaving the
+    // body-portaled legend detached. A re-render rebuilds the chip and, finding
+    // none present, calls hideLegend().
+    chip.remove();
+    document.getElementById('planetList')?.appendChild(document.createElement('div'));
+    await vi.advanceTimersByTimeAsync(250);
+
+    expect(document.querySelector('.oge-mb-help')).not.toBeNull(); // chip rebuilt
+    expect(legend.style.display).toBe('none'); // lingering legend reset
+    vi.useRealTimers();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
 // Idempotency
 // ──────────────────────────────────────────────────────────────────
 

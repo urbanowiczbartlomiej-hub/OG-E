@@ -4,6 +4,33 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.30.13] — 2026-06-25
+
+### Added
+
+- **Colony Scout now tells you WHO sits on an occupied position, not just
+  "Occupied".** Active neighbours are classified by the game's own
+  noob-protection brackets — **Weak** (protected, can't be honourably raided),
+  **Honorable** (a fair fight that earns honour) or **Strong** (out-guns a fresh
+  colony) — and the dot in the system card is tinted to match. Players the game
+  hasn't classified, or systems you've only seen via the API (never scanned
+  in-game), stay "Occupied". Each settle area also gets a **🎯 Targets** line —
+  e.g. *2 honorable · 1 weak · 3 strong* — so you can pick a spot next to the
+  neighbours you actually want.
+
+### Fixed
+
+- **An auto-detected fleet-save more than 3 days out is no longer unreadable in
+  the event list.** It used to paint a solid amber fill and dim the cell, hiding
+  the arrival timer underneath (black-on-black); it now shows a light dashed
+  frame, so the countdown stays legible while still flagging "detected, will arm
+  within 3 days".
+- **The planet-marker legend (the "?" hover) no longer hides behind the page or
+  overflows its box.** It now opens above everything else no matter which side it
+  appears on, its rows wrap instead of spilling out (room for future
+  translations), and the longest entry was shortened to "Fleet reminder — landed
+  fleet".
+
 ## [1.30.12] — 2026-06-25
 
 ### Changed

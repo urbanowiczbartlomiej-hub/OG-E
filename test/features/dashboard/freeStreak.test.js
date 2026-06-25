@@ -77,6 +77,37 @@ describe('renderFreeRegions', () => {
     expect(score?.textContent).toMatch(/outlaw/);
   });
 
+  it('classifies occupants by NoobProtection band and shows a target summary', () => {
+    /** @type {Record<string, Record<number, any>>} */
+    const spec = {};
+    for (let s = 1; s <= 6; s++) spec[`4:${s}`] = { 8: empty };
+    spec['4:2'][3] = occ(1); // honorable target
+    spec['4:3'][5] = occ(2); // weak (newbie / protected)
+    spec['4:4'][6] = occ(3); // strong
+    /** @type {any} */
+    const players = {
+      1: { id: 1, name: 'H', flags: { honorable: true } },
+      2: { id: 2, name: 'N', flags: { newbie: true } },
+      3: { id: 3, name: 'S', flags: { strong: true } },
+    };
+    renderFreeRegions({ ...baseOpts(), scans: scansOf(spec), positions: [8], players });
+
+    // Region target breakdown in the detail panel.
+    const record = containerEl.querySelector('.streak-record');
+    expect(record?.textContent).toMatch(/Targets:/);
+    expect(record?.textContent).toMatch(/1 honorable/);
+    expect(record?.textContent).toMatch(/1 weak/);
+    expect(record?.textContent).toMatch(/1 strong/);
+
+    // Per-occupant card: hovering system 2's strip cell pops a card that labels
+    // the honorable occupant "Honorable", not the flat "Occupied".
+    const cells = containerEl.querySelectorAll('.region-strip .strip-cell');
+    cells[1].dispatchEvent(new Event('mouseenter')); // index 1 = system 2
+    const pop = containerEl.querySelector('.region-pop');
+    expect(pop?.textContent).toMatch(/Honorable/);
+    expect(pop?.textContent).not.toMatch(/Occupied/);
+  });
+
   it('annotates the top neighbour rank relative to our own (ownRank)', () => {
     /** @type {Record<string, Record<number, any>>} */
     const spec = {};

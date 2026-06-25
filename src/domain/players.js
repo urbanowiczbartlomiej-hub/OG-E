@@ -167,3 +167,34 @@ export const mergePlayerMeta = (existing, fresh, seenAt) => {
   }
   return existing;
 };
+
+/**
+ * Classify an occupied slot's owner into one of the game's NoobProtection
+ * bands, read straight from the cached flags — which the game itself computes
+ * RELATIVE to your own score, so they ARE the protection brackets, no rank
+ * arithmetic needed:
+ *
+ *   - `'weak'`      — `isNewbie`: noob-protected, can't be honourably raided.
+ *   - `'strong'`    — `isStrong`: outside your bracket, much stronger than you.
+ *   - `'honorable'` — `isHonorableTarget`: a fair fight — attacking earns honour.
+ *
+ * Bands are checked weakest-first so the exclusive lower band wins, then
+ * `strong` before `honorable` (a much-stronger player is often ALSO an
+ * honourable target; we surface the more cautionary signal). Returns `null`
+ * when the player isn't in the cache or carries none of these flags — an
+ * active occupant inside your bracket but unflagged — so the caller keeps the
+ * plain "Occupied" label instead of inventing a band.
+ *
+ * Pure: a flag read, nothing else.
+ *
+ * @param {PlayerMeta | null | undefined} meta
+ * @returns {'weak' | 'strong' | 'honorable' | null}
+ */
+export const occupantStrength = (meta) => {
+  const f = meta && meta.flags;
+  if (!f) return null;
+  if (f.newbie) return 'weak';
+  if (f.strong) return 'strong';
+  if (f.honorable) return 'honorable';
+  return null;
+};

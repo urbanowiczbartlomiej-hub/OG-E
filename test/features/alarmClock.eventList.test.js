@@ -216,7 +216,7 @@ describe('event-list badges', () => {
     expect(title).not.toContain('ships');
   });
 
-  it('dims the 🛡 badge and explains the wait for a fleet-save still beyond the 3-day cap', async () => {
+  it('marks the 🛡 badge pending (readable dashed frame, no dim) for a fleet-save still beyond the 3-day cap', async () => {
     setSettings({
       alarmClockMasterEnabled: true, alarmClockNtfyToken: VALID_TOKEN,
     });
@@ -229,10 +229,13 @@ describe('event-list badges', () => {
     const cell = paintRow(far);
     installEventListAlarmClock(stubApi());
     await tick();
-    expect(cell.classList.contains('fs')).toBe(true);
-    // Nothing is queued yet → dimmed, and the tooltip says why instead of the
-    // old misleading "Set automatically".
-    expect(cell.classList.contains('disabled')).toBe(true);
+    // Nothing queued yet → a dashed "pending" frame, NOT the solid `fs` fill +
+    // `disabled` opacity dim that used to bury the native arrival timer
+    // (black-on-black). The frame signals "detected, will arm within 3 days".
+    expect(cell.classList.contains('fs-pending')).toBe(true);
+    expect(cell.classList.contains('fs')).toBe(false);
+    expect(cell.classList.contains('disabled')).toBe(false);
+    expect(cell.classList.contains('fs-cancel')).toBe(false);
     const title = cell.getAttribute('title') || '';
     expect(title).toContain('Too far out');
     expect(title).toContain('within 3 days');

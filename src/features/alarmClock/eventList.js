@@ -121,6 +121,13 @@ const CSS = `
   50% { box-shadow: inset 0 0 0 2px rgba(255, 220, 130, 0.55); }
 }
 .${BADGE_CLASS}.disabled { opacity: 0.5; }
+/* Detected fleet-save still beyond ntfy's 3-day cap: NOTHING is scheduled yet,
+   so it must read as "not armed" WITHOUT the solid amber fill + opacity dim that
+   buried the native arrival timer (the black-on-black the user hit). A dashed
+   amber frame + a faint shield reads "detected, will arm within 3 days" while
+   the arrival timer underneath stays fully legible. */
+.${BADGE_CLASS}.fs-pending { outline: 1px dashed rgba(255, 176, 32, 0.6); outline-offset: -1px; }
+.${BADGE_CLASS}.fs-pending::before { content: '🛡'; margin-right: 2px; font-size: 0.85em; opacity: 0.55; }
 .${BADGE_CLASS}.syncing { animation: oge-rem-pulse 1s ease-in-out infinite; }
 .${BADGE_CLASS}.syncing::after { content: '⏳'; margin-left: 2px; font-size: 0.8em; }
 @keyframes oge-rem-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
@@ -189,7 +196,7 @@ const labelFor = (row) => {
  * which the cell could never be found (or updated) again.
  */
 const OWNED_CLASSES = [
-  BADGE_CLASS, 'act', 'idle', 'armed', 'wave', 'wave-off', 'member', 'member-off', 'fs', 'fs-cancel',
+  BADGE_CLASS, 'act', 'idle', 'armed', 'wave', 'wave-off', 'member', 'member-off', 'fs', 'fs-cancel', 'fs-pending',
   'disabled', 'syncing',
 ];
 
@@ -421,7 +428,7 @@ const render = () => {
               nextFsFlipAt = Math.min(nextFsFlipAt, Math.min(...liveSlots) - FS_CANCEL_WINDOW_SEC);
             } else {
               // Far future: detected but unschedulable until it enters the cap.
-              stamp(cell, 'fs disabled', '', '', fsTitle(fs, now, 'passive'));
+              stamp(cell, 'fs-pending', '', '', fsTitle(fs, now, 'passive'));
               const earliest = Math.min(...fs.fireAts.filter((t) => Number.isFinite(t) && t > now));
               nextFsFlipAt = Math.min(nextFsFlipAt, earliest - NTFY_MAX_DELAY_SEC);
             }

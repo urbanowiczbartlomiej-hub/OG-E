@@ -255,8 +255,19 @@ const buildCss = () => `
 }
 .oge-mb-legend{
   display:none;
-  position:absolute;top:-4px;left:calc(100% + 8px);
-  z-index:99999;
+  /* Portaled to <body> and positioned in VIEWPORT coords (JS sets top/left on
+     show). As a <body> child it lives in the ROOT stacking context, so this
+     z-index actually wins — inside #planetList even z-index:99999 still painted
+     UNDER OGame's left column (a sibling stacking context the value can't reach
+     across). Show/hide is JS-driven (see the legend-portal section), not :hover,
+     because the panel is no longer a descendant of the chip. */
+  position:fixed;top:0;left:0;
+  /* Deliberately just BELOW the 32-bit max (2147483647): high enough to clear
+     all normal game chrome (left column, resource bar, menus, chat), but it
+     still yields to a genuine OGame system overlay (cookie/consent layer, modal
+     dialog) — this is only a minor hover popover and must not cover a blocking
+     dialog. */
+  z-index:2147483000;
   width:max-content;max-width:280px;
   background:#0d1a24;border:1px solid #2c5470;border-radius:6px;
   padding:9px 11px;
@@ -264,15 +275,17 @@ const buildCss = () => `
   box-shadow:0 2px 12px rgba(0,0,0,.65);
   text-align:left;
 }
-.oge-mb-help:hover .oge-mb-legend,
-.oge-mb-help:focus-within .oge-mb-legend{display:block;}
 .oge-mb-legend .lt{font-weight:700;color:#fff;margin:0 0 7px;}
-.oge-mb-legend-row{display:flex;align-items:center;gap:9px;margin:4px 0;white-space:nowrap;}
+/* Rows wrap (no nowrap): a long label — especially once translated — flows onto
+   a second line inside the box instead of overflowing it; the swatch keeps to
+   the first line. */
+.oge-mb-legend-row{display:flex;align-items:flex-start;gap:9px;margin:4px 0;}
 .oge-mb-legend-row .sw{flex:0 0 18px;display:flex;align-items:center;justify-content:center;}
+.oge-mb-legend-row .lbl{min-width:0;white-space:normal;}
 .oge-mb-legend .note{margin-top:7px;color:#9fb8c9;white-space:normal;}
 `;
 
-const HIDE_CSS = `.${COL_CLASS},.oge-mb-help{display:none!important;}`;
+const HIDE_CSS = `.${COL_CLASS},.oge-mb-help,.oge-mb-legend{display:none!important;}`;
 
 // ── Legend ("?" help chip) ───────────────────────────────────────────────
 
@@ -285,7 +298,7 @@ const HIDE_CSS = `.${COL_CLASS},.oge-mb-help{display:none!important;}`;
 const LEGEND_ROWS = [
   { category: 'threat', label: 'Incoming attack (foreign fleet at you)' },
   { category: 'fs', label: 'Fleet-save — in motion (safe)' },
-  { category: 'fs', landed: true, label: 'Fleet reminder — landed fleet, exposed (until re-saved)' },
+  { category: 'fs', landed: true, label: 'Fleet reminder — landed fleet' },
   { category: 'aggro', label: 'Your attack / spy on a player' },
   { category: 'explore', label: 'Your expedition' },
   { category: 'logistics', label: 'Logistics (transport / deploy / defend)' },
@@ -311,6 +324,7 @@ const buildLegend = () => {
     else if (row.category === 'threat') mk.textContent = '!!!';
     sw.appendChild(mk);
     const lb = document.createElement('span');
+    lb.className = 'lbl';
     lb.textContent = row.label;
     r.append(sw, lb);
     panel.appendChild(r);
@@ -323,22 +337,115 @@ const buildLegend = () => {
   return panel;
 };
 
+// ── Legend portal (singleton) ──────────────────────────────────────────────
+//
+// The legend lives at <body> level, NOT inside the "?" chip. A child of
+// #planetList can't escape that subtree's stacking context, so its z-index —
+// however high — still rendered UNDERNEATH OGame's left-column components when
+// the panel flipped left to overlap them. As a <body> child positioned in
+// viewport coords it sits in the root stacking context and reliably paints on
+// top. One reused element (there is only ever one #planetList ⇒ one chip),
+// shown on chip hover/focus and torn down on dispose.
+
+/** @type {HTMLElement | null} */
+let legendEl = null;
+/** @type {ReturnType<typeof setTimeout> | null} */
+let legendHideTimer = null;
+
+const cancelLegendHide = () => {
+  if (legendHideTimer) { clearTimeout(legendHideTimer); legendHideTimer = null; }
+};
+
+/** Hide the legend immediately. */
+const hideLegend = () => {
+  cancelLegendHide();
+  if (legendEl) legendEl.style.display = 'none';
+};
+
+/** Hide after a short grace period, so the pointer can cross the gap from the
+ *  chip onto the panel without it vanishing mid-move. */
+const scheduleLegendHide = () => {
+  cancelLegendHide();
+  legendHideTimer = setTimeout(hideLegend, 160);
+};
+
+/** Build the legend once and ensure it's attached to <body>. */
+const ensureLegendEl = () => {
+  if (!legendEl) {
+    legendEl = buildLegend();
+    // Keep it open while the pointer is over the panel itself.
+    legendEl.addEventListener('mouseenter', cancelLegendHide);
+    legendEl.addEventListener('mouseleave', scheduleLegendHide);
+  }
+  if (legendEl.parentNode !== document.body) document.body.appendChild(legendEl);
+  return legendEl;
+};
+
+/** Remove the portaled legend from the page (dispose / teardown). */
+const removeLegendEl = () => {
+  cancelLegendHide();
+  legendEl?.remove();
+  legendEl = null;
+};
+
+/**
+ * Show the legend beside `chip`: to its RIGHT when it fits, else flipped LEFT,
+ * always clamped inside the viewport. Coords are viewport-relative because the
+ * panel is `position:fixed` on <body>.
+ *
+ * @param {HTMLElement} chip
+ * @returns {void}
+ */
+const showLegendFor = (chip) => {
+  const el = ensureLegendEl();
+  cancelLegendHide();
+  el.style.display = 'block';
+  const r = chip.getBoundingClientRect();
+  const GAP = 8;
+  const MARGIN = 4;
+  const lw = el.offsetWidth;
+  const lh = el.offsetHeight;
+  // Horizontal: prefer the right of the chip; flip left when the panel would
+  // overflow the right edge; if neither side fits (tiny viewport) pin to the
+  // right margin.
+  let left = r.right + GAP;
+  if (left + lw > window.innerWidth - MARGIN) {
+    const leftSide = r.left - GAP - lw;
+    left = leftSide >= MARGIN ? leftSide : Math.max(MARGIN, window.innerWidth - MARGIN - lw);
+  }
+  // Vertical: align near the chip top, clamped so a tall panel stays on-screen.
+  let top = Math.min(r.top - 4, window.innerHeight - MARGIN - lh);
+  if (top < MARGIN) top = MARGIN;
+  el.style.left = `${Math.round(left)}px`;
+  el.style.top = `${Math.round(top)}px`;
+};
+
 /**
  * Idempotently place the "?" help chip at the top of `#planetList` (OGame
- * AJAX-swaps the list, so the render path re-adds it). Hover reveals the legend
- * — there is no click target, the markers themselves being too small to hit.
+ * AJAX-swaps the list, so the render path re-adds it). Hover/focus reveals the
+ * body-portaled legend — there is no click target, the markers themselves being
+ * too small to hit.
  *
  * @returns {void}
  */
 const ensureHelpIcon = () => {
   const list = document.getElementById('planetList');
   if (!list || list.querySelector('.oge-mb-help')) return;
+  // A fresh chip means #planetList was (re)built — drop any legend left over
+  // from a swap that happened mid-hover so it can't linger detached.
+  hideLegend();
   const help = document.createElement('div');
   help.className = 'oge-mb-help';
   help.textContent = '?';
   help.tabIndex = 0;
   help.setAttribute('aria-label', 'Planet markers legend');
-  help.appendChild(buildLegend());
+  // The legend is portaled to <body> (see the legend-portal section), NOT a
+  // child of this chip, so it can paint above OGame's left column. Drive it
+  // from the chip's hover/focus instead of the old CSS :hover rule.
+  help.addEventListener('mouseenter', () => showLegendFor(help));
+  help.addEventListener('focusin', () => showLegendFor(help));
+  help.addEventListener('mouseleave', scheduleLegendHide);
+  help.addEventListener('focusout', scheduleLegendHide);
   list.insertBefore(help, list.firstChild);
 };
 
@@ -652,6 +759,7 @@ export const installBadges = () => {
       eventBoxReady = false;
       clearColumns();
       document.querySelectorAll('.oge-mb-help').forEach((el) => el.remove());
+      removeLegendEl();
       document.getElementById(STYLE_ID)?.remove();
       document.getElementById(HIDE_STYLE_ID)?.remove();
       installed = null;

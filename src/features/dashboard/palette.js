@@ -72,6 +72,33 @@ export const STATUS_LABELS = {
 };
 
 /**
+ * Player-strength bands (from `domain/players.occupantStrength`, driven by the
+ * game's own NoobProtection flags). Replace the flat "Occupied" label for an
+ * active occupant the game has classified relative to your score, and tint that
+ * occupant's dot in the Colony Scout system card so the neighbourhood reads as
+ * who-you-can-actually-fight rather than a wall of grey "Occupied".
+ *
+ * @type {Record<'weak' | 'honorable' | 'strong', string>}
+ */
+export const STRENGTH_LABELS = {
+  weak: 'Weak',
+  honorable: 'Honorable',
+  strong: 'Strong',
+};
+
+/**
+ * Dot colour per {@link STRENGTH_LABELS} band: muted green = protected/harmless,
+ * gold = a fair honour fight, orange-red = out-guns a fresh colony.
+ *
+ * @type {Record<'weak' | 'honorable' | 'strong', string>}
+ */
+export const STRENGTH_COLORS = {
+  weak: '#5a8f5a',
+  honorable: '#e0b020',
+  strong: '#d05a3a',
+};
+
+/**
  * Colour for the "no data yet" pixel in the galaxy map and the legend
  * swatch beside the "Not scanned" label. Distinct from any
  * {@link STATUS_COLORS} value so an unscanned system is visually

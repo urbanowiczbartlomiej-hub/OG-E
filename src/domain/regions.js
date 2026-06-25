@@ -91,6 +91,9 @@
  *   they out-gun a fresh colony. A danger signal. `0` without a player cache.
  * @property {number} newbie   Distinct players flagged `isNewbie` — noob-protected,
  *   cannot be raided, so they offer no farm value. `0` without a player cache.
+ * @property {number} honorable Distinct players flagged `isHonorableTarget` — a
+ *   fair fight, attacking earns honour. (Distinct from `honored`, which counts
+ *   positive-honor RANK CLASSES.) `0` without a player cache.
  * @property {number} buddy    Distinct players on your buddy list (`isBuddy`) —
  *   friends, never targets. `0` without a player cache.
  * @property {number} outlaw   Distinct players flagged `isOutlaw` — have lost
@@ -330,6 +333,7 @@ export const scoreRegion = (region, scans, opts = {}) => {
   const cache = opts.players;
   let strong = 0;
   let newbie = 0;
+  let honorable = 0;
   let buddy = 0;
   let outlaw = 0;
   let activeOnVacation = 0;
@@ -341,6 +345,7 @@ export const scoreRegion = (region, scans, opts = {}) => {
       if (!f) continue;
       if (f.strong) strong++;
       if (f.newbie) newbie++;
+      if (f.honorable) honorable++;
       if (f.buddy) buddy++;
       if (f.outlaw) outlaw++;
       if (f.allianceMember) allyMembers++;
@@ -365,6 +370,7 @@ export const scoreRegion = (region, scans, opts = {}) => {
     honoredTierSum,
     strong,
     newbie,
+    honorable,
     buddy,
     outlaw,
     activeOnVacation,

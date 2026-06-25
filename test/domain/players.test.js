@@ -3,7 +3,7 @@
 // @ts-check
 
 import { describe, it, expect } from 'vitest';
-import { extractPlayerMeta, mergePlayerMeta } from '../../src/domain/players.js';
+import { extractPlayerMeta, mergePlayerMeta, occupantStrength } from '../../src/domain/players.js';
 
 // A realistic occupied-slot player block (the live fields we read; this is
 // the HAR's slot-8 case: rank-11 starlord, active but on vacation).
@@ -110,5 +110,34 @@ describe('mergePlayerMeta', () => {
     expect(mergePlayerMeta(old, { id: 1, name: 'A2' }, 100)).toEqual({
       id: 1, name: 'A2', seenAt: 100,
     });
+  });
+});
+
+describe('occupantStrength', () => {
+  /** @param {object} flags @returns {any} */
+  const withFlags = (flags) => ({ id: 1, name: 'X', flags });
+
+  it('returns null without a record or without flags', () => {
+    expect(occupantStrength(null)).toBeNull();
+    expect(occupantStrength(undefined)).toBeNull();
+    expect(occupantStrength(/** @type {any} */ ({ id: 1, name: 'X' }))).toBeNull();
+    expect(occupantStrength(withFlags({}))).toBeNull();
+    // An active occupant inside your bracket but unflagged stays unclassified.
+    expect(occupantStrength(withFlags({ active: true, outlaw: true }))).toBeNull();
+  });
+
+  it('maps newbie → weak, honorable → honorable, strong → strong', () => {
+    expect(occupantStrength(withFlags({ newbie: true }))).toBe('weak');
+    expect(occupantStrength(withFlags({ honorable: true }))).toBe('honorable');
+    expect(occupantStrength(withFlags({ strong: true }))).toBe('strong');
+  });
+
+  it('checks weakest-first, then strong before honorable', () => {
+    // A newbie can never be strong/honorable, but if the game ever sets both,
+    // the protected (weak) band wins.
+    expect(occupantStrength(withFlags({ newbie: true, strong: true }))).toBe('weak');
+    // A much-stronger player is often ALSO an honorable target — surface the
+    // more cautionary "strong".
+    expect(occupantStrength(withFlags({ strong: true, honorable: true }))).toBe('strong');
   });
 });

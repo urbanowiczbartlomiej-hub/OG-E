@@ -219,12 +219,28 @@ describe('scoreRegion — player-cache signals (2b)', () => {
     expect(sc.allyNearby).toBe(1); // player 2 isAllianceMember
   });
 
+  it('counts honorable targets and newbies (weak) from the cache', () => {
+    const occScans = scansOf({
+      '4:1': { 8: empty, 3: occ(1), 5: occ(2), 7: occ(3) },
+    });
+    /** @type {any} */
+    const cache = {
+      1: { id: 1, name: 'H1', flags: { honorable: true } },
+      2: { id: 2, name: 'H2', flags: { honorable: true } },
+      3: { id: 3, name: 'N1', flags: { newbie: true } },
+    };
+    const sc = scoreRegion(region, occScans, { players: cache, ...G10 });
+    expect(sc.honorable).toBe(2);
+    expect(sc.newbie).toBe(1);
+  });
+
   it('leaves the new counts at 0 when no cache is supplied', () => {
     const sc = scoreRegion(region, scans, { ...G10 });
     expect(sc.strong).toBe(0);
     expect(sc.outlaw).toBe(0);
     expect(sc.activeOnVacation).toBe(0);
     expect(sc.newbie).toBe(0);
+    expect(sc.honorable).toBe(0);
     expect(sc.buddy).toBe(0);
   });
 

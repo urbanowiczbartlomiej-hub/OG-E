@@ -48,7 +48,8 @@ import {
   MIN_REGION_LENGTH,
 } from '../../domain/regions.js';
 import { STRIP_PRIORITY, bestStatusInSystem } from '../../domain/histogram.js';
-import { STATUS_COLORS, STATUS_LABELS, UNSCANNED_COLOR, heatColor } from './palette.js';
+import { occupantStrength } from '../../domain/players.js';
+import { STATUS_COLORS, STATUS_LABELS, STRENGTH_COLORS, STRENGTH_LABELS, UNSCANNED_COLOR, heatColor } from './palette.js';
 import { makeLegendSwatch } from './legend.js';
 
 /**
@@ -113,9 +114,11 @@ const stripCellStatus = (positions) =>
  * @param {number} s
  * @param {import('../../state/scans.js').SystemScan | null | undefined} scan
  * @param {boolean} pinned
+ * @param {import('../../domain/regions.js').PlayerCache} [players]  Joined by
+ *   occupant id to classify active owners into NoobProtection strength bands.
  * @returns {HTMLElement}
  */
-const buildSystemCard = (g, s, scan, pinned) => {
+const buildSystemCard = (g, s, scan, pinned, players) => {
   const card = document.createElement('div');
   const head = document.createElement('div');
   head.className = 'rp-head';
@@ -143,17 +146,34 @@ const buildSystemCard = (g, s, scan, pinned) => {
       occupants++;
       const row = document.createElement('div');
       row.className = 'rp-row';
+      // Strength band for an ACTIVE occupant, from the game's NoobProtection
+      // flags in the player cache. Drives both the dot tint and the label so a
+      // crowded system reads as who-you-can-fight, not a wall of grey "Occupied".
+      // null (unflagged / never live-scanned) falls back to the plain status.
+      const band = p.status === 'occupied' && p.player && players
+        ? occupantStrength(players[p.player.id])
+        : null;
       const dot = document.createElement('span');
       dot.className = 'rp-dot';
-      dot.style.background = STATUS_COLORS[/** @type {keyof typeof STATUS_COLORS} */ (p.status)] || '#888';
+      dot.style.background = band
+        ? STRENGTH_COLORS[band]
+        : STATUS_COLORS[/** @type {keyof typeof STATUS_COLORS} */ (p.status)] || '#888';
       row.appendChild(dot);
-      const flags = p.flags
-        ? ' (' + Object.keys(p.flags).filter((f) => /** @type {Record<string, unknown>} */ (p.flags)[f]).join(',') + ')'
-        : '';
+      // When the band label is already "Honorable", the per-slot `honorable`
+      // flag is redundant — drop it to avoid "Honorable (honorable, hasMoon)".
+      // Otherwise keep it (e.g. a "Strong" honorable target, or the cache-less
+      // fallback) so the signal isn't lost.
+      const flagKeys = p.flags
+        ? Object.keys(p.flags).filter((f) =>
+          (band !== 'honorable' || f !== 'honorable') && /** @type {Record<string, unknown>} */ (p.flags)[f])
+        : [];
+      const flags = flagKeys.length ? ` (${flagKeys.join(',')})` : '';
       const who = p.player
         ? ` — ${p.player.name}${typeof p.player.rank === 'number' ? ' #' + p.player.rank : ''}${p.player.ally ? ' ' + p.player.ally : ''}`
         : '';
-      const label = STATUS_LABELS[/** @type {keyof typeof STATUS_LABELS} */ (p.status)] || p.status;
+      const label = band
+        ? STRENGTH_LABELS[band]
+        : STATUS_LABELS[/** @type {keyof typeof STATUS_LABELS} */ (p.status)] || p.status;
       const txt = document.createElement('span');
       txt.textContent = `${pos}: ${label}${flags}${who}`;
       row.appendChild(txt);
@@ -219,7 +239,7 @@ const buildInteractiveStrip = (region, scans, { mode, weights, players }) => {
   const showFor = (sys) => {
     const cell = cellBySys.get(sys);
     if (!cell) return;
-    pop.replaceChildren(buildSystemCard(region.galaxy, sys, scans[`${region.galaxy}:${sys}`], pinned === sys));
+    pop.replaceChildren(buildSystemCard(region.galaxy, sys, scans[`${region.galaxy}:${sys}`], pinned === sys, players));
     pop.classList.toggle('pinned', pinned === sys);
     pop.style.display = 'block';
     // Centre the card over the cell, clamped inside the strip's width.
@@ -323,6 +343,7 @@ const buildNbrsTip = (s, ownRank) => {
   if (threat.length) parts.push('⚠ ' + threat.join(', '));
 
   if (s.honored) parts.push(`${s.honored} honored (max tier ${s.honoredMaxLevel}/3)`);
+  if (s.honorable) parts.push(`🎯 ${s.honorable} honorable target${s.honorable > 1 ? 's' : ''}`);
 
   // Rank-relative danger: how many neighbours sit ABOVE us (lower rank number =
   // stronger). The headline reason a new colony gets farmed.
@@ -627,6 +648,20 @@ const buildDetail = (region, scans, { mode, weights, players, ownRank }) => {
     scoreLine.className = 'streak-score';
     scoreLine.textContent = scoreLineText(s, ownRank, { coverage: !nbr });
     el.appendChild(scoreLine);
+
+    // Target breakdown by NoobProtection band — honorable / weak / strong
+    // occupants in range. All 0 without a joined player cache, so the line
+    // simply doesn't appear then.
+    const targetBits = [];
+    if (s.honorable) targetBits.push(`${s.honorable} honorable`);
+    if (s.newbie) targetBits.push(`${s.newbie} weak`);
+    if (s.strong) targetBits.push(`${s.strong} strong`);
+    if (targetBits.length) {
+      const targets = document.createElement('div');
+      targets.style.cssText = 'color:#9fb8c9;font-size:12px;margin-top:2px;';
+      targets.textContent = '🎯 Targets: ' + targetBits.join(' · ');
+      el.appendChild(targets);
+    }
 
     el.appendChild(buildInteractiveStrip(region, scans, { mode, weights, players }));
 
