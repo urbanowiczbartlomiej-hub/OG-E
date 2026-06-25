@@ -67,6 +67,7 @@ import { initGalaxyScanConfigStore } from './state/galaxyScanConfig.js';
 import { initAlarmClockConfigStore } from './state/alarmClockConfig.js';
 import { initBodiesStore } from './state/bodies.js';
 import { initColonizeDecisionsStore } from './state/colonizeDecisions.js';
+import { initTargetReportsStore } from './state/targets.js';
 
 import { installColonyRecorder } from './features/colonyRecorder.js';
 import { installPlanetBarCapture } from './features/planetBarCapture.js';
@@ -89,6 +90,7 @@ import { installRewardingWatcher } from './features/rewardingWatcher.js';
 import { installArtifactShopWatcher } from './features/artifactShopWatcher.js';
 import { installAlarmClock } from './features/alarmClock/index.js';
 import { installApiContext } from './features/apiContext/index.js';
+import { installTargetsIngest } from './features/targetsIngest/index.js';
 
 import { installSync } from './sync/scheduler.js';
 
@@ -136,6 +138,10 @@ initBodiesStore();
 // the picker subtracts and the Scout flags — and the only colonization state
 // destined for gist sync (it's what the public API can't reproduce).
 initColonizeDecisionsStore();
+// Espionage-report cache (per-universe, chrome.storage). The in-game ingest
+// consumer (installTargetsIngest) writes opened spy reports here; the dashboard
+// Targets sub-tab reads them to estimate hidden (fleet-saved) fleet.
+initTargetReportsStore();
 
 // The alarmClock master switch + ntfy token live in `settings.js` (regular
 // localStorage Settings, authored in the in-game OG-E settings panel) — wired
@@ -180,6 +186,12 @@ const installDomFeatures = () => {
   if (window.top === window.self) installThreatHighlight();
   installRewardingWatcher();
   installArtifactShopWatcher();
+  // Espionage-report ingestion — a MutationObserver reads each report's
+  // rawMessageData straight from the rendered messages DOM and records it for
+  // the dashboard Targets sub-tab. DOM-based (not an XHR hook) because the
+  // messages component fetches via fetch(), which observeXHR can't see. Top
+  // frame only: the messages UI is the top-level page.
+  if (window.top === window.self) installTargetsIngest();
   // OGame public-API context (per-device occupancy breadth for colonization).
   // Warms the per-device occupancy cache on every load (cache-gated, so the
   // multi-MB universe.xml is fetched at most weekly) and publishes the

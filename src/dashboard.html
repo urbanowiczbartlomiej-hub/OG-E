@@ -472,6 +472,7 @@
     <button type="button" class="subtab active" data-subtab="histogram" role="tab">Planet sizes</button>
     <button type="button" class="subtab" data-subtab="scans" role="tab">Scanned data</button>
     <button type="button" class="subtab" data-subtab="scout" role="tab">Colony Scout</button>
+    <button type="button" class="subtab" data-subtab="targets" role="tab">Targets</button>
   </div>
 
   <div class="subtabpane active" data-subtab="histogram">
@@ -588,6 +589,32 @@
       <button id="freeWeightsReset" class="weight-reset">↺ Reset to selected preset</button>
     </details>
     <div id="freeContainer"></div>
+    </div>
+  </div>
+
+  <div class="subtabpane" data-subtab="targets">
+    <div class="sub-section">
+    <h2>🎯 Targets — hidden fleet<span class="exp-badge" title="Estimates and espionage sending are still being built — this first cut lists the viable targets and their military points.">experimental</span></h2>
+    <p style="color:#888;font-size:13px;margin-bottom:16px;">
+      Active players in this universe — vacation, banned, your own alliance and anyone outside
+      attack range (noob protection, ±5× your points) are excluded — ranked by military points.
+      The <strong style="color:#ccc;">hidden-fleet</strong> estimate (military points minus spied
+      defense) fills in once espionage-report reading is added. Data is read from OGame's public
+      API, fetched in-game — open the galaxy view once to populate it.
+    </p>
+    <div class="controls">
+      <label>Min. military:</label>
+      <input id="tgtMinMilitary" value="0" size="10" title="Hide players whose military score is below this value.">
+      <label>Show:</label>
+      <select id="tgtLimit">
+        <option value="50">top 50</option>
+        <option value="100" selected>top 100</option>
+        <option value="200">top 200</option>
+        <option value="0">all</option>
+      </select>
+      <span id="tgtCountInfo" style="color:#888;font-size:13px;margin-left:auto;"></span>
+    </div>
+    <div id="targetsContainer"></div>
     </div>
   </div>
 

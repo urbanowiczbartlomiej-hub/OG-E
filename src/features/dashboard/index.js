@@ -49,9 +49,13 @@ import { parseTargetPositions } from '../../domain/histogram.js';
 import { populatePositionFilter, renderColonyChart } from './colony.js';
 import { renderGalaxyMap } from './galaxy.js';
 import { renderFreeRegions } from './freeStreak.js';
+import { renderTargets } from './targets.js';
 import { STRATEGIES } from '../../domain/regions.js';
 import { buildOccupancyIndex, buildScanMapFromIndex } from '../../domain/apiOccupancy.js';
-import { readApiCacheFor } from '../../state/apiCache.js';
+import { buildTargetCandidates } from '../../domain/targets.js';
+import { estimateHiddenFleet } from '../../domain/threatModel.js';
+import { readApiCacheFor, apiCacheKeyFor } from '../../state/apiCache.js';
+import { targetReportsKeyFor } from '../../state/targets.js';
 import {
   HISTORY_KEY_BASE,
   historyKeyFor,
@@ -186,6 +190,36 @@ let apiIndex = null;
 let apiBounds = {};
 
 /**
+ * Raw per-universe API cache (`state/apiCache.js`), loaded in `loadAll`. Held so
+ * the Targets sub-tab can read the players/total/military feeds (own-score for
+ * the noob-protection band, own-alliance for the ally exclusion). `{}` until a
+ * universe with cached API data loads.
+ * @type {import('../../state/apiCache.js').ApiCache}
+ */
+let apiCache = {};
+
+/**
+ * Candidate target rows joined from the API feeds (`domain/targets.js`), rebuilt
+ * by `loadAll`. The Targets sub-tab filters/sorts this on each repaint.
+ * @type {import('../../domain/targets.js').TargetCandidate[]}
+ */
+let targetCandidates = [];
+
+/**
+ * Opened espionage reports for the selected universe (`state/targets.js`),
+ * keyed playerId → bodyKey → report. Drives the hidden-fleet estimate.
+ * @type {import('../../state/targets.js').TargetReports}
+ */
+let targetReports = {};
+
+/**
+ * Planet count per player from the universe.xml snapshot — the coverage
+ * denominator ("spied X / Y planets") for the hidden-fleet estimate.
+ * @type {Record<string, number>}
+ */
+let planetCountByPlayer = {};
+
+/**
  * Per-universe player-metadata cache (`state/players.js`), loaded alongside
  * `scans` and forwarded to Colony Scout so neighbourhood scoring can use the
  * richer strong/newbie/buddy/outlaw/ally signals. `{}` until a universe loads.
@@ -241,6 +275,10 @@ const expandedGalaxies = new Set();
 /** @type {HTMLElement | null} */ let freeRadiusRow;
 /** @type {HTMLElement} */ let freeContainer;
 /** @type {HTMLElement | null} */ let freeCountInfoEl;
+/** @type {HTMLElement} */ let targetsContainer;
+/** @type {HTMLInputElement} */ let tgtMinMilitary;
+/** @type {HTMLSelectElement} */ let tgtLimit;
+/** @type {HTMLElement | null} */ let tgtCountInfoEl;
 
 /** The 5 neighbourhood factors users can tune via sliders. */
 const WEIGHT_FIELDS = /** @type {const} */ (['free', 'inactive', 'occupied', 'bandit', 'honored']);
@@ -345,6 +383,8 @@ const boot = async () => {
       playersKeyFor(selectedUniverseId),
       ownProfileKeyFor(selectedUniverseId),
       galaxyScanConfigKeyFor(selectedUniverseId),
+      apiCacheKeyFor(selectedUniverseId),
+      targetReportsKeyFor(selectedUniverseId),
     ];
     if (keysToWatch.some((k) => k in changes)) {
       void loadAll().then(renderAll);
@@ -484,6 +524,10 @@ const wireDom = () => {
   freeRadiusRow = document.getElementById('freeRadiusRow');
   freeContainer = /** @type {HTMLElement} */ (document.getElementById('freeContainer'));
   freeCountInfoEl = document.getElementById('freeCountInfo');
+  targetsContainer = /** @type {HTMLElement} */ (document.getElementById('targetsContainer'));
+  tgtMinMilitary = /** @type {HTMLInputElement} */ (document.getElementById('tgtMinMilitary'));
+  tgtLimit = /** @type {HTMLSelectElement} */ (document.getElementById('tgtLimit'));
+  tgtCountInfoEl = document.getElementById('tgtCountInfo');
   for (const k of WEIGHT_FIELDS) {
     const s = document.getElementById(`freeW_${k}`);
     const v = document.getElementById(`freeWV_${k}`);
@@ -628,15 +672,20 @@ const loadAll = async () => {
     apiBounds = {};
     galaxyConfig = defaultGalaxyScanConfig();
     targetPositions = parseTargetPositions(galaxyConfig.positions);
+    apiCache = {};
+    targetCandidates = [];
+    targetReports = {};
+    planetCountByPlayer = {};
     return;
   }
-  const [h, s, c, p, op, api] = await Promise.all([
+  const [h, s, c, p, op, api, tr] = await Promise.all([
     chromeStore.get(historyKeyFor(selectedUniverseId)),
     chromeStore.get(scansKeyFor(selectedUniverseId)),
     chromeStore.get(galaxyScanConfigKeyFor(selectedUniverseId)),
     chromeStore.get(playersKeyFor(selectedUniverseId)),
     readOwnProfile(selectedUniverseId),
     readApiCacheFor(selectedUniverseId),
+    chromeStore.get(targetReportsKeyFor(selectedUniverseId)),
   ]);
   history = Array.isArray(h) ? /** @type {ColonyEntry[]} */ (h) : [];
   scans = s && typeof s === 'object' ? /** @type {GalaxyScans} */ (s) : {};
@@ -665,6 +714,32 @@ const loadAll = async () => {
     apiIndex = null;
     apiBounds = {};
   }
+
+  // Targets sub-tab: join the already-cached API feeds (players + total +
+  // military) into candidate rows. Empty when the in-game side hasn't populated
+  // the cache yet → the sub-tab shows its "open the galaxy view" hint.
+  apiCache = api && typeof api === 'object' ? /** @type {import('../../state/apiCache.js').ApiCache} */ (api) : {};
+  targetCandidates = buildTargetCandidates({
+    players: apiCache.players ? apiCache.players.players : undefined,
+    total: apiCache.total ? apiCache.total.ranks : undefined,
+    military: apiCache.military ? apiCache.military.ranks : undefined,
+  });
+
+  targetReports = tr && typeof tr === 'object'
+    ? /** @type {import('../../state/targets.js').TargetReports} */ (tr)
+    : {};
+  // Coverage denominator: count each player's planets in the universe.xml
+  // snapshot (planets only — moons are <moon> children we don't parse).
+  /** @type {Record<string, number>} */
+  const counts = {};
+  const uniPlanets = apiCache.universe ? apiCache.universe.planets : [];
+  for (const pl of uniPlanets) {
+    if (pl && pl.player != null) {
+      const pid = String(pl.player);
+      counts[pid] = (counts[pid] || 0) + 1;
+    }
+  }
+  planetCountByPlayer = counts;
 };
 
 /**
@@ -744,6 +819,56 @@ const renderAll = () => {
   // listeners that re-paint only this block without paying for the
   // colony / galaxy passes.
   repaintFreeRegions();
+  repaintTargets();
+};
+
+/**
+ * Repaint only the Targets sub-tab from the joined candidate list + the
+ * active-target filter controls. Cheap (DOM-only over an already-loaded
+ * candidate list), so control changes don't pay the colony / galaxy passes.
+ *
+ * The noob-protection band and ally exclusion need OUR own numbers: own total
+ * score (from the total highscore) and own alliance id (from players.xml),
+ * both keyed by our own player id from the profile. Absent until the in-game
+ * header read lands — then those two filters simply don't apply.
+ *
+ * @returns {void}
+ */
+const repaintTargets = () => {
+  const ownId = ownProfile.id != null ? String(ownProfile.id) : undefined;
+  const totalRanks = apiCache.total ? apiCache.total.ranks : undefined;
+  const apiPlayers = apiCache.players ? apiCache.players.players : undefined;
+  const ownTotalScore = ownId && totalRanks ? totalRanks[ownId]?.score : undefined;
+  const ownAlliance = ownId && apiPlayers ? apiPlayers[ownId]?.alliance : undefined;
+
+  // Per-player hidden-fleet estimate, for players we've opened reports on.
+  const military = apiCache.military ? apiCache.military.ranks : {};
+  /** @type {Record<string, import('../../domain/threatModel.js').HiddenFleetEstimate>} */
+  const estimates = {};
+  for (const pid of Object.keys(targetReports)) {
+    const bucket = targetReports[pid];
+    const reports = bucket ? Object.values(bucket) : [];
+    if (!reports.length) continue;
+    estimates[pid] = estimateHiddenFleet({
+      militaryPoints: military[pid] ? military[pid].score : undefined,
+      reports,
+      planetCount: planetCountByPlayer[pid],
+    });
+  }
+
+  renderTargets({
+    containerEl: targetsContainer,
+    candidates: targetCandidates,
+    opts: {
+      ownPlayerId: ownId,
+      ownTotalScore,
+      ownAlliance,
+      minMilitary: Number(tgtMinMilitary?.value) || 0,
+    },
+    limit: Number(tgtLimit?.value) || 0,
+    estimates,
+    countInfoEl: tgtCountInfoEl,
+  });
 };
 
 /**
@@ -945,6 +1070,11 @@ const wireListeners = () => {
   });
 
   posFilter.addEventListener('change', () => renderAll());
+
+  // Targets controls only repaint the Targets sub-tab (the candidate list is
+  // already loaded; only the filter/limit we apply to it changed).
+  tgtMinMilitary.addEventListener('change', repaintTargets);
+  tgtLimit.addEventListener('change', repaintTargets);
 
   // Region controls only repaint the settlement-regions block. The
   // underlying `scans` cache hasn't changed — only the slots/tolerance
