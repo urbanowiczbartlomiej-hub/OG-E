@@ -17,6 +17,7 @@ import {
   emptyPositionsInSystem,
   countFreeTargetSlots,
   buildScanMapFromIndex,
+  honorClass,
 } from '../../src/domain/apiOccupancy.js';
 
 describe('ALL_POSITIONS', () => {
@@ -160,6 +161,33 @@ describe('parseServerData', () => {
   });
 });
 
+describe('honorClass', () => {
+  it('needs BOTH a top ranking position and an HP floor (honoured tiers)', () => {
+    expect(honorClass({ position: 1, score: 15000 }, 1000)).toBe('rank_honored3');
+    // ≥15000 HP but outside the top 10 → capped at the tier the position allows.
+    expect(honorClass({ position: 50, score: 15000 }, 1000)).toBe('rank_honored2');
+    expect(honorClass({ position: 200, score: 600 }, 1000)).toBe('rank_honored1');
+    // Top 10 but below the 500 HP floor → no rank.
+    expect(honorClass({ position: 5, score: 400 }, 1000)).toBeUndefined();
+  });
+
+  it('classifies bandits by BOTTOM positions + negative HP (keeps worst tier earned)', () => {
+    // total 1000 → bottom 10 = positions 991..1000.
+    expect(honorClass({ position: 1000, score: -20000 }, 1000)).toBe('rank_bandit3');
+    // ≤-15000 HP but NOT in the bottom 10 → capped at Lord (bottom 100).
+    expect(honorClass({ position: 950, score: -20000 }, 1000)).toBe('rank_bandit2');
+    expect(honorClass({ position: 800, score: -600 }, 1000)).toBe('rank_bandit1');
+    // Bottom 250 by position but milder than -500 HP → not a bandit.
+    expect(honorClass({ position: 800, score: -100 }, 1000)).toBeUndefined();
+  });
+
+  it('returns undefined without a row / position / score', () => {
+    expect(honorClass(undefined, 1000)).toBeUndefined();
+    expect(honorClass({ score: -20000 }, 1000)).toBeUndefined(); // no position
+    expect(honorClass({ position: 1000 }, 1000)).toBeUndefined(); // no score
+  });
+});
+
 describe('buildOccupancyIndex', () => {
   /** A small, reused set of feeds. */
   const feeds = () => ({
@@ -197,6 +225,24 @@ describe('buildOccupancyIndex', () => {
       alliance: undefined,
       rank: 9001,
     });
+  });
+
+  it('synthesises rankClass from the honour highscore (bottom position + negative score = bandit)', () => {
+    const idx = buildOccupancyIndex({
+      universe: { planets: [{ coords: '1:1:2', player: 103 }, { coords: '1:1:8', player: 207 }] },
+      // total 2 → 103 at the bottom with ≤-15000 = Król; 207 at the top with ≥2500 = honoured2.
+      honor: { ranks: { 103: { position: 2, score: -20000 }, 207: { position: 1, score: 3000 } } },
+    });
+    expect(idx.occupied.get('1:1:2')?.rankClass).toBe('rank_bandit3');
+    expect(idx.occupied.get('1:1:8')?.rankClass).toBe('rank_honored2');
+  });
+
+  it('leaves rankClass undefined for a neutral honour standing', () => {
+    const idx = buildOccupancyIndex({
+      universe: { planets: [{ coords: '1:1:2', player: 103 }] },
+      honor: { ranks: { 103: { position: 500, score: 0 } } },
+    });
+    expect(idx.occupied.get('1:1:2')?.rankClass).toBeUndefined();
   });
 
   it('flags our own colonies and carries the universe timestamp', () => {
@@ -354,6 +400,16 @@ describe('buildScanMapFromIndex', () => {
       status: 'inactive',
       player: { id: 207, name: 'Foe', rank: 50, ally: '7', rankClass: undefined },
     });
+  });
+
+  it('carries the synthesised bandit rankClass onto the player payload', () => {
+    const idx = buildOccupancyIndex({
+      universe: { planets: [{ coords: '1:1:8', player: 207 }] },
+      players: { players: { 207: { name: 'Foe', status: '' } } },
+      honor: { ranks: { 207: { position: 1, score: -3000 } } },
+    });
+    const map = buildScanMapFromIndex(idx, { galaxies: 1, systems: 1, targets: [4] });
+    expect(map['1:1'].positions[8].player?.rankClass).toBe('rank_bandit2');
   });
 
   it('maps an occupant with no player id to plain "occupied"', () => {

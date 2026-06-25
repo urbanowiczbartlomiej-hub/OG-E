@@ -146,6 +146,14 @@ export async function refreshCache(opts = {}) {
     fetched.push('military');
     changed = true;
   }
+  if (force || !isFresh(cache.honor, TTL.highscore, now)) {
+    // Honour highscore (type 7): score = honour points, negative = bandit. Joined
+    // by id in buildOccupancyIndex → synthesised rankClass → bandit/honoured scoring.
+    const hs = parseHighscore(await fetchApiText('highscore', { category: '1', type: '7' }));
+    cache.honor = { ranks: hs.ranks, timestamp: hs.timestamp, fetchedAt: now };
+    fetched.push('honor');
+    changed = true;
+  }
   if (force || !isFresh(cache.server, TTL.server, now)) {
     cache.server = { data: parseServerData(await fetchApiText('serverData')), fetchedAt: now };
     fetched.push('server');
@@ -176,6 +184,7 @@ export async function getContext(opts = {}) {
     },
     players: { players: cache.players ? cache.players.players : {} },
     highscore: { ranks: cache.total ? cache.total.ranks : {} },
+    honor: { ranks: cache.honor ? cache.honor.ranks : {} },
     ownPlayerId,
   });
 

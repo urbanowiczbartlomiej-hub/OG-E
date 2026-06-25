@@ -78,24 +78,50 @@ export const STATUS_LABELS = {
  * occupant's dot in the Colony Scout system card so the neighbourhood reads as
  * who-you-can-actually-fight rather than a wall of grey "Occupied".
  *
- * @type {Record<'weak' | 'honorable' | 'strong', string>}
+ * @type {Record<'weak' | 'normal' | 'honorable' | 'strong', string>}
  */
 export const STRENGTH_LABELS = {
   weak: 'Weak',
+  normal: 'Normal',
   honorable: 'Honorable',
   strong: 'Strong',
 };
 
 /**
  * Dot colour per {@link STRENGTH_LABELS} band: muted green = protected/harmless,
- * gold = a fair honour fight, orange-red = out-guns a fresh colony.
+ * near-white grey = a plain ("white") attackable target, gold = a fair honour
+ * fight, orange-red = out-guns a fresh colony.
  *
- * @type {Record<'weak' | 'honorable' | 'strong', string>}
+ * @type {Record<'weak' | 'normal' | 'honorable' | 'strong', string>}
  */
 export const STRENGTH_COLORS = {
   weak: '#5a8f5a',
+  normal: '#cdd6dd',
   honorable: '#e0b020',
   strong: '#d05a3a',
+};
+
+/**
+ * Honour-rank chip naming (from `domain/players.honorRank`) — a SEPARATE axis
+ * from strength. Bandit tiers use the game's English titles (1 Bandit →
+ * 2 Bandit Lord → 3 Bandit King); positive honour stays generic ("Honored" +
+ * tier, since OG-E doesn't reverse-engineer every positive title).
+ *
+ * @type {{ bandit: Record<number, string> }}
+ */
+export const HONOR_TIER_LABELS = {
+  bandit: { 1: 'Bandit', 2: 'Bandit Lord', 3: 'Bandit King' },
+};
+
+/**
+ * Honour-rank chip colour: bandits (aggressors → danger) red, honoured
+ * fighters gold.
+ *
+ * @type {Record<'bandit' | 'honored', string>}
+ */
+export const HONOR_COLORS = {
+  bandit: '#e24b4a',
+  honored: '#e0c060',
 };
 
 /**

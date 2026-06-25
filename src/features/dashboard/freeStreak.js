@@ -48,8 +48,11 @@ import {
   MIN_REGION_LENGTH,
 } from '../../domain/regions.js';
 import { STRIP_PRIORITY, bestStatusInSystem } from '../../domain/histogram.js';
-import { occupantStrength } from '../../domain/players.js';
-import { STATUS_COLORS, STATUS_LABELS, STRENGTH_COLORS, STRENGTH_LABELS, UNSCANNED_COLOR, heatColor } from './palette.js';
+import { occupantStrength, honorRank } from '../../domain/players.js';
+import {
+  STATUS_COLORS, STATUS_LABELS, STRENGTH_COLORS, STRENGTH_LABELS,
+  HONOR_COLORS, HONOR_TIER_LABELS, UNSCANNED_COLOR, heatColor,
+} from './palette.js';
 import { makeLegendSwatch } from './legend.js';
 
 /**
@@ -150,9 +153,8 @@ const buildSystemCard = (g, s, scan, pinned, players) => {
       // flags in the player cache. Drives both the dot tint and the label so a
       // crowded system reads as who-you-can-fight, not a wall of grey "Occupied".
       // null (unflagged / never live-scanned) falls back to the plain status.
-      const band = p.status === 'occupied' && p.player && players
-        ? occupantStrength(players[p.player.id])
-        : null;
+      const meta = p.player && players ? players[p.player.id] : undefined;
+      const band = p.status === 'occupied' ? occupantStrength(meta) : null;
       const dot = document.createElement('span');
       dot.className = 'rp-dot';
       dot.style.background = band
@@ -168,15 +170,38 @@ const buildSystemCard = (g, s, scan, pinned, players) => {
           (band !== 'honorable' || f !== 'honorable') && /** @type {Record<string, unknown>} */ (p.flags)[f])
         : [];
       const flags = flagKeys.length ? ` (${flagKeys.join(',')})` : '';
+      // Name: prefer the per-slot scan name, fall back to the cached player name
+      // (an API-derived slot often lacks it), then the bare id — never "undefined".
+      const pname = p.player
+        ? (p.player.name || meta?.name || (p.player.id != null ? `player ${p.player.id}` : 'unknown'))
+        : '';
       const who = p.player
-        ? ` — ${p.player.name}${typeof p.player.rank === 'number' ? ' #' + p.player.rank : ''}${p.player.ally ? ' ' + p.player.ally : ''}`
+        ? ` — ${pname}${typeof p.player.rank === 'number' ? ' #' + p.player.rank : ''}${p.player.ally ? ' ' + p.player.ally : ''}`
         : '';
       const label = band
         ? STRENGTH_LABELS[band]
         : STATUS_LABELS[/** @type {keyof typeof STATUS_LABELS} */ (p.status)] || p.status;
       const txt = document.createElement('span');
-      txt.textContent = `${pos}: ${label}${flags}${who}`;
+      txt.textContent = `${pos}: ${label}`;
       row.appendChild(txt);
+      // Honour-rank chip (bandit / honoured + tier) — a SEPARATE axis from the
+      // strength band: a player can be both "Strong" and a "Bandit King". A
+      // banned owner is frozen, so their honour rank isn't a live danger.
+      const honor = p.status !== 'banned' ? honorRank(p.player?.rankClass) : null;
+      if (honor) {
+        const chip = document.createElement('span');
+        chip.style.cssText = `margin-left:6px;font-weight:700;color:${HONOR_COLORS[honor.kind]};`;
+        // Visibility: the higher the rank, the more marks — red "!" for bandits
+        // (the threat convention OG-E already uses), gold "⭐" for honoured.
+        chip.textContent = honor.kind === 'bandit'
+          ? `${'!'.repeat(honor.tier)} ${HONOR_TIER_LABELS.bandit[honor.tier] || 'Bandit'}`
+          : `${'⭐'.repeat(honor.tier)} Honored`;
+        chip.title = `${honor.kind === 'bandit' ? 'Bandit' : 'Honoured fighter'} — honour tier ${honor.tier}/3`;
+        row.appendChild(chip);
+      }
+      const rest = document.createElement('span');
+      rest.textContent = `${flags}${who}`;
+      row.appendChild(rest);
       card.appendChild(row);
     }
     if (!occupants) {
@@ -654,6 +679,7 @@ const buildDetail = (region, scans, { mode, weights, players, ownRank }) => {
     // simply doesn't appear then.
     const targetBits = [];
     if (s.honorable) targetBits.push(`${s.honorable} honorable`);
+    if (s.normal) targetBits.push(`${s.normal} normal`);
     if (s.newbie) targetBits.push(`${s.newbie} weak`);
     if (s.strong) targetBits.push(`${s.strong} strong`);
     if (targetBits.length) {
@@ -661,6 +687,27 @@ const buildDetail = (region, scans, { mode, weights, players, ownRank }) => {
       targets.style.cssText = 'color:#9fb8c9;font-size:12px;margin-top:2px;';
       targets.textContent = '🎯 Targets: ' + targetBits.join(' · ');
       el.appendChild(targets);
+    }
+
+    // Bandit (negative-honour aggressor) breakdown by tier — the danger signal
+    // for a fresh colony, counted SEPARATELY from the target bands. Highest
+    // tier first (Bandit King → Bandit). All from per-slot rankClass, so this
+    // shows even without a player cache.
+    const banditBits = [];
+    let banditMaxTier = 0;
+    for (const t of [3, 2, 1]) {
+      const n = s.banditTiers?.[t];
+      if (n) {
+        banditBits.push(`${n} ${HONOR_TIER_LABELS.bandit[t]}`);
+        if (!banditMaxTier) banditMaxTier = t;
+      }
+    }
+    if (banditBits.length) {
+      const bandits = document.createElement('div');
+      bandits.style.cssText = `color:${HONOR_COLORS.bandit};font-weight:700;font-size:12px;margin-top:2px;`;
+      // Lead with "!" marks for the WORST tier present (more = nastier), red.
+      bandits.textContent = `${'!'.repeat(banditMaxTier)} Bandits: ${banditBits.join(' · ')}`;
+      el.appendChild(bandits);
     }
 
     el.appendChild(buildInteractiveStrip(region, scans, { mode, weights, players }));

@@ -39,6 +39,8 @@
 //
 // @ts-check
 
+import { occupantStrength } from './players.js';
+
 /**
  * @typedef {import('../state/scans.js').GalaxyScans} GalaxyScans
  * @typedef {import('./scans.js').PositionStatus} PositionStatus
@@ -78,6 +80,9 @@
  *   Monotonically grows with every additional bandit OR with higher tier —
  *   bandit3 scores 3× the threat of bandit1. Used in scoring; `banditMaxLevel`
  *   is used only for display.
+ * @property {Record<number, number>} banditTiers  Bandit count keyed by honour
+ *   tier — 1 Bandit, 2 Bandit Lord, 3 Bandit King. Empty when `bandits === 0`.
+ *   Drives the per-tier breakdown line in the detail panel.
  * @property {number} honored    Players with positive honor (non-bandit
  *   ranked — likely `rank_general*` / `rank_starlord*`). Also mostly
  *   combat-active, but they prefer stronger targets — lower danger for a
@@ -94,6 +99,10 @@
  * @property {number} honorable Distinct players flagged `isHonorableTarget` — a
  *   fair fight, attacking earns honour. (Distinct from `honored`, which counts
  *   positive-honor RANK CLASSES.) `0` without a player cache.
+ * @property {number} normal   Distinct live-scanned ACTIVE occupants with no
+ *   special standing — past noob protection, below the honour bracket, not a
+ *   friend/ally: the plain "white" farm target (`occupantStrength === 'normal'`).
+ *   `0` without a player cache.
  * @property {number} buddy    Distinct players on your buddy list (`isBuddy`) —
  *   friends, never targets. `0` without a player cache.
  * @property {number} outlaw   Distinct players flagged `isOutlaw` — have lost
@@ -308,6 +317,8 @@ export const scoreRegion = (region, scans, opts = {}) => {
   let bandits = 0;
   let banditMaxLevel = 0;
   let banditTierSum = 0;
+  /** @type {Record<number, number>} bandit count keyed by tier (1–3) */
+  const banditTiers = {};
   let honored = 0;
   let honoredMaxLevel = 0;
   let honoredTierSum = 0;
@@ -318,6 +329,7 @@ export const scoreRegion = (region, scans, opts = {}) => {
     if (rc.startsWith('rank_bandit')) {
       bandits++;
       banditTierSum += tier;
+      banditTiers[tier] = (banditTiers[tier] || 0) + 1;
       if (tier > banditMaxLevel) banditMaxLevel = tier;
     } else {
       honored++;
@@ -334,6 +346,7 @@ export const scoreRegion = (region, scans, opts = {}) => {
   let strong = 0;
   let newbie = 0;
   let honorable = 0;
+  let normal = 0;
   let buddy = 0;
   let outlaw = 0;
   let activeOnVacation = 0;
@@ -341,17 +354,24 @@ export const scoreRegion = (region, scans, opts = {}) => {
   if (cache) {
     for (const [id, st] of playerStatus) {
       if (bannedIds.has(id)) continue; // banned = eternal vacation, no threat/value
-      const f = cache[id]?.flags;
-      if (!f) continue;
-      if (f.strong) strong++;
-      if (f.newbie) newbie++;
-      if (f.honorable) honorable++;
-      if (f.buddy) buddy++;
-      if (f.outlaw) outlaw++;
-      if (f.allianceMember) allyMembers++;
-      // A vacation-status owner who is ALSO flagged active is a live player
-      // hiding behind vacation, not a dormant farm — surface separately.
-      if (f.active && st === 'vacation') activeOnVacation++;
+      const meta = cache[id];
+      if (!meta) continue; // not live-scanned → unknown, not a counted target
+      const f = meta.flags;
+      if (f) {
+        if (f.strong) strong++;
+        if (f.newbie) newbie++;
+        if (f.honorable) honorable++;
+        if (f.buddy) buddy++;
+        if (f.outlaw) outlaw++;
+        if (f.allianceMember) allyMembers++;
+        // A vacation-status owner who is ALSO flagged active is a live player
+        // hiding behind vacation, not a dormant farm — surface separately.
+        if (f.active && st === 'vacation') activeOnVacation++;
+      }
+      // "Normal/white" target: a live-scanned ACTIVE occupant with no special
+      // standing. Same classifier the per-occupant card uses, so the count and
+      // the labels can't drift.
+      if (st === 'occupied' && occupantStrength(meta) === 'normal') normal++;
     }
   }
 
@@ -365,12 +385,14 @@ export const scoreRegion = (region, scans, opts = {}) => {
     bandits,
     banditMaxLevel,
     banditTierSum,
+    banditTiers,
     honored,
     honoredMaxLevel,
     honoredTierSum,
     strong,
     newbie,
     honorable,
+    normal,
     buddy,
     outlaw,
     activeOnVacation,

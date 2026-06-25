@@ -3,7 +3,7 @@
 // @ts-check
 
 import { describe, it, expect } from 'vitest';
-import { extractPlayerMeta, mergePlayerMeta, occupantStrength } from '../../src/domain/players.js';
+import { extractPlayerMeta, mergePlayerMeta, occupantStrength, honorRank } from '../../src/domain/players.js';
 
 // A realistic occupied-slot player block (the live fields we read; this is
 // the HAR's slot-8 case: rank-11 starlord, active but on vacation).
@@ -117,13 +117,9 @@ describe('occupantStrength', () => {
   /** @param {object} flags @returns {any} */
   const withFlags = (flags) => ({ id: 1, name: 'X', flags });
 
-  it('returns null without a record or without flags', () => {
+  it('returns null ONLY when the player is not in the cache (never live-scanned)', () => {
     expect(occupantStrength(null)).toBeNull();
     expect(occupantStrength(undefined)).toBeNull();
-    expect(occupantStrength(/** @type {any} */ ({ id: 1, name: 'X' }))).toBeNull();
-    expect(occupantStrength(withFlags({}))).toBeNull();
-    // An active occupant inside your bracket but unflagged stays unclassified.
-    expect(occupantStrength(withFlags({ active: true, outlaw: true }))).toBeNull();
   });
 
   it('maps newbie → weak, honorable → honorable, strong → strong', () => {
@@ -139,5 +135,41 @@ describe('occupantStrength', () => {
     // A much-stronger player is often ALSO an honorable target — surface the
     // more cautionary "strong".
     expect(occupantStrength(withFlags({ strong: true, honorable: true }))).toBe('strong');
+  });
+
+  it('classifies a live-scanned occupant with no special standing as "normal" (white)', () => {
+    expect(occupantStrength(/** @type {any} */ ({ id: 1, name: 'X' }))).toBe('normal'); // no flags object
+    expect(occupantStrength(withFlags({}))).toBe('normal');
+    expect(occupantStrength(withFlags({ active: true }))).toBe('normal');
+    // Active + outlaw but none of the three bands → still a plain attackable target.
+    expect(occupantStrength(withFlags({ active: true, outlaw: true }))).toBe('normal');
+  });
+
+  it('excludes friends and your own alliance from "normal" (→ null, not a target)', () => {
+    expect(occupantStrength(withFlags({ buddy: true }))).toBeNull();
+    expect(occupantStrength(withFlags({ allianceMember: true }))).toBeNull();
+  });
+});
+
+describe('honorRank', () => {
+  it('returns null without a rank class', () => {
+    expect(honorRank(undefined)).toBeNull();
+    expect(honorRank(null)).toBeNull();
+    expect(honorRank('')).toBeNull();
+  });
+
+  it('parses bandit tiers 1–3 (Bandit / Bandit Lord / Bandit King)', () => {
+    expect(honorRank('rank_bandit1')).toEqual({ kind: 'bandit', tier: 1 });
+    expect(honorRank('rank_bandit2')).toEqual({ kind: 'bandit', tier: 2 });
+    expect(honorRank('rank_bandit3')).toEqual({ kind: 'bandit', tier: 3 });
+  });
+
+  it('treats any other rank_* as honoured with its tier', () => {
+    expect(honorRank('rank_starlord1')).toEqual({ kind: 'honored', tier: 1 });
+    expect(honorRank('rank_general3')).toEqual({ kind: 'honored', tier: 3 });
+  });
+
+  it('falls back to tier 1 for an unknown variant', () => {
+    expect(honorRank('rank_bandit')).toEqual({ kind: 'bandit', tier: 1 });
   });
 });

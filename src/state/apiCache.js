@@ -31,6 +31,7 @@ import { currentUniverseKey } from './universeKey.js';
  * @property {{ players: Record<string, ApiPlayerMeta>, timestamp?: number, fetchedAt: number }} [players]
  * @property {{ ranks: Record<string, ApiRank>, timestamp?: number, fetchedAt: number }} [total]
  * @property {{ ranks: Record<string, ApiRank>, timestamp?: number, fetchedAt: number }} [military]
+ * @property {{ ranks: Record<string, ApiRank>, timestamp?: number, fetchedAt: number }} [honor]
  * @property {{ data: ServerData, fetchedAt: number }} [server]
  */
 

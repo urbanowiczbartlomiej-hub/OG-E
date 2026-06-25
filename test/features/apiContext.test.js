@@ -105,7 +105,7 @@ afterEach(() => {
 describe('refreshCache — cold (empty cache)', () => {
   it('fetches every feed and reports them', async () => {
     const { fetched } = await refreshCache();
-    expect(fetched).toEqual(['universe', 'players', 'total', 'military', 'server']);
+    expect(fetched).toEqual(['universe', 'players', 'total', 'military', 'honor', 'server']);
   });
 
   it('writes the parsed feeds back to the cache once', async () => {
@@ -141,6 +141,7 @@ describe('refreshCache — TTL gating', () => {
       players: { players: {}, fetchedAt: now },
       total: { ranks: {}, fetchedAt: now },
       military: { ranks: {}, fetchedAt: now },
+      honor: { ranks: {}, fetchedAt: now },
       server: { data: {}, fetchedAt: now },
     };
     const { fetched } = await refreshCache();
@@ -158,10 +159,11 @@ describe('refreshCache — TTL gating', () => {
       players: { players: {}, fetchedAt: now }, // daily — fresh
       total: { ranks: {}, fetchedAt: now - 2 * HOUR }, // hourly — STALE
       military: { ranks: {}, fetchedAt: now - 2 * HOUR }, // hourly — STALE
+      honor: { ranks: {}, fetchedAt: now - 2 * HOUR }, // hourly — STALE
       server: { data: {}, fetchedAt: now - 2 * DAY }, // daily — STALE
     };
     const { fetched } = await refreshCache();
-    expect(fetched).toEqual(['total', 'military', 'server']);
+    expect(fetched).toEqual(['total', 'military', 'honor', 'server']);
   });
 
   it('force re-fetches every feed regardless of freshness', async () => {
@@ -171,10 +173,11 @@ describe('refreshCache — TTL gating', () => {
       players: { players: {}, fetchedAt: now },
       total: { ranks: {}, fetchedAt: now },
       military: { ranks: {}, fetchedAt: now },
+      honor: { ranks: {}, fetchedAt: now },
       server: { data: {}, fetchedAt: now },
     };
     const { fetched } = await refreshCache({ force: true });
-    expect(fetched).toEqual(['universe', 'players', 'total', 'military', 'server']);
+    expect(fetched).toEqual(['universe', 'players', 'total', 'military', 'honor', 'server']);
   });
 });
 

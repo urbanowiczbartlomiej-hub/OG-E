@@ -99,6 +99,9 @@
  * @property {string} status          `''` = active (see ApiPlayerMeta.status).
  * @property {string} [alliance]
  * @property {number} [rank]          Total-highscore position, when known.
+ * @property {string} [rankClass]     Synthesised honour-rank class from the honour
+ *   highscore (see {@link honorClass}) — e.g. `"rank_bandit3"`. Lets the
+ *   bandit/honoured machinery work from the API, no live scan needed.
  */
 
 /**
@@ -305,11 +308,13 @@ export function parseServerData(xml) {
  * @param {UniverseData} [feeds.universe]
  * @param {PlayersData} [feeds.players]
  * @param {HighscoreData} [feeds.highscore]   Total-score ranks (category 1, type 0).
+ * @param {HighscoreData} [feeds.honor]       Honour-score ranks (category 1, type 7) —
+ *   negative score = bandit; drives the synthesised `rankClass`.
  * @param {number} [feeds.ownPlayerId]        Our player id, to flag own colonies.
  * @returns {OccupancyIndex}
  */
 export function buildOccupancyIndex(feeds = {}) {
-  const { universe, players, highscore, ownPlayerId } = feeds;
+  const { universe, players, highscore, honor, ownPlayerId } = feeds;
   /** @type {Map<string, OccupiedSlot>} */
   const occupied = new Map();
   /** @type {Set<string>} */
@@ -318,6 +323,8 @@ export function buildOccupancyIndex(feeds = {}) {
   const occupiedByPosition = {};
   const pmap = players && players.players ? players.players : {};
   const rmap = highscore && highscore.ranks ? highscore.ranks : {};
+  const hmap = honor && honor.ranks ? honor.ranks : {};
+  const honorTotal = Object.keys(hmap).length; // ranked-player count → "bottom N" cutoffs
   const planets = universe && universe.planets ? universe.planets : [];
   for (const pl of planets) {
     if (!pl || !pl.coords) continue;
@@ -325,12 +332,14 @@ export function buildOccupancyIndex(feeds = {}) {
     const pid = pl.player;
     const meta = pid != null ? pmap[String(pid)] : undefined;
     const rank = pid != null ? rmap[String(pid)] : undefined;
+    const honorRow = pid != null ? hmap[String(pid)] : undefined;
     occupied.set(pl.coords, {
       player: pid,
       name: meta ? meta.name : undefined,
       status: meta ? meta.status : '',
       alliance: meta ? meta.alliance : undefined,
       rank: rank ? rank.position : undefined,
+      rankClass: honorClass(honorRow, honorTotal),
     });
     // Tally the position (last `:`-segment of "g:s:p") for the whole-universe
     // free-slot count.
@@ -430,6 +439,44 @@ function apiStatusToPosition(status) {
 }
 
 /**
+ * Classify a player's HONOUR rank from their honour-highscore row (position +
+ * score) into a synthesised `rankClass`, so the whole downstream pipeline —
+ * `scoreRegion`'s bandit/honoured tallies, `domain/players.honorRank`, the Scout
+ * honour chip — works UNCHANGED from the public API, no live scan needed.
+ *
+ * OGame awards a rank on BOTH a ranking POSITION and an honour-point floor: the
+ * higher tier needs you near the top/bottom of the honour highscore AND past the
+ * HP threshold; you keep the best tier you qualify for:
+ *
+ *   honoured: top 10 & ≥15000 → 3, top 100 & ≥2500 → 2, top 250 & ≥500 → 1
+ *             (Cesarz / Imperator / Władca)
+ *   bandit:   bottom 10 & ≤-15000 → 3, bottom 100 & ≤-2500 → 2, bottom 250 & ≤-500 → 1
+ *             (Król Bandytów / Lord Bandytów / Bandyta)
+ *
+ * `total` is the ranked-player count (the honour highscore length) so "bottom N"
+ * = the last N positions. The synthesised class names are internal; only the
+ * `rank_bandit` prefix and the trailing tier digit are read downstream.
+ *
+ * @param {{ position?: number, score?: number } | undefined} row  Honour highscore entry.
+ * @param {number} total  Ranked-player count (honour highscore length).
+ * @returns {string | undefined}
+ */
+export function honorClass(row, total) {
+  if (!row) return undefined;
+  const pos = row.position;
+  const score = row.score;
+  if (typeof pos !== 'number' || typeof score !== 'number') return undefined;
+  if (pos <= 10 && score >= 15000) return 'rank_honored3';
+  if (pos <= 100 && score >= 2500) return 'rank_honored2';
+  if (pos <= 250 && score >= 500) return 'rank_honored1';
+  const n = typeof total === 'number' && total > 0 ? total : 0;
+  if (pos > n - 10 && score <= -15000) return 'rank_bandit3';
+  if (pos > n - 100 && score <= -2500) return 'rank_bandit2';
+  if (pos > n - 250 && score <= -500) return 'rank_bandit1';
+  return undefined;
+}
+
+/**
  * Build a synthetic `GalaxyScans`-shaped map from the occupancy index so the
  * EXISTING pure region finder/scorer (`domain/regions.js`) can reason over
  * WHOLE-SERVER data with no rewrite. Every grid system gets an entry: occupied
@@ -438,10 +485,10 @@ function apiStatusToPosition(status) {
  * where not occupied — so a fully-free system is a region match, exactly as a
  * live scan of it would be.
  *
- * Fidelity caveat: the API has highscore rank but NOT honor `rankClass` or
- * alliance TAGS (galaxy-DOM only), so bandit/honored scoring is absent here and
- * alliance counting uses the alliance id. Live scans (merged on top by the
- * caller, live-wins) restore full fidelity for systems actually visited.
+ * Fidelity caveat: bandit/honoured `rankClass` is now SYNTHESISED from the
+ * honour highscore (category 1, type 7) via {@link honorClass} — so
+ * bandit/honoured scoring works whole-server, not just on visited systems. Only
+ * alliance TAGS remain galaxy-DOM only (alliance counting uses the alliance id).
  *
  * Pure: no DOM/fetch/clock. The caller overlays live scans and casts the result
  * to `GalaxyScans`.
@@ -492,7 +539,7 @@ export function buildScanMapFromIndex(index, opts) {
             name: slot.name,
             rank: slot.rank,
             ally: slot.alliance,
-            rankClass: undefined,
+            rankClass: slot.rankClass,
           },
         };
       } else {

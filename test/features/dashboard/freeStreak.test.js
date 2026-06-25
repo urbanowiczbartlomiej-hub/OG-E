@@ -108,6 +108,82 @@ describe('renderFreeRegions', () => {
     expect(pop?.textContent).not.toMatch(/Occupied/);
   });
 
+  it('labels a live-scanned occupant with no special standing "Normal", not "Occupied"', () => {
+    /** @type {Record<string, Record<number, any>>} */
+    const spec = {};
+    for (let s = 1; s <= 6; s++) spec[`4:${s}`] = { 8: empty };
+    spec['4:2'][3] = occ(1); // plain "white" occupant
+    /** @type {any} */
+    const players = { 1: { id: 1, name: 'W', flags: { active: true } } };
+    renderFreeRegions({ ...baseOpts(), scans: scansOf(spec), positions: [8], players });
+
+    const record = containerEl.querySelector('.streak-record');
+    expect(record?.textContent).toMatch(/Targets:/);
+    expect(record?.textContent).toMatch(/1 normal/);
+
+    const cells = containerEl.querySelectorAll('.region-strip .strip-cell');
+    cells[1].dispatchEvent(new Event('mouseenter')); // system 2
+    const pop = containerEl.querySelector('.region-pop');
+    expect(pop?.textContent).toMatch(/Normal/);
+    expect(pop?.textContent).not.toMatch(/Occupied/);
+  });
+
+  it('keeps "Occupied" for an occupant we have NOT live-scanned (absent from the cache)', () => {
+    /** @type {Record<string, Record<number, any>>} */
+    const spec = {};
+    for (let s = 1; s <= 6; s++) spec[`4:${s}`] = { 8: empty };
+    spec['4:2'][3] = occ(99); // occupant id 99 not present in the (empty) cache
+    renderFreeRegions({ ...baseOpts(), scans: scansOf(spec), positions: [8], players: {} });
+
+    const cells = containerEl.querySelectorAll('.region-strip .strip-cell');
+    cells[1].dispatchEvent(new Event('mouseenter'));
+    const pop = containerEl.querySelector('.region-pop');
+    expect(pop?.textContent).toMatch(/Occupied/);
+    expect(pop?.textContent).not.toMatch(/Normal/);
+  });
+
+  it('marks bandit occupants with their tier and a separate per-tier breakdown', () => {
+    /** @type {Record<string, Record<number, any>>} */
+    const spec = {};
+    for (let s = 1; s <= 6; s++) spec[`4:${s}`] = { 8: empty };
+    spec['4:2'][3] = { status: 'occupied', player: { id: 1, name: 'KB', rankClass: 'rank_bandit3' } };
+    spec['4:3'][5] = { status: 'occupied', player: { id: 2, name: 'B', rankClass: 'rank_bandit1' } };
+    renderFreeRegions({ ...baseOpts(), scans: scansOf(spec), positions: [8] });
+
+    // Region-level bandit breakdown by tier, separate from the target bands.
+    const record = containerEl.querySelector('.streak-record');
+    expect(record?.textContent).toMatch(/Bandits:/);
+    expect(record?.textContent).toMatch(/1 Bandit King/);
+
+    // Per-occupant chip on the Bandit King's system card (system 2).
+    const cells = containerEl.querySelectorAll('.region-strip .strip-cell');
+    cells[1].dispatchEvent(new Event('mouseenter'));
+    const pop = containerEl.querySelector('.region-pop');
+    expect(pop?.textContent).toMatch(/Bandit King/);
+  });
+
+  it('never renders an "undefined" occupant name (falls back to cache name / id)', () => {
+    /** @type {Record<string, Record<number, any>>} */
+    const spec = {};
+    for (let s = 1; s <= 6; s++) spec[`4:${s}`] = { 8: empty };
+    spec['4:2'][3] = { status: 'occupied', player: { id: 7 } }; // no per-slot name
+    spec['4:3'][5] = { status: 'occupied', player: { id: 9 } }; // not cached
+    /** @type {any} */
+    const players = { 7: { id: 7, name: 'FromCache', flags: { active: true } } };
+    renderFreeRegions({ ...baseOpts(), scans: scansOf(spec), positions: [8], players });
+
+    const cells = containerEl.querySelectorAll('.region-strip .strip-cell');
+    cells[1].dispatchEvent(new Event('mouseenter')); // system 2 → id 7 (cached)
+    let pop = containerEl.querySelector('.region-pop');
+    expect(pop?.textContent).toMatch(/FromCache/);
+    expect(pop?.textContent).not.toMatch(/undefined/);
+
+    cells[2].dispatchEvent(new Event('mouseenter')); // system 3 → id 9 (not cached)
+    pop = containerEl.querySelector('.region-pop');
+    expect(pop?.textContent).toMatch(/player 9/);
+    expect(pop?.textContent).not.toMatch(/undefined/);
+  });
+
   it('annotates the top neighbour rank relative to our own (ownRank)', () => {
     /** @type {Record<string, Record<number, any>>} */
     const spec = {};

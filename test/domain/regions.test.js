@@ -234,6 +234,48 @@ describe('scoreRegion — player-cache signals (2b)', () => {
     expect(sc.newbie).toBe(1);
   });
 
+  it('counts "normal" (white) live-scanned occupants with no special standing', () => {
+    const occScans = scansOf({
+      '4:1': { 8: empty, 3: occ(1), 5: occ(2), 7: occ(3) },
+    });
+    /** @type {any} */
+    const cache = {
+      1: { id: 1, name: 'W1', flags: { active: true } }, // plain white target
+      2: { id: 2, name: 'W2' },                          // cached, no flags → white
+      3: { id: 3, name: 'H', flags: { honorable: true } }, // a band, not normal
+    };
+    const sc = scoreRegion(region, occScans, { players: cache, ...G10 });
+    expect(sc.normal).toBe(2);
+    expect(sc.honorable).toBe(1);
+  });
+
+  it('breaks bandits down by honour tier (banditTiers)', () => {
+    const occScans = scansOf({
+      '4:1': {
+        8: empty,
+        3: { status: 'occupied', player: { id: 1, name: 'KB', rankClass: 'rank_bandit3' } },
+        5: { status: 'occupied', player: { id: 2, name: 'KB2', rankClass: 'rank_bandit3' } },
+        7: { status: 'occupied', player: { id: 3, name: 'B', rankClass: 'rank_bandit1' } },
+      },
+    });
+    const sc = scoreRegion(region, occScans, { ...G10 });
+    expect(sc.bandits).toBe(3);
+    expect(sc.banditTiers[3]).toBe(2);
+    expect(sc.banditTiers[1]).toBe(1);
+    expect(sc.banditTiers[2]).toBeUndefined();
+  });
+
+  it('does NOT count a cached buddy / alliance member as "normal"', () => {
+    const occScans = scansOf({ '4:1': { 8: empty, 3: occ(1), 5: occ(2) } });
+    /** @type {any} */
+    const cache = {
+      1: { id: 1, name: 'Friend', flags: { buddy: true } },
+      2: { id: 2, name: 'Mate', flags: { allianceMember: true } },
+    };
+    const sc = scoreRegion(region, occScans, { players: cache, ...G10 });
+    expect(sc.normal).toBe(0);
+  });
+
   it('leaves the new counts at 0 when no cache is supplied', () => {
     const sc = scoreRegion(region, scans, { ...G10 });
     expect(sc.strong).toBe(0);
@@ -241,6 +283,7 @@ describe('scoreRegion — player-cache signals (2b)', () => {
     expect(sc.activeOnVacation).toBe(0);
     expect(sc.newbie).toBe(0);
     expect(sc.honorable).toBe(0);
+    expect(sc.normal).toBe(0);
     expect(sc.buddy).toBe(0);
   });
 

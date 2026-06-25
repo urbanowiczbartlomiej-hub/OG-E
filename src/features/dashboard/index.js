@@ -704,6 +704,7 @@ const loadAll = async () => {
       universe: { planets: api.universe.planets, timestamp: api.universe.timestamp },
       players: { players: api.players ? api.players.players : {} },
       highscore: { ranks: api.total ? api.total.ranks : {} },
+      honor: { ranks: api.honor ? api.honor.ranks : {} },
       ownPlayerId: op.id,
     });
     apiBounds = {

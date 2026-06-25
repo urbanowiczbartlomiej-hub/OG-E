@@ -177,24 +177,61 @@ export const mergePlayerMeta = (existing, fresh, seenAt) => {
  *   - `'weak'`      — `isNewbie`: noob-protected, can't be honourably raided.
  *   - `'strong'`    — `isStrong`: outside your bracket, much stronger than you.
  *   - `'honorable'` — `isHonorableTarget`: a fair fight — attacking earns honour.
+ *   - `'normal'`    — the "white" player: live-scanned, past noob protection,
+ *     below the honour bracket, no honour reward — a plain attackable farm
+ *     target. It's the ABSENCE of the three flags above (the game exposes no
+ *     positive flag for it), so we infer it — but ONLY for a player we actually
+ *     hold a cache record for. Friends (`isBuddy`) and your own alliance
+ *     (`isAllianceMember`) are NOT farm targets, so they're excluded back to
+ *     `null` rather than mislabelled "normal".
  *
  * Bands are checked weakest-first so the exclusive lower band wins, then
  * `strong` before `honorable` (a much-stronger player is often ALSO an
  * honourable target; we surface the more cautionary signal). Returns `null`
- * when the player isn't in the cache or carries none of these flags — an
- * active occupant inside your bracket but unflagged — so the caller keeps the
- * plain "Occupied" label instead of inventing a band.
+ * ONLY when the player isn't in the cache at all — i.e. never live-scanned, so
+ * genuinely UNKNOWN — letting the caller keep the plain "Occupied" label and
+ * keeping "normal" (a confirmed white target) distinct from "we don't know yet".
  *
  * Pure: a flag read, nothing else.
  *
  * @param {PlayerMeta | null | undefined} meta
- * @returns {'weak' | 'strong' | 'honorable' | null}
+ * @returns {'weak' | 'strong' | 'honorable' | 'normal' | null}
  */
 export const occupantStrength = (meta) => {
-  const f = meta && meta.flags;
-  if (!f) return null;
-  if (f.newbie) return 'weak';
-  if (f.strong) return 'strong';
-  if (f.honorable) return 'honorable';
-  return null;
+  if (!meta) return null; // not in the cache → never live-scanned → unknown
+  const f = meta.flags;
+  if (f) {
+    if (f.newbie) return 'weak';
+    if (f.strong) return 'strong';
+    if (f.honorable) return 'honorable';
+    if (f.buddy || f.allianceMember) return null; // friends/allies aren't targets
+  }
+  return 'normal';
+};
+
+/**
+ * Parse a galaxy `rankClass` (HONOUR rank) into its kind + tier. The honour
+ * system is ORTHOGONAL to {@link occupantStrength} (noob-protection): a player
+ * can be both `strong` AND a `rank_bandit3`. `rankClass` is present only for
+ * players who actually hold an honour rank (`player.rank.hasRank`); neutral
+ * players carry none, so this returns `null` for them.
+ *
+ *   - `'bandit'` — negative honour, an aggressor who farms the weak. Tiers:
+ *     1 = Bandit, 2 = Bandit Lord, 3 = Bandit King (`rank_bandit{1,2,3}`). The
+ *     danger signal for a fresh colony.
+ *   - `'honored'` — positive honour, a decorated fighter (any other `rank_*`).
+ *
+ * Tier is the trailing digit of the class (`"rank_bandit3"` → 3), falling back
+ * to 1 for an unknown variant. (Mirrors the bandit/honoured split `scoreRegion`
+ * uses for its tallies, kept here as the single per-player classifier.)
+ *
+ * @param {string | null | undefined} rankClass
+ * @returns {{ kind: 'bandit' | 'honored', tier: number } | null}
+ */
+export const honorRank = (rankClass) => {
+  if (!rankClass || typeof rankClass !== 'string') return null;
+  const tier = parseInt(rankClass.slice(-1), 10) || 1;
+  return rankClass.startsWith('rank_bandit')
+    ? { kind: 'bandit', tier }
+    : { kind: 'honored', tier };
 };
