@@ -50,6 +50,7 @@ import { readBadgeCache, writeBadgeCache, clearBadgeCache } from '../../state/ba
 import { injectStyle, waitFor } from '../../lib/dom.js';
 import { debounce } from '../../lib/debounce.js';
 import { GAME } from '../../lib/gameDom.js';
+import { EXPEDITION_HEART_URI } from '../../lib/markerIcons.js';
 import { EVENT_BOX_LOADED_EVENT } from '../../lib/ogeEvents.js';
 import { clock } from '../../lib/clock.js';
 import { groupMarkers, bodyKey, MARKER_LABEL } from './pure.js';
@@ -236,12 +237,23 @@ const buildCss = () => `
 .oge-mb-explore{
   width:10px;height:10px;
   border-radius:0;box-shadow:none;
-  background:url("data:image/svg+xml,<svg viewBox='0 0 32 32' xmlns='http://www.w3.org/2000/svg'><path d='M16 29C16 29 2.5 19 2.5 11C2.5 6.8 6 4 9.5 4C12.5 4 15 6 16 9C17 6 19.5 4 22.5 4C26 4 29.5 6.8 29.5 11C29.5 19 16 29 16 29Z' fill='%232C9FE0'/></svg>") center/contain no-repeat;
+  background:url("${EXPEDITION_HEART_URI}") center/contain no-repeat;
   filter:drop-shadow(0 0 1px rgba(0,0,0,.9));
 }
-/* "?" help chip at the top of the planet list → hover reveals the legend. */
+/* "?" help chip overlapping the top of the planet list → hover reveals the
+   legend. PORTALED to <body> (position:fixed, JS sets top/left from the planet
+   list's rect) for the SAME reason as the legend: a child of #planetList is
+   trapped in that subtree's stacking context and gets painted UNDER OGame's
+   left-column components (a sibling context no z-index can cross) — which is why
+   it was "sometimes covered". As a <body> child it sits in the root context and
+   reliably wins. Sits just below the legend's z so the open panel is never
+   covered by its own chip. */
 .oge-mb-help{
-  position:relative;
+  /* absolute (NOT fixed) + DOCUMENT coords: the chip then scrolls with the page
+     natively, so it can't lag a frame behind the scroll the way a JS-tracked
+     fixed element does (that was the "jumping"). Still a <body> child, so it
+     stays in the root stacking context and isn't trapped under #planetList. */
+  position:absolute;top:0;left:0;
   display:flex;align-items:center;justify-content:center;
   width:14px;height:14px;
   border-radius:50%;
@@ -249,9 +261,14 @@ const buildCss = () => `
   border:1px solid #2c5470;
   font:700 10px/1 Verdana,sans-serif;
   cursor:help;
-  z-index:31;
-  right:13px;top:-3px;
-  margin:-10px;
+  z-index:2147482000;
+  /* The chip's nudge from the planet-list corner. JS pins top/left to the list's
+     top-RIGHT corner (and tracks scroll), but NEVER touches transform — so THIS
+     line is the one knob to tweak: edit it live in DevTools, then tell me the
+     values. The chip's own box is offset from the corner here: -100% X pulls its
+     whole width back inside the right edge; the px values nudge it (more-negative
+     X = further left, more-negative Y = further up). */
+  transform:translate(calc(-100% + 8px),-10px);
 }
 .oge-mb-legend{
   display:none;
@@ -349,6 +366,9 @@ const buildLegend = () => {
 
 /** @type {HTMLElement | null} */
 let legendEl = null;
+/** The "?" chip — a body-portaled singleton (see {@link ensureHelpChip}). */
+/** @type {HTMLElement | null} */
+let helpEl = null;
 /** @type {ReturnType<typeof setTimeout> | null} */
 let legendHideTimer = null;
 
@@ -421,33 +441,66 @@ const showLegendFor = (chip) => {
 };
 
 /**
- * Idempotently place the "?" help chip at the top of `#planetList` (OGame
- * AJAX-swaps the list, so the render path re-adds it). Hover/focus reveals the
- * body-portaled legend — there is no click target, the markers themselves being
- * too small to hit.
+ * Build the "?" chip once and ensure it's attached to <body>. Like the legend,
+ * it's portaled out of `#planetList` so OGame's left column can't paint over it
+ * (a child of the list is trapped in that subtree's stacking context). It is a
+ * singleton — there is only ever one planet list — and SURVIVES OGame's AJAX
+ * swaps of the list (it isn't a child of it), so it's created once, not re-added
+ * per swap. Hover/focus reveals the legend; there is no click target, the
+ * markers themselves being too small to hit.
  *
  * @returns {void}
  */
-const ensureHelpIcon = () => {
-  const list = document.getElementById('planetList');
-  if (!list || list.querySelector('.oge-mb-help')) return;
-  // A fresh chip means #planetList was (re)built — drop any legend left over
-  // from a swap that happened mid-hover so it can't linger detached.
-  hideLegend();
+const ensureHelpChip = () => {
+  if (helpEl) {
+    if (helpEl.parentNode !== document.body) document.body.appendChild(helpEl);
+    return;
+  }
   const help = document.createElement('div');
   help.className = 'oge-mb-help';
   help.textContent = '?';
   help.tabIndex = 0;
   help.setAttribute('aria-label', 'Planet markers legend');
-  // The legend is portaled to <body> (see the legend-portal section), NOT a
-  // child of this chip, so it can paint above OGame's left column. Drive it
-  // from the chip's hover/focus instead of the old CSS :hover rule.
+  // Start hidden so it can't flash at (0,0) for a frame before the first
+  // positionHelpChip() places it.
+  help.style.display = 'none';
   help.addEventListener('mouseenter', () => showLegendFor(help));
   help.addEventListener('focusin', () => showLegendFor(help));
   help.addEventListener('mouseleave', scheduleLegendHide);
   help.addEventListener('focusout', scheduleLegendHide);
-  list.insertBefore(help, list.firstChild);
+  document.body.appendChild(help);
+  helpEl = help;
 };
+
+/**
+ * Place the body-portaled chip over the planet list's top-right corner, in
+ * DOCUMENT coords (so the absolute chip scrolls with the page). Hidden when
+ * there's no visible planet list (other pages, or the list collapsed). Cheap —
+ * call it on every render and on scroll/resize so it tracks the list.
+ *
+ * @returns {void}
+ */
+const positionHelpChip = () => {
+  if (!helpEl) return;
+  const list = document.getElementById('planetList');
+  const r = list?.getBoundingClientRect();
+  if (!r || (r.width === 0 && r.height === 0)) { helpEl.style.display = 'none'; return; }
+  // Anchor to the list's top-RIGHT corner in DOCUMENT coords (rect is viewport →
+  // add the scroll offset). Because the chip is position:absolute, this value is
+  // invariant under page scroll — recomputing on scroll yields the SAME number,
+  // so the chip glides with the page instead of jumping. The visual nudge lives
+  // in CSS (`.oge-mb-help { transform }`), which JS NEVER writes — so it's the
+  // one knob safe to tune in DevTools. We write each style only when it actually
+  // changes, so a stable chip isn't churned on every render/poll tick.
+  const left = `${Math.round(r.right + window.scrollX)}px`;
+  const top = `${Math.round(r.top + window.scrollY)}px`;
+  if (helpEl.style.display !== 'flex') helpEl.style.display = 'flex';
+  if (helpEl.style.left !== left) helpEl.style.left = left;
+  if (helpEl.style.top !== top) helpEl.style.top = top;
+};
+
+/** Remove the portaled chip from the page (dispose / teardown). */
+const removeHelpEl = () => { helpEl?.remove(); helpEl = null; };
 
 // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -583,7 +636,8 @@ const cacheExpiry = (legs) => {
  * @returns {void}
  */
 const renderColumns = () => {
-  ensureHelpIcon();
+  ensureHelpChip();
+  positionHelpChip();
   const ready = eventBoxLoaded();
   // Pre-XHR window: keep the optimistic cache paint rather than wiping it with
   // an empty live pass. Once the event box has loaded, the live result is
@@ -742,6 +796,16 @@ export const installBadges = () => {
   observer = createVisibilityObserver(() => scheduleRefresh());
   attachObserver(observer);
 
+  // Window scroll is handled for free (absolute chip in document coords moves
+  // with the page). This listener is the backstop for layout shifts and for
+  // scrolls inside an inner scroller (the left menu), where the document-coord
+  // anchor genuinely changes; capture-phase catches those. Recompute is a no-op
+  // under plain window scroll, so it can't reintroduce the jump. Pure read+style
+  // writes, no DOM structure change, so it can't loop the observer.
+  const onReposition = () => positionHelpChip();
+  window.addEventListener('scroll', onReposition, true);
+  window.addEventListener('resize', onReposition);
+
   // Safety net: OGame refreshes #eventContent on a ~30s AJAX tick and has
   // historically dodged scoped observers. 5s is still far tighter than that
   // and the re-render is O(#planets) — practically free. On the shared,
@@ -755,10 +819,12 @@ export const installBadges = () => {
       observer?.disconnect();
       unsubPoll();
       unsubSettings();
+      window.removeEventListener('scroll', onReposition, true);
+      window.removeEventListener('resize', onReposition);
       document.removeEventListener(EVENT_BOX_LOADED_EVENT, onEventBox);
       eventBoxReady = false;
       clearColumns();
-      document.querySelectorAll('.oge-mb-help').forEach((el) => el.remove());
+      removeHelpEl();
       removeLegendEl();
       document.getElementById(STYLE_ID)?.remove();
       document.getElementById(HIDE_STYLE_ID)?.remove();

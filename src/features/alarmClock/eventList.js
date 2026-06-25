@@ -12,10 +12,12 @@
 //     present, i.e. the one whose time matches the alarmClock) carries the
 //     control: one click cancels the whole series, and on an
 //     already-cancelled wave one click RESENDS it. Every other leg of the
-//     wave shows a passive "🛰 part of a wave" marker so the grouping is
-//     visible, but isn't independently armable.
+//     wave shows a passive "part of a wave" heart marker (the same blue
+//     expedition heart the planet markers use) so the grouping is visible, but
+//     isn't independently armable.
 //   - **Fleet-save.** A leg the producer classified as a fleet-save (big own
-//     fleet on a long-enough flight) shows a 🛡 marker (amber). It is
+//     fleet on a long-enough flight) shows an amber "FS" tag (the same gold
+//     fleet-save tag the planet markers use). It is
 //     auto-detected and auto-scheduled; the player can't arm it, and can
 //     cancel a slot only inside its final cancel window
 //     (`FS_CANCEL_WINDOW_SEC` before it fires). The badge visibly FLIPS when
@@ -74,6 +76,7 @@ import { readPending, lastAdhocIntent, lastWaveIntent } from './pending.js';
 import { readFleetSaveCancel, pruneFleetSaveCancel } from './fleetSaveCancel.js';
 import { fleetRowMeta } from './fleetSaveScan.js';
 import { GAME } from '../../lib/gameDom.js';
+import { EXPEDITION_HEART_URI } from '../../lib/markerIcons.js';
 import { clock } from '../../lib/clock.js';
 
 /** @typedef {import('../../sync/alarmClock.js').AlarmClockState} AlarmClockState */
@@ -103,14 +106,31 @@ const CSS = `
 .${BADGE_CLASS}.armed { background: rgba(0, 200, 90, 0.22); box-shadow: inset 0 0 0 1px rgba(0, 220, 110, 0.7); }
 .${BADGE_CLASS}.armed::before { content: '🔔'; margin-right: 2px; font-size: 0.85em; }
 .${BADGE_CLASS}.wave { background: rgba(70, 150, 255, 0.20); box-shadow: inset 0 0 0 1px rgba(90, 170, 255, 0.7); }
-.${BADGE_CLASS}.wave::before { content: '🛰'; margin-right: 2px; font-size: 0.85em; }
 .${BADGE_CLASS}.wave-off { box-shadow: inset 0 0 0 1px rgba(150, 150, 150, 0.6); opacity: 0.75; }
-.${BADGE_CLASS}.wave-off::before { content: '🛰'; margin-right: 2px; font-size: 0.85em; opacity: 0.6; }
 .${BADGE_CLASS}.member { box-shadow: inset 2px 0 0 0 rgba(90, 170, 255, 0.6); }
-.${BADGE_CLASS}.member::before { content: '🛰'; margin-right: 2px; font-size: 0.7em; opacity: 0.5; }
 .${BADGE_CLASS}.member-off { box-shadow: inset 2px 0 0 0 rgba(150, 150, 150, 0.5); opacity: 0.7; }
+/* Expedition reminder (a wave anchor or one of its members): the SAME blue
+   heart the planet markers paint for our expeditions, so both surfaces read
+   alike (replaces the old 🛰). A background image on the pseudo keeps it crisp;
+   a cancelled wave / passive member is dimmed via opacity. */
+.${BADGE_CLASS}.wave::before,
+.${BADGE_CLASS}.wave-off::before,
+.${BADGE_CLASS}.member::before {
+  content: ''; display: inline-block; vertical-align: -0.15em; margin-right: 3px;
+  background: url("${EXPEDITION_HEART_URI}") center/contain no-repeat;
+}
+.${BADGE_CLASS}.wave::before, .${BADGE_CLASS}.wave-off::before { width: 0.95em; height: 0.95em; }
+.${BADGE_CLASS}.wave-off::before { opacity: 0.6; }
+.${BADGE_CLASS}.member::before { width: 0.72em; height: 0.72em; opacity: 0.6; }
 .${BADGE_CLASS}.fs { background: rgba(255, 176, 32, 0.20); box-shadow: inset 0 0 0 1px rgba(255, 176, 32, 0.75); }
-.${BADGE_CLASS}.fs::before { content: '🛡'; margin-right: 2px; font-size: 0.85em; }
+/* Fleet-save reminder: the SAME gold "FS" tag the planet markers use for an
+   in-motion fleet-save (the fleet IS in motion here), replacing the old shield.
+   The badge keeps the eventList amber armed-state fill/frame around it. */
+.${BADGE_CLASS}.fs::before, .${BADGE_CLASS}.fs-pending::before {
+  content: 'FS'; margin-right: 3px; vertical-align: 0.05em;
+  font: 700 0.72em/1 Verdana, sans-serif; letter-spacing: -0.5px;
+  color: #f0c23c; text-shadow: 0 0 2px #000, 0 0 1px #000;
+}
 /* Cancel window open: the badge brightens, pulses and grows a ✕ so the
    player SEES the moment the slot becomes cancellable (and sees the state
    drop back after a successful cancel). */
@@ -127,7 +147,7 @@ const CSS = `
    amber frame + a faint shield reads "detected, will arm within 3 days" while
    the arrival timer underneath stays fully legible. */
 .${BADGE_CLASS}.fs-pending { outline: 1px dashed rgba(255, 176, 32, 0.6); outline-offset: -1px; }
-.${BADGE_CLASS}.fs-pending::before { content: '🛡'; margin-right: 2px; font-size: 0.85em; opacity: 0.55; }
+.${BADGE_CLASS}.fs-pending::before { opacity: 0.55; }
 .${BADGE_CLASS}.syncing { animation: oge-rem-pulse 1s ease-in-out infinite; }
 .${BADGE_CLASS}.syncing::after { content: '⏳'; margin-left: 2px; font-size: 0.8em; }
 @keyframes oge-rem-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
@@ -573,7 +593,7 @@ export const installEventListAlarmClock = ({
   });
 
   // Fleet-save enable is per-universe (B3b): re-render when it (or the async
-  // hydrate of the galaxyScanConfig store) flips so the 🛡 badges appear/clear
+  // hydrate of the galaxyScanConfig store) flips so the "FS" badges appear/clear
   // without a reload.
   let prevFsEnabled = galaxyScanConfigStore.get().fsEnabled;
   const unsubScanConfig = galaxyScanConfigStore.subscribe((next) => {
