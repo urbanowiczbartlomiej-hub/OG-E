@@ -56,6 +56,40 @@ export const shouldScheduleUpload = ({ cloudSync, applying = false }) =>
   Boolean(cloudSync) && !applying;
 
 /**
+ * Whether the on-load (boot) DOWNLOAD should run. Three independent triggers,
+ * each mapping to a real way the gist could hold data this tab hasn't applied:
+ *
+ *   1. Fresh tab — `appliedRev` empty means this tab session (sessionStorage,
+ *      per-tab, survives reloads) has never pulled. A brand-new tab pulls once.
+ *   2. Same-machine peer — `beaconRev` (chrome.storage, bumped by every PATCH on
+ *      this machine) is ahead of what we applied: a sibling tab / the dashboard
+ *      uploaded while our JS context was gone between navigations. Pull it.
+ *   3. New session — a long quiet gap since this origin was last active. This is
+ *      the ONLY signal for a CROSS-device change: another machine logging in
+ *      ends our game session (OGame is single-session) and leaves NO local
+ *      beacon, so we fall back to "were we away long enough that another device
+ *      could have played?".
+ *
+ * Otherwise skip: mid-session navigation on the only active device can't have
+ * changed the gist, so re-downloading on every click (the game reloads on every
+ * click) is pure waste.
+ *
+ * @param {object} a
+ * @param {string} a.appliedRev    Rev this tab has incorporated ('' = none yet).
+ * @param {string} a.beaconRev     Latest same-machine PATCH rev ('' = none yet).
+ * @param {number} a.lastActiveAt  Epoch-ms this origin was last active (0 = never).
+ * @param {number} a.now           Epoch-ms now.
+ * @param {number} a.sessionGapMs  Quiet gap that counts as a new session.
+ * @returns {boolean}
+ */
+export const shouldDownloadOnLoad = ({ appliedRev, beaconRev, lastActiveAt, now, sessionGapMs }) => {
+  if (!appliedRev) return true;
+  if (beaconRev && beaconRev !== appliedRev) return true;
+  if (!lastActiveAt || now - lastActiveAt > sessionGapMs) return true;
+  return false;
+};
+
+/**
  * Whether a fleet-save routes slot carries data worth contributing to the
  * gist. A never-configured universe (no routes, no target, ts 0) must NOT
  * write an empty slot — that would differ from the gist's absent field and

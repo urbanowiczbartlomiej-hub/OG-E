@@ -71,36 +71,41 @@
 // scheduler module exists, and tests can simulate user clicks with a
 // plain `document.dispatchEvent`.
 //
-// # Initial boot — download THEN catch-up upload
+// # Boot — gated download, gated catch-up upload
 //
-// On install we fire exactly one full round-trip (download + upload, fire-and-
-// forget, we don't await). The download catches this device up with whatever
-// another device uploaded while we were offline. The trailing upload is the
-// catch-up PUSH: OGame force-reloads the page after every fleet send, which
-// destroys the JS context — and with it any 15-s debounced upload still
-// pending for the decision that very send just wrote. So a `sent`/`taken`
-// decision can land in chrome.storage (flushed synchronously) yet never reach
-// the gist, because its upload timer died with the page. Pushing once right
-// after the boot download guarantees such a stranded write leaves on the next
-// page load instead of waiting for a fragile 15-s idle window. `upload()` self-
-// skips via `gistIsCurrent` when local + gist already agree, so a fully-synced
-// boot pays at most one extra no-op GET. Local writes that happen DURING the
-// boot round-trip are still safe — the lock serialises them and each upload
-// pre-merges with remote at its own call site.
+// On install we no longer fire an unconditional round-trip. OGame is single-
+// session, so while THIS device is the only one playing the gist cannot change
+// underneath us — re-downloading on every page navigation (the game reloads on
+// every click) was pure waste. Instead the boot:
+//   - DOWNLOADS only when {@link shouldDownloadOnLoad} says we might be behind:
+//     a fresh tab (per-tab applied-rev unset), a same-machine peer that bumped
+//     the {@link gistRevKeyFor} beacon while our JS was gone, or a long quiet
+//     gap that suggests another device may have played (the only signal for a
+//     cross-device change — single-session leaves no local beacon).
+//   - UPLOADS only when the {@link UPLOAD_PENDING_KEY} dirty flag is set — i.e.
+//     a local write's 15-s debounced upload was killed by OGame's forced post-
+//     send reload before it could flush. This is the catch-up PUSH the boot
+//     upload has always been for; gating it means a navigation with nothing
+//     pending costs zero requests. `upload()` still self-skips via
+//     `gistIsCurrent` when local + gist already agree.
+// The user's explicit "Sync now" and the dashboard tombstone still force an
+// UNCONDITIONAL round-trip via {@link onForceSync} — those are deliberate.
 //
-// # Periodic backstop
+// # Same-machine beacon (replaces the periodic backstop)
 //
-// Downloads otherwise happen only on boot / force-sync, so a tab left OPEN never
-// learns of another device's changes. A visibility-gated `clock` DOWNLOAD every
-// {@link PERIODIC_SYNC_MS} closes that gap. It is download-ONLY on purpose:
-// uploads are covered by the on-install catch-up push + the store-change
-// debounce, so the backstop never PATCHes — which keeps an idle tab quiet and,
-// crucially, stops it ping-ponging with another open device (a download can't
-// change the gist, so it can't trigger the peer's "remote changed → upload";
-// the earlier 60 s full round-trip did exactly that and two open devices burned
-// the 5000 req/h quota). It pauses while hidden, and fires once on regaining
-// visibility — throttled to one run per interval so rapid tab-switching can't
-// burst requests — so refocusing a stale tab pulls immediately.
+// A tab left OPEN still needs to learn when a SIBLING context on the same
+// machine — a second tab of this universe, or the dashboard — changes the gist.
+// The old solution polled (a download every 5 min), which both wasted requests
+// and, with two open tabs, risked ping-ponging the quota. Instead every real
+// PATCH writes the per-universe beacon ({@link gistRevKeyFor}) in
+// chrome.storage; every tab listens via `chrome.storage.onChanged` and pulls
+// the moment the beacon moves PAST what it has applied — instant, and with NO
+// network call to discover that a change happened. The applied-rev is written
+// BEFORE the beacon (see {@link noteApplied}) so the writer's own onChanged
+// sees applied === beacon and self-skips — no ping-pong. The cross-DEVICE case
+// needs no backstop here: single-session means another device logging in ends
+// THIS tab's game session, so the user re-enters through a fresh load where the
+// boot gap check pulls.
 //
 // @ts-check
 
@@ -151,8 +156,7 @@ import {
   seedUniverseTsIfAbsent,
 } from './settingsSync.js';
 import { debounce } from '../lib/debounce.js';
-import { clock } from '../lib/clock.js';
-import { chromeStore } from '../lib/storage.js';
+import { chromeStore, safeLS } from '../lib/storage.js';
 import { parseUniverseId } from '../lib/universeId.js';
 import { readDailyState, writeDailyState } from '../state/dailyActions.js';
 import { readManualLandedFsSlot, writeManualLandedFsSlot } from '../state/manualLandedFs.js';
@@ -160,6 +164,7 @@ import { SYNC_FORCE_EVENT, DAILY_STATE_CHANGED_EVENT } from '../lib/ogeEvents.js
 import {
   canStartSync,
   shouldScheduleUpload,
+  shouldDownloadOnLoad,
   slotHasData,
   dailyStateHasData,
   galaxyConfigSlotHasData,
@@ -206,19 +211,61 @@ export const resetGalaxyKeyFor = (universeId) =>
 const DEBOUNCE_MS = 15_000;
 
 /**
- * Cadence (ms) of the periodic backstop — a clock-driven DOWNLOAD that pulls a
- * peer device's changes into an already-open tab. Deliberately a download, NOT a
- * round-trip: uploads are already covered by the on-install catch-up push and
- * the store-change debounce, so the backstop never PATCHes. That keeps an idle
- * tab quiet (one GET per interval, nothing while hidden) AND — crucially — means
- * it can't ping-pong with another open device, because a download doesn't change
- * the gist, so it can never trigger the peer's "remote changed → upload" (the
- * earlier 60 s full round-trip DID, and two open devices burned the 5000 req/h
- * quota between them). Five minutes is a fine staleness bound for cross-device
- * continuation; the clock's fire-on-visibility-regain still pulls immediately
- * when you return to the tab.
+ * Per-universe `chrome.storage.local` BEACON base: the ISO `updatedAt` of the
+ * most recent data-file PATCH made by ANY tab on THIS machine. Full key is
+ * `<universeId>:oge_gistRev`. Written only after a real upload (see
+ * {@link upload} / {@link noteApplied}); every same-machine context observes the
+ * change via `chrome.storage.onChanged` and pulls iff the beacon is ahead of
+ * what that tab has already applied. This is what lets two open tabs of one
+ * universe (or the dashboard) converge WITHOUT polling — the old 5-min
+ * backstop's job, done event-driven and network-free for the same-machine case.
  */
-const PERIODIC_SYNC_MS = 5 * 60 * 1000;
+const GIST_REV_KEY_BASE = 'oge_gistRev';
+/** @param {string} universeId */
+const gistRevKeyFor = (universeId) => `${universeId}:${GIST_REV_KEY_BASE}`;
+
+/**
+ * localStorage (per-origin → already per-universe) epoch-ms of the last page
+ * load on this origin. Read on boot to decide whether enough quiet time passed
+ * that another DEVICE could have played (OGame is single-session, so a
+ * cross-device change leaves no local beacon — time is the only signal). See
+ * {@link shouldDownloadOnLoad}.
+ */
+const LAST_ACTIVE_KEY = 'oge_lastActiveAt';
+
+/**
+ * localStorage dirty flag: set whenever an upload is armed, cleared when one
+ * completes. The on-load catch-up upload runs ONLY when this is set, so a plain
+ * navigation with nothing pending does ZERO requests — while a `sent`/`taken`
+ * decision whose 15-s debounce was killed by OGame's post-send reload still
+ * gets flushed on the next load (the case the boot upload exists for).
+ */
+const UPLOAD_PENDING_KEY = 'oge_uploadPending';
+
+/**
+ * sessionStorage (per-TAB, survives reload, cleared on tab close) rev this tab
+ * has incorporated. Per-tab — NOT localStorage — so two tabs of one universe
+ * compare independently against the shared beacon; a localStorage value would be
+ * shared and a sibling would never see the beacon as "ahead".
+ */
+const APPLIED_REV_KEY = 'oge_gistRevApplied';
+
+/**
+ * Non-empty sentinel for "pulled, but the gist was empty". Keeps a fresh,
+ * empty-gist account from re-downloading on every reload (the `!appliedRev`
+ * trigger in {@link shouldDownloadOnLoad}) while never colliding with a real
+ * ISO `updatedAt`.
+ */
+const EMPTY_REV = '∅';
+
+/**
+ * Quiet gap (ms) on this origin that counts as a NEW session on boot — long
+ * enough that another device might have played since our last load. Tunable;
+ * 10 min is a conservative proxy for "I switched devices", well under OGame's
+ * own session timeout. Too small → needless re-downloads after every pause; too
+ * large → a cross-device change waits for the next gap / explicit "Sync now".
+ */
+const SESSION_GAP_MS = 10 * 60 * 1000;
 
 // SYNC_FORCE_EVENT (lib/ogeEvents.js) is dispatched on `document` by the
 // Settings UI and histogram to request an immediate sync round-trip; this
@@ -290,6 +337,51 @@ let routesUniverseId = '';
  * @type {Record<string, number>}
  */
 let localUniverseTsMap = {};
+
+// ── Same-machine sync beacon + per-tab applied-rev ──────────────────
+//
+// Together these replace the old 5-min polling backstop. The beacon
+// (chrome.storage, written on every PATCH) is the cross-tab "the gist moved"
+// signal; the per-tab applied-rev (sessionStorage) records how far THIS tab has
+// caught up, so a tab only ever downloads when it is genuinely behind.
+
+/** @returns {string} The rev this tab has applied, or '' if none this session. */
+const readAppliedRev = () => {
+  try {
+    return (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(APPLIED_REV_KEY)) || '';
+  } catch {
+    return '';
+  }
+};
+
+/** @param {string} rev */
+const writeAppliedRev = (rev) => {
+  try {
+    if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(APPLIED_REV_KEY, rev);
+  } catch {
+    // private mode / disabled storage — degrade to "always pull on load".
+  }
+};
+
+/**
+ * Record that this tab has incorporated the gist up to `rev`. Writes the per-tab
+ * applied-rev FIRST (synchronous) so that when a write also raises the beacon,
+ * our OWN `chrome.storage.onChanged` sees applied === beacon and self-skips (no
+ * ping-pong). `beacon: true` (a real PATCH) additionally raises the same-machine
+ * beacon so sibling tabs pull; a download passes `false` — a read changes
+ * nothing remotely, and the cross-device data it pulled would only re-arrive at
+ * a sibling on that sibling's own next (re)load, which single-session forces.
+ *
+ * @param {string | undefined} rev  ISO updatedAt, or undefined for an empty gist.
+ * @param {{ beacon?: boolean }} [opts]
+ * @returns {Promise<void>}
+ */
+const noteApplied = async (rev, { beacon = false } = {}) => {
+  writeAppliedRev(rev || EMPTY_REV);
+  if (beacon && rev && routesUniverseId) {
+    await chromeStore.set(gistRevKeyFor(routesUniverseId), rev);
+  }
+};
 
 /**
  * Read this universe's local fleet-save routes slot from chrome.storage —
@@ -661,6 +753,10 @@ const downloadAndMerge = async () => {
       // merge in, but also not a failure — clear any stale error and
       // skip the timestamp (we didn't actually download data).
       setStatus('err', null);
+      // Mark this tab as "pulled" so an empty-gist account doesn't re-download
+      // on every reload (the `!appliedRev` boot trigger). Never clobber a real
+      // rev we already hold.
+      if (!readAppliedRev()) writeAppliedRev(EMPTY_REV);
       return;
     }
 
@@ -694,6 +790,10 @@ const downloadAndMerge = async () => {
 
     setStatus('down', new Date().toISOString());
     setStatus('err', null);
+    // Record how far this tab has caught up (no beacon bump — a download changes
+    // nothing remotely), so the boot gate and the onChanged listener can tell
+    // "already current" from "behind".
+    await noteApplied(remote.updatedAt);
   } catch (err) {
     setStatus('err', `download: ${/** @type {Error} */ (err).message}`);
   } finally {
@@ -817,13 +917,26 @@ const upload = async () => {
     // case right after a download from another device. PATCHing anyway would
     // burn a request and produce a no-op gist revision.
     if (!gistIsCurrent(remote, mergedSlots)) {
+      const updatedAt = new Date().toISOString();
       await writeGistData({
         version: 1,
-        updatedAt: new Date().toISOString(),
+        updatedAt,
         ...mergedSlots,
       });
-      setStatus('up', new Date().toISOString());
+      setStatus('up', updatedAt);
+      // Real PATCH: raise the same-machine beacon so sibling tabs / the
+      // dashboard pull (applied-rev is written first inside noteApplied, so our
+      // own onChanged self-skips).
+      await noteApplied(updatedAt, { beacon: true });
+    } else {
+      // Already current with the gist (common right after a peer's change):
+      // record that we're caught up, no PATCH, no beacon bump.
+      await noteApplied(remote?.updatedAt);
     }
+    // Whatever armed this upload is now reflected remotely — drop the catch-up
+    // dirty flag so the next boot doesn't re-push. Left intact on the error path
+    // (outer catch) so a failed flush retries on the next load.
+    safeLS.remove(UPLOAD_PENDING_KEY);
     setStatus('err', null);
   } catch (err) {
     setStatus('err', `upload: ${/** @type {Error} */ (err).message}`);
@@ -843,11 +956,25 @@ const upload = async () => {
  * error is captured by its internal try/catch and surfaced via
  * {@link setStatus}.
  */
-const scheduleUpload = debounce(() => {
+const debouncedUpload = debounce(() => {
   // `void` the promise so tsc doesn't complain about an unhandled
   // PromiseLike. The function's own try/catch owns error reporting.
   void upload();
 }, DEBOUNCE_MS);
+
+/**
+ * Arm the debounced upload AND set the {@link UPLOAD_PENDING_KEY} dirty flag.
+ * The flag is what lets the next boot know a local write may not have reached
+ * the gist (its 15-s debounce killed by OGame's post-send reload) and run the
+ * catch-up upload; a clean navigation never sets it, so it stays quiet. The flag
+ * is cleared by {@link upload} on success.
+ *
+ * @returns {void}
+ */
+const scheduleUpload = () => {
+  safeLS.set(UPLOAD_PENDING_KEY, '1');
+  debouncedUpload();
+};
 
 /**
  * Install the scheduler: subscribe local stores, listen for the force-
@@ -1015,12 +1142,13 @@ export const installSync = () => {
   const unsubSettings = settingsStore.subscribe(onSettingsChange);
 
   const onForceSync = async () => {
-    // A full round-trip (download THEN upload), back-to-back, bypassing the
-    // upload debounce. THREE callers share it: the user's explicit force-sync
-    // (settings "Sync now" / histogram "Refresh"), the on-install catch-up kick
-    // (A), and the periodic clock backstop (B). Each operation has its own
-    // in-flight guard; they serialise naturally via the shared lock, and each
-    // self-skips when cloudSync is off / no token / already current.
+    // A full UNCONDITIONAL round-trip (download THEN upload), back-to-back,
+    // bypassing both the upload debounce and the boot gate. Two callers share
+    // it: the user's explicit force-sync (settings "Sync now" / histogram
+    // "Refresh") and the dashboard's `oge_syncRequestAt` tombstone — both are
+    // deliberate "the data really changed, reconcile now" signals. Each
+    // operation has its own in-flight guard; they serialise via the shared lock,
+    // and each self-skips when cloudSync is off / no token / already current.
     await downloadAndMerge();
     await upload();
   };
@@ -1040,6 +1168,7 @@ export const installSync = () => {
   const resetKey = universeId
     ? resetGalaxyKeyFor(universeId)
     : RESET_GALAXY_KEY_BASE;
+  const gistRevKey = gistRevKeyFor(routesUniverseId);
 
   /**
    * Bridge from the extension-origin histogram page to this scheduler.
@@ -1057,6 +1186,16 @@ export const installSync = () => {
   const onStorageChange = (changes) => {
     if (syncKey in changes) {
       void onForceSync();
+    }
+    // Same-machine beacon: a sibling tab of this universe (or the dashboard, via
+    // the game tab it signalled) PATCHed the gist. Pull iff the beacon moved
+    // PAST what THIS tab has applied — a download-only reaction, no PATCH, so it
+    // can't ping-pong. The tab that wrote the beacon set its applied-rev first,
+    // so its own onChanged falls through here.
+    if (gistRevKey in changes) {
+      const raw = /** @type {{ newValue?: unknown }} */ (changes[gistRevKey]).newValue;
+      const rev = typeof raw === 'string' ? raw : '';
+      if (rev && rev !== readAppliedRev()) void downloadAndMerge();
     }
     if (resetKey in changes) {
       // Value shape is `"<galaxy>:<timestamp>"`; we only care about the
@@ -1091,30 +1230,34 @@ export const installSync = () => {
   };
   const unsubStorage = chromeStore.onChanged(onStorageChange);
 
-  // Kick off the initial round-trip fire-and-forget (download THEN upload). We
-  // do not await — the content-script bootstrap shouldn't block on the network.
-  // The trailing upload is the catch-up push (A): a decision written on a prior
-  // page whose 15-s debounced upload was killed by the game's forced post-send
-  // reload would otherwise sit unsynced until the next chance 15 s idle window;
-  // pushing right after the initial download guarantees it leaves on THIS page
-  // load. `upload()` self-skips via gistIsCurrent when local + gist already
-  // agree, so this adds at most one no-op GET on a fully-synced load.
-  void onForceSync();
-
-  // Periodic backstop (B): a visibility-gated clock DOWNLOAD every
-  // PERIODIC_SYNC_MS pulls a peer's changes into an ALREADY-OPEN tab — the case
-  // neither the debounce nor the on-install catch-up covers. Download-ONLY by
-  // design (see PERIODIC_SYNC_MS): it never PATCHes, so it can't ping-pong with
-  // another open device. The clock also fires once on regaining visibility, so
-  // refocusing a stale tab pulls immediately; we throttle that to one run per
-  // interval so rapid tab-switching can't burst GitHub requests.
-  let lastBackstopAt = 0;
-  const unsubClock = clock.subscribe(() => {
-    const t = Date.now();
-    if (t - lastBackstopAt < PERIODIC_SYNC_MS - 1000) return;
-    lastBackstopAt = t;
-    void downloadAndMerge();
-  }, { everyMs: PERIODIC_SYNC_MS });
+  // Boot, fire-and-forget (we don't await — the bootstrap mustn't block on the
+  // network). GATED, not unconditional (see file header "# Boot"):
+  //   - DOWNLOAD only when shouldDownloadOnLoad says we might be behind (fresh
+  //     tab / same-machine peer ahead via the beacon / long-enough gap that
+  //     another device may have played). A plain mid-session navigation skips it
+  //     — single-session means the gist can't have changed under us.
+  //   - UPLOAD only when the catch-up dirty flag is set, i.e. a local write's
+  //     debounce was killed by a post-send reload. `upload()` still self-skips
+  //     via gistIsCurrent, so a stranded flag with already-synced data is cheap.
+  // We stamp LAST_ACTIVE_KEY with now AFTER reading the old value for the gap.
+  void (async () => {
+    const beaconRev = /** @type {string} */ ((await chromeStore.get(gistRevKey)) || '');
+    const now = Date.now();
+    const lastActiveAt = safeLS.int(LAST_ACTIVE_KEY, 0);
+    safeLS.set(LAST_ACTIVE_KEY, String(now));
+    if (
+      shouldDownloadOnLoad({
+        appliedRev: readAppliedRev(),
+        beaconRev,
+        lastActiveAt,
+        now,
+        sessionGapMs: SESSION_GAP_MS,
+      })
+    ) {
+      await downloadAndMerge();
+    }
+    if (safeLS.get(UPLOAD_PENDING_KEY)) await upload();
+  })();
 
   installed = {
     dispose: () => {
@@ -1124,7 +1267,6 @@ export const installSync = () => {
       unsubRoutes();
       unsubGalaxyConfig();
       unsubAlarmClockConfig();
-      unsubClock();
       document.removeEventListener(SYNC_FORCE_EVENT, onForceSync);
       document.removeEventListener(DAILY_STATE_CHANGED_EVENT, onDailyStateChanged);
       unsubStorage();
@@ -1153,4 +1295,9 @@ export const _resetSchedulerForTest = () => {
   applyDepth.clear();
   routesUniverseId = '';
   localUniverseTsMap = {};
+  // Boot-gate state lives in local/session storage, not module scope — clear it
+  // too so a fresh install in the next case starts from "never synced".
+  safeLS.remove(UPLOAD_PENDING_KEY);
+  safeLS.remove(LAST_ACTIVE_KEY);
+  writeAppliedRev('');
 };
