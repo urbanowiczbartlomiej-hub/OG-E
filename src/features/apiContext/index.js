@@ -65,6 +65,8 @@ const TTL = {
  * @typedef {object} ApiContext
  * @property {import('../../domain/apiOccupancy.js').OccupancyIndex} index
  * @property {import('../../domain/apiOccupancy.js').ServerData} server
+ * @property {import('../../domain/apiOccupancy.js').ApiPlanet[]} universePlanets
+ *   Raw occupied-planet rows (coords + owner id) — the scan FAB's per-player coords.
  * @property {{ ranks: Record<string, import('../../domain/apiOccupancy.js').ApiRank>, timestamp?: number }} military
  *   Military ranks (category 1, type 3) — kept for later threat scoring.
  * @property {number} builtAt
@@ -192,6 +194,9 @@ export async function getContext(opts = {}) {
   const ctx = {
     index,
     server: cache.server ? cache.server.data : {},
+    // Raw occupied-planet rows — the in-game scan FAB maps watched player ids to
+    // their planet coords through `domain/targets.playerPlanets` over this.
+    universePlanets: cache.universe ? cache.universe.planets : [],
     military: {
       ranks: cache.military ? cache.military.ranks : {},
       timestamp: cache.military ? cache.military.timestamp : undefined,

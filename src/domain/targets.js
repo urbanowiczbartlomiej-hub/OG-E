@@ -40,6 +40,7 @@
  * @property {number} [protectionFactor]   Noob-protection multiplier (default 5).
  * @property {[number, number]} [rankWindow]  Inclusive total-rank window [lo, hi].
  * @property {number} [minMilitary]        Minimum military score to keep.
+ * @property {number} [maxMilitary]        Maximum military score to keep (0/absent = no cap).
  * @property {boolean} [excludeVacation]   Default true.
  * @property {boolean} [excludeInactive]   Default true (covers i and I).
  * @property {boolean} [excludeBanned]     Default true.
@@ -101,6 +102,12 @@ export function targetExclusionReason(c, opts = {}) {
 
   if (typeof opts.minMilitary === 'number') {
     if ((c.militaryScore ?? 0) < opts.minMilitary) return 'minMilitary';
+  }
+
+  // A 0/absent cap means "no upper bound"; only players WITH a known military
+  // score can exceed it (an unknown score is treated as 0, never above a cap).
+  if (typeof opts.maxMilitary === 'number' && opts.maxMilitary > 0) {
+    if ((c.militaryScore ?? 0) > opts.maxMilitary) return 'maxMilitary';
   }
 
   return null;

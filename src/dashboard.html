@@ -239,6 +239,22 @@
   #routesList input[type="number"]::-webkit-outer-spin-button,
   #routesList input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 
+  /* ── Targets sub-tab controls — same dark input/select look as the rest of
+     the dashboard, and strip the native number spinners (the +/- arrows add
+     nothing on these small fields). ── */
+  #spyglassSection input[type="number"],
+  #spyglassSection select {
+    background: #0d1620; color: #cfe; border: 1px solid #2a4a5a;
+    border-radius: 6px; padding: 5px 8px; font-size: 12px; font-family: inherit;
+  }
+  #spyglassSection input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+  #spyglassSection input[type="number"]::-webkit-outer-spin-button,
+  #spyglassSection input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  #spyglassSection input:focus,
+  #spyglassSection select:focus {
+    outline: none; border-color: #4a9eff; box-shadow: 0 0 0 2px rgba(74,158,255,0.2);
+  }
+
   /* Labelled config rows (cfg-row label + field) — RWD: stack on narrow. */
   .cfg-row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
   .cfg-label { flex: 0 0 220px; max-width: 220px; color: #ccc; font-size: 13px; padding-top: 6px; }
@@ -451,6 +467,7 @@
 <div class="top-bar">
   <div class="tabs" role="tablist">
     <button class="tab-btn" data-tab="colony" role="tab">Colonizations</button>
+    <button class="tab-btn" data-tab="spyglass" role="tab">Spyglass</button>
     <button class="tab-btn" data-tab="alarmClock" role="tab">Alarm clock</button>
     <button class="tab-btn" data-tab="routes" role="tab">Daily Run</button>
     <button class="tab-btn" data-tab="sync" role="tab">Sync</button>
@@ -472,7 +489,6 @@
     <button type="button" class="subtab active" data-subtab="histogram" role="tab">Planet sizes</button>
     <button type="button" class="subtab" data-subtab="scans" role="tab">Scanned data</button>
     <button type="button" class="subtab" data-subtab="scout" role="tab">Colony Scout</button>
-    <button type="button" class="subtab" data-subtab="targets" role="tab">Targets</button>
   </div>
 
   <div class="subtabpane active" data-subtab="histogram">
@@ -592,40 +608,6 @@
     </div>
   </div>
 
-  <div class="subtabpane" data-subtab="targets">
-    <div class="sub-section">
-    <h2>🎯 Targets — hidden fleet<span class="exp-badge" title="Hidden-fleet estimates depend on how much you've spied; treat them as a guide, not gospel.">experimental</span></h2>
-    <p style="color:#888;font-size:13px;margin-bottom:16px;">
-      Active players in this universe — vacation, banned, your own alliance and anyone outside
-      attack range (noob protection, ±5× your points) are excluded — ranked by military points.
-      The <strong style="color:#ccc;">hidden-fleet</strong> estimate is their military points minus
-      the defense + visible fleet you've spied; open the in-game Espionage tab to feed it.
-      Click a player to list their planets and open a pre-armed <strong style="color:#ccc;">Spy</strong>
-      fleet (you press send). Data is read from OGame's public API, fetched in-game — open the galaxy
-      view once to populate it.
-    </p>
-    <div class="controls">
-      <label>Min. military:</label>
-      <input id="tgtMinMilitary" value="0" size="10" title="Hide players whose military score is below this value.">
-      <label>Show:</label>
-      <select id="tgtLimit">
-        <option value="50">top 50</option>
-        <option value="100" selected>top 100</option>
-        <option value="200">top 200</option>
-        <option value="0">all</option>
-      </select>
-      <label style="cursor:pointer;" title="Show only players you've starred (⭐) in the table.">
-        <input type="checkbox" id="tgtWatchedOnly"> ⭐ only
-      </label>
-      <label>Probes:</label>
-      <input id="tgtProbes" type="number" min="1" max="9999" value="20" size="4"
-        title="How many espionage probes the Spy links pre-arm.">
-      <span id="tgtCountInfo" style="color:#888;font-size:13px;margin-left:auto;"></span>
-    </div>
-    <div id="targetsContainer"></div>
-    </div>
-  </div>
-
   <details class="settings-panel">
     <summary>⚙ Settings</summary>
     <div class="settings-body">
@@ -638,6 +620,62 @@
       <div id="colonizationConfigBody"></div>
     </div>
   </details>
+</section>
+
+<section id="spyglassSection" class="tab-section">
+  <h1>Spyglass<span class="exp-badge" title="Hidden-fleet estimates depend on how much you've spied; treat them as a guide, not gospel.">experimental</span></h1>
+  <p style="color:#888;font-size:13px;margin-bottom:16px;">
+    Who in this universe is hiding fleet, how much, and how fresh the intel is. Players are ranked
+    by military points; the <strong style="color:#ccc;">hidden-fleet</strong> estimate is their
+    military points minus the defense + visible fleet you've spied (open the in-game Espionage tab to
+    feed it). Hit <strong style="color:#7fd6a8;">+ scan</strong> to drop a player onto the in-game
+    scan button, and <strong style="color:#6b97c4;">↻</strong> to mark them for a re-scan when the
+    data looks stale. Click a player to see their planets. Data comes from OGame's public API,
+    fetched in-game — open the galaxy view once to populate it.
+  </p>
+  <div class="controls">
+    <label>Military:</label>
+    <input id="tgtMinMilitary" type="number" min="0" value="0" size="8"
+      title="Hide players whose military score is below this value.">
+    <span style="color:#666;">–</span>
+    <input id="tgtMaxMilitary" type="number" min="0" value="0" size="8"
+      title="Hide players whose military score is above this value (0 = no upper cap).">
+    <label>Show:</label>
+    <select id="tgtLimit">
+      <option value="50">top 50</option>
+      <option value="100" selected>top 100</option>
+      <option value="200">top 200</option>
+      <option value="0">all</option>
+    </select>
+    <label style="cursor:pointer;" title="Show only players on the in-game scan list.">
+      <input type="checkbox" id="tgtWatchedOnly"> scan list only
+    </label>
+    <label>Probes:</label>
+    <input id="tgtProbes" type="number" min="1" max="9999" value="20" size="4"
+      title="How many espionage probes the in-game scan button pre-arms per planet.">
+    <span id="tgtCountInfo" style="color:#888;font-size:13px;margin-left:auto;"></span>
+  </div>
+  <details style="margin:4px 0 12px;">
+    <summary style="cursor:pointer;color:#9aa;font-size:13px;list-style:none;">⚙ More filters</summary>
+    <div class="controls" style="margin-top:8px;">
+      <label title="OGame's noob-protection: you may only attack players within this score-multiple of your own. Widen or disable it to surface players the game currently locks.">Attack range:</label>
+      <select id="tgtBand">
+        <option value="5" selected>±5× (game default)</option>
+        <option value="10">±10×</option>
+        <option value="0">off — show every score</option>
+      </select>
+      <label style="cursor:pointer;" title="Include players on vacation mode (v).">
+        <input type="checkbox" id="tgtInclVacation"> incl. vacation
+      </label>
+      <label style="cursor:pointer;" title="Include inactive / long-inactive players (i / I).">
+        <input type="checkbox" id="tgtInclInactive"> incl. inactive
+      </label>
+      <label style="cursor:pointer;" title="Include banned players (b).">
+        <input type="checkbox" id="tgtInclBanned"> incl. banned
+      </label>
+    </div>
+  </details>
+  <div id="targetsContainer"></div>
 </section>
 
 <section id="alarmClockSection" class="tab-section">

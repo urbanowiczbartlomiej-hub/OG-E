@@ -68,6 +68,7 @@ import { initAlarmClockConfigStore } from './state/alarmClockConfig.js';
 import { initBodiesStore } from './state/bodies.js';
 import { initColonizeDecisionsStore } from './state/colonizeDecisions.js';
 import { initTargetReportsStore } from './state/targets.js';
+import { initWatchListStore } from './state/watchList.js';
 
 import { installColonyRecorder } from './features/colonyRecorder.js';
 import { installPlanetBarCapture } from './features/planetBarCapture.js';
@@ -75,6 +76,7 @@ import { installOwnProfile } from './features/ownProfile.js';
 import { installBadges } from './features/badges/index.js';
 import { installSendExpedition } from './features/sendExpedition/index.js';
 import { installSendColony } from './features/sendColony/index.js';
+import { installSendSpy } from './features/sendSpy/index.js';
 import { installSendLifeform } from './features/sendLifeform/index.js';
 import { installDailyRun } from './features/dailyRun/index.js';
 import { installColonyFab } from './features/abandon/colonyFab.js';
@@ -142,6 +144,9 @@ initColonizeDecisionsStore();
 // consumer (installTargetsIngest) writes opened spy reports here; the dashboard
 // Targets sub-tab reads them to estimate hidden (fleet-saved) fleet.
 initTargetReportsStore();
+// Watch-list (per-universe, chrome.storage). Hydrated here so the in-game scan
+// FAB sees the players the user starred in the dashboard Targets sub-tab.
+initWatchListStore();
 
 // The alarmClock master switch + ntfy token live in `settings.js` (regular
 // localStorage Settings, authored in the in-game OG-E settings panel) — wired
@@ -221,6 +226,10 @@ const installDomFeatures = () => {
   installSendLifeform();
   // Unified Daily Transport button (Send micro-fleets + Collect).
   installDailyRun();
+  // Espionage-scan button — walks the dashboard watch-list firing probes, one
+  // planet per tap, then jumps to messages. Mounts only when players are
+  // starred (so it's absent until there's something to scan).
+  installSendSpy();
 
   // Unified FAB colony module — folds the old fresh-planet banner and the
   // red abandon overlay into ONE button on the FAB: a fresh colony elsewhere

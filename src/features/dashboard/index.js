@@ -56,6 +56,8 @@ import { buildTargetCandidates } from '../../domain/targets.js';
 import { estimateHiddenFleet } from '../../domain/threatModel.js';
 import { readApiCacheFor, apiCacheKeyFor } from '../../state/apiCache.js';
 import { targetReportsKeyFor } from '../../state/targets.js';
+import { watchListKeyFor, normalizeWatchList, DEFAULT_SPY_PROBES } from '../../state/watchList.js';
+import { pointsOf } from '../../domain/unitCosts.js';
 import {
   HISTORY_KEY_BASE,
   historyKeyFor,
@@ -107,15 +109,24 @@ const TARGET_PREFS_KEY = 'oge_targetPrefs';
 let targetSort = { ...DEFAULT_TARGET_SORT };
 
 // Watch-list: the player ids the user has starred in the Targets table.
-// Per-universe (ids are universe-scoped) + device-local view-state — same
-// load-on-boot / mutate-in-place / persist-on-toggle shape as expandedGalaxies,
-// but keyed by universe like the spy-report cache.
-const WATCHED_LS_KEY_BASE = 'oge_watchedPlayers';
-const watchedKeyFor = (/** @type {string} */ universeId) =>
+// Per-universe (ids are universe-scoped). Lives in chrome.storage.local (via
+// state/watchList.js) — NOT localStorage — because the in-game scan FAB (game
+// origin) must read it; localStorage is per-origin. The dashboard keeps an
+// in-memory Set for fast star toggles and write-throughs the array to
+// chrome.storage. (Legacy safeLS data from M4 is migrated on first load.)
+const WATCHED_LS_KEY_BASE = 'oge_watchedPlayers'; // legacy localStorage key (migration source)
+const legacyWatchedKeyFor = (/** @type {string} */ universeId) =>
   `${universeId}:${WATCHED_LS_KEY_BASE}`;
 
 /** @type {Set<string>} Watched player ids for the selected universe. */
 const watchedPlayers = new Set();
+
+/**
+ * Re-scan flags for the selected universe: player id / "g:s:p" coord →
+ * epoch-ms "treat reports older than this as needing a re-scan". Loaded with the
+ * watch-list, written alongside it. @type {Record<string, number>}
+ */
+let rescanMap = {};
 
 /**
  * Player ids whose Targets detail row (planets + spy links) is expanded.
@@ -128,10 +139,10 @@ const expandedTargets = new Set();
 
 // localStorage key for the active dashboard tab. Per-device UI prefs.
 // Possible values are the `data-tab` attributes from dashboard.html:
-// `'colony'`, `'alarmClock'`, `'routes'`. Anything unrecognised — including the
-// retired `'free'` and `'galaxy'` (whose content folded into the Colonizations
-// tab's sub-tabs) — falls back to `'colony'` (the page's first tab). The key
-// keeps its legacy `oge_histogram` name so the saved preference survives the
+// `'colony'`, `'spyglass'`, `'alarmClock'`, `'routes'`, `'sync'`. Anything
+// unrecognised — including the retired `'free'` / `'galaxy'` (folded into the
+// Colonizations sub-tabs) — falls back to `'colony'` (the page's first tab). The
+// key keeps its legacy `oge_histogram` name so the saved preference survives the
 // rename.
 const ACTIVE_TAB_LS_KEY = 'oge_histogramTab';
 const DEFAULT_TAB = 'colony';
@@ -304,9 +315,14 @@ const expandedGalaxies = new Set();
 /** @type {HTMLElement | null} */ let freeCountInfoEl;
 /** @type {HTMLElement} */ let targetsContainer;
 /** @type {HTMLInputElement} */ let tgtMinMilitary;
+/** @type {HTMLInputElement | null} */ let tgtMaxMilitary;
 /** @type {HTMLSelectElement} */ let tgtLimit;
 /** @type {HTMLInputElement | null} */ let tgtWatchedOnly;
 /** @type {HTMLInputElement | null} */ let tgtProbes;
+/** @type {HTMLSelectElement | null} */ let tgtBand;
+/** @type {HTMLInputElement | null} */ let tgtInclVacation;
+/** @type {HTMLInputElement | null} */ let tgtInclInactive;
+/** @type {HTMLInputElement | null} */ let tgtInclBanned;
 /** @type {HTMLElement | null} */ let tgtCountInfoEl;
 
 /** The 5 neighbourhood factors users can tune via sliders. */
@@ -367,7 +383,7 @@ const boot = async () => {
   const universes = await discoverUniverses();
   selectedUniverseId = resolveInitialUniverse(universes);
   populateUniverseSelect(universes, selectedUniverseId);
-  loadWatched();
+  await loadWatched();
 
   await loadAll();
   renderAll();
@@ -400,12 +416,11 @@ const boot = async () => {
   applyPresetToSliders(freeStrategySelect.value);
   updateModeControls();
 
-  // Restore the Targets table sort from previous session (device-local).
-  const targetPrefs = /** @type {any} */ (safeLS.json(TARGET_PREFS_KEY, {}));
-  if (targetPrefs.key === 'hiddenFleet' || targetPrefs.key === 'military'
-    || targetPrefs.key === 'totalRank') {
-    targetSort = { key: targetPrefs.key, dir: targetPrefs.dir === 'asc' ? 'asc' : 'desc' };
-  }
+  // Restore the Targets table sort + filter controls from the previous session,
+  // then repaint so the restored sort/filters show on this first load (the
+  // initial renderAll above ran before this restore).
+  loadTargetPrefs();
+  repaintTargets();
 
   chromeStore.onChanged((changes) => {
     // Filter: only re-render when one of the SELECTED universe's keys
@@ -563,9 +578,14 @@ const wireDom = () => {
   freeCountInfoEl = document.getElementById('freeCountInfo');
   targetsContainer = /** @type {HTMLElement} */ (document.getElementById('targetsContainer'));
   tgtMinMilitary = /** @type {HTMLInputElement} */ (document.getElementById('tgtMinMilitary'));
+  tgtMaxMilitary = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtMaxMilitary'));
   tgtLimit = /** @type {HTMLSelectElement} */ (document.getElementById('tgtLimit'));
   tgtWatchedOnly = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtWatchedOnly'));
   tgtProbes = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtProbes'));
+  tgtBand = /** @type {HTMLSelectElement | null} */ (document.getElementById('tgtBand'));
+  tgtInclVacation = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtInclVacation'));
+  tgtInclInactive = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtInclInactive'));
+  tgtInclBanned = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtInclBanned'));
   tgtCountInfoEl = document.getElementById('tgtCountInfo');
   for (const k of WEIGHT_FIELDS) {
     const s = document.getElementById(`freeW_${k}`);
@@ -694,24 +714,69 @@ const persistExpanded = () => {
 
 /**
  * (Re)load the watch-list for the selected universe into {@link watchedPlayers},
- * replacing whatever was there. Called on boot and on universe switch (the ids
- * are universe-scoped). Tolerates a malformed stored value.
+ * replacing whatever was there. Reads chrome.storage.local (shared with the
+ * in-game scan FAB) and, on a one-time basis, migrates any legacy M4 data that's
+ * still in localStorage. Called on boot and on universe switch (ids are
+ * universe-scoped).
  *
- * @returns {void}
+ * @returns {Promise<void>}
  */
-const loadWatched = () => {
+const loadWatched = async () => {
   watchedPlayers.clear();
   if (!selectedUniverseId) return;
-  const raw = safeLS.json(watchedKeyFor(selectedUniverseId), []);
-  if (!Array.isArray(raw)) return;
-  for (const v of raw) {
-    if (typeof v === 'string' || typeof v === 'number') watchedPlayers.add(String(v));
+  let raw = await chromeStore.get(watchListKeyFor(selectedUniverseId));
+  // One-time migration: M4 stored a bare watch-list array in localStorage
+  // (per-origin, invisible in-game). If chrome.storage is empty but the legacy
+  // key has data, adopt it and write the normalised config through.
+  if (raw == null) {
+    const legacy = safeLS.json(legacyWatchedKeyFor(selectedUniverseId), null);
+    if (Array.isArray(legacy) && legacy.length) {
+      raw = normalizeWatchList(legacy);
+      await chromeStore.set(watchListKeyFor(selectedUniverseId), raw);
+    }
   }
+  const cfg = normalizeWatchList(raw);
+  for (const id of cfg.players) watchedPlayers.add(id);
+  rescanMap = cfg.rescan;
+  // chrome.storage is authoritative for the probe count (the FAB reads it too).
+  if (tgtProbes) tgtProbes.value = String(cfg.probes);
 };
 
 /**
- * Toggle a player's watch-list membership, persist the new set, and repaint
- * just the Targets sub-tab. Mutates {@link watchedPlayers} in place.
+ * Write the watch-list config ({players, probes}) for the selected universe to
+ * chrome.storage.local so the in-game scan FAB sees the same players + probe
+ * count. Fire-and-forget (the in-memory Set / control are the source of truth
+ * for the current paint).
+ *
+ * @returns {void}
+ */
+const writeWatchConfig = () => {
+  if (!selectedUniverseId) return;
+  void chromeStore.set(watchListKeyFor(selectedUniverseId), {
+    players: [...watchedPlayers],
+    probes: Number(tgtProbes?.value) || DEFAULT_SPY_PROBES,
+    rescan: rescanMap,
+  });
+};
+
+/**
+ * Flag a player (key = player id) or a single planet (key = "g:s:p" coord) as
+ * needing a re-scan: records "now" so the scan FAB treats any report older than
+ * this moment as stale and re-targets it. Clears itself when a newer report
+ * lands. Persists + repaints the sub-tab.
+ *
+ * @param {string} key  player id or "g:s:p" coord.
+ * @returns {void}
+ */
+const markRescan = (key) => {
+  rescanMap = { ...rescanMap, [key]: Date.now() };
+  writeWatchConfig();
+  repaintTargets();
+};
+
+/**
+ * Toggle a player's watch-list membership, persist the config, and repaint just
+ * the Targets sub-tab. Mutates {@link watchedPlayers} in place.
  *
  * @param {string} id
  * @returns {void}
@@ -719,9 +784,7 @@ const loadWatched = () => {
 const toggleWatched = (id) => {
   if (watchedPlayers.has(id)) watchedPlayers.delete(id);
   else watchedPlayers.add(id);
-  if (selectedUniverseId) {
-    safeLS.setJSON(watchedKeyFor(selectedUniverseId), [...watchedPlayers]);
-  }
+  writeWatchConfig();
   repaintTargets();
 };
 
@@ -914,16 +977,15 @@ const repaintTargets = () => {
   const ownTotalScore = ownId && totalRanks ? totalRanks[ownId]?.score : undefined;
   const ownAlliance = ownId && apiPlayers ? apiPlayers[ownId]?.alliance : undefined;
 
-  // Per-player hidden-fleet estimate (for players we've opened reports on) +
-  // the already-spied planet coords → newest report timestamp per player (drives
-  // the ✓ marker, the report-age display, the stale flag, and the "next" link in
-  // the expandable detail row). The report key is a bodyKey "g:s:p:type"; strip
-  // the trailing ":type" to get the "g:s:p" coord.
+  // Per-player hidden-fleet estimate + the per-planet report data the table
+  // reads: coord → { ts, defPts, fleetPts } (timestamp drives the freshness /
+  // re-scan status; defense + visible-fleet POINTS feed the expanded per-planet
+  // rows). The report key is a bodyKey "g:s:p:type"; strip ":type" for the coord.
   const military = apiCache.military ? apiCache.military.ranks : {};
   /** @type {Record<string, import('../../domain/threatModel.js').HiddenFleetEstimate>} */
   const estimates = {};
-  /** @type {Record<string, Record<string, number>>} */
-  const spiedByPlayer = {};
+  /** @type {Record<string, Record<string, {ts:number, defPts:number, fleetPts:number}>>} */
+  const reportsByPlayer = {};
   for (const pid of Object.keys(targetReports)) {
     const bucket = targetReports[pid];
     const reports = bucket ? Object.values(bucket) : [];
@@ -933,14 +995,18 @@ const repaintTargets = () => {
       reports,
       planetCount: planetCountByPlayer[pid],
     });
-    /** @type {Record<string, number>} */
-    const coordTs = {};
+    /** @type {Record<string, {ts:number, defPts:number, fleetPts:number}>} */
+    const byCoord = {};
     for (const [key, report] of Object.entries(bucket)) {
       const lastColon = key.lastIndexOf(':');
       const coord = lastColon >= 0 ? key.slice(0, lastColon) : key;
-      coordTs[coord] = report.timestamp ?? 0;
+      byCoord[coord] = {
+        ts: report.timestamp ?? 0,
+        defPts: pointsOf(report.defenseValue ?? 0),
+        fleetPts: pointsOf(report.fleetValue ?? 0),
+      };
     }
-    spiedByPlayer[pid] = coordTs;
+    reportsByPlayer[pid] = byCoord;
   }
 
   renderTargets({
@@ -951,6 +1017,13 @@ const repaintTargets = () => {
       ownTotalScore,
       ownAlliance,
       minMilitary: Number(tgtMinMilitary?.value) || 0,
+      maxMilitary: Number(tgtMaxMilitary?.value) || 0,
+      // "Attack range" select: 0 = disable the noob-protection band entirely.
+      protectionFactor: tgtBand ? Number(tgtBand.value) : undefined,
+      // Checkboxes INCLUDE a status; absence (unchecked) keeps the exclusion on.
+      excludeVacation: !tgtInclVacation?.checked,
+      excludeInactive: !tgtInclInactive?.checked,
+      excludeBanned: !tgtInclBanned?.checked,
     },
     limit: Number(tgtLimit?.value) || 0,
     estimates,
@@ -958,12 +1031,12 @@ const repaintTargets = () => {
     onSort: handleTargetSort,
     watchedIds: watchedPlayers,
     onToggleWatch: toggleWatched,
+    onRescan: markRescan,
+    rescan: rescanMap,
     watchedOnly: !!tgtWatchedOnly?.checked,
     universePlanets: apiCache.universe ? apiCache.universe.planets : [],
-    spiedByPlayer,
+    reportsByPlayer,
     nowMs: Date.now(),
-    probes: Number(tgtProbes?.value) || 20,
-    gameHref: targetGameHref(),
     expandedIds: expandedTargets,
     onToggleExpand: (id) => {
       if (expandedTargets.has(id)) expandedTargets.delete(id);
@@ -971,23 +1044,6 @@ const repaintTargets = () => {
     },
     countInfoEl: tgtCountInfoEl,
   });
-};
-
-/**
- * In-game URL base for the SELECTED universe — the origin spy deep-links must
- * point at. The dashboard runs on the extension origin, so `location.href` is
- * useless here; prefer the server's own `<domain>` from the cached serverData,
- * falling back to the canonical `<universeId>.ogame.gameforge.com` host. Returns
- * '' when neither is known (links then render as muted, non-clickable text).
- *
- * @returns {string}
- */
-const targetGameHref = () => {
-  const domain = apiCache.server?.data?.domain;
-  const host = domain || (selectedUniverseId
-    ? `${selectedUniverseId}.ogame.gameforge.com`
-    : '');
-  return host ? `https://${host}/game/index.php` : '';
 };
 
 /**
@@ -1009,8 +1065,47 @@ const handleTargetSort = (key) => {
   targetSort = targetSort.key === key
     ? { key, dir: targetSort.dir === 'asc' ? 'desc' : 'asc' }
     : { key, dir: defaultTargetDir(key) };
-  safeLS.setJSON(TARGET_PREFS_KEY, targetSort);
+  saveTargetPrefs();
   repaintTargets();
+};
+
+/**
+ * Snapshot the Targets sort + filter controls to device-local storage so they
+ * survive a reload. Called on every sort/filter change.
+ * @returns {void}
+ */
+const saveTargetPrefs = () => {
+  safeLS.setJSON(TARGET_PREFS_KEY, {
+    sort: targetSort,
+    minMilitary: tgtMinMilitary?.value,
+    maxMilitary: tgtMaxMilitary?.value,
+    band: tgtBand?.value,
+    inclVacation: !!tgtInclVacation?.checked,
+    inclInactive: !!tgtInclInactive?.checked,
+    inclBanned: !!tgtInclBanned?.checked,
+  });
+};
+
+/**
+ * Restore the persisted Targets sort + filter controls. Tolerates the older
+ * flat `{key,dir}` sort shape. Setting a control's `.value` programmatically
+ * does NOT fire a change event, so this never triggers a spurious repaint.
+ * @returns {void}
+ */
+const loadTargetPrefs = () => {
+  const p = /** @type {any} */ (safeLS.json(TARGET_PREFS_KEY, {}));
+  const sort = p.sort || p; // pre-redesign prefs stored the flat sort directly.
+  if (sort && (sort.key === 'hiddenFleet' || sort.key === 'military' || sort.key === 'totalRank')) {
+    targetSort = { key: sort.key, dir: sort.dir === 'asc' ? 'asc' : 'desc' };
+  }
+  if (p.minMilitary != null && tgtMinMilitary) tgtMinMilitary.value = String(p.minMilitary);
+  if (p.maxMilitary != null && tgtMaxMilitary) tgtMaxMilitary.value = String(p.maxMilitary);
+  if (p.band != null && tgtBand && tgtBand.querySelector(`[value="${p.band}"]`)) {
+    tgtBand.value = String(p.band);
+  }
+  if (tgtInclVacation) tgtInclVacation.checked = !!p.inclVacation;
+  if (tgtInclInactive) tgtInclInactive.checked = !!p.inclInactive;
+  if (tgtInclBanned) tgtInclBanned.checked = !!p.inclBanned;
 };
 
 /**
@@ -1214,11 +1309,20 @@ const wireListeners = () => {
   posFilter.addEventListener('change', () => renderAll());
 
   // Targets controls only repaint the Targets sub-tab (the candidate list is
-  // already loaded; only the filter/limit we apply to it changed).
-  tgtMinMilitary.addEventListener('change', repaintTargets);
+  // already loaded; only the filter/limit we apply to it changed). Filter
+  // controls also persist so the choice survives a reload.
+  const onTargetFilterChange = () => { saveTargetPrefs(); repaintTargets(); };
+  tgtMinMilitary.addEventListener('change', onTargetFilterChange);
+  tgtMaxMilitary?.addEventListener('change', onTargetFilterChange);
+  tgtBand?.addEventListener('change', onTargetFilterChange);
+  tgtInclVacation?.addEventListener('change', onTargetFilterChange);
+  tgtInclInactive?.addEventListener('change', onTargetFilterChange);
+  tgtInclBanned?.addEventListener('change', onTargetFilterChange);
+  // Probe count is shared with the in-game scan FAB via chrome.storage, so it
+  // persists through the watch-config write rather than the localStorage prefs.
+  tgtProbes?.addEventListener('change', () => { writeWatchConfig(); repaintTargets(); });
   tgtLimit.addEventListener('change', repaintTargets);
   tgtWatchedOnly?.addEventListener('change', repaintTargets);
-  tgtProbes?.addEventListener('change', repaintTargets);
 
   // Region controls only repaint the settlement-regions block. The
   // underlying `scans` cache hasn't changed — only the slots/tolerance
@@ -1265,8 +1369,7 @@ const wireListeners = () => {
 
   universeSelect.addEventListener('change', () => {
     selectedUniverseId = universeSelect.value;
-    loadWatched();
-    void loadAll().then(renderAll);
+    void loadWatched().then(() => loadAll()).then(renderAll);
     alarmClockApi?.refresh();
     routesApi?.refresh();
     scanColonyConfigApi?.refresh();

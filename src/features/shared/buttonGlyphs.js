@@ -89,6 +89,21 @@ export const ABANDON_GLYPH = [
   '</g>',
 ].join('');
 
+/**
+ * Espionage scan — a watchful eye with two scan rays (sendSpy). The almond eye
+ * + filled pupil reads as "spying"; the short rays to the side say "probing /
+ * scanning". Simple silhouette, currentColor like the rest.
+ */
+export const EYE_GLYPH = [
+  '<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">',
+  '<g transform="translate(32,32) scale(1.1) translate(-32,-32)">',
+  '<path d="M10 32 Q32 15 54 32 Q32 49 10 32 Z"/>',
+  '<circle cx="32" cy="32" r="7" fill="currentColor"/>',
+  '<path d="M50 20 l6 -4 M50 44 l6 4" stroke-width="2.5"/>',
+  '</g>',
+  '</g>',
+].join('');
+
 /** Lifeforms — a DNA double helix with four rungs (sendLifeform). */
 export const DNA_GLYPH = [
   '<g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" transform="translate(32,32) rotate(45) scale(1.15) translate(-32,-32)">',

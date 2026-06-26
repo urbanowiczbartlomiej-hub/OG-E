@@ -39,6 +39,7 @@ export const EXPEDITION_POSITION = 16;
 export const OWNER_EXP = 'exp';
 export const OWNER_COL = 'col';
 export const OWNER_FS = 'fs';
+export const OWNER_SPY = 'spy';
 
 /**
  * @typedef {object} OwnershipSession

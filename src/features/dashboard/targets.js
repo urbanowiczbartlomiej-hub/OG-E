@@ -1,16 +1,17 @@
 // @ts-check
 
 // Targets sub-tab renderer (dashboard, "Colonizations" section). Pure DOM
-// factory: given the joined candidate list + the active-target filter options,
-// it filters via the pure domain `buildTargetList`, re-sorts by the active
-// column via `sortTargetList`, and paints a ranked table. The hidden-fleet
-// column carries the per-player estimate (from espionage-report ingestion) and
-// is heat-coloured by magnitude; its header (plus Rank / Military) is a
-// clickable sort control. Read-only and self-contained (inline styles in the
-// dashboard's dark palette).
+// factory: filters the joined candidate list via the pure domain
+// `buildTargetList`, re-sorts by the active column via `sortTargetList`, and
+// paints a ranked table. Columns split the hidden-fleet estimate into its parts
+// (defense / visible fleet / hidden), plus coverage and scan-freshness readouts.
+// A "scan" chip drops a player onto the in-game scan FAB's watch-list; a ↻
+// re-scan flag (player- or planet-level) marks data that may have changed.
+// Expanding a row lists the player's planets with per-body scan status, defense,
+// and visible fleet. Read-only and self-contained (inline styles, dark palette).
 
 import { buildTargetList, sortTargetList, playerPlanets } from '../../domain/targets.js';
-import { spyMissionUrl } from '../../domain/ogameUrl.js';
+import { scanStatus, rescanAtFor } from '../../domain/spyScan.js';
 import { heatColor } from './palette.js';
 
 /**
@@ -24,6 +25,8 @@ export const DEFAULT_TARGET_SORT = { key: 'hiddenFleet', dir: 'desc' };
 /**
  * @typedef {import('../../domain/targets.js').TargetCandidate} TargetCandidate
  * @typedef {import('../../domain/targets.js').TargetFilterOptions} TargetFilterOptions
+ * @typedef {import('../../domain/targets.js').PlanetPos} PlanetPos
+ * @typedef {{ ts: number, defPts: number, fleetPts: number }} PlanetReport
  */
 
 /**
@@ -35,18 +38,19 @@ function fmt(n) {
   return typeof n === 'number' && Number.isFinite(n) ? n.toLocaleString('pl-PL') : '—';
 }
 
-// A spy report older than this is "stale": defenses/fleet move, so the
-// hidden-fleet estimate (and the spied ✓) shouldn't be trusted — re-spy.
-const STALE_MS = 7 * 24 * 3600 * 1000;
-
 /**
- * Milliseconds since a report timestamp (epoch SECONDS), or NaN if unknown.
- * @param {number|undefined} tsSeconds
- * @param {number} nowMs
- * @returns {number}
+ * Compact magnitude ("4.57B" / "47.9M" / "880K") — keeps the numeric columns
+ * narrow. Exact values stay available in cell tooltips via {@link fmt}.
+ * @param {number|undefined} n
+ * @returns {string}
  */
-function ageMs(tsSeconds, nowMs) {
-  return typeof tsSeconds === 'number' && tsSeconds > 0 ? nowMs - tsSeconds * 1000 : NaN;
+function compact(n) {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return '—';
+  const abs = Math.abs(n);
+  if (abs >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
+  if (abs >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (abs >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
+  return String(Math.round(n));
 }
 
 /**
@@ -62,6 +66,16 @@ function formatAge(ms) {
   const days = hours / 24;
   if (days < 14) return `${Math.round(days)}d`;
   return `${Math.round(days / 7)}w`;
+}
+
+/**
+ * Milliseconds since a report timestamp (epoch SECONDS), or NaN if unknown.
+ * @param {number|undefined} tsSeconds
+ * @param {number} nowMs
+ * @returns {number}
+ */
+function ageMs(tsSeconds, nowMs) {
+  return typeof tsSeconds === 'number' && tsSeconds > 0 ? nowMs - tsSeconds * 1000 : NaN;
 }
 
 /**
@@ -83,9 +97,7 @@ function cell(text, opts = {}) {
 
 /**
  * Build one header cell. When `opts.sortKey` + `opts.onSort` are given the
- * header becomes a clickable sort control: it shows a ▲/▼ arrow and brightens
- * while it's the active sort, and a click hands its key back to the caller
- * (which decides the new direction, persists it, and repaints).
+ * header becomes a clickable sort control (▲/▼, brightens while active).
  * @param {string} text
  * @param {string} [align]
  * @param {{ sortKey?: TargetSortKey, sort?: TargetSort, onSort?: (key: TargetSortKey) => void }} [opts]
@@ -116,82 +128,203 @@ function headCell(text, align, opts = {}) {
 }
 
 /**
- * Build the hidden-fleet cell from a per-player estimate, or the not-spied
- * placeholder when we have no reports for that player. Shows the estimated
- * hidden points, then a muted coverage suffix ("spied/total", ⏱ = provisional
- * coverage, ⚠ = some report is stale), with the full breakdown in the tooltip.
- * @param {import('../../domain/threatModel.js').HiddenFleetEstimate | undefined} est
- * @param {number} maxHidden   Largest hidden-fleet estimate in view (for the heat ramp).
- * @param {boolean} [stale]    At least one underlying report is older than STALE_MS.
+ * Build the "scan" chip cell (replaces the old ⭐). Outline `+ scan` = not on
+ * the scan list; filled `✓ scan` = on the in-game scan FAB's watch-list. A ↻
+ * appears for watched players to flag a whole-player re-scan.
+ * @param {string} id
+ * @param {boolean} watched
+ * @param {(id: string) => void} [onToggle]
+ * @param {(key: string) => void} [onRescan]
  * @returns {HTMLTableCellElement}
  */
-function hiddenCell(est, maxHidden, stale) {
-  if (!est) return cell('— not spied', { align: 'right', color: '#666' });
-  const hidden = Math.round(est.hiddenFleetPoints);
-  const td = cell('', { align: 'right' });
-  const val = document.createElement('span');
-  val.textContent = fmt(hidden);
-  // Heat by magnitude: grey for ~0, saturating to red for the biggest fleet in
-  // view. heatColor's negative half (0 → −1) is exactly that grey→red ramp.
-  const frac = maxHidden > 0 ? Math.max(0, Math.min(1, hidden / maxHidden)) : 0;
-  val.style.color = hidden > 0 ? heatColor(-frac) : '#666';
-  const cov = document.createElement('span');
-  const denom = typeof est.planetCount === 'number' ? `/${est.planetCount}` : '';
-  cov.textContent = ` ${est.spiedCount}${denom}${est.provisional ? ' ⏱' : ''}`;
-  cov.style.color = '#888';
-  cov.style.fontSize = '11px';
-  td.appendChild(val);
-  td.appendChild(cov);
-  if (stale) {
-    const warn = document.createElement('span');
-    warn.textContent = ' ⚠';
-    warn.style.color = '#e0a020';
-    warn.style.fontSize = '11px';
-    td.appendChild(warn);
+function chipCell(id, watched, onToggle, onRescan) {
+  const td = cell('');
+  const chip = document.createElement('span');
+  chip.textContent = watched ? '✓ scan' : '+ scan';
+  chip.style.cssText =
+    'display:inline-block;font-size:11px;border-radius:11px;padding:2px 9px;'
+    + 'cursor:pointer;user-select:none;white-space:nowrap;';
+  if (watched) {
+    chip.style.background = '#16352a';
+    chip.style.border = '1px solid #2f6f4f';
+    chip.style.color = '#7fd6a8';
+    chip.title = 'On the in-game scan list — click to remove';
+  } else {
+    chip.style.background = 'transparent';
+    chip.style.border = '1px solid #2a3a45';
+    chip.style.color = '#8b95a0';
+    chip.title = 'Add to the in-game scan list';
   }
-  td.title =
-    `military ${fmt(est.militaryPoints)} − defense ${fmt(Math.round(est.defensePoints))} `
-    + `− visible fleet ${fmt(Math.round(est.visibleFleetPoints))}`
-    + (est.provisional ? ' · coverage incomplete (provisional)' : '')
-    + (stale ? ' · some report > 7d old (stale) — re-spy' : '');
+  if (onToggle) chip.addEventListener('click', () => onToggle(id));
+  td.appendChild(chip);
+  if (watched && onRescan) {
+    const rescan = document.createElement('span');
+    rescan.textContent = '↻';
+    rescan.style.cssText = 'color:#6b97c4;cursor:pointer;margin-left:6px;user-select:none;';
+    rescan.title = 'Flag this player for re-scan (data may have changed)';
+    rescan.addEventListener('click', () => onRescan(id));
+    td.appendChild(rescan);
+  }
   return td;
 }
 
 /**
- * Build the ⭐ watch-toggle cell. Filled gold star = watched, hollow grey =
- * not; clicking flips it (the caller persists the set + repaints).
- * @param {string} id
- * @param {boolean} watched
- * @param {(id: string) => void} [onToggle]
+ * Combined total-highscore cell (rank `#88` + compact score `4.57B`; exact in
+ * the tooltip). Header keeps the `totalRank` sort axis.
+ * @param {TargetCandidate} c
  * @returns {HTMLTableCellElement}
  */
-function starCell(id, watched, onToggle) {
-  const td = cell('', { align: 'center' });
-  const star = document.createElement('span');
-  star.textContent = watched ? '★' : '☆';
-  star.style.color = watched ? '#e0c060' : '#555';
-  star.style.cursor = 'pointer';
-  star.style.userSelect = 'none';
-  star.title = watched ? 'Remove from watch-list' : 'Add to watch-list';
-  if (onToggle) star.addEventListener('click', () => onToggle(id));
-  td.appendChild(star);
+function highscoreCell(c) {
+  const td = cell('', { align: 'right' });
+  if (typeof c.totalRank !== 'number' && c.totalScore == null) {
+    td.textContent = '—';
+    td.style.color = '#666';
+    return td;
+  }
+  const rank = document.createElement('span');
+  rank.textContent = typeof c.totalRank === 'number' ? `#${c.totalRank}` : '#—';
+  rank.style.color = '#888';
+  rank.style.fontSize = '11px';
+  const score = document.createElement('span');
+  score.textContent = ` ${compact(c.totalScore)}`;
+  score.style.color = '#cfd6dd';
+  td.appendChild(rank);
+  td.appendChild(score);
+  td.title = `total rank ${typeof c.totalRank === 'number' ? c.totalRank : '—'} · ${fmt(c.totalScore)} points`;
+  return td;
+}
+
+/**
+ * Combined military cell (compact score `47.9M` + rank `#88`; exact in tooltip).
+ * Header keeps the `military` sort axis.
+ * @param {TargetCandidate} c
+ * @returns {HTMLTableCellElement}
+ */
+function militaryCell(c) {
+  const td = cell('', { align: 'right' });
+  if (c.militaryScore == null && typeof c.militaryRank !== 'number') {
+    td.textContent = '—';
+    td.style.color = '#666';
+    return td;
+  }
+  const score = document.createElement('span');
+  score.textContent = compact(c.militaryScore);
+  score.style.color = '#e3e3e3';
+  const rank = document.createElement('span');
+  rank.textContent = typeof c.militaryRank === 'number' ? ` · #${c.militaryRank}` : '';
+  rank.style.color = '#888';
+  rank.style.fontSize = '11px';
+  td.appendChild(score);
+  td.appendChild(rank);
+  td.title =
+    `military ${fmt(c.militaryScore)}`
+    + (typeof c.militaryRank === 'number' ? ` · rank ${c.militaryRank}` : '');
+  return td;
+}
+
+/**
+ * A muted points cell (defense / visible fleet), or '—' when not spied.
+ * @param {number | null | undefined} pts
+ * @returns {HTMLTableCellElement}
+ */
+function pointsCell(pts) {
+  if (pts == null) return cell('—', { align: 'right', color: '#5f6b75' });
+  return cell(compact(Math.round(pts)), { align: 'right', color: '#9aa6b0' });
+}
+
+/**
+ * Hidden-fleet cell — the estimate, heat-coloured by magnitude (grey for ~0 →
+ * red for the biggest in view via heatColor's negative half). Breakdown is now
+ * in the adjacent Defense / Visible columns; the exact subtraction stays in the
+ * tooltip. Sort axis = `hiddenFleet`.
+ * @param {import('../../domain/threatModel.js').HiddenFleetEstimate | undefined} est
+ * @param {number} maxHidden
+ * @returns {HTMLTableCellElement}
+ */
+function hiddenCell(est, maxHidden) {
+  if (!est) return cell('—', { align: 'right', color: '#5f6b75' });
+  const hidden = Math.round(est.hiddenFleetPoints);
+  const td = cell(compact(hidden), { align: 'right' });
+  const frac = maxHidden > 0 ? Math.max(0, Math.min(1, hidden / maxHidden)) : 0;
+  td.style.color = hidden > 0 ? heatColor(-frac) : '#666';
+  td.style.fontWeight = '600';
+  td.title =
+    `hidden = military ${fmt(est.militaryPoints)} − defense ${fmt(Math.round(est.defensePoints))} `
+    + `− visible fleet ${fmt(Math.round(est.visibleFleetPoints))}`
+    + (est.provisional ? ' · coverage incomplete (provisional)' : '');
+  return td;
+}
+
+/**
+ * Scan-freshness cell: oldest-report age coloured by the player's worst scan
+ * status (green fresh / amber stale or re-scan), or '—' when nothing's spied.
+ * @param {'none'|'fresh'|'stale'|'rescan'} status
+ * @param {number} oldestAgeMs
+ * @returns {HTMLTableCellElement}
+ */
+function scannedCell(status, oldestAgeMs) {
+  if (status === 'none') return cell('—', { align: 'right', color: '#5f6b75' });
+  const age = formatAge(oldestAgeMs) || '?';
+  const td = cell('', { align: 'right' });
+  const txt = document.createElement('span');
+  if (status === 'fresh') {
+    txt.textContent = age;
+    td.style.color = '#5a8f5a';
+    td.title = `oldest report ${age} old`;
+  } else if (status === 'stale') {
+    txt.textContent = `${age} ⚠`;
+    td.style.color = '#e0a020';
+    td.title = `oldest report ${age} old — stale (> 7d)`;
+  } else {
+    txt.textContent = `${age} ↻`;
+    td.style.color = '#e0a020';
+    td.title = `re-scan requested · oldest report ${age} old`;
+  }
+  td.appendChild(txt);
+  return td;
+}
+
+/**
+ * Coverage cell: `spied/total` + a thin progress bar (full = green, partial =
+ * amber, none = empty).
+ * @param {number} spied
+ * @param {number} total
+ * @returns {HTMLTableCellElement}
+ */
+function coverageCell(spied, total) {
+  const td = cell('');
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;align-items:center;gap:6px;';
+  const label = document.createElement('span');
+  label.textContent = `${spied}/${total}`;
+  label.style.cssText = 'color:#9aa6b0;font-size:11px;';
+  const bar = document.createElement('span');
+  bar.style.cssText =
+    'display:inline-block;width:46px;height:5px;background:#28333c;border-radius:3px;overflow:hidden;';
+  const frac = total > 0 ? Math.max(0, Math.min(1, spied / total)) : 0;
+  const fill = document.createElement('span');
+  const colour = frac >= 1 ? '#5a8f5a' : frac > 0 ? '#caa14a' : 'transparent';
+  fill.style.cssText = `display:block;width:${Math.round(frac * 100)}%;height:100%;background:${colour};`;
+  bar.appendChild(fill);
+  wrap.appendChild(label);
+  wrap.appendChild(bar);
+  td.appendChild(wrap);
   return td;
 }
 
 /**
  * Build the Player cell as an expand toggle: a ▸/▾ triangle + name. Clicking
- * flips the linked detail row's visibility (instant — no repaint) and notifies
- * the caller so it can remember the open/closed state across repaints.
+ * flips the linked detail row's visibility (instant) and notifies the caller.
  * @param {string} name
  * @param {boolean} open
- * @param {HTMLTableRowElement} detail   The detail row this toggle controls.
+ * @param {HTMLTableRowElement} detail
  * @param {() => void} [onToggle]
  * @returns {HTMLTableCellElement}
  */
 function playerCell(name, open, detail, onToggle) {
   const td = cell('');
   td.style.cursor = 'pointer';
-  td.title = 'Show planets / spy links';
+  td.title = 'Show planets / scan status';
   const tri = document.createElement('span');
   tri.textContent = open ? '▾ ' : '▸ ';
   tri.style.color = '#888';
@@ -209,60 +342,31 @@ function playerCell(name, open, detail, onToggle) {
 }
 
 /**
- * One "Spy" deep-link anchor — opens the in-game fleet dispatch pre-armed with
- * probes (user presses send; no auto-dispatch). Degrades to muted plain text
- * when we can't build a target-origin URL yet (game address unknown).
- * @param {import('../../domain/targets.js').PlanetPos} p
- * @param {number} probes
- * @param {string} gameHref
- * @param {string} label
- * @returns {HTMLElement}
- */
-function spyLink(p, probes, gameHref, label) {
-  const coords = `${p.galaxy}:${p.system}:${p.position}`;
-  if (!gameHref) {
-    const span = document.createElement('span');
-    span.textContent = label;
-    span.style.color = '#555';
-    span.title = 'Open the in-game galaxy view once so OG-E learns this server’s address.';
-    return span;
-  }
-  const a = document.createElement('a');
-  a.href = spyMissionUrl(gameHref, p, probes);
-  a.textContent = label;
-  a.target = '_blank';
-  a.rel = 'noopener';
-  a.style.color = '#7fb0ff';
-  a.style.textDecoration = 'none';
-  a.title = `Opens the fleet dispatch with ${probes} probes pre-armed to ${coords} — you press send.`;
-  return a;
-}
-
-/**
- * Build the expandable detail row for one target: a quick "next action" link
- * plus a per-planet list. Un-spied planets carry a "Spy N" deep-link; spied
- * planets show ✓ with the report age — amber + a re-spy link once the report is
- * stale (> 7d). Hidden unless `open`.
+ * Build the expandable per-planet detail row. Each planet shows its scan status
+ * (scanned + age / stale / re-scan / needs scan), defense, and visible fleet;
+ * stale or re-scan-flagged bodies carry a per-planet ↻ re-scan action. Pure
+ * information — no send links (the in-game scan FAB does the sending). Hidden
+ * unless `open`.
  * @param {object} args
  * @param {string} args.playerId
- * @param {import('../../domain/targets.js').PlanetPos[]} args.planets
- * @param {Record<string, number> | undefined} args.spied  "g:s:p" → newest report ts (epoch SECONDS).
+ * @param {PlanetPos[]} args.planets
+ * @param {Record<string, PlanetReport> | undefined} args.reports  coord → report data.
+ * @param {Record<string, number> | undefined} args.rescan
  * @param {number} args.nowMs
- * @param {number} args.probes
- * @param {string} args.gameHref
+ * @param {(key: string) => void} [args.onRescan]
  * @param {number} args.colspan
  * @param {boolean} args.open
  * @returns {HTMLTableRowElement}
  */
-function detailRow({ playerId, planets, spied, nowMs, probes, gameHref, colspan, open }) {
+function detailRow({ playerId, planets, reports, rescan, nowMs, onRescan, colspan, open }) {
   const tr = document.createElement('tr');
   tr.dataset.detailFor = playerId;
   tr.style.display = open ? '' : 'none';
   const td = document.createElement('td');
   td.colSpan = colspan;
-  td.style.padding = '4px 8px 12px 28px';
+  td.style.padding = '8px 8px 12px 28px';
   td.style.borderBottom = '1px solid #222';
-  td.style.background = '#141414';
+  td.style.background = '#0b1118';
   tr.appendChild(td);
 
   if (!planets.length) {
@@ -274,74 +378,72 @@ function detailRow({ playerId, planets, spied, nowMs, probes, gameHref, colspan,
     return tr;
   }
 
-  const coordStr = (/** @type {import('../../domain/targets.js').PlanetPos} */ p) =>
-    `${p.galaxy}:${p.system}:${p.position}`;
-  const reportTs = (/** @type {import('../../domain/targets.js').PlanetPos} */ p) =>
-    (spied ? spied[coordStr(p)] : undefined);
-  const isSpied = (/** @type {import('../../domain/targets.js').PlanetPos} */ p) =>
-    reportTs(p) !== undefined;
-  const isStale = (/** @type {import('../../domain/targets.js').PlanetPos} */ p) =>
-    ageMs(reportTs(p), nowMs) > STALE_MS;
+  const coordStr = (/** @type {PlanetPos} */ p) => `${p.galaxy}:${p.system}:${p.position}`;
+  const spied = planets.filter((p) => reports && reports[coordStr(p)]).length;
 
-  // Quick action header: send to the first un-spied planet, else re-spy the
-  // oldest stale one, else confirm everything is fresh — so the user can chain
-  // sends without hunting the list.
   const head = document.createElement('div');
-  head.style.fontSize = '12px';
-  head.style.marginBottom = '6px';
-  const next = planets.find((p) => !isSpied(p));
-  const stalest = planets
-    .filter((p) => isStale(p))
-    .sort((a, b) => (reportTs(a) ?? 0) - (reportTs(b) ?? 0))[0];
-  if (next) {
-    head.style.color = '#888';
-    head.appendChild(document.createTextNode('Next un-spied: '));
-    head.appendChild(spyLink(next, probes, gameHref, `Spy ${coordStr(next)} →`));
-  } else if (stalest) {
-    head.style.color = '#e0a020';
-    head.appendChild(document.createTextNode('All spied · re-spy oldest: '));
-    head.appendChild(spyLink(stalest, probes, gameHref, `Spy ${coordStr(stalest)} →`));
-  } else {
-    head.style.color = '#5a8f5a';
-    head.textContent = `All ${planets.length} planet(s) spied, fresh ✓`;
-  }
+  head.style.cssText = 'font-size:11px;color:#7c8893;margin-bottom:8px;';
+  const need = planets.length - spied;
+  head.textContent = `${spied} of ${planets.length} planets scanned`
+    + (need > 0 ? ` · ${need} need a scan` : '');
   td.appendChild(head);
 
-  const wrap = document.createElement('div');
-  wrap.style.display = 'flex';
-  wrap.style.flexWrap = 'wrap';
-  wrap.style.gap = '4px 14px';
+  // Responsive grid of compact per-planet cells — a player can own 20+ planets,
+  // so a single vertical list would be unusably tall; auto-fill packs them into
+  // as many ~190px columns as the width allows.
+  const grid = document.createElement('div');
+  grid.style.cssText =
+    'display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:7px 18px;';
+
   for (const p of planets) {
-    const spiedHere = isSpied(p);
-    const staleHere = spiedHere && isStale(p);
-    const item = document.createElement('span');
-    item.style.fontSize = '12px';
-    item.style.whiteSpace = 'nowrap';
-    const tag = document.createElement('span');
-    tag.textContent = `${coordStr(p)} `;
-    let tagColor = '#ccc';
-    if (spiedHere) tagColor = staleHere ? '#e0a020' : '#5a8f5a';
-    tag.style.color = tagColor;
-    item.appendChild(tag);
-    if (spiedHere) {
-      const age = formatAge(ageMs(reportTs(p), nowMs));
-      const chk = document.createElement('span');
-      chk.textContent = `✓${age ? ` ${age}` : ''}`;
-      chk.style.color = staleHere ? '#e0a020' : '#5a8f5a';
-      chk.title = staleHere
-        ? `Spy report ${age} old — stale (> 7d), re-spy for an accurate estimate`
-        : `Spy report on file (${age || 'age unknown'})`;
-      item.appendChild(chk);
-      if (staleHere) {
-        item.appendChild(document.createTextNode(' '));
-        item.appendChild(spyLink(p, probes, gameHref, '↻'));
-      }
-    } else {
-      item.appendChild(spyLink(p, probes, gameHref, `Spy ${probes}`));
+    const coord = coordStr(p);
+    const r = reports ? reports[coord] : undefined;
+    const status = scanStatus({
+      reportTsSec: r ? r.ts : undefined,
+      nowMs,
+      rescanAtMs: rescanAtFor(rescan, playerId, coord),
+    });
+    const item = document.createElement('div');
+    item.style.cssText = 'font-size:11px;line-height:1.4;';
+
+    // Line 1: coords · status · (re-scan ↻ pushed to the right).
+    const l1 = document.createElement('div');
+    l1.style.cssText = 'display:flex;align-items:baseline;gap:6px;white-space:nowrap;';
+    const coordEl = document.createElement('span');
+    coordEl.textContent = coord;
+    coordEl.style.color = status === 'none' ? '#8b95a0' : '#cfd6dd';
+    l1.appendChild(coordEl);
+
+    const age = formatAge(ageMs(r?.ts, nowMs));
+    const st = document.createElement('span');
+    st.style.fontSize = '10px';
+    if (status === 'none') { st.textContent = '○ needs scan'; st.style.color = '#7c8893'; }
+    else if (status === 'fresh') { st.textContent = age; st.style.color = '#5a8f5a'; }
+    else if (status === 'stale') { st.textContent = `${age} stale`; st.style.color = '#e0a020'; }
+    else { st.textContent = `${age} re-scan`; st.style.color = '#e0a020'; }
+    l1.appendChild(st);
+
+    if ((status === 'fresh' || status === 'stale') && onRescan) {
+      const link = document.createElement('span');
+      link.textContent = '↻';
+      link.style.cssText = 'color:#6b97c4;cursor:pointer;user-select:none;margin-left:auto;';
+      link.title = 'Flag this planet for re-scan';
+      link.addEventListener('click', () => onRescan(coord));
+      l1.appendChild(link);
     }
-    wrap.appendChild(item);
+    item.appendChild(l1);
+
+    // Line 2: defense + visible fleet (only meaningful once scanned).
+    const l2 = document.createElement('div');
+    l2.style.color = '#6b7782';
+    l2.textContent = r
+      ? `D ${compact(Math.round(r.defPts))} · F ${compact(Math.round(r.fleetPts))}`
+      : ' ';
+    item.appendChild(l2);
+
+    grid.appendChild(item);
   }
-  td.appendChild(wrap);
+  td.appendChild(grid);
   return tr;
 }
 
@@ -349,25 +451,22 @@ function detailRow({ playerId, planets, spied, nowMs, probes, gameHref, colspan,
  * Render the ranked target table into `containerEl`.
  * @param {object} args
  * @param {HTMLElement} args.containerEl
- * @param {TargetCandidate[]} args.candidates   Full joined candidate list.
- * @param {TargetFilterOptions} args.opts        Active-target filter options.
- * @param {number} [args.limit]                  Max rows to display (0 = all).
+ * @param {TargetCandidate[]} args.candidates
+ * @param {TargetFilterOptions} args.opts
+ * @param {number} [args.limit]
  * @param {Record<string, import('../../domain/threatModel.js').HiddenFleetEstimate>} [args.estimates]
- *   Per-player hidden-fleet estimate (keyed playerId), for players with reports.
- * @param {TargetSort} [args.sort]               Active column sort (default: hidden fleet desc).
- * @param {(key: TargetSortKey) => void} [args.onSort]  Click handler for a sortable header.
- * @param {Set<string>} [args.watchedIds]        Starred player ids (watch-list).
- * @param {(id: string) => void} [args.onToggleWatch]   Star-click handler.
- * @param {boolean} [args.watchedOnly]           Show only starred players.
+ * @param {TargetSort} [args.sort]
+ * @param {(key: TargetSortKey) => void} [args.onSort]
+ * @param {Set<string>} [args.watchedIds]
+ * @param {(id: string) => void} [args.onToggleWatch]
+ * @param {(key: string) => void} [args.onRescan]
+ * @param {Record<string, number>} [args.rescan]
+ * @param {boolean} [args.watchedOnly]
  * @param {Array<{coords: string, player?: number}>} [args.universePlanets]
- *   universe.xml occupancy rows — source for a target's planet list (spy links).
- * @param {Record<string, Record<string, number>>} [args.spiedByPlayer]
- *   playerId → ("g:s:p" coord → newest report ts in epoch SECONDS).
- * @param {number} [args.nowMs]                   Clock for report-age display (default 0 = ageless).
- * @param {number} [args.probes]                 Probe count for the Spy links (default 20).
- * @param {string} [args.gameHref]               Target-origin in-game URL base for spy links.
- * @param {Set<string>} [args.expandedIds]       Player ids whose detail row starts open.
- * @param {(id: string) => void} [args.onToggleExpand]  Notified when a row expands/collapses.
+ * @param {Record<string, Record<string, PlanetReport>>} [args.reportsByPlayer]
+ * @param {number} [args.nowMs]
+ * @param {Set<string>} [args.expandedIds]
+ * @param {(id: string) => void} [args.onToggleExpand]
  * @param {HTMLElement | null} [args.countInfoEl]
  * @returns {void}
  */
@@ -381,12 +480,12 @@ export function renderTargets({
   onSort,
   watchedIds,
   onToggleWatch,
+  onRescan,
+  rescan,
   watchedOnly = false,
   universePlanets = [],
-  spiedByPlayer,
+  reportsByPlayer,
   nowMs = 0,
-  probes = 20,
-  gameHref = '',
   expandedIds,
   onToggleExpand,
   countInfoEl,
@@ -405,7 +504,7 @@ export function renderTargets({
     return;
   }
 
-  // Hidden-fleet magnitude per id (for both the sort key and the heat ramp).
+  // Hidden-fleet magnitude per id (for the sort key and the heat ramp).
   /** @type {Record<string, number>} */
   const hiddenById = {};
   let maxHidden = 0;
@@ -431,7 +530,7 @@ export function renderTargets({
     p.style.color = '#888';
     p.style.fontSize = '13px';
     p.textContent =
-      'No watched players yet — click the ☆ next to a target to add it to your watch-list.';
+      'No players on the scan list yet — click “+ scan” next to a target to add it.';
     containerEl.appendChild(p);
     if (countInfoEl) countInfoEl.textContent = '';
     return;
@@ -446,61 +545,68 @@ export function renderTargets({
   const hr = document.createElement('tr');
   /** @param {TargetSortKey} key */
   const sortable = (key) => ({ sortKey: key, sort, onSort });
-  hr.appendChild(headCell('★', 'center'));
+  hr.appendChild(headCell('Scan'));
   hr.appendChild(headCell('#', 'right'));
   hr.appendChild(headCell('Player'));
-  hr.appendChild(headCell('Rank', 'right', sortable('totalRank')));
-  hr.appendChild(headCell('Points', 'right'));
+  hr.appendChild(headCell('Highscore', 'right', sortable('totalRank')));
   hr.appendChild(headCell('Military', 'right', sortable('military')));
-  hr.appendChild(headCell('Mil. rank', 'right'));
-  hr.appendChild(headCell('Hidden fleet', 'right', sortable('hiddenFleet')));
+  hr.appendChild(headCell('Defense', 'right'));
+  hr.appendChild(headCell('Visible', 'right'));
+  hr.appendChild(headCell('Hidden', 'right', sortable('hiddenFleet')));
+  hr.appendChild(headCell('Scanned', 'right'));
+  hr.appendChild(headCell('Coverage'));
   thead.appendChild(hr);
   table.appendChild(thead);
 
+  const COLSPAN = 10;
   const tbody = document.createElement('tbody');
   let i = 0;
   for (const c of shown) {
     i += 1;
-    const open = !!(expandedIds && expandedIds.has(c.id));
-    const spied = spiedByPlayer ? spiedByPlayer[c.id] : undefined;
-    let stale = false;
-    if (spied) {
-      for (const ts of Object.values(spied)) {
-        if (ageMs(ts, nowMs) > STALE_MS) { stale = true; break; }
+    const est = estimates ? estimates[c.id] : undefined;
+    const planets = playerPlanets(universePlanets, c.id);
+    const reports = reportsByPlayer ? reportsByPlayer[c.id] : undefined;
+
+    // Per-row scan summary: worst status across the player's reports (rescan >
+    // stale > fresh; none = nothing spied) + the oldest report's age.
+    let worst = /** @type {'none'|'fresh'|'stale'|'rescan'} */ ('none');
+    let oldestTs = Infinity;
+    if (reports) {
+      for (const coord of Object.keys(reports)) {
+        const st = scanStatus({
+          reportTsSec: reports[coord].ts,
+          nowMs,
+          rescanAtMs: rescanAtFor(rescan, c.id, coord),
+        });
+        if (st === 'rescan') worst = 'rescan';
+        else if (st === 'stale' && worst !== 'rescan') worst = 'stale';
+        else if (st === 'fresh' && worst === 'none') worst = 'fresh';
+        const ts = reports[coord].ts;
+        if (ts && ts < oldestTs) oldestTs = ts;
       }
     }
+    const oldestAgeMs = Number.isFinite(oldestTs) ? nowMs - oldestTs * 1000 : NaN;
+    const total = est && typeof est.planetCount === 'number' ? est.planetCount : planets.length;
+    const spied = est ? est.spiedCount : 0;
+
+    const open = !!(expandedIds && expandedIds.has(c.id));
     const detail = detailRow({
-      playerId: c.id,
-      planets: playerPlanets(universePlanets, c.id),
-      spied,
-      nowMs,
-      probes,
-      gameHref,
-      colspan: 8,
-      open,
+      playerId: c.id, planets, reports, rescan, nowMs, onRescan, colspan: COLSPAN, open,
     });
 
     const tr = document.createElement('tr');
-    tr.appendChild(starCell(c.id, !!(watchedIds && watchedIds.has(c.id)), onToggleWatch));
+    tr.appendChild(chipCell(c.id, !!(watchedIds && watchedIds.has(c.id)), onToggleWatch, onRescan));
     tr.appendChild(cell(String(i), { align: 'right', color: '#666' }));
     tr.appendChild(playerCell(c.name || `#${c.id}`, open, detail, () => {
       if (onToggleExpand) onToggleExpand(c.id);
     }));
-    tr.appendChild(
-      cell(typeof c.totalRank === 'number' ? `#${c.totalRank}` : '—', {
-        align: 'right',
-        color: '#888',
-      }),
-    );
-    tr.appendChild(cell(fmt(c.totalScore), { align: 'right' }));
-    tr.appendChild(cell(fmt(c.militaryScore), { align: 'right', color: '#e3e3e3' }));
-    tr.appendChild(
-      cell(typeof c.militaryRank === 'number' ? `#${c.militaryRank}` : '—', {
-        align: 'right',
-        color: '#888',
-      }),
-    );
-    tr.appendChild(hiddenCell(estimates ? estimates[c.id] : undefined, maxHidden, stale));
+    tr.appendChild(highscoreCell(c));
+    tr.appendChild(militaryCell(c));
+    tr.appendChild(pointsCell(est ? est.defensePoints : null));
+    tr.appendChild(pointsCell(est ? est.visibleFleetPoints : null));
+    tr.appendChild(hiddenCell(est, maxHidden));
+    tr.appendChild(scannedCell(worst, oldestAgeMs));
+    tr.appendChild(coverageCell(spied, total));
     tbody.appendChild(tr);
     tbody.appendChild(detail);
   }
@@ -508,7 +614,7 @@ export function renderTargets({
   containerEl.appendChild(table);
 
   if (countInfoEl) {
-    const noun = watchedOnly ? 'watched' : 'targets in range';
+    const noun = watchedOnly ? 'on scan list' : 'targets in range';
     countInfoEl.textContent = `${list.length} ${noun} · showing ${shown.length}`;
   }
 }

@@ -100,6 +100,8 @@ export const SHIP_LARGE_CARGO = 203;
 export const SHIP_PATHFINDER = 219;
 /** Colony ship (Statek kolonizacyjny) — the one a colonize mission needs. */
 export const SHIP_COLONY = 208;
+/** Espionage probe (Sonda szpiegowska) — the ship an espionage mission sends. */
+export const SHIP_ESPIONAGE_PROBE = 210;
 
 /**
  * Mobile ships selectable for a Daily Run route fleet, in display order

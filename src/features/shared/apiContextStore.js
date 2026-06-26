@@ -13,6 +13,7 @@
 
 /** @typedef {import('../../domain/apiOccupancy.js').OccupancyIndex} OccupancyIndex */
 /** @typedef {import('../../domain/apiOccupancy.js').ServerData} ServerData */
+/** @typedef {import('../../domain/apiOccupancy.js').ApiPlanet} ApiPlanet */
 
 /**
  * The slice of `features/apiContext`'s built context the picker reads. Typed
@@ -21,7 +22,7 @@
  * whole-universe free-slot count needs. The producer may attach more fields
  * (military, builtAt, …) — they're simply not part of this read contract.
  *
- * @typedef {{ index: OccupancyIndex, server?: ServerData }} ApiContextHandoff
+ * @typedef {{ index: OccupancyIndex, server?: ServerData, universePlanets?: ApiPlanet[] }} ApiContextHandoff
  */
 
 /** @type {ApiContextHandoff | null} */
