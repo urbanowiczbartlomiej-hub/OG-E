@@ -22,13 +22,23 @@ grounded in file:line so any session can pick it up cold.
   magnitude (`heatColor(-frac)`, per-view max → grey→red). Sort persisted
   device-local in `oge_targetPrefs` (default = hidden-fleet desc).
 
-**DONE (built + typecheck/lint/build clean; awaiting browser verify):**
-
 - **M4** — watch-list. ⭐/☆ toggle column (leftmost) per row; "⭐ only" filter
   checkbox in the controls. Watched player ids are a per-universe device-local
   Set (`<universeId>:oge_watchedPlayers`, `safeLS`), loaded on boot + on universe
   switch, mutated in place, persisted on toggle → `repaintTargets`. Star = gold
   `★`, unwatched = grey `☆`.
+
+**DONE (built + typecheck/lint/build clean; awaiting browser verify):**
+
+- **M5** — spy deep-link buttons. Click a player → expandable detail row listing
+  their planets (pure `playerPlanets` parses `universe.planets` by owner id),
+  each un-spied body a `Spy N` `<a>` opening the in-game fleet dispatch pre-armed
+  (pure `spyMissionUrl` → `mission:6 type:1 am210:N`; user presses send). Bodies
+  with a report on file show ✓; a "next un-spied" quick link heads the list.
+  Probe count is a controls input (default 20). Game origin derived from
+  `apiCache.server.data.domain` (fallback `<universeId>.ogame.gameforge.com`) —
+  NOT the extension origin. Expansion state is an ephemeral in-memory Set
+  (`expandedTargets`), survives repaints, not persisted.
 
 **Reused** (no new network fetching): `features/apiContext` cache
 (`players`/`total`/`military`/`universe.xml`), dashboard render scaffolding.
@@ -83,7 +93,13 @@ on toggle → `repaintTargets`). ⭐/☆ toggle column + "⭐ only" filter check
 **Decision:** `safeLS` (per the cited expandedGalaxies pattern), not a reactive
 store — only the dashboard touches it, so a store would be pure overhead.
 
-### M5 — Spy deep-link buttons (per-position confirm)  *(do next)*
+### M5 — Spy deep-link buttons (per-position confirm)  ✅ DONE
+
+Shipped as described below. **Resolved decisions:** game origin = serverData
+`<domain>` with `<universeId>.ogame.gameforge.com` fallback (didn't need
+`serverData.domain` at a call site — it's already in the cache); `universe.xml`
+occupancy was enough (no per-player `playerData.xml` fetch). Expansion state is
+ephemeral (not persisted). Original spec retained below for reference:
 
 Send 20 probes to each of a target's planets — one click per body (locked:
 per-position confirm, planets-only).
@@ -115,12 +131,10 @@ per-position confirm, planets-only).
 
 ## Open decisions
 
-- M5 link base-origin (dashboard ≠ game origin) — universe-id-derived vs
-  `serverData.domain`.
 - `api/playerData.xml?id=` (fresh per-player planets incl. moons) vs
-  `universe.xml` occupancy (cached, weekly) — `universe.xml` is enough for M5;
-  add `playerData` only if we want moons / freshness.
-- Watch-list scope: device-local (default) vs gist-synced (later).
+  `universe.xml` occupancy (cached, weekly) — `universe.xml` was enough through
+  M5; add `playerData` only if M6 wants moons / freshness.
+- Watch-list scope: device-local (shipped) vs gist-synced (later).
 
 ## Test reconciliation (at release — `npm run test` green is the AMO gate)
 

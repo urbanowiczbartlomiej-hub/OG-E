@@ -173,6 +173,45 @@ export function sortTargetList(list, key, dir = 'desc', hiddenById = {}) {
 }
 
 /**
+ * A planet position parsed from the universe occupancy snapshot.
+ * @typedef {object} PlanetPos
+ * @property {number} galaxy
+ * @property {number} system
+ * @property {number} position
+ */
+
+/**
+ * Enumerate a player's planet positions from the universe.xml occupancy
+ * snapshot. Pure: filter the `{coords, player}` rows by owner id, parse each
+ * `coords` ("g:s:p") into numbers, drop anything malformed, and return them
+ * ordered galaxy→system→position for a stable display. Planets only — moons
+ * are `<moon>` children the snapshot parser doesn't surface, matching the
+ * planets-only spy decision.
+ *
+ * @param {Array<{coords: string, player?: number}>} universePlanets
+ * @param {string} playerId
+ * @returns {PlanetPos[]}
+ */
+export function playerPlanets(universePlanets, playerId) {
+  /** @type {PlanetPos[]} */
+  const out = [];
+  for (const pl of universePlanets || []) {
+    if (!pl || pl.player == null || String(pl.player) !== playerId) continue;
+    const parts = String(pl.coords).split(':');
+    if (parts.length !== 3) continue;
+    const galaxy = Number(parts[0]);
+    const system = Number(parts[1]);
+    const position = Number(parts[2]);
+    if (!Number.isFinite(galaxy) || !Number.isFinite(system) || !Number.isFinite(position)) {
+      continue;
+    }
+    out.push({ galaxy, system, position });
+  }
+  out.sort((a, b) => a.galaxy - b.galaxy || a.system - b.system || a.position - b.position);
+  return out;
+}
+
+/**
  * Minimal shape of a players.xml row (name + status + alliance).
  * @typedef {object} ApiPlayerLite
  * @property {string} [name]

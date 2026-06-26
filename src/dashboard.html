@@ -594,13 +594,15 @@
 
   <div class="subtabpane" data-subtab="targets">
     <div class="sub-section">
-    <h2>🎯 Targets — hidden fleet<span class="exp-badge" title="Estimates and espionage sending are still being built — this first cut lists the viable targets and their military points.">experimental</span></h2>
+    <h2>🎯 Targets — hidden fleet<span class="exp-badge" title="Hidden-fleet estimates depend on how much you've spied; treat them as a guide, not gospel.">experimental</span></h2>
     <p style="color:#888;font-size:13px;margin-bottom:16px;">
       Active players in this universe — vacation, banned, your own alliance and anyone outside
       attack range (noob protection, ±5× your points) are excluded — ranked by military points.
-      The <strong style="color:#ccc;">hidden-fleet</strong> estimate (military points minus spied
-      defense) fills in once espionage-report reading is added. Data is read from OGame's public
-      API, fetched in-game — open the galaxy view once to populate it.
+      The <strong style="color:#ccc;">hidden-fleet</strong> estimate is their military points minus
+      the defense + visible fleet you've spied; open the in-game Espionage tab to feed it.
+      Click a player to list their planets and open a pre-armed <strong style="color:#ccc;">Spy</strong>
+      fleet (you press send). Data is read from OGame's public API, fetched in-game — open the galaxy
+      view once to populate it.
     </p>
     <div class="controls">
       <label>Min. military:</label>
@@ -615,6 +617,9 @@
       <label style="cursor:pointer;" title="Show only players you've starred (⭐) in the table.">
         <input type="checkbox" id="tgtWatchedOnly"> ⭐ only
       </label>
+      <label>Probes:</label>
+      <input id="tgtProbes" type="number" min="1" max="9999" value="20" size="4"
+        title="How many espionage probes the Spy links pre-arm.">
       <span id="tgtCountInfo" style="color:#888;font-size:13px;margin-left:auto;"></span>
     </div>
     <div id="targetsContainer"></div>

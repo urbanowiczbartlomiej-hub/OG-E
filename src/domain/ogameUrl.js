@@ -41,3 +41,31 @@ export const ingameComponentUrl = (href, component, params = {}) => {
   for (const [key, value] of Object.entries(params)) url += `&${key}=${value}`;
   return url;
 };
+
+/**
+ * Build a fleet-dispatch URL pre-armed to send espionage probes to one planet.
+ * Opening it lands the player on the in-game fleet dispatch already targeted at
+ * the coords with the probe count filled in — the USER still presses send (no
+ * auto-dispatch; see docs/fair-play.md). Params: `type:1` = planet,
+ * `mission:6` = espionage (domain/rules.js `MISSION_ESPIONAGE` — kept a literal
+ * here so this pure URL module stays import-free for the bridges), `am210` =
+ * espionage-probe ship id × count.
+ *
+ * NOTE: `gameHref` must be a URL on the TARGET universe's own origin, not the
+ * dashboard's extension origin — derive it from the selected universe / server
+ * domain at the call site.
+ *
+ * @param {string} gameHref  A full in-game URL on the target universe's origin.
+ * @param {{ galaxy: number, system: number, position: number }} coords
+ * @param {number} probes    Espionage probes to pre-arm.
+ * @returns {string}
+ */
+export const spyMissionUrl = (gameHref, { galaxy, system, position }, probes) =>
+  ingameComponentUrl(gameHref, 'fleetdispatch', {
+    galaxy,
+    system,
+    position,
+    type: 1,
+    mission: 6,
+    am210: probes,
+  });

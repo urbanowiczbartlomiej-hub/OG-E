@@ -117,6 +117,15 @@ const watchedKeyFor = (/** @type {string} */ universeId) =>
 /** @type {Set<string>} Watched player ids for the selected universe. */
 const watchedPlayers = new Set();
 
+/**
+ * Player ids whose Targets detail row (planets + spy links) is expanded.
+ * Ephemeral session state — not persisted (re-deriving it on reload would mean
+ * re-opening rows the user has since closed). Mutated in place so expansion
+ * survives a repaint.
+ * @type {Set<string>}
+ */
+const expandedTargets = new Set();
+
 // localStorage key for the active dashboard tab. Per-device UI prefs.
 // Possible values are the `data-tab` attributes from dashboard.html:
 // `'colony'`, `'alarmClock'`, `'routes'`. Anything unrecognised — including the
@@ -297,6 +306,7 @@ const expandedGalaxies = new Set();
 /** @type {HTMLInputElement} */ let tgtMinMilitary;
 /** @type {HTMLSelectElement} */ let tgtLimit;
 /** @type {HTMLInputElement | null} */ let tgtWatchedOnly;
+/** @type {HTMLInputElement | null} */ let tgtProbes;
 /** @type {HTMLElement | null} */ let tgtCountInfoEl;
 
 /** The 5 neighbourhood factors users can tune via sliders. */
@@ -555,6 +565,7 @@ const wireDom = () => {
   tgtMinMilitary = /** @type {HTMLInputElement} */ (document.getElementById('tgtMinMilitary'));
   tgtLimit = /** @type {HTMLSelectElement} */ (document.getElementById('tgtLimit'));
   tgtWatchedOnly = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtWatchedOnly'));
+  tgtProbes = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtProbes'));
   tgtCountInfoEl = document.getElementById('tgtCountInfo');
   for (const k of WEIGHT_FIELDS) {
     const s = document.getElementById(`freeW_${k}`);
@@ -903,10 +914,15 @@ const repaintTargets = () => {
   const ownTotalScore = ownId && totalRanks ? totalRanks[ownId]?.score : undefined;
   const ownAlliance = ownId && apiPlayers ? apiPlayers[ownId]?.alliance : undefined;
 
-  // Per-player hidden-fleet estimate, for players we've opened reports on.
+  // Per-player hidden-fleet estimate (for players we've opened reports on) +
+  // the set of already-spied planet coords per player (drives the ✓ marker and
+  // the "next un-spied" link in the expandable detail row). The report key is a
+  // bodyKey "g:s:p:type"; strip the trailing ":type" to get the "g:s:p" coord.
   const military = apiCache.military ? apiCache.military.ranks : {};
   /** @type {Record<string, import('../../domain/threatModel.js').HiddenFleetEstimate>} */
   const estimates = {};
+  /** @type {Record<string, Set<string>>} */
+  const spiedByPlayer = {};
   for (const pid of Object.keys(targetReports)) {
     const bucket = targetReports[pid];
     const reports = bucket ? Object.values(bucket) : [];
@@ -916,6 +932,12 @@ const repaintTargets = () => {
       reports,
       planetCount: planetCountByPlayer[pid],
     });
+    const coords = new Set();
+    for (const key of Object.keys(bucket)) {
+      const lastColon = key.lastIndexOf(':');
+      coords.add(lastColon >= 0 ? key.slice(0, lastColon) : key);
+    }
+    spiedByPlayer[pid] = coords;
   }
 
   renderTargets({
@@ -934,8 +956,34 @@ const repaintTargets = () => {
     watchedIds: watchedPlayers,
     onToggleWatch: toggleWatched,
     watchedOnly: !!tgtWatchedOnly?.checked,
+    universePlanets: apiCache.universe ? apiCache.universe.planets : [],
+    spiedByPlayer,
+    probes: Number(tgtProbes?.value) || 20,
+    gameHref: targetGameHref(),
+    expandedIds: expandedTargets,
+    onToggleExpand: (id) => {
+      if (expandedTargets.has(id)) expandedTargets.delete(id);
+      else expandedTargets.add(id);
+    },
     countInfoEl: tgtCountInfoEl,
   });
+};
+
+/**
+ * In-game URL base for the SELECTED universe — the origin spy deep-links must
+ * point at. The dashboard runs on the extension origin, so `location.href` is
+ * useless here; prefer the server's own `<domain>` from the cached serverData,
+ * falling back to the canonical `<universeId>.ogame.gameforge.com` host. Returns
+ * '' when neither is known (links then render as muted, non-clickable text).
+ *
+ * @returns {string}
+ */
+const targetGameHref = () => {
+  const domain = apiCache.server?.data?.domain;
+  const host = domain || (selectedUniverseId
+    ? `${selectedUniverseId}.ogame.gameforge.com`
+    : '');
+  return host ? `https://${host}/game/index.php` : '';
 };
 
 /**
@@ -1166,6 +1214,7 @@ const wireListeners = () => {
   tgtMinMilitary.addEventListener('change', repaintTargets);
   tgtLimit.addEventListener('change', repaintTargets);
   tgtWatchedOnly?.addEventListener('change', repaintTargets);
+  tgtProbes?.addEventListener('change', repaintTargets);
 
   // Region controls only repaint the settlement-regions block. The
   // underlying `scans` cache hasn't changed — only the slots/tolerance
