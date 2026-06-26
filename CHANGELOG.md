@@ -4,6 +4,46 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.31.0] — 2026-06-26
+
+### Added
+
+- **New "Spyglass" tab — find who's hiding their fleet.** A universe-wide board
+  of active players ranked by military points, with an estimate of how much fleet
+  each one is *hiding* (their military score minus the defence and visible fleet
+  you've actually spied). The estimate is broken out into **Defence / Visible /
+  Hidden** columns, with **Coverage** (how many of their planets you've scanned)
+  and **Scanned** (how fresh your intel is — green when recent, amber when older
+  than a week). Open a player to see their planets laid out in a responsive grid:
+  each one shows when it was last scanned plus the defence and fleet found there,
+  or "needs scan" if you've never looked. Built-in filters let you set a military
+  range, widen or switch off the noob-protection band, and include vacationing /
+  inactive / banned players — so you decide who shows up instead of OG-E hiding
+  them silently.
+- **One-tap espionage scanning from in-game.** Hit **+ scan** on a player to drop
+  them onto a new floating **Spy** button that appears in-game only when you have
+  targets to scan. Each tap sends espionage probes to that player's next planet
+  (un-scanned, or stale, or one you flagged) and steps to the next — you press
+  send each time, nothing is automated — and once everything's scanned it offers
+  a jump to your messages to read the reports. Use **↻** in the dashboard to mark
+  a player or a single planet for a re-scan when you think their fleet has moved.
+
+### Changed
+
+- **Colony Scout's top-region summary is now a row of stat cards.** The dense
+  one-line readout (active / farmable / vacation / bandits / honoured / nearest
+  colony …) became colour-coded cards — the same look as the "Scanned data" tab —
+  with threats in red/orange, farm value in gold/green, and bandits broken out by
+  tier (King / Lord / Bandit). Hover any card for the detail.
+- **Multi-device sync is quieter and faster.** OGame reloads the page on every
+  click, and the old sync re-checked the cloud on each load and polled every few
+  minutes — wasteful, and with two tabs open it could burn through the request
+  quota. Now a tab only pulls when something actually changed (a sibling tab or
+  device left a marker, or you've been away a while), and two tabs on the same
+  machine sync the instant one of them writes — with no extra network calls. Your
+  explicit "Sync now" and the dashboard's clear/tombstone still force a full
+  round-trip.
+
 ## [1.30.13] — 2026-06-25
 
 ### Added
