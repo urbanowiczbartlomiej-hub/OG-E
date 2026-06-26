@@ -35,3 +35,35 @@ export const makeLegendSwatch = (color, label, opts = {}) => {
   item.append(dot, txt);
   return item;
 };
+
+/**
+ * Build one stat card — a coloured value over a muted label. Used by the
+ * galaxy "Scanned data" stats row (`galaxy.js`) and the Colony-Scout top-region
+ * neighbourhood stats (`freeStreak.js`); shared so the two read identically.
+ * Relies on the `.stat-card` / `.stat-value` / `.stat-label` classes in
+ * `dashboard.html`; only the value colour (per status) is set inline.
+ *
+ * @param {string} color  Value colour (the status colour).
+ * @param {string | number} value  The count (or a short string like `#3` / `56/56`).
+ * @param {string} label  The status label.
+ * @param {string} [title]  Optional hover tooltip on the whole card.
+ * @returns {HTMLDivElement}
+ */
+export const makeStatCard = (color, value, label, title) => {
+  const card = document.createElement('div');
+  card.className = 'stat-card';
+  if (title) card.title = title;
+
+  const valEl = document.createElement('div');
+  valEl.className = 'stat-value';
+  valEl.style.color = color;
+  valEl.textContent = String(value);
+  card.appendChild(valEl);
+
+  const labEl = document.createElement('div');
+  labEl.className = 'stat-label';
+  labEl.textContent = label;
+  card.appendChild(labEl);
+
+  return card;
+};

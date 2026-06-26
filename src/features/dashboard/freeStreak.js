@@ -53,7 +53,7 @@ import {
   STATUS_COLORS, STATUS_LABELS, STRENGTH_COLORS, STRENGTH_LABELS,
   HONOR_COLORS, HONOR_TIER_LABELS, UNSCANNED_COLOR, heatColor,
 } from './palette.js';
-import { makeLegendSwatch } from './legend.js';
+import { makeLegendSwatch, makeStatCard } from './legend.js';
 
 /**
  * @typedef {import('../../state/scans.js').GalaxyScans} GalaxyScans
@@ -460,58 +460,91 @@ const buildTable = (results, ownRank) => {
 };
 
 /**
- * One-line neighbourhood summary from a {@link RegionScore}. Shared by the
- * streak record and the neighbourhood detail panel. `coverage` prepends the
- * "N/M sys scanned" fragment — useful for a streak region (whose span is
- * partly scanned) but noise for a neighbourhood window over API-complete data.
+ * The neighbourhood {@link RegionScore} as a wrapping row of stat cards (same
+ * look as the galaxy "Scanned data" tab) — replaces the old dense one-liner.
+ * Each meaningful metric becomes a colour-coded card (threats red/orange, farm
+ * value gold/green, neutral counts grey-blue), shown only when non-zero, with
+ * the detail in the card tooltip.
  *
  * @param {RegionScore} s
  * @param {number} [ownRank]
- * @param {{ coverage?: boolean }} [o]
- * @returns {string}
+ * @returns {HTMLElement}
  */
-const scoreLineText = (s, ownRank, { coverage = true } = {}) => {
-  const parts = [];
-  if (coverage) {
-    const cov = s.scanned === s.systemCount ? `all ${s.systemCount}` : `${s.scanned}/${s.systemCount}`;
-    parts.push(`${cov} sys scanned`);
+const buildScoreCards = (s, ownRank) => {
+  /** @type {Array<{ value: string|number, label: string, color: string, title?: string }>} */
+  const cards = [];
+  const NEUTRAL = '#9fb4c4';
+
+  if (s.occupied) {
+    cards.push({ value: s.occupied, label: 'Active', color: STRENGTH_COLORS.normal, title: 'Active occupants in range — how crowded it is' });
   }
-  if (s.occupied || s.inactive || s.vacation) {
-    const nbParts = [];
-    if (s.occupied) nbParts.push(`${s.occupied} active`);
-    if (s.inactive) nbParts.push(`${s.inactive} farmable`);
-    if (s.vacation) nbParts.push(`${s.vacation} vacation`);
-    parts.push(nbParts.join(' · '));
+  if (s.inactive) {
+    cards.push({ value: s.inactive, label: 'Farmable', color: STATUS_COLORS.inactive, title: 'Inactive players — farm targets that cannot defend' });
   }
-  if (s.allianceCount) parts.push(`${s.allianceCount} alliance${s.allianceCount > 1 ? 's' : ''}`);
-  if (s.bandits || s.honored) {
-    const honor = [];
-    if (s.bandits) honor.push(`${s.bandits}× bandit${s.bandits > 1 ? 's' : ''} ${'★'.repeat(s.banditMaxLevel)}`);
-    if (s.honored) honor.push(`${s.honored}× honored ${'★'.repeat(s.honoredMaxLevel)}`);
-    parts.push(honor.join(', '));
+  if (s.vacation) {
+    cards.push({ value: s.vacation, label: 'Vacation', color: STATUS_COLORS.vacation, title: 'On vacation or banned — protected, neither farm nor threat' });
   }
-  const threats = [];
-  if (s.strong) threats.push(`${s.strong} strong`);
-  if (s.activeOnVacation) threats.push(`${s.activeOnVacation} active-on-vac`);
-  if (threats.length) parts.push(threats.join(', '));
-  const social = [];
-  if (s.allyNearby) social.push(`${s.allyNearby} ally`);
-  if (s.buddy) social.push(`${s.buddy} buddy`);
-  if (s.outlaw) social.push(`${s.outlaw} outlaw`);
-  if (s.newbie) social.push(`${s.newbie} newbie`);
-  if (social.length) parts.push(social.join(', '));
+  if (s.allianceCount) {
+    cards.push({ value: s.allianceCount, label: s.allianceCount === 1 ? 'Alliance' : 'Alliances', color: '#4a9eff', title: 'Distinct alliance tags in range' });
+  }
+  if (s.honored) {
+    cards.push({
+      value: s.honored,
+      label: `Honored${s.honoredMaxLevel ? ` ${'★'.repeat(s.honoredMaxLevel)}` : ''}`,
+      color: HONOR_COLORS.honored,
+      title: 'Positive-honour fighters — prefer stronger targets than a fresh colony',
+    });
+  }
+  // Bandit aggressors, broken out by tier (King → Lord → Bandit) — the danger
+  // signal for a new colony.
+  for (const t of [3, 2, 1]) {
+    const n = s.banditTiers?.[t];
+    if (n) {
+      cards.push({
+        value: n,
+        label: HONOR_TIER_LABELS.bandit[t],
+        color: HONOR_COLORS.bandit,
+        title: 'Negative-honour aggressor — a danger for a fresh colony',
+      });
+    }
+  }
+  if (s.strong) {
+    cards.push({ value: s.strong, label: 'Strong', color: STRENGTH_COLORS.strong, title: 'Outside your protection bracket — out-gun a fresh colony' });
+  }
+  if (s.activeOnVacation) {
+    cards.push({ value: s.activeOnVacation, label: 'Active-on-vac', color: '#e0a020', title: 'A live player hiding behind vacation mode — not a safe farm' });
+  }
+  if (s.honorable) {
+    cards.push({ value: s.honorable, label: 'Honorable', color: STRENGTH_COLORS.honorable, title: 'A fair fight — attacking earns honour' });
+  }
+  if (s.normal) {
+    cards.push({ value: s.normal, label: 'Normal', color: STRENGTH_COLORS.normal, title: 'Plain "white" farm targets' });
+  }
+  if (s.newbie) {
+    cards.push({ value: s.newbie, label: 'Weak', color: STRENGTH_COLORS.weak, title: 'Noob-protected — cannot be raided' });
+  }
+  if (s.allyNearby) cards.push({ value: s.allyNearby, label: 'Ally', color: '#5a8f5a', title: 'Players in your alliance' });
+  if (s.buddy) cards.push({ value: s.buddy, label: 'Buddy', color: '#5a8f5a', title: 'Players on your buddy list' });
+  if (s.outlaw) cards.push({ value: s.outlaw, label: 'Outlaw', color: '#e0a020', title: 'Lost protection by raiding the weak — fair game' });
   if (s.ranks.length) {
     const top = s.ranks[0];
-    let rel = '';
+    let rel = `highscore rank #${top}`;
     if (typeof ownRank === 'number' && ownRank > 0) {
       const d = ownRank - top;
-      rel = d > 0 ? ` (${d} above you)` : d < 0 ? ` (${-d} below you)` : ' (your rank)';
+      rel = d > 0 ? `${d} ranks above you` : d < 0 ? `${-d} ranks below you` : 'the same rank as you';
     }
-    parts.push(`top neighbour rank #${top}${rel}`);
+    cards.push({ value: `#${top}`, label: 'Top rank', color: NEUTRAL, title: rel });
   }
-  if (Number.isFinite(s.mineMinDist)) parts.push(`${s.mineMinDist} sys to nearest colony`);
-  else parts.push('no colony in this galaxy yet');
-  return parts.join(' · ');
+  if (Number.isFinite(s.mineMinDist)) {
+    cards.push({ value: s.mineMinDist, label: 'Sys to colony', color: NEUTRAL, title: 'Systems to your nearest colony in this galaxy' });
+  } else {
+    cards.push({ value: '—', label: 'No colony yet', color: NEUTRAL, title: 'You have no colony in this galaxy yet' });
+  }
+
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;margin:12px 0;';
+  for (const c of cards) row.appendChild(makeStatCard(c.color, c.value, c.label, c.title));
+  return row;
 };
 
 /** The red↔grey↔green ramp legend for the heat strip. */
@@ -669,46 +702,9 @@ const buildDetail = (region, scans, { mode, weights, players, ownRank }) => {
 
   const s = region.score;
   if (s) {
-    const scoreLine = document.createElement('div');
-    scoreLine.className = 'streak-score';
-    scoreLine.textContent = scoreLineText(s, ownRank, { coverage: !nbr });
-    el.appendChild(scoreLine);
-
-    // Target breakdown by NoobProtection band — honorable / weak / strong
-    // occupants in range. All 0 without a joined player cache, so the line
-    // simply doesn't appear then.
-    const targetBits = [];
-    if (s.honorable) targetBits.push(`${s.honorable} honorable`);
-    if (s.normal) targetBits.push(`${s.normal} normal`);
-    if (s.newbie) targetBits.push(`${s.newbie} weak`);
-    if (s.strong) targetBits.push(`${s.strong} strong`);
-    if (targetBits.length) {
-      const targets = document.createElement('div');
-      targets.style.cssText = 'color:#9fb8c9;font-size:12px;margin-top:2px;';
-      targets.textContent = '🎯 Targets: ' + targetBits.join(' · ');
-      el.appendChild(targets);
-    }
-
-    // Bandit (negative-honour aggressor) breakdown by tier — the danger signal
-    // for a fresh colony, counted SEPARATELY from the target bands. Highest
-    // tier first (Bandit King → Bandit). All from per-slot rankClass, so this
-    // shows even without a player cache.
-    const banditBits = [];
-    let banditMaxTier = 0;
-    for (const t of [3, 2, 1]) {
-      const n = s.banditTiers?.[t];
-      if (n) {
-        banditBits.push(`${n} ${HONOR_TIER_LABELS.bandit[t]}`);
-        if (!banditMaxTier) banditMaxTier = t;
-      }
-    }
-    if (banditBits.length) {
-      const bandits = document.createElement('div');
-      bandits.style.cssText = `color:${HONOR_COLORS.bandit};font-weight:700;font-size:12px;margin-top:2px;`;
-      // Lead with "!" marks for the WORST tier present (more = nastier), red.
-      bandits.textContent = `${'!'.repeat(banditMaxTier)} Bandits: ${banditBits.join(' · ')}`;
-      el.appendChild(bandits);
-    }
+    // Neighbourhood score as stat cards (same look as the galaxy Scanned-data
+    // tab) instead of a dense one-liner — sat right above the per-system strip.
+    el.appendChild(buildScoreCards(s, ownRank));
 
     el.appendChild(buildInteractiveStrip(region, scans, { mode, weights, players }));
 

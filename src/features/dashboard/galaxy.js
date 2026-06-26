@@ -35,7 +35,7 @@ import {
 } from './palette.js';
 
 import { buildSystemTooltip } from './systemTooltip.js';
-import { makeLegendSwatch } from './legend.js';
+import { makeLegendSwatch, makeStatCard } from './legend.js';
 
 /**
  * @typedef {import('../../state/scans.js').GalaxyScans} GalaxyScans
@@ -208,35 +208,6 @@ export const renderGalaxyMap = (opts) => {
       }),
     );
   }
-};
-
-/**
- * Build one stat card (coloured value + monochrome label). Relies on
- * the `.stat-card` / `.stat-value` / `.stat-label` classes already
- * defined in `dashboard.html`; only the value colour is set inline
- * because it varies per status.
- *
- * @param {string} color
- * @param {number} value
- * @param {string} label
- * @returns {HTMLDivElement}
- */
-const makeStatCard = (color, value, label) => {
-  const card = document.createElement('div');
-  card.className = 'stat-card';
-
-  const valEl = document.createElement('div');
-  valEl.className = 'stat-value';
-  valEl.style.color = color;
-  valEl.textContent = String(value);
-  card.appendChild(valEl);
-
-  const labEl = document.createElement('div');
-  labEl.className = 'stat-label';
-  labEl.textContent = label;
-  card.appendChild(labEl);
-
-  return card;
 };
 
 /**
