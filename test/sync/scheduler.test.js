@@ -199,11 +199,14 @@ describe('installSync — initial boot', () => {
     expect(() => dispose()).not.toThrow();
   });
 
-  it('boot runs a full round-trip — download then a catch-up upload of stranded local state', async () => {
-    // The on-install kick is now download + catch-up upload (was download-only):
-    // a decision written on a prior page whose 15 s debounced upload was killed
-    // by the game's forced post-send reload would otherwise sit unsynced. Seed
-    // such a decision; the gist has neither it nor our settings yet.
+  it('boot DOWNLOADS but does NOT catch-up upload when nothing is dirty (gated round-trip)', async () => {
+    // The boot is no longer an UNCONDITIONAL download + upload. On a fresh tab
+    // the download still runs (shouldDownloadOnLoad → true: appliedRev is unset
+    // AND lastActiveAt is 0 after the per-test reset), but the catch-up upload
+    // is now gated on the UPLOAD_PENDING dirty flag — a flag set only when a
+    // local write armed an upload. A decision seeded BEFORE install (no
+    // subscription fired, so no dirty flag) must therefore NOT trigger a PATCH:
+    // a plain navigation with nothing pending costs exactly one read, no write.
     colonizeDecisionsStore.set({ '4:30:5': dec(100) });
     /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(
       payload(),
@@ -213,12 +216,37 @@ describe('installSync — initial boot', () => {
     );
     installSync();
     await tick(0);
-    // Two reads: the initial download and the catch-up upload's pre-merge.
+    // One read: the gated boot download. No catch-up upload → no pre-merge read.
+    expect(fetchGistData).toHaveBeenCalledTimes(1);
+    // No dirty flag was set, so the boot performs NO PATCH.
+    expect(writeGistData).not.toHaveBeenCalled();
+  });
+
+  it('boot CATCH-UP UPLOADS stranded local state when the UPLOAD_PENDING dirty flag is set', async () => {
+    // A decision written on a prior page whose 15 s debounced upload was killed
+    // by the game's forced post-send reload leaves behind the UPLOAD_PENDING
+    // dirty flag ('oge_uploadPending' in localStorage — see scheduler.js). On the
+    // next load the boot sees the flag and runs the catch-up upload so that
+    // stranded decision finally reaches the gist. Simulate that: seed both the
+    // stranded decision AND the dirty flag the killed debounce would have left.
+    colonizeDecisionsStore.set({ '4:30:5': dec(100) });
+    localStorage.setItem('oge_uploadPending', '1');
+    /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(
+      payload(),
+    );
+    /** @type {import('vitest').Mock} */ (writeGistData).mockResolvedValue(
+      undefined,
+    );
+    installSync();
+    await tick(0);
+    // Two reads: the gated boot download and the catch-up upload's pre-merge.
     expect(fetchGistData).toHaveBeenCalledTimes(2);
     // The catch-up upload PATCHes — local carries a decision the gist lacks.
     expect(writeGistData).toHaveBeenCalledTimes(1);
     const [[sent]] = /** @type {import('vitest').Mock} */ (writeGistData).mock.calls;
     expect(sent.colonizeDecisionsPerUniverse[UNI]['4:30:5']).toEqual(dec(100));
+    // A successful catch-up clears the dirty flag so the NEXT boot won't re-push.
+    expect(localStorage.getItem('oge_uploadPending')).toBeNull();
   });
 
   it('is idempotent — a second installSync returns the same dispose and does not double-subscribe', async () => {
@@ -228,11 +256,16 @@ describe('installSync — initial boot', () => {
     const dispose1 = installSync();
     const dispose2 = installSync();
     await tick(0);
-    // Second install must reuse the first handle: exactly ONE boot round-trip
-    // (download + catch-up upload = 2 reads), not two installs' worth.
-    expect(fetchGistData).toHaveBeenCalledTimes(2);
+    // Second install must reuse the first handle, not register a second set of
+    // subscriptions + onChanged listener + boot kick. A clean boot with nothing
+    // dirty is download-only, so exactly ONE read — and crucially not TWO (which
+    // is what a double-install's two boot downloads would produce).
+    expect(fetchGistData).toHaveBeenCalledTimes(1);
+    // No dirty flag set → the gated boot performs no catch-up PATCH at all.
+    expect(writeGistData).not.toHaveBeenCalled();
     // Dispose references are the same function — the second install
-    // returned the cached handle.
+    // returned the cached handle (the onChanged listener / store subs were
+    // installed once; disposing once tears everything down).
     expect(dispose2).toBe(dispose1);
   });
 });

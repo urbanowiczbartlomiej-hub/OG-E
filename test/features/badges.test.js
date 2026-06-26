@@ -565,24 +565,45 @@ describe('installBadges — legend portal', () => {
     expect(document.querySelector('.oge-mb-legend')).toBeNull();
   });
 
-  it('resets a lingering legend when #planetList is rebuilt (AJAX swap)', async () => {
+  it('keeps the body-portaled chip across a #planetList rebuild (AJAX swap)', async () => {
     vi.useFakeTimers();
     setupGameDOM();
     installBadges();
     const chip = /** @type {HTMLElement} */ (document.querySelector('.oge-mb-help'));
-    chip.dispatchEvent(new Event('mouseenter'));
-    const legend = /** @type {HTMLElement} */ (document.querySelector('.oge-mb-legend'));
-    expect(legend.style.display).toBe('block');
+    expect(chip).not.toBeNull();
+    expect(chip.parentElement).toBe(document.body); // portaled, not a list child
 
-    // Simulate the swap: the chip is destroyed with the old list, leaving the
-    // body-portaled legend detached. A re-render rebuilds the chip and, finding
-    // none present, calls hideLegend().
-    chip.remove();
+    // OGame AJAX-swaps #planetList. Because the chip lives on <body> (NOT inside
+    // the list), the swap can't destroy it — it survives untouched, so there is
+    // never a duplicate chip and no per-swap rebuild churn.
     document.getElementById('planetList')?.appendChild(document.createElement('div'));
     await vi.advanceTimersByTimeAsync(250);
 
-    expect(document.querySelector('.oge-mb-help')).not.toBeNull(); // chip rebuilt
-    expect(legend.style.display).toBe('none'); // lingering legend reset
+    // Exactly one chip, still the SAME node, still on <body>.
+    expect(document.querySelectorAll('.oge-mb-help').length).toBe(1);
+    expect(document.querySelector('.oge-mb-help')).toBe(chip);
+    expect(chip.parentElement).toBe(document.body);
+    vi.useRealTimers();
+  });
+
+  it('re-attaches the portaled chip if it is detached from <body>', async () => {
+    vi.useFakeTimers();
+    setupGameDOM();
+    installBadges();
+    const chip = /** @type {HTMLElement} */ (document.querySelector('.oge-mb-help'));
+
+    // If something detaches the singleton chip, the next render re-homes the
+    // same element on <body> rather than orphaning it or minting a duplicate.
+    chip.remove();
+    expect(document.querySelector('.oge-mb-help')).toBeNull();
+
+    // Wake a render via an external #planetList mutation.
+    document.getElementById('planetList')?.appendChild(document.createElement('div'));
+    await vi.advanceTimersByTimeAsync(250);
+
+    expect(document.querySelectorAll('.oge-mb-help').length).toBe(1);
+    expect(document.querySelector('.oge-mb-help')).toBe(chip); // same node re-homed
+    expect(chip.parentElement).toBe(document.body);
     vi.useRealTimers();
   });
 });
