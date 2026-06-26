@@ -124,6 +124,55 @@ export function buildTargetList(candidates, opts = {}) {
 }
 
 /**
+ * Re-sort an already-filtered target list by a chosen column, without mutating
+ * the input. The three sortable axes mirror the table columns:
+ *
+ *   - `hiddenFleet` — estimated hidden-fleet points (looked up in
+ *     {@link hiddenById}). Players we haven't spied have no estimate and always
+ *     sink to the bottom regardless of direction, so a known fleet is never
+ *     buried under a wall of un-spied unknowns.
+ *   - `military`    — military highscore score.
+ *   - `totalRank`   — total-highscore position (1 = top).
+ *
+ * Ties (and the un-spied tail under `hiddenFleet`) fall back to the canonical
+ * ranking from {@link buildTargetList}: military score desc, then total score
+ * desc — so the most fleet-potential targets stay clustered at the top.
+ *
+ * @param {TargetCandidate[]} list
+ * @param {'hiddenFleet'|'military'|'totalRank'} key
+ * @param {'asc'|'desc'} [dir]
+ * @param {Record<string, number>} [hiddenById]  playerId → hidden-fleet points.
+ * @returns {TargetCandidate[]}
+ */
+export function sortTargetList(list, key, dir = 'desc', hiddenById = {}) {
+  const factor = dir === 'asc' ? 1 : -1;
+  /** @param {TargetCandidate} c @returns {number | null} */
+  const value = (c) => {
+    if (key === 'hiddenFleet') {
+      const h = hiddenById[c.id];
+      return typeof h === 'number' && Number.isFinite(h) ? h : null;
+    }
+    if (key === 'totalRank') {
+      return typeof c.totalRank === 'number' ? c.totalRank : null;
+    }
+    return typeof c.militaryScore === 'number' ? c.militaryScore : null;
+  };
+  /** @param {TargetCandidate} a @param {TargetCandidate} b */
+  const tiebreak = (a, b) =>
+    (b.militaryScore ?? 0) - (a.militaryScore ?? 0) ||
+    (b.totalScore ?? 0) - (a.totalScore ?? 0);
+  return list.slice().sort((a, b) => {
+    const va = value(a);
+    const vb = value(b);
+    if (va == null && vb == null) return tiebreak(a, b);
+    if (va == null) return 1; // missing value always sinks, either direction
+    if (vb == null) return -1;
+    if (va !== vb) return factor * (va - vb);
+    return tiebreak(a, b);
+  });
+}
+
+/**
  * Minimal shape of a players.xml row (name + status + alliance).
  * @typedef {object} ApiPlayerLite
  * @property {string} [name]

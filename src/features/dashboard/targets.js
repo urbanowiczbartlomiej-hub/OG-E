@@ -2,12 +2,23 @@
 
 // Targets sub-tab renderer (dashboard, "Colonizations" section). Pure DOM
 // factory: given the joined candidate list + the active-target filter options,
-// it filters/sorts via the pure domain `buildTargetList` and paints a ranked
-// table. Read-only and self-contained (inline styles in the dashboard's dark
-// palette) — the hidden-fleet column is a placeholder until espionage-report
-// ingestion lands (Milestone 2).
+// it filters via the pure domain `buildTargetList`, re-sorts by the active
+// column via `sortTargetList`, and paints a ranked table. The hidden-fleet
+// column carries the per-player estimate (from espionage-report ingestion) and
+// is heat-coloured by magnitude; its header (plus Rank / Military) is a
+// clickable sort control. Read-only and self-contained (inline styles in the
+// dashboard's dark palette).
 
-import { buildTargetList } from '../../domain/targets.js';
+import { buildTargetList, sortTargetList } from '../../domain/targets.js';
+import { heatColor } from './palette.js';
+
+/**
+ * @typedef {'hiddenFleet'|'military'|'totalRank'} TargetSortKey
+ * @typedef {{ key: TargetSortKey, dir: 'asc'|'desc' }} TargetSort
+ */
+
+/** Default sort: biggest known hidden fleet first. @type {TargetSort} */
+export const DEFAULT_TARGET_SORT = { key: 'hiddenFleet', dir: 'desc' };
 
 /**
  * @typedef {import('../../domain/targets.js').TargetCandidate} TargetCandidate
@@ -41,20 +52,36 @@ function cell(text, opts = {}) {
 }
 
 /**
- * Build one header cell.
+ * Build one header cell. When `opts.sortKey` + `opts.onSort` are given the
+ * header becomes a clickable sort control: it shows a ▲/▼ arrow and brightens
+ * while it's the active sort, and a click hands its key back to the caller
+ * (which decides the new direction, persists it, and repaints).
  * @param {string} text
  * @param {string} [align]
+ * @param {{ sortKey?: TargetSortKey, sort?: TargetSort, onSort?: (key: TargetSortKey) => void }} [opts]
  * @returns {HTMLTableCellElement}
  */
-function headCell(text, align) {
+function headCell(text, align, opts = {}) {
   const th = document.createElement('th');
-  th.textContent = text;
   th.style.textAlign = align || 'left';
   th.style.color = '#888';
   th.style.fontWeight = 'normal';
   th.style.padding = '6px 8px';
   th.style.borderBottom = '1px solid #333';
   th.style.whiteSpace = 'nowrap';
+  if (opts.sortKey && opts.onSort) {
+    const { sortKey, sort, onSort } = opts;
+    const active = sort != null && sort.key === sortKey;
+    th.dataset.sortKey = sortKey;
+    th.style.cursor = 'pointer';
+    th.style.userSelect = 'none';
+    th.textContent = text + (active ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '');
+    if (active) th.style.color = '#bbb';
+    th.title = `Sort by ${text.toLowerCase()}`;
+    th.addEventListener('click', () => onSort(sortKey));
+  } else {
+    th.textContent = text;
+  }
   return th;
 }
 
@@ -64,15 +91,19 @@ function headCell(text, align) {
  * hidden points, then a muted coverage suffix ("spied/total", ⏱ = provisional),
  * with the full breakdown in the cell tooltip.
  * @param {import('../../domain/threatModel.js').HiddenFleetEstimate | undefined} est
+ * @param {number} maxHidden   Largest hidden-fleet estimate in view (for the heat ramp).
  * @returns {HTMLTableCellElement}
  */
-function hiddenCell(est) {
+function hiddenCell(est, maxHidden) {
   if (!est) return cell('— not spied', { align: 'right', color: '#666' });
   const hidden = Math.round(est.hiddenFleetPoints);
   const td = cell('', { align: 'right' });
   const val = document.createElement('span');
   val.textContent = fmt(hidden);
-  val.style.color = hidden > 0 ? '#e3e3e3' : '#666';
+  // Heat by magnitude: grey for ~0, saturating to red for the biggest fleet in
+  // view. heatColor's negative half (0 → −1) is exactly that grey→red ramp.
+  const frac = maxHidden > 0 ? Math.max(0, Math.min(1, hidden / maxHidden)) : 0;
+  val.style.color = hidden > 0 ? heatColor(-frac) : '#666';
   const cov = document.createElement('span');
   const denom = typeof est.planetCount === 'number' ? `/${est.planetCount}` : '';
   cov.textContent = ` ${est.spiedCount}${denom}${est.provisional ? ' ⏱' : ''}`;
@@ -96,10 +127,21 @@ function hiddenCell(est) {
  * @param {number} [args.limit]                  Max rows to display (0 = all).
  * @param {Record<string, import('../../domain/threatModel.js').HiddenFleetEstimate>} [args.estimates]
  *   Per-player hidden-fleet estimate (keyed playerId), for players with reports.
+ * @param {TargetSort} [args.sort]               Active column sort (default: hidden fleet desc).
+ * @param {(key: TargetSortKey) => void} [args.onSort]  Click handler for a sortable header.
  * @param {HTMLElement | null} [args.countInfoEl]
  * @returns {void}
  */
-export function renderTargets({ containerEl, candidates, opts, limit = 0, estimates, countInfoEl }) {
+export function renderTargets({
+  containerEl,
+  candidates,
+  opts,
+  limit = 0,
+  estimates,
+  sort = DEFAULT_TARGET_SORT,
+  onSort,
+  countInfoEl,
+}) {
   containerEl.textContent = '';
 
   if (!candidates || candidates.length === 0) {
@@ -114,7 +156,22 @@ export function renderTargets({ containerEl, candidates, opts, limit = 0, estima
     return;
   }
 
-  const list = buildTargetList(candidates, opts);
+  // Hidden-fleet magnitude per id (for both the sort key and the heat ramp).
+  /** @type {Record<string, number>} */
+  const hiddenById = {};
+  let maxHidden = 0;
+  if (estimates) {
+    for (const id of Object.keys(estimates)) {
+      const pts = estimates[id].hiddenFleetPoints;
+      if (typeof pts === 'number' && Number.isFinite(pts)) {
+        hiddenById[id] = pts;
+        if (pts > maxHidden) maxHidden = pts;
+      }
+    }
+  }
+
+  const filtered = buildTargetList(candidates, opts);
+  const list = sortTargetList(filtered, sort.key, sort.dir, hiddenById);
   const shown = limit > 0 ? list.slice(0, limit) : list;
 
   const table = document.createElement('table');
@@ -124,13 +181,15 @@ export function renderTargets({ containerEl, candidates, opts, limit = 0, estima
 
   const thead = document.createElement('thead');
   const hr = document.createElement('tr');
+  /** @param {TargetSortKey} key */
+  const sortable = (key) => ({ sortKey: key, sort, onSort });
   hr.appendChild(headCell('#', 'right'));
   hr.appendChild(headCell('Player'));
-  hr.appendChild(headCell('Rank', 'right'));
+  hr.appendChild(headCell('Rank', 'right', sortable('totalRank')));
   hr.appendChild(headCell('Points', 'right'));
-  hr.appendChild(headCell('Military', 'right'));
+  hr.appendChild(headCell('Military', 'right', sortable('military')));
   hr.appendChild(headCell('Mil. rank', 'right'));
-  hr.appendChild(headCell('Hidden fleet', 'right'));
+  hr.appendChild(headCell('Hidden fleet', 'right', sortable('hiddenFleet')));
   thead.appendChild(hr);
   table.appendChild(thead);
 
@@ -155,7 +214,7 @@ export function renderTargets({ containerEl, candidates, opts, limit = 0, estima
         color: '#888',
       }),
     );
-    tr.appendChild(hiddenCell(estimates ? estimates[c.id] : undefined));
+    tr.appendChild(hiddenCell(estimates ? estimates[c.id] : undefined, maxHidden));
     tbody.appendChild(tr);
   }
   table.appendChild(tbody);

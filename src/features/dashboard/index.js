@@ -49,7 +49,7 @@ import { parseTargetPositions } from '../../domain/histogram.js';
 import { populatePositionFilter, renderColonyChart } from './colony.js';
 import { renderGalaxyMap } from './galaxy.js';
 import { renderFreeRegions } from './freeStreak.js';
-import { renderTargets } from './targets.js';
+import { renderTargets, DEFAULT_TARGET_SORT } from './targets.js';
 import { STRATEGIES } from '../../domain/regions.js';
 import { buildOccupancyIndex, buildScanMapFromIndex } from '../../domain/apiOccupancy.js';
 import { buildTargetCandidates } from '../../domain/targets.js';
@@ -98,6 +98,13 @@ const EXPANDED_LS_KEY = 'oge_expandedGalaxies';
 
 // Colony Scout control preferences — persisted so selections survive page reload.
 const SCOUT_PREFS_KEY = 'oge_colonyScoutPrefs';
+
+// Targets sub-tab preferences (currently just the chosen column sort) —
+// device-local, survives reload. Keyed separately from the Scout prefs above.
+const TARGET_PREFS_KEY = 'oge_targetPrefs';
+
+/** @type {import('./targets.js').TargetSort} */
+let targetSort = { ...DEFAULT_TARGET_SORT };
 
 // localStorage key for the active dashboard tab. Per-device UI prefs.
 // Possible values are the `data-tab` attributes from dashboard.html:
@@ -369,6 +376,13 @@ const boot = async () => {
   }
   applyPresetToSliders(freeStrategySelect.value);
   updateModeControls();
+
+  // Restore the Targets table sort from previous session (device-local).
+  const targetPrefs = /** @type {any} */ (safeLS.json(TARGET_PREFS_KEY, {}));
+  if (targetPrefs.key === 'hiddenFleet' || targetPrefs.key === 'military'
+    || targetPrefs.key === 'totalRank') {
+    targetSort = { key: targetPrefs.key, dir: targetPrefs.dir === 'asc' ? 'asc' : 'desc' };
+  }
 
   chromeStore.onChanged((changes) => {
     // Filter: only re-render when one of the SELECTED universe's keys
@@ -868,8 +882,33 @@ const repaintTargets = () => {
     },
     limit: Number(tgtLimit?.value) || 0,
     estimates,
+    sort: targetSort,
+    onSort: handleTargetSort,
     countInfoEl: tgtCountInfoEl,
   });
+};
+
+/**
+ * Default sort direction for a freshly-picked column: ranks read best-first
+ * (ascending, #1 on top); score-like columns read biggest-first (descending).
+ * @param {import('./targets.js').TargetSortKey} key
+ * @returns {'asc'|'desc'}
+ */
+const defaultTargetDir = (key) => (key === 'totalRank' ? 'asc' : 'desc');
+
+/**
+ * Header-click handler for the Targets table: clicking the active column flips
+ * its direction, clicking a new column switches to it at its natural default.
+ * Persists the choice (device-local) and repaints just the sub-tab.
+ * @param {import('./targets.js').TargetSortKey} key
+ * @returns {void}
+ */
+const handleTargetSort = (key) => {
+  targetSort = targetSort.key === key
+    ? { key, dir: targetSort.dir === 'asc' ? 'desc' : 'asc' }
+    : { key, dir: defaultTargetDir(key) };
+  safeLS.setJSON(TARGET_PREFS_KEY, targetSort);
+  repaintTargets();
 };
 
 /**

@@ -5,7 +5,7 @@ history). Background + locked design live in the AI memory
 (`project_target_finder`); this file is just the remaining build sequence,
 grounded in file:line so any session can pick it up cold.
 
-## Status (2026-06-25 · branch `feat/hidden-fleet-targets` · commit `ec7180e`)
+## Status (2026-06-26 · branch `feat/hidden-fleet-targets` · commit `029c38c`)
 
 **DONE & browser-verified:**
 
@@ -15,6 +15,14 @@ grounded in file:line so any session can pick it up cold.
   sorted by military, with rank/points columns.
 - **M2** — DOM ingestion of spy reports + per-player hidden-fleet estimate with
   `spied / total` coverage and a ⏱ provisional marker.
+
+**DONE (built + typecheck/lint/build clean; awaiting browser verify):**
+
+- **M3** — clickable column sort (Rank / Military / Hidden fleet) via pure
+  `sortTargetList` in `domain/targets.js`; un-spied rows always sink under the
+  hidden-fleet sort, military as tiebreak. Hidden-fleet cell is heat-coloured by
+  magnitude (`heatColor(-frac)`, per-view max → grey→red). Sort persisted
+  device-local in `oge_targetPrefs` (default = hidden-fleet desc).
 
 **Reused** (no new network fetching): `features/apiContext` cache
 (`players`/`total`/`military`/`universe.xml`), dashboard render scaffolding.
@@ -52,22 +60,16 @@ wiring in `content.js` / `dashboard.html` / `features/dashboard/index.js`.
 
 ## Next milestones
 
-### M3 — Sort + colour by hidden fleet  *(small; do first)*
+### M3 — Sort + colour by hidden fleet  ✅ DONE
 
-Juicy targets float to top; magnitude visible at a glance.
+Juicy targets float to top; magnitude visible at a glance. Shipped:
+`sortTargetList` (pure, un-spied sinks, military tiebreak); clickable
+Rank/Military/Hidden-fleet `<th>` with ▲/▼ arrow; hidden-fleet cell heat via
+`heatColor(-frac)` (per-view max normalization); sort persisted in
+`oge_targetPrefs`. **Resolved decisions:** colour = per-view max (not fraction
+of military); reused `heatColor`'s negative half rather than a new ramp.
 
-- `domain/targets.js`: add pure `sortTargetList(list, key, dir)` (keys:
-  `hiddenFleet` | `military` | `totalRank`).
-- `features/dashboard/targets.js`: clickable `<th>` (`th.dataset.sortKey`);
-  default = hidden-fleet desc (rows with an estimate first, then by military).
-  Needs the `estimates` map (already passed in) to sort by hidden fleet.
-- Colour the hidden-fleet cell by magnitude with `palette.js heatColor()`
-  (`:157`) — normalize `hiddenFleetPoints` to `[0,1]` (per-view max, or fraction
-  of `militaryScore`) → amber→red; gray for ~0 / not spied.
-- Persist the sort choice in a small device-local pref (`safeLS`, like
-  `SCOUT_PREFS_KEY` in `index.js:100/354/1085`).
-
-### M4 — Watch-list (star players)
+### M4 — Watch-list (star players)  *(do next)*
 
 - Device-local **Set of watched playerIds** (per-universe; `safeLS`/`chrome.storage`).
   Pattern: `expandedGalaxies` Set in `index.js` (load on boot, mutate in place,
@@ -109,8 +111,6 @@ per-position confirm, planets-only).
 
 - M5 link base-origin (dashboard ≠ game origin) — universe-id-derived vs
   `serverData.domain`.
-- M3 colour normalization reference (per-view max vs absolute bands vs fraction
-  of military).
 - `api/playerData.xml?id=` (fresh per-player planets incl. moons) vs
   `universe.xml` occupancy (cached, weekly) — `universe.xml` is enough for M5;
   add `playerData` only if we want moons / freshness.
