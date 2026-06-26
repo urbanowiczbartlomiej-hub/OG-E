@@ -29,6 +29,21 @@ const empty = { status: 'empty' };
 /** @param {number} id */
 const occ = (id) => ({ status: 'occupied', player: { id, name: 'P' + id } });
 
+/**
+ * Find the neighbourhood stat-card whose label matches `label` (trailing ★s
+ * stripped), or undefined. The score line is now a row of `.stat-card`s.
+ * @param {Element|null} root @param {string} label
+ */
+const cardEl = (root, label) =>
+  [...(root?.querySelectorAll('.stat-card') ?? [])].find(
+    (c) => (c.querySelector('.stat-label')?.textContent || '').replace(/\s*★+$/, '').trim() === label,
+  );
+/** @param {Element|null} root @param {string} label @returns {string|null} */
+const cardValue = (root, label) => {
+  const c = cardEl(root, label);
+  return c ? (c.querySelector('.stat-value')?.textContent || '').trim() : null;
+};
+
 /** @param {Record<string, Record<number, any>>} spec */
 const scansOf = (spec) => {
   /** @type {any} */
@@ -71,10 +86,10 @@ describe('renderFreeRegions', () => {
     };
     renderFreeRegions({ ...baseOpts(), scans: scansOf(spec), positions: [8], players });
 
-    const score = containerEl.querySelector('.streak-score');
-    expect(score?.textContent).toMatch(/strong/);
-    expect(score?.textContent).toMatch(/active-on-vac/);
-    expect(score?.textContent).toMatch(/outlaw/);
+    const record = containerEl.querySelector('.streak-record');
+    expect(cardValue(record, 'Strong')).toBe('1');
+    expect(cardValue(record, 'Active-on-vac')).toBe('1');
+    expect(cardValue(record, 'Outlaw')).toBe('1');
   });
 
   it('classifies occupants by NoobProtection band and shows a target summary', () => {
@@ -92,12 +107,11 @@ describe('renderFreeRegions', () => {
     };
     renderFreeRegions({ ...baseOpts(), scans: scansOf(spec), positions: [8], players });
 
-    // Region target breakdown in the detail panel.
+    // Region target breakdown as stat cards in the detail panel.
     const record = containerEl.querySelector('.streak-record');
-    expect(record?.textContent).toMatch(/Targets:/);
-    expect(record?.textContent).toMatch(/1 honorable/);
-    expect(record?.textContent).toMatch(/1 weak/);
-    expect(record?.textContent).toMatch(/1 strong/);
+    expect(cardValue(record, 'Honorable')).toBe('1');
+    expect(cardValue(record, 'Weak')).toBe('1');
+    expect(cardValue(record, 'Strong')).toBe('1');
 
     // Per-occupant card: hovering system 2's strip cell pops a card that labels
     // the honorable occupant "Honorable", not the flat "Occupied".
@@ -118,8 +132,7 @@ describe('renderFreeRegions', () => {
     renderFreeRegions({ ...baseOpts(), scans: scansOf(spec), positions: [8], players });
 
     const record = containerEl.querySelector('.streak-record');
-    expect(record?.textContent).toMatch(/Targets:/);
-    expect(record?.textContent).toMatch(/1 normal/);
+    expect(cardValue(record, 'Normal')).toBe('1');
 
     const cells = containerEl.querySelectorAll('.region-strip .strip-cell');
     cells[1].dispatchEvent(new Event('mouseenter')); // system 2
@@ -150,10 +163,10 @@ describe('renderFreeRegions', () => {
     spec['4:3'][5] = { status: 'occupied', player: { id: 2, name: 'B', rankClass: 'rank_bandit1' } };
     renderFreeRegions({ ...baseOpts(), scans: scansOf(spec), positions: [8] });
 
-    // Region-level bandit breakdown by tier, separate from the target bands.
+    // Region-level bandit breakdown by tier, as cards separate from target bands.
     const record = containerEl.querySelector('.streak-record');
-    expect(record?.textContent).toMatch(/Bandits:/);
-    expect(record?.textContent).toMatch(/1 Bandit King/);
+    expect(cardValue(record, 'Bandit King')).toBe('1');
+    expect(cardValue(record, 'Bandit')).toBe('1');
 
     // Per-occupant chip on the Bandit King's system card (system 2).
     const cells = containerEl.querySelectorAll('.region-strip .strip-cell');
@@ -192,8 +205,10 @@ describe('renderFreeRegions', () => {
     spec['4:2'][3] = { status: 'occupied', player: { id: 5, name: 'X', rank: 100 } };
     renderFreeRegions({ ...baseOpts(), scans: scansOf(spec), positions: [8], ownRank: 250 });
 
-    const score = containerEl.querySelector('.streak-score');
-    expect(score?.textContent).toMatch(/top neighbour rank #100 \(150 above you\)/);
+    const record = containerEl.querySelector('.streak-record');
+    expect(cardValue(record, 'Top rank')).toBe('#100');
+    // the relative-to-you detail moved to the card tooltip.
+    expect(cardEl(record, 'Top rank')?.getAttribute('title')).toMatch(/150 ranks above you/);
   });
 
   it('falls back to the individual free-systems list when no region forms', () => {
