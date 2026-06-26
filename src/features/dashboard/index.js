@@ -106,6 +106,17 @@ const TARGET_PREFS_KEY = 'oge_targetPrefs';
 /** @type {import('./targets.js').TargetSort} */
 let targetSort = { ...DEFAULT_TARGET_SORT };
 
+// Watch-list: the player ids the user has starred in the Targets table.
+// Per-universe (ids are universe-scoped) + device-local view-state — same
+// load-on-boot / mutate-in-place / persist-on-toggle shape as expandedGalaxies,
+// but keyed by universe like the spy-report cache.
+const WATCHED_LS_KEY_BASE = 'oge_watchedPlayers';
+const watchedKeyFor = (/** @type {string} */ universeId) =>
+  `${universeId}:${WATCHED_LS_KEY_BASE}`;
+
+/** @type {Set<string>} Watched player ids for the selected universe. */
+const watchedPlayers = new Set();
+
 // localStorage key for the active dashboard tab. Per-device UI prefs.
 // Possible values are the `data-tab` attributes from dashboard.html:
 // `'colony'`, `'alarmClock'`, `'routes'`. Anything unrecognised — including the
@@ -285,6 +296,7 @@ const expandedGalaxies = new Set();
 /** @type {HTMLElement} */ let targetsContainer;
 /** @type {HTMLInputElement} */ let tgtMinMilitary;
 /** @type {HTMLSelectElement} */ let tgtLimit;
+/** @type {HTMLInputElement | null} */ let tgtWatchedOnly;
 /** @type {HTMLElement | null} */ let tgtCountInfoEl;
 
 /** The 5 neighbourhood factors users can tune via sliders. */
@@ -345,6 +357,7 @@ const boot = async () => {
   const universes = await discoverUniverses();
   selectedUniverseId = resolveInitialUniverse(universes);
   populateUniverseSelect(universes, selectedUniverseId);
+  loadWatched();
 
   await loadAll();
   renderAll();
@@ -541,6 +554,7 @@ const wireDom = () => {
   targetsContainer = /** @type {HTMLElement} */ (document.getElementById('targetsContainer'));
   tgtMinMilitary = /** @type {HTMLInputElement} */ (document.getElementById('tgtMinMilitary'));
   tgtLimit = /** @type {HTMLSelectElement} */ (document.getElementById('tgtLimit'));
+  tgtWatchedOnly = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtWatchedOnly'));
   tgtCountInfoEl = document.getElementById('tgtCountInfo');
   for (const k of WEIGHT_FIELDS) {
     const s = document.getElementById(`freeW_${k}`);
@@ -665,6 +679,39 @@ const loadExpanded = () => {
  */
 const persistExpanded = () => {
   safeLS.setJSON(EXPANDED_LS_KEY, [...expandedGalaxies]);
+};
+
+/**
+ * (Re)load the watch-list for the selected universe into {@link watchedPlayers},
+ * replacing whatever was there. Called on boot and on universe switch (the ids
+ * are universe-scoped). Tolerates a malformed stored value.
+ *
+ * @returns {void}
+ */
+const loadWatched = () => {
+  watchedPlayers.clear();
+  if (!selectedUniverseId) return;
+  const raw = safeLS.json(watchedKeyFor(selectedUniverseId), []);
+  if (!Array.isArray(raw)) return;
+  for (const v of raw) {
+    if (typeof v === 'string' || typeof v === 'number') watchedPlayers.add(String(v));
+  }
+};
+
+/**
+ * Toggle a player's watch-list membership, persist the new set, and repaint
+ * just the Targets sub-tab. Mutates {@link watchedPlayers} in place.
+ *
+ * @param {string} id
+ * @returns {void}
+ */
+const toggleWatched = (id) => {
+  if (watchedPlayers.has(id)) watchedPlayers.delete(id);
+  else watchedPlayers.add(id);
+  if (selectedUniverseId) {
+    safeLS.setJSON(watchedKeyFor(selectedUniverseId), [...watchedPlayers]);
+  }
+  repaintTargets();
 };
 
 /**
@@ -884,6 +931,9 @@ const repaintTargets = () => {
     estimates,
     sort: targetSort,
     onSort: handleTargetSort,
+    watchedIds: watchedPlayers,
+    onToggleWatch: toggleWatched,
+    watchedOnly: !!tgtWatchedOnly?.checked,
     countInfoEl: tgtCountInfoEl,
   });
 };
@@ -1115,6 +1165,7 @@ const wireListeners = () => {
   // already loaded; only the filter/limit we apply to it changed).
   tgtMinMilitary.addEventListener('change', repaintTargets);
   tgtLimit.addEventListener('change', repaintTargets);
+  tgtWatchedOnly?.addEventListener('change', repaintTargets);
 
   // Region controls only repaint the settlement-regions block. The
   // underlying `scans` cache hasn't changed — only the slots/tolerance
@@ -1161,6 +1212,7 @@ const wireListeners = () => {
 
   universeSelect.addEventListener('change', () => {
     selectedUniverseId = universeSelect.value;
+    loadWatched();
     void loadAll().then(renderAll);
     alarmClockApi?.refresh();
     routesApi?.refresh();

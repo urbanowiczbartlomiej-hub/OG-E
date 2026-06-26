@@ -16,13 +16,19 @@ grounded in file:line so any session can pick it up cold.
 - **M2** — DOM ingestion of spy reports + per-player hidden-fleet estimate with
   `spied / total` coverage and a ⏱ provisional marker.
 
-**DONE (built + typecheck/lint/build clean; awaiting browser verify):**
-
 - **M3** — clickable column sort (Rank / Military / Hidden fleet) via pure
   `sortTargetList` in `domain/targets.js`; un-spied rows always sink under the
   hidden-fleet sort, military as tiebreak. Hidden-fleet cell is heat-coloured by
   magnitude (`heatColor(-frac)`, per-view max → grey→red). Sort persisted
   device-local in `oge_targetPrefs` (default = hidden-fleet desc).
+
+**DONE (built + typecheck/lint/build clean; awaiting browser verify):**
+
+- **M4** — watch-list. ⭐/☆ toggle column (leftmost) per row; "⭐ only" filter
+  checkbox in the controls. Watched player ids are a per-universe device-local
+  Set (`<universeId>:oge_watchedPlayers`, `safeLS`), loaded on boot + on universe
+  switch, mutated in place, persisted on toggle → `repaintTargets`. Star = gold
+  `★`, unwatched = grey `☆`.
 
 **Reused** (no new network fetching): `features/apiContext` cache
 (`players`/`total`/`military`/`universe.xml`), dashboard render scaffolding.
@@ -69,15 +75,15 @@ Rank/Military/Hidden-fleet `<th>` with ▲/▼ arrow; hidden-fleet cell heat via
 `oge_targetPrefs`. **Resolved decisions:** colour = per-view max (not fraction
 of military); reused `heatColor`'s negative half rather than a new ramp.
 
-### M4 — Watch-list (star players)  *(do next)*
+### M4 — Watch-list (star players)  ✅ DONE
 
-- Device-local **Set of watched playerIds** (per-universe; `safeLS`/`chrome.storage`).
-  Pattern: `expandedGalaxies` Set in `index.js` (load on boot, mutate in place,
-  persist on toggle) and `galaxy.js:362` header-toggle.
-- `targets.js`: ⭐ toggle per row + a "only watched" filter checkbox in the
-  controls (`dashboard.html`). Toggle → persist → `repaintTargets`.
+Per-universe device-local Set (`<universeId>:oge_watchedPlayers`, `safeLS`),
+expandedGalaxies-style (load on boot + universe switch, mutate in place, persist
+on toggle → `repaintTargets`). ⭐/☆ toggle column + "⭐ only" filter checkbox.
+**Decision:** `safeLS` (per the cited expandedGalaxies pattern), not a reactive
+store — only the dashboard touches it, so a store would be pure overhead.
 
-### M5 — Spy deep-link buttons (per-position confirm)
+### M5 — Spy deep-link buttons (per-position confirm)  *(do next)*
 
 Send 20 probes to each of a target's planets — one click per body (locked:
 per-position confirm, planets-only).

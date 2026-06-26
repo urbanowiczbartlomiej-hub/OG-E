@@ -119,6 +119,27 @@ function hiddenCell(est, maxHidden) {
 }
 
 /**
+ * Build the ⭐ watch-toggle cell. Filled gold star = watched, hollow grey =
+ * not; clicking flips it (the caller persists the set + repaints).
+ * @param {string} id
+ * @param {boolean} watched
+ * @param {(id: string) => void} [onToggle]
+ * @returns {HTMLTableCellElement}
+ */
+function starCell(id, watched, onToggle) {
+  const td = cell('', { align: 'center' });
+  const star = document.createElement('span');
+  star.textContent = watched ? '★' : '☆';
+  star.style.color = watched ? '#e0c060' : '#555';
+  star.style.cursor = 'pointer';
+  star.style.userSelect = 'none';
+  star.title = watched ? 'Remove from watch-list' : 'Add to watch-list';
+  if (onToggle) star.addEventListener('click', () => onToggle(id));
+  td.appendChild(star);
+  return td;
+}
+
+/**
  * Render the ranked target table into `containerEl`.
  * @param {object} args
  * @param {HTMLElement} args.containerEl
@@ -129,6 +150,9 @@ function hiddenCell(est, maxHidden) {
  *   Per-player hidden-fleet estimate (keyed playerId), for players with reports.
  * @param {TargetSort} [args.sort]               Active column sort (default: hidden fleet desc).
  * @param {(key: TargetSortKey) => void} [args.onSort]  Click handler for a sortable header.
+ * @param {Set<string>} [args.watchedIds]        Starred player ids (watch-list).
+ * @param {(id: string) => void} [args.onToggleWatch]   Star-click handler.
+ * @param {boolean} [args.watchedOnly]           Show only starred players.
  * @param {HTMLElement | null} [args.countInfoEl]
  * @returns {void}
  */
@@ -140,6 +164,9 @@ export function renderTargets({
   estimates,
   sort = DEFAULT_TARGET_SORT,
   onSort,
+  watchedIds,
+  onToggleWatch,
+  watchedOnly = false,
   countInfoEl,
 }) {
   containerEl.textContent = '';
@@ -171,8 +198,22 @@ export function renderTargets({
   }
 
   const filtered = buildTargetList(candidates, opts);
-  const list = sortTargetList(filtered, sort.key, sort.dir, hiddenById);
+  const scoped = watchedOnly && watchedIds
+    ? filtered.filter((c) => watchedIds.has(c.id))
+    : filtered;
+  const list = sortTargetList(scoped, sort.key, sort.dir, hiddenById);
   const shown = limit > 0 ? list.slice(0, limit) : list;
+
+  if (watchedOnly && list.length === 0) {
+    const p = document.createElement('p');
+    p.style.color = '#888';
+    p.style.fontSize = '13px';
+    p.textContent =
+      'No watched players yet — click the ☆ next to a target to add it to your watch-list.';
+    containerEl.appendChild(p);
+    if (countInfoEl) countInfoEl.textContent = '';
+    return;
+  }
 
   const table = document.createElement('table');
   table.style.width = '100%';
@@ -183,6 +224,7 @@ export function renderTargets({
   const hr = document.createElement('tr');
   /** @param {TargetSortKey} key */
   const sortable = (key) => ({ sortKey: key, sort, onSort });
+  hr.appendChild(headCell('★', 'center'));
   hr.appendChild(headCell('#', 'right'));
   hr.appendChild(headCell('Player'));
   hr.appendChild(headCell('Rank', 'right', sortable('totalRank')));
@@ -198,6 +240,7 @@ export function renderTargets({
   for (const c of shown) {
     i += 1;
     const tr = document.createElement('tr');
+    tr.appendChild(starCell(c.id, !!(watchedIds && watchedIds.has(c.id)), onToggleWatch));
     tr.appendChild(cell(String(i), { align: 'right', color: '#666' }));
     tr.appendChild(cell(c.name || `#${c.id}`));
     tr.appendChild(
@@ -221,6 +264,7 @@ export function renderTargets({
   containerEl.appendChild(table);
 
   if (countInfoEl) {
-    countInfoEl.textContent = `${list.length} targets in range · showing ${shown.length}`;
+    const noun = watchedOnly ? 'watched' : 'targets in range';
+    countInfoEl.textContent = `${list.length} ${noun} · showing ${shown.length}`;
   }
 }
