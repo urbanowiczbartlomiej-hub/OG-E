@@ -121,19 +121,28 @@ per-position confirm, planets-only).
 - **Fair-play**: user-initiated links only, no auto-send; wording per
   `docs/fair-play.md`.
 
-### M6 — Polish / accuracy  *(optional)*
+### M6 — Polish / accuracy  *(optional; partially done)*
 
-- "Spy his remaining planets": list bodies not yet in `targetReports`.
-- Report freshness: show report age; flag stale (> N days) for re-spy.
-- Moons (currently excluded): optional toggle to include moons for tighter
-  estimates — revisit only if estimates look inflated by unseen moon defense.
-- Label / i18n: "Targets" → Polish if desired.
+- ✅ "Spy his remaining planets" — covered by M5's per-planet list + "next
+  un-spied" quick link.
+- ✅ **Report freshness** (built + typecheck/lint/build clean; awaiting browser
+  verify) — per-planet report age (`✓ 3d`), stale (> 7d, `STALE_MS` in
+  `targets.js`) turns amber + gains a `↻` re-spy link; hidden-fleet cell gains a
+  `⚠` when any underlying report is stale; the detail header re-spies the oldest
+  stale body when all are spied. `spiedByPlayer` now carries coord→ts; `nowMs`
+  passed from the feature (renderer stays clock-free for tests).
+- ⏸ Moons (excluded): DEFERRED — needs `<moon>` parsing in the breadth-layer
+  `apiOccupancy` parser + estimate/coverage changes (cross-cutting); revisit only
+  if estimates look inflated by unseen moon defense.
+- ⏸ Label / i18n to Polish: DEFERRED — the rest of the dashboard is English;
+  localizing only this tab would be inconsistent. Do the whole dashboard or none.
 
 ## Open decisions
 
 - `api/playerData.xml?id=` (fresh per-player planets incl. moons) vs
-  `universe.xml` occupancy (cached, weekly) — `universe.xml` was enough through
-  M5; add `playerData` only if M6 wants moons / freshness.
+  `universe.xml` occupancy (cached, weekly) — `universe.xml` + report timestamps
+  were enough through M6 freshness; add `playerData` only if the deferred moons
+  item is picked up.
 - Watch-list scope: device-local (shipped) vs gist-synced (later).
 
 ## Test reconciliation (at release — `npm run test` green is the AMO gate)

@@ -915,13 +915,14 @@ const repaintTargets = () => {
   const ownAlliance = ownId && apiPlayers ? apiPlayers[ownId]?.alliance : undefined;
 
   // Per-player hidden-fleet estimate (for players we've opened reports on) +
-  // the set of already-spied planet coords per player (drives the ✓ marker and
-  // the "next un-spied" link in the expandable detail row). The report key is a
-  // bodyKey "g:s:p:type"; strip the trailing ":type" to get the "g:s:p" coord.
+  // the already-spied planet coords → newest report timestamp per player (drives
+  // the ✓ marker, the report-age display, the stale flag, and the "next" link in
+  // the expandable detail row). The report key is a bodyKey "g:s:p:type"; strip
+  // the trailing ":type" to get the "g:s:p" coord.
   const military = apiCache.military ? apiCache.military.ranks : {};
   /** @type {Record<string, import('../../domain/threatModel.js').HiddenFleetEstimate>} */
   const estimates = {};
-  /** @type {Record<string, Set<string>>} */
+  /** @type {Record<string, Record<string, number>>} */
   const spiedByPlayer = {};
   for (const pid of Object.keys(targetReports)) {
     const bucket = targetReports[pid];
@@ -932,12 +933,14 @@ const repaintTargets = () => {
       reports,
       planetCount: planetCountByPlayer[pid],
     });
-    const coords = new Set();
-    for (const key of Object.keys(bucket)) {
+    /** @type {Record<string, number>} */
+    const coordTs = {};
+    for (const [key, report] of Object.entries(bucket)) {
       const lastColon = key.lastIndexOf(':');
-      coords.add(lastColon >= 0 ? key.slice(0, lastColon) : key);
+      const coord = lastColon >= 0 ? key.slice(0, lastColon) : key;
+      coordTs[coord] = report.timestamp ?? 0;
     }
-    spiedByPlayer[pid] = coords;
+    spiedByPlayer[pid] = coordTs;
   }
 
   renderTargets({
@@ -958,6 +961,7 @@ const repaintTargets = () => {
     watchedOnly: !!tgtWatchedOnly?.checked,
     universePlanets: apiCache.universe ? apiCache.universe.planets : [],
     spiedByPlayer,
+    nowMs: Date.now(),
     probes: Number(tgtProbes?.value) || 20,
     gameHref: targetGameHref(),
     expandedIds: expandedTargets,

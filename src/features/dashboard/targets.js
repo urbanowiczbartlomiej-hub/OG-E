@@ -35,6 +35,35 @@ function fmt(n) {
   return typeof n === 'number' && Number.isFinite(n) ? n.toLocaleString('pl-PL') : '—';
 }
 
+// A spy report older than this is "stale": defenses/fleet move, so the
+// hidden-fleet estimate (and the spied ✓) shouldn't be trusted — re-spy.
+const STALE_MS = 7 * 24 * 3600 * 1000;
+
+/**
+ * Milliseconds since a report timestamp (epoch SECONDS), or NaN if unknown.
+ * @param {number|undefined} tsSeconds
+ * @param {number} nowMs
+ * @returns {number}
+ */
+function ageMs(tsSeconds, nowMs) {
+  return typeof tsSeconds === 'number' && tsSeconds > 0 ? nowMs - tsSeconds * 1000 : NaN;
+}
+
+/**
+ * Compact human age ("3h" / "2d" / "5w") for a millisecond span, '' if unknown.
+ * @param {number} ms
+ * @returns {string}
+ */
+function formatAge(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return '';
+  const hours = ms / 3600000;
+  if (hours < 1) return '<1h';
+  if (hours < 48) return `${Math.round(hours)}h`;
+  const days = hours / 24;
+  if (days < 14) return `${Math.round(days)}d`;
+  return `${Math.round(days / 7)}w`;
+}
+
 /**
  * Build one body cell.
  * @param {string} text
@@ -89,13 +118,14 @@ function headCell(text, align, opts = {}) {
 /**
  * Build the hidden-fleet cell from a per-player estimate, or the not-spied
  * placeholder when we have no reports for that player. Shows the estimated
- * hidden points, then a muted coverage suffix ("spied/total", ⏱ = provisional),
- * with the full breakdown in the cell tooltip.
+ * hidden points, then a muted coverage suffix ("spied/total", ⏱ = provisional
+ * coverage, ⚠ = some report is stale), with the full breakdown in the tooltip.
  * @param {import('../../domain/threatModel.js').HiddenFleetEstimate | undefined} est
  * @param {number} maxHidden   Largest hidden-fleet estimate in view (for the heat ramp).
+ * @param {boolean} [stale]    At least one underlying report is older than STALE_MS.
  * @returns {HTMLTableCellElement}
  */
-function hiddenCell(est, maxHidden) {
+function hiddenCell(est, maxHidden, stale) {
   if (!est) return cell('— not spied', { align: 'right', color: '#666' });
   const hidden = Math.round(est.hiddenFleetPoints);
   const td = cell('', { align: 'right' });
@@ -112,10 +142,18 @@ function hiddenCell(est, maxHidden) {
   cov.style.fontSize = '11px';
   td.appendChild(val);
   td.appendChild(cov);
+  if (stale) {
+    const warn = document.createElement('span');
+    warn.textContent = ' ⚠';
+    warn.style.color = '#e0a020';
+    warn.style.fontSize = '11px';
+    td.appendChild(warn);
+  }
   td.title =
     `military ${fmt(est.militaryPoints)} − defense ${fmt(Math.round(est.defensePoints))} `
     + `− visible fleet ${fmt(Math.round(est.visibleFleetPoints))}`
-    + (est.provisional ? ' · coverage incomplete (provisional)' : '');
+    + (est.provisional ? ' · coverage incomplete (provisional)' : '')
+    + (stale ? ' · some report > 7d old (stale) — re-spy' : '');
   return td;
 }
 
@@ -201,21 +239,22 @@ function spyLink(p, probes, gameHref, label) {
 }
 
 /**
- * Build the expandable detail row for one target: a "next un-spied" quick link
- * plus a per-planet list, each un-spied planet carrying a "Spy N" deep-link.
- * Coords with a spy report on file are flagged ✓ (no link). Hidden unless
- * `open`.
+ * Build the expandable detail row for one target: a quick "next action" link
+ * plus a per-planet list. Un-spied planets carry a "Spy N" deep-link; spied
+ * planets show ✓ with the report age — amber + a re-spy link once the report is
+ * stale (> 7d). Hidden unless `open`.
  * @param {object} args
  * @param {string} args.playerId
  * @param {import('../../domain/targets.js').PlanetPos[]} args.planets
- * @param {Set<string> | undefined} args.spied   "g:s:p" coords already spied.
+ * @param {Record<string, number> | undefined} args.spied  "g:s:p" → newest report ts (epoch SECONDS).
+ * @param {number} args.nowMs
  * @param {number} args.probes
  * @param {string} args.gameHref
  * @param {number} args.colspan
  * @param {boolean} args.open
  * @returns {HTMLTableRowElement}
  */
-function detailRow({ playerId, planets, spied, probes, gameHref, colspan, open }) {
+function detailRow({ playerId, planets, spied, nowMs, probes, gameHref, colspan, open }) {
   const tr = document.createElement('tr');
   tr.dataset.detailFor = playerId;
   tr.style.display = open ? '' : 'none';
@@ -237,22 +276,34 @@ function detailRow({ playerId, planets, spied, probes, gameHref, colspan, open }
 
   const coordStr = (/** @type {import('../../domain/targets.js').PlanetPos} */ p) =>
     `${p.galaxy}:${p.system}:${p.position}`;
+  const reportTs = (/** @type {import('../../domain/targets.js').PlanetPos} */ p) =>
+    (spied ? spied[coordStr(p)] : undefined);
   const isSpied = (/** @type {import('../../domain/targets.js').PlanetPos} */ p) =>
-    !!(spied && spied.has(coordStr(p)));
+    reportTs(p) !== undefined;
+  const isStale = (/** @type {import('../../domain/targets.js').PlanetPos} */ p) =>
+    ageMs(reportTs(p), nowMs) > STALE_MS;
 
-  // "Next un-spied" quick action so the user can chain spy sends without
-  // hunting the list.
+  // Quick action header: send to the first un-spied planet, else re-spy the
+  // oldest stale one, else confirm everything is fresh — so the user can chain
+  // sends without hunting the list.
   const head = document.createElement('div');
   head.style.fontSize = '12px';
   head.style.marginBottom = '6px';
   const next = planets.find((p) => !isSpied(p));
-  if (!next) {
-    head.style.color = '#5a8f5a';
-    head.textContent = `All ${planets.length} planet(s) spied ✓`;
-  } else {
+  const stalest = planets
+    .filter((p) => isStale(p))
+    .sort((a, b) => (reportTs(a) ?? 0) - (reportTs(b) ?? 0))[0];
+  if (next) {
     head.style.color = '#888';
     head.appendChild(document.createTextNode('Next un-spied: '));
     head.appendChild(spyLink(next, probes, gameHref, `Spy ${coordStr(next)} →`));
+  } else if (stalest) {
+    head.style.color = '#e0a020';
+    head.appendChild(document.createTextNode('All spied · re-spy oldest: '));
+    head.appendChild(spyLink(stalest, probes, gameHref, `Spy ${coordStr(stalest)} →`));
+  } else {
+    head.style.color = '#5a8f5a';
+    head.textContent = `All ${planets.length} planet(s) spied, fresh ✓`;
   }
   td.appendChild(head);
 
@@ -261,19 +312,30 @@ function detailRow({ playerId, planets, spied, probes, gameHref, colspan, open }
   wrap.style.flexWrap = 'wrap';
   wrap.style.gap = '4px 14px';
   for (const p of planets) {
+    const spiedHere = isSpied(p);
+    const staleHere = spiedHere && isStale(p);
     const item = document.createElement('span');
     item.style.fontSize = '12px';
     item.style.whiteSpace = 'nowrap';
     const tag = document.createElement('span');
     tag.textContent = `${coordStr(p)} `;
-    tag.style.color = isSpied(p) ? '#5a8f5a' : '#ccc';
+    let tagColor = '#ccc';
+    if (spiedHere) tagColor = staleHere ? '#e0a020' : '#5a8f5a';
+    tag.style.color = tagColor;
     item.appendChild(tag);
-    if (isSpied(p)) {
+    if (spiedHere) {
+      const age = formatAge(ageMs(reportTs(p), nowMs));
       const chk = document.createElement('span');
-      chk.textContent = '✓';
-      chk.style.color = '#5a8f5a';
-      chk.title = 'A spy report is on file for this planet';
+      chk.textContent = `✓${age ? ` ${age}` : ''}`;
+      chk.style.color = staleHere ? '#e0a020' : '#5a8f5a';
+      chk.title = staleHere
+        ? `Spy report ${age} old — stale (> 7d), re-spy for an accurate estimate`
+        : `Spy report on file (${age || 'age unknown'})`;
       item.appendChild(chk);
+      if (staleHere) {
+        item.appendChild(document.createTextNode(' '));
+        item.appendChild(spyLink(p, probes, gameHref, '↻'));
+      }
     } else {
       item.appendChild(spyLink(p, probes, gameHref, `Spy ${probes}`));
     }
@@ -299,8 +361,9 @@ function detailRow({ playerId, planets, spied, probes, gameHref, colspan, open }
  * @param {boolean} [args.watchedOnly]           Show only starred players.
  * @param {Array<{coords: string, player?: number}>} [args.universePlanets]
  *   universe.xml occupancy rows — source for a target's planet list (spy links).
- * @param {Record<string, Set<string>>} [args.spiedByPlayer]
- *   playerId → set of "g:s:p" coords with a spy report on file.
+ * @param {Record<string, Record<string, number>>} [args.spiedByPlayer]
+ *   playerId → ("g:s:p" coord → newest report ts in epoch SECONDS).
+ * @param {number} [args.nowMs]                   Clock for report-age display (default 0 = ageless).
  * @param {number} [args.probes]                 Probe count for the Spy links (default 20).
  * @param {string} [args.gameHref]               Target-origin in-game URL base for spy links.
  * @param {Set<string>} [args.expandedIds]       Player ids whose detail row starts open.
@@ -321,6 +384,7 @@ export function renderTargets({
   watchedOnly = false,
   universePlanets = [],
   spiedByPlayer,
+  nowMs = 0,
   probes = 20,
   gameHref = '',
   expandedIds,
@@ -398,10 +462,18 @@ export function renderTargets({
   for (const c of shown) {
     i += 1;
     const open = !!(expandedIds && expandedIds.has(c.id));
+    const spied = spiedByPlayer ? spiedByPlayer[c.id] : undefined;
+    let stale = false;
+    if (spied) {
+      for (const ts of Object.values(spied)) {
+        if (ageMs(ts, nowMs) > STALE_MS) { stale = true; break; }
+      }
+    }
     const detail = detailRow({
       playerId: c.id,
       planets: playerPlanets(universePlanets, c.id),
-      spied: spiedByPlayer ? spiedByPlayer[c.id] : undefined,
+      spied,
+      nowMs,
       probes,
       gameHref,
       colspan: 8,
@@ -428,7 +500,7 @@ export function renderTargets({
         color: '#888',
       }),
     );
-    tr.appendChild(hiddenCell(estimates ? estimates[c.id] : undefined, maxHidden));
+    tr.appendChild(hiddenCell(estimates ? estimates[c.id] : undefined, maxHidden, stale));
     tbody.appendChild(tr);
     tbody.appendChild(detail);
   }
