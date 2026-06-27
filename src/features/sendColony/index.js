@@ -124,7 +124,9 @@ import {
   CHECK_TARGET_RESULT_EVENT,
   GALAXY_SCANNED_EVENT,
   COLONIZE_SENT_EVENT,
+  EVENT_BOX_LOADED_EVENT,
 } from '../../lib/ogeEvents.js';
+import { whenEventBoxReady } from '../shared/eventBoxGate.js';
 import { installFabSettingsLifecycle } from '../shared/fabSettingsLifecycle.js';
 import { createFleetDispatcherCache } from '../shared/fleetDispatcherCache.js';
 import { getApiContext } from '../shared/apiContextStore.js';
@@ -174,6 +176,18 @@ const FOCUS_RESTORE_DELAY_MS = 50;
 const REPAINT_TICK_MS = 1000;
 /** Hold duration (ms) required to trigger a manual skip of the current candidate. */
 const HOLD_SKIP_MS = 2000;
+/**
+ * How long to hold the busy lock after a successful dispatch. The game reloads
+ * the page within ~1 s on the happy path; this safety net releases the lock if
+ * that reload never comes. Mirrors sendExpedition's post-send lock window.
+ */
+const SENT_LOCK_MS = 3000;
+/**
+ * Repaint once more this long after the eventbox gate opens — the XHR 'load'
+ * can precede the game inserting the rows, so a just-landed list shows
+ * immediately. Mirrors dailyRun's settle repaint.
+ */
+const EVENTBOX_SETTLE_MS = 150;
 
 // ─── Module-local state (§3) ───────────────────────────────────────────
 
@@ -204,6 +218,26 @@ let colTarget = /** @type {Coords | null} */ (null);
 let waitStartAt = 0;
 /** Total wait seconds measured at the start of the current min-gap cycle. */
 let waitTotalSecs = 0;
+/**
+ * False while the game's async event-list XHR hasn't landed on this page view.
+ * Gates `refresh()` (paints a "Wait…" hold instead of a candidate label) and
+ * `onSendClick` (a tap is a no-op) so the button never computes or acts on a
+ * candidate while the page — and our stores — are still hydrating. THE SAME
+ * gate that drives the shared Button's visual disable (`gateUntilEventBox`),
+ * so the label is never a confident "No more candidates" on a half-loaded
+ * page. The `true` default keeps standalone `refresh()` paints ungated.
+ * Mirrors dailyRun's eventbox gate.
+ *
+ * @type {boolean}
+ */
+let eventBoxReady = true;
+/**
+ * Active post-send lock timer — releases the busy lock if the expected
+ * post-dispatch page reload never comes. `null` when no send is settling.
+ *
+ * @type {ReturnType<typeof setTimeout> | null}
+ */
+let sentLockTimer = null;
 
 // ─── DOM paint (impure — drives the shared Button controller) ──────────
 
@@ -293,6 +327,15 @@ const refresh = () => {
   // is in flight (busy) or once a send is armed-ready on step 2; otherwise it
   // shows the derive-computed next-candidate label.
   if (busy) return;
+  // Event list (and our stores) not hydrated on this page view yet — hold a
+  // "Wait…" label instead of computing a candidate, so the label never flashes
+  // a confident "No more candidates" on a half-loaded page. The shared Button's
+  // visual gate (`gateUntilEventBox`) disables taps in parallel off the same
+  // signal; this keeps the LABEL honest. Mirrors dailyRun.
+  if (!eventBoxReady) {
+    paintZone('send', { text: 'Wait…', bg: BG_SEND_WAIT, dim: true });
+    return;
+  }
   if (colReady && colTarget && courierStep() === 'fleet2') {
     // Armed and ready — but keep showing a live min-gap countdown if a
     // colony arrival is too close (the 1 Hz ticker drives it down).
@@ -383,6 +426,10 @@ const colErrorPaint = (reason, c) => {
  */
 const onSendClick = async () => {
   if (busy) return;
+  // Page/stores still hydrating — the visual gate already swallows the tap,
+  // but guard here too so a focus-driven or programmatic call can't act on a
+  // half-loaded candidate set (the false "No more candidates"). Mirrors dailyRun.
+  if (!eventBoxReady) return;
   const s = courierStep();
 
   // Tap 2 — dispatch the armed colonize, gated by the min-gap.
@@ -398,9 +445,9 @@ const onSendClick = async () => {
     busy = true;
     paintZone('send', { text: 'Wait…', bg: BG_SEND_WAIT, dim: true });
     const r = await courierDispatch(OWNER_COL);
-    busy = false;
     colReady = false;
     if (!r.ok) {
+      busy = false;
       // Fleet2 stopped being ours between the taps (another initiator took
       // over) — abandon it for a clean fleet1 instead of sending their fleet.
       if (r.reason === 'foreign') {
@@ -413,9 +460,19 @@ const onSendClick = async () => {
       });
       return;
     }
-    // Success → the game navigates; onColonizeSent records the slot.
+    // Success → the game navigates; onColonizeSent records the slot. HOLD the
+    // busy lock through the post-send navigation window so no reactor / ticker
+    // repaints the button into a stale unlocked state (the "weird unlocked
+    // states" before reload). The safety timeout releases the lock if the
+    // expected reload never comes. Mirrors sendExpedition's lock + timeout.
     colTarget = null;
     paintZone('send', { text: 'Sent!', bg: BG_SEND_READY });
+    if (sentLockTimer) clearTimeout(sentLockTimer);
+    sentLockTimer = setTimeout(() => {
+      sentLockTimer = null;
+      busy = false;
+      refresh();
+    }, SENT_LOCK_MS);
     return;
   }
 
@@ -808,6 +865,29 @@ export const installSendColony = () => {
   // courier's select() can resolve the fleet.
   installFleetCourier();
 
+  // Eventbox readiness — the SAME gate that drives the button's visual disable
+  // (`gateUntilEventBox` below). Starts not-ready on fleetdispatch and opens on
+  // the first of the eventList XHR, window load, or the safety net; off
+  // fleetdispatch it opens synchronously (nothing to wait for). At that one
+  // moment we flip the flag and repaint with a real candidate — so the label is
+  // honest at-or-before the instant the button becomes enabled. Mirrors dailyRun.
+  eventBoxReady = false;
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let settleTimer = null;
+  const stopGate = whenEventBoxReady(() => {
+    eventBoxReady = true;
+    refresh();
+    // The XHR 'load' can precede the game inserting the rows — repaint once
+    // more after a short settle so a just-landed list shows immediately.
+    if (settleTimer) clearTimeout(settleTimer);
+    settleTimer = setTimeout(refresh, EVENTBOX_SETTLE_MS);
+  });
+  // Permanent repaint on EVERY later eventbox refresh so a candidate first
+  // computed when the gate opened via the fallback (before the first XHR
+  // landed) is corrected without waiting on the 1 Hz ticker.
+  const onEventBoxLoaded = () => refresh();
+  document.addEventListener(EVENT_BOX_LOADED_EVENT, onEventBoxLoaded);
+
   /**
    * Create + mount the button DOM. Idempotent: bails when already mounted.
    *
@@ -920,6 +1000,13 @@ export const installSendColony = () => {
       document.removeEventListener(CHECK_TARGET_RESULT_EVENT, onCheckTargetResult);
       document.removeEventListener(GALAXY_SCANNED_EVENT, onGalaxyScanned);
       document.removeEventListener(COLONIZE_SENT_EVENT, onColonizeSent);
+      document.removeEventListener(EVENT_BOX_LOADED_EVENT, onEventBoxLoaded);
+      stopGate();
+      if (settleTimer) clearTimeout(settleTimer);
+      if (sentLockTimer) {
+        clearTimeout(sentLockTimer);
+        sentLockTimer = null;
+      }
       installed = null;
     },
   };
@@ -947,4 +1034,9 @@ export const _resetSendColonyForTest = () => {
   colTarget = null;
   waitStartAt = 0;
   waitTotalSecs = 0;
+  eventBoxReady = true;
+  if (sentLockTimer) {
+    clearTimeout(sentLockTimer);
+    sentLockTimer = null;
+  }
 };
