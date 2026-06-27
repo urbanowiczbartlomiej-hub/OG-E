@@ -4,6 +4,18 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.31.1] — 2026-06-27
+
+### Fixed
+
+- **The Colonization button no longer flickers or misfires around a send.** Just
+  after you hit Send it could briefly flip back to an unlocked, wrong-looking
+  state before the page reloaded — it now stays locked through the reload, the
+  same way the Expedition button does. And immediately after a reload it could
+  read "No more candidates" before its data had finished loading; it now waits
+  for the page to be ready (like the Daily Run button) before showing a target,
+  so an early tap can't trigger that false message.
+
 ## [1.31.0] — 2026-06-26
 
 ### Added
