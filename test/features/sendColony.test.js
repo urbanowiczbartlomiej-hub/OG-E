@@ -716,6 +716,78 @@ describe('onSendClick — fleetdispatch branch', () => {
   });
 });
 
+// ──────────────────────────────────────────────────────────────────
+// Eventbox readiness gate + post-send lock (button-state hardening)
+// ──────────────────────────────────────────────────────────────────
+describe('eventbox readiness gate', () => {
+  it('before the eventbox loads: holds "Wait…" and a tap is a no-op', () => {
+    // On fleetdispatch the gate stays CLOSED until OGame's eventList XHR lands
+    // (or window 'load'). happy-dom reports readyState 'complete', which would
+    // make whenEventBoxReady fire synchronously at install — force 'loading' so
+    // the gate behaves as it does on a fresh post-reload page view.
+    Object.defineProperty(document, 'readyState', { value: 'loading', configurable: true });
+    try {
+      setupScene({ onFleetdispatch: true, mission: 7 });
+      settingsStore.set({ ...settingsStore.get(), fabMode: true });
+      setFleetDispatcher(makeFleetDispatcher({ canColonize: false, hasColonizer: true }));
+      // scansStore is empty, so an ungated tap would compute a candidate from
+      // half-loaded data and flash the false "No more candidates".
+      installSendColony();
+      // Deliberately do NOT dispatch oge:eventBoxLoaded — the gate stays closed.
+      expect(getSend()?.textContent).toContain('Wait');
+      getSend()?.click();
+      expect(navTarget).toBeNull();
+      expect(getSend()?.textContent).not.toContain('No more candidates');
+    } finally {
+      // Restore the real (prototype) getter so later tests see 'complete'.
+      delete (/** @type {any} */ (document)).readyState;
+    }
+  });
+
+  it('once the eventbox loads: the gate opens and the real label paints', () => {
+    setupScene({ onFleetdispatch: true, mission: 7 });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    setFleetDispatcher(makeFleetDispatcher({ canColonize: false, hasColonizer: true }));
+    installSendColony();
+    document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
+    // Gate open + an empty DB → the honest "No more candidates" (not the
+    // gated "Wait…"), and the tap is processed.
+    getSend()?.click();
+    expect(getSend()?.textContent).toContain('No more candidates');
+  });
+});
+
+describe('post-send lock', () => {
+  it('a successful dispatch holds the button on "Sent!" through later refreshes', async () => {
+    setupScene({ onFleetdispatch: true });
+    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    scansStore.set({
+      '4:30': { scannedAt: Date.now(), positions: { 8: { status: 'empty' } } },
+    });
+    installSendColony();
+    document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded')); // open the gate
+    const unhook = armCourier({ errorCode: null, missionOk: true });
+    // Tap 1 — arm a ready send.
+    getSend()?.click();
+    await settle();
+    expect(getSend()?.textContent).toContain('Send!');
+    // Tap 2 — dispatch; the fake form reports success.
+    document.getElementById('dispatchFleet')?.addEventListener('click', () => {
+      document.dispatchEvent(new CustomEvent('oge:sendFleetResult', {
+        detail: { success: true, errorCode: null, mission: 7 },
+      }));
+    });
+    getSend()?.click();
+    await settle();
+    expect(getSend()?.textContent).toContain('Sent!');
+    // A store change fires the refresh subscription — but the busy lock held
+    // through the post-send nav window must NOT let it repaint a stale state.
+    scansStore.set({ ...scansStore.get() });
+    expect(getSend()?.textContent).toContain('Sent!');
+    unhook();
+  });
+});
+
 // (The onScanClick integration suite was removed with the Scan half (§2d):
 // there is no second zone, no in-page galaxy-submit, and no scan cooldown —
 // galaxy occupancy is now sourced from the OGame public API.)

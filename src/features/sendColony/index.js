@@ -182,12 +182,6 @@ const HOLD_SKIP_MS = 2000;
  * that reload never comes. Mirrors sendExpedition's post-send lock window.
  */
 const SENT_LOCK_MS = 3000;
-/**
- * Repaint once more this long after the eventbox gate opens — the XHR 'load'
- * can precede the game inserting the rows, so a just-landed list shows
- * immediately. Mirrors dailyRun's settle repaint.
- */
-const EVENTBOX_SETTLE_MS = 150;
 
 // ─── Module-local state (§3) ───────────────────────────────────────────
 
@@ -872,19 +866,15 @@ export const installSendColony = () => {
   // moment we flip the flag and repaint with a real candidate — so the label is
   // honest at-or-before the instant the button becomes enabled. Mirrors dailyRun.
   eventBoxReady = false;
-  /** @type {ReturnType<typeof setTimeout> | null} */
-  let settleTimer = null;
   const stopGate = whenEventBoxReady(() => {
     eventBoxReady = true;
     refresh();
-    // The XHR 'load' can precede the game inserting the rows — repaint once
-    // more after a short settle so a just-landed list shows immediately.
-    if (settleTimer) clearTimeout(settleTimer);
-    settleTimer = setTimeout(refresh, EVENTBOX_SETTLE_MS);
   });
   // Permanent repaint on EVERY later eventbox refresh so a candidate first
   // computed when the gate opened via the fallback (before the first XHR
-  // landed) is corrected without waiting on the 1 Hz ticker.
+  // landed) is corrected without waiting on the 1 Hz ticker. (Unlike dailyRun
+  // we read candidates from OG-E stores, not the freshly-inserted event rows,
+  // so no post-load settle repaint is needed.)
   const onEventBoxLoaded = () => refresh();
   document.addEventListener(EVENT_BOX_LOADED_EVENT, onEventBoxLoaded);
 
@@ -1002,7 +992,6 @@ export const installSendColony = () => {
       document.removeEventListener(COLONIZE_SENT_EVENT, onColonizeSent);
       document.removeEventListener(EVENT_BOX_LOADED_EVENT, onEventBoxLoaded);
       stopGate();
-      if (settleTimer) clearTimeout(settleTimer);
       if (sentLockTimer) {
         clearTimeout(sentLockTimer);
         sentLockTimer = null;
