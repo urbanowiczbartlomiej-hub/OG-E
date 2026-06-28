@@ -30,6 +30,15 @@ import {
   stampDailyRunRoutesChanged,
 } from '../../src/state/dailyRunRoutes.js';
 import { parseDailyRunRoutes } from '../../src/domain/dailyRunRoutes.js';
+import { MISSION_DEPLOYMENT } from '../../src/domain/rules.js';
+
+/** The three "collect" config defaults parseDailyRunRoutes / emptyConfig fill
+ * in (junk/missing input ⇒ deployment mission + "most" ships + "most" cargo). */
+const COLLECT_DEFAULTS = /** @type {const} */ ({
+  collectMission: MISSION_DEPLOYMENT,
+  collectShips: 'most',
+  collectResources: 'most',
+});
 
 /**
  * @type {{
@@ -43,7 +52,7 @@ const mockStore = /** @type {any} */ (chromeStore);
 
 const resetAll = () => {
   disposeDailyRunRoutesStore();
-  dailyRunRoutesStore.set({ routes: [], collectTarget: null });
+  dailyRunRoutesStore.set({ routes: [], collectTarget: null, ...COLLECT_DEFAULTS });
   mockStore.get.mockReset();
   mockStore.set.mockReset();
   mockStore.remove.mockReset();
@@ -62,7 +71,7 @@ describe('dailyRunRoutesStore — defaults and basic ops', () => {
   afterEach(disposeDailyRunRoutesStore);
 
   it('starts as an empty config when persist has not been initialised', () => {
-    expect(dailyRunRoutesStore.get()).toEqual({ routes: [], collectTarget: null });
+    expect(dailyRunRoutesStore.get()).toEqual({ routes: [], collectTarget: null, ...COLLECT_DEFAULTS });
   });
 
   it('exports the expected key suffix', () => {
@@ -148,9 +157,10 @@ describe('dailyRunRoutesStore — hydration via initDailyRunRoutesStore', () => 
     };
     mockStore.get.mockResolvedValueOnce(stored);
     initDailyRunRoutesStore();
-    expect(dailyRunRoutesStore.get()).toEqual({ routes: [], collectTarget: null });
+    expect(dailyRunRoutesStore.get()).toEqual({ routes: [], collectTarget: null, ...COLLECT_DEFAULTS });
     await flushMicrotasks();
-    // Hydrate normalises through parseDailyRunRoutes → explicit enabled + mission.
+    // Hydrate normalises through parseDailyRunRoutes → explicit enabled +
+    // mission on each route, plus the three "collect" config defaults.
     expect(dailyRunRoutesStore.get()).toEqual({
       routes: [
         {
@@ -162,6 +172,7 @@ describe('dailyRunRoutesStore — hydration via initDailyRunRoutesStore', () => 
         },
       ],
       collectTarget: null,
+      ...COLLECT_DEFAULTS,
     });
   });
 
@@ -258,13 +269,44 @@ describe('parseDailyRunRoutes (pure)', () => {
   });
 
   it('defaults to an empty route list + null target for junk / missing input', () => {
-    expect(parseDailyRunRoutes(null)).toEqual({ routes: [], collectTarget: null });
-    expect(parseDailyRunRoutes({})).toEqual({ routes: [], collectTarget: null });
-    expect(parseDailyRunRoutes({ routes: 42 })).toEqual({ routes: [], collectTarget: null });
+    const empty = { routes: [], collectTarget: null, ...COLLECT_DEFAULTS };
+    expect(parseDailyRunRoutes(null)).toEqual(empty);
+    expect(parseDailyRunRoutes({})).toEqual(empty);
+    expect(parseDailyRunRoutes({ routes: 42 })).toEqual(empty);
   });
 
   it('preserves an existing collectTarget', () => {
     const ct = { galaxy: 4, system: 472, position: 15, type: 3 };
     expect(parseDailyRunRoutes({ routes: [], collectTarget: ct }).collectTarget).toEqual(ct);
+  });
+
+  it('defaults the collect config (mission 4 / most / most) on junk input', () => {
+    const r = parseDailyRunRoutes({ routes: [] });
+    expect(r.collectMission).toBe(MISSION_DEPLOYMENT); // 4
+    expect(r.collectShips).toBe('most');
+    expect(r.collectResources).toBe('most');
+  });
+
+  it('round-trips an explicit collect config (custom mission, all/all)', () => {
+    const r = parseDailyRunRoutes({
+      routes: [],
+      collectTarget: null,
+      collectMission: 3,
+      collectShips: 'all',
+      collectResources: 'all',
+    });
+    expect(r.collectMission).toBe(3);
+    expect(r.collectShips).toBe('all');
+    expect(r.collectResources).toBe('all');
+  });
+
+  it('coerces any non-"all" collect ship/resource flag to "most"', () => {
+    const r = parseDailyRunRoutes({
+      routes: [],
+      collectShips: /** @type {any} */ ('garbage'),
+      collectResources: /** @type {any} */ (undefined),
+    });
+    expect(r.collectShips).toBe('most');
+    expect(r.collectResources).toBe('most');
   });
 });

@@ -20,6 +20,15 @@ import {
   gistIsCurrent,
 } from '../../../src/sync/scheduler/pure.js';
 
+/** The three "collect" config fields a DailyRunRoutesSlot now carries.
+ * `slotHasData` ignores them, but the literal must be a complete slot to
+ * typecheck — spread these in. */
+const COLLECT_DEFAULTS = /** @type {const} */ ({
+  collectMission: 4,
+  collectShips: 'most',
+  collectResources: 'most',
+});
+
 describe('canStartSync', () => {
   it('is true only when sync is enabled, a token exists, and nothing is in flight', () => {
     expect(canStartSync({ cloudSync: true, hasToken: true, inFlight: false })).toBe(true);
@@ -64,16 +73,16 @@ describe('shouldScheduleUpload', () => {
 
 describe('slotHasData', () => {
   it('is false for a never-configured slot (no routes, no target, ts 0)', () => {
-    expect(slotHasData({ updatedAt: 0, routes: [], collectTarget: null })).toBe(false);
+    expect(slotHasData({ updatedAt: 0, routes: [], collectTarget: null, ...COLLECT_DEFAULTS })).toBe(false);
   });
 
   it('is true when the slot has a timestamp', () => {
-    expect(slotHasData({ updatedAt: 123, routes: [], collectTarget: null })).toBe(true);
+    expect(slotHasData({ updatedAt: 123, routes: [], collectTarget: null, ...COLLECT_DEFAULTS })).toBe(true);
   });
 
   it('is true when the slot has at least one route', () => {
     expect(
-      slotHasData({ updatedAt: 0, routes: [/** @type {any} */ ({})], collectTarget: null }),
+      slotHasData({ updatedAt: 0, routes: [/** @type {any} */ ({})], collectTarget: null, ...COLLECT_DEFAULTS }),
     ).toBe(true);
   });
 
@@ -83,6 +92,7 @@ describe('slotHasData', () => {
         updatedAt: 0,
         routes: [],
         collectTarget: /** @type {any} */ ({ galaxy: 1, system: 2, position: 3, type: 1 }),
+        ...COLLECT_DEFAULTS,
       }),
     ).toBe(true);
   });

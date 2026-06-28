@@ -20,7 +20,7 @@ vi.mock('../../../src/lib/storage.js', () => ({
 
 import { chromeStore } from '../../../src/lib/storage.js';
 import { installRoutes } from '../../../src/features/dashboard/routes.js';
-import { TARGET_PLANET, TARGET_MOON, SHIP_LARGE_CARGO, SHIP_SMALL_CARGO, MISSION_TRANSPORT } from '../../../src/domain/rules.js';
+import { TARGET_PLANET, TARGET_MOON, SHIP_LARGE_CARGO, SHIP_SMALL_CARGO, MISSION_TRANSPORT, MISSION_DEPLOYMENT } from '../../../src/domain/rules.js';
 
 const mockStore = /** @type {{ get: import('vitest').Mock, set: import('vitest').Mock }} */ (
   /** @type {any} */ (chromeStore)
@@ -134,6 +134,11 @@ describe('build a route by clicking', () => {
         },
       ],
       collectTarget: moon(4, 472, 15),
+      // Save persists the full config: the collect "Send All" defaults
+      // (deployment mission + "most" ships + "most" cargo) ride along untouched.
+      collectMission: MISSION_DEPLOYMENT,
+      collectShips: 'most',
+      collectResources: 'most',
     });
     expect($('#routesStatus').textContent).toContain('Saved 1 route');
     // Save also stamps the cross-device sync clock and pokes any open game

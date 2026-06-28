@@ -21,7 +21,15 @@ import {
 } from '../../src/features/planetBarCapture.js';
 import { bodiesStore, disposeBodiesStore } from '../../src/state/bodies.js';
 import { dailyRunRoutesStore, disposeDailyRunRoutesStore } from '../../src/state/dailyRunRoutes.js';
-import { TARGET_PLANET, TARGET_MOON } from '../../src/domain/rules.js';
+import { TARGET_PLANET, TARGET_MOON, MISSION_DEPLOYMENT } from '../../src/domain/rules.js';
+
+/** The three "collect" config defaults a DailyRunRoutes value now carries.
+ * Spread into each `dailyRunRoutesStore.set({...})` so the literal is complete. */
+const COLLECT_DEFAULTS = /** @type {const} */ ({
+  collectMission: MISSION_DEPLOYMENT,
+  collectShips: 'most',
+  collectResources: 'most',
+});
 
 const HOST = 'https://s163-pl.ogame.gameforge.com/game/index.php';
 const fd = (/** @type {number} */ cp) =>
@@ -69,7 +77,7 @@ beforeEach(() => {
   disposeBodiesStore();
   bodiesStore.set({ bodies: [], capturedAt: 0 });
   disposeDailyRunRoutesStore();
-  dailyRunRoutesStore.set({ routes: [], collectTarget: null });
+  dailyRunRoutesStore.set({ routes: [], collectTarget: null, ...COLLECT_DEFAULTS });
   _resetPlanetBarCaptureForTest();
 });
 
@@ -77,7 +85,7 @@ afterEach(() => {
   disposeBodiesStore();
   bodiesStore.set({ bodies: [], capturedAt: 0 });
   disposeDailyRunRoutesStore();
-  dailyRunRoutesStore.set({ routes: [], collectTarget: null });
+  dailyRunRoutesStore.set({ routes: [], collectTarget: null, ...COLLECT_DEFAULTS });
   _resetPlanetBarCaptureForTest();
 });
 
@@ -185,6 +193,7 @@ describe('installPlanetBarCapture — route reconciliation', () => {
     dailyRunRoutesStore.set({
       routes: [{ sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8), planet(9, 9, 9)], fleet }],
       collectTarget: null,
+      ...COLLECT_DEFAULTS,
     });
     fullBar();
     installPlanetBarCapture();
@@ -198,6 +207,7 @@ describe('installPlanetBarCapture — route reconciliation', () => {
     dailyRunRoutesStore.set({
       routes: [{ sources: [moon(6, 6, 6)], targets: [planet(5, 172, 8)], fleet }],
       collectTarget: null,
+      ...COLLECT_DEFAULTS,
     });
     fullBar();
     installPlanetBarCapture();
@@ -207,7 +217,7 @@ describe('installPlanetBarCapture — route reconciliation', () => {
 
   it('leaves routes untouched (same reference) when every endpoint still exists', async () => {
     const routes = [{ sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8)], fleet }];
-    dailyRunRoutesStore.set({ routes, collectTarget: null });
+    dailyRunRoutesStore.set({ routes, collectTarget: null, ...COLLECT_DEFAULTS });
     fullBar();
     installPlanetBarCapture();
     await flush();
@@ -216,7 +226,7 @@ describe('installPlanetBarCapture — route reconciliation', () => {
 
   it('does not touch routes when the capture is empty (no bar)', async () => {
     const routes = [{ sources: [moon(6, 6, 6)], targets: [planet(9, 9, 9)], fleet }];
-    dailyRunRoutesStore.set({ routes, collectTarget: null });
+    dailyRunRoutesStore.set({ routes, collectTarget: null, ...COLLECT_DEFAULTS });
     setupBar(null); // no inventory captured → reconcile must not run
     installPlanetBarCapture();
     await flush();
