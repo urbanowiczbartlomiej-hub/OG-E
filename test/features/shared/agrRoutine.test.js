@@ -19,6 +19,7 @@ import {
   classifyRoutineFailure,
   prepareViaRoutine,
   dispatchPrepared,
+  dispatchWhenReady,
 } from '../../../src/features/shared/agrRoutine.js';
 import {
   claimFleet2,
@@ -152,6 +153,73 @@ describe('dispatchPrepared', () => {
     });
     claimFleet2(OWNER_EXP); // someone else owns it
     expect(dispatchPrepared({ owner: OWNER_FS })).toBe('foreign');
+    expect(clicks).toBe(0);
+  });
+
+  it('returns "notReady" (no click) when #dispatchFleet is present but still .off', () => {
+    const dispatch = mountFleet2();
+    dispatch.classList.add('off'); // AGR still filling the fleet → disabled
+    let clicks = 0;
+    dispatch.addEventListener('click', () => {
+      clicks += 1;
+    });
+    claimFleet2(OWNER_FS);
+    // Must NOT report a false "sent": clicking a `.off` control launches nothing.
+    expect(dispatchPrepared({ owner: OWNER_FS })).toBe('notReady');
+    expect(clicks).toBe(0);
+  });
+});
+
+describe('dispatchWhenReady', () => {
+  it('fires immediately when the dispatch is already ready → "sent", one click', async () => {
+    const dispatch = mountFleet2();
+    let clicks = 0;
+    dispatch.addEventListener('click', () => {
+      clicks += 1;
+    });
+    claimFleet2(OWNER_FS);
+    expect(await dispatchWhenReady({ owner: OWNER_FS })).toBe('sent');
+    expect(clicks).toBe(1);
+  });
+
+  it('waits out a still-.off dispatch, then sends once the game clears it → "sent"', async () => {
+    const dispatch = mountFleet2();
+    dispatch.classList.add('off');
+    let clicks = 0;
+    dispatch.addEventListener('click', () => {
+      clicks += 1;
+    });
+    claimFleet2(OWNER_FS);
+    const pending = dispatchWhenReady({ owner: OWNER_FS });
+    // The game clears `.off` shortly after the tap; the poll picks it up.
+    setTimeout(() => dispatch.classList.remove('off'), 50);
+    expect(await pending).toBe('sent');
+    expect(clicks).toBe(1);
+  });
+
+  it('returns "foreign" without clicking when fleet2 belongs to someone else', async () => {
+    const dispatch = mountFleet2();
+    let clicks = 0;
+    dispatch.addEventListener('click', () => {
+      clicks += 1;
+    });
+    claimFleet2(OWNER_EXP); // someone else owns it
+    expect(await dispatchWhenReady({ owner: OWNER_FS })).toBe('foreign');
+    expect(clicks).toBe(0);
+  });
+
+  it('returns "timeout" when the .off never clears', async () => {
+    const dispatch = mountFleet2();
+    dispatch.classList.add('off');
+    let clicks = 0;
+    dispatch.addEventListener('click', () => {
+      clicks += 1;
+    });
+    claimFleet2(OWNER_FS);
+    const restore = fastForwardClock();
+    const out = await dispatchWhenReady({ owner: OWNER_FS });
+    restore();
+    expect(out).toBe('timeout');
     expect(clicks).toBe(0);
   });
 });

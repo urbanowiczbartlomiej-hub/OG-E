@@ -386,6 +386,37 @@ describe('installSendExpedition — click navigation', () => {
     expect(clicks).toBe(1);
   });
 
+  it('Phase 1: #dispatchFleet present but still .off → "Wait...", sends once .off clears → "Sent!"', async () => {
+    setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
+    installSendExpedition();
+    document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
+    document.dispatchEvent(new CustomEvent('oge:checkTargetResult', {
+      detail: { galaxy: 1, system: 2, position: 16, ships: { 219: 1 } },
+    }));
+    const panel = document.createElement('div');
+    panel.id = 'ago_fleet2_main';
+    document.body.appendChild(panel);
+    const dispatch = document.createElement('button');
+    dispatch.id = 'dispatchFleet';
+    dispatch.classList.add('off'); // AGR still filling the fleet → disabled
+    document.body.appendChild(dispatch);
+    let clicks = 0;
+    dispatch.addEventListener('click', () => { clicks += 1; });
+
+    getBtn()?.click();
+    // Eager tap mid-fill: NO false send, button shows it's working.
+    expect(clicks).toBe(0);
+    expect(labelOf(getBtn())).toBe('Wait...');
+
+    // Game clears `.off`; the patient path polls, sees it ready, and sends —
+    // so this single tap launches without a second tap.
+    dispatch.classList.remove('off');
+    await settle();
+    expect(navTarget).toBeNull();
+    expect(clicks).toBe(1);
+    expect(labelOf(getBtn())).toBe('Sent!');
+  });
+
   it('Phase 2: routine ready (check_3) → clicks it, panel hydrates, label flips to "Send!"', async () => {
     setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
     installSendExpedition();
