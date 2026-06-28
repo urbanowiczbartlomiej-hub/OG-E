@@ -406,11 +406,19 @@ const buildOrder = (mode) => {
       },
     };
   }
-  const target = dailyRunRoutesStore.get().collectTarget;
+  const cfg = dailyRunRoutesStore.get();
+  const target = cfg.collectTarget;
   if (!target) return { flash: 'No target' };
   return {
     order: {
-      spec: { kind: 'all' }, target, mission: MISSION_DEPLOYMENT, resources: 'all', owner: OWNER_FS,
+      spec: { kind: 'all' },
+      // Ship + resource selection mirror AGR's "send most/all" buttons; both
+      // default to "most" (leave a reserve) unless explicitly set to "all".
+      selectMostShips: cfg.collectShips !== 'all',
+      target,
+      mission: cfg.collectMission ?? MISSION_DEPLOYMENT,
+      resources: cfg.collectResources === 'all' ? 'all' : 'most',
+      owner: OWNER_FS,
     },
   };
 };

@@ -151,20 +151,30 @@ const normalizeRoute = (r) => {
  * `collectTarget`. Array input is mapped through {@link normalizeRoute}
  * (migrating legacy single-ship routes, dropping anything missing a source
  * list, target list, or usable fleet); any non-array / junk input yields an
- * empty route list. `collectTarget` passes through (or `null`).
+ * empty route list. `collectTarget` passes through (or `null`); `collectMission`
+ * is the fleet mission id the in-game "Send All" (collect) action sends with,
+ * normalised to a finite number (default {@link MISSION_DEPLOYMENT}).
+ * `collectShips` / `collectResources` pick how that action selects ships and
+ * loads cargo — `'all'` or `'most'` (AGR "send/load most", which leaves a
+ * reserve); both default to `'most'` (anything but an explicit `'all'`).
  *
  * @param {unknown} stored
- * @returns {{ routes: Route[], collectTarget: TargetCoord | null }}
+ * @returns {{ routes: Route[], collectTarget: TargetCoord | null, collectMission: number, collectShips: 'all' | 'most', collectResources: 'all' | 'most' }}
  */
 export const parseDailyRunRoutes = (stored) => {
   const obj = stored && typeof stored === 'object' ? /** @type {any} */ (stored) : {};
   /** @type {TargetCoord | null} */
   const collectTarget = obj.collectTarget ?? null;
+  const collectMission = Number.isFinite(obj.collectMission) ? obj.collectMission : MISSION_DEPLOYMENT;
+  /** @type {'all' | 'most'} */
+  const collectShips = obj.collectShips === 'all' ? 'all' : 'most';
+  /** @type {'all' | 'most'} */
+  const collectResources = obj.collectResources === 'all' ? 'all' : 'most';
   const raw = obj.routes;
   const routes = Array.isArray(raw)
     ? /** @type {Route[]} */ (raw.map(normalizeRoute).filter(Boolean))
     : [];
-  return { routes, collectTarget };
+  return { routes, collectTarget, collectMission, collectShips, collectResources };
 };
 
 /**

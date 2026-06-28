@@ -136,8 +136,12 @@ export const GAME = {
   FD_DISABLED_CLASS: 'off',
   /** "Load all resources" control (step 2). */
   FD_ALL_RESOURCES: '#allresources',
+  /** "Load most resources" control (step 2) — AGR; leaves a reserve. */
+  FD_MOST_RESOURCES: '#mostresources',
   /** "Select all ships" control (step 1 fallback to `.send_all a`). */
   FD_SEND_ALL: '#sendall',
+  /** "Select most ships" control (step 1) — AGR; fallback `.send_most a`. */
+  FD_SEND_MOST: '#sendmost',
   /**
    * Native fleet2 speed selector container — holds `div[data-value="1".."10"]`
    * (10 = 100 %). Clicking a value div selects that speed and gives it

@@ -127,6 +127,7 @@ import {
   alarmClockConfigTsKeyFor,
 } from '../state/alarmClockConfig.js';
 import { parseDailyRunRoutes } from '../domain/dailyRunRoutes.js';
+import { MISSION_DEPLOYMENT } from '../domain/rules.js';
 import { normalizeGalaxyScanConfig } from '../domain/galaxyScanConfig.js';
 import { normalizeAlarmClockConfig } from '../domain/alarmClockConfig.js';
 import {
@@ -393,13 +394,13 @@ const noteApplied = async (rev, { beacon = false } = {}) => {
  * @returns {Promise<import('./merge.js').DailyRunRoutesSlot>}
  */
 const readLocalRoutesSlot = async () => {
-  if (!routesUniverseId) return { routes: [], collectTarget: null, updatedAt: 0 };
+  if (!routesUniverseId) return { routes: [], collectTarget: null, collectMission: MISSION_DEPLOYMENT, collectShips: 'most', collectResources: 'most', updatedAt: 0 };
   const [raw, ts] = await Promise.all([
     chromeStore.get(dailyRunRoutesKeyFor(routesUniverseId)),
     chromeStore.get(dailyRunRoutesTsKeyFor(routesUniverseId)),
   ]);
-  const { routes, collectTarget } = parseDailyRunRoutes(raw);
-  return { routes, collectTarget, updatedAt: typeof ts === 'number' ? ts : 0 };
+  const { routes, collectTarget, collectMission, collectShips, collectResources } = parseDailyRunRoutes(raw);
+  return { routes, collectTarget, collectMission, collectShips, collectResources, updatedAt: typeof ts === 'number' ? ts : 0 };
 };
 
 /**
@@ -420,12 +421,18 @@ const writeLocalRoutesSlot = async (slot) => {
     await chromeStore.set(dailyRunRoutesKeyFor(routesUniverseId), {
       routes: slot.routes,
       collectTarget: slot.collectTarget,
+      collectMission: slot.collectMission ?? MISSION_DEPLOYMENT,
+      collectShips: slot.collectShips ?? 'most',
+      collectResources: slot.collectResources ?? 'most',
     });
     await chromeStore.set(dailyRunRoutesTsKeyFor(routesUniverseId), slot.updatedAt);
     dailyRunRoutesStore.set(
       /** @type {import('../state/dailyRunRoutes.js').DailyRunRoutes} */ ({
         routes: slot.routes,
         collectTarget: slot.collectTarget,
+        collectMission: slot.collectMission ?? MISSION_DEPLOYMENT,
+        collectShips: slot.collectShips ?? 'most',
+        collectResources: slot.collectResources ?? 'most',
       }),
     );
   } finally {
