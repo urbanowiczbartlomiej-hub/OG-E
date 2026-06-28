@@ -4,6 +4,17 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.31.2] — 2026-06-28
+
+### Fixed
+
+- **The Expedition button no longer "eats" a tap when sent quickly.** At high
+  send volume an eager tap could land while AGR was still filling the fleet and
+  the game's Send control was momentarily disabled. The button used to report
+  "Sent!" and lock for a moment without actually launching anything, so you had
+  to tap a second time. It now waits out that brief disabled window and fires as
+  soon as the control is ready — one tap reliably sends one expedition.
+
 ## [1.31.1] — 2026-06-27
 
 ### Fixed
