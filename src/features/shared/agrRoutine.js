@@ -99,22 +99,71 @@ export const prepareViaRoutine = async ({ routineId, owner, requireCheckReady = 
 };
 
 /**
+ * Whether the native dispatch control is genuinely sendable right now: it
+ * exists, the game has cleared its not-ready `.off` class, AND AGR's fleet2
+ * panel is up. Mirrors `fleetCourier.readyToDispatch()`'s `.off` check (kept
+ * inline to avoid a shared↔shared import cycle) plus the panel guard. A `.off`
+ * dispatch is in the DOM but disabled — clicking it is a no-op server-side, so
+ * treating "present" as "ready" is the bug this guards against.
+ *
+ * @returns {boolean}
+ */
+const dispatchReady = () => {
+  const dispatch = document.querySelector(GAME.FD_DISPATCH);
+  return (
+    !!dispatch &&
+    !dispatch.classList.contains(GAME.FD_DISABLED_CLASS) &&
+    document.getElementById('ago_fleet2_main') !== null
+  );
+};
+
+/**
  * Phase 1 — the fleet2 panel + native dispatch are already up. Verify the
  * ownership session belongs to `owner`, then fire the dispatch.
  *
  *   - `'sent'`     — dispatch clicked.
  *   - `'foreign'`  — fleet2 belongs to someone else; the caller should bail
  *     (e.g. restart from a bare fleetdispatch) rather than send.
- *   - `'notReady'` — the dispatch control / fleet2 panel isn't actually there.
+ *   - `'notReady'` — the dispatch control / fleet2 panel isn't actually there
+ *     yet, OR the control is present but still `.off` (AGR is mid-fill). A tap
+ *     here must NOT report success: clicking a `.off` button launches nothing.
  *
  * @param {{ owner: string }} opts
  * @returns {'sent' | 'foreign' | 'notReady'}
  */
 export const dispatchPrepared = ({ owner }) => {
-  const dispatch = document.querySelector(GAME.FD_DISPATCH);
-  const fleetPanel = document.getElementById('ago_fleet2_main');
-  if (!dispatch || !fleetPanel) return 'notReady';
+  if (!dispatchReady()) return 'notReady';
   if (!mayCompleteFleet2(owner).allowed) return 'foreign';
-  safeClick(dispatch);
+  safeClick(document.querySelector(GAME.FD_DISPATCH));
   return 'sent';
+};
+
+/**
+ * Phase 1, patient variant — send as soon as the native dispatch is truly
+ * ready. Fires immediately when {@link dispatchPrepared} already can; otherwise
+ * the control is present-but-`.off` (AGR still filling the fleet), so it polls
+ * until the game clears `.off`, then sends. This makes a single tap on a loaded
+ * fleet2 always launch, even when tapped mid-fill — the high-volume case where
+ * an eager tap used to hit a `.off` button and silently do nothing.
+ *
+ *   - `'sent'` / `'foreign'` — as {@link dispatchPrepared}.
+ *   - `'timeout'`            — never became sendable within the poll window.
+ *
+ * @param {{ owner: string }} opts
+ * @returns {Promise<'sent' | 'foreign' | 'timeout'>}
+ */
+export const dispatchWhenReady = async ({ owner }) => {
+  const r = dispatchPrepared({ owner });
+  if (r !== 'notReady') return r;
+
+  const ready = await waitFor(() => (dispatchReady() ? true : null), {
+    timeoutMs: ROUTINE_POLL_TIMEOUT_MS,
+    intervalMs: ROUTINE_POLL_INTERVAL_MS,
+  });
+  if (!ready) return 'timeout';
+
+  const after = dispatchPrepared({ owner });
+  // A `.off`→ready transition can't reintroduce 'notReady'; if it somehow does
+  // (control yanked between poll and click), surface it as a quiet timeout.
+  return after === 'notReady' ? 'timeout' : after;
 };

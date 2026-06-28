@@ -78,7 +78,7 @@
 //   post-send `redirectUrl` so successive dispatches hop planets.
 
 import { settingsStore } from '../../state/settings.js';
-import { prepareViaRoutine, dispatchPrepared } from '../shared/agrRoutine.js';
+import { prepareViaRoutine, dispatchPrepared, dispatchWhenReady } from '../shared/agrRoutine.js';
 import { GAME } from '../../lib/gameDom.js';
 import { createButton as makeButton, LABEL_CLASS } from '../shared/button.js';
 import { COMET_GLYPH } from '../shared/buttonGlyphs.js';
@@ -333,6 +333,38 @@ export const installSendExpedition = () => {
   };
 
   /**
+   * Phase 1, patient variant — fleet2 panel is up but the native dispatch is
+   * still `.off` (AGR mid-fill). Paint a working cue, then {@link
+   * dispatchWhenReady} polls until the game clears `.off` and fires. One tap
+   * launches even when tapped mid-fill — the high-volume case where an eager
+   * tap used to hit a disabled button and silently do nothing.
+   *
+   * @param {HTMLButtonElement} btn
+   * @returns {Promise<void>}
+   */
+  const runPhase1 = async (btn) => {
+    setLabel(btn, 'Wait...');
+    const r = await dispatchWhenReady({ owner: OWNER_EXP });
+
+    if (r === 'foreign') {
+      // Not our fleet2 — restart from a bare fleetdispatch (page nav; the
+      // button stays locked through the reload).
+      location.href = bareFleetdispatchUrl();
+      return;
+    }
+    if (r === 'sent') {
+      setLabel(btn, 'Sent!');
+      // Lock held; release after the post-send nav window in case the page
+      // doesn't reload (rare dispatch failure) — mirrors the fast path.
+      setTimeout(() => unlock(btn), 3000);
+      return;
+    }
+    // 'timeout' — never became sendable; restore idle and release for a retry.
+    setLabel(btn, BUTTON_TEXT);
+    unlock(btn);
+  };
+
+  /**
    * Send-button TAP — drive AGR's expedition routine (no fleet memory).
    *
    * Flow:
@@ -414,6 +446,17 @@ export const installSendExpedition = () => {
       // with no session, the last checkTarget matches the expedition profile
       // (position 16 + Pathfinder). Anything foreign: leave it untouched and
       // restart from a bare fleetdispatch.
+
+      // Dispatch present but still `.off` (AGR is mid-fill): a synchronous send
+      // here would click a disabled control and launch nothing while reporting
+      // success. Hand off to the patient path so this single tap waits out the
+      // fill and then fires — the high-volume "first tap does nothing" fix.
+      if (dispatch.classList.contains(GAME.FD_DISABLED_CLASS)) {
+        lock(btn);
+        void runPhase1(btn);
+        return;
+      }
+
       const r = dispatchPrepared({ owner: OWNER_EXP });
       if (r === 'foreign') {
         location.href = bareFleetdispatchUrl();
