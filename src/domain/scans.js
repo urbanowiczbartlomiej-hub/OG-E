@@ -103,6 +103,13 @@
  *   positive honour) and intensity level (1–3). Collected as-is — the
  *   interpretation (safe vs. risky neighbour) belongs to the scoring /
  *   display layer. Omitted for neutral players (`player.rank.hasRank: false`).
+ * @property {number} [score] Total-highscore POINTS (not rank), when known.
+ *   Only the API-synthesised map (`buildScanMapFromIndex`) carries this — live
+ *   galaxy scans don't expose per-player points, so it's omitted there. Feeds
+ *   the points-temperature average (mean account strength of a region).
+ * @property {number} [militaryScore] Military-highscore POINTS, when known. Same
+ *   API-only provenance as {@link score}. Drives the aggressor lens (where
+ *   fleets concentrate) versus total-points "calibre".
  */
 
 /**

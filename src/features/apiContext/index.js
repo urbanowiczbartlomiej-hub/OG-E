@@ -186,6 +186,7 @@ export async function getContext(opts = {}) {
     },
     players: { players: cache.players ? cache.players.players : {} },
     highscore: { ranks: cache.total ? cache.total.ranks : {} },
+    military: { ranks: cache.military ? cache.military.ranks : {} },
     honor: { ranks: cache.honor ? cache.honor.ranks : {} },
     ownPlayerId,
   });

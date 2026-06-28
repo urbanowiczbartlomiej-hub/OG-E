@@ -244,9 +244,10 @@ const buildSystemCard = (g, s, scan, pinned, players) => {
  * @param {'streak'|'neighbourhood'} o.mode
  * @param {import('../../domain/regions.js').StrategyWeights} [o.weights]
  * @param {import('../../domain/regions.js').PlayerCache} [o.players]
+ * @param {number} [o.ownRank]
  * @returns {HTMLElement}
  */
-const buildInteractiveStrip = (region, scans, { mode, weights, players }) => {
+const buildInteractiveStrip = (region, scans, { mode, weights, players, ownRank }) => {
   const wrap = document.createElement('div');
   wrap.className = 'region-strip-wrap';
   const strip = document.createElement('div');
@@ -285,7 +286,7 @@ const buildInteractiveStrip = (region, scans, { mode, weights, players }) => {
     cell.className = 'strip-cell';
     if (mode === 'neighbourhood') {
       cell.style.backgroundColor = scanned
-        ? heatColor(systemIntentHeat(scans, region.galaxy, sys, w, { players }))
+        ? heatColor(systemIntentHeat(scans, region.galaxy, sys, w, { players, ownRank }))
         : UNSCANNED_COLOR;
       if (sys === region.center) cell.classList.add('center');
     } else {
@@ -460,6 +461,14 @@ const buildTable = (results, ownRank) => {
 };
 
 /**
+ * Compact points formatter for the stat cards: 1.2M / 340k / 850.
+ * @param {number} n
+ * @returns {string}
+ */
+const fmtPts = (n) =>
+  n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n);
+
+/**
  * The neighbourhood {@link RegionScore} as a wrapping row of stat cards (same
  * look as the galaxy "Scanned data" tab) — replaces the old dense one-liner.
  * Each meaningful metric becomes a colour-coded card (threats red/orange, farm
@@ -534,6 +543,12 @@ const buildScoreCards = (s, ownRank) => {
       rel = d > 0 ? `${d} ranks above you` : d < 0 ? `${-d} ranks below you` : 'the same rank as you';
     }
     cards.push({ value: `#${top}`, label: 'Top rank', color: NEUTRAL, title: rel });
+  }
+  if (s.avgTotal) {
+    cards.push({ value: fmtPts(s.avgTotal), label: 'Avg points', color: NEUTRAL, title: 'Mean total-highscore points of neighbours in range — higher = a stronger area to avoid when settling' });
+  }
+  if (s.avgMilitary) {
+    cards.push({ value: fmtPts(s.avgMilitary), label: 'Avg military', color: '#e0a020', title: 'Mean military points of neighbours — where fleets concentrate (target-rich for an aggressor)' });
   }
   if (Number.isFinite(s.mineMinDist)) {
     cards.push({ value: s.mineMinDist, label: 'Sys to colony', color: NEUTRAL, title: 'Systems to your nearest colony in this galaxy' });
@@ -706,7 +721,7 @@ const buildDetail = (region, scans, { mode, weights, players, ownRank }) => {
     // tab) instead of a dense one-liner — sat right above the per-system strip.
     el.appendChild(buildScoreCards(s, ownRank));
 
-    el.appendChild(buildInteractiveStrip(region, scans, { mode, weights, players }));
+    el.appendChild(buildInteractiveStrip(region, scans, { mode, weights, players, ownRank }));
 
     if (nbr) {
       el.appendChild(buildHeatLegend());
@@ -815,7 +830,7 @@ export const renderFreeRegions = ({ containerEl, countInfoEl, scans, positions, 
   const allyBonus = players && neighbourhood ? 1.5 : 0;
   /** @param {Region[]} list @returns {Region[]} */
   const sortByStrategy = (list) =>
-    sortRegionsByStrategy(list, stratKey, { expansion: expansion ?? 0, allyBonus, customWeights });
+    sortRegionsByStrategy(list, stratKey, { expansion: expansion ?? 0, allyBonus, customWeights, ownRank });
   const stratLabel = neighbourhood && STRATEGIES[stratKey]
     ? ` · ${STRATEGIES[stratKey].label}` : '';
   const posLabel = positions.join(', ');

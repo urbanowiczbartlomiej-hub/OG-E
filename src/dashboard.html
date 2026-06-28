@@ -225,6 +225,7 @@
     outline: none; border-color: #4a9eff; box-shadow: 0 0 0 2px rgba(74,158,255,0.2);
   }
   .settings-panel input[type="checkbox"] { width: 16px; height: 16px; accent-color: #4a9eff; cursor: pointer; }
+  .settings-panel input[type="radio"] { width: 16px; height: 16px; accent-color: #4a9eff; cursor: pointer; vertical-align: middle; }
   .settings-panel button {
     background: #1a2a3a; border: 1px solid #2a4a5a; color: #ccc;
     padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer;
@@ -537,6 +538,7 @@
         title="Longest streak hunts a long run of a free slot (Slots + Tolerance). The other strategies instead analyse the AREA around each settle spot (Radius + Ignore worst), ranked by how the neighbourhood fits your play style.">
         <option value="longest">Longest streak</option>
         <option value="peaceful">Peaceful settler</option>
+        <option value="safe_expansion">Safe expansion</option>
         <option value="farmer">Farmer</option>
         <option value="honor_pvp">Honor PvP</option>
         <option value="aggressive">Aggressive PvP</option>
@@ -800,9 +802,46 @@
     <summary>⚙ Settings</summary>
     <div class="settings-body">
       <p class="settings-desc">
-        Nothing to configure here yet — we don't have any settings ideas for the
-        Daily Run tab so far. 🙂 If something belongs here, suggestions are welcome.
+        <strong>Send All (collect) — this universe.</strong> What the in-game
+        <strong>Send All</strong> zone uses when you tap it: the fleet mission, and
+        whether ships / resources go via AGR's “most” (leave a reserve) or “all”.
+        Saved instantly.
       </p>
+      <!-- Radio values: mission= ids 4 = Deployment / 3 = Transport
+           (MISSION_DEPLOYMENT / MISSION_TRANSPORT in src/domain/rules.js); ships +
+           resources map to AGR's "send/load most" (#sendmost / #mostresources)
+           vs "all" (#sendall / #allresources). Wired by features/dashboard/routes.js. -->
+      <div id="routesCollectRow">
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px;">
+          <span style="color:#8aa;font-size:13px;min-width:80px;">Mission</span>
+          <label style="display:inline-flex;align-items:center;gap:5px;color:#cfe;font-size:13px;cursor:pointer;">
+            <input type="radio" name="routesCollectMission" value="4"> Deployment <span style="color:#667;">(stay — default)</span>
+          </label>
+          <label style="display:inline-flex;align-items:center;gap:5px;color:#cfe;font-size:13px;cursor:pointer;">
+            <input type="radio" name="routesCollectMission" value="3"> Transport <span style="color:#667;">(drop &amp; return)</span>
+          </label>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px;">
+          <span style="color:#8aa;font-size:13px;min-width:80px;">Ships</span>
+          <label style="display:inline-flex;align-items:center;gap:5px;color:#cfe;font-size:13px;cursor:pointer;">
+            <input type="radio" name="routesCollectShips" value="most"> Most <span style="color:#667;">(leave a reserve — default)</span>
+          </label>
+          <label style="display:inline-flex;align-items:center;gap:5px;color:#cfe;font-size:13px;cursor:pointer;">
+            <input type="radio" name="routesCollectShips" value="all"> All
+          </label>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+          <span style="color:#8aa;font-size:13px;min-width:80px;">Resources</span>
+          <label style="display:inline-flex;align-items:center;gap:5px;color:#cfe;font-size:13px;cursor:pointer;">
+            <input type="radio" name="routesCollectResources" value="most"> Most <span style="color:#667;">(leave some — default)</span>
+          </label>
+          <label style="display:inline-flex;align-items:center;gap:5px;color:#cfe;font-size:13px;cursor:pointer;">
+            <input type="radio" name="routesCollectResources" value="all"> All
+          </label>
+        </div>
+      </div>
     </div>
   </details>
 </section>

@@ -122,6 +122,13 @@ import { occupantStrength } from './players.js';
  *   in the SAME galaxy. `Infinity` when no own colonies exist in that
  *   galaxy's scans. Used by the placement modifier: < 50 = "too close home",
  *   100+ = "reasonable expansion territory", 200+ = "solid new zone".
+ * @property {number} avgTotal   Mean TOTAL-highscore points of the distinct
+ *   players in range (banned excluded), 0 when no points were joined (live-only
+ *   scans / pre-API callers). The points-temperature "calibre" signal — high =
+ *   a strong neighbourhood to avoid when settling.
+ * @property {number} avgMilitary Mean MILITARY-highscore points of the distinct
+ *   players in range, 0 when unknown. The aggressor lens — where fleets
+ *   concentrate (target-rich) — as opposed to total-points calibre.
  */
 
 /**
@@ -236,6 +243,8 @@ export const scoreRegion = (region, scans, opts = {}) => {
   const playerRank = new Map();
   /** @type {Map<number, string>} id → rankClass */
   const playerRankClass = new Map();
+  /** @type {Map<number, { total?: number, military?: number }>} id → highscore POINTS */
+  const playerPoints = new Map();
   const alliances = new Set();
   /** @type {Set<number>} ids of own-ally players seen in range */
   const allyPlayerIds = new Set();
@@ -271,6 +280,16 @@ export const scoreRegion = (region, scans, opts = {}) => {
         if (typeof p.rankClass === 'string' && !playerRankClass.has(p.id)) {
           playerRankClass.set(p.id, p.rankClass);
         }
+        // Points temperature: capture each distinct player's account POINTS.
+        // Only the API map carries points; fill from whichever position first
+        // exposes a number so a player counts once, with data.
+        let pp = playerPoints.get(p.id);
+        if (!pp) {
+          pp = {};
+          playerPoints.set(p.id, pp);
+        }
+        if (pp.total == null && typeof p.score === 'number') pp.total = p.score;
+        if (pp.military == null && typeof p.militaryScore === 'number') pp.military = p.militaryScore;
       }
       if (p.ally) alliances.add(p.ally);
       if (ownAllyTag && p.ally === ownAllyTag) allyPlayerIds.add(p.id);
@@ -375,6 +394,26 @@ export const scoreRegion = (region, scans, opts = {}) => {
     }
   }
 
+  // Points temperature: mean account POINTS of the distinct players in range.
+  // Total = "calibre" (avoid when settling); military = fleet concentration
+  // (target-rich for an aggressor). 0 when no points were joined.
+  let pointsTotalSum = 0;
+  let pointsTotalN = 0;
+  let pointsMilSum = 0;
+  let pointsMilN = 0;
+  for (const pp of playerPoints.values()) {
+    if (typeof pp.total === 'number') {
+      pointsTotalSum += pp.total;
+      pointsTotalN++;
+    }
+    if (typeof pp.military === 'number') {
+      pointsMilSum += pp.military;
+      pointsMilN++;
+    }
+  }
+  const avgTotal = pointsTotalN ? Math.round(pointsTotalSum / pointsTotalN) : 0;
+  const avgMilitary = pointsMilN ? Math.round(pointsMilSum / pointsMilN) : 0;
+
   return {
     systemCount: systems.length,
     scanned,
@@ -399,6 +438,8 @@ export const scoreRegion = (region, scans, opts = {}) => {
     allianceCount: alliances.size,
     allyNearby: cache ? allyMembers : allyPlayerIds.size,
     mineMinDist,
+    avgTotal,
+    avgMilitary,
   };
 };
 
@@ -435,6 +476,11 @@ export const scoreRegion = (region, scans, opts = {}) => {
  *   Negative = avoid (a fresh colony gets crushed); positive = seek fights.
  * @property {number} [outlaw]   Outlaw (sanctioned-target) density (player cache).
  *   Positive = prefer fair-game targets.
+ * @property {number} [weakerNearby] Rank-relative safety signal: net count of
+ *   neighbours WEAKER than us minus those STRONGER (by highscore rank), per
+ *   scanned system. Positive = settle where you out-rank the neighbours
+ *   (the points-temperature "safe expansion" lens); needs `ownRank` in the
+ *   sort/heat opts, else it contributes 0.
  * @property {number} [length]   Small length tiebreaker (0–1 over 499 systems).
  */
 
@@ -455,6 +501,11 @@ export const STRATEGIES = {
     label: 'Peaceful settler',
     hint: 'Mining / expeditions — quiet zone; bandits & strong/returning players strongly penalised, honored moderately; inactive farm targets welcome',
     weights: { free: 1, inactive: 0.5, occupied: -0.3, bandit: -3, honored: -1.5, strong: -1.5, length: 0.1 },
+  },
+  safe_expansion: {
+    label: 'Safe expansion',
+    hint: 'Settle where you out-rank the neighbours — rewards weaker-ranked & inactive players and free slots; bandits, strong and stronger-ranked players penalised. Needs your own highscore rank.',
+    weights: { free: 1, weakerNearby: 1.5, inactive: 0.6, occupied: -0.2, bandit: -2, strong: -1.5, length: 0.1 },
   },
   farmer: {
     label: 'Farmer',
@@ -493,6 +544,26 @@ const expansionFactor = (mineMinDist) => {
 };
 
 /**
+ * Count neighbours STRONGER vs WEAKER than us by highscore rank (lower rank
+ * number = stronger). The rank-relative "safe expansion" signal — a missing or
+ * invalid `ownRank`, or no ranked neighbours, yields {0,0} (neutral). Pure.
+ *
+ * @param {number[]} ranks   Sorted neighbour ranks ({@link RegionScore.ranks}).
+ * @param {number} [ownRank] Our own highscore rank.
+ * @returns {{ stronger: number, weaker: number }}
+ */
+const rankRelative = (ranks, ownRank) => {
+  if (!(typeof ownRank === 'number' && ownRank > 0)) return { stronger: 0, weaker: 0 };
+  let stronger = 0;
+  let weaker = 0;
+  for (const r of ranks) {
+    if (r > 0 && r < ownRank) stronger++;
+    else if (r > ownRank) weaker++;
+  }
+  return { stronger, weaker };
+};
+
+/**
  * @typedef {object} SortOptions
  * @property {number} [expansion]
  *   Placement preference:
@@ -510,6 +581,9 @@ const expansionFactor = (mineMinDist) => {
  *   The UI writes slider values here; the strategy key then acts only
  *   as a "load preset" convenience. `length` tiebreaker (0.1) is
  *   included automatically if omitted from the custom set.
+ * @property {number} [ownRank]
+ *   Our own highscore rank, for the `weakerNearby` rank-relative signal.
+ *   Omit (or pass 0) to neutralise that term — it then contributes nothing.
  */
 
 /**
@@ -525,6 +599,7 @@ const scoreForStrategy = (region, weights, mods = {}) => {
   const s = region.score;
   if (!s || !s.scanned) return (weights.length ?? 0) * (region.length / 499);
   const n = s.scanned;
+  const rel = rankRelative(s.ranks, mods.ownRank);
   let score = (
     (weights.free     ?? 0) * (region.matched / Math.max(region.length, 1)) +
     (weights.inactive ?? 0) * (s.inactive      / n) +
@@ -537,6 +612,9 @@ const scoreForStrategy = (region, weights, mods = {}) => {
     // Both are 0 unless a player cache was supplied to scoreRegion.
     (weights.strong   ?? 0) * ((s.strong + s.activeOnVacation) / n) +
     (weights.outlaw   ?? 0) * (s.outlaw / n) +
+    // Rank-relative safety: net (weaker − stronger) neighbours per scanned
+    // system. Rewards settling where you out-rank the locals. 0 without ownRank.
+    (weights.weakerNearby ?? 0) * ((rel.weaker - rel.stronger) / n) +
     (weights.length   ?? 0) * (region.length / 499)
   );
   // Placement modifier — orthogonal to base strategy
@@ -1117,7 +1195,7 @@ export const spaceOutCandidates = (sorted, radius, galaxyMax = 499) => {
  * @param {number} galaxy
  * @param {number} system
  * @param {StrategyWeights} weights
- * @param {{ players?: PlayerCache }} [opts]
+ * @param {{ players?: PlayerCache, ownRank?: number }} [opts]
  * @returns {number} Heat in (−1, +1). 0 for an unscanned / empty system.
  */
 export const systemIntentHeat = (scans, galaxy, system, weights, opts = {}) => {
@@ -1127,13 +1205,17 @@ export const systemIntentHeat = (scans, galaxy, system, weights, opts = {}) => {
     { players: opts.players, mineSystemsInGalaxy: [] },
   );
   const w = weights;
+  const rel = rankRelative(s.ranks, opts.ownRank);
   const raw =
     (w.inactive ?? 0) * s.inactive +
     (w.occupied ?? 0) * s.occupied +
     (w.bandit ?? 0) * s.banditTierSum +
     (w.honored ?? 0) * s.honoredTierSum +
     (w.strong ?? 0) * (s.strong + s.activeOnVacation) +
-    (w.outlaw ?? 0) * s.outlaw;
+    (w.outlaw ?? 0) * s.outlaw +
+    // Rank-relative safety as a COUNT (composes with the others): net
+    // weaker−stronger neighbours in this system. 0 without ownRank.
+    (w.weakerNearby ?? 0) * (rel.weaker - rel.stronger);
   // tanh squashes any magnitude into (−1, 1); /3 makes a single tier-3 threat
   // (raw ≈ ±9 under a ±3 weight) read as a near-saturated colour.
   return Math.tanh(raw / 3);

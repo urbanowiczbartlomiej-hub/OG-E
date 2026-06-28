@@ -99,6 +99,9 @@
  * @property {string} status          `''` = active (see ApiPlayerMeta.status).
  * @property {string} [alliance]
  * @property {number} [rank]          Total-highscore position, when known.
+ * @property {number} [score]         Total-highscore POINTS, when known. Retained
+ *   (not just rank) so the points-temperature map can average account strength.
+ * @property {number} [militaryScore] Military-highscore POINTS, when known.
  * @property {string} [rankClass]     Synthesised honour-rank class from the honour
  *   highscore (see {@link honorClass}) — e.g. `"rank_bandit3"`. Lets the
  *   bandit/honoured machinery work from the API, no live scan needed.
@@ -308,13 +311,15 @@ export function parseServerData(xml) {
  * @param {UniverseData} [feeds.universe]
  * @param {PlayersData} [feeds.players]
  * @param {HighscoreData} [feeds.highscore]   Total-score ranks (category 1, type 0).
+ * @param {HighscoreData} [feeds.military]    Military-score ranks (category 1, type 3),
+ *   retained as per-player POINTS for the aggressor lens of the points-temperature map.
  * @param {HighscoreData} [feeds.honor]       Honour-score ranks (category 1, type 7) —
  *   negative score = bandit; drives the synthesised `rankClass`.
  * @param {number} [feeds.ownPlayerId]        Our player id, to flag own colonies.
  * @returns {OccupancyIndex}
  */
 export function buildOccupancyIndex(feeds = {}) {
-  const { universe, players, highscore, honor, ownPlayerId } = feeds;
+  const { universe, players, highscore, military, honor, ownPlayerId } = feeds;
   /** @type {Map<string, OccupiedSlot>} */
   const occupied = new Map();
   /** @type {Set<string>} */
@@ -323,6 +328,7 @@ export function buildOccupancyIndex(feeds = {}) {
   const occupiedByPosition = {};
   const pmap = players && players.players ? players.players : {};
   const rmap = highscore && highscore.ranks ? highscore.ranks : {};
+  const mmap = military && military.ranks ? military.ranks : {};
   const hmap = honor && honor.ranks ? honor.ranks : {};
   const honorTotal = Object.keys(hmap).length; // ranked-player count → "bottom N" cutoffs
   const planets = universe && universe.planets ? universe.planets : [];
@@ -332,6 +338,7 @@ export function buildOccupancyIndex(feeds = {}) {
     const pid = pl.player;
     const meta = pid != null ? pmap[String(pid)] : undefined;
     const rank = pid != null ? rmap[String(pid)] : undefined;
+    const milRow = pid != null ? mmap[String(pid)] : undefined;
     const honorRow = pid != null ? hmap[String(pid)] : undefined;
     occupied.set(pl.coords, {
       player: pid,
@@ -339,6 +346,8 @@ export function buildOccupancyIndex(feeds = {}) {
       status: meta ? meta.status : '',
       alliance: meta ? meta.alliance : undefined,
       rank: rank ? rank.position : undefined,
+      score: rank ? rank.score : undefined,
+      militaryScore: milRow ? milRow.score : undefined,
       rankClass: honorClass(honorRow, honorTotal),
     });
     // Tally the position (last `:`-segment of "g:s:p") for the whole-universe
@@ -498,7 +507,7 @@ export function honorClass(row, total) {
  * @param {number} opts.galaxies   Grid galaxy bound (serverData.galaxies).
  * @param {number} opts.systems    Grid system bound (serverData.systems).
  * @param {number[]} opts.targets  Positions to surface as `empty` when free.
- * @returns {Record<string, { scannedAt: number, positions: Record<number, { status: string, player?: { id: number, name?: string, rank?: number, ally?: string, rankClass?: string } }> }>}
+ * @returns {Record<string, { scannedAt: number, positions: Record<number, { status: string, player?: { id: number, name?: string, rank?: number, score?: number, militaryScore?: number, ally?: string, rankClass?: string } }> }>}
  */
 export function buildScanMapFromIndex(index, opts) {
   /** @type {Record<string, { scannedAt: number, positions: Record<number, any> }>} */
@@ -538,6 +547,8 @@ export function buildScanMapFromIndex(index, opts) {
             id: slot.player,
             name: slot.name,
             rank: slot.rank,
+            score: slot.score,
+            militaryScore: slot.militaryScore,
             ally: slot.alliance,
             rankClass: slot.rankClass,
           },
