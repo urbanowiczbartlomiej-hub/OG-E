@@ -325,6 +325,7 @@
   .smap-legend { display: flex; align-items: center; gap: 8px; margin: 8px 0 0 26px; font-size: 11px; color: #7a8a99; font-family: monospace; }
   .smap-legbar { width: 160px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, rgb(202,64,56), rgb(90,96,104), rgb(54,178,84)); }
   .smap-info { margin-top: 8px; font-size: 12px; color: #888; }
+  .smap-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0 10px; font-size: 13px; color: #ccc; }
   .smap-occ-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
   .smap-occ-leg { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: #9aabb8; }
   .smap-occ-sw { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
@@ -503,8 +504,7 @@
 
   <div class="subtabs" id="colonySubtabs" role="tablist">
     <button type="button" class="subtab active" data-subtab="histogram" role="tab">Planet sizes</button>
-    <button type="button" class="subtab" data-subtab="scans" role="tab">Scanned data</button>
-    <button type="button" class="subtab" data-subtab="scout" role="tab">Colony Scout</button>
+    <button type="button" class="subtab" data-subtab="scout" role="tab">Galaxy Viewer</button>
   </div>
 
   <div class="subtabpane active" data-subtab="histogram">
@@ -520,21 +520,23 @@
     </div>
     <div class="stats" id="statsContainer"></div>
     <div class="chart-container"><div class="chart" id="chart"></div></div>
-  </div>
-
-  <div class="subtabpane" data-subtab="scans">
-    <p style="color:#888;font-size:13px;margin-bottom:16px;">
-      Per-system summary of positions you have navigated past in the in-game galaxy view.
-      Data was recorded only for galaxy pages you yourself opened. Filtered by the target
-      positions list (set under ⚙ Settings below) — only those positions count toward
-      the stats below.
-    </p>
-    <div id="scansContainer"></div>
+    <details class="settings-panel">
+      <summary>⚙ Settings</summary>
+      <div class="settings-body">
+        <p class="settings-desc">
+          Colonization targets and the colonize / abandon thresholds — they drive
+          the in-game Colonize / Abandon buttons. Which positions are free is read
+          from OGame's public API automatically, so there's no manual scanning to
+          set up. Per-universe and synced across your devices.
+        </p>
+        <div id="colonizationConfigBody"></div>
+      </div>
+    </details>
   </div>
 
   <div class="subtabpane" data-subtab="scout">
     <div class="sub-section">
-    <h2>🔭 Colony Scout — systems analysis<span class="exp-badge" title="The scoring, strategies and neighbourhood intel here are still evolving — expect changes, and feedback is welcome.">experimental</span></h2>
+    <h2>🌌 Galaxy Viewer — server map + settlement scout<span class="exp-badge" title="The map, scoring and neighbourhood intel here are still evolving — expect changes, and feedback is welcome.">experimental</span></h2>
     <p style="color:#888;font-size:13px;margin-bottom:16px;">
       For each scanned galaxy, the best contiguous run of systems whose target slots are all
       confirmed <code style="color:#4a9eff;">empty</code> — scored and ranked by how well the
@@ -622,25 +624,25 @@
       <button id="freeWeightsReset" class="weight-reset">↺ Reset to selected preset</button>
     </details>
     <details class="server-map-panel" id="serverMapPanel">
-      <summary>🗺 Server map — temperature per strategy · occupancy in Longest streak</summary>
+      <summary>🗺 Server map — whole server at a glance</summary>
+      <div class="smap-controls">
+        <label>View:</label>
+        <select id="serverMapView">
+          <option value="field">Threat / farm field</option>
+          <option value="occupancy">Occupancy (every position)</option>
+        </select>
+        <label title="Your max nightly offline window — how far a moon-destruction (NISZCZ) threat reaches.">Offline (h):</label>
+        <input type="range" id="serverMapWindow" min="4" max="16" step="1" value="8" style="width:80px;">
+        <span id="serverMapWindowV" style="color:#888;font-size:12px;min-width:20px;">8</span>
+        <label title="How far you'll fly to farm — the farm glow radius, in systems.">Farm reach:</label>
+        <input type="range" id="serverMapFarm" min="4" max="60" step="2" value="30" style="width:80px;">
+        <span id="serverMapFarmV" style="color:#888;font-size:12px;min-width:24px;">30</span>
+      </div>
       <div id="serverMapHost"></div>
     </details>
     <div id="freeContainer"></div>
     </div>
   </div>
-
-  <details class="settings-panel">
-    <summary>⚙ Settings</summary>
-    <div class="settings-body">
-      <p class="settings-desc">
-        Colonization targets and the colonize / abandon thresholds — they drive
-        the in-game Colonize / Abandon buttons. Which positions are free is read
-        from OGame's public API automatically, so there's no manual scanning to
-        set up. Per-universe and synced across your devices.
-      </p>
-      <div id="colonizationConfigBody"></div>
-    </div>
-  </details>
 </section>
 
 <section id="spyglassSection" class="tab-section">

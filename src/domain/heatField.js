@@ -1,49 +1,49 @@
-// Server "temperature field" — coarsens the per-system Colony-Scout intent heat
-// into a binned, metric-smoothed, adaptively-scaled grid for the server map.
+// Server "threat / farm field" — the strategy-INDEPENDENT temperature layer of
+// the server map. Two channels, each a signal EMITTED by its sources and spread
+// to the neighbourhood by real OGame reach mechanics, over a black void:
 //
-// # Why this shape (the design, in one place)
+//  • THREAT (red): every active player emits danger weighted by how much
+//    stronger-than-me they are + bandit/honour tier ({@link classifyCell}).
+//    It spreads by the MOON-DESTRUCTION (NISZCZ) reach — the only way to break
+//    a proper moon fleet-save. Post-v12.9.0 that mission flies at a FIXED speed
+//    (independent of drive tech and server speed), so its flight time is a pure
+//    function of distance: `t = 3500·√(d/31) + 10` s. We grade the reach by
+//    whether a RIP arrives inside the player's offline window (default 8 h — an
+//    active player is away at most a night; 12 h is the rare tail; ≥16 h ⇒ they
+//    play passively and are farm anyway). At 8 h that reaches ~your own system;
+//    at 12 h ~20 systems; a galaxy hop is ~24.7 h ⇒ cross-galaxy is safe. So the
+//    threat is tight and local, and galaxies separate — from mechanics, not blur.
 //
-// The naive map (9 galaxies × 499 system cells) is too detailed and overflows
-// the panel. This collapses each galaxy's 499 systems into ~64 columns and
-// renders a smooth FIELD instead of every system. Three pure transforms:
+//  • FARM (gold): every inactive emits value = its account points (rich idler =
+//    developed mines = loot). It spreads by YOUR cargo reach — fast, wide, and
+//    scaling with your drive/server, so we take it as a plain system radius.
 //
-//  1. BIN + TRIMMED WEIGHTED MEAN. Each column aggregates its ~8 systems'
-//     `systemIntentHeat`, dropping the single hottest+coldest member (kills a
-//     lone outlier) and weighting the rest by occupancy so empty space
-//     contributes ~0 — empty bins read faint, not falsely warm.
+// Colour is RELATIVE (each channel stretched to its own p95), because on one
+// server everyone shares the same scaling — the server-speed multiplier cancels
+// in a relative map, so absolute minutes never enter the colouring.
 //
-//  2. METRIC SMOOTHING. Warmth bleeds between cells by the VERIFIED OGame
-//     flight metric, not a hand-tuned σ: weight = exp(−√dist / τ) where `dist`
-//     is the real inter-cell flight distance (galaxy step 20000, system
-//     2700+95·Δs), with donut `min()` wrap on whichever axis the server wraps.
-//     Because √20000 ≈ √(2700+95·183), cross-galaxy bleed comes out naturally
-//     gentle — galaxy seams SOFTEN but galaxies don't dissolve. Position is
-//     dropped (≤5/step, negligible vs 95 / 20000). `√distance` (not raw) is the
-//     felt/time reach: flight time ∝ √distance.
-//
-//  3. ADAPTIVE TWO-SIDED STRETCH. Colour spans the REALIZED data: the positive
-//     side is stretched to its p95, the negative side to |p5|, with 0 pinned
-//     neutral — so a uniformly mild server still paints vivid while red never
-//     flips to green. The realized endpoints are returned for the legend.
-//
-// Pure: no DOM/timers/storage/chrome — the `domain/` contract. The renderer
-// (features/dashboard) turns the returned grid into coloured cells.
+// Pure: no DOM/timers/storage/chrome — the `domain/` contract.
 //
 // @ts-check
 
-import { systemIntentHeat } from './regions.js';
+import { classifyCell } from './cellClass.js';
 
 /**
  * @typedef {import('../state/scans.js').GalaxyScans} GalaxyScans
- * @typedef {import('./regions.js').StrategyWeights} StrategyWeights
- * @typedef {import('./regions.js').PlayerCache} PlayerCache
  */
 
-// Verified OGame flight-distance constants (galaxy / system terms). Position is
-// dropped. See the module header + docs for sources.
+// Verified OGame flight-distance constants (galaxy / system terms).
 const GALAXY_STEP = 20000;
 const SYSTEM_BASE = 2700;
 const SYSTEM_STEP = 95;
+// Same-vicinity (a source in the target's own bin) reads as an in-system RIP.
+const SAME_SYSTEM_D = 1005;
+// Systems-of-distance a galaxy hop costs (20000 = 2700 + 95·183) — for the farm
+// system-radius so it barely crosses galaxies.
+const GALAXY_IN_SYSTEMS = 183;
+
+/** @param {number} x */
+const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
 
 /**
  * Wrap-aware absolute difference on a circular axis (the donut `min()`).
@@ -55,180 +55,173 @@ const axisDelta = (a, b, total, donut) => {
   return donut ? Math.min(d, total - d) : d;
 };
 
-/**
- * Occupancy weight = number of positions with a real occupant (a `player`) in a
- * scanned system. Empty / mine / abandoned slots have no player → 0.
- * @param {{positions?: Record<number, {player?: unknown}>}|undefined} sysData
- * @returns {number}
- */
-const occWeight = (sysData) => {
-  if (!sysData || !sysData.positions) return 0;
-  let n = 0;
-  for (const pos of Object.values(sysData.positions)) {
-    if (pos && pos.player) n++;
-  }
-  return n;
-};
+/** NISZCZ flight time (hours) for an OGame flight-distance `d`. @param {number} d */
+const niszczHours = (d) => (3500 * Math.sqrt(d / 31) + 10) / 3600;
 
 /**
- * Nearest-rank percentile of an ASCENDING-sorted array. 0 for empty.
- * @param {number[]} sorted @param {number} p
- * @returns {number}
+ * Threat reach 0..1 for distance `d` and offline window (hours): 1 while a RIP
+ * arrives inside the window, fading to 0 by 1.5× the window.
+ * @param {number} d @param {number} windowH
  */
-const pct = (sorted, p) => (sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))] : 0);
+const reachThreat = (d, windowH) => clamp01(3 - 2 * (niszczHours(d) / windowH));
+
+/** Nearest-rank percentile of an ASCENDING-sorted array. @param {number[]} a @param {number} p */
+const pct = (a, p) => (a.length ? a[Math.min(a.length - 1, Math.floor(p * a.length))] : 0);
 
 /**
- * @typedef {object} HeatFieldCell
- * @property {number} v  Normalized heat in [-1,1], ready for `heatColor`.
- * @property {number} w  Occupancy confidence 0..1 (low = render faint).
+ * @typedef {object} FieldCell
+ * @property {number} threat  0..1 (relative), red channel.
+ * @property {number} farm    0..1 (relative), gold channel.
  */
 
 /**
- * @typedef {object} HeatField
- * @property {HeatFieldCell[][]} grid  Indexed by 1-based galaxy then column
- *   (`grid[g][c]`, g = 1..galaxies). Index 0 is unused.
- * @property {number} cols       System columns (bins).
- * @property {number} galaxies   Galaxy rows.
- * @property {number} binWidth   Systems per column.
- * @property {number} scalePos   Realized positive scale endpoint (p95 of +heat).
- * @property {number} scaleNeg   Realized negative scale magnitude (p95 of |−heat|).
+ * @typedef {object} ThreatFarmField
+ * @property {FieldCell[][]} grid  Indexed by 1-based galaxy then column.
+ * @property {number} cols
+ * @property {number} galaxies
+ * @property {number} binWidth
  */
 
 /**
- * Build the server temperature field.
+ * Build the two-channel threat/farm field.
  *
  * @param {GalaxyScans} scans   Composite (API + live) scan map, keyed `"g:s"`.
  * @param {{galaxies:number, systems:number, donutGalaxy?:boolean, donutSystem?:boolean}} dims
- *   Grid bounds + per-server wrap flags (from serverData).
- * @param {StrategyWeights} weights  Active strategy weights (the heat lens).
- * @param {{players?:PlayerCache, ownRank?:number, cols?:number, tau?:number}} [opts]
- *   `cols` default 64, `tau` default 100. `players`/`ownRank` forwarded to
- *   `systemIntentHeat`.
- * @returns {HeatField}
+ * @param {{ownMilitary?:number, cols?:number, window?:number, farmReach?:number}} [opts]
+ *   `window` = offline hours (default 8) — the threat radius. `farmReach` =
+ *   farm system radius (default 30). `ownMilitary` anchors threat intensity.
+ * @returns {ThreatFarmField}
  */
-export const buildHeatField = (scans, dims, weights, opts = {}) => {
+export const buildThreatFarmField = (scans, dims, opts = {}) => {
   const { galaxies, systems } = dims;
   const donutGalaxy = !!dims.donutGalaxy;
   const donutSystem = !!dims.donutSystem;
   const N = Math.max(1, Math.min(opts.cols ?? 64, systems));
-  const tau = opts.tau ?? 100;
-  const ctx = { players: opts.players, ownRank: opts.ownRank };
+  const windowH = opts.window ?? 8;
+  const farmReach = opts.farmReach ?? 30;
+  const clsCtx = { ownMilitary: opts.ownMilitary };
   const binWidth = systems / N;
-  /** @param {number} c Column → its centroid system number. */
+  /** @param {number} c */
   const centroid = (c) => Math.round((c + 0.5) * binWidth);
 
-  // 1) Per-system heat + occupancy, binned per galaxy row, then reduced to a
-  //    trimmed weighted mean per cell.
-  /** @type {number[][]} raw[g][c] heat (1-based g). */
-  const raw = [];
-  /** @type {number[][]} wsum[g][c] total bin occupancy (1-based g). */
-  const wsum = [];
+  // 1) Per-bin sources: threat = strongest active occupant; farm = summed points.
+  /** @type {number[][]} */
+  const threatSrc = [];
+  /** @type {number[][]} */
+  const farmSrc = [];
   for (let g = 1; g <= galaxies; g++) {
-    /** @type {Array<Array<{heat:number, w:number}>>} */
-    const cols = Array.from({ length: N }, () => []);
+    threatSrc[g] = new Array(N).fill(0);
+    farmSrc[g] = new Array(N).fill(0);
+  }
+  // Planet count per idle account: a whale's loot ≈ its account score spread
+  // over its planets — NOT counted in full once per planet (a 20-planet idler
+  // was 20×, drowning every other farm).
+  /** @type {Map<number, number>} */
+  const farmPlanets = new Map();
+  for (let g = 1; g <= galaxies; g++) {
     for (let s = 1; s <= systems; s++) {
-      const c = Math.min(N - 1, Math.floor(((s - 1) * N) / systems));
-      const w = occWeight(scans[`${g}:${s}`]);
-      const heat = systemIntentHeat(scans, g, s, weights, ctx);
-      cols[c].push({ heat, w });
-    }
-    raw[g] = [];
-    wsum[g] = [];
-    for (let c = 0; c < N; c++) {
-      const members = cols[c];
-      let val = 0;
-      let tw = 0;
-      if (members.length >= 3) {
-        members.sort((a, b) => a.heat - b.heat); // drop hottest + coldest outlier
-        for (let i = 1; i < members.length - 1; i++) {
-          val += members[i].heat * members[i].w;
-          tw += members[i].w;
+      const positions = scans[`${g}:${s}`]?.positions;
+      if (!positions) continue;
+      for (let p = 1; p <= 15; p++) {
+        const pos = positions[p];
+        if (pos && (pos.status === 'inactive' || pos.status === 'long_inactive') && pos.player && pos.player.id != null) {
+          farmPlanets.set(pos.player.id, (farmPlanets.get(pos.player.id) || 0) + 1);
         }
-      } else {
-        for (const m of members) { val += m.heat * m.w; tw += m.w; }
       }
-      raw[g][c] = tw > 0 ? val / tw : 0;
-      let total = 0;
-      for (const m of members) total += m.w;
-      wsum[g][c] = total;
+    }
+  }
+  for (let g = 1; g <= galaxies; g++) {
+    for (let s = 1; s <= systems; s++) {
+      const positions = scans[`${g}:${s}`]?.positions;
+      if (!positions) continue;
+      let st = 0;
+      let fm = 0;
+      for (let p = 1; p <= 15; p++) {
+        const pos = positions[p];
+        if (!pos) continue;
+        const cls = classifyCell(pos.status, pos.player, clsCtx);
+        if (cls.bucket === 'threat') st = Math.max(st, cls.intensity);
+        else if (cls.bucket === 'farm' && pos.player && typeof pos.player.score === 'number') {
+          const pc = pos.player.id != null ? (farmPlanets.get(pos.player.id) || 1) : 1;
+          fm += pos.player.score / pc;
+        }
+      }
+      const c = Math.min(N - 1, Math.floor(((s - 1) * N) / systems));
+      if (st > threatSrc[g][c]) threatSrc[g][c] = st;
+      farmSrc[g][c] += fm;
     }
   }
 
-  // 2) Metric smoothing — exp(−√dist/τ) over a small window (±2 col, ±1 row),
-  //    donut-wrapped per the server flags. Self distance 0 → weight 1.
+  // 2) Convolve each source field with its reach kernel (donut-wrapped). Window
+  //    is sized to the wider of the two reaches; threat fades by 1.5× the window.
+  const farmBins = Math.ceil(farmReach / binWidth) + 1;
+  const tMaxD = 31 * ((1.5 * windowH * 3600 - 10) / 3500) ** 2;
+  const threatSys = tMaxD > SYSTEM_BASE ? (tMaxD - SYSTEM_BASE) / SYSTEM_STEP : 0;
+  const threatBins = Math.ceil(threatSys / binWidth) + 1;
+  const maxCols = Math.min(N, Math.max(farmBins, threatBins, 1));
+
   /** @type {number[][]} */
-  const sm = [];
+  const threatF = [];
+  /** @type {number[][]} */
+  const farmF = [];
   for (let g = 1; g <= galaxies; g++) {
-    sm[g] = [];
+    threatF[g] = new Array(N).fill(0);
+    farmF[g] = new Array(N).fill(0);
     for (let c = 0; c < N; c++) {
-      let num = 0;
-      let den = 0;
+      let tv = 0;
+      let fv = 0;
       for (let dg = -1; dg <= 1; dg++) {
         let g2 = g + dg;
         if (g2 < 1 || g2 > galaxies) {
           if (!donutGalaxy) continue;
           g2 = ((g2 - 1 + galaxies) % galaxies) + 1;
         }
-        for (let dc = -2; dc <= 2; dc++) {
+        for (let dc = -maxCols; dc <= maxCols; dc++) {
           let c2 = c + dc;
           if (c2 < 0 || c2 >= N) {
             if (!donutSystem) continue;
             c2 = ((c2 % N) + N) % N;
           }
-          let dist;
-          if (g2 === g && c2 === c) {
-            dist = 0;
-          } else {
-            const ag = axisDelta(g, g2, galaxies, donutGalaxy);
-            if (ag > 0) {
-              dist = GALAXY_STEP * ag; // galaxy term dominates (highest coord wins)
-            } else {
-              const as = axisDelta(centroid(c), centroid(c2), systems, donutSystem);
-              dist = SYSTEM_BASE + SYSTEM_STEP * as;
-            }
+          const ts = threatSrc[g2][c2];
+          const fs = farmSrc[g2][c2];
+          if (ts === 0 && fs === 0) continue;
+          const ag = axisDelta(g, g2, galaxies, donutGalaxy);
+          const dSys = axisDelta(centroid(c), centroid(c2), systems, donutSystem);
+          if (ts > 0) {
+            const d = ag > 0 ? GALAXY_STEP * ag : (dSys === 0 ? SAME_SYSTEM_D : SYSTEM_BASE + SYSTEM_STEP * dSys);
+            tv += ts * reachThreat(d, windowH);
           }
-          const wk = Math.exp(-Math.sqrt(dist) / tau);
-          num += wk * raw[g2][c2];
-          den += wk;
+          if (fs > 0) fv += fs * clamp01(1 - (dSys + ag * GALAXY_IN_SYSTEMS) / farmReach);
         }
       }
-      sm[g][c] = den > 0 ? num / den : 0;
+      threatF[g][c] = tv;
+      farmF[g][c] = fv;
     }
   }
 
-  // 3) Adaptive two-sided percentile stretch on the SMOOTHED values (colour what
-  //    we draw). Sign-preserving, 0 pinned neutral.
+  // 3) Relative normalisation — each channel to its own p95.
   /** @type {number[]} */
-  const posVals = [];
+  const tvals = [];
   /** @type {number[]} */
-  const negVals = [];
-  /** @type {number[]} */
-  const wflat = [];
+  const fvals = [];
   for (let g = 1; g <= galaxies; g++) {
     for (let c = 0; c < N; c++) {
-      const v = sm[g][c];
-      if (v > 0) posVals.push(v);
-      else if (v < 0) negVals.push(-v);
-      wflat.push(wsum[g][c]);
+      if (threatF[g][c] > 0) tvals.push(threatF[g][c]);
+      if (farmF[g][c] > 0) fvals.push(farmF[g][c]);
     }
   }
-  posVals.sort((a, b) => a - b);
-  negVals.sort((a, b) => a - b);
-  wflat.sort((a, b) => a - b);
-  const scalePos = Math.max(1e-3, pct(posVals, 0.95));
-  const scaleNeg = Math.max(1e-3, pct(negVals, 0.95));
-  const wref = Math.max(1, pct(wflat, 0.8)); // a bin is "full" around p80 occupancy
+  tvals.sort((a, b) => a - b);
+  fvals.sort((a, b) => a - b);
+  const tScale = tvals.length ? Math.max(1e-6, pct(tvals, 0.95)) : 1;
+  const fScale = fvals.length ? Math.max(1e-6, pct(fvals, 0.95)) : 1;
 
-  /** @type {HeatFieldCell[][]} */
+  /** @type {FieldCell[][]} */
   const grid = [];
   for (let g = 1; g <= galaxies; g++) {
     grid[g] = [];
     for (let c = 0; c < N; c++) {
-      const h = sm[g][c];
-      const v = h >= 0 ? Math.min(1, h / scalePos) : -Math.min(1, -h / scaleNeg);
-      grid[g][c] = { v, w: Math.min(1, wsum[g][c] / wref) };
+      grid[g][c] = { threat: clamp01(threatF[g][c] / tScale), farm: clamp01(farmF[g][c] / fScale) };
     }
   }
-
-  return { grid, cols: N, galaxies, binWidth, scalePos, scaleNeg };
+  return { grid, cols: N, galaxies, binWidth };
 };

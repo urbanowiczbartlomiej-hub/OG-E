@@ -226,6 +226,8 @@ let apiIndex = null;
  * @type {{ galaxies?: number, systems?: number, donutGalaxy?: boolean, donutSystem?: boolean, domain?: string }}
  */
 let apiBounds = {};
+/** Our own military-highscore points (from the API), for the map's threat intensity. @type {number|undefined} */
+let ownMilitary;
 
 /**
  * Raw per-universe API cache (`state/apiCache.js`), loaded in `loadAll`. Held so
@@ -314,6 +316,11 @@ const expandedGalaxies = new Set();
 /** @type {HTMLElement} */ let freeContainer;
 /** @type {HTMLElement | null} */ let serverMapHost;
 /** @type {HTMLDetailsElement | null} */ let serverMapPanel;
+/** @type {HTMLSelectElement | null} */ let serverMapView;
+/** @type {HTMLInputElement | null} */ let serverMapWindow;
+/** @type {HTMLElement | null} */ let serverMapWindowV;
+/** @type {HTMLInputElement | null} */ let serverMapFarm;
+/** @type {HTMLElement | null} */ let serverMapFarmV;
 /** @type {HTMLElement | null} */ let freeCountInfoEl;
 /** @type {HTMLElement} */ let targetsContainer;
 /** @type {HTMLInputElement} */ let tgtMinMilitary;
@@ -579,6 +586,11 @@ const wireDom = () => {
   freeContainer = /** @type {HTMLElement} */ (document.getElementById('freeContainer'));
   serverMapHost = document.getElementById('serverMapHost');
   serverMapPanel = /** @type {HTMLDetailsElement | null} */ (document.getElementById('serverMapPanel'));
+  serverMapView = /** @type {HTMLSelectElement | null} */ (document.getElementById('serverMapView'));
+  serverMapWindow = /** @type {HTMLInputElement | null} */ (document.getElementById('serverMapWindow'));
+  serverMapWindowV = document.getElementById('serverMapWindowV');
+  serverMapFarm = /** @type {HTMLInputElement | null} */ (document.getElementById('serverMapFarm'));
+  serverMapFarmV = document.getElementById('serverMapFarmV');
   freeCountInfoEl = document.getElementById('freeCountInfo');
   targetsContainer = /** @type {HTMLElement} */ (document.getElementById('targetsContainer'));
   tgtMinMilitary = /** @type {HTMLInputElement} */ (document.getElementById('tgtMinMilitary'));
@@ -854,9 +866,13 @@ const loadAll = async () => {
       donutSystem: api.server ? api.server.data.donutSystem : undefined,
       domain: api.server ? api.server.data.domain : undefined,
     };
+    ownMilitary = api.military && op.id != null && api.military.ranks[String(op.id)]
+      ? api.military.ranks[String(op.id)].score
+      : undefined;
   } else {
     apiIndex = null;
     apiBounds = {};
+    ownMilitary = undefined;
   }
 
   // Targets sub-tab: join the already-cached API feeds (players + total +
@@ -933,28 +949,30 @@ const renderAll = () => {
     filterLabel: filterValue,
   });
 
-  // Galaxy map now renders the WHOLE server from the API occupancy index
-  // (§5), with live scans overlaid (live wins per system). Falls back to raw
-  // local scans when the API cache isn't populated yet for this universe.
-  const mapScans =
-    apiIndex && apiBounds.galaxies && apiBounds.systems
-      ? /** @type {GalaxyScans} */ ({
-          ...buildScanMapFromIndex(apiIndex, {
-            galaxies: apiBounds.galaxies,
-            systems: apiBounds.systems,
-            targets: [...targetPositions],
-          }),
-          ...liveOverlay(scans),
-        })
-      : scans;
-  renderGalaxyMap({
-    containerEl: scansContainer,
-    scans: mapScans,
-    targetPositions,
-    expandedGalaxies,
-    onToggleExpand: () => { persistExpanded(); },
-    onResetGalaxy: (g) => { void resetGalaxy(g); },
-  });
+  // The old "Scanned data" per-galaxy accordion (galaxy.js) is retired — the
+  // Galaxy Viewer server map supersedes it. Guarded because its container is
+  // gone, pending a dead-code sweep of galaxy.js + the accordion helpers.
+  if (scansContainer) {
+    const mapScans =
+      apiIndex && apiBounds.galaxies && apiBounds.systems
+        ? /** @type {GalaxyScans} */ ({
+            ...buildScanMapFromIndex(apiIndex, {
+              galaxies: apiBounds.galaxies,
+              systems: apiBounds.systems,
+              targets: [...targetPositions],
+            }),
+            ...liveOverlay(scans),
+          })
+        : scans;
+    renderGalaxyMap({
+      containerEl: scansContainer,
+      scans: mapScans,
+      targetPositions,
+      expandedGalaxies,
+      onToggleExpand: () => { persistExpanded(); },
+      onResetGalaxy: (g) => { void resetGalaxy(g); },
+    });
+  }
 
   // Settlement-regions block (inside the galaxy tab) — runs over the
   // same `scans` data with the current positions + tolerance controls.
@@ -1232,10 +1250,10 @@ const repaintFreeRegions = () => {
       systems: apiBounds.systems,
       donutGalaxy: apiBounds.donutGalaxy,
       donutSystem: apiBounds.donutSystem,
-      strategy: freeStrategySelect.value || 'longest',
-      customWeights: readCustomWeights(),
-      players,
-      ownRank: ownProfile.rank,
+      view: serverMapView?.value || 'field',
+      offlineWindow: parseInt(serverMapWindow?.value ?? '', 10) || 8,
+      farmReach: parseInt(serverMapFarm?.value ?? '', 10) || 30,
+      ownMilitary,
       linkBase: host ? `https://${host}` : '',
     });
   }
@@ -1379,6 +1397,15 @@ const wireListeners = () => {
   // Paint the server map the first time its panel is opened; repaintFreeRegions
   // skips it while collapsed, so this is what fills it on demand.
   serverMapPanel?.addEventListener('toggle', () => {
+    if (serverMapPanel?.open) repaintFreeRegions();
+  });
+  serverMapView?.addEventListener('change', () => { if (serverMapPanel?.open) repaintFreeRegions(); });
+  serverMapWindow?.addEventListener('input', () => {
+    if (serverMapWindowV && serverMapWindow) serverMapWindowV.textContent = serverMapWindow.value;
+    if (serverMapPanel?.open) repaintFreeRegions();
+  });
+  serverMapFarm?.addEventListener('input', () => {
+    if (serverMapFarmV && serverMapFarm) serverMapFarmV.textContent = serverMapFarm.value;
     if (serverMapPanel?.open) repaintFreeRegions();
   });
   freeExpansionSelect.addEventListener('change', () => { saveScoutPrefs(); repaintFreeRegions(); });

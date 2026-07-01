@@ -47,7 +47,8 @@ import {
   STRATEGIES,
   MIN_REGION_LENGTH,
 } from '../../domain/regions.js';
-import { buildHeatField } from '../../domain/heatField.js';
+import { buildThreatFarmField } from '../../domain/heatField.js';
+import { classifyCell, cellColor, fieldColor } from '../../domain/cellClass.js';
 import { STRIP_PRIORITY, bestStatusInSystem } from '../../domain/histogram.js';
 import { occupantStrength, honorRank } from '../../domain/players.js';
 import {
@@ -330,9 +331,10 @@ const openGalaxyView = (linkBase, g, s) => {
  * @param {GalaxyScans} scans
  * @param {{galaxies:number, systems:number}} dims
  * @param {string} [linkBase]  Game origin; when set, clicking opens the galaxy view.
+ * @param {number} [ownMilitary]  Our military-highscore points, for threat intensity.
  * @returns {void}
  */
-const renderOccupancyMap = (hostEl, scans, { galaxies, systems }, linkBase) => {
+const renderOccupancyMap = (hostEl, scans, { galaxies, systems }, linkBase, ownMilitary) => {
   const POS = 15;
   const posPx = 2;
   const gap = 4;
@@ -342,13 +344,27 @@ const renderOccupancyMap = (hostEl, scans, { galaxies, systems }, linkBase) => {
   const plotH = galaxies * stride - gap + topPad;
   const W = hostEl.clientWidth || 700;
   const cellW = (W - gutter) / systems;
-  const DARK = '#161c24';
-  const SC = /** @type {Record<string, string>} */ (STATUS_COLORS);
-  /** @param {string|undefined} st @returns {string} */
-  const colorFor = (st) => {
-    if (!st || st === 'empty' || st === 'empty_sent' || st === 'abandoned') return DARK;
-    return SC[st] || DARK;
-  };
+  // Farm "full" scale: p90 of DISTINCT idle accounts' points (deduped by player,
+  // so a multi-planet whale counts ONCE and can't inflate the scale and darken
+  // every other farm). One pass over the composite.
+  /** @type {Map<number, number>} */
+  const farmByPlayer = new Map();
+  for (let g = 1; g <= galaxies; g++) {
+    for (let s = 1; s <= systems; s++) {
+      const positions = scans[`${g}:${s}`]?.positions;
+      if (!positions) continue;
+      for (let p = 1; p <= POS; p++) {
+        const pos = positions[p];
+        if (pos && (pos.status === 'inactive' || pos.status === 'long_inactive')
+          && pos.player && pos.player.id != null && typeof pos.player.score === 'number') {
+          farmByPlayer.set(pos.player.id, pos.player.score);
+        }
+      }
+    }
+  }
+  const farmScores = [...farmByPlayer.values()].sort((a, b) => a - b);
+  const farmScale = farmScores.length ? Math.max(1, farmScores[Math.floor(0.9 * farmScores.length)]) : 1;
+  const clsCtx = { ownMilitary, farmScale };
   const dpr = window.devicePixelRatio || 1;
   const canvas = document.createElement('canvas');
   canvas.style.width = '100%';
@@ -369,7 +385,8 @@ const renderOccupancyMap = (hostEl, scans, { galaxies, systems }, linkBase) => {
       const positions = scans[`${g}:${s}`]?.positions;
       const x = gutter + (s - 1) * cellW;
       for (let p = 1; p <= POS; p++) {
-        ctx.fillStyle = colorFor(positions && positions[p] ? positions[p].status : undefined);
+        const pos = positions && positions[p];
+        ctx.fillStyle = cellColor(classifyCell(pos ? pos.status : undefined, pos ? pos.player : undefined, clsCtx));
         ctx.fillRect(x, yBase + (p - 1) * posPx, Math.ceil(cellW) + 0.4, posPx);
       }
     }
@@ -409,17 +426,14 @@ const renderOccupancyMap = (hostEl, scans, { galaxies, systems }, linkBase) => {
 
   const legend = document.createElement('div');
   legend.className = 'smap-occ-legend';
-  /** @type {Array<[string, string]>} */
-  const items = [
-    ['empty', 'empty'], ['occupied', 'Occupied'], ['inactive', 'Inactive (i)'],
-    ['long_inactive', 'Inactive (I)'], ['vacation', 'Vacation'], ['banned', 'Banned'], ['mine', 'Mine'],
-  ];
-  for (const [key, label] of items) {
+  /** @type {Array<[import('../../domain/cellClass.js').CellBucket, string]>} */
+  const items = [['free', 'Free'], ['farm', 'Farm (rich → bright)'], ['threat', 'Active threat (stronger → brighter)'], ['blocked', 'Protected'], ['mine', 'Mine']];
+  for (const [bucket, label] of items) {
     const sw = document.createElement('span');
     sw.className = 'smap-occ-leg';
     const dot = document.createElement('span');
     dot.className = 'smap-occ-sw';
-    dot.style.background = key === 'empty' ? DARK : (SC[key] || DARK);
+    dot.style.background = cellColor({ bucket, intensity: 1 });
     sw.append(dot, document.createTextNode(label));
     legend.appendChild(sw);
   }
@@ -427,10 +441,9 @@ const renderOccupancyMap = (hostEl, scans, { galaxies, systems }, linkBase) => {
 };
 
 /**
- * Server map: the whole server as a binned, metric-smoothed temperature FIELD
- * under the active strategy's lens (see {@link buildHeatField}). 9 galaxy rows ×
- * ~64 system columns of coloured cells — coarse "temperature", not per-system
- * detail, so it fits the panel. Painted on demand (collapsed <details>).
+ * Server map: the whole server at a glance, in one of two views — the smooth,
+ * strategy-INDEPENDENT threat/farm FIELD (default) or the SHARP per-position
+ * occupancy texture. Painted on demand (collapsed <details>).
  *
  * @param {object} o
  * @param {HTMLElement} o.hostEl
@@ -438,19 +451,18 @@ const renderOccupancyMap = (hostEl, scans, { galaxies, systems }, linkBase) => {
  * @param {number} [o.galaxies]   Grid galaxy bound (serverData.galaxies); a
  *   falsy value renders the "no API data" note instead of a map.
  * @param {number} [o.systems]    Grid system bound (serverData.systems).
- * @param {boolean} [o.donutGalaxy] Galaxy axis wraps (serverData) — drives the
- *   distance-aware smoothing across the galaxy seam.
+ * @param {boolean} [o.donutGalaxy] Galaxy axis wraps (serverData).
  * @param {boolean} [o.donutSystem] System axis wraps (serverData).
- * @param {string} [o.strategy]   Active strategy key — drives BOTH the temperature
- *   lens AND (when 'longest') the switch to the raw occupancy texture.
- * @param {import('../../domain/regions.js').StrategyWeights} [o.customWeights]
- * @param {import('../../domain/regions.js').PlayerCache} [o.players]
- * @param {number} [o.ownRank]
+ * @param {string} [o.view]       'field' (default, threat/farm) or 'occupancy'.
+ * @param {number} [o.offlineWindow]  Threat window in hours (default 8) — the
+ *   NISZCZ reach.
+ * @param {number} [o.farmReach]  Farm glow radius in systems (default 30).
  * @param {string} [o.linkBase]  Game origin (e.g. https://s1-en.ogame.gameforge.com);
  *   when set, clicking a cell opens the in-game galaxy view at that G:S.
+ * @param {number} [o.ownMilitary]  Our military-highscore points, for threat intensity.
  * @returns {void}
  */
-export const renderServerMap = ({ hostEl, scans, galaxies, systems, donutGalaxy, donutSystem, strategy, customWeights, players, ownRank, linkBase }) => {
+export const renderServerMap = ({ hostEl, scans, galaxies, systems, donutGalaxy, donutSystem, view, offlineWindow, farmReach, linkBase, ownMilitary }) => {
   hostEl.innerHTML = '';
   /** @param {string} msg */
   const note = (msg) => {
@@ -463,26 +475,21 @@ export const renderServerMap = ({ hostEl, scans, galaxies, systems, donutGalaxy,
     note('No API data yet — the server map needs the public-API occupancy feed.');
     return;
   }
-  const stratKey = strategy ?? 'longest';
-  // The Strategy select doubles as the map lens. 'Longest streak' is the raw,
-  // unweighted mode → show raw OCCUPANCY (every position), since a strategy
-  // temperature field is meaningless without weights. Any neighbourhood strategy
-  // → the smooth, categorical-free temperature field under that lens.
-  if (stratKey === 'longest') {
-    renderOccupancyMap(hostEl, scans, { galaxies, systems }, linkBase);
+  // Two views, independent of the Strategy select: the sharp per-position
+  // occupancy texture, or (default) the strategy-independent threat/farm field.
+  if (view === 'occupancy') {
+    renderOccupancyMap(hostEl, scans, { galaxies, systems }, linkBase, ownMilitary);
     return;
   }
-  const weights = customWeights ?? (STRATEGIES[stratKey]?.weights ?? {});
-  // Granularity adapts to the panel width: aim for ~4px cells (≈2–4 systems per
-  // column on a typical panel) so the field is as fine as fits — coarser hides
-  // local structure. buildHeatField caps cols at `systems`.
+  // Granularity adapts to the panel width: aim for ~4px cells so the field is as
+  // fine as fits. buildThreatFarmField caps cols at `systems`.
   const avail = (hostEl.clientWidth || 700) - 26;
   const cols = Math.max(64, Math.round(avail / 4));
-  const field = buildHeatField(scans, { galaxies, systems, donutGalaxy, donutSystem }, weights, { players, ownRank, cols });
+  const field = buildThreatFarmField(scans, { galaxies, systems, donutGalaxy, donutSystem }, { ownMilitary, cols, window: offlineWindow, farmReach });
 
   const info = document.createElement('div');
   info.className = 'smap-info';
-  info.textContent = 'Hover a cell for its system range and temperature.';
+  info.textContent = 'Hover a cell for its system range, threat and farm.';
 
   // Sparse top axis: a representative system number every 8 columns.
   const axis = document.createElement('div');
@@ -505,13 +512,13 @@ export const renderServerMap = ({ hostEl, scans, galaxies, systems, donutGalaxy,
       const cell = field.grid[g][c];
       const el = document.createElement('span');
       el.className = 'smap-cell';
-      el.style.backgroundColor = heatColor(cell.v);
-      el.style.opacity = (0.12 + 0.88 * cell.w).toFixed(2);
+      el.style.backgroundColor = fieldColor(cell.threat, cell.farm);
       const lo = Math.round(c * field.binWidth) + 1;
       const hi = Math.round((c + 1) * field.binWidth);
-      const v = cell.v;
+      const tv = cell.threat;
+      const fv = cell.farm;
       el.addEventListener('mouseenter', () => {
-        info.textContent = `G${g} · sys ≈ ${lo}–${hi} · heat ${v >= 0 ? '+' : ''}${v.toFixed(2)}`;
+        info.textContent = `G${g} · sys ≈ ${lo}–${hi} · threat ${tv.toFixed(2)} · farm ${fv.toFixed(2)}`;
       });
       if (linkBase) {
         const cs = Math.round((c + 0.5) * field.binWidth);
@@ -524,17 +531,20 @@ export const renderServerMap = ({ hostEl, scans, galaxies, systems, donutGalaxy,
     hostEl.appendChild(row);
   }
 
-  // Legend: diverging bar + the REALIZED scale endpoints (so the colour scale
-  // reads as relative-to-this-server, not absolute).
+  // Legend: the two channels over the void — colour is relative to this server.
   const legend = document.createElement('div');
-  legend.className = 'smap-legend';
-  const lo = document.createElement('span');
-  lo.textContent = `−${field.scaleNeg.toFixed(2)}`;
-  const bar = document.createElement('span');
-  bar.className = 'smap-legbar';
-  const hi = document.createElement('span');
-  hi.textContent = `+${field.scalePos.toFixed(2)}`;
-  legend.append(lo, bar, hi);
+  legend.className = 'smap-occ-legend';
+  /** @type {Array<[number, number, string]>} */
+  const legItems = [[1, 0, 'Threat (NISZCZ reach)'], [0, 1, 'Farm (cargo reach)'], [0, 0, 'Empty']];
+  for (const [lt, lf, lbl] of legItems) {
+    const sw = document.createElement('span');
+    sw.className = 'smap-occ-leg';
+    const dot = document.createElement('span');
+    dot.className = 'smap-occ-sw';
+    dot.style.background = fieldColor(lt, lf);
+    sw.append(dot, document.createTextNode(lbl));
+    legend.appendChild(sw);
+  }
   hostEl.appendChild(legend);
 
   hostEl.appendChild(info);
