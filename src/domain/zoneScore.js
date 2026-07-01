@@ -184,25 +184,30 @@ const sampleRegion = (field, region, galaxyMax) => {
  */
 
 /**
- * Field-aware "Ignore worst": how much of the window's (normalised) threat
- * sample the excluded players account for. Mirrors the field's own build
- * rules — per-system source = MAX occupant intensity (so dropping a player
- * only matters where they WERE the local maximum), emission spread by the
- * RIP-reach kernel, result scaled by the field's own p95 — so subtracting it
- * from the sampled threat reads "the area as if you avoided them".
+ * Field-aware "Ignore worst": the window's mean threat re-sampled AS IF the
+ * excluded players were gone. Mirrors the field's own build rules — per-system
+ * source = MAX occupant intensity (so dropping a player only matters where
+ * they WERE the local maximum), emission spread by the RIP-reach kernel,
+ * scaled by the field's own p95 — and, crucially, works PER CELL in RAW
+ * (pre-clamp) units: a cell saturated past the p95 must not read as safer
+ * just because a fraction of its (hidden) excess pressure was removed.
  *
  * Excluded players live inside the window by construction
  * (`findNeighbourhoodCandidates` gathers them from the window span), so only
- * span systems need re-reading. Pure.
+ * span systems are re-read. A multi-planet excluded player's planets OUTSIDE
+ * the span still emit into it — an accepted, conservative under-correction
+ * (the drop never over-promises). Pure.
  *
  * @param {Region} region
  * @param {ZoneContext} ctx
  * @param {ThreatFarmField} field
- * @returns {number} Mean normalised threat reduction over the span (≥ 0).
+ * @returns {number | null} Mean adjusted threat over the span (0..1), or
+ *   `null` when the exclusions touch no threat source (caller keeps the
+ *   plain sample).
  */
-const excludedThreatDrop = (region, ctx, field) => {
+const adjustedThreatMean = (region, ctx, field) => {
   const excluded = region.excluded;
-  if (!excluded || excluded.length === 0 || !(field.threatScale > 0)) return 0;
+  if (!excluded || excluded.length === 0 || !(field.threatScale > 0)) return null;
   const excludedIds = new Set(excluded.map((p) => p.id));
   const galaxyMax = ctx.galaxyMax ?? 499;
   const clsCtx = { ownMilitary: ctx.ownMilitary };
@@ -230,19 +235,23 @@ const excludedThreatDrop = (region, ctx, field) => {
     }
     if (maxAll > maxKept) sources.push({ sys, delta: maxAll - maxKept });
   }
-  if (sources.length === 0) return 0;
+  if (sources.length === 0) return null;
 
-  // Spread each delta by the same RIP-reach kernel the field used and average
-  // over the span — the counterpart of sampleRegion's mean.
+  // Per span cell: subtract the excluded emission from the RAW sample, THEN
+  // clamp — the mean of clamped adjusted cells is the honest counterpart of
+  // sampleRegion's mean of clamped cells.
   let total = 0;
   for (let i = 0; i < span; i++) {
     const sys = wrapSystem(start + i, galaxyMax);
+    const cell = sampleField(field, region.galaxy, sys);
+    let dropRaw = 0;
     for (const src of sources) {
       const d = axisDelta(sys, src.sys, galaxyMax, field.donutSystem);
-      total += src.delta * reachThreat(flightDistance(0, d), field.windowH);
+      dropRaw += src.delta * reachThreat(flightDistance(0, d), field.windowH);
     }
+    total += clamp01((cell.threatRaw ?? cell.threat) - dropRaw / field.threatScale);
   }
-  return (total / span) / field.threatScale;
+  return total / span;
 };
 
 /**
@@ -257,11 +266,15 @@ export const computeZoneChannels = (region, ctx) => {
   const status = ctx.status ?? 'empty';
   const s = region.score;
   let { threat, farm } = sampleRegion(ctx.field, region, galaxyMax);
-  // "Ignore worst" reaches the safety channel: subtract the excluded players'
-  // share of the sampled threat, so the ranking (not just the report) reads
-  // the area as if they were avoided.
+  // "Ignore worst" reaches the safety channel: re-sample the window's threat
+  // as if the excluded players were gone, so the ranking (not just the
+  // report) reads the area as avoided. Memoised per field build — the
+  // re-sample is the expensive half of an annotate when excludeN > 0.
   if (ctx.field && region.excluded && region.excluded.length) {
-    threat = Math.max(0, threat - excludedThreatDrop(region, ctx, ctx.field));
+    if (!region.threatAdjMemo || region.threatAdjMemo.field !== ctx.field) {
+      region.threatAdjMemo = { field: ctx.field, value: adjustedThreatMean(region, ctx, ctx.field) };
+    }
+    if (region.threatAdjMemo.value != null) threat = region.threatAdjMemo.value;
   }
 
   // Streak: a real streak region carries its own matched count; an area

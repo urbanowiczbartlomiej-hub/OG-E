@@ -160,6 +160,9 @@ import { occupantStrength } from './players.js';
  * @property {number} [freeRun] Memoised ANY-free contiguous run through the
  *   candidate's centre (zoneScore.contiguousFreeRun) — computed once per
  *   region lifetime.
+ * @property {{ field: unknown, value: number | null }} [threatAdjMemo]
+ *   Memoised exclusion-adjusted threat sample (zoneScore), keyed by the
+ *   field build it was computed against.
  */
 
 /**
@@ -1019,9 +1022,13 @@ const gatherWindowPlayers = (region, scans, galaxyMax) => {
     if (!sysData?.positions) continue;
     for (const pos of Object.values(sysData.positions)) {
       if (pos.status === 'mine') continue;
-      // Banned accounts are eternal vacation (can't attack), so they're never a
-      // stat-ruiner worth spending an "ignore worst" slot on — skip them.
-      if (pos.status === 'banned') continue;
+      // Non-attack-capable occupants are never a stat-ruiner worth spending an
+      // "ignore worst" slot on: banned = eternal vacation, vacation = frozen,
+      // inactive/long_inactive = a farm, not a threat. Mirrors cellClass's
+      // buckets (only ACTIVE occupants can be 'threat'), so an exclusion slot
+      // always buys an actual safety effect.
+      if (pos.status === 'banned' || pos.status === 'vacation'
+        || pos.status === 'inactive' || pos.status === 'long_inactive') continue;
       const p = pos.player;
       if (!p) continue;
       const prev = byId.get(p.id);

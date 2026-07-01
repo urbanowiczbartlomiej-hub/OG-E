@@ -1,9 +1,9 @@
 // @ts-check
 
-// Shared legend swatch builder — a coloured square + label, used by the
-// galaxy pixel-map legend (`galaxy.js`) and the Top-region strip legend
-// (`freeStreak.js`). Both painted identical swatches inline; this is the
-// single source of truth so a swatch-style tweak lands in both at once.
+// Shared legend swatch + stat-card builders — a coloured square + label and
+// the colour-coded stat card, used by the Galaxy Viewer's strip/field legends
+// and detail cards (`freeStreak.js`). Kept as the single source of truth so a
+// swatch-style tweak lands everywhere at once.
 //
 // Pure DOM factory: builds and returns a detached `<span>`. The `border`
 // option draws a faint outline for swatches whose colour is close to the

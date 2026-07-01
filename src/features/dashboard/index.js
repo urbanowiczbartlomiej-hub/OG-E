@@ -1211,8 +1211,10 @@ const repaintFreeRegions = () => {
     if (typeof ts === 'number' && ts > 0) {
       const days = Math.max(0, Math.floor((Date.now() - ts) / 86_400_000));
       const age = days === 0 ? 'from today' : days === 1 ? '1 day old' : `${days} days old`;
+      // `> 0` — classifyCell only applies the anchor for a positive score, so
+      // a fresh account listed with military 0 is NOT calibrated either.
       scoutDataStamp.textContent = `Occupancy data: ${age}`
-        + (ownMilitary !== undefined
+        + (typeof ownMilitary === 'number' && ownMilitary > 0
           ? ' · threat calibrated to your fleet'
           : ' · threat NOT calibrated — open the game once in this universe to anchor it to your fleet');
     } else {

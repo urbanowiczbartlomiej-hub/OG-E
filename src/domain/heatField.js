@@ -48,6 +48,11 @@ const pct = (a, p) => (a.length ? a[Math.min(a.length - 1, Math.floor(p * a.leng
  * @typedef {object} FieldCell
  * @property {number} threat  0..1 (relative), red channel.
  * @property {number} farm    0..1 (relative), gold channel.
+ * @property {number} [threatRaw]  Pre-clamp threat in p95 units (0..∞) — a
+ *   cell whose raw pressure exceeded the server p95 clamps to 1.0 in
+ *   `threat`, but consumers that SUBTRACT from the sample (the zoneScore
+ *   field-aware exclusion) must work in raw units or a saturated cell would
+ *   read as safer than it is.
  */
 
 /**
@@ -200,7 +205,8 @@ export const buildThreatFarmField = (scans, dims, opts = {}) => {
   for (let g = 1; g <= galaxies; g++) {
     grid[g] = [];
     for (let c = 0; c < N; c++) {
-      grid[g][c] = { threat: clamp01(threatF[g][c] / tScale), farm: clamp01(farmF[g][c] / fScale) };
+      const rawT = threatF[g][c] / tScale;
+      grid[g][c] = { threat: clamp01(rawT), farm: clamp01(farmF[g][c] / fScale), threatRaw: rawT };
     }
   }
   return { grid, cols: N, galaxies, systems, binWidth, windowH, donutSystem, threatScale: tScale };

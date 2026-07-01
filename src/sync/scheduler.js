@@ -3,19 +3,21 @@
 // # Role
 //
 // This is the glue that turns three independently-useful primitives —
-// {@link scansStore}/{@link historyStore} (local state),
+// {@link historyStore} + the other synced stores (local state),
 // {@link mergeScans}/{@link mergeHistory} (pure reconcilers), and the
 // {@link fetchGistData}/{@link writeGistData} gist client — into a
 // working cross-device sync round-trip. Every other sync module is
 // stateless; this one owns the timers, the in-flight lock, and the
-// store/event subscriptions that drive it.
+// store/event subscriptions that drive it. (Galaxy scans are no longer
+// gist-synced — §4b — so the scans store is not watched here any more;
+// the scan-burst story below survives as the debounce's design rationale.)
 //
 // # Why a 15-second debounce
 //
 // OGame's galaxy page emits a burst of scans whenever the user scrolls
 // — one XHR per system, potentially a dozen in a few seconds. Each
-// scan flips {@link scansStore}, which on its own would queue an
-// upload. Without debouncing we'd burn ~12 GitHub API requests to sync
+// scan flipped the (then-synced) scans store, which on its own would
+// queue an upload. Without debouncing we'd burn ~12 GitHub API requests to sync
 // a single scrolling session; at OGame's tick cadence that exhausts
 // the 5000 req/h quota in minutes. A 15 s quiet window lets the whole
 // burst coalesce into one trailing upload. The price is staleness on
@@ -30,8 +32,8 @@
 // Every sync round-trip merges local and remote, and in the general
 // case writes the merged result back to the local store. But the local
 // store is watched by `storage.onChanged`-equivalent subscribers (any
-// feature that reacts to scans / history updates), and — crucially
-// — by US: any write to {@link scansStore} or {@link historyStore}
+// feature that reacts to history / decision updates), and — crucially
+// — by US: any write to {@link historyStore} (or another synced store)
 // fires {@link onStoreChange}, which schedules another upload. If the
 // write was a no-op (merge produced exactly what was already there),
 // that next upload will re-merge, re-write, re-schedule, forever.
