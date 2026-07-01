@@ -313,6 +313,21 @@
   .subtab.active { color: #fff; background: #16252f; border-color: #2a4a5a; font-weight: bold; }
   .subtabpane { display: none; }
   .subtabpane.active { display: block; }
+  /* Colony Scout → server map: binned temperature field (whole server). */
+  .server-map-panel { margin: 10px 0; }
+  .server-map-panel > summary { cursor: pointer; color: #ccc; font-size: 13px; user-select: none; padding: 4px 0; }
+  .server-map-empty { color: #888; font-size: 13px; padding: 6px 0; }
+  .smap-axis { display: flex; margin-left: 26px; height: 11px; font-size: 9px; color: #5f6f7c; font-family: monospace; }
+  .smap-axis > span { flex: 1 1 auto; min-width: 0; overflow: hidden; }
+  .smap-row { display: flex; align-items: center; height: 16px; }
+  .smap-glab { flex: 0 0 26px; font-size: 11px; font-family: monospace; color: #7a8a99; text-align: right; padding-right: 6px; }
+  .smap-cell { flex: 1 1 auto; height: 100%; min-width: 0; }
+  .smap-legend { display: flex; align-items: center; gap: 8px; margin: 8px 0 0 26px; font-size: 11px; color: #7a8a99; font-family: monospace; }
+  .smap-legbar { width: 160px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, rgb(202,64,56), rgb(90,96,104), rgb(54,178,84)); }
+  .smap-info { margin-top: 8px; font-size: 12px; color: #888; }
+  .smap-occ-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+  .smap-occ-leg { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: #9aabb8; }
+  .smap-occ-sw { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
   /* Each pane splits into Settings | Message columns; stacks on narrow. */
   .rem-pane-grid { display: grid; grid-template-columns: 1fr; gap: 0 32px; align-items: start; }
   .rem-pane-grid .cfg-sub:first-child { margin-top: 0; }
@@ -605,6 +620,10 @@
         <span id="freeWV_honored"  class="weight-val">0</span>
       </div>
       <button id="freeWeightsReset" class="weight-reset">↺ Reset to selected preset</button>
+    </details>
+    <details class="server-map-panel" id="serverMapPanel">
+      <summary>🗺 Server map — temperature per strategy · occupancy in Longest streak</summary>
+      <div id="serverMapHost"></div>
     </details>
     <div id="freeContainer"></div>
     </div>

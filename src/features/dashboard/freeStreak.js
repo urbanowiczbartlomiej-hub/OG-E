@@ -47,6 +47,7 @@ import {
   STRATEGIES,
   MIN_REGION_LENGTH,
 } from '../../domain/regions.js';
+import { buildHeatField } from '../../domain/heatField.js';
 import { STRIP_PRIORITY, bestStatusInSystem } from '../../domain/histogram.js';
 import { occupantStrength, honorRank } from '../../domain/players.js';
 import {
@@ -74,7 +75,7 @@ const TOP_N = 20;
  * 499 → 1 boundary. Shared by the strip and its legend so they always
  * describe the exact same systems.
  *
- * @param {Region} region
+ * @param {Pick<Region, 'start' | 'end'>} region
  * @param {number} [galaxyMax]
  * @returns {number[]}
  */
@@ -238,7 +239,7 @@ const buildSystemCard = (g, s, scan, pinned, players) => {
  * wait); clicking PINS it so it stays while you read / compare. Hovering other
  * cells previews them; leaving the strip restores the pinned card (or hides).
  *
- * @param {Region} region
+ * @param {Pick<Region, 'galaxy' | 'start' | 'end' | 'center'>} region
  * @param {GalaxyScans} scans
  * @param {object} o
  * @param {'streak'|'neighbourhood'} o.mode
@@ -305,6 +306,238 @@ const buildInteractiveStrip = (region, scans, { mode, weights, players, ownRank 
 
   wrap.append(strip, pop);
   return wrap;
+};
+
+/**
+ * Open the in-game galaxy view at g:s in a new tab. No-op without a base URL.
+ * @param {string|undefined} linkBase  Game origin, e.g. https://s1-en.ogame.gameforge.com
+ * @param {number} g @param {number} s
+ * @returns {void}
+ */
+const openGalaxyView = (linkBase, g, s) => {
+  if (!linkBase) return;
+  window.open(`${linkBase}/game/index.php?page=ingame&component=galaxy&galaxy=${g}&system=${s}`, '_blank', 'noopener');
+};
+
+/**
+ * Occupancy lens: a SHARP per-position texture of the whole server — every
+ * galaxy as a 499 (systems) × 15 (positions) block, one cell per planet slot,
+ * coloured by status ({@link STATUS_COLORS}). No binning/smoothing — occupancy
+ * is categorical (a planet is there or not), so blur would only blur the truth.
+ * Canvas (≈67k cells); systems scaled to panel width, positions fixed at 2px.
+ *
+ * @param {HTMLElement} hostEl
+ * @param {GalaxyScans} scans
+ * @param {{galaxies:number, systems:number}} dims
+ * @param {string} [linkBase]  Game origin; when set, clicking opens the galaxy view.
+ * @returns {void}
+ */
+const renderOccupancyMap = (hostEl, scans, { galaxies, systems }, linkBase) => {
+  const POS = 15;
+  const posPx = 2;
+  const gap = 4;
+  const gutter = 24;
+  const topPad = 2;
+  const stride = POS * posPx + gap;
+  const plotH = galaxies * stride - gap + topPad;
+  const W = hostEl.clientWidth || 700;
+  const cellW = (W - gutter) / systems;
+  const DARK = '#161c24';
+  const SC = /** @type {Record<string, string>} */ (STATUS_COLORS);
+  /** @param {string|undefined} st @returns {string} */
+  const colorFor = (st) => {
+    if (!st || st === 'empty' || st === 'empty_sent' || st === 'abandoned') return DARK;
+    return SC[st] || DARK;
+  };
+  const dpr = window.devicePixelRatio || 1;
+  const canvas = document.createElement('canvas');
+  canvas.style.width = '100%';
+  canvas.style.height = `${plotH}px`;
+  canvas.style.display = 'block';
+  canvas.width = Math.round(W * dpr);
+  canvas.height = Math.round(plotH * dpr);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) { hostEl.appendChild(canvas); return; }
+  ctx.scale(dpr, dpr);
+  ctx.font = '10px monospace';
+  ctx.textBaseline = 'middle';
+  for (let g = 1; g <= galaxies; g++) {
+    const yBase = topPad + (g - 1) * stride;
+    ctx.fillStyle = '#7a8a99';
+    ctx.fillText(`G${g}`, 2, yBase + (POS * posPx) / 2);
+    for (let s = 1; s <= systems; s++) {
+      const positions = scans[`${g}:${s}`]?.positions;
+      const x = gutter + (s - 1) * cellW;
+      for (let p = 1; p <= POS; p++) {
+        ctx.fillStyle = colorFor(positions && positions[p] ? positions[p].status : undefined);
+        ctx.fillRect(x, yBase + (p - 1) * posPx, Math.ceil(cellW) + 0.4, posPx);
+      }
+    }
+  }
+  hostEl.appendChild(canvas);
+
+  const info = document.createElement('div');
+  info.className = 'smap-info';
+  info.textContent = 'Hover for the exact coordinate and status.';
+  canvas.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    if (mx < gutter) { info.textContent = 'Hover for the exact coordinate and status.'; return; }
+    const s = Math.floor((mx - gutter) / cellW) + 1;
+    const g = Math.floor((my - topPad) / stride) + 1;
+    if (s < 1 || s > systems || g < 1 || g > galaxies) { info.textContent = ''; return; }
+    const within = (my - topPad) - (g - 1) * stride;
+    const p = Math.floor(within / posPx) + 1;
+    if (p < 1 || p > POS) { info.textContent = `G${g} · system ${s}`; return; }
+    const st = scans[`${g}:${s}`]?.positions?.[p]?.status;
+    info.textContent = `G${g}:${s}:${p} — ${st ? (STATUS_LABELS[st] || st) : 'empty'}`;
+  });
+  if (linkBase) {
+    canvas.style.cursor = 'pointer';
+    canvas.addEventListener('click', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      if (mx < gutter) return;
+      const s = Math.floor((mx - gutter) / cellW) + 1;
+      const g = Math.floor((my - topPad) / stride) + 1;
+      if (s >= 1 && s <= systems && g >= 1 && g <= galaxies) openGalaxyView(linkBase, g, s);
+    });
+  }
+  hostEl.appendChild(info);
+
+  const legend = document.createElement('div');
+  legend.className = 'smap-occ-legend';
+  /** @type {Array<[string, string]>} */
+  const items = [
+    ['empty', 'empty'], ['occupied', 'Occupied'], ['inactive', 'Inactive (i)'],
+    ['long_inactive', 'Inactive (I)'], ['vacation', 'Vacation'], ['banned', 'Banned'], ['mine', 'Mine'],
+  ];
+  for (const [key, label] of items) {
+    const sw = document.createElement('span');
+    sw.className = 'smap-occ-leg';
+    const dot = document.createElement('span');
+    dot.className = 'smap-occ-sw';
+    dot.style.background = key === 'empty' ? DARK : (SC[key] || DARK);
+    sw.append(dot, document.createTextNode(label));
+    legend.appendChild(sw);
+  }
+  hostEl.appendChild(legend);
+};
+
+/**
+ * Server map: the whole server as a binned, metric-smoothed temperature FIELD
+ * under the active strategy's lens (see {@link buildHeatField}). 9 galaxy rows ×
+ * ~64 system columns of coloured cells — coarse "temperature", not per-system
+ * detail, so it fits the panel. Painted on demand (collapsed <details>).
+ *
+ * @param {object} o
+ * @param {HTMLElement} o.hostEl
+ * @param {GalaxyScans} o.scans   The composite (API + live) scan map.
+ * @param {number} [o.galaxies]   Grid galaxy bound (serverData.galaxies); a
+ *   falsy value renders the "no API data" note instead of a map.
+ * @param {number} [o.systems]    Grid system bound (serverData.systems).
+ * @param {boolean} [o.donutGalaxy] Galaxy axis wraps (serverData) — drives the
+ *   distance-aware smoothing across the galaxy seam.
+ * @param {boolean} [o.donutSystem] System axis wraps (serverData).
+ * @param {string} [o.strategy]   Active strategy key — drives BOTH the temperature
+ *   lens AND (when 'longest') the switch to the raw occupancy texture.
+ * @param {import('../../domain/regions.js').StrategyWeights} [o.customWeights]
+ * @param {import('../../domain/regions.js').PlayerCache} [o.players]
+ * @param {number} [o.ownRank]
+ * @param {string} [o.linkBase]  Game origin (e.g. https://s1-en.ogame.gameforge.com);
+ *   when set, clicking a cell opens the in-game galaxy view at that G:S.
+ * @returns {void}
+ */
+export const renderServerMap = ({ hostEl, scans, galaxies, systems, donutGalaxy, donutSystem, strategy, customWeights, players, ownRank, linkBase }) => {
+  hostEl.innerHTML = '';
+  /** @param {string} msg */
+  const note = (msg) => {
+    const el = document.createElement('div');
+    el.className = 'server-map-empty';
+    el.textContent = msg;
+    hostEl.appendChild(el);
+  };
+  if (!galaxies || !systems) {
+    note('No API data yet — the server map needs the public-API occupancy feed.');
+    return;
+  }
+  const stratKey = strategy ?? 'longest';
+  // The Strategy select doubles as the map lens. 'Longest streak' is the raw,
+  // unweighted mode → show raw OCCUPANCY (every position), since a strategy
+  // temperature field is meaningless without weights. Any neighbourhood strategy
+  // → the smooth, categorical-free temperature field under that lens.
+  if (stratKey === 'longest') {
+    renderOccupancyMap(hostEl, scans, { galaxies, systems }, linkBase);
+    return;
+  }
+  const weights = customWeights ?? (STRATEGIES[stratKey]?.weights ?? {});
+  // Granularity adapts to the panel width: aim for ~4px cells (≈2–4 systems per
+  // column on a typical panel) so the field is as fine as fits — coarser hides
+  // local structure. buildHeatField caps cols at `systems`.
+  const avail = (hostEl.clientWidth || 700) - 26;
+  const cols = Math.max(64, Math.round(avail / 4));
+  const field = buildHeatField(scans, { galaxies, systems, donutGalaxy, donutSystem }, weights, { players, ownRank, cols });
+
+  const info = document.createElement('div');
+  info.className = 'smap-info';
+  info.textContent = 'Hover a cell for its system range and temperature.';
+
+  // Sparse top axis: a representative system number every 8 columns.
+  const axis = document.createElement('div');
+  axis.className = 'smap-axis';
+  for (let c = 0; c < field.cols; c++) {
+    const a = document.createElement('span');
+    if (c % 8 === 0) a.textContent = String(Math.round((c + 0.5) * field.binWidth));
+    axis.appendChild(a);
+  }
+  hostEl.appendChild(axis);
+
+  for (let g = 1; g <= field.galaxies; g++) {
+    const row = document.createElement('div');
+    row.className = 'smap-row';
+    const label = document.createElement('span');
+    label.className = 'smap-glab';
+    label.textContent = `G${g}`;
+    row.appendChild(label);
+    for (let c = 0; c < field.cols; c++) {
+      const cell = field.grid[g][c];
+      const el = document.createElement('span');
+      el.className = 'smap-cell';
+      el.style.backgroundColor = heatColor(cell.v);
+      el.style.opacity = (0.12 + 0.88 * cell.w).toFixed(2);
+      const lo = Math.round(c * field.binWidth) + 1;
+      const hi = Math.round((c + 1) * field.binWidth);
+      const v = cell.v;
+      el.addEventListener('mouseenter', () => {
+        info.textContent = `G${g} · sys ≈ ${lo}–${hi} · heat ${v >= 0 ? '+' : ''}${v.toFixed(2)}`;
+      });
+      if (linkBase) {
+        const cs = Math.round((c + 0.5) * field.binWidth);
+        el.style.cursor = 'pointer';
+        el.title = `Open G${g}:${cs} in-game`;
+        el.addEventListener('click', () => openGalaxyView(linkBase, g, cs));
+      }
+      row.appendChild(el);
+    }
+    hostEl.appendChild(row);
+  }
+
+  // Legend: diverging bar + the REALIZED scale endpoints (so the colour scale
+  // reads as relative-to-this-server, not absolute).
+  const legend = document.createElement('div');
+  legend.className = 'smap-legend';
+  const lo = document.createElement('span');
+  lo.textContent = `−${field.scaleNeg.toFixed(2)}`;
+  const bar = document.createElement('span');
+  bar.className = 'smap-legbar';
+  const hi = document.createElement('span');
+  hi.textContent = `+${field.scalePos.toFixed(2)}`;
+  legend.append(lo, bar, hi);
+  hostEl.appendChild(legend);
+
+  hostEl.appendChild(info);
 };
 
 /**

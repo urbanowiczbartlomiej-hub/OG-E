@@ -48,7 +48,7 @@ import { debounce } from '../../lib/debounce.js';
 import { parseTargetPositions } from '../../domain/histogram.js';
 import { populatePositionFilter, renderColonyChart } from './colony.js';
 import { renderGalaxyMap } from './galaxy.js';
-import { renderFreeRegions } from './freeStreak.js';
+import { renderFreeRegions, renderServerMap } from './freeStreak.js';
 import { renderTargets, DEFAULT_TARGET_SORT } from './targets.js';
 import { STRATEGIES } from '../../domain/regions.js';
 import { buildOccupancyIndex, buildScanMapFromIndex } from '../../domain/apiOccupancy.js';
@@ -223,7 +223,7 @@ let apiIndex = null;
 /**
  * Grid bounds from the cached serverData, needed to enumerate fully-empty
  * systems in the synthetic scan map. `{}` until API data loads.
- * @type {{ galaxies?: number, systems?: number }}
+ * @type {{ galaxies?: number, systems?: number, donutGalaxy?: boolean, donutSystem?: boolean, domain?: string }}
  */
 let apiBounds = {};
 
@@ -312,6 +312,8 @@ const expandedGalaxies = new Set();
 /** @type {HTMLElement | null} */ let nbrOnlyControls;
 /** @type {HTMLElement | null} */ let freeRadiusRow;
 /** @type {HTMLElement} */ let freeContainer;
+/** @type {HTMLElement | null} */ let serverMapHost;
+/** @type {HTMLDetailsElement | null} */ let serverMapPanel;
 /** @type {HTMLElement | null} */ let freeCountInfoEl;
 /** @type {HTMLElement} */ let targetsContainer;
 /** @type {HTMLInputElement} */ let tgtMinMilitary;
@@ -575,6 +577,8 @@ const wireDom = () => {
   nbrOnlyControls = document.getElementById('nbrOnlyControls');
   freeRadiusRow = document.getElementById('freeRadiusRow');
   freeContainer = /** @type {HTMLElement} */ (document.getElementById('freeContainer'));
+  serverMapHost = document.getElementById('serverMapHost');
+  serverMapPanel = /** @type {HTMLDetailsElement | null} */ (document.getElementById('serverMapPanel'));
   freeCountInfoEl = document.getElementById('freeCountInfo');
   targetsContainer = /** @type {HTMLElement} */ (document.getElementById('targetsContainer'));
   tgtMinMilitary = /** @type {HTMLInputElement} */ (document.getElementById('tgtMinMilitary'));
@@ -839,12 +843,16 @@ const loadAll = async () => {
       universe: { planets: api.universe.planets, timestamp: api.universe.timestamp },
       players: { players: api.players ? api.players.players : {} },
       highscore: { ranks: api.total ? api.total.ranks : {} },
+      military: { ranks: api.military ? api.military.ranks : {} },
       honor: { ranks: api.honor ? api.honor.ranks : {} },
       ownPlayerId: op.id,
     });
     apiBounds = {
       galaxies: api.server ? api.server.data.galaxies : undefined,
       systems: api.server ? api.server.data.systems : undefined,
+      donutGalaxy: api.server ? api.server.data.donutGalaxy : undefined,
+      donutSystem: api.server ? api.server.data.donutSystem : undefined,
+      domain: api.server ? api.server.data.domain : undefined,
     };
   } else {
     apiIndex = null;
@@ -1208,6 +1216,29 @@ const repaintFreeRegions = () => {
     players,
     ownRank: ownProfile.rank,
   });
+  // Server map paints only while its (collapsed-by-default) panel is open —
+  // 9×499 cells are too heavy to rebuild on every slider tick otherwise.
+  if (serverMapHost && serverMapPanel?.open) {
+    // Game origin for the click-to-galaxy deep link: prefer serverData's own
+    // domain, else reconstruct the canonical host from the universe id.
+    const dom = apiBounds.domain;
+    const host = (typeof dom === 'string' && dom.includes('.'))
+      ? dom
+      : (/^s\d+-[a-z]+$/i.test(selectedUniverseId) ? `${selectedUniverseId}.ogame.gameforge.com` : '');
+    renderServerMap({
+      hostEl: serverMapHost,
+      scans: composite,
+      galaxies: apiBounds.galaxies,
+      systems: apiBounds.systems,
+      donutGalaxy: apiBounds.donutGalaxy,
+      donutSystem: apiBounds.donutSystem,
+      strategy: freeStrategySelect.value || 'longest',
+      customWeights: readCustomWeights(),
+      players,
+      ownRank: ownProfile.rank,
+      linkBase: host ? `https://${host}` : '',
+    });
+  }
 };
 
 /**
@@ -1344,6 +1375,11 @@ const wireListeners = () => {
     updateModeControls();
     saveScoutPrefs();
     repaintFreeRegions();
+  });
+  // Paint the server map the first time its panel is opened; repaintFreeRegions
+  // skips it while collapsed, so this is what fills it on demand.
+  serverMapPanel?.addEventListener('toggle', () => {
+    if (serverMapPanel?.open) repaintFreeRegions();
   });
   freeExpansionSelect.addEventListener('change', () => { saveScoutPrefs(); repaintFreeRegions(); });
   freeRadius?.addEventListener('input', () => {
