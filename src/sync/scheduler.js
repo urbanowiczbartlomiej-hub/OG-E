@@ -111,7 +111,6 @@
 
 /* global document */
 
-import { scansStore } from '../state/scans.js';
 import { historyStore } from '../state/history.js';
 import { colonizeDecisionsStore } from '../state/colonizeDecisions.js';
 import { settingsStore } from '../state/settings.js';
@@ -189,20 +188,9 @@ import {
  */
 const SYNC_REQUEST_KEY_BASE = 'oge_syncRequestAt';
 
-/**
- * Per-galaxy reset tombstone suffix. Value is `"<galaxy>:<timestamp>"`
- * so two resets of the same galaxy back-to-back register as distinct
- * changes (chrome.storage.onChanged only fires when the value actually
- * changes).
- */
-const RESET_GALAXY_KEY_BASE = 'oge_resetGalaxyAt';
-
 /** @param {string} universeId */
 export const syncRequestKeyFor = (universeId) =>
   `${universeId}:${SYNC_REQUEST_KEY_BASE}`;
-/** @param {string} universeId */
-export const resetGalaxyKeyFor = (universeId) =>
-  `${universeId}:${RESET_GALAXY_KEY_BASE}`;
 
 /**
  * Quiet-period length (ms) for {@link scheduleUpload}. See file header
@@ -1172,21 +1160,19 @@ export const installSync = () => {
   const syncKey = universeId
     ? syncRequestKeyFor(universeId)
     : SYNC_REQUEST_KEY_BASE;
-  const resetKey = universeId
-    ? resetGalaxyKeyFor(universeId)
-    : RESET_GALAXY_KEY_BASE;
   const gistRevKey = gistRevKeyFor(routesUniverseId);
 
   /**
    * Bridge from the extension-origin histogram page to this scheduler.
    * The histogram writes `<universeId>:oge_syncRequestAt = Date.now()`
-   * for the selected universe's "Sync now" button and
-   * `<universeId>:oge_resetGalaxyAt = "<galaxy>:<ts>"` for a per-galaxy
-   * "Reset" button. chrome.storage.onChanged fires in THIS origin
-   * (game), so we observe and act on the tombstones whose key matches
-   * our universe — the histogram may have selected a different server
-   * in the dropdown, in which case its tombstone has a different prefix
-   * and we ignore it.
+   * for the selected universe's "Sync now" button. chrome.storage.onChanged
+   * fires in THIS origin (game), so we observe and act on the tombstones
+   * whose key matches our universe — the histogram may have selected a
+   * different server in the dropdown, in which case its tombstone has a
+   * different prefix and we ignore it. (The old per-galaxy
+   * `oge_resetGalaxyAt` reset tombstone is gone with the Scanned-data
+   * accordion — the API TTL supersedes manual purges; stale keys from old
+   * installs are inert and classified as plumbing by syncInventory.)
    *
    * @param {Record<string, unknown>} changes
    */
@@ -1203,36 +1189,6 @@ export const installSync = () => {
       const raw = /** @type {{ newValue?: unknown }} */ (changes[gistRevKey]).newValue;
       const rev = typeof raw === 'string' ? raw : '';
       if (rev && rev !== readAppliedRev()) void downloadAndMerge();
-    }
-    if (resetKey in changes) {
-      // Value shape is `"<galaxy>:<timestamp>"`; we only care about the
-      // galaxy id. Bad parses fall through silently — a corrupt
-      // tombstone shouldn't take down the listener for the next one.
-      const raw = /** @type {{ newValue?: unknown }} */ (
-        changes[resetKey]
-      ).newValue;
-      const str = typeof raw === 'string' ? raw : '';
-      const galaxy = parseInt(str.split(':')[0], 10);
-      if (Number.isFinite(galaxy) && galaxy > 0) {
-        // Drop the galaxy from scansStore IN MEMORY (+ its write-through to
-        // chrome.storage). Galaxy scans are no longer synced (§4b), so this is
-        // now a purely LOCAL reset — there is no gist slot to wipe (and the old
-        // gist-clear path would have overwritten the gist with only the
-        // scans/history fields, dropping every other slice; removing it fixes
-        // that latent bug too).
-        const current = scansStore.get();
-        const prefix = galaxy + ':';
-        /** @type {typeof current} */
-        const filtered = {};
-        for (const key of /** @type {(keyof typeof current)[]} */ (
-          Object.keys(current)
-        )) {
-          if (!key.startsWith(prefix)) filtered[key] = current[key];
-        }
-        if (Object.keys(filtered).length !== Object.keys(current).length) {
-          scansStore.set(filtered);
-        }
-      }
     }
   };
   const unsubStorage = chromeStore.onChanged(onStorageChange);

@@ -37,15 +37,11 @@ import {
   importAllData,
   exportColonyCsv,
   triggerSync,
-  triggerResetGalaxy,
 } from '../../../src/features/dashboard/io.js';
 import { chromeStore } from '../../../src/lib/storage.js';
 import { historyKeyFor } from '../../../src/state/history.js';
 import { scansKeyFor } from '../../../src/state/scans.js';
-import {
-  syncRequestKeyFor,
-  resetGalaxyKeyFor,
-} from '../../../src/sync/scheduler.js';
+import { syncRequestKeyFor } from '../../../src/sync/scheduler.js';
 
 const UNI = 's163-pl';
 const HKEY = historyKeyFor(UNI);
@@ -269,10 +265,6 @@ describe('sync tombstone triggers', () => {
     expect(chromeStore.set).toHaveBeenCalledWith(syncRequestKeyFor(UNI), expect.any(Number));
   });
 
-  it('triggerResetGalaxy writes "<galaxy>:<ts>" so repeats fire fresh onChanged', async () => {
-    await triggerResetGalaxy(4, UNI);
-    const [, value] = /** @type {import('vitest').Mock} */ (chromeStore.set).mock.calls.at(-1);
-    expect(value).toMatch(/^4:\d+$/);
-    expect(chromeStore.set).toHaveBeenCalledWith(resetGalaxyKeyFor(UNI), expect.stringMatching(/^4:/));
-  });
+  // triggerResetGalaxy is gone — the per-galaxy reset tombstone was swept with
+  // the Scanned-data accordion (API TTL supersedes manual purges).
 });

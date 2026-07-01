@@ -40,17 +40,16 @@
 //   re-runs loadAll() + render*() against the new universe's keys.
 //
 // @see ./colony.js  — renderColonyChart + populatePositionFilter
-// @see ./galaxy.js  — renderGalaxyMap (accordion + pixel map)
 // @see ./io.js      — Export/Import/CSV + tombstones (all universe-scoped)
 
 import { chromeStore, safeLS } from '../../lib/storage.js';
 import { debounce } from '../../lib/debounce.js';
 import { parseTargetPositions } from '../../domain/histogram.js';
 import { populatePositionFilter, renderColonyChart } from './colony.js';
-import { renderGalaxyMap } from './galaxy.js';
-import { renderFreeRegions, renderServerMap } from './freeStreak.js';
+import { renderFreeRegions, renderServerMap, selectCandidate } from './freeStreak.js';
 import { renderTargets, DEFAULT_TARGET_SORT } from './targets.js';
-import { STRATEGIES } from '../../domain/regions.js';
+import { buildThreatFarmField } from '../../domain/heatField.js';
+import { ZONES } from '../../domain/zoneScore.js';
 import { buildOccupancyIndex, buildScanMapFromIndex } from '../../domain/apiOccupancy.js';
 import { buildTargetCandidates } from '../../domain/targets.js';
 import { estimateHiddenFleet } from '../../domain/threatModel.js';
@@ -73,14 +72,9 @@ import {
   galaxyScanConfigKeyFor,
 } from '../../state/galaxyScanConfig.js';
 import {
-  defaultGalaxyScanConfig,
-  normalizeGalaxyScanConfig,
-} from '../../domain/galaxyScanConfig.js';
-import {
   exportAllData,
   importAllData,
   exportColonyCsv,
-  triggerResetGalaxy,
 } from './io.js';
 import { installAlarmClock, _resetAlarmClockForTest } from './alarmClock.js';
 import { installRoutes } from './routes.js';
@@ -94,12 +88,13 @@ import { installSettingsControls } from './settingsControls.js';
  * @typedef {import('../../state/scans.js').GalaxyScans} GalaxyScans
  */
 
-// localStorage key for accordion open/closed state. Per-device, not
-// synced — accordion state is UI preference, not user data.
-const EXPANDED_LS_KEY = 'oge_expandedGalaxies';
-
 // Colony Scout control preferences — persisted so selections survive page reload.
 const SCOUT_PREFS_KEY = 'oge_colonyScoutPrefs';
+
+// Active Colonizations sub-tab ("histogram" = Big Colony Hunting, "scout" =
+// Galaxy Viewer) — device-local UI preference, so a reload reopens the view
+// the user actually works in.
+const COLONY_SUBTAB_LS_KEY = 'oge_colonySubtab';
 
 // Targets sub-tab preferences (currently just the chosen column sort) —
 // device-local, survives reload. Keyed separately from the Scout prefs above.
@@ -146,12 +141,6 @@ const expandedTargets = new Set();
 // rename.
 const ACTIVE_TAB_LS_KEY = 'oge_histogramTab';
 const DEFAULT_TAB = 'colony';
-
-// Default target positions when no per-universe Galaxy-Scan config is
-// stored yet. Matches the default shipped by `domain/galaxyScanConfig.js`
-// so the dashboard reads the same filter as the Send Col feature does on
-// the game side.
-const DEFAULT_COL_POSITIONS = defaultGalaxyScanConfig().positions;
 
 // ── Module-local caches ────────────────────────────────────────────────
 
@@ -275,25 +264,6 @@ let players = {};
  */
 let ownProfile = {};
 
-/** @type {Set<number>} */
-let targetPositions = parseTargetPositions(DEFAULT_COL_POSITIONS);
-
-/**
- * The selected universe's Galaxy-Scan config (positions + rescan policy),
- * refreshed by `loadAll`. Drives both the target-positions filter and the
- * rescan policy the galaxy map's stale rings/pills are computed against.
- * @type {import('../../domain/galaxyScanConfig.js').GalaxyScanConfig}
- */
-let galaxyConfig = defaultGalaxyScanConfig();
-
-/**
- * Per-galaxy accordion open/closed state. A Set so we can mutate it
- * in-place from the galaxy renderer and persist to localStorage without
- * allocating a new collection on every toggle.
- * @type {Set<number>}
- */
-const expandedGalaxies = new Set();
-
 // ── DOM refs (filled by wireDom) ───────────────────────────────────────
 
 /** @type {HTMLElement} */ let statsEl;
@@ -301,21 +271,18 @@ const expandedGalaxies = new Set();
 /** @type {HTMLElement} */ let countInfoEl;
 /** @type {HTMLSelectElement} */ let posFilter;
 /** @type {HTMLSelectElement} */ let universeSelect;
-/** @type {HTMLElement} */ let scansContainer;
 /** @type {HTMLElement | null} */ let importStatusEl;
 /** @type {HTMLInputElement} */ let freePosInput;
 /** @type {HTMLSelectElement} */ let freeGapsSelect;
-/** @type {HTMLSelectElement} */ let freeStrategySelect;
-/** @type {HTMLSelectElement} */ let freeExpansionSelect;
-/** @type {HTMLInputElement} */ let freeRadius;
-/** @type {HTMLElement | null} */ let freeRadiusVal;
+/** @type {HTMLSelectElement} */ let freeZoneSelect;
+/** @type {HTMLSelectElement} */ let freeFindSelect;
+/** @type {HTMLElement | null} */ let freeZoneHint;
+/** @type {HTMLElement | null} */ let scoutDataStamp;
 /** @type {HTMLSelectElement} */ let freeExcludeN;
 /** @type {HTMLElement | null} */ let streakOnlyControls;
 /** @type {HTMLElement | null} */ let nbrOnlyControls;
-/** @type {HTMLElement | null} */ let freeRadiusRow;
 /** @type {HTMLElement} */ let freeContainer;
 /** @type {HTMLElement | null} */ let serverMapHost;
-/** @type {HTMLDetailsElement | null} */ let serverMapPanel;
 /** @type {HTMLSelectElement | null} */ let serverMapView;
 /** @type {HTMLInputElement | null} */ let serverMapWindow;
 /** @type {HTMLElement | null} */ let serverMapWindowV;
@@ -333,17 +300,6 @@ const expandedGalaxies = new Set();
 /** @type {HTMLInputElement | null} */ let tgtInclInactive;
 /** @type {HTMLInputElement | null} */ let tgtInclBanned;
 /** @type {HTMLElement | null} */ let tgtCountInfoEl;
-
-/** The 5 neighbourhood factors users can tune via sliders. */
-const WEIGHT_FIELDS = /** @type {const} */ (['free', 'inactive', 'occupied', 'bandit', 'honored']);
-/** @type {Partial<Record<typeof WEIGHT_FIELDS[number], HTMLInputElement>>} */
-const weightSliders = {};
-/** @type {Partial<Record<typeof WEIGHT_FIELDS[number], HTMLElement>>} */
-const weightValues = {};
-// True once the user has moved any slider away from the preset values.
-// Lets readCustomWeights distinguish "user explicitly set all to zero"
-// from "nothing has been touched yet".
-let weightsDirty = false;
 
 /**
  * Bootstrap the dashboard page. Safe to call multiple times but
@@ -369,7 +325,6 @@ export const installDashboard = () => {
  */
 const boot = async () => {
   wireDom();
-  loadExpanded();
   wireTabs();
   wireColonySubtabs();
 
@@ -405,25 +360,57 @@ const boot = async () => {
   alarmClockConfigApi?.refresh();
   wireListeners();
 
-  // Restore Colony Scout preferences from previous session.
+  // Restore Galaxy Viewer preferences from previous session. The pre-zone
+  // prefs shape carried a 6-preset `strategy`; remap it so a long-time
+  // "Farmer" user lands on Farm hub instead of silently resetting to the
+  // default (new keys win when both are present).
   const scoutPrefs = /** @type {any} */ (safeLS.json(SCOUT_PREFS_KEY, {}));
-  if (scoutPrefs.strategy && freeStrategySelect.querySelector(`[value="${scoutPrefs.strategy}"]`)) {
-    freeStrategySelect.value = scoutPrefs.strategy;
+  /** @type {Record<string, { zone?: string, find?: string }>} */
+  const LEGACY_STRATEGY_MAP = {
+    longest: { find: 'streaks' },
+    peaceful: { zone: 'safe' },
+    safe_expansion: { zone: 'safe' },
+    farmer: { zone: 'farm' },
+    honor_pvp: { zone: 'pvp' },
+    aggressive: { zone: 'pvp' },
+  };
+  const legacy = LEGACY_STRATEGY_MAP[scoutPrefs.strategy] ?? {};
+  const zonePref = scoutPrefs.zone ?? legacy.zone;
+  const findPref = scoutPrefs.find ?? legacy.find;
+  if (zonePref && freeZoneSelect.querySelector(`[value="${zonePref}"]`)) {
+    freeZoneSelect.value = zonePref;
   }
-  if (scoutPrefs.expansion !== undefined
-    && freeExpansionSelect.querySelector(`[value="${String(scoutPrefs.expansion)}"]`)) {
-    freeExpansionSelect.value = String(scoutPrefs.expansion);
-  }
-  if (scoutPrefs.radius !== undefined && freeRadius) {
-    freeRadius.value = String(scoutPrefs.radius);
-    if (freeRadiusVal) freeRadiusVal.textContent = String(scoutPrefs.radius);
+  if (findPref && freeFindSelect.querySelector(`[value="${findPref}"]`)) {
+    freeFindSelect.value = findPref;
   }
   if (scoutPrefs.excludeN !== undefined
     && freeExcludeN?.querySelector(`[value="${String(scoutPrefs.excludeN)}"]`)) {
     freeExcludeN.value = String(scoutPrefs.excludeN);
   }
-  applyPresetToSliders(freeStrategySelect.value);
+  if (typeof scoutPrefs.slots === 'string' && scoutPrefs.slots.trim()) {
+    freePosInput.value = scoutPrefs.slots;
+  }
+  if (scoutPrefs.gaps !== undefined
+    && freeGapsSelect.querySelector(`[value="${String(scoutPrefs.gaps)}"]`)) {
+    freeGapsSelect.value = String(scoutPrefs.gaps);
+  }
+  if (scoutPrefs.window !== undefined && serverMapWindow) {
+    serverMapWindow.value = String(scoutPrefs.window);
+    if (serverMapWindowV) serverMapWindowV.textContent = String(scoutPrefs.window);
+  }
+  if (scoutPrefs.farmReach !== undefined && serverMapFarm) {
+    serverMapFarm.value = String(scoutPrefs.farmReach);
+    if (serverMapFarmV) serverMapFarmV.textContent = String(scoutPrefs.farmReach);
+  }
+  if (scoutPrefs.view && serverMapView?.querySelector(`[value="${scoutPrefs.view}"]`)) {
+    serverMapView.value = scoutPrefs.view;
+  }
   updateModeControls();
+  // The first renderAll above painted with the DOM defaults — repaint so the
+  // restored zone/find/slots/window/farm actually drive the first ranking
+  // (mirrors the loadTargetPrefs → repaintTargets pattern below; cheap, the
+  // composite cache makes this second paint rebuild only the field).
+  repaintFreeRegions();
 
   // Restore the Targets table sort + filter controls from the previous session,
   // then repaint so the restored sort/filters show on this first load (the
@@ -571,21 +558,18 @@ const wireDom = () => {
   countInfoEl = /** @type {HTMLElement} */ (document.getElementById('countInfo'));
   posFilter = /** @type {HTMLSelectElement} */ (document.getElementById('posFilter'));
   universeSelect = /** @type {HTMLSelectElement} */ (document.getElementById('universeSelect'));
-  scansContainer = /** @type {HTMLElement} */ (document.getElementById('scansContainer'));
   importStatusEl = document.getElementById('importStatus');
   freePosInput = /** @type {HTMLInputElement} */ (document.getElementById('freePosInput'));
   freeGapsSelect = /** @type {HTMLSelectElement} */ (document.getElementById('freeGapsSelect'));
-  freeStrategySelect = /** @type {HTMLSelectElement} */ (document.getElementById('freeStrategySelect'));
-  freeExpansionSelect = /** @type {HTMLSelectElement} */ (document.getElementById('freeExpansionSelect'));
-  freeRadius = /** @type {HTMLInputElement} */ (document.getElementById('freeRadius'));
-  freeRadiusVal = document.getElementById('freeRadiusVal');
+  freeZoneSelect = /** @type {HTMLSelectElement} */ (document.getElementById('freeZoneSelect'));
+  freeFindSelect = /** @type {HTMLSelectElement} */ (document.getElementById('freeFindSelect'));
+  freeZoneHint = document.getElementById('freeZoneHint');
+  scoutDataStamp = document.getElementById('scoutDataStamp');
   freeExcludeN = /** @type {HTMLSelectElement} */ (document.getElementById('freeExcludeN'));
   streakOnlyControls = document.getElementById('streakOnlyControls');
   nbrOnlyControls = document.getElementById('nbrOnlyControls');
-  freeRadiusRow = document.getElementById('freeRadiusRow');
   freeContainer = /** @type {HTMLElement} */ (document.getElementById('freeContainer'));
   serverMapHost = document.getElementById('serverMapHost');
-  serverMapPanel = /** @type {HTMLDetailsElement | null} */ (document.getElementById('serverMapPanel'));
   serverMapView = /** @type {HTMLSelectElement | null} */ (document.getElementById('serverMapView'));
   serverMapWindow = /** @type {HTMLInputElement | null} */ (document.getElementById('serverMapWindow'));
   serverMapWindowV = document.getElementById('serverMapWindowV');
@@ -603,12 +587,6 @@ const wireDom = () => {
   tgtInclInactive = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtInclInactive'));
   tgtInclBanned = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtInclBanned'));
   tgtCountInfoEl = document.getElementById('tgtCountInfo');
-  for (const k of WEIGHT_FIELDS) {
-    const s = document.getElementById(`freeW_${k}`);
-    const v = document.getElementById(`freeWV_${k}`);
-    if (s instanceof HTMLInputElement) weightSliders[k] = s;
-    if (v instanceof HTMLElement) weightValues[k] = v;
-  }
 };
 
 /**
@@ -671,61 +649,54 @@ const wireTabs = () => {
     btn.addEventListener('click', () => {
       const key = /** @type {HTMLElement} */ (btn).dataset.tab ?? DEFAULT_TAB;
       setActiveTab(key);
+      // The server map skips painting while its host is hidden (width 0) —
+      // entering the Colonizations tab is the moment it becomes measurable.
+      if (key === 'colony') repaintFreeRegions();
     });
   }
 };
 
 /**
- * Wire the Colonizations sub-tabs ("Planet sizes" / "Scanned data" /
- * "Colony Scout"). All panes stay mounted (the inactive ones are
- * `display:none`) so the histogram, galaxy-map and Colony-Scout renderers keep
- * painting into their containers regardless of which sub-tab is showing —
- * clicking only flips the `active` classes. (The histogram tolerates being
- * hidden at render time: its width-based binning falls back to a viewport
- * estimate when `clientWidth` is 0 — see colony.js `estimateChartWidth`.)
- * Purely presentational; no persistence (always opens on the first sub-tab),
- * matching the AlarmClock settings sub-tabs.
+ * Wire the Colonizations sub-tabs ("Big Colony Hunting" / "Galaxy Viewer").
+ * All panes stay mounted (the inactive ones are `display:none`) so both
+ * renderers keep painting into their containers regardless of which sub-tab
+ * is showing — clicking flips the `active` classes and persists the choice
+ * so a reload reopens the same view. (The histogram tolerates being hidden at
+ * render time: its width-based binning falls back to a viewport estimate when
+ * `clientWidth` is 0 — see colony.js `estimateChartWidth`.)
  *
  * @returns {void}
  */
 const wireColonySubtabs = () => {
   const buttons = document.querySelectorAll('#colonySubtabs .subtab');
   const panes = document.querySelectorAll('#colonySection .subtabpane');
+  /** @param {string | undefined} key @returns {boolean} */
+  const activate = (key) => {
+    if (!key || ![...buttons].some((b) => /** @type {HTMLElement} */ (b).dataset.subtab === key)) {
+      return false;
+    }
+    for (const b of buttons) {
+      b.classList.toggle('active', /** @type {HTMLElement} */ (b).dataset.subtab === key);
+    }
+    for (const pane of panes) {
+      pane.classList.toggle('active', /** @type {HTMLElement} */ (pane).dataset.subtab === key);
+    }
+    return true;
+  };
   for (const btn of buttons) {
     btn.addEventListener('click', () => {
       const key = /** @type {HTMLElement} */ (btn).dataset.subtab;
-      for (const b of buttons) {
-        b.classList.toggle('active', b === btn);
-      }
-      for (const pane of panes) {
-        pane.classList.toggle('active', /** @type {HTMLElement} */ (pane).dataset.subtab === key);
-      }
+      if (!activate(key)) return;
+      safeLS.set(COLONY_SUBTAB_LS_KEY, key ?? '');
+      // The map sizes itself from its host's width, which reads 0 while the
+      // pane is hidden — entering the Galaxy Viewer repaints so it measures
+      // for real (cheap: composite/field/find caches all hit).
+      if (key === 'scout') repaintFreeRegions();
     });
   }
-};
-
-/**
- * Restore previously-expanded galaxy IDs from localStorage. Tolerates
- * a malformed stored value by silently skipping non-numeric entries.
- *
- * @returns {void}
- */
-const loadExpanded = () => {
-  const raw = safeLS.json(EXPANDED_LS_KEY, []);
-  if (!Array.isArray(raw)) return;
-  for (const v of raw) {
-    if (typeof v === 'number') expandedGalaxies.add(v);
-  }
-};
-
-/**
- * Persist the current expanded-galaxies set to localStorage. Called
- * after every toggle so the state survives a page reload.
- *
- * @returns {void}
- */
-const persistExpanded = () => {
-  safeLS.setJSON(EXPANDED_LS_KEY, [...expandedGalaxies]);
+  // Reopen the sub-tab the user last worked in (falls back to the HTML
+  // default, Big Colony Hunting, when nothing valid is stored).
+  activate(safeLS.get(COLONY_SUBTAB_LS_KEY) || undefined);
 };
 
 /**
@@ -805,7 +776,7 @@ const toggleWatched = (id) => {
 };
 
 /**
- * Refresh module-local caches (`history`, `scans`, `targetPositions`)
+ * Refresh module-local caches (`history`, `scans`, `players`, API layer)
  * from chrome.storage.local for the currently-selected universe.
  * Single Promise.all so a cold start only pays one round-trip. With
  * no universe selected we resolve to empty collections so the render
@@ -821,18 +792,15 @@ const loadAll = async () => {
     ownProfile = {};
     apiIndex = null;
     apiBounds = {};
-    galaxyConfig = defaultGalaxyScanConfig();
-    targetPositions = parseTargetPositions(galaxyConfig.positions);
     apiCache = {};
     targetCandidates = [];
     targetReports = {};
     planetCountByPlayer = {};
     return;
   }
-  const [h, s, c, p, op, api, tr] = await Promise.all([
+  const [h, s, p, op, api, tr] = await Promise.all([
     chromeStore.get(historyKeyFor(selectedUniverseId)),
     chromeStore.get(scansKeyFor(selectedUniverseId)),
-    chromeStore.get(galaxyScanConfigKeyFor(selectedUniverseId)),
     chromeStore.get(playersKeyFor(selectedUniverseId)),
     readOwnProfile(selectedUniverseId),
     readApiCacheFor(selectedUniverseId),
@@ -844,8 +812,6 @@ const loadAll = async () => {
     ? /** @type {import('../../state/players.js').PlayerCache} */ (p)
     : {};
   ownProfile = op;
-  galaxyConfig = normalizeGalaxyScanConfig(c);
-  targetPositions = parseTargetPositions(galaxyConfig.positions);
 
   // Build the API occupancy index (breadth layer) for the Colony Scout. Empty
   // when the in-game side hasn't populated the cache yet → Scout uses live
@@ -949,37 +915,11 @@ const renderAll = () => {
     filterLabel: filterValue,
   });
 
-  // The old "Scanned data" per-galaxy accordion (galaxy.js) is retired — the
-  // Galaxy Viewer server map supersedes it. Guarded because its container is
-  // gone, pending a dead-code sweep of galaxy.js + the accordion helpers.
-  if (scansContainer) {
-    const mapScans =
-      apiIndex && apiBounds.galaxies && apiBounds.systems
-        ? /** @type {GalaxyScans} */ ({
-            ...buildScanMapFromIndex(apiIndex, {
-              galaxies: apiBounds.galaxies,
-              systems: apiBounds.systems,
-              targets: [...targetPositions],
-            }),
-            ...liveOverlay(scans),
-          })
-        : scans;
-    renderGalaxyMap({
-      containerEl: scansContainer,
-      scans: mapScans,
-      targetPositions,
-      expandedGalaxies,
-      onToggleExpand: () => { persistExpanded(); },
-      onResetGalaxy: (g) => { void resetGalaxy(g); },
-    });
-  }
-
-  // Settlement-regions block (inside the galaxy tab) — runs over the
-  // same `scans` data with the current positions + tolerance controls.
-  // Repainting on every renderAll keeps it in sync with universe changes
-  // / storage updates; the controls also have their own onchange
-  // listeners that re-paint only this block without paying for the
-  // colony / galaxy passes.
+  // Analyzer block (Galaxy Viewer) — runs over the same `scans` data with the
+  // current controls. Repainting on every renderAll keeps it in sync with
+  // universe changes / storage updates; the controls also have their own
+  // onchange listeners that re-paint only this block without paying for the
+  // colony pass.
   repaintFreeRegions();
   repaintTargets();
 };
@@ -1149,142 +1089,226 @@ const freeRegionPositions = () => {
 };
 
 /**
- * Read current slider values as a StrategyWeights object.
- * Returns the current slider values as custom weights, or `undefined` when
- * the user hasn't touched the sliders since the last preset was applied —
- * in that case the caller uses the named preset unchanged.
- *
- * @returns {import('../../domain/regions.js').StrategyWeights | undefined}
- */
-const readCustomWeights = () => {
-  if (!weightsDirty) return undefined;
-  /** @type {import('../../domain/regions.js').StrategyWeights} */
-  const w = {};
-  for (const k of WEIGHT_FIELDS) {
-    w[k] = parseFloat(weightSliders[k]?.value ?? '0') || 0;
-  }
-  return w;
-};
-
-/**
- * Populate weight sliders from a named strategy preset and mark them as
- * clean (not customised). Called when the strategy select changes, on reset,
- * and on initial load.
- *
- * @param {string} strategyKey
- */
-const applyPresetToSliders = (strategyKey) => {
-  weightsDirty = false;
-  const preset = STRATEGIES[strategyKey];
-  for (const k of WEIGHT_FIELDS) {
-    const val = (preset?.weights[k] ?? 0).toFixed(1);
-    const slider = weightSliders[k];
-    const display = weightValues[k];
-    if (slider) slider.value = val;
-    if (display) display.textContent = val;
-  }
-};
-
-/**
- * Show the control set that matches the selected strategy: Longest streak hunts
- * a free-slot run (Slots + Tolerance), the other strategies analyse the area
- * around a settle spot (Radius + Ignore-worst + Placement). Keeping each mode's
- * irrelevant controls hidden is what stops the "why pick a slot streak for
- * Peaceful?" confusion. Idempotent; safe before the refs exist (tests).
+ * Show the control set that matches the Find shape: Longest streaks hunts a
+ * free-slot run (Tolerance applies), Best spots analyses the area around each
+ * free-slot system (Ignore worst applies). Ignore worst also hides under the
+ * PvP zone — there exclusion is conceptually wrong (those players are the
+ * point). Idempotent; safe before the refs exist (tests).
  */
 const updateModeControls = () => {
-  const streak = (freeStrategySelect?.value || 'longest') === 'longest';
-  if (streakOnlyControls) streakOnlyControls.style.display = streak ? '' : 'none';
-  if (nbrOnlyControls) nbrOnlyControls.style.display = streak ? 'none' : '';
-  // Radius lives on its own full-width row (the slider is long); flex so the
-  // slider stretches across it.
-  if (freeRadiusRow) freeRadiusRow.style.display = streak ? 'none' : 'flex';
+  const streaks = (freeFindSelect?.value || 'spots') === 'streaks';
+  const pvp = (freeZoneSelect?.value || 'safe') === 'pvp';
+  if (streakOnlyControls) streakOnlyControls.style.display = streaks ? '' : 'none';
+  if (nbrOnlyControls) nbrOnlyControls.style.display = streaks || pvp ? 'none' : '';
+  // One line under the controls explaining what the active zone optimises —
+  // the hint text lives with the zone definitions in domain/zoneScore.js.
+  if (freeZoneHint) {
+    freeZoneHint.textContent = ZONES[freeZoneSelect?.value || 'safe']?.hint ?? '';
+  }
 };
 
-/** Repaint ONLY the settlement-regions block from current controls. */
+/**
+ * Composite cache: `buildScanMapFromIndex` allocates ~galaxies×systems (≈4.5k)
+ * system entries per call, but most repaints (sliders, strategy switches)
+ * don't change its inputs. Keyed by the identity of `apiIndex`/`scans` (both
+ * reassigned wholesale by loadAll) + the positions the synthetic map marks
+ * empty.
+ *
+ * @type {{apiIndex: unknown, scans: unknown, posKey: string, value: GalaxyScans} | null}
+ */
+let compositeCache = null;
+
+/**
+ * Composite the API breadth layer (whole-server occupancy) with the live
+ * scan map — live wins per system (fresher, carries honor rankClass /
+ * empty_sent). When there's no cached API data the composite is just the
+ * live scans.
+ *
+ * @param {number[]} positions
+ * @returns {GalaxyScans}
+ */
+const buildComposite = (positions) => {
+  if (!(apiIndex && apiBounds.galaxies && apiBounds.systems)) return scans;
+  const posKey = positions.join(',');
+  if (compositeCache
+    && compositeCache.apiIndex === apiIndex
+    && compositeCache.scans === scans
+    && compositeCache.posKey === posKey) {
+    return compositeCache.value;
+  }
+  const value = /** @type {GalaxyScans} */ ({
+    ...buildScanMapFromIndex(apiIndex, {
+      galaxies: apiBounds.galaxies,
+      systems: apiBounds.systems,
+      targets: positions,
+    }),
+    ...liveOverlay(scans),
+  });
+  compositeCache = { apiIndex, scans, posKey, value };
+  return value;
+};
+
+/**
+ * Scoring-field cache: the per-system threat/farm field costs ~galaxies×499
+ * convolution columns per build; controls that don't change its inputs
+ * (zone, find, slots when the composite is cached) shouldn't pay it again.
+ * Keyed by composite identity + the physical knobs + the threat anchor.
+ *
+ * @type {{composite: unknown, windowH: number, farmReach: number, ownMilitary: number | undefined, value: import('../../domain/heatField.js').ThreatFarmField} | null}
+ */
+let scoreFieldCache = null;
+
+/**
+ * The threat/farm field at PER-SYSTEM resolution over the current composite —
+ * the analyzer's ranking substrate (the map paints its own coarser build).
+ * `null` without API bounds; zone scoring then degrades gracefully.
+ *
+ * @param {GalaxyScans} composite
+ * @returns {import('../../domain/heatField.js').ThreatFarmField | null}
+ */
+const buildScoreField = (composite) => {
+  if (!apiBounds.galaxies || !apiBounds.systems) return null;
+  const windowH = parseInt(serverMapWindow?.value ?? '', 10) || 8;
+  const farmReach = parseInt(serverMapFarm?.value ?? '', 10) || 30;
+  if (scoreFieldCache
+    && scoreFieldCache.composite === composite
+    && scoreFieldCache.windowH === windowH
+    && scoreFieldCache.farmReach === farmReach
+    && scoreFieldCache.ownMilitary === ownMilitary) {
+    return scoreFieldCache.value;
+  }
+  const value = buildThreatFarmField(composite, {
+    galaxies: apiBounds.galaxies,
+    systems: apiBounds.systems,
+    donutGalaxy: apiBounds.donutGalaxy,
+    donutSystem: apiBounds.donutSystem,
+  }, { ownMilitary, cols: apiBounds.systems, window: windowH, farmReach });
+  scoreFieldCache = { composite, windowH, farmReach, ownMilitary, value };
+  return value;
+};
+
+/**
+ * Last map paint's inputs — the map is the pane's always-visible canvas now,
+ * so it repaints ONLY when its actual inputs changed (field identity, view,
+ * pins, host width). A zone switch re-sorts the list but must not rebuild
+ * the 9×N map DOM.
+ *
+ * @type {{field: unknown, composite: unknown, view: string, candKey: string, width: number} | null}
+ */
+let lastMapPaint = null;
+
+/** Repaint ONLY the analyzer block from current controls. */
 const repaintFreeRegions = () => {
   const positions = freeRegionPositions();
-  // Composite the API breadth layer (whole-server occupancy) with the live
-  // scan map — live wins per system (fresher, carries honor rankClass /
-  // empty_sent). When there's no cached API data the composite is just the
-  // live scans (today's behaviour). The free-region finder is unchanged; it
-  // simply now sees the whole server.
-  const composite =
-    apiIndex && apiBounds.galaxies && apiBounds.systems
-      ? /** @type {GalaxyScans} */ ({
-          ...buildScanMapFromIndex(apiIndex, {
-            galaxies: apiBounds.galaxies,
-            systems: apiBounds.systems,
-            targets: positions,
-          }),
-          ...liveOverlay(scans),
-        })
-      : scans;
-  renderFreeRegions({
+  const composite = buildComposite(positions);
+  const field = buildScoreField(composite);
+  // Pane-level data contract: how old the occupancy snapshot is (universe.xml
+  // regenerates weekly server-side) and whether the threat channel is anchored
+  // to OUR fleet — without ownMilitary every active reads a flat base threat,
+  // and the ranking silently looks identical to a calibrated one.
+  if (scoutDataStamp) {
+    const ts = apiCache.universe?.timestamp;
+    if (typeof ts === 'number' && ts > 0) {
+      const days = Math.max(0, Math.floor((Date.now() - ts) / 86_400_000));
+      const age = days === 0 ? 'from today' : days === 1 ? '1 day old' : `${days} days old`;
+      scoutDataStamp.textContent = `Occupancy data: ${age}`
+        + (ownMilitary !== undefined
+          ? ' · threat calibrated to your fleet'
+          : ' · threat NOT calibrated — open the game once in this universe to anchor it to your fleet');
+    } else {
+      scoutDataStamp.textContent = '';
+    }
+  }
+  // Game origin for the popovers' "Open in game" links + the occupancy lens's
+  // click-to-galaxy: prefer serverData's own domain, else reconstruct the
+  // canonical host from the universe id.
+  const dom = apiBounds.domain;
+  const host = (typeof dom === 'string' && dom.includes('.'))
+    ? dom
+    : (/^s\d+-[a-z]+$/i.test(selectedUniverseId) ? `${selectedUniverseId}.ogame.gameforge.com` : '');
+  const linkBase = host ? `https://${host}` : '';
+  const shown = renderFreeRegions({
     containerEl: freeContainer,
     countInfoEl: freeCountInfoEl,
     scans: composite,
     positions,
     maxGaps: parseInt(freeGapsSelect.value, 10) || 0,
-    strategy: freeStrategySelect.value || 'longest',
-    expansion: parseInt(freeExpansionSelect.value, 10) || 0,
-    radius: parseInt(freeRadius?.value, 10) || 15,
-    excludeN: parseInt(freeExcludeN?.value, 10) || 0,
-    customWeights: readCustomWeights(),
+    zone: freeZoneSelect.value || 'safe',
+    find: freeFindSelect.value || 'spots',
+    // The Ignore-worst control is hidden under the PvP zone (those players are
+    // the point there) — force the exclusion off too, or a value saved under
+    // Safe zone would silently censor the PvP target census.
+    excludeN: (freeZoneSelect.value || 'safe') === 'pvp' ? 0 : (parseInt(freeExcludeN?.value, 10) || 0),
+    field,
+    galaxyMax: apiBounds.systems,
+    linkBase,
+    ownMilitary,
     players,
     ownRank: ownProfile.rank,
   });
-  // Server map paints only while its (collapsed-by-default) panel is open —
-  // 9×499 cells are too heavy to rebuild on every slider tick otherwise.
-  if (serverMapHost && serverMapPanel?.open) {
-    // Game origin for the click-to-galaxy deep link: prefer serverData's own
-    // domain, else reconstruct the canonical host from the universe id.
-    const dom = apiBounds.domain;
-    const host = (typeof dom === 'string' && dom.includes('.'))
-      ? dom
-      : (/^s\d+-[a-z]+$/i.test(selectedUniverseId) ? `${selectedUniverseId}.ogame.gameforge.com` : '');
-    renderServerMap({
-      hostEl: serverMapHost,
-      scans: composite,
-      galaxies: apiBounds.galaxies,
-      systems: apiBounds.systems,
-      donutGalaxy: apiBounds.donutGalaxy,
-      donutSystem: apiBounds.donutSystem,
-      view: serverMapView?.value || 'field',
-      offlineWindow: parseInt(serverMapWindow?.value ?? '', 10) || 8,
-      farmReach: parseInt(serverMapFarm?.value ?? '', 10) || 30,
-      ownMilitary,
-      linkBase: host ? `https://${host}` : '',
-    });
+  if (serverMapHost) {
+    const view = serverMapView?.value || 'field';
+    const width = serverMapHost.clientWidth || 0;
+    // Hidden pane (tab/sub-tab not showing) → width 0 → both renderers would
+    // lay out against a 700px guess; the occupancy canvas then maps hover and
+    // deep-link clicks to the WRONG systems once stretched to the real width.
+    // Skip and drop the memo instead — the tab/sub-tab click handlers repaint
+    // as soon as the host is measurable.
+    if (width === 0) {
+      lastMapPaint = null;
+      return;
+    }
+    const pins = view === 'field' ? shown : [];
+    // Occupancy ignores the field, so its identity must not force a canvas
+    // rebuild on every Offline/Farm drag tick there. Pin key includes the fit
+    // (tooltips bake it in) so a re-annotation with unchanged order repaints.
+    const fieldKey = view === 'field' ? field : null;
+    const candKey = pins.map((r) => `${r.galaxy}:${r.center ?? r.start}:${Math.round((r.fit ?? 0) * 100)}`).join(',');
+    if (!lastMapPaint
+      || lastMapPaint.field !== fieldKey
+      || lastMapPaint.composite !== composite
+      || lastMapPaint.view !== view
+      || lastMapPaint.candKey !== candKey
+      || lastMapPaint.width !== width) {
+      lastMapPaint = { field: fieldKey, composite, view, candKey, width };
+      renderServerMap({
+        hostEl: serverMapHost,
+        scans: composite,
+        galaxies: apiBounds.galaxies,
+        systems: apiBounds.systems,
+        donutGalaxy: apiBounds.donutGalaxy,
+        donutSystem: apiBounds.donutSystem,
+        view,
+        offlineWindow: parseInt(serverMapWindow?.value ?? '', 10) || 8,
+        farmReach: parseInt(serverMapFarm?.value ?? '', 10) || 30,
+        ownMilitary,
+        linkBase,
+        field,
+        candidates: pins,
+        onPinClick: (i) => {
+          selectCandidate(freeContainer, i);
+          // The table sits below the controls — nudge it into view so the
+          // selection the pin just made is actually visible.
+          freeContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        },
+      });
+    }
   }
 };
 
 /**
- * Delete every scan whose key starts with `"${g}:"` from the selected
- * universe's scans map, then flag a per-galaxy remote reset so the
- * next sync cycle wipes the gist's copy of this galaxy too. Without
- * the remote-side wipe the union merge would reintroduce the
- * just-deleted local entries on the next download. (Plain
- * triggerSync is wrong here for the same reason — it merges, it
- * doesn't subtract.)
- *
- * @param {number} g
- * @returns {Promise<void>}
+ * rAF-coalesced variant for high-frequency `input` events (range sliders fire
+ * on every pixel of a drag): at most one repaint per frame, always reading the
+ * freshest control values when it runs.
  */
-const resetGalaxy = async (g) => {
-  if (!selectedUniverseId) return;
-  const scansKey = scansKeyFor(selectedUniverseId);
-  const raw = await chromeStore.get(scansKey);
-  if (!raw || typeof raw !== 'object') return;
-  /** @type {GalaxyScans} */
-  const current = { .../** @type {GalaxyScans} */ (raw) };
-  for (const key of Object.keys(current)) {
-    if (key.startsWith(g + ':')) {
-      delete current[/** @type {`${number}:${number}`} */ (key)];
-    }
-  }
-  await chromeStore.set(scansKey, current);
-  await triggerResetGalaxy(g, selectedUniverseId);
+let repaintQueued = false;
+const repaintFreeRegionsThrottled = () => {
+  if (repaintQueued) return;
+  repaintQueued = true;
+  requestAnimationFrame(() => {
+    repaintQueued = false;
+    repaintFreeRegions();
+  });
 };
 
 /**
@@ -1377,58 +1401,48 @@ const wireListeners = () => {
   // underlying `scans` cache hasn't changed — only the slots/tolerance
   // we query against have — so the colony / galaxy passes would be
   // wasted work.
-  freePosInput.addEventListener('change', repaintFreeRegions);
-  freeGapsSelect.addEventListener('change', repaintFreeRegions);
   const saveScoutPrefs = () => {
     safeLS.setJSON(SCOUT_PREFS_KEY, {
-      strategy: freeStrategySelect.value,
-      expansion: freeExpansionSelect.value,
-      radius: freeRadius?.value,
+      zone: freeZoneSelect.value,
+      find: freeFindSelect.value,
       excludeN: freeExcludeN?.value,
+      slots: freePosInput.value,
+      gaps: freeGapsSelect.value,
+      window: serverMapWindow?.value,
+      farmReach: serverMapFarm?.value,
+      view: serverMapView?.value,
     });
   };
 
-  freeStrategySelect.addEventListener('change', () => {
-    applyPresetToSliders(freeStrategySelect.value);
+  freePosInput.addEventListener('change', () => { saveScoutPrefs(); repaintFreeRegions(); });
+  freeGapsSelect.addEventListener('change', () => { saveScoutPrefs(); repaintFreeRegions(); });
+  freeZoneSelect.addEventListener('change', () => {
     updateModeControls();
     saveScoutPrefs();
     repaintFreeRegions();
   });
-  // Paint the server map the first time its panel is opened; repaintFreeRegions
-  // skips it while collapsed, so this is what fills it on demand.
-  serverMapPanel?.addEventListener('toggle', () => {
-    if (serverMapPanel?.open) repaintFreeRegions();
-  });
-  serverMapView?.addEventListener('change', () => { if (serverMapPanel?.open) repaintFreeRegions(); });
-  serverMapWindow?.addEventListener('input', () => {
-    if (serverMapWindowV && serverMapWindow) serverMapWindowV.textContent = serverMapWindow.value;
-    if (serverMapPanel?.open) repaintFreeRegions();
-  });
-  serverMapFarm?.addEventListener('input', () => {
-    if (serverMapFarmV && serverMapFarm) serverMapFarmV.textContent = serverMapFarm.value;
-    if (serverMapPanel?.open) repaintFreeRegions();
-  });
-  freeExpansionSelect.addEventListener('change', () => { saveScoutPrefs(); repaintFreeRegions(); });
-  freeRadius?.addEventListener('input', () => {
-    if (freeRadiusVal) freeRadiusVal.textContent = freeRadius.value;
+  freeFindSelect.addEventListener('change', () => {
+    updateModeControls();
     saveScoutPrefs();
     repaintFreeRegions();
   });
-  freeExcludeN?.addEventListener('change', () => { saveScoutPrefs(); repaintFreeRegions(); });
-
-  for (const k of WEIGHT_FIELDS) {
-    weightSliders[k]?.addEventListener('input', () => {
-      weightsDirty = true;
-      const v = weightSliders[k]?.value ?? '0';
-      if (weightValues[k]) weightValues[k].textContent = parseFloat(v).toFixed(1);
-      repaintFreeRegions();
-    });
-  }
-
-  document.getElementById('freeWeightsReset')?.addEventListener('click', () => {
-    applyPresetToSliders(freeStrategySelect.value);
+  serverMapView?.addEventListener('change', () => {
+    saveScoutPrefs();
     repaintFreeRegions();
   });
+  // Offline window / farm reach drive the RANKING field, not just the map —
+  // repaint unconditionally. Persist on release ('change'), not per drag tick.
+  serverMapWindow?.addEventListener('input', () => {
+    if (serverMapWindowV && serverMapWindow) serverMapWindowV.textContent = serverMapWindow.value;
+    repaintFreeRegionsThrottled();
+  });
+  serverMapWindow?.addEventListener('change', saveScoutPrefs);
+  serverMapFarm?.addEventListener('input', () => {
+    if (serverMapFarmV && serverMapFarm) serverMapFarmV.textContent = serverMapFarm.value;
+    repaintFreeRegionsThrottled();
+  });
+  serverMapFarm?.addEventListener('change', saveScoutPrefs);
+  freeExcludeN?.addEventListener('change', () => { saveScoutPrefs(); repaintFreeRegions(); });
 
   universeSelect.addEventListener('change', () => {
     selectedUniverseId = universeSelect.value;
@@ -1466,9 +1480,9 @@ export const _resetDashboardForTest = () => {
   alarmClockConfigApi = null;
   history = [];
   scans = {};
-  galaxyConfig = defaultGalaxyScanConfig();
-  targetPositions = parseTargetPositions(DEFAULT_COL_POSITIONS);
-  weightsDirty = false;
+  compositeCache = null;
+  scoreFieldCache = null;
+  lastMapPaint = null;
   // DOM refs filled by wireDom(); wireDom re-resolves them on the next
   // install, but null them now so nothing reads a detached node in between.
   statsEl =
@@ -1476,22 +1490,18 @@ export const _resetDashboardForTest = () => {
     countInfoEl =
     posFilter =
     universeSelect =
-    scansContainer =
     importStatusEl =
     freePosInput =
     freeGapsSelect =
-    freeStrategySelect =
-    freeExpansionSelect =
-    freeRadius =
-    freeRadiusVal =
+    freeZoneSelect =
+    freeFindSelect =
+    freeZoneHint =
+    scoutDataStamp =
     freeExcludeN =
     streakOnlyControls =
     nbrOnlyControls =
-    freeRadiusRow =
     freeContainer =
     freeCountInfoEl =
       /** @type {any} */ (undefined);
-  for (const k of Object.keys(weightSliders)) delete weightSliders[/** @type {keyof typeof weightSliders} */ (k)];
-  for (const k of Object.keys(weightValues)) delete weightValues[/** @type {keyof typeof weightValues} */ (k)];
   _resetAlarmClockForTest();
 };

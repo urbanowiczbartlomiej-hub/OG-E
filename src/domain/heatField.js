@@ -27,43 +27,19 @@
 // @ts-check
 
 import { classifyCell } from './cellClass.js';
+import {
+  GALAXY_IN_SYSTEMS,
+  SYSTEM_BASE,
+  SYSTEM_STEP,
+  axisDelta,
+  clamp01,
+  flightDistance,
+  reachThreat,
+} from './geometry.js';
 
 /**
  * @typedef {import('../state/scans.js').GalaxyScans} GalaxyScans
  */
-
-// Verified OGame flight-distance constants (galaxy / system terms).
-const GALAXY_STEP = 20000;
-const SYSTEM_BASE = 2700;
-const SYSTEM_STEP = 95;
-// Same-vicinity (a source in the target's own bin) reads as an in-system RIP.
-const SAME_SYSTEM_D = 1005;
-// Systems-of-distance a galaxy hop costs (20000 = 2700 + 95·183) — for the farm
-// system-radius so it barely crosses galaxies.
-const GALAXY_IN_SYSTEMS = 183;
-
-/** @param {number} x */
-const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
-
-/**
- * Wrap-aware absolute difference on a circular axis (the donut `min()`).
- * @param {number} a @param {number} b @param {number} total @param {boolean} donut
- * @returns {number}
- */
-const axisDelta = (a, b, total, donut) => {
-  const d = Math.abs(a - b);
-  return donut ? Math.min(d, total - d) : d;
-};
-
-/** NISZCZ flight time (hours) for an OGame flight-distance `d`. @param {number} d */
-const niszczHours = (d) => (3500 * Math.sqrt(d / 31) + 10) / 3600;
-
-/**
- * Threat reach 0..1 for distance `d` and offline window (hours): 1 while a RIP
- * arrives inside the window, fading to 0 by 1.5× the window.
- * @param {number} d @param {number} windowH
- */
-const reachThreat = (d, windowH) => clamp01(3 - 2 * (niszczHours(d) / windowH));
 
 /** Nearest-rank percentile of an ASCENDING-sorted array. @param {number[]} a @param {number} p */
 const pct = (a, p) => (a.length ? a[Math.min(a.length - 1, Math.floor(p * a.length))] : 0);
@@ -79,7 +55,14 @@ const pct = (a, p) => (a.length ? a[Math.min(a.length - 1, Math.floor(p * a.leng
  * @property {FieldCell[][]} grid  Indexed by 1-based galaxy then column.
  * @property {number} cols
  * @property {number} galaxies
+ * @property {number} systems   Systems per galaxy the field was built over —
+ *   needed for the exact system→bin mapping ({@link sampleField}).
  * @property {number} binWidth
+ * @property {number} windowH   Offline window (hours) the threat kernel used.
+ * @property {boolean} donutSystem  System-axis wrap the build honoured.
+ * @property {number} threatScale  The p95 the threat channel was normalised
+ *   by — lets a consumer convert a raw emission back into grid units (the
+ *   zoneScore field-aware exclusion).
  */
 
 /**
@@ -187,10 +170,7 @@ export const buildThreatFarmField = (scans, dims, opts = {}) => {
           if (ts === 0 && fs === 0) continue;
           const ag = axisDelta(g, g2, galaxies, donutGalaxy);
           const dSys = axisDelta(centroid(c), centroid(c2), systems, donutSystem);
-          if (ts > 0) {
-            const d = ag > 0 ? GALAXY_STEP * ag : (dSys === 0 ? SAME_SYSTEM_D : SYSTEM_BASE + SYSTEM_STEP * dSys);
-            tv += ts * reachThreat(d, windowH);
-          }
+          if (ts > 0) tv += ts * reachThreat(flightDistance(ag, dSys), windowH);
           if (fs > 0) fv += fs * clamp01(1 - (dSys + ag * GALAXY_IN_SYSTEMS) / farmReach);
         }
       }
@@ -223,5 +203,20 @@ export const buildThreatFarmField = (scans, dims, opts = {}) => {
       grid[g][c] = { threat: clamp01(threatF[g][c] / tScale), farm: clamp01(farmF[g][c] / fScale) };
     }
   }
-  return { grid, cols: N, galaxies, binWidth };
+  return { grid, cols: N, galaxies, systems, binWidth, windowH, donutSystem, threatScale: tScale };
+};
+
+/**
+ * Exact system → bin sample of a built field. Mirrors the source binning
+ * (`floor((s−1)·cols/systems)`) so any scoring consumer and the map pixels can
+ * never drift on the mapping. Out-of-range coordinates read as void.
+ *
+ * @param {ThreatFarmField} field @param {number} g @param {number} s
+ * @returns {FieldCell}
+ */
+export const sampleField = (field, g, s) => {
+  const row = field.grid[g];
+  if (!row) return { threat: 0, farm: 0 };
+  const c = Math.max(0, Math.min(field.cols - 1, Math.floor(((s - 1) * field.cols) / field.systems)));
+  return row[c] ?? { threat: 0, farm: 0 };
 };

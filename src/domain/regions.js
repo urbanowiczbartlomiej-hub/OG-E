@@ -153,6 +153,13 @@ import { occupantStrength } from './players.js';
  * @property {Array<{ id: number, name?: string, rank?: number, rankClass?: string }>} [excluded]
  *   Neighbourhood mode only: the players dropped from this window's score by the
  *   "ignore N worst" feature, best-to-worst. Empty/absent when none were dropped.
+ * @property {number} [fit] Zone fit 0..1, stamped by
+ *   `zoneScore.annotateAndSortByZone` — the analyzer's one ranking number.
+ * @property {import('./zoneScore.js').ZoneChannels} [channels] The bounded
+ *   channel breakdown behind `fit` (safety/farm/streak/target + coverage).
+ * @property {number} [freeRun] Memoised ANY-free contiguous run through the
+ *   candidate's centre (zoneScore.contiguousFreeRun) — computed once per
+ *   region lifetime.
  */
 
 /**
