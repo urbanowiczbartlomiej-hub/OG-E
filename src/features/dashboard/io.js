@@ -45,10 +45,7 @@
 import { chromeStore } from '../../lib/storage.js';
 import { historyKeyFor } from '../../state/history.js';
 import { scansKeyFor } from '../../state/scans.js';
-import {
-  syncRequestKeyFor,
-  resetGalaxyKeyFor,
-} from '../../sync/scheduler.js';
+import { syncRequestKeyFor } from '../../sync/scheduler.js';
 import { mergeScans, mergeHistory } from '../../sync/merge.js';
 
 /**
@@ -304,19 +301,3 @@ export const exportColonyCsv = (entries, universeId) => {
 export const triggerSync = (universeId) =>
   chromeStore.set(syncRequestKeyFor(universeId), Date.now());
 
-/**
- * Request a remote-side reset for a single galaxy within the given
- * universe. Writes `"<galaxy>:<Date.now()>"` to that universe's
- * namespaced reset tombstone so back-to-back resets of the same galaxy
- * each fire a fresh `onChanged` event. The scheduler reads the galaxy id and
- * drops that galaxy's keys from the LOCAL scans store only — galaxy scans are no
- * longer gist-synced (§4b), so there is no remote slot to clear. Pair with the
- * local `chromeStore.set(scansKeyFor(universeId), ...)` that already dropped the
- * galaxy's keys on this device.
- *
- * @param {number} galaxy
- * @param {string} universeId
- * @returns {Promise<void>}
- */
-export const triggerResetGalaxy = (galaxy, universeId) =>
-  chromeStore.set(resetGalaxyKeyFor(universeId), `${galaxy}:${Date.now()}`);

@@ -82,7 +82,11 @@ const POLL_MS = 100;
  * @property {import('../../domain/fleetPlan.js').SelectionSpec} spec
  * @property {Target} target
  * @property {number} mission
- * @property {'all'} [resources]  load all resources on step 2 when set.
+ * @property {'all' | 'most'} [resources]  load all (#allresources) or most
+ *   (#mostresources, AGR — leaves a reserve) resources on step 2 when set.
+ * @property {boolean} [selectMostShips]  on step 1, click AGR's "send most"
+ *   (#sendmost) instead of filling the resolved {@link FleetOrder.spec}
+ *   selection — leaves a reserve. The spec is still resolved to gate emptiness.
  * @property {boolean} [zeroResources]  zero the cargo inputs on step 2 (a micro
  *   probe carries nothing). Best-effort via the executor.
  * @property {number} [speedStep]  fleet speed step 1–10 (10 = 100 %) to force on
@@ -288,6 +292,14 @@ const awaitCheckTarget = (target) =>
 const clickContinue = () => safeClick(document.querySelector(GAME.FD_CONTINUE));
 const clickAllResources = () =>
   safeClick(document.querySelector(GAME.FD_ALL_RESOURCES));
+const clickMostResources = () =>
+  safeClick(document.querySelector(GAME.FD_MOST_RESOURCES));
+// AGR's "send most" link (step 1). Mirrors clickAllResources: a direct
+// isolated-world click on the AGR control (the same path fleetdispatchShortcut
+// uses for `.send_all a`). `#sendmost` is AGR's id; `.send_most a` the class
+// fallback, matching FD_SEND_ALL's documented fallback.
+const clickSendMost = () =>
+  safeClick(document.querySelector(GAME.FD_SEND_MOST) ?? document.querySelector('.send_most a'));
 
 /**
  * Build an id→count availability map from the cached snapshot.
@@ -374,8 +386,15 @@ export const select = async (order) => {
   /** @type {Promise<{ errorCode: number|null, orders: Record<string,boolean>|null } | null> | null} */
   let ctPromise = null;
   if (step() === 'fleet1') {
-    const r = await rpc('selectShips', { ships: sel.selection });
-    if (!r || !r.ok) return { ok: false, reason: 'selectFailed' };
+    if (order.selectMostShips) {
+      // Delegate ship selection to AGR's "send most" (leaves a reserve)
+      // instead of our explicit fill. The resolveSelection gate above already
+      // confirmed the planet isn't empty; AGR decides exactly what "most" is.
+      clickSendMost();
+    } else {
+      const r = await rpc('selectShips', { ships: sel.selection });
+      if (!r || !r.ok) return { ok: false, reason: 'selectFailed' };
+    }
 
     await rpc('setTarget', order.target);
 
@@ -474,6 +493,7 @@ const armMissionAndWaitReady = async (order) => {
   if (!m || !m.ok) return { ok: false, reason: 'mission' };
 
   if (order.resources === 'all') clickAllResources();
+  else if (order.resources === 'most') clickMostResources();
   // Micro probe: carry nothing, fly full speed. Best-effort — a transient DOM
   // miss must not block the dispatch (the readiness poll below still gates).
   if (order.zeroResources) await rpc('zeroResources', {});

@@ -417,6 +417,9 @@ export const mergeSettings = (local, remote) => {
  * @typedef {object} DailyRunRoutesSlot
  * @property {import('../domain/dailyRunRoutes.js').Route[]} routes
  * @property {import('../domain/dailyRunRoutes.js').TargetCoord | null} collectTarget
+ * @property {number} collectMission  Mission id the in-game "Send All" (collect) action uses.
+ * @property {'all' | 'most'} collectShips  How "Send All" selects ships.
+ * @property {'all' | 'most'} collectResources  How "Send All" loads cargo.
  * @property {number} updatedAt  Epoch-ms of the last local edit (0 = never).
  */
 
@@ -426,8 +429,8 @@ export const mergeSettings = (local, remote) => {
  * route config is a single edited unit per universe, so the grain is the
  * whole slot and the tie-breaker is its `updatedAt` (set by whichever device
  * last edited the routes/collectTarget — dashboard or in-game). The newer
- * side wins the ENTIRE slot (routes + collectTarget together); ties and a
- * missing/0 remote timestamp keep local (the anti-loop no-write path).
+ * side wins the ENTIRE slot (routes + collectTarget + collectMission together);
+ * ties and a missing/0 remote timestamp keep local (the anti-loop no-write path).
  *
  * The whole-universe grain is a deliberate trade: concurrent edits to the
  * SAME universe on two devices resolve last-writer-wins (the older edit is
@@ -458,6 +461,9 @@ export const mergeDailyRunRoutes = (local, remote) => {
       merged: {
         routes: Array.isArray(remote.routes) ? remote.routes : [],
         collectTarget: remote.collectTarget ?? null,
+        collectMission: remote.collectMission ?? local.collectMission,
+        collectShips: remote.collectShips ?? local.collectShips,
+        collectResources: remote.collectResources ?? local.collectResources,
         updatedAt: rT,
       },
       changed: true,

@@ -38,6 +38,7 @@ import {
   SHIP_LARGE_CARGO,
   ROUTE_MISSION_CATALOG,
   MISSION_DEPLOYMENT,
+  MISSION_TRANSPORT,
 } from '../../domain/rules.js';
 
 /** @typedef {import('../../domain/dailyRunRoutes.js').TargetCoord} TargetCoord */
@@ -85,6 +86,15 @@ export const installRoutes = ({ getUniverseId }) => {
   const addBtn = document.getElementById('routesAddBtn');
   const saveBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById('routesSaveBtn'));
   const status = document.getElementById('routesStatus');
+  const collectMissionRadios = /** @type {NodeListOf<HTMLInputElement>} */ (
+    document.querySelectorAll('input[name="routesCollectMission"]')
+  );
+  const collectShipsRadios = /** @type {NodeListOf<HTMLInputElement>} */ (
+    document.querySelectorAll('input[name="routesCollectShips"]')
+  );
+  const collectResourcesRadios = /** @type {NodeListOf<HTMLInputElement>} */ (
+    document.querySelectorAll('input[name="routesCollectResources"]')
+  );
   // Defensive: if the markup is absent (older dashboard.html), no-op so a
   // missing tab never throws during boot.
   if (!list) return { refresh: () => {} };
@@ -97,12 +107,15 @@ export const installRoutes = ({ getUniverseId }) => {
    * @type {{
    *   routes: Route[],
    *   collectTarget: TargetCoord | null,
+   *   collectMission: number,
+   *   collectShips: 'all' | 'most',
+   *   collectResources: 'all' | 'most',
    *   bodies: Body[],
    *   bodyByKey: Map<string, Body>,
    *   hasInventory: boolean,
    * }}
    */
-  let model = { routes: [], collectTarget: null, bodies: [], bodyByKey: new Map(), hasInventory: false };
+  let model = { routes: [], collectTarget: null, collectMission: MISSION_DEPLOYMENT, collectShips: 'most', collectResources: 'most', bodies: [], bodyByKey: new Map(), hasInventory: false };
   /** Snapshot for Revert — the last loaded/saved routes (deep-cloned). */
   let baseline = '[]';
 
@@ -116,6 +129,36 @@ export const installRoutes = ({ getUniverseId }) => {
 
   /** @param {unknown} v @returns {any} */
   const clone = (v) => JSON.parse(JSON.stringify(v));
+
+  /** Reflect {@link model}'s collect config onto the three Send-All radio groups. */
+  const syncCollectRadios = () => {
+    for (const r of collectMissionRadios) r.checked = parseInt(r.value, 10) === model.collectMission;
+    for (const r of collectShipsRadios) r.checked = r.value === model.collectShips;
+    for (const r of collectResourcesRadios) r.checked = r.value === model.collectResources;
+  };
+
+  /**
+   * Persist a patch to the collect ("Send All") config for the selected
+   * universe. Independent of the route-card Save: it writes IMMEDIATELY — a
+   * read-modify-write that preserves the persisted `routes` + `collectTarget`
+   * and overlays `patch` onto the collect fields — then stamps the sync clock
+   * + request exactly like {@link save}, so the change rides the same
+   * per-universe newest-wins sync. No-op when no universe is selected.
+   *
+   * @param {Partial<{ collectMission: number, collectShips: 'all' | 'most', collectResources: 'all' | 'most' }>} patch
+   * @returns {Promise<void>}
+   */
+  const writeCollectConfig = async (patch) => {
+    const uni = getUniverseId();
+    if (!uni) return;
+    const stored = await chromeStore.get(dailyRunRoutesKeyFor(uni));
+    const { routes, collectTarget, collectMission, collectShips, collectResources } = parseDailyRunRoutes(stored);
+    await chromeStore.set(dailyRunRoutesKeyFor(uni), {
+      routes, collectTarget, collectMission, collectShips, collectResources, ...patch,
+    });
+    await chromeStore.set(dailyRunRoutesTsKeyFor(uni), Date.now());
+    await chromeStore.set(syncRequestKeyFor(uni), Date.now());
+  };
 
   /** @param {TargetCoord} coord @returns {boolean} True if an OWN-body coord
    *  has no captured match. Custom (external) coords are never stale. */
@@ -494,8 +537,9 @@ export const installRoutes = ({ getUniverseId }) => {
   const refresh = async () => {
     const uni = getUniverseId();
     if (!uni) {
-      model = { routes: [], collectTarget: null, bodies: [], bodyByKey: new Map(), hasInventory: false };
+      model = { routes: [], collectTarget: null, collectMission: MISSION_DEPLOYMENT, collectShips: 'most', collectResources: 'most', bodies: [], bodyByKey: new Map(), hasInventory: false };
       baseline = '[]';
+      syncCollectRadios();
       render();
       setStatus('');
       return;
@@ -504,13 +548,14 @@ export const installRoutes = ({ getUniverseId }) => {
       chromeStore.get(dailyRunRoutesKeyFor(uni)),
       chromeStore.get(bodiesKeyFor(uni)),
     ]);
-    const { routes, collectTarget } = parseDailyRunRoutes(storedRoutes);
+    const { routes, collectTarget, collectMission, collectShips, collectResources } = parseDailyRunRoutes(storedRoutes);
     const bodies = Array.isArray(/** @type {any} */ (storedBodies)?.bodies)
       ? /** @type {Body[]} */ (/** @type {any} */ (storedBodies).bodies)
       : [];
     const bodyByKey = new Map(bodies.map((b) => [coordTypeKey(b), b]));
-    model = { routes: clone(routes), collectTarget, bodies, bodyByKey, hasInventory: bodies.length > 0 };
+    model = { routes: clone(routes), collectTarget, collectMission, collectShips, collectResources, bodies, bodyByKey, hasInventory: bodies.length > 0 };
     baseline = JSON.stringify(model.routes);
+    syncCollectRadios();
     render();
     setStatus('');
   };
@@ -524,10 +569,11 @@ export const installRoutes = ({ getUniverseId }) => {
       (r) => r.sources.length > 0 && r.targets.length > 0 && r.fleet.some((f) => f.count > 0),
     );
     const dropped = model.routes.length - clean.length;
-    // Preserve the in-game-set collect target; we only own `routes` here.
+    // Preserve the in-game-set collect target and the (separately-saved)
+    // collect mission / ships / resources; we only own `routes` in this Save path.
     const stored = await chromeStore.get(dailyRunRoutesKeyFor(uni));
-    const { collectTarget } = parseDailyRunRoutes(stored);
-    await chromeStore.set(dailyRunRoutesKeyFor(uni), { routes: clean, collectTarget });
+    const { collectTarget, collectMission, collectShips, collectResources } = parseDailyRunRoutes(stored);
+    await chromeStore.set(dailyRunRoutesKeyFor(uni), { routes: clean, collectTarget, collectMission, collectShips, collectResources });
     // Stamp the cross-device sync clock (whole-universe newest-wins) and poke
     // any open game tab to push the change to the gist (same tombstone the
     // "Sync now" button uses). Harmless no-op when cloud sync is off.
@@ -549,6 +595,42 @@ export const installRoutes = ({ getUniverseId }) => {
     render();
   });
   saveBtn?.addEventListener('click', () => void save());
+
+  // Send-All mission radios persist on the spot (no "Save routes" needed),
+  // mirroring how the dashboard's shared-settings controls write on change.
+  for (const radio of collectMissionRadios) {
+    radio.addEventListener('change', () => {
+      if (!radio.checked) return;
+      const mission = parseInt(radio.value, 10);
+      // Only the two missions this radio offers are valid here.
+      if (mission !== MISSION_DEPLOYMENT && mission !== MISSION_TRANSPORT) return;
+      model.collectMission = mission;
+      void writeCollectConfig({ collectMission: mission });
+    });
+  }
+
+  // Ships + resources radios: each persists its 'all' | 'most' choice on the
+  // spot, same as the mission radios above.
+  /**
+   * @param {NodeListOf<HTMLInputElement>} radios
+   * @param {(v: 'all' | 'most') => void} apply
+   */
+  const wireMostAllGroup = (radios, apply) => {
+    for (const radio of radios) {
+      radio.addEventListener('change', () => {
+        if (!radio.checked) return;
+        apply(radio.value === 'all' ? 'all' : 'most');
+      });
+    }
+  };
+  wireMostAllGroup(collectShipsRadios, (v) => {
+    model.collectShips = v;
+    void writeCollectConfig({ collectShips: v });
+  });
+  wireMostAllGroup(collectResourcesRadios, (v) => {
+    model.collectResources = v;
+    void writeCollectConfig({ collectResources: v });
+  });
 
   return { refresh: () => void refresh() };
 };

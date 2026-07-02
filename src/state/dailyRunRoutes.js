@@ -14,6 +14,13 @@
 //     sends everything back to. Set by clicking "set target" while on the
 //     staging moon; `null` until chosen. Carries `type` because the
 //     target may be a moon (type 3) or planet (type 1).
+//   - `collectMission` — the fleet mission the COLLECT ("Send All") action
+//     sends with (game `mission=` id). Defaults to deployment (stay); can be
+//     switched to transport (drop resources + return) from the dashboard's
+//     Daily Run tab.
+//   - `collectShips` / `collectResources` — how COLLECT selects ships and
+//     loads cargo: `'all'` or `'most'` (AGR's "send/load most", leaving a
+//     reserve). Both default to `'most'`. Set from the dashboard's Daily Run tab.
 //
 // # Why per-universe namespacing
 //
@@ -32,6 +39,7 @@ import { persist } from '../lib/persist.js';
 import { chromeStore } from '../lib/storage.js';
 import { DAILY_RUN_REDIRECT_KEY } from '../lib/storageKeys.js';
 import { parseDailyRunRoutes } from '../domain/dailyRunRoutes.js';
+import { MISSION_DEPLOYMENT } from '../domain/rules.js';
 import { currentUniverseKey } from './universeKey.js';
 
 /**
@@ -52,6 +60,12 @@ import { currentUniverseKey } from './universeKey.js';
  * @property {Route[]} routes  All micro-fleet routes (each with its own
  *   source/target lists). See {@link parseDailyRunRoutes} for normalisation.
  * @property {TargetCoord | null} collectTarget  Ad-hoc collect destination.
+ * @property {number} collectMission  Mission id the in-game "Send All"
+ *   (collect) action sends with (default {@link MISSION_DEPLOYMENT}).
+ * @property {'all' | 'most'} collectShips  How "Send All" selects ships:
+ *   `'all'` (explicit fill) or `'most'` (AGR "send most" — leaves a reserve).
+ * @property {'all' | 'most'} collectResources  How "Send All" loads cargo:
+ *   `'all'` (#allresources) or `'most'` (#mostresources — leaves a reserve).
  */
 
 /**
@@ -129,7 +143,13 @@ const DEBOUNCE_MS = 200;
  *
  * @returns {DailyRunRoutes}
  */
-const emptyConfig = () => ({ routes: [], collectTarget: null });
+const emptyConfig = () => ({
+  routes: [],
+  collectTarget: null,
+  collectMission: MISSION_DEPLOYMENT,
+  collectShips: 'most',
+  collectResources: 'most',
+});
 
 /**
  * The Daily Run route store. Initial value is empty; hydration is async

@@ -3,19 +3,21 @@
 // # Role
 //
 // This is the glue that turns three independently-useful primitives —
-// {@link scansStore}/{@link historyStore} (local state),
+// {@link historyStore} + the other synced stores (local state),
 // {@link mergeScans}/{@link mergeHistory} (pure reconcilers), and the
 // {@link fetchGistData}/{@link writeGistData} gist client — into a
 // working cross-device sync round-trip. Every other sync module is
 // stateless; this one owns the timers, the in-flight lock, and the
-// store/event subscriptions that drive it.
+// store/event subscriptions that drive it. (Galaxy scans are no longer
+// gist-synced — §4b — so the scans store is not watched here any more;
+// the scan-burst story below survives as the debounce's design rationale.)
 //
 // # Why a 15-second debounce
 //
 // OGame's galaxy page emits a burst of scans whenever the user scrolls
 // — one XHR per system, potentially a dozen in a few seconds. Each
-// scan flips {@link scansStore}, which on its own would queue an
-// upload. Without debouncing we'd burn ~12 GitHub API requests to sync
+// scan flipped the (then-synced) scans store, which on its own would
+// queue an upload. Without debouncing we'd burn ~12 GitHub API requests to sync
 // a single scrolling session; at OGame's tick cadence that exhausts
 // the 5000 req/h quota in minutes. A 15 s quiet window lets the whole
 // burst coalesce into one trailing upload. The price is staleness on
@@ -30,8 +32,8 @@
 // Every sync round-trip merges local and remote, and in the general
 // case writes the merged result back to the local store. But the local
 // store is watched by `storage.onChanged`-equivalent subscribers (any
-// feature that reacts to scans / history updates), and — crucially
-// — by US: any write to {@link scansStore} or {@link historyStore}
+// feature that reacts to history / decision updates), and — crucially
+// — by US: any write to {@link historyStore} (or another synced store)
 // fires {@link onStoreChange}, which schedules another upload. If the
 // write was a no-op (merge produced exactly what was already there),
 // that next upload will re-merge, re-write, re-schedule, forever.
@@ -111,7 +113,6 @@
 
 /* global document */
 
-import { scansStore } from '../state/scans.js';
 import { historyStore } from '../state/history.js';
 import { colonizeDecisionsStore } from '../state/colonizeDecisions.js';
 import { settingsStore } from '../state/settings.js';
@@ -127,6 +128,7 @@ import {
   alarmClockConfigTsKeyFor,
 } from '../state/alarmClockConfig.js';
 import { parseDailyRunRoutes } from '../domain/dailyRunRoutes.js';
+import { MISSION_DEPLOYMENT } from '../domain/rules.js';
 import { normalizeGalaxyScanConfig } from '../domain/galaxyScanConfig.js';
 import { normalizeAlarmClockConfig } from '../domain/alarmClockConfig.js';
 import {
@@ -188,20 +190,9 @@ import {
  */
 const SYNC_REQUEST_KEY_BASE = 'oge_syncRequestAt';
 
-/**
- * Per-galaxy reset tombstone suffix. Value is `"<galaxy>:<timestamp>"`
- * so two resets of the same galaxy back-to-back register as distinct
- * changes (chrome.storage.onChanged only fires when the value actually
- * changes).
- */
-const RESET_GALAXY_KEY_BASE = 'oge_resetGalaxyAt';
-
 /** @param {string} universeId */
 export const syncRequestKeyFor = (universeId) =>
   `${universeId}:${SYNC_REQUEST_KEY_BASE}`;
-/** @param {string} universeId */
-export const resetGalaxyKeyFor = (universeId) =>
-  `${universeId}:${RESET_GALAXY_KEY_BASE}`;
 
 /**
  * Quiet-period length (ms) for {@link scheduleUpload}. See file header
@@ -393,13 +384,13 @@ const noteApplied = async (rev, { beacon = false } = {}) => {
  * @returns {Promise<import('./merge.js').DailyRunRoutesSlot>}
  */
 const readLocalRoutesSlot = async () => {
-  if (!routesUniverseId) return { routes: [], collectTarget: null, updatedAt: 0 };
+  if (!routesUniverseId) return { routes: [], collectTarget: null, collectMission: MISSION_DEPLOYMENT, collectShips: 'most', collectResources: 'most', updatedAt: 0 };
   const [raw, ts] = await Promise.all([
     chromeStore.get(dailyRunRoutesKeyFor(routesUniverseId)),
     chromeStore.get(dailyRunRoutesTsKeyFor(routesUniverseId)),
   ]);
-  const { routes, collectTarget } = parseDailyRunRoutes(raw);
-  return { routes, collectTarget, updatedAt: typeof ts === 'number' ? ts : 0 };
+  const { routes, collectTarget, collectMission, collectShips, collectResources } = parseDailyRunRoutes(raw);
+  return { routes, collectTarget, collectMission, collectShips, collectResources, updatedAt: typeof ts === 'number' ? ts : 0 };
 };
 
 /**
@@ -420,12 +411,18 @@ const writeLocalRoutesSlot = async (slot) => {
     await chromeStore.set(dailyRunRoutesKeyFor(routesUniverseId), {
       routes: slot.routes,
       collectTarget: slot.collectTarget,
+      collectMission: slot.collectMission ?? MISSION_DEPLOYMENT,
+      collectShips: slot.collectShips ?? 'most',
+      collectResources: slot.collectResources ?? 'most',
     });
     await chromeStore.set(dailyRunRoutesTsKeyFor(routesUniverseId), slot.updatedAt);
     dailyRunRoutesStore.set(
       /** @type {import('../state/dailyRunRoutes.js').DailyRunRoutes} */ ({
         routes: slot.routes,
         collectTarget: slot.collectTarget,
+        collectMission: slot.collectMission ?? MISSION_DEPLOYMENT,
+        collectShips: slot.collectShips ?? 'most',
+        collectResources: slot.collectResources ?? 'most',
       }),
     );
   } finally {
@@ -1165,21 +1162,19 @@ export const installSync = () => {
   const syncKey = universeId
     ? syncRequestKeyFor(universeId)
     : SYNC_REQUEST_KEY_BASE;
-  const resetKey = universeId
-    ? resetGalaxyKeyFor(universeId)
-    : RESET_GALAXY_KEY_BASE;
   const gistRevKey = gistRevKeyFor(routesUniverseId);
 
   /**
    * Bridge from the extension-origin histogram page to this scheduler.
    * The histogram writes `<universeId>:oge_syncRequestAt = Date.now()`
-   * for the selected universe's "Sync now" button and
-   * `<universeId>:oge_resetGalaxyAt = "<galaxy>:<ts>"` for a per-galaxy
-   * "Reset" button. chrome.storage.onChanged fires in THIS origin
-   * (game), so we observe and act on the tombstones whose key matches
-   * our universe — the histogram may have selected a different server
-   * in the dropdown, in which case its tombstone has a different prefix
-   * and we ignore it.
+   * for the selected universe's "Sync now" button. chrome.storage.onChanged
+   * fires in THIS origin (game), so we observe and act on the tombstones
+   * whose key matches our universe — the histogram may have selected a
+   * different server in the dropdown, in which case its tombstone has a
+   * different prefix and we ignore it. (The old per-galaxy
+   * `oge_resetGalaxyAt` reset tombstone is gone with the Scanned-data
+   * accordion — the API TTL supersedes manual purges; stale keys from old
+   * installs are inert and classified as plumbing by syncInventory.)
    *
    * @param {Record<string, unknown>} changes
    */
@@ -1196,36 +1191,6 @@ export const installSync = () => {
       const raw = /** @type {{ newValue?: unknown }} */ (changes[gistRevKey]).newValue;
       const rev = typeof raw === 'string' ? raw : '';
       if (rev && rev !== readAppliedRev()) void downloadAndMerge();
-    }
-    if (resetKey in changes) {
-      // Value shape is `"<galaxy>:<timestamp>"`; we only care about the
-      // galaxy id. Bad parses fall through silently — a corrupt
-      // tombstone shouldn't take down the listener for the next one.
-      const raw = /** @type {{ newValue?: unknown }} */ (
-        changes[resetKey]
-      ).newValue;
-      const str = typeof raw === 'string' ? raw : '';
-      const galaxy = parseInt(str.split(':')[0], 10);
-      if (Number.isFinite(galaxy) && galaxy > 0) {
-        // Drop the galaxy from scansStore IN MEMORY (+ its write-through to
-        // chrome.storage). Galaxy scans are no longer synced (§4b), so this is
-        // now a purely LOCAL reset — there is no gist slot to wipe (and the old
-        // gist-clear path would have overwritten the gist with only the
-        // scans/history fields, dropping every other slice; removing it fixes
-        // that latent bug too).
-        const current = scansStore.get();
-        const prefix = galaxy + ':';
-        /** @type {typeof current} */
-        const filtered = {};
-        for (const key of /** @type {(keyof typeof current)[]} */ (
-          Object.keys(current)
-        )) {
-          if (!key.startsWith(prefix)) filtered[key] = current[key];
-        }
-        if (Object.keys(filtered).length !== Object.keys(current).length) {
-          scansStore.set(filtered);
-        }
-      }
     }
   };
   const unsubStorage = chromeStore.onChanged(onStorageChange);

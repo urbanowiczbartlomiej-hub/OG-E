@@ -21,7 +21,16 @@ import {
   disposeDailyRunRoutesStore,
   DAILY_RUN_REDIRECT_KEY,
 } from '../../src/state/dailyRunRoutes.js';
-import { TARGET_PLANET, TARGET_MOON, SHIP_LARGE_CARGO } from '../../src/domain/rules.js';
+import { TARGET_PLANET, TARGET_MOON, SHIP_LARGE_CARGO, MISSION_DEPLOYMENT } from '../../src/domain/rules.js';
+
+/** The three "collect" config defaults every DailyRunRoutes value now carries
+ * (deployment mission + "most" ships + "most" cargo). Spread into each
+ * `dailyRunRoutesStore.set({...})` so the literal is a complete config. */
+const COLLECT_DEFAULTS = /** @type {const} */ ({
+  collectMission: MISSION_DEPLOYMENT,
+  collectShips: 'most',
+  collectResources: 'most',
+});
 
 // ── location.href spy (mirrors sendExpedition.test.js) ──────────────────────────
 let navTarget = /** @type {string | null} */ (null);
@@ -59,7 +68,7 @@ const setBodyMeta = (coords, type) => {
 beforeEach(() => {
   _resetDailyRunForTest();
   disposeDailyRunRoutesStore();
-  dailyRunRoutesStore.set({ routes: [], collectTarget: null });
+  dailyRunRoutesStore.set({ routes: [], collectTarget: null, ...COLLECT_DEFAULTS });
   resetSettingsToDefaults();
   document.body.innerHTML = '';
   document.head.innerHTML = '';
@@ -142,6 +151,7 @@ describe('set collect target (via long-press on the Collect zone)', () => {
     dailyRunRoutesStore.set({
       routes: [],
       collectTarget: { galaxy: 4, system: 480, position: 8, type: TARGET_PLANET },
+      ...COLLECT_DEFAULTS,
     });
     const collectZone = /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-zone'));
     // pointerdown + immediate pointerup (no long-press) then click → collect.
@@ -176,6 +186,7 @@ describe('micro send — navigation (top zone)', () => {
         },
       ],
       collectTarget: null,
+      ...COLLECT_DEFAULTS,
     });
     /** @type {HTMLElement} */ (document.getElementById('oge-fs-micro-zone')).click();
     expect(navTarget).toContain('component=fleetdispatch');
@@ -196,6 +207,7 @@ describe('micro send — navigation (top zone)', () => {
         },
       ],
       collectTarget: null,
+      ...COLLECT_DEFAULTS,
     });
     // The route's only target already has an inbound deployment.
     document.body.insertAdjacentHTML('beforeend', `
@@ -227,6 +239,7 @@ describe('micro send — navigation (top zone)', () => {
         },
       ],
       collectTarget: null,
+      ...COLLECT_DEFAULTS,
     });
     // An inbound DEPLOYMENT (mission 4) to the same target must NOT count as
     // "already sent" for a transport (mission 3) route.
@@ -255,7 +268,7 @@ describe('micro send — navigation (top zone)', () => {
     installDailyRun();
     openEventBoxGate();
     setBodyMeta('4:472:15', 'moon');
-    dailyRunRoutesStore.set({ routes: [], collectTarget: null });
+    dailyRunRoutesStore.set({ routes: [], collectTarget: null, ...COLLECT_DEFAULTS });
     const micro = /** @type {HTMLElement} */ (document.getElementById('oge-fs-micro-zone'));
     micro.click();
     expect(navTarget).toBeNull();
@@ -271,6 +284,7 @@ describe('collect send — navigation + dispatch (bottom zone)', () => {
     dailyRunRoutesStore.set({
       routes: [],
       collectTarget: { galaxy: 4, system: 472, position: 15, type: TARGET_MOON },
+      ...COLLECT_DEFAULTS,
     });
     /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-zone')).click();
     expect(navTarget).toContain('component=fleetdispatch');
@@ -376,6 +390,7 @@ describe('collect send — navigation + dispatch (bottom zone)', () => {
     dailyRunRoutesStore.set({
       routes: [],
       collectTarget: { galaxy: 4, system: 472, position: 15, type: TARGET_MOON },
+      ...COLLECT_DEFAULTS,
     });
     const spy = buildTwoStep(true);
     const zone = /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-zone'));
@@ -397,6 +412,7 @@ describe('collect send — navigation + dispatch (bottom zone)', () => {
     dailyRunRoutesStore.set({
       routes: [],
       collectTarget: { galaxy: 4, system: 472, position: 15, type: TARGET_MOON },
+      ...COLLECT_DEFAULTS,
     });
     buildTwoStep(false, 140026);
     const zone = /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-zone'));
@@ -405,5 +421,151 @@ describe('collect send — navigation + dispatch (bottom zone)', () => {
     zone.click(); // tap 2 — dispatch, rejected by the game
     await until(() => zone.textContent?.includes('No fuel'));
     expect(localStorage.getItem(DAILY_RUN_REDIRECT_KEY)).toBeNull();
+  });
+});
+
+// The collect "Send All" order builder maps the store's collect config onto the
+// FleetOrder the courier executes. We can't unit-test buildOrder directly (it's
+// closure-scoped), so we drive tap 1 of a collect send and read the order at the
+// observable courier seam: which AGR ship control it clicked (#sendmost for
+// "most" vs the selectShips RPC for "all"), which resource control (#mostresources
+// vs #allresources), and the mission arg of selectMission.
+describe('collect order builder — ship/resource/mission selection from store config', () => {
+  /** Removes the probe executor's listener after each test. */
+  let cleanupProbe = () => {};
+  afterEach(() => {
+    cleanupProbe();
+    cleanupProbe = () => {};
+  });
+
+  /** Poll until `cond()` is truthy (real timers — the courier waits on them).
+   *  @param {() => unknown} cond @param {number} [timeoutMs] */
+  const until = async (cond, timeoutMs = 4000) => {
+    const t0 = Date.now();
+    while (!cond()) {
+      if (Date.now() - t0 > timeoutMs) throw new Error('until(): condition not met');
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  };
+
+  /**
+   * Build a fleetdispatch scene that RECORDS the order-shaping calls a collect
+   * tap 1 makes: the AGR "send most" / "all resources" / "most resources"
+   * clicks and the RPC ops (selectShips, selectMission). Mirrors
+   * {@link buildTwoStep} but adds the resource/ship controls and a recorder.
+   *
+   * @returns {{ sendMost: () => number, allRes: () => number, mostRes: () => number,
+   *   ops: () => Array<{ op: string, args: any }> }}
+   */
+  const buildOrderProbe = () => {
+    document.body.insertAdjacentHTML('beforeend', `
+      <div id="planetList">
+        <div class="smallplanet hightlightPlanet" id="planet-100"><span class="planet-koords">[4:472:15]</span></div>
+        <div class="smallplanet" id="planet-200"><span class="planet-koords">[4:480:8]</span></div>
+      </div>
+      <div id="fleet1"></div>
+      <a id="sendmost"></a>
+      <a id="allresources"></a>
+      <a id="mostresources"></a>`);
+    let sendMost = 0;
+    let allRes = 0;
+    let mostRes = 0;
+    /** @type {Array<{ op: string, args: any }>} */
+    const ops = [];
+    document.getElementById('sendmost')?.addEventListener('click', () => { sendMost += 1; });
+    document.getElementById('allresources')?.addEventListener('click', () => { allRes += 1; });
+    document.getElementById('mostresources')?.addEventListener('click', () => { mostRes += 1; });
+    /** @type {any} */
+    let lastTarget = null;
+    const cont = document.createElement('a');
+    cont.id = 'continueToFleet2';
+    cont.className = 'off';
+    cont.addEventListener('click', () => {
+      document.getElementById('fleet1')?.remove();
+      const dispatch = document.createElement('a');
+      dispatch.id = 'dispatchFleet';
+      dispatch.className = 'off';
+      document.body.appendChild(dispatch);
+      const t = lastTarget || {};
+      document.dispatchEvent(new CustomEvent('oge:checkTargetResult', {
+        detail: { galaxy: t.galaxy, system: t.system, position: t.position, errorCode: null, orders: { 3: true, 4: true } },
+      }));
+    });
+    document.body.appendChild(cont);
+    const onCmd = (/** @type {any} */ e) => {
+      const { id, op, args } = e.detail;
+      ops.push({ op, args });
+      /** @type {any} */
+      const res = { id, ok: true };
+      if (op === 'setTarget') {
+        lastTarget = args;
+        setTimeout(() => document.getElementById('continueToFleet2')?.classList.remove('off'), 0);
+      } else if (op === 'selectMission') {
+        res.data = { available: true };
+        setTimeout(() => document.getElementById('dispatchFleet')?.classList.remove('off'), 0);
+      }
+      document.dispatchEvent(new CustomEvent('oge:fd:res', { detail: res }));
+    };
+    document.addEventListener('oge:fd:cmd', onCmd);
+    cleanupProbe = () => document.removeEventListener('oge:fd:cmd', onCmd);
+    document.dispatchEvent(new CustomEvent('oge:fleetDispatcher', {
+      detail: { shipsOnPlanet: [{ id: 203, number: 100 }], orders: { 3: true, 4: true } },
+    }));
+    return { sendMost: () => sendMost, allRes: () => allRes, mostRes: () => mostRes, ops: () => ops };
+  };
+
+  /** Mission arg of the (last) selectMission RPC the courier issued.
+   *  @param {Array<{ op: string, args: any }>} ops */
+  const missionOf = (ops) => {
+    const m = ops.filter((o) => o.op === 'selectMission').at(-1);
+    return m ? m.args.mission : undefined;
+  };
+
+  it('most/most/mission-3 → selectMostShips (AGR send-most), most resources, mission 3', async () => {
+    enable();
+    installDailyRun();
+    openEventBoxGate();
+    dailyRunRoutesStore.set({
+      routes: [],
+      collectTarget: { galaxy: 4, system: 472, position: 15, type: TARGET_MOON },
+      collectMission: 3,
+      collectShips: 'most',
+      collectResources: 'most',
+    });
+    const p = buildOrderProbe();
+    const zone = /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-zone'));
+    zone.click(); // tap 1 — select+target+mission+resources
+    await until(() => zone.textContent?.includes('(tap to send)'));
+    // selectMostShips === true → AGR "send most" clicked, NO explicit selectShips.
+    expect(p.sendMost()).toBe(1);
+    expect(p.ops().some((o) => o.op === 'selectShips')).toBe(false);
+    // resources === 'most' → #mostresources clicked, not #allresources.
+    expect(p.mostRes()).toBe(1);
+    expect(p.allRes()).toBe(0);
+    // mission flows straight through.
+    expect(missionOf(p.ops())).toBe(3);
+  });
+
+  it('all/all → explicit selectShips (not send-most) and all resources', async () => {
+    enable();
+    installDailyRun();
+    openEventBoxGate();
+    dailyRunRoutesStore.set({
+      routes: [],
+      collectTarget: { galaxy: 4, system: 472, position: 15, type: TARGET_MOON },
+      collectMission: 4,
+      collectShips: 'all',
+      collectResources: 'all',
+    });
+    const p = buildOrderProbe();
+    const zone = /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-zone'));
+    zone.click();
+    await until(() => zone.textContent?.includes('(tap to send)'));
+    // selectMostShips === false → explicit selectShips RPC, NO AGR send-most.
+    expect(p.ops().some((o) => o.op === 'selectShips')).toBe(true);
+    expect(p.sendMost()).toBe(0);
+    // resources === 'all' → #allresources clicked, not #mostresources.
+    expect(p.allRes()).toBe(1);
+    expect(p.mostRes()).toBe(0);
   });
 });

@@ -52,7 +52,12 @@ const scansOf = (spec) => {
   return out;
 };
 
-const baseOpts = () => ({ containerEl, countInfoEl, maxGaps: 0 });
+// `find` now defaults to 'spots' (neighbourhood windows, radius 15) — most of
+// this suite pins down the per-system classification/labelling logic that was
+// authored against a fixed 6-system STREAK region, so explicitly ask for the
+// 'streaks' path to keep those fixtures meaningful. The new 'spots' default
+// and zone-based ranking get their own dedicated tests below.
+const baseOpts = () => ({ containerEl, countInfoEl, maxGaps: 0, find: 'streaks' });
 
 describe('renderFreeRegions', () => {
   it('renders a table, record card and a legended strip for a real region', () => {
@@ -68,7 +73,7 @@ describe('renderFreeRegions', () => {
     expect(containerEl.querySelector('.region-legend')).toBeTruthy();
     // Rich per-system detail is now a hover/pin popover, not a native title.
     expect(containerEl.querySelector('.region-strip-wrap .region-pop')).toBeTruthy();
-    expect(countInfoEl.textContent).toMatch(/region/);
+    expect(countInfoEl.textContent).toMatch(/streak/);
   });
 
   it('surfaces player-cache signals (strong / active-on-vac / outlaw) in the record', () => {
@@ -262,6 +267,71 @@ describe('renderFreeRegions', () => {
     expect(empties).toHaveLength(1);
     expect(empties[0].textContent).toMatch(/Nothing to show yet/);
     expect(containerEl.querySelector('table.streak-table')).toBeFalsy();
-    expect(countInfoEl.textContent).toMatch(/No confirmed empty regions/);
+    expect(countInfoEl.textContent).toMatch(/No confirmed empty streaks/);
+  });
+});
+
+describe("renderFreeRegions — 'spots' (default find) and zone-based ranking", () => {
+  it('defaults to the candidate ("Best spots") table when find is omitted', () => {
+    /** @type {Record<string, Record<number, any>>} */
+    const spec = {};
+    for (let s = 1; s <= 6; s++) spec[`4:${s}`] = { 8: empty };
+    renderFreeRegions({ containerEl, countInfoEl, maxGaps: 0, scans: scansOf(spec), positions: [8] });
+
+    const table = containerEl.querySelector('table.streak-table');
+    expect(table).toBeTruthy();
+    // The candidate table has "Window"/"Ignored" columns; the streak table
+    // has "Length"/"Gaps" instead — this is the observable mode fingerprint.
+    const headers = [...(table?.querySelectorAll('thead th') ?? [])].map((th) => th.textContent);
+    expect(headers).toContain('Window');
+    expect(headers).toContain('Ignored');
+    expect(headers).not.toContain('Length');
+    expect(countInfoEl.textContent).toMatch(/spot/);
+  });
+
+  it('explicit find:"streaks" opts back into the streak table', () => {
+    /** @type {Record<string, Record<number, any>>} */
+    const spec = {};
+    for (let s = 1; s <= 6; s++) spec[`4:${s}`] = { 8: empty };
+    renderFreeRegions({ containerEl, countInfoEl, maxGaps: 0, scans: scansOf(spec), positions: [8], find: 'streaks' });
+
+    const table = containerEl.querySelector('table.streak-table');
+    const headers = [...(table?.querySelectorAll('thead th') ?? [])].map((th) => th.textContent);
+    expect(headers).toContain('Length');
+    expect(headers).toContain('Gaps');
+  });
+
+  it('every rendered row carries a numeric Fit score (0-100), zone-ranked even without a field', () => {
+    /** @type {Record<string, Record<number, any>>} */
+    const spec = {};
+    for (let s = 1; s <= 6; s++) spec[`4:${s}`] = { 8: empty };
+    renderFreeRegions({ containerEl, countInfoEl, maxGaps: 0, scans: scansOf(spec), positions: [8], find: 'streaks' });
+    const fitCell = containerEl.querySelector('table.streak-table tbody tr td:nth-child(2)');
+    expect(Number(fitCell?.textContent)).toBeGreaterThanOrEqual(0);
+    expect(Number(fitCell?.textContent)).toBeLessThanOrEqual(100);
+  });
+
+  it("zone weighting shifts a target-rich candidate's Fit — higher under 'pvp' than under 'safe'", () => {
+    // One free-slot centre (system 1) surrounded by active honoured occupants
+    // — a target-rich but not especially "quiet" neighbourhood. No field is
+    // supplied (safety/farm stay at their field-less neutral values), so the
+    // ONLY channel the two zones weight differently that actually moves here
+    // is `target` (pvp: 0.65, safe: 0) — pvp must score this candidate higher.
+    /** @type {Record<string, Record<number, any>>} */
+    const spec = { '4:1': { 8: empty } };
+    for (const s of [2, 3, 4, 5]) {
+      spec[`4:${s}`] = { 3: { status: 'occupied', player: { id: 100 + s, name: 'T' + s, rankClass: 'rank_honored2' } } };
+    }
+    const scans = scansOf(spec);
+
+    renderFreeRegions({ containerEl, countInfoEl, maxGaps: 0, scans, positions: [8], zone: 'pvp' });
+    const pvpFit = Number(containerEl.querySelector('table.streak-table tbody tr td:nth-child(2)')?.textContent);
+
+    const containerSafe = document.createElement('div');
+    const countSafe = document.createElement('span');
+    renderFreeRegions({ containerEl: containerSafe, countInfoEl: countSafe, maxGaps: 0, scans, positions: [8], zone: 'safe' });
+    const safeFit = Number(containerSafe.querySelector('table.streak-table tbody tr td:nth-child(2)')?.textContent);
+
+    expect(pvpFit).toBeGreaterThan(safeFit);
   });
 });

@@ -45,12 +45,13 @@
   .tab-section { display: none; }
   .tab-section.active { display: block; }
 
-  /* In-tab sub-section (the Colony Scout block in its Colonizations
+  /* In-tab sub-section (the Galaxy Viewer block in its Colonizations
      sub-tab) — one heading size down. No top separator: the sub-tab bar
-     already delimits it from the Scanned-data pane. */
+     already delimits it from the Big Colony Hunting pane. */
   .sub-section h2 { color: #4a9eff; font-size: 17px; margin-bottom: 10px; }
-  /* Modest "experimental" marker — the Colony Scout heuristics (scoring,
-     strategies, neighbourhood intel) are still evolving and feedback-driven. */
+  /* Modest "experimental" marker — the Galaxy Viewer heuristics (zone
+     scoring, field, neighbourhood intel) are still evolving and
+     feedback-driven. */
   .exp-badge {
     margin-left: 8px; padding: 1px 7px; border-radius: 10px;
     font-size: 10px; font-weight: bold; letter-spacing: .04em; text-transform: uppercase;
@@ -137,14 +138,13 @@
      detail panel below describes (default = the top row). */
   .streak-table tbody tr { cursor: pointer; }
   .streak-table tbody tr.selected { background: #1c3346; box-shadow: inset 3px 0 0 #4a9eff; }
-  /* Heat strip (neighbourhood strategies): taller than the status strip, hard
-     BLACK separators between systems (gap over a black bg), the centre settle
-     system ringed white, the focused/hovered cell ringed blue. Coloured by
-     intent (palette.heatColor), not raw status. */
+  /* Field strip (Best spots): taller than the status strip, hard BLACK
+     separators between systems (gap over a black bg), the centre system
+     ringed white, the focused/hovered cell ringed blue. Coloured by the
+     threat/farm field (cellClass.fieldColor), not raw status. */
   .region-strip.heat { height: 22px; gap: 1px; background: #000; border-radius: 4px; padding: 1px; overflow: visible; }
   .region-strip.heat .strip-cell { min-width: 6px; box-shadow: none; cursor: pointer; border-radius: 1px; }
   .region-strip.heat .strip-cell.center { outline: 2px solid #fff; outline-offset: -2px; }
-  .region-strip.heat .strip-cell.focus { outline: 2px solid #4a9eff; outline-offset: -2px; }
   /* Friendly hover/pin popover over a strip cell (styled like the planet-badge
      legend and the in-game "?" help). Anchored ABOVE the strip; `left` is set
      per-cell in JS. pointer-events:none so it never blocks hovering the cells
@@ -157,7 +157,11 @@
     padding: 8px 11px; color: #cfe6f5; font-size: 11px; line-height: 1.5;
     box-shadow: 0 2px 14px rgba(0,0,0,.7); text-align: left; pointer-events: none;
   }
+  /* Only the LINK inside a pinned card regains pointer-events — the card
+     body stays pass-through (a tall card can reach over the stat cards and
+     table rows above the strip; it must never block clicking those). */
   .region-pop.pinned { border-color: #4a9eff; box-shadow: 0 2px 14px rgba(74,158,255,.35); }
+  .region-pop.pinned a { pointer-events: auto; }
   .region-pop .rp-head { font-weight: 700; color: #fff; margin: 0 0 4px; }
   .region-pop .rp-time { color: #7f93a3; font-size: 10px; margin: 0 0 6px; }
   .region-pop .rp-row { display: flex; align-items: center; gap: 8px; margin: 3px 0; white-space: nowrap; }
@@ -165,32 +169,6 @@
   .region-pop .rp-free { color: #0c0; margin-top: 5px; }
   .region-pop .rp-foot { margin-top: 7px; color: #7f93a3; font-size: 10px; }
   .region-excluded { margin-top: 6px; font-size: 12px; color: #d9a441; }
-  .heat-legend { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 11px; color: #888; }
-  .heat-ramp { width: 120px; height: 10px; border-radius: 3px;
-    background: linear-gradient(to right, rgb(202,64,56), rgb(90,96,104), rgb(54,178,84)); }
-  /* Custom weight panel */
-  details.weight-panel { margin-top: 10px; }
-  details.weight-panel > summary {
-    cursor: pointer; color: #4a9eff; font-size: 12px;
-    user-select: none; list-style: none; display: inline-block;
-  }
-  details.weight-panel > summary::-webkit-details-marker { display: none; }
-  .weight-grid {
-    display: grid; grid-template-columns: 130px 1fr 34px;
-    gap: 6px 8px; align-items: center; margin-top: 8px;
-  }
-  .weight-label { color: #aaa; font-size: 12px; }
-  .weight-slider { width: 100%; accent-color: #4a9eff; cursor: pointer; }
-  .weight-val {
-    color: #4a9eff; text-align: right; font-size: 11px;
-    font-variant-numeric: tabular-nums;
-  }
-  .weight-reset {
-    background: #111820; border: 1px solid #2a4a5a; color: #888;
-    padding: 3px 10px; border-radius: 5px; font-size: 11px;
-    cursor: pointer; margin-top: 6px;
-  }
-  .weight-reset:hover { border-color: #4a9eff; color: #ccc; }
 
   /* Collapsible "⚙ Settings" panel — one per tab, configuration tucked at the
      bottom (collapsed by default) so the data view leads and the options don't
@@ -305,7 +283,7 @@
 
   /* Generic in-section sub-tabs — shared by the AlarmClock ⚙ Settings
      sub-panes (Expedition waves / Ad-hoc / Fleet-save) and the Colonizations
-     sub-tabs (Planet sizes / Scanned data / Colony Scout). */
+     sub-tabs (Big Colony Hunting / Galaxy Viewer). */
   .subtabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 14px; border-bottom: 1px solid #2a4a5a; }
   .subtab { background: transparent; border: 1px solid transparent; border-bottom: none;
     color: #888; padding: 6px 14px; font-size: 13px; cursor: pointer; border-radius: 6px 6px 0 0; }
@@ -313,6 +291,31 @@
   .subtab.active { color: #fff; background: #16252f; border-color: #2a4a5a; font-weight: bold; }
   .subtabpane { display: none; }
   .subtabpane.active { display: block; }
+  /* Colony Scout → server map: binned temperature field (whole server). */
+  .server-map-panel { margin: 10px 0; }
+  /* Candidate pins overlaid on the field map: one ring per top-listed spot,
+     generous ≥12px hit target (the underlying bins are ~4px), absolutely
+     positioned inside the row's cells area. Click selects the table row. */
+  .smap-cells { display: flex; flex: 1 1 auto; height: 100%; min-width: 0; position: relative; }
+  .smap-pin {
+    position: absolute; top: 50%; width: 13px; height: 13px; margin: -6.5px 0 0 -6.5px;
+    border-radius: 50%; border: 2px solid #e8ecf5; background: rgba(14,17,23,.35);
+    cursor: pointer; z-index: 2; box-sizing: border-box;
+  }
+  .smap-pin:hover { border-color: #4a9eff; }
+  .server-map-empty { color: #888; font-size: 13px; padding: 6px 0; }
+  .smap-axis { display: flex; margin-left: 26px; height: 11px; font-size: 9px; color: #5f6f7c; font-family: monospace; }
+  .smap-axis > span { flex: 1 1 auto; min-width: 0; overflow: hidden; }
+  .smap-row { display: flex; align-items: center; height: 16px; }
+  .smap-glab { flex: 0 0 26px; font-size: 11px; font-family: monospace; color: #7a8a99; text-align: right; padding-right: 6px; }
+  .smap-cell { flex: 1 1 auto; height: 100%; min-width: 0; }
+  .smap-legend { display: flex; align-items: center; gap: 8px; margin: 8px 0 0 26px; font-size: 11px; color: #7a8a99; font-family: monospace; }
+  .smap-legbar { width: 160px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, rgb(202,64,56), rgb(90,96,104), rgb(54,178,84)); }
+  .smap-info { margin-top: 8px; font-size: 12px; color: #888; }
+  .smap-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0 10px; font-size: 13px; color: #ccc; }
+  .smap-occ-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+  .smap-occ-leg { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: #9aabb8; }
+  .smap-occ-sw { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
   /* Each pane splits into Settings | Message columns; stacks on narrow. */
   .rem-pane-grid { display: grid; grid-template-columns: 1fr; gap: 0 32px; align-items: start; }
   .rem-pane-grid .cfg-sub:first-child { margin-top: 0; }
@@ -487,9 +490,8 @@
   <h1>Colonizations</h1>
 
   <div class="subtabs" id="colonySubtabs" role="tablist">
-    <button type="button" class="subtab active" data-subtab="histogram" role="tab">Planet sizes</button>
-    <button type="button" class="subtab" data-subtab="scans" role="tab">Scanned data</button>
-    <button type="button" class="subtab" data-subtab="scout" role="tab">Colony Scout</button>
+    <button type="button" class="subtab active" data-subtab="histogram" role="tab">Big Colony Hunting</button>
+    <button type="button" class="subtab" data-subtab="scout" role="tab">Galaxy Viewer</button>
   </div>
 
   <div class="subtabpane active" data-subtab="histogram">
@@ -505,123 +507,95 @@
     </div>
     <div class="stats" id="statsContainer"></div>
     <div class="chart-container"><div class="chart" id="chart"></div></div>
-  </div>
-
-  <div class="subtabpane" data-subtab="scans">
-    <p style="color:#888;font-size:13px;margin-bottom:16px;">
-      Per-system summary of positions you have navigated past in the in-game galaxy view.
-      Data was recorded only for galaxy pages you yourself opened. Filtered by the target
-      positions list (set under ⚙ Settings below) — only those positions count toward
-      the stats below.
-    </p>
-    <div id="scansContainer"></div>
+    <details class="settings-panel">
+      <summary>⚙ Settings</summary>
+      <div class="settings-body">
+        <p class="settings-desc">
+          Colonization targets and the colonize / abandon thresholds — they drive
+          the in-game Colonize / Abandon buttons. Which positions are free is read
+          from OGame's public API automatically, so there's no manual scanning to
+          set up. Per-universe and synced across your devices.
+        </p>
+        <div id="colonizationConfigBody"></div>
+      </div>
+    </details>
   </div>
 
   <div class="subtabpane" data-subtab="scout">
     <div class="sub-section">
-    <h2>🔭 Colony Scout — systems analysis<span class="exp-badge" title="The scoring, strategies and neighbourhood intel here are still evolving — expect changes, and feedback is welcome.">experimental</span></h2>
+    <h2>🌌 Galaxy Viewer — server map + zone analyzer<span class="exp-badge" title="The map, scoring and neighbourhood intel here are still evolving — expect changes, and feedback is welcome.">experimental</span></h2>
+    <div id="scoutDataStamp" style="color:#666;font-size:12px;margin:-4px 0 10px;"></div>
     <p style="color:#888;font-size:13px;margin-bottom:16px;">
-      For each scanned galaxy, the best contiguous run of systems whose target slots are all
-      confirmed <code style="color:#4a9eff;">empty</code> — scored and ranked by how well the
-      neighbourhood fits your play style. <strong style="color:#ccc;">Positions</strong>: a slot list or range
-      (e.g. <code style="color:#4a9eff;">8</code> or <code style="color:#4a9eff;">12-15</code>);
-      every listed slot must be empty for a system to count.
-      <strong style="color:#ccc;">Tolerance</strong> lets a
-      region bridge a few non-matching or unscanned systems instead of demanding a perfect
-      run. Unscanned systems never count as free — results grow as you keep scanning.
-      <strong style="color:#ccc;">Strategy</strong> re-ranks found regions by neighbourhood
-      profile: player density, honour ranks, farm targets, proximity to your existing colonies.
+      A viewer and analyzer of this server's galaxies — where the threats, farms and quiet
+      space are. Pick a <strong style="color:#ccc;">Zone</strong> (what a good area means to
+      you) and a <strong style="color:#ccc;">Find</strong> shape:
+      <em>Best spots</em> rates the neighbourhood around every system with ANY listed slot
+      <code style="color:#4a9eff;">empty</code>; <em>Longest streaks</em> hunts contiguous
+      runs where EVERY listed slot is empty (Tolerance lets a run bridge a few bad systems).
+      Ranking, strip colours and the server map all read the same threat/farm field —
+      threat spreads by moon-destruction reach within your offline window, farm value by
+      your farm reach. Unscanned systems never count as free.
     </p>
+    <div class="server-map-panel" id="serverMapBlock">
+      <div class="smap-controls">
+        <label>View:</label>
+        <select id="serverMapView">
+          <option value="field">Threat / farm field</option>
+          <option value="occupancy">Occupancy (every position)</option>
+        </select>
+      </div>
+      <div id="serverMapHost"></div>
+    </div>
     <div class="controls">
-      <label>Strategy:</label>
-      <select id="freeStrategySelect"
-        title="Longest streak hunts a long run of a free slot (Slots + Tolerance). The other strategies instead analyse the AREA around each settle spot (Radius + Ignore worst), ranked by how the neighbourhood fits your play style.">
-        <option value="longest">Longest streak</option>
-        <option value="peaceful">Peaceful settler</option>
-        <option value="safe_expansion">Safe expansion</option>
-        <option value="farmer">Farmer</option>
-        <option value="honor_pvp">Honor PvP</option>
-        <option value="aggressive">Aggressive PvP</option>
+      <label>Zone:</label>
+      <select id="freeZoneSelect"
+        title="What a good area means for the ranking. Safe zone = low threat pressure; Farm hub = maximum inactive loot in reach; PvP zone = target-rich space.">
+        <option value="safe">Safe zone</option>
+        <option value="farm">Farm hub</option>
+        <option value="pvp">PvP zone</option>
+      </select>
+      <label>Find:</label>
+      <select id="freeFindSelect"
+        title="Best spots rates the area around each free-slot system (ANY listed slot free). Longest streaks hunts contiguous runs where EVERY listed slot is empty.">
+        <option value="spots">Best spots</option>
+        <option value="streaks">Longest streaks</option>
       </select>
       <label>Slots:</label>
       <input id="freePosInput" value="15" size="8" placeholder="e.g. 7-9, 15"
-        title="Which planet slots you'd settle on — a list or range like 8 or 12-15. In Longest streak EVERY listed slot must be empty; in the area strategies a system qualifies as a centre when ANY listed slot is free.">
-      <span style="color:#666;font-size:12px;">list or range, e.g. 7-9, 15</span>
-      <span id="streakOnlyControls">
+        title="Which planet slots to look at — a list or range like 8 or 12-15. Best spots: ANY listed slot free qualifies a system; Longest streaks: EVERY listed slot must be empty.">
+      <span id="streakOnlyControls" style="display:none;">
         <label>Tolerance:</label>
         <select id="freeGapsSelect"
-          title="How many non-matching (occupied or unscanned) systems a region may bridge.">
+          title="How many non-matching (occupied or unscanned) systems a run may bridge.">
           <option value="0" selected>perfect streak</option>
           <option value="1">allow 1 gap</option>
           <option value="2">allow 2 gaps</option>
         </select>
       </span>
-      <span id="nbrOnlyControls" style="display:none;">
+      <span id="nbrOnlyControls">
         <label>Ignore worst:</label>
         <select id="freeExcludeN"
-          title="Drop the N most stat-ruining neighbours from each window's score (e.g. a top-tier bandit ranked far above you) — you'll just avoid that one system. Rank-relative: the further above you, the more droppable.">
+          title="Drop the N most threatening neighbours from each window's score — safety then reads the area as if you avoided them (you'll just avoid their systems). Not applied in the PvP zone.">
           <option value="0" selected>none</option>
           <option value="1">1 player</option>
           <option value="2">2 players</option>
           <option value="3">3 players</option>
         </select>
-        <label>Placement:</label>
-        <select id="freeExpansionSelect"
-          title="Colony placement preference. 'Spread' favours areas 100+ systems from your existing colonies; 'Cluster' rewards areas near them (eco trade-routes, quick resupply).">
-          <option value="0" selected>No preference</option>
-          <option value="2">Spread out</option>
-          <option value="-2">Cluster near base</option>
-        </select>
       </span>
       <span id="freeCountInfo" style="color:#888;font-size:13px;margin-left:auto;"></span>
     </div>
-    <div id="freeRadiusRow" style="display:none; align-items:center; gap:10px; margin-top:8px;">
-      <label style="white-space:nowrap;">Radius ±<span id="freeRadiusVal">15</span>:</label>
-      <input type="range" id="freeRadius" class="weight-slider" style="flex:1;"
-        min="2" max="50" step="1" value="15"
-        title="Half-width of the analysed window: the area scored is [S−R, S+R] systems around each settle spot S, including all 15 positions of every system in it.">
+    <div class="controls" style="margin-top:8px;">
+      <label title="Your max nightly offline window — how far a moon-destruction (RIP) threat reaches. Drives the threat channel of both the ranking and the map.">Offline (h):</label>
+      <input type="range" id="serverMapWindow" min="4" max="16" step="1" value="8" style="width:110px;">
+      <span id="serverMapWindowV" style="color:#888;font-size:12px;min-width:20px;">8</span>
+      <label title="How far you'll fly to farm — the farm-value radius, in systems. Drives the farm channel of both the ranking and the map.">Farm reach:</label>
+      <input type="range" id="serverMapFarm" min="4" max="60" step="2" value="30" style="width:110px;">
+      <span id="serverMapFarmV" style="color:#888;font-size:12px;min-width:24px;">30</span>
     </div>
-    <details class="weight-panel">
-      <summary>⚙ Adjust weights</summary>
-      <div class="weight-grid">
-        <span class="weight-label" title="How much the density of confirmed-empty target slots matters. High = must have many free slots.">Free slots</span>
-        <input type="range" id="freeW_free"     class="weight-slider" min="-3" max="3" step="0.1" value="0">
-        <span id="freeWV_free"     class="weight-val">0</span>
-
-        <span class="weight-label" title="Inactive / long-inactive / vacation players = farm targets. Positive = seek them; negative = avoid (they bring active defenders).">Inactive (farm)</span>
-        <input type="range" id="freeW_inactive" class="weight-slider" min="-3" max="3" step="0.1" value="0">
-        <span id="freeWV_inactive" class="weight-val">0</span>
-
-        <span class="weight-label" title="Active (occupied) players. Positive = want PvP targets nearby; negative = want a quiet neighbourhood.">Active players</span>
-        <input type="range" id="freeW_occupied" class="weight-slider" min="-3" max="3" step="0.1" value="0">
-        <span id="freeWV_occupied" class="weight-val">0</span>
-
-        <span class="weight-label" title="Bandit-rank neighbours (negative honour, attack the weak). Tier level amplifies the threat — bandit3 counts 3× more than bandit1. Negative = strongly avoid; positive = seek them.">Bandit threat</span>
-        <input type="range" id="freeW_bandit"   class="weight-slider" min="-3" max="3" step="0.1" value="0">
-        <span id="freeWV_bandit"   class="weight-val">0</span>
-
-        <span class="weight-label" title="Honored-rank neighbours (positive honour, attack the strong). Less dangerous to weak settlers than bandits. Positive = seek honour fights; negative = avoid combat altogether.">Honored fighters</span>
-        <input type="range" id="freeW_honored"  class="weight-slider" min="-3" max="3" step="0.1" value="0">
-        <span id="freeWV_honored"  class="weight-val">0</span>
-      </div>
-      <button id="freeWeightsReset" class="weight-reset">↺ Reset to selected preset</button>
-    </details>
+    <p id="freeZoneHint" style="color:#777;font-size:12px;margin:6px 0 10px;"></p>
     <div id="freeContainer"></div>
     </div>
   </div>
-
-  <details class="settings-panel">
-    <summary>⚙ Settings</summary>
-    <div class="settings-body">
-      <p class="settings-desc">
-        Colonization targets and the colonize / abandon thresholds — they drive
-        the in-game Colonize / Abandon buttons. Which positions are free is read
-        from OGame's public API automatically, so there's no manual scanning to
-        set up. Per-universe and synced across your devices.
-      </p>
-      <div id="colonizationConfigBody"></div>
-    </div>
-  </details>
 </section>
 
 <section id="spyglassSection" class="tab-section">
