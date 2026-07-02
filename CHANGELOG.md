@@ -4,6 +4,24 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.32.0] — 2026-07-02
+
+### Added
+
+- **Neighbourhood strength at a glance — average points on the region detail.**
+  The settlement-region panel gains two stat cards built from the server's
+  public highscore data: **Avg points** (mean total score of the neighbours in
+  range — higher = a stronger area to think twice about settling in) and
+  **Avg military** (mean military points — where the fleets actually
+  concentrate). Shown automatically when API data is available; no extra
+  scanning needed.
+- **New "Safe expansion" strategy for ranking regions.** It rewards regions
+  whose neighbours are ranked *below* you — settle where you out-rank the
+  locals — alongside free slots and inactives, and penalises areas whose
+  residents out-rank you. The same rank-relative signal also feeds the
+  per-system heat strip, so a system full of weaker neighbours reads greener.
+  Uses your own highscore rank, which OG-E already knows.
+
 ## [1.31.2] — 2026-06-28
 
 ### Fixed

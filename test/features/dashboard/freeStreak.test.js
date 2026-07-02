@@ -211,6 +211,31 @@ describe('renderFreeRegions', () => {
     expect(cardEl(record, 'Top rank')?.getAttribute('title')).toMatch(/150 ranks above you/);
   });
 
+  it('shows compact "Avg points" / "Avg military" cards when API points are present', () => {
+    /** @type {Record<string, Record<number, any>>} */
+    const spec = {};
+    for (let s = 1; s <= 6; s++) spec[`4:${s}`] = { 8: empty };
+    // One API-mapped neighbour carrying account points → 1.2M / 340k cards.
+    spec['4:2'][3] = { status: 'occupied', player: { id: 5, name: 'X', score: 1200000, militaryScore: 340000 } };
+    renderFreeRegions({ ...baseOpts(), scans: scansOf(spec), positions: [8] });
+
+    const record = containerEl.querySelector('.streak-record');
+    expect(cardValue(record, 'Avg points')).toBe('1.2M');
+    expect(cardValue(record, 'Avg military')).toBe('340k');
+  });
+
+  it('omits the points cards when no scanned player carries points (live-only scans)', () => {
+    /** @type {Record<string, Record<number, any>>} */
+    const spec = {};
+    for (let s = 1; s <= 6; s++) spec[`4:${s}`] = { 8: empty };
+    spec['4:2'][3] = occ(5);
+    renderFreeRegions({ ...baseOpts(), scans: scansOf(spec), positions: [8] });
+
+    const record = containerEl.querySelector('.streak-record');
+    expect(cardEl(record, 'Avg points')).toBeUndefined();
+    expect(cardEl(record, 'Avg military')).toBeUndefined();
+  });
+
   it('falls back to the individual free-systems list when no region forms', () => {
     // Slot 8 free at non-adjacent systems — no run of 5, so no region.
     /** @type {Record<string, Record<number, any>>} */

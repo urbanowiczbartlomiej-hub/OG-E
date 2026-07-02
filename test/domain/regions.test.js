@@ -348,6 +348,72 @@ describe('scoreRegion — banned = eternal vacation', () => {
   });
 });
 
+describe('scoreRegion — points temperature (avgTotal / avgMilitary)', () => {
+  /**
+   * An occupied slot whose player carries API-joined highscore POINTS.
+   * @param {number} id @param {number} [score] @param {number} [militaryScore]
+   */
+  const pts = (id, score, militaryScore) => ({
+    status: 'occupied', player: { id, name: 'P' + id, score, militaryScore },
+  });
+
+  it('averages points over DISTINCT players (rounded)', () => {
+    const scans = scansOf({
+      '4:1': { 8: empty, 3: pts(1, 1000, 100), 5: pts(2, 2001) },
+      // player 1's second colony — the account must not be double-counted.
+      '4:2': { 4: pts(1, 1000, 100) },
+    });
+    const sc = scoreRegion({ galaxy: 4, start: 1, end: 2 }, scans, { ...G10 });
+    expect(sc.avgTotal).toBe(1501); // (1000 + 2001) / 2, rounded
+    expect(sc.avgMilitary).toBe(100); // only player 1 exposes military points
+  });
+
+  it("fills a player's points from whichever position first exposes them", () => {
+    const scans = scansOf({
+      '4:1': { 8: empty, 3: occ(1) }, // live-scan sighting: no points
+      '4:2': { 3: pts(1, 500) }, // API sighting fills them in
+    });
+    const sc = scoreRegion({ galaxy: 4, start: 1, end: 2 }, scans, { ...G10 });
+    expect(sc.avgTotal).toBe(500);
+  });
+
+  it('is 0 when no scanned player carries points (live-only scans)', () => {
+    const scans = scansOf({ '4:1': { 8: empty, 3: occ(1) } });
+    const sc = scoreRegion({ galaxy: 4, start: 1, end: 1 }, scans, { ...G10 });
+    expect(sc.avgTotal).toBe(0);
+    expect(sc.avgMilitary).toBe(0);
+  });
+
+  it('excludes a banned account from the averages (eternal vacation)', () => {
+    const scans = scansOf({
+      '4:1': {
+        8: empty,
+        3: { status: 'banned', player: { id: 7, name: 'B', score: 9000000, militaryScore: 9000000 } },
+        5: pts(8, 1000),
+      },
+    });
+    const sc = scoreRegion({ galaxy: 4, start: 1, end: 1 }, scans, { ...G10 });
+    expect(sc.avgTotal).toBe(1000);
+    expect(sc.avgMilitary).toBe(0);
+  });
+});
+
+describe("sortRegionsByStrategy — 'safe_expansion' rank-relative signal", () => {
+  it('prefers the region whose neighbours we out-rank (given ownRank)', () => {
+    // Two single-system free regions; 4:1's neighbour out-ranks us (#5 vs our
+    // #100), 4:2's is weaker (#900). Under safe_expansion (weakerNearby: 1.5)
+    // the weaker neighbourhood must win.
+    const scans = scansOf({
+      '4:1': { 8: empty, 3: { status: 'occupied', player: { id: 10, name: 'S', rank: 5 } } },
+      '4:2': { 8: empty, 3: { status: 'occupied', player: { id: 20, name: 'W', rank: 900 } } },
+    });
+    const free = findFreeSystems(scans, { positions: [8], ...G10 });
+    const sorted = sortRegionsByStrategy(free, 'safe_expansion', { ownRank: 100 });
+    expect(sorted[0].start).toBe(2);
+    expect(sorted[1].start).toBe(1);
+  });
+});
+
 describe('systemIntentHeat', () => {
   it('is 0 for an empty/quiet system', () => {
     const scans = scansOf({ '4:1': { 8: empty } });
@@ -362,6 +428,21 @@ describe('systemIntentHeat', () => {
   it('trends positive (green) for a farm under a positive inactive weight', () => {
     const scans = scansOf({ '4:1': { 3: inact(2) } });
     expect(systemIntentHeat(scans, 4, 1, { inactive: 2.5 })).toBeGreaterThan(0);
+  });
+
+  it('trends positive for a weaker-ranked neighbour under weakerNearby + ownRank', () => {
+    const scans = scansOf({ '4:1': { 3: { status: 'occupied', player: { id: 1, name: 'W', rank: 900 } } } });
+    expect(systemIntentHeat(scans, 4, 1, { weakerNearby: 1.5 }, { ownRank: 100 })).toBeGreaterThan(0);
+  });
+
+  it('trends negative when the neighbour out-ranks us', () => {
+    const scans = scansOf({ '4:1': { 3: { status: 'occupied', player: { id: 1, name: 'S', rank: 5 } } } });
+    expect(systemIntentHeat(scans, 4, 1, { weakerNearby: 1.5 }, { ownRank: 100 })).toBeLessThan(0);
+  });
+
+  it('weakerNearby contributes 0 without ownRank', () => {
+    const scans = scansOf({ '4:1': { 3: { status: 'occupied', player: { id: 1, name: 'W', rank: 900 } } } });
+    expect(systemIntentHeat(scans, 4, 1, { weakerNearby: 1.5 })).toBe(0);
   });
 });
 
