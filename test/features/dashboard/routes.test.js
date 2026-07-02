@@ -38,7 +38,13 @@ const MARKUP = `
   <div id="routesList"></div>
   <button id="routesAddBtn"></button>
   <button id="routesSaveBtn"></button>
-  <span id="routesStatus"></span>`;
+  <span id="routesStatus"></span>
+  <input type="radio" name="routesCollectMission" value="4">
+  <input type="radio" name="routesCollectMission" value="3">
+  <input type="radio" name="routesCollectShips" value="most">
+  <input type="radio" name="routesCollectShips" value="all">
+  <input type="radio" name="routesCollectResources" value="most">
+  <input type="radio" name="routesCollectResources" value="all">`;
 
 const planet = (/** @type {number} */ g, /** @type {number} */ s, /** @type {number} */ p) =>
   ({ galaxy: g, system: s, position: p, type: TARGET_PLANET });
@@ -344,5 +350,82 @@ describe('dirty Save', () => {
     countInp.dispatchEvent(new Event('input'));
     expect(save().disabled).toBe(false);
     expect(save().textContent).toContain('•');
+  });
+});
+
+describe('Send All collect config radios (mission / ships / resources)', () => {
+  /** Check the radio with `value` in `name`'s group and fire `change`. */
+  const check = (/** @type {string} */ name, /** @type {string} */ value) => {
+    const radio = /** @type {HTMLInputElement} */ (
+      document.querySelector(`input[name="${name}"][value="${value}"]`)
+    );
+    radio.checked = true;
+    radio.dispatchEvent(new Event('change'));
+  };
+  const radioChecked = (/** @type {string} */ name, /** @type {string} */ value) =>
+    /** @type {HTMLInputElement} */ (document.querySelector(`input[name="${name}"][value="${value}"]`)).checked;
+
+  it('reflects the stored collect config onto the radios on refresh', async () => {
+    seedRoutes([], null);
+    store.set(ROUTES_KEY, { routes: [], collectTarget: null, collectMission: MISSION_TRANSPORT, collectShips: 'all', collectResources: 'all' });
+    install().refresh();
+    await flush();
+
+    expect(radioChecked('routesCollectMission', '3')).toBe(true);
+    expect(radioChecked('routesCollectShips', 'all')).toBe(true);
+    expect(radioChecked('routesCollectResources', 'all')).toBe(true);
+  });
+
+  it('persists a mission change IMMEDIATELY (no Save click needed), preserving routes/collectTarget', async () => {
+    seedBodies([{ cp: 101, name: 'K1', ...moon(4, 467, 15) }]);
+    seedRoutes([{ sources: [moon(4, 467, 15)], targets: [], fleet: [] }], moon(4, 472, 15));
+    install().refresh();
+    await flush();
+
+    check('routesCollectMission', '3'); // Transport
+    await flush();
+
+    expect(store.get(ROUTES_KEY)).toMatchObject({
+      collectTarget: moon(4, 472, 15),
+      collectMission: MISSION_TRANSPORT,
+      collectShips: 'most',
+      collectResources: 'most',
+    });
+    // The unsaved route-card edit state is untouched by this instant write —
+    // Save is a separate, still-clean action (no incomplete-route drop noise).
+    expect($('#routesStatus').textContent).not.toContain('Saved');
+    // Same cross-device sync stamps the route Save uses.
+    expect(typeof store.get(`${UNI}:oge_dailyRunRoutesTs`)).toBe('number');
+    expect(store.has(`${UNI}:oge_syncRequestAt`)).toBe(true);
+  });
+
+  it('ignores an out-of-range mission value defensively (only 3/4 are wired here)', async () => {
+    seedRoutes([]);
+    install().refresh();
+    await flush();
+    mockStore.set.mockClear();
+
+    // Simulate a rogue value on the deployment radio and fire change.
+    const radio = /** @type {HTMLInputElement} */ (document.querySelector('input[name="routesCollectMission"][value="4"]'));
+    radio.value = '99';
+    radio.checked = true;
+    radio.dispatchEvent(new Event('change'));
+    await flush();
+
+    expect(mockStore.set).not.toHaveBeenCalledWith(ROUTES_KEY, expect.anything());
+  });
+
+  it('persists ships + resources changes independently of each other', async () => {
+    seedRoutes([]);
+    install().refresh();
+    await flush();
+
+    check('routesCollectShips', 'all');
+    await flush();
+    expect(store.get(ROUTES_KEY)).toMatchObject({ collectShips: 'all', collectResources: 'most' });
+
+    check('routesCollectResources', 'all');
+    await flush();
+    expect(store.get(ROUTES_KEY)).toMatchObject({ collectShips: 'all', collectResources: 'all' });
   });
 });
