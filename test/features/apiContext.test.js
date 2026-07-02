@@ -62,8 +62,8 @@ const PLAYERS_XML =
   '<player id="103" name="Me" status=""/>' +
   '<player id="207" name="Foe" status="i"/>' +
   '</players>';
-const TOTAL_XML = '<highscore timestamp="1700000000" category="1" type="0"><player id="103" position="11"/></highscore>';
-const MILITARY_XML = '<highscore timestamp="1700000000" category="1" type="3"><player id="103" position="22"/></highscore>';
+const TOTAL_XML = '<highscore timestamp="1700000000" category="1" type="0"><player id="103" position="11" score="123456"/></highscore>';
+const MILITARY_XML = '<highscore timestamp="1700000000" category="1" type="3"><player id="103" position="22" score="7890"/></highscore>';
 const SERVER_XML = '<serverData timestamp="1700000000"><galaxies>9</galaxies><systems>499</systems></serverData>';
 
 /** Route a fetch by endpoint + (for highscore) the type param to the right fixture. */
@@ -184,7 +184,11 @@ describe('refreshCache — TTL gating', () => {
 describe('getContext — builds + publishes the occupancy index', () => {
   it('joins feeds into an occupancy index and flags own colonies', async () => {
     const ctx = await getContext();
-    expect(ctx.index.occupied.get('1:1:2')).toMatchObject({ player: 103, name: 'Me', rank: 11 });
+    // Points (total + the newly-joined military feed) must reach the INDEX,
+    // not just ride along as raw feeds on the context.
+    expect(ctx.index.occupied.get('1:1:2')).toMatchObject({
+      player: 103, name: 'Me', rank: 11, score: 123456, militaryScore: 7890,
+    });
     expect([...ctx.index.ownColonies]).toEqual(['1:1:2']); // ownPlayerId 103
     expect(ctx.server).toEqual(
       expect.objectContaining({ galaxies: 9, systems: 499 }),

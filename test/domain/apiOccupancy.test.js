@@ -227,6 +227,21 @@ describe('buildOccupancyIndex', () => {
     });
   });
 
+  it('retains highscore POINTS (total + military) when the feeds carry them', () => {
+    const idx = buildOccupancyIndex({
+      universe: { planets: [{ coords: '1:1:8', player: 207 }] },
+      highscore: { ranks: { 207: { position: 9001, score: 123456 } } },
+      military: { ranks: { 207: { position: 40, score: 7890 } } },
+    });
+    expect(idx.occupied.get('1:1:8')).toMatchObject({ rank: 9001, score: 123456, militaryScore: 7890 });
+  });
+
+  it('leaves points undefined when the feeds omit them (rank-only highscore)', () => {
+    const idx = buildOccupancyIndex(feeds());
+    expect(idx.occupied.get('1:1:8')?.score).toBeUndefined();
+    expect(idx.occupied.get('1:1:8')?.militaryScore).toBeUndefined();
+  });
+
   it('synthesises rankClass from the honour highscore (bottom position + negative score = bandit)', () => {
     const idx = buildOccupancyIndex({
       universe: { planets: [{ coords: '1:1:2', player: 103 }, { coords: '1:1:8', player: 207 }] },
@@ -410,6 +425,17 @@ describe('buildScanMapFromIndex', () => {
     });
     const map = buildScanMapFromIndex(idx, { galaxies: 1, systems: 1, targets: [4] });
     expect(map['1:1'].positions[8].player?.rankClass).toBe('rank_bandit2');
+  });
+
+  it('carries highscore points (total + military) onto the player payload', () => {
+    const idx = buildOccupancyIndex({
+      universe: { planets: [{ coords: '1:1:8', player: 207 }] },
+      players: { players: { 207: { name: 'Foe', status: 'i' } } },
+      highscore: { ranks: { 207: { position: 50, score: 200000 } } },
+      military: { ranks: { 207: { position: 60, score: 66000 } } },
+    });
+    const map = buildScanMapFromIndex(idx, { galaxies: 1, systems: 1, targets: [] });
+    expect(map['1:1'].positions[8].player).toMatchObject({ score: 200000, militaryScore: 66000 });
   });
 
   it('maps an occupant with no player id to plain "occupied"', () => {
