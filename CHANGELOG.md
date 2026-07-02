@@ -4,6 +4,41 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.33.0] — 2026-07-02
+
+### Added
+
+- **Daily Run's "Send All" (collect) zone is now configurable per universe.**
+  Pick the Mission (Deployment — stay, or Transport — drop & return), how many
+  Ships to send (Most, leaving a reserve — the new default, or All), and how
+  much of the Resources to load (Most or All) from the Daily Run tab's Settings
+  panel. Each choice saves instantly, no extra step.
+- **"Galaxy Viewer" — a new server map + zone analyzer, replacing the old
+  "Scanned data" tab.** A black-background temperature map plots the whole
+  server in either a **Field** view (red = threat pressure within your Offline
+  window, gold = farm value within your Farm reach — a smooth, strategy-
+  independent read of where danger and loot concentrate) or a sharp
+  **Occupancy** texture (every planet slot, coloured by status); click any cell
+  to jump to that system in-game. Below it, pick a **Zone** — Safe zone, Farm
+  hub, or PvP zone — and a **Find** mode — Best spots (rates the neighbourhood
+  around every free-slot system) or Longest streaks (hunts contiguous fully-
+  free runs) — and every candidate gets a single 0–100 **Fit** score, broken
+  down into safety / farm / streak / target channels in its tooltip so the
+  ranking explains itself. The Offline-window and Farm-reach sliders now drive
+  both the map and the ranking together.
+
+### Changed
+
+- The six ranking presets (Peaceful, Safe expansion, Farmer, Honor/PvP,
+  Aggressive, Longest streak) are superseded by the Zone + Find pair above —
+  a saved preset preference is auto-migrated to its closest zone/find
+  equivalent, so nothing resets silently. "Colony Scout" is renamed **Big
+  Colony Hunting** to make room for the new Galaxy Viewer sub-tab.
+- The settlement-region detail panel's "Ignore worst" now re-reads the map's
+  own threat field with the dropped players actually removed, instead of a
+  flat score penalty — so excluding a bandit measurably raises the area's
+  safety read, not just its ranking.
+
 ## [1.32.0] — 2026-07-02
 
 ### Added
