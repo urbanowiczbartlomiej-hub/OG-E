@@ -83,7 +83,7 @@ const cleanupAbandonedPlanet = (galaxy, system, position) => {
     };
     return {
       ...prev,
-      [key]: { scannedAt: Date.now(), positions: newPositions },
+      [key]: { ...existing, scannedAt: Date.now(), positions: newPositions },
     };
   });
 

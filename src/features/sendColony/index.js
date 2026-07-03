@@ -664,6 +664,12 @@ const onCheckTargetResult = (e) => {
   ) {
     return;
   }
+  // Only checkTarget requests that selected a colony ship are ours to
+  // interpret -- expeditions, spy probes, manual sends and mid-typing
+  // transients (no ship picked yet) must not pollute the decision log or
+  // downgrade a scan entry. See REVIEW.md 2.1.
+  const hasColonyShip = !!(detail.ships && detail.ships[SHIP_COLONY] > 0);
+  if (!hasColonyShip) return;
   const errorCode = extractErrorCode(detail);
   const orders =
     detail.orders && typeof detail.orders === 'object' ? detail.orders : null;
@@ -770,7 +776,7 @@ const onColonizeSent = (e) => {
     };
     return {
       ...prev,
-      [key]: { scannedAt: existing.scannedAt, positions: newPositions },
+      [key]: { ...existing, positions: newPositions },
     };
   });
   // Bypass the 200 ms debounce so the mark survives a page reload that

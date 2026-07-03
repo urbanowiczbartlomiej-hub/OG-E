@@ -54,6 +54,19 @@ export const colonizeDecisionsStore = createStore(/** @type {DecisionMap} */ ({}
 
 /** @type {(() => void) | null} */
 let disposeFn = null;
+/** @type {() => void} */
+let resolveHydrated = () => {};
+/** @type {Promise<void>} */
+let hydratedPromise = Promise.resolve();
+
+/**
+ * Resolves once the store's hydrate phase has settled. Gating a fresh-colony
+ * `mine` decision write on this prevents an early write being wiped by a late
+ * load (the colonyRecorder race — see state/targets.js for the sibling fix and
+ * state/history.js for the full story).
+ * @returns {Promise<void>}
+ */
+export const whenColonizeDecisionsHydrated = () => hydratedPromise;
 
 /**
  * Wire the store to chrome.storage.local (hydrate + debounced write-through),
@@ -64,6 +77,9 @@ let disposeFn = null;
  */
 export const initColonizeDecisionsStore = () => {
   if (disposeFn) return disposeFn;
+  hydratedPromise = new Promise((resolve) => {
+    resolveHydrated = resolve;
+  });
   disposeFn = persist({
     store: colonizeDecisionsStore,
     load: async () => {
@@ -75,13 +91,16 @@ export const initColonizeDecisionsStore = () => {
     onHydrate: () => {
       const { map, changed } = compactDecisions(colonizeDecisionsStore.get(), Date.now());
       if (changed) colonizeDecisionsStore.set(map);
+      resolveHydrated();
     },
   });
   return disposeFn;
 };
 
 /**
- * Tear down the persist wiring. Idempotent.
+ * Tear down the persist wiring. Idempotent. Resets
+ * {@link whenColonizeDecisionsHydrated} to the pre-resolved sentinel, matching
+ * the "no init has run" state.
  * @returns {void}
  */
 export const disposeColonizeDecisionsStore = () => {
@@ -89,6 +108,8 @@ export const disposeColonizeDecisionsStore = () => {
     disposeFn();
     disposeFn = null;
   }
+  hydratedPromise = Promise.resolve();
+  resolveHydrated = () => {};
 };
 
 /**

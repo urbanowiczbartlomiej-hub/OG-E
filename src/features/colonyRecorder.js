@@ -69,6 +69,7 @@ import { historyStore, whenHistoryHydrated } from '../state/history.js';
 import {
   colonizeDecisionsStore,
   flushColonizeDecisionsStore,
+  whenColonizeDecisionsHydrated,
 } from '../state/colonizeDecisions.js';
 import { withDecision, DEC_MINE } from '../domain/colonizeDecisions.js';
 import { waitFor } from '../lib/dom.js';
@@ -151,9 +152,9 @@ const readActiveCp = () => {
  * early without any side effect, which is what lets `installColonyRecorder`
  * call this twice (sync + post-waitFor) without double-recording.
  *
- * @returns {boolean}
+ * @returns {Promise<boolean>}
  */
-const tryCollect = () => {
+const tryCollect = async () => {
   if (!location.search.includes('component=overview')) return false;
 
   const cp = readActiveCp();
@@ -190,6 +191,13 @@ const tryCollect = () => {
   // picker from re-proposing the slot in the lag window before universe.xml
   // lists it, tells a second device "ours", and (Stage 4) carries the histogram
   // value into the synced log. flush so it survives any immediate reload.
+  //
+  // colonizeDecisionsStore hydrates independently of historyStore, with no
+  // ordering guarantee between the two — writing here before THIS store's own
+  // hydrate resolves would get silently wiped when the hydrate's stored map
+  // overwrites it moments later. Same race class documented at the top of this
+  // file for historyStore; see state/targets.js for the sibling fix.
+  await whenColonizeDecisionsHydrated();
   const ck = /** @type {`${number}:${number}:${number}`} */ (
     `${parsed.galaxy}:${parsed.system}:${parsed.position}`
   );
@@ -258,11 +266,11 @@ export const installColonyRecorder = () => {
   // is pre-resolved when `initHistoryStore` was never called (the
   // unit-test path), so the .then callback simply fires on the next
   // microtask in that case.
-  void whenHistoryHydrated().then(() => {
+  void whenHistoryHydrated().then(async () => {
     // First try — avoids a pointless waitFor roundtrip when the
     // overview DOM is already hydrated (the common case once OGame's
     // own scripts have finished running before us).
-    if (tryCollect()) return;
+    if (await tryCollect()) return;
 
     // Retry path: poll for the diameter element, then attempt once
     // more. The poll itself aborts (returns truthy) when
@@ -276,7 +284,7 @@ export const installColonyRecorder = () => {
       },
       { timeoutMs: 5000, intervalMs: 200 },
     ).then(() => {
-      tryCollect();
+      void tryCollect();
     });
   });
 
