@@ -218,11 +218,17 @@ const coerceMirror = (m) => {
 
 /**
  * Fetch the gist and partition alarmClock files by universeId.
- * Returns one `AlarmClockState` per universe present in the gist.
+ * Returns one `AlarmClockState` per universe present in the gist, plus a
+ * `complete` flag: `false` when ANY alarmClock-named file could not be fully
+ * read (empty content, truncated file whose raw_url resolution failed, corrupt
+ * JSON). The orphan sweep keys off that flag — a universe silently dropped
+ * from the dict would surrender every one of its live message ids as
+ * "orphans", so an incomplete read must fail CLOSED (render what we have,
+ * sweep nothing).
  *
  * @param {string} gistId
  * @param {string} gistToken
- * @returns {Promise<Record<string, AlarmClockState>>}
+ * @returns {Promise<{ states: Record<string, AlarmClockState>, complete: boolean }>}
  */
 const fetchAllAlarmClockStates = async (gistId, gistToken) => {
   const res = await fetch(`https://api.github.com/gists/${gistId}`, {
@@ -236,19 +242,35 @@ const fetchAllAlarmClockStates = async (gistId, gistToken) => {
   const files = gist?.files ?? {};
   /** @type {Record<string, AlarmClockState>} */
   const out = {};
+  let complete = true;
   for (const [filename, file] of Object.entries(files)) {
     const m = ALARM_CLOCK_FILENAME_RE.exec(filename);
     if (!m) continue;
-    const f = /** @type {{ content?: string }} */ (file);
-    if (!f?.content) continue;
+    const f = /** @type {{ content?: string, truncated?: boolean, raw_url?: string }} */ (file);
+    let content = f?.content;
+    // GitHub inlines only files under ~1 MB; a truncated file's `content` is
+    // a useless prefix — resolve the full body via raw_url (same as
+    // sync/alarmClock.js does) or count the read as incomplete.
+    if (f?.truncated && f.raw_url) {
+      try {
+        const rawRes = await fetch(f.raw_url);
+        content = rawRes.ok ? await rawRes.text() : undefined;
+      } catch {
+        content = undefined;
+      }
+    }
+    if (!content) {
+      complete = false;
+      continue;
+    }
     try {
-      const parsed = /** @type {AlarmClockState} */ (JSON.parse(f.content));
-      out[m[1]] = parsed;
+      out[m[1]] = /** @type {AlarmClockState} */ (JSON.parse(content));
     } catch {
-      // Skip corrupt file; next write rebuilds it.
+      // Skip corrupt file (next write rebuilds it) — but poison the sweep.
+      complete = false;
     }
   }
-  return out;
+  return { states: out, complete };
 };
 
 /**
@@ -346,25 +368,38 @@ const refreshPreview = async () => {
   })();
 
   try {
-    const [states, ntfyMap] = await Promise.all([
+    const [gistRead, ntfyMap] = await Promise.all([
       fetchAllAlarmClockStates(/** @type {string} */ (gistId), /** @type {string} */ (gistToken)),
       ntfyP,
     ]);
+    const states = gistRead.states;
 
     // Orphan sweep: cancel ntfy messages that aren't claimed by ANY
-    // universe in the gist. Guard skips the sweep when every universe
-    // file is fresh (< 120 s old) to avoid cancelling messages that
-    // were just posted but not yet PATCHed.
+    // universe in the gist. The sweep fails CLOSED — it is skipped when:
+    //   - the gist read was incomplete (corrupt/truncated file: that
+    //     universe's live ids would look like orphans), or
+    //   - any state lacks a parseable updatedAt (its freshness can't be
+    //     judged, and the "no timestamps at all" case must not sweep), or
+    //   - any universe file is fresh (< 120 s old), to avoid cancelling
+    //     messages just posted but not yet PATCHed by a sibling device.
+    // Residual risk (accepted): a sibling that posts to ntfy right now,
+    // while its LAST gist write is already > 120 s old, loses that race —
+    // the protocol carries no per-message creation time to guard on.
     let orphansCancelled = 0;
     const ours = collectOurMessageIds(states);
     let freshestAge = Infinity;
+    let allStamped = true;
     for (const state of Object.values(states)) {
-      if (state.updatedAt) {
-        const age = nowSec - Math.floor(new Date(state.updatedAt).getTime() / 1000);
-        if (age < freshestAge) freshestAge = age;
+      const t = state.updatedAt ? new Date(state.updatedAt).getTime() : NaN;
+      if (!Number.isFinite(t)) {
+        allStamped = false;
+        continue;
       }
+      const age = nowSec - Math.floor(t / 1000);
+      if (age < freshestAge) freshestAge = age;
     }
     if (
+      gistRead.complete && allStamped &&
       typeof ntfyToken === 'string' && ntfyToken && ntfyMap.size > 0 &&
       Object.keys(states).length > 0 && freshestAge > 120
     ) {
@@ -529,7 +564,7 @@ const cancelWaveFromDashboard = async (universeId, waveId) => {
   /** @type {Record<string, AlarmClockState>} */
   let states;
   try {
-    states = await fetchAllAlarmClockStates(gistId, gistToken);
+    states = (await fetchAllAlarmClockStates(gistId, gistToken)).states;
   } catch (err) {
     setPreviewStatus('cancel failed: ' + /** @type {Error} */ (err).message, 'err');
     return;
@@ -566,19 +601,27 @@ const cancelWaveFromDashboard = async (universeId, waveId) => {
     notifyState: { ...notify, [waveId]: { ...(notify[waveId] || {}), scheduledMessageIds: [] } },
   };
 
-  const res = await fetch(`https://api.github.com/gists/${gistId}`, {
-    method: 'PATCH',
-    headers: {
-      Authorization: `Bearer ${gistToken}`,
-      Accept: 'application/vnd.github+json',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      files: {
-        [alarmClockFilenameFor(universeId)]: { content: JSON.stringify(next, null, 2) },
+  /** @type {Response} */
+  let res;
+  try {
+    res = await fetch(`https://api.github.com/gists/${gistId}`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${gistToken}`,
+        Accept: 'application/vnd.github+json',
+        'Content-Type': 'application/json',
       },
-    }),
-  });
+      body: JSON.stringify({
+        files: {
+          [alarmClockFilenameFor(universeId)]: { content: JSON.stringify(next, null, 2) },
+        },
+      }),
+    });
+  } catch (err) {
+    setPreviewStatus('cancel failed: ' + /** @type {Error} */ (err).message, 'err');
+    void refreshPreview();
+    return;
+  }
   if (!res.ok) {
     setPreviewStatus(`cancel failed: gist PATCH ${res.status}`, 'err');
     void refreshPreview();
@@ -990,7 +1033,7 @@ const cancelAdhocFromDashboard = async (universeId, entryId) => {
   /** @type {Record<string, AlarmClockState>} */
   let states;
   try {
-    states = await fetchAllAlarmClockStates(gistId, gistToken);
+    states = (await fetchAllAlarmClockStates(gistId, gistToken)).states;
   } catch (err) {
     setPreviewStatus('cancel failed: ' + /** @type {Error} */ (err).message, 'err');
     return;
@@ -1026,19 +1069,27 @@ const cancelAdhocFromDashboard = async (universeId, entryId) => {
     adhocNotify: nextNotify,
   };
 
-  const res = await fetch(`https://api.github.com/gists/${gistId}`, {
-    method: 'PATCH',
-    headers: {
-      Authorization: `Bearer ${gistToken}`,
-      Accept: 'application/vnd.github+json',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      files: {
-        [alarmClockFilenameFor(universeId)]: { content: JSON.stringify(next, null, 2) },
+  /** @type {Response} */
+  let res;
+  try {
+    res = await fetch(`https://api.github.com/gists/${gistId}`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${gistToken}`,
+        Accept: 'application/vnd.github+json',
+        'Content-Type': 'application/json',
       },
-    }),
-  });
+      body: JSON.stringify({
+        files: {
+          [alarmClockFilenameFor(universeId)]: { content: JSON.stringify(next, null, 2) },
+        },
+      }),
+    });
+  } catch (err) {
+    setPreviewStatus('cancel failed: ' + /** @type {Error} */ (err).message, 'err');
+    void refreshPreview();
+    return;
+  }
   if (!res.ok) {
     setPreviewStatus(`cancel failed: gist PATCH ${res.status}`, 'err');
     void refreshPreview();

@@ -545,6 +545,12 @@ const readGistFile = async (gist, filename) => {
   if (!file) return null;
   if (file.truncated && file.raw_url) {
     const res = await fetch(file.raw_url);
+    // Must THROW on a non-ok response (mirroring gh()): returning the error
+    // body would fail the JSON parse upstream and read as "empty gist" — and
+    // the upload path treats null as license to rebuild the payload from
+    // local, wiping every other universe's slots. An availability failure
+    // has to abort the round via the caller's try/catch instead.
+    if (!res.ok) throw new Error(`gist raw_url fetch failed: HTTP ${res.status}`);
     return res.text();
   }
   return file.content;

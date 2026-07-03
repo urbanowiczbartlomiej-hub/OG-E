@@ -49,11 +49,17 @@ export const pickShared = (s) => ({
 
 /**
  * Merge a raw chrome.storage value (canonical) with this origin's local values
- * to produce the effective shared settings. chrome.storage wins, EXCEPT an
- * empty token is back-filled from a non-empty local one — that's the migration
- * path: a token a user typed per-origin before this build existed is lifted up
- * rather than clobbered by an as-yet-empty cloud slot. Booleans take the cloud
- * value whenever it is present (a real `false` must not be treated as "unset").
+ * to produce the effective shared settings. chrome.storage wins whenever the
+ * key is PRESENT — including a present-but-empty token, which is an
+ * authoritative clear (the dashboard's "remove my token") and must not be
+ * resurrected from this origin's mirror. Only an ABSENT key falls back to the
+ * local value — that's the migration path: a token a user typed per-origin
+ * before this build existed is lifted up into the fresh cloud slot. To keep
+ * that window open, {@link initSharedSettings} never SEEDS an empty token key
+ * (a token-less origin booting first must not materialize `''` as "present"
+ * and clobber a sibling origin's yet-unmigrated token). Booleans likewise
+ * take the cloud value whenever it is present (a real `false` must not be
+ * treated as "unset").
  *
  * Pure — exported for unit tests.
  *
@@ -71,9 +77,9 @@ export const mergeShared = (raw, local) => {
       typeof o.alarmClockMasterEnabled === 'boolean'
         ? o.alarmClockMasterEnabled
         : local.alarmClockMasterEnabled,
-    gistToken: typeof o.gistToken === 'string' && o.gistToken ? o.gistToken : local.gistToken,
+    gistToken: typeof o.gistToken === 'string' ? o.gistToken : local.gistToken,
     alarmClockNtfyToken:
-      typeof o.alarmClockNtfyToken === 'string' && o.alarmClockNtfyToken
+      typeof o.alarmClockNtfyToken === 'string'
         ? o.alarmClockNtfyToken
         : local.alarmClockNtfyToken,
   };
@@ -97,11 +103,33 @@ let unsub = null;
 export const initSharedSettings = async () => {
   if (unsub) return;
   const raw = await chromeStore.get(SHARED_SETTINGS_KEY);
+  const rawObj = raw && typeof raw === 'object' && !Array.isArray(raw)
+    ? /** @type {Record<string, unknown>} */ (raw)
+    : {};
   const merged = mergeShared(raw, pickShared(settingsStore.get()));
+  // Write-up payload: NEVER seed an empty token key. Materializing `''` for a
+  // token this origin simply doesn't have would read as an authoritative
+  // dashboard clear on every OTHER origin (mergeShared: a present string
+  // wins) and destroy a yet-unmigrated local token there — boot order must
+  // not decide whether the migration works. An absent key keeps the
+  // migration window open until a REAL value exists (a dashboard write, or a
+  // non-empty local lifted up).
+  /** @type {Record<string, unknown>} */
+  const toWrite = { ...merged };
+  if (!('gistToken' in rawObj) && !merged.gistToken) delete toWrite.gistToken;
+  if (!('alarmClockNtfyToken' in rawObj) && !merged.alarmClockNtfyToken) {
+    delete toWrite.alarmClockNtfyToken;
+  }
   // Only write when the merge actually changed the cloud value (a fresh slot,
   // or a migrated-up token) — steady state must not spam onChanged.
-  if (JSON.stringify(raw) !== JSON.stringify(merged)) {
-    await chromeStore.set(SHARED_SETTINGS_KEY, merged);
+  if (JSON.stringify(raw) !== JSON.stringify(toWrite)) {
+    try {
+      await chromeStore.set(SHARED_SETTINGS_KEY, toWrite);
+    } catch {
+      // Best-effort migration write: a failed chrome.storage write (quota,
+      // shutdown) must not abort the hydration below or the onChanged
+      // subscription — the next boot simply retries the write-up.
+    }
   }
   applyToStore(merged);
 

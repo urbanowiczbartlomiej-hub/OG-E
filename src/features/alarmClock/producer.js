@@ -452,7 +452,11 @@ export const installAlarmClockProducer = (opts = {}) => {
   /** @param {string} bodyKey @param {number} landedAt */
   const guardianDismiss = (bodyKey, landedAt) => {
     const now = Math.floor(Date.now() / 1000);
-    addGuardianDismiss(universeId, bodyKey, landedAt, landedAt + GUARDIAN_SUPPRESS_TTL_SEC, now);
+    // The TTL must start at the TAP, not at the landing: the landed-FS set is
+    // durable (no expiry), so a landing can be arbitrarily old when dismissed —
+    // landedAt + TTL would be already-expired and prune() would drop the record
+    // before the sync ever saw it.
+    addGuardianDismiss(universeId, bodyKey, landedAt, now + GUARDIAN_SUPPRESS_TTL_SEC, now);
     force();
   };
   /** @param {string} bodyKey */

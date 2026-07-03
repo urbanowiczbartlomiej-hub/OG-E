@@ -6,8 +6,10 @@
 // event list on every producer run, so a one-off ntfy DELETE isn't enough — the
 // next scan would re-arm the guardian push for a still-exposed body. We remember
 // the dismissed landing (its `bodyKey` + the `landedAt` it was dismissed at) and
-// re-apply the suppression every scan until the record's `expiresAt` passes (by
-// then the landed flag's own TTL is gone anyway). A NEW landing on the same body
+// re-apply the suppression every scan until the record's `expiresAt` passes —
+// `expiresAt` is anchored at the TAP (the landed set itself never expires), and
+// only needs to outlive the gap until the sync drops the landing at the source
+// via its dismissedKey. A NEW landing on the same body
 // has a different `landedAt`, so it re-arms — dismiss suppresses THIS landing,
 // not the body forever. Local only (a single-device, in-game action); not synced.
 //

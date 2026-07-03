@@ -330,10 +330,20 @@ const readAlarmClockState = async (universeId) => {
   const gist = await gh(`/gists/${id}`);
   const file = gist?.files?.[alarmClockFilenameFor(universeId)];
   if (!file) return null;
-  const text =
-    file.truncated && file.raw_url
-      ? await (await fetch(file.raw_url)).text()
-      : file.content;
+  /** @type {string} */
+  let text;
+  if (file.truncated && file.raw_url) {
+    // THROW on a non-ok raw_url response (as gh() does): returning the error
+    // body would fail the JSON.parse below into `null`, and a `null` read
+    // makes syncAlarmClock rebuild the alarm state from scratch — losing the
+    // cross-device bookkeeping over a transient availability failure. A throw
+    // just aborts this sync round; the next one retries.
+    const res = await fetch(file.raw_url);
+    if (!res.ok) throw new Error(`alarmClock raw_url fetch failed: HTTP ${res.status}`);
+    text = await res.text();
+  } else {
+    text = file.content;
+  }
   try {
     const parsed = /** @type {AlarmClockState} */ (JSON.parse(text));
     if (!READABLE_SCHEMA_VERSIONS.has(parsed?.version)) return null;

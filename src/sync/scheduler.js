@@ -225,13 +225,30 @@ const gistRevKeyFor = (universeId) => `${universeId}:${GIST_REV_KEY_BASE}`;
 const LAST_ACTIVE_KEY = 'oge_lastActiveAt';
 
 /**
- * localStorage dirty flag: set whenever an upload is armed, cleared when one
- * completes. The on-load catch-up upload runs ONLY when this is set, so a plain
+ * localStorage dirty flag: set (with a fresh token) whenever an upload is
+ * armed, cleared when a round that covered the arming write completes — a
+ * re-arm mid-flight keeps it set (token mismatch; see {@link scheduleUpload}).
+ * The on-load catch-up upload runs ONLY when this is set, so a plain
  * navigation with nothing pending does ZERO requests — while a `sent`/`taken`
  * decision whose 15-s debounce was killed by OGame's post-send reload still
  * gets flushed on the next load (the case the boot upload exists for).
  */
 const UPLOAD_PENDING_KEY = 'oge_uploadPending';
+
+/**
+ * Monotonic per-page counter feeding {@link scheduleUpload}'s arm tokens —
+ * combined with `Date.now()` so two arms in the same millisecond (or from two
+ * tabs) still produce distinct tokens.
+ */
+let uploadArmSeq = 0;
+
+/**
+ * True only for the synchronous prefix of upload()'s own pre-merge
+ * `writeLocal` calls: those adopt REMOTE data the in-flight round already
+ * carries, so their store notifications must not re-arm the dirty flag
+ * (see {@link scheduleUpload}).
+ */
+let suppressUploadArm = false;
 
 /**
  * sessionStorage (per-TAB, survives reload, cleared on tab close) rev this tab
@@ -831,6 +848,12 @@ const upload = async () => {
   if (!canStartSync({ cloudSync: settingsStore.get().cloudSync, hasToken: !!getToken(), inFlight }))
     return;
   inFlight = true;
+  // Snapshot the dirty-flag token BEFORE any local read. A store write landing
+  // mid-flight re-arms the flag with a FRESH token (see scheduleUpload), so the
+  // success path below can tell "this round covered everything that armed the
+  // flag" (tokens equal → clear) from "a write raced this round and is NOT in
+  // the PATCH" (tokens differ → leave the flag for the next boot's catch-up).
+  const pendingToken = safeLS.get(UPLOAD_PENDING_KEY);
   try {
     // Pre-merge: read remote and combine with local BEFORE writing, so a
     // concurrent write from another device isn't clobbered. Two "no remote"
@@ -873,7 +896,25 @@ const upload = async () => {
       if (routesUniverseId) {
         const remoteSlot = remoteRec?.[s.payloadKey]?.[routesUniverseId] ?? s.remoteDefault;
         const { merged, changed } = s.merge(await s.readLocal(), remoteSlot);
-        if (changed) await s.writeLocal(merged);
+        if (changed) {
+          // The adopted value is REMOTE-origin data this very round carries
+          // (see `map` below) — its store notification must not re-arm the
+          // upload dirty flag or every remote-contributing round would end
+          // with the flag stranded and the next boot would run a spurious
+          // catch-up upload. Store notifications are synchronous (createStore
+          // notifies inside set()), so suppress only the synchronous prefix
+          // of the call: a user write interleaving during the awaited
+          // persistence tail still arms normally.
+          suppressUploadArm = true;
+          /** @type {unknown} */
+          let write;
+          try {
+            write = s.writeLocal(merged);
+          } finally {
+            suppressUploadArm = false;
+          }
+          await write;
+        }
         if (s.hasData(merged)) map[routesUniverseId] = merged;
       }
       slotPayloads[s.payloadKey] = Object.keys(map).length ? map : undefined;
@@ -931,9 +972,13 @@ const upload = async () => {
       await noteApplied(remote?.updatedAt);
     }
     // Whatever armed this upload is now reflected remotely — drop the catch-up
-    // dirty flag so the next boot doesn't re-push. Left intact on the error path
-    // (outer catch) so a failed flush retries on the next load.
-    safeLS.remove(UPLOAD_PENDING_KEY);
+    // dirty flag so the next boot doesn't re-push. Only when the token still
+    // matches our entry snapshot, though: a write that landed mid-flight
+    // re-armed the flag for data this PATCH did NOT carry, and clearing it
+    // would strand that write if the post-send reload kills its debounce.
+    // Left intact on the error path (outer catch) so a failed flush retries
+    // on the next load.
+    if (safeLS.get(UPLOAD_PENDING_KEY) === pendingToken) safeLS.remove(UPLOAD_PENDING_KEY);
     setStatus('err', null);
   } catch (err) {
     setStatus('err', `upload: ${/** @type {Error} */ (err).message}`);
@@ -969,7 +1014,16 @@ const debouncedUpload = debounce(() => {
  * @returns {void}
  */
 const scheduleUpload = () => {
-  safeLS.set(UPLOAD_PENDING_KEY, '1');
+  // Self-inflicted change: upload()'s pre-merge adopting remote data. That
+  // data is fully carried by the in-flight round — arming here would only
+  // strand the flag (token mismatch at the round's end) and burn a spurious
+  // boot catch-up upload.
+  if (suppressUploadArm) return;
+  // A FRESH token per arm (not a constant '1'): upload() snapshots the token at
+  // entry and clears the flag only if it is unchanged at the end, so a write
+  // that arms mid-flight (its data absent from that PATCH) keeps the flag alive
+  // for the next boot's catch-up. Timestamp + counter — unique across tabs too.
+  safeLS.set(UPLOAD_PENDING_KEY, `${Date.now()}:${++uploadArmSeq}`);
   debouncedUpload();
 };
 
@@ -1027,16 +1081,25 @@ export const installSync = () => {
   // cache always ends up populated before the first downloadAndMerge runs.
   if (routesUniverseId) {
     void (async () => {
-      const seeded = await seedUniverseTsIfAbsent(
-        routesUniverseId,
-        settingsStore.get(),
-        Date.now(),
-      );
+      /** @type {Record<string, number>} */
+      let base;
+      try {
+        const seeded = await seedUniverseTsIfAbsent(
+          routesUniverseId,
+          settingsStore.get(),
+          Date.now(),
+        );
+        base = seeded ?? (await readUniverseTsMap(routesUniverseId));
+      } catch {
+        // The seed WRITE can reject (chromeStore.set surfaces storage
+        // failures) — the cache must still be populated from whatever a
+        // plain read yields (reads degrade to empty, never reject).
+        base = await readUniverseTsMap(routesUniverseId);
+      }
       // Merge UNDER any stamps a user edit added during this async window: a
       // late `=` overwrite would revert that edit's fresh timestamp back to the
       // seed's stale value, letting an older remote win the next merge (C5).
       // The current in-memory map (already-stamped edits) wins per key.
-      const base = seeded ?? (await readUniverseTsMap(routesUniverseId));
       localUniverseTsMap = { ...base, ...localUniverseTsMap };
     })();
   }
@@ -1138,16 +1201,33 @@ export const installSync = () => {
   };
   const unsubSettings = settingsStore.subscribe(onSettingsChange);
 
+  // Coalesces overlapping force-syncs: a second SYNC_FORCE_EVENT while one
+  // round is already waiting/running would reconcile the exact same state.
+  let forceInFlight = false;
   const onForceSync = async () => {
     // A full UNCONDITIONAL round-trip (download THEN upload), back-to-back,
     // bypassing both the upload debounce and the boot gate. Two callers share
     // it: the user's explicit force-sync (settings "Sync now" / histogram
     // "Refresh") and the dashboard's `oge_syncRequestAt` tombstone — both are
-    // deliberate "the data really changed, reconcile now" signals. Each
-    // operation has its own in-flight guard; they serialise via the shared lock,
-    // and each self-skips when cloudSync is off / no token / already current.
-    await downloadAndMerge();
-    await upload();
+    // deliberate "the data really changed, reconcile now" signals.
+    if (forceInFlight) return;
+    forceInFlight = true;
+    try {
+      // The shared inFlight lock may be held (a debounced upload, the boot
+      // download). downloadAndMerge/upload SKIP when it is — so calling them
+      // straight away would silently drop the user's explicit request. Wait
+      // (bounded) for the lock to free instead; one-shot timers, not periodic
+      // work, so no clock-bus obligation.
+      const deadline = Date.now() + 30_000;
+      while (inFlight && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      if (!installed) return; // disposed while we waited
+      await downloadAndMerge();
+      await upload();
+    } finally {
+      forceInFlight = false;
+    }
   };
   document.addEventListener(SYNC_FORCE_EVENT, onForceSync);
 

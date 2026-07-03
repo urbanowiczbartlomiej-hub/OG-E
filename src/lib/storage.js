@@ -150,6 +150,21 @@ const pickStorage = () => {
 };
 
 /**
+ * Read (and thereby acknowledge) `runtime.lastError` after a callback-style
+ * storage call. MUST be called inside every storage callback: the browser
+ * reports the failure ONLY there, and Chrome logs an "Unchecked
+ * runtime.lastError" warning when a callback never touches it.
+ *
+ * @returns {string | null} The failure message, or `null` on success.
+ */
+const takeLastStorageError = () => {
+  const g = /** @type {Record<string, any>} */ (/** @type {unknown} */ (globalThis));
+  const err = (g.browser ?? g.chrome)?.runtime?.lastError;
+  if (!err) return null;
+  return typeof err.message === 'string' && err.message ? err.message : String(err);
+};
+
+/**
  * Promise-shaped wrapper over `chrome.storage.local` / `browser.storage.local`.
  * All calls are safe when the WebExtension API is not loaded (node tests,
  * stripped contexts): reads resolve to `undefined`, writes resolve to void,
@@ -164,9 +179,11 @@ const pickStorage = () => {
  *   (it scans the keys for the `<universeId>:oge_*` namespacing pattern).
  *   Resolves to `{}` when the WebExtension API is absent.
  * @property {(key: string, value: unknown) => Promise<void>} set
- *   Persist `{ [key]: value }`. Resolves when the backing store acks.
+ *   Persist `{ [key]: value }`. Resolves when the backing store acks;
+ *   REJECTS when the browser reports the write failed (quota, shutdown) —
+ *   a failed durable write must never look like success.
  * @property {(key: string | string[]) => Promise<void>} remove
- *   Delete one key or a batch.
+ *   Delete one key or a batch. Rejects on a reported failure, like `set`.
  * @property {(callback: (changes: Record<string, unknown>, areaName: string) => void) => () => void} onChanged
  *   Register a global storage-change listener. Returned unsubscribe is
  *   idempotent and a no-op when the API is absent.
@@ -182,6 +199,9 @@ export const chromeStore = {
         return;
       }
       api.local.get(key, (items) => {
+        // A failed read degrades to "key missing" — callers already handle
+        // `undefined` — but lastError must still be read (see helper).
+        takeLastStorageError();
         resolve(items ? items[key] : undefined);
       });
     }),
@@ -199,31 +219,42 @@ export const chromeStore = {
       // null sentinel — chrome.storage.local has no key-enumeration
       // method, so this is the canonical way to list all keys.
       /** @type {(items: Record<string, unknown>) => void} */
-      const cb = (items) => resolve(items || {});
+      const cb = (items) => {
+        takeLastStorageError();
+        resolve(items || {});
+      };
       /** @type {any} */ (api.local.get)(null, cb);
     }),
 
   set: (key, value) =>
-    new Promise((resolve) => {
+    new Promise((resolve, reject) => {
       const api = pickStorage();
       if (!api) {
         resolve();
         return;
       }
       api.local.set({ [key]: value }, () => {
-        resolve();
+        // A failed WRITE must not masquerade as success — the durability-
+        // critical flush paths (sync scheduler, decision log) sit in
+        // try/catch blocks that surface and retry; fire-and-forget callers
+        // get a visible unhandled rejection instead of silent data loss.
+        const err = takeLastStorageError();
+        if (err) reject(new Error(`chrome.storage set('${key}') failed: ${err}`));
+        else resolve();
       });
     }),
 
   remove: (key) =>
-    new Promise((resolve) => {
+    new Promise((resolve, reject) => {
       const api = pickStorage();
       if (!api) {
         resolve();
         return;
       }
       api.local.remove(key, () => {
-        resolve();
+        const err = takeLastStorageError();
+        if (err) reject(new Error(`chrome.storage remove('${key}') failed: ${err}`));
+        else resolve();
       });
     }),
 
