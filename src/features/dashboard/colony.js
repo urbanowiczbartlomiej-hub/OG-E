@@ -119,6 +119,13 @@ export const populatePositionFilter = (selectEl, entries) => {
   if (previousValue && previousValue !== selectEl.value) {
     selectEl.value = previousValue;
   }
+  // If the restore didn't stick (previousValue's option no longer exists),
+  // some browsers leave `.value` as `""` rather than snapping to option[0]
+  // ("all"). Force the fallback explicitly so callers always see a valid
+  // filter value.
+  if (selectEl.value === '') {
+    selectEl.value = 'all';
+  }
 };
 
 /**

@@ -70,6 +70,12 @@ const FOCUS_RESTORE_DELAY_MS = 50;
 const REPAINT_TICK_MS = 2000;
 /** sessionStorage key (page origin, per tab) for coords sent this session. */
 const SENT_COORDS_KEY = 'oge_spySentCoords';
+/**
+ * How long to hold the busy lock after a successful dispatch. The game reloads
+ * the page within ~1 s on the happy path; this safety net releases the lock if
+ * that reload never comes. Mirrors sendColony's post-send lock window.
+ */
+const SENT_LOCK_MS = 3000;
 
 // ─── Module-local state ────────────────────────────────────────────────────
 
@@ -81,6 +87,13 @@ let busy = false;
 let spyReady = false;
 /** The coords the armed send is aimed at. @type {SpyTarget | null} */
 let spyTarget = null;
+/**
+ * Active post-send lock timer — releases the busy lock if the expected
+ * post-dispatch page reload never comes. `null` when no send is settling.
+ *
+ * @type {ReturnType<typeof setTimeout> | null}
+ */
+let sentLockTimer = null;
 
 // ─── sent-coords (survives the post-send reload via sessionStorage) ─────────
 
@@ -236,17 +249,26 @@ const onSpyClick = async () => {
     busy = true;
     paintZone({ text: 'Wait…', bg: BG_SPY_IDLE, dim: true });
     const r = await courierDispatch(OWNER_SPY);
-    busy = false;
     spyReady = false;
     if (!r.ok) {
+      busy = false;
       if (r.reason === 'foreign') { location.href = bareFleetdispatchUrl(); return; }
       paintZone({ text: r.errorCode === 140026 ? 'No fuel' : 'Failed', bg: BG_SPY_ERROR });
       return;
     }
     if (spyTarget) markSent(spyTarget);
     spyTarget = null;
+    // Success → the game navigates; HOLD the busy lock through the post-send
+    // navigation window so no reactor/ticker repaints the button into a stale
+    // unlocked state before the reload. The safety timeout releases the lock
+    // if the expected reload never comes. Mirrors sendColony's lock + timeout.
     paintZone({ text: 'Sent!', bg: BG_SPY_READY });
-    refresh();
+    if (sentLockTimer) clearTimeout(sentLockTimer);
+    sentLockTimer = setTimeout(() => {
+      sentLockTimer = null;
+      busy = false;
+      refresh();
+    }, SENT_LOCK_MS);
     return;
   }
 
@@ -403,6 +425,10 @@ export const installSendSpy = () => {
       unsubSettings();
       unsubWatch();
       unsubReports();
+      if (sentLockTimer) {
+        clearTimeout(sentLockTimer);
+        sentLockTimer = null;
+      }
       installed = null;
     },
   };
@@ -421,4 +447,8 @@ export const _resetSendSpyForTest = () => {
   busy = false;
   spyReady = false;
   spyTarget = null;
+  if (sentLockTimer) {
+    clearTimeout(sentLockTimer);
+    sentLockTimer = null;
+  }
 };

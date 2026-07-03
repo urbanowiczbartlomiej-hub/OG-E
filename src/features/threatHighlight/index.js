@@ -301,7 +301,10 @@ export const installThreatHighlight = () => {
     // Fall back to reality: if an attack is genuinely ongoing, checkAttack
     // keeps the alarm up (now with real data); otherwise it hides cleanly.
     checkAttack();
-    if (!visible) hide();
+    // checkAttack() returns early (feature off) BEFORE it would hide a
+    // stray preview banner, so mirror the settings-subscriber path above
+    // (lines 366-369) and force-hide here when the toggle is off.
+    if (!settingsStore.get().threatHighlight) hide();
   };
 
   // ── core decision ────────────────────────────────────────────────────────

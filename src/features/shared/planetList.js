@@ -44,8 +44,16 @@ export const findNextPlanetInList = (predicate, opts = {}) => {
     p.classList.contains(ACTIVE_PLANET_CLASS),
   );
   const start = activeIdx < 0 ? 0 : activeIdx;
-  const lo = active === 'first' ? 0 : 1;
-  const hi = active === 'last' ? planets.length : planets.length - 1;
+  // No row carries the active-planet class (e.g. the current page is a
+  // moon) — there is no active row to skip or defer around, so every mode
+  // degrades to a plain full walk over every planet.
+  const lo = activeIdx < 0 ? 0 : active === 'first' ? 0 : 1;
+  const hi =
+    activeIdx < 0
+      ? planets.length - 1
+      : active === 'last'
+        ? planets.length
+        : planets.length - 1;
 
   for (let i = lo; i <= hi; i++) {
     const p = planets[(start + i) % planets.length];

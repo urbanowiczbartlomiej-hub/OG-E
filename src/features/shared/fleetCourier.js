@@ -396,7 +396,8 @@ export const select = async (order) => {
       if (!r || !r.ok) return { ok: false, reason: 'selectFailed' };
     }
 
-    await rpc('setTarget', order.target);
+    const t = await rpc('setTarget', order.target);
+    if (!t || !t.ok) return { ok: false, reason: 'selectFailed' };
 
     const cont = await waitFor(() => (continueReady() ? true : null), {
       timeoutMs: STEP2_TIMEOUT_MS,

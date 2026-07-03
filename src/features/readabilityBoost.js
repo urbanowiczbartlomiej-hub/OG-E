@@ -599,7 +599,12 @@ export const installReadabilityBoost = () => {
 
   // At document_start `#eventboxFilled` / the movement link don't exist
   // yet. Start once now (no-op if absent) and once on DOMContentLoaded.
+  // Guarded on the hydrated preference: DOMContentLoaded can fire after
+  // initSettingsStore() has already resolved readabilityBoost to `false`,
+  // and these starters must not re-arm the DOM-rewriting observers when
+  // the feature is off (mirrors the settings-hydration subscriber below).
   const onDomReady = () => {
+    if (!settingsStore.get().readabilityBoost) return;
     startCountdownTrimmer();
     startMovementRelabel();
   };

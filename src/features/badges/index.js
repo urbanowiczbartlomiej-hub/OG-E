@@ -734,15 +734,33 @@ export const installBadges = () => {
   /** @type {import('../../lib/visibilityObserver.js').VisibilityObserver | null} */
   let observer = null;
 
-  // Run a paint with the observer paused so our own DOM writes don't feed back
-  // into a refresh loop (the writes would otherwise re-trigger it).
+  // Run a paint with the observer's callback muted, so our own DOM writes
+  // don't feed back into a refresh loop (the writes would otherwise re-trigger
+  // it). A cheap boolean guard, NOT observer.disconnect()+re-observe: the
+  // latter is a full teardown (see visibilityObserver.js) that also drops the
+  // one-time `visibilitychange` listener, which nothing ever re-adds — cycling
+  // it on every render would permanently strip this observer's
+  // pause-while-hidden behaviour after the first paint. The targets never
+  // change between renders (always the same #planetList/#eventContent/body),
+  // so there is nothing to re-target — muting the callback is all `guarded()`
+  // needs.
+  //
+  // Unmute is deferred to a microtask, NOT the `finally` itself: the native
+  // MutationObserver queues its callback as a microtask the moment `fn()`'s
+  // synchronous DOM writes are observed — i.e. before `finally` runs — so an
+  // immediate `muted = false` would already be reset by the time that queued
+  // callback executes, and `muted` would fail to suppress it. Queuing the
+  // unmute AFTER `fn()` returns guarantees it lands behind any callback the
+  // browser already queued during `fn()`, so that callback still observes
+  // `muted === true`; the microtask ordering is FIFO.
+  let muted = false;
   /** @param {() => void} fn */
   const guarded = (fn) => {
-    if (observer) observer.disconnect();
+    muted = true;
     try {
       fn();
     } finally {
-      if (observer) attachObserver(observer);
+      queueMicrotask(() => { muted = false; });
     }
   };
   const renderGuarded = () => guarded(renderColumns);
@@ -793,7 +811,10 @@ export const installBadges = () => {
   };
   document.addEventListener(EVENT_BOX_LOADED_EVENT, onEventBox);
 
-  observer = createVisibilityObserver(() => scheduleRefresh());
+  observer = createVisibilityObserver(() => {
+    if (muted) return;
+    scheduleRefresh();
+  });
   attachObserver(observer);
 
   // Window scroll is handled for free (absolute chip in document coords moves
