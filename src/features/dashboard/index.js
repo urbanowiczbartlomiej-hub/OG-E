@@ -48,6 +48,7 @@ import { parseTargetPositions } from '../../domain/histogram.js';
 import { populatePositionFilter, renderColonyChart } from './colony.js';
 import { renderFreeRegions, renderServerMap, selectCandidate, resetFreeSelection, highlightPin, _resetFreeStreakForTest } from './freeStreak.js';
 import { chipValue, setChipValue, wireChips, setChipsEnabled, toggleChipOn, setToggleChip, wireToggleChip } from './chips.js';
+import { digestProximityReports } from '../../domain/proximityDigest.js';
 import { computeComposite, computeScoreField, renderPositionsMap, RELATIONSHIP_COLORS } from './mapPrimitives.js';
 import { renderTargets, DEFAULT_TARGET_SORT } from './targets.js';
 import { ZONES } from '../../domain/zoneScore.js';
@@ -373,6 +374,8 @@ const forceIncludeIds = new Set();
 /** @type {HTMLElement | null} */ let tgtConfigCard;
 /** @type {HTMLElement | null} */ let tgtCountInfoEl;
 /** @type {HTMLElement | null} */ let proximityStripEl;
+/** @type {HTMLElement | null} */ let proximityCountsEl;
+/** @type {HTMLElement | null} */ let proximityAlertEl;
 
 /** Guards {@link installDashboard} against a double-install. */
 let installed = false;
@@ -660,6 +663,8 @@ const wireDom = () => {
   tgtConfigCard = document.getElementById('tgtConfigCard');
   tgtCountInfoEl = document.getElementById('tgtCountInfo');
   proximityStripEl = document.getElementById('proximityStrip');
+  proximityCountsEl = document.getElementById('proximityCounts');
+  proximityAlertEl = document.getElementById('proximityAlert');
   spyglassMapHost = document.getElementById('spyglassMapHost');
   spyMapToggle = /** @type {HTMLButtonElement | null} */ (document.getElementById('spyMapToggle'));
   spyMapBlock = document.getElementById('spyMapBlock');
@@ -1259,45 +1264,136 @@ const proximityAge = (tsSeconds, nowMs) => {
 };
 
 /**
- * Fill the Spyglass "🛡 Who's been near you" strip from {@link proximityReports}:
- * the last ~10 probes as compact lines "<name or #id> · near <coords> · <age> ago
- * · from <coords>". The prober name is a click target that seeds the nickname
- * search (dispatching an 'input' event so `tgtSearch`'s listener reveals them).
- * Device-local, read-only — no sends, purely a passive view of opened alerts.
+ * Fill the Spyglass "🛡 Who's been near you" strip from {@link proximityReports},
+ * digested to ONE row per prober (Etap H3, `domain/proximityDigest.js`): count,
+ * last-seen age, which of our bodies, origin — with a 💀 flag + hot-first sort
+ * when the origin sits in our own system (even RIPs reach us fast from there).
+ * Live counts land in the collapsed `<summary>` so the picture reads unopened.
+ * Each row offers ⭐ watch (the existing toggle) and a dossier deep-link; the
+ * name still seeds the nickname search. The raw per-alert log stays reachable
+ * behind a nested <details>. Device-local, read-only — no sends, purely a
+ * passive view of opened alerts.
  * @returns {void}
  */
 const renderProximityStrip = () => {
   if (!proximityStripEl) return;
   proximityStripEl.textContent = '';
-  if (!proximityReports.length) {
+  const digest = digestProximityReports(proximityReports);
+  const nowMs = Date.now();
+  if (proximityCountsEl) {
+    proximityCountsEl.textContent = digest.totalReports
+      ? ` — ${digest.playerCount} ${digest.playerCount === 1 ? 'prober' : 'probers'}`
+        + ` · ${digest.totalReports} ${digest.totalReports === 1 ? 'alert' : 'alerts'}`
+        + (digest.lastTs != null ? ` · last ${proximityAge(digest.lastTs, nowMs)}` : '')
+      : '';
+  }
+  if (proximityAlertEl) {
+    proximityAlertEl.textContent = digest.sameSystemCount > 0
+      ? ` · ⚠ ${digest.sameSystemCount} from your system`
+      : '';
+  }
+  if (!digest.totalReports) {
     const note = document.createElement('div');
     note.style.cssText = 'color:#667;font-size:12px;';
     note.textContent = 'No fleets spotted near you yet.';
     proximityStripEl.appendChild(note);
     return;
   }
-  const nowMs = Date.now();
-  for (const r of proximityReports.slice(0, 10)) {
-    const line = document.createElement('div');
-    line.style.cssText = 'font-size:12px;color:#9aa;margin-bottom:3px;line-height:1.4;';
 
-    const label = r.byPlayerName || `#${r.byPlayerId}`;
+  /** @param {string} label */
+  const seedSearch = (label) => {
+    if (!tgtSearch) return;
+    tgtSearch.value = label;
+    tgtSearch.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+
+  const MAX_ROWS = 10;
+  for (const e of digest.players.slice(0, MAX_ROWS)) {
+    const line = document.createElement('div');
+    line.style.cssText =
+      'font-size:12px;color:#9aa;margin-bottom:4px;line-height:1.6;'
+      + 'display:flex;align-items:center;gap:6px;flex-wrap:wrap;'
+      + (e.sameSystem ? 'border-left:2px solid #e06c5f;padding-left:7px;' : 'padding-left:9px;');
+
+    const label = e.name || `#${e.byPlayerId}`;
     const who = document.createElement('span');
     who.textContent = label;
-    who.style.cssText = 'cursor:pointer;color:#8fb8e0;';
-    who.title = 'Find this player in the search below';
-    who.addEventListener('click', () => {
-      if (!tgtSearch) return;
-      tgtSearch.value = label;
-      tgtSearch.dispatchEvent(new Event('input', { bubbles: true }));
-    });
+    who.style.cssText = 'cursor:pointer;color:#8fb8e0;font-weight:600;';
+    who.title = 'Find this player in the search above';
+    who.addEventListener('click', () => seedSearch(label));
     line.appendChild(who);
 
-    const age = proximityAge(r.ts, nowMs);
-    const rest = ` · near ${r.atCoords}${age ? ` · ${age} ago` : ''}${r.fromCoords ? ` · from ${r.fromCoords}` : ''}`;
-    line.appendChild(document.createTextNode(rest));
+    const at = e.atCoords.slice(0, 2).join(', ')
+      + (e.atCoords.length > 2 ? ` +${e.atCoords.length - 2}` : '');
+    const age = e.lastTs != null ? proximityAge(e.lastTs, nowMs) : '';
+    const facts = (e.count > 1 ? `×${e.count} · ` : '')
+      + (age ? `last ${age} · ` : '')
+      + `at ${at}`
+      + (e.fromCoords ? ` · from ${e.fromCoords}` : '');
+    line.appendChild(document.createTextNode(facts));
+
+    if (e.sameSystem) {
+      const hot = document.createElement('span');
+      hot.textContent = '💀 your system';
+      hot.style.cssText = 'color:#e06c5f;font-weight:600;';
+      hot.title =
+        'Probed you from a body in the same system as yours — even Death Stars '
+        + '(the slowest ships in the game) reach you quickly from there.';
+      line.appendChild(hot);
+    }
+
+    const watched = watchedPlayers.has(String(e.byPlayerId));
+    const watch = document.createElement('button');
+    watch.type = 'button';
+    watch.textContent = watched ? '✓ watching' : '⭐ watch';
+    watch.style.cssText =
+      'font-size:11px;border-radius:999px;padding:1px 8px;cursor:pointer;'
+      + (watched
+        ? 'border:1px solid #2f6f4f;background:#16352a;color:#7fd6a8;'
+        : 'border:1px solid #2b3a4d;background:#18222e;color:#9fb4c4;');
+    watch.title = watched ? 'On your watchlist — click to remove' : 'Add to your watchlist / scan list';
+    watch.addEventListener('click', () => {
+      toggleWatched(String(e.byPlayerId));
+      renderProximityStrip();
+    });
+    line.appendChild(watch);
+
+    const dossier = document.createElement('button');
+    dossier.type = 'button';
+    dossier.textContent = 'dossier ▸';
+    dossier.style.cssText =
+      'font-size:11px;border:1px solid #2b3a4d;background:#18222e;color:#9fb4c4;'
+      + 'border-radius:999px;padding:1px 8px;cursor:pointer;';
+    dossier.title = 'Open this player in the table below';
+    dossier.addEventListener('click', () => openSpyglassFor(e.byPlayerId));
+    line.appendChild(dossier);
+
     proximityStripEl.appendChild(line);
   }
+  if (digest.players.length > MAX_ROWS) {
+    const more = document.createElement('div');
+    more.style.cssText = 'color:#667;font-size:11px;margin:2px 0 4px 9px;';
+    more.textContent = `+${digest.players.length - MAX_ROWS} more probers in the raw log`;
+    proximityStripEl.appendChild(more);
+  }
+
+  // The undigested per-alert log, for when the exact sequence matters.
+  const raw = document.createElement('details');
+  raw.style.cssText = 'margin:6px 0 0 9px;';
+  const rawSum = document.createElement('summary');
+  rawSum.style.cssText = 'cursor:pointer;color:#667;font-size:11px;list-style:none;';
+  rawSum.textContent = `show raw log (${digest.totalReports} ${digest.totalReports === 1 ? 'alert' : 'alerts'}) ▸`;
+  raw.appendChild(rawSum);
+  for (const r of proximityReports) {
+    const line = document.createElement('div');
+    line.style.cssText = 'font-size:11px;color:#788;margin-top:3px;line-height:1.4;';
+    const age = proximityAge(r.ts, nowMs);
+    line.textContent =
+      `${r.byPlayerName || `#${r.byPlayerId}`} · near ${r.atCoords}`
+      + `${age ? ` · ${age} ago` : ''}${r.fromCoords ? ` · from ${r.fromCoords}` : ''}`;
+    raw.appendChild(line);
+  }
+  proximityStripEl.appendChild(raw);
 };
 
 /**
@@ -2054,6 +2150,8 @@ export const _resetDashboardForTest = () => {
     tgtConfigCard =
     tgtCountInfoEl =
     proximityStripEl =
+    proximityCountsEl =
+    proximityAlertEl =
     freeContainer =
     freeCountInfoEl =
       /** @type {any} */ (undefined);

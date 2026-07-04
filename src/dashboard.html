@@ -787,7 +787,9 @@
       style="width:280px;max-width:100%;padding:5px 9px;background:#0e141b;border:1px solid #2a3542;border-radius:4px;color:#cfd6dd;font-size:13px;margin-left:auto;"
       title="Find any player by nickname — including ones the filters hide (with the reason why).">
   </div>
-  <details style="margin-bottom:10px;"><summary style="cursor:pointer;color:#9aa;font-size:13px;list-style:none;">🛡 Who's been near you</summary><div id="proximityStrip" style="margin-top:8px;"></div></details>
+  <!-- Collapsed by default, but the summary line carries live counts so the
+       defensive picture reads without opening it (Etap H3). -->
+  <details style="margin-bottom:10px;"><summary style="cursor:pointer;color:#9aa;font-size:13px;list-style:none;">🛡 Who's been near you<span id="proximityCounts" style="color:#77848f;"></span><span id="proximityAlert" style="color:#e06c5f;font-weight:600;"></span></summary><div id="proximityStrip" style="margin-top:8px;"></div></details>
   <!-- Everyday filters as chip pills (same pattern as the Galaxy Viewer);
        the rarely-touched numeric config (military range, probes) hides
        behind ⚙ so the strip stays one calm line (Etap H1). -->
