@@ -64,6 +64,12 @@ code path (`sync/ntfyReconciler.js` `X-Delay`). The seven YELLOWs reduce to
 **three** themes (A redirect-response rewrite, B synthetic-input disclosure,
 C under-attack highlight). Everything else is GREEN.
 
+> **These counts predate the Spyglass tab.** The Spyglass v3 intelligence-workbench
+> family (one-tap scan, `targetsIngest`, danger model, routine tracker, scan plan,
+> defensive strip, own map) is classified separately in its own section below — mostly
+> GREEN, with one **YELLOW-D** ToolDev item (routine tracker + `windowBonus`) to be
+> confirmed before those ship. See "🟢/🟡 Spyglass intelligence workbench (v3)".
+
 ---
 
 ## 🔴 RED → ✅ approved (conditional) — off-device push reminders (rule 4)
@@ -281,6 +287,99 @@ permitted; the *cancel/dismiss* controls only ever **remove** notifications.
 
 ---
 
+## 🟢/🟡 Spyglass intelligence workbench (v3) — new surface classification
+
+The 50/7/5 counts above predate the Spyglass tab entirely: this whole family
+(one-tap espionage scan, `targetsIngest`, the danger model, and everything the
+v3 redesign adds) had **zero** entries. This section classifies it. The load-bearing
+argument is a single **provenance guarantee**, and every item below inherits it:
+
+> **Provenance guarantee.** Every Spyglass surface is built only from (a) spy/galaxy
+> reports the player **opened during normal play** (passive `MutationObserver` /
+> XHR-observe of the game's *own* rendered content — the same basis as
+> `planetBarCapture` and `galaxyHook`), and (b) the deliberately-public `/api/*.xml`
+> read **only while a game tab is open** (`credentials:'omit'`, TTL cadence). OG-E
+> **never** fetches or samples on the player's behalf while they are away, **never**
+> originates a game request, **never** sends without a deliberate user tap, and
+> **never** alerts. One-tap-one-scan is preserved throughout.
+
+### 🟢 GREEN (ship as-is — each extends an existing category)
+
+- **`targetsIngest`** — passive read of the *dataset* on the player's own rendered
+  messages page (`.rawMessageData`); originates nothing. Same class as
+  `planetBarCapture`/`colonyRecorder` (Scraping/data, GREEN). *Now includes:* the
+  richer fields already in that dataset (resources, loot %, counter-esp %, class,
+  scores, buildings/research), **partial/resources-only reports**, and the
+  **proximity "foreign fleet near your planet"** reports — all the same passive read.
+- **Galaxy-view activity capture** — reads the per-body activity marker out of the
+  `fetchGalaxyContent` the player themselves browses; identical basis to the existing
+  GREEN `galaxyHook` observer. No extra fetch (the player drives the galaxy view).
+- **Spy FAB (`sendSpy`)** — 1-click-1-send; each tap pre-fills + one native dispatch
+  for **one** planet. Shipped precedent (v1.31.0: "you press send each time, nothing
+  is automated"). Fleet-send-buttons class (GREEN).
+- **Danger model, Finder table, per-player Dossier, civil-fleet baseline, player
+  search, own player-centric map** — pure read/calc/display over the public API + the
+  player's own reports. No game traffic, no send, no hiding of any ad/menu/premium.
+  Display/calc class (GREEN).
+- **Scan plan (proposes + ranks)** — the dashboard only **reorders which single planet
+  the one existing manual FAB tap proposes next**, and shows the plan as a read-only
+  strip. It is display logic over one already-permitted tap; the dashboard has **no
+  send control** and must never grow a "send"/"send all" affordance, and the re-rank
+  must never auto-advance past the send click. Display class (GREEN).
+- **"Ship count changed — worth a re-spy" chip** — a passive hint over public-API data
+  read while a tab is open; triggers no send and no alert (the player taps to re-spy).
+  It must never claim "fleet moved" (that inference is impossible — a flying fleet
+  still counts; see `docs/ogame-fleet-mechanics.md`). Display class (GREEN).
+- **"Who's been near you" defensive strip** — passive read of the player's own
+  proximity reports; names a scout the player can then watch. No alert, no send.
+  Display class (GREEN).
+
+### 🟡 YELLOW-D — routine tracker + "good moment" nudge (one ToolDev consult)
+
+Two items are defensible on the provenance guarantee but sit in the same *symbolic*
+zone rule 4 polices (YELLOW-C: opponent-state-derived signals) and so want an explicit,
+written ToolDev green-light **before they ship** (Etaps F/G), exactly as the ntfy push
+was gated:
+
+1. **Routine tracker** — summarising a watched opponent's activity/wealth *pattern over
+   time* (hour-of-day activity, weekday resources, collection planet) from reports the
+   player opened + tab-open public API.
+2. **`windowBonus`** — a passive re-rank that surfaces "good moment to scan" when *now*
+   falls inside that observed pattern. It is never a toast, never a timer, never a send.
+
+**Consult (open ONE, provenance-first):** *"Is a device-local intel workbench that
+summarises an opponent's activity/wealth pattern **purely** from spy reports the player
+opened during normal play + public-API data read **only while a game tab is open** — no
+background fetch, no send, no alert, one-tap-one-scan preserved — a permitted display of
+intel the player gathered, or does summarising opponent activity-over-time itself trip
+rule 4?"* Ship F/G only after the OK. Nothing in user copy is named "monitor", "watcher",
+"tracker-of-\<player\>", or "alarm"; "Watchlist" (the player's *own* list) is fine.
+
+### Wording discipline — Spyglass extension (binding, extends §"Wording discipline")
+
+The banned-vocabulary rule (never imply OG-E watches the game or fires on a timer)
+applies verbatim to every Spyglass string. Concretely:
+
+- **Banned** (rendered copy): *track / tracking / monitor / monitoring / watching
+  \<player\>*, *live* (as a status), *queue / queued*, *scheduled / due / fires*, bare
+  *alarm*. The scan plan is a **"scan plan"** / **"suggested order"** / **"next
+  suggested"** / **"stalest first"**, never a "queue".
+- **Use**: routine visuals read **"from the reports you've opened"** / **"intel you
+  gathered"**; the `windowBonus` reads **"good moment — based on intel you gathered"**,
+  never "scan now"/"due"; activity reads **"activity"** / **"interacted"**, never
+  "online"/"logged in" (the marker is *any* interaction, including our own probe —
+  §6.6bis of `SPYGLASS-REDESIGN.md`). "Watchlist" is the tab; a player is "watched"
+  (on the player's own list), never "being monitored".
+- **Exempt** (never rendered): internal identifiers — `scanPriority.js`, `windowBonus`,
+  `targetReports`, `.target-focus`, storage keys. Only rendered strings are governed.
+
+### Persistence invariant (keeps it out of RED)
+
+No Spyglass state may ever hold a **"send at" / "rescan at" timestamp that a background
+path acts on**. The plan's persisted workspace state (sort, limit, open-dossier id) is
+display/prefs only. All timing is in-tab and visibility-gated (`lib/clock`); there is no
+service worker and no `chrome.alarms` — verified unchanged by this redesign.
+
 ## What OG-E never does (all grep-verified)
 
 - No origination or modification of a game **request** (only response
@@ -304,3 +403,6 @@ permitted; the *cancel/dismiss* controls only ever **remove** notifications.
 4. **Correct the "never modifies a request" wording** to be response-accurate
    (YELLOW-A).
 5. **Write the synthetic-input disclosure** paragraph for reviewers (YELLOW-B).
+6. **Run the Spyglass ToolDev consult** (YELLOW-D) — the one provenance-first question
+   for the routine tracker + `windowBonus`; required before Etaps F/G of the Spyglass v3
+   redesign ship. See "🟢/🟡 Spyglass intelligence workbench (v3)".

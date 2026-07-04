@@ -17,10 +17,24 @@
 //   targetplayerid='115886' playername='Macstyle'
 //   defensevalue='2768761000' fleetvalue='78093000'   (resources, game-summed)
 //   highscoremilitary='47974257' highscoretotal='4566812884' ranking='88'
+//   highscoreeconomy='426371206' highscoreresearch='581634692'
+//   highscorelifeforms='564362413'  (report-time all-axis scores)
 //   fleet='{"203":5000,...}'  defense='{"401":453493,...}'  (id→count JSON)
+//   buildings='{"1":50,...}'  research='{"113":24,...}'
+//   lfbuildings / lfresearch (id→level JSON)
+//   characterclass='{"id":1,"icon":"miner","name":"Zbieracz"}'  (player class)
+//   resources='414286783' metal / crystal / deuterium / population / food
+//   loot='75' (plunder %)  counterespionagechance='2'
 //   playerstatus='["honorableTarget"]'  timestamp='1782405308' (epoch SECONDS)
-//   activity='25' (minutes; '*' = active <15 min). `sourceplayerid` is present
-//   ONLY on proximity "spotted near you" alerts — see isEspionageReportBag.
+//   activity='25' (minutes since last activity on THIS body; '*' = active <15 min;
+//     '-1' = none / >60 min — NOT "1 minute ago"). See parseActivityMin.
+// PARTIAL reports: a low-probe / high-counter-espionage scan reveals only SOME
+// sections. Then fleetvalue/defensevalue are '-', the fleet/defense/buildings/
+// research keys are absent, and per-section `hidden*` flags are '1' (a FULL report
+// carries them as ''): hiddenships / hiddendef / hiddenbuildings / hiddenresearch.
+// A resources-only report still carries resources+scores+class — see `revealed`.
+//   `sourceplayerid` is present ONLY on proximity "spotted near you" alerts —
+//   see isEspionageReportBag.
 
 import { sumResourceValue } from './unitCosts.js';
 
@@ -39,12 +53,46 @@ import { sumResourceValue } from './unitCosts.js';
  * @property {string} [fleetvalue]
  * @property {string} [highscoremilitary]
  * @property {string} [highscoretotal]
+ * @property {string} [highscoreeconomy]
+ * @property {string} [highscoreresearch]
+ * @property {string} [highscorelifeforms]
  * @property {string} [ranking]
  * @property {string} [fleet]
  * @property {string} [defense]
+ * @property {string} [buildings]
+ * @property {string} [research]
+ * @property {string} [lfbuildings]
+ * @property {string} [lfresearch]
+ * @property {string} [characterclass]
+ * @property {string} [resources]
+ * @property {string} [metal]
+ * @property {string} [crystal]
+ * @property {string} [deuterium]
+ * @property {string} [population]
+ * @property {string} [food]
+ * @property {string} [loot]
+ * @property {string} [counterespionagechance]
+ * @property {string} [hiddenships]
+ * @property {string} [hiddendef]
+ * @property {string} [hiddenbuildings]
+ * @property {string} [hiddenresearch]
  * @property {string} [playerstatus]
  * @property {string} [timestamp]
  * @property {string} [activity]
+ */
+
+/**
+ * Which sections a report actually revealed. A low-probe / high-counter-espionage
+ * scan can withhold fleet/defense/buildings/research (each `hidden*` flag = '1')
+ * while still showing resources. Consumers MUST gate on this: e.g. hidden-fleet
+ * math counts a body's defence only when `revealed.defense` is true, so an
+ * unrevealed section is never read as zero (see SPYGLASS-REDESIGN.md §9bis).
+ * @typedef {object} Revealed
+ * @property {boolean} resources   Resources/loot section shown (the base reveal).
+ * @property {boolean} fleet       Ship counts shown (`hiddenships` !== '1').
+ * @property {boolean} defense     Defense counts shown (`hiddendef` !== '1').
+ * @property {boolean} buildings   Building levels shown (`hiddenbuildings` !== '1').
+ * @property {boolean} research    Research levels shown (`hiddenresearch` !== '1').
  */
 
 /**
@@ -61,15 +109,34 @@ import { sumResourceValue } from './unitCosts.js';
  * @property {number} fleetValue         Visible (parked) fleet resource value.
  * @property {number} [militaryPoints]   Player TOTAL military score (highscore).
  * @property {number} [totalPoints]      Player total score.
+ * @property {number} [economyPoints]    Player economy score (report-time).
+ * @property {number} [researchPoints]   Player research score (report-time).
+ * @property {number} [lifeformPoints]   Player lifeform score — inflates economy
+ *   without civil ships; used to de-bias the civil-fleet baseline.
  * @property {number} [ranking]          Player total rank.
  * @property {Record<number, number>} [fleet]    id→count.
  * @property {Record<number, number>} [defense]  id→count.
+ * @property {Record<number, number>} [buildings]   id→level.
+ * @property {Record<number, number>} [research]    id→level (mine levels → loot rate).
+ * @property {Record<number, number>} [lfBuildings] id→level.
+ * @property {Record<number, number>} [lfResearch]  id→level.
+ * @property {string} [characterClass]   Player class icon ('miner' | 'warrior' |
+ *   'explorer' | 'general' | 'collector'): builder-vs-fleeter prior.
+ * @property {number} [resources]        Total on-planet resources (loot base).
+ * @property {number} [metal]
+ * @property {number} [crystal]
+ * @property {number} [deuterium]
+ * @property {number} [lootPct]          Plunder fraction as a percent (e.g. 75).
+ * @property {number} [counterEspionage] Probe-loss chance percent at scan time.
  * @property {string[]} [playerStatus]
+ * @property {Revealed} [revealed]       Which sections this report actually showed.
  * @property {number} [timestamp]        Report time, epoch SECONDS — the unit
  *   every consumer speaks (`scanStatus`'s `reportTsSec`, the dashboard's
  *   `ageMs`). Reports persisted before the unit fix stored MILLISECONDS; see
  *   {@link normalizeReportTimestamps}.
- * @property {number} [activityMin]      Minutes since last activity (0 = '*').
+ * @property {number} [activityMin]      Minutes since last activity on this body:
+ *   0 = active (<15 min, '*'); a positive number = that many minutes; undefined =
+ *   none (>60 min, '-1', or not shown). See {@link parseActivityMin}.
  */
 
 /**
@@ -121,6 +188,56 @@ function toStringArray(s) {
 }
 
 /**
+ * Normalise the per-body activity marker to "minutes since last activity".
+ * The game encodes: '*' = active <15 min (→ 0), '-1' = none / >60 min (→ undefined
+ * — NOT "1 minute ago"), any other value = that minute count. '-'/'' = not shown.
+ * @param {string|undefined} s
+ * @returns {number|undefined}
+ */
+function parseActivityMin(s) {
+  if (s == null || s === '' || s === '-') return undefined;
+  if (s === '*') return 0;
+  const n = toNum(s);
+  if (n == null || n < 0) return undefined; // '-1' (or any negative) = none
+  return n;
+}
+
+/**
+ * Pull the player-class icon ('miner' | 'warrior' | 'explorer' | …) out of the
+ * `characterclass` attribute, which is a `{"id":1,"icon":"miner","name":…}` JSON
+ * (or '-' when absent). Returns the icon string, else undefined.
+ * @param {string|undefined} s
+ * @returns {string|undefined}
+ */
+function parseCharacterClass(s) {
+  if (!s || s === '-') return undefined;
+  try {
+    const obj = JSON.parse(s);
+    return obj && typeof obj.icon === 'string' ? obj.icon : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Which sections did this report reveal? A FULL report carries every `hidden*`
+ * flag as '' (revealed); a partial scan sets the withheld ones to '1'. Resources
+ * are the base reveal (present whenever the report exists at all).
+ * @param {RawEspionageData} raw
+ * @returns {Revealed}
+ */
+function computeRevealed(raw) {
+  const shown = (/** @type {string|undefined} */ flag) => flag !== '1';
+  return {
+    resources: raw.resources != null && raw.resources !== '-',
+    fleet: shown(raw.hiddenships),
+    defense: shown(raw.hiddendef),
+    buildings: shown(raw.hiddenbuildings),
+    research: shown(raw.hiddenresearch),
+  };
+}
+
+/**
  * Normalise a raw `data-raw-*` bag into a `SpyReport`. Returns null when the
  * report lacks the two fields we can't do without — coordinates and the owner
  * player id. Resource values prefer the game-summed attribute and fall back to
@@ -148,7 +265,7 @@ export function normalizeSpyReport(raw) {
 
   const planetType = toNum(raw.targetplanettype) ?? 1;
   const tsSec = toNum(raw.timestamp);
-  const activityMin = raw.activity === '*' ? 0 : toNum(raw.activity);
+  const activityMin = parseActivityMin(raw.activity);
 
   return {
     galaxy,
@@ -161,10 +278,25 @@ export function normalizeSpyReport(raw) {
     fleetValue,
     militaryPoints: toNum(raw.highscoremilitary),
     totalPoints: toNum(raw.highscoretotal),
+    economyPoints: toNum(raw.highscoreeconomy),
+    researchPoints: toNum(raw.highscoreresearch),
+    lifeformPoints: toNum(raw.highscorelifeforms),
     ranking: toNum(raw.ranking),
     fleet,
     defense,
+    buildings: toCountMap(raw.buildings),
+    research: toCountMap(raw.research),
+    lfBuildings: toCountMap(raw.lfbuildings),
+    lfResearch: toCountMap(raw.lfresearch),
+    characterClass: parseCharacterClass(raw.characterclass),
+    resources: toNum(raw.resources),
+    metal: toNum(raw.metal),
+    crystal: toNum(raw.crystal),
+    deuterium: toNum(raw.deuterium),
+    lootPct: toNum(raw.loot),
+    counterEspionage: toNum(raw.counterespionagechance),
     playerStatus: toStringArray(raw.playerstatus),
+    revealed: computeRevealed(raw),
     // Epoch SECONDS, straight from the game attribute — the whole freshness
     // pipeline (scanStatus reportTsSec, ageMs) multiplies by 1000 itself. The
     // old `* 1000` here made every stored report read as perpetually fresh.

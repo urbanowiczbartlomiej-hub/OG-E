@@ -51,6 +51,7 @@ import { classifyCell, cellColor, fieldColor } from '../../domain/cellClass.js';
 import { STRIP_PRIORITY, bestStatusInSystem } from '../../domain/histogram.js';
 import { occupantStrength, honorRank } from '../../domain/players.js';
 import { DANGER_LABELS } from '../../domain/dangerScore.js';
+import { dangerColor } from '../../lib/dangerColor.js';
 import {
   STATUS_COLORS, STATUS_LABELS, STRENGTH_COLORS, STRENGTH_LABELS,
   HONOR_COLORS, HONOR_TIER_LABELS, UNSCANNED_COLOR,
@@ -133,7 +134,7 @@ const dangerBadge = (prof) => {
   const d = Math.round(prof.danger * 100);
   const badge = document.createElement('span');
   // Green (safe) → amber → red across 0..100. Friendly (D 0) reads green.
-  const col = d <= 15 ? '#5a8f5a' : d <= 45 ? '#e0b020' : '#d05a3a';
+  const col = dangerColor(d);
   badge.style.cssText = `margin-left:6px;font-weight:700;color:${col};`;
   badge.textContent = prof.friendly ? 'D 0 friendly' : `D ${d}`;
   const why = [DANGER_LABELS[prof.label], ...prof.reasons].filter(Boolean).join(' · ');

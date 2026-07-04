@@ -13,6 +13,7 @@
 import { buildTargetList, sortTargetList, playerPlanets } from '../../domain/targets.js';
 import { scanStatus, rescanAtFor } from '../../domain/spyScan.js';
 import { DANGER_LABELS } from '../../domain/dangerScore.js';
+import { dangerColor } from '../../lib/dangerColor.js';
 import { heatColor } from './palette.js';
 
 /**
@@ -261,7 +262,7 @@ function shipsCell(c) {
 function dangerCell(prof) {
   if (!prof) return cell('—', { align: 'right', color: '#5f6b75' });
   const d = Math.round(prof.danger * 100);
-  const col = d <= 15 ? '#7fd6a8' : d <= 45 ? '#e0b020' : '#e2726a';
+  const col = dangerColor(d);
   const td = cell('', { align: 'right' });
   const val = document.createElement('span');
   val.textContent = prof.friendly ? 'friendly' : String(d);

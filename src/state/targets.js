@@ -77,7 +77,12 @@ export const recordReport = async (report) => {
   targetReportsStore.update((cur) => {
     const bucket = cur[pid] || {};
     const prev = bucket[key];
-    if (prev && (prev.timestamp ?? 0) > (report.timestamp ?? 0)) return cur;
+    // Keep the stored report unless the incoming one is STRICTLY newer. An
+    // equal-ts re-ingest (re-opening the identical report on a messages-page
+    // revisit) is a no-op — returning cur unchanged skips the store update,
+    // the subscriber fan-out, and the debounced persist, killing dashboard
+    // re-render churn. An older archived report is likewise ignored.
+    if (prev && (prev.timestamp ?? 0) >= (report.timestamp ?? 0)) return cur;
     return { ...cur, [pid]: { ...bucket, [key]: report } };
   });
 };
