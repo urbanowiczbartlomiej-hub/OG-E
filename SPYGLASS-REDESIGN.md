@@ -55,11 +55,22 @@ map. Tree green at each commit. User verified E1 (GV renders identically) before
 | `1f24fa8` | E2a-2 | **⌖ spotlights on the Spyglass map** (in-tab) — new `showPlayerOnSpyglassMap`; **removed** the orphaned GV-jump `showPlayerOnMap` + the whole GV occupancy-lens spotlight machinery (`mapHighlight`, render params, `hiKey`/`lastMapPaint.hi`) → full decouple (§1.1); universe-switch/teardown now reset the Spyglass map state. |
 | `99109a3` | E2b | **Watchlist colour overlay** — `mapPrimitives.playerColor(id)` (golden-angle stable hue); `renderServerMap`/`renderOccupancyMap` gain an optional `highlightColors` Map (watched player → colour; absent for GV → unchanged); each watched player's planets paint their colour; caption added. |
 
-**Etap F foundation is DONE.** What remains of Etap F = the **routine visuals only** (activity
-strip + galaxy-view activity capture + self-induced discount, weekday pattern, collection
-callout, spy timeline) — **still ToolDev-consult-gated**. **Deferred test debt** (per CLAUDE.md,
-reconcile at release): migration-cap / both-read-paths / retention-gate + equal-ts-no-dup-history
-tests, partial+moon gate, `revealed` gating, `<moon>` parse, `mapPrimitives` compute.
+**Etap F foundation is DONE.** **DECISION (user, this session): proceed with F + G WITHOUT a
+blocking ToolDev consult** — no intentional rule-break, OG-E already has green light on current
+functions, and ToolDevs prefer to judge a live feature; the §8 compliance guardrails (wording
+discipline, provenance, presence-gate, self-induced-activity discount, coverage rows) are the
+standing defense and are NOT optional. A post-hoc consult stays welcome. **F1 (routine engine)
+DONE — `domain/routine.js`** (pure `summarizeRoutine`: hour-of-day activity, weekday resource
+medians, collection body, timeline; 30-day recency, n-gated, sample counts). **Remaining F:
+F2** — dossier visuals (activity strip + mandatory coverage row + weekday + collection + timeline)
+threaded through `index.js`→`renderTargets`→`dossier.js`, with the §6.6/§8 wording ("from reports
+you've opened", "activity" never "online"). **F3** — the denser galaxy-view activity source
+(`parseActivity` in `classifyPosition` + a per-body activity ring, watched-only) with the
+**self-induced-activity discount** (don't count markers our own probes caused). Note: the history
+rings only started filling THIS session, so routines render hollow until watched players are
+re-spied over days — F3 fills them faster. **Deferred test debt** (per CLAUDE.md, reconcile at
+release): migration-cap / both-read-paths / retention-gate + equal-ts-no-dup-history tests,
+partial+moon gate, `revealed` gating, `<moon>` parse, `mapPrimitives` compute, `routine`.
 
 **Etap E (map) is IN PROGRESS** (not deferred-to-1.36.0 as the plan assumed — user chose to
 build it now; placement = a map SECTION in the current Spyglass tab, not the cards-landing view
