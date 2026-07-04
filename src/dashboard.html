@@ -358,6 +358,12 @@
   .chip-group.seg button + button { border-left: 1px solid #2b3a4d; }
   .chip-group.seg button.on { background: #12253c; color: #cfe4ff; }
 
+  /* Dossier layout — judgement (danger/why/hidden/civil) beside evidence
+     (planets/routine) from 860px; one column below. Layout only, the blocks
+     and their wording are untouched. */
+  .dossier-grid { display: grid; grid-template-columns: 1fr; gap: 0 28px; }
+  @media (min-width: 860px) { .dossier-grid { grid-template-columns: 1.1fr 1fr; } }
+
   /* Watched-player chips under the Spyglass map — one pill per watched player
      (dot = relationship, 👁 = map-only mute, ✕ = unwatch). */
   .spy-pchip {
