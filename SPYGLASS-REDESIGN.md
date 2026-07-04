@@ -106,9 +106,12 @@ discount — the dense probe-free source; §6.6bis). **Then Etap G** (scanPriori
 ### Etap H — UX pass (branch `feat/spyglass-ux`, worktree, based on `bd6b5a5` = 1.35.0)
 
 **User-approved 2026-07-05** (mockup: claude.ai artifact `c5af6bea…`, session "Spyglass UX").
-Runs PARALLEL to the user's F3+G work in the main tree — merge/rebase onto their branch after
-1.35.0 ships; conflicts expected in `index.js`/`dossier.js`/`watchList.js`/`dashboard.html`
-(different spans, resolvable). Target release: **1.36.0**. Diagnosis: too much standing text
+Ran PARALLEL to the user's F3+G work — which SHIPPED as **v1.36.0** (`744a12f` on `main`,
+AMO 2026-07-05) while H was being built, so the merge target is **`main` @ 744a12f** and H's
+release is the **next minor (1.37.0)**. Conflicts expected in `index.js`/`dossier.js`/
+`watchList.js`/`dashboard.html` (different spans, resolvable); 1.36.0 also ADDED Spyglass UI
+this layout must adopt at merge time: the `#scanPlanStrip` collapsed details (slot between
+the cards and the Finder) and the `#spyMapReach` opt-in (slots by the map legend/chips). Diagnosis: too much standing text
 (intro + map paragraphs), checkbox strip where GV has chips, res/ship buried in the Ships
 tooltip, "Who's been near you" = 10 raw lines with no aggregation, map membership model
 (map = watchlist) invisible → users think ⌖ "adds to map" and can't find removal.
@@ -130,13 +133,14 @@ alerts); map player-chips (dot cycle, 👁 mute persists, ✕, empty-ghost); car
 headline/sparkline, click→dossier, empty-ghost); dossier 2-col ≥860px; narrow-viewport
 table scroll. "scan list only" chip kept — candidate for removal once cards prove out.
 
-Deferred test debt from H (reconcile at 1.36.0 release): `proximityDigest`,
+Deferred test debt from H (reconcile at the 1.37.0 release): `proximityDigest`,
 `normalizeWatchList` mapHidden, chips toggle helpers, `renderWatchlistCards` (behavioral).
 Freshness header chips ("ships data 2 h old") skipped — needs an apiCache fetch-timestamp
-plumb; revisit later. MERGE NOTE: rebase/merge this branch onto the post-release
-`feat/spyglass-v3` (F3+G landed there in parallel) — expect localized conflicts in
-`index.js` (imports, repaintTargets args, listeners), `dossier.js`, `watchList.js`
-(if G's prune touched it) and `dashboard.html`; resolve keeping BOTH features.
+plumb; revisit later. MERGE NOTE: rebase/merge this branch onto **`main` @ `744a12f`
+(v1.36.0, carries F3+G)** — expect localized conflicts in `index.js` (imports,
+repaintTargets args, listeners, loadAll routines), `dossier.js`, `watchList.js` (G's
+hydrate prune) and `dashboard.html` (G added `#scanPlanStrip` + `#spyMapReach`); resolve
+keeping BOTH features and slot the strip/reach toggle into the H layout as noted above.
 
 ### NEXT — future sessions, in order
 
