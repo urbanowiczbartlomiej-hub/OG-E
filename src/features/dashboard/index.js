@@ -1160,7 +1160,7 @@ const repaintTargets = () => {
     onShowAnyway: (/** @type {string} */ id) => { forceIncludeIds.add(id); repaintTargets(); },
     // Spyglass → map reverse deep-link: spotlight this player's planets on the
     // Galaxy Viewer occupancy lens.
-    onShowOnMap: showPlayerOnMap,
+    onShowOnMap: showPlayerOnSpyglassMap,
   });
 
   // Deep-link focus: scroll to + highlight the player a Galaxy Viewer "Top
@@ -1255,28 +1255,21 @@ const openSpyglassFor = (playerId) => {
 };
 
 /**
- * Spyglass → map reverse deep-link: jump to the Galaxy Viewer occupancy lens
- * with this player's planets spotlighted. Switches the top tab + the
- * Colonizations sub-tab, forces the occupancy view (the only lens that shows
- * individual planets), then repaints. The highlight is transient (not
- * persisted) — cleared by the map banner or by picking another player.
+ * Spotlight one player's planets on the Spyglass watchlist map — Spyglass's OWN
+ * map now, IN the Spyglass tab (it no longer hijacks the Galaxy Viewer's
+ * occupancy lens, per SPYGLASS-REDESIGN.md §1.1). Opens the map if collapsed,
+ * sets the highlight, repaints, and scrolls it into view. The highlight is
+ * transient (not persisted) — cleared by the map banner or by picking another
+ * player.
  * @param {string|number} playerId
  * @param {string} [name]
  * @returns {void}
  */
-const showPlayerOnMap = (playerId, name) => {
-  mapHighlight = { id: Number(playerId), name: name || `player ${playerId}` };
-  setActiveTab('colony');
-  for (const b of document.querySelectorAll('#colonySubtabs .subtab')) {
-    b.classList.toggle('active', /** @type {HTMLElement} */ (b).dataset.subtab === 'scout');
-  }
-  for (const pane of document.querySelectorAll('#colonySection .subtabpane')) {
-    pane.classList.toggle('active', /** @type {HTMLElement} */ (pane).dataset.subtab === 'scout');
-  }
-  safeLS.set(COLONY_SUBTAB_LS_KEY, 'scout');
-  // The spotlight only renders on the occupancy lens (individual planets).
-  setChipValue(serverMapViewChips, 'occupancy');
-  repaintFreeRegions();
+const showPlayerOnSpyglassMap = (playerId, name) => {
+  spyMapHighlight = { id: Number(playerId), name: name || `player ${playerId}` };
+  if (!spyMapOpen) toggleSpyMap(); // opens + repaints with the highlight applied
+  else repaintSpyglassMap();
+  spyMapBlock?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 };
 
 /**
@@ -1469,7 +1462,7 @@ const buildScoreField = (composite) => {
  * pins, host width). A zone switch re-sorts the list but must not rebuild
  * the 9×N map DOM.
  *
- * @type {{field: unknown, composite: unknown, view: string, candKey: string, width: number, hi: number} | null}
+ * @type {{field: unknown, composite: unknown, view: string, candKey: string, width: number} | null}
  */
 let lastMapPaint = null;
 
@@ -1481,13 +1474,6 @@ let lastMapPaint = null;
  */
 let scoutSelectedPin = -1;
 
-/**
- * Player whose planets the occupancy map is spotlighting (Spyglass → map
- * reverse deep-link), or null. Set by {@link showPlayerOnMap}; cleared by the
- * map banner's "clear" action.
- * @type {{ id: number, name: string } | null}
- */
-let mapHighlight = null;
 
 /**
  * Game origin for "Open in game" links + click-to-galaxy — prefer serverData's
@@ -1604,18 +1590,13 @@ const repaintFreeRegions = () => {
     const fieldKey = view === 'field' ? field : null;
     const candKey = pins.map((r) => `${r.galaxy}:${r.center ?? r.start}`
       + (view === 'field' ? `:${Math.round((r.fit ?? 0) * 100)}` : '')).join(',');
-    // Spotlight is occupancy-only; a field-view paint ignores it, so key it as
-    // -1 there to avoid a needless occupancy→field rebuild when only the
-    // highlight changed.
-    const hiKey = view === 'occupancy' && mapHighlight ? mapHighlight.id : -1;
     if (!lastMapPaint
       || lastMapPaint.field !== fieldKey
       || lastMapPaint.composite !== composite
       || lastMapPaint.view !== view
       || lastMapPaint.candKey !== candKey
-      || lastMapPaint.width !== width
-      || lastMapPaint.hi !== hiKey) {
-      lastMapPaint = { field: fieldKey, composite, view, candKey, width, hi: hiKey };
+      || lastMapPaint.width !== width) {
+      lastMapPaint = { field: fieldKey, composite, view, candKey, width };
       renderServerMap({
         hostEl: serverMapHost,
         scans: composite,
@@ -1632,9 +1613,6 @@ const repaintFreeRegions = () => {
         danger: dangerProfiles,
         field,
         candidates: pins,
-        highlightPlayer: view === 'occupancy' && mapHighlight ? mapHighlight.id : undefined,
-        highlightName: view === 'occupancy' && mapHighlight ? mapHighlight.name : undefined,
-        onClearHighlight: () => { mapHighlight = null; repaintFreeRegions(); },
         onPinClick: (i) => {
           selectCandidate(freeContainer, i);
           // Scroll the ROW the pin just selected into view — scrolling the
@@ -1875,7 +1853,7 @@ const wireListeners = () => {
     // Region keys carry no universe component — a coincidentally matching
     // region in the next universe would auto-expand as "your selection".
     resetFreeSelection();
-    mapHighlight = null; // a player id is universe-scoped — drop the spotlight.
+    spyMapHighlight = null; // a player id is universe-scoped — drop the spotlight.
     void loadWatched().then(() => loadAll()).then(renderAll);
     alarmClockApi?.refresh();
     routesApi?.refresh();
@@ -1918,7 +1896,9 @@ export const _resetDashboardForTest = () => {
   dangerProfiles = new Map();
   civilProfiles = new Map();
   focusedTargetId = null;
-  mapHighlight = null;
+  spyMapHighlight = null;
+  spyMapOpen = false;
+  spyCompositeCache = null;
   // DOM refs filled by wireDom(); wireDom re-resolves them on the next
   // install, but null them now so nothing reads a detached node in between.
   statsEl =
