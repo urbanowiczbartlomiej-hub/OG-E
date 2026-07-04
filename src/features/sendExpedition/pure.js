@@ -41,17 +41,6 @@ import { ingameComponentUrl } from '../../domain/ogameUrl.js';
  */
 export const BUTTON_ID = 'oge-send-exp';
 
-/**
- * localStorage key — holds the id of whichever of our buttons was last
- * focused. Currently only {@link FOCUS_VALUE} ever lands here, but the
- * value string is namespaced (e.g. `'send-exp'`) so additional buttons
- * can share this key without collision.
- */
-export const FOCUS_KEY = 'oge_focusedBtn';
-
-/** Focus-persist value written/read by this feature. */
-export const FOCUS_VALUE = 'send-exp';
-
 // ─── Visual / interaction constants ──────────────────────────────────
 
 /**
@@ -68,20 +57,6 @@ export const MAX_LABEL_MS = 2000;
  * radial charge arc as live feedback) so an ordinary tap can never trip it.
  */
 export const HOLD_SKIP_MS = 2000;
-
-/**
- * Timeout for waiting on AGR's routine element / fleet panel hydration.
- * 15 s is long enough for a slow phone on a cold cache to receive the
- * async fleet-panel assets, short enough that an obviously-broken page
- * doesn't lock the button forever.
- */
-export const POLL_TIMEOUT_MS = 15_000;
-
-/** Poll interval for AGR-readiness checks. */
-export const POLL_INTERVAL_MS = 300;
-
-/** Delay before restoring focus on install. */
-export const FOCUS_RESTORE_DELAY_MS = 50;
 
 // The eventbox-readiness gate moved to the shared Button (`gateUntilEventBox`)
 // and `features/shared/eventBoxGate.js`, which owns the safety-timeout

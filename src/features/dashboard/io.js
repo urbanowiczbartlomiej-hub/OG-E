@@ -45,7 +45,6 @@
 import { chromeStore } from '../../lib/storage.js';
 import { historyKeyFor } from '../../state/history.js';
 import { scansKeyFor } from '../../state/scans.js';
-import { syncRequestKeyFor } from '../../sync/scheduler.js';
 import { mergeScans, mergeHistory } from '../../sync/merge.js';
 
 /**
@@ -286,18 +285,4 @@ export const exportColonyCsv = (entries, universeId) => {
   const blob = new Blob([body], { type: 'text/csv' });
   downloadBlob(blob, `oge-${universeId}-colony-history.csv`);
 };
-
-/**
- * Request a forced sync cycle for the given universe. Writes a
- * timestamp to that universe's namespaced sync tombstone; the sync
- * scheduler running on a game tab for the SAME universe observes the
- * change via `chrome.storage.onChanged` and uploads immediately. If no
- * tab for that universe is currently open, the tombstone sits until
- * one is — natural behaviour since sync requires a game tab anyway.
- *
- * @param {string} universeId
- * @returns {Promise<void>}
- */
-export const triggerSync = (universeId) =>
-  chromeStore.set(syncRequestKeyFor(universeId), Date.now());
 

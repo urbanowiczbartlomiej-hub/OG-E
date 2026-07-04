@@ -73,13 +73,9 @@ import {
 // ─── DOM ids / storage keys ───────────────────────────────────────────────
 
 const BUTTON_ID = 'oge-send-lf';
-/** Shared focus-persist key (same as sendExpedition / sendColony). */
-const FOCUS_KEY = 'oge_focusedBtn';
-const FOCUS_VALUE = 'lf-main';
 
 // ─── Tunables (match the other buttons) ────────────────────────────────────
 
-const FOCUS_RESTORE_DELAY_MS = 50;
 const REPAINT_TICK_MS = 1000;
 /** How long the transient "Sent!" / "Empty" / "Max fleets" label lingers. */
 const TRANSIENT_MS = 1800;
@@ -373,7 +369,6 @@ export const installSendLifeform = () => {
       fontScale: 0.18,
       module: { id: 'lf', name: 'Lifeforms', color: BG_LF_IDLE, glyph: DNA_GLYPH },
       gateUntilEventBox: true,
-      focusKey: FOCUS_KEY,
       zones: [
         {
           key: 'main',
@@ -382,8 +377,6 @@ export const installSendLifeform = () => {
           bg: BG_LF_IDLE,
           glyph: DNA_GLYPH,
           onTap: onClick,
-          focusValue: FOCUS_VALUE,
-          focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,
         },
       ],
     });

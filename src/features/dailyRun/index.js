@@ -95,8 +95,6 @@ const FS_UNIFIED_ID = 'oge-fs-unified';
 const FS_MICRO_ZONE_ID = 'oge-fs-micro-zone';
 const FS_COLLECT_ZONE_ID = 'oge-fs-collect-zone';
 
-const FOCUS_KEY = 'oge_focusedBtn';
-
 const FLASH_MS = 1500;
 const SENT_LOCK_MS = 3000;
 const LONG_PRESS_MS = 2000;
@@ -607,10 +605,9 @@ const lockBriefly = (zone) => {
 
 /**
  * Reflect the eventbox gate on the button: while the event list hasn't
- * loaded, BOTH zones (and the host glow) go amber with a wait pulse and a
- * "Wait…" label; once it lands, the per-zone greens are restored and the
- * pulse stops. Rim is set directly on the live elements (the controller is
- * closure-scoped to the installer); the host carries the `data-flag`.
+ * loaded, BOTH zones (and the host glow) go amber with a "Wait…" label;
+ * once it lands, the per-zone greens are restored. Rim is set directly on
+ * the live elements (the controller is closure-scoped to the installer).
  *
  * @param {HTMLElement | null} microZone
  * @param {HTMLElement | null} collectZone
@@ -754,7 +751,6 @@ export const installDailyRun = () => {
       fontScale: 0.12,
       module: { id: 'fs', name: 'Daily Run', color: BG_MICRO, glyph: PLANET_ARROW_GLYPH },
       gateUntilEventBox: true,
-      focusKey: FOCUS_KEY,
       holdMs: LONG_PRESS_MS,
       zones: [
         {
@@ -764,7 +760,6 @@ export const installDailyRun = () => {
           bg: BG_MICRO,
           glyph: PLANET_ARROW_GLYPH,
           onTap: onMicroClick,
-          focusValue: 'fs-unified-micro',
           labelShiftY: -6,
         },
         {
@@ -776,7 +771,6 @@ export const installDailyRun = () => {
           bg: BG_COLLECT,
           onTap: onCollectClick,
           onHold: onSetTargetClick,
-          focusValue: 'fs-unified-collect',
           labelShiftY: 1,
         },
       ],

@@ -154,27 +154,6 @@ export const galaxyConfigSlotHasData = (slot) => slot.updatedAt > 0;
 export const alarmClockConfigSlotHasData = (slot) => slot.updatedAt > 0;
 
 /**
- * Whether a player-cache slot is worth contributing to the gist. Same
- * no-op-PATCH guard as the others: an empty roster ({}) must NOT write a slot
- * that would differ from the gist's absent field.
- *
- * @param {import('../../state/players.js').PlayerCache | undefined} players
- * @returns {boolean}
- */
-export const playersSlotHasData = (players) =>
-  Boolean(players && Object.keys(players).length > 0);
-
-/**
- * Whether an own-profile slot is worth contributing to the gist. `readOwnProfile`
- * returns `{}` when nothing is stored; only a profile actually written by the
- * header reader carries `updatedAt > 0`, so that is the no-op-PATCH guard.
- *
- * @param {import('../../state/ownProfile.js').OwnProfile | undefined} profile
- * @returns {boolean}
- */
-export const ownProfileHasData = (profile) => Boolean(profile && Number(profile.updatedAt) > 0);
-
-/**
  * Whether a colonization-decision slot is worth contributing to the gist.
  * Same no-op-PATCH guard as the others: an empty decision map ({}) must NOT
  * write a slot that would differ from the gist's absent field.

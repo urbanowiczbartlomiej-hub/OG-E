@@ -122,33 +122,6 @@ export const initGalaxyScanConfigStore = () => {
 };
 
 /**
- * Bypass the debounce and write the current value immediately. Call before
- * navigating away so an in-memory edit is not lost to a pending debounce.
- *
- * @returns {Promise<void>}
- */
-const flushGalaxyScanConfigStore = () =>
-  chromeStore.set(currentKey(), galaxyScanConfigStore.get());
-
-/**
- * Stamp "config changed just now" for the current universe so the next sync
- * round-trip treats this device's config as freshest (whole-universe
- * newest-wins, see `sync/merge.mergeGalaxyScanConfig`). Flushes the value
- * first to close the debounce race (same rationale as
- * `state/dailyRunRoutes.stampDailyRunRoutesChanged`). The dashboard writes the same key
- * directly on save.
- *
- * @returns {Promise<void>}
- */
-export const stampGalaxyScanConfigChanged = async () => {
-  await flushGalaxyScanConfigStore();
-  await chromeStore.set(
-    currentUniverseKey(GALAXY_SCAN_CONFIG_TS_BASE, galaxyScanConfigTsKeyFor),
-    Date.now(),
-  );
-};
-
-/**
  * Tear down the persist wiring. Idempotent.
  *
  * @returns {void}

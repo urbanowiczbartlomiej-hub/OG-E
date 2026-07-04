@@ -134,14 +134,8 @@ export const HONOR_COLORS = {
 export const UNSCANNED_COLOR = '#1a1a2a';
 
 /**
- * Subtle border drawn around unscanned pixels — keeps them visible
- * against the page background, which is a similar dark shade.
- */
-export const UNSCANNED_BORDER = '1px solid #222';
-
-/**
- * Map a Colony-Scout "intent heat" value (see `domain/regions.js`
- * {@link systemIntentHeat}, range −1..+1) to a diverging colour:
+ * Map a Colony-Scout "intent heat" value (a strategy-relative danger/farm
+ * score in the range −1..+1) to a diverging colour:
  *
  *   −1  ───────────  0  ───────────  +1
  *   red          neutral grey         green

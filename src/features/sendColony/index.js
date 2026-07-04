@@ -64,8 +64,7 @@
 //
 //   - Pure helpers live in `./pure.js`; impure DOM helpers in
 //     `./domHelpers.js` — target-picking, URL builders, coord readers.
-//   - Drag + focus reuse `shared/draggableButton.js` (same `oge_focusedBtn`
-//     key as sendExpedition).
+//   - Drag reuses `shared/draggableButton.js`.
 //   - Abandon overlay is `features/abandon/overview.js` — orthogonal.
 //
 // @see ./pure.js — pure helpers this orchestrator consumes.
@@ -154,13 +153,6 @@ const BUTTON_ID = 'oge-send-col';
 /** id of the (single) Send zone. */
 const SEND_HALF_ID = 'oge-col-send';
 
-// ─── Storage keys ──────────────────────────────────────────────────────
-
-/** Shared focus-persist key with sendExpedition. */
-const FOCUS_KEY = 'oge_focusedBtn';
-/** Focus-persist value written when the Send zone holds focus. */
-const FOCUS_SEND = 'col-send';
-
 // ─── Tunables ──────────────────────────────────────────────────────────
 //
 // Colour constants (`BG_SEND_*` / `BG_SCAN_*`), the checkTarget /
@@ -170,8 +162,6 @@ const FOCUS_SEND = 'col-send';
 // fallbacks (e.g. "None available" flash) and the fleetdispatch URL
 // sniff.
 
-/** Delay before restoring focus on install (matches sendExpedition). */
-const FOCUS_RESTORE_DELAY_MS = 50;
 /** Repaint ticker period in ms. */
 const REPAINT_TICK_MS = 1000;
 /** Hold duration (ms) required to trigger a manual skip of the current candidate. */
@@ -906,7 +896,6 @@ export const installSendColony = () => {
       fontScale: 0.18,
       module: { id: 'col', name: 'Colonization', color: BG_SEND_IDLE, glyph: LANDER_GLYPH },
       gateUntilEventBox: true,
-      focusKey: FOCUS_KEY,
       holdMs: HOLD_SKIP_MS,
       zones: [
         {
@@ -917,8 +906,6 @@ export const installSendColony = () => {
           glyph: LANDER_GLYPH,
           onTap: () => void onSendClick(),
           onHold: onSendHold,
-          focusValue: FOCUS_SEND,
-          focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,
         },
       ],
     });

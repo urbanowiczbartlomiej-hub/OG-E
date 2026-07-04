@@ -1,9 +1,8 @@
-// Shared drag + focus-persistence helpers used by the floating mobile
-// buttons (sendExpedition, sendColony, and the unified FAB shell). The button
-// features previously open-coded the same touch/mouse drag wiring with an 8-px
-// threshold and the same `oge_focusedBtn`-based focus persistence. This module
-// factors that out so changes (e.g. adjusting the drag threshold, tweaking
-// restore timing) land in one place instead of near-identical copies.
+// Shared drag helpers used by the floating mobile buttons (sendExpedition,
+// sendColony, and the unified FAB shell). The button features previously
+// open-coded the same touch/mouse drag wiring with an 8-px threshold. This
+// module factors that out so changes (e.g. adjusting the drag threshold) land
+// in one place instead of near-identical copies.
 //
 // Lives in `features/shared/` rather than `lib/` because it touches
 // `window`, `document`, and `safeLS` — `lib/` is the pure-helpers
@@ -15,11 +14,7 @@
 //   1. Drag (touch + mouse): once movement exceeds `dragThreshold` px,
 //      switch the element to absolute `left` / `top` positioning and
 //      persist the position to `safeLS` under `posKey` on release.
-//   2. Focus persistence: writes `focusValue` to `focusKey` on focus;
-//      clears it on blur iff we're still the current owner; restores
-//      focus `focusRestoreDelay` ms after install when the saved key
-//      matches `focusValue`.
-//   3. Click suppression: when a drag has actually moved (`hasMoved`),
+//   2. Click suppression: when a drag has actually moved (`hasMoved`),
 //      the next click on the element is swallowed so a drag terminating
 //      on the button doesn't double-fire as a tap.
 //
@@ -33,16 +28,14 @@
 //
 // # Why a single helper
 //
-// sendColony's container wraps two halves; the drag/focus logic still
-// lives on the OUTER `wrap`, and the focus persistence wires on each
-// half independently — which we model by calling `installFocusPersist`
-// twice (once per half) with different `focusValue`s. sendExpedition uses a
-// single button so calls both helpers once. The unified FAB shell calls only
-// `installDrag` on its wrapper — focus state is per-module, not shared.
+// sendColony's container wraps two halves; the drag logic lives on the
+// OUTER `wrap`. sendExpedition uses a single button. The unified FAB shell
+// calls `installDrag` on its wrapper. Factoring the drag wiring here keeps
+// the threshold/clamp/persist behaviour identical across all of them.
 //
 // @see ../sendColony/index.js          — caller for the colonize button.
 // @see ../sendExpedition/index.js          — caller for the expedition button.
-// @see ./unifiedFab.js                 — drag-only caller for the FAB wrapper.
+// @see ./unifiedFab.js                 — drag caller for the FAB wrapper.
 
 /** @ts-check */
 
@@ -249,36 +242,4 @@ export const installDrag = ({ element, posKey, dragThreshold = 8, onMove }) => {
       hasMoved = false;
     },
   };
-};
-
-/**
- * Wire focus-persistence onto a button. On focus, write `focusValue` to
- * `focusKey`; on blur, clear iff the key still points at us. If the key
- * already equals `focusValue` at install time, restore focus
- * `focusRestoreDelay` ms later (gives the DOM a tick to settle).
- *
- * @param {object} opts
- * @param {HTMLElement} opts.button
- * @param {string} opts.focusKey
- * @param {string} opts.focusValue
- * @param {number} [opts.focusRestoreDelay=50]
- * @returns {void}
- */
-export const installFocusPersist = ({
-  button,
-  focusKey,
-  focusValue,
-  focusRestoreDelay = 50,
-}) => {
-  button.addEventListener('focus', () => safeLS.set(focusKey, focusValue));
-  button.addEventListener('blur', () => {
-    if (safeLS.get(focusKey) === focusValue) safeLS.remove(focusKey);
-  });
-  // Skip programmatic focus restoration on touch-primary devices. On mobile,
-  // calling button.focus() can trigger virtual keyboard popup or focus ring
-  // with no UX benefit (no keyboard navigation on touch).
-  const isTouchPrimary = window.matchMedia('(pointer: coarse)').matches;
-  if (!isTouchPrimary && safeLS.get(focusKey) === focusValue) {
-    setTimeout(() => button.focus(), focusRestoreDelay);
-  }
 };

@@ -19,7 +19,7 @@
 // of that paint logic changes. The decorative children are appended to a
 // STABLE host (the wrap for the split buttons; the button itself for the
 // single one) so frequent label repaints never wipe them — which is why
-// sendExpedition paints its label into a dedicated `.oge-exp-label` span rather
+// each button paints its label into a dedicated `.oge-btn-label` span rather
 // than clobbering the button's textContent.
 //
 // Lives in features/shared/ because it injects into `document`; the CSS
@@ -275,40 +275,13 @@ export const BUTTON_CHROME_CSS = [
   '.oge-host:active{transform:scale(.975);}',
   '.oge-tap-active{filter:brightness(1.08);}',
 
-  // ── Hold-to-confirm ring charge animation ────────────────────────────────
-  // --charge (0→1) is set by JS; drives scale, glow intensity and arc fill.
-  '.oge-host.oge-charging{',
-  'transform:scale(calc(1 + .045*var(--charge,0)));',
-  'box-shadow:',
-  'inset 0 1px 0 rgba(255,255,255,.1),',
-  'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) calc(82% + 13%*var(--charge,0)),transparent),',
-  'inset 0 0 calc(8px + 6px*var(--charge,0)) -1px color-mix(in oklab,var(--rim) 52%,transparent),',
-  '0 0 calc(22px + 30px*var(--charge,0)) -6px var(--rim),',
-  '0 18px 36px -12px rgba(0,0,0,.72),0 4px 12px -2px rgba(0,0,0,.5);}',
-  '.oge-host.oge-fired{animation:oge-fire .45s ease-out;}',
-  '@keyframes oge-fire{',
-  '0%{filter:brightness(1.6);transform:scale(1.07);}',
-  '100%{filter:none;transform:scale(1);}}',
+  // The live hold-to-confirm feedback is the '.oge-ring-charge' SVG arc
+  // (animated via stroke-dashoffset in button.js), not a CSS class on the host.
 
   // ── Focus ring (keyboard a11y) ───────────────────────────────────────────
   '.oge-host:focus-visible,.oge-host .zone:focus-visible{',
   'outline:3px solid color-mix(in oklab,var(--rim) 85%,#fff);outline-offset:3px;}',
   '.oge-host:focus:not(:focus-visible),.oge-host .zone:focus:not(:focus-visible){outline:none;}',
-
-  // ── State flag animations (error pulsates faster, wait slower) ───────────
-  '.oge-host[data-flag~="error"]{animation:oge-alert 1.6s ease-in-out infinite;}',
-  '.oge-host[data-flag~="wait"]{animation:oge-alert 2.4s ease-in-out infinite;}',
-  '@keyframes oge-alert{',
-  '0%,100%{box-shadow:',
-  'inset 0 1px 0 rgba(255,255,255,.07),',
-  'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) 78%,transparent),',
-  'inset 0 0 8px -1px color-mix(in oklab,var(--rim) 48%,transparent),',
-  '0 0 22px -8px var(--rim),0 18px 36px -12px rgba(0,0,0,.72),0 4px 12px -2px rgba(0,0,0,.5);}',
-  '50%{box-shadow:',
-  'inset 0 1px 0 rgba(255,255,255,.1),',
-  'inset 0 0 0 1.5px color-mix(in oklab,var(--rim) 95%,transparent),',
-  'inset 0 0 11px -1px color-mix(in oklab,var(--rim) 58%,transparent),',
-  '0 0 34px -2px var(--rim),0 18px 36px -12px rgba(0,0,0,.72),0 4px 12px -2px rgba(0,0,0,.5);}}',
 
   // ── Disabled ─────────────────────────────────────────────────────────────
   // Greys ONLY the fill + label (the .zone / .oge-surface layer), leaving the
@@ -325,10 +298,7 @@ export const BUTTON_CHROME_CSS = [
   // ── Reduced motion ────────────────────────────────────────────────────────
   '@media (prefers-reduced-motion:reduce){',
   '.oge-host,.oge-host .zone,.oge-ring-progress{transition:none;}',
-  '.oge-ripple{display:none;}',
-  '.oge-host[data-flag]{animation:none;}',
-  '.oge-host.oge-charging{transform:none;}',
-  '.oge-host.oge-fired{animation:none;}}',
+  '.oge-ripple{display:none;}}',
 ].join('');
 
 /**

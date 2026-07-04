@@ -16,9 +16,8 @@
 //     a dedicated `.oge-btn-label` span rather than its own textContent;
 //   • per-zone background + a `dim` (greyed-out) flag;
 //   • wiring: the engraved title ring + tap ripple (`decorateButton`),
-//     drag (`installDrag`) with a tap/drag discriminator, an optional
-//     long-press gesture with a radial sweep indicator, and focus
-//     persistence (`installFocusPersist`).
+//     drag (`installDrag`) with a tap/drag discriminator, and an optional
+//     long-press gesture with a radial sweep indicator.
 //
 // What it deliberately does NOT do (per CLAUDE.md's layering): it never
 // reads the game DOM, never touches XHR, and knows nothing about fleets,
@@ -28,14 +27,10 @@
 // game's fragile contract.
 //
 // @see ./buttonChrome.js     — the engraved ring + ripple decoration.
-// @see ./draggableButton.js  — the drag + focus-persistence primitives.
+// @see ./draggableButton.js  — the drag primitives.
 
 import { decorateButton, appendNode } from './buttonChrome.js';
-import {
-  installDrag,
-  installFocusPersist,
-  restorePosition,
-} from './draggableButton.js';
+import { installDrag, restorePosition } from './draggableButton.js';
 import { registerFabModule } from './unifiedFab.js';
 import { whenEventBoxReady, isFleetdispatchPage } from './eventBoxGate.js';
 
@@ -69,8 +64,6 @@ export const LABEL_CLASS = 'oge-btn-label';
  * @property {string} [glyph]              inner SVG markup of the glass node
  *                                         lens glyph (see buttonGlyphs.js);
  *                                         omitted ⇒ no lens.
- * @property {string} [focusValue]         present ⇒ persist focus under `focusKey`.
- * @property {number} [focusRestoreDelay]
  * @property {number} [labelShiftY]        px to nudge this zone's label
  *                                         vertically (translateY; +down).
  *                                         Split buttons push labels AWAY from
@@ -95,7 +88,6 @@ export const LABEL_CLASS = 'oge-btn-label';
  * @property {ZoneConfig[]} zones          1 zone ⇒ single circle; 2+ ⇒ split.
  * @property {number} [edgeOffset]         bottom-right anchor inset (default 20).
  * @property {number} [dragThreshold]      px before a gesture is a drag (default 8).
- * @property {string} [focusKey]           shared focus key (default 'oge_focusedBtn').
  * @property {number} [holdMs]             long-press duration (default 300).
  * @property {boolean} [gateUntilEventBox] present ⇒ the button starts VISIBLY
  *   disabled on `component=fleetdispatch` and enables once OGame's post-load
@@ -124,7 +116,6 @@ export const LABEL_CLASS = 'oge-btn-label';
 const DEFAULTS = {
   edgeOffset: 20,
   dragThreshold: 8,
-  focusKey: 'oge_focusedBtn',
   holdMs: 300,
 };
 
@@ -194,7 +185,6 @@ export const createButton = (cfg) => {
 
   const edgeOffset = cfg.edgeOffset ?? DEFAULTS.edgeOffset;
   const dragThreshold = cfg.dragThreshold ?? DEFAULTS.dragThreshold;
-  const focusKey = cfg.focusKey ?? DEFAULTS.focusKey;
   const holdMs = cfg.holdMs ?? DEFAULTS.holdMs;
   const single = cfg.zones.length === 1;
   // Single-zone labels run 1px smaller than the raw scale (the split
@@ -475,17 +465,6 @@ export const createButton = (cfg) => {
       e.stopPropagation();
       z.onTap(/** @type {MouseEvent} */ (e));
     });
-
-    if (z.focusValue) {
-      installFocusPersist({
-        button: el,
-        focusKey,
-        focusValue: z.focusValue,
-        ...(z.focusRestoreDelay != null
-          ? { focusRestoreDelay: z.focusRestoreDelay }
-          : {}),
-      });
-    }
   }
 
   const progressArc = /** @type {SVGCircleElement | null} */ (

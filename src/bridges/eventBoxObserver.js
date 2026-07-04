@@ -13,7 +13,7 @@
 // `#ago_routine_7 .ago_routine_check_3`, ...). A user who taps the
 // floating "Send Exp" button before the eventbox lands therefore
 // triggers Phase 2 polling that never resolves, locking the button
-// for the full 15 s `POLL_TIMEOUT_MS` window before recovery.
+// for the full 15 s `ROUTINE_POLL_TIMEOUT_MS` window before recovery.
 //
 // This bridge gives the isolated-world consumer a single, reliable
 // signal — "eventbox is fresh, you may now click" — without forcing

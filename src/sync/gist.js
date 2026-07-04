@@ -178,17 +178,18 @@ import { SYNC_STATUS_EVENT } from '../lib/ogeEvents.js';
  *   {@link import('./merge.js').mergeAlarmClockConfig}). Per-universe because the
  *   alarmClock cadence is configured per server.
  * @property {Record<string, import('../state/players.js').PlayerCache>} [playersPerUniverse]
- *   OPTIONAL, additive: per-universe player-metadata cache (rank, alliance,
- *   honour, flags) keyed by universe id. Each slot is a
- *   {@link import('../state/players.js').PlayerCache} merged per-`playerId`,
- *   newest-`seenAt`-wins (see {@link import('./merge.js').mergePlayers}).
- *   Per-universe because a roster is server-specific. Feeds Colony Scout
- *   neighbourhood scoring on a device that hasn't itself rescanned the galaxy.
+ *   LEGACY, no longer written: per-universe player-metadata cache (rank,
+ *   alliance, honour, flags) keyed by universe id. §4b stopped syncing this —
+ *   the writer leaves it `undefined` and its merge helper was removed. The key
+ *   is retained here only so {@link import('./scheduler/pure.js').gistIsCurrent}
+ *   still compares it: a gist written before §4b that still carries this slot
+ *   reads "not current" against our `undefined` and gets slimmed by one PATCH.
  * @property {Record<string, import('../state/ownProfile.js').OwnProfile>} [ownProfilePerUniverse]
- *   OPTIONAL, additive: our own standing (rank, name, honour class) keyed by
- *   universe id. Whole-record newest-`updatedAt`-wins (see
- *   {@link import('./merge.js').mergeOwnProfile}). Per-universe because our rank
- *   differs per server; it anchors relative-strength scoring of neighbours.
+ *   LEGACY, no longer written: our own standing (rank, name, honour class)
+ *   keyed by universe id. Dropped alongside `playersPerUniverse` in §4b (writer
+ *   omits it, merge helper removed). Retained in this typedef for the same
+ *   reason: {@link import('./scheduler/pure.js').gistIsCurrent} compares it so a
+ *   pre-§4b gist still carrying it is detected and slimmed on the next PATCH.
  * @property {Record<string, import('../domain/colonizeDecisions.js').DecisionMap>} [colonizeDecisionsPerUniverse]
  *   OPTIONAL, additive: the colonization decision log keyed by universe id —
  *   the small "looks-free-but-isn't" correction set (sent/mine/abandoned/
@@ -496,25 +497,6 @@ export const gh = async (path, options = {}) => {
     throw new Error(`HTTP ${res.status}: ${conciseErrorBody(text) || res.statusText}`);
   }
   return res.json();
-};
-
-/**
- * Probe whether the configured token is currently valid, for the Settings
- * "Token" row. Calls the lightweight `/user` endpoint (which 401s fast on a
- * bad / expired / wrong-scope PAT) and NEVER throws — it returns a short,
- * display-ready line so the asyncStatus control can paint it verbatim.
- *
- * @returns {Promise<string>}
- */
-export const validateToken = async () => {
-  if (!getToken()) return '✗ No token set';
-  try {
-    const user = await gh('/user');
-    const login = user && typeof user.login === 'string' ? user.login : '?';
-    return `✓ Valid — ${login}`;
-  } catch (err) {
-    return `✗ ${/** @type {Error} */ (err).message}`;
-  }
 };
 
 // ── Gist file reader (truncation-aware) ─────────────────────────────

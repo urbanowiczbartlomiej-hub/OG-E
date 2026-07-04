@@ -64,9 +64,6 @@ export { deriveSpy, renderSpy } from './pure.js';
 
 const BUTTON_ID = 'oge-send-spy';
 const SEND_HALF_ID = 'oge-spy-send';
-const FOCUS_KEY = 'oge_focusedBtn';
-const FOCUS_SPY = 'spy-send';
-const FOCUS_RESTORE_DELAY_MS = 50;
 const REPAINT_TICK_MS = 2000;
 /** sessionStorage key (page origin, per tab) for coords sent this session. */
 const SENT_COORDS_KEY = 'oge_spySentCoords';
@@ -357,7 +354,6 @@ export const installSendSpy = () => {
       fontScale: 0.18,
       module: { id: 'spy', name: 'Spy', color: BG_SPY_IDLE, glyph: EYE_GLYPH },
       gateUntilEventBox: true,
-      focusKey: FOCUS_KEY,
       zones: [
         {
           key: 'send',
@@ -366,8 +362,6 @@ export const installSendSpy = () => {
           bg: BG_SPY_IDLE,
           glyph: EYE_GLYPH,
           onTap: () => void onSpyClick(),
-          focusValue: FOCUS_SPY,
-          focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,
         },
       ],
     });

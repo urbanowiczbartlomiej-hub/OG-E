@@ -67,12 +67,6 @@
 // the shell owns the shared dragged position (`oge_fabPos`) and shows the
 // button only while it is the active module.
 //
-// Focus persists across reloads via `oge_focusedBtn`. When the button
-// is the focused element on reload, we restore focus 50 ms after
-// insert. This matters for keyboard users and — importantly — for the
-// mobile keyboard-Enter flow where the user's Enter key naturally
-// triggers `click` on the focused button.
-//
 // @see ./pure.js — pure constants + helpers consumed here.
 // @see ../../bridges/expeditionRedirect.js — orthogonal: rewrites the
 //   post-send `redirectUrl` so successive dispatches hop planets.
@@ -90,11 +84,8 @@ import { installFabSettingsLifecycle } from '../shared/fabSettingsLifecycle.js';
 import { createFleetDispatcherCache } from '../shared/fleetDispatcherCache.js';
 import {
   BUTTON_ID,
-  FOCUS_KEY,
-  FOCUS_VALUE,
   MAX_LABEL_MS,
   HOLD_SKIP_MS,
-  FOCUS_RESTORE_DELAY_MS,
   BUTTON_TEXT,
   ALL_MAXED_LABEL,
   ALL_FLEETS_LABEL,
@@ -528,7 +519,6 @@ export const installSendExpedition = () => {
       fontScale: 0.18,
       module: { id: 'exp', name: 'Expeditions', color: BG_IDLE, glyph: COMET_GLYPH },
       gateUntilEventBox: true,
-      focusKey: FOCUS_KEY,
       holdMs: HOLD_SKIP_MS,
       zones: [
         {
@@ -539,8 +529,6 @@ export const installSendExpedition = () => {
           glyph: COMET_GLYPH,
           onTap: () => void handleClick(/** @type {HTMLButtonElement} */ (controller?.el)),
           onHold: handleSkip,
-          focusValue: FOCUS_VALUE,
-          focusRestoreDelay: FOCUS_RESTORE_DELAY_MS,
         },
       ],
     });

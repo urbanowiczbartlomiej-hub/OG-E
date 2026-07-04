@@ -360,18 +360,6 @@ export const cancelWaveAlarmClock = async ({ ids, topic, token }) => {
 };
 
 /**
- * Fixed ntfy priority per notification kind.
- *
- * Expedition-wave alarmClock stay at "default" (3) — they're background
- * nudges. They used to escalate 3→4→5 across the series, but that
- * competed for attention with the notifications the player marks ON
- * PURPOSE. Those intentional marks are the ad-hoc fleet alarmClock, so
- * they ring at "max" (5). One flat priority per kind, no per-slot ladder.
- */
-export const WAVE_PRIORITY = 3;
-export const ADHOC_PRIORITY = 5;
-
-/**
  * Publish one message at `fireAt`. Generic over notification kind: the
  * caller supplies the `title` (which doubles as the per-kind queue filter
  * — see {@link reconcileQueue}), `body`, `priority`, and `icon` URL.
@@ -564,7 +552,7 @@ const waveCtx = (universeId, baseAt, i, total) => ({
 /**
  * Reconcile this universe's EXPEDITION-WAVE slice of the queue. Thin
  * wrapper over {@link reconcileQueue}: expands each wave into a series of
- * slots (fire times from the active preset, flat {@link WAVE_PRIORITY}),
+ * slots (fire times from the active preset, priority from the normalized template),
  * and maps the generic result back to the historical `idsByWave` shape so
  * existing callers/tests are unaffected.
  *
@@ -776,8 +764,9 @@ const fsCtx = (universeId, e, fireAt, i, total) => ({
 /**
  * Reconcile this universe's FLEET-SAVE slice of the queue. Each detected FS
  * is a MULTI-slot series fired at each of its `fireAts` (the relative-offset
- * schedule resolved against the leg's arrival), at flat {@link ADHOC_PRIORITY}
- * — an FS is high-value, so it rings as urgently as a player-armed alarmClock.
+ * schedule resolved against the leg's arrival), at the priority from the
+ * normalized template — an FS is high-value, so it rings as urgently as a
+ * player-armed alarmClock.
  *
  * Same idempotent reconcile as waves/ad-hoc, under the distinct FS title, so
  * a send-reload on mobile self-heals. Slots beyond ntfy's 3-day cap are

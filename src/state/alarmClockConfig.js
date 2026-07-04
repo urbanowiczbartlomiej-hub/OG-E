@@ -122,32 +122,6 @@ export const initAlarmClockConfigStore = () => {
 };
 
 /**
- * Bypass the debounce and write the current value immediately. Call before
- * navigating away so an in-memory edit is not lost to a pending debounce.
- *
- * @returns {Promise<void>}
- */
-const flushAlarmClockConfigStore = () =>
-  chromeStore.set(currentKey(), alarmClockConfigStore.get());
-
-/**
- * Stamp "config changed just now" for the current universe so the next sync
- * round-trip treats this device's config as freshest (whole-universe
- * newest-wins, see `sync/merge.mergeAlarmClockConfig`). Flushes the value first
- * to close the debounce race (same rationale as `stampGalaxyScanConfigChanged`).
- * The dashboard writes the same key directly on save.
- *
- * @returns {Promise<void>}
- */
-export const stampAlarmClockConfigChanged = async () => {
-  await flushAlarmClockConfigStore();
-  await chromeStore.set(
-    currentUniverseKey(ALARM_CLOCK_CONFIG_TS_BASE, alarmClockConfigTsKeyFor),
-    Date.now(),
-  );
-};
-
-/**
  * Tear down the persist wiring. Idempotent.
  *
  * @returns {void}

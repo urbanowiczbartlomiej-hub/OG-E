@@ -52,9 +52,6 @@
  * @typedef {import('../state/scans.js').SystemScan} SystemScan
  * @typedef {import('../state/history.js').ColonyEntry} ColonyEntry
  * @typedef {import('../state/history.js').ColonyHistory} ColonyHistory
- * @typedef {import('../state/players.js').PlayerCache} PlayerCache
- * @typedef {import('../domain/players.js').PlayerMeta} PlayerMeta
- * @typedef {import('../state/ownProfile.js').OwnProfile} OwnProfile
  */
 
 // The colonization decision log's merge is pure domain logic (monotonic +
@@ -285,63 +282,6 @@ export const mergeHistory = (local, remote) => {
     }
   }
   return { merged: [...byCp.values()], changed };
-};
-
-/**
- * Merge local + remote player caches, PER `playerId`, newest-`seenAt` wins.
- *
- * A player record is global to the account (rank, alliance, honour, and the
- * strong/newbie/buddy flags are not per-colony), so — exactly like
- * {@link import('../domain/players.js').mergePlayerMeta} — a strictly-newer
- * sighting replaces the WHOLE record rather than field-merging. Ids union: a
- * player only one side has seen survives.
- *
- * `changed` is the anti-loop hint (see file header): `true` iff remote
- * contributed a new id OR a strictly-newer record for a shared id. Ties (equal
- * `seenAt`) and a missing/0 remote `seenAt` keep local (the no-write path), and
- * on no change `merged` is the local reference so the caller can skip the write.
- *
- * @param {PlayerCache} local
- * @param {PlayerCache | undefined | null} remote
- * @returns {{ merged: PlayerCache, changed: boolean }}
- */
-export const mergePlayers = (local, remote) => {
-  if (!remote || typeof remote !== 'object') return { merged: local, changed: false };
-  /** @type {PlayerCache} */
-  const merged = { ...local };
-  let changed = false;
-  for (const key of Object.keys(remote)) {
-    const id = Number(key);
-    const r = remote[id];
-    if (!r) continue;
-    const l = merged[id];
-    const lSeen = Number(l?.seenAt) || 0;
-    const rSeen = Number(r.seenAt) || 0;
-    if (!l || rSeen > lSeen) {
-      merged[id] = r;
-      changed = true;
-    }
-  }
-  return { merged: changed ? merged : local, changed };
-};
-
-/**
- * Merge local + remote own-profile slot, WHOLE-record newest-`updatedAt` wins.
- * Our standing (rank, name, honour class) is one snapshot the in-game header
- * reader overwrites each load, so the grain is the whole record and the
- * tie-breaker its `updatedAt`. Remote must be STRICTLY newer to displace local;
- * ties and a missing/0 remote timestamp keep local (the anti-loop no-write path).
- *
- * @param {OwnProfile} local
- * @param {OwnProfile | undefined | null} remote
- * @returns {{ merged: OwnProfile, changed: boolean }}
- */
-export const mergeOwnProfile = (local, remote) => {
-  if (!remote || typeof remote !== 'object') return { merged: local, changed: false };
-  const lT = Number(local?.updatedAt) || 0;
-  const rT = Number(remote.updatedAt) || 0;
-  if (rT > lT) return { merged: remote, changed: true };
-  return { merged: local, changed: false };
 };
 
 /**

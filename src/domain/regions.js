@@ -453,27 +453,13 @@ export const scoreRegion = (region, scans, opts = {}) => {
   };
 };
 
-// ─── Strategy engine ────────────────────────────────────────────────────────
+// ─── Neighbourhood harm weights ─────────────────────────────────────────────
 //
-// Scoring is two-layer:
-//
-//  1. BASE STRATEGY — a named weight set over neighbourhood rates:
-//       free      = matched / length          (free-slot density, 0–1)
-//       inactive  = inactive  / scanned       (dormant-player density, 0–1)
-//       occupied  = occupied  / scanned       (active-player density, 0–1)
-//       bandit    = bandits × banditMaxLevel  / (scanned × 3)  (0–1 threat)
-//       honored   = honored × honoredMaxLevel / (scanned × 3)  (0–1 presence)
-//       length    = region.length / 499                        (tiebreaker)
-//
-//  2. ORTHOGONAL MODIFIERS — applied on top of any base strategy:
-//       expansion (+/−) — placement preference
-//         > 0  "Spread":  bonus for mineMinDist ≥ 100 (new territory)
-//         < 0  "Cluster": bonus for mineMinDist < 50  (near home base)
-//         = 0  no preference (default)
-//       allyBonus (≥ 0) — reward regions with allied neighbours
-//         ally rate = allyNearby / scanned (requires ownAllyTag in findBestRegions)
-//
-// The default 'longest' preset reproduces the pre-strategy sort exactly.
+// The `StrategyWeights` weight set below is retained for the "drop the N worst"
+// exclusion ranking (`playerHarm` / `findNeighbourhoodCandidates`): a negative
+// weight marks a dimension whose occupants HURT a candidate. The legacy
+// full-strategy scoring/sorting engine that also consumed it has been removed —
+// candidate ranking now lives in `domain/zoneScore.js` (annotateAndSortByZone).
 
 /**
  * @typedef {object} StrategyWeights
@@ -493,181 +479,6 @@ export const scoreRegion = (region, scans, opts = {}) => {
  *   sort/heat opts, else it contributes 0.
  * @property {number} [length]   Small length tiebreaker (0–1 over 499 systems).
  */
-
-/**
- * Named strategy presets. Exported so the UI can build a `<select>` from them.
- * Colony placement (spread / cluster) and alliance proximity are SEPARATE
- * modifiers passed to {@link sortRegionsByStrategy}, not baked into these presets.
- *
- * @type {Record<string, { label: string, hint: string, weights: StrategyWeights }>}
- */
-export const STRATEGIES = {
-  longest: {
-    label: 'Longest streak',
-    hint: 'Default — pure free-slot length; no neighbourhood weighting',
-    weights: { length: 1 },
-  },
-  peaceful: {
-    label: 'Peaceful settler',
-    hint: 'Mining / expeditions — quiet zone; bandits & strong/returning players strongly penalised, honored moderately; inactive farm targets welcome',
-    weights: { free: 1, inactive: 0.5, occupied: -0.3, bandit: -3, honored: -1.5, strong: -1.5, length: 0.1 },
-  },
-  safe_expansion: {
-    label: 'Safe expansion',
-    hint: 'Settle where you out-rank the neighbours — rewards weaker-ranked & inactive players and free slots; bandits, strong and stronger-ranked players penalised. Needs your own highscore rank.',
-    weights: { free: 1, weakerNearby: 1.5, inactive: 0.6, occupied: -0.2, bandit: -2, strong: -1.5, length: 0.1 },
-  },
-  farmer: {
-    label: 'Farmer',
-    hint: 'Maximise inactive farm targets; bandits & strong players penalised, outlaws (fair game) welcome',
-    weights: { free: 0.7, inactive: 2.5, bandit: -1.5, honored: -0.3, strong: -0.5, outlaw: 0.5, length: 0.1 },
-  },
-  honor_pvp: {
-    label: 'Honor PvP',
-    hint: 'Seek honored fighters — attacking them earns positive honour; outlaws are fair game; avoid bandits',
-    weights: { free: 0.5, occupied: 0.8, honored: 2.5, bandit: -1, outlaw: 0.5, length: 0.1 },
-  },
-  aggressive: {
-    label: 'Aggressive PvP',
-    hint: 'Max active players of any honour rank — target density over colour; outlaws & strong players welcome',
-    weights: { free: 0.5, occupied: 2, inactive: 0.5, bandit: 0.3, honored: 0.5, strong: 0.5, outlaw: 0.5, length: 0.1 },
-  },
-};
-
-/**
- * Map `mineMinDist` to a 0–1 spread factor used by the placement modifier.
- *
- * - dist < 50  → 0.0  (too close to home, no spread value)
- * - dist = 100 → 0.33 (acceptable but not great)
- * - dist = 150 → 0.67
- * - dist ≥ 200 → 1.0  (solid new territory)
- * - dist = Infinity (no mines in galaxy) → 1.0 (pristine)
- *
- * The cluster factor is `1 − spreadFactor`.
- *
- * @param {number} mineMinDist
- * @returns {number}
- */
-const expansionFactor = (mineMinDist) => {
-  if (!Number.isFinite(mineMinDist)) return 1;
-  return Math.min(1, Math.max(0, mineMinDist - 50) / 150);
-};
-
-/**
- * Count neighbours STRONGER vs WEAKER than us by highscore rank (lower rank
- * number = stronger). The rank-relative "safe expansion" signal — a missing or
- * invalid `ownRank`, or no ranked neighbours, yields {0,0} (neutral). Pure.
- *
- * @param {number[]} ranks   Sorted neighbour ranks ({@link RegionScore.ranks}).
- * @param {number} [ownRank] Our own highscore rank.
- * @returns {{ stronger: number, weaker: number }}
- */
-const rankRelative = (ranks, ownRank) => {
-  if (!(typeof ownRank === 'number' && ownRank > 0)) return { stronger: 0, weaker: 0 };
-  let stronger = 0;
-  let weaker = 0;
-  for (const r of ranks) {
-    if (r > 0 && r < ownRank) stronger++;
-    else if (r > ownRank) weaker++;
-  }
-  return { stronger, weaker };
-};
-
-/**
- * @typedef {object} SortOptions
- * @property {number} [expansion]
- *   Placement preference:
- *   `> 0` = spread (bonus for being far from own colonies, 100+ sys);
- *   `< 0` = cluster (bonus for being near own colonies);
- *   `0`   = no placement preference (default).
- *   Typical values: `±1` (light), `±2` (strong).
- * @property {number} [allyBonus]
- *   Alliance proximity weight. Positive = reward regions with allied
- *   neighbours (`allyNearby / scanned` rate). Requires `ownAllyTag`
- *   passed to `findBestRegions` — otherwise `allyNearby` is always 0.
- *   Typical value: `1.5` when an ally tag is provided.
- * @property {StrategyWeights} [customWeights]
- *   When provided, REPLACES the named strategy's built-in weights.
- *   The UI writes slider values here; the strategy key then acts only
- *   as a "load preset" convenience. `length` tiebreaker (0.1) is
- *   included automatically if omitted from the custom set.
- * @property {number} [ownRank]
- *   Our own highscore rank, for the `weakerNearby` rank-relative signal.
- *   Omit (or pass 0) to neutralise that term — it then contributes nothing.
- */
-
-/**
- * Compute a single comparable score for a region under strategy + modifiers.
- * Higher = better.
- *
- * @param {Region} region
- * @param {StrategyWeights} weights
- * @param {SortOptions} [mods]
- * @returns {number}
- */
-const scoreForStrategy = (region, weights, mods = {}) => {
-  const s = region.score;
-  if (!s || !s.scanned) return (weights.length ?? 0) * (region.length / 499);
-  const n = s.scanned;
-  const rel = rankRelative(s.ranks, mods.ownRank);
-  let score = (
-    (weights.free     ?? 0) * (region.matched / Math.max(region.length, 1)) +
-    (weights.inactive ?? 0) * (s.inactive      / n) +
-    (weights.occupied ?? 0) * (s.occupied      / n) +
-    // banditTierSum / (n×3): normalised 0–1; bandit3 scores 3× bandit1
-    (weights.bandit   ?? 0) * (s.banditTierSum  / (n * 3)) +
-    (weights.honored  ?? 0) * (s.honoredTierSum / (n * 3)) +
-    // strong + active-on-vacation share one threat rate (both "live and
-    // dangerous to a fresh colony"). outlaw is a separate opportunity rate.
-    // Both are 0 unless a player cache was supplied to scoreRegion.
-    (weights.strong   ?? 0) * ((s.strong + s.activeOnVacation) / n) +
-    (weights.outlaw   ?? 0) * (s.outlaw / n) +
-    // Rank-relative safety: net (weaker − stronger) neighbours per scanned
-    // system. Rewards settling where you out-rank the locals. 0 without ownRank.
-    (weights.weakerNearby ?? 0) * ((rel.weaker - rel.stronger) / n) +
-    (weights.length   ?? 0) * (region.length / 499)
-  );
-  // Placement modifier — orthogonal to base strategy
-  const expansion = mods.expansion ?? 0;
-  if (expansion !== 0) {
-    const ef = expansionFactor(s.mineMinDist);
-    // spread (>0): bonus when far; cluster (<0): bonus when close (1-ef)
-    score += Math.abs(expansion) * (expansion > 0 ? ef : 1 - ef);
-  }
-  // Alliance proximity modifier — saturates at 3 allied neighbours so a single
-  // ally already gives a half-bonus (avoids the /scanned dilution problem).
-  const allyBonus = mods.allyBonus ?? 0;
-  if (allyBonus > 0) {
-    score += allyBonus * Math.min(1, s.allyNearby / 3);
-  }
-  return score;
-};
-
-/**
- * Re-sort an array of regions by the named strategy + orthogonal modifiers.
- * Returns a NEW array (does not mutate `regions`).
- * Unknown strategy key falls back to `'longest'`.
- *
- * @param {Region[]} regions
- * @param {string} strategyKey  Key of {@link STRATEGIES}.
- * @param {SortOptions} [opts]
- * @returns {Region[]}
- */
-export const sortRegionsByStrategy = (regions, strategyKey, opts = {}) => {
-  const strategy = STRATEGIES[strategyKey];
-  const hasModifiers = (opts.expansion ?? 0) !== 0 || (opts.allyBonus ?? 0) > 0;
-  const hasCustom = !!opts.customWeights;
-  if (!hasModifiers && !hasCustom && (!strategy || strategyKey === 'longest')) {
-    return [...regions].sort((a, b) => b.length - a.length || a.gaps - b.gaps || a.galaxy - b.galaxy);
-  }
-  // Custom weights override the preset; keep a small length tiebreaker if omitted.
-  const w = opts.customWeights
-    ? { length: 0.1, ...opts.customWeights }
-    : (strategy?.weights ?? STRATEGIES.longest.weights);
-  return [...regions].sort(
-    (a, b) => scoreForStrategy(b, w, opts) - scoreForStrategy(a, w, opts) || b.length - a.length || a.galaxy - b.galaxy,
-  );
-};
 
 /**
  * Minimum region length worth reporting. Shorter spans aren't useful as a
@@ -872,7 +683,7 @@ export const findBestRegions = (scans, opts) => {
  * adjacency be damned. This returns one scored region per matching system
  * (`length: 1`, `start === end`), with NO minimum length and NO per-galaxy
  * cap. The result is a plain `Region[]`, so it sorts and renders through the
- * exact same {@link sortRegionsByStrategy} / table code as real regions.
+ * exact same `zoneScore.annotateAndSortByZone` / table code as real regions.
  *
  * @param {GalaxyScans} scans
  * @param {Omit<FindRegionsOptions, 'maxGaps'>} opts  `positions` (required),
@@ -1195,42 +1006,4 @@ export const spaceOutCandidates = (sorted, radius, galaxyMax = 499) => {
     out.push(r);
   }
   return out;
-};
-
-/**
- * Per-system "intent heat" for the strip colouring: the active strategy weights
- * applied to ONE system's own occupants, squashed to (−1, +1). Positive (green)
- * = the area reads GOOD for this strategy (e.g. farms under Farmer); negative
- * (red) = BAD (e.g. a bandit under Peaceful); ~0 (grey) = neutral/empty. Because
- * it uses the very weights that rank the candidates, the colour story always
- * matches the user's chosen intent — tweak a slider, the map re-tints. Pure.
- *
- * @param {GalaxyScans} scans
- * @param {number} galaxy
- * @param {number} system
- * @param {StrategyWeights} weights
- * @param {{ players?: PlayerCache, ownRank?: number }} [opts]
- * @returns {number} Heat in (−1, +1). 0 for an unscanned / empty system.
- */
-export const systemIntentHeat = (scans, galaxy, system, weights, opts = {}) => {
-  const s = scoreRegion(
-    { galaxy, start: system, end: system },
-    scans,
-    { players: opts.players, mineSystemsInGalaxy: [] },
-  );
-  const w = weights;
-  const rel = rankRelative(s.ranks, opts.ownRank);
-  const raw =
-    (w.inactive ?? 0) * s.inactive +
-    (w.occupied ?? 0) * s.occupied +
-    (w.bandit ?? 0) * s.banditTierSum +
-    (w.honored ?? 0) * s.honoredTierSum +
-    (w.strong ?? 0) * (s.strong + s.activeOnVacation) +
-    (w.outlaw ?? 0) * s.outlaw +
-    // Rank-relative safety as a COUNT (composes with the others): net
-    // weaker−stronger neighbours in this system. 0 without ownRank.
-    (w.weakerNearby ?? 0) * (rel.weaker - rel.stronger);
-  // tanh squashes any magnitude into (−1, 1); /3 makes a single tier-3 threat
-  // (raw ≈ ±9 under a ±3 weight) read as a near-saturated colour.
-  return Math.tanh(raw / 3);
 };
