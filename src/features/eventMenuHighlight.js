@@ -252,7 +252,7 @@ export const installEventMenuHighlight = () => {
   }, REFRESH_DEBOUNCE_MS);
 
   const observer = createVisibilityObserver(scheduleRefresh);
-  const target = document.getElementById('menuTable') ?? document.body;
+  const target = document.querySelector(GAME.MENU_TABLE) ?? document.body;
   observer.observe(target, { childList: true, subtree: true });
 
   const unsubPoll = clock.subscribe(() => {

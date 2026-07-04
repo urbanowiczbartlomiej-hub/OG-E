@@ -12,15 +12,18 @@
 
 import { buildTargetList, sortTargetList, playerPlanets } from '../../domain/targets.js';
 import { scanStatus, rescanAtFor } from '../../domain/spyScan.js';
+import { DANGER_LABELS } from '../../domain/dangerScore.js';
 import { heatColor } from './palette.js';
 
 /**
- * @typedef {'hiddenFleet'|'military'|'totalRank'} TargetSortKey
+ * @typedef {'hiddenFleet'|'military'|'totalRank'|'ships'|'destroyed'|'danger'|'fleet'} TargetSortKey
  * @typedef {{ key: TargetSortKey, dir: 'asc'|'desc' }} TargetSort
  */
 
-/** Default sort: biggest known hidden fleet first. @type {TargetSort} */
-export const DEFAULT_TARGET_SORT = { key: 'hiddenFleet', dir: 'desc' };
+/** Default sort: most dangerous first — the free, whole-server fleet-finder
+ * ranking (works before any spy report; hidden-fleet is the spied refinement).
+ * @type {TargetSort} */
+export const DEFAULT_TARGET_SORT = { key: 'danger', dir: 'desc' };
 
 /**
  * @typedef {import('../../domain/targets.js').TargetCandidate} TargetCandidate
@@ -223,6 +226,97 @@ function militaryCell(c) {
 }
 
 /**
+ * Ship-count cell — the free mobility signal (`ships` attribute of the
+ * military feed, hourly). An explicit 0 = pure defense: this player's whole
+ * military score CANNOT fly an attack — rendered green, the single hardest
+ * "safe" fact the API gives us. '—' = player absent from the military feed.
+ * The rough resources-per-ship hint (contaminated both ways — defense inflates,
+ * probe/cargo swarms dilute) rides in the tooltip rather than its own column.
+ * @param {TargetCandidate} c
+ * @returns {HTMLTableCellElement}
+ */
+function shipsCell(c) {
+  if (typeof c.ships !== 'number') return cell('—', { align: 'right', color: '#5f6b75' });
+  const td = cell(compact(c.ships), {
+    align: 'right',
+    color: c.ships === 0 ? '#7fd6a8' : '#cfd6dd',
+  });
+  if (c.ships === 0) {
+    td.title = '0 ships — pure defense; this military score cannot attack anyone';
+  } else {
+    const rps = typeof c.militaryScore === 'number' ? Math.round((c.militaryScore * 1000) / c.ships) : null;
+    td.title = `${fmt(c.ships)} ships (military highscore, hourly)`
+      + (rps != null ? ` · ≈ ${fmt(rps)} res/ship (defense inflates, probe swarms dilute)` : '');
+  }
+  return td;
+}
+
+/**
+ * Danger cell (v2) — the free whole-server verdict: D 0–100 (green → amber →
+ * red) + the archetype label, from the danger profile (no spy needed). The
+ * headline the fleet-finder sorts by; the tooltip spells out WHY.
+ * @param {import('../../domain/dangerScore.js').DangerProfile | undefined} prof
+ * @returns {HTMLTableCellElement}
+ */
+function dangerCell(prof) {
+  if (!prof) return cell('—', { align: 'right', color: '#5f6b75' });
+  const d = Math.round(prof.danger * 100);
+  const col = d <= 15 ? '#7fd6a8' : d <= 45 ? '#e0b020' : '#e2726a';
+  const td = cell('', { align: 'right' });
+  const val = document.createElement('span');
+  val.textContent = prof.friendly ? 'friendly' : String(d);
+  val.style.color = col;
+  val.style.fontWeight = '600';
+  td.append(val);
+  // Archetype label rides alongside the number — but not for friendlies,
+  // whose value already reads "friendly" (else "friendly Friendly").
+  if (!prof.friendly) {
+    const lab = document.createElement('span');
+    lab.textContent = ` ${DANGER_LABELS[prof.label]}`;
+    lab.style.color = '#8a97a3';
+    lab.style.fontSize = '11px';
+    td.append(lab);
+  }
+  td.title = `Danger ${d}/100 — ${[DANGER_LABELS[prof.label], ...prof.reasons].filter(Boolean).join(' · ')}`;
+  return td;
+}
+
+/**
+ * Mobile-fleet cell (v2) — the ATTACK-CAPABLE military (defense excluded): the
+ * exact figure when fully spied, else the ceiling (`≤`) with the estimate in
+ * the tooltip. This is the "worth watching / worth spying" signal — a high
+ * ceiling on estimated data is a prime spy target. Sorted by that ceiling.
+ * @param {import('../../domain/dangerScore.js').DangerProfile | undefined} prof
+ * @returns {HTMLTableCellElement}
+ */
+function fleetCell(prof) {
+  if (!prof || prof.friendly) return cell('—', { align: 'right', color: '#5f6b75' });
+  if (prof.provenance === 'spied') {
+    const td = cell(compact(prof.mobileMil), { align: 'right', color: '#cfd6dd' });
+    td.title = `${fmt(prof.mobileMil)} mobile military — exact (fully spied), defense excluded`;
+    return td;
+  }
+  const td = cell(`≤ ${compact(prof.mobileHi)}`, { align: 'right', color: '#9aa6b0' });
+  td.title = `mobile-military ceiling ${fmt(prof.mobileHi)} — est. ~${fmt(prof.mobileMil)} `
+    + `(${prof.provenance === 'ships' ? 'ship-bounded' : 'no ship count'}); spy to firm up`;
+  return td;
+}
+
+/**
+ * Lifetime military-destroyed cell — the kill history only combat can move
+ * (production and expeditions never touch it). A defended bunker eating
+ * attackers scores here too, so read it with the Ships column.
+ * @param {TargetCandidate} c
+ * @returns {HTMLTableCellElement}
+ */
+function destroyedCell(c) {
+  if (typeof c.destroyedScore !== 'number') return cell('—', { align: 'right', color: '#5f6b75' });
+  const td = cell(compact(c.destroyedScore), { align: 'right', color: '#d9a441' });
+  td.title = `military destroyed ${fmt(c.destroyedScore)} — units this player destroyed in combat (lifetime)`;
+  return td;
+}
+
+/**
  * A muted points cell (defense / visible fleet), or '—' when not spied.
  * @param {number | null | undefined} pts
  * @returns {HTMLTableCellElement}
@@ -319,25 +413,38 @@ function coverageCell(spied, total) {
  * @param {boolean} open
  * @param {HTMLTableRowElement} detail
  * @param {() => void} [onToggle]
+ * @param {() => void} [onShowOnMap]  Spyglass → map spotlight (⌖).
  * @returns {HTMLTableCellElement}
  */
-function playerCell(name, open, detail, onToggle) {
+function playerCell(name, open, detail, onToggle, onShowOnMap) {
   const td = cell('');
-  td.style.cursor = 'pointer';
-  td.title = 'Show planets / scan status';
+  const nameWrap = document.createElement('span');
+  nameWrap.style.cursor = 'pointer';
+  nameWrap.title = 'Show planets / scan status';
   const tri = document.createElement('span');
   tri.textContent = open ? '▾ ' : '▸ ';
   tri.style.color = '#888';
   const label = document.createElement('span');
   label.textContent = name;
-  td.appendChild(tri);
-  td.appendChild(label);
-  td.addEventListener('click', () => {
+  nameWrap.append(tri, label);
+  nameWrap.addEventListener('click', () => {
     const nowOpen = detail.style.display === 'none';
     detail.style.display = nowOpen ? '' : 'none';
     tri.textContent = nowOpen ? '▾ ' : '▸ ';
     if (onToggle) onToggle();
   });
+  td.appendChild(nameWrap);
+  // Spyglass → map: spotlight this player's planets on the Galaxy Viewer
+  // occupancy lens. A separate control (not the name) so it never fights the
+  // expand toggle.
+  if (onShowOnMap) {
+    const mapLink = document.createElement('span');
+    mapLink.textContent = ' ⌖';
+    mapLink.style.cssText = 'cursor:pointer;color:#c07ad0;user-select:none;';
+    mapLink.title = 'Show this player’s planets on the map';
+    mapLink.addEventListener('click', (e) => { e.stopPropagation(); onShowOnMap(); });
+    td.appendChild(mapLink);
+  }
   return td;
 }
 
@@ -468,6 +575,11 @@ function detailRow({ playerId, planets, reports, rescan, nowMs, onRescan, colspa
  * @param {Set<string>} [args.expandedIds]
  * @param {(id: string) => void} [args.onToggleExpand]
  * @param {HTMLElement | null} [args.countInfoEl]
+ * @param {Map<number, import('../../domain/dangerScore.js').DangerProfile>} [args.danger]
+ *   Per-player danger profiles (v2) — the free whole-server fleet-finder
+ *   columns (Danger D + mobile-fleet ceiling) and their sort axes.
+ * @param {(playerId: string, name?: string) => void} [args.onShowOnMap]
+ *   Spyglass → map reverse deep-link (⌖ per row).
  * @returns {void}
  */
 export function renderTargets({
@@ -489,6 +601,8 @@ export function renderTargets({
   expandedIds,
   onToggleExpand,
   countInfoEl,
+  danger,
+  onShowOnMap,
 }) {
   containerEl.textContent = '';
 
@@ -518,11 +632,20 @@ export function renderTargets({
     }
   }
 
+  // Danger / mobile-fleet-ceiling per id — the free fleet-finder sort axes.
+  /** @type {Record<string, {danger:number, fleet:number}>} */
+  const dangerById = {};
+  if (danger) {
+    for (const [id, prof] of danger) {
+      dangerById[String(id)] = { danger: prof.danger, fleet: prof.mobileHi };
+    }
+  }
+
   const filtered = buildTargetList(candidates, opts);
   const scoped = watchedOnly && watchedIds
     ? filtered.filter((c) => watchedIds.has(c.id))
     : filtered;
-  const list = sortTargetList(scoped, sort.key, sort.dir, hiddenById);
+  const list = sortTargetList(scoped, sort.key, sort.dir, hiddenById, dangerById);
   const shown = limit > 0 ? list.slice(0, limit) : list;
 
   if (watchedOnly && list.length === 0) {
@@ -548,8 +671,12 @@ export function renderTargets({
   hr.appendChild(headCell('Scan'));
   hr.appendChild(headCell('#', 'right'));
   hr.appendChild(headCell('Player'));
-  hr.appendChild(headCell('Highscore', 'right', sortable('totalRank')));
+  hr.appendChild(headCell('Danger', 'right', sortable('danger')));
+  hr.appendChild(headCell('Fleet', 'right', sortable('fleet')));
   hr.appendChild(headCell('Military', 'right', sortable('military')));
+  hr.appendChild(headCell('Ships', 'right', sortable('ships')));
+  hr.appendChild(headCell('Destr', 'right', sortable('destroyed')));
+  hr.appendChild(headCell('Highscore', 'right', sortable('totalRank')));
   hr.appendChild(headCell('Defense', 'right'));
   hr.appendChild(headCell('Visible', 'right'));
   hr.appendChild(headCell('Hidden', 'right', sortable('hiddenFleet')));
@@ -558,7 +685,7 @@ export function renderTargets({
   thead.appendChild(hr);
   table.appendChild(thead);
 
-  const COLSPAN = 10;
+  const COLSPAN = 14;
   const tbody = document.createElement('tbody');
   let i = 0;
   for (const c of shown) {
@@ -595,13 +722,20 @@ export function renderTargets({
     });
 
     const tr = document.createElement('tr');
+    // Anchor for the Galaxy Viewer → Spyglass deep-link (scroll + highlight).
+    tr.dataset.playerId = c.id;
     tr.appendChild(chipCell(c.id, !!(watchedIds && watchedIds.has(c.id)), onToggleWatch, onRescan));
     tr.appendChild(cell(String(i), { align: 'right', color: '#666' }));
     tr.appendChild(playerCell(c.name || `#${c.id}`, open, detail, () => {
       if (onToggleExpand) onToggleExpand(c.id);
-    }));
-    tr.appendChild(highscoreCell(c));
+    }, onShowOnMap ? () => onShowOnMap(c.id, c.name) : undefined));
+    const prof = danger ? danger.get(Number(c.id)) : undefined;
+    tr.appendChild(dangerCell(prof));
+    tr.appendChild(fleetCell(prof));
     tr.appendChild(militaryCell(c));
+    tr.appendChild(shipsCell(c));
+    tr.appendChild(destroyedCell(c));
+    tr.appendChild(highscoreCell(c));
     tr.appendChild(pointsCell(est ? est.defensePoints : null));
     tr.appendChild(pointsCell(est ? est.visibleFleetPoints : null));
     tr.appendChild(hiddenCell(est, maxHidden));

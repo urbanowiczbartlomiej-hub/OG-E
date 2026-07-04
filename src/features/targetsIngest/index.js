@@ -13,11 +13,9 @@
 
 import { normalizeSpyReport, isEspionageReportBag } from '../../domain/espionageReport.js';
 import { recordReport } from '../../state/targets.js';
+import { GAME } from '../../lib/gameDom.js';
 
 /* global MutationObserver, document */
-
-/** Live element carrying a report's `data-raw-*` attributes. */
-const RAW_SELECTOR = '.rawMessageData';
 
 /**
  * `data-raw-defenseValue` → dataset key `rawDefenseValue`. Strip the leading
@@ -71,8 +69,8 @@ function ingest(el) {
  * @returns {void}
  */
 function sweep(root) {
-  if (root instanceof Element && root.matches(RAW_SELECTOR)) ingest(root);
-  for (const el of root.querySelectorAll(RAW_SELECTOR)) ingest(el);
+  if (root instanceof Element && root.matches(GAME.MESSAGES_RAW_DATA)) ingest(root);
+  for (const el of root.querySelectorAll(GAME.MESSAGES_RAW_DATA)) ingest(el);
 }
 
 /** @type {MutationObserver | null} */

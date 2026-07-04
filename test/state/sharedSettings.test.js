@@ -145,11 +145,19 @@ describe('mergeShared', () => {
     expect(merged.alarmClockMasterEnabled).toBe(true);
   });
 
-  it('takes cloud tokens only when a non-empty string, else local (back-fill)', () => {
+  it('takes a cloud token whenever the key is PRESENT — even empty (authoritative clear)', () => {
     const l = { cloudSync: false, gistToken: 'localG', alarmClockMasterEnabled: false, alarmClockNtfyToken: 'localN' };
-    // cloud has a real gistToken → wins; cloud's ntfy is empty → local back-fills
+    // cloud has a real gistToken → wins; cloud's ntfy is present-but-empty → an
+    // authoritative clear (dashboard "remove token"), NOT resurrected from local.
     const merged = mergeShared({ gistToken: 'cloudG', alarmClockNtfyToken: '' }, l);
     expect(merged.gistToken).toBe('cloudG');
+    expect(merged.alarmClockNtfyToken).toBe('');
+  });
+
+  it('falls back to the local token only when the cloud key is ABSENT (migration)', () => {
+    const l = { cloudSync: false, gistToken: 'localG', alarmClockMasterEnabled: false, alarmClockNtfyToken: 'localN' };
+    // No ntfy key in the cloud value at all → the un-migrated local token lifts up.
+    const merged = mergeShared({ gistToken: 'cloudG' }, l);
     expect(merged.alarmClockNtfyToken).toBe('localN');
   });
 
@@ -179,7 +187,7 @@ describe('initSharedSettings / disposeSharedSettings', () => {
       cloudSync: false,
       gistToken: 'localG',
       alarmClockMasterEnabled: false,
-      alarmClockNtfyToken: '',
+      // ntfy token is empty AND absent from raw → omitted (never seed '').
     });
   });
 

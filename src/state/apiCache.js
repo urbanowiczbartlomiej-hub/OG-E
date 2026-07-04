@@ -27,11 +27,19 @@ import { currentUniverseKey } from './universeKey.js';
 
 /**
  * @typedef {object} ApiCache
- * @property {{ planets: ApiPlanet[], timestamp?: number, fetchedAt: number }} [universe]
+ * @property {{ planets: ApiPlanet[], timestamp?: number, fetchedAt: number, regenProbeTs?: number }} [universe]
+ *   `regenProbeTs` — self-timestamp observed by a fruitless regen-due probe;
+ *   disarms the early-refetch trigger until OGame actually rolls the file.
  * @property {{ players: Record<string, ApiPlayerMeta>, timestamp?: number, fetchedAt: number }} [players]
  * @property {{ ranks: Record<string, ApiRank>, timestamp?: number, fetchedAt: number }} [total]
  * @property {{ ranks: Record<string, ApiRank>, timestamp?: number, fetchedAt: number }} [military]
  * @property {{ ranks: Record<string, ApiRank>, timestamp?: number, fetchedAt: number }} [honor]
+ * @property {{ ranks: Record<string, ApiRank>, timestamp?: number, fetchedAt: number }} [economy]
+ *   Economy highscore (type 1) — the civil baseline for the danger model.
+ * @property {{ ranks: Record<string, ApiRank>, timestamp?: number, fetchedAt: number }} [destroyed]
+ *   Military destroyed (type 5) — lifetime kill history; only combat moves it.
+ * @property {{ ranks: Record<string, ApiRank>, timestamp?: number, fetchedAt: number }} [lost]
+ *   Military lost (type 6) — war involvement / crash recency.
  * @property {{ data: ServerData, fetchedAt: number }} [server]
  */
 

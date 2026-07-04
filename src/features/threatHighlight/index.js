@@ -44,6 +44,7 @@
 import { injectStyle } from '../../lib/dom.js';
 import { clock } from '../../lib/clock.js';
 import { GAME } from '../../lib/gameDom.js';
+import { denseCoords } from '../../domain/bodies.js';
 import { settingsStore } from '../../state/settings.js';
 import { EVENT_BOX_LOADED_EVENT, THREAT_HIGHLIGHT_TEST_EVENT } from '../../lib/ogeEvents.js';
 import {
@@ -125,10 +126,6 @@ const CSS = `
  */
 let installed = null;
 
-/** `[g:s:p]`-text → dense `g:s:p` (strip spaces + brackets). */
-const denseCoords = (/** @type {string | null | undefined} */ s) =>
-  (s || '').replace(/[\s[\]]/g, '');
-
 /**
  * Install the threat highlight. Idempotent — a second call returns the existing
  * dispose fn. Top-frame only at the call site (`content.js`).
@@ -167,7 +164,7 @@ export const installThreatHighlight = () => {
       return {
         missionType: row.getAttribute('data-mission-type') || '',
         isReturn: row.getAttribute('data-return-flight') === 'true',
-        isHostile: Boolean(row.querySelector('.hostile')),
+        isHostile: Boolean(row.querySelector(GAME.ROW_HOSTILE)),
         arrivalAt: parseInt(row.getAttribute('data-arrival-time') || '', 10),
         target: dest ? `[${dest}]` : '',
       };

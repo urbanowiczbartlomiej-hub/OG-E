@@ -10,9 +10,9 @@
  * not a friendly/own movement. `1` Attack · `2` ACS attack · `9` Moon
  * destruction. Mirrors the set OGame's own top-bar `#attack_alert` flag
  * reacts to, so the event-list enrichment never disagrees with the flag by
- * counting an inbound spy probe as an attack. (Numbers match
- * `features/alarmClock/fleetSaveScan.js`'s MISSION_NAMES — reverse-engineered
- * game knowledge, duplicated locally because features never import features.)
+ * counting an inbound spy probe as an attack. (Numbers are the
+ * `data-mission-type` ids catalogued in `domain/missions.js`'s MISSION_NAMES —
+ * reverse-engineered game knowledge.)
  *
  * @type {ReadonlySet<string>}
  */

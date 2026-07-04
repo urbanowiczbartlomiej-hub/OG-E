@@ -24,6 +24,9 @@ import {
 /** @type {HTMLElement | null} */
 let bodyEl = null;
 
+/** @type {ReturnType<typeof setTimeout> | null} */
+let renderTimer = null;
+
 /**
  * Tiny element factory — keeps the render readable and uses textContent
  * throughout (never innerHTML) so a stored error string can't inject markup.
@@ -139,7 +142,9 @@ export const installSync = () => {
   bodyEl = document.getElementById('syncBody');
   void render();
   chromeStore.onChanged((changes) => {
-    if (Object.keys(changes).some((k) => k.includes(':oge_'))) void render();
+    if (!Object.keys(changes).some((k) => k.includes(':oge_'))) return;
+    if (renderTimer != null) clearTimeout(renderTimer);
+    renderTimer = setTimeout(() => { renderTimer = null; void render(); }, 300);
   });
   return { refresh: () => { void render(); } };
 };

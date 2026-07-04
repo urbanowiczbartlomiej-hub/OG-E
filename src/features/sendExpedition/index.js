@@ -1,7 +1,7 @@
 ﻿// @ts-check
 
 // Floating "Send Exp" button — orchestrator + DOM I/O. Pure helpers
-// (constants, stripBrackets, URL builder, cap checks, initial-label
+// (constants, URL builder, cap checks, initial-label
 // decision) live in `./pure.js`; this file owns the install/dispose
 // lifecycle, the click-handler state machine, the DOM readers, and
 // the bridge listener that keeps the fleetDispatcher snapshot fresh.
@@ -74,7 +74,7 @@
 import { settingsStore } from '../../state/settings.js';
 import { prepareViaRoutine, dispatchPrepared, dispatchWhenReady } from '../shared/agrRoutine.js';
 import { GAME } from '../../lib/gameDom.js';
-import { createButton as makeButton, LABEL_CLASS } from '../shared/button.js';
+import { createButton as makeButton } from '../shared/button.js';
 import { COMET_GLYPH } from '../shared/buttonGlyphs.js';
 import { OWNER_EXP } from '../../domain/fleetOwnership.js';
 import { isFleetCapReached } from '../../domain/fleetPlan.js';
@@ -184,23 +184,16 @@ export const installSendExpedition = () => {
   /** @type {import('../shared/button.js').Button | null} */
   let controller = null;
 
+  // Tracks the pending cap-label restore timer so overlapping cap
+  // transients coalesce onto one timer (the last always restores
+  // BUTTON_TEXT) instead of leaving a stale label behind.
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let capLabelTimer = null;
+
   // The eventbox-readiness gate (hold the button visibly disabled on
   // fleetdispatch until OGame's post-load eventbox XHR lands) now lives in
   // the shared Button — see `gateUntilEventBox` in the config below and
   // `features/shared/eventBoxGate.js`. Every fleet-send button shares it.
-
-  /**
-   * Read the current label. The label lives in the shared Button's
-   * `.oge-btn-label` span (not the button's textContent) so the engraved
-   * title-ring SVG sharing the host doesn't pollute it.
-   *
-   * @param {HTMLButtonElement} btn
-   * @returns {string}
-   */
-  const getLabel = (btn) =>
-    /** @type {HTMLElement | null} */ (
-      btn.querySelector('.' + LABEL_CLASS)
-    )?.textContent ?? '';
 
   /**
    * Repaint the button text into the dedicated label span (auto-creating
@@ -241,11 +234,12 @@ export const installSendExpedition = () => {
    * @param {string} label
    */
   const paintCapLabel = (btn, label) => {
-    const original = getLabel(btn);
+    if (capLabelTimer !== null) clearTimeout(capLabelTimer);
     setLabel(btn, label);
     controller?.setBg('main', BG_MAX);
-    setTimeout(() => {
-      setLabel(btn, original);
+    capLabelTimer = setTimeout(() => {
+      capLabelTimer = null;
+      setLabel(btn, BUTTON_TEXT);
       controller?.setBg('main', BG_IDLE);
     }, MAX_LABEL_MS);
   };

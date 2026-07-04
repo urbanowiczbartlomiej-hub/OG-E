@@ -26,6 +26,7 @@
 // (`g:s:p:type`) without leaning on a fragile "active body" class.
 
 import { GAME } from '../../lib/gameDom.js';
+import { denseCoords, bodyKey as toBodyKey } from '../../domain/bodies.js';
 import { injectStyle } from '../../lib/dom.js';
 import { debounce } from '../../lib/debounce.js';
 import { MANUAL_FS_CHANGED_EVENT } from '../../lib/ogeEvents.js';
@@ -86,9 +87,6 @@ const CSS = `
 #${CHIP_ID}.tile .ico svg{width:36px;height:36px;}
 `;
 
-/** @param {string|null|undefined} s @returns {string} dense `g:s:p` */
-const dense = (s) => (s || '').replace(/[\s[\]]/g, '');
-
 /** Parse a link href's `cp` query param, or '' on failure. @param {string} href */
 const cpOf = (href) => {
   try {
@@ -111,23 +109,23 @@ const cpOf = (href) => {
  */
 const currentBody = () => {
   if (!location.search.includes('component=fleetdispatch')) return null;
-  const metaCoords = dense(
+  const metaCoords = denseCoords(
     document.querySelector(GAME.META_PLANET_COORDS)?.getAttribute('content'),
   );
   if (/^\d+:\d+:\d+$/.test(metaCoords)) {
     const isMoon =
       document.querySelector(GAME.META_PLANET_TYPE)?.getAttribute('content') === 'moon';
-    return { bodyKey: `${metaCoords}:${isMoon ? 3 : 1}` };
+    return { bodyKey: toBodyKey(metaCoords, isMoon ? 3 : 1) };
   }
   const cp = new URLSearchParams(location.search).get('cp') || '';
   if (!cp) return null;
   for (const row of document.querySelectorAll(GAME.SMALL_PLANET_ONLY)) {
-    const coords = dense(row.querySelector(GAME.PLANET_KOORDS)?.textContent);
+    const coords = denseCoords(row.querySelector(GAME.PLANET_KOORDS)?.textContent);
     if (!coords) continue;
     const planet = row.querySelector(`a${GAME.PLANET_LINK}`)?.getAttribute('href') || '';
-    if (cpOf(planet) === cp) return { bodyKey: `${coords}:1` };
+    if (cpOf(planet) === cp) return { bodyKey: toBodyKey(coords, 1) };
     const moon = row.querySelector(GAME.MOON_LINK)?.getAttribute('href') || '';
-    if (cpOf(moon) === cp) return { bodyKey: `${coords}:3` };
+    if (cpOf(moon) === cp) return { bodyKey: toBodyKey(coords, 3) };
   }
   return null;
 };
@@ -211,7 +209,7 @@ let installed = null;
 export const installManualFsMark = () => {
   if (installed) return installed;
   injectStyle(STYLE_ID, CSS);
-  const debounced = debounce(sync, 150);
+  const debounced = debounce(() => { if (installed) sync(); }, 150);
   observer = new MutationObserver(debounced);
   observer.observe(document.body, { childList: true, subtree: true });
   sync();
@@ -219,6 +217,7 @@ export const installManualFsMark = () => {
     observer?.disconnect();
     observer = null;
     document.getElementById(CHIP_ID)?.remove();
+    document.getElementById(STYLE_ID)?.remove();
     installed = null;
   };
   return installed;

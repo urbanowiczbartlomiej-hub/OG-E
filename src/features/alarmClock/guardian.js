@@ -34,6 +34,7 @@
 
 import { EVENT_BOX_LOADED_EVENT, MANUAL_FS_CHANGED_EVENT } from '../../lib/ogeEvents.js';
 import { GAME } from '../../lib/gameDom.js';
+import { denseCoords } from '../../domain/bodies.js';
 import { clock } from '../../lib/clock.js';
 import { createButton, labelLines } from '../shared/button.js';
 import { installButtonChrome } from '../shared/buttonChrome.js';
@@ -98,9 +99,6 @@ let navTimer = /** @type {ReturnType<typeof setTimeout> | null} */ (null);
 const ackIntervalSec = () =>
   Math.max(60, (galaxyScanConfigStore.get().guardianAckIntervalMin || 3) * 60);
 
-/** @param {string|null|undefined} s @returns {string} dense `g:s:p` */
-const dense = (s) => (s || '').replace(/[\s[\]]/g, '');
-
 /**
  * Navigate to the bare fleet's body's FLEET-DISPATCH page (ready to re-save) via
  * the left planet list — moon vs planet picked from `type` (3 = moon, else
@@ -112,7 +110,7 @@ const dense = (s) => (s || '').replace(/[\s[\]]/g, '');
  */
 const navigateToBody = (t) => {
   for (const sp of document.querySelectorAll(GAME.SMALL_PLANET_ONLY)) {
-    if (dense(sp.querySelector(GAME.PLANET_KOORDS)?.textContent) !== t.coords) continue;
+    if (denseCoords(sp.querySelector(GAME.PLANET_KOORDS)?.textContent) !== t.coords) continue;
     const href = sp
       .querySelector(t.type === 3 ? GAME.MOON_LINK : GAME.PLANET_LINK)
       ?.getAttribute('href');
@@ -209,7 +207,7 @@ const dismissPrimary = () => {
 
 /** Active body's coords on the current page (dense `g:s:p`), or '' if unknown. */
 const currentBodyCoords = () =>
-  dense(
+  denseCoords(
     document.querySelector(GAME.ACTIVE_PLANET)?.querySelector(GAME.PLANET_KOORDS)?.textContent,
   );
 

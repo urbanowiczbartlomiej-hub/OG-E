@@ -53,6 +53,8 @@ import { GAME } from '../../lib/gameDom.js';
 import { EXPEDITION_HEART_URI } from '../../lib/markerIcons.js';
 import { EVENT_BOX_LOADED_EVENT } from '../../lib/ogeEvents.js';
 import { clock } from '../../lib/clock.js';
+import { denseCoords } from '../../domain/bodies.js';
+import { shipCountFromText } from '../../domain/fleetSave.js';
 import { groupMarkers, bodyKey, MARKER_LABEL } from './pure.js';
 
 // ── OG-E-owned ids/classes (NOT a DOM contract — ours to rename freely) ──
@@ -77,15 +79,6 @@ const REFRESH_DEBOUNCE_MS = 200;
 const CACHE_GRACE_MS = 5 * 60 * 1000;
 
 // ── DOM read helpers (feature layer — pure.js stays DOM-free) ─────────────
-
-/** @param {string | null | undefined} s @returns {string} dense `g:s:p`. */
-const denseCoords = (s) => (s || '').replace(/[\s[\]]/g, '');
-
-/** @param {string | null | undefined} text @returns {number} ships, or NaN. */
-const shipCountOf = (text) => {
-  const digits = (text || '').replace(/\D/g, '');
-  return digits ? Number.parseInt(digits, 10) : NaN;
-};
 
 /**
  * Body type of an event-row origin/dest cell: a moon carries `figure.moon`,
@@ -117,7 +110,7 @@ const scanLegs = () => {
       id: /** @type {HTMLElement} */ (row).id || '',
       missionType,
       isReturn: row.getAttribute('data-return-flight') === 'true',
-      isHostile: Boolean(row.querySelector('.hostile')),
+      isHostile: Boolean(row.querySelector(GAME.ROW_HOSTILE)),
       origin: {
         coords: denseCoords(row.querySelector(GAME.COORDS_ORIGIN)?.textContent),
         type: figureType(row.querySelector(GAME.ORIGIN_FLEET)),
@@ -127,7 +120,7 @@ const scanLegs = () => {
         type: figureType(row.querySelector(GAME.DEST_FLEET)),
       },
       arrivalAt: arrivalAttr ? Number.parseInt(arrivalAttr, 10) : NaN,
-      shipCount: shipCountOf(row.querySelector(GAME.DETAILS_FLEET)?.textContent),
+      shipCount: shipCountFromText(row.querySelector(GAME.DETAILS_FLEET)?.textContent),
     });
   }
   return legs;
@@ -482,7 +475,7 @@ const ensureHelpChip = () => {
  */
 const positionHelpChip = () => {
   if (!helpEl) return;
-  const list = document.getElementById('planetList');
+  const list = document.querySelector(GAME.PLANET_LIST);
   const r = list?.getBoundingClientRect();
   if (!r || (r.width === 0 && r.height === 0)) { helpEl.style.display = 'none'; return; }
   // Anchor to the list's top-RIGHT corner in DOCUMENT coords (rect is viewport →
@@ -711,7 +704,7 @@ let installed = null;
  * @returns {void}
  */
 const attachObserver = (observer) => {
-  const planetList = document.getElementById('planetList');
+  const planetList = document.querySelector(GAME.PLANET_LIST);
   const eventContent = document.querySelector(GAME.EVENT_CONTENT);
   if (planetList) observer.observe(planetList, { childList: true, subtree: true });
   if (eventContent) observer.observe(eventContent, { childList: true, subtree: true });

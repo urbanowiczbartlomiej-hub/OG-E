@@ -46,13 +46,16 @@ import { chromeStore, safeLS } from '../../lib/storage.js';
 import { debounce } from '../../lib/debounce.js';
 import { parseTargetPositions } from '../../domain/histogram.js';
 import { populatePositionFilter, renderColonyChart } from './colony.js';
-import { renderFreeRegions, renderServerMap, selectCandidate } from './freeStreak.js';
+import { renderFreeRegions, renderServerMap, selectCandidate, resetFreeSelection, highlightPin, _resetFreeStreakForTest } from './freeStreak.js';
+import { chipValue, setChipValue, wireChips, setChipsEnabled } from './chips.js';
 import { renderTargets, DEFAULT_TARGET_SORT } from './targets.js';
 import { buildThreatFarmField } from '../../domain/heatField.js';
 import { ZONES } from '../../domain/zoneScore.js';
 import { buildOccupancyIndex, buildScanMapFromIndex } from '../../domain/apiOccupancy.js';
 import { buildTargetCandidates } from '../../domain/targets.js';
+import { buildDangerProfiles } from '../../domain/dangerScore.js';
 import { estimateHiddenFleet } from '../../domain/threatModel.js';
+import { normalizeReportTimestamps } from '../../domain/espionageReport.js';
 import { readApiCacheFor, apiCacheKeyFor } from '../../state/apiCache.js';
 import { targetReportsKeyFor } from '../../state/targets.js';
 import { watchListKeyFor, normalizeWatchList, DEFAULT_SPY_PROBES } from '../../state/watchList.js';
@@ -131,6 +134,15 @@ let rescanMap = {};
  * @type {Set<string>}
  */
 const expandedTargets = new Set();
+
+/**
+ * Player id (string) to scroll to + highlight on the next Targets repaint,
+ * then cleared — set when a Galaxy Viewer "Top threats" row deep-links into
+ * Spyglass. The highlight class lives on the freshly-rendered row and clears
+ * itself on the following repaint (rows are rebuilt wholesale).
+ * @type {string | null}
+ */
+let focusedTargetId = null;
 
 // localStorage key for the active dashboard tab. Per-device UI prefs.
 // Possible values are the `data-tab` attributes from dashboard.html:
@@ -264,6 +276,16 @@ let players = {};
  */
 let ownProfile = {};
 
+/**
+ * Per-player danger profiles (v2) for the selected universe — the threat
+ * substrate the Galaxy Viewer field + occupancy map read. Rebuilt in
+ * `loadAll` from the API feeds (military+ships, destroyed, honour, alliance,
+ * planet dispersion) + the live player-flag cache. Empty until a universe
+ * with API data loads.
+ * @type {Map<number, import('../../domain/dangerScore.js').DangerProfile>}
+ */
+let dangerProfiles = new Map();
+
 // ── DOM refs (filled by wireDom) ───────────────────────────────────────
 
 /** @type {HTMLElement} */ let statsEl;
@@ -273,17 +295,20 @@ let ownProfile = {};
 /** @type {HTMLSelectElement} */ let universeSelect;
 /** @type {HTMLElement | null} */ let importStatusEl;
 /** @type {HTMLInputElement} */ let freePosInput;
-/** @type {HTMLSelectElement} */ let freeGapsSelect;
-/** @type {HTMLSelectElement} */ let freeZoneSelect;
-/** @type {HTMLSelectElement} */ let freeFindSelect;
+// Chip groups (see ./chips.js) — the containers replacing the old <select>s;
+// their data-value carries the control value.
+/** @type {HTMLElement | null} */ let freeGapsChips;
+/** @type {HTMLElement | null} */ let freeZoneChips;
+/** @type {HTMLElement | null} */ let freeFindChips;
 /** @type {HTMLElement | null} */ let freeZoneHint;
 /** @type {HTMLElement | null} */ let scoutDataStamp;
-/** @type {HTMLSelectElement} */ let freeExcludeN;
-/** @type {HTMLElement | null} */ let streakOnlyControls;
-/** @type {HTMLElement | null} */ let nbrOnlyControls;
+/** @type {HTMLElement | null} */ let freeExcludeChips;
+/** @type {HTMLElement | null} */ let freeSlotsNote;
+/** @type {HTMLElement | null} */ let freeGapsNote;
+/** @type {HTMLElement | null} */ let freeExcludeNote;
 /** @type {HTMLElement} */ let freeContainer;
 /** @type {HTMLElement | null} */ let serverMapHost;
-/** @type {HTMLSelectElement | null} */ let serverMapView;
+/** @type {HTMLElement | null} */ let serverMapViewChips;
 /** @type {HTMLInputElement | null} */ let serverMapWindow;
 /** @type {HTMLElement | null} */ let serverMapWindowV;
 /** @type {HTMLInputElement | null} */ let serverMapFarm;
@@ -301,6 +326,9 @@ let ownProfile = {};
 /** @type {HTMLInputElement | null} */ let tgtInclBanned;
 /** @type {HTMLElement | null} */ let tgtCountInfoEl;
 
+/** Guards {@link installDashboard} against a double-install. */
+let installed = false;
+
 /**
  * Bootstrap the dashboard page. Safe to call multiple times but
  * there's no reason to — the HTML entry invokes this exactly once.
@@ -310,6 +338,8 @@ let ownProfile = {};
  * @returns {void}
  */
 export const installDashboard = () => {
+  if (installed) return;
+  installed = true;
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => { void boot(); });
   } else {
@@ -377,34 +407,25 @@ const boot = async () => {
   const legacy = LEGACY_STRATEGY_MAP[scoutPrefs.strategy] ?? {};
   const zonePref = scoutPrefs.zone ?? legacy.zone;
   const findPref = scoutPrefs.find ?? legacy.find;
-  if (zonePref && freeZoneSelect.querySelector(`[value="${zonePref}"]`)) {
-    freeZoneSelect.value = zonePref;
-  }
-  if (findPref && freeFindSelect.querySelector(`[value="${findPref}"]`)) {
-    freeFindSelect.value = findPref;
-  }
-  if (scoutPrefs.excludeN !== undefined
-    && freeExcludeN?.querySelector(`[value="${String(scoutPrefs.excludeN)}"]`)) {
-    freeExcludeN.value = String(scoutPrefs.excludeN);
-  }
+  // setChipValue rejects values no chip carries — the same guard the old
+  // `querySelector('[value=…]')` checks gave the selects.
+  if (zonePref) setChipValue(freeZoneChips, zonePref);
+  if (findPref) setChipValue(freeFindChips, findPref);
+  if (scoutPrefs.excludeN !== undefined) setChipValue(freeExcludeChips, String(scoutPrefs.excludeN));
   if (typeof scoutPrefs.slots === 'string' && scoutPrefs.slots.trim()) {
     freePosInput.value = scoutPrefs.slots;
   }
-  if (scoutPrefs.gaps !== undefined
-    && freeGapsSelect.querySelector(`[value="${String(scoutPrefs.gaps)}"]`)) {
-    freeGapsSelect.value = String(scoutPrefs.gaps);
-  }
+  if (scoutPrefs.gaps !== undefined) setChipValue(freeGapsChips, String(scoutPrefs.gaps));
   if (scoutPrefs.window !== undefined && serverMapWindow) {
     serverMapWindow.value = String(scoutPrefs.window);
-    if (serverMapWindowV) serverMapWindowV.textContent = String(scoutPrefs.window);
+    if (serverMapWindowV) serverMapWindowV.textContent = `${scoutPrefs.window} h`;
   }
   if (scoutPrefs.farmReach !== undefined && serverMapFarm) {
     serverMapFarm.value = String(scoutPrefs.farmReach);
-    if (serverMapFarmV) serverMapFarmV.textContent = String(scoutPrefs.farmReach);
+    if (serverMapFarmV) serverMapFarmV.textContent = `${scoutPrefs.farmReach} sys`;
   }
-  if (scoutPrefs.view && serverMapView?.querySelector(`[value="${scoutPrefs.view}"]`)) {
-    serverMapView.value = scoutPrefs.view;
-  }
+  if (scoutPrefs.view) setChipValue(serverMapViewChips, String(scoutPrefs.view));
+  validateSlots();
   updateModeControls();
   // The first renderAll above painted with the DOM defaults — repaint so the
   // restored zone/find/slots/window/farm actually drive the first ranking
@@ -560,17 +581,18 @@ const wireDom = () => {
   universeSelect = /** @type {HTMLSelectElement} */ (document.getElementById('universeSelect'));
   importStatusEl = document.getElementById('importStatus');
   freePosInput = /** @type {HTMLInputElement} */ (document.getElementById('freePosInput'));
-  freeGapsSelect = /** @type {HTMLSelectElement} */ (document.getElementById('freeGapsSelect'));
-  freeZoneSelect = /** @type {HTMLSelectElement} */ (document.getElementById('freeZoneSelect'));
-  freeFindSelect = /** @type {HTMLSelectElement} */ (document.getElementById('freeFindSelect'));
+  freeGapsChips = document.getElementById('freeGapsChips');
+  freeZoneChips = document.getElementById('freeZoneChips');
+  freeFindChips = document.getElementById('freeFindChips');
   freeZoneHint = document.getElementById('freeZoneHint');
   scoutDataStamp = document.getElementById('scoutDataStamp');
-  freeExcludeN = /** @type {HTMLSelectElement} */ (document.getElementById('freeExcludeN'));
-  streakOnlyControls = document.getElementById('streakOnlyControls');
-  nbrOnlyControls = document.getElementById('nbrOnlyControls');
+  freeExcludeChips = document.getElementById('freeExcludeChips');
+  freeSlotsNote = document.getElementById('freeSlotsNote');
+  freeGapsNote = document.getElementById('freeGapsNote');
+  freeExcludeNote = document.getElementById('freeExcludeNote');
   freeContainer = /** @type {HTMLElement} */ (document.getElementById('freeContainer'));
   serverMapHost = document.getElementById('serverMapHost');
-  serverMapView = /** @type {HTMLSelectElement | null} */ (document.getElementById('serverMapView'));
+  serverMapViewChips = document.getElementById('serverMapViewChips');
   serverMapWindow = /** @type {HTMLInputElement | null} */ (document.getElementById('serverMapWindow'));
   serverMapWindowV = document.getElementById('serverMapWindowV');
   serverMapFarm = /** @type {HTMLInputElement | null} */ (document.getElementById('serverMapFarm'));
@@ -711,18 +733,23 @@ const wireColonySubtabs = () => {
 const loadWatched = async () => {
   watchedPlayers.clear();
   if (!selectedUniverseId) return;
-  let raw = await chromeStore.get(watchListKeyFor(selectedUniverseId));
+  // Snapshot the universe: this async load can be interleaved with a universe
+  // switch, and we must key every read/write to the universe we started with
+  // (and bail before mutating shared state if it changed underneath us).
+  const uni = selectedUniverseId;
+  let raw = await chromeStore.get(watchListKeyFor(uni));
   // One-time migration: M4 stored a bare watch-list array in localStorage
   // (per-origin, invisible in-game). If chrome.storage is empty but the legacy
   // key has data, adopt it and write the normalised config through.
   if (raw == null) {
-    const legacy = safeLS.json(legacyWatchedKeyFor(selectedUniverseId), null);
+    const legacy = safeLS.json(legacyWatchedKeyFor(uni), null);
     if (Array.isArray(legacy) && legacy.length) {
       raw = normalizeWatchList(legacy);
-      await chromeStore.set(watchListKeyFor(selectedUniverseId), raw);
+      await chromeStore.set(watchListKeyFor(uni), raw);
     }
   }
   const cfg = normalizeWatchList(raw);
+  if (uni !== selectedUniverseId) return;
   for (const id of cfg.players) watchedPlayers.add(id);
   rescanMap = cfg.rescan;
   // chrome.storage is authoritative for the probe count (the FAB reads it too).
@@ -796,6 +823,7 @@ const loadAll = async () => {
     targetCandidates = [];
     targetReports = {};
     planetCountByPlayer = {};
+    dangerProfiles = new Map();
     return;
   }
   const [h, s, p, op, api, tr] = await Promise.all([
@@ -849,10 +877,13 @@ const loadAll = async () => {
     players: apiCache.players ? apiCache.players.players : undefined,
     total: apiCache.total ? apiCache.total.ranks : undefined,
     military: apiCache.military ? apiCache.military.ranks : undefined,
+    destroyed: apiCache.destroyed ? apiCache.destroyed.ranks : undefined,
   });
 
+  // Unit repair (same as the store's hydrate path): reports persisted before
+  // the timestamp fix carry ms values that read as perpetually fresh.
   targetReports = tr && typeof tr === 'object'
-    ? /** @type {import('../../state/targets.js').TargetReports} */ (tr)
+    ? normalizeReportTimestamps(/** @type {import('../../state/targets.js').TargetReports} */ (tr))
     : {};
   // Coverage denominator: count each player's planets in the universe.xml
   // snapshot (planets only — moons are <moon> children we don't parse).
@@ -866,6 +897,48 @@ const loadAll = async () => {
     }
   }
   planetCountByPlayer = counts;
+
+  // Per-player danger profiles (v2) — the threat substrate for the Galaxy
+  // Viewer field + occupancy map. Built from the API feeds (ships/destroyed/
+  // honour/alliance/dispersion) + the live flag cache; the own-alliance test
+  // reads our own players.xml row.
+  const ownId = ownProfile.id != null ? String(ownProfile.id) : undefined;
+  const apiPlayersMap = apiCache.players ? apiCache.players.players : undefined;
+  const militaryRanks = apiCache.military ? apiCache.military.ranks : undefined;
+  // Spy refinement (E4): per player, the defence we've seen + whether coverage
+  // is complete — fully spied collapses the fleet bound to military − defence
+  // EXACTLY, partial coverage just tightens the upper bound.
+  /** @type {Record<string, {defensePts:number, coverageComplete:boolean, spiedCount:number, planetCount?:number}>} */
+  const spiedByPlayer = {};
+  for (const pid of Object.keys(targetReports)) {
+    const bucket = targetReports[pid];
+    const reports = bucket ? Object.values(bucket) : [];
+    if (!reports.length) continue;
+    const est = estimateHiddenFleet({
+      militaryPoints: militaryRanks && militaryRanks[pid] ? militaryRanks[pid].score : undefined,
+      reports,
+      planetCount: planetCountByPlayer[pid],
+    });
+    spiedByPlayer[pid] = {
+      defensePts: est.defensePoints,
+      coverageComplete: est.coverageComplete,
+      spiedCount: est.spiedCount,
+      planetCount: est.planetCount,
+    };
+  }
+  dangerProfiles = buildDangerProfiles({
+    military: militaryRanks,
+    destroyed: apiCache.destroyed ? apiCache.destroyed.ranks : undefined,
+    honor: apiCache.honor ? apiCache.honor.ranks : undefined,
+    honorTotal: apiCache.honor ? Object.keys(apiCache.honor.ranks).length : 0,
+    apiPlayers: apiPlayersMap,
+    players,
+    universePlanets: uniPlanets,
+    spied: spiedByPlayer,
+    ownMilitary,
+    ownId,
+    ownAlliance: ownId && apiPlayersMap ? apiPlayersMap[ownId]?.alliance : undefined,
+  });
 };
 
 /**
@@ -1009,7 +1082,67 @@ const repaintTargets = () => {
       else expandedTargets.add(id);
     },
     countInfoEl: tgtCountInfoEl,
+    // The free whole-server fleet-finder columns/sorts (Danger D + mobile
+    // fleet ceiling) — computed from the API feeds, no spy needed.
+    danger: dangerProfiles,
+    // Spyglass → map reverse deep-link: spotlight this player's planets on the
+    // Galaxy Viewer occupancy lens.
+    onShowOnMap: showPlayerOnMap,
   });
+
+  // Deep-link focus: scroll to + highlight the player a Galaxy Viewer "Top
+  // threats" row asked for. The row was just rendered; the highlight class
+  // clears on the next repaint (rows rebuild wholesale). No-op when the player
+  // is filtered out of the current Targets view.
+  if (focusedTargetId != null) {
+    const row = targetsContainer?.querySelector(`tr[data-player-id="${focusedTargetId}"]`);
+    if (row) {
+      row.classList.add('target-focus');
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    focusedTargetId = null;
+  }
+};
+
+/**
+ * Open the Spyglass tab, optionally focused on one player: expand that player's
+ * detail row and scroll/highlight it on the repaint. Wired to the Galaxy
+ * Viewer "Top threats" panel (row click → this player; panel link → no id).
+ * @param {number} [playerId]
+ * @returns {void}
+ */
+const openSpyglassFor = (playerId) => {
+  setActiveTab('spyglass');
+  if (playerId != null) {
+    focusedTargetId = String(playerId);
+    expandedTargets.add(String(playerId));
+    repaintTargets();
+  }
+};
+
+/**
+ * Spyglass → map reverse deep-link: jump to the Galaxy Viewer occupancy lens
+ * with this player's planets spotlighted. Switches the top tab + the
+ * Colonizations sub-tab, forces the occupancy view (the only lens that shows
+ * individual planets), then repaints. The highlight is transient (not
+ * persisted) — cleared by the map banner or by picking another player.
+ * @param {string|number} playerId
+ * @param {string} [name]
+ * @returns {void}
+ */
+const showPlayerOnMap = (playerId, name) => {
+  mapHighlight = { id: Number(playerId), name: name || `player ${playerId}` };
+  setActiveTab('colony');
+  for (const b of document.querySelectorAll('#colonySubtabs .subtab')) {
+    b.classList.toggle('active', /** @type {HTMLElement} */ (b).dataset.subtab === 'scout');
+  }
+  for (const pane of document.querySelectorAll('#colonySection .subtabpane')) {
+    pane.classList.toggle('active', /** @type {HTMLElement} */ (pane).dataset.subtab === 'scout');
+  }
+  safeLS.set(COLONY_SUBTAB_LS_KEY, 'scout');
+  // The spotlight only renders on the occupancy lens (individual planets).
+  setChipValue(serverMapViewChips, 'occupancy');
+  repaintFreeRegions();
 };
 
 /**
@@ -1061,7 +1194,7 @@ const saveTargetPrefs = () => {
 const loadTargetPrefs = () => {
   const p = /** @type {any} */ (safeLS.json(TARGET_PREFS_KEY, {}));
   const sort = p.sort || p; // pre-redesign prefs stored the flat sort directly.
-  if (sort && (sort.key === 'hiddenFleet' || sort.key === 'military' || sort.key === 'totalRank')) {
+  if (sort && ['hiddenFleet', 'military', 'totalRank', 'ships', 'destroyed', 'danger', 'fleet'].includes(sort.key)) {
     targetSort = { key: sort.key, dir: sort.dir === 'asc' ? 'asc' : 'desc' };
   }
   if (p.minMilitary != null && tgtMinMilitary) tgtMinMilitary.value = String(p.minMilitary);
@@ -1089,21 +1222,43 @@ const freeRegionPositions = () => {
 };
 
 /**
- * Show the control set that matches the Find shape: Longest streaks hunts a
- * free-slot run (Tolerance applies), Best spots analyses the area around each
- * free-slot system (Ignore worst applies). Ignore worst also hides under the
- * PvP zone — there exclusion is conceptually wrong (those players are the
- * point). Idempotent; safe before the refs exist (tests).
+ * Inline validity feedback for the Slots input. The fallback in
+ * {@link freeRegionPositions} is silent by design (the analysis must always
+ * run against SOMETHING) — but without this marker a typo like "16" kept
+ * showing the user's text while every result quietly described slot 15.
+ * Idempotent; safe before the refs exist (tests).
+ *
+ * @returns {void}
+ */
+const validateSlots = () => {
+  if (!freePosInput) return;
+  const raw = freePosInput.value.trim();
+  const list = [...parseTargetPositions(raw)].filter((p) => p >= 1 && p <= 15);
+  const invalid = raw !== '' && list.length === 0;
+  freePosInput.classList.toggle('invalid', invalid);
+  if (freeSlotsNote) freeSlotsNote.textContent = invalid ? 'invalid — using slot 15' : '';
+};
+
+/**
+ * Match the mode-dependent controls to the Find shape: Longest streaks hunts
+ * a free-slot run (Tolerance applies), Best spots analyses the area around
+ * each free-slot system (Ignore worst applies). Ignore worst is also off
+ * under the PvP zone — there exclusion is conceptually wrong (those players
+ * are the point). The inapplicable group stays IN PLACE, greyed out with the
+ * reason beside it — controls that vanish shift the row and hide the "why".
+ * Idempotent; safe before the refs exist (tests).
  */
 const updateModeControls = () => {
-  const streaks = (freeFindSelect?.value || 'spots') === 'streaks';
-  const pvp = (freeZoneSelect?.value || 'safe') === 'pvp';
-  if (streakOnlyControls) streakOnlyControls.style.display = streaks ? '' : 'none';
-  if (nbrOnlyControls) nbrOnlyControls.style.display = streaks || pvp ? 'none' : '';
-  // One line under the controls explaining what the active zone optimises —
-  // the hint text lives with the zone definitions in domain/zoneScore.js.
+  const streaks = chipValue(freeFindChips) === 'streaks';
+  const pvp = chipValue(freeZoneChips) === 'pvp';
+  setChipsEnabled(freeGapsChips, streaks, freeGapsNote, 'streaks only');
+  setChipsEnabled(freeExcludeChips, !streaks && !pvp, freeExcludeNote,
+    streaks ? 'spots only' : 'not applied in the PvP zone');
+  // One line under the Zone/Find chips explaining what the active zone
+  // optimises — the hint text lives with the zone definitions in
+  // domain/zoneScore.js.
   if (freeZoneHint) {
-    freeZoneHint.textContent = ZONES[freeZoneSelect?.value || 'safe']?.hint ?? '';
+    freeZoneHint.textContent = ZONES[chipValue(freeZoneChips) || 'safe']?.hint ?? '';
   }
 };
 
@@ -1154,7 +1309,7 @@ const buildComposite = (positions) => {
  * (zone, find, slots when the composite is cached) shouldn't pay it again.
  * Keyed by composite identity + the physical knobs + the threat anchor.
  *
- * @type {{composite: unknown, windowH: number, farmReach: number, ownMilitary: number | undefined, value: import('../../domain/heatField.js').ThreatFarmField} | null}
+ * @type {{composite: unknown, windowH: number, farmReach: number, ownMilitary: number | undefined, danger: unknown, value: import('../../domain/heatField.js').ThreatFarmField} | null}
  */
 let scoreFieldCache = null;
 
@@ -1174,7 +1329,8 @@ const buildScoreField = (composite) => {
     && scoreFieldCache.composite === composite
     && scoreFieldCache.windowH === windowH
     && scoreFieldCache.farmReach === farmReach
-    && scoreFieldCache.ownMilitary === ownMilitary) {
+    && scoreFieldCache.ownMilitary === ownMilitary
+    && scoreFieldCache.danger === dangerProfiles) {
     return scoreFieldCache.value;
   }
   const value = buildThreatFarmField(composite, {
@@ -1182,8 +1338,8 @@ const buildScoreField = (composite) => {
     systems: apiBounds.systems,
     donutGalaxy: apiBounds.donutGalaxy,
     donutSystem: apiBounds.donutSystem,
-  }, { ownMilitary, cols: apiBounds.systems, window: windowH, farmReach });
-  scoreFieldCache = { composite, windowH, farmReach, ownMilitary, value };
+  }, { ownMilitary, danger: dangerProfiles, cols: apiBounds.systems, window: windowH, farmReach });
+  scoreFieldCache = { composite, windowH, farmReach, ownMilitary, danger: dangerProfiles, value };
   return value;
 };
 
@@ -1193,9 +1349,25 @@ const buildScoreField = (composite) => {
  * pins, host width). A zone switch re-sorts the list but must not rebuild
  * the 9×N map DOM.
  *
- * @type {{field: unknown, composite: unknown, view: string, candKey: string, width: number} | null}
+ * @type {{field: unknown, composite: unknown, view: string, candKey: string, width: number, hi: number} | null}
  */
 let lastMapPaint = null;
+
+/**
+ * Index of the currently-selected candidate row (−1 = none) — mirrored onto
+ * the map as the highlighted pin, so the row↔pin link reads in BOTH
+ * directions (pin click selects the row; row click lights the pin). Re-applied
+ * after every map repaint (the pin DOM is rebuilt wholesale).
+ */
+let scoutSelectedPin = -1;
+
+/**
+ * Player whose planets the occupancy map is spotlighting (Spyglass → map
+ * reverse deep-link), or null. Set by {@link showPlayerOnMap}; cleared by the
+ * map banner's "clear" action.
+ * @type {{ id: number, name: string } | null}
+ */
+let mapHighlight = null;
 
 /** Repaint ONLY the analyzer block from current controls. */
 const repaintFreeRegions = () => {
@@ -1209,16 +1381,35 @@ const repaintFreeRegions = () => {
   if (scoutDataStamp) {
     const ts = apiCache.universe?.timestamp;
     if (typeof ts === 'number' && ts > 0) {
-      const days = Math.max(0, Math.floor((Date.now() - ts) / 86_400_000));
+      const now = Date.now();
+      const days = Math.max(0, Math.floor((now - ts) / 86_400_000));
       const age = days === 0 ? 'from today' : days === 1 ? '1 day old' : `${days} days old`;
+      // TWO clocks, because they answer different questions: the snapshot age
+      // is OGame's regeneration time (the file's own timestamp — how old the
+      // occupancy truth is), "checked" is OUR last download (is the extension
+      // still refreshing?). Showing only one made "10 days old" unexplainable.
+      const fAt = apiCache.universe?.fetchedAt;
+      const checkedH = typeof fAt === 'number' ? Math.max(0, (now - fAt) / 3_600_000) : null;
+      const checked = checkedH == null ? ''
+        : checkedH < 1 ? ' · checked <1 h ago'
+          : checkedH < 48 ? ` · checked ${Math.round(checkedH)} h ago`
+            : ` · checked ${Math.round(checkedH / 24)} d ago`;
       // `> 0` — classifyCell only applies the anchor for a positive score, so
-      // a fresh account listed with military 0 is NOT calibrated either.
-      scoutDataStamp.textContent = `Occupancy data: ${age}`
-        + (typeof ownMilitary === 'number' && ownMilitary > 0
-          ? ' · threat calibrated to your fleet'
-          : ' · threat NOT calibrated — open the game once in this universe to anchor it to your fleet');
+      // a fresh account listed with military 0 is NOT calibrated either. The
+      // anchor is our military-highscore POINTS (fleet + defence) — say so;
+      // the old "calibrated to your fleet" overpromised.
+      const calibrated = typeof ownMilitary === 'number' && ownMilitary > 0;
+      scoutDataStamp.textContent = `Server snapshot: ${age}${checked}`
+        + (calibrated
+          ? ' · threat anchored to your military points (fleet + defence)'
+          : ' · threat NOT calibrated — open the game once in this universe to anchor it');
+      // Uncalibrated / stale states CHANGE what every Fit number means — they
+      // read as a visible warning chip, not near-invisible grey micro-copy
+      // (universe.xml regenerates weekly, hence the 7-day staleness bar).
+      scoutDataStamp.classList.toggle('warn', !calibrated || days > 7);
     } else {
       scoutDataStamp.textContent = '';
+      scoutDataStamp.classList.remove('warn');
     }
   }
   // Game origin for the popovers' "Open in game" links + the occupancy lens's
@@ -1234,45 +1425,68 @@ const repaintFreeRegions = () => {
     countInfoEl: freeCountInfoEl,
     scans: composite,
     positions,
-    maxGaps: parseInt(freeGapsSelect.value, 10) || 0,
-    zone: freeZoneSelect.value || 'safe',
-    find: freeFindSelect.value || 'spots',
-    // The Ignore-worst control is hidden under the PvP zone (those players are
-    // the point there) — force the exclusion off too, or a value saved under
-    // Safe zone would silently censor the PvP target census.
-    excludeN: (freeZoneSelect.value || 'safe') === 'pvp' ? 0 : (parseInt(freeExcludeN?.value, 10) || 0),
+    maxGaps: parseInt(chipValue(freeGapsChips), 10) || 0,
+    zone: chipValue(freeZoneChips) || 'safe',
+    find: chipValue(freeFindChips) || 'spots',
+    // The Ignore-worst chips are disabled under the PvP zone (those players
+    // are the point there) — force the exclusion off too, or a value saved
+    // under Safe zone would silently censor the PvP target census.
+    excludeN: (chipValue(freeZoneChips) || 'safe') === 'pvp' ? 0 : (parseInt(chipValue(freeExcludeChips), 10) || 0),
     field,
     galaxyMax: apiBounds.systems,
     linkBase,
     ownMilitary,
     players,
+    danger: dangerProfiles,
+    // Players we hold at least one spy report for — the Top-threats panel's
+    // coverage readout (which of the window's actives we have intel on).
+    spied: new Set(
+      Object.keys(targetReports)
+        .filter((id) => targetReports[id] && Object.keys(targetReports[id]).length)
+        .map(Number),
+    ),
+    onOpenSpyglass: openSpyglassFor,
     ownRank: ownProfile.rank,
+    onSelect: (i) => {
+      scoutSelectedPin = i;
+      highlightPin(serverMapHost, i);
+    },
   });
   if (serverMapHost) {
-    const view = serverMapView?.value || 'field';
+    const view = chipValue(serverMapViewChips) || 'field';
     const width = serverMapHost.clientWidth || 0;
     // Hidden pane (tab/sub-tab not showing) → width 0 → both renderers would
     // lay out against a 700px guess; the occupancy canvas then maps hover and
-    // deep-link clicks to the WRONG systems once stretched to the real width.
+    // pin clicks to the WRONG systems once stretched to the real width.
     // Skip and drop the memo instead — the tab/sub-tab click handlers repaint
     // as soon as the host is measurable.
     if (width === 0) {
       lastMapPaint = null;
       return;
     }
-    const pins = view === 'field' ? shown : [];
+    // Candidate pins overlay BOTH views (they share the pin grammar).
+    const pins = shown;
     // Occupancy ignores the field, so its identity must not force a canvas
-    // rebuild on every Offline/Farm drag tick there. Pin key includes the fit
-    // (tooltips bake it in) so a re-annotation with unchanged order repaints.
+    // rebuild on every Offline/Farm drag tick there — its pin key also skips
+    // the fit number (a drag re-annotates fit every frame; repainting the
+    // ~67k-cell canvas per tick for a tooltip digit isn't worth it). The
+    // field view is DOM-cheap and keeps fit in the key so pin tooltips track
+    // a re-annotation with unchanged order exactly.
     const fieldKey = view === 'field' ? field : null;
-    const candKey = pins.map((r) => `${r.galaxy}:${r.center ?? r.start}:${Math.round((r.fit ?? 0) * 100)}`).join(',');
+    const candKey = pins.map((r) => `${r.galaxy}:${r.center ?? r.start}`
+      + (view === 'field' ? `:${Math.round((r.fit ?? 0) * 100)}` : '')).join(',');
+    // Spotlight is occupancy-only; a field-view paint ignores it, so key it as
+    // -1 there to avoid a needless occupancy→field rebuild when only the
+    // highlight changed.
+    const hiKey = view === 'occupancy' && mapHighlight ? mapHighlight.id : -1;
     if (!lastMapPaint
       || lastMapPaint.field !== fieldKey
       || lastMapPaint.composite !== composite
       || lastMapPaint.view !== view
       || lastMapPaint.candKey !== candKey
-      || lastMapPaint.width !== width) {
-      lastMapPaint = { field: fieldKey, composite, view, candKey, width };
+      || lastMapPaint.width !== width
+      || lastMapPaint.hi !== hiKey) {
+      lastMapPaint = { field: fieldKey, composite, view, candKey, width, hi: hiKey };
       renderServerMap({
         hostEl: serverMapHost,
         scans: composite,
@@ -1285,16 +1499,26 @@ const repaintFreeRegions = () => {
         farmReach: parseInt(serverMapFarm?.value ?? '', 10) || 30,
         ownMilitary,
         linkBase,
+        players,
+        danger: dangerProfiles,
         field,
         candidates: pins,
+        highlightPlayer: view === 'occupancy' && mapHighlight ? mapHighlight.id : undefined,
+        highlightName: view === 'occupancy' && mapHighlight ? mapHighlight.name : undefined,
+        onClearHighlight: () => { mapHighlight = null; repaintFreeRegions(); },
         onPinClick: (i) => {
           selectCandidate(freeContainer, i);
-          // The table sits below the controls — nudge it into view so the
-          // selection the pin just made is actually visible.
-          freeContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          // Scroll the ROW the pin just selected into view — scrolling the
+          // container stopped at its nearest edge, leaving the highlighted
+          // row and its expanded detail below the fold (the pin looked dead).
+          const sel = freeContainer.querySelector('tbody tr.selected');
+          (sel ?? freeContainer).scrollIntoView({ behavior: 'smooth', block: sel ? 'center' : 'nearest' });
         },
       });
     }
+    // The map paint (memoised or not) rebuilds/keeps pin DOM — re-assert the
+    // selected row's pin so the row↔pin link survives repaints.
+    highlightPin(serverMapHost, scoutSelectedPin);
   }
 };
 
@@ -1405,49 +1629,54 @@ const wireListeners = () => {
   // wasted work.
   const saveScoutPrefs = () => {
     safeLS.setJSON(SCOUT_PREFS_KEY, {
-      zone: freeZoneSelect.value,
-      find: freeFindSelect.value,
-      excludeN: freeExcludeN?.value,
+      zone: chipValue(freeZoneChips),
+      find: chipValue(freeFindChips),
+      excludeN: chipValue(freeExcludeChips),
       slots: freePosInput.value,
-      gaps: freeGapsSelect.value,
+      gaps: chipValue(freeGapsChips),
       window: serverMapWindow?.value,
       farmReach: serverMapFarm?.value,
-      view: serverMapView?.value,
+      view: chipValue(serverMapViewChips),
     });
   };
 
-  freePosInput.addEventListener('change', () => { saveScoutPrefs(); repaintFreeRegions(); });
-  freeGapsSelect.addEventListener('change', () => { saveScoutPrefs(); repaintFreeRegions(); });
-  freeZoneSelect.addEventListener('change', () => {
+  freePosInput.addEventListener('change', () => { validateSlots(); saveScoutPrefs(); repaintFreeRegions(); });
+  wireChips(freeGapsChips, () => { saveScoutPrefs(); repaintFreeRegions(); });
+  wireChips(freeZoneChips, () => {
     updateModeControls();
     saveScoutPrefs();
     repaintFreeRegions();
   });
-  freeFindSelect.addEventListener('change', () => {
+  wireChips(freeFindChips, () => {
     updateModeControls();
     saveScoutPrefs();
     repaintFreeRegions();
   });
-  serverMapView?.addEventListener('change', () => {
+  wireChips(serverMapViewChips, () => {
     saveScoutPrefs();
     repaintFreeRegions();
   });
   // Offline window / farm reach drive the RANKING field, not just the map —
   // repaint unconditionally. Persist on release ('change'), not per drag tick.
+  // Readouts carry their unit — a bare "30" said nothing about systems.
   serverMapWindow?.addEventListener('input', () => {
-    if (serverMapWindowV && serverMapWindow) serverMapWindowV.textContent = serverMapWindow.value;
+    if (serverMapWindowV && serverMapWindow) serverMapWindowV.textContent = `${serverMapWindow.value} h`;
     repaintFreeRegionsThrottled();
   });
   serverMapWindow?.addEventListener('change', saveScoutPrefs);
   serverMapFarm?.addEventListener('input', () => {
-    if (serverMapFarmV && serverMapFarm) serverMapFarmV.textContent = serverMapFarm.value;
+    if (serverMapFarmV && serverMapFarm) serverMapFarmV.textContent = `${serverMapFarm.value} sys`;
     repaintFreeRegionsThrottled();
   });
   serverMapFarm?.addEventListener('change', saveScoutPrefs);
-  freeExcludeN?.addEventListener('change', () => { saveScoutPrefs(); repaintFreeRegions(); });
+  wireChips(freeExcludeChips, () => { saveScoutPrefs(); repaintFreeRegions(); });
 
   universeSelect.addEventListener('change', () => {
     selectedUniverseId = universeSelect.value;
+    // Region keys carry no universe component — a coincidentally matching
+    // region in the next universe would auto-expand as "your selection".
+    resetFreeSelection();
+    mapHighlight = null; // a player id is universe-scoped — drop the spotlight.
     void loadWatched().then(() => loadAll()).then(renderAll);
     alarmClockApi?.refresh();
     routesApi?.refresh();
@@ -1485,6 +1714,10 @@ export const _resetDashboardForTest = () => {
   compositeCache = null;
   scoreFieldCache = null;
   lastMapPaint = null;
+  scoutSelectedPin = -1;
+  dangerProfiles = new Map();
+  focusedTargetId = null;
+  mapHighlight = null;
   // DOM refs filled by wireDom(); wireDom re-resolves them on the next
   // install, but null them now so nothing reads a detached node in between.
   statsEl =
@@ -1494,16 +1727,44 @@ export const _resetDashboardForTest = () => {
     universeSelect =
     importStatusEl =
     freePosInput =
-    freeGapsSelect =
-    freeZoneSelect =
-    freeFindSelect =
+    freeGapsChips =
+    freeZoneChips =
+    freeFindChips =
     freeZoneHint =
     scoutDataStamp =
-    freeExcludeN =
-    streakOnlyControls =
-    nbrOnlyControls =
+    freeExcludeChips =
+    freeSlotsNote =
+    freeGapsNote =
+    freeExcludeNote =
+    serverMapViewChips =
+    serverMapHost =
+    serverMapWindow =
+    serverMapWindowV =
+    serverMapFarm =
+    serverMapFarmV =
+    targetsContainer =
+    tgtMinMilitary =
+    tgtMaxMilitary =
+    tgtLimit =
+    tgtWatchedOnly =
+    tgtProbes =
+    tgtBand =
+    tgtInclVacation =
+    tgtInclInactive =
+    tgtInclBanned =
+    tgtCountInfoEl =
     freeContainer =
     freeCountInfoEl =
       /** @type {any} */ (undefined);
+  // Session-only state that boot() does not re-establish: clear it so a
+  // re-install starts clean (watch-list Set, rescan flags, expanded target
+  // rows, target sort, and the pending-repaint flag).
+  watchedPlayers.clear();
+  rescanMap = {};
+  expandedTargets.clear();
+  targetSort = { ...DEFAULT_TARGET_SORT };
+  repaintQueued = false;
+  installed = false;
   _resetAlarmClockForTest();
+  _resetFreeStreakForTest();
 };

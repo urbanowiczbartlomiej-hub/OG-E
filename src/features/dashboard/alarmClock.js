@@ -67,6 +67,9 @@ let topicRevealed = false;
 /** Pending "Copied!" → "Copy" button-label restore, so re-clicks can reset it. */
 let copyResetTimer = 0;
 
+/** Unsubscribe for the chrome.storage change listener wired in installAlarmClock. */
+let unsubscribeStorage = () => {};
+
 /** Shown in the topic slot before any ntfy token is configured. */
 const NO_TOPIC_TEXT = '— (set your ntfy.sh access token above first)';
 
@@ -155,7 +158,7 @@ export const installAlarmClock = (opts = {}) => {
   void updateTopic();
   void refreshPreview();
 
-  chromeStore.onChanged((changes) => {
+  unsubscribeStorage = chromeStore.onChanged((changes) => {
     if (ALARM_CLOCK_NTFY_TOKEN_KEY in changes) void updateTopic();
     if (ALARM_CLOCK_MIRROR_KEY in changes) void refreshPreview();
   });
@@ -1113,5 +1116,6 @@ export const _resetAlarmClockForTest = () => {
   currentTopic = '';
   topicRevealed = false;
   if (copyResetTimer) { clearTimeout(copyResetTimer); copyResetTimer = 0; }
+  unsubscribeStorage(); unsubscribeStorage = () => {};
   for (const k of Object.keys(el)) delete el[k];
 };

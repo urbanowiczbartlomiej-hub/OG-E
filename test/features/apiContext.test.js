@@ -105,7 +105,7 @@ afterEach(() => {
 describe('refreshCache — cold (empty cache)', () => {
   it('fetches every feed and reports them', async () => {
     const { fetched } = await refreshCache();
-    expect(fetched).toEqual(['universe', 'players', 'total', 'military', 'honor', 'server']);
+    expect(fetched).toEqual(['universe', 'players', 'total', 'military', 'honor', 'economy', 'destroyed', 'lost', 'server']);
   });
 
   it('writes the parsed feeds back to the cache once', async () => {
@@ -142,6 +142,9 @@ describe('refreshCache — TTL gating', () => {
       total: { ranks: {}, fetchedAt: now },
       military: { ranks: {}, fetchedAt: now },
       honor: { ranks: {}, fetchedAt: now },
+      economy: { ranks: {}, fetchedAt: now },
+      destroyed: { ranks: {}, fetchedAt: now },
+      lost: { ranks: {}, fetchedAt: now },
       server: { data: {}, fetchedAt: now },
     };
     const { fetched } = await refreshCache();
@@ -160,6 +163,9 @@ describe('refreshCache — TTL gating', () => {
       total: { ranks: {}, fetchedAt: now - 2 * HOUR }, // hourly — STALE
       military: { ranks: {}, fetchedAt: now - 2 * HOUR }, // hourly — STALE
       honor: { ranks: {}, fetchedAt: now - 2 * HOUR }, // hourly — STALE
+      economy: { ranks: {}, fetchedAt: now }, // lifetime — fresh
+      destroyed: { ranks: {}, fetchedAt: now }, // lifetime — fresh
+      lost: { ranks: {}, fetchedAt: now }, // lifetime — fresh
       server: { data: {}, fetchedAt: now - 2 * DAY }, // daily — STALE
     };
     const { fetched } = await refreshCache();
@@ -177,7 +183,7 @@ describe('refreshCache — TTL gating', () => {
       server: { data: {}, fetchedAt: now },
     };
     const { fetched } = await refreshCache({ force: true });
-    expect(fetched).toEqual(['universe', 'players', 'total', 'military', 'honor', 'server']);
+    expect(fetched).toEqual(['universe', 'players', 'total', 'military', 'honor', 'economy', 'destroyed', 'lost', 'server']);
   });
 });
 

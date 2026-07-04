@@ -349,7 +349,9 @@ export const collectGalaxyStats = (scans, targetPositions) => {
 
   for (const [key, systemScan] of Object.entries(scans)) {
     if (!systemScan || !systemScan.positions) continue;
-    const g = Number(key.split(':')[0]);
+    const colonIdx = key.indexOf(':');
+    if (colonIdx <= 0) continue;
+    const g = Number(key.slice(0, colonIdx));
     if (!Number.isFinite(g)) continue;
     if (!byGalaxy[g]) byGalaxy[g] = makeZeroCounts();
     const galStats = byGalaxy[g];

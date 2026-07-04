@@ -172,6 +172,13 @@ const HOLD_SKIP_MS = 2000;
  * that reload never comes. Mirrors sendExpedition's post-send lock window.
  */
 const SENT_LOCK_MS = 3000;
+/**
+ * How long a failure paint ('Stale'/'Timeout'/'No ship!'/'No fuel'/'Failed')
+ * lingers before the 1 Hz ticker's derive-driven label is allowed to clobber
+ * it. Without this hold the error flashes for ~0.5 s and is gone. Mirrors
+ * sendLifeform's transient-hold.
+ */
+const TRANSIENT_MS = 1800;
 
 // ─── Module-local state (§3) ───────────────────────────────────────────
 
@@ -222,6 +229,15 @@ let eventBoxReady = true;
  * @type {ReturnType<typeof setTimeout> | null}
  */
 let sentLockTimer = null;
+/**
+ * A transient failure label to hold and its epoch-ms deadline. While active,
+ * `refresh()` re-paints it (and returns) instead of computing the derive label,
+ * so an error paint survives the next 1 Hz tick. Mirrors sendLifeform.
+ *
+ * @type {Paint | null}
+ */
+let transientPaint = null;
+let transientUntil = 0;
 
 // ─── DOM paint (impure — drives the shared Button controller) ──────────
 
@@ -246,6 +262,21 @@ const paintZone = (key, p) => {
   controller.setBg(key, p.bg);
   // `dim: true` greys the zone so the user sees a click would be ignored.
   controller.setDim(key, p.dim === true);
+};
+
+/**
+ * Paint a transient failure label and hold it for {@link TRANSIENT_MS} so the
+ * next derive-driven `refresh()` (e.g. the 1 Hz ticker) doesn't clobber it
+ * after ~0.5 s. The hold is cleared in `refresh()` once the deadline passes.
+ * Mirrors sendLifeform's `showTransient`.
+ *
+ * @param {Paint} p
+ * @returns {void}
+ */
+const showTransient = (p) => {
+  transientPaint = p;
+  transientUntil = Date.now() + TRANSIENT_MS;
+  paintZone('send', p);
 };
 
 // ─── captureEnv + refresh ──────────────────────────────────────────────
@@ -305,11 +336,11 @@ const captureEnv = () => {
  * @returns {void}
  */
 const refresh = () => {
-  const ctx = derive(captureEnv());
-  const result = render(ctx);
   // The Send zone is owned by the courier handler while a select()/dispatch()
   // is in flight (busy) or once a send is armed-ready on step 2; otherwise it
-  // shows the derive-computed next-candidate label.
+  // shows the derive-computed next-candidate label. Both early-return guards run
+  // BEFORE the derive/render compute so a wasted whole-universe scan isn't run
+  // then discarded.
   if (busy) return;
   // Event list (and our stores) not hydrated on this page view yet — hold a
   // "Wait…" label instead of computing a candidate, so the label never flashes
@@ -320,6 +351,13 @@ const refresh = () => {
     paintZone('send', { text: 'Wait…', bg: BG_SEND_WAIT, dim: true });
     return;
   }
+  // A failure paint is being held — re-paint it until its deadline so the 1 Hz
+  // ticker doesn't clobber the error after ~0.5 s. Mirrors sendLifeform.
+  if (transientPaint && Date.now() < transientUntil) {
+    paintZone('send', transientPaint);
+    return;
+  }
+  transientPaint = null;
   if (colReady && colTarget && courierStep() === 'fleet2') {
     // Armed and ready — but keep showing a live min-gap countdown if a
     // colony arrival is too close (the 1 Hz ticker drives it down).
@@ -355,7 +393,7 @@ const refresh = () => {
     waitTotalSecs = 0;
     controller?.setProgress(0);
   }
-  paintZone('send', result.send);
+  paintZone('send', render(derive(captureEnv())).send);
 };
 
 
@@ -438,7 +476,7 @@ const onSendClick = async () => {
         location.href = bareFleetdispatchUrl();
         return;
       }
-      paintZone('send', {
+      showTransient({
         text: r.errorCode === 140026 ? 'No fuel' : 'Failed',
         bg: BG_SEND_ERROR,
       });
@@ -511,7 +549,7 @@ const onSendClick = async () => {
       }
       // Dead again — onCheckTargetResult marked this slot too, so the next
       // tap retargets to whatever is still free.
-      paintZone('send', colErrorPaint(r.reason, candidate));
+      showTransient(colErrorPaint(r.reason, candidate));
       return;
     }
     colReady = true;
@@ -554,7 +592,7 @@ const onSendClick = async () => {
       location.href = bareFleetdispatchUrl();
       return;
     }
-    paintZone('send', colErrorPaint(r.reason, candidate));
+    showTransient(colErrorPaint(r.reason, candidate));
     return;
   }
   colReady = true;
@@ -1018,6 +1056,8 @@ export const _resetSendColonyForTest = () => {
   waitStartAt = 0;
   waitTotalSecs = 0;
   eventBoxReady = true;
+  transientPaint = null;
+  transientUntil = 0;
   if (sentLockTimer) {
     clearTimeout(sentLockTimer);
     sentLockTimer = null;

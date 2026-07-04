@@ -18,6 +18,7 @@
 import { GAME } from '../../lib/gameDom.js';
 import { findNextPlanetInList } from '../shared/planetList.js';
 import { TARGET_PLANET, TARGET_MOON } from '../../domain/rules.js';
+import { parseKoords } from '../../domain/bodies.js';
 import { coordKey } from './pure.js';
 
 // ─── Feature-local selectors / ids ──────────────────────────────────────
@@ -34,23 +35,6 @@ const SEL_INBOUND_ROWS =
  */
 
 /**
- * Parse a `"[g:s:p]"` or `"g:s:p"` string into coords, or `null`.
- *
- * @param {string | null | undefined} txt
- * @returns {{ galaxy: number, system: number, position: number } | null}
- */
-const parseCoordsText = (txt) => {
-  if (!txt) return null;
-  const m = String(txt).match(/(\d+):(\d+):(\d+)/);
-  if (!m) return null;
-  return {
-    galaxy: parseInt(m[1], 10),
-    system: parseInt(m[2], 10),
-    position: parseInt(m[3], 10),
-  };
-};
-
-/**
  * Read the body the user is currently on, as `{galaxy,system,position,type}`.
  * Meta tags first (work on every page); falls back to the highlighted
  * planet row's coords (type assumed planet). `null` when nothing is
@@ -62,7 +46,7 @@ export const readCurrentBody = () => {
   const coordsMeta = document
     .querySelector(GAME.META_PLANET_COORDS)
     ?.getAttribute('content');
-  const c = parseCoordsText(coordsMeta);
+  const c = parseKoords(coordsMeta);
   if (c) {
     const typeMeta = document
       .querySelector(GAME.META_PLANET_TYPE)
@@ -74,7 +58,7 @@ export const readCurrentBody = () => {
   const koords = document.querySelector(
     `${GAME.ACTIVE_PLANET} ${GAME.PLANET_KOORDS}`,
   )?.textContent;
-  const c2 = parseCoordsText(koords);
+  const c2 = parseKoords(koords);
   if (c2) return { ...c2, type: TARGET_PLANET };
   return null;
 };
@@ -94,7 +78,7 @@ export const readCurrentBody = () => {
 export const bodyNameByCoord = (coord) => {
   if (!coord) return null;
   for (const row of document.querySelectorAll(GAME.SMALL_PLANET)) {
-    const c = parseCoordsText(
+    const c = parseKoords(
       row.querySelector(GAME.PLANET_KOORDS)?.textContent,
     );
     if (
@@ -135,12 +119,12 @@ export const readInboundLegs = () => {
   const legs = [];
   const rows = document.querySelectorAll(SEL_INBOUND_ROWS);
   for (const row of rows) {
-    const dest = parseCoordsText(row.querySelector(GAME.COORDS_DEST)?.textContent);
+    const dest = parseKoords(row.querySelector(GAME.COORDS_DEST)?.textContent);
     if (!dest) continue;
     const fig = row.querySelector('.destFleet figure');
     const destType =
       fig && fig.classList.contains('moon') ? TARGET_MOON : TARGET_PLANET;
-    const origin = parseCoordsText(row.querySelector(GAME.COORDS_ORIGIN)?.textContent);
+    const origin = parseKoords(row.querySelector(GAME.COORDS_ORIGIN)?.textContent);
     const mission = parseInt(row.getAttribute('data-mission-type') || '', 10) || 0;
     legs.push({ origin, dest: { ...dest, type: destType }, mission });
   }
@@ -162,7 +146,7 @@ export const readInboundLegs = () => {
 export const findNextCollectPlanetCp = (collectedOriginKeys, targetCoordKey) =>
   findNextPlanetInList(
     (p) => {
-      const coords = parseCoordsText(
+      const coords = parseKoords(
         p.querySelector(GAME.PLANET_KOORDS)?.textContent,
       );
       if (!coords) return false;

@@ -67,6 +67,22 @@
 import { parseDurationList } from './duration.js';
 
 /**
+ * Total ship count parsed from a `detailsFleet` cell's text. OGame renders a
+ * leg's total ships as a locale-formatted integer (e.g. `"8.256.872"`), so we
+ * strip every non-digit and parse what's left — locale-independent. `NaN` when
+ * the text carries no digits. The DOM read stays in the feature layer
+ * (`features/alarmClock/fleetSaveScan`, `features/badges`); this is the shared
+ * pure core both of them call, so the two counters can never drift.
+ *
+ * @param {string | null | undefined} text
+ * @returns {number}
+ */
+export const shipCountFromText = (text) => {
+  const digits = (text || '').replace(/\D/g, '');
+  return digits ? Number.parseInt(digits, 10) : NaN;
+};
+
+/**
  * One fleet leg as read from the event list, before the threshold test.
  * DOM-derived (see `features/alarmClock/fleetSaveScan.js`) but a plain data shape so
  * this module stays DOM-free and Node-testable.

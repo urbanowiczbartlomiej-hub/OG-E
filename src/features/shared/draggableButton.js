@@ -220,9 +220,11 @@ export const installDrag = ({ element, posKey, dragThreshold = 8, onMove }) => {
     },
     { passive: false },
   );
-  element.addEventListener('touchend', () => {
+  const endTouch = () => {
     onEnd();
-  });
+  };
+  element.addEventListener('touchend', endTouch);
+  element.addEventListener('touchcancel', endTouch);
   element.addEventListener('mousedown', (e) => {
     onStart(e.clientX, e.clientY);
     /** @param {MouseEvent} ev */

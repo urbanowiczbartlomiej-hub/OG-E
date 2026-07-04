@@ -999,6 +999,7 @@ const upload = async () => {
  * {@link setStatus}.
  */
 const debouncedUpload = debounce(() => {
+  if (!installed) return;
   // `void` the promise so tsc doesn't complain about an unhandled
   // PromiseLike. The function's own try/catch owns error reporting.
   void upload();
@@ -1053,7 +1054,7 @@ export const installSync = () => {
   // it can always call `installSync()` and pay at most one cheap
   // settings read for the decision.
   if (!settingsStore.get().cloudSync) {
-    const noop = () => {};
+    const noop = () => { installed = null; };
     installed = { dispose: noop };
     return noop;
   }

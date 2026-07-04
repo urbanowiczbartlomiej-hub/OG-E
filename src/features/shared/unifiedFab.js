@@ -29,6 +29,7 @@
 // @see ./button.js         — builds the per-module hosts and registers them.
 
 import { safeLS } from '../../lib/storage.js';
+import { injectStyle } from '../../lib/dom.js';
 import {
   settingsStore,
   FAB_POS_KEY,
@@ -157,13 +158,7 @@ export const setFabModuleAlert = (id, on) => {
 const currentSize = () => settingsStore.get().fabBtnSize;
 
 /** Inject the satellite-orb stylesheet once. @returns {void} */
-const ensureCss = () => {
-  if (document.getElementById(STYLE_ID)) return;
-  const style = document.createElement('style');
-  style.id = STYLE_ID;
-  style.textContent = FAB_CSS;
-  document.head.appendChild(style);
-};
+const ensureCss = () => injectStyle(STYLE_ID, FAB_CSS);
 
 /**
  * Re-measure the FAB and lay the live orbs on the arc toward the viewport

@@ -40,6 +40,7 @@
 // OGame knowledge this classification rests on.
 
 import { TARGET_PLANET, TARGET_MOON } from '../../domain/rules.js';
+import { bodyKey } from '../../domain/bodies.js';
 
 /** Max markers rendered on one body (priority-ordered; the rest are dropped). */
 export const MAX_MARKERS = 3;
@@ -91,16 +92,10 @@ const DEEP_SPACE_POSITION = '16';
  */
 const isDeepSpace = (coords) => coords.split(':')[2] === DEEP_SPACE_POSITION;
 
-/**
- * Identity of a body for matching a leg endpoint against the player's own
- * bodies. A planet and its moon share `g:s:p`, so the `type` (1 planet /
- * 3 moon) is part of the key — byte-identical to `domain/bodies` identity.
- *
- * @param {string} coords Dense `g:s:p` coords (no brackets/whitespace).
- * @param {number} type   1 = planet, 3 = moon.
- * @returns {string}
- */
-export const bodyKey = (coords, type) => `${coords}:${type}`;
+// Body identity key `g:s:p:type` — the single source is `domain/bodies.bodyKey`.
+// Imported above for local use in {@link classifyLeg}, and re-exported here so
+// this feature's consumers (badges/index.js) and its tests keep one import site.
+export { bodyKey };
 
 /**
  * @typedef {object} BadgeEndpoint

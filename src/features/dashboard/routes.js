@@ -572,8 +572,8 @@ export const installRoutes = ({ getUniverseId }) => {
     // Preserve the in-game-set collect target and the (separately-saved)
     // collect mission / ships / resources; we only own `routes` in this Save path.
     const stored = await chromeStore.get(dailyRunRoutesKeyFor(uni));
-    const { collectTarget, collectMission, collectShips, collectResources } = parseDailyRunRoutes(stored);
-    await chromeStore.set(dailyRunRoutesKeyFor(uni), { routes: clean, collectTarget, collectMission, collectShips, collectResources });
+    const { collectTarget } = parseDailyRunRoutes(stored);
+    await chromeStore.set(dailyRunRoutesKeyFor(uni), { routes: clean, collectTarget, collectMission: model.collectMission, collectShips: model.collectShips, collectResources: model.collectResources });
     // Stamp the cross-device sync clock (whole-universe newest-wins) and poke
     // any open game tab to push the change to the gist (same tombstone the
     // "Sync now" button uses). Harmless no-op when cloud sync is off.

@@ -51,9 +51,10 @@ import { TARGET_PLANET } from './rules.js';
  * (`"[4:467:15]"`) or a bare `"4:467:15"` into its three numbers, or
  * `null` when nothing coordinate-shaped is present.
  *
- * Mirrors `features/dailyRun/domHelpers.parseCoordsText` but lives here
- * in `domain/` because the inventory capture needs it independently of
- * that feature (a feature must not import another feature).
+ * The single home for coord-string parsing: features import it from here
+ * (`features/dailyRun/domHelpers`, `features/planetBarCapture`) rather than
+ * re-declaring it — a feature must not import another feature, and domain is
+ * the shared floor.
  *
  * @param {string | null | undefined} text
  * @returns {{ galaxy: number, system: number, position: number } | null}
@@ -68,6 +69,33 @@ export const parseKoords = (text) => {
     position: parseInt(m[3], 10),
   };
 };
+
+/**
+ * Strip whitespace and brackets from a coord string, yielding a dense
+ * `g:s:p` key, e.g. `"[4:467:15]"` → `"4:467:15"`. `''` for nullish input.
+ *
+ * The event-list / planet-bar features all key persisted body state
+ * (fleet-save {@link bodyKey}s, guardian coords) off this exact grammar, so
+ * it lives here as the ONE normaliser they share — a drift between per-feature
+ * copies would silently break cross-feature key equality.
+ *
+ * @param {string | null | undefined} text
+ * @returns {string}
+ */
+export const denseCoords = (text) => (text ?? '').replace(/[\s[\]]/g, '');
+
+/**
+ * Body identity key `g:s:p:type`. A planet and its moon share `g:s:p`, so
+ * `type` (1 = planet, 3 = moon) is what tells them apart. This is the ONE
+ * joiner the fleet-save / badge / manual-mark features key persisted body
+ * state off (`state/fleetSaveSet`), so it lives here rather than being
+ * re-declared per feature; {@link dedupeBodies} inlines the same grammar.
+ *
+ * @param {string} coords Dense `g:s:p` (no brackets/whitespace — see {@link denseCoords}).
+ * @param {number} type   1 = planet, 3 = moon.
+ * @returns {string}
+ */
+export const bodyKey = (coords, type) => `${coords}:${type}`;
 
 /**
  * Stable display order for a body list: by galaxy, then system, then

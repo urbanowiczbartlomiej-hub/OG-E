@@ -30,7 +30,7 @@
 //
 // @ts-check
 
-import { sampleField } from './heatField.js';
+import { sampleField, presenceBonus } from './heatField.js';
 import { classifyCell } from './cellClass.js';
 import { axisDelta, clamp01, flightDistance, reachThreat } from './geometry.js';
 
@@ -181,13 +181,19 @@ const sampleRegion = (field, region, galaxyMax) => {
  * @property {number} [ownMilitary]  Own military points — the threat anchor
  *   {@link excludedThreatDrop} grades excluded players with (same anchor the
  *   field itself was built with).
+ * @property {Map<number, import('./dangerScore.js').DangerProfile>} [danger]
+ *   Per-player danger profiles (v2). MUST be the same map the field was built
+ *   with, or the exclusion re-sample grades players on a different scale than
+ *   the field it edits (classifyCell would fall back to the legacy 0.3+
+ *   heuristic while the field holds D-based intensities).
  */
 
 /**
  * Field-aware "Ignore worst": the window's mean threat re-sampled AS IF the
  * excluded players were gone. Mirrors the field's own build rules — per-system
- * source = MAX occupant intensity (so dropping a player only matters where
- * they WERE the local maximum), emission spread by the RIP-reach kernel,
+ * source = SUM over DISTINCT players of each player's danger D (v2; so dropping
+ * a player removes exactly their D from the system's source, whether or not
+ * they were the local maximum), emission spread by the RIP-reach kernel,
  * scaled by the field's own p95 — and, crucially, works PER CELL in RAW
  * (pre-clamp) units: a cell saturated past the p95 must not read as safer
  * just because a fraction of its (hidden) excess pressure was removed.
@@ -210,44 +216,61 @@ const adjustedThreatMean = (region, ctx, field) => {
   if (!excluded || excluded.length === 0 || !(field.threatScale > 0)) return null;
   const excludedIds = new Set(excluded.map((p) => p.id));
   const galaxyMax = ctx.galaxyMax ?? 499;
-  const clsCtx = { ownMilitary: ctx.ownMilitary };
+  // Same ctx the field was built with — WITH danger — or classifyCell would
+  // fall back to the legacy heuristic and grade excluded players on a scale
+  // that no longer matches the D-based field this delta is subtracted from.
+  const clsCtx = { ownMilitary: ctx.ownMilitary, danger: ctx.danger };
   const { start, end } = region;
   const span = end >= start ? end - start + 1 : galaxyMax - start + 1 + end;
 
-  // Per span system: the threat-source delta = max intensity of ALL occupants
-  // minus max intensity of the KEPT ones (0 unless an excluded player was the
-  // local maximum — matching how buildThreatFarmField sources threat).
-  /** @type {Array<{ sys: number, delta: number }>} */
-  const sources = [];
+  // Per excluded player: their danger D + the span systems where they emit
+  // threat. Distinct per system (their multiple planets in one system are one
+  // fleet), then grouped PER PLAYER — the drop must remove each excluded
+  // player exactly the way buildThreatFarmField ADDED them (one deduped term
+  // with the capped presence bonus), or a player dense in the window would be
+  // over-subtracted and the region would read safer than the players you KEEP.
+  /** @type {Map<number, { d: number, systems: number[] }>} */
+  const byPlayer = new Map();
   for (let i = 0; i < span; i++) {
     const sys = wrapSystem(start + i, galaxyMax);
     const positions = ctx.scans[`${region.galaxy}:${sys}`]?.positions;
     if (!positions) continue;
-    let maxAll = 0;
-    let maxKept = 0;
+    /** @type {Map<number, number>} */
+    const here = new Map(); // distinct excluded players in THIS system → max D
     for (const pos of Object.values(positions)) {
+      if (!(pos.player && excludedIds.has(pos.player.id))) continue;
       const cls = classifyCell(pos.status, pos.player, clsCtx);
       if (cls.bucket !== 'threat') continue;
-      if (cls.intensity > maxAll) maxAll = cls.intensity;
-      if (!(pos.player && excludedIds.has(pos.player.id)) && cls.intensity > maxKept) {
-        maxKept = cls.intensity;
-      }
+      const prev = here.get(pos.player.id) ?? 0;
+      if (cls.intensity > prev) here.set(pos.player.id, cls.intensity);
     }
-    if (maxAll > maxKept) sources.push({ sys, delta: maxAll - maxKept });
+    for (const [id, intensity] of here) {
+      const e = byPlayer.get(id);
+      if (e) { if (intensity > e.d) e.d = intensity; e.systems.push(sys); }
+      else byPlayer.set(id, { d: intensity, systems: [sys] });
+    }
   }
-  if (sources.length === 0) return null;
+  if (byPlayer.size === 0) return null;
 
-  // Per span cell: subtract the excluded emission from the RAW sample, THEN
-  // clamp — the mean of clamped adjusted cells is the honest counterpart of
-  // sampleRegion's mean of clamped cells.
+  // Per span cell: subtract each excluded player's ONE deduped term (D ×
+  // maxReach × presenceBonus(sumReach/maxReach) — identical to the field's
+  // per-player fold) from the RAW sample, THEN clamp. (Only the excluded
+  // players' IN-SPAN planets are seen here — the same conservative
+  // under-correction as before: the drop never over-promises.)
   let total = 0;
   for (let i = 0; i < span; i++) {
     const sys = wrapSystem(start + i, galaxyMax);
     const cell = sampleField(field, region.galaxy, sys);
     let dropRaw = 0;
-    for (const src of sources) {
-      const d = axisDelta(sys, src.sys, galaxyMax, field.donutSystem);
-      dropRaw += src.delta * reachThreat(flightDistance(0, d), field.windowH);
+    for (const { d, systems } of byPlayer.values()) {
+      let sum = 0;
+      let max = 0;
+      for (const ssys of systems) {
+        const dist = axisDelta(sys, ssys, galaxyMax, field.donutSystem);
+        const r = reachThreat(flightDistance(0, dist), field.windowH);
+        if (r > 0) { sum += r; if (r > max) max = r; }
+      }
+      if (max > 0) dropRaw += d * max * presenceBonus(sum / max);
     }
     total += clamp01((cell.threatRaw ?? cell.threat) - dropRaw / field.threatScale);
   }

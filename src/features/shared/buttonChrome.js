@@ -32,7 +32,7 @@
 
 /** @ts-check */
 
-import { parseSvg } from '../../lib/dom.js';
+import { parseSvg, injectStyle } from '../../lib/dom.js';
 
 /** Id of the singleton <style> element this module injects. */
 export const CHROME_STYLE_ID = 'oge-btn-chrome';
@@ -306,13 +306,7 @@ export const BUTTON_CHROME_CSS = [
  *
  * @returns {void}
  */
-export const installButtonChrome = () => {
-  if (document.getElementById(CHROME_STYLE_ID)) return;
-  const style = document.createElement('style');
-  style.id = CHROME_STYLE_ID;
-  style.textContent = BUTTON_CHROME_CSS;
-  (document.head || document.documentElement).appendChild(style);
-};
+export const installButtonChrome = () => injectStyle(CHROME_STYLE_ID, BUTTON_CHROME_CSS);
 
 /**
  * Build the SVG ring overlay carrying `title` engraved along its top arc.

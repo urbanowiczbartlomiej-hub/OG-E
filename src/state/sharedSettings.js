@@ -94,58 +94,69 @@ const applyToStore = (/** @type {SharedSettings} */ shared) => {
 let unsub = null;
 
 /**
+ * @type {Promise<void> | null} In-flight/settled init latch. Set synchronously
+ * on the first call so overlapping callers await the SAME init instead of each
+ * racing past the (async) `unsub` assignment and double-registering onChanged.
+ */
+let initPromise = null;
+
+/**
  * Wire the game-origin side of shared settings. Idempotent — a second call
  * before {@link disposeSharedSettings} is a no-op. MUST run after
  * `initSettingsStore` (it reads + writes `settingsStore`).
  *
  * @returns {Promise<void>}
  */
-export const initSharedSettings = async () => {
-  if (unsub) return;
-  const raw = await chromeStore.get(SHARED_SETTINGS_KEY);
-  const rawObj = raw && typeof raw === 'object' && !Array.isArray(raw)
-    ? /** @type {Record<string, unknown>} */ (raw)
-    : {};
-  const merged = mergeShared(raw, pickShared(settingsStore.get()));
-  // Write-up payload: NEVER seed an empty token key. Materializing `''` for a
-  // token this origin simply doesn't have would read as an authoritative
-  // dashboard clear on every OTHER origin (mergeShared: a present string
-  // wins) and destroy a yet-unmigrated local token there — boot order must
-  // not decide whether the migration works. An absent key keeps the
-  // migration window open until a REAL value exists (a dashboard write, or a
-  // non-empty local lifted up).
-  /** @type {Record<string, unknown>} */
-  const toWrite = { ...merged };
-  if (!('gistToken' in rawObj) && !merged.gistToken) delete toWrite.gistToken;
-  if (!('alarmClockNtfyToken' in rawObj) && !merged.alarmClockNtfyToken) {
-    delete toWrite.alarmClockNtfyToken;
-  }
-  // Only write when the merge actually changed the cloud value (a fresh slot,
-  // or a migrated-up token) — steady state must not spam onChanged.
-  if (JSON.stringify(raw) !== JSON.stringify(toWrite)) {
-    try {
-      await chromeStore.set(SHARED_SETTINGS_KEY, toWrite);
-    } catch {
-      // Best-effort migration write: a failed chrome.storage write (quota,
-      // shutdown) must not abort the hydration below or the onChanged
-      // subscription — the next boot simply retries the write-up.
+export const initSharedSettings = () => {
+  if (initPromise) return initPromise;
+  initPromise = (async () => {
+    const raw = await chromeStore.get(SHARED_SETTINGS_KEY);
+    const rawObj = raw && typeof raw === 'object' && !Array.isArray(raw)
+      ? /** @type {Record<string, unknown>} */ (raw)
+      : {};
+    const merged = mergeShared(raw, pickShared(settingsStore.get()));
+    // Write-up payload: NEVER seed an empty token key. Materializing `''` for a
+    // token this origin simply doesn't have would read as an authoritative
+    // dashboard clear on every OTHER origin (mergeShared: a present string
+    // wins) and destroy a yet-unmigrated local token there — boot order must
+    // not decide whether the migration works. An absent key keeps the
+    // migration window open until a REAL value exists (a dashboard write, or a
+    // non-empty local lifted up).
+    /** @type {Record<string, unknown>} */
+    const toWrite = { ...merged };
+    if (!('gistToken' in rawObj) && !merged.gistToken) delete toWrite.gistToken;
+    if (!('alarmClockNtfyToken' in rawObj) && !merged.alarmClockNtfyToken) {
+      delete toWrite.alarmClockNtfyToken;
     }
-  }
-  applyToStore(merged);
+    // Only write when the merge actually changed the cloud value (a fresh slot,
+    // or a migrated-up token) — steady state must not spam onChanged.
+    if (JSON.stringify(raw) !== JSON.stringify(toWrite)) {
+      try {
+        await chromeStore.set(SHARED_SETTINGS_KEY, toWrite);
+      } catch {
+        // Best-effort migration write: a failed chrome.storage write (quota,
+        // shutdown) must not abort the hydration below or the onChanged
+        // subscription — the next boot simply retries the write-up.
+      }
+    }
+    applyToStore(merged);
 
-  unsub = chromeStore.onChanged((changes) => {
-    if (!(SHARED_SETTINGS_KEY in changes)) return;
-    // Re-read the value rather than trust the change record's shape (the
-    // wrapper forwards the raw StorageChange); same pattern as the dashboard's
-    // alarmClock consumers.
-    void chromeStore.get(SHARED_SETTINGS_KEY).then((next) => {
-      applyToStore(mergeShared(next, pickShared(settingsStore.get())));
+    unsub = chromeStore.onChanged((changes) => {
+      if (!(SHARED_SETTINGS_KEY in changes)) return;
+      // Re-read the value rather than trust the change record's shape (the
+      // wrapper forwards the raw StorageChange); same pattern as the dashboard's
+      // alarmClock consumers.
+      void chromeStore.get(SHARED_SETTINGS_KEY).then((next) => {
+        applyToStore(mergeShared(next, pickShared(settingsStore.get())));
+      });
     });
-  });
+  })();
+  return initPromise;
 };
 
 /** Teardown for tests. Idempotent. */
 export const disposeSharedSettings = () => {
+  initPromise = null;
   if (unsub) {
     unsub();
     unsub = null;

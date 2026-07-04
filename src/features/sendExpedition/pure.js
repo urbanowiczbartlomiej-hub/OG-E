@@ -109,17 +109,6 @@ export const ROUTINE_OFF_LABEL_MS = 4000;
 // ─── Pure helpers ────────────────────────────────────────────────────
 
 /**
- * Strip the surrounding `[` and `]` from a coords string. OGame renders
- * both `.planet-koords` (planet list) and `.coordsOrigin` (event row)
- * with the brackets — stripping them once gives a consistent `g:s:p`
- * key usable for equality comparison across the two lookups.
- *
- * @param {string | null | undefined} raw
- * @returns {string}
- */
-export const stripBrackets = (raw) => (raw ?? '').trim().replace(/^\[|]$/g, '');
-
-/**
  * Build a fleetdispatch URL pointing at the given `cp`. No `mission`
  * param — AGR's own expedition routine sets the mission when the user
  * taps it on the fleetdispatch page, so baking `mission=15` into the

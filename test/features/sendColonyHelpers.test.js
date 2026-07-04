@@ -119,11 +119,11 @@ describe('findNextColonizeTarget', () => {
   });
 
   it('returns null when targets is empty', () => {
-    expect(findNextColonizeTarget({}, [], home, [], false)).toBeNull();
+    expect(findNextColonizeTarget({}, [], home, [], false, Date.now())).toBeNull();
   });
 
   it('returns null when scans is empty', () => {
-    expect(findNextColonizeTarget({}, [], home, [8], false)).toBeNull();
+    expect(findNextColonizeTarget({}, [], home, [8], false, Date.now())).toBeNull();
   });
 
   it('returns a match for an empty slot at a target position', () => {
@@ -134,15 +134,13 @@ describe('findNextColonizeTarget', () => {
         positions: { 8: { status: 'empty' } },
       },
     };
-    const t = findNextColonizeTarget(scans, [], home, [8], false);
+    const t = findNextColonizeTarget(scans, [], home, [8], false, Date.now());
     expect(t).not.toBeNull();
     expect(t?.galaxy).toBe(4);
     expect(t?.system).toBe(30);
     expect(t?.position).toBe(8);
-    expect(t?.link).toContain('galaxy=4');
-    expect(t?.link).toContain('system=30');
-    expect(t?.link).toContain('position=8');
-    expect(t?.link).toContain('mission=7');
+    // `.link` was dropped from the return — the courier builds the fleet spec
+    // from the {galaxy,system,position} coords, so the URL string is dead.
   });
 
   it('skips positions not in the user targets list', () => {
@@ -153,7 +151,7 @@ describe('findNextColonizeTarget', () => {
         positions: { 9: { status: 'empty' } },
       },
     };
-    expect(findNextColonizeTarget(scans, [], home, [8], false)).toBeNull();
+    expect(findNextColonizeTarget(scans, [], home, [8], false, Date.now())).toBeNull();
   });
 
   it('skips empty_sent (we dispatched already)', () => {
@@ -164,7 +162,7 @@ describe('findNextColonizeTarget', () => {
         positions: { 8: { status: 'empty_sent' } },
       },
     };
-    expect(findNextColonizeTarget(scans, [], home, [8], false)).toBeNull();
+    expect(findNextColonizeTarget(scans, [], home, [8], false, Date.now())).toBeNull();
   });
 
   it('skips a slot with a pending in-flight fleet in the registry', () => {
@@ -183,7 +181,7 @@ describe('findNextColonizeTarget', () => {
         arrivalAt: Date.now() + 10 * 60_000,
       },
     ];
-    expect(findNextColonizeTarget(scans, registry, home, [8], false)).toBeNull();
+    expect(findNextColonizeTarget(scans, registry, home, [8], false, Date.now())).toBeNull();
   });
 
   it('with preferOther=true, skips home galaxy first and finds in galaxy 5', () => {
@@ -198,7 +196,7 @@ describe('findNextColonizeTarget', () => {
         positions: { 8: { status: 'empty' } },
       },
     };
-    const t = findNextColonizeTarget(scans, [], home, [8], true);
+    const t = findNextColonizeTarget(scans, [], home, [8], true, Date.now());
     expect(t?.galaxy).toBe(5);
     expect(t?.system).toBe(1);
   });
@@ -215,7 +213,7 @@ describe('findNextColonizeTarget', () => {
         positions: { 8: { status: 'empty' } },
       },
     };
-    const t = findNextColonizeTarget(scans, [], home, [8], false);
+    const t = findNextColonizeTarget(scans, [], home, [8], false, Date.now());
     // sysDist(250, 30) = 220 > sysDist(31, 30) = 1 → farthest wins.
     expect(t?.system).toBe(250);
   });
@@ -232,7 +230,7 @@ describe('findNextColonizeTarget', () => {
         positions: { 8: { status: 'empty' } },
       },
     };
-    const t = findNextColonizeTarget(scans, [], home, [8], false, false);
+    const t = findNextColonizeTarget(scans, [], home, [8], false, Date.now(), false);
     // sysDist(31, 30) = 1 < sysDist(250, 30) = 220 → nearest wins.
     expect(t?.system).toBe(31);
   });

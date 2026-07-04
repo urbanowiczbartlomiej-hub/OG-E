@@ -33,9 +33,15 @@
  * @typedef {object} ClassifyContext
  * @property {number} [ownMilitary]  Our own military-highscore points — the
  *   anchor for "how much stronger militarily than me". Omit → threat uses the
- *   base + bandit/honour accent only.
+ *   base + bandit/honour accent only. (Legacy fallback; superseded by `danger`.)
  * @property {number} [farmScale]    Points value that reads as a "full" farm
  *   (e.g. a high server percentile of inactive points). Omit → 1 (raw).
+ * @property {Map<number, import('./dangerScore.js').DangerProfile>} [danger]
+ *   Per-player danger profiles (v2). When present, an active occupant's threat
+ *   intensity is that player's precomputed `D` — which already excludes defense
+ *   (ships-bounded), zeroes friendly players, and neutralises honoured ones.
+ *   The `ownMilitary`/rankClass formula below is the fallback when it's absent
+ *   (no API danger layer yet, e.g. the map's legacy self-build path).
  */
 
 // Statuses that are NOT a planet we care about → treated as free/void.
@@ -66,8 +72,26 @@ export const classifyCell = (status, player, ctx = {}) => {
     return { bucket: 'farm', intensity: Math.min(1, Math.sqrt(pts / scale)) };
   }
 
-  // Anything else with an owner = an ACTIVE player → threat. Base danger for
-  // being active at all, raised by relative military strength and honour tier.
+  // Anything else with an owner = an ACTIVE player → threat.
+  //
+  // v2: when the danger layer is present, the intensity IS that player's D —
+  // defense already stripped (a ships=0 turtle reads ~0, not "10× your
+  // military = max threat"), friendlies zeroed, honoured neutral.
+  if (ctx.danger) {
+    if (player && player.id != null) {
+      const prof = ctx.danger.get(player.id);
+      if (prof) return { bucket: 'threat', intensity: Math.max(0, Math.min(1, prof.danger)) };
+    }
+    // Danger layer active but this occupant has NO profile — a new/tiny/
+    // unranked active absent from the highscore feeds. Read the model's active
+    // base (matches dangerScore ACTIVE_BASE), NOT the legacy 0.3 heuristic
+    // below: blending the two scales would paint an unranked newcomer redder
+    // than a scored eco whale, inverting the whole point of v2.
+    return { bucket: 'threat', intensity: 0.08 };
+  }
+
+  // Fallback (no danger layer AT ALL): base danger for being active, raised by
+  // relative military strength and honour tier — the pre-v2 heuristic.
   let t = 0.3;
   const mil = player && typeof player.militaryScore === 'number' ? player.militaryScore : undefined;
   if (mil != null && ctx.ownMilitary && ctx.ownMilitary > 0) {

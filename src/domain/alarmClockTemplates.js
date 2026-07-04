@@ -285,8 +285,9 @@ export const renderTemplate = (template, ctx) =>
 /**
  * Split a push label of the form `"Mission → [g:s:p]"` into its `{mission}`
  * and `{coords}` parts — the inverse of the `${mission} → [${landing}]`
- * format the event-list / fleet-save labellers build (see
- * `features/alarmClock/eventList.labelFor` and `fleetSaveScan.fleetSaveLabelFor`).
+ * format the shared labeller builds (see
+ * `features/alarmClock/fleetSaveScan.fleetSaveLabelFor`, used for both the
+ * fleet-save and the ad-hoc event-list labels).
  *
  * Deriving the two from the combined label here means the templating wildcards
  * `{mission}` / `{coords}` work WITHOUT persisting the parts separately (no

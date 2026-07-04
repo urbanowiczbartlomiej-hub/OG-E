@@ -126,18 +126,28 @@
   }
   .streak-record .label { color: #888; font-size: 12px; }
   .streak-record .value { color: #4a9eff; font-weight: bold; }
-  .streak-score { color: #aaa; font-size: 11px; margin-top: 6px; line-height: 1.5; }
-  .region-strip { display: flex; height: 12px; margin-top: 8px; border-radius: 3px; overflow: hidden; }
+  .region-strip { display: flex; height: 16px; margin-top: 8px; border-radius: 3px; overflow: hidden; }
   /* Inset right divider draws a 1px line BETWEEN systems without changing
      cell width (a real border/gap would on flex:1 + 1px-min cells), so even
-     long regions stay legible system-by-system. */
-  .strip-cell { flex: 1; min-width: 2px; box-shadow: inset -1px 0 0 rgba(0,0,0,.45); }
+     long regions stay legible system-by-system. Cells are click-to-pin in
+     BOTH strip modes — advertise it (cursor + hover ring) in both too. */
+  .strip-cell { flex: 1; min-width: 2px; box-shadow: inset -1px 0 0 rgba(0,0,0,.45); cursor: pointer; }
   .strip-cell:last-child { box-shadow: none; }
+  .strip-cell:hover { outline: 1px solid #4a9eff; outline-offset: -1px; }
   .region-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; font-size: 11px; }
-  /* Interactive candidate table: a row click selects which candidate the
-     detail panel below describes (default = the top row). */
+  /* Interactive candidate table: a row click expands the candidate's detail
+     panel INLINE, directly under that row (accordion — one open at a time;
+     re-clicking the open row collapses it). Default = the top row. */
   .streak-table tbody tr { cursor: pointer; }
   .streak-table tbody tr.selected { background: #1c3346; box-shadow: inset 3px 0 0 #4a9eff; }
+  .streak-table tbody tr.selected td { border-bottom: none; }
+  .streak-table tbody tr.streak-detail { cursor: default; }
+  .streak-table tbody tr.streak-detail:hover { background: transparent; }
+  .streak-table tr.streak-detail > td { padding: 0 0 10px; box-shadow: inset 3px 0 0 #4a9eff; }
+  .streak-table tr.streak-detail .streak-record { margin-top: 0; border-radius: 0 0 8px 8px; border-top: none; }
+  .streak-record .record-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .streak-record .record-head .open-link { margin-left: auto; font-size: 12px; color: #4a9eff; text-decoration: none; }
+  .streak-record .record-head .open-link:hover { text-decoration: underline; }
   /* Field strip (Best spots): taller than the status strip, hard BLACK
      separators between systems (gap over a black bg), the centre system
      ringed white, the focused/hovered cell ringed blue. Coloured by the
@@ -163,11 +173,13 @@
   .region-pop.pinned { border-color: #4a9eff; box-shadow: 0 2px 14px rgba(74,158,255,.35); }
   .region-pop.pinned a { pointer-events: auto; }
   .region-pop .rp-head { font-weight: 700; color: #fff; margin: 0 0 4px; }
-  .region-pop .rp-time { color: #7f93a3; font-size: 10px; margin: 0 0 6px; }
-  .region-pop .rp-row { display: flex; align-items: center; gap: 8px; margin: 3px 0; white-space: nowrap; }
+  .region-pop .rp-time { color: #8a9db0; font-size: 11px; margin: 0 0 6px; }
+  /* Rows may wrap: a long player name + honour chip + flags can exceed the
+     320px card — wrapping beats spilling past the border. */
+  .region-pop .rp-row { display: flex; align-items: center; gap: 8px; margin: 3px 0; flex-wrap: wrap; }
   .region-pop .rp-dot { flex: 0 0 9px; width: 9px; height: 9px; border-radius: 2px; }
   .region-pop .rp-free { color: #0c0; margin-top: 5px; }
-  .region-pop .rp-foot { margin-top: 7px; color: #7f93a3; font-size: 10px; }
+  .region-pop .rp-foot { margin-top: 7px; color: #8a9db0; font-size: 11px; }
   .region-excluded { margin-top: 6px; font-size: 12px; color: #d9a441; }
 
   /* Collapsible "⚙ Settings" panel — one per tab, configuration tucked at the
@@ -226,6 +238,9 @@
     background: #0d1620; color: #cfe; border: 1px solid #2a4a5a;
     border-radius: 6px; padding: 5px 8px; font-size: 12px; font-family: inherit;
   }
+  /* Deep-link highlight: the row a Galaxy Viewer "Top threats" click focused. */
+  #spyglassSection tr.target-focus td { background: #16304a; }
+  #spyglassSection tr.target-focus td:first-child { box-shadow: inset 3px 0 0 #4a9eff; }
   #spyglassSection input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
   #spyglassSection input[type="number"]::-webkit-outer-spin-button,
   #spyglassSection input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
@@ -291,6 +306,91 @@
   .subtab.active { color: #fff; background: #16252f; border-color: #2a4a5a; font-weight: bold; }
   .subtabpane { display: none; }
   .subtabpane.active { display: block; }
+  /* ── Galaxy Viewer (scout pane) — redesigned layout: one config card, a
+     map card, a results card, in the user's working order (configure → map
+     → results). The cards share one look. ── */
+  .gv-card { background: #121922; border: 1px solid #223044; border-radius: 8px; padding: 12px 14px; margin: 0 0 12px; }
+  .gv-card-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .gv-card-title { color: #c9d4de; font-size: 14px; font-weight: bold; }
+  .gv-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 0; }
+  .gv-lab { color: #8a97a3; font-size: 12px; }
+  .gv-hint { color: #8a97a3; font-size: 12px; margin: 2px 0 8px; }
+  .gv-note { color: #66788a; font-size: 11px; }
+  .gv-note.warn { color: #ffb454; }
+  .gv-val { color: #cfe4ff; font-size: 12px; min-width: 44px; }
+  .gv-config input[type="range"] { width: 110px; }
+  .gv-config input#freePosInput {
+    background: #0d1620; border: 1px solid #2a4a5a; color: #cfe;
+    padding: 4px 10px; border-radius: 6px; font-size: 13px; width: 90px;
+  }
+  .gv-config input#freePosInput.invalid { border-color: #a44; background: #3a1f1f; color: #f3b0b0; }
+  /* Fit — the primary ranking signal — gets its definition ON the results
+     card, not only in tooltips. */
+  .gv-fit-caption { margin-left: auto; color: #66788a; font-size: 11px; }
+  #freeCountInfo { color: #8a97a3; font-size: 13px; }
+  /* Data-freshness stamp: quiet grey when healthy, a visible warning chip
+     when the ranking is uncalibrated / the snapshot is stale (an invisible
+     stamp there silently changes what every Fit number means). */
+  #scoutDataStamp { color: #8a97a3; font-size: 12px; margin: -4px 0 10px; }
+  #scoutDataStamp.warn {
+    display: inline-block; color: #ffb454; background: #2a1f10;
+    border: 1px solid #5a4415; border-radius: 6px; padding: 2px 8px; margin: 0 0 10px;
+  }
+  /* Compact inline notice (e.g. the streaks → individual-systems fallback
+     explanation) — deliberately NOT the full-height `.empty` banner, which is
+     reserved for true no-results states. */
+  .gv-notice { color: #8a97a3; font-size: 12px; padding: 6px 0; }
+
+  /* Chip groups — 2–4-option selects as pills; `data-value` on the group is
+     the value, `.on` marks the active chip. A `.disabled` group keeps its
+     layout slot (no reflow) and explains itself via the sibling .gv-note. */
+  .chip-group { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  .chip-group button {
+    background: #18222e; border: 1px solid #2b3a4d; color: #9fb4c4;
+    padding: 3px 10px; border-radius: 999px; font-size: 12px; cursor: pointer;
+  }
+  .chip-group button:hover { border-color: #4a9eff; color: #cfe4ff; }
+  .chip-group button.on { border-color: #4a9eff; background: #12253c; color: #cfe4ff; }
+  .chip-group.disabled button { opacity: .4; cursor: default; }
+  /* Segmented variant — the map's Field/Occupancy view toggle. */
+  .chip-group.seg { gap: 0; border: 1px solid #2b3a4d; border-radius: 6px; overflow: hidden; }
+  .chip-group.seg button { border: none; border-radius: 0; background: transparent; }
+  .chip-group.seg button + button { border-left: 1px solid #2b3a4d; }
+  .chip-group.seg button.on { background: #12253c; color: #cfe4ff; }
+
+  /* Grouped neighbourhood census (inside the expanded row) — fixed labelled
+     families instead of a reshuffling flat tile row; zeros stay visible but
+     dimmed so two candidates always compare slot-for-slot. */
+  .census { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+  .census-group { border: 1px solid #223044; border-radius: 6px; padding: 6px 10px; background: #0f151d; }
+  .census-title { font-size: 11px; margin-bottom: 3px; font-weight: bold; }
+  .census-stat { font-size: 12px; color: #9fb4c4; margin-right: 8px; white-space: nowrap; }
+  .census-stat:last-child { margin-right: 0; }
+  .census-stat b { color: #dbe6ef; }
+  .census-stat.zero, .census-stat.zero b { color: #55636f; font-weight: normal; }
+
+  /* Top-threats panel (inside the expanded row) — the named "who makes this
+     region dangerous, and why" list that turns the D colours into an
+     interrogable explanation. Ranked by danger D, most-dangerous first. */
+  .gv-threats { border: 1px solid #223044; border-radius: 6px; padding: 8px 10px; margin: 12px 0; background: #0f151d; }
+  .gv-threats-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+  .gv-threats-title { font-size: 11px; font-weight: bold; color: #d0603a; }
+  .gv-threats-sub { font-size: 11px; color: #66788a; }
+  .gv-cov { font-size: 11px; color: #8a97a3; margin-bottom: 6px; }
+  .gv-cov b { color: #cfe4ff; font-weight: 500; }
+  .gv-cov a, .gv-threats a.open-spy { color: #4a9eff; text-decoration: none; }
+  .gv-cov a:hover, .gv-threats a.open-spy:hover { text-decoration: underline; }
+  .gv-threat-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 12px; padding: 2px 0; }
+  .gv-threat-rank { color: #55636f; min-width: 14px; }
+  .gv-threat-name { color: #dbe6ef; }
+  .gv-threat-why { color: #8a97a3; font-size: 11px; }
+  .gv-threat-prov { font-size: 11px; color: #66788a; }
+  .gv-threat-none { font-size: 12px; color: #7ee787; }
+  /* An "Ignore worst" drop-out: still listed (it's physically here) but dimmed
+     and tagged, so the panel agrees with the "Ignoring N worst" line below. */
+  .gv-threat-row.ignored { opacity: .5; }
+  .gv-threat-ignored-tag { font-size: 10px; color: #c98a4b; border: 1px solid #5a4415; border-radius: 8px; padding: 0 6px; }
+
   /* Colony Scout → server map: binned temperature field (whole server). */
   .server-map-panel { margin: 10px 0; }
   /* Candidate pins overlaid on the field map: one ring per top-listed spot,
@@ -302,20 +402,47 @@
     border-radius: 50%; border: 2px solid #e8ecf5; background: rgba(14,17,23,.35);
     cursor: pointer; z-index: 2; box-sizing: border-box;
   }
-  .smap-pin:hover { border-color: #4a9eff; }
+  .smap-pin:hover, .smap-pin:focus-visible { border-color: #4a9eff; }
+  /* The pin of the currently-selected results row — the row↔pin link reads in
+     both directions (pin click selects the row; row click lights the pin). */
+  .smap-pin.sel { background: #4a9eff; border-color: #fff; }
   .server-map-empty { color: #888; font-size: 13px; padding: 6px 0; }
-  .smap-axis { display: flex; margin-left: 26px; height: 11px; font-size: 9px; color: #5f6f7c; font-family: monospace; }
-  .smap-axis > span { flex: 1 1 auto; min-width: 0; overflow: hidden; }
-  .smap-row { display: flex; align-items: center; height: 16px; }
+  /* Equal flex-basis 0 keeps every axis column the same width — with basis
+     auto a LABELED span's basis is its text width, which pushed the labels
+     tens of systems off the columns they name. Labels overflow their ~4px
+     column instead (visible, nowrap); the container clips edge bleed. */
+  .smap-axis { display: flex; margin-left: 26px; height: 13px; font-size: 11px; color: #8a97a3; font-family: monospace; overflow: hidden; }
+  .smap-axis > span { flex: 1 1 0; min-width: 0; overflow: visible; white-space: nowrap; }
+  /* Row pitch 34px (30 + 4 gap) — the SAME per-galaxy stride the occupancy
+     canvas uses (15 positions × 2px + 4), so switching views never changes
+     the map stage height. */
+  .smap-row { display: flex; align-items: center; height: 30px; margin-bottom: 4px; }
   .smap-glab { flex: 0 0 26px; font-size: 11px; font-family: monospace; color: #7a8a99; text-align: right; padding-right: 6px; }
   .smap-cell { flex: 1 1 auto; height: 100%; min-width: 0; }
-  .smap-legend { display: flex; align-items: center; gap: 8px; margin: 8px 0 0 26px; font-size: 11px; color: #7a8a99; font-family: monospace; }
-  .smap-legbar { width: 160px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, rgb(202,64,56), rgb(90,96,104), rgb(54,178,84)); }
-  .smap-info { margin-top: 8px; font-size: 12px; color: #888; }
-  .smap-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0 10px; font-size: 13px; color: #ccc; }
+  .smap-info { margin-top: 6px; font-size: 12px; color: #8a97a3; border-top: 1px solid #1a2532; padding-top: 6px; }
+  .smap-occ-wrap { position: relative; }
+  .smap-occ-overlay { position: absolute; top: 0; bottom: 0; left: 26px; right: 0; pointer-events: none; }
+  .smap-occ-overlay .smap-pin { pointer-events: auto; }
+  /* Spyglass → map spotlight: a magenta diamond per system the highlighted
+     player occupies, centred on the galaxy row (the exact 2px cell is also
+     painted magenta on the canvas). */
+  .smap-hi-marker {
+    position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px;
+    background: #ff5edb; transform: rotate(45deg); border: 1px solid #fff;
+    box-sizing: border-box; z-index: 3; pointer-events: none;
+  }
+  .smap-hi-banner {
+    font-size: 12px; color: #f4b8e6; background: #2a1030;
+    border: 1px solid #6a2a5e; border-radius: 6px; padding: 3px 9px; margin: 0 0 8px;
+  }
+  .smap-hi-banner a { color: #58a6ff; text-decoration: none; }
+  .smap-hi-banner a:hover { text-decoration: underline; }
   .smap-occ-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
   .smap-occ-leg { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: #9aabb8; }
   .smap-occ-sw { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
+  /* Mini gradient bar for the ramped legend buckets (farm richness, threat
+     strength) — a flat swatch under a "→ brighter" label contradicts itself. */
+  .smap-leg-ramp { width: 36px; height: 10px; border-radius: 2px; display: inline-block; }
   /* Each pane splits into Settings | Message columns; stacks on narrow. */
   .rem-pane-grid { display: grid; grid-template-columns: 1fr; gap: 0 32px; align-items: start; }
   .rem-pane-grid .cfg-sub:first-child { margin-top: 0; }
@@ -524,76 +651,93 @@
   <div class="subtabpane" data-subtab="scout">
     <div class="sub-section">
     <h2>🌌 Galaxy Viewer — server map + zone analyzer<span class="exp-badge" title="The map, scoring and neighbourhood intel here are still evolving — expect changes, and feedback is welcome.">experimental</span></h2>
-    <div id="scoutDataStamp" style="color:#666;font-size:12px;margin:-4px 0 10px;"></div>
-    <p style="color:#888;font-size:13px;margin-bottom:16px;">
-      A viewer and analyzer of this server's galaxies — where the threats, farms and quiet
-      space are. Pick a <strong style="color:#ccc;">Zone</strong> (what a good area means to
-      you) and a <strong style="color:#ccc;">Find</strong> shape:
-      <em>Best spots</em> rates the neighbourhood around every system with ANY listed slot
-      <code style="color:#4a9eff;">empty</code>; <em>Longest streaks</em> hunts contiguous
-      runs where EVERY listed slot is empty (Tolerance lets a run bridge a few bad systems).
-      Ranking, strip colours and the server map all read the same threat/farm field —
-      threat spreads by moon-destruction reach within your offline window, farm value by
-      your farm reach. Unscanned systems never count as free.
+    <div id="scoutDataStamp"></div>
+    <p style="color:#888;font-size:13px;margin-bottom:12px;">
+      Where this server's threats, farms and quiet space are — tune what a good area
+      means below, read the map, then drill into the ranked spots. Every control
+      explains itself on hover.
     </p>
-    <div class="server-map-panel" id="serverMapBlock">
-      <div class="smap-controls">
-        <label>View:</label>
-        <select id="serverMapView">
-          <option value="field">Threat / farm field</option>
-          <option value="occupancy">Occupancy (every position)</option>
-        </select>
+
+    <!-- ── 1. Config card — EVERY analysis input in one place. The chip groups
+         behave like the selects they replaced (data-value = value); Tolerance /
+         Ignore worst keep their layout slot and grey out with a reason instead
+         of vanishing when the mode makes them inapplicable. ── -->
+    <div class="gv-card gv-config" id="gvConfig">
+      <div class="gv-row">
+        <span class="gv-lab">Zone</span>
+        <div class="chip-group" id="freeZoneChips" data-value="safe"
+          title="What a good area means for the ranking. Safe zone = low threat pressure; Farm hub = maximum inactive loot in reach; PvP zone = target-rich space.">
+          <button type="button" data-value="safe" class="on">Safe zone</button>
+          <button type="button" data-value="farm">Farm hub</button>
+          <button type="button" data-value="pvp">PvP zone</button>
+        </div>
+        <span class="gv-lab">Find</span>
+        <div class="chip-group" id="freeFindChips" data-value="spots"
+          title="Best spots rates the area around each free-slot system (ANY listed slot free). Longest streaks hunts contiguous runs where EVERY listed slot is empty.">
+          <button type="button" data-value="spots" class="on">Best spots</button>
+          <button type="button" data-value="streaks">Longest streaks</button>
+        </div>
+      </div>
+      <p id="freeZoneHint" class="gv-hint"></p>
+      <div class="gv-row">
+        <span class="gv-lab">Slots</span>
+        <input id="freePosInput" value="15" placeholder="e.g. 7-9, 15"
+          title="Which planet slots to look at — a list or range like 8 or 12-15. Best spots: ANY listed slot free qualifies a system; Longest streaks: EVERY listed slot must be empty.">
+        <span id="freeSlotsNote" class="gv-note warn"></span>
+        <span class="gv-lab">Ignore worst</span>
+        <div class="chip-group" id="freeExcludeChips" data-value="0"
+          title="Drop the N most threatening neighbours from each window's score — safety then reads the area as if you avoided them (you'll just avoid their systems).">
+          <button type="button" data-value="0" class="on">none</button>
+          <button type="button" data-value="1">1</button>
+          <button type="button" data-value="2">2</button>
+          <button type="button" data-value="3">3</button>
+        </div>
+        <span id="freeExcludeNote" class="gv-note"></span>
+        <span class="gv-lab">Tolerance</span>
+        <div class="chip-group" id="freeGapsChips" data-value="0"
+          title="How many non-matching (occupied or unscanned) systems a run may bridge.">
+          <button type="button" data-value="0" class="on">perfect</button>
+          <button type="button" data-value="1">1 gap</button>
+          <button type="button" data-value="2">2 gaps</button>
+        </div>
+        <span id="freeGapsNote" class="gv-note"></span>
+      </div>
+      <div class="gv-row">
+        <span class="gv-lab" title="Your max nightly offline window — how far a moon-destruction (RIP) threat reaches. Drives the threat channel of both the ranking and the map.">Offline</span>
+        <input type="range" id="serverMapWindow" min="4" max="16" step="1" value="8">
+        <span id="serverMapWindowV" class="gv-val">8 h</span>
+        <span class="gv-lab" title="How far you'll fly to farm — the farm-value radius, in systems. Drives the farm channel of both the ranking and the map.">Farm reach</span>
+        <input type="range" id="serverMapFarm" min="4" max="60" step="2" value="30">
+        <span id="serverMapFarmV" class="gv-val">30 sys</span>
+      </div>
+    </div>
+
+    <!-- ── 2. Map card. The Field/Occupancy toggle lives WITH the map (it
+         changes only how the map is drawn, never the ranking below) — the
+         one deliberate exception to "all inputs in the config card". ── -->
+    <div class="gv-card server-map-panel" id="serverMapBlock">
+      <div class="gv-card-head">
+        <span class="gv-card-title">Server map</span>
+        <div class="chip-group seg" id="serverMapViewChips" data-value="field"
+          title="Threat / farm — the smoothed danger/loot field the ranking reads. Occupancy — every planet slot on the server, one pixel each.">
+          <button type="button" data-value="field" class="on">Threat / farm</button>
+          <button type="button" data-value="occupancy">Occupancy</button>
+        </div>
       </div>
       <div id="serverMapHost"></div>
     </div>
-    <div class="controls">
-      <label>Zone:</label>
-      <select id="freeZoneSelect"
-        title="What a good area means for the ranking. Safe zone = low threat pressure; Farm hub = maximum inactive loot in reach; PvP zone = target-rich space.">
-        <option value="safe">Safe zone</option>
-        <option value="farm">Farm hub</option>
-        <option value="pvp">PvP zone</option>
-      </select>
-      <label>Find:</label>
-      <select id="freeFindSelect"
-        title="Best spots rates the area around each free-slot system (ANY listed slot free). Longest streaks hunts contiguous runs where EVERY listed slot is empty.">
-        <option value="spots">Best spots</option>
-        <option value="streaks">Longest streaks</option>
-      </select>
-      <label>Slots:</label>
-      <input id="freePosInput" value="15" size="8" placeholder="e.g. 7-9, 15"
-        title="Which planet slots to look at — a list or range like 8 or 12-15. Best spots: ANY listed slot free qualifies a system; Longest streaks: EVERY listed slot must be empty.">
-      <span id="streakOnlyControls" style="display:none;">
-        <label>Tolerance:</label>
-        <select id="freeGapsSelect"
-          title="How many non-matching (occupied or unscanned) systems a run may bridge.">
-          <option value="0" selected>perfect streak</option>
-          <option value="1">allow 1 gap</option>
-          <option value="2">allow 2 gaps</option>
-        </select>
-      </span>
-      <span id="nbrOnlyControls">
-        <label>Ignore worst:</label>
-        <select id="freeExcludeN"
-          title="Drop the N most threatening neighbours from each window's score — safety then reads the area as if you avoided them (you'll just avoid their systems). Not applied in the PvP zone.">
-          <option value="0" selected>none</option>
-          <option value="1">1 player</option>
-          <option value="2">2 players</option>
-          <option value="3">3 players</option>
-        </select>
-      </span>
-      <span id="freeCountInfo" style="color:#888;font-size:13px;margin-left:auto;"></span>
+
+    <!-- ── 3. Results card: count + Fit definition in the header, ranked
+         table below; a row click expands its detail inline. ── -->
+    <div class="gv-card" id="gvResults">
+      <div class="gv-card-head">
+        <span class="gv-card-title">Results</span>
+        <span id="freeCountInfo"></span>
+        <span class="gv-fit-caption"
+          title="Fit 0–100 — weighted safety / farm / streak / targets, blended by scan coverage">Fit = zone-weighted safety · farm · streak · targets × coverage</span>
+      </div>
+      <div id="freeContainer"></div>
     </div>
-    <div class="controls" style="margin-top:8px;">
-      <label title="Your max nightly offline window — how far a moon-destruction (RIP) threat reaches. Drives the threat channel of both the ranking and the map.">Offline (h):</label>
-      <input type="range" id="serverMapWindow" min="4" max="16" step="1" value="8" style="width:110px;">
-      <span id="serverMapWindowV" style="color:#888;font-size:12px;min-width:20px;">8</span>
-      <label title="How far you'll fly to farm — the farm-value radius, in systems. Drives the farm channel of both the ranking and the map.">Farm reach:</label>
-      <input type="range" id="serverMapFarm" min="4" max="60" step="2" value="30" style="width:110px;">
-      <span id="serverMapFarmV" style="color:#888;font-size:12px;min-width:24px;">30</span>
-    </div>
-    <p id="freeZoneHint" style="color:#777;font-size:12px;margin:6px 0 10px;"></p>
-    <div id="freeContainer"></div>
     </div>
   </div>
 </section>

@@ -666,7 +666,7 @@ describe('onSendClick — fleetdispatch branch', () => {
       document.dispatchEvent(new CustomEvent('oge:checkTargetResult', {
         detail: {
           galaxy: t.galaxy, system: t.system, position: t.position,
-          errorCode: null, orders: { 7: false },
+          errorCode: null, orders: { 7: false }, ships: { 208: 1 },
         },
       }));
     });
@@ -814,7 +814,7 @@ describe('oge:checkTargetResult reactor', () => {
     installSendColony();
     document.dispatchEvent(
       new CustomEvent('oge:checkTargetResult', {
-        detail: { galaxy: 4, system: 30, position: 8, errorCodes: [140016] },
+        detail: { galaxy: 4, system: 30, position: 8, errorCodes: [140016], ships: { 208: 1 } },
       }),
     );
     expect(scansStore.get()['4:30']?.positions?.[8]?.status).toBe('reserved');
@@ -835,7 +835,7 @@ describe('oge:checkTargetResult reactor', () => {
       new CustomEvent('oge:checkTargetResult', {
         detail: {
           galaxy: 4, system: 30, position: 8,
-          errorCode: null, orders: { 7: false },
+          errorCode: null, orders: { 7: false }, ships: { 208: 1 },
         },
       }),
     );
@@ -862,7 +862,7 @@ describe('oge:checkTargetResult reactor', () => {
       new CustomEvent('oge:checkTargetResult', {
         detail: {
           galaxy: 4, system: 30, position: 8,
-          errorCode: null, orders: { 7: false },
+          errorCode: null, orders: { 7: false }, ships: { 208: 1 },
         },
       }),
     );

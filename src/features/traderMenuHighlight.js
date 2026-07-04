@@ -210,10 +210,11 @@ const IMPORT_EVENT_IMG_SEL = 'img[src*="importexport_6"]';
  * screen": that dates the event so a single visit to the inbox covers the
  * whole multi-day run, AND a long-since-expired message reopened weeks later
  * can no longer re-trigger event mode (its window is already in the past).
- * Selectors local to this feature — no one else reads the message page.
+ * The `.msg` row + `data-raw-timestamp` attribute are local to this feature;
+ * the `.rawMessageData` block is shared with `features/targetsIngest`, so it
+ * lives in `GAME.MESSAGES_RAW_DATA`.
  */
 const MSG_ROW_SEL = '.msg';
-const MSG_RAW_DATA_SEL = '.rawMessageData';
 const MSG_TIMESTAMP_ATTR = 'data-raw-timestamp';
 
 /**
@@ -684,7 +685,7 @@ const applyHighlight = () => {
 const readNewestEventStartMs = () => {
   let newest = 0;
   document.querySelectorAll(IMPORT_EVENT_IMG_SEL).forEach((img) => {
-    const raw = img.closest(MSG_ROW_SEL)?.querySelector(MSG_RAW_DATA_SEL);
+    const raw = img.closest(MSG_ROW_SEL)?.querySelector(GAME.MESSAGES_RAW_DATA);
     const sec = Number(raw?.getAttribute(MSG_TIMESTAMP_ATTR));
     if (Number.isFinite(sec) && sec > 0) newest = Math.max(newest, sec * 1000);
   });

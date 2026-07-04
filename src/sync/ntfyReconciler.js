@@ -84,6 +84,7 @@
 // here as a parameter; this module never reads storage directly.
 
 import { parseDurationList, humanizeOffset, humanizeArrivalOffset } from '../domain/duration.js';
+import { clockHHMM } from '../domain/clockFormat.js';
 import {
   renderTemplate,
   iconFileFor,
@@ -227,16 +228,6 @@ const OGE_ICON_URL = iconUrl('icon128.png');
  * @returns {string}
  */
 const resolveIconUrl = (iconId) => iconUrl(iconFileFor(iconId));
-
-/**
- * Format an epoch second as a locale `HH:MM` clock — the `{returnTime}` /
- * `{arrivalTime}` (and its `{landTime}` alias) wildcard value.
- *
- * @param {number} epochSec
- * @returns {string}
- */
-const clock = (epochSec) =>
-  new Date(epochSec * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 /**
  * The ntfy push title for a universe. Doubles as the per-universe filter
@@ -519,7 +510,11 @@ const reconcileQueue = async ({ series, topic, token, now, title, queue }) => {
     idsBySeries[s.id] = ids;
   }
 
-  const orphanIds = ours.filter((m) => !wantedTimes.has(m.time)).map((m) => m.id);
+  const orphanIds = ours
+    // second clause sweeps same-time duplicates (concurrent-producer race): a
+    // non-winner queued at a wanted time whose id isn't the per-time winner.
+    .filter((m) => !wantedTimes.has(m.time) || queuedByTime.get(m.time) !== m.id)
+    .map((m) => m.id);
   const cancelled = await cancelWaveAlarmClock({ ids: orphanIds, topic, token });
 
   return { idsBySeries, posted, cancelled };
@@ -544,7 +539,7 @@ const waveCtx = (universeId, baseAt, i, total) => ({
   // A wave is always an Expedition series; exposing `{mission}` keeps the
   // three editors uniform (see `domain/alarmClockTemplates` COMMON_FIELDS).
   mission: 'Expedition',
-  returnTime: clock(baseAt),
+  returnTime: clockHHMM(baseAt),
   index: i + 1,
   total,
 });
@@ -643,7 +638,7 @@ const legCtxBase = (universeId, e) => {
     targetName: e.targetName ?? '',
     direction: legDirection(coords, e.origin ?? '', e.target ?? ''),
     shipCount: Number.isFinite(e.shipCount) ? Number(e.shipCount).toLocaleString() : '',
-    arrivalTime: clock(e.arrivalAt),
+    arrivalTime: clockHHMM(e.arrivalAt),
   };
 };
 
@@ -755,7 +750,7 @@ const fsCtx = (universeId, e, fireAt, i, total) => ({
   ...legCtxBase(universeId, e),
   // `landTime` stays as an UNADVERTISED back-compat alias (= `arrivalTime`) so a
   // body saved before the wildcard cleanup still renders (it's no longer a chip).
-  landTime: clock(e.arrivalAt),
+  landTime: clockHHMM(e.arrivalAt),
   offset: humanizeOffset(fireAt - e.arrivalAt),
   index: i + 1,
   total,

@@ -74,10 +74,11 @@ import { injectStyle } from '../../lib/dom.js';
 import { debounce } from '../../lib/debounce.js';
 import { readPending, lastAdhocIntent, lastWaveIntent } from './pending.js';
 import { readFleetSaveCancel, pruneFleetSaveCancel } from './fleetSaveCancel.js';
-import { fleetRowMeta } from './fleetSaveScan.js';
+import { fleetRowMeta, fleetSaveLabelFor } from './fleetSaveScan.js';
 import { GAME } from '../../lib/gameDom.js';
 import { EXPEDITION_HEART_URI } from '../../lib/markerIcons.js';
 import { clock } from '../../lib/clock.js';
+import { clockHHMM } from '../../domain/clockFormat.js';
 
 /** @typedef {import('../../sync/alarmClock.js').AlarmClockState} AlarmClockState */
 /** @typedef {import('../../domain/adhoc.js').AdhocAlarmClock} AdhocAlarmClock */
@@ -87,13 +88,6 @@ const BADGE_CLASS = 'oge-rem-badge';
 const REFRESH_DEBOUNCE_MS = 200;
 /** The cancel window, in whole minutes, for human-facing hint text. */
 const FS_CANCEL_WINDOW_MIN = Math.round(FS_CANCEL_WINDOW_SEC / 60);
-
-/** English mission-type names for the push label (locale-independent). */
-const MISSION_NAMES = /** @type {Record<string, string>} */ ({
-  1: 'Attack', 2: 'ACS attack', 3: 'Transport', 4: 'Deployment',
-  5: 'ACS defend', 6: 'Espionage', 7: 'Colonisation', 8: 'Recycle',
-  9: 'Moon destruction', 15: 'Expedition',
-});
 
 const CSS = `
 .${BADGE_CLASS} { border-radius: 3px; transition: box-shadow .12s, background-color .12s; }
@@ -178,37 +172,6 @@ const refreshSnapshot = async () => {
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
-/** @param {string | null | undefined} s @returns {string} dense `g:s:p` */
-const denseCoords = (s) => (s || '').replace(/[\s[\]]/g, '');
-
-/** Epoch SECONDS → locale HH:MM — the one clock format every tooltip uses. */
-const fmtClock = (/** @type {number} */ epochSec) =>
-  new Date(epochSec * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-/**
- * Push label naming where the fleet actually LANDS, e.g.
- * "Expedition → [4:467:16]".
- *
- * The alarmClock fires for the arrival of THIS leg, so the coords must be
- * the leg's landing point — not always the mission destination. On a
- * return flight (`data-return-flight="true"`) the fleet is coming home,
- * so it lands at its origin (`.coordsOrigin`); on an outbound leg it
- * lands at the destination (`.destCoords`). Reading `.destCoords`
- * unconditionally mislabels every return as arriving at the target it is
- * in fact leaving.
- *
- * @param {Element} row
- * @returns {string}
- */
-const labelFor = (row) => {
-  const mt = row.getAttribute('data-mission-type') || '';
-  const mission = MISSION_NAMES[mt] || 'Fleet';
-  const isReturn = row.getAttribute('data-return-flight') === 'true';
-  const sel = isReturn ? GAME.COORDS_ORIGIN : GAME.COORDS_DEST;
-  const landing = denseCoords(row.querySelector(sel)?.textContent);
-  return landing ? `${mission} → [${landing}]` : mission;
-};
-
 /**
  * Every class we own. We toggle ONLY these via classList so OGame's own
  * cell classes (notably `arrivalTime`, which `render` selects on) survive
@@ -268,7 +231,7 @@ const clearCell = (cell) => {
  */
 const waveTitle = (w, schedule, hint) => {
   const baseAt = snapshot?.notifyState?.[w.id]?.baseAt ?? w.nextWaveAt;
-  const times = offsetsForSchedule(schedule).map((o) => fmtClock(baseAt + o)).join(', ');
+  const times = offsetsForSchedule(schedule).map((o) => clockHHMM(baseAt + o)).join(', ');
   return `Wave reminders at: ${times}\n${hint}`;
 };
 
@@ -290,7 +253,7 @@ const waveTitle = (w, schedule, hint) => {
 const fsTitle = (fs, now, mode) => {
   const live = (fs.fireAts || [])
     .filter((t) => Number.isFinite(t) && t > now && t <= now + NTFY_MAX_DELAY_SEC)
-    .map(fmtClock);
+    .map(clockHHMM);
   const hint =
     mode === 'cancel'
       ? 'Cancellable now — click to cancel this reminder'
@@ -373,6 +336,12 @@ const render = () => {
     for (const row of rows) {
       const arrivalAt = parseInt(row.getAttribute('data-arrival-time') || '', 10);
       if (!Number.isFinite(arrivalAt)) continue;
+      // Mirror producer.js RETURN_ROW_SELECTOR: only expedition (mission 15)
+      // return legs are wave members — otherwise an unrelated same-second leg
+      // could get wave-badged and steal the anchor. Keep '15'/'true' literal
+      // (raw game-attribute contract), not hoisted.
+      if (row.getAttribute('data-mission-type') !== '15' ||
+          row.getAttribute('data-return-flight') !== 'true') continue;
       const w = snapshot.waves.find((x) => (x.returnAts || []).includes(arrivalAt));
       if (!w) continue;
       waveOf.set(row, w);
@@ -472,8 +441,8 @@ const render = () => {
         const title = earliest === null
           ? 'Reminder set — click to cancel'
           : fireAts.length === 1
-            ? `Reminder at ${fmtClock(earliest)} — click to cancel`
-            : `Reminders: ${fireAts.length} · first at ${fmtClock(earliest)} — click to cancel`;
+            ? `Reminder at ${clockHHMM(earliest)} — click to cancel`
+            : `Reminders: ${fireAts.length} · first at ${clockHHMM(earliest)} — click to cancel`;
         stamp(cell, `armed${syncing}`, 'disarm', '', title);
       } else if (earliest !== null && earliest - now > NTFY_MAX_DELAY_SEC) {
         stamp(cell, 'disabled', '', '', 'Too far ahead to set a reminder (ntfy limit is 3 days)');
@@ -560,7 +529,7 @@ export const installEventListAlarmClock = ({
       const fleetId = row.querySelector('.recallFleet')?.getAttribute('data-fleet-id') || undefined;
       armAdhoc({
         id, arrivalAt,
-        label: labelFor(row),
+        label: fleetSaveLabelFor(row),
         // Per-leg push metadata (origin/target coords + names, ship count) so
         // ad-hoc bodies share the same wildcard set as fleet-save. The fire
         // cadence is the LIVE per-universe schedule, not frozen on the entry.

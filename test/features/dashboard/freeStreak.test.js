@@ -29,19 +29,28 @@ const empty = { status: 'empty' };
 /** @param {number} id */
 const occ = (id) => ({ status: 'occupied', player: { id, name: 'P' + id } });
 
+// The census breakdown is now a row of labelled `.census-stat` spans grouped
+// under titled `.census-group`s. Each stat is `<b>{value}</b> {label}`; a
+// zero-valued stat carries the extra `zero` class but is still rendered. The
+// value+label live in one span, so we key on the trailing label text (which may
+// itself carry trailing "!"/"★" tier marks — stripped before matching) and read
+// the `<b>` for the value.
 /**
- * Find the neighbourhood stat-card whose label matches `label` (trailing ★s
- * stripped), or undefined. The score line is now a row of `.stat-card`s.
+ * Find the census stat span whose label matches `label` (trailing !/★ tier
+ * marks stripped), or undefined.
  * @param {Element|null} root @param {string} label
  */
 const cardEl = (root, label) =>
-  [...(root?.querySelectorAll('.stat-card') ?? [])].find(
-    (c) => (c.querySelector('.stat-label')?.textContent || '').replace(/\s*★+$/, '').trim() === label,
-  );
+  [...(root?.querySelectorAll('.census-stat') ?? [])].find((c) => {
+    const b = c.querySelector('b');
+    // The label is the text AFTER the <b> value; drop trailing tier glyphs.
+    const text = (b?.nextSibling?.textContent || '').replace(/\s*[!★]+\s*$/, '').trim();
+    return text === label;
+  });
 /** @param {Element|null} root @param {string} label @returns {string|null} */
 const cardValue = (root, label) => {
   const c = cardEl(root, label);
-  return c ? (c.querySelector('.stat-value')?.textContent || '').trim() : null;
+  return c ? (c.querySelector('b')?.textContent || '').trim() : null;
 };
 
 /** @param {Record<string, Record<number, any>>} spec */
@@ -93,7 +102,7 @@ describe('renderFreeRegions', () => {
 
     const record = containerEl.querySelector('.streak-record');
     expect(cardValue(record, 'Strong')).toBe('1');
-    expect(cardValue(record, 'Active-on-vac')).toBe('1');
+    expect(cardValue(record, 'On-vac')).toBe('1');
     expect(cardValue(record, 'Outlaw')).toBe('1');
   });
 
@@ -168,10 +177,14 @@ describe('renderFreeRegions', () => {
     spec['4:3'][5] = { status: 'occupied', player: { id: 2, name: 'B', rankClass: 'rank_bandit1' } };
     renderFreeRegions({ ...baseOpts(), scans: scansOf(spec), positions: [8] });
 
-    // Region-level bandit breakdown by tier, as cards separate from target bands.
+    // Region-level bandit tally collapses into ONE "Bandits" census stat (count
+    // + the worst tier's "!" marks); the per-tier King/Lord/Bandit split lives
+    // in that stat's tooltip. Assert both: the combined count and the breakdown.
     const record = containerEl.querySelector('.streak-record');
-    expect(cardValue(record, 'Bandit King')).toBe('1');
-    expect(cardValue(record, 'Bandit')).toBe('1');
+    expect(cardValue(record, 'Bandits')).toBe('2');
+    const banditTip = cardEl(record, 'Bandits')?.getAttribute('title') || '';
+    expect(banditTip).toMatch(/1 Bandit King/);
+    expect(banditTip).toMatch(/1 Bandit(?!\s*(King|Lord))/); // the tier-1 "Bandit"
 
     // Per-occupant chip on the Bandit King's system card (system 2).
     const cells = containerEl.querySelectorAll('.region-strip .strip-cell');
@@ -211,9 +224,9 @@ describe('renderFreeRegions', () => {
     renderFreeRegions({ ...baseOpts(), scans: scansOf(spec), positions: [8], ownRank: 250 });
 
     const record = containerEl.querySelector('.streak-record');
-    expect(cardValue(record, 'Top rank')).toBe('#100');
-    // the relative-to-you detail moved to the card tooltip.
-    expect(cardEl(record, 'Top rank')?.getAttribute('title')).toMatch(/150 ranks above you/);
+    expect(cardValue(record, 'top rank')).toBe('#100');
+    // the relative-to-you detail is the census stat's tooltip.
+    expect(cardEl(record, 'top rank')?.getAttribute('title')).toMatch(/150 ranks above you/);
   });
 
   it('shows compact "Avg points" / "Avg military" cards when API points are present', () => {
@@ -225,8 +238,8 @@ describe('renderFreeRegions', () => {
     renderFreeRegions({ ...baseOpts(), scans: scansOf(spec), positions: [8] });
 
     const record = containerEl.querySelector('.streak-record');
-    expect(cardValue(record, 'Avg points')).toBe('1.2M');
-    expect(cardValue(record, 'Avg military')).toBe('340k');
+    expect(cardValue(record, 'avg points')).toBe('1.2M');
+    expect(cardValue(record, 'avg military')).toBe('340k');
   });
 
   it('omits the points cards when no scanned player carries points (live-only scans)', () => {
@@ -237,8 +250,8 @@ describe('renderFreeRegions', () => {
     renderFreeRegions({ ...baseOpts(), scans: scansOf(spec), positions: [8] });
 
     const record = containerEl.querySelector('.streak-record');
-    expect(cardEl(record, 'Avg points')).toBeUndefined();
-    expect(cardEl(record, 'Avg military')).toBeUndefined();
+    expect(cardEl(record, 'avg points')).toBeUndefined();
+    expect(cardEl(record, 'avg military')).toBeUndefined();
   });
 
   it('falls back to the individual free-systems list when no region forms', () => {
@@ -248,7 +261,9 @@ describe('renderFreeRegions', () => {
     for (const s of [1, 3, 5, 7, 9]) spec[`4:${s}`] = { 8: empty };
     renderFreeRegions({ ...baseOpts(), scans: scansOf(spec), positions: [8] });
 
-    const note = containerEl.querySelector('.empty');
+    // A compact inline `.gv-notice` (deliberately NOT the padded `.empty`
+    // banner — results follow right below), explaining the fallback.
+    const note = containerEl.querySelector('.gv-notice');
     expect(note).toBeTruthy();
     expect(note?.textContent).toMatch(/individual free system/);
     // The free systems are still listed in a table…

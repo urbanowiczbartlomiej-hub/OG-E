@@ -44,6 +44,7 @@ import { createButton as makeButton, labelLines } from '../shared/button.js';
 import { setActiveFabModule, FAB_WRAP_ID } from '../shared/unifiedFab.js';
 import { ABANDON_GLYPH } from '../shared/buttonGlyphs.js';
 import { parseUniverseId } from '../../lib/universeId.js';
+import { debounce } from '../../lib/debounce.js';
 import { findFirstFreshPlanet, getOverviewCp, buildOverviewUrl } from './detect.js';
 import { checkAbandonState, createAbandonFlow } from './index.js';
 
@@ -161,6 +162,8 @@ export const installColonyFab = () => {
   let controller = null;
   /** @type {ColonyState} */
   let currentState = 'none';
+  /** The mounted navigate target's colony-planet id (0 when not in navigate). */
+  let currentCp = 0;
   /** @type {import('./index.js').AbandonFlow | null} */
   let flow = null;
   /** True while an abandon flow is mid-popup — refresh() is suppressed. */
@@ -168,16 +171,16 @@ export const installColonyFab = () => {
   /** @type {(() => void) | null} */
   let removeGuard = null;
 
-  /** @returns {ColonyState} the state the page warrants right now. */
+  /** @returns {{ state: ColonyState, cp: number }} the state the page warrants right now (cp = navigate target's colony-planet id, else 0). */
   const desiredState = () => {
-    if (checkAbandonState()) return 'abandon';
+    if (checkAbandonState()) return { state: 'abandon', cp: 0 };
     // A fresh colony elsewhere is only worth surfacing when it's ALSO too small
     // to keep — read straight from its planet-list tooltip (`max` fields), so
     // we flag a give-up candidate without first navigating to its overview.
     const min = galaxyScanConfigStore.get().colonyMinFields;
     const fresh = findFirstFreshPlanet({ belowFields: min });
-    if (fresh && getOverviewCp() !== fresh.cp) return 'navigate';
-    return 'none';
+    if (fresh && getOverviewCp() !== fresh.cp) return { state: 'navigate', cp: fresh.cp };
+    return { state: 'none', cp: 0 };
   };
 
   /** Tear down the button (and any in-flight flow guard). @returns {void} */
@@ -185,6 +188,7 @@ export const installColonyFab = () => {
     controller?.dispose();
     controller = null;
     currentState = 'none';
+    currentCp = 0;
   };
 
   /** @param {import('./index.js').AdvanceResult['phase']} phase @param {{max:number}|null} [info] */
@@ -203,6 +207,9 @@ export const installColonyFab = () => {
 
   /** End the current flow: release the guard + clear the running flag. */
   const endFlow = () => {
+    // Release the flow's re-entry guard (flowActive). cancel() no-ops when the
+    // flow is already dead (done/aborted paths), so this is safe everywhere.
+    flow?.cancel();
     flow = null;
     flowRunning = false;
     if (removeGuard) { removeGuard(); removeGuard = null; }
@@ -237,8 +244,9 @@ export const installColonyFab = () => {
       endFlow();
       paint('aborted', checkAbandonState());
       // The popup may have vanished — re-evaluate (deferred so we don't churn
-      // the DOM inside the tap handler).
-      setTimeout(refresh, 100);
+      // the DOM inside the tap handler). Guard against a dispose landing in this
+      // 100 ms window, which would otherwise remount the FAB post-teardown.
+      setTimeout(() => { if (installed) refresh(); }, 100);
       return;
     }
     paint(res.phase);
@@ -266,6 +274,7 @@ export const installColonyFab = () => {
       if (!controller) return;
       controller.paintLines('go', labelLines({ main: 'Abandon', sub: `${fresh.max} fields`, hint: 'too small' }));
       currentState = 'navigate';
+      currentCp = fresh.cp;
       setActiveFabModule(MODULE_ID);
     } else if (state === 'abandon') {
       const info = checkAbandonState();
@@ -299,8 +308,11 @@ export const installColonyFab = () => {
   const refresh = () => {
     if (flowRunning) return;
     if (!settingsStore.get().fabMode) { unmount(); return; }
-    const want = desiredState();
-    if (want === currentState) return;
+    const { state: want, cp: wantCp } = desiredState();
+    // Remount when the state changes OR when we're staying in 'navigate' but the
+    // chosen first-fresh colony changed (the mounted button's onTap closes over
+    // a now-stale cp).
+    if (want === currentState && wantCp === currentCp) return;
     unmount();
     if (want !== 'none') mountFor(want);
   };
@@ -326,7 +338,11 @@ export const installColonyFab = () => {
     refresh();
   });
   const unsubConfig = galaxyScanConfigStore.subscribe(refresh);
-  const observer = new MutationObserver(refresh);
+  // Debounce so OGame's 1 Hz ticker DOM churn doesn't re-run refresh() on every
+  // mutation; the `if (installed)` guard also closes the observer-path teardown
+  // gap (a mutation landing after dispose can't remount the FAB).
+  const scheduleRefresh = debounce(() => { if (installed) refresh(); }, 200);
+  const observer = new MutationObserver(scheduleRefresh);
   if (document.body) observer.observe(document.body, { childList: true, subtree: true });
 
   installed = {

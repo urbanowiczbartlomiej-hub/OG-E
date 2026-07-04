@@ -44,6 +44,7 @@ import {
 import { GAME } from '../../lib/gameDom.js';
 import { safeClick, waitFor } from '../../lib/dom.js';
 import { ingameComponentUrl } from '../../domain/ogameUrl.js';
+import { seedFromLiveFd } from './fleetDispatcherCache.js';
 import {
   installFleetOwnership,
   claimFleet2,
@@ -628,17 +629,13 @@ export const installFleetCourier = () => {
   };
   document.addEventListener(FLEET_DISPATCHER_EVENT, onSnapshot);
   // Seed from a live fleetDispatcher if readable (tests / Firefox Xray).
+  // Only seed once the ships array is actually populated (an fd present but
+  // pre-ship-load shouldn't make the courier think there are zero ships);
+  // the shared normalizer keeps the seed's shape identical to the event one.
   if (!snapshot) {
     const fd = /** @type {any} */ (window).fleetDispatcher;
     if (fd && Array.isArray(fd.shipsOnPlanet)) {
-      snapshot = /** @type {any} */ ({
-        shipsOnPlanet: fd.shipsOnPlanet,
-        orders: fd.orders || null,
-        currentPlanet: fd.currentPlanet || null,
-        targetPlanet: fd.targetPlanet || null,
-        fleetCount: Number(fd.fleetCount) || 0,
-        maxFleetCount: Number(fd.maxFleetCount) || 0,
-      });
+      snapshot = /** @type {any} */ (seedFromLiveFd(fd));
     }
   }
 };

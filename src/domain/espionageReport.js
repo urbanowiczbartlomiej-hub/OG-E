@@ -65,7 +65,10 @@ import { sumResourceValue } from './unitCosts.js';
  * @property {Record<number, number>} [fleet]    id→count.
  * @property {Record<number, number>} [defense]  id→count.
  * @property {string[]} [playerStatus]
- * @property {number} [timestamp]        Report time, ms epoch.
+ * @property {number} [timestamp]        Report time, epoch SECONDS — the unit
+ *   every consumer speaks (`scanStatus`'s `reportTsSec`, the dashboard's
+ *   `ageMs`). Reports persisted before the unit fix stored MILLISECONDS; see
+ *   {@link normalizeReportTimestamps}.
  * @property {number} [activityMin]      Minutes since last activity (0 = '*').
  */
 
@@ -162,9 +165,46 @@ export function normalizeSpyReport(raw) {
     fleet,
     defense,
     playerStatus: toStringArray(raw.playerstatus),
-    timestamp: tsSec != null ? tsSec * 1000 : undefined,
+    // Epoch SECONDS, straight from the game attribute — the whole freshness
+    // pipeline (scanStatus reportTsSec, ageMs) multiplies by 1000 itself. The
+    // old `* 1000` here made every stored report read as perpetually fresh.
+    timestamp: tsSec != null ? tsSec : undefined,
     activityMin,
   };
+}
+
+/**
+ * One-time unit repair for persisted report maps: reports recorded before the
+ * timestamp fix stored `timestamp` in MILLISECONDS while every consumer
+ * expects SECONDS — so their age/staleness always read as fresh. Any value
+ * above 1e11 (year ~5138 as seconds) can only be milliseconds — convert it.
+ * Pure; returns the input object untouched when nothing needs fixing.
+ *
+ * @param {Record<string, Record<string, SpyReport>>} reports
+ * @returns {Record<string, Record<string, SpyReport>>}
+ */
+export function normalizeReportTimestamps(reports) {
+  let changed = false;
+  /** @type {Record<string, Record<string, SpyReport>>} */
+  const out = {};
+  for (const pid of Object.keys(reports)) {
+    const bucket = reports[pid];
+    // Pass a malformed bucket THROUGH untouched — returning `out` on `changed`
+    // must never silently drop an entry we didn't rewrite (data-preserving).
+    if (!bucket || typeof bucket !== 'object') { out[pid] = bucket; continue; }
+    /** @type {Record<string, SpyReport>} */
+    let fixedBucket = bucket;
+    for (const key of Object.keys(bucket)) {
+      const r = bucket[key];
+      if (r && typeof r.timestamp === 'number' && r.timestamp > 1e11) {
+        if (fixedBucket === bucket) fixedBucket = { ...bucket };
+        fixedBucket[key] = { ...r, timestamp: Math.round(r.timestamp / 1000) };
+        changed = true;
+      }
+    }
+    out[pid] = fixedBucket;
+  }
+  return changed ? out : reports;
 }
 
 /**

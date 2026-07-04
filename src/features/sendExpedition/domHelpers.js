@@ -3,8 +3,9 @@
 // Impure DOM readers for sendExpedition — the expedition-cap walk over the
 // planet list + event box. Every export here touches the live page (the
 // `#planetList` rows, the `#eventContent` fleet table, and the settings
-// store); the pure compute core (constants, `stripBrackets`, URL builder,
-// cap checks, initial-label decision) lives in `./pure.js` instead.
+// store); the pure compute core (constants, URL builder, cap checks,
+// initial-label decision) lives in `./pure.js` instead. Coord normalization
+// (`denseCoords`) is shared from `domain/bodies.js`.
 //
 // Why a sibling file instead of inlining into `./index.js` (mirrors
 // `sendColony/domHelpers.js` + `sendLifeform/domHelpers.js`):
@@ -31,13 +32,13 @@
 // single-feature (only sendExpedition filters in-flight expeditions this way), so
 // per `gameDom.js`'s scope rules it stays local here rather than hoisted.
 //
-// @see ./pure.js  — pure compute core (`stripBrackets`, URL builder, caps).
+// @see ./pure.js  — pure compute core (URL builder, caps).
 // @see ./index.js — orchestrator; the click handler consumes these readers.
 
 import { settingsStore } from '../../state/settings.js';
 import { GAME } from '../../lib/gameDom.js';
 import { findNextPlanetInList } from '../shared/planetList.js';
-import { stripBrackets } from './pure.js';
+import { denseCoords } from '../../domain/bodies.js';
 
 /**
  * Read the currently-active planet's coords from `#planetList`. Returns
@@ -50,7 +51,7 @@ export const getActivePlanetCoords = () => {
   const planet = document.querySelector(GAME.ACTIVE_PLANET);
   if (!planet) return null;
   const coordsEl = planet.querySelector(GAME.PLANET_KOORDS);
-  const coords = stripBrackets(coordsEl?.textContent);
+  const coords = denseCoords(coordsEl?.textContent);
   return coords || null;
 };
 
@@ -75,7 +76,7 @@ export const countActiveExpeditions = (originCoords) => {
   if (originCoords === null) return rows.length;
   let count = 0;
   for (const row of rows) {
-    const c = stripBrackets(row.querySelector(GAME.COORDS_ORIGIN)?.textContent);
+    const c = denseCoords(row.querySelector(GAME.COORDS_ORIGIN)?.textContent);
     if (c === originCoords) count += 1;
   }
   return count;
@@ -99,7 +100,7 @@ export const findPlanetWithExpSlot = (skipCurrent) => {
   const max = settingsStore.get().maxExpeditionsPerPlanet;
   const cp = findNextPlanetInList(
     (p) => {
-      const coords = stripBrackets(
+      const coords = denseCoords(
         p.querySelector(GAME.PLANET_KOORDS)?.textContent,
       );
       return !!coords && countActiveExpeditions(coords) < max;

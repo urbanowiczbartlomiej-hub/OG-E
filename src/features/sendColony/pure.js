@@ -219,12 +219,13 @@ const isFreeTarget = (scan, index, coordKey, pos) => {
  * Pick the first free target position inside the galaxy view the user
  * is currently staring at. Pure: inputs in, coord out, no DOM / clock.
  *
- * Implements the "current-view priority" rule: when the user has just
- * scanned a system and is still on its galaxy
- * view, a matching free slot in THAT system takes precedence over the
- * global best candidate from `findNextColonizeTarget`. Gives immediate
- * visual feedback ("you see it, Send goes there") instead of bouncing
- * to some other galaxy.
+ * PREVIEW / PAINT-ONLY: this pick is used purely to tint the button
+ * rim/label so the user can see that a matching free slot exists in the
+ * system they're currently staring at. It does NOT redirect the dispatch:
+ * the actual send always uses the global best candidate from
+ * `findNextColonizeTarget` after navigating to `fleetdispatch`. So this is
+ * immediate visual feedback about what's in view, not a promise that "you
+ * see it, Send goes there".
  *
  * A position is a hit when both:
  *   - `scans[view.galaxy:view.system].positions[pos].status === 'empty'`
@@ -506,8 +507,10 @@ export const derive = (env) => {
     freeUniverse = Math.max(0, freeUniverse - blocks);
   }
 
-  // Galaxy branch — current-view priority so the coords the user is looking at
-  // win over the global pick.
+  // Galaxy branch — the in-view candidate is PREVIEW/PAINT-ONLY: it tints the
+  // rim/label to show a free slot exists in the system the user is looking at.
+  // The dispatched send still uses the global best candidate from
+  // findNextColonizeTarget after navigating to fleetdispatch.
   if (env.search.includes('component=galaxy')) {
     /** @type {Coords | null} */
     let candidate = null;

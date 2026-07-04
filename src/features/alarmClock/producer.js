@@ -57,6 +57,7 @@ import { clusterWaves, DEFAULT_CLUSTER_GAP_SECONDS } from '../../domain/waves.js
 /** @typedef {import('../../domain/adhoc.js').AdhocAlarmClock} AdhocAlarmClock */
 import { extractFleetSaveCandidates, extractDepartingBodyKeys } from './fleetSaveScan.js';
 import { parseFsOffsets, GUARDIAN_SUPPRESS_TTL_SEC } from '../../domain/fleetSave.js';
+import { denseCoords } from '../../domain/bodies.js';
 import { NTFY_MAX_DELAY_SEC } from '../../sync/ntfyReconciler.js';
 import { settingsStore } from '../../state/settings.js';
 import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
@@ -115,8 +116,7 @@ export const extractReturnEntries = (root = document) => {
   for (const row of root.querySelectorAll(RETURN_ROW_SELECTOR)) {
     const arrivalAttr = row.getAttribute('data-arrival-time');
     const returnAt = arrivalAttr ? parseInt(arrivalAttr, 10) : NaN;
-    const coordsText = row.querySelector(GAME.COORDS_ORIGIN)?.textContent || '';
-    const origin = coordsText.replace(/[\s[\]]/g, '');
+    const origin = denseCoords(row.querySelector(GAME.COORDS_ORIGIN)?.textContent);
     out.push({ returnAt, origin });
   }
   return out;

@@ -68,6 +68,11 @@
  * @typedef {object} ApiRank
  * @property {number} [position]      Rank (1 = top).
  * @property {number} [score]
+ * @property {number} [ships]         Ship COUNT — military highscore (type 3)
+ *   rows only. The server OMITS the attribute when the player owns 0 ships
+ *   (verified on s163-pl: no `ships="0"` rows exist), so consumers must read
+ *   "row present, attribute absent" as 0 — a pure-defense account, not
+ *   missing data.
  */
 
 /**
@@ -135,6 +140,7 @@ const A_STATUS = /\bstatus="([^"]*)"/;
 const A_ALLIANCE = /\balliance="([^"]*)"/;
 const A_POSITION = /\bposition="([^"]*)"/;
 const A_SCORE = /\bscore="([^"]*)"/;
+const A_SHIPS = /\bships="([^"]*)"/;
 const A_CATEGORY = /\bcategory="([^"]*)"/;
 const A_TYPE = /\btype="([^"]*)"/;
 const ROOT_TS_RE = /\btimestamp="(\d+)"/;
@@ -263,9 +269,13 @@ export function parseHighscore(xml) {
     if (!idm) continue;
     const posm = attrs.match(A_POSITION);
     const scm = attrs.match(A_SCORE);
+    const shm = attrs.match(A_SHIPS);
     ranks[idm[1]] = {
       position: posm ? Number(posm[1]) : undefined,
       score: scm ? Number(scm[1]) : undefined,
+      // Only the military feed carries it; keep undefined elsewhere so the
+      // "absent attribute on a present row = 0 ships" rule stays type-scoped.
+      ...(shm ? { ships: Number(shm[1]) } : {}),
     };
   }
   // category/type are attributes on the <highscore …> root (first match).

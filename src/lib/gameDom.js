@@ -106,6 +106,13 @@ export const GAME = {
    *  `title` (the visible text is truncated). Read by the alarmClock fleet-row
    *  parser; `features/dailyRun` reads `.destFleet figure` for the moon icon. */
   DEST_FLEET: '.destFleet',
+  /** Game-native ownership marker on an incoming HOSTILE fleet row's countdown.
+   *  Read by `features/badges` and `features/threatHighlight`. Bare class name
+   *  used via `row.querySelector(...)`. */
+  ROW_HOSTILE: '.hostile',
+  /** Game-native ownership marker on an OWN / friendly fleet row's countdown.
+   *  Read by `features/alarmClock` (FS-candidate scanning). */
+  ROW_FRIENDLY: '.friendly',
 
   // ── Planet detail panel ────────────────────────────────────────────
   /** Anchor holding the current planet's coords, e.g. "[4:30:8]". */
@@ -231,4 +238,13 @@ export const GAME = {
 
   // ── Top menu ───────────────────────────────────────────────────────
   MENU_TABLE: '#menuTable',
+
+  // ── Messages / inbox ───────────────────────────────────────────────
+  /**
+   * Hidden per-message metadata block on the messages page, carrying the
+   * report's `data-raw-*` attributes. Read by `features/targetsIngest` (spy
+   * report ingestion) and `features/traderMenuHighlight` (the 6× trader
+   * auto-switch detector).
+   */
+  MESSAGES_RAW_DATA: '.rawMessageData',
 };

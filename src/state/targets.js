@@ -19,7 +19,7 @@ import { createStore } from '../lib/createStore.js';
 import { persist } from '../lib/persist.js';
 import { chromeStore } from '../lib/storage.js';
 import { currentUniverseKey } from './universeKey.js';
-import { bodyKey } from '../domain/espionageReport.js';
+import { bodyKey, normalizeReportTimestamps } from '../domain/espionageReport.js';
 
 /** @typedef {import('../domain/espionageReport.js').SpyReport} SpyReport */
 
@@ -97,8 +97,11 @@ export const initTargetReportsStore = () => {
     store: targetReportsStore,
     load: async () => {
       const parsed = await chromeStore.get(currentTargetReportsKey());
+      // Unit repair on hydrate: pre-fix reports stored ms timestamps (they
+      // read as perpetually fresh). Normalised in memory here; the next
+      // write-through persists the fix.
       return parsed && typeof parsed === 'object'
-        ? /** @type {TargetReports} */ (parsed)
+        ? normalizeReportTimestamps(/** @type {TargetReports} */ (parsed))
         : null;
     },
     save: (value) => chromeStore.set(currentTargetReportsKey(), value),

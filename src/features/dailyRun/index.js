@@ -46,6 +46,7 @@
 
 import { settingsStore } from '../../state/settings.js';
 import { parseUniverseId } from '../../lib/universeId.js';
+import { safeLS } from '../../lib/storage.js';
 import {
   dailyRunRoutesStore,
   flushDailyRunRoutesStore,
@@ -303,7 +304,7 @@ const flash = (el, text) => {
  * @returns {void}
  */
 const stashMicroRedirect = () => {
-  safeWrite(bareFleetdispatchUrl(urlParam('cp')));
+  safeLS.set(DAILY_RUN_REDIRECT_KEY, bareFleetdispatchUrl(urlParam('cp')));
 };
 
 /**
@@ -324,25 +325,7 @@ const stashCollectRedirect = (target) => {
   // Bare fleetdispatch on the next planet still needing collection; the
   // courier re-selects + re-targets there on the next tap (the collect
   // target comes from the store, not the URL).
-  safeWrite(bareFleetdispatchUrl(nextCp));
-};
-
-/** @param {string} url */
-const safeWrite = (url) => {
-  try {
-    localStorage.setItem(DAILY_RUN_REDIRECT_KEY, url);
-  } catch {
-    // Private mode / quota — the send still works, just no auto-redirect.
-  }
-};
-
-/** Drop a stashed redirect (the send was rejected, so no navigation). */
-const clearRedirectStash = () => {
-  try {
-    localStorage.removeItem(DAILY_RUN_REDIRECT_KEY);
-  } catch {
-    // ignore
-  }
+  safeLS.set(DAILY_RUN_REDIRECT_KEY, bareFleetdispatchUrl(nextCp));
 };
 
 /** Short label for a rejected sendFleet, by error code.
@@ -489,7 +472,7 @@ const handleZone = async (mode) => {
     dimZone(zone, true);
     const r = await courierDispatch(OWNER_FS);
     if (!r.ok) {
-      clearRedirectStash();
+      safeLS.remove(DAILY_RUN_REDIRECT_KEY);
       // Belt-and-braces: the gate above already vetted ownership, but keep
       // the courier's own refusal mapped to the same recovery as sendColony.
       if (r.reason === 'foreign') {
