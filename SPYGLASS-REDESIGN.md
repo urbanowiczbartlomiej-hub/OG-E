@@ -17,6 +17,106 @@
 
 ---
 
+## 0. SESSION HANDOFF (read this first — for the next session)
+
+Implementation is **in progress on branch `feat/spyglass-v3`** (off `main` @ `chore(release):
+1.34.0`). **Local only — not pushed, not released.** Tree is **green** (`npm run typecheck`
++ `npm run lint` + `npm run build` all pass) at every commit below. Work loop per CLAUDE.md:
+change → build → user verifies in the browser → commit; **no unit tests during the loop**
+(reconcile them at release, Etap-end). Publishing = bump `package.json`+`manifest.json` +
+CHANGELOG + `chore(release): 1.35.0` pushed to `main` (`urbanowiczbartlomiej-hub`), **confirm
+with the user first**.
+
+### DONE this session (commits on `feat/spyglass-v3`)
+
+| Commit | Etap | What shipped |
+|---|---|---|
+| `1ed2696` | 0a + 0b/E1 | fair-play addendum (§8); `lib/dangerColor.js` (de-drift); equal-ts ingest guard; **rich-field spy-report normalizer** (economy/research/lifeform scores, buildings/research/lf, characterClass, resources/metal/crystal/deut, loot%, counter-esp%, `revealed{}`, activity enum) — additive, gate unchanged |
+| `4fdff3c` | (re-plan) | moved 0b's coverage-honesty (partial+moon admission, `revealed.defense` gating, bodies denominator) **into Etap F** — the newest-per-body store would let a partial re-scan evict a full report's defence; moon bodies entangle `playerPlanets`→`sendSpy`→coverage that F reworks |
+| `3b560d8` | — | deleted stale `RELEASE-HANDOFF.md` (1.34.0 shipped) |
+| `d777683` | A | table **14→7 cols** (⭐·Player·Danger·Fleet·Military·Ships·Intel), Intel glyph merges Scanned+Coverage, controls cleanup (drop Attack-range + More-filters; add "in range only" + "hide inactive"), intro rewrite, persist show-limit |
+| `c4836f6` | B | **`domain/raidVerdict.js`** (raid-or-skip + loot) + **`dossier.js`** (rich drill-down: verdict banner, danger `mobileLo..mobileHi` interval bar, reasons, hidden-fleet math, planets grid + ⭐ hoard) replacing the thin expand-row |
+| `9af13a1` | C | **`domain/civilBaseline.js`** — economy→ships decile-median curve → per-player combat-ship surplus; CIVIL BASELINE dossier section (weak prior / upper bound, never into D) |
+| `2bd2915` | D-search | header **nickname search** over the whole set incl. excluded players (dimmed + reason + "show anyway" `forceInclude`) |
+| `f41f4a5` | D-strip | "who's been near you" defensive strip from proximity reports (§6.10) — NEW `state/proximityReports.js` + proximity gate/normalizer + targetsIngest + `content.js` init + dashboard strip. Green, committed. **Not yet live-verified** — needs a real "obca flota dostrzeżona" alert to see the strip populate (verify next session) |
+
+### NEXT — future sessions, in order
+
+*(Etap D-strip is committed `f41f4a5` but not live-verified — open the messages tab with a
+real "obca flota dostrzeżona" alert and confirm the 🛡 strip populates; the code is green.)*
+
+1. **Etap E — the Spyglass map** (its own release, likely 1.36.0): multi-player overlay. A
+   genuine multi-day refactor — extract the private, state-glued `buildComposite`/
+   `buildScoreField`/`showPlayerOnMap`/`buildSystemCard` out of the 1,826-line `freeStreak.js`
+   into a shared `mapPrimitives.js`. See §6.9. Treat it as a big, isolated piece; `freeStreak.js`
+   is now settled (1.34.0 shipped) so touching it is allowed.
+2. **Etap F — routine tracker + coverage honesty** (the big one; **needs the ToolDev consult
+   first — see below**). Consolidates: the `{latest, history}` store migration, partial+moon
+   report admission, `revealed.defense` coverage gating, bodies (moon) denominator, galaxy-view
+   activity capture with self-induced-activity discount, `domain/routine.js`, the activity/
+   weekday/collection visuals. **The migration is the single riskiest change** (§10.1): it MUST
+   ship as a read-time `latestOf`/`historyOf` projection applied to BOTH read paths — the
+   dashboard's `index.js:~1030` (`Object.values(bucket)`→`estimateHiddenFleet`) and `~1039`
+   (`Object.entries(bucket)`) iterate bucket values AS raw `SpyReport`s, so a naive shape change
+   silently zeroes every hidden-fleet estimate. Plus the normalizer rewrite, in ONE commit, with
+   a migration-cap test. Reuse the D-strip store as a template for the ring shape.
+3. **Etap G — scan planner** (`windowBonus` **needs the ToolDev consult**): `domain/scanPriority.js`
+   (danger×staleness×windowBonus), per-player `staleMs` cadence, FAB walks the order, "why next"
+   strip, `shipAvailability()` pre-flight (note: it's LIVE code used by `dailyRun` — add a
+   `sendSpy` consumer, don't "revive dead code"), `noShips`→"No probes!" label fix, rescan-map prune.
+4. **Release 1.35.0** — reconcile tests (new pure modules `raidVerdict`/`civilBaseline`/`routine`/
+   `scanPriority` + the store migration + `espionageReport` rich fields & proximity + `targets.js`
+   search + `dangerColor` + `proximityReports`), CHANGELOG, bump `package.json`+`manifest.json`,
+   `chore(release): 1.35.0`, push to `main`. Map/FS-bracketing/watchlist-sync → **1.36.0** (§12).
+
+### Parallel USER action (do NOT block on it, but start it)
+
+**Open the one consolidated ToolDev consult (YELLOW-D, see §8 + `docs/fair-play.md`)** — the
+provenance-first question for the **routine tracker + `windowBonus`**. It is required before
+Etaps **F and G** ship, and it can invalidate them, so ask before building those. Etap D-strip
+and Etap E do not need it.
+
+### Implementation gotchas learned this session (save future time)
+
+- **Coordinator pattern that worked:** isolated/mechanical tasks → delegate to background
+  subagents on **disjoint files** (dangerColor, equal-ts, the table-cut + controls, dossier.js,
+  civilBaseline.js, the proximity strip); **keystone contracts and tightly-coupled UI↔domain
+  wiring → drive directly** (espionageReport rich fields, raidVerdict, all the index.js plumbing).
+  Always run the **authoritative tsc+lint+build yourself** after integrating (agents were told
+  not to run npm).
+- **Shell:** PowerShell only (the Bash tool errors "No suitable shell"). Multi-line commit
+  messages → write to a scratch file + `git commit -F` (never inline heredocs). Commit trailer
+  `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
+- **Large deletions fail the Edit tool** when the block has special chars (`·`, `↻`, backticks,
+  curly `'`): matching a 100-line `old_string` mismatches. Use a PowerShell **regex on the raw
+  text** and write back UTF-8 **without BOM** (`[System.IO.File]::WriteAllText($p,$t,(New-Object
+  System.Text.UTF8Encoding $false))`) — that's how `detailRow` was removed.
+- **"File modified since read"** trips after your OWN edits to a large file even when git shows
+  it unmodified — just re-read the region and retry. **Line numbers drift** across edits;
+  re-`grep` for anchors before each edit rather than trusting earlier line numbers.
+- `protectionFactor: 0` = attack-band OFF (it was the old select's "off" value; domain already
+  treats 0 as disable).
+- **Old spy reports (pre-`1ed2696`) lack the new `resources`/`revealed` fields** → `lootNow`
+  reads 0 and the raid verdict shows "scan first"/"empty" for previously-spied players until
+  they are **re-spied on the new build**. Expected; mention it when the user tests loot.
+- `raidVerdict.js` and `civilBaseline.js` carry **first-pass heuristic thresholds** (LOOT_FLOOR
+  500k, FLEET_RISK_FLOOR 30k pts, fresh 12h/stale 3d; civil BASELINE_MAX 0.25/ELEVATED_MAX 0.6)
+  — named consts, tune once the user has lived with them.
+
+### Still deferred / not yet built (beyond E/F/G)
+
+- The **watchlist-card landing IA** (§6.1, §6.3) — the current table is still the landing view;
+  the raid verdict lives in the **dossier**, not yet on a glanceable card. The "card" half of
+  the §6.4 jack-point is pending an IA step (fold into a later etap or its own).
+- **pts/ship calibration** (§7 step 3) — the civil baseline ships the ship-surplus model; the
+  spy-calibrated points-per-ship refinement is deferred.
+- **Attack-range** is a per-request toggle now, not the per-planet ⚔ glyph on cards (cards
+  pending). The dossier shows `⚔ in range` in its header.
+
+---
+
+---
+
 ## 1. AS-IS — the two surfaces and their engine
 
 ### 1.1 Galaxy Viewer — what it is and what it is FOR
@@ -831,17 +931,15 @@ All Etapy are **blocked-on** a green, merged 1.34.0 (not "coordinated with"); Et
 the exact `targets.js` / `index.js` hot zones the in-flight GV-UX work also edits, and the
 map refactor stays off `freeStreak.js` until 1.34.0 settles.
 
-> **Progress (branch `feat/spyglass-v3`, off `main` @ 1.34.0):**
-> **Etap 0a + Etap 0b/E1 DONE — committed `1ed2696`, tree green (tsc+lint+build).**
+> **Progress: Etapy 0, A, B, C, D-search DONE + committed on `feat/spyglass-v3` (tree
+> green). Full commit-by-commit status + the next-session plan is in §0 (top).**
 > **Re-sequencing (design met code):** Etap 0b's *coverage-honesty* items — admit
-> **partial** reports and **moon** reports, gate `estimateHiddenFleet` on
-> `revealed.defense`, and the **bodies (moon) coverage denominator** — have been
-> **moved into Etap F**. Reason: the newest-per-body store would let a partial re-scan
-> *evict* a full report's defence (the `{latest,history}` ring in F fixes this, exactly
-> as §9bis's "defence history only from full reports" implies), and moon bodies entangle
-> with `playerPlanets`→`sendSpy`→coverage which F reworks anyway. The `revealed{}` map,
-> rich-field normalizer, `dangerColor` unify, and equal-ts guard all shipped in 0b as the
-> safe additive foundation. **rescan-map prune** moved to Etap G (which owns the rescan map).
+> **partial** + **moon** reports, gate `estimateHiddenFleet` on `revealed.defense`, and the
+> **bodies (moon) coverage denominator** — were **moved into Etap F** (the newest-per-body
+> store would let a partial re-scan *evict* a full report's defence; the `{latest,history}`
+> ring in F fixes it, per §9bis; moons entangle `playerPlanets`→`sendSpy`→coverage F reworks).
+> **rescan-map prune** moved to Etap G. The rich-field normalizer, `revealed{}` map,
+> `dangerColor` unify, and equal-ts guard shipped in 0b as the safe additive foundation.
 
 | Etap | Goal | Key files | Store change? |
 |---|---|---|---|
