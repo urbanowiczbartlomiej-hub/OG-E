@@ -48,10 +48,10 @@ import { parseTargetPositions } from '../../domain/histogram.js';
 import { populatePositionFilter, renderColonyChart } from './colony.js';
 import { renderFreeRegions, renderServerMap, selectCandidate, resetFreeSelection, highlightPin, _resetFreeStreakForTest } from './freeStreak.js';
 import { chipValue, setChipValue, wireChips, setChipsEnabled } from './chips.js';
+import { computeComposite, computeScoreField } from './mapPrimitives.js';
 import { renderTargets, DEFAULT_TARGET_SORT } from './targets.js';
-import { buildThreatFarmField } from '../../domain/heatField.js';
 import { ZONES } from '../../domain/zoneScore.js';
-import { buildOccupancyIndex, buildScanMapFromIndex } from '../../domain/apiOccupancy.js';
+import { buildOccupancyIndex } from '../../domain/apiOccupancy.js';
 import { buildTargetCandidates } from '../../domain/targets.js';
 import { buildDangerProfiles } from '../../domain/dangerScore.js';
 import { buildCivilBaseline } from '../../domain/civilBaseline.js';
@@ -991,25 +991,6 @@ const loadAll = async () => {
 const getFilter = () => posFilter?.value ?? 'all';
 
 /**
- * The live-scan overlay for the API composite: only systems whose positions
- * were actually observed (this session). Excludes lf-only entries — after §5
- * the persisted scans blob keeps only lifeform markers (empty `positions`), so
- * a naive spread would clobber the API occupancy for those systems with blanks.
- *
- * @param {GalaxyScans} s
- * @returns {GalaxyScans}
- */
-const liveOverlay = (s) => {
-  /** @type {GalaxyScans} */
-  const out = {};
-  for (const k of /** @type {(keyof GalaxyScans)[]} */ (Object.keys(s))) {
-    const v = s[k];
-    if (v && v.positions && Object.keys(v.positions).length > 0) out[k] = v;
-  }
-  return out;
-};
-
-/**
  * Re-render both the colony section and the galaxy section from the
  * current caches.
  *
@@ -1431,14 +1412,7 @@ const buildComposite = (positions) => {
     && compositeCache.posKey === posKey) {
     return compositeCache.value;
   }
-  const value = /** @type {GalaxyScans} */ ({
-    ...buildScanMapFromIndex(apiIndex, {
-      galaxies: apiBounds.galaxies,
-      systems: apiBounds.systems,
-      targets: positions,
-    }),
-    ...liveOverlay(scans),
-  });
+  const value = computeComposite({ apiIndex, apiBounds, scans, positions });
   compositeCache = { apiIndex, scans, posKey, value };
   return value;
 };
@@ -1473,12 +1447,9 @@ const buildScoreField = (composite) => {
     && scoreFieldCache.danger === dangerProfiles) {
     return scoreFieldCache.value;
   }
-  const value = buildThreatFarmField(composite, {
-    galaxies: apiBounds.galaxies,
-    systems: apiBounds.systems,
-    donutGalaxy: apiBounds.donutGalaxy,
-    donutSystem: apiBounds.donutSystem,
-  }, { ownMilitary, danger: dangerProfiles, cols: apiBounds.systems, window: windowH, farmReach });
+  const value = /** @type {import('../../domain/heatField.js').ThreatFarmField} */ (
+    computeScoreField({ composite, apiBounds, ownMilitary, danger: dangerProfiles, windowH, farmReach })
+  );
   scoreFieldCache = { composite, windowH, farmReach, ownMilitary, danger: dangerProfiles, value };
   return value;
 };
