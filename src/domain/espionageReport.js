@@ -48,6 +48,9 @@ import { sumResourceValue } from './unitCosts.js';
  * @property {string} [targetplanettype]
  * @property {string} [targetplayerid]
  * @property {string} [sourceplayerid]
+ * @property {string} [sourceplayername]
+ * @property {string} [sourceplanetcoordinates]
+ * @property {string} [sourceplanettype]
  * @property {string} [playername]
  * @property {string} [defensevalue]
  * @property {string} [fleetvalue]
@@ -365,4 +368,65 @@ export function isEspionageReportBag(bag) {
   if (bag.targetplanettype === '3') return false;
   const dv = bag.defensevalue;
   return typeof dv === 'string' && dv !== '' && dv !== '-';
+}
+
+// ── Proximity "spotted near you" alerts ────────────────────────────────────────
+// The espionage message tab ALSO carries "obca flota dostrzeżona w pobliżu Twojej
+// planety" alerts (sender "dowódca floty"), emitted whenever an enemy fleet is
+// detected near one of OUR OWN bodies. They share the rawMessageData shape but
+// invert the roles: `coordinates` is MY planet, `targetplayerid` is ME, and the
+// distinguishing `sourceplayerid` names the SCOUT (a normal scan has none, which
+// is exactly what `isEspionageReportBag` rejects on). `fleetvalue`/`defensevalue`
+// are '-' (no fleet/defense revealed). We ingest these into a device-local
+// "who's been probing me" feed — see state/proximityReports.js. Verified fields
+// (lowercased): coordinates / targetplayerid / targetplanettype / sourceplayerid /
+// sourceplayername / sourceplanetcoordinates / sourceplanettype / timestamp
+// (epoch SECONDS) / counterespionagechance / active.
+
+/**
+ * A normalised proximity "foreign fleet spotted near your planet" alert. Purely
+ * positional — no fleet/defense figures (the game reveals none). `atCoords` is
+ * OUR body that was approached; `byPlayerId` is the scout who approached it.
+ * @typedef {object} ProximityReport
+ * @property {number} [ts]            Alert time, epoch SECONDS (same unit as SpyReport).
+ * @property {number} byPlayerId      The scout's player id (`sourceplayerid`).
+ * @property {string} [byPlayerName]  The scout's name (`sourceplayername`), if shown.
+ * @property {string} [fromCoords]    Where the scouting fleet came from.
+ * @property {number} [fromPlanetType] 1 = planet, 3 = moon (of `fromCoords`).
+ * @property {string} atCoords        OUR planet that was approached (`coordinates`).
+ * @property {number} [atPlanetType]  1 = planet, 3 = moon (of `atCoords`).
+ */
+
+/**
+ * Is this raw `data-raw-*` bag a PROXIMITY "spotted near you" alert? True only
+ * when it carries all three of `coordinates` (our body), `targetplayerid` (us)
+ * and `sourceplayerid` (the scout) — the last is the very field the espionage
+ * gate rejects on, so the two predicates are mutually exclusive.
+ * @param {Record<string, string|undefined> | null | undefined} bag
+ * @returns {boolean}
+ */
+export function isProximityReportBag(bag) {
+  return !!(bag && bag.coordinates && bag.targetplayerid && bag.sourceplayerid);
+}
+
+/**
+ * Normalise a raw `data-raw-*` bag into a {@link ProximityReport}. Returns null
+ * when it lacks the two fields we can't do without — the approached coordinates
+ * and the scout's id.
+ * @param {RawEspionageData & Record<string, string|undefined>} bag
+ * @returns {ProximityReport | null}
+ */
+export function normalizeProximityReport(bag) {
+  if (!bag || !bag.coordinates) return null;
+  const byPlayerId = toNum(bag.sourceplayerid);
+  if (byPlayerId == null) return null;
+  return {
+    atCoords: bag.coordinates,
+    atPlanetType: toNum(bag.targetplanettype),
+    byPlayerId,
+    byPlayerName: bag.sourceplayername || undefined,
+    fromCoords: bag.sourceplanetcoordinates || undefined,
+    fromPlanetType: toNum(bag.sourceplanettype),
+    ts: toNum(bag.timestamp),
+  };
 }

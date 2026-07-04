@@ -11,8 +11,14 @@
 // see — hence reading the rendered DOM instead.) Every genuine TARGET espionage
 // report is normalised (domain/espionageReport) and recorded (state/targets).
 
-import { normalizeSpyReport, isEspionageReportBag } from '../../domain/espionageReport.js';
+import {
+  normalizeSpyReport,
+  isEspionageReportBag,
+  normalizeProximityReport,
+  isProximityReportBag,
+} from '../../domain/espionageReport.js';
 import { recordReport } from '../../state/targets.js';
+import { recordProximityReport } from '../../state/proximityReports.js';
 import { GAME } from '../../lib/gameDom.js';
 
 /* global MutationObserver, document */
@@ -50,7 +56,10 @@ function bagFromElement(el) {
 let seen = new WeakSet();
 
 /**
- * Ingest one rawMessageData element if it's a genuine target spy report.
+ * Ingest one rawMessageData element. A genuine target spy report feeds the
+ * hidden-fleet store; a proximity "spotted near you" alert (distinguished by
+ * carrying a `sourceplayerid`) feeds the device-local probe feed. The two
+ * predicates are mutually exclusive on that field.
  * @param {Element} el
  * @returns {void}
  */
@@ -58,9 +67,13 @@ function ingest(el) {
   if (seen.has(el)) return;
   seen.add(el);
   const bag = bagFromElement(/** @type {HTMLElement} */ (el));
-  if (!isEspionageReportBag(bag)) return;
-  const report = normalizeSpyReport(bag);
-  if (report) void recordReport(report);
+  if (isEspionageReportBag(bag)) {
+    const report = normalizeSpyReport(bag);
+    if (report) void recordReport(report);
+  } else if (isProximityReportBag(bag)) {
+    const pr = normalizeProximityReport(bag);
+    if (pr) void recordProximityReport(pr);
+  }
 }
 
 /**

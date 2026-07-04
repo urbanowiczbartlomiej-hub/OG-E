@@ -60,6 +60,7 @@ import { raidVerdict } from '../../domain/raidVerdict.js';
 import { normalizeReportTimestamps } from '../../domain/espionageReport.js';
 import { readApiCacheFor, apiCacheKeyFor } from '../../state/apiCache.js';
 import { targetReportsKeyFor } from '../../state/targets.js';
+import { proximityReportsKeyFor } from '../../state/proximityReports.js';
 import { watchListKeyFor, normalizeWatchList, DEFAULT_SPY_PROBES } from '../../state/watchList.js';
 import { pointsOf } from '../../domain/unitCosts.js';
 import {
@@ -256,6 +257,14 @@ let targetCandidates = [];
 let targetReports = {};
 
 /**
+ * "Foreign fleet spotted near your planet" alerts for the selected universe
+ * (`state/proximityReports.js`), newest-first. Drives the Spyglass
+ * "🛡 Who's been near you" strip.
+ * @type {import('../../domain/espionageReport.js').ProximityReport[]}
+ */
+let proximityReports = [];
+
+/**
  * Planet count per player from the universe.xml snapshot — the coverage
  * denominator ("spied X / Y planets") for the hidden-fleet estimate.
  * @type {Record<string, number>}
@@ -337,6 +346,7 @@ const forceIncludeIds = new Set();
 /** @type {HTMLInputElement | null} */ let tgtInRange;
 /** @type {HTMLInputElement | null} */ let tgtHideInactive;
 /** @type {HTMLElement | null} */ let tgtCountInfoEl;
+/** @type {HTMLElement | null} */ let proximityStripEl;
 
 /** Guards {@link installDashboard} against a double-install. */
 let installed = false;
@@ -466,6 +476,7 @@ const boot = async () => {
       galaxyScanConfigKeyFor(selectedUniverseId),
       apiCacheKeyFor(selectedUniverseId),
       targetReportsKeyFor(selectedUniverseId),
+      proximityReportsKeyFor(selectedUniverseId),
     ];
     if (keysToWatch.some((k) => k in changes)) {
       void loadAll().then(renderAll);
@@ -620,6 +631,7 @@ const wireDom = () => {
   tgtInRange = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtInRange'));
   tgtHideInactive = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtHideInactive'));
   tgtCountInfoEl = document.getElementById('tgtCountInfo');
+  proximityStripEl = document.getElementById('proximityStrip');
 };
 
 /**
@@ -833,18 +845,20 @@ const loadAll = async () => {
     apiCache = {};
     targetCandidates = [];
     targetReports = {};
+    proximityReports = [];
     planetCountByPlayer = {};
     dangerProfiles = new Map();
     civilProfiles = new Map();
     return;
   }
-  const [h, s, p, op, api, tr] = await Promise.all([
+  const [h, s, p, op, api, tr, pr] = await Promise.all([
     chromeStore.get(historyKeyFor(selectedUniverseId)),
     chromeStore.get(scansKeyFor(selectedUniverseId)),
     chromeStore.get(playersKeyFor(selectedUniverseId)),
     readOwnProfile(selectedUniverseId),
     readApiCacheFor(selectedUniverseId),
     chromeStore.get(targetReportsKeyFor(selectedUniverseId)),
+    chromeStore.get(proximityReportsKeyFor(selectedUniverseId)),
   ]);
   history = Array.isArray(h) ? /** @type {ColonyEntry[]} */ (h) : [];
   scans = s && typeof s === 'object' ? /** @type {GalaxyScans} */ (s) : {};
@@ -897,6 +911,11 @@ const loadAll = async () => {
   targetReports = tr && typeof tr === 'object'
     ? normalizeReportTimestamps(/** @type {import('../../state/targets.js').TargetReports} */ (tr))
     : {};
+  // Proximity "spotted near you" feed — a plain newest-first array (no unit
+  // repair needed; it's written only by the post-fix ingest path).
+  proximityReports = Array.isArray(pr)
+    ? /** @type {import('../../domain/espionageReport.js').ProximityReport[]} */ (pr)
+    : [];
   // Coverage denominator: count each player's planets in the universe.xml
   // snapshot (planets only — moons are <moon> children we don't parse).
   /** @type {Record<string, number>} */
@@ -1013,6 +1032,7 @@ const renderAll = () => {
   // colony pass.
   repaintFreeRegions();
   repaintTargets();
+  renderProximityStrip();
 };
 
 /**
@@ -1153,6 +1173,67 @@ const repaintTargets = () => {
       row.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
     focusedTargetId = null;
+  }
+};
+
+/**
+ * Compact human age ("<1h" / "3h" / "2d" / "5w") for a proximity alert's epoch-
+ * SECONDS timestamp, '' when unknown. Mirrors the small formatAge/ageMs helpers
+ * in dossier.js / targets.js (kept inline — the strip is the only caller here).
+ * @param {number|undefined} tsSeconds
+ * @param {number} nowMs
+ * @returns {string}
+ */
+const proximityAge = (tsSeconds, nowMs) => {
+  const ms = typeof tsSeconds === 'number' && tsSeconds > 0 ? nowMs - tsSeconds * 1000 : NaN;
+  if (!Number.isFinite(ms) || ms < 0) return '';
+  const hours = ms / 3600000;
+  if (hours < 1) return '<1h';
+  if (hours < 48) return `${Math.round(hours)}h`;
+  const days = hours / 24;
+  if (days < 14) return `${Math.round(days)}d`;
+  return `${Math.round(days / 7)}w`;
+};
+
+/**
+ * Fill the Spyglass "🛡 Who's been near you" strip from {@link proximityReports}:
+ * the last ~10 probes as compact lines "<name or #id> · near <coords> · <age> ago
+ * · from <coords>". The prober name is a click target that seeds the nickname
+ * search (dispatching an 'input' event so `tgtSearch`'s listener reveals them).
+ * Device-local, read-only — no sends, purely a passive view of opened alerts.
+ * @returns {void}
+ */
+const renderProximityStrip = () => {
+  if (!proximityStripEl) return;
+  proximityStripEl.textContent = '';
+  if (!proximityReports.length) {
+    const note = document.createElement('div');
+    note.style.cssText = 'color:#667;font-size:12px;';
+    note.textContent = 'No fleets spotted near you yet.';
+    proximityStripEl.appendChild(note);
+    return;
+  }
+  const nowMs = Date.now();
+  for (const r of proximityReports.slice(0, 10)) {
+    const line = document.createElement('div');
+    line.style.cssText = 'font-size:12px;color:#9aa;margin-bottom:3px;line-height:1.4;';
+
+    const label = r.byPlayerName || `#${r.byPlayerId}`;
+    const who = document.createElement('span');
+    who.textContent = label;
+    who.style.cssText = 'cursor:pointer;color:#8fb8e0;';
+    who.title = 'Find this player in the search below';
+    who.addEventListener('click', () => {
+      if (!tgtSearch) return;
+      tgtSearch.value = label;
+      tgtSearch.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    line.appendChild(who);
+
+    const age = proximityAge(r.ts, nowMs);
+    const rest = ` · near ${r.atCoords}${age ? ` · ${age} ago` : ''}${r.fromCoords ? ` · from ${r.fromCoords}` : ''}`;
+    line.appendChild(document.createTextNode(rest));
+    proximityStripEl.appendChild(line);
   }
 };
 
@@ -1761,6 +1842,7 @@ export const _resetDashboardForTest = () => {
   alarmClockConfigApi = null;
   history = [];
   scans = {};
+  proximityReports = [];
   compositeCache = null;
   scoreFieldCache = null;
   lastMapPaint = null;
@@ -1803,6 +1885,7 @@ export const _resetDashboardForTest = () => {
     tgtInRange =
     tgtHideInactive =
     tgtCountInfoEl =
+    proximityStripEl =
     freeContainer =
     freeCountInfoEl =
       /** @type {any} */ (undefined);

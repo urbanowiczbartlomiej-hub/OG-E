@@ -68,6 +68,7 @@ import { initAlarmClockConfigStore } from './state/alarmClockConfig.js';
 import { initBodiesStore } from './state/bodies.js';
 import { initColonizeDecisionsStore } from './state/colonizeDecisions.js';
 import { initTargetReportsStore } from './state/targets.js';
+import { initProximityReportsStore } from './state/proximityReports.js';
 import { initWatchListStore } from './state/watchList.js';
 
 import { installColonyRecorder } from './features/colonyRecorder.js';
@@ -152,6 +153,10 @@ initColonizeDecisionsStore();
 // consumer (installTargetsIngest) writes opened spy reports here; the dashboard
 // Targets sub-tab reads them to estimate hidden (fleet-saved) fleet.
 initTargetReportsStore();
+// Proximity-alert feed (per-universe, chrome.storage). The SAME ingest consumer
+// writes "foreign fleet spotted near your planet" alerts here; the dashboard
+// Spyglass "🛡 Who's been near you" strip reads them.
+initProximityReportsStore();
 // Watch-list (per-universe, chrome.storage). Hydrated here so the in-game scan
 // FAB sees the players the user starred in the dashboard Targets sub-tab.
 initWatchListStore();
