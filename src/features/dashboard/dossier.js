@@ -390,6 +390,38 @@ function planetsBlock({ playerId, planets, reports, rescan, nowMs, onRescan }) {
   return box;
 }
 
+/**
+ * Relationship tag selector (Etap F redesign) — enemy / friend / neutral, the tag
+ * that drives the Spyglass map marker colour (enemy red, friend green, neutral
+ * grey). Device-local; neutral = untagged. A click stops propagation so it never
+ * collapses the dossier.
+ * @param {string} playerId
+ * @param {import('../../state/watchList.js').Relationship} current
+ * @param {(pid: string, rel: import('../../state/watchList.js').Relationship) => void} onSet
+ * @returns {HTMLDivElement}
+ */
+function relationshipSelector(playerId, current, onSet) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'margin-bottom:10px;display:flex;align-items:center;gap:6px;font-size:11px;';
+  const label = document.createElement('span');
+  label.textContent = 'Relationship:';
+  label.style.color = '#6b7782';
+  wrap.appendChild(label);
+  /** @type {Array<[import('../../state/watchList.js').Relationship, string, string]>} */
+  const opts = [['enemy', 'Enemy', '#e2726a'], ['friend', 'Friend', '#7fd6a8'], ['neutral', 'Neutral', '#9aa7b3']];
+  for (const [rel, text, color] of opts) {
+    const on = (current || 'neutral') === rel;
+    const btn = document.createElement('button');
+    btn.textContent = text;
+    btn.style.cssText = 'padding:2px 8px;border-radius:3px;font-size:11px;cursor:pointer;'
+      + `border:1px solid ${on ? color : '#2a3542'};background:${on ? color : 'transparent'};`
+      + `color:${on ? '#0b1118' : '#8b95a0'};font-weight:${on ? '700' : '400'};`;
+    btn.addEventListener('click', (e) => { e.stopPropagation(); onSet(playerId, rel); });
+    wrap.appendChild(btn);
+  }
+  return wrap;
+}
+
 /** Sparkline block glyphs, empty → full. */
 const SPARK_BLOCKS = [' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 
@@ -490,6 +522,8 @@ function routineBlock(routine) {
  * @param {object} a
  * @param {string} a.playerId
  * @param {string} a.name
+ * @param {import('../../state/watchList.js').Relationship} [a.relationship]  Current tag.
+ * @param {(pid: string, rel: import('../../state/watchList.js').Relationship) => void} [a.onSetRelationship]
  * @param {import('../../domain/dangerScore.js').DangerProfile} [a.profile]
  * @param {import('../../domain/threatModel.js').HiddenFleetEstimate} [a.estimate]
  * @param {import('../../domain/raidVerdict.js').RaidVerdict} [a.verdict]
@@ -519,6 +553,11 @@ export function buildDossier(a) {
 
   // 1) Header (always).
   td.appendChild(headerLine(a.name, a.profile, !!a.inBand));
+
+  // 1b) Relationship tag selector — drives the Spyglass map marker colour.
+  if (a.onSetRelationship) {
+    td.appendChild(relationshipSelector(a.playerId, a.relationship || 'neutral', a.onSetRelationship));
+  }
 
   // 2) Raid verdict banner (the jack-point).
   if (a.verdict) td.appendChild(verdictBanner(a.verdict));

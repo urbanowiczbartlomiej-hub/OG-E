@@ -132,6 +132,13 @@ const watchedPlayers = new Set();
 let rescanMap = {};
 
 /**
+ * Player id → user-assigned relationship tag (enemy/friend/neutral) for the
+ * selected universe — the Spyglass map marker colour. Loaded/written with the
+ * watch-list. @type {Record<string, import('../../state/watchList.js').Relationship>}
+ */
+let watchRelationships = {};
+
+/**
  * Player ids whose Targets detail row (planets + spy links) is expanded.
  * Ephemeral session state — not persisted (re-deriving it on reload would mean
  * re-opening rows the user has since closed). Mutated in place so expansion
@@ -775,6 +782,7 @@ const wireColonySubtabs = () => {
  */
 const loadWatched = async () => {
   watchedPlayers.clear();
+  watchRelationships = {};
   if (!selectedUniverseId) return;
   // Snapshot the universe: this async load can be interleaved with a universe
   // switch, and we must key every read/write to the universe we started with
@@ -795,6 +803,7 @@ const loadWatched = async () => {
   if (uni !== selectedUniverseId) return;
   for (const id of cfg.players) watchedPlayers.add(id);
   rescanMap = cfg.rescan;
+  watchRelationships = cfg.relationships ?? {};
   // chrome.storage is authoritative for the probe count (the FAB reads it too).
   if (tgtProbes) tgtProbes.value = String(cfg.probes);
 };
@@ -813,7 +822,23 @@ const writeWatchConfig = () => {
     players: [...watchedPlayers],
     probes: Number(tgtProbes?.value) || DEFAULT_SPY_PROBES,
     rescan: rescanMap,
+    relationships: watchRelationships,
   });
+};
+
+/**
+ * Set (or clear → neutral) a watched player's relationship tag, persist it, and
+ * repaint the Targets sub-tab + the map so the marker colour updates.
+ * @param {string} pid
+ * @param {import('../../state/watchList.js').Relationship} rel
+ * @returns {void}
+ */
+const setRelationship = (pid, rel) => {
+  if (rel === 'neutral') delete watchRelationships[pid];
+  else watchRelationships[pid] = rel;
+  writeWatchConfig();
+  repaintTargets();
+  repaintSpyglassMap();
 };
 
 /**
@@ -1183,6 +1208,8 @@ const repaintTargets = () => {
     // Per-player civil-fleet baseline for the dossier (Etap C).
     civil: civilProfiles,
     routines,
+    relationships: watchRelationships,
+    onSetRelationship: setRelationship,
     // Nickname search (Etap D): reveals name-matches incl. excluded players.
     searchQuery: targetSearchQuery,
     onShowAnyway: (/** @type {string} */ id) => { forceIncludeIds.add(id); repaintTargets(); },

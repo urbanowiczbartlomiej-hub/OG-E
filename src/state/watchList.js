@@ -32,6 +32,11 @@ import { chromeStore } from '../lib/storage.js';
 import { currentUniverseKey } from './universeKey.js';
 
 /**
+ * @typedef {'enemy'|'friend'|'neutral'} Relationship
+ *   How the user has tagged a watched player — drives the Spyglass map marker
+ *   colour (enemy = red, friend = green, neutral = grey; own planets = white).
+ *   Absent = neutral. Device-local intel, never synced.
+ *
  * @typedef {object} WatchListConfig
  * @property {string[]} players   Watched player ids.
  * @property {number} probes      Espionage probes the scan FAB pre-arms per body.
@@ -39,6 +44,10 @@ import { currentUniverseKey } from './universeKey.js';
  *   Re-scan flags: player id (whole player) or "g:s:p" coord (one planet) →
  *   epoch-ms "treat any report older than this as needing a re-scan". Clears
  *   itself once a newer report lands. See `domain/spyScan.rescanAtFor`.
+ * @property {Record<string, Relationship>} [relationships]
+ *   Player id → user-assigned relationship tag (Spyglass map colour). Optional
+ *   in the type (pre-relationships configs omit it) but `normalizeWatchList` +
+ *   the store default always materialise it, so readers get `{}` not undefined.
  */
 
 /** Default probe count when none has been chosen yet. */
@@ -66,7 +75,7 @@ export const watchListKeyFor = (universeId) => `${universeId}:${WATCH_LIST_KEY_B
  */
 export const normalizeWatchList = (raw) => {
   if (Array.isArray(raw)) {
-    return { players: raw.map(String), probes: DEFAULT_SPY_PROBES, rescan: {} };
+    return { players: raw.map(String), probes: DEFAULT_SPY_PROBES, rescan: {}, relationships: {} };
   }
   const o = raw && typeof raw === 'object' ? /** @type {any} */ (raw) : {};
   const players = Array.isArray(o.players) ? o.players.map(String) : [];
@@ -79,7 +88,15 @@ export const normalizeWatchList = (raw) => {
       if (Number.isFinite(v) && v > 0) rescan[k] = v;
     }
   }
-  return { players, probes, rescan };
+  /** @type {Record<string, Relationship>} */
+  const relationships = {};
+  if (o.relationships && typeof o.relationships === 'object') {
+    for (const k of Object.keys(o.relationships)) {
+      const v = o.relationships[k];
+      if (v === 'enemy' || v === 'friend' || v === 'neutral') relationships[k] = v;
+    }
+  }
+  return { players, probes, rescan, relationships };
 };
 
 const currentKey = () => currentUniverseKey(WATCH_LIST_KEY_BASE, watchListKeyFor);
@@ -89,6 +106,7 @@ export const watchListStore = createStore(/** @type {WatchListConfig} */ ({
   players: [],
   probes: DEFAULT_SPY_PROBES,
   rescan: {},
+  relationships: {},
 }));
 
 /** @type {(() => void) | null} */
