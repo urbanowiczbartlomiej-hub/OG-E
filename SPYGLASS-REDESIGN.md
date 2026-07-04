@@ -40,6 +40,22 @@ with the user first**.
 | `2bd2915` | D-search | header **nickname search** over the whole set incl. excluded players (dimmed + reason + "show anyway" `forceInclude`) |
 | `f41f4a5` | D-strip | "who's been near you" defensive strip from proximity reports (§6.10) — NEW `state/proximityReports.js` + proximity gate/normalizer + targetsIngest + `content.js` init + dashboard strip. Green, committed. **Not yet live-verified** — needs a real "obca flota dostrzeżona" alert to see the strip populate (verify next session) |
 
+### DONE — session 2 (Etap F foundation; no routine visuals)
+
+The unblocked, de-risking core of Etap F — the store migration + coverage honesty — shipped
+per the user's cut, WITHOUT the consult-gated routine visuals. Tree green at each commit.
+
+| Commit | Etap | What shipped |
+|---|---|---|
+| `9aff5ff` | F (foundation) | **`{latest,history}` store migration** — NEW `domain/targetReports.js` (`latestOf`/`historyOf`/`toLite`/`HISTORY_CAP`, both-shape tolerant); shape-tolerant `normalizeReportTimestamps` (repairs `latest.timestamp` + each `history[].ts`); `recordReport` writes the ring with a **watched-only write-side retention gate** + equal-ts guard also blocking a duplicate history append; **all 4 read paths through `latestOf`** (3× dashboard `index.js` + in-game sendSpy FAB). Plus **coverage honesty**: `estimateHiddenFleet` gates each body on `revealed` (defence/fleet/`spiedCount` defence-covered only, so a partial's absent defence is never read as a real zero); `isEspionageReportBag` admits **partial** reports behind a scan-fingerprint (`hidden*`/numeric defence|fleet) so a combat-report loot line can't slip in. |
+| `e798124` | F (moons) | **Moon bodies**: `parseUniverse` flags `ApiPlanet.hasMoon` (own-content scan up to next `<planet>`, O(n)); coverage denominator counts planets + moons; gate admits `type=3` moon scans; **planet↔moon coord-collision guards** in the sendSpy FAB `spiedCoordsByPlayer` + dashboard per-planet `byCoord` (a moon scan never marks the planet spied). |
+
+**Etap F foundation is DONE.** What remains of Etap F = the **routine visuals only** (activity
+strip + galaxy-view activity capture + self-induced discount, weekday pattern, collection
+callout, spy timeline) — **still ToolDev-consult-gated**. **Deferred test debt** (per CLAUDE.md,
+reconcile at release): migration-cap / both-read-paths / retention-gate + equal-ts-no-dup-history
+tests, partial+moon gate, `revealed` gating, `<moon>` parse.
+
 ### NEXT — future sessions, in order
 
 *(Etap D-strip is committed `f41f4a5` but not live-verified — open the messages tab with a
@@ -50,16 +66,13 @@ real "obca flota dostrzeżona" alert and confirm the 🛡 strip populates; the c
    `buildScoreField`/`showPlayerOnMap`/`buildSystemCard` out of the 1,826-line `freeStreak.js`
    into a shared `mapPrimitives.js`. See §6.9. Treat it as a big, isolated piece; `freeStreak.js`
    is now settled (1.34.0 shipped) so touching it is allowed.
-2. **Etap F — routine tracker + coverage honesty** (the big one; **needs the ToolDev consult
-   first — see below**). Consolidates: the `{latest, history}` store migration, partial+moon
-   report admission, `revealed.defense` coverage gating, bodies (moon) denominator, galaxy-view
-   activity capture with self-induced-activity discount, `domain/routine.js`, the activity/
-   weekday/collection visuals. **The migration is the single riskiest change** (§10.1): it MUST
-   ship as a read-time `latestOf`/`historyOf` projection applied to BOTH read paths — the
-   dashboard's `index.js:~1030` (`Object.values(bucket)`→`estimateHiddenFleet`) and `~1039`
-   (`Object.entries(bucket)`) iterate bucket values AS raw `SpyReport`s, so a naive shape change
-   silently zeroes every hidden-fleet estimate. Plus the normalizer rewrite, in ONE commit, with
-   a migration-cap test. Reuse the D-strip store as a template for the ring shape.
+2. **Etap F — routine VISUALS only** (foundation DONE — see the session-2 block above; **still
+   needs the ToolDev consult first — see below**). The store now already carries the
+   `{latest, history}` ring these visuals read (no schema change left). Remaining: galaxy-view
+   activity capture (`parseActivity` in `classifyPosition` + a per-body activity ring,
+   watched-only) with the **self-induced-activity discount** (§6.6bis); `domain/routine.js`;
+   and the activity-strip (two sources) + coverage rows + weekday pattern (`resTotal`) +
+   collection callout + spy timeline on the dossier + card. **Gated on the ToolDev OK.**
 3. **Etap G — scan planner** (`windowBonus` **needs the ToolDev consult**): `domain/scanPriority.js`
    (danger×staleness×windowBonus), per-player `staleMs` cadence, FAB walks the order, "why next"
    strip, `shipAvailability()` pre-flight (note: it's LIVE code used by `dailyRun` — add a
