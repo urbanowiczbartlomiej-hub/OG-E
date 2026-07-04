@@ -54,6 +54,7 @@ import { ZONES } from '../../domain/zoneScore.js';
 import { buildOccupancyIndex, buildScanMapFromIndex } from '../../domain/apiOccupancy.js';
 import { buildTargetCandidates } from '../../domain/targets.js';
 import { buildDangerProfiles } from '../../domain/dangerScore.js';
+import { buildCivilBaseline } from '../../domain/civilBaseline.js';
 import { estimateHiddenFleet } from '../../domain/threatModel.js';
 import { raidVerdict } from '../../domain/raidVerdict.js';
 import { normalizeReportTimestamps } from '../../domain/espionageReport.js';
@@ -286,6 +287,13 @@ let ownProfile = {};
  * @type {Map<number, import('../../domain/dangerScore.js').DangerProfile>}
  */
 let dangerProfiles = new Map();
+
+/**
+ * Per-player civil-fleet baseline (Etap C) — expected civil ships from the
+ * economy feed + the combat-ship surplus over it. Rebuilt with API data loads.
+ * @type {Map<number, import('../../domain/civilBaseline.js').CivilProfile>}
+ */
+let civilProfiles = new Map();
 
 // ── DOM refs (filled by wireDom) ───────────────────────────────────────
 
@@ -821,6 +829,7 @@ const loadAll = async () => {
     targetReports = {};
     planetCountByPlayer = {};
     dangerProfiles = new Map();
+    civilProfiles = new Map();
     return;
   }
   const [h, s, p, op, api, tr] = await Promise.all([
@@ -935,6 +944,12 @@ const loadAll = async () => {
     ownMilitary,
     ownId,
     ownAlliance: ownId && apiPlayersMap ? apiPlayersMap[ownId]?.alliance : undefined,
+  });
+  // Etap C: server civil-fleet baseline from the (previously unused) economy
+  // feed — expected civil ships per player + the combat-ship surplus over it.
+  civilProfiles = buildCivilBaseline({
+    economy: apiCache.economy ? apiCache.economy.ranks : undefined,
+    military: militaryRanks,
   });
 };
 
@@ -1110,6 +1125,8 @@ const repaintTargets = () => {
     // Per-player raid verdict + in-band flag for the expanded dossier (Etap B).
     verdicts,
     inBand: inBandById,
+    // Per-player civil-fleet baseline for the dossier (Etap C).
+    civil: civilProfiles,
     // Spyglass → map reverse deep-link: spotlight this player's planets on the
     // Galaxy Viewer occupancy lens.
     onShowOnMap: showPlayerOnMap,
@@ -1735,6 +1752,7 @@ export const _resetDashboardForTest = () => {
   lastMapPaint = null;
   scoutSelectedPin = -1;
   dangerProfiles = new Map();
+  civilProfiles = new Map();
   focusedTargetId = null;
   mapHighlight = null;
   // DOM refs filled by wireDom(); wireDom re-resolves them on the next

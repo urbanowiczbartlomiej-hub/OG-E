@@ -377,6 +377,8 @@ function playerCell(name, open, detail, onToggle, onShowOnMap) {
  *   Per-player raid verdict (label + loot) shown in the expanded dossier.
  * @param {Record<string, boolean|undefined>} [args.inBand]
  *   Per-player legal-attack-band flag for the dossier header.
+ * @param {Map<number, import('../../domain/civilBaseline.js').CivilProfile>} [args.civil]
+ *   Per-player civil-fleet baseline shown in the dossier (Etap C).
  * @returns {void}
  */
 export function renderTargets({
@@ -401,6 +403,7 @@ export function renderTargets({
   danger,
   verdicts,
   inBand,
+  civil,
   onShowOnMap,
 }) {
   containerEl.textContent = '';
@@ -513,6 +516,7 @@ export function renderTargets({
       estimate: est,
       verdict: verdicts ? verdicts[c.id] : undefined,
       inBand: inBand ? inBand[c.id] : undefined,
+      civilProfile: civil ? civil.get(Number(c.id)) : undefined,
       planets,
       reports,
       rescan,

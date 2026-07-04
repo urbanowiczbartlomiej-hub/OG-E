@@ -236,6 +236,46 @@ function hiddenFleetBlock(est) {
 }
 
 /**
+ * 5b) CIVIL BASELINE (Etap C): economy → expected civil ships, and the combat-
+ * ship surplus over that baseline. A WEAK prior — shown as an upper bound with a
+ * contamination caveat, never asserted as exact and never fed into the D score.
+ * @param {import('../../domain/civilBaseline.js').CivilProfile} civ
+ * @returns {HTMLDivElement}
+ */
+function civilBlock(civ) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'margin-bottom:10px;font-size:11px;color:#8b95a0;line-height:1.5;';
+
+  const title = document.createElement('div');
+  title.textContent = 'CIVIL BASELINE';
+  title.style.cssText = 'font-size:10px;letter-spacing:0.5px;color:#6b7782;margin-bottom:2px;';
+  wrap.appendChild(title);
+
+  const line = document.createElement('div');
+  line.textContent =
+    `Economy ${compact(civ.economyScore)} → expected ~${compact(civ.expectedCivil)} civil ships. `
+    + `Has ${compact(civ.ships)} → ~${compact(civ.combatShips)} look like combat fleet.`;
+  wrap.appendChild(line);
+
+  const bandColor = civ.band === 'fleet-holder' ? '#e2726a'
+    : civ.band === 'elevated' ? '#e0b020' : '#7fd6a8';
+  const bandLabel = civ.band === 'fleet-holder' ? 'combat-fleet holder'
+    : civ.band === 'elevated' ? 'elevated — some combat fleet' : '≈ builder baseline';
+  const verdict = document.createElement('div');
+  verdict.textContent = `${bandLabel} · ${civ.confidence} confidence`;
+  verdict.style.color = bandColor;
+  wrap.appendChild(verdict);
+
+  const caveat = document.createElement('div');
+  caveat.textContent =
+    'upper bound — probe swarms dilute, lifeform economy inflates; spy to confirm';
+  caveat.style.cssText = 'color:#5f6b76;font-size:10px;';
+  wrap.appendChild(caveat);
+
+  return wrap;
+}
+
+/**
  * 6) PLANETS grid — reuses detailRow's exact responsive grid + per-planet scan
  * status / re-scan link / "D · F" line, plus a ⭐ hoard flag on the single planet
  * holding the most visible fleet.
@@ -363,6 +403,7 @@ function planetsBlock({ playerId, planets, reports, rescan, nowMs, onRescan }) {
  * @param {import('../../domain/threatModel.js').HiddenFleetEstimate} [a.estimate]
  * @param {import('../../domain/raidVerdict.js').RaidVerdict} [a.verdict]
  * @param {boolean} [a.inBand]
+ * @param {import('../../domain/civilBaseline.js').CivilProfile} [a.civilProfile]
  * @param {import('../../domain/targets.js').PlanetPos[]} a.planets
  * @param {Record<string, {ts:number, defPts:number, fleetPts:number}>} [a.reports]  keyed by "g:s:p"
  * @param {*} a.rescan
@@ -400,6 +441,9 @@ export function buildDossier(a) {
 
   // 5) Hidden-fleet arithmetic.
   if (a.estimate) td.appendChild(hiddenFleetBlock(a.estimate));
+
+  // 5b) Civil-fleet baseline (Etap C).
+  if (a.civilProfile) td.appendChild(civilBlock(a.civilProfile));
 
   // 6) Planets grid (renders its own "no planets" note when empty).
   td.appendChild(planetsBlock({
