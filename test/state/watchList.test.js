@@ -72,6 +72,7 @@ describe('normalizeWatchList', () => {
       players: ['1', '2', '3'],
       probes: DEFAULT_SPY_PROBES,
       rescan: {},
+      relationships: {},
     });
   });
 
@@ -80,6 +81,7 @@ describe('normalizeWatchList', () => {
       players: ['1', '2', '3'],
       probes: DEFAULT_SPY_PROBES,
       rescan: {},
+      relationships: {},
     });
   });
 
@@ -88,6 +90,7 @@ describe('normalizeWatchList', () => {
       players: ['7', '8'],
       probes: DEFAULT_SPY_PROBES,
       rescan: {},
+      relationships: {},
     });
   });
 
@@ -125,7 +128,7 @@ describe('normalizeWatchList', () => {
   });
 
   it('returns an empty config for null / undefined / garbage', () => {
-    const empty = { players: [], probes: DEFAULT_SPY_PROBES, rescan: {} };
+    const empty = { players: [], probes: DEFAULT_SPY_PROBES, rescan: {}, relationships: {} };
     expect(normalizeWatchList(null)).toEqual(empty);
     expect(normalizeWatchList(undefined)).toEqual(empty);
     expect(normalizeWatchList(42)).toEqual(empty);
@@ -151,6 +154,7 @@ describe('watchList store — hydration + write-through', () => {
       players: ['11', '22'],
       probes: DEFAULT_SPY_PROBES,
       rescan: {},
+      relationships: {},
     });
   });
 

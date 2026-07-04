@@ -37,7 +37,9 @@ describe('parseUniverse', () => {
     expect(parseUniverse(xml)).toEqual({
       timestamp: 1700000000 * 1000,
       planets: [
-        { coords: '1:1:2', player: 103 },
+        // The first planet carries a <moon> child → hasMoon (a second spiable
+        // body, counted in the hidden-fleet coverage denominator).
+        { coords: '1:1:2', player: 103, hasMoon: true },
         { coords: '1:1:8', player: 207 },
       ],
     });
