@@ -402,6 +402,7 @@ function playerCell(name, open, detail, onToggle, onShowOnMap) {
  * @param {Record<string, boolean|undefined>} [args.inBand]
  *   Per-player legal-attack-band flag for the dossier header.
  * @param {Map<number, import('../../domain/civilBaseline.js').CivilProfile>} [args.civil]
+ * @param {Record<string, import('../../domain/routine.js').RoutineSummary>} [args.routines]
  *   Per-player civil-fleet baseline shown in the dossier (Etap C).
  * @param {string} [args.searchQuery]  Nickname search (Etap D); when set, the
  *   table shows every name-match INCLUDING excluded players (with the reason).
@@ -432,6 +433,7 @@ export function renderTargets({
   verdicts,
   inBand,
   civil,
+  routines,
   onShowOnMap,
   searchQuery = '',
   onShowAnyway,
@@ -578,6 +580,7 @@ export function renderTargets({
       verdict: verdicts ? verdicts[c.id] : undefined,
       inBand: inBand ? inBand[c.id] : undefined,
       civilProfile: civil ? civil.get(Number(c.id)) : undefined,
+      routine: routines ? routines[c.id] : undefined,
       planets,
       reports,
       rescan,

@@ -390,6 +390,97 @@ function planetsBlock({ playerId, planets, reports, rescan, nowMs, onRescan }) {
   return box;
 }
 
+/** Sparkline block glyphs, empty → full. */
+const SPARK_BLOCKS = [' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+
+/**
+ * A monospace sparkline for a small histogram (each bar scaled to the max).
+ * @param {number[]} bins
+ * @returns {string}
+ */
+function sparkline(bins) {
+  const max = Math.max(1, ...bins);
+  return bins.map((v) => SPARK_BLOCKS[Math.min(8, Math.round((v / max) * 8))]).join('');
+}
+
+/**
+ * 7) ROUTINE (Etap F) — the honest, sample-gated summary of what the player's
+ * spy history shows: hour-of-day activity, weekday resources, the collection
+ * planet, a recent timeline. Built ENTIRELY from reports the user opened while
+ * playing; every line names its sample count (coverage), and "activity" is the
+ * last INTERACTION with a body — never asserted as the player being "online"
+ * (SPYGLASS-REDESIGN.md §6.6/§6.6bis). Hollow until the history fills.
+ * @param {import('../../domain/routine.js').RoutineSummary} routine
+ * @returns {HTMLDivElement}
+ */
+function routineBlock(routine) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'margin-bottom:10px;font-size:11px;color:#8b95a0;line-height:1.5;';
+
+  const title = document.createElement('div');
+  title.textContent = 'ROUTINE';
+  title.style.cssText = 'font-size:10px;letter-spacing:0.5px;color:#6b7782;margin-bottom:2px;';
+  wrap.appendChild(title);
+
+  if (!routine || routine.observations === 0) {
+    const empty = document.createElement('div');
+    empty.textContent = 'No history yet — this fills from the spy reports you open over time.';
+    empty.style.color = '#5f6b76';
+    wrap.appendChild(empty);
+    return wrap;
+  }
+
+  const act = routine.activity;
+  if (act.gate !== 'none') {
+    const line = document.createElement('div');
+    const spark = document.createElement('span');
+    spark.style.cssText = 'font-family:monospace;color:#9fc6e8;';
+    spark.textContent = sparkline(act.bins);
+    line.append('activity by hour ', spark);
+    if (act.label && (act.gate === 'pattern' || act.gate === 'strong')) line.append(` — ${act.label}`);
+    wrap.appendChild(line);
+    const cov = document.createElement('div');
+    cov.style.cssText = 'color:#5f6b76;font-size:10px;';
+    cov.textContent = `hours 0–23 · from ${act.samples} report${act.samples === 1 ? '' : 's'} you opened`
+      + `${act.gate === 'hint' ? ' (thin — a hint, not a pattern)' : ''} · "activity" = last interaction, not "online"`;
+    wrap.appendChild(cov);
+  }
+
+  const wk = routine.weekday;
+  if (wk.gate !== 'none') {
+    const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    let best = -1;
+    let bestVal = -1;
+    wk.medians.forEach((m, i) => { if (m != null && m > bestVal) { bestVal = m; best = i; } });
+    if (best >= 0) {
+      const line = document.createElement('div');
+      line.textContent = `richest ${DAYS[best]} (~${compact(bestVal)} res, n=${wk.samples[best]})`;
+      wrap.appendChild(line);
+    }
+  }
+
+  if (routine.collection) {
+    const c = routine.collection;
+    const line = document.createElement('div');
+    line.textContent = `gathers onto ${c.coord} (richest of ${c.ofBodies}, median ~${compact(c.medianRes)}, n=${c.samples})`;
+    wrap.appendChild(line);
+  }
+
+  if (routine.timeline.length) {
+    const tl = document.createElement('div');
+    tl.style.cssText = 'margin-top:3px;color:#7c8893;font-size:10px;';
+    tl.textContent = 'recent: ' + routine.timeline.slice(0, 5).map((t) => {
+      const parts = [t.coord];
+      if (typeof t.defenseValue === 'number') parts.push(`def ${compact(t.defenseValue)}`);
+      if (typeof t.fleetValue === 'number') parts.push(`f ${compact(t.fleetValue)}`);
+      return parts.join(' ');
+    }).join(' · ');
+    wrap.appendChild(tl);
+  }
+
+  return wrap;
+}
+
 /**
  * Build the per-player dossier detail row: a dark panel stacking the header,
  * raid verdict, danger interval bar, WHY reasons, hidden-fleet arithmetic, and
@@ -404,6 +495,7 @@ function planetsBlock({ playerId, planets, reports, rescan, nowMs, onRescan }) {
  * @param {import('../../domain/raidVerdict.js').RaidVerdict} [a.verdict]
  * @param {boolean} [a.inBand]
  * @param {import('../../domain/civilBaseline.js').CivilProfile} [a.civilProfile]
+ * @param {import('../../domain/routine.js').RoutineSummary} [a.routine]
  * @param {import('../../domain/targets.js').PlanetPos[]} a.planets
  * @param {Record<string, {ts:number, defPts:number, fleetPts:number}>} [a.reports]  keyed by "g:s:p"
  * @param {*} a.rescan
@@ -454,6 +546,9 @@ export function buildDossier(a) {
     nowMs: a.nowMs,
     onRescan: a.onRescan,
   }));
+
+  // 7) Routine (Etap F) — activity/weekday/collection/timeline from spy history.
+  if (a.routine) td.appendChild(routineBlock(a.routine));
 
   return tr;
 }

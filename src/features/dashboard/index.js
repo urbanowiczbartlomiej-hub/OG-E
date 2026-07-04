@@ -58,7 +58,8 @@ import { buildCivilBaseline } from '../../domain/civilBaseline.js';
 import { estimateHiddenFleet } from '../../domain/threatModel.js';
 import { raidVerdict } from '../../domain/raidVerdict.js';
 import { normalizeReportTimestamps } from '../../domain/espionageReport.js';
-import { latestOf } from '../../domain/targetReports.js';
+import { latestOf, historyOf } from '../../domain/targetReports.js';
+import { summarizeRoutine } from '../../domain/routine.js';
 import { readApiCacheFor, apiCacheKeyFor } from '../../state/apiCache.js';
 import { targetReportsKeyFor } from '../../state/targets.js';
 import { proximityReportsKeyFor } from '../../state/proximityReports.js';
@@ -304,6 +305,14 @@ let dangerProfiles = new Map();
  * @type {Map<number, import('../../domain/civilBaseline.js').CivilProfile>}
  */
 let civilProfiles = new Map();
+
+/**
+ * Per-player routine summary (Etap F) — hour/weekday/collection/timeline from the
+ * spy-report history rings. Rebuilt on data load; empty for players with no
+ * history (only watched players accrue it).
+ * @type {Record<string, import('../../domain/routine.js').RoutineSummary>}
+ */
+let routines = {};
 
 // ── DOM refs (filled by wireDom) ───────────────────────────────────────
 
@@ -860,6 +869,7 @@ const loadAll = async () => {
     planetCountByPlayer = {};
     dangerProfiles = new Map();
     civilProfiles = new Map();
+    routines = {};
     return;
   }
   const [h, s, p, op, api, tr, pr] = await Promise.all([
@@ -991,6 +1001,21 @@ const loadAll = async () => {
     economy: apiCache.economy ? apiCache.economy.ranks : undefined,
     military: militaryRanks,
   });
+  // Etap F: per-player routine from the spy-report history rings (watched players
+  // accrue history; the rest summarise to empty). Built from reports the user
+  // opened — see domain/routine.js. The bodyKey's ":type" is stripped to a coord.
+  const routineNowMs = Date.now();
+  /** @type {Record<string, import('../../domain/routine.js').RoutineSummary>} */
+  const routinesAcc = {};
+  for (const pid of Object.keys(targetReports)) {
+    const bucket = targetReports[pid];
+    const bodies = Object.entries(bucket).map(([key, entry]) => {
+      const lastColon = key.lastIndexOf(':');
+      return { coord: lastColon >= 0 ? key.slice(0, lastColon) : key, history: historyOf(entry) };
+    });
+    routinesAcc[pid] = summarizeRoutine(bodies, routineNowMs);
+  }
+  routines = routinesAcc;
 };
 
 /**
@@ -1157,6 +1182,7 @@ const repaintTargets = () => {
     inBand: inBandById,
     // Per-player civil-fleet baseline for the dossier (Etap C).
     civil: civilProfiles,
+    routines,
     // Nickname search (Etap D): reveals name-matches incl. excluded players.
     searchQuery: targetSearchQuery,
     onShowAnyway: (/** @type {string} */ id) => { forceIncludeIds.add(id); repaintTargets(); },
@@ -1932,6 +1958,7 @@ export const _resetDashboardForTest = () => {
   scoutSelectedPin = -1;
   dangerProfiles = new Map();
   civilProfiles = new Map();
+  routines = {};
   focusedTargetId = null;
   spyMapHighlight = null;
   spyMapOpen = false;
