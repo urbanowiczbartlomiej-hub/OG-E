@@ -52,6 +52,8 @@ map. Tree green at each commit. User verified E1 (GV renders identically) before
 | `e798124` | F (moons) | **Moon bodies**: `parseUniverse` flags `ApiPlanet.hasMoon` (own-content scan up to next `<planet>`, O(n)); coverage denominator counts planets + moons; gate admits `type=3` moon scans; **planet↔moon coord-collision guards** in the sendSpy FAB `spiedCoordsByPlayer` + dashboard per-planet `byCoord` (a moon scan never marks the planet spied). |
 | `ac59d2c` | E1 | **Map primitives extracted** — NEW `features/dashboard/mapPrimitives.js` (pure `computeComposite`/`computeScoreField` — window/farm as params, not DOM reads — + `buildSystemCard`/`dangerBadge`/`liveOverlay` moved verbatim). GV keeps its **caller-side** `compositeCache`/`scoreFieldCache` wrappers → each sub-tab owns its cache. Behaviour-preserving (GV renders identically). |
 | `f34f5db` | E2a-1 | **Spyglass watchlist map (occupancy)** — `🗺` toggle + `#spyglassMapHost` in the Spyglass tab reusing `renderServerMap`; own `spyCompositeCache` + `spyMapHighlight`; `repaintSpyglassMap` wired to renderAll + the spyglass tab-switch + the toggle; extracted shared `gameLinkBase()`. |
+| `1f24fa8` | E2a-2 | **⌖ spotlights on the Spyglass map** (in-tab) — new `showPlayerOnSpyglassMap`; **removed** the orphaned GV-jump `showPlayerOnMap` + the whole GV occupancy-lens spotlight machinery (`mapHighlight`, render params, `hiKey`/`lastMapPaint.hi`) → full decouple (§1.1); universe-switch/teardown now reset the Spyglass map state. |
+| `99109a3` | E2b | **Watchlist colour overlay** — `mapPrimitives.playerColor(id)` (golden-angle stable hue); `renderServerMap`/`renderOccupancyMap` gain an optional `highlightColors` Map (watched player → colour; absent for GV → unchanged); each watched player's planets paint their colour; caption added. |
 
 **Etap F foundation is DONE.** What remains of Etap F = the **routine visuals only** (activity
 strip + galaxy-view activity capture + self-induced discount, weekday pattern, collection
@@ -59,14 +61,15 @@ callout, spy timeline) — **still ToolDev-consult-gated**. **Deferred test debt
 reconcile at release): migration-cap / both-read-paths / retention-gate + equal-ts-no-dup-history
 tests, partial+moon gate, `revealed` gating, `<moon>` parse, `mapPrimitives` compute.
 
-**Etap E (map) is IN PROGRESS** (not the deferred-to-1.36.0 status the plan assumed — user
-chose to build it now, placement = a map SECTION in the current Spyglass tab, not the
-cards-landing view toggle). E1 (extraction) + E2a-1 (occupancy map + toggle) DONE. **Next:
-E2a-2** — click a watchlist player → set `spyMapHighlight` → spotlight on the Spyglass map
-(reuse the existing highlight machinery; decide: replace the GV-jump `onShowOnMap` or branch on
-`spyMapOpen`). **Then E2b** — multi-player colour overlay (stable id-hash colour, danger-scaled
-markers, own planets as white rings — extends `renderServerMap` or a layer over it). **E2c** —
-click system→popover (`buildSystemCard`), click player→dossier.
+**Etap E (map) is IN PROGRESS** (not deferred-to-1.36.0 as the plan assumed — user chose to
+build it now; placement = a map SECTION in the current Spyglass tab, not the cards-landing view
+toggle). **DONE: E1** (extraction) + **E2a-1** (occupancy map + toggle) + **E2a-2** (⌖ spotlight
+in-tab, GV fully decoupled) + **E2b** (watchlist colour overlay). The Spyglass map now shows
+whole-server occupancy + every watched player in their stable colour + a click-⌖ focus (diamond
+markers + banner) + system popovers (inherited from `renderServerMap`). **Remaining E2 polish
+(optional, none release-blocking):** danger-scaled marker size + own-planets-as-white-rings
+(§6.9); **click a coloured cell/player → open their dossier** (needs canvas hit-detection →
+playerId, or clickable focus markers); a colour→name legend for the overlay.
 
 ### NEXT — future sessions, in order
 
