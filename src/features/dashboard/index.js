@@ -58,6 +58,7 @@ import { buildCivilBaseline } from '../../domain/civilBaseline.js';
 import { estimateHiddenFleet } from '../../domain/threatModel.js';
 import { raidVerdict } from '../../domain/raidVerdict.js';
 import { normalizeReportTimestamps } from '../../domain/espionageReport.js';
+import { latestOf } from '../../domain/targetReports.js';
 import { readApiCacheFor, apiCacheKeyFor } from '../../state/apiCache.js';
 import { targetReportsKeyFor } from '../../state/targets.js';
 import { proximityReportsKeyFor } from '../../state/proximityReports.js';
@@ -943,7 +944,7 @@ const loadAll = async () => {
   const spiedByPlayer = {};
   for (const pid of Object.keys(targetReports)) {
     const bucket = targetReports[pid];
-    const reports = bucket ? Object.values(bucket) : [];
+    const reports = bucket ? Object.values(bucket).map(latestOf) : [];
     if (!reports.length) continue;
     const est = estimateHiddenFleet({
       militaryPoints: militaryRanks && militaryRanks[pid] ? militaryRanks[pid].score : undefined,
@@ -1065,7 +1066,7 @@ const repaintTargets = () => {
   const reportsByPlayer = {};
   for (const pid of Object.keys(targetReports)) {
     const bucket = targetReports[pid];
-    const reports = bucket ? Object.values(bucket) : [];
+    const reports = bucket ? Object.values(bucket).map(latestOf) : [];
     if (!reports.length) continue;
     estimates[pid] = estimateHiddenFleet({
       militaryPoints: military[pid] ? military[pid].score : undefined,
@@ -1074,9 +1075,10 @@ const repaintTargets = () => {
     });
     /** @type {Record<string, {ts:number, defPts:number, fleetPts:number}>} */
     const byCoord = {};
-    for (const [key, report] of Object.entries(bucket)) {
+    for (const [key, entry] of Object.entries(bucket)) {
       const lastColon = key.lastIndexOf(':');
       const coord = lastColon >= 0 ? key.slice(0, lastColon) : key;
+      const report = latestOf(entry);
       byCoord[coord] = {
         ts: report.timestamp ?? 0,
         defPts: pointsOf(report.defenseValue ?? 0),
@@ -1105,7 +1107,7 @@ const repaintTargets = () => {
     verdicts[c.id] = raidVerdict({
       profile: dangerProfiles.get(Number(c.id)),
       estimate: estimates[c.id],
-      reports: bucket ? Object.values(bucket) : [],
+      reports: bucket ? Object.values(bucket).map(latestOf) : [],
       inBand,
       nowMs,
     });

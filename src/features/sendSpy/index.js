@@ -30,6 +30,7 @@
 import { settingsStore } from '../../state/settings.js';
 import { watchListStore } from '../../state/watchList.js';
 import { targetReportsStore } from '../../state/targets.js';
+import { latestOf } from '../../domain/targetReports.js';
 import { createButton as makeButton, labelLines } from '../shared/button.js';
 import { EYE_GLYPH } from '../shared/buttonGlyphs.js';
 import {
@@ -143,7 +144,7 @@ const spiedCoordsByPlayer = () => {
     for (const key of Object.keys(bucket)) {
       const lastColon = key.lastIndexOf(':');
       const coord = lastColon >= 0 ? key.slice(0, lastColon) : key;
-      coordTs[coord] = bucket[key].timestamp ?? 0;
+      coordTs[coord] = latestOf(bucket[key]).timestamp ?? 0;
     }
     out[pid] = coordTs;
   }

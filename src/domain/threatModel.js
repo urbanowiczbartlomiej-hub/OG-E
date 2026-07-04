@@ -27,12 +27,12 @@ import { bodyKey } from './espionageReport.js';
 
 /**
  * @typedef {object} HiddenFleetEstimate
- * @property {number} defensePoints        Σ defense over spied bodies, in points.
- * @property {number} visibleFleetPoints   Σ parked fleet over spied bodies, in points.
+ * @property {number} defensePoints        Σ defense over DEFENCE-covered bodies, in points.
+ * @property {number} visibleFleetPoints   Σ parked fleet over fleet-revealed bodies, in points.
  * @property {number} accountedPoints       defensePoints + visibleFleetPoints.
  * @property {number} hiddenFleetPoints     max(0, military − accounted).
  * @property {number} militaryPoints        The military score used (0 if unknown).
- * @property {number} spiedCount            Distinct bodies counted.
+ * @property {number} spiedCount            Distinct DEFENCE-covered bodies (coverage numerator).
  * @property {number} [planetCount]         Known total bodies (coverage denominator).
  * @property {boolean} coverageComplete     spiedCount ≥ planetCount (false if unknown).
  * @property {boolean} provisional          Estimate not yet trustworthy (incomplete coverage).
@@ -71,11 +71,26 @@ export function estimateHiddenFleet(input) {
   const militaryPoints = input.militaryPoints ?? 0;
   const reports = dedupeNewest(input.reports ?? []);
 
+  // Gate each body's contribution on what its report actually revealed (§9bis):
+  // a resources-only partial scan (fleet/defence withheld) must NOT read its
+  // absent defence as a real zero — that would subtract nothing and report the
+  // player's WHOLE military score as hidden fleet (a dangerous over-estimate).
+  // So defence only accrues when `revealed.defense`, fleet only when
+  // `revealed.fleet`, and coverage counts only defence-covered bodies. A report
+  // with no `revealed` map is legacy (it passed the old numeric-defence gate),
+  // so it counts as a full reveal.
   let defenseRes = 0;
   let fleetRes = 0;
+  let defenceCovered = 0;
   for (const r of reports) {
-    defenseRes += r.defenseValue || 0;
-    fleetRes += r.fleetValue || 0;
+    const rev = r.revealed;
+    const showedDef = rev ? rev.defense : true;
+    const showedFleet = rev ? rev.fleet : true;
+    if (showedDef) {
+      defenseRes += r.defenseValue || 0;
+      defenceCovered += 1;
+    }
+    if (showedFleet) fleetRes += r.fleetValue || 0;
   }
 
   const defensePoints = pointsOf(defenseRes);
@@ -83,7 +98,10 @@ export function estimateHiddenFleet(input) {
   const accountedPoints = defensePoints + visibleFleetPoints;
   const hiddenFleetPoints = Math.max(0, militaryPoints - accountedPoints);
 
-  const spiedCount = reports.length;
+  // A resources-only partial advances loot/routine coverage but NOT the
+  // hidden-fleet denominator, so a player is never read as "fully spied" off
+  // partial reports that never showed a defence.
+  const spiedCount = defenceCovered;
   const planetCount = input.planetCount;
   const coverageComplete =
     typeof planetCount === 'number' && planetCount > 0 && spiedCount >= planetCount;

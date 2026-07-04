@@ -308,32 +308,86 @@ export function normalizeSpyReport(raw) {
   };
 }
 
+/** Above this (year ~5138 as seconds) a `timestamp` can only be milliseconds. */
+const MS_TIMESTAMP_THRESHOLD = 1e11;
+
 /**
- * One-time unit repair for persisted report maps: reports recorded before the
- * timestamp fix stored `timestamp` in MILLISECONDS while every consumer
- * expects SECONDS — so their age/staleness always read as fresh. Any value
- * above 1e11 (year ~5138 as seconds) can only be milliseconds — convert it.
- * Pure; returns the input object untouched when nothing needs fixing.
+ * Convert a millisecond timestamp back to seconds; pass a value already in
+ * seconds (or a non-number) through unchanged.
+ * @param {unknown} t
+ * @returns {unknown}
+ */
+function tsToSeconds(t) {
+  return typeof t === 'number' && t > MS_TIMESTAMP_THRESHOLD ? Math.round(t / 1000) : t;
+}
+
+/**
+ * Repair a bare SpyReport's `timestamp` (returns the SAME object when nothing
+ * changed, a shallow copy otherwise).
+ * @param {any} r
+ * @returns {any}
+ */
+function fixReportTs(r) {
+  if (!r || typeof r !== 'object') return r;
+  const fixed = tsToSeconds(r.timestamp);
+  return fixed === r.timestamp ? r : { ...r, timestamp: fixed };
+}
+
+/**
+ * Repair one body entry, tolerating BOTH persisted shapes: a legacy bare
+ * `SpyReport`, or a `{ latest, history }` entry (targetReports.js `BodyEntry`) —
+ * whose `latest.timestamp` AND each `history[].ts` need the same seconds repair.
+ * @param {any} entry
+ * @returns {any}
+ */
+function fixEntryTs(entry) {
+  if (!entry || typeof entry !== 'object') return entry;
+  if (entry.latest || Array.isArray(entry.history)) {
+    const latest = fixReportTs(entry.latest);
+    const history = Array.isArray(entry.history) ? entry.history : null;
+    let fixedHistory = history;
+    if (history) {
+      for (let i = 0; i < history.length; i++) {
+        const h = history[i];
+        const ft = tsToSeconds(h && h.ts);
+        if (h && ft !== h.ts) {
+          if (fixedHistory === history) fixedHistory = history.slice();
+          fixedHistory[i] = { ...h, ts: ft };
+        }
+      }
+    }
+    if (latest === entry.latest && fixedHistory === history) return entry;
+    return { ...entry, latest, history: fixedHistory ?? entry.history };
+  }
+  return fixReportTs(entry);
+}
+
+/**
+ * One-time unit repair for a persisted report map: reports recorded before the
+ * timestamp fix stored `timestamp` in MILLISECONDS while every consumer expects
+ * SECONDS — so their age/staleness always read as fresh. Shape-tolerant: repairs
+ * both the legacy bare-`SpyReport` value and the new `{latest, history}` entry
+ * (latest + each history observation), per SPYGLASS-REDESIGN.md §10.1. Pure;
+ * returns the input object untouched when nothing needs fixing, and passes a
+ * malformed bucket THROUGH untouched (never silently drops an unrewritten entry).
  *
- * @param {Record<string, Record<string, SpyReport>>} reports
- * @returns {Record<string, Record<string, SpyReport>>}
+ * @param {Record<string, Record<string, any>>} reports
+ * @returns {Record<string, Record<string, any>>}
  */
 export function normalizeReportTimestamps(reports) {
   let changed = false;
-  /** @type {Record<string, Record<string, SpyReport>>} */
+  /** @type {Record<string, Record<string, any>>} */
   const out = {};
   for (const pid of Object.keys(reports)) {
     const bucket = reports[pid];
-    // Pass a malformed bucket THROUGH untouched — returning `out` on `changed`
-    // must never silently drop an entry we didn't rewrite (data-preserving).
     if (!bucket || typeof bucket !== 'object') { out[pid] = bucket; continue; }
-    /** @type {Record<string, SpyReport>} */
     let fixedBucket = bucket;
     for (const key of Object.keys(bucket)) {
-      const r = bucket[key];
-      if (r && typeof r.timestamp === 'number' && r.timestamp > 1e11) {
+      const entry = bucket[key];
+      const fixedEntry = fixEntryTs(entry);
+      if (fixedEntry !== entry) {
         if (fixedBucket === bucket) fixedBucket = { ...bucket };
-        fixedBucket[key] = { ...r, timestamp: Math.round(r.timestamp / 1000) };
+        fixedBucket[key] = fixedEntry;
         changed = true;
       }
     }
@@ -356,9 +410,16 @@ export function bodyKey(r) {
  * espionage message tab also carries "obca flota dostrzeżona w pobliżu Twojej
  * planety" PROXIMITY alerts, which share the rawMessageData shape but describe
  * OUR OWN planet: they carry a `sourcePlayerId` (the scout) + `targetPlayerId` =
- * us, and `defenseValue='-'`. A genuine planet scan has a numeric `defenseValue`
- * (even '0') and no source. We also keep planets only (skip moons, type 3),
- * matching the coverage denominator from universe.xml.
+ * us. Those are rejected on `sourceplayerid`. We also keep planets only (skip
+ * moons, type 3), matching the coverage denominator from universe.xml.
+ *
+ * A genuine scan is admitted when it revealed intel of ANY kind — resources OR
+ * defence OR fleet. This ADMITS partial reports (a low-probe / high-counter-
+ * espionage scan reveals only some sections; then `defensevalue`/`fleetvalue`
+ * are '-' but `resources` is present), because a resources-only report still
+ * carries the decision-relevant loot number (§9bis). Safe because the
+ * hidden-fleet math gates on `revealed.defense`, so an unrevealed defence is
+ * never read as a real zero.
  * @param {Record<string, string|undefined> | null | undefined} bag
  * @returns {boolean}
  */
@@ -366,8 +427,23 @@ export function isEspionageReportBag(bag) {
   if (!bag || !bag.coordinates || !bag.targetplayerid) return false;
   if (bag.sourceplayerid) return false;
   if (bag.targetplanettype === '3') return false;
-  const dv = bag.defensevalue;
-  return typeof dv === 'string' && dv !== '' && dv !== '-';
+  const numericish = (/** @type {string|undefined} */ v) =>
+    typeof v === 'string' && v !== '' && v !== '-';
+  // Espionage-scan fingerprint. The observer matches EVERY `.rawMessageData`
+  // block on the page (combat/expedition reports render one too, not just spy
+  // reports), so the gate is the only discriminator. A spy report — full OR
+  // partial — is the only kind carrying the per-section reveal flags (`hidden*`,
+  // '' on a full report, '1' on a withheld section) or a numeric defence/fleet.
+  // Requiring one of those keeps a combat report's loot line (which has none of
+  // them) from being admitted as a phantom 0-defence body.
+  const isScan = bag.hiddendef != null || bag.hiddenships != null
+    || numericish(bag.defensevalue) || numericish(bag.fleetvalue);
+  if (!isScan) return false;
+  // Admit when the scan revealed intel of ANY kind — resources OR defence OR
+  // fleet — so a resources-only partial (its loot number is the decision-relevant
+  // fact) is kept (§9bis). Safe: the hidden-fleet math gates on `revealed.defense`,
+  // so an unrevealed section is never read as a real zero.
+  return numericish(bag.resources) || numericish(bag.defensevalue) || numericish(bag.fleetvalue);
 }
 
 // ── Proximity "spotted near you" alerts ────────────────────────────────────────

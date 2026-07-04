@@ -1,9 +1,12 @@
 // @ts-check
 
 // Espionage-report cache — per-universe, device-local store of the spy reports
-// the player has OPENED, keyed `playerId → bodyKey → newest SpyReport`. Feeds
-// the dashboard Targets sub-tab's hidden-fleet estimate (military points minus
-// the spied defense + visible fleet).
+// the player has OPENED, keyed `playerId → bodyKey → { latest, history }`: the
+// newest report per body plus a bounded ring of lean prior observations (watched
+// players only). Feeds the dashboard Targets sub-tab's hidden-fleet estimate
+// (military points minus the spied defense + visible fleet) + the routine
+// tracker. The `{latest, history}` shape is owned by `domain/targetReports.js` —
+// every reader goes through its `latestOf`/`historyOf` accessors (§10.1).
 //
 // LOCAL ONLY — never gist-synced: it's per-device intel, fully re-derivable by
 // re-spying, exactly like `state/scans.js` / `state/apiCache.js`. Reactive
@@ -20,14 +23,19 @@ import { persist } from '../lib/persist.js';
 import { chromeStore } from '../lib/storage.js';
 import { currentUniverseKey } from './universeKey.js';
 import { bodyKey, normalizeReportTimestamps } from '../domain/espionageReport.js';
+import { latestOf, historyOf, toLite, HISTORY_CAP } from '../domain/targetReports.js';
+import { watchListStore } from './watchList.js';
 
 /** @typedef {import('../domain/espionageReport.js').SpyReport} SpyReport */
+/** @typedef {import('../domain/targetReports.js').BodyEntry} BodyEntry */
 
 /**
  * All recorded reports for the current universe: `playerId` → (`bodyKey` →
- * newest report for that body). Planets only (we never spy moons under the
- * planets-only decision), so each body key is a planet coord+type.
- * @typedef {Record<string, Record<string, SpyReport>>} TargetReports
+ * body entry). Each entry holds the NEWEST report (`latest`) plus a bounded ring
+ * of lean prior observations (`history`), the latter accruing for WATCHED players
+ * only — see {@link recordReport}. Each body key is a coord+type (planets only
+ * under the current gate).
+ * @typedef {Record<string, Record<string, BodyEntry>>} TargetReports
  */
 
 /** Suffix of the per-universe chrome.storage.local key. */
@@ -74,16 +82,27 @@ export const recordReport = async (report) => {
   await whenTargetsHydrated();
   const pid = String(report.playerId);
   const key = bodyKey(report);
+  // Retention gate (§10.1): the history ring accrues ONLY for players on the
+  // watch list — the bounded intel we deliberately track. Everyone else keeps
+  // `latest` only, so the store can't grow without bound and un-watch→re-watch
+  // never wipes coverage. Read once, outside the update closure (sync). A report
+  // arriving before the watch list has hydrated reads an empty set → treated as
+  // unwatched → no history append, which is the safe direction.
+  const isWatched = watchListStore.get().players.includes(pid);
   targetReportsStore.update((cur) => {
     const bucket = cur[pid] || {};
-    const prev = bucket[key];
-    // Keep the stored report unless the incoming one is STRICTLY newer. An
+    const prevEntry = bucket[key];
+    const prevLatest = latestOf(prevEntry);
+    // Keep the stored entry unless the incoming report is STRICTLY newer. An
     // equal-ts re-ingest (re-opening the identical report on a messages-page
-    // revisit) is a no-op — returning cur unchanged skips the store update,
-    // the subscriber fan-out, and the debounced persist, killing dashboard
-    // re-render churn. An older archived report is likewise ignored.
-    if (prev && (prev.timestamp ?? 0) >= (report.timestamp ?? 0)) return cur;
-    return { ...cur, [pid]: { ...bucket, [key]: report } };
+    // revisit) is a no-op — returning cur unchanged skips the store update, the
+    // subscriber fan-out, the debounced persist, AND a duplicate history append.
+    // An older archived report is likewise ignored.
+    if (prevLatest && (prevLatest.timestamp ?? 0) >= (report.timestamp ?? 0)) return cur;
+    const history = isWatched
+      ? [...historyOf(prevEntry), toLite(report)].slice(-HISTORY_CAP)
+      : historyOf(prevEntry);
+    return { ...cur, [pid]: { ...bucket, [key]: { latest: report, history } } };
   });
 };
 
