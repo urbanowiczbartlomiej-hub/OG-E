@@ -429,10 +429,11 @@ const SPARK_BLOCKS = [' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█
 
 /**
  * A monospace sparkline for a small histogram (each bar scaled to the max).
+ * Exported for the watchlist cards (same feature, same visual language).
  * @param {number[]} bins
  * @returns {string}
  */
-function sparkline(bins) {
+export function sparkline(bins) {
   const max = Math.max(1, ...bins);
   return bins.map((v) => SPARK_BLOCKS[Math.min(8, Math.round((v / max) * 8))]).join('');
 }

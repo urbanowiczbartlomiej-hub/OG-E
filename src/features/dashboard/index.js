@@ -49,6 +49,7 @@ import { populatePositionFilter, renderColonyChart } from './colony.js';
 import { renderFreeRegions, renderServerMap, selectCandidate, resetFreeSelection, highlightPin, _resetFreeStreakForTest } from './freeStreak.js';
 import { chipValue, setChipValue, wireChips, setChipsEnabled, toggleChipOn, setToggleChip, wireToggleChip } from './chips.js';
 import { digestProximityReports } from '../../domain/proximityDigest.js';
+import { renderWatchlistCards } from './cards.js';
 import { computeComposite, computeScoreField, renderPositionsMap, RELATIONSHIP_COLORS } from './mapPrimitives.js';
 import { renderTargets, DEFAULT_TARGET_SORT } from './targets.js';
 import { ZONES } from '../../domain/zoneScore.js';
@@ -383,6 +384,7 @@ const forceIncludeIds = new Set();
 /** @type {HTMLElement | null} */ let proximityStripEl;
 /** @type {HTMLElement | null} */ let proximityCountsEl;
 /** @type {HTMLElement | null} */ let proximityAlertEl;
+/** @type {HTMLElement | null} */ let watchCardsEl;
 
 /** Guards {@link installDashboard} against a double-install. */
 let installed = false;
@@ -672,6 +674,7 @@ const wireDom = () => {
   proximityStripEl = document.getElementById('proximityStrip');
   proximityCountsEl = document.getElementById('proximityCounts');
   proximityAlertEl = document.getElementById('proximityAlert');
+  watchCardsEl = document.getElementById('watchCards');
   spyglassMapHost = document.getElementById('spyglassMapHost');
   spyMapToggle = /** @type {HTMLButtonElement | null} */ (document.getElementById('spyMapToggle'));
   spyMapBlock = document.getElementById('spyMapBlock');
@@ -1202,6 +1205,23 @@ const repaintTargets = () => {
       nowMs,
     });
   }
+
+  // Watchlist cards — the landing strip (Etap H4). Same per-repaint data the
+  // table + dossier read, so a card can never disagree with the row below it.
+  renderWatchlistCards({
+    hostEl: watchCardsEl,
+    watchedIds: watchedPlayers,
+    candidates: targetCandidates,
+    verdicts,
+    estimates,
+    danger: dangerProfiles,
+    routines,
+    relationships: watchRelationships,
+    reportsByPlayer,
+    inBand: inBandById,
+    nowMs,
+    onOpen: (pid) => openSpyglassFor(Number(pid)),
+  });
 
   renderTargets({
     containerEl: targetsContainer,
@@ -2249,6 +2269,7 @@ export const _resetDashboardForTest = () => {
     proximityCountsEl =
     proximityAlertEl =
     spyMapPlayersEl =
+    watchCardsEl =
     freeContainer =
     freeCountInfoEl =
       /** @type {any} */ (undefined);

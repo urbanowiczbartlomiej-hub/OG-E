@@ -358,6 +358,16 @@
   .chip-group.seg button + button { border-left: 1px solid #2b3a4d; }
   .chip-group.seg button.on { background: #12253c; color: #cfe4ff; }
 
+  /* Watchlist cards — the Spyglass landing strip (one card per watched
+     player: verdict words, headline number, activity sparkline). */
+  .watch-zone-label { font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase; color: #66788a; margin: 0 0 8px; }
+  .watch-cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(235px, 1fr)); gap: 12px; }
+  .watch-card {
+    background: #0b1118; border: 1px solid #223041; border-radius: 8px;
+    padding: 10px 12px; cursor: pointer; min-width: 0;
+  }
+  .watch-card:hover { border-color: #4a9eff; }
+
   /* Dossier layout — judgement (danger/why/hidden/civil) beside evidence
      (planets/routine) from 860px; one column below. Layout only, the blocks
      and their wording are untouched. */
@@ -813,6 +823,9 @@
   <!-- Collapsed by default, but the summary line carries live counts so the
        defensive picture reads without opening it (Etap H3). -->
   <details style="margin-bottom:10px;"><summary style="cursor:pointer;color:#9aa;font-size:13px;list-style:none;">🛡 Who's been near you<span id="proximityCounts" style="color:#77848f;"></span><span id="proximityAlert" style="color:#e06c5f;font-weight:600;"></span></summary><div id="proximityStrip" style="margin-top:8px;"></div></details>
+  <!-- Watchlist cards — the landing view (Etap H4, design §6.1): each card
+       answers raid-or-skip in words before any table is read. -->
+  <div id="watchCards" style="margin-bottom:16px;"></div>
   <!-- Everyday filters as chip pills (same pattern as the Galaxy Viewer);
        the rarely-touched numeric config (military range, probes) hides
        behind ⚙ so the strip stays one calm line (Etap H1). -->
