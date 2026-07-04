@@ -480,6 +480,7 @@ const onSendClick = async () => {
         home,
         /** @type {number[]} */ (parsePositions(cfg.positions)),
         cfg.preferOtherGalaxies,
+        Date.now(),
         cfg.preferFarthestSystems,
         getApiContext()?.index ?? null,
         blockingCoords(colonizeDecisionsStore.get(), Date.now()),

@@ -200,6 +200,11 @@ export const GAME = {
   AGO_DEUTERIUM: '#ago_deuterium',
   /** AGR food cargo input (fleet2; lifeform universes only). */
   AGO_FOOD: '#ago_food',
+  // AGR's fleet-2 panel container — its presence means AGR has advanced past
+  // fleet1 and the dispatch step is up. AGR-owned id, verbatim. Bare id (no `#`)
+  // because every reader looks it up via `getElementById`, not `querySelector`.
+  /** AGR fleet-2 panel id (fleet2 step is loaded when present). */
+  AGO_FLEET2_MAIN: 'ago_fleet2_main',
 
   // ── AGR presence probe (top-bar chrome) ────────────────────────────
   // AGR injects its menu-toggle button into OGame's top bar on every game

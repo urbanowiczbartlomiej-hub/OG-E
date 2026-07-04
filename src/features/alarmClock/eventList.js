@@ -582,7 +582,7 @@ export const installEventListAlarmClock = ({
   const onMirror = (/** @type {Record<string, unknown>} */ changes) => {
     if (ALARM_CLOCK_MIRROR_KEY in changes) void refreshSnapshot().then(() => scheduleRender());
   };
-  chromeStore.onChanged(onMirror);
+  const unsubMirror = chromeStore.onChanged(onMirror);
 
   let prevSig = pickSig(settingsStore.get());
   const unsubSettings = settingsStore.subscribe((next) => {
@@ -627,6 +627,7 @@ export const installEventListAlarmClock = ({
       document.removeEventListener('click', onClick, true);
       observer.disconnect();
       unsubPoll();
+      unsubMirror();
       clearFsFlipTimer();
       unsubSettings();
       unsubScanConfig();

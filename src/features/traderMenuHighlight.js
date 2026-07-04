@@ -102,6 +102,8 @@ import {
   TRADER_IMPORT_KEY,
   TRADER_AUCTION_QUIET_KEY,
   TRADER_IMPORT_NEXT_KEY,
+  readDailyState,
+  writeDailyState,
 } from '../state/dailyActions.js';
 import {
   DAILY_STATE_CHANGED_EVENT,
@@ -524,44 +526,6 @@ export const nextTraderBoundary = (now, state) => {
 };
 
 /**
- * Read the stored bid timestamp, or `null` when missing / unparseable.
- *
- * @returns {number | null}
- */
-const readAuctionBidAt = () => {
-  const raw = safeLS.get(AUCTION_BID_KEY);
-  if (raw === null) return null;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : null;
-};
-
-/**
- * Read the stored auction quiet-until timestamp, or `null` when missing /
- * unparseable.
- *
- * @returns {number | null}
- */
-const readAuctionQuietUntil = () => {
-  const raw = safeLS.get(AUCTION_QUIET_KEY);
-  if (raw === null) return null;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : null;
-};
-
-/**
- * Read the stored last-taken-slot timestamp, or `null` when missing /
- * unparseable.
- *
- * @returns {number | null}
- */
-const readImportNextAt = () => {
-  const raw = safeLS.get(IMPORT_NEXT_KEY);
-  if (raw === null) return null;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : null;
-};
-
-/**
  * The player's chosen Import/Export mode, defaulting to {@link MODE_DAILY} for
  * any missing / unrecognised value.
  *
@@ -593,17 +557,26 @@ const readEventSeen = () => {
 };
 
 /**
- * Assemble the persisted state from localStorage.
+ * Assemble the persisted state from the synced {@link DailyState}.
+ *
+ * `readDailyState()` is the single reader for the four synced trader keys; it
+ * reports an absent epoch-ms field as `0` and an absent day-key as `''`. The
+ * pure policy functions ({@link traderGlows} / {@link nextTraderBoundary}) use
+ * `null` as their "unset" sentinel, so we translate `0`/`''` → `null` right
+ * here at the read boundary — the one place the two conventions meet.
  *
  * @returns {TraderState}
  */
-const readState = () => ({
-  auctionBidAt: readAuctionBidAt(),
-  importTradedDay: safeLS.get(IMPORT_TRADED_KEY),
-  auctionQuietUntil: readAuctionQuietUntil(),
-  mode: readMode(),
-  importNextAt: readImportNextAt(),
-});
+const readState = () => {
+  const daily = readDailyState();
+  return {
+    auctionBidAt: daily.traderAuctionBidAt || null,
+    importTradedDay: daily.traderImportDay || null,
+    auctionQuietUntil: daily.traderAuctionQuietUntil || null,
+    mode: readMode(),
+    importNextAt: daily.traderImportNextAt || null,
+  };
+};
 
 /**
  * Whether an element is present AND not hidden by an inline `display:none`.
@@ -725,18 +698,30 @@ const readNewestEventStartMs = () => {
  * forward, so repeated calls within a slot don't churn. Shared by the
  * `oge:traderImportTraded` XHR signal and the passive "overlay shown" scan.
  *
+ * Writes go through {@link writeDailyState} (the sanctioned key-owner) so the
+ * synced `dailyStatePerUniverse` slot stays consistent; returns whether a value
+ * actually changed so the caller can gate the {@link DAILY_STATE_CHANGED_EVENT}
+ * upload nudge on real progress.
+ *
  * @param {Date} now
- * @returns {void}
+ * @returns {boolean} `true` when a stamp was written (state changed).
  */
 const markImportTaken = (now) => {
   const today = localDayKey(now);
+  const daily = readDailyState();
   if (readMode() === MODE_6X) {
     const slot = slotStartMs(now, EVENT_SLOT_HOURS);
-    const stored = readImportNextAt();
-    if (stored === null || slot > stored) safeLS.set(IMPORT_NEXT_KEY, String(slot));
-  } else if (safeLS.get(IMPORT_TRADED_KEY) !== today) {
-    safeLS.set(IMPORT_TRADED_KEY, today);
+    // `traderImportNextAt` is 0 when unset; `slot` is always > 0, so this also
+    // covers the "nothing taken yet" case (old null-guard) without a branch.
+    if (slot > daily.traderImportNextAt) {
+      writeDailyState({ traderImportNextAt: slot });
+      return true;
+    }
+  } else if (daily.traderImportDay !== today) {
+    writeDailyState({ traderImportDay: today });
+    return true;
   }
+  return false;
 };
 
 /**
@@ -786,8 +771,12 @@ const scanTraderSubpages = (now) => {
   }
 
   // Import/Export — a visible overlay means the current offer is gone (taken).
-  if (isShown(document.querySelector(IMPORT_DONE_OVERLAY_SEL))) {
-    markImportTaken(now);
+  // Route through the key-owner + nudge sync only when the stamp actually moved.
+  if (
+    isShown(document.querySelector(IMPORT_DONE_OVERLAY_SEL)) &&
+    markImportTaken(now)
+  ) {
+    document.dispatchEvent(new CustomEvent(DAILY_STATE_CHANGED_EVENT));
   }
 
   // Auctioneer — no auction live; push the quiet window to the next auction.
@@ -797,10 +786,14 @@ const scanTraderSubpages = (now) => {
     );
     if (sec !== null && sec > 0) {
       const target = now.getTime() + sec * 1000;
-      const stored = readAuctionQuietUntil();
-      // Only ever extend forward; a ±1 s wobble across ticks must not churn.
-      if (stored === null || target > stored + 1000) {
-        safeLS.set(AUCTION_QUIET_KEY, String(target));
+      // `traderAuctionQuietUntil` is 0 when unset. Only ever extend forward;
+      // a ±1 s wobble across ticks must not churn. When unset (0), any
+      // positive target clears the guard (target > 0 + 1000) exactly as the
+      // old `stored === null` case did.
+      const stored = readDailyState().traderAuctionQuietUntil;
+      if (target > stored + 1000) {
+        writeDailyState({ traderAuctionQuietUntil: target });
+        document.dispatchEvent(new CustomEvent(DAILY_STATE_CHANGED_EVENT));
       }
     }
   }
@@ -922,7 +915,7 @@ const refresh = () => {
 
 /** Stamp the bid time and re-render. Driven by `oge:traderBidPlaced`. */
 const onBidPlaced = () => {
-  safeLS.set(AUCTION_BID_KEY, String(Date.now()));
+  writeDailyState({ traderAuctionBidAt: Date.now() });
   applyHighlight();
   document.dispatchEvent(new CustomEvent(DAILY_STATE_CHANGED_EVENT));
 };
@@ -930,9 +923,9 @@ const onBidPlaced = () => {
 /** Record the import (slot during the event, day otherwise) and re-render.
  *  Driven by `oge:traderImportTraded`. */
 const onImportTraded = () => {
-  markImportTaken(new Date());
+  const changed = markImportTaken(new Date());
   applyHighlight();
-  document.dispatchEvent(new CustomEvent(DAILY_STATE_CHANGED_EVENT));
+  if (changed) document.dispatchEvent(new CustomEvent(DAILY_STATE_CHANGED_EVENT));
 };
 
 /** Strip highlight + chips + style — used when toggled off / on dispose. */

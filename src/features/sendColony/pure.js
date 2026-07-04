@@ -52,7 +52,6 @@ import {
   COL_MAX_GALAXY,
 } from '../../domain/rules.js';
 import { countFreeTargetSlots } from '../../domain/apiOccupancy.js';
-import { ingameComponentUrl } from '../../domain/ogameUrl.js';
 
 /**
  * @typedef {import('../../state/scans.js').GalaxyScans} GalaxyScans
@@ -139,13 +138,15 @@ export const BG_SEND_WAIT = '#fbbf24';
  * @param {{ galaxy: number, system: number }} home
  * @param {number[]} targets  user's parsed `colPositions` list
  * @param {boolean} preferOther  move home galaxy to end of order
+ * @param {number} now  epoch-ms "now" for inFlight filtering (derive passes
+ *   `env.now`; the in-game caller passes `Date.now()`).
  * @param {boolean} [farthestFirst]  home-galaxy system order: farthest free
  *   system first (default, true) vs. nearest first (false).
  * @param {import('../../domain/apiOccupancy.js').OccupancyIndex | null} [index]
  *   API occupancy index (whole-server breadth). Omit/`null` → scan-only.
  * @param {Set<string> | null} [rejected]  `"g:s:p"` coords to skip (session
  *   rejections from checkTarget for slots not in the scan map).
- * @returns {{ galaxy: number, system: number, position: number, link: string } | null}
+ * @returns {{ galaxy: number, system: number, position: number } | null}
  */
 export const findNextColonizeTarget = (
   scans,
@@ -153,13 +154,13 @@ export const findNextColonizeTarget = (
   home,
   targets,
   preferOther,
+  now,
   farthestFirst = true,
   index = null,
   rejected = null,
 ) => {
   if (targets.length === 0) return null;
 
-  const now = Date.now();
   const inFlight = new Set(
     registry.filter((r) => (r.arrivalAt || 0) > now).map((r) => r.coords),
   );
@@ -190,15 +191,7 @@ export const findNextColonizeTarget = (
         if (inFlight.has(coordKey)) continue;
         if (rejected && rejected.has(coordKey)) continue;
         if (!isFreeTarget(scan, index, coordKey, pos)) continue;
-        const link = ingameComponentUrl(location.href, 'fleetdispatch', {
-          galaxy: g,
-          system: s,
-          position: pos,
-          type: 1,
-          mission: MISSION_COLONIZE,
-          am208: 1,
-        });
-        return { galaxy: g, system: s, position: pos, link };
+        return { galaxy: g, system: s, position: pos };
       }
     }
   }
@@ -536,6 +529,7 @@ export const derive = (env) => {
         home,
         env.targets,
         env.preferOther,
+        env.now,
         farthestFirst,
         index,
         rejected,
@@ -561,6 +555,7 @@ export const derive = (env) => {
       home,
       env.targets,
       env.preferOther,
+      env.now,
       farthestFirst,
       index,
       rejected,

@@ -273,7 +273,7 @@ const handleGuardianTap = async () => {
   busy = true;
   try {
     // Phase 1 — fleet2 already prepared → fire the fleet save.
-    if (document.querySelector(GAME.FD_DISPATCH) && document.getElementById('ago_fleet2_main')) {
+    if (document.querySelector(GAME.FD_DISPATCH) && document.getElementById(GAME.AGO_FLEET2_MAIN)) {
       const r = dispatchPrepared({ owner: OWNER_FS });
       if (r === 'sent') {
         paintSent(target);

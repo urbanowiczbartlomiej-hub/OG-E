@@ -437,7 +437,7 @@ export const installSendExpedition = () => {
     // `component=fleetdispatch` only: AGR assigns the mission itself when
     // the user taps its routine, so `mission=15` is not a precondition.
     const dispatch = document.querySelector(GAME.FD_DISPATCH);
-    const fleetPanel = document.getElementById('ago_fleet2_main');
+    const fleetPanel = document.getElementById(GAME.AGO_FLEET2_MAIN);
     if (dispatch && fleetPanel) {
       // Ownership gate (T5): a loaded fleet panel is NOT proof this is our
       // expedition — the player may have armed a manual send, or another

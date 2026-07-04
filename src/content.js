@@ -96,6 +96,8 @@ import { installTargetsIngest } from './features/targetsIngest/index.js';
 
 import { installSync } from './sync/scheduler.js';
 
+import { logger } from './lib/logger.js';
+
 // All stores hydrate synchronously. localStorage is per-origin and the
 // chrome.storage stores are namespaced per-universe (keyed on
 // `location.host`), so settings/registry/history/scans are naturally
@@ -171,32 +173,54 @@ if (window.top === window.self) {
 // DOMContentLoaded so `document.body` exists and `getElementById` can
 // resolve live nodes.
 const installDomFeatures = () => {
+  // Per-feature error isolation. OG-E is a parasite on volatile game/AGR
+  // DOM, so a single game-update-induced throw in one install must NOT
+  // abort the rest of the bootstrap (which would silently disable every
+  // feature installed after it — logger is off by default, so nothing
+  // reaches the console). Each install runs inside try/catch that routes
+  // the error through logger.error, degrading a one-feature breakage to a
+  // one-feature outage instead of a whole-extension outage. Install order
+  // is preserved exactly; the top-frame `window.top === window.self` guards
+  // stay outside safeInstall so a sub-frame still skips (rather than runs)
+  // the top-frame-only features.
+  /**
+   * @param {string} name Feature name for the error log.
+   * @param {() => void} fn The feature's `install*()` entry point.
+   */
+  const safeInstall = (name, fn) => {
+    try {
+      fn();
+    } catch (err) {
+      logger.error(`[content] install ${name} threw`, err);
+    }
+  };
+
   // Passive observers (data capture).
-  installColonyRecorder();
+  safeInstall('colonyRecorder', installColonyRecorder);
   // Snapshot the planet bar (owned planets + moons) for the dashboard
   // route picker + route reconciliation. Top-frame only: the bar is
   // identical across OGame's iframes, so sub-frame captures would just
   // multiply storage writes.
-  if (window.top === window.self) installPlanetBarCapture();
+  if (window.top === window.self) safeInstall('planetBarCapture', installPlanetBarCapture);
   // Own profile — scrape our rank / honour class off the header bar once so
   // Colony Scout can score neighbours relative to us. Top-frame only (the
   // header bar lives there; one write per page load suffices).
-  if (window.top === window.self) installOwnProfile();
-  installBadges();
-  installEventMenuHighlight();
-  installTraderMenuHighlight();
+  if (window.top === window.self) safeInstall('ownProfile', installOwnProfile);
+  safeInstall('badges', installBadges);
+  safeInstall('eventMenuHighlight', installEventMenuHighlight);
+  safeInstall('traderMenuHighlight', installTraderMenuHighlight);
   // Loud under-attack alert (opt-in via Display settings). Top-frame only:
   // the `#attack_alert` flag + event box live there, and a single overlay
   // must not be multiplied across OGame's embedded iframes.
-  if (window.top === window.self) installThreatHighlight();
-  installRewardingWatcher();
-  installArtifactShopWatcher();
+  if (window.top === window.self) safeInstall('threatHighlight', installThreatHighlight);
+  safeInstall('rewardingWatcher', installRewardingWatcher);
+  safeInstall('artifactShopWatcher', installArtifactShopWatcher);
   // Espionage-report ingestion — a MutationObserver reads each report's
   // rawMessageData straight from the rendered messages DOM and records it for
   // the dashboard Targets sub-tab. DOM-based (not an XHR hook) because the
   // messages component fetches via fetch(), which observeXHR can't see. Top
   // frame only: the messages UI is the top-level page.
-  if (window.top === window.self) installTargetsIngest();
+  if (window.top === window.self) safeInstall('targetsIngest', installTargetsIngest);
   // OGame public-API context (per-device occupancy breadth for colonization).
   // Warms the per-device occupancy cache on every load (cache-gated, so the
   // multi-MB universe.xml is fetched at most weekly) and publishes the
@@ -204,7 +228,7 @@ const installDomFeatures = () => {
   // Scout. The `oge_debugApi` flag swaps the silent build for a console probe.
   // Top-frame only: universe.xml is multi-MB and identical across the game's
   // iframes, so a per-frame fetch would just multiply traffic.
-  if (window.top === window.self) installApiContext();
+  if (window.top === window.self) safeInstall('apiContext', installApiContext);
 
   // AlarmClock — the producer reads expedition return-flights + present
   // fleet legs from #eventContent and reconciles both wave and ad-hoc
@@ -213,23 +237,23 @@ const installDomFeatures = () => {
   // it does gist IO, and running it in OGame's embedded iframes would
   // multiply that API traffic for no gain (same reasoning as installSync).
   // The event box lives in the top frame.
-  if (window.top === window.self) installAlarmClock();
+  if (window.top === window.self) safeInstall('alarmClock', installAlarmClock);
 
   // User-facing buttons — the four modules of the unified FAB
   // (features/shared/unifiedFab.js). All gated on the single fabMode
   // setting; exactly one is visible at a time and the FAB's orbital
   // picker switches between them. Install order = picker order only.
-  installSendExpedition();
-  installSendColony();
+  safeInstall('sendExpedition', installSendExpedition);
+  safeInstall('sendColony', installSendColony);
   // Lifeforms (system-discovery) button — walks the galaxy firing lifeform
   // discoveries, one system per tap. Independent of Send-Col.
-  installSendLifeform();
+  safeInstall('sendLifeform', installSendLifeform);
   // Unified Daily Transport button (Send micro-fleets + Collect).
-  installDailyRun();
+  safeInstall('dailyRun', installDailyRun);
   // Espionage-scan button — walks the dashboard watch-list firing probes, one
   // planet per tap, then jumps to messages. Mounts only when players are
   // starred (so it's absent until there's something to scan).
-  installSendSpy();
+  safeInstall('sendSpy', installSendSpy);
 
   // Unified FAB colony module — folds the old fresh-planet banner and the
   // red abandon overlay into ONE button on the FAB: a fresh colony elsewhere
@@ -237,34 +261,34 @@ const installDomFeatures = () => {
   // overview the button becomes "abandon" and its taps drive the flow
   // (features/abandon/colonyFab.js + abandon/index.js). Gated on fabMode
   // internally (like the other FAB modules).
-  installColonyFab();
+  safeInstall('colonyFab', installColonyFab);
 
   // Keyboard shortcut on fleetdispatch — desktop users press
   // ArrowRight to advance through AGR/OGame's send panels.
-  installFleetdispatchShortcut();
+  safeInstall('fleetdispatchShortcut', installFleetdispatchShortcut);
 
   // Manual landed-FS mark — an inline chip on fleet1 to flag the fleet sitting
   // on this body as a fleet-save (lights the badge + arms the guardian). Top
   // frame only: fleetdispatch is the top-level page, so the MutationObserver
   // never needs to run in OGame's embedded iframes.
-  if (window.top === window.self) installManualFsMark();
+  if (window.top === window.self) safeInstall('manualFsMark', installManualFsMark);
 
   // Settings panel — hooks into AGR's options menu. AGR is a hard
   // dependency; if AGR isn't present the install skips silently
   // (no-op) and the panel simply doesn't appear.
-  installSettingsUi();
+  safeInstall('settingsUi', installSettingsUi);
 
   // Rewire AGR's otherwise-idle menu-logo anchor: swap its image to the
   // OG-E icon and make a click open AGR's menu + auto-expand our
   // settings tab. Same silent-no-op-without-AGR behaviour as settingsUi.
-  installAgrLogo();
+  safeInstall('agrLogo', installAgrLogo);
 
   // AGR-missing guard — OG-E hard-depends on AGR; if it never hydrates,
   // show a dismissible top-of-page banner prompting the user to install
   // it. The notice can't live in the settings panel (that panel lives
   // inside AGR's menu, which is exactly what's absent). Top-frame only:
   // one banner, not one per OGame iframe.
-  if (window.top === window.self) installAgrGuard();
+  if (window.top === window.self) safeInstall('agrGuard', installAgrGuard);
 };
 
 if (document.readyState === 'loading') {

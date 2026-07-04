@@ -369,12 +369,23 @@ export const installAlarmClockProducer = (opts = {}) => {
     // inside syncAlarmClock so the offline push matches the in-game button.
     const manualLanded = readManualLandedFs();
 
+    // Bail if a dispose landed after the debounce already fired but before we
+    // reach the network round-trip. Guards against a stale run PATCHing the
+    // per-universe gist post-teardown (and, after re-install, racing the new
+    // producer for the same file — the last-write-wins loss the lock forbids).
+    if (!installed) return;
     try {
       const res = await syncAlarmClock(
         config,
         { waveCandidates: candidates, present, adhocMutate, waveMutate, fleetSaveCandidates, fsCancelById, departingKeys, guardianDismissed, guardianAcked, manualLanded },
         now, universeId,
       );
+      // A dispose can land WHILE syncAlarmClock's read→poll-ntfy→PATCH-gist
+      // round-trip is in flight. Abort the post-teardown continuation before it
+      // persists lastSig / rewrites the fleet-save + landed sets, so a stale
+      // run leaves no trace after dispose (and can't clobber a re-installed
+      // producer's state).
+      if (!installed) return;
       if (res.ok) {
         lastSig = sig;
         safeLS.set(sigKeyFor(universeId), sig);
@@ -432,7 +443,12 @@ export const installAlarmClockProducer = (opts = {}) => {
     }
   };
 
-  const scheduleRun = debounce(() => { void run(); }, DEBOUNCE_MS);
+  // Guard on the install sentinel: lib/debounce.js is deliberately cancel-less,
+  // so a dispose landing inside the 1.5s window can't cancel a pending fire.
+  // Without this bail the debounced body would run() a full post-teardown gist
+  // round-trip; worse, after dispose→re-install it would PATCH the same
+  // per-universe file as the new producer, defeating the single-writer lock.
+  const scheduleRun = debounce(() => { if (installed) void run(); }, DEBOUNCE_MS);
 
   const force = () => { pendingForce = true; scheduleRun(); };
 

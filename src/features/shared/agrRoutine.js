@@ -90,7 +90,7 @@ export const prepareViaRoutine = async ({ routineId, owner, requireCheckReady = 
 
   const ready = await waitFor(
     () =>
-      document.querySelector(GAME.FD_DISPATCH) && document.getElementById('ago_fleet2_main')
+      document.querySelector(GAME.FD_DISPATCH) && document.getElementById(GAME.AGO_FLEET2_MAIN)
         ? true
         : null,
     { timeoutMs: ROUTINE_POLL_TIMEOUT_MS, intervalMs: ROUTINE_POLL_INTERVAL_MS },
@@ -113,7 +113,7 @@ const dispatchReady = () => {
   return (
     !!dispatch &&
     !dispatch.classList.contains(GAME.FD_DISABLED_CLASS) &&
-    document.getElementById('ago_fleet2_main') !== null
+    document.getElementById(GAME.AGO_FLEET2_MAIN) !== null
   );
 };
 
