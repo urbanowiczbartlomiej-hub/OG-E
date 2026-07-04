@@ -4,6 +4,56 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.35.0] — 2026-07-04
+
+### Added
+
+- **Spyglass becomes a "Watchlist Workbench".** The whole-server discovery wall
+  gives way to a focused, per-player intelligence view built around one question
+  per target: **raid or skip, and when**. The finder table shrinks from 14 columns
+  to 7; clicking a player opens a full dossier.
+- **Per-player dossier.** One panel stacks a glanceable **raid verdict + loot
+  estimate** (the go / no-go at the moment you decide), the honest **mobile-fleet
+  interval** (a bounded low→high range, never fake-precise), the danger reasons,
+  the hidden-fleet subtraction, a per-planet scan grid, and a **civil-fleet
+  baseline** (economy → expected civil ships → the combat surplus over it, shown
+  as a weak upper bound, never fed into the danger score).
+- **Routine tracker.** From the spy reports you open over time, the dossier shows
+  a player's **hour-of-day activity**, **weekday resource pattern**, **collection
+  planet**, and a **spy-history timeline** — every line sample-gated and labelled
+  with its coverage, so it only ever claims what you actually sampled ("activity"
+  means a body was interacted with, never "online").
+- **Spyglass positions map.** A dedicated attack-planning / player-tracking map:
+  your planets and your watched players' on an otherwise-empty grid, coloured by a
+  **relationship** you tag per player (enemy · friend · neutral; you are white)
+  and sized by danger. Click a marker to open that player's dossier. The
+  colonization occupancy map stays in the Galaxy Viewer.
+- **Find any player by nickname** — including ones the filters hide, each with the
+  reason why and a "show anyway" override.
+- **"Who's been near you"** — a defensive strip listing who has scouted your
+  planets recently, and from where.
+- **Partial and moon spy reports are now kept.** A low-probe "just the loot" scan
+  or a moon scan is no longer discarded — the loot number it carries is often the
+  decision-relevant fact — while the hidden-fleet coverage stays honest (a moon is
+  a second spiable body, and a section a scan didn't reveal is never read as zero).
+
+### Changed
+
+- **Spyglass reads far more out of each spy report** — on-planet resources, the
+  real plunder %, all four highscore axes, character class and mine levels — which
+  feed the loot estimate and the civil-fleet baseline.
+- **Spy-report history is remembered per watched player** (a bounded ring) instead
+  of each report overwriting the last, so the routine tracker has a record to read.
+- **Danger colours are unified** across the Galaxy Viewer and Spyglass (one shared
+  palette; the two had drifted apart).
+
+### Fixed
+
+- **The Galaxy Viewer → Spyglass link no longer silently does nothing** when the
+  player is filtered out of the current view — it opens their dossier directly.
+- **Re-opening the same spy report no longer churns** the dashboard (an
+  identical-timestamp re-read is now a no-op).
+
 ## [1.34.0] — 2026-07-04
 
 ### Added
