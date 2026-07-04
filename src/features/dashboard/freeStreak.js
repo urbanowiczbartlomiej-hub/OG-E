@@ -331,9 +331,12 @@ const OCC_HINT = 'Hover for the exact coordinate and status · click to pin a sy
  *   their systems gets an overlay marker.
  * @param {string} [o.highlightName]  That player's name (for the banner).
  * @param {(() => void)} [o.onClearHighlight]  Clears the spotlight.
+ * @param {Map<number, string>} [o.highlightColors]  Watchlist overlay (Spyglass
+ *   map): player id → their stable colour; those planets paint in that colour
+ *   instead of the occupancy palette. Absent for the Galaxy Viewer (unchanged).
  * @returns {void}
  */
-const renderOccupancyMap = (hostEl, scans, { galaxies, systems }, { linkBase, ownMilitary, players, danger, candidates, onPinClick, highlightPlayer, highlightName, onClearHighlight }) => {
+const renderOccupancyMap = (hostEl, scans, { galaxies, systems }, { linkBase, ownMilitary, players, danger, candidates, onPinClick, highlightPlayer, highlightName, onClearHighlight, highlightColors }) => {
   const POS = 15;
   const posPx = 2;
   const gap = 4;
@@ -392,11 +395,18 @@ const renderOccupancyMap = (hostEl, scans, { galaxies, systems }, { linkBase, ow
       let hitHere = false;
       for (let p = 1; p <= POS; p++) {
         const pos = positions && positions[p];
-        const isHi = highlightPlayer != null && pos && pos.player && pos.player.id === highlightPlayer;
+        const pid = pos && pos.player && pos.player.id != null ? pos.player.id : null;
+        // Watchlist overlay: a watched player's planets paint in their OWN stable
+        // colour (the Spyglass map). Off (undefined) for the Galaxy Viewer, which
+        // passes no highlightColors → normal occupancy colouring, unchanged.
+        const overlayCol = highlightColors && pid != null ? highlightColors.get(pid) : undefined;
+        const isHi = highlightPlayer != null && pid === highlightPlayer;
         if (isHi) hitHere = true;
-        ctx.fillStyle = isHi
-          ? '#ff5edb' // spotlight — bright magenta pops against the dark map
-          : cellColor(classifyCell(pos ? pos.status : undefined, pos ? pos.player : undefined, clsCtx));
+        ctx.fillStyle = overlayCol
+          ? overlayCol
+          : isHi
+            ? '#ff5edb' // spotlight — bright magenta pops against the dark map
+            : cellColor(classifyCell(pos ? pos.status : undefined, pos ? pos.player : undefined, clsCtx));
         ctx.fillRect(x, yBase + (p - 1) * posPx, Math.ceil(cellW) + 0.4, posPx);
       }
       if (hitHere) highlightCells.push({ g, s });
@@ -609,12 +619,14 @@ const renderOccupancyMap = (hostEl, scans, { galaxies, systems }, { linkBase, ow
  *   BOTH views; click selects the matching table row via `onPinClick`.
  * @param {(index: number) => void} [o.onPinClick]
  * @param {number} [o.highlightPlayer]  Occupancy lens only — spotlight this
- *   player's planets (Spyglass → map reverse deep-link).
+ *   player's planets (adds diamond markers + a banner).
  * @param {string} [o.highlightName]
  * @param {(() => void)} [o.onClearHighlight]
+ * @param {Map<number, string>} [o.highlightColors]  Occupancy lens only — the
+ *   Spyglass watchlist overlay (player id → stable colour). Absent for the GV.
  * @returns {void}
  */
-export const renderServerMap = ({ hostEl, scans, galaxies, systems, donutGalaxy, donutSystem, view, offlineWindow, farmReach, linkBase, ownMilitary, players, danger, field, candidates, onPinClick, highlightPlayer, highlightName, onClearHighlight }) => {
+export const renderServerMap = ({ hostEl, scans, galaxies, systems, donutGalaxy, donutSystem, view, offlineWindow, farmReach, linkBase, ownMilitary, players, danger, field, candidates, onPinClick, highlightPlayer, highlightName, onClearHighlight, highlightColors }) => {
   hostEl.innerHTML = '';
   /** @param {string} msg */
   const note = (msg) => {
@@ -630,7 +642,7 @@ export const renderServerMap = ({ hostEl, scans, galaxies, systems, donutGalaxy,
   // Two views: the sharp per-position occupancy texture, or (default) the
   // threat/farm field the zone ranking reads.
   if (view === 'occupancy') {
-    renderOccupancyMap(hostEl, scans, { galaxies, systems }, { linkBase, ownMilitary, players, danger, candidates, onPinClick, highlightPlayer, highlightName, onClearHighlight });
+    renderOccupancyMap(hostEl, scans, { galaxies, systems }, { linkBase, ownMilitary, players, danger, candidates, onPinClick, highlightPlayer, highlightName, onClearHighlight, highlightColors });
     return;
   }
   // Granularity adapts to the panel width: aim for ~4px cells so the field is

@@ -48,7 +48,7 @@ import { parseTargetPositions } from '../../domain/histogram.js';
 import { populatePositionFilter, renderColonyChart } from './colony.js';
 import { renderFreeRegions, renderServerMap, selectCandidate, resetFreeSelection, highlightPin, _resetFreeStreakForTest } from './freeStreak.js';
 import { chipValue, setChipValue, wireChips, setChipsEnabled } from './chips.js';
-import { computeComposite, computeScoreField } from './mapPrimitives.js';
+import { computeComposite, computeScoreField, playerColor } from './mapPrimitives.js';
 import { renderTargets, DEFAULT_TARGET_SORT } from './targets.js';
 import { ZONES } from '../../domain/zoneScore.js';
 import { buildOccupancyIndex } from '../../domain/apiOccupancy.js';
@@ -1682,6 +1682,11 @@ const repaintSpyglassMap = () => {
   // systems; skip and repaint on the next tab/toggle open (the memo isn't needed
   // here — occupancy is cheap and the composite is cached).
   if ((spyglassMapHost.clientWidth || 0) === 0) return;
+  // Watchlist overlay: colour every watched player's planets by their stable id
+  // colour, so the whole watched set shows at once (not just the focused one).
+  /** @type {Map<number, string>} */
+  const highlightColors = new Map();
+  for (const pid of watchedPlayers) highlightColors.set(Number(pid), playerColor(pid));
   renderServerMap({
     hostEl: spyglassMapHost,
     scans: buildSpyComposite(),
@@ -1694,6 +1699,7 @@ const repaintSpyglassMap = () => {
     linkBase: gameLinkBase(),
     players,
     danger: dangerProfiles,
+    highlightColors,
     highlightPlayer: spyMapHighlight ? spyMapHighlight.id : undefined,
     highlightName: spyMapHighlight ? spyMapHighlight.name : undefined,
     onClearHighlight: () => { spyMapHighlight = null; repaintSpyglassMap(); },

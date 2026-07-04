@@ -30,6 +30,20 @@ import {
  */
 
 /**
+ * Stable, well-spread display colour for a player id — golden-angle (137.508°)
+ * hue stepping so nearby ids don't cluster into near-identical hues. Deterministic
+ * (the same player is always the same colour across repaints), and bright enough
+ * to pop on the dark occupancy canvas. Used by the Spyglass map's watchlist
+ * overlay to colour each watched player's planets.
+ * @param {string|number} id
+ * @returns {string} an `hsl(...)` colour string.
+ */
+export const playerColor = (id) => {
+  const hue = ((Number(id) || 0) * 137.508) % 360;
+  return `hsl(${hue.toFixed(0)}, 70%, 60%)`;
+};
+
+/**
  * The live-scan overlay for the API composite: only systems whose positions
  * were actually observed (this session). Excludes lf-only entries — after §5
  * the persisted scans blob keeps only lifeform markers (empty `positions`), so
