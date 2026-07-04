@@ -14,6 +14,7 @@ import { buildTargetList, sortTargetList, playerPlanets } from '../../domain/tar
 import { scanStatus, rescanAtFor } from '../../domain/spyScan.js';
 import { DANGER_LABELS } from '../../domain/dangerScore.js';
 import { dangerColor } from '../../lib/dangerColor.js';
+import { buildDossier } from './dossier.js';
 
 /**
  * @typedef {'hiddenFleet'|'military'|'totalRank'|'ships'|'destroyed'|'danger'|'fleet'} TargetSortKey
@@ -69,16 +70,6 @@ function formatAge(ms) {
   const days = hours / 24;
   if (days < 14) return `${Math.round(days)}d`;
   return `${Math.round(days / 7)}w`;
-}
-
-/**
- * Milliseconds since a report timestamp (epoch SECONDS), or NaN if unknown.
- * @param {number|undefined} tsSeconds
- * @param {number} nowMs
- * @returns {number}
- */
-function ageMs(tsSeconds, nowMs) {
-  return typeof tsSeconds === 'number' && tsSeconds > 0 ? nowMs - tsSeconds * 1000 : NaN;
 }
 
 /**
@@ -357,112 +348,6 @@ function playerCell(name, open, detail, onToggle, onShowOnMap) {
 }
 
 /**
- * Build the expandable per-planet detail row. Each planet shows its scan status
- * (scanned + age / stale / re-scan / needs scan), defense, and visible fleet;
- * stale or re-scan-flagged bodies carry a per-planet ↻ re-scan action. Pure
- * information — no send links (the in-game scan FAB does the sending). Hidden
- * unless `open`.
- * @param {object} args
- * @param {string} args.playerId
- * @param {PlanetPos[]} args.planets
- * @param {Record<string, PlanetReport> | undefined} args.reports  coord → report data.
- * @param {Record<string, number> | undefined} args.rescan
- * @param {number} args.nowMs
- * @param {(key: string) => void} [args.onRescan]
- * @param {number} args.colspan
- * @param {boolean} args.open
- * @returns {HTMLTableRowElement}
- */
-function detailRow({ playerId, planets, reports, rescan, nowMs, onRescan, colspan, open }) {
-  const tr = document.createElement('tr');
-  tr.dataset.detailFor = playerId;
-  tr.style.display = open ? '' : 'none';
-  const td = document.createElement('td');
-  td.colSpan = colspan;
-  td.style.padding = '8px 8px 12px 28px';
-  td.style.borderBottom = '1px solid #222';
-  td.style.background = '#0b1118';
-  tr.appendChild(td);
-
-  if (!planets.length) {
-    const note = document.createElement('div');
-    note.style.color = '#888';
-    note.style.fontSize = '12px';
-    note.textContent = 'No planets in the cached universe snapshot for this player.';
-    td.appendChild(note);
-    return tr;
-  }
-
-  const coordStr = (/** @type {PlanetPos} */ p) => `${p.galaxy}:${p.system}:${p.position}`;
-  const spied = planets.filter((p) => reports && reports[coordStr(p)]).length;
-
-  const head = document.createElement('div');
-  head.style.cssText = 'font-size:11px;color:#7c8893;margin-bottom:8px;';
-  const need = planets.length - spied;
-  head.textContent = `${spied} of ${planets.length} planets scanned`
-    + (need > 0 ? ` · ${need} need a scan` : '');
-  td.appendChild(head);
-
-  // Responsive grid of compact per-planet cells — a player can own 20+ planets,
-  // so a single vertical list would be unusably tall; auto-fill packs them into
-  // as many ~190px columns as the width allows.
-  const grid = document.createElement('div');
-  grid.style.cssText =
-    'display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:7px 18px;';
-
-  for (const p of planets) {
-    const coord = coordStr(p);
-    const r = reports ? reports[coord] : undefined;
-    const status = scanStatus({
-      reportTsSec: r ? r.ts : undefined,
-      nowMs,
-      rescanAtMs: rescanAtFor(rescan, playerId, coord),
-    });
-    const item = document.createElement('div');
-    item.style.cssText = 'font-size:11px;line-height:1.4;';
-
-    // Line 1: coords · status · (re-scan ↻ pushed to the right).
-    const l1 = document.createElement('div');
-    l1.style.cssText = 'display:flex;align-items:baseline;gap:6px;white-space:nowrap;';
-    const coordEl = document.createElement('span');
-    coordEl.textContent = coord;
-    coordEl.style.color = status === 'none' ? '#8b95a0' : '#cfd6dd';
-    l1.appendChild(coordEl);
-
-    const age = formatAge(ageMs(r?.ts, nowMs));
-    const st = document.createElement('span');
-    st.style.fontSize = '10px';
-    if (status === 'none') { st.textContent = '○ needs scan'; st.style.color = '#7c8893'; }
-    else if (status === 'fresh') { st.textContent = age; st.style.color = '#5a8f5a'; }
-    else if (status === 'stale') { st.textContent = `${age} stale`; st.style.color = '#e0a020'; }
-    else { st.textContent = `${age} re-scan`; st.style.color = '#e0a020'; }
-    l1.appendChild(st);
-
-    if ((status === 'fresh' || status === 'stale') && onRescan) {
-      const link = document.createElement('span');
-      link.textContent = '↻';
-      link.style.cssText = 'color:#6b97c4;cursor:pointer;user-select:none;margin-left:auto;';
-      link.title = 'Flag this planet for re-scan';
-      link.addEventListener('click', () => onRescan(coord));
-      l1.appendChild(link);
-    }
-    item.appendChild(l1);
-
-    // Line 2: defense + visible fleet (only meaningful once scanned).
-    const l2 = document.createElement('div');
-    l2.style.color = '#6b7782';
-    l2.textContent = r
-      ? `D ${compact(Math.round(r.defPts))} · F ${compact(Math.round(r.fleetPts))}`
-      : ' ';
-    item.appendChild(l2);
-
-    grid.appendChild(item);
-  }
-  td.appendChild(grid);
-  return tr;
-}
-
-/**
  * Render the ranked target table into `containerEl`.
  * @param {object} args
  * @param {HTMLElement} args.containerEl
@@ -488,6 +373,10 @@ function detailRow({ playerId, planets, reports, rescan, nowMs, onRescan, colspa
  *   columns (Danger D + mobile-fleet ceiling) and their sort axes.
  * @param {(playerId: string, name?: string) => void} [args.onShowOnMap]
  *   Spyglass → map reverse deep-link (⌖ per row).
+ * @param {Record<string, import('../../domain/raidVerdict.js').RaidVerdict>} [args.verdicts]
+ *   Per-player raid verdict (label + loot) shown in the expanded dossier.
+ * @param {Record<string, boolean|undefined>} [args.inBand]
+ *   Per-player legal-attack-band flag for the dossier header.
  * @returns {void}
  */
 export function renderTargets({
@@ -510,6 +399,8 @@ export function renderTargets({
   onToggleExpand,
   countInfoEl,
   danger,
+  verdicts,
+  inBand,
   onShowOnMap,
 }) {
   containerEl.textContent = '';
@@ -614,8 +505,21 @@ export function renderTargets({
     const spied = est ? est.spiedCount : 0;
 
     const open = !!(expandedIds && expandedIds.has(c.id));
-    const detail = detailRow({
-      playerId: c.id, planets, reports, rescan, nowMs, onRescan, colspan: COLSPAN, open,
+    const prof = danger ? danger.get(Number(c.id)) : undefined;
+    const detail = buildDossier({
+      playerId: c.id,
+      name: c.name || `#${c.id}`,
+      profile: prof,
+      estimate: est,
+      verdict: verdicts ? verdicts[c.id] : undefined,
+      inBand: inBand ? inBand[c.id] : undefined,
+      planets,
+      reports,
+      rescan,
+      nowMs,
+      onRescan,
+      colspan: COLSPAN,
+      open,
     });
 
     const tr = document.createElement('tr');
@@ -625,7 +529,6 @@ export function renderTargets({
     tr.appendChild(playerCell(c.name || `#${c.id}`, open, detail, () => {
       if (onToggleExpand) onToggleExpand(c.id);
     }, onShowOnMap ? () => onShowOnMap(c.id, c.name) : undefined));
-    const prof = danger ? danger.get(Number(c.id)) : undefined;
     tr.appendChild(dangerCell(prof));
     tr.appendChild(fleetCell(prof));
     tr.appendChild(militaryCell(c));

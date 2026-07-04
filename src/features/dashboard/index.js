@@ -55,6 +55,7 @@ import { buildOccupancyIndex, buildScanMapFromIndex } from '../../domain/apiOccu
 import { buildTargetCandidates } from '../../domain/targets.js';
 import { buildDangerProfiles } from '../../domain/dangerScore.js';
 import { estimateHiddenFleet } from '../../domain/threatModel.js';
+import { raidVerdict } from '../../domain/raidVerdict.js';
 import { normalizeReportTimestamps } from '../../domain/espionageReport.js';
 import { readApiCacheFor, apiCacheKeyFor } from '../../state/apiCache.js';
 import { targetReportsKeyFor } from '../../state/targets.js';
@@ -1044,6 +1045,31 @@ const repaintTargets = () => {
     reportsByPlayer[pid] = byCoord;
   }
 
+  // Per-player raid verdict + legal-attack-band flag for the dossier (Etap B).
+  // Cheap arithmetic over the candidate list, computed for all so an expanded
+  // never-spied player still reads "scan first". inBand uses OGame's ±5× noob-
+  // protection on TOTAL score (undefined when our own score is unknown).
+  const nowMs = Date.now();
+  /** @type {Record<string, import('../../domain/raidVerdict.js').RaidVerdict>} */
+  const verdicts = {};
+  /** @type {Record<string, boolean|undefined>} */
+  const inBandById = {};
+  for (const c of targetCandidates) {
+    const inBand = typeof ownTotalScore === 'number' && ownTotalScore > 0
+      && typeof c.totalScore === 'number'
+      ? c.totalScore >= ownTotalScore / 5 && c.totalScore <= ownTotalScore * 5
+      : undefined;
+    inBandById[c.id] = inBand;
+    const bucket = targetReports[c.id];
+    verdicts[c.id] = raidVerdict({
+      profile: dangerProfiles.get(Number(c.id)),
+      estimate: estimates[c.id],
+      reports: bucket ? Object.values(bucket) : [],
+      inBand,
+      nowMs,
+    });
+  }
+
   renderTargets({
     containerEl: targetsContainer,
     candidates: targetCandidates,
@@ -1071,7 +1097,7 @@ const repaintTargets = () => {
     watchedOnly: !!tgtWatchedOnly?.checked,
     universePlanets: apiCache.universe ? apiCache.universe.planets : [],
     reportsByPlayer,
-    nowMs: Date.now(),
+    nowMs,
     expandedIds: expandedTargets,
     onToggleExpand: (id) => {
       if (expandedTargets.has(id)) expandedTargets.delete(id);
@@ -1081,6 +1107,9 @@ const repaintTargets = () => {
     // The free whole-server fleet-finder columns/sorts (Danger D + mobile
     // fleet ceiling) — computed from the API feeds, no spy needed.
     danger: dangerProfiles,
+    // Per-player raid verdict + in-band flag for the expanded dossier (Etap B).
+    verdicts,
+    inBand: inBandById,
     // Spyglass → map reverse deep-link: spotlight this player's planets on the
     // Galaxy Viewer occupancy lens.
     onShowOnMap: showPlayerOnMap,
