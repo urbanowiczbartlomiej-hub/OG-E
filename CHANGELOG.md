@@ -4,6 +4,48 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.34.0] — 2026-07-04
+
+### Added
+
+- **Per-player danger scoring.** Every occupant on the map and in the analyzer
+  now carries a single Danger score that separates a harmless defensive whale
+  from a real aggressor. It reads the whole-server military highscore's *ship
+  count* (0 ships = cannot attack, whatever the point total) and the lifetime
+  *military-destroyed* history (kills only combat produces), bounded — never
+  fake-precise — and leant by bandit rank and planet dispersion. Fully-spied
+  players collapse to their exact fleet (military − known defence). Your
+  alliance and buddies are excluded outright.
+- **Spyglass — a whole-server hidden-fleet finder.** The Colonizations tab's
+  target list gains Danger and Fleet columns and sorts by Danger by default,
+  turning espionage reports into a ranked read of who is actually dangerous and
+  where the loot is. Two-way deep-links tie the map and Spyglass together:
+  click a threat on the map to find the player in Spyglass, and back.
+- **"Top threats" panel** in the Galaxy Viewer census, summarising the
+  highest-danger occupants in view.
+
+### Changed
+
+- **Galaxy Viewer control refresh.** The view / zone / find selectors are now
+  chip groups in a single config card, the Field and Occupancy maps render at
+  equal height, region rows expand inline instead of jumping to a panel at the
+  bottom, and the census is grouped for a faster read.
+- **API freshness is now a two-clock model with per-feed resilience.** The
+  public-API feeds (now including economy, destroyed, and lost) refresh
+  independently — one feed failing no longer aborts the whole refresh — and a
+  universe regeneration re-fetches automatically.
+
+### Fixed
+
+- **Spy-report timestamps were off by a factor of 1000** (seconds vs
+  milliseconds), which could misorder or misdate reports; report times are now
+  normalised to a single unit.
+- **A mid-flight expedition recall could schedule a duplicate set of return
+  reminders.** When a recall split one live wave's returns across the 5-minute
+  clustering gap, the tail half was mistaken for a brand-new wave and given its
+  own reminder schedule (and could even cancel the original). The wave is now
+  re-unified before matching, so one wave stays one wave.
+
 ## [1.33.0] — 2026-07-02
 
 ### Added
