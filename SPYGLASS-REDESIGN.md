@@ -115,16 +115,28 @@ tooltip, "Who's been near you" = 10 raw lines with no aggregation, map membershi
 
 | Sub-etap | What | Status |
 |---|---|---|
-| H1 | Controls → chip pills (reuse `chips.js` + new boolean-toggle helpers) + top-N seg chips + Military/Probes behind a ⚙ config card + intro paragraph → one-liner + "?" popover (full text inside) + map caption diet | planned |
-| H2 | `shipsCell` second line `≈ X res/ship` (tiered colour: <5K swarm-dim · ≥50K amber · ≥1M red; caveat stays in tooltip) + table in an `overflow-x` wrapper (RWD) | planned |
-| H3 | NEW pure `domain/proximityDigest.js` (group per prober, same-system = RIP-range detection, hot-first sort) + strip rewrite: live counts in the `<summary>`, 💀 rows, ⭐ watch / dossier ▸ actions, raw log behind a `<details>` | planned |
-| H5 | `WatchListConfig.mapHidden` (additive, like `relationships`) + watched-player chips under the map (✕ unwatch · 👁 hide-from-map · dot = cycle relationship · name → dossier) + ⌖ → 🗺 glyph with "focus on map" title | planned |
-| H6 | Dossier two-column grid ≥860px (verdict/danger/hidden/civil ↔ planets/routine) — **zero wording changes** (provenance/coverage lines are the §8 spine) + relationship selector restyled as chips | planned |
-| H4 | Watchlist CARDS as the landing (§6.1/§6.3 — never implemented) above the Finder; card = verdict words + headline + sparkline + intel age; click → dossier; drops the "scan list only" chip | planned (largest; may slip to next session) |
+| H1 | Controls → chip pills (reuse `chips.js` + new boolean-toggle helpers) + top-N seg chips + Military/Probes behind a ⚙ config card + intro paragraph → one-liner + "?" popover (full text inside) + map caption diet | ✅ `89d4817` |
+| H2 | `shipsCell` second line `≈ X res/ship` (tiered colour: <5K swarm-dim · ≥50K amber · ≥1M red; caveat stays in tooltip) + table in an `overflow-x` wrapper (RWD) | ✅ `7d387bc` |
+| H3 | NEW pure `domain/proximityDigest.js` (group per prober, same-system = RIP-range detection, hot-first sort) + strip rewrite: live counts in the `<summary>`, 💀 rows, ⭐ watch / dossier ▸ actions, raw log behind a `<details>` | ✅ `a73927c` |
+| H5 | `WatchListConfig.mapHidden` (additive, like `relationships`) + watched-player chips under the map (✕ unwatch · 👁 hide-from-map · dot = cycle relationship · name → dossier) + ⌖ → 🗺 glyph; `toggleWatched` now also repaints the open map | ✅ `dba5bcc` |
+| H6 | Dossier two-column grid ≥860px (verdict/danger/hidden/civil ↔ planets/routine) — **zero wording changes** (provenance/coverage lines are the §8 spine) + relationship selector restyled as chips | ✅ `52e3bd6` |
+| H4 | Watchlist CARDS as the landing (§6.1/§6.3 — never implemented): NEW `cards.js` fed from the same repaint data as table+dossier; verdict words + headline + gate-aware sparkline + intel age; click → dossier | ✅ `554b37f` |
 
-Deferred test debt from H (reconcile at 1.36.0 release): `proximityDigest`, `normalizeWatchList`
-mapHidden, chips toggle helpers. Freshness header chips ("ships data 2 h old") skipped — needs
-an apiCache fetch-timestamp plumb; revisit with H4.
+**All six sub-etaps BUILT + committed (tree green: tsc/lint/build at every commit) —
+AWAITING BROWSER VERIFICATION** (per the work loop; none of it is user-verified yet).
+Browser checklist: chips toggle + persist across reload; ⚙ card; "?" popover; res/ship
+line + tiers; near-you digest counts/💀/watch/dossier buttons (needs real proximity
+alerts); map player-chips (dot cycle, 👁 mute persists, ✕, empty-ghost); cards (verdict/
+headline/sparkline, click→dossier, empty-ghost); dossier 2-col ≥860px; narrow-viewport
+table scroll. "scan list only" chip kept — candidate for removal once cards prove out.
+
+Deferred test debt from H (reconcile at 1.36.0 release): `proximityDigest`,
+`normalizeWatchList` mapHidden, chips toggle helpers, `renderWatchlistCards` (behavioral).
+Freshness header chips ("ships data 2 h old") skipped — needs an apiCache fetch-timestamp
+plumb; revisit later. MERGE NOTE: rebase/merge this branch onto the post-release
+`feat/spyglass-v3` (F3+G landed there in parallel) — expect localized conflicts in
+`index.js` (imports, repaintTargets args, listeners), `dossier.js`, `watchList.js`
+(if G's prune touched it) and `dashboard.html`; resolve keeping BOTH features.
 
 ### NEXT — future sessions, in order
 
