@@ -33,8 +33,7 @@ import { watchListStore } from './watchList.js';
  * All recorded reports for the current universe: `playerId` → (`bodyKey` →
  * body entry). Each entry holds the NEWEST report (`latest`) plus a bounded ring
  * of lean prior observations (`history`), the latter accruing for WATCHED players
- * only — see {@link recordReport}. Each body key is a coord+type (planets only
- * under the current gate).
+ * only — see {@link recordReport}. Each body key is a coord+type (planet OR moon).
  * @typedef {Record<string, Record<string, BodyEntry>>} TargetReports
  */
 

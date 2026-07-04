@@ -142,9 +142,15 @@ const spiedCoordsByPlayer = () => {
     /** @type {Record<string, number>} */
     const coordTs = {};
     for (const key of Object.keys(bucket)) {
+      const report = latestOf(bucket[key]);
+      // A moon spy must NOT mark the planet spied: their bodyKeys collapse to the
+      // same "g:s:p" once ":type" is stripped, and the scan FAB reasons about
+      // planets. Skip moon reports so a moon scan doesn't hide a planet still
+      // needing one.
+      if (report.planetType === 3) continue;
       const lastColon = key.lastIndexOf(':');
       const coord = lastColon >= 0 ? key.slice(0, lastColon) : key;
-      coordTs[coord] = latestOf(bucket[key]).timestamp ?? 0;
+      coordTs[coord] = report.timestamp ?? 0;
     }
     out[pid] = coordTs;
   }

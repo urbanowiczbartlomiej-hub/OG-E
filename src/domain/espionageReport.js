@@ -410,8 +410,9 @@ export function bodyKey(r) {
  * espionage message tab also carries "obca flota dostrzeżona w pobliżu Twojej
  * planety" PROXIMITY alerts, which share the rawMessageData shape but describe
  * OUR OWN planet: they carry a `sourcePlayerId` (the scout) + `targetPlayerId` =
- * us. Those are rejected on `sourceplayerid`. We also keep planets only (skip
- * moons, type 3), matching the coverage denominator from universe.xml.
+ * us. Those are rejected on `sourceplayerid`. Moons (type 3) ARE admitted now —
+ * a moon is a second spiable body, counted in the coverage denominator via the
+ * universe.xml `<moon>` parse (§9bis); `bodyKey` keeps planet vs moon distinct.
  *
  * A genuine scan is admitted when it revealed intel of ANY kind — resources OR
  * defence OR fleet. This ADMITS partial reports (a low-probe / high-counter-
@@ -426,7 +427,6 @@ export function bodyKey(r) {
 export function isEspionageReportBag(bag) {
   if (!bag || !bag.coordinates || !bag.targetplayerid) return false;
   if (bag.sourceplayerid) return false;
-  if (bag.targetplanettype === '3') return false;
   const numericish = (/** @type {string|undefined} */ v) =>
     typeof v === 'string' && v !== '' && v !== '-';
   // Espionage-scan fingerprint. The observer matches EVERY `.rawMessageData`

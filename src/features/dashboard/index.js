@@ -917,15 +917,19 @@ const loadAll = async () => {
   proximityReports = Array.isArray(pr)
     ? /** @type {import('../../domain/espionageReport.js').ProximityReport[]} */ (pr)
     : [];
-  // Coverage denominator: count each player's planets in the universe.xml
-  // snapshot (planets only — moons are <moon> children we don't parse).
+  // Coverage denominator: count each player's spiable BODIES in the universe.xml
+  // snapshot — planets PLUS their moons (`hasMoon` from the <moon> parse; a moon
+  // is a second body of the same owner). §9bis: without moons here a fully-planet-
+  // spied player reads as "complete" while unspied moon defence still hides in the
+  // military score. (Stale caches predating the <moon> parse lack hasMoon → count
+  // as planets-only until the 7-day universe feed refreshes; graceful.)
   /** @type {Record<string, number>} */
   const counts = {};
   const uniPlanets = apiCache.universe ? apiCache.universe.planets : [];
   for (const pl of uniPlanets) {
     if (pl && pl.player != null) {
       const pid = String(pl.player);
-      counts[pid] = (counts[pid] || 0) + 1;
+      counts[pid] = (counts[pid] || 0) + 1 + (pl.hasMoon ? 1 : 0);
     }
   }
   planetCountByPlayer = counts;
@@ -1076,9 +1080,14 @@ const repaintTargets = () => {
     /** @type {Record<string, {ts:number, defPts:number, fleetPts:number}>} */
     const byCoord = {};
     for (const [key, entry] of Object.entries(bucket)) {
+      const report = latestOf(entry);
+      // Skip moon reports here: once ":type" is stripped their bodyKey shares the
+      // planet's "g:s:p", so a moon would clobber the planet's per-planet row. A
+      // moon still feeds the hidden-fleet estimate above (bodyKey keeps it
+      // distinct) — it just isn't a planet-grid row.
+      if (report.planetType === 3) continue;
       const lastColon = key.lastIndexOf(':');
       const coord = lastColon >= 0 ? key.slice(0, lastColon) : key;
-      const report = latestOf(entry);
       byCoord[coord] = {
         ts: report.timestamp ?? 0,
         defPts: pointsOf(report.defenseValue ?? 0),

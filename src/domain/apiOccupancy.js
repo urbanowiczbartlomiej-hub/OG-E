@@ -38,6 +38,10 @@
  * @typedef {object} ApiPlanet
  * @property {string} coords          `"g:s:p"` (position 1..15).
  * @property {number} [player]        Owner player id (join key to players/highscore).
+ * @property {boolean} [hasMoon]      Planet carries a `<moon>` child — a SECOND
+ *   spiable body of the same owner, so it counts toward the hidden-fleet coverage
+ *   denominator (SPYGLASS-REDESIGN.md §9bis). Occupancy consumers ignore it
+ *   (a moon shares its planet's slot, it is not a separate occupancy cell).
  */
 
 /**
@@ -218,7 +222,19 @@ export function parseUniverse(xml) {
     const cm = attrs.match(A_COORDS);
     if (!cm) continue;
     const pm = attrs.match(A_PLAYER);
-    planets.push({ coords: cm[1], player: pm ? Number(pm[1]) : undefined });
+    // A planet carries AT MOST one <moon> child (`<planet ...>[<moon .../>]`).
+    // Detect it by scanning only THIS planet's own content — from just past its
+    // opening `>` up to the next `<planet` (or end of xml) — so a later planet's
+    // moon can't be misattributed. The moon is a second spiable body → it counts
+    // toward the hidden-fleet coverage denominator (§9bis). O(n) overall: the
+    // slice is one planet's ~small content, not the tail of the document.
+    const contentStart = PLANET_TAG_RE.lastIndex;
+    const nextPlanet = xml.indexOf('<planet', contentStart);
+    const boundary = nextPlanet === -1 ? xml.length : nextPlanet;
+    /** @type {ApiPlanet} */
+    const planet = { coords: cm[1], player: pm ? Number(pm[1]) : undefined };
+    if (xml.slice(contentStart, boundary).includes('<moon')) planet.hasMoon = true;
+    planets.push(planet);
   }
   return { timestamp: rootTimestampMs(xml), planets };
 }
