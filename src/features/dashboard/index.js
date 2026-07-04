@@ -47,7 +47,7 @@ import { debounce } from '../../lib/debounce.js';
 import { parseTargetPositions } from '../../domain/histogram.js';
 import { populatePositionFilter, renderColonyChart } from './colony.js';
 import { renderFreeRegions, renderServerMap, selectCandidate, resetFreeSelection, highlightPin, _resetFreeStreakForTest } from './freeStreak.js';
-import { chipValue, setChipValue, wireChips, setChipsEnabled } from './chips.js';
+import { chipValue, setChipValue, wireChips, setChipsEnabled, toggleChipOn, setToggleChip, wireToggleChip } from './chips.js';
 import { computeComposite, computeScoreField, renderPositionsMap, RELATIONSHIP_COLORS } from './mapPrimitives.js';
 import { renderTargets, DEFAULT_TARGET_SORT } from './targets.js';
 import { ZONES } from '../../domain/zoneScore.js';
@@ -356,16 +356,21 @@ let routines = {};
 /** @type {HTMLElement | null} */ let spyMapLegend;
 /** @type {HTMLInputElement} */ let tgtMinMilitary;
 /** @type {HTMLInputElement | null} */ let tgtMaxMilitary;
-/** @type {HTMLSelectElement} */ let tgtLimit;
+/** Show-limit seg chip-group (was a <select>); `data-value` = row cap. */
+/** @type {HTMLElement | null} */ let tgtLimitChips;
 /** @type {HTMLInputElement | null} */ let tgtSearch;
 /** Current Spyglass nickname search (Etap D); '' = no search. */
 let targetSearchQuery = '';
 /** Player ids force-included past the filters via search "show anyway". */
 const forceIncludeIds = new Set();
-/** @type {HTMLInputElement | null} */ let tgtWatchedOnly;
+// The three everyday filters are toggle PILLS (Etap H1) — `.on` is the state,
+// read via toggleChipOn where `.checked` used to be.
+/** @type {HTMLElement | null} */ let tgtWatchedOnly;
 /** @type {HTMLInputElement | null} */ let tgtProbes;
-/** @type {HTMLInputElement | null} */ let tgtInRange;
-/** @type {HTMLInputElement | null} */ let tgtHideInactive;
+/** @type {HTMLElement | null} */ let tgtInRange;
+/** @type {HTMLElement | null} */ let tgtHideInactive;
+/** @type {HTMLButtonElement | null} */ let tgtConfigToggle;
+/** @type {HTMLElement | null} */ let tgtConfigCard;
 /** @type {HTMLElement | null} */ let tgtCountInfoEl;
 /** @type {HTMLElement | null} */ let proximityStripEl;
 
@@ -645,12 +650,14 @@ const wireDom = () => {
   targetsContainer = /** @type {HTMLElement} */ (document.getElementById('targetsContainer'));
   tgtMinMilitary = /** @type {HTMLInputElement} */ (document.getElementById('tgtMinMilitary'));
   tgtMaxMilitary = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtMaxMilitary'));
-  tgtLimit = /** @type {HTMLSelectElement} */ (document.getElementById('tgtLimit'));
+  tgtLimitChips = document.getElementById('tgtLimitChips');
   tgtSearch = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtSearch'));
-  tgtWatchedOnly = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtWatchedOnly'));
+  tgtWatchedOnly = document.getElementById('tgtWatchedOnly');
   tgtProbes = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtProbes'));
-  tgtInRange = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtInRange'));
-  tgtHideInactive = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtHideInactive'));
+  tgtInRange = document.getElementById('tgtInRange');
+  tgtHideInactive = document.getElementById('tgtHideInactive');
+  tgtConfigToggle = /** @type {HTMLButtonElement | null} */ (document.getElementById('tgtConfigToggle'));
+  tgtConfigCard = document.getElementById('tgtConfigCard');
   tgtCountInfoEl = document.getElementById('tgtCountInfo');
   proximityStripEl = document.getElementById('proximityStrip');
   spyglassMapHost = document.getElementById('spyglassMapHost');
@@ -1175,13 +1182,13 @@ const repaintTargets = () => {
       maxMilitary: Number(tgtMaxMilitary?.value) || 0,
       // "In range only" opt-in: apply OGame's noob-protection band (game default
       // 5x) so only legally-attackable players show; default off = show every score.
-      protectionFactor: tgtInRange?.checked ? 5 : 0,
+      protectionFactor: toggleChipOn(tgtInRange) ? 5 : 0,
       excludeVacation: true,
-      excludeInactive: tgtHideInactive ? !!tgtHideInactive.checked : true,
+      excludeInactive: tgtHideInactive ? toggleChipOn(tgtHideInactive) : true,
       excludeBanned: true,
       forceInclude: forceIncludeIds,
     },
-    limit: Number(tgtLimit?.value) || 0,
+    limit: Number(chipValue(tgtLimitChips)) || 0,
     estimates,
     sort: targetSort,
     onSort: handleTargetSort,
@@ -1189,7 +1196,7 @@ const repaintTargets = () => {
     onToggleWatch: toggleWatched,
     onRescan: markRescan,
     rescan: rescanMap,
-    watchedOnly: !!tgtWatchedOnly?.checked,
+    watchedOnly: toggleChipOn(tgtWatchedOnly),
     universePlanets: apiCache.universe ? apiCache.universe.planets : [],
     reportsByPlayer,
     nowMs,
@@ -1356,9 +1363,9 @@ const saveTargetPrefs = () => {
     sort: targetSort,
     minMilitary: tgtMinMilitary?.value,
     maxMilitary: tgtMaxMilitary?.value,
-    inRange: !!tgtInRange?.checked,
-    hideInactive: tgtHideInactive ? !!tgtHideInactive.checked : true,
-    showLimit: tgtLimit?.value,
+    inRange: toggleChipOn(tgtInRange),
+    hideInactive: tgtHideInactive ? toggleChipOn(tgtHideInactive) : true,
+    showLimit: chipValue(tgtLimitChips),
   });
 };
 
@@ -1376,9 +1383,11 @@ const loadTargetPrefs = () => {
   }
   if (p.minMilitary != null && tgtMinMilitary) tgtMinMilitary.value = String(p.minMilitary);
   if (p.maxMilitary != null && tgtMaxMilitary) tgtMaxMilitary.value = String(p.maxMilitary);
-  if (tgtInRange) tgtInRange.checked = !!p.inRange;
-  if (tgtHideInactive) tgtHideInactive.checked = p.hideInactive !== false; // default ON
-  if (p.showLimit != null && tgtLimit && tgtLimit.querySelector('[value="' + p.showLimit + '"]')) tgtLimit.value = String(p.showLimit);
+  setToggleChip(tgtInRange, !!p.inRange);
+  setToggleChip(tgtHideInactive, p.hideInactive !== false); // default ON
+  // setChipValue refuses values no chip carries — the phantom-option guard the
+  // old `<select>` restore had via querySelector('[value=…]').
+  if (p.showLimit != null) setChipValue(tgtLimitChips, String(p.showLimit));
 };
 
 /**
@@ -1891,17 +1900,23 @@ const wireListeners = () => {
   const onTargetFilterChange = () => { saveTargetPrefs(); repaintTargets(); };
   tgtMinMilitary.addEventListener('change', onTargetFilterChange);
   tgtMaxMilitary?.addEventListener('change', onTargetFilterChange);
-  tgtInRange?.addEventListener('change', onTargetFilterChange);
-  tgtHideInactive?.addEventListener('change', onTargetFilterChange);
+  wireToggleChip(tgtInRange, onTargetFilterChange);
+  wireToggleChip(tgtHideInactive, onTargetFilterChange);
   // Probe count is shared with the in-game scan FAB via chrome.storage, so it
   // persists through the watch-config write rather than the localStorage prefs.
   tgtProbes?.addEventListener('change', () => { writeWatchConfig(); repaintTargets(); });
-  tgtLimit.addEventListener('change', onTargetFilterChange);
+  wireChips(tgtLimitChips, onTargetFilterChange);
   tgtSearch?.addEventListener('input', () => {
     targetSearchQuery = tgtSearch ? tgtSearch.value : '';
     repaintTargets();
   });
-  tgtWatchedOnly?.addEventListener('change', repaintTargets);
+  wireToggleChip(tgtWatchedOnly, () => repaintTargets());
+  // ⚙ show/hide for the rarely-touched numeric filters (military range, probes).
+  tgtConfigToggle?.addEventListener('click', () => {
+    const opening = tgtConfigCard ? tgtConfigCard.style.display === 'none' : false;
+    if (tgtConfigCard) tgtConfigCard.style.display = opening ? '' : 'none';
+    tgtConfigToggle?.setAttribute('aria-expanded', String(opening));
+  });
   spyMapToggle?.addEventListener('click', toggleSpyMap);
 
   // Region controls only repaint the settlement-regions block. The
@@ -2029,12 +2044,14 @@ export const _resetDashboardForTest = () => {
     targetsContainer =
     tgtMinMilitary =
     tgtMaxMilitary =
-    tgtLimit =
+    tgtLimitChips =
     tgtSearch =
     tgtWatchedOnly =
     tgtProbes =
     tgtInRange =
     tgtHideInactive =
+    tgtConfigToggle =
+    tgtConfigCard =
     tgtCountInfoEl =
     proximityStripEl =
     freeContainer =
