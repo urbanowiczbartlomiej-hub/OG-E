@@ -782,6 +782,14 @@
     <label style="cursor:pointer;" title="Hide inactive / long-inactive accounts."><input type="checkbox" id="tgtHideInactive" checked> hide inactive</label>
     <span id="tgtCountInfo" style="color:#888;font-size:13px;margin-left:auto;"></span>
   </div>
+  <div style="margin:6px 0 12px;">
+    <button type="button" id="spyMapToggle" aria-expanded="false" aria-controls="spyMapBlock"
+      title="Show the whole-server occupancy map. Click a player to spotlight their planets."
+      style="padding:5px 12px;background:#12202e;border:1px solid #2a3542;border-radius:4px;color:#9fc6e8;font-size:13px;cursor:pointer;">🗺 Show map</button>
+  </div>
+  <div class="server-map-panel" id="spyMapBlock" style="display:none;margin-bottom:14px;">
+    <div id="spyglassMapHost"></div>
+  </div>
   <div id="targetsContainer"></div>
 </section>
 

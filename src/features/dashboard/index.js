@@ -334,6 +334,9 @@ let civilProfiles = new Map();
 /** @type {HTMLElement | null} */ let serverMapFarmV;
 /** @type {HTMLElement | null} */ let freeCountInfoEl;
 /** @type {HTMLElement} */ let targetsContainer;
+/** @type {HTMLElement | null} */ let spyglassMapHost;
+/** @type {HTMLButtonElement | null} */ let spyMapToggle;
+/** @type {HTMLElement | null} */ let spyMapBlock;
 /** @type {HTMLInputElement} */ let tgtMinMilitary;
 /** @type {HTMLInputElement | null} */ let tgtMaxMilitary;
 /** @type {HTMLSelectElement} */ let tgtLimit;
@@ -633,6 +636,9 @@ const wireDom = () => {
   tgtHideInactive = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtHideInactive'));
   tgtCountInfoEl = document.getElementById('tgtCountInfo');
   proximityStripEl = document.getElementById('proximityStrip');
+  spyglassMapHost = document.getElementById('spyglassMapHost');
+  spyMapToggle = /** @type {HTMLButtonElement | null} */ (document.getElementById('spyMapToggle'));
+  spyMapBlock = document.getElementById('spyMapBlock');
 };
 
 /**
@@ -698,6 +704,8 @@ const wireTabs = () => {
       // The server map skips painting while its host is hidden (width 0) —
       // entering the Colonizations tab is the moment it becomes measurable.
       if (key === 'colony') repaintFreeRegions();
+      // Same for the Spyglass watchlist map (only when it's open).
+      if (key === 'spyglass') repaintSpyglassMap();
     });
   }
 };
@@ -1019,6 +1027,7 @@ const renderAll = () => {
   repaintFreeRegions();
   repaintTargets();
   renderProximityStrip();
+  repaintSpyglassMap();
 };
 
 /**
@@ -1480,6 +1489,20 @@ let scoutSelectedPin = -1;
  */
 let mapHighlight = null;
 
+/**
+ * Game origin for "Open in game" links + click-to-galaxy — prefer serverData's
+ * own domain, else reconstruct the canonical host from the universe id; `''`
+ * when neither is available (links then omitted). Shared by the GV + Spyglass maps.
+ * @returns {string}
+ */
+const gameLinkBase = () => {
+  const dom = apiBounds.domain;
+  const host = (typeof dom === 'string' && dom.includes('.'))
+    ? dom
+    : (/^s\d+-[a-z]+$/i.test(selectedUniverseId) ? `${selectedUniverseId}.ogame.gameforge.com` : '');
+  return host ? `https://${host}` : '';
+};
+
 /** Repaint ONLY the analyzer block from current controls. */
 const repaintFreeRegions = () => {
   const positions = freeRegionPositions();
@@ -1524,13 +1547,8 @@ const repaintFreeRegions = () => {
     }
   }
   // Game origin for the popovers' "Open in game" links + the occupancy lens's
-  // click-to-galaxy: prefer serverData's own domain, else reconstruct the
-  // canonical host from the universe id.
-  const dom = apiBounds.domain;
-  const host = (typeof dom === 'string' && dom.includes('.'))
-    ? dom
-    : (/^s\d+-[a-z]+$/i.test(selectedUniverseId) ? `${selectedUniverseId}.ogame.gameforge.com` : '');
-  const linkBase = host ? `https://${host}` : '';
+  // click-to-galaxy (shared with the Spyglass watchlist map).
+  const linkBase = gameLinkBase();
   const shown = renderFreeRegions({
     containerEl: freeContainer,
     countInfoEl: freeCountInfoEl,
@@ -1648,6 +1666,73 @@ const repaintFreeRegionsThrottled = () => {
   });
 };
 
+// ── Spyglass watchlist map (Etap E2) ────────────────────────────────────────
+// Reuses the shared map primitives + `renderServerMap`, but keeps its OWN
+// composite cache + highlight so it never stomps the Galaxy Viewer's (the two
+// sub-tabs memoise independently — mapPrimitives itself is stateless). Occupancy
+// view only; no colonization pins/field.
+
+/** All 15 colonizable positions — the Spyglass map shows whole-server occupancy. */
+const SPY_MAP_POSITIONS = Array.from({ length: 15 }, (_, i) => i + 1);
+
+/** Spyglass map composite cache — SEPARATE from the GV `compositeCache`. @type {{apiIndex: unknown, scans: unknown, posKey: string, value: GalaxyScans} | null} */
+let spyCompositeCache = null;
+/** Whether the Spyglass map section is expanded. */
+let spyMapOpen = false;
+/** Spotlighted watched player on the Spyglass map, or null. @type {{ id: number, name: string } | null} */
+let spyMapHighlight = null;
+
+/** Composite for the Spyglass map — own cache (mirrors `buildComposite`). */
+const buildSpyComposite = () => {
+  if (!(apiIndex && apiBounds.galaxies && apiBounds.systems)) return scans;
+  const posKey = SPY_MAP_POSITIONS.join(',');
+  if (spyCompositeCache
+    && spyCompositeCache.apiIndex === apiIndex
+    && spyCompositeCache.scans === scans
+    && spyCompositeCache.posKey === posKey) {
+    return spyCompositeCache.value;
+  }
+  const value = computeComposite({ apiIndex, apiBounds, scans, positions: SPY_MAP_POSITIONS });
+  spyCompositeCache = { apiIndex, scans, posKey, value };
+  return value;
+};
+
+/** Repaint the Spyglass watchlist map (occupancy view). No-op while closed/hidden. */
+const repaintSpyglassMap = () => {
+  if (!spyglassMapHost || !spyMapOpen) return;
+  // Hidden pane → width 0 → renderServerMap would map hover/clicks to the wrong
+  // systems; skip and repaint on the next tab/toggle open (the memo isn't needed
+  // here — occupancy is cheap and the composite is cached).
+  if ((spyglassMapHost.clientWidth || 0) === 0) return;
+  renderServerMap({
+    hostEl: spyglassMapHost,
+    scans: buildSpyComposite(),
+    galaxies: apiBounds.galaxies,
+    systems: apiBounds.systems,
+    donutGalaxy: apiBounds.donutGalaxy,
+    donutSystem: apiBounds.donutSystem,
+    view: 'occupancy',
+    ownMilitary,
+    linkBase: gameLinkBase(),
+    players,
+    danger: dangerProfiles,
+    highlightPlayer: spyMapHighlight ? spyMapHighlight.id : undefined,
+    highlightName: spyMapHighlight ? spyMapHighlight.name : undefined,
+    onClearHighlight: () => { spyMapHighlight = null; repaintSpyglassMap(); },
+  });
+};
+
+/** Toggle the Spyglass map section open/closed. */
+const toggleSpyMap = () => {
+  spyMapOpen = !spyMapOpen;
+  if (spyMapBlock) spyMapBlock.style.display = spyMapOpen ? '' : 'none';
+  if (spyMapToggle) {
+    spyMapToggle.textContent = spyMapOpen ? '🗺 Hide map' : '🗺 Show map';
+    spyMapToggle.setAttribute('aria-expanded', String(spyMapOpen));
+  }
+  if (spyMapOpen) repaintSpyglassMap();
+};
+
 /**
  * Update the status line under the Export/Import row.
  *
@@ -1735,6 +1820,7 @@ const wireListeners = () => {
     repaintTargets();
   });
   tgtWatchedOnly?.addEventListener('change', repaintTargets);
+  spyMapToggle?.addEventListener('click', toggleSpyMap);
 
   // Region controls only repaint the settlement-regions block. The
   // underlying `scans` cache hasn't changed — only the slots/tolerance
