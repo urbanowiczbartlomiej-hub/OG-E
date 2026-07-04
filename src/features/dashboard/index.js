@@ -320,10 +320,8 @@ let dangerProfiles = new Map();
 /** @type {HTMLSelectElement} */ let tgtLimit;
 /** @type {HTMLInputElement | null} */ let tgtWatchedOnly;
 /** @type {HTMLInputElement | null} */ let tgtProbes;
-/** @type {HTMLSelectElement | null} */ let tgtBand;
-/** @type {HTMLInputElement | null} */ let tgtInclVacation;
-/** @type {HTMLInputElement | null} */ let tgtInclInactive;
-/** @type {HTMLInputElement | null} */ let tgtInclBanned;
+/** @type {HTMLInputElement | null} */ let tgtInRange;
+/** @type {HTMLInputElement | null} */ let tgtHideInactive;
 /** @type {HTMLElement | null} */ let tgtCountInfoEl;
 
 /** Guards {@link installDashboard} against a double-install. */
@@ -604,10 +602,8 @@ const wireDom = () => {
   tgtLimit = /** @type {HTMLSelectElement} */ (document.getElementById('tgtLimit'));
   tgtWatchedOnly = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtWatchedOnly'));
   tgtProbes = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtProbes'));
-  tgtBand = /** @type {HTMLSelectElement | null} */ (document.getElementById('tgtBand'));
-  tgtInclVacation = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtInclVacation'));
-  tgtInclInactive = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtInclInactive'));
-  tgtInclBanned = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtInclBanned'));
+  tgtInRange = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtInRange'));
+  tgtHideInactive = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtHideInactive'));
   tgtCountInfoEl = document.getElementById('tgtCountInfo');
 };
 
@@ -1057,12 +1053,12 @@ const repaintTargets = () => {
       ownAlliance,
       minMilitary: Number(tgtMinMilitary?.value) || 0,
       maxMilitary: Number(tgtMaxMilitary?.value) || 0,
-      // "Attack range" select: 0 = disable the noob-protection band entirely.
-      protectionFactor: tgtBand ? Number(tgtBand.value) : undefined,
-      // Checkboxes INCLUDE a status; absence (unchecked) keeps the exclusion on.
-      excludeVacation: !tgtInclVacation?.checked,
-      excludeInactive: !tgtInclInactive?.checked,
-      excludeBanned: !tgtInclBanned?.checked,
+      // "In range only" opt-in: apply OGame's noob-protection band (game default
+      // 5x) so only legally-attackable players show; default off = show every score.
+      protectionFactor: tgtInRange?.checked ? 5 : 0,
+      excludeVacation: true,
+      excludeInactive: tgtHideInactive ? !!tgtHideInactive.checked : true,
+      excludeBanned: true,
     },
     limit: Number(tgtLimit?.value) || 0,
     estimates,
@@ -1178,10 +1174,9 @@ const saveTargetPrefs = () => {
     sort: targetSort,
     minMilitary: tgtMinMilitary?.value,
     maxMilitary: tgtMaxMilitary?.value,
-    band: tgtBand?.value,
-    inclVacation: !!tgtInclVacation?.checked,
-    inclInactive: !!tgtInclInactive?.checked,
-    inclBanned: !!tgtInclBanned?.checked,
+    inRange: !!tgtInRange?.checked,
+    hideInactive: tgtHideInactive ? !!tgtHideInactive.checked : true,
+    showLimit: tgtLimit?.value,
   });
 };
 
@@ -1199,12 +1194,9 @@ const loadTargetPrefs = () => {
   }
   if (p.minMilitary != null && tgtMinMilitary) tgtMinMilitary.value = String(p.minMilitary);
   if (p.maxMilitary != null && tgtMaxMilitary) tgtMaxMilitary.value = String(p.maxMilitary);
-  if (p.band != null && tgtBand && tgtBand.querySelector(`[value="${p.band}"]`)) {
-    tgtBand.value = String(p.band);
-  }
-  if (tgtInclVacation) tgtInclVacation.checked = !!p.inclVacation;
-  if (tgtInclInactive) tgtInclInactive.checked = !!p.inclInactive;
-  if (tgtInclBanned) tgtInclBanned.checked = !!p.inclBanned;
+  if (tgtInRange) tgtInRange.checked = !!p.inRange;
+  if (tgtHideInactive) tgtHideInactive.checked = p.hideInactive !== false; // default ON
+  if (p.showLimit != null && tgtLimit && tgtLimit.querySelector('[value="' + p.showLimit + '"]')) tgtLimit.value = String(p.showLimit);
 };
 
 /**
@@ -1613,14 +1605,12 @@ const wireListeners = () => {
   const onTargetFilterChange = () => { saveTargetPrefs(); repaintTargets(); };
   tgtMinMilitary.addEventListener('change', onTargetFilterChange);
   tgtMaxMilitary?.addEventListener('change', onTargetFilterChange);
-  tgtBand?.addEventListener('change', onTargetFilterChange);
-  tgtInclVacation?.addEventListener('change', onTargetFilterChange);
-  tgtInclInactive?.addEventListener('change', onTargetFilterChange);
-  tgtInclBanned?.addEventListener('change', onTargetFilterChange);
+  tgtInRange?.addEventListener('change', onTargetFilterChange);
+  tgtHideInactive?.addEventListener('change', onTargetFilterChange);
   // Probe count is shared with the in-game scan FAB via chrome.storage, so it
   // persists through the watch-config write rather than the localStorage prefs.
   tgtProbes?.addEventListener('change', () => { writeWatchConfig(); repaintTargets(); });
-  tgtLimit.addEventListener('change', repaintTargets);
+  tgtLimit.addEventListener('change', onTargetFilterChange);
   tgtWatchedOnly?.addEventListener('change', repaintTargets);
 
   // Region controls only repaint the settlement-regions block. The
@@ -1748,10 +1738,8 @@ export const _resetDashboardForTest = () => {
     tgtLimit =
     tgtWatchedOnly =
     tgtProbes =
-    tgtBand =
-    tgtInclVacation =
-    tgtInclInactive =
-    tgtInclBanned =
+    tgtInRange =
+    tgtHideInactive =
     tgtCountInfoEl =
     freeContainer =
     freeCountInfoEl =

@@ -745,13 +745,12 @@
 <section id="spyglassSection" class="tab-section">
   <h1>Spyglass<span class="exp-badge" title="Hidden-fleet estimates depend on how much you've spied; treat them as a guide, not gospel.">experimental</span></h1>
   <p style="color:#888;font-size:13px;margin-bottom:16px;">
-    Who in this universe is hiding fleet, how much, and how fresh the intel is. Players are ranked
-    by military points; the <strong style="color:#ccc;">hidden-fleet</strong> estimate is their
-    military points minus the defense + visible fleet you've spied (open the in-game Espionage tab to
-    feed it). Hit <strong style="color:#7fd6a8;">+ scan</strong> to drop a player onto the in-game
-    scan button, and <strong style="color:#6b97c4;">↻</strong> to mark them for a re-scan when the
-    data looks stale. Click a player to see their planets. Data comes from OGame's public API,
-    fetched in-game — open the galaxy view once to populate it.
+    The whole-server board — who is holding fleet, and how fresh your intel is. Danger and the
+    <strong style="color:#ccc;">mobile-Fleet</strong> estimate come free from OGame's public API
+    (no spying needed); spy a player to firm the numbers up. Hit <strong style="color:#7fd6a8;">⭐</strong>
+    to add a player to your scan list, <strong style="color:#6b97c4;">↻</strong> to flag a re-scan,
+    and click a player to see their planets. Data is fetched in-game from the public API — open the
+    galaxy view once to populate it.
   </p>
   <div class="controls">
     <label>Military:</label>
@@ -773,28 +772,10 @@
     <label>Probes:</label>
     <input id="tgtProbes" type="number" min="1" max="9999" value="20" size="4"
       title="How many espionage probes the in-game scan button pre-arms per planet.">
+    <label style="cursor:pointer;" title="Show only players you can legally attack (OGame noob-protection band around your own score)."><input type="checkbox" id="tgtInRange"> in range only</label>
+    <label style="cursor:pointer;" title="Hide inactive / long-inactive accounts."><input type="checkbox" id="tgtHideInactive" checked> hide inactive</label>
     <span id="tgtCountInfo" style="color:#888;font-size:13px;margin-left:auto;"></span>
   </div>
-  <details style="margin:4px 0 12px;">
-    <summary style="cursor:pointer;color:#9aa;font-size:13px;list-style:none;">⚙ More filters</summary>
-    <div class="controls" style="margin-top:8px;">
-      <label title="OGame's noob-protection: you may only attack players within this score-multiple of your own. Widen or disable it to surface players the game currently locks.">Attack range:</label>
-      <select id="tgtBand">
-        <option value="5" selected>±5× (game default)</option>
-        <option value="10">±10×</option>
-        <option value="0">off — show every score</option>
-      </select>
-      <label style="cursor:pointer;" title="Include players on vacation mode (v).">
-        <input type="checkbox" id="tgtInclVacation"> incl. vacation
-      </label>
-      <label style="cursor:pointer;" title="Include inactive / long-inactive players (i / I).">
-        <input type="checkbox" id="tgtInclInactive"> incl. inactive
-      </label>
-      <label style="cursor:pointer;" title="Include banned players (b).">
-        <input type="checkbox" id="tgtInclBanned"> incl. banned
-      </label>
-    </div>
-  </details>
   <div id="targetsContainer"></div>
 </section>
 

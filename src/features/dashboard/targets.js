@@ -14,7 +14,6 @@ import { buildTargetList, sortTargetList, playerPlanets } from '../../domain/tar
 import { scanStatus, rescanAtFor } from '../../domain/spyScan.js';
 import { DANGER_LABELS } from '../../domain/dangerScore.js';
 import { dangerColor } from '../../lib/dangerColor.js';
-import { heatColor } from './palette.js';
 
 /**
  * @typedef {'hiddenFleet'|'military'|'totalRank'|'ships'|'destroyed'|'danger'|'fleet'} TargetSortKey
@@ -173,32 +172,6 @@ function chipCell(id, watched, onToggle, onRescan) {
 }
 
 /**
- * Combined total-highscore cell (rank `#88` + compact score `4.57B`; exact in
- * the tooltip). Header keeps the `totalRank` sort axis.
- * @param {TargetCandidate} c
- * @returns {HTMLTableCellElement}
- */
-function highscoreCell(c) {
-  const td = cell('', { align: 'right' });
-  if (typeof c.totalRank !== 'number' && c.totalScore == null) {
-    td.textContent = '—';
-    td.style.color = '#666';
-    return td;
-  }
-  const rank = document.createElement('span');
-  rank.textContent = typeof c.totalRank === 'number' ? `#${c.totalRank}` : '#—';
-  rank.style.color = '#888';
-  rank.style.fontSize = '11px';
-  const score = document.createElement('span');
-  score.textContent = ` ${compact(c.totalScore)}`;
-  score.style.color = '#cfd6dd';
-  td.appendChild(rank);
-  td.appendChild(score);
-  td.title = `total rank ${typeof c.totalRank === 'number' ? c.totalRank : '—'} · ${fmt(c.totalScore)} points`;
-  return td;
-}
-
-/**
  * Combined military cell (compact score `47.9M` + rank `#88`; exact in tooltip).
  * Header keeps the `military` sort axis.
  * @param {TargetCandidate} c
@@ -304,106 +277,40 @@ function fleetCell(prof) {
 }
 
 /**
- * Lifetime military-destroyed cell — the kill history only combat can move
- * (production and expeditions never touch it). A defended bunker eating
- * attackers scores here too, so read it with the Ships column.
- * @param {TargetCandidate} c
- * @returns {HTMLTableCellElement}
- */
-function destroyedCell(c) {
-  if (typeof c.destroyedScore !== 'number') return cell('—', { align: 'right', color: '#5f6b75' });
-  const td = cell(compact(c.destroyedScore), { align: 'right', color: '#d9a441' });
-  td.title = `military destroyed ${fmt(c.destroyedScore)} — units this player destroyed in combat (lifetime)`;
-  return td;
-}
-
-/**
- * A muted points cell (defense / visible fleet), or '—' when not spied.
- * @param {number | null | undefined} pts
- * @returns {HTMLTableCellElement}
- */
-function pointsCell(pts) {
-  if (pts == null) return cell('—', { align: 'right', color: '#5f6b75' });
-  return cell(compact(Math.round(pts)), { align: 'right', color: '#9aa6b0' });
-}
-
-/**
- * Hidden-fleet cell — the estimate, heat-coloured by magnitude (grey for ~0 →
- * red for the biggest in view via heatColor's negative half). Breakdown is now
- * in the adjacent Defense / Visible columns; the exact subtraction stays in the
- * tooltip. Sort axis = `hiddenFleet`.
- * @param {import('../../domain/threatModel.js').HiddenFleetEstimate | undefined} est
- * @param {number} maxHidden
- * @returns {HTMLTableCellElement}
- */
-function hiddenCell(est, maxHidden) {
-  if (!est) return cell('—', { align: 'right', color: '#5f6b75' });
-  const hidden = Math.round(est.hiddenFleetPoints);
-  const td = cell(compact(hidden), { align: 'right' });
-  const frac = maxHidden > 0 ? Math.max(0, Math.min(1, hidden / maxHidden)) : 0;
-  td.style.color = hidden > 0 ? heatColor(-frac) : '#666';
-  td.style.fontWeight = '600';
-  td.title =
-    `hidden = military ${fmt(est.militaryPoints)} − defense ${fmt(Math.round(est.defensePoints))} `
-    + `− visible fleet ${fmt(Math.round(est.visibleFleetPoints))}`
-    + (est.provisional ? ' · coverage incomplete (provisional)' : '');
-  return td;
-}
-
-/**
- * Scan-freshness cell: oldest-report age coloured by the player's worst scan
- * status (green fresh / amber stale or re-scan), or '—' when nothing's spied.
- * @param {'none'|'fresh'|'stale'|'rescan'} status
+ * Intel cell — one glyph merging scan-freshness with coverage into a single
+ * "how much do we know?" read: grey ○ = never scanned, amber ⚠ = stale/re-scan
+ * (data may be wrong), green ● = complete (every planet spied), blue ◐ =
+ * partial. The tooltip carries the coverage fraction and the oldest report age.
+ * @param {'none'|'fresh'|'stale'|'rescan'} worst
+ * @param {number} spied
+ * @param {number} total
  * @param {number} oldestAgeMs
  * @returns {HTMLTableCellElement}
  */
-function scannedCell(status, oldestAgeMs) {
-  if (status === 'none') return cell('—', { align: 'right', color: '#5f6b75' });
-  const age = formatAge(oldestAgeMs) || '?';
-  const td = cell('', { align: 'right' });
-  const txt = document.createElement('span');
-  if (status === 'fresh') {
-    txt.textContent = age;
-    td.style.color = '#5a8f5a';
-    td.title = `oldest report ${age} old`;
-  } else if (status === 'stale') {
-    txt.textContent = `${age} ⚠`;
-    td.style.color = '#e0a020';
-    td.title = `oldest report ${age} old — stale (> 7d)`;
+function intelCell(worst, spied, total, oldestAgeMs) {
+  const td = cell('', { align: 'center' });
+  const age = formatAge(oldestAgeMs);
+  const agePart = age ? ` · ${age} old` : '';
+  const glyph = document.createElement('span');
+  glyph.style.fontSize = '13px';
+  if (worst === 'none' || spied <= 0) {
+    glyph.textContent = '○';
+    glyph.style.color = '#666';
+    td.title = 'Never scanned';
+  } else if (worst === 'stale' || worst === 'rescan') {
+    glyph.textContent = '⚠';
+    glyph.style.color = '#e0b020';
+    td.title = `Stale · spied ${spied}/${total}${agePart}`;
+  } else if (total > 0 && spied >= total) {
+    glyph.textContent = '●';
+    glyph.style.color = '#7fd6a8';
+    td.title = `Complete · ${spied}/${total}${agePart}`;
   } else {
-    txt.textContent = `${age} ↻`;
-    td.style.color = '#e0a020';
-    td.title = `re-scan requested · oldest report ${age} old`;
+    glyph.textContent = '◐';
+    glyph.style.color = '#8bb0d0';
+    td.title = `Partial · ${spied}/${total}${agePart}`;
   }
-  td.appendChild(txt);
-  return td;
-}
-
-/**
- * Coverage cell: `spied/total` + a thin progress bar (full = green, partial =
- * amber, none = empty).
- * @param {number} spied
- * @param {number} total
- * @returns {HTMLTableCellElement}
- */
-function coverageCell(spied, total) {
-  const td = cell('');
-  const wrap = document.createElement('div');
-  wrap.style.cssText = 'display:flex;align-items:center;gap:6px;';
-  const label = document.createElement('span');
-  label.textContent = `${spied}/${total}`;
-  label.style.cssText = 'color:#9aa6b0;font-size:11px;';
-  const bar = document.createElement('span');
-  bar.style.cssText =
-    'display:inline-block;width:46px;height:5px;background:#28333c;border-radius:3px;overflow:hidden;';
-  const frac = total > 0 ? Math.max(0, Math.min(1, spied / total)) : 0;
-  const fill = document.createElement('span');
-  const colour = frac >= 1 ? '#5a8f5a' : frac > 0 ? '#caa14a' : 'transparent';
-  fill.style.cssText = `display:block;width:${Math.round(frac * 100)}%;height:100%;background:${colour};`;
-  bar.appendChild(fill);
-  wrap.appendChild(label);
-  wrap.appendChild(bar);
-  td.appendChild(wrap);
+  td.appendChild(glyph);
   return td;
 }
 
@@ -619,16 +526,14 @@ export function renderTargets({
     return;
   }
 
-  // Hidden-fleet magnitude per id (for the sort key and the heat ramp).
+  // Hidden-fleet magnitude per id (feeds the `hiddenFleet` sort key).
   /** @type {Record<string, number>} */
   const hiddenById = {};
-  let maxHidden = 0;
   if (estimates) {
     for (const id of Object.keys(estimates)) {
       const pts = estimates[id].hiddenFleetPoints;
       if (typeof pts === 'number' && Number.isFinite(pts)) {
         hiddenById[id] = pts;
-        if (pts > maxHidden) maxHidden = pts;
       }
     }
   }
@@ -669,28 +574,19 @@ export function renderTargets({
   const hr = document.createElement('tr');
   /** @param {TargetSortKey} key */
   const sortable = (key) => ({ sortKey: key, sort, onSort });
-  hr.appendChild(headCell('Scan'));
-  hr.appendChild(headCell('#', 'right'));
+  hr.appendChild(headCell('⭐'));
   hr.appendChild(headCell('Player'));
   hr.appendChild(headCell('Danger', 'right', sortable('danger')));
   hr.appendChild(headCell('Fleet', 'right', sortable('fleet')));
   hr.appendChild(headCell('Military', 'right', sortable('military')));
   hr.appendChild(headCell('Ships', 'right', sortable('ships')));
-  hr.appendChild(headCell('Destr', 'right', sortable('destroyed')));
-  hr.appendChild(headCell('Highscore', 'right', sortable('totalRank')));
-  hr.appendChild(headCell('Defense', 'right'));
-  hr.appendChild(headCell('Visible', 'right'));
-  hr.appendChild(headCell('Hidden', 'right', sortable('hiddenFleet')));
-  hr.appendChild(headCell('Scanned', 'right'));
-  hr.appendChild(headCell('Coverage'));
+  hr.appendChild(headCell('Intel'));
   thead.appendChild(hr);
   table.appendChild(thead);
 
-  const COLSPAN = 14;
+  const COLSPAN = 7;
   const tbody = document.createElement('tbody');
-  let i = 0;
   for (const c of shown) {
-    i += 1;
     const est = estimates ? estimates[c.id] : undefined;
     const planets = playerPlanets(universePlanets, c.id);
     const reports = reportsByPlayer ? reportsByPlayer[c.id] : undefined;
@@ -726,7 +622,6 @@ export function renderTargets({
     // Anchor for the Galaxy Viewer → Spyglass deep-link (scroll + highlight).
     tr.dataset.playerId = c.id;
     tr.appendChild(chipCell(c.id, !!(watchedIds && watchedIds.has(c.id)), onToggleWatch, onRescan));
-    tr.appendChild(cell(String(i), { align: 'right', color: '#666' }));
     tr.appendChild(playerCell(c.name || `#${c.id}`, open, detail, () => {
       if (onToggleExpand) onToggleExpand(c.id);
     }, onShowOnMap ? () => onShowOnMap(c.id, c.name) : undefined));
@@ -735,13 +630,7 @@ export function renderTargets({
     tr.appendChild(fleetCell(prof));
     tr.appendChild(militaryCell(c));
     tr.appendChild(shipsCell(c));
-    tr.appendChild(destroyedCell(c));
-    tr.appendChild(highscoreCell(c));
-    tr.appendChild(pointsCell(est ? est.defensePoints : null));
-    tr.appendChild(pointsCell(est ? est.visibleFleetPoints : null));
-    tr.appendChild(hiddenCell(est, maxHidden));
-    tr.appendChild(scannedCell(worst, oldestAgeMs));
-    tr.appendChild(coverageCell(spied, total));
+    tr.appendChild(intelCell(worst, spied, total, oldestAgeMs));
     tbody.appendChild(tr);
     tbody.appendChild(detail);
   }
