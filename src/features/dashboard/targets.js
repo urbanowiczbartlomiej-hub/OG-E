@@ -376,14 +376,14 @@ function playerCell(name, open, detail, onToggle, onShowOnMap) {
     if (onToggle) onToggle();
   });
   td.appendChild(nameWrap);
-  // Spyglass → map: spotlight this player's planets on the Galaxy Viewer
-  // occupancy lens. A separate control (not the name) so it never fights the
-  // expand toggle.
+  // Spyglass → map focus. A separate control (not the name) so it never
+  // fights the expand toggle; 🗺 (was an opaque ⌖) because it OPENS the map —
+  // it does not "add" anything, every watched player is on the map already.
   if (onShowOnMap) {
     const mapLink = document.createElement('span');
-    mapLink.textContent = ' ⌖';
-    mapLink.style.cssText = 'cursor:pointer;color:#c07ad0;user-select:none;';
-    mapLink.title = 'Show this player’s planets on the map';
+    mapLink.textContent = ' 🗺';
+    mapLink.style.cssText = 'cursor:pointer;user-select:none;font-size:11px;';
+    mapLink.title = 'Focus the positions map (all watched players are on it)';
     mapLink.addEventListener('click', (e) => { e.stopPropagation(); onShowOnMap(); });
     td.appendChild(mapLink);
   }

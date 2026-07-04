@@ -138,6 +138,12 @@ let rescanMap = {};
  * watch-list. @type {Record<string, import('../../state/watchList.js').Relationship>}
  */
 let watchRelationships = {};
+/**
+ * Watched players muted on the positions map (id → true) — map-only, they stay
+ * in the table scope + the FAB's scan walk. Mirrors `WatchListConfig.mapHidden`.
+ * @type {Record<string, true>}
+ */
+let mapHiddenIds = {};
 
 /**
  * Player ids whose Targets detail row (planets + spy links) is expanded.
@@ -355,6 +361,7 @@ let routines = {};
 /** @type {HTMLButtonElement | null} */ let spyMapToggle;
 /** @type {HTMLElement | null} */ let spyMapBlock;
 /** @type {HTMLElement | null} */ let spyMapLegend;
+/** @type {HTMLElement | null} */ let spyMapPlayersEl;
 /** @type {HTMLInputElement} */ let tgtMinMilitary;
 /** @type {HTMLInputElement | null} */ let tgtMaxMilitary;
 /** Show-limit seg chip-group (was a <select>); `data-value` = row cap. */
@@ -669,6 +676,7 @@ const wireDom = () => {
   spyMapToggle = /** @type {HTMLButtonElement | null} */ (document.getElementById('spyMapToggle'));
   spyMapBlock = document.getElementById('spyMapBlock');
   spyMapLegend = document.getElementById('spyMapLegend');
+  spyMapPlayersEl = document.getElementById('spyMapPlayers');
 };
 
 /**
@@ -795,6 +803,7 @@ const wireColonySubtabs = () => {
 const loadWatched = async () => {
   watchedPlayers.clear();
   watchRelationships = {};
+  mapHiddenIds = {};
   if (!selectedUniverseId) return;
   // Snapshot the universe: this async load can be interleaved with a universe
   // switch, and we must key every read/write to the universe we started with
@@ -816,6 +825,7 @@ const loadWatched = async () => {
   for (const id of cfg.players) watchedPlayers.add(id);
   rescanMap = cfg.rescan;
   watchRelationships = cfg.relationships ?? {};
+  mapHiddenIds = cfg.mapHidden ?? {};
   // chrome.storage is authoritative for the probe count (the FAB reads it too).
   if (tgtProbes) tgtProbes.value = String(cfg.probes);
 };
@@ -835,6 +845,7 @@ const writeWatchConfig = () => {
     probes: Number(tgtProbes?.value) || DEFAULT_SPY_PROBES,
     rescan: rescanMap,
     relationships: watchRelationships,
+    mapHidden: mapHiddenIds,
   });
 };
 
@@ -850,6 +861,20 @@ const setRelationship = (pid, rel) => {
   else watchRelationships[pid] = rel;
   writeWatchConfig();
   repaintTargets();
+  repaintSpyglassMap();
+};
+
+/**
+ * Mute/unmute a watched player on the positions map (map-only — they stay
+ * watched, in the table scope and in the FAB's scan walk). Persists through
+ * the same watch-config write as relationships.
+ * @param {string} pid
+ * @returns {void}
+ */
+const toggleMapHidden = (pid) => {
+  if (mapHiddenIds[pid]) delete mapHiddenIds[pid];
+  else mapHiddenIds[pid] = true;
+  writeWatchConfig();
   repaintSpyglassMap();
 };
 
@@ -880,6 +905,8 @@ const toggleWatched = (id) => {
   else watchedPlayers.add(id);
   writeWatchConfig();
   repaintTargets();
+  // Membership IS the map's body set — keep the open map + its chips honest.
+  repaintSpyglassMap();
 };
 
 /**
@@ -1865,6 +1892,74 @@ const renderSpyMapLegend = (hasOwn) => {
   spyMapLegend.style.display = rows.length ? 'flex' : 'none';
 };
 
+/**
+ * Render the watched-player chips under the positions map (Etap H5) — the
+ * add/remove story made visible right where it matters: one pill per watched
+ * player with a relationship dot (click cycles enemy → friend → neutral), the
+ * name (opens the dossier), 👁 (map-only mute via {@link toggleMapHidden}) and
+ * ✕ (stop watching). Empty watchlist → a ghost hint instead of a blank row.
+ * @returns {void}
+ */
+const renderSpyMapPlayerChips = () => {
+  if (!spyMapPlayersEl) return;
+  spyMapPlayersEl.textContent = '';
+  const ids = [...watchedPlayers];
+  if (!ids.length) {
+    const ghost = document.createElement('span');
+    ghost.className = 'spy-pchip';
+    ghost.style.cssText = 'border-style:dashed;color:#77848f;';
+    ghost.textContent = '＋ watch players in the table below — they appear here and on the map';
+    spyMapPlayersEl.appendChild(ghost);
+    return;
+  }
+  const nameOf = (/** @type {string} */ pid) => apiCache.players?.players?.[pid]?.name || `#${pid}`;
+  ids.sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
+  /** @type {import('../../state/watchList.js').Relationship[]} */
+  const cycle = ['enemy', 'friend', 'neutral'];
+  for (const pid of ids) {
+    const rel = /** @type {import('../../state/watchList.js').Relationship} */ (watchRelationships[pid] || 'neutral');
+    const chip = document.createElement('span');
+    chip.className = 'spy-pchip' + (mapHiddenIds[pid] ? ' map-hidden' : '');
+
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.style.background = RELATIONSHIP_COLORS[rel];
+    dot.title = `Relationship: ${rel} — click to change (enemy → friend → neutral)`;
+    dot.addEventListener('click', () => {
+      setRelationship(pid, cycle[(cycle.indexOf(rel) + 1) % cycle.length]);
+    });
+    chip.appendChild(dot);
+
+    const nm = document.createElement('span');
+    nm.className = 'nm';
+    nm.textContent = nameOf(pid);
+    nm.title = 'Open this player in the table below';
+    nm.addEventListener('click', () => openSpyglassFor(Number(pid)));
+    chip.appendChild(nm);
+
+    const eye = document.createElement('span');
+    eye.className = 'ico';
+    eye.textContent = '👁';
+    eye.title = mapHiddenIds[pid]
+      ? 'Hidden from the map — click to show again'
+      : 'Hide from the map only (stays watched + scanned)';
+    eye.addEventListener('click', () => toggleMapHidden(pid));
+    chip.appendChild(eye);
+
+    const off = document.createElement('span');
+    off.className = 'ico';
+    off.textContent = '✕';
+    off.title = 'Stop watching — removes from the list, the scan walk and the map';
+    off.addEventListener('click', () => {
+      toggleWatched(pid);
+      repaintSpyglassMap();
+    });
+    chip.appendChild(off);
+
+    spyMapPlayersEl.appendChild(chip);
+  }
+};
+
 /** Repaint the Spyglass positions map. No-op while closed/hidden. */
 const repaintSpyglassMap = () => {
   if (!spyglassMapHost || !spyMapOpen) return;
@@ -1887,7 +1982,7 @@ const repaintSpyglassMap = () => {
       if (!player || player.id == null) continue;
       const pid = String(player.id);
       const isOwn = pid === ownId;
-      if (!isOwn && !watchedPlayers.has(pid)) continue;
+      if (!isOwn && (!watchedPlayers.has(pid) || mapHiddenIds[pid])) continue;
       bodies.push({
         galaxy: g,
         system: s,
@@ -1900,6 +1995,7 @@ const repaintSpyglassMap = () => {
     }
   }
   renderSpyMapLegend(!!ownId);
+  renderSpyMapPlayerChips();
   renderPositionsMap({
     hostEl: spyglassMapHost,
     galaxies: apiBounds.galaxies,
@@ -2152,14 +2248,18 @@ export const _resetDashboardForTest = () => {
     proximityStripEl =
     proximityCountsEl =
     proximityAlertEl =
+    spyMapPlayersEl =
     freeContainer =
     freeCountInfoEl =
       /** @type {any} */ (undefined);
   // Session-only state that boot() does not re-establish: clear it so a
-  // re-install starts clean (watch-list Set, rescan flags, expanded target
-  // rows, target sort, and the pending-repaint flag).
+  // re-install starts clean (watch-list Set, rescan flags, relationship +
+  // map-mute tags, expanded target rows, target sort, and the
+  // pending-repaint flag).
   watchedPlayers.clear();
   rescanMap = {};
+  watchRelationships = {};
+  mapHiddenIds = {};
   expandedTargets.clear();
   targetSort = { ...DEFAULT_TARGET_SORT };
   repaintQueued = false;
