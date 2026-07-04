@@ -50,6 +50,8 @@
  * @property {boolean} [excludeBanned]     Default true.
  * @property {boolean} [excludeAdmin]      Default true.
  * @property {boolean} [excludeOwnAlliance] Default true.
+ * @property {Set<string>} [forceInclude]  Player ids to keep regardless of every
+ *   exclusion — the search bar's "show anyway" override.
  */
 
 const DEFAULT_PROTECTION_FACTOR = 5;
@@ -71,6 +73,9 @@ function onByDefault(v) {
  * @returns {string | null}
  */
 export function targetExclusionReason(c, opts = {}) {
+  // "Show anyway" override: a player the user force-included from the search bar
+  // bypasses every exclusion below.
+  if (opts.forceInclude && opts.forceInclude.has(c.id)) return null;
   if (opts.ownPlayerId != null && c.id === opts.ownPlayerId) return 'self';
 
   const status = c.status || '';

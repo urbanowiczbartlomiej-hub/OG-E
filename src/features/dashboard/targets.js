@@ -10,7 +10,9 @@
 // Expanding a row lists the player's planets with per-body scan status, defense,
 // and visible fleet. Read-only and self-contained (inline styles, dark palette).
 
-import { buildTargetList, sortTargetList, playerPlanets } from '../../domain/targets.js';
+import {
+  buildTargetList, sortTargetList, playerPlanets, targetExclusionReason,
+} from '../../domain/targets.js';
 import { scanStatus, rescanAtFor } from '../../domain/spyScan.js';
 import { DANGER_LABELS } from '../../domain/dangerScore.js';
 import { dangerColor } from '../../lib/dangerColor.js';
@@ -70,6 +72,28 @@ function formatAge(ms) {
   const days = hours / 24;
   if (days < 14) return `${Math.round(days)}d`;
   return `${Math.round(days / 7)}w`;
+}
+
+/**
+ * Human label for a `targetExclusionReason` cause (search "hidden: …" rows).
+ * @param {string} reason
+ * @returns {string}
+ */
+function reasonLabel(reason) {
+  switch (reason) {
+    case 'self': return "that's you";
+    case 'vacation': return 'on vacation';
+    case 'inactive': return 'inactive';
+    case 'banned': return 'banned';
+    case 'admin': return 'admin account';
+    case 'ownAlliance': return 'your alliance';
+    case 'tooStrong': return 'too strong (out of your band)';
+    case 'tooWeak': return 'too weak (out of your band)';
+    case 'rankWindow': return 'outside the rank window';
+    case 'minMilitary': return 'below your military filter';
+    case 'maxMilitary': return 'above your military filter';
+    default: return reason;
+  }
 }
 
 /**
@@ -379,6 +403,10 @@ function playerCell(name, open, detail, onToggle, onShowOnMap) {
  *   Per-player legal-attack-band flag for the dossier header.
  * @param {Map<number, import('../../domain/civilBaseline.js').CivilProfile>} [args.civil]
  *   Per-player civil-fleet baseline shown in the dossier (Etap C).
+ * @param {string} [args.searchQuery]  Nickname search (Etap D); when set, the
+ *   table shows every name-match INCLUDING excluded players (with the reason).
+ * @param {(id: string) => void} [args.onShowAnyway]  "Show anyway" override for
+ *   an excluded search hit (force-include the player).
  * @returns {void}
  */
 export function renderTargets({
@@ -405,6 +433,8 @@ export function renderTargets({
   inBand,
   civil,
   onShowOnMap,
+  searchQuery = '',
+  onShowAnyway,
 }) {
   containerEl.textContent = '';
 
@@ -441,14 +471,45 @@ export function renderTargets({
     }
   }
 
-  const filtered = buildTargetList(candidates, opts);
-  const scoped = watchedOnly && watchedIds
-    ? filtered.filter((c) => watchedIds.has(c.id))
-    : filtered;
-  const list = sortTargetList(scoped, sort.key, sort.dir, hiddenById, dangerById);
-  const shown = limit > 0 ? list.slice(0, limit) : list;
+  // Search mode overrides the filter: match by name across the WHOLE candidate
+  // set (incl. excluded players), so a hidden player is findable — with the
+  // reason it's hidden + a "show anyway" override. Empty query = the normal
+  // filter / watched-scope / limit flow.
+  const query = searchQuery.trim().toLowerCase();
+  /** @type {Array<{ c: TargetCandidate, reason: string }>} */
+  const excludedMatches = [];
+  /** @type {TargetCandidate[]} */
+  let list;
+  if (query) {
+    /** @type {TargetCandidate[]} */
+    const kept = [];
+    for (const c of candidates) {
+      if (!(c.name || '').toLowerCase().includes(query) && String(c.id) !== query) continue;
+      const reason = targetExclusionReason(c, opts); // opts carries forceInclude
+      if (reason === null) kept.push(c);
+      else excludedMatches.push({ c, reason });
+    }
+    list = sortTargetList(kept, sort.key, sort.dir, hiddenById, dangerById);
+  } else {
+    const filtered = buildTargetList(candidates, opts);
+    const scoped = watchedOnly && watchedIds
+      ? filtered.filter((c) => watchedIds.has(c.id))
+      : filtered;
+    list = sortTargetList(scoped, sort.key, sort.dir, hiddenById, dangerById);
+  }
+  const shown = !query && limit > 0 ? list.slice(0, limit) : list;
 
-  if (watchedOnly && list.length === 0) {
+  if (query && shown.length === 0 && excludedMatches.length === 0) {
+    const p = document.createElement('p');
+    p.style.color = '#888';
+    p.style.fontSize = '13px';
+    p.textContent = `No player matches “${searchQuery.trim()}”.`;
+    containerEl.appendChild(p);
+    if (countInfoEl) countInfoEl.textContent = '';
+    return;
+  }
+
+  if (!query && watchedOnly && list.length === 0) {
     const p = document.createElement('p');
     p.style.color = '#888';
     p.style.fontSize = '13px';
@@ -541,11 +602,42 @@ export function renderTargets({
     tbody.appendChild(tr);
     tbody.appendChild(detail);
   }
+  // Search hits that are normally hidden — shown dimmed with WHY + a "show
+  // anyway" override, so the search never silently drops a matching player.
+  for (const { c, reason } of excludedMatches) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = COLSPAN;
+    td.style.cssText =
+      'padding:4px 8px;color:#6b7782;font-size:12px;border-bottom:1px solid #161c24;';
+    const name = document.createElement('span');
+    name.textContent = c.name || `#${c.id}`;
+    name.style.color = '#8b95a0';
+    td.appendChild(name);
+    const why = document.createElement('span');
+    why.textContent = ` — hidden: ${reasonLabel(reason)}`;
+    td.appendChild(why);
+    if (onShowAnyway) {
+      const link = document.createElement('span');
+      link.textContent = 'show anyway';
+      link.style.cssText = 'color:#6b97c4;cursor:pointer;user-select:none;margin-left:8px;';
+      link.addEventListener('click', () => onShowAnyway(c.id));
+      td.appendChild(link);
+    }
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+  }
   table.appendChild(tbody);
   containerEl.appendChild(table);
 
   if (countInfoEl) {
-    const noun = watchedOnly ? 'on scan list' : 'targets in range';
-    countInfoEl.textContent = `${list.length} ${noun} · showing ${shown.length}`;
+    if (query) {
+      const hid = excludedMatches.length;
+      countInfoEl.textContent = `${shown.length} match${shown.length === 1 ? '' : 'es'}`
+        + (hid ? ` · ${hid} hidden` : '');
+    } else {
+      const noun = watchedOnly ? 'on scan list' : 'targets in range';
+      countInfoEl.textContent = `${list.length} ${noun} · showing ${shown.length}`;
+    }
   }
 }

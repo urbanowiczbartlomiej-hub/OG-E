@@ -327,6 +327,11 @@ let civilProfiles = new Map();
 /** @type {HTMLInputElement} */ let tgtMinMilitary;
 /** @type {HTMLInputElement | null} */ let tgtMaxMilitary;
 /** @type {HTMLSelectElement} */ let tgtLimit;
+/** @type {HTMLInputElement | null} */ let tgtSearch;
+/** Current Spyglass nickname search (Etap D); '' = no search. */
+let targetSearchQuery = '';
+/** Player ids force-included past the filters via search "show anyway". */
+const forceIncludeIds = new Set();
 /** @type {HTMLInputElement | null} */ let tgtWatchedOnly;
 /** @type {HTMLInputElement | null} */ let tgtProbes;
 /** @type {HTMLInputElement | null} */ let tgtInRange;
@@ -609,6 +614,7 @@ const wireDom = () => {
   tgtMinMilitary = /** @type {HTMLInputElement} */ (document.getElementById('tgtMinMilitary'));
   tgtMaxMilitary = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtMaxMilitary'));
   tgtLimit = /** @type {HTMLSelectElement} */ (document.getElementById('tgtLimit'));
+  tgtSearch = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtSearch'));
   tgtWatchedOnly = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtWatchedOnly'));
   tgtProbes = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtProbes'));
   tgtInRange = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtInRange'));
@@ -1100,6 +1106,7 @@ const repaintTargets = () => {
       excludeVacation: true,
       excludeInactive: tgtHideInactive ? !!tgtHideInactive.checked : true,
       excludeBanned: true,
+      forceInclude: forceIncludeIds,
     },
     limit: Number(tgtLimit?.value) || 0,
     estimates,
@@ -1127,6 +1134,9 @@ const repaintTargets = () => {
     inBand: inBandById,
     // Per-player civil-fleet baseline for the dossier (Etap C).
     civil: civilProfiles,
+    // Nickname search (Etap D): reveals name-matches incl. excluded players.
+    searchQuery: targetSearchQuery,
+    onShowAnyway: (/** @type {string} */ id) => { forceIncludeIds.add(id); repaintTargets(); },
     // Spyglass → map reverse deep-link: spotlight this player's planets on the
     // Galaxy Viewer occupancy lens.
     onShowOnMap: showPlayerOnMap,
@@ -1657,6 +1667,10 @@ const wireListeners = () => {
   // persists through the watch-config write rather than the localStorage prefs.
   tgtProbes?.addEventListener('change', () => { writeWatchConfig(); repaintTargets(); });
   tgtLimit.addEventListener('change', onTargetFilterChange);
+  tgtSearch?.addEventListener('input', () => {
+    targetSearchQuery = tgtSearch ? tgtSearch.value : '';
+    repaintTargets();
+  });
   tgtWatchedOnly?.addEventListener('change', repaintTargets);
 
   // Region controls only repaint the settlement-regions block. The
@@ -1783,6 +1797,7 @@ export const _resetDashboardForTest = () => {
     tgtMinMilitary =
     tgtMaxMilitary =
     tgtLimit =
+    tgtSearch =
     tgtWatchedOnly =
     tgtProbes =
     tgtInRange =
