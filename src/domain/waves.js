@@ -222,6 +222,102 @@ const findBestOverlap = (prevWaves, cand, consumed) => {
 };
 
 /**
+ * Re-unify wave candidates that are fragments of a single stored wave.
+ *
+ * {@link clusterWaves} groups returns by consecutive gaps ≤ the cluster
+ * gap. When a live wave loses an INTERIOR member — an expedition recalled
+ * mid-flight, so its `data-arrival-time` shifts out of the cluster — the
+ * gap across the hole can exceed the threshold and split the remaining
+ * returns into two candidates. Left alone, {@link reconcileWaves}'s greedy
+ * overlap match lets the first fragment consume the prev wave and stamps
+ * the second BRAND-NEW (fresh `id` + `detectedAt`), handing it a duplicate
+ * six-alarm schedule — the exact double-schedule the wave identity exists
+ * to prevent — and it can even tombstone the matched fragment via the
+ * brand-new cleanup rule.
+ *
+ * This pass runs BEFORE matching: it links every candidate that shares any
+ * of a prev wave's return-times (union-find over candidate indices) and
+ * merges each connected group into one candidate (union of `returnAts`,
+ * summed `fleetCount`, union of `origins`). In steady state each candidate
+ * overlaps exactly one prev wave and vice-versa, so every group is a
+ * singleton and the output is identical to the input — the merge only
+ * fires when ≥2 candidates overlap the SAME prev wave (the split case). A
+ * genuinely new candidate that shares nothing with any prev wave is never
+ * merged, so brand-new detection is preserved.
+ *
+ * Pure: builds fresh candidates, never mutates the inputs.
+ *
+ * @param {Wave[]} prevWaves
+ * @param {WaveCandidate[]} candidates  ascending `nextWaveAt` (from clusterWaves)
+ * @returns {WaveCandidate[]} Re-unified candidates, ascending `nextWaveAt`.
+ */
+const mergeSplitCandidates = (prevWaves, candidates) => {
+  const n = candidates.length;
+  if (n < 2 || prevWaves.length === 0) return candidates;
+
+  // Union-find over candidate indices; roots kept as the smallest index so
+  // group order is stable.
+  const parent = candidates.map((_, i) => i);
+  /** @param {number} x @returns {number} */
+  const find = (x) => {
+    let r = x;
+    while (parent[r] !== r) r = parent[r];
+    while (parent[x] !== r) {
+      const nx = parent[x];
+      parent[x] = r;
+      x = nx;
+    }
+    return r;
+  };
+  /** @param {number} a @param {number} b */
+  const union = (a, b) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent[Math.max(ra, rb)] = Math.min(ra, rb);
+  };
+
+  // Link all candidates that share any of a given prev wave's return-times:
+  // they are fragments of that one wave.
+  for (const prev of prevWaves) {
+    const times = new Set(prev.returnAts);
+    let anchor = -1;
+    for (let i = 0; i < n; i++) {
+      if (candidates[i].returnAts.some((t) => times.has(t))) {
+        if (anchor === -1) anchor = i;
+        else union(anchor, i);
+      }
+    }
+  }
+
+  // Collect groups by root, preserving first-seen order.
+  /** @type {Map<number, number[]>} */
+  const groups = new Map();
+  for (let i = 0; i < n; i++) {
+    const r = find(i);
+    const g = groups.get(r);
+    if (g) g.push(i);
+    else groups.set(r, [i]);
+  }
+
+  /** @type {WaveCandidate[]} */
+  const merged = [];
+  for (const idxs of groups.values()) {
+    if (idxs.length === 1) {
+      merged.push(candidates[idxs[0]]);
+      continue;
+    }
+    const group = idxs.map((i) => candidates[i]);
+    const returnAts = [...new Set(group.flatMap((c) => c.returnAts))].sort((a, b) => a - b);
+    const origins = [...new Set(group.flatMap((c) => c.origins))].sort();
+    const fleetCount = group.reduce((sum, c) => sum + c.fleetCount, 0);
+    merged.push({ nextWaveAt: returnAts[0], fleetCount, returnAts, origins });
+  }
+
+  merged.sort((a, b) => a.nextWaveAt - b.nextWaveAt);
+  return merged;
+};
+
+/**
  * Reconcile the previously-stored waves with the wave candidates just
  * observed in the event list.
  *
@@ -261,13 +357,18 @@ const findBestOverlap = (prevWaves, cand, consumed) => {
  * @returns {{ waves: Wave[], droppedIds: string[], brandNewDetected: boolean }}
  */
 export const reconcileWaves = (prevWaves, currentCandidates, now) => {
+  // Re-unify candidates a mid-flight recall split apart before matching, so
+  // a partially-recalled wave can't resurrect its tail half as brand-new
+  // (see mergeSplitCandidates). No-op unless ≥2 candidates share a prev wave.
+  const candidates = mergeSplitCandidates(prevWaves, currentCandidates);
+
   /** @type {Wave[]} */
   const out = [];
   /** @type {Set<string>} */
   const consumed = new Set();
   let brandNewDetected = false;
 
-  for (const cand of currentCandidates) {
+  for (const cand of candidates) {
     const match = findBestOverlap(prevWaves, cand, consumed);
     if (match) {
       consumed.add(match.id);

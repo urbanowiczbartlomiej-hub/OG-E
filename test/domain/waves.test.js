@@ -393,6 +393,62 @@ describe('reconcileWaves', () => {
     expect(waves[0].id).toBe('w_' + (NOW + 5400));
     expect(waves[0].cancelled).toBeUndefined();
   });
+
+  it('re-unifies a wave a mid-flight recall split into two candidates (7.23)', () => {
+    // Live wave of three returns, all within the cluster gap.
+    const full = [
+      { returnAt: NOW + 3600, origin: '1:1:1' },
+      { returnAt: NOW + 3850, origin: '1:2:1' }, // +250s
+      { returnAt: NOW + 4100, origin: '1:3:1' }, // +250s
+    ];
+    const first = reconcileWaves([], clusterWaves(full), NOW).waves;
+    expect(first).toHaveLength(1);
+
+    // A recall pulls the MIDDLE expedition out; the remaining two returns
+    // now sit 500s apart (> the 300s gap) so clusterWaves splits them.
+    const recalled = [
+      { returnAt: NOW + 3600, origin: '1:1:1' },
+      { returnAt: NOW + 4100, origin: '1:3:1' },
+    ];
+    const split = clusterWaves(recalled);
+    expect(split).toHaveLength(2); // precondition: the split really happens
+
+    // Before 7.23 the tail half stamped brand-new (double schedule, and the
+    // matched half could even get tombstoned). Now the pre-pass re-unifies
+    // both fragments back into the ORIGINAL wave.
+    const { waves, droppedIds, brandNewDetected } = reconcileWaves(first, split, NOW + 60);
+    expect(waves).toHaveLength(1);
+    expect(waves[0].id).toBe(first[0].id);                // identity carried
+    expect(waves[0].fleetCount).toBe(2);                  // two fleets left
+    expect(waves[0].returnAts).toEqual([NOW + 3600, NOW + 4100]);
+    expect(waves[0].detectedAt).toBe(NOW);                // detectedAt carried
+    expect(brandNewDetected).toBe(false);                 // NOT a new wave
+    expect(droppedIds).toEqual([]);
+  });
+
+  it('does not over-merge: a genuinely new wave sharing no return-time still stamps brand-new (7.23)', () => {
+    const prev = wave({
+      id: 'w_a', returnAts: [NOW + 3600, NOW + 3850], nextWaveAt: NOW + 3600,
+      detectedAt: NOW,
+    });
+    const current = [
+      // still-live half of A (shares its return-times → matches A)
+      ...clusterWaves([
+        { returnAt: NOW + 3600, origin: '1:1:1' },
+        { returnAt: NOW + 3850, origin: '1:2:1' },
+      ]),
+      // a separate fresh send far away — no shared return-time
+      ...clusterWaves([
+        { returnAt: NOW + 9000, origin: '2:1:1' },
+        { returnAt: NOW + 9100, origin: '2:2:1' },
+      ]),
+    ];
+    const { waves, brandNewDetected } = reconcileWaves([prev], current, NOW + 30);
+    expect(waves).toHaveLength(2);                         // NOT merged into one
+    expect(waves.some((w) => w.id === 'w_a')).toBe(true);  // A kept its id
+    expect(waves.some((w) => w.id === 'w_' + (NOW + 9000))).toBe(true); // new brand-new
+    expect(brandNewDetected).toBe(true);
+  });
 });
 
 describe('pruneNotifyState', () => {
