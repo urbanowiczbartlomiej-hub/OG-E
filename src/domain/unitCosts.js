@@ -74,23 +74,6 @@ export const UNIT_COSTS = {
 };
 
 /**
- * English display names for the defenses (the ship names live in
- * `rules.js` SHIP_CATALOG). The dashboard runs on the extension origin and
- * can't read the game's localized labels, so the catalog is static.
- * @type {ReadonlyArray<{ id: number, name: string }>}
- */
-export const DEFENSE_CATALOG = [
-  { id: 401, name: 'Rocket Launcher' },
-  { id: 402, name: 'Light Laser' },
-  { id: 403, name: 'Heavy Laser' },
-  { id: 404, name: 'Gauss Cannon' },
-  { id: 405, name: 'Ion Cannon' },
-  { id: 406, name: 'Plasma Turret' },
-  { id: 407, name: 'Small Shield Dome' },
-  { id: 408, name: 'Large Shield Dome' },
-];
-
-/**
  * Total resource value of one unit (metal + crystal + deuterium).
  * @param {number} unitId
  * @returns {number}  0 for ids we don't price (missiles, unknown).

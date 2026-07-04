@@ -24,7 +24,7 @@
 - [x] **Etap 2** - Psucie danych kolonizacji i skanow (4 pozycji)
 - [~] **Etap 3** - Bugi feature-ow (UI/zachowanie) (7/9 zrobione; 3.5+3.9 odlozone - apiContext/index.js w trakcie edycji uzytkownika)
 - [x] **Etap 4** - Lifecycle, teardown i architektura (medium) (6 pozycji)
-- [~] **Etap 5** - Martwy kod - usuwanie (13/15 zrobione; 5.12+5.13 odlozone - Targets-adjacent, uzytkownik buduje Targets)
+- [x] **Etap 5** - Martwy kod - usuwanie (15 pozycji)
 - [ ] **Etap 6** - Duplikacja i centralizacja gameDom (16 pozycji)
 - [ ] **Etap 7** - Drobne bugi, race-y i teardown (low) (26 pozycji)
 - [ ] **Etap 8** - Dokumentacja i komentarze (6 pozycji)
@@ -187,7 +187,7 @@ Same delecje - git przechowa historie. Przed kazda delecja ponow grep upewniajac
 
 Sugerowany commit: `refactor: remove dead code (legacy strategy engine, settingsUi controls, dead exports)`
 
-**Notka (2026-07-04):** 13/15 zrobione i scommitowane (workflow: 11 rozlacznych bundli → 11× verify CORRECT + holistic CORRECT; gate build+lint zielone, typecheck czerwony TYLKO w test/** — martwe testy usunietych eksportow, rekoncyliacja przy release per CLAUDE.md). **5.12 (spyMissionUrl) + 5.13 (DEFENSE_CATALOG) ODLOZONE** — obie Targets-tab-adjacent (REVIEW sam pisze "staged for deep-link spy buttons" / "static defense names for a per-unit breakdown UI"), a uzytkownik aktywnie buduje Targets/Spyglass; usuwac dopiero gdy ta praca sie ustabilizuje. Uwaga procesowa: bundle 5.2 (buttons) usunal tez osierocone eksporty FOCUS_* z sendExpedition/pure.js, kolidujac plikowo z bundlem 5.10 (POLL) — 5.10 zwrocil null (StructuredOutput retry cap), ale obie delecje wyladowaly spojnie (potwierdzone: src/ typecheckuje sie czysto, verify 5.10 = CORRECT).
+**Notka (2026-07-04):** 13/15 zrobione i scommitowane (workflow: 11 rozlacznych bundli → 11× verify CORRECT + holistic CORRECT; gate build+lint zielone, typecheck czerwony TYLKO w test/** — martwe testy usunietych eksportow, rekoncyliacja przy release per CLAUDE.md). **5.12 (spyMissionUrl) + 5.13 (DEFENSE_CATALOG)** dokonczone pozniej (2026-07-04, osobny commit) — pliki byly czyste (ogameUrl.js/unitCosts.js nie w WIP), symbole wciaz martwe, usuniete. Uwaga procesowa: bundle 5.2 (buttons) usunal tez osierocone eksporty FOCUS_* z sendExpedition/pure.js, kolidujac plikowo z bundlem 5.10 (POLL) — 5.10 zwrocil null (StructuredOutput retry cap), ale obie delecje wyladowaly spojnie (potwierdzone: src/ typecheckuje sie czysto, verify 5.10 = CORRECT).
 
 - [x] **5.1** `src/features/settingsUi/controls.js:698` **[medium/dead-code]** - Six control flavours (text, password, select, duration, button, asyncStatus incl. the whole secret/eye/copy stack and refresh-event machinery) are dead code since the settings-to-dashboard move
   - **Problem:** Grep over src/features/settingsUi/sections/ shows the live SECTIONS use only type 'checkbox', 'range', 'radio', and 'static' (floatingButton.js:17-18, expeditions.js:18-21, display.js:20-52, sync.js:26, alarmClock.js:31). Nothing constructs 'text'/'password'/'select'/'duration'/'button'/'asyncStatus' options anywhere in src/, yet controls.js carries buildInputControl, buildSelectControl, buildDurationControl, buildButtonControl, buildAsyncStatusControl, buildSecretStack (576-622, eye/copy buttons and the "Copied!"/1200 ms reset timer), paintSecretValue (223-225), refreshAsyncStatus, asyncStatusState (139-210), asyncRefreshEventBound (which registers never-removed document listeners), plus the maskTopic import from sync/alarmClock.js (line 33) and parseDuration/formatDuration from domain/duration.js (line 32) — roughly 350+ lines shipped in the content bundle solely to support flavours the panel no longer renders. The topic row moved to the dashboard (sections/alarmClock.js:11 says so), whose live, drifted implementation is features/dashboard/alarmClock.js:119-190 (adds reveal-on-copy-failure, lines 140-145).
@@ -233,11 +233,11 @@ Sugerowany commit: `refactor: remove dead code (legacy strategy engine, settings
   - **Problem:** WAVE_PRIORITY (371) and ADHOC_PRIORITY (372) appear in code only at their definitions (test-only otherwise); every postMessage call passes priority from template.priority (lines 610, 731, 818) or a literal 5 (882). The docs at lines 567 and 779 still say slots are posted 'at flat WAVE_PRIORITY / ADHOC_PRIORITY', which no longer describes the code.
   - **Kierunek naprawy:** Delete the two constants and correct the two JSDoc mentions to say priority comes from the normalized template.
 
-- [ ] **5.12** `src/domain/ogameUrl.js:63` **[low/dead-code]** *(ODLOZONE — Targets-adjacent, uzytkownik buduje deep-link spy buttons)* - spyMissionUrl has zero references anywhere — including tests.
+- [x] **5.12** `src/domain/ogameUrl.js:63` **[low/dead-code]** - spyMissionUrl has zero references anywhere — including tests.
   - **Problem:** Grep across src (JS+HTML) and test/: the only occurrence of spyMissionUrl is its definition at ogameUrl.js:63. ogameUrlBase and ingameComponentUrl in the same module are alive. This looks staged for the Targets tab's pending 'deep-link spy buttons' work (the doc references docs/fair-play.md and the fleetdispatch pre-arm contract).
   - **Kierunek naprawy:** If the deep-link spy button lands soon, keep it and wire it up; otherwise delete it — an untested URL builder for a fragile game contract will silently rot.
 
-- [ ] **5.13** `src/domain/unitCosts.js:82` **[low/dead-code]** *(ODLOZONE — Targets-adjacent, per-unit defense breakdown UI moze byc potrzebne)* - DEFENSE_CATALOG has zero references anywhere — including tests.
+- [x] **5.13** `src/domain/unitCosts.js:82` **[low/dead-code]** - DEFENSE_CATALOG has zero references anywhere — including tests.
   - **Problem:** Grep across src and test/: DEFENSE_CATALOG appears only at its definition (unitCosts.js:82-91). Its doc says the dashboard needs static defense names for a per-unit breakdown UI, but no such UI reads it; UNIT_COSTS/resourceValueOf/sumResourceValue in the same file are alive (used internally and by the targets estimate).
   - **Kierunek naprawy:** Delete the DEFENSE_CATALOG binding only — keep UNIT_COSTS and the file's reverse-engineered cost/points commentary intact (protected game knowledge per CLAUDE.md carve-out).
 
