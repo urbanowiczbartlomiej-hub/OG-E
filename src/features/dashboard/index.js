@@ -337,6 +337,7 @@ let civilProfiles = new Map();
 /** @type {HTMLElement | null} */ let spyglassMapHost;
 /** @type {HTMLButtonElement | null} */ let spyMapToggle;
 /** @type {HTMLElement | null} */ let spyMapBlock;
+/** @type {HTMLElement | null} */ let spyMapLegend;
 /** @type {HTMLInputElement} */ let tgtMinMilitary;
 /** @type {HTMLInputElement | null} */ let tgtMaxMilitary;
 /** @type {HTMLSelectElement} */ let tgtLimit;
@@ -639,6 +640,7 @@ const wireDom = () => {
   spyglassMapHost = document.getElementById('spyglassMapHost');
   spyMapToggle = /** @type {HTMLButtonElement | null} */ (document.getElementById('spyMapToggle'));
   spyMapBlock = document.getElementById('spyMapBlock');
+  spyMapLegend = document.getElementById('spyMapLegend');
 };
 
 /**
@@ -1675,6 +1677,31 @@ const buildSpyComposite = () => {
   return value;
 };
 
+/**
+ * Render the watchlist map's colour→player legend into #spyMapLegend, so a
+ * colour on the map maps back to a name (you = white). Hidden when empty.
+ * @param {string|null} ownId
+ */
+const renderSpyMapLegend = (ownId) => {
+  if (!spyMapLegend) return;
+  const nameOf = (/** @type {string} */ pid) =>
+    apiCache.players?.players?.[pid]?.name || `player ${pid}`;
+  /** @type {Array<{ name: string, color: string }>} */
+  const entries = [];
+  if (ownId != null) entries.push({ name: `${nameOf(ownId)} · you`, color: '#ffffff' });
+  for (const pid of watchedPlayers) entries.push({ name: nameOf(pid), color: playerColor(pid) });
+  spyMapLegend.replaceChildren();
+  for (const e of entries) {
+    const chip = document.createElement('span');
+    chip.style.cssText = 'display:inline-flex;align-items:center;gap:5px;';
+    const sw = document.createElement('span');
+    sw.style.cssText = `width:10px;height:10px;border-radius:2px;background:${e.color};border:1px solid #0008;flex:0 0 auto;`;
+    chip.append(sw, document.createTextNode(e.name));
+    spyMapLegend.appendChild(chip);
+  }
+  spyMapLegend.style.display = entries.length ? 'flex' : 'none';
+};
+
 /** Repaint the Spyglass watchlist map (occupancy view). No-op while closed/hidden. */
 const repaintSpyglassMap = () => {
   if (!spyglassMapHost || !spyMapOpen) return;
@@ -1687,6 +1714,10 @@ const repaintSpyglassMap = () => {
   /** @type {Map<number, string>} */
   const highlightColors = new Map();
   for (const pid of watchedPlayers) highlightColors.set(Number(pid), playerColor(pid));
+  // Own planets = white — the reference frame (§6.9): spot yourself amid the set.
+  const ownId = ownProfile && ownProfile.id != null ? String(ownProfile.id) : null;
+  if (ownId != null) highlightColors.set(Number(ownId), '#ffffff');
+  renderSpyMapLegend(ownId);
   renderServerMap({
     hostEl: spyglassMapHost,
     scans: buildSpyComposite(),
