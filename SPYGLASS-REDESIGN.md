@@ -40,21 +40,33 @@ with the user first**.
 | `2bd2915` | D-search | header **nickname search** over the whole set incl. excluded players (dimmed + reason + "show anyway" `forceInclude`) |
 | `f41f4a5` | D-strip | "who's been near you" defensive strip from proximity reports (§6.10) — NEW `state/proximityReports.js` + proximity gate/normalizer + targetsIngest + `content.js` init + dashboard strip. Green, committed. **Not yet live-verified** — needs a real "obca flota dostrzeżona" alert to see the strip populate (verify next session) |
 
-### DONE — session 2 (Etap F foundation; no routine visuals)
+### DONE — session 2 (Etap F foundation + Etap E extraction & map start)
 
-The unblocked, de-risking core of Etap F — the store migration + coverage honesty — shipped
-per the user's cut, WITHOUT the consult-gated routine visuals. Tree green at each commit.
+Etap F's unblocked core (store migration + coverage honesty, WITHOUT the consult-gated routine
+visuals) THEN Etap E (map): the `freeStreak.js` extraction + the first slice of the Spyglass
+map. Tree green at each commit. User verified E1 (GV renders identically) before E2a.
 
 | Commit | Etap | What shipped |
 |---|---|---|
 | `9aff5ff` | F (foundation) | **`{latest,history}` store migration** — NEW `domain/targetReports.js` (`latestOf`/`historyOf`/`toLite`/`HISTORY_CAP`, both-shape tolerant); shape-tolerant `normalizeReportTimestamps` (repairs `latest.timestamp` + each `history[].ts`); `recordReport` writes the ring with a **watched-only write-side retention gate** + equal-ts guard also blocking a duplicate history append; **all 4 read paths through `latestOf`** (3× dashboard `index.js` + in-game sendSpy FAB). Plus **coverage honesty**: `estimateHiddenFleet` gates each body on `revealed` (defence/fleet/`spiedCount` defence-covered only, so a partial's absent defence is never read as a real zero); `isEspionageReportBag` admits **partial** reports behind a scan-fingerprint (`hidden*`/numeric defence|fleet) so a combat-report loot line can't slip in. |
 | `e798124` | F (moons) | **Moon bodies**: `parseUniverse` flags `ApiPlanet.hasMoon` (own-content scan up to next `<planet>`, O(n)); coverage denominator counts planets + moons; gate admits `type=3` moon scans; **planet↔moon coord-collision guards** in the sendSpy FAB `spiedCoordsByPlayer` + dashboard per-planet `byCoord` (a moon scan never marks the planet spied). |
+| `ac59d2c` | E1 | **Map primitives extracted** — NEW `features/dashboard/mapPrimitives.js` (pure `computeComposite`/`computeScoreField` — window/farm as params, not DOM reads — + `buildSystemCard`/`dangerBadge`/`liveOverlay` moved verbatim). GV keeps its **caller-side** `compositeCache`/`scoreFieldCache` wrappers → each sub-tab owns its cache. Behaviour-preserving (GV renders identically). |
+| `f34f5db` | E2a-1 | **Spyglass watchlist map (occupancy)** — `🗺` toggle + `#spyglassMapHost` in the Spyglass tab reusing `renderServerMap`; own `spyCompositeCache` + `spyMapHighlight`; `repaintSpyglassMap` wired to renderAll + the spyglass tab-switch + the toggle; extracted shared `gameLinkBase()`. |
 
 **Etap F foundation is DONE.** What remains of Etap F = the **routine visuals only** (activity
 strip + galaxy-view activity capture + self-induced discount, weekday pattern, collection
 callout, spy timeline) — **still ToolDev-consult-gated**. **Deferred test debt** (per CLAUDE.md,
 reconcile at release): migration-cap / both-read-paths / retention-gate + equal-ts-no-dup-history
-tests, partial+moon gate, `revealed` gating, `<moon>` parse.
+tests, partial+moon gate, `revealed` gating, `<moon>` parse, `mapPrimitives` compute.
+
+**Etap E (map) is IN PROGRESS** (not the deferred-to-1.36.0 status the plan assumed — user
+chose to build it now, placement = a map SECTION in the current Spyglass tab, not the
+cards-landing view toggle). E1 (extraction) + E2a-1 (occupancy map + toggle) DONE. **Next:
+E2a-2** — click a watchlist player → set `spyMapHighlight` → spotlight on the Spyglass map
+(reuse the existing highlight machinery; decide: replace the GV-jump `onShowOnMap` or branch on
+`spyMapOpen`). **Then E2b** — multi-player colour overlay (stable id-hash colour, danger-scaled
+markers, own planets as white rings — extends `renderServerMap` or a layer over it). **E2c** —
+click system→popover (`buildSystemCard`), click player→dossier.
 
 ### NEXT — future sessions, in order
 
