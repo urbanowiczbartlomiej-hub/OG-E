@@ -117,3 +117,75 @@ probe must carry nothing and fly full speed.
 explicit zero-out + 100 % speed step. Confirm whether to drive the AGR
 `#ago_*` inputs or native equivalents at design time (AGR present in my
 setup; native equivalents exist for resources via `#noneresources`).
+
+## 6. Spyglass — fleet-save window bracketing (strike-timing)
+
+**Goal.** Turn the spy-report + galaxy-activity history into *departure
+arcs*: when a watched player's body reads present-then-absent across two
+observations, the fleet left in that window — the highest-value
+strike-timing intel (raid just after they fleet-save, hit just before it
+lands).
+
+**Why it was deferred (v3.1, not v3).** It rides five confounds
+(same-body vs sibling-body relocation, moon vs planet, defense-only
+suppression, our own probe's activity, and interval width) and needs
+sampling DENSITY a solo fleeter rarely had — which is exactly what the
+**galaxy-view activity rings** shipped in 1.36.0 (`state/activityObs.js`)
+now accumulate for free. Revisit after a few weeks of real data.
+
+**Shape (rough), all mandatory to stay honest:** same-`bodyKey` pairing
+only; sibling-body relocation check (a fleet that just moved next door
+isn't "saved"); moon-gate downgrade; defense-only suppression; and it must
+render as an **interval, never an instant**. Source stays spy-report +
+galaxy-activity only — the API can't see fleet movement (a flying fleet
+still counts in the `ships` count), so there is no API-delta bracket, ever.
+Feeds a new `domain/routine.js` (or sibling) departure-arc summary; surfaced
+on the dossier timeline. See `docs/ogame-fleet-mechanics.md` (activity
+marker) + SPYGLASS-REDESIGN.md §6.6.
+
+## 7. Watchlist sync across devices (C6-safe)
+
+**Goal.** Optionally sync the per-universe watch list (`{players, probes,
+relationships}`, `state/watchList.js`) across devices via the existing gist
+sync, so starring a player on the desktop shows up on the laptop.
+
+**Why it's CUT from v3, not merely deferred.** It re-opens the **C6
+silent multi-universe-wipe** class (a device that hydrates an empty
+`players[]` before the legacy migration runs, then uploads it with a fresh
+`Ts` and clobbers the other device's real list — see the sync audit). There
+is **zero functional dependency**: routine, dossier, finder, verdict and the
+scan plan all work fully device-local.
+
+**Shape if ever built.** Its own isolated etap with its own user
+confirmation, a C6-safe "never upload a just-hydrated empty list with a
+newer `Ts`" guard, and a **union** (not replace) merge — starring is
+monotonic intent, so two devices' lists should merge, never overwrite.
+Relationships tags likewise union (last-writer-wins per player id).
+
+## 8. Points-per-ship spy calibration for the civil baseline
+
+**Goal.** The civil-fleet baseline (`domain/civilBaseline.js`, shipped
+1.35.0) estimates a player's combat-ship surplus from a server
+economy→ships curve using an *assumed* points-per-ship. Refine that constant
+from the **actual** fleet compositions we've spied (the per-ship maps on
+each `SpyReport`), so the baseline's upper bound tightens for players we
+have real scans on.
+
+**Grounding.** The spy reports already persist per-ship fleet maps
+(`espionageReport.js`), currently read only for the hidden-fleet math. A
+calibration pass could derive an empirical pts/ship from spied fleets and
+feed it back into `buildCivilBaseline`. Keep it a weak prior / upper bound
+(never into the danger score `D`), same as the baseline is today.
+
+## 9. Watchlist card landing IA
+
+**Goal.** Make the glanceable **raid-verdict card** the Spyglass landing
+view (the handful of players you actually track, as fat cards answering
+"raid or skip, and when" at a glance), with the 7-column finder table
+demoted to a "find more targets" step behind it.
+
+**Grounding.** The raid verdict + loot proxy already exist in the **dossier**
+(`domain/raidVerdict.js`, `features/dashboard/dossier.js`, shipped 1.35.0);
+this is the IA step that surfaces them on a card in the landing view rather
+than only inside the drill-down. See SPYGLASS-REDESIGN.md §6.1/§6.3/§6.4 —
+the "card" half of the jack-point that was left pending an IA pass.

@@ -100,3 +100,31 @@ Authoritative logic lives in `pure.js`; this is the summary.
 
 The markers are purely passive: every byte is read from the event list OGame
 itself renders. OG-E never queries the server.
+
+## The activity marker ("aktywka") — exact encoding
+
+Confirmed on live payloads (2026-07-04); consumed by the Spyglass routine
+tracker (`domain/routine.js`, `domain/activityObs.js`). OGame tracks activity
+**per body** — a planet and its moon carry independent markers.
+
+The galaxy view (`fetchGalaxyContent` JSON) exposes, per planet/moon, an
+`activity: { showActivity, idleTime }` block:
+
+| Game state          | JSON                               | Meaning                                    |
+|---------------------|------------------------------------|--------------------------------------------|
+| fresh dot, no digit | `showActivity: 15, idleTime: null` | interacted with **0–15 min** ago (exact minute hidden) |
+| minute shown        | `showActivity: 60, idleTime: N`    | interacted with **exactly N minutes** ago (15 ≤ N ≤ 60) |
+| no marker           | `showActivity: false`              | no interaction in the last **60 min** (or never) |
+
+So the resolution is: a coarse "<15" band, the **exact minute** in the 15–60
+band, nothing past 60 — the ceiling is 60, not 45/59. A spy report's
+`data-raw-activity` mirrors the same encoding (`'*'` = <15 min, a number = the
+minute, `-1` = none — **not** "1 minute ago").
+
+**The marker means "this body was interacted with", NOT "the player is
+online".** It fires on: the owner's own actions, the owner's fleet returning
+(incl. a fleet-save landing), an incoming resource delivery or attack, and
+**incoming espionage — including OG-E's own probes** (a re-scan within 15 min
+shows the activity the previous probe caused). Any consumer must therefore
+discount self-induced markers (see `domain/activityObs.js` / the read-side pass
+in `domain/routine.js`) and must never label the signal "online".

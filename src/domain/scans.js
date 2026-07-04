@@ -135,6 +135,15 @@
  *   never changes once formed) and the raw material for moon-destruction
  *   / phalanx-range analysis. Present for any slot with a sized moon,
  *   including `mine`.
+ * @property {number} [activity] The PLANET body's activity marker at scan
+ *   time, in the game's own encoding (see {@link parseActivity}): `0` =
+ *   interacted with <15 min ago (the dot), `15..60` = the exact idle
+ *   minute, `-1` = no marker (>60 min / never). Absent when the payload
+ *   didn't expose it. Ephemeral observation — never persisted with the
+ *   scan (state/scans strips positions); consumed by the watched-player
+ *   activity ring (`state/activityObs.js`).
+ * @property {number} [moonActivity] Same, for the slot's MOON body (the
+ *   game tracks planet and moon activity independently).
  */
 
 /**
@@ -152,6 +161,7 @@
  *   debris?: unknown,
  *   planetType?: number,
  *   size?: number | string,
+ *   activity?: unknown,
  * }>} [planets] Zero-or-more space-object entries. In current payloads
  *   `planetType` discriminates: 1 = planet, 2 = debris field, 3 = moon
  *   (moons additionally carry their diameter in `size`, as a string).
@@ -198,6 +208,43 @@
 const readPlayerRank = (player) => {
   for (const v of [player.highscorePositionPlayer, player.highscorePosition]) {
     if (typeof v === 'number' && Number.isFinite(v) && v > 0) return v;
+  }
+  return null;
+};
+
+/**
+ * Parse a galaxy body's `activity` block into the canonical activity minute.
+ * The game exposes, per body (planet AND moon independently), an
+ * `activity: { showActivity, idleTime }` object whose encoding is exact
+ * (user-confirmed on live payloads, docs/ogame-fleet-mechanics.md):
+ *
+ * | Game state          | JSON                                | Return |
+ * |---------------------|-------------------------------------|--------|
+ * | fresh dot           | `showActivity: 15, idleTime: null`  | `0`    |
+ * | minute shown        | `showActivity: 60, idleTime: N`     | `N` (15..60, EXACT) |
+ * | no marker           | `showActivity: false`               | `-1`   |
+ *
+ * Returns `null` when the block is absent or malformed (own planets and some
+ * payload variants carry nothing) — null means "no observation", which is
+ * different from `-1` = "observed: no marker in the last 60 min" (negative
+ * evidence the activity ring deliberately keeps).
+ *
+ * The returned scale matches the spy report's `activityMin`
+ * (`domain/espionageReport.parseActivityMin`): 0 = <15 min, else exact
+ * minutes — so both sources feed one routine model.
+ *
+ * @param {unknown} activity One `planets[]` entry's `activity` block.
+ * @returns {number | null}
+ */
+export const parseActivity = (activity) => {
+  if (!activity || typeof activity !== 'object') return null;
+  const a = /** @type {{ showActivity?: unknown, idleTime?: unknown }} */ (activity);
+  if (a.showActivity === false) return -1;
+  const sa = Number(a.showActivity);
+  if (sa === 15) return 0;
+  if (sa === 60) {
+    const m = Number(a.idleTime);
+    return Number.isFinite(m) && m >= 15 && m <= 60 ? m : null;
   }
   return null;
 };
@@ -302,6 +349,12 @@ export const classifyPosition = (entry, ownPlayerId) => {
   const moon = planets.find((p) => (p.planetType === 3 || p.isMoon || p.luna) && !p.isDestroyed);
   const moonSize = moon && moon.size != null ? Number(moon.size) : NaN;
 
+  // Per-body activity markers (§6.6bis) — planet and moon are tracked by the
+  // game independently. The first live non-moon entry is the planet body.
+  const planetBody = livePlanets.find((p) => !(p.planetType === 3 || p.isMoon || p.luna));
+  const planetActivity = planetBody ? parseActivity(planetBody.activity) : null;
+  const moonActivity = moon ? parseActivity(moon.activity) : null;
+
   /**
    * Stamp the shared optional extras on a branch's result.
    * @param {Position} out @returns {Position}
@@ -309,6 +362,8 @@ export const classifyPosition = (entry, ownPlayerId) => {
   const finish = (out) => {
     if (hasAnyFlag) out.flags = flags;
     if (Number.isFinite(moonSize) && moonSize > 0) out.moonSize = moonSize;
+    if (planetActivity != null) out.activity = planetActivity;
+    if (moonActivity != null) out.moonActivity = moonActivity;
     return out;
   };
 

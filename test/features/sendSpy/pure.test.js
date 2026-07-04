@@ -13,6 +13,7 @@ import {
   SPY_STALE_MS,
   BG_SPY_IDLE,
   BG_SPY_DONE,
+  BG_SPY_ERROR,
 } from '../../../src/features/sendSpy/pure.js';
 
 const NOW = 1_700_000_000_000;
@@ -169,5 +170,60 @@ describe('renderSpy', () => {
     expect(paint.bg).toBe(BG_SPY_IDLE);
     expect(paint.subtext).toContain('1:2:3');
     expect(paint.subtext).toContain('4');
+  });
+});
+
+describe('renderSpy — probe pre-flight (Etap G)', () => {
+  const ctx = {
+    candidate: { galaxy: 1, system: 2, position: 3, playerId: '42' },
+    remaining: 4,
+    hasWatched: true,
+  };
+
+  it('enough probes on hand → normal "Spy" paint, no shortage hint', () => {
+    const paint = renderSpy(ctx, { have: 20, need: 20 });
+    expect(paint.text).toBe('Spy');
+    expect(paint.bg).toBe(BG_SPY_IDLE);
+    expect(paint.hint).toBeUndefined();
+  });
+
+  it('too few probes (but some) → hint shows have/need, still armable', () => {
+    const paint = renderSpy(ctx, { have: 5, need: 20 });
+    expect(paint.text).toBe('Spy');
+    expect(paint.hint).toBe('5/20 probes');
+    expect(paint.subtext).toContain('1:2:3');
+  });
+
+  it('zero probes on hand → error "No probes!" paint before the tap', () => {
+    const paint = renderSpy(ctx, { have: 0, need: 20 });
+    expect(paint.text).toBe('No probes!');
+    expect(paint.bg).toBe(BG_SPY_ERROR);
+    expect(paint.subtext).toContain('1:2:3');
+  });
+
+  it('preflight is ignored on the done / no-targets states', () => {
+    expect(renderSpy({ candidate: null, remaining: 0, hasWatched: true }, { have: 0, need: 20 }).text)
+      .toBe('Reports');
+    expect(renderSpy({ candidate: null, remaining: 0, hasWatched: false }, { have: 0, need: 20 }).text)
+      .toBe('Spy');
+  });
+});
+
+describe('deriveSpy — priority ranking (Etap G)', () => {
+  it('proposes the highest-danger watched player\'s planet first', () => {
+    const ctx = deriveSpy(
+      env({
+        players: ['10', '80'],
+        universePlanets: [
+          { coords: '1:1:1', player: 10 },
+          { coords: '2:2:2', player: 80 },
+        ],
+        spiedByPlayer: {},
+        dangerByPlayer: { 10: 10, 80: 80 },
+      }),
+    );
+    expect(ctx.candidate).toEqual({ galaxy: 2, system: 2, position: 2, playerId: '80' });
+    expect(ctx.remaining).toBe(2);
+    expect(typeof ctx.why).toBe('string');
   });
 });

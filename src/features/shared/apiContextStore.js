@@ -16,13 +16,21 @@
 /** @typedef {import('../../domain/apiOccupancy.js').ApiPlanet} ApiPlanet */
 
 /**
- * The slice of `features/apiContext`'s built context the picker reads. Typed
+ * The slice of `features/apiContext`'s built context its consumers read. Typed
  * with domain types only (no feature→feature type coupling): the occupancy
- * index plus the server grid bounds (`server.galaxies` / `.systems`) the
- * whole-universe free-slot count needs. The producer may attach more fields
- * (military, builtAt, …) — they're simply not part of this read contract.
+ * index, the server grid bounds (`server.galaxies` / `.systems`) the
+ * whole-universe free-slot count needs, the raw planet rows the scan FAB maps
+ * watched players over, and the danger profiles the scan planner ranks by
+ * (built via `domain/dangerJoin.js`, identical to the dashboard's). The
+ * producer may attach more fields (military, builtAt, …) — they're simply not
+ * part of this read contract.
  *
- * @typedef {{ index: OccupancyIndex, server?: ServerData, universePlanets?: ApiPlanet[] }} ApiContextHandoff
+ * @typedef {{
+ *   index: OccupancyIndex,
+ *   server?: ServerData,
+ *   universePlanets?: ApiPlanet[],
+ *   danger?: Map<number, import('../../domain/dangerScore.js').DangerProfile>,
+ * }} ApiContextHandoff
  */
 
 /** @type {ApiContextHandoff | null} */

@@ -57,3 +57,33 @@ export function rescanAtFor(rescan, playerId, coord) {
   if (!rescan) return 0;
   return Math.max(rescan[playerId] || 0, rescan[coord] || 0);
 }
+
+/**
+ * Drop rescan entries that can no longer change any planet's status. A mark
+ * older than the stale horizon is provably redundant: any report OLDER than it
+ * is also older than `nowMs − staleMs`, i.e. already `stale` without the mark
+ * (see {@link scanStatus} — the rescan branch only matters for reports the
+ * stale branch wouldn't catch). The map was previously never cleaned, so
+ * one-off marks accumulated forever. Uses the DEFAULT stale threshold as the
+ * horizon — per-player cadences (domain/scanPriority.staleMsFor) are only ever
+ * SHORTER, so pruning at the 7-day default never revives a hidden mark.
+ *
+ * Returns the same reference when nothing was pruned, so store hydrates can
+ * cheaply skip a no-op write.
+ *
+ * @param {Record<string, number>} rescan
+ * @param {number} nowMs
+ * @param {number} [staleMs]
+ * @returns {Record<string, number>}
+ */
+export function pruneRescan(rescan, nowMs, staleMs = SPY_STALE_MS) {
+  const cutoff = nowMs - staleMs;
+  const keys = Object.keys(rescan);
+  if (!keys.some((k) => rescan[k] < cutoff)) return rescan;
+  /** @type {Record<string, number>} */
+  const out = {};
+  for (const k of keys) {
+    if (rescan[k] >= cutoff) out[k] = rescan[k];
+  }
+  return out;
+}

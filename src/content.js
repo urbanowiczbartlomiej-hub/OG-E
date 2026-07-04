@@ -70,6 +70,7 @@ import { initColonizeDecisionsStore } from './state/colonizeDecisions.js';
 import { initTargetReportsStore } from './state/targets.js';
 import { initProximityReportsStore } from './state/proximityReports.js';
 import { initWatchListStore } from './state/watchList.js';
+import { initActivityObsStore } from './state/activityObs.js';
 
 import { installColonyRecorder } from './features/colonyRecorder.js';
 import { installPlanetBarCapture } from './features/planetBarCapture.js';
@@ -160,6 +161,11 @@ initProximityReportsStore();
 // Watch-list (per-universe, chrome.storage). Hydrated here so the in-game scan
 // FAB sees the players the user starred in the dashboard Targets sub-tab.
 initWatchListStore();
+// Galaxy-activity rings (per-universe, chrome.storage). Auto-installs its own
+// `oge:galaxyScanned` listener (like initScansStore) and records watched
+// players' per-body activity markers — the routine tracker's dense, probe-free
+// second source. Reads the watch list above for its watched-only write gate.
+initActivityObsStore();
 
 // The alarmClock master switch + ntfy token live in `settings.js` (regular
 // localStorage Settings, authored in the in-game OG-E settings panel) — wired

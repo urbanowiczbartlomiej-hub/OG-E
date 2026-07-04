@@ -44,8 +44,11 @@ const crossFeatureZones = featureNames.map((name) => ({
 
 export default [
   {
-    // Generated/vendored output and tooling caches are never linted.
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**', '**/*.min.js'],
+    // Generated/vendored output and tooling caches are never linted. `.claude/`
+    // is gitignored per-project state (Claude Code's worktrees + their own built
+    // `dist/`); a nested worktree's `dist/**` isn't caught by the root `dist/**`
+    // glob, so ignore the whole dir or `eslint .` lints thousands of bundled lines.
+    ignores: ['dist/**', 'node_modules/**', 'coverage/**', '**/*.min.js', '.claude/**'],
   },
 
   js.configs.recommended,

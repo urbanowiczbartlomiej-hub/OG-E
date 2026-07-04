@@ -43,6 +43,9 @@ import {
 } from '../../domain/apiOccupancy.js';
 import { readApiCache, writeApiCache } from '../../state/apiCache.js';
 import { readOwnProfile } from '../../state/ownProfile.js';
+import { playersStore } from '../../state/players.js';
+import { targetReportsStore } from '../../state/targets.js';
+import { joinDangerProfiles } from '../../domain/dangerJoin.js';
 import { setApiContext } from '../shared/apiContextStore.js';
 
 /** localStorage flag (string `'1'`) that opts into the on-load probe fetch. */
@@ -84,6 +87,10 @@ const UNIVERSE_RETRY_COOLDOWN = 6 * HOUR;
  *   Raw occupied-planet rows (coords + owner id) — the scan FAB's per-player coords.
  * @property {{ ranks: Record<string, import('../../domain/apiOccupancy.js').ApiRank>, timestamp?: number }} military
  *   Military ranks (category 1, type 3) — kept for later threat scoring.
+ * @property {Map<number, import('../../domain/dangerScore.js').DangerProfile>} danger
+ *   Per-player danger profiles, built by the SAME `domain/dangerJoin.js` recipe
+ *   the dashboard uses — the scan planner's D input (the FAB must rank targets
+ *   exactly like the dashboard's plan strip).
  * @property {number} builtAt
  * @property {string[]} fetched   Which feeds were hit over the network this call.
  */
@@ -283,6 +290,17 @@ export async function getContext(opts = {}) {
     ownPlayerId,
   });
 
+  // Danger profiles for the in-game scan planner (§6.7) — the SAME join the
+  // dashboard's loadAll runs, over the same cache + live caches, so the Spy
+  // FAB proposes exactly what the dashboard's plan strip lists first. Cheap
+  // relative to the fetch/parse work above and computed once per context build.
+  const danger = joinDangerProfiles({
+    apiCache: cache,
+    livePlayers: playersStore.get(),
+    targetReports: targetReportsStore.get(),
+    ownId: ownPlayerId,
+  }).dangerProfiles;
+
   /** @type {ApiContext} */
   const ctx = {
     index,
@@ -294,6 +312,7 @@ export async function getContext(opts = {}) {
       ranks: cache.military ? cache.military.ranks : {},
       timestamp: cache.military ? cache.military.timestamp : undefined,
     },
+    danger,
     builtAt: Date.now(),
     fetched,
   };

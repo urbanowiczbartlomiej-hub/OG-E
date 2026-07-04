@@ -8,19 +8,21 @@
 //
 // # What it computes
 //
-// The button walks the user's WATCH-LIST (players starred in the dashboard
-// Targets sub-tab) and proposes the next planet that needs a scan — one whose
-// owner has no spy report on file, or whose newest report is stale (> 7 days,
-// since defenses/fleet drift). One tap sends one espionage fleet to that planet
-// (via the shared fleetCourier — TOS: 1 click → 1 server action), then the
-// button advances to the next. When nothing is left to scan it offers a "read
-// reports" jump to the messages component (the user's PS request).
+// The button proposes the TOP entry of the shared scan plan
+// (`domain/scanPriority.buildScanPlan`): every watched player's planet that
+// needs a scan — no report on file, report stale (per-player cadence: hot
+// targets go stale sooner), or an explicit re-scan flag — ranked by
+// danger × staleness × activity-window bonus. The dashboard's "suggested scan
+// order" strip runs the SAME ranking, so both surfaces always agree on what's
+// next. One tap sends one espionage fleet to that planet (via the shared
+// fleetCourier — TOS: 1 click → 1 server action), then the button advances to
+// the next. When nothing is left to scan it offers a "read reports" jump to
+// the messages component (the user's PS request).
 //
 // No DOM, no timers, no storage, no `location` — the index.js orchestrator
 // feeds everything through `env` and reads `location` at the call sites.
 
-import { playerPlanets } from '../../domain/targets.js';
-import { scanStatus, needsScan, rescanAtFor, SPY_STALE_MS } from '../../domain/spyScan.js';
+import { buildScanPlan } from '../../domain/scanPriority.js';
 
 export { SPY_STALE_MS } from '../../domain/spyScan.js';
 
@@ -42,16 +44,11 @@ export const BG_SPY_DONE = '#34506b';
  */
 
 /**
- * @typedef {object} SpyEnv
- * @property {string[]} players                Watched player ids (scan order).
- * @property {Array<{coords: string, player?: number}>} universePlanets
- *   universe.xml occupancy rows (source of each player's planet coords).
- * @property {Record<string, Record<string, number>>} spiedByPlayer
- *   playerId → ("g:s:p" coord → newest report ts, epoch SECONDS).
- * @property {Set<string>} [sentCoords]        "g:s:p" coords sent this session (skip).
- * @property {Record<string, number>} [rescan]  player id / "g:s:p" coord → re-scan-requested ts (ms).
- * @property {number} nowMs                    Clock for staleness.
- * @property {number} [staleMs]                Stale threshold (default SPY_STALE_MS).
+ * @typedef {import('../../domain/scanPriority.js').ScanPlanEnv} SpyEnv
+ *   The planner env (see domain/scanPriority.js): watched players, universe
+ *   planet rows, per-coord report freshness, rescan flags, session sent-coords,
+ *   the clock, and — when the API context has them — per-player danger (D) and
+ *   activity summaries for the priority ranking.
  */
 
 /**
@@ -59,53 +56,48 @@ export const BG_SPY_DONE = '#34506b';
  * @property {SpyTarget | null} candidate   Next planet to scan, or null when done.
  * @property {number} remaining             Planets still needing a scan.
  * @property {boolean} hasWatched           Any players are on the watch-list.
+ * @property {string} [why]                 The candidate's wording-safe reason line.
  */
 
 /**
- * Pure `env → SpyContext`: the next planet needing a scan (no report, stale, or
- * re-scan-flagged — see `domain/spyScan.scanStatus`) across the watched players
- * (in watch-list order, planets galaxy→system→position via {@link playerPlanets})
- * plus how many remain. Coords already sent this session are skipped so the
- * button advances instead of re-proposing them while a probe is in flight.
+ * Pure `env → SpyContext`: the TOP entry of the shared scan plan (see
+ * `domain/scanPriority.buildScanPlan` — danger × staleness × window bonus,
+ * deterministic tiebreak) plus how many planets still need a scan. Coords
+ * already sent this session are skipped so the button advances instead of
+ * re-proposing them while a probe is in flight.
  *
  * @param {SpyEnv} env
  * @returns {SpyContext}
  */
 export function deriveSpy(env) {
-  const players = env.players || [];
-  const staleMs = env.staleMs ?? SPY_STALE_MS;
-  /** @type {SpyTarget | null} */
-  let candidate = null;
-  let remaining = 0;
-  for (const pid of players) {
-    const coordTs = env.spiedByPlayer ? env.spiedByPlayer[pid] : undefined;
-    for (const p of playerPlanets(env.universePlanets, pid)) {
-      const coord = `${p.galaxy}:${p.system}:${p.position}`;
-      if (env.sentCoords && env.sentCoords.has(coord)) continue;
-      const status = scanStatus({
-        reportTsSec: coordTs ? coordTs[coord] : undefined,
-        nowMs: env.nowMs,
-        rescanAtMs: rescanAtFor(env.rescan, pid, coord),
-        staleMs,
-      });
-      if (needsScan(status)) {
-        remaining += 1;
-        if (!candidate) candidate = { ...p, playerId: pid };
+  const { entries } = buildScanPlan(env);
+  const top = entries.length ? entries[0] : null;
+  return {
+    candidate: top
+      ? {
+        galaxy: top.galaxy, system: top.system, position: top.position, playerId: top.playerId,
       }
-    }
-  }
-  return { candidate, remaining, hasWatched: players.length > 0 };
+      : null,
+    remaining: entries.length,
+    hasWatched: (env.players || []).length > 0,
+    ...(top ? { why: top.why } : {}),
+  };
 }
 
 /**
- * Pure `SpyContext → Paint` for the idle / candidate / done states. The armed
- * "Send!" state is painted by the orchestrator (it owns the courier step), the
- * same split sendColony uses.
+ * Pure `(SpyContext, preflight?) → Paint` for the idle / candidate / done
+ * states. The armed "Send!" state is painted by the orchestrator (it owns the
+ * courier step), the same split sendColony uses.
+ *
+ * `preflight` is the probe-availability readout (from the fleetdispatch
+ * snapshot, when on that page): painting the shortage BEFORE the tap replaces
+ * the old flow of discovering it via a failed select().
  *
  * @param {SpyContext} ctx
+ * @param {{ have: number, need: number } | null} [preflight]
  * @returns {Paint}
  */
-export function renderSpy(ctx) {
+export function renderSpy(ctx, preflight) {
   if (!ctx.hasWatched) {
     return { text: 'Spy', subtext: 'no targets', bg: BG_SPY_IDLE, dim: true };
   }
@@ -113,9 +105,22 @@ export function renderSpy(ctx) {
     return { text: 'Reports', subtext: 'all scanned ✓', bg: BG_SPY_DONE };
   }
   const c = ctx.candidate;
+  const coords = `[${c.galaxy}:${c.system}:${c.position}]`;
+  if (preflight && preflight.have < preflight.need) {
+    // Not enough probes on THIS planet for the armed order — say so up front.
+    if (preflight.have <= 0) {
+      return { text: 'No probes!', subtext: coords, bg: BG_SPY_ERROR };
+    }
+    return {
+      text: 'Spy',
+      subtext: `${coords} ·${ctx.remaining}`,
+      hint: `${preflight.have}/${preflight.need} probes`,
+      bg: BG_SPY_IDLE,
+    };
+  }
   return {
     text: 'Spy',
-    subtext: `[${c.galaxy}:${c.system}:${c.position}] ·${ctx.remaining}`,
+    subtext: `${coords} ·${ctx.remaining}`,
     bg: BG_SPY_IDLE,
   };
 }

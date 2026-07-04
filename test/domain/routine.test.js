@@ -194,3 +194,88 @@ describe('summarizeRoutine — timeline', () => {
     expect(r.timeline[0].resTotal).toBe(5);
   });
 });
+
+describe('summarizeRoutine — galaxy activity as a second source (F3)', () => {
+  const recentT = Math.floor((NOW_MS - DAY_MS) / 1000);
+
+  it('counts a galaxy-view activity marker as an activity sample', () => {
+    const r = summarizeRoutine(
+      [{ coord: '1:1:1', history: [], activity: [{ t: recentT, m: 0 }] }],
+      NOW_MS,
+    );
+    expect(r.activity.samples).toBe(1);
+    expect(r.activity.sources).toEqual({ reports: 0, galaxy: 1 });
+    expect(r.activity.galaxyLooks).toBe(1);
+    expect(r.activity.discounted).toBe(0);
+  });
+
+  it('counts BOTH sources when a report and a galaxy look are on distinct interactions', () => {
+    // A report activity marker (interaction ~2h before recentT) + a galaxy marker
+    // (interaction ~recentT). Well apart → no dedup, both counted per source.
+    const r = summarizeRoutine(
+      [{
+        coord: '1:1:1',
+        history: [{ ts: recentT - 4 * 3600, activityMin: 60 }],
+        activity: [{ t: recentT, m: 0 }],
+      }],
+      NOW_MS,
+    );
+    expect(r.activity.samples).toBe(2);
+    expect(r.activity.sources).toEqual({ reports: 1, galaxy: 1 });
+  });
+
+  it('a "no marker" galaxy look is coverage (galaxyLooks) but not an activity sample', () => {
+    const r = summarizeRoutine(
+      [{ coord: '1:1:1', history: [], activity: [{ t: recentT, m: -1 }] }],
+      NOW_MS,
+    );
+    expect(r.activity.samples).toBe(0);
+    expect(r.activity.galaxyLooks).toBe(1);
+    expect(r.observations).toBe(1); // the look still counts as an observation
+  });
+
+  it('exposes the peak window (for the scan planner windowBonus) once ≥ pattern', () => {
+    // 6 galaxy markers all implying the SAME local hour (whole-day spacing keeps
+    // the wall-clock hour while ts stays inside recency).
+    const base = Math.floor((NOW_MS - DAY_MS) / 1000);
+    const activity = Array.from({ length: 6 }, (_, i) => ({ t: base - i * 24 * 3600, m: 0 }));
+    const r = summarizeRoutine([{ coord: '1:1:1', history: [], activity }], NOW_MS);
+    expect(r.activity.gate).toBe('pattern');
+    expect(r.activity.peak).toBeDefined();
+    const hour = new Date(base * 1000).getHours();
+    // The 5-hour peak window contains the clustered hour.
+    const { startH, endH } = /** @type {{startH:number,endH:number}} */ (r.activity.peak);
+    const inside = startH <= endH ? hour >= startH && hour <= endH : hour >= startH || hour <= endH;
+    expect(inside).toBe(true);
+  });
+});
+
+describe('summarizeRoutine — self-induced discount (F3, read side)', () => {
+  const P = Math.floor((NOW_MS - DAY_MS) / 1000); // a probe-arrival timestamp
+
+  it('drops a galaxy marker our own probe lit, counting it in `discounted`', () => {
+    // A report at ts=P (a probe arrival, no activity signal of its own) + a
+    // galaxy marker 15 min later implying an interaction right at P → our probe.
+    const r = summarizeRoutine(
+      [{
+        coord: '1:1:1',
+        history: [{ ts: P }], // probe timestamp, no activityMin
+        activity: [{ t: P + 900, m: 15 }], // implies interaction ≈ P
+        latestTs: P,
+      }],
+      NOW_MS,
+    );
+    expect(r.activity.samples).toBe(0);
+    expect(r.activity.discounted).toBe(1);
+  });
+
+  it('does NOT discount a report activity marker against its OWN timestamp', () => {
+    // The report's own probe arrival must not cancel the reading it carries.
+    const r = summarizeRoutine(
+      [{ coord: '1:1:1', history: [{ ts: P, activityMin: 30 }], latestTs: P }],
+      NOW_MS,
+    );
+    expect(r.activity.samples).toBe(1);
+    expect(r.activity.discounted).toBe(0);
+  });
+});

@@ -789,9 +789,18 @@
   </div>
   <div class="server-map-panel" id="spyMapBlock" style="display:none;margin-bottom:14px;">
     <div style="color:#9aa;font-size:12px;margin-bottom:6px;">Your planets (white) + your watched players', coloured by <strong style="color:#cfd6dd;">relationship</strong> (enemy red · friend green · neutral grey) and sized by danger. Set a player's relationship in their dossier; click a marker to open it.</div>
+    <label style="display:inline-block;cursor:pointer;color:#9aa;font-size:12px;margin-bottom:6px;"
+      title="Rings every tracked body close enough to hit one of your planets within 8 hours at RIP (Deathstar) speed — the slowest attack ship, so anything faster reaches you sooner. Positions from the public API.">
+      <input type="checkbox" id="spyMapReach"> who can reach you (≤8 h, RIP-speed)
+    </label>
     <div id="spyMapLegend" style="display:none;flex-wrap:wrap;gap:4px 12px;margin-bottom:8px;font-size:12px;color:#cfd6dd;"></div>
     <div id="spyglassMapHost"></div>
   </div>
+  <details style="margin-bottom:10px;"
+    title="Ranks your scan list by danger × intel staleness (× a small bump when a target's observed activity window is open). A plan only — the in-game Spy button proposes the same order, and every probe stays one deliberate tap.">
+    <summary style="cursor:pointer;color:#9aa;font-size:13px;list-style:none;" id="scanPlanSummary">🧭 Suggested scan order</summary>
+    <div id="scanPlanStrip" style="margin-top:8px;"></div>
+  </details>
   <div id="targetsContainer"></div>
 </section>
 

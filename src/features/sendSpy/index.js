@@ -30,7 +30,9 @@
 import { settingsStore } from '../../state/settings.js';
 import { watchListStore } from '../../state/watchList.js';
 import { targetReportsStore } from '../../state/targets.js';
-import { latestOf } from '../../domain/targetReports.js';
+import { activityObsStore } from '../../state/activityObs.js';
+import { spiedCoordsByPlayer } from '../../domain/targetReports.js';
+import { summarizeRoutine, routineBodies } from '../../domain/routine.js';
 import { createButton as makeButton, labelLines } from '../shared/button.js';
 import { EYE_GLYPH } from '../shared/buttonGlyphs.js';
 import {
@@ -41,6 +43,7 @@ import {
   readyToDispatch,
   installFleetCourier,
   bareFleetdispatchUrl,
+  shipAvailability,
 } from '../shared/fleetCourier.js';
 import { installFabSettingsLifecycle } from '../shared/fabSettingsLifecycle.js';
 import { getApiContext } from '../shared/apiContextStore.js';
@@ -48,6 +51,7 @@ import { SHIP_ESPIONAGE_PROBE, TARGET_PLANET, MISSION_ESPIONAGE } from '../../do
 import { OWNER_SPY } from '../../domain/fleetOwnership.js';
 import { ingameComponentUrl } from '../../domain/ogameUrl.js';
 import { clock } from '../../lib/clock.js';
+import { readSpySentMap, markSpySent } from '../../lib/spySentSession.js';
 import {
   deriveSpy,
   renderSpy,
@@ -66,8 +70,6 @@ export { deriveSpy, renderSpy } from './pure.js';
 const BUTTON_ID = 'oge-send-spy';
 const SEND_HALF_ID = 'oge-spy-send';
 const REPAINT_TICK_MS = 2000;
-/** sessionStorage key (page origin, per tab) for coords sent this session. */
-const SENT_COORDS_KEY = 'oge_spySentCoords';
 /**
  * How long to hold the busy lock after a successful dispatch. The game reloads
  * the page within ~1 s on the happy path; this safety net releases the lock if
@@ -94,65 +96,64 @@ let spyTarget = null;
 let sentLockTimer = null;
 
 // ─── sent-coords (survives the post-send reload via sessionStorage) ─────────
+// Shared module (lib/spySentSession.js): this feature marks sends with their
+// timestamp; state/activityObs reads the TIMES for the self-induced-activity
+// discount (a marker our own probe lit must not enter the routine).
 
 /**
  * Coords sent this browser-tab session, so a just-probed planet isn't
  * re-proposed across the post-send page reload before its report lands.
  * @returns {Set<string>}
  */
-const getSentCoords = () => {
-  try {
-    const raw = window.sessionStorage.getItem(SENT_COORDS_KEY);
-    const arr = raw ? JSON.parse(raw) : [];
-    return new Set(Array.isArray(arr) ? arr.map(String) : []);
-  } catch {
-    return new Set();
-  }
-};
+const getSentCoords = () => new Set(Object.keys(readSpySentMap()));
 
 /**
- * Mark a coord as sent this session.
+ * Mark a coord as sent this session (with the send time — the discount window
+ * anchor).
  * @param {SpyTarget} t
  * @returns {void}
  */
 const markSent = (t) => {
-  const set = getSentCoords();
-  set.add(`${t.galaxy}:${t.system}:${t.position}`);
-  try {
-    window.sessionStorage.setItem(SENT_COORDS_KEY, JSON.stringify([...set]));
-  } catch {
-    /* sessionStorage unavailable — degrade to in-memory only (no persistence). */
-  }
+  markSpySent(`${t.galaxy}:${t.system}:${t.position}`, Date.now());
 };
 
 // ─── env capture (the one impure read of the derive pipeline) ───────────────
 
 /**
- * Project the espionage-report cache into `playerId → (coord → newest ts)`. The
- * report key is a bodyKey "g:s:p:type"; strip the trailing ":type" for the coord.
- * @returns {Record<string, Record<string, number>>}
+ * Per-watched-player danger D (0..100) from the apiContext handoff's profiles
+ * (built by the SAME domain/dangerJoin recipe the dashboard uses). `undefined`
+ * before the handoff populates — the planner then ranks danger-neutral.
+ * @returns {Record<string, number> | undefined}
  */
-const spiedCoordsByPlayer = () => {
-  const reports = targetReportsStore.get();
-  /** @type {Record<string, Record<string, number>>} */
+const dangerByPlayer = () => {
+  const danger = getApiContext()?.danger;
+  if (!danger) return undefined;
+  /** @type {Record<string, number>} */
   const out = {};
-  for (const pid of Object.keys(reports)) {
+  for (const pid of watchListStore.get().players) {
+    const prof = danger.get(Number(pid));
+    if (prof) out[pid] = prof.danger * 100;
+  }
+  return out;
+};
+
+/**
+ * Per-watched-player activity summary (spy history + galaxy rings) — the
+ * planner's `windowBonus` input. Cheap: ≤ a few hundred lite observations per
+ * watched player.
+ * @param {number} nowMs
+ * @returns {Record<string, import('../../domain/routine.js').ActivitySummary>}
+ */
+const activityByPlayer = (nowMs) => {
+  const reports = targetReportsStore.get();
+  const acts = activityObsStore.get();
+  /** @type {Record<string, import('../../domain/routine.js').ActivitySummary>} */
+  const out = {};
+  for (const pid of watchListStore.get().players) {
     const bucket = reports[pid];
-    if (!bucket) continue;
-    /** @type {Record<string, number>} */
-    const coordTs = {};
-    for (const key of Object.keys(bucket)) {
-      const report = latestOf(bucket[key]);
-      // A moon spy must NOT mark the planet spied: their bodyKeys collapse to the
-      // same "g:s:p" once ":type" is stripped, and the scan FAB reasons about
-      // planets. Skip moon reports so a moon scan doesn't hide a planet still
-      // needing one.
-      if (report.planetType === 3) continue;
-      const lastColon = key.lastIndexOf(':');
-      const coord = lastColon >= 0 ? key.slice(0, lastColon) : key;
-      coordTs[coord] = report.timestamp ?? 0;
-    }
-    out[pid] = coordTs;
+    const rings = acts[pid];
+    if (!bucket && !rings) continue;
+    out[pid] = summarizeRoutine(routineBodies(bucket, rings), nowMs).activity;
   }
   return out;
 };
@@ -161,14 +162,34 @@ const spiedCoordsByPlayer = () => {
  * Snapshot every input of {@link deriveSpy}.
  * @returns {import('./pure.js').SpyEnv}
  */
-const captureEnv = () => ({
-  players: watchListStore.get().players,
-  universePlanets: getApiContext()?.universePlanets ?? [],
-  spiedByPlayer: spiedCoordsByPlayer(),
-  rescan: watchListStore.get().rescan,
-  sentCoords: getSentCoords(),
-  nowMs: Date.now(),
-});
+const captureEnv = () => {
+  const nowMs = Date.now();
+  return {
+    players: watchListStore.get().players,
+    universePlanets: getApiContext()?.universePlanets ?? [],
+    spiedByPlayer: spiedCoordsByPlayer(targetReportsStore.get()),
+    rescan: watchListStore.get().rescan,
+    sentCoords: getSentCoords(),
+    nowMs,
+    dangerByPlayer: dangerByPlayer(),
+    activityByPlayer: activityByPlayer(nowMs),
+  };
+};
+
+/**
+ * Probe availability on the CURRENT planet vs the armed order — `null` when no
+ * fleetdispatch snapshot exists yet (off the page). Painting the shortage
+ * BEFORE the tap replaces discovering it via a failed select().
+ * @returns {{ have: number, need: number } | null}
+ */
+const probePreflight = () => {
+  const avail = shipAvailability();
+  if (!avail) return null;
+  return {
+    have: avail[SHIP_ESPIONAGE_PROBE] ?? 0,
+    need: watchListStore.get().probes,
+  };
+};
 
 // ─── paint ──────────────────────────────────────────────────────────────────
 
@@ -204,7 +225,7 @@ const refresh = () => {
     });
     return;
   }
-  paintZone(renderSpy(deriveSpy(captureEnv())));
+  paintZone(renderSpy(deriveSpy(captureEnv()), probePreflight()));
 };
 
 // ─── click handler (two intentional taps, mirrors sendColony) ───────────────
@@ -218,7 +239,14 @@ const refresh = () => {
 const spyErrorPaint = (reason, t) => {
   const coords = `[${t.galaxy}:${t.system}:${t.position}]`;
   if (reason === 'allFleets') return { text: 'All fleets!', bg: BG_SPY_ERROR };
-  if (reason === 'noShip') return { text: 'No probes!', subtext: coords, bg: BG_SPY_ERROR };
+  // Two distinct courier failures, one user-facing meaning for a probe order:
+  // 'noShips' (plural) = select() couldn't fill the order from the planet's
+  // hangar; 'noShip' (singular) = the target-validation path's missing-ship
+  // case. The old compare matched only the singular, so the common empty-
+  // hangar case fell through to the raw code label.
+  if (reason === 'noShip' || reason === 'noShips') {
+    return { text: 'No probes!', subtext: coords, bg: BG_SPY_ERROR };
+  }
   return { text: reason || 'Failed', subtext: coords, bg: BG_SPY_ERROR };
 };
 

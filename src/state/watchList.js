@@ -30,6 +30,7 @@ import { createStore } from '../lib/createStore.js';
 import { persist } from '../lib/persist.js';
 import { chromeStore } from '../lib/storage.js';
 import { currentUniverseKey } from './universeKey.js';
+import { pruneRescan } from '../domain/spyScan.js';
 
 /**
  * @typedef {'enemy'|'friend'|'neutral'} Relationship
@@ -125,7 +126,13 @@ export const initWatchListStore = () => {
     store: watchListStore,
     load: async () => {
       const raw = await chromeStore.get(currentKey());
-      return raw == null ? null : normalizeWatchList(raw);
+      if (raw == null) return null;
+      const cfg = normalizeWatchList(raw);
+      // Hydrate-time hygiene (§6.7): drop rescan marks old enough to be
+      // redundant (any report they'd flag is already stale) — the map was
+      // previously append-only and never cleaned. Persists on the next write.
+      cfg.rescan = pruneRescan(cfg.rescan, Date.now());
+      return cfg;
     },
     save: (value) => chromeStore.set(currentKey(), value),
     debounceMs: 200,

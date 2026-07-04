@@ -1,7 +1,7 @@
 // @ts-check
 
 import { describe, it, expect } from 'vitest';
-import { scanStatus, needsScan, rescanAtFor, SPY_STALE_MS } from '../../src/domain/spyScan.js';
+import { scanStatus, needsScan, rescanAtFor, pruneRescan, SPY_STALE_MS } from '../../src/domain/spyScan.js';
 
 // A fixed "now" used everywhere — never call Date.now() in a pure-logic test.
 const NOW = 1_000_000_000_000;
@@ -119,5 +119,53 @@ describe('rescanAtFor', () => {
   it('treats a falsy/zero value as absent', () => {
     expect(rescanAtFor({ [playerId]: 0, [coord]: 0 }, playerId, coord)).toBe(0);
     expect(rescanAtFor({ [playerId]: 0, [coord]: 5 }, playerId, coord)).toBe(5);
+  });
+});
+
+describe('pruneRescan', () => {
+  it('returns the SAME object reference when every entry is recent (nothing to prune)', () => {
+    const rescan = {
+      p1: NOW - 1000, // just now
+      '1:2:3': NOW - SPY_STALE_MS, // exactly at the horizon → still kept
+    };
+    const out = pruneRescan(rescan, NOW);
+    expect(out).toBe(rescan); // identity: no-op skips the copy
+    expect(out).toEqual({ p1: NOW - 1000, '1:2:3': NOW - SPY_STALE_MS });
+  });
+
+  it('drops entries older than the 7-day horizon, keeping the recent ones', () => {
+    const rescan = {
+      stale: NOW - SPY_STALE_MS - 1, // one ms past the horizon → pruned
+      fresh: NOW - 60_000, // a minute ago → kept
+    };
+    const out = pruneRescan(rescan, NOW);
+    expect(out).not.toBe(rescan); // a new object, since something was pruned
+    expect(out).toEqual({ fresh: NOW - 60_000 });
+  });
+
+  it('honours a custom (shorter) staleMs that the default horizon would keep', () => {
+    const staleMs = 60 * 60 * 1000; // one hour
+    const rescan = {
+      recent: NOW - 30 * 60 * 1000, // 30 min ago → within the hour, kept
+      old: NOW - 2 * 60 * 60 * 1000, // 2 h ago → past the hour, pruned…
+    };
+    // …but the default 7-day horizon would keep BOTH, so this proves staleMs is used.
+    expect(pruneRescan(rescan, NOW)).toBe(rescan);
+    const out = pruneRescan(rescan, NOW, staleMs);
+    expect(out).not.toBe(rescan);
+    expect(out).toEqual({ recent: NOW - 30 * 60 * 1000 });
+  });
+
+  it('returns the same (empty) reference for an empty map', () => {
+    const rescan = /** @type {Record<string, number>} */ ({});
+    expect(pruneRescan(rescan, NOW)).toBe(rescan);
+  });
+
+  it('keeps an entry exactly at the cutoff boundary (test is strictly <)', () => {
+    // value === nowMs - staleMs is NOT < cutoff, so it is retained.
+    const rescan = { edge: NOW - SPY_STALE_MS };
+    const out = pruneRescan(rescan, NOW);
+    expect(out).toBe(rescan); // nothing pruned → same reference
+    expect(out).toEqual({ edge: NOW - SPY_STALE_MS });
   });
 });

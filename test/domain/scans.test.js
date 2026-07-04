@@ -9,7 +9,7 @@
 // @ts-check
 
 import { describe, it, expect } from 'vitest';
-import { classifyPosition, mergeScanResult } from '../../src/domain/scans.js';
+import { classifyPosition, mergeScanResult, parseActivity } from '../../src/domain/scans.js';
 
 describe('classifyPosition', () => {
   it('returns empty status for a slot with no planets and no player', () => {
@@ -354,5 +354,138 @@ describe('mergeScanResult', () => {
 
     expect(existing).toEqual(existingBefore);
     expect(fresh).toEqual(freshBefore);
+  });
+});
+
+describe('parseActivity', () => {
+  // Decodes the game's per-body `activity: { showActivity, idleTime }` block
+  // into the canonical activity minute (0 = fresh dot, N = exact idle minutes,
+  // -1 = observed-no-marker, null = no observation / malformed). The scale is
+  // shared with the spy report's activityMin so both feed one routine model.
+
+  it('maps the fresh dot (showActivity 15) to 0 regardless of idleTime', () => {
+    // <15 min ago: the game shows the solid dot but no minute. idleTime is
+    // typically null here, but any value must collapse to the same 0.
+    expect(parseActivity({ showActivity: 15, idleTime: null })).toBe(0);
+    expect(parseActivity({ showActivity: 15, idleTime: 42 })).toBe(0);
+  });
+
+  it('returns the exact idle minute when showActivity is 60 and N is in [15,60]', () => {
+    // Minute shown: 15..60 inclusive passes through verbatim.
+    expect(parseActivity({ showActivity: 60, idleTime: 42 })).toBe(42);
+    expect(parseActivity({ showActivity: 60, idleTime: 15 })).toBe(15);
+    expect(parseActivity({ showActivity: 60, idleTime: 60 })).toBe(60);
+  });
+
+  it('returns -1 for showActivity === false (observed absence of a marker)', () => {
+    // Distinct from null: the game affirmatively reported "no activity in the
+    // last 60 min" — negative evidence the ring deliberately keeps.
+    expect(parseActivity({ showActivity: false })).toBe(-1);
+    expect(parseActivity({ showActivity: false, idleTime: null })).toBe(-1);
+  });
+
+  it('returns null when showActivity is 60 but idleTime is out of band or non-finite', () => {
+    // Below 15, above 60, or NaN/undefined → malformed → null.
+    expect(parseActivity({ showActivity: 60, idleTime: 14 })).toBeNull();
+    expect(parseActivity({ showActivity: 60, idleTime: 61 })).toBeNull();
+    expect(parseActivity({ showActivity: 60, idleTime: 0 })).toBeNull();
+    expect(parseActivity({ showActivity: 60, idleTime: null })).toBeNull();
+    expect(parseActivity({ showActivity: 60 })).toBeNull();
+    expect(parseActivity({ showActivity: 60, idleTime: 'x' })).toBeNull();
+  });
+
+  it('returns null for absent / non-object / unrecognised inputs (no observation)', () => {
+    // null / undefined / non-object / any other showActivity value → no signal.
+    expect(parseActivity(null)).toBeNull();
+    expect(parseActivity(undefined)).toBeNull();
+    expect(parseActivity(0)).toBeNull();
+    expect(parseActivity('nope')).toBeNull();
+    expect(parseActivity({})).toBeNull();
+    expect(parseActivity({ showActivity: 30, idleTime: 20 })).toBeNull();
+    expect(parseActivity({ showActivity: true })).toBeNull();
+  });
+});
+
+describe('classifyPosition — per-body activity fields', () => {
+  // classifyPosition now stamps `.activity` (from the live non-moon planet
+  // body) and `.moonActivity` (from the moon body) via parseActivity, each
+  // only when the parse is non-null. Planet and moon are tracked independently
+  // by the game, so each field comes from its own body.
+
+  it('stamps .activity from the planet body when showActivity 60 / idleTime 30', () => {
+    // Occupied slot whose planet carries an in-band minute → Position.activity
+    // === 30. Same occupied fixture shape as the other tests, plus activity.
+    const result = classifyPosition(
+      {
+        position: 8,
+        planets: [{ activity: { showActivity: 60, idleTime: 30 } }],
+        player: { playerId: 99, playerName: 'Bob' },
+      },
+      123,
+    );
+    expect(result).toEqual({
+      status: 'occupied',
+      player: { id: 99, name: 'Bob' },
+      activity: 30,
+    });
+  });
+
+  it('stamps .moonActivity from the moon body (fresh dot → 0)', () => {
+    // Slot with a live planet plus a moon whose activity is the fresh dot.
+    // The moon's activity lands in .moonActivity (=== 0), independent of the
+    // planet body (which carries no activity block here).
+    const result = classifyPosition(
+      {
+        position: 8,
+        planets: [{}, { isMoon: true, activity: { showActivity: 15, idleTime: null } }],
+        player: { playerId: 99, playerName: 'Bob' },
+      },
+      123,
+    );
+    expect(result).toEqual({
+      status: 'occupied',
+      player: { id: 99, name: 'Bob' },
+      flags: { hasMoon: true },
+      moonActivity: 0,
+    });
+  });
+
+  it('leaves .activity and .moonActivity undefined when no activity block is present', () => {
+    // The plain occupied fixture used elsewhere carries no activity data, so
+    // both optional fields must be absent (undefined) on the Position.
+    const result = classifyPosition(
+      {
+        position: 8,
+        planets: [{}],
+        player: { playerId: 99, playerName: 'Bob' },
+      },
+      123,
+    );
+    expect(result.activity).toBeUndefined();
+    expect(result.moonActivity).toBeUndefined();
+  });
+
+  it('reads planet and moon activity from their own bodies independently', () => {
+    // Both a planet activity (minute shown) and a moon activity (fresh dot) in
+    // one slot: .activity comes from the non-moon body, .moonActivity from the
+    // moon body — proving the two are sourced separately, not crossed.
+    const result = classifyPosition(
+      {
+        position: 8,
+        planets: [
+          { activity: { showActivity: 60, idleTime: 50 } },
+          { isMoon: true, activity: { showActivity: 15, idleTime: null } },
+        ],
+        player: { playerId: 99, playerName: 'Bob' },
+      },
+      123,
+    );
+    expect(result).toEqual({
+      status: 'occupied',
+      player: { id: 99, name: 'Bob' },
+      flags: { hasMoon: true },
+      activity: 50,
+      moonActivity: 0,
+    });
   });
 });

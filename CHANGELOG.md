@@ -4,6 +4,40 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.36.0] — 2026-07-05
+
+### Added
+
+- **The routine tracker now fills from the galaxy view, not just spy reports.**
+  The activity markers you already see while browsing the galaxy (colony hunting,
+  checking systems) now feed a watched player's **hour-of-day activity** — a far
+  denser source than the handful of reports you open, for zero extra probes. It
+  stays honest: a marker your **own probe** caused is excluded (so the tool never
+  measures its own scanning rhythm), the dossier names how many samples came from
+  each source, and "activity" still means a body was interacted with — never
+  "online".
+- **Suggested scan order.** A new strip on the Spyglass tab ranks your scan list
+  by danger × how stale your intel is, with a small nudge when a target's observed
+  active window is open right now. The in-game **Spy** button proposes the same
+  order — so what the dashboard lists first is exactly what the button offers next.
+  It stays one deliberate tap per probe; the strip has no send button of its own.
+- **Probe pre-flight on the Spy button.** On the fleet screen the button now shows
+  whether the current planet actually has enough probes for the scan — an early
+  "No probes!" or an "N/20 probes" hint — instead of only discovering a shortage
+  when the send fails.
+- **"Who can reach you" overlay** on the positions map (opt-in): rings every
+  tracked body close enough to land on one of *your* planets within 8 hours at
+  Deathstar (RIP) speed. Deathstar is the slowest attacker, so the ring is the
+  conservative floor — anything faster arrives sooner.
+
+### Fixed
+
+- **The Spy button's "No probes!" label now shows in every empty-hangar case**
+  (it previously caught only one of the two internal outcomes, so a plain empty
+  hangar showed a raw error instead).
+- **Old re-scan flags are cleaned up** on load — a flag old enough that any report
+  it would mark is already stale on age alone is dropped, so they no longer pile up.
+
 ## [1.35.0] — 2026-07-04
 
 ### Added

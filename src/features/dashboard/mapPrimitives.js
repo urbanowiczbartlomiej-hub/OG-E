@@ -279,7 +279,14 @@ export const RELATIONSHIP_COLORS = {
  * @property {string} name
  * @property {'enemy'|'friend'|'neutral'|'you'} relationship
  * @property {number} danger   0..100 — scales the marker size.
+ * @property {number} [reachH]  RIP-speed flight hours from THIS body to the
+ *   viewer's nearest planet (the inverted reach kernel — "who can reach me").
+ *   Set only when the caller computed the overlay; drives the ring + title.
+ * @property {boolean} [inReach]  reachH ≤ the caller's horizon → draw the ring.
  */
+
+/** The "in reach" ring colour (amber — distinct from every relationship hue). */
+export const REACH_RING_COLOR = '#ffb454';
 
 /**
  * The Spyglass "positions" map — the attack-planning / player-tracking view. An
@@ -339,11 +346,19 @@ export const renderPositionsMap = ({ hostEl, galaxies, systems, bodies, onPlayer
     const x = gutter + (b.system - 0.5) * cellW;
     const y = topPad + (b.galaxy - 1) * stride + (b.position - 0.5) * posPx;
     const m = document.createElement(onPlayerClick ? 'button' : 'span');
+    // "Who can reach me" overlay: an amber ring on a body close enough to hit
+    // one of the viewer's planets inside the horizon (caller-computed).
+    const ring = b.inReach && b.relationship !== 'you'
+      ? `box-shadow:0 0 0 2px ${REACH_RING_COLOR}cc;`
+      : '';
     m.style.cssText = `position:absolute;left:${x}px;top:${y}px;width:${size}px;height:${size}px;`
-      + `margin:${-size / 2}px 0 0 ${-size / 2}px;border-radius:50%;background:${col};`
+      + `margin:${-size / 2}px 0 0 ${-size / 2}px;border-radius:50%;background:${col};${ring}`
       + `border:1px solid #000a;padding:0;box-sizing:border-box;cursor:${onPlayerClick ? 'pointer' : 'default'};`;
     m.title = `${b.name} — ${b.galaxy}:${b.system}:${b.position}`
-      + (b.relationship === 'you' ? ' · you' : b.relationship !== 'neutral' ? ` · ${b.relationship}` : '');
+      + (b.relationship === 'you' ? ' · you' : b.relationship !== 'neutral' ? ` · ${b.relationship}` : '')
+      + (typeof b.reachH === 'number' && b.relationship !== 'you'
+        ? ` · ~${b.reachH < 10 ? b.reachH.toFixed(1) : Math.round(b.reachH)} h to your nearest planet (RIP-speed)`
+        : '');
     if (onPlayerClick) m.addEventListener('click', (e) => { e.preventDefault(); onPlayerClick(b.playerId); });
     wrap.appendChild(m);
   }

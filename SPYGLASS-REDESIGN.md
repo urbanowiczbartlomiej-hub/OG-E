@@ -103,31 +103,55 @@ strip in a follow-up. **Etap F remaining = F3** (galaxy-view activity capture + 
 discount — the dense probe-free source; §6.6bis). **Then Etap G** (scanPriority). Then release 1.35.0
 (reconcile tests incl. `routine`/`relationships`/`renderPositionsMap`).
 
+### DONE — session 3 (F3 + Etap G + reach overlay + cleanup) → SHIPPED as 1.36.0
+
+*(1.35.0 shipped WITHOUT F3/G — session 3 built them on `main` directly. User verified in the
+browser 2026-07-05; tests reconciled green (293 files / 4675 tests), typecheck + lint + build
+green; released as `chore(release): 1.36.0`. Reconciliation added: `domain/scanPriority`,
+`domain/activityObs`, `domain/dangerJoin`, `domain/routine` two-source+discount cases,
+`state/activityObs` behavioural, `lib/spySentSession`, `domain/spyScan.pruneRescan`,
+`domain/targetReports.spiedCoordsByPlayer`, `domain/scans.parseActivity`, sendSpy renderSpy
+preflight + noShips label. Also fixed: `eslint.config.mjs` now ignores `.claude/**` (a nested
+worktree's built `dist/` was polluting `eslint .`). Backlog for the still-deferred v3.1 items
+captured in IDEAS.md §6–9.)*
+
+| Piece | What shipped |
+|---|---|
+| **F3 capture** | `domain/scans.parseActivity` (galaxy `activity:{showActivity,idleTime}` → 0 / 15..60 / −1 enum, per body — planet AND moon) + `Position.activity`/`.moonActivity`; NEW `state/activityObs.js` (per-universe `pid→bodyKey→ring`, subscribes `oge:galaxyScanned` like state/players, **watched-only**, hydration-gated, 45-day hydrate sweep, wired in content.js); NEW `domain/activityObs.js` pure append rules — **self-induced discount** (probe-send window −2 min..+45 min), same-interaction dedup (implied-τ interval overlap), none-throttle 30 min, ring cap 48. |
+| **F3 discount plumbing** | NEW `lib/spySentSession.js` — the FAB's sent-coords sessionStorage moved here **with timestamps** (legacy array tolerated); sendSpy marks sends through it; the state recorder reads send times for the write-side discount. Read-side discount (opened reports, BOTH sources) lives in `domain/routine.js`. |
+| **F3 routine merge** | `summarizeRoutine` now takes `{coord, history, activity?, latestTs?}` bodies (NEW shared `routineBodies()` union-builder): activity strip counts BOTH sources, discounts self-induced (vs the body's own report timestamps), dedupes cross-source re-observations; `ActivitySummary` gains `sources{reports,galaxy}` + `discounted` + `galaxyLooks` + `peak{startH,endH}` (windowBonus input). Dashboard loadAll reads the `oge_activityObs` key (union of report+activity pids); dossier coverage row: "from N reports you opened + M galaxy sightings you browsed · K self-caused markers excluded". |
+| **G planner** | NEW `domain/scanPriority.js` — `staleMsFor(D)` (≥60→2 d, ≥30→4 d, else 7 d), `dangerWeight` (0.3+0.7·D/100), `stalenessWeight` (never 1.0 / rescan 0.9 / stale 0.3+0.2·overage capped 0.9), `windowBonus` (×1.3 inside the ≥pattern peak window), `buildScanPlan(env)` (deterministic: priority desc → watch order → g:s:p) with wording-safe `why` per entry. |
+| **G one-source-of-D** | NEW `domain/dangerJoin.js` — the dashboard's danger recipe (bodies denominator + estimateHiddenFleet spy refinement + buildDangerProfiles) extracted verbatim; dashboard loadAll now calls it, and `features/apiContext.getContext()` runs the SAME join in-game and attaches `danger` (Map) to the handoff (`apiContextStore` typedef extended). |
+| **G FAB** | `deriveSpy` = `buildScanPlan(env)[0]` (SpyEnv = ScanPlanEnv; env gains `dangerByPlayer` from the handoff profiles ×100 + `activityByPlayer` via routineBodies/summarizeRoutine over the two stores); `spiedCoordsByPlayer` projection moved to `domain/targetReports.js` (shared, moon-skip preserved); **pre-flight** `probePreflight()` over courier `shipAvailability()` → renderSpy paints `have/need probes` hint or an early "No probes!" BEFORE the tap; **label fix**: `spyErrorPaint` now maps BOTH `noShips` (select couldn't fill) and `noShip` (target validation) → "No probes!". |
+| **G strip** | Dashboard `#scanPlanStrip` (collapsed `<details>` above the table, mirrors the proximity strip): summary "🧭 Suggested scan order · N planets need a scan", top-8 rows "name [g:s:p] — why" (head row "← next suggested"), name-click → dossier, footer "The in-game Spy button proposes this order — one tap, one probe." **No send affordances.** Repainted from repaintTargets. |
+| **G prune** | `domain/spyScan.pruneRescan` (drop marks older than the stale horizon = provably redundant; same-ref fast path) applied in `state/watchList` hydrate. |
+| **Reach overlay** | Positions map opt-in checkbox `#spyMapReach` "who can reach you (≤8 h, RIP-speed)": inverted kernel — per tracked body, min `niszczHours(flightDistance(axisDelta…))` to YOUR nearest planet (donut-aware); `MapBody.reachH/.inReach` → amber ring + hours in the marker title + legend chip. RIP = slowest attacker ⇒ conservative floor. |
+| **Cleanup** | Dead E2b path stripped: `renderServerMap`/`renderOccupancyMap` `highlightColors` param + cell branch removed (nothing passed it since the positions-map redesign). |
+| **Docs** | `docs/ogame-fleet-mechanics.md` gains the "activity marker — exact encoding" section (galaxy JSON + report attr + the activity≠online trap + self-induced rule). fair-play.md already covered galaxy-view activity capture (GREEN) — no change needed. |
+
+**Deferred test debt from this session** (reconcile at the next release, per CLAUDE.md):
+`domain/activityObs` (append rules: discount window, τ-dedup, none-throttle, cap, out-of-order),
+`domain/routine` (two-source merge, read-side discount incl. own-report exclusion, sources/discounted/looks, peak),
+`domain/scanPriority` (weights, cadence, windowBonus wrap, plan determinism),
+`domain/dangerJoin` (parity with the old dashboard block), `domain/targetReports.spiedCoordsByPlayer`,
+`domain/spyScan.pruneRescan`, `lib/spySentSession` (legacy array), `state/activityObs` (watched gate,
+hydrate sweep, event wiring), sendSpy `renderSpy` preflight + `noShips` label, reach-overlay math.
+
 ### NEXT — future sessions, in order
 
 *(Etap D-strip is committed `f41f4a5` but not live-verified — open the messages tab with a
 real "obca flota dostrzeżona" alert and confirm the 🛡 strip populates; the code is green.)*
 
-1. **Etap E — the Spyglass map** (its own release, likely 1.36.0): multi-player overlay. A
-   genuine multi-day refactor — extract the private, state-glued `buildComposite`/
-   `buildScoreField`/`showPlayerOnMap`/`buildSystemCard` out of the 1,826-line `freeStreak.js`
-   into a shared `mapPrimitives.js`. See §6.9. Treat it as a big, isolated piece; `freeStreak.js`
-   is now settled (1.34.0 shipped) so touching it is allowed.
-2. **Etap F — routine VISUALS only** (foundation DONE — see the session-2 block above; **still
-   needs the ToolDev consult first — see below**). The store now already carries the
-   `{latest, history}` ring these visuals read (no schema change left). Remaining: galaxy-view
-   activity capture (`parseActivity` in `classifyPosition` + a per-body activity ring,
-   watched-only) with the **self-induced-activity discount** (§6.6bis); `domain/routine.js`;
-   and the activity-strip (two sources) + coverage rows + weekday pattern (`resTotal`) +
-   collection callout + spy timeline on the dossier + card. **Gated on the ToolDev OK.**
-3. **Etap G — scan planner** (`windowBonus` **needs the ToolDev consult**): `domain/scanPriority.js`
-   (danger×staleness×windowBonus), per-player `staleMs` cadence, FAB walks the order, "why next"
-   strip, `shipAvailability()` pre-flight (note: it's LIVE code used by `dailyRun` — add a
-   `sendSpy` consumer, don't "revive dead code"), `noShips`→"No probes!" label fix, rescan-map prune.
-4. **Release 1.35.0** — reconcile tests (new pure modules `raidVerdict`/`civilBaseline`/`routine`/
-   `scanPriority` + the store migration + `espionageReport` rich fields & proximity + `targets.js`
-   search + `dangerColor` + `proximityReports`), CHANGELOG, bump `package.json`+`manifest.json`,
-   `chore(release): 1.35.0`, push to `main`. Map/FS-bracketing/watchlist-sync → **1.36.0** (§12).
+1. **User browser-verification of session 3** (F3 galaxy capture → routine strip fills from
+   galaxy browsing; the 🧭 strip + FAB agree on the next target; pre-flight probe readout;
+   reach-overlay rings; rescan prune) → then **commit** the session-3 work on `main`.
+2. **Release 1.36.0** — reconcile the session-3 test debt (list in the session-3 block above)
+   + anything 1.35.0's reconcile deferred, CHANGELOG section, bump `package.json` +
+   `manifest.json`, `chore(release): 1.36.0`, push to `main` (confirm with the user first).
+3. **Still-open v3.1 leftovers** (each its own decision): FS-window bracketing (deferred until
+   real sampling density exists — the galaxy activity rings F3 now accumulates are exactly the
+   density source, so revisit after a few weeks of data); watchlist-card landing IA (§6.1/§6.3);
+   pts/ship spy calibration (§7 step 3); watchlist sync stays **cut** (C6 class, §10.4).
 
 ### Parallel USER action (do NOT block on it, but start it)
 

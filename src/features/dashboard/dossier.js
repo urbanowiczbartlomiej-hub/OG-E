@@ -456,7 +456,8 @@ function routineBlock(routine) {
 
   if (!routine || routine.observations === 0) {
     const empty = document.createElement('div');
-    empty.textContent = 'No history yet — this fills from the spy reports you open over time.';
+    empty.textContent = 'No history yet — this fills from the spy reports you open'
+      + ' and the galaxy views you browse over time.';
     empty.style.color = '#5f6b76';
     wrap.appendChild(empty);
     return wrap;
@@ -473,7 +474,15 @@ function routineBlock(routine) {
     wrap.appendChild(line);
     const cov = document.createElement('div');
     cov.style.cssText = 'color:#5f6b76;font-size:10px;';
-    cov.textContent = `hours 0–23 · from ${act.samples} report${act.samples === 1 ? '' : 's'} you opened`
+    // Coverage row (§6.6/§8): name each source's sample count so the strip
+    // visibly only knows what the user gathered; name the self-induced
+    // discount so a probe-heavy day can't be mistaken for target activity.
+    const src = act.sources;
+    const fromParts = [];
+    if (src.reports) fromParts.push(`${src.reports} report${src.reports === 1 ? '' : 's'} you opened`);
+    if (src.galaxy) fromParts.push(`${src.galaxy} galaxy sighting${src.galaxy === 1 ? '' : 's'} you browsed`);
+    cov.textContent = `hours 0–23 · from ${fromParts.join(' + ') || 'no samples'}`
+      + `${act.discounted ? ` · ${act.discounted} self-caused marker${act.discounted === 1 ? '' : 's'} excluded` : ''}`
       + `${act.gate === 'hint' ? ' (thin — a hint, not a pattern)' : ''} · "activity" = last interaction, not "online"`;
     wrap.appendChild(cov);
   }

@@ -69,6 +69,37 @@ export function historyOf(entry) {
 }
 
 /**
+ * Project the whole report store into `playerId → ("g:s:p" coord → newest
+ * PLANET report ts, epoch SECONDS)` — the freshness map the scan planner
+ * (domain/scanPriority) reasons over. Moon reports (type 3) are skipped: their
+ * bodyKey collapses to the planet's "g:s:p" once ":type" is stripped, and a
+ * moon scan must never mark the planet spied. Shared by the in-game Spy FAB
+ * and the dashboard's plan strip (feature→feature imports are forbidden, so
+ * the projection lives here).
+ * @param {Record<string, Record<string, BodyEntry | SpyReport>>} reports
+ * @returns {Record<string, Record<string, number>>}
+ */
+export function spiedCoordsByPlayer(reports) {
+  /** @type {Record<string, Record<string, number>>} */
+  const out = {};
+  for (const pid of Object.keys(reports || {})) {
+    const bucket = reports[pid];
+    if (!bucket) continue;
+    /** @type {Record<string, number>} */
+    const coordTs = {};
+    for (const key of Object.keys(bucket)) {
+      const report = latestOf(bucket[key]);
+      if (!report || report.planetType === 3) continue;
+      const lastColon = key.lastIndexOf(':');
+      const coord = lastColon >= 0 ? key.slice(0, lastColon) : key;
+      coordTs[coord] = report.timestamp ?? 0;
+    }
+    out[pid] = coordTs;
+  }
+  return out;
+}
+
+/**
  * Project a full {@link SpyReport} down to a lean {@link SpyReportLite} for the
  * history ring. Honours `revealed`: defence/fleet values accrue only from a
  * report that actually showed them (§9bis). Legacy reports (no `revealed`) came

@@ -48,21 +48,24 @@ import { parseTargetPositions } from '../../domain/histogram.js';
 import { populatePositionFilter, renderColonyChart } from './colony.js';
 import { renderFreeRegions, renderServerMap, selectCandidate, resetFreeSelection, highlightPin, _resetFreeStreakForTest } from './freeStreak.js';
 import { chipValue, setChipValue, wireChips, setChipsEnabled } from './chips.js';
-import { computeComposite, computeScoreField, renderPositionsMap, RELATIONSHIP_COLORS } from './mapPrimitives.js';
+import { computeComposite, computeScoreField, renderPositionsMap, RELATIONSHIP_COLORS, REACH_RING_COLOR } from './mapPrimitives.js';
+import { axisDelta, flightDistance, niszczHours } from '../../domain/geometry.js';
 import { renderTargets, DEFAULT_TARGET_SORT } from './targets.js';
 import { ZONES } from '../../domain/zoneScore.js';
 import { buildOccupancyIndex } from '../../domain/apiOccupancy.js';
 import { buildTargetCandidates } from '../../domain/targets.js';
-import { buildDangerProfiles } from '../../domain/dangerScore.js';
+import { joinDangerProfiles } from '../../domain/dangerJoin.js';
 import { buildCivilBaseline } from '../../domain/civilBaseline.js';
 import { estimateHiddenFleet } from '../../domain/threatModel.js';
 import { raidVerdict } from '../../domain/raidVerdict.js';
 import { normalizeReportTimestamps } from '../../domain/espionageReport.js';
-import { latestOf, historyOf } from '../../domain/targetReports.js';
-import { summarizeRoutine } from '../../domain/routine.js';
+import { latestOf, spiedCoordsByPlayer } from '../../domain/targetReports.js';
+import { summarizeRoutine, routineBodies } from '../../domain/routine.js';
+import { buildScanPlan } from '../../domain/scanPriority.js';
 import { readApiCacheFor, apiCacheKeyFor } from '../../state/apiCache.js';
 import { targetReportsKeyFor } from '../../state/targets.js';
 import { proximityReportsKeyFor } from '../../state/proximityReports.js';
+import { activityObsKeyFor } from '../../state/activityObs.js';
 import { watchListKeyFor, normalizeWatchList, DEFAULT_SPY_PROBES } from '../../state/watchList.js';
 import { pointsOf } from '../../domain/unitCosts.js';
 import {
@@ -315,11 +318,19 @@ let civilProfiles = new Map();
 
 /**
  * Per-player routine summary (Etap F) — hour/weekday/collection/timeline from the
- * spy-report history rings. Rebuilt on data load; empty for players with no
- * history (only watched players accrue it).
+ * spy-report history rings + the galaxy-activity rings (F3). Rebuilt on data
+ * load; empty for players with no history (only watched players accrue it).
  * @type {Record<string, import('../../domain/routine.js').RoutineSummary>}
  */
 let routines = {};
+
+/**
+ * Galaxy-activity rings for the selected universe (F3): playerId → bodyKey →
+ * observation ring. Written in-game by `state/activityObs.js` (watched players
+ * only); the dashboard reads the raw per-universe key, like targetReports.
+ * @type {import('../../state/activityObs.js').ActivityObsMap}
+ */
+let activityObs = {};
 
 // ── DOM refs (filled by wireDom) ───────────────────────────────────────
 
@@ -354,6 +365,7 @@ let routines = {};
 /** @type {HTMLButtonElement | null} */ let spyMapToggle;
 /** @type {HTMLElement | null} */ let spyMapBlock;
 /** @type {HTMLElement | null} */ let spyMapLegend;
+/** @type {HTMLInputElement | null} */ let spyMapReach;
 /** @type {HTMLInputElement} */ let tgtMinMilitary;
 /** @type {HTMLInputElement | null} */ let tgtMaxMilitary;
 /** @type {HTMLSelectElement} */ let tgtLimit;
@@ -368,6 +380,8 @@ const forceIncludeIds = new Set();
 /** @type {HTMLInputElement | null} */ let tgtHideInactive;
 /** @type {HTMLElement | null} */ let tgtCountInfoEl;
 /** @type {HTMLElement | null} */ let proximityStripEl;
+/** @type {HTMLElement | null} */ let scanPlanStripEl;
+/** @type {HTMLElement | null} */ let scanPlanSummaryEl;
 
 /** Guards {@link installDashboard} against a double-install. */
 let installed = false;
@@ -653,10 +667,13 @@ const wireDom = () => {
   tgtHideInactive = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtHideInactive'));
   tgtCountInfoEl = document.getElementById('tgtCountInfo');
   proximityStripEl = document.getElementById('proximityStrip');
+  scanPlanStripEl = document.getElementById('scanPlanStrip');
+  scanPlanSummaryEl = document.getElementById('scanPlanSummary');
   spyglassMapHost = document.getElementById('spyglassMapHost');
   spyMapToggle = /** @type {HTMLButtonElement | null} */ (document.getElementById('spyMapToggle'));
   spyMapBlock = document.getElementById('spyMapBlock');
   spyMapLegend = document.getElementById('spyMapLegend');
+  spyMapReach = /** @type {HTMLInputElement | null} */ (document.getElementById('spyMapReach'));
 };
 
 /**
@@ -891,13 +908,14 @@ const loadAll = async () => {
     targetCandidates = [];
     targetReports = {};
     proximityReports = [];
+    activityObs = {};
     planetCountByPlayer = {};
     dangerProfiles = new Map();
     civilProfiles = new Map();
     routines = {};
     return;
   }
-  const [h, s, p, op, api, tr, pr] = await Promise.all([
+  const [h, s, p, op, api, tr, pr, ao] = await Promise.all([
     chromeStore.get(historyKeyFor(selectedUniverseId)),
     chromeStore.get(scansKeyFor(selectedUniverseId)),
     chromeStore.get(playersKeyFor(selectedUniverseId)),
@@ -905,6 +923,7 @@ const loadAll = async () => {
     readApiCacheFor(selectedUniverseId),
     chromeStore.get(targetReportsKeyFor(selectedUniverseId)),
     chromeStore.get(proximityReportsKeyFor(selectedUniverseId)),
+    chromeStore.get(activityObsKeyFor(selectedUniverseId)),
   ]);
   history = Array.isArray(h) ? /** @type {ColonyEntry[]} */ (h) : [];
   scans = s && typeof s === 'object' ? /** @type {GalaxyScans} */ (s) : {};
@@ -962,83 +981,45 @@ const loadAll = async () => {
   proximityReports = Array.isArray(pr)
     ? /** @type {import('../../domain/espionageReport.js').ProximityReport[]} */ (pr)
     : [];
-  // Coverage denominator: count each player's spiable BODIES in the universe.xml
-  // snapshot — planets PLUS their moons (`hasMoon` from the <moon> parse; a moon
-  // is a second body of the same owner). §9bis: without moons here a fully-planet-
-  // spied player reads as "complete" while unspied moon defence still hides in the
-  // military score. (Stale caches predating the <moon> parse lack hasMoon → count
-  // as planets-only until the 7-day universe feed refreshes; graceful.)
-  /** @type {Record<string, number>} */
-  const counts = {};
-  const uniPlanets = apiCache.universe ? apiCache.universe.planets : [];
-  for (const pl of uniPlanets) {
-    if (pl && pl.player != null) {
-      const pid = String(pl.player);
-      counts[pid] = (counts[pid] || 0) + 1 + (pl.hasMoon ? 1 : 0);
-    }
-  }
-  planetCountByPlayer = counts;
-
-  // Per-player danger profiles (v2) — the threat substrate for the Galaxy
-  // Viewer field + occupancy map. Built from the API feeds (ships/destroyed/
-  // honour/alliance/dispersion) + the live flag cache; the own-alliance test
-  // reads our own players.xml row.
+  // Galaxy-activity rings (F3) — the routine tracker's dense probe-free source.
+  activityObs = ao && typeof ao === 'object'
+    ? /** @type {import('../../state/activityObs.js').ActivityObsMap} */ (ao)
+    : {};
+  // Danger substrate (v2): per-player profiles (the Galaxy Viewer field /
+  // occupancy map / Spyglass threat columns) + the spiable-bodies coverage
+  // denominator (planets + moons, §9bis) + the spy refinement — all via the ONE
+  // shared recipe in domain/dangerJoin.js. The in-game side (features/apiContext)
+  // runs the SAME join for the scan planner, so the Spy FAB and this dashboard
+  // rank targets from identical profiles.
   const ownId = ownProfile.id != null ? String(ownProfile.id) : undefined;
-  const apiPlayersMap = apiCache.players ? apiCache.players.players : undefined;
-  const militaryRanks = apiCache.military ? apiCache.military.ranks : undefined;
-  // Spy refinement (E4): per player, the defence we've seen + whether coverage
-  // is complete — fully spied collapses the fleet bound to military − defence
-  // EXACTLY, partial coverage just tightens the upper bound.
-  /** @type {Record<string, {defensePts:number, coverageComplete:boolean, spiedCount:number, planetCount?:number}>} */
-  const spiedByPlayer = {};
-  for (const pid of Object.keys(targetReports)) {
-    const bucket = targetReports[pid];
-    const reports = bucket ? Object.values(bucket).map(latestOf) : [];
-    if (!reports.length) continue;
-    const est = estimateHiddenFleet({
-      militaryPoints: militaryRanks && militaryRanks[pid] ? militaryRanks[pid].score : undefined,
-      reports,
-      planetCount: planetCountByPlayer[pid],
-    });
-    spiedByPlayer[pid] = {
-      defensePts: est.defensePoints,
-      coverageComplete: est.coverageComplete,
-      spiedCount: est.spiedCount,
-      planetCount: est.planetCount,
-    };
-  }
-  dangerProfiles = buildDangerProfiles({
-    military: militaryRanks,
-    destroyed: apiCache.destroyed ? apiCache.destroyed.ranks : undefined,
-    honor: apiCache.honor ? apiCache.honor.ranks : undefined,
-    honorTotal: apiCache.honor ? Object.keys(apiCache.honor.ranks).length : 0,
-    apiPlayers: apiPlayersMap,
-    players,
-    universePlanets: uniPlanets,
-    spied: spiedByPlayer,
-    ownMilitary,
+  const joined = joinDangerProfiles({
+    apiCache,
+    livePlayers: players,
+    targetReports,
     ownId,
-    ownAlliance: ownId && apiPlayersMap ? apiPlayersMap[ownId]?.alliance : undefined,
   });
+  planetCountByPlayer = joined.planetCountByPlayer;
+  dangerProfiles = joined.dangerProfiles;
   // Etap C: server civil-fleet baseline from the (previously unused) economy
   // feed — expected civil ships per player + the combat-ship surplus over it.
   civilProfiles = buildCivilBaseline({
     economy: apiCache.economy ? apiCache.economy.ranks : undefined,
-    military: militaryRanks,
+    military: apiCache.military ? apiCache.military.ranks : undefined,
   });
-  // Etap F: per-player routine from the spy-report history rings (watched players
-  // accrue history; the rest summarise to empty). Built from reports the user
-  // opened — see domain/routine.js. The bodyKey's ":type" is stripped to a coord.
+  // Etap F: per-player routine from the spy-report history rings + the galaxy-
+  // activity rings (F3; both accrue for watched players only — the rest
+  // summarise to empty). Built from reports the user opened + galaxy views they
+  // browsed — see domain/routine.js. A player may exist in either store alone
+  // (browsed but never spied), so iterate the UNION of the two key sets.
   const routineNowMs = Date.now();
   /** @type {Record<string, import('../../domain/routine.js').RoutineSummary>} */
   const routinesAcc = {};
-  for (const pid of Object.keys(targetReports)) {
-    const bucket = targetReports[pid];
-    const bodies = Object.entries(bucket).map(([key, entry]) => {
-      const lastColon = key.lastIndexOf(':');
-      return { coord: lastColon >= 0 ? key.slice(0, lastColon) : key, history: historyOf(entry) };
-    });
-    routinesAcc[pid] = summarizeRoutine(bodies, routineNowMs);
+  const routinePids = new Set([...Object.keys(targetReports), ...Object.keys(activityObs)]);
+  for (const pid of routinePids) {
+    routinesAcc[pid] = summarizeRoutine(
+      routineBodies(targetReports[pid], activityObs[pid]),
+      routineNowMs,
+    );
   }
   routines = routinesAcc;
 };
@@ -1230,6 +1211,10 @@ const repaintTargets = () => {
     }
     focusedTargetId = null;
   }
+
+  // The suggested-scan-order strip reads the same joined data (watch list,
+  // reports, danger, routines), so every Targets repaint refreshes it too.
+  renderScanPlanStrip();
 };
 
 /**
@@ -1291,6 +1276,98 @@ const renderProximityStrip = () => {
     line.appendChild(document.createTextNode(rest));
     proximityStripEl.appendChild(line);
   }
+};
+
+/**
+ * Repaint the "suggested scan order" strip (§6.7): the shared scan plan —
+ * danger × staleness × activity-window bonus over the user's scan list, the
+ * SAME `domain/scanPriority.buildScanPlan` ranking the in-game Spy FAB walks,
+ * so what this strip lists first is exactly what the button proposes next.
+ * PLANS ONLY: no send affordance of any kind lives here (fair-play §8 — the
+ * dashboard is extension-origin and must never originate a game action; the
+ * one deliberate in-game tap per probe is the only sender). A player-name
+ * click opens their dossier — an act-on-intel path, not a send.
+ * @returns {void}
+ */
+const renderScanPlanStrip = () => {
+  if (!scanPlanStripEl) return;
+  scanPlanStripEl.textContent = '';
+  const setSummary = (/** @type {string} */ txt) => {
+    if (scanPlanSummaryEl) scanPlanSummaryEl.textContent = txt;
+  };
+  const note = (/** @type {string} */ txt) => {
+    const el = document.createElement('div');
+    el.style.cssText = 'color:#667;font-size:12px;';
+    el.textContent = txt;
+    scanPlanStripEl?.appendChild(el);
+  };
+  const watched = [...watchedPlayers];
+  if (!watched.length) {
+    setSummary('🧭 Suggested scan order');
+    note('Star players (⭐) to build a scan list — the suggested order appears here.');
+    return;
+  }
+
+  const nowMs = Date.now();
+  /** @type {Record<string, number>} */
+  const dangerBy = {};
+  /** @type {Record<string, import('../../domain/routine.js').ActivitySummary>} */
+  const activityBy = {};
+  for (const pid of watched) {
+    const prof = dangerProfiles.get(Number(pid));
+    if (prof) dangerBy[pid] = prof.danger * 100;
+    const r = routines[pid];
+    if (r) activityBy[pid] = r.activity;
+  }
+  const { entries } = buildScanPlan({
+    players: watched,
+    universePlanets: apiCache.universe ? apiCache.universe.planets : [],
+    spiedByPlayer: spiedCoordsByPlayer(targetReports),
+    rescan: rescanMap,
+    nowMs,
+    dangerByPlayer: dangerBy,
+    activityByPlayer: activityBy,
+  });
+  if (!entries.length) {
+    setSummary('🧭 Suggested scan order · all fresh ✓');
+    note('Nothing needs a scan right now — your intel on the scan list is fresh.');
+    return;
+  }
+
+  const n = entries.length;
+  setSummary(`🧭 Suggested scan order · ${n} planet${n === 1 ? '' : 's'} need${n === 1 ? 's' : ''} a scan`);
+  /** @type {Map<string, string>} */
+  const namesById = new Map(targetCandidates.map((c) => [String(c.id), c.name || `#${c.id}`]));
+
+  const SHOW = 8;
+  const list = document.createElement('div');
+  list.style.cssText = 'font-size:12px;color:#9aa;line-height:1.5;';
+  entries.slice(0, SHOW).forEach((e, i) => {
+    const row = document.createElement('div');
+    const label = namesById.get(e.playerId) || `#${e.playerId}`;
+    row.appendChild(document.createTextNode(`${i + 1}. `));
+    const who = document.createElement('span');
+    who.textContent = label;
+    who.style.cssText = 'cursor:pointer;color:#8fb8e0;';
+    who.title = 'Open this player’s dossier';
+    who.addEventListener('click', () => openSpyglassFor(Number(e.playerId)));
+    row.appendChild(who);
+    row.appendChild(document.createTextNode(
+      ` [${e.galaxy}:${e.system}:${e.position}] — ${e.why}`,
+    ));
+    // The head entry is the FAB's next proposal — say why it's first.
+    if (i === 0) {
+      row.style.color = '#cfd6dd';
+      row.appendChild(document.createTextNode('  ← next suggested'));
+    }
+    list.appendChild(row);
+  });
+  scanPlanStripEl.appendChild(list);
+  const foot = document.createElement('div');
+  foot.style.cssText = 'color:#5f6b76;font-size:11px;margin-top:4px;';
+  foot.textContent = `${n > SHOW ? `…and ${n - SHOW} more · ` : ''}`
+    + 'The in-game Spy button proposes this order — one tap, one probe.';
+  scanPlanStripEl.appendChild(foot);
 };
 
 /**
@@ -1705,6 +1782,14 @@ const repaintFreeRegionsThrottled = () => {
 /** All 15 colonizable positions — used to synthesise the composite we scan for planets. */
 const SPY_MAP_POSITIONS = Array.from({ length: 15 }, (_, i) => i + 1);
 
+/**
+ * "Who can reach you" horizon (hours) — a body is ringed when a RIP launched
+ * from it lands on one of your planets inside this window (anything faster
+ * arrives sooner, so the ring is the conservative floor). Matches the Galaxy
+ * Viewer threat kernel's default offline window.
+ */
+const SPY_MAP_REACH_H = 8;
+
 /** Spyglass map composite cache — SEPARATE from the GV `compositeCache`. @type {{apiIndex: unknown, scans: unknown, posKey: string, value: GalaxyScans} | null} */
 let spyCompositeCache = null;
 /** Whether the Spyglass map section is expanded. */
@@ -1738,8 +1823,9 @@ const relationshipOf = (pid, ownId) => (pid === ownId ? 'you' : (watchRelationsh
  * Render the Spyglass map's RELATIONSHIP legend into #spyMapLegend (you / enemy /
  * friend / neutral) — only the categories actually on the map. Hidden when empty.
  * @param {boolean} hasOwn
+ * @param {boolean} [reachOn]  Append the "in reach" ring chip (overlay active).
  */
-const renderSpyMapLegend = (hasOwn) => {
+const renderSpyMapLegend = (hasOwn, reachOn) => {
   if (!spyMapLegend) return;
   const present = new Set([...watchedPlayers].map((pid) => watchRelationships[pid] || 'neutral'));
   /** @type {Array<[import('../../state/watchList.js').Relationship|'you', string]>} */
@@ -1757,7 +1843,16 @@ const renderSpyMapLegend = (hasOwn) => {
     chip.append(sw, document.createTextNode(text));
     spyMapLegend.appendChild(chip);
   }
-  spyMapLegend.style.display = rows.length ? 'flex' : 'none';
+  if (reachOn) {
+    const chip = document.createElement('span');
+    chip.style.cssText = 'display:inline-flex;align-items:center;gap:5px;';
+    const sw = document.createElement('span');
+    sw.style.cssText = 'width:8px;height:8px;border-radius:50%;background:transparent;'
+      + `box-shadow:0 0 0 2px ${REACH_RING_COLOR}cc;flex:0 0 auto;`;
+    chip.append(sw, document.createTextNode(`can reach you (≤${SPY_MAP_REACH_H} h, RIP-speed)`));
+    spyMapLegend.appendChild(chip);
+  }
+  spyMapLegend.style.display = rows.length || reachOn ? 'flex' : 'none';
 };
 
 /** Repaint the Spyglass positions map. No-op while closed/hidden. */
@@ -1773,6 +1868,8 @@ const repaintSpyglassMap = () => {
   // (The whole occupancy palette is the Galaxy Viewer's job, not this map's.)
   /** @type {import('./mapPrimitives.js').MapBody[]} */
   const bodies = [];
+  /** @type {Array<{g: number, s: number}>} Your own planets — the reach targets. */
+  const ownCoords = [];
   for (const key of /** @type {(keyof GalaxyScans)[]} */ (Object.keys(composite))) {
     const positions = composite[key]?.positions;
     if (!positions) continue;
@@ -1783,6 +1880,7 @@ const repaintSpyglassMap = () => {
       const pid = String(player.id);
       const isOwn = pid === ownId;
       if (!isOwn && !watchedPlayers.has(pid)) continue;
+      if (isOwn) ownCoords.push({ g, s });
       bodies.push({
         galaxy: g,
         system: s,
@@ -1794,7 +1892,32 @@ const repaintSpyglassMap = () => {
       });
     }
   }
-  renderSpyMapLegend(!!ownId);
+  // "Who can reach you" overlay (opt-in): the INVERTED reach kernel — instead
+  // of "whom can I threaten", ring each tracked body whose RIP-speed flight to
+  // your NEAREST planet fits the horizon. RIP is the slowest attacker, so the
+  // ring is the conservative floor: anything faster arrives sooner. Distances
+  // honour the server's donut wrap; positions come from the same public-API
+  // composite as the markers themselves.
+  const reachOn = !!spyMapReach?.checked;
+  if (reachOn && ownCoords.length && apiBounds.galaxies && apiBounds.systems) {
+    const gTot = apiBounds.galaxies;
+    const sTot = apiBounds.systems;
+    for (const b of bodies) {
+      if (b.relationship === 'you') continue;
+      let minD = Infinity;
+      for (const oc of ownCoords) {
+        const ag = axisDelta(b.galaxy, oc.g, gTot, !!apiBounds.donutGalaxy);
+        const ds = axisDelta(b.system, oc.s, sTot, !!apiBounds.donutSystem);
+        const d = flightDistance(ag, ds);
+        if (d < minD) minD = d;
+      }
+      if (Number.isFinite(minD)) {
+        b.reachH = niszczHours(minD);
+        b.inReach = b.reachH <= SPY_MAP_REACH_H;
+      }
+    }
+  }
+  renderSpyMapLegend(!!ownId, reachOn && ownCoords.length > 0);
   renderPositionsMap({
     hostEl: spyglassMapHost,
     galaxies: apiBounds.galaxies,
@@ -1903,6 +2026,7 @@ const wireListeners = () => {
   });
   tgtWatchedOnly?.addEventListener('change', repaintTargets);
   spyMapToggle?.addEventListener('click', toggleSpyMap);
+  spyMapReach?.addEventListener('change', repaintSpyglassMap);
 
   // Region controls only repaint the settlement-regions block. The
   // underlying `scans` cache hasn't changed — only the slots/tolerance
@@ -1992,6 +2116,7 @@ export const _resetDashboardForTest = () => {
   history = [];
   scans = {};
   proximityReports = [];
+  activityObs = {};
   compositeCache = null;
   scoreFieldCache = null;
   lastMapPaint = null;
@@ -2037,6 +2162,8 @@ export const _resetDashboardForTest = () => {
     tgtHideInactive =
     tgtCountInfoEl =
     proximityStripEl =
+    scanPlanStripEl =
+    scanPlanSummaryEl =
     freeContainer =
     freeCountInfoEl =
       /** @type {any} */ (undefined);
