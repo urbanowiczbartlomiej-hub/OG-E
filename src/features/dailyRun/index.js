@@ -15,8 +15,9 @@
 //     lands on fleet step 1 with the micro-fleet already selected. With no route
 //     for the current body, a tap opens the dashboard's route-setup tab instead.
 //   - BOTTOM (Collect): TAP sends EVERYTHING (all ships + all resources) from the
-//     current planet back to the ad-hoc collect target. LONG-PRESS (300ms+) marks
-//     the body you're standing on as that collect target. The label shows the
+//     current planet back to the ad-hoc collect target. LONG-PRESS (2s+, see
+//     LONG_PRESS_MS) marks the body you're standing on as that collect target.
+//     The label shows the
 //     current target so it's clear where a collect run goes.
 //
 // # Two-tap send model (TOS-safe: one click → one originated request)

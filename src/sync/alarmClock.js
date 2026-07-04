@@ -6,8 +6,9 @@
 // # The separate plain-JSON file
 //
 // The cross-device sync payload lives in `oge-data.json.gz.b64`
-// (gzip+base64, schema 3) and `fetchGistData` rejects anything that
-// isn't schema 3. The alarmClock state must NOT go there. Instead we keep
+// (gzip+base64, schema 1 — see gist.js `SCHEMA_VERSION`) and
+// `fetchGistData` rejects anything that isn't that schema. The alarmClock
+// state must NOT go there. Instead we keep
 // it in separate files in the same gist, one per universe (see
 // {@link alarmClockFilenameFor}), as plain pretty-printed JSON.
 //

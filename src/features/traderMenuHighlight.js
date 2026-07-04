@@ -83,7 +83,7 @@
 //      `oge:traderImportTraded` stamp storage and re-render immediately.
 //   4. settingsStore subscription reacts to the on/off toggle.
 //   5. Dispose strips classes, removes the style, disconnects the
-//      observer, clears the poll, removes the event listeners, and
+//      observer, disposes the boundary timer, removes the event listeners, and
 //      unsubscribes from settingsStore.
 
 /** @ts-check */
@@ -901,7 +901,7 @@ const removeTraderModeChips = () => {
 
 /**
  * Scan the Trader sub-pages, render the mode chips, then re-render the glows.
- * The single refresh path used by the MutationObserver, the safety-poll, and
+ * The single refresh path used by the MutationObserver, the boundary timer, and
  * install. No-op when the feature is toggled off (so navigating the Trader pages
  * with it disabled neither stamps storage, injects chips, nor paints).
  *
@@ -968,7 +968,7 @@ export const installTraderMenuHighlight = () => {
   // overview (with our two tiles) is a separate region that renders on
   // navigation. We only watch childList/subtree — text-only mutations
   // (eventbox countdowns) don't fire it, so the cost stays low and the
-  // 150 ms debounce coalesces bursts.
+  // 300 ms debounce coalesces bursts.
   const observer = createVisibilityObserver(scheduleRefresh);
   observer.observe(document.body, { childList: true, subtree: true });
 

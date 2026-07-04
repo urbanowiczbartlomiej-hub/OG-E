@@ -98,10 +98,16 @@ import { installSync } from './sync/scheduler.js';
 
 import { logger } from './lib/logger.js';
 
-// All stores hydrate synchronously. localStorage is per-origin and the
+// Store hydration is mixed. The localStorage-backed stores (settings,
+// registry) hydrate synchronously; the chrome.storage-backed stores
+// (history, scans, players, dailyRunRoutes, galaxyScanConfig,
+// alarmClockConfig, bodies, colonizeDecisions, targets, watchList) load
+// asynchronously via `chromeStore.get` — until their `when*Hydrated()`
+// gate resolves, consumers see the initial value, so a feature that writes
+// before awaiting that gate would clobber the persisted blob (the race the
+// gates exist to prevent). localStorage is per-origin and the
 // chrome.storage stores are namespaced per-universe (keyed on
-// `location.host`), so settings/registry/history/scans are naturally
-// isolated per OGame server.
+// `location.host`), so state is isolated per OGame server.
 //
 // `initScansStore` also auto-installs the `oge:galaxyScanned` MAIN-world
 // bridge listener internally (see `state/scans.js`), so nothing extra

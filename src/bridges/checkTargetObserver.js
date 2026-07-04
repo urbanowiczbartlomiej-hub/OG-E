@@ -109,8 +109,10 @@ let unsubscribeFn = null;
  *
  * The observer:
  *   1. Fires on `load` for any URL containing `action=checkTarget`.
- *   2. Parses the JSON response; bails silently on invalid JSON or on
- *      `status !== 'success'`.
+ *   2. Parses the JSON response; bails silently on invalid JSON. Dispatches
+ *      on BOTH success and failure responses (failures carry `errors[]`
+ *      with the error code consumers need) — it does NOT filter on
+ *      `status === 'success'`.
  *   3. Parses the form body to pull out `galaxy` / `system` / `position`;
  *      bails if any coordinate is missing or non-numeric.
  *   4. Dispatches `oge:checkTargetResult` on `document` with a
@@ -145,8 +147,6 @@ export const installCheckTargetObserver = () => {
       // contract — failure responses carry `errors[]` with the error
       // code consumers need (e.g. 140016 for a slot reserved for
       // planet-move). Filtering would hide those.
-      const success = parsed.status === 'success';
-
       const params = parseFormBody(body);
       const galaxy = parseInt(params.galaxy, 10);
       const system = parseInt(params.system, 10);
@@ -172,11 +172,8 @@ export const installCheckTargetObserver = () => {
           }
         }
       }
-      // `success` is kept in scope for the `if (!success) return` gate
-      // above (actually there's no gate — we dispatch on both), but we
-      // no longer export it in the detail. Consumers that care about
-      // success/failure read `errorCode === null` as the signal.
-      void success;
+      // Consumers that care about success/failure read `errorCode === null`
+      // as the signal (we no longer carry a `success` flag in the detail).
 
       // The `orders` map says which missions the target permits (e.g.
       // `{ "7": true }` ⇒ colonize allowed). The fleet courier reads it to
