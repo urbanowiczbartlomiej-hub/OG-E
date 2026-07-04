@@ -65,11 +65,13 @@ tests, partial+moon gate, `revealed` gating, `<moon>` parse, `mapPrimitives` com
 build it now; placement = a map SECTION in the current Spyglass tab, not the cards-landing view
 toggle). **DONE: E1** (extraction) + **E2a-1** (occupancy map + toggle) + **E2a-2** (⌖ spotlight
 in-tab, GV fully decoupled) + **E2b** (watchlist colour overlay). The Spyglass map now shows
-whole-server occupancy + every watched player in their stable colour + a click-⌖ focus (diamond
-markers + banner) + system popovers (inherited from `renderServerMap`). **Remaining E2 polish
-(optional, none release-blocking):** danger-scaled marker size + own-planets-as-white-rings
-(§6.9); **click a coloured cell/player → open their dossier** (needs canvas hit-detection →
-playerId, or clickable focus markers); a colour→name legend for the overlay.
+whole-server occupancy + every watched player in their stable colour + **own planets in white
+(reference frame)** + a **colour→player legend** + a click-⌖ focus (diamond markers + banner) +
+system popovers (inherited from `renderServerMap`). Polish commit `b4334d9` (legend + own-white).
+**Remaining E2 polish (optional, none release-blocking):** danger-scaled marker size; **click a
+coloured cell → open that player's dossier** — deferred: the occupancy canvas click already
+pins the system popover (`buildSystemCard` names the occupants), so a click→dossier would
+conflict + needs canvas hit-detect→playerId; the table row/⌖ is the act-on-a-player path today.
 
 ### NEXT — future sessions, in order
 
