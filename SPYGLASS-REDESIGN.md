@@ -103,6 +103,29 @@ strip in a follow-up. **Etap F remaining = F3** (galaxy-view activity capture + 
 discount — the dense probe-free source; §6.6bis). **Then Etap G** (scanPriority). Then release 1.35.0
 (reconcile tests incl. `routine`/`relationships`/`renderPositionsMap`).
 
+### Etap H — UX pass (branch `feat/spyglass-ux`, worktree, based on `bd6b5a5` = 1.35.0)
+
+**User-approved 2026-07-05** (mockup: claude.ai artifact `c5af6bea…`, session "Spyglass UX").
+Runs PARALLEL to the user's F3+G work in the main tree — merge/rebase onto their branch after
+1.35.0 ships; conflicts expected in `index.js`/`dossier.js`/`watchList.js`/`dashboard.html`
+(different spans, resolvable). Target release: **1.36.0**. Diagnosis: too much standing text
+(intro + map paragraphs), checkbox strip where GV has chips, res/ship buried in the Ships
+tooltip, "Who's been near you" = 10 raw lines with no aggregation, map membership model
+(map = watchlist) invisible → users think ⌖ "adds to map" and can't find removal.
+
+| Sub-etap | What | Status |
+|---|---|---|
+| H1 | Controls → chip pills (reuse `chips.js` + new boolean-toggle helpers) + top-N seg chips + Military/Probes behind a ⚙ config card + intro paragraph → one-liner + "?" popover (full text inside) + map caption diet | planned |
+| H2 | `shipsCell` second line `≈ X res/ship` (tiered colour: <5K swarm-dim · ≥50K amber · ≥1M red; caveat stays in tooltip) + table in an `overflow-x` wrapper (RWD) | planned |
+| H3 | NEW pure `domain/proximityDigest.js` (group per prober, same-system = RIP-range detection, hot-first sort) + strip rewrite: live counts in the `<summary>`, 💀 rows, ⭐ watch / dossier ▸ actions, raw log behind a `<details>` | planned |
+| H5 | `WatchListConfig.mapHidden` (additive, like `relationships`) + watched-player chips under the map (✕ unwatch · 👁 hide-from-map · dot = cycle relationship · name → dossier) + ⌖ → 🗺 glyph with "focus on map" title | planned |
+| H6 | Dossier two-column grid ≥860px (verdict/danger/hidden/civil ↔ planets/routine) — **zero wording changes** (provenance/coverage lines are the §8 spine) + relationship selector restyled as chips | planned |
+| H4 | Watchlist CARDS as the landing (§6.1/§6.3 — never implemented) above the Finder; card = verdict words + headline + sparkline + intel age; click → dossier; drops the "scan list only" chip | planned (largest; may slip to next session) |
+
+Deferred test debt from H (reconcile at 1.36.0 release): `proximityDigest`, `normalizeWatchList`
+mapHidden, chips toggle helpers. Freshness header chips ("ships data 2 h old") skipped — needs
+an apiCache fetch-timestamp plumb; revisit with H4.
+
 ### NEXT — future sessions, in order
 
 *(Etap D-strip is committed `f41f4a5` but not live-verified — open the messages tab with a
