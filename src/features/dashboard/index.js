@@ -48,7 +48,7 @@ import { parseTargetPositions } from '../../domain/histogram.js';
 import { populatePositionFilter, renderColonyChart } from './colony.js';
 import { renderFreeRegions, renderServerMap, selectCandidate, resetFreeSelection, highlightPin, _resetFreeStreakForTest } from './freeStreak.js';
 import { chipValue, setChipValue, wireChips, setChipsEnabled } from './chips.js';
-import { computeComposite, computeScoreField, playerColor } from './mapPrimitives.js';
+import { computeComposite, computeScoreField, renderPositionsMap, RELATIONSHIP_COLORS } from './mapPrimitives.js';
 import { renderTargets, DEFAULT_TARGET_SORT } from './targets.js';
 import { ZONES } from '../../domain/zoneScore.js';
 import { buildOccupancyIndex } from '../../domain/apiOccupancy.js';
@@ -1310,19 +1310,15 @@ const openSpyglassFor = (playerId) => {
 };
 
 /**
- * Spotlight one player's planets on the Spyglass watchlist map — Spyglass's OWN
- * map now, IN the Spyglass tab (it no longer hijacks the Galaxy Viewer's
- * occupancy lens, per SPYGLASS-REDESIGN.md §1.1). Opens the map if collapsed,
- * sets the highlight, repaints, and scrolls it into view. The highlight is
- * transient (not persisted) — cleared by the map banner or by picking another
- * player.
- * @param {string|number} playerId
- * @param {string} [name]
+ * The per-row ⌖ "show on map": open the Spyglass positions map (if collapsed)
+ * and scroll it into view. The map already plots every watched player + you
+ * (coloured by relationship), so there's no single-player highlight to set — the
+ * player's own marker is right there. Takes no args (the caller passes id/name,
+ * harmlessly ignored).
  * @returns {void}
  */
-const showPlayerOnSpyglassMap = (playerId, name) => {
-  spyMapHighlight = { id: Number(playerId), name: name || `player ${playerId}` };
-  if (!spyMapOpen) toggleSpyMap(); // opens + repaints with the highlight applied
+const showPlayerOnSpyglassMap = () => {
+  if (!spyMapOpen) toggleSpyMap(); // opens + repaints
   else repaintSpyglassMap();
   spyMapBlock?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 };
@@ -1699,21 +1695,20 @@ const repaintFreeRegionsThrottled = () => {
   });
 };
 
-// ── Spyglass watchlist map (Etap E2) ────────────────────────────────────────
-// Reuses the shared map primitives + `renderServerMap`, but keeps its OWN
-// composite cache + highlight so it never stomps the Galaxy Viewer's (the two
-// sub-tabs memoise independently — mapPrimitives itself is stateless). Occupancy
-// view only; no colonization pins/field.
+// ── Spyglass positions map (attack-planning / player-tracking) ──────────────
+// A DEDICATED renderer (`renderPositionsMap`), NOT the Galaxy Viewer's occupancy
+// lens: an empty grid with a marker only at your planets + your watched players',
+// coloured by RELATIONSHIP (enemy/friend/neutral/you) and sized by danger. Keeps
+// its OWN composite cache so it never stomps the GV's (mapPrimitives is stateless).
+// The composite is only used to LOCATE each tracked player's planets.
 
-/** All 15 colonizable positions — the Spyglass map shows whole-server occupancy. */
+/** All 15 colonizable positions — used to synthesise the composite we scan for planets. */
 const SPY_MAP_POSITIONS = Array.from({ length: 15 }, (_, i) => i + 1);
 
 /** Spyglass map composite cache — SEPARATE from the GV `compositeCache`. @type {{apiIndex: unknown, scans: unknown, posKey: string, value: GalaxyScans} | null} */
 let spyCompositeCache = null;
 /** Whether the Spyglass map section is expanded. */
 let spyMapOpen = false;
-/** Spotlighted watched player on the Spyglass map, or null. @type {{ id: number, name: string } | null} */
-let spyMapHighlight = null;
 
 /** Composite for the Spyglass map — own cache (mirrors `buildComposite`). */
 const buildSpyComposite = () => {
@@ -1731,62 +1726,81 @@ const buildSpyComposite = () => {
 };
 
 /**
- * Render the watchlist map's colour→player legend into #spyMapLegend, so a
- * colour on the map maps back to a name (you = white). Hidden when empty.
+ * A player's map relationship: own = 'you', else the user's tag (untagged =
+ * 'neutral').
+ * @param {string} pid
  * @param {string|null} ownId
+ * @returns {import('../../state/watchList.js').Relationship | 'you'}
  */
-const renderSpyMapLegend = (ownId) => {
+const relationshipOf = (pid, ownId) => (pid === ownId ? 'you' : (watchRelationships[pid] || 'neutral'));
+
+/**
+ * Render the Spyglass map's RELATIONSHIP legend into #spyMapLegend (you / enemy /
+ * friend / neutral) — only the categories actually on the map. Hidden when empty.
+ * @param {boolean} hasOwn
+ */
+const renderSpyMapLegend = (hasOwn) => {
   if (!spyMapLegend) return;
-  const nameOf = (/** @type {string} */ pid) =>
-    apiCache.players?.players?.[pid]?.name || `player ${pid}`;
-  /** @type {Array<{ name: string, color: string }>} */
-  const entries = [];
-  if (ownId != null) entries.push({ name: `${nameOf(ownId)} · you`, color: '#ffffff' });
-  for (const pid of watchedPlayers) entries.push({ name: nameOf(pid), color: playerColor(pid) });
+  const present = new Set([...watchedPlayers].map((pid) => watchRelationships[pid] || 'neutral'));
+  /** @type {Array<[import('../../state/watchList.js').Relationship|'you', string]>} */
+  const rows = [];
+  if (hasOwn) rows.push(['you', 'You']);
+  if (present.has('enemy')) rows.push(['enemy', 'Enemy']);
+  if (present.has('friend')) rows.push(['friend', 'Friend']);
+  if (present.has('neutral')) rows.push(['neutral', 'Neutral / untagged']);
   spyMapLegend.replaceChildren();
-  for (const e of entries) {
+  for (const [rel, text] of rows) {
     const chip = document.createElement('span');
     chip.style.cssText = 'display:inline-flex;align-items:center;gap:5px;';
     const sw = document.createElement('span');
-    sw.style.cssText = `width:10px;height:10px;border-radius:2px;background:${e.color};border:1px solid #0008;flex:0 0 auto;`;
-    chip.append(sw, document.createTextNode(e.name));
+    sw.style.cssText = `width:10px;height:10px;border-radius:50%;background:${RELATIONSHIP_COLORS[rel]};border:1px solid #0008;flex:0 0 auto;`;
+    chip.append(sw, document.createTextNode(text));
     spyMapLegend.appendChild(chip);
   }
-  spyMapLegend.style.display = entries.length ? 'flex' : 'none';
+  spyMapLegend.style.display = rows.length ? 'flex' : 'none';
 };
 
-/** Repaint the Spyglass watchlist map (occupancy view). No-op while closed/hidden. */
+/** Repaint the Spyglass positions map. No-op while closed/hidden. */
 const repaintSpyglassMap = () => {
   if (!spyglassMapHost || !spyMapOpen) return;
-  // Hidden pane → width 0 → renderServerMap would map hover/clicks to the wrong
-  // systems; skip and repaint on the next tab/toggle open (the memo isn't needed
-  // here — occupancy is cheap and the composite is cached).
+  // Hidden pane → width 0 → markers land at the wrong systems; repaint on the
+  // next tab/toggle open instead.
   if ((spyglassMapHost.clientWidth || 0) === 0) return;
-  // Watchlist overlay: colour every watched player's planets by their stable id
-  // colour, so the whole watched set shows at once (not just the focused one).
-  /** @type {Map<number, string>} */
-  const highlightColors = new Map();
-  for (const pid of watchedPlayers) highlightColors.set(Number(pid), playerColor(pid));
-  // Own planets = white — the reference frame (§6.9): spot yourself amid the set.
   const ownId = ownProfile && ownProfile.id != null ? String(ownProfile.id) : null;
-  if (ownId != null) highlightColors.set(Number(ownId), '#ffffff');
-  renderSpyMapLegend(ownId);
-  renderServerMap({
+  const composite = buildSpyComposite();
+  const nameOf = (/** @type {string} */ pid) => apiCache.players?.players?.[pid]?.name || `player ${pid}`;
+  // Plot ONLY the bodies you care about: your planets + your watched players'.
+  // (The whole occupancy palette is the Galaxy Viewer's job, not this map's.)
+  /** @type {import('./mapPrimitives.js').MapBody[]} */
+  const bodies = [];
+  for (const key of /** @type {(keyof GalaxyScans)[]} */ (Object.keys(composite))) {
+    const positions = composite[key]?.positions;
+    if (!positions) continue;
+    const [g, s] = String(key).split(':').map(Number);
+    for (let p = 1; p <= 15; p++) {
+      const player = positions[p]?.player;
+      if (!player || player.id == null) continue;
+      const pid = String(player.id);
+      const isOwn = pid === ownId;
+      if (!isOwn && !watchedPlayers.has(pid)) continue;
+      bodies.push({
+        galaxy: g,
+        system: s,
+        position: p,
+        playerId: pid,
+        name: player.name || nameOf(pid),
+        relationship: relationshipOf(pid, ownId),
+        danger: (dangerProfiles.get(Number(pid))?.danger ?? 0) * 100,
+      });
+    }
+  }
+  renderSpyMapLegend(!!ownId);
+  renderPositionsMap({
     hostEl: spyglassMapHost,
-    scans: buildSpyComposite(),
     galaxies: apiBounds.galaxies,
     systems: apiBounds.systems,
-    donutGalaxy: apiBounds.donutGalaxy,
-    donutSystem: apiBounds.donutSystem,
-    view: 'occupancy',
-    ownMilitary,
-    linkBase: gameLinkBase(),
-    players,
-    danger: dangerProfiles,
-    highlightColors,
-    highlightPlayer: spyMapHighlight ? spyMapHighlight.id : undefined,
-    highlightName: spyMapHighlight ? spyMapHighlight.name : undefined,
-    onClearHighlight: () => { spyMapHighlight = null; repaintSpyglassMap(); },
+    bodies,
+    onPlayerClick: (pid) => openSpyglassFor(Number(pid)),
   });
 };
 
@@ -1943,7 +1957,6 @@ const wireListeners = () => {
     // Region keys carry no universe component — a coincidentally matching
     // region in the next universe would auto-expand as "your selection".
     resetFreeSelection();
-    spyMapHighlight = null; // a player id is universe-scoped — drop the spotlight.
     void loadWatched().then(() => loadAll()).then(renderAll);
     alarmClockApi?.refresh();
     routesApi?.refresh();
@@ -1987,7 +2000,6 @@ export const _resetDashboardForTest = () => {
   civilProfiles = new Map();
   routines = {};
   focusedTargetId = null;
-  spyMapHighlight = null;
   spyMapOpen = false;
   spyCompositeCache = null;
   // DOM refs filled by wireDom(); wireDom re-resolves them on the next

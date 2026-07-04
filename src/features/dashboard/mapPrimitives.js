@@ -30,20 +30,6 @@ import {
  */
 
 /**
- * Stable, well-spread display colour for a player id — golden-angle (137.508°)
- * hue stepping so nearby ids don't cluster into near-identical hues. Deterministic
- * (the same player is always the same colour across repaints), and bright enough
- * to pop on the dark occupancy canvas. Used by the Spyglass map's watchlist
- * overlay to colour each watched player's planets.
- * @param {string|number} id
- * @returns {string} an `hsl(...)` colour string.
- */
-export const playerColor = (id) => {
-  const hue = ((Number(id) || 0) * 137.508) % 360;
-  return `hsl(${hue.toFixed(0)}, 70%, 60%)`;
-};
-
-/**
  * The live-scan overlay for the API composite: only systems whose positions
  * were actually observed (this session). Excludes lf-only entries — after §5
  * the persisted scans blob keeps only lifeform markers (empty `positions`), so
@@ -274,4 +260,92 @@ export const buildSystemCard = (g, s, scan, pinned, players, linkBase, danger) =
     : 'click to pin';
   card.appendChild(foot);
   return card;
+};
+
+/** Relationship → Spyglass map marker colour. Own planets render white. */
+export const RELATIONSHIP_COLORS = {
+  enemy: '#e2726a',
+  friend: '#7fd6a8',
+  neutral: '#9aa7b3',
+  you: '#ffffff',
+};
+
+/**
+ * @typedef {object} MapBody   One planet to plot on the Spyglass positions map.
+ * @property {number} galaxy
+ * @property {number} system
+ * @property {number} position
+ * @property {string} playerId
+ * @property {string} name
+ * @property {'enemy'|'friend'|'neutral'|'you'} relationship
+ * @property {number} danger   0..100 — scales the marker size.
+ */
+
+/**
+ * The Spyglass "positions" map — the attack-planning / player-tracking view. An
+ * EMPTY galaxy×system grid with a marker only at each body you care about (your
+ * planets + your watched players'), coloured by RELATIONSHIP and sized by danger.
+ * Deliberately NOT the occupancy palette (threat/farm/empty/protected) — that is
+ * the Galaxy Viewer's job; here you only want to see WHERE the players you track
+ * are. Plain DOM markers (native hover/click), no canvas.
+ * @param {{ hostEl: HTMLElement, galaxies?: number, systems?: number, bodies: MapBody[], onPlayerClick?: (playerId: string) => void }} o
+ * @returns {void}
+ */
+export const renderPositionsMap = ({ hostEl, galaxies, systems, bodies, onPlayerClick }) => {
+  hostEl.innerHTML = '';
+  if (!galaxies || !systems) {
+    const el = document.createElement('div');
+    el.className = 'server-map-empty';
+    el.textContent = 'No API data yet — open the galaxy view in-game to populate positions.';
+    hostEl.appendChild(el);
+    return;
+  }
+  const POS = 15;
+  const posPx = 2;
+  const gap = 6;
+  const gutter = 26;
+  const topPad = 2;
+  const stride = POS * posPx + gap;
+  const plotH = galaxies * stride - gap + topPad;
+  const W = hostEl.clientWidth || 700;
+  const cellW = (W - gutter) / systems;
+
+  const wrap = document.createElement('div');
+  wrap.style.cssText = `position:relative;height:${plotH}px;`;
+
+  // Faint galaxy baselines + labels — the only "grid"; the field is otherwise empty.
+  for (let g = 1; g <= galaxies; g++) {
+    const yMid = topPad + (g - 1) * stride + (POS * posPx) / 2;
+    const lab = document.createElement('div');
+    lab.textContent = `G${g}`;
+    lab.style.cssText = `position:absolute;left:0;top:${yMid - 6}px;font:10px monospace;color:#5a6672;`;
+    wrap.appendChild(lab);
+    const line = document.createElement('div');
+    line.style.cssText = `position:absolute;left:${gutter}px;right:0;top:${yMid}px;height:1px;background:#141b24;`;
+    wrap.appendChild(line);
+  }
+
+  if (!bodies.length) {
+    const hint = document.createElement('div');
+    hint.style.cssText = 'position:absolute;left:26px;top:2px;color:#5f6b76;font-size:12px;';
+    hint.textContent = '⭐ a player and browse their galaxy so their planets are known — they appear here.';
+    wrap.appendChild(hint);
+  }
+
+  for (const b of bodies) {
+    if (b.galaxy < 1 || b.galaxy > galaxies || b.system < 1 || b.system > systems) continue;
+    const size = 4 + Math.round((Math.max(0, Math.min(100, b.danger)) / 100) * 6); // 4..10 by danger
+    const col = RELATIONSHIP_COLORS[b.relationship] || RELATIONSHIP_COLORS.neutral;
+    const x = gutter + (b.system - 0.5) * cellW;
+    const y = topPad + (b.galaxy - 1) * stride + (b.position - 0.5) * posPx;
+    const m = document.createElement(onPlayerClick ? 'button' : 'span');
+    m.style.cssText = `position:absolute;left:${x}px;top:${y}px;width:${size}px;height:${size}px;`
+      + `margin:${-size / 2}px 0 0 ${-size / 2}px;border-radius:50%;background:${col};`
+      + `border:1px solid #000a;padding:0;box-sizing:border-box;cursor:${onPlayerClick ? 'pointer' : 'default'};`;
+    m.title = `${b.name} — ${b.galaxy}:${b.system}:${b.position}`
+      + (b.relationship === 'you' ? ' · you' : b.relationship !== 'neutral' ? ` · ${b.relationship}` : '');
+    if (onPlayerClick) m.addEventListener('click', (e) => { e.preventDefault(); onPlayerClick(b.playerId); });
+    wrap.appendChild(m);
+  }
+  hostEl.appendChild(wrap);
 };
