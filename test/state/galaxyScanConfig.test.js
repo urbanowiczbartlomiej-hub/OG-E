@@ -28,7 +28,6 @@ import {
   galaxyScanConfigStore,
   initGalaxyScanConfigStore,
   disposeGalaxyScanConfigStore,
-  stampGalaxyScanConfigChanged,
 } from '../../src/state/galaxyScanConfig.js';
 import { defaultGalaxyScanConfig } from '../../src/domain/galaxyScanConfig.js';
 
@@ -86,22 +85,5 @@ describe('galaxyScanConfig store — hydration', () => {
     await flushMicrotasks();
     expect(galaxyScanConfigStore.get()).toEqual(defaultGalaxyScanConfig());
     expect(mockStore.set).not.toHaveBeenCalled();
-  });
-});
-
-describe('stampGalaxyScanConfigChanged — flush then stamp', () => {
-  beforeEach(resetAll);
-  afterEach(disposeGalaxyScanConfigStore);
-
-  it('writes the config value first, then the timestamp', async () => {
-    galaxyScanConfigStore.set({ ...defaultGalaxyScanConfig(), positions: '7' });
-    mockStore.set.mockClear();
-
-    await stampGalaxyScanConfigChanged();
-
-    const keys = mockStore.set.mock.calls.map((/** @type {any[]} */ c) => c[0]);
-    expect(keys).toEqual([GALAXY_SCAN_CONFIG_KEY_BASE, GALAXY_SCAN_CONFIG_TS_BASE]);
-    expect(mockStore.set.mock.calls[0][1].positions).toBe('7');
-    expect(typeof mockStore.set.mock.calls[1][1]).toBe('number');
   });
 });

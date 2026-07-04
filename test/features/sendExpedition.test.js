@@ -7,7 +7,7 @@
 //   - `settings.fabBtnSize` drives diameter + font scaling,
 //   - `settings.maxExpeditionsPerPlanet` gates the click handler.
 // ... and writes the button to `document.body`, plus JSON position to
-// `oge_enterBtnPos` and focus marker to `oge_focusedBtn`.
+// `oge_enterBtnPos`.
 //
 // # Navigation testing strategy
 //
@@ -660,28 +660,6 @@ describe('installSendExpedition — live settings updates', () => {
     expect(btn?.style.height).toBe('300px');
     // 300 * 0.18 = 54, less 1px for single-zone.
     expect(btn?.style.fontSize).toBe('53px');
-  });
-});
-
-// ──────────────────────────────────────────────────────────────────
-// Focus persistence
-// ──────────────────────────────────────────────────────────────────
-
-describe('installSendExpedition — focus persistence', () => {
-  it('restores focus to the button 50ms after install when focus marker is present', () => {
-    vi.useFakeTimers();
-    localStorage.setItem('oge_focusedBtn', 'send-exp');
-    setupScene({});
-    installSendExpedition();
-    const btn = getBtn();
-    expect(btn).not.toBeNull();
-    // Focus restore is deferred to a 50ms setTimeout.
-    expect(document.activeElement).not.toBe(btn);
-
-    vi.advanceTimersByTime(60);
-
-    expect(document.activeElement).toBe(btn);
-    vi.useRealTimers();
   });
 });
 

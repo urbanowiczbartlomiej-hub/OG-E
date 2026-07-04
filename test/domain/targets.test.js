@@ -8,6 +8,7 @@ import {
   sortTargetList,
   playerPlanets,
   targetExclusionReason,
+  buildTargetCandidates,
 } from '../../src/domain/targets.js';
 
 describe('sortTargetList', () => {
@@ -110,6 +111,82 @@ describe('sortTargetList', () => {
     const snapshot = list.map((c) => c.id);
     sortTargetList(list, 'military', 'desc');
     expect(list.map((c) => c.id)).toEqual(snapshot);
+  });
+
+  // The v2 fleet-finder axes: `danger` ranks by the D scalar (0..1), `fleet` by
+  // the mobile-military ceiling. Both look up a per-player profile in
+  // `dangerById`; players with no profile sink to the bottom, either direction
+  // (like the un-spied tail under `hiddenFleet`).
+  it('sorts by danger via dangerById, descending, profileless rows sinking', () => {
+    const list = [
+      { id: 'a', militaryScore: 1, totalScore: 1 },
+      { id: 'b', militaryScore: 1, totalScore: 1 }, // no profile
+      { id: 'c', militaryScore: 1, totalScore: 1 },
+    ];
+    const dangerById = { a: { danger: 0.3, fleet: 10 }, c: { danger: 0.9, fleet: 20 } };
+    // desc: highest danger first, unprofiled 'b' last.
+    expect(sortTargetList(list, 'danger', 'desc', {}, dangerById).map((c) => c.id))
+      .toEqual(['c', 'a', 'b']);
+    // asc: lowest danger first, but unprofiled 'b' still sinks to the bottom.
+    expect(sortTargetList(list, 'danger', 'asc', {}, dangerById).map((c) => c.id))
+      .toEqual(['a', 'c', 'b']);
+  });
+
+  it('sorts by fleet via dangerById, descending, profileless rows sinking', () => {
+    const list = [
+      { id: 'a', militaryScore: 1, totalScore: 1 },
+      { id: 'b', militaryScore: 1, totalScore: 1 }, // no profile
+      { id: 'c', militaryScore: 1, totalScore: 1 },
+    ];
+    const dangerById = { a: { danger: 0.9, fleet: 5000 }, c: { danger: 0.1, fleet: 9000 } };
+    expect(sortTargetList(list, 'fleet', 'desc', {}, dangerById).map((c) => c.id))
+      .toEqual(['c', 'a', 'b']);
+    expect(sortTargetList(list, 'fleet', 'asc', {}, dangerById).map((c) => c.id))
+      .toEqual(['a', 'c', 'b']);
+  });
+});
+
+describe('buildTargetCandidates', () => {
+  it('joins the feeds and maps a present-but-missing ships to 0 (feed carries ships)', () => {
+    const out = buildTargetCandidates({
+      players: { '1': { name: 'Fleeter', status: '', alliance: '9' } },
+      total: { '1': { position: 3, score: 5000 } },
+      // The military feed CARRIES ships on at least one row (row '2'), so the
+      // "present row + absent attribute = 0 ships" read is valid for row '1'.
+      military: {
+        '1': { position: 10, score: 700 }, // no ships attr → 0
+        '2': { position: 11, score: 800, ships: 42 },
+      },
+    });
+    const a = out.find((c) => c.id === '1');
+    const b = out.find((c) => c.id === '2');
+    expect(a).toMatchObject({
+      id: '1',
+      name: 'Fleeter',
+      totalScore: 5000,
+      militaryScore: 700,
+      ships: 0, // missing ships mapped via ?? 0
+    });
+    expect(b?.ships).toBe(42);
+  });
+
+  it('carries a destroyed score from the military-destroyed feed', () => {
+    const out = buildTargetCandidates({
+      players: { '1': { name: 'X', status: '' } },
+      military: { '1': { position: 1, score: 100, ships: 3 } },
+      destroyed: { '1': { position: 5, score: 987654 } },
+    });
+    const a = out.find((c) => c.id === '1');
+    expect(a?.destroyedScore).toBe(987654);
+  });
+
+  it('leaves ships undefined when the whole military feed lacks the attribute', () => {
+    // No row carries `ships` → feedHasShips is false → ships is unknown
+    // (undefined), NOT a confidently-green 0.
+    const out = buildTargetCandidates({
+      military: { '1': { position: 1, score: 100 }, '2': { position: 2, score: 50 } },
+    });
+    expect(out.find((c) => c.id === '1')?.ships).toBeUndefined();
   });
 });
 

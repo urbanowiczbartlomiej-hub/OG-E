@@ -13,7 +13,9 @@ import {
   zoneFit,
   annotateAndSortByZone,
 } from '../../src/domain/zoneScore.js';
-import { buildThreatFarmField } from '../../src/domain/heatField.js';
+import { buildThreatFarmField, sampleField, presenceBonus } from '../../src/domain/heatField.js';
+import { classifyCell } from '../../src/domain/cellClass.js';
+import { axisDelta, clamp01, flightDistance, reachThreat } from '../../src/domain/geometry.js';
 
 /** A confirmed-empty slot. */
 const empty = { status: 'empty' };
@@ -36,6 +38,65 @@ const scansOf = (spec) => {
 };
 
 const G10 = 10;
+const G60 = 60;
+
+/**
+ * Replicate `adjustedThreatMean`'s exact field-consistent math over a span for
+ * ONE excluded player: build its per-player {d, systems} from the in-span
+ * scans (dedup within a system, then group PER PLAYER), then per span cell
+ * subtract its ONE deduped term `d × maxReach × presenceBonus(sumReach/maxReach)`
+ * from the RAW sample and clamp. This is the E7-correct formula the assertions
+ * pin the implementation against — one deduped term per player, NOT one term
+ * per in-span planet.
+ *
+ * @param {import('../../src/domain/heatField.js').ThreatFarmField} field
+ * @param {any} scans
+ * @param {number} galaxy @param {number} start @param {number} end
+ * @param {number} excludedId @param {number} galaxyMax @param {number} ownMilitary
+ * @returns {number}
+ */
+const replicateAdjustedMean = (field, scans, galaxy, start, end, excludedId, galaxyMax, ownMilitary) => {
+  const span = end - start + 1;
+  /** @param {number} s */
+  const wrap = (s) => ((((s - 1) % galaxyMax) + galaxyMax) % galaxyMax) + 1;
+  const clsCtx = { ownMilitary, danger: undefined };
+  /** @type {Map<number, { d: number, systems: number[] }>} */
+  const byPlayer = new Map();
+  for (let i = 0; i < span; i++) {
+    const sys = wrap(start + i);
+    const positions = scans[`${galaxy}:${sys}`]?.positions;
+    if (!positions) continue;
+    const here = new Map();
+    for (const pos of Object.values(positions)) {
+      if (!(pos.player && pos.player.id === excludedId)) continue;
+      const cls = classifyCell(pos.status, pos.player, clsCtx);
+      if (cls.bucket !== 'threat') continue;
+      if (cls.intensity > (here.get(excludedId) ?? 0)) here.set(excludedId, cls.intensity);
+    }
+    for (const [id, intensity] of here) {
+      const e = byPlayer.get(id);
+      if (e) { if (intensity > e.d) e.d = intensity; e.systems.push(sys); }
+      else byPlayer.set(id, { d: intensity, systems: [sys] });
+    }
+  }
+  let total = 0;
+  for (let i = 0; i < span; i++) {
+    const sys = wrap(start + i);
+    const cell = sampleField(field, galaxy, sys);
+    let dropRaw = 0;
+    for (const { d, systems } of byPlayer.values()) {
+      let sum = 0;
+      let max = 0;
+      for (const ssys of systems) {
+        const r = reachThreat(flightDistance(0, axisDelta(sys, ssys, galaxyMax, field.donutSystem)), field.windowH);
+        if (r > 0) { sum += r; if (r > max) max = r; }
+      }
+      if (max > 0) dropRaw += d * max * presenceBonus(sum / max);
+    }
+    total += clamp01((cell.threatRaw ?? cell.threat) - dropRaw / field.threatScale);
+  }
+  return total / span;
+};
 
 describe('ZONES / HARM_WEIGHTS', () => {
   it('each zone weight vector sums to 1', () => {
@@ -275,6 +336,109 @@ describe('computeZoneChannels — region.excluded field-aware threat adjustment'
     });
 
     expect(emptyExcludedCh.safety).toBe(omittedCh.safety);
+  });
+});
+
+describe('adjustedThreatMean — E7 per-player (not per-planet) subtraction', () => {
+  // Scenario: a CLUSTERED excluded player (id 42) with three planets in
+  // systems 20,21,22 — all inside the span 18..24 (centre 21). Two strong
+  // KEPT players sit far away (systems 40,41) purely to lift the field's p95
+  // scale, so the cluster is a MODEST fraction of it and the per-cell threat
+  // does not fully saturate/clamp — that keeps the subtraction arithmetic
+  // visible rather than masked by a clamp to 0.
+  const ownMilitary = 100000; // occ(_, 100000) → classifyCell intensity 0.5
+  const clusteredScans = scansOf({
+    '4:20': { 1: occ(42, 100000) },
+    '4:21': { 1: occ(42, 100000), 8: empty },
+    '4:22': { 1: occ(42, 100000) },
+    '4:40': { 1: occ(99, 100000) },
+    '4:41': { 1: occ(98, 100000) },
+  });
+  const spanArgs = /** @type {const} */ ([4, 18, 24]);
+  /** @param {any} scans */
+  const buildField = (scans) =>
+    buildThreatFarmField(scans, { galaxies: 4, systems: G60 }, { cols: G60, ownMilitary });
+
+  it('the adjusted threat mean equals the per-PLAYER-dedup formula (one term per player)', () => {
+    const field = buildField(clusteredScans);
+    /** @type {any} */
+    const region = { galaxy: 4, start: 18, end: 24, center: 21, matched: 1, excluded: [{ id: 42, name: 'P42' }] };
+    const ch = computeZoneChannels(region, {
+      scans: clusteredScans, positions: [8], galaxyMax: G60, field, ownMilitary,
+    });
+    const adjustedThreat = 1 - ch.safety; // safety = 1 − threat
+    const expected = replicateAdjustedMean(field, clusteredScans, ...spanArgs, 42, G60, ownMilitary);
+    // Exact match to the field-consistent per-player formula — the E7 fix.
+    expect(adjustedThreat).toBeCloseTo(expected, 12);
+  });
+
+  it('excluding the clustered player drops the mean by ~one per-player term, NOT ~three (no over-subtraction)', () => {
+    const field = buildField(clusteredScans);
+    /** @type {any} */
+    const baseRegion = { galaxy: 4, start: 18, end: 24, center: 21, matched: 1 };
+    const plainCh = computeZoneChannels({ ...baseRegion }, {
+      scans: clusteredScans, positions: [8], galaxyMax: G60, field, ownMilitary,
+    });
+    const excludedCh = computeZoneChannels({ ...baseRegion, excluded: [{ id: 42, name: 'P42' }] }, {
+      scans: clusteredScans, positions: [8], galaxyMax: G60, field, ownMilitary,
+    });
+
+    const plainThreat = 1 - plainCh.safety;
+    const adjustedThreat = 1 - excludedCh.safety;
+    const drop = plainThreat - adjustedThreat;
+
+    // A real, positive drop — the exclusion reaches the safety channel.
+    expect(drop).toBeGreaterThan(0);
+    // Crucially it does NOT remove the whole cluster: a per-PLANET
+    // over-subtraction (three separate terms) would drive the span threat to
+    // ~0 everywhere → drop ≈ plainThreat. The per-player term leaves clear
+    // residual threat, so the adjusted mean stays comfortably above zero.
+    expect(adjustedThreat).toBeGreaterThan(0.02);
+    expect(drop).toBeLessThan(plainThreat);
+
+    // The single deduped per-cell drop is bounded by the presence cap: at the
+    // cluster centre its raw magnitude is `d × maxReach × presenceBonus(≤1.3)`,
+    // strictly below the `d × Σreach` (≈2×) an over-subtraction would remove.
+    const centre = 21;
+    const rs = [20, 21, 22].map((ssys) =>
+      reachThreat(flightDistance(0, axisDelta(centre, ssys, G60, field.donutSystem)), field.windowH));
+    const sum = rs.reduce((a, b) => a + b, 0);
+    const max = Math.max(...rs);
+    const d = 0.5; // occ(_, 100000) intensity
+    const singleTermRaw = d * max * presenceBonus(sum / max);
+    const naiveThreeTermRaw = d * sum;
+    expect(singleTermRaw / (d * max)).toBeLessThanOrEqual(1.3); // ≤ PRESENCE_CAP
+    expect(naiveThreeTermRaw).toBeGreaterThan(1.8 * singleTermRaw); // over-sub ≈ 2× the real drop
+  });
+
+  it('baseline: excluding a LONE (single-planet) player still drops threat and matches the same per-player formula', () => {
+    const loneScans = scansOf({
+      '4:21': { 1: occ(42, 100000), 8: empty },
+      '4:40': { 1: occ(99, 100000) },
+      '4:41': { 1: occ(98, 100000) },
+    });
+    const field = buildField(loneScans);
+    /** @type {any} */
+    const baseRegion = { galaxy: 4, start: 18, end: 24, center: 21, matched: 1 };
+    const plainCh = computeZoneChannels({ ...baseRegion }, {
+      scans: loneScans, positions: [8], galaxyMax: G60, field, ownMilitary,
+    });
+    const excludedCh = computeZoneChannels({ ...baseRegion, excluded: [{ id: 42, name: 'P42' }] }, {
+      scans: loneScans, positions: [8], galaxyMax: G60, field, ownMilitary,
+    });
+
+    const plainThreat = 1 - plainCh.safety;
+    const adjustedThreat = 1 - excludedCh.safety;
+    expect(adjustedThreat).toBeLessThan(plainThreat); // a lone player still lowers threat
+
+    const expected = replicateAdjustedMean(field, loneScans, ...spanArgs, 42, G60, ownMilitary);
+    expect(adjustedThreat).toBeCloseTo(expected, 12);
+
+    // With a single planet there is exactly one reach term, so presenceBonus(1)
+    // = 1 and there is no cluster to over-subtract — the per-player and
+    // per-planet formulas coincide here (that is why the clustered case above
+    // is the one that discriminates the E7 fix).
+    expect(presenceBonus(1)).toBeCloseTo(1, 12);
   });
 });
 

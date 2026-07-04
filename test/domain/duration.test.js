@@ -1,7 +1,7 @@
 // @ts-check
 
 import { describe, it, expect } from 'vitest';
-import { parseDuration, parseDurationList, formatDuration, humanizeOffset, humanizeArrivalOffset, humanizeReturnOffset, humanizeOffsetShort, humanizeReturnOffsetShort, summarizeSchedule } from '../../src/domain/duration.js';
+import { parseDuration, parseDurationList, formatDuration, humanizeOffset, humanizeArrivalOffset, humanizeReturnOffset, summarizeSchedule } from '../../src/domain/duration.js';
 
 describe('parseDuration', () => {
   it('treats a bare number as minutes', () => {
@@ -152,39 +152,6 @@ describe('humanizeReturnOffset', () => {
 
   it('treats non-finite input as zero', () => {
     expect(humanizeReturnOffset(NaN)).toBe('when the wave returns');
-  });
-});
-
-describe('humanizeOffsetShort', () => {
-  it('renders the compact before / at / after form (reference point dropped)', () => {
-    expect(humanizeOffsetShort(-600)).toBe('10m before');
-    expect(humanizeOffsetShort(0)).toBe('at landing');
-    expect(humanizeOffsetShort(900)).toBe('15m after');
-  });
-
-  it('rounds magnitude to the nearest whole minute', () => {
-    expect(humanizeOffsetShort(-90)).toBe('2m before');
-    expect(humanizeOffsetShort(30)).toBe('1m after');
-  });
-
-  it('treats non-finite input as zero', () => {
-    expect(humanizeOffsetShort(NaN)).toBe('at landing');
-  });
-});
-
-describe('humanizeReturnOffsetShort', () => {
-  it('renders "at return" for zero (and non-positive)', () => {
-    expect(humanizeReturnOffsetShort(0)).toBe('at return');
-    expect(humanizeReturnOffsetShort(-60)).toBe('at return');
-  });
-
-  it('renders the compact "Nm after" form for positive offsets', () => {
-    expect(humanizeReturnOffsetShort(600)).toBe('10m after');
-    expect(humanizeReturnOffsetShort(1800)).toBe('30m after');
-  });
-
-  it('treats non-finite input as zero', () => {
-    expect(humanizeReturnOffsetShort(NaN)).toBe('at return');
   });
 });
 

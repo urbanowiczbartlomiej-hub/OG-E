@@ -98,8 +98,10 @@ describe('findNextPlanetInList', () => {
       ['10', true],
       ['20', true],
     ]);
+    // With no active row, every mode degrades to a plain full walk from
+    // index 0 (REVIEW.md 3.8) — 'skip' no longer drops the first planet.
     expect(findNextPlanetInList(isOk, { active: 'first' })).toBe('10');
-    expect(findNextPlanetInList(isOk, { active: 'skip' })).toBe('20');
+    expect(findNextPlanetInList(isOk, { active: 'skip' })).toBe('10');
   });
 
   it('defaults to first mode when no opts are passed', () => {

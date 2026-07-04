@@ -14,8 +14,6 @@ import {
   dailyStateHasData,
   galaxyConfigSlotHasData,
   alarmClockConfigSlotHasData,
-  playersSlotHasData,
-  ownProfileHasData,
   sameJSON,
   gistIsCurrent,
 } from '../../../src/sync/scheduler/pure.js';
@@ -242,22 +240,5 @@ describe('gistIsCurrent', () => {
   it('treats a null/undefined remote as not-current (first upload)', () => {
     expect(gistIsCurrent(null, merged)).toBe(false);
     expect(gistIsCurrent(undefined, merged)).toBe(false);
-  });
-});
-
-describe('playersSlotHasData', () => {
-  it('is true for a non-empty roster, false for empty / undefined', () => {
-    expect(playersSlotHasData({ 7: { id: 7, name: 'x', seenAt: 1 } })).toBe(true);
-    expect(playersSlotHasData({})).toBe(false);
-    expect(playersSlotHasData(undefined)).toBe(false);
-  });
-});
-
-describe('ownProfileHasData', () => {
-  it('is true only when the profile carries a real updatedAt', () => {
-    expect(ownProfileHasData({ rank: 1, updatedAt: 5 })).toBe(true);
-    expect(ownProfileHasData({})).toBe(false); // {} from readOwnProfile = never written
-    expect(ownProfileHasData(undefined)).toBe(false);
-    expect(ownProfileHasData({ rank: 1 })).toBe(false); // no updatedAt
   });
 });

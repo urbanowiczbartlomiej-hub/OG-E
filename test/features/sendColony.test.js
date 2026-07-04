@@ -708,6 +708,12 @@ describe('onSendClick — fleetdispatch branch', () => {
     getSend()?.click();
     await settle();
     expect(navTarget).toBeNull();
+    // The retarget armed a ready send on 4:30:8. Tap 1's 'Stale' transient-hold
+    // (REVIEW.md 7.10, ~1.8 s) is still re-painting when the retarget lands, so
+    // wait it out and pump one refresh() — the derive-driven armed-fleet2 label
+    // ('Send!' on the freshly-aimed slot) then resumes.
+    await new Promise((r) => setTimeout(r, 1900));
+    document.dispatchEvent(new CustomEvent('oge:galaxyScanned'));
     expect(getSend()?.textContent).toContain('Send!');
     expect(getSend()?.textContent).toContain('4:30:8');
     expect(scansStore.get()['4:30']?.positions?.[8]?.status).toBe('empty');
@@ -897,7 +903,7 @@ describe('oge:checkTargetResult reactor', () => {
     installSendColony();
     document.dispatchEvent(
       new CustomEvent('oge:checkTargetResult', {
-        detail: { galaxy: 4, system: 30, position: 8, errorCode: 140008 },
+        detail: { galaxy: 4, system: 30, position: 8, errorCode: 140008, ships: { 208: 1 } },
       }),
     );
     expect(scansStore.get()['4:30']?.positions?.[8]?.status).toBe('abandoned');

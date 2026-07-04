@@ -97,7 +97,12 @@ describe('createFleetDispatcherCache', () => {
       /** @type {any} */ (window).fleetDispatcher = live;
       const c = createFleetDispatcherCache();
       c.bootstrap();
-      expect(c.get()).toBe(live);
+      // bootstrap() now projects a normalized COPY via seedFromLiveFd
+      // (not the raw live ref) so cached reads are decoupled from later
+      // mutation and every field is coerced.
+      const snap = c.get();
+      expect(snap).not.toBe(live);
+      expect(snap?.fleetCount).toBe(7);
     });
 
     it('is a no-op when window.fleetDispatcher is not an object', () => {

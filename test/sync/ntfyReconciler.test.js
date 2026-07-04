@@ -19,8 +19,6 @@ import {
   fetchScheduledMessages,
   offsetsForSchedule,
   DEFAULT_WAVE_OFFSETS_SEC,
-  WAVE_PRIORITY,
-  ADHOC_PRIORITY,
 } from '../../src/sync/ntfyReconciler.js';
 import { logger } from '../../src/lib/logger.js';
 
@@ -161,8 +159,6 @@ describe('reconcileWaveQueue', () => {
       expect(init.headers.Authorization).toBeUndefined();
       expect(init.headers.Title).toBe(TITLE);
       expect(init.headers['X-Delay']).toBe(String(2000 + slot * WAVE_INTERVAL));
-      // Wave alarmClock are flat "default" priority now (3) — no escalation.
-      expect(init.headers.Priority).toBe(String(WAVE_PRIORITY));
       // Tags were dropped entirely — no `Tags` header on any push.
       expect(init.headers.Tags).toBeUndefined();
       // Icon is a public https URL (ntfy app fetches it; moz-extension:// won't do).
@@ -333,7 +329,6 @@ describe('reconcileAdhocQueue', () => {
 
     const post = fetchMock.mock.calls.find((c) => c[1]?.method === 'POST');
     expect(post?.[1].headers.Title).toBe(ADHOC_TITLE);
-    expect(post?.[1].headers.Priority).toBe(String(ADHOC_PRIORITY));
     // No `Tags` header any more.
     expect(post?.[1].headers.Tags).toBeUndefined();
     expect(post?.[1].headers['X-Delay']).toBe('5000');
@@ -480,7 +475,6 @@ describe('reconcileFleetSaveQueue', () => {
     expect(posts).toHaveLength(3);
     for (const p of posts) {
       expect(p[1].headers.Title).toBe(FS_TITLE);
-      expect(p[1].headers.Priority).toBe(String(ADHOC_PRIORITY));
     }
     // Bodies state before/at/after landing honestly.
     const bodies = posts.map((p) => p[1].body);

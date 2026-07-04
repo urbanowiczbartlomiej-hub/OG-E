@@ -17,9 +17,7 @@ import {
   findFreeSystems,
   findNeighbourhoodCandidates,
   spaceOutCandidates,
-  systemIntentHeat,
   scoreRegion,
-  sortRegionsByStrategy,
   MIN_REGION_LENGTH,
 } from '../../src/domain/regions.js';
 
@@ -296,24 +294,6 @@ describe('scoreRegion — player-cache signals (2b)', () => {
   });
 });
 
-describe('sortRegionsByStrategy — strong penalty (2b)', () => {
-  it("ranks a region with a strong neighbour below an equivalent one without, under 'peaceful'", () => {
-    // Two single-system free regions, each with one active neighbour; only
-    // 4:1's neighbour is flagged strong. Under 'peaceful' (strong: -1.5) the
-    // clean region should sort first.
-    const scans = scansOf({
-      '4:1': { 8: empty, 3: occ(10) },
-      '4:2': { 8: empty, 3: occ(20) },
-    });
-    /** @type {any} */
-    const players = { 10: { id: 10, name: 'A', flags: { strong: true } } };
-    const free = findFreeSystems(scans, { positions: [8], players, ...G10 });
-    const sorted = sortRegionsByStrategy(free, 'peaceful');
-    expect(sorted[0].start).toBe(2); // the strong-free system wins
-    expect(sorted[1].start).toBe(1);
-  });
-});
-
 /**
  * An occupied slot owned by `id` with a rank class (bandit/honored).
  * @param {number} id @param {string} rankClass @param {number} [rank]
@@ -395,54 +375,6 @@ describe('scoreRegion — points temperature (avgTotal / avgMilitary)', () => {
     const sc = scoreRegion({ galaxy: 4, start: 1, end: 1 }, scans, { ...G10 });
     expect(sc.avgTotal).toBe(1000);
     expect(sc.avgMilitary).toBe(0);
-  });
-});
-
-describe("sortRegionsByStrategy — 'safe_expansion' rank-relative signal", () => {
-  it('prefers the region whose neighbours we out-rank (given ownRank)', () => {
-    // Two single-system free regions; 4:1's neighbour out-ranks us (#5 vs our
-    // #100), 4:2's is weaker (#900). Under safe_expansion (weakerNearby: 1.5)
-    // the weaker neighbourhood must win.
-    const scans = scansOf({
-      '4:1': { 8: empty, 3: { status: 'occupied', player: { id: 10, name: 'S', rank: 5 } } },
-      '4:2': { 8: empty, 3: { status: 'occupied', player: { id: 20, name: 'W', rank: 900 } } },
-    });
-    const free = findFreeSystems(scans, { positions: [8], ...G10 });
-    const sorted = sortRegionsByStrategy(free, 'safe_expansion', { ownRank: 100 });
-    expect(sorted[0].start).toBe(2);
-    expect(sorted[1].start).toBe(1);
-  });
-});
-
-describe('systemIntentHeat', () => {
-  it('is 0 for an empty/quiet system', () => {
-    const scans = scansOf({ '4:1': { 8: empty } });
-    expect(systemIntentHeat(scans, 4, 1, { inactive: 2.5 })).toBe(0);
-  });
-
-  it('trends negative (red) for a bandit under a negative bandit weight', () => {
-    const scans = scansOf({ '4:1': { 3: ranked(1, 'rank_bandit3') } });
-    expect(systemIntentHeat(scans, 4, 1, { bandit: -3 })).toBeLessThan(0);
-  });
-
-  it('trends positive (green) for a farm under a positive inactive weight', () => {
-    const scans = scansOf({ '4:1': { 3: inact(2) } });
-    expect(systemIntentHeat(scans, 4, 1, { inactive: 2.5 })).toBeGreaterThan(0);
-  });
-
-  it('trends positive for a weaker-ranked neighbour under weakerNearby + ownRank', () => {
-    const scans = scansOf({ '4:1': { 3: { status: 'occupied', player: { id: 1, name: 'W', rank: 900 } } } });
-    expect(systemIntentHeat(scans, 4, 1, { weakerNearby: 1.5 }, { ownRank: 100 })).toBeGreaterThan(0);
-  });
-
-  it('trends negative when the neighbour out-ranks us', () => {
-    const scans = scansOf({ '4:1': { 3: { status: 'occupied', player: { id: 1, name: 'S', rank: 5 } } } });
-    expect(systemIntentHeat(scans, 4, 1, { weakerNearby: 1.5 }, { ownRank: 100 })).toBeLessThan(0);
-  });
-
-  it('weakerNearby contributes 0 without ownRank', () => {
-    const scans = scansOf({ '4:1': { 3: { status: 'occupied', player: { id: 1, name: 'W', rank: 900 } } } });
-    expect(systemIntentHeat(scans, 4, 1, { weakerNearby: 1.5 })).toBe(0);
   });
 });
 

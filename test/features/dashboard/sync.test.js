@@ -105,10 +105,13 @@ describe('Sync tab renderer', () => {
 
     store.set('s1-en:oge_players', { a: 1 });
     onChangedCbs.forEach((cb) => cb({ 's1-en:oge_players': { newValue: { a: 1 } } }));
-    await flush();
 
-    expect($('.sync-empty')).toBeNull();
-    expect($('.sync-universe').textContent).toBe('s1-en');
+    // The onChanged repaint is debounced (REVIEW.md 7.5, 300 ms trailing
+    // timer), so poll the real timer instead of just flushing microtasks.
+    await vi.waitFor(() => {
+      expect($('.sync-empty')).toBeNull();
+      expect($('.sync-universe').textContent).toBe('s1-en');
+    });
   });
 
   it('ignores onChanged keys without :oge_', async () => {

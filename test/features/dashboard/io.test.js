@@ -36,12 +36,10 @@ import {
   exportAllData,
   importAllData,
   exportColonyCsv,
-  triggerSync,
 } from '../../../src/features/dashboard/io.js';
 import { chromeStore } from '../../../src/lib/storage.js';
 import { historyKeyFor } from '../../../src/state/history.js';
 import { scansKeyFor } from '../../../src/state/scans.js';
-import { syncRequestKeyFor } from '../../../src/sync/scheduler.js';
 
 const UNI = 's163-pl';
 const HKEY = historyKeyFor(UNI);
@@ -257,14 +255,4 @@ describe('export round-trips', () => {
     expect(lines[1]).toContain('"3"');
     expect(lines[3]).toContain('"1"');
   });
-});
-
-describe('sync tombstone triggers', () => {
-  it('triggerSync writes a numeric timestamp to the per-universe sync key', async () => {
-    await triggerSync(UNI);
-    expect(chromeStore.set).toHaveBeenCalledWith(syncRequestKeyFor(UNI), expect.any(Number));
-  });
-
-  // triggerResetGalaxy is gone — the per-galaxy reset tombstone was swept with
-  // the Scanned-data accordion (API TTL supersedes manual purges).
 });

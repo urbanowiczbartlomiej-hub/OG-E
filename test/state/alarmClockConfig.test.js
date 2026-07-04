@@ -29,7 +29,6 @@ import {
   alarmClockConfigStore,
   initAlarmClockConfigStore,
   disposeAlarmClockConfigStore,
-  stampAlarmClockConfigChanged,
 } from '../../src/state/alarmClockConfig.js';
 import { defaultAlarmClockConfig } from '../../src/domain/alarmClockConfig.js';
 
@@ -89,22 +88,5 @@ describe('alarmClockConfig store — hydration', () => {
     initAlarmClockConfigStore();
     await flushMicrotasks();
     expect(mockStore.get).toHaveBeenCalledWith(ALARM_CLOCK_CONFIG_KEY_BASE);
-  });
-});
-
-describe('stampAlarmClockConfigChanged — flush then stamp', () => {
-  beforeEach(resetAll);
-  afterEach(disposeAlarmClockConfigStore);
-
-  it('writes the config value first, then the timestamp', async () => {
-    alarmClockConfigStore.set({ ...defaultAlarmClockConfig(), alarmClockEnabled: true });
-    mockStore.set.mockClear();
-
-    await stampAlarmClockConfigChanged();
-
-    const keys = mockStore.set.mock.calls.map((/** @type {any[]} */ c) => c[0]);
-    expect(keys).toEqual([ALARM_CLOCK_CONFIG_KEY_BASE, ALARM_CLOCK_CONFIG_TS_BASE]);
-    expect(mockStore.set.mock.calls[0][1].alarmClockEnabled).toBe(true);
-    expect(typeof mockStore.set.mock.calls[1][1]).toBe('number');
   });
 });

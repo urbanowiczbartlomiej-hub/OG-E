@@ -46,7 +46,6 @@ import {
   fetchGistData,
   writeGistData,
   setStatus,
-  validateToken,
   _resetGistStateForTest,
   TOKEN_KEY,
   GIST_ID_KEY,
@@ -139,25 +138,6 @@ describe('token handling', () => {
   it('getToken returns an empty string when no token is stored', () => {
     localStorage.removeItem(TOKEN_KEY);
     expect(getToken()).toBe('');
-  });
-});
-
-describe('validateToken', () => {
-  it('returns a "no token" line without hitting the network', async () => {
-    localStorage.removeItem(TOKEN_KEY);
-    const fetchMock = mockFetch(makeResponse());
-    expect(await validateToken()).toBe('✗ No token set');
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it('reports the login on a 200 from /user', async () => {
-    mockFetch(makeResponse({ body: { login: 'yoxid' } }));
-    expect(await validateToken()).toBe('✓ Valid — yoxid');
-  });
-
-  it('surfaces a 401 as a ✗ line and never throws', async () => {
-    mockFetch(makeResponse({ ok: false, status: 401, body: { message: 'Bad credentials' } }));
-    expect(await validateToken()).toBe('✗ HTTP 401: Bad credentials');
   });
 });
 

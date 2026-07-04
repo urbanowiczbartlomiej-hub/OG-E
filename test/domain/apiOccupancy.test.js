@@ -123,6 +123,49 @@ describe('parseHighscore', () => {
       ranks: {},
     });
   });
+
+  // The `ships` attribute is emitted only on the MILITARY highscore (type 3).
+  // It is the free "does this player own a mobile fleet" signal for the danger
+  // model. The parser must (a) coerce it to a number where present, (b) leave
+  // it ABSENT (undefined) where the row omits it — never coin a 0 — and (c) not
+  // fabricate a ships field on feeds that never carry the attribute.
+  describe('ships attribute (military feed)', () => {
+    it('parses ships to a number on a military (type 3) row when present', () => {
+      const xml =
+        '<highscore timestamp="1700000000" category="1" type="3">' +
+        '<player id="103" position="1" score="47974257" ships="1234"/>' +
+        '</highscore>';
+      const hs = parseHighscore(xml);
+      expect(hs.type).toBe(3);
+      expect(hs.ranks['103'].ships).toBe(1234);
+      expect(typeof hs.ranks['103'].ships).toBe('number');
+    });
+
+    it('leaves ships undefined (key absent) when the attribute is missing on a row', () => {
+      const xml =
+        '<highscore category="1" type="3">' +
+        '<player id="103" position="1" score="500" ships="7"/>' +
+        '<player id="207" position="2" score="400"/>' + // pure-defense: no ships attr
+        '</highscore>';
+      const hs = parseHighscore(xml);
+      expect(hs.ranks['207'].ships).toBeUndefined();
+      // The absence is a genuinely absent key, not an explicit `ships: undefined`.
+      expect(Object.prototype.hasOwnProperty.call(hs.ranks['207'], 'ships')).toBe(false);
+      // And it is NOT coerced to 0.
+      expect(hs.ranks['207'].ships).not.toBe(0);
+    });
+
+    it('does not fabricate a ships field on a non-military feed (no ships attrs)', () => {
+      const xml =
+        '<highscore category="1" type="0">' +
+        '<player id="103" position="1" score="123456"/>' +
+        '</highscore>';
+      const hs = parseHighscore(xml);
+      expect(hs.type).toBe(0);
+      expect(hs.ranks['103'].ships).toBeUndefined();
+      expect(Object.prototype.hasOwnProperty.call(hs.ranks['103'], 'ships')).toBe(false);
+    });
+  });
 });
 
 describe('parseServerData', () => {

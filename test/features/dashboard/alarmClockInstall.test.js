@@ -26,7 +26,10 @@ vi.mock('../../../src/lib/storage.js', () => ({
     get: vi.fn(() => Promise.resolve(undefined)),
     set: vi.fn(),
     remove: vi.fn(),
-    onChanged: vi.fn(),
+    // Real chromeStore.onChanged returns an idempotent unsubscribe (see
+    // lib/storage.js); installAlarmClock now stores it and _resetAlarmClockForTest
+    // calls it (REVIEW.md 7.6), so the mock must hand back a function too.
+    onChanged: vi.fn(() => () => {}),
   },
 }));
 
