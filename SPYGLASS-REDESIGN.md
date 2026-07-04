@@ -84,6 +84,25 @@ coloured cell → open that player's dossier** — deferred: the occupancy canva
 pins the system popover (`buildSystemCard` names the occupants), so a click→dossier would
 conflict + needs canvas hit-detect→playerId; the table row/⌖ is the act-on-a-player path today.
 
+### DONE — session 2 continued (Etap F routine + MAP REDESIGN)
+
+| Commit | What shipped |
+|---|---|
+| `90c6274` | **F1** — NEW `domain/routine.js` pure `summarizeRoutine` (hour-of-day activity, weekday res medians, collection body, timeline; 30-day recency, n-gated, sample counts). |
+| `0e2841c` | **F2** — dossier ROUTINE section (`routineBlock` + sparkline; `routines` built in `loadAll`, threaded index→renderTargets→dossier). Wording-disciplined; hollow until history fills. |
+| `26fb469` | **Map redesign (data)** — `WatchListConfig.relationships` (enemy/friend/neutral, device-local) + `setRelationship` + a dossier relationship selector. |
+| `3ff7326` | **Map redesign (renderer)** — NEW `mapPrimitives.renderPositionsMap` (empty grid, markers ONLY at own+watched, colour=relationship, size=danger, click→dossier) REPLACING the E2b occupancy-colour overlay. `repaintSpyglassMap` builds the bodies list; relationship legend; ⌖ just opens the map; dropped `playerColor`/`spyMapHighlight`/`highlightColors` overlay path. |
+
+**User DECISION (this session):** the Spyglass map is a **positions / attack-planning map**, not
+the colonization occupancy lens — empty grid + only your planets (white) + watched players' by
+relationship (enemy red / friend green / neutral grey), sized by danger. **This SUPERSEDED E2b**
+(the per-player id-hash occupancy overlay). **Remaining map polish:** danger-scaled markers are in;
+still optional = a "reachable tonight" overlay. **Dead-code cleanup owed:** `renderServerMap`'s
+`highlightColors` param + its `renderOccupancyMap` cell branch are now unused (nothing passes it) —
+strip in a follow-up. **Etap F remaining = F3** (galaxy-view activity capture + self-induced
+discount — the dense probe-free source; §6.6bis). **Then Etap G** (scanPriority). Then release 1.35.0
+(reconcile tests incl. `routine`/`relationships`/`renderPositionsMap`).
+
 ### NEXT — future sessions, in order
 
 *(Etap D-strip is committed `f41f4a5` but not live-verified — open the messages tab with a
