@@ -373,7 +373,8 @@ let activityObs = {};
 /** @type {HTMLButtonElement | null} */ let spyMapToggle;
 /** @type {HTMLElement | null} */ let spyMapBlock;
 /** @type {HTMLElement | null} */ let spyMapLegend;
-/** @type {HTMLInputElement | null} */ let spyMapReach;
+/** Reach overlay toggle — a chip pill (`.on` is its state), not a checkbox. */
+/** @type {HTMLElement | null} */ let spyMapReach;
 /** @type {HTMLElement | null} */ let spyMapPlayersEl;
 /** @type {HTMLInputElement} */ let tgtMinMilitary;
 /** @type {HTMLInputElement | null} */ let tgtMaxMilitary;
@@ -388,7 +389,6 @@ const forceIncludeIds = new Set();
 // read via toggleChipOn where `.checked` used to be.
 /** @type {HTMLElement | null} */ let tgtWatchedOnly;
 /** @type {HTMLInputElement | null} */ let tgtProbes;
-/** @type {HTMLElement | null} */ let tgtInRange;
 /** @type {HTMLElement | null} */ let tgtHideInactive;
 /** @type {HTMLButtonElement | null} */ let tgtConfigToggle;
 /** @type {HTMLElement | null} */ let tgtConfigCard;
@@ -397,6 +397,7 @@ const forceIncludeIds = new Set();
 /** @type {HTMLElement | null} */ let proximityCountsEl;
 /** @type {HTMLElement | null} */ let proximityAlertEl;
 /** @type {HTMLElement | null} */ let watchCardsEl;
+/** @type {HTMLElement | null} */ let spyFreshnessEl;
 /** @type {HTMLElement | null} */ let scanPlanStripEl;
 /** @type {HTMLElement | null} */ let scanPlanSummaryEl;
 
@@ -680,7 +681,6 @@ const wireDom = () => {
   tgtSearch = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtSearch'));
   tgtWatchedOnly = document.getElementById('tgtWatchedOnly');
   tgtProbes = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtProbes'));
-  tgtInRange = document.getElementById('tgtInRange');
   tgtHideInactive = document.getElementById('tgtHideInactive');
   tgtConfigToggle = /** @type {HTMLButtonElement | null} */ (document.getElementById('tgtConfigToggle'));
   tgtConfigCard = document.getElementById('tgtConfigCard');
@@ -689,13 +689,14 @@ const wireDom = () => {
   proximityCountsEl = document.getElementById('proximityCounts');
   proximityAlertEl = document.getElementById('proximityAlert');
   watchCardsEl = document.getElementById('watchCards');
+  spyFreshnessEl = document.getElementById('spyFreshness');
   scanPlanStripEl = document.getElementById('scanPlanStrip');
   scanPlanSummaryEl = document.getElementById('scanPlanSummary');
   spyglassMapHost = document.getElementById('spyglassMapHost');
   spyMapToggle = /** @type {HTMLButtonElement | null} */ (document.getElementById('spyMapToggle'));
   spyMapBlock = document.getElementById('spyMapBlock');
   spyMapLegend = document.getElementById('spyMapLegend');
-  spyMapReach = /** @type {HTMLInputElement | null} */ (document.getElementById('spyMapReach'));
+  spyMapReach = document.getElementById('spyMapReach');
   spyMapPlayersEl = document.getElementById('spyMapPlayers');
 };
 
@@ -921,8 +922,14 @@ const markRescan = (key) => {
  * @returns {void}
  */
 const toggleWatched = (id) => {
-  if (watchedPlayers.has(id)) watchedPlayers.delete(id);
-  else watchedPlayers.add(id);
+  if (watchedPlayers.has(id)) {
+    watchedPlayers.delete(id);
+  } else {
+    watchedPlayers.add(id);
+    // New watches default to ENEMY (the map marker is red until you say
+    // otherwise) — untagged neutral was too easy to leave everything grey.
+    if (!watchRelationships[id]) watchRelationships[id] = 'enemy';
+  }
   writeWatchConfig();
   repaintTargets();
   // Membership IS the map's body set — keep the open map + its chips honest.
@@ -1169,23 +1176,23 @@ const repaintTargets = () => {
   const nowMs = Date.now();
   /** @type {Record<string, import('../../domain/raidVerdict.js').RaidVerdict>} */
   const verdicts = {};
+  // Attack-band ("in range") gating was removed — we treat every player as
+  // reachable, so `inBand` is never asserted (no "can't hit" verdict, no ⚔).
   /** @type {Record<string, boolean|undefined>} */
   const inBandById = {};
   for (const c of targetCandidates) {
-    const inBand = typeof ownTotalScore === 'number' && ownTotalScore > 0
-      && typeof c.totalScore === 'number'
-      ? c.totalScore >= ownTotalScore / 5 && c.totalScore <= ownTotalScore * 5
-      : undefined;
-    inBandById[c.id] = inBand;
     const bucket = targetReports[c.id];
     verdicts[c.id] = raidVerdict({
       profile: dangerProfiles.get(Number(c.id)),
       estimate: estimates[c.id],
       reports: bucket ? Object.values(bucket).map(latestOf) : [],
-      inBand,
+      inBand: undefined,
       nowMs,
     });
   }
+
+  // Header freshness chips: how old the API feeds are + how many players spied.
+  renderSpyFreshness(Object.keys(reportsByPlayer).length);
 
   // Watchlist cards — the landing strip (Etap H4). Same per-repaint data the
   // table + dossier read, so a card can never disagree with the row below it.
@@ -1213,9 +1220,8 @@ const repaintTargets = () => {
       ownAlliance,
       minMilitary: Number(tgtMinMilitary?.value) || 0,
       maxMilitary: Number(tgtMaxMilitary?.value) || 0,
-      // "In range only" opt-in: apply OGame's noob-protection band (game default
-      // 5x) so only legally-attackable players show; default off = show every score.
-      protectionFactor: toggleChipOn(tgtInRange) ? 5 : 0,
+      // No attack-band filter — every player is treated as reachable.
+      protectionFactor: 0,
       excludeVacation: true,
       excludeInactive: tgtHideInactive ? toggleChipOn(tgtHideInactive) : true,
       excludeBanned: true,
@@ -1253,9 +1259,6 @@ const repaintTargets = () => {
     // Nickname search (Etap D): reveals name-matches incl. excluded players.
     searchQuery: targetSearchQuery,
     onShowAnyway: (/** @type {string} */ id) => { forceIncludeIds.add(id); repaintTargets(); },
-    // Spyglass → map reverse deep-link: spotlight this player's planets on the
-    // Galaxy Viewer occupancy lens.
-    onShowOnMap: showPlayerOnSpyglassMap,
   });
 
   // Deep-link focus: scroll to + highlight the player a Galaxy Viewer "Top
@@ -1327,7 +1330,7 @@ const renderProximityStrip = () => {
   if (!digest.totalReports) {
     const note = document.createElement('div');
     note.style.cssText = 'color:#667;font-size:12px;';
-    note.textContent = 'No fleets spotted near you yet.';
+    note.textContent = 'No scans on you yet.';
     proximityStripEl.appendChild(note);
     return;
   }
@@ -1339,73 +1342,79 @@ const renderProximityStrip = () => {
     tgtSearch.dispatchEvent(new Event('input', { bubbles: true }));
   };
 
+  // A 2-column grid (facts | actions) so the watch/dossier buttons line up in a
+  // fixed right-hand column across every row — no ragged, un-justified rows.
+  const grid = document.createElement('div');
+  grid.style.cssText = 'display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 10px;align-items:center;';
+
   const MAX_ROWS = 10;
   for (const e of digest.players.slice(0, MAX_ROWS)) {
-    const line = document.createElement('div');
-    line.style.cssText =
-      'font-size:12px;color:#9aa;margin-bottom:4px;line-height:1.6;'
-      + 'display:flex;align-items:center;gap:6px;flex-wrap:wrap;'
-      + (e.sameSystem ? 'border-left:2px solid #e06c5f;padding-left:7px;' : 'padding-left:9px;');
+    const facts = document.createElement('div');
+    facts.style.cssText = 'font-size:12px;color:#9aa;line-height:1.4;min-width:0;'
+      + (e.sameSystem ? 'border-left:2px solid #e06c5f;padding-left:7px;' : '');
 
     const label = e.name || `#${e.byPlayerId}`;
     const who = document.createElement('span');
     who.textContent = label;
     who.style.cssText = 'cursor:pointer;color:#8fb8e0;font-weight:600;';
-    who.title = 'Find this player in the search above';
+    who.title = 'Find this player in the table below';
     who.addEventListener('click', () => seedSearch(label));
-    line.appendChild(who);
+    facts.appendChild(who);
+    if (e.count > 1) facts.appendChild(document.createTextNode(` ×${e.count}`));
+    if (e.sameSystem) {
+      const hot = document.createElement('span');
+      hot.textContent = ' 💀';
+      hot.style.color = '#e06c5f';
+      hot.title =
+        'Probed you from a body in the same system as yours — even Death Stars '
+        + '(the slowest ships in the game) reach you quickly from there.';
+      facts.appendChild(hot);
+    }
 
     const at = e.atCoords.slice(0, 2).join(', ')
       + (e.atCoords.length > 2 ? ` +${e.atCoords.length - 2}` : '');
     const age = e.lastTs != null ? proximityAge(e.lastTs, nowMs) : '';
-    const facts = (e.count > 1 ? `×${e.count} · ` : '')
-      + (age ? `last ${age} · ` : '')
-      + `at ${at}`
+    const sub = document.createElement('div');
+    sub.style.cssText = 'font-size:11px;color:#6b7782;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    sub.textContent = (age ? `${age} · ` : '') + `at ${at}`
       + (e.fromCoords ? ` · from ${e.fromCoords}` : '');
-    line.appendChild(document.createTextNode(facts));
+    facts.appendChild(sub);
 
-    if (e.sameSystem) {
-      const hot = document.createElement('span');
-      hot.textContent = '💀 your system';
-      hot.style.cssText = 'color:#e06c5f;font-weight:600;';
-      hot.title =
-        'Probed you from a body in the same system as yours — even Death Stars '
-        + '(the slowest ships in the game) reach you quickly from there.';
-      line.appendChild(hot);
-    }
-
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;gap:6px;justify-content:flex-end;';
     const watched = watchedPlayers.has(String(e.byPlayerId));
     const watch = document.createElement('button');
     watch.type = 'button';
-    watch.textContent = watched ? '✓ watching' : '⭐ watch';
+    watch.textContent = watched ? '✓' : '⭐';
     watch.style.cssText =
       'font-size:11px;border-radius:999px;padding:1px 8px;cursor:pointer;'
       + (watched
         ? 'border:1px solid #2f6f4f;background:#16352a;color:#7fd6a8;'
         : 'border:1px solid #2b3a4d;background:#18222e;color:#9fb4c4;');
-    watch.title = watched ? 'On your watchlist — click to remove' : 'Add to your watchlist / scan list';
+    watch.title = watched ? 'Watching — click to remove' : 'Watch this player';
     watch.addEventListener('click', () => {
       toggleWatched(String(e.byPlayerId));
       renderProximityStrip();
     });
-    line.appendChild(watch);
+    actions.appendChild(watch);
 
     const dossier = document.createElement('button');
     dossier.type = 'button';
     dossier.textContent = 'dossier ▸';
     dossier.style.cssText =
       'font-size:11px;border:1px solid #2b3a4d;background:#18222e;color:#9fb4c4;'
-      + 'border-radius:999px;padding:1px 8px;cursor:pointer;';
+      + 'border-radius:999px;padding:1px 8px;cursor:pointer;white-space:nowrap;';
     dossier.title = 'Open this player in the table below';
     dossier.addEventListener('click', () => openSpyglassFor(e.byPlayerId));
-    line.appendChild(dossier);
+    actions.appendChild(dossier);
 
-    proximityStripEl.appendChild(line);
+    grid.append(facts, actions);
   }
+  proximityStripEl.appendChild(grid);
   if (digest.players.length > MAX_ROWS) {
     const more = document.createElement('div');
-    more.style.cssText = 'color:#667;font-size:11px;margin:2px 0 4px 9px;';
-    more.textContent = `+${digest.players.length - MAX_ROWS} more probers in the raw log`;
+    more.style.cssText = 'color:#667;font-size:11px;margin:4px 0 0;';
+    more.textContent = `+${digest.players.length - MAX_ROWS} more in the raw log`;
     proximityStripEl.appendChild(more);
   }
 
@@ -1442,19 +1451,16 @@ const renderProximityStrip = () => {
 const renderScanPlanStrip = () => {
   if (!scanPlanStripEl) return;
   scanPlanStripEl.textContent = '';
+  // The whole disclosure hides when there's nothing to scan, so it never eats a
+  // row in the common (all-fresh / nobody-watched) case.
+  const details = scanPlanStripEl.closest('details');
+  const show = (/** @type {boolean} */ on) => { if (details) details.style.display = on ? '' : 'none'; };
   const setSummary = (/** @type {string} */ txt) => {
     if (scanPlanSummaryEl) scanPlanSummaryEl.textContent = txt;
   };
-  const note = (/** @type {string} */ txt) => {
-    const el = document.createElement('div');
-    el.style.cssText = 'color:#667;font-size:12px;';
-    el.textContent = txt;
-    scanPlanStripEl?.appendChild(el);
-  };
   const watched = [...watchedPlayers];
   if (!watched.length) {
-    setSummary('🧭 Suggested scan order');
-    note('Star players (⭐) to build a scan list — the suggested order appears here.');
+    show(false);
     return;
   }
 
@@ -1479,13 +1485,13 @@ const renderScanPlanStrip = () => {
     activityByPlayer: activityBy,
   });
   if (!entries.length) {
-    setSummary('🧭 Suggested scan order · all fresh ✓');
-    note('Nothing needs a scan right now — your intel on the scan list is fresh.');
+    show(false);
     return;
   }
 
+  show(true);
   const n = entries.length;
-  setSummary(`🧭 Suggested scan order · ${n} planet${n === 1 ? '' : 's'} need${n === 1 ? 's' : ''} a scan`);
+  setSummary(`🧭 ${n} planet${n === 1 ? '' : 's'} to scan`);
   /** @type {Map<string, string>} */
   const namesById = new Map(targetCandidates.map((c) => [String(c.id), c.name || `#${c.id}`]));
 
@@ -1537,17 +1543,32 @@ const openSpyglassFor = (playerId) => {
 };
 
 /**
- * The per-row ⌖ "show on map": open the Spyglass positions map (if collapsed)
- * and scroll it into view. The map already plots every watched player + you
- * (coloured by relationship), so there's no single-player highlight to set — the
- * player's own marker is right there. Takes no args (the caller passes id/name,
- * harmlessly ignored).
+ * Data-freshness chips in the header: how long ago OG-E last downloaded the
+ * public-API feeds (the military highscore drives the free danger/fleet numbers)
+ * and how many watched-or-listed players you've actually spied. Read-only.
+ * @param {number} spiedCount  Players carrying at least one spy report.
  * @returns {void}
  */
-const showPlayerOnSpyglassMap = () => {
-  if (!spyMapOpen) toggleSpyMap(); // opens + repaints
-  else repaintSpyglassMap();
-  spyMapBlock?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+const renderSpyFreshness = (spiedCount) => {
+  if (!spyFreshnessEl) return;
+  spyFreshnessEl.textContent = '';
+  const nowMs = Date.now();
+  /** @param {string} text @param {boolean} [warn] */
+  const chip = (text, warn) => {
+    const el = document.createElement('span');
+    el.className = 'fresh-chip' + (warn ? ' warn' : '');
+    el.textContent = text;
+    spyFreshnessEl?.appendChild(el);
+  };
+  const fetchedAt = apiCache.military?.fetchedAt;
+  if (typeof fetchedAt === 'number' && fetchedAt > 0) {
+    const h = Math.max(0, (nowMs - fetchedAt) / 3_600_000);
+    const age = h < 1 ? '<1 h old' : h < 48 ? `${Math.round(h)} h old` : `${Math.round(h / 24)} d old`;
+    chip(`API data ${age}`, h >= 48);
+  } else {
+    chip('no API data yet — open the galaxy view once', true);
+  }
+  chip(`${spiedCount} spied`);
 };
 
 /**
@@ -1583,7 +1604,6 @@ const saveTargetPrefs = () => {
     sort: targetSort,
     minMilitary: tgtMinMilitary?.value,
     maxMilitary: tgtMaxMilitary?.value,
-    inRange: toggleChipOn(tgtInRange),
     hideInactive: tgtHideInactive ? toggleChipOn(tgtHideInactive) : true,
     showLimit: chipValue(tgtLimitChips),
   });
@@ -1603,7 +1623,6 @@ const loadTargetPrefs = () => {
   }
   if (p.minMilitary != null && tgtMinMilitary) tgtMinMilitary.value = String(p.minMilitary);
   if (p.maxMilitary != null && tgtMaxMilitary) tgtMaxMilitary.value = String(p.maxMilitary);
-  setToggleChip(tgtInRange, !!p.inRange);
   setToggleChip(tgtHideInactive, p.hideInactive !== false); // default ON
   // setChipValue refuses values no chip carries — the phantom-option guard the
   // old `<select>` restore had via querySelector('[value=…]').
@@ -1927,12 +1946,8 @@ const repaintFreeRegionsThrottled = () => {
 // ── Spyglass positions map (attack-planning / player-tracking) ──────────────
 // A DEDICATED renderer (`renderPositionsMap`), NOT the Galaxy Viewer's occupancy
 // lens: an empty grid with a marker only at your planets + your watched players',
-// coloured by RELATIONSHIP (enemy/friend/neutral/you) and sized by danger. Keeps
-// its OWN composite cache so it never stomps the GV's (mapPrimitives is stateless).
-// The composite is only used to LOCATE each tracked player's planets.
-
-/** All 15 colonizable positions — used to synthesise the composite we scan for planets. */
-const SPY_MAP_POSITIONS = Array.from({ length: 15 }, (_, i) => i + 1);
+// coloured by RELATIONSHIP (enemy/friend/neutral/you) and sized by danger. The
+// map plots each tracked player's planets straight from universe.xml.
 
 /**
  * "Who can reach you" horizon (hours) — a body is ringed when a RIP launched
@@ -1942,25 +1957,8 @@ const SPY_MAP_POSITIONS = Array.from({ length: 15 }, (_, i) => i + 1);
  */
 const SPY_MAP_REACH_H = 8;
 
-/** Spyglass map composite cache — SEPARATE from the GV `compositeCache`. @type {{apiIndex: unknown, scans: unknown, posKey: string, value: GalaxyScans} | null} */
-let spyCompositeCache = null;
 /** Whether the Spyglass map section is expanded. */
 let spyMapOpen = false;
-
-/** Composite for the Spyglass map — own cache (mirrors `buildComposite`). */
-const buildSpyComposite = () => {
-  if (!(apiIndex && apiBounds.galaxies && apiBounds.systems)) return scans;
-  const posKey = SPY_MAP_POSITIONS.join(',');
-  if (spyCompositeCache
-    && spyCompositeCache.apiIndex === apiIndex
-    && spyCompositeCache.scans === scans
-    && spyCompositeCache.posKey === posKey) {
-    return spyCompositeCache.value;
-  }
-  const value = computeComposite({ apiIndex, apiBounds, scans, positions: SPY_MAP_POSITIONS });
-  spyCompositeCache = { apiIndex, scans, posKey, value };
-  return value;
-};
 
 /**
  * A player's map relationship: own = 'you', else the user's tag (untagged =
@@ -2019,14 +2017,7 @@ const renderSpyMapPlayerChips = () => {
   if (!spyMapPlayersEl) return;
   spyMapPlayersEl.textContent = '';
   const ids = [...watchedPlayers];
-  if (!ids.length) {
-    const ghost = document.createElement('span');
-    ghost.className = 'spy-pchip';
-    ghost.style.cssText = 'border-style:dashed;color:#77848f;';
-    ghost.textContent = '＋ watch players in the table below — they appear here and on the map';
-    spyMapPlayersEl.appendChild(ghost);
-    return;
-  }
+  if (!ids.length) return;
   const nameOf = (/** @type {string} */ pid) => apiCache.players?.players?.[pid]?.name || `#${pid}`;
   ids.sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
   /** @type {import('../../state/watchList.js').Relationship[]} */
@@ -2082,44 +2073,46 @@ const repaintSpyglassMap = () => {
   // next tab/toggle open instead.
   if ((spyglassMapHost.clientWidth || 0) === 0) return;
   const ownId = ownProfile && ownProfile.id != null ? String(ownProfile.id) : null;
-  const composite = buildSpyComposite();
   const nameOf = (/** @type {string} */ pid) => apiCache.players?.players?.[pid]?.name || `player ${pid}`;
-  // Plot ONLY the bodies you care about: your planets + your watched players'.
-  // (The whole occupancy palette is the Galaxy Viewer's job, not this map's.)
+  // Plot from the AUTHORITATIVE universe.xml planet list (every planet with its
+  // owner), not the sparse galaxy-scan composite — otherwise your own planets
+  // (and a watched player's) only appeared for systems you had happened to
+  // browse. Own bodies always plot (white) + seed the reach kernel; watched +
+  // not map-muted plot in their relationship colour.
   /** @type {import('./mapPrimitives.js').MapBody[]} */
   const bodies = [];
   /** @type {Array<{g: number, s: number}>} Your own planets — the reach targets. */
   const ownCoords = [];
-  for (const key of /** @type {(keyof GalaxyScans)[]} */ (Object.keys(composite))) {
-    const positions = composite[key]?.positions;
-    if (!positions) continue;
-    const [g, s] = String(key).split(':').map(Number);
-    for (let p = 1; p <= 15; p++) {
-      const player = positions[p]?.player;
-      if (!player || player.id == null) continue;
-      const pid = String(player.id);
-      const isOwn = pid === ownId;
-      // Watched + not map-muted (H5); own bodies always plot and seed the reach kernel.
-      if (!isOwn && (!watchedPlayers.has(pid) || mapHiddenIds[pid])) continue;
-      if (isOwn) ownCoords.push({ g, s });
-      bodies.push({
-        galaxy: g,
-        system: s,
-        position: p,
-        playerId: pid,
-        name: player.name || nameOf(pid),
-        relationship: relationshipOf(pid, ownId),
-        danger: (dangerProfiles.get(Number(pid))?.danger ?? 0) * 100,
-      });
-    }
+  const planets = apiCache.universe ? apiCache.universe.planets : [];
+  for (const pl of planets || []) {
+    if (!pl || pl.player == null) continue;
+    const pid = String(pl.player);
+    const isOwn = pid === ownId;
+    if (!isOwn && (!watchedPlayers.has(pid) || mapHiddenIds[pid])) continue;
+    const parts = String(pl.coords).split(':');
+    if (parts.length !== 3) continue;
+    const g = Number(parts[0]);
+    const s = Number(parts[1]);
+    const p = Number(parts[2]);
+    if (!Number.isFinite(g) || !Number.isFinite(s) || !Number.isFinite(p)) continue;
+    if (isOwn) ownCoords.push({ g, s });
+    bodies.push({
+      galaxy: g,
+      system: s,
+      position: p,
+      playerId: pid,
+      name: nameOf(pid),
+      relationship: relationshipOf(pid, ownId),
+      danger: (dangerProfiles.get(Number(pid))?.danger ?? 0) * 100,
+    });
   }
   // "Who can reach you" overlay (opt-in): the INVERTED reach kernel — instead
   // of "whom can I threaten", ring each tracked body whose RIP-speed flight to
   // your NEAREST planet fits the horizon. RIP is the slowest attacker, so the
   // ring is the conservative floor: anything faster arrives sooner. Distances
   // honour the server's donut wrap; positions come from the same public-API
-  // composite as the markers themselves.
-  const reachOn = !!spyMapReach?.checked;
+  // universe list as the markers themselves.
+  const reachOn = toggleChipOn(spyMapReach);
   if (reachOn && ownCoords.length && apiBounds.galaxies && apiBounds.systems) {
     const gTot = apiBounds.galaxies;
     const sTot = apiBounds.systems;
@@ -2149,12 +2142,13 @@ const repaintSpyglassMap = () => {
   });
 };
 
-/** Toggle the Spyglass map section open/closed. */
+/** Toggle the Spyglass map section open/closed. The toggle is a chip pill now,
+ *  so `.on` marks the open state (the label stays "🗺 map"). */
 const toggleSpyMap = () => {
   spyMapOpen = !spyMapOpen;
   if (spyMapBlock) spyMapBlock.style.display = spyMapOpen ? '' : 'none';
   if (spyMapToggle) {
-    spyMapToggle.textContent = spyMapOpen ? '🗺 Hide map' : '🗺 Show map';
+    spyMapToggle.classList.toggle('on', spyMapOpen);
     spyMapToggle.setAttribute('aria-expanded', String(spyMapOpen));
   }
   if (spyMapOpen) repaintSpyglassMap();
@@ -2236,7 +2230,6 @@ const wireListeners = () => {
   const onTargetFilterChange = () => { saveTargetPrefs(); repaintTargets(); };
   tgtMinMilitary.addEventListener('change', onTargetFilterChange);
   tgtMaxMilitary?.addEventListener('change', onTargetFilterChange);
-  wireToggleChip(tgtInRange, onTargetFilterChange);
   wireToggleChip(tgtHideInactive, onTargetFilterChange);
   // Probe count is shared with the in-game scan FAB via chrome.storage, so it
   // persists through the watch-config write rather than the localStorage prefs.
@@ -2254,7 +2247,7 @@ const wireListeners = () => {
     tgtConfigToggle?.setAttribute('aria-expanded', String(opening));
   });
   spyMapToggle?.addEventListener('click', toggleSpyMap);
-  spyMapReach?.addEventListener('change', repaintSpyglassMap);
+  wireToggleChip(spyMapReach, () => repaintSpyglassMap());
 
   // Region controls only repaint the settlement-regions block. The
   // underlying `scans` cache hasn't changed — only the slots/tolerance
@@ -2354,7 +2347,6 @@ export const _resetDashboardForTest = () => {
   routines = {};
   focusedTargetId = null;
   spyMapOpen = false;
-  spyCompositeCache = null;
   // DOM refs filled by wireDom(); wireDom re-resolves them on the next
   // install, but null them now so nothing reads a detached node in between.
   statsEl =
@@ -2386,7 +2378,6 @@ export const _resetDashboardForTest = () => {
     tgtSearch =
     tgtWatchedOnly =
     tgtProbes =
-    tgtInRange =
     tgtHideInactive =
     tgtConfigToggle =
     tgtConfigCard =
@@ -2396,6 +2387,7 @@ export const _resetDashboardForTest = () => {
     proximityAlertEl =
     spyMapPlayersEl =
     watchCardsEl =
+    spyFreshnessEl =
     scanPlanStripEl =
     scanPlanSummaryEl =
     freeContainer =
