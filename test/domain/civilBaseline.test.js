@@ -124,9 +124,11 @@ describe('buildCivilBaseline — the median curve on a crafted distribution', ()
 describe('buildCivilBaseline — surplus bands & confidence', () => {
   it('flags a player with ships FAR above baseline as a fleet-holder (high confidence)', () => {
     const { economy, military } = buildersFeed(30);
-    // A modest economy (2000 → expectedCivil 200) but a huge combat fleet.
+    // A modest economy (2000 → expectedCivil 200) but a huge combat fleet. Score is
+    // set high enough that res/ship clears the cheap-swarm veto (this IS a real fleet;
+    // the band tracks the ship-COUNT surplus, so score doesn't affect it).
     economy['500'] = { score: 2000 };
-    military['500'] = { score: 2000, ships: 20000 };
+    military['500'] = { score: 300000, ships: 20000 }; // res/ship 15k > cheap-hull floor
 
     const out = buildCivilBaseline({ economy, military });
     const p = /** @type {import('../../src/domain/civilBaseline.js').CivilProfile} */ (out.get(500));
@@ -144,7 +146,7 @@ describe('buildCivilBaseline — surplus bands & confidence', () => {
     // expectedCivil 500 for economy 5000; ships chosen so ratio lands in [0.25,0.6).
     // ships 1000 → combat 500 → ratio 0.5.
     economy['600'] = { score: 5000 };
-    military['600'] = { score: 5000, ships: 1000 };
+    military['600'] = { score: 20000, ships: 1000 }; // res/ship 20k > cheap-hull floor
 
     const out = buildCivilBaseline({ economy, military });
     const p = /** @type {import('../../src/domain/civilBaseline.js').CivilProfile} */ (out.get(600));
@@ -180,13 +182,24 @@ describe('buildCivilBaseline — surplus bands & confidence', () => {
     // expectedCivil 500, ships 5000 → combat 4500 → ratio 0.9. combatShips (4500)
     // is far above expectedCivil (500), which is the high-confidence gate.
     economy['800'] = { score: 5000 };
-    military['800'] = { score: 5000, ships: 5000 };
+    military['800'] = { score: 100000, ships: 5000 }; // res/ship 20k > cheap-hull floor
 
     const out = buildCivilBaseline({ economy, military });
     const p = /** @type {import('../../src/domain/civilBaseline.js').CivilProfile} */ (out.get(800));
     expect(p.band).toBe('fleet-holder');
     expect(p.combatShips).toBeGreaterThan(p.expectedCivil);
     expect(p.confidence).toBe('high');
+  });
+
+  it('relabels a big COUNT surplus of CHEAP hulls as cheap-swarm (res/ship veto)', () => {
+    const { economy, military } = buildersFeed(30);
+    economy['501'] = { score: 2000 };
+    military['501'] = { score: 2000, ships: 20000 }; // res/ship 100 → cheap swarm, not combat
+    const out = buildCivilBaseline({ economy, military });
+    const p = /** @type {import('../../src/domain/civilBaseline.js').CivilProfile} */ (out.get(501));
+    expect(p.band).toBe('cheap-swarm');
+    expect(p.confidence).toBe('low');
+    expect(p.resPerShip).toBeCloseTo(100, 6);
   });
 });
 

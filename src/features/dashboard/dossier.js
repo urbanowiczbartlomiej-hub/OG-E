@@ -15,11 +15,12 @@
 
 import { scanStatus, rescanAtFor } from '../../domain/spyScan.js';
 import { DANGER_LABELS } from '../../domain/dangerScore.js';
+import { motherPlanetOf } from '../../domain/lootRhythm.js';
 import { dangerColor } from '../../lib/dangerColor.js';
 
 /**
  * @typedef {import('../../domain/targets.js').PlanetPos} PlanetPos
- * @typedef {{ ts: number, defPts: number, fleetPts: number }} PlanetReport
+ * @typedef {{ ts: number, defPts: number, fleetPts: number, avgLoot?: number, maxLoot?: number, lastLoot?: number, lootSamples?: number }} PlanetReport
  */
 
 // ── Local self-contained formatting helpers (copies of targets.js's) ──────────
@@ -94,6 +95,8 @@ function headerLine(name, profile) {
  * @returns {HTMLDivElement}
  */
 function verdictBanner(verdict) {
+  const wrap = document.createElement('div');
+  wrap.style.marginBottom = '10px';
   const div = document.createElement('div');
   // Colour + weight by kind.
   let color = '#6b7782';
@@ -107,21 +110,27 @@ function verdictBanner(verdict) {
     case 'friendly':
     default: color = '#6b7782'; break;
   }
+  // Plain, no emoji: label · loot · scan age. The confidence TIER was dropped — it
+  // was just a restatement of the age ("high" ⇔ "<1h old") and read as a threat score.
   let text = verdict.label;
   if (typeof verdict.lootNow === 'number' && verdict.lootNow > 0) {
-    text += ` · loot ~${compact(verdict.lootNow)} 💰`;
+    text += ` · loot ~${compact(verdict.lootNow)}`;
   }
-  const tier = verdict.tier;
   if (typeof verdict.ageMs === 'number' && Number.isFinite(verdict.ageMs)) {
-    text += ` (${tier}, ${formatAge(verdict.ageMs)} old)`;
-  } else {
-    text += ` (${tier})`;
+    text += ` · scan ${formatAge(verdict.ageMs)} old`;
   }
   div.textContent = text;
-  div.style.cssText = `font-size:15px;margin-bottom:10px;color:${color};`
-    + (bold ? 'font-weight:700;' : 'font-weight:600;');
+  div.style.cssText = `font-size:15px;color:${color};` + (bold ? 'font-weight:700;' : 'font-weight:600;');
   if (verdict.lootCoord) div.title = `best loot at ${verdict.lootCoord}`;
-  return div;
+  wrap.appendChild(div);
+  // Spell out the WHY (so "fleet risk" isn't an unexplained tag).
+  if (verdict.reasons && verdict.reasons.length) {
+    const why = document.createElement('div');
+    why.textContent = verdict.reasons[0];
+    why.style.cssText = 'font-size:11px;color:#6b7782;margin-top:2px;';
+    wrap.appendChild(why);
+  }
+  return wrap;
 }
 
 /**
@@ -197,26 +206,46 @@ function hiddenFleetBlock(est) {
  * ship surplus over that baseline. A WEAK prior — shown as an upper bound with a
  * contamination caveat, never asserted as exact and never fed into the D score.
  * @param {import('../../domain/civilBaseline.js').CivilProfile} civ
+ * @param {import('../../domain/dangerScore.js').DangerProfile} [profile]  The Danger
+ *   profile — its fleet- and spy-aware combat quality OVERRIDES this count-only prior.
  * @returns {HTMLDivElement}
  */
-function civilBlock(civ) {
+function civilBlock(civ, profile) {
   const wrap = document.createElement('div');
   wrap.style.cssText = 'margin-bottom:10px;font-size:11px;color:#8b95a0;line-height:1.5;';
 
+  // The Danger model measures res/ship on the FLEET (defence excluded, tightened by
+  // any scan); when THAT reads cheap hulls (low combat quality), it overrides this
+  // count-only prior — a defensive farmer's TOTAL res/ship looks combat, but the
+  // fleet itself is transporters (the pentagon case: 38M of 54.6M was defence). So
+  // demote the "combat" verdict rather than let the two blocks contradict.
+  const q = profile && typeof profile.combatQuality === 'number' ? profile.combatQuality : undefined;
+  const fleetRps = profile && typeof profile.resPerShip === 'number' ? profile.resPerShip : undefined;
+  const demoted = q !== undefined && q < 0.5 && (civ.band === 'elevated' || civ.band === 'fleet-holder');
+
   // One tight line: how many of the player's ships look like combat fleet over
-  // the economy-implied civil baseline, tinted by band. The old three-line
-  // block (economy preamble + verdict + caveat) was too heavy — "upper bound"
-  // carries the caveat, the tooltip keeps the full reasoning.
-  const bandColor = civ.band === 'fleet-holder' ? '#e2726a'
+  // the economy-implied civil baseline, tinted by band. "upper bound" carries the
+  // caveat; the tooltip keeps the full reasoning.
+  const bandColor = demoted || civ.band === 'cheap-swarm' ? '#8b95a0'
+    : civ.band === 'fleet-holder' ? '#e2726a'
     : civ.band === 'elevated' ? '#e0b020' : '#7fd6a8';
-  const bandLabel = civ.band === 'fleet-holder' ? 'combat-fleet holder'
-    : civ.band === 'elevated' ? 'elevated' : '≈ builder';
+  const bandLabel = demoted ? 'cheap hulls per Danger'
+    : civ.band === 'fleet-holder' ? 'combat-fleet holder'
+    : civ.band === 'elevated' ? 'elevated'
+    : civ.band === 'cheap-swarm' ? 'cheap-hull swarm' : '≈ builder';
   const line = document.createElement('div');
   const label = document.createElement('span');
   label.textContent = 'Civil baseline: ';
   label.style.color = '#6b7782';
   const val = document.createElement('span');
-  val.textContent = `~${compact(civ.combatShips)} of ${compact(civ.ships)} ships look combat · ${bandLabel} (upper bound)`;
+  // Demoted: the fleet-aware Danger model contradicts the count surplus (defence /
+  // logistics). Cheap-swarm: a big COUNT surplus at low res/ship is logistics, not
+  // combat (the Qbaba case). Otherwise the usual surplus phrasing.
+  val.textContent = demoted
+    ? `${compact(civ.ships)} ships, but Danger reads cheap hulls${fleetRps ? ` (≈${compact(fleetRps)}/ship fleet)` : ''} — defence / logistics, not combat`
+    : civ.band === 'cheap-swarm'
+      ? `${compact(civ.ships)} ships at ≈${compact(civ.resPerShip ?? 0)}/ship — logistics, not combat · ${bandLabel}`
+      : `~${compact(civ.combatShips)} of ${compact(civ.ships)} ships look combat · ${bandLabel} (upper bound)`;
   val.style.color = bandColor;
   line.append(label, val);
   line.title =
@@ -268,6 +297,11 @@ function planetsBlock({ playerId, planets, reports, rescan, nowMs, onRescan }) {
   }
   // Only flag when there is actually a positive fleet to hoard.
   if (!(hoardFleet > 0)) hoardCoord = undefined;
+
+  // The loot HOARD ("mother") planet: the body whose peak loot towers over the
+  // empire — a collector farmer's accumulation point (🏦), distinct from ⭐ (most
+  // parked fleet); they often, but not always, coincide.
+  const motherCoord = motherPlanetOf(reports || {});
 
   const head = document.createElement('div');
   head.style.cssText = 'font-size:11px;color:#7c8893;margin-bottom:8px;';
@@ -328,12 +362,19 @@ function planetsBlock({ playerId, planets, reports, rescan, nowMs, onRescan }) {
     }
     item.appendChild(l1);
 
-    // Line 2: defense + visible fleet (only meaningful once scanned).
+    // Line 2: defense + visible fleet + loot rhythm (avg / peak), 🏦 on the hoard.
     const l2 = document.createElement('div');
-    l2.style.color = '#6b7782';
-    l2.textContent = r
-      ? `D ${compact(Math.round(r.defPts))} · F ${compact(Math.round(r.fleetPts))}`
-      : ' ';
+    l2.style.color = coord === motherCoord ? '#e0b45f' : '#6b7782';
+    if (r) {
+      let t = `D ${compact(Math.round(r.defPts))} · F ${compact(Math.round(r.fleetPts))}`;
+      if (typeof r.maxLoot === 'number') {
+        t += ` · L̄${compact(Math.round(r.avgLoot ?? 0))} ↑${compact(Math.round(r.maxLoot))}`;
+      }
+      l2.textContent = (coord === motherCoord ? '🏦 ' : '') + t;
+      if (coord === motherCoord) l2.title = 'hoard / mother planet — loot peak towers over the empire (collection point)';
+    } else {
+      l2.textContent = ' ';
+    }
     item.appendChild(l2);
 
     grid.appendChild(item);
@@ -513,13 +554,13 @@ export function buildDossier(a) {
   td.style.background = '#0b1118';
   tr.appendChild(td);
 
-  // 1) Header (always): name · archetype, with the relationship chips pushed to
-  //    the right of the SAME line (no separate "Relationship:" row/label).
+  // 1) Header (always): relationship chips on the LEFT, then name · archetype on
+  //    the SAME line (no separate "Relationship:" row/label).
   const header = headerLine(a.name, a.profile);
   if (a.onSetRelationship) {
     const rel = relationshipSelector(a.playerId, a.relationship || 'neutral', a.onSetRelationship);
-    rel.style.marginLeft = 'auto';
-    header.appendChild(rel);
+    rel.style.marginRight = '4px';
+    header.insertBefore(rel, header.firstChild);
   }
   td.appendChild(header);
 
@@ -549,7 +590,7 @@ export function buildDossier(a) {
   if (a.estimate) judgement.appendChild(hiddenFleetBlock(a.estimate));
 
   // 5b) Civil-fleet baseline (Etap C).
-  if (a.civilProfile) judgement.appendChild(civilBlock(a.civilProfile));
+  if (a.civilProfile) judgement.appendChild(civilBlock(a.civilProfile, a.profile));
 
   // 6) Planets grid (renders its own "no planets" note when empty).
   evidence.appendChild(planetsBlock({

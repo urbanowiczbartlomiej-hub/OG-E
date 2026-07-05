@@ -321,15 +321,20 @@ export const renderPositionsMap = ({ hostEl, galaxies, systems, bodies, onPlayer
   wrap.style.cssText = `position:relative;height:${plotH}px;`;
 
   // Faint galaxy baselines + labels — the only "grid"; the field is otherwise empty.
+  // Lines sit at each galaxy's BAND EDGES (positions 1 and 15) so they delimit the
+  // galaxy as a strip, instead of a single midline through position 8.
   for (let g = 1; g <= galaxies; g++) {
     const yMid = topPad + (g - 1) * stride + (POS * posPx) / 2;
     const lab = document.createElement('div');
     lab.textContent = `G${g}`;
     lab.style.cssText = `position:absolute;left:0;top:${yMid - 6}px;font:10px monospace;color:#5a6672;`;
     wrap.appendChild(lab);
-    const line = document.createElement('div');
-    line.style.cssText = `position:absolute;left:${gutter}px;right:0;top:${yMid}px;height:1px;background:#141b24;`;
-    wrap.appendChild(line);
+    for (const pos of [1, POS]) {
+      const y = topPad + (g - 1) * stride + (pos - 0.5) * posPx;
+      const line = document.createElement('div');
+      line.style.cssText = `position:absolute;left:${gutter}px;right:0;top:${y}px;height:1px;background:#141b24;`;
+      wrap.appendChild(line);
+    }
   }
 
   if (!bodies.length) {

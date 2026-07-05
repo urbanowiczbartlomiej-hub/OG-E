@@ -52,7 +52,11 @@
  * @property {number} combatShips    max(0, ships − expectedCivil). UPPER BOUND
  *   on combat fleet — probe swarms / lifeform eco contaminate it (see header).
  * @property {number} combatRatio    combatShips / ships (0 when ships === 0).
- * @property {'baseline'|'elevated'|'fleet-holder'} band  Coarse ratio bucket.
+ * @property {number} [resPerShip]    militaryPts·1000/ships — the composition tell
+ *   that vetoes a cheap-hull surplus (undefined = no military score / 0 ships).
+ * @property {'baseline'|'elevated'|'fleet-holder'|'cheap-swarm'} band  Coarse
+ *   ratio bucket. `cheap-swarm` = a big COUNT surplus but ~logistics hulls
+ *   (low res/ship) — the count model's blind spot, relabelled honestly.
  * @property {'high'|'medium'|'low'} confidence  How much to trust the band.
  */
 
@@ -65,6 +69,8 @@ const ELEVATED_MAX = 0.6;
 const MIN_SAMPLES = 20;
 /** Bin count for the economy→ships median curve (deciles). Heuristic, tunable. */
 const DECILES = 10;
+/** Below this res/ship the surplus is cheap logistics hulls, not combat fleet. Heuristic, tunable. */
+const CHEAP_HULL_RPS = 12_000;
 
 /** Median of an ascending-sorted array; even length → mean of the two middles. @param {number[]} a */
 const medianSorted = (a) => {
@@ -159,7 +165,7 @@ export const buildCivilBaseline = ({ economy, military } = {}) => {
     const combatShips = Math.max(0, ships - expectedCivil);
     const combatRatio = ships > 0 ? combatShips / ships : 0;
 
-    /** @type {'baseline'|'elevated'|'fleet-holder'} */
+    /** @type {'baseline'|'elevated'|'fleet-holder'|'cheap-swarm'} */
     let band;
     if (combatRatio < BASELINE_MAX) band = 'baseline';
     else if (combatRatio < ELEVATED_MAX) band = 'elevated';
@@ -174,12 +180,27 @@ export const buildCivilBaseline = ({ economy, military } = {}) => {
     else if (band === 'baseline') confidence = 'low';
     else confidence = 'medium';
 
+    // res/ship veto — the count model's blind spot. A huge COUNT surplus made of
+    // cheap hulls (probes / small transporters, < ~12k/ship) is a logistics/probe
+    // swarm, NOT a combat fleet (the Qbaba case: 20M ships at ~2k/ship read as
+    // "fleet-holder"). Relabel it so the dossier says "cheap swarm" instead of
+    // asserting a combat fleet. A high res/ship is left alone here — that's real
+    // capital ships or defence, which the surplus-vs-baseline reading handles.
+    const rps = Number.isFinite(m.score) && ships > 0
+      ? (/** @type {number} */ (m.score) * 1000) / ships
+      : undefined;
+    if (typeof rps === 'number' && rps < CHEAP_HULL_RPS && band !== 'baseline') {
+      band = 'cheap-swarm';
+      confidence = 'low';
+    }
+
     out.set(numId, {
       economyScore,
       ships,
       expectedCivil,
       combatShips,
       combatRatio,
+      ...(typeof rps === 'number' ? { resPerShip: rps } : {}),
       band,
       confidence,
     });

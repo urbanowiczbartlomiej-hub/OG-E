@@ -203,12 +203,15 @@ function militaryCell(c) {
   const score = document.createElement('span');
   score.textContent = compact(c.militaryScore);
   score.style.color = '#e3e3e3';
-  const rank = document.createElement('span');
-  rank.textContent = typeof c.militaryRank === 'number' ? ` · #${c.militaryRank}` : '';
-  rank.style.color = '#888';
-  rank.style.fontSize = '11px';
   td.appendChild(score);
-  td.appendChild(rank);
+  // Military highscore rank on a dim second line (mirrors the overall rank under
+  // the nick), so score and position read as a two-row cell.
+  if (typeof c.militaryRank === 'number') {
+    const rank = document.createElement('span');
+    rank.style.cssText = 'display:block;font-size:11px;line-height:1.3;color:#6b7782;';
+    rank.textContent = `#${c.militaryRank}`;
+    td.appendChild(rank);
+  }
   td.title =
     `military ${fmt(c.militaryScore)}`
     + (typeof c.militaryRank === 'number' ? ` · rank ${c.militaryRank}` : '');
@@ -246,14 +249,15 @@ function shipsCell(c) {
     td.title = `${fmt(c.ships)} ships (military highscore, hourly)`
       + (rps != null ? ` · ≈ ${fmt(rps)} res/ship (defense inflates, probe swarms dilute)` : '');
     if (rps != null) {
-      // Rough composition bands: destroyers ~125K res, battleships ~60K,
-      // light fighters ~4K, probes ~1K — so ≥50K reads "capital-heavy",
-      // ≥1M reads "RIP-scale", <5K reads "swarm".
-      sub.textContent = `≈ ${compact(rps)} res/ship${rps < 5_000 ? ' · swarm' : ''}`;
-      sub.style.color = rps >= 1_000_000 ? '#ff9d8a'
-        : rps >= 50_000 ? '#e0b45f'
-        : rps < 5_000 ? '#5f6b75'
-        : '#8b95a0';
+      // Composition bands (owner's read): < 20k = cheap CIVILIAN hulls (cargo /
+      // probes / LF); 20k–100k = the real COMBAT window (cruisers ~29k, battleships
+      // ~60k, destroyers ~125k land around here); > 100k = too high for a pure
+      // fleet, so DEFENCE is inflating the points (or a rare capital / RIP core).
+      const band = rps < 20_000 ? ' · civilian' : rps > 100_000 ? ' · defence?' : ' · combat';
+      sub.textContent = `≈ ${compact(rps)} res/ship${band}`;
+      sub.style.color = rps > 100_000 ? '#c98f8f'
+        : rps >= 20_000 ? '#e0b45f'
+        : '#5f6b75';
       td.appendChild(sub);
     }
   }
@@ -352,14 +356,23 @@ function intelCell(worst, spied, total, oldestAgeMs) {
 /**
  * Build the Player cell — just the name. Expanding the dossier is handled by a
  * click anywhere on the row (no separate ▸ toggle, no per-row map control).
- * @param {string} name
+ * @param {TargetCandidate} c
  * @returns {HTMLTableCellElement}
  */
-function playerCell(name) {
+function playerCell(c) {
   const td = cell('');
   const label = document.createElement('span');
-  label.textContent = name;
+  label.textContent = c.name || `#${c.id}`;
   td.appendChild(label);
+  // Overall (total) highscore rank on a dim second line — the "how big is this
+  // player server-wide" anchor, beside the nick.
+  if (typeof c.totalRank === 'number') {
+    const sub = document.createElement('span');
+    sub.style.cssText = 'display:block;font-size:11px;line-height:1.3;color:#6b7782;';
+    sub.textContent = `#${c.totalRank}`;
+    sub.title = `overall highscore rank #${c.totalRank}`;
+    td.appendChild(sub);
+  }
   return td;
 }
 
@@ -597,7 +610,7 @@ export function renderTargets({
       if (onToggleExpand) onToggleExpand(c.id);
     });
     tr.appendChild(chipCell(c.id, !!(watchedIds && watchedIds.has(c.id)), onToggleWatch, onRescan));
-    tr.appendChild(playerCell(c.name || `#${c.id}`));
+    tr.appendChild(playerCell(c));
     tr.appendChild(dangerCell(prof));
     tr.appendChild(fleetCell(prof));
     tr.appendChild(militaryCell(c));

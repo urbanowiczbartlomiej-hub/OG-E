@@ -50,7 +50,7 @@ import { renderFreeRegions, renderServerMap, selectCandidate, resetFreeSelection
 import { chipValue, setChipValue, wireChips, setChipsEnabled, toggleChipOn, setToggleChip, wireToggleChip } from './chips.js';
 import { digestProximityReports } from '../../domain/proximityDigest.js';
 import { renderWatchlistCards } from './cards.js';
-import { computeComposite, computeScoreField, renderPositionsMap, RELATIONSHIP_COLORS, REACH_RING_COLOR } from './mapPrimitives.js';
+import { computeComposite, computeScoreField, renderPositionsMap, RELATIONSHIP_COLORS } from './mapPrimitives.js';
 import { axisDelta, flightDistance, niszczHours } from '../../domain/geometry.js';
 import { renderTargets, DEFAULT_TARGET_SORT } from './targets.js';
 import { ZONES } from '../../domain/zoneScore.js';
@@ -61,7 +61,8 @@ import { buildCivilBaseline } from '../../domain/civilBaseline.js';
 import { estimateHiddenFleet } from '../../domain/threatModel.js';
 import { raidVerdict } from '../../domain/raidVerdict.js';
 import { normalizeReportTimestamps } from '../../domain/espionageReport.js';
-import { latestOf, spiedCoordsByPlayer } from '../../domain/targetReports.js';
+import { latestOf, historyOf, spiedCoordsByPlayer } from '../../domain/targetReports.js';
+import { bodyLootStats } from '../../domain/lootRhythm.js';
 import { summarizeRoutine, routineBodies } from '../../domain/routine.js';
 import { buildScanPlan } from '../../domain/scanPriority.js';
 import { readApiCacheFor, apiCacheKeyFor } from '../../state/apiCache.js';
@@ -372,7 +373,7 @@ let activityObs = {};
 /** @type {HTMLElement | null} */ let spyglassMapHost;
 /** @type {HTMLButtonElement | null} */ let spyMapToggle;
 /** @type {HTMLElement | null} */ let spyMapBlock;
-/** @type {HTMLElement | null} */ let spyMapLegend;
+/** @type {HTMLElement | null} */ let spyMapYouEl;
 /** Reach overlay toggle — a chip pill (`.on` is its state), not a checkbox. */
 /** @type {HTMLElement | null} */ let spyMapReach;
 /** @type {HTMLElement | null} */ let spyMapPlayersEl;
@@ -695,7 +696,7 @@ const wireDom = () => {
   spyglassMapHost = document.getElementById('spyglassMapHost');
   spyMapToggle = /** @type {HTMLButtonElement | null} */ (document.getElementById('spyMapToggle'));
   spyMapBlock = document.getElementById('spyMapBlock');
-  spyMapLegend = document.getElementById('spyMapLegend');
+  spyMapYouEl = document.getElementById('spyMapYou');
   spyMapReach = document.getElementById('spyMapReach');
   spyMapPlayersEl = document.getElementById('spyMapPlayers');
 };
@@ -934,6 +935,9 @@ const toggleWatched = (id) => {
   repaintTargets();
   // Membership IS the map's body set — keep the open map + its chips honest.
   repaintSpyglassMap();
+  // The proximity digest shows a per-prober watch toggle (✓ / ⭐); an unwatch from
+  // the card / map / anywhere must refresh it too, or its button state goes stale.
+  renderProximityStrip();
 };
 
 /**
@@ -1160,10 +1164,15 @@ const repaintTargets = () => {
       if (report.planetType === 3) continue;
       const lastColon = key.lastIndexOf(':');
       const coord = lastColon >= 0 ? key.slice(0, lastColon) : key;
+      // Loot rhythm from the body's history ring (watched players accrue it): the
+      // avg / peak on-planet resources feed the dossier's per-planet L line and the
+      // hoard ("mother") detection.
+      const loot = bodyLootStats(report, historyOf(entry));
       byCoord[coord] = {
         ts: report.timestamp ?? 0,
         defPts: pointsOf(report.defenseValue ?? 0),
         fleetPts: pointsOf(report.fleetValue ?? 0),
+        ...(loot ? { avgLoot: loot.avg, maxLoot: loot.max, lastLoot: loot.last, lootSamples: loot.samples } : {}),
       };
     }
     reportsByPlayer[pid] = byCoord;
@@ -1209,6 +1218,7 @@ const repaintTargets = () => {
     inBand: inBandById,
     nowMs,
     onOpen: (pid) => openSpyglassFor(Number(pid)),
+    onToggleWatch: (pid) => toggleWatched(pid),
   });
 
   renderTargets({
@@ -1425,6 +1435,10 @@ const renderProximityStrip = () => {
   rawSum.style.cssText = 'cursor:pointer;color:#667;font-size:11px;list-style:none;';
   rawSum.textContent = `show raw log (${digest.totalReports} ${digest.totalReports === 1 ? 'alert' : 'alerts'}) ▸`;
   raw.appendChild(rawSum);
+  // Bound the disclosed log so 100+ alerts scroll inside a box instead of
+  // pushing the whole page down when expanded.
+  const rawBody = document.createElement('div');
+  rawBody.style.cssText = 'max-height:320px;overflow-y:auto;';
   for (const r of proximityReports) {
     const line = document.createElement('div');
     line.style.cssText = 'font-size:11px;color:#788;margin-top:3px;line-height:1.4;';
@@ -1432,8 +1446,9 @@ const renderProximityStrip = () => {
     line.textContent =
       `${r.byPlayerName || `#${r.byPlayerId}`} · near ${r.atCoords}`
       + `${age ? ` · ${age} ago` : ''}${r.fromCoords ? ` · from ${r.fromCoords}` : ''}`;
-    raw.appendChild(line);
+    rawBody.appendChild(line);
   }
+  raw.appendChild(rawBody);
   proximityStripEl.appendChild(raw);
 };
 
@@ -1453,8 +1468,12 @@ const renderScanPlanStrip = () => {
   scanPlanStripEl.textContent = '';
   // The whole disclosure hides when there's nothing to scan, so it never eats a
   // row in the common (all-fresh / nobody-watched) case.
-  const details = scanPlanStripEl.closest('details');
-  const show = (/** @type {boolean} */ on) => { if (details) details.style.display = on ? '' : 'none'; };
+  // The toggle CHIP (in the controls row) + its full-width strip below both hide
+  // when there's nothing to scan, so neither eats space in the common case.
+  const show = (/** @type {boolean} */ on) => {
+    if (scanPlanSummaryEl) scanPlanSummaryEl.style.display = on ? '' : 'none';
+    if (!on && scanPlanStripEl) scanPlanStripEl.style.display = 'none';
+  };
   const setSummary = (/** @type {string} */ txt) => {
     if (scanPlanSummaryEl) scanPlanSummaryEl.textContent = txt;
   };
@@ -1970,39 +1989,21 @@ let spyMapOpen = false;
 const relationshipOf = (pid, ownId) => (pid === ownId ? 'you' : (watchRelationships[pid] || 'neutral'));
 
 /**
- * Render the Spyglass map's RELATIONSHIP legend into #spyMapLegend (you / enemy /
- * friend / neutral) — only the categories actually on the map. Hidden when empty.
+ * Render the "You" marker chip into #spyMapYou (own-planet colour) inline with the
+ * watched-player chips. The standing relationship legend was dropped (H-polish):
+ * every watched player is already a coloured chip in that same row.
  * @param {boolean} hasOwn
- * @param {boolean} [reachOn]  Append the "in reach" ring chip (overlay active).
  */
-const renderSpyMapLegend = (hasOwn, reachOn) => {
-  if (!spyMapLegend) return;
-  const present = new Set([...watchedPlayers].map((pid) => watchRelationships[pid] || 'neutral'));
-  /** @type {Array<[import('../../state/watchList.js').Relationship|'you', string]>} */
-  const rows = [];
-  if (hasOwn) rows.push(['you', 'You']);
-  if (present.has('enemy')) rows.push(['enemy', 'Enemy']);
-  if (present.has('friend')) rows.push(['friend', 'Friend']);
-  if (present.has('neutral')) rows.push(['neutral', 'Neutral / untagged']);
-  spyMapLegend.replaceChildren();
-  for (const [rel, text] of rows) {
-    const chip = document.createElement('span');
-    chip.style.cssText = 'display:inline-flex;align-items:center;gap:5px;';
-    const sw = document.createElement('span');
-    sw.style.cssText = `width:10px;height:10px;border-radius:50%;background:${RELATIONSHIP_COLORS[rel]};border:1px solid #0008;flex:0 0 auto;`;
-    chip.append(sw, document.createTextNode(text));
-    spyMapLegend.appendChild(chip);
-  }
-  if (reachOn) {
-    const chip = document.createElement('span');
-    chip.style.cssText = 'display:inline-flex;align-items:center;gap:5px;';
-    const sw = document.createElement('span');
-    sw.style.cssText = 'width:8px;height:8px;border-radius:50%;background:transparent;'
-      + `box-shadow:0 0 0 2px ${REACH_RING_COLOR}cc;flex:0 0 auto;`;
-    chip.append(sw, document.createTextNode(`can reach you (≤${SPY_MAP_REACH_H} h, RIP-speed)`));
-    spyMapLegend.appendChild(chip);
-  }
-  spyMapLegend.style.display = rows.length || reachOn ? 'flex' : 'none';
+const renderSpyMapYou = (hasOwn) => {
+  if (!spyMapYouEl) return;
+  spyMapYouEl.replaceChildren();
+  if (!hasOwn) { spyMapYouEl.style.display = 'none'; return; }
+  const sw = document.createElement('span');
+  sw.className = 'dot'; // match the watched-player chips' relationship dot
+  sw.style.background = RELATIONSHIP_COLORS.you;
+  sw.style.cursor = 'default';
+  spyMapYouEl.append(sw, document.createTextNode('You'));
+  spyMapYouEl.style.display = ''; // revert to the .spy-pchip pill's inline-flex
 };
 
 /**
@@ -2131,7 +2132,7 @@ const repaintSpyglassMap = () => {
       }
     }
   }
-  renderSpyMapLegend(!!ownId, reachOn && ownCoords.length > 0);
+  renderSpyMapYou(!!ownId);
   renderSpyMapPlayerChips();
   renderPositionsMap({
     hostEl: spyglassMapHost,
@@ -2248,6 +2249,12 @@ const wireListeners = () => {
   });
   spyMapToggle?.addEventListener('click', toggleSpyMap);
   wireToggleChip(spyMapReach, () => repaintSpyglassMap());
+  scanPlanSummaryEl?.addEventListener('click', () => {
+    if (!scanPlanStripEl) return;
+    const open = scanPlanStripEl.style.display === 'none';
+    scanPlanStripEl.style.display = open ? '' : 'none';
+    scanPlanSummaryEl?.setAttribute('aria-expanded', String(open));
+  });
 
   // Region controls only repaint the settlement-regions block. The
   // underlying `scans` cache hasn't changed — only the slots/tolerance

@@ -7,7 +7,7 @@
 // than hand-computed danger floats, so the tests pin behaviour, not arithmetic.
 
 import { describe, it, expect } from 'vitest';
-import { buildDangerProfiles, DANGER_LABELS } from '../../src/domain/dangerScore.js';
+import { buildDangerProfiles, DANGER_LABELS, combatQuality } from '../../src/domain/dangerScore.js';
 
 /**
  * Non-null get helper — the profile is always present for a fed id.
@@ -203,8 +203,25 @@ describe('buildDangerProfiles — coverage of the id set', () => {
 describe('DANGER_LABELS', () => {
   it('maps every DangerLabel to a human string', () => {
     expect(Object.keys(DANGER_LABELS).sort()).toEqual(
-      ['apex', 'declawed', 'eco', 'fleeter', 'fortress', 'friendly', 'raider', 'turtle', 'unknown'].sort(),
+      ['apex', 'cargo', 'declawed', 'eco', 'fleeter', 'fortress', 'friendly', 'raider', 'turtle', 'unknown'].sort(),
     );
     for (const v of Object.values(DANGER_LABELS)) expect(typeof v).toBe('string');
+  });
+});
+
+describe('combatQuality — res/ship → hull quality', () => {
+  it('floors a cheap-hull swarm at 0.2 and peaks warships at 1.0', () => {
+    expect(combatQuality(2_000)).toBe(0.2);
+    expect(combatQuality(0)).toBe(0.2);
+    expect(combatQuality(50_000)).toBe(1.0);
+    expect(combatQuality(150_000)).toBe(1.0);
+  });
+  it('ramps monotonically up to the warship window', () => {
+    expect(combatQuality(15_000)).toBeCloseTo(0.6, 6);
+    expect(combatQuality(40_000)).toBe(1.0);
+  });
+  it('decays a defence / RIP-inflated res/ship back toward 0.6', () => {
+    expect(combatQuality(500_000)).toBeCloseTo(0.6, 6);
+    expect(combatQuality(1_000_000)).toBe(0.6);
   });
 });

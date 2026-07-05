@@ -65,6 +65,24 @@ describe('raidVerdict — gating branches (priority order)', () => {
   });
 });
 
+describe('raidVerdict — defence wall (the hoarding-turtle case)', () => {
+  it('heavy defence at the fat body → loaded · heavily defended, ahead of fleet risk', () => {
+    const v = raidVerdict({
+      reports: [fatReport({ defenseValue: 7_940_000_000 })], // pentagon mother wall
+      profile: /** @type {any} */ ({ mobileHi: 999_999 }), // would also read fleet-risk
+      nowMs: 0,
+    });
+    expect(v.kind).toBe('loaded-risky');
+    expect(v.label).toBe('loaded · heavily defended');
+    expect(v.reasons[0]).toContain('defence');
+  });
+
+  it('defence under the wall floor falls through to the fleet / raid verdict', () => {
+    const v = raidVerdict({ reports: [fatReport({ defenseValue: 1_000_000 })], nowMs: 0 });
+    expect(v.kind).toBe('raid');
+  });
+});
+
 describe('raidVerdict — loot estimate composition', () => {
   it('picks the fattest single body, applies default 50% plunder, records its coord', () => {
     const v = raidVerdict({

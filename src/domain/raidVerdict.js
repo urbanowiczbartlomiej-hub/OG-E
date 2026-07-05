@@ -23,6 +23,8 @@ const STALE_MS = 3 * 24 * 60 * 60 * 1000; // 3 d
 const LOOT_FLOOR = 500_000; // resources
 /** A mobile/hidden fleet above this (in points) is a real bounce/return risk. */
 const FLEET_RISK_FLOOR = 30_000; // points (~30M resources)
+/** Defence (resources) at the fat body above which a raid must break a real wall first. */
+const DEF_WALL_FLOOR = 300_000_000; // resources
 /** Default plunder fraction when a report doesn't carry loot% (½ of undefended). */
 const DEFAULT_LOOT_PCT = 50;
 
@@ -112,6 +114,19 @@ export function raidVerdict(input) {
   if (lootNow < LOOT_FLOOR) {
     return { kind: 'empty', label: 'skip — empty', tier, lootNow, lootCoord, ageMs,
       reasons: ['little to steal right now'] };
+  }
+  // Defence at the fat body — the wall a raid must break BEFORE it can loot, and the
+  // real obstacle for a hoarding turtle (a fleet-risk verdict alone under-sells a
+  // 7.9B-defence mother planet like pentagon's).
+  let lootDef = 0;
+  for (const r of list) {
+    if (coordOf(r) === lootCoord && typeof r.defenseValue === 'number' && Number.isFinite(r.defenseValue)) {
+      lootDef = r.defenseValue;
+    }
+  }
+  if (lootDef >= DEF_WALL_FLOOR) {
+    return { kind: 'loaded-risky', label: 'loaded · heavily defended', tier, lootNow, lootCoord, ageMs,
+      reasons: ['fat loot, but heavy defence guards it — needs a real fleet to crack'] };
   }
   if (fleetRisk >= FLEET_RISK_FLOOR) {
     return { kind: 'loaded-risky', label: 'loaded · fleet risk', tier, lootNow, lootCoord, ageMs,

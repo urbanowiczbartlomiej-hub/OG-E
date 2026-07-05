@@ -72,6 +72,7 @@ const VERDICT_COLORS = /** @type {Record<string, string>} */ ({
  * @param {Record<string, boolean|undefined>} a.inBand
  * @param {number} a.nowMs
  * @param {(pid: string) => void} a.onOpen
+ * @param {(pid: string) => void} [a.onToggleWatch]  Stop watching this player.
  * @returns {void}
  */
 export function renderWatchlistCards(a) {
@@ -133,7 +134,29 @@ export function renderWatchlistCards(a) {
       badge.textContent = '—';
       badge.style.cssText = 'margin-left:auto;color:#5f6b75;font-size:12px;';
     }
-    top.append(dot, nm, badge);
+    // Inline actions (H-polish): open dossier ▸ + stop-watching ⭐, right of the
+    // badge — reuse row 1 so the card gains affordances without growing taller.
+    const acts = document.createElement('span');
+    acts.style.cssText = 'display:inline-flex;align-items:center;gap:6px;margin-left:6px;flex:0 0 auto;';
+    const open = document.createElement('span');
+    open.textContent = '▸';
+    open.title = 'Open dossier';
+    open.style.cssText = 'cursor:pointer;color:#9fb4c4;font-weight:700;font-size:13px;';
+    open.addEventListener('click', (ev) => { ev.stopPropagation(); a.onOpen(pid); });
+    acts.appendChild(open);
+    if (a.onToggleWatch) {
+      // Red ✕, NOT a star: on the card this action DELETES the card (removes the
+      // player from the watchlist and the tile vanishes) — a destructive, easy-to-
+      // misfire click, so it must read "remove", unlike the reversible toggles
+      // elsewhere where the row stays put.
+      const watch = document.createElement('span');
+      watch.textContent = '✕';
+      watch.title = 'Remove from watchlist — deletes this card';
+      watch.style.cssText = 'cursor:pointer;font-size:12px;color:#e06c5f;font-weight:700;';
+      watch.addEventListener('click', (ev) => { ev.stopPropagation(); a.onToggleWatch?.(pid); });
+      acts.appendChild(watch);
+    }
+    top.append(dot, nm, badge, acts);
     card.appendChild(top);
 
     // Row 2 — the verdict, in words (same palette as the dossier banner).
@@ -141,7 +164,7 @@ export function renderWatchlistCards(a) {
       const v = document.createElement('div');
       let text = verdict.label;
       if (typeof verdict.lootNow === 'number' && verdict.lootNow > 0) {
-        text += ` · ~${compact(verdict.lootNow)} 💰`;
+        text += ` · loot ~${compact(verdict.lootNow)}`;
       }
       v.textContent = text;
       v.style.cssText = `font-size:12.5px;margin-bottom:3px;color:${VERDICT_COLORS[verdict.kind] || '#6b7782'};`
