@@ -47,7 +47,9 @@ import { debounce } from '../../lib/debounce.js';
 import { parseTargetPositions } from '../../domain/histogram.js';
 import { populatePositionFilter, renderColonyChart } from './colony.js';
 import { renderFreeRegions, renderServerMap, selectCandidate, resetFreeSelection, highlightPin, _resetFreeStreakForTest } from './freeStreak.js';
-import { chipValue, setChipValue, wireChips, setChipsEnabled } from './chips.js';
+import { chipValue, setChipValue, wireChips, setChipsEnabled, toggleChipOn, setToggleChip, wireToggleChip } from './chips.js';
+import { digestProximityReports } from '../../domain/proximityDigest.js';
+import { renderWatchlistCards } from './cards.js';
 import { computeComposite, computeScoreField, renderPositionsMap, RELATIONSHIP_COLORS, REACH_RING_COLOR } from './mapPrimitives.js';
 import { axisDelta, flightDistance, niszczHours } from '../../domain/geometry.js';
 import { renderTargets, DEFAULT_TARGET_SORT } from './targets.js';
@@ -140,6 +142,12 @@ let rescanMap = {};
  * watch-list. @type {Record<string, import('../../state/watchList.js').Relationship>}
  */
 let watchRelationships = {};
+/**
+ * Watched players muted on the positions map (id → true) — map-only, they stay
+ * in the table scope + the FAB's scan walk. Mirrors `WatchListConfig.mapHidden`.
+ * @type {Record<string, true>}
+ */
+let mapHiddenIds = {};
 
 /**
  * Player ids whose Targets detail row (planets + spy links) is expanded.
@@ -366,20 +374,29 @@ let activityObs = {};
 /** @type {HTMLElement | null} */ let spyMapBlock;
 /** @type {HTMLElement | null} */ let spyMapLegend;
 /** @type {HTMLInputElement | null} */ let spyMapReach;
+/** @type {HTMLElement | null} */ let spyMapPlayersEl;
 /** @type {HTMLInputElement} */ let tgtMinMilitary;
 /** @type {HTMLInputElement | null} */ let tgtMaxMilitary;
-/** @type {HTMLSelectElement} */ let tgtLimit;
+/** Show-limit seg chip-group (was a <select>); `data-value` = row cap. */
+/** @type {HTMLElement | null} */ let tgtLimitChips;
 /** @type {HTMLInputElement | null} */ let tgtSearch;
 /** Current Spyglass nickname search (Etap D); '' = no search. */
 let targetSearchQuery = '';
 /** Player ids force-included past the filters via search "show anyway". */
 const forceIncludeIds = new Set();
-/** @type {HTMLInputElement | null} */ let tgtWatchedOnly;
+// The three everyday filters are toggle PILLS (Etap H1) — `.on` is the state,
+// read via toggleChipOn where `.checked` used to be.
+/** @type {HTMLElement | null} */ let tgtWatchedOnly;
 /** @type {HTMLInputElement | null} */ let tgtProbes;
-/** @type {HTMLInputElement | null} */ let tgtInRange;
-/** @type {HTMLInputElement | null} */ let tgtHideInactive;
+/** @type {HTMLElement | null} */ let tgtInRange;
+/** @type {HTMLElement | null} */ let tgtHideInactive;
+/** @type {HTMLButtonElement | null} */ let tgtConfigToggle;
+/** @type {HTMLElement | null} */ let tgtConfigCard;
 /** @type {HTMLElement | null} */ let tgtCountInfoEl;
 /** @type {HTMLElement | null} */ let proximityStripEl;
+/** @type {HTMLElement | null} */ let proximityCountsEl;
+/** @type {HTMLElement | null} */ let proximityAlertEl;
+/** @type {HTMLElement | null} */ let watchCardsEl;
 /** @type {HTMLElement | null} */ let scanPlanStripEl;
 /** @type {HTMLElement | null} */ let scanPlanSummaryEl;
 
@@ -659,14 +676,19 @@ const wireDom = () => {
   targetsContainer = /** @type {HTMLElement} */ (document.getElementById('targetsContainer'));
   tgtMinMilitary = /** @type {HTMLInputElement} */ (document.getElementById('tgtMinMilitary'));
   tgtMaxMilitary = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtMaxMilitary'));
-  tgtLimit = /** @type {HTMLSelectElement} */ (document.getElementById('tgtLimit'));
+  tgtLimitChips = document.getElementById('tgtLimitChips');
   tgtSearch = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtSearch'));
-  tgtWatchedOnly = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtWatchedOnly'));
+  tgtWatchedOnly = document.getElementById('tgtWatchedOnly');
   tgtProbes = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtProbes'));
-  tgtInRange = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtInRange'));
-  tgtHideInactive = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtHideInactive'));
+  tgtInRange = document.getElementById('tgtInRange');
+  tgtHideInactive = document.getElementById('tgtHideInactive');
+  tgtConfigToggle = /** @type {HTMLButtonElement | null} */ (document.getElementById('tgtConfigToggle'));
+  tgtConfigCard = document.getElementById('tgtConfigCard');
   tgtCountInfoEl = document.getElementById('tgtCountInfo');
   proximityStripEl = document.getElementById('proximityStrip');
+  proximityCountsEl = document.getElementById('proximityCounts');
+  proximityAlertEl = document.getElementById('proximityAlert');
+  watchCardsEl = document.getElementById('watchCards');
   scanPlanStripEl = document.getElementById('scanPlanStrip');
   scanPlanSummaryEl = document.getElementById('scanPlanSummary');
   spyglassMapHost = document.getElementById('spyglassMapHost');
@@ -674,6 +696,7 @@ const wireDom = () => {
   spyMapBlock = document.getElementById('spyMapBlock');
   spyMapLegend = document.getElementById('spyMapLegend');
   spyMapReach = /** @type {HTMLInputElement | null} */ (document.getElementById('spyMapReach'));
+  spyMapPlayersEl = document.getElementById('spyMapPlayers');
 };
 
 /**
@@ -800,6 +823,7 @@ const wireColonySubtabs = () => {
 const loadWatched = async () => {
   watchedPlayers.clear();
   watchRelationships = {};
+  mapHiddenIds = {};
   if (!selectedUniverseId) return;
   // Snapshot the universe: this async load can be interleaved with a universe
   // switch, and we must key every read/write to the universe we started with
@@ -821,6 +845,7 @@ const loadWatched = async () => {
   for (const id of cfg.players) watchedPlayers.add(id);
   rescanMap = cfg.rescan;
   watchRelationships = cfg.relationships ?? {};
+  mapHiddenIds = cfg.mapHidden ?? {};
   // chrome.storage is authoritative for the probe count (the FAB reads it too).
   if (tgtProbes) tgtProbes.value = String(cfg.probes);
 };
@@ -840,6 +865,7 @@ const writeWatchConfig = () => {
     probes: Number(tgtProbes?.value) || DEFAULT_SPY_PROBES,
     rescan: rescanMap,
     relationships: watchRelationships,
+    mapHidden: mapHiddenIds,
   });
 };
 
@@ -855,6 +881,20 @@ const setRelationship = (pid, rel) => {
   else watchRelationships[pid] = rel;
   writeWatchConfig();
   repaintTargets();
+  repaintSpyglassMap();
+};
+
+/**
+ * Mute/unmute a watched player on the positions map (map-only — they stay
+ * watched, in the table scope and in the FAB's scan walk). Persists through
+ * the same watch-config write as relationships.
+ * @param {string} pid
+ * @returns {void}
+ */
+const toggleMapHidden = (pid) => {
+  if (mapHiddenIds[pid]) delete mapHiddenIds[pid];
+  else mapHiddenIds[pid] = true;
+  writeWatchConfig();
   repaintSpyglassMap();
 };
 
@@ -885,6 +925,8 @@ const toggleWatched = (id) => {
   else watchedPlayers.add(id);
   writeWatchConfig();
   repaintTargets();
+  // Membership IS the map's body set — keep the open map + its chips honest.
+  repaintSpyglassMap();
 };
 
 /**
@@ -1145,6 +1187,23 @@ const repaintTargets = () => {
     });
   }
 
+  // Watchlist cards — the landing strip (Etap H4). Same per-repaint data the
+  // table + dossier read, so a card can never disagree with the row below it.
+  renderWatchlistCards({
+    hostEl: watchCardsEl,
+    watchedIds: watchedPlayers,
+    candidates: targetCandidates,
+    verdicts,
+    estimates,
+    danger: dangerProfiles,
+    routines,
+    relationships: watchRelationships,
+    reportsByPlayer,
+    inBand: inBandById,
+    nowMs,
+    onOpen: (pid) => openSpyglassFor(Number(pid)),
+  });
+
   renderTargets({
     containerEl: targetsContainer,
     candidates: targetCandidates,
@@ -1156,13 +1215,13 @@ const repaintTargets = () => {
       maxMilitary: Number(tgtMaxMilitary?.value) || 0,
       // "In range only" opt-in: apply OGame's noob-protection band (game default
       // 5x) so only legally-attackable players show; default off = show every score.
-      protectionFactor: tgtInRange?.checked ? 5 : 0,
+      protectionFactor: toggleChipOn(tgtInRange) ? 5 : 0,
       excludeVacation: true,
-      excludeInactive: tgtHideInactive ? !!tgtHideInactive.checked : true,
+      excludeInactive: tgtHideInactive ? toggleChipOn(tgtHideInactive) : true,
       excludeBanned: true,
       forceInclude: forceIncludeIds,
     },
-    limit: Number(tgtLimit?.value) || 0,
+    limit: Number(chipValue(tgtLimitChips)) || 0,
     estimates,
     sort: targetSort,
     onSort: handleTargetSort,
@@ -1170,7 +1229,7 @@ const repaintTargets = () => {
     onToggleWatch: toggleWatched,
     onRescan: markRescan,
     rescan: rescanMap,
-    watchedOnly: !!tgtWatchedOnly?.checked,
+    watchedOnly: toggleChipOn(tgtWatchedOnly),
     universePlanets: apiCache.universe ? apiCache.universe.planets : [],
     reportsByPlayer,
     nowMs,
@@ -1237,45 +1296,136 @@ const proximityAge = (tsSeconds, nowMs) => {
 };
 
 /**
- * Fill the Spyglass "🛡 Who's been near you" strip from {@link proximityReports}:
- * the last ~10 probes as compact lines "<name or #id> · near <coords> · <age> ago
- * · from <coords>". The prober name is a click target that seeds the nickname
- * search (dispatching an 'input' event so `tgtSearch`'s listener reveals them).
- * Device-local, read-only — no sends, purely a passive view of opened alerts.
+ * Fill the Spyglass "🛡 Who's been near you" strip from {@link proximityReports},
+ * digested to ONE row per prober (Etap H3, `domain/proximityDigest.js`): count,
+ * last-seen age, which of our bodies, origin — with a 💀 flag + hot-first sort
+ * when the origin sits in our own system (even RIPs reach us fast from there).
+ * Live counts land in the collapsed `<summary>` so the picture reads unopened.
+ * Each row offers ⭐ watch (the existing toggle) and a dossier deep-link; the
+ * name still seeds the nickname search. The raw per-alert log stays reachable
+ * behind a nested <details>. Device-local, read-only — no sends, purely a
+ * passive view of opened alerts.
  * @returns {void}
  */
 const renderProximityStrip = () => {
   if (!proximityStripEl) return;
   proximityStripEl.textContent = '';
-  if (!proximityReports.length) {
+  const digest = digestProximityReports(proximityReports);
+  const nowMs = Date.now();
+  if (proximityCountsEl) {
+    proximityCountsEl.textContent = digest.totalReports
+      ? ` — ${digest.playerCount} ${digest.playerCount === 1 ? 'prober' : 'probers'}`
+        + ` · ${digest.totalReports} ${digest.totalReports === 1 ? 'alert' : 'alerts'}`
+        + (digest.lastTs != null ? ` · last ${proximityAge(digest.lastTs, nowMs)}` : '')
+      : '';
+  }
+  if (proximityAlertEl) {
+    proximityAlertEl.textContent = digest.sameSystemCount > 0
+      ? ` · ⚠ ${digest.sameSystemCount} from your system`
+      : '';
+  }
+  if (!digest.totalReports) {
     const note = document.createElement('div');
     note.style.cssText = 'color:#667;font-size:12px;';
     note.textContent = 'No fleets spotted near you yet.';
     proximityStripEl.appendChild(note);
     return;
   }
-  const nowMs = Date.now();
-  for (const r of proximityReports.slice(0, 10)) {
-    const line = document.createElement('div');
-    line.style.cssText = 'font-size:12px;color:#9aa;margin-bottom:3px;line-height:1.4;';
 
-    const label = r.byPlayerName || `#${r.byPlayerId}`;
+  /** @param {string} label */
+  const seedSearch = (label) => {
+    if (!tgtSearch) return;
+    tgtSearch.value = label;
+    tgtSearch.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+
+  const MAX_ROWS = 10;
+  for (const e of digest.players.slice(0, MAX_ROWS)) {
+    const line = document.createElement('div');
+    line.style.cssText =
+      'font-size:12px;color:#9aa;margin-bottom:4px;line-height:1.6;'
+      + 'display:flex;align-items:center;gap:6px;flex-wrap:wrap;'
+      + (e.sameSystem ? 'border-left:2px solid #e06c5f;padding-left:7px;' : 'padding-left:9px;');
+
+    const label = e.name || `#${e.byPlayerId}`;
     const who = document.createElement('span');
     who.textContent = label;
-    who.style.cssText = 'cursor:pointer;color:#8fb8e0;';
-    who.title = 'Find this player in the search below';
-    who.addEventListener('click', () => {
-      if (!tgtSearch) return;
-      tgtSearch.value = label;
-      tgtSearch.dispatchEvent(new Event('input', { bubbles: true }));
-    });
+    who.style.cssText = 'cursor:pointer;color:#8fb8e0;font-weight:600;';
+    who.title = 'Find this player in the search above';
+    who.addEventListener('click', () => seedSearch(label));
     line.appendChild(who);
 
-    const age = proximityAge(r.ts, nowMs);
-    const rest = ` · near ${r.atCoords}${age ? ` · ${age} ago` : ''}${r.fromCoords ? ` · from ${r.fromCoords}` : ''}`;
-    line.appendChild(document.createTextNode(rest));
+    const at = e.atCoords.slice(0, 2).join(', ')
+      + (e.atCoords.length > 2 ? ` +${e.atCoords.length - 2}` : '');
+    const age = e.lastTs != null ? proximityAge(e.lastTs, nowMs) : '';
+    const facts = (e.count > 1 ? `×${e.count} · ` : '')
+      + (age ? `last ${age} · ` : '')
+      + `at ${at}`
+      + (e.fromCoords ? ` · from ${e.fromCoords}` : '');
+    line.appendChild(document.createTextNode(facts));
+
+    if (e.sameSystem) {
+      const hot = document.createElement('span');
+      hot.textContent = '💀 your system';
+      hot.style.cssText = 'color:#e06c5f;font-weight:600;';
+      hot.title =
+        'Probed you from a body in the same system as yours — even Death Stars '
+        + '(the slowest ships in the game) reach you quickly from there.';
+      line.appendChild(hot);
+    }
+
+    const watched = watchedPlayers.has(String(e.byPlayerId));
+    const watch = document.createElement('button');
+    watch.type = 'button';
+    watch.textContent = watched ? '✓ watching' : '⭐ watch';
+    watch.style.cssText =
+      'font-size:11px;border-radius:999px;padding:1px 8px;cursor:pointer;'
+      + (watched
+        ? 'border:1px solid #2f6f4f;background:#16352a;color:#7fd6a8;'
+        : 'border:1px solid #2b3a4d;background:#18222e;color:#9fb4c4;');
+    watch.title = watched ? 'On your watchlist — click to remove' : 'Add to your watchlist / scan list';
+    watch.addEventListener('click', () => {
+      toggleWatched(String(e.byPlayerId));
+      renderProximityStrip();
+    });
+    line.appendChild(watch);
+
+    const dossier = document.createElement('button');
+    dossier.type = 'button';
+    dossier.textContent = 'dossier ▸';
+    dossier.style.cssText =
+      'font-size:11px;border:1px solid #2b3a4d;background:#18222e;color:#9fb4c4;'
+      + 'border-radius:999px;padding:1px 8px;cursor:pointer;';
+    dossier.title = 'Open this player in the table below';
+    dossier.addEventListener('click', () => openSpyglassFor(e.byPlayerId));
+    line.appendChild(dossier);
+
     proximityStripEl.appendChild(line);
   }
+  if (digest.players.length > MAX_ROWS) {
+    const more = document.createElement('div');
+    more.style.cssText = 'color:#667;font-size:11px;margin:2px 0 4px 9px;';
+    more.textContent = `+${digest.players.length - MAX_ROWS} more probers in the raw log`;
+    proximityStripEl.appendChild(more);
+  }
+
+  // The undigested per-alert log, for when the exact sequence matters.
+  const raw = document.createElement('details');
+  raw.style.cssText = 'margin:6px 0 0 9px;';
+  const rawSum = document.createElement('summary');
+  rawSum.style.cssText = 'cursor:pointer;color:#667;font-size:11px;list-style:none;';
+  rawSum.textContent = `show raw log (${digest.totalReports} ${digest.totalReports === 1 ? 'alert' : 'alerts'}) ▸`;
+  raw.appendChild(rawSum);
+  for (const r of proximityReports) {
+    const line = document.createElement('div');
+    line.style.cssText = 'font-size:11px;color:#788;margin-top:3px;line-height:1.4;';
+    const age = proximityAge(r.ts, nowMs);
+    line.textContent =
+      `${r.byPlayerName || `#${r.byPlayerId}`} · near ${r.atCoords}`
+      + `${age ? ` · ${age} ago` : ''}${r.fromCoords ? ` · from ${r.fromCoords}` : ''}`;
+    raw.appendChild(line);
+  }
+  proximityStripEl.appendChild(raw);
 };
 
 /**
@@ -1433,9 +1583,9 @@ const saveTargetPrefs = () => {
     sort: targetSort,
     minMilitary: tgtMinMilitary?.value,
     maxMilitary: tgtMaxMilitary?.value,
-    inRange: !!tgtInRange?.checked,
-    hideInactive: tgtHideInactive ? !!tgtHideInactive.checked : true,
-    showLimit: tgtLimit?.value,
+    inRange: toggleChipOn(tgtInRange),
+    hideInactive: tgtHideInactive ? toggleChipOn(tgtHideInactive) : true,
+    showLimit: chipValue(tgtLimitChips),
   });
 };
 
@@ -1453,9 +1603,11 @@ const loadTargetPrefs = () => {
   }
   if (p.minMilitary != null && tgtMinMilitary) tgtMinMilitary.value = String(p.minMilitary);
   if (p.maxMilitary != null && tgtMaxMilitary) tgtMaxMilitary.value = String(p.maxMilitary);
-  if (tgtInRange) tgtInRange.checked = !!p.inRange;
-  if (tgtHideInactive) tgtHideInactive.checked = p.hideInactive !== false; // default ON
-  if (p.showLimit != null && tgtLimit && tgtLimit.querySelector('[value="' + p.showLimit + '"]')) tgtLimit.value = String(p.showLimit);
+  setToggleChip(tgtInRange, !!p.inRange);
+  setToggleChip(tgtHideInactive, p.hideInactive !== false); // default ON
+  // setChipValue refuses values no chip carries — the phantom-option guard the
+  // old `<select>` restore had via querySelector('[value=…]').
+  if (p.showLimit != null) setChipValue(tgtLimitChips, String(p.showLimit));
 };
 
 /**
@@ -1855,6 +2007,74 @@ const renderSpyMapLegend = (hasOwn, reachOn) => {
   spyMapLegend.style.display = rows.length || reachOn ? 'flex' : 'none';
 };
 
+/**
+ * Render the watched-player chips under the positions map (Etap H5) — the
+ * add/remove story made visible right where it matters: one pill per watched
+ * player with a relationship dot (click cycles enemy → friend → neutral), the
+ * name (opens the dossier), 👁 (map-only mute via {@link toggleMapHidden}) and
+ * ✕ (stop watching). Empty watchlist → a ghost hint instead of a blank row.
+ * @returns {void}
+ */
+const renderSpyMapPlayerChips = () => {
+  if (!spyMapPlayersEl) return;
+  spyMapPlayersEl.textContent = '';
+  const ids = [...watchedPlayers];
+  if (!ids.length) {
+    const ghost = document.createElement('span');
+    ghost.className = 'spy-pchip';
+    ghost.style.cssText = 'border-style:dashed;color:#77848f;';
+    ghost.textContent = '＋ watch players in the table below — they appear here and on the map';
+    spyMapPlayersEl.appendChild(ghost);
+    return;
+  }
+  const nameOf = (/** @type {string} */ pid) => apiCache.players?.players?.[pid]?.name || `#${pid}`;
+  ids.sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
+  /** @type {import('../../state/watchList.js').Relationship[]} */
+  const cycle = ['enemy', 'friend', 'neutral'];
+  for (const pid of ids) {
+    const rel = /** @type {import('../../state/watchList.js').Relationship} */ (watchRelationships[pid] || 'neutral');
+    const chip = document.createElement('span');
+    chip.className = 'spy-pchip' + (mapHiddenIds[pid] ? ' map-hidden' : '');
+
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.style.background = RELATIONSHIP_COLORS[rel];
+    dot.title = `Relationship: ${rel} — click to change (enemy → friend → neutral)`;
+    dot.addEventListener('click', () => {
+      setRelationship(pid, cycle[(cycle.indexOf(rel) + 1) % cycle.length]);
+    });
+    chip.appendChild(dot);
+
+    const nm = document.createElement('span');
+    nm.className = 'nm';
+    nm.textContent = nameOf(pid);
+    nm.title = 'Open this player in the table below';
+    nm.addEventListener('click', () => openSpyglassFor(Number(pid)));
+    chip.appendChild(nm);
+
+    const eye = document.createElement('span');
+    eye.className = 'ico';
+    eye.textContent = '👁';
+    eye.title = mapHiddenIds[pid]
+      ? 'Hidden from the map — click to show again'
+      : 'Hide from the map only (stays watched + scanned)';
+    eye.addEventListener('click', () => toggleMapHidden(pid));
+    chip.appendChild(eye);
+
+    const off = document.createElement('span');
+    off.className = 'ico';
+    off.textContent = '✕';
+    off.title = 'Stop watching — removes from the list, the scan walk and the map';
+    off.addEventListener('click', () => {
+      toggleWatched(pid);
+      repaintSpyglassMap();
+    });
+    chip.appendChild(off);
+
+    spyMapPlayersEl.appendChild(chip);
+  }
+};
+
 /** Repaint the Spyglass positions map. No-op while closed/hidden. */
 const repaintSpyglassMap = () => {
   if (!spyglassMapHost || !spyMapOpen) return;
@@ -1879,7 +2099,8 @@ const repaintSpyglassMap = () => {
       if (!player || player.id == null) continue;
       const pid = String(player.id);
       const isOwn = pid === ownId;
-      if (!isOwn && !watchedPlayers.has(pid)) continue;
+      // Watched + not map-muted (H5); own bodies always plot and seed the reach kernel.
+      if (!isOwn && (!watchedPlayers.has(pid) || mapHiddenIds[pid])) continue;
       if (isOwn) ownCoords.push({ g, s });
       bodies.push({
         galaxy: g,
@@ -1918,6 +2139,7 @@ const repaintSpyglassMap = () => {
     }
   }
   renderSpyMapLegend(!!ownId, reachOn && ownCoords.length > 0);
+  renderSpyMapPlayerChips();
   renderPositionsMap({
     hostEl: spyglassMapHost,
     galaxies: apiBounds.galaxies,
@@ -2014,17 +2236,23 @@ const wireListeners = () => {
   const onTargetFilterChange = () => { saveTargetPrefs(); repaintTargets(); };
   tgtMinMilitary.addEventListener('change', onTargetFilterChange);
   tgtMaxMilitary?.addEventListener('change', onTargetFilterChange);
-  tgtInRange?.addEventListener('change', onTargetFilterChange);
-  tgtHideInactive?.addEventListener('change', onTargetFilterChange);
+  wireToggleChip(tgtInRange, onTargetFilterChange);
+  wireToggleChip(tgtHideInactive, onTargetFilterChange);
   // Probe count is shared with the in-game scan FAB via chrome.storage, so it
   // persists through the watch-config write rather than the localStorage prefs.
   tgtProbes?.addEventListener('change', () => { writeWatchConfig(); repaintTargets(); });
-  tgtLimit.addEventListener('change', onTargetFilterChange);
+  wireChips(tgtLimitChips, onTargetFilterChange);
   tgtSearch?.addEventListener('input', () => {
     targetSearchQuery = tgtSearch ? tgtSearch.value : '';
     repaintTargets();
   });
-  tgtWatchedOnly?.addEventListener('change', repaintTargets);
+  wireToggleChip(tgtWatchedOnly, () => repaintTargets());
+  // ⚙ show/hide for the rarely-touched numeric filters (military range, probes).
+  tgtConfigToggle?.addEventListener('click', () => {
+    const opening = tgtConfigCard ? tgtConfigCard.style.display === 'none' : false;
+    if (tgtConfigCard) tgtConfigCard.style.display = opening ? '' : 'none';
+    tgtConfigToggle?.setAttribute('aria-expanded', String(opening));
+  });
   spyMapToggle?.addEventListener('click', toggleSpyMap);
   spyMapReach?.addEventListener('change', repaintSpyglassMap);
 
@@ -2154,24 +2382,33 @@ export const _resetDashboardForTest = () => {
     targetsContainer =
     tgtMinMilitary =
     tgtMaxMilitary =
-    tgtLimit =
+    tgtLimitChips =
     tgtSearch =
     tgtWatchedOnly =
     tgtProbes =
     tgtInRange =
     tgtHideInactive =
+    tgtConfigToggle =
+    tgtConfigCard =
     tgtCountInfoEl =
     proximityStripEl =
+    proximityCountsEl =
+    proximityAlertEl =
+    spyMapPlayersEl =
+    watchCardsEl =
     scanPlanStripEl =
     scanPlanSummaryEl =
     freeContainer =
     freeCountInfoEl =
       /** @type {any} */ (undefined);
   // Session-only state that boot() does not re-establish: clear it so a
-  // re-install starts clean (watch-list Set, rescan flags, expanded target
-  // rows, target sort, and the pending-repaint flag).
+  // re-install starts clean (watch-list Set, rescan flags, relationship +
+  // map-mute tags, expanded target rows, target sort, and the
+  // pending-repaint flag).
   watchedPlayers.clear();
   rescanMap = {};
+  watchRelationships = {};
+  mapHiddenIds = {};
   expandedTargets.clear();
   targetSort = { ...DEFAULT_TARGET_SORT };
   repaintQueued = false;

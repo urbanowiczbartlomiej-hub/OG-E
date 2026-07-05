@@ -358,6 +358,60 @@
   .chip-group.seg button + button { border-left: 1px solid #2b3a4d; }
   .chip-group.seg button.on { background: #12253c; color: #cfe4ff; }
 
+  /* Watchlist cards — the Spyglass landing strip (one card per watched
+     player: verdict words, headline number, activity sparkline). */
+  .watch-zone-label { font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase; color: #66788a; margin: 0 0 8px; }
+  .watch-cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(235px, 1fr)); gap: 12px; }
+  .watch-card {
+    background: #0b1118; border: 1px solid #223041; border-radius: 8px;
+    padding: 10px 12px; cursor: pointer; min-width: 0;
+  }
+  .watch-card:hover { border-color: #4a9eff; }
+
+  /* Dossier layout — judgement (danger/why/hidden/civil) beside evidence
+     (planets/routine) from 860px; one column below. Layout only, the blocks
+     and their wording are untouched. */
+  .dossier-grid { display: grid; grid-template-columns: 1fr; gap: 0 28px; }
+  @media (min-width: 860px) { .dossier-grid { grid-template-columns: 1.1fr 1fr; } }
+
+  /* Watched-player chips under the Spyglass map — one pill per watched player
+     (dot = relationship, 👁 = map-only mute, ✕ = unwatch). */
+  .spy-pchip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #18222e; border: 1px solid #2b3a4d; border-radius: 999px;
+    padding: 3px 7px 3px 10px; font-size: 12px; color: #cfe4ff;
+  }
+  .spy-pchip .dot { width: 9px; height: 9px; border-radius: 999px; border: 1px solid rgba(0,0,0,.5); cursor: pointer; }
+  .spy-pchip .nm { cursor: pointer; }
+  .spy-pchip .nm:hover { color: #4a9eff; }
+  .spy-pchip .ico {
+    cursor: pointer; color: #9fb4c4; font-size: 11px;
+    padding: 1px 5px; border-radius: 999px; user-select: none;
+  }
+  .spy-pchip .ico:hover { background: #22303f; color: #cfe4ff; }
+  .spy-pchip.map-hidden { opacity: .45; }
+
+  /* "?" help popover — a <details> whose body floats absolutely, so opening it
+     explains the section WITHOUT reflowing the page. Houses the long intro
+     text the Spyglass header used to open with. */
+  .sg-help { position: relative; display: inline-block; }
+  .sg-help summary {
+    list-style: none; cursor: pointer; user-select: none;
+    width: 20px; height: 20px; border-radius: 999px;
+    border: 1px solid #2b3a4d; background: #18222e; color: #9fb4c4;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 12px;
+  }
+  .sg-help summary::-webkit-details-marker { display: none; }
+  .sg-help summary:hover, .sg-help[open] summary { border-color: #4a9eff; color: #cfe4ff; }
+  .sg-help > div {
+    position: absolute; left: 0; top: 26px; z-index: 40;
+    width: min(560px, 82vw);
+    background: #0d131b; border: 1px solid #2b3a4d; border-radius: 8px;
+    padding: 10px 12px; color: #9aa; font-size: 12.5px; line-height: 1.5;
+    box-shadow: 0 6px 24px rgba(0,0,0,.6);
+  }
+
   /* Grouped neighbourhood census (inside the expanded row) — fixed labelled
      families instead of a reshuffling flat tile row; zeros stay visible but
      dimmed so two candidates always compare slot-for-slot. */
@@ -744,57 +798,87 @@
 
 <section id="spyglassSection" class="tab-section">
   <h1>Spyglass<span class="exp-badge" title="Hidden-fleet estimates depend on how much you've spied; treat them as a guide, not gospel.">experimental</span></h1>
-  <p style="color:#888;font-size:13px;margin-bottom:16px;">
-    The whole-server board — who is holding fleet, and how fresh your intel is. Danger and the
-    <strong style="color:#ccc;">mobile-Fleet</strong> estimate come free from OGame's public API
-    (no spying needed); spy a player to firm the numbers up. Hit <strong style="color:#7fd6a8;">⭐</strong>
-    to add a player to your scan list, <strong style="color:#6b97c4;">↻</strong> to flag a re-scan,
-    and click a player to see their planets. Data is fetched in-game from the public API — open the
-    galaxy view once to populate it.
-  </p>
-  <div style="margin-bottom:10px;">
+  <!-- One-line tagline; the full how-it-works paragraph lives in the "?" popover
+       so it stops greeting every visit as a wall of text (Etap H1). -->
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+    <p style="color:#888;font-size:13px;margin:0;">
+      Watch players across the whole server — <strong style="color:#7fd6a8;">+ scan</strong> a
+      player to track them, spy them to firm the numbers up.
+    </p>
+    <details class="sg-help">
+      <summary title="How Spyglass works">?</summary>
+      <div>
+        The whole-server board — who is holding fleet, and how fresh your intel is. Danger and the
+        <strong style="color:#ccc;">mobile-Fleet</strong> estimate come free from OGame's public API
+        (no spying needed); spy a player to firm the numbers up. Hit <strong style="color:#7fd6a8;">⭐</strong>
+        to add a player to your scan list, <strong style="color:#6b97c4;">↻</strong> to flag a re-scan,
+        and click a player to see their planets. Data is fetched in-game from the public API — open the
+        galaxy view once to populate it.
+      </div>
+    </details>
     <input id="tgtSearch" type="search" placeholder="🔍 search player by name…"
-      style="width:280px;max-width:100%;padding:5px 9px;background:#0e141b;border:1px solid #2a3542;border-radius:4px;color:#cfd6dd;font-size:13px;"
+      style="width:280px;max-width:100%;padding:5px 9px;background:#0e141b;border:1px solid #2a3542;border-radius:4px;color:#cfd6dd;font-size:13px;margin-left:auto;"
       title="Find any player by nickname — including ones the filters hide (with the reason why).">
   </div>
-  <details style="margin-bottom:10px;"><summary style="cursor:pointer;color:#9aa;font-size:13px;list-style:none;">🛡 Who's been near you</summary><div id="proximityStrip" style="margin-top:8px;"></div></details>
-  <div class="controls">
-    <label>Military:</label>
-    <input id="tgtMinMilitary" type="number" min="0" value="0" size="8"
-      title="Hide players whose military score is below this value.">
-    <span style="color:#666;">–</span>
-    <input id="tgtMaxMilitary" type="number" min="0" value="0" size="8"
-      title="Hide players whose military score is above this value (0 = no upper cap).">
-    <label>Show:</label>
-    <select id="tgtLimit">
-      <option value="50">top 50</option>
-      <option value="100" selected>top 100</option>
-      <option value="200">top 200</option>
-      <option value="0">all</option>
-    </select>
-    <label style="cursor:pointer;" title="Show only players on the in-game scan list.">
-      <input type="checkbox" id="tgtWatchedOnly"> scan list only
-    </label>
-    <label>Probes:</label>
-    <input id="tgtProbes" type="number" min="1" max="9999" value="20" size="4"
-      title="How many espionage probes the in-game scan button pre-arms per planet.">
-    <label style="cursor:pointer;" title="Show only players you can legally attack (OGame noob-protection band around your own score)."><input type="checkbox" id="tgtInRange"> in range only</label>
-    <label style="cursor:pointer;" title="Hide inactive / long-inactive accounts."><input type="checkbox" id="tgtHideInactive" checked> hide inactive</label>
+  <!-- Collapsed by default, but the summary line carries live counts so the
+       defensive picture reads without opening it (Etap H3). -->
+  <details style="margin-bottom:10px;"><summary style="cursor:pointer;color:#9aa;font-size:13px;list-style:none;">🛡 Who's been near you<span id="proximityCounts" style="color:#77848f;"></span><span id="proximityAlert" style="color:#e06c5f;font-weight:600;"></span></summary><div id="proximityStrip" style="margin-top:8px;"></div></details>
+  <!-- Watchlist cards — the landing view (Etap H4, design §6.1): each card
+       answers raid-or-skip in words before any table is read. -->
+  <div id="watchCards" style="margin-bottom:16px;"></div>
+  <!-- Everyday filters as chip pills (same pattern as the Galaxy Viewer);
+       the rarely-touched numeric config (military range, probes) hides
+       behind ⚙ so the strip stays one calm line (Etap H1). -->
+  <div class="controls" style="align-items:center;">
+    <div class="chip-group">
+      <button type="button" id="tgtHideInactive" class="on"
+        title="Hide inactive / long-inactive accounts.">😴 hide inactive</button>
+      <button type="button" id="tgtInRange"
+        title="Show only players you can legally attack (OGame noob-protection band around your own score).">⚔ in range</button>
+      <button type="button" id="tgtWatchedOnly"
+        title="Show only players on the in-game scan list.">⭐ scan list</button>
+    </div>
+    <div class="chip-group seg" id="tgtLimitChips" data-value="100" title="How many rows to show.">
+      <button type="button" data-value="50">top 50</button>
+      <button type="button" data-value="100">top 100</button>
+      <button type="button" data-value="200">top 200</button>
+      <button type="button" data-value="0">all</button>
+    </div>
+    <button type="button" id="tgtConfigToggle" aria-expanded="false" aria-controls="tgtConfigCard"
+      title="More filters: military score range · probes per planet"
+      style="background:#18222e;border:1px solid #2b3a4d;border-radius:999px;color:#9fb4c4;padding:3px 10px;font-size:12px;cursor:pointer;">⚙</button>
     <span id="tgtCountInfo" style="color:#888;font-size:13px;margin-left:auto;"></span>
+  </div>
+  <div id="tgtConfigCard" style="display:none;background:#0b1118;border:1px solid #2b3a4d;border-radius:8px;padding:8px 14px;margin:-8px 0 14px;max-width:560px;font-size:13px;color:#8b99a8;">
+    <label style="margin-right:14px;">Military:
+      <input id="tgtMinMilitary" type="number" min="0" value="0" size="8"
+        title="Hide players whose military score is below this value.">
+      <span style="color:#666;">–</span>
+      <input id="tgtMaxMilitary" type="number" min="0" value="0" size="8"
+        title="Hide players whose military score is above this value (0 = no upper cap).">
+    </label>
+    <label>Probes:
+      <input id="tgtProbes" type="number" min="1" max="9999" value="20" size="4"
+        title="How many espionage probes the in-game scan button pre-arms per planet.">
+    </label>
   </div>
   <div style="margin:6px 0 12px;">
     <button type="button" id="spyMapToggle" aria-expanded="false" aria-controls="spyMapBlock"
-      title="Show the whole-server occupancy map. Click a player to spotlight their planets."
+      title="The positions map — your planets plus every watched player's."
       style="padding:5px 12px;background:#12202e;border:1px solid #2a3542;border-radius:4px;color:#9fc6e8;font-size:13px;cursor:pointer;">🗺 Show map</button>
   </div>
   <div class="server-map-panel" id="spyMapBlock" style="display:none;margin-bottom:14px;">
-    <div style="color:#9aa;font-size:12px;margin-bottom:6px;">Your planets (white) + your watched players', coloured by <strong style="color:#cfd6dd;">relationship</strong> (enemy red · friend green · neutral grey) and sized by danger. Set a player's relationship in their dossier; click a marker to open it.</div>
+    <div style="color:#9aa;font-size:12px;margin-bottom:6px;">you = white · colour = relationship · size = danger · click a marker to open the dossier</div>
     <label style="display:inline-block;cursor:pointer;color:#9aa;font-size:12px;margin-bottom:6px;"
       title="Rings every tracked body close enough to hit one of your planets within 8 hours at RIP (Deathstar) speed — the slowest attack ship, so anything faster reaches you sooner. Positions from the public API.">
       <input type="checkbox" id="spyMapReach"> who can reach you (≤8 h, RIP-speed)
     </label>
     <div id="spyMapLegend" style="display:none;flex-wrap:wrap;gap:4px 12px;margin-bottom:8px;font-size:12px;color:#cfd6dd;"></div>
     <div id="spyglassMapHost"></div>
+    <!-- Per-player management right AT the map (Etap H5): every watched player
+         is a chip — dot = relationship (click to cycle), 👁 = hide from the map
+         only, ✕ = stop watching. Makes the "map = watchlist" model visible. -->
+    <div id="spyMapPlayers" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;"></div>
   </div>
   <details style="margin-bottom:10px;"
     title="Ranks your scan list by danger × intel staleness (× a small bump when a target's observed activity window is open). A plan only — the in-game Spy button proposes the same order, and every probe stays one deliberate tap.">

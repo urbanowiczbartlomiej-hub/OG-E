@@ -219,23 +219,42 @@ function militaryCell(c) {
  * military feed, hourly). An explicit 0 = pure defense: this player's whole
  * military score CANNOT fly an attack — rendered green, the single hardest
  * "safe" fact the API gives us. '—' = player absent from the military feed.
- * The rough resources-per-ship hint (contaminated both ways — defense inflates,
- * probe/cargo swarms dilute) rides in the tooltip rather than its own column.
+ * The rough resources-per-ship figure rides as a dim second LINE (Etap H2):
+ * it's the fleet-composition tell (2.8K/ship = cargo/probe swarm, 54K/ship =
+ * capital ships) and was too load-bearing to leave tooltip-only. Its
+ * contamination caveat (defense inflates, swarms dilute) stays in the tooltip.
  * @param {TargetCandidate} c
  * @returns {HTMLTableCellElement}
  */
 function shipsCell(c) {
   if (typeof c.ships !== 'number') return cell('—', { align: 'right', color: '#5f6b75' });
-  const td = cell(compact(c.ships), {
-    align: 'right',
-    color: c.ships === 0 ? '#7fd6a8' : '#cfd6dd',
-  });
+  const td = cell('', { align: 'right' });
+  const count = document.createElement('span');
+  count.textContent = c.ships === 0 ? '0 🛡' : compact(c.ships);
+  count.style.color = c.ships === 0 ? '#7fd6a8' : '#cfd6dd';
+  td.appendChild(count);
+  const sub = document.createElement('span');
+  sub.style.cssText = 'display:block;font-size:11px;line-height:1.3;';
   if (c.ships === 0) {
     td.title = '0 ships — pure defense; this military score cannot attack anyone';
+    sub.textContent = 'pure defense';
+    sub.style.color = '#4f8f6f';
+    td.appendChild(sub);
   } else {
     const rps = typeof c.militaryScore === 'number' ? Math.round((c.militaryScore * 1000) / c.ships) : null;
     td.title = `${fmt(c.ships)} ships (military highscore, hourly)`
       + (rps != null ? ` · ≈ ${fmt(rps)} res/ship (defense inflates, probe swarms dilute)` : '');
+    if (rps != null) {
+      // Rough composition bands: destroyers ~125K res, battleships ~60K,
+      // light fighters ~4K, probes ~1K — so ≥50K reads "capital-heavy",
+      // ≥1M reads "RIP-scale", <5K reads "swarm".
+      sub.textContent = `≈ ${compact(rps)} res/ship${rps < 5_000 ? ' · swarm' : ''}`;
+      sub.style.color = rps >= 1_000_000 ? '#ff9d8a'
+        : rps >= 50_000 ? '#e0b45f'
+        : rps < 5_000 ? '#5f6b75'
+        : '#8b95a0';
+      td.appendChild(sub);
+    }
   }
   return td;
 }
@@ -357,14 +376,14 @@ function playerCell(name, open, detail, onToggle, onShowOnMap) {
     if (onToggle) onToggle();
   });
   td.appendChild(nameWrap);
-  // Spyglass → map: spotlight this player's planets on the Galaxy Viewer
-  // occupancy lens. A separate control (not the name) so it never fights the
-  // expand toggle.
+  // Spyglass → map focus. A separate control (not the name) so it never
+  // fights the expand toggle; 🗺 (was an opaque ⌖) because it OPENS the map —
+  // it does not "add" anything, every watched player is on the map already.
   if (onShowOnMap) {
     const mapLink = document.createElement('span');
-    mapLink.textContent = ' ⌖';
-    mapLink.style.cssText = 'cursor:pointer;color:#c07ad0;user-select:none;';
-    mapLink.title = 'Show this player’s planets on the map';
+    mapLink.textContent = ' 🗺';
+    mapLink.style.cssText = 'cursor:pointer;user-select:none;font-size:11px;';
+    mapLink.title = 'Focus the positions map (all watched players are on it)';
     mapLink.addEventListener('click', (e) => { e.stopPropagation(); onShowOnMap(); });
     td.appendChild(mapLink);
   }
@@ -637,7 +656,12 @@ export function renderTargets({
     tbody.appendChild(tr);
   }
   table.appendChild(tbody);
-  containerEl.appendChild(table);
+  // Horizontal-scroll containment: on a narrow viewport the (nowrap) table
+  // scrolls inside this wrapper instead of stretching the whole page.
+  const scroller = document.createElement('div');
+  scroller.style.overflowX = 'auto';
+  scroller.appendChild(table);
+  containerEl.appendChild(scroller);
 
   if (countInfoEl) {
     if (query) {

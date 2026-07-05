@@ -137,6 +137,49 @@ captured in IDEAS.md §6–9.)*
 `domain/spyScan.pruneRescan`, `lib/spySentSession` (legacy array), `state/activityObs` (watched gate,
 hydrate sweep, event wiring), sendSpy `renderSpy` preflight + `noShips` label, reach-overlay math.
 
+### Etap H — UX pass (branch `feat/spyglass-ux`, worktree, based on `bd6b5a5` = 1.35.0)
+
+**User-approved 2026-07-05** (mockup: claude.ai artifact `c5af6bea…`, session "Spyglass UX").
+Ran PARALLEL to the user's F3+G work — which SHIPPED as **v1.36.0** (`744a12f` on `main`,
+AMO 2026-07-05) while H was being built, so the merge target is **`main` @ 744a12f** and H's
+release is the **next minor (1.37.0)**. Conflicts expected in `index.js`/`dossier.js`/
+`watchList.js`/`dashboard.html` (different spans, resolvable); 1.36.0 also ADDED Spyglass UI
+this layout must adopt at merge time: the `#scanPlanStrip` collapsed details (slot between
+the cards and the Finder) and the `#spyMapReach` opt-in (slots by the map legend/chips). Diagnosis: too much standing text
+(intro + map paragraphs), checkbox strip where GV has chips, res/ship buried in the Ships
+tooltip, "Who's been near you" = 10 raw lines with no aggregation, map membership model
+(map = watchlist) invisible → users think ⌖ "adds to map" and can't find removal.
+
+| Sub-etap | What | Status |
+|---|---|---|
+| H1 | Controls → chip pills (reuse `chips.js` + new boolean-toggle helpers) + top-N seg chips + Military/Probes behind a ⚙ config card + intro paragraph → one-liner + "?" popover (full text inside) + map caption diet | ✅ `89d4817` |
+| H2 | `shipsCell` second line `≈ X res/ship` (tiered colour: <5K swarm-dim · ≥50K amber · ≥1M red; caveat stays in tooltip) + table in an `overflow-x` wrapper (RWD) | ✅ `7d387bc` |
+| H3 | NEW pure `domain/proximityDigest.js` (group per prober, same-system = RIP-range detection, hot-first sort) + strip rewrite: live counts in the `<summary>`, 💀 rows, ⭐ watch / dossier ▸ actions, raw log behind a `<details>` | ✅ `a73927c` |
+| H5 | `WatchListConfig.mapHidden` (additive, like `relationships`) + watched-player chips under the map (✕ unwatch · 👁 hide-from-map · dot = cycle relationship · name → dossier) + ⌖ → 🗺 glyph; `toggleWatched` now also repaints the open map | ✅ `dba5bcc` |
+| H6 | Dossier two-column grid ≥860px (verdict/danger/hidden/civil ↔ planets/routine) — **zero wording changes** (provenance/coverage lines are the §8 spine) + relationship selector restyled as chips | ✅ `52e3bd6` |
+| H4 | Watchlist CARDS as the landing (§6.1/§6.3 — never implemented): NEW `cards.js` fed from the same repaint data as table+dossier; verdict words + headline + gate-aware sparkline + intel age; click → dossier | ✅ `554b37f` |
+
+**All six sub-etaps BUILT + committed (tree green: tsc/lint/build at every commit) —
+AWAITING BROWSER VERIFICATION** (per the work loop; none of it is user-verified yet).
+Browser checklist: chips toggle + persist across reload; ⚙ card; "?" popover; res/ship
+line + tiers; near-you digest counts/💀/watch/dossier buttons (needs real proximity
+alerts); map player-chips (dot cycle, 👁 mute persists, ✕, empty-ghost); cards (verdict/
+headline/sparkline, click→dossier, empty-ghost); dossier 2-col ≥860px; narrow-viewport
+table scroll. "scan list only" chip kept — candidate for removal once cards prove out.
+
+Deferred test debt from H (reconcile at the 1.37.0 release): `proximityDigest`,
+`normalizeWatchList` mapHidden, chips toggle helpers, `renderWatchlistCards` (behavioral).
+Freshness header chips ("ships data 2 h old") skipped — needs an apiCache fetch-timestamp
+plumb; revisit later. MERGE NOTE: rebase/merge this branch onto **`main` @ `744a12f`
+(v1.36.0, carries F3+G)** — expect localized conflicts in `index.js` (imports,
+repaintTargets args, listeners, loadAll routines), `dossier.js`, `watchList.js` (G's
+hydrate prune) and `dashboard.html` (G added `#scanPlanStrip` + `#spyMapReach`); resolve
+keeping BOTH features and slot the strip/reach toggle into the H layout as noted above.
+
+**MERGED onto `main` @ `744a12f` and RELEASED as 1.37.0** — the `#scanPlanStrip` slots
+above the Finder, `#spyMapReach` sits with the map legend/chips, both retained. All six
+sub-etaps live.
+
 ### NEXT — future sessions, in order
 
 *(Etap D-strip is committed `f41f4a5` but not live-verified — open the messages tab with a

@@ -411,11 +411,13 @@ function relationshipSelector(playerId, current, onSet) {
   const opts = [['enemy', 'Enemy', '#e2726a'], ['friend', 'Friend', '#7fd6a8'], ['neutral', 'Neutral', '#9aa7b3']];
   for (const [rel, text, color] of opts) {
     const on = (current || 'neutral') === rel;
+    // Chip-pill look (Etap H6, matches .chip-group) with the relationship hue
+    // carried by the active chip's border + text — not a filled swatch.
     const btn = document.createElement('button');
     btn.textContent = text;
-    btn.style.cssText = 'padding:2px 8px;border-radius:3px;font-size:11px;cursor:pointer;'
-      + `border:1px solid ${on ? color : '#2a3542'};background:${on ? color : 'transparent'};`
-      + `color:${on ? '#0b1118' : '#8b95a0'};font-weight:${on ? '700' : '400'};`;
+    btn.style.cssText = 'padding:2px 10px;border-radius:999px;font-size:11px;cursor:pointer;'
+      + `border:1px solid ${on ? color : '#2b3a4d'};background:${on ? '#12253c' : '#18222e'};`
+      + `color:${on ? color : '#9fb4c4'};font-weight:${on ? '600' : '400'};`;
     btn.addEventListener('click', (e) => { e.stopPropagation(); onSet(playerId, rel); });
     wrap.appendChild(btn);
   }
@@ -427,10 +429,11 @@ const SPARK_BLOCKS = [' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█
 
 /**
  * A monospace sparkline for a small histogram (each bar scaled to the max).
+ * Exported for the watchlist cards (same feature, same visual language).
  * @param {number[]} bins
  * @returns {string}
  */
-function sparkline(bins) {
+export function sparkline(bins) {
   const max = Math.max(1, ...bins);
   return bins.map((v) => SPARK_BLOCKS[Math.min(8, Math.round((v / max) * 8))]).join('');
 }
@@ -571,22 +574,34 @@ export function buildDossier(a) {
   // 2) Raid verdict banner (the jack-point).
   if (a.verdict) td.appendChild(verdictBanner(a.verdict));
 
+  // Below the full-width header/verdict, the rest splits into two columns on
+  // wide viewports (Etap H6, `.dossier-grid` in dashboard.html): the JUDGEMENT
+  // stack (danger / why / hidden math / civil) beside the EVIDENCE stack
+  // (planets / routine) instead of one long scroll. Content is untouched —
+  // this is layout only.
+  const grid = document.createElement('div');
+  grid.className = 'dossier-grid';
+  const judgement = document.createElement('div');
+  const evidence = document.createElement('div');
+  grid.append(judgement, evidence);
+  td.appendChild(grid);
+
   // 3) Danger + interval bar.
-  if (a.profile) td.appendChild(dangerBlock(a.profile));
+  if (a.profile) judgement.appendChild(dangerBlock(a.profile));
 
   // 4) WHY reasons.
   if (a.profile && a.profile.reasons && a.profile.reasons.length) {
-    td.appendChild(whyList(a.profile.reasons));
+    judgement.appendChild(whyList(a.profile.reasons));
   }
 
   // 5) Hidden-fleet arithmetic.
-  if (a.estimate) td.appendChild(hiddenFleetBlock(a.estimate));
+  if (a.estimate) judgement.appendChild(hiddenFleetBlock(a.estimate));
 
   // 5b) Civil-fleet baseline (Etap C).
-  if (a.civilProfile) td.appendChild(civilBlock(a.civilProfile));
+  if (a.civilProfile) judgement.appendChild(civilBlock(a.civilProfile));
 
   // 6) Planets grid (renders its own "no planets" note when empty).
-  td.appendChild(planetsBlock({
+  evidence.appendChild(planetsBlock({
     playerId: a.playerId,
     planets: a.planets,
     reports: a.reports,
@@ -596,7 +611,7 @@ export function buildDossier(a) {
   }));
 
   // 7) Routine (Etap F) — activity/weekday/collection/timeline from spy history.
-  if (a.routine) td.appendChild(routineBlock(a.routine));
+  if (a.routine) evidence.appendChild(routineBlock(a.routine));
 
   return tr;
 }

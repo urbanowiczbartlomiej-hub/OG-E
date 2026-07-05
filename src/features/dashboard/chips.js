@@ -7,6 +7,13 @@
 // class marks the active chip. Pure DOM helpers, no state of their own —
 // wiring, persistence and repaints stay with the caller (index.js), exactly
 // as they did for the selects.
+//
+// Two chip flavours share the same CSS but different semantics:
+// - SELECT groups (chipValue/setChipValue/wireChips): one value per group,
+//   re-clicking the active chip is a no-op.
+// - TOGGLE chips (toggleChipOn/setToggleChip/wireToggleChip): independent
+//   boolean pills — Spyglass's checkbox replacements. `.on` on the BUTTON is
+//   the whole state (no container data-value; each pill stands alone).
 
 /**
  * Current value of a chip group (its `data-value`). Empty string when the
@@ -57,6 +64,44 @@ export const wireChips = (el, onChange) => {
     if (v === chipValue(el)) return;
     setChipValue(el, v);
     onChange(v);
+  });
+};
+
+/**
+ * Is an independent toggle pill on? Missing element = off (tests without the
+ * full DOM), mirroring `chipValue`'s null-tolerance.
+ *
+ * @param {HTMLElement | null} btn
+ * @returns {boolean}
+ */
+export const toggleChipOn = (btn) => !!btn?.classList.contains('on');
+
+/**
+ * Set a toggle pill's state without firing its change callback (the
+ * programmatic-restore analogue of writing `input.checked` — prefs restore
+ * must never trigger a spurious repaint).
+ *
+ * @param {HTMLElement | null} btn
+ * @param {boolean} on
+ * @returns {void}
+ */
+export const setToggleChip = (btn, on) => {
+  btn?.classList.toggle('on', !!on);
+};
+
+/**
+ * Wire an independent boolean pill: click flips `.on` and reports the new
+ * state. The `.on` class IS the state — callers read it via
+ * {@link toggleChipOn} exactly where they used to read `.checked`.
+ *
+ * @param {HTMLElement | null} btn
+ * @param {(on: boolean) => void} onChange
+ * @returns {void}
+ */
+export const wireToggleChip = (btn, onChange) => {
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    onChange(btn.classList.toggle('on'));
   });
 };
 

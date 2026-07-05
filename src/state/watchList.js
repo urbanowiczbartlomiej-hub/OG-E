@@ -49,6 +49,11 @@ import { pruneRescan } from '../domain/spyScan.js';
  *   Player id → user-assigned relationship tag (Spyglass map colour). Optional
  *   in the type (pre-relationships configs omit it) but `normalizeWatchList` +
  *   the store default always materialise it, so readers get `{}` not undefined.
+ * @property {Record<string, true>} [mapHidden]
+ *   Player id → hidden from the Spyglass positions map while STAYING watched
+ *   (still in the table's scan scope + the FAB's scan walk) — the map-only
+ *   mute the H5 player chips toggle with 👁. Same optional-but-materialised
+ *   contract as `relationships`.
  */
 
 /** Default probe count when none has been chosen yet. */
@@ -76,7 +81,7 @@ export const watchListKeyFor = (universeId) => `${universeId}:${WATCH_LIST_KEY_B
  */
 export const normalizeWatchList = (raw) => {
   if (Array.isArray(raw)) {
-    return { players: raw.map(String), probes: DEFAULT_SPY_PROBES, rescan: {}, relationships: {} };
+    return { players: raw.map(String), probes: DEFAULT_SPY_PROBES, rescan: {}, relationships: {}, mapHidden: {} };
   }
   const o = raw && typeof raw === 'object' ? /** @type {any} */ (raw) : {};
   const players = Array.isArray(o.players) ? o.players.map(String) : [];
@@ -97,7 +102,14 @@ export const normalizeWatchList = (raw) => {
       if (v === 'enemy' || v === 'friend' || v === 'neutral') relationships[k] = v;
     }
   }
-  return { players, probes, rescan, relationships };
+  /** @type {Record<string, true>} */
+  const mapHidden = {};
+  if (o.mapHidden && typeof o.mapHidden === 'object') {
+    for (const k of Object.keys(o.mapHidden)) {
+      if (o.mapHidden[k]) mapHidden[k] = true;
+    }
+  }
+  return { players, probes, rescan, relationships, mapHidden };
 };
 
 const currentKey = () => currentUniverseKey(WATCH_LIST_KEY_BASE, watchListKeyFor);
@@ -108,6 +120,7 @@ export const watchListStore = createStore(/** @type {WatchListConfig} */ ({
   probes: DEFAULT_SPY_PROBES,
   rescan: {},
   relationships: {},
+  mapHidden: {},
 }));
 
 /** @type {(() => void) | null} */
