@@ -4,6 +4,50 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.38.0] — 2026-07-05
+
+### Changed
+
+- **A smarter Danger score.** The whole-server threat rating was overhauled so
+  far fewer players pin at a meaningless 100/100. Danger is now an *absolute*
+  reading — where a player sits on the server's real combat-fleet ladder — so the
+  top few percent spread across ~90–100 instead of everyone at the ceiling, and a
+  fresh colony no longer reads half the server as maximally dangerous.
+- **Cheap fleets stop masquerading as war fleets.** Danger and the civil-fleet
+  baseline now read the free composition tell — resources-per-ship on the *fleet*
+  (defence excluded) — so a hoard of small transporters or probes is scored as the
+  logistics swarm it is, not a combat armada. Once you spy a player, their known
+  defence is subtracted and the estimate re-settles lower for defensive farmers.
+- **Aggression is read from position, not just points.** A player who scatters
+  planets tactically across a few galaxies (with a tight fleet-save pair amid the
+  spread) reads as a real hunter; a defensive cluster reads as a builder — even at
+  the same military score.
+- **"Destroyed" is gated by real fleet.** A mega-bunker earns destroyed points
+  defensively (its walls eat attackers), so that history now counts as aggression
+  only in proportion to the player's actual combat fleet — a turtle no longer
+  reads as a predator.
+
+### Added
+
+- **Loot tracking.** For watched players, each planet now shows its average and
+  peak loot from your scan history, and the **hoard ("mother") planet** — where a
+  collector funnels their daily income — is flagged 🏦. The raid verdict now also
+  weighs **defence**, so a fat-but-walled hoard reads "loaded · heavily defended"
+  instead of just "fleet risk".
+- **Composition and rank at a glance.** The Ships column bands resources-per-ship
+  (civilian / combat / defence-inflated); the player and Military columns show
+  overall and military highscore rank.
+
+### Fixed
+
+- The raid-verdict line was de-jargoned — no emoji, no confusing "confidence"
+  tag, and it now spells out *why* a target is risky.
+- Spyglass layout polish: the positions map opens above the control row; the
+  "who can reach you" and "You" markers match the watched-player chips; player
+  search comes first; the galaxy map draws its lines at system boundaries; the
+  watchlist card gained an open-dossier control and a clear red-✕ remove; and the
+  data-freshness chips moved onto the title line.
+
 ## [1.37.0] — 2026-07-05
 
 ### Changed
