@@ -4,6 +4,41 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.37.0] — 2026-07-05
+
+### Changed
+
+- **Spyglass gets a clarity pass.** The tab now opens with a one-line summary
+  instead of a paragraph — the full explanation moved into a **"?"** popover — and
+  the filter row became **chip buttons** (hide inactive · in range · scan list ·
+  top-N), matching the Galaxy Viewer. The rarely-touched military-score range and
+  probe count tuck behind a **⚙** button. Less to read, the same controls.
+- **Watchlist cards are the new landing view.** Above the finder table, each
+  watched player now shows as a card that answers the one question in words —
+  **raid or skip, and the loot** — with the headline fleet number, an hour-of-day
+  activity sparkline, and how fresh your intel is. Click a card to open the full
+  dossier. The table is still right below for browsing the whole server.
+- **Average resources-per-ship is now a column, not a tooltip.** The Ships cell
+  shows it as a second line, colour-tiered so a cargo/probe **swarm** (thousands
+  per ship) reads differently from a **capital-ship** fleet (tens of thousands) at
+  a glance — the fleet-composition tell you needed without hovering.
+- **"Who's been near you" is now a digest.** Instead of a flat list of every raw
+  scan alert, it groups by player (how many times, when, from where) and **flags a
+  prober in your own system** — a fleet parked there reaches you fast even at
+  Deathstar speed. Live counts show in the collapsed header; each row offers a
+  one-click **watch** and a jump to the dossier; the raw log is still one click away.
+- **The dossier reads in two columns** on a wide screen — the raid judgement beside
+  the planets and routine, instead of one long scroll.
+
+### Added
+
+- **Manage the positions map right at the map.** Every watched player is a chip
+  under it: a coloured dot for their **relationship** (click to cycle enemy →
+  friend → neutral), their name (opens the dossier), an **eye** to hide them from
+  the map without un-watching, and an **✕** to stop watching. Starring a player now
+  places them on the map immediately — no more wondering how a player gets on or
+  off it.
+
 ## [1.36.0] — 2026-07-05
 
 ### Added
