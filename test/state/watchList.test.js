@@ -73,6 +73,7 @@ describe('normalizeWatchList', () => {
       probes: DEFAULT_SPY_PROBES,
       rescan: {},
       relationships: {},
+      mapHidden: {},
     });
   });
 
@@ -82,6 +83,7 @@ describe('normalizeWatchList', () => {
       probes: DEFAULT_SPY_PROBES,
       rescan: {},
       relationships: {},
+      mapHidden: {},
     });
   });
 
@@ -91,6 +93,7 @@ describe('normalizeWatchList', () => {
       probes: DEFAULT_SPY_PROBES,
       rescan: {},
       relationships: {},
+      mapHidden: {},
     });
   });
 
@@ -128,7 +131,7 @@ describe('normalizeWatchList', () => {
   });
 
   it('returns an empty config for null / undefined / garbage', () => {
-    const empty = { players: [], probes: DEFAULT_SPY_PROBES, rescan: {}, relationships: {} };
+    const empty = { players: [], probes: DEFAULT_SPY_PROBES, rescan: {}, relationships: {}, mapHidden: {} };
     expect(normalizeWatchList(null)).toEqual(empty);
     expect(normalizeWatchList(undefined)).toEqual(empty);
     expect(normalizeWatchList(42)).toEqual(empty);
@@ -139,6 +142,16 @@ describe('normalizeWatchList', () => {
   it('ignores a non-object rescan field', () => {
     expect(normalizeWatchList({ players: [], rescan: 'nope' }).rescan).toEqual({});
     expect(normalizeWatchList({ players: [], rescan: 5 }).rescan).toEqual({});
+  });
+
+  it('keeps only truthy mapHidden entries and tolerates a non-object field (Etap H5)', () => {
+    const out = normalizeWatchList({
+      players: [],
+      mapHidden: { '7': true, '8': false, '9': 1, '10': 0, '11': '' },
+    });
+    expect(out.mapHidden).toEqual({ '7': true, '9': true });
+    expect(normalizeWatchList({ players: [], mapHidden: 'nope' }).mapHidden).toEqual({});
+    expect(normalizeWatchList({ players: [] }).mapHidden).toEqual({});
   });
 });
 
@@ -155,6 +168,7 @@ describe('watchList store — hydration + write-through', () => {
       probes: DEFAULT_SPY_PROBES,
       rescan: {},
       relationships: {},
+      mapHidden: {},
     });
   });
 

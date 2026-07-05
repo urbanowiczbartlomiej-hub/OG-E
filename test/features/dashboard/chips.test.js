@@ -25,6 +25,9 @@ import {
   setChipValue,
   wireChips,
   setChipsEnabled,
+  toggleChipOn,
+  setToggleChip,
+  wireToggleChip,
 } from '../../../src/features/dashboard/chips.js';
 
 /**
@@ -202,5 +205,47 @@ describe('setChipsEnabled', () => {
     expect(() => setChipsEnabled(null, false, noteEl, 'x')).not.toThrow();
     expect(noteEl.textContent).toBe('x');
     expect(() => setChipsEnabled(makeGroup('safe', ['safe']), false, null, 'x')).not.toThrow();
+  });
+});
+
+// Independent boolean toggle pills (Etap H1) — the Spyglass checkbox
+// replacements. Unlike the select groups above, `.on` on the BUTTON itself is
+// the whole state (no container data-value); each pill stands alone.
+describe('toggle chips (independent booleans)', () => {
+  it('toggleChipOn reads the `.on` state, false for a null element', () => {
+    const b = document.createElement('button');
+    expect(toggleChipOn(b)).toBe(false);
+    b.classList.add('on');
+    expect(toggleChipOn(b)).toBe(true);
+    expect(toggleChipOn(null)).toBe(false);
+  });
+
+  it('setToggleChip sets the state WITHOUT firing onChange (prefs-restore path)', () => {
+    const b = document.createElement('button');
+    /** @type {boolean[]} */
+    const changes = [];
+    wireToggleChip(b, (on) => changes.push(on));
+    setToggleChip(b, true);
+    expect(toggleChipOn(b)).toBe(true);
+    setToggleChip(b, false);
+    expect(toggleChipOn(b)).toBe(false);
+    expect(changes).toEqual([]); // programmatic set never calls the handler
+    expect(() => setToggleChip(null, true)).not.toThrow();
+  });
+
+  it('wireToggleChip flips `.on` on click and reports the new state', () => {
+    const b = document.createElement('button');
+    /** @type {boolean[]} */
+    const changes = [];
+    wireToggleChip(b, (on) => changes.push(on));
+    b.click();
+    expect(toggleChipOn(b)).toBe(true);
+    b.click();
+    expect(toggleChipOn(b)).toBe(false);
+    expect(changes).toEqual([true, false]);
+  });
+
+  it('wireToggleChip on a null element is a safe no-op', () => {
+    expect(() => wireToggleChip(null, () => {})).not.toThrow();
   });
 });
