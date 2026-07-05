@@ -66,28 +66,24 @@ function ageMs(tsSeconds, nowMs) {
 // ── Section builders ──────────────────────────────────────────────────────────
 
 /**
- * 1) HEADER: name · danger-label + optional "⚔ in range" chip. Muted.
+ * 1) HEADER: bold name · danger-label. The relationship chips are appended by
+ * buildDossier onto the right of this same line.
  * @param {string} name
  * @param {import('../../domain/dangerScore.js').DangerProfile | undefined} profile
- * @param {boolean} inBand
  * @returns {HTMLDivElement}
  */
-function headerLine(name, profile, inBand) {
+function headerLine(name, profile) {
   const div = document.createElement('div');
-  div.style.cssText = 'font-size:13px;color:#8b95a0;margin-bottom:8px;display:flex;'
-    + 'align-items:baseline;gap:8px;flex-wrap:wrap;';
+  div.style.cssText = 'font-size:13px;color:#8b95a0;margin-bottom:10px;display:flex;'
+    + 'align-items:center;gap:8px;flex-wrap:wrap;';
   const txt = document.createElement('span');
-  txt.textContent = name + (profile ? ` · ${DANGER_LABELS[profile.label]}` : '');
+  const nm = document.createElement('strong');
+  nm.textContent = name;
+  nm.style.color = '#cfd6dd';
+  txt.appendChild(nm);
+  if (profile) txt.appendChild(document.createTextNode(` · ${DANGER_LABELS[profile.label]}`));
   div.appendChild(txt);
-  if (inBand) {
-    const chip = document.createElement('span');
-    chip.textContent = '⚔ in range';
-    chip.style.cssText =
-      'font-size:11px;border-radius:11px;padding:1px 8px;background:#16352a;'
-      + 'border:1px solid #2f6f4f;color:#7fd6a8;white-space:nowrap;';
-    chip.title = 'Inside your legal attack band';
-    div.appendChild(chip);
-  }
+  // The relationship selector is appended by buildDossier (pushed to the right).
   return div;
 }
 
@@ -144,50 +140,11 @@ function dangerBlock(profile) {
 
   const label = document.createElement('div');
   label.textContent = `DANGER ${d}/100`;
-  label.style.cssText = `font-size:12px;font-weight:600;color:${col};margin-bottom:5px;`;
+  label.style.cssText = `font-size:12px;font-weight:600;color:${col};`;
   wrap.appendChild(label);
-
-  // Interval bar: a fixed ~180px track scaled to [0, mobileHi]; fill the
-  // lo..hi band, tint it dangerColor, and drop a thin marker at mobileMil.
-  const TRACK = 180;
-  const H = 10;
-  const hi = Number.isFinite(profile.mobileHi) ? Math.max(0, profile.mobileHi) : 0;
-  const lo = Number.isFinite(profile.mobileLo) ? Math.max(0, profile.mobileLo) : 0;
-  const mid = Number.isFinite(profile.mobileMil) ? Math.max(0, profile.mobileMil) : 0;
-  // Scale factor; when hi is 0 the whole band collapses to the left edge.
-  const scale = hi > 0 ? TRACK / hi : 0;
-  const clampPx = (/** @type {number} */ px) => Math.max(0, Math.min(TRACK, px));
-  const loPx = clampPx(lo * scale);
-  const hiPx = clampPx(hi * scale);
-  const midPx = clampPx(mid * scale);
-  const bandLeft = Math.min(loPx, hiPx);
-  const bandWidth = Math.max(1, Math.abs(hiPx - loPx));
-
-  const track = document.createElement('div');
-  track.style.cssText = `position:relative;width:${TRACK}px;height:${H}px;`
-    + 'background:#1a2028;border-radius:5px;overflow:hidden;';
-
-  const band = document.createElement('div');
-  band.style.cssText = `position:absolute;top:0;left:${bandLeft}px;width:${bandWidth}px;`
-    + `height:${H}px;background:${col};opacity:0.55;`;
-  track.appendChild(band);
-
-  const marker = document.createElement('div');
-  marker.style.cssText = `position:absolute;top:0;left:${Math.max(0, midPx - 1)}px;`
-    + `width:2px;height:${H}px;background:${col};`;
-  marker.title = `estimate ~${compact(mid)}`;
-  track.appendChild(marker);
-  wrap.appendChild(track);
-
-  const provenanceText = profile.provenance === 'spied'
-    ? 'spied — exact'
-    : profile.provenance === 'ships'
-      ? 'ships-bounded'
-      : 'estimated';
-  const sub = document.createElement('div');
-  sub.textContent = `${compact(profile.mobileLo)} ── ${compact(profile.mobileHi)} · ${provenanceText}`;
-  sub.style.cssText = 'font-size:10px;color:#7c8893;margin-top:4px;';
-  wrap.appendChild(sub);
+  // The lo/hi mobile-fleet interval used to render here as a bar + a
+  // "lo ── hi · provenance" line; it duplicated the Fleet column + the reasons
+  // below, so it was dropped for a cleaner block.
 
   return wrap;
 }
@@ -246,31 +203,26 @@ function civilBlock(civ) {
   const wrap = document.createElement('div');
   wrap.style.cssText = 'margin-bottom:10px;font-size:11px;color:#8b95a0;line-height:1.5;';
 
-  const title = document.createElement('div');
-  title.textContent = 'CIVIL BASELINE';
-  title.style.cssText = 'font-size:10px;letter-spacing:0.5px;color:#6b7782;margin-bottom:2px;';
-  wrap.appendChild(title);
-
-  const line = document.createElement('div');
-  line.textContent =
-    `Economy ${compact(civ.economyScore)} → expected ~${compact(civ.expectedCivil)} civil ships. `
-    + `Has ${compact(civ.ships)} → ~${compact(civ.combatShips)} look like combat fleet.`;
-  wrap.appendChild(line);
-
+  // One tight line: how many of the player's ships look like combat fleet over
+  // the economy-implied civil baseline, tinted by band. The old three-line
+  // block (economy preamble + verdict + caveat) was too heavy — "upper bound"
+  // carries the caveat, the tooltip keeps the full reasoning.
   const bandColor = civ.band === 'fleet-holder' ? '#e2726a'
     : civ.band === 'elevated' ? '#e0b020' : '#7fd6a8';
   const bandLabel = civ.band === 'fleet-holder' ? 'combat-fleet holder'
-    : civ.band === 'elevated' ? 'elevated — some combat fleet' : '≈ builder baseline';
-  const verdict = document.createElement('div');
-  verdict.textContent = `${bandLabel} · ${civ.confidence} confidence`;
-  verdict.style.color = bandColor;
-  wrap.appendChild(verdict);
-
-  const caveat = document.createElement('div');
-  caveat.textContent =
-    'upper bound — probe swarms dilute, lifeform economy inflates; spy to confirm';
-  caveat.style.cssText = 'color:#5f6b76;font-size:10px;';
-  wrap.appendChild(caveat);
+    : civ.band === 'elevated' ? 'elevated' : '≈ builder';
+  const line = document.createElement('div');
+  const label = document.createElement('span');
+  label.textContent = 'Civil baseline: ';
+  label.style.color = '#6b7782';
+  const val = document.createElement('span');
+  val.textContent = `~${compact(civ.combatShips)} of ${compact(civ.ships)} ships look combat · ${bandLabel} (upper bound)`;
+  val.style.color = bandColor;
+  line.append(label, val);
+  line.title =
+    `Economy ${compact(civ.economyScore)} → expected ~${compact(civ.expectedCivil)} civil ships; `
+    + `${civ.confidence} confidence. Upper bound — probe swarms dilute, lifeform economy inflates; spy to confirm.`;
+  wrap.appendChild(line);
 
   return wrap;
 }
@@ -402,11 +354,9 @@ function planetsBlock({ playerId, planets, reports, rescan, nowMs, onRescan }) {
  */
 function relationshipSelector(playerId, current, onSet) {
   const wrap = document.createElement('div');
-  wrap.style.cssText = 'margin-bottom:10px;display:flex;align-items:center;gap:6px;font-size:11px;';
-  const label = document.createElement('span');
-  label.textContent = 'Relationship:';
-  label.style.color = '#6b7782';
-  wrap.appendChild(label);
+  // No "Relationship:" label — the three chips explain themselves. Sits inline
+  // on the header line (pushed to the right).
+  wrap.style.cssText = 'display:inline-flex;align-items:center;gap:6px;font-size:11px;';
   /** @type {Array<[import('../../state/watchList.js').Relationship, string, string]>} */
   const opts = [['enemy', 'Enemy', '#e2726a'], ['friend', 'Friend', '#7fd6a8'], ['neutral', 'Neutral', '#9aa7b3']];
   for (const [rel, text, color] of opts) {
@@ -558,27 +508,25 @@ export function buildDossier(a) {
 
   const td = document.createElement('td');
   td.colSpan = a.colspan;
-  td.style.padding = '8px 8px 12px 28px';
+  td.style.padding = '10px 10px 14px';
   td.style.borderBottom = '1px solid #222';
   td.style.background = '#0b1118';
   tr.appendChild(td);
 
-  // 1) Header (always).
-  td.appendChild(headerLine(a.name, a.profile, !!a.inBand));
-
-  // 1b) Relationship tag selector — drives the Spyglass map marker colour.
+  // 1) Header (always): name · archetype, with the relationship chips pushed to
+  //    the right of the SAME line (no separate "Relationship:" row/label).
+  const header = headerLine(a.name, a.profile);
   if (a.onSetRelationship) {
-    td.appendChild(relationshipSelector(a.playerId, a.relationship || 'neutral', a.onSetRelationship));
+    const rel = relationshipSelector(a.playerId, a.relationship || 'neutral', a.onSetRelationship);
+    rel.style.marginLeft = 'auto';
+    header.appendChild(rel);
   }
+  td.appendChild(header);
 
-  // 2) Raid verdict banner (the jack-point).
-  if (a.verdict) td.appendChild(verdictBanner(a.verdict));
-
-  // Below the full-width header/verdict, the rest splits into two columns on
-  // wide viewports (Etap H6, `.dossier-grid` in dashboard.html): the JUDGEMENT
-  // stack (danger / why / hidden math / civil) beside the EVIDENCE stack
-  // (planets / routine) instead of one long scroll. Content is untouched —
-  // this is layout only.
+  // Below the header the rest splits into two top-aligned columns on wide
+  // viewports (`.dossier-grid`): JUDGEMENT (verdict / danger / why / hidden /
+  // civil) beside EVIDENCE (planets / routine). The verdict leads the judgement
+  // column so the evidence's "N of M scanned" header sits at the top of the row.
   const grid = document.createElement('div');
   grid.className = 'dossier-grid';
   const judgement = document.createElement('div');
@@ -586,7 +534,10 @@ export function buildDossier(a) {
   grid.append(judgement, evidence);
   td.appendChild(grid);
 
-  // 3) Danger + interval bar.
+  // 2) Raid verdict banner (the jack-point) — top of the judgement column.
+  if (a.verdict) judgement.appendChild(verdictBanner(a.verdict));
+
+  // 3) Danger.
   if (a.profile) judgement.appendChild(dangerBlock(a.profile));
 
   // 4) WHY reasons.

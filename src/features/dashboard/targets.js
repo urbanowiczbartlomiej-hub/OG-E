@@ -158,7 +158,7 @@ function headCell(text, align, opts = {}) {
 function chipCell(id, watched, onToggle, onRescan) {
   const td = cell('');
   const chip = document.createElement('span');
-  chip.textContent = watched ? '✓ scan' : '+ scan';
+  chip.textContent = watched ? '✓ watch' : '+ watch';
   chip.style.cssText =
     'display:inline-block;font-size:11px;border-radius:11px;padding:2px 9px;'
     + 'cursor:pointer;user-select:none;white-space:nowrap;';
@@ -166,21 +166,22 @@ function chipCell(id, watched, onToggle, onRescan) {
     chip.style.background = '#16352a';
     chip.style.border = '1px solid #2f6f4f';
     chip.style.color = '#7fd6a8';
-    chip.title = 'On the in-game scan list — click to remove';
+    chip.title = 'Watching (on your scan list + the map) — click to remove';
   } else {
     chip.style.background = 'transparent';
     chip.style.border = '1px solid #2a3a45';
     chip.style.color = '#8b95a0';
-    chip.title = 'Add to the in-game scan list';
+    chip.title = 'Watch this player (adds to the scan list + the map)';
   }
-  if (onToggle) chip.addEventListener('click', () => onToggle(id));
+  // Stop the click bubbling to the row (whose click toggles the dossier).
+  if (onToggle) chip.addEventListener('click', (e) => { e.stopPropagation(); onToggle(id); });
   td.appendChild(chip);
   if (watched && onRescan) {
     const rescan = document.createElement('span');
     rescan.textContent = '↻';
     rescan.style.cssText = 'color:#6b97c4;cursor:pointer;margin-left:6px;user-select:none;';
     rescan.title = 'Flag this player for re-scan (data may have changed)';
-    rescan.addEventListener('click', () => onRescan(id));
+    rescan.addEventListener('click', (e) => { e.stopPropagation(); onRescan(id); });
     td.appendChild(rescan);
   }
   return td;
@@ -349,44 +350,16 @@ function intelCell(worst, spied, total, oldestAgeMs) {
 }
 
 /**
- * Build the Player cell as an expand toggle: a ▸/▾ triangle + name. Clicking
- * flips the linked detail row's visibility (instant) and notifies the caller.
+ * Build the Player cell — just the name. Expanding the dossier is handled by a
+ * click anywhere on the row (no separate ▸ toggle, no per-row map control).
  * @param {string} name
- * @param {boolean} open
- * @param {HTMLTableRowElement} detail
- * @param {() => void} [onToggle]
- * @param {() => void} [onShowOnMap]  Spyglass → map spotlight (⌖).
  * @returns {HTMLTableCellElement}
  */
-function playerCell(name, open, detail, onToggle, onShowOnMap) {
+function playerCell(name) {
   const td = cell('');
-  const nameWrap = document.createElement('span');
-  nameWrap.style.cursor = 'pointer';
-  nameWrap.title = 'Show planets / scan status';
-  const tri = document.createElement('span');
-  tri.textContent = open ? '▾ ' : '▸ ';
-  tri.style.color = '#888';
   const label = document.createElement('span');
   label.textContent = name;
-  nameWrap.append(tri, label);
-  nameWrap.addEventListener('click', () => {
-    const nowOpen = detail.style.display === 'none';
-    detail.style.display = nowOpen ? '' : 'none';
-    tri.textContent = nowOpen ? '▾ ' : '▸ ';
-    if (onToggle) onToggle();
-  });
-  td.appendChild(nameWrap);
-  // Spyglass → map focus. A separate control (not the name) so it never
-  // fights the expand toggle; 🗺 (was an opaque ⌖) because it OPENS the map —
-  // it does not "add" anything, every watched player is on the map already.
-  if (onShowOnMap) {
-    const mapLink = document.createElement('span');
-    mapLink.textContent = ' 🗺';
-    mapLink.style.cssText = 'cursor:pointer;user-select:none;font-size:11px;';
-    mapLink.title = 'Focus the positions map (all watched players are on it)';
-    mapLink.addEventListener('click', (e) => { e.stopPropagation(); onShowOnMap(); });
-    td.appendChild(mapLink);
-  }
+  td.appendChild(label);
   return td;
 }
 
@@ -414,8 +387,6 @@ function playerCell(name, open, detail, onToggle, onShowOnMap) {
  * @param {Map<number, import('../../domain/dangerScore.js').DangerProfile>} [args.danger]
  *   Per-player danger profiles (v2) — the free whole-server fleet-finder
  *   columns (Danger D + mobile-fleet ceiling) and their sort axes.
- * @param {(playerId: string, name?: string) => void} [args.onShowOnMap]
- *   Spyglass → map reverse deep-link (⌖ per row).
  * @param {Record<string, import('../../domain/raidVerdict.js').RaidVerdict>} [args.verdicts]
  *   Per-player raid verdict (label + loot) shown in the expanded dossier.
  * @param {Record<string, boolean|undefined>} [args.inBand]
@@ -457,7 +428,6 @@ export function renderTargets({
   routines,
   relationships,
   onSetRelationship,
-  onShowOnMap,
   searchQuery = '',
   onShowAnyway,
 }) {
@@ -539,7 +509,7 @@ export function renderTargets({
     p.style.color = '#888';
     p.style.fontSize = '13px';
     p.textContent =
-      'No players on the scan list yet — click “+ scan” next to a target to add it.';
+      'No players on the watch list yet — click “+ watch” next to a target to add it.';
     containerEl.appendChild(p);
     if (countInfoEl) countInfoEl.textContent = '';
     return;
@@ -618,10 +588,16 @@ export function renderTargets({
     const tr = document.createElement('tr');
     // Anchor for the Galaxy Viewer → Spyglass deep-link (scroll + highlight).
     tr.dataset.playerId = c.id;
-    tr.appendChild(chipCell(c.id, !!(watchedIds && watchedIds.has(c.id)), onToggleWatch, onRescan));
-    tr.appendChild(playerCell(c.name || `#${c.id}`, open, detail, () => {
+    tr.style.cursor = 'pointer';
+    // A click anywhere on the row toggles the dossier (interactive cells like
+    // the watch chip stopPropagation, so they don't also fire this).
+    tr.addEventListener('click', () => {
+      const nowOpen = detail.style.display === 'none';
+      detail.style.display = nowOpen ? '' : 'none';
       if (onToggleExpand) onToggleExpand(c.id);
-    }, onShowOnMap ? () => onShowOnMap(c.id, c.name) : undefined));
+    });
+    tr.appendChild(chipCell(c.id, !!(watchedIds && watchedIds.has(c.id)), onToggleWatch, onRescan));
+    tr.appendChild(playerCell(c.name || `#${c.id}`));
     tr.appendChild(dangerCell(prof));
     tr.appendChild(fleetCell(prof));
     tr.appendChild(militaryCell(c));

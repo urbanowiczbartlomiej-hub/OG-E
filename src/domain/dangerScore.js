@@ -343,10 +343,10 @@ export const buildDangerProfiles = (input) => {
       reasons.push(ships === 0 ? '0 ships — cannot attack' : `${fmt(ships)} ships`);
     }
     if (mobileMil > 0 || provenance === 'spied') {
-      const x = mobileMil / anchor;
-      // Exact (fully spied) drops the "~"; estimates keep it.
+      // Exact (fully spied) drops the "~"; estimates keep it. The "(N× your
+      // anchor)" ratio was dropped as jargon — the D score already encodes it.
       const approx = provenance === 'spied' ? '' : '~';
-      reasons.push(`${approx}${fmt(mobileMil)} mobile mil (${x >= 1 ? `${x.toFixed(1)}×` : `${(x * 100).toFixed(0)}% of`} your anchor)`);
+      reasons.push(`${approx}${fmt(mobileMil)} mobile mil`);
     }
     if (banditTier > 0) reasons.push(`Bandit tier ${banditTier}/3`);
     if (destroyedPts > 0) reasons.push(`destroyed ${fmt(destroyedPts)} (top ${Math.round((1 - destroyedPct) * 100)}%)`);

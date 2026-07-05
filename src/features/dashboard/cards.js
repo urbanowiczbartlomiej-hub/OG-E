@@ -92,7 +92,7 @@ export function renderWatchlistCards(a) {
     const ghost = document.createElement('div');
     ghost.className = 'watch-card';
     ghost.style.cssText = 'border-style:dashed;cursor:default;color:#66788a;font-size:12px;';
-    ghost.textContent = 'Nobody watched yet — hit “+ scan” next to a player in the table below and their card appears here.';
+    ghost.textContent = 'Nobody watched yet — “+ watch” a player below.';
     grid.appendChild(ghost);
     return;
   }

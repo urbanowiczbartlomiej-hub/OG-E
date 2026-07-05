@@ -335,7 +335,7 @@ export const renderPositionsMap = ({ hostEl, galaxies, systems, bodies, onPlayer
   if (!bodies.length) {
     const hint = document.createElement('div');
     hint.style.cssText = 'position:absolute;left:26px;top:2px;color:#5f6b76;font-size:12px;';
-    hint.textContent = '⭐ a player and browse their galaxy so their planets are known — they appear here.';
+    hint.textContent = 'Watch a player to see them here.';
     wrap.appendChild(hint);
   }
 
