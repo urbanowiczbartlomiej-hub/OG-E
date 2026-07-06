@@ -91,6 +91,7 @@ import { installEventMenuHighlight } from './features/eventMenuHighlight.js';
 import { installTraderMenuHighlight } from './features/traderMenuHighlight.js';
 import { installThreatHighlight } from './features/threatHighlight/index.js';
 import { installRewardingWatcher } from './features/rewardingWatcher.js';
+import { installWhosSpyingPanel } from './features/whosSpyingPanel.js';
 import { installArtifactShopWatcher } from './features/artifactShopWatcher.js';
 import { installAlarmClock } from './features/alarmClock/index.js';
 import { installApiContext } from './features/apiContext/index.js';
@@ -230,6 +231,10 @@ const installDomFeatures = () => {
   // the `#attack_alert` flag + event box live there, and a single overlay
   // must not be multiplied across OGame's embedded iframes.
   if (window.top === window.self) safeInstall('threatHighlight', installThreatHighlight);
+  // Who's-spying sidebar tab — reads the proximity log + injects an OG-E tab
+  // into AntiGame's sidebar. Top-frame only: the AGR sidebar is a top-level
+  // element and one MutationObserver per page is plenty (no iframe copies).
+  if (window.top === window.self) safeInstall('whosSpyingPanel', installWhosSpyingPanel);
   safeInstall('rewardingWatcher', installRewardingWatcher);
   safeInstall('artifactShopWatcher', installArtifactShopWatcher);
   // Espionage-report ingestion — a MutationObserver reads each report's
