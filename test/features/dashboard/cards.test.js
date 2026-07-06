@@ -34,8 +34,9 @@ describe('renderWatchlistCards', () => {
     const cards = a.hostEl.querySelectorAll('.watch-card');
     expect(cards.length).toBe(1);
     expect(cards[0].textContent).toMatch(/Nobody watched yet/i);
-    // The label reads "Watchlist" with no count.
-    expect(a.hostEl.querySelector('.watch-zone-label')?.textContent).toBe('Watchlist');
+    // The label reads "Watchlist" with no count (now a gv-card-title, matching
+    // the Galaxy Viewer's card headers).
+    expect(a.hostEl.querySelector('.gv-card-title')?.textContent).toBe('Watchlist');
   });
 
   it('renders one card per watched player with name + verdict, labelled with the count', () => {
@@ -50,7 +51,7 @@ describe('renderWatchlistCards', () => {
     expect(cards.length).toBe(1);
     expect(cards[0].textContent).toContain('Yoxid');
     expect(cards[0].textContent).toContain('RAID NOW');
-    expect(a.hostEl.querySelector('.watch-zone-label')?.textContent).toBe('Watchlist (1)');
+    expect(a.hostEl.querySelector('.gv-card-title')?.textContent).toBe('Watchlist (1)');
   });
 
   it('clicking a card opens that player (deep-link, no watchlist mutation)', () => {

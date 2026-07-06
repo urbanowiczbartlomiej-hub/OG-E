@@ -370,6 +370,9 @@ let activityObs = {};
 /** @type {HTMLElement | null} */ let serverMapWindowV;
 /** @type {HTMLInputElement | null} */ let serverMapFarm;
 /** @type {HTMLElement | null} */ let serverMapFarmV;
+/** @type {HTMLInputElement | null} */ let serverMapSep;
+/** @type {HTMLElement | null} */ let serverMapSepV;
+/** @type {HTMLElement | null} */ let serverMapSepNote;
 /** @type {HTMLElement | null} */ let freeCountInfoEl;
 /** @type {HTMLElement} */ let targetsContainer;
 /** @type {HTMLElement | null} */ let spyglassMapHost;
@@ -388,6 +391,15 @@ let activityObs = {};
 let targetSearchQuery = '';
 /** Player ids force-included past the filters via search "show anyway". */
 const forceIncludeIds = new Set();
+/**
+ * Player ids PINNED into the table by a deep-link click (watchlist card,
+ * "dossier ▸", map chip, scan plan, `?spy=`). A pinned player renders even
+ * when the top-N row cap / watched-only scope would drop them — the click
+ * means "show me this player", so a silent no-op row is a UX dead end. The
+ * row is appended after the capped list with a "beyond the cap" note.
+ * @type {Set<string>}
+ */
+const pinnedTargetIds = new Set();
 // The three everyday filters are toggle PILLS (Etap H1) — `.on` is the state,
 // read via toggleChipOn where `.checked` used to be.
 /** @type {HTMLElement | null} */ let tgtWatchedOnly;
@@ -504,6 +516,10 @@ const boot = async () => {
   if (scoutPrefs.farmReach !== undefined && serverMapFarm) {
     serverMapFarm.value = String(scoutPrefs.farmReach);
     if (serverMapFarmV) serverMapFarmV.textContent = `${scoutPrefs.farmReach} sys`;
+  }
+  if (scoutPrefs.spotGap !== undefined && serverMapSep) {
+    serverMapSep.value = String(scoutPrefs.spotGap);
+    if (serverMapSepV) serverMapSepV.textContent = `${scoutPrefs.spotGap} sys`;
   }
   if (scoutPrefs.view) setChipValue(serverMapViewChips, String(scoutPrefs.view));
   validateSlots();
@@ -679,6 +695,9 @@ const wireDom = () => {
   serverMapWindowV = document.getElementById('serverMapWindowV');
   serverMapFarm = /** @type {HTMLInputElement | null} */ (document.getElementById('serverMapFarm'));
   serverMapFarmV = document.getElementById('serverMapFarmV');
+  serverMapSep = /** @type {HTMLInputElement | null} */ (document.getElementById('serverMapSep'));
+  serverMapSepV = document.getElementById('serverMapSepV');
+  serverMapSepNote = document.getElementById('serverMapSepNote');
   freeCountInfoEl = document.getElementById('freeCountInfo');
   targetsContainer = /** @type {HTMLElement} */ (document.getElementById('targetsContainer'));
   tgtMinMilitary = /** @type {HTMLInputElement} */ (document.getElementById('tgtMinMilitary'));
@@ -761,9 +780,18 @@ const wireTabs = () => {
   // in-game "no route" Daily Transport button opens `?tab=routes`). It
   // wins over the persisted preference when present; `setActiveTab` falls
   // back to DEFAULT_TAB for an unknown value, so a bad param is harmless.
-  const fromUrl = new URLSearchParams(location.search).get('tab');
+  const params = new URLSearchParams(location.search);
+  const fromUrl = params.get('tab');
   const initial = fromUrl || safeLS.get(ACTIVE_TAB_LS_KEY) || DEFAULT_TAB;
   setActiveTab(initial);
+
+  // `?spy=<playerId>` deep-links one player's Spyglass dossier (the in-game
+  // "Who's spying on you" table sends it). Same path as every in-dashboard
+  // deep-link click — expand + focus + pin past the filters/row cap; data
+  // hasn't loaded yet at wire time, so the focus consumer in repaintTargets
+  // (which retries until the row exists) does the scrolling.
+  const spyPid = params.get('spy');
+  if (spyPid && /^\d+$/.test(spyPid)) openSpyglassFor(Number(spyPid));
 
   for (const btn of document.querySelectorAll('.tab-btn')) {
     btn.addEventListener('click', () => {
@@ -911,12 +939,13 @@ const toggleMapHidden = (pid) => {
 };
 
 /**
- * Flag a player (key = player id) or a single planet (key = "g:s:p" coord) as
- * needing a re-scan: records "now" so the scan FAB treats any report older than
- * this moment as stale and re-targets it. Clears itself when a newer report
- * lands. Persists + repaints the sub-tab.
+ * Flag a player (key = player id — covers every body), a single planet (key =
+ * "g:s:p") or a single moon (key = "g:s:p:3", the bodyKey shape) as needing a
+ * re-scan: records "now" so the scan FAB treats any report older than this
+ * moment as stale and re-targets it. Clears itself when a newer report lands.
+ * Persists + repaints the sub-tab.
  *
- * @param {string} key  player id or "g:s:p" coord.
+ * @param {string} key  player id, "g:s:p" planet coord, or "g:s:p:3" moon key.
  * @returns {void}
  */
 const markRescan = (key) => {
@@ -1154,6 +1183,12 @@ const repaintTargets = () => {
   const estimates = {};
   /** @type {Record<string, Record<string, {ts:number, defPts:number, fleetPts:number}>>} */
   const reportsByPlayer = {};
+  // Moon reports, keyed by the SAME "g:s:p" coord as their planet but in their
+  // own map (a shared map would let a moon clobber its planet's row). Feeds the
+  // dossier's per-planet 🌙 scan status + moon def/fleet line and the coverage
+  // header's "moons M/N".
+  /** @type {Record<string, Record<string, {ts:number, defPts:number, fleetPts:number}>>} */
+  const moonsByPlayer = {};
   for (const pid of Object.keys(targetReports)) {
     const bucket = targetReports[pid];
     const reports = bucket ? Object.values(bucket).map(latestOf) : [];
@@ -1165,18 +1200,26 @@ const repaintTargets = () => {
     });
     /** @type {Record<string, {ts:number, defPts:number, fleetPts:number}>} */
     const byCoord = {};
+    /** @type {Record<string, {ts:number, defPts:number, fleetPts:number}>} */
+    const moonsByCoord = {};
     for (const [key, entry] of Object.entries(bucket)) {
       const report = latestOf(entry);
-      // Skip moon reports here: once ":type" is stripped their bodyKey shares the
-      // planet's "g:s:p", so a moon would clobber the planet's per-planet row. A
-      // moon still feeds the hidden-fleet estimate above (bodyKey keeps it
-      // distinct) — it just isn't a planet-grid row.
-      if (report.planetType === 3) continue;
       const lastColon = key.lastIndexOf(':');
       const coord = lastColon >= 0 ? key.slice(0, lastColon) : key;
+      // Moon reports land in their own map: once ":type" is stripped their
+      // bodyKey shares the planet's "g:s:p", so the shared map would clobber
+      // the planet's row. They still feed the hidden-fleet estimate above.
+      if (report.planetType === 3) {
+        moonsByCoord[coord] = {
+          ts: report.timestamp ?? 0,
+          defPts: pointsOf(report.defenseValue ?? 0),
+          fleetPts: pointsOf(report.fleetValue ?? 0),
+        };
+        continue;
+      }
       // Loot rhythm from the body's history ring (watched players accrue it): the
-      // avg / peak on-planet resources feed the dossier's per-planet L line and the
-      // hoard ("mother") detection.
+      // avg / peak on-planet resources feed the dossier's per-planet loot line and
+      // the hoard ("mother") detection.
       const loot = bodyLootStats(report, historyOf(entry));
       byCoord[coord] = {
         ts: report.timestamp ?? 0,
@@ -1186,6 +1229,7 @@ const repaintTargets = () => {
       };
     }
     reportsByPlayer[pid] = byCoord;
+    if (Object.keys(moonsByCoord).length) moonsByPlayer[pid] = moonsByCoord;
   }
 
   // Per-player raid verdict + legal-attack-band flag for the dossier (Etap B).
@@ -1258,6 +1302,10 @@ const repaintTargets = () => {
     watchedOnly: toggleChipOn(tgtWatchedOnly),
     universePlanets: apiCache.universe ? apiCache.universe.planets : [],
     reportsByPlayer,
+    moonsByPlayer,
+    // Scan-chip value — the dossier gates its per-body ↻ links on it (a flag
+    // for a body the FAB never proposes would be a dead switch).
+    scanBodies: /** @type {'planets'|'moons'|'both'} */ (chipValue(tgtScanBodies) || 'planets'),
     nowMs,
     expandedIds: expandedTargets,
     onToggleExpand: (id) => {
@@ -1279,19 +1327,24 @@ const repaintTargets = () => {
     // Nickname search (Etap D): reveals name-matches incl. excluded players.
     searchQuery: targetSearchQuery,
     onShowAnyway: (/** @type {string} */ id) => { forceIncludeIds.add(id); repaintTargets(); },
+    pinIds: pinnedTargetIds,
   });
 
   // Deep-link focus: scroll to + highlight the player a Galaxy Viewer "Top
-  // threats" row asked for. The row was just rendered; the highlight class
-  // clears on the next repaint (rows rebuild wholesale). No-op when the player
-  // is filtered out of the current Targets view.
+  // threats" row (or a `?spy=` URL) asked for. The highlight class clears on
+  // the next repaint (rows rebuild wholesale). The focus is consumed when the
+  // row is found — or once data HAS loaded and the player still isn't in the
+  // view (filtered out); an early empty repaint (URL deep-link lands before
+  // the async data) keeps it pending so the scroll fires when the row exists.
   if (focusedTargetId != null) {
     const row = targetsContainer?.querySelector(`tr[data-player-id="${focusedTargetId}"]`);
     if (row) {
       row.classList.add('target-focus');
       row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      focusedTargetId = null;
+    } else if (targetCandidates.length > 0) {
+      focusedTargetId = null;
     }
-    focusedTargetId = null;
   }
 
   // The suggested-scan-order strip reads the same joined data (watch list,
@@ -1403,15 +1456,19 @@ const renderProximityStrip = () => {
     const actions = document.createElement('div');
     actions.style.cssText = 'display:flex;gap:6px;justify-content:flex-end;';
     const watched = watchedPlayers.has(String(e.byPlayerId));
+    // Same watch-chip affordance as the table's chipCell (`+ watch` ⇄ `✓ watch`)
+    // — the bare ⭐ icon-button read as decoration, not as the same action.
     const watch = document.createElement('button');
     watch.type = 'button';
-    watch.textContent = watched ? '✓' : '⭐';
+    watch.textContent = watched ? '✓ watch' : '+ watch';
     watch.style.cssText =
-      'font-size:11px;border-radius:999px;padding:1px 8px;cursor:pointer;'
+      'font-size:11px;border-radius:999px;padding:1px 9px;cursor:pointer;white-space:nowrap;'
       + (watched
         ? 'border:1px solid #2f6f4f;background:#16352a;color:#7fd6a8;'
-        : 'border:1px solid #2b3a4d;background:#18222e;color:#9fb4c4;');
-    watch.title = watched ? 'Watching — click to remove' : 'Watch this player';
+        : 'border:1px solid #2a3a45;background:transparent;color:#8b95a0;');
+    watch.title = watched
+      ? 'Watching (on your scan list + the map) — click to remove'
+      : 'Watch this player (adds to the scan list + the map)';
     watch.addEventListener('click', () => {
       toggleWatched(String(e.byPlayerId));
       renderProximityStrip();
@@ -1548,10 +1605,10 @@ const renderScanPlanStrip = () => {
     row.appendChild(document.createTextNode(
       ` [${e.galaxy}:${e.system}:${e.position}]${e.bodyType === 3 ? ' 🌙' : ''} — ${e.why}`,
     ));
-    // The head entry is the FAB's next proposal — say why it's first.
+    // The head entry is the FAB's next proposal — mark it, tersely.
     if (i === 0) {
       row.style.color = '#cfd6dd';
-      row.appendChild(document.createTextNode('  ← next suggested'));
+      row.appendChild(document.createTextNode('  ← next'));
     }
     list.appendChild(row);
   });
@@ -1573,8 +1630,15 @@ const renderScanPlanStrip = () => {
 const openSpyglassFor = (playerId) => {
   setActiveTab('spyglass');
   if (playerId != null) {
-    focusedTargetId = String(playerId);
-    expandedTargets.add(String(playerId));
+    const pid = String(playerId);
+    focusedTargetId = pid;
+    expandedTargets.add(pid);
+    // The click means "show me this player" — bypass the filters (existing
+    // force-include machinery) AND the top-N row cap (the pin, appended past
+    // the capped list). Without this, opening e.g. a prober outside the
+    // top-50 view silently did nothing.
+    forceIncludeIds.add(pid);
+    pinnedTargetIds.add(pid);
     repaintTargets();
   }
 };
@@ -1761,6 +1825,18 @@ const updateModeControls = () => {
   setChipsEnabled(freeGapsChips, streaks, freeGapsNote, 'streaks only');
   setChipsEnabled(freeExcludeChips, !streaks && !pvp, freeExcludeNote,
     streaks ? 'spots only' : 'not applied in the PvP zone');
+  // Spot gap spaces the Best-spots LIST (spaceOutCandidates) — a streak result
+  // has no spots to separate, so under "Longest streaks" the slider keeps its
+  // layout slot but greys out, same rule as the chip groups above.
+  if (serverMapSep) {
+    serverMapSep.disabled = streaks;
+    serverMapSep.title = streaks
+      ? 'Spots only — streak results are not spaced apart'
+      : '';
+  }
+  if (serverMapSepV) serverMapSepV.style.opacity = streaks ? '.4' : '';
+  // The "why greyed" note beside the value — same affordance as Ignore worst.
+  if (serverMapSepNote) serverMapSepNote.textContent = streaks ? 'spots only' : '';
   // One line under the Zone/Find chips explaining what the active zone
   // optimises — the hint text lives with the zone definitions in
   // domain/zoneScore.js.
@@ -1878,42 +1954,48 @@ const repaintFreeRegions = () => {
   const positions = freeRegionPositions();
   const composite = buildComposite(positions);
   const field = buildScoreField(composite);
-  // Pane-level data contract: how old the occupancy snapshot is (universe.xml
-  // regenerates weekly server-side) and whether the threat channel is anchored
-  // to OUR fleet — without ownMilitary every active reads a flat base threat,
-  // and the ranking silently looks identical to a calibrated one.
+  // Pane-level data contract as header CHIPS (Spyglass parity — the old prose
+  // stamp was three lines of text): snapshot age (universe.xml regenerates
+  // weekly server-side), our last download, and — only when it matters — the
+  // threat-not-calibrated warning. Healthy states stay quiet; warn states
+  // amber, because they change what every Fit number means.
   if (scoutDataStamp) {
+    scoutDataStamp.textContent = '';
+    /** @param {string} text @param {boolean} [warn] @param {string} [tip] */
+    const chip = (text, warn, tip) => {
+      const el = document.createElement('span');
+      el.className = 'fresh-chip' + (warn ? ' warn' : '');
+      el.textContent = text;
+      if (tip) el.title = tip;
+      scoutDataStamp?.appendChild(el);
+    };
     const ts = apiCache.universe?.timestamp;
     if (typeof ts === 'number' && ts > 0) {
       const now = Date.now();
       const days = Math.max(0, Math.floor((now - ts) / 86_400_000));
-      const age = days === 0 ? 'from today' : days === 1 ? '1 day old' : `${days} days old`;
+      const age = days === 0 ? 'today' : days === 1 ? '1 d old' : `${days} d old`;
       // TWO clocks, because they answer different questions: the snapshot age
-      // is OGame's regeneration time (the file's own timestamp — how old the
-      // occupancy truth is), "checked" is OUR last download (is the extension
-      // still refreshing?). Showing only one made "10 days old" unexplainable.
+      // is OGame's regeneration time (how old the occupancy truth is; the file
+      // regenerates weekly — hence the 7-day warn bar), "checked" is OUR last
+      // download (is the extension still refreshing?).
+      chip(`Snapshot ${age}`, days > 7,
+        "OGame's server occupancy file (universe.xml) regenerates weekly — this is the file's own age.");
       const fAt = apiCache.universe?.fetchedAt;
       const checkedH = typeof fAt === 'number' ? Math.max(0, (now - fAt) / 3_600_000) : null;
-      const checked = checkedH == null ? ''
-        : checkedH < 1 ? ' · checked <1 h ago'
-          : checkedH < 48 ? ` · checked ${Math.round(checkedH)} h ago`
-            : ` · checked ${Math.round(checkedH / 24)} d ago`;
+      if (checkedH != null) {
+        const checked = checkedH < 1 ? '<1 h' : checkedH < 48 ? `${Math.round(checkedH)} h` : `${Math.round(checkedH / 24)} d`;
+        chip(`checked ${checked} ago`, false, 'When OG-E last downloaded the snapshot.');
+      }
       // `> 0` — classifyCell only applies the anchor for a positive score, so
       // a fresh account listed with military 0 is NOT calibrated either. The
-      // anchor is our military-highscore POINTS (fleet + defence) — say so;
-      // the old "calibrated to your fleet" overpromised.
+      // calibrated state is silent (the default); only the problem gets a chip.
       const calibrated = typeof ownMilitary === 'number' && ownMilitary > 0;
-      scoutDataStamp.textContent = `Server snapshot: ${age}${checked}`
-        + (calibrated
-          ? ' · threat anchored to your military points (fleet + defence)'
-          : ' · threat NOT calibrated — open the game once in this universe to anchor it');
-      // Uncalibrated / stale states CHANGE what every Fit number means — they
-      // read as a visible warning chip, not near-invisible grey micro-copy
-      // (universe.xml regenerates weekly, hence the 7-day staleness bar).
-      scoutDataStamp.classList.toggle('warn', !calibrated || days > 7);
-    } else {
-      scoutDataStamp.textContent = '';
-      scoutDataStamp.classList.remove('warn');
+      if (!calibrated) {
+        chip('threat not calibrated', true,
+          'Open the game once in this universe so the threat channel can anchor '
+          + 'to your military points (fleet + defence) — until then every active '
+          + 'player reads a flat base threat.');
+      }
     }
   }
   // Game origin for the popovers' "Open in game" links + the occupancy lens's
@@ -1931,6 +2013,9 @@ const repaintFreeRegions = () => {
     // are the point there) — force the exclusion off too, or a value saved
     // under Safe zone would silently censor the PvP target census.
     excludeN: (chipValue(freeZoneChips) || 'safe') === 'pvp' ? 0 : (parseInt(chipValue(freeExcludeChips), 10) || 0),
+    // Minimum system distance between listed spots (the Spot gap slider) —
+    // spaceOutCandidates' suppression radius.
+    spotGap: parseInt(serverMapSep?.value ?? '', 10) || 15,
     field,
     galaxyMax: apiBounds.systems,
     linkBase,
@@ -2349,6 +2434,7 @@ const wireListeners = () => {
       gaps: chipValue(freeGapsChips),
       window: serverMapWindow?.value,
       farmReach: serverMapFarm?.value,
+      spotGap: serverMapSep?.value,
       view: chipValue(serverMapViewChips),
     });
   };
@@ -2382,6 +2468,13 @@ const wireListeners = () => {
     repaintFreeRegionsThrottled();
   });
   serverMapFarm?.addEventListener('change', saveScoutPrefs);
+  // Spot gap re-spaces the RANKED list (spaceOutCandidates radius) — cheap,
+  // but reuse the same throttled repaint as the sibling sliders.
+  serverMapSep?.addEventListener('input', () => {
+    if (serverMapSepV && serverMapSep) serverMapSepV.textContent = `${serverMapSep.value} sys`;
+    repaintFreeRegionsThrottled();
+  });
+  serverMapSep?.addEventListener('change', saveScoutPrefs);
   wireChips(freeExcludeChips, () => { saveScoutPrefs(); repaintFreeRegions(); });
 
   universeSelect.addEventListener('change', () => {
@@ -2458,6 +2551,9 @@ export const _resetDashboardForTest = () => {
     serverMapWindowV =
     serverMapFarm =
     serverMapFarmV =
+    serverMapSep =
+    serverMapSepV =
+    serverMapSepNote =
     targetsContainer =
     tgtMinMilitary =
     tgtMaxMilitary =

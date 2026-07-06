@@ -4,6 +4,69 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.39.0] — 2026-07-06
+
+### Added
+
+- **"Who's spying on you" moved onto the messages page.** The defensive digest that
+  used to hide in the small AntiGame sidebar now sits at the top of the spy-report
+  tab (Szpieguj), above AntiGame's own spy overview — a compact, scannable table of
+  who's been probing you, with a one-click jump to each prober's full dossier in the
+  dashboard. More room, right where you review espionage.
+- **Spot gap slider (Galaxy Viewer).** A new control beside Offline / Farm reach sets
+  the minimum distance between listed spots — spread proposals out across the server,
+  or pack them tight around one hotspot. (Greys out under "Longest streaks".)
+- **Alliance combat class feeds Danger.** A warrior-class alliance (combat bonuses)
+  now reads as a capability tell — a few extra Danger points and an "apex" signal.
+  Sourced from spy reports, since the public API doesn't expose it.
+- **Moon scan coverage.** Moons count as their own spiable bodies everywhere: the
+  coverage readout splits planets vs moons, and each moon has its own re-scan flag
+  (gated by the Scan planets / moons / both chip).
+
+### Changed
+
+- **Galaxy Viewer is no longer "experimental".** A terse header with data-freshness
+  chips (snapshot age · last checked · calibration) replaces the wall of text, the
+  noisy "Context" tile is gone, and bandits / honoured fighters are split per honour
+  tier (Bandits ! / !! / !!! · Honored ★ / ★★ / ★★★), each a distinct-player count.
+- **Spyglass laid out in cards**, matching the Galaxy Viewer: Watchlist,
+  "Who's spying you", the positions map and the players table each get their own
+  panel. Clicking a player row now turns that row INTO the dossier's header — same
+  colour, no duplicated name.
+- **Scan intel, made legible.** The cryptic per-planet stat line is now a labelled
+  table — def / fleet / loot in aligned columns, with an indented moon row per slot
+  (its own scan age + parked fleet, flagged gold when found). Coverage reads at a
+  glance: 17/17 planets · 12/17 moons · to scan: 5 moons.
+- **The Ships column tells the truth.** res/ship is now measured on the FLEET
+  estimate, not raw military — so a bunker farmer's cheap transporters no longer read
+  as "28K · combat" while the dossier (correctly) said cheap hulls. One number now,
+  consistent everywhere.
+- **Plainer wording** across Danger / verdicts — game vocabulary instead of model
+  jargon ("14.2M fleet × 0.34 combat quality", "mostly transporters/probes",
+  "needs a real fleet to attack") — and the reassuring civil-baseline verdict is now
+  green.
+- **Daily Run collect options are chips** now, matching the Spyglass Scan control:
+  Deployment / Transport · Most / All.
+- **Positions map:** each galaxy row carries a visible band, so the galaxy divisions
+  read at a glance.
+
+### Fixed
+
+- **Empire / standalone pages stay clean** — the floating OG-E button and the
+  "install AntiGameReborn" banner no longer appear on `?page=standalone` views.
+- **Spyglass FAB:** tapping it while it still shows "loading…" no longer fires a
+  stray action (and the generic errors that followed); "Sent!" now greys out like the
+  other busy states.
+- **Deep-links always land on a row.** Opening a player from a watchlist card, the
+  "who's spying" table or a map chip now shows their row even when the top-N cap or a
+  filter would have hidden it (appended with an "outside the cap" note).
+- **Apex signals could read "5/4"** — the count and its denominator now stay in step
+  (out of 6).
+- **Galaxy Viewer census** no longer shows a permanent "0 Honorable" or a collapsed
+  bandit count — both are split per honour tier.
+- The 💀 "scout in your system" legend only appears when there's actually a
+  same-system prober to explain.
+
 ## [1.38.1] — 2026-07-06
 
 ### Added

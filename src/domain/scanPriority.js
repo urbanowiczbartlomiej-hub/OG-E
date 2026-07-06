@@ -202,19 +202,25 @@ export const buildScanPlan = (env) => {
       const status = scanStatus({
         reportTsSec,
         nowMs: env.nowMs,
-        rescanAtMs: rescanAtFor(env.rescan, pid, coord),
+        // Each body reads its OWN rescan key (planet "g:s:p", moon "g:s:p:3" —
+        // the same shape as the sent-key): a planet's re-scan flag must not
+        // drag its moon back into the plan, and the dossier's moon ↻ writes
+        // the ":3" key. The player-id mark still covers both bodies.
+        rescanAtMs: rescanAtFor(env.rescan, pid, sentK),
         staleMs,
       });
       if (!needsScan(status)) return;
       const ageMs = reportTsSec ? env.nowMs - reportTsSec * 1000 : 0;
       const priority = wDanger * stalenessWeight(status, ageMs, staleMs) * wWindow;
+      // Terse by design — the strip row was drowning in prose ("re-scan
+      // requested · good moment (activity window, from intel you gathered)").
+      // No 'moon' word either: the renderer already prints 🌙 after the coords.
       const whyParts = [];
-      if (bodyType === 3) whyParts.push('moon');
       if (status === 'none') whyParts.push('never scanned');
-      else if (status === 'rescan') whyParts.push('re-scan requested');
-      else whyParts.push(`report ${Math.max(1, Math.round(ageMs / DAY_MS))}d old`);
+      else if (status === 'rescan') whyParts.push('re-scan');
+      else whyParts.push(`${Math.max(1, Math.round(ageMs / DAY_MS))}d old`);
       if (typeof d100 === 'number') whyParts.push(`D ${Math.round(d100)}`);
-      if (wWindow > 1) whyParts.push('good moment (activity window, from intel you gathered)');
+      if (wWindow > 1) whyParts.push('good moment');
       entries.push({
         playerId: pid,
         galaxy: p.galaxy,

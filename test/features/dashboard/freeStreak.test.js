@@ -53,6 +53,17 @@ const cardValue = (root, label) => {
   return c ? (c.querySelector('b')?.textContent || '').trim() : null;
 };
 
+// Exact-label variant (tier marks NOT stripped) — for the per-tier bandit /
+// honoured slots ("Bandits !" vs "Bandits !!!"), which `cardEl` would collapse.
+/** @param {Element|null} root @param {string} label @returns {string|null} */
+const censusFull = (root, label) => {
+  const c = [...(root?.querySelectorAll('.census-stat') ?? [])].find((el) => {
+    const b = el.querySelector('b');
+    return (b?.nextSibling?.textContent || '').trim() === label;
+  });
+  return c ? (c.querySelector('b')?.textContent || '').trim() : null;
+};
+
 /** @param {Record<string, Record<number, any>>} spec */
 const scansOf = (spec) => {
   /** @type {any} */
@@ -121,9 +132,11 @@ describe('renderFreeRegions', () => {
     };
     renderFreeRegions({ ...baseOpts(), scans: scansOf(spec), positions: [8], players });
 
-    // Region target breakdown as stat cards in the detail panel.
+    // Region target breakdown as stat cards in the detail panel. "Honorable"
+    // no longer has its own census slot (the live-scan-only flag read 0 on
+    // API-derived data) — Weak + Strong still do; the per-occupant popover
+    // (below) still labels the honorable occupant.
     const record = containerEl.querySelector('.streak-record');
-    expect(cardValue(record, 'Honorable')).toBe('1');
     expect(cardValue(record, 'Weak')).toBe('1');
     expect(cardValue(record, 'Strong')).toBe('1');
 
@@ -177,14 +190,13 @@ describe('renderFreeRegions', () => {
     spec['4:3'][5] = { status: 'occupied', player: { id: 2, name: 'B', rankClass: 'rank_bandit1' } };
     renderFreeRegions({ ...baseOpts(), scans: scansOf(spec), positions: [8] });
 
-    // Region-level bandit tally collapses into ONE "Bandits" census stat (count
-    // + the worst tier's "!" marks); the per-tier King/Lord/Bandit split lives
-    // in that stat's tooltip. Assert both: the combined count and the breakdown.
+    // Bandits are split into per-tier census slots (! / !! / !!!), each a
+    // DISTINCT-PLAYER count: one tier-1 Bandit, zero tier-2, one tier-3 Bandit
+    // King. The tooltip on each carries the game title.
     const record = containerEl.querySelector('.streak-record');
-    expect(cardValue(record, 'Bandits')).toBe('2');
-    const banditTip = cardEl(record, 'Bandits')?.getAttribute('title') || '';
-    expect(banditTip).toMatch(/1 Bandit King/);
-    expect(banditTip).toMatch(/1 Bandit(?!\s*(King|Lord))/); // the tier-1 "Bandit"
+    expect(censusFull(record, 'Bandits !')).toBe('1');
+    expect(censusFull(record, 'Bandits !!')).toBe('0');
+    expect(censusFull(record, 'Bandits !!!')).toBe('1');
 
     // Per-occupant chip on the Bandit King's system card (system 2).
     const cells = containerEl.querySelectorAll('.region-strip .strip-cell');
@@ -215,44 +227,10 @@ describe('renderFreeRegions', () => {
     expect(pop?.textContent).not.toMatch(/undefined/);
   });
 
-  it('annotates the top neighbour rank relative to our own (ownRank)', () => {
-    /** @type {Record<string, Record<number, any>>} */
-    const spec = {};
-    for (let s = 1; s <= 6; s++) spec[`4:${s}`] = { 8: empty };
-    // A ranked neighbour at #100; we sit at #250 → they are 150 above us.
-    spec['4:2'][3] = { status: 'occupied', player: { id: 5, name: 'X', rank: 100 } };
-    renderFreeRegions({ ...baseOpts(), scans: scansOf(spec), positions: [8], ownRank: 250 });
-
-    const record = containerEl.querySelector('.streak-record');
-    expect(cardValue(record, 'top rank')).toBe('#100');
-    // the relative-to-you detail is the census stat's tooltip.
-    expect(cardEl(record, 'top rank')?.getAttribute('title')).toMatch(/150 ranks above you/);
-  });
-
-  it('shows compact "Avg points" / "Avg military" cards when API points are present', () => {
-    /** @type {Record<string, Record<number, any>>} */
-    const spec = {};
-    for (let s = 1; s <= 6; s++) spec[`4:${s}`] = { 8: empty };
-    // One API-mapped neighbour carrying account points → 1.2M / 340k cards.
-    spec['4:2'][3] = { status: 'occupied', player: { id: 5, name: 'X', score: 1200000, militaryScore: 340000 } };
-    renderFreeRegions({ ...baseOpts(), scans: scansOf(spec), positions: [8] });
-
-    const record = containerEl.querySelector('.streak-record');
-    expect(cardValue(record, 'avg points')).toBe('1.2M');
-    expect(cardValue(record, 'avg military')).toBe('340k');
-  });
-
-  it('omits the points cards when no scanned player carries points (live-only scans)', () => {
-    /** @type {Record<string, Record<number, any>>} */
-    const spec = {};
-    for (let s = 1; s <= 6; s++) spec[`4:${s}`] = { 8: empty };
-    spec['4:2'][3] = occ(5);
-    renderFreeRegions({ ...baseOpts(), scans: scansOf(spec), positions: [8] });
-
-    const record = containerEl.querySelector('.streak-record');
-    expect(cardEl(record, 'avg points')).toBeUndefined();
-    expect(cardEl(record, 'avg military')).toBeUndefined();
-  });
+  // The census "Context" group (top rank · avg points · avg military) was
+  // dropped as noise — the Top-threats panel names the strong neighbours
+  // anyway — so its three tests (top-rank ownRank annotation, avg-points/
+  // military cards, and their omission) went with it.
 
   it('falls back to the individual free-systems list when no region forms', () => {
     // Slot 8 free at non-adjacent systems — no run of 5, so no region.

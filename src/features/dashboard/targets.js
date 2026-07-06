@@ -223,14 +223,23 @@ function militaryCell(c) {
  * military feed, hourly). An explicit 0 = pure defense: this player's whole
  * military score CANNOT fly an attack — rendered green, the single hardest
  * "safe" fact the API gives us. '—' = player absent from the military feed.
- * The rough resources-per-ship figure rides as a dim second LINE (Etap H2):
- * it's the fleet-composition tell (2.8K/ship = cargo/probe swarm, 54K/ship =
- * capital ships) and was too load-bearing to leave tooltip-only. Its
- * contamination caveat (defense inflates, swarms dilute) stays in the tooltip.
+ * The resources-per-ship figure rides as a dim second LINE (Etap H2): it's
+ * the fleet-composition tell (2.8K/ship = cargo/probe swarm, 54K/ship =
+ * capital ships).
+ *
+ * res/ship comes from the danger profile's FLEET estimate (`resPerShip` =
+ * mobileMil·1000/ships — spied defence already subtracted), NOT raw
+ * military/ships: defence inflates military points without adding a single
+ * ship, so military/ships painted a bunker farmer's cheap transporters as
+ * "28K · combat" while the dossier's danger block (correctly) said ~7K cheap
+ * hulls — the same player, two contradicting numbers. One source now. The raw
+ * military/ships stays only as the no-profile fallback, flagged as an upper
+ * bound in the tooltip.
  * @param {TargetCandidate} c
+ * @param {import('../../domain/dangerScore.js').DangerProfile} [prof]
  * @returns {HTMLTableCellElement}
  */
-function shipsCell(c) {
+function shipsCell(c, prof) {
   if (typeof c.ships !== 'number') return cell('—', { align: 'right', color: '#5f6b75' });
   const td = cell('', { align: 'right' });
   const count = document.createElement('span');
@@ -245,15 +254,31 @@ function shipsCell(c) {
     sub.style.color = '#4f8f6f';
     td.appendChild(sub);
   } else {
-    const rps = typeof c.militaryScore === 'number' ? Math.round((c.militaryScore * 1000) / c.ships) : null;
+    const fromProfile = prof && typeof prof.resPerShip === 'number';
+    const rpsRaw = fromProfile
+      ? /** @type {number} */ (prof.resPerShip)
+      : (typeof c.militaryScore === 'number' ? (c.militaryScore * 1000) / c.ships : null);
+    const rps = rpsRaw != null ? Math.round(rpsRaw) : null;
+    // Fully spied ⇒ the fleet estimate collapsed to military − seen defence:
+    // the figure is exact, not a share prior.
+    const exact = fromProfile && prof.provenance === 'spied';
     td.title = `${fmt(c.ships)} ships (military highscore, hourly)`
-      + (rps != null ? ` · ≈ ${fmt(rps)} res/ship (defense inflates, probe swarms dilute)` : '');
+      + (rps != null
+        ? ` · ≈ ${fmt(rps)} res/ship of the FLEET estimate (${
+          exact
+            ? 'fully spied — defence subtracted exactly'
+            : fromProfile
+              ? 'fleet share estimated; scan the player to pin it down'
+              : 'raw military/ships — defence inflates this upper bound'})`
+        : '');
     if (rps != null) {
       // Composition bands (owner's read): < 20k = cheap CIVILIAN hulls (cargo /
       // probes / LF); 20k–100k = the real COMBAT window (cruisers ~29k, battleships
-      // ~60k, destroyers ~125k land around here); > 100k = too high for a pure
-      // fleet, so DEFENCE is inflating the points (or a rare capital / RIP core).
-      const band = rps < 20_000 ? ' · civilian' : rps > 100_000 ? ' · defence?' : ' · combat';
+      // ~60k land around here); > 100k = a capital/RIP core when the fleet is
+      // pinned by scans, otherwise likely defence inflating the estimate.
+      const band = rps < 20_000 ? ' · civilian'
+        : rps > 100_000 ? (exact ? ' · capitals' : ' · defence?')
+        : ' · combat';
       sub.textContent = `≈ ${compact(rps)} res/ship${band}`;
       sub.style.color = rps > 100_000 ? '#c98f8f'
         : rps >= 20_000 ? '#e0b45f'
@@ -393,6 +418,11 @@ function playerCell(c) {
  * @param {boolean} [args.watchedOnly]
  * @param {Array<{coords: string, player?: number}>} [args.universePlanets]
  * @param {Record<string, Record<string, PlanetReport>>} [args.reportsByPlayer]
+ * @param {Record<string, Record<string, {ts:number, defPts:number, fleetPts:number}>>} [args.moonsByPlayer]
+ *   MOON reports per player, keyed by the moon's planet "g:s:p" coord (own map —
+ *   a shared one would clobber the planet's row). Dossier 🌙 status + coverage.
+ * @param {'planets'|'moons'|'both'} [args.scanBodies]  Scan-chip value — gates
+ *   the dossier's per-body ↻ links (no flag for a body the FAB never proposes).
  * @param {number} [args.nowMs]
  * @param {Set<string>} [args.expandedIds]
  * @param {(id: string) => void} [args.onToggleExpand]
@@ -413,6 +443,12 @@ function playerCell(c) {
  *   table shows every name-match INCLUDING excluded players (with the reason).
  * @param {(id: string) => void} [args.onShowAnyway]  "Show anyway" override for
  *   an excluded search hit (force-include the player).
+ * @param {Set<string>} [args.pinIds]  Players PINNED into the view by a
+ *   deep-link click (dossier ▸ / card / map / ?spy=). A pin bypasses the
+ *   top-N row cap and the watched-only scope: the row is appended after the
+ *   capped list with a "beyond the cap" note (filters are bypassed upstream
+ *   via opts.forceInclude). Without this, opening a player who sits outside
+ *   the current view silently did nothing.
  * @returns {void}
  */
 export function renderTargets({
@@ -430,6 +466,8 @@ export function renderTargets({
   watchedOnly = false,
   universePlanets = [],
   reportsByPlayer,
+  moonsByPlayer,
+  scanBodies,
   nowMs = 0,
   expandedIds,
   onToggleExpand,
@@ -443,6 +481,7 @@ export function renderTargets({
   onSetRelationship,
   searchQuery = '',
   onShowAnyway,
+  pinIds,
 }) {
   containerEl.textContent = '';
 
@@ -507,6 +546,24 @@ export function renderTargets({
   }
   const shown = !query && limit > 0 ? list.slice(0, limit) : list;
 
+  // Deep-link pins: append any pinned player the row cap (or the watched-only
+  // scope) dropped, so a "show me this player" click always lands on a row.
+  // Skipped in search mode (the query defines the view there). The appended
+  // rows get a "beyond the cap" note via `pinnedShown`.
+  /** @type {Set<string>} */
+  const pinnedShown = new Set();
+  if (!query && pinIds && pinIds.size) {
+    const have = new Set(shown.map((c) => c.id));
+    for (const pid of pinIds) {
+      if (have.has(pid)) continue;
+      const c = candidates.find((x) => String(x.id) === String(pid));
+      if (c) {
+        shown.push(c);
+        pinnedShown.add(c.id);
+      }
+    }
+  }
+
   if (query && shown.length === 0 && excludedMatches.length === 0) {
     const p = document.createElement('p');
     p.style.color = '#888';
@@ -553,6 +610,7 @@ export function renderTargets({
     const est = estimates ? estimates[c.id] : undefined;
     const planets = playerPlanets(universePlanets, c.id);
     const reports = reportsByPlayer ? reportsByPlayer[c.id] : undefined;
+    const moons = moonsByPlayer ? moonsByPlayer[c.id] : undefined;
 
     // Per-row scan summary: worst status across the player's reports (rescan >
     // stale > fresh; none = nothing spied) + the oldest report's age.
@@ -591,9 +649,11 @@ export function renderTargets({
       onSetRelationship,
       planets,
       reports,
+      moons,
       rescan,
       nowMs,
       onRescan,
+      scanBodies,
       colspan: COLSPAN,
       open,
     });
@@ -602,19 +662,35 @@ export function renderTargets({
     // Anchor for the Galaxy Viewer → Spyglass deep-link (scroll + highlight).
     tr.dataset.playerId = c.id;
     tr.style.cursor = 'pointer';
+    // Open dossier ⇒ the row wears the panel background (dossier-open) and
+    // acts as the panel's header — the panel itself repeats no name.
+    if (open) tr.classList.add('dossier-open');
     // A click anywhere on the row toggles the dossier (interactive cells like
     // the watch chip stopPropagation, so they don't also fire this).
     tr.addEventListener('click', () => {
       const nowOpen = detail.style.display === 'none';
       detail.style.display = nowOpen ? '' : 'none';
+      tr.classList.toggle('dossier-open', nowOpen);
       if (onToggleExpand) onToggleExpand(c.id);
     });
     tr.appendChild(chipCell(c.id, !!(watchedIds && watchedIds.has(c.id)), onToggleWatch, onRescan));
-    tr.appendChild(playerCell(c));
+    const pcell = playerCell(c);
+    // Deep-link pin marker — says WHY this row sits after the capped list
+    // instead of in rank order.
+    if (pinnedShown.has(c.id)) {
+      const note = document.createElement('span');
+      note.textContent = 'outside the cap';
+      note.style.cssText = 'display:inline-block;margin-left:7px;font-size:10px;color:#8b95a0;'
+        + 'border:1px solid #2a3a45;border-radius:999px;padding:0 7px;vertical-align:1px;white-space:nowrap;';
+      note.title = 'Opened from a link — this player sits outside the current row cap / scope, so the row is appended here.';
+      // Right after the name span (before the dim block #rank sub-line).
+      pcell.insertBefore(note, pcell.firstChild ? pcell.firstChild.nextSibling : null);
+    }
+    tr.appendChild(pcell);
     tr.appendChild(dangerCell(prof));
     tr.appendChild(fleetCell(prof));
     tr.appendChild(militaryCell(c));
-    tr.appendChild(shipsCell(c));
+    tr.appendChild(shipsCell(c, prof));
     tr.appendChild(intelCell(worst, spied, total, oldestAgeMs));
     tbody.appendChild(tr);
     tbody.appendChild(detail);

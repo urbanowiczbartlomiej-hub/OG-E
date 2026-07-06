@@ -45,12 +45,14 @@ export function scanStatus({ reportTsSec, nowMs, rescanAtMs = 0, staleMs = SPY_S
 export const needsScan = (status) => status !== 'fresh';
 
 /**
- * Effective "re-scan requested at" (epoch MS) for a planet, from a rescan map
- * that may be keyed by player id (whole player) and/or "g:s:p" coord (single
- * planet) — the later of the two wins.
+ * Effective "re-scan requested at" (epoch MS) for a BODY, from a rescan map
+ * that may be keyed by player id (whole player — covers every body) and/or a
+ * per-body key — planets "g:s:p", moons "g:s:p:3" (the bodyKey shape, so a
+ * planet's flag never drags its moon along). Pass the body's OWN key; the
+ * later of the two marks wins.
  * @param {Record<string, number> | undefined} rescan
  * @param {string} playerId
- * @param {string} coord  "g:s:p"
+ * @param {string} coord  body key: "g:s:p" (planet) or "g:s:p:3" (moon)
  * @returns {number}
  */
 export function rescanAtFor(rescan, playerId, coord) {

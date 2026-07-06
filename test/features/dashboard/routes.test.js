@@ -39,12 +39,18 @@ const MARKUP = `
   <button id="routesAddBtn"></button>
   <button id="routesSaveBtn"></button>
   <span id="routesStatus"></span>
-  <input type="radio" name="routesCollectMission" value="4">
-  <input type="radio" name="routesCollectMission" value="3">
-  <input type="radio" name="routesCollectShips" value="most">
-  <input type="radio" name="routesCollectShips" value="all">
-  <input type="radio" name="routesCollectResources" value="most">
-  <input type="radio" name="routesCollectResources" value="all">`;
+  <div class="chip-group seg" id="routesCollectMission" data-value="4">
+    <button type="button" data-value="4">Deployment</button>
+    <button type="button" data-value="3">Transport</button>
+  </div>
+  <div class="chip-group seg" id="routesCollectShips" data-value="most">
+    <button type="button" data-value="most">Most</button>
+    <button type="button" data-value="all">All</button>
+  </div>
+  <div class="chip-group seg" id="routesCollectResources" data-value="most">
+    <button type="button" data-value="most">Most</button>
+    <button type="button" data-value="all">All</button>
+  </div>`;
 
 const planet = (/** @type {number} */ g, /** @type {number} */ s, /** @type {number} */ p) =>
   ({ galaxy: g, system: s, position: p, type: TARGET_PLANET });
@@ -353,27 +359,27 @@ describe('dirty Save', () => {
   });
 });
 
-describe('Send All collect config radios (mission / ships / resources)', () => {
-  /** Check the radio with `value` in `name`'s group and fire `change`. */
-  const check = (/** @type {string} */ name, /** @type {string} */ value) => {
-    const radio = /** @type {HTMLInputElement} */ (
-      document.querySelector(`input[name="${name}"][value="${value}"]`)
+describe('Send All collect config chips (mission / ships / resources)', () => {
+  /** Click the chip with `value` in the `#groupId` group. */
+  const click = (/** @type {string} */ groupId, /** @type {string} */ value) => {
+    const btn = /** @type {HTMLButtonElement} */ (
+      document.querySelector(`#${groupId} button[data-value="${value}"]`)
     );
-    radio.checked = true;
-    radio.dispatchEvent(new Event('change'));
+    btn.click();
   };
-  const radioChecked = (/** @type {string} */ name, /** @type {string} */ value) =>
-    /** @type {HTMLInputElement} */ (document.querySelector(`input[name="${name}"][value="${value}"]`)).checked;
+  /** The chip group's current value (data-value === the `.on` button). */
+  const chipValue = (/** @type {string} */ groupId) =>
+    /** @type {HTMLElement} */ (document.getElementById(groupId)).dataset.value;
 
-  it('reflects the stored collect config onto the radios on refresh', async () => {
+  it('reflects the stored collect config onto the chips on refresh', async () => {
     seedRoutes([], null);
     store.set(ROUTES_KEY, { routes: [], collectTarget: null, collectMission: MISSION_TRANSPORT, collectShips: 'all', collectResources: 'all' });
     install().refresh();
     await flush();
 
-    expect(radioChecked('routesCollectMission', '3')).toBe(true);
-    expect(radioChecked('routesCollectShips', 'all')).toBe(true);
-    expect(radioChecked('routesCollectResources', 'all')).toBe(true);
+    expect(chipValue('routesCollectMission')).toBe('3');
+    expect(chipValue('routesCollectShips')).toBe('all');
+    expect(chipValue('routesCollectResources')).toBe('all');
   });
 
   it('persists a mission change IMMEDIATELY (no Save click needed), preserving routes/collectTarget', async () => {
@@ -382,7 +388,7 @@ describe('Send All collect config radios (mission / ships / resources)', () => {
     install().refresh();
     await flush();
 
-    check('routesCollectMission', '3'); // Transport
+    click('routesCollectMission', '3'); // Transport
     await flush();
 
     expect(store.get(ROUTES_KEY)).toMatchObject({
@@ -405,11 +411,10 @@ describe('Send All collect config radios (mission / ships / resources)', () => {
     await flush();
     mockStore.set.mockClear();
 
-    // Simulate a rogue value on the deployment radio and fire change.
-    const radio = /** @type {HTMLInputElement} */ (document.querySelector('input[name="routesCollectMission"][value="4"]'));
-    radio.value = '99';
-    radio.checked = true;
-    radio.dispatchEvent(new Event('change'));
+    // Tamper a mission chip with a rogue value and click it.
+    const btn = /** @type {HTMLButtonElement} */ (document.querySelector('#routesCollectMission button[data-value="4"]'));
+    btn.dataset.value = '99';
+    btn.click();
     await flush();
 
     expect(mockStore.set).not.toHaveBeenCalledWith(ROUTES_KEY, expect.anything());
@@ -420,11 +425,11 @@ describe('Send All collect config radios (mission / ships / resources)', () => {
     install().refresh();
     await flush();
 
-    check('routesCollectShips', 'all');
+    click('routesCollectShips', 'all');
     await flush();
     expect(store.get(ROUTES_KEY)).toMatchObject({ collectShips: 'all', collectResources: 'most' });
 
-    check('routesCollectResources', 'all');
+    click('routesCollectResources', 'all');
     await flush();
     expect(store.get(ROUTES_KEY)).toMatchObject({ collectShips: 'all', collectResources: 'all' });
   });

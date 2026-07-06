@@ -94,6 +94,13 @@ let spyTarget = null;
  * @type {ReturnType<typeof setTimeout> | null}
  */
 let sentLockTimer = null;
+/**
+ * True while the button is DISPLAYING the dim "loading…" state (apiContext
+ * handoff not yet populated). A tap in that state — including the brief window
+ * after the handoff lands but before the next repaint — must never fire an
+ * action; see {@link onSpyClick}.
+ */
+let showingLoading = false;
 
 // ─── sent-coords (survives the post-send reload via sessionStorage) ─────────
 // Shared module (lib/spySentSession.js): this feature marks sends with their
@@ -254,15 +261,18 @@ const paintZone = (p) => {
 const refresh = () => {
   if (!controller || busy) return;
   if (spyReady && spyTarget && courierStep() === 'fleet2') {
+    showingLoading = false;
     paintZone({ text: 'Send!', subtext: coordsLabel(spyTarget), bg: BG_SPY_READY });
     return;
   }
   // Hold a dim "loading…" state until the apiContext handoff lands — before
   // then there are no candidates and the "all scanned" done state would flash.
   if (!apiContextReady()) {
+    showingLoading = true;
     paintZone({ text: 'Spy', subtext: 'loading…', bg: BG_SPY_IDLE, dim: true });
     return;
   }
+  showingLoading = false;
   paintZone(renderSpy(deriveSpy(captureEnv()), probePreflight()));
 };
 
@@ -337,7 +347,7 @@ const onSpyClick = async () => {
     // navigation window so no reactor/ticker repaints the button into a stale
     // unlocked state before the reload. The safety timeout releases the lock
     // if the expected reload never comes. Mirrors sendColony's lock + timeout.
-    paintZone({ text: 'Sent!', bg: BG_SPY_READY });
+    paintZone({ text: 'Sent!', bg: BG_SPY_READY, dim: true });
     if (sentLockTimer) clearTimeout(sentLockTimer);
     sentLockTimer = setTimeout(() => {
       sentLockTimer = null;
@@ -347,9 +357,16 @@ const onSpyClick = async () => {
     return;
   }
 
-  // Handoff still loading → swallow the tap so it can't jump to messages off an
-  // empty candidate set (the button is showing the dim "loading…" state).
-  if (!apiContextReady()) return;
+  // The button is showing the dim "loading…" state — either the handoff still
+  // isn't ready, OR it quietly became ready but the label hasn't repainted yet
+  // (the ≤ REPAINT_TICK_MS ticker window). Either way a tap must NOT fire an
+  // action off a "loading…" button: that stale tap used to navigate to
+  // fleetdispatch and then fail with a generic courier error. Repaint to the
+  // real state and let the next, deliberate tap act.
+  if (!apiContextReady() || showingLoading) {
+    refresh();
+    return;
+  }
 
   const ctx = deriveSpy(captureEnv());
 
@@ -515,6 +532,7 @@ export const _resetSendSpyForTest = () => {
   busy = false;
   spyReady = false;
   spyTarget = null;
+  showingLoading = false;
   if (sentLockTimer) {
     clearTimeout(sentLockTimer);
     sentLockTimer = null;

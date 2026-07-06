@@ -1,106 +1,98 @@
 // @ts-check
 
-// Who's-spying panel — an OG-E tab injected into AntiGame's sidebar
-// (`.ago_panel_wrapper`, alongside Ustawienia / Konto / Loty / …) that shows
-// WHO has been probing YOU. It renders the same passive proximity intel the
-// dashboard surfaces in its "🛡 Who's been near you" strip, but live on the
-// game page where you actually decide to react.
+// Who's-spying-on-you panel — an OG-E table injected at the TOP of the messages
+// page's spy-report tab (`?page=ingame&component=messages`, the "Szpieguj"
+// sub-tab), right above AntiGame's own spy-report overview (`#agoSpyReportOverview`).
+// It is the DEFENSIVE mirror of AGR's OFFENSIVE list: AGR summarises the farms
+// YOU scanned; this summarises WHO has been probing YOU.
 //
-// # Data
+// # Why the messages page (this used to live in the AGR sidebar)
 //
-// Reads `state/proximityReports.js` (the per-universe log of "foreign fleet
-// spotted near your planet" alerts the player OPENED) and aggregates it with
-// the pure `domain/proximityDigest.js` into one row per prober — newest and
-// closest first, with the same-system (RIP-range) probers flagged hottest.
-// Purely presentational: no new data is captured (fair-play GREEN, same as the
-// dashboard strip).
+// The sidebar tab was cramped and easy to miss. The messages page is where you
+// actually review espionage — the incoming "Obca flota … dostrzeżona w pobliżu
+// Twojej planety" alerts that feed this panel LIVE in this very tab — and there's
+// full page width for a scannable table. So we moved it here and reshaped the
+// narrow stacked cards into a compact table that blends with AGR's overview
+// directly below it.
 //
-// # Why we inject our OWN classes instead of AGR's tab machinery
+// # Data (unchanged — fair-play GREEN)
 //
-// OG-E assumes AntiGameReborn is installed (see features/settingsUi), and the
-// user chose to mount this in AGR's sidebar. But we do NOT wear AGR's
-// `ago-data` toggle attribute (so AGR's delegated handler never tries to
-// rebuild our tab) and we keep the body on our OWN class (`.oge-sp-body`, not
-// `.ago_panel_tab_content`) so an AGR content-wipe can't blank it. The header
-// keeps `.ago_panel_tab` purely for visual blend; a gold-free indigo accent +
-// our glyph mark it as the OG-E addition, mirroring how settingsUi marks its
-// menu tab. We self-wire the collapse toggle.
+// Reads `state/proximityReports.js` (the per-universe log of proximity alerts the
+// player OPENED, captured by `features/targetsIngest`) and aggregates it with the
+// pure `domain/proximityDigest.js` into one row per prober — newest and closest
+// first, same-system (RIP-range) probers flagged 💀. Purely presentational: no new
+// data is captured here.
 //
-// # Lifecycle (mirrors features/settingsUi's AGR-injection model)
+// # Anchor + lifecycle
 //
-//   1. `inject()` builds + inserts the tab when `.ago_panel_wrapper` exists and
-//      our tab isn't already there. It ends by rendering the current digest.
-//   2. A `MutationObserver` on `document.body` re-runs `inject()` — survives
-//      AGR rebuilding the sidebar, and covers the AGR-not-yet-loaded case.
-//   3. `proximityReportsStore.subscribe` re-renders the content when a new
-//      alert lands; a slow clock poll refreshes the relative ages.
-//   4. Dispose disconnects the observer, unsubscribes, removes the tab + style.
+// The single spy-tab signal AND insertion anchor is AGR's `#agoSpyReportOverview`
+// (AGR injects it only in the spy-report tab). A `MutationObserver` on <body>
+// keeps our table mounted immediately before it — surviving OGame's AJAX sub-tab
+// re-renders (each switch rebuilds the messages DOM). When the anchor is absent
+// (other sub-tab) or there are no probers, the table is removed (no clutter when
+// there's nothing to show). A `proximityReportsStore` subscription repaints on a
+// new alert; a slow clock poll refreshes the relative ages. A cheap render
+// signature skips the rebuild when nothing changed, so the frequent <body>
+// mutations OGame emits stay free.
 //
 // Idempotent install: a second call returns the same dispose fn.
 
 import { proximityReportsStore } from '../state/proximityReports.js';
-import { watchListStore } from '../state/watchList.js';
 import { digestProximityReports } from '../domain/proximityDigest.js';
-import { ingameComponentUrl } from '../domain/ogameUrl.js';
 import { injectStyle } from '../lib/dom.js';
 import { clock } from '../lib/clock.js';
+import { parseUniverseId } from '../lib/universeId.js';
 
-/** AGR's sidebar container — we append our tab into it. Absent ⇒ no-op. */
-const WRAPPER_SEL = '.ago_panel_wrapper';
-/** Our tab wrapper id (OG-E's own — deliberately NOT an `ago_panel_*` id, so
- *  AGR's id-based tab queries skip it). */
-const TAB_ID = 'oge-spying-panel';
+/**
+ * AGR's spy-report overview on the messages page — present ONLY in the
+ * spy-report ("Szpieguj") sub-tab. Doubles as our spy-tab signal and the node
+ * we insert our table before. AGR-owned (OG-E hard-depends on AGR), single
+ * feature ⇒ kept local rather than hoisted to gameDom.js.
+ */
+const SPY_OVERVIEW_SEL = '#agoSpyReportOverview';
+/** Our table wrapper id (OG-E's own surface). */
+const PANEL_ID = 'oge-spyback';
 /** Singleton style element id. */
-const STYLE_ID = 'oge-spying-style';
+const STYLE_ID = 'oge-spyback-style';
 /** Max prober rows rendered (the log is capped at 60 alerts upstream). */
 const MAX_ROWS = 8;
 /** Age-refresh cadence for the relative timestamps. */
 const POLL_MS = 60000;
 
 const CSS = [
-  `#${TAB_ID}{--sp-indigo:#6355e6;--sp-danger:#e2726a;}`,
-  `#${TAB_ID} .oge-sp-hdr{display:flex;align-items:center;gap:7px;cursor:pointer;`,
-  'user-select:none;-webkit-user-select:none;}',
-  `#${TAB_ID} .oge-sp-hdr .oge-sp-eye{font-size:12px;}`,
-  `#${TAB_ID} .oge-sp-badge{margin-left:auto;font:700 10px/1 monospace;color:#0a0f15;`,
-  'background:#5f6b76;border-radius:9px;padding:1px 7px;min-width:14px;text-align:center;}',
-  `#${TAB_ID} .oge-sp-badge.hot{background:var(--sp-danger);}`,
-  `#${TAB_ID} .oge-sp-badge:empty{display:none;}`,
-  `#${TAB_ID} .oge-sp-body{background:#0d151d;border:1px solid #26323f;`,
-  'border-left:3px solid var(--sp-indigo);border-radius:0 6px 6px 0;',
-  'margin:2px 0 4px;padding:2px 0;font-family:Verdana,"Segoe UI",Tahoma,sans-serif;color:#93a3b3;}',
-  `#${TAB_ID} .oge-sp-sum{font-size:10.5px;color:#6b7987;padding:6px 10px 4px;font-family:monospace;}`,
-  `#${TAB_ID} .oge-sp-sum b{color:#c6d4e2;font-weight:700;}`,
-  `#${TAB_ID} .oge-sp-sum .hot{color:var(--sp-danger);font-weight:700;}`,
-  `#${TAB_ID} .oge-sp-row{padding:7px 10px;border-top:1px solid #1b2732;}`,
-  `#${TAB_ID} .oge-sp-row.hot{background:linear-gradient(90deg,#2a1512,transparent 82%);`,
+  `#${PANEL_ID}{--sp-indigo:#6355e6;--sp-danger:#e2726a;margin:0 0 10px;`,
+  'background:#0d151d;border:1px solid #26323f;border-left:3px solid var(--sp-indigo);',
+  'border-radius:6px;overflow:hidden;color:#93a3b3;',
+  'font-family:Verdana,"Segoe UI",Tahoma,sans-serif;}',
+  `#${PANEL_ID} .oge-sb-hdr{display:flex;align-items:center;gap:8px;padding:8px 12px;`,
+  'background:linear-gradient(90deg,#141d27,transparent);border-bottom:1px solid #1b2732;}',
+  `#${PANEL_ID} .oge-sb-eye{font-size:14px;}`,
+  `#${PANEL_ID} .oge-sb-title{font-size:12.5px;font-weight:700;color:#d8e6f4;letter-spacing:.02em;}`,
+  `#${PANEL_ID} .oge-sb-sum{margin-left:auto;font:11px/1 monospace;color:#6b7987;}`,
+  `#${PANEL_ID} .oge-sb-sum b{color:#c6d4e2;font-weight:700;}`,
+  `#${PANEL_ID} .oge-sb-sum .hot{color:var(--sp-danger);font-weight:700;}`,
+  `#${PANEL_ID} table{width:100%;border-collapse:collapse;font-size:12px;}`,
+  `#${PANEL_ID} thead th{text-align:left;font:700 10px/1 Verdana,sans-serif;`,
+  'letter-spacing:.05em;text-transform:uppercase;color:#5f6b76;padding:6px 10px;',
+  'border-bottom:1px solid #1b2732;white-space:nowrap;}',
+  `#${PANEL_ID} th.num,#${PANEL_ID} td.num{text-align:right;}`,
+  `#${PANEL_ID} tbody td{padding:6px 10px;border-top:1px solid #16212c;vertical-align:middle;}`,
+  `#${PANEL_ID} tbody tr.hot{background:linear-gradient(90deg,#2a1512,transparent 70%);`,
   'box-shadow:inset 3px 0 0 var(--sp-danger);}',
-  `#${TAB_ID} .oge-sp-top{display:flex;align-items:baseline;gap:6px;}`,
-  `#${TAB_ID} .oge-sp-name{font-size:12px;font-weight:700;color:#d8e6f4;}`,
-  `#${TAB_ID} .oge-sp-row.hot .oge-sp-name{color:#f4b4ad;}`,
-  `#${TAB_ID} .oge-sp-count{font:10px/1 monospace;color:#6b7987;}`,
-  `#${TAB_ID} .oge-sp-age{margin-left:auto;font:10px/1 monospace;color:#6b7987;white-space:nowrap;}`,
-  `#${TAB_ID} .oge-sp-tag{display:inline-flex;align-items:center;gap:4px;margin-top:4px;`,
-  'font:700 9px/1.4 Verdana,sans-serif;letter-spacing:.05em;text-transform:uppercase;',
-  'color:var(--sp-danger);border:1px solid #5a2b26;background:#1c0f0d;border-radius:4px;padding:2px 6px;}',
-  `#${TAB_ID} .oge-sp-meta{margin-top:4px;font:11px/1.5 monospace;color:#8ea3b6;`,
-  'display:flex;flex-wrap:wrap;gap:1px 10px;}',
-  `#${TAB_ID} .oge-sp-meta .lbl{color:#5f6b76;}`,
-  `#${TAB_ID} .oge-sp-meta .coord{color:#a9c4de;}`,
-  `#${TAB_ID} .oge-sp-acts{display:flex;gap:6px;margin-top:7px;}`,
-  `#${TAB_ID} .oge-sp-btn{font:10.5px Verdana,sans-serif;color:#93a3b3;cursor:pointer;`,
-  'background:#16212c;border:1px solid #26323f;border-radius:5px;padding:3px 9px;}',
-  `#${TAB_ID} .oge-sp-btn:hover{border-color:var(--sp-indigo);color:#d8e6f4;background:#1a2534;}`,
-  `#${TAB_ID} .oge-sp-btn .g{color:var(--sp-indigo);font-weight:700;}`,
-  `#${TAB_ID} .oge-sp-btn.done{color:#7fd6a8;border-color:#2f5a44;}`,
-  `#${TAB_ID} .oge-sp-empty{padding:12px 10px;font-size:11.5px;color:#6b7987;text-align:center;}`,
-  `#${TAB_ID} .oge-sp-foot{padding:6px 10px;border-top:1px solid #1b2732;font-size:9.5px;`,
-  'color:#5f6b76;line-height:1.4;}',
-  `#${TAB_ID} .oge-sp-foot .k{color:var(--sp-danger);}`,
+  `#${PANEL_ID} .oge-sb-name{font-weight:700;color:#d8e6f4;}`,
+  `#${PANEL_ID} tr.hot .oge-sb-name{color:#f4b4ad;}`,
+  `#${PANEL_ID} .oge-sb-skull{margin-right:5px;cursor:help;}`,
+  `#${PANEL_ID} .oge-sb-age{font:11px/1 monospace;color:#6b7987;white-space:nowrap;}`,
+  `#${PANEL_ID} .coord{color:#a9c4de;font:11px/1 monospace;}`,
+  `#${PANEL_ID} .muted{color:#4c5763;}`,
+  `#${PANEL_ID} .oge-sb-acts{display:flex;gap:6px;justify-content:flex-end;}`,
+  `#${PANEL_ID} .oge-sb-btn{font:11px Verdana,sans-serif;color:#93a3b3;cursor:pointer;`,
+  'background:#16212c;border:1px solid #26323f;border-radius:5px;padding:3px 9px;white-space:nowrap;}',
+  `#${PANEL_ID} .oge-sb-btn:hover{border-color:var(--sp-indigo);color:#d8e6f4;background:#1a2534;}`,
+  `#${PANEL_ID} .oge-sb-btn .g{color:var(--sp-indigo);font-weight:700;}`,
+  `#${PANEL_ID} .oge-sb-foot{padding:5px 12px;border-top:1px solid #1b2732;font-size:10px;color:#5f6b76;}`,
+  `#${PANEL_ID} .oge-sb-foot .k{color:var(--sp-danger);}`,
 ].join('');
-
-/** Collapse state, persisted across re-injects (AGR rebuilds recreate the tab). */
-let openState = false;
 
 /**
  * Small createElement helper.
@@ -131,184 +123,175 @@ const ageStr = (tsSec) => {
 };
 
 /**
- * Add a player to the Spyglass watch list (shared with the dashboard + the
- * in-game Spy FAB via the same per-universe store). No-op if already watched.
+ * The dashboard's extension URL, resolved once via `browser/chrome.runtime`.
+ * Empty string when the WebExtension runtime isn't present (test envs) —
+ * {@link openSpyglass} no-ops then. Kept local (a feature must not import
+ * another feature); mirrors the resolver in features/dailyRun.
+ * @type {string}
+ */
+const DASHBOARD_URL = (() => {
+  try {
+    const g = /** @type {any} */ (/** @type {unknown} */ (globalThis));
+    const ns = g.browser ?? g.chrome;
+    const url = ns?.runtime?.getURL?.('dashboard.html');
+    return typeof url === 'string' ? url : '';
+  } catch {
+    return '';
+  }
+})();
+
+/**
+ * Open the OG-E dashboard on the Spyglass tab, deep-linked to this prober's
+ * dossier (`?spy=<pid>` — the dashboard expands + scrolls to the player) and
+ * pre-selecting the current universe (`?host=`). A deliberate user tap → one
+ * new tab. No-op when the runtime URL is unavailable.
  * @param {number} pid
  * @returns {void}
  */
-const watchPlayer = (pid) => {
-  const id = String(pid);
-  watchListStore.update((cfg) =>
-    cfg.players.includes(id) ? cfg : { ...cfg, players: [...cfg.players, id] });
+const openSpyglass = (pid) => {
+  if (!DASHBOARD_URL) return;
+  const universeId = parseUniverseId(location.host);
+  const url = DASHBOARD_URL
+    + `?${universeId ? `host=${encodeURIComponent(universeId)}&` : ''}tab=spyglass&spy=${pid}`;
+  window.open(url, '_blank');
 };
 
 /**
- * Navigate to galaxy view at a `"g:s:p"` coord (a deliberate user tap → one
- * navigation). Malformed coord = no-op.
- * @param {string | null} coords
- * @returns {void}
- */
-const gotoGalaxy = (coords) => {
-  const m = /^(\d+):(\d+):(\d+)$/.exec(coords ?? '');
-  if (!m) return;
-  location.href = ingameComponentUrl(location.href, 'galaxy', {
-    galaxy: m[1], system: m[2], position: m[3],
-  });
-};
-
-/**
- * Build one prober row from a digest entry.
+ * Build one prober `<tr>` from a digest entry.
  * @param {import('../domain/proximityDigest.js').ProximityDigestEntry} p
  * @returns {HTMLElement}
  */
 const buildRow = (p) => {
-  const row = el('div', `oge-sp-row${p.sameSystem ? ' hot' : ''}`);
+  const tr = el('tr', p.sameSystem ? 'hot' : undefined);
 
-  const top = el('div', 'oge-sp-top');
-  top.appendChild(el('span', 'oge-sp-name', p.name || `#${p.byPlayerId}`));
-  top.appendChild(el('span', 'oge-sp-count', `${p.count}×`));
-  const age = ageStr(p.lastTs);
-  if (age) top.appendChild(el('span', 'oge-sp-age', age));
-  row.appendChild(top);
-
-  if (p.sameSystem) row.appendChild(el('div', 'oge-sp-tag', '💀 in your system · RIP-range'));
-
-  const meta = el('div', 'oge-sp-meta');
-  if (p.fromCoords) {
-    const from = el('span');
-    from.appendChild(el('span', 'lbl', 'from '));
-    from.appendChild(el('span', 'coord', p.fromCoords));
-    meta.appendChild(from);
+  const nameTd = el('td');
+  if (p.sameSystem) {
+    const skull = el('span', 'oge-sb-skull', '💀');
+    skull.title = 'In your system — can strike at moon/RIP speed';
+    nameTd.appendChild(skull);
   }
-  if (p.atCoords.length) {
-    const at = el('span');
-    at.appendChild(el('span', 'lbl', 'at '));
-    at.appendChild(el('span', 'coord', p.atCoords.join(', ')));
-    meta.appendChild(at);
-  }
-  if (meta.childElementCount) row.appendChild(meta);
+  nameTd.appendChild(el('span', 'oge-sb-name', p.name || `#${p.byPlayerId}`));
+  tr.appendChild(nameTd);
 
-  const acts = el('div', 'oge-sp-acts');
-  const already = watchListStore.get().players.includes(String(p.byPlayerId));
-  const watchBtn = el('button', `oge-sp-btn${already ? ' done' : ''}`);
-  watchBtn.innerHTML = '<span class="g">★</span> ';
-  watchBtn.appendChild(document.createTextNode(already ? 'watched' : 'watch'));
-  watchBtn.addEventListener('click', () => {
-    watchPlayer(p.byPlayerId);
-    watchBtn.classList.add('done');
-    watchBtn.textContent = '';
-    watchBtn.innerHTML = '<span class="g">★</span> ';
-    watchBtn.appendChild(document.createTextNode('watched'));
-  });
-  acts.appendChild(watchBtn);
+  tr.appendChild(el('td', 'oge-sb-age', ageStr(p.lastTs) || '—'));
+  tr.appendChild(el('td', 'num', String(p.count)));
 
-  const gotoTarget = p.fromCoords || p.atCoords[0] || null;
-  if (gotoTarget) {
-    const galBtn = el('button', 'oge-sp-btn');
-    galBtn.innerHTML = '<span class="g">↗</span> ';
-    galBtn.appendChild(document.createTextNode('galaxy'));
-    galBtn.addEventListener('click', () => gotoGalaxy(gotoTarget));
-    acts.appendChild(galBtn);
-  }
-  row.appendChild(acts);
+  const fromTd = el('td');
+  fromTd.appendChild(p.fromCoords ? el('span', 'coord', p.fromCoords) : el('span', 'muted', '—'));
+  tr.appendChild(fromTd);
 
-  return row;
+  const nearTd = el('td');
+  nearTd.appendChild(
+    p.atCoords.length ? el('span', 'coord', p.atCoords.join(', ')) : el('span', 'muted', '—'));
+  tr.appendChild(nearTd);
+
+  // One action: jump to this prober's full dossier in the dashboard's Spyglass
+  // tab (which owns watch/relationship/scan tooling — no point duplicating a
+  // thinner copy of it here).
+  const actTd = el('td');
+  const acts = el('div', 'oge-sb-acts');
+  const dossierBtn = el('button', 'oge-sb-btn');
+  dossierBtn.appendChild(document.createTextNode('Spyglass '));
+  dossierBtn.appendChild(el('span', 'g', '▸'));
+  dossierBtn.title = "Open this player's dossier in the OG-E dashboard (Spyglass tab)";
+  dossierBtn.addEventListener('click', () => openSpyglass(p.byPlayerId));
+  acts.appendChild(dossierBtn);
+  actTd.appendChild(acts);
+  tr.appendChild(actTd);
+
+  return tr;
 };
 
 /**
- * Paint the content body + header badge from the current proximity digest.
- * Reads the live tab from the DOM (it may have been re-injected), so it is safe
- * to call after an AGR rebuild.
- * @returns {void}
- */
-const render = () => {
-  const tab = document.getElementById(TAB_ID);
-  if (!tab) return;
-  const body = tab.querySelector('.oge-sp-body');
-  const badge = tab.querySelector('.oge-sp-badge');
-  if (!body || !badge) return;
-
-  const digest = digestProximityReports(proximityReportsStore.get());
-  body.textContent = '';
-
-  // Badge: same-system count in danger colour, else prober count, else nothing.
-  if (digest.sameSystemCount > 0) {
-    badge.textContent = String(digest.sameSystemCount);
-    badge.classList.add('hot');
-  } else if (digest.playerCount > 0) {
-    badge.textContent = String(digest.playerCount);
-    badge.classList.remove('hot');
-  } else {
-    badge.textContent = '';
-    badge.classList.remove('hot');
-  }
-
-  if (!digest.playerCount) {
-    body.appendChild(el('div', 'oge-sp-empty', 'No probes detected near your planets. 🛡'));
-    return;
-  }
-
-  const sum = el('div', 'oge-sp-sum');
-  const s = document.createElement('span');
-  s.innerHTML = `<b>${digest.playerCount}</b> spy${digest.playerCount === 1 ? '' : ' ·'} `
-    + `<b>${digest.totalReports}</b> alert${digest.totalReports === 1 ? '' : 's'}`;
-  sum.appendChild(s);
-  if (digest.sameSystemCount > 0) {
-    sum.appendChild(document.createTextNode(' · '));
-    sum.appendChild(el('span', 'hot', `${digest.sameSystemCount} in your system`));
-  }
-  body.appendChild(sum);
-
-  for (const p of digest.players.slice(0, MAX_ROWS)) body.appendChild(buildRow(p));
-
-  const foot = el('div', 'oge-sp-foot');
-  foot.appendChild(el('span', 'k', '💀'));
-  foot.appendChild(document.createTextNode(
-    ' = a scout with a body in your system — can strike at moon/RIP speed. From alerts you opened.'));
-  body.appendChild(foot);
-};
-
-/**
- * Apply the collapse state to a tab's body (display toggle).
- * @param {HTMLElement} tab
- * @returns {void}
- */
-const applyOpen = (tab) => {
-  const body = /** @type {HTMLElement | null} */ (tab.querySelector('.oge-sp-body'));
-  if (body) body.style.display = openState ? '' : 'none';
-};
-
-/**
- * Build the tab wrapper (header strip + body). The header self-wires the
- * collapse toggle — we do NOT emit AGR's `ago-data`, so AGR never rebinds it.
+ * Build the empty panel shell (header strip + table skeleton + footnote slot).
+ * `renderInto` fills it.
  * @returns {HTMLElement}
  */
-const buildTab = () => {
-  const tab = el('div', undefined);
-  tab.id = TAB_ID;
+const buildShell = () => {
+  const panel = el('div');
+  panel.id = PANEL_ID;
 
-  const hdr = el('div', 'ago_panel_tab oge-sp-hdr');
-  hdr.appendChild(el('span', 'oge-sp-eye', '👁'));
-  hdr.appendChild(document.createTextNode("Who's spying"));
-  hdr.appendChild(el('span', 'ago_panel_tab_info oge-sp-badge'));
-  hdr.addEventListener('click', () => {
-    openState = !openState;
-    applyOpen(tab);
-  });
-  tab.appendChild(hdr);
+  const hdr = el('div', 'oge-sb-hdr');
+  hdr.appendChild(el('span', 'oge-sb-eye', '👁'));
+  hdr.appendChild(el('span', 'oge-sb-title', "Who's spying on you"));
+  hdr.appendChild(el('span', 'oge-sb-sum'));
+  panel.appendChild(hdr);
 
-  tab.appendChild(el('div', 'oge-sp-body'));
-  applyOpen(tab);
-  return tab;
+  const table = document.createElement('table');
+  const thead = document.createElement('thead');
+  const htr = el('tr');
+  /** @type {Array<[string, string]>} label + optional class */
+  const cols = [
+    ['Prober', ''], ['Seen', ''], ['Alerts', 'num'], ['From', ''], ['Near you', ''], ['', ''],
+  ];
+  for (const [label, cls] of cols) {
+    const th = document.createElement('th');
+    if (cls) th.className = cls;
+    th.textContent = label;
+    htr.appendChild(th);
+  }
+  thead.appendChild(htr);
+  table.appendChild(thead);
+  table.appendChild(document.createElement('tbody'));
+  panel.appendChild(table);
+
+  panel.appendChild(el('div', 'oge-sb-foot'));
+  return panel;
 };
+
+/**
+ * Paint the summary line, rows and footnote from a digest.
+ * @param {HTMLElement} panel
+ * @param {ReturnType<typeof digestProximityReports>} digest
+ * @returns {void}
+ */
+const renderInto = (panel, digest) => {
+  const sum = panel.querySelector('.oge-sb-sum');
+  if (sum) {
+    sum.textContent = '';
+    const pc = el('b', undefined, String(digest.playerCount));
+    sum.appendChild(pc);
+    sum.appendChild(document.createTextNode(` prober${digest.playerCount === 1 ? '' : 's'} · `));
+    sum.appendChild(el('b', undefined, String(digest.totalReports)));
+    sum.appendChild(document.createTextNode(` alert${digest.totalReports === 1 ? '' : 's'}`));
+    if (digest.sameSystemCount > 0) {
+      sum.appendChild(document.createTextNode(' · '));
+      sum.appendChild(el('span', 'hot', `${digest.sameSystemCount} in your system`));
+    }
+  }
+
+  const tbody = panel.querySelector('tbody');
+  if (tbody) {
+    tbody.textContent = '';
+    for (const p of digest.players.slice(0, MAX_ROWS)) tbody.appendChild(buildRow(p));
+  }
+
+  // Footnote only when there's actually a 💀 to explain — no same-system prober
+  // ⇒ no legend (a legend for a glyph that isn't on screen is pure clutter).
+  const foot = /** @type {HTMLElement | null} */ (panel.querySelector('.oge-sb-foot'));
+  if (foot) {
+    foot.textContent = '';
+    if (digest.sameSystemCount > 0) {
+      foot.appendChild(el('span', 'k', '💀'));
+      foot.appendChild(document.createTextNode(
+        ' = a scout with a body in your system — can strike at moon/RIP speed. From alerts you opened.'));
+      foot.style.display = '';
+    } else {
+      foot.style.display = 'none';
+    }
+  }
+};
+
+/** Last painted render signature — skips no-op rebuilds on idle <body> churn. */
+let lastSig = '';
 
 /** @type {{ dispose: () => void } | null} */
 let installed = null;
 
 /**
- * Install the Who's-spying sidebar tab. Idempotent — a second call returns the
- * same dispose fn. No-op in practice until AGR's `.ago_panel_wrapper` exists
- * (the observer picks it up when it appears).
+ * Install the Who's-spying-on-you table. Idempotent — a second call returns the
+ * same dispose fn. No-op until the messages page's spy-report tab is open (the
+ * observer picks up AGR's `#agoSpyReportOverview` when it appears).
  * @returns {() => void}
  */
 export const installWhosSpyingPanel = () => {
@@ -317,46 +300,60 @@ export const installWhosSpyingPanel = () => {
   injectStyle(STYLE_ID, CSS);
 
   /**
-   * Build + insert the tab (before the sidebar's trailing arrow) when the
-   * wrapper is present and our tab isn't already there, then render. Cheap
-   * early-return when already mounted — safe to call on every body mutation.
+   * Mount/remove + repaint the table to match the current tab + digest. Cheap
+   * on the common "nothing to do / unchanged" paths so it's safe on every
+   * <body> mutation: bails immediately off the spy tab, and a render signature
+   * skips the rebuild when the digest hasn't moved.
+   * @param {{ force?: boolean }} [opts] force ⇒ repaint even if unchanged (age refresh).
    * @returns {void}
    */
-  const inject = () => {
-    if (document.getElementById(TAB_ID)) return;
-    const wrapper = document.querySelector(WRAPPER_SEL);
-    if (!wrapper) return;
-    const tab = buildTab();
-    // Slot before the trailing `.ago_panel_arrow` span (the wrapper's last
-    // child); fall back to append if the arrow isn't there.
-    const last = wrapper.lastElementChild;
-    if (last && last.classList.contains('ago_panel_arrow')) wrapper.insertBefore(tab, last);
-    else wrapper.appendChild(tab);
-    render();
+  const refresh = ({ force = false } = {}) => {
+    const anchor = document.querySelector(SPY_OVERVIEW_SEL);
+    const reports = proximityReportsStore.get();
+    let panel = document.getElementById(PANEL_ID);
+    if (!anchor || !anchor.parentNode || reports.length === 0) {
+      if (panel) panel.remove();
+      lastSig = '';
+      return;
+    }
+    const digest = digestProximityReports(reports);
+    if (!panel) {
+      panel = buildShell();
+      lastSig = '';
+    }
+    // Keep it glued directly above AGR's overview (AGR may have re-injected it).
+    if (panel.parentNode !== anchor.parentNode || panel.nextElementSibling !== anchor) {
+      anchor.parentNode.insertBefore(panel, anchor);
+    }
+    const shown = digest.players.slice(0, MAX_ROWS);
+    const sig = `${digest.playerCount}|${digest.totalReports}|${digest.sameSystemCount}|`
+      + shown.map((p) => `${p.byPlayerId}:${p.count}:${p.lastTs}`).join(',');
+    if (force || sig !== lastSig) {
+      renderInto(panel, digest);
+      lastSig = sig;
+    }
   };
 
-  inject();
+  refresh();
 
-  const observer = new MutationObserver(inject);
+  const observer = new MutationObserver(() => refresh());
   observer.observe(document.body, { childList: true, subtree: true });
 
   // A landed alert repaints the digest; the slow poll refreshes relative ages
-  // (and re-injects as a backstop if a mutation was missed).
-  const unsub = proximityReportsStore.subscribe(render);
-  const unsubPoll = clock.subscribe(() => {
-    inject();
-    render();
-  }, { everyMs: POLL_MS });
+  // (and re-mounts as a backstop if a mutation was missed).
+  const unsub = proximityReportsStore.subscribe(() => refresh());
+  const unsubPoll = clock.subscribe(() => refresh({ force: true }), { everyMs: POLL_MS });
 
   installed = {
     dispose: () => {
       observer.disconnect();
       unsub();
       unsubPoll();
-      const live = document.getElementById(TAB_ID);
+      const live = document.getElementById(PANEL_ID);
       if (live) live.remove();
       const style = document.getElementById(STYLE_ID);
       if (style && style.parentNode) style.parentNode.removeChild(style);
+      lastSig = '';
       installed = null;
     },
   };
@@ -372,5 +369,5 @@ export const _resetWhosSpyingPanelForTest = () => {
     installed.dispose();
     installed = null;
   }
-  openState = false;
+  lastSig = '';
 };

@@ -80,10 +80,15 @@ export function renderWatchlistCards(a) {
   a.hostEl.textContent = '';
 
   const ids = [...a.watchedIds];
-  const label = document.createElement('div');
-  label.className = 'watch-zone-label';
+  // gv-card-head/-title: the host sits inside a Spyglass gv-card zone now, so
+  // the label speaks the same card-title language as the Galaxy Viewer's cards.
+  const head = document.createElement('div');
+  head.className = 'gv-card-head';
+  const label = document.createElement('span');
+  label.className = 'gv-card-title';
   label.textContent = ids.length ? `Watchlist (${ids.length})` : 'Watchlist';
-  a.hostEl.appendChild(label);
+  head.appendChild(label);
+  a.hostEl.appendChild(head);
 
   const grid = document.createElement('div');
   grid.className = 'watch-cards-grid';
@@ -175,7 +180,8 @@ export function renderWatchlistCards(a) {
       head.textContent = '0 ships 🛡 pure defense';
       head.style.color = '#7fd6a8';
     } else if (est && typeof est.hiddenFleetPoints === 'number' && Number.isFinite(est.hiddenFleetPoints)) {
-      head.textContent = `hidden ~${compact(est.hiddenFleetPoints)}`;
+      // "hidden fleet", not bare "hidden" — the bare word didn't say WHAT is hidden.
+      head.textContent = `hidden fleet ~${compact(est.hiddenFleetPoints)}`;
     } else if (prof && !prof.friendly) {
       head.textContent = `fleet ≤ ${compact(prof.mobileHi)}`;
     } else {

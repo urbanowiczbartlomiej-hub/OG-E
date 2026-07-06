@@ -126,7 +126,7 @@ export function raidVerdict(input) {
   }
   if (lootDef >= DEF_WALL_FLOOR) {
     return { kind: 'loaded-risky', label: 'loaded · heavily defended', tier, lootNow, lootCoord, ageMs,
-      reasons: ['fat loot, but heavy defence guards it — needs a real fleet to crack'] };
+      reasons: ['fat loot, but heavy defence guards it — needs a real fleet to attack'] };
   }
   if (fleetRisk >= FLEET_RISK_FLOOR) {
     return { kind: 'loaded-risky', label: 'loaded · fleet risk', tier, lootNow, lootCoord, ageMs,

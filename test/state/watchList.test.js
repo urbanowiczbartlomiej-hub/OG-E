@@ -71,6 +71,7 @@ describe('normalizeWatchList', () => {
     expect(normalizeWatchList(['1', '2', '3'])).toEqual({
       players: ['1', '2', '3'],
       probes: DEFAULT_SPY_PROBES,
+      scanBodies: 'planets',
       rescan: {},
       relationships: {},
       mapHidden: {},
@@ -81,6 +82,7 @@ describe('normalizeWatchList', () => {
     expect(normalizeWatchList([1, 2, 3])).toEqual({
       players: ['1', '2', '3'],
       probes: DEFAULT_SPY_PROBES,
+      scanBodies: 'planets',
       rescan: {},
       relationships: {},
       mapHidden: {},
@@ -91,6 +93,7 @@ describe('normalizeWatchList', () => {
     expect(normalizeWatchList({ players: ['7', '8'] })).toEqual({
       players: ['7', '8'],
       probes: DEFAULT_SPY_PROBES,
+      scanBodies: 'planets',
       rescan: {},
       relationships: {},
       mapHidden: {},
@@ -131,7 +134,7 @@ describe('normalizeWatchList', () => {
   });
 
   it('returns an empty config for null / undefined / garbage', () => {
-    const empty = { players: [], probes: DEFAULT_SPY_PROBES, rescan: {}, relationships: {}, mapHidden: {} };
+    const empty = { players: [], probes: DEFAULT_SPY_PROBES, scanBodies: 'planets', rescan: {}, relationships: {}, mapHidden: {} };
     expect(normalizeWatchList(null)).toEqual(empty);
     expect(normalizeWatchList(undefined)).toEqual(empty);
     expect(normalizeWatchList(42)).toEqual(empty);
@@ -166,6 +169,7 @@ describe('watchList store — hydration + write-through', () => {
     expect(watchListStore.get()).toEqual({
       players: ['11', '22'],
       probes: DEFAULT_SPY_PROBES,
+      scanBodies: 'planets',
       rescan: {},
       relationships: {},
       mapHidden: {},

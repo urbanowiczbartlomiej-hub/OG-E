@@ -72,11 +72,11 @@ import { makeLegendSwatch } from './legend.js';
 const TOP_N = 20;
 
 /**
- * Fixed half-width of the Best-spots analysis window and the candidate
- * spacing. No longer a user knob: the RANKING reach is set by the physical
- * Offline-window / Farm-reach sliders (the field's decay), so this only
- * defines the census window for the popover/cards, the strip span and how
- * far apart listed spots must be.
+ * Fixed half-width of the Best-spots analysis window. The RANKING reach is
+ * set by the physical Offline-window / Farm-reach sliders (the field's
+ * decay), so this only defines the census window for the popover/cards and
+ * the strip span. It also serves as the DEFAULT listing separation between
+ * spots — the user-tunable "Spot gap" slider overrides that (and only that).
  */
 const NEIGHBOURHOOD_RADIUS = 15;
 
@@ -299,7 +299,8 @@ export const highlightPin = (hostEl, index) => {
 };
 
 /** Occupancy map's idle readout text (also the mouseleave reset). */
-const OCC_HINT = 'Hover for the exact coordinate and status · click to pin a system card.';
+// No "click to pin" instruction — the pointer cursor advertises the click.
+const OCC_HINT = 'Hover a cell for its coordinate and status.';
 
 /**
  * Occupancy lens: a SHARP per-position texture of the whole server — every
@@ -443,7 +444,7 @@ const renderOccupancyMap = (hostEl, scans, { galaxies, systems }, { linkBase, ow
   // pointer-transparent), here it floats over the CANVAS — every pixel below
   // is a live click target, so a pass-through card would silently re-pin
   // whatever system happens to sit under a body click. Solid card instead:
-  // a body click unpins (matching the footer copy), the link still navigates.
+  // a body click unpins, the link still navigates.
   const pop = document.createElement('div');
   pop.className = 'region-pop';
   pop.style.pointerEvents = 'auto';
@@ -929,27 +930,21 @@ const buildTable = (results, ownRank) => {
 };
 
 /**
- * Compact points formatter for the stat cards: 1.2M / 340k / 850.
- * @param {number} n
- * @returns {string}
- */
-const fmtPts = (n) =>
-  n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n);
-
-/**
  * The neighbourhood {@link RegionScore} as a row of labelled census GROUPS —
- * Population / Threats / Targets / Social / Context — with FIXED stat slots
- * per group: a zero renders dimmed instead of disappearing, so two candidates
- * always compare slot-for-slot and "0 bandits" is visibly different from "no
- * data". Colour encodes the FAMILY (one hue each, never reused across
- * families); per-stat explanations stay as tooltips on each stat. Replaces
- * the old flat conditional tile row that reshuffled on every row selection.
+ * Population / Threats / Targets / Social — with FIXED stat slots per group:
+ * a zero renders dimmed instead of disappearing, so two candidates always
+ * compare slot-for-slot and "0 bandits" is visibly different from "no data".
+ * Colour encodes the FAMILY (one hue each, never reused across families);
+ * per-stat explanations stay as tooltips on each stat. Bandits and honoured
+ * fighters are split per honour tier (! / !! / !!! and ★ / ★★ / ★★★) — each
+ * counts DISTINCT PLAYERS in the window, never planets (scoreRegion dedupes
+ * by player id). The old Context group (top rank / averages) was dropped as
+ * noise; the Top-threats panel names the strong neighbours anyway.
  *
  * @param {RegionScore} s
- * @param {number} [ownRank]
  * @returns {HTMLElement}
  */
-const buildCensusGroups = (s, ownRank) => {
+const buildCensusGroups = (s) => {
   const wrap = document.createElement('div');
   wrap.className = 'census';
 
@@ -993,50 +988,37 @@ const buildCensusGroups = (s, ownRank) => {
     slot(s.vacation, 'Vacation', 'On vacation or banned — protected, neither farm nor threat'),
     slot(s.newbie, 'Weak', 'Noob-protected — cannot be raided'),
   ]);
-  // Bandits collapse into one slot: total count + the worst tier's "!" marks
-  // (the OG-E threat convention); the King/Lord/Bandit split is the tooltip.
-  const banditTip = s.bandits
-    ? [3, 2, 1].filter((t) => s.banditTiers?.[t])
-      .map((t) => `${s.banditTiers?.[t]} ${HONOR_TIER_LABELS.bandit[t]}`).join(', ')
-      + ' — negative-honour aggressors, the danger signal for a fresh colony'
-    : 'Negative-honour aggressors — a danger for a fresh colony';
+  // Bandits split PER TIER (! / !! / !!!): one glance says whether the area's
+  // bandits are accidental tier-1s or true Bandit Kings — the collapsed
+  // "6 Bandits !!!" hid that 5 of the 6 might be harmless. Distinct players.
   group('Threats', STRENGTH_COLORS.strong, [
-    slot(s.bandits, s.bandits ? `Bandit${s.bandits > 1 ? 's' : ''} ${'!'.repeat(s.banditMaxLevel || 1)}` : 'Bandits', banditTip),
+    slot(s.banditTiers?.[1] || 0, 'Bandits !',
+      `${HONOR_TIER_LABELS.bandit[1]} (tier 1) — often an accidental negative-honour dip`),
+    slot(s.banditTiers?.[2] || 0, 'Bandits !!',
+      `${HONOR_TIER_LABELS.bandit[2]} (tier 2) — a habitual negative-honour aggressor`),
+    slot(s.banditTiers?.[3] || 0, 'Bandits !!!',
+      `${HONOR_TIER_LABELS.bandit[3]} (tier 3) — top-tier aggressor who consistently hits weaker players`),
     slot(s.strong, 'Strong', 'Outside your protection bracket — out-gun a fresh colony'),
     slot(s.activeOnVacation, 'On-vac', 'A live player hiding behind vacation mode — not a safe farm'),
   ]);
+  // Honoured fighters split per tier too (★/★★/★★★). No "Honorable" slot any
+  // more: that counted the live-scan-only `isHonorableTarget` flag, which is 0
+  // on API-derived data — a permanently dim slot that said nothing.
   group('Targets', STRENGTH_COLORS.honorable, [
-    slot(s.honorable, 'Honorable', 'A fair fight — attacking earns honour'),
     slot(s.normal, 'Normal', 'Plain "white" farm targets'),
     slot(s.outlaw, 'Outlaw', 'Lost protection by raiding the weak — fair game'),
-    slot(s.honored, s.honored ? `Honored ${'★'.repeat(s.honoredMaxLevel || 1)}` : 'Honored',
-      'Positive-honour fighters — prefer stronger targets than a fresh colony'),
+    slot(s.honoredTiers?.[1] || 0, 'Honored ★',
+      'Positive honour, tier 1 — combat-active, prefers stronger targets than a fresh colony'),
+    slot(s.honoredTiers?.[2] || 0, 'Honored ★★',
+      'Positive honour, tier 2 — combat-active, prefers stronger targets than a fresh colony'),
+    slot(s.honoredTiers?.[3] || 0, 'Honored ★★★',
+      'Positive honour, tier 3 — a decorated fighter; prefers stronger targets than a fresh colony'),
   ]);
   group('Social', '#4a9eff', [
     slot(s.allianceCount, s.allianceCount === 1 ? 'Alliance' : 'Alliances', 'Distinct alliance tags in range'),
     slot(s.allyNearby, 'Ally', 'Players in your alliance'),
     slot(s.buddy, 'Buddy', 'Players on your buddy list'),
   ]);
-  // Context — rank / points averages; only meaningful with someone in range,
-  // so this group (alone) collapses entirely when the area is empty.
-  /** @type {Array<{ value: string|number, label: string, title?: string }>} */
-  const ctx = [];
-  if (s.ranks.length) {
-    const top = s.ranks[0];
-    let rel = `highscore rank #${top}`;
-    if (typeof ownRank === 'number' && ownRank > 0) {
-      const d = ownRank - top;
-      rel = d > 0 ? `${d} ranks above you` : d < 0 ? `${-d} ranks below you` : 'the same rank as you';
-    }
-    ctx.push({ value: `#${top}`, label: 'top rank', title: rel });
-  }
-  if (s.avgTotal) {
-    ctx.push({ value: fmtPts(s.avgTotal), label: 'avg points', title: 'Mean total-highscore points of neighbours in range — how strong the area is' });
-  }
-  if (s.avgMilitary) {
-    ctx.push({ value: fmtPts(s.avgMilitary), label: 'avg military', title: 'Mean military points of neighbours — where fleets concentrate (target-rich for an aggressor)' });
-  }
-  group('Context', '#9fb4c4', ctx);
 
   return wrap;
 };
@@ -1063,7 +1045,7 @@ const buildCensusGroups = (s, ownRank) => {
  */
 const buildTopThreats = (region, scans, { danger, spied, galaxyMax, players, onOpenSpyglass }) => {
   if (!danger) return null;
-  /** @type {Map<number, {name:string, rank?:number, ally?:string, prof?:import('../../domain/dangerScore.js').DangerProfile}>} */
+  /** @type {Map<number, {name:string, rank?:number, prof?:import('../../domain/dangerScore.js').DangerProfile}>} */
   const byId = new Map();
   for (const sys of regionSystems(region, galaxyMax)) {
     const positions = scans[`${region.galaxy}:${sys}`]?.positions;
@@ -1075,7 +1057,6 @@ const buildTopThreats = (region, scans, { danger, spied, galaxyMax, players, onO
       byId.set(p.player.id, {
         name: p.player.name || meta?.name || `player ${p.player.id}`,
         rank: typeof p.player.rank === 'number' ? p.player.rank : undefined,
-        ally: p.player.ally,
         prof: danger.get(p.player.id),
       });
     }
@@ -1148,9 +1129,10 @@ const buildTopThreats = (region, scans, { danger, spied, galaxyMax, players, onO
     if (badge) { badge.style.marginLeft = '0'; row.appendChild(badge); }
     const name = document.createElement('span');
     name.className = 'gv-threat-name';
+    // Name + rank only — the raw alliance ID that used to trail here (e.g.
+    // "501023") is the API's numeric id, unexplainable to a player.
     name.textContent = a.name
-      + (typeof a.rank === 'number' ? ` #${a.rank}` : '')
-      + (a.ally ? ` ${a.ally}` : '');
+      + (typeof a.rank === 'number' ? ` #${a.rank}` : '');
     row.appendChild(name);
     if (a.ignored) {
       const tag = document.createElement('span');
@@ -1167,12 +1149,15 @@ const buildTopThreats = (region, scans, { danger, spied, galaxyMax, players, onO
     }
     const prov = document.createElement('span');
     prov.className = 'gv-threat-prov';
+    // Provenance marker only where it changes the READING: spied = exact-ish,
+    // '~ est.' = a share prior. The old 'ships-bounded' jargon said nothing to
+    // a player — a ships-anchored figure just shows bare.
     prov.textContent = a.prof?.provenance === 'spied'
       ? '🔭 spied (exact)'
       : spied && spied.has(a.id)
         ? '🔭 spied (partial)'
         : a.prof
-          ? (a.prof.provenance === 'ships' ? 'ships-bounded' : '~ est.')
+          ? (a.prof.provenance === 'ships' ? '' : '~ est.')
           : 'unranked';
     row.appendChild(prov);
     // Click a threat → jump to Spyglass focused on that player (the "found a
@@ -1375,18 +1360,10 @@ const buildDetail = (region, scans, { mode, field, players, ownRank, galaxyMax, 
 
   const s = region.score;
   if (s) {
-    // Neighbourhood census as fixed labelled groups, sat right above the
-    // per-system strip.
-    el.appendChild(buildCensusGroups(s, ownRank));
-
-    // The named "who / why" panel — the specific players behind the counts,
-    // ranked by danger D, with spy coverage. Skipped (null) without a danger
-    // layer or active players.
-    const threats = buildTopThreats(region, scans, { danger, spied, galaxyMax, players, onOpenSpyglass });
-    if (threats) el.appendChild(threats);
-
+    // The per-system STRIP leads (user pref): the spatial read sits right
+    // under the "Window …" subtitle, with its legend; the census groups and
+    // the named threats panel follow as the drill-down.
     el.appendChild(buildInteractiveStrip(region, scans, { mode, field, players, galaxyMax, linkBase, danger }));
-
     if (nbr) {
       el.appendChild(field ? buildFieldLegend() : buildStripLegend(region, scans, galaxyMax));
       if (region.excluded && region.excluded.length) {
@@ -1394,6 +1371,22 @@ const buildDetail = (region, scans, { mode, field, players, ownRank, galaxyMax, 
       }
     } else {
       el.appendChild(buildStripLegend(region, scans, galaxyMax));
+    }
+
+    // Neighbourhood census + the named "who / why" threats panel. With both
+    // present they share one responsive row (census left, threats right —
+    // .gv-intel-row) instead of two stacked full-width bands; without a
+    // threats panel (no danger layer / no actives) the census keeps the row
+    // to itself in its plain full-width form.
+    const census = buildCensusGroups(s);
+    const threats = buildTopThreats(region, scans, { danger, spied, galaxyMax, players, onOpenSpyglass });
+    if (threats) {
+      const intel = document.createElement('div');
+      intel.className = 'gv-intel-row';
+      intel.append(census, threats);
+      el.appendChild(intel);
+    } else {
+      el.appendChild(census);
     }
   }
 
@@ -1567,6 +1560,10 @@ export const selectCandidate = (containerEl, i) => {
  * @property {number} [excludeN]
  *   Best-spots only: how many worst (most threatening) players to drop from
  *   each window's score. Default 0.
+ * @property {number} [spotGap]
+ *   Best-spots only: minimum circular system distance between LISTED spots in
+ *   one galaxy (the "Spot gap" slider) — spaceOutCandidates' suppression
+ *   radius. Default NEIGHBOURHOOD_RADIUS. Does NOT change the scoring window.
  * @property {import('../../domain/heatField.js').ThreatFarmField | null} [field]
  *   The threat/farm field built over the SAME composite at per-system
  *   resolution — the ranking substrate and the strip colouring. `null` (no
@@ -1639,7 +1636,7 @@ const cachedFind = (pathKey, scansRef, playersRef, optKey, compute) => {
  * @returns {Region[]} The rows actually listed (≤ TOP_N; empty on the
  *   empty-state paths) — the caller overlays them as map pins.
  */
-export const renderFreeRegions = ({ containerEl, countInfoEl, scans, positions, maxGaps, zone, find, excludeN, field, galaxyMax, linkBase, ownMilitary, players, ownRank, onSelect, danger, spied, onOpenSpyglass }) => {
+export const renderFreeRegions = ({ containerEl, countInfoEl, scans, positions, maxGaps, zone, find, excludeN, spotGap, field, galaxyMax, linkBase, ownMilitary, players, ownRank, onSelect, danger, spied, onOpenSpyglass }) => {
   containerEl.innerHTML = '';
 
   const zoneKey = ZONES[zone ?? ''] ? /** @type {string} */ (zone) : 'safe';
@@ -1673,7 +1670,9 @@ export const renderFreeRegions = ({ containerEl, countInfoEl, scans, positions, 
           weights: HARM_WEIGHTS,
           galaxyMax: gMax,
         }))),
-      NEIGHBOURHOOD_RADIUS,
+      // Listing separation only — the analysis window above keeps its fixed
+      // radius (the slider spreads/packs RESULTS, it doesn't resize scoring).
+      spotGap ?? NEIGHBOURHOOD_RADIUS,
       gMax,
     );
     if (candidates.length > 0) {

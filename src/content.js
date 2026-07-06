@@ -99,6 +99,7 @@ import { installTargetsIngest } from './features/targetsIngest/index.js';
 
 import { installSync } from './sync/scheduler.js';
 
+import { isStandalonePage } from './domain/ogameUrl.js';
 import { logger } from './lib/logger.js';
 
 // Store hydration is mixed. The localStorage-backed stores (settings,
@@ -213,6 +214,22 @@ const installDomFeatures = () => {
     }
   };
 
+  // Standalone sub-pages (?page=standalone&component=empire | combatsim | …)
+  // render without AGR and are self-contained tables/overlays, so OG-E's
+  // floating FAB and the AGR-missing banner just clutter them (and the banner
+  // would be a false positive there — AGR is installed, the sub-page simply
+  // doesn't host its menu). `uiInstall` is `safeInstall` that additionally
+  // skips those pages; the visible-UI features below use it, while passive
+  // capture keeps plain `safeInstall`.
+  const onStandalone = isStandalonePage(location.href);
+  /**
+   * @param {string} name Feature name for the error log.
+   * @param {() => void} fn The feature's `install*()` entry point.
+   */
+  const uiInstall = (name, fn) => {
+    if (!onStandalone) safeInstall(name, fn);
+  };
+
   // Passive observers (data capture).
   safeInstall('colonyRecorder', installColonyRecorder);
   // Snapshot the planet bar (owned planets + moons) for the dashboard
@@ -231,9 +248,10 @@ const installDomFeatures = () => {
   // the `#attack_alert` flag + event box live there, and a single overlay
   // must not be multiplied across OGame's embedded iframes.
   if (window.top === window.self) safeInstall('threatHighlight', installThreatHighlight);
-  // Who's-spying sidebar tab — reads the proximity log + injects an OG-E tab
-  // into AntiGame's sidebar. Top-frame only: the AGR sidebar is a top-level
-  // element and one MutationObserver per page is plenty (no iframe copies).
+  // Who's-spying-on-you table — reads the proximity log + injects an OG-E table
+  // at the top of the messages page's spy-report tab (above AGR's own spy
+  // overview), the defensive mirror of AGR's offensive scan list. Top-frame
+  // only: the messages UI is the top-level page (one MutationObserver is plenty).
   if (window.top === window.self) safeInstall('whosSpyingPanel', installWhosSpyingPanel);
   safeInstall('rewardingWatcher', installRewardingWatcher);
   safeInstall('artifactShopWatcher', installArtifactShopWatcher);
@@ -265,17 +283,17 @@ const installDomFeatures = () => {
   // (features/shared/unifiedFab.js). All gated on the single fabMode
   // setting; exactly one is visible at a time and the FAB's orbital
   // picker switches between them. Install order = picker order only.
-  safeInstall('sendExpedition', installSendExpedition);
-  safeInstall('sendColony', installSendColony);
+  uiInstall('sendExpedition', installSendExpedition);
+  uiInstall('sendColony', installSendColony);
   // Lifeforms (system-discovery) button — walks the galaxy firing lifeform
   // discoveries, one system per tap. Independent of Send-Col.
-  safeInstall('sendLifeform', installSendLifeform);
+  uiInstall('sendLifeform', installSendLifeform);
   // Unified Daily Transport button (Send micro-fleets + Collect).
-  safeInstall('dailyRun', installDailyRun);
+  uiInstall('dailyRun', installDailyRun);
   // Espionage-scan button — walks the dashboard watch-list firing probes, one
   // planet per tap, then jumps to messages. Mounts only when players are
   // starred (so it's absent until there's something to scan).
-  safeInstall('sendSpy', installSendSpy);
+  uiInstall('sendSpy', installSendSpy);
 
   // Unified FAB colony module — folds the old fresh-planet banner and the
   // red abandon overlay into ONE button on the FAB: a fresh colony elsewhere
@@ -283,7 +301,7 @@ const installDomFeatures = () => {
   // overview the button becomes "abandon" and its taps drive the flow
   // (features/abandon/colonyFab.js + abandon/index.js). Gated on fabMode
   // internally (like the other FAB modules).
-  safeInstall('colonyFab', installColonyFab);
+  uiInstall('colonyFab', installColonyFab);
 
   // Keyboard shortcut on fleetdispatch — desktop users press
   // ArrowRight to advance through AGR/OGame's send panels.
@@ -310,7 +328,7 @@ const installDomFeatures = () => {
   // it. The notice can't live in the settings panel (that panel lives
   // inside AGR's menu, which is exactly what's absent). Top-frame only:
   // one banner, not one per OGame iframe.
-  if (window.top === window.self) safeInstall('agrGuard', installAgrGuard);
+  if (window.top === window.self) uiInstall('agrGuard', installAgrGuard);
 };
 
 if (document.readyState === 'loading') {

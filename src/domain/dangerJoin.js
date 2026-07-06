@@ -65,8 +65,11 @@ export const joinDangerProfiles = ({ apiCache, livePlayers, targetReports, ownId
 
   // Spy refinement (E4): per player, the defence we've seen + whether coverage
   // is complete — fully spied collapses the fleet bound to military − defence
-  // EXACTLY, partial coverage just tightens the upper bound.
-  /** @type {Record<string, {defensePts:number, coverageComplete:boolean, spiedCount:number, planetCount?:number}>} */
+  // EXACTLY, partial coverage just tightens the upper bound. Also carries the
+  // NEWEST report's alliance class ('warrior' | 'trader' | 'researcher') — the
+  // public XML API has no alliance class, so spy reports are its only source;
+  // dangerScore reads 'warrior' as an apex tell.
+  /** @type {Record<string, {defensePts:number, coverageComplete:boolean, spiedCount:number, planetCount?:number, allianceClass?:string}>} */
   const spiedByPlayer = {};
   const reports = targetReports || {};
   for (const pid of Object.keys(reports)) {
@@ -80,11 +83,24 @@ export const joinDangerProfiles = ({ apiCache, livePlayers, targetReports, ownId
       reports: latest,
       planetCount: planetCountByPlayer[pid],
     });
+    // Newest report carrying an alliance class wins (a player can switch
+    // alliances; older reports would report the previous one).
+    /** @type {string | undefined} */
+    let allianceClass;
+    let allianceTs = -Infinity;
+    for (const r of latest) {
+      const rr = /** @type {any} */ (r);
+      if (rr && typeof rr.allianceClass === 'string' && (rr.timestamp ?? 0) > allianceTs) {
+        allianceClass = rr.allianceClass;
+        allianceTs = rr.timestamp ?? 0;
+      }
+    }
     spiedByPlayer[pid] = {
       defensePts: est.defensePoints,
       coverageComplete: est.coverageComplete,
       spiedCount: est.spiedCount,
       planetCount: est.planetCount,
+      ...(allianceClass ? { allianceClass } : {}),
     };
   }
 

@@ -23,6 +23,10 @@
 //   buildings='{"1":50,...}'  research='{"113":24,...}'
 //   lfbuildings / lfresearch (id→level JSON)
 //   characterclass='{"id":1,"icon":"miner","name":"Zbieracz"}'  (player class)
+//   allianceclass='{"id":2,"icon":"trader","name":"Handlarz (Sojusz)"}'  (alliance
+//     class — 'warrior' | 'trader' | 'researcher'; '-' when none). NOT in the
+//     public XML API (alliances are id/name/tag only there) — spy reports are
+//     the only machine-readable source OG-E has for it.
 //   resources='414286783' metal / crystal / deuterium / population / food
 //   loot='75' (plunder %)  counterespionagechance='2'
 //   playerstatus='["honorableTarget"]'  timestamp='1782405308' (epoch SECONDS)
@@ -67,6 +71,7 @@ import { sumResourceValue } from './unitCosts.js';
  * @property {string} [lfbuildings]
  * @property {string} [lfresearch]
  * @property {string} [characterclass]
+ * @property {string} [allianceclass]
  * @property {string} [resources]
  * @property {string} [metal]
  * @property {string} [crystal]
@@ -125,6 +130,9 @@ import { sumResourceValue } from './unitCosts.js';
  * @property {Record<number, number>} [lfResearch]  id→level.
  * @property {string} [characterClass]   Player class icon ('miner' | 'warrior' |
  *   'explorer' | 'general' | 'collector'): builder-vs-fleeter prior.
+ * @property {string} [allianceClass]    ALLIANCE class icon ('warrior' | 'trader' |
+ *   'researcher') — a warrior-class alliance is a combat-oriented context
+ *   (danger reads it as an apex tell). Spy reports are the only source (§ header).
  * @property {number} [resources]        Total on-planet resources (loot base).
  * @property {number} [metal]
  * @property {number} [crystal]
@@ -206,13 +214,14 @@ function parseActivityMin(s) {
 }
 
 /**
- * Pull the player-class icon ('miner' | 'warrior' | 'explorer' | …) out of the
- * `characterclass` attribute, which is a `{"id":1,"icon":"miner","name":…}` JSON
+ * Pull the class icon out of a class attribute — `characterclass` ('miner' |
+ * 'warrior' | 'explorer' | …) and `allianceclass` ('warrior' | 'trader' |
+ * 'researcher') share the same `{"id":1,"icon":"miner","name":…}` JSON shape
  * (or '-' when absent). Returns the icon string, else undefined.
  * @param {string|undefined} s
  * @returns {string|undefined}
  */
-function parseCharacterClass(s) {
+function parseClassIcon(s) {
   if (!s || s === '-') return undefined;
   try {
     const obj = JSON.parse(s);
@@ -291,7 +300,8 @@ export function normalizeSpyReport(raw) {
     research: toCountMap(raw.research),
     lfBuildings: toCountMap(raw.lfbuildings),
     lfResearch: toCountMap(raw.lfresearch),
-    characterClass: parseCharacterClass(raw.characterclass),
+    characterClass: parseClassIcon(raw.characterclass),
+    allianceClass: parseClassIcon(raw.allianceclass),
     resources: toNum(raw.resources),
     metal: toNum(raw.metal),
     crystal: toNum(raw.crystal),

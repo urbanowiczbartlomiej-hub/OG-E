@@ -56,7 +56,7 @@ describe('deriveSpy', () => {
     );
     expect(ctx.hasWatched).toBe(true);
     // candidate is the first planet (galaxy→system→position order).
-    expect(ctx.candidate).toEqual({ galaxy: 1, system: 2, position: 3, playerId: '42' });
+    expect(ctx.candidate).toEqual({ galaxy: 1, system: 2, position: 3, playerId: '42', bodyType: 1 });
     // BOTH watched planets need a scan; the unwatched player's is ignored.
     expect(ctx.remaining).toBe(2);
   });
@@ -95,7 +95,7 @@ describe('deriveSpy', () => {
       }),
     );
     // First planet was just sent → candidate advances to the second.
-    expect(ctx.candidate).toEqual({ galaxy: 1, system: 2, position: 8, playerId: '42' });
+    expect(ctx.candidate).toEqual({ galaxy: 1, system: 2, position: 8, playerId: '42', bodyType: 1 });
     expect(ctx.remaining).toBe(1);
   });
 
@@ -109,7 +109,7 @@ describe('deriveSpy', () => {
         },
       }),
     );
-    expect(ctx.candidate).toEqual({ galaxy: 1, system: 2, position: 3, playerId: '42' });
+    expect(ctx.candidate).toEqual({ galaxy: 1, system: 2, position: 3, playerId: '42', bodyType: 1 });
     expect(ctx.remaining).toBe(1);
   });
 
@@ -126,7 +126,7 @@ describe('deriveSpy', () => {
         rescan: { 42: NOW - 1000 },
       }),
     );
-    expect(ctx.candidate).toEqual({ galaxy: 1, system: 2, position: 3, playerId: '42' });
+    expect(ctx.candidate).toEqual({ galaxy: 1, system: 2, position: 3, playerId: '42', bodyType: 1 });
     expect(ctx.remaining).toBe(1);
   });
 
@@ -169,7 +169,8 @@ describe('renderSpy', () => {
     expect(paint.text).toBe('Spy');
     expect(paint.bg).toBe(BG_SPY_IDLE);
     expect(paint.subtext).toContain('1:2:3');
-    expect(paint.subtext).toContain('4');
+    // The remaining count moved from the subtext to the third "N left" line.
+    expect(paint.hint).toContain('4');
   });
 });
 
@@ -184,7 +185,10 @@ describe('renderSpy — probe pre-flight (Etap G)', () => {
     const paint = renderSpy(ctx, { have: 20, need: 20 });
     expect(paint.text).toBe('Spy');
     expect(paint.bg).toBe(BG_SPY_IDLE);
-    expect(paint.hint).toBeUndefined();
+    // With enough probes the hint is the remaining-count ("N left"), NOT a
+    // probe-shortage warning (have/need).
+    expect(paint.hint).toBe('4 left');
+    expect(paint.hint).not.toMatch(/probes/);
   });
 
   it('too few probes (but some) → hint shows have/need, still armable', () => {
@@ -222,7 +226,7 @@ describe('deriveSpy — priority ranking (Etap G)', () => {
         dangerByPlayer: { 10: 10, 80: 80 },
       }),
     );
-    expect(ctx.candidate).toEqual({ galaxy: 2, system: 2, position: 2, playerId: '80' });
+    expect(ctx.candidate).toEqual({ galaxy: 2, system: 2, position: 2, playerId: '80', bodyType: 1 });
     expect(ctx.remaining).toBe(2);
     expect(typeof ctx.why).toBe('string');
   });

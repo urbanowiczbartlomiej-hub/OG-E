@@ -41,3 +41,19 @@ export const ingameComponentUrl = (href, component, params = {}) => {
   for (const [key, value] of Object.entries(params)) url += `&${key}=${value}`;
   return url;
 };
+
+/**
+ * True on OGame's standalone sub-pages (`?page=standalone&component=…` — the
+ * Empire view, combat simulator, etc.). These render WITHOUT AGR's top-bar menu
+ * or sidebar and are self-contained tables/overlays, so OG-E's floating FAB and
+ * the AGR-missing banner have no place there — the banner would even be a false
+ * positive (AGR IS installed; the sub-page just doesn't host its menu).
+ *
+ * Pure string parse (no DOM/`location`) so any layer may call it;
+ * `URLSearchParams` tolerates any param order and a missing query.
+ *
+ * @param {string} href  A full OGame URL (usually `location.href`).
+ * @returns {boolean}
+ */
+export const isStandalonePage = (href) =>
+  new URLSearchParams(String(href).split('?')[1] ?? '').get('page') === 'standalone';

@@ -91,6 +91,9 @@ import { occupantStrength } from './players.js';
  *   `honored === 0`). Mirrors `banditMaxLevel`.
  * @property {number} honoredTierSum Sum of all honored tier values. Mirrors
  *   `banditTierSum` for the honor-fighter population.
+ * @property {Record<number, number>} honoredTiers  Honored count keyed by
+ *   honour tier (1–3). Mirrors `banditTiers` — drives the census ★/★★/★★★
+ *   split. Empty when `honored === 0`.
  * @property {number} strong   Distinct players flagged `isStrong` (player cache
  *   only) — outside your noob-protection bracket; attacking is allowed but
  *   they out-gun a fresh colony. A danger signal. `0` without a player cache.
@@ -351,6 +354,8 @@ export const scoreRegion = (region, scans, opts = {}) => {
   let honored = 0;
   let honoredMaxLevel = 0;
   let honoredTierSum = 0;
+  /** @type {Record<number, number>} honored count keyed by tier (1–3) */
+  const honoredTiers = {};
   for (const rc of playerRankClass.values()) {
     // Tier is the trailing digit: "rank_bandit3" → 3, "rank_starlord2" → 2.
     // Falls back to 1 when the class has no trailing digit (unknown variant).
@@ -363,6 +368,7 @@ export const scoreRegion = (region, scans, opts = {}) => {
     } else {
       honored++;
       honoredTierSum += tier;
+      honoredTiers[tier] = (honoredTiers[tier] || 0) + 1;
       if (tier > honoredMaxLevel) honoredMaxLevel = tier;
     }
   }
@@ -438,6 +444,7 @@ export const scoreRegion = (region, scans, opts = {}) => {
     honored,
     honoredMaxLevel,
     honoredTierSum,
+    honoredTiers,
     strong,
     newbie,
     honorable,

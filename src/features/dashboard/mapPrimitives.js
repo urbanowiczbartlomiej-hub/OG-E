@@ -185,8 +185,10 @@ export const buildSystemCard = (g, s, scan, pinned, players, linkBase, danger) =
       const pname = p.player
         ? (p.player.name || meta?.name || (p.player.id != null ? `player ${p.player.id}` : 'unknown'))
         : '';
+      // No raw alliance id after the rank — the API gives only the numeric id
+      // (e.g. "501023"), which read as an unexplained number salad.
       const who = p.player
-        ? ` — ${pname}${typeof p.player.rank === 'number' ? ' #' + p.player.rank : ''}${p.player.ally ? ' ' + p.player.ally : ''}`
+        ? ` — ${pname}${typeof p.player.rank === 'number' ? ' #' + p.player.rank : ''}`
         : '';
       const label = band
         ? STRENGTH_LABELS[band]
@@ -233,32 +235,23 @@ export const buildSystemCard = (g, s, scan, pinned, players, linkBase, danger) =
     }
   }
 
-  if (linkBase) {
+  // Only a PINNED card renders the link row — the hover-preview card is
+  // pointer-transparent by design (see .region-pop), so a link there would be
+  // a false affordance. No pin/unpin instruction footers either: the pointer
+  // cursor on the cells already advertises the click, and the hint rows just
+  // ate a line of every card.
+  if (linkBase && pinned) {
     const linkRow = document.createElement('div');
     linkRow.className = 'rp-foot';
-    // Only a PINNED card renders a real link — the hover-preview card is
-    // pointer-transparent by design (see .region-pop), so a blue link there
-    // would be a false affordance the user clicks through into nothing.
-    if (pinned) {
-      const a = document.createElement('a');
-      a.href = `${linkBase}/game/index.php?page=ingame&component=galaxy&galaxy=${g}&system=${s}`;
-      a.target = '_blank';
-      a.rel = 'noopener';
-      a.textContent = 'Open in game ↗';
-      a.style.color = '#4a9eff';
-      linkRow.appendChild(a);
-    } else {
-      linkRow.textContent = 'Open in game ↗ — pin first (click the cell)';
-    }
+    const a = document.createElement('a');
+    a.href = `${linkBase}/game/index.php?page=ingame&component=galaxy&galaxy=${g}&system=${s}`;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = 'Open in game ↗';
+    a.style.color = '#4a9eff';
+    linkRow.appendChild(a);
     card.appendChild(linkRow);
   }
-
-  const foot = document.createElement('div');
-  foot.className = 'rp-foot';
-  foot.textContent = pinned
-    ? '📌 pinned — click again to unpin'
-    : 'click to pin';
-  card.appendChild(foot);
   return card;
 };
 
@@ -320,19 +313,30 @@ export const renderPositionsMap = ({ hostEl, galaxies, systems, bodies, onPlayer
   const wrap = document.createElement('div');
   wrap.style.cssText = `position:relative;height:${plotH}px;`;
 
-  // Faint galaxy baselines + labels — the only "grid"; the field is otherwise empty.
-  // Lines sit at each galaxy's BAND EDGES (positions 1 and 15) so they delimit the
-  // galaxy as a strip, instead of a single midline through position 8.
+  // Galaxy bands + labels — the only "grid"; the field is otherwise empty.
+  // The old 1px #141b24 edge lines were invisible on the card background, so
+  // EVERY galaxy band gets the same faint fill — the dark 6px gap between
+  // bands is what separates the galaxies (uniform bands, NOT zebra: an
+  // alternating tint read as two kinds of galaxy). Band-edge lines
+  // (positions 1 and 15) are drawn in a clearly visible tone. Bands are
+  // appended before the markers and take no pointer events, so they never
+  // block a marker's hover/click.
   for (let g = 1; g <= galaxies; g++) {
-    const yMid = topPad + (g - 1) * stride + (POS * posPx) / 2;
+    const bandTop = topPad + (g - 1) * stride;
+    const band = document.createElement('div');
+    band.style.cssText = `position:absolute;left:${gutter}px;right:0;top:${bandTop}px;`
+      + `height:${POS * posPx}px;background:rgba(122,160,200,.07);pointer-events:none;`;
+    wrap.appendChild(band);
+    const yMid = bandTop + (POS * posPx) / 2;
     const lab = document.createElement('div');
     lab.textContent = `G${g}`;
-    lab.style.cssText = `position:absolute;left:0;top:${yMid - 6}px;font:10px monospace;color:#5a6672;`;
+    lab.style.cssText = `position:absolute;left:0;top:${yMid - 6}px;font:10px monospace;color:#7a8894;`;
     wrap.appendChild(lab);
     for (const pos of [1, POS]) {
-      const y = topPad + (g - 1) * stride + (pos - 0.5) * posPx;
+      const y = bandTop + (pos - 0.5) * posPx;
       const line = document.createElement('div');
-      line.style.cssText = `position:absolute;left:${gutter}px;right:0;top:${y}px;height:1px;background:#141b24;`;
+      line.style.cssText = `position:absolute;left:${gutter}px;right:0;top:${y}px;height:1px;`
+        + 'background:#2a3d52;pointer-events:none;';
       wrap.appendChild(line);
     }
   }

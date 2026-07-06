@@ -86,15 +86,11 @@ export const installRoutes = ({ getUniverseId }) => {
   const addBtn = document.getElementById('routesAddBtn');
   const saveBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById('routesSaveBtn'));
   const status = document.getElementById('routesStatus');
-  const collectMissionRadios = /** @type {NodeListOf<HTMLInputElement>} */ (
-    document.querySelectorAll('input[name="routesCollectMission"]')
-  );
-  const collectShipsRadios = /** @type {NodeListOf<HTMLInputElement>} */ (
-    document.querySelectorAll('input[name="routesCollectShips"]')
-  );
-  const collectResourcesRadios = /** @type {NodeListOf<HTMLInputElement>} */ (
-    document.querySelectorAll('input[name="routesCollectResources"]')
-  );
+  // Segmented chip groups (same .chip-group.seg pattern as the Spyglass Scan
+  // chips) — `data-value` on the group is the value, `.on` marks the chip.
+  const collectMissionChips = document.getElementById('routesCollectMission');
+  const collectShipsChips = document.getElementById('routesCollectShips');
+  const collectResourcesChips = document.getElementById('routesCollectResources');
   // Defensive: if the markup is absent (older dashboard.html), no-op so a
   // missing tab never throws during boot.
   if (!list) return { refresh: () => {} };
@@ -130,11 +126,25 @@ export const installRoutes = ({ getUniverseId }) => {
   /** @param {unknown} v @returns {any} */
   const clone = (v) => JSON.parse(JSON.stringify(v));
 
-  /** Reflect {@link model}'s collect config onto the three Send-All radio groups. */
-  const syncCollectRadios = () => {
-    for (const r of collectMissionRadios) r.checked = parseInt(r.value, 10) === model.collectMission;
-    for (const r of collectShipsRadios) r.checked = r.value === model.collectShips;
-    for (const r of collectResourcesRadios) r.checked = r.value === model.collectResources;
+  /**
+   * Set a chip group's value: `data-value` + the `.on` marker on the matching
+   * button (the shared .chip-group contract). Null group = markup absent — no-op.
+   * @param {HTMLElement | null} group
+   * @param {string} value
+   */
+  const setChipValue = (group, value) => {
+    if (!group) return;
+    group.dataset.value = value;
+    for (const b of group.querySelectorAll('button')) {
+      b.classList.toggle('on', /** @type {HTMLElement} */ (b).dataset.value === value);
+    }
+  };
+
+  /** Reflect {@link model}'s collect config onto the three Send-All chip groups. */
+  const syncCollectChips = () => {
+    setChipValue(collectMissionChips, String(model.collectMission));
+    setChipValue(collectShipsChips, model.collectShips);
+    setChipValue(collectResourcesChips, model.collectResources);
   };
 
   /**
@@ -539,7 +549,7 @@ export const installRoutes = ({ getUniverseId }) => {
     if (!uni) {
       model = { routes: [], collectTarget: null, collectMission: MISSION_DEPLOYMENT, collectShips: 'most', collectResources: 'most', bodies: [], bodyByKey: new Map(), hasInventory: false };
       baseline = '[]';
-      syncCollectRadios();
+      syncCollectChips();
       render();
       setStatus('');
       return;
@@ -555,7 +565,7 @@ export const installRoutes = ({ getUniverseId }) => {
     const bodyByKey = new Map(bodies.map((b) => [coordTypeKey(b), b]));
     model = { routes: clone(routes), collectTarget, collectMission, collectShips, collectResources, bodies, bodyByKey, hasInventory: bodies.length > 0 };
     baseline = JSON.stringify(model.routes);
-    syncCollectRadios();
+    syncCollectChips();
     render();
     setStatus('');
   };
@@ -596,40 +606,41 @@ export const installRoutes = ({ getUniverseId }) => {
   });
   saveBtn?.addEventListener('click', () => void save());
 
-  // Send-All mission radios persist on the spot (no "Save routes" needed),
-  // mirroring how the dashboard's shared-settings controls write on change.
-  for (const radio of collectMissionRadios) {
-    radio.addEventListener('change', () => {
-      if (!radio.checked) return;
-      const mission = parseInt(radio.value, 10);
-      // Only the two missions this radio offers are valid here.
-      if (mission !== MISSION_DEPLOYMENT && mission !== MISSION_TRANSPORT) return;
-      model.collectMission = mission;
-      void writeCollectConfig({ collectMission: mission });
-    });
-  }
-
-  // Ships + resources radios: each persists its 'all' | 'most' choice on the
-  // spot, same as the mission radios above.
+  // Send-All chips persist on the spot (no "Save routes" needed), mirroring
+  // how the dashboard's shared-settings controls write on change.
   /**
-   * @param {NodeListOf<HTMLInputElement>} radios
-   * @param {(v: 'all' | 'most') => void} apply
+   * Wire one chip group: a button click sets the group value + persists via
+   * `apply`. Null group (markup absent) = no-op.
+   * @param {HTMLElement | null} group
+   * @param {(v: string) => void} apply
    */
-  const wireMostAllGroup = (radios, apply) => {
-    for (const radio of radios) {
-      radio.addEventListener('change', () => {
-        if (!radio.checked) return;
-        apply(radio.value === 'all' ? 'all' : 'most');
+  const wireCollectChips = (group, apply) => {
+    if (!group) return;
+    for (const b of group.querySelectorAll('button')) {
+      b.addEventListener('click', () => {
+        const v = /** @type {HTMLElement} */ (b).dataset.value;
+        if (!v || group.dataset.value === v) return;
+        setChipValue(group, v);
+        apply(v);
       });
     }
   };
-  wireMostAllGroup(collectShipsRadios, (v) => {
-    model.collectShips = v;
-    void writeCollectConfig({ collectShips: v });
+  wireCollectChips(collectMissionChips, (v) => {
+    const mission = parseInt(v, 10);
+    // Only the two missions this group offers are valid here.
+    if (mission !== MISSION_DEPLOYMENT && mission !== MISSION_TRANSPORT) return;
+    model.collectMission = mission;
+    void writeCollectConfig({ collectMission: mission });
   });
-  wireMostAllGroup(collectResourcesRadios, (v) => {
-    model.collectResources = v;
-    void writeCollectConfig({ collectResources: v });
+  wireCollectChips(collectShipsChips, (v) => {
+    const ships = v === 'all' ? 'all' : 'most';
+    model.collectShips = ships;
+    void writeCollectConfig({ collectShips: ships });
+  });
+  wireCollectChips(collectResourcesChips, (v) => {
+    const res = v === 'all' ? 'all' : 'most';
+    model.collectResources = res;
+    void writeCollectConfig({ collectResources: res });
   });
 
   return { refresh: () => void refresh() };

@@ -241,6 +241,15 @@
   /* Deep-link highlight: the row a Galaxy Viewer "Top threats" click focused. */
   #spyglassSection tr.target-focus td { background: #16304a; }
   #spyglassSection tr.target-focus td:first-child { box-shadow: inset 3px 0 0 #4a9eff; }
+  /* Expanded dossier: the clicked row wears the detail panel's background +
+     the blue inset, so row + panel read as ONE unit — the row IS the panel's
+     header (the panel repeats no name). !important beats the cells' inline
+     border-bottom, which would otherwise draw a seam through the unit. */
+  #spyglassSection tr.dossier-open td {
+    background: #1a2a3a;
+    border-bottom-color: transparent !important;
+  }
+  #spyglassSection tr.dossier-open td:first-child { box-shadow: inset 3px 0 0 #4a9eff; }
   #spyglassSection input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
   #spyglassSection input[type="number"]::-webkit-outer-spin-button,
   #spyglassSection input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
@@ -319,6 +328,9 @@
   .gv-note.warn { color: #ffb454; }
   .gv-val { color: #cfe4ff; font-size: 12px; min-width: 44px; }
   .gv-config input[type="range"] { width: 110px; }
+  /* An inapplicable slider keeps its layout slot and greys out (same rule as
+     the Tolerance / Ignore-worst chip groups) — e.g. Spot gap under streaks. */
+  .gv-config input[type="range"]:disabled { opacity: .35; }
   .gv-config input#freePosInput {
     background: #0d1620; border: 1px solid #2a4a5a; color: #cfe;
     padding: 4px 10px; border-radius: 6px; font-size: 13px; width: 90px;
@@ -328,14 +340,15 @@
      card, not only in tooltips. */
   .gv-fit-caption { margin-left: auto; color: #66788a; font-size: 11px; }
   #freeCountInfo { color: #8a97a3; font-size: 13px; }
-  /* Data-freshness stamp: quiet grey when healthy, a visible warning chip
-     when the ranking is uncalibrated / the snapshot is stale (an invisible
-     stamp there silently changes what every Fit number means). */
-  #scoutDataStamp { color: #8a97a3; font-size: 12px; margin: -4px 0 10px; }
-  #scoutDataStamp.warn {
-    display: inline-block; color: #ffb454; background: #2a1f10;
-    border: 1px solid #5a4415; border-radius: 6px; padding: 2px 8px; margin: 0 0 10px;
+  /* Data-freshness chips (shared look, Spyglass header + Galaxy Viewer header):
+     quiet grey when healthy, amber `.warn` when stale / uncalibrated — an
+     invisible stamp silently changes what every Fit number means. */
+  .fresh-chip {
+    font-size: 11px; color: #9fb4c4; background: #12202e;
+    border: 1px solid #2b3a4d; border-radius: 999px; padding: 2px 9px;
+    white-space: nowrap;
   }
+  .fresh-chip.warn { color: #e0b45f; border-color: #5a4a28; }
   /* Compact inline notice (e.g. the streaks → individual-systems fallback
      explanation) — deliberately NOT the full-height `.empty` banner, which is
      reserved for true no-results states. */
@@ -360,8 +373,11 @@
 
   /* Top block: watchlist (hero) beside the "who's spying you" digest. One
      column on narrow screens, two from 900px (watchlist gets the width). */
-  .spy-top { display: grid; grid-template-columns: 1fr; gap: 16px 24px; margin-bottom: 18px; }
+  .spy-top { display: grid; grid-template-columns: 1fr; gap: 12px 16px; margin-bottom: 12px; }
   @media (min-width: 900px) { .spy-top { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); } }
+  /* The grid gap spaces the two top cards; a card's own bottom margin would
+     double it (and misalign the columns' bottoms). */
+  .spy-top > .gv-card { margin: 0; }
 
   /* Compact scan-plan disclosure — the summary reads as a chip, so collapsed it
      costs one small pill instead of a full-width banner row. */
@@ -373,13 +389,6 @@
   }
   .scan-order > summary::-webkit-details-marker { display: none; }
   .scan-order > summary:hover { border-color: #4a9eff; color: #cfe4ff; }
-
-  /* Data-freshness chips in the header (how current the public-API feeds are). */
-  #spyFreshness .fresh-chip {
-    font-size: 11px; color: #9fb4c4; background: #12202e;
-    border: 1px solid #2b3a4d; border-radius: 999px; padding: 2px 9px;
-  }
-  #spyFreshness .fresh-chip.warn { color: #e0b45f; border-color: #5a4a28; }
 
   /* Watchlist cards — the Spyglass landing strip (one card per watched
      player: verdict words, headline number, activity sparkline). */
@@ -420,6 +429,12 @@
      families instead of a reshuffling flat tile row; zeros stay visible but
      dimmed so two candidates always compare slot-for-slot. */
   .census { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+  /* Census beside the named-threats panel on wide viewports — the threats
+     panel alone spanned the full width while the census row sat ragged above
+     it. One grid row, stacking back to one column on narrow screens. */
+  .gv-intel-row { display: grid; grid-template-columns: 1fr; gap: 12px; align-items: start; margin: 12px 0; }
+  @media (min-width: 1000px) { .gv-intel-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); } }
+  .gv-intel-row > .census, .gv-intel-row > .gv-threats { margin: 0; }
   .census-group { border: 1px solid #223044; border-radius: 6px; padding: 6px 10px; background: #0f151d; }
   .census-title { font-size: 11px; margin-bottom: 3px; font-weight: bold; }
   .census-stat { font-size: 12px; color: #9fb4c4; margin-right: 8px; white-space: nowrap; }
@@ -708,13 +723,14 @@
 
   <div class="subtabpane" data-subtab="scout">
     <div class="sub-section">
-    <h2>🌌 Galaxy Viewer — server map + zone analyzer<span class="exp-badge" title="The map, scoring and neighbourhood intel here are still evolving — expect changes, and feedback is welcome.">experimental</span></h2>
-    <div id="scoutDataStamp"></div>
-    <p style="color:#888;font-size:13px;margin-bottom:12px;">
-      Where this server's threats, farms and quiet space are — tune what a good area
-      means below, read the map, then drill into the ranked spots. Every control
-      explains itself on hover.
-    </p>
+    <!-- No title or "experimental" badge — the sub-tab tab already reads
+         "Galaxy Viewer" and the feature is now considered ready for use. Just
+         the one-line description, with the data-freshness chips (#scoutDataStamp
+         → .fresh-chip pills) pushed to the right. -->
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+      <p style="color:#888;font-size:13px;margin:0;">Where this server's threats, farms and quiet space are.</p>
+      <span id="scoutDataStamp" style="display:inline-flex;gap:6px;flex-wrap:wrap;margin-left:auto;"></span>
+    </div>
 
     <!-- ── 1. Config card — EVERY analysis input in one place. The chip groups
          behave like the selects they replaced (data-value = value); Tolerance /
@@ -767,6 +783,13 @@
         <span class="gv-lab" title="How far you'll fly to farm — the farm-value radius, in systems. Drives the farm channel of both the ranking and the map.">Farm reach</span>
         <input type="range" id="serverMapFarm" min="4" max="60" step="2" value="30">
         <span id="serverMapFarmV" class="gv-val">30 sys</span>
+        <span class="gv-lab" title="Minimum distance between listed spots (same galaxy), in systems — higher = fewer, more spread-out proposals; lower = allow near-overlapping areas around one hotspot.">Spot gap</span>
+        <!-- Wide range (2–250 sys, up to half a donut ring) ⇒ a LONGER track
+             than the sibling 110px sliders, or single-system precision is
+             impossible to hit with the mouse. -->
+        <input type="range" id="serverMapSep" min="2" max="250" step="1" value="15" style="width:260px;">
+        <span id="serverMapSepV" class="gv-val">15 sys</span>
+        <span id="serverMapSepNote" class="gv-note"></span>
       </div>
     </div>
 
@@ -809,18 +832,20 @@
       style="font-size:11px;color:#9fb4c4;background:#12202e;border:1px solid #2b3a4d;border-radius:999px;padding:3px 11px;cursor:pointer;white-space:nowrap;">⟳ Refresh</button>
   </h1>
   <!-- Watchlist (the hero, left) beside "Who's spying you" (defensive digest,
-       right) — one glance block at the top of the tab. -->
+       right) — one glance block at the top of the tab. Each side is its own
+       gv-card zone (same section-background language as the Galaxy Viewer). -->
   <div class="spy-top">
-    <div><div id="watchCards"></div></div>
-    <div>
-      <div class="watch-zone-label">Who's spying you<span id="proximityCounts" style="color:#77848f;text-transform:none;letter-spacing:0;"></span><span id="proximityAlert" style="color:#e06c5f;font-weight:600;text-transform:none;letter-spacing:0;"></span></div>
+    <div class="gv-card"><div id="watchCards"></div></div>
+    <div class="gv-card">
+      <div class="gv-card-head"><span class="gv-card-title">Who's spying you</span><span id="proximityCounts" style="color:#77848f;"></span><span id="proximityAlert" style="color:#e06c5f;font-weight:600;"></span></div>
       <div id="proximityStrip"></div>
     </div>
   </div>
   <!-- Positions map ABOVE the control line (user pref): toggled by 🗺 in the
        controls below; the reach/You pills + watched-player chips share its own
        row under the canvas, all as .spy-pchip pills. -->
-  <div class="server-map-panel" id="spyMapBlock" style="display:none;margin:0 0 12px;">
+  <div class="gv-card server-map-panel" id="spyMapBlock" style="display:none;">
+    <div class="gv-card-head"><span class="gv-card-title">Positions map</span></div>
     <div id="spyglassMapHost"></div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;align-items:center;">
       <button type="button" id="spyMapReach" class="spy-pchip"
@@ -829,10 +854,14 @@
       <span id="spyMapPlayers" style="display:contents;"></span>
     </div>
   </div>
-  <!-- One control line on top of the table: search · map · planets-to-scan (left)
-       · ⚙ Filters · row cap (right). The map button toggles the map ABOVE; the
-       "planets to scan" button (right after it) toggles the scan-plan panel BELOW. -->
-  <div class="controls" style="align-items:center;gap:8px;flex-wrap:wrap;">
+  <!-- Players card — the control line, the toggleable panels and the ranked
+       table live in ONE gv-card zone (mirrors the Galaxy Viewer's Results
+       card). Control line: search · map · scan plan (left) · ⚙ Filters · row
+       cap (right); the map button toggles the map card ABOVE, the scan-plan
+       button its panel BELOW. -->
+  <div class="gv-card">
+  <div class="controls" style="align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+    <span class="gv-card-title">Players</span>
     <input id="tgtSearch" type="search" placeholder="🔍 search player by name…"
       style="width:220px;max-width:100%;padding:5px 9px;background:#0e141b;border:1px solid #2a3542;border-radius:4px;color:#cfd6dd;font-size:13px;"
       title="Find any player by nickname — including ones the filters hide (with the reason why).">
@@ -886,6 +915,7 @@
     </label>
   </div>
   <div id="targetsContainer"></div>
+  </div>
 </section>
 
 <section id="alarmClockSection" class="tab-section">
@@ -1015,39 +1045,35 @@
         whether ships / resources go via AGR's “most” (leave a reserve) or “all”.
         Saved instantly.
       </p>
-      <!-- Radio values: mission= ids 4 = Deployment / 3 = Transport
+      <!-- Chip values (segmented groups, same pattern as the Spyglass Scan
+           chips): mission = ids 4 = Deployment / 3 = Transport
            (MISSION_DEPLOYMENT / MISSION_TRANSPORT in src/domain/rules.js); ships +
            resources map to AGR's "send/load most" (#sendmost / #mostresources)
-           vs "all" (#sendall / #allresources). Wired by features/dashboard/routes.js. -->
+           vs "all" (#sendall / #allresources). The per-option hints live as
+           button tooltips. Wired by features/dashboard/routes.js. -->
       <div id="routesCollectRow">
         <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px;">
           <span style="color:#8aa;font-size:13px;min-width:80px;">Mission</span>
-          <label style="display:inline-flex;align-items:center;gap:5px;color:#cfe;font-size:13px;cursor:pointer;">
-            <input type="radio" name="routesCollectMission" value="4"> Deployment <span style="color:#667;">(stay — default)</span>
-          </label>
-          <label style="display:inline-flex;align-items:center;gap:5px;color:#cfe;font-size:13px;cursor:pointer;">
-            <input type="radio" name="routesCollectMission" value="3"> Transport <span style="color:#667;">(drop &amp; return)</span>
-          </label>
+          <div class="chip-group seg" id="routesCollectMission" data-value="4">
+            <button type="button" data-value="4" title="Fleet stays at the collect target (default)">Deployment</button>
+            <button type="button" data-value="3" title="Drop the resources and fly back">Transport</button>
+          </div>
         </div>
 
         <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px;">
           <span style="color:#8aa;font-size:13px;min-width:80px;">Ships</span>
-          <label style="display:inline-flex;align-items:center;gap:5px;color:#cfe;font-size:13px;cursor:pointer;">
-            <input type="radio" name="routesCollectShips" value="most"> Most <span style="color:#667;">(leave a reserve — default)</span>
-          </label>
-          <label style="display:inline-flex;align-items:center;gap:5px;color:#cfe;font-size:13px;cursor:pointer;">
-            <input type="radio" name="routesCollectShips" value="all"> All
-          </label>
+          <div class="chip-group seg" id="routesCollectShips" data-value="most">
+            <button type="button" data-value="most" title="Leave a small reserve on the source (default)">Most</button>
+            <button type="button" data-value="all" title="Send every ship">All</button>
+          </div>
         </div>
 
         <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
           <span style="color:#8aa;font-size:13px;min-width:80px;">Resources</span>
-          <label style="display:inline-flex;align-items:center;gap:5px;color:#cfe;font-size:13px;cursor:pointer;">
-            <input type="radio" name="routesCollectResources" value="most"> Most <span style="color:#667;">(leave some — default)</span>
-          </label>
-          <label style="display:inline-flex;align-items:center;gap:5px;color:#cfe;font-size:13px;cursor:pointer;">
-            <input type="radio" name="routesCollectResources" value="all"> All
-          </label>
+          <div class="chip-group seg" id="routesCollectResources" data-value="most">
+            <button type="button" data-value="most" title="Leave some resources behind (default)">Most</button>
+            <button type="button" data-value="all" title="Load everything the fleet can carry">All</button>
+          </div>
         </div>
       </div>
     </div>

@@ -85,7 +85,9 @@ import { honorRank } from './players.js';
  * @property {number} [resPerShip]  militaryPts·1000/ships — composition tell (undefined = ships unknown/0).
  * @property {number} [combatQuality]  q(res/ship) in 0..1 — how combat-grade the hulls look.
  * @property {number} [reach]       0..1 — tactical dispersion / striking reach.
- * @property {number} [apexSignals] 0..4 — how many apex tells fired (top ships, optimal res/ship, reach, kills).
+ * @property {number} [apexSignals] 0..6 — how many apex tells fired (top ships,
+ *   optimal res/ship, warrior alliance, reach, kills, FS spot). Denominator =
+ *   APEX_TELLS_TOTAL.
  * @property {DangerLabel} label
  * @property {string[]} reasons     Short human phrases for the tooltip.
  */
@@ -262,11 +264,14 @@ const computeReach = (planets) => {
  *   fallback when the honour feed is thin.
  * @property {Array<{coords:string, player?:number}>} [universePlanets]  Raw
  *   occupied-planet rows — per-player planet coords for the reach signal.
- * @property {Record<string, {defensePts:number, coverageComplete:boolean, spiedCount:number, planetCount?:number}>} [spied]
+ * @property {Record<string, {defensePts:number, coverageComplete:boolean, spiedCount:number, planetCount?:number, allianceClass?:string}>} [spied]
  *   Per-player spy summary (from `estimateHiddenFleet`): the defence points we
  *   have seen and whether coverage is complete. Fully spied → fleet = military
  *   − defence EXACTLY (the precise refinement of the ships bound). Partial →
  *   seen defence is a floor, so military − seen-defence is an UPPER bound.
+ *   `allianceClass` is the newest report's alliance class icon ('warrior' |
+ *   'trader' | 'researcher') — spy-report-only intel (not in the public API);
+ *   'warrior' reads as an apex capability tell + a small danger lift.
  * @property {number} [ownMilitary]  Your military points — kept for callers/UI,
  *   no longer the strength anchor (v3 strength is absolute/percentile).
  * @property {string} [ownId]        Your player id (to read your own alliance).
@@ -303,6 +308,21 @@ const APEX_SHIPS_PCT = 0.95; // top 5% ship count (absolute)
 const APEX_Q = 0.85; // res/ship in the warship window
 const APEX_REACH = 0.55; // tactically spread
 const APEX_DESTROYED_PCT = 0.9; // top 10% kill history
+/**
+ * Total apex tells that can fire — the display denominator of the
+ * "apex signals N/…" reason. 3 capability (top ships, optimal res/ship,
+ * warrior-class alliance) + 3 aggression (reach, kill history, FS spot).
+ * MUST track the tell sums in pass 2 — the old hardcoded "/4" drifted into
+ * the impossible "5/4" once the fsSpot tell landed.
+ */
+const APEX_TELLS_TOTAL = 6;
+/**
+ * Direct danger lift for a warrior-class ALLIANCE (spy-report intel): the
+ * whole alliance opted into the combat class (fleet bonuses), a deliberate
+ * combat-oriented context. Small — a context tell, not demonstrated
+ * aggression; it consumes headroom via the same soft ceiling as the rest.
+ */
+const WARRIOR_ALLIANCE_WEIGHT = 0.05;
 
 /**
  * Build every player's {@link DangerProfile} from the API feeds. Two passes:
@@ -387,6 +407,8 @@ export const buildDangerProfiles = (input) => {
    * @property {number} combatMil
    * @property {ReachInfo} reach
    * @property {{spiedCount:number, planetCount?:number}|undefined} spy
+   * @property {boolean} warriorAlliance  Newest spy report says the player's
+   *   ALLIANCE is warrior-class (combat bonuses) — an apex capability tell.
    */
   /** @type {Partial[]} */
   const partials = [];
@@ -490,6 +512,7 @@ export const buildDangerProfiles = (input) => {
       id, militaryPts, ships, destroyedPts, banditTier, destroyedPct, shipsPct,
       mobileLo, mobileHi, mobileMil, provenance, rps, q, combatMil, reach,
       spy: spyRow ? { spiedCount: spyRow.spiedCount, planetCount: spyRow.planetCount } : undefined,
+      warriorAlliance: !!(spyRow && spyRow.allianceClass === 'warrior'),
     });
   }
 
@@ -517,18 +540,25 @@ export const buildDangerProfiles = (input) => {
     const banditBonus = 0.12 * p.banditTier * (0.4 + 0.6 * strength);
     const reachVal = p.reach.reach;
 
-    // Apex tells, split into CAPABILITY (fleet size + composition — aggression-
-    // agnostic) and AGGRESSION (wide spread, kill history, and the overnight-FS-
-    // amid-spread pattern). The bonus needs ≥2 tells AND at least one AGGRESSION
-    // tell, so a peaceful top-tier builder (big fleet, good composition, no kills,
-    // clustered) does NOT read apex. apexSignals (0..5) is the full count for the
+    // Apex tells, split into CAPABILITY (fleet size + composition + warrior-class
+    // alliance — aggression-agnostic) and AGGRESSION (wide spread, kill history,
+    // and the overnight-FS-amid-spread pattern). The bonus needs ≥2 tells AND at
+    // least one AGGRESSION tell, so a peaceful top-tier builder (big fleet, good
+    // composition, no kills, clustered — even in a warrior alliance) does NOT
+    // read apex. apexSignals (0..APEX_TELLS_TOTAL) is the full count for the
     // label/tooltip; the bonus is capped so it can't dominate the headroom.
-    const capabilityTells = (p.shipsPct >= APEX_SHIPS_PCT ? 1 : 0) + (p.q >= APEX_Q ? 1 : 0);
+    const capabilityTells = (p.shipsPct >= APEX_SHIPS_PCT ? 1 : 0) + (p.q >= APEX_Q ? 1 : 0)
+      + (p.warriorAlliance ? 1 : 0);
     const aggressionTells = (reachVal >= APEX_REACH ? 1 : 0)
       + (p.destroyedPct >= APEX_DESTROYED_PCT && p.q >= 0.6 ? 1 : 0)
       + (p.reach.fsSpot ? 1 : 0);
     const apexSignals = capabilityTells + aggressionTells;
     const apex = apexSignals >= 2 && aggressionTells >= 1 ? Math.min(0.3, 0.1 * (apexSignals - 1)) : 0;
+    // Warrior-class alliance: a small direct lift on top of the tell — the whole
+    // alliance opted into combat bonuses, so "a few extra points" even when the
+    // apex gate doesn't fire. Scaled by strength so a shell of a fleet in a
+    // warrior alliance isn't warmed on affiliation alone.
+    const warriorBonus = p.warriorAlliance ? WARRIOR_ALLIANCE_WEIGHT * (0.4 + 0.6 * strength) : 0;
 
     let danger;
     if (p.ships === 0) {
@@ -540,7 +570,7 @@ export const buildDangerProfiles = (input) => {
       // natural diminishing returns — so the top ~2.5% SPREADS across ~90–100
       // (ordered by base) instead of every strong aggressor pinning at exactly 100.
       const base = strength * (0.4 + 0.6 * predator);
-      const lift = clamp01(banditBonus + REACH_WEIGHT * reachVal + apex);
+      const lift = clamp01(banditBonus + REACH_WEIGHT * reachVal + apex + warriorBonus);
       danger = clamp01(Math.max(ACTIVE_BASE, base + (1 - base) * lift));
     }
 
@@ -571,11 +601,16 @@ export const buildDangerProfiles = (input) => {
       // (cheap hulls / spied defence) so the two numbers don't just restate each other.
       reasons.push(`${approx}${fmt(p.combatMil)} combat fleet (${strengthTxt})`);
       if (p.mobileMil > p.combatMil * 1.15) {
-        reasons.push(`${fmt(p.mobileMil)} mobile-mil bound × ${p.q.toFixed(2)} hull quality`);
+        // Game language, not model jargon ("mobile-mil bound × hull quality"
+        // said nothing to a player): fleet points × the combat-quality factor,
+        // with the plain-words meaning when the factor is low.
+        const qNote = p.q < 0.5 ? ' — few real warships' : '';
+        reasons.push(`${fmt(p.mobileMil)} fleet × ${p.q.toFixed(2)} combat quality${qNote}`);
       }
     }
     if (typeof p.rps === 'number' && p.q < 0.7 && p.ships) {
-      reasons.push(`≈ ${fmt(p.rps)}/ship fleet — cheap hulls (transporters/probes), combat ×${p.q.toFixed(2)}`);
+      // "cheap hulls" is not game vocabulary — name the ship kinds instead.
+      reasons.push(`≈ ${fmt(p.rps)} res/ship — mostly transporters/probes, not warships`);
     }
     if (p.banditTier > 0) reasons.push(`Bandit tier ${p.banditTier}/3`);
     if (p.destroyedPts > 0) {
@@ -584,8 +619,9 @@ export const buildDangerProfiles = (input) => {
     }
     if (p.reach.galaxies >= 2) reasons.push(`planets across ${p.reach.galaxies} galaxies`);
     if (p.reach.spread >= 0.5) reasons.push(`tactically spread (reach ${Math.round(reachVal * 100)}%)`);
+    if (p.warriorAlliance) reasons.push('warrior-class alliance (combat bonuses)');
     if (p.reach.fsSpot) reasons.push('FS spot amid spread');
-    if (apex > 0) reasons.push(`apex signals ${apexSignals}/4`);
+    if (apex > 0) reasons.push(`apex signals ${apexSignals}/${APEX_TELLS_TOTAL}`);
     if (p.spy && p.spy.spiedCount > 0) {
       reasons.push(p.provenance === 'spied'
         ? `spied ${p.spy.spiedCount}/${p.spy.planetCount} — exact fleet`
