@@ -4,6 +4,27 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.39.1] — 2026-07-06
+
+### Added
+
+- **Alliance combat class now lights up without spying.** 1.39.0 read a warrior-class
+  alliance only from a spy report, so strong players you hadn't scouted sat one signal
+  short of "apex". OG-E now harvests each alliance's class straight from the in-game
+  alliance ranking — open it once and every alliance on the page is captured — so the
+  "warrior alliance" signal fires for any member, no scouting needed. A Spyglass banner
+  and a per-card hint flag watched players whose class isn't known yet, each deep-linking
+  to that alliance in the ranking so one click fills it in.
+- **Galaxy links in the dossier.** Every body coordinate in a player's scan table
+  (e.g. `4:474:8`) is now a link that opens that system in the in-game galaxy view.
+
+### Changed
+
+- **Fleet-return alarm clock — fair-play caution.** The Alarm clock tab now carries a
+  clear notice: a fleet-return alarm clock has no official public ruling from Gameforge
+  yet, so it is borderline and should not be used on public servers until it is publicly
+  confirmed. Use at your own risk.
+
 ## [1.39.0] — 2026-07-06
 
 ### Added
