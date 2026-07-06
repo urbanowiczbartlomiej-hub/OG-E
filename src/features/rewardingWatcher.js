@@ -12,11 +12,19 @@
 // # Solution
 //
 // Only on the Rewarding page (`?page=ingame&component=rewarding`) we observe
-// the task list. When EVERY `.rewardlist-item` carries a `.reward-claimed-text`
-// badge the player has completed all available tasks for this game-day.
-// We write the current game-day key (YYYY-MM-DD, 14:00 reset) to localStorage
-// and dispatch `oge:dailyStateChanged` so the sync scheduler uploads the
-// result to the gist.
+// the task list. The player is "done" — nothing left worth a pulse — in EITHER
+// of two ways:
+//   (a) every `.rewardlist-item` carries a `.reward-claimed-text` badge (all
+//       of today's tasks are collected), OR
+//   (b) every rank tier (`.tierlist [data-tier]`) carries `undermark` — the
+//       player has already reached the TOP rank of the event, so the remaining
+//       daily tasks yield nothing more and the pulse is pure noise even though
+//       individual items still show progress (0/20, 35/1337, …).
+// On either, we write the current game-day key (YYYY-MM-DD, 14:00 reset) to
+// localStorage and dispatch `oge:dailyStateChanged` so the sync scheduler
+// uploads the result to the gist. (Both stamp the same per-day key, so the
+// all-ranks case still needs a page visit each day to re-suppress — same model
+// as the all-claimed case; kept intentionally small.)
 //
 // # Page detection
 //
@@ -25,9 +33,10 @@
 //
 // # Completion rule
 //
-// All `.rewardlist-item` nodes inside `#rewardings` must have a child
-// `.reward-claimed-text`. The list is non-empty (guards against a transient
-// empty DOM while the AJAX render is in flight).
+// Done when EITHER: all `.rewardlist-item` nodes inside `#rewardings` have a
+// child `.reward-claimed-text` (all tasks claimed), OR all `.tierlist [data-tier]`
+// nodes carry `undermark` (all ranks reached). Each list must be non-empty
+// (guards against a transient empty DOM while the AJAX render is in flight).
 //
 // # Lifecycle
 //
@@ -59,6 +68,10 @@ import { clock } from '../lib/clock.js';
 const REWARDINGS_SEL = '#rewardings';
 const ITEM_SEL = '.rewardlist-item';
 const CLAIMED_SEL = '.reward-claimed-text';
+/** Each rank tier button; `[data-tier]` excludes the sibling "Zadania" btn. */
+const TIER_SEL = '.tierlist [data-tier]';
+/** Class the game stamps on a rank the player has already reached. */
+const TIER_REACHED_CLASS = 'undermark';
 
 /**
  * Return true iff the page is the Rewarding component. Locale-independent.
@@ -85,6 +98,20 @@ export const allRewardsClaimed = (container) => {
   return items.length > 0 && items.every((item) => item.querySelector(CLAIMED_SEL) !== null);
 };
 
+/**
+ * Return true iff every rank tier has been reached — i.e. the `.tierlist`
+ * is non-empty and every `[data-tier]` button carries the `undermark` class.
+ * When true the player has maxed the event's ranks, so nothing more can be
+ * earned and the menu pulse is noise regardless of individual task progress.
+ *
+ * @param {Element} container  The `#rewardings` root element.
+ * @returns {boolean}
+ */
+export const allTiersReached = (container) => {
+  const tiers = [...container.querySelectorAll(TIER_SEL)];
+  return tiers.length > 0 && tiers.every((t) => t.classList.contains(TIER_REACHED_CLASS));
+};
+
 /** @type {{ dispose: () => void } | null} */
 let installed = null;
 
@@ -97,7 +124,7 @@ let installed = null;
 const checkCompletion = () => {
   const container = document.querySelector(REWARDINGS_SEL);
   if (!container) return;
-  if (!allRewardsClaimed(container)) return;
+  if (!allRewardsClaimed(container) && !allTiersReached(container)) return;
 
   const today = gameDayKey(new Date());
   if (readDailyState().rewardingDoneDay === today) return; // already stamped
