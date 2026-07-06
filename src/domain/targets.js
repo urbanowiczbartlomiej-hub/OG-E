@@ -215,17 +215,19 @@ export function sortTargetList(list, key, dir = 'desc', hiddenById = {}, dangerB
  * @property {number} galaxy
  * @property {number} system
  * @property {number} position
+ * @property {boolean} [hasMoon]  The slot also carries a `<moon>` — a SECOND
+ *   spiable body of the same owner (parsed by `apiOccupancy`). Lets the scan
+ *   planner offer the moon as its own candidate when moon scanning is enabled.
  */
 
 /**
  * Enumerate a player's planet positions from the universe.xml occupancy
  * snapshot. Pure: filter the `{coords, player}` rows by owner id, parse each
  * `coords` ("g:s:p") into numbers, drop anything malformed, and return them
- * ordered galaxy→system→position for a stable display. Planets only — moons
- * are `<moon>` children the snapshot parser doesn't surface, matching the
- * planets-only spy decision.
+ * ordered galaxy→system→position for a stable display. Carries each row's
+ * `hasMoon` flag through so a caller can also enumerate the moons.
  *
- * @param {Array<{coords: string, player?: number}>} universePlanets
+ * @param {Array<{coords: string, player?: number, hasMoon?: boolean}>} universePlanets
  * @param {string} playerId
  * @returns {PlanetPos[]}
  */
@@ -242,7 +244,7 @@ export function playerPlanets(universePlanets, playerId) {
     if (!Number.isFinite(galaxy) || !Number.isFinite(system) || !Number.isFinite(position)) {
       continue;
     }
-    out.push({ galaxy, system, position });
+    out.push({ galaxy, system, position, ...(pl.hasMoon ? { hasMoon: true } : {}) });
   }
   out.sort((a, b) => a.galaxy - b.galaxy || a.system - b.system || a.position - b.position);
   return out;

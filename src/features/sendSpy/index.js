@@ -31,7 +31,7 @@ import { settingsStore } from '../../state/settings.js';
 import { watchListStore } from '../../state/watchList.js';
 import { targetReportsStore } from '../../state/targets.js';
 import { activityObsStore } from '../../state/activityObs.js';
-import { spiedCoordsByPlayer } from '../../domain/targetReports.js';
+import { spiedCoordsByPlayer, spiedMoonsByPlayer } from '../../domain/targetReports.js';
 import { summarizeRoutine, routineBodies } from '../../domain/routine.js';
 import { createButton as makeButton, labelLines } from '../shared/button.js';
 import { EYE_GLYPH } from '../shared/buttonGlyphs.js';
@@ -47,7 +47,7 @@ import {
 } from '../shared/fleetCourier.js';
 import { installFabSettingsLifecycle } from '../shared/fabSettingsLifecycle.js';
 import { getApiContext } from '../shared/apiContextStore.js';
-import { SHIP_ESPIONAGE_PROBE, TARGET_PLANET, MISSION_ESPIONAGE } from '../../domain/rules.js';
+import { SHIP_ESPIONAGE_PROBE, TARGET_PLANET, TARGET_MOON, MISSION_ESPIONAGE } from '../../domain/rules.js';
 import { OWNER_SPY } from '../../domain/fleetOwnership.js';
 import { ingameComponentUrl } from '../../domain/ogameUrl.js';
 import { clock } from '../../lib/clock.js';
@@ -108,14 +108,32 @@ let sentLockTimer = null;
 const getSentCoords = () => new Set(Object.keys(readSpySentMap()));
 
 /**
- * Mark a coord as sent this session (with the send time — the discount window
+ * Session sent-key for a body: `g:s:p` for a planet, `g:s:p:3` for a moon, so a
+ * probe sent to a planet doesn't also suppress its moon (and vice versa).
+ * @param {SpyTarget} t
+ * @returns {string}
+ */
+const sentKey = (t) =>
+  t.bodyType === 3 ? `${t.galaxy}:${t.system}:${t.position}:3` : `${t.galaxy}:${t.system}:${t.position}`;
+
+/**
+ * Mark a body as sent this session (with the send time — the discount window
  * anchor).
  * @param {SpyTarget} t
  * @returns {void}
  */
 const markSent = (t) => {
-  markSpySent(`${t.galaxy}:${t.system}:${t.position}`, Date.now());
+  markSpySent(sentKey(t), Date.now());
 };
+
+/**
+ * Coords label for the armed "Send!" confirmation — includes a 🌙 for a moon
+ * so the deliberate second tap shows exactly which body is about to be probed.
+ * @param {SpyTarget} t
+ * @returns {string}
+ */
+const coordsLabel = (t) =>
+  `[${t.galaxy}:${t.system}:${t.position}]${t.bodyType === 3 ? ' 🌙' : ''}`;
 
 // ─── env capture (the one impure read of the derive pipeline) ───────────────
 
@@ -164,16 +182,34 @@ const activityByPlayer = (nowMs) => {
  */
 const captureEnv = () => {
   const nowMs = Date.now();
+  const reports = targetReportsStore.get();
+  const cfg = watchListStore.get();
   return {
-    players: watchListStore.get().players,
+    players: cfg.players,
     universePlanets: getApiContext()?.universePlanets ?? [],
-    spiedByPlayer: spiedCoordsByPlayer(targetReportsStore.get()),
-    rescan: watchListStore.get().rescan,
+    spiedByPlayer: spiedCoordsByPlayer(reports),
+    spiedMoonsByPlayer: spiedMoonsByPlayer(reports),
+    rescan: cfg.rescan,
     sentCoords: getSentCoords(),
     nowMs,
+    scanBodies: cfg.scanBodies,
     dangerByPlayer: dangerByPlayer(),
     activityByPlayer: activityByPlayer(nowMs),
+    playerNames: getApiContext()?.players ?? {},
   };
+};
+
+/**
+ * Is the apiContext handoff populated yet? Until it is, `universePlanets` is
+ * empty, so `deriveSpy` sees zero candidates and would paint the misleading
+ * "all scanned ✓" done state on a fresh page load. The button holds a dim
+ * "loading…" state (and swallows taps) until this is true — mirroring how the
+ * other FABs stay disabled until their data lands.
+ * @returns {boolean}
+ */
+const apiContextReady = () => {
+  const c = getApiContext();
+  return !!(c && Array.isArray(c.universePlanets) && c.universePlanets.length > 0);
 };
 
 /**
@@ -218,11 +254,13 @@ const paintZone = (p) => {
 const refresh = () => {
   if (!controller || busy) return;
   if (spyReady && spyTarget && courierStep() === 'fleet2') {
-    paintZone({
-      text: 'Send!',
-      subtext: `[${spyTarget.galaxy}:${spyTarget.system}:${spyTarget.position}]`,
-      bg: BG_SPY_READY,
-    });
+    paintZone({ text: 'Send!', subtext: coordsLabel(spyTarget), bg: BG_SPY_READY });
+    return;
+  }
+  // Hold a dim "loading…" state until the apiContext handoff lands — before
+  // then there are no candidates and the "all scanned" done state would flash.
+  if (!apiContextReady()) {
+    paintZone({ text: 'Spy', subtext: 'loading…', bg: BG_SPY_IDLE, dim: true });
     return;
   }
   paintZone(renderSpy(deriveSpy(captureEnv()), probePreflight()));
@@ -260,7 +298,12 @@ const spyOrder = (t) => ({
     kind: 'list',
     ships: [{ id: SHIP_ESPIONAGE_PROBE, qty: watchListStore.get().probes, frac: 1 }],
   },
-  target: { galaxy: t.galaxy, system: t.system, position: t.position, type: TARGET_PLANET },
+  target: {
+    galaxy: t.galaxy,
+    system: t.system,
+    position: t.position,
+    type: t.bodyType === 3 ? TARGET_MOON : TARGET_PLANET,
+  },
   mission: MISSION_ESPIONAGE,
   owner: OWNER_SPY,
 });
@@ -304,6 +347,10 @@ const onSpyClick = async () => {
     return;
   }
 
+  // Handoff still loading → swallow the tap so it can't jump to messages off an
+  // empty candidate set (the button is showing the dim "loading…" state).
+  if (!apiContextReady()) return;
+
   const ctx = deriveSpy(captureEnv());
 
   // Nothing left to scan → jump to the messages component to read reports
@@ -331,11 +378,7 @@ const onSpyClick = async () => {
     }
     spyReady = true;
     spyTarget = target;
-    paintZone({
-      text: 'Send!',
-      subtext: `[${target.galaxy}:${target.system}:${target.position}]`,
-      bg: BG_SPY_READY,
-    });
+    paintZone({ text: 'Send!', subtext: coordsLabel(target), bg: BG_SPY_READY });
     return;
   }
 
@@ -352,11 +395,7 @@ const onSpyClick = async () => {
   }
   spyReady = true;
   spyTarget = target;
-  paintZone({
-    text: 'Send!',
-    subtext: `[${target.galaxy}:${target.system}:${target.position}]`,
-    bg: BG_SPY_READY,
-  });
+  paintZone({ text: 'Send!', subtext: coordsLabel(target), bg: BG_SPY_READY });
 };
 
 // ─── lifecycle ────────────────────────────────────────────────────────────
@@ -383,7 +422,7 @@ export const installSendSpy = () => {
     const size = settingsStore.get().fabBtnSize;
     controller = makeButton({
       id: BUTTON_ID,
-      title: 'Espionage scan',
+      title: 'Spyglass',
       ringId: 'oge-ring-spy',
       size,
       fontScale: 0.18,

@@ -100,6 +100,37 @@ export function spiedCoordsByPlayer(reports) {
 }
 
 /**
+ * Companion to {@link spiedCoordsByPlayer} for MOON scans: `playerId → ("g:s:p"
+ * coord → newest MOON report ts, epoch SECONDS)`. `spiedCoordsByPlayer` skips
+ * moons on purpose (a moon scan must never mark the planet spied), so the scan
+ * planner needs this separate freshness map to know a moon has already been
+ * scanned — without it a moon would be proposed forever. The coord is the
+ * shared "g:s:p" (the ":type" suffix stripped, exactly like the planet map), so
+ * a moon and its planet key by the same coord in their OWN maps.
+ * @param {Record<string, Record<string, BodyEntry | SpyReport>>} reports
+ * @returns {Record<string, Record<string, number>>}
+ */
+export function spiedMoonsByPlayer(reports) {
+  /** @type {Record<string, Record<string, number>>} */
+  const out = {};
+  for (const pid of Object.keys(reports || {})) {
+    const bucket = reports[pid];
+    if (!bucket) continue;
+    /** @type {Record<string, number>} */
+    const coordTs = {};
+    for (const key of Object.keys(bucket)) {
+      const report = latestOf(bucket[key]);
+      if (!report || report.planetType !== 3) continue;
+      const lastColon = key.lastIndexOf(':');
+      const coord = lastColon >= 0 ? key.slice(0, lastColon) : key;
+      coordTs[coord] = report.timestamp ?? 0;
+    }
+    out[pid] = coordTs;
+  }
+  return out;
+}
+
+/**
  * Project a full {@link SpyReport} down to a lean {@link SpyReportLite} for the
  * history ring. Honours `revealed`: defence/fleet values accrue only from a
  * report that actually showed them (§9bis). Legacy reports (no `revealed`) came

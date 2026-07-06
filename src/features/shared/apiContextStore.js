@@ -30,6 +30,7 @@
  *   server?: ServerData,
  *   universePlanets?: ApiPlanet[],
  *   danger?: Map<number, import('../../domain/dangerScore.js').DangerProfile>,
+ *   players?: Record<string, import('../../domain/apiOccupancy.js').ApiPlayerMeta>,
  * }} ApiContextHandoff
  */
 

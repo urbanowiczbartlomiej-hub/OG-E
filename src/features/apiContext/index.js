@@ -69,6 +69,9 @@ export const refreshCache = refreshApiCache;
  *   Per-player danger profiles, built by the SAME `domain/dangerJoin.js` recipe
  *   the dashboard uses — the scan planner's D input (the FAB must rank targets
  *   exactly like the dashboard's plan strip).
+ * @property {Record<string, import('../../domain/apiOccupancy.js').ApiPlayerMeta>} players
+ *   players.xml rows keyed by id — the scan FAB resolves a candidate's owner
+ *   name for its label from this.
  * @property {number} builtAt
  * @property {string[]} fetched   Which feeds were hit over the network this call.
  */
@@ -141,6 +144,7 @@ export async function getContext(opts = {}) {
       timestamp: cache.military ? cache.military.timestamp : undefined,
     },
     danger,
+    players: cache.players ? cache.players.players : {},
     builtAt: Date.now(),
     fetched,
   };

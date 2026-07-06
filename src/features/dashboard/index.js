@@ -63,7 +63,7 @@ import { buildCivilBaseline } from '../../domain/civilBaseline.js';
 import { estimateHiddenFleet } from '../../domain/threatModel.js';
 import { raidVerdict } from '../../domain/raidVerdict.js';
 import { normalizeReportTimestamps } from '../../domain/espionageReport.js';
-import { latestOf, historyOf, spiedCoordsByPlayer } from '../../domain/targetReports.js';
+import { latestOf, historyOf, spiedCoordsByPlayer, spiedMoonsByPlayer } from '../../domain/targetReports.js';
 import { bodyLootStats } from '../../domain/lootRhythm.js';
 import { summarizeRoutine, routineBodies } from '../../domain/routine.js';
 import { buildScanPlan } from '../../domain/scanPriority.js';
@@ -392,6 +392,7 @@ const forceIncludeIds = new Set();
 // read via toggleChipOn where `.checked` used to be.
 /** @type {HTMLElement | null} */ let tgtWatchedOnly;
 /** @type {HTMLInputElement | null} */ let tgtProbes;
+/** @type {HTMLElement | null} */ let tgtScanBodies;
 /** @type {HTMLElement | null} */ let tgtHideInactive;
 /** @type {HTMLButtonElement | null} */ let tgtConfigToggle;
 /** @type {HTMLElement | null} */ let tgtConfigCard;
@@ -686,6 +687,7 @@ const wireDom = () => {
   tgtSearch = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtSearch'));
   tgtWatchedOnly = document.getElementById('tgtWatchedOnly');
   tgtProbes = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtProbes'));
+  tgtScanBodies = document.getElementById('tgtScanBodies');
   tgtHideInactive = document.getElementById('tgtHideInactive');
   tgtConfigToggle = /** @type {HTMLButtonElement | null} */ (document.getElementById('tgtConfigToggle'));
   tgtConfigCard = document.getElementById('tgtConfigCard');
@@ -856,6 +858,7 @@ const loadWatched = async () => {
   mapHiddenIds = cfg.mapHidden ?? {};
   // chrome.storage is authoritative for the probe count (the FAB reads it too).
   if (tgtProbes) tgtProbes.value = String(cfg.probes);
+  if (tgtScanBodies) setChipValue(tgtScanBodies, cfg.scanBodies ?? 'planets');
 };
 
 /**
@@ -871,6 +874,7 @@ const writeWatchConfig = () => {
   void chromeStore.set(watchListKeyFor(selectedUniverseId), {
     players: [...watchedPlayers],
     probes: Number(tgtProbes?.value) || DEFAULT_SPY_PROBES,
+    scanBodies: chipValue(tgtScanBodies) || 'planets',
     rescan: rescanMap,
     relationships: watchRelationships,
     mapHidden: mapHiddenIds,
@@ -1510,8 +1514,11 @@ const renderScanPlanStrip = () => {
     players: watched,
     universePlanets: apiCache.universe ? apiCache.universe.planets : [],
     spiedByPlayer: spiedCoordsByPlayer(targetReports),
+    spiedMoonsByPlayer: spiedMoonsByPlayer(targetReports),
     rescan: rescanMap,
     nowMs,
+    // Mirror the in-game FAB's planet/moon filter so the two never disagree.
+    scanBodies: /** @type {'planets'|'moons'|'both'} */ (chipValue(tgtScanBodies) || 'planets'),
     dangerByPlayer: dangerBy,
     activityByPlayer: activityBy,
   });
@@ -1521,7 +1528,7 @@ const renderScanPlanStrip = () => {
   }
 
   const n = entries.length;
-  setSummary(`🧭 ${n} planet${n === 1 ? '' : 's'} to scan`);
+  setSummary(`🧭 ${n} to scan`);
   /** @type {Map<string, string>} */
   const namesById = new Map(targetCandidates.map((c) => [String(c.id), c.name || `#${c.id}`]));
 
@@ -1539,7 +1546,7 @@ const renderScanPlanStrip = () => {
     who.addEventListener('click', () => openSpyglassFor(Number(e.playerId)));
     row.appendChild(who);
     row.appendChild(document.createTextNode(
-      ` [${e.galaxy}:${e.system}:${e.position}] — ${e.why}`,
+      ` [${e.galaxy}:${e.system}:${e.position}]${e.bodyType === 3 ? ' 🌙' : ''} — ${e.why}`,
     ));
     // The head entry is the FAB's next proposal — say why it's first.
     if (i === 0) {
@@ -2305,6 +2312,8 @@ const wireListeners = () => {
   // Probe count is shared with the in-game scan FAB via chrome.storage, so it
   // persists through the watch-config write rather than the localStorage prefs.
   tgtProbes?.addEventListener('change', () => { writeWatchConfig(); repaintTargets(); });
+  // Planet/moon/both scan filter — same shared-config write as the probes.
+  wireChips(tgtScanBodies, () => { writeWatchConfig(); repaintTargets(); });
   wireChips(tgtLimitChips, onTargetFilterChange);
   tgtSearch?.addEventListener('input', () => {
     targetSearchQuery = tgtSearch ? tgtSearch.value : '';
@@ -2456,6 +2465,7 @@ export const _resetDashboardForTest = () => {
     tgtSearch =
     tgtWatchedOnly =
     tgtProbes =
+    tgtScanBodies =
     tgtHideInactive =
     tgtConfigToggle =
     tgtConfigCard =

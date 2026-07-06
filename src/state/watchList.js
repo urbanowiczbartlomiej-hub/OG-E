@@ -38,9 +38,17 @@ import { pruneRescan } from '../domain/spyScan.js';
  *   colour (enemy = red, friend = green, neutral = grey; own planets = white).
  *   Absent = neutral. Device-local intel, never synced.
  *
+ * @typedef {'planets'|'moons'|'both'} ScanBodies
+ *   Which body types the scan FAB / plan proposes: planets only (default),
+ *   moons only, or both. Device-local, shared with the in-game FAB like the
+ *   rest of this config.
+ *
  * @typedef {object} WatchListConfig
  * @property {string[]} players   Watched player ids.
  * @property {number} probes      Espionage probes the scan FAB pre-arms per body.
+ * @property {ScanBodies} [scanBodies]  Planet/moon scan filter (default 'planets').
+ *   Optional in the type (pre-scanBodies configs omit it) but `normalizeWatchList`
+ *   + the store default always materialise it.
  * @property {Record<string, number>} rescan
  *   Re-scan flags: player id (whole player) or "g:s:p" coord (one planet) →
  *   epoch-ms "treat any report older than this as needing a re-scan". Clears
@@ -81,11 +89,13 @@ export const watchListKeyFor = (universeId) => `${universeId}:${WATCH_LIST_KEY_B
  */
 export const normalizeWatchList = (raw) => {
   if (Array.isArray(raw)) {
-    return { players: raw.map(String), probes: DEFAULT_SPY_PROBES, rescan: {}, relationships: {}, mapHidden: {} };
+    return { players: raw.map(String), probes: DEFAULT_SPY_PROBES, scanBodies: 'planets', rescan: {}, relationships: {}, mapHidden: {} };
   }
   const o = raw && typeof raw === 'object' ? /** @type {any} */ (raw) : {};
   const players = Array.isArray(o.players) ? o.players.map(String) : [];
   const probes = Number.isFinite(o.probes) && o.probes > 0 ? Math.round(o.probes) : DEFAULT_SPY_PROBES;
+  /** @type {ScanBodies} */
+  const scanBodies = (o.scanBodies === 'moons' || o.scanBodies === 'both') ? o.scanBodies : 'planets';
   /** @type {Record<string, number>} */
   const rescan = {};
   if (o.rescan && typeof o.rescan === 'object') {
@@ -109,7 +119,7 @@ export const normalizeWatchList = (raw) => {
       if (o.mapHidden[k]) mapHidden[k] = true;
     }
   }
-  return { players, probes, rescan, relationships, mapHidden };
+  return { players, probes, scanBodies, rescan, relationships, mapHidden };
 };
 
 const currentKey = () => currentUniverseKey(WATCH_LIST_KEY_BASE, watchListKeyFor);
@@ -118,6 +128,7 @@ const currentKey = () => currentUniverseKey(WATCH_LIST_KEY_BASE, watchListKeyFor
 export const watchListStore = createStore(/** @type {WatchListConfig} */ ({
   players: [],
   probes: DEFAULT_SPY_PROBES,
+  scanBodies: 'planets',
   rescan: {},
   relationships: {},
   mapHidden: {},

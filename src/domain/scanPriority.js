@@ -117,13 +117,20 @@ export const windowBonus = (nowMs, activity) => {
 /**
  * @typedef {object} ScanPlanEnv
  * @property {string[]} players                Watched player ids (tiebreak order).
- * @property {Array<{coords: string, player?: number}>} universePlanets
- *   universe.xml occupancy rows (each watched player's planet coords).
+ * @property {Array<{coords: string, player?: number, hasMoon?: boolean}>} universePlanets
+ *   universe.xml occupancy rows (each watched player's planet coords + a
+ *   `hasMoon` flag when the slot also carries a moon).
  * @property {Record<string, Record<string, number>>} spiedByPlayer
- *   playerId → ("g:s:p" coord → newest report ts, epoch SECONDS).
+ *   playerId → ("g:s:p" coord → newest PLANET report ts, epoch SECONDS).
+ * @property {Record<string, Record<string, number>>} [spiedMoonsByPlayer]
+ *   playerId → ("g:s:p" coord → newest MOON report ts, epoch SECONDS). Absent =
+ *   no moon scans on file (every enabled moon then ranks as never-scanned).
  * @property {Record<string, number>} [rescan]  player id / coord → re-scan mark (ms).
- * @property {Set<string>} [sentCoords]         Coords probed this session (skip).
+ * @property {Set<string>} [sentCoords]         Bodies probed this session (skip);
+ *   moons are keyed `"g:s:p:3"`, planets `"g:s:p"`.
  * @property {number} nowMs
+ * @property {'planets'|'moons'|'both'} [scanBodies]  Which body types to plan
+ *   (default 'planets').
  * @property {number} [staleMs]                 Default stale threshold override.
  * @property {Record<string, number>} [dangerByPlayer]   playerId → D (0..100).
  * @property {Record<string, ActivitySummary>} [activityByPlayer]
@@ -137,6 +144,7 @@ export const windowBonus = (nowMs, activity) => {
  * @property {number} galaxy
  * @property {number} system
  * @property {number} position
+ * @property {1|3} bodyType   Body to scan: 1 = planet, 3 = moon.
  * @property {'none'|'stale'|'rescan'} status
  * @property {number} priority
  * @property {string} why   Compact, wording-safe reason ("never scanned",
@@ -160,8 +168,13 @@ export const buildScanPlan = (env) => {
   const orderByPid = new Map();
   players.forEach((pid, i) => orderByPid.set(pid, i));
 
+  const scanBodies = env.scanBodies || 'planets';
+  const wantPlanets = scanBodies !== 'moons';
+  const wantMoons = scanBodies !== 'planets';
+
   for (const pid of players) {
     const coordTs = env.spiedByPlayer ? env.spiedByPlayer[pid] : undefined;
+    const moonTs = env.spiedMoonsByPlayer ? env.spiedMoonsByPlayer[pid] : undefined;
     const d100 = env.dangerByPlayer ? env.dangerByPlayer[pid] : undefined;
     const staleMs = env.dangerByPlayer && pid in env.dangerByPlayer
       ? staleMsFor(d100)
@@ -170,20 +183,33 @@ export const buildScanPlan = (env) => {
     const wWindow = windowBonus(env.nowMs, env.activityByPlayer
       ? env.activityByPlayer[pid]
       : undefined);
-    for (const p of playerPlanets(env.universePlanets, pid)) {
+
+    /**
+     * Consider one body (planet or moon) at a coord; push a plan entry if it
+     * needs a scan and wasn't already sent this session. Planet and moon read
+     * their OWN freshness map + sent-key so scanning one never suppresses the
+     * other.
+     * @param {1|3} bodyType
+     * @param {import('./targets.js').PlanetPos} p
+     * @param {Record<string, number> | undefined} tsMap
+     * @returns {void}
+     */
+    const consider = (bodyType, p, tsMap) => {
       const coord = `${p.galaxy}:${p.system}:${p.position}`;
-      if (env.sentCoords && env.sentCoords.has(coord)) continue;
-      const reportTsSec = coordTs ? coordTs[coord] : undefined;
+      const sentK = bodyType === 3 ? `${coord}:3` : coord;
+      if (env.sentCoords && env.sentCoords.has(sentK)) return;
+      const reportTsSec = tsMap ? tsMap[coord] : undefined;
       const status = scanStatus({
         reportTsSec,
         nowMs: env.nowMs,
         rescanAtMs: rescanAtFor(env.rescan, pid, coord),
         staleMs,
       });
-      if (!needsScan(status)) continue;
+      if (!needsScan(status)) return;
       const ageMs = reportTsSec ? env.nowMs - reportTsSec * 1000 : 0;
       const priority = wDanger * stalenessWeight(status, ageMs, staleMs) * wWindow;
       const whyParts = [];
+      if (bodyType === 3) whyParts.push('moon');
       if (status === 'none') whyParts.push('never scanned');
       else if (status === 'rescan') whyParts.push('re-scan requested');
       else whyParts.push(`report ${Math.max(1, Math.round(ageMs / DAY_MS))}d old`);
@@ -194,10 +220,16 @@ export const buildScanPlan = (env) => {
         galaxy: p.galaxy,
         system: p.system,
         position: p.position,
+        bodyType,
         status: /** @type {'none'|'stale'|'rescan'} */ (status),
         priority,
         why: whyParts.join(' · '),
       });
+    };
+
+    for (const p of playerPlanets(env.universePlanets, pid)) {
+      if (wantPlanets) consider(1, p, coordTs);
+      if (wantMoons && p.hasMoon) consider(3, p, moonTs);
     }
   }
 
@@ -206,7 +238,8 @@ export const buildScanPlan = (env) => {
     const oa = orderByPid.get(a.playerId) ?? 0;
     const ob = orderByPid.get(b.playerId) ?? 0;
     if (oa !== ob) return oa - ob;
-    return a.galaxy - b.galaxy || a.system - b.system || a.position - b.position;
+    return a.galaxy - b.galaxy || a.system - b.system || a.position - b.position
+      || a.bodyType - b.bodyType;
   });
   return { entries };
 };
