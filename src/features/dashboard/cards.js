@@ -55,6 +55,13 @@ const VERDICT_COLORS = /** @type {Record<string, string>} */ ({
   scan: '#8b95a0',
 });
 
+// OGame ALLIANCE-highscore deep link (category=2, points). `searchRelId` jumps
+// straight to a given alliance's page. Local to this feature — the only place
+// that links there (cf. gameDom's single-consumer rule). Empty base → no link.
+const ALLY_HIGHSCORE_PATH = '/game/index.php?page=highscore&category=2&type=0';
+const allyRankingUrl = (/** @type {string|undefined} */ base, /** @type {string|undefined} */ id = '') =>
+  base ? `${base}${ALLY_HIGHSCORE_PATH}${id ? `&searchRelId=${id}` : ''}` : '';
+
 /**
  * Render the watchlist card strip into `hostEl` (label + responsive grid).
  * Empty watchlist → a ghost onboarding card, never a blank gap.
@@ -71,6 +78,10 @@ const VERDICT_COLORS = /** @type {Record<string, string>} */ ({
  * @param {Record<string, Record<string, {ts: number}>>} a.reportsByPlayer
  * @param {Record<string, boolean|undefined>} a.inBand
  * @param {number} a.nowMs
+ * @param {string} [a.linkBase]  Game origin for the selected universe (e.g.
+ *   `https://s163-pl.ogame.gameforge.com`) — builds the "open the alliance
+ *   ranking" deep link that captures a missing alliance class. Absent → the
+ *   unknown-class nudge shows as plain text (no link).
  * @param {(pid: string) => void} a.onOpen
  * @param {(pid: string) => void} [a.onToggleWatch]  Stop watching this player.
  * @returns {void}
@@ -89,6 +100,40 @@ export function renderWatchlistCards(a) {
   label.textContent = ids.length ? `Watchlist (${ids.length})` : 'Watchlist';
   head.appendChild(label);
   a.hostEl.appendChild(head);
+
+  // Unknown-alliance-class nudge (Etap: warrior-alliance source). A watched
+  // player whose alliance class we've never harvested has the warrior-alliance
+  // apex tell dark — the ONLY tell not derivable from the public API. Flag it so
+  // the user can light it by opening the (spy-free) alliance ranking. Own-alliance
+  // players are `friendly` (class irrelevant); players with no alliance can't be
+  // looked up. Class 'none' counts as KNOWN (allianceClass is set) → not flagged.
+  const unknownClass = (/** @type {string} */ pid) => {
+    const p = a.danger.get(Number(pid));
+    return !!(p && !p.friendly && p.allianceId && !p.allianceClass);
+  };
+  const unknownIds = ids.filter(unknownClass);
+  if (unknownIds.length) {
+    const banner = document.createElement('div');
+    banner.style.cssText = 'margin:0 0 8px;padding:6px 9px;border-radius:5px;font-size:11.5px;'
+      + 'background:#241d0e;border:1px solid #4a3c17;color:#d9b45a;';
+    banner.appendChild(document.createTextNode(
+      `⚠ ${unknownIds.length} watched ${unknownIds.length === 1 ? 'player' : 'players'} with unknown alliance class — `));
+    const url = allyRankingUrl(a.linkBase);
+    if (url) {
+      const link = document.createElement('a');
+      link.href = url;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.textContent = 'open the alliance ranking';
+      link.style.cssText = 'color:#eac25c;text-decoration:underline;font-weight:600;';
+      banner.appendChild(link);
+      banner.appendChild(document.createTextNode(' to light the warrior-alliance signal.'));
+    } else {
+      banner.appendChild(document.createTextNode(
+        'open the in-game alliance ranking to light the warrior-alliance signal.'));
+    }
+    a.hostEl.appendChild(banner);
+  }
 
   const grid = document.createElement('div');
   grid.className = 'watch-cards-grid';
@@ -201,6 +246,30 @@ export function renderWatchlistCards(a) {
       if (routine.activity.label) act.appendChild(document.createTextNode(routine.activity.label));
       act.title = `From ${routine.observations} report(s) you opened — "activity" means a body was interacted with.`;
       card.appendChild(act);
+    }
+
+    // Row 4b — unknown-alliance-class nudge (see banner above). Deep-links to
+    // this player's alliance in the ranking; one open captures its class and
+    // lights the warrior tell — no spying. stopPropagation so the link doesn't
+    // also trigger the card's click-to-open-dossier.
+    if (unknownClass(pid) && prof) {
+      const warn = document.createElement('div');
+      warn.style.cssText = 'font-size:11px;color:#c79a3a;margin-bottom:6px;';
+      const url = allyRankingUrl(a.linkBase, prof.allianceId);
+      if (url) {
+        const link = document.createElement('a');
+        link.href = url;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.textContent = '⚠ alliance class unknown';
+        link.title = 'Open this alliance in the ranking to capture its class (warrior / trader / …) — no spying needed.';
+        link.style.cssText = 'color:#c79a3a;text-decoration:underline;';
+        link.addEventListener('click', (ev) => ev.stopPropagation());
+        warn.appendChild(link);
+      } else {
+        warn.textContent = '⚠ alliance class unknown';
+      }
+      card.appendChild(warn);
     }
 
     // Row 5 — intel age + band flag.

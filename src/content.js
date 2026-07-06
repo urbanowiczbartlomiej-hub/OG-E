@@ -96,6 +96,7 @@ import { installArtifactShopWatcher } from './features/artifactShopWatcher.js';
 import { installAlarmClock } from './features/alarmClock/index.js';
 import { installApiContext } from './features/apiContext/index.js';
 import { installTargetsIngest } from './features/targetsIngest/index.js';
+import { installAllianceClassIngest } from './features/allianceClassIngest/index.js';
 
 import { installSync } from './sync/scheduler.js';
 
@@ -261,6 +262,12 @@ const installDomFeatures = () => {
   // messages component fetches via fetch(), which observeXHR can't see. Top
   // frame only: the messages UI is the top-level page.
   if (window.top === window.self) safeInstall('targetsIngest', installTargetsIngest);
+  // Alliance-CLASS harvester — reads the class token off each row of the in-game
+  // ALLIANCE highscore (category=2), the only machine-readable source besides a
+  // spy report (the XML API omits alliance class). Feeds the danger model's
+  // 'warrior alliance' apex tell for EVERY member, no spying. DOM-based (the
+  // pager loads pages via ajax) and top-frame only, same as targetsIngest.
+  if (window.top === window.self) safeInstall('allianceClassIngest', installAllianceClassIngest);
   // OGame public-API context (per-device occupancy breadth for colonization).
   // Warms the per-device occupancy cache on every load (cache-gated, so the
   // multi-MB universe.xml is fetched at most weekly) and publishes the

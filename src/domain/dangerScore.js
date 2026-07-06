@@ -54,6 +54,7 @@
 
 import { honorClass } from './apiOccupancy.js';
 import { honorRank } from './players.js';
+import { isWarriorAlliance } from './allianceClass.js';
 
 /**
  * @typedef {'apex'|'raider'|'declawed'|'fortress'|'turtle'|'fleeter'|'cargo'|'eco'|'friendly'|'unknown'} DangerLabel
@@ -88,6 +89,11 @@ import { honorRank } from './players.js';
  * @property {number} [apexSignals] 0..6 — how many apex tells fired (top ships,
  *   optimal res/ship, warrior alliance, reach, kills, FS spot). Denominator =
  *   APEX_TELLS_TOTAL.
+ * @property {string} [allianceId]    Player's alliance id (players.xml), for the
+ *   dashboard's "alliance class unknown → open the ranking" deep link.
+ * @property {string} [allianceClass] Resolved alliance class slug ('warrior' |
+ *   'trader' | 'explorer' | 'none'). Absent = class not known for this player's
+ *   alliance (drives the unknown-class hint).
  * @property {DangerLabel} label
  * @property {string[]} reasons     Short human phrases for the tooltip.
  */
@@ -270,8 +276,13 @@ const computeReach = (planets) => {
  *   − defence EXACTLY (the precise refinement of the ships bound). Partial →
  *   seen defence is a floor, so military − seen-defence is an UPPER bound.
  *   `allianceClass` is the newest report's alliance class icon ('warrior' |
- *   'trader' | 'researcher') — spy-report-only intel (not in the public API);
- *   'warrior' reads as an apex capability tell + a small danger lift.
+ *   'trader' | 'explorer') — a spy-report FALLBACK source for the class (the
+ *   public API has none). Superseded by `allianceClasses` when the ranking has
+ *   been harvested; 'warrior' reads as an apex capability tell + a small lift.
+ * @property {Record<string, string>} [allianceClasses]  allianceId → class slug
+ *   ('warrior' | 'trader' | 'explorer' | 'none'), harvested from the ALLIANCE
+ *   highscore DOM (state/allianceClass). The comprehensive, spy-free source for
+ *   the warrior-alliance tell — joined per player via `apiPlayers[id].alliance`.
  * @property {number} [ownMilitary]  Your military points — kept for callers/UI,
  *   no longer the strength anchor (v3 strength is absolute/percentile).
  * @property {string} [ownId]        Your player id (to read your own alliance).
@@ -339,6 +350,10 @@ export const buildDangerProfiles = (input) => {
   const destroyed = input.destroyed ?? {};
   const apiPlayers = input.apiPlayers ?? {};
   const players = input.players ?? {};
+  // Alliance id → class slug, harvested from the ALLIANCE highscore DOM
+  // (state/allianceClass). The comprehensive, spy-free source for the 'warrior
+  // alliance' tell — joined per player via `apiPlayers[id].alliance`.
+  const allianceClasses = input.allianceClasses ?? {};
 
   // Does the military feed carry the ships attribute at all? A feed cached by
   // a pre-`ships` parser (or a server that doesn't emit it) has it on no row —
@@ -407,8 +422,12 @@ export const buildDangerProfiles = (input) => {
    * @property {number} combatMil
    * @property {ReachInfo} reach
    * @property {{spiedCount:number, planetCount?:number}|undefined} spy
-   * @property {boolean} warriorAlliance  Newest spy report says the player's
-   *   ALLIANCE is warrior-class (combat bonuses) — an apex capability tell.
+   * @property {boolean} warriorAlliance  The player's ALLIANCE is warrior-class
+   *   (combat bonuses) — from the highscore harvest OR a spy report; an apex
+   *   capability tell.
+   * @property {string|undefined} allianceId    Player's alliance id (players.xml).
+   * @property {string|undefined} allianceClass Resolved class slug ('warrior' |
+   *   'trader' | 'explorer' | 'none'), or undefined = alliance class not known.
    */
   /** @type {Partial[]} */
   const partials = [];
@@ -508,11 +527,21 @@ export const buildDangerProfiles = (input) => {
     const combatMil = ships === 0 ? 0 : mobileMil * q;
     if (combatMil > 0) combatMilVals.push(combatMil);
 
+    // Alliance class: prefer the comprehensive highscore harvest (covers every
+    // member, no spy needed), fall back to a spied report's own alliance class.
+    // A harvested 'none' is truthy, so it correctly wins over a stale spy report
+    // and is NOT mistaken for "unknown". undefined = never harvested (→ the
+    // dashboard's "alliance class unknown" hint).
+    const allianceId = apiPlayers[idStr] ? apiPlayers[idStr].alliance : undefined;
+    const allianceClass = (allianceId ? allianceClasses[allianceId] : undefined)
+      || (spyRow ? spyRow.allianceClass : undefined);
+
     partials.push({
       id, militaryPts, ships, destroyedPts, banditTier, destroyedPct, shipsPct,
       mobileLo, mobileHi, mobileMil, provenance, rps, q, combatMil, reach,
       spy: spyRow ? { spiedCount: spyRow.spiedCount, planetCount: spyRow.planetCount } : undefined,
-      warriorAlliance: !!(spyRow && spyRow.allianceClass === 'warrior'),
+      warriorAlliance: isWarriorAlliance(allianceClass),
+      allianceId, allianceClass,
     });
   }
 
@@ -637,6 +666,8 @@ export const buildDangerProfiles = (input) => {
       ...(p.destroyedPts > 0 ? { destroyed: p.destroyedPts } : {}),
       ...(typeof p.rps === 'number' ? { resPerShip: p.rps, combatQuality: p.q } : {}),
       reach: reachVal, apexSignals,
+      ...(p.allianceId ? { allianceId: p.allianceId } : {}),
+      ...(p.allianceClass ? { allianceClass: p.allianceClass } : {}),
       label, reasons,
     });
   }

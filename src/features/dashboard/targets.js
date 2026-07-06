@@ -449,6 +449,9 @@ function playerCell(c) {
  *   capped list with a "beyond the cap" note (filters are bypassed upstream
  *   via opts.forceInclude). Without this, opening a player who sits outside
  *   the current view silently did nothing.
+ * @param {string} [args.linkBase]  Game origin for the selected universe (e.g.
+ *   `https://s163-pl.ogame.gameforge.com`) — turns the dossier's per-body coords
+ *   into in-game galaxy links.
  * @returns {void}
  */
 export function renderTargets({
@@ -482,6 +485,7 @@ export function renderTargets({
   searchQuery = '',
   onShowAnyway,
   pinIds,
+  linkBase,
 }) {
   containerEl.textContent = '';
 
@@ -654,6 +658,7 @@ export function renderTargets({
       nowMs,
       onRescan,
       scanBodies,
+      linkBase,
       colspan: COLSPAN,
       open,
     });

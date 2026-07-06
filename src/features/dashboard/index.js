@@ -69,6 +69,7 @@ import { summarizeRoutine, routineBodies } from '../../domain/routine.js';
 import { buildScanPlan } from '../../domain/scanPriority.js';
 import { readApiCacheFor, apiCacheKeyFor } from '../../state/apiCache.js';
 import { targetReportsKeyFor } from '../../state/targets.js';
+import { allianceClassKeyFor } from '../../state/allianceClass.js';
 import { proximityReportsKeyFor } from '../../state/proximityReports.js';
 import { activityObsKeyFor } from '../../state/activityObs.js';
 import { watchListKeyFor, normalizeWatchList, DEFAULT_SPY_PROBES } from '../../state/watchList.js';
@@ -278,6 +279,15 @@ let targetCandidates = [];
  * @type {import('../../state/targets.js').TargetReports}
  */
 let targetReports = {};
+
+/**
+ * Alliance id → class slug ('warrior' | 'trader' | 'explorer' | 'none') for the
+ * selected universe (`state/allianceClass.js`), harvested from the ALLIANCE
+ * highscore DOM. Feeds the danger model's warrior-alliance tell + the
+ * unknown-class hint.
+ * @type {Record<string, string>}
+ */
+let allianceClasses = {};
 
 /**
  * "Foreign fleet spotted near your planet" alerts for the selected universe
@@ -552,6 +562,7 @@ const boot = async () => {
       apiCacheKeyFor(selectedUniverseId),
       targetReportsKeyFor(selectedUniverseId),
       proximityReportsKeyFor(selectedUniverseId),
+      allianceClassKeyFor(selectedUniverseId),
     ];
     if (keysToWatch.some((k) => k in changes)) {
       void loadAll().then(renderAll);
@@ -999,6 +1010,7 @@ const loadAll = async () => {
     apiCache = {};
     targetCandidates = [];
     targetReports = {};
+    allianceClasses = {};
     proximityReports = [];
     activityObs = {};
     planetCountByPlayer = {};
@@ -1007,7 +1019,7 @@ const loadAll = async () => {
     routines = {};
     return;
   }
-  const [h, s, p, op, api, tr, pr, ao] = await Promise.all([
+  const [h, s, p, op, api, tr, pr, ao, ac] = await Promise.all([
     chromeStore.get(historyKeyFor(selectedUniverseId)),
     chromeStore.get(scansKeyFor(selectedUniverseId)),
     chromeStore.get(playersKeyFor(selectedUniverseId)),
@@ -1016,6 +1028,7 @@ const loadAll = async () => {
     chromeStore.get(targetReportsKeyFor(selectedUniverseId)),
     chromeStore.get(proximityReportsKeyFor(selectedUniverseId)),
     chromeStore.get(activityObsKeyFor(selectedUniverseId)),
+    chromeStore.get(allianceClassKeyFor(selectedUniverseId)),
   ]);
   history = Array.isArray(h) ? /** @type {ColonyEntry[]} */ (h) : [];
   scans = s && typeof s === 'object' ? /** @type {GalaxyScans} */ (s) : {};
@@ -1077,6 +1090,8 @@ const loadAll = async () => {
   activityObs = ao && typeof ao === 'object'
     ? /** @type {import('../../state/activityObs.js').ActivityObsMap} */ (ao)
     : {};
+  // Alliance-class map (allianceId → slug) harvested from the ALLIANCE highscore.
+  allianceClasses = ac && typeof ac === 'object' ? /** @type {Record<string, string>} */ (ac) : {};
   // Danger substrate (v2): per-player profiles (the Galaxy Viewer field /
   // occupancy map / Spyglass threat columns) + the spiable-bodies coverage
   // denominator (planets + moons, §9bis) + the spy refinement — all via the ONE
@@ -1088,6 +1103,7 @@ const loadAll = async () => {
     apiCache,
     livePlayers: players,
     targetReports,
+    allianceClasses,
     ownId,
   });
   planetCountByPlayer = joined.planetCountByPlayer;
@@ -1271,6 +1287,7 @@ const repaintTargets = () => {
     reportsByPlayer,
     inBand: inBandById,
     nowMs,
+    linkBase: gameLinkBase(),
     onOpen: (pid) => openSpyglassFor(Number(pid)),
     onToggleWatch: (pid) => toggleWatched(pid),
   });
@@ -1328,6 +1345,7 @@ const repaintTargets = () => {
     searchQuery: targetSearchQuery,
     onShowAnyway: (/** @type {string} */ id) => { forceIncludeIds.add(id); repaintTargets(); },
     pinIds: pinnedTargetIds,
+    linkBase: gameLinkBase(),
   });
 
   // Deep-link focus: scroll to + highlight the player a Galaxy Viewer "Top

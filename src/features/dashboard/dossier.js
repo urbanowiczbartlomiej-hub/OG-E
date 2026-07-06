@@ -251,9 +251,11 @@ function civilBlock(civ, profile) {
  *   scan FAB proposes (the Scan chip). Gates the ↻ links: flagging a body the
  *   planner will never propose would be a dead switch, so planets lose ↻ under
  *   "moons", moons lose it under "planets".
+ * @param {string} [a.linkBase]  Game origin (e.g. `https://s163-pl.ogame.gameforge.com`);
+ *   present → the `body` coords become links to the in-game galaxy view.
  * @returns {HTMLDivElement}
  */
-function planetsBlock({ playerId, planets, reports, moons, rescan, nowMs, onRescan, scanBodies = 'planets' }) {
+function planetsBlock({ playerId, planets, reports, moons, rescan, nowMs, onRescan, scanBodies = 'planets', linkBase }) {
   const box = document.createElement('div');
 
   if (!planets.length) {
@@ -265,6 +267,12 @@ function planetsBlock({ playerId, planets, reports, moons, rescan, nowMs, onResc
   }
 
   const coordStr = (/** @type {PlanetPos} */ p) => `${p.galaxy}:${p.system}:${p.position}`;
+  // In-game galaxy deep link for a body — same shape the Galaxy Viewer / free
+  // maps use (`component=galaxy&galaxy=&system=`), plus `position` to land on the
+  // exact planet's row. Empty when the game origin is unknown → plain text.
+  const galaxyHref = (/** @type {PlanetPos} */ p) => (linkBase
+    ? `${linkBase}/game/index.php?page=ingame&component=galaxy&galaxy=${p.galaxy}&system=${p.system}&position=${p.position}`
+    : '');
   const spied = planets.filter((p) => reports && reports[coordStr(p)]).length;
 
   // Which coord holds the most visible fleet? (the collection/fleet planet.)
@@ -418,9 +426,23 @@ function planetsBlock({ playerId, planets, reports, moons, rescan, nowMs, onResc
     // body: coords + ⭐ (most parked fleet) + 🏦 (loot hoard).
     const body = document.createElement('td');
     body.style.cssText = 'padding:2px 0;white-space:nowrap;';
-    const coordEl = document.createElement('span');
+    // Coords link to the in-game galaxy view when we know the origin; otherwise
+    // plain text. stopPropagation so the click opens the game (new tab) without
+    // also toggling the dossier row it lives in.
+    const href = galaxyHref(p);
+    const coordEl = document.createElement(href ? 'a' : 'span');
     coordEl.textContent = coord;
     coordEl.style.color = status === 'none' ? '#8b95a0' : '#cfd6dd';
+    if (href) {
+      const link = /** @type {HTMLAnchorElement} */ (coordEl);
+      link.href = href;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.title = 'Open this system in the in-game galaxy view';
+      link.style.textDecoration = 'none';
+      link.style.cursor = 'pointer';
+      link.addEventListener('click', (ev) => ev.stopPropagation());
+    }
     body.appendChild(coordEl);
     if (coord === hoardCoord) {
       const star = document.createElement('span');
@@ -693,6 +715,7 @@ function routineBlock(routine) {
  * @param {number} a.nowMs
  * @param {(coord:string)=>void} [a.onRescan]  Body re-scan flag ("g:s:p" planet / "g:s:p:3" moon).
  * @param {'planets'|'moons'|'both'} [a.scanBodies]  Scan-chip value — gates the ↻ links.
+ * @param {string} [a.linkBase]  Game origin — makes the per-body coords in-game galaxy links.
  * @param {number} a.colspan
  * @param {boolean} a.open
  * @returns {HTMLTableRowElement}
@@ -768,6 +791,7 @@ export function buildDossier(a) {
     nowMs: a.nowMs,
     onRescan: a.onRescan,
     scanBodies: a.scanBodies,
+    linkBase: a.linkBase,
   }));
 
   return tr;

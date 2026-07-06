@@ -36,7 +36,10 @@ export const alarmClockSection = {
         + 'Alarm clock tab (open it from the Dashboard button above). You set '
         + 'each reminder for a time you already know from your own action, and '
         + 'it rings at that time; OG-E never watches the game while you\'re away. '
-        + 'The token is shared across all your universes.',
+        + 'The token is shared across all your universes. '
+        + '⚠ Borderline fair-play: a fleet-return alarm clock has no official public '
+        + 'ruling from Gameforge yet — do not use it on public servers until it is publicly '
+        + 'confirmed (see the note in the Dashboard ▸ Alarm clock tab). Use at your own risk.',
     },
   ],
 };

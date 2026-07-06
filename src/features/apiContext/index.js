@@ -39,6 +39,7 @@ import {
 import { readOwnProfile } from '../../state/ownProfile.js';
 import { playersStore } from '../../state/players.js';
 import { targetReportsStore } from '../../state/targets.js';
+import { readAllianceClasses } from '../../state/allianceClass.js';
 import { joinDangerProfiles } from '../../domain/dangerJoin.js';
 import { refreshApiCache } from '../shared/apiRefresh.js';
 import { setApiContext } from '../shared/apiContextStore.js';
@@ -129,6 +130,7 @@ export async function getContext(opts = {}) {
     apiCache: cache,
     livePlayers: playersStore.get(),
     targetReports: targetReportsStore.get(),
+    allianceClasses: await readAllianceClasses(),
     ownId: ownPlayerId,
   }).dangerProfiles;
 

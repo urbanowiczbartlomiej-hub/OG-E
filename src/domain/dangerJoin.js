@@ -37,6 +37,9 @@ import { latestOf } from './targetReports.js';
  * @param {Record<string, Record<string, object>>} [a.targetReports]
  *   The spy-report store (`playerId → bodyKey → entry`, either shape) — the
  *   spy refinement that collapses/bounds the fleet estimate.
+ * @param {Record<string, string>} [a.allianceClasses]  allianceId → class slug,
+ *   harvested from the ALLIANCE highscore DOM (state/allianceClass) — the
+ *   spy-free source for the warrior-alliance apex tell.
  * @param {string | number | null} [a.ownId]  Our player id.
  * @returns {{
  *   dangerProfiles: Map<number, import('./dangerScore.js').DangerProfile>,
@@ -44,7 +47,7 @@ import { latestOf } from './targetReports.js';
  *   ownMilitary: number | undefined,
  * }}
  */
-export const joinDangerProfiles = ({ apiCache, livePlayers, targetReports, ownId }) => {
+export const joinDangerProfiles = ({ apiCache, livePlayers, targetReports, allianceClasses, ownId }) => {
   const uniPlanets = apiCache.universe ? apiCache.universe.planets : [];
 
   // Coverage denominator: each player's spiable BODIES — planets PLUS moons
@@ -119,6 +122,7 @@ export const joinDangerProfiles = ({ apiCache, livePlayers, targetReports, ownId
     players: livePlayers,
     universePlanets: uniPlanets,
     spied: spiedByPlayer,
+    allianceClasses,
     ownMilitary,
     ownId: ownIdStr,
     ownAlliance: ownIdStr && apiPlayersMap ? apiPlayersMap[ownIdStr]?.alliance : undefined,

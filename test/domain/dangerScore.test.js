@@ -209,6 +209,60 @@ describe('DANGER_LABELS', () => {
   });
 });
 
+describe('buildDangerProfiles — warrior-alliance tell from the highscore harvest', () => {
+  /** Base feed: one active, un-spied player (id 20) in alliance 500921. */
+  const base = () => ({
+    military: { '20': { score: 5_000_000, ships: 500 } },
+    apiPlayers: { '20': { alliance: '500921' } },
+    ownMilitary: 1_000_000,
+  });
+
+  it('warrior class from the harvest lights the tell (no spy report needed)', () => {
+    const p = prof(buildDangerProfiles({
+      ...base(),
+      allianceClasses: { '500921': 'warrior' },
+    }), 20);
+    expect(p.allianceId).toBe('500921');
+    expect(p.allianceClass).toBe('warrior');
+    expect(p.reasons).toContain('warrior-class alliance (combat bonuses)');
+  });
+
+  it('a harvested "none" is KNOWN-not-warrior — carried, tell dark, no warrior reason', () => {
+    const p = prof(buildDangerProfiles({
+      ...base(),
+      allianceClasses: { '500921': 'none' },
+    }), 20);
+    expect(p.allianceClass).toBe('none');
+    expect(p.reasons).not.toContain('warrior-class alliance (combat bonuses)');
+  });
+
+  it('never harvested → allianceClass undefined (drives the unknown-class hint), tell dark', () => {
+    const p = prof(buildDangerProfiles({ ...base() }), 20);
+    expect(p.allianceId).toBe('500921');
+    expect(p.allianceClass).toBeUndefined();
+    expect(p.reasons).not.toContain('warrior-class alliance (combat bonuses)');
+  });
+
+  it('falls back to a spy report\'s alliance class when the harvest lacks it', () => {
+    const p = prof(buildDangerProfiles({
+      ...base(),
+      spied: { '20': { defensePts: 0, coverageComplete: false, spiedCount: 1, allianceClass: 'warrior' } },
+    }), 20);
+    expect(p.allianceClass).toBe('warrior');
+    expect(p.reasons).toContain('warrior-class alliance (combat bonuses)');
+  });
+
+  it('the harvest wins over a stale spy report (harvested "none" beats spied "warrior")', () => {
+    const p = prof(buildDangerProfiles({
+      ...base(),
+      allianceClasses: { '500921': 'none' },
+      spied: { '20': { defensePts: 0, coverageComplete: false, spiedCount: 1, allianceClass: 'warrior' } },
+    }), 20);
+    expect(p.allianceClass).toBe('none');
+    expect(p.reasons).not.toContain('warrior-class alliance (combat bonuses)');
+  });
+});
+
 describe('combatQuality — res/ship → hull quality', () => {
   it('floors a cheap-hull swarm at 0.2 and peaks warships at 1.0', () => {
     expect(combatQuality(2_000)).toBe(0.2);
