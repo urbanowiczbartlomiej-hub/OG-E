@@ -134,16 +134,11 @@ export function renderWatchlistCards(a) {
       badge.textContent = '—';
       badge.style.cssText = 'margin-left:auto;color:#5f6b75;font-size:12px;';
     }
-    // Inline actions (H-polish): open dossier ▸ + stop-watching ⭐, right of the
-    // badge — reuse row 1 so the card gains affordances without growing taller.
+    // Inline action: stop-watching ✕, right of the badge. No separate "open"
+    // affordance — the whole card is already click-to-open (line above), so a ▸
+    // would just duplicate it.
     const acts = document.createElement('span');
     acts.style.cssText = 'display:inline-flex;align-items:center;gap:6px;margin-left:6px;flex:0 0 auto;';
-    const open = document.createElement('span');
-    open.textContent = '▸';
-    open.title = 'Open dossier';
-    open.style.cssText = 'cursor:pointer;color:#9fb4c4;font-weight:700;font-size:13px;';
-    open.addEventListener('click', (ev) => { ev.stopPropagation(); a.onOpen(pid); });
-    acts.appendChild(open);
     if (a.onToggleWatch) {
       // Red ✕, NOT a star: on the card this action DELETES the card (removes the
       // player from the watchlist and the tile vanishes) — a destructive, easy-to-

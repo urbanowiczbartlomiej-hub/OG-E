@@ -4,6 +4,8 @@ Build instructions are in REVIEWERS.md inside source.zip (Node >= 20):
 The resulting dist/ matches the uploaded extension exactly.
 
 Permissions: storage. Host permissions: *.ogame.gameforge.com (content
-scripts), api.github.com (opt-in gist sync), ntfy.sh (opt-in fleet-landing
-reminders). All outbound traffic is user-initiated and goes only to those
-hosts; no telemetry, no analytics. See PRIVACY.md in source.zip for detail.
+scripts, plus the Spyglass dashboard's manual "Refresh" button, which fetches
+the same public /api/*.xml statistics with credentials omitted), api.github.com
+(opt-in gist sync), ntfy.sh (opt-in fleet-landing reminders). All outbound
+traffic is user-initiated and goes only to those hosts; no telemetry, no
+analytics. See PRIVACY.md in source.zip for detail.

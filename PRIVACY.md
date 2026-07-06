@@ -75,7 +75,11 @@ service [ntfy.sh](https://ntfy.sh):
 
 - `storage` — local scan database and colony history.
 - `host: ogame.gameforge.com` — content scripts run on game tabs;
-  the XHR observer reads requests the game already fires.
+  the XHR observer reads requests the game already fires. The Spyglass
+  dashboard's **⟳ Refresh** button also fetches the same universe's
+  **public** statistics API (`/api/*.xml`) directly, with no game cookie
+  attached (`credentials: 'omit'`) — the same public data OG-E already
+  reads in-game, only triggered by your click from the dashboard page.
 - `host: api.github.com` — only used when you enable gist sync.
 - `host: ntfy.sh` — only used when you enable fleet-landing reminders.
 

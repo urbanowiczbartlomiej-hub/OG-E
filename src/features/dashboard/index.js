@@ -44,6 +44,8 @@
 
 import { chromeStore, safeLS } from '../../lib/storage.js';
 import { debounce } from '../../lib/debounce.js';
+import { logger } from '../../lib/logger.js';
+import { refreshApiCache } from '../shared/apiRefresh.js';
 import { parseTargetPositions } from '../../domain/histogram.js';
 import { populatePositionFilter, renderColonyChart } from './colony.js';
 import { renderFreeRegions, renderServerMap, selectCandidate, resetFreeSelection, highlightPin, _resetFreeStreakForTest } from './freeStreak.js';
@@ -399,7 +401,9 @@ const forceIncludeIds = new Set();
 /** @type {HTMLElement | null} */ let proximityAlertEl;
 /** @type {HTMLElement | null} */ let watchCardsEl;
 /** @type {HTMLElement | null} */ let spyFreshnessEl;
+/** @type {HTMLButtonElement | null} */ let spyApiRefreshEl;
 /** @type {HTMLElement | null} */ let scanPlanStripEl;
+/** @type {HTMLElement | null} */ let scanPlanListEl;
 /** @type {HTMLElement | null} */ let scanPlanSummaryEl;
 
 /** Guards {@link installDashboard} against a double-install. */
@@ -691,7 +695,9 @@ const wireDom = () => {
   proximityAlertEl = document.getElementById('proximityAlert');
   watchCardsEl = document.getElementById('watchCards');
   spyFreshnessEl = document.getElementById('spyFreshness');
+  spyApiRefreshEl = /** @type {HTMLButtonElement | null} */ (document.getElementById('spyApiRefresh'));
   scanPlanStripEl = document.getElementById('scanPlanStrip');
+  scanPlanListEl = document.getElementById('scanPlanList');
   scanPlanSummaryEl = document.getElementById('scanPlanSummary');
   spyglassMapHost = document.getElementById('spyglassMapHost');
   spyMapToggle = /** @type {HTMLButtonElement | null} */ (document.getElementById('spyMapToggle'));
@@ -1464,22 +1470,28 @@ const renderProximityStrip = () => {
  * @returns {void}
  */
 const renderScanPlanStrip = () => {
-  if (!scanPlanStripEl) return;
-  scanPlanStripEl.textContent = '';
-  // The whole disclosure hides when there's nothing to scan, so it never eats a
-  // row in the common (all-fresh / nobody-watched) case.
-  // The toggle CHIP (in the controls row) + its full-width strip below both hide
-  // when there's nothing to scan, so neither eats space in the common case.
-  const show = (/** @type {boolean} */ on) => {
-    if (scanPlanSummaryEl) scanPlanSummaryEl.style.display = on ? '' : 'none';
-    if (!on && scanPlanStripEl) scanPlanStripEl.style.display = 'none';
-  };
+  // Only the ranked LIST is rebuilt each render — the Probes input lives in the
+  // same panel (a scan setting) and is static HTML, so we never touch it here or
+  // its `change` wiring would break. The toggle button is ALWAYS visible now (it
+  // no longer disappears when the list is empty); its collapsed panel still holds
+  // Probes, so the button stays a reliable way in. Panel open/closed is owned by
+  // the toggle click handler — this function never forces it.
+  if (!scanPlanListEl) return;
+  scanPlanListEl.textContent = '';
   const setSummary = (/** @type {string} */ txt) => {
     if (scanPlanSummaryEl) scanPlanSummaryEl.textContent = txt;
   };
+  /** @param {string} txt */
+  const hint = (txt) => {
+    setSummary('🧭 planets to scan');
+    const h = document.createElement('div');
+    h.style.cssText = 'font-size:12px;color:#5f6b76;';
+    h.textContent = txt;
+    scanPlanListEl?.appendChild(h);
+  };
   const watched = [...watchedPlayers];
   if (!watched.length) {
-    show(false);
+    hint('Watch players (⭐) to build a scan order.');
     return;
   }
 
@@ -1504,11 +1516,10 @@ const renderScanPlanStrip = () => {
     activityByPlayer: activityBy,
   });
   if (!entries.length) {
-    show(false);
+    hint('Nothing to scan right now — your watched players are freshly scanned.');
     return;
   }
 
-  show(true);
   const n = entries.length;
   setSummary(`🧭 ${n} planet${n === 1 ? '' : 's'} to scan`);
   /** @type {Map<string, string>} */
@@ -1537,12 +1548,12 @@ const renderScanPlanStrip = () => {
     }
     list.appendChild(row);
   });
-  scanPlanStripEl.appendChild(list);
+  scanPlanListEl.appendChild(list);
   const foot = document.createElement('div');
   foot.style.cssText = 'color:#5f6b76;font-size:11px;margin-top:4px;';
   foot.textContent = `${n > SHOW ? `…and ${n - SHOW} more · ` : ''}`
     + 'The in-game Spy button proposes this order — one tap, one probe.';
-  scanPlanStripEl.appendChild(foot);
+  scanPlanListEl.appendChild(foot);
 };
 
 /**
@@ -1588,6 +1599,54 @@ const renderSpyFreshness = (spiedCount) => {
     chip('no API data yet — open the galaxy view once', true);
   }
   chip(`${spiedCount} spied`);
+};
+
+/** Guards the manual API refresh against overlapping clicks. */
+let apiRefreshInFlight = false;
+
+/**
+ * Manually re-download the public-API feeds for the selected universe and
+ * rebuild the cache in place (item 9). The dashboard runs on the EXTENSION
+ * origin, so — unlike the in-game path — it fetches the universe's own host
+ * directly (`https://s<num>-<lang>.ogame.gameforge.com`, permitted by the
+ * manifest's `host_permissions`) via the shared {@link refreshApiCache}, writing
+ * that universe's cache slice, then reloads + repaints. `force` re-fetches every
+ * feed, including the multi-MB universe.xml — the point of a manual refresh.
+ * @returns {Promise<void>}
+ */
+const refreshApiData = async () => {
+  if (apiRefreshInFlight) return;
+  const btn = spyApiRefreshEl;
+  const id = selectedUniverseId;
+  // Only the canonical s<num>-<lang> id maps to a fetchable game host; a fallback
+  // namespace (dev/edge host) can't be turned into an origin, so bail visibly.
+  if (!id || !/^s\d+-[a-z]{2,4}$/.test(id)) {
+    if (btn) btn.textContent = '⟳ no universe';
+    return;
+  }
+  apiRefreshInFlight = true;
+  if (btn) { btn.disabled = true; btn.textContent = '⟳ refreshing…'; }
+  try {
+    const origin = `https://${id}.ogame.gameforge.com`;
+    const { fetched } = await refreshApiCache({ force: true, origin, universeId: id });
+    // The user may have switched universes mid-fetch — only repaint if we're
+    // still on the one we refreshed (its cache is what loadAll would read).
+    if (selectedUniverseId === id) {
+      await loadAll();
+      renderAll();
+    }
+    if (btn) btn.textContent = fetched.length ? '⟳ Refreshed' : '⟳ up to date';
+  } catch (err) {
+    logger.warn('spyglass: manual API refresh failed', err);
+    if (btn) btn.textContent = '⟳ failed';
+  } finally {
+    apiRefreshInFlight = false;
+    if (btn) {
+      btn.disabled = false;
+      // Let the outcome word linger, then restore the resting label.
+      setTimeout(() => { if (spyApiRefreshEl === btn) btn.textContent = '⟳ Refresh'; }, 2500);
+    }
+  }
 };
 
 /**
@@ -1978,6 +2037,9 @@ const SPY_MAP_REACH_H = 8;
 
 /** Whether the Spyglass map section is expanded. */
 let spyMapOpen = false;
+/** Legend toggle: when true, your own (white) planets are hidden on the map.
+ *  The reach kernel still uses their coords — only the markers are muted. */
+let spyMapHideYou = false;
 
 /**
  * A player's map relationship: own = 'you', else the user's tag (untagged =
@@ -1990,8 +2052,8 @@ const relationshipOf = (pid, ownId) => (pid === ownId ? 'you' : (watchRelationsh
 
 /**
  * Render the "You" marker chip into #spyMapYou (own-planet colour) inline with the
- * watched-player chips. The standing relationship legend was dropped (H-polish):
- * every watched player is already a coloured chip in that same row.
+ * watched-player chips. Clicking it toggles your own planets on the map — a legend
+ * filter, like the watched-player chips' 👁 mute — with a dimmed off-state.
  * @param {boolean} hasOwn
  */
 const renderSpyMapYou = (hasOwn) => {
@@ -2001,9 +2063,14 @@ const renderSpyMapYou = (hasOwn) => {
   const sw = document.createElement('span');
   sw.className = 'dot'; // match the watched-player chips' relationship dot
   sw.style.background = RELATIONSHIP_COLORS.you;
-  sw.style.cursor = 'default';
   spyMapYouEl.append(sw, document.createTextNode('You'));
   spyMapYouEl.style.display = ''; // revert to the .spy-pchip pill's inline-flex
+  spyMapYouEl.classList.toggle('map-hidden', spyMapHideYou);
+  spyMapYouEl.style.cursor = 'pointer';
+  spyMapYouEl.title = spyMapHideYou
+    ? 'Your planets are hidden on the map — click to show them'
+    : 'Click to hide your own planets on the map';
+  spyMapYouEl.onclick = () => { spyMapHideYou = !spyMapHideYou; repaintSpyglassMap(); };
 };
 
 /**
@@ -2096,7 +2163,10 @@ const repaintSpyglassMap = () => {
     const s = Number(parts[1]);
     const p = Number(parts[2]);
     if (!Number.isFinite(g) || !Number.isFinite(s) || !Number.isFinite(p)) continue;
+    // Own coords always seed the reach kernel, even when the "You" legend chip
+    // is toggled off — hiding only mutes the markers, not the distance maths.
     if (isOwn) ownCoords.push({ g, s });
+    if (isOwn && spyMapHideYou) continue;
     bodies.push({
       galaxy: g,
       system: s,
@@ -2255,6 +2325,7 @@ const wireListeners = () => {
     scanPlanStripEl.style.display = open ? '' : 'none';
     scanPlanSummaryEl?.setAttribute('aria-expanded', String(open));
   });
+  spyApiRefreshEl?.addEventListener('click', () => { void refreshApiData(); });
 
   // Region controls only repaint the settlement-regions block. The
   // underlying `scans` cache hasn't changed — only the slots/tolerance
@@ -2395,7 +2466,9 @@ export const _resetDashboardForTest = () => {
     spyMapPlayersEl =
     watchCardsEl =
     spyFreshnessEl =
+    spyApiRefreshEl =
     scanPlanStripEl =
+    scanPlanListEl =
     scanPlanSummaryEl =
     freeContainer =
     freeCountInfoEl =

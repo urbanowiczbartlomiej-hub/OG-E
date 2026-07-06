@@ -416,27 +416,6 @@
   button.spy-pchip { font-family: inherit; cursor: pointer; }
   .spy-pchip.on { border-color: #4a9eff; background: #1c2f45; color: #cfe4ff; }
 
-  /* "?" help popover — a <details> whose body floats absolutely, so opening it
-     explains the section WITHOUT reflowing the page. Houses the long intro
-     text the Spyglass header used to open with. */
-  .sg-help { position: relative; display: inline-block; }
-  .sg-help summary {
-    list-style: none; cursor: pointer; user-select: none;
-    width: 20px; height: 20px; border-radius: 999px;
-    border: 1px solid #2b3a4d; background: #18222e; color: #9fb4c4;
-    display: inline-flex; align-items: center; justify-content: center;
-    font-size: 12px;
-  }
-  .sg-help summary::-webkit-details-marker { display: none; }
-  .sg-help summary:hover, .sg-help[open] summary { border-color: #4a9eff; color: #cfe4ff; }
-  .sg-help > div {
-    position: absolute; left: 0; top: 26px; z-index: 40;
-    width: min(560px, 82vw);
-    background: #0d131b; border: 1px solid #2b3a4d; border-radius: 8px;
-    padding: 10px 12px; color: #9aa; font-size: 12.5px; line-height: 1.5;
-    box-shadow: 0 6px 24px rgba(0,0,0,.6);
-  }
-
   /* Grouped neighbourhood census (inside the expanded row) — fixed labelled
      families instead of a reshuffling flat tile row; zeros stay visible but
      dimmed so two candidates always compare slot-for-slot. */
@@ -822,21 +801,12 @@
 </section>
 
 <section id="spyglassSection" class="tab-section">
-  <!-- Header: title + "experimental" + a "?" popover holding the full
-       how-it-works text (no standing tagline), then a data-freshness chip row. -->
+  <!-- Header: title + "experimental", then a data-freshness chip row. -->
   <h1 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">Spyglass<span class="exp-badge" title="Hidden-fleet estimates depend on how much you've spied; treat them as a guide, not gospel.">experimental</span>
-    <details class="sg-help">
-      <summary title="How Spyglass works">?</summary>
-      <div>
-        The whole-server board — who is holding fleet, and how fresh your intel is. Danger and the
-        <strong style="color:#ccc;">mobile-Fleet</strong> estimate come free from OGame's public API
-        (no spying needed); spy a player to firm the numbers up. Hit <strong style="color:#7fd6a8;">⭐ watch</strong>
-        to track a player (they land on the map too), <strong style="color:#6b97c4;">↻</strong> to flag a re-scan,
-        and click a row to see their planets. Data is fetched in-game from the public API — open the
-        galaxy view once to populate it.
-      </div>
-    </details>
     <span id="spyFreshness" style="display:inline-flex;gap:6px;flex-wrap:wrap;margin-left:auto;"></span>
+    <button type="button" id="spyApiRefresh"
+      title="Download fresh data from OGame's public API for this universe now (danger, mobile-fleet estimates, occupancy map). Normally OG-E refreshes this in-game; use this to force it from here."
+      style="font-size:11px;color:#9fb4c4;background:#12202e;border:1px solid #2b3a4d;border-radius:999px;padding:3px 11px;cursor:pointer;white-space:nowrap;">⟳ Refresh</button>
   </h1>
   <!-- Watchlist (the hero, left) beside "Who's spying you" (defensive digest,
        right) — one glance block at the top of the tab. -->
@@ -859,9 +829,9 @@
       <span id="spyMapPlayers" style="display:contents;"></span>
     </div>
   </div>
-  <!-- One control line, right on top of the table it drives: map toggle · row
-       cap · ⚙ (holds the hide-inactive / watch-list filters + military range +
-       probes) · search. -->
+  <!-- One control line on top of the table: search · map · planets-to-scan (left)
+       · ⚙ Filters · row cap (right). The map button toggles the map ABOVE; the
+       "planets to scan" button (right after it) toggles the scan-plan panel BELOW. -->
   <div class="controls" style="align-items:center;gap:8px;flex-wrap:wrap;">
     <input id="tgtSearch" type="search" placeholder="🔍 search player by name…"
       style="width:220px;max-width:100%;padding:5px 9px;background:#0e141b;border:1px solid #2a3542;border-radius:4px;color:#cfd6dd;font-size:13px;"
@@ -870,22 +840,29 @@
       <button type="button" id="spyMapToggle" aria-expanded="false" aria-controls="spyMapBlock"
         title="Show the positions map — your planets plus every watched player's.">🗺 map</button>
     </div>
+    <button type="button" id="scanPlanSummary" aria-expanded="false" aria-controls="scanPlanStrip"
+      title="Ranks your watch list by danger × intel staleness. A plan only — the in-game Spy button proposes the same order, and every probe stays one deliberate tap."
+      style="background:#18222e;border:1px solid #2b3a4d;border-radius:999px;color:#9fb4c4;padding:3px 10px;font-size:12px;cursor:pointer;">🧭 planets to scan</button>
+    <button type="button" id="tgtConfigToggle" aria-expanded="false" aria-controls="tgtConfigCard"
+      title="Filters: hide inactive · watch list only · military range"
+      style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;background:#18222e;border:1px solid #2b3a4d;border-radius:999px;color:#9fb4c4;padding:3px 12px;font-size:12px;cursor:pointer;">⚙ Filters</button>
     <div class="chip-group seg" id="tgtLimitChips" data-value="100" title="How many rows to show.">
       <button type="button" data-value="50">top 50</button>
       <button type="button" data-value="100">top 100</button>
       <button type="button" data-value="200">top 200</button>
       <button type="button" data-value="0">all</button>
     </div>
-    <button type="button" id="tgtConfigToggle" aria-expanded="false" aria-controls="tgtConfigCard"
-      title="Filters: hide inactive · watch list only · military range · probes"
-      style="background:#18222e;border:1px solid #2b3a4d;border-radius:999px;color:#9fb4c4;padding:3px 10px;font-size:12px;cursor:pointer;">⚙</button>
-    <button type="button" id="scanPlanSummary" aria-expanded="false" aria-controls="scanPlanStrip"
-      title="Ranks your watch list by danger × intel staleness. A plan only — the in-game Spy button proposes the same order, and every probe stays one deliberate tap."
-      style="display:none;background:#18222e;border:1px solid #2b3a4d;border-radius:999px;color:#9fb4c4;padding:3px 10px;font-size:12px;cursor:pointer;">🧭 scan order</button>
-    <span id="tgtCountInfo" style="color:#888;font-size:13px;margin-left:auto;"></span>
   </div>
-  <div id="scanPlanStrip" style="display:none;margin:6px 0 10px;"></div>
-  <div id="tgtConfigCard" style="display:none;background:#0b1118;border:1px solid #2b3a4d;border-radius:8px;padding:10px 14px;margin:-4px 0 14px;max-width:560px;font-size:13px;color:#8b99a8;">
+  <!-- Scan-plan panel — Probes (the in-game scan FAB's per-planet pre-arm, a scan
+       setting) + the ranked scan order. Toggled by "planets to scan" above. -->
+  <div id="scanPlanStrip" style="display:none;background:#0b1118;border:1px solid #2b3a4d;border-radius:8px;padding:10px 14px;margin:-4px 0 14px;font-size:13px;color:#8b99a8;">
+    <label style="display:inline-block;margin:0 0 8px;">Probes:
+      <input id="tgtProbes" type="number" min="1" max="9999" value="20" size="4"
+        title="How many espionage probes the in-game scan button pre-arms per planet.">
+    </label>
+    <div id="scanPlanList"></div>
+  </div>
+  <div id="tgtConfigCard" style="display:none;background:#0b1118;border:1px solid #2b3a4d;border-radius:8px;padding:10px 14px;margin:-4px 0 14px;width:100%;box-sizing:border-box;font-size:13px;color:#8b99a8;">
     <div class="chip-group" style="margin-bottom:10px;">
       <button type="button" id="tgtHideInactive" class="on"
         title="Hide inactive / long-inactive accounts.">😴 hide inactive</button>
@@ -898,10 +875,6 @@
       <span style="color:#666;">–</span>
       <input id="tgtMaxMilitary" type="number" min="0" value="0" size="8"
         title="Hide players whose military score is above this value (0 = no upper cap).">
-    </label>
-    <label>Probes:
-      <input id="tgtProbes" type="number" min="1" max="9999" value="20" size="4"
-        title="How many espionage probes the in-game scan button pre-arms per planet.">
     </label>
   </div>
   <div id="targetsContainer"></div>

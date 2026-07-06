@@ -543,7 +543,7 @@ export function renderTargets({
   hr.appendChild(headCell('Fleet', 'right', sortable('fleet')));
   hr.appendChild(headCell('Military', 'right', sortable('military')));
   hr.appendChild(headCell('Ships', 'right', sortable('ships')));
-  hr.appendChild(headCell('Intel'));
+  hr.appendChild(headCell('Intel', 'center'));
   thead.appendChild(hr);
   table.appendChild(thead);
 

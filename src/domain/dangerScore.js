@@ -584,7 +584,7 @@ export const buildDangerProfiles = (input) => {
     }
     if (p.reach.galaxies >= 2) reasons.push(`planets across ${p.reach.galaxies} galaxies`);
     if (p.reach.spread >= 0.5) reasons.push(`tactically spread (reach ${Math.round(reachVal * 100)}%)`);
-    if (p.reach.fsSpot) reasons.push('FS spot amid spread (aggressor tell)');
+    if (p.reach.fsSpot) reasons.push('FS spot amid spread');
     if (apex > 0) reasons.push(`apex signals ${apexSignals}/4`);
     if (p.spy && p.spy.spiedCount > 0) {
       reasons.push(p.provenance === 'spied'

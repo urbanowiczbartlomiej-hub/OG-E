@@ -25,6 +25,7 @@ import {
   readApiCache,
   readApiCacheFor,
   writeApiCache,
+  writeApiCacheFor,
 } from '../../src/state/apiCache.js';
 
 /**
@@ -87,5 +88,15 @@ describe('writeApiCache', () => {
     await writeApiCache(cache);
     expect(mock.set).toHaveBeenCalledTimes(1);
     expect(mock.set).toHaveBeenCalledWith('s163-pl:oge_apiCache', cache);
+  });
+});
+
+describe('writeApiCacheFor (explicit universe)', () => {
+  it('persists under the given universe key, ignoring location', async () => {
+    /** @type {import('../../src/state/apiCache.js').ApiCache} */
+    const cache = { server: { data: { galaxies: 4, systems: 400 }, fetchedAt: 2 } };
+    await writeApiCacheFor('s999-en', cache);
+    expect(mock.set).toHaveBeenCalledTimes(1);
+    expect(mock.set).toHaveBeenCalledWith('s999-en:oge_apiCache', cache);
   });
 });

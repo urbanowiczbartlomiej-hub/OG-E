@@ -5,8 +5,9 @@
 //
 // Plain `read*/write*` key-owner over `chrome.storage.local` — the sanctioned
 // exception documented in CLAUDE.md (cf. `state/ownProfile.js`,
-// `state/dailyActions.js`): only `features/apiContext` reads this, on demand,
-// so a reactive store would be pure overhead.
+// `state/dailyActions.js`): the writers/readers pull this on demand
+// (`features/shared/apiRefresh` in-game; the dashboard's manual refresh + read
+// via the `*For(universeId)` variants), so a reactive store would be pure overhead.
 //
 // LOCAL ONLY — this never enters the gist. The data is fully re-fetchable from
 // the API, so it's a device cache, not state we own: its sole purpose is to
@@ -85,3 +86,14 @@ export const writeApiCache = (cache) => {
   const key = currentUniverseKey(API_CACHE_KEY_BASE, apiCacheKeyFor);
   return chromeStore.set(key, cache);
 };
+
+/**
+ * Persist a specific universe's API cache (dashboard counterpart to
+ * {@link readApiCacheFor} — the extension-origin dashboard selects a universe
+ * explicitly rather than parsing `location.host`).
+ * @param {string} universeId
+ * @param {ApiCache} cache
+ * @returns {Promise<void>}
+ */
+export const writeApiCacheFor = (universeId, cache) =>
+  chromeStore.set(apiCacheKeyFor(universeId), cache);

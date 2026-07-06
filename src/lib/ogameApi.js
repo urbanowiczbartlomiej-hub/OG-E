@@ -4,16 +4,21 @@
 //
 // The content script runs ON the universe host (e.g.
 // `s163-pl.ogame.gameforge.com`), and the API is served from that same host,
-// so every request here is SAME-ORIGIN: no CORS, no `host_permissions`, no
-// base-URL guessing. We only ever fetch the current universe's data (the
-// per-device, current-universe-only rule), which is exactly what same-origin
-// gives us for free. Cross-universe fetching would need `host_permissions` for
-// `*.ogame.gameforge.com` and an AMO permissions note — deliberately out of
-// scope.
+// so an in-game request is SAME-ORIGIN by default: no CORS, no base-URL guessing.
+// Omit the `origin` argument and every call resolves against `location.origin` —
+// exactly the current-universe data the per-device rule wants, for free.
+//
+// The dashboard is the exception: it runs on the EXTENSION origin
+// (`moz-extension://…`), so it must pass an explicit `origin` (the selected
+// universe's `https://s<num>-<lang>.ogame.gameforge.com`). That cross-origin
+// fetch is allowed by the manifest's existing `host_permissions`
+// (`*://*.ogame.gameforge.com/*`); the data is still the same public XML,
+// fetched with `credentials: 'omit'` (never the game cookie). This is the only
+// sanctioned cross-origin caller — see PRIVACY.md.
 //
 // This module returns RAW TEXT only. All parsing is pure and lives in
 // `domain/apiOccupancy.js`; the side-effectful orchestration (cadence, cache,
-// own-id) lives in `features/apiContext`. lib/ stays the zero-app-dep
+// own-id) lives in `features/shared/apiRefresh.js`. lib/ stays the zero-app-dep
 // foundation — it imports nothing from domain/state/features/sync.
 
 /* global location, fetch */
@@ -21,13 +26,17 @@
 const API_PATH = '/api';
 
 /**
- * Build the same-origin URL for a statistics endpoint.
+ * Build the URL for a statistics endpoint. Defaults to same-origin
+ * (`location.origin`); pass `origin` to target a specific universe host (the
+ * dashboard, which is not on a game origin).
  * @param {string} file              Endpoint base name, e.g. `'universe'`, `'players'`.
  * @param {Record<string,string>} [params]   Query params (e.g. highscore `{category,type}`).
+ * @param {string} [origin]          Absolute origin, e.g. `https://s163-pl.ogame.gameforge.com`.
  * @returns {string}
  */
-export function apiUrl(file, params) {
-  const base = `${location.origin}${API_PATH}/${file}.xml`;
+export function apiUrl(file, params, origin) {
+  const root = origin || (typeof location !== 'undefined' ? location.origin : '');
+  const base = `${root}${API_PATH}/${file}.xml`;
   if (!params) return base;
   return `${base}?${new URLSearchParams(params).toString()}`;
 }
@@ -39,10 +48,11 @@ export function apiUrl(file, params) {
  *
  * @param {string} file
  * @param {Record<string,string>} [params]
+ * @param {string} [origin]   Absolute origin to fetch from (default: same-origin).
  * @returns {Promise<string>}
  */
-export async function fetchApiText(file, params) {
-  const res = await fetch(apiUrl(file, params), { credentials: 'omit' });
+export async function fetchApiText(file, params, origin) {
+  const res = await fetch(apiUrl(file, params, origin), { credentials: 'omit' });
   if (!res.ok) throw new Error(`ogame api ${file}: HTTP ${res.status}`);
   return res.text();
 }

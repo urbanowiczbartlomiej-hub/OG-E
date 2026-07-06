@@ -4,6 +4,35 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.38.1] — 2026-07-06
+
+### Added
+
+- **Refresh Spyglass data on demand.** A new **⟳ Refresh** button in the Spyglass
+  header pulls the latest public-API data — Danger, mobile-fleet estimates, the
+  positions map — for the selected universe straight from the dashboard, so you no
+  longer have to hop back into the galaxy view just to freshen it.
+
+### Changed
+
+- **Spyglass controls, tidied into one row.** Left to right: search · 🗺 map ·
+  🧭 planets to scan, with **⚙ Filters** and the row cap (top 50 / 100 / 200 /
+  all) grouped on the right. The old "N targets in range" caption is gone (the row
+  cap took its place), the Filters panel now opens full-width, and the **Probes**
+  count moved into the *planets to scan* panel where it belongs. The Intel column
+  is centred, and the header's "?" help was dropped.
+- **"Planets to scan" is always available** — it no longer disappears when nothing
+  is queued; the button opens a panel with the Probes count and the ranked order.
+- **Hide your own planets on the map.** Click the **You** chip in the map legend
+  to toggle your planets off/on, the same way the watched-player chips already mute.
+- Watchlist cards dropped the redundant ▸ — the whole card already opens the
+  dossier, so only the ✕ (remove) remains.
+
+### Fixed
+
+- De-jargoned a Danger reason: "FS spot amid spread (aggressor tell)" now reads
+  simply "FS spot amid spread".
+
 ## [1.38.0] — 2026-07-05
 
 ### Changed

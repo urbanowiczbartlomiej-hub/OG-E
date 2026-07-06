@@ -49,6 +49,17 @@ describe('apiUrl', () => {
       'https://s999-en.ogame.gameforge.com/api/players.xml',
     );
   });
+
+  it('targets an explicit origin when given (the dashboard, off-game-origin)', () => {
+    // location is s163-pl, but the explicit origin wins — the extension-origin
+    // dashboard refreshing another universe's public API.
+    expect(apiUrl('universe', undefined, 'https://s5-en.ogame.gameforge.com')).toBe(
+      'https://s5-en.ogame.gameforge.com/api/universe.xml',
+    );
+    expect(apiUrl('highscore', { category: '1', type: '3' }, 'https://s5-en.ogame.gameforge.com')).toBe(
+      'https://s5-en.ogame.gameforge.com/api/highscore.xml?category=1&type=3',
+    );
+  });
 });
 
 describe('fetchApiText', () => {
@@ -92,5 +103,18 @@ describe('fetchApiText', () => {
     );
 
     await expect(fetchApiText('universe')).rejects.toThrow('ogame api universe: HTTP 503');
+  });
+
+  it('fetches from an explicit origin when given (cross-origin, cookie still omitted)', async () => {
+    const fetchMock = vi.fn(
+      /** @param {...any} _args */ (..._args) => Promise.resolve(fakeResponse({ body: 'ok' })),
+    );
+    globalThis.fetch = /** @type {any} */ (fetchMock);
+
+    await fetchApiText('universe', undefined, 'https://s5-en.ogame.gameforge.com');
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://s5-en.ogame.gameforge.com/api/universe.xml');
+    expect(init).toEqual({ credentials: 'omit' });
   });
 });
