@@ -128,3 +128,38 @@ online".** It fires on: the owner's own actions, the owner's fleet returning
 shows the activity the previous probe caused). Any consumer must therefore
 discount self-induced markers (see `domain/activityObs.js` / the read-side pass
 in `domain/routine.js`) and must never label the signal "online".
+
+## Catching a landed fleet-save via the activity marker (the aggressor's tell)
+
+The single most common aggressor tactic: catch a **returning fleet-save that
+landed on a moon while its owner is offline** — the fleet sits exposed until the
+owner logs in to re-save it, so it can be spied and destroyed. The activity
+marker gives it away, using the "activity ≠ online" asymmetry **offensively**:
+
+- A human *playing* leaves marks on **several** bodies (they hop planets, use
+  their main). So a lone fresh marker on **one moon**, with **every other body
+  of that player quiet** (no marker, i.e. >60 min), is not a human at the
+  keyboard — it's a **mechanical event on that moon**, and the most common one is
+  a fleet-save touchdown.
+- The signal is **NOW-only**: the moon marker fades after ~60 min, so it must be
+  read fresh and acted on fast.
+- It is a **candidate, not a certainty** — the same marker fires for a foreign
+  attack/probe on that moon or a brief owner login. A probe (one deliberate tap)
+  is what confirms the fleet. The tool's copy says *"possible fresh fleet — spy
+  to confirm"*, never *"fleet is there"*.
+
+**OG-E detection — `domain/fleetLanding.js` (`detectFleetLanding`).** Pure, over
+the galaxy activity rings (`state/activityObs`) the player gathered passively.
+Fires when: exactly ONE of a watched player's bodies is *fresh-active* (a
+positive marker seen within `FRESH_LOOK_MS`), it is a **moon**, and ≥1 other body
+is *recently-seen quiet* (a `-1` look within `QUIET_COVERAGE_MS`). Two honesty
+gates are load-bearing: **coverage** (we can only call the other bodies "quiet"
+if we LOOKED at them recently — bodies with a stale/no look are `unknown` and
+lower the coverage the UI shows; never over-claim), and the **self-induced skip**
+(a fresh moon we probed ourselves within `SELF_WINDOW_MS` is our own light, not a
+landing — belt-and-braces over the ring's append-side discount). A hit boosts
+that moon to the top of the probe plan (`scanPriority.STRIKE_BOOST`, past the
+scan-bodies filter and the freshness gate) so the FAB proposes spying it first,
+and flags it on the dashboard (🎯 row marker + dossier banner). It **respects
+scan-'off'** (an explicit "don't probe this player" wins; the flag still shows)
+and never auto-sends — the confirming probe is one deliberate tap.

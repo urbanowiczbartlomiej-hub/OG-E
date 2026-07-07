@@ -15,10 +15,12 @@ watched player's relationship tag. Today both are `LOCAL ONLY` (see
 |---|---|
 | Watchlist player ids | **yes** |
 | Relationship tags (enemy/friend/neutral) | **yes** |
-| Probes count (`{players, probes}`) | **no** — per-device FAB convenience, stays local |
+| Scan mode (`scanMode`: pid/bodyKey → on/off) | **yes** — the "do I also probe this" decision; follows the user like relationships. (Galaxy activity is always-on, not stored — nothing to sync.) |
+| Cadences (`cadence`: hot/warm/cold days + galaxyHours) | **yes** — strategy tuning, wanted consistent across devices; small (4 numbers) |
+| Probes count (`{players, probes}`) | **no** — per-device FAB convenience (how many this device's hangars spare per tap), stays local |
 | `targetReports` (opened spy reports) | **no** — heavy (`{latest,history}`/body); gist-size risk (cf. the 2.6 MB scans lesson) |
 | `allianceClass` map | **no** — small but re-derivable by opening the ranking; marginal |
-| `activityObs`, proximity reports | **no** — device-local, re-observable |
+| `activityObs`, proximity reports | **no** — device-local, re-observable (and the presence heatmap re-derives from them) |
 
 ## Merge (decided): last-write-wins + tombstones
 
@@ -33,7 +35,10 @@ Proposed synced shape (per universe):
 {
   "watched":       { "<id>": { "ts": 1720000000000 } },   // added/re-added at ts
   "tombstones":    { "<id>": { "ts": 1720000100000 } },   // removed at ts
-  "relationships": { "<id>": { "rel": "enemy", "ts": 1720000050000 } }
+  "relationships": { "<id>": { "rel": "enemy", "ts": 1720000050000 } },
+  "scanMode":      { "<key>": { "mode": "off", "ts": 1720000060000 } },  // key = pid or "g:s:p"/"g:s:p:3"; 'on'/'off'
+  "scanModeGone":  { "<key>": { "ts": 1720000070000 } },  // key cleared back to inherited, at ts
+  "cadence":       { "hotDays": 2, "warmDays": 4, "coldDays": 7, "galaxyHours": 24, "ts": 1720000080000 }
 }
 ```
 
@@ -41,6 +46,19 @@ Merge rule (pure, per id): the **newest ts wins** across devices AND across
 `watched` vs `tombstones` — a later removal beats an earlier add and vice-versa.
 Relationship: newest ts per id wins. A relationship for a tombstoned id is kept
 (harmless; re-watching restores the tag).
+
+**`scanMode`** merges exactly like `watched`, per KEY (a pid or a body override
+key): newest ts wins across `scanMode` vs `scanModeGone`, so *setting* a body's
+probe scan off on device A and *clearing it back to inherited* on device B resolve
+by recency (clearing a key needs its own tombstone, `scanModeGone`, just like an
+un-watch — the map stores explicit `on` overrides too, so "absent" is a real,
+propagatable state). A `scanMode` entry for a tombstoned player is harmless (kept;
+re-watching restores it).
+
+**`cadence`** is a single small object, so it merges as ONE last-write-wins value
+(whole-object newest `ts` wins) — no per-field merge (the four numbers are one
+strategy the user tunes together). Absent remote `cadence` → keep local; absent
+local → take remote.
 
 ## Mechanism
 
@@ -57,13 +75,16 @@ Relationship: newest ts per id wins. A relationship for a tombstoned id is kept
 
 1. **`domain/watchListMerge.js` (pure, NEW)** — the LWW+tombstone merge of two
    synced shapes → one. Unit-tested: add-vs-remove ordering, cross-device union,
-   relationship LWW, tombstone GC (drop tombstones older than N days so the file
-   can't grow forever).
-2. **`state/watchList.js`** — migrate `{players[], probes}` → the timestamped
+   relationship LWW, **scanMode set-vs-clear ordering (via `scanModeGone`)**,
+   **cadence whole-object LWW**, tombstone GC (drop tombstones — incl.
+   `scanModeGone` — older than N days so the file can't grow forever).
+2. **`state/watchList.js`** — migrate `{players[], probes, ...}` → the timestamped
    shape; tolerate BOTH on read (like `targetReports` `{latest,history}`). Writes
    stamp `ts`. Drop the "LOCAL ONLY" header note. **First-sync safety:** seed
-   existing local ids with `ts = now` so the initial merge PRESERVES them (never
-   wipe a device's list); tombstones start empty.
+   existing local ids **and scanMode keys** with `ts = now` so the initial merge
+   PRESERVES them (never wipe a device's list or watch strategy); tombstones start
+   empty. `cadence` seeds with `ts = now` too (else a remote default could clobber
+   a locally-tuned one). `probes` stays out of the synced shape (local only).
 3. **`sync/gist.js` + scheduler** — register the new per-universe file: fetch,
    merge (via the pure fn), write-back; upload on the watchlist store's change +
    on-install catch-up.

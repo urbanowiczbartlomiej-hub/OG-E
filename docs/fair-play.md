@@ -314,6 +314,19 @@ argument is a single **provenance guarantee**, and every item below inherits it:
 - **Galaxy-view activity capture** — reads the per-body activity marker out of the
   `fetchGalaxyContent` the player themselves browses; identical basis to the existing
   GREEN `galaxyHook` observer. No extra fetch (the player drives the galaxy view).
+- **Always-on galaxy activity + galaxy-look proposal (`galaxyWatch`)** — galaxy activity
+  is tracked for EVERY watched body (planet + moon), always, purely by reading the
+  `fetchGalaxyContent` the player's own navigation loaded (undetectable by the target — no
+  espionage-log entry, no counter-espionage). To keep that coverage fresh the Spy FAB may
+  propose **one system**, and a single tap navigates there (`navigateGalaxyInPage` — the
+  same 1-tap-1-navigation as `sendLifeform`'s shipped discovery walk). No probe is sent,
+  no request is originated, the player drives every step, and it is *strictly less* game
+  traffic than probing. Galaxy-capture + 1-tap-nav classes (GREEN).
+- **Per-body / per-player scan toggle + cadences (dashboard prefs)** — device-local intent
+  (whether to ALSO send probes for a body/player — galaxy activity is never gated; the
+  staleness thresholds that reorder the plan). Read **in-tab only** to rank/label; no send,
+  no timer, no background actor. Same display/prefs class as the sort/limit/open-dossier
+  workspace state (GREEN).
 - **Spy FAB (`sendSpy`)** — 1-click-1-send; each tap pre-fills + one native dispatch
   for **one** planet. Shipped precedent (v1.31.0: "you press send each time, nothing
   is automated"). Fleet-send-buttons class (GREEN).
@@ -346,14 +359,36 @@ was gated:
    player opened + tab-open public API.
 2. **`windowBonus`** — a passive re-rank that surfaces "good moment to scan" when *now*
    falls inside that observed pattern. It is never a toast, never a timer, never a send.
+3. **Presence heatmap (offline-window analysis)** — the SAME routine data, aggregated
+   into a day/hour temperature map of when a watched opponent is reliably *not*
+   interacting, to time an attack. Same provenance (reports the player opened + galaxy
+   views they browsed), same in-tab display, no send/alert/timer. It is the **sharpest
+   form** of the same question items 1–2 raise — opponent-activity-over-time — so it sits
+   inside the SAME consult, not outside it. Its copy says **"offline windows"** /
+   **"based on the intel you gathered"** / **"no activity seen"**, and NEVER
+   "online"/"logged in" (the marker is *any* interaction — a foreign fleet, a probe, our
+   own; §6.6bis). The map deliberately shows **coverage** (unobserved ≠ offline) so it
+   cannot fabricate a certainty the samples don't support.
+4. **Fleet-landing "strike" signal** (`domain/fleetLanding.js`) — the instantaneous
+   cousin: a lone fresh moon marker + all other bodies quiet ⇒ *"possible fresh
+   fleet-save landed while the owner is away"*, boosting that moon to the top of the scan
+   plan so the FAB proposes spying it. Same provenance (the galaxy views the player
+   browsed), same in-tab display, **no send/alert/timer** — the confirming probe is one
+   deliberate tap, and there is deliberately **no in-game highlight** (that would be the
+   YELLOW-C visual-signal zone; kept off). It is the closest thing to a "strike now"
+   nudge OG-E has, so it belongs to this consult too. Copy is a **candidate** —
+   *"possible fresh fleet — spy to confirm"* — never *"fleet is there"*, and it shows the
+   coverage basis (never over-claims "all others quiet" beyond what was looked at).
 
 **Consult (open ONE, provenance-first):** *"Is a device-local intel workbench that
-summarises an opponent's activity/wealth pattern **purely** from spy reports the player
-opened during normal play + public-API data read **only while a game tab is open** — no
-background fetch, no send, no alert, one-tap-one-scan preserved — a permitted display of
-intel the player gathered, or does summarising opponent activity-over-time itself trip
-rule 4?"* Ship F/G only after the OK. Nothing in user copy is named "monitor", "watcher",
-"tracker-of-\<player\>", or "alarm"; "Watchlist" (the player's *own* list) is fine.
+summarises an opponent's activity/wealth pattern — up to and including a heatmap of their
+likely-offline windows — **purely** from spy reports the player opened during normal play
++ public-API data read **only while a game tab is open** — no background fetch, no send,
+no alert, one-tap-one-scan preserved — a permitted display of intel the player gathered,
+or does summarising opponent activity-over-time itself trip rule 4?"* Ship F/G (incl. the
+presence heatmap AND the fleet-landing strike signal) only after the OK. Nothing in user
+copy is named "monitor", "watcher", "tracker-of-\<player\>", or "alarm"; "Watchlist" (the
+player's *own* list) is fine.
 
 ### Wording discipline — Spyglass extension (binding, extends §"Wording discipline")
 
@@ -378,7 +413,12 @@ applies verbatim to every Spyglass string. Concretely:
 No Spyglass state may ever hold a **"send at" / "rescan at" timestamp that a background
 path acts on**. The plan's persisted workspace state (sort, limit, open-dossier id) is
 display/prefs only. All timing is in-tab and visibility-gated (`lib/clock`); there is no
-service worker and no `chrome.alarms` — verified unchanged by this redesign.
+service worker and no `chrome.alarms` — verified unchanged by this redesign. The
+galaxy-watch additions keep the line: the `scanMode` map holds no timestamps, and the
+`cadence` values are in-tab **staleness thresholds** that only reorder/label the plan
+(exactly like the existing per-danger cadence), never a background-acted "rescan at".
+The presence engine reads timestamps purely to compute an in-tab display; nothing acts
+on them off-tab.
 
 ## What OG-E never does (all grep-verified)
 

@@ -897,6 +897,21 @@
         <button type="button" data-value="both">both</button>
       </span>
     </span>
+    <!-- Re-scan cadence — how old intel may get before a body re-enters the plan.
+         Probe staleness by danger tier (hot ≥60 D, warm ≥30 D, cold the rest);
+         galaxy = passive-sighting freshness for galaxy-watched bodies. Read
+         in-tab for ranking/display only. -->
+    <div style="border-top:1px solid #1c2836;margin-top:2px;padding-top:8px;display:flex;flex-wrap:wrap;gap:14px;align-items:center;">
+      <span style="color:#6b7887;">Re-scan after —</span>
+      <label title="Probe re-scan for hot targets (danger ≥ 60).">🔥 hot
+        <input id="cadHotDays" type="number" min="0.5" max="60" step="0.5" value="2" size="3"> d</label>
+      <label title="Probe re-scan for warm targets (danger ≥ 30).">🌡️ warm
+        <input id="cadWarmDays" type="number" min="0.5" max="60" step="0.5" value="4" size="3"> d</label>
+      <label title="Probe re-scan for everyone else.">❄️ cold
+        <input id="cadColdDays" type="number" min="0.5" max="60" step="0.5" value="7" size="3"> d</label>
+      <label title="Galaxy-sighting freshness for bodies watched via the galaxy (passive, undetectable).">🔭 galaxy
+        <input id="cadGalaxyHours" type="number" min="2" max="336" step="1" value="24" size="3"> h</label>
+    </div>
     <div id="scanPlanList"></div>
   </div>
   <div id="tgtConfigCard" style="display:none;background:#0b1118;border:1px solid #2b3a4d;border-radius:8px;padding:10px 14px;margin:-4px 0 14px;width:100%;box-sizing:border-box;font-size:13px;color:#8b99a8;">

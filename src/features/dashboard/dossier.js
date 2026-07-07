@@ -16,6 +16,8 @@
 import { scanStatus, rescanAtFor } from '../../domain/spyScan.js';
 import { motherPlanetOf } from '../../domain/lootRhythm.js';
 import { dangerColor } from '../../lib/dangerColor.js';
+import { effectiveScan, ringKeyFor } from '../../domain/scanMode.js';
+import { bodyActivityReadout } from '../../domain/galaxyWatch.js';
 
 /**
  * @typedef {import('../../domain/targets.js').PlanetPos} PlanetPos
@@ -245,17 +247,25 @@ function civilBlock(civ, profile) {
  *   MOON reports keyed by the moon's planet "g:s:p" coord (their own map).
  * @param {*} a.rescan
  * @param {number} a.nowMs
- * @param {(coord: string) => void} [a.onRescan]  Body re-scan flag — receives
- *   the body's OWN key: "g:s:p" for a planet, "g:s:p:3" for a moon.
- * @param {'planets'|'moons'|'both'} [a.scanBodies]  Which bodies the in-game
- *   scan FAB proposes (the Scan chip). Gates the ↻ links: flagging a body the
- *   planner will never propose would be a dead switch, so planets lose ↻ under
- *   "moons", moons lose it under "planets".
+ * @param {Record<string, import('../../domain/scanMode.js').ScanMode>} [a.scanMode]
+ *   Scan-mode map (player id / body override key → 'on'|'off') — drives the
+ *   per-body Scan toggle. Galaxy activity is NOT gated (always on).
+ * @param {(key: string, mode: import('../../domain/scanMode.js').ScanMode | null) => void} [a.onSetScanMode]
+ *   Set a body scan override (key = "g:s:p"/"g:s:p:3"); present → the toggle renders.
+ * @param {Record<string, import('../../domain/activityObs.js').ActivityObs[]>} [a.rings]
+ *   THIS player's galaxy-activity rings (ringKey "g:s:p:type" → ring) — the
+ *   Activity column source.
+ * @param {'planets'|'moons'|'both'} [a.scanBodies]  Which body TYPES the probe
+ *   plan includes; gates the per-body Scan toggle (a toggle on a filtered-out
+ *   type would be a dead switch).
  * @param {string} [a.linkBase]  Game origin (e.g. `https://s163-pl.ogame.gameforge.com`);
  *   present → the `body` coords become links to the in-game galaxy view.
  * @returns {HTMLDivElement}
  */
-function planetsBlock({ playerId, planets, reports, moons, rescan, nowMs, onRescan, scanBodies = 'planets', linkBase }) {
+function planetsBlock({
+  playerId, planets, reports, moons, rescan, nowMs, scanMode, onSetScanMode,
+  rings, scanBodies = 'planets', linkBase,
+}) {
   const box = document.createElement('div');
 
   if (!planets.length) {
@@ -368,12 +378,12 @@ function planetsBlock({ playerId, planets, reports, moons, rescan, nowMs, onResc
   /** @type {Array<[string, string, string]>} */
   const cols = [
     ['body', 'left', ''],
-    ['scan', 'left', 'Age of your newest espionage report on this body'],
+    ['scan', 'left', 'Age of your newest espionage report (probe intel) — click the toggle to stop/resume probing this body'],
+    ['activity', 'left', 'When this body was last active in the galaxy view — always tracked, passive, undetectable. "Activity" = any interaction, not "online".'],
     ['def', 'right', 'Defence on the body — resource points, newest report'],
     ['fleet', 'right', 'Visible (parked) fleet on the body — resource points, newest report'],
     ['loot avg', 'right', 'Average on-body resources across your reports (the loot rhythm)'],
     ['peak', 'right', 'Highest on-body resources you have ever seen'],
-    ['', 'right', ''],
   ];
   for (const [txt, align, tip] of cols) {
     const th = document.createElement('th');
@@ -402,10 +412,103 @@ function planetsBlock({ playerId, planets, reports, moons, rescan, nowMs, onResc
   const NUM = 'text-align:right;padding:2px 0 2px 14px;white-space:nowrap;';
   /** Colour of an absent value ("—"). */
   const DASH = '#4c5763';
-  // ↻ is offered only for bodies the scan planner actually proposes (the Scan
-  // chip) — a flag the FAB would never act on is a dead switch.
-  const rescanPlanets = scanBodies !== 'moons';
-  const rescanMoons = scanBodies !== 'planets';
+  // Probe scanning is per-body toggleable, but only for the body TYPES the scan
+  // filter includes (planets/moons/both) — a toggle on a filtered-out type would
+  // be a dead switch.
+  const scannablePlanets = scanBodies !== 'moons';
+  const scannableMoons = scanBodies !== 'planets';
+
+  /**
+   * The Scan cell for one body: probe-report freshness + an integrated on/off
+   * toggle (no separate action column). Scan-off shows a muted "off" (galaxy
+   * activity keeps tracking regardless); a body type outside the scan filter
+   * shows an inert "—".
+   * @param {string} key         override key: "g:s:p" / "g:s:p:3".
+   * @param {'none'|'fresh'|'stale'|'rescan'} status
+   * @param {number|undefined} reportTs
+   * @param {boolean} scannable  is this body's TYPE in the scan filter?
+   * @param {boolean} small      moon-row font sizing.
+   * @returns {HTMLTableCellElement}
+   */
+  const scanCell = (key, status, reportTs, scannable, small) => {
+    const pad = small ? 'padding:0 0 3px 12px;' : 'padding:2px 0 2px 12px;';
+    const td = document.createElement('td');
+    td.style.cssText = `${pad}font-size:11px;white-space:nowrap;`;
+    if (!scannable) {
+      td.textContent = '—';
+      td.style.color = DASH;
+      td.title = 'Outside the current scan filter (planets / moons / both)';
+      return td;
+    }
+    const on = effectiveScan(scanMode, playerId, key) === 'on';
+    const txtEl = document.createElement('span');
+    if (!on) {
+      txtEl.textContent = 'off';
+      txtEl.style.color = '#5a646f';
+    } else {
+      const age = formatAge(ageMs(reportTs, nowMs));
+      if (status === 'none') { txtEl.textContent = '○ needs scan'; txtEl.style.color = '#7c8893'; }
+      else if (status === 'fresh') { txtEl.textContent = age; txtEl.style.color = '#5a8f5a'; }
+      else if (status === 'stale') { txtEl.textContent = `${age} stale`; txtEl.style.color = '#e0a020'; }
+      else { txtEl.textContent = `${age} re-scan`; txtEl.style.color = '#e0a020'; }
+    }
+    td.appendChild(txtEl);
+    // Integrated toggle — one small glyph, no separate column.
+    if (onSetScanMode) {
+      const tog = document.createElement('span');
+      tog.textContent = on ? ' ⊘' : ' ⟳';
+      tog.style.cssText = 'color:#54626f;cursor:pointer;user-select:none;margin-left:5px;';
+      tog.title = on
+        ? 'Stop probing this body (keep tracking its galaxy activity)'
+        : 'Resume probing this body';
+      tog.addEventListener('click', (e) => { e.stopPropagation(); onSetScanMode(key, on ? 'off' : 'on'); });
+      td.appendChild(tog);
+    }
+    return td;
+  };
+
+  /**
+   * The Activity cell for one body — HONEST last-active from the galaxy ring
+   * (galaxyWatch.bodyActivityReadout): the time since the last positive marker,
+   * never a small look-based number when the body has only quiet looks. Colour
+   * warms with recent activity (target likely around) and cools with long
+   * silence (a better strike window). Always shown — galaxy activity is
+   * always-on for every body.
+   * @param {string} ringKey  "g:s:p:1" / "g:s:p:3"
+   * @param {boolean} small
+   * @returns {HTMLTableCellElement}
+   */
+  const activityCell = (ringKey, small) => {
+    const pad = small ? 'padding:0 0 3px 12px;' : 'padding:2px 0 2px 12px;';
+    const td = document.createElement('td');
+    td.style.cssText = `${pad}font-size:11px;white-space:nowrap;`;
+    const ro = bodyActivityReadout(rings ? rings[ringKey] : undefined);
+    if (ro.looks === 0) {
+      td.textContent = '— never sighted';
+      td.style.color = '#5a646f';
+      td.title = 'Never sighted in the galaxy yet — browse this system to start tracking activity';
+      return td;
+    }
+    if (ro.lastActiveSec == null) {
+      // Only quiet looks — we looked but never caught activity (inactive ≥1 h
+      // each look). Do NOT show a small age; that's the "<1 h" bug.
+      td.textContent = 'no activity';
+      td.style.color = '#6f97b0';
+      td.title = `Looked ${ro.looks}× — quiet every time (inactive ≥1 h at each look). `
+        + 'No interaction ever seen here.';
+      return td;
+    }
+    const activeMs = ageMs(ro.lastActiveSec, nowMs);
+    const age = formatAge(activeMs);
+    const lookAge = ro.lastLookSec ? formatAge(ageMs(ro.lastLookSec, nowMs)) : '';
+    // Warm = active recently (around now), cool = long quiet (strike window).
+    td.style.color = activeMs < 3600_000 ? '#e0a86a' : activeMs < 12 * 3600_000 ? '#c8b06a' : '#6f97b0';
+    td.textContent = `${age} ago${ro.quietNow ? ' · quiet' : ''}`;
+    td.title = `Last interaction ~${age} ago (from ${ro.hits} activity marker`
+      + `${ro.hits === 1 ? '' : 's'} in ${ro.looks} look${ro.looks === 1 ? '' : 's'}; `
+      + `last looked ${lookAge} ago). "Activity" = any interaction with the body, not "online".`;
+    return td;
+  };
 
   let firstRow = true;
   for (const p of planets) {
@@ -460,16 +563,9 @@ function planetsBlock({ playerId, planets, reports, moons, rescan, nowMs, onResc
     }
     row.appendChild(body);
 
-    // scan freshness (same palette as before).
-    const age = formatAge(ageMs(r?.ts, nowMs));
-    let scanTxt = '';
-    let scanColor = '';
-    if (status === 'none') { scanTxt = '○ needs scan'; scanColor = '#7c8893'; }
-    else if (status === 'fresh') { scanTxt = age; scanColor = '#5a8f5a'; }
-    else if (status === 'stale') { scanTxt = `${age} stale`; scanColor = '#e0a020'; }
-    else { scanTxt = `${age} re-scan`; scanColor = '#e0a020'; }
-    row.appendChild(cellEl(scanTxt,
-      `padding:2px 0 2px 12px;color:${scanColor};font-size:11px;white-space:nowrap;`));
+    // Scan (probe freshness + toggle) then Activity (galaxy, always tracked).
+    row.appendChild(scanCell(coord, status, r?.ts, scannablePlanets, false));
+    row.appendChild(activityCell(ringKeyFor(coord, 1), false));
 
     if (r) {
       row.appendChild(cellEl(compact(Math.round(r.defPts)), `${NUM}color:#9fb0c0;`));
@@ -485,22 +581,10 @@ function planetsBlock({ playerId, planets, reports, moons, rescan, nowMs, onResc
     } else {
       for (let i = 0; i < 4; i++) row.appendChild(cellEl('—', `${NUM}color:${DASH};`));
     }
-
-    const act = document.createElement('td');
-    act.style.cssText = 'text-align:right;padding:2px 0 2px 10px;';
-    if ((status === 'fresh' || status === 'stale') && onRescan && rescanPlanets) {
-      const link = document.createElement('span');
-      link.textContent = '↻';
-      link.style.cssText = 'color:#6b97c4;cursor:pointer;user-select:none;';
-      link.title = 'Flag this planet for re-scan';
-      link.addEventListener('click', () => onRescan(coord));
-      act.appendChild(link);
-    }
-    row.appendChild(act);
     table.appendChild(row);
 
     // Moon row — the slot's SECOND spiable body, with its OWN scan state (a
-    // planet scan says nothing about the moon) and its own re-scan flag
+    // planet scan says nothing about the moon) and its own toggle/ring
     // (keyed "g:s:p:3", so it never drags the planet along).
     if (p.hasMoon) {
       const m = moons ? moons[coord] : undefined;
@@ -515,15 +599,10 @@ function planetsBlock({ playerId, planets, reports, moons, rescan, nowMs, onResc
         `padding:0 0 3px 14px;white-space:nowrap;font-size:11px;color:#8b95a0;${m ? '' : 'opacity:.55;'}`);
       mbody.title = 'This slot has a moon — a separate spiable body';
       mrow.appendChild(mbody);
+      // Scan + Activity, same helpers as the planet row (moon keys/rings).
+      mrow.appendChild(scanCell(moonKey, mStatus, m ? m.ts : undefined, scannableMoons, true));
+      mrow.appendChild(activityCell(ringKeyFor(coord, 3), true));
       if (m) {
-        // Same freshness palette as the planets' scan column.
-        const mAge = formatAge(ageMs(m.ts, nowMs));
-        let mScanTxt = mAge;
-        let mScanColor = '#5a8f5a';
-        if (mStatus === 'stale') { mScanTxt = `${mAge} stale`; mScanColor = '#e0a020'; }
-        else if (mStatus === 'rescan') { mScanTxt = `${mAge} re-scan`; mScanColor = '#e0a020'; }
-        mrow.appendChild(cellEl(mScanTxt,
-          `padding:0 0 3px 12px;color:${mScanColor};font-size:11px;white-space:nowrap;`));
         mrow.appendChild(cellEl(compact(Math.round(m.defPts)), `${NUM}font-size:11px;color:#8fa0b0;`));
         // Fleet parked on a spied moon is the headline find — flag it gold.
         const parked = m.fleetPts > 0;
@@ -534,25 +613,68 @@ function planetsBlock({ playerId, planets, reports, moons, rescan, nowMs, onResc
         mrow.appendChild(cellEl('', NUM));
         mrow.appendChild(cellEl('', NUM));
       } else {
-        mrow.appendChild(cellEl('○ needs scan',
-          'padding:0 0 3px 12px;color:#7c8893;font-size:11px;white-space:nowrap;'));
         for (let i = 0; i < 4; i++) mrow.appendChild(cellEl('—', `${NUM}font-size:11px;color:${DASH};`));
       }
-      const mact = document.createElement('td');
-      mact.style.cssText = 'text-align:right;padding:0 0 3px 10px;';
-      if ((mStatus === 'fresh' || mStatus === 'stale') && onRescan && rescanMoons) {
-        const link = document.createElement('span');
-        link.textContent = '↻';
-        link.style.cssText = 'color:#6b97c4;cursor:pointer;user-select:none;font-size:11px;';
-        link.title = 'Flag this moon for re-scan';
-        link.addEventListener('click', () => onRescan(moonKey));
-        mact.appendChild(link);
-      }
-      mrow.appendChild(mact);
       table.appendChild(mrow);
     }
   }
   box.appendChild(table);
+
+  // Relocation hint: bodies we hold intel on (a report or moon report) whose
+  // coords are NO LONGER in the player's current universe.xml occupancy — the
+  // player moved or the body was destroyed. Pure derivation of existing data
+  // (no new collection). Guarded on planets.length so an unloaded occupancy
+  // snapshot (0 planets) never paints every known body as "gone".
+  if (planets.length > 0 && (reports || moons)) {
+    const present = new Set(planets.map(coordStr));
+    /** @type {Record<string, number>} coord → newest known intel ts (epoch s). */
+    const ghosts = {};
+    /** @param {Record<string, {ts:number}>|undefined} map @returns {void} */
+    const scanGhosts = (map) => {
+      if (!map) return;
+      for (const coord of Object.keys(map)) {
+        if (present.has(coord)) continue;
+        const ts = map[coord] ? map[coord].ts : 0;
+        if (!ghosts[coord] || (ts && ts > ghosts[coord])) ghosts[coord] = ts || 0;
+      }
+    };
+    scanGhosts(reports);
+    scanGhosts(moons);
+    const ghostCoords = Object.keys(ghosts);
+    if (ghostCoords.length) {
+      ghostCoords.sort();
+      const note = document.createElement('div');
+      note.style.cssText = 'margin-top:6px;font-size:10px;color:#8a7f5f;line-height:1.5;';
+      const lead = document.createElement('span');
+      lead.textContent = '🚚 no longer here — moved or destroyed: ';
+      note.appendChild(lead);
+      ghostCoords.forEach((coord, i) => {
+        if (i) note.appendChild(document.createTextNode(' · '));
+        const parts = coord.split(':');
+        const href = linkBase
+          ? `${linkBase}/game/index.php?page=ingame&component=galaxy&galaxy=${parts[0]}&system=${parts[1]}&position=${parts[2]}`
+          : '';
+        const el = document.createElement(href ? 'a' : 'span');
+        const age = formatAge(ageMs(ghosts[coord] || undefined, nowMs));
+        el.textContent = coord + (age ? ` (${age} old)` : '');
+        el.style.color = '#b0a072';
+        if (href) {
+          const link = /** @type {HTMLAnchorElement} */ (el);
+          link.href = href;
+          link.target = '_blank';
+          link.rel = 'noopener';
+          link.style.textDecoration = 'none';
+          link.title = 'Open this system in the galaxy view to confirm';
+          link.addEventListener('click', (ev) => ev.stopPropagation());
+        }
+        note.appendChild(el);
+      });
+      note.appendChild(document.createTextNode(
+        ' — intel on file, but the player isn’t at these coords now.',
+      ));
+      box.appendChild(note);
+    }
+  }
   return box;
 }
 
@@ -585,6 +707,48 @@ function relationshipSelector(playerId, current, onSet) {
     btn.addEventListener('click', (e) => { e.stopPropagation(); onSet(playerId, rel); });
     wrap.appendChild(btn);
   }
+  return wrap;
+}
+
+/**
+ * Whole-player "Watch via" indicator: galaxy activity is ALWAYS on (shown as a
+ * locked-lit chip — passive, undetectable, can't be turned off), plus a
+ * togglable 📡 probe-scan default. Both can be "on" at once — that's the point.
+ * Toggling probe sets/clears the player-id key ('off' explicit / clear back to
+ * the 'on' default). A click stops propagation (never collapses the dossier).
+ * @param {string} playerId
+ * @param {boolean} scanOn   is the player's probe-scan default on?
+ * @param {(key: string, mode: import('../../domain/scanMode.js').ScanMode | null) => void} onSet
+ * @returns {HTMLDivElement}
+ */
+function watchViaSelector(playerId, scanOn, onSet) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:inline-flex;align-items:center;gap:6px;font-size:11px;';
+  const lbl = document.createElement('span');
+  lbl.textContent = 'Watch via';
+  lbl.style.cssText = 'color:#6b7887;';
+  wrap.appendChild(lbl);
+
+  // Galaxy — always on, not a button (locked lit).
+  const glx = document.createElement('span');
+  glx.textContent = '🔭 galaxy';
+  glx.title = 'Always on — passive galaxy activity tracking; the target never sees it. Can’t be turned off (remove the player from the watch-list to stop watching).';
+  glx.style.cssText = 'padding:2px 10px;border-radius:999px;font-size:11px;'
+    + 'border:1px solid #2f5140;background:#13251c;color:#7fb389;';
+  wrap.appendChild(glx);
+
+  // Probe — the togglable default.
+  const probe = document.createElement('button');
+  probe.textContent = '📡 probes';
+  probe.title = scanOn
+    ? 'Probe scanning ON by default — click to make this player galaxy-only (no probes; the target stops seeing scans)'
+    : 'Probe scanning OFF — galaxy-only. Click to resume proposing probes for this player.';
+  probe.style.cssText = 'padding:2px 10px;border-radius:999px;font-size:11px;cursor:pointer;'
+    + `border:1px solid ${scanOn ? '#3f6ea5' : '#2b3a4d'};background:${scanOn ? '#12253c' : '#18222e'};`
+    + `color:${scanOn ? '#8fb8e0' : '#7c8893'};font-weight:${scanOn ? '600' : '400'};`;
+  // on = the implicit default → clear the key; off = explicit set.
+  probe.addEventListener('click', (e) => { e.stopPropagation(); onSet(playerId, scanOn ? 'off' : null); });
+  wrap.appendChild(probe);
   return wrap;
 }
 
@@ -690,6 +854,204 @@ function routineBlock(routine) {
 }
 
 /**
+ * STRIKE banner — a fresh fleet-landing candidate (domain/fleetLanding). A moon
+ * lit up while the player is otherwise quiet: likely a returning fleet-save
+ * landed and the owner isn't there to move it. Honest framing ("possible",
+ * "spy to confirm") + the coverage basis; never asserts the fleet is there.
+ * @param {import('../../domain/fleetLanding.js').FleetLandingSignal} landing
+ * @param {string} [linkBase]
+ * @returns {HTMLDivElement}
+ */
+function landingBanner(landing, linkBase) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'margin-bottom:10px;padding:7px 10px;border-radius:8px;'
+    + 'border:1px solid #7a4420;background:#2a1a10;color:#e8b591;font-size:12px;line-height:1.5;';
+  const strong = landing.confidence === 'strong';
+  const head = document.createElement('div');
+  head.style.cssText = 'font-weight:500;color:#f0a869;';
+  head.textContent = `🎯 Possible fresh fleet${strong ? '' : ' (partial coverage)'}`;
+  wrap.appendChild(head);
+
+  const body = document.createElement('div');
+  const parts = landing.coord.split(':');
+  const href = linkBase
+    ? `${linkBase}/game/index.php?page=ingame&component=galaxy&galaxy=${parts[0]}&system=${parts[1]}&position=${parts[2]}`
+    : '';
+  const coordEl = document.createElement(href ? 'a' : 'span');
+  coordEl.textContent = `🌙 ${landing.coord}`;
+  coordEl.style.color = '#f0c89a';
+  if (href) {
+    const link = /** @type {HTMLAnchorElement} */ (coordEl);
+    link.href = href; link.target = '_blank'; link.rel = 'noopener';
+    link.style.textDecoration = 'none';
+    link.title = 'Open this system in the galaxy view';
+    link.addEventListener('click', (ev) => ev.stopPropagation());
+  }
+  body.append(
+    coordEl,
+    document.createTextNode(` active ${formatAge(landing.freshAgeMs)} ago, player`
+      + ` otherwise quiet (${landing.quiet}/${landing.total} bodies checked).`),
+  );
+  wrap.appendChild(body);
+
+  const tail = document.createElement('div');
+  tail.style.cssText = 'color:#c69a76;font-size:11px;margin-top:2px;';
+  tail.textContent = 'Could be a landed fleet-save — the Spy FAB proposes this moon first. '
+    + 'Spy to confirm (the marker also fires for a foreign attack or a brief login).';
+  wrap.appendChild(tail);
+  return wrap;
+}
+
+const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/**
+ * Presence-temperature colour ramp: blue (offline) → grey → red (online),
+ * interpolated in RGB (percept-safe). @param {number} p 0..1 @returns {string}
+ */
+function presenceRamp(p) {
+  /** @type {Array<[number, [number, number, number]]>} */
+  const stops = [
+    [0, [37, 99, 235]], [0.3, [124, 166, 222]], [0.5, [150, 160, 175]],
+    [0.7, [239, 159, 80]], [1, [220, 60, 55]],
+  ];
+  const t = Math.max(0, Math.min(1, p));
+  for (let i = 1; i < stops.length; i++) {
+    if (t <= stops[i][0]) {
+      const [a, ca] = stops[i - 1];
+      const [b, cb] = stops[i];
+      const f = (t - a) / (b - a);
+      const c = ca.map((v, k) => Math.round(v + (cb[k] - v) * f));
+      return `rgb(${c[0]},${c[1]},${c[2]})`;
+    }
+  }
+  const last = stops[stops.length - 1][1];
+  return `rgb(${last[0]},${last[1]},${last[2]})`;
+}
+
+/**
+ * 8) PRESENCE (SPYGLASS-PASSIVE-PLAN §4) — the offline-window heatmap. Colour =
+ * P(online | phase), opacity = coverage (blank = "not observed", NOT "offline").
+ * A framed block marks the best attack window (well-covered + quiet); the basis
+ * line names the look count so the tool never claims certainty it lacks.
+ * "Activity" is an interaction with a body, never asserted as the owner "online".
+ * @param {ReturnType<typeof import('../../domain/presence.js').summarizePresence>} presence
+ * @returns {HTMLDivElement}
+ */
+function presenceBlock(presence) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'margin-bottom:10px;font-size:11px;color:#8b95a0;line-height:1.5;';
+
+  const title = document.createElement('div');
+  title.textContent = 'PRESENCE — offline windows';
+  title.style.cssText = 'font-size:10px;letter-spacing:0.5px;color:#6b7782;margin-bottom:3px;';
+  wrap.appendChild(title);
+
+  if (!presence || presence.samples === 0) {
+    const empty = document.createElement('div');
+    empty.textContent = 'No coverage yet — browse this player’s galaxy systems and this'
+      + ' fills with when they’re reliably offline (activity is tracked passively).';
+    empty.style.color = '#5f6b76';
+    wrap.appendChild(empty);
+    return wrap;
+  }
+
+  // Player-level "last active anywhere" — the honest headline (max over all
+  // bodies), so the reader sees at a glance how long the WHOLE player has been
+  // quiet, not just one planet.
+  const la = document.createElement('div');
+  la.style.cssText = 'margin-bottom:4px;';
+  if (presence.lastActiveSec) {
+    const laAge = formatAge(ageMs(presence.lastActiveSec, Date.now()));
+    la.textContent = `Last active (any body): ${laAge} ago`;
+    la.style.color = '#9fb0c0';
+  } else {
+    la.textContent = `Last active (any body): none caught in ${presence.samples} looks`;
+    la.style.color = '#8a7f5f';
+  }
+  wrap.appendChild(la);
+
+  if (presence.scale === 'occasional' || !presence.grid) {
+    const note = document.createElement('div');
+    note.textContent = `Too few / scattered samples for a routine (${presence.online} online`
+      + ` of ${presence.samples} looks). No reliable window yet — keep sighting.`;
+    note.style.color = '#8a7f5f';
+    wrap.appendChild(note);
+    return wrap;
+  }
+
+  const grid = presence.grid;
+  const win = presence.window;
+
+  // Heatmap: one row per weekday (week) or a single hour strip (day). Left gutter
+  // labels the row; a sparse hour axis sits above.
+  const table = document.createElement('div');
+  const gutter = grid.scale === 'week' ? 30 : 42;
+  table.style.cssText = `display:grid;grid-template-columns:${gutter}px repeat(24, 1fr);`
+    + 'gap:1px;background:#20303f;padding:1px;border-radius:6px;max-width:420px;';
+
+  // Hour axis.
+  const corner = document.createElement('div');
+  corner.style.background = 'transparent';
+  table.appendChild(corner);
+  for (let h = 0; h < 24; h++) {
+    const hx = document.createElement('div');
+    hx.textContent = h % 6 === 0 ? String(h) : '';
+    hx.style.cssText = 'font-size:9px;color:#5f6b76;text-align:center;background:transparent;';
+    table.appendChild(hx);
+  }
+
+  for (let r = 0; r < grid.rows; r++) {
+    const lbl = document.createElement('div');
+    lbl.textContent = grid.scale === 'week' ? DOW_LABELS[r] : 'all days';
+    lbl.style.cssText = 'font-size:10px;color:#8b95a0;display:flex;align-items:center;'
+      + 'justify-content:flex-end;padding-right:5px;background:transparent;white-space:nowrap;';
+    table.appendChild(lbl);
+    for (let h = 0; h < 24; h++) {
+      const c = grid.cells[r][h];
+      const cell = document.createElement('div');
+      const inWin = !!win && win.row === r && h >= win.startH && h <= win.endH;
+      const alpha = (0.06 + 0.94 * c.conf).toFixed(2);
+      cell.style.cssText = `min-height:${grid.scale === 'week' ? 13 : 22}px;`
+        + `background:${presenceRamp(c.p)};opacity:${alpha};`
+        + (inWin ? 'box-shadow:inset 0 0 0 2px #eaeff4;' : '');
+      const pct = Math.round(c.p * 100);
+      cell.title = `${grid.scale === 'week' ? DOW_LABELS[r] + ' ' : ''}`
+        + `${String(h).padStart(2, '0')}:00 · ${c.looks} look${c.looks === 1 ? '' : 's'}`
+        + ` · ${c.hits} with activity · P(online)=${pct}%`;
+      table.appendChild(cell);
+    }
+  }
+  wrap.appendChild(table);
+
+  // Legend + basis.
+  const legend = document.createElement('div');
+  legend.style.cssText = 'display:flex;gap:12px;align-items:center;margin-top:5px;font-size:10px;color:#6b7782;flex-wrap:wrap;';
+  const bar = document.createElement('span');
+  bar.style.cssText = 'display:inline-block;width:70px;height:9px;border-radius:5px;vertical-align:-1px;'
+    + 'background:linear-gradient(90deg,rgb(37,99,235),rgb(150,160,175),rgb(220,60,55));';
+  legend.append('offline ', bar, ' online · faint = little data');
+  wrap.appendChild(legend);
+
+  const basis = document.createElement('div');
+  basis.style.cssText = 'margin-top:4px;font-size:10px;';
+  if (win) {
+    const dayPart = grid.scale === 'week' ? `${DOW_LABELS[win.row]} ` : '';
+    basis.style.color = '#7fb389';
+    basis.textContent = `⌖ best window: ${dayPart}`
+      + `${String(win.startH).padStart(2, '0')}:00–${String((win.endH + 1) % 24).padStart(2, '0')}:00`
+      + ` — ${win.looks} look${win.looks === 1 ? '' : 's'}, no activity seen`
+      + (win.exceptions > 0 ? ` · ${win.exceptions} one-off blip noted` : '');
+  } else {
+    basis.style.color = '#8a7f5f';
+    basis.textContent = `${presence.online} online of ${presence.samples} looks · no window`
+      + ' clears the coverage bar yet — sight more to be sure.';
+  }
+  wrap.appendChild(basis);
+
+  return wrap;
+}
+
+/**
  * Build the per-player dossier detail row: a dark panel stacking the header,
  * raid verdict, danger interval bar, WHY reasons, hidden-fleet arithmetic, and
  * the per-planet scan grid. Each section is skipped cleanly when its data is
@@ -707,14 +1069,29 @@ function routineBlock(routine) {
  * @param {boolean} [a.inBand]
  * @param {import('../../domain/civilBaseline.js').CivilProfile} [a.civilProfile]
  * @param {import('../../domain/routine.js').RoutineSummary} [a.routine]
+ * @param {ReturnType<typeof import('../../domain/presence.js').summarizePresence>} [a.presence]
+ *   Per-player presence summary — the offline-window heatmap under the routine.
+ * @param {import('../../domain/fleetLanding.js').FleetLandingSignal} [a.landing]
+ *   Fresh fleet-landing signal — the strike banner atop the judgement column.
  * @param {import('../../domain/targets.js').PlanetPos[]} a.planets
  * @param {Record<string, {ts:number, defPts:number, fleetPts:number}>} [a.reports]  keyed by "g:s:p"
  * @param {Record<string, {ts:number, defPts:number, fleetPts:number}>} [a.moons]  MOON
  *   reports keyed by the moon's planet "g:s:p" (own map, never mixed with planets).
  * @param {*} a.rescan
  * @param {number} a.nowMs
- * @param {(coord:string)=>void} [a.onRescan]  Body re-scan flag ("g:s:p" planet / "g:s:p:3" moon).
- * @param {'planets'|'moons'|'both'} [a.scanBodies]  Scan-chip value — gates the ↻ links.
+ * @param {*} [a.onRescan]  (Unused here — whole-player re-scan lives in the
+ *   targets table; per-body re-scan was dropped.) Accepted for caller convenience.
+ * @param {Record<string, import('../../domain/scanMode.js').ScanMode>} [a.scanMode]
+ *   Scan-mode map (player id / body override key → 'on'|'off').
+ * @param {(key: string, mode: import('../../domain/scanMode.js').ScanMode | null) => void} [a.onSetScanMode]
+ *   Set a body scan override (key "g:s:p"/"g:s:p:3") or the whole-player default
+ *   (key = player id); `null` clears the key back to inherited 'on'.
+ * @param {Record<string, import('../../domain/activityObs.js').ActivityObs[]>} [a.rings]
+ *   THIS player's galaxy-activity rings — the Activity column source.
+ * @param {number} [a.galaxyLookMs]  (Unused now — the Activity column reads
+ *   last-active, not look-coverage.) Accepted for caller convenience.
+ * @param {'planets'|'moons'|'both'} [a.scanBodies]  Scan-chip value — gates the
+ *   per-body Scan toggle to the included body types.
  * @param {string} [a.linkBase]  Game origin — makes the per-body coords in-game galaxy links.
  * @param {number} a.colspan
  * @param {boolean} a.open
@@ -740,10 +1117,19 @@ export function buildDossier(a) {
   //    panel's background (targets.js `dossier-open`) and IS the header —
   //    repeating the name + archetype here just duplicated the row one line
   //    above (both already sit in its Player / Danger cells).
-  if (a.onSetRelationship) {
+  if (a.onSetRelationship || a.onSetScanMode) {
     const header = document.createElement('div');
-    header.style.cssText = 'margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;';
-    header.appendChild(relationshipSelector(a.playerId, a.relationship || 'neutral', a.onSetRelationship));
+    header.style.cssText = 'margin-bottom:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;';
+    if (a.onSetRelationship) {
+      header.appendChild(relationshipSelector(a.playerId, a.relationship || 'neutral', a.onSetRelationship));
+    }
+    if (a.onSetScanMode) {
+      // Whole-player watch: galaxy activity is ALWAYS on (shown locked); the
+      // only choice is the probe-scan default. Per-body overrides live in the
+      // scan table below.
+      const scanOn = !(a.scanMode && a.scanMode[a.playerId] === 'off');
+      header.appendChild(watchViaSelector(a.playerId, scanOn, a.onSetScanMode));
+    }
     td.appendChild(header);
   }
 
@@ -758,6 +1144,11 @@ export function buildDossier(a) {
   const evidence = document.createElement('div');
   grid.append(judgement, evidence);
   td.appendChild(grid);
+
+  // 1b) STRIKE banner — a fresh fleet-landing candidate. Leads the judgement
+  // column (above the raid verdict): the most time-sensitive, most actionable
+  // signal in the dossier.
+  if (a.landing) judgement.appendChild(landingBanner(a.landing, a.linkBase));
 
   // 2) Raid verdict banner (the jack-point) — top of the judgement column.
   if (a.verdict) judgement.appendChild(verdictBanner(a.verdict));
@@ -781,6 +1172,10 @@ export function buildDossier(a) {
   // pref), so the evidence column is the per-body table alone.
   if (a.routine) judgement.appendChild(routineBlock(a.routine));
 
+  // 5d) Presence — the offline-window heatmap (the attack-timing readout).
+  // Rendered whenever we have any presence data; hollow-states itself otherwise.
+  if (a.presence) judgement.appendChild(presenceBlock(a.presence));
+
   // 6) Planets grid (renders its own "no planets" note when empty).
   evidence.appendChild(planetsBlock({
     playerId: a.playerId,
@@ -789,7 +1184,9 @@ export function buildDossier(a) {
     moons: a.moons,
     rescan: a.rescan,
     nowMs: a.nowMs,
-    onRescan: a.onRescan,
+    scanMode: a.scanMode,
+    onSetScanMode: a.onSetScanMode,
+    rings: a.rings,
     scanBodies: a.scanBodies,
     linkBase: a.linkBase,
   }));

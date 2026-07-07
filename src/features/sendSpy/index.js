@@ -33,6 +33,7 @@ import { targetReportsStore } from '../../state/targets.js';
 import { activityObsStore } from '../../state/activityObs.js';
 import { spiedCoordsByPlayer, spiedMoonsByPlayer } from '../../domain/targetReports.js';
 import { summarizeRoutine, routineBodies } from '../../domain/routine.js';
+import { detectAllLandings, strikeKeysOf } from '../../domain/fleetLanding.js';
 import { createButton as makeButton, labelLines } from '../shared/button.js';
 import { EYE_GLYPH } from '../shared/buttonGlyphs.js';
 import {
@@ -47,6 +48,8 @@ import {
 } from '../shared/fleetCourier.js';
 import { installFabSettingsLifecycle } from '../shared/fabSettingsLifecycle.js';
 import { getApiContext } from '../shared/apiContextStore.js';
+import { parseCurrentGalaxyView } from '../shared/galaxyView.js';
+import { navigateGalaxyInPage } from '../shared/galaxyNav.js';
 import { SHIP_ESPIONAGE_PROBE, TARGET_PLANET, TARGET_MOON, MISSION_ESPIONAGE } from '../../domain/rules.js';
 import { OWNER_SPY } from '../../domain/fleetOwnership.js';
 import { ingameComponentUrl } from '../../domain/ogameUrl.js';
@@ -191,6 +194,7 @@ const captureEnv = () => {
   const nowMs = Date.now();
   const reports = targetReportsStore.get();
   const cfg = watchListStore.get();
+  const rings = activityObsStore.get();
   return {
     players: cfg.players,
     universePlanets: getApiContext()?.universePlanets ?? [],
@@ -200,6 +204,20 @@ const captureEnv = () => {
     sentCoords: getSentCoords(),
     nowMs,
     scanBodies: cfg.scanBodies,
+    // Scan mode gates the PROBE plan (off bodies excluded); the galaxy-look plan
+    // covers every watched body always (galaxy activity is never gated).
+    scanMode: cfg.scanMode,
+    cadence: cfg.cadence,
+    rings,
+    // Fresh fleet-landing candidates (domain/fleetLanding) → force-boosted to the
+    // top of the probe plan so the FAB proposes spying that moon NOW.
+    strikeCoords: strikeKeysOf(detectAllLandings(
+      cfg.players,
+      getApiContext()?.universePlanets ?? [],
+      rings,
+      nowMs,
+      { sentMap: readSpySentMap() },
+    )),
     dangerByPlayer: dangerByPlayer(),
     activityByPlayer: activityByPlayer(nowMs),
     playerNames: getApiContext()?.players ?? {},
@@ -370,6 +388,20 @@ const onSpyClick = async () => {
 
   const ctx = deriveSpy(captureEnv());
 
+  // Galaxy look proposed → ONE tap = ONE navigation to that system. On the
+  // galaxy view step in-page (the game's own AJAX loader); anywhere else a
+  // full navigation. The galaxyHook ingest of the rendered system then bumps
+  // the rings and the button self-advances — no queue state, no auto-paging.
+  if (ctx.proposal === 'look' && ctx.look) {
+    const l = ctx.look;
+    if (!parseCurrentGalaxyView() || !navigateGalaxyInPage(l.galaxy, l.system)) {
+      location.href = ingameComponentUrl(location.href, 'galaxy', {
+        galaxy: l.galaxy, system: l.system,
+      });
+    }
+    return;
+  }
+
   // Nothing left to scan → jump to the messages component to read reports
   // (a deliberate navigation on the user's tap, never chained off a send).
   if (!ctx.candidate) {
@@ -500,6 +532,9 @@ export const installSendSpy = () => {
   const unsubWatch = watchListStore.subscribe(reconcile);
   // A landed spy report flips a planet from "needs scan" to spied — repaint.
   const unsubReports = targetReportsStore.subscribe(refresh);
+  // A galaxy ingest (oge:galaxyScanned → rings) flips a looked-at system to
+  // fresh — the look proposal self-advances on this repaint.
+  const unsubActivity = activityObsStore.subscribe(refresh);
   // Slow ticker catches the apiContext handoff populating + staleness ticking.
   const unsubTicker = clock.subscribe(refresh, { everyMs: REPAINT_TICK_MS });
 
@@ -510,6 +545,7 @@ export const installSendSpy = () => {
       unsubSettings();
       unsubWatch();
       unsubReports();
+      unsubActivity();
       if (sentLockTimer) {
         clearTimeout(sentLockTimer);
         sentLockTimer = null;

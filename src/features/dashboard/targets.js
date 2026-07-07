@@ -14,6 +14,7 @@ import {
   buildTargetList, sortTargetList, playerPlanets, targetExclusionReason,
 } from '../../domain/targets.js';
 import { scanStatus, rescanAtFor } from '../../domain/spyScan.js';
+import { aggregatePlayerScan } from '../../domain/scanMode.js';
 import { DANGER_LABELS } from '../../domain/dangerScore.js';
 import { dangerColor } from '../../lib/dangerColor.js';
 import { buildDossier } from './dossier.js';
@@ -349,12 +350,47 @@ function fleetCell(prof) {
  * @param {number} spied
  * @param {number} total
  * @param {number} oldestAgeMs
+ * @param {import('../../domain/scanMode.js').ScanMode | 'mixed' | null} [scan]
+ *   Aggregate scan mode — a small leading glyph flags probing-off / mixed; 'on'
+ *   and null draw nothing (galaxy activity is always on, so the quiet default is
+ *   "scanning normally").
+ * @param {import('../../domain/fleetLanding.js').FleetLandingSignal} [landing]
+ *   Fresh fleet-landing signal — a leading 🎯 (highest-priority marker).
  * @returns {HTMLTableCellElement}
  */
-function intelCell(worst, spied, total, oldestAgeMs) {
+function intelCell(worst, spied, total, oldestAgeMs, scan, landing) {
   const td = cell('', { align: 'center' });
   const age = formatAge(oldestAgeMs);
   const agePart = age ? ` · ${age} old` : '';
+
+  // Fresh fleet-landing marker leads everything — the single most actionable
+  // signal (a catchable fleet just landed while the owner is away).
+  if (landing) {
+    const st = document.createElement('span');
+    st.textContent = '🎯 ';
+    st.style.cssText = 'font-size:12px;';
+    st.title = `Possible fresh fleet — moon ${landing.coord} active `
+      + `${formatAge(landing.freshAgeMs)} ago, player otherwise quiet `
+      + `(${landing.quiet}/${landing.total} bodies). Spy to confirm.`;
+    td.appendChild(st);
+  }
+
+  // Leading glyph flags where probing is OFF (galaxy-only, undetectable) so the
+  // column reads "who am I watching without revealing myself" at a glance. The
+  // 'on'-everywhere default draws nothing to stay quiet.
+  if (scan === 'off' || scan === 'mixed') {
+    const mg = document.createElement('span');
+    mg.style.cssText = 'font-size:11px;margin-right:5px;vertical-align:1px;';
+    mg.textContent = '🔭';
+    if (scan === 'off') {
+      mg.title = 'Probing off — galaxy activity only (undetectable by the target)';
+    } else {
+      mg.style.opacity = '0.6';
+      mg.title = 'Probing off on some of this player’s bodies (see dossier)';
+    }
+    td.appendChild(mg);
+  }
+
   const glyph = document.createElement('span');
   glyph.style.fontSize = '13px';
   if (worst === 'none' || spied <= 0) {
@@ -439,6 +475,18 @@ function playerCell(c) {
  * @param {Record<string, import('../../state/watchList.js').Relationship>} [args.relationships]
  * @param {(pid: string, rel: import('../../state/watchList.js').Relationship) => void} [args.onSetRelationship]
  *   Per-player civil-fleet baseline shown in the dossier (Etap C).
+ * @param {Record<string, import('../../domain/scanMode.js').ScanMode>} [args.scanMode]
+ *   Scan-mode map threaded to the dossier (per-body/-player probe on/off).
+ * @param {(key: string, mode: import('../../domain/scanMode.js').ScanMode | null) => void} [args.onSetScanMode]
+ *   Set a body override or the whole-player default; `null` clears to inherited.
+ * @param {import('../../state/activityObs.js').ActivityObsMap} [args.activityRings]
+ *   Galaxy-activity rings (playerId → ringKey → ring) — the dossier's Activity
+ *   column + galaxy look-coverage.
+ * @param {number} [args.galaxyLookMs]  Galaxy look-coverage stale threshold (ms).
+ * @param {Record<string, ReturnType<typeof import('../../domain/presence.js').summarizePresence>>} [args.presences]
+ *   Per-player presence summary — the dossier's offline-window heatmap.
+ * @param {Record<string, import('../../domain/fleetLanding.js').FleetLandingSignal>} [args.landingSignals]
+ *   Per-player fresh fleet-landing signal — the 🎯 row marker + dossier banner.
  * @param {string} [args.searchQuery]  Nickname search (Etap D); when set, the
  *   table shows every name-match INCLUDING excluded players (with the reason).
  * @param {(id: string) => void} [args.onShowAnyway]  "Show anyway" override for
@@ -482,6 +530,12 @@ export function renderTargets({
   routines,
   relationships,
   onSetRelationship,
+  scanMode,
+  onSetScanMode,
+  activityRings,
+  galaxyLookMs,
+  presences,
+  landingSignals,
   searchQuery = '',
   onShowAnyway,
   pinIds,
@@ -638,6 +692,20 @@ export function renderTargets({
     const total = est && typeof est.planetCount === 'number' ? est.planetCount : planets.length;
     const spied = est ? est.spiedCount : 0;
 
+    // Aggregate watch mode over the in-scope bodies (respecting the scan-bodies
+    // filter, so the glyph matches what the plans actually consider).
+    const wantP = scanBodies !== 'moons';
+    const wantM = scanBodies !== 'planets';
+    /** @type {string[]} */
+    const modeKeys = [];
+    for (const p of planets) {
+      const coord = `${p.galaxy}:${p.system}:${p.position}`;
+      if (wantP) modeKeys.push(coord);
+      if (wantM && p.hasMoon) modeKeys.push(`${coord}:3`);
+    }
+    const aggScan = aggregatePlayerScan(scanMode, c.id, modeKeys);
+    const landing = landingSignals ? landingSignals[c.id] : undefined;
+
     const open = !!(expandedIds && expandedIds.has(c.id));
     const prof = danger ? danger.get(Number(c.id)) : undefined;
     const detail = buildDossier({
@@ -657,6 +725,12 @@ export function renderTargets({
       rescan,
       nowMs,
       onRescan,
+      scanMode,
+      onSetScanMode,
+      rings: activityRings ? activityRings[c.id] : undefined,
+      galaxyLookMs,
+      presence: presences ? presences[c.id] : undefined,
+      landing,
       scanBodies,
       linkBase,
       colspan: COLSPAN,
@@ -696,7 +770,7 @@ export function renderTargets({
     tr.appendChild(fleetCell(prof));
     tr.appendChild(militaryCell(c));
     tr.appendChild(shipsCell(c, prof));
-    tr.appendChild(intelCell(worst, spied, total, oldestAgeMs));
+    tr.appendChild(intelCell(worst, spied, total, oldestAgeMs, aggScan, landing));
     tbody.appendChild(tr);
     tbody.appendChild(detail);
   }

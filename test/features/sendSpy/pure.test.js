@@ -149,12 +149,12 @@ describe('deriveSpy', () => {
 
 describe('renderSpy', () => {
   it('hasWatched false → muted "no targets" idle paint', () => {
-    const paint = renderSpy({ candidate: null, remaining: 0, hasWatched: false });
+    const paint = renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasWatched: false });
     expect(paint).toEqual({ text: 'Spy', subtext: 'no targets', bg: BG_SPY_IDLE, dim: true });
   });
 
   it('hasWatched true, candidate null → "Reports" done paint (BG_SPY_DONE)', () => {
-    const paint = renderSpy({ candidate: null, remaining: 0, hasWatched: true });
+    const paint = renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasWatched: true });
     expect(paint.text).toBe('Reports');
     expect(paint.bg).toBe(BG_SPY_DONE);
     expect(paint.dim).toBeUndefined();
@@ -162,7 +162,9 @@ describe('renderSpy', () => {
 
   it('candidate set → "Spy" paint with the coord in the subtext', () => {
     const paint = renderSpy({
+      proposal: 'probe',
       candidate: { galaxy: 1, system: 2, position: 3, playerId: '42' },
+      look: null,
       remaining: 4,
       hasWatched: true,
     });
@@ -175,8 +177,11 @@ describe('renderSpy', () => {
 });
 
 describe('renderSpy — probe pre-flight (Etap G)', () => {
+  /** @type {import('../../../src/features/sendSpy/pure.js').SpyContext} */
   const ctx = {
+    proposal: 'probe',
     candidate: { galaxy: 1, system: 2, position: 3, playerId: '42' },
+    look: null,
     remaining: 4,
     hasWatched: true,
   };
@@ -206,9 +211,9 @@ describe('renderSpy — probe pre-flight (Etap G)', () => {
   });
 
   it('preflight is ignored on the done / no-targets states', () => {
-    expect(renderSpy({ candidate: null, remaining: 0, hasWatched: true }, { have: 0, need: 20 }).text)
+    expect(renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasWatched: true }, { have: 0, need: 20 }).text)
       .toBe('Reports');
-    expect(renderSpy({ candidate: null, remaining: 0, hasWatched: false }, { have: 0, need: 20 }).text)
+    expect(renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasWatched: false }, { have: 0, need: 20 }).text)
       .toBe('Spy');
   });
 });

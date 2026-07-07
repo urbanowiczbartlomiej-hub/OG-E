@@ -23,6 +23,7 @@
 // feeds everything through `env` and reads `location` at the call sites.
 
 import { buildScanPlan } from '../../domain/scanPriority.js';
+import { buildGalaxyPlan, galaxyStaleMs } from '../../domain/galaxyWatch.js';
 
 export { SPY_STALE_MS } from '../../domain/spyScan.js';
 
@@ -39,6 +40,10 @@ export const BG_SPY_IDLE = '#6355e6';
 export const BG_SPY_READY = '#6a5acd';
 export const BG_SPY_ERROR = '#7a2f2f';
 export const BG_SPY_DONE = '#34506b';
+/** The galaxy-LOOK proposal — a vivid azure, clearly "not a probe send". */
+export const BG_SPY_LOOK = '#1f8fbf';
+/** STRIKE — a fresh fleet-landing candidate. Hot orange-red: "act now". */
+export const BG_SPY_STRIKE = '#d1571f';
 
 /**
  * @typedef {{ galaxy: number, system: number, position: number }} Coords
@@ -51,37 +56,72 @@ export const BG_SPY_DONE = '#34506b';
 
 /**
  * @typedef {import('../../domain/scanPriority.js').ScanPlanEnv
- *   & { playerNames?: Record<string, { name?: string }> }} SpyEnv
+ *   & { playerNames?: Record<string, { name?: string }>,
+ *       rings?: Record<string, Record<string, import('../../domain/activityObs.js').ActivityObs[]>> }} SpyEnv
  *   The planner env (see domain/scanPriority.js): watched players, universe
  *   planet rows, per-coord report freshness (planets AND moons), rescan flags,
- *   session sent-coords, the clock, the planet/moon scan filter, and — when the
- *   API context has them — per-player danger (D), activity summaries, and the
- *   player-id → name map for the label.
+ *   session sent-coords, the clock, the planet/moon scan filter, the scan-mode
+ *   map + cadence, and — when available — per-player danger (D), activity
+ *   summaries, the player-id → name map for the label, and the galaxy-view
+ *   activity rings (`rings`, from state/activityObs — look freshness for the
+ *   galaxy-look plan, which covers EVERY watched body).
+ */
+
+/**
+ * A proposed galaxy LOOK: one system to browse, refreshing every galaxy-watched
+ * body in it (passive, undetectable by the targets).
+ * @typedef {object} SpyLook
+ * @property {number} galaxy
+ * @property {number} system
+ * @property {number} bodies   How many needs-sight bodies the visit covers.
+ * @property {string} [why]
  */
 
 /**
  * @typedef {object} SpyContext
- * @property {SpyTarget | null} candidate   Next planet to scan, or null when done.
- * @property {number} remaining             Planets still needing a scan.
+ * @property {'probe'|'look'|null} proposal  Which action the button proposes:
+ *   a probe send (courier flow), a galaxy look (one-tap navigation), or null
+ *   when both plans are empty ("all scanned" end state).
+ * @property {SpyTarget | null} candidate   Next body to probe, or null.
+ * @property {SpyLook | null} look          Top galaxy-look system, or null.
+ * @property {number} remaining             Bodies + systems still needing attention.
  * @property {boolean} hasWatched           Any players are on the watch-list.
- * @property {string} [why]                 The candidate's wording-safe reason line.
+ * @property {boolean} [strike]             The probe proposal is a fresh
+ *   fleet-landing candidate (painted distinctly).
+ * @property {string} [why]                 The proposal's wording-safe reason line.
  */
 
 /**
- * Pure `env → SpyContext`: the TOP entry of the shared scan plan (see
- * `domain/scanPriority.buildScanPlan` — danger × staleness × window bonus,
- * deterministic tiebreak) plus how many planets still need a scan. Coords
- * already sent this session are skipped so the button advances instead of
- * re-proposing them while a probe is in flight.
+ * Pure `env → SpyContext`: the TOP entries of BOTH intel plans — the probe
+ * scan plan (`domain/scanPriority.buildScanPlan`) and the galaxy-look plan
+ * (`domain/galaxyWatch.buildGalaxyPlan`) — unified into one "best next intel
+ * action". Higher priority wins; ties go to the look (it's free: no probes, no
+ * fleet slot, and the target never sees it). Coords already probed this
+ * session are skipped by the probe plan; a browsed system self-clears from the
+ * look plan the moment its `oge:galaxyScanned` ingest lands.
  *
  * @param {SpyEnv} env
  * @returns {SpyContext}
  */
 export function deriveSpy(env) {
   const { entries } = buildScanPlan(env);
+  const looks = buildGalaxyPlan({
+    players: env.players,
+    universePlanets: env.universePlanets,
+    rings: env.rings,
+    rescan: env.rescan,
+    nowMs: env.nowMs,
+    staleMs: galaxyStaleMs(env.cadence),
+    dangerByPlayer: env.dangerByPlayer,
+  }).entries;
+
   const top = entries.length ? entries[0] : null;
+  const lookTop = looks.length ? looks[0] : null;
+  const pickLook = !!lookTop && (!top || lookTop.priority >= top.priority);
   const name = top && env.playerNames ? env.playerNames[top.playerId]?.name : undefined;
+  const why = pickLook ? lookTop?.why : top?.why;
   return {
+    proposal: pickLook ? 'look' : (top ? 'probe' : null),
     candidate: top
       ? {
         galaxy: top.galaxy,
@@ -92,9 +132,18 @@ export function deriveSpy(env) {
         ...(name ? { name } : {}),
       }
       : null,
-    remaining: entries.length,
+    look: lookTop
+      ? {
+        galaxy: lookTop.galaxy,
+        system: lookTop.system,
+        bodies: lookTop.bodies.length,
+        ...(lookTop.why ? { why: lookTop.why } : {}),
+      }
+      : null,
+    remaining: entries.length + looks.length,
     hasWatched: (env.players || []).length > 0,
-    ...(top ? { why: top.why } : {}),
+    ...(!pickLook && top?.strike ? { strike: true } : {}),
+    ...(why ? { why } : {}),
   };
 }
 
@@ -115,6 +164,20 @@ export function renderSpy(ctx, preflight) {
   if (!ctx.hasWatched) {
     return { text: 'Spy', subtext: 'no targets', bg: BG_SPY_IDLE, dim: true };
   }
+  if (!ctx.proposal) {
+    return { text: 'Reports', subtext: 'all scanned ✓', bg: BG_SPY_DONE };
+  }
+  // Galaxy look — one tap navigates to the system; browsing it refreshes every
+  // galaxy-watched body there (passive, the target never sees it).
+  if (ctx.proposal === 'look' && ctx.look) {
+    const l = ctx.look;
+    return {
+      text: 'Look',
+      subtext: `[${l.galaxy}:${l.system}]${l.bodies > 1 ? ` ×${l.bodies}` : ''}`,
+      hint: `${ctx.remaining} left`,
+      bg: BG_SPY_LOOK,
+    };
+  }
   if (!ctx.candidate) {
     return { text: 'Reports', subtext: 'all scanned ✓', bg: BG_SPY_DONE };
   }
@@ -130,10 +193,20 @@ export function renderSpy(ctx, preflight) {
       return { text: 'No probes!', subtext: who, bg: BG_SPY_ERROR };
     }
     return {
-      text: 'Spy',
+      text: ctx.strike ? 'Strike' : 'Spy',
       subtext: who,
       hint: `${preflight.have}/${preflight.need} probes`,
-      bg: BG_SPY_IDLE,
+      bg: ctx.strike ? BG_SPY_STRIKE : BG_SPY_IDLE,
+    };
+  }
+  // Strike — a fresh fleet-landing candidate: distinct hot paint + a 🎯 so the
+  // one deliberate tap that confirms it reads unmistakably.
+  if (ctx.strike) {
+    return {
+      text: 'Strike',
+      subtext: `🎯 ${who}`,
+      hint: 'fresh landing? · spy to confirm',
+      bg: BG_SPY_STRIKE,
     };
   }
   // Line 3 is the remaining count — "N left" (planets + moons still to scan).

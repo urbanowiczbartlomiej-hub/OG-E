@@ -43,6 +43,21 @@ import { pruneRescan } from '../domain/spyScan.js';
  *   moons only, or both. Device-local, shared with the in-game FAB like the
  *   rest of this config.
  *
+ * @typedef {import('../domain/scanMode.js').ScanMode} ScanMode
+ *   Whether a body is PROBE-scanned: 'on' (default) / 'off'. Union + resolution
+ *   live in the domain floor (domain/scanMode.js). Galaxy activity observation
+ *   is ALWAYS on for every watched body (passive/undetectable — nothing to
+ *   gate); scan-'off' just means "don't reveal me with probes".
+ *
+ * @typedef {object} Cadence
+ *   Re-scan cadences, edited in the dashboard Spyglass config row. Read
+ *   IN-TAB for ranking/display only (fair-play persistence invariant: no
+ *   background path ever acts on these).
+ * @property {number} hotDays     Probe staleness for hot targets (D≥60).
+ * @property {number} warmDays    Probe staleness for warm targets (D≥30).
+ * @property {number} coldDays    Probe staleness for everyone else.
+ * @property {number} galaxyHours Galaxy-sighting (activity-coverage) staleness.
+ *
  * @typedef {object} WatchListConfig
  * @property {string[]} players   Watched player ids.
  * @property {number} probes      Espionage probes the scan FAB pre-arms per body.
@@ -62,10 +77,66 @@ import { pruneRescan } from '../domain/spyScan.js';
  *   (still in the table's scan scope + the FAB's scan walk) — the map-only
  *   mute the H5 player chips toggle with 👁. Same optional-but-materialised
  *   contract as `relationships`.
+ * @property {Record<string, ScanMode>} [scanMode]
+ *   Scan-mode map: player id (whole-player default) or bodyKey "g:s:p" /
+ *   "g:s:p:3" (per-body override) → 'on'|'off'. Absent key = 'on'. Resolution
+ *   lives in domain/scanMode.effectiveScan (body ?? player ?? 'on'). Galaxy
+ *   activity is NOT in this map — it's always on. Same optional-but-materialised
+ *   contract as `relationships`.
+ * @property {Cadence} [cadence]
+ *   Re-scan cadences (see {@link Cadence}); materialised with
+ *   {@link DEFAULT_CADENCE} — the pre-cadence hardcoded thresholds.
  */
 
 /** Default probe count when none has been chosen yet. */
 export const DEFAULT_SPY_PROBES = 20;
+
+/**
+ * Default cadences = the thresholds that were hardcoded before cadence became
+ * configurable (domain/scanPriority's HOT/WARM/default tiers + a daily galaxy
+ * look), so an untouched config behaves exactly as it always did.
+ * @type {Cadence}
+ */
+export const DEFAULT_CADENCE = Object.freeze({
+  hotDays: 2, warmDays: 4, coldDays: 7, galaxyHours: 24,
+});
+
+/** Cadence input clamps — day fields and the hour field respectively. */
+export const CADENCE_DAYS_MIN = 0.5;
+export const CADENCE_DAYS_MAX = 60;
+/** Galaxy hours floor: sighting freshness has ~1 h ring resolution (the quiet
+ * throttle / same-interaction dedup lag), so sub-2 h cadences would just churn. */
+export const CADENCE_HOURS_MIN = 2;
+export const CADENCE_HOURS_MAX = 24 * 14;
+
+/**
+ * Coerce one cadence field: finite + clamped, else the default.
+ * @param {unknown} v
+ * @param {number} min
+ * @param {number} max
+ * @param {number} dflt
+ * @returns {number}
+ */
+const cadenceField = (v, min, max, dflt) => {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.min(max, Math.max(min, n)) : dflt;
+};
+
+/**
+ * Coerce any raw value into a complete {@link Cadence} (missing/invalid fields
+ * fall back to {@link DEFAULT_CADENCE}). Exported for the dashboard inputs.
+ * @param {unknown} raw
+ * @returns {Cadence}
+ */
+export const normalizeCadence = (raw) => {
+  const o = raw && typeof raw === 'object' ? /** @type {any} */ (raw) : {};
+  return {
+    hotDays: cadenceField(o.hotDays, CADENCE_DAYS_MIN, CADENCE_DAYS_MAX, DEFAULT_CADENCE.hotDays),
+    warmDays: cadenceField(o.warmDays, CADENCE_DAYS_MIN, CADENCE_DAYS_MAX, DEFAULT_CADENCE.warmDays),
+    coldDays: cadenceField(o.coldDays, CADENCE_DAYS_MIN, CADENCE_DAYS_MAX, DEFAULT_CADENCE.coldDays),
+    galaxyHours: cadenceField(o.galaxyHours, CADENCE_HOURS_MIN, CADENCE_HOURS_MAX, DEFAULT_CADENCE.galaxyHours),
+  };
+};
 
 /**
  * Suffix of the per-universe chrome.storage.local key (full key:
@@ -89,7 +160,9 @@ export const watchListKeyFor = (universeId) => `${universeId}:${WATCH_LIST_KEY_B
  */
 export const normalizeWatchList = (raw) => {
   if (Array.isArray(raw)) {
-    return { players: raw.map(String), probes: DEFAULT_SPY_PROBES, scanBodies: 'planets', rescan: {}, relationships: {}, mapHidden: {} };
+    return {
+      players: raw.map(String), probes: DEFAULT_SPY_PROBES, scanBodies: 'planets', rescan: {}, relationships: {}, mapHidden: {}, scanMode: {}, cadence: { ...DEFAULT_CADENCE },
+    };
   }
   const o = raw && typeof raw === 'object' ? /** @type {any} */ (raw) : {};
   const players = Array.isArray(o.players) ? o.players.map(String) : [];
@@ -119,7 +192,29 @@ export const normalizeWatchList = (raw) => {
       if (o.mapHidden[k]) mapHidden[k] = true;
     }
   }
-  return { players, probes, scanBodies, rescan, relationships, mapHidden };
+  /** @type {Record<string, ScanMode>} */
+  const scanMode = {};
+  if (o.scanMode && typeof o.scanMode === 'object') {
+    for (const k of Object.keys(o.scanMode)) {
+      const v = o.scanMode[k];
+      // 'on' entries are stored too (an explicit body override back to on under
+      // an 'off' player default is meaningful).
+      if (v === 'on' || v === 'off') scanMode[k] = v;
+    }
+  } else if (o.watchMode && typeof o.watchMode === 'object') {
+    // One-time migration from the old tri-state watchMode: galaxy activity is
+    // now always on, so the only thing to carry over is "was probing off here".
+    // 'galaxy' (galaxy-only, no probe) and 'off' → scan 'off'; 'probe' → 'on'.
+    for (const k of Object.keys(o.watchMode)) {
+      const v = o.watchMode[k];
+      if (v === 'galaxy' || v === 'off') scanMode[k] = 'off';
+      else if (v === 'probe') scanMode[k] = 'on';
+    }
+  }
+  const cadence = normalizeCadence(o.cadence);
+  return {
+    players, probes, scanBodies, rescan, relationships, mapHidden, scanMode, cadence,
+  };
 };
 
 const currentKey = () => currentUniverseKey(WATCH_LIST_KEY_BASE, watchListKeyFor);
@@ -132,6 +227,8 @@ export const watchListStore = createStore(/** @type {WatchListConfig} */ ({
   rescan: {},
   relationships: {},
   mapHidden: {},
+  scanMode: {},
+  cadence: { ...DEFAULT_CADENCE },
 }));
 
 /** @type {(() => void) | null} */

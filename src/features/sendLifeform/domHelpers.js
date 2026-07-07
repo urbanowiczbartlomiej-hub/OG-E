@@ -50,35 +50,10 @@ export const readHomePlanet = () => {
   return { galaxy: parseInt(m[1], 10), system: parseInt(m[2], 10) };
 };
 
-/**
- * Update the galaxy-view form inputs and submit for a fast in-page nav to
- * `(galaxy, system)`. Returns `true` when the submit control was found +
- * clicked; `false` so the caller can fall back to a full-page navigation.
- *
- * @param {number} galaxy
- * @param {number} system
- * @returns {boolean}
- */
-export const navigateGalaxyInPage = (galaxy, system) => {
-  const galInput = /** @type {HTMLInputElement | null} */ (
-    document.querySelector(GAME.GALAXY_INPUT)
-  );
-  const sysInput = /** @type {HTMLInputElement | null} */ (
-    document.querySelector(GAME.SYSTEM_INPUT)
-  );
-  if (!sysInput) return false;
-  if (galInput) galInput.value = String(galaxy);
-  sysInput.value = String(system);
-  const submitBtn = /** @type {HTMLElement | null} */ (
-    document.querySelector(GAME.GALAXY_SUBMIT) ??
-      document.querySelector(GAME.GALAXY_SUBMIT_FALLBACK)
-  );
-  if (submitBtn) {
-    submitBtn.click();
-    return true;
-  }
-  return false;
-};
+// In-page galaxy navigation moved to features/shared/galaxyNav.js (sendSpy's
+// galaxy-look proposal needs it too; feature→feature imports are forbidden).
+// Re-exported so this module keeps its historical surface for callers/tests.
+export { navigateGalaxyInPage } from '../shared/galaxyNav.js';
 
 /**
  * Is the game's discover-system control present in the DOM right now?
