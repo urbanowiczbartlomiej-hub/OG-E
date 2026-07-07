@@ -204,9 +204,10 @@ const captureEnv = () => {
     sentCoords: getSentCoords(),
     nowMs,
     scanBodies: cfg.scanBodies,
-    // Scan mode gates the PROBE plan (off bodies excluded); the galaxy-look plan
-    // covers every watched body always (galaxy activity is never gated).
+    // Scan mode gates the PROBE plan (off bodies excluded); galaxyMode mutes
+    // the LOOK plan per player (recording stays always-on regardless).
     scanMode: cfg.scanMode,
+    galaxyMode: cfg.galaxyMode,
     cadence: cfg.cadence,
     rings,
     // Fresh fleet-landing candidates (domain/fleetLanding) → force-boosted to the

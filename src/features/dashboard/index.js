@@ -69,6 +69,7 @@ import { summarizeRoutine, routineBodies } from '../../domain/routine.js';
 import { summarizePresence } from '../../domain/presence.js';
 import { detectAllLandings, strikeKeysOf } from '../../domain/fleetLanding.js';
 import { buildScanPlan } from '../../domain/scanPriority.js';
+import { probeActivityObs } from '../../domain/activityObs.js';
 import { readApiCacheFor, apiCacheKeyFor } from '../../state/apiCache.js';
 import { targetReportsKeyFor } from '../../state/targets.js';
 import { allianceClassKeyFor } from '../../state/allianceClass.js';
@@ -158,12 +159,19 @@ let mapHiddenIds = {};
 /**
  * Scan-mode map (player id / body override key → 'on'|'off') for the selected
  * universe. Mirrors `WatchListConfig.scanMode`; resolution lives in
- * domain/scanMode.effectiveScan. Galaxy activity is NOT in here (always on).
+ * domain/scanMode.effectiveScan. Galaxy activity is NOT in here.
  * @type {Record<string, import('../../domain/scanMode.js').ScanMode>}
  */
 let scanModeMap = {};
 /**
- * Re-scan cadences for the selected universe (probe hot/warm/cold days + galaxy
+ * Per-player galaxy-watch toggle (player id → 'on'|'off'; absent = on) for the
+ * selected universe — mutes the galaxy-LOOK plan for that player (recording
+ * stays always-on). Mirrors `WatchListConfig.galaxyMode`.
+ * @type {Record<string, import('../../domain/scanMode.js').ScanMode>}
+ */
+let galaxyModeMap = {};
+/**
+ * Re-scan cadences for the selected universe (probe re-scan hours + galaxy
  * hours). Mirrors `WatchListConfig.cadence`. @type {import('../../state/watchList.js').Cadence}
  */
 let cadenceCfg = { ...DEFAULT_CADENCE };
@@ -438,9 +446,7 @@ const pinnedTargetIds = new Set();
 /** @type {HTMLElement | null} */ let tgtWatchedOnly;
 /** @type {HTMLInputElement | null} */ let tgtProbes;
 /** @type {HTMLElement | null} */ let tgtScanBodies;
-/** @type {HTMLInputElement | null} */ let cadHotDays;
-/** @type {HTMLInputElement | null} */ let cadWarmDays;
-/** @type {HTMLInputElement | null} */ let cadColdDays;
+/** @type {HTMLInputElement | null} */ let cadRescanHours;
 /** @type {HTMLInputElement | null} */ let cadGalaxyHours;
 /** @type {HTMLElement | null} */ let tgtHideInactive;
 /** @type {HTMLButtonElement | null} */ let tgtConfigToggle;
@@ -745,9 +751,7 @@ const wireDom = () => {
   tgtWatchedOnly = document.getElementById('tgtWatchedOnly');
   tgtProbes = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtProbes'));
   tgtScanBodies = document.getElementById('tgtScanBodies');
-  cadHotDays = /** @type {HTMLInputElement | null} */ (document.getElementById('cadHotDays'));
-  cadWarmDays = /** @type {HTMLInputElement | null} */ (document.getElementById('cadWarmDays'));
-  cadColdDays = /** @type {HTMLInputElement | null} */ (document.getElementById('cadColdDays'));
+  cadRescanHours = /** @type {HTMLInputElement | null} */ (document.getElementById('cadRescanHours'));
   cadGalaxyHours = /** @type {HTMLInputElement | null} */ (document.getElementById('cadGalaxyHours'));
   tgtHideInactive = document.getElementById('tgtHideInactive');
   tgtConfigToggle = /** @type {HTMLButtonElement | null} */ (document.getElementById('tgtConfigToggle'));
@@ -927,6 +931,7 @@ const loadWatched = async () => {
   watchRelationships = cfg.relationships ?? {};
   mapHiddenIds = cfg.mapHidden ?? {};
   scanModeMap = cfg.scanMode ?? {};
+  galaxyModeMap = cfg.galaxyMode ?? {};
   cadenceCfg = cfg.cadence ?? { ...DEFAULT_CADENCE };
   // chrome.storage is authoritative for the probe count (the FAB reads it too).
   if (tgtProbes) tgtProbes.value = String(cfg.probes);
@@ -952,28 +957,25 @@ const writeWatchConfig = () => {
     relationships: watchRelationships,
     mapHidden: mapHiddenIds,
     scanMode: scanModeMap,
+    galaxyMode: galaxyModeMap,
     cadence: cadenceCfg,
   });
 };
 
-/** Reflect the current cadence into the four number inputs (hydrate/reset). */
+/** Reflect the current cadence into the two number inputs (hydrate/reset). */
 const hydrateCadenceInputs = () => {
-  if (cadHotDays) cadHotDays.value = String(cadenceCfg.hotDays);
-  if (cadWarmDays) cadWarmDays.value = String(cadenceCfg.warmDays);
-  if (cadColdDays) cadColdDays.value = String(cadenceCfg.coldDays);
+  if (cadRescanHours) cadRescanHours.value = String(cadenceCfg.rescanHours);
   if (cadGalaxyHours) cadGalaxyHours.value = String(cadenceCfg.galaxyHours);
 };
 
 /**
- * Read the four cadence inputs into {@link cadenceCfg} (clamped/validated by
+ * Read the two cadence inputs into {@link cadenceCfg} (clamped/validated by
  * `normalizeCadence`), reflect the clamped values back, persist, repaint.
  * @returns {void}
  */
 const commitCadence = () => {
   cadenceCfg = normalizeCadence({
-    hotDays: Number(cadHotDays?.value),
-    warmDays: Number(cadWarmDays?.value),
-    coldDays: Number(cadColdDays?.value),
+    rescanHours: Number(cadRescanHours?.value),
     galaxyHours: Number(cadGalaxyHours?.value),
   });
   hydrateCadenceInputs();
@@ -995,6 +997,23 @@ const setScanMode = (key, mode) => {
   if (mode == null) delete next[key];
   else next[key] = mode;
   scanModeMap = next;
+  writeWatchConfig();
+  repaintTargets();
+};
+
+/**
+ * Set (or clear back to the 'on' default) a player's galaxy-watch toggle —
+ * the "Watch via → galaxy" button. 'off' mutes the galaxy-LOOK plan for the
+ * player (passive sighting recording continues regardless). Persist, repaint.
+ * @param {string} pid
+ * @param {import('../../domain/scanMode.js').ScanMode | null} mode
+ * @returns {void}
+ */
+const setGalaxyMode = (pid, mode) => {
+  const next = { ...galaxyModeMap };
+  if (mode == null) delete next[pid];
+  else next[pid] = mode;
+  galaxyModeMap = next;
   writeWatchConfig();
   repaintTargets();
 };
@@ -1273,19 +1292,20 @@ const repaintTargets = () => {
   const ownAlliance = ownId && apiPlayers ? apiPlayers[ownId]?.alliance : undefined;
 
   // Per-player hidden-fleet estimate + the per-planet report data the table
-  // reads: coord → { ts, defPts, fleetPts } (timestamp drives the freshness /
+  // reads: coord → { ts, defPts, fleetPts, act } (timestamp drives the freshness /
   // re-scan status; defense + visible-fleet POINTS feed the expanded per-planet
-  // rows). The report key is a bodyKey "g:s:p:type"; strip ":type" for the coord.
+  // rows; `act` = the reports' activity markers as probe LOOKS for the Activity
+  // column). The report key is a bodyKey "g:s:p:type"; strip ":type" for the coord.
   const military = apiCache.military ? apiCache.military.ranks : {};
   /** @type {Record<string, import('../../domain/threatModel.js').HiddenFleetEstimate>} */
   const estimates = {};
-  /** @type {Record<string, Record<string, {ts:number, defPts:number, fleetPts:number}>>} */
+  /** @type {Record<string, Record<string, {ts:number, defPts:number, fleetPts:number, act?: import('../../domain/activityObs.js').ActivityObs[]}>>} */
   const reportsByPlayer = {};
   // Moon reports, keyed by the SAME "g:s:p" coord as their planet but in their
   // own map (a shared map would let a moon clobber its planet's row). Feeds the
   // dossier's per-planet 🌙 scan status + moon def/fleet line and the coverage
   // header's "moons M/N".
-  /** @type {Record<string, Record<string, {ts:number, defPts:number, fleetPts:number}>>} */
+  /** @type {Record<string, Record<string, {ts:number, defPts:number, fleetPts:number, act?: import('../../domain/activityObs.js').ActivityObs[]}>>} */
   const moonsByPlayer = {};
   for (const pid of Object.keys(targetReports)) {
     const bucket = targetReports[pid];
@@ -1304,6 +1324,14 @@ const repaintTargets = () => {
       const report = latestOf(entry);
       const lastColon = key.lastIndexOf(':');
       const coord = lastColon >= 0 ? key.slice(0, lastColon) : key;
+      // Probe-look activity for the dossier's Activity column: every report is
+      // also a LOOK at the body (its activity marker), so the column can speak
+      // even for bodies never browsed in the galaxy. History when present
+      // (watched players accrue it), else the lone latest report.
+      const hist = historyOf(entry);
+      const act = probeActivityObs(hist.length
+        ? hist
+        : [{ ts: report.timestamp, activityMin: report.activityMin }]);
       // Moon reports land in their own map: once ":type" is stripped their
       // bodyKey shares the planet's "g:s:p", so the shared map would clobber
       // the planet's row. They still feed the hidden-fleet estimate above.
@@ -1312,18 +1340,20 @@ const repaintTargets = () => {
           ts: report.timestamp ?? 0,
           defPts: pointsOf(report.defenseValue ?? 0),
           fleetPts: pointsOf(report.fleetValue ?? 0),
+          ...(act.length ? { act } : {}),
         };
         continue;
       }
       // Loot rhythm from the body's history ring (watched players accrue it): the
       // avg / peak on-planet resources feed the dossier's per-planet loot line and
       // the hoard ("mother") detection.
-      const loot = bodyLootStats(report, historyOf(entry));
+      const loot = bodyLootStats(report, hist);
       byCoord[coord] = {
         ts: report.timestamp ?? 0,
         defPts: pointsOf(report.defenseValue ?? 0),
         fleetPts: pointsOf(report.fleetValue ?? 0),
         ...(loot ? { avgLoot: loot.avg, maxLoot: loot.max, lastLoot: loot.last, lootSamples: loot.samples } : {}),
+        ...(act.length ? { act } : {}),
       };
     }
     reportsByPlayer[pid] = byCoord;
@@ -1433,10 +1463,12 @@ const repaintTargets = () => {
     routines,
     relationships: watchRelationships,
     onSetRelationship: setRelationship,
-    // Per-body / per-player scan mode (probe on/off; galaxy activity always on)
-    // + the activity-ring inputs for the Activity column.
+    // Per-body / per-player scan mode (probe on/off) + the per-player galaxy
+    // toggle + the activity-ring inputs for the Activity column.
     scanMode: scanModeMap,
     onSetScanMode: setScanMode,
+    galaxyMode: galaxyModeMap,
+    onSetGalaxyMode: setGalaxyMode,
     activityRings: activityObs,
     galaxyLookMs: galaxyStaleMs(cadenceCfg),
     presences,
@@ -1487,6 +1519,25 @@ const proximityAge = (tsSeconds, nowMs) => {
   const days = hours / 24;
   if (days < 14) return `${Math.round(days)}d`;
   return `${Math.round(days / 7)}w`;
+};
+
+/**
+ * One coord span for the proximity strip. A MOON body renders in the lunar
+ * tint with a tooltip saying so — a planet and its moon share `"g:s:p"`, so
+ * the colour is the only thing telling you which body the alert was about.
+ * Same hex as the in-game Who's-spying panel's `.coord.moon`.
+ * @param {string} coords
+ * @param {boolean} moon
+ * @returns {HTMLSpanElement}
+ */
+const proximityBodyEl = (coords, moon) => {
+  const s = document.createElement('span');
+  s.textContent = coords;
+  if (moon) {
+    s.style.cssText = 'color:#c9a9e8;cursor:help;';
+    s.title = 'This coordinate is the slot’s MOON, not the planet';
+  }
+  return s;
 };
 
 /**
@@ -1562,13 +1613,22 @@ const renderProximityStrip = () => {
       facts.appendChild(hot);
     }
 
-    const at = e.atCoords.slice(0, 2).join(', ')
-      + (e.atCoords.length > 2 ? ` +${e.atCoords.length - 2}` : '');
     const age = e.lastTs != null ? proximityAge(e.lastTs, nowMs) : '';
     const sub = document.createElement('div');
     sub.style.cssText = 'font-size:11px;color:#6b7782;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-    sub.textContent = (age ? `${age} · ` : '') + `at ${at}`
-      + (e.fromCoords ? ` · from ${e.fromCoords}` : '');
+    sub.appendChild(document.createTextNode(`${age ? `${age} · ` : ''}at `));
+    // Moon bodies carry the lunar tint (a planet and its moon share coords).
+    e.atBodies.slice(0, 2).forEach((b, i) => {
+      if (i) sub.appendChild(document.createTextNode(', '));
+      sub.appendChild(proximityBodyEl(b.coords, b.moon));
+    });
+    if (e.atBodies.length > 2) {
+      sub.appendChild(document.createTextNode(` +${e.atBodies.length - 2}`));
+    }
+    if (e.fromCoords) {
+      sub.appendChild(document.createTextNode(' · from '));
+      sub.appendChild(proximityBodyEl(e.fromCoords, e.fromMoon));
+    }
     facts.appendChild(sub);
 
     const actions = document.createElement('div');
@@ -1628,9 +1688,13 @@ const renderProximityStrip = () => {
     const line = document.createElement('div');
     line.style.cssText = 'font-size:11px;color:#788;margin-top:3px;line-height:1.4;';
     const age = proximityAge(r.ts, nowMs);
-    line.textContent =
-      `${r.byPlayerName || `#${r.byPlayerId}`} · near ${r.atCoords}`
-      + `${age ? ` · ${age} ago` : ''}${r.fromCoords ? ` · from ${r.fromCoords}` : ''}`;
+    line.appendChild(document.createTextNode(`${r.byPlayerName || `#${r.byPlayerId}`} · near `));
+    line.appendChild(proximityBodyEl(r.atCoords, r.atPlanetType === 3));
+    if (age) line.appendChild(document.createTextNode(` · ${age} ago`));
+    if (r.fromCoords) {
+      line.appendChild(document.createTextNode(' · from '));
+      line.appendChild(proximityBodyEl(r.fromCoords, r.fromPlanetType === 3));
+    }
     rawBody.appendChild(line);
   }
   raw.appendChild(rawBody);
@@ -1660,17 +1724,11 @@ const renderScanPlanStrip = () => {
   const setSummary = (/** @type {string} */ txt) => {
     if (scanPlanSummaryEl) scanPlanSummaryEl.textContent = txt;
   };
-  /** @param {string} txt */
-  const hint = (txt) => {
-    setSummary('🧭 planets to scan');
-    const h = document.createElement('div');
-    h.style.cssText = 'font-size:12px;color:#5f6b76;';
-    h.textContent = txt;
-    scanPlanListEl?.appendChild(h);
-  };
   const watched = [...watchedPlayers];
+  // Nothing to rank (no watched players / everything freshly scanned) → just
+  // the idle summary, no hint line in the panel body.
   if (!watched.length) {
-    hint('Watch players (⭐) to build a scan order.');
+    setSummary('🧭 planets to scan');
     return;
   }
 
@@ -1706,7 +1764,7 @@ const renderScanPlanStrip = () => {
     activityByPlayer: activityBy,
   });
   if (!entries.length) {
-    hint('Nothing to scan right now — your watched players are freshly scanned.');
+    setSummary('🧭 planets to scan');
     return;
   }
 
@@ -2524,7 +2582,7 @@ const wireListeners = () => {
   // persists through the watch-config write rather than the localStorage prefs.
   tgtProbes?.addEventListener('change', () => { writeWatchConfig(); repaintTargets(); });
   // Re-scan cadence inputs — commitCadence clamps, reflects, persists, repaints.
-  for (const el of [cadHotDays, cadWarmDays, cadColdDays, cadGalaxyHours]) {
+  for (const el of [cadRescanHours, cadGalaxyHours]) {
     el?.addEventListener('change', commitCadence);
   }
   // Planet/moon/both scan filter — same shared-config write as the probes.

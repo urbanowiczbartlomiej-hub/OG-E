@@ -14,8 +14,6 @@ import {
   staleMsFor,
   buildScanPlan,
   WINDOW_BONUS,
-  STALE_HOT_MS,
-  STALE_WARM_MS,
 } from '../../src/domain/scanPriority.js';
 import { SPY_STALE_MS } from '../../src/domain/spyScan.js';
 
@@ -55,14 +53,10 @@ describe('stalenessWeight', () => {
 });
 
 describe('staleMsFor', () => {
-  it('hot targets go stale sooner; unknown D uses the 7-day default', () => {
-    expect(staleMsFor(80)).toBe(STALE_HOT_MS);
-    expect(staleMsFor(60)).toBe(STALE_HOT_MS); // boundary inclusive
-    expect(staleMsFor(45)).toBe(STALE_WARM_MS);
-    expect(staleMsFor(30)).toBe(STALE_WARM_MS); // boundary inclusive
-    expect(staleMsFor(10)).toBe(SPY_STALE_MS);
+  it('uses the configured re-scan hours; no cadence falls back to the 7-day default', () => {
+    expect(staleMsFor({ rescanHours: 12 })).toBe(12 * 3600 * 1000);
+    expect(staleMsFor({ rescanHours: 48, galaxyHours: 24 })).toBe(48 * 3600 * 1000);
     expect(staleMsFor(undefined)).toBe(SPY_STALE_MS);
-    expect(staleMsFor(NaN)).toBe(SPY_STALE_MS);
   });
 });
 

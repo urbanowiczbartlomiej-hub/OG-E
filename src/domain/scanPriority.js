@@ -20,9 +20,9 @@
 //                       timer, framed "good moment, based on intel you
 //                       gathered" (§8 wording discipline).
 //
-// Per-player cadence (staleMsFor) spends `deriveSpy`'s plumbed-but-unused
-// staleMs: hot targets (high D) go stale sooner, so the plan naturally
-// rotates through the dangerous ones more often.
+// The re-scan cadence (staleMsFor) is ONE user-set hour threshold for every
+// watched body (the old hot/warm/cold danger tiers were dropped — three knobs
+// for one idea); danger still shapes the ORDER via dangerWeight.
 //
 // Pure: no DOM, no storage, no Date.now() — `nowMs` arrives in the env.
 
@@ -33,20 +33,14 @@ import { effectiveScan, overrideKeyFor } from './scanMode.js';
 /** @typedef {import('./routine.js').ActivitySummary} ActivitySummary */
 /** @typedef {import('./scanMode.js').ScanMode} ScanMode */
 /**
- * The probe-cadence fields of the watch-list cadence (see state/watchList
+ * The probe-cadence field of the watch-list cadence (see state/watchList
  * Cadence) — typed structurally so the domain floor never imports state. The
  * optional `galaxyHours` rides along so the SAME config object also feeds
- * galaxyWatch.galaxyStaleMs (this module only reads the day fields).
- * @typedef {{ hotDays: number, warmDays: number, coldDays: number, galaxyHours?: number }} ProbeCadence
+ * galaxyWatch.galaxyStaleMs (this module only reads `rescanHours`).
+ * @typedef {{ rescanHours: number, galaxyHours?: number }} ProbeCadence
  */
 
 const DAY_MS = 24 * 3600 * 1000;
-/** Re-scan cadence by danger: hot targets go stale sooner (§6.7). */
-export const STALE_HOT_MS = 2 * DAY_MS;
-export const STALE_WARM_MS = 4 * DAY_MS;
-/** D thresholds for the cadence tiers. */
-const HOT_D = 60;
-const WARM_D = 30;
 /** Danger weight floor/scale: 0.3 + 0.7·(D/100). */
 const DANGER_FLOOR = 0.3;
 /** Assumed mid danger when a player's D is unknown (no API profile yet). */
@@ -69,21 +63,14 @@ export const WINDOW_BONUS = 1.3;
 export const STRIKE_BOOST = 100;
 
 /**
- * Stale threshold for a player of danger D (0..100). When a {@link ProbeCadence}
- * is supplied its hot/warm/cold day fields drive the tiers (the user-configured
- * cadence); without one the module falls back to the hardcoded defaults, so
- * every existing caller is unchanged. Unknown D uses the cold/default tier.
- * @param {number | undefined} d100
+ * Stale threshold for every watched body: the user-configured re-scan cadence
+ * (one hour-scale knob), or the 7-day default when no cadence is supplied.
  * @param {ProbeCadence} [cadence]
  * @returns {number}
  */
-export const staleMsFor = (d100, cadence) => {
-  const cold = cadence ? cadence.coldDays * DAY_MS : SPY_STALE_MS;
-  if (typeof d100 !== 'number' || !Number.isFinite(d100)) return cold;
-  if (d100 >= HOT_D) return cadence ? cadence.hotDays * DAY_MS : STALE_HOT_MS;
-  if (d100 >= WARM_D) return cadence ? cadence.warmDays * DAY_MS : STALE_WARM_MS;
-  return cold;
-};
+export const staleMsFor = (cadence) => (
+  cadence ? cadence.rescanHours * 3600 * 1000 : SPY_STALE_MS
+);
 
 /**
  * Danger multiplicand: 0.3 (harmless) .. 1.0 (D=100). Unknown D sits mid-scale
@@ -153,7 +140,7 @@ export const windowBonus = (nowMs, activity) => {
  *   (default 'planets').
  * @property {number} [staleMs]                 Default stale threshold override.
  * @property {ProbeCadence} [cadence]           User-configured probe cadence
- *   (drives {@link staleMsFor}); absent → hardcoded default tiers.
+ *   (drives {@link staleMsFor}); absent → the 7-day default.
  * @property {Record<string, ScanMode>} [scanMode]  Scan-mode map — bodies whose
  *   effective scan is 'off' are excluded from the probe plan (their galaxy
  *   activity is still tracked always-on, via domain/galaxyWatch).
@@ -209,9 +196,7 @@ export const buildScanPlan = (env) => {
     const coordTs = env.spiedByPlayer ? env.spiedByPlayer[pid] : undefined;
     const moonTs = env.spiedMoonsByPlayer ? env.spiedMoonsByPlayer[pid] : undefined;
     const d100 = env.dangerByPlayer ? env.dangerByPlayer[pid] : undefined;
-    const staleMs = env.dangerByPlayer && pid in env.dangerByPlayer
-      ? staleMsFor(d100, env.cadence)
-      : env.staleMs ?? staleMsFor(undefined, env.cadence);
+    const staleMs = env.staleMs ?? staleMsFor(env.cadence);
     const wDanger = dangerWeight(d100);
     const wWindow = windowBonus(env.nowMs, env.activityByPlayer
       ? env.activityByPlayer[pid]

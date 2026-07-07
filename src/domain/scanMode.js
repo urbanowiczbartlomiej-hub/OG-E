@@ -8,12 +8,13 @@
 // (state → domain).
 //
 // Why binary (not the old probe/galaxy/off tri-state): GALAXY activity
-// observation is now ALWAYS on for every watched body — it is passive and
-// undetectable, so there is nothing to gate. The only real choice is whether we
-// ALSO send probes (which reveal us to the target). So a body is simply
-// scan-'on' (probes proposed) or scan-'off' (galaxy activity still tracked, no
-// probes). Removing a player from the watch-list is the way to stop watching
-// entirely; there is no "off everything" mode.
+// RECORDING is always on for every watched body — it is passive and
+// undetectable, so there is nothing to gate at the data layer. The probe choice
+// (send probes = reveal us, or not) is this map; the separate per-player
+// galaxy-LOOK-plan toggle (watchList `galaxyMode` — "stop proposing galaxy
+// looks for this player") gates only the look proposals, never the recording.
+// Removing a player from the watch-list is the way to stop watching entirely;
+// there is no "off everything" mode.
 
 /**
  * Whether a body is probe-scanned:
@@ -46,9 +47,11 @@ export const ringKeyFor = (coord, bodyType) => `${coord}:${bodyType}`;
 export const overrideKeyFor = (coord, bodyType) => (bodyType === 3 ? `${coord}:3` : coord);
 
 /**
- * Resolve a body's effective scan mode: per-body override wins, then the
- * whole-player default, then 'on' (so an absent map behaves as "scan
- * everything", the pre-feature default).
+ * Resolve a body's effective scan mode. A whole-player 'off' (the dossier's
+ * "Watch via → probes" toggle) DOMINATES: it means "no probes for this player,
+ * period", so a stale per-body 'on' override can never keep one body in the
+ * probe plan. With the player on (default), the per-body override wins, then
+ * 'on' (an absent map behaves as "scan everything", the pre-feature default).
  * @param {Record<string, ScanMode> | undefined} scanMode
  * @param {string} playerId
  * @param {string} overrideKey  body override key (see {@link overrideKeyFor})
@@ -56,11 +59,10 @@ export const overrideKeyFor = (coord, bodyType) => (bodyType === 3 ? `${coord}:3
  */
 export const effectiveScan = (scanMode, playerId, overrideKey) => {
   if (!scanMode) return 'on';
+  if (scanMode[playerId] === 'off') return 'off';
   const body = scanMode[overrideKey];
   if (body) return body;
-  const player = scanMode[playerId];
-  if (player) return player;
-  return 'on';
+  return scanMode[playerId] || 'on';
 };
 
 /**

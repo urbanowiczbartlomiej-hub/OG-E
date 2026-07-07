@@ -67,8 +67,10 @@ export function rescanAtFor(rescan, playerId, coord) {
  * (see {@link scanStatus} — the rescan branch only matters for reports the
  * stale branch wouldn't catch). The map was previously never cleaned, so
  * one-off marks accumulated forever. Uses the DEFAULT stale threshold as the
- * horizon — per-player cadences (domain/scanPriority.staleMsFor) are only ever
- * SHORTER, so pruning at the 7-day default never revives a hidden mark.
+ * horizon; a user cadence LONGER than 7 d (domain/scanPriority.staleMsFor)
+ * can in theory outlive a pruned mark, but a week-old "data may have changed"
+ * flag has long since served its purpose — same trade-off the old cold tier
+ * (up to 60 d) already made.
  *
  * Returns the same reference when nothing was pruned, so store hydrates can
  * cheaply skip a no-op write.

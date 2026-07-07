@@ -146,8 +146,9 @@ import { sumResourceValue } from './unitCosts.js';
  *   `ageMs`). Reports persisted before the unit fix stored MILLISECONDS; see
  *   {@link normalizeReportTimestamps}.
  * @property {number} [activityMin]      Minutes since last activity on this body:
- *   0 = active (<15 min, '*'); a positive number = that many minutes; undefined =
- *   none (>60 min, '-1', or not shown). See {@link parseActivityMin}.
+ *   0 = active (<15 min, '*'); a positive number = that many minutes; −1 =
+ *   explicitly none (>60 min, the game's '-1'); undefined = not shown.
+ *   See {@link parseActivityMin}.
  */
 
 /**
@@ -200,8 +201,12 @@ function toStringArray(s) {
 
 /**
  * Normalise the per-body activity marker to "minutes since last activity".
- * The game encodes: '*' = active <15 min (→ 0), '-1' = none / >60 min (→ undefined
- * — NOT "1 minute ago"), any other value = that minute count. '-'/'' = not shown.
+ * The game encodes: '*' = active <15 min (→ 0), '-1' = none / >60 min (→ −1,
+ * an EXPLICIT quiet — NOT "1 minute ago"), any other value = that minute
+ * count. '-'/'' = not shown (→ undefined). Keeping quiet as −1 (instead of the
+ * old undefined) lets the history ring store it (targetReports.toLite copies
+ * numbers only), so a probe scan that saw no activity counts as a quiet LOOK
+ * downstream — presence offline evidence + the dossier's ">Nh" readout.
  * @param {string|undefined} s
  * @returns {number|undefined}
  */
@@ -209,8 +214,8 @@ function parseActivityMin(s) {
   if (s == null || s === '' || s === '-') return undefined;
   if (s === '*') return 0;
   const n = toNum(s);
-  if (n == null || n < 0) return undefined; // '-1' (or any negative) = none
-  return n;
+  if (n == null) return undefined;
+  return n < 0 ? -1 : n; // any negative = the game's '-1' quiet marker
 }
 
 /**

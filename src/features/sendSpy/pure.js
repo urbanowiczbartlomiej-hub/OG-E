@@ -10,8 +10,8 @@
 //
 // The button proposes the TOP entry of the shared scan plan
 // (`domain/scanPriority.buildScanPlan`): every watched player's planet that
-// needs a scan — no report on file, report stale (per-player cadence: hot
-// targets go stale sooner), or an explicit re-scan flag — ranked by
+// needs a scan — no report on file, report older than the user's re-scan
+// cadence, or an explicit re-scan flag — ranked by
 // danger × staleness × activity-window bonus. The dashboard's "suggested scan
 // order" strip runs the SAME ranking, so both surfaces always agree on what's
 // next. One tap sends one espionage fleet to that planet (via the shared
@@ -57,14 +57,16 @@ export const BG_SPY_STRIKE = '#d1571f';
 /**
  * @typedef {import('../../domain/scanPriority.js').ScanPlanEnv
  *   & { playerNames?: Record<string, { name?: string }>,
- *       rings?: Record<string, Record<string, import('../../domain/activityObs.js').ActivityObs[]>> }} SpyEnv
+ *       rings?: Record<string, Record<string, import('../../domain/activityObs.js').ActivityObs[]>>,
+ *       galaxyMode?: Record<string, import('../../domain/scanMode.js').ScanMode> }} SpyEnv
  *   The planner env (see domain/scanPriority.js): watched players, universe
  *   planet rows, per-coord report freshness (planets AND moons), rescan flags,
  *   session sent-coords, the clock, the planet/moon scan filter, the scan-mode
  *   map + cadence, and — when available — per-player danger (D), activity
- *   summaries, the player-id → name map for the label, and the galaxy-view
+ *   summaries, the player-id → name map for the label, the galaxy-view
  *   activity rings (`rings`, from state/activityObs — look freshness for the
- *   galaxy-look plan, which covers EVERY watched body).
+ *   galaxy-look plan), and the per-player galaxy toggle (`galaxyMode` — a
+ *   player switched off in "Watch via" gets no look proposals).
  */
 
 /**
@@ -113,6 +115,7 @@ export function deriveSpy(env) {
     nowMs: env.nowMs,
     staleMs: galaxyStaleMs(env.cadence),
     dangerByPlayer: env.dangerByPlayer,
+    galaxyMode: env.galaxyMode,
   }).entries;
 
   const top = entries.length ? entries[0] : null;

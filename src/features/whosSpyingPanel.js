@@ -84,12 +84,15 @@ const CSS = [
   `#${PANEL_ID} .oge-sb-skull{margin-right:5px;cursor:help;}`,
   `#${PANEL_ID} .oge-sb-age{font:11px/1 monospace;color:#6b7987;white-space:nowrap;}`,
   `#${PANEL_ID} .coord{color:#a9c4de;font:11px/1 monospace;}`,
+  // Lunar tint — a MOON body's coords (planet and moon share "g:s:p"; the
+  // colour + tooltip is what tells them apart). Same hex as the dashboard's
+  // proximity strip.
+  `#${PANEL_ID} .coord.moon{color:#c9a9e8;cursor:help;}`,
   `#${PANEL_ID} .muted{color:#4c5763;}`,
   `#${PANEL_ID} .oge-sb-acts{display:flex;gap:6px;justify-content:flex-end;}`,
   `#${PANEL_ID} .oge-sb-btn{font:11px Verdana,sans-serif;color:#93a3b3;cursor:pointer;`,
   'background:#16212c;border:1px solid #26323f;border-radius:5px;padding:3px 9px;white-space:nowrap;}',
   `#${PANEL_ID} .oge-sb-btn:hover{border-color:var(--sp-indigo);color:#d8e6f4;background:#1a2534;}`,
-  `#${PANEL_ID} .oge-sb-btn .g{color:var(--sp-indigo);font-weight:700;}`,
   `#${PANEL_ID} .oge-sb-foot{padding:5px 12px;border-top:1px solid #1b2732;font-size:10px;color:#5f6b76;}`,
   `#${PANEL_ID} .oge-sb-foot .k{color:var(--sp-danger);}`,
 ].join('');
@@ -157,6 +160,20 @@ const openSpyglass = (pid) => {
 };
 
 /**
+ * One coord span. A MOON body renders in the lunar tint (`.coord.moon`) with a
+ * tooltip saying so — a planet and its moon share `"g:s:p"`, so the colour is
+ * the only thing telling you which body the alert was actually about.
+ * @param {string} coords
+ * @param {boolean} moon
+ * @returns {HTMLElement}
+ */
+const bodyEl = (coords, moon) => {
+  const s = el('span', moon ? 'coord moon' : 'coord', coords);
+  if (moon) s.title = 'This coordinate is the slot’s MOON, not the planet';
+  return s;
+};
+
+/**
  * Build one prober `<tr>` from a digest entry.
  * @param {import('../domain/proximityDigest.js').ProximityDigestEntry} p
  * @returns {HTMLElement}
@@ -177,12 +194,18 @@ const buildRow = (p) => {
   tr.appendChild(el('td', 'num', String(p.count)));
 
   const fromTd = el('td');
-  fromTd.appendChild(p.fromCoords ? el('span', 'coord', p.fromCoords) : el('span', 'muted', '—'));
+  fromTd.appendChild(p.fromCoords ? bodyEl(p.fromCoords, p.fromMoon) : el('span', 'muted', '—'));
   tr.appendChild(fromTd);
 
   const nearTd = el('td');
-  nearTd.appendChild(
-    p.atCoords.length ? el('span', 'coord', p.atCoords.join(', ')) : el('span', 'muted', '—'));
+  if (p.atBodies.length) {
+    p.atBodies.forEach((b, i) => {
+      if (i) nearTd.appendChild(el('span', 'coord', ', '));
+      nearTd.appendChild(bodyEl(b.coords, b.moon));
+    });
+  } else {
+    nearTd.appendChild(el('span', 'muted', '—'));
+  }
   tr.appendChild(nearTd);
 
   // One action: jump to this prober's full dossier in the dashboard's Spyglass
@@ -190,9 +213,7 @@ const buildRow = (p) => {
   // thinner copy of it here).
   const actTd = el('td');
   const acts = el('div', 'oge-sb-acts');
-  const dossierBtn = el('button', 'oge-sb-btn');
-  dossierBtn.appendChild(document.createTextNode('Spyglass '));
-  dossierBtn.appendChild(el('span', 'g', '▸'));
+  const dossierBtn = el('button', 'oge-sb-btn', 'Spyglass');
   dossierBtn.title = "Open this player's dossier in the OG-E dashboard (Spyglass tab)";
   dossierBtn.addEventListener('click', () => openSpyglass(p.byPlayerId));
   acts.appendChild(dossierBtn);

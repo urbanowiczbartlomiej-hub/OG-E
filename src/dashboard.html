@@ -885,32 +885,28 @@
   <!-- Scan-plan panel — Probes (the in-game scan FAB's per-planet pre-arm, a scan
        setting) + the ranked scan order. Toggled by "planets to scan" above. -->
   <div id="scanPlanStrip" style="display:none;background:#0b1118;border:1px solid #2b3a4d;border-radius:8px;padding:10px 14px;margin:-4px 0 14px;font-size:13px;color:#8b99a8;">
-    <label style="display:inline-block;margin:0 16px 8px 0;">Probes:
-      <input id="tgtProbes" type="number" min="1" max="9999" value="20" size="4"
-        title="How many espionage probes the in-game scan button pre-arms per body.">
-    </label>
-    <span style="display:inline-block;margin:0 0 8px;">Scan:
-      <span class="chip-group seg" id="tgtScanBodies" data-value="planets" style="vertical-align:middle;margin-left:4px;"
-        title="Which bodies the in-game scan button proposes: planets, moons, or both.">
-        <button type="button" data-value="planets">🪐 planets</button>
-        <button type="button" data-value="moons">🌙 moons</button>
-        <button type="button" data-value="both">both</button>
+    <!-- One settings line: probe count · body filter · re-scan cadence (a
+         single hour-scale probe knob — the old hot/warm/cold danger tiers are
+         gone — plus galaxy-sighting freshness). Read in-tab for
+         ranking/display only. -->
+    <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-bottom:8px;">
+      <label>Probes:
+        <input id="tgtProbes" type="number" min="1" max="9999" value="20" size="4"
+          title="How many espionage probes the in-game scan button pre-arms per body.">
+      </label>
+      <span>Scan:
+        <span class="chip-group seg" id="tgtScanBodies" data-value="planets" style="vertical-align:middle;margin-left:4px;"
+          title="Which bodies the in-game scan button proposes: planets, moons, or both.">
+          <button type="button" data-value="planets">🪐 planets</button>
+          <button type="button" data-value="moons">🌙 moons</button>
+          <button type="button" data-value="both">both</button>
+        </span>
       </span>
-    </span>
-    <!-- Re-scan cadence — how old intel may get before a body re-enters the plan.
-         Probe staleness by danger tier (hot ≥60 D, warm ≥30 D, cold the rest);
-         galaxy = passive-sighting freshness for galaxy-watched bodies. Read
-         in-tab for ranking/display only. -->
-    <div style="border-top:1px solid #1c2836;margin-top:2px;padding-top:8px;display:flex;flex-wrap:wrap;gap:14px;align-items:center;">
-      <span style="color:#6b7887;">Re-scan after —</span>
-      <label title="Probe re-scan for hot targets (danger ≥ 60).">🔥 hot
-        <input id="cadHotDays" type="number" min="0.5" max="60" step="0.5" value="2" size="3"> d</label>
-      <label title="Probe re-scan for warm targets (danger ≥ 30).">🌡️ warm
-        <input id="cadWarmDays" type="number" min="0.5" max="60" step="0.5" value="4" size="3"> d</label>
-      <label title="Probe re-scan for everyone else.">❄️ cold
-        <input id="cadColdDays" type="number" min="0.5" max="60" step="0.5" value="7" size="3"> d</label>
-      <label title="Galaxy-sighting freshness for bodies watched via the galaxy (passive, undetectable).">🔭 galaxy
-        <input id="cadGalaxyHours" type="number" min="2" max="336" step="1" value="24" size="3"> h</label>
+      <span style="color:#6b7887;">Re-scan after:</span>
+      <label title="Probe re-scan: a report older than this re-enters the scan plan (every watched body).">probes
+        <input id="cadRescanHours" type="number" min="1" max="1440" step="1" value="48" size="4"> h</label>
+      <label title="Galaxy-sighting freshness for bodies watched via the galaxy (passive, undetectable).">galaxy
+        <input id="cadGalaxyHours" type="number" min="1" max="336" step="1" value="24" size="3"> h</label>
     </div>
     <div id="scanPlanList"></div>
   </div>

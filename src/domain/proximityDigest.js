@@ -21,8 +21,12 @@
  * @property {string|null} name       Latest known nickname (alerts may omit it).
  * @property {number} count           Alerts this prober triggered (in the log window).
  * @property {number|null} lastTs     Newest alert, epoch SECONDS; null = none carried a ts.
- * @property {string[]} atCoords      Distinct bodies of OURS approached, newest first.
+ * @property {Array<{coords: string, moon: boolean}>} atBodies
+ *   Distinct bodies of OURS approached, newest first. A planet and its moon
+ *   share coords but are separate spiable bodies, so they list separately —
+ *   `moon` says which one the scout actually probed.
  * @property {string|null} fromCoords Newest known origin body.
+ * @property {boolean} fromMoon       That origin is a moon (launched from a moon).
  * @property {boolean} sameSystem     Some alert's origin g:s equals the approached body's g:s.
  * @property {string|null} sameSystemFrom  The origin behind that flag (newest such).
  */
@@ -76,8 +80,9 @@ export const digestProximityReports = (reports) => {
         name: null,
         count: 0,
         lastTs: null,
-        atCoords: [],
+        atBodies: [],
         fromCoords: null,
+        fromMoon: false,
         sameSystem: false,
         sameSystemFrom: null,
       };
@@ -88,11 +93,18 @@ export const digestProximityReports = (reports) => {
     if (newest) e.lastTs = ts;
     // Name / origin: prefer the newest alert that actually carries the field
     // (first fill wins on a ts-less log, which the store keeps newest-first).
+    // fromMoon travels WITH fromCoords — the pair describes one origin body.
     if (r.byPlayerName && (newest || e.name == null)) e.name = r.byPlayerName;
-    if (r.fromCoords && (newest || e.fromCoords == null)) e.fromCoords = r.fromCoords;
-    if (r.atCoords && !e.atCoords.includes(r.atCoords)) {
-      if (newest) e.atCoords.unshift(r.atCoords);
-      else e.atCoords.push(r.atCoords);
+    if (r.fromCoords && (newest || e.fromCoords == null)) {
+      e.fromCoords = r.fromCoords;
+      e.fromMoon = r.fromPlanetType === 3;
+    }
+    if (r.atCoords) {
+      const moon = r.atPlanetType === 3;
+      if (!e.atBodies.some((b) => b.coords === r.atCoords && b.moon === moon)) {
+        if (newest) e.atBodies.unshift({ coords: r.atCoords, moon });
+        else e.atBodies.push({ coords: r.atCoords, moon });
+      }
     }
     const from = systemOf(r.fromCoords);
     if (from != null && from === systemOf(r.atCoords)) {

@@ -33,7 +33,8 @@ export const DEFAULT_TARGET_SORT = { key: 'danger', dir: 'desc' };
  * @typedef {import('../../domain/targets.js').TargetCandidate} TargetCandidate
  * @typedef {import('../../domain/targets.js').TargetFilterOptions} TargetFilterOptions
  * @typedef {import('../../domain/targets.js').PlanetPos} PlanetPos
- * @typedef {{ ts: number, defPts: number, fleetPts: number }} PlanetReport
+ * @typedef {{ ts: number, defPts: number, fleetPts: number,
+ *   act?: import('../../domain/activityObs.js').ActivityObs[] }} PlanetReport
  */
 
 /**
@@ -454,7 +455,7 @@ function playerCell(c) {
  * @param {boolean} [args.watchedOnly]
  * @param {Array<{coords: string, player?: number}>} [args.universePlanets]
  * @param {Record<string, Record<string, PlanetReport>>} [args.reportsByPlayer]
- * @param {Record<string, Record<string, {ts:number, defPts:number, fleetPts:number}>>} [args.moonsByPlayer]
+ * @param {Record<string, Record<string, PlanetReport>>} [args.moonsByPlayer]
  *   MOON reports per player, keyed by the moon's planet "g:s:p" coord (own map —
  *   a shared one would clobber the planet's row). Dossier 🌙 status + coverage.
  * @param {'planets'|'moons'|'both'} [args.scanBodies]  Scan-chip value — gates
@@ -479,6 +480,10 @@ function playerCell(c) {
  *   Scan-mode map threaded to the dossier (per-body/-player probe on/off).
  * @param {(key: string, mode: import('../../domain/scanMode.js').ScanMode | null) => void} [args.onSetScanMode]
  *   Set a body override or the whole-player default; `null` clears to inherited.
+ * @param {Record<string, import('../../domain/scanMode.js').ScanMode>} [args.galaxyMode]
+ *   Per-player galaxy-watch toggle threaded to the dossier's "Watch via" row.
+ * @param {(pid: string, mode: import('../../domain/scanMode.js').ScanMode | null) => void} [args.onSetGalaxyMode]
+ *   Set / clear ('null' = back to on) a player's galaxy-watch toggle.
  * @param {import('../../state/activityObs.js').ActivityObsMap} [args.activityRings]
  *   Galaxy-activity rings (playerId → ringKey → ring) — the dossier's Activity
  *   column + galaxy look-coverage.
@@ -532,6 +537,8 @@ export function renderTargets({
   onSetRelationship,
   scanMode,
   onSetScanMode,
+  galaxyMode,
+  onSetGalaxyMode,
   activityRings,
   galaxyLookMs,
   presences,
@@ -727,6 +734,8 @@ export function renderTargets({
       onRescan,
       scanMode,
       onSetScanMode,
+      galaxyMode,
+      onSetGalaxyMode,
       rings: activityRings ? activityRings[c.id] : undefined,
       galaxyLookMs,
       presence: presences ? presences[c.id] : undefined,

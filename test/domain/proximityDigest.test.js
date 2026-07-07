@@ -37,7 +37,10 @@ describe('digestProximityReports', () => {
     expect(e.name).toBe('Mqres');
     expect(e.lastTs).toBe(300);
     // Distinct bodies, newest first; the duplicate 1:1:1 is not repeated.
-    expect(e.atCoords).toEqual(['1:1:1', '1:2:3']);
+    expect(e.atBodies).toEqual([
+      { coords: '1:1:1', moon: false },
+      { coords: '1:2:3', moon: false },
+    ]);
   });
 
   it('flags a prober whose origin is in the same system as the approached body', () => {
@@ -76,7 +79,7 @@ describe('digestProximityReports', () => {
     const e = d.players[0];
     expect(e.name).toBe('new');
     expect(e.fromCoords).toBe('8:8:8');
-    expect(e.atCoords[0]).toBe('1:2:2'); // newest body first
+    expect(e.atBodies[0].coords).toBe('1:2:2'); // newest body first
     expect(d.lastTs).toBe(800);
   });
 

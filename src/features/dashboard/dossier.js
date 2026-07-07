@@ -18,10 +18,11 @@ import { motherPlanetOf } from '../../domain/lootRhythm.js';
 import { dangerColor } from '../../lib/dangerColor.js';
 import { effectiveScan, ringKeyFor } from '../../domain/scanMode.js';
 import { bodyActivityReadout } from '../../domain/galaxyWatch.js';
+import { mergeActivityObs } from '../../domain/activityObs.js';
 
 /**
  * @typedef {import('../../domain/targets.js').PlanetPos} PlanetPos
- * @typedef {{ ts: number, defPts: number, fleetPts: number, avgLoot?: number, maxLoot?: number, lastLoot?: number, lootSamples?: number }} PlanetReport
+ * @typedef {{ ts: number, defPts: number, fleetPts: number, avgLoot?: number, maxLoot?: number, lastLoot?: number, lootSamples?: number, act?: import('../../domain/activityObs.js').ActivityObs[] }} PlanetReport
  */
 
 // ── Local self-contained formatting helpers (copies of targets.js's) ──────────
@@ -234,91 +235,29 @@ function civilBlock(civ, profile) {
 }
 
 /**
- * 6) PLANETS grid — responsive per-planet grid with scan status / re-scan link,
- * labelled def/fleet/loot stat lines (plain words, no glyph soup), a per-slot
- * 🌙 moon row with the moon's OWN scan state, plus a ⭐ hoard flag on the single
- * planet holding the most visible fleet. Headed by the coverage element: one
- * pill per body kind (planets / moons), green when complete, amber while short.
- * @param {object} a
- * @param {string} a.playerId
- * @param {PlanetPos[]} a.planets
- * @param {Record<string, PlanetReport> | undefined} a.reports
- * @param {Record<string, {ts:number, defPts:number, fleetPts:number}> | undefined} [a.moons]
- *   MOON reports keyed by the moon's planet "g:s:p" coord (their own map).
- * @param {*} a.rescan
- * @param {number} a.nowMs
- * @param {Record<string, import('../../domain/scanMode.js').ScanMode>} [a.scanMode]
- *   Scan-mode map (player id / body override key → 'on'|'off') — drives the
- *   per-body Scan toggle. Galaxy activity is NOT gated (always on).
- * @param {(key: string, mode: import('../../domain/scanMode.js').ScanMode | null) => void} [a.onSetScanMode]
- *   Set a body scan override (key = "g:s:p"/"g:s:p:3"); present → the toggle renders.
- * @param {Record<string, import('../../domain/activityObs.js').ActivityObs[]>} [a.rings]
- *   THIS player's galaxy-activity rings (ringKey "g:s:p:type" → ring) — the
- *   Activity column source.
- * @param {'planets'|'moons'|'both'} [a.scanBodies]  Which body TYPES the probe
- *   plan includes; gates the per-body Scan toggle (a toggle on a filtered-out
- *   type would be a dead switch).
- * @param {string} [a.linkBase]  Game origin (e.g. `https://s163-pl.ogame.gameforge.com`);
- *   present → the `body` coords become links to the in-game galaxy view.
- * @returns {HTMLDivElement}
+ * The at-a-glance coverage line — "🪐 17/17 · 🌙 12/17 · to scan: 5 moons":
+ * one count per body kind (planets / moons — a moon is a SEPARATE spiable
+ * body, hidden fleet parks there), green when complete, amber while short,
+ * with a plain-words tail saying exactly what's left. Rendered on the dossier
+ * HEADER line (beside the relationship / Watch-via chips): stacked above the
+ * table it used to push the evidence down a full line, leaving a dead band
+ * under the header. `null` when the snapshot has no planets.
+ * @param {PlanetPos[]} planets
+ * @param {Record<string, PlanetReport> | undefined} reports
+ * @param {Record<string, PlanetReport> | undefined} moons
+ * @returns {HTMLDivElement | null}
  */
-function planetsBlock({
-  playerId, planets, reports, moons, rescan, nowMs, scanMode, onSetScanMode,
-  rings, scanBodies = 'planets', linkBase,
-}) {
-  const box = document.createElement('div');
-
-  if (!planets.length) {
-    const note = document.createElement('div');
-    note.style.cssText = 'color:#888;font-size:12px;';
-    note.textContent = 'No planets in the cached universe snapshot for this player.';
-    box.appendChild(note);
-    return box;
-  }
-
+function coverageLine(planets, reports, moons) {
+  if (!planets.length) return null;
   const coordStr = (/** @type {PlanetPos} */ p) => `${p.galaxy}:${p.system}:${p.position}`;
-  // In-game galaxy deep link for a body — same shape the Galaxy Viewer / free
-  // maps use (`component=galaxy&galaxy=&system=`), plus `position` to land on the
-  // exact planet's row. Empty when the game origin is unknown → plain text.
-  const galaxyHref = (/** @type {PlanetPos} */ p) => (linkBase
-    ? `${linkBase}/game/index.php?page=ingame&component=galaxy&galaxy=${p.galaxy}&system=${p.system}&position=${p.position}`
-    : '');
   const spied = planets.filter((p) => reports && reports[coordStr(p)]).length;
-
-  // Which coord holds the most visible fleet? (the collection/fleet planet.)
-  /** @type {string|undefined} */ let hoardCoord;
-  let hoardFleet = -Infinity;
-  if (reports) {
-    for (const p of planets) {
-      const r = reports[coordStr(p)];
-      if (r && typeof r.fleetPts === 'number' && r.fleetPts > hoardFleet) {
-        hoardFleet = r.fleetPts;
-        hoardCoord = coordStr(p);
-      }
-    }
-  }
-  // Only flag when there is actually a positive fleet to hoard.
-  if (!(hoardFleet > 0)) hoardCoord = undefined;
-
-  // The loot HOARD ("mother") planet: the body whose peak loot towers over the
-  // empire — a collector farmer's accumulation point (🏦), distinct from ⭐ (most
-  // parked fleet); they often, but not always, coincide.
-  const motherCoord = motherPlanetOf(reports || {});
-
-  // ── Coverage header — the at-a-glance "how much of this empire do I see". ──
-  // The old thin "17 of 17 planets scanned" line was easy to miss and silent
-  // about moons (a moon is a SEPARATE spiable body — hidden fleet parks there),
-  // so each body kind gets its own pill: green when complete, amber while short,
-  // with a plain-words tail saying exactly what's left.
   const moonsTotal = planets.reduce((n, p) => n + (p.hasMoon ? 1 : 0), 0);
   const moonsSpied = moons
     ? planets.reduce((n, p) => n + (p.hasMoon && moons[coordStr(p)] ? 1 : 0), 0)
     : 0;
 
-  // ONE dim line (the mini-table wasted vertical space): "🪐 17/17 · 🌙 12/17 ·
-  // to scan: 5 moons" — counts green when complete, amber while short.
   const head = document.createElement('div');
-  head.style.cssText = 'font-size:11px;color:#7c8893;margin-bottom:8px;'
+  head.style.cssText = 'font-size:11px;color:#7c8893;'
     + 'display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;';
 
   /**
@@ -362,7 +301,79 @@ function planetsBlock({
     tail.style.color = '#b08a3e';
   }
   head.appendChild(tail);
-  box.appendChild(head);
+  return head;
+}
+
+/**
+ * 6) PLANETS grid — responsive per-planet grid with scan status / re-scan link,
+ * labelled def/fleet/loot stat lines (plain words, no glyph soup), a per-slot
+ * 🌙 moon row with the moon's OWN scan state, plus a ⭐ hoard flag on the single
+ * planet holding the most visible fleet. (Its coverage summary — 🪐/🌙 counts —
+ * renders on the dossier header line via {@link coverageLine}, not here.)
+ * @param {object} a
+ * @param {string} a.playerId
+ * @param {PlanetPos[]} a.planets
+ * @param {Record<string, PlanetReport> | undefined} a.reports
+ * @param {Record<string, PlanetReport> | undefined} [a.moons]
+ *   MOON reports keyed by the moon's planet "g:s:p" coord (their own map).
+ * @param {*} a.rescan
+ * @param {number} a.nowMs
+ * @param {Record<string, import('../../domain/scanMode.js').ScanMode>} [a.scanMode]
+ *   Scan-mode map (player id / body override key → 'on'|'off') — drives the
+ *   per-body Scan toggle. Galaxy activity is NOT gated (always on).
+ * @param {(key: string, mode: import('../../domain/scanMode.js').ScanMode | null) => void} [a.onSetScanMode]
+ *   Set a body scan override (key = "g:s:p"/"g:s:p:3"); present → the toggle renders.
+ * @param {Record<string, import('../../domain/activityObs.js').ActivityObs[]>} [a.rings]
+ *   THIS player's galaxy-activity rings (ringKey "g:s:p:type" → ring) — the
+ *   Activity column source.
+ * @param {'planets'|'moons'|'both'} [a.scanBodies]  Which body TYPES the probe
+ *   plan includes; gates the per-body Scan toggle (a toggle on a filtered-out
+ *   type would be a dead switch).
+ * @param {string} [a.linkBase]  Game origin (e.g. `https://s163-pl.ogame.gameforge.com`);
+ *   present → the `body` coords become links to the in-game galaxy view.
+ * @returns {HTMLDivElement}
+ */
+function planetsBlock({
+  playerId, planets, reports, moons, rescan, nowMs, scanMode, onSetScanMode,
+  rings, scanBodies = 'planets', linkBase,
+}) {
+  const box = document.createElement('div');
+
+  if (!planets.length) {
+    const note = document.createElement('div');
+    note.style.cssText = 'color:#888;font-size:12px;';
+    note.textContent = 'No planets in the cached universe snapshot for this player.';
+    box.appendChild(note);
+    return box;
+  }
+
+  const coordStr = (/** @type {PlanetPos} */ p) => `${p.galaxy}:${p.system}:${p.position}`;
+  // In-game galaxy deep link for a body — same shape the Galaxy Viewer / free
+  // maps use (`component=galaxy&galaxy=&system=`), plus `position` to land on the
+  // exact planet's row. Empty when the game origin is unknown → plain text.
+  const galaxyHref = (/** @type {PlanetPos} */ p) => (linkBase
+    ? `${linkBase}/game/index.php?page=ingame&component=galaxy&galaxy=${p.galaxy}&system=${p.system}&position=${p.position}`
+    : '');
+
+  // Which coord holds the most visible fleet? (the collection/fleet planet.)
+  /** @type {string|undefined} */ let hoardCoord;
+  let hoardFleet = -Infinity;
+  if (reports) {
+    for (const p of planets) {
+      const r = reports[coordStr(p)];
+      if (r && typeof r.fleetPts === 'number' && r.fleetPts > hoardFleet) {
+        hoardFleet = r.fleetPts;
+        hoardCoord = coordStr(p);
+      }
+    }
+  }
+  // Only flag when there is actually a positive fleet to hoard.
+  if (!(hoardFleet > 0)) hoardCoord = undefined;
+
+  // The loot HOARD ("mother") planet: the body whose peak loot towers over the
+  // empire — a collector farmer's accumulation point (🏦), distinct from ⭐ (most
+  // parked fleet); they often, but not always, coincide.
+  const motherCoord = motherPlanetOf(reports || {});
 
   // ── Per-BODY table — one row per planet plus an indented 🌙 row for its
   // moon, so def / fleet / loot line up in real columns and an empire reads
@@ -379,7 +390,7 @@ function planetsBlock({
   const cols = [
     ['body', 'left', ''],
     ['scan', 'left', 'Age of your newest espionage report (probe intel) — click the toggle to stop/resume probing this body'],
-    ['activity', 'left', 'When this body was last active in the galaxy view — always tracked, passive, undetectable. "Activity" = any interaction, not "online".'],
+    ['activity', 'left', 'When this body was last active — from your galaxy sightings AND your spy reports’ activity marker. ">Nh" = quiet at every look for that long. "Activity" = any interaction, not "online".'],
     ['def', 'right', 'Defence on the body — resource points, newest report'],
     ['fleet', 'right', 'Visible (parked) fleet on the body — resource points, newest report'],
     ['loot avg', 'right', 'Average on-body resources across your reports (the loot rhythm)'],
@@ -414,15 +425,18 @@ function planetsBlock({
   const DASH = '#4c5763';
   // Probe scanning is per-body toggleable, but only for the body TYPES the scan
   // filter includes (planets/moons/both) — a toggle on a filtered-out type would
-  // be a dead switch.
+  // be a dead switch. With the whole player's probes OFF (Watch via) the column
+  // goes fully inert: raw report age if one exists, '—' otherwise — no per-body
+  // toggles (player-'off' dominates in effectiveScan, so they'd be dead too).
   const scannablePlanets = scanBodies !== 'moons';
   const scannableMoons = scanBodies !== 'planets';
+  const playerProbesOff = !!(scanMode && scanMode[playerId] === 'off');
 
   /**
    * The Scan cell for one body: probe-report freshness + an integrated on/off
-   * toggle (no separate action column). Scan-off shows a muted "off" (galaxy
-   * activity keeps tracking regardless); a body type outside the scan filter
-   * shows an inert "—".
+   * toggle (no separate action column). Per-body scan-off shows a muted "off";
+   * a body type outside the scan filter shows an inert "—"; the whole player
+   * probes-off (Watch via) shows only the raw age / '—', nothing clickable.
    * @param {string} key         override key: "g:s:p" / "g:s:p:3".
    * @param {'none'|'fresh'|'stale'|'rescan'} status
    * @param {number|undefined} reportTs
@@ -440,6 +454,14 @@ function planetsBlock({
       td.title = 'Outside the current scan filter (planets / moons / both)';
       return td;
     }
+    if (playerProbesOff) {
+      // Watch via → probes OFF: raw data only, no rescan/toggle affordances.
+      const age = formatAge(ageMs(reportTs, nowMs));
+      td.textContent = age || '—';
+      td.style.color = age ? '#7c8893' : DASH;
+      td.title = 'Probes are off for this player (Watch via) — showing the last report’s age only';
+      return td;
+    }
     const on = effectiveScan(scanMode, playerId, key) === 'on';
     const txtEl = document.createElement('span');
     if (!on) {
@@ -447,7 +469,7 @@ function planetsBlock({
       txtEl.style.color = '#5a646f';
     } else {
       const age = formatAge(ageMs(reportTs, nowMs));
-      if (status === 'none') { txtEl.textContent = '○ needs scan'; txtEl.style.color = '#7c8893'; }
+      if (status === 'none') { txtEl.textContent = '—'; txtEl.style.color = DASH; td.title = 'No espionage report for this body yet'; }
       else if (status === 'fresh') { txtEl.textContent = age; txtEl.style.color = '#5a8f5a'; }
       else if (status === 'stale') { txtEl.textContent = `${age} stale`; txtEl.style.color = '#e0a020'; }
       else { txtEl.textContent = `${age} re-scan`; txtEl.style.color = '#e0a020'; }
@@ -468,34 +490,43 @@ function planetsBlock({
   };
 
   /**
-   * The Activity cell for one body — HONEST last-active from the galaxy ring
-   * (galaxyWatch.bodyActivityReadout): the time since the last positive marker,
-   * never a small look-based number when the body has only quiet looks. Colour
-   * warms with recent activity (target likely around) and cools with long
-   * silence (a better strike window). Always shown — galaxy activity is
-   * always-on for every body.
+   * The Activity cell for one body — HONEST last-active merged from BOTH
+   * sources: the galaxy ring AND the body's spy reports (every report is also
+   * a look — its activity marker), so a probed-but-never-browsed body still
+   * reads here. The time since the last positive marker; when every look was
+   * quiet, a ">Nh" bound counted from the FIRST quiet look (each look proves
+   * ≥1 h idle; activity between looks can't be ruled out) that keeps aging as
+   * time passes — a new quiet look carries the same information, so it never
+   * resets the readout; a new positive marker updates it. Colour warms with
+   * recent activity (target likely around) and cools with long silence (a
+   * better strike window).
    * @param {string} ringKey  "g:s:p:1" / "g:s:p:3"
+   * @param {import('../../domain/activityObs.js').ActivityObs[] | undefined} probeAct
+   *   The body's spy-report looks (projected in repaintTargets).
    * @param {boolean} small
    * @returns {HTMLTableCellElement}
    */
-  const activityCell = (ringKey, small) => {
+  const activityCell = (ringKey, probeAct, small) => {
     const pad = small ? 'padding:0 0 3px 12px;' : 'padding:2px 0 2px 12px;';
     const td = document.createElement('td');
     td.style.cssText = `${pad}font-size:11px;white-space:nowrap;`;
-    const ro = bodyActivityReadout(rings ? rings[ringKey] : undefined);
+    const ro = bodyActivityReadout(mergeActivityObs(rings ? rings[ringKey] : undefined, probeAct));
     if (ro.looks === 0) {
-      td.textContent = '— never sighted';
-      td.style.color = '#5a646f';
-      td.title = 'Never sighted in the galaxy yet — browse this system to start tracking activity';
+      td.textContent = '—';
+      td.style.color = DASH;
+      td.title = 'No sighting yet — browse this system in the galaxy or scan the body to start tracking activity';
       return td;
     }
     if (ro.lastActiveSec == null) {
-      // Only quiet looks — we looked but never caught activity (inactive ≥1 h
-      // each look). Do NOT show a small age; that's the "<1 h" bug.
-      td.textContent = 'no activity';
+      // Only quiet looks — never caught activity. Show the honest aging bound:
+      // quiet since the first look, +1 h (a quiet marker proves ≥1 h idle).
+      const sinceMs = ageMs(ro.quietSinceSec ?? ro.lastLookSec, nowMs) + 3600_000;
+      const lookAge = ro.lastLookSec ? formatAge(ageMs(ro.lastLookSec, nowMs)) : '';
+      td.textContent = `>${formatAge(sinceMs)}`;
       td.style.color = '#6f97b0';
-      td.title = `Looked ${ro.looks}× — quiet every time (inactive ≥1 h at each look). `
-        + 'No interaction ever seen here.';
+      td.title = `No activity seen in ${ro.looks} look${ro.looks === 1 ? '' : 's'} — quiet every `
+        + `time since the first one (each proves ≥1 h idle; activity between looks can’t be `
+        + `ruled out). Last checked ${lookAge || '—'} ago.`;
       return td;
     }
     const activeMs = ageMs(ro.lastActiveSec, nowMs);
@@ -563,9 +594,9 @@ function planetsBlock({
     }
     row.appendChild(body);
 
-    // Scan (probe freshness + toggle) then Activity (galaxy, always tracked).
+    // Scan (probe freshness + toggle) then Activity (galaxy looks + probe looks).
     row.appendChild(scanCell(coord, status, r?.ts, scannablePlanets, false));
-    row.appendChild(activityCell(ringKeyFor(coord, 1), false));
+    row.appendChild(activityCell(ringKeyFor(coord, 1), r?.act, false));
 
     if (r) {
       row.appendChild(cellEl(compact(Math.round(r.defPts)), `${NUM}color:#9fb0c0;`));
@@ -601,7 +632,7 @@ function planetsBlock({
       mrow.appendChild(mbody);
       // Scan + Activity, same helpers as the planet row (moon keys/rings).
       mrow.appendChild(scanCell(moonKey, mStatus, m ? m.ts : undefined, scannableMoons, true));
-      mrow.appendChild(activityCell(ringKeyFor(coord, 3), true));
+      mrow.appendChild(activityCell(ringKeyFor(coord, 3), m?.act, true));
       if (m) {
         mrow.appendChild(cellEl(compact(Math.round(m.defPts)), `${NUM}font-size:11px;color:#8fa0b0;`));
         // Fleet parked on a spied moon is the headline find — flag it gold.
@@ -711,17 +742,20 @@ function relationshipSelector(playerId, current, onSet) {
 }
 
 /**
- * Whole-player "Watch via" indicator: galaxy activity is ALWAYS on (shown as a
- * locked-lit chip — passive, undetectable, can't be turned off), plus a
- * togglable 📡 probe-scan default. Both can be "on" at once — that's the point.
- * Toggling probe sets/clears the player-id key ('off' explicit / clear back to
- * the 'on' default). A click stops propagation (never collapses the dossier).
+ * Whole-player "Watch via" selector: a togglable galaxy chip (mutes the
+ * galaxy-LOOK plan for this player — passive sighting RECORDING continues
+ * regardless) plus a togglable probe-scan default. Both can be "on" at once —
+ * that's the point. Each toggle sets/clears its player-id key ('off' explicit
+ * / clear back to the 'on' default). A click stops propagation (never
+ * collapses the dossier).
  * @param {string} playerId
- * @param {boolean} scanOn   is the player's probe-scan default on?
- * @param {(key: string, mode: import('../../domain/scanMode.js').ScanMode | null) => void} onSet
+ * @param {boolean} scanOn     is the player's probe-scan default on?
+ * @param {boolean} galaxyOn   is the player's galaxy-look plan on?
+ * @param {(key: string, mode: import('../../domain/scanMode.js').ScanMode | null) => void} onSetScan
+ * @param {((pid: string, mode: import('../../domain/scanMode.js').ScanMode | null) => void) | undefined} onSetGalaxy
  * @returns {HTMLDivElement}
  */
-function watchViaSelector(playerId, scanOn, onSet) {
+function watchViaSelector(playerId, scanOn, galaxyOn, onSetScan, onSetGalaxy) {
   const wrap = document.createElement('div');
   wrap.style.cssText = 'display:inline-flex;align-items:center;gap:6px;font-size:11px;';
   const lbl = document.createElement('span');
@@ -729,26 +763,43 @@ function watchViaSelector(playerId, scanOn, onSet) {
   lbl.style.cssText = 'color:#6b7887;';
   wrap.appendChild(lbl);
 
-  // Galaxy — always on, not a button (locked lit).
-  const glx = document.createElement('span');
-  glx.textContent = '🔭 galaxy';
-  glx.title = 'Always on — passive galaxy activity tracking; the target never sees it. Can’t be turned off (remove the player from the watch-list to stop watching).';
-  glx.style.cssText = 'padding:2px 10px;border-radius:999px;font-size:11px;'
-    + 'border:1px solid #2f5140;background:#13251c;color:#7fb389;';
-  wrap.appendChild(glx);
+  /**
+   * One togglable Watch-via chip (shared look; the hue names the channel).
+   * @param {string} text
+   * @param {boolean} on
+   * @param {string} onBorder  border colour while on
+   * @param {string} onBg      background while on
+   * @param {string} onColor   text colour while on
+   * @param {string} title
+   * @param {() => void} onClick
+   * @returns {HTMLButtonElement}
+   */
+  const chip = (text, on, onBorder, onBg, onColor, title, onClick) => {
+    const btn = document.createElement('button');
+    btn.textContent = text;
+    btn.title = title;
+    btn.style.cssText = 'padding:2px 10px;border-radius:999px;font-size:11px;cursor:pointer;'
+      + `border:1px solid ${on ? onBorder : '#2b3a4d'};background:${on ? onBg : '#18222e'};`
+      + `color:${on ? onColor : '#7c8893'};font-weight:${on ? '600' : '400'};`;
+    btn.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
+    return btn;
+  };
+
+  // Galaxy — mutes/unmutes the look plan (recording is never gated).
+  if (onSetGalaxy) {
+    wrap.appendChild(chip('galaxy', galaxyOn, '#2f5140', '#13251c', '#7fb389',
+      galaxyOn
+        ? 'Galaxy watch ON — the Look plan proposes browsing this player’s systems (passive, the target never sees it). Click to stop proposing looks; sightings you browse past still record.'
+        : 'Galaxy watch OFF — no galaxy-look proposals for this player (sightings you browse past still record). Click to resume.',
+      () => onSetGalaxy(playerId, galaxyOn ? 'off' : null)));
+  }
 
   // Probe — the togglable default.
-  const probe = document.createElement('button');
-  probe.textContent = '📡 probes';
-  probe.title = scanOn
-    ? 'Probe scanning ON by default — click to make this player galaxy-only (no probes; the target stops seeing scans)'
-    : 'Probe scanning OFF — galaxy-only. Click to resume proposing probes for this player.';
-  probe.style.cssText = 'padding:2px 10px;border-radius:999px;font-size:11px;cursor:pointer;'
-    + `border:1px solid ${scanOn ? '#3f6ea5' : '#2b3a4d'};background:${scanOn ? '#12253c' : '#18222e'};`
-    + `color:${scanOn ? '#8fb8e0' : '#7c8893'};font-weight:${scanOn ? '600' : '400'};`;
-  // on = the implicit default → clear the key; off = explicit set.
-  probe.addEventListener('click', (e) => { e.stopPropagation(); onSet(playerId, scanOn ? 'off' : null); });
-  wrap.appendChild(probe);
+  wrap.appendChild(chip('probes', scanOn, '#3f6ea5', '#12253c', '#8fb8e0',
+    scanOn
+      ? 'Probe scanning ON by default — click to make this player galaxy-only (no probes; the target stops seeing scans)'
+      : 'Probe scanning OFF — galaxy-only. Click to resume proposing probes for this player.',
+    () => onSetScan(playerId, scanOn ? 'off' : null)));
   return wrap;
 }
 
@@ -1074,8 +1125,8 @@ function presenceBlock(presence) {
  * @param {import('../../domain/fleetLanding.js').FleetLandingSignal} [a.landing]
  *   Fresh fleet-landing signal — the strike banner atop the judgement column.
  * @param {import('../../domain/targets.js').PlanetPos[]} a.planets
- * @param {Record<string, {ts:number, defPts:number, fleetPts:number}>} [a.reports]  keyed by "g:s:p"
- * @param {Record<string, {ts:number, defPts:number, fleetPts:number}>} [a.moons]  MOON
+ * @param {Record<string, PlanetReport>} [a.reports]  keyed by "g:s:p"
+ * @param {Record<string, PlanetReport>} [a.moons]  MOON
  *   reports keyed by the moon's planet "g:s:p" (own map, never mixed with planets).
  * @param {*} a.rescan
  * @param {number} a.nowMs
@@ -1086,6 +1137,11 @@ function presenceBlock(presence) {
  * @param {(key: string, mode: import('../../domain/scanMode.js').ScanMode | null) => void} [a.onSetScanMode]
  *   Set a body scan override (key "g:s:p"/"g:s:p:3") or the whole-player default
  *   (key = player id); `null` clears the key back to inherited 'on'.
+ * @param {Record<string, import('../../domain/scanMode.js').ScanMode>} [a.galaxyMode]
+ *   Per-player galaxy-watch toggle (player id → 'on'|'off'; absent = on) —
+ *   the "Watch via → galaxy" button state.
+ * @param {(pid: string, mode: import('../../domain/scanMode.js').ScanMode | null) => void} [a.onSetGalaxyMode]
+ *   Toggle the player's galaxy-look plan; `null` clears back to 'on'.
  * @param {Record<string, import('../../domain/activityObs.js').ActivityObs[]>} [a.rings]
  *   THIS player's galaxy-activity rings — the Activity column source.
  * @param {number} [a.galaxyLookMs]  (Unused now — the Activity column reads
@@ -1113,31 +1169,40 @@ export function buildDossier(a) {
   td.style.boxShadow = 'inset 3px 0 0 #4a9eff';
   tr.appendChild(td);
 
-  // 1) Header: relationship chips only. The clicked TABLE ROW wears the
-  //    panel's background (targets.js `dossier-open`) and IS the header —
-  //    repeating the name + archetype here just duplicated the row one line
-  //    above (both already sit in its Player / Danger cells).
-  if (a.onSetRelationship || a.onSetScanMode) {
+  // 1) Header: relationship chips · Watch-via toggles · (right) the scan
+  //    coverage line. The clicked TABLE ROW wears the panel's background
+  //    (targets.js `dossier-open`) and IS the header — repeating the name +
+  //    archetype here just duplicated the row one line above. Coverage sits up
+  //    here (not above the evidence table) so the table starts a line higher.
+  const coverage = coverageLine(a.planets, a.reports, a.moons);
+  if (a.onSetRelationship || a.onSetScanMode || coverage) {
     const header = document.createElement('div');
     header.style.cssText = 'margin-bottom:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;';
     if (a.onSetRelationship) {
       header.appendChild(relationshipSelector(a.playerId, a.relationship || 'neutral', a.onSetRelationship));
     }
     if (a.onSetScanMode) {
-      // Whole-player watch: galaxy activity is ALWAYS on (shown locked); the
-      // only choice is the probe-scan default. Per-body overrides live in the
-      // scan table below.
+      // Whole-player watch: the galaxy-look plan and the probe-scan default,
+      // each its own toggle. Per-body probe overrides live in the scan table
+      // below (inert while the whole player's probes are off).
       const scanOn = !(a.scanMode && a.scanMode[a.playerId] === 'off');
-      header.appendChild(watchViaSelector(a.playerId, scanOn, a.onSetScanMode));
+      const galaxyOn = !(a.galaxyMode && a.galaxyMode[a.playerId] === 'off');
+      header.appendChild(watchViaSelector(
+        a.playerId, scanOn, galaxyOn, a.onSetScanMode, a.onSetGalaxyMode,
+      ));
+    }
+    if (coverage) {
+      // Gravitates right — over the evidence column, whose table it describes.
+      coverage.style.marginLeft = 'auto';
+      header.appendChild(coverage);
     }
     td.appendChild(header);
   }
 
   // Below the header the rest splits into two top-aligned columns on wide
   // viewports (`.dossier-grid`): JUDGEMENT (verdict / danger / why / hidden /
-  // civil / routine) beside EVIDENCE (the per-body scan table). The verdict
-  // leads the judgement column so the evidence's coverage line sits at the top
-  // of the row.
+  // civil / routine) beside EVIDENCE (the per-body scan table — its coverage
+  // summary lives on the header line above).
   const grid = document.createElement('div');
   grid.className = 'dossier-grid';
   const judgement = document.createElement('div');

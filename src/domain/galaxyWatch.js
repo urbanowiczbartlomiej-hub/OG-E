@@ -4,7 +4,9 @@
 // counterpart to the probe scan plan. Galaxy activity is observed for EVERY
 // watched body (planet + moon), always, by the player BROWSING its galaxy
 // system (undetectable by the target: no espionage log entry, no
-// counter-espionage). The COVERAGE-freshness source is the galaxy-view activity
+// counter-espionage); the LOOK PLAN below can be muted per player via the
+// watch-list `galaxyMode` toggle (proposals stop, recording never does).
+// The COVERAGE-freshness source is the galaxy-view activity
 // ring (state/activityObs) — its NEWEST entry time, of ANY marker including a
 // "-1" quiet look, because a look is a look whether or not it saw activity.
 //
@@ -54,6 +56,10 @@ export const lastSightSec = (ring) => {
  *   seen (only quiet looks, or no ring).
  * @property {number} [lastLookSec]    Newest look time (any marker); absent when
  *   no ring.
+ * @property {number} [quietSinceSec]  OLDEST look time — set only when the ring
+ *   holds looks but NO positive marker ever (hits = 0): "quiet at every look
+ *   since here". Drives the ">Nh" no-activity readout (a claim about our
+ *   observations — activity between looks can't be ruled out).
  * @property {boolean} quietNow        The newest look saw NO activity (m < 0).
  * @property {number} looks            Total observations in the ring.
  * @property {number} hits             Observations that saw activity (m ≥ 0).
@@ -88,6 +94,8 @@ export const bodyActivityReadout = (ring) => {
   return {
     ...(lastActiveSec !== undefined ? { lastActiveSec } : {}),
     lastLookSec: last.t,
+    // Never any positive → "quiet since the first look" (the ">Nh" bound).
+    ...(hits === 0 ? { quietSinceSec: ring[0].t } : {}),
     quietNow: last.m < 0,
     looks: ring.length,
     hits,
@@ -122,10 +130,14 @@ export const galaxySightStatus = ({ lastSightSec: sec, nowMs, rescanAtMs = 0, st
  * @property {number} nowMs
  * @property {number} staleMs       Galaxy-look stale threshold (cadence.galaxyHours in ms).
  * @property {Record<string, number>} [dangerByPlayer]   playerId → D (0..100).
+ * @property {Record<string, import('./scanMode.js').ScanMode>} [galaxyMode]
+ *   Per-player galaxy-watch toggle (watchList `galaxyMode`, player-id keys):
+ *   'off' drops the player's bodies from the LOOK plan (the dossier's "Watch
+ *   via → galaxy" button). Recording stays always-on — sightings the user
+ *   browses past still accrue; only the proposals stop.
  *
- * Note: NO scan-mode / scan-bodies filter — galaxy activity is tracked for EVERY
- * watched body (planet + moon), always. A single look refreshes a whole system
- * anyway, so the plan is per-system regardless of body-type prefs.
+ * Note: NO probe scan-mode / scan-bodies filter — a galaxy look is per-system
+ * and covers planet + moon alike, so body-type prefs don't apply here.
  */
 
 /**
@@ -165,6 +177,8 @@ export const buildGalaxyPlan = (env) => {
   const bySystem = new Map();
 
   for (const pid of players) {
+    // Galaxy watch toggled off for this player (Watch via) → no look proposals.
+    if (env.galaxyMode && env.galaxyMode[pid] === 'off') continue;
     const ringsForPid = env.rings ? env.rings[pid] : undefined;
     const d100 = env.dangerByPlayer ? env.dangerByPlayer[pid] : undefined;
     const wDanger = dangerWeight(d100);

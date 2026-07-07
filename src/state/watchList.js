@@ -53,9 +53,8 @@ import { pruneRescan } from '../domain/spyScan.js';
  *   Re-scan cadences, edited in the dashboard Spyglass config row. Read
  *   IN-TAB for ranking/display only (fair-play persistence invariant: no
  *   background path ever acts on these).
- * @property {number} hotDays     Probe staleness for hot targets (D≥60).
- * @property {number} warmDays    Probe staleness for warm targets (D≥30).
- * @property {number} coldDays    Probe staleness for everyone else.
+ * @property {number} rescanHours Probe staleness for every watched body (the
+ *   old hot/warm/cold danger tiers collapsed into this one hour-scale knob).
  * @property {number} galaxyHours Galaxy-sighting (activity-coverage) staleness.
  *
  * @typedef {object} WatchListConfig
@@ -80,33 +79,37 @@ import { pruneRescan } from '../domain/spyScan.js';
  * @property {Record<string, ScanMode>} [scanMode]
  *   Scan-mode map: player id (whole-player default) or bodyKey "g:s:p" /
  *   "g:s:p:3" (per-body override) → 'on'|'off'. Absent key = 'on'. Resolution
- *   lives in domain/scanMode.effectiveScan (body ?? player ?? 'on'). Galaxy
- *   activity is NOT in this map — it's always on. Same optional-but-materialised
- *   contract as `relationships`.
+ *   lives in domain/scanMode.effectiveScan (player-'off' dominates, else body
+ *   override, else 'on'). Galaxy activity is NOT in this map. Same
+ *   optional-but-materialised contract as `relationships`.
+ * @property {Record<string, ScanMode>} [galaxyMode]
+ *   Per-player galaxy-watch toggle (player-id keys only): 'off' mutes the
+ *   galaxy-LOOK plan for that player (the dossier's "Watch via → galaxy"
+ *   button). Passive sighting RECORDING stays always-on. Absent key = 'on'.
+ *   Same optional-but-materialised contract as `relationships`.
  * @property {Cadence} [cadence]
  *   Re-scan cadences (see {@link Cadence}); materialised with
- *   {@link DEFAULT_CADENCE} — the pre-cadence hardcoded thresholds.
+ *   {@link DEFAULT_CADENCE}.
  */
 
 /** Default probe count when none has been chosen yet. */
 export const DEFAULT_SPY_PROBES = 20;
 
 /**
- * Default cadences = the thresholds that were hardcoded before cadence became
- * configurable (domain/scanPriority's HOT/WARM/default tiers + a daily galaxy
- * look), so an untouched config behaves exactly as it always did.
+ * Default cadences: probe re-scan after 48 h (the old hot tier — the tightest
+ * of the retired hot/warm/cold trio) + a daily galaxy look.
  * @type {Cadence}
  */
 export const DEFAULT_CADENCE = Object.freeze({
-  hotDays: 2, warmDays: 4, coldDays: 7, galaxyHours: 24,
+  rescanHours: 48, galaxyHours: 24,
 });
 
-/** Cadence input clamps — day fields and the hour field respectively. */
-export const CADENCE_DAYS_MIN = 0.5;
-export const CADENCE_DAYS_MAX = 60;
-/** Galaxy hours floor: sighting freshness has ~1 h ring resolution (the quiet
- * throttle / same-interaction dedup lag), so sub-2 h cadences would just churn. */
-export const CADENCE_HOURS_MIN = 2;
+/** Probe re-scan clamps (hours): 1 h .. 60 days (the old day-field ceiling). */
+export const RESCAN_HOURS_MIN = 1;
+export const RESCAN_HOURS_MAX = 24 * 60;
+/** Galaxy hours floor: 1 h — the ring's own resolution (the quiet throttle /
+ * same-interaction dedup lag), so anything shorter couldn't observe more. */
+export const CADENCE_HOURS_MIN = 1;
 export const CADENCE_HOURS_MAX = 24 * 14;
 
 /**
@@ -124,16 +127,21 @@ const cadenceField = (v, min, max, dflt) => {
 
 /**
  * Coerce any raw value into a complete {@link Cadence} (missing/invalid fields
- * fall back to {@link DEFAULT_CADENCE}). Exported for the dashboard inputs.
+ * fall back to {@link DEFAULT_CADENCE}). A legacy tiered config (pre-collapse
+ * `hotDays`/`warmDays`/`coldDays`) migrates via its `hotDays` — the tightest
+ * tier, so no target gets scanned LESS often than the user had asked for.
+ * Exported for the dashboard inputs.
  * @param {unknown} raw
  * @returns {Cadence}
  */
 export const normalizeCadence = (raw) => {
   const o = raw && typeof raw === 'object' ? /** @type {any} */ (raw) : {};
+  const legacyHours = Number.isFinite(Number(o.hotDays)) ? Number(o.hotDays) * 24 : NaN;
   return {
-    hotDays: cadenceField(o.hotDays, CADENCE_DAYS_MIN, CADENCE_DAYS_MAX, DEFAULT_CADENCE.hotDays),
-    warmDays: cadenceField(o.warmDays, CADENCE_DAYS_MIN, CADENCE_DAYS_MAX, DEFAULT_CADENCE.warmDays),
-    coldDays: cadenceField(o.coldDays, CADENCE_DAYS_MIN, CADENCE_DAYS_MAX, DEFAULT_CADENCE.coldDays),
+    rescanHours: cadenceField(
+      Number.isFinite(Number(o.rescanHours)) ? o.rescanHours : legacyHours,
+      RESCAN_HOURS_MIN, RESCAN_HOURS_MAX, DEFAULT_CADENCE.rescanHours,
+    ),
     galaxyHours: cadenceField(o.galaxyHours, CADENCE_HOURS_MIN, CADENCE_HOURS_MAX, DEFAULT_CADENCE.galaxyHours),
   };
 };
@@ -161,7 +169,7 @@ export const watchListKeyFor = (universeId) => `${universeId}:${WATCH_LIST_KEY_B
 export const normalizeWatchList = (raw) => {
   if (Array.isArray(raw)) {
     return {
-      players: raw.map(String), probes: DEFAULT_SPY_PROBES, scanBodies: 'planets', rescan: {}, relationships: {}, mapHidden: {}, scanMode: {}, cadence: { ...DEFAULT_CADENCE },
+      players: raw.map(String), probes: DEFAULT_SPY_PROBES, scanBodies: 'planets', rescan: {}, relationships: {}, mapHidden: {}, scanMode: {}, galaxyMode: {}, cadence: { ...DEFAULT_CADENCE },
     };
   }
   const o = raw && typeof raw === 'object' ? /** @type {any} */ (raw) : {};
@@ -211,9 +219,17 @@ export const normalizeWatchList = (raw) => {
       else if (v === 'probe') scanMode[k] = 'on';
     }
   }
+  /** @type {Record<string, ScanMode>} */
+  const galaxyMode = {};
+  if (o.galaxyMode && typeof o.galaxyMode === 'object') {
+    for (const k of Object.keys(o.galaxyMode)) {
+      const v = o.galaxyMode[k];
+      if (v === 'on' || v === 'off') galaxyMode[k] = v;
+    }
+  }
   const cadence = normalizeCadence(o.cadence);
   return {
-    players, probes, scanBodies, rescan, relationships, mapHidden, scanMode, cadence,
+    players, probes, scanBodies, rescan, relationships, mapHidden, scanMode, galaxyMode, cadence,
   };
 };
 
@@ -228,6 +244,7 @@ export const watchListStore = createStore(/** @type {WatchListConfig} */ ({
   relationships: {},
   mapHidden: {},
   scanMode: {},
+  galaxyMode: {},
   cadence: { ...DEFAULT_CADENCE },
 }));
 

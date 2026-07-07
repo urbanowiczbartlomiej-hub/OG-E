@@ -83,6 +83,64 @@ export const isSelfInduced = (obs, sentAtMs) => {
 };
 
 /**
+ * Convert a body's spy-report history into activity observations — every
+ * espionage report is also a LOOK at the body (its activity field is the same
+ * marker the galaxy view shows). `activityMin` ≥ 0 → a positive marker;
+ * `-1` OR absent → a quiet look (reports recorded before the `-1` parse fix
+ * stored quiet as absent, and the game always prints the activity block, so
+ * absent ≈ quiet). A positive whose implied interaction time matches ANOTHER
+ * of our own probe arrivals (± {@link SAME_TAU_SLACK_S}) is demoted to a quiet
+ * look — the marker was almost surely our earlier probe, not the owner
+ * (mirrors presence.bodyPresenceEvents; a report's OWN arrival is excluded:
+ * the marker it reads predates it). Output is oldest→newest by report time.
+ * @param {Array<{ ts?: number, activityMin?: number }>} events
+ *   Spy-report observations of ONE body (targetReports history shape).
+ * @returns {ActivityObs[]}
+ */
+export const probeActivityObs = (events) => {
+  if (!Array.isArray(events) || !events.length) return [];
+  /** @type {number[]} our own probe arrivals = every report time we hold. */
+  const probes = [];
+  for (const e of events) {
+    if (typeof e.ts === 'number' && Number.isFinite(e.ts) && e.ts > 0) probes.push(e.ts);
+  }
+  /** @type {ActivityObs[]} */
+  const out = [];
+  for (const e of events) {
+    if (typeof e.ts !== 'number' || !Number.isFinite(e.ts) || e.ts <= 0) continue;
+    let m = typeof e.activityMin === 'number' && e.activityMin >= 0
+      ? Math.min(60, e.activityMin)
+      : -1;
+    if (m >= 0) {
+      const iv = interactionInterval({ t: e.ts, m });
+      const selfInduced = probes.some((p) => p !== e.ts
+        && p >= iv.lo - SAME_TAU_SLACK_S && p <= iv.hi + SAME_TAU_SLACK_S);
+      if (selfInduced) m = -1;
+    }
+    out.push({ t: e.ts, m });
+  }
+  out.sort((a, b) => a.t - b.t);
+  return out;
+};
+
+/**
+ * Merge two oldest→newest observation lists (galaxy ring + probe looks) into
+ * one time-ordered list — the input of a combined activity readout. No dedup:
+ * the readout takes a max over implied interaction times, so re-observing the
+ * same interaction from both sources cannot inflate the last-active claim.
+ * @param {ActivityObs[] | undefined} a
+ * @param {ActivityObs[] | undefined} b
+ * @returns {ActivityObs[]}
+ */
+export const mergeActivityObs = (a, b) => {
+  const la = Array.isArray(a) ? a : [];
+  const lb = Array.isArray(b) ? b : [];
+  if (!la.length) return lb;
+  if (!lb.length) return la;
+  return [...la, ...lb].sort((x, y) => x.t - y.t);
+};
+
+/**
  * Append one observation to a body's ring, applying the three append-time
  * rules (header). Returns the NEW ring, or `null` when the observation was
  * absorbed (duplicate / throttled / self-induced) — callers skip the store
