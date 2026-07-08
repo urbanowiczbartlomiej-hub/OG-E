@@ -3,7 +3,14 @@
 // @ts-check
 
 import { describe, it, expect } from 'vitest';
-import { extractPlayerMeta, mergePlayerMeta, occupantStrength, honorRank } from '../../src/domain/players.js';
+import {
+  extractPlayerMeta,
+  mergePlayerMeta,
+  occupantStrength,
+  honorRank,
+  sweepStalePlayers,
+  PLAYER_SWEEP_AFTER_MS,
+} from '../../src/domain/players.js';
 
 // A realistic occupied-slot player block (the live fields we read; this is
 // the HAR's slot-8 case: rank-11 starlord, active but on vacation).
@@ -171,5 +178,42 @@ describe('honorRank', () => {
 
   it('falls back to tier 1 for an unknown variant', () => {
     expect(honorRank('rank_bandit')).toEqual({ kind: 'bandit', tier: 1 });
+  });
+});
+
+describe('sweepStalePlayers — hydrate-time retention', () => {
+  const NOW = 1_700_000_000_000;
+  /** @param {number} id @param {number | null} seenAgoMs */
+  const meta = (id, seenAgoMs) => ({
+    id,
+    name: `P${id}`,
+    ...(seenAgoMs !== null ? { seenAt: NOW - seenAgoMs } : {}),
+  });
+
+  it('drops records older than the horizon, keeps fresh ones', () => {
+    const cache = {
+      1: meta(1, 1000), // fresh
+      2: meta(2, PLAYER_SWEEP_AFTER_MS + 1000), // stale
+    };
+    const out = sweepStalePlayers(cache, NOW, []);
+    expect(Object.keys(out)).toEqual(['1']);
+  });
+
+  it('watched players survive regardless of age (dossiers read them forever)', () => {
+    const cache = { 2: meta(2, PLAYER_SWEEP_AFTER_MS + 1000) };
+    const out = sweepStalePlayers(cache, NOW, ['2']);
+    expect(out[2]).toBe(cache[2]);
+    // Numeric watched ids are tolerated (watchList keeps strings).
+    expect(sweepStalePlayers(cache, NOW, [2])[2]).toBe(cache[2]);
+  });
+
+  it('a record with no seenAt has no age to defend itself with → dropped', () => {
+    const out = sweepStalePlayers({ 3: meta(3, null) }, NOW, []);
+    expect(out).toEqual({});
+  });
+
+  it('returns the input BY REFERENCE when nothing was dropped', () => {
+    const cache = { 1: meta(1, 1000) };
+    expect(sweepStalePlayers(cache, NOW, [])).toBe(cache);
   });
 });

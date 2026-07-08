@@ -169,6 +169,57 @@ export const mergePlayerMeta = (existing, fresh, seenAt) => {
 };
 
 /**
+ * Retention horizon for {@link sweepStalePlayers}: a record not refreshed by
+ * ANY galaxy render for this long is dropped from the cache on hydrate.
+ * 60 days — deliberately looser than activityObs' 45 (that horizon is derived
+ * from the 30-day routine window; this cache has no derived window, each
+ * record is tiny next to an activity ring, and a longer memory keeps Colony
+ * Scout scoring usable on rarely-browsed regions) — but still bounds the
+ * roster to "players actually around these two months" instead of every id
+ * ever rendered on a long-lived profile.
+ */
+export const PLAYER_SWEEP_AFTER_MS = 60 * 24 * 60 * 60 * 1000;
+
+/**
+ * Hydrate-time retention sweep for the player cache (`state/players.js`):
+ * drop every record whose `seenAt` predates `nowMs - PLAYER_SWEEP_AFTER_MS`,
+ * EXCEPT players on the watch list — dossiers read a watched player's meta
+ * indefinitely, so watched ids survive regardless of age. A record with no
+ * `seenAt` at all (pre-stamp legacy / malformed) has no age to defend itself
+ * with and is treated as infinitely old.
+ *
+ * Pure: the clock and the watched set are supplied by the caller. Returns the
+ * input BY REFERENCE when nothing was dropped, so callers can cheaply detect
+ * "no change" via identity (the same contract {@link mergePlayerMeta} gives
+ * its caller).
+ *
+ * @param {Record<number, PlayerMeta>} cache  Cached roster, keyed by id.
+ * @param {number} nowMs  Current time (ms since epoch).
+ * @param {Iterable<string | number>} watchedIds  Watch-list player ids
+ *   (`state/watchList.js` keeps them as strings; numbers are tolerated).
+ * @returns {Record<number, PlayerMeta>}
+ */
+export const sweepStalePlayers = (cache, nowMs, watchedIds) => {
+  const cutoff = nowMs - PLAYER_SWEEP_AFTER_MS;
+  /** @type {Set<string>} */
+  const watched = new Set();
+  for (const id of watchedIds) watched.add(String(id));
+  /** @type {Record<number, PlayerMeta>} */
+  const out = {};
+  let dropped = false;
+  for (const key of Object.keys(cache)) {
+    const id = Number(key);
+    const meta = cache[id];
+    if (meta && (watched.has(key) || (meta.seenAt ?? 0) >= cutoff)) {
+      out[id] = meta;
+    } else {
+      dropped = true;
+    }
+  }
+  return dropped ? out : cache;
+};
+
+/**
  * Classify an occupied slot's owner into one of the game's NoobProtection
  * bands, read straight from the cached flags — which the game itself computes
  * RELATIVE to your own score, so they ARE the protection brackets, no rank

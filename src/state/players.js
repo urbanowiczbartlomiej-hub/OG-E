@@ -18,6 +18,15 @@
 // galaxy scroll fires a burst of per-system scans; 200 ms collapses them into
 // one trailing save.
 //
+// Retention: hydrate runs `domain/players.sweepStalePlayers` over the loaded
+// map — records not refreshed for PLAYER_SWEEP_AFTER_MS (60 d) are dropped,
+// EXCEPT watched players (`state/watchList.js`), whose meta the Spyglass
+// dossiers read indefinitely. Without it this is THE unbounded key on a
+// long-lived profile (one record per distinct player ever rendered, no cap —
+// unlike activityObs' 45 d sweep + ring caps or proximityReports' cap of 60).
+// The swept map is written back by persist's hydrate echo, so storage shrinks
+// on the next page load even if no further scan ever fires.
+//
 // @ts-check
 
 import { createStore } from '../lib/createStore.js';
@@ -25,7 +34,8 @@ import { persist } from '../lib/persist.js';
 import { chromeStore } from '../lib/storage.js';
 import { GALAXY_SCANNED_EVENT } from '../lib/ogeEvents.js';
 import { currentUniverseKey } from './universeKey.js';
-import { mergePlayerMeta } from '../domain/players.js';
+import { WATCH_LIST_KEY_BASE, watchListKeyFor, normalizeWatchList } from './watchList.js';
+import { mergePlayerMeta, sweepStalePlayers } from '../domain/players.js';
 
 /**
  * @typedef {import('../domain/players.js').PlayerMeta} PlayerMeta
@@ -48,6 +58,18 @@ export const playersKeyFor = (universeId) => `${universeId}:${PLAYERS_KEY_BASE}`
 
 /** Resolve the key for the current tab's universe (falls back in node tests). */
 const currentPlayersKey = () => currentUniverseKey(PLAYERS_KEY_BASE, playersKeyFor);
+
+/**
+ * Resolve the persisted watch-list key for the current universe. The hydrate
+ * sweep reads that key RAW (through watchList's own composer + normalizer)
+ * instead of `watchListStore.get()` on purpose: content.js init order is not
+ * load-bearing and every store hydrates asynchronously, so at OUR hydrate
+ * time the watch-list store may still hold its empty default — racing it
+ * would sweep watched players' meta. The persisted key is the truth no matter
+ * who initialized first. (Read-only: the "mutate only via the store" rule
+ * bars writing someone else's key, not reading it.)
+ */
+const currentWatchListKey = () => currentUniverseKey(WATCH_LIST_KEY_BASE, watchListKeyFor);
 
 /** Write-through debounce window (see header). */
 const DEBOUNCE_MS = 200;
@@ -77,7 +99,19 @@ export const initPlayersStore = () => {
     store: playersStore,
     load: async () => {
       const raw = await chromeStore.get(currentPlayersKey());
-      return /** @type {PlayerCache | null | undefined} */ (raw);
+      if (!raw || typeof raw !== 'object') return null;
+      const cache = /** @type {PlayerCache} */ (raw);
+      // Retention sweep (see header; mirrors activityObs' hydrate sweep). If
+      // the watch list can't be read we skip the sweep for THIS hydrate
+      // rather than treat everyone as unwatched — dropping a watched player's
+      // meta would break their dossier; the next page load simply retries.
+      try {
+        const wlRaw = await chromeStore.get(currentWatchListKey());
+        const watched = wlRaw == null ? [] : normalizeWatchList(wlRaw).players;
+        return sweepStalePlayers(cache, Date.now(), watched);
+      } catch {
+        return cache;
+      }
     },
     save: (value) => chromeStore.set(currentPlayersKey(), value),
     debounceMs: DEBOUNCE_MS,
