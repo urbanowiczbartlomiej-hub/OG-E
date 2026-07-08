@@ -14,8 +14,16 @@
 // dashboard now migrates that data here on first load — see
 // features/dashboard/index.js migrateWatchListFromLs.)
 //
-// LOCAL ONLY — never gist-synced: like targetReports / apiCache it's per-device
-// intent, re-derivable by re-starring, so there's no `Ts` key and no merge.
+// GIST-SYNCED since 1.40 (SPYGLASS-SYNC-PLAN): the workbench DECISIONS —
+// players, relationships, scanMode, galaxyMode, mapHidden, scanBodies,
+// cadence — follow the user across devices via the `watchListPerUniverse`
+// sync slot. `probes` (per-device FAB convenience) and `rescan` (transient,
+// self-clears against the per-device targetReports) stay local. Per-key
+// last-write-wins timestamps live in a sidecar ledger key
+// (`<uni>:oge_watchListTs`, the settings `oge_settingsTs` precedent) so this
+// store's value keeps the exact shape every reader already knows. ALL config
+// writes must go through {@link writeWatchListConfig} (it stamps the ledger);
+// the pure merge/stamp logic is domain/watchListMerge.js.
 //
 // The store value is `{ players: string[], probes: number }` — the marked
 // player ids plus the probe count the scan FAB pre-arms (the dashboard's
@@ -31,17 +39,23 @@ import { persist } from '../lib/persist.js';
 import { chromeStore } from '../lib/storage.js';
 import { currentUniverseKey } from './universeKey.js';
 import { pruneRescan } from '../domain/spyScan.js';
+import {
+  WATCH_FAMILIES,
+  decomposeWatchSlot,
+  seedWatchListLedger,
+  stampWatchListDiff,
+} from '../domain/watchListMerge.js';
 
 /**
  * @typedef {'enemy'|'friend'|'neutral'} Relationship
  *   How the user has tagged a watched player — drives the Spyglass map marker
  *   colour (enemy = red, friend = green, neutral = grey; own planets = white).
- *   Absent = neutral. Device-local intel, never synced.
+ *   Absent = neutral. Synced across devices (a workbench decision).
  *
  * @typedef {'planets'|'moons'|'both'} ScanBodies
  *   Which body types the scan FAB / plan proposes: planets only (default),
- *   moons only, or both. Device-local, shared with the in-game FAB like the
- *   rest of this config.
+ *   moons only, or both. Shared with the in-game FAB like the rest of this
+ *   config; synced across devices (a strategy knob, like `cadence`).
  *
  * @typedef {import('../domain/scanMode.js').ScanMode} ScanMode
  *   Whether a body is PROBE-scanned: 'on' (default) / 'off'. Union + resolution
@@ -287,4 +301,164 @@ export const disposeWatchListStore = () => {
     disposeFn();
     disposeFn = null;
   }
+};
+
+// ── Sync ts-ledger (per-key LWW stamps + tombstones) ────────────────────────
+//
+// The sidecar `<uni>:oge_watchListTs` key mirrors the settings `oge_settingsTs`
+// pattern: the config value above keeps its reader-friendly shape, and this
+// ledger records WHEN each synced key last changed. A ledger stamp whose key
+// is absent from the config is the record of a removal (tombstone) — that is
+// what lets an un-star propagate across devices instead of being resurrected
+// by a union. See domain/watchListMerge.js for the model and the merge.
+
+/**
+ * Suffix of the per-universe ts-ledger key (full key:
+ * `<universeId>:oge_watchListTs`). The `Ts` suffix classifies it as sync
+ * plumbing for the dashboard inventory (syncInventory.isPlumbingBase).
+ */
+export const WATCH_LIST_TS_KEY_BASE = 'oge_watchListTs';
+
+/**
+ * Compose the full ts-ledger key for a universe id.
+ * @param {string} universeId  e.g. `'s163-pl'`.
+ * @returns {string}
+ */
+export const watchListTsKeyFor = (universeId) => `${universeId}:${WATCH_LIST_TS_KEY_BASE}`;
+
+/**
+ * Coerce any stored/legacy value into a complete ledger (every family
+ * present, non-finite stamps dropped).
+ *
+ * @param {unknown} raw
+ * @returns {import('../domain/watchListMerge.js').WatchListLedger}
+ */
+export const normalizeWatchListLedger = (raw) => {
+  const o = raw && typeof raw === 'object' && !Array.isArray(raw) ? /** @type {any} */ (raw) : {};
+  /** @type {import('../domain/watchListMerge.js').WatchListLedger} */
+  const out = {};
+  for (const fam of WATCH_FAMILIES) {
+    out[fam] = {};
+    const m = o[fam];
+    if (m && typeof m === 'object' && !Array.isArray(m)) {
+      for (const [k, v] of Object.entries(m)) {
+        const n = Number(v);
+        if (Number.isFinite(n) && n >= 0) out[fam][k] = n;
+      }
+    }
+  }
+  return out;
+};
+
+/**
+ * Read one universe's config + ts ledger from chrome.storage (the
+ * cross-origin source of truth — the dashboard and the game tab both edit
+ * through it, so neither trusts an in-memory store here).
+ *
+ * @param {string} universeId
+ * @returns {Promise<{ cfg: WatchListConfig, ledger: import('../domain/watchListMerge.js').WatchListLedger }>}
+ */
+export const readWatchListSlot = async (universeId) => {
+  const [rawCfg, rawLedger] = await Promise.all([
+    chromeStore.get(watchListKeyFor(universeId)),
+    chromeStore.get(watchListTsKeyFor(universeId)),
+  ]);
+  return { cfg: normalizeWatchList(rawCfg), ledger: normalizeWatchListLedger(rawLedger) };
+};
+
+/**
+ * First-sync safety (SPYGLASS-SYNC-PLAN invariant 2): make sure every LIVE
+ * key of the stored config carries a stamp, persisting the seeded ledger so
+ * the stamps are STABLE (re-seeding a fresh `now` on every read would make
+ * the composed slot differ each round and defeat the no-op-PATCH guard).
+ * Never creates tombstones (C6 invariant 1 — seeding is not a user action).
+ * Idempotent after the first call.
+ *
+ * @param {string} universeId
+ * @param {number} [now]
+ * @returns {Promise<{ cfg: WatchListConfig, ledger: import('../domain/watchListMerge.js').WatchListLedger }>}
+ */
+export const ensureWatchListLedgerSeeded = async (universeId, now = Date.now()) => {
+  const { cfg, ledger } = await readWatchListSlot(universeId);
+  const seeded = seedWatchListLedger(cfg, ledger, now, SEED_DEFAULTS);
+  if (seeded.changed) await chromeStore.set(watchListTsKeyFor(universeId), seeded.ledger);
+  return { cfg, ledger: seeded.ledger };
+};
+
+/**
+ * The materialised single-family defaults `seedWatchListLedger` compares
+ * against — a default-valued `scanBodies`/`cadence` carries no user intent
+ * and must NOT get a protective stamp (it would win LWW over another
+ * device's earlier-seeded TUNED value). See the domain fn's doc.
+ */
+const SEED_DEFAULTS = Object.freeze({
+  scanBodies: 'planets',
+  cadence: DEFAULT_CADENCE,
+});
+
+/**
+ * Adopt a MERGED sync slot (gist download or JSON import) into one universe's
+ * stored config + ledger: decompose the per-key `{ v?, ts }` families back
+ * into config fields, overlay them onto the CURRENT stored config so the
+ * local-only fields (`probes`, `rescan`) survive, and persist both keys with
+ * the slot's OWN stamps (never re-stamped `now` — a remote/imported ts must
+ * be kept or this device would win LWW races it didn't earn). Config first,
+ * ledger second — same crash-ordering argument as {@link writeWatchListConfig}.
+ *
+ * Callers: the sync scheduler's `writeLocal` (which additionally refreshes
+ * the in-memory store under its anti-loop suppressor) and the dashboard's
+ * JSON import.
+ *
+ * @param {string} universeId
+ * @param {import('../domain/watchListMerge.js').WatchListSyncSlot} slot
+ * @returns {Promise<WatchListConfig>} The written config.
+ */
+export const applyWatchListSyncSlot = async (universeId, slot) => {
+  const cur = normalizeWatchList(await chromeStore.get(watchListKeyFor(universeId)));
+  const { cfg, ledger } = decomposeWatchSlot(slot);
+  const next = normalizeWatchList({ ...cur, ...cfg });
+  await chromeStore.set(watchListKeyFor(universeId), next);
+  await chromeStore.set(watchListTsKeyFor(universeId), ledger);
+  return next;
+};
+
+/**
+ * Serialises {@link writeWatchListConfig} calls: the dashboard fires them on
+ * every star/toggle click, and two overlapping read-modify-write rounds could
+ * otherwise interleave their prev-reads and drop a stamp.
+ * @type {Promise<void>}
+ */
+let writeChain = Promise.resolve();
+
+/**
+ * THE write path for user edits of the watch-list config (the dashboard's
+ * save funnel). Read-modify-write: diffs the incoming config against the
+ * stored one and stamps every changed/removed synced key in the ts ledger —
+ * this is the only place removal tombstones are born, which is exactly the
+ * C6 invariant ("a tombstone records a user action, never a migration").
+ *
+ * Write order is deliberate: config FIRST, ledger second. A crash between
+ * the two leaves a fresh value with a stale stamp — under-defended in the
+ * next merge, recoverable by re-editing — never a stale value with a fresh
+ * stamp, which would WIN merges it shouldn't and propagate the stale value
+ * to other devices.
+ *
+ * @param {string} universeId
+ * @param {unknown} nextCfgRaw  The full next config (normalised here).
+ * @param {number} [now]
+ * @returns {Promise<void>} Settles when both keys are persisted.
+ */
+export const writeWatchListConfig = (universeId, nextCfgRaw, now = Date.now()) => {
+  const run = async () => {
+    const next = normalizeWatchList(nextCfgRaw);
+    const { cfg: prev, ledger } = await readWatchListSlot(universeId);
+    const seeded = seedWatchListLedger(prev, ledger, now, SEED_DEFAULTS);
+    const stamped = stampWatchListDiff(prev, next, seeded.ledger, now);
+    await chromeStore.set(watchListKeyFor(universeId), next);
+    if (seeded.changed || stamped.changed) {
+      await chromeStore.set(watchListTsKeyFor(universeId), stamped.ledger);
+    }
+  };
+  writeChain = writeChain.then(run, run);
+  return writeChain;
 };

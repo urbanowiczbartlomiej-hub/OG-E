@@ -1,51 +1,94 @@
 // @ts-check
 
-// Histogram page I/O — Export / Import of the full dataset (JSON),
-// CSV dump of the colony history, and sync/clear-remote tombstones.
+// Histogram page I/O — Export / Import of the selected universe's dataset
+// (JSON) + CSV dump of the colony history.
 //
 // This module is the only place the histogram page talks to
-// `chrome.storage.local` for the export/import round-trip and for the
-// tombstone keys the sync scheduler observes. It never hits the
-// network — all downloads go through Blob + ObjectURL, and neither
-// `fetch()` nor `XMLHttpRequest` appear anywhere in this file.
+// `chrome.storage.local` for the export/import round-trip. It never hits the
+// network — all downloads go through Blob + ObjectURL, and neither `fetch()`
+// nor `XMLHttpRequest` appear anywhere in this file.
 //
-// # Per-universe scope
+// # The IO_SLOTS registry
 //
-// Every storage operation here is scoped to a `universeId` passed in
-// by the caller (the histogram's server-selector dropdown). The base
-// suffixes (`oge_colonyHistory`, `oge_galaxyScans`, ...) and the
-// `*KeyFor` composers are imported from the state / sync modules that
-// own them, so this file does not re-declare any key string — keeping
-// the wire contract single-sourced.
+// One table drives both directions (mirroring the sync scheduler's
+// SYNC_SLOTS): export = read every slot and include the non-empty ones;
+// import = for each payload field with a registered slot, read local → merge
+// → write-back-if-changed → count for the summary. Adding a dataset is ONE
+// registry entry. Every merge REUSES the canonical reconciler from
+// `sync/merge.js` (or `domain/watchListMerge.js` for the watch list), so an
+// Export → Import round-trip behaves EXACTLY like a gist download — additive,
+// local-first, no wholesale replaces. The one deliberate exception to "purely
+// additive": the watch list rides its per-key LWW+tombstone merge, so an
+// un-star inside a NEWER file propagates, exactly like sync.
 //
-// Shape of the exported JSON:
+// # Scope — what the file can and cannot carry
+//
+//   - Everything here is `chrome.storage.local`-backed. Game-origin
+//     localStorage (per-universe settings values, lifeform artifacts, daily
+//     flags) is UNREACHABLE from this extension-origin page — those stay
+//     gist-sync-only.
+//   - SECRETS NEVER ENTER THE FILE: `oge_sharedSettings` (it holds the GitHub
+//     PAT + ntfy token), the token keys, and all sync bookkeeping
+//     (`*Ts` ledgers are the exception — the watch-list ledger travels INSIDE
+//     its slot's `{v?, ts}` records, and the config slots carry `updatedAt`)
+//     are simply not in the registry. An exported file is safe to hand to
+//     another person.
+//
+// # Shape of the exported JSON (version 2)
+//
 //   {
-//     version: 1,
+//     version: 2,
 //     exportedAt: <ISO>,
-//     universeId: <e.g. "s163-pl">,
-//     colonyHistory: ColonyEntry[],
-//     galaxyScans:   GalaxyScans
+//     extensionVersion: <manifest version, when available>,
+//     universeId: <e.g. "s163-pl">,        // informational — see below
+//     data: { <slot field>: <value>, ... } // every field optional
 //   }
 //
-// Merge semantics: this REUSES the canonical `mergeScans` / `mergeHistory`
-// from `sync/merge.js` rather than re-implementing them, so an Export → Import
-// round-trip behaves EXACTLY like Gist sync — including lifeform-marker
-// reconciliation, which a separate copy here previously dropped (a newer plain
-// rescan would erase a discovery recorded earlier). The merge:
-//   - colonyHistory: union by `cp`, local entry WINS on duplicate.
-//   - galaxyScans:   per key, newer `scannedAt` wins; lifeform markers
-//                    (`lfScannedAt`/`lfPositions`) reconcile independently.
-//
-// Old export files may include a `deletedColonies` field; it is
-// silently ignored on import (only `version` is validated). The
-// `universeId` field on the import payload is also ignored at
-// import time — the caller's currently-selected universe owns the
-// merge target, so a file exported from s163 can be imported into s164.
+// Version-1 files (bare `colonyHistory` / `galaxyScans` at the top level)
+// still import — the dispatcher maps them onto the same two slots. Unknown
+// `data` fields are skipped and REPORTED (forward compatibility: a file from
+// a newer OG-E degrades to a partial import instead of a hard reject). The
+// `universeId` field on the import payload is ignored at import time — the
+// caller's currently-selected universe owns the merge target, so a file
+// exported from s163 can be imported into s164 (deliberate, e.g. server
+// merges).
 
 import { chromeStore } from '../../lib/storage.js';
 import { historyKeyFor } from '../../state/history.js';
 import { scansKeyFor } from '../../state/scans.js';
-import { mergeScans, mergeHistory } from '../../sync/merge.js';
+import { targetReportsKeyFor } from '../../state/targets.js';
+import { proximityReportsKeyFor } from '../../state/proximityReports.js';
+import { activityObsKeyFor } from '../../state/activityObs.js';
+import { playersKeyFor } from '../../state/players.js';
+import { allianceClassKeyFor } from '../../state/allianceClass.js';
+import { bodiesKeyFor } from '../../state/bodies.js';
+import { colonizeDecisionsKeyFor } from '../../state/colonizeDecisions.js';
+import { dailyRunRoutesKeyFor, dailyRunRoutesTsKeyFor } from '../../state/dailyRunRoutes.js';
+import { galaxyScanConfigKeyFor, galaxyScanConfigTsKeyFor } from '../../state/galaxyScanConfig.js';
+import { alarmClockConfigKeyFor, alarmClockConfigTsKeyFor } from '../../state/alarmClockConfig.js';
+import {
+  watchListKeyFor,
+  normalizeWatchList,
+  ensureWatchListLedgerSeeded,
+  applyWatchListSyncSlot,
+} from '../../state/watchList.js';
+import {
+  WATCH_FAMILIES,
+  composeWatchSlot,
+  mergeWatchList,
+  watchSlotHasData,
+} from '../../domain/watchListMerge.js';
+import {
+  mergeScans,
+  mergeHistory,
+  mergeColonizeDecisions,
+  mergeTargetReports,
+  mergeActivityObs,
+  mergeProximityReports,
+  mergePlayerCache,
+  mergeAllianceClassMap,
+  mergeBodyInventory,
+} from '../../sync/merge.js';
 
 /**
  * @typedef {import('../../state/history.js').ColonyEntry} ColonyEntry
@@ -53,8 +96,261 @@ import { mergeScans, mergeHistory } from '../../sync/merge.js';
  * @typedef {import('../../state/scans.js').GalaxyScans} GalaxyScans
  */
 
-/** Schema version embedded in the exported JSON payload. */
-const EXPORT_VERSION = 1;
+/** Schema version written by {@link exportAllData}. */
+const EXPORT_VERSION = 2;
+/** The pre-registry format (bare colonyHistory/galaxyScans) — still imports. */
+const LEGACY_VERSION = 1;
+
+/** Legacy/metadata payload fields an import silently ignores (not data). */
+const IGNORED_FIELDS = new Set(['version', 'exportedAt', 'extensionVersion', 'universeId', 'deletedColonies']);
+
+/** @param {unknown} v @returns {Record<string, any>} Defensive object narrowing. */
+const asObj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? /** @type {any} */ (v) : {});
+/** @param {unknown} v @returns {any[]} Defensive array narrowing. */
+const asArr = (v) => (Array.isArray(v) ? v : []);
+/** @param {unknown} v @returns {number} Finite non-negative number, else 0. */
+const asTs = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+};
+
+/** @param {Record<string, any>} a @param {Record<string, any>} b @returns {number} Keys whose value differs (added or updated). */
+const changedKeyCount = (a, b) => {
+  let n = 0;
+  for (const k of Object.keys(b)) {
+    if (!(k in a) || JSON.stringify(a[k]) !== JSON.stringify(b[k])) n += 1;
+  }
+  return n;
+};
+
+/** @param {Record<string, Record<string, any>>} a @param {Record<string, Record<string, any>>} b @returns {number} Two-level {@link changedKeyCount} (pid → key → entry). */
+const changedLeafCount = (a, b) => {
+  let n = 0;
+  for (const pid of Object.keys(b)) n += changedKeyCount(asObj(a[pid]), asObj(b[pid]));
+  return n;
+};
+
+/**
+ * The extension's own version for the export header — best-effort (absent in
+ * node tests / stripped contexts, where `runtime.getManifest` doesn't exist).
+ * @returns {string | undefined}
+ */
+const extensionVersion = () => {
+  try {
+    const g = /** @type {Record<string, any>} */ (/** @type {unknown} */ (globalThis));
+    return (g.browser ?? g.chrome)?.runtime?.getManifest?.()?.version;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * One export/import dataset. `read` doubles as the import merge-target
+ * loader; `exportRead` (optional) overrides the export source — the player
+ * cache uses it to ship only the WATCHED players' metadata instead of the
+ * unbounded server-wide roster.
+ *
+ * @typedef {object} IoSlot
+ * @property {string} field  Payload field under `data` (and the v1 top level
+ *   for the two legacy datasets).
+ * @property {string} label  Plural noun for the import summary ("+3 <label>").
+ * @property {(uni: string) => Promise<any>} read
+ * @property {(uni: string) => Promise<any>} [exportRead]
+ * @property {(uni: string, merged: any) => Promise<void>} write
+ * @property {(local: any, incoming: any) => { merged: any, changed: boolean }} merge
+ * @property {(local: any, merged: any) => number} count  Entries the import
+ *   added/updated — the user-facing number, computed AFTER the merge.
+ * @property {(v: any) => boolean} nonEmpty  Include in the export?
+ */
+
+/**
+ * A whole-slot LWW config pair (`<key>` + `<key>Ts`) — Daily Run routes,
+ * galaxy-scan config, alarmClock config. The gist syncs these
+ * newest-`updatedAt`-wins on the whole slot (sync/merge.js
+ * mergeNewestConfigSlot); the import applies the SAME rule to an opaque
+ * `{ value, updatedAt }` pair, so no domain shape knowledge is needed here —
+ * every reader normalises on hydrate anyway.
+ *
+ * @param {string} field
+ * @param {string} label
+ * @param {(uni: string) => string} valueKeyFor
+ * @param {(uni: string) => string} tsKeyFor
+ * @returns {IoSlot}
+ */
+const lwwConfigSlot = (field, label, valueKeyFor, tsKeyFor) => ({
+  field,
+  label,
+  read: async (uni) => ({
+    value: await chromeStore.get(valueKeyFor(uni)),
+    updatedAt: asTs(await chromeStore.get(tsKeyFor(uni))),
+  }),
+  write: async (uni, merged) => {
+    await chromeStore.set(valueKeyFor(uni), merged.value);
+    await chromeStore.set(tsKeyFor(uni), merged.updatedAt);
+  },
+  merge: (local, incoming) => {
+    const inc = asObj(incoming);
+    const incAt = asTs(inc.updatedAt);
+    if (incAt > local.updatedAt && inc.value != null) {
+      return { merged: { value: inc.value, updatedAt: incAt }, changed: true };
+    }
+    return { merged: local, changed: false };
+  },
+  count: () => 1, // whole-slot adoption — "1 config" either way
+  nonEmpty: (v) => v.value != null && v.updatedAt > 0,
+});
+
+/** @type {IoSlot[]} */
+const IO_SLOTS = [
+  {
+    field: 'colonyHistory',
+    label: 'colonies',
+    read: async (uni) => /** @type {ColonyHistory} */ (asArr(await chromeStore.get(historyKeyFor(uni)))),
+    write: (uni, merged) => chromeStore.set(historyKeyFor(uni), merged),
+    merge: (local, incoming) => mergeHistory(local, asArr(incoming)),
+    // Union dedups by cp (local-wins), so the size delta is the # of new cps.
+    count: (local, merged) => merged.length - local.length,
+    nonEmpty: (v) => v.length > 0,
+  },
+  {
+    field: 'galaxyScans',
+    label: 'scans',
+    read: async (uni) => /** @type {GalaxyScans} */ (asObj(await chromeStore.get(scansKeyFor(uni)))),
+    write: (uni, merged) => chromeStore.set(scansKeyFor(uni), merged),
+    merge: (local, incoming) => mergeScans(local, asObj(incoming)),
+    // Systems added or refreshed (new key, or an advanced scan / LF timestamp).
+    count: (local, merged) => {
+      let n = 0;
+      for (const key of Object.keys(merged)) {
+        const before = local[key];
+        const after = merged[key];
+        if (
+          !before ||
+          before.scannedAt !== after.scannedAt ||
+          (before.lfScannedAt ?? 0) !== (after.lfScannedAt ?? 0)
+        ) {
+          n += 1;
+        }
+      }
+      return n;
+    },
+    nonEmpty: (v) => Object.keys(v).length > 0,
+  },
+  {
+    field: 'watchList',
+    label: 'watch entries',
+    // Seeded read on BOTH paths: unseeded (all-`ts:0`) local records would
+    // lose every LWW race against an imported file's stamps — an import must
+    // never wipe local decisions (the same first-sync invariant the gist
+    // path pins).
+    read: async (uni) => {
+      const { cfg, ledger } = await ensureWatchListLedgerSeeded(uni);
+      return composeWatchSlot(cfg, ledger);
+    },
+    write: async (uni, merged) => {
+      await applyWatchListSyncSlot(uni, merged);
+    },
+    merge: (local, incoming) => mergeWatchList(local, incoming, Date.now()),
+    count: (local, merged) => {
+      let n = 0;
+      for (const fam of WATCH_FAMILIES) n += changedKeyCount(asObj(local[fam]), asObj(merged[fam]));
+      return n;
+    },
+    nonEmpty: watchSlotHasData,
+  },
+  {
+    field: 'targetReports',
+    label: 'spy reports',
+    read: async (uni) => asObj(await chromeStore.get(targetReportsKeyFor(uni))),
+    write: (uni, merged) => chromeStore.set(targetReportsKeyFor(uni), merged),
+    merge: (local, incoming) => mergeTargetReports(local, asObj(incoming)),
+    count: (local, merged) => changedLeafCount(local, merged),
+    nonEmpty: (v) => Object.keys(v).length > 0,
+  },
+  {
+    field: 'proximityReports',
+    label: 'proximity alerts',
+    read: async (uni) => asArr(await chromeStore.get(proximityReportsKeyFor(uni))),
+    write: (uni, merged) => chromeStore.set(proximityReportsKeyFor(uni), merged),
+    merge: (local, incoming) => mergeProximityReports(local, asArr(incoming)),
+    count: (local, merged) => Math.max(0, merged.length - local.length),
+    nonEmpty: (v) => v.length > 0,
+  },
+  {
+    field: 'activityObs',
+    label: 'activity looks',
+    read: async (uni) => asObj(await chromeStore.get(activityObsKeyFor(uni))),
+    write: (uni, merged) => chromeStore.set(activityObsKeyFor(uni), merged),
+    merge: (local, incoming) => mergeActivityObs(local, asObj(incoming)),
+    count: (local, merged) => {
+      /** @param {Record<string, Record<string, any[]>>} m @returns {number} */
+      const looks = (m) => {
+        let n = 0;
+        for (const bodies of Object.values(m)) for (const ring of Object.values(asObj(bodies))) n += asArr(ring).length;
+        return n;
+      };
+      return Math.max(0, looks(merged) - looks(local));
+    },
+    nonEmpty: (v) => Object.keys(v).length > 0,
+  },
+  {
+    field: 'players',
+    label: 'player profiles',
+    read: async (uni) => asObj(await chromeStore.get(playersKeyFor(uni))),
+    // Export ONLY the watched players' metadata ("playersLite") — the full
+    // roster cache grows with every player ever seen server-wide and would
+    // bloat the file with rebuild-able data; the watched subset is what makes
+    // dossiers readable on a fresh machine.
+    exportRead: async (uni) => {
+      const cfg = normalizeWatchList(await chromeStore.get(watchListKeyFor(uni)));
+      const watched = new Set(cfg.players.map(String));
+      const all = asObj(await chromeStore.get(playersKeyFor(uni)));
+      /** @type {Record<string, any>} */
+      const lite = {};
+      for (const [id, meta] of Object.entries(all)) {
+        if (watched.has(String(id))) lite[id] = meta;
+      }
+      return lite;
+    },
+    write: (uni, merged) => chromeStore.set(playersKeyFor(uni), merged),
+    merge: (local, incoming) => mergePlayerCache(local, asObj(incoming)),
+    count: (local, merged) => changedKeyCount(local, merged),
+    nonEmpty: (v) => Object.keys(v).length > 0,
+  },
+  {
+    field: 'allianceClass',
+    label: 'alliance classes',
+    read: async (uni) => asObj(await chromeStore.get(allianceClassKeyFor(uni))),
+    write: (uni, merged) => chromeStore.set(allianceClassKeyFor(uni), merged),
+    merge: (local, incoming) => mergeAllianceClassMap(local, asObj(incoming)),
+    count: (local, merged) => changedKeyCount(local, merged),
+    nonEmpty: (v) => Object.keys(v).length > 0,
+  },
+  {
+    field: 'bodies',
+    label: 'own bodies',
+    read: async (uni) => {
+      const raw = asObj(await chromeStore.get(bodiesKeyFor(uni)));
+      return { bodies: asArr(raw.bodies), capturedAt: asTs(raw.capturedAt) };
+    },
+    write: (uni, merged) => chromeStore.set(bodiesKeyFor(uni), merged),
+    merge: (local, incoming) => mergeBodyInventory(local, asObj(incoming)),
+    count: (local, merged) => merged.bodies.length,
+    nonEmpty: (v) => v.capturedAt > 0,
+  },
+  {
+    field: 'colonizeDecisions',
+    label: 'colonize decisions',
+    read: async (uni) => asObj(await chromeStore.get(colonizeDecisionsKeyFor(uni))),
+    write: (uni, merged) => chromeStore.set(colonizeDecisionsKeyFor(uni), merged),
+    merge: (local, incoming) => mergeColonizeDecisions(local, asObj(incoming)),
+    count: (local, merged) => changedKeyCount(local, merged),
+    nonEmpty: (v) => Object.keys(v).length > 0,
+  },
+  lwwConfigSlot('dailyRunRoutes', 'Daily Run config', dailyRunRoutesKeyFor, dailyRunRoutesTsKeyFor),
+  lwwConfigSlot('galaxyScanConfig', 'scan config', galaxyScanConfigKeyFor, galaxyScanConfigTsKeyFor),
+  lwwConfigSlot('alarmClockConfig', 'alarm config', alarmClockConfigKeyFor, alarmClockConfigTsKeyFor),
+];
 
 /**
  * Today's date as YYYY-MM-DD, used in download filenames so users can
@@ -103,67 +399,69 @@ const readFileAsText = (file) =>
   });
 
 /**
- * Download the selected universe's dataset as a pretty-printed JSON
- * file. Missing keys (nothing recorded yet, or the WebExtension API is
- * absent) are exported as the appropriate empty collection so the file
- * always round-trips cleanly. When the API is absent and `document` is
- * missing (node tests), this resolves without writing — the Blob step
- * itself requires `document.createElement('a')`, so the guard below
- * makes the "stripped context" case a no-op rather than a throw.
+ * Download the selected universe's dataset as a JSON file (compact — spy
+ * reports + activity rings can push a heavy account into the megabytes, and
+ * pretty-printing would double it). Every registered slot with data is
+ * included; empty ones are omitted so the file stays honest about what it
+ * carries. When the WebExtension API is absent and `document` is missing
+ * (node tests), this resolves without writing.
  *
- * Filename embeds the universe id so a user managing several servers
- * can tell exports apart at a glance: `oge-s163-pl-2026-05-23.json`.
+ * Filename embeds the universe id so a user managing several servers can
+ * tell exports apart at a glance: `oge-s163-pl-2026-07-08.json`.
  *
  * @param {string} universeId  Selected universe (e.g. `'s163-pl'`).
- * @returns {Promise<void>}
+ * @returns {Promise<{ datasets: number, bytes: number }>} What was written
+ *   (dataset count + serialized size) for the status line.
  */
 export const exportAllData = async (universeId) => {
-  const [history, scans] = await Promise.all([
-    chromeStore.get(historyKeyFor(universeId)),
-    chromeStore.get(scansKeyFor(universeId)),
-  ]);
-
-  // Defensive narrowing — corrupt or absent values fall back to empty.
-  const colonyHistory = /** @type {ColonyHistory} */ (
-    Array.isArray(history) ? history : []
-  );
-  const galaxyScans = /** @type {GalaxyScans} */ (
-    scans && typeof scans === 'object' ? scans : {}
-  );
+  /** @type {Record<string, unknown>} */
+  const data = {};
+  for (const slot of IO_SLOTS) {
+    const value = await (slot.exportRead ?? slot.read)(universeId);
+    if (slot.nonEmpty(value)) data[slot.field] = value;
+  }
 
   const payload = {
     version: EXPORT_VERSION,
     exportedAt: new Date().toISOString(),
+    extensionVersion: extensionVersion(),
     universeId,
-    colonyHistory,
-    galaxyScans,
+    data,
   };
+
+  const json = JSON.stringify(payload);
+  const result = { datasets: Object.keys(data).length, bytes: json.length };
 
   // No DOM = no download target. Stay silent instead of throwing so
   // callers running under node/test environments can await us safely.
-  if (typeof document === 'undefined') return;
+  if (typeof document === 'undefined') return result;
 
-  const blob = new Blob([JSON.stringify(payload, null, 2)], {
-    type: 'application/json',
-  });
-  downloadBlob(blob, `oge-${universeId}-${todayIso()}.json`);
+  downloadBlob(new Blob([json], { type: 'application/json' }), `oge-${universeId}-${todayIso()}.json`);
+  return result;
 };
 
 /**
- * Parse a user-uploaded JSON file and merge it into the selected
- * universe's slot in `chrome.storage.local`. Each field is
- * independently optional — a file may contain only `colonyHistory`,
- * only `galaxyScans`, and the other field is left untouched. Unknown
- * fields (legacy exports' `deletedColonies`, or the new `universeId`
- * tag) are silently ignored — only `version` is validated.
+ * One import summary line: the dataset label + how many entries the merge
+ * added or updated.
+ * @typedef {{ label: string, count: number }} ImportPart
+ */
+
+/**
+ * Parse a user-uploaded JSON file and merge it into the selected universe's
+ * keys in `chrome.storage.local`, one registered slot at a time. Every slot
+ * is independently optional — a file carrying only `colonyHistory` leaves
+ * everything else untouched. Version 1 files (top-level fields) and version
+ * 2 files (`data: {...}`) both import; unknown `data` fields are skipped and
+ * returned in `skipped` so the caller can say so (a file from a NEWER OG-E
+ * degrades to a partial import instead of a hard reject).
  *
- * On parse failure or unsupported version, returns a zero-count result
- * with a `warning` describing the reason. This is the one place we
- * wrap awaits in try/catch because the failure mode IS user-visible.
+ * On parse failure or an unknown version, returns an empty result with a
+ * `warning` describing the reason. This is the one place we wrap awaits in
+ * try/catch because the failure mode IS user-visible.
  *
  * @param {File} file
  * @param {string} universeId  Selected universe (destination of the merge).
- * @returns {Promise<{ colonies: number, scans: number, warning?: string }>}
+ * @returns {Promise<{ parts: ImportPart[], skipped: string[], warning?: string }>}
  */
 export const importAllData = async (file, universeId) => {
   /** @type {unknown} */
@@ -172,66 +470,48 @@ export const importAllData = async (file, universeId) => {
     const text = await readFileAsText(file);
     parsed = JSON.parse(text);
   } catch {
-    return { colonies: 0, scans: 0, warning: 'Invalid JSON' };
+    return { parts: [], skipped: [], warning: 'Invalid JSON' };
   }
 
   if (!parsed || typeof parsed !== 'object') {
-    return { colonies: 0, scans: 0, warning: 'Invalid JSON' };
+    return { parts: [], skipped: [], warning: 'Invalid JSON' };
   }
 
   const imported = /** @type {Record<string, unknown>} */ (parsed);
-  if (imported.version !== EXPORT_VERSION) {
-    return { colonies: 0, scans: 0, warning: 'Unsupported version' };
+
+  /** @type {Record<string, unknown>} */
+  let data;
+  /** @type {string[]} */
+  const skipped = [];
+  if (imported.version === LEGACY_VERSION) {
+    // v1: the two datasets sat at the top level.
+    data = {};
+    if (imported.colonyHistory != null) data.colonyHistory = imported.colonyHistory;
+    if (imported.galaxyScans != null) data.galaxyScans = imported.galaxyScans;
+  } else if (imported.version === EXPORT_VERSION) {
+    data = asObj(imported.data);
+  } else {
+    return { parts: [], skipped: [], warning: 'Unsupported version' };
   }
 
-  const historyKey = historyKeyFor(universeId);
-  const scansKey = scansKeyFor(universeId);
-
-  let colonies = 0;
-  let scans = 0;
-
-  if (Array.isArray(imported.colonyHistory)) {
-    const localRaw = await chromeStore.get(historyKey);
-    const local = /** @type {ColonyHistory} */ (
-      Array.isArray(localRaw) ? localRaw : []
-    );
-    const { merged, changed } = mergeHistory(
-      local,
-      /** @type {ColonyHistory} */ (imported.colonyHistory),
-    );
-    if (changed) await chromeStore.set(historyKey, merged);
-    // Union dedups by cp (local-wins), so the size delta is the # of new cps.
-    colonies = merged.length - local.length;
+  const known = new Set(IO_SLOTS.map((s) => s.field));
+  for (const field of Object.keys(data)) {
+    if (!known.has(field) && !IGNORED_FIELDS.has(field)) skipped.push(field);
   }
 
-  if (imported.galaxyScans && typeof imported.galaxyScans === 'object') {
-    const localRaw = await chromeStore.get(scansKey);
-    const local = /** @type {GalaxyScans} */ (
-      localRaw && typeof localRaw === 'object' ? localRaw : {}
-    );
-    const { merged, changed } = mergeScans(
-      local,
-      /** @type {GalaxyScans} */ (imported.galaxyScans),
-    );
-    if (changed) await chromeStore.set(scansKey, merged);
-    // Count systems added or refreshed (new key, or an advanced scan / LF
-    // timestamp) for the user-facing import summary.
-    if (changed) {
-      for (const key of /** @type {(keyof GalaxyScans)[]} */ (Object.keys(merged))) {
-        const before = local[key];
-        const after = merged[key];
-        if (
-          !before ||
-          before.scannedAt !== after.scannedAt ||
-          (before.lfScannedAt ?? 0) !== (after.lfScannedAt ?? 0)
-        ) {
-          scans += 1;
-        }
-      }
-    }
+  /** @type {ImportPart[]} */
+  const parts = [];
+  for (const slot of IO_SLOTS) {
+    if (!(slot.field in data) || data[slot.field] == null) continue;
+    const local = await slot.read(universeId);
+    const { merged, changed } = slot.merge(local, data[slot.field]);
+    if (!changed) continue;
+    await slot.write(universeId, merged);
+    const count = slot.count(local, merged);
+    if (count > 0) parts.push({ label: slot.label, count });
   }
 
-  return { colonies, scans };
+  return { parts, skipped };
 };
 
 /**
@@ -285,4 +565,3 @@ export const exportColonyCsv = (entries, universeId) => {
   const blob = new Blob([body], { type: 'text/csv' });
   downloadBlob(blob, `oge-${universeId}-colony-history.csv`);
 };
-

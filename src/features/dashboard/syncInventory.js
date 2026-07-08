@@ -36,6 +36,7 @@ const CATEGORY_LABELS = {
   oge_alarmClockConfig: 'Alarm clock config',
   oge_apiCache: 'API cache',
   oge_colonizeDecisions: 'Colonization decisions',
+  oge_watchedPlayers: 'Watch list',
 };
 
 /**

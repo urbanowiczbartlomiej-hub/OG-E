@@ -59,6 +59,17 @@
 // imports every reconciler from one place. See domain/colonizeDecisions.js.
 export { mergeColonizeDecisions } from '../domain/colonizeDecisions.js';
 
+// The JSON-import reconcilers at the bottom of this file (target reports,
+// proximity log, activity rings, player cache, alliance classes, body
+// inventory) serve the dashboard Export/Import (features/dashboard/io.js).
+// They live HERE — not in io.js — because this file is the single home of
+// "two snapshots in, one out" reconciliation: an import must behave exactly
+// like a gist download, and keeping every reconciler on one shelf is what
+// keeps that promise honest.
+import { latestOf, historyOf, HISTORY_CAP } from '../domain/targetReports.js';
+import { ACTIVITY_RING_CAP } from '../domain/activityObs.js';
+import { PROXIMITY_CAP } from '../state/proximityReports.js';
+
 /**
  * Whether two lifeform-position maps (slot → discovery epoch-ms) carry the
  * identical data. Missing maps are treated as empty. Used to decide when the
@@ -563,6 +574,223 @@ export const mergeManualLandedFs = (local, remote) => {
       },
       changed: true,
     };
+  }
+  return { merged: local, changed: false };
+};
+
+// ── JSON-import reconcilers (dashboard Export/Import) ───────────────────────
+//
+// Everything below merges an INCOMING (imported-file) snapshot into the local
+// one. None of these datasets gist-sync (they are per-device intel — the JSON
+// export is their only backup path), but the discipline is identical:
+// pure `{ merged, changed }`, additive, local observations trusted first.
+
+/** @typedef {import('../state/targets.js').TargetReports} TargetReports */
+/** @typedef {import('../state/activityObs.js').ActivityObsMap} ActivityObsMap */
+/** @typedef {import('../domain/espionageReport.js').ProximityReport} ProximityReport */
+/** @typedef {import('../state/players.js').PlayerCache} PlayerCache */
+/** @typedef {import('../state/bodies.js').BodyInventory} BodyInventory */
+
+/**
+ * Merge spy-report caches: per body, the newer `latest` (by the report's own
+ * `timestamp`) wins; the lean history rings union by content, time-ordered,
+ * re-capped to {@link HISTORY_CAP} newest-last. Tolerates BOTH persisted
+ * entry shapes (`{latest, history}` and the legacy bare report) on both
+ * sides via the `latestOf` / `historyOf` accessors — the same tolerance the
+ * store itself guarantees (SPYGLASS-REDESIGN §10.1).
+ *
+ * @param {TargetReports} local
+ * @param {TargetReports} incoming
+ * @returns {{ merged: TargetReports, changed: boolean }}
+ */
+export const mergeTargetReports = (local, incoming) => {
+  let changed = false;
+  /** @type {TargetReports} */
+  const merged = {};
+  const pids = new Set([...Object.keys(local || {}), ...Object.keys(incoming || {})]);
+  for (const pid of pids) {
+    const l = local?.[pid] || {};
+    const r = incoming?.[pid] || {};
+    /** @type {Record<string, import('../domain/targetReports.js').BodyEntry>} */
+    const bodies = {};
+    const keys = new Set([...Object.keys(l), ...Object.keys(r)]);
+    for (const bk of keys) {
+      const le = l[bk];
+      const re = r[bk];
+      const lLatest = le ? latestOf(le) : undefined;
+      const rLatest = re ? latestOf(re) : undefined;
+      // Newer report wins the `latest` slot; ties keep local (our own copy of
+      // the same observation).
+      const latest =
+        rLatest && (!lLatest || (rLatest.timestamp || 0) > (lLatest.timestamp || 0))
+          ? rLatest
+          : lLatest;
+      if (!latest) continue;
+      if (latest === rLatest && latest !== lLatest) changed = true;
+      // History union: content-dedup (the lite entries are tiny bags of
+      // numbers — structural identity IS identity), time-ordered, newest-last
+      // ring cap. An imported ring can only ADD observations.
+      const seen = new Set();
+      /** @type {import('../domain/targetReports.js').SpyReportLite[]} */
+      const hist = [];
+      for (const src of [le ? historyOf(le) : [], re ? historyOf(re) : []]) {
+        for (const h of src) {
+          const key = JSON.stringify(h ?? null);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          hist.push(h);
+        }
+      }
+      hist.sort((a, b) => (a.ts ?? 0) - (b.ts ?? 0));
+      const capped = hist.slice(-HISTORY_CAP);
+      // Content compare, not length: an import can ADD a newer observation
+      // while the cap EVICTS the oldest — same length, different ring.
+      if (JSON.stringify(capped) !== JSON.stringify(le ? historyOf(le) : [])) changed = true;
+      bodies[bk] = { latest, history: capped };
+    }
+    if (Object.keys(bodies).length) merged[pid] = bodies;
+  }
+  return { merged, changed };
+};
+
+/**
+ * Merge galaxy-activity observation rings: per body, union by content
+ * (`t` + `m` identify one look), time-ordered, re-capped to the newest
+ * {@link ACTIVITY_RING_CAP} — exactly the shape the append path maintains.
+ * Past looks are the one thing a new device can NEVER re-derive (the moment
+ * is gone), which is why this heatmap fuel is worth carrying in a backup.
+ *
+ * @param {ActivityObsMap} local
+ * @param {ActivityObsMap} incoming
+ * @returns {{ merged: ActivityObsMap, changed: boolean }}
+ */
+export const mergeActivityObs = (local, incoming) => {
+  let changed = false;
+  /** @type {ActivityObsMap} */
+  const merged = {};
+  const pids = new Set([...Object.keys(local || {}), ...Object.keys(incoming || {})]);
+  for (const pid of pids) {
+    const l = local?.[pid] || {};
+    const r = incoming?.[pid] || {};
+    /** @type {Record<string, import('../domain/activityObs.js').ActivityObs[]>} */
+    const bodies = {};
+    const keys = new Set([...Object.keys(l), ...Object.keys(r)]);
+    for (const bk of keys) {
+      const seen = new Set();
+      /** @type {import('../domain/activityObs.js').ActivityObs[]} */
+      const ring = [];
+      for (const src of [l[bk] || [], r[bk] || []]) {
+        for (const obs of src) {
+          if (!obs || typeof obs.t !== 'number') continue;
+          const key = `${obs.t}|${obs.m}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          ring.push(obs);
+        }
+      }
+      ring.sort((a, b) => a.t - b.t);
+      const capped = ring.slice(-ACTIVITY_RING_CAP);
+      // Content compare, not length — same cap-eviction blindness as the
+      // spy-report history ring above.
+      if (JSON.stringify(capped) !== JSON.stringify(l[bk] || [])) changed = true;
+      if (capped.length) bodies[bk] = capped;
+    }
+    if (Object.keys(bodies).length) merged[pid] = bodies;
+  }
+  return { merged, changed };
+};
+
+/**
+ * Merge proximity logs ("who's been near you"): union deduped by the same
+ * identity triple the store's writer uses (`byPlayerId|atCoords|ts`), local
+ * first (local wins a duplicate), newest-first, re-capped to
+ * {@link PROXIMITY_CAP}.
+ *
+ * @param {ProximityReport[]} local
+ * @param {ProximityReport[]} incoming
+ * @returns {{ merged: ProximityReport[], changed: boolean }}
+ */
+export const mergeProximityReports = (local, incoming) => {
+  const seen = new Set();
+  /** @type {ProximityReport[]} */
+  const union = [];
+  for (const src of [local || [], incoming || []]) {
+    for (const rep of src) {
+      if (!rep || typeof rep !== 'object') continue;
+      const key = `${rep.byPlayerId}|${rep.atCoords}|${rep.ts ?? 0}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      union.push(rep);
+    }
+  }
+  union.sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0));
+  const merged = union.slice(0, PROXIMITY_CAP);
+  const localLen = (local || []).length;
+  const changed =
+    merged.length !== localLen || merged.some((rep, i) => rep !== (local || [])[i]);
+  return { merged, changed };
+};
+
+/**
+ * Merge player-metadata caches: per id, the newer sighting (`seenAt`) wins;
+ * ties keep local. Used by the import path with the incoming side already
+ * FILTERED to watched ids (`playersLite` — the export never carries the
+ * unbounded server-wide roster).
+ *
+ * @param {PlayerCache} local
+ * @param {PlayerCache} incoming
+ * @returns {{ merged: PlayerCache, changed: boolean }}
+ */
+export const mergePlayerCache = (local, incoming) => {
+  let changed = false;
+  /** @type {PlayerCache} */
+  const merged = { ...(local || {}) };
+  for (const [id, meta] of Object.entries(incoming || {})) {
+    if (!meta || typeof meta !== 'object') continue;
+    const cur = merged[/** @type {any} */ (id)];
+    if (!cur || (meta.seenAt ?? 0) > (cur.seenAt ?? 0)) {
+      merged[/** @type {any} */ (id)] = meta;
+      changed = true;
+    }
+  }
+  return { merged, changed };
+};
+
+/**
+ * Merge alliance-class maps (`allianceId → class slug`): fill-gaps only —
+ * the map carries no timestamps, so the local harvest (verifiably from THIS
+ * server's current ranking) outranks whatever the file says on a conflict.
+ *
+ * @param {Record<string, string>} local
+ * @param {Record<string, string>} incoming
+ * @returns {{ merged: Record<string, string>, changed: boolean }}
+ */
+export const mergeAllianceClassMap = (local, incoming) => {
+  let changed = false;
+  /** @type {Record<string, string>} */
+  const merged = { ...(local || {}) };
+  for (const [id, slug] of Object.entries(incoming || {})) {
+    if (typeof slug !== 'string' || id in merged) continue;
+    merged[id] = slug;
+    changed = true;
+  }
+  return { merged, changed };
+};
+
+/**
+ * Merge own-body inventories: the planet bar snapshot is REPLACED wholesale
+ * on every capture (state/bodies.js), so the merge is whole-snapshot
+ * newest-`capturedAt`-wins — never a body-level union, which could stitch two
+ * half-truths (e.g. resurrect an abandoned moon from an older snapshot).
+ *
+ * @param {BodyInventory} local
+ * @param {Partial<BodyInventory> | null | undefined} incoming
+ * @returns {{ merged: BodyInventory, changed: boolean }}
+ */
+export const mergeBodyInventory = (local, incoming) => {
+  const incomingAt = (incoming && typeof incoming === 'object' && Number(incoming.capturedAt)) || 0;
+  if (incomingAt > (local.capturedAt || 0) && Array.isArray(incoming?.bodies)) {
+    return { merged: { bodies: incoming.bodies, capturedAt: incomingAt }, changed: true };
   }
   return { merged: local, changed: false };
 };

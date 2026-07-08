@@ -26,8 +26,10 @@ import { currentUniverseKey } from './universeKey.js';
 
 /** @typedef {import('../domain/espionageReport.js').ProximityReport} ProximityReport */
 
-/** Newest-first cap — a rolling window of recent probes, older ones fall off. */
-const PROXIMITY_CAP = 60;
+/** Newest-first cap — a rolling window of recent probes, older ones fall off.
+ * Exported for the JSON-import reconciler (sync/merge.js), which re-caps the
+ * merged log to the same window. */
+export const PROXIMITY_CAP = 60;
 
 /** Suffix of the per-universe chrome.storage.local key. */
 export const PROXIMITY_REPORTS_KEY_BASE = 'oge_proximityReports';

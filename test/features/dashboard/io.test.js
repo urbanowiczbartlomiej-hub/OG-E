@@ -40,6 +40,7 @@ import {
 import { chromeStore } from '../../../src/lib/storage.js';
 import { historyKeyFor } from '../../../src/state/history.js';
 import { scansKeyFor } from '../../../src/state/scans.js';
+import { watchListKeyFor, watchListTsKeyFor } from '../../../src/state/watchList.js';
 
 const UNI = 's163-pl';
 const HKEY = historyKeyFor(UNI);
@@ -77,7 +78,7 @@ beforeEach(() => {
 describe('importAllData — guards', () => {
   it('returns an Invalid JSON warning on unparseable input', async () => {
     const res = await importAllData(jsonFile('not json {{{'), UNI);
-    expect(res).toEqual({ colonies: 0, scans: 0, warning: 'Invalid JSON' });
+    expect(res).toEqual({ parts: [], skipped: [], warning: 'Invalid JSON' });
     expect(chromeStore.set).not.toHaveBeenCalled();
   });
 
@@ -88,10 +89,19 @@ describe('importAllData — guards', () => {
 
   it('rejects an unsupported schema version without writing', async () => {
     const res = await importAllData(jsonFile({ version: 99, colonyHistory: [colony(1)] }), UNI);
-    expect(res).toEqual({ colonies: 0, scans: 0, warning: 'Unsupported version' });
+    expect(res).toEqual({ parts: [], skipped: [], warning: 'Unsupported version' });
     expect(chromeStore.set).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Count for one dataset label out of the v2 import summary (`parts`), 0 when
+ * the label is absent (nothing new for that dataset).
+ * @param {{ parts: { label: string, count: number }[] }} res
+ * @param {string} label
+ * @returns {number}
+ */
+const importCount = (res, label) => res.parts.find((p) => p.label === label)?.count ?? 0;
 
 describe('importAllData — colony merge (local wins on cp collision)', () => {
   it('adds only new cps and keeps the local entry on collision', async () => {
@@ -104,7 +114,7 @@ describe('importAllData — colony merge (local wins on cp collision)', () => {
       UNI,
     );
 
-    expect(res.colonies).toBe(1); // only cp=2 is new
+    expect(importCount(res, 'colonies')).toBe(1); // only cp=2 is new
     const stored = store.get(HKEY);
     const byCp = new Map(stored.map((/** @type {any} */ e) => [e.cp, e]));
     expect(byCp.get(1).fields).toBe(999); // local won the collision
@@ -117,7 +127,7 @@ describe('importAllData — colony merge (local wins on cp collision)', () => {
       jsonFile({ version: 1, colonyHistory: [colony(1)] }),
       UNI,
     );
-    expect(res.colonies).toBe(0);
+    expect(importCount(res, 'colonies')).toBe(0);
     // get for the re-read, but never a set (added === 0).
     expect(chromeStore.set).not.toHaveBeenCalledWith(HKEY, expect.anything());
   });
@@ -127,7 +137,7 @@ describe('importAllData — colony merge (local wins on cp collision)', () => {
       jsonFile({ version: 1, colonyHistory: [colony(5)] }),
       UNI,
     );
-    expect(res.colonies).toBe(1);
+    expect(importCount(res, 'colonies')).toBe(1);
     expect(store.get(HKEY)).toHaveLength(1);
   });
 });
@@ -150,7 +160,7 @@ describe('importAllData — scan merge (newer scannedAt wins)', () => {
       UNI,
     );
 
-    expect(res.scans).toBe(2); // 1:9 updated + 1:3 added
+    expect(importCount(res, 'scans')).toBe(2); // 1:9 updated + 1:3 added
     const merged = store.get(SKEY);
     expect(merged['1:2'].scannedAt).toBe(100); // unchanged
     expect(merged['1:9'].scannedAt).toBe(200); // updated
@@ -168,7 +178,7 @@ describe('importAllData — scan merge preserves lifeform markers (canonical mer
       jsonFile({ version: 1, galaxyScans: { '1:2': { scannedAt: 200 } } }),
       UNI,
     );
-    expect(res.scans).toBe(1);
+    expect(importCount(res, 'scans')).toBe(1);
     const merged = store.get(SKEY);
     expect(merged['1:2'].scannedAt).toBe(200); // newer base scan wins
     expect(merged['1:2'].lfScannedAt).toBe(999); // discovery NOT erased
@@ -182,7 +192,7 @@ describe('importAllData — partial & unknown fields', () => {
       jsonFile({ version: 1, colonyHistory: [colony(1)] }),
       UNI,
     );
-    expect(res).toEqual({ colonies: 1, scans: 0 });
+    expect(res).toEqual({ parts: [{ label: 'colonies', count: 1 }], skipped: [] });
     expect(chromeStore.set).not.toHaveBeenCalledWith(SKEY, expect.anything());
   });
 
@@ -196,8 +206,44 @@ describe('importAllData — partial & unknown fields', () => {
       }),
       UNI,
     );
-    expect(res.colonies).toBe(1);
+    expect(importCount(res, 'colonies')).toBe(1);
     expect(store.get(HKEY).map((/** @type {any} */ e) => e.cp)).toEqual([3]);
+  });
+});
+
+describe('importAllData — v2 payloads', () => {
+  it('merges a v2 watchList slot: union + a NEWER file tombstone un-stars locally', async () => {
+    const fileTs = Date.now() + 60_000; // beats the import-time seed stamp
+    store.set(watchListKeyFor(UNI), { players: ['1'], probes: 7, rescan: { 1: 123 } });
+    const res = await importAllData(
+      jsonFile({
+        version: 2,
+        data: {
+          watchList: {
+            watched: { 1: { ts: fileTs }, 2: { v: true, ts: fileTs } },
+            rel: { 2: { v: 'enemy', ts: fileTs } },
+          },
+        },
+      }),
+      UNI,
+    );
+    expect(importCount(res, 'watch entries')).toBeGreaterThan(0);
+    const cfg = store.get(watchListKeyFor(UNI));
+    expect(cfg.players).toEqual(['2']); // 1 un-starred by the newer tombstone, 2 added
+    expect(cfg.relationships).toEqual({ 2: 'enemy' });
+    expect(cfg.probes).toBe(7); // local-only fields preserved
+    expect(cfg.rescan).toEqual({ 1: 123 });
+    // The imported stamps land in the ledger verbatim (LWW continuity).
+    expect(store.get(watchListTsKeyFor(UNI)).watched[1]).toBe(fileTs);
+  });
+
+  it('skips unknown data fields and reports them (forward compatibility)', async () => {
+    const res = await importAllData(
+      jsonFile({ version: 2, data: { futureDataset: { x: 1 } } }),
+      UNI,
+    );
+    expect(res.parts).toEqual([]);
+    expect(res.skipped).toEqual(['futureDataset']);
   });
 });
 
@@ -228,20 +274,39 @@ describe('export round-trips', () => {
     vi.restoreAllMocks();
   });
 
-  it('exportAllData reads both keys and downloads a version-tagged JSON', async () => {
+  it('exportAllData downloads a v2 payload with non-empty datasets under data', async () => {
     store.set(HKEY, [colony(1)]);
     store.set(SKEY, { '1:2': { scannedAt: 100 } });
 
-    await exportAllData(UNI);
+    const res = await exportAllData(UNI);
 
     expect(chromeStore.get).toHaveBeenCalledWith(HKEY);
     expect(chromeStore.get).toHaveBeenCalledWith(SKEY);
     expect(downloads[0]).toMatch(/^oge-s163-pl-\d{4}-\d{2}-\d{2}\.json$/);
 
     const payload = JSON.parse(await blobs[0].text());
-    expect(payload.version).toBe(1);
-    expect(payload.colonyHistory).toHaveLength(1);
-    expect(payload.galaxyScans['1:2'].scannedAt).toBe(100);
+    expect(payload.version).toBe(2);
+    expect(payload.universeId).toBe(UNI);
+    expect(payload.data.colonyHistory).toHaveLength(1);
+    expect(payload.data.galaxyScans['1:2'].scannedAt).toBe(100);
+    // Empty datasets are omitted — only the two seeded ones are present.
+    expect(Object.keys(payload.data).sort()).toEqual(['colonyHistory', 'galaxyScans']);
+    expect(res).toEqual({ datasets: 2, bytes: expect.any(Number) });
+  });
+
+  it('the exported file never carries secrets or sync bookkeeping', async () => {
+    store.set(HKEY, [colony(1)]);
+    // Plant secret-bearing keys the way a real profile holds them — none may
+    // leak into the file (oge_sharedSettings holds the PAT + ntfy token).
+    store.set('oge_sharedSettings', { gistToken: 'ghp_SECRET', alarmClockNtfyToken: 'ntfy_SECRET' });
+    store.set(`${UNI}:oge_gistToken`, 'ghp_SECRET2');
+
+    await exportAllData(UNI);
+
+    const text = await blobs[0].text();
+    expect(text).not.toContain('SECRET');
+    expect(text).not.toContain('gistToken');
+    expect(text).not.toContain('sharedSettings');
   });
 
   it('exportColonyCsv emits a header + rows sorted newest-first', async () => {

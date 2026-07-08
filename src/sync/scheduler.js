@@ -162,6 +162,17 @@ import { chromeStore, safeLS } from '../lib/storage.js';
 import { parseUniverseId } from '../lib/universeId.js';
 import { readDailyState, writeDailyState } from '../state/dailyActions.js';
 import { readManualLandedFsSlot, writeManualLandedFsSlot } from '../state/manualLandedFs.js';
+import {
+  watchListStore,
+  normalizeWatchList,
+  ensureWatchListLedgerSeeded,
+  applyWatchListSyncSlot,
+} from '../state/watchList.js';
+import {
+  composeWatchSlot,
+  mergeWatchList,
+  watchSlotHasData,
+} from '../domain/watchListMerge.js';
 import { SYNC_FORCE_EVENT, DAILY_STATE_CHANGED_EVENT } from '../lib/ogeEvents.js';
 import {
   canStartSync,
@@ -657,8 +668,9 @@ const mergeSyncSettings = (remote, routesUniverseId) => {
  * in the pure layer) instead of edits scattered across both round-trip
  * functions and the anti-loop suppressor.
  *
- * `writeLocal` adopts a newer remote slot into local stores; the three config
- * entities guard that write with the keyed anti-loop suppressor (inside their
+ * `writeLocal` adopts a newer remote slot into local stores; the config
+ * entities (routes, galaxy config, alarmClock config, watch list) guard that
+ * write with the keyed anti-loop suppressor (inside their
  * `writeLocal*Slot` helper), while history / dailyState / decisions carry no
  * local timestamp to protect and rely on the `changed` guard + the
  * {@link gistIsCurrent} skip to break the subscription loop. `remoteDefault`
@@ -673,6 +685,51 @@ const mergeSyncSettings = (remote, routesUniverseId) => {
  * @property {(merged: *) => boolean} hasData
  * @property {*} [remoteDefault]
  */
+
+/**
+ * Read this universe's watch-list sync slot: config + ts ledger from
+ * chrome.storage (cross-origin source of truth — the dashboard edits it from
+ * the extension origin, so the in-memory store can't be trusted here; same
+ * reason as {@link readLocalRoutesSlot}), composed into the per-key
+ * `{ v?, ts }` wire shape. Seeding is part of the read so a device that
+ * never opens the dashboard still stamps its pre-1.40 list before its first
+ * merge (first-sync safety) — the seed persists, keeping the slot stable
+ * across rounds.
+ *
+ * @returns {Promise<import('../domain/watchListMerge.js').WatchListSyncSlot>}
+ */
+const readLocalWatchListSlot = async () => {
+  if (!routesUniverseId) return composeWatchSlot(normalizeWatchList(null), { });
+  const { cfg, ledger } = await ensureWatchListLedgerSeeded(routesUniverseId);
+  return composeWatchSlot(cfg, ledger);
+};
+
+/**
+ * Write a merged remote watch-list slot back to local: decompose into config
+ * fields + ledger, overlay onto the stored config so the LOCAL-ONLY fields
+ * (`probes`, `rescan`) survive, persist both keys, and refresh the in-memory
+ * store so the live scan FAB reflects the adopted list without a reload.
+ * Guarded by the keyed anti-loop suppressor (`'watchListPerUniverse'`) so the
+ * store subscriber treats it as a sync-origin write (no upload reschedule) —
+ * and the ledger is written with the REMOTE stamps, never re-stamped `now`
+ * (re-stamping would let this device win LWW races it didn't earn).
+ *
+ * Config first, ledger second — same crash-ordering argument as
+ * `state/watchList.js#writeWatchListConfig`.
+ *
+ * @param {import('../domain/watchListMerge.js').WatchListSyncSlot} slot
+ * @returns {Promise<void>}
+ */
+const writeLocalWatchListSlot = async (slot) => {
+  if (!routesUniverseId) return;
+  bumpApplying('watchListPerUniverse');
+  try {
+    const next = await applyWatchListSyncSlot(routesUniverseId, slot);
+    watchListStore.set(next);
+  } finally {
+    dropApplying('watchListPerUniverse');
+  }
+};
 
 /** @type {SyncSlot[]} */
 const SYNC_SLOTS = [
@@ -727,6 +784,15 @@ const SYNC_SLOTS = [
     // Keep an empty set with a non-zero updatedAt — it's the removal tombstone
     // that lets an unmark / re-save propagate cross-device (last-writer-wins).
     hasData: (merged) => (merged.updatedAt || 0) > 0,
+  },
+  {
+    payloadKey: 'watchListPerUniverse',
+    readLocal: readLocalWatchListSlot,
+    writeLocal: writeLocalWatchListSlot,
+    // `now` is injected at the call so the domain merge (and its tombstone GC
+    // horizon) stays pure and test-clockable.
+    merge: (local, remote) => mergeWatchList(local, remote, Date.now()),
+    hasData: watchSlotHasData,
   },
 ];
 
@@ -949,6 +1015,7 @@ const upload = async () => {
       alarmClockConfigPerUniverse: slotPayloads.alarmClockConfigPerUniverse,
       colonizeDecisionsPerUniverse: slotPayloads.colonizeDecisionsPerUniverse,
       manualLandedFsPerUniverse: slotPayloads.manualLandedFsPerUniverse,
+      watchListPerUniverse: slotPayloads.watchListPerUniverse,
     };
 
     // Skip the PATCH when the gist already matches the merged state — the common
@@ -1157,6 +1224,18 @@ export const installSync = () => {
   };
   const unsubAlarmClockConfig = alarmClockConfigStore.subscribe(onAlarmClockConfigChange);
 
+  // Watch-list: an in-game change (none today — all edits happen in the
+  // dashboard, whose writes arrive via the `oge_syncRequestAt` tombstone like
+  // the galaxy config) flips the store → schedule an upload. This subscriber
+  // covers any future in-game writer; sync-applied writes are skipped via the
+  // anti-loop flag (their ledger carries remote stamps that must be kept).
+  const onWatchListChange = () => {
+    if (!shouldScheduleUpload({ cloudSync: settingsStore.get().cloudSync, applying: isApplyingFromSync('watchListPerUniverse') }))
+      return;
+    scheduleUpload();
+  };
+  const unsubWatchList = watchListStore.subscribe(onWatchListChange);
+
   // Settings sync: stamp the keys that changed since the last tick with
   // `now`, then schedule an upload. The keyed suppressor (`'settings'`) skips
   // sync-origin writes (those carry remote timestamps we must keep), and
@@ -1313,6 +1392,7 @@ export const installSync = () => {
       unsubRoutes();
       unsubGalaxyConfig();
       unsubAlarmClockConfig();
+      unsubWatchList();
       document.removeEventListener(SYNC_FORCE_EVENT, onForceSync);
       document.removeEventListener(DAILY_STATE_CHANGED_EVENT, onDailyStateChanged);
       unsubStorage();

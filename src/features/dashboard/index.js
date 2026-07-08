@@ -75,7 +75,9 @@ import { targetReportsKeyFor } from '../../state/targets.js';
 import { allianceClassKeyFor } from '../../state/allianceClass.js';
 import { proximityReportsKeyFor } from '../../state/proximityReports.js';
 import { activityObsKeyFor } from '../../state/activityObs.js';
-import { watchListKeyFor, normalizeWatchList, DEFAULT_SPY_PROBES, DEFAULT_CADENCE, normalizeCadence } from '../../state/watchList.js';
+import { watchListKeyFor, normalizeWatchList, writeWatchListConfig, DEFAULT_SPY_PROBES, DEFAULT_CADENCE, normalizeCadence } from '../../state/watchList.js';
+import { syncRequestKeyFor } from '../../sync/scheduler.js';
+import { formatBytes } from './syncInventory.js';
 import { galaxyStaleMs } from '../../domain/galaxyWatch.js';
 import { pointsOf } from '../../domain/unitCosts.js';
 import {
@@ -940,16 +942,39 @@ const loadWatched = async () => {
 };
 
 /**
- * Write the watch-list config ({players, probes}) for the selected universe to
- * chrome.storage.local so the in-game scan FAB sees the same players + probe
- * count. Fire-and-forget (the in-memory Set / control are the source of truth
- * for the current paint).
+ * Trailing debounce for the post-edit sync poke: rapid star/tag/toggle
+ * clicks coalesce into ONE `<uni>:oge_syncRequestAt` tombstone (each poke
+ * costs any open game tab a full forced sync round-trip). The DATA writes
+ * stay immediate — the poke fires last, and the round it triggers reads the
+ * then-freshest chrome.storage state, so coalescing loses nothing.
+ */
+let pokeSyncTimer = /** @type {ReturnType<typeof setTimeout> | null} */ (null);
+
+/** @param {string} uni @returns {void} */
+const pokeSyncSoon = (uni) => {
+  if (pokeSyncTimer) clearTimeout(pokeSyncTimer);
+  pokeSyncTimer = setTimeout(() => {
+    pokeSyncTimer = null;
+    void chromeStore.set(syncRequestKeyFor(uni), Date.now());
+  }, 4000);
+};
+
+/**
+ * Write the watch-list config for the selected universe so the in-game scan
+ * FAB sees the same players + probe count. Goes through
+ * `writeWatchListConfig` — the stamping funnel that diffs against the stored
+ * config and records per-key LWW timestamps (+ removal tombstones) in the
+ * `oge_watchListTs` ledger — then pokes any open game tab to push the change
+ * to the gist (harmless no-op when cloud sync is off; same pattern as
+ * dashboard/scanConfig.js). Fire-and-forget (the in-memory Set / control are
+ * the source of truth for the current paint).
  *
  * @returns {void}
  */
 const writeWatchConfig = () => {
   if (!selectedUniverseId) return;
-  void chromeStore.set(watchListKeyFor(selectedUniverseId), {
+  const uni = selectedUniverseId;
+  void writeWatchListConfig(uni, {
     players: [...watchedPlayers],
     probes: Number(tgtProbes?.value) || DEFAULT_SPY_PROBES,
     scanBodies: chipValue(tgtScanBodies) || 'planets',
@@ -959,7 +984,7 @@ const writeWatchConfig = () => {
     scanMode: scanModeMap,
     galaxyMode: galaxyModeMap,
     cadence: cadenceCfg,
-  });
+  }).then(() => pokeSyncSoon(uni));
 };
 
 /** Reflect the current cadence into the two number inputs (hydrate/reset). */
@@ -2530,10 +2555,10 @@ const wireListeners = () => {
       setStatus('No server selected.');
       return;
     }
-    void exportAllData(selectedUniverseId).then(() => {
+    void exportAllData(selectedUniverseId).then((res) => {
       setStatus(
-        'Exported ' + history.length + ' colonies, '
-        + Object.keys(scans).length + ' scans (' + selectedUniverseId + ')',
+        'Exported ' + res.datasets + ' datasets, ' + formatBytes(res.bytes)
+        + ' (' + selectedUniverseId + ')',
       );
     });
   });
@@ -2552,10 +2577,13 @@ const wireListeners = () => {
     if (res.warning) {
       setStatus('Error: ' + res.warning);
     } else {
-      setStatus(
-        'Imported into ' + selectedUniverseId + ': +' + res.colonies
-        + ' colonies, +' + res.scans + ' scans',
-      );
+      const gains = res.parts.length
+        ? res.parts.map((p) => `+${p.count} ${p.label}`).join(', ')
+        : 'nothing new';
+      const skipped = res.skipped.length
+        ? ` (skipped unknown: ${res.skipped.join(', ')})`
+        : '';
+      setStatus(`Imported into ${selectedUniverseId}: ${gains}${skipped}`);
     }
     // Clear the input so re-selecting the same file fires `change`.
     importFile.value = '';

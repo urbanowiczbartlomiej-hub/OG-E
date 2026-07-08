@@ -198,6 +198,17 @@ import { SYNC_STATUS_EVENT } from '../lib/ogeEvents.js';
  *   {@link import('../domain/colonizeDecisions.js').mergeColonizeDecisions}).
  *   Per-universe because a coord is server-specific. This is the colonization
  *   state that powers cross-device "continue only the remaining free positions".
+ * @property {Record<string, import('../domain/watchListMerge.js').WatchListSyncSlot>} [watchListPerUniverse]
+ *   OPTIONAL, additive (same two-way tolerance as `settings`): the Spyglass
+ *   watch-list DECISIONS keyed by universe id — starred players, relationship
+ *   tags, scan/galaxy-watch modes, map mutes, body filter and cadence, each a
+ *   per-key `{ v?, ts }` family merged newest-`ts`-wins with removal
+ *   tombstones (see {@link import('../domain/watchListMerge.js').mergeWatchList}).
+ *   `probes` / `rescan` are deliberately absent (per-device). Per-universe
+ *   because player ids are server-specific. NOTE while devices run mixed
+ *   versions: a pre-1.40 writer omits this field, so its PATCH drops it until
+ *   a 1.40 device's next round restores it from local — transient, converges
+ *   once all devices update (same exposure every additive field had).
  */
 
 /**
