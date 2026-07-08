@@ -35,15 +35,31 @@ import {
  * the persisted scans blob keeps only lifeform markers (empty `positions`), so
  * a naive spread would clobber the API occupancy for those systems with blanks.
  *
+ * When `bounds` is known it also drops entries OUTSIDE the server's real grid.
+ * The persisted blob can carry junk keys beyond it (an old import / another
+ * server's leftovers); serverData.xml's galaxies×systems is authoritative, and
+ * a phantom galaxy has no planets in universe.xml, so its systems would read
+ * "fully free" and top every colonization ranking (the "worth colonizing in
+ * galaxy 8/9 on a 7-galaxy server" artifact).
+ *
  * @param {GalaxyScans} s
+ * @param {{ galaxies?: number, systems?: number }} [bounds]
  * @returns {GalaxyScans}
  */
-export const liveOverlay = (s) => {
+export const liveOverlay = (s, bounds) => {
+  const gMax = bounds && Number.isFinite(bounds.galaxies) ? Number(bounds.galaxies) : Infinity;
+  const sMax = bounds && Number.isFinite(bounds.systems) ? Number(bounds.systems) : Infinity;
   /** @type {GalaxyScans} */
   const out = {};
   for (const k of /** @type {(keyof GalaxyScans)[]} */ (Object.keys(s))) {
     const v = s[k];
-    if (v && v.positions && Object.keys(v.positions).length > 0) out[k] = v;
+    if (!(v && v.positions && Object.keys(v.positions).length > 0)) continue;
+    const colon = String(k).indexOf(':');
+    const g = parseInt(String(k).slice(0, colon), 10);
+    const sys = parseInt(String(k).slice(colon + 1), 10);
+    if (Number.isFinite(g) && (g < 1 || g > gMax)) continue;
+    if (Number.isFinite(sys) && (sys < 1 || sys > sMax)) continue;
+    out[k] = v;
   }
   return out;
 };
@@ -65,7 +81,9 @@ export const computeComposite = ({ apiIndex, apiBounds, scans, positions }) => {
       systems: apiBounds.systems,
       targets: positions,
     }),
-    ...liveOverlay(scans),
+    // Bounds-clamped: stale out-of-grid keys in the persisted blob must not
+    // resurrect nonexistent galaxies in the analysis (see liveOverlay).
+    ...liveOverlay(scans, { galaxies: apiBounds.galaxies, systems: apiBounds.systems }),
   });
 };
 
@@ -116,7 +134,7 @@ export const dangerBadge = (prof) => {
  * Build the friendly hover/pin CARD for one system — a styled popover (à la the
  * in-game "?" help and the planet-badge legend) rather than a cramped one-liner.
  * Header coords + scan time, one coloured row per OCCUPIED slot (status · owner
- * · #rank · ally · flags · danger D), a "Free: …" line, and a pin hint. Pure DOM.
+ * · #rank · ally · flags · danger D), a "Free positions: …" line, and a pin hint. Pure DOM.
  *
  * @param {number} g
  * @param {number} s
@@ -230,7 +248,7 @@ export const buildSystemCard = (g, s, scan, pinned, players, linkBase, danger) =
     if (free.length) {
       const f = document.createElement('div');
       f.className = 'rp-free';
-      f.textContent = 'Free: ' + free.join(', ');
+      f.textContent = 'Free positions: ' + free.join(', ');
       card.appendChild(f);
     }
   }

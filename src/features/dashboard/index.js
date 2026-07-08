@@ -63,12 +63,11 @@ import { buildCivilBaseline } from '../../domain/civilBaseline.js';
 import { estimateHiddenFleet } from '../../domain/threatModel.js';
 import { raidVerdict } from '../../domain/raidVerdict.js';
 import { normalizeReportTimestamps } from '../../domain/espionageReport.js';
-import { latestOf, historyOf, spiedCoordsByPlayer, spiedMoonsByPlayer } from '../../domain/targetReports.js';
+import { latestOf, historyOf } from '../../domain/targetReports.js';
 import { bodyLootStats } from '../../domain/lootRhythm.js';
 import { summarizeRoutine, routineBodies } from '../../domain/routine.js';
 import { summarizePresence } from '../../domain/presence.js';
-import { detectAllLandings, strikeKeysOf } from '../../domain/fleetLanding.js';
-import { buildScanPlan } from '../../domain/scanPriority.js';
+import { detectAllLandings } from '../../domain/fleetLanding.js';
 import { probeActivityObs } from '../../domain/activityObs.js';
 import { readApiCacheFor, apiCacheKeyFor } from '../../state/apiCache.js';
 import { targetReportsKeyFor } from '../../state/targets.js';
@@ -409,6 +408,8 @@ let activityObs = {};
 /** @type {HTMLElement} */ let freeContainer;
 /** @type {HTMLElement | null} */ let serverMapHost;
 /** @type {HTMLElement | null} */ let serverMapViewChips;
+/** @type {HTMLElement | null} */ let serverMapProtWrap;
+/** @type {HTMLElement | null} */ let serverMapProtected;
 /** @type {HTMLInputElement | null} */ let serverMapWindow;
 /** @type {HTMLElement | null} */ let serverMapWindowV;
 /** @type {HTMLInputElement | null} */ let serverMapFarm;
@@ -436,7 +437,7 @@ let targetSearchQuery = '';
 const forceIncludeIds = new Set();
 /**
  * Player ids PINNED into the table by a deep-link click (watchlist card,
- * "dossier ▸", map chip, scan plan, `?spy=`). A pinned player renders even
+ * "dossier ▸", map chip, `?spy=`). A pinned player renders even
  * when the top-N row cap / watched-only scope would drop them — the click
  * means "show me this player", so a silent no-op row is a UX dead end. The
  * row is appended after the capped list with a "beyond the cap" note.
@@ -458,11 +459,7 @@ const pinnedTargetIds = new Set();
 /** @type {HTMLElement | null} */ let proximityCountsEl;
 /** @type {HTMLElement | null} */ let proximityAlertEl;
 /** @type {HTMLElement | null} */ let watchCardsEl;
-/** @type {HTMLElement | null} */ let spyFreshnessEl;
 /** @type {HTMLButtonElement | null} */ let spyApiRefreshEl;
-/** @type {HTMLElement | null} */ let scanPlanStripEl;
-/** @type {HTMLElement | null} */ let scanPlanListEl;
-/** @type {HTMLElement | null} */ let scanPlanSummaryEl;
 
 /** Guards {@link installDashboard} against a double-install. */
 let installed = false;
@@ -567,6 +564,9 @@ const boot = async () => {
     if (serverMapSepV) serverMapSepV.textContent = `${scoutPrefs.spotGap} sys`;
   }
   if (scoutPrefs.view) setChipValue(serverMapViewChips, String(scoutPrefs.view));
+  // Protected visibility (occupancy view): absent/legacy prefs default to shown.
+  if (serverMapProtected) setToggleChip(serverMapProtected, scoutPrefs.mapProtected !== false);
+  syncMapProtVisibility();
   validateSlots();
   updateModeControls();
   // The first renderAll above painted with the DOM defaults — repaint so the
@@ -737,6 +737,8 @@ const wireDom = () => {
   freeContainer = /** @type {HTMLElement} */ (document.getElementById('freeContainer'));
   serverMapHost = document.getElementById('serverMapHost');
   serverMapViewChips = document.getElementById('serverMapViewChips');
+  serverMapProtWrap = document.getElementById('serverMapProtWrap');
+  serverMapProtected = document.getElementById('serverMapProtected');
   serverMapWindow = /** @type {HTMLInputElement | null} */ (document.getElementById('serverMapWindow'));
   serverMapWindowV = document.getElementById('serverMapWindowV');
   serverMapFarm = /** @type {HTMLInputElement | null} */ (document.getElementById('serverMapFarm'));
@@ -763,11 +765,7 @@ const wireDom = () => {
   proximityCountsEl = document.getElementById('proximityCounts');
   proximityAlertEl = document.getElementById('proximityAlert');
   watchCardsEl = document.getElementById('watchCards');
-  spyFreshnessEl = document.getElementById('spyFreshness');
   spyApiRefreshEl = /** @type {HTMLButtonElement | null} */ (document.getElementById('spyApiRefresh'));
-  scanPlanStripEl = document.getElementById('scanPlanStrip');
-  scanPlanListEl = document.getElementById('scanPlanList');
-  scanPlanSummaryEl = document.getElementById('scanPlanSummary');
   spyglassMapHost = document.getElementById('spyglassMapHost');
   spyMapToggle = /** @type {HTMLButtonElement | null} */ (document.getElementById('spyMapToggle'));
   spyMapBlock = document.getElementById('spyMapBlock');
@@ -1417,9 +1415,6 @@ const repaintTargets = () => {
     nowMs,
   );
 
-  // Header freshness chips: how old the API feeds are + how many players spied.
-  renderSpyFreshness(Object.keys(reportsByPlayer).length);
-
   // Watchlist cards — the landing strip (Etap H4). Same per-repaint data the
   // table + dossier read, so a card can never disagree with the row below it.
   renderWatchlistCards({
@@ -1522,9 +1517,6 @@ const repaintTargets = () => {
     }
   }
 
-  // The suggested-scan-order strip reads the same joined data (watch list,
-  // reports, danger, routines), so every Targets repaint refreshes it too.
-  renderScanPlanStrip();
 };
 
 /**
@@ -1575,13 +1567,22 @@ const proximityBodyEl = (coords, moon) => {
  * name still seeds the nickname search. The raw per-alert log stays reachable
  * behind a nested <details>. Device-local, read-only — no sends, purely a
  * passive view of opened alerts.
+ *
+ * Only the last 30 days are shown (a months-old probe says nothing about
+ * today's threat); the count-capped log can reach further back. Every row in
+ * the window renders — the card scrolls (CSS max-height) instead of capping.
  * @returns {void}
  */
 const renderProximityStrip = () => {
   if (!proximityStripEl) return;
   proximityStripEl.textContent = '';
-  const digest = digestProximityReports(proximityReports);
   const nowMs = Date.now();
+  // Ts-less alerts stay (they can't be aged); `ts` is epoch seconds.
+  const cutoffSec = Math.floor(nowMs / 1000) - 30 * 86400;
+  const recentReports = proximityReports.filter(
+    (r) => !(typeof r.ts === 'number' && r.ts > 0) || r.ts >= cutoffSec,
+  );
+  const digest = digestProximityReports(recentReports);
   if (proximityCountsEl) {
     proximityCountsEl.textContent = digest.totalReports
       ? ` — ${digest.playerCount} ${digest.playerCount === 1 ? 'prober' : 'probers'}`
@@ -1614,8 +1615,7 @@ const renderProximityStrip = () => {
   const grid = document.createElement('div');
   grid.style.cssText = 'display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 10px;align-items:center;';
 
-  const MAX_ROWS = 10;
-  for (const e of digest.players.slice(0, MAX_ROWS)) {
+  for (const e of digest.players) {
     const facts = document.createElement('div');
     facts.style.cssText = 'font-size:12px;color:#9aa;line-height:1.4;min-width:0;'
       + (e.sameSystem ? 'border-left:2px solid #e06c5f;padding-left:7px;' : '');
@@ -1691,12 +1691,6 @@ const renderProximityStrip = () => {
     grid.append(facts, actions);
   }
   proximityStripEl.appendChild(grid);
-  if (digest.players.length > MAX_ROWS) {
-    const more = document.createElement('div');
-    more.style.cssText = 'color:#667;font-size:11px;margin:4px 0 0;';
-    more.textContent = `+${digest.players.length - MAX_ROWS} more in the raw log`;
-    proximityStripEl.appendChild(more);
-  }
 
   // The undigested per-alert log, for when the exact sequence matters.
   const raw = document.createElement('details');
@@ -1709,7 +1703,7 @@ const renderProximityStrip = () => {
   // pushing the whole page down when expanded.
   const rawBody = document.createElement('div');
   rawBody.style.cssText = 'max-height:320px;overflow-y:auto;';
-  for (const r of proximityReports) {
+  for (const r of recentReports) {
     const line = document.createElement('div');
     line.style.cssText = 'font-size:11px;color:#788;margin-top:3px;line-height:1.4;';
     const age = proximityAge(r.ts, nowMs);
@@ -1724,109 +1718,6 @@ const renderProximityStrip = () => {
   }
   raw.appendChild(rawBody);
   proximityStripEl.appendChild(raw);
-};
-
-/**
- * Repaint the "suggested scan order" strip (§6.7): the shared scan plan —
- * danger × staleness × activity-window bonus over the user's scan list, the
- * SAME `domain/scanPriority.buildScanPlan` ranking the in-game Spy FAB walks,
- * so what this strip lists first is exactly what the button proposes next.
- * PLANS ONLY: no send affordance of any kind lives here (fair-play §8 — the
- * dashboard is extension-origin and must never originate a game action; the
- * one deliberate in-game tap per probe is the only sender). A player-name
- * click opens their dossier — an act-on-intel path, not a send.
- * @returns {void}
- */
-const renderScanPlanStrip = () => {
-  // Only the ranked LIST is rebuilt each render — the Probes input lives in the
-  // same panel (a scan setting) and is static HTML, so we never touch it here or
-  // its `change` wiring would break. The toggle button is ALWAYS visible now (it
-  // no longer disappears when the list is empty); its collapsed panel still holds
-  // Probes, so the button stays a reliable way in. Panel open/closed is owned by
-  // the toggle click handler — this function never forces it.
-  if (!scanPlanListEl) return;
-  scanPlanListEl.textContent = '';
-  const setSummary = (/** @type {string} */ txt) => {
-    if (scanPlanSummaryEl) scanPlanSummaryEl.textContent = txt;
-  };
-  const watched = [...watchedPlayers];
-  // Nothing to rank (no watched players / everything freshly scanned) → just
-  // the idle summary, no hint line in the panel body.
-  if (!watched.length) {
-    setSummary('🧭 planets to scan');
-    return;
-  }
-
-  const nowMs = Date.now();
-  /** @type {Record<string, number>} */
-  const dangerBy = {};
-  /** @type {Record<string, import('../../domain/routine.js').ActivitySummary>} */
-  const activityBy = {};
-  for (const pid of watched) {
-    const prof = dangerProfiles.get(Number(pid));
-    if (prof) dangerBy[pid] = prof.danger * 100;
-    const r = routines[pid];
-    if (r) activityBy[pid] = r.activity;
-  }
-  const { entries } = buildScanPlan({
-    players: watched,
-    universePlanets: apiCache.universe ? apiCache.universe.planets : [],
-    spiedByPlayer: spiedCoordsByPlayer(targetReports),
-    spiedMoonsByPlayer: spiedMoonsByPlayer(targetReports),
-    rescan: rescanMap,
-    nowMs,
-    // Mirror the in-game FAB's planet/moon filter so the two never disagree.
-    scanBodies: /** @type {'planets'|'moons'|'both'} */ (chipValue(tgtScanBodies) || 'planets'),
-    // Scan-off bodies are excluded from the probe plan (galaxy activity still
-    // tracked always-on); the configured cadence drives per-danger staleness.
-    scanMode: scanModeMap,
-    cadence: cadenceCfg,
-    // Fresh fleet-landing moons boosted to the top (mirrors the FAB).
-    strikeCoords: strikeKeysOf(detectAllLandings(
-      watched, apiCache.universe ? apiCache.universe.planets : [], activityObs, nowMs,
-    )),
-    dangerByPlayer: dangerBy,
-    activityByPlayer: activityBy,
-  });
-  if (!entries.length) {
-    setSummary('🧭 planets to scan');
-    return;
-  }
-
-  const n = entries.length;
-  setSummary(`🧭 ${n} to scan`);
-  /** @type {Map<string, string>} */
-  const namesById = new Map(targetCandidates.map((c) => [String(c.id), c.name || `#${c.id}`]));
-
-  const SHOW = 8;
-  const list = document.createElement('div');
-  list.style.cssText = 'font-size:12px;color:#9aa;line-height:1.5;';
-  entries.slice(0, SHOW).forEach((e, i) => {
-    const row = document.createElement('div');
-    const label = namesById.get(e.playerId) || `#${e.playerId}`;
-    row.appendChild(document.createTextNode(`${i + 1}. `));
-    const who = document.createElement('span');
-    who.textContent = label;
-    who.style.cssText = 'cursor:pointer;color:#8fb8e0;';
-    who.title = 'Open this player’s dossier';
-    who.addEventListener('click', () => openSpyglassFor(Number(e.playerId)));
-    row.appendChild(who);
-    row.appendChild(document.createTextNode(
-      ` [${e.galaxy}:${e.system}:${e.position}]${e.bodyType === 3 ? ' 🌙' : ''} — ${e.why}`,
-    ));
-    // The head entry is the FAB's next proposal — mark it, tersely.
-    if (i === 0) {
-      row.style.color = '#cfd6dd';
-      row.appendChild(document.createTextNode('  ← next'));
-    }
-    list.appendChild(row);
-  });
-  scanPlanListEl.appendChild(list);
-  const foot = document.createElement('div');
-  foot.style.cssText = 'color:#5f6b76;font-size:11px;margin-top:4px;';
-  foot.textContent = `${n > SHOW ? `…and ${n - SHOW} more · ` : ''}`
-    + 'The in-game Spy button proposes this order — one tap, one probe.';
-  scanPlanListEl.appendChild(foot);
 };
 
 /**
@@ -1850,35 +1741,6 @@ const openSpyglassFor = (playerId) => {
     pinnedTargetIds.add(pid);
     repaintTargets();
   }
-};
-
-/**
- * Data-freshness chips in the header: how long ago OG-E last downloaded the
- * public-API feeds (the military highscore drives the free danger/fleet numbers)
- * and how many watched-or-listed players you've actually spied. Read-only.
- * @param {number} spiedCount  Players carrying at least one spy report.
- * @returns {void}
- */
-const renderSpyFreshness = (spiedCount) => {
-  if (!spyFreshnessEl) return;
-  spyFreshnessEl.textContent = '';
-  const nowMs = Date.now();
-  /** @param {string} text @param {boolean} [warn] */
-  const chip = (text, warn) => {
-    const el = document.createElement('span');
-    el.className = 'fresh-chip' + (warn ? ' warn' : '');
-    el.textContent = text;
-    spyFreshnessEl?.appendChild(el);
-  };
-  const fetchedAt = apiCache.military?.fetchedAt;
-  if (typeof fetchedAt === 'number' && fetchedAt > 0) {
-    const h = Math.max(0, (nowMs - fetchedAt) / 3_600_000);
-    const age = h < 1 ? '<1 h old' : h < 48 ? `${Math.round(h)} h old` : `${Math.round(h / 24)} d old`;
-    chip(`API data ${age}`, h >= 48);
-  } else {
-    chip('no API data yet — open the galaxy view once', true);
-  }
-  chip(`${spiedCount} spied`);
 };
 
 /** Guards the manual API refresh against overlapping clicks. */
@@ -2131,9 +1993,20 @@ const buildScoreField = (composite) => {
  * pins, host width). A zone switch re-sorts the list but must not rebuild
  * the 9×N map DOM.
  *
- * @type {{field: unknown, composite: unknown, view: string, candKey: string, width: number} | null}
+ * @type {{field: unknown, composite: unknown, view: string, hideBlocked: boolean, candKey: string, width: number} | null}
  */
 let lastMapPaint = null;
+
+/**
+ * The 🛡 Protected toggle only means anything in the occupancy view (the
+ * threat/farm field never paints blocked cells) — show its chip only there.
+ * @returns {void}
+ */
+const syncMapProtVisibility = () => {
+  if (!serverMapProtWrap) return;
+  const view = chipValue(serverMapViewChips) || 'field';
+  serverMapProtWrap.style.display = view === 'occupancy' ? '' : 'none';
+};
 
 /**
  * Index of the currently-selected candidate row (−1 = none) — mirrored onto
@@ -2247,6 +2120,7 @@ const repaintFreeRegions = () => {
   });
   if (serverMapHost) {
     const view = chipValue(serverMapViewChips) || 'field';
+    const hideBlocked = serverMapProtected ? !toggleChipOn(serverMapProtected) : false;
     const width = serverMapHost.clientWidth || 0;
     // Hidden pane (tab/sub-tab not showing) → width 0 → both renderers would
     // lay out against a 700px guess; the occupancy canvas then maps hover and
@@ -2272,9 +2146,10 @@ const repaintFreeRegions = () => {
       || lastMapPaint.field !== fieldKey
       || lastMapPaint.composite !== composite
       || lastMapPaint.view !== view
+      || lastMapPaint.hideBlocked !== hideBlocked
       || lastMapPaint.candKey !== candKey
       || lastMapPaint.width !== width) {
-      lastMapPaint = { field: fieldKey, composite, view, candKey, width };
+      lastMapPaint = { field: fieldKey, composite, view, hideBlocked, candKey, width };
       renderServerMap({
         hostEl: serverMapHost,
         scans: composite,
@@ -2283,6 +2158,7 @@ const repaintFreeRegions = () => {
         donutGalaxy: apiBounds.donutGalaxy,
         donutSystem: apiBounds.donutSystem,
         view,
+        hideBlocked,
         offlineWindow: parseInt(serverMapWindow?.value ?? '', 10) || 8,
         farmReach: parseInt(serverMapFarm?.value ?? '', 10) || 30,
         ownMilitary,
@@ -2629,12 +2505,6 @@ const wireListeners = () => {
   });
   spyMapToggle?.addEventListener('click', toggleSpyMap);
   wireToggleChip(spyMapReach, () => repaintSpyglassMap());
-  scanPlanSummaryEl?.addEventListener('click', () => {
-    if (!scanPlanStripEl) return;
-    const open = scanPlanStripEl.style.display === 'none';
-    scanPlanStripEl.style.display = open ? '' : 'none';
-    scanPlanSummaryEl?.setAttribute('aria-expanded', String(open));
-  });
   spyApiRefreshEl?.addEventListener('click', () => { void refreshApiData(); });
 
   // Region controls only repaint the settlement-regions block. The
@@ -2652,6 +2522,7 @@ const wireListeners = () => {
       farmReach: serverMapFarm?.value,
       spotGap: serverMapSep?.value,
       view: chipValue(serverMapViewChips),
+      mapProtected: serverMapProtected ? toggleChipOn(serverMapProtected) : true,
     });
   };
 
@@ -2668,6 +2539,11 @@ const wireListeners = () => {
     repaintFreeRegions();
   });
   wireChips(serverMapViewChips, () => {
+    saveScoutPrefs();
+    syncMapProtVisibility();
+    repaintFreeRegions();
+  });
+  wireToggleChip(serverMapProtected, () => {
     saveScoutPrefs();
     repaintFreeRegions();
   });
@@ -2762,6 +2638,8 @@ export const _resetDashboardForTest = () => {
     freeGapsNote =
     freeExcludeNote =
     serverMapViewChips =
+    serverMapProtWrap =
+    serverMapProtected =
     serverMapHost =
     serverMapWindow =
     serverMapWindowV =
@@ -2787,11 +2665,7 @@ export const _resetDashboardForTest = () => {
     proximityAlertEl =
     spyMapPlayersEl =
     watchCardsEl =
-    spyFreshnessEl =
     spyApiRefreshEl =
-    scanPlanStripEl =
-    scanPlanListEl =
-    scanPlanSummaryEl =
     freeContainer =
     freeCountInfoEl =
       /** @type {any} */ (undefined);

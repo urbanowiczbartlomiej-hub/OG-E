@@ -748,14 +748,20 @@ function relationshipSelector(playerId, current, onSet) {
  * that's the point. Each toggle sets/clears its player-id key ('off' explicit
  * / clear back to the 'on' default). A click stops propagation (never
  * collapses the dossier).
+ *
+ * While probes are ON, a ↻ sits right after the probes chip — the whole-player
+ * re-scan flag (it feeds the probe scan plan, so it lives with the toggle it
+ * belongs to and hides when probes are off: a flag for a plan that never runs
+ * would be a dead switch).
  * @param {string} playerId
  * @param {boolean} scanOn     is the player's probe-scan default on?
  * @param {boolean} galaxyOn   is the player's galaxy-look plan on?
  * @param {(key: string, mode: import('../../domain/scanMode.js').ScanMode | null) => void} onSetScan
  * @param {((pid: string, mode: import('../../domain/scanMode.js').ScanMode | null) => void) | undefined} onSetGalaxy
+ * @param {((key: string) => void) | undefined} onRescan
  * @returns {HTMLDivElement}
  */
-function watchViaSelector(playerId, scanOn, galaxyOn, onSetScan, onSetGalaxy) {
+function watchViaSelector(playerId, scanOn, galaxyOn, onSetScan, onSetGalaxy, onRescan) {
   const wrap = document.createElement('div');
   wrap.style.cssText = 'display:inline-flex;align-items:center;gap:6px;font-size:11px;';
   const lbl = document.createElement('span');
@@ -800,6 +806,17 @@ function watchViaSelector(playerId, scanOn, galaxyOn, onSetScan, onSetGalaxy) {
       ? 'Probe scanning ON by default — click to make this player galaxy-only (no probes; the target stops seeing scans)'
       : 'Probe scanning OFF — galaxy-only. Click to resume proposing probes for this player.',
     () => onSetScan(playerId, scanOn ? 'off' : null)));
+
+  // ↻ whole-player re-scan flag — probes-on only (it only feeds the probe plan).
+  if (scanOn && onRescan) {
+    const rescan = document.createElement('button');
+    rescan.textContent = '↻';
+    rescan.title = 'Flag this player for re-scan (data may have changed) — every body re-enters the probe scan plan';
+    rescan.style.cssText = 'border:none;background:none;color:#6b97c4;cursor:pointer;'
+      + 'font-size:13px;line-height:1;padding:0 2px;';
+    rescan.addEventListener('click', (e) => { e.stopPropagation(); onRescan(playerId); });
+    wrap.appendChild(rescan);
+  }
   return wrap;
 }
 
@@ -1130,8 +1147,9 @@ function presenceBlock(presence) {
  *   reports keyed by the moon's planet "g:s:p" (own map, never mixed with planets).
  * @param {*} a.rescan
  * @param {number} a.nowMs
- * @param {*} [a.onRescan]  (Unused here — whole-player re-scan lives in the
- *   targets table; per-body re-scan was dropped.) Accepted for caller convenience.
+ * @param {((key: string) => void) | undefined} [a.onRescan]  Flag the whole
+ *   player for re-scan — the ↻ on the Watch-via row (shown only while the
+ *   player's probes are on; per-body re-scan was dropped).
  * @param {Record<string, import('../../domain/scanMode.js').ScanMode>} [a.scanMode]
  *   Scan-mode map (player id / body override key → 'on'|'off').
  * @param {(key: string, mode: import('../../domain/scanMode.js').ScanMode | null) => void} [a.onSetScanMode]
@@ -1188,7 +1206,7 @@ export function buildDossier(a) {
       const scanOn = !(a.scanMode && a.scanMode[a.playerId] === 'off');
       const galaxyOn = !(a.galaxyMode && a.galaxyMode[a.playerId] === 'off');
       header.appendChild(watchViaSelector(
-        a.playerId, scanOn, galaxyOn, a.onSetScanMode, a.onSetGalaxyMode,
+        a.playerId, scanOn, galaxyOn, a.onSetScanMode, a.onSetGalaxyMode, a.onRescan,
       ));
     }
     if (coverage) {

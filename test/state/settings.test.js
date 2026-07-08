@@ -93,6 +93,7 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
         'gistToken',
         'maxExpeditionsPerPlanet',
         'readabilityBoost',
+        'showExpeditionButton',
         'alarmClockMasterEnabled',
         'alarmClockNtfyToken',
         'traderMenuHighlight',

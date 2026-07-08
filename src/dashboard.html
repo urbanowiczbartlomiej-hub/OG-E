@@ -371,6 +371,18 @@
   .chip-group.seg button + button { border-left: 1px solid #2b3a4d; }
   .chip-group.seg button.on { background: #12253c; color: #cfe4ff; }
 
+  /* Standalone toolbar toggles (⚙ Filters) — same pill language as
+     .chip-group buttons, with the expanded state wearing the `.on` look via
+     aria-expanded (one source of truth: the toggle handlers already keep the
+     attribute in sync for a11y). `button.`-qualified to out-cascade the generic
+     `.controls button` skin (same 0,1,1 specificity, later in the sheet wins). */
+  button.spy-toolbtn {
+    background: #18222e; border: 1px solid #2b3a4d; color: #9fb4c4;
+    padding: 3px 11px; border-radius: 999px; font-size: 12px; cursor: pointer;
+  }
+  button.spy-toolbtn:hover { background: #18222e; border-color: #4a9eff; color: #cfe4ff; }
+  button.spy-toolbtn[aria-expanded="true"] { border-color: #4a9eff; background: #12253c; color: #cfe4ff; }
+
   /* Top block: watchlist (hero) beside the "who's spying you" digest. One
      column on narrow screens, two from 900px (watchlist gets the width). */
   .spy-top { display: grid; grid-template-columns: 1fr; gap: 12px 16px; margin-bottom: 12px; }
@@ -378,22 +390,33 @@
   /* The grid gap spaces the two top cards; a card's own bottom margin would
      double it (and misalign the columns' bottoms). */
   .spy-top > .gv-card { margin: 0; }
-
-  /* Compact scan-plan disclosure — the summary reads as a chip, so collapsed it
-     costs one small pill instead of a full-width banner row. */
-  .scan-order > summary {
-    display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-    list-style: none; font-size: 12px; color: #9fb4c4;
-    background: #12202e; border: 1px solid #2b3a4d; border-radius: 999px;
-    padding: 3px 11px; user-select: none;
+  /* The watchlist card is a flex column so its scan-settings footer pins to
+     the card's BOTTOM edge — #watchCards takes the slack (the cards grid
+     inside it scrolls) even when the grid row stretches this card taller. */
+  .spy-watch-card { display: flex; flex-direction: column; }
+  .spy-watch-card > #watchCards { flex: 1; }
+  /* Scan settings — the in-game Spy button's knobs, always visible as the
+     watchlist card's footer bar. Negative margins mirror .gv-card's
+     12px/14px padding so the bar bleeds to the card's inner edges. */
+  .spy-scan-prefs {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px;
+    margin: 12px -14px -12px; padding: 9px 14px;
+    border-top: 1px solid #223044; background: #0e151e;
+    border-radius: 0 0 8px 8px;
+    font-size: 12.5px; color: #8b99a8;
   }
-  .scan-order > summary::-webkit-details-marker { display: none; }
-  .scan-order > summary:hover { border-color: #4a9eff; color: #cfe4ff; }
+  .spy-scan-prefs label { white-space: nowrap; }
 
   /* Watchlist cards — the Spyglass landing strip (one card per watched
      player: verdict words, headline number, activity sparkline). */
   .watch-zone-label { font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase; color: #66788a; margin: 0 0 8px; }
-  .watch-cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(235px, 1fr)); gap: 12px; }
+  /* Both top panels cap their height and scroll inside — a long watch list /
+     prober log must never push the Players table below the fold. */
+  .watch-cards-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(235px, 1fr)); gap: 12px;
+    max-height: 420px; overflow-y: auto; padding-right: 2px;
+  }
+  #proximityStrip { max-height: 420px; overflow-y: auto; padding-right: 2px; }
   .watch-card {
     background: #0b1118; border: 1px solid #223041; border-radius: 8px;
     padding: 10px 12px; cursor: pointer; min-width: 0;
@@ -804,6 +827,12 @@
           <button type="button" data-value="field" class="on">Threat / farm</button>
           <button type="button" data-value="occupancy">Occupancy</button>
         </div>
+        <!-- Occupancy-only: Protected (admin/banned/vacation) cells can drown
+             the actionable signal — this hides them (paints as void). -->
+        <div class="chip-group" id="serverMapProtWrap" style="display:none;">
+          <button type="button" id="serverMapProtected" class="on"
+            title="Show Protected slots (admin / banned / vacation — they block colonization but are neither farm nor threat). Turn off to hide them and let farms/threats pop.">🛡 Protected</button>
+        </div>
       </div>
       <div id="serverMapHost"></div>
     </div>
@@ -824,20 +853,42 @@
 </section>
 
 <section id="spyglassSection" class="tab-section">
-  <!-- Header: title + "experimental", then a data-freshness chip row. -->
+  <!-- Header: title + "experimental" + the manual API refresh. -->
   <h1 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">Spyglass<span class="exp-badge" title="Hidden-fleet estimates depend on how much you've spied; treat them as a guide, not gospel.">experimental</span>
-    <span id="spyFreshness" style="display:inline-flex;gap:6px;flex-wrap:wrap;margin-left:auto;"></span>
     <button type="button" id="spyApiRefresh"
       title="Download fresh data from OGame's public API for this universe now (danger, mobile-fleet estimates, occupancy map). Normally OG-E refreshes this in-game; use this to force it from here."
-      style="font-size:11px;color:#9fb4c4;background:#12202e;border:1px solid #2b3a4d;border-radius:999px;padding:3px 11px;cursor:pointer;white-space:nowrap;">⟳ Refresh</button>
+      style="margin-left:auto;font-size:11px;color:#9fb4c4;background:#12202e;border:1px solid #2b3a4d;border-radius:999px;padding:3px 11px;cursor:pointer;white-space:nowrap;">⟳ Refresh</button>
   </h1>
   <!-- Watchlist (the hero, left) beside "Who's spying you" (defensive digest,
        right) — one glance block at the top of the tab. Each side is its own
-       gv-card zone (same section-background language as the Galaxy Viewer). -->
+       gv-card zone (same section-background language as the Galaxy Viewer).
+       The watchlist card carries the scan settings as its pinned footer bar —
+       always visible (they used to hide behind the "planets to scan" toggle);
+       the ranked scan-order preview is gone with it (the in-game Spy button IS
+       the plan's consumer and proposes the same order anyway). -->
   <div class="spy-top">
-    <div class="gv-card"><div id="watchCards"></div></div>
+    <div class="gv-card spy-watch-card">
+      <div id="watchCards"></div>
+      <div class="spy-scan-prefs">
+        <label title="How many espionage probes the in-game scan button pre-arms per body.">Probes per scan:
+          <input id="tgtProbes" type="number" min="1" max="9999" value="20" size="4">
+        </label>
+        <span>Scan:
+          <span class="chip-group seg" id="tgtScanBodies" data-value="planets" style="vertical-align:middle;margin-left:4px;"
+            title="Which bodies the in-game scan button proposes: planets, moons, or both.">
+            <button type="button" data-value="planets">🪐 planets</button>
+            <button type="button" data-value="moons">🌙 moons</button>
+            <button type="button" data-value="both">both</button>
+          </span>
+        </span>
+        <label title="Probe re-scan: a report older than this re-enters the scan plan (every watched body).">Re-scan probes after
+          <input id="cadRescanHours" type="number" min="1" max="1440" step="1" value="48" size="4"> h</label>
+        <label title="Galaxy-sighting freshness for bodies watched via the galaxy (passive, undetectable).">Re-look galaxy after
+          <input id="cadGalaxyHours" type="number" min="1" max="336" step="1" value="24" size="3"> h</label>
+      </div>
+    </div>
     <div class="gv-card">
-      <div class="gv-card-head"><span class="gv-card-title">Who's spying you</span><span id="proximityCounts" style="color:#77848f;"></span><span id="proximityAlert" style="color:#e06c5f;font-weight:600;"></span></div>
+      <div class="gv-card-head"><span class="gv-card-title" title="Probers from the alerts you opened, last 30 days.">Who's spying you</span><span id="proximityCounts" style="color:#77848f;"></span><span id="proximityAlert" style="color:#e06c5f;font-weight:600;"></span></div>
       <div id="proximityStrip"></div>
     </div>
   </div>
@@ -854,11 +905,11 @@
       <span id="spyMapPlayers" style="display:contents;"></span>
     </div>
   </div>
-  <!-- Players card — the control line, the toggleable panels and the ranked
-       table live in ONE gv-card zone (mirrors the Galaxy Viewer's Results
-       card). Control line: search · map · scan plan (left) · ⚙ Filters · row
-       cap (right); the map button toggles the map card ABOVE, the scan-plan
-       button its panel BELOW. -->
+  <!-- Players card — the control line, the toggleable filters panel and the
+       ranked table live in ONE gv-card zone (mirrors the Galaxy Viewer's
+       Results card). Control line: search · map (left) · ⚙ Filters · row cap
+       (right); the map button toggles the map card ABOVE, ⚙ its panel BELOW.
+       (Scan settings live in the watchlist card's footer, not here.) -->
   <div class="gv-card">
   <div class="controls" style="align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
     <span class="gv-card-title">Players</span>
@@ -869,46 +920,15 @@
       <button type="button" id="spyMapToggle" aria-expanded="false" aria-controls="spyMapBlock"
         title="Show the positions map — your planets plus every watched player's.">🗺 map</button>
     </div>
-    <button type="button" id="scanPlanSummary" aria-expanded="false" aria-controls="scanPlanStrip"
-      title="Ranks your watch list by danger × intel staleness. A plan only — the in-game Spy button proposes the same order, and every probe stays one deliberate tap."
-      style="background:#18222e;border:1px solid #2b3a4d;border-radius:999px;color:#9fb4c4;padding:3px 10px;font-size:12px;cursor:pointer;">🧭 scan plan</button>
-    <button type="button" id="tgtConfigToggle" aria-expanded="false" aria-controls="tgtConfigCard"
+    <button type="button" id="tgtConfigToggle" class="spy-toolbtn" aria-expanded="false" aria-controls="tgtConfigCard"
       title="Filters: hide inactive · watch list only · military range"
-      style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;background:#18222e;border:1px solid #2b3a4d;border-radius:999px;color:#9fb4c4;padding:3px 12px;font-size:12px;cursor:pointer;">⚙ Filters</button>
+      style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;">⚙ Filters</button>
     <div class="chip-group seg" id="tgtLimitChips" data-value="100" title="How many rows to show.">
       <button type="button" data-value="50">top 50</button>
       <button type="button" data-value="100">top 100</button>
       <button type="button" data-value="200">top 200</button>
       <button type="button" data-value="0">all</button>
     </div>
-  </div>
-  <!-- Scan-plan panel — Probes (the in-game scan FAB's per-planet pre-arm, a scan
-       setting) + the ranked scan order. Toggled by "planets to scan" above. -->
-  <div id="scanPlanStrip" style="display:none;background:#0b1118;border:1px solid #2b3a4d;border-radius:8px;padding:10px 14px;margin:-4px 0 14px;font-size:13px;color:#8b99a8;">
-    <!-- One settings line: probe count · body filter · re-scan cadence (a
-         single hour-scale probe knob — the old hot/warm/cold danger tiers are
-         gone — plus galaxy-sighting freshness). Read in-tab for
-         ranking/display only. -->
-    <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-bottom:8px;">
-      <label>Probes:
-        <input id="tgtProbes" type="number" min="1" max="9999" value="20" size="4"
-          title="How many espionage probes the in-game scan button pre-arms per body.">
-      </label>
-      <span>Scan:
-        <span class="chip-group seg" id="tgtScanBodies" data-value="planets" style="vertical-align:middle;margin-left:4px;"
-          title="Which bodies the in-game scan button proposes: planets, moons, or both.">
-          <button type="button" data-value="planets">🪐 planets</button>
-          <button type="button" data-value="moons">🌙 moons</button>
-          <button type="button" data-value="both">both</button>
-        </span>
-      </span>
-      <span style="color:#6b7887;">Re-scan after:</span>
-      <label title="Probe re-scan: a report older than this re-enters the scan plan (every watched body).">probes
-        <input id="cadRescanHours" type="number" min="1" max="1440" step="1" value="48" size="4"> h</label>
-      <label title="Galaxy-sighting freshness for bodies watched via the galaxy (passive, undetectable).">galaxy
-        <input id="cadGalaxyHours" type="number" min="1" max="336" step="1" value="24" size="3"> h</label>
-    </div>
-    <div id="scanPlanList"></div>
   </div>
   <div id="tgtConfigCard" style="display:none;background:#0b1118;border:1px solid #2b3a4d;border-radius:8px;padding:10px 14px;margin:-4px 0 14px;width:100%;box-sizing:border-box;font-size:13px;color:#8b99a8;">
     <div class="chip-group" style="margin-bottom:10px;">

@@ -197,6 +197,13 @@ const buildColonizationFields = (body) => {
   preferInput.type = 'checkbox';
   preferInput.id = 'scanCfgPrefer';
 
+  const showFabInput = /** @type {HTMLInputElement} */ (mk('input'));
+  showFabInput.type = 'checkbox';
+  showFabInput.id = 'scanCfgShowFab';
+  showFabInput.title =
+    'Show the Colonize button on the in-game floating button. Off hides the module '
+    + '(and its orbit orb); scanning, decisions and this dashboard keep working.';
+
   const preferFarthestInput = /** @type {HTMLInputElement} */ (mk('input'));
   preferFarthestInput.type = 'checkbox';
   preferFarthestInput.id = 'scanCfgPreferFarthest';
@@ -232,6 +239,7 @@ const buildColonizationFields = (body) => {
   const grid = mk('div');
   grid.className = 'cfg-grid';
   grid.appendChild(row('Target positions', positionsInput, 'list or range, e.g. 7-9, 15'));
+  grid.appendChild(row('Colonize button on the FAB', showFabInput, 'off = hide the in-game button'));
   grid.appendChild(row('Prefer neighbouring galaxies', preferInput, 'more predictable arrival times'));
   grid.appendChild(row('Prefer farthest systems first', preferFarthestInput, 'better arrival spread; off = nearest first'));
   grid.appendChild(row('Min gap between arrivals (sec)', colonyMinGapInput));
@@ -242,6 +250,7 @@ const buildColonizationFields = (body) => {
   return {
     fill: (cfg) => {
       positionsInput.value = cfg.positions;
+      showFabInput.checked = cfg.showFabButton;
       preferInput.checked = cfg.preferOtherGalaxies;
       preferFarthestInput.checked = cfg.preferFarthestSystems;
       colonyMinGapInput.value = String(cfg.colonyMinGap);
@@ -250,6 +259,7 @@ const buildColonizationFields = (body) => {
     },
     collect: () => ({
       positions: positionsInput.value.trim(),
+      showFabButton: showFabInput.checked,
       preferOtherGalaxies: preferInput.checked,
       preferFarthestSystems: preferFarthestInput.checked,
       colonyMinGap: parseInt(colonyMinGapInput.value, 10),

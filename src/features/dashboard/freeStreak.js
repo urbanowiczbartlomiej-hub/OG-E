@@ -332,9 +332,11 @@ const OCC_HINT = 'Hover a cell for its coordinate and status.';
  *   their systems gets an overlay marker.
  * @param {string} [o.highlightName]  That player's name (for the banner).
  * @param {(() => void)} [o.onClearHighlight]  Clears the spotlight.
+ * @param {boolean} [o.hideBlocked]  Paint Protected (admin/banned/vacation)
+ *   cells as void + drop their legend row (the 🛡 toggle).
  * @returns {void}
  */
-const renderOccupancyMap = (hostEl, scans, { galaxies, systems }, { linkBase, ownMilitary, players, danger, candidates, onPinClick, highlightPlayer, highlightName, onClearHighlight }) => {
+const renderOccupancyMap = (hostEl, scans, { galaxies, systems }, { linkBase, ownMilitary, players, danger, candidates, onPinClick, highlightPlayer, highlightName, onClearHighlight, hideBlocked }) => {
   const POS = 15;
   const posPx = 2;
   const gap = 4;
@@ -396,9 +398,13 @@ const renderOccupancyMap = (hostEl, scans, { galaxies, systems }, { linkBase, ow
         const pid = pos && pos.player && pos.player.id != null ? pos.player.id : null;
         const isHi = highlightPlayer != null && pid === highlightPlayer;
         if (isHi) hitHere = true;
+        let cc = classifyCell(pos ? pos.status : undefined, pos ? pos.player : undefined, clsCtx);
+        // 🛡 Protected off → blocked cells paint as void (they block
+        // colonization but are neither farm nor threat — pure clutter then).
+        if (hideBlocked && cc.bucket === 'blocked') cc = { bucket: 'free', intensity: 0 };
         ctx.fillStyle = isHi
           ? '#ff5edb' // spotlight — bright magenta pops against the dark map
-          : cellColor(classifyCell(pos ? pos.status : undefined, pos ? pos.player : undefined, clsCtx));
+          : cellColor(cc);
         ctx.fillRect(x, yBase + (p - 1) * posPx, Math.ceil(cellW) + 0.4, posPx);
       }
       if (hitHere) highlightCells.push({ g, s });
@@ -556,11 +562,12 @@ const renderOccupancyMap = (hostEl, scans, { galaxies, systems }, { linkBase, ow
     // Same structure as the field view's legend — ramps first (threat before
     // farm), categoricals after, pin last — so switching views reads as the
     // same vocabulary in the same order. "Empty" — the same word the strip
-    // legend and popovers use (this legend used to say "Free").
+    // legend and popovers use (this legend used to say "Free"). Protected is
+    // listed only while it's actually painted (the 🛡 toggle).
     makeRampLegend((v) => cellColor({ bucket: 'threat', intensity: v }), 'Active threat (stronger → brighter)'),
     makeRampLegend((v) => cellColor({ bucket: 'farm', intensity: v }), 'Farm (rich → bright)'),
     flatLeg('free', 'Empty'),
-    flatLeg('blocked', 'Protected'),
+    ...(hideBlocked ? [] : [flatLeg('blocked', 'Protected')]),
     flatLeg('mine', 'Mine'),
   );
   if (candidates && candidates.length) {
@@ -614,9 +621,12 @@ const renderOccupancyMap = (hostEl, scans, { galaxies, systems }, { linkBase, ow
  *   player's planets (adds diamond markers + a banner).
  * @param {string} [o.highlightName]
  * @param {(() => void)} [o.onClearHighlight]
+ * @param {boolean} [o.hideBlocked]  Occupancy lens only — paint Protected
+ *   (admin/banned/vacation) cells as void and drop their legend row (the 🛡
+ *   toggle beside the view chips).
  * @returns {void}
  */
-export const renderServerMap = ({ hostEl, scans, galaxies, systems, donutGalaxy, donutSystem, view, offlineWindow, farmReach, linkBase, ownMilitary, players, danger, field, candidates, onPinClick, highlightPlayer, highlightName, onClearHighlight }) => {
+export const renderServerMap = ({ hostEl, scans, galaxies, systems, donutGalaxy, donutSystem, view, hideBlocked, offlineWindow, farmReach, linkBase, ownMilitary, players, danger, field, candidates, onPinClick, highlightPlayer, highlightName, onClearHighlight }) => {
   hostEl.innerHTML = '';
   /** @param {string} msg */
   const note = (msg) => {
@@ -632,7 +642,7 @@ export const renderServerMap = ({ hostEl, scans, galaxies, systems, donutGalaxy,
   // Two views: the sharp per-position occupancy texture, or (default) the
   // threat/farm field the zone ranking reads.
   if (view === 'occupancy') {
-    renderOccupancyMap(hostEl, scans, { galaxies, systems }, { linkBase, ownMilitary, players, danger, candidates, onPinClick, highlightPlayer, highlightName, onClearHighlight });
+    renderOccupancyMap(hostEl, scans, { galaxies, systems }, { linkBase, ownMilitary, players, danger, candidates, onPinClick, highlightPlayer, highlightName, onClearHighlight, hideBlocked });
     return;
   }
   // Granularity adapts to the panel width: aim for ~4px cells so the field is

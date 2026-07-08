@@ -31,17 +31,30 @@ export { SPY_STALE_MS } from '../../domain/spyScan.js';
 // button's outer glow AND the brand-node's glyph ring are both driven by this
 // colour (`--rim` / `--mod` in buttonChrome, mixed with transparent), so it has
 // to be BRIGHT enough to actually cast a glow — the old `#3b3559` was so dark /
-// desaturated that both halos vanished (the button only "lit up" once it armed
-// to the brighter ready colour). A vivid indigo keeps the spy identity while
-// glowing like the other FABs (expedition #4aa8ff, colonize #12b3c2, daily
-// #34d96e, lifeform #a78bfa). Ready stays the liked lit slate-blue, error red,
-// steel-blue for the "all scanned → read reports" end state.
-export const BG_SPY_IDLE = '#6355e6';
-export const BG_SPY_READY = '#6a5acd';
-export const BG_SPY_ERROR = '#7a2f2f';
-export const BG_SPY_DONE = '#34506b';
-/** The galaxy-LOOK proposal — a vivid azure, clearly "not a probe send". */
-export const BG_SPY_LOOK = '#1f8fbf';
+// desaturated that both halos vanished.
+//
+// ONE GOLD FAMILY. The first palette gave every state its own hue (indigo idle,
+// slate-violet ready, azure Look, steel done, maroon error) — so the button
+// changed identity per state, the glow hopped hues with it, and the oczko
+// (always `--mod` = IDLE) matched the button in only one state. Now the spy
+// identity is GOLD — a hue no other module wears (expedition #4aa8ff, colonize
+// #12b3c2, daily #34d96e, lifeform #a78bfa) and the colour of OG-E's own brand
+// lens — and every normal state is a shade of it, exactly how the other FABs
+// speak (colony: teal idle → lit-teal ready): oczko, rim and glow stay one
+// colour through idle/loading/Look/ready/done. The family sits on the PALE
+// champagne side of gold on purpose: the Fleet-reminder button is a saturated
+// orange (guardian RIM #f5851a), and a deeper gold read as its sibling. Only
+// the two semantic states leave the family: error borrows the SHARED FAB error
+// red, strike stays the hot "act now" orange-red (deliberately loud).
+export const BG_SPY_IDLE = '#e6c054';
+/** Armed "Send!" — the same gold, lit (the colony idle→ready treatment). */
+export const BG_SPY_READY = '#f7dc66';
+/** The shared FAB error red (sendExpedition/sendColony/sendLifeform). */
+export const BG_SPY_ERROR = '#fb7185';
+/** "All scanned → read reports" end state — the gold, muted. */
+export const BG_SPY_DONE = '#a68d4a';
+/** The galaxy-LOOK proposal — even paler champagne; the label carries the verb. */
+export const BG_SPY_LOOK = '#eed27f';
 /** STRIKE — a fresh fleet-landing candidate. Hot orange-red: "act now". */
 export const BG_SPY_STRIKE = '#d1571f';
 
@@ -200,6 +213,7 @@ export function renderSpy(ctx, preflight) {
       subtext: who,
       hint: `${preflight.have}/${preflight.need} probes`,
       bg: ctx.strike ? BG_SPY_STRIKE : BG_SPY_IDLE,
+      pulse: true,
     };
   }
   // Strike — a fresh fleet-landing candidate: distinct hot paint + a 🎯 so the
@@ -210,13 +224,18 @@ export function renderSpy(ctx, preflight) {
       subtext: `🎯 ${who}`,
       hint: 'fresh landing? · spy to confirm',
       bg: BG_SPY_STRIKE,
+      pulse: true,
     };
   }
   // Line 3 is the remaining count — "N left" (planets + moons still to scan).
+  // `pulse` rides every probe-PROPOSAL paint (this one, strike, the probe
+  // shortage above): "there is something to scan" is exactly the state the
+  // FAB should nudge about — never Look/done/idle/error/mid-send.
   return {
     text: 'Spy',
     subtext: who,
     hint: `${ctx.remaining} left`,
     bg: BG_SPY_IDLE,
+    pulse: true,
   };
 }

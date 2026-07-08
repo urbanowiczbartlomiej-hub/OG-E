@@ -31,6 +31,9 @@
  *   FARTHEST free system first (better arrival spread — the historical default).
  *   Off ⇒ nearest free system first. Only affects home-galaxy ordering; other
  *   galaxies stay linear.
+ * @property {boolean} showFabButton  Show the Colonize module on the unified
+ *   FAB. Off ⇒ the button unmounts (its satellite orb too); scanning, the
+ *   decision log and the dashboard are unaffected.
  * @property {number} colonyMinGap  Min seconds between colonize arrivals (the
  *   min-gap scheduling guard read by `features/sendColony`).
  * @property {number} colonyMinFields  Abandon-eligibility floor: a fresh
@@ -67,6 +70,7 @@ export const defaultGalaxyScanConfig = () => ({
   positions: '8',
   preferOtherGalaxies: true,
   preferFarthestSystems: true,
+  showFabButton: true,
   colonyMinGap: 15,
   colonyMinFields: 320,
   colonyPassword: '',
@@ -118,6 +122,8 @@ export const normalizeGalaxyScanConfig = (raw) => {
       typeof r.preferFarthestSystems === 'boolean'
         ? r.preferFarthestSystems
         : d.preferFarthestSystems,
+    showFabButton:
+      typeof r.showFabButton === 'boolean' ? r.showFabButton : d.showFabButton,
     colonyMinGap: coerceInt(r.colonyMinGap, d.colonyMinGap),
     colonyMinFields: coerceInt(r.colonyMinFields, d.colonyMinFields),
     colonyPassword:

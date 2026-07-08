@@ -8,8 +8,6 @@
 import { floatingButtonSection } from './floatingButton.js';
 import { expeditionsSection } from './expeditions.js';
 import { displaySection } from './display.js';
-import { syncSection } from './sync.js';
-import { alarmClockSection } from './alarmClock.js';
 
 /**
  * @typedef {import('../controls.js').SettingsSection} SettingsSection
@@ -30,6 +28,4 @@ export const SECTIONS = [
   floatingButtonSection,
   expeditionsSection,
   displaySection,
-  syncSection,
-  alarmClockSection,
 ];

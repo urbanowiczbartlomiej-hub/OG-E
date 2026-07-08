@@ -47,6 +47,7 @@ import {
   shipAvailability,
 } from '../shared/fleetCourier.js';
 import { installFabSettingsLifecycle } from '../shared/fabSettingsLifecycle.js';
+import { setFabModuleAlert } from '../shared/unifiedFab.js';
 import { getApiContext } from '../shared/apiContextStore.js';
 import { parseCurrentGalaxyView } from '../shared/galaxyView.js';
 import { navigateGalaxyInPage } from '../shared/galaxyNav.js';
@@ -269,6 +270,10 @@ const paintZone = (p) => {
   }
   controller.setBg('send', p.bg);
   controller.setDim('send', p.dim === true);
+  // FR-style needs-attention glow while a probe scan is proposed (renderSpy
+  // sets `pulse` on exactly those paints); any other paint clears it, so the
+  // pulse dies the moment the plan empties or a send takes over the zone.
+  setFabModuleAlert('spy', p.pulse === true);
 };
 
 /**
@@ -495,6 +500,9 @@ export const installSendSpy = () => {
 
   /** Detach the button. Safe unmounted. @returns {void} */
   const removeButton = () => {
+    // The alert flag lives in the FAB shell (survives unregistration) — clear
+    // it so a re-mount never inherits a stale pulse.
+    setFabModuleAlert('spy', false);
     controller?.dispose();
     controller = null;
   };

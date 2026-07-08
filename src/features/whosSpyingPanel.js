@@ -60,8 +60,10 @@ const MAX_ROWS = 8;
 const POLL_MS = 60000;
 
 const CSS = [
-  `#${PANEL_ID}{--sp-indigo:#6355e6;--sp-danger:#e2726a;margin:0 0 10px;`,
-  'background:#0d151d;border:1px solid #26323f;border-left:3px solid var(--sp-indigo);',
+  // --sp-accent = the Spyglass gold (sendSpy's BG_SPY_IDLE) — one spy identity
+  // across the FAB, this panel and the dashboard tab it deep-links to.
+  `#${PANEL_ID}{--sp-accent:#e6c054;--sp-danger:#e2726a;margin:0 0 10px;`,
+  'background:#0d151d;border:1px solid #26323f;border-left:3px solid var(--sp-accent);',
   'border-radius:6px;overflow:hidden;color:#93a3b3;',
   'font-family:Verdana,"Segoe UI",Tahoma,sans-serif;}',
   `#${PANEL_ID} .oge-sb-hdr{display:flex;align-items:center;gap:8px;padding:8px 12px;`,
@@ -92,7 +94,7 @@ const CSS = [
   `#${PANEL_ID} .oge-sb-acts{display:flex;gap:6px;justify-content:flex-end;}`,
   `#${PANEL_ID} .oge-sb-btn{font:11px Verdana,sans-serif;color:#93a3b3;cursor:pointer;`,
   'background:#16212c;border:1px solid #26323f;border-radius:5px;padding:3px 9px;white-space:nowrap;}',
-  `#${PANEL_ID} .oge-sb-btn:hover{border-color:var(--sp-indigo);color:#d8e6f4;background:#1a2534;}`,
+  `#${PANEL_ID} .oge-sb-btn:hover{border-color:var(--sp-accent);color:#d8e6f4;background:#1a2534;}`,
   `#${PANEL_ID} .oge-sb-foot{padding:5px 12px;border-top:1px solid #1b2732;font-size:10px;color:#5f6b76;}`,
   `#${PANEL_ID} .oge-sb-foot .k{color:var(--sp-danger);}`,
 ].join('');

@@ -565,13 +565,21 @@ export const installSendExpedition = () => {
   fdCache.bootstrap();
 
   // Settings-driven mount/teardown + live resize — the wiring shared by
-  // every send* FAB feature.
+  // every send* FAB feature. The mount is additionally gated on the
+  // per-module `showExpeditionButton` toggle (settings ▸ Expeditions); the
+  // lifecycle helper only watches fabMode/fabBtnSize, so that flag's live
+  // flips reconcile in `onSettingsChange`.
   const unsubSettings = installFabSettingsLifecycle({
     settingsStore,
-    mount: createButton,
+    mount: () => { if (settingsStore.get().showExpeditionButton) createButton(); },
     removeButton,
     updateButtonSize,
     isInstalled: () => installed !== null,
+    onSettingsChange: () => {
+      const s = settingsStore.get();
+      if (!s.showExpeditionButton && controller) removeButton();
+      else if (s.showExpeditionButton && !controller && s.fabMode && document.body) createButton();
+    },
   });
 
   // Keep the snapshot fresh across checkTarget XHRs and subsequent

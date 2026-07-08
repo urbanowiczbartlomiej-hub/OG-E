@@ -68,6 +68,7 @@ export const SETTINGS_PREFIX = 'oge_';
  *                                   modules: Exp / Col / Lifeforms / Daily Run) visible
  *   fabBtnSize              320   — unified floating button size in px
  *   expeditionBadges        true  — ekspedycje dot on planet list
+ *   showExpeditionButton    true  — Expeditions module visible on the FAB
  *   autoRedirectExpedition  true  — redirect to next planet after expedition
  *   maxExpeditionsPerPlanet         1     — simultaneous expeditions per planet
  *
@@ -98,6 +99,7 @@ export const SETTINGS_PREFIX = 'oge_';
  * @property {boolean} fabMode
  * @property {number}  fabBtnSize
  * @property {boolean} expeditionBadges
+ * @property {boolean} showExpeditionButton
  * @property {boolean} autoRedirectExpedition
  * @property {number}  maxExpeditionsPerPlanet
  * @property {boolean} cloudSync
@@ -149,6 +151,7 @@ export const SETTINGS_SCHEMA = {
   fabMode:                { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'fabMode' },
   fabBtnSize:             { type: 'int',    default: 320,   key: SETTINGS_PREFIX + 'fabBtnSize' },
   expeditionBadges:       { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'expeditionBadges' },
+  showExpeditionButton:   { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'showExpeditionButton' },
   autoRedirectExpedition: { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'autoRedirectExpedition' },
   maxExpeditionsPerPlanet:        { type: 'int',    default: 1,     key: SETTINGS_PREFIX + 'maxExpeditionsPerPlanet' },
   cloudSync:              { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'cloudSync' },

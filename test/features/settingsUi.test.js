@@ -265,38 +265,41 @@ describe('installSettingsUi — range', () => {
 });
 
 // ──────────────────────────────────────────────────────────────────
-// Static signpost rows + the Display section's fleet-status checkbox.
+// Removed signpost sections + the Display section's fleet-status checkbox.
 //
-// The editable sync/alarmClock controls (master switches, the ntfy token —
-// the only `type:'password'` field — the account-status / derived-topic
-// rows, the "Sync now"/"Check now" inline buttons, and the Sync status
-// readout) all MOVED to the OG-E Dashboard. The AGR panel keeps only a
-// static signpost note per section; their dashboard equivalents are tested
+// The editable sync/alarmClock controls moved to the OG-E Dashboard long ago;
+// the leftover static "it moved" notes were then dropped outright (the
+// dashboard is self-describing — UX must explain itself, not via a paragraph
+// in the AGR panel). The panel now renders ONLY the three live sections:
+// floating button, expeditions, display. The dashboard equivalents are tested
 // separately under test/features/dashboard/.
 // ──────────────────────────────────────────────────────────────────
 
-describe('installSettingsUi — static signpost rows', () => {
-  it('renders the multi-device-sync signpost note', async () => {
+describe('installSettingsUi — removed signpost sections', () => {
+  it('renders NO sync / alarm-clock signpost notes', async () => {
     setupAGR();
     installSettingsUi();
     await flushWaitFor();
 
-    const span = document.getElementById(INPUT_PREFIX + 'syncMovedNote');
-    expect(span).not.toBeNull();
-    expect(span?.textContent).toContain('OG-E Dashboard');
-    // The note is purely informational — no inline button.
-    expect(document.getElementById(INPUT_PREFIX + 'syncMovedNote-btn')).toBeNull();
+    expect(document.getElementById(INPUT_PREFIX + 'syncMovedNote')).toBeNull();
+    expect(document.getElementById(INPUT_PREFIX + 'alarmClockMovedNote')).toBeNull();
   });
 
-  it('renders the alarmClock signpost note', async () => {
+  it('renders the Expeditions FAB-module toggle ABOVE the auto-redirect option', async () => {
     setupAGR();
     installSettingsUi();
     await flushWaitFor();
 
-    const span = document.getElementById(INPUT_PREFIX + 'alarmClockMovedNote');
-    expect(span).not.toBeNull();
-    expect(span?.textContent).toContain('OG-E Dashboard');
-    expect(document.getElementById(INPUT_PREFIX + 'alarmClockMovedNote-btn')).toBeNull();
+    const show = /** @type {HTMLInputElement | null} */ (
+      document.getElementById(INPUT_PREFIX + 'showExpeditionButton')
+    );
+    const redirect = document.getElementById(INPUT_PREFIX + 'autoRedirectExpedition');
+    expect(show).not.toBeNull();
+    expect(show?.type).toBe('checkbox');
+    expect(redirect).not.toBeNull();
+    // Placement is part of the spec: the module toggle leads the section.
+    expect(!!(show && redirect
+      && (show.compareDocumentPosition(redirect) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
   });
 
   it('renders the Display section\'s fleet-status-markers checkbox', async () => {

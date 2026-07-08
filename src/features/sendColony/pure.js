@@ -413,9 +413,12 @@ export const countLocalBlocksFreeInApi = (index, targets, scans, registry, now, 
 /**
  * Single-zone paint instruction. `subtext` flips the caller to a two-line
  * render (big primary on top, small caption below). `dim: true` renders the
- * zone at reduced opacity (disabled / waiting hint).
+ * zone at reduced opacity (disabled / waiting hint). `pulse: true` asks the
+ * FAB shell for the gentle needs-attention glow (setFabModuleAlert) — the
+ * pure renderer decides WHEN, the orchestrator only relays (sendSpy pulses
+ * while a probe scan is actually proposed).
  *
- * @typedef {{ text: string, bg: string, subtext?: string, hint?: string, dim?: boolean }} Paint
+ * @typedef {{ text: string, bg: string, subtext?: string, hint?: string, dim?: boolean, pulse?: boolean }} Paint
  */
 
 /**

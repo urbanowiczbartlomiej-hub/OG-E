@@ -5,8 +5,9 @@
 // `buildTargetList`, re-sorts by the active column via `sortTargetList`, and
 // paints a ranked table. Columns split the hidden-fleet estimate into its parts
 // (defense / visible fleet / hidden), plus coverage and scan-freshness readouts.
-// A "scan" chip drops a player onto the in-game scan FAB's watch-list; a ↻
-// re-scan flag (player- or planet-level) marks data that may have changed.
+// A "watch" chip drops a player onto the in-game scan FAB's watch-list; the ↻
+// whole-player re-scan flag lives in the dossier's "Watch via" row (next to
+// the probes toggle it belongs to — it only shows while probes are on).
 // Expanding a row lists the player's planets with per-body scan status, defense,
 // and visible fleet. Read-only and self-contained (inline styles, dark palette).
 
@@ -148,16 +149,16 @@ function headCell(text, align, opts = {}) {
 }
 
 /**
- * Build the "scan" chip cell (replaces the old ⭐). Outline `+ scan` = not on
- * the scan list; filled `✓ scan` = on the in-game scan FAB's watch-list. A ↻
- * appears for watched players to flag a whole-player re-scan.
+ * Build the "watch" chip cell (replaces the old ⭐). Outline `+ watch` = not on
+ * the scan list; filled `✓ watch` = on the in-game scan FAB's watch-list. (The
+ * ↻ whole-player re-scan moved to the dossier's Watch-via row, beside the
+ * probes toggle it flags for.)
  * @param {string} id
  * @param {boolean} watched
  * @param {(id: string) => void} [onToggle]
- * @param {(key: string) => void} [onRescan]
  * @returns {HTMLTableCellElement}
  */
-function chipCell(id, watched, onToggle, onRescan) {
+function chipCell(id, watched, onToggle) {
   const td = cell('');
   const chip = document.createElement('span');
   chip.textContent = watched ? '✓ watch' : '+ watch';
@@ -178,14 +179,6 @@ function chipCell(id, watched, onToggle, onRescan) {
   // Stop the click bubbling to the row (whose click toggles the dossier).
   if (onToggle) chip.addEventListener('click', (e) => { e.stopPropagation(); onToggle(id); });
   td.appendChild(chip);
-  if (watched && onRescan) {
-    const rescan = document.createElement('span');
-    rescan.textContent = '↻';
-    rescan.style.cssText = 'color:#6b97c4;cursor:pointer;margin-left:6px;user-select:none;';
-    rescan.title = 'Flag this player for re-scan (data may have changed)';
-    rescan.addEventListener('click', (e) => { e.stopPropagation(); onRescan(id); });
-    td.appendChild(rescan);
-  }
   return td;
 }
 
@@ -450,7 +443,8 @@ function playerCell(c) {
  * @param {(key: TargetSortKey) => void} [args.onSort]
  * @param {Set<string>} [args.watchedIds]
  * @param {(id: string) => void} [args.onToggleWatch]
- * @param {(key: string) => void} [args.onRescan]
+ * @param {(key: string) => void} [args.onRescan]  Flag a whole player for
+ *   re-scan — rendered by the dossier's Watch-via row (probes-on only).
  * @param {Record<string, number>} [args.rescan]
  * @param {boolean} [args.watchedOnly]
  * @param {Array<{coords: string, player?: number}>} [args.universePlanets]
@@ -761,7 +755,7 @@ export function renderTargets({
       tr.classList.toggle('dossier-open', nowOpen);
       if (onToggleExpand) onToggleExpand(c.id);
     });
-    tr.appendChild(chipCell(c.id, !!(watchedIds && watchedIds.has(c.id)), onToggleWatch, onRescan));
+    tr.appendChild(chipCell(c.id, !!(watchedIds && watchedIds.has(c.id)), onToggleWatch));
     const pcell = playerCell(c);
     // Deep-link pin marker — says WHY this row sits after the capped list
     // instead of in rank order.

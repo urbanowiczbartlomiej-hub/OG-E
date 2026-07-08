@@ -4,6 +4,51 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.40.1] — 2026-07-08
+
+### Added
+
+- **Server map: "🛡 Protected" toggle.** The Occupancy view can now hide
+  admin/vacation/banned slots, so farms and threats pop instead of drowning in
+  protected clutter. The legend follows the toggle.
+- **Hide individual FAB buttons.** The Colonize module can be switched off in
+  the dashboard's Big Colony Hunting ⚙ settings, and the Expeditions module in
+  Settings ▸ Expeditions — each hides that button (and its orbit orb) without
+  touching the rest of the floating button.
+- **The Spy button now pulses while there is something to scan** — the same
+  gentle attention glow the Fleet reminder uses. It stops the moment the scan
+  plan empties or a send takes over the button.
+
+### Changed
+
+- **The Spy button went gold.** One pale-gold family across idle / loading /
+  Look / armed / done — the eye node, rim and glow finally agree in every
+  state — with the shared FAB red for errors. The champagne shade is
+  deliberately lighter than the Fleet reminder's orange so the two buttons
+  never read as siblings. The messages-page "Who's spying on you" panel wears
+  the same gold accent.
+- **Spyglass tab decluttered.** The header freshness chips are gone; the
+  "planets to scan" button and its ranked preview are gone too — the scan
+  settings now sit as an always-visible footer bar of the Watchlist card, with
+  labels that explain themselves: "Probes per scan" (the number of espionage
+  probes sent), "Re-scan probes after N h", "Re-look galaxy after N h".
+- **Watchlist and "Who's spying you" cap their height** and scroll inside, so
+  a long list never pushes the Players table below the fold. "Who's spying
+  you" now shows the last 30 days.
+- **The whole-player re-scan ↻ moved into the dossier's "Watch via" row**,
+  right next to the probes toggle it flags for — and shows only while probes
+  are on.
+- The ⚙ Filters toggle shows a pressed state while its panel is open; the
+  map's system card says "Free positions:" instead of a bare "Free:"; the two
+  "moved to the dashboard" signpost paragraphs left the in-game settings panel.
+
+### Fixed
+
+- **No more colonization proposals in galaxies that don't exist.** Stale
+  out-of-grid leftovers in the stored scan data (e.g. galaxies 8–9 on a
+  7-galaxy server) are now ignored — the server's own API data defines the
+  real grid, so phantom "fully free" galaxies stop topping the rankings.
+
 ## [1.40.0] — 2026-07-08
 
 ### Added

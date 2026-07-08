@@ -299,6 +299,41 @@ describe('renderSpy — probe pre-flight (Etap G)', () => {
   });
 });
 
+// The FAB's needs-attention glow: `pulse` rides EXACTLY the probe-proposal
+// paints ("there is something to scan"), so the orchestrator can relay it
+// blindly (paintZone → setFabModuleAlert) and every other state clears it.
+describe('renderSpy — pulse contract', () => {
+  /** @type {import('../../../src/features/sendSpy/pure.js').SpyContext} */
+  const probeCtx = {
+    proposal: 'probe',
+    candidate: { galaxy: 1, system: 2, position: 3, playerId: '42' },
+    look: null,
+    remaining: 4,
+    hasWatched: true,
+  };
+
+  it('probe proposal pulses (plain, strike, and probe-shortage variants)', () => {
+    expect(renderSpy(probeCtx).pulse).toBe(true);
+    expect(renderSpy({ ...probeCtx, strike: true }).pulse).toBe(true);
+    expect(renderSpy(probeCtx, { have: 5, need: 20 }).pulse).toBe(true);
+  });
+
+  it('non-proposal states never pulse (no targets, done, look, no-probes error)', () => {
+    expect(renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasWatched: false }).pulse)
+      .toBeUndefined();
+    expect(renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasWatched: true }).pulse)
+      .toBeUndefined();
+    expect(renderSpy({
+      proposal: 'look',
+      candidate: null,
+      look: { galaxy: 2, system: 40, bodies: 3 },
+      remaining: 3,
+      hasWatched: true,
+    }).pulse).toBeUndefined();
+    expect(renderSpy(probeCtx, { have: 0, need: 20 }).pulse).toBeUndefined();
+  });
+});
+
 describe('deriveSpy — priority ranking (Etap G)', () => {
   it('proposes the highest-danger watched player\'s planet first', () => {
     const ctx = deriveSpy(
