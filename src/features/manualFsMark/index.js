@@ -27,7 +27,7 @@
 
 import { GAME } from '../../lib/gameDom.js';
 import { denseCoords, bodyKey as toBodyKey } from '../../domain/bodies.js';
-import { injectStyle } from '../../lib/dom.js';
+import { injectStyle, parseSvg } from '../../lib/dom.js';
 import { debounce } from '../../lib/debounce.js';
 import { MANUAL_FS_CHANGED_EVENT } from '../../lib/ogeEvents.js';
 import { hasManualLandedFs, toggleManualLandedFs } from '../../state/manualLandedFs.js';
@@ -151,7 +151,13 @@ const paintChip = (chip, bodyKey) => {
 const buildChip = () => {
   const chip = document.createElement('div');
   chip.id = CHIP_ID;
-  chip.innerHTML = `<span class="ico">${GLYPH_SVG}</span><span class="lbl">Set FR</span>`;
+  const ico = document.createElement('span');
+  ico.className = 'ico';
+  ico.appendChild(parseSvg(GLYPH_SVG));
+  const lbl = document.createElement('span');
+  lbl.className = 'lbl';
+  lbl.textContent = 'Set FR';
+  chip.append(ico, lbl);
   chip.addEventListener('click', (e) => {
     // In the #civil grid our tile sits among the game's ship cells; keep the
     // click from bubbling into OGame's delegated ship-select handler.
