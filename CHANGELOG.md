@@ -4,6 +4,62 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.40.0] — 2026-07-08
+
+### Added
+
+- **Your watch list now follows you across devices.** With cloud sync on, the
+  starred players, relationship tags, probe/galaxy watch toggles, map mutes,
+  the planets/moons filter and the re-scan cadence ride the same private gist
+  as the rest of OG-E's sync — star a player on the desktop and they're on the
+  laptop. Un-starring propagates too (no resurrection by the other device);
+  the most recent edit wins; the per-device knobs (probe count, one-off
+  re-scan flags) deliberately stay local.
+- **Export JSON grew from 2 to 13 datasets.** The dashboard backup used to
+  carry colony history and galaxy scans only. It now also includes the watch
+  list, spy reports, proximity alerts, the galaxy-activity history (the
+  presence heatmap's memory — the one thing a new machine can never
+  re-observe), watched players' profiles, alliance classes, your own planet
+  list, colonization decisions and the three synced configs. Old export files
+  still import, and the import summary now lists exactly what each dataset
+  gained. Tokens and sync internals never enter the file — an export is safe
+  to hand to another person.
+- **Watch passively from the galaxy view.** Browsing a system records the
+  activity markers of every watched body in it — no probes, no espionage-log
+  entry, nothing the target can ever see. The spy FAB now proposes the best
+  next intel action of BOTH kinds: probe a body, or "Look" — one tap opens the
+  single system whose watched bodies most need a sighting (one visit covers
+  them all). Each dossier has a "Watch via" control to mute galaxy proposals
+  or probes per player, independently.
+- **Presence heatmap.** A dossier now distills your own galaxy looks into an
+  hour-by-hour picture of when that player tends to be around — with
+  confidence drawn as its own axis (an hour you never observed reads as
+  unknown, never as offline) and the best-covered quiet window framed. It
+  measures observed activity, not "online", and the wording keeps that honest.
+- **Fleet-landing "strike" flag.** When exactly one of a watched player's
+  bodies lights up, it is a MOON, and every other body you have recently seen
+  is quiet, OG-E flags a likely fleet-save landing: a 🎯 marker in the
+  dashboard and a hot "Strike" spy FAB that jumps that moon to the top of the
+  scan plan. Always a candidate to confirm with one probe — never an
+  auto-action.
+- **Honour ranks in the Galaxy Viewer.** Occupant bands now read the honour
+  rank straight from the API markers, and a "Normal" band sits between the
+  outlaw and honoured tiers so ordinary players stop inflating either count.
+
+### Changed
+
+- **One re-scan cadence.** The hot/warm/cold danger tiers collapsed into a
+  single "re-scan after N hours" knob plus a galaxy-sighting cadence — the
+  same behaviour with two numbers instead of four.
+- **The activity column tells the truth.** A body's "last active" now derives
+  from positive markers' implied interaction time — a quiet look reads as
+  "inactive ≥1 h at that look", never as fresh activity — and markers caused
+  by your own probes are discounted instead of being counted as the target's
+  activity.
+- **The player cache no longer grows forever.** Player records not seen in any
+  galaxy view for 60 days are swept on load; watched players are exempt, so
+  dossiers keep their names and ranks indefinitely.
+
 ## [1.39.1] — 2026-07-06
 
 ### Added

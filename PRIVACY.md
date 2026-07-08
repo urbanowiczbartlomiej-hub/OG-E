@@ -23,8 +23,9 @@ Sync tab:
 
 - OG-E reads from / writes to a single private gist that **you own**.
   Payload is your colony history, colonization decisions, per-universe
-  preferences and schedules, Daily Run routes, and your manual fleet-save
-  marks — gzip-compressed.
+  preferences and schedules, Daily Run routes, your manual fleet-save
+  marks, and your Spyglass watch-list decisions (starred players,
+  relationship tags, scan preferences) — gzip-compressed.
 - Requests go to `https://api.github.com` only, authenticated with
   your PAT. The PAT is stored in `chrome.storage.local` (extension-private,
   not reachable by any web page) so a single entry applies to all your
