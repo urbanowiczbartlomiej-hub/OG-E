@@ -20,37 +20,9 @@ import {
 import { recordReport } from '../../state/targets.js';
 import { recordProximityReport } from '../../state/proximityReports.js';
 import { GAME } from '../../lib/gameDom.js';
+import { bagFromElement } from '../../lib/rawMessageBag.js';
 
 /* global MutationObserver, document */
-
-/**
- * `data-raw-defenseValue` → dataset key `rawDefenseValue`. Strip the leading
- * `raw` and lowercase the next char to recover the attribute name the domain
- * normaliser expects (`defenseValue`).
- * @param {string} datasetKey
- * @returns {string}
- */
-function stripRawPrefix(datasetKey) {
-  if (!datasetKey.startsWith('raw') || datasetKey.length < 4) return datasetKey;
-  const rest = datasetKey.slice(3);
-  return rest.charAt(0).toLowerCase() + rest.slice(1);
-}
-
-/**
- * Read a rawMessageData element's `data-raw-*` attributes into a flat bag.
- * @param {HTMLElement} el
- * @returns {Record<string, string>}
- */
-function bagFromElement(el) {
-  /** @type {Record<string, string>} */
-  const bag = {};
-  const ds = el.dataset;
-  for (const k of Object.keys(ds)) {
-    const v = ds[k];
-    if (typeof v === 'string') bag[stripRawPrefix(k)] = v;
-  }
-  return bag;
-}
 
 /** Elements already processed, so repeated mutations don't re-ingest them. */
 let seen = new WeakSet();

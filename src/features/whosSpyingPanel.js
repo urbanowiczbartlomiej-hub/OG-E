@@ -23,15 +23,28 @@
 // first, same-system (RIP-range) probers flagged 💀. Purely presentational: no new
 // data is captured here.
 //
-// # Anchor + lifecycle
+// # Anchor + lifecycle (two-tier)
 //
-// The single spy-tab signal AND insertion anchor is AGR's `#agoSpyReportOverview`
-// (AGR injects it only in the spy-report tab). A `MutationObserver` on <body>
-// keeps our table mounted immediately before it — surviving OGame's AJAX sub-tab
-// re-renders (each switch rebuilds the messages DOM). When the anchor is absent
-// (other sub-tab) or there are no probers, the table is removed (no clutter when
-// there's nothing to show). A `proximityReportsStore` subscription repaints on a
-// new alert; a slow clock poll refreshes the relative ages. A cheap render
+// The insertion slot is resolved per refresh, best-first:
+//
+//   1. Above AGR's `#agoSpyReportOverview` (the 1.39.0 placement) — AGR builds
+//      it only in the spy-report tab, so it doubles as the tab signal. Newer
+//      AGR builds STOPPED injecting it (observed in the wild 2026-07, confirmed
+//      by a live console check), which used to make this panel silently vanish.
+//   2. GAME-owned fallback: the top of `.messagesHolder` — the game's own
+//      message-list container — while the espionage sub-tab is the active one
+//      (`.innerTabItem.active[data-subtab-id="20"]`; the numeric sub-tab id is
+//      a game constant, so the check is locale-independent). Verified against
+//      a live 2026-07 messages-page dump. Works even when the tab holds no
+//      messages at all.
+//
+// A `MutationObserver` on <body> keeps the table mounted at the slot —
+// surviving OGame's AJAX sub-tab re-renders (each switch rebuilds the messages
+// DOM; a holder re-render also drops our panel, and the observer simply
+// re-inserts it). When no slot resolves (other sub-tab / not the messages
+// page) or there are no probers, the table is removed (no clutter when
+// there's nothing to show). A `proximityReportsStore` subscription repaints on
+// a new alert; a slow clock poll refreshes the relative ages. A cheap render
 // signature skips the rebuild when nothing changed, so the frequent <body>
 // mutations OGame emits stay free.
 //
@@ -44,12 +57,42 @@ import { clock } from '../lib/clock.js';
 import { parseUniverseId } from '../lib/universeId.js';
 
 /**
- * AGR's spy-report overview on the messages page — present ONLY in the
- * spy-report ("Szpieguj") sub-tab. Doubles as our spy-tab signal and the node
- * we insert our table before. AGR-owned (OG-E hard-depends on AGR), single
- * feature ⇒ kept local rather than hoisted to gameDom.js.
+ * AGR's spy-report overview on the messages page — the PREFERRED slot when
+ * present (see the header: newer AGR builds no longer inject it, hence the
+ * game-owned fallback below). AGR-owned, single feature ⇒ kept local rather
+ * than hoisted to gameDom.js.
  */
 const SPY_OVERVIEW_SEL = '#agoSpyReportOverview';
+/**
+ * The game's ACTIVE espionage sub-tab header on the messages page. Game-owned
+ * DOM contract (single feature ⇒ local, per the gameDom.js rule): sub-tab ids
+ * are numeric game constants — 20 espionage, 21 combat, 22 expeditions,
+ * 23 unions/transport, 24 other — so this never depends on the locale label.
+ */
+const SPY_SUBTAB_ACTIVE_SEL = '.innerTabItem.active[data-subtab-id="20"]';
+/** The game's message-list container (direct parent of every `.msg`). */
+const MESSAGES_HOLDER_SEL = '.messagesHolder';
+
+/**
+ * Resolve where the panel mounts: insert into `parent` before `before`
+ * (`before: null` = append — an empty holder). `null` when the spy tab isn't
+ * open (as far as we can tell). Tier 1: right above AGR's overview. Tier 2:
+ * the top of the game's own message list while the espionage sub-tab is
+ * active. `before` never resolves to the panel itself, so the caller's
+ * "already glued" check stays a cheap identity comparison.
+ * @returns {{ parent: Element, before: Element | null } | null}
+ */
+const resolveSlot = () => {
+  const agr = document.querySelector(SPY_OVERVIEW_SEL);
+  if (agr && agr.parentElement) return { parent: agr.parentElement, before: agr };
+
+  if (!document.querySelector(SPY_SUBTAB_ACTIVE_SEL)) return null;
+  const holder = document.querySelector(MESSAGES_HOLDER_SEL);
+  if (!holder) return null;
+  let first = holder.firstElementChild;
+  if (first && first.id === PANEL_ID) first = first.nextElementSibling;
+  return { parent: holder, before: first };
+};
 /** Our table wrapper id (OG-E's own surface). */
 const PANEL_ID = 'oge-spyback';
 /** Singleton style element id. */
@@ -331,10 +374,16 @@ export const installWhosSpyingPanel = () => {
    * @returns {void}
    */
   const refresh = ({ force = false } = {}) => {
-    const anchor = document.querySelector(SPY_OVERVIEW_SEL);
     const reports = proximityReportsStore.get();
     let panel = document.getElementById(PANEL_ID);
-    if (!anchor || !anchor.parentNode || reports.length === 0) {
+    // Empty log first — a cheap store read before any DOM queries.
+    if (reports.length === 0) {
+      if (panel) panel.remove();
+      lastSig = '';
+      return;
+    }
+    const slot = resolveSlot();
+    if (!slot) {
       if (panel) panel.remove();
       lastSig = '';
       return;
@@ -344,9 +393,11 @@ export const installWhosSpyingPanel = () => {
       panel = buildShell();
       lastSig = '';
     }
-    // Keep it glued directly above AGR's overview (AGR may have re-injected it).
-    if (panel.parentNode !== anchor.parentNode || panel.nextElementSibling !== anchor) {
-      anchor.parentNode.insertBefore(panel, anchor);
+    // Keep it glued in the slot — AGR may have re-injected its overview, and a
+    // holder re-render both drops our panel and mints a new first message (the
+    // observer lands here again either way).
+    if (panel.parentNode !== slot.parent || panel.nextElementSibling !== slot.before) {
+      slot.parent.insertBefore(panel, slot.before);
     }
     const shown = digest.players.slice(0, MAX_ROWS);
     const sig = `${digest.playerCount}|${digest.totalReports}|${digest.sameSystemCount}|`

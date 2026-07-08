@@ -4,6 +4,17 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.40.2] — 2026-07-08
+
+### Fixed
+
+- **The "Who's spying on you" panel is back on the messages page.** Newer
+  AntiGame builds stopped injecting the overview element the panel anchored
+  to, so it silently vanished. The panel now mounts on the game's own message
+  list whenever the espionage tab is open — AntiGame is no longer needed for
+  it to appear (when AntiGame's overview IS present, the panel keeps its old
+  spot right above it). It also shows up on an empty espionage tab now.
+
 ## [1.40.1] — 2026-07-08
 
 ### Added
