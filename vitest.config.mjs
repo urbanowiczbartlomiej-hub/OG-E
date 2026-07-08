@@ -13,6 +13,10 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     setupFiles: ['./test/setup.js'],
+    // Stale agent worktrees under .claude/worktrees carry a full repo copy —
+    // without this exclude vitest discovers their test/ tree too and every
+    // failure shows up twice (and a red one blocks the release gate).
+    exclude: ['**/node_modules/**', '**/dist/**', '.claude/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text-summary', 'html'],

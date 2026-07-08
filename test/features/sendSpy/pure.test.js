@@ -22,7 +22,11 @@ const NOW = 1_700_000_000_000;
 const tsSecAgo = (ageMs) => Math.floor((NOW - ageMs) / 1000);
 
 /**
- * Build a SpyEnv with sane defaults; override per-test.
+ * Build a SpyEnv with sane defaults; override per-test. The galaxy-LOOK plan
+ * is muted by default (`galaxyMode: 'off'` for every fixture player) so the
+ * probe-plan tests stay deterministic — the look plan proposes every
+ * never-sighted watched body, which without rings is ALL of them. The
+ * dedicated look-branch tests below re-enable it explicitly.
  * @param {Partial<import('../../../src/features/sendSpy/pure.js').SpyEnv>} [over]
  * @returns {import('../../../src/features/sendSpy/pure.js').SpyEnv}
  */
@@ -32,6 +36,7 @@ function env(over = {}) {
     universePlanets: [],
     spiedByPlayer: {},
     nowMs: NOW,
+    galaxyMode: { 42: 'off', 10: 'off', 80: 'off' },
     ...over,
   };
 }
@@ -39,7 +44,9 @@ function env(over = {}) {
 describe('deriveSpy', () => {
   it('no watched players → null candidate, 0 remaining, hasWatched false', () => {
     const ctx = deriveSpy(env());
-    expect(ctx).toEqual({ candidate: null, remaining: 0, hasWatched: false });
+    expect(ctx).toEqual({
+      proposal: null, candidate: null, look: null, remaining: 0, hasWatched: false,
+    });
   });
 
   it('watched player with un-spied planets → candidate + remaining counts ALL needing-scan', () => {
@@ -144,6 +151,80 @@ describe('deriveSpy', () => {
     );
     expect(ctx.candidate).toBeNull();
     expect(ctx.remaining).toBe(0);
+  });
+});
+
+describe('deriveSpy — galaxy-look branch', () => {
+  it('galaxy watch on + never sighted → look proposal covering the whole system', () => {
+    const ctx = deriveSpy(
+      env({
+        players: ['42'],
+        universePlanets: [
+          { coords: '1:2:3', player: 42 },
+          { coords: '1:2:8', player: 42 },
+        ],
+        // Probe plan satisfied (fresh reports) — only the look plan remains.
+        spiedByPlayer: {
+          42: { '1:2:3': tsSecAgo(60_000), '1:2:8': tsSecAgo(60_000) },
+        },
+        galaxyMode: {}, // un-mute the look plan (env() mutes it by default)
+      }),
+    );
+    expect(ctx.proposal).toBe('look');
+    expect(ctx.candidate).toBeNull();
+    // ONE system visit covers BOTH watched bodies.
+    expect(ctx.look).toMatchObject({ galaxy: 1, system: 2, bodies: 2 });
+    expect(ctx.remaining).toBe(1);
+  });
+
+  it('a fresh sighting (rings) satisfies the look plan → nothing proposed', () => {
+    const ctx = deriveSpy(
+      env({
+        players: ['42'],
+        universePlanets: [
+          { coords: '1:2:3', player: 42 },
+          { coords: '1:2:8', player: 42 },
+        ],
+        spiedByPlayer: {
+          42: { '1:2:3': tsSecAgo(60_000), '1:2:8': tsSecAgo(60_000) },
+        },
+        galaxyMode: {},
+        // Both bodies sighted an hour ago (quiet look, m = -1) — well inside
+        // the default 24h galaxy staleness.
+        rings: {
+          42: {
+            '1:2:3:1': [{ t: tsSecAgo(3_600_000), m: -1 }],
+            '1:2:8:1': [{ t: tsSecAgo(3_600_000), m: -1 }],
+          },
+        },
+      }),
+    );
+    expect(ctx.proposal).toBeNull();
+    expect(ctx.look).toBeNull();
+    expect(ctx.remaining).toBe(0);
+  });
+
+  it('a strike coord forces the moon to the top with the strike flag', () => {
+    const ctx = deriveSpy(
+      env({
+        players: ['42', '80'],
+        universePlanets: [
+          { coords: '1:2:3', player: 42, hasMoon: true },
+          { coords: '2:2:2', player: 80 },
+        ],
+        spiedByPlayer: {
+          // The strike moon has a FRESH report — a strike bypasses the
+          // freshness gate (any report predates the landing).
+          42: { '1:2:3': tsSecAgo(60_000) },
+        },
+        dangerByPlayer: { 42: 1, 80: 80 }, // danger alone would rank 80 first
+        strikeCoords: new Set(['1:2:3:3']),
+      }),
+    );
+    expect(ctx.proposal).toBe('probe');
+    expect(ctx.strike).toBe(true);
+    expect(ctx.candidate).toMatchObject({ galaxy: 1, system: 2, position: 3, playerId: '42', bodyType: 3 });
+    expect(ctx.why).toContain('landing');
   });
 });
 

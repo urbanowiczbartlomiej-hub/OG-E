@@ -1,0 +1,135 @@
+// Unit tests for domain/galaxyWatch.js — the passive look plan + the honest
+// activity readout. Two separate questions, tested separately: "should we
+// LOOK again?" keys on the last-LOOK time (any marker), while "when was the
+// body last ACTIVE?" keys on the positive markers' implied interaction time —
+// the fix for the misleading "<1 h" reading a quiet look used to produce.
+//
+// Node env — pure, `nowMs` injected.
+//
+// @ts-check
+
+import { describe, it, expect } from 'vitest';
+import {
+  lastSightSec,
+  bodyActivityReadout,
+  galaxySightStatus,
+  buildGalaxyPlan,
+} from '../../src/domain/galaxyWatch.js';
+
+const NOW = 1_700_000_000_000;
+const STALE_MS = 24 * 3600 * 1000; // the default galaxyHours cadence
+/** @param {number} ms */
+const sec = (ms) => Math.floor(ms / 1000);
+
+describe('lastSightSec', () => {
+  it('is the newest entry time — ANY marker counts as a look', () => {
+    expect(lastSightSec([{ t: 100, m: 0 }, { t: 200, m: -1 }])).toBe(200);
+  });
+
+  it('is 0 for no ring / junk', () => {
+    expect(lastSightSec(undefined)).toBe(0);
+    expect(lastSightSec([])).toBe(0);
+    expect(lastSightSec([{ t: NaN, m: 0 }])).toBe(0);
+  });
+});
+
+describe('galaxySightStatus', () => {
+  it('never sighted → none; recent → fresh; old → stale; ↻ after the look → rescan', () => {
+    const base = { nowMs: NOW, staleMs: STALE_MS };
+    expect(galaxySightStatus({ ...base, lastSightSec: 0 })).toBe('none');
+    expect(galaxySightStatus({ ...base, lastSightSec: sec(NOW - 3600e3) })).toBe('fresh');
+    expect(galaxySightStatus({ ...base, lastSightSec: sec(NOW - STALE_MS - 3600e3) })).toBe('stale');
+    expect(galaxySightStatus({
+      ...base,
+      lastSightSec: sec(NOW - 3600e3),
+      rescanAtMs: NOW - 60e3, // requested AFTER the sighting
+    })).toBe('rescan');
+  });
+});
+
+describe('bodyActivityReadout — the honesty fix', () => {
+  it('quiet-only ring: NO lastActiveSec, a quietSince bound, quietNow', () => {
+    const r = bodyActivityReadout([
+      { t: sec(NOW - 7200e3), m: -1 },
+      { t: sec(NOW - 3600e3), m: -1 },
+    ]);
+    expect(r.lastActiveSec).toBeUndefined(); // never claim "active <1h" off a quiet look
+    expect(r.quietSinceSec).toBe(sec(NOW - 7200e3));
+    expect(r.quietNow).toBe(true);
+    expect(r.looks).toBe(2);
+    expect(r.hits).toBe(0);
+  });
+
+  it('positive markers: lastActive = the newest implied INTERACTION, not the look', () => {
+    const lookT = sec(NOW - 3600e3);
+    // m=30 → the interaction happened ~30 min BEFORE the look.
+    const r = bodyActivityReadout([{ t: lookT, m: 30 }]);
+    expect(r.lastActiveSec).toBe(lookT - 30 * 60);
+    expect(r.hits).toBe(1);
+    expect(r.quietSinceSec).toBeUndefined();
+  });
+
+  it('no ring → an all-quiet zero readout', () => {
+    expect(bodyActivityReadout(undefined)).toEqual({ quietNow: false, looks: 0, hits: 0 });
+  });
+});
+
+describe('buildGalaxyPlan', () => {
+  const universePlanets = [
+    { coords: '1:2:3', player: 42, hasMoon: true },
+    { coords: '1:2:8', player: 42 },
+    { coords: '5:5:5', player: 42 },
+  ];
+
+  it('groups needs-sight bodies by SYSTEM — one navigation covers them all', () => {
+    const { entries } = buildGalaxyPlan({
+      players: ['42'],
+      universePlanets,
+      nowMs: NOW,
+      staleMs: STALE_MS,
+    });
+    // Two systems: 1:2 (planet + moon + second planet = 3 bodies) and 5:5.
+    expect(entries).toHaveLength(2);
+    const sys12 = entries.find((e) => e.label === '1:2');
+    expect(sys12?.bodies).toHaveLength(3);
+    expect(sys12?.worst).toBe('none');
+  });
+
+  it('a fresh sighting satisfies a body; a whole-fresh system drops out', () => {
+    const fresh = [{ t: sec(NOW - 3600e3), m: -1 }];
+    const { entries } = buildGalaxyPlan({
+      players: ['42'],
+      universePlanets,
+      rings: { 42: { '5:5:5:1': fresh } },
+      nowMs: NOW,
+      staleMs: STALE_MS,
+    });
+    expect(entries.map((e) => e.label)).toEqual(['1:2']);
+  });
+
+  it('galaxyMode "off" mutes a player\'s look proposals entirely', () => {
+    const { entries } = buildGalaxyPlan({
+      players: ['42'],
+      universePlanets,
+      galaxyMode: { 42: 'off' },
+      nowMs: NOW,
+      staleMs: STALE_MS,
+    });
+    expect(entries).toHaveLength(0);
+  });
+
+  it('ranks by danger — the dangerous player\'s system comes first', () => {
+    const { entries } = buildGalaxyPlan({
+      players: ['42', '80'],
+      universePlanets: [
+        { coords: '1:2:3', player: 42 },
+        { coords: '7:7:7', player: 80 },
+      ],
+      dangerByPlayer: { 42: 5, 80: 90 },
+      nowMs: NOW,
+      staleMs: STALE_MS,
+    });
+    expect(entries[0].label).toBe('7:7');
+    expect(entries[0].priority).toBeGreaterThan(entries[1].priority);
+  });
+});
