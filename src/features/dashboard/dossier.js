@@ -114,26 +114,32 @@ function verdictBanner(verdict) {
 }
 
 /**
- * 3) DANGER + interval bar. Label line "DANGER n/100" + a horizontal track with
- * the mobileLo..mobileHi band tinted by dangerColor and a mobileMil marker, then
- * a tiny lo ── hi · provenance line. Finally renders the honest lo bound.
+ * 3) DANGER line — "DANGER n/100" followed inline by the ACTIVE apex tells as
+ * compact danger-tinted pills (the terse "why it's apex", right beside the
+ * number). Only fired tells show — no N/6, no missing chips.
  * @param {import('../../domain/dangerScore.js').DangerProfile} profile
  * @returns {HTMLDivElement}
  */
 function dangerBlock(profile) {
   const wrap = document.createElement('div');
-  wrap.style.cssText = 'margin-bottom:10px;';
+  wrap.style.cssText = 'margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;';
 
   const d = Math.round(profile.danger * 100);
   const col = dangerColor(d);
 
-  const label = document.createElement('div');
+  const label = document.createElement('span');
   label.textContent = `DANGER ${d}/100`;
   label.style.cssText = `font-size:12px;font-weight:600;color:${col};`;
   wrap.appendChild(label);
-  // The lo/hi mobile-fleet interval used to render here as a bar + a
-  // "lo ── hi · provenance" line; it duplicated the Fleet column + the reasons
-  // below, so it was dropped for a cleaner block.
+
+  // Active apex tells inline (capability first, then aggression). The lo/hi
+  // mobile-fleet interval that used to render here was dropped long ago (it
+  // duplicated the Fleet column + the reasons below).
+  if (profile.apex) {
+    for (const t of [...profile.apex.capability, ...profile.apex.aggression]) {
+      if (t.fired) wrap.appendChild(apexChip(t.label, col));
+    }
+  }
 
   return wrap;
 }
@@ -153,6 +159,22 @@ function whyList(reasons) {
     ul.appendChild(li);
   }
   return ul;
+}
+
+/**
+ * One active apex tell, rendered as a compact danger-tinted pill inline beside
+ * the DANGER number (see {@link dangerBlock}). Only FIRED tells are shown — the
+ * dossier no longer spells out the N/6 or the missing signals.
+ * @param {string} label  Short keyword (e.g. `res/ship`, `reach`).
+ * @param {string} col    Danger colour (hex #RRGGBB — alpha appended for the tint).
+ * @returns {HTMLSpanElement}
+ */
+function apexChip(label, col) {
+  const c = document.createElement('span');
+  c.textContent = label;
+  c.style.cssText = 'font-size:11px;padding:1px 7px;border-radius:9px;'
+    + `background:${col}24;color:${col};border:0.5px solid ${col}66;`;
+  return c;
 }
 
 /**
@@ -200,8 +222,8 @@ function civilBlock(civ, profile) {
   const demoted = q !== undefined && q < 0.5 && (civ.band === 'elevated' || civ.band === 'fleet-holder');
 
   // One tight line: how many of the player's ships look like combat fleet over
-  // the economy-implied civil baseline, tinted by band. "upper bound" carries the
-  // caveat; the tooltip keeps the full reasoning.
+  // the economy-implied civil baseline, tinted by band. The caveat (upper bound /
+  // contamination) lives only in the tooltip now — the visible line stays lean.
   // Demoted and cheap-swarm are REASSURING verdicts ("not combat") — paint them
   // green like the builder band, not neutral grey (the user reads colour first).
   const bandColor = demoted || civ.band === 'cheap-swarm' ? '#7fd6a8'
@@ -220,10 +242,10 @@ function civilBlock(civ, profile) {
   // combat (the Qbaba case). Otherwise the usual surplus phrasing. Game language:
   // name the ship kinds ("transporters/probes"), never "cheap hulls".
   val.textContent = demoted
-    ? `${compact(civ.ships)} ships, but the fleet is transporters/probes${fleetRps ? ` (≈${compact(fleetRps)} res/ship)` : ''} — defence / logistics, not combat`
+    ? `${compact(civ.ships)} ships, but the fleet is transporters/probes${fleetRps ? ` (≈${compact(fleetRps)} res/ship)` : ''}`
     : civ.band === 'cheap-swarm'
-      ? `${compact(civ.ships)} ships at ≈${compact(civ.resPerShip ?? 0)} res/ship — logistics, not combat · ${bandLabel}`
-      : `~${compact(civ.combatShips)} of ${compact(civ.ships)} ships look combat · ${bandLabel} (upper bound)`;
+      ? `${compact(civ.ships)} ships at ≈${compact(civ.resPerShip ?? 0)} res/ship · ${bandLabel}`
+      : `~${compact(civ.combatShips)} of ${compact(civ.ships)} ships look combat · ${bandLabel}`;
   val.style.color = bandColor;
   line.append(label, val);
   line.title =
@@ -1239,9 +1261,14 @@ export function buildDossier(a) {
   // 3) Danger.
   if (a.profile) judgement.appendChild(dangerBlock(a.profile));
 
-  // 4) WHY reasons.
+  // 4) WHY reasons. The active apex tells now render inline on the DANGER line,
+  // so drop the flat `apex signals N/6` bullet here — the terse tooltips
+  // (cards/targets/map) render `reasons` raw and keep it.
   if (a.profile && a.profile.reasons && a.profile.reasons.length) {
-    judgement.appendChild(whyList(a.profile.reasons));
+    const reasons = a.profile.apex
+      ? a.profile.reasons.filter((r) => !r.startsWith('apex signals'))
+      : a.profile.reasons;
+    if (reasons.length) judgement.appendChild(whyList(reasons));
   }
 
   // 5) Hidden-fleet arithmetic.

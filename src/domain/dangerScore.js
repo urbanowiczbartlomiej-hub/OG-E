@@ -61,6 +61,25 @@ import { isWarriorAlliance } from './allianceClass.js';
  */
 
 /**
+ * One apex tell — a single named signal in the {@link ApexBreakdown} scorecard.
+ * @typedef {object} ApexTell
+ * @property {string} key    Stable id (`ships`|`resPerShip`|`warrior`|`reach`|`kills`|`fsSpot`).
+ * @property {string} label  Short keyword shown in the scorecard chip (UI rule: keywords, not sentences).
+ * @property {boolean} fired Whether this tell's threshold was met.
+ */
+
+/**
+ * Structured apex breakdown — the 6 tells behind {@link DangerProfile.apexSignals},
+ * split into the two model legs so the dossier can render a scorecard that shows
+ * WHICH signals fired (and which are missing) instead of a bare `N/6`. Present
+ * only when the apex bonus fired (≥2 tells incl. ≥1 aggression).
+ * @typedef {object} ApexBreakdown
+ * @property {number} total  Fired-tell count (0..6) — mirrors `apexSignals`.
+ * @property {ApexTell[]} capability  Top ships, res/ship, warrior (aggression-agnostic).
+ * @property {ApexTell[]} aggression  Reach, kills, FS spot (demonstrated aggression).
+ */
+
+/**
  * One player's danger profile. `danger` is the field/strength scalar (×100 for
  * display); everything else explains WHY, so the UI can justify a colour
  * instead of asserting one.
@@ -89,6 +108,9 @@ import { isWarriorAlliance } from './allianceClass.js';
  * @property {number} [apexSignals] 0..6 — how many apex tells fired (top ships,
  *   optimal res/ship, warrior alliance, reach, kills, FS spot). Denominator =
  *   APEX_TELLS_TOTAL.
+ * @property {ApexBreakdown} [apex]  Structured 6-tell breakdown, present only when
+ *   the apex bonus fired (≥2 tells incl. ≥1 aggression). The dossier renders it as
+ *   a scorecard; `apexSignals` stays the scalar the terse tooltips read.
  * @property {string} [allianceId]    Player's alliance id (players.xml), for the
  *   dashboard's "alliance class unknown → open the ranking" deep link.
  * @property {string} [allianceClass] Resolved alliance class slug ('warrior' |
@@ -576,13 +598,35 @@ export const buildDangerProfiles = (input) => {
     // composition, no kills, clustered — even in a warrior alliance) does NOT
     // read apex. apexSignals (0..APEX_TELLS_TOTAL) is the full count for the
     // label/tooltip; the bonus is capped so it can't dominate the headroom.
-    const capabilityTells = (p.shipsPct >= APEX_SHIPS_PCT ? 1 : 0) + (p.q >= APEX_Q ? 1 : 0)
-      + (p.warriorAlliance ? 1 : 0);
-    const aggressionTells = (reachVal >= APEX_REACH ? 1 : 0)
-      + (p.destroyedPct >= APEX_DESTROYED_PCT && p.q >= 0.6 ? 1 : 0)
-      + (p.reach.fsSpot ? 1 : 0);
+    // Each tell is named ONCE and reused for both the count and the structured
+    // breakdown, so the dossier scorecard can never drift from the score.
+    const tShips = p.shipsPct >= APEX_SHIPS_PCT;
+    const tResPerShip = p.q >= APEX_Q;
+    const tWarrior = p.warriorAlliance;
+    const tReach = reachVal >= APEX_REACH;
+    const tKills = p.destroyedPct >= APEX_DESTROYED_PCT && p.q >= 0.6;
+    const tFsSpot = p.reach.fsSpot;
+    const capabilityTells = (tShips ? 1 : 0) + (tResPerShip ? 1 : 0) + (tWarrior ? 1 : 0);
+    const aggressionTells = (tReach ? 1 : 0) + (tKills ? 1 : 0) + (tFsSpot ? 1 : 0);
     const apexSignals = capabilityTells + aggressionTells;
     const apex = apexSignals >= 2 && aggressionTells >= 1 ? Math.min(0.3, 0.1 * (apexSignals - 1)) : 0;
+    // Structured breakdown for the dossier scorecard — built only when the bonus
+    // gate fires (same condition as the `apex signals N/6` reason), so a weak
+    // player never gets an all-empty card. Labels are short keywords (UI rule).
+    /** @type {ApexBreakdown | undefined} */
+    const apexBreakdown = apex > 0 ? {
+      total: apexSignals,
+      capability: [
+        { key: 'ships', label: 'top ships', fired: tShips },
+        { key: 'resPerShip', label: 'res/ship', fired: tResPerShip },
+        { key: 'warrior', label: 'warrior', fired: tWarrior },
+      ],
+      aggression: [
+        { key: 'reach', label: 'reach', fired: tReach },
+        { key: 'kills', label: 'kills', fired: tKills },
+        { key: 'fsSpot', label: 'FS spot', fired: tFsSpot },
+      ],
+    } : undefined;
     // Warrior-class alliance: a small direct lift on top of the tell — the whole
     // alliance opted into combat bonuses, so "a few extra points" even when the
     // apex gate doesn't fire. Scaled by strength so a shell of a fleet in a
@@ -666,6 +710,7 @@ export const buildDangerProfiles = (input) => {
       ...(p.destroyedPts > 0 ? { destroyed: p.destroyedPts } : {}),
       ...(typeof p.rps === 'number' ? { resPerShip: p.rps, combatQuality: p.q } : {}),
       reach: reachVal, apexSignals,
+      ...(apexBreakdown ? { apex: apexBreakdown } : {}),
       ...(p.allianceId ? { allianceId: p.allianceId } : {}),
       ...(p.allianceClass ? { allianceClass: p.allianceClass } : {}),
       label, reasons,
