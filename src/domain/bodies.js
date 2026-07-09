@@ -71,6 +71,63 @@ export const parseKoords = (text) => {
 };
 
 /**
+ * Build a `"g:s:p|m|p"` → body-name index from owned bodies. A planet and its
+ * moon share coords (`type` 3 = moon), so the key carries the body type. Powers
+ * the "show our planet/moon names instead of coordinates" toggles (in-game
+ * Who's-spying panel + the dashboard proximity strip).
+ *
+ * @param {ReadonlyArray<Body>} bodies
+ * @returns {Map<string, string>}
+ */
+export const bodyNameIndex = (bodies) => {
+  const m = new Map();
+  for (const b of bodies || []) {
+    if (b && b.name) m.set(`${b.galaxy}:${b.system}:${b.position}|${b.type === 3 ? 'm' : 'p'}`, b.name);
+  }
+  return m;
+};
+
+/**
+ * Look up our body name for a coord string + moon flag in a
+ * {@link bodyNameIndex}, or `null` when we own no matching body.
+ *
+ * @param {Map<string, string>} index
+ * @param {string} coords
+ * @param {boolean} moon
+ * @returns {string | null}
+ */
+export const bodyNameFor = (index, coords, moon) => {
+  const k = parseKoords(coords);
+  return k ? index.get(`${k.galaxy}:${k.system}:${k.position}|${moon ? 'm' : 'p'}`) ?? null : null;
+};
+
+/**
+ * Coarse distance from an origin coord to our NEAREST owned body, as a short
+ * label + severity class (`'hot'` = same system, `'near'` = ≤1 galaxy / ≤15
+ * systems, `''` = far). Absolute (non-donut) galaxy/system deltas — good enough
+ * for a threat glance; the rare wrap-around edge over-states by the donut width,
+ * which we accept rather than thread universe geometry through a passive view.
+ *
+ * @param {string | null} fromCoords
+ * @param {ReadonlyArray<Body>} bodies
+ * @returns {{ label: string, cls: string } | null}
+ */
+export const nearestBodyDistance = (fromCoords, bodies) => {
+  const from = parseKoords(fromCoords);
+  if (!from || !bodies || !bodies.length) return null;
+  let bg = Infinity;
+  let bs = Infinity;
+  for (const b of bodies) {
+    const dg = Math.abs(b.galaxy - from.galaxy);
+    const ds = Math.abs(b.system - from.system);
+    if (dg < bg || (dg === bg && ds < bs)) { bg = dg; bs = ds; }
+  }
+  if (bg > 0) return { label: `${bg} gal`, cls: bg === 1 ? 'near' : '' };
+  if (bs === 0) return { label: '0 sys', cls: 'hot' };
+  return { label: `${bs} sys`, cls: bs <= 15 ? 'near' : '' };
+};
+
+/**
  * Strip whitespace and brackets from a coord string, yielding a dense
  * `g:s:p` key, e.g. `"[4:467:15]"` → `"4:467:15"`. `''` for nullish input.
  *

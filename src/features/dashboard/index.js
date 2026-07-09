@@ -51,6 +51,7 @@ import { populatePositionFilter, renderColonyChart } from './colony.js';
 import { renderFreeRegions, renderServerMap, selectCandidate, resetFreeSelection, highlightPin, _resetFreeStreakForTest } from './freeStreak.js';
 import { chipValue, setChipValue, wireChips, setChipsEnabled, toggleChipOn, setToggleChip, wireToggleChip } from './chips.js';
 import { digestProximityReports } from '../../domain/proximityDigest.js';
+import { bodyNameIndex, bodyNameFor, nearestBodyDistance } from '../../domain/bodies.js';
 import { renderWatchlistCards } from './cards.js';
 import { computeComposite, computeScoreField, renderPositionsMap, RELATIONSHIP_COLORS } from './mapPrimitives.js';
 import { axisDelta, flightDistance, niszczHours } from '../../domain/geometry.js';
@@ -73,6 +74,7 @@ import { readApiCacheFor, apiCacheKeyFor } from '../../state/apiCache.js';
 import { targetReportsKeyFor } from '../../state/targets.js';
 import { allianceClassKeyFor } from '../../state/allianceClass.js';
 import { proximityReportsKeyFor } from '../../state/proximityReports.js';
+import { bodiesKeyFor } from '../../state/bodies.js';
 import { activityObsKeyFor } from '../../state/activityObs.js';
 import { watchListKeyFor, normalizeWatchList, writeWatchListConfig, DEFAULT_SPY_PROBES, DEFAULT_CADENCE, normalizeCadence } from '../../state/watchList.js';
 import { syncRequestKeyFor } from '../../sync/scheduler.js';
@@ -324,6 +326,13 @@ let allianceClasses = {};
  * @type {import('../../domain/espionageReport.js').ProximityReport[]}
  */
 let proximityReports = [];
+/** Our owned bodies (planets + moons) for the selected universe — powers the
+ *  proximity strip's coords/names toggle + distance lines.
+ *  @type {import('../../domain/bodies.js').Body[]} */
+let ownBodies = [];
+/** Device-local coords↔names toggle for the proximity strip (localStorage). */
+const PROX_NAMES_KEY = 'oge_proxNames';
+let proximityShowNames = safeLS.get(PROX_NAMES_KEY) === '1';
 
 /**
  * Planet count per player from the universe.xml snapshot — the coverage
@@ -1137,6 +1146,7 @@ const loadAll = async () => {
     targetReports = {};
     allianceClasses = {};
     proximityReports = [];
+    ownBodies = [];
     activityObs = {};
     planetCountByPlayer = {};
     dangerProfiles = new Map();
@@ -1144,7 +1154,7 @@ const loadAll = async () => {
     routines = {};
     return;
   }
-  const [h, s, p, op, api, tr, pr, ao, ac] = await Promise.all([
+  const [h, s, p, op, api, tr, pr, ao, ac, bd] = await Promise.all([
     chromeStore.get(historyKeyFor(selectedUniverseId)),
     chromeStore.get(scansKeyFor(selectedUniverseId)),
     chromeStore.get(playersKeyFor(selectedUniverseId)),
@@ -1154,6 +1164,7 @@ const loadAll = async () => {
     chromeStore.get(proximityReportsKeyFor(selectedUniverseId)),
     chromeStore.get(activityObsKeyFor(selectedUniverseId)),
     chromeStore.get(allianceClassKeyFor(selectedUniverseId)),
+    chromeStore.get(bodiesKeyFor(selectedUniverseId)),
   ]);
   history = Array.isArray(h) ? /** @type {ColonyEntry[]} */ (h) : [];
   scans = s && typeof s === 'object' ? /** @type {GalaxyScans} */ (s) : {};
@@ -1211,6 +1222,10 @@ const loadAll = async () => {
   proximityReports = Array.isArray(pr)
     ? /** @type {import('../../domain/espionageReport.js').ProximityReport[]} */ (pr)
     : [];
+  // Our owned bodies for this universe (planet-bar snapshot) — feeds the
+  // proximity strip's coords/names toggle + distance-to-prober lines.
+  const bdBodies = bd && typeof bd === 'object' ? /** @type {any} */ (bd).bodies : null;
+  ownBodies = Array.isArray(bdBodies) ? bdBodies : [];
   // Galaxy-activity rings (F3) — the routine tracker's dense probe-free source.
   activityObs = ao && typeof ao === 'object'
     ? /** @type {import('../../state/activityObs.js').ActivityObsMap} */ (ao)
@@ -1572,8 +1587,22 @@ const proximityBodyEl = (coords, moon) => {
   s.textContent = coords;
   if (moon) {
     s.style.cssText = 'color:#c9a9e8;cursor:help;';
-    s.title = 'This coordinate is the slot’s MOON, not the planet';
+    s.title = 'Moon';
   }
+  return s;
+};
+
+/**
+ * A "Near you" body rendered as our OWN body name (moon keeps the lunar tint;
+ * the raw coords go in the tooltip so nothing is lost).
+ * @param {string} name @param {string} coords @param {boolean} moon
+ * @returns {HTMLElement}
+ */
+const proximityNamedEl = (name, coords, moon) => {
+  const s = document.createElement('span');
+  s.textContent = name;
+  s.style.cssText = `color:${moon ? '#c9a9e8' : '#a9c4de'};cursor:help;`;
+  s.title = moon ? `${coords} moon` : coords;
   return s;
 };
 
@@ -1623,6 +1652,24 @@ const renderProximityStrip = () => {
     return;
   }
 
+  const nameIdx = bodyNameIndex(ownBodies);
+  // Coords/names toggle (device-local): swap the "at <our bodies>" coords for
+  // our planet/moon names. Only when we actually have a body snapshot.
+  if (ownBodies.length) {
+    const tgl = document.createElement('button');
+    tgl.type = 'button';
+    tgl.textContent = proximityShowNames ? 'Names' : 'Coords';
+    tgl.title = 'Coords / names';
+    tgl.style.cssText = 'font-size:11px;border:1px solid #2b3a4d;background:#18222e;color:#9fb4c4;'
+      + 'border-radius:999px;padding:1px 9px;cursor:pointer;margin-bottom:8px;';
+    tgl.addEventListener('click', () => {
+      proximityShowNames = !proximityShowNames;
+      safeLS.set(PROX_NAMES_KEY, proximityShowNames ? '1' : '0');
+      renderProximityStrip();
+    });
+    proximityStripEl.appendChild(tgl);
+  }
+
   /** @param {string} label */
   const seedSearch = (label) => {
     if (!tgtSearch) return;
@@ -1658,6 +1705,17 @@ const renderProximityStrip = () => {
       facts.appendChild(hot);
     }
 
+    // Distance from this prober's origin to our nearest body — its own line
+    // under the name (colour carries the severity; 0 sys = in-empire range).
+    const dist = nearestBodyDistance(e.fromCoords, ownBodies);
+    if (dist) {
+      const d = document.createElement('div');
+      d.textContent = dist.label;
+      d.style.cssText = 'font-family:monospace;font-size:11px;color:'
+        + (dist.cls === 'hot' ? '#e06c5f' : dist.cls === 'near' ? '#e0b45f' : '#6b7782') + ';';
+      facts.appendChild(d);
+    }
+
     const age = e.lastTs != null ? proximityAge(e.lastTs, nowMs) : '';
     const sub = document.createElement('div');
     sub.style.cssText = 'font-size:11px;color:#6b7782;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
@@ -1665,7 +1723,8 @@ const renderProximityStrip = () => {
     // Moon bodies carry the lunar tint (a planet and its moon share coords).
     e.atBodies.slice(0, 2).forEach((b, i) => {
       if (i) sub.appendChild(document.createTextNode(', '));
-      sub.appendChild(proximityBodyEl(b.coords, b.moon));
+      const nm = proximityShowNames ? bodyNameFor(nameIdx, b.coords, b.moon) : null;
+      sub.appendChild(nm ? proximityNamedEl(nm, b.coords, b.moon) : proximityBodyEl(b.coords, b.moon));
     });
     if (e.atBodies.length > 2) {
       sub.appendChild(document.createTextNode(` +${e.atBodies.length - 2}`));
@@ -2632,6 +2691,7 @@ export const _resetDashboardForTest = () => {
   history = [];
   scans = {};
   proximityReports = [];
+  ownBodies = [];
   activityObs = {};
   compositeCache = null;
   scoreFieldCache = null;

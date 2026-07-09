@@ -54,7 +54,7 @@ import { proximityReportsStore } from '../state/proximityReports.js';
 import { digestProximityReports } from '../domain/proximityDigest.js';
 import { settingsStore } from '../state/settings.js';
 import { bodiesStore } from '../state/bodies.js';
-import { parseKoords } from '../domain/bodies.js';
+import { bodyNameIndex, bodyNameFor, nearestBodyDistance } from '../domain/bodies.js';
 import { injectStyle } from '../lib/dom.js';
 import { safeLS } from '../lib/storage.js';
 import { clock } from '../lib/clock.js';
@@ -218,47 +218,6 @@ const openSpyglass = (pid) => {
   const url = DASHBOARD_URL
     + `?${universeId ? `host=${encodeURIComponent(universeId)}&` : ''}tab=spyglass&spy=${pid}`;
   window.open(url, '_blank');
-};
-
-/**
- * Build a `"g:s:p|m|p"` → body-name lookup from our owned bodies, so the
- * "Near you" column can show OUR planet/moon names instead of coordinates. A
- * planet and its moon share coords but are separate bodies (`type` 3 = moon),
- * so the key carries the body type.
- * @param {ReadonlyArray<import('../domain/bodies.js').Body>} bodies
- * @returns {Map<string, string>}
- */
-const buildNameMap = (bodies) => {
-  const m = new Map();
-  for (const b of bodies) {
-    if (b && b.name) m.set(`${b.galaxy}:${b.system}:${b.position}|${b.type === 3 ? 'm' : 'p'}`, b.name);
-  }
-  return m;
-};
-
-/**
- * Coarse distance from a prober's ORIGIN to our NEAREST owned body, as a short
- * chip label + severity class. Absolute (non-donut) galaxy/system deltas —
- * good enough for a threat glance; the rare galaxy/system wrap-around edge
- * over-states by the donut width, which we accept rather than thread universe
- * geometry through this presentational panel.
- * @param {string | null} fromCoords
- * @param {ReadonlyArray<import('../domain/bodies.js').Body>} bodies
- * @returns {{ label: string, cls: string } | null}
- */
-const proberDistance = (fromCoords, bodies) => {
-  const from = parseKoords(fromCoords);
-  if (!from || !bodies.length) return null;
-  let bg = Infinity;
-  let bs = Infinity;
-  for (const b of bodies) {
-    const dg = Math.abs(b.galaxy - from.galaxy);
-    const ds = Math.abs(b.system - from.system);
-    if (dg < bg || (dg === bg && ds < bs)) { bg = dg; bs = ds; }
-  }
-  if (bg > 0) return { label: `${bg} gal`, cls: bg === 1 ? 'near' : '' };
-  if (bs === 0) return { label: '0 sys', cls: 'hot' };
-  return { label: `${bs} sys`, cls: bs <= 15 ? 'near' : '' };
 };
 
 /**
@@ -508,15 +467,12 @@ export const installWhosSpyingPanel = () => {
     // Our owned bodies feed the names toggle + distance chips; capturedAt goes
     // into the render signature so a fresh planet-bar capture repaints.
     const inv = bodiesStore.get();
-    const nameMap = buildNameMap(inv.bodies);
+    const nameMap = bodyNameIndex(inv.bodies);
     /** @type {RenderCtx} */
     const ctx = {
       showNames,
-      nameFor: (coords, moon) => {
-        const k = parseKoords(coords);
-        return k ? nameMap.get(`${k.galaxy}:${k.system}:${k.position}|${moon ? 'm' : 'p'}`) ?? null : null;
-      },
-      distFor: (fromCoords) => proberDistance(fromCoords, inv.bodies),
+      nameFor: (coords, moon) => bodyNameFor(nameMap, coords, moon),
+      distFor: (fromCoords) => nearestBodyDistance(fromCoords, inv.bodies),
     };
     const shown = digest.players.slice(0, MAX_ROWS);
     const sig = `${digest.playerCount}|${digest.totalReports}|${digest.sameSystemCount}`
