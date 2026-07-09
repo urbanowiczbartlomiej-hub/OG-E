@@ -124,9 +124,34 @@ const lerp = (a, b, t) => [
 const rgb = (c) => `rgb(${c[0]},${c[1]},${c[2]})`;
 
 /**
+ * Threat-emphasis curve for the map's danger (red) channel. The danger model D
+ * is only an approximation, but the field read is clear that the TOP of the
+ * range is disproportionately dangerous — a D≈100 aggressor is far worse than a
+ * 90, while everyone below ~60 is roughly neutral. A linear ramp hides that; a
+ * convex knee makes it read like a decibel scale: flat below THREAT_KNEE, then
+ * a γ-shaped acceleration to full red at 1.
+ *
+ * Display-only — applied to `intensity` HERE, in the colour mapping. The danger
+ * model D (`domain/dangerScore.js`) and the field aggregation
+ * (`domain/heatField.js`) are left untouched, so ranking / thresholds elsewhere
+ * are unchanged. Deliberately gentle (D is a guess) and knob-driven: nudge the
+ * two constants to taste.
+ *
+ * @param {number} x  Intensity 0..1 (= D/100 for a per-player threat cell).
+ * @returns {number}  Emphasised intensity 0..1, monotone non-decreasing.
+ */
+const THREAT_KNEE = 0.55;
+const THREAT_GAMMA = 1.6;
+const emphasizeThreat = (/** @type {number} */ x) => {
+  if (x <= THREAT_KNEE) return 0;
+  return ((x - THREAT_KNEE) / (1 - THREAT_KNEE)) ** THREAT_GAMMA;
+};
+
+/**
  * Map a {@link CellClass} to an rgb() string. Void is near-black so the signal
- * pops; farm/threat ramp from a dim floor (so even a weak one is visible) to
- * full gold/red by intensity.
+ * pops; farm ramps linearly from a dim floor to full gold by intensity, while
+ * threat runs its intensity through {@link emphasizeThreat} first so the top of
+ * the danger range dominates and the low end stays near the floor.
  *
  * @param {CellClass} cls
  * @returns {string}
@@ -136,7 +161,7 @@ export const cellColor = ({ bucket, intensity }) => {
     case 'mine': return rgb(MINE);
     case 'blocked': return rgb(BLOCKED);
     case 'farm': return rgb(lerp(VOID, GOLD, 0.35 + 0.65 * intensity));
-    case 'threat': return rgb(lerp(VOID, RED, 0.35 + 0.65 * intensity));
+    case 'threat': return rgb(lerp(VOID, RED, 0.35 + 0.65 * emphasizeThreat(intensity)));
     default: return rgb(VOID);
   }
 };
@@ -151,7 +176,10 @@ export const cellColor = ({ bucket, intensity }) => {
  * @returns {string} `rgb(r,g,b)`
  */
 export const fieldColor = (threat, farm) => {
-  const t = Math.max(0, Math.min(1, threat));
+  // Same decibel-style emphasis as the sharp per-cell view, so the smooth field
+  // and the per-position map read consistently (only truly dangerous regions
+  // glow red). Farm stays linear — the emphasis is a danger-channel choice.
+  const t = emphasizeThreat(Math.max(0, Math.min(1, threat)));
   const f = Math.max(0, Math.min(1, farm));
   /** @param {number} i */
   const ch = (i) => Math.min(255, Math.round(VOID[i] + t * (RED[i] - VOID[i]) + f * (GOLD[i] - VOID[i])));

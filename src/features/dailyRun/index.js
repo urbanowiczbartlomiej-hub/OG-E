@@ -782,20 +782,26 @@ export const installDailyRun = () => {
   };
 
   const initial = settingsStore.get();
-  if (initial.fabMode) {
+  // The button rides the FAB only when the FAB is on AND its per-module
+  // `showDailyRunButton` toggle (settings ▸ Floating button) is on. Both flips
+  // reconcile through the same combined `show` below.
+  /** @param {ReturnType<typeof settingsStore.get>} s */
+  const shouldShow = (s) => s.fabMode && s.showDailyRunButton;
+  if (shouldShow(initial)) {
     if (document.body) mount();
     else document.addEventListener('DOMContentLoaded', () => {
-      if (installed && settingsStore.get().fabMode) mount();
+      if (installed && shouldShow(settingsStore.get())) mount();
     }, { once: true });
   }
 
-  let prevMode = initial.fabMode;
+  let prevShow = shouldShow(initial);
   let prevSize = initial.fabBtnSize;
   const unsubSettings = settingsStore.subscribe((next) => {
-    if (next.fabMode !== prevMode) {
-      if (next.fabMode) { if (document.body) mount(); }
+    const show = shouldShow(next);
+    if (show !== prevShow) {
+      if (show) { if (document.body) mount(); }
       else removeButton();
-      prevMode = next.fabMode;
+      prevShow = show;
     }
     if (next.fabBtnSize !== prevSize) {
       updateSize(next.fabBtnSize);

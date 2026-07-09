@@ -100,6 +100,9 @@ export const SETTINGS_PREFIX = 'oge_';
  * @property {number}  fabBtnSize
  * @property {boolean} expeditionBadges
  * @property {boolean} showExpeditionButton
+ * @property {boolean} showColonizeButton
+ * @property {boolean} showLifeformButton
+ * @property {boolean} showDailyRunButton
  * @property {boolean} autoRedirectExpedition
  * @property {number}  maxExpeditionsPerPlanet
  * @property {boolean} cloudSync
@@ -108,6 +111,7 @@ export const SETTINGS_PREFIX = 'oge_';
  * @property {boolean} eventMenuHighlight
  * @property {boolean} traderMenuHighlight
  * @property {boolean} threatHighlight
+ * @property {boolean} showWhosSpying
  * @property {boolean} alarmClockMasterEnabled
  * @property {string}  alarmClockNtfyToken
  */
@@ -152,6 +156,9 @@ export const SETTINGS_SCHEMA = {
   fabBtnSize:             { type: 'int',    default: 320,   key: SETTINGS_PREFIX + 'fabBtnSize' },
   expeditionBadges:       { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'expeditionBadges' },
   showExpeditionButton:   { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'showExpeditionButton' },
+  showColonizeButton:     { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'showColonizeButton' },
+  showLifeformButton:     { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'showLifeformButton' },
+  showDailyRunButton:     { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'showDailyRunButton' },
   autoRedirectExpedition: { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'autoRedirectExpedition' },
   maxExpeditionsPerPlanet:        { type: 'int',    default: 1,     key: SETTINGS_PREFIX + 'maxExpeditionsPerPlanet' },
   cloudSync:              { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'cloudSync' },
@@ -160,6 +167,7 @@ export const SETTINGS_SCHEMA = {
   eventMenuHighlight:     { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'eventMenuHighlight' },
   traderMenuHighlight:    { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'traderMenuHighlight' },
   threatHighlight:            { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'threatHighlight' },
+  showWhosSpying:             { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'showWhosSpying' },
   alarmClockMasterEnabled: { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'alarmClockMasterEnabled' },
   alarmClockNtfyToken:      { type: 'string', default: '',    key: SETTINGS_PREFIX + 'alarmClockNtfyToken' },
 };

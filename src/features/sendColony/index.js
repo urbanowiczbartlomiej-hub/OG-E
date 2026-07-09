@@ -978,30 +978,30 @@ export const installSendColony = () => {
   fdCache.bootstrap();
 
   // Settings-driven mount/teardown + live resize — the wiring shared by
-  // every send* FAB feature. Any settings change can flip the candidate,
-  // so repaint on every notification via `onSettingsChange`. The mount is
-  // additionally gated on the per-universe `showFabButton` colonization knob
-  // (dashboard ▸ Big Colony Hunting ⚙) — off means no Colonize module at all.
+  // every send* FAB feature. Any settings change can flip the candidate, so
+  // repaint on every notification via `onSettingsChange`. The mount is
+  // additionally gated on the global `showColonizeButton` toggle (settings ▸
+  // Floating button) — off means no Colonize module at all; its live flips
+  // reconcile in onSettingsChange (mirrors the other per-module FAB toggles).
   const unsubSettings = installFabSettingsLifecycle({
     settingsStore,
-    mount: () => { if (galaxyScanConfigStore.get().showFabButton) mount(); },
+    mount: () => { if (settingsStore.get().showColonizeButton) mount(); },
     removeButton,
     updateButtonSize,
     isInstalled: () => installed !== null,
-    onSettingsChange: refresh,
+    onSettingsChange: () => {
+      const s = settingsStore.get();
+      if (!s.showColonizeButton && controller) removeButton();
+      else if (s.showColonizeButton && !controller && s.fabMode && document.body) mount();
+      refresh();
+    },
   });
 
-  // Galaxy-Scan config (positions / preference / rescan policy) drives both
-  // the candidate and the Scan-remaining count — refresh on every change,
-  // including the ones sync applies after a cross-device edit. It also owns
-  // `showFabButton`: the settings lifecycle only watches fabMode, so the
-  // module's own visibility flag reconciles mount/remove here.
-  const unsubGalaxyConfig = galaxyScanConfigStore.subscribe(() => {
-    const show = galaxyScanConfigStore.get().showFabButton;
-    if (!show && controller) removeButton();
-    else if (show && !controller && settingsStore.get().fabMode && document.body) mount();
-    refresh();
-  });
+  // Galaxy-Scan config (positions / preference) drives both the candidate and
+  // the Scan-remaining count — refresh on every change, including the ones sync
+  // applies after a cross-device edit. (Button visibility moved to the global
+  // `showColonizeButton` setting, reconciled in the settings lifecycle above.)
+  const unsubGalaxyConfig = galaxyScanConfigStore.subscribe(() => refresh());
   const unsubScans = scansStore.subscribe(() => refresh());
   const unsubRegistry = registryStore.subscribe(() => refresh());
   // The "N free" stat subtracts decision-log blocks (sent / skipped / taken /

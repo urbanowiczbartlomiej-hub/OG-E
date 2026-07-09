@@ -48,7 +48,7 @@ import {
 } from '../shared/fleetCourier.js';
 import { installFabSettingsLifecycle } from '../shared/fabSettingsLifecycle.js';
 import { setFabModuleAlert } from '../shared/unifiedFab.js';
-import { getApiContext } from '../shared/apiContextStore.js';
+import { getApiContext, subscribeApiContext } from '../shared/apiContextStore.js';
 import { parseCurrentGalaxyView } from '../shared/galaxyView.js';
 import { navigateGalaxyInPage } from '../shared/galaxyNav.js';
 import { SHIP_ESPIONAGE_PROBE, TARGET_PLANET, TARGET_MOON, MISSION_ESPIONAGE } from '../../domain/rules.js';
@@ -544,12 +544,18 @@ export const installSendSpy = () => {
   // A galaxy ingest (oge:galaxyScanned → rings) flips a looked-at system to
   // fresh — the look proposal self-advances on this repaint.
   const unsubActivity = activityObsStore.subscribe(refresh);
-  // Slow ticker catches the apiContext handoff populating + staleness ticking.
+  // Repaint the instant the apiContext handoff lands — clears the dim
+  // "loading…" state immediately instead of waiting up to REPAINT_TICK_MS for
+  // the next slow tick (the visible post-reload lag on the Spyglass button).
+  const unsubApiCtx = subscribeApiContext(refresh);
+  // Slow ticker now only catches staleness ticking (the handoff itself is
+  // event-driven above).
   const unsubTicker = clock.subscribe(refresh, { everyMs: REPAINT_TICK_MS });
 
   installed = {
     dispose: () => {
       unsubTicker();
+      unsubApiCtx();
       removeButton();
       unsubSettings();
       unsubWatch();

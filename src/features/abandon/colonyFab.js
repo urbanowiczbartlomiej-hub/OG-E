@@ -260,7 +260,7 @@ export const installColonyFab = () => {
       const fresh = findFirstFreshPlanet({ belowFields: min });
       if (!fresh) return;
       controller = makeButton({
-        id: BUTTON_ID, title: 'Abandon colony', ringId: RING_ID, size, fontScale: 0.12,
+        id: BUTTON_ID, title: 'Abandon colony', ringId: RING_ID, size, fontScale: 0.18,
         module: { id: MODULE_ID, name: 'Abandon', color: ABANDON_COLOR, glyph: ABANDON_GLYPH },
         zones: [{
           key: 'go',
@@ -280,7 +280,7 @@ export const installColonyFab = () => {
       const info = checkAbandonState();
       if (!info) return;
       controller = makeButton({
-        id: BUTTON_ID, title: 'Abandon colony', ringId: RING_ID, size, fontScale: 0.12,
+        id: BUTTON_ID, title: 'Abandon colony', ringId: RING_ID, size, fontScale: 0.18,
         module: { id: MODULE_ID, name: 'Abandon', color: ABANDON_COLOR, glyph: ABANDON_GLYPH },
         zones: [{
           key: 'go',

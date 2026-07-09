@@ -53,10 +53,6 @@ describe('defaultGalaxyScanConfig', () => {
     expect(d.guardianIntervalMin).toBe(20);
     expect(d.guardianAckIntervalMin).toBe(3);
   });
-
-  it('shows the Colonize FAB module by default (showFabButton)', () => {
-    expect(defaultGalaxyScanConfig().showFabButton).toBe(true);
-  });
 });
 
 describe('normalizeGalaxyScanConfig', () => {
@@ -92,13 +88,6 @@ describe('normalizeGalaxyScanConfig', () => {
   it('keeps an explicit preferOtherGalaxies:false but coerces garbage to the default', () => {
     expect(normalizeGalaxyScanConfig({ preferOtherGalaxies: false }).preferOtherGalaxies).toBe(false);
     expect(normalizeGalaxyScanConfig({ preferOtherGalaxies: 'yes' }).preferOtherGalaxies).toBe(true);
-  });
-
-  it('keeps an explicit showFabButton:false but coerces garbage / absent to shown', () => {
-    expect(normalizeGalaxyScanConfig({ showFabButton: false }).showFabButton).toBe(false);
-    expect(normalizeGalaxyScanConfig({ showFabButton: 'off' }).showFabButton).toBe(true);
-    // A pre-1.40.1 stored blob has no such key — the button must stay visible.
-    expect(normalizeGalaxyScanConfig({ positions: '8' }).showFabButton).toBe(true);
   });
 
   it('keeps / coerces the colonization knobs', () => {

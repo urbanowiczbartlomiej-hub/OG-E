@@ -52,7 +52,11 @@
 
 import { proximityReportsStore } from '../state/proximityReports.js';
 import { digestProximityReports } from '../domain/proximityDigest.js';
+import { settingsStore } from '../state/settings.js';
+import { bodiesStore } from '../state/bodies.js';
+import { parseKoords } from '../domain/bodies.js';
 import { injectStyle } from '../lib/dom.js';
+import { safeLS } from '../lib/storage.js';
 import { clock } from '../lib/clock.js';
 import { parseUniverseId } from '../lib/universeId.js';
 
@@ -101,6 +105,11 @@ const STYLE_ID = 'oge-spyback-style';
 const MAX_ROWS = 8;
 /** Age-refresh cadence for the relative timestamps. */
 const POLL_MS = 60000;
+/** Device-local coords↔names toggle for the "Near you" column — show OUR
+ *  planet/moon names instead of raw coordinates. Persists per device. */
+const NAMES_KEY = 'oge_spybackNames';
+/** True ⇒ render the "Near you" column as our body names, not coordinates. */
+let showNames = safeLS.get(NAMES_KEY) === '1';
 
 const CSS = [
   // --sp-accent = the Spyglass gold (sendSpy's BG_SPY_IDLE) — one spy identity
@@ -140,6 +149,13 @@ const CSS = [
   `#${PANEL_ID} .oge-sb-btn:hover{border-color:var(--sp-accent);color:#d8e6f4;background:#1a2534;}`,
   `#${PANEL_ID} .oge-sb-foot{padding:5px 12px;border-top:1px solid #1b2732;font-size:10px;color:#5f6b76;}`,
   `#${PANEL_ID} .oge-sb-foot .k{color:var(--sp-danger);}`,
+  // Header coords/names toggle + per-prober distance line (under the name).
+  `#${PANEL_ID} .oge-sb-namebtn{margin-left:8px;font:10px Verdana,sans-serif;color:#93a3b3;`,
+  'cursor:pointer;background:#16212c;border:1px solid #26323f;border-radius:5px;padding:2px 8px;white-space:nowrap;}',
+  `#${PANEL_ID} .oge-sb-namebtn:hover{border-color:var(--sp-accent);color:#d8e6f4;}`,
+  `#${PANEL_ID} .oge-sb-dist{display:block;margin-top:2px;font:11px/1 monospace;color:#6b7987;}`,
+  `#${PANEL_ID} .oge-sb-dist.near{color:#e0b45f;}`,
+  `#${PANEL_ID} .oge-sb-dist.hot{color:var(--sp-danger);}`,
 ].join('');
 
 /**
@@ -205,6 +221,47 @@ const openSpyglass = (pid) => {
 };
 
 /**
+ * Build a `"g:s:p|m|p"` → body-name lookup from our owned bodies, so the
+ * "Near you" column can show OUR planet/moon names instead of coordinates. A
+ * planet and its moon share coords but are separate bodies (`type` 3 = moon),
+ * so the key carries the body type.
+ * @param {ReadonlyArray<import('../domain/bodies.js').Body>} bodies
+ * @returns {Map<string, string>}
+ */
+const buildNameMap = (bodies) => {
+  const m = new Map();
+  for (const b of bodies) {
+    if (b && b.name) m.set(`${b.galaxy}:${b.system}:${b.position}|${b.type === 3 ? 'm' : 'p'}`, b.name);
+  }
+  return m;
+};
+
+/**
+ * Coarse distance from a prober's ORIGIN to our NEAREST owned body, as a short
+ * chip label + severity class. Absolute (non-donut) galaxy/system deltas —
+ * good enough for a threat glance; the rare galaxy/system wrap-around edge
+ * over-states by the donut width, which we accept rather than thread universe
+ * geometry through this presentational panel.
+ * @param {string | null} fromCoords
+ * @param {ReadonlyArray<import('../domain/bodies.js').Body>} bodies
+ * @returns {{ label: string, cls: string } | null}
+ */
+const proberDistance = (fromCoords, bodies) => {
+  const from = parseKoords(fromCoords);
+  if (!from || !bodies.length) return null;
+  let bg = Infinity;
+  let bs = Infinity;
+  for (const b of bodies) {
+    const dg = Math.abs(b.galaxy - from.galaxy);
+    const ds = Math.abs(b.system - from.system);
+    if (dg < bg || (dg === bg && ds < bs)) { bg = dg; bs = ds; }
+  }
+  if (bg > 0) return { label: `${bg} gal`, cls: bg === 1 ? 'near' : '' };
+  if (bs === 0) return { label: '0 sys', cls: 'hot' };
+  return { label: `${bs} sys`, cls: bs <= 15 ? 'near' : '' };
+};
+
+/**
  * One coord span. A MOON body renders in the lunar tint (`.coord.moon`) with a
  * tooltip saying so — a planet and its moon share `"g:s:p"`, so the colour is
  * the only thing telling you which body the alert was actually about.
@@ -214,16 +271,44 @@ const openSpyglass = (pid) => {
  */
 const bodyEl = (coords, moon) => {
   const s = el('span', moon ? 'coord moon' : 'coord', coords);
-  if (moon) s.title = 'This coordinate is the slot’s MOON, not the planet';
+  if (moon) s.title = 'Moon';
   return s;
+};
+
+/**
+ * @typedef {object} RenderCtx
+ * @property {boolean} showNames
+ * @property {(coords: string, moon: boolean) => string | null} nameFor
+ * @property {(fromCoords: string | null) => { label: string, cls: string } | null} distFor
+ */
+
+/**
+ * Render one "Near you" body. When the header toggle is on and we own a
+ * matching body, show its NAME (raw coords kept in the tooltip so nothing is
+ * lost); otherwise fall back to the coordinate span. Lunar tint either way.
+ * @param {{ coords: string, moon: boolean }} b
+ * @param {RenderCtx} ctx
+ * @returns {HTMLElement}
+ */
+const nearBodyEl = (b, ctx) => {
+  if (ctx.showNames) {
+    const name = ctx.nameFor(b.coords, b.moon);
+    if (name) {
+      const s = el('span', b.moon ? 'coord moon' : 'coord', name);
+      s.title = b.moon ? `${b.coords} moon` : b.coords;
+      return s;
+    }
+  }
+  return bodyEl(b.coords, b.moon);
 };
 
 /**
  * Build one prober `<tr>` from a digest entry.
  * @param {import('../domain/proximityDigest.js').ProximityDigestEntry} p
+ * @param {RenderCtx} ctx
  * @returns {HTMLElement}
  */
-const buildRow = (p) => {
+const buildRow = (p, ctx) => {
   const tr = el('tr', p.sameSystem ? 'hot' : undefined);
 
   const nameTd = el('td');
@@ -233,6 +318,10 @@ const buildRow = (p) => {
     nameTd.appendChild(skull);
   }
   nameTd.appendChild(el('span', 'oge-sb-name', p.name || `#${p.byPlayerId}`));
+  // Distance from this prober's origin to our nearest body — its OWN line under
+  // the name (0 sys = in-empire strike range; the colour carries the severity).
+  const dist = ctx.distFor(p.fromCoords);
+  if (dist) nameTd.appendChild(el('div', `oge-sb-dist${dist.cls ? ` ${dist.cls}` : ''}`, dist.label));
   tr.appendChild(nameTd);
 
   tr.appendChild(el('td', 'oge-sb-age', ageStr(p.lastTs) || '—'));
@@ -246,7 +335,7 @@ const buildRow = (p) => {
   if (p.atBodies.length) {
     p.atBodies.forEach((b, i) => {
       if (i) nearTd.appendChild(el('span', 'coord', ', '));
-      nearTd.appendChild(bodyEl(b.coords, b.moon));
+      nearTd.appendChild(nearBodyEl(b, ctx));
     });
   } else {
     nearTd.appendChild(el('span', 'muted', '—'));
@@ -271,15 +360,21 @@ const buildRow = (p) => {
 /**
  * Build the empty panel shell (header strip + table skeleton + footnote slot).
  * `renderInto` fills it.
+ * @param {() => void} onToggleNames  Header coords↔names toggle handler.
  * @returns {HTMLElement}
  */
-const buildShell = () => {
+const buildShell = (onToggleNames) => {
   const panel = el('div');
   panel.id = PANEL_ID;
 
   const hdr = el('div', 'oge-sb-hdr');
   hdr.appendChild(el('span', 'oge-sb-eye', '👁'));
   hdr.appendChild(el('span', 'oge-sb-title', "Who's spying on you"));
+  const nameBtn = el('button', 'oge-sb-namebtn');
+  nameBtn.setAttribute('type', 'button');
+  nameBtn.title = 'Coords / names';
+  nameBtn.addEventListener('click', onToggleNames);
+  hdr.appendChild(nameBtn);
   hdr.appendChild(el('span', 'oge-sb-sum'));
   panel.appendChild(hdr);
 
@@ -309,9 +404,12 @@ const buildShell = () => {
  * Paint the summary line, rows and footnote from a digest.
  * @param {HTMLElement} panel
  * @param {ReturnType<typeof digestProximityReports>} digest
+ * @param {RenderCtx} ctx
  * @returns {void}
  */
-const renderInto = (panel, digest) => {
+const renderInto = (panel, digest, ctx) => {
+  const nb = panel.querySelector('.oge-sb-namebtn');
+  if (nb) nb.textContent = ctx.showNames ? 'Names' : 'Coords';
   const sum = panel.querySelector('.oge-sb-sum');
   if (sum) {
     sum.textContent = '';
@@ -329,7 +427,7 @@ const renderInto = (panel, digest) => {
   const tbody = panel.querySelector('tbody');
   if (tbody) {
     tbody.textContent = '';
-    for (const p of digest.players.slice(0, MAX_ROWS)) tbody.appendChild(buildRow(p));
+    for (const p of digest.players.slice(0, MAX_ROWS)) tbody.appendChild(buildRow(p, ctx));
   }
 
   // Footnote only when there's actually a 💀 to explain — no same-system prober
@@ -374,8 +472,16 @@ export const installWhosSpyingPanel = () => {
    * @returns {void}
    */
   const refresh = ({ force = false } = {}) => {
-    const reports = proximityReportsStore.get();
     let panel = document.getElementById(PANEL_ID);
+    // Display opt-out — the panel is ON by default but can be hidden from the
+    // in-game "Display" settings section; a flip lands here via the settings
+    // subscription below and removes the table.
+    if (!settingsStore.get().showWhosSpying) {
+      if (panel) panel.remove();
+      lastSig = '';
+      return;
+    }
+    const reports = proximityReportsStore.get();
     // Empty log first — a cheap store read before any DOM queries.
     if (reports.length === 0) {
       if (panel) panel.remove();
@@ -390,7 +496,7 @@ export const installWhosSpyingPanel = () => {
     }
     const digest = digestProximityReports(reports);
     if (!panel) {
-      panel = buildShell();
+      panel = buildShell(onToggleNames);
       lastSig = '';
     }
     // Keep it glued in the slot — AGR may have re-injected its overview, and a
@@ -399,13 +505,38 @@ export const installWhosSpyingPanel = () => {
     if (panel.parentNode !== slot.parent || panel.nextElementSibling !== slot.before) {
       slot.parent.insertBefore(panel, slot.before);
     }
+    // Our owned bodies feed the names toggle + distance chips; capturedAt goes
+    // into the render signature so a fresh planet-bar capture repaints.
+    const inv = bodiesStore.get();
+    const nameMap = buildNameMap(inv.bodies);
+    /** @type {RenderCtx} */
+    const ctx = {
+      showNames,
+      nameFor: (coords, moon) => {
+        const k = parseKoords(coords);
+        return k ? nameMap.get(`${k.galaxy}:${k.system}:${k.position}|${moon ? 'm' : 'p'}`) ?? null : null;
+      },
+      distFor: (fromCoords) => proberDistance(fromCoords, inv.bodies),
+    };
     const shown = digest.players.slice(0, MAX_ROWS);
-    const sig = `${digest.playerCount}|${digest.totalReports}|${digest.sameSystemCount}|`
+    const sig = `${digest.playerCount}|${digest.totalReports}|${digest.sameSystemCount}`
+      + `|${showNames ? 'n' : 'c'}|${inv.capturedAt}|`
       + shown.map((p) => `${p.byPlayerId}:${p.count}:${p.lastTs}`).join(',');
     if (force || sig !== lastSig) {
-      renderInto(panel, digest);
+      renderInto(panel, digest, ctx);
       lastSig = sig;
     }
+  };
+
+  /**
+   * Header toggle: flip the "Near you" column between coordinates and our body
+   * names, persist the choice per device, and force a repaint.
+   * @returns {void}
+   */
+  const onToggleNames = () => {
+    showNames = !showNames;
+    safeLS.set(NAMES_KEY, showNames ? '1' : '0');
+    refresh({ force: true });
   };
 
   refresh();
@@ -414,15 +545,21 @@ export const installWhosSpyingPanel = () => {
   observer.observe(document.body, { childList: true, subtree: true });
 
   // A landed alert repaints the digest; the slow poll refreshes relative ages
-  // (and re-mounts as a backstop if a mutation was missed).
+  // (and re-mounts as a backstop if a mutation was missed). A Display-settings
+  // flip shows/hides the whole panel; a fresh planet-bar capture refreshes the
+  // names + distance chips.
   const unsub = proximityReportsStore.subscribe(() => refresh());
   const unsubPoll = clock.subscribe(() => refresh({ force: true }), { everyMs: POLL_MS });
+  const unsubSettings = settingsStore.subscribe(() => refresh());
+  const unsubBodies = bodiesStore.subscribe(() => refresh());
 
   installed = {
     dispose: () => {
       observer.disconnect();
       unsub();
       unsubPoll();
+      unsubSettings();
+      unsubBodies();
       const live = document.getElementById(PANEL_ID);
       if (live) live.remove();
       const style = document.getElementById(STYLE_ID);

@@ -41,6 +41,7 @@ import {
   alarmClockConfigTsKeyFor,
 } from '../../state/alarmClockConfig.js';
 import { syncRequestKeyFor } from '../../sync/scheduler.js';
+import { wireToggleChip, toggleChipOn, setToggleChip } from './chips.js';
 import {
   defaultGalaxyScanConfig,
   normalizeGalaxyScanConfig,
@@ -445,9 +446,12 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
   // ── wave / ad-hoc field widgets ──────────────────────────────────────
   // ids are OG-E's own hooks (not a game DOM contract) — kept next to the
   // code that emits them, used by the behavioural tests.
-  const waveEnabledInput = /** @type {HTMLInputElement} */ (mk('input'));
-  waveEnabledInput.type = 'checkbox';
+  const waveEnabledInput = /** @type {HTMLButtonElement} */ (mk('button'));
+  waveEnabledInput.type = 'button';
+  waveEnabledInput.className = 'toggle-chip';
   waveEnabledInput.id = 'remCfgWaveEnabled';
+  waveEnabledInput.textContent = 'Enabled';
+  wireToggleChip(waveEnabledInput, () => {});
 
   const waveEditor = makeOffsetEditor({
     idBase: 'remCfgWaveEditor',
@@ -466,9 +470,12 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
   });
 
   // ── per-server (fleet-save) field widgets ────────────────────────────
-  const enabledInput = /** @type {HTMLInputElement} */ (mk('input'));
-  enabledInput.type = 'checkbox';
+  const enabledInput = /** @type {HTMLButtonElement} */ (mk('button'));
+  enabledInput.type = 'button';
+  enabledInput.className = 'toggle-chip';
   enabledInput.id = 'remCfgFsEnabled';
+  enabledInput.textContent = 'Enabled';
+  wireToggleChip(enabledInput, () => {});
 
   const thresholdInput = /** @type {HTMLInputElement} */ (mk('input'));
   thresholdInput.type = 'text';
@@ -494,9 +501,12 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
     reference: 'landing',
   });
 
-  const guardianEnableInput = /** @type {HTMLInputElement} */ (mk('input'));
-  guardianEnableInput.type = 'checkbox';
+  const guardianEnableInput = /** @type {HTMLButtonElement} */ (mk('button'));
+  guardianEnableInput.type = 'button';
+  guardianEnableInput.className = 'toggle-chip';
   guardianEnableInput.id = 'remCfgGuardianEnabled';
+  guardianEnableInput.textContent = 'Enabled';
+  wireToggleChip(guardianEnableInput, () => {});
 
   const guardianIntervalInput = /** @type {HTMLInputElement} */ (mk('input'));
   guardianIntervalInput.type = 'text';
@@ -681,11 +691,11 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
 
   /** Populate the per-server widgets. @param {import('../../domain/galaxyScanConfig.js').GalaxyScanConfig} cfg */
   const fillFs = (cfg) => {
-    enabledInput.checked = cfg.fsEnabled;
+    setToggleChip(enabledInput, cfg.fsEnabled);
     thresholdInput.value = String(cfg.fsThreshold);
     minFlightInput.value = formatDuration(cfg.fsMinFlightSec);
     fsEditor.setFromString(cfg.fsOffsets);
-    guardianEnableInput.checked = cfg.guardianEnabled;
+    setToggleChip(guardianEnableInput, cfg.guardianEnabled);
     guardianIntervalInput.value = String(cfg.guardianIntervalMin);
     guardianAckIntervalInput.value = String(cfg.guardianAckIntervalMin);
   };
@@ -696,7 +706,7 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
    * @param {import('../../domain/alarmClockConfig.js').AlarmClockConfig} cfg
    */
   const fillAlarmClock = (cfg) => {
-    waveEnabledInput.checked = cfg.alarmClockEnabled;
+    setToggleChip(waveEnabledInput, cfg.alarmClockEnabled);
     waveEditor.setFromString(cfg.alarmClockSchedule);
     adhocEditor.setFromString(cfg.adhocSchedule);
     waveTplEditor.setFromTemplate(cfg.templates.wave);
@@ -757,7 +767,7 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
     // alarmClock at the guardian interval if none already fires at or after it. The
     // injected chip shows in the editor so the change is visible.
     let fsOffsets = offsets;
-    if (guardianEnableInput.checked) {
+    if (toggleChipOn(guardianEnableInput)) {
       const need = guardianIntervalMin * 60;
       const parsed = parseDurationList(offsets, { signed: true });
       if (!parsed.some((o) => o >= need)) {
@@ -766,11 +776,11 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
       }
     }
     return {
-      fsEnabled: enabledInput.checked,
+      fsEnabled: toggleChipOn(enabledInput),
       fsThreshold: threshold,
       fsMinFlightSec: minFlight,
       fsOffsets,
-      guardianEnabled: guardianEnableInput.checked,
+      guardianEnabled: toggleChipOn(guardianEnableInput),
       guardianIntervalMin,
       guardianAckIntervalMin,
     };
@@ -799,7 +809,7 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
       return null;
     }
     return normalizeAlarmClockConfig({
-      alarmClockEnabled: waveEnabledInput.checked,
+      alarmClockEnabled: toggleChipOn(waveEnabledInput),
       alarmClockSchedule: schedule,
       adhocSchedule,
       templates: {

@@ -409,14 +409,22 @@ export const installSendLifeform = () => {
     );
   }
 
-  // Settings-driven mount/teardown + live resize — the wiring shared by
-  // every send* FAB feature.
+  // Settings-driven mount/teardown + live resize — the wiring shared by every
+  // send* FAB feature. The mount is additionally gated on the per-module
+  // `showLifeformButton` toggle (settings ▸ Floating button); the lifecycle
+  // helper only watches fabMode/fabBtnSize, so that flag's live flips reconcile
+  // in onSettingsChange (mirrors sendExpedition).
   const unsubSettings = installFabSettingsLifecycle({
     settingsStore,
-    mount,
+    mount: () => { if (settingsStore.get().showLifeformButton) mount(); },
     removeButton,
     updateButtonSize,
     isInstalled: () => installed !== null,
+    onSettingsChange: () => {
+      const s = settingsStore.get();
+      if (!s.showLifeformButton && controller) removeButton();
+      else if (s.showLifeformButton && !controller && s.fabMode && document.body) mount();
+    },
   });
 
   const unsubScans = scansStore.subscribe(() => refresh());

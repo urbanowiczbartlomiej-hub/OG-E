@@ -51,5 +51,13 @@ export const displaySection = {
       buttonText: 'Preview',
       onclick: () => document.dispatchEvent(new CustomEvent(THREAT_HIGHLIGHT_TEST_EVENT)),
     },
+    {
+      // The defensive "Who's spying on you" table injected at the top of the
+      // messages page's spy-report tab. ON by default (it was unconditional
+      // before this toggle existed) — `whosSpyingPanel` self-gates on the flag.
+      id: 'showWhosSpying',
+      label: "Who's spying on you (panel on the messages spy-report tab)",
+      type: 'checkbox',
+    },
   ],
 };

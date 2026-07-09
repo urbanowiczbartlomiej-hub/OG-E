@@ -370,6 +370,15 @@
   .chip-group.seg button { border: none; border-radius: 0; background: transparent; }
   .chip-group.seg button + button { border-left: 1px solid #2b3a4d; }
   .chip-group.seg button.on { background: #12253c; color: #cfe4ff; }
+  /* Standalone boolean toggle pill (wireToggleChip) — used by the Alarm-clock
+     enable chips. State is the blue `.on` highlight, matching the app's other
+     toggle chips. */
+  .toggle-chip {
+    background: #18222e; border: 1px solid #2b3a4d; color: #9fb4c4;
+    padding: 5px 14px; border-radius: 999px; font-size: 13px; cursor: pointer;
+  }
+  .toggle-chip:hover { border-color: #4a9eff; color: #cfe4ff; }
+  .toggle-chip.on { border-color: #4a9eff; background: #12253c; color: #cfe4ff; }
 
   /* Standalone toolbar toggles (⚙ Filters) — same pill language as
      .chip-group buttons, with the expanded state wearing the `.on` look via
@@ -417,6 +426,20 @@
     max-height: 420px; overflow-y: auto; padding-right: 2px;
   }
   #proximityStrip { max-height: 420px; overflow-y: auto; padding-right: 2px; }
+  /* Themed scrollbars for the Spyglass scroll boxes — the OS-default chrome
+     (light thumb, chunky track) clashed with the dark palette. Firefox uses
+     the two-value `scrollbar-color` (thumb, track); WebKit/Blink gets the
+     pseudo-elements. Thumb = the chip border grey, brightening to the accent
+     blue on hover; track stays transparent so the card background shows. */
+  .watch-cards-grid, #proximityStrip { scrollbar-width: thin; scrollbar-color: #2b3a4d transparent; }
+  .watch-cards-grid::-webkit-scrollbar,
+  #proximityStrip::-webkit-scrollbar { width: 10px; height: 10px; }
+  .watch-cards-grid::-webkit-scrollbar-track,
+  #proximityStrip::-webkit-scrollbar-track { background: transparent; }
+  .watch-cards-grid::-webkit-scrollbar-thumb,
+  #proximityStrip::-webkit-scrollbar-thumb { background: #2b3a4d; border-radius: 999px; }
+  .watch-cards-grid::-webkit-scrollbar-thumb:hover,
+  #proximityStrip::-webkit-scrollbar-thumb:hover { background: #4a9eff; }
   .watch-card {
     background: #0b1118; border: 1px solid #223041; border-radius: 8px;
     padding: 10px 12px; cursor: pointer; min-width: 0;
@@ -714,7 +737,7 @@
 
   <div class="subtabs" id="colonySubtabs" role="tablist">
     <button type="button" class="subtab active" data-subtab="histogram" role="tab">Big Colony Hunting</button>
-    <button type="button" class="subtab" data-subtab="scout" role="tab">Galaxy Viewer</button>
+    <button type="button" class="subtab" data-subtab="scout" role="tab">Best Colony Spots</button>
   </div>
 
   <div class="subtabpane active" data-subtab="histogram">

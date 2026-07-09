@@ -163,6 +163,22 @@ and pushes — but the push-to-`main` path above is the only one we use.)
   are reverse-engineered game knowledge with no other home (OG-E has no access
   to OGame's source/docs); never trim them under a "DRY" banner.
 
+## UI/UX wording & iconography
+
+OG-E must be **intuitive, not descriptive**. Two rules the injected surface obeys:
+
+- **No decorative emoji / symbol icons in the UI** — do not use 📍 🏷 ⚠ ● ○ and
+  the like as button labels, prefixes, or state markers. They read as noise, not
+  signal. Convey state with colour + a short word, or a plain control — not a
+  glyph. (A few long-standing FUNCTIONAL markers pre-date this rule, e.g. the 💀
+  RIP-range flag with its footnote legend; leave those unless asked, but do not
+  add new ones.)
+- **Keywords over descriptions.** Labels are short keywords, not sentences —
+  `Coords` / `Names`, never "Toggle the column between coordinates and names".
+  Tooltips are a fallback, not the primary UI. If a control needs a full
+  sentence to be understood, that is a UX smell — reconsider the design before
+  writing the description.
+
 ## Context hygiene (read this every session)
 
 This repo is large (`src/` ~830 KB, `test/` ~600 KB, single files up to

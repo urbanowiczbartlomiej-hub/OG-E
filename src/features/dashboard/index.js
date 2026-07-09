@@ -112,6 +112,10 @@ import { installSettingsControls } from './settingsControls.js';
 
 // Colony Scout control preferences — persisted so selections survive page reload.
 const SCOUT_PREFS_KEY = 'oge_colonyScoutPrefs';
+/** Device-local last-selected Big Colony Hunting position filter — persists
+ *  the `#posFilter` choice across reloads (restored once in renderAll after
+ *  the Position-N options exist). Device-local like the other colony prefs. */
+const COLONY_POS_FILTER_KEY = 'oge_colonyPosFilter';
 
 // Active Colonizations sub-tab ("histogram" = Big Colony Hunting, "scout" =
 // Galaxy Viewer) — device-local UI preference, so a reload reopens the view
@@ -1263,6 +1267,10 @@ const loadAll = async () => {
  */
 const getFilter = () => posFilter?.value ?? 'all';
 
+/** One-shot latch so the persisted position filter is restored only on the
+ *  first render (later renders must respect the user's live selection). */
+let posFilterRestored = false;
+
 /**
  * Re-render both the colony section and the galaxy section from the
  * current caches.
@@ -1271,6 +1279,18 @@ const getFilter = () => posFilter?.value ?? 'all';
  */
 const renderAll = () => {
   populatePositionFilter(posFilter, history);
+  // Restore the persisted Position filter once — only after the first populate
+  // has built the Position-N options (setting it earlier wouldn't stick). If
+  // the saved position no longer exists in the data we leave the select on
+  // "all". Later renders skip this so a live user change is never overridden;
+  // the select preserves its own value across re-populates.
+  if (!posFilterRestored) {
+    posFilterRestored = true;
+    const savedPos = safeLS.get(COLONY_POS_FILTER_KEY);
+    if (savedPos && [...posFilter.options].some((o) => o.value === savedPos)) {
+      posFilter.value = savedPos;
+    }
+  }
   const filterValue = getFilter();
   const entries = filterValue === 'all'
     ? history
@@ -2473,7 +2493,10 @@ const wireListeners = () => {
     exportColonyCsv(history, selectedUniverseId);
   });
 
-  posFilter.addEventListener('change', () => renderAll());
+  posFilter.addEventListener('change', () => {
+    safeLS.set(COLONY_POS_FILTER_KEY, posFilter.value);
+    renderAll();
+  });
 
   // Targets controls only repaint the Targets sub-tab (the candidate list is
   // already loaded; only the filter/limit we apply to it changed). Filter

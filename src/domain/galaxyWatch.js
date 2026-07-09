@@ -167,6 +167,31 @@ export const galaxySightStatus = ({ lastSightSec: sec, nowMs, rescanAtMs = 0, st
 export const buildGalaxyPlan = (env) => {
   const players = env.players || [];
 
+  // Per-SYSTEM newest sighting across every watched body there. ONE galaxy look
+  // records every body the game shows in that system, so a system we just
+  // looked at is "covered" even for a watched body that left NO ring entry — an
+  // empty/relocated slot (the player moved) or an activity encoding
+  // `parseActivity` doesn't record. Without this, such a body's own ring never
+  // advances (`lastSightSec` = 0 → status 'none'), so the FAB would re-propose
+  // the system on every rebuild, forever, no matter how often it's looked at.
+  // (galaxyMode 'off' is NOT skipped here: mute suppresses proposals, not the
+  // fact that a look happened — coverage is about "did we look".)
+  /** @type {Map<string, number>} "g:s" → newest sight sec */
+  const sysLastSight = new Map();
+  for (const pid of players) {
+    const ringsForPid = env.rings ? env.rings[pid] : undefined;
+    if (!ringsForPid) continue;
+    for (const p of playerPlanets(env.universePlanets, pid)) {
+      const coord = `${p.galaxy}:${p.system}:${p.position}`;
+      let best = lastSightSec(ringsForPid[ringKeyFor(coord, 1)]);
+      if (p.hasMoon) best = Math.max(best, lastSightSec(ringsForPid[ringKeyFor(coord, 3)]));
+      if (best > 0) {
+        const k = `${p.galaxy}:${p.system}`;
+        if (best > (sysLastSight.get(k) || 0)) sysLastSight.set(k, best);
+      }
+    }
+  }
+
   /**
    * Per-system accumulator (loose — the ranked {@link GalaxyPlanEntry} with its
    * worst/why/priority is derived once at the end).
@@ -192,15 +217,18 @@ export const buildGalaxyPlan = (env) => {
       const coord = `${p.galaxy}:${p.system}:${p.position}`;
       const overrideKey = overrideKeyFor(coord, bodyType);
       const ring = ringsForPid ? ringsForPid[ringKeyFor(coord, bodyType)] : undefined;
+      // Effective coverage = this body's own last sight OR the newest look at
+      // its whole system (one navigation covers the system — see sysLastSight),
+      // so a body the look couldn't record still clears once the system is seen.
+      const sec = Math.max(lastSightSec(ring), sysLastSight.get(`${p.galaxy}:${p.system}`) || 0);
       const status = galaxySightStatus({
-        lastSightSec: lastSightSec(ring),
+        lastSightSec: sec,
         nowMs: env.nowMs,
         rescanAtMs: rescanAtFor(env.rescan, pid, overrideKey),
         staleMs: env.staleMs,
       });
       if (!needsScan(status)) return;
 
-      const sec = lastSightSec(ring);
       const ageMs = sec ? env.nowMs - sec * 1000 : 0;
       const bodyScore = wDanger * stalenessWeight(status, ageMs, env.staleMs);
 

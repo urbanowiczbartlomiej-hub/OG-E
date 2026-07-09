@@ -38,12 +38,25 @@
 let ctx = null;
 
 /**
- * Publish the latest built context (called by `features/apiContext`).
+ * Listeners fired on every {@link setApiContext} publish. Kept minimal (no
+ * value payload — subscribers re-read {@link getApiContext}) because the point
+ * is only to let a consumer react the instant the handoff lands, instead of
+ * polling. A throwing listener must never wedge the handoff for the others.
+ * @type {Set<() => void>}
+ */
+const listeners = new Set();
+
+/**
+ * Publish the latest built context (called by `features/apiContext`) and notify
+ * subscribers so they can repaint immediately.
  * @param {ApiContextHandoff | null} next
  * @returns {void}
  */
 export const setApiContext = (next) => {
   ctx = next;
+  for (const fn of listeners) {
+    try { fn(); } catch { /* one bad listener must not block the rest */ }
+  }
 };
 
 /**
@@ -54,9 +67,22 @@ export const setApiContext = (next) => {
 export const getApiContext = () => ctx;
 
 /**
- * Test-only: clear the held context.
+ * Subscribe to context publishes — fires on EVERY {@link setApiContext} call
+ * (including forced rebuilds), never retroactively for an already-set context
+ * (read {@link getApiContext} for the current value). Returns an unsubscribe.
+ * @param {() => void} fn
+ * @returns {() => void}
+ */
+export const subscribeApiContext = (fn) => {
+  listeners.add(fn);
+  return () => { listeners.delete(fn); };
+};
+
+/**
+ * Test-only: clear the held context and any subscribers.
  * @returns {void}
  */
 export const _resetApiContextStoreForTest = () => {
   ctx = null;
+  listeners.clear();
 };
