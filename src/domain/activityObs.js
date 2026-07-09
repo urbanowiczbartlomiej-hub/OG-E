@@ -49,11 +49,14 @@ export const FRESH_BAND_S = 15 * 60;
 export const SELF_BEFORE_MS = 2 * 60 * 1000;
 /**
  * Self-induced window after a probe SEND: the probe flies (minutes, up to
- * tens cross-galaxy), then its arrival is the interaction. Generous on
- * purpose — the honest failure direction is dropping a genuine marker, never
- * keeping our own.
+ * tens cross-galaxy), then its arrival lights the marker — which then lives a
+ * full HOUR. Sized to that 60-min lifetime so a look late in the hour still
+ * discounts our own probe. Generous on purpose — the honest failure direction
+ * is dropping a genuine marker, never keeping our own. This wide window is the
+ * best we can do off a bare send TIME; once the report lands, the precise,
+ * age-aware {@link matchesProbeArrival} takes over (see state/activityObs).
  */
-export const SELF_AFTER_MS = 45 * 60 * 1000;
+export const SELF_AFTER_MS = 60 * 60 * 1000;
 
 /**
  * The implied-interaction-time interval of a positive observation, in epoch
@@ -80,6 +83,28 @@ export const isSelfInduced = (obs, sentAtMs) => {
   const iv = interactionInterval(obs);
   return iv.hi * 1000 >= sentAtMs - SELF_BEFORE_MS
     && iv.lo * 1000 <= sentAtMs + SELF_AFTER_MS;
+};
+
+/**
+ * Was this positive marker one of OUR OWN probe ARRIVALS? True when the
+ * marker's implied interaction interval contains any probe-arrival time (epoch
+ * SECONDS — a spy report's `ts`/`timestamp`) within ±{@link SAME_TAU_SLACK_S}.
+ * The durable, age-aware companion to {@link isSelfInduced}: a report we hold
+ * PROVES we probed the body at ~that time (the arrival that lit the marker),
+ * and unlike the per-tab send map (lib/spySentSession) it survives a tab close,
+ * a manual (non-OG-E) send, and looking from a different tab. Age-aware by
+ * construction — a FRESHER marker (genuine activity after our probe) has an
+ * interval that misses every arrival and is kept. Mirrors the read-side match
+ * in {@link probeActivityObs}.
+ * @param {ActivityObs} obs
+ * @param {number[]} [probeTimesSec]  Our probe arrivals for this body, epoch s.
+ * @returns {boolean}
+ */
+export const matchesProbeArrival = (obs, probeTimesSec) => {
+  if (obs.m < 0 || !Array.isArray(probeTimesSec) || !probeTimesSec.length) return false;
+  const iv = interactionInterval(obs);
+  return probeTimesSec.some((p) => Number.isFinite(p)
+    && p >= iv.lo - SAME_TAU_SLACK_S && p <= iv.hi + SAME_TAU_SLACK_S);
 };
 
 /**
@@ -148,8 +173,11 @@ export const mergeActivityObs = (a, b) => {
  *
  * @param {ActivityObs[] | undefined} ring  Existing ring (oldest→newest).
  * @param {ActivityObs} obs
- * @param {{ sentAtMs?: number }} [opts]  Our own probe-send time for this
- *   body's coord, if any (see lib/spySentSession.js).
+ * @param {{ sentAtMs?: number, probeTimesSec?: number[] }} [opts]  Anchors for
+ *   the self-induced discount: `sentAtMs` = our probe-SEND time for this body
+ *   (per-tab, fresh — lib/spySentSession.js); `probeTimesSec` = our probe
+ *   ARRIVALS from reports we already hold (durable, cross-tab —
+ *   state/activityObs). Either one matching drops the marker.
  * @returns {ActivityObs[] | null}
  */
 export const appendActivityObs = (ring, obs, opts = {}) => {
@@ -166,6 +194,7 @@ export const appendActivityObs = (ring, obs, opts = {}) => {
     if (last && last.m === -1 && (obs.t - last.t) * 1000 < NONE_REPEAT_MS) return null;
   } else {
     if (isSelfInduced(obs, opts.sentAtMs)) return null;
+    if (matchesProbeArrival(obs, opts.probeTimesSec)) return null;
     // Same-interaction dedup against the most recent POSITIVE observation
     // (intervals are time-ordered; only the newest one can still collide).
     const lastPos = [...cur].reverse().find((e) => e.m >= 0);

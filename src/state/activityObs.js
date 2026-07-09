@@ -35,6 +35,8 @@ import { GALAXY_SCANNED_EVENT } from '../lib/ogeEvents.js';
 import { readSpySentMap } from '../lib/spySentSession.js';
 import { currentUniverseKey } from './universeKey.js';
 import { watchListStore } from './watchList.js';
+import { targetReportsStore } from './targets.js';
+import { latestOf, historyOf } from '../domain/targetReports.js';
 import { appendActivityObs } from '../domain/activityObs.js';
 
 /** @typedef {import('../domain/activityObs.js').ActivityObs} ActivityObs */
@@ -106,10 +108,52 @@ const sweepStale = (map, nowMs) => {
 };
 
 /**
+ * A galaxy activity marker only reflects interaction in the last hour, so only
+ * probe arrivals inside this look-back of the scan can be the one that lit it.
+ */
+const PROBE_LOOKBACK_S = 60 * 60;
+
+/**
+ * Our own probe ARRIVALS for one body within the hour before `tSec`, epoch
+ * seconds — the timestamps of the spy reports we already hold for it (`latest`
+ * + `history`). Durable, cross-tab evidence of "we probed this body at ~T" that
+ * anchors the self-induced-activity discount even when the per-tab
+ * `spySentSession` map is gone: tab closed, probe sent manually (outside OG-E),
+ * or the galaxy look happened in a different tab than the send. `undefined`
+ * when we hold no recent report — the discount then falls back to the session
+ * map alone (the pre-existing behaviour).
+ * @param {import('../domain/targetReports.js').BodyEntry
+ *   | import('../domain/espionageReport.js').SpyReport | undefined} entry
+ * @param {number} tSec
+ * @returns {number[] | undefined}
+ */
+const recentProbeArrivals = (entry, tSec) => {
+  if (!entry) return undefined;
+  /** @type {number[]} */
+  const out = [];
+  /** @param {number | undefined} t */
+  const consider = (t) => {
+    if (typeof t === 'number' && Number.isFinite(t) && t > 0 && t >= tSec - PROBE_LOOKBACK_S) {
+      out.push(t);
+    }
+  };
+  consider(latestOf(entry).timestamp);
+  for (const h of historyOf(entry)) consider(h.ts);
+  return out.length ? out : undefined;
+};
+
+/**
  * Record one galaxy system snapshot: for every slot owned by a WATCHED player,
  * append the planet's and (independently) the moon's activity marker to that
  * body's ring. Hydration-gated like `recordReport` so an early event can't be
  * clobbered by a late load. No-op when nothing changed.
+ *
+ * The self-induced-probe discount is anchored on BOTH our per-tab send map
+ * (`spySentSession`, keyed by body so a moon send doesn't discount its planet)
+ * AND the durable probe arrivals from reports we already hold for the body
+ * (`recentProbeArrivals`) — so an induced "active" marker is dropped even when
+ * the session map was never populated (tab closed / manual send / look from
+ * another tab), which is the common way a probe's own marker used to leak.
  *
  * @param {{ galaxy: number, system: number, scannedAt: number,
  *   positions: Record<number, import('../domain/scans.js').Position> }} detail
@@ -121,6 +165,7 @@ export const recordGalaxyActivity = async (detail) => {
   if (!watched.length) return;
   await whenActivityObsHydrated();
   const sentMap = readSpySentMap();
+  const reports = targetReportsStore.get();
   const tSec = Math.floor((detail.scannedAt ?? 0) / 1000);
   if (!tSec) return;
 
@@ -133,12 +178,16 @@ export const recordGalaxyActivity = async (detail) => {
       const pid = pos && pos.player ? String(pos.player.id) : null;
       if (!pid || !watched.includes(pid)) continue;
       const coord = `${detail.galaxy}:${detail.system}:${posKey}`;
+      const pidReports = reports[pid];
       for (const [type, m] of [[1, pos.activity], [3, pos.moonActivity]]) {
         if (typeof m !== 'number') continue;
         const bodyKey = `${coord}:${type}`;
+        // Session send key mirrors sendSpy.sentKey: planet `g:s:p`, moon `g:s:p:3`.
+        const sentKey = type === 3 ? `${coord}:3` : coord;
         const bucket = next[pid] || {};
         const ring = appendActivityObs(bucket[bodyKey], { t: tSec, m }, {
-          sentAtMs: sentMap[coord],
+          sentAtMs: sentMap[sentKey],
+          probeTimesSec: recentProbeArrivals(pidReports && pidReports[bodyKey], tSec),
         });
         if (!ring) continue;
         if (!changed) { next = { ...cur }; changed = true; }
