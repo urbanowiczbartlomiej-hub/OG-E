@@ -469,7 +469,10 @@
   .spy-pchip .ico:hover { background: #22303f; color: #cfe4ff; }
   .spy-pchip.map-hidden { opacity: .45; }
   button.spy-pchip { font-family: inherit; cursor: pointer; }
-  .spy-pchip.on { border-color: #4a9eff; background: #1c2f45; color: #cfe4ff; }
+  /* The reach-overlay pill uses the SAME on/off grammar as the You / player
+     chips: bright when its layer is ON the map, dimmed when OFF — not a
+     separate blue "on" look. Its state is still the `.on` class. */
+  #spyMapReach:not(.on) { opacity: .45; }
 
   /* Grouped neighbourhood census (inside the expanded row) — fixed labelled
      families instead of a reshuffling flat tile row; zeros stay visible but
