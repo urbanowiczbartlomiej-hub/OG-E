@@ -150,6 +150,13 @@ and pushes — but the push-to-`main` path above is the only one we use.)
   green once, at release time, and enforced there by the release script.
 - Follow Conventional Commits: `fix:` / `feat:` / `refactor:` /
   `chore:` / `test:` / `docs:`.
+- **Git: always work on `main`; never create a branch without an explicit
+  command.** Commit directly to `main`. This OVERRIDES the generic "if on the
+  default branch, branch first" default — do NOT auto-branch. Only branch (or
+  use a worktree) when the user explicitly asks for one. When the tree is
+  shared with parallel work, isolate by staging ONLY the files you changed
+  (`git add <path> …`, never `-A` / `-u`), not by branching. Never push
+  without being told.
 - **Documentation hygiene (DRY).** Each topic has ONE source of truth;
   every other mention *links* to it instead of restating it. Canonical
   homes: build steps → `REVIEWERS.md`; release workflow → `CLAUDE.md`;
