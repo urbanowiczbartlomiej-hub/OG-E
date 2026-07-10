@@ -1,7 +1,7 @@
 // @ts-check
 
 // Unit tests for domain/proximityDigest — the pure per-prober aggregation behind
-// the Spyglass "🛡 Who's been near you" strip (Etap H3). Pure over a plain
+// the Spyglass "Who's spying on you" strip (Etap H3). Pure over a plain
 // newest-first log; the only interesting logic is the grouping, the same-system
 // (RIP-range) detection from from/at coords, and the hot-first ordering.
 
