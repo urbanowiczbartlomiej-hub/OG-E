@@ -4,6 +4,30 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.42.0] — 2026-07-10
+
+### Added
+
+- **Spyglass reads a player's fleet-save rhythm.** A new "FS windows" block in
+  the dossier brackets when a watched player's fleet *left* and *came back* —
+  paired from your own spy reports plus the galaxy activity you already gather
+  passively. Every line is an honest time window ("left Tue 21:40 → 23:15"),
+  narrowed to a likely moment only when a single activity marker pins it, never
+  a fake exact minute. It flags its own doubts: a fleet that may have just
+  moved next door (`relocated?`), a moon departure that could be a jump-gate
+  hop (`gate?`), or sibling bodies it couldn't check. The "is a real fleet
+  home" bar scales to each player (a fraction of their own peak / total fleet),
+  so it catches a small farm's save and ignores a big player's recycler junk
+  alike.
+
+### Changed
+
+- **Watchlist cards and the dossier show visible fleet beside hidden.** The
+  hidden-fleet estimate swings with scan timing — a fleet caught home reads
+  "~0 hidden" exactly when it sits catchable — so the scan-confirmed *visible*
+  parked fleet now sits next to it ("visible 48M · hidden ~12M"), the stable
+  number beside the volatile one, colour-coded (blue = seen, amber = computed).
+
 ## [1.41.1] — 2026-07-10
 
 ### Changed
