@@ -324,7 +324,7 @@ let allianceClasses = {};
 /**
  * "Foreign fleet spotted near your planet" alerts for the selected universe
  * (`state/proximityReports.js`), newest-first. Drives the Spyglass
- * "🛡 Who's been near you" strip.
+ * "Who's spying on you" strip.
  * @type {import('../../domain/espionageReport.js').ProximityReport[]}
  */
 let proximityReports = [];
@@ -1614,7 +1614,7 @@ const proximityNamedEl = (name, coords, moon) => {
 };
 
 /**
- * Fill the Spyglass "🛡 Who's been near you" strip from {@link proximityReports},
+ * Fill the Spyglass "Who's spying on you" strip from {@link proximityReports},
  * digested to ONE row per prober (Etap H3, `domain/proximityDigest.js`): count,
  * last-seen age, which of our bodies, origin — with a 💀 flag + hot-first sort
  * when the origin sits in our own system (even RIPs reach us fast from there).
@@ -1699,6 +1699,7 @@ const renderProximityStrip = () => {
           + 'background:linear-gradient(90deg,#241413,transparent 75%);'
         : '');
 
+    // Line 1 — the glance summary: who + how many + 💀 + how close + how recent.
     const label = e.name || `#${e.byPlayerId}`;
     const who = document.createElement('span');
     who.textContent = label;
@@ -1717,32 +1718,47 @@ const renderProximityStrip = () => {
       facts.appendChild(hot);
     }
 
-    // Distance from this prober's origin to our nearest body — its own line
-    // under the name (colour carries the severity; 0 sys = in-empire range).
+    // Distance + last-seen ride INLINE on the name line (each was its own
+    // stacked line before) so a row is 2 lines, not 3 — more probers fit at
+    // the same height. Distance colour carries the severity (0 sys = in-empire
+    // strike range); the age stays muted.
     const dist = nearestBodyDistance(e.fromCoords, ownBodies);
     if (dist) {
-      const d = document.createElement('div');
+      facts.appendChild(document.createTextNode(' · '));
+      const d = document.createElement('span');
       d.textContent = dist.label;
       d.style.cssText = 'font-family:monospace;font-size:11px;color:'
         + (dist.cls === 'hot' ? '#e06c5f' : dist.cls === 'near' ? '#e0b45f' : '#6b7782') + ';';
       facts.appendChild(d);
     }
-
     const age = e.lastTs != null ? proximityAge(e.lastTs, nowMs) : '';
+    if (age) {
+      const a = document.createElement('span');
+      a.textContent = ` · ${age}`;
+      a.style.cssText = 'font-size:11px;color:#6b7782;';
+      facts.appendChild(a);
+    }
+
+    // Line 2 — the geometry: `from <origin> · at <our bodies>`. `from` LEADS
+    // because it's almost always a SINGLE coord (the prober's origin), while
+    // `at` fans out over the several bodies of ours they probed — so the long
+    // list trails. (Matches the in-game panel's From-before-Near-you column
+    // order.) Wraps so EVERY probed body of ours shows.
     const sub = document.createElement('div');
-    // Wraps (was nowrap + ellipsis) so EVERY probed body of ours shows, not
-    // just the first two — parity with the in-game panel's "Near you" column.
     sub.style.cssText = 'font-size:11px;color:#6b7782;line-height:1.5;';
-    sub.appendChild(document.createTextNode(`${age ? `${age} · ` : ''}at `));
-    // Moon bodies carry the lunar tint (a planet and its moon share coords).
-    e.atBodies.forEach((b, i) => {
-      if (i) sub.appendChild(document.createTextNode(', '));
-      const nm = proximityShowNames ? bodyNameFor(nameIdx, b.coords, b.moon) : null;
-      sub.appendChild(nm ? proximityNamedEl(nm, b.coords, b.moon) : proximityBodyEl(b.coords, b.moon));
-    });
     if (e.fromCoords) {
-      sub.appendChild(document.createTextNode(' · from '));
+      sub.appendChild(document.createTextNode('from '));
       sub.appendChild(proximityBodyEl(e.fromCoords, e.fromMoon));
+      if (e.atBodies.length) sub.appendChild(document.createTextNode(' · '));
+    }
+    if (e.atBodies.length) {
+      sub.appendChild(document.createTextNode('at '));
+      // Moon bodies carry the lunar tint (a planet and its moon share coords).
+      e.atBodies.forEach((b, i) => {
+        if (i) sub.appendChild(document.createTextNode(', '));
+        const nm = proximityShowNames ? bodyNameFor(nameIdx, b.coords, b.moon) : null;
+        sub.appendChild(nm ? proximityNamedEl(nm, b.coords, b.moon) : proximityBodyEl(b.coords, b.moon));
+      });
     }
     facts.appendChild(sub);
 

@@ -1,6 +1,6 @@
 // @ts-check
 
-// Pure aggregation for the Spyglass "🛡 Who's been near you" strip (Etap H3).
+// Pure aggregation for the Spyglass "Who's spying on you" strip (Etap H3).
 // The store (state/proximityReports.js) is a flat newest-first log — one entry
 // per opened "foreign fleet spotted near your planet" alert — so a repeat
 // scout used to fill the strip with near-identical lines. This collapses the

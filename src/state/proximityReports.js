@@ -4,7 +4,7 @@
 // spotted near your planet" alerts the player has OPENED. A bounded, newest-first
 // ARRAY of {@link ProximityReport} (unlike state/targets.js's nested map, this is
 // a flat log — "who's been probing me lately"). Feeds the dashboard Spyglass
-// "🛡 Who's been near you" strip.
+// "Who's spying on you" strip.
 //
 // LOCAL ONLY — never gist-synced: it's per-device intel, fully re-derivable by
 // re-opening the alerts, exactly like state/targets.js / state/scans.js. GREEN

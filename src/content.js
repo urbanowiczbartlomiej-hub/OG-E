@@ -159,7 +159,7 @@ initColonizeDecisionsStore();
 initTargetReportsStore();
 // Proximity-alert feed (per-universe, chrome.storage). The SAME ingest consumer
 // writes "foreign fleet spotted near your planet" alerts here; the dashboard
-// Spyglass "🛡 Who's been near you" strip reads them.
+// Spyglass "Who's spying on you" strip reads them.
 initProximityReportsStore();
 // Watch-list (per-universe, chrome.storage). Hydrated here so the in-game scan
 // FAB sees the players the user starred in the dashboard Targets sub-tab.
