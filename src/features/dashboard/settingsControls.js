@@ -19,7 +19,7 @@ import { syncRequestKeyFor } from '../../sync/scheduler.js';
 import { fetchNtfyAccount } from '../../sync/ntfyAccount.js';
 import { formatNtfyAccountLines } from '../../domain/ntfyAccount.js';
 import { ALARM_CLOCK_NTFY_TOKEN_KEY, isValidNtfyToken } from '../../sync/alarmClock.js';
-import { SYNC_STATUS_BASE } from './syncInventory.js';
+import { SYNC_STATUS_BASE, parsePerUniverseKey } from './syncInventory.js';
 
 /**
  * Read the shared-settings dict, normalised to the four known fields.
@@ -64,8 +64,8 @@ const requestSyncAll = async () => {
   /** @type {Set<string>} */
   const ids = new Set();
   for (const key of Object.keys(all)) {
-    const i = key.indexOf(':');
-    if (i > 0 && key.slice(i + 1).startsWith('oge_')) ids.add(key.slice(0, i));
+    const parsed = parsePerUniverseKey(key);
+    if (parsed) ids.add(parsed.universeId);
   }
   const now = Date.now();
   await Promise.all([...ids].map((id) => chromeStore.set(syncRequestKeyFor(id), now)));

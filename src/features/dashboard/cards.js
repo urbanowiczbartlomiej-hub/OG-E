@@ -14,23 +14,10 @@
 
 import { RELATIONSHIP_COLORS } from './mapPrimitives.js';
 import { sparkline } from './dossier.js';
+import { compact } from './format.js';
 import { dangerColor } from '../../lib/dangerColor.js';
 
-// ── Local self-contained formatting helpers (copies of targets.js's) ─────────
-
-/**
- * Compact score: 47_912_345 → "47.9M".
- * @param {number|undefined} n
- * @returns {string}
- */
-function compact(n) {
-  if (typeof n !== 'number' || !Number.isFinite(n)) return '—';
-  const abs = Math.abs(n);
-  if (abs >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
-  if (abs >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
-  if (abs >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
-  return String(Math.round(n));
-}
+// ── Local formatting helpers (compact magnitude → shared ./format.js) ─────────
 
 /**
  * Compact age ("<1h" / "3h" / "2d" / "5w"), '' for junk.

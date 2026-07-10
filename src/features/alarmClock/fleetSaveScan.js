@@ -11,17 +11,9 @@ import { isFleetSaveLeg, shipCountFromText } from '../../domain/fleetSave.js';
 import { GAME } from '../../lib/gameDom.js';
 import { MISSION_NAMES } from '../../domain/missions.js';
 import { bodyKey, denseCoords } from '../../domain/bodies.js';
+import { figureType } from '../shared/eventRow.js';
 
 /** @typedef {import('../../domain/fleetSave.js').FleetSaveCandidate} FleetSaveCandidate */
-
-/**
- * Body type of an origin/dest cell: a moon carries `figure.moon`, everything
- * else is a planet. Matches the badge feature's `bodyKey` type (1/3).
- *
- * @param {Element | null} cell
- * @returns {number} 1 = planet, 3 = moon.
- */
-const figureType = (cell) => (cell?.querySelector('figure')?.classList.contains('moon') ? 3 : 1);
 
 /**
  * Body identity (`g:s:p:type`) of where a row's leg LANDS — origin on a return,

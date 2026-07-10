@@ -8,9 +8,10 @@
 // (reused verbatim from targets.js `detailRow`, incl. a ⭐ hoard flag on the
 // planet holding the most visible fleet).
 //
-// Self-contained by design: the small compact()/formatAge()/ageMs() helpers are
-// copied here (NOT imported from targets.js) so the sibling feature file has no
-// intra-feature dependency. Pure DOM — no timers, no storage, no chrome.*.
+// Mostly self-contained: the small formatAge()/ageMs() helpers are local, and
+// compact() comes from the shared ./format.js leaf (NOT a sibling RENDERER
+// file) so there is no intra-feature file coupling. Pure DOM — no timers, no
+// storage, no chrome.*.
 // Read-only: it renders intel, it never sends (the in-game scan FAB does that).
 
 import { scanStatus, rescanAtFor } from '../../domain/spyScan.js';
@@ -19,27 +20,14 @@ import { dangerColor } from '../../lib/dangerColor.js';
 import { effectiveScan, ringKeyFor } from '../../domain/scanMode.js';
 import { bodyActivityReadout } from '../../domain/galaxyWatch.js';
 import { mergeActivityObs } from '../../domain/activityObs.js';
+import { compact } from './format.js';
 
 /**
  * @typedef {import('../../domain/targets.js').PlanetPos} PlanetPos
  * @typedef {{ ts: number, defPts: number, fleetPts: number, avgLoot?: number, maxLoot?: number, lastLoot?: number, lootSamples?: number, act?: import('../../domain/activityObs.js').ActivityObs[] }} PlanetReport
  */
 
-// ── Local self-contained formatting helpers (copies of targets.js's) ──────────
-
-/**
- * Compact magnitude ("4.57B" / "47.9M" / "880K"), '—' when absent.
- * @param {number|undefined} n
- * @returns {string}
- */
-function compact(n) {
-  if (typeof n !== 'number' || !Number.isFinite(n)) return '—';
-  const abs = Math.abs(n);
-  if (abs >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
-  if (abs >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
-  if (abs >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
-  return String(Math.round(n));
-}
+// ── Local formatting helpers (compact magnitude → shared ./format.js) ─────────
 
 /**
  * Compact human age ("3h" / "2d" / "5w") for a millisecond span, '' if unknown.

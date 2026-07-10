@@ -18,6 +18,7 @@ import { scanStatus, rescanAtFor } from '../../domain/spyScan.js';
 import { aggregatePlayerScan } from '../../domain/scanMode.js';
 import { DANGER_LABELS } from '../../domain/dangerScore.js';
 import { dangerColor } from '../../lib/dangerColor.js';
+import { compact } from './format.js';
 import { buildDossier } from './dossier.js';
 
 /**
@@ -45,21 +46,6 @@ export const DEFAULT_TARGET_SORT = { key: 'danger', dir: 'desc' };
  */
 function fmt(n) {
   return typeof n === 'number' && Number.isFinite(n) ? n.toLocaleString('pl-PL') : '—';
-}
-
-/**
- * Compact magnitude ("4.57B" / "47.9M" / "880K") — keeps the numeric columns
- * narrow. Exact values stay available in cell tooltips via {@link fmt}.
- * @param {number|undefined} n
- * @returns {string}
- */
-function compact(n) {
-  if (typeof n !== 'number' || !Number.isFinite(n)) return '—';
-  const abs = Math.abs(n);
-  if (abs >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
-  if (abs >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
-  if (abs >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
-  return String(Math.round(n));
 }
 
 /**

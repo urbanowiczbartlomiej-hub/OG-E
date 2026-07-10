@@ -101,7 +101,7 @@ const countOf = (v) => {
  * @param {string} key
  * @returns {{ universeId: string, base: string } | null}
  */
-const parsePerUniverseKey = (key) => {
+export const parsePerUniverseKey = (key) => {
   const i = key.indexOf(':');
   if (i <= 0) return null;
   const base = key.slice(i + 1);

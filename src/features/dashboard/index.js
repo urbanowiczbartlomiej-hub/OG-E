@@ -78,7 +78,7 @@ import { bodiesKeyFor } from '../../state/bodies.js';
 import { activityObsKeyFor } from '../../state/activityObs.js';
 import { watchListKeyFor, normalizeWatchList, writeWatchListConfig, DEFAULT_SPY_PROBES, DEFAULT_CADENCE, normalizeCadence } from '../../state/watchList.js';
 import { syncRequestKeyFor } from '../../sync/scheduler.js';
-import { formatBytes } from './syncInventory.js';
+import { formatBytes, parsePerUniverseKey } from './syncInventory.js';
 import { galaxyStaleMs } from '../../domain/galaxyWatch.js';
 import { pointsOf } from '../../domain/unitCosts.js';
 import {
@@ -629,24 +629,22 @@ const boot = async () => {
  * also recognised so a fresh universe that has only the config written
  * (no scans / no colonies yet) still shows up.
  *
+ * Built on the shared {@link parsePerUniverseKey} (the one parser for
+ * `<id>:oge_*` keys), then narrowed by an EXPLICIT base whitelist: the
+ * selector deliberately surfaces only universes carrying real data, not
+ * any lone `oge_*` bookkeeping key. That narrower policy is the intent
+ * here (unlike `requestSyncAll`, which pokes every `oge_*` universe).
+ *
  * @returns {Promise<string[]>}
  */
 const discoverUniverses = async () => {
   const all = await chromeStore.getAll();
   /** @type {Set<string>} */
   const ids = new Set();
-  const suffixes = [
-    `:${HISTORY_KEY_BASE}`,
-    `:${SCANS_KEY_BASE}`,
-    `:${GALAXY_SCAN_CONFIG_KEY_BASE}`,
-  ];
+  const bases = new Set([HISTORY_KEY_BASE, SCANS_KEY_BASE, GALAXY_SCAN_CONFIG_KEY_BASE]);
   for (const key of Object.keys(all)) {
-    for (const suffix of suffixes) {
-      if (key.endsWith(suffix)) {
-        ids.add(key.slice(0, key.length - suffix.length));
-        break;
-      }
-    }
+    const parsed = parsePerUniverseKey(key);
+    if (parsed && bases.has(parsed.base)) ids.add(parsed.universeId);
   }
   return [...ids].sort();
 };

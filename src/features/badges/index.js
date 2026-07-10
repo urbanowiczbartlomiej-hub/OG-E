@@ -55,6 +55,7 @@ import { EVENT_BOX_LOADED_EVENT } from '../../lib/ogeEvents.js';
 import { clock } from '../../lib/clock.js';
 import { denseCoords } from '../../domain/bodies.js';
 import { shipCountFromText } from '../../domain/fleetSave.js';
+import { figureType } from '../shared/eventRow.js';
 import { groupMarkers, bodyKey, MARKER_LABEL } from './pure.js';
 
 // ── OG-E-owned ids/classes (NOT a DOM contract — ours to rename freely) ──
@@ -79,19 +80,6 @@ const REFRESH_DEBOUNCE_MS = 200;
 const CACHE_GRACE_MS = 5 * 60 * 1000;
 
 // ── DOM read helpers (feature layer — pure.js stays DOM-free) ─────────────
-
-/**
- * Body type of an event-row origin/dest cell: a moon carries `figure.moon`,
- * everything else (planet / debris) is treated as planet — only OUR endpoints
- * need an accurate planet-vs-moon split, and ours are never debris.
- *
- * @param {Element | null} cell
- * @returns {number} 1 = planet, 3 = moon.
- */
-const figureType = (cell) => {
-  const fig = cell?.querySelector('figure');
-  return fig && fig.classList.contains('moon') ? 3 : 1;
-};
 
 /**
  * Read every fleet leg out of `#eventContent` as plain {@link
