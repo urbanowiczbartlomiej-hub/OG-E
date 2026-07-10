@@ -92,6 +92,7 @@ import {
 import { parsePositions } from '../../domain/positions.js';
 import { createButton as makeButton, labelLines } from '../shared/button.js';
 import { LANDER_GLYPH } from '../shared/buttonGlyphs.js';
+import { FAB_MODULES } from '../shared/fabModules.js';
 import {
   select as courierSelect,
   retarget as courierRetarget,
@@ -872,8 +873,8 @@ let installed = null;
  * SAME dispose fn as the first.
  *
  * Lifecycle:
- *   1. Snapshot settings. If `fabMode === false` we skip DOM work
- *      entirely but still subscribe to settings so a later flip to
+ *   1. Snapshot settings. If `showColonizeButton === false` we skip DOM
+ *      work entirely but still subscribe to settings so a later flip to
  *      `true` creates the button live.
  *   2. Renders (if enabled): `<div id="oge-send-col">` + two halves,
  *      registered as the 'col' module of the unified FAB (which owns
@@ -932,7 +933,7 @@ export const installSendColony = () => {
       // Matches sendExpedition / sendLifeform so the single-word labels read at
       // the same size across the 1-zone command buttons (was 0.12 — too small).
       fontScale: 0.18,
-      module: { id: 'col', name: 'Colonization', color: BG_SEND_IDLE, glyph: LANDER_GLYPH },
+      module: FAB_MODULES.col,
       gateUntilEventBox: true,
       holdMs: HOLD_SKIP_MS,
       zones: [
@@ -978,23 +979,17 @@ export const installSendColony = () => {
   fdCache.bootstrap();
 
   // Settings-driven mount/teardown + live resize — the wiring shared by
-  // every send* FAB feature. Any settings change can flip the candidate, so
-  // repaint on every notification via `onSettingsChange`. The mount is
-  // additionally gated on the global `showColonizeButton` toggle (settings ▸
-  // Floating button) — off means no Colonize module at all; its live flips
-  // reconcile in onSettingsChange (mirrors the other per-module FAB toggles).
+  // every send* FAB feature, gated on the per-module `showColonizeButton`
+  // toggle (the settings module bar). Any settings change can flip the
+  // candidate, so repaint on every notification via `onSettingsChange`.
   const unsubSettings = installFabSettingsLifecycle({
     settingsStore,
-    mount: () => { if (settingsStore.get().showColonizeButton) mount(); },
+    enabled: (s) => s.showColonizeButton,
+    mount: () => mount(),
     removeButton,
     updateButtonSize,
     isInstalled: () => installed !== null,
-    onSettingsChange: () => {
-      const s = settingsStore.get();
-      if (!s.showColonizeButton && controller) removeButton();
-      else if (s.showColonizeButton && !controller && s.fabMode && document.body) mount();
-      refresh();
-    },
+    onSettingsChange: () => refresh(),
   });
 
   // Galaxy-Scan config (positions / preference) drives both the candidate and

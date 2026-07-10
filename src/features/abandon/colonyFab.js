@@ -301,13 +301,12 @@ export const installColonyFab = () => {
   /**
    * Re-evaluate the desired state and (un)mount to match. A NO-OP while a flow
    * is running (so we never register/dispose the FAB — i.e. mutate the DOM —
-   * while the game is opening its jQuery UI dialog), and when fabMode is off.
+   * while the game is opening its jQuery UI dialog).
    *
    * @returns {void}
    */
   const refresh = () => {
     if (flowRunning) return;
-    if (!settingsStore.get().fabMode) { unmount(); return; }
     const { state: want, cp: wantCp } = desiredState();
     // Remount when the state changes OR when we're staying in 'navigate' but the
     // chosen first-fresh colony changed (the mounted button's onTap closes over
@@ -321,7 +320,7 @@ export const installColonyFab = () => {
   if (document.body) refresh();
   else document.addEventListener('DOMContentLoaded', () => { if (installed) refresh(); }, { once: true });
 
-  // React to config edits (fabMode toggle, colonyMinFields bump) and to OGame
+  // React to config edits (colonyMinFields bump) and to OGame
   // AJAX overview swaps (planet switch via #planetList). The observer is
   // inert while a flow runs (see refresh()).
   //

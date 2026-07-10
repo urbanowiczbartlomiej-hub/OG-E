@@ -1,12 +1,18 @@
 // @ts-check
 
-// Floating-button section of the OG-E settings tab — the unified FAB that
-// hosts all four command modules (Expeditions / Colonization / Lifeforms /
-// Daily Run). Master toggle, size, and the per-module "Show …" visibility
-// toggles gathered in one place (Colonization's lives in the dashboard, since
-// it's a per-universe colony-hunting setting); other per-module knobs live in
-// their own sections, and switching the visible module happens on the button
-// itself (its orbital picker), not here.
+// The OG-E command block — the HEADERLESS first section of the settings tab:
+// the Dashboard launcher riding flush on top of the FAB module bar, then the
+// shared size slider. The module BAR (one toggle tile per module, each a 1:1
+// preview of its satellite orb: lit = visible, dark = hidden) IS the
+// visibility control — there is no master FAB switch; all four tiles off =
+// no command buttons. The bar governs FAB *visibility* only — each feature
+// self-gates its own mount; Colonization's hunting config stays a
+// per-universe dashboard concern. Other per-module knobs live in their own
+// sections, and switching the visible module happens on the button itself
+// (its orbital picker), not here.
+
+import { FAB_MODULES } from '../../shared/fabModules.js';
+import { buildDashboardButton } from './data.js';
 
 /**
  * @typedef {import('../controls.js').SettingsSection} SettingsSection
@@ -14,16 +20,29 @@
 
 /** @type {SettingsSection} */
 export const floatingButtonSection = {
-  section: 'Floating button',
+  // Empty title — the block leads the tab directly under the "OG-E Settings"
+  // header; it explains itself (createSectionTable skips the header row).
+  section: '',
   options: [
-    { id: 'fabMode', label: 'Floating button (Expeditions / Colonization / Lifeforms / Daily Run)', type: 'checkbox' },
-    { id: 'fabBtnSize', label: 'Button size', type: 'range', min: 40, max: 560, step: 10, unit: 'px', disabledWhen: (s) => !s.fabMode },
-    // Per-module visibility — which command buttons ride the FAB. All positive
-    // ("Show …", ON = visible); each feature self-gates its own mount. Greyed
-    // out when the FAB itself is off.
-    { id: 'showExpeditionButton', label: 'Show the Expeditions button', type: 'checkbox', disabledWhen: (s) => !s.fabMode },
-    { id: 'showColonizeButton', label: 'Show the Colonize button', type: 'checkbox', disabledWhen: (s) => !s.fabMode },
-    { id: 'showLifeformButton', label: 'Show the Lifeforms button', type: 'checkbox', disabledWhen: (s) => !s.fabMode },
-    { id: 'showDailyRunButton', label: 'Show the Daily Run button', type: 'checkbox', disabledWhen: (s) => !s.fabMode },
+    {
+      id: 'fabModules',
+      label: '',
+      type: 'moduleTiles',
+      fullWidth: true,
+      tiles: Object.values(FAB_MODULES),
+      topSlot: buildDashboardButton,
+    },
+    // No heading — a lone slider directly under the bar reads as "size" on
+    // its own (the px readout says the rest).
+    {
+      id: 'fabBtnSize',
+      label: '',
+      type: 'range',
+      fullWidth: true,
+      min: 40,
+      max: 560,
+      step: 10,
+      unit: 'px',
+    },
   ],
 };

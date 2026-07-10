@@ -46,6 +46,7 @@ const setup = () => {
   };
   unsub = installFabSettingsLifecycle({
     settingsStore,
+    enabled: (s) => s.showExpeditionButton,
     mount: spies.mount,
     removeButton: spies.removeButton,
     updateButtonSize: spies.updateButtonSize,
@@ -56,7 +57,7 @@ const setup = () => {
 };
 
 beforeEach(() => {
-  resetSettingsToDefaults(); // fabMode: true, fabBtnSize: 320
+  resetSettingsToDefaults(); // showExpeditionButton: true, fabBtnSize: 320
 });
 
 afterEach(() => {
@@ -65,28 +66,28 @@ afterEach(() => {
 });
 
 describe('installFabSettingsLifecycle', () => {
-  it('mounts once on install when fabMode is on', () => {
+  it('mounts once on install when showExpeditionButton is on', () => {
     const s = setup();
     expect(s.mount).toHaveBeenCalledTimes(1);
     expect(s.removeButton).not.toHaveBeenCalled();
     expect(s.updateButtonSize).not.toHaveBeenCalled();
   });
 
-  it('does not mount on install when fabMode is off', () => {
-    setSettings({ fabMode: false });
+  it('does not mount on install when showExpeditionButton is off', () => {
+    setSettings({ showExpeditionButton: false });
     const s = setup();
     expect(s.mount).not.toHaveBeenCalled();
   });
 
-  it('mounts on a fabMode flip to on, removes on a flip to off', () => {
+  it('mounts on a showExpeditionButton flip to on, removes on a flip to off', () => {
     const s = setup(); // initial mount
     s.mount.mockClear();
 
-    setSettings({ fabMode: false });
+    setSettings({ showExpeditionButton: false });
     expect(s.removeButton).toHaveBeenCalledTimes(1);
     expect(s.mount).not.toHaveBeenCalled();
 
-    setSettings({ fabMode: true });
+    setSettings({ showExpeditionButton: true });
     expect(s.mount).toHaveBeenCalledTimes(1);
   });
 
@@ -99,7 +100,7 @@ describe('installFabSettingsLifecycle', () => {
   it('runs onSettingsChange on every notification', () => {
     const s = setup();
     setSettings({ fabBtnSize: 400 });
-    setSettings({ fabMode: false });
+    setSettings({ showExpeditionButton: false });
     expect(s.onSettingsChange).toHaveBeenCalledTimes(2);
   });
 
@@ -118,8 +119,8 @@ describe('installFabSettingsLifecycle', () => {
     s.mount.mockClear();
     unsub?.();
     unsub = null;
-    setSettings({ fabMode: false });
-    setSettings({ fabMode: true });
+    setSettings({ showExpeditionButton: false });
+    setSettings({ showExpeditionButton: true });
     expect(s.mount).not.toHaveBeenCalled();
     expect(s.removeButton).not.toHaveBeenCalled();
     expect(s.onSettingsChange).not.toHaveBeenCalled();
@@ -128,6 +129,7 @@ describe('installFabSettingsLifecycle', () => {
   it('works without an onSettingsChange callback', () => {
     unsub = installFabSettingsLifecycle({
       settingsStore,
+      enabled: (s) => s.showExpeditionButton,
       mount: vi.fn(),
       removeButton: vi.fn(),
       updateButtonSize: vi.fn(),

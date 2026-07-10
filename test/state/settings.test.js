@@ -89,7 +89,6 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
         'eventMenuHighlight',
         'expeditionBadges',
         'fabBtnSize',
-        'fabMode',
         'gistToken',
         'maxExpeditionsPerPlanet',
         'readabilityBoost',
@@ -104,10 +103,10 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
       ].sort(),
     );
 
-    expect(SETTINGS_SCHEMA.fabMode).toEqual({
+    expect(SETTINGS_SCHEMA.showExpeditionButton).toEqual({
       type: 'bool',
       default: true,
-      key: 'oge_fabMode',
+      key: 'oge_showExpeditionButton',
     });
     expect(SETTINGS_SCHEMA.fabBtnSize).toEqual({
       type: 'int',
@@ -127,7 +126,7 @@ describe('settingsStore — initial state (pre-init)', () => {
     // beforeEach resets the store to defaults — but the assertion is that
     // the DEFAULTS are what the store exposes, regardless of init.
     const state = settingsStore.get();
-    expect(state.fabMode).toBe(true);
+    expect(state.showExpeditionButton).toBe(true);
     expect(state.expeditionBadges).toBe(true);
     expect(state.autoRedirectExpedition).toBe(true);
     expect(state.fabBtnSize).toBe(320);
@@ -148,9 +147,9 @@ describe('initSettingsStore — hydration', () => {
   });
 
   it('hydrates a boolean field from localStorage', () => {
-    localStorage.setItem('oge_fabMode', 'true');
+    localStorage.setItem('oge_showExpeditionButton', 'true');
     initSettingsStore();
-    expect(settingsStore.get().fabMode).toBe(true);
+    expect(settingsStore.get().showExpeditionButton).toBe(true);
   });
 
   it('hydrates an int field from localStorage', () => {
@@ -181,7 +180,7 @@ describe('initSettingsStore — hydration', () => {
   });
 
   it('hydrates a mix of fields at once in a single store update', () => {
-    localStorage.setItem('oge_fabMode', 'false');
+    localStorage.setItem('oge_showExpeditionButton', 'false');
     localStorage.setItem('oge_fabBtnSize', '30');
     localStorage.setItem('oge_alarmClockNtfyToken', 'tk_abc');
     localStorage.setItem('oge_gistToken', 'ghp_abc123');
@@ -189,7 +188,7 @@ describe('initSettingsStore — hydration', () => {
     initSettingsStore();
 
     const state = settingsStore.get();
-    expect(state.fabMode).toBe(false);
+    expect(state.showExpeditionButton).toBe(false);
     expect(state.fabBtnSize).toBe(30);
     expect(state.alarmClockNtfyToken).toBe('tk_abc');
     expect(state.gistToken).toBe('ghp_abc123');
@@ -202,8 +201,8 @@ describe('initSettingsStore — hydration', () => {
 describe('initSettingsStore — write-through (per-key diff)', () => {
   it('writes a changed bool field to its own localStorage key', () => {
     initSettingsStore();
-    settingsStore.update((s) => ({ ...s, fabMode: false }));
-    expect(localStorage.getItem('oge_fabMode')).toBe('false');
+    settingsStore.update((s) => ({ ...s, showExpeditionButton: false }));
+    expect(localStorage.getItem('oge_showExpeditionButton')).toBe('false');
   });
 
   it('writes a changed int field to its own localStorage key', () => {
@@ -224,12 +223,12 @@ describe('initSettingsStore — write-through (per-key diff)', () => {
       ...s,
       fabBtnSize: 30,
       alarmClockNtfyToken: 'tk_7',
-      fabMode: false,
+      showExpeditionButton: false,
     }));
 
     expect(localStorage.getItem('oge_fabBtnSize')).toBe('30');
     expect(localStorage.getItem('oge_alarmClockNtfyToken')).toBe('tk_7');
-    expect(localStorage.getItem('oge_fabMode')).toBe('false');
+    expect(localStorage.getItem('oge_showExpeditionButton')).toBe('false');
   });
 
   it('does NOT touch localStorage keys for fields that did not change', () => {
@@ -256,13 +255,13 @@ describe('initSettingsStore — write-through (per-key diff)', () => {
 
     settingsStore.update((s) => ({
       ...s,
-      fabMode: false,
+      showExpeditionButton: false,
       expeditionBadges: false,
       fabBtnSize: 42,
       gistToken: 'abc',
     }));
 
-    expect(localStorage.getItem('oge_fabMode')).toBe('false');
+    expect(localStorage.getItem('oge_showExpeditionButton')).toBe('false');
     expect(localStorage.getItem('oge_expeditionBadges')).toBe('false');
     expect(localStorage.getItem('oge_fabBtnSize')).toBe('42');
     expect(localStorage.getItem('oge_gistToken')).toBe('abc');
@@ -288,7 +287,7 @@ describe('initSettingsStore — persistence round-trip', () => {
     initSettingsStore();
     settingsStore.update((s) => ({
       ...s,
-      fabMode: false,
+      showExpeditionButton: false,
       fabBtnSize: 45,
       alarmClockNtfyToken: 'tk_789',
       gistToken: 'ghp_roundtrip',
@@ -298,12 +297,12 @@ describe('initSettingsStore — persistence round-trip', () => {
     // Wipe in-memory state back to defaults to prove the next init
     // hydrates from LS and not from leftover memory.
     settingsStore.set(defaultsFromSchema());
-    expect(settingsStore.get().fabMode).toBe(true);
+    expect(settingsStore.get().showExpeditionButton).toBe(true);
 
     initSettingsStore();
 
     const state = settingsStore.get();
-    expect(state.fabMode).toBe(false);
+    expect(state.showExpeditionButton).toBe(false);
     expect(state.fabBtnSize).toBe(45);
     expect(state.alarmClockNtfyToken).toBe('tk_789');
     expect(state.gistToken).toBe('ghp_roundtrip');

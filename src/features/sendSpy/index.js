@@ -15,7 +15,7 @@
 //     ./pure.js (deriveSpy), fed by captureEnv() below.
 //   - Ships = N espionage probes (the dashboard's "Probes" control, shared via
 //     state/watchList.js); mission = espionage; owner = OWNER_SPY.
-//   - Mounted ONLY when fabMode is on AND the watch-list is non-empty — so the
+//   - Mounted ONLY when the watch-list is non-empty — so the
 //     button "appears only when there's something to scan" (the user's ask),
 //     reconciled on every watch-list change.
 //   - No min-gap wait, no decision log, no Scan half — espionage has none of
@@ -460,7 +460,7 @@ let installed = null;
 
 /**
  * Install the espionage-scan button. Idempotent — a second call returns the
- * SAME dispose fn. The button mounts only when fabMode is on AND the watch-list
+ * SAME dispose fn. The button mounts only when the watch-list
  * has at least one player (so it stays out of the FAB until the user marks
  * targets in the dashboard); it's reconciled on every watch-list change.
  *
@@ -516,21 +516,24 @@ export const installSendSpy = () => {
   };
 
   /**
-   * Reconcile mount state against (fabMode AND watch-list non-empty): mount
-   * when work appears, remove when the last watched player is cleared.
+   * Reconcile mount state against the watch-list: mount when work appears,
+   * remove when the last watched player is cleared.
    * @returns {void}
    */
   const reconcile = () => {
-    const enabled = settingsStore.get().fabMode;
     const hasWatched = watchListStore.get().players.length > 0;
     const mounted = !!document.getElementById(BUTTON_ID);
-    if (enabled && hasWatched && !mounted && document.body) mount();
+    if (hasWatched && !mounted && document.body) mount();
     else if (!hasWatched && mounted) removeButton();
     refresh();
   };
 
+  // `enabled: () => true` — the spy button's visibility is watch-list-driven
+  // (reconcile above), not settings-driven; the lifecycle contributes the
+  // initial gated mount + the live fabBtnSize resize.
   const unsubSettings = installFabSettingsLifecycle({
     settingsStore,
+    enabled: () => true,
     mount: gatedMount,
     removeButton,
     updateButtonSize,

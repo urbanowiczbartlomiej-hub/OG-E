@@ -3,7 +3,7 @@
 // Unit tests for the floating Send Exp button.
 //
 // The module reads three things from the page:
-//   - `settings.fabMode` gates visibility,
+//   - `settings.showExpeditionButton` gates visibility,
 //   - `settings.fabBtnSize` drives diameter + font scaling,
 //   - `settings.maxExpeditionsPerPlanet` gates the click handler.
 // ... and writes the button to `document.body`, plus JSON position to
@@ -155,7 +155,7 @@ const resetSettingsToDefaults = () => {
  * `location.search` at whichever scene we need.
  *
  * @param {{
- *   fabMode?: boolean,
+ *   showExpeditionButton?: boolean,
  *   fabBtnSize?: number,
  *   maxExpeditionsPerPlanet?: number,
  *   onFleetdispatch?: boolean,
@@ -165,7 +165,7 @@ const resetSettingsToDefaults = () => {
  * }} [opts]
  */
 const setupScene = ({
-  fabMode = true,
+  showExpeditionButton = true,
   fabBtnSize = 560,
   maxExpeditionsPerPlanet = 1,
   onFleetdispatch = false,
@@ -175,7 +175,7 @@ const setupScene = ({
 } = {}) => {
   settingsStore.set({
     ...settingsStore.get(),
-    fabMode,
+    showExpeditionButton,
     fabBtnSize,
     maxExpeditionsPerPlanet,
   });
@@ -262,18 +262,18 @@ afterEach(() => {
 });
 
 // ──────────────────────────────────────────────────────────────────
-// Visibility gating via fabMode
+// Visibility gating via showExpeditionButton
 // ──────────────────────────────────────────────────────────────────
 
-describe('installSendExpedition — visibility via fabMode', () => {
-  it('does not render a button when fabMode is off', () => {
-    setupScene({ fabMode: false });
+describe('installSendExpedition — visibility via showExpeditionButton', () => {
+  it('does not render a button when showExpeditionButton is off', () => {
+    setupScene({ showExpeditionButton: false });
     installSendExpedition();
     expect(getBtn()).toBeNull();
   });
 
-  it('renders the button with the correct id + text when fabMode is on', () => {
-    setupScene({ fabMode: true });
+  it('renders the button with the correct id + text when showExpeditionButton is on', () => {
+    setupScene({ showExpeditionButton: true });
     installSendExpedition();
     const btn = getBtn();
     expect(btn).not.toBeNull();
@@ -504,7 +504,7 @@ describe('installSendExpedition — long-press skip', () => {
   const setupMultiPlanetScene = ({ maxExpeditionsPerPlanet = 1, planets }) => {
     settingsStore.set({
       ...settingsStore.get(),
-      fabMode: true,
+      showExpeditionButton: true,
       maxExpeditionsPerPlanet,
     });
     const current = planets.find((p) => p.current) ?? planets[0];
@@ -631,21 +631,21 @@ describe('installSendExpedition — position (unified FAB wrapper)', () => {
 // ──────────────────────────────────────────────────────────────────
 
 describe('installSendExpedition — live settings updates', () => {
-  it('removes the button when fabMode is toggled off after install', () => {
-    setupScene({ fabMode: true });
+  it('removes the button when showExpeditionButton is toggled off after install', () => {
+    setupScene({ showExpeditionButton: true });
     installSendExpedition();
     expect(getBtn()).not.toBeNull();
 
-    settingsStore.update((s) => ({ ...s, fabMode: false }));
+    settingsStore.update((s) => ({ ...s, showExpeditionButton: false }));
     expect(getBtn()).toBeNull();
   });
 
-  it('creates the button when fabMode is toggled on after install', () => {
-    setupScene({ fabMode: false });
+  it('creates the button when showExpeditionButton is toggled on after install', () => {
+    setupScene({ showExpeditionButton: false });
     installSendExpedition();
     expect(getBtn()).toBeNull();
 
-    settingsStore.update((s) => ({ ...s, fabMode: true }));
+    settingsStore.update((s) => ({ ...s, showExpeditionButton: true }));
     expect(getBtn()).not.toBeNull();
   });
 
@@ -669,7 +669,7 @@ describe('installSendExpedition — live settings updates', () => {
 
 describe('installSendExpedition — dispose', () => {
   it('dispose removes the button and settings updates no longer resurrect it', () => {
-    setupScene({ fabMode: true });
+    setupScene({ showExpeditionButton: true });
     const dispose = installSendExpedition();
     expect(getBtn()).not.toBeNull();
 
@@ -679,8 +679,8 @@ describe('installSendExpedition — dispose', () => {
     // Flipping settings after dispose is a no-op (subscriber was
     // unsubscribed, and even if re-install were called we'd want the
     // button to come back ONLY via an explicit install).
-    settingsStore.update((s) => ({ ...s, fabMode: false }));
-    settingsStore.update((s) => ({ ...s, fabMode: true }));
+    settingsStore.update((s) => ({ ...s, showExpeditionButton: false }));
+    settingsStore.update((s) => ({ ...s, showExpeditionButton: true }));
     expect(getBtn()).toBeNull();
   });
 });
@@ -703,7 +703,7 @@ describe('installSendExpedition — idempotency + edges', () => {
   it('click is a safe no-op when there is no active planet', () => {
     setupScene({ activeCp: null });
     installSendExpedition();
-    // getBtn works because fabMode is on — but with no .hightlightPlanet
+    // getBtn works because showExpeditionButton is on — but with no .hightlightPlanet
     // the click handler short-circuits and never navigates.
     getBtn()?.click();
     expect(navTarget).toBeNull();

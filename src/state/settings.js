@@ -64,8 +64,6 @@ export const SETTINGS_PREFIX = 'oge_';
  * single source of truth at runtime; this typedef is the compile-time
  * counterpart):
  *
- *   fabMode                 true  — unified floating button (all four command
- *                                   modules: Exp / Col / Lifeforms / Daily Run) visible
  *   fabBtnSize              320   — unified floating button size in px
  *   expeditionBadges        true  — ekspedycje dot on planet list
  *   showExpeditionButton    true  — Expeditions module visible on the FAB
@@ -96,7 +94,6 @@ export const SETTINGS_PREFIX = 'oge_';
  *    edited in the dashboard's AlarmClock tab), see `state/alarmClockConfig.js`.)
  *
  * @typedef {object} Settings
- * @property {boolean} fabMode
  * @property {number}  fabBtnSize
  * @property {boolean} expeditionBadges
  * @property {boolean} showExpeditionButton
@@ -151,8 +148,9 @@ export const SETTINGS_PREFIX = 'oge_';
  * @type {Record<keyof Settings, SettingSchema>}
  */
 export const SETTINGS_SCHEMA = {
-  // Unified floating button (one mode/size pair for all modules).
-  fabMode:                { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'fabMode' },
+  // Unified floating button (one shared size; per-module visibility rides
+  // the show*Button flags below — there is no master FAB switch. The old
+  // `oge_fabMode` localStorage key is simply orphaned on upgrade.)
   fabBtnSize:             { type: 'int',    default: 320,   key: SETTINGS_PREFIX + 'fabBtnSize' },
   expeditionBadges:       { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'expeditionBadges' },
   showExpeditionButton:   { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'showExpeditionButton' },

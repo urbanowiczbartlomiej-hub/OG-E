@@ -10,12 +10,13 @@
 //                  ACKs ("I'm here" — silences the pulse, stays put) and the
 //                  2nd navigates to the body to re-save;
 //   • long-press → dismiss this landing.
-// It also rides the FAB's `fabMode` / `fabBtnSize` settings live.
+// It also rides the FAB's `fabBtnSize` setting live (no visibility gate —
+// the guardian is a safety prompt).
 //
 // We mock the heavy *view* (`shared/button.js` + `shared/buttonChrome.js`) so we
 // can capture the button config and drive its `onTap`/`onHold` directly, and we
 // mock the producer's output (`readLandedFs`). The real `settingsStore` (defaults
-// to fabMode:true, fabBtnSize:320) and the real `safeLS`-backed guardian dismiss
+// to fabBtnSize:320) and the real `safeLS`-backed guardian dismiss
 // store are used — happy-dom gives us a working `localStorage`.
 //
 // @ts-check
@@ -127,8 +128,8 @@ beforeEach(() => {
   installButtonChrome.mockClear();
   buttonMock.created.length = 0;
   buttonMock.last.value = null;
-  // Known FAB state: visible, size 320 (the schema defaults, but assert it).
-  settingsStore.set({ ...settingsStore.get(), fabMode: true, fabBtnSize: 320 });
+  // Known FAB state: size 320 (the schema default, but assert it).
+  settingsStore.set({ ...settingsStore.get(), fabBtnSize: 320 });
 });
 
 afterEach(() => {
@@ -150,13 +151,6 @@ describe('installGuardian — mounting', () => {
     // Built on the unified FAB at the settings-driven size.
     expect(lastBtn().cfg.module.id).toBe('guard');
     expect(lastBtn().cfg.size).toBe(320);
-  });
-
-  it('does NOT mount while the FAB is disabled, even with a bare fleet', () => {
-    settingsStore.set({ ...settingsStore.get(), fabMode: false });
-    readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
-    installGuardian({ universeId: UID });
-    expect(lastBtn()).toBeNull();
   });
 
   it('is idempotent — a second install does not build a second button', () => {
@@ -284,19 +278,6 @@ describe('installGuardian — reactivity', () => {
     expect(lastBtn()).not.toBeNull();
   });
 
-  it('mounts / unmounts as the FAB is toggled in settings', () => {
-    readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
-    settingsStore.set({ ...settingsStore.get(), fabMode: false });
-    installGuardian({ universeId: UID });
-    expect(lastBtn()).toBeNull();
-
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
-    expect(lastBtn()).not.toBeNull();
-
-    settingsStore.set({ ...settingsStore.get(), fabMode: false });
-    expect(lastBtn().dispose).toHaveBeenCalled();
-  });
-
   it('live-resizes the mounted button when fabBtnSize changes', () => {
     readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
     installGuardian({ universeId: UID });
@@ -342,9 +323,9 @@ describe('installGuardian — teardown', () => {
     document.dispatchEvent(new CustomEvent(EVENT_BOX_LOADED_EVENT));
     expect(lastBtn()).toBeNull();
 
-    // Settings sub gone: a toggle must not rebuild a button either.
-    settingsStore.set({ ...settingsStore.get(), fabMode: false });
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    // Settings sub gone: a size poke must not rebuild a button either.
+    settingsStore.set({ ...settingsStore.get(), fabBtnSize: 111 });
+    settingsStore.set({ ...settingsStore.get(), fabBtnSize: 320 });
     expect(lastBtn()).toBeNull();
   });
 });

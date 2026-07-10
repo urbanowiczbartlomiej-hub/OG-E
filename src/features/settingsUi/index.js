@@ -61,7 +61,6 @@
 import { settingsStore } from '../../state/settings.js';
 import { safeClick } from '../../lib/dom.js';
 import { SECTIONS } from './sections/index.js';
-import { buildDashboardButton } from './sections/data.js';
 import {
   buildRow,
   syncInputsFromState,
@@ -129,10 +128,11 @@ const applyCollapse = (tab, collapse) => {
 /**
  * Build an empty `.ago_menu_section` table — fixed layout, the shared
  * 434/220 colgroup (so inputs align across every section), and the gold
- * section-title header row. Callers append their own rows (for the
- * Dashboard section, a single full-width cell) and then the table itself.
+ * section-title header row. An EMPTY title skips the header row entirely
+ * (the leading command block explains itself). Callers append their own
+ * rows and then the table itself.
  *
- * @param {string} title  The section header text.
+ * @param {string} title  The section header text ('' = no header row).
  * @returns {HTMLTableElement}
  */
 const createSectionTable = (title) => {
@@ -152,14 +152,16 @@ const createSectionTable = (title) => {
   colgroup.appendChild(col2);
   table.appendChild(colgroup);
 
-  const sectionRow = document.createElement('tr');
-  sectionRow.className = 'ago_menu_section_header';
-  const sectionCell = document.createElement('th');
-  sectionCell.className = 'ago_menu_section_title';
-  sectionCell.colSpan = 2;
-  sectionCell.textContent = title;
-  sectionRow.appendChild(sectionCell);
-  table.appendChild(sectionRow);
+  if (title) {
+    const sectionRow = document.createElement('tr');
+    sectionRow.className = 'ago_menu_section_header';
+    const sectionCell = document.createElement('th');
+    sectionCell.className = 'ago_menu_section_title';
+    sectionCell.colSpan = 2;
+    sectionCell.textContent = title;
+    sectionRow.appendChild(sectionCell);
+    table.appendChild(sectionRow);
+  }
 
   return table;
 };
@@ -214,18 +216,9 @@ const buildTab = () => {
   header.appendChild(labelSpan);
   tab.appendChild(header);
 
-  // Dashboard launcher as its own named section, first — so it reads like
-  // every other group instead of a loose full-width button. The button
-  // spans both columns (it speaks for itself; no label row).
-  const dashTable = createSectionTable('Dashboard');
-  const dashRow = document.createElement('tr');
-  const dashCell = document.createElement('td');
-  dashCell.colSpan = 2;
-  dashCell.appendChild(buildDashboardButton());
-  dashRow.appendChild(dashCell);
-  dashTable.appendChild(dashRow);
-  tab.appendChild(dashTable);
-
+  // (The Dashboard launcher is no longer its own section — it rides as the
+  // top segment of the FAB command block, via the moduleTiles `topSlot` in
+  // sections/floatingButton.js.)
   let primaryTableSet = false;
   for (const section of SECTIONS) {
     const table = createSectionTable(section.section);

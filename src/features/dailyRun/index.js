@@ -61,6 +61,7 @@ import {
   labelLines,
 } from '../shared/button.js';
 import { PLANET_ARROW_GLYPH } from '../shared/buttonGlyphs.js';
+import { FAB_MODULES } from '../shared/fabModules.js';
 import {
   select as courierSelect,
   dispatch as courierDispatch,
@@ -103,7 +104,7 @@ const LONG_PRESS_MS = 2000;
 
 // Colours — distinct from sendExpedition (blue #4aa8ff) / sendColony (cyan #13d1de).
 // Daily Run uses pure green: micro & collect both in green family (minimal difference).
-const BG_MICRO = '#34d96e';   // green rim (micro zone)
+const BG_MICRO = FAB_MODULES.fs.color; // green rim (micro zone) — the module's signature colour
 const BG_COLLECT = '#43cf72'; // green rim (collect zone, slightly brighter)
 
 // ─── Eventbox readiness gate ────────────────────────────────────────────
@@ -677,7 +678,7 @@ let installed = null;
 
 /**
  * Install the unified fleet-save button. Idempotent — a second call returns the
- * same dispose fn. Gated on `settings.fabMode`; flipping it at
+ * same dispose fn. Gated on `settings.showDailyRunButton`; flipping it at
  * runtime mounts/removes the widget live.
  *
  * @returns {() => void} Dispose handle.
@@ -733,7 +734,7 @@ export const installDailyRun = () => {
       size,
       // Matches sendColony so identical `em` labels render at identical px.
       fontScale: 0.12,
-      module: { id: 'fs', name: 'Daily Run', color: BG_MICRO, glyph: PLANET_ARROW_GLYPH },
+      module: FAB_MODULES.fs,
       gateUntilEventBox: true,
       holdMs: LONG_PRESS_MS,
       zones: [
@@ -782,11 +783,11 @@ export const installDailyRun = () => {
   };
 
   const initial = settingsStore.get();
-  // The button rides the FAB only when the FAB is on AND its per-module
-  // `showDailyRunButton` toggle (settings ▸ Floating button) is on. Both flips
-  // reconcile through the same combined `show` below.
+  // The button rides the FAB while its per-module `showDailyRunButton`
+  // toggle (the settings module bar) is on; flips reconcile through `show`
+  // below.
   /** @param {ReturnType<typeof settingsStore.get>} s */
-  const shouldShow = (s) => s.fabMode && s.showDailyRunButton;
+  const shouldShow = (s) => s.showDailyRunButton;
   if (shouldShow(initial)) {
     if (document.body) mount();
     else document.addEventListener('DOMContentLoaded', () => {

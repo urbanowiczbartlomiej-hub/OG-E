@@ -28,6 +28,7 @@
 // @see ./index.js — orchestrator that consumes this.
 
 import { ingameComponentUrl } from '../../domain/ogameUrl.js';
+import { FAB_MODULES } from '../shared/fabModules.js';
 
 /**
  * @typedef {import('../../bridges/fleetDispatcherSnapshot.js').FleetDispatcherSnapshot} FleetDispatcherSnapshot
@@ -79,8 +80,12 @@ export const ALL_FLEETS_LABEL = 'All fleets!';
 
 // ─── Background colors ───────────────────────────────────────────────
 
-/** Rim colour for the idle button (cerulean blue). */
-export const BG_IDLE = '#4aa8ff';
+/**
+ * Rim colour for the idle button (cerulean blue). Doubles as the module's
+ * signature colour, so it is sourced from the shared FAB identity table —
+ * idle rim, satellite orb and settings module tile can never diverge.
+ */
+export const BG_IDLE = FAB_MODULES.exp.color;
 
 /** Rim colour for the "All maxed!" state (amber). */
 export const BG_MAX = '#fbbf24';

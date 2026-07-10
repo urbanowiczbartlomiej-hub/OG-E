@@ -1,9 +1,11 @@
 // @ts-check
 
 // Dashboard launch button. The panel's primary call-to-action, so it leads:
-// the caller (settingsUi/index.js) drops it into a full-width cell under its
-// own "Dashboard" section header, first in the tab. Owns the Dashboard-page
-// URL resolver because it's the only consumer.
+// it rides as the TOP SEGMENT of the FAB module block (floatingButton.js
+// passes it as the moduleTiles `topSlot`), flush above the module tiles.
+// Look lives in controls.js' TILES_CSS under `.oge-dash-launch` (class-driven
+// so hover/focus work); this file owns structure + the Dashboard-page URL
+// resolver because it's the only consumer.
 
 import { parseUniverseId } from '../../../lib/universeId.js';
 import { appendLens, installButtonChrome } from '../../shared/buttonChrome.js';
@@ -41,27 +43,20 @@ const DASHBOARD_URL = (() => {
   }
 })();
 
-const BUTTON_STYLE =
-  'width:100%;padding:7px 0;background:#1a2a3a;border:1px solid #2a4a5a;' +
-  'color:#4a9eff;border-radius:4px;font-size:13px;cursor:pointer;font-weight:bold;';
-
 /**
- * Build the "OG-E Dashboard" launch button (wrapped so it spans the panel
- * width). Not a `SettingsSection` — the caller drops it into a full-width
- * cell under its own "Dashboard" section header.
+ * Build the "OG-E Dashboard" launch button. Not a `SettingsSection` — the
+ * floatingButton section passes this as the moduleTiles `topSlot`, so it
+ * renders flush above the module tiles as the block's top segment (styled by
+ * `.oge-dash-launch` in controls.js' TILES_CSS).
  *
  * @returns {HTMLElement}
  */
 export const buildDashboardButton = () => {
-  const wrap = document.createElement('div');
-  wrap.style.cssText = 'padding:6px 4px 10px;';
-
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.id = 'oge-open-dashboard';
+  btn.className = 'oge-dash-launch';
   btn.title = 'Colony stats + galaxy observations';
-  btn.style.cssText =
-    BUTTON_STYLE + 'display:inline-flex;align-items:center;justify-content:center;gap:9px;';
 
   // Lead with the OG-E gold node (cabochon + orbit mark) instead of an emoji.
   installButtonChrome();
@@ -88,6 +83,5 @@ export const buildDashboardButton = () => {
     window.open(url, '_blank');
   });
 
-  wrap.appendChild(btn);
-  return wrap;
+  return btn;
 };

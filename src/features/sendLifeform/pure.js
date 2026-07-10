@@ -35,6 +35,7 @@
 import { buildGalaxyOrder } from '../../domain/positions.js';
 import { COL_MAX_SYSTEM, COL_MAX_GALAXY } from '../../domain/rules.js';
 import { ingameComponentUrl } from '../../domain/ogameUrl.js';
+import { FAB_MODULES } from '../shared/fabModules.js';
 
 /**
  * @typedef {import('../../state/scans.js').GalaxyScans} GalaxyScans
@@ -56,8 +57,11 @@ export const LF_RESCAN_MS = 7 * 24 * 3600 * 1000;
 // Seeded from the planted TODO in `sendColony/pure.js`. Distinct hue from the
 // cyan Send-Col / amber-wait palette so the three buttons read apart.
 
-/** Rim colour — idle / "Discover" (violet). */
-export const BG_LF_IDLE = '#a78bfa';
+/**
+ * Rim colour — idle / "Discover" (violet). Doubles as the module's signature
+ * colour — sourced from the shared FAB identity table.
+ */
+export const BG_LF_IDLE = FAB_MODULES.lf.color;
 /** Rim colour — ready to discover / navigate (brighter violet). */
 export const BG_LF_ACTIVE = '#bb9dff';
 /** Rim colour — mid-discovery cooldown "Wait…" (deep violet). */

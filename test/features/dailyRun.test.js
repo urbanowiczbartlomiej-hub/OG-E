@@ -85,7 +85,7 @@ afterEach(() => {
 });
 
 const enable = () => {
-  settingsStore.set({ ...settingsStore.get(), fabMode: true });
+  settingsStore.set({ ...settingsStore.get(), showDailyRunButton: true });
 };
 
 // T13 eventbox readiness gate: fixtures mount without the game's
@@ -97,15 +97,15 @@ const openEventBoxGate = () => {
 };
 
 describe('mount / unmount', () => {
-  it('does not mount when fabMode is off', () => {
-    // fabMode defaults to true (unlike the legacy dailyRunMode) — turn it
+  it('does not mount when showDailyRunButton is off', () => {
+    // showDailyRunButton defaults to true (unlike the legacy dailyRunMode) — turn it
     // off explicitly to exercise the gate.
-    settingsStore.set({ ...settingsStore.get(), fabMode: false });
+    settingsStore.set({ ...settingsStore.get(), showDailyRunButton: false });
     installDailyRun();
     expect(document.getElementById('oge-fs-unified')).toBeNull();
   });
 
-  it('mounts the unified button with two zones when fabMode is on', () => {
+  it('mounts the unified button with two zones when showDailyRunButton is on', () => {
     enable();
     installDailyRun();
     expect(document.getElementById('oge-fs-unified')).not.toBeNull();
@@ -118,7 +118,7 @@ describe('mount / unmount', () => {
   it('removes the button when the toggle flips off at runtime', () => {
     enable();
     installDailyRun();
-    settingsStore.set({ ...settingsStore.get(), fabMode: false });
+    settingsStore.set({ ...settingsStore.get(), showDailyRunButton: false });
     expect(document.getElementById('oge-fs-unified')).toBeNull();
   });
 });

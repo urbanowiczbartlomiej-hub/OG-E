@@ -27,20 +27,22 @@
 
 import { GAME } from '../../lib/gameDom.js';
 import { denseCoords, bodyKey as toBodyKey } from '../../domain/bodies.js';
-import { injectStyle, parseSvg } from '../../lib/dom.js';
+import { injectStyle } from '../../lib/dom.js';
 import { debounce } from '../../lib/debounce.js';
 import { MANUAL_FS_CHANGED_EVENT } from '../../lib/ogeEvents.js';
 import { hasManualLandedFs, toggleManualLandedFs } from '../../state/manualLandedFs.js';
 import { LIGHTHOUSE_GLYPH } from '../shared/buttonGlyphs.js';
+import { appendGlyph, installButtonChrome } from '../shared/buttonChrome.js';
 
 /** OG-E-owned ids (NOT a game contract — ours to rename). */
 const CHIP_ID = 'oge-mfs-chip';
 const STYLE_ID = 'oge-mfs-style';
 
-/** The guardian's lighthouse glyph, wrapped for inline use; tints to the chip's
- *  `color` (the art paints with `currentColor`). Same mark as the FAB button so
- *  the "Set FR" chip and the Fleet-reminder button read as one feature. */
-const GLYPH_SVG = `<svg viewBox="0 0 64 64" aria-hidden="true">${LIGHTHOUSE_GLYPH}</svg>`;
+/** The guardian module's signature orange (`RIM` in alarmClock/guardian.js —
+ *  not importable here: features must not import features; keep in sync). The
+ *  chip's dome lights up in it when the mark is ON, so the chip and the
+ *  Fleet-reminder button read as one feature. */
+const GUARDIAN_COLOR = '#f5851a';
 
 /**
  * Anchors tried in order; the chip mounts at the first one present, using that
@@ -61,30 +63,45 @@ const ANCHORS = [
 ];
 
 const CSS = `
+/* Bare dome — no box, no label: the lighthouse orb IS the button (the SAME
+   .oge-node the guardian's FAB orb wears, so it self-explains; the title
+   attribute carries the words). */
 #${CHIP_ID}{
-  display:inline-flex;align-items:center;gap:6px;
+  display:inline-flex;align-items:center;justify-content:center;
   float:right;clear:right;
-  margin:6px 25px 6px 4px;padding:4px 9px;vertical-align:middle;
-  border:1px solid #6b4a1f;border-radius:6px;
-  background:#241a0c;color:#e8902e;
-  font:700 11px/1 Verdana,sans-serif;cursor:pointer;user-select:none;
+  margin:6px 25px 6px 4px;padding:0;vertical-align:middle;
+  border:none;background:transparent;cursor:pointer;user-select:none;
 }
-#${CHIP_ID}:hover{border-color:#e8902e;}
-/* Active = marked. The label stays "Set FR"; this highlight (brighter fill,
-   lit border + glow) is what signals the on-state now that the text is fixed. */
-#${CHIP_ID}.on{background:#3a2a10;border-color:#e8902e;box-shadow:0 0 6px rgba(245,133,26,.55);}
-#${CHIP_ID} .ico{display:inline-flex;align-items:center;justify-content:center;}
-#${CHIP_ID} .ico svg{width:14px;height:14px;display:block;}
-/* Tile mode: fills the empty 80×80 cell next to the espionage probe in #civil.
-   margin-bottom matches the game's .technology.interactive so it lines up. The
-   lighthouse sits big over the label, a mini echo of the guardian FAB button. */
+/* Mark state = the dome's RING: dormant while unmarked (faint ring, no glow,
+   dimmed glyph), lit + glowing once the mark is set. The id selector outranks
+   .oge-node, so these box-shadows replace its defaults; the inset sheen and
+   drop shadow are kept verbatim. */
+#${CHIP_ID} .dome{
+  position:relative;width:24px;height:24px;--mod:${GUARDIAN_COLOR};--art-opacity:.65;
+  box-shadow:inset 0 1px 1px rgba(255,255,255,.18),
+    0 0 0 1.5px color-mix(in oklab,var(--mod) 30%,transparent),
+    0 4px 12px rgba(0,0,0,.55);
+}
+#${CHIP_ID}:hover .dome{
+  box-shadow:inset 0 1px 1px rgba(255,255,255,.18),
+    0 0 0 1.5px color-mix(in oklab,var(--mod) 60%,transparent),
+    0 4px 12px rgba(0,0,0,.55);
+}
+#${CHIP_ID}.on .dome{
+  --art-opacity:.92;
+  box-shadow:inset 0 1px 1px rgba(255,255,255,.18),
+    0 0 0 2px color-mix(in oklab,var(--mod) 95%,transparent),
+    0 0 16px 2px color-mix(in oklab,var(--mod) 55%,transparent),
+    0 4px 12px rgba(0,0,0,.55);
+}
+/* Tile mode: centred in the empty 80×80 cell next to the espionage probe in
+   #civil; margin-bottom matches the game's .technology.interactive so the
+   grid lines up. */
 #${CHIP_ID}.tile{
-  flex-direction:column;justify-content:center;text-align:center;gap:5px;
   float:none;clear:none;
-  width:80px;height:80px;margin:0 0 30px;padding:4px;
-  box-sizing:border-box;border-width:2px;line-height:1.2;
+  width:80px;height:80px;margin:0 0 30px;padding:0;box-sizing:border-box;
 }
-#${CHIP_ID}.tile .ico svg{width:36px;height:36px;}
+#${CHIP_ID}.tile .dome{width:48px;height:48px;}
 `;
 
 /** Parse a link href's `cp` query param, or '' on failure. @param {string} href */
@@ -132,9 +149,9 @@ const currentBody = () => {
 
 /**
  * Reflect the mark state onto the chip. Touches only the `on` class + `title`
- * (both attributes, NOT watched by the install observer) — the label is the
- * fixed "Set FR" set once at build, so the active state shows purely as the
- * highlight, and there is no childList write that could re-trigger the observer.
+ * (both attributes, NOT watched by the install observer) — the chip has no
+ * text at all, the state shows purely as the dome's lit/dormant ring, and
+ * there is no childList write that could re-trigger the observer.
  *
  * @param {HTMLElement} chip
  * @param {string} bodyKey
@@ -151,13 +168,11 @@ const paintChip = (chip, bodyKey) => {
 const buildChip = () => {
   const chip = document.createElement('div');
   chip.id = CHIP_ID;
-  const ico = document.createElement('span');
-  ico.className = 'ico';
-  ico.appendChild(parseSvg(GLYPH_SVG));
-  const lbl = document.createElement('span');
-  lbl.className = 'lbl';
-  lbl.textContent = 'Set FR';
-  chip.append(ico, lbl);
+  const dome = document.createElement('span');
+  dome.className = 'oge-node dome';
+  dome.setAttribute('aria-hidden', 'true');
+  appendGlyph(dome, LIGHTHOUSE_GLYPH);
+  chip.append(dome);
   chip.addEventListener('click', (e) => {
     // In the #civil grid our tile sits among the game's ship cells; keep the
     // click from bubbling into OGame's delegated ship-select handler.
@@ -214,6 +229,7 @@ let installed = null;
  */
 export const installManualFsMark = () => {
   if (installed) return installed;
+  installButtonChrome(); // the dome's .oge-node/.oge-art rules (idempotent)
   injectStyle(STYLE_ID, CSS);
   const debounced = debounce(() => { if (installed) sync(); }, 150);
   observer = new MutationObserver(debounced);

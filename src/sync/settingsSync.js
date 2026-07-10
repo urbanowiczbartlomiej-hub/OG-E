@@ -12,7 +12,7 @@
 // Synced settings are split into two buckets:
 //
 //   - GLOBAL: UI / behaviour preferences that apply identically on every
-//     OGame server (fabMode, readabilityBoost, …). Stored in the gist's
+//     OGame server (fabBtnSize, readabilityBoost, …). Stored in the gist's
 //     top-level `settings` field and in a localStorage timestamp map under
 //     `SETTINGS_TS_KEY`. (The alarmClock knobs — wave enable/schedule, ad-hoc
 //     lead time, templates — live in the per-universe `alarmClockConfig` slot.)

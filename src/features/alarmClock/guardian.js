@@ -76,8 +76,6 @@ let dismissFn = /** @type {(bodyKey: string, landedAt: number) => void} */ (() =
 let ackFn = /** @type {(bodyKey: string) => void} */ (() => {});
 /** This universe's id, for reading the persisted dismiss store. */
 let universeId = '';
-/** Whether the unified FAB is active — the guardian rides it like the command buttons. */
-let fabOn = false;
 /** Current FAB diameter (settings-driven), shared with the command modules. */
 let fabSize = 56;
 /** Guard against re-entrant taps while a fleet-save send is in flight. */
@@ -299,11 +297,11 @@ const handleGuardianTap = async () => {
 
 /**
  * Show / repaint / hide the button to match the bare set. The guardian rides the
- * unified FAB as its own module (like the command buttons), so it only mounts
- * when a fleet is bare AND the FAB is enabled; the shell owns its position/drag.
+ * unified FAB as its own module (like the command buttons), mounting whenever
+ * a fleet is bare; the shell owns its position/drag.
  */
 const render = () => {
-  if (bare.length > 0 && fabOn) {
+  if (bare.length > 0) {
     if (!btn) {
       installButtonChrome();
       btn = createButton({
@@ -401,17 +399,12 @@ export const installGuardian = ({ dismiss, ack, universeId: uid } = {}) => {
   universeId = uid || '';
   activeAt = Math.floor(Date.now() / 1000); // this page's load = fresh presence
 
-  // Ride the unified FAB: mirror the command buttons' fabMode visibility +
-  // fabBtnSize live-resize, so the guardian appears/sizes with the cluster.
-  const s0 = settingsStore.get();
-  fabOn = s0.fabMode;
-  fabSize = s0.fabBtnSize;
+  // Ride the unified FAB: mirror the cluster's fabBtnSize live-resize. No
+  // settings visibility gate — the guardian is a safety prompt, it appears
+  // whenever a bare fleet needs one.
+  fabSize = settingsStore.get().fabBtnSize;
   let prevSize = fabSize;
   const unsubSettings = settingsStore.subscribe((next) => {
-    if (next.fabMode !== fabOn) {
-      fabOn = next.fabMode;
-      render();
-    }
     if (next.fabBtnSize !== prevSize) {
       prevSize = fabSize = next.fabBtnSize;
       if (btn) btn.resize(fabSize);
@@ -445,7 +438,6 @@ export const installGuardian = ({ dismiss, ack, universeId: uid } = {}) => {
     dismissFn = () => {};
     ackFn = () => {};
     universeId = '';
-    fabOn = false;
     installed = null;
   };
   return installed;

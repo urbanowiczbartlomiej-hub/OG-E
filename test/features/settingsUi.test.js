@@ -190,13 +190,13 @@ describe('installSettingsUi — AGR availability', () => {
 
 describe('installSettingsUi — checkbox', () => {
   it('renders checked=true when underlying settings value is true', async () => {
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), autoRedirectExpedition: true });
     setupAGR();
     installSettingsUi();
     await flushWaitFor();
 
     const cb = /** @type {HTMLInputElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'fabMode')
+      document.getElementById(INPUT_PREFIX + 'autoRedirectExpedition')
     );
     expect(cb).not.toBeNull();
     expect(cb?.type).toBe('checkbox');
@@ -209,17 +209,17 @@ describe('installSettingsUi — checkbox', () => {
     await flushWaitFor();
 
     const cb = /** @type {HTMLInputElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'fabMode')
+      document.getElementById(INPUT_PREFIX + 'autoRedirectExpedition')
     );
     expect(cb).not.toBeNull();
 
     // Default: true → uncheck → false.
-    expect(settingsStore.get().fabMode).toBe(true);
+    expect(settingsStore.get().autoRedirectExpedition).toBe(true);
     if (cb) {
       cb.checked = false;
       cb.dispatchEvent(new Event('change'));
     }
-    expect(settingsStore.get().fabMode).toBe(false);
+    expect(settingsStore.get().autoRedirectExpedition).toBe(false);
   });
 });
 
@@ -326,14 +326,14 @@ describe('installSettingsUi — reactive sync from store', () => {
     await flushWaitFor();
 
     const cb = /** @type {HTMLInputElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'fabMode')
+      document.getElementById(INPUT_PREFIX + 'autoRedirectExpedition')
     );
     expect(cb?.checked).toBe(true);
 
-    settingsStore.update((prev) => ({ ...prev, fabMode: false }));
+    settingsStore.update((prev) => ({ ...prev, autoRedirectExpedition: false }));
     expect(cb?.checked).toBe(false);
 
-    settingsStore.update((prev) => ({ ...prev, fabMode: true }));
+    settingsStore.update((prev) => ({ ...prev, autoRedirectExpedition: true }));
     expect(cb?.checked).toBe(true);
   });
 
@@ -382,9 +382,9 @@ describe('installSettingsUi — dispose + idempotency', () => {
     // Grab a no-longer-in-DOM snapshot and bump settings. Nothing
     // should re-appear, and the nuked input element must not somehow
     // be auto-reinserted.
-    settingsStore.update((prev) => ({ ...prev, fabMode: true }));
+    settingsStore.update((prev) => ({ ...prev, autoRedirectExpedition: true }));
     expect(document.getElementById(HEADER_ID)).toBeNull();
-    expect(document.getElementById(INPUT_PREFIX + 'fabMode')).toBeNull();
+    expect(document.getElementById(INPUT_PREFIX + 'autoRedirectExpedition')).toBeNull();
   });
 
   it('second install returns the same dispose without duplicating DOM', async () => {

@@ -287,9 +287,10 @@ const installDomFeatures = () => {
   if (window.top === window.self) safeInstall('alarmClock', installAlarmClock);
 
   // User-facing buttons — the four modules of the unified FAB
-  // (features/shared/unifiedFab.js). All gated on the single fabMode
-  // setting; exactly one is visible at a time and the FAB's orbital
-  // picker switches between them. Install order = picker order only.
+  // (features/shared/unifiedFab.js). Each gated on its own show*Button
+  // setting (the settings module bar); exactly one is visible at a time and
+  // the FAB's orbital picker switches between them. Install order = picker
+  // order only.
   uiInstall('sendExpedition', installSendExpedition);
   uiInstall('sendColony', installSendColony);
   // Lifeforms (system-discovery) button — walks the galaxy firing lifeform
@@ -306,8 +307,8 @@ const installDomFeatures = () => {
   // red abandon overlay into ONE button on the FAB: a fresh colony elsewhere
   // shows a "new colony" button that navigates to it; on that colony's
   // overview the button becomes "abandon" and its taps drive the flow
-  // (features/abandon/colonyFab.js + abandon/index.js). Gated on fabMode
-  // internally (like the other FAB modules).
+  // (features/abandon/colonyFab.js + abandon/index.js). Contextual — mounts
+  // only when its flow states apply, no settings gate.
   uiInstall('colonyFab', installColonyFab);
 
   // Keyboard shortcut on fleetdispatch — desktop users press

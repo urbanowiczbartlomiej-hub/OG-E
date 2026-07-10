@@ -284,16 +284,16 @@ afterEach(() => {
 // ──────────────────────────────────────────────────────────────────
 
 describe('installSendColony — lifecycle', () => {
-  it('does not render when fabMode is off', () => {
+  it('does not render when showColonizeButton is off', () => {
     setupScene();
-    settingsStore.set({ ...settingsStore.get(), fabMode: false });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: false });
     installSendColony();
     expect(getWrap()).toBeNull();
   });
 
-  it('renders the single Send zone when fabMode is on', () => {
+  it('renders the single Send zone when showColonizeButton is on', () => {
     setupScene();
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     installSendColony();
     expect(getWrap()).not.toBeNull();
     expect(getSend()).not.toBeNull();
@@ -303,7 +303,7 @@ describe('installSendColony — lifecycle', () => {
     setupScene();
     settingsStore.set({
       ...settingsStore.get(),
-      fabMode: true,
+      showColonizeButton: true,
       fabBtnSize: 400,
     });
     installSendColony();
@@ -313,7 +313,7 @@ describe('installSendColony — lifecycle', () => {
 
   it('dispose removes the button', () => {
     setupScene();
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     const dispose = installSendColony();
     expect(getWrap()).not.toBeNull();
     dispose();
@@ -322,7 +322,7 @@ describe('installSendColony — lifecycle', () => {
 
   it('is idempotent — second install returns the same dispose', () => {
     setupScene();
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     const d1 = installSendColony();
     const d2 = installSendColony();
     expect(d2).toBe(d1);
@@ -504,7 +504,7 @@ describe('render — pure paint instructions', () => {
 describe('onSendClick — idle/galaxy branch', () => {
   it('idle with a candidate → navigates to a bare fleetdispatch', () => {
     setupScene();
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     scansStore.set({
       '4:30': { scannedAt: Date.now(), positions: { 8: { status: 'empty' } } },
     });
@@ -518,7 +518,7 @@ describe('onSendClick — idle/galaxy branch', () => {
 
   it('idle with no candidate → paints "No more candidates" (no nav)', () => {
     setupScene();
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     installSendColony();
     getSend()?.click();
     // The single-zone host's textContent also carries the lens glyph + title
@@ -532,7 +532,7 @@ describe('onSendClick — fleetdispatch branch', () => {
   /** @param {Parameters<typeof makeFleetDispatcher>[0]} fdOpts */
   const installFleet = (fdOpts = {}) => {
     setupScene({ onFleetdispatch: true, mission: 7 });
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     setFleetDispatcher(makeFleetDispatcher(fdOpts));
     installSendColony();
     // Open the shared eventbox-readiness gate so the button is enabled (on
@@ -578,7 +578,7 @@ describe('onSendClick — fleetdispatch branch', () => {
 
   it('two taps: select arms a ready send, then dispatch fires', async () => {
     setupScene({ onFleetdispatch: true });
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     scansStore.set({
       '4:30': { scannedAt: Date.now(), positions: { 8: { status: 'empty' } } },
     });
@@ -605,7 +605,7 @@ describe('onSendClick — fleetdispatch branch', () => {
 
   it('tap 2 with a min-gap conflict shows "Wait Ns" and does not dispatch', async () => {
     setupScene({ onFleetdispatch: true });
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     scansStore.set({
       '4:30': { scannedAt: Date.now(), positions: { 8: { status: 'empty' } } },
     });
@@ -638,7 +638,7 @@ describe('onSendClick — fleetdispatch branch', () => {
     // marks it; tap 2 must edit the native fleet2 coords to the NEXT free slot
     // instead of re-checking the same dead target or navigating away.
     setupScene({ onFleetdispatch: true });
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), positions: '8' });
     // Two empty candidates; the farther system (4:31) is picked first.
     scansStore.set({
@@ -734,7 +734,7 @@ describe('eventbox readiness gate', () => {
     Object.defineProperty(document, 'readyState', { value: 'loading', configurable: true });
     try {
       setupScene({ onFleetdispatch: true, mission: 7 });
-      settingsStore.set({ ...settingsStore.get(), fabMode: true });
+      settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
       setFleetDispatcher(makeFleetDispatcher({ canColonize: false, hasColonizer: true }));
       // scansStore is empty, so an ungated tap would compute a candidate from
       // half-loaded data and flash the false "No more candidates".
@@ -752,7 +752,7 @@ describe('eventbox readiness gate', () => {
 
   it('once the eventbox loads: the gate opens and the real label paints', () => {
     setupScene({ onFleetdispatch: true, mission: 7 });
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     setFleetDispatcher(makeFleetDispatcher({ canColonize: false, hasColonizer: true }));
     installSendColony();
     document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
@@ -766,7 +766,7 @@ describe('eventbox readiness gate', () => {
 describe('post-send lock', () => {
   it('a successful dispatch holds the button on "Sent!" through later refreshes', async () => {
     setupScene({ onFleetdispatch: true });
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     scansStore.set({
       '4:30': { scannedAt: Date.now(), positions: { 8: { status: 'empty' } } },
     });
@@ -815,7 +815,7 @@ describe('oge:checkTargetResult reactor', () => {
 
   it('errorCodes[0]=140016 on an empty candidate → marks it Reserved', () => {
     setupScene({ onFleetdispatch: true, mission: 7 });
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     seedEmpty();
     installSendColony();
     document.dispatchEvent(
@@ -834,7 +834,7 @@ describe('oge:checkTargetResult reactor', () => {
     // reactor reads orders straight from the detail and downgrades the slot so
     // findNextColonizeTarget stops proposing it.
     setupScene({ onFleetdispatch: true, mission: 7 });
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     seedEmpty();
     installSendColony();
     document.dispatchEvent(
@@ -856,7 +856,7 @@ describe('oge:checkTargetResult reactor', () => {
     // so the dead candidate was never marked → wait→Stale→nothing forever. The
     // detail is authoritative for its own coords, so we mark from it regardless.
     setupScene({ onFleetdispatch: true, mission: 7 });
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     seedEmpty(); // 4:30:8 empty — the candidate we just tried
     // Snapshot still describes the PREVIOUS target (4:31:8), reported colonizable.
     setFleetDispatcher(makeFleetDispatcher({
@@ -877,7 +877,7 @@ describe('oge:checkTargetResult reactor', () => {
 
   it('orders["7"]=true (colonizable) → leaves the empty candidate alone', () => {
     setupScene({ onFleetdispatch: true, mission: 7 });
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     seedEmpty();
     installSendColony();
     document.dispatchEvent(
@@ -898,7 +898,7 @@ describe('oge:checkTargetResult reactor', () => {
     // the game deduped checkTarget → wait→timeout forever. Now any target-side
     // error (≠140035) downgrades the slot so the next tap moves on.
     setupScene({ onFleetdispatch: true, mission: 7 });
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     seedEmpty();
     installSendColony();
     document.dispatchEvent(
@@ -913,7 +913,7 @@ describe('oge:checkTargetResult reactor', () => {
     // 140035 means "you lack a colony ship", not "the slot is bad" — so the
     // reactor leaves the DB alone (the user can build/move a ship and retry).
     setupScene({ onFleetdispatch: true, mission: 7 });
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     seedEmpty();
     installSendColony();
     document.dispatchEvent(
@@ -932,7 +932,7 @@ describe('oge:checkTargetResult reactor', () => {
     // for a slot we never proposed (not in scans) must not create an entry —
     // that would falsely mark the whole system scan-fresh.
     setupScene({ onFleetdispatch: true, mission: 7 });
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     installSendColony();
     document.dispatchEvent(
       new CustomEvent('oge:checkTargetResult', {
@@ -949,7 +949,7 @@ describe('oge:checkTargetResult reactor', () => {
 describe('oge:colonizeSent reactor', () => {
   it('marks the sent slot empty_sent in scansStore + NO auto-redirect', () => {
     setupScene();
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     // Preload scansStore with TWO candidates — if auto-redirect fired
     // we'd observe a nav to the next one.
     scansStore.set({
@@ -970,7 +970,7 @@ describe('oge:colonizeSent reactor', () => {
 
   it('bad detail payload is tolerated (no-op)', () => {
     setupScene();
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     installSendColony();
     // No galaxy/system/position → no-op.
     document.dispatchEvent(
@@ -987,7 +987,7 @@ describe('oge:colonizeSent reactor', () => {
 describe('onSendHold — manual skip', () => {
   it('is a no-op when no candidate is shown (empty scansStore)', () => {
     setupScene(); // overview, no galaxy view → derive finds no candidate
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     installSendColony(); // refresh() → lastDerivedCandidate = null
     _onSendHoldForTest();
     expect(Object.keys(scansStore.get())).toHaveLength(0);
@@ -1000,7 +1000,7 @@ describe('onSendHold — manual skip', () => {
     // a durable `taken` DECISION (not the old scansStore empty_sent write) so
     // it also blocks API-only candidates that have no scan entry.
     setupScene({ onFleetdispatch: true });
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), positions: '9' });
     scansStore.set({
       '4:30': { scannedAt: Date.now(), positions: { 9: { status: 'empty' } } },
@@ -1024,7 +1024,7 @@ describe('onSendHold — manual skip', () => {
 
   it('is a no-op in the idle (un-armed) state even with a derivable candidate', () => {
     setupScene({ onGalaxy: true, galaxyG: 4, galaxyS: 30 });
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), positions: '9' });
     scansStore.set({
       '4:30': { scannedAt: Date.now(), positions: { 9: { status: 'empty' } } },
@@ -1036,7 +1036,7 @@ describe('onSendHold — manual skip', () => {
 
   it('does not trigger any navigation', () => {
     setupScene({ onGalaxy: true, galaxyG: 4, galaxyS: 30 });
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), positions: '9' });
     scansStore.set({
       '4:30': { scannedAt: Date.now(), positions: { 9: { status: 'empty' } } },
@@ -1060,20 +1060,20 @@ describe('onSendHold — manual skip', () => {
 // ──────────────────────────────────────────────────────────────────
 
 describe('settings reactions', () => {
-  it('fabMode toggle off → button removed; on → remounted', () => {
+  it('showColonizeButton toggle off → button removed; on → remounted', () => {
     setupScene();
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     installSendColony();
     expect(getWrap()).not.toBeNull();
-    settingsStore.update((s) => ({ ...s, fabMode: false }));
+    settingsStore.update((s) => ({ ...s, showColonizeButton: false }));
     expect(getWrap()).toBeNull();
-    settingsStore.update((s) => ({ ...s, fabMode: true }));
+    settingsStore.update((s) => ({ ...s, showColonizeButton: true }));
     expect(getWrap()).not.toBeNull();
   });
 
   it('fabBtnSize change → button resizes live', () => {
     setupScene();
-    settingsStore.set({ ...settingsStore.get(), fabMode: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     installSendColony();
     expect(getWrap()?.style.width).toBe('320px'); // default
     settingsStore.update((s) => ({ ...s, fabBtnSize: 500 }));

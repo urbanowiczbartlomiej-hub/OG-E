@@ -51,11 +51,12 @@
 //
 // # Settings-driven lifecycle
 //
-//   - `fabMode`     toggles visibility (shared by all unified-FAB
-//                   modules). Flipping it off at runtime removes the DOM
-//                   node entirely (we aren't a CSS-hide feature like the
-//                   badges cluster; the button would grab tap area even
-//                   while invisible, so actual removal is correct).
+//   - `showExpeditionButton` toggles visibility (the settings module bar;
+//                   each unified-FAB module has its own flag). Flipping it
+//                   off at runtime removes the DOM node entirely (we aren't
+//                   a CSS-hide feature like the badges cluster; the button
+//                   would grab tap area even while invisible, so actual
+//                   removal is correct).
 //   - `fabBtnSize`  resizes the circle and scales the font to ~23%.
 //                   Updates apply live.
 //   - `maxExpeditionsPerPlanet` gates the click handler. Read per click, so
@@ -76,6 +77,7 @@ import { prepareViaRoutine, dispatchPrepared, dispatchWhenReady } from '../share
 import { GAME } from '../../lib/gameDom.js';
 import { createButton as makeButton } from '../shared/button.js';
 import { COMET_GLYPH } from '../shared/buttonGlyphs.js';
+import { FAB_MODULES } from '../shared/fabModules.js';
 import { OWNER_EXP } from '../../domain/fleetOwnership.js';
 import { isFleetCapReached } from '../../domain/fleetPlan.js';
 import { installFleetOwnership } from '../shared/fleetOwnership.js';
@@ -144,16 +146,16 @@ let skipForTest = () => {};
  * Install the floating Send Exp button.
  *
  * Lifecycle:
- *   1. Snapshots current settings. If `fabMode === false` we skip
- *      DOM work entirely — but still wire the settings subscriber so
+ *   1. Snapshots current settings. If `showExpeditionButton === false` we
+ *      skip DOM work entirely — but still wire the settings subscriber so
  *      a later flip to `true` creates the button live.
  *   2. Renders (if enabled): creates the `<button id="oge-send-exp">`,
  *      registers it as the 'exp' module of the unified FAB, and wires
  *      click / focus handlers. When body is not yet present we defer
  *      insertion to `DOMContentLoaded` (once).
  *   3. Subscribes to `settingsStore` for live updates:
- *        - `fabMode true → false`: remove button,
- *        - `fabMode false → true`: create button,
+ *        - `showExpeditionButton true → false`: remove button,
+ *        - `showExpeditionButton false → true`: create button,
  *        - `fabBtnSize` change: resize width/height/font-size in place.
  *   4. Returns a dispose fn that removes the button (if present) and
  *      unsubscribes from settings.
@@ -511,7 +513,7 @@ export const installSendExpedition = () => {
       // Matches sendLifeform's scale so short labels ("Send" / "Prepare" /
       // "Discover") read at the same size across the 1-zone command buttons.
       fontScale: 0.18,
-      module: { id: 'exp', name: 'Expeditions', color: BG_IDLE, glyph: COMET_GLYPH },
+      module: FAB_MODULES.exp,
       gateUntilEventBox: true,
       holdMs: HOLD_SKIP_MS,
       zones: [
@@ -565,21 +567,15 @@ export const installSendExpedition = () => {
   fdCache.bootstrap();
 
   // Settings-driven mount/teardown + live resize — the wiring shared by
-  // every send* FAB feature. The mount is additionally gated on the
-  // per-module `showExpeditionButton` toggle (settings ▸ Expeditions); the
-  // lifecycle helper only watches fabMode/fabBtnSize, so that flag's live
-  // flips reconcile in `onSettingsChange`.
+  // every send* FAB feature, gated on the per-module `showExpeditionButton`
+  // toggle (the settings module bar).
   const unsubSettings = installFabSettingsLifecycle({
     settingsStore,
-    mount: () => { if (settingsStore.get().showExpeditionButton) createButton(); },
+    enabled: (s) => s.showExpeditionButton,
+    mount: () => createButton(),
     removeButton,
     updateButtonSize,
     isInstalled: () => installed !== null,
-    onSettingsChange: () => {
-      const s = settingsStore.get();
-      if (!s.showExpeditionButton && controller) removeButton();
-      else if (s.showExpeditionButton && !controller && s.fabMode && document.body) createButton();
-    },
   });
 
   // Keep the snapshot fresh across checkTarget XHRs and subsequent

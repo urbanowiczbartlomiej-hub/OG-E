@@ -6,10 +6,15 @@
 // what gets painted and how is feature-specific — but the wiring ABOVE
 // those is identical boilerplate:
 //
-//   • on install, mount once when `fabMode` is on (deferring to
-//     DOMContentLoaded when `document.body` isn't ready yet);
-//   • react to live `fabMode` flips (mount / remove) and `fabBtnSize`
+//   • on install, mount once when the feature's `enabled` predicate says
+//     so (deferring to DOMContentLoaded when `document.body` isn't ready
+//     yet);
+//   • react to live `enabled` flips (mount / remove) and `fabBtnSize`
 //     edits (live resize), ignoring every other settings field.
+//
+// `enabled` is the caller's visibility gate over settings — each command
+// module passes its own `show*Button` flag (the settings module bar);
+// there is no master FAB switch any more.
 //
 // Pulling it here keeps each orchestrator down to its own decision logic
 // and gives the wiring a single tested home. No DOM is read beyond
@@ -33,6 +38,10 @@
  *
  * @param {object} cfg
  * @param {SettingsStore} cfg.settingsStore  the global settings store.
+ * @param {(s: import('../../state/settings.js').Settings) => boolean} cfg.enabled
+ *   visibility predicate over settings — the feature's own `show*Button`
+ *   flag (or `() => true` for modules whose visibility is driven outside
+ *   settings, like sendSpy's watch-list gate).
  * @param {() => void} cfg.mount  build + attach the button (no-op safe to
  *   call only when unmounted — callers guarantee that here).
  * @param {() => void} cfg.removeButton  detach the button; safe unmounted.
@@ -46,6 +55,7 @@
  */
 export const installFabSettingsLifecycle = ({
   settingsStore,
+  enabled,
   mount,
   removeButton,
   updateButtonSize,
@@ -54,7 +64,7 @@ export const installFabSettingsLifecycle = ({
 }) => {
   // Initial render based on current settings.
   const initial = settingsStore.get();
-  if (initial.fabMode) {
+  if (enabled(initial)) {
     if (document.body) {
       mount();
     } else {
@@ -62,26 +72,27 @@ export const installFabSettingsLifecycle = ({
         'DOMContentLoaded',
         () => {
           // Re-check in case dispose ran before DOMContentLoaded fired.
-          if (isInstalled() && settingsStore.get().fabMode) mount();
+          if (isInstalled() && enabled(settingsStore.get())) mount();
         },
         { once: true },
       );
     }
   }
 
-  // Live settings reactions. React ONLY to the two fields we care about —
+  // Live settings reactions. React ONLY to the two signals we care about —
   // the settings store carries the whole panel, so unrelated edits would
   // otherwise spam this callback.
-  let prevFabMode = initial.fabMode;
+  let prevEnabled = enabled(initial);
   let prevFabBtnSize = initial.fabBtnSize;
   return settingsStore.subscribe((next) => {
-    if (next.fabMode !== prevFabMode) {
-      if (next.fabMode) {
+    const nextEnabled = enabled(next);
+    if (nextEnabled !== prevEnabled) {
+      if (nextEnabled) {
         if (document.body) mount();
       } else {
         removeButton();
       }
-      prevFabMode = next.fabMode;
+      prevEnabled = nextEnabled;
     }
     if (next.fabBtnSize !== prevFabBtnSize) {
       updateButtonSize(next.fabBtnSize);

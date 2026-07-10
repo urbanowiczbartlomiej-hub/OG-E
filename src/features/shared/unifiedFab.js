@@ -21,9 +21,9 @@
 // module id (`FAB_ACTIVE_KEY`) — all of which survive page reloads.
 //
 // Lifecycle: the shell is created lazily by the first registration and
-// torn down when the last module unregisters (all four features dispose
-// their buttons when `settings.fabMode` flips off, so the wrapper and the
-// satellite orbs disappear with them).
+// torn down when the last module unregisters (each feature disposes its
+// button when its `show*Button` flag flips off, so the wrapper and the
+// satellite orbs disappear with the last module).
 //
 // @see ./unifiedFabPure.js — the testable orbit geometry + active-id logic.
 // @see ./button.js         — builds the per-module hosts and registers them.

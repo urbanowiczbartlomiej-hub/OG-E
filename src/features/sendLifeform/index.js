@@ -39,6 +39,7 @@ import { scansStore, flushScansStore } from '../../state/scans.js';
 import { readLfArtifacts, writeLfArtifacts } from '../../state/lifeformArtifacts.js';
 import { createButton as makeButton, labelLines } from '../shared/button.js';
 import { DNA_GLYPH } from '../shared/buttonGlyphs.js';
+import { FAB_MODULES } from '../shared/fabModules.js';
 import { installFabSettingsLifecycle } from '../shared/fabSettingsLifecycle.js';
 import { SYSTEM_DISCOVERY_RESULT_EVENT } from '../../lib/ogeEvents.js';
 import { clock } from '../../lib/clock.js';
@@ -349,7 +350,7 @@ let installed = null;
 
 /**
  * Install the Lifeforms button. Idempotent — a second call returns the SAME
- * dispose fn as the first. Gated on the `fabMode` setting (mount /
+ * dispose fn as the first. Gated on the `showLifeformButton` setting (mount /
  * remove live on toggle); resized live on `fabBtnSize`. Registers as the
  * 'lf' module of the unified FAB.
  *
@@ -367,7 +368,7 @@ export const installSendLifeform = () => {
       ringId: 'oge-ring-lf',
       size,
       fontScale: 0.18,
-      module: { id: 'lf', name: 'Lifeforms', color: BG_LF_IDLE, glyph: DNA_GLYPH },
+      module: FAB_MODULES.lf,
       gateUntilEventBox: true,
       zones: [
         {
@@ -394,7 +395,7 @@ export const installSendLifeform = () => {
   /** @param {number} size */
   const updateButtonSize = (size) => controller?.resize(size);
 
-  // Passive artifact-counter harvest — NOT gated on fabMode: like the
+  // Passive artifact-counter harvest — NOT gated on the button toggle: like the
   // galaxy scans it's pure data collection, and a reading taken while the
   // button is off is immediately correct when the user re-enables it.
   if (document.body) {
@@ -410,21 +411,15 @@ export const installSendLifeform = () => {
   }
 
   // Settings-driven mount/teardown + live resize — the wiring shared by every
-  // send* FAB feature. The mount is additionally gated on the per-module
-  // `showLifeformButton` toggle (settings ▸ Floating button); the lifecycle
-  // helper only watches fabMode/fabBtnSize, so that flag's live flips reconcile
-  // in onSettingsChange (mirrors sendExpedition).
+  // send* FAB feature, gated on the per-module `showLifeformButton` toggle
+  // (the settings module bar; mirrors sendExpedition).
   const unsubSettings = installFabSettingsLifecycle({
     settingsStore,
-    mount: () => { if (settingsStore.get().showLifeformButton) mount(); },
+    enabled: (s) => s.showLifeformButton,
+    mount: () => mount(),
     removeButton,
     updateButtonSize,
     isInstalled: () => installed !== null,
-    onSettingsChange: () => {
-      const s = settingsStore.get();
-      if (!s.showLifeformButton && controller) removeButton();
-      else if (s.showLifeformButton && !controller && s.fabMode && document.body) mount();
-    },
   });
 
   const unsubScans = scansStore.subscribe(() => refresh());

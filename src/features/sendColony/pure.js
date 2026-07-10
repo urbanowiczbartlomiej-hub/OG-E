@@ -52,6 +52,7 @@ import {
   COL_MAX_GALAXY,
 } from '../../domain/rules.js';
 import { countFreeTargetSlots } from '../../domain/apiOccupancy.js';
+import { FAB_MODULES } from '../shared/fabModules.js';
 
 /**
  * @typedef {import('../../state/scans.js').GalaxyScans} GalaxyScans
@@ -85,8 +86,11 @@ export const CHECK_TARGET_TIMEOUT_MS = 15_000;
 
 // ─── BG colors ───────────────────────────────────────────────────────────
 
-/** Rim colour for idle "Send" with no candidate yet (cyan). */
-export const BG_SEND_IDLE = '#12b3c2';
+/**
+ * Rim colour for idle "Send" with no candidate yet (cyan). Doubles as the
+ * module's signature colour — sourced from the shared FAB identity table.
+ */
+export const BG_SEND_IDLE = FAB_MODULES.col.color;
 /** Rim colour for active "Send!" / "Send Colony [g:s:p]" (bright cyan). */
 export const BG_SEND_READY = '#13d1de';
 

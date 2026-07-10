@@ -28,6 +28,8 @@
 
 import { settingsStore } from '../../state/settings.js';
 import { SECTIONS } from './sections/index.js';
+import { injectStyle } from '../../lib/dom.js';
+import { appendGlyph, installButtonChrome } from '../shared/buttonChrome.js';
 
 /**
  * Shape of a single option in the SECTIONS config. Each `type` is
@@ -37,17 +39,24 @@ import { SECTIONS } from './sections/index.js';
  * `id` is both the `keyof Settings` field (for data-bound types) and
  * the suffix of the DOM id (`oge-setting-<id>`). For `static`
  * options the id is read-only (`static` may read from any data source,
- * not necessarily a Settings field).
+ * not necessarily a Settings field); `moduleTiles` binds each TILE to its
+ * own `tiles[].settingKey`, so its id is synthetic too.
  *
  * @typedef {object} SettingsOption
  * @property {string} id Option identifier — matches `Settings` field for data-bound types.
  * @property {string} label Human-readable row label.
- * @property {'checkbox' | 'range' | 'radio' | 'static'} type Control flavour.
+ * @property {'checkbox' | 'range' | 'radio' | 'static' | 'moduleTiles'} type Control flavour.
  * @property {number} [min] Slider minimum (range only).
  * @property {number} [max] Slider maximum (range only).
  * @property {number} [step] Slider step (range only; defaults to 1).
  * @property {string} [unit] Slider display unit suffix (range only, e.g. `'px'`).
  * @property {{ value: number, label: string }[]} [radioOptions] Choices for a horizontal radio group (radio only; values are written to the store as numbers).
+ * @property {import('../shared/fabModules.js').FabModule[]} [tiles]
+ *   Module identities for the multi-select tile bar (`moduleTiles` only) —
+ *   one independent toggle tile per entry, bound to `entry.settingKey`.
+ * @property {() => HTMLElement} [topSlot]
+ *   `moduleTiles` only: builds an element rendered flush ABOVE the tiles
+ *   inside the same bordered block (the Dashboard launcher).
  * @property {string} [buttonText] Inline action-button label (`checkbox` / `static` with `onclick`): renders a button beside the primary control.
  * @property {() => void} [onclick] Inline action-button click handler (`checkbox` / `static` with `buttonText`).
  * @property {() => string} [getText] Dynamic text producer (static only).
@@ -98,6 +107,53 @@ const BUTTON_STYLE =
   'color:#4a9eff;border-radius:4px;font-size:12px;cursor:pointer;font-weight:bold;';
 const STATIC_STYLE = 'font-size:11px;color:#888;white-space:pre-line;';
 const STATUS_WRAP_STYLE = 'display:inline-flex;align-items:center;gap:8px;width:100%;';
+
+// ─── Module-tiles bar (injected stylesheet, not inline) ──────────────────
+//
+// A tile is a 1:1 preview of the module's FAB satellite orb: the SAME
+// `.oge-node` dome (buttonChrome.js) at 38px, over the module's `--mod`
+// colour. ON = the orb lit in its signature colour (tinted tile + 2px bottom
+// accent); OFF = the orb powered down to grey. Stylesheet (not inline)
+// because the states are class-driven (`.on`, hover, focus, disabled).
+
+/** Injected-once `<style>` id for the module-tiles bar. */
+const TILES_STYLE_ID = 'oge-setting-module-tiles-style';
+
+// `--mod-on` (per tile, inline) carries the module colour; the class-level
+// `--mod` swap below is what flips the dome between grey and lit — an inline
+// `--mod` would beat the `.on` class and pin the tile permanently lit.
+const TILES_CSS = [
+  // The block: ONE bordered rounded box holding the optional top slot (the
+  // Dashboard launcher) flush above the module tiles — they read as a single
+  // command block.
+  '.oge-fab-block{width:100%;box-sizing:border-box;',
+  'border:1px solid #2a3a4c;border-radius:8px;overflow:hidden;background:#0b1016;}',
+  // Top segment — the Dashboard launcher (structure in sections/data.js).
+  // Class-driven (not inline) so hover/focus rules can win.
+  '.oge-dash-launch{display:flex;width:100%;box-sizing:border-box;align-items:center;',
+  'justify-content:center;gap:9px;padding:9px 6px;margin:0;border:none;',
+  'border-bottom:1px solid #223142;background:#0e141c;color:#e6c054;',
+  'font-size:13px;font-weight:bold;cursor:pointer;}',
+  '.oge-dash-launch:hover{background:#131c28;color:#f0d27a;}',
+  '.oge-dash-launch:focus-visible{outline:1px solid #4a9eff;outline-offset:-2px;}',
+  '.oge-module-tiles{display:flex;width:100%;box-sizing:border-box;}',
+  '.oge-module-tiles.oge-tiles-disabled{opacity:.35;pointer-events:none;}',
+  '.oge-module-tile{flex:1 1 0;display:flex;flex-direction:column;align-items:center;',
+  'gap:7px;padding:12px 6px 11px;margin:0;border:none;background:transparent;',
+  'cursor:pointer;--mod:#4d5866;}',
+  '.oge-module-tile + .oge-module-tile{border-left:1px solid #223142;}',
+  '.oge-module-tile.on{--mod:var(--mod-on);',
+  'background:color-mix(in oklab,var(--mod) 13%,transparent);',
+  'box-shadow:inset 0 -2px 0 var(--mod);}',
+  '.oge-module-tile:hover{background:color-mix(in oklab,var(--mod) 20%,transparent);}',
+  '.oge-module-tile:focus-visible{outline:1px solid #4a9eff;outline-offset:-2px;}',
+  // position:relative — the dome hosts appendGlyph's absolutely-inset
+  // `.oge-art` layer, which needs a positioned ancestor to fill.
+  '.oge-module-tile-dome{position:relative;width:38px;height:38px;}',
+  '.oge-module-tile:not(.on) .oge-module-tile-dome{--art-opacity:.45;}',
+  '.oge-module-tile-cap{font-size:11px;line-height:1;color:#66727f;}',
+  '.oge-module-tile.on .oge-module-tile-cap{color:#dfe7f2;}',
+].join('');
 
 // ─── Anti-loop flag + bound state helpers ────────────────────────────────
 
@@ -283,6 +339,78 @@ const buildRadioControl = (opt, valueCell) => {
 };
 
 /**
+ * Flip one module tile between lit (module visible) and powered-down.
+ * Shared by the builder's click handler and {@link syncInputsFromState}.
+ *
+ * @param {Element} btn  A `.oge-module-tile` button.
+ * @param {boolean} on
+ * @returns {void}
+ */
+const setTilePressed = (btn, on) => {
+  btn.classList.toggle('on', on);
+  btn.setAttribute('aria-pressed', String(on));
+};
+
+/**
+ * Render the moduleTiles (multi-select tile bar) flavour: one toggle tile
+ * per `opt.tiles` entry, each bound to its OWN boolean Settings field
+ * (`entry.settingKey`) — unlike radio, every tile flips independently. The
+ * tile's dome reuses buttonChrome's `.oge-node` + `appendGlyph`, so it is
+ * pixel-identical to the module's FAB satellite orb: the control IS a
+ * preview of what it toggles.
+ *
+ * @param {SettingsOption} opt
+ * @param {HTMLTableCellElement} valueCell
+ * @returns {void}
+ */
+const buildModuleTilesControl = (opt, valueCell) => {
+  // Both idempotent — on a page where the FAB is live the chrome sheet is
+  // already in, and panel rebuilds must not stack tile sheets.
+  installButtonChrome();
+  injectStyle(TILES_STYLE_ID, TILES_CSS);
+
+  const block = document.createElement('div');
+  block.className = 'oge-fab-block';
+  if (opt.topSlot) block.appendChild(opt.topSlot());
+
+  const wrap = document.createElement('span');
+  wrap.id = INPUT_ID_PREFIX + opt.id;
+  wrap.className = 'oge-module-tiles';
+
+  for (const tile of opt.tiles ?? []) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'oge-module-tile';
+    btn.dataset.key = tile.settingKey;
+    btn.style.setProperty('--mod-on', tile.color);
+
+    const dome = document.createElement('span');
+    dome.className = 'oge-node oge-module-tile-dome';
+    dome.setAttribute('aria-hidden', 'true');
+    appendGlyph(dome, tile.glyph);
+
+    const cap = document.createElement('span');
+    cap.className = 'oge-module-tile-cap';
+    cap.textContent = tile.name;
+
+    btn.appendChild(dome);
+    btn.appendChild(cap);
+    setTilePressed(btn, Boolean(readSetting(tile.settingKey)));
+    btn.addEventListener('click', () => {
+      const next = !readSetting(tile.settingKey);
+      writeSetting(tile.settingKey, next);
+      // Our own write skips the store-driven resync (writingFromUi), so the
+      // clicked tile repaints itself — same pattern as the range display.
+      setTilePressed(btn, next);
+    });
+    wrap.appendChild(btn);
+  }
+
+  block.appendChild(wrap);
+  valueCell.appendChild(block);
+};
+
+/**
  * Render the static (read-only text) flavour. `getText` is called once
  * at build time; subsequent refreshes flow through
  * {@link syncInputsFromState}.
@@ -349,6 +477,7 @@ const CONTROL_BUILDERS = {
   range: buildRangeControl,
   radio: buildRadioControl,
   static: buildStaticControl,
+  moduleTiles: buildModuleTilesControl,
 };
 
 /**
@@ -394,8 +523,12 @@ export const buildRow = (opt) => {
   }
 
   const labelCell = document.createElement('td');
-  labelCell.className = 'ago_menu_label_bullet';
-  labelCell.textContent = opt.label;
+  // An empty label leaves the cell blank WITHOUT the bullet class, which
+  // would still paint its lone bullet.
+  if (opt.label) {
+    labelCell.className = 'ago_menu_label_bullet';
+    labelCell.textContent = opt.label;
+  }
   tr.appendChild(labelCell);
 
   const valueCell = document.createElement('td');
@@ -435,8 +568,15 @@ export const syncInputsFromState = () => {
       // UI write — so flipping the master switch greys/un-greys dependents
       // immediately. Toggling `.disabled` never resets a caret.
       if (opt.disabledWhen) {
-        /** @type {HTMLInputElement} */ (el).disabled =
-          opt.disabledWhen(settingsStore.get());
+        const disabled = opt.disabledWhen(settingsStore.get());
+        if (opt.type === 'moduleTiles') {
+          // The bar is a wrapper <span> — no native `disabled`; the class
+          // gates it (opacity + pointer-events) like the dashboard's
+          // `.chip-group.disabled`.
+          el.classList.toggle('oge-tiles-disabled', disabled);
+        } else {
+          /** @type {HTMLInputElement} */ (el).disabled = disabled;
+        }
       }
       // Inline action button (checkbox/static rows) greys independently of
       // its row's primary control — e.g. the sync master stays on while its
@@ -471,6 +611,13 @@ export const syncInputsFromState = () => {
           el.querySelector(`input[value="${current}"]`)
         );
         if (sel) sel.checked = true;
+      } else if (opt.type === 'moduleTiles') {
+        // Each tile binds its own Settings field — re-read per tile so an
+        // outside write (e.g. cross-device settings sync) repaints the bar.
+        for (const btn of el.querySelectorAll('.oge-module-tile')) {
+          const key = /** @type {HTMLElement} */ (btn).dataset.key;
+          if (key) setTilePressed(btn, Boolean(readSetting(key)));
+        }
       }
     }
   }
