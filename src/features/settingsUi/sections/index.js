@@ -6,26 +6,24 @@
 // top-to-bottom in the AGR settings tab.
 
 import { floatingButtonSection } from './floatingButton.js';
-import { expeditionsSection } from './expeditions.js';
-import { displaySection } from './display.js';
+import { preferencesSection } from './preferences.js';
 
 /**
  * @typedef {import('../controls.js').SettingsSection} SettingsSection
  */
 
 /**
- * Declarative layout of the entire settings panel. Grouped by section
- * for readability; each section renders a full-width header row followed
- * by one row per option.
+ * Declarative layout of the entire settings panel: the FAB command block,
+ * then the preferences panel. Both sections are headerless — each block
+ * carries its own captions.
  *
- * Every data-bound option's `id` MUST match a field of `Settings` —
- * typecheck catches the mismatch via the index read in
- * `controls.js#buildRow`.
+ * Every data-bound option's `id` (and every prefTiles `key`) MUST match a
+ * field of `Settings` — typecheck catches the mismatch via the index read
+ * in `controls.js`.
  *
  * @type {SettingsSection[]}
  */
 export const SECTIONS = [
   floatingButtonSection,
-  expeditionsSection,
-  displaySection,
+  preferencesSection,
 ];

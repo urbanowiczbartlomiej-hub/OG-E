@@ -28,7 +28,7 @@
 
 import { settingsStore } from '../../state/settings.js';
 import { SECTIONS } from './sections/index.js';
-import { injectStyle } from '../../lib/dom.js';
+import { injectStyle, parseSvg } from '../../lib/dom.js';
 import { appendGlyph, installButtonChrome } from '../shared/buttonChrome.js';
 
 /**
@@ -45,7 +45,7 @@ import { appendGlyph, installButtonChrome } from '../shared/buttonChrome.js';
  * @typedef {object} SettingsOption
  * @property {string} id Option identifier — matches `Settings` field for data-bound types.
  * @property {string} label Human-readable row label.
- * @property {'checkbox' | 'range' | 'radio' | 'static' | 'moduleTiles'} type Control flavour.
+ * @property {'checkbox' | 'range' | 'radio' | 'static' | 'moduleTiles' | 'prefTiles'} type Control flavour.
  * @property {number} [min] Slider minimum (range only).
  * @property {number} [max] Slider maximum (range only).
  * @property {number} [step] Slider step (range only; defaults to 1).
@@ -57,6 +57,8 @@ import { appendGlyph, installButtonChrome } from '../shared/buttonChrome.js';
  * @property {() => HTMLElement} [topSlot]
  *   `moduleTiles` only: builds an element rendered flush ABOVE the tiles
  *   inside the same bordered block (the Dashboard launcher).
+ * @property {PrefGroup[]} [prefGroups]
+ *   Tile groups for the preferences panel (`prefTiles` only).
  * @property {string} [buttonText] Inline action-button label (`checkbox` / `static` with `onclick`): renders a button beside the primary control.
  * @property {() => void} [onclick] Inline action-button click handler (`checkbox` / `static` with `buttonText`).
  * @property {() => string} [getText] Dynamic text producer (static only).
@@ -80,6 +82,37 @@ import { appendGlyph, installButtonChrome } from '../shared/buttonChrome.js';
  *   the INLINE BUTTON independently of the primary control. Lets a master
  *   checkbox stay enabled while its own "do it now" button greys out when
  *   the feature is off. Re-evaluated on every store change.
+ */
+
+/**
+ * One self-indicating toggle tile of the preferences panel: a flat line
+ * glyph + keyword caption bound to a boolean Settings field. Optional
+ * extras: an embedded numeric segment (`seg` — its own field, radio
+ * semantics, clicks don't toggle the tile) and a corner action pill
+ * (`action` — fires independently of the toggle, e.g. the banner preview).
+ *
+ * @typedef {object} PrefTile
+ * @property {keyof import('../../state/settings.js').Settings} key
+ *   Boolean Settings field the tile toggles.
+ * @property {string} caption Keyword label (full sentence goes in `hint`).
+ * @property {string} glyph   Inner SVG markup (`0 0 64 64`, currentColor).
+ * @property {string} [hint]  Tooltip — the old full-sentence row label.
+ * @property {{
+ *   key: keyof import('../../state/settings.js').Settings,
+ *   caption: string,
+ *   choices: number[],
+ *   hint?: string,
+ * }} [seg]
+ * @property {{ label: string, run: () => void, hint?: string }} [action]
+ */
+
+/**
+ * One captioned group of preference tiles.
+ *
+ * @typedef {object} PrefGroup
+ * @property {string} caption Thin muted group caption inside the panel.
+ * @property {number} columns Grid columns; 1 = full-width two-zone row tiles.
+ * @property {PrefTile[]} tiles
  */
 
 /**
@@ -153,6 +186,58 @@ const TILES_CSS = [
   '.oge-module-tile:not(.on) .oge-module-tile-dome{--art-opacity:.45;}',
   '.oge-module-tile-cap{font-size:11px;line-height:1;color:#66727f;}',
   '.oge-module-tile.on .oge-module-tile-cap{color:#dfe7f2;}',
+].join('');
+
+// ─── Preferences panel (injected stylesheet, not inline) ─────────────────
+//
+// Self-indicating toggle tiles in one bordered panel (same chrome as the FAB
+// command block). Deliberately FLAT glyphs + ONE neutral accent (the panel's
+// #4a9eff blue): the radial dome and the per-module colours are reserved for
+// the FAB module bar — the settings panel stays calm so the bar above remains
+// the only colourful element.
+
+/** Injected-once `<style>` id for the preferences panel. */
+const PREF_STYLE_ID = 'oge-setting-pref-style';
+
+const PREF_CSS = [
+  '.oge-pref-panel{width:100%;box-sizing:border-box;',
+  'border:1px solid #2a3a4c;border-radius:8px;overflow:hidden;background:#0b1016;}',
+  '.oge-pref-cap{padding:8px 12px 2px;font-size:11px;color:#5f6c7b;}',
+  '.oge-pref-cap.sep{border-top:1px solid #1a2735;}',
+  '.oge-pref-grid{display:grid;}',
+  // A tile is a <div role="button"> (not <button>): the row variant nests the
+  // segment's and the pill's REAL buttons inside, and interactive content
+  // inside a native button is invalid HTML.
+  '.oge-pref-tile{position:relative;display:flex;flex-direction:column;align-items:center;',
+  'justify-content:center;gap:7px;padding:13px 6px 12px;margin:0;',
+  'cursor:pointer;user-select:none;color:#5a6672;}',
+  '.oge-pref-tile svg{width:26px;height:26px;overflow:visible;}',
+  '.oge-pref-tile-cap{font-size:11px;line-height:1;color:#66727f;}',
+  '.oge-pref-tile:hover{background:rgba(74,158,255,.07);}',
+  '.oge-pref-tile.on{background:rgba(74,158,255,.10);box-shadow:inset 0 -2px 0 #4a9eff;color:#7db8ff;}',
+  '.oge-pref-tile.on .oge-pref-tile-cap{color:#dfe7f2;}',
+  '.oge-pref-tile:focus-visible{outline:1px solid #4a9eff;outline-offset:-2px;}',
+  // Hairline separators for the 3-column grid (first column / first row skip).
+  '.oge-pref-grid.cols3 .oge-pref-tile:not(:nth-child(3n+1)){border-left:1px solid #1a2735;}',
+  '.oge-pref-grid.cols3 .oge-pref-tile:nth-child(n+4){border-top:1px solid #1a2735;}',
+  // Row variant (columns:1) — a full-width two-zone control: tile body =
+  // toggle, embedded segment = its own numeric field.
+  '.oge-pref-tile.row{flex-direction:row;justify-content:flex-start;gap:10px;',
+  'padding:11px 12px;text-align:left;}',
+  '.oge-pref-tile.row .oge-pref-tile-cap{font-size:12px;}',
+  '.oge-pref-spacer{flex:1;}',
+  '.oge-pref-segcap{font-size:11px;color:#5f6c7b;}',
+  '.oge-pref-seg{display:inline-flex;border:1px solid #2a3a4c;border-radius:6px;overflow:hidden;}',
+  '.oge-pref-seg button{border:none;margin:0;padding:4px 14px;background:transparent;',
+  'color:#66727f;font-size:12px;cursor:pointer;font-family:inherit;}',
+  '.oge-pref-seg button + button{border-left:1px solid #2a3a4c;}',
+  '.oge-pref-seg button.on{background:rgba(74,158,255,.16);color:#cfe4ff;',
+  'box-shadow:inset 0 -2px 0 #4a9eff;}',
+  '.oge-pref-pill{position:absolute;top:6px;right:6px;padding:2px 8px;margin:0;',
+  'border:1px solid #3a4a5c;border-radius:9px;background:#101823;color:#8fa8c0;',
+  'font-size:11px;cursor:pointer;font-family:inherit;}',
+  // Hover reddens toward the banner it previews.
+  '.oge-pref-pill:hover{border-color:#fb7185;color:#ffb3bd;}',
 ].join('');
 
 // ─── Anti-loop flag + bound state helpers ────────────────────────────────
@@ -411,6 +496,143 @@ const buildModuleTilesControl = (opt, valueCell) => {
 };
 
 /**
+ * Build the embedded numeric segment of a row tile (its OWN Settings field,
+ * radio semantics — exactly one choice lit). Clicks stop propagating so they
+ * never toggle the host tile.
+ *
+ * @param {NonNullable<PrefTile['seg']>} seg
+ * @returns {HTMLElement}
+ */
+const buildPrefSeg = (seg) => {
+  const wrap = document.createElement('span');
+  wrap.className = 'oge-pref-seg';
+  wrap.dataset.key = seg.key;
+  if (seg.hint) wrap.title = seg.hint;
+  const current = Number(readSetting(seg.key));
+  for (const choice of seg.choices) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = String(choice);
+    b.dataset.value = String(choice);
+    b.classList.toggle('on', choice === current);
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      writeSetting(seg.key, choice);
+      for (const sib of wrap.querySelectorAll('button')) {
+        sib.classList.toggle('on', sib === b);
+      }
+    });
+    wrap.appendChild(b);
+  }
+  return wrap;
+};
+
+/**
+ * Build one preference tile: flat glyph + keyword caption over a boolean
+ * Settings field, with the optional embedded segment / corner action pill.
+ * The tile itself is a `role="button"` div (see the PREF_CSS note) with
+ * Enter/Space handling, so nesting the extras' real buttons stays valid.
+ *
+ * @param {PrefTile} tile
+ * @param {boolean} rowLayout  columns:1 group — horizontal two-zone layout.
+ * @returns {HTMLElement}
+ */
+const buildPrefTile = (tile, rowLayout) => {
+  const el = document.createElement('div');
+  el.className = 'oge-pref-tile' + (rowLayout ? ' row' : '');
+  el.setAttribute('role', 'button');
+  el.tabIndex = 0;
+  el.dataset.key = tile.key;
+  if (tile.hint) el.title = tile.hint;
+
+  el.appendChild(
+    parseSvg(
+      '<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" focusable="false" aria-hidden="true">' +
+        tile.glyph +
+        '</svg>',
+    ),
+  );
+  const cap = document.createElement('span');
+  cap.className = 'oge-pref-tile-cap';
+  cap.textContent = tile.caption;
+  el.appendChild(cap);
+
+  if (tile.seg) {
+    const spacer = document.createElement('span');
+    spacer.className = 'oge-pref-spacer';
+    const segCap = document.createElement('span');
+    segCap.className = 'oge-pref-segcap';
+    segCap.textContent = tile.seg.caption;
+    el.append(spacer, segCap, buildPrefSeg(tile.seg));
+  }
+  if (tile.action) {
+    const pill = document.createElement('button');
+    pill.type = 'button';
+    pill.className = 'oge-pref-pill';
+    pill.textContent = tile.action.label;
+    if (tile.action.hint) pill.title = tile.action.hint;
+    const run = tile.action.run;
+    pill.addEventListener('click', (e) => {
+      e.stopPropagation();
+      run();
+    });
+    el.appendChild(pill);
+  }
+
+  setTilePressed(el, Boolean(readSetting(tile.key)));
+  const toggle = () => {
+    const next = !readSetting(tile.key);
+    writeSetting(tile.key, next);
+    setTilePressed(el, next);
+  };
+  el.addEventListener('click', toggle);
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggle();
+    }
+  });
+  return el;
+};
+
+/**
+ * Render the prefTiles (preferences panel) flavour: captioned groups of
+ * self-indicating toggle tiles inside one bordered panel. Each tile binds
+ * its own Settings field via `data-key` (same discipline as moduleTiles);
+ * {@link syncInputsFromState} repaints per key on outside writes.
+ *
+ * @param {SettingsOption} opt
+ * @param {HTMLTableCellElement} valueCell
+ * @returns {void}
+ */
+const buildPrefTilesControl = (opt, valueCell) => {
+  injectStyle(PREF_STYLE_ID, PREF_CSS);
+
+  const panel = document.createElement('div');
+  panel.id = INPUT_ID_PREFIX + opt.id;
+  panel.className = 'oge-pref-panel';
+
+  let first = true;
+  for (const group of opt.prefGroups ?? []) {
+    const cap = document.createElement('div');
+    cap.className = 'oge-pref-cap' + (first ? '' : ' sep');
+    cap.textContent = group.caption;
+    panel.appendChild(cap);
+    first = false;
+
+    const grid = document.createElement('div');
+    grid.className = 'oge-pref-grid' + (group.columns === 3 ? ' cols3' : '');
+    grid.style.gridTemplateColumns = `repeat(${group.columns},1fr)`;
+    for (const tile of group.tiles) {
+      grid.appendChild(buildPrefTile(tile, group.columns === 1));
+    }
+    panel.appendChild(grid);
+  }
+
+  valueCell.appendChild(panel);
+};
+
+/**
  * Render the static (read-only text) flavour. `getText` is called once
  * at build time; subsequent refreshes flow through
  * {@link syncInputsFromState}.
@@ -478,6 +700,7 @@ const CONTROL_BUILDERS = {
   radio: buildRadioControl,
   static: buildStaticControl,
   moduleTiles: buildModuleTilesControl,
+  prefTiles: buildPrefTilesControl,
 };
 
 /**
@@ -617,6 +840,24 @@ export const syncInputsFromState = () => {
         for (const btn of el.querySelectorAll('.oge-module-tile')) {
           const key = /** @type {HTMLElement} */ (btn).dataset.key;
           if (key) setTilePressed(btn, Boolean(readSetting(key)));
+        }
+      } else if (opt.type === 'prefTiles') {
+        // Same per-key repaint as moduleTiles, plus the embedded segments'
+        // numeric fields.
+        for (const t of el.querySelectorAll('.oge-pref-tile')) {
+          const key = /** @type {HTMLElement} */ (t).dataset.key;
+          if (key) setTilePressed(t, Boolean(readSetting(key)));
+        }
+        for (const segEl of el.querySelectorAll('.oge-pref-seg')) {
+          const key = /** @type {HTMLElement} */ (segEl).dataset.key;
+          if (!key) continue;
+          const current = Number(readSetting(key));
+          for (const b of segEl.querySelectorAll('button')) {
+            b.classList.toggle(
+              'on',
+              Number(/** @type {HTMLElement} */ (b).dataset.value) === current,
+            );
+          }
         }
       }
     }
