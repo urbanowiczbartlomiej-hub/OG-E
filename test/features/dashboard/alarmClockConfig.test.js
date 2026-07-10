@@ -48,6 +48,15 @@ const install = () => installAlarmClockConfig({ getUniverseId: () => UNI });
 
 const $ = (/** @type {string} */ sel) => /** @type {HTMLInputElement} */ (document.querySelector(sel));
 
+// The Enabled / Guardian toggles are `<button class="toggle-chip">` pills whose
+// `.on` class IS the boolean state (see chips.js toggleChipOn/setToggleChip) —
+// they are NOT <input> checkboxes, so read/set them the way production does
+// rather than via `.checked` (which reads/writes undefined on a <button>).
+/** Is a toggle-chip on? @param {string} sel */
+const chipOn = (sel) => !!document.querySelector(sel)?.classList.contains('on');
+/** Set a toggle-chip on/off (mirrors setToggleChip). @param {string} sel @param {boolean} on */
+const setChip = (sel, on) => { document.querySelector(sel)?.classList.toggle('on', !!on); };
+
 // ── per-entry offset editor helpers ───────────────────────────────────────
 // Each offset list is a row editor (container id + `${id}Add` button, rows with
 // `.oge-offset-input` / `.oge-offset-remove`; the full impact phrase is the
@@ -96,7 +105,7 @@ describe('AlarmClock fleet-save config editor', () => {
   it('fills fields from the default preset when nothing is stored', async () => {
     install().refresh();
     await flush();
-    expect($('#remCfgFsEnabled').checked).toBe(false);
+    expect(chipOn('#remCfgFsEnabled')).toBe(false);
     expect($('#remCfgFsThreshold').value).toBe('100000');
     expect($('#remCfgFsMinFlight').value).toBe('10m');
     expect(readEditor('remCfgFsOffsets')).toBe('-10m, 0m, 10m');
@@ -106,7 +115,7 @@ describe('AlarmClock fleet-save config editor', () => {
     store.set(CFG_KEY, { fsEnabled: true, fsThreshold: 50000, fsMinFlightSec: 900, fsOffsets: '-5m, 0m' });
     install().refresh();
     await flush();
-    expect($('#remCfgFsEnabled').checked).toBe(true);
+    expect(chipOn('#remCfgFsEnabled')).toBe(true);
     expect($('#remCfgFsThreshold').value).toBe('50000');
     expect($('#remCfgFsMinFlight').value).toBe('15m');
     expect(readEditor('remCfgFsOffsets')).toBe('-5m, 0m');
@@ -134,13 +143,13 @@ describe('AlarmClock fleet-save config editor', () => {
     install().refresh();
     await flush();
 
-    $('#remCfgFsEnabled').checked = true;
+    setChip('#remCfgFsEnabled', true);
     $('#remCfgFsThreshold').value = '250000';
     $('#remCfgFsMinFlight').value = '5m';
     setEditor('remCfgFsOffsets', ['-20m', '0m']);
     // Guardian off so the offsets pass through verbatim (its "never-enters net"
     // would otherwise inject a post-landing chip — covered by its own tests).
-    $('#remCfgGuardianEnabled').checked = false;
+    setChip('#remCfgGuardianEnabled', false);
     $('#remCfgSave').dispatchEvent(new Event('click'));
     await flush();
 
@@ -178,7 +187,7 @@ describe('AlarmClock fleet-save config editor', () => {
     await flush();
     clearEditor('remCfgFsOffsets');
     // Guardian off, else it injects a post-landing chip into the empty list.
-    $('#remCfgGuardianEnabled').checked = false;
+    setChip('#remCfgGuardianEnabled', false);
     $('#remCfgSave').dispatchEvent(new Event('click'));
     await flush();
     expect(/** @type {any} */ (store.get(CFG_KEY)).fsOffsets).toBe('');
@@ -191,11 +200,11 @@ describe('AlarmClock fleet-save config editor', () => {
     // it in the editor) so the classic fleet-save alarmClock still reaches them.
     install().refresh();
     await flush();
-    $('#remCfgFsEnabled').checked = true;
+    setChip('#remCfgFsEnabled', true);
     $('#remCfgFsThreshold').value = '0';
     $('#remCfgFsMinFlight').value = '0';
     setEditor('remCfgFsOffsets', ['-20m', '0m']);
-    $('#remCfgGuardianEnabled').checked = true;
+    setChip('#remCfgGuardianEnabled', true);
     $('#remCfgGuardianInterval').value = '20';
     $('#remCfgSave').dispatchEvent(new Event('click'));
     await flush();
@@ -209,11 +218,11 @@ describe('AlarmClock fleet-save config editor', () => {
   it('guardian on: does NOT inject when an offset already covers the interval', async () => {
     install().refresh();
     await flush();
-    $('#remCfgFsEnabled').checked = true;
+    setChip('#remCfgFsEnabled', true);
     $('#remCfgFsThreshold').value = '0';
     $('#remCfgFsMinFlight').value = '0';
     setEditor('remCfgFsOffsets', ['0m', '30m']);
-    $('#remCfgGuardianEnabled').checked = true;
+    setChip('#remCfgGuardianEnabled', true);
     $('#remCfgGuardianInterval').value = '20';
     $('#remCfgSave').dispatchEvent(new Event('click'));
     await flush();
@@ -239,7 +248,7 @@ describe('AlarmClock fleet-save config editor', () => {
     store.set(CFG_KEY, { positions: '12-15', preferOtherGalaxies: false, colonyPassword: 'hunter2' });
     install().refresh();
     await flush();
-    $('#remCfgFsEnabled').checked = true;
+    setChip('#remCfgFsEnabled', true);
     $('#remCfgSave').dispatchEvent(new Event('click'));
     await flush();
     const saved = /** @type {any} */ (store.get(CFG_KEY));
@@ -274,7 +283,7 @@ describe('AlarmClock fleet-save config editor', () => {
     expect($('#remCfgFsThreshold').value).toBe('50000');
 
     $('#remCfgReset').dispatchEvent(new Event('click'));
-    expect($('#remCfgFsEnabled').checked).toBe(defaultGalaxyScanConfig().fsEnabled);
+    expect(chipOn('#remCfgFsEnabled')).toBe(defaultGalaxyScanConfig().fsEnabled);
     expect($('#remCfgFsThreshold').value).toBe(String(defaultGalaxyScanConfig().fsThreshold));
     // Reset alone does not persist — the stored value is unchanged.
     expect(/** @type {any} */ (store.get(CFG_KEY)).fsThreshold).toBe(50000);
@@ -286,7 +295,7 @@ describe('AlarmClock wave + ad-hoc config editor', () => {
     install().refresh();
     await flush();
     const d = defaultAlarmClockConfig();
-    expect($('#remCfgWaveEnabled').checked).toBe(d.alarmClockEnabled);
+    expect(chipOn('#remCfgWaveEnabled')).toBe(d.alarmClockEnabled);
     expect(readEditor('remCfgWaveEditor')).toBe(d.alarmClockSchedule);
     // The ad-hoc lead time is now a signed chip editor; default '-1m'.
     expect(readEditor('remCfgAdhocOffsets')).toBe(d.adhocSchedule);
@@ -296,7 +305,7 @@ describe('AlarmClock wave + ad-hoc config editor', () => {
     store.set(ALARM_CLOCK_KEY, { alarmClockEnabled: true, alarmClockSchedule: '5m, 15m', adhocSchedule: '-10m, 0m' });
     install().refresh();
     await flush();
-    expect($('#remCfgWaveEnabled').checked).toBe(true);
+    expect(chipOn('#remCfgWaveEnabled')).toBe(true);
     expect(readEditor('remCfgWaveEditor')).toBe('5m, 15m');
     expect(readEditor('remCfgAdhocOffsets')).toBe('-10m, 0m');
   });
@@ -314,7 +323,7 @@ describe('AlarmClock wave + ad-hoc config editor', () => {
     install().refresh();
     await flush();
 
-    $('#remCfgWaveEnabled').checked = true;
+    setChip('#remCfgWaveEnabled', true);
     setEditor('remCfgWaveEditor', ['0m', '20m']);
     setEditor('remCfgAdhocOffsets', ['-90s', '0m']);
     $('#remCfgSave').dispatchEvent(new Event('click'));
@@ -332,8 +341,8 @@ describe('AlarmClock wave + ad-hoc config editor', () => {
   it('a save writes BOTH the fleet-save slot AND the alarmClock slot', async () => {
     install().refresh();
     await flush();
-    $('#remCfgFsEnabled').checked = true;
-    $('#remCfgWaveEnabled').checked = true;
+    setChip('#remCfgFsEnabled', true);
+    setChip('#remCfgWaveEnabled', true);
     $('#remCfgSave').dispatchEvent(new Event('click'));
     await flush();
     expect(/** @type {any} */ (store.get(CFG_KEY)).fsEnabled).toBe(true);
