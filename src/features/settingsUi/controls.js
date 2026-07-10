@@ -57,6 +57,10 @@ import { appendGlyph, installButtonChrome } from '../shared/buttonChrome.js';
  * @property {() => HTMLElement} [topSlot]
  *   `moduleTiles` only: builds an element rendered flush ABOVE the tiles
  *   inside the same bordered block (the Dashboard launcher).
+ * @property {RangeSpec} [sizeSlider]
+ *   `moduleTiles` only: a range spec rendered as the block's BOTTOM segment
+ *   (the shared FAB size slider — it sizes the buttons the tiles preview,
+ *   so it lives inside the block, not as its own row).
  * @property {PrefGroup[]} [prefGroups]
  *   Tile groups for the preferences panel (`prefTiles` only).
  * @property {string} [buttonText] Inline action-button label (`checkbox` / `static` with `onclick`): renders a button beside the primary control.
@@ -107,6 +111,18 @@ import { appendGlyph, installButtonChrome } from '../shared/buttonChrome.js';
  */
 
 /**
+ * Minimal slider spec — the `range` fields of a {@link SettingsOption},
+ * reusable standalone as a moduleTiles block's nested `sizeSlider`.
+ *
+ * @typedef {object} RangeSpec
+ * @property {string} id `keyof Settings` field the slider binds to (numeric).
+ * @property {number} [min]
+ * @property {number} [max]
+ * @property {number} [step]
+ * @property {string} [unit]
+ */
+
+/**
  * One captioned group of preference tiles.
  *
  * @typedef {object} PrefGroup
@@ -140,36 +156,40 @@ const STATUS_WRAP_STYLE = 'display:inline-flex;align-items:center;gap:8px;width:
 // ─── Range slider (injected stylesheet, not inline) ──────────────────────
 //
 // Native <input type=range> restyled to the panel's design language: slim
-// rounded track, lit progress fill + round thumb in the panel's #4a9eff
-// accent. Stylesheet (not inline) because tracks/thumbs are only reachable
-// through vendor pseudo-elements. `-moz-range-progress` paints the filled
-// side on Firefox (the shipping target); WebKit has no track-fill pseudo,
-// so there the track stays uniformly dark — still modern, just unfilled.
-// The wrap's 10px side margin matches `.oge-pref-panel` below, and its
-// equal top/bottom margins seat the row evenly between the command block
-// and the preferences panel.
+// rounded track, lit progress fill + a ringed round thumb in the panel's
+// #4a9eff accent (the dark ring makes the knob read as a physical cap, not
+// the browser default dot). Stylesheet (not inline) because tracks/thumbs
+// are only reachable through vendor pseudo-elements. `-moz-range-progress`
+// paints the filled side on Firefox (the shipping target); WebKit has no
+// track-fill pseudo, so there the track stays uniformly dark. The wrap is
+// layout-neutral — its seat comes from the host (`.oge-fab-size` inside the
+// command block, or the standalone `.oge-range-row` margins).
 
 /** Injected-once `<style>` id for the range slider. */
 const RANGE_STYLE_ID = 'oge-setting-range-style';
 
 const RANGE_CSS = [
-  '.oge-range-wrap{display:flex;align-items:center;gap:10px;margin:12px 10px;}',
+  '.oge-range-wrap{display:flex;flex:1;align-items:center;gap:10px;min-width:0;}',
+  // Standalone-row seat (a range option outside the command block): side
+  // margins matching `.oge-pref-panel`, equal top/bottom.
+  '.oge-range-row{margin:12px 10px;}',
   '.oge-range-wrap .oge-range-display{min-width:50px;text-align:right;',
   'font-size:11px;color:#8fa8c0;}',
-  '.oge-range{flex:1;height:16px;margin:0;padding:0;background:transparent;',
-  '-webkit-appearance:none;appearance:none;cursor:pointer;}',
+  '.oge-range{flex:1;height:18px;margin:0;padding:0;background:transparent;',
+  '-webkit-appearance:none;appearance:none;cursor:pointer;min-width:0;}',
   '.oge-range:focus-visible{outline:1px solid #4a9eff;outline-offset:3px;}',
   // Firefox track + progress fill + thumb.
-  '.oge-range::-moz-range-track{height:4px;border-radius:2px;background:#223142;}',
-  '.oge-range::-moz-range-progress{height:4px;border-radius:2px;background:#4a9eff;}',
-  '.oge-range::-moz-range-thumb{width:14px;height:14px;border:none;border-radius:50%;',
-  'background:#4a9eff;box-shadow:0 0 5px rgba(74,158,255,.55);}',
+  '.oge-range::-moz-range-track{height:5px;border-radius:3px;background:#223142;}',
+  '.oge-range::-moz-range-progress{height:5px;border-radius:3px;background:#4a9eff;}',
+  '.oge-range::-moz-range-thumb{width:16px;height:16px;border-radius:50%;',
+  'background:#4a9eff;border:3px solid #0b1016;',
+  'box-shadow:0 0 0 1px #2a3a4c,0 0 6px rgba(74,158,255,.55);}',
   '.oge-range:hover::-moz-range-thumb{background:#7db8ff;}',
-  // WebKit track + thumb (thumb needs the -5px seat onto the 4px track).
-  '.oge-range::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:#223142;}',
-  '.oge-range::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;',
-  'margin-top:-5px;border:none;border-radius:50%;background:#4a9eff;',
-  'box-shadow:0 0 5px rgba(74,158,255,.55);}',
+  // WebKit track + thumb (thumb needs the -5.5px seat onto the 5px track).
+  '.oge-range::-webkit-slider-runnable-track{height:5px;border-radius:3px;background:#223142;}',
+  '.oge-range::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;',
+  'margin-top:-5.5px;border-radius:50%;background:#4a9eff;border:3px solid #0b1016;',
+  'box-shadow:0 0 0 1px #2a3a4c,0 0 6px rgba(74,158,255,.55);}',
   '.oge-range:hover::-webkit-slider-thumb{background:#7db8ff;}',
 ].join('');
 
@@ -194,13 +214,22 @@ const TILES_CSS = [
   '.oge-fab-block{width:100%;box-sizing:border-box;',
   'border:1px solid #2a3a4c;border-radius:8px;overflow:hidden;background:#0b1016;}',
   // Top segment — the Dashboard launcher (structure in sections/data.js).
-  // Class-driven (not inline) so hover/focus rules can win.
-  '.oge-dash-launch{display:flex;width:100%;box-sizing:border-box;align-items:center;',
-  'justify-content:center;gap:9px;padding:9px 6px;margin:0;border:none;',
+  // Class-driven (not inline) so hover/focus rules can win. Same anatomy as
+  // the module tiles below (glyph over caption, same paddings/gap) so the
+  // whole block reads as one family; the gold lens + label is what says
+  // "primary CTA, not a module toggle".
+  '.oge-dash-launch{display:flex;width:100%;box-sizing:border-box;flex-direction:column;',
+  'align-items:center;justify-content:center;gap:7px;padding:12px 6px 11px;margin:0;border:none;',
   'border-bottom:1px solid #223142;background:#0e141c;color:#e6c054;',
-  'font-size:13px;font-weight:bold;cursor:pointer;}',
+  'font-size:12px;font-weight:bold;cursor:pointer;}',
   '.oge-dash-launch:hover{background:#131c28;color:#f0d27a;}',
   '.oge-dash-launch:focus-visible{outline:1px solid #4a9eff;outline-offset:-2px;}',
+  // Bottom segment — the shared size slider, fused into the block (it sizes
+  // the very buttons the tiles above preview, so it belongs to the block,
+  // not floating under it). Same chrome shade as the launcher segment, so
+  // the block reads launcher / tiles / slider top-to-bottom.
+  '.oge-fab-size{display:flex;box-sizing:border-box;width:100%;',
+  'border-top:1px solid #223142;background:#0e141c;padding:11px 12px;}',
   '.oge-module-tiles{display:flex;width:100%;box-sizing:border-box;}',
   '.oge-module-tiles.oge-tiles-disabled{opacity:.35;pointer-events:none;}',
   '.oge-module-tile{flex:1 1 0;display:flex;flex-direction:column;align-items:center;',
@@ -236,7 +265,11 @@ const PREF_CSS = [
   // panel read as one aligned column under the full-bleed command block.
   '.oge-pref-panel{box-sizing:border-box;margin:0 10px;',
   'border:1px solid #2a3a4c;border-radius:8px;overflow:hidden;background:#0b1016;}',
-  '.oge-pref-cap{padding:8px 12px 2px;font-size:11px;color:#5f6c7b;}',
+  // Group captions carry the same typographic weight as the Dashboard
+  // launcher's label (12px bold) so the groups scan as real headings, but
+  // stay in the panel's muted blue-grey — gold remains the launcher's mark.
+  '.oge-pref-cap{padding:9px 12px 3px;font-size:12px;font-weight:bold;',
+  'letter-spacing:.02em;color:#a7b8cb;}',
   '.oge-pref-cap.sep{border-top:1px solid #1a2735;}',
   '.oge-pref-grid{display:grid;}',
   // A tile is a <div role="button"> (not <button>): the row variant nests the
@@ -395,6 +428,21 @@ const buildCheckboxControl = (opt, valueCell) => {
  * @returns {void}
  */
 const buildRangeControl = (opt, valueCell) => {
+  const wrap = buildRangeWrap(opt);
+  wrap.classList.add('oge-range-row');
+  valueCell.appendChild(wrap);
+};
+
+/**
+ * Build the bare slider + value-display wrap (layout-neutral — the caller
+ * seats it: {@link buildRangeControl} adds the standalone-row margins,
+ * {@link buildModuleTilesControl} drops it into the command block's bottom
+ * segment).
+ *
+ * @param {RangeSpec} opt
+ * @returns {HTMLElement}
+ */
+const buildRangeWrap = (opt) => {
   injectStyle(RANGE_STYLE_ID, RANGE_CSS);
 
   const wrap = document.createElement('span');
@@ -421,7 +469,7 @@ const buildRangeControl = (opt, valueCell) => {
 
   wrap.appendChild(slider);
   wrap.appendChild(display);
-  valueCell.appendChild(wrap);
+  return wrap;
 };
 
 /**
@@ -528,6 +576,16 @@ const buildModuleTilesControl = (opt, valueCell) => {
   }
 
   block.appendChild(wrap);
+
+  // Bottom segment — the nested size slider (see the `sizeSlider` typedef
+  // note; synced by the moduleTiles branch of syncInputsFromState).
+  if (opt.sizeSlider) {
+    const seg = document.createElement('div');
+    seg.className = 'oge-fab-size';
+    seg.appendChild(buildRangeWrap(opt.sizeSlider));
+    block.appendChild(seg);
+  }
+
   valueCell.appendChild(block);
 };
 
@@ -876,6 +934,19 @@ export const syncInputsFromState = () => {
         for (const btn of el.querySelectorAll('.oge-module-tile')) {
           const key = /** @type {HTMLElement} */ (btn).dataset.key;
           if (key) setTilePressed(btn, Boolean(readSetting(key)));
+        }
+        // The nested size slider is this option's second binding — sync it
+        // the same way the standalone range branch does.
+        if (opt.sizeSlider) {
+          const slider = /** @type {HTMLInputElement | null} */ (
+            document.getElementById(INPUT_ID_PREFIX + opt.sizeSlider.id)
+          );
+          if (slider) {
+            const current = String(readSetting(opt.sizeSlider.id));
+            slider.value = current;
+            const display = slider.nextElementSibling;
+            if (display) display.textContent = current + (opt.sizeSlider.unit ?? '');
+          }
         }
       } else if (opt.type === 'prefTiles') {
         // Same per-key repaint as moduleTiles, plus the embedded segments'

@@ -20,6 +20,7 @@ import { fetchNtfyAccount } from '../../sync/ntfyAccount.js';
 import { formatNtfyAccountLines } from '../../domain/ntfyAccount.js';
 import { ALARM_CLOCK_NTFY_TOKEN_KEY, isValidNtfyToken } from '../../sync/alarmClock.js';
 import { SYNC_STATUS_BASE, parsePerUniverseKey } from './syncInventory.js';
+import { toggleChipOn, setToggleChip, wireToggleChip } from './chips.js';
 
 /**
  * Read the shared-settings dict, normalised to the four known fields.
@@ -101,7 +102,7 @@ const validateGistToken = async (token) => {
  * @returns {void}
  */
 export const installSettingsControls = () => {
-  const cloud = /** @type {HTMLInputElement | null} */ (document.getElementById('syncCloudToggle'));
+  const cloud = /** @type {HTMLButtonElement | null} */ (document.getElementById('syncCloudToggle'));
   const gist = /** @type {HTMLInputElement | null} */ (document.getElementById('syncGistToken'));
   const syncNow = document.getElementById('syncNowBtn');
   const gistStatus = document.getElementById('syncTokenStatus');
@@ -113,9 +114,9 @@ export const installSettingsControls = () => {
   // so the token row + status + note collapse. (The per-universe inventory
   // below stays — it's local-data info, independent of the sync toggle.)
   const syncControlsVisibility = () => {
-    if (syncControlsBody && cloud) syncControlsBody.style.display = cloud.checked ? '' : 'none';
+    if (syncControlsBody && cloud) syncControlsBody.style.display = toggleChipOn(cloud) ? '' : 'none';
   };
-  const master = /** @type {HTMLInputElement | null} */ (document.getElementById('remMasterToggle'));
+  const master = /** @type {HTMLButtonElement | null} */ (document.getElementById('remMasterToggle'));
   const ntfy = /** @type {HTMLInputElement | null} */ (document.getElementById('remNtfyToken'));
   const ntfyStatus = document.getElementById('remTokenStatus');
   const ntfyReveal = document.getElementById('remRevealNtfy');
@@ -125,7 +126,7 @@ export const installSettingsControls = () => {
   // The master switch gates the rest of the tab: with alarmClock off there's
   // nothing to configure, so the whole body below it collapses out of view.
   const syncRemBodyVisibility = () => {
-    if (remBody && master) remBody.style.display = master.checked ? '' : 'none';
+    if (remBody && master) remBody.style.display = toggleChipOn(master) ? '' : 'none';
   };
 
   // Render the ntfy account probe under the token: a ✓/✗ head plus, on success,
@@ -150,17 +151,19 @@ export const installSettingsControls = () => {
   const populate = async () => {
     const s = await readShared();
     const active = document.activeElement;
-    if (cloud && cloud !== active) cloud.checked = s.cloudSync;
+    // The chips are safe to repaint even while focused (no caret to reset);
+    // only the text inputs skip the focused element.
+    setToggleChip(cloud, s.cloudSync);
     if (gist && gist !== active) gist.value = s.gistToken;
-    if (master && master !== active) master.checked = s.alarmClockMasterEnabled;
+    setToggleChip(master, s.alarmClockMasterEnabled);
     if (ntfy && ntfy !== active) ntfy.value = s.alarmClockNtfyToken;
     syncRemBodyVisibility();
     syncControlsVisibility();
   };
   void populate();
 
-  cloud?.addEventListener('change', () => {
-    void writeShared({ cloudSync: cloud.checked });
+  wireToggleChip(cloud, (on) => {
+    void writeShared({ cloudSync: on });
     syncControlsVisibility();
   });
 
@@ -172,8 +175,8 @@ export const installSettingsControls = () => {
     gistReveal.classList.toggle('revealed', reveal);
     gistReveal.setAttribute('aria-pressed', String(reveal));
   });
-  master?.addEventListener('change', () => {
-    void writeShared({ alarmClockMasterEnabled: master.checked });
+  wireToggleChip(master, (on) => {
+    void writeShared({ alarmClockMasterEnabled: on });
     syncRemBodyVisibility();
   });
 

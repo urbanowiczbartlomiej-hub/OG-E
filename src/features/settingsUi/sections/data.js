@@ -62,7 +62,9 @@ export const buildDashboardButton = () => {
   installButtonChrome();
   const icon = document.createElement('span');
   icon.setAttribute('aria-hidden', 'true');
-  icon.style.cssText = 'position:relative;display:inline-flex;width:24px;height:24px;flex:none;';
+  // 38px — the same footprint as the module tiles' domes below, so the
+  // launcher (glyph over caption) mirrors their anatomy and height.
+  icon.style.cssText = 'position:relative;display:inline-flex;width:38px;height:38px;flex:none;';
   appendLens(icon, DASHBOARD_GLYPH);
   // The `.oge-lens` base is absolutely positioned for a circular FAB; here it
   // fills the inline icon box instead.

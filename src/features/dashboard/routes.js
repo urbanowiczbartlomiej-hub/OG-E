@@ -32,6 +32,7 @@ import {
   coordTypeKey,
 } from '../../domain/dailyRunRoutes.js';
 import { sortBodies } from '../../domain/bodies.js';
+import { setToggleChip, wireToggleChip } from './chips.js';
 import {
   TARGET_MOON,
   SHIP_CATALOG,
@@ -349,16 +350,15 @@ export const installRoutes = ({ getUniverseId }) => {
       mk('strong', 'flex:1;color:#4a9eff;font-size:14px;', `Route ${idx + 1}${enabled ? '' : ' — paused'}`),
     );
 
-    // Enable / pause toggle.
-    const toggleLabel = mk('label', 'display:inline-flex;align-items:center;gap:5px;color:#8aa;font-size:12px;cursor:pointer;');
-    const toggle = /** @type {HTMLInputElement} */ (mk('input'));
-    toggle.type = 'checkbox';
-    toggle.checked = enabled;
+    // Enable / pause toggle — the shared `.toggle-chip` pill (dashboard.html
+    // CSS reaches inside #routesList; only `.controls button` doesn't).
+    const toggle = /** @type {HTMLButtonElement} */ (mk('button', '', 'Enabled'));
+    toggle.type = 'button';
+    toggle.className = 'toggle-chip';
     toggle.dataset.role = 'enabled';
-    toggle.addEventListener('change', () => { route.enabled = toggle.checked; render(); });
-    toggleLabel.appendChild(toggle);
-    toggleLabel.appendChild(mk('span', '', 'Enabled'));
-    head.appendChild(toggleLabel);
+    setToggleChip(toggle, enabled);
+    wireToggleChip(toggle, (on) => { route.enabled = on; render(); });
+    head.appendChild(toggle);
 
     // Inline-styled (it lives inside #routesList, so the dashboard's
     // `.controls button` CSS doesn't reach it). Shares the danger palette

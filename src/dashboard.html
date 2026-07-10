@@ -352,29 +352,44 @@
 
   /* Chip groups — 2–4-option selects as pills; `data-value` on the group is
      the value, `.on` marks the active chip. A `.disabled` group keeps its
-     layout slot (no reflow) and explains itself via the sibling .gv-note. */
+     layout slot (no reflow) and explains itself via the sibling .gv-note.
+
+     Touch discipline (all chip flavours): hover styles live behind
+     (hover:hover) — on touch the browser "sticks" :hover after a tap, and a
+     hovered-looking off chip was indistinguishable from an on one. Same for
+     focus: taps focus buttons on Android, so only :focus-visible (keyboard)
+     paints a ring; the `.on` fill is deliberately stronger than any
+     hover/focus tint so state always wins. */
   .chip-group { display: inline-flex; gap: 6px; flex-wrap: wrap; }
   .chip-group button {
     background: #18222e; border: 1px solid #2b3a4d; color: #9fb4c4;
     padding: 3px 10px; border-radius: 999px; font-size: 12px; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
   }
-  .chip-group button:hover { border-color: #4a9eff; color: #cfe4ff; }
-  .chip-group button.on { border-color: #4a9eff; background: #12253c; color: #cfe4ff; }
+  .chip-group button.on { border-color: #4a9eff; background: #17395d; color: #eaf4ff; }
   .chip-group.disabled button { opacity: .4; cursor: default; }
   /* Segmented variant — the map's Field/Occupancy view toggle. */
   .chip-group.seg { gap: 0; border: 1px solid #2b3a4d; border-radius: 6px; overflow: hidden; }
   .chip-group.seg button { border: none; border-radius: 0; background: transparent; }
   .chip-group.seg button + button { border-left: 1px solid #2b3a4d; }
-  .chip-group.seg button.on { background: #12253c; color: #cfe4ff; }
-  /* Standalone boolean toggle pill (wireToggleChip) — used by the Alarm-clock
-     enable chips. State is the blue `.on` highlight, matching the app's other
-     toggle chips. */
+  .chip-group.seg button.on { background: #17395d; color: #eaf4ff; }
+  /* Standalone boolean toggle pill (wireToggleChip) — every dashboard
+     enable/disable is one of these (Alarm-clock enables, scan-config prefers,
+     route pause, the master switches). State is the blue `.on` fill. */
   .toggle-chip {
     background: #18222e; border: 1px solid #2b3a4d; color: #9fb4c4;
     padding: 5px 14px; border-radius: 999px; font-size: 13px; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
   }
-  .toggle-chip:hover { border-color: #4a9eff; color: #cfe4ff; }
-  .toggle-chip.on { border-color: #4a9eff; background: #12253c; color: #cfe4ff; }
+  .toggle-chip.on { border-color: #4a9eff; background: #17395d; color: #eaf4ff; }
+  @media (hover: hover) {
+    .chip-group button:hover { border-color: #4a9eff; color: #cfe4ff; }
+    .toggle-chip:hover { border-color: #4a9eff; color: #cfe4ff; }
+  }
+  .chip-group button:focus:not(:focus-visible),
+  .toggle-chip:focus:not(:focus-visible) { outline: none; }
+  .chip-group button:focus-visible,
+  .toggle-chip:focus-visible { outline: 1px solid #4a9eff; outline-offset: 2px; }
 
   /* Standalone toolbar toggles (⚙ Filters) — same pill language as
      .chip-group buttons, with the expanded state wearing the `.on` look via
@@ -384,9 +399,12 @@
   button.spy-toolbtn {
     background: #18222e; border: 1px solid #2b3a4d; color: #9fb4c4;
     padding: 3px 11px; border-radius: 999px; font-size: 12px; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
   }
-  button.spy-toolbtn:hover { background: #18222e; border-color: #4a9eff; color: #cfe4ff; }
-  button.spy-toolbtn[aria-expanded="true"] { border-color: #4a9eff; background: #12253c; color: #cfe4ff; }
+  @media (hover: hover) {
+    button.spy-toolbtn:hover { background: #18222e; border-color: #4a9eff; color: #cfe4ff; }
+  }
+  button.spy-toolbtn[aria-expanded="true"] { border-color: #4a9eff; background: #17395d; color: #eaf4ff; }
 
   /* Top block: watchlist (hero) beside the "who's spying you" digest. One
      column on narrow screens, two from 900px (watchlist gets the width). */
@@ -699,8 +717,7 @@
   .sync-table tfoot td { color: #ccc; font-weight: 600; border-bottom: none; border-top: 1px solid #2a4a5a; }
 
   /* ── Moved settings controls (Sync + AlarmClock tabs) ───────────────── */
-  .rem-master-row { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: #ccc; cursor: pointer; margin-top: 2px; }
-  .rem-master-row input { width: 16px; height: 16px; accent-color: #4a9eff; cursor: pointer; }
+  .rem-master-row { display: inline-flex; align-items: center; gap: 8px; margin-top: 2px; }
   .rem-card input.rem-mono { width: auto; }
   .rem-card input.rem-mono:focus { outline: none; border-color: #4a9eff; }
   /* Equal-width action buttons (Validate / Copy / Sync now) so the token and
@@ -998,9 +1015,9 @@
   </div>
 
   <div class="rem-card" style="margin-top:14px">
-    <label class="rem-master-row">
-      <input type="checkbox" id="remMasterToggle"> Enable alarm clock
-    </label>
+    <div class="rem-master-row">
+      <button type="button" class="toggle-chip" id="remMasterToggle">Enable alarm clock</button>
+    </div>
     <div id="remBody">
     <div class="rem-row" style="margin-top:12px">
       <label>ntfy.sh access token</label>
@@ -1154,9 +1171,9 @@
   </p>
 
   <div class="rem-card sync-controls-card">
-    <label class="rem-master-row">
-      <input type="checkbox" id="syncCloudToggle"> Sync across devices
-    </label>
+    <div class="rem-master-row">
+      <button type="button" class="toggle-chip" id="syncCloudToggle">Sync across devices</button>
+    </div>
     <div id="syncControlsBody">
       <div class="rem-row" style="margin-top:12px">
         <label>GitHub token (gist scope)</label>

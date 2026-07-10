@@ -31,6 +31,7 @@ import {
   defaultGalaxyScanConfig,
   normalizeGalaxyScanConfig,
 } from '../../domain/galaxyScanConfig.js';
+import { toggleChipOn, setToggleChip, wireToggleChip } from './chips.js';
 
 /**
  * Make an element with inline CSS + optional text (same tiny builder as
@@ -193,13 +194,21 @@ const buildColonizationFields = (body) => {
   positionsInput.title =
     'Target positions (only these count as colonizable / drive the Scan + Colonize buttons). A list or range, e.g. 8,10-12,15.';
 
-  const preferInput = /** @type {HTMLInputElement} */ (mk('input'));
-  preferInput.type = 'checkbox';
+  // Toggle chips, not checkboxes — every dashboard boolean wears the same
+  // `.toggle-chip` pill (state read via toggleChipOn at Save time).
+  const preferInput = /** @type {HTMLButtonElement} */ (mk('button'));
+  preferInput.type = 'button';
+  preferInput.className = 'toggle-chip';
+  preferInput.textContent = 'Enabled';
   preferInput.id = 'scanCfgPrefer';
+  wireToggleChip(preferInput, () => {});
 
-  const preferFarthestInput = /** @type {HTMLInputElement} */ (mk('input'));
-  preferFarthestInput.type = 'checkbox';
+  const preferFarthestInput = /** @type {HTMLButtonElement} */ (mk('button'));
+  preferFarthestInput.type = 'button';
+  preferFarthestInput.className = 'toggle-chip';
+  preferFarthestInput.textContent = 'Enabled';
   preferFarthestInput.id = 'scanCfgPreferFarthest';
+  wireToggleChip(preferFarthestInput, () => {});
   preferFarthestInput.title =
     'Within your home galaxy, propose the farthest free system first (spreads colony-ship arrival times). Uncheck to propose the nearest free system first.';
 
@@ -242,16 +251,16 @@ const buildColonizationFields = (body) => {
   return {
     fill: (cfg) => {
       positionsInput.value = cfg.positions;
-      preferInput.checked = cfg.preferOtherGalaxies;
-      preferFarthestInput.checked = cfg.preferFarthestSystems;
+      setToggleChip(preferInput, cfg.preferOtherGalaxies);
+      setToggleChip(preferFarthestInput, cfg.preferFarthestSystems);
       colonyMinGapInput.value = String(cfg.colonyMinGap);
       colonyMinFieldsInput.value = String(cfg.colonyMinFields);
       colonyPasswordInput.value = cfg.colonyPassword;
     },
     collect: () => ({
       positions: positionsInput.value.trim(),
-      preferOtherGalaxies: preferInput.checked,
-      preferFarthestSystems: preferFarthestInput.checked,
+      preferOtherGalaxies: toggleChipOn(preferInput),
+      preferFarthestSystems: toggleChipOn(preferFarthestInput),
       colonyMinGap: parseInt(colonyMinGapInput.value, 10),
       colonyMinFields: parseInt(colonyMinFieldsInput.value, 10),
       colonyPassword: colonyPasswordInput.value,
