@@ -4,6 +4,20 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.41.0] — 2026-07-10
+
+### Changed
+
+- **The dashboard "Who's spying you" card caught up to the in-game panel.**
+  Probers from your own system now stand out with a red hot-row treatment, the
+  card lists every body a scout probed (it used to stop at two), and a 💀
+  legend explains the same-system flag — matching the messages-page panel,
+  while keeping the dashboard-only watch / dossier / coords-or-names tools.
+- **One spy eye across both surfaces.** The 👁 emoji on the messages-page
+  "Who's spying on you" header is now OG-E's own eye glyph in spy gold — and
+  that same mark sits beside the Spyglass tab title (the "experimental" badge
+  is gone; its hidden-fleet caveat lives on as the eye's tooltip).
+
 ## [1.40.2] — 2026-07-08
 
 ### Fixed
