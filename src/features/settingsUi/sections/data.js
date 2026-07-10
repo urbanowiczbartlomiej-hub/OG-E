@@ -68,8 +68,10 @@ export const buildDashboardButton = () => {
   // fills the inline icon box instead.
   const lens = /** @type {HTMLElement | null} */ (icon.querySelector('.oge-lens'));
   if (lens) lens.style.cssText += ';position:absolute;left:0;top:0;width:100%;height:100%;transform:none;';
+  // Verb-led label — "OG-E Dashboard" read as a section title, not a
+  // clickable control, once the launcher fused with the module tiles.
   const label = document.createElement('span');
-  label.textContent = 'OG-E Dashboard';
+  label.textContent = 'Open Dashboard';
   btn.append(icon, label);
   btn.addEventListener('click', () => {
     if (!DASHBOARD_URL) return;

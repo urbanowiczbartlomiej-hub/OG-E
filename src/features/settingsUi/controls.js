@@ -128,10 +128,6 @@ const INPUT_ID_PREFIX = 'oge-setting-';
 
 // ─── Style constants ─────────────────────────────────────────────────────
 
-const RANGE_WRAP_STYLE =
-  'display:inline-flex;align-items:center;gap:6px;width:100%';
-const RANGE_DISPLAY_STYLE =
-  'min-width:50px;text-align:right;font-size:11px;color:#848484;';
 const RADIO_WRAP_STYLE = 'display:inline-flex;align-items:center;gap:16px;';
 const RADIO_LABEL_STYLE =
   'display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:12px;color:#ccc;';
@@ -140,6 +136,42 @@ const BUTTON_STYLE =
   'color:#4a9eff;border-radius:4px;font-size:12px;cursor:pointer;font-weight:bold;';
 const STATIC_STYLE = 'font-size:11px;color:#888;white-space:pre-line;';
 const STATUS_WRAP_STYLE = 'display:inline-flex;align-items:center;gap:8px;width:100%;';
+
+// ─── Range slider (injected stylesheet, not inline) ──────────────────────
+//
+// Native <input type=range> restyled to the panel's design language: slim
+// rounded track, lit progress fill + round thumb in the panel's #4a9eff
+// accent. Stylesheet (not inline) because tracks/thumbs are only reachable
+// through vendor pseudo-elements. `-moz-range-progress` paints the filled
+// side on Firefox (the shipping target); WebKit has no track-fill pseudo,
+// so there the track stays uniformly dark — still modern, just unfilled.
+// The wrap's 10px side margin matches `.oge-pref-panel` below, and its
+// equal top/bottom margins seat the row evenly between the command block
+// and the preferences panel.
+
+/** Injected-once `<style>` id for the range slider. */
+const RANGE_STYLE_ID = 'oge-setting-range-style';
+
+const RANGE_CSS = [
+  '.oge-range-wrap{display:flex;align-items:center;gap:10px;margin:12px 10px;}',
+  '.oge-range-wrap .oge-range-display{min-width:50px;text-align:right;',
+  'font-size:11px;color:#8fa8c0;}',
+  '.oge-range{flex:1;height:16px;margin:0;padding:0;background:transparent;',
+  '-webkit-appearance:none;appearance:none;cursor:pointer;}',
+  '.oge-range:focus-visible{outline:1px solid #4a9eff;outline-offset:3px;}',
+  // Firefox track + progress fill + thumb.
+  '.oge-range::-moz-range-track{height:4px;border-radius:2px;background:#223142;}',
+  '.oge-range::-moz-range-progress{height:4px;border-radius:2px;background:#4a9eff;}',
+  '.oge-range::-moz-range-thumb{width:14px;height:14px;border:none;border-radius:50%;',
+  'background:#4a9eff;box-shadow:0 0 5px rgba(74,158,255,.55);}',
+  '.oge-range:hover::-moz-range-thumb{background:#7db8ff;}',
+  // WebKit track + thumb (thumb needs the -5px seat onto the 4px track).
+  '.oge-range::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:#223142;}',
+  '.oge-range::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;',
+  'margin-top:-5px;border:none;border-radius:50%;background:#4a9eff;',
+  'box-shadow:0 0 5px rgba(74,158,255,.55);}',
+  '.oge-range:hover::-webkit-slider-thumb{background:#7db8ff;}',
+].join('');
 
 // ─── Module-tiles bar (injected stylesheet, not inline) ──────────────────
 //
@@ -200,7 +232,9 @@ const TILES_CSS = [
 const PREF_STYLE_ID = 'oge-setting-pref-style';
 
 const PREF_CSS = [
-  '.oge-pref-panel{width:100%;box-sizing:border-box;',
+  // Side margins match `.oge-range-wrap` above — the inset slider + inset
+  // panel read as one aligned column under the full-bleed command block.
+  '.oge-pref-panel{box-sizing:border-box;margin:0 10px;',
   'border:1px solid #2a3a4c;border-radius:8px;overflow:hidden;background:#0b1016;}',
   '.oge-pref-cap{padding:8px 12px 2px;font-size:11px;color:#5f6c7b;}',
   '.oge-pref-cap.sep{border-top:1px solid #1a2735;}',
@@ -361,20 +395,22 @@ const buildCheckboxControl = (opt, valueCell) => {
  * @returns {void}
  */
 const buildRangeControl = (opt, valueCell) => {
+  injectStyle(RANGE_STYLE_ID, RANGE_CSS);
+
   const wrap = document.createElement('span');
-  wrap.style.cssText = RANGE_WRAP_STYLE;
+  wrap.className = 'oge-range-wrap';
 
   const slider = document.createElement('input');
   slider.type = 'range';
   slider.id = INPUT_ID_PREFIX + opt.id;
+  slider.className = 'oge-range';
   slider.min = String(opt.min ?? 0);
   slider.max = String(opt.max ?? 100);
   slider.step = String(opt.step ?? 1);
   slider.value = String(readSetting(opt.id));
-  slider.style.flex = '1';
 
   const display = document.createElement('span');
-  display.style.cssText = RANGE_DISPLAY_STYLE;
+  display.className = 'oge-range-display';
   display.textContent = slider.value + (opt.unit ?? '');
 
   slider.addEventListener('input', () => {
