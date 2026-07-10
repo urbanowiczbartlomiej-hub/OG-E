@@ -116,9 +116,10 @@ describe('installManualFsMark — visibility gating', () => {
     setForm();
     installManualFsMark();
     expect(chip()).not.toBeNull();
-    // Unmarked initially: no `.on`. The label is the constant "Set FR".
+    // Unmarked initially: no `.on`. The chip is text-free (dome-only);
+    // the affordance lives in the title.
     expect(chip()?.classList.contains('on')).toBe(false);
-    expect(chip()?.querySelector('.lbl')?.textContent).toBe('Set FR');
+    expect(chip()?.title).toMatch(/Set a Fleet reminder/);
   });
 });
 
@@ -144,9 +145,9 @@ describe('installManualFsMark — toggle writes state + fires the event', () => 
     expect(stored).toHaveLength(1);
     expect(stored[0].bodyKey).toBe('1:2:3:1');
     expect(typeof stored[0].markedAt).toBe('number');
-    // Chip reflects the marked state via the highlight; the label stays "Set FR".
+    // Chip reflects the marked state via the lit dome + swapped title.
     expect(chip()?.classList.contains('on')).toBe(true);
-    expect(chip()?.querySelector('.lbl')?.textContent).toBe('Set FR');
+    expect(chip()?.title).toMatch(/tap to clear/);
   });
 
   it('clicking again unmarks: clears storage, fires a second event, reverts the chip', () => {
@@ -162,7 +163,7 @@ describe('installManualFsMark — toggle writes state + fires the event', () => 
     expect(events).toBe(2);
     expect(readManualLandedFs()).toEqual([]);
     expect(chip()?.classList.contains('on')).toBe(false);
-    expect(chip()?.querySelector('.lbl')?.textContent).toBe('Set FR');
+    expect(chip()?.title).toMatch(/Set a Fleet reminder/);
   });
 
   it('reflects a pre-existing mark from storage on install (chip starts "on")', () => {
@@ -172,7 +173,7 @@ describe('installManualFsMark — toggle writes state + fires the event', () => 
     );
     installManualFsMark();
     expect(chip()?.classList.contains('on')).toBe(true);
-    expect(chip()?.querySelector('.lbl')?.textContent).toBe('Set FR');
+    expect(chip()?.title).toMatch(/tap to clear/);
   });
 });
 
@@ -187,8 +188,7 @@ describe('installManualFsMark — civil-grid tile anchor', () => {
     expect(c).not.toBeNull();
     expect(c?.parentElement?.id).toBe('civil');
     expect(c?.classList.contains('tile')).toBe(true);
-    expect(c?.querySelector('.ico svg')).not.toBeNull(); // the lighthouse glyph
-    expect(c?.querySelector('.lbl')?.textContent).toBe('Set FR');
+    expect(c?.querySelector('.dome svg')).not.toBeNull(); // the lighthouse glyph
   });
 });
 

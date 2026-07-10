@@ -185,41 +185,46 @@ describe('installSettingsUi — AGR availability', () => {
 });
 
 // ──────────────────────────────────────────────────────────────────
-// Checkbox rendering + binding
+// Preference-tile rendering + binding (the tiles replaced the old
+// checkbox rows; each tile binds its Settings field via data-key and
+// self-indicates with the `on` class + aria-pressed)
 // ──────────────────────────────────────────────────────────────────
 
-describe('installSettingsUi — checkbox', () => {
-  it('renders checked=true when underlying settings value is true', async () => {
+/**
+ * @param {string} key
+ * @returns {HTMLElement | null}
+ */
+const prefTile = (key) =>
+  /** @type {HTMLElement | null} */ (
+    document.querySelector(`.oge-pref-tile[data-key="${key}"]`)
+  );
+
+describe('installSettingsUi — preference tiles', () => {
+  it('renders the tile lit (.on) when the underlying settings value is true', async () => {
     settingsStore.set({ ...settingsStore.get(), autoRedirectExpedition: true });
     setupAGR();
     installSettingsUi();
     await flushWaitFor();
 
-    const cb = /** @type {HTMLInputElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'autoRedirectExpedition')
-    );
-    expect(cb).not.toBeNull();
-    expect(cb?.type).toBe('checkbox');
-    expect(cb?.checked).toBe(true);
+    const tile = prefTile('autoRedirectExpedition');
+    expect(tile).not.toBeNull();
+    expect(tile?.classList.contains('on')).toBe(true);
+    expect(tile?.getAttribute('aria-pressed')).toBe('true');
   });
 
-  it('change event writes the new boolean back to settingsStore', async () => {
+  it('click toggles the tile and writes the new boolean back to settingsStore', async () => {
     setupAGR();
     installSettingsUi();
     await flushWaitFor();
 
-    const cb = /** @type {HTMLInputElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'autoRedirectExpedition')
-    );
-    expect(cb).not.toBeNull();
+    const tile = prefTile('autoRedirectExpedition');
+    expect(tile).not.toBeNull();
 
-    // Default: true → uncheck → false.
+    // Default: true → click → false.
     expect(settingsStore.get().autoRedirectExpedition).toBe(true);
-    if (cb) {
-      cb.checked = false;
-      cb.dispatchEvent(new Event('change'));
-    }
+    tile?.click();
     expect(settingsStore.get().autoRedirectExpedition).toBe(false);
+    expect(tile?.classList.contains('on')).toBe(false);
   });
 });
 
@@ -270,9 +275,9 @@ describe('installSettingsUi — range', () => {
 // The editable sync/alarmClock controls moved to the OG-E Dashboard long ago;
 // the leftover static "it moved" notes were then dropped outright (the
 // dashboard is self-describing — UX must explain itself, not via a paragraph
-// in the AGR panel). The panel now renders ONLY the three live sections:
-// floating button, expeditions, display. The dashboard equivalents are tested
-// separately under test/features/dashboard/.
+// in the AGR panel). The panel now renders ONLY the two live sections:
+// the FAB command block and the preferences tile panel. The dashboard
+// equivalents are tested separately under test/features/dashboard/.
 // ──────────────────────────────────────────────────────────────────
 
 describe('installSettingsUi — removed signpost sections', () => {
@@ -285,33 +290,28 @@ describe('installSettingsUi — removed signpost sections', () => {
     expect(document.getElementById(INPUT_PREFIX + 'alarmClockMovedNote')).toBeNull();
   });
 
-  it('renders the Expeditions FAB-module toggle ABOVE the auto-redirect option', async () => {
+  it('renders the Expeditions FAB-module tile ABOVE the auto-redirect tile', async () => {
     setupAGR();
     installSettingsUi();
     await flushWaitFor();
 
-    const show = /** @type {HTMLInputElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'showExpeditionButton')
+    const show = /** @type {HTMLElement | null} */ (
+      document.querySelector('.oge-module-tile[data-key="showExpeditionButton"]')
     );
-    const redirect = document.getElementById(INPUT_PREFIX + 'autoRedirectExpedition');
+    const redirect = prefTile('autoRedirectExpedition');
     expect(show).not.toBeNull();
-    expect(show?.type).toBe('checkbox');
     expect(redirect).not.toBeNull();
-    // Placement is part of the spec: the module toggle leads the section.
+    // Placement is part of the spec: the FAB command block leads the tab.
     expect(!!(show && redirect
       && (show.compareDocumentPosition(redirect) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
   });
 
-  it('renders the Display section\'s fleet-status-markers checkbox', async () => {
+  it('renders the Display group\'s fleet-status-markers tile', async () => {
     setupAGR();
     installSettingsUi();
     await flushWaitFor();
 
-    const cb = /** @type {HTMLInputElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'expeditionBadges')
-    );
-    expect(cb).not.toBeNull();
-    expect(cb?.type).toBe('checkbox');
+    expect(prefTile('expeditionBadges')).not.toBeNull();
   });
 });
 
@@ -320,21 +320,19 @@ describe('installSettingsUi — removed signpost sections', () => {
 // ──────────────────────────────────────────────────────────────────
 
 describe('installSettingsUi — reactive sync from store', () => {
-  it('external settingsStore.update flips the checkbox to match', async () => {
+  it('external settingsStore.update flips the pref tile to match', async () => {
     setupAGR();
     installSettingsUi();
     await flushWaitFor();
 
-    const cb = /** @type {HTMLInputElement | null} */ (
-      document.getElementById(INPUT_PREFIX + 'autoRedirectExpedition')
-    );
-    expect(cb?.checked).toBe(true);
+    const tile = prefTile('autoRedirectExpedition');
+    expect(tile?.classList.contains('on')).toBe(true);
 
     settingsStore.update((prev) => ({ ...prev, autoRedirectExpedition: false }));
-    expect(cb?.checked).toBe(false);
+    expect(tile?.classList.contains('on')).toBe(false);
 
     settingsStore.update((prev) => ({ ...prev, autoRedirectExpedition: true }));
-    expect(cb?.checked).toBe(true);
+    expect(tile?.classList.contains('on')).toBe(true);
   });
 
   it('external settingsStore.update updates the range slider + display', async () => {

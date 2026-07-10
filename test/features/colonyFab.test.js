@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
 //
 // Behavioural tests for the unified FAB colony module — the state selection
-// (navigate ↔ abandon ↔ none), fabMode gating, and the abandon entry gate.
+// (navigate ↔ abandon ↔ none) and the abandon entry gate. (No settings gate:
+// the Abandon module is event-driven — it mounts only when the page shows a
+// give-up candidate, so it deliberately has no `show*Button` flag.)
 // The 3-step flow itself is covered in abandon.test.js; here we assert the FAB
 // surfaces the right button for the page and wires the tap.
 //
@@ -17,14 +19,13 @@ import { defaultGalaxyScanConfig } from '../../src/domain/galaxyScanConfig.js';
 
 const BUTTON_ID = 'oge-colony-fab';
 
-/** @param {boolean} fabMode */
-const setSettings = (fabMode) => {
+/** Reset every setting to its schema default. */
+const setSettings = () => {
   /** @type {Record<string, unknown>} */
   const s = {};
   for (const key of /** @type {Array<keyof typeof SETTINGS_SCHEMA>} */ (Object.keys(SETTINGS_SCHEMA))) {
     s[key] = SETTINGS_SCHEMA[key].default;
   }
-  s.fabMode = fabMode;
   settingsStore.set(/** @type {any} */ (s));
 };
 
@@ -60,7 +61,7 @@ beforeEach(() => {
   galaxyScanConfigStore.set(defaultGalaxyScanConfig());
   document.body.innerHTML = '';
   location.search = '';
-  setSettings(true);
+  setSettings();
 });
 
 afterEach(() => {
@@ -71,13 +72,6 @@ afterEach(() => {
 });
 
 describe('colony FAB — state selection', () => {
-  it('does not mount when fabMode is off', () => {
-    setSettings(false);
-    stageOverview();
-    installColonyFab();
-    expect(document.getElementById(BUTTON_ID)).toBeNull();
-  });
-
   it('mounts the NAVIGATE button (red Abandon identity) for a small fresh colony elsewhere', () => {
     stageFreshElsewhere(163);
     installColonyFab();
