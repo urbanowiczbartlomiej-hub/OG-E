@@ -177,11 +177,25 @@ function hiddenFleetBlock(est) {
   const wrap = document.createElement('div');
   wrap.style.cssText = 'margin-bottom:10px;font-size:11px;color:#8b95a0;line-height:1.5;';
 
+  // One arithmetic line, but the two halves the reader acts on are TINTED:
+  // `visible` (parked fleet the scans actually SAW — hard evidence, blue) and
+  // `hidden` (the computed remainder, amber — it SWINGS with scan timing: a
+  // fleet caught home reads ~0 hidden, exactly when it sits catchable).
   const arith = document.createElement('div');
-  arith.textContent =
-    `military ${compact(est.militaryPoints)} − defence ${compact(est.defensePoints)} `
-    + `− visible ${compact(est.visibleFleetPoints)} = ~${compact(est.hiddenFleetPoints)} hidden`
-    + (est.provisional ? ' (provisional)' : '');
+  arith.appendChild(document.createTextNode(
+    `military ${compact(est.militaryPoints)} − defence ${compact(est.defensePoints)} − `));
+  const vis = document.createElement('span');
+  vis.textContent = `visible ${compact(est.visibleFleetPoints)}`;
+  vis.style.color = '#7ca6de';
+  arith.appendChild(vis);
+  arith.appendChild(document.createTextNode(' = '));
+  const hid = document.createElement('span');
+  hid.textContent = `~${compact(est.hiddenFleetPoints)} hidden`;
+  hid.style.color = '#e0b020';
+  arith.appendChild(hid);
+  if (est.provisional) arith.appendChild(document.createTextNode(' (provisional)'));
+  arith.title = 'Visible = parked fleet your scans saw (stable evidence). Hidden = the remainder; '
+    + 'it swings with scan timing — a fleet caught home reads ~0 hidden.';
   wrap.appendChild(arith);
 
   return wrap;
@@ -1130,6 +1144,91 @@ function presenceBlock(presence) {
 }
 
 /**
+ * 8b) FS WINDOWS (IDEAS #1 — fleet-save window bracketing) — the bracketed
+ * fleet departures/returns from domain/fsBracket.js. Every line is an honest
+ * INTERVAL between two observations, never an instant; the `likely` sub-range
+ * appears only when a single activity marker pinned the moment. Flag words
+ * (`relocated?`, `gate?`, `siblings unchecked`) carry the gates' doubts.
+ * @param {import('../../domain/fsBracket.js').FsArc[]} arcs
+ * @param {number} nowMs
+ * @returns {HTMLDivElement}
+ */
+function fsArcsBlock(arcs, nowMs) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'margin-bottom:10px;font-size:11px;color:#8b95a0;line-height:1.6;';
+
+  const title = document.createElement('div');
+  title.textContent = 'FS WINDOWS — fleet departures & returns';
+  title.style.cssText = 'font-size:10px;letter-spacing:0.5px;color:#6b7782;margin-bottom:3px;';
+  wrap.appendChild(title);
+
+  /** Window bound → "Tue 21:40" (short, local). @param {number} sec */
+  const fmtT = (sec) => new Date(sec * 1000).toLocaleString(undefined, {
+    weekday: 'short', hour: '2-digit', minute: '2-digit',
+  });
+  /** Time-only "22:05" for the narrowed sub-range. @param {number} sec */
+  const fmtHM = (sec) => new Date(sec * 1000).toLocaleTimeString(undefined, {
+    hour: '2-digit', minute: '2-digit',
+  });
+
+  for (const arc of arcs) {
+    const row = document.createElement('div');
+
+    // Kind word wears the colour: departures the spy gold (the strike-timing
+    // signal), returns the calm blue.
+    const kind = document.createElement('span');
+    kind.textContent = arc.kind === 'departure' ? 'left' : 'back';
+    kind.style.cssText = `font-weight:700;color:${arc.kind === 'departure' ? '#e6c054' : '#7ca6de'};`;
+    row.appendChild(kind);
+
+    const body = document.createElement('span');
+    body.textContent = ` ${arc.coord}${arc.bodyType === 3 ? ' moon' : ''}`;
+    body.style.color = arc.bodyType === 3 ? '#c9a9e8' : '#a9c4de';
+    row.appendChild(body);
+
+    row.appendChild(document.createTextNode(
+      ` · ${fmtT(arc.loSec)} → ${fmtT(arc.hiSec)} · ${formatAge(ageMs(arc.hiSec, nowMs))} ago`
+      + ` · ${compact(arc.valueBefore)} → ${compact(arc.valueAfter)}`,
+    ));
+
+    if (arc.narrowed) {
+      const n = document.createElement('span');
+      n.textContent = ` · likely ~${fmtHM(arc.narrowed.lo)}–${fmtHM(arc.narrowed.hi)}`;
+      n.style.color = '#9fb0c0';
+      n.title = 'A single activity marker inside the window pins the likely moment.';
+      row.appendChild(n);
+    }
+
+    // Gate doubts as short flag words — colour carries the caution.
+    /** @param {string} word @param {string} tip */
+    const flag = (word, tip) => {
+      const f = document.createElement('span');
+      f.textContent = ` · ${word}`;
+      f.style.cssText = 'color:#8a7f5f;cursor:help;';
+      f.title = tip;
+      row.appendChild(f);
+    };
+    if (arc.relocation === 'possible') {
+      flag('relocated?', 'A sibling body’s fleet rose by about the dropped value around this window — the fleet may have just moved next door, not saved.');
+    } else if (arc.relocation === 'unchecked') {
+      flag('siblings unchecked', 'Not every other body of this player has fleet observations around this window — a move next door can’t be ruled out.');
+    }
+    if (arc.moonGate) {
+      flag('gate?', 'Departure from a moon while the player holds 2+ moons — could be a jump-gate hop (instant, invisible), not a fleet-save.');
+    }
+
+    wrap.appendChild(row);
+  }
+
+  const basis = document.createElement('div');
+  basis.textContent = 'From your own spy reports + galaxy looks — windows are gaps between observations, not exact times.';
+  basis.style.cssText = 'color:#5f6b76;font-size:10px;margin-top:2px;';
+  wrap.appendChild(basis);
+
+  return wrap;
+}
+
+/**
  * Build the per-player dossier detail row: a dark panel stacking the header,
  * raid verdict, danger interval bar, WHY reasons, hidden-fleet arithmetic, and
  * the per-planet scan grid. Each section is skipped cleanly when its data is
@@ -1149,6 +1248,8 @@ function presenceBlock(presence) {
  * @param {import('../../domain/routine.js').RoutineSummary} [a.routine]
  * @param {ReturnType<typeof import('../../domain/presence.js').summarizePresence>} [a.presence]
  *   Per-player presence summary — the offline-window heatmap under the routine.
+ * @param {import('../../domain/fsBracket.js').FsArc[]} [a.fsArcs]
+ *   Bracketed fleet departures/returns — the FS-windows block under presence.
  * @param {import('../../domain/fleetLanding.js').FleetLandingSignal} [a.landing]
  *   Fresh fleet-landing signal — the strike banner atop the judgement column.
  * @param {import('../../domain/targets.js').PlanetPos[]} a.planets
@@ -1273,6 +1374,10 @@ export function buildDossier(a) {
   // 5d) Presence — the offline-window heatmap (the attack-timing readout).
   // Rendered whenever we have any presence data; hollow-states itself otherwise.
   if (a.presence) judgement.appendChild(presenceBlock(a.presence));
+
+  // 5e) FS windows — bracketed fleet departures/returns (skipped when none
+  // were caught; an empty brackets block would explain nothing).
+  if (a.fsArcs && a.fsArcs.length) judgement.appendChild(fsArcsBlock(a.fsArcs, a.nowMs));
 
   // 6) Planets grid (renders its own "no planets" note when empty).
   evidence.appendChild(planetsBlock({

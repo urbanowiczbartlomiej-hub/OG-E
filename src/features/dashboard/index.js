@@ -60,7 +60,7 @@ import { axisDelta, flightDistance, niszczHours } from '../../domain/geometry.js
 import { renderTargets, DEFAULT_TARGET_SORT } from './targets.js';
 import { ZONES } from '../../domain/zoneScore.js';
 import { buildOccupancyIndex } from '../../domain/apiOccupancy.js';
-import { buildTargetCandidates } from '../../domain/targets.js';
+import { buildTargetCandidates, playerPlanets } from '../../domain/targets.js';
 import { joinDangerProfiles } from '../../domain/dangerJoin.js';
 import { buildCivilBaseline } from '../../domain/civilBaseline.js';
 import { estimateHiddenFleet } from '../../domain/threatModel.js';
@@ -71,6 +71,7 @@ import { bodyLootStats } from '../../domain/lootRhythm.js';
 import { summarizeRoutine, routineBodies } from '../../domain/routine.js';
 import { summarizePresence } from '../../domain/presence.js';
 import { detectAllLandings } from '../../domain/fleetLanding.js';
+import { bracketFsArcs } from '../../domain/fsBracket.js';
 import { probeActivityObs } from '../../domain/activityObs.js';
 import { readApiCacheFor, apiCacheKeyFor } from '../../state/apiCache.js';
 import { targetReportsKeyFor } from '../../state/targets.js';
@@ -1372,6 +1373,10 @@ const repaintTargets = () => {
   // header's "moons M/N".
   /** @type {Record<string, Record<string, {ts:number, defPts:number, fleetPts:number, act?: import('../../domain/activityObs.js').ActivityObs[]}>>} */
   const moonsByPlayer = {};
+  const nowMs = Date.now();
+  const universePlanets = apiCache.universe ? apiCache.universe.planets : [];
+  /** @type {Record<string, import('../../domain/fsBracket.js').FsArc[]>} */
+  const fsArcsAcc = {};
   for (const pid of Object.keys(targetReports)) {
     const bucket = targetReports[pid];
     const reports = bucket ? Object.values(bucket).map(latestOf) : [];
@@ -1381,6 +1386,23 @@ const repaintTargets = () => {
       reports,
       planetCount: planetCountByPlayer[pid],
     });
+    // FS-window bracketing (domain/fsBracket) — lives HERE, beside the freshly
+    // computed estimate, because the present-gate anchors on the player's
+    // TOTAL mobile fleet (visible + hidden; stable — unlike hidden alone,
+    // which swings with whether the fleet was home when we probed). The API
+    // anchor is trusted only when coverage is complete (`!provisional`) —
+    // otherwise unseen DEFENSE inflates it and the gate would go blind.
+    const est = estimates[pid];
+    const fleetScaleRes = est && !est.provisional
+      ? (est.visibleFleetPoints + est.hiddenFleetPoints) * 1000
+      : 0;
+    const known = playerPlanets(universePlanets, pid);
+    const arcs = bracketFsArcs(bucket, activityObs[pid], nowMs, {
+      moonCount: known.filter((p) => p.hasMoon).length,
+      totalBodies: known.length + known.filter((p) => p.hasMoon).length,
+      fleetScaleRes,
+    });
+    if (arcs.length) fsArcsAcc[pid] = arcs;
     /** @type {Record<string, {ts:number, defPts:number, fleetPts:number}>} */
     const byCoord = {};
     /** @type {Record<string, {ts:number, defPts:number, fleetPts:number}>} */
@@ -1429,7 +1451,6 @@ const repaintTargets = () => {
   // Cheap arithmetic over the candidate list, computed for all so an expanded
   // never-spied player still reads "scan first". inBand uses OGame's ±5× noob-
   // protection on TOTAL score (undefined when our own score is unknown).
-  const nowMs = Date.now();
   /** @type {Record<string, import('../../domain/raidVerdict.js').RaidVerdict>} */
   const verdicts = {};
   // Attack-band ("in range") gating was removed — we treat every player as
@@ -1534,6 +1555,7 @@ const repaintTargets = () => {
     activityRings: activityObs,
     galaxyLookMs: galaxyStaleMs(cadenceCfg),
     presences,
+    fsArcs: fsArcsAcc,
     landingSignals,
     // Nickname search (Etap D): reveals name-matches incl. excluded players.
     searchQuery: targetSearchQuery,

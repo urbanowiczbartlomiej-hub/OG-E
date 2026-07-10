@@ -470,6 +470,8 @@ function playerCell(c) {
  * @param {number} [args.galaxyLookMs]  Galaxy look-coverage stale threshold (ms).
  * @param {Record<string, ReturnType<typeof import('../../domain/presence.js').summarizePresence>>} [args.presences]
  *   Per-player presence summary — the dossier's offline-window heatmap.
+ * @param {Record<string, import('../../domain/fsBracket.js').FsArc[]>} [args.fsArcs]
+ *   Per-player bracketed fleet departures/returns — the dossier's FS-windows block.
  * @param {Record<string, import('../../domain/fleetLanding.js').FleetLandingSignal>} [args.landingSignals]
  *   Per-player fresh fleet-landing signal — the 🎯 row marker + dossier banner.
  * @param {string} [args.searchQuery]  Nickname search (Etap D); when set, the
@@ -522,6 +524,7 @@ export function renderTargets({
   activityRings,
   galaxyLookMs,
   presences,
+  fsArcs,
   landingSignals,
   searchQuery = '',
   onShowAnyway,
@@ -719,6 +722,7 @@ export function renderTargets({
       rings: activityRings ? activityRings[c.id] : undefined,
       galaxyLookMs,
       presence: presences ? presences[c.id] : undefined,
+      fsArcs: fsArcs ? fsArcs[c.id] : undefined,
       landing,
       scanBodies,
       linkBase,

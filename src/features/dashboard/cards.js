@@ -212,8 +212,13 @@ export function renderWatchlistCards(a) {
       head.textContent = '0 ships 🛡 pure defense';
       head.style.color = '#7fd6a8';
     } else if (est && typeof est.hiddenFleetPoints === 'number' && Number.isFinite(est.hiddenFleetPoints)) {
-      // "hidden fleet", not bare "hidden" — the bare word didn't say WHAT is hidden.
-      head.textContent = `hidden fleet ~${compact(est.hiddenFleetPoints)}`;
+      // Visible (parked, scan-confirmed — the stable half) BESIDE hidden (the
+      // computed remainder, which SWINGS with scan timing): hidden alone read
+      // "~0" right after a fleet-home scan — exactly when the fleet sits
+      // catchable and the card must not read as "safe".
+      head.textContent = `visible ${compact(est.visibleFleetPoints)} · hidden ~${compact(est.hiddenFleetPoints)}`;
+      head.title = 'Visible = parked fleet your scans saw. Hidden = military − defence − visible; '
+        + 'it swings with scan timing — a fleet caught home reads ~0 hidden.';
     } else if (prof && !prof.friendly) {
       head.textContent = `fleet ≤ ${compact(prof.mobileHi)}`;
     } else {
