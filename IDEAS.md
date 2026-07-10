@@ -11,32 +11,7 @@ grounded against the current code at capture time.
 
 ---
 
-## 1. Spyglass — fleet-save window bracketing (strike-timing)
-
-**Goal.** Turn the spy-report + galaxy-activity history into *departure
-arcs*: when a watched player's body reads present-then-absent across two
-observations, the fleet left in that window — the highest-value
-strike-timing intel (raid just after they fleet-save, hit just before it
-lands).
-
-**Why it was deferred (v3.1, not v3).** It rides five confounds
-(same-body vs sibling-body relocation, moon vs planet, defense-only
-suppression, our own probe's activity, and interval width) and needs
-sampling DENSITY a solo fleeter rarely had — which is exactly what the
-**galaxy-view activity rings** shipped in 1.36.0 (`state/activityObs.js`)
-now accumulate for free. Revisit after a few weeks of real data.
-
-**Shape (rough), all mandatory to stay honest:** same-`bodyKey` pairing
-only; sibling-body relocation check (a fleet that just moved next door
-isn't "saved"); moon-gate downgrade; defense-only suppression; and it must
-render as an **interval, never an instant**. Source stays spy-report +
-galaxy-activity only — the API can't see fleet movement (a flying fleet
-still counts in the `ships` count), so there is no API-delta bracket, ever.
-Feeds a new `domain/routine.js` (or sibling) departure-arc summary; surfaced
-on the dossier timeline. See `docs/ogame-fleet-mechanics.md` (activity
-marker) + SPYGLASS-REDESIGN.md §6.6 (git history).
-
-## 2. Points-per-ship spy calibration for the civil baseline
+## 1. Points-per-ship spy calibration for the civil baseline
 
 **Goal.** The civil-fleet baseline (`domain/civilBaseline.js`, shipped
 1.35.0) estimates a player's combat-ship surplus from a server
@@ -51,7 +26,7 @@ calibration pass could derive an empirical pts/ship from spied fleets and
 feed it back into `buildCivilBaseline`. Keep it a weak prior / upper bound
 (never into the danger score `D`), same as the baseline is today.
 
-## 3. Alliance-shared Spyglass sync (scan/activity co-op, sync-on-click)
+## 2. Alliance-shared Spyglass sync (scan/activity co-op, sync-on-click)
 
 **Goal.** Optionally pool Spyglass intel with alliance-mates: share our
 scans of watched players (spy reports, galaxy-view activity, relationship
