@@ -4,6 +4,17 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.41.1] — 2026-07-10
+
+### Changed
+
+- **The dashboard "Who's spying on you" card packs more in.** Each prober is
+  now two lines instead of three — its distance and last-seen sit inline beside
+  the name, so more scouts fit at a glance — and the geometry line leads with
+  the origin (`from … · at your bodies`), since a scout almost always comes
+  from one spot but touches several of yours. The card's title now reads
+  exactly "Who's spying on you", matching the messages-page panel.
+
 ## [1.41.0] — 2026-07-10
 
 ### Changed
