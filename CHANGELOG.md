@@ -4,6 +4,19 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.42.1] — 2026-07-10
+
+### Changed
+
+- **Settings panel polish.** The button-size slider wears the panel's design
+  language — slim rounded track with a filled progress side and a round accent
+  thumb — and sits evenly spaced between the command block and the options
+  below. The preferences panel gains matching side margins, so everything under
+  the full-width command block reads as one aligned column.
+- **Dashboard launcher says what it does.** The button now reads
+  "Open Dashboard" instead of "OG-E Dashboard" — fused flush with the module
+  tiles, the old name read as a section title rather than a clickable control.
+
 ## [1.42.0] — 2026-07-10
 
 ### Added
