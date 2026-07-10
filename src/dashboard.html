@@ -49,15 +49,11 @@
      sub-tab) — one heading size down. No top separator: the sub-tab bar
      already delimits it from the Big Colony Hunting pane. */
   .sub-section h2 { color: #4a9eff; font-size: 17px; margin-bottom: 10px; }
-  /* Modest "experimental" marker — the Galaxy Viewer heuristics (zone
-     scoring, field, neighbourhood intel) are still evolving and
-     feedback-driven. */
-  .exp-badge {
-    margin-left: 8px; padding: 1px 7px; border-radius: 10px;
-    font-size: 10px; font-weight: bold; letter-spacing: .04em; text-transform: uppercase;
-    color: #ffd84d; background: rgba(255,216,77,.10); border: 1px solid rgba(255,216,77,.4);
-    vertical-align: middle;
-  }
+  /* Spyglass title identity mark — our own eye glyph (sendSpy's watermark),
+     tinted to the spy gold. Fed the EYE_GLYPH SVG from JS so the art has one
+     source (mirrors the in-game Who's-spying panel's header eye). */
+  .spy-title-eye { display: inline-flex; align-items: center; color: #e6c054; }
+  .spy-title-eye svg { width: 20px; height: 20px; display: block; }
   .controls input {
     background: #1a2a3a; border: 1px solid #2a4a5a; color: #ccc;
     padding: 6px 12px; border-radius: 6px; font-size: 13px;
@@ -404,6 +400,9 @@
      inside it scrolls) even when the grid row stretches this card taller. */
   .spy-watch-card { display: flex; flex-direction: column; }
   .spy-watch-card > #watchCards { flex: 1; }
+  /* Who's-spying card wears the spy gold on its left edge — the Spyglass
+     identity, echoing the in-game panel's gold rule. */
+  .spy-back-card { border-left: 3px solid #e6c054; }
   /* Scan settings — the in-game Spy button's knobs, always visible as the
      watchlist card's footer bar. Negative margins mirror .gv-card's
      12px/14px padding so the bar bleeds to the card's inner edges. */
@@ -879,8 +878,8 @@
 </section>
 
 <section id="spyglassSection" class="tab-section">
-  <!-- Header: title + "experimental" + the manual API refresh. -->
-  <h1 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">Spyglass<span class="exp-badge" title="Hidden-fleet estimates depend on how much you've spied; treat them as a guide, not gospel.">experimental</span>
+  <!-- Header: title + the spy-eye identity mark + the manual API refresh. -->
+  <h1 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">Spyglass<span id="spyTitleEye" class="spy-title-eye" aria-hidden="true" title="Hidden-fleet estimates depend on how much you've spied; treat them as a guide, not gospel."></span>
     <button type="button" id="spyApiRefresh"
       title="Download fresh data from OGame's public API for this universe now (danger, mobile-fleet estimates, occupancy map). Normally OG-E refreshes this in-game; use this to force it from here."
       style="margin-left:auto;font-size:11px;color:#9fb4c4;background:#12202e;border:1px solid #2b3a4d;border-radius:999px;padding:3px 11px;cursor:pointer;white-space:nowrap;">⟳ Refresh</button>
@@ -913,7 +912,7 @@
           <input id="cadGalaxyHours" type="number" min="1" max="336" step="1" value="24" size="3"> h</label>
       </div>
     </div>
-    <div class="gv-card">
+    <div class="gv-card spy-back-card">
       <div class="gv-card-head"><span class="gv-card-title" title="Probers from the alerts you opened, last 30 days.">Who's spying you</span><span id="proximityCounts" style="color:#77848f;"></span><span id="proximityAlert" style="color:#e06c5f;font-weight:600;"></span></div>
       <div id="proximityStrip"></div>
     </div>

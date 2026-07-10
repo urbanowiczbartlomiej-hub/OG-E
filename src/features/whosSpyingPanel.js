@@ -55,7 +55,8 @@ import { digestProximityReports } from '../domain/proximityDigest.js';
 import { settingsStore } from '../state/settings.js';
 import { bodiesStore } from '../state/bodies.js';
 import { bodyNameIndex, bodyNameFor, nearestBodyDistance } from '../domain/bodies.js';
-import { injectStyle } from '../lib/dom.js';
+import { injectStyle, parseSvg } from '../lib/dom.js';
+import { EYE_GLYPH } from './shared/buttonGlyphs.js';
 import { safeLS } from '../lib/storage.js';
 import { clock } from '../lib/clock.js';
 import { parseUniverseId } from '../lib/universeId.js';
@@ -120,7 +121,10 @@ const CSS = [
   'font-family:Verdana,"Segoe UI",Tahoma,sans-serif;}',
   `#${PANEL_ID} .oge-sb-hdr{display:flex;align-items:center;gap:8px;padding:8px 12px;`,
   'background:linear-gradient(90deg,#141d27,transparent);border-bottom:1px solid #1b2732;}',
-  `#${PANEL_ID} .oge-sb-eye{font-size:14px;}`,
+  // The Spyglass eye — our own SVG glyph (sendSpy's watermark), tinted to the
+  // gold accent so the panel wears the one spy identity (was a 👁 emoji).
+  `#${PANEL_ID} .oge-sb-eye{display:inline-flex;color:var(--sp-accent);}`,
+  `#${PANEL_ID} .oge-sb-eye svg{width:16px;height:16px;display:block;}`,
   `#${PANEL_ID} .oge-sb-title{font-size:12.5px;font-weight:700;color:#d8e6f4;letter-spacing:.02em;}`,
   `#${PANEL_ID} .oge-sb-sum{margin-left:auto;font:11px/1 monospace;color:#6b7987;}`,
   `#${PANEL_ID} .oge-sb-sum b{color:#c6d4e2;font-weight:700;}`,
@@ -327,7 +331,11 @@ const buildShell = (onToggleNames) => {
   panel.id = PANEL_ID;
 
   const hdr = el('div', 'oge-sb-hdr');
-  hdr.appendChild(el('span', 'oge-sb-eye', '👁'));
+  const eye = el('span', 'oge-sb-eye');
+  eye.setAttribute('aria-hidden', 'true');
+  eye.appendChild(parseSvg(
+    `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" focusable="false">${EYE_GLYPH}</svg>`));
+  hdr.appendChild(eye);
   hdr.appendChild(el('span', 'oge-sb-title', "Who's spying on you"));
   const nameBtn = el('button', 'oge-sb-namebtn');
   nameBtn.setAttribute('type', 'button');

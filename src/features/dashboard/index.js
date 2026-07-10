@@ -46,6 +46,8 @@ import { chromeStore, safeLS } from '../../lib/storage.js';
 import { debounce } from '../../lib/debounce.js';
 import { logger } from '../../lib/logger.js';
 import { refreshApiCache } from '../shared/apiRefresh.js';
+import { parseSvg } from '../../lib/dom.js';
+import { EYE_GLYPH } from '../shared/buttonGlyphs.js';
 import { parseTargetPositions } from '../../domain/histogram.js';
 import { populatePositionFilter, renderColonyChart } from './colony.js';
 import { renderFreeRegions, renderServerMap, selectCandidate, resetFreeSelection, highlightPin, _resetFreeStreakForTest } from './freeStreak.js';
@@ -783,6 +785,13 @@ const wireDom = () => {
   spyMapYouEl = document.getElementById('spyMapYou');
   spyMapReach = document.getElementById('spyMapReach');
   spyMapPlayersEl = document.getElementById('spyMapPlayers');
+  // Paint the Spyglass title eye from the shared EYE_GLYPH (one art source,
+  // mirrors the in-game Who's-spying panel's header eye).
+  const spyEyeHost = document.getElementById('spyTitleEye');
+  if (spyEyeHost && !spyEyeHost.firstChild) {
+    spyEyeHost.appendChild(parseSvg(
+      `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" focusable="false">${EYE_GLYPH}</svg>`));
+  }
 };
 
 /**
@@ -1682,8 +1691,13 @@ const renderProximityStrip = () => {
 
   for (const e of digest.players) {
     const facts = document.createElement('div');
+    // Hot (same-system) rows wear the red rule + a fading tint, echoing the
+    // in-game Who's-spying panel's hot-row treatment.
     facts.style.cssText = 'font-size:12px;color:#9aa;line-height:1.4;min-width:0;'
-      + (e.sameSystem ? 'border-left:2px solid #e06c5f;padding-left:7px;' : '');
+      + (e.sameSystem
+        ? 'border-left:2px solid #e06c5f;padding-left:7px;'
+          + 'background:linear-gradient(90deg,#241413,transparent 75%);'
+        : '');
 
     const label = e.name || `#${e.byPlayerId}`;
     const who = document.createElement('span');
@@ -1716,17 +1730,16 @@ const renderProximityStrip = () => {
 
     const age = e.lastTs != null ? proximityAge(e.lastTs, nowMs) : '';
     const sub = document.createElement('div');
-    sub.style.cssText = 'font-size:11px;color:#6b7782;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    // Wraps (was nowrap + ellipsis) so EVERY probed body of ours shows, not
+    // just the first two — parity with the in-game panel's "Near you" column.
+    sub.style.cssText = 'font-size:11px;color:#6b7782;line-height:1.5;';
     sub.appendChild(document.createTextNode(`${age ? `${age} · ` : ''}at `));
     // Moon bodies carry the lunar tint (a planet and its moon share coords).
-    e.atBodies.slice(0, 2).forEach((b, i) => {
+    e.atBodies.forEach((b, i) => {
       if (i) sub.appendChild(document.createTextNode(', '));
       const nm = proximityShowNames ? bodyNameFor(nameIdx, b.coords, b.moon) : null;
       sub.appendChild(nm ? proximityNamedEl(nm, b.coords, b.moon) : proximityBodyEl(b.coords, b.moon));
     });
-    if (e.atBodies.length > 2) {
-      sub.appendChild(document.createTextNode(` +${e.atBodies.length - 2}`));
-    }
     if (e.fromCoords) {
       sub.appendChild(document.createTextNode(' · from '));
       sub.appendChild(proximityBodyEl(e.fromCoords, e.fromMoon));
@@ -1768,6 +1781,20 @@ const renderProximityStrip = () => {
     grid.append(facts, actions);
   }
   proximityStripEl.appendChild(grid);
+
+  // 💀 legend — only when a same-system prober is actually on screen (a legend
+  // for a glyph that isn't shown is clutter). Mirrors the in-game panel's foot.
+  if (digest.sameSystemCount > 0) {
+    const foot = document.createElement('div');
+    foot.style.cssText = 'margin-top:8px;font-size:10px;color:#5f6b76;';
+    const k = document.createElement('span');
+    k.textContent = '💀';
+    k.style.color = '#e06c5f';
+    foot.appendChild(k);
+    foot.appendChild(document.createTextNode(
+      ' = a scout with a body in your system — can strike at moon/RIP speed. From alerts you opened.'));
+    proximityStripEl.appendChild(foot);
+  }
 
   // The undigested per-alert log, for when the exact sequence matters.
   const raw = document.createElement('details');
