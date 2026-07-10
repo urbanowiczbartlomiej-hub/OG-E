@@ -160,7 +160,7 @@ if (releaseNotes !== rawReleaseNotes) {
   );
 }
 
-const reviewerNotesPath = resolve(ROOT, 'amo-reviewer-notes.txt');
+const reviewerNotesPath = resolve(ROOT, 'docs', 'amo-reviewer-notes.txt');
 if (!existsSync(reviewerNotesPath)) {
   die('amo-reviewer-notes.txt is missing — it holds the AMO "Notes to Reviewer".');
 }
@@ -200,7 +200,7 @@ bumpVersionFile('manifest.json');
 // checkout doesn't persist them between runs — so rebuild even when resuming.
 run('npm run package');
 for (const f of ['dist.zip', 'source.zip']) {
-  if (!existsSync(resolve(ROOT, f))) die(`${f} was not produced by npm run package.`);
+  if (!existsSync(resolve(ROOT, 'release', f))) die(`${f} was not produced by npm run package.`);
 }
 
 // phase 5 — local commit + tag, skipped on resume / in CI (tag already exists).
@@ -225,8 +225,8 @@ if (haveCreds) {
       version: VERSION,
       issuer: JWT_ISSUER,
       secret: JWT_SECRET,
-      distZip: resolve(ROOT, 'dist.zip'),
-      sourceZip: resolve(ROOT, 'source.zip'),
+      distZip: resolve(ROOT, 'release', 'dist.zip'),
+      sourceZip: resolve(ROOT, 'release', 'source.zip'),
       releaseNotes,
       reviewerNotes,
       log: (m) => console.log(`release: ${m}`),

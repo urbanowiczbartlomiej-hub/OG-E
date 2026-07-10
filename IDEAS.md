@@ -141,7 +141,7 @@ galaxy-activity only — the API can't see fleet movement (a flying fleet
 still counts in the `ships` count), so there is no API-delta bracket, ever.
 Feeds a new `domain/routine.js` (or sibling) departure-arc summary; surfaced
 on the dossier timeline. See `docs/ogame-fleet-mechanics.md` (activity
-marker) + SPYGLASS-REDESIGN.md §6.6.
+marker) + SPYGLASS-REDESIGN.md §6.6 (git history).
 
 ## 7. Watchlist sync across devices (C6-safe)
 
@@ -187,7 +187,7 @@ demoted to a "find more targets" step behind it.
 **Grounding.** The raid verdict + loot proxy already exist in the **dossier**
 (`domain/raidVerdict.js`, `features/dashboard/dossier.js`, shipped 1.35.0);
 this is the IA step that surfaces them on a card in the landing view rather
-than only inside the drill-down. See SPYGLASS-REDESIGN.md §6.1/§6.3/§6.4 —
+than only inside the drill-down. See SPYGLASS-REDESIGN.md §6.1/§6.3/§6.4 (git history) —
 the "card" half of the jack-point that was left pending an IA pass.
 
 ## 10. Alliance-shared Spyglass sync (scan/activity co-op, sync-on-click)

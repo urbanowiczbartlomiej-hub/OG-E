@@ -133,7 +133,7 @@ and pushes — but the push-to-`main` path above is the only one we use.)
 
 ## AMO note fields (sent automatically by the script)
 
-- **Notes to Reviewer** (internal) ← `amo-reviewer-notes.txt`, sent verbatim.
+- **Notes to Reviewer** (internal) ← `docs/amo-reviewer-notes.txt`, sent verbatim.
   That file IS the source of truth (the script reads it) — edit it there when
   build steps or permissions change; don't restate its contents here.
 - **Release notes** (public) ← the `## [X.Y.Z]` section of `CHANGELOG.md`,

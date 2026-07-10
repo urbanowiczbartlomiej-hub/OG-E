@@ -16,13 +16,16 @@
 // Run via `npm run package` after `npm run build:prod` has produced
 // the minified bundle.
 
-import { existsSync, rmSync, readdirSync } from 'node:fs';
+import { existsSync, rmSync, readdirSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { zipDir } from './zip.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const DIST = resolve(ROOT, 'dist');
-const ZIP = resolve(ROOT, 'dist.zip');
+// Zip artefacts live in a gitignored `release/` subfolder — never in the repo
+// root — so `npm run package`/`release` cannot litter it.
+const RELEASE = resolve(ROOT, 'release');
+const ZIP = resolve(RELEASE, 'dist.zip');
 
 if (!existsSync(DIST)) {
   console.error('package: dist/ does not exist. Run `npm run build:prod` first.');
@@ -41,6 +44,7 @@ if (existsSync(ZIP)) {
 }
 
 try {
+  mkdirSync(RELEASE, { recursive: true });
   zipDir(DIST, ZIP);
 } catch (err) {
   console.error('package: archive command failed');

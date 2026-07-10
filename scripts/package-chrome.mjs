@@ -13,12 +13,13 @@
 //   npm run package:chrome
 // which runs `build:prod` first, then this script.
 
-import { existsSync, rmSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, rmSync, readdirSync, readFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { zipDir } from './zip.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const DIST = resolve(ROOT, 'dist');
+const RELEASE = resolve(ROOT, 'release');
 
 if (!existsSync(DIST) || readdirSync(DIST).length === 0) {
   console.error('package:chrome: dist/ missing or empty. Run `npm run build:prod` first.');
@@ -26,7 +27,8 @@ if (!existsSync(DIST) || readdirSync(DIST).length === 0) {
 }
 
 const { version } = JSON.parse(readFileSync(resolve(ROOT, 'manifest.json'), 'utf8'));
-const ZIP = resolve(ROOT, `og-e-chrome-${version}.zip`);
+// Output into the gitignored `release/` subfolder, never the repo root.
+const ZIP = resolve(RELEASE, `og-e-chrome-${version}.zip`);
 
 if (existsSync(ZIP)) {
   rmSync(ZIP);
@@ -34,6 +36,7 @@ if (existsSync(ZIP)) {
 }
 
 try {
+  mkdirSync(RELEASE, { recursive: true });
   zipDir(DIST, ZIP);
 } catch (err) {
   console.error('package:chrome: archive command failed');

@@ -403,7 +403,7 @@ applies verbatim to every Spyglass string. Concretely:
   gathered"**; the `windowBonus` reads **"good moment — based on intel you gathered"**,
   never "scan now"/"due"; activity reads **"activity"** / **"interacted"**, never
   "online"/"logged in" (the marker is *any* interaction, including our own probe —
-  §6.6bis of `SPYGLASS-REDESIGN.md`). "Watchlist" is the tab; a player is "watched"
+  §6.6bis of `SPYGLASS-REDESIGN.md`, git history). "Watchlist" is the tab; a player is "watched"
   (on the player's own list), never "being monitored".
 - **Exempt** (never rendered): internal identifiers — `scanPriority.js`, `windowBonus`,
   `targetReports`, `.target-focus`, storage keys. Only rendered strings are governed.

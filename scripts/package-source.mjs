@@ -17,13 +17,14 @@
 // backslashes that AMO's validator rejects). `tar.exe` ships with
 // Windows 10 1803+ (bsdtar/libarchive).
 
-import { existsSync, rmSync, mkdtempSync, cpSync } from 'node:fs';
+import { existsSync, rmSync, mkdtempSync, cpSync, mkdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { zipDir } from './zip.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
-const ZIP = resolve(ROOT, 'source.zip');
+// Output into the gitignored `release/` subfolder, never the repo root.
+const ZIP = resolve(ROOT, 'release', 'source.zip');
 
 const INCLUDE = [
   'src',
@@ -61,6 +62,7 @@ try {
     cpSync(resolve(ROOT, entry), join(STAGE, entry), { recursive: true });
   }
 
+  mkdirSync(resolve(ROOT, 'release'), { recursive: true });
   zipDir(STAGE, ZIP);
 } catch (err) {
   console.error('package-source: archive command failed');
