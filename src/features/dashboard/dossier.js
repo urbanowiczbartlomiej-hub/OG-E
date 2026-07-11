@@ -448,7 +448,7 @@ function planetsBlock({
     const th = document.createElement('th');
     th.textContent = txt;
     if (tip) th.title = tip;
-    th.style.cssText = `text-align:${align};font-size:10px;font-weight:400;color:#5f6b76;`
+    th.style.cssText = `text-align:${align};font-size:11px;font-weight:400;color:#5f6b76;`
       + 'padding:0 0 3px;border-bottom:1px solid #2a3d52;'
       + (align === 'right' ? 'padding-left:14px;' : '');
     thr.appendChild(th);
@@ -523,11 +523,14 @@ function planetsBlock({
       else { txtEl.textContent = `${age} re-scan`; txtEl.style.color = '#e0a020'; }
     }
     td.appendChild(txtEl);
-    // Integrated toggle — one small glyph, no separate column.
+    // Integrated toggle — one small glyph, no separate column. .hit-pad
+    // grows its touch hit-box to ≥36px (coarse pointers only, see
+    // dashboard.html); inline-block so the pad has a box to centre on.
     if (onSetScanMode) {
       const tog = document.createElement('span');
       tog.textContent = on ? ' ⊘' : ' ⟳';
-      tog.style.cssText = 'color:#54626f;cursor:pointer;user-select:none;margin-left:5px;';
+      tog.className = 'hit-pad';
+      tog.style.cssText = 'color:#54626f;cursor:pointer;user-select:none;margin-left:5px;display:inline-block;';
       tog.title = on
         ? 'Stop probing this body (keep tracking its galaxy activity)'
         : 'Resume probing this body';
@@ -697,7 +700,13 @@ function planetsBlock({
       table.appendChild(mrow);
     }
   }
-  box.appendChild(table);
+  // Horizontal-scroll containment (shared .table-scroll idiom): 7 nowrap
+  // columns overflow a phone — the table scrolls inside its own wrapper,
+  // never the page.
+  const tableScroller = document.createElement('div');
+  tableScroller.className = 'table-scroll';
+  tableScroller.appendChild(table);
+  box.appendChild(tableScroller);
 
   // Relocation hint: bodies we hold intel on (a report or moon report) whose
   // coords are NO LONGER in the player's current universe.xml occupancy — the
@@ -723,7 +732,7 @@ function planetsBlock({
     if (ghostCoords.length) {
       ghostCoords.sort();
       const note = document.createElement('div');
-      note.style.cssText = 'margin-top:6px;font-size:10px;color:#8a7f5f;line-height:1.5;';
+      note.style.cssText = 'margin-top:6px;font-size:11px;color:#8a7f5f;line-height:1.5;';
       const lead = document.createElement('span');
       lead.textContent = '🚚 no longer here — moved or destroyed: ';
       note.appendChild(lead);
@@ -859,6 +868,7 @@ function watchViaSelector(playerId, scanOn, galaxyOn, onSetScan, onSetGalaxy, on
   if (scanOn && onRescan) {
     const rescan = document.createElement('button');
     rescan.textContent = '↻';
+    rescan.className = 'hit-pad';
     rescan.title = 'Flag this player for re-scan (data may have changed) — every body re-enters the probe scan plan';
     rescan.style.cssText = 'border:none;background:none;color:#6b97c4;cursor:pointer;'
       + 'font-size:13px;line-height:1;padding:0 2px;';
@@ -898,7 +908,7 @@ function routineBlock(routine) {
 
   const title = document.createElement('div');
   title.textContent = 'ROUTINE';
-  title.style.cssText = 'font-size:10px;letter-spacing:0.5px;color:#6b7782;margin-bottom:2px;';
+  title.style.cssText = 'font-size:11px;letter-spacing:0.5px;color:#6b7782;margin-bottom:2px;';
   wrap.appendChild(title);
 
   if (!routine || routine.observations === 0) {
@@ -920,7 +930,7 @@ function routineBlock(routine) {
     if (act.label && (act.gate === 'pattern' || act.gate === 'strong')) line.append(` — ${act.label}`);
     wrap.appendChild(line);
     const cov = document.createElement('div');
-    cov.style.cssText = 'color:#5f6b76;font-size:10px;';
+    cov.style.cssText = 'color:#5f6b76;font-size:11px;';
     // Coverage row (§6.6/§8): name each source's sample count so the strip
     // visibly only knows what the user gathered; name the self-induced
     // discount so a probe-heavy day can't be mistaken for target activity.
@@ -956,7 +966,7 @@ function routineBlock(routine) {
 
   if (routine.timeline.length) {
     const tl = document.createElement('div');
-    tl.style.cssText = 'margin-top:3px;color:#7c8893;font-size:10px;';
+    tl.style.cssText = 'margin-top:3px;color:#7c8893;font-size:11px;';
     tl.textContent = 'recent: ' + routine.timeline.slice(0, 5).map((t) => {
       const parts = [t.coord];
       if (typeof t.defenseValue === 'number') parts.push(`def ${compact(t.defenseValue)}`);
@@ -1077,7 +1087,7 @@ function presenceBlock(presence) {
 
   const title = document.createElement('div');
   title.textContent = 'PRESENCE — offline windows';
-  title.style.cssText = 'font-size:10px;letter-spacing:0.5px;color:#6b7782;margin-bottom:3px;';
+  title.style.cssText = 'font-size:11px;letter-spacing:0.5px;color:#6b7782;margin-bottom:3px;';
   wrap.appendChild(title);
 
   if (!presence || presence.samples === 0) {
@@ -1130,14 +1140,14 @@ function presenceBlock(presence) {
   for (let h = 0; h < 24; h++) {
     const hx = document.createElement('div');
     hx.textContent = h % 6 === 0 ? String(h) : '';
-    hx.style.cssText = 'font-size:9px;color:#5f6b76;text-align:center;background:transparent;';
+    hx.style.cssText = 'font-size:10px;color:#5f6b76;text-align:center;background:transparent;';
     table.appendChild(hx);
   }
 
   for (let r = 0; r < grid.rows; r++) {
     const lbl = document.createElement('div');
     lbl.textContent = grid.scale === 'week' ? DOW_LABELS[r] : 'all days';
-    lbl.style.cssText = 'font-size:10px;color:#8b95a0;display:flex;align-items:center;'
+    lbl.style.cssText = 'font-size:11px;color:#8b95a0;display:flex;align-items:center;'
       + 'justify-content:flex-end;padding-right:5px;background:transparent;white-space:nowrap;';
     table.appendChild(lbl);
     for (let h = 0; h < 24; h++) {
@@ -1159,7 +1169,7 @@ function presenceBlock(presence) {
 
   // Legend + basis.
   const legend = document.createElement('div');
-  legend.style.cssText = 'display:flex;gap:12px;align-items:center;margin-top:5px;font-size:10px;color:#6b7782;flex-wrap:wrap;';
+  legend.style.cssText = 'display:flex;gap:12px;align-items:center;margin-top:5px;font-size:11px;color:#6b7782;flex-wrap:wrap;';
   const bar = document.createElement('span');
   bar.style.cssText = 'display:inline-block;width:70px;height:9px;border-radius:5px;vertical-align:-1px;'
     + 'background:linear-gradient(90deg,rgb(37,99,235),rgb(150,160,175),rgb(220,60,55));';
@@ -1167,7 +1177,7 @@ function presenceBlock(presence) {
   wrap.appendChild(legend);
 
   const basis = document.createElement('div');
-  basis.style.cssText = 'margin-top:4px;font-size:10px;';
+  basis.style.cssText = 'margin-top:4px;font-size:11px;';
   if (win) {
     const dayPart = grid.scale === 'week' ? `${DOW_LABELS[win.row]} ` : '';
     basis.style.color = '#7fb389';
@@ -1201,7 +1211,7 @@ function fsArcsBlock(arcs, nowMs) {
 
   const title = document.createElement('div');
   title.textContent = 'FS WINDOWS — fleet departures & returns';
-  title.style.cssText = 'font-size:10px;letter-spacing:0.5px;color:#6b7782;margin-bottom:3px;';
+  title.style.cssText = 'font-size:11px;letter-spacing:0.5px;color:#6b7782;margin-bottom:3px;';
   wrap.appendChild(title);
 
   /** Window bound → "Tue 21:40" (short, local). @param {number} sec */
@@ -1264,7 +1274,7 @@ function fsArcsBlock(arcs, nowMs) {
 
   const basis = document.createElement('div');
   basis.textContent = 'From your own spy reports + galaxy looks — windows are gaps between observations, not exact times.';
-  basis.style.cssText = 'color:#5f6b76;font-size:10px;margin-top:2px;';
+  basis.style.cssText = 'color:#5f6b76;font-size:11px;margin-top:2px;';
   wrap.appendChild(basis);
 
   return wrap;

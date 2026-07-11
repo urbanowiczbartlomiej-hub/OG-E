@@ -148,6 +148,9 @@ function chipCell(id, watched, onToggle) {
   const td = cell('');
   const chip = document.createElement('span');
   chip.textContent = watched ? '✓ watch' : '+ watch';
+  // .hit-pad: ≥36px touch hit-box (coarse pointers only) without growing
+  // the visible pill.
+  chip.className = 'hit-pad';
   chip.style.cssText =
     'display:inline-block;font-size:11px;border-radius:11px;padding:2px 9px;'
     + 'cursor:pointer;user-select:none;white-space:nowrap;';
@@ -800,7 +803,7 @@ export function renderTargets({
   // Horizontal-scroll containment: on a narrow viewport the (nowrap) table
   // scrolls inside this wrapper instead of stretching the whole page.
   const scroller = document.createElement('div');
-  scroller.style.overflowX = 'auto';
+  scroller.className = 'table-scroll';
   scroller.appendChild(table);
   containerEl.appendChild(scroller);
 

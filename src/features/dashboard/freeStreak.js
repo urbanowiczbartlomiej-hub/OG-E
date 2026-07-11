@@ -885,9 +885,12 @@ const buildTable = (results, ownRank) => {
   const table = document.createElement('table');
   table.className = 'streak-table';
 
+  // Gaps/Nbrs wear .gt-md: secondary columns a phone drops (≤500px) so the
+  // load-bearing ones stay legible — the .table-scroll wrapper is the
+  // baseline overflow fix, this just buys width.
   const thead = document.createElement('thead');
   const headRow = document.createElement('tr');
-  for (const [label, title] of [
+  for (const [label, title, mdOnly] of /** @type {[string, string, boolean?][]} */ ([
     ['#', ''],
     ['Fit', FIT_TIP],
     ['Galaxy', ''],
@@ -895,13 +898,14 @@ const buildTable = (results, ownRank) => {
     ['End', ''],
     ['Length', 'Total systems spanned (including gap systems)'],
     ['Free', 'Systems where every requested slot is confirmed empty'],
-    ['Gaps', 'Non-matching systems tolerated inside the region'],
-    ['Nbrs', 'Players seen in range (active + dormant) — neighbourhood crowdedness'],
-  ]) {
+    ['Gaps', 'Non-matching systems tolerated inside the region', true],
+    ['Nbrs', 'Players seen in range (active + dormant) — neighbourhood crowdedness', true],
+  ])) {
     const th = document.createElement('th');
     th.textContent = label;
     if (title) th.title = title;
     if (label !== 'Galaxy') th.style.textAlign = 'right';
+    if (mdOnly) th.classList.add('gt-md');
     headRow.appendChild(th);
   }
   thead.appendChild(headRow);
@@ -913,7 +917,7 @@ const buildTable = (results, ownRank) => {
     const s = r.score;
     const nbrs = s ? String(s.occupied + s.inactive) : '?';
     const fit = fitCell(r);
-    /** @type {[string, boolean, string][]} */
+    /** @type {[string, boolean, string, boolean?][]} */
     const cells = [
       [String(i + 1), true, ''],
       [fit.text, true, fit.tip],
@@ -922,14 +926,15 @@ const buildTable = (results, ownRank) => {
       [String(r.end), true, ''],
       [String(r.length), true, ''],
       [String(r.matched), true, ''],
-      [r.gaps ? String(r.gaps) : '—', true, ''],
-      [nbrs, true, s ? buildNbrsTip(s, ownRank) : 'No scan data in range'],
+      [r.gaps ? String(r.gaps) : '—', true, '', true],
+      [nbrs, true, s ? buildNbrsTip(s, ownRank) : 'No scan data in range', true],
     ];
-    for (const [text, isNum, tip] of cells) {
+    for (const [text, isNum, tip, mdOnly] of cells) {
       const td = document.createElement('td');
       td.textContent = text;
       if (isNum) td.className = 'num';
       if (tip) td.title = tip;
+      if (mdOnly) td.classList.add('gt-md');
       tr.appendChild(td);
     }
     tbody.appendChild(tr);
@@ -1487,7 +1492,13 @@ const renderInteractive = (containerEl, results, scans, detailOpts, tableBuilder
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(i); }
     });
   });
-  containerEl.appendChild(table);
+  // Horizontal-scroll containment (shared .table-scroll idiom): the 7–9
+  // column table scrolls inside its own wrapper on narrow viewports instead
+  // of stretching the whole page sideways.
+  const scroller = document.createElement('div');
+  scroller.className = 'table-scroll';
+  scroller.appendChild(table);
+  containerEl.appendChild(scroller);
   if (shown.length) {
     // Restore the previous selection BY IDENTITY; fall back to the top row.
     const keep = lastSelectedKey

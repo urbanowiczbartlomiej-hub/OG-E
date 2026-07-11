@@ -139,10 +139,36 @@
      multi-digit counts ("23", "150") stack vertically instead of overflowing the bar
      width. max-height caps the count column at ~4 digits to keep the chart area
      reservation predictable (see BAR_AREA_PX in features/dashboard/colony.js). */
-  .bar-label { font-size: 10px; color: #888; margin-top: 4px; writing-mode: vertical-rl; text-orientation: mixed; height: 40px; flex-shrink: 0; overflow: hidden; }
-  .bar-count { font-size: 10px; color: #fff; margin-bottom: 2px; writing-mode: vertical-rl; text-orientation: mixed; max-height: 36px; flex-shrink: 0; overflow: hidden; }
+  .bar-label { font-size: 11px; color: #888; margin-top: 4px; writing-mode: vertical-rl; text-orientation: mixed; height: 40px; flex-shrink: 0; overflow: hidden; }
+  .bar-count { font-size: 11px; color: #fff; margin-bottom: 2px; writing-mode: vertical-rl; text-orientation: mixed; max-height: 36px; flex-shrink: 0; overflow: hidden; }
 
   .empty { text-align: center; color: #666; padding: 60px; font-size: 16px; }
+
+  /* ONE shared idiom for wide tables: the wrapper scrolls sideways, the
+     page NEVER does (hoisted from the Spyglass players table). Applied to
+     every ≥7-column table (players, dossier per-body, GV streak/candidate). */
+  .table-scroll { overflow-x: auto; }
+  /* Utility: columns a phone can live without (streak table Gaps/Nbrs) —
+     the scroll wrapper is the baseline fix, this just buys legibility. */
+  @media (max-width: 500px) { .gt-md { display: none; } }
+
+  /* Touch hit-pads (coarse pointers only — desktop mouse keeps exact
+     targets): an invisible ::after grows a small control's hit-test box to
+     ≥36px without changing its visual box or the layout. The pad may bleed
+     over neighbours, so it's only worn by controls that are the dominant
+     interactive thing in their vicinity (thin ✕ / ▲ / ⊘ glyphs, small
+     chips). JS-built controls opt in via .hit-pad; the stylesheet-owned
+     ones (.rem-cancel, .smap-pin) are listed here. The offset-chip ✕ sits
+     flush against its own editable input, so it gets a DIRECTIONAL pad
+     (down at its own definition) instead of this centred one. */
+  @media (pointer: coarse) {
+    .hit-pad, .rem-cancel { position: relative; }
+    .hit-pad::after, .rem-cancel::after, .smap-pin::after {
+      content: ''; position: absolute; top: 50%; left: 50%;
+      width: 100%; height: 100%; min-width: 36px; min-height: 36px;
+      transform: translate(-50%, -50%);
+    }
+  }
 
   /* Free Positions table */
   .streak-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
@@ -187,6 +213,12 @@
      threat/farm field (cellClass.fieldColor), not raw status. */
   .region-strip.heat { height: 22px; gap: 1px; background: #000; border-radius: 4px; padding: 1px; overflow: visible; }
   .region-strip.heat .strip-cell { min-width: 6px; box-shadow: none; cursor: pointer; border-radius: 1px; }
+  /* Coarse pointers: the strips stay dense horizontally (they ARE density
+     displays), but a finger deserves a taller ribbon to land on. */
+  @media (pointer: coarse) {
+    .region-strip { height: 24px; }
+    .region-strip.heat { height: 30px; }
+  }
   .region-strip.heat .strip-cell.center { outline: 2px solid #fff; outline-offset: -2px; }
   /* Friendly hover/pin popover over a strip cell (styled like the planet-badge
      legend and the in-game "?" help). Anchored ABOVE the strip; `left` is set
@@ -316,6 +348,13 @@
   .settings-panel .oge-offset-remove { background: none; border: none; color: #c47070;
     padding: 0 2px; font-size: 13px; line-height: 1; }
   .settings-panel .oge-offset-remove:hover { background: none; color: #ff9090; }
+  /* Coarse pointers: grow the ✕'s hit box with padding pulled back by
+     negative margins (chip keeps its size). Directional — tall + rightward
+     only, because the chip's editable input sits flush on its LEFT and a
+     centred 36px pad would swallow the input's tail. */
+  @media (pointer: coarse) {
+    .settings-panel .oge-offset-remove { padding: 10px 8px 10px 4px; margin: -10px -6px -10px -2px; }
+  }
   /* "Add" trails the chip row as a matching pill (overrides the boxy default). */
   .settings-panel .oge-offset-add { background: #16252f; color: #9cf; border: 1px solid #2a4a5a;
     border-radius: 14px; padding: 3px 12px; font-size: 12px; }
@@ -360,6 +399,20 @@
   .gv-note { color: #66788a; font-size: 11px; }
   .gv-note.warn { color: #ffb454; }
   .gv-val { color: #cfe4ff; font-size: 12px; min-width: 44px; }
+  /* Each GV slider is PAIRED with a compact number box bound to the same
+     value — drag for coarse sweeps (desktop), type for precision (touch:
+     a 2–250 range on a finger-width track can't hit single systems). */
+  .gv-config input.gv-num {
+    background: #0d1620; border: 1px solid #2a4a5a; color: #cfe;
+    padding: 4px 6px; border-radius: 6px; font-size: 12px; width: 52px;
+    text-align: right; font-family: inherit;
+    -moz-appearance: textfield; appearance: textfield;
+  }
+  .gv-config input.gv-num::-webkit-outer-spin-button,
+  .gv-config input.gv-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .gv-config input.gv-num:focus {
+    outline: none; border-color: #4a9eff; box-shadow: 0 0 0 2px rgba(74,158,255,0.2);
+  }
   .gv-config input[type="range"] { width: 110px; }
   /* An inapplicable slider keeps its layout slot and greys out (same rule as
      the Tolerance / Ignore-worst chip groups) — e.g. Spot gap under streaks. */
@@ -565,7 +618,7 @@
   /* An "Ignore worst" drop-out: still listed (it's physically here) but dimmed
      and tagged, so the panel agrees with the "Ignoring N worst" line below. */
   .gv-threat-row.ignored { opacity: .5; }
-  .gv-threat-ignored-tag { font-size: 10px; color: #c98a4b; border: 1px solid #5a4415; border-radius: 8px; padding: 0 6px; }
+  .gv-threat-ignored-tag { font-size: 11px; color: #c98a4b; border: 1px solid #5a4415; border-radius: 8px; padding: 0 6px; }
 
   /* Colony Scout → server map: binned temperature field (whole server). */
   .server-map-panel { margin: 10px 0; }
@@ -882,18 +935,24 @@
         <span id="freeGapsNote" class="gv-note"></span>
       </div>
       <div class="gv-row">
+        <!-- Sliders come PAIRED with a number box bound to the same value
+             (see .gv-num) — the box replaced the plain readout span, so the
+             ids keep their V suffix and index.js keeps one wiring path. -->
         <span class="gv-lab" title="Your max nightly offline window — how far a moon-destruction (RIP) threat reaches. Drives the threat channel of both the ranking and the map.">Offline</span>
         <input type="range" id="serverMapWindow" min="4" max="16" step="1" value="8">
-        <span id="serverMapWindowV" class="gv-val">8 h</span>
+        <input type="number" id="serverMapWindowV" class="gv-num" min="4" max="16" step="1" value="8">
+        <span class="gv-lab">h</span>
         <span class="gv-lab" title="How far you'll fly to farm — the farm-value radius, in systems. Drives the farm channel of both the ranking and the map.">Farm reach</span>
         <input type="range" id="serverMapFarm" min="4" max="60" step="2" value="30">
-        <span id="serverMapFarmV" class="gv-val">30 sys</span>
+        <input type="number" id="serverMapFarmV" class="gv-num" min="4" max="60" step="2" value="30">
+        <span class="gv-lab">sys</span>
         <span class="gv-lab" title="Minimum distance between listed spots (same galaxy), in systems — higher = fewer, more spread-out proposals; lower = allow near-overlapping areas around one hotspot.">Spot gap</span>
         <!-- Wide range (2–250 sys, up to half a donut ring) ⇒ a LONGER track
              than the sibling 110px sliders, or single-system precision is
-             impossible to hit with the mouse. -->
+             impossible to hit with the mouse; the paired box types it exactly. -->
         <input type="range" id="serverMapSep" min="2" max="250" step="1" value="15" style="width:260px;">
-        <span id="serverMapSepV" class="gv-val">15 sys</span>
+        <input type="number" id="serverMapSepV" class="gv-num" min="2" max="250" step="1" value="15">
+        <span class="gv-lab">sys</span>
         <span id="serverMapSepNote" class="gv-note"></span>
       </div>
     </div>

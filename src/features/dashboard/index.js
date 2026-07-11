@@ -429,11 +429,11 @@ let activityObs = {};
 /** @type {HTMLElement | null} */ let serverMapProtWrap;
 /** @type {HTMLElement | null} */ let serverMapProtected;
 /** @type {HTMLInputElement | null} */ let serverMapWindow;
-/** @type {HTMLElement | null} */ let serverMapWindowV;
+/** @type {HTMLInputElement | null} */ let serverMapWindowV;
 /** @type {HTMLInputElement | null} */ let serverMapFarm;
-/** @type {HTMLElement | null} */ let serverMapFarmV;
+/** @type {HTMLInputElement | null} */ let serverMapFarmV;
 /** @type {HTMLInputElement | null} */ let serverMapSep;
-/** @type {HTMLElement | null} */ let serverMapSepV;
+/** @type {HTMLInputElement | null} */ let serverMapSepV;
 /** @type {HTMLElement | null} */ let serverMapSepNote;
 /** @type {HTMLElement | null} */ let freeCountInfoEl;
 /** @type {HTMLElement} */ let targetsContainer;
@@ -577,15 +577,15 @@ const boot = async () => {
   if (scoutPrefs.gaps !== undefined) setChipValue(freeGapsChips, String(scoutPrefs.gaps));
   if (scoutPrefs.window !== undefined && serverMapWindow) {
     serverMapWindow.value = String(scoutPrefs.window);
-    if (serverMapWindowV) serverMapWindowV.textContent = `${scoutPrefs.window} h`;
+    if (serverMapWindowV) serverMapWindowV.value = serverMapWindow.value;
   }
   if (scoutPrefs.farmReach !== undefined && serverMapFarm) {
     serverMapFarm.value = String(scoutPrefs.farmReach);
-    if (serverMapFarmV) serverMapFarmV.textContent = `${scoutPrefs.farmReach} sys`;
+    if (serverMapFarmV) serverMapFarmV.value = serverMapFarm.value;
   }
   if (scoutPrefs.spotGap !== undefined && serverMapSep) {
     serverMapSep.value = String(scoutPrefs.spotGap);
-    if (serverMapSepV) serverMapSepV.textContent = `${scoutPrefs.spotGap} sys`;
+    if (serverMapSepV) serverMapSepV.value = serverMapSep.value;
   }
   if (scoutPrefs.view) setChipValue(serverMapViewChips, String(scoutPrefs.view));
   // Protected visibility (occupancy view): absent/legacy prefs default to shown.
@@ -762,11 +762,11 @@ const wireDom = () => {
   serverMapProtWrap = document.getElementById('serverMapProtWrap');
   serverMapProtected = document.getElementById('serverMapProtected');
   serverMapWindow = /** @type {HTMLInputElement | null} */ (document.getElementById('serverMapWindow'));
-  serverMapWindowV = document.getElementById('serverMapWindowV');
+  serverMapWindowV = /** @type {HTMLInputElement | null} */ (document.getElementById('serverMapWindowV'));
   serverMapFarm = /** @type {HTMLInputElement | null} */ (document.getElementById('serverMapFarm'));
-  serverMapFarmV = document.getElementById('serverMapFarmV');
+  serverMapFarmV = /** @type {HTMLInputElement | null} */ (document.getElementById('serverMapFarmV'));
   serverMapSep = /** @type {HTMLInputElement | null} */ (document.getElementById('serverMapSep'));
-  serverMapSepV = document.getElementById('serverMapSepV');
+  serverMapSepV = /** @type {HTMLInputElement | null} */ (document.getElementById('serverMapSepV'));
   serverMapSepNote = document.getElementById('serverMapSepNote');
   freeCountInfoEl = document.getElementById('freeCountInfo');
   targetsContainer = /** @type {HTMLElement} */ (document.getElementById('targetsContainer'));
@@ -2801,24 +2801,38 @@ const wireListeners = () => {
   });
   // Offline window / farm reach drive the RANKING field, not just the map —
   // repaint unconditionally. Persist on release ('change'), not per drag tick.
-  // Readouts carry their unit — a bare "30" said nothing about systems.
-  serverMapWindow?.addEventListener('input', () => {
-    if (serverMapWindowV && serverMapWindow) serverMapWindowV.textContent = `${serverMapWindow.value} h`;
-    repaintFreeRegionsThrottled();
-  });
-  serverMapWindow?.addEventListener('change', saveScoutPrefs);
-  serverMapFarm?.addEventListener('input', () => {
-    if (serverMapFarmV && serverMapFarm) serverMapFarmV.textContent = `${serverMapFarm.value} sys`;
-    repaintFreeRegionsThrottled();
-  });
-  serverMapFarm?.addEventListener('change', saveScoutPrefs);
+  // Each slider is paired with a number box bound to the same value: drag =
+  // coarse sweeps, type = precision (on touch a 2–250 range on a finger-width
+  // track can't hit single systems). The RANGE input stays the single source
+  // the painters and saveScoutPrefs read; the box mirrors it both ways.
+  /**
+   * @param {HTMLInputElement | null} range
+   * @param {HTMLInputElement | null} num
+   * @returns {void}
+   */
+  const wireRangePair = (range, num) => {
+    if (!range || !num) return;
+    range.addEventListener('input', () => {
+      num.value = range.value;
+      repaintFreeRegionsThrottled();
+    });
+    range.addEventListener('change', saveScoutPrefs);
+    num.addEventListener('change', () => {
+      // Clamp typed values to the slider's own bounds; blank/garbage falls
+      // back to the current slider value.
+      const typed = Number(num.value) || Number(range.value);
+      const v = Math.min(Number(range.max), Math.max(Number(range.min), Math.round(typed)));
+      num.value = String(v);
+      range.value = String(v);
+      saveScoutPrefs();
+      repaintFreeRegions();
+    });
+  };
+  wireRangePair(serverMapWindow, serverMapWindowV);
+  wireRangePair(serverMapFarm, serverMapFarmV);
   // Spot gap re-spaces the RANKED list (spaceOutCandidates radius) — cheap,
-  // but reuse the same throttled repaint as the sibling sliders.
-  serverMapSep?.addEventListener('input', () => {
-    if (serverMapSepV && serverMapSep) serverMapSepV.textContent = `${serverMapSep.value} sys`;
-    repaintFreeRegionsThrottled();
-  });
-  serverMapSep?.addEventListener('change', saveScoutPrefs);
+  // and it reuses the same pair wiring as the sibling sliders.
+  wireRangePair(serverMapSep, serverMapSepV);
   wireChips(freeExcludeChips, () => { saveScoutPrefs(); repaintFreeRegions(); });
 
   universeSelect.addEventListener('change', () => {

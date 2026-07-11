@@ -206,6 +206,9 @@ export const installRoutes = ({ getUniverseId }) => {
     for (const l of lead) c.appendChild(l);
     c.appendChild(mk('span', '', (stale ? '⚠ ' : '') + labelForCoord(coord)));
     const x = mk('button', 'background:none;border:none;color:inherit;cursor:pointer;font-size:13px;line-height:1;padding:0;', '×');
+    // ≥36px touch hit-box (coarse pointers only) — the ✕ is the chip's only
+    // control, so the pad's bleed is harmless.
+    x.className = 'hit-pad';
     x.setAttribute('aria-label', `Remove ${short(coord)}`);
     x.addEventListener('click', onRemove);
     c.appendChild(x);
@@ -219,8 +222,11 @@ export const installRoutes = ({ getUniverseId }) => {
    * @returns {HTMLButtonElement}
    */
   const iconBtn = (glyph, aria, onClick) => {
+    // Padding-grown hit box (~24px) with negative vertical margins so the
+    // chip row keeps its height. NOT the 36px .hit-pad — ▲/▼/× sit directly
+    // beside each other and full pads would swallow their neighbours.
     const b = /** @type {HTMLButtonElement} */ (
-      mk('button', 'background:none;border:none;color:#9bd;cursor:pointer;font-size:12px;line-height:1;padding:0 2px;', glyph)
+      mk('button', 'background:none;border:none;color:#9bd;cursor:pointer;font-size:12px;line-height:1;padding:6px;margin:-6px 0;', glyph)
     );
     b.setAttribute('aria-label', aria);
     b.addEventListener('click', onClick);
