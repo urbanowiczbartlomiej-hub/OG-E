@@ -11,21 +11,6 @@ grounded against the current code at capture time.
 
 ---
 
-## 1. Points-per-ship spy calibration for the civil baseline
-
-**Goal.** The civil-fleet baseline (`domain/civilBaseline.js`, shipped
-1.35.0) estimates a player's combat-ship surplus from a server
-economy→ships curve using an *assumed* points-per-ship. Refine that constant
-from the **actual** fleet compositions we've spied (the per-ship maps on
-each `SpyReport`), so the baseline's upper bound tightens for players we
-have real scans on.
-
-**Grounding.** The spy reports already persist per-ship fleet maps
-(`espionageReport.js`), currently read only for the hidden-fleet math. A
-calibration pass could derive an empirical pts/ship from spied fleets and
-feed it back into `buildCivilBaseline`. Keep it a weak prior / upper bound
-(never into the danger score `D`), same as the baseline is today.
-
 ## 2. Alliance-shared Spyglass sync (scan/activity co-op, sync-on-click)
 
 **Goal.** Optionally pool Spyglass intel with alliance-mates: share our
