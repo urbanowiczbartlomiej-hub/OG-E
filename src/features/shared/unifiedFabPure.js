@@ -14,8 +14,12 @@
  * @property {number} y  orb centre y.
  */
 
-/** Arc the orbit items fan across, in radians (~112°). */
-const ORBIT_SPREAD_RAD = Math.PI * 0.62;
+// Angular STEP between adjacent orbit items (~37°) — the gap the original
+// fixed ~112° arc gave a 4-orb menu, kept as the aesthetic baseline. The arc
+// WIDTH is now count-driven (step × gaps) instead of constant: a constant arc
+// flung 2 orbs to its extremes (unnaturally far apart, hugging nothing) and
+// crammed 5+ into the same 112°. See orbitLayout.
+const ORBIT_STEP_RAD = (Math.PI * 0.62) / 3;
 
 /** @param {number} v @param {number} lo @param {number} hi @returns {number} */
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -87,6 +91,13 @@ export const orbitRadius = (fabSize, orbSize) => fabSize / 2 + orbSize / 2 + 14;
  * edge; each position is additionally clamped to the viewport as a
  * belt-and-braces guard.
  *
+ * The arc's WIDTH grows with the item count: adjacent orbs sit a constant
+ * ~37° apart (2 orbs hug the aim ray instead of flying to a fixed arc's
+ * extremes; 5+ get the wider arc they need to fit). The step is raised to
+ * the collision minimum when the orbs are large relative to the orbit
+ * radius (small FABs), and the total spread is capped at a full even circle
+ * so the arc's two ends can never overlap each other.
+ *
  * @param {object} opts
  * @param {number} opts.cx       FAB centre x (viewport px).
  * @param {number} opts.cy       FAB centre y.
@@ -102,10 +113,16 @@ export const orbitLayout = ({ cx, cy, count, radius, orbSize, vw, vh }) => {
   const items = [];
   if (count <= 0) return items;
   const base = aimAngle({ cx, cy, vw, vh });
-  const start = base - ORBIT_SPREAD_RAD / 2;
+  // Collision floor: the angular step whose chord equals one orb diameter
+  // plus a small gap, so neighbouring orbs never touch even on a tiny FAB
+  // (where the orbit radius shrinks faster than the 36px orb floor).
+  const collisionStep = 2 * Math.asin(Math.min(1, (orbSize + 8) / (2 * radius)));
+  const step = Math.max(ORBIT_STEP_RAD, collisionStep);
+  const spread = Math.min(step * (count - 1), (Math.PI * 2 * (count - 1)) / count);
+  const start = base - spread / 2;
   const orbMargin = orbSize / 2 + 8;
   for (let i = 0; i < count; i++) {
-    const a = count === 1 ? base : start + ORBIT_SPREAD_RAD * (i / (count - 1));
+    const a = count === 1 ? base : start + spread * (i / (count - 1));
     items.push({
       x: clamp(cx + Math.cos(a) * radius, orbMargin, vw - orbMargin),
       y: clamp(cy + Math.sin(a) * radius, orbMargin, vh - orbMargin),
