@@ -135,10 +135,25 @@ export const galaxySightStatus = ({ lastSightSec: sec, nowMs, rescanAtMs = 0, st
  *   'off' drops the player's bodies from the LOOK plan (the dossier's "Watch
  *   via → galaxy" button). Recording stays always-on — sightings the user
  *   browses past still accrue; only the proposals stop.
+ * @property {Record<string, import('./fleetLanding.js').LandingRecheck>} [rechecks]
+ *   Per-player ambiguous-moon re-look windows (fleetLanding.detectAllRechecks).
+ *   While a window is OPEN (readyAt ≤ now < expiresAt) the moon's system is
+ *   force-included and boosted to {@link RECHECK_BOOST} — one look there now
+ *   reads exact minutes and settles the moon-vs-planet order the 'newest'
+ *   strike tier needs. Fresh coverage does NOT suppress it (we just looked;
+ *   that is exactly why it is ambiguous).
  *
  * Note: NO probe scan-mode / scan-bodies filter — a galaxy look is per-system
  * and covers planet + moon alike, so body-type prefs don't apply here.
  */
+
+/**
+ * Priority of a re-look entry: far above any staleness-driven look or normal
+ * probe entry (those top out ~1.3), deliberately BELOW a live strike's
+ * {@link import('./scanPriority.js').STRIKE_BOOST} — a confirmed-enough
+ * landing to probe beats a maybe to re-look.
+ */
+export const RECHECK_BOOST = 50;
 
 /**
  * One ranked galaxy-look entry — a whole SYSTEM (one navigation refreshes every
@@ -152,6 +167,8 @@ export const galaxySightStatus = ({ lastSightSec: sec, nowMs, rescanAtMs = 0, st
  * @property {'none'|'stale'|'rescan'} worst   worst member status (display).
  * @property {number} priority
  * @property {string} why
+ * @property {boolean} [recheck]  An ambiguous-moon re-look window is open in
+ *   this system (see env.rechecks) — the FAB words the look accordingly.
  */
 
 /**
@@ -196,7 +213,7 @@ export const buildGalaxyPlan = (env) => {
    * Per-system accumulator (loose — the ranked {@link GalaxyPlanEntry} with its
    * worst/why/priority is derived once at the end).
    * @typedef {{ galaxy: number, system: number, label: string,
-   *   bodies: GalaxyPlanEntry['bodies'], score: number }} SysAcc
+   *   bodies: GalaxyPlanEntry['bodies'], score: number, recheck?: boolean }} SysAcc
    */
   /** @type {Map<string, SysAcc>} */
   const bySystem = new Map();
@@ -250,6 +267,32 @@ export const buildGalaxyPlan = (env) => {
     }
   }
 
+  // Re-look nudge: force-include each system whose ambiguous-moon window is
+  // OPEN, at RECHECK_BOOST. Runs after the staleness pass on purpose — fresh
+  // coverage must not suppress it (see the env.rechecks doc).
+  if (env.rechecks) {
+    for (const [pid, r] of Object.entries(env.rechecks)) {
+      if (env.nowMs < r.readyAtMs || env.nowMs >= r.expiresAtMs) continue;
+      if (env.galaxyMode && env.galaxyMode[pid] === 'off') continue;
+      const m = /^(\d+):(\d+):(\d+)$/.exec(r.coord);
+      if (!m) continue;
+      const galaxy = Number(m[1]);
+      const system = Number(m[2]);
+      const position = Number(m[3]);
+      const sysKey = `${galaxy}:${system}`;
+      let acc = bySystem.get(sysKey);
+      if (!acc) {
+        acc = { galaxy, system, label: sysKey, bodies: [], score: 0 };
+        bySystem.set(sysKey, acc);
+      }
+      acc.recheck = true;
+      if (!acc.bodies.some((b) => b.playerId === pid && b.position === position && b.bodyType === 3)) {
+        acc.bodies.push({ playerId: pid, position, bodyType: 3, status: 'rescan' });
+      }
+      if (RECHECK_BOOST > acc.score) acc.score = RECHECK_BOOST;
+    }
+  }
+
   /** @type {GalaxyPlanEntry[]} */
   const entries = [...bySystem.values()].map((e) => {
     // worst = the most-urgent member status for the display band
@@ -266,7 +309,10 @@ export const buildGalaxyPlan = (env) => {
       bodies: e.bodies,
       worst,
       priority: e.score,
-      why: `${n} ${n === 1 ? 'body' : 'bodies'} · ${label}`,
+      why: e.recheck
+        ? 'moon order? · marks readable now'
+        : `${n} ${n === 1 ? 'body' : 'bodies'} · ${label}`,
+      ...(e.recheck ? { recheck: true } : {}),
     };
   });
 

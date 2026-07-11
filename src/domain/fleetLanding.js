@@ -39,6 +39,19 @@
 // confirm", never "fleet is there". A probe (one deliberate tap) confirms
 // it; this module only RANKS/flags.
 //
+// # The re-look nudge ({@link detectLandingRecheck})
+//
+// The one ambiguity a 'newest' claim cannot resolve NOW — a moon and a
+// planet both marked inside the fuzzy "<15 min" band — resolves ITSELF with
+// time: once both marks age past 15 min the game shows exact idle minutes
+// (±1 min), and a single re-look orders the events. The recheck detector
+// flags exactly that situation with a time WINDOW: `readyAtMs` (both marks
+// have left the fuzzy band) → `expiresAtMs` (a marker dies 60 min after its
+// interaction — after that a re-look can no longer order anything). The
+// galaxy LOOK plan boosts the moon's system inside that window, so the FAB
+// passively proposes "look here again now" — no timers, no toasts, same
+// propose-only discipline as everything else here.
+//
 // # Several moons lit at once
 //
 // ONE signal per player — the strongest claim the evidence supports, on the
@@ -70,7 +83,9 @@
 // Pure: no DOM, no storage, no Date.now() — `nowMs` arrives from the caller.
 
 import { playerPlanets } from './targets.js';
-import { interactionInterval, isSelfInduced, SAME_TAU_SLACK_S } from './activityObs.js';
+import {
+  interactionInterval, isSelfInduced, SAME_TAU_SLACK_S, FRESH_BAND_S,
+} from './activityObs.js';
 import { ringKeyFor, overrideKeyFor } from './scanMode.js';
 
 /**
@@ -96,6 +111,9 @@ export const STRONG_COVERAGE = 0.7;
  * bounds how long we keep proposing before the trail is stale.
  */
 export const AFTERGLOW_HORIZON_MS = 8 * 3600 * 1000;
+/** A galaxy activity marker's lifetime: it shows the exact idle minutes up
+ * to 60, then disappears. Bounds the re-look window below. */
+const MARKER_LIFE_MS = 60 * 60 * 1000;
 
 /**
  * @typedef {object} BodyState
@@ -311,3 +329,92 @@ export function detectAllLandings(players, universePlanets, ringsMap, nowMs, opt
  */
 export const strikeMapOf = (signals) =>
   new Map(Object.values(signals || {}).map((s) => [s.overrideKey, s]));
+
+/**
+ * @typedef {object} LandingRecheck
+ * @property {string} coord      "g:s:p" of the ambiguous moon.
+ * @property {3} bodyType
+ * @property {number} readyAtMs   From here a re-look is informative: every
+ *   mark of the ambiguous pair has left the fuzzy "<15" band, so the game
+ *   shows exact minutes and one look orders the events.
+ * @property {number} expiresAtMs After this a re-look can't help any more:
+ *   the earliest mark of the pair has died (60 min lifetime), so the order
+ *   is lost for good.
+ */
+
+/**
+ * Detect the "come back and look again" situation for ONE player: a lit moon
+ * whose 'newest' claim is blocked ONLY by a planet mark it can't be ordered
+ * against (overlapping implied-interaction intervals — see the re-look
+ * header section). Modes 'off'/'lone' never recheck (nothing to upgrade).
+ *
+ * @param {Array<{coord: string, bodyType: 1|3}>} bodies
+ * @param {Record<string, import('./activityObs.js').ActivityObs[]> | undefined} rings
+ * @param {number} nowMs
+ * @param {{ sentMap?: Record<string, number>, mode?: MoonStrikeMode }} [opts]
+ * @returns {LandingRecheck | null}
+ */
+export function detectLandingRecheck(bodies, rings, nowMs, opts = {}) {
+  const mode = opts.mode ?? 'newest';
+  if (mode === 'off' || mode === 'lone') return null;
+  const sent = opts.sentMap || {};
+  const states = (bodies || []).map((b) =>
+    bodyState(b.coord, b.bodyType, rings ? rings[ringKeyFor(b.coord, b.bodyType)] : undefined, nowMs, sent));
+
+  const freshMoons = states.filter((s) => s.bodyType === 3 && s.cls === 'fresh' && !s.selfLit);
+  if (!freshMoons.length) return null;
+  const moon = freshMoons.reduce((a, b) =>
+    (interactionInterval(/** @type {any} */ (b.pos)).hi > interactionInterval(/** @type {any} */ (a.pos)).hi ? b : a));
+  const mIv = interactionInterval(/** @type {any} */ (moon.pos));
+
+  // Planets whose mark OVERLAPS the moon's (neither strictly older nor
+  // strictly newer) — the exact blocker of the 'newest' tier. A strictly
+  // NEWER planet is not rechecked: the re-look would only re-confirm "the
+  // owner moved last", which is already the no-strike verdict.
+  let latestHiS = mIv.hi;
+  let earliestLoS = mIv.lo;
+  let overlapping = false;
+  for (const o of states) {
+    if (o === moon || o.bodyType !== 1 || o.cls !== 'fresh' || o.selfLit || !o.pos) continue;
+    const iv = interactionInterval(o.pos);
+    const older = iv.hi <= mIv.lo - SAME_TAU_SLACK_S;
+    const newer = mIv.hi <= iv.lo - SAME_TAU_SLACK_S;
+    if (older || newer) continue;
+    overlapping = true;
+    if (iv.hi > latestHiS) latestHiS = iv.hi;
+    if (iv.lo < earliestLoS) earliestLoS = iv.lo;
+  }
+  if (!overlapping) return null;
+
+  const readyAtMs = (latestHiS + FRESH_BAND_S + SAME_TAU_SLACK_S) * 1000;
+  const expiresAtMs = earliestLoS * 1000 + MARKER_LIFE_MS;
+  if (nowMs >= expiresAtMs) return null; // the order is already lost
+  return { coord: moon.coord, bodyType: 3, readyAtMs, expiresAtMs };
+}
+
+/**
+ * Run {@link detectLandingRecheck} across all watched players.
+ * @param {string[]} players
+ * @param {Array<{coords: string, player?: number, hasMoon?: boolean}>} universePlanets
+ * @param {Record<string, Record<string, import('./activityObs.js').ActivityObs[]>>} ringsMap
+ * @param {number} nowMs
+ * @param {{ sentMap?: Record<string, number>, mode?: MoonStrikeMode }} [opts]
+ * @returns {Record<string, LandingRecheck>}
+ */
+export function detectAllRechecks(players, universePlanets, ringsMap, nowMs, opts = {}) {
+  /** @type {Record<string, LandingRecheck>} */
+  const out = {};
+  if (opts.mode === 'off' || opts.mode === 'lone') return out;
+  for (const pid of players || []) {
+    /** @type {Array<{coord: string, bodyType: 1|3}>} */
+    const bodies = [];
+    for (const p of playerPlanets(universePlanets, pid)) {
+      const coord = `${p.galaxy}:${p.system}:${p.position}`;
+      bodies.push({ coord, bodyType: 1 });
+      if (p.hasMoon) bodies.push({ coord, bodyType: 3 });
+    }
+    const r = detectLandingRecheck(bodies, ringsMap ? ringsMap[pid] : undefined, nowMs, opts);
+    if (r) out[pid] = r;
+  }
+  return out;
+}

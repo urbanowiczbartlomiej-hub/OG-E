@@ -33,7 +33,7 @@ import { targetReportsStore } from '../../state/targets.js';
 import { activityObsStore } from '../../state/activityObs.js';
 import { spiedCoordsByPlayer, spiedMoonsByPlayer } from '../../domain/targetReports.js';
 import { summarizeRoutine, routineBodies } from '../../domain/routine.js';
-import { detectAllLandings, strikeMapOf } from '../../domain/fleetLanding.js';
+import { detectAllLandings, detectAllRechecks, strikeMapOf } from '../../domain/fleetLanding.js';
 import { createButton as makeButton, labelLines } from '../shared/button.js';
 import { EYE_GLYPH } from '../shared/buttonGlyphs.js';
 import {
@@ -196,9 +196,11 @@ const captureEnv = () => {
   const reports = targetReportsStore.get();
   const cfg = watchListStore.get();
   const rings = activityObsStore.get();
+  const universePlanets = getApiContext()?.universePlanets ?? [];
+  const landingOpts = { sentMap: readSpySentMap(), mode: cfg.moonStrike };
   return {
     players: cfg.players,
-    universePlanets: getApiContext()?.universePlanets ?? [],
+    universePlanets,
     spiedByPlayer: spiedCoordsByPlayer(reports),
     spiedMoonsByPlayer: spiedMoonsByPlayer(reports),
     rescan: cfg.rescan,
@@ -216,13 +218,10 @@ const captureEnv = () => {
     // configured moon-strike mode (off/lone/newest/any) gates how much
     // corroboration the detector demands; the map carries each signal's
     // tier so the button words its claim per rung.
-    strikes: strikeMapOf(detectAllLandings(
-      cfg.players,
-      getApiContext()?.universePlanets ?? [],
-      rings,
-      nowMs,
-      { sentMap: readSpySentMap(), mode: cfg.moonStrike },
-    )),
+    strikes: strikeMapOf(detectAllLandings(cfg.players, universePlanets, rings, nowMs, landingOpts)),
+    // Ambiguous-moon re-look windows → boost those systems in the LOOK plan
+    // (one look now reads exact minutes and settles the moon-vs-planet order).
+    rechecks: detectAllRechecks(cfg.players, universePlanets, rings, nowMs, landingOpts),
     dangerByPlayer: dangerByPlayer(),
     activityByPlayer: activityByPlayer(nowMs),
     playerNames: getApiContext()?.players ?? {},

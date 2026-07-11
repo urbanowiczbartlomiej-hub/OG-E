@@ -71,7 +71,8 @@ export const BG_SPY_STRIKE = '#d1571f';
  * @typedef {import('../../domain/scanPriority.js').ScanPlanEnv
  *   & { playerNames?: Record<string, { name?: string }>,
  *       rings?: Record<string, Record<string, import('../../domain/activityObs.js').ActivityObs[]>>,
- *       galaxyMode?: Record<string, import('../../domain/scanMode.js').ScanMode> }} SpyEnv
+ *       galaxyMode?: Record<string, import('../../domain/scanMode.js').ScanMode>,
+ *       rechecks?: Record<string, import('../../domain/fleetLanding.js').LandingRecheck> }} SpyEnv
  *   The planner env (see domain/scanPriority.js): watched players, universe
  *   planet rows, per-coord report freshness (planets AND moons), rescan flags,
  *   session sent-coords, the clock, the planet/moon scan filter, the scan-mode
@@ -90,6 +91,8 @@ export const BG_SPY_STRIKE = '#d1571f';
  * @property {number} system
  * @property {number} bodies   How many needs-sight bodies the visit covers.
  * @property {string} [why]
+ * @property {boolean} [recheck]  An ambiguous-moon re-look window is open here
+ *   (fleetLanding) — the Look face words the nudge instead of the "N left" count.
  */
 
 /**
@@ -131,6 +134,7 @@ export function deriveSpy(env) {
     staleMs: galaxyStaleMs(env.cadence),
     dangerByPlayer: env.dangerByPlayer,
     galaxyMode: env.galaxyMode,
+    rechecks: env.rechecks,
   }).entries;
 
   const top = entries.length ? entries[0] : null;
@@ -156,6 +160,7 @@ export function deriveSpy(env) {
         system: lookTop.system,
         bodies: lookTop.bodies.length,
         ...(lookTop.why ? { why: lookTop.why } : {}),
+        ...(lookTop.recheck ? { recheck: true } : {}),
       }
       : null,
     remaining: entries.length + looks.length,
@@ -194,7 +199,10 @@ export function renderSpy(ctx, preflight) {
     return {
       text: 'Look',
       subtext: `[${l.galaxy}:${l.system}]${l.bodies > 1 ? ` ×${l.bodies}` : ''}`,
-      hint: `${ctx.remaining} left`,
+      // Re-look nudge: an ambiguous moon there is orderable NOW (the fuzzy
+      // "<15" marks have matured into exact minutes) — say so instead of the
+      // generic remaining count.
+      hint: l.recheck ? 'moon order? · look now' : `${ctx.remaining} left`,
       bg: BG_SPY_LOOK,
     };
   }
