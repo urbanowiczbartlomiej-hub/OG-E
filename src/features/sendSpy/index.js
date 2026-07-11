@@ -36,7 +36,9 @@ import { scansStore } from '../../state/scans.js';
 import { playersStore } from '../../state/players.js';
 import { spiedCoordsByPlayer, spiedMoonsByPlayer } from '../../domain/targetReports.js';
 import { summarizeRoutine, routineBodies } from '../../domain/routine.js';
-import { detectAllLandings, detectAllRechecks, strikeMapOf } from '../../domain/fleetLanding.js';
+import {
+  detectAllLandings, detectAllRechecks, detectAllSweeps, strikeMapOf,
+} from '../../domain/fleetLanding.js';
 import {
   patrolSystemKeys,
   patrolOccupants,
@@ -202,7 +204,16 @@ const captureEnv = () => {
   const ctx = getApiContext();
   const universePlanets = ctx?.universePlanets ?? [];
   const sentMap = readSpySentMap();
-  const landingOpts = { sentMap, mode: cfg.moonStrike };
+  // Per-system newest scan time ("g:s" → epoch s) — the full-sweep gate's
+  // system-level coverage source (a rendered system covers a body whose
+  // activity block wasn't parseable into a ring entry).
+  /** @type {Record<string, number>} */
+  const sysLookSec = {};
+  for (const [k, v] of Object.entries(scansStore.get())) {
+    const t = v ? Number(v.scannedAt) : 0;
+    if (Number.isFinite(t) && t > 0) sysLookSec[k] = Math.floor(t / 1000);
+  }
+  const landingOpts = { sentMap, mode: cfg.moonStrike, sysLookSec };
 
   // ── Patrol territory (domain/patrol) — the hunting-grounds mode ──────────
   // With a radius configured: the systems around every own body form the
@@ -226,12 +237,17 @@ const captureEnv = () => {
   // the territory's — a body flagged by both keeps the watch-list signal.
   const strikes = strikeMapOf(detectAllLandings(cfg.players, universePlanets, rings, nowMs, landingOpts));
   const rechecks = detectAllRechecks(cfg.players, universePlanets, rings, nowMs, landingOpts);
+  // Full-sweep gate's actionable half: players with a moon candidate but an
+  // incompletely-covered account get their uncovered systems boosted in the
+  // look plan — the verdict fires only after the sweep completes.
+  const sweeps = detectAllSweeps(cfg.players, universePlanets, rings, nowMs, landingOpts);
   if (prey.length) {
     for (const [k, sig] of strikeMapOf(detectAllLandings(prey, universePlanets, rings, nowMs, landingOpts))) {
       if (!strikes.has(k)) strikes.set(k, sig);
     }
     // No pid collisions possible (prey excludes watch-list ids).
     Object.assign(rechecks, detectAllRechecks(prey, universePlanets, rings, nowMs, landingOpts));
+    Object.assign(sweeps, detectAllSweeps(prey, universePlanets, rings, nowMs, landingOpts));
   }
 
   return {
@@ -262,6 +278,8 @@ const captureEnv = () => {
     // Ambiguous-moon re-look windows → boost those systems in the LOOK plan
     // (one look now reads exact minutes and settles the moon-vs-planet order).
     rechecks,
+    // Account sweeps → the looks that must complete before a verdict may fire.
+    sweeps,
     // Patrol looks: territory systems whose last galaxy scan outgrew the
     // look cadence — merged into the LOOK plan by deriveSpy.
     patrolLooks: patrolSet && patrolSet.size

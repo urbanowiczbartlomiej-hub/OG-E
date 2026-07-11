@@ -142,6 +142,12 @@ export const galaxySightStatus = ({ lastSightSec: sec, nowMs, rescanAtMs = 0, st
  *   reads exact minutes and settles the moon-vs-planet order the 'newest'
  *   strike tier needs. Fresh coverage does NOT suppress it (we just looked;
  *   that is exactly why it is ambiguous).
+ * @property {Record<string, import('./fleetLanding.js').LandingSweep>} [sweeps]
+ *   Per-player full-account sweeps (fleetLanding.detectAllSweeps): a moon
+ *   candidate exists but the account isn't fully covered, so no verdict may
+ *   fire yet. Every UNCOVERED system is force-included at
+ *   {@link RECHECK_BOOST} — the plan walks the account to completion FIRST,
+ *   and only then the strike ladder speaks (the full-sweep gate).
  *
  * Note: NO probe scan-mode / scan-bodies filter — a galaxy look is per-system
  * and covers planet + moon alike, so body-type prefs don't apply here.
@@ -169,6 +175,8 @@ export const RECHECK_BOOST = 50;
  * @property {string} why
  * @property {boolean} [recheck]  An ambiguous-moon re-look window is open in
  *   this system (see env.rechecks) — the FAB words the look accordingly.
+ * @property {boolean} [sweep]  This system is part of an account sweep that
+ *   must complete before a strike verdict may fire (see env.sweeps).
  */
 
 /**
@@ -213,7 +221,8 @@ export const buildGalaxyPlan = (env) => {
    * Per-system accumulator (loose — the ranked {@link GalaxyPlanEntry} with its
    * worst/why/priority is derived once at the end).
    * @typedef {{ galaxy: number, system: number, label: string,
-   *   bodies: GalaxyPlanEntry['bodies'], score: number, recheck?: boolean }} SysAcc
+   *   bodies: GalaxyPlanEntry['bodies'], score: number, recheck?: boolean,
+   *   sweep?: boolean }} SysAcc
    */
   /** @type {Map<string, SysAcc>} */
   const bySystem = new Map();
@@ -293,12 +302,39 @@ export const buildGalaxyPlan = (env) => {
     }
   }
 
+  // Account sweeps (fleetLanding.detectAllSweeps): every uncovered system of
+  // a player with a live moon candidate is force-included — the verdict is
+  // gated on full coverage, so these looks are what UNLOCK it. Runs after
+  // the staleness pass for the same reason as rechecks (freshness by the
+  // ordinary cadence must not suppress a sweep's 60-min coverage need).
+  if (env.sweeps) {
+    for (const [pid, sw] of Object.entries(env.sweeps)) {
+      if (env.nowMs >= sw.expiresAtMs) continue;
+      if (env.galaxyMode && env.galaxyMode[pid] === 'off') continue;
+      for (const sysKey of sw.systems || []) {
+        const m = /^(\d+):(\d+)$/.exec(sysKey);
+        if (!m) continue;
+        const galaxy = Number(m[1]);
+        const system = Number(m[2]);
+        let acc = bySystem.get(sysKey);
+        if (!acc) {
+          acc = { galaxy, system, label: sysKey, bodies: [], score: 0 };
+          bySystem.set(sysKey, acc);
+        }
+        acc.sweep = true;
+        if (RECHECK_BOOST > acc.score) acc.score = RECHECK_BOOST;
+      }
+    }
+  }
+
   /** @type {GalaxyPlanEntry[]} */
   const entries = [...bySystem.values()].map((e) => {
     // worst = the most-urgent member status for the display band
-    // (never > rescan > stale), independent of the numeric score.
+    // (never > rescan > stale), independent of the numeric score. Sweep
+    // entries may carry no body rows (the sweep knows systems, not slots).
     const rank = { none: 3, rescan: 2, stale: 1 };
-    let worst = /** @type {'none'|'stale'|'rescan'} */ (e.bodies[0].status);
+    let worst = /** @type {'none'|'stale'|'rescan'} */ (
+      e.bodies.length ? e.bodies[0].status : 'rescan');
     for (const b of e.bodies) if (rank[b.status] > rank[worst]) worst = b.status;
     const n = e.bodies.length;
     const label = worst === 'none' ? 'never sighted' : worst === 'rescan' ? 're-sight' : 'stale sighting';
@@ -311,8 +347,11 @@ export const buildGalaxyPlan = (env) => {
       priority: e.score,
       why: e.recheck
         ? 'moon order? · marks readable now'
-        : `${n} ${n === 1 ? 'body' : 'bodies'} · ${label}`,
+        : e.sweep
+          ? 'strike? · sweep the account'
+          : `${n} ${n === 1 ? 'body' : 'bodies'} · ${label}`,
       ...(e.recheck ? { recheck: true } : {}),
+      ...(e.sweep ? { sweep: true } : {}),
     };
   });
 

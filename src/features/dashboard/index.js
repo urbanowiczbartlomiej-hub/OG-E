@@ -1085,6 +1085,21 @@ const commitCadence = () => {
 };
 
 /**
+ * Per-system newest scan time ("g:s" → epoch s) from the loaded scans — the
+ * full-sweep gate's system-level coverage source (see domain/fleetLanding).
+ * @returns {Record<string, number>}
+ */
+const sysLookSecFromScans = () => {
+  /** @type {Record<string, number>} */
+  const out = {};
+  for (const [k, v] of Object.entries(scans)) {
+    const t = v ? Number(v.scannedAt) : 0;
+    if (Number.isFinite(t) && t > 0) out[k] = Math.floor(t / 1000);
+  }
+  return out;
+};
+
+/**
  * Recompute + repaint the Patrol card (territory mode, domain/patrol) from
  * the per-universe loads already in scope: own bodies → territory; API
  * occupancy → occupants/prey (filtered by API status, galaxy meta and
@@ -1118,6 +1133,7 @@ const repaintPatrol = (nowMs) => {
   const strikes = detectAllLandings(prey, planets, activityObs, nowMs, {
     mode: /** @type {import('../../domain/fleetLanding.js').MoonStrikeMode} */ (
       chipValue(tgtMoonStrike) || DEFAULT_MOON_STRIKE),
+    sysLookSec: sysLookSecFromScans(),
   });
   renderPatrolCard({
     summaryEl: patrolSummaryEl,
@@ -1599,7 +1615,10 @@ const repaintTargets = () => {
     apiCache.universe ? apiCache.universe.planets : [],
     activityObs,
     nowMs,
-    { mode: /** @type {import('../../domain/fleetLanding.js').MoonStrikeMode} */ (chipValue(tgtMoonStrike) || DEFAULT_MOON_STRIKE) },
+    {
+      mode: /** @type {import('../../domain/fleetLanding.js').MoonStrikeMode} */ (chipValue(tgtMoonStrike) || DEFAULT_MOON_STRIKE),
+      sysLookSec: sysLookSecFromScans(),
+    },
   );
 
   // Patrol card — the territory mode's dashboard face (same signals the

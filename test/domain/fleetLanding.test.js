@@ -1,10 +1,11 @@
 // Unit tests for domain/fleetLanding.js — the "a fleet just landed on that
 // moon and the owner is away" candidate signal. The suite pins the mode
 // LADDER (off / lone / newest / any — each rung's claim and what blocks it),
-// the multi-moon co-candidate rule, the honesty gates — coverage (stale
-// looks are `unknown`, never quiet), the self-induced skip (our own probe's
-// light is not a landing), kept-looking (silence-since needs a later look) —
-// and the ambiguous-moon re-look window (detectLandingRecheck).
+// the FULL-SWEEP gate (no verdict until EVERY body of the player was looked
+// at within the coverage window; partial knowledge proposes looks via
+// detectLandingSweep instead), the multi-moon co-candidate rule, the honesty
+// gates — self-induced skip, kept-looking (silence-since needs a later
+// look) — and the ambiguous-moon re-look window (detectLandingRecheck).
 //
 // Node env — pure, `nowMs` injected.
 //
@@ -17,7 +18,9 @@ import {
   AFTERGLOW_HORIZON_MS,
   detectFleetLanding,
   detectLandingRecheck,
+  detectLandingSweep,
   detectAllLandings,
+  detectAllSweeps,
   strikeMapOf,
 } from '../../src/domain/fleetLanding.js';
 
@@ -66,15 +69,20 @@ describe('detectFleetLanding', () => {
     expect(sig).toBeNull();
   });
 
-  it('half coverage still fires, at medium confidence', () => {
-    const sig = detectFleetLanding(bodies, {
+  it('FULL-SWEEP gate: an unseen body blocks the verdict outright', () => {
+    // 1:2:8 never looked at → the account is not fully swept → no signal,
+    // however perfect the moon's signature looks so far.
+    const rings = {
       '1:2:3:3': freshRing(),
       '1:2:3:1': quietRing(),
-      // 1:2:8 never looked at → unknown, lowers coverage
-    }, NOW);
-    expect(sig?.confidence).toBe('medium');
-    expect(sig?.quiet).toBe(1);
-    expect(sig?.total).toBe(2);
+    };
+    expect(detectFleetLanding(bodies, rings, NOW)).toBeNull();
+    // The SAME evidence + system-level coverage of 1:2:8 (a recent scan of
+    // that system, even with no parseable ring entry) → verdict fires.
+    const sig = detectFleetLanding(bodies, rings, NOW, {
+      sysLookSec: { '1:2': sec(NOW - 5 * 60_000) },
+    });
+    expect(sig).toMatchObject({ coord: '1:2:3', tier: 'lone' });
   });
 
   it('a fresh PLANET is not a landing (moons only)', () => {
@@ -188,11 +196,13 @@ describe('detectFleetLanding', () => {
   });
 
   it('afterglow is bounded by the horizon', () => {
+    // The moon's own look is ancient, so cover its system via a fresh scan —
+    // the gate passes and the HORIZON is what rejects the stale trail.
     const sig = detectFleetLanding(bodies, {
       '1:2:3:3': [{ t: sec(NOW - AFTERGLOW_HORIZON_MS - 60_000), m: 0 }],
       '1:2:3:1': quietRing(),
       '1:2:8:1': quietRing(),
-    }, NOW);
+    }, NOW, { sysLookSec: { '1:2': sec(NOW - 5 * 60_000) } });
     expect(sig).toBeNull();
   });
 
@@ -208,6 +218,49 @@ describe('detectFleetLanding', () => {
       '1:2:8:1': [{ t: sec(moonLookMs - 5 * 60_000), m: -1 }],
     }, NOW);
     expect(sig).toBeNull();
+  });
+});
+
+describe('detectLandingSweep', () => {
+  it('a moon candidate + uncovered systems → the sweep lists what to look at', () => {
+    const sw = detectLandingSweep(bodies, {
+      '1:2:3:3': freshRing(),
+      '1:2:3:1': quietRing(),
+      // 1:2:8 unseen → uncovered
+    }, NOW);
+    expect(sw).toMatchObject({ coord: '1:2:3', bodyType: 3, systems: ['1:2'] });
+    expect(sw && sw.expiresAtMs).toBeGreaterThan(NOW);
+  });
+
+  it('no sweep when the account is fully covered (the verdict path owns it)', () => {
+    expect(detectLandingSweep(bodies, {
+      '1:2:3:3': freshRing(),
+      '1:2:3:1': quietRing(),
+      '1:2:8:1': quietRing(),
+    }, NOW)).toBeNull();
+  });
+
+  it('no sweep without a moon candidate, or when a planet mark is already newer', () => {
+    // Quiet moon → nothing to settle.
+    expect(detectLandingSweep(bodies, {
+      '1:2:3:3': quietRing(),
+      '1:2:3:1': quietRing(),
+    }, NOW)).toBeNull();
+    // Planet strictly newer than the moon → the owner moved later; dead claim.
+    expect(detectLandingSweep(bodies, {
+      '1:2:3:3': [{ t: sec(NOW), m: 30 }],
+      '1:2:3:1': [{ t: sec(NOW), m: 0 }],
+    }, NOW)).toBeNull();
+  });
+
+  it('detectAllSweeps maps per player and honours mode off', () => {
+    const universePlanets = [
+      { coords: '1:2:3', player: 42, hasMoon: true },
+      { coords: '1:2:8', player: 42 },
+    ];
+    const rings = { 42: { '1:2:3:3': freshRing(), '1:2:3:1': quietRing() } };
+    expect(Object.keys(detectAllSweeps(['42'], universePlanets, rings, NOW))).toEqual(['42']);
+    expect(detectAllSweeps(['42'], universePlanets, rings, NOW, { mode: 'off' })).toEqual({});
   });
 });
 

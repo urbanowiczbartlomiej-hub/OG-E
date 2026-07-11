@@ -73,6 +73,7 @@ export const BG_SPY_STRIKE = '#d1571f';
  *       rings?: Record<string, Record<string, import('../../domain/activityObs.js').ActivityObs[]>>,
  *       galaxyMode?: Record<string, import('../../domain/scanMode.js').ScanMode>,
  *       rechecks?: Record<string, import('../../domain/fleetLanding.js').LandingRecheck>,
+ *       sweeps?: Record<string, import('../../domain/fleetLanding.js').LandingSweep>,
  *       sentAt?: Record<string, number>,
  *       patrolLooks?: import('../../domain/galaxyWatch.js').GalaxyPlanEntry[] }} SpyEnv
  *   The planner env (see domain/scanPriority.js): watched players, universe
@@ -95,6 +96,8 @@ export const BG_SPY_STRIKE = '#d1571f';
  * @property {string} [why]
  * @property {boolean} [recheck]  An ambiguous-moon re-look window is open here
  *   (fleetLanding) — the Look face words the nudge instead of the "N left" count.
+ * @property {boolean} [sweep]  This look completes an account sweep gating a
+ *   strike verdict (fleetLanding full-sweep rule).
  */
 
 /**
@@ -191,6 +194,7 @@ export function deriveSpy(env) {
     dangerByPlayer: env.dangerByPlayer,
     galaxyMode: env.galaxyMode,
     rechecks: env.rechecks,
+    sweeps: env.sweeps,
   }).entries;
   // Patrol looks (domain/patrol, precomputed by the orchestrator) join the
   // watch-driven ones; a system proposed by BOTH keeps the higher-priority
@@ -249,6 +253,7 @@ export function deriveSpy(env) {
         bodies: lookTop.bodies.length,
         ...(lookTop.why ? { why: lookTop.why } : {}),
         ...(lookTop.recheck ? { recheck: true } : {}),
+        ...(lookTop.sweep ? { sweep: true } : {}),
       }
       : null,
     remaining: entries.length + looks.length,
@@ -297,10 +302,13 @@ export function renderSpy(ctx, preflight) {
     return {
       text: 'Look',
       subtext: `[${l.galaxy}:${l.system}]${l.bodies > 1 ? ` ×${l.bodies}` : ''}`,
-      // Re-look nudge: an ambiguous moon there is orderable NOW (the fuzzy
-      // "<15" marks have matured into exact minutes) — say so instead of the
-      // generic remaining count.
-      hint: l.recheck ? 'moon order? · look now' : `${ctx.remaining} left`,
+      // Re-look nudge / account sweep: say WHY this look matters (it settles
+      // or unlocks a strike verdict) instead of the generic remaining count.
+      hint: l.recheck
+        ? 'moon order? · look now'
+        : l.sweep
+          ? 'strike? · sweep account'
+          : `${ctx.remaining} left`,
       bg: BG_SPY_LOOK,
     };
   }

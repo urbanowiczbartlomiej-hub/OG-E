@@ -67,10 +67,19 @@
 //
 // # Honesty gates (structural)
 //
+//   - FULL-SWEEP: a verdict (ANY tier) fires only once the WHOLE account has
+//     been swept — every body of the player looked at within
+//     {@link QUIET_COVERAGE_MS}. Partial knowledge proposes MORE LOOKING,
+//     never a probe: {@link detectLandingSweep} lists the player's uncovered
+//     systems, and the galaxy look plan boosts them so the FAB walks the
+//     account to completion first (looks are free and undetectable; a fresh
+//     planet mark elsewhere refutes the claim before a probe is spent).
+//     Body coverage is system-level: the ring's own last look OR the
+//     caller-supplied per-system scan time (`opts.sysLookSec` — a rendered
+//     system covers a body whose activity block wasn't parseable).
 //   - COVERAGE: we can only call the other bodies "quiet"/"older" if we
 //     LOOKED at them. Bodies with a stale look (or none) are `unknown`, not
-//     quiet, and they lower the coverage the caller displays — the tool never
-//     claims more than it saw.
+//     quiet — and under the full-sweep gate they block the verdict outright.
 //   - SELF-INDUCED: our own probe lights the moon for the next hour. The ring
 //     append already discounts probes whose send we recorded; this pass ALSO
 //     skips a body we probed recently ({@link SELF_WINDOW_MS} for a live
@@ -131,7 +140,12 @@ const MARKER_LIFE_MS = 60 * 60 * 1000;
  *   ordering evidence.
  * @property {number} lastLookT  Newest look time (epoch s); 0 when none.
  * @property {boolean} selfLit   The positive light is plausibly our own probe.
+ * @property {boolean} covered   Looked at within {@link QUIET_COVERAGE_MS} —
+ *   by its own ring OR the per-system scan time (the full-sweep gate's unit).
  */
+
+/** `"g:s"` of a `"g:s:p"` coord. @param {string} coord @returns {string} */
+const systemOf = (coord) => coord.slice(0, coord.lastIndexOf(':'));
 
 /**
  * Distill one body's activity ring at `nowMs` (see {@link BodyState}).
@@ -140,9 +154,10 @@ const MARKER_LIFE_MS = 60 * 60 * 1000;
  * @param {import('./activityObs.js').ActivityObs[] | undefined} ring
  * @param {number} nowMs
  * @param {Record<string, number>} sent  our recent probe sends (overrideKey → epoch ms).
+ * @param {Record<string, number>} sysLookSec  per-system newest look (epoch s).
  * @returns {BodyState}
  */
-function bodyState(coord, bodyType, ring, nowMs, sent) {
+function bodyState(coord, bodyType, ring, nowMs, sent, sysLookSec) {
   /** @type {BodyState['cls']} */
   let cls = 'unknown';
   /** @type {BodyState['pos']} */
@@ -175,7 +190,12 @@ function bodyState(coord, bodyType, ring, nowMs, sent) {
     (cls === 'fresh' && nowMs - sentAt < SELF_WINDOW_MS)
     || (pos && isSelfInduced(pos, sentAt))
   ));
-  return { coord, bodyType, cls, pos, lastLookT, selfLit };
+  const sysT = Number(sysLookSec[systemOf(coord)]) || 0;
+  const bestLookT = Math.max(lastLookT, sysT);
+  const covered = bestLookT > 0
+    && nowMs - bestLookT * 1000 >= 0
+    && nowMs - bestLookT * 1000 <= QUIET_COVERAGE_MS;
+  return { coord, bodyType, cls, pos, lastLookT, selfLit, covered };
 }
 
 /**
@@ -228,22 +248,34 @@ function mkSignal(s, tier, corroborated, total, concurrent, coMoons, nowMs, forc
  * are tried strictest-first, so the returned signal always carries the
  * STRONGEST claim the evidence supports. Self-lit bodies never flag.
  *
+ * FULL-SWEEP GATE: no tier fires unless EVERY body of the player is covered
+ * (looked at within {@link QUIET_COVERAGE_MS} — see the header). Partial
+ * knowledge yields `null` here; {@link detectLandingSweep} turns it into a
+ * "finish sweeping this account" look proposal instead.
+ *
  * @param {Array<{coord: string, bodyType: 1|3}>} bodies  the player's bodies.
  * @param {Record<string, import('./activityObs.js').ActivityObs[]> | undefined} rings
  *   this player's activity rings (ringKey → ring).
  * @param {number} nowMs
- * @param {{ sentMap?: Record<string, number>, mode?: MoonStrikeMode }} [opts]
+ * @param {{ sentMap?: Record<string, number>, mode?: MoonStrikeMode,
+ *   sysLookSec?: Record<string, number> }} [opts]
  *   `sentMap`: our recent probe sends (overrideKey → epoch ms) for the
  *   self-induced skip. `mode`: the ladder rung (default 'newest' — the
  *   store's default; callers normally pass the configured value).
+ *   `sysLookSec`: per-system newest scan time ("g:s" → epoch s, from
+ *   state/scans) — covers bodies whose activity block wasn't parseable.
  * @returns {FleetLandingSignal | null}
  */
 export function detectFleetLanding(bodies, rings, nowMs, opts = {}) {
   const mode = opts.mode ?? 'newest';
   if (mode === 'off') return null;
   const sent = opts.sentMap || {};
+  const sysLookSec = opts.sysLookSec || {};
   const states = (bodies || []).map((b) =>
-    bodyState(b.coord, b.bodyType, rings ? rings[ringKeyFor(b.coord, b.bodyType)] : undefined, nowMs, sent));
+    bodyState(b.coord, b.bodyType, rings ? rings[ringKeyFor(b.coord, b.bodyType)] : undefined, nowMs, sent, sysLookSec));
+  if (!states.length) return null;
+  // The full-sweep gate: verdicts only over a COMPLETELY seen account.
+  if (states.some((s) => !s.covered)) return null;
   const totalOthers = Math.max(0, states.length - 1);
 
   const fresh = states.filter((s) => s.cls === 'fresh' && !s.selfLit);
@@ -315,7 +347,8 @@ export function detectFleetLanding(bodies, rings, nowMs, opts = {}) {
  * @param {Array<{coords: string, player?: number, hasMoon?: boolean}>} universePlanets
  * @param {Record<string, Record<string, import('./activityObs.js').ActivityObs[]>>} ringsMap
  * @param {number} nowMs
- * @param {{ sentMap?: Record<string, number>, mode?: MoonStrikeMode }} [opts]
+ * @param {{ sentMap?: Record<string, number>, mode?: MoonStrikeMode,
+ *   sysLookSec?: Record<string, number> }} [opts]
  * @returns {Record<string, FleetLandingSignal>}
  */
 export function detectAllLandings(players, universePlanets, ringsMap, nowMs, opts = {}) {
@@ -347,6 +380,96 @@ export const strikeMapOf = (signals) =>
   new Map(Object.values(signals || {}).map((s) => [s.overrideKey, s]));
 
 /**
+ * @typedef {object} LandingSweep
+ * @property {string} coord      The candidate moon ("g:s:p") whose claim the
+ *   sweep would settle.
+ * @property {3} bodyType
+ * @property {string[]} systems  The player's UNCOVERED systems ("g:s") — the
+ *   looks still needed before any verdict may fire.
+ * @property {number} expiresAtMs  When the candidate's trail leaves the
+ *   afterglow horizon — past it the sweep has nothing left to settle.
+ */
+
+/**
+ * The full-sweep gate's actionable half: when a player has a plausible moon
+ * candidate (a non-self positive within the horizon, not already outdated by
+ * a planet mark) but the account is NOT fully covered, list the uncovered
+ * systems so the look plan can walk them. Once they're covered,
+ * {@link detectFleetLanding}'s verdict takes over. `null` when there is no
+ * candidate (nothing to settle) or nothing is uncovered (verdict path).
+ *
+ * @param {Array<{coord: string, bodyType: 1|3}>} bodies
+ * @param {Record<string, import('./activityObs.js').ActivityObs[]> | undefined} rings
+ * @param {number} nowMs
+ * @param {{ sentMap?: Record<string, number>, mode?: MoonStrikeMode,
+ *   sysLookSec?: Record<string, number> }} [opts]
+ * @returns {LandingSweep | null}
+ */
+export function detectLandingSweep(bodies, rings, nowMs, opts = {}) {
+  const mode = opts.mode ?? 'newest';
+  if (mode === 'off') return null;
+  const sent = opts.sentMap || {};
+  const sysLookSec = opts.sysLookSec || {};
+  const states = (bodies || []).map((b) =>
+    bodyState(b.coord, b.bodyType, rings ? rings[ringKeyFor(b.coord, b.bodyType)] : undefined, nowMs, sent, sysLookSec));
+  const uncovered = [...new Set(states.filter((s) => !s.covered).map((s) => systemOf(s.coord)))];
+  if (!uncovered.length) return null;
+  // Candidate: the newest non-self MOON mark (any body, covered or not — an
+  // aged moon sighting is exactly what a sweep re-examines), within the
+  // horizon and not already strictly outdated by a planet mark.
+  /** @type {{ s: BodyState, hi: number } | null} */
+  let moonTop = null;
+  let planetHi = -Infinity;
+  for (const s of states) {
+    if (!s.pos || s.selfLit) continue;
+    const hi = interactionInterval(s.pos).hi;
+    if (s.bodyType === 3) {
+      if (!moonTop || hi > moonTop.hi) moonTop = { s, hi };
+    } else if (hi > planetHi) {
+      planetHi = hi;
+    }
+  }
+  if (!moonTop) return null;
+  const ageMs = nowMs - moonTop.hi * 1000;
+  if (!(ageMs >= 0 && ageMs <= AFTERGLOW_HORIZON_MS)) return null;
+  if (planetHi > moonTop.hi + SAME_TAU_SLACK_S) return null; // owner moved later — claim dead
+  return {
+    coord: moonTop.s.coord,
+    bodyType: 3,
+    systems: uncovered,
+    expiresAtMs: moonTop.hi * 1000 + AFTERGLOW_HORIZON_MS,
+  };
+}
+
+/**
+ * Run {@link detectLandingSweep} across all watched players.
+ * @param {string[]} players
+ * @param {Array<{coords: string, player?: number, hasMoon?: boolean}>} universePlanets
+ * @param {Record<string, Record<string, import('./activityObs.js').ActivityObs[]>>} ringsMap
+ * @param {number} nowMs
+ * @param {{ sentMap?: Record<string, number>, mode?: MoonStrikeMode,
+ *   sysLookSec?: Record<string, number> }} [opts]
+ * @returns {Record<string, LandingSweep>}
+ */
+export function detectAllSweeps(players, universePlanets, ringsMap, nowMs, opts = {}) {
+  /** @type {Record<string, LandingSweep>} */
+  const out = {};
+  if (opts.mode === 'off') return out;
+  for (const pid of players || []) {
+    /** @type {Array<{coord: string, bodyType: 1|3}>} */
+    const bodies = [];
+    for (const p of playerPlanets(universePlanets, pid)) {
+      const coord = `${p.galaxy}:${p.system}:${p.position}`;
+      bodies.push({ coord, bodyType: 1 });
+      if (p.hasMoon) bodies.push({ coord, bodyType: 3 });
+    }
+    const s = detectLandingSweep(bodies, ringsMap ? ringsMap[pid] : undefined, nowMs, opts);
+    if (s) out[pid] = s;
+  }
+  return out;
+}
+
+/**
  * @typedef {object} LandingRecheck
  * @property {string} coord      "g:s:p" of the ambiguous moon.
  * @property {3} bodyType
@@ -367,7 +490,8 @@ export const strikeMapOf = (signals) =>
  * @param {Array<{coord: string, bodyType: 1|3}>} bodies
  * @param {Record<string, import('./activityObs.js').ActivityObs[]> | undefined} rings
  * @param {number} nowMs
- * @param {{ sentMap?: Record<string, number>, mode?: MoonStrikeMode }} [opts]
+ * @param {{ sentMap?: Record<string, number>, mode?: MoonStrikeMode,
+ *   sysLookSec?: Record<string, number> }} [opts]
  * @returns {LandingRecheck | null}
  */
 export function detectLandingRecheck(bodies, rings, nowMs, opts = {}) {
@@ -375,7 +499,7 @@ export function detectLandingRecheck(bodies, rings, nowMs, opts = {}) {
   if (mode === 'off' || mode === 'lone') return null;
   const sent = opts.sentMap || {};
   const states = (bodies || []).map((b) =>
-    bodyState(b.coord, b.bodyType, rings ? rings[ringKeyFor(b.coord, b.bodyType)] : undefined, nowMs, sent));
+    bodyState(b.coord, b.bodyType, rings ? rings[ringKeyFor(b.coord, b.bodyType)] : undefined, nowMs, sent, opts.sysLookSec || {}));
 
   const freshMoons = states.filter((s) => s.bodyType === 3 && s.cls === 'fresh' && !s.selfLit);
   if (!freshMoons.length) return null;
@@ -414,7 +538,8 @@ export function detectLandingRecheck(bodies, rings, nowMs, opts = {}) {
  * @param {Array<{coords: string, player?: number, hasMoon?: boolean}>} universePlanets
  * @param {Record<string, Record<string, import('./activityObs.js').ActivityObs[]>>} ringsMap
  * @param {number} nowMs
- * @param {{ sentMap?: Record<string, number>, mode?: MoonStrikeMode }} [opts]
+ * @param {{ sentMap?: Record<string, number>, mode?: MoonStrikeMode,
+ *   sysLookSec?: Record<string, number> }} [opts]
  * @returns {Record<string, LandingRecheck>}
  */
 export function detectAllRechecks(players, universePlanets, ringsMap, nowMs, opts = {}) {
