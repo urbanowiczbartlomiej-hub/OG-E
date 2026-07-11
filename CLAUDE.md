@@ -172,8 +172,16 @@ and pushes — but the push-to-`main` path above is the only one we use.)
 
 ## UI/UX wording & iconography
 
-OG-E must be **intuitive, not descriptive**. Two rules the injected surface obeys:
+OG-E must be **intuitive, not descriptive**. Rules the injected surface obeys:
 
+- **Mobile-first is the dashboard's primary verification target** (since the
+  2026-07 mobile pass): design and check at 360–430 px / touch FIRST; desktop
+  is the enhancement. The page itself never scrolls horizontally — a wide
+  table scrolls inside its own `.table-scroll` wrapper.
+- **Data must never live ONLY in a `title=` tooltip.** On touch a tooltip does
+  not exist — a tooltip may EXPLAIN, but every number and verdict must also be
+  reachable without hover: inline, by tap (readout lines, pinned cards), or
+  via the dossier.
 - **No decorative emoji / symbol icons in the UI** — do not use 📍 🏷 ⚠ ● ○ and
   the like as button labels, prefixes, or state markers. They read as noise, not
   signal. Convey state with colour + a short word, or a plain control — not a

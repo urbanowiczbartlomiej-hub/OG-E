@@ -74,23 +74,3 @@ silent-wipe class applies here too, and its single-user LWW+tombstone model
 is the precursor to reuse. Decided 2026-07-09: backlog only, own design
 session before any code.
 
-## 3. Dashboard mobile-first pass + settings design language
-
-**Goal.** Make 360–430 px / touch the dashboard's primary verification
-target and transplant the settings panel's recent design idioms (command
-blocks, keyword captions, restyled sliders, two-tier colour) onto the
-existing `gv-card`/`chip-group` substrate. Motivated by real phone use:
-the dashboard scales "okay" but not well — while the base CSS is already
-mobile-first (1-col grids + `min-width` enhancement), the breakage is
-concentrated in navigation, tables, hover-only data and tap-target sizes.
-
-**Plan.** Fully designed, audit-grounded, phased A–E in
-`docs/DASHBOARD-MOBILE-PLAN.md` (transient doc — delete when shipped).
-Headline fixes: `.tabs` can't wrap (page-level sideways scroll on every
-phone), non-sticky top bar, three tables without scroll wrappers, numbers
-and verdicts living ONLY in `title=` tooltips (invisible on touch),
-sub-36 px tap targets, a 2–250 range slider on a 260 px track. New encoded
-rule riding the work: data must never live only in a tooltip.
-
-Captured 2026-07-11: plan only, implementation in its own session
-(phases ship independently; A+B alone fix the daily phone experience).
