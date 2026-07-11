@@ -157,6 +157,11 @@
     background: #1a2a3a; border: 1px solid #2a4a5a; border-radius: 8px;
     padding: 10px 16px; min-width: 100px; text-align: center;
   }
+  /* Phones: a tidy 2-col grid instead of a ragged wrap-with-gaps row. */
+  @media (max-width: 520px) {
+    .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .stat-card { min-width: 0; }
+  }
   .stat-card .stat-value { font-size: 22px; font-weight: bold; color: #4a9eff; }
   .stat-card .stat-label { font-size: 11px; color: #888; margin-top: 2px; }
 
@@ -1196,7 +1201,7 @@
       </div>
     </div>
     <div class="gv-card spy-back-card">
-      <div class="gv-card-head"><span class="gv-card-title" title="Probers from the alerts you opened, last 30 days.">Who's spying on you</span><span id="proximityCounts" style="color:#77848f;"></span><span id="proximityAlert" style="color:#e06c5f;font-weight:600;"></span></div>
+      <div class="gv-card-head"><span class="gv-card-title" title="Probers from the alerts you opened, last 30 days.">Who's spying on you</span><span id="proximityCounts" style="color:#8a97a3;"></span><span id="proximityAlert" style="color:#e06c5f;font-weight:600;"></span></div>
       <div id="proximityStrip"></div>
     </div>
   </div>
@@ -1204,7 +1209,7 @@
        the scan prefs below. Strikes here are the SAME signals the in-game Spy
        button flags; the summary shows the grounds' look coverage. -->
   <div class="gv-card" id="patrolCard" style="display:none;">
-    <div class="gv-card-head"><span class="gv-card-title" title="Moon-strike candidates among your neighbours (±N systems around your colonies) and how well the grounds are patrolled. Same signals as the in-game Spy button.">Patrol</span><span id="patrolSummary" style="color:#77848f;"></span></div>
+    <div class="gv-card-head"><span class="gv-card-title" title="Moon-strike candidates among your neighbours (±N systems around your colonies) and how well the grounds are patrolled. Same signals as the in-game Spy button.">Patrol</span><span id="patrolSummary" style="color:#8a97a3;"></span></div>
     <div id="patrolStrikes"></div>
   </div>
   <!-- Positions map ABOVE the control line (user pref): toggled by 🗺 in the

@@ -98,7 +98,7 @@ export function renderPatrolCard({
   if (!sigs.length) {
     hostEl.appendChild(mk(
       'div',
-      'color:#77848f;font-size:12px;padding:2px 0;',
+      'color:#8a97a3;font-size:12px;padding:2px 0;',
       'No strikes in the grounds — walk the stale systems in game (the Spy button leads).',
     ));
     return;

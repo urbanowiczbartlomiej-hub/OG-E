@@ -1130,8 +1130,11 @@ function presenceBlock(presence) {
   // labels the row; a sparse hour axis sits above.
   const table = document.createElement('div');
   const gutter = grid.scale === 'week' ? 30 : 42;
+  // min-width floors the 24 hour-columns at ~12px each; below that the
+  // .table-scroll wrapper (appended below) scrolls instead of letting the
+  // cells crush into unreadable slivers on a phone.
   table.style.cssText = `display:grid;grid-template-columns:${gutter}px repeat(24, 1fr);`
-    + 'gap:1px;background:#20303f;padding:1px;border-radius:6px;max-width:420px;';
+    + 'gap:1px;background:#20303f;padding:1px;border-radius:6px;max-width:420px;min-width:340px;';
 
   // Hour axis.
   const corner = document.createElement('div');
@@ -1165,7 +1168,10 @@ function presenceBlock(presence) {
       table.appendChild(cell);
     }
   }
-  wrap.appendChild(table);
+  const heatScroller = document.createElement('div');
+  heatScroller.className = 'table-scroll';
+  heatScroller.appendChild(table);
+  wrap.appendChild(heatScroller);
 
   // Legend + basis.
   const legend = document.createElement('div');
