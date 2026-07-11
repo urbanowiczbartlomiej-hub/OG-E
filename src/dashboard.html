@@ -293,6 +293,14 @@
      table rows above the strip; it must never block clicking those). */
   .region-pop.pinned { border-color: #4a9eff; box-shadow: 0 2px 14px rgba(74,158,255,.35); }
   .region-pop.pinned a { pointer-events: auto; }
+  /* Coarse pointers: the popover becomes an INLINE detail block in the
+     flow under its strip/canvas instead of an absolute overlay — a card
+     floating over content you can't hover-dodge is a desktop idiom. The
+     JS-set left/top coordinates are simply ignored by position:static,
+     and the card is fully tappable (no hover pass-through to protect). */
+  @media (pointer: coarse) {
+    .region-pop { position: static; width: auto; max-width: none; pointer-events: auto; margin-top: 8px; }
+  }
   .region-pop .rp-head { font-weight: 700; color: #fff; margin: 0 0 4px; }
   .region-pop .rp-time { color: #8a9db0; font-size: 11px; margin: 0 0 6px; }
   /* Rows may wrap: a long player name + honour chip + flags can exceed the

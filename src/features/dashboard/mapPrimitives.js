@@ -366,6 +366,22 @@ export const renderPositionsMap = ({ hostEl, galaxies, systems, bodies, onPlayer
     wrap.appendChild(hint);
   }
 
+  // Caption line under the map — the touch-parity carrier for what desktop
+  // reads from the markers' title tooltips (name, coords, reach hours). On
+  // touch the FIRST tap on a marker prints it here; the SECOND tap on the
+  // same marker opens the player (a bare tap must not navigate blind).
+  // Desktop keeps hover → caption + immediate click-through.
+  const coarse = typeof window.matchMedia === 'function'
+    && window.matchMedia('(pointer: coarse)').matches;
+  const CAPTION_HINT = coarse
+    ? (onPlayerClick ? 'Tap a body for details; tap again to open the player.' : 'Tap a body for details.')
+    : 'Hover a body for details.';
+  const caption = document.createElement('div');
+  caption.className = 'smap-info';
+  caption.textContent = CAPTION_HINT;
+  /** @type {string | null} The marker described by the current caption (tap 1 of 2). */
+  let described = null;
+
   for (const b of bodies) {
     if (b.galaxy < 1 || b.galaxy > galaxies || b.system < 1 || b.system > systems) continue;
     const size = 4 + Math.round((Math.max(0, Math.min(100, b.danger)) / 100) * 6); // 4..10 by danger
@@ -381,13 +397,24 @@ export const renderPositionsMap = ({ hostEl, galaxies, systems, bodies, onPlayer
     m.style.cssText = `position:absolute;left:${x}px;top:${y}px;width:${size}px;height:${size}px;`
       + `margin:${-size / 2}px 0 0 ${-size / 2}px;border-radius:50%;background:${col};${ring}`
       + `border:1px solid #000a;padding:0;box-sizing:border-box;cursor:${onPlayerClick ? 'pointer' : 'default'};`;
-    m.title = `${b.name} — ${b.galaxy}:${b.system}:${b.position}`
+    const desc = `${b.name} — ${b.galaxy}:${b.system}:${b.position}`
       + (b.relationship === 'you' ? ' · you' : b.relationship !== 'neutral' ? ` · ${b.relationship}` : '')
       + (typeof b.reachH === 'number' && b.relationship !== 'you'
         ? ` · ~${b.reachH < 10 ? b.reachH.toFixed(1) : Math.round(b.reachH)} h to your nearest planet (RIP-speed)`
         : '');
-    if (onPlayerClick) m.addEventListener('click', (e) => { e.preventDefault(); onPlayerClick(b.playerId); });
+    m.title = desc;
+    const key = `${b.galaxy}:${b.system}:${b.position}`;
+    m.addEventListener('mouseenter', () => { caption.textContent = desc; });
+    if (onPlayerClick) {
+      m.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (coarse && described !== key) { described = key; caption.textContent = desc; return; }
+        onPlayerClick(b.playerId);
+      });
+    }
     wrap.appendChild(m);
   }
+  wrap.addEventListener('mouseleave', () => { caption.textContent = CAPTION_HINT; described = null; });
   hostEl.appendChild(wrap);
+  hostEl.appendChild(caption);
 };

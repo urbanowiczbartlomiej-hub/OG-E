@@ -269,7 +269,10 @@ const buildPin = (i, r, info, onPinClick) => {
   pin.title = summary;
   // A pin covers the bins beneath it, so it owns the hover: feed the info
   // line the candidate summary instead of leaving a stale bin readout.
-  pin.addEventListener('mouseenter', () => { info.textContent = summary; });
+  // pointerdown = the touch parity path (a finger can't hover).
+  const setReadout = () => { info.textContent = summary; };
+  pin.addEventListener('mouseenter', setReadout);
+  pin.addEventListener('pointerdown', setReadout);
   if (onPinClick) {
     pin.tabIndex = 0;
     pin.setAttribute('role', 'button');
@@ -298,9 +301,15 @@ export const highlightPin = (hostEl, index) => {
   }
 };
 
+/** True on touch-first devices — the readout hints say "Tap", not "Hover". */
+const coarsePointer = () =>
+  typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+
 /** Occupancy map's idle readout text (also the mouseleave reset). */
 // No "click to pin" instruction — the pointer cursor advertises the click.
-const OCC_HINT = 'Hover a cell for its coordinate and status.';
+const occHint = () => (coarsePointer()
+  ? 'Tap a cell for its coordinate and status.'
+  : 'Hover a cell for its coordinate and status.');
 
 /**
  * Occupancy lens: a SHARP per-position texture of the whole server — every
@@ -419,9 +428,10 @@ const renderOccupancyMap = (hostEl, scans, { galaxies, systems }, { linkBase, ow
   wrap.className = 'smap-occ-wrap';
   wrap.appendChild(canvas);
 
+  const HINT = occHint();
   const info = document.createElement('div');
   info.className = 'smap-info';
-  info.textContent = OCC_HINT;
+  info.textContent = HINT;
 
   const overlay = document.createElement('div');
   overlay.className = 'smap-occ-overlay';
@@ -477,27 +487,32 @@ const renderOccupancyMap = (hostEl, scans, { galaxies, systems }, { linkBase, ow
     pop.style.left = `${Math.max(0, Math.min(x - popW / 2, W - popW))}px`;
   };
 
-  canvas.addEventListener('mousemove', (e) => {
+  /** @param {MouseEvent | PointerEvent} e */
+  const readoutFromEvent = (e) => {
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
-    if (mx < gutter) { info.textContent = OCC_HINT; return; }
+    if (mx < gutter) { info.textContent = HINT; return; }
     const s = Math.floor((mx - gutter) / cellW) + 1;
     const g = Math.floor((my - topPad) / stride) + 1;
-    if (s < 1 || s > systems || g < 1 || g > galaxies) { info.textContent = OCC_HINT; return; }
+    if (s < 1 || s > systems || g < 1 || g > galaxies) { info.textContent = HINT; return; }
     const within = (my - topPad) - (g - 1) * stride;
     const p = Math.floor(within / posPx) + 1;
     if (p < 1 || p > POS) { info.textContent = `G${g} · system ${s}`; return; }
     const st = scans[`${g}:${s}`]?.positions?.[p]?.status;
     info.textContent = `G${g}:${s}:${p} — ${st ? (STATUS_LABELS[st] || st) : 'empty'}`;
-  });
+  };
+  canvas.addEventListener('mousemove', readoutFromEvent);
+  // Touch parity: a tap feeds the same readout (and the click that follows
+  // pins the system card — both fire, in that order).
+  canvas.addEventListener('pointerdown', readoutFromEvent);
   // Reset on leave — a frozen "G4:233:9 — Inactive" readout reads like a
   // status summary long after the pointer moved on. On the WRAP, not the
   // canvas: the pins live in a sibling overlay stacked above the canvas, so
   // a pointer exiting the map straight off a pin never fires a canvas
   // mouseleave (the field view's reset likewise sits on the row wrapper
   // that contains its pins).
-  wrap.addEventListener('mouseleave', () => { info.textContent = OCC_HINT; });
+  wrap.addEventListener('mouseleave', () => { info.textContent = HINT; });
   canvas.style.cursor = 'pointer';
   canvas.addEventListener('click', (e) => {
     const rect = canvas.getBoundingClientRect();
@@ -674,7 +689,9 @@ export const renderServerMap = ({ hostEl, scans, galaxies, systems, donutGalaxy,
   }
   const disp = { grid: dispGrid, cols: N, galaxies, binWidth: systems / N };
 
-  const FIELD_HINT = 'Hover a cell for its system range, threat and farm.';
+  const FIELD_HINT = coarsePointer()
+    ? 'Tap a cell for its system range, threat and farm.'
+    : 'Hover a cell for its system range, threat and farm.';
   const info = document.createElement('div');
   info.className = 'smap-info';
   info.textContent = FIELD_HINT;
@@ -707,11 +724,14 @@ export const renderServerMap = ({ hostEl, scans, galaxies, systems, donutGalaxy,
       const hi = Math.round((c + 1) * disp.binWidth);
       const tv = cell.threat;
       const fv = cell.farm;
-      el.addEventListener('mouseenter', () => {
-        // 0–100 like the Fit column — one scale across the whole view, not
-        // raw normalised decimals here and integers there.
+      // 0–100 like the Fit column — one scale across the whole view, not
+      // raw normalised decimals here and integers there. pointerdown = the
+      // touch parity path (a finger can't hover).
+      const setReadout = () => {
         info.textContent = `G${g} · sys ≈ ${lo}–${hi} · threat ${Math.round(tv * 100)}/100 · farm ${Math.round(fv * 100)}/100`;
-      });
+      };
+      el.addEventListener('mouseenter', setReadout);
+      el.addEventListener('pointerdown', setReadout);
       cellsWrap.appendChild(el);
     }
     // Top-listed candidates as pins: generous ≥13px targets over the ~4px
