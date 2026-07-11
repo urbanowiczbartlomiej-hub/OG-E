@@ -512,7 +512,10 @@ const renderOccupancyMap = (hostEl, scans, { galaxies, systems }, { linkBase, ow
   // a pointer exiting the map straight off a pin never fires a canvas
   // mouseleave (the field view's reset likewise sits on the row wrapper
   // that contains its pins).
-  wrap.addEventListener('mouseleave', () => { info.textContent = HINT; });
+  // No reset on coarse pointers: after a tap the browser replays compat
+  // mouse events (incl. a stray mouseleave) that would instantly wipe the
+  // just-tapped readout — and a persistent readout IS the touch UX anyway.
+  if (!coarsePointer()) wrap.addEventListener('mouseleave', () => { info.textContent = HINT; });
   canvas.style.cursor = 'pointer';
   canvas.addEventListener('click', (e) => {
     const rect = canvas.getBoundingClientRect();
@@ -701,8 +704,10 @@ export const renderServerMap = ({ hostEl, scans, galaxies, systems, donutGalaxy,
 
   // Rows live in one body wrapper so leaving the map can reset the readout
   // (a frozen readout reads like a status summary long after the hover).
+  // Desktop-only: on touch the compat mouse events replayed after a tap
+  // include stray mouseleaves that would wipe the just-tapped readout.
   const body = document.createElement('div');
-  body.addEventListener('mouseleave', () => { info.textContent = FIELD_HINT; });
+  if (!coarsePointer()) body.addEventListener('mouseleave', () => { info.textContent = FIELD_HINT; });
 
   for (let g = 1; g <= disp.galaxies; g++) {
     const row = document.createElement('div');

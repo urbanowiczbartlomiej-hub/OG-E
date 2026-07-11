@@ -414,7 +414,10 @@ export const renderPositionsMap = ({ hostEl, galaxies, systems, bodies, onPlayer
     }
     wrap.appendChild(m);
   }
-  wrap.addEventListener('mouseleave', () => { caption.textContent = CAPTION_HINT; described = null; });
+  // Desktop-only reset: on touch the compat mouse events replayed after a
+  // tap include stray mouseleaves that would wipe the caption (and re-arm
+  // the two-tap sequence) right after the first tap set it.
+  if (!coarse) wrap.addEventListener('mouseleave', () => { caption.textContent = CAPTION_HINT; described = null; });
   hostEl.appendChild(wrap);
   hostEl.appendChild(caption);
 };

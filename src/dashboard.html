@@ -260,6 +260,12 @@
   .streak-table tbody tr.streak-detail:hover { background: transparent; }
   .streak-table tr.streak-detail > td { padding: 0 0 10px; box-shadow: inset 3px 0 0 #4a9eff; }
   .streak-table tr.streak-detail .streak-record { margin-top: 0; border-radius: 0 0 8px 8px; border-top: none; }
+  /* The detail td spans the FULL (possibly wider-than-viewport) table
+     inside its .table-scroll wrapper — sticky-left pins the panel to the
+     wrapper's visible edge and the max-width caps it to the phone screen,
+     so swiping the table sideways never drags the census/threat blocks
+     out of view. No-op on desktop (the cap exceeds the table width). */
+  .streak-table tr.streak-detail .streak-record { position: sticky; left: 0; max-width: calc(100vw - 52px); }
   .streak-record .record-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
   .streak-record .record-head .open-link { margin-left: auto; font-size: 12px; color: #4a9eff; text-decoration: none; }
   .streak-record .record-head .open-link:hover { text-decoration: underline; }
@@ -655,9 +661,15 @@
   .gv-intel-row { display: grid; grid-template-columns: 1fr; gap: 12px; align-items: start; margin: 12px 0; }
   @media (min-width: 1000px) { .gv-intel-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); } }
   .gv-intel-row > .census, .gv-intel-row > .gv-threats { margin: 0; }
-  .census-group { border: 1px solid #223044; border-radius: 6px; padding: 6px 10px; background: #0f151d; }
+  /* max-width caps a group at the panel — without it a 5-stat group sizes
+     to max-content and bleeds past a phone-width detail card; the stats
+     inside wrap instead (each stat is nowrap, the LINE breaks between them). */
+  .census-group { border: 1px solid #223044; border-radius: 6px; padding: 6px 10px; background: #0f151d; max-width: 100%; }
   .census-title { font-size: 11px; margin-bottom: 3px; font-weight: bold; }
-  .census-stat { font-size: 12px; color: #9fb4c4; margin-right: 8px; white-space: nowrap; }
+  /* inline-block: the stats are appended back-to-back with no whitespace
+     between the spans, so a plain inline run has NO soft-wrap opportunity —
+     inline-blocks break between boxes and the group wraps on phones. */
+  .census-stat { display: inline-block; font-size: 12px; color: #9fb4c4; margin-right: 8px; white-space: nowrap; }
   .census-stat:last-child { margin-right: 0; }
   .census-stat b { color: #dbe6ef; }
   .census-stat.zero, .census-stat.zero b { color: #55636f; font-weight: normal; }
