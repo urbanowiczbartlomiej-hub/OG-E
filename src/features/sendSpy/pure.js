@@ -138,7 +138,7 @@ export const countPendingReports = (env) => {
  * @property {'probe'|'look'|'reports'|null} proposal  Which action the button
  *   proposes: a probe send (courier flow), a galaxy look (one-tap
  *   navigation), reading the fresh espionage reports (one-tap navigation to
- *   messages — proposed between "probes done" and the ordinary looks), or
+ *   messages — the loop's closing step once both plans are empty), or
  *   null when everything is done ("all scanned" end state).
  * @property {SpyTarget | null} candidate   Next body to probe, or null.
  * @property {SpyLook | null} look          Top galaxy-look system, or null.
@@ -158,10 +158,19 @@ export const countPendingReports = (env) => {
  * Pure `env → SpyContext`: the TOP entries of BOTH intel plans — the probe
  * scan plan (`domain/scanPriority.buildScanPlan`) and the galaxy-look plan
  * (`domain/galaxyWatch.buildGalaxyPlan`) — unified into one "best next intel
- * action". Higher priority wins; ties go to the look (it's free: no probes, no
- * fleet slot, and the target never sees it). Coords already probed this
- * session are skipped by the probe plan; a browsed system self-clears from the
- * look plan the moment its `oge:galaxyScanned` ingest lands.
+ * action" by the LOOK-FIRST doctrine:
+ *
+ *   strike probe  →  looks  →  ordinary probes  →  reports  →  done
+ *
+ * Looks lead the ordinary probes on purpose: a look is free (no probes, no
+ * fleet slot, the target never sees it) and it FEEDS the strike detector —
+ * browsing before probing reads the account's activity while our own probes
+ * haven't lit any markers yet, and the probes that follow fire on that fresh
+ * picture. Only a STRIKE probe (a catchable fleet NOW — often the very
+ * outcome of the look just done) cuts the line. Reports close the loop once
+ * both plans are empty. Coords already probed this session are skipped by
+ * the probe plan; a browsed system self-clears from the look plan the moment
+ * its `oge:galaxyScanned` ingest lands.
  *
  * @param {SpyEnv} env
  * @returns {SpyContext}
@@ -183,26 +192,25 @@ export function deriveSpy(env) {
   const top = entries.length ? entries[0] : null;
   const lookTop = looks.length ? looks[0] : null;
 
-  // Fresh, un-ingested espionage reports interpose between "probes done" and
-  // the ordinary looks: the user just paid fleet slots for that intel, so
-  // reading it comes before gathering more. Probe proposals (incl. strikes)
-  // still lead — the nudge must not interrupt a probing run — and an
-  // ambiguous-moon RECHECK look still wins too (its window is time-critical;
-  // reports keep). One tap = one navigation to messages (which is also what
-  // ingests the reports and clears the nudge).
+  // Reports close the loop: both plans empty + session probe-sends whose
+  // report isn't ingested yet → one tap navigates to messages (which is also
+  // what ingests them and advances the button).
   const pendingReports = countPendingReports(env);
-  if (pendingReports > 0 && !top && !(lookTop && lookTop.recheck)) {
+  if (!top && !lookTop && pendingReports > 0) {
     return {
       proposal: 'reports',
       candidate: null,
       look: null,
-      remaining: looks.length,
+      remaining: 0,
       hasWatched: (env.players || []).length > 0,
       pendingReports,
     };
   }
 
-  const pickLook = !!lookTop && (!top || lookTop.priority >= top.priority);
+  // Look-first: every pending look outranks every ordinary probe; only a
+  // strike probe cuts the line (see the doctrine above). The RECHECK_BOOST
+  // already orders an ambiguous-moon re-look first WITHIN the look plan.
+  const pickLook = !!lookTop && !(top && top.strike);
   const name = top && env.playerNames ? env.playerNames[top.playerId]?.name : undefined;
   const why = pickLook ? lookTop?.why : top?.why;
   return {
@@ -255,13 +263,13 @@ export function renderSpy(ctx, preflight) {
   if (!ctx.proposal) {
     return { text: 'Reports', subtext: 'all scanned ✓', bg: BG_SPY_DONE };
   }
-  // Fresh reports await ingest — read them before the next look (tap →
-  // messages). Calm paint (no pulse): the intel is already yours.
+  // Fresh reports await ingest — the loop's closing step (tap → messages).
+  // Calm paint (no pulse): the intel is already yours.
   if (ctx.proposal === 'reports') {
     return {
       text: 'Reports',
       subtext: `${ctx.pendingReports ?? 0} new`,
-      hint: 'read, then looks',
+      hint: 'tap → messages',
       bg: BG_SPY_DONE,
     };
   }
