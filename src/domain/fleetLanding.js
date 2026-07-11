@@ -194,6 +194,10 @@ function bodyState(coord, bodyType, ring, nowMs, sent) {
  *   owner may be around) — only 'newest'/'any' can set it.
  * @property {number} coMoons  OTHER moons lit alongside the flagged one (see
  *   the multi-moon section in the header) — 0 in the common case.
+ * @property {string} [playerId]  The moon's owner — stamped by
+ *   {@link detectAllLandings} (the per-body detector doesn't know it). Lets
+ *   the scan plan synthesize an entry for a strike on a player OUTSIDE the
+ *   watch-list (the patrol mode's prey).
  */
 
 /** Build the signal from a winning body state. Confidence from coverage
@@ -327,7 +331,7 @@ export function detectAllLandings(players, universePlanets, ringsMap, nowMs, opt
       if (p.hasMoon) bodies.push({ coord, bodyType: 3 });
     }
     const sig = detectFleetLanding(bodies, ringsMap ? ringsMap[pid] : undefined, nowMs, opts);
-    if (sig) out[pid] = sig;
+    if (sig) out[pid] = { ...sig, playerId: String(pid) };
   }
   return out;
 }

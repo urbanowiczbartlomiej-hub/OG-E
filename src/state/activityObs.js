@@ -35,9 +35,11 @@ import { GALAXY_SCANNED_EVENT } from '../lib/ogeEvents.js';
 import { readSpySentMap } from '../lib/spySentSession.js';
 import { currentUniverseKey } from './universeKey.js';
 import { watchListStore } from './watchList.js';
+import { bodiesStore } from './bodies.js';
 import { targetReportsStore } from './targets.js';
 import { latestOf, historyOf } from '../domain/targetReports.js';
 import { appendActivityObs } from '../domain/activityObs.js';
+import { patrolSystemKeys } from '../domain/patrol.js';
 
 /** @typedef {import('../domain/activityObs.js').ActivityObs} ActivityObs */
 
@@ -143,10 +145,12 @@ const recentProbeArrivals = (entry, tSec) => {
 };
 
 /**
- * Record one galaxy system snapshot: for every slot owned by a WATCHED player,
- * append the planet's and (independently) the moon's activity marker to that
- * body's ring. Hydration-gated like `recordReport` so an early event can't be
- * clobbered by a late load. No-op when nothing changed.
+ * Record one galaxy system snapshot: for every slot owned by a WATCHED player
+ * — or, with a patrol radius configured (domain/patrol), by ANY player when
+ * the system lies inside the territory — append the planet's and
+ * (independently) the moon's activity marker to that body's ring.
+ * Hydration-gated like `recordReport` so an early event can't be clobbered
+ * by a late load. No-op when nothing changed.
  *
  * The self-induced-probe discount is anchored on BOTH our per-tab send map
  * (`spySentSession`, keyed by body so a moon send doesn't discount its planet)
@@ -161,8 +165,18 @@ const recentProbeArrivals = (entry, tSec) => {
  */
 export const recordGalaxyActivity = async (detail) => {
   if (!detail || !detail.positions) return;
-  const watched = watchListStore.get().players;
-  if (!watched.length) return;
+  const cfg = watchListStore.get();
+  const watched = cfg.players;
+  // Patrol territory: with a radius on, THIS system being inside it makes
+  // every occupied slot recordable. Bounded structurally (a finite system
+  // set), so the watched-only growth guard still holds. Server donut /
+  // system-count defaults are fine at the recording gate (state must not
+  // reach into the features-layer api context) — a generous wrap edge only
+  // records a couple of extra systems.
+  const inPatrolSystem = (cfg.patrolSystems || 0) > 0
+    && patrolSystemKeys(bodiesStore.get().bodies, cfg.patrolSystems || 0)
+      .has(`${detail.galaxy}:${detail.system}`);
+  if (!watched.length && !inPatrolSystem) return;
   await whenActivityObsHydrated();
   const sentMap = readSpySentMap();
   const reports = targetReportsStore.get();
@@ -176,7 +190,7 @@ export const recordGalaxyActivity = async (detail) => {
     for (const posKey of Object.keys(detail.positions)) {
       const pos = detail.positions[Number(posKey)];
       const pid = pos && pos.player ? String(pos.player.id) : null;
-      if (!pid || !watched.includes(pid)) continue;
+      if (!pid || (!watched.includes(pid) && !inPatrolSystem)) continue;
       const coord = `${detail.galaxy}:${detail.system}:${posKey}`;
       const pidReports = reports[pid];
       for (const [type, m] of [[1, pos.activity], [3, pos.moonActivity]]) {

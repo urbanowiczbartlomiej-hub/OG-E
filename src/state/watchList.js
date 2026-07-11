@@ -109,6 +109,11 @@ import {
  *   newest/any): how much corroboration the scan plan demands before
  *   flagging a moon as a parked-fleet candidate. Synced (a strategy knob,
  *   like `cadence`); materialised with {@link DEFAULT_MOON_STRIKE}.
+ * @property {number} [patrolSystems]
+ *   Patrol territory radius (domain/patrol): ±N systems around every own
+ *   body whose neighbourhood the Look plan walks and the moon-strike
+ *   detector hunts. 0 = patrol off (the default). Synced (a strategy knob);
+ *   clamped to 0..{@link import('../domain/patrol.js').PATROL_SYSTEMS_MAX}.
  */
 
 /** @typedef {import('../domain/fleetLanding.js').MoonStrikeMode} MoonStrikeMode */
@@ -131,6 +136,21 @@ export const DEFAULT_MOON_STRIKE = 'newest';
  */
 const moonStrikeField = (v) =>
   (v === 'off' || v === 'lone' || v === 'newest' || v === 'any' ? v : DEFAULT_MOON_STRIKE);
+
+/** Default patrol radius: 0 — the territory mode is a deliberate opt-in. */
+export const DEFAULT_PATROL_SYSTEMS = 0;
+
+/**
+ * Coerce a raw value into a valid patrol radius (integer, clamped; else the
+ * default). The max mirrors domain/patrol.PATROL_SYSTEMS_MAX (kept as a
+ * literal here so state's normalize pulls no extra import).
+ * @param {unknown} v
+ * @returns {number}
+ */
+const patrolField = (v) => {
+  const n = Math.floor(Number(v));
+  return Number.isFinite(n) && n >= 0 ? Math.min(50, n) : DEFAULT_PATROL_SYSTEMS;
+};
 
 /**
  * Default cadences: probe re-scan after 48 h (the old hot tier — the tightest
@@ -206,7 +226,7 @@ export const watchListKeyFor = (universeId) => `${universeId}:${WATCH_LIST_KEY_B
 export const normalizeWatchList = (raw) => {
   if (Array.isArray(raw)) {
     return {
-      players: raw.map(String), probes: DEFAULT_SPY_PROBES, scanBodies: 'planets', rescan: {}, relationships: {}, mapHidden: {}, scanMode: {}, galaxyMode: {}, cadence: { ...DEFAULT_CADENCE }, moonStrike: DEFAULT_MOON_STRIKE,
+      players: raw.map(String), probes: DEFAULT_SPY_PROBES, scanBodies: 'planets', rescan: {}, relationships: {}, mapHidden: {}, scanMode: {}, galaxyMode: {}, cadence: { ...DEFAULT_CADENCE }, moonStrike: DEFAULT_MOON_STRIKE, patrolSystems: DEFAULT_PATROL_SYSTEMS,
     };
   }
   const o = raw && typeof raw === 'object' ? /** @type {any} */ (raw) : {};
@@ -266,8 +286,9 @@ export const normalizeWatchList = (raw) => {
   }
   const cadence = normalizeCadence(o.cadence);
   const moonStrike = moonStrikeField(o.moonStrike);
+  const patrolSystems = patrolField(o.patrolSystems);
   return {
-    players, probes, scanBodies, rescan, relationships, mapHidden, scanMode, galaxyMode, cadence, moonStrike,
+    players, probes, scanBodies, rescan, relationships, mapHidden, scanMode, galaxyMode, cadence, moonStrike, patrolSystems,
   };
 };
 
@@ -285,6 +306,7 @@ export const watchListStore = createStore(/** @type {WatchListConfig} */ ({
   galaxyMode: {},
   cadence: { ...DEFAULT_CADENCE },
   moonStrike: DEFAULT_MOON_STRIKE,
+  patrolSystems: DEFAULT_PATROL_SYSTEMS,
 }));
 
 /** @type {(() => void) | null} */
@@ -420,6 +442,7 @@ const SEED_DEFAULTS = Object.freeze({
   scanBodies: 'planets',
   cadence: DEFAULT_CADENCE,
   moonStrike: DEFAULT_MOON_STRIKE,
+  patrol: DEFAULT_PATROL_SYSTEMS,
 });
 
 /**

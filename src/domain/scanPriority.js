@@ -278,6 +278,36 @@ export const buildScanPlan = (env) => {
     }
   }
 
+  // Territory strikes — a strike on a player OUTSIDE the watch-list (the
+  // patrol mode's prey) never passes the per-player loop above, so its plan
+  // entry is synthesized here from the signal itself. Same boost, same
+  // session-sent / scan-'off' guards; the `why` marks the provenance.
+  if (env.strikes) {
+    const watched = new Set(players.map(String));
+    for (const sig of env.strikes.values()) {
+      const pid = sig.playerId != null ? String(sig.playerId) : null;
+      if (!pid || watched.has(pid)) continue; // watch-list strikes handled above
+      const key = sig.overrideKey;
+      if (env.sentCoords && env.sentCoords.has(key)) continue;
+      if (effectiveScan(env.scanMode, pid, key) === 'off') continue;
+      const parts = sig.coord.split(':').map(Number);
+      if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) continue;
+      const d100 = env.dangerByPlayer ? env.dangerByPlayer[pid] : undefined;
+      entries.push({
+        playerId: pid,
+        galaxy: parts[0],
+        system: parts[1],
+        position: parts[2],
+        bodyType: 3,
+        status: 'rescan',
+        priority: STRIKE_BOOST + dangerWeight(d100),
+        strike: true,
+        strikeTier: sig.tier,
+        why: `${sig.tier === 'any' ? '🎯 moon lit?' : '🎯 fresh landing?'} · patrol`,
+      });
+    }
+  }
+
   entries.sort((a, b) => {
     if (b.priority !== a.priority) return b.priority - a.priority;
     const oa = orderByPid.get(a.playerId) ?? 0;

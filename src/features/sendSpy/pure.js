@@ -73,7 +73,8 @@ export const BG_SPY_STRIKE = '#d1571f';
  *       rings?: Record<string, Record<string, import('../../domain/activityObs.js').ActivityObs[]>>,
  *       galaxyMode?: Record<string, import('../../domain/scanMode.js').ScanMode>,
  *       rechecks?: Record<string, import('../../domain/fleetLanding.js').LandingRecheck>,
- *       sentAt?: Record<string, number> }} SpyEnv
+ *       sentAt?: Record<string, number>,
+ *       patrolLooks?: import('../../domain/galaxyWatch.js').GalaxyPlanEntry[] }} SpyEnv
  *   The planner env (see domain/scanPriority.js): watched players, universe
  *   planet rows, per-coord report freshness (planets AND moons), rescan flags,
  *   session sent-coords, the clock, the planet/moon scan filter, the scan-mode
@@ -180,7 +181,7 @@ export const countPendingReports = (env) => {
  */
 export function deriveSpy(env) {
   const { entries } = buildScanPlan(env);
-  const looks = buildGalaxyPlan({
+  const watchLooks = buildGalaxyPlan({
     players: env.players,
     universePlanets: env.universePlanets,
     rings: env.rings,
@@ -191,6 +192,19 @@ export function deriveSpy(env) {
     galaxyMode: env.galaxyMode,
     rechecks: env.rechecks,
   }).entries;
+  // Patrol looks (domain/patrol, precomputed by the orchestrator) join the
+  // watch-driven ones; a system proposed by BOTH keeps the higher-priority
+  // entry (a watched player living inside the territory must not produce two
+  // proposals for one navigation).
+  /** @type {Map<string, import('../../domain/galaxyWatch.js').GalaxyPlanEntry>} */
+  const byLabel = new Map();
+  for (const e of [...watchLooks, ...(env.patrolLooks || [])]) {
+    const cur = byLabel.get(e.label);
+    if (!cur || e.priority > cur.priority) byLabel.set(e.label, e);
+  }
+  const looks = [...byLabel.values()].sort((a, b) => (
+    b.priority - a.priority || a.galaxy - b.galaxy || a.system - b.system
+  ));
 
   const top = entries.length ? entries[0] : null;
   const lookTop = looks.length ? looks[0] : null;

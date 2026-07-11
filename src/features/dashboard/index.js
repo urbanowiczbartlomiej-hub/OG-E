@@ -467,6 +467,7 @@ const pinnedTargetIds = new Set();
 /** @type {HTMLElement | null} */ let tgtScanBodies;
 /** @type {HTMLElement | null} */ let tgtMoonStrike;
 /** @type {HTMLInputElement | null} */ let cadRescanHours;
+/** @type {HTMLInputElement | null} */ let tgtPatrolSystems;
 /** @type {HTMLInputElement | null} */ let cadGalaxyHours;
 /** @type {HTMLElement | null} */ let tgtHideInactive;
 /** @type {HTMLButtonElement | null} */ let tgtConfigToggle;
@@ -772,6 +773,7 @@ const wireDom = () => {
   tgtScanBodies = document.getElementById('tgtScanBodies');
   tgtMoonStrike = document.getElementById('tgtMoonStrike');
   cadRescanHours = /** @type {HTMLInputElement | null} */ (document.getElementById('cadRescanHours'));
+  tgtPatrolSystems = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtPatrolSystems'));
   cadGalaxyHours = /** @type {HTMLInputElement | null} */ (document.getElementById('cadGalaxyHours'));
   tgtHideInactive = document.getElementById('tgtHideInactive');
   tgtConfigToggle = /** @type {HTMLButtonElement | null} */ (document.getElementById('tgtConfigToggle'));
@@ -960,6 +962,7 @@ const loadWatched = async () => {
   if (tgtProbes) tgtProbes.value = String(cfg.probes);
   if (tgtScanBodies) setChipValue(tgtScanBodies, cfg.scanBodies ?? 'planets');
   if (tgtMoonStrike) setChipValue(tgtMoonStrike, cfg.moonStrike ?? DEFAULT_MOON_STRIKE);
+  if (tgtPatrolSystems) tgtPatrolSystems.value = String(cfg.patrolSystems ?? 0);
   hydrateCadenceInputs();
 };
 
@@ -1001,6 +1004,7 @@ const writeWatchConfig = () => {
     probes: Number(tgtProbes?.value) || DEFAULT_SPY_PROBES,
     scanBodies: chipValue(tgtScanBodies) || 'planets',
     moonStrike: chipValue(tgtMoonStrike) || DEFAULT_MOON_STRIKE,
+    patrolSystems: Number(tgtPatrolSystems?.value) || 0,
     rescan: rescanMap,
     relationships: watchRelationships,
     mapHidden: mapHiddenIds,
@@ -2641,6 +2645,9 @@ const wireListeners = () => {
   // Probe count is shared with the in-game scan FAB via chrome.storage, so it
   // persists through the watch-config write rather than the localStorage prefs.
   tgtProbes?.addEventListener('change', () => { writeWatchConfig(); repaintTargets(); });
+  // Patrol radius — same shared-config write (normalize clamps 0..50; the
+  // clamped value reflects back on the next hydrate).
+  tgtPatrolSystems?.addEventListener('change', () => { writeWatchConfig(); repaintTargets(); });
   // Re-scan cadence inputs — commitCadence clamps, reflects, persists, repaints.
   for (const el of [cadRescanHours, cadGalaxyHours]) {
     el?.addEventListener('change', commitCadence);
@@ -2817,6 +2824,7 @@ export const _resetDashboardForTest = () => {
     tgtProbes =
     tgtScanBodies =
     tgtMoonStrike =
+    tgtPatrolSystems =
     tgtHideInactive =
     tgtConfigToggle =
     tgtConfigCard =

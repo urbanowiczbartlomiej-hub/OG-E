@@ -31,9 +31,19 @@ import { settingsStore } from '../../state/settings.js';
 import { watchListStore } from '../../state/watchList.js';
 import { targetReportsStore } from '../../state/targets.js';
 import { activityObsStore } from '../../state/activityObs.js';
+import { bodiesStore } from '../../state/bodies.js';
+import { scansStore } from '../../state/scans.js';
+import { playersStore } from '../../state/players.js';
 import { spiedCoordsByPlayer, spiedMoonsByPlayer } from '../../domain/targetReports.js';
 import { summarizeRoutine, routineBodies } from '../../domain/routine.js';
 import { detectAllLandings, detectAllRechecks, strikeMapOf } from '../../domain/fleetLanding.js';
+import {
+  patrolSystemKeys,
+  patrolOccupants,
+  patrolPlayers,
+  buildPatrolPlan,
+} from '../../domain/patrol.js';
+import { galaxyStaleMs } from '../../domain/galaxyWatch.js';
 import { createButton as makeButton, labelLines } from '../shared/button.js';
 import { EYE_GLYPH } from '../shared/buttonGlyphs.js';
 import {
@@ -189,9 +199,41 @@ const captureEnv = () => {
   const reports = targetReportsStore.get();
   const cfg = watchListStore.get();
   const rings = activityObsStore.get();
-  const universePlanets = getApiContext()?.universePlanets ?? [];
+  const ctx = getApiContext();
+  const universePlanets = ctx?.universePlanets ?? [];
   const sentMap = readSpySentMap();
   const landingOpts = { sentMap, mode: cfg.moonStrike };
+
+  // ── Patrol territory (domain/patrol) — the hunting-grounds mode ──────────
+  // With a radius configured: the systems around every own body form the
+  // territory; its filtered occupants become extra strike candidates, and its
+  // stale systems join the LOOK plan as patrol entries. All passive.
+  const patrolSet = (cfg.patrolSystems || 0) > 0
+    ? patrolSystemKeys(bodiesStore.get().bodies, cfg.patrolSystems || 0, ctx?.server ?? {})
+    : null;
+  const occupants = patrolSet && patrolSet.size
+    ? patrolOccupants(universePlanets, patrolSet, ctx?.ownId ?? null)
+    : {};
+  const prey = patrolSet
+    ? patrolPlayers(occupants, {
+      apiPlayers: ctx?.players ?? {},
+      meta: playersStore.get(),
+      relationships: cfg.relationships,
+    }).filter((pid) => !cfg.players.includes(pid)) // watch-list runs its own pass
+    : [];
+
+  // Watch-list strikes first (they carry the user's deliberate focus), then
+  // the territory's — a body flagged by both keeps the watch-list signal.
+  const strikes = strikeMapOf(detectAllLandings(cfg.players, universePlanets, rings, nowMs, landingOpts));
+  const rechecks = detectAllRechecks(cfg.players, universePlanets, rings, nowMs, landingOpts);
+  if (prey.length) {
+    for (const [k, sig] of strikeMapOf(detectAllLandings(prey, universePlanets, rings, nowMs, landingOpts))) {
+      if (!strikes.has(k)) strikes.set(k, sig);
+    }
+    // No pid collisions possible (prey excludes watch-list ids).
+    Object.assign(rechecks, detectAllRechecks(prey, universePlanets, rings, nowMs, landingOpts));
+  }
+
   return {
     players: cfg.players,
     universePlanets,
@@ -214,14 +256,26 @@ const captureEnv = () => {
     // top of the probe plan so the FAB proposes spying that moon NOW. The
     // configured moon-strike mode (off/lone/newest/any) gates how much
     // corroboration the detector demands; the map carries each signal's
-    // tier so the button words its claim per rung.
-    strikes: strikeMapOf(detectAllLandings(cfg.players, universePlanets, rings, nowMs, landingOpts)),
+    // tier so the button words its claim per rung. Includes the patrol
+    // territory's prey when a radius is configured (see above).
+    strikes,
     // Ambiguous-moon re-look windows → boost those systems in the LOOK plan
     // (one look now reads exact minutes and settles the moon-vs-planet order).
-    rechecks: detectAllRechecks(cfg.players, universePlanets, rings, nowMs, landingOpts),
+    rechecks,
+    // Patrol looks: territory systems whose last galaxy scan outgrew the
+    // look cadence — merged into the LOOK plan by deriveSpy.
+    patrolLooks: patrolSet && patrolSet.size
+      ? buildPatrolPlan({
+        systems: patrolSet,
+        scans: scansStore.get(),
+        occupants,
+        nowMs,
+        staleMs: galaxyStaleMs(cfg.cadence),
+      }).entries
+      : [],
     dangerByPlayer: dangerByPlayer(),
     activityByPlayer: activityByPlayer(nowMs),
-    playerNames: getApiContext()?.players ?? {},
+    playerNames: ctx?.players ?? {},
   };
 };
 
