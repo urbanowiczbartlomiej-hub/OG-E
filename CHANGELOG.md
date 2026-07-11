@@ -4,6 +4,39 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.43.0] — 2026-07-11
+
+### Fixed
+
+- **Hidden-fleet estimates were too low for cargo-heavy players.** The
+  military highscore counts civil ships (transporters, recyclers, colony
+  ships, probes, satellites, crawlers) at half their value; Spyglass had been
+  treating them at full value, so a player parking a big transporter fleet
+  read as having far less hidden than they really did. Spyglass now subtracts
+  the visible fleet in the score's own currency and shows the hidden fleet in
+  **resources** (the units a spy report uses) beside the exact visible fleet —
+  no more mystery gap between a scan and the estimate.
+
+### Changed
+
+- **Danger reads composition more sharply.** The res/ship signal now accounts
+  for the civil-ship weighting, and the assumed makeup of a player's flying
+  fleet leans toward warships when the signs point that way — a warrior-class
+  alliance, a fleet spread wide across the server, a heavy kill history, or a
+  high bandit rank. An aggressive player's hidden fleet is treated as more
+  combat-heavy than a builder's.
+- **Settings panel command block.** The size slider is now the bottom segment
+  of the FAB block it controls (a slim modern slider with a filled track), the
+  Dashboard launcher matches the module tiles (logo over label, same height),
+  and the section headings read as headings.
+- **Dashboard enable switches are all chips now.** The last checkboxes (alarm
+  clock, cross-device sync, the colonization "prefer" switches, route pause)
+  became toggle chips like the rest, and every chip behaves correctly on
+  touch — a tap no longer leaves a phantom highlight that looked enabled.
+- **Floating-button menu spacing.** The satellite orbs keep an even gap
+  whether you have two modules or six, instead of flinging two to the extremes
+  and cramming six together.
+
 ## [1.42.1] — 2026-07-10
 
 ### Changed
