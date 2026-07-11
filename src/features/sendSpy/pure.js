@@ -72,7 +72,8 @@ export const BG_SPY_STRIKE = '#d1571f';
  *   & { playerNames?: Record<string, { name?: string }>,
  *       rings?: Record<string, Record<string, import('../../domain/activityObs.js').ActivityObs[]>>,
  *       galaxyMode?: Record<string, import('../../domain/scanMode.js').ScanMode>,
- *       rechecks?: Record<string, import('../../domain/fleetLanding.js').LandingRecheck> }} SpyEnv
+ *       rechecks?: Record<string, import('../../domain/fleetLanding.js').LandingRecheck>,
+ *       sentAt?: Record<string, number> }} SpyEnv
  *   The planner env (see domain/scanPriority.js): watched players, universe
  *   planet rows, per-coord report freshness (planets AND moons), rescan flags,
  *   session sent-coords, the clock, the planet/moon scan filter, the scan-mode
@@ -96,10 +97,49 @@ export const BG_SPY_STRIKE = '#d1571f';
  */
 
 /**
+ * How long a session probe-send waits for its report before the pending-
+ * reports nudge stops counting it: a probe destroyed by the defender never
+ * yields a report, and the nudge must not wedge the button forever.
+ */
+export const PENDING_REPORT_MAX_MS = 30 * 60 * 1000;
+
+/**
+ * How many of this session's probe sends have NO ingested report newer than
+ * the send — "you probed, the reports are (or will shortly be) in your
+ * messages, and OG-E hasn't seen them yet" (ingest happens when the messages
+ * page is opened). Legacy no-time sends and sends older than
+ * {@link PENDING_REPORT_MAX_MS} don't count (see the constant).
+ *
+ * @param {SpyEnv} env
+ * @returns {number}
+ */
+export const countPendingReports = (env) => {
+  const sentAt = env.sentAt || {};
+  let n = 0;
+  for (const key of Object.keys(sentAt)) {
+    const at = sentAt[key];
+    if (!(typeof at === 'number' && at > 0)) continue;
+    if (env.nowMs - at > PENDING_REPORT_MAX_MS) continue;
+    const moon = key.endsWith(':3');
+    const coord = moon ? key.slice(0, -2) : key;
+    const byPlayer = (moon ? env.spiedMoonsByPlayer : env.spiedByPlayer) || {};
+    let tsSec = 0;
+    for (const pid of Object.keys(byPlayer)) {
+      const t = byPlayer[pid] ? byPlayer[pid][coord] : undefined;
+      if (typeof t === 'number' && t > tsSec) tsSec = t;
+    }
+    if (!(tsSec * 1000 > at)) n += 1;
+  }
+  return n;
+};
+
+/**
  * @typedef {object} SpyContext
- * @property {'probe'|'look'|null} proposal  Which action the button proposes:
- *   a probe send (courier flow), a galaxy look (one-tap navigation), or null
- *   when both plans are empty ("all scanned" end state).
+ * @property {'probe'|'look'|'reports'|null} proposal  Which action the button
+ *   proposes: a probe send (courier flow), a galaxy look (one-tap
+ *   navigation), reading the fresh espionage reports (one-tap navigation to
+ *   messages — proposed between "probes done" and the ordinary looks), or
+ *   null when everything is done ("all scanned" end state).
  * @property {SpyTarget | null} candidate   Next body to probe, or null.
  * @property {SpyLook | null} look          Top galaxy-look system, or null.
  * @property {number} remaining             Bodies + systems still needing attention.
@@ -108,6 +148,9 @@ export const BG_SPY_STRIKE = '#d1571f';
  *   candidate (painted distinctly).
  * @property {'lone'|'newest'|'any'} [strikeTier]  The strike's ladder rung —
  *   picks the hint wording ('any' concedes the owner may be around).
+ * @property {number} [pendingReports]      Session probe sends whose report
+ *   isn't ingested yet (see {@link countPendingReports}) — set with the
+ *   'reports' proposal.
  * @property {string} [why]                 The proposal's wording-safe reason line.
  */
 
@@ -139,6 +182,26 @@ export function deriveSpy(env) {
 
   const top = entries.length ? entries[0] : null;
   const lookTop = looks.length ? looks[0] : null;
+
+  // Fresh, un-ingested espionage reports interpose between "probes done" and
+  // the ordinary looks: the user just paid fleet slots for that intel, so
+  // reading it comes before gathering more. Probe proposals (incl. strikes)
+  // still lead — the nudge must not interrupt a probing run — and an
+  // ambiguous-moon RECHECK look still wins too (its window is time-critical;
+  // reports keep). One tap = one navigation to messages (which is also what
+  // ingests the reports and clears the nudge).
+  const pendingReports = countPendingReports(env);
+  if (pendingReports > 0 && !top && !(lookTop && lookTop.recheck)) {
+    return {
+      proposal: 'reports',
+      candidate: null,
+      look: null,
+      remaining: looks.length,
+      hasWatched: (env.players || []).length > 0,
+      pendingReports,
+    };
+  }
+
   const pickLook = !!lookTop && (!top || lookTop.priority >= top.priority);
   const name = top && env.playerNames ? env.playerNames[top.playerId]?.name : undefined;
   const why = pickLook ? lookTop?.why : top?.why;
@@ -191,6 +254,16 @@ export function renderSpy(ctx, preflight) {
   }
   if (!ctx.proposal) {
     return { text: 'Reports', subtext: 'all scanned ✓', bg: BG_SPY_DONE };
+  }
+  // Fresh reports await ingest — read them before the next look (tap →
+  // messages). Calm paint (no pulse): the intel is already yours.
+  if (ctx.proposal === 'reports') {
+    return {
+      text: 'Reports',
+      subtext: `${ctx.pendingReports ?? 0} new`,
+      hint: 'read, then looks',
+      bg: BG_SPY_DONE,
+    };
   }
   // Galaxy look — one tap navigates to the system; browsing it refreshes every
   // galaxy-watched body there (passive, the target never sees it).

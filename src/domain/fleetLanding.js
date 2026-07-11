@@ -95,8 +95,13 @@ import { ringKeyFor, overrideKeyFor } from './scanMode.js';
  * @typedef {'off'|'lone'|'newest'|'any'} MoonStrikeMode
  */
 
-/** A body is "freshly active" only if we saw it active within this window (so
- * the reading reflects NOW, not an hours-old look). */
+/** A body is "freshly active" only if its IMPLIED INTERACTION (τ, from the
+ * marker's minutes — not the look time) falls within this window. The old
+ * look-age rule let a marker of 40–55 idle minutes seen just now read as
+ * "lit NOW", so a lone strike could claim a moon whose last interaction was
+ * an hour old (a real false-strike users hit while their own probes lit the
+ * planets); the 15–60 min tail belongs to the 'newest' tier, which reports
+ * its age instead of claiming NOW. */
 export const FRESH_LOOK_MS = 30 * 60 * 1000;
 /** A quiet look counts as "quiet now" only if this recent (concurrency). */
 export const QUIET_COVERAGE_MS = 60 * 60 * 1000;
@@ -148,7 +153,10 @@ function bodyState(coord, bodyType, ring, nowMs, sent) {
       lastLookT = last.t;
       const lookAgeMs = nowMs - last.t * 1000;
       if (last.m >= 0) {
-        if (lookAgeMs >= 0 && lookAgeMs <= FRESH_LOOK_MS) cls = 'fresh';
+        // Interaction age, not look age (see FRESH_LOOK_MS) — τ_hi ≤ look
+        // time, so a recent interaction implies a recent look for free.
+        const tauAgeMs = nowMs - interactionInterval(last).hi * 1000;
+        if (lookAgeMs >= 0 && tauAgeMs <= FRESH_LOOK_MS) cls = 'fresh';
       } else if (lookAgeMs >= 0 && lookAgeMs <= QUIET_COVERAGE_MS) {
         cls = 'quiet';
       }

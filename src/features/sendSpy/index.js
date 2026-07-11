@@ -112,13 +112,6 @@ let showingLoading = false;
 // discount (a marker our own probe lit must not enter the routine).
 
 /**
- * Coords sent this browser-tab session, so a just-probed planet isn't
- * re-proposed across the post-send page reload before its report lands.
- * @returns {Set<string>}
- */
-const getSentCoords = () => new Set(Object.keys(readSpySentMap()));
-
-/**
  * Session sent-key for a body: `g:s:p` for a planet, `g:s:p:3` for a moon, so a
  * probe sent to a planet doesn't also suppress its moon (and vice versa).
  * @param {SpyTarget} t
@@ -197,14 +190,18 @@ const captureEnv = () => {
   const cfg = watchListStore.get();
   const rings = activityObsStore.get();
   const universePlanets = getApiContext()?.universePlanets ?? [];
-  const landingOpts = { sentMap: readSpySentMap(), mode: cfg.moonStrike };
+  const sentMap = readSpySentMap();
+  const landingOpts = { sentMap, mode: cfg.moonStrike };
   return {
     players: cfg.players,
     universePlanets,
     spiedByPlayer: spiedCoordsByPlayer(reports),
     spiedMoonsByPlayer: spiedMoonsByPlayer(reports),
     rescan: cfg.rescan,
-    sentCoords: getSentCoords(),
+    sentCoords: new Set(Object.keys(sentMap)),
+    // Send TIMES too — the pending-reports nudge compares them against the
+    // ingested report timestamps (countPendingReports).
+    sentAt: sentMap,
     nowMs,
     scanBodies: cfg.scanBodies,
     // Scan mode gates the PROBE plan (off bodies excluded); galaxyMode mutes
@@ -395,6 +392,13 @@ const onSpyClick = async () => {
   }
 
   const ctx = deriveSpy(captureEnv());
+
+  // Fresh reports await ingest → ONE tap = ONE navigation to messages
+  // (opening them is what ingests the reports and advances the button).
+  if (ctx.proposal === 'reports') {
+    location.href = ingameComponentUrl(location.href, 'messages', {});
+    return;
+  }
 
   // Galaxy look proposed → ONE tap = ONE navigation to that system. On the
   // galaxy view step in-page (the game's own AJAX loader); anywhere else a
