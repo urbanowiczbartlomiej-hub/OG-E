@@ -67,7 +67,7 @@ import { observeXHR } from './xhrObserver.js';
 import { safeLS } from '../lib/storage.js';
 import { MISSION_EXPEDITION } from '../domain/rules.js';
 import { ingameComponentUrl } from '../domain/ogameUrl.js';
-import { GAME, ACTIVE_PLANET_CLASS } from '../lib/gameDom.js';
+import { GAME, ACTIVE_PLANET_CLASS, ACTIVE_MOON_CLASS } from '../lib/gameDom.js';
 
 /**
  * localStorage key for the user preference. OPT-OUT: default is `true`,
@@ -153,17 +153,25 @@ const getMissionFromBody = (body) => {
 };
 
 /**
- * Find the cp (planet id) of the next planet in `#planetList` order that is
- * still UNDER the per-planet expedition cap (`maxExpeditionsPerPlanet`).
+ * Find the cp of the next body in `#planetList` order that is still UNDER
+ * the per-planet expedition cap (`maxExpeditionsPerPlanet`).
  *
- * "Next" is defined as: the first planet after the currently highlighted
- * one (the `.hightlightPlanet` — yes, the game's CSS class is spelled
- * that way) whose in-flight expedition count (its `.ogi-exp-dots` child
- * count) is below the cap, wrapping around to the start of the list if
- * necessary. Always walking forward from the active planet and skipping it
- * is what makes the loop ROUND-ROBIN: each pass tops every planet up by one
- * before any planet receives its next expedition. At the default cap of 1
- * this is exactly "the first planet that has no expedition yet".
+ * "Next" is defined as: the first row after the currently highlighted one
+ * whose in-flight expedition count (its `.ogi-exp-dots` child count) is
+ * below the cap, wrapping around to the start of the list if necessary.
+ * On planet pages the active row carries `.hightlightPlanet`; on MOON
+ * pages the game swaps it for `.hightlightMoon` (both are the game's own
+ * misspellings) — we recognise both, so a moon-launched expedition hops
+ * too. Always walking forward from the active row and skipping it is what
+ * makes the loop ROUND-ROBIN: each pass tops every body up by one before
+ * any body receives its next expedition. At the default cap of 1 this is
+ * exactly "the first body that has no expedition yet".
+ *
+ * The hop stays on the KIND of body the expedition left from (read off the
+ * `ogame-planet-type` meta of the page that sent it): a planet-launched
+ * expedition lands on the next planet (the row's `planet-<n>` id), a
+ * moon-launched one on the next MOON (the row's moonlink `cp`; rows
+ * without a moon are skipped).
  *
  * The `.ogi-exp-dots` badge is rendered by the isolated-world UI layer
  * next to every planet with an expedition in flight. Using the DOM as
@@ -174,12 +182,12 @@ const getMissionFromBody = (body) => {
  *   - There are fewer than 2 planets (nowhere to redirect to — all
  *     dispatch loops are single-planet accounts that don't benefit from
  *     this feature anyway).
- *   - The currently active planet can't be found (edge case; the game
- *     always marks exactly one planet highlighted, but a race between
+ *   - The currently active row can't be found (edge case; the game
+ *     always marks exactly one row highlighted, but a race between
  *     our observer and the DOM rebuild could theoretically hit it).
- *   - Every other planet has already reached the cap — i.e. the user has
- *     saturated their expedition budget across all planets and there's
- *     genuinely no next target.
+ *   - Every other candidate has already reached the cap — i.e. the user
+ *     has saturated their expedition budget and there's genuinely no next
+ *     target (in moon mode also: no other row has a moon).
  *
  * @returns {string | null} The cp id as a string (what the game's URL
  *   param format expects), or `null` when no suitable target exists.
@@ -191,17 +199,37 @@ const findNextPlanetWithFreeSlot = () => {
   );
   if (planets.length < 2) return null;
 
-  const currentIdx = planets.findIndex((el) => el.classList.contains(ACTIVE_PLANET_CLASS));
+  // This runs while the sendFleet response is being read — the page is
+  // still the ORIGIN's fleetdispatch, so its meta names the body the
+  // expedition just left from.
+  const fromMoon =
+    document.querySelector(GAME.META_PLANET_TYPE)?.getAttribute('content') ===
+    'moon';
+  const currentIdx = planets.findIndex(
+    (el) =>
+      el.classList.contains(ACTIVE_PLANET_CLASS) ||
+      el.classList.contains(ACTIVE_MOON_CLASS),
+  );
   if (currentIdx === -1) return null;
 
-  // Wrap-around scan: we skip offset 0 (that's the current planet, which
+  // Wrap-around scan: we skip offset 0 (that's the current body, which
   // just finished sending an expedition — its badge hasn't caught up yet,
   // and we don't want to immediately bounce back to it) and walk forward,
-  // wrapping to the start when we fall off the end. The first planet still
-  // under the cap wins.
+  // wrapping to the start when we fall off the end. The first candidate
+  // still under the cap wins.
   for (let i = 1; i < planets.length; i++) {
     const planet = planets[(currentIdx + i) % planets.length];
-    if (countPlanetExpeditions(planet) < max) {
+    if (countPlanetExpeditions(planet) >= max) continue;
+    if (fromMoon) {
+      const href = planet.querySelector(GAME.MOON_LINK)?.getAttribute('href');
+      if (!href) continue; // no moon at this slot → not a candidate
+      try {
+        const cpId = new URL(href, location.href).searchParams.get('cp');
+        if (cpId) return cpId;
+      } catch {
+        // Malformed href — skip the row rather than abort the walk.
+      }
+    } else {
       const cpId = planet.id.replace('planet-', '');
       if (cpId) return cpId;
     }

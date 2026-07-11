@@ -44,6 +44,14 @@
 export const ACTIVE_PLANET_CLASS = 'hightlightPlanet';
 
 /**
+ * On MOON pages the game highlights the `.smallplanet` row with THIS class
+ * instead — `hightlightPlanet` is absent entirely (only the row's moonlink
+ * gets `active`). Same intentional game-side misspelling. Readers that need
+ * "the active row, whichever body I'm on" must check both classes.
+ */
+export const ACTIVE_MOON_CLASS = 'hightlightMoon';
+
+/**
  * Shared OGame-native selectors, grouped by the surface they live on.
  * Compose relative ones with `el.querySelector(...)` against a row/planet
  * node; absolute ones (those starting with `#`) against `document`.
@@ -57,6 +65,8 @@ export const GAME = {
   SMALL_PLANET_ONLY: '#planetList .smallplanet[id^="planet-"]',
   /** The active planet entry. See {@link ACTIVE_PLANET_CLASS}. */
   ACTIVE_PLANET: `#planetList .${ACTIVE_PLANET_CLASS}`,
+  /** The active row on MOON pages. See {@link ACTIVE_MOON_CLASS}. */
+  ACTIVE_MOON_ROW: `#planetList .${ACTIVE_MOON_CLASS}`,
   /** Anchor inside a `.smallplanet` row. */
   PLANET_LINK: '.planetlink',
   /** Name span inside a planet link. */
@@ -65,10 +75,11 @@ export const GAME = {
   PLANET_KOORDS: '.planet-koords',
   /**
    * Moon anchor inside a planet/galaxy row (a row has one only if a moon
-   * exists at that body). Read by `features/planetBarCapture` (the planet
-   * bar) and `features/dailyRun` (galaxy rows). The moon image / name is
-   * a single-feature detail (`img.icon-moon`) — composed locally where
-   * needed, not hoisted here.
+   * exists at that body). Its href's `cp` is the moon's id; the moon icon
+   * `<img>` inside carries the moon's display name in `alt` (the image has
+   * no class — match it as a plain `img`, composed locally where needed).
+   * Read by `features/planetBarCapture`, `features/dailyRun`, the
+   * alarmClock guardian, and `bridges/expeditionRedirect`.
    */
   MOON_LINK: 'a.moonlink',
 
@@ -77,7 +88,9 @@ export const GAME = {
    * present on EVERY ingame page regardless of how it was reached. Unlike the
    * URL `cp` (which only the planet/moon links carry, NOT the top "Fleet" menu),
    * these always identify the active body. Coordinates are `"g:s:p"`; type is
-   * `"planet"` | `"moon"`. Read by `features/dailyRun` and `features/manualFsMark`.
+   * `"planet"` | `"moon"`. Read by `features/shared/currentBody` (dailyRun +
+   * the alarmClock guardian), `features/manualFsMark`, and
+   * `bridges/expeditionRedirect` (moon-aware hop).
    */
   META_PLANET_COORDS: 'meta[name="ogame-planet-coordinates"]',
   META_PLANET_TYPE: 'meta[name="ogame-planet-type"]',

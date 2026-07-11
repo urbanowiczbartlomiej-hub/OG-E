@@ -34,7 +34,8 @@
 
 import { EVENT_BOX_LOADED_EVENT, MANUAL_FS_CHANGED_EVENT } from '../../lib/ogeEvents.js';
 import { GAME } from '../../lib/gameDom.js';
-import { denseCoords } from '../../domain/bodies.js';
+import { denseCoords, bodyKey as toBodyKey } from '../../domain/bodies.js';
+import { readCurrentBody } from '../shared/currentBody.js';
 import { clock } from '../../lib/clock.js';
 import { createButton, labelLines } from '../shared/button.js';
 import { installButtonChrome } from '../shared/buttonChrome.js';
@@ -126,20 +127,35 @@ const navigateToBody = (t) => {
 };
 
 /**
+ * Body key (`g:s:p:type`) of the body the current page belongs to, or ''
+ * when unreadable. Type-aware on purpose: a bare fleet on PLANET A and the
+ * page being MOON A's fleetdispatch share coords but are different bodies —
+ * saving from the wrong one is exactly what the tap gate prevents.
+ */
+const currentBodyKey = () => {
+  const b = readCurrentBody();
+  return b ? toBodyKey(`${b.galaxy}:${b.system}:${b.position}`, b.type) : '';
+};
+
+/**
  * Repaint the idle button face. OG-E does NOT watch the game — this button is
  * here only because YOU landed a fleet yourself. The primary word splits by
- * context: off a fleetdispatch screen it's "You here?" (a tap there only confirms
- * you're present + snoozes — it never yanks you away); on the bare body's
- * fleetdispatch it's the actionable "Fleet save". Subtitle = landing coords
- * (`+n` for extras); hint = hold-to-dismiss.
+ * context: away from a BARE body's fleetdispatch it's "You here?" (a tap there
+ * only confirms you're present + snoozes — it never yanks you away); on a bare
+ * body's own fleetdispatch it's the actionable "Fleet save". A fleetdispatch
+ * page of some OTHER body counts as "away" — the tap there won't save (see
+ * handleGuardianTap's active-body gate), so the label must not promise it.
+ * Subtitle = landing coords (`+n` for extras); hint = hold-to-dismiss.
  */
 const paint = () => {
   if (!btn || bare.length === 0) return;
   const t = bare[0];
   const sub = bare.length > 1 ? `${t.coords} +${bare.length - 1}` : t.coords;
-  const onDispatch = location.search.includes('component=fleetdispatch');
+  const onBareDispatch =
+    location.search.includes('component=fleetdispatch') &&
+    bare.some((b) => b.bodyKey === currentBodyKey());
   btn.paintLines('g', labelLines({
-    main: onDispatch ? 'Fleet save' : 'You here?',
+    main: onBareDispatch ? 'Fleet save' : 'You here?',
     sub,
     hint: '(hold to skip)',
   }));
@@ -203,12 +219,6 @@ const dismissPrimary = () => {
   refresh();
 };
 
-/** Active body's coords on the current page (dense `g:s:p`), or '' if unknown. */
-const currentBodyCoords = () =>
-  denseCoords(
-    document.querySelector(GAME.ACTIVE_PLANET)?.querySelector(GAME.PLANET_KOORDS)?.textContent,
-  );
-
 /** "Wait…" while AGR's routine is being driven. */
 const paintBusy = () =>
   btn?.paintLines('g', labelLines({ main: 'Wait…', sub: bare[0]?.coords, hint: '' }));
@@ -223,9 +233,36 @@ const paintFsOff = () =>
   btn?.paintLines('g', labelLines({ main: 'FS off', sub: 'enable Fleet', hint: 'Save in AGR' }));
 
 /**
+ * The two-step flow used whenever the tap can NOT fleet-save right here
+ * (off fleetdispatch, or on the WRONG body's fleetdispatch), so the pulse
+ * never yanks the player away by reflex. FIRST tap = ACK only (silence the
+ * pulse, snooze the push, stay put). A SECOND tap (while armed) navigates
+ * to the bare body to save.
+ *
+ * @param {BareFleet} t
+ * @returns {void}
+ */
+const ackOrNavigate = (t) => {
+  if (navArmed) {
+    navigateToBody(t);
+    return;
+  }
+  ackPresence(t);
+  navArmed = true;
+  paintAcked(t);
+  if (navTimer) clearTimeout(navTimer);
+  navTimer = setTimeout(() => {
+    navTimer = null;
+    navArmed = false;
+    paint();
+  }, 5000);
+};
+
+/**
  * Button TAP. Two-tap fleet-save flow, mirroring sendExpedition:
- *   - Off a bare body's fleetdispatch → ack ("I'm on it") + navigate to the
- *     primary bare body.
+ *   - Off the bare body's fleetdispatch (any other page, OR fleetdispatch of
+ *     a DIFFERENT body) → ack ("I'm on it") + navigate to the primary bare
+ *     body.
  *   - On a bare body's fleetdispatch, fleet2 NOT up yet → prepare AGR's
  *     fleet-save routine (6) and flip to "Send FS".
  *   - On a bare body's fleetdispatch, fleet2 up → fire the dispatch, then drop
@@ -238,33 +275,23 @@ const handleGuardianTap = async () => {
   const t = bare[0];
   if (!t) return;
 
-  // Off a fleetdispatch screen → two-step, so the pulse never yanks the player
-  // away by reflex. FIRST tap = ACK only (silence the pulse, snooze the push,
-  // stay put). A SECOND tap (while armed) navigates to the bare body to save.
   if (!location.search.includes('component=fleetdispatch')) {
-    if (navArmed) {
-      navigateToBody(t);
-      return;
-    }
-    ackPresence(t);
-    navArmed = true;
-    paintAcked(t);
-    if (navTimer) clearTimeout(navTimer);
-    navTimer = setTimeout(() => {
-      navTimer = null;
-      navArmed = false;
-      paint();
-    }, 5000);
+    ackOrNavigate(t);
     return;
   }
 
-  // On fleetdispatch → drive the fleet-save for the body we're on. Like the
-  // expedition button, being on fleetdispatch is enough to proceed — we do NOT
-  // gate on a coords match (AGR's routine itself is the real "is there a fleet
-  // here to save?" check). The active-body coords just pick WHICH bare entry to
-  // clear on success; fall back to the primary when they can't be read.
-  const here = currentBodyCoords();
-  const target = bare.find((b) => b.coords === here) || t;
+  // On fleetdispatch → only drive the fleet-save when the ACTIVE body is one
+  // of the bare ones. The page alone is NOT enough: fleetdispatch opens on
+  // whatever body is currently selected, and AGR's routine would happily save
+  // THAT fleet — so with planet A bare and the player on planet B's (or even
+  // moon A's) fleet page, an ungated tap fleet-saves the wrong fleet. Wrong
+  // (or unreadable) body → same two-step as off-page: ack, then navigate.
+  const here = currentBodyKey();
+  const target = here ? bare.find((b) => b.bodyKey === here) : undefined;
+  if (!target) {
+    ackOrNavigate(t);
+    return;
+  }
 
   busy = true;
   try {

@@ -36,9 +36,11 @@
 //     pre-pick the next target here, because the target we just sent to
 //     is not yet in `#eventContent` — deferring the pick to the reloaded
 //     page (where it IS) keeps "skip already-sent" correct.
-//   - Collect: redirect to the next planet's fleetdispatch already aimed
-//     at the collect target (we always advance PAST the current planet,
-//     so the not-yet-visible current leg doesn't matter).
+//   - Collect: redirect to the next source's fleetdispatch already aimed
+//     at the collect target (we always advance PAST the current body,
+//     so the not-yet-visible current leg doesn't matter). The walk stays
+//     on the kind of body the send left from: planet runs hop planets,
+//     moon runs hop moons.
 //
 // @see ./pure.js — URL builders, target picking, the routes DSL.
 // @see ./domHelpers.js — DOM readers + fleet-step drivers.
@@ -71,7 +73,7 @@ import {
   installFleetCourier,
   bareFleetdispatchUrl,
 } from '../shared/fleetCourier.js';
-import { MISSION_DEPLOYMENT } from '../../domain/rules.js';
+import { MISSION_DEPLOYMENT, TARGET_PLANET, TARGET_MOON } from '../../domain/rules.js';
 import { OWNER_FS } from '../../domain/fleetOwnership.js';
 import { mayCompleteFleet2 } from '../shared/fleetOwnership.js';
 import { EVENT_BOX_LOADED_EVENT } from '../../lib/ogeEvents.js';
@@ -79,7 +81,6 @@ import { whenEventBoxReady } from '../shared/eventBoxGate.js';
 import { clock } from '../../lib/clock.js';
 import { resolveSelection } from '../../domain/fleetPlan.js';
 import {
-  coordKey,
   coordTypeKey,
   findRouteForBody,
   findNextMicroTarget,
@@ -88,7 +89,7 @@ import {
 import {
   readCurrentBody,
   readInboundLegs,
-  findNextCollectPlanetCp,
+  findNextCollectSourceCp,
   bodyNameByCoord,
 } from './domHelpers.js';
 
@@ -202,9 +203,10 @@ const microInFlightKeys = (mission) => {
 };
 
 /**
- * Set of {@link coordKey}s of planets that already have a deployment
- * inbound to `target` — the "already collected" guard for the next-planet
- * walk.
+ * Set of {@link coordTypeKey}s of bodies that already have a deployment
+ * inbound to `target` — the "already collected" guard for the next-source
+ * walk. Type-aware on BOTH ends: a deployment from moon A must not mark
+ * the PLANET at A as collected (and vice versa).
  *
  * @param {import('../../state/dailyRunRoutes.js').TargetCoord | null} target
  * @returns {Set<string>}
@@ -217,11 +219,21 @@ const collectedOriginKeys = (target) => {
   // collected" guard only counts inbound DEPLOYMENT legs.
   for (const leg of readInboundLegs()) {
     if (leg.mission === MISSION_DEPLOYMENT && leg.origin && coordTypeKey(leg.dest) === tkt) {
-      set.add(coordKey(leg.origin));
+      set.add(coordTypeKey(leg.origin));
     }
   }
   return set;
 };
+
+/**
+ * The kind of body the CURRENT collect leg departs from — decides whether
+ * the next-source walk advances planet→planet or moon→moon (a run started
+ * on a moon stays on moons). Falls back to the planet walk when the
+ * current body can't be read.
+ *
+ * @returns {number}
+ */
+const collectSourceType = () => readCurrentBody()?.type ?? TARGET_PLANET;
 
 // ─── pre-tap availability checks (snapshot-driven, null = unknown) ──────
 
@@ -310,21 +322,24 @@ const stashMicroRedirect = () => {
 };
 
 /**
- * Stash the post-send redirect for a COLLECT send: the next planet still
- * needing collection, already aimed at the collect target. No redirect
- * (clears the key) when nothing's left — the game's own redirect stands.
+ * Stash the post-send redirect for a COLLECT send: the next body still
+ * needing collection (same kind as the one we're sending from — planet
+ * runs hop planets, moon runs hop moons), already aimed at the collect
+ * target. No redirect (clears the key) when nothing's left — the game's
+ * own redirect stands.
  *
  * @param {import('../../state/dailyRunRoutes.js').TargetCoord | null} target
  * @returns {void}
  */
 const stashCollectRedirect = (target) => {
   if (!target) return;
-  const nextCp = findNextCollectPlanetCp(
+  const nextCp = findNextCollectSourceCp(
     collectedOriginKeys(target),
-    coordKey(target),
+    coordTypeKey(target),
+    collectSourceType(),
   );
   if (!nextCp) return;
-  // Bare fleetdispatch on the next planet still needing collection; the
+  // Bare fleetdispatch on the next body still needing collection; the
   // courier re-selects + re-targets there on the next tap (the collect
   // target comes from the store, not the URL).
   safeLS.set(DAILY_RUN_REDIRECT_KEY, bareFleetdispatchUrl(nextCp));
@@ -520,7 +535,11 @@ const handleZone = async (mode) => {
   if (mode === 'collect' && collectPlanetEmpty()) {
     const target = dailyRunRoutesStore.get().collectTarget;
     const nextCp = target
-      ? findNextCollectPlanetCp(collectedOriginKeys(target), coordKey(target))
+      ? findNextCollectSourceCp(
+          collectedOriginKeys(target),
+          coordTypeKey(target),
+          collectSourceType(),
+        )
       : null;
     if (!nextCp) {
       flash(zone, 'All done');
@@ -663,8 +682,12 @@ const refresh = () => {
     } else if (collectPlanetEmpty()) {
       // Nothing to take here — propose the jump; the tap performs it
       // (see handleZone). Mirrors the post-send "advance to the next
-      // planet" flow, just without a send.
-      setLabel(collectZone, 'Empty', '→ next planet');
+      // source" flow, just without a send.
+      setLabel(
+        collectZone,
+        'Empty',
+        collectSourceType() === TARGET_MOON ? '→ next moon' : '→ next planet',
+      );
     } else {
       setLabel(collectZone, 'Send All', collectTargetLabel(t), '(hold to change)');
     }

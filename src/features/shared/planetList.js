@@ -10,13 +10,26 @@
 // lives in `lib/gameDom.js`; this owns the traversal so neither feature
 // re-implements the modulo walk.
 
-import { GAME, ACTIVE_PLANET_CLASS } from '../../lib/gameDom.js';
+import { GAME, ACTIVE_PLANET_CLASS, ACTIVE_MOON_CLASS } from '../../lib/gameDom.js';
+
+/** Default cp extraction: the row's own `planet-<n>` id. */
+const rowCp = (/** @type {HTMLElement} */ p) => {
+  const id = p.id || '';
+  if (!id.startsWith('planet-')) return null;
+  return id.slice('planet-'.length) || null;
+};
 
 /**
- * Walk the planet rows starting from the active planet and return the
+ * Walk the planet rows starting from the active row and return the
  * `cp` of the first row for which `predicate` is truthy.
  *
- * `active` controls where the active planet itself sits in the walk:
+ * The active row is the one the current page belongs to — marked
+ * `hightlightPlanet` on planet pages and `hightlightMoon` on moon pages
+ * (see `lib/gameDom.js`); both count, so a walk started from a moon still
+ * advances relative to that moon's row instead of degrading to a
+ * top-of-list scan.
+ *
+ * `active` controls where the active row itself sits in the walk:
  *   - `'first'` — checked first, then the rest forward with wrap (used
  *     when the active planet is a valid candidate to prefer);
  *   - `'skip'`  — never checked (caller already ruled it out);
@@ -26,27 +39,36 @@ import { GAME, ACTIVE_PLANET_CLASS } from '../../lib/gameDom.js';
  *
  * The predicate runs BEFORE the `cp` is parsed (matching both original
  * call sites), so a feature can read coords / classes off the element
- * without worrying about id shape. Non-`planet-<n>` rows are skipped.
+ * without worrying about id shape. Rows whose cp can't be extracted are
+ * skipped.
  *
  * @param {(planet: HTMLElement) => boolean} predicate  per-row test.
- * @param {{ active?: 'first' | 'skip' | 'last' }} [opts]
+ * @param {{
+ *   active?: 'first' | 'skip' | 'last',
+ *   cpOf?: (planet: HTMLElement) => string | null,
+ * }} [opts]  `cpOf` overrides what a matching row's cp IS — default is the
+ *   row's `planet-<n>` id (the planet); dailyRun's moon walk reads the
+ *   moonlink's `cp` instead.
  * @returns {string | null} the numeric `cp` as a string, or `null` when
  *   no row matches (or the list is empty).
  */
 export const findNextPlanetInList = (predicate, opts = {}) => {
   const active = opts.active ?? 'first';
+  const cpOf = opts.cpOf ?? rowCp;
   const planets = /** @type {HTMLElement[]} */ (
     [...document.querySelectorAll(GAME.SMALL_PLANET)]
   );
   if (planets.length === 0) return null;
 
-  const activeIdx = planets.findIndex((p) =>
-    p.classList.contains(ACTIVE_PLANET_CLASS),
+  const activeIdx = planets.findIndex(
+    (p) =>
+      p.classList.contains(ACTIVE_PLANET_CLASS) ||
+      p.classList.contains(ACTIVE_MOON_CLASS),
   );
   const start = activeIdx < 0 ? 0 : activeIdx;
-  // No row carries the active-planet class (e.g. the current page is a
-  // moon) — there is no active row to skip or defer around, so every mode
-  // degrades to a plain full walk over every planet.
+  // No row carries either active class (unexpected — some non-ingame
+  // layout) — there is no active row to skip or defer around, so every
+  // mode degrades to a plain full walk over every planet.
   const lo = activeIdx < 0 ? 0 : active === 'first' ? 0 : 1;
   const hi =
     activeIdx < 0
@@ -58,9 +80,7 @@ export const findNextPlanetInList = (predicate, opts = {}) => {
   for (let i = lo; i <= hi; i++) {
     const p = planets[(start + i) % planets.length];
     if (!predicate(p)) continue;
-    const id = p.id || '';
-    if (!id.startsWith('planet-')) continue;
-    const cp = id.slice('planet-'.length);
+    const cp = cpOf(p);
     if (cp) return cp;
   }
   return null;

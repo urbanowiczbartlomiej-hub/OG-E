@@ -127,7 +127,7 @@ export const readHomePlanet = () => {
   // Both cases keep .planet-koords inside the same .smallplanet row.
   const row =
     document.querySelector(GAME.ACTIVE_PLANET) ??
-    document.querySelector('#planetList .hightlightMoon');
+    document.querySelector(GAME.ACTIVE_MOON_ROW);
   if (!row) return null;
   const coords = row.querySelector(GAME.PLANET_KOORDS)?.textContent?.trim();
   const m = (coords || '').match(/\[(\d+):(\d+):(\d+)\]/);
