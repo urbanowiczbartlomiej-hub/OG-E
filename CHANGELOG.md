@@ -4,6 +4,76 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.45.0] — 2026-07-11
+
+### Added
+
+- **Patrol territory mode (Spyglass).** The watch-list is the sniper's tool;
+  this is the territorial predator's: your colonies become a coverage
+  lattice and the prey is whoever NEARBY slips. One knob — `Patrol ± N
+  systems` in the Spyglass scan preferences (0 = off, synced across
+  devices) — and the in-game Spy button starts walking those systems
+  through its Look proposals and hunting moon-strike signals on ANY
+  neighbour there (friends, your alliance, noob-protected, vacation and
+  banned players are skipped). A new Patrol card on the Spyglass tab shows
+  the strikes it found — coords deep-link to the galaxy, each signal names
+  its honest claim (fresh landing? / parked fleet? / owner around?), and a
+  one-tap "watch" promotes the neighbour onto the watch-list — plus a
+  coverage summary saying how well the grounds are being walked. The card
+  renders only while a patrol radius is set; the detector and prey filters
+  are the SAME code the in-game button runs, so the two surfaces can never
+  disagree.
+- **Spy-calibrated civil baseline (Spyglass dossier).** Your own spy
+  reports now calibrate the "how many of those ships are combat" model. A
+  player whose scans account for their WHOLE current military score
+  (defence + fleet, civil ships at 50% — the game's own weighting) is
+  provably seen in full: an unscanned moon, a fleet in flight or a stale
+  report all break that identity, so bad samples exclude themselves. Such
+  verified players' dossiers state the seen composition directly ("X
+  combat · Y civil ships — fully scanned"). From three or more of them
+  OG-E learns the server's civil-ships-per-economy ceiling and every other
+  dossier gains an opposite-direction read: "at least ~N beyond any civil
+  need" — ships no plausible civilian fleet explains. Still a count (a
+  probe swarm exceeds any ceiling — the transporter/probe-swarm veto
+  applies), still dossier prose only, still never fed into the danger
+  score.
+- **Type-to-set number boxes beside the Galaxy Viewer sliders.** Each
+  slider (Offline window, Farm reach, Spot gap) is paired with a compact
+  number box bound to the same value — drag for coarse sweeps, type for
+  single-system precision (the 2–250 Spot gap range was impossible to hit
+  by finger).
+
+### Changed
+
+- **The dashboard is now mobile-first.** A full pass over every tab at
+  phone widths: the tab bar is a single row that scrolls sideways under
+  your finger (edge glows say "more tabs this way", the active tab pulls
+  itself into view) and stays stuck to the top of the screen, so switching
+  tabs from the bottom of a long table no longer costs a full scroll back
+  up. Wide tables (players, dossier per-body, Galaxy Viewer results, the
+  presence heatmap) scroll inside their own wrappers — the page itself
+  never scrolls sideways. Small controls grew real touch targets, the
+  smallest text sizes came up a notch, and stat cards form a tidy
+  two-column grid on phones.
+- **Hover is an enhancement, never the carrier.** Every number and verdict
+  that used to live only in a hover tooltip is now reachable by touch: the
+  map readout lines also respond to taps, the system card opens INLINE
+  under its strip or map instead of floating over content, and on the
+  positions map the first tap on a body prints its details (name, coords,
+  reach hours) into a caption line — only a second tap opens the player.
+- **The server codename is the phone top bar's tool.** On narrow screens
+  the top-right pill shows which server you're looking at (e.g. `s163-pl`)
+  and tapping it drops in the row that changes it — server selector plus
+  Export/Import, now dressed in the same dark-field-and-pill language as
+  the rest of the page (the last natively-styled controls are gone).
+- **Control clusters became command blocks.** The Spyglass scan
+  preferences and the Galaxy Viewer configuration read top-to-bottom as
+  one bordered block: muted keyword captions, hairline dividers, two
+  columns that stack on phones, full sentences demoted to tooltips. The
+  Galaxy Viewer sliders wear the settings panel's look (slim track, lit
+  progress, ringed thumb) and the Sync / Alarm clock action buttons the
+  chip-pill look.
+
 ## [1.44.0] — 2026-07-11
 
 ### Added
