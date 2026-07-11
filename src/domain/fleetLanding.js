@@ -77,8 +77,9 @@
 //     marker, interval-matched {@link isSelfInduced} for an older one), so
 //     the tool never flags its own scan as a landing.
 //   - KEPT-LOOKING: the afterglow claim "quiet since the landing" requires at
-//     least one observation AFTER the sighting — absence of looks is not
-//     evidence of silence.
+//     least one QUIET look taken AFTER the implied interaction — a quiet look
+//     that PRECEDES it says nothing about "since", and absence of looks is
+//     not evidence of silence.
 //
 // Pure: no DOM, no storage, no Date.now() — `nowMs` arrives from the caller.
 
@@ -257,8 +258,8 @@ export function detectFleetLanding(bodies, rings, nowMs, opts = {}) {
   // ambiguous (the owner may be playing — falls through to 'any'); another
   // MOON's co-lit mark does NOT (moons-only concurrency reads as landings —
   // see the multi-moon header section), it just counts into `coMoons`. The
-  // afterglow horizon bounds the age; a faded marker additionally needs a
-  // later look somewhere (kept-looking).
+  // afterglow horizon bounds the age; a FADED marker additionally needs at
+  // least one quiet look taken after the interaction itself (kept-looking).
   const positives = states.filter((s) => s.pos && !s.selfLit);
   if (positives.length) {
     const newest = positives.reduce((a, b) =>
@@ -267,6 +268,7 @@ export function detectFleetLanding(bodies, rings, nowMs, opts = {}) {
     const ageMs = nowMs - iv.hi * 1000;
     if (newest.bodyType === 3 && ageMs >= 0 && ageMs <= AFTERGLOW_HORIZON_MS) {
       let corroborated = 0;
+      let quietSince = 0;
       let coMoons = 0;
       let ambiguous = false;
       for (const o of states) {
@@ -277,10 +279,12 @@ export function detectFleetLanding(bodies, rings, nowMs, opts = {}) {
           else ambiguous = true; // a planet's overlapping/newer mark — owner may be active
         } else if (o.cls === 'quiet') {
           corroborated += 1;
+          // A quiet look AFTER the moon's interaction testifies "quiet
+          // SINCE"; one that precedes it only lowers unknown-ness.
+          if (o.lastLookT > iv.hi) quietSince += 1;
         }
       }
-      const lookedAfter = states.some((s) => s.lastLookT > /** @type {any} */ (newest.pos).t);
-      if (!ambiguous && corroborated >= 1 && (newest.cls === 'fresh' || lookedAfter)) {
+      if (!ambiguous && corroborated >= 1 && (newest.cls === 'fresh' || quietSince >= 1)) {
         const concurrent = states.some((s) =>
           s !== newest && s.bodyType === 1 && s.cls === 'fresh' && !s.selfLit);
         return mkSignal(newest, 'newest', corroborated, totalOthers, concurrent, coMoons, nowMs);

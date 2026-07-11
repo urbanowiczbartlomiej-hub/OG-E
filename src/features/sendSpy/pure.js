@@ -120,7 +120,10 @@ export const countPendingReports = (env) => {
     const at = sentAt[key];
     if (!(typeof at === 'number' && at > 0)) continue;
     if (env.nowMs - at > PENDING_REPORT_MAX_MS) continue;
-    const moon = key.endsWith(':3');
+    // Moon sent-keys are "g:s:p:3" (FOUR segments) — a bare `endsWith(':3')`
+    // would misread every PLANET at position 3 as a moon.
+    const parts = key.split(':');
+    const moon = parts.length === 4 && parts[3] === '3';
     const coord = moon ? key.slice(0, -2) : key;
     const byPlayer = (moon ? env.spiedMoonsByPlayer : env.spiedByPlayer) || {};
     let tsSec = 0;
