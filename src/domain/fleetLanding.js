@@ -39,6 +39,19 @@
 // confirm", never "fleet is there". A probe (one deliberate tap) confirms
 // it; this module only RANKS/flags.
 //
+// # Several moons lit at once
+//
+// ONE signal per player — the strongest claim the evidence supports, on the
+// moon with the newest mark; `coMoons` counts the other lit moons so the
+// surfaces can say "newest of N". Co-lit MOONS never demote a 'newest'
+// claim: a human playing touches planets (economy, building), so activity
+// concentrated on moons alone reads as landings, not play — only a PLANET's
+// overlapping/newer mark does (the owner may genuinely be active). The rest
+// rotates naturally: probing the top moon self-discounts its light
+// (sentMap), so the NEXT tick flags the next moon — one deliberate tap per
+// probe, in evidence order. Across players each watched player yields their
+// own signal; the scan plan ranks the strikes by danger.
+//
 // # Honesty gates (structural)
 //
 //   - COVERAGE: we can only call the other bodies "quiet"/"older" if we
@@ -150,17 +163,19 @@ function bodyState(coord, bodyType, ring, nowMs, sent) {
  * @property {'strong'|'medium'|'weak'} confidence  strong/medium from
  *   coverage; the 'any' tier is always weak.
  * @property {'lone'|'newest'|'any'} tier  Which rung of the ladder fired.
- * @property {boolean} concurrent  Other bodies were ALSO freshly lit (the
+ * @property {boolean} concurrent  Other PLANETS were ALSO freshly lit (the
  *   owner may be around) — only 'newest'/'any' can set it.
+ * @property {number} coMoons  OTHER moons lit alongside the flagged one (see
+ *   the multi-moon section in the header) — 0 in the common case.
  */
 
 /** Build the signal from a winning body state. Confidence from coverage
  * unless forced (the 'any' tier passes 'weak').
  * @param {BodyState} s @param {FleetLandingSignal['tier']} tier
  * @param {number} corroborated @param {number} total @param {boolean} concurrent
- * @param {number} nowMs @param {'weak'} [forceConfidence]
+ * @param {number} coMoons @param {number} nowMs @param {'weak'} [forceConfidence]
  * @returns {FleetLandingSignal} */
-function mkSignal(s, tier, corroborated, total, concurrent, nowMs, forceConfidence) {
+function mkSignal(s, tier, corroborated, total, concurrent, coMoons, nowMs, forceConfidence) {
   const iv = interactionInterval(/** @type {import('./activityObs.js').ActivityObs} */ (s.pos));
   const ratio = total > 0 ? corroborated / total : 0;
   return {
@@ -173,6 +188,7 @@ function mkSignal(s, tier, corroborated, total, concurrent, nowMs, forceConfiden
     confidence: forceConfidence ?? (ratio >= STRONG_COVERAGE ? 'strong' : 'medium'),
     tier,
     concurrent,
+    coMoons,
   };
 }
 
@@ -205,15 +221,18 @@ export function detectFleetLanding(bodies, rings, nowMs, opts = {}) {
   // ── Tier 'lone' (every mode): the classic signature — exactly one body
   // lit, it's a moon, ≥1 other confirmed quiet.
   if (fresh.length === 1 && fresh[0].bodyType === 3 && quietN >= 1) {
-    return mkSignal(fresh[0], 'lone', quietN, totalOthers, false, nowMs);
+    return mkSignal(fresh[0], 'lone', quietN, totalOthers, false, 0, nowMs);
   }
   if (mode === 'lone') return null;
 
   // ── Tier 'newest': the moon holds the account's newest known interaction.
-  // Other bodies corroborate by being quiet-recent OR strictly older-marked;
-  // any interaction that overlaps/outdates the moon's makes the claim
-  // ambiguous (falls through to 'any'). The afterglow horizon bounds the age;
-  // a faded marker additionally needs a later look somewhere (kept-looking).
+  // Other bodies corroborate by being quiet-recent OR strictly older-marked.
+  // A PLANET's interaction that overlaps/outdates the moon's makes the claim
+  // ambiguous (the owner may be playing — falls through to 'any'); another
+  // MOON's co-lit mark does NOT (moons-only concurrency reads as landings —
+  // see the multi-moon header section), it just counts into `coMoons`. The
+  // afterglow horizon bounds the age; a faded marker additionally needs a
+  // later look somewhere (kept-looking).
   const positives = states.filter((s) => s.pos && !s.selfLit);
   if (positives.length) {
     const newest = positives.reduce((a, b) =>
@@ -222,20 +241,23 @@ export function detectFleetLanding(bodies, rings, nowMs, opts = {}) {
     const ageMs = nowMs - iv.hi * 1000;
     if (newest.bodyType === 3 && ageMs >= 0 && ageMs <= AFTERGLOW_HORIZON_MS) {
       let corroborated = 0;
+      let coMoons = 0;
       let ambiguous = false;
       for (const o of states) {
         if (o === newest) continue;
         if (o.pos && !o.selfLit) {
           if (interactionInterval(o.pos).hi <= iv.lo - SAME_TAU_SLACK_S) corroborated += 1;
-          else ambiguous = true; // overlapping/newer mark elsewhere — not "newest"
+          else if (o.bodyType === 3) coMoons += 1; // co-lit moon — a co-candidate, not the owner
+          else ambiguous = true; // a planet's overlapping/newer mark — owner may be active
         } else if (o.cls === 'quiet') {
           corroborated += 1;
         }
       }
       const lookedAfter = states.some((s) => s.lastLookT > /** @type {any} */ (newest.pos).t);
       if (!ambiguous && corroborated >= 1 && (newest.cls === 'fresh' || lookedAfter)) {
-        const concurrent = states.some((s) => s !== newest && s.cls === 'fresh' && !s.selfLit);
-        return mkSignal(newest, 'newest', corroborated, totalOthers, concurrent, nowMs);
+        const concurrent = states.some((s) =>
+          s !== newest && s.bodyType === 1 && s.cls === 'fresh' && !s.selfLit);
+        return mkSignal(newest, 'newest', corroborated, totalOthers, concurrent, coMoons, nowMs);
       }
     }
   }
@@ -246,7 +268,9 @@ export function detectFleetLanding(bodies, rings, nowMs, opts = {}) {
   if (freshMoons.length) {
     const pick = freshMoons.reduce((a, b) =>
       (interactionInterval(/** @type {any} */ (b.pos)).hi > interactionInterval(/** @type {any} */ (a.pos)).hi ? b : a));
-    return mkSignal(pick, 'any', quietN, totalOthers, fresh.length > 1, nowMs, 'weak');
+    return mkSignal(
+      pick, 'any', quietN, totalOthers, fresh.length > 1, freshMoons.length - 1, nowMs, 'weak',
+    );
   }
   return null;
 }
@@ -279,9 +303,11 @@ export function detectAllLandings(players, universePlanets, ringsMap, nowMs, opt
 }
 
 /**
- * The set of override keys ("g:s:p:3") flagged this tick — what the scan plan
- * boosts. Convenience over {@link detectAllLandings}'s map.
+ * Override-key → signal map of everything flagged this tick — what the scan
+ * plan boosts (and reads the tier from, for the FAB's per-tier wording).
+ * Convenience over {@link detectAllLandings}'s per-player map.
  * @param {Record<string, FleetLandingSignal>} signals
- * @returns {Set<string>}
+ * @returns {Map<string, FleetLandingSignal>}
  */
-export const strikeKeysOf = (signals) => new Set(Object.values(signals || {}).map((s) => s.overrideKey));
+export const strikeMapOf = (signals) =>
+  new Map(Object.values(signals || {}).map((s) => [s.overrideKey, s]));

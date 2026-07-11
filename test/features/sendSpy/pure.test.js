@@ -218,7 +218,12 @@ describe('deriveSpy — galaxy-look branch', () => {
           42: { '1:2:3': tsSecAgo(60_000) },
         },
         dangerByPlayer: { 42: 1, 80: 80 }, // danger alone would rank 80 first
-        strikeCoords: new Set(['1:2:3:3']),
+        strikes: new Map([['1:2:3:3', {
+          coord: '1:2:3', bodyType: /** @type {3} */ (3), overrideKey: '1:2:3:3',
+          freshAgeMs: 0, quiet: 1, total: 1,
+          confidence: /** @type {'strong'} */ ('strong'),
+          tier: /** @type {'lone'} */ ('lone'), concurrent: false, coMoons: 0,
+        }]]),
       }),
     );
     expect(ctx.proposal).toBe('probe');

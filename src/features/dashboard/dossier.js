@@ -1008,13 +1008,21 @@ function landingBanner(landing, linkBase) {
     link.title = 'Open this system in the galaxy view';
     link.addEventListener('click', (ev) => ev.stopPropagation());
   }
+  // 'newest' qualifiers: co-lit moons (co-candidates — probing this one
+  // rotates the flag to the next), fresh-but-older planets, or plain silence.
+  const coMoons = landing.coMoons || 0;
+  const newestDetail =
+    ` active ${formatAge(landing.freshAgeMs)} ago — the account's newest mark`
+    + (coMoons ? `; ${coMoons + 1} moons lit, this one newest` : '')
+    + (landing.concurrent
+      ? '; planets show only older activity'
+      : coMoons ? '' : ', only silence observed since')
+    + ` (${landing.quiet}/${landing.total} bodies corroborated).`;
   const detail = landing.tier === 'any'
     ? ` active ${formatAge(landing.freshAgeMs)} ago — other bodies are lit too,`
       + ` so this may just be the owner playing (${landing.quiet}/${landing.total} bodies quiet).`
     : landing.tier === 'newest'
-      ? ` active ${formatAge(landing.freshAgeMs)} ago — the account's newest mark`
-        + `${landing.concurrent ? '; other bodies show only older activity' : ', only silence observed since'}`
-        + ` (${landing.quiet}/${landing.total} bodies corroborated).`
+      ? newestDetail
       : ` active ${formatAge(landing.freshAgeMs)} ago, player`
         + ` otherwise quiet (${landing.quiet}/${landing.total} bodies checked).`;
   body.append(coordEl, document.createTextNode(detail));

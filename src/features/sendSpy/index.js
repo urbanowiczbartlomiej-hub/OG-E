@@ -33,7 +33,7 @@ import { targetReportsStore } from '../../state/targets.js';
 import { activityObsStore } from '../../state/activityObs.js';
 import { spiedCoordsByPlayer, spiedMoonsByPlayer } from '../../domain/targetReports.js';
 import { summarizeRoutine, routineBodies } from '../../domain/routine.js';
-import { detectAllLandings, strikeKeysOf } from '../../domain/fleetLanding.js';
+import { detectAllLandings, strikeMapOf } from '../../domain/fleetLanding.js';
 import { createButton as makeButton, labelLines } from '../shared/button.js';
 import { EYE_GLYPH } from '../shared/buttonGlyphs.js';
 import {
@@ -211,11 +211,12 @@ const captureEnv = () => {
     galaxyMode: cfg.galaxyMode,
     cadence: cfg.cadence,
     rings,
-    // Fresh fleet-landing candidates (domain/fleetLanding) → force-boosted to the
+    // Moon-strike candidates (domain/fleetLanding) → force-boosted to the
     // top of the probe plan so the FAB proposes spying that moon NOW. The
     // configured moon-strike mode (off/lone/newest/any) gates how much
-    // corroboration the detector demands.
-    strikeCoords: strikeKeysOf(detectAllLandings(
+    // corroboration the detector demands; the map carries each signal's
+    // tier so the button words its claim per rung.
+    strikes: strikeMapOf(detectAllLandings(
       cfg.players,
       getApiContext()?.universePlanets ?? [],
       rings,

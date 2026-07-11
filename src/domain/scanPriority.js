@@ -144,12 +144,14 @@ export const windowBonus = (nowMs, activity) => {
  * @property {Record<string, ScanMode>} [scanMode]  Scan-mode map — bodies whose
  *   effective scan is 'off' are excluded from the probe plan (their galaxy
  *   activity is still tracked always-on, via domain/galaxyWatch).
- * @property {Set<string>} [strikeCoords]  Override keys ("g:s:p:3") flagged as
- *   fresh fleet-landing candidates (domain/fleetLanding). A strike body is
- *   FORCE-INCLUDED (even past the scan-bodies filter and the freshness gate —
- *   an old report predates the landing) and boosted to the top, so the FAB
- *   proposes spying it NOW. Still respects scan-'off' (an explicit "don't probe
- *   this player" wins; the dashboard flag still shows).
+ * @property {Map<string, import('./fleetLanding.js').FleetLandingSignal>} [strikes]
+ *   Override key ("g:s:p:3") → moon-strike signal (domain/fleetLanding, see
+ *   `strikeMapOf`). A strike body is FORCE-INCLUDED (even past the scan-bodies
+ *   filter and the freshness gate — an old report predates the landing) and
+ *   boosted to the top, so the FAB proposes spying it NOW; the signal's `tier`
+ *   rides the plan entry so the button words its claim honestly. Still
+ *   respects scan-'off' (an explicit "don't probe this player" wins; the
+ *   dashboard flag still shows).
  * @property {Record<string, number>} [dangerByPlayer]   playerId → D (0..100).
  * @property {Record<string, ActivitySummary>} [activityByPlayer]
  *   playerId → routine activity summary (drives {@link windowBonus}).
@@ -165,8 +167,10 @@ export const windowBonus = (nowMs, activity) => {
  * @property {1|3} bodyType   Body to scan: 1 = planet, 3 = moon.
  * @property {'none'|'stale'|'rescan'} status
  * @property {number} priority
- * @property {boolean} [strike]  A fresh fleet-landing candidate (force-included +
+ * @property {boolean} [strike]  A moon-strike candidate (force-included +
  *   boosted). The FAB paints this proposal distinctly.
+ * @property {'lone'|'newest'|'any'} [strikeTier]  The strike signal's ladder
+ *   rung — drives the FAB's per-tier hint wording.
  * @property {string} why   Compact, wording-safe reason ("never scanned",
  *   "report 9d old", "re-scan requested", "+ good moment (activity window)").
  */
@@ -221,7 +225,8 @@ export const buildScanPlan = (env) => {
       // override key ("g:s:p" / "g:s:p:3") is exactly the sent/rescan key shape.
       if (effectiveScan(env.scanMode, pid, sentK) === 'off') return;
       if (env.sentCoords && env.sentCoords.has(sentK)) return;
-      const strike = !!(env.strikeCoords && env.strikeCoords.has(sentK));
+      const strikeSig = env.strikes ? env.strikes.get(sentK) : undefined;
+      const strike = !!strikeSig;
       const reportTsSec = tsMap ? tsMap[coord] : undefined;
       const status = scanStatus({
         reportTsSec,
@@ -244,7 +249,8 @@ export const buildScanPlan = (env) => {
       // requested · good moment (activity window, from intel you gathered)").
       // No 'moon' word either: the renderer already prints 🌙 after the coords.
       const whyParts = [];
-      if (strike) whyParts.push('🎯 fresh landing?');
+      // The 'any' tier concedes the owner may be around; the others claim a landing.
+      if (strike) whyParts.push(strikeSig?.tier === 'any' ? '🎯 moon lit?' : '🎯 fresh landing?');
       else if (status === 'none') whyParts.push('never scanned');
       else if (status === 'rescan') whyParts.push('re-scan');
       else whyParts.push(`${Math.max(1, Math.round(ageMs / DAY_MS))}d old`);
@@ -258,7 +264,7 @@ export const buildScanPlan = (env) => {
         bodyType,
         status: /** @type {'none'|'stale'|'rescan'} */ (status === 'fresh' ? 'rescan' : status),
         priority,
-        ...(strike ? { strike: true } : {}),
+        ...(strikeSig ? { strike: true, strikeTier: strikeSig.tier } : {}),
         why: whyParts.join(' · '),
       });
     };
@@ -267,7 +273,7 @@ export const buildScanPlan = (env) => {
       if (wantPlanets) consider(1, p, coordTs);
       // Moons enter when the filter wants them OR a strike forces this moon in
       // (you always want to spy a fresh-landing moon, whatever your filter).
-      const moonStrike = !!(env.strikeCoords && env.strikeCoords.has(`${p.galaxy}:${p.system}:${p.position}:3`));
+      const moonStrike = !!(env.strikes && env.strikes.has(`${p.galaxy}:${p.system}:${p.position}:3`));
       if ((wantMoons || moonStrike) && p.hasMoon) consider(3, p, moonTs);
     }
   }

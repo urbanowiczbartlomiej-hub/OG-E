@@ -15,7 +15,7 @@ import {
   QUIET_COVERAGE_MS,
   detectFleetLanding,
   detectAllLandings,
-  strikeKeysOf,
+  strikeMapOf,
 } from '../../src/domain/fleetLanding.js';
 
 const NOW = 1_700_000_000_000;
@@ -115,7 +115,7 @@ describe('detectFleetLanding', () => {
   });
 });
 
-describe('detectAllLandings / strikeKeysOf', () => {
+describe('detectAllLandings / strikeMapOf', () => {
   it('expands universe rows (hasMoon) per watched player and maps the boost keys', () => {
     const universePlanets = [
       { coords: '1:2:3', player: 42, hasMoon: true },
@@ -130,6 +130,6 @@ describe('detectAllLandings / strikeKeysOf', () => {
       },
     }, NOW);
     expect(Object.keys(signals)).toEqual(['42']);
-    expect(strikeKeysOf(signals)).toEqual(new Set(['1:2:3:3']));
+    expect([...strikeMapOf(signals).keys()]).toEqual(['1:2:3:3']);
   });
 });

@@ -101,8 +101,10 @@ export const BG_SPY_STRIKE = '#d1571f';
  * @property {SpyLook | null} look          Top galaxy-look system, or null.
  * @property {number} remaining             Bodies + systems still needing attention.
  * @property {boolean} hasWatched           Any players are on the watch-list.
- * @property {boolean} [strike]             The probe proposal is a fresh
- *   fleet-landing candidate (painted distinctly).
+ * @property {boolean} [strike]             The probe proposal is a moon-strike
+ *   candidate (painted distinctly).
+ * @property {'lone'|'newest'|'any'} [strikeTier]  The strike's ladder rung —
+ *   picks the hint wording ('any' concedes the owner may be around).
  * @property {string} [why]                 The proposal's wording-safe reason line.
  */
 
@@ -158,7 +160,9 @@ export function deriveSpy(env) {
       : null,
     remaining: entries.length + looks.length,
     hasWatched: (env.players || []).length > 0,
-    ...(!pickLook && top?.strike ? { strike: true } : {}),
+    ...(!pickLook && top?.strike
+      ? { strike: true, ...(top.strikeTier ? { strikeTier: top.strikeTier } : {}) }
+      : {}),
     ...(why ? { why } : {}),
   };
 }
@@ -216,13 +220,21 @@ export function renderSpy(ctx, preflight) {
       pulse: true,
     };
   }
-  // Strike — a fresh fleet-landing candidate: distinct hot paint + a 🎯 so the
-  // one deliberate tap that confirms it reads unmistakably.
+  // Strike — a moon-strike candidate: distinct hot paint + a 🎯 so the one
+  // deliberate tap that confirms it reads unmistakably. The hint tracks the
+  // signal's tier so the claim never outruns the evidence: 'lone' = the
+  // classic just-landed signature, 'newest' = the trail points at a parked
+  // fleet, 'any' concedes the owner may be around.
   if (ctx.strike) {
+    const claim = ctx.strikeTier === 'any'
+      ? 'owner around?'
+      : ctx.strikeTier === 'newest'
+        ? 'parked fleet?'
+        : 'fresh landing?';
     return {
       text: 'Strike',
       subtext: `🎯 ${who}`,
-      hint: 'fresh landing? · spy to confirm',
+      hint: `${claim} · spy to confirm`,
       bg: BG_SPY_STRIKE,
       pulse: true,
     };
