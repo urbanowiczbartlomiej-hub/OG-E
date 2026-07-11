@@ -75,7 +75,14 @@
   .tools-box > summary::-webkit-details-marker { display: none; }
   .tools-box[open] > summary { border-color: #4a9eff; background: #17395d; color: #eaf4ff; }
   @media (max-width: 520px) {
-    .tools-box > summary { display: inline-flex; }
+    /* Keep the sticky bar TWO tab-rows high: tabs tighten, and the Tools
+       pill anchors to the bar's top-right corner (absolute against the
+       sticky bar) instead of costing a third row; the tabs' padding-right
+       keeps their first row clear of it. The opened tools row is in-flow
+       again (flex-basis 100%), sliding in under the tabs. */
+    .tab-btn { padding: 6px 10px; }
+    .tabs { padding-right: 76px; }
+    .tools-box > summary { display: inline-flex; position: absolute; top: 8px; right: var(--page-pad); }
     .tools-box { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .tools-box[open] { flex-basis: 100%; }
   }
