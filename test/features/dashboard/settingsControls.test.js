@@ -37,16 +37,18 @@ const $ = (/** @type {string} */ id) => /** @type {any} */ (document.getElementB
 const VALID_NTFY = 'tk_abcdefghijklmnopqrstuvwxyz';
 
 const buildDom = () => {
+  // Master switches are toggle-chip buttons (state = the `.on` class), matching
+  // the shipped dashboard.html; the credential inputs stay text/password.
   document.body.innerHTML = `
+    <button type="button" class="toggle-chip" id="syncCloudToggle">Sync across devices</button>
     <div id="syncControlsBody">
-      <input type="checkbox" id="syncCloudToggle" />
       <input type="password" id="syncGistToken" />
       <button id="syncRevealGist"></button>
       <button id="syncNowBtn"></button>
       <div id="syncTokenStatus"></div>
     </div>
+    <button type="button" class="toggle-chip" id="remMasterToggle">Enable alarm clock</button>
     <div id="remBody">
-      <input type="checkbox" id="remMasterToggle" />
       <input type="password" id="remNtfyToken" />
       <button id="remRevealNtfy"></button>
       <button id="remValidateBtn"></button>
@@ -82,9 +84,9 @@ describe('populate()', () => {
     });
     installSettingsControls();
     await flush();
-    expect($('syncCloudToggle').checked).toBe(true);
+    expect($('syncCloudToggle').classList.contains('on')).toBe(true);
     expect($('syncGistToken').value).toBe('ghp_xyz');
-    expect($('remMasterToggle').checked).toBe(true);
+    expect($('remMasterToggle').classList.contains('on')).toBe(true);
     expect($('remNtfyToken').value).toBe(VALID_NTFY);
   });
 
@@ -109,8 +111,7 @@ describe('toggles', () => {
   it('toggling syncCloudToggle writes the patch and updates visibility', async () => {
     installSettingsControls();
     await flush();
-    $('syncCloudToggle').checked = true;
-    $('syncCloudToggle').dispatchEvent(new Event('change'));
+    $('syncCloudToggle').click(); // off → on
     await flush();
     expect(/** @type {any} */ (store.get(SHARED_SETTINGS_KEY)).cloudSync).toBe(true);
     expect($('syncControlsBody').style.display).toBe('');
@@ -119,8 +120,7 @@ describe('toggles', () => {
   it('toggling remMasterToggle writes the patch and updates visibility', async () => {
     installSettingsControls();
     await flush();
-    $('remMasterToggle').checked = true;
-    $('remMasterToggle').dispatchEvent(new Event('change'));
+    $('remMasterToggle').click(); // off → on
     await flush();
     expect(/** @type {any} */ (store.get(SHARED_SETTINGS_KEY)).alarmClockMasterEnabled).toBe(true);
     expect($('remBody').style.display).toBe('');

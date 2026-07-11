@@ -132,6 +132,39 @@ describe('orbitLayout', () => {
       expect(it_.y).toBeLessThanOrEqual(base.vh - margin);
     }
   });
+
+  // Count-driven arc width: adjacent orbs keep a constant angular step instead
+  // of a fixed total arc that flung 2 orbs apart and crammed 5+ together.
+  // Angle of an orb about the FAB centre (unclamped geometry — measured from a
+  // centred FAB with a big viewport so no clamp fires).
+  /** @param {{x:number,y:number}} it_ @param {number} cx @param {number} cy */
+  const angleOf = (it_, cx, cy) => Math.atan2(it_.y - cy, it_.x - cx);
+  const wide = { radius: 400, orbSize: 40, vw: 4000, vh: 4000 };
+
+  it('keeps a ~constant step between neighbours as the count grows', () => {
+    /** @param {number} count */
+    const step = (count) => {
+      const items = orbitLayout({ ...wide, cx: 2000, cy: 2000, count });
+      return Math.abs(angleOf(items[1], 2000, 2000) - angleOf(items[0], 2000, 2000));
+    };
+    // 2, 3, 4 orbs share the same neighbour gap (≈37°); the total span scales.
+    expect(step(3)).toBeCloseTo(step(2), 3);
+    expect(step(4)).toBeCloseTo(step(2), 3);
+    expect(step(2)).toBeCloseTo((Math.PI * 0.62) / 3, 3);
+  });
+
+  it('a 2-orb menu hugs the aim ray instead of spanning a wide arc', () => {
+    const items = orbitLayout({ ...wide, cx: 2000, cy: 2000, count: 2 });
+    const span = Math.abs(angleOf(items[1], 2000, 2000) - angleOf(items[0], 2000, 2000));
+    expect(span).toBeLessThan(Math.PI / 4); // < 45°, not the old ~112°
+  });
+
+  it('a single orb sits exactly on the aim ray', () => {
+    const items = orbitLayout({ ...wide, cx: 2000, cy: 100, count: 1 });
+    // FAB near the top, centre below → aim points straight down (+y).
+    expect(items[0].x).toBeCloseTo(2000, 0);
+    expect(items[0].y).toBeGreaterThan(100);
+  });
 });
 
 // ─── pure: aimAngle ───────────────────────────────────────────────────────

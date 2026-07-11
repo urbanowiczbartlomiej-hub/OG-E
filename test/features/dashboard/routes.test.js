@@ -251,10 +251,9 @@ describe('new route options — multi-ship / mission / pause / custom target', (
     install().refresh();
     await flush();
 
-    const toggle = /** @type {HTMLInputElement} */ (list().querySelector('[data-role="enabled"]'));
-    expect(toggle.checked).toBe(true);
-    toggle.checked = false;
-    toggle.dispatchEvent(new Event('change'));
+    const toggle = /** @type {HTMLButtonElement} */ (list().querySelector('[data-role="enabled"]'));
+    expect(toggle.classList.contains('on')).toBe(true);
+    toggle.click(); // on → off (pause)
     $('#routesSaveBtn').click();
     await flush();
 

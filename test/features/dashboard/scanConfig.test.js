@@ -67,8 +67,8 @@ describe('Colonization config editor', () => {
     install().refresh();
     await flush();
     expect($('#scanCfgPositions').value).toBe('8');
-    expect($('#scanCfgPrefer').checked).toBe(true);
-    expect($('#scanCfgPreferFarthest').checked).toBe(true);
+    expect($('#scanCfgPrefer').classList.contains('on')).toBe(true);
+    expect($('#scanCfgPreferFarthest').classList.contains('on')).toBe(true);
     expect($('#scanCfgColonyMinGap').value).toBe('15');
     expect($('#scanCfgColonyMinFields').value).toBe('320');
     expect($('#scanCfgColonyPassword').value).toBe('');
@@ -83,8 +83,8 @@ describe('Colonization config editor', () => {
     install().refresh();
     await flush();
     expect($('#scanCfgPositions').value).toBe('12-15');
-    expect($('#scanCfgPrefer').checked).toBe(false);
-    expect($('#scanCfgPreferFarthest').checked).toBe(false);
+    expect($('#scanCfgPrefer').classList.contains('on')).toBe(false);
+    expect($('#scanCfgPreferFarthest').classList.contains('on')).toBe(false);
   });
 
   it('saves the colonization fields + timestamp + syncRequest', async () => {
@@ -92,8 +92,8 @@ describe('Colonization config editor', () => {
     await flush();
 
     $('#scanCfgPositions').value = '9,10';
-    $('#scanCfgPrefer').checked = false;
-    $('#scanCfgPreferFarthest').checked = false;
+    $('#scanCfgPrefer').click(); // default on → off
+    $('#scanCfgPreferFarthest').click(); // default on → off
     $('#scanCfgColonyMinGap').value = '25';
     $('#scanCfgColonyMinFields').value = '250';
     $('#scanCfgColonyPassword').value = 'hunter2';
