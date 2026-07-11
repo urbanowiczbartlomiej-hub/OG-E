@@ -4,6 +4,70 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.44.0] — 2026-07-11
+
+### Added
+
+- **Moon strike setting (Spyglass).** The "a fleet may be sitting on that
+  moon" detector is now an explicit option — one `Moon strike` selector in the
+  Spyglass scan preferences, a ladder where each level includes the previous:
+  `off` · `lone` (only the moon is lit and the rest of the account is
+  confirmed quiet — the classic fleet-save-landing signature) · `newest`
+  (default: the moon holds the account's newest activity, or the last trace
+  before everything went quiet — a parked fleet outlives its 60-minute
+  marker, so this catches "left it and logged off" up to 8 hours back) ·
+  `any` (any lit moon, even beside active planets — the owner may be around,
+  and every surface says so). Signals name their claim honestly: "fresh
+  landing?", "parked fleet?", or "owner around?" — always "spy to confirm",
+  never "fleet is there". The setting syncs across devices.
+- **Re-look nudge for ambiguous moons.** When a moon and a planet light up
+  inside the same fuzzy "<15 min" band, no honest call is possible — but the
+  markers mature into exact minutes after a quarter hour. The galaxy Look
+  plan now proposes revisiting that system exactly in the window where one
+  look settles the order ("moon order? · look now"), and drops the nudge
+  once the markers die.
+- **Reports step on the Spy button.** After a probing run the button now
+  closes the loop with "Reports · N new" — one tap opens the messages page
+  (which is also what feeds the reports into Spyglass). A probe destroyed by
+  the defender stops counting after 30 minutes, so the button can never get
+  stuck.
+
+### Changed
+
+- **Look-first intel loop.** The Spy button now orders its proposals:
+  strike → galaxy looks → probes → reports. Looks are free and undetectable,
+  and browsing BEFORE probing reads the target's activity while your own
+  probes haven't lit any markers yet — the probes that follow act on that
+  clean picture. Only a strike cuts the line.
+- **Several moons lit at once.** The strike flags one moon at a time (the
+  newest mark, with "N moons lit" shown when others glow too) and rotates
+  automatically: probing the flagged moon moves the flag to the next one.
+  Co-lit moons no longer downgrade the signal — a human playing touches
+  planets; activity concentrated on moons alone reads as landings.
+- **Expedition auto-redirect hops moons.** An expedition sent from a moon now
+  redirects to the next moon in your list (previously a moon-launched send
+  got no redirect at all).
+- **Daily Run walks moons.** A Send All started from a moon advances
+  moon→moon instead of jumping to a planet, and the button shows the moon's
+  own name (moons have names too).
+
+### Fixed
+
+- **Fleet reminder could fleet-save the wrong fleet.** On a fleet page the FR
+  button now verifies the ACTIVE body — coordinates AND planet-vs-moon — is
+  the one being watched before driving the save; anywhere else it snoozes and
+  navigates there instead. Being on "a" fleet page is no longer enough.
+- **Send All skipped the planet under its own moon.** With the collect target
+  on moon A, planet A was excluded from the collection walk (same
+  coordinates read as "that's the target"); the walk now tells planets and
+  moons apart, on targets and on already-collected origins alike.
+- **False strike on an inactive moon.** A marker showing 40–55 idle minutes
+  seen during a fresh look counted as "lit NOW", so a moon nobody touched in
+  an hour could fire the strike while your own probes lit the planets.
+  Freshness is now keyed on the interaction time the marker implies; the
+  15–60-minute tail is reported as "parked fleet?" with its age instead of
+  masquerading as live activity.
+
 ## [1.43.0] — 2026-07-11
 
 ### Fixed
