@@ -536,6 +536,7 @@ const boot = async () => {
   const universes = await discoverUniverses();
   selectedUniverseId = resolveInitialUniverse(universes);
   populateUniverseSelect(universes, selectedUniverseId);
+  updateToolsPill();
   await loadWatched();
 
   await loadAll();
@@ -893,23 +894,36 @@ const wireTabs = () => {
 };
 
 /**
- * Top-bar Tools disclosure. The Server/Export/Import cluster sits in a
- * <details> so phones collapse it behind a "Tools" pill and the sticky bar
- * stays tabs-high. CSS hides the summary on wide viewports, but a CLOSED
- * <details> hides its content regardless of styling — so the open state
- * follows the same 520px breakpoint from here: forced open on wide,
- * collapsed by default (still user-togglable) on narrow. Re-applied on
- * every breakpoint crossing (rotation, window resize).
+ * Top-bar tools disclosure (phone only). The Server/Export/Import cluster
+ * hides behind the codename pill below 520px; tapping the pill toggles
+ * `.tools-open` on the bar, which CSS turns into the tools' own full-width
+ * second row. aria-expanded mirrors the class (same pattern as ⚙ Filters).
+ * On wide viewports CSS shows the tools inline and hides the pill — this
+ * listener is simply inert there.
  *
  * @returns {void}
  */
 const wireTopTools = () => {
-  const box = /** @type {HTMLDetailsElement | null} */ (document.getElementById('topTools'));
-  if (!box || typeof window.matchMedia !== 'function') return;
-  const mq = window.matchMedia('(max-width: 520px)');
-  const apply = () => { box.open = !mq.matches; };
-  apply();
-  mq.addEventListener('change', apply);
+  const pill = document.getElementById('topToolsPill');
+  const bar = pill?.closest('.top-bar');
+  if (!pill || !bar) return;
+  pill.addEventListener('click', () => {
+    const open = bar.classList.toggle('tools-open');
+    pill.setAttribute('aria-expanded', String(open));
+  });
+};
+
+/**
+ * Paint the ACTIVE universe's codename (`s163-pl`) on the top-bar Tools
+ * pill — the pill both says which server the page is showing and opens the
+ * row that changes it. Falls back to "Tools" when no universe has data yet.
+ * Called at boot and on every universe switch.
+ *
+ * @returns {void}
+ */
+const updateToolsPill = () => {
+  const pill = document.getElementById('topToolsPill');
+  if (pill) pill.textContent = selectedUniverseId || 'Tools';
 };
 
 /**
@@ -2843,6 +2857,7 @@ const wireListeners = () => {
 
   universeSelect.addEventListener('change', () => {
     selectedUniverseId = universeSelect.value;
+    updateToolsPill();
     // Region keys carry no universe component — a coincidentally matching
     // region in the next universe would auto-expand as "your selection".
     resetFreeSelection();
