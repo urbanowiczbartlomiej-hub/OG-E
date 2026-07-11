@@ -40,14 +40,39 @@
     padding: 6px var(--page-pad);
     background: #111820; border-bottom: 1px solid #2a4a5a;
   }
-  /* flex:1 + min-width:0 lets the tab row shrink and wrap INSIDE its own
-     box, leaving the right edge to the tools cluster — 5 tabs are ~480px
-     of intrinsic width, far past a phone. */
-  .tabs { display: flex; gap: 4px; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; }
+  /* ONE row, always: 5 tabs are ~480px of intrinsic width, far past a
+     phone, so the row scrolls sideways inside its own box (hidden
+     scrollbar, gentle snap) instead of wrapping into a two-row block —
+     wrapping was tried first and looked broken, not adaptive. JS scrolls
+     the active tab into view on every switch, so the current tab can
+     never sit hidden off-edge. */
+  .tabs {
+    /* flex-basis 0 (not auto): the bar wraps flex items by their
+       HYPOTHETICAL size, and this scroller's auto basis is the full
+       ~480px tab row — it would shove the tools onto a second row
+       before ever shrinking. Basis 0 + grow fills the leftover space. */
+    display: flex; gap: 4px; flex: 1 1 0; min-width: 0;
+    flex-wrap: nowrap; overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+    /* Scroll affordance without JS (the classic four-layer trick): a soft
+       glow at an edge means more tabs that way. The `local` cover layers
+       scroll WITH the content and slide over the `scroll`-attached glows,
+       so each glow shows only while there is content past its edge. */
+    background:
+      linear-gradient(to right, #111820 40%, rgba(17,24,32,0)) left / 28px 100%,
+      linear-gradient(to left, #111820 40%, rgba(17,24,32,0)) right / 28px 100%,
+      radial-gradient(farthest-side at 0 50%, rgba(154,190,220,.30), transparent) left / 12px 100%,
+      radial-gradient(farthest-side at 100% 50%, rgba(154,190,220,.30), transparent) right / 12px 100%;
+    background-repeat: no-repeat;
+    background-attachment: local, local, scroll, scroll;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
   .tab-btn {
     background: transparent; border: 1px solid transparent;
     color: #888; padding: 6px 14px; font-size: 13px; cursor: pointer;
     border-radius: 6px; min-height: 40px;
+    white-space: nowrap; flex: 0 0 auto; scroll-snap-align: start;
     -webkit-tap-highlight-color: transparent;
   }
   /* Hover behind (hover:hover) — same touch discipline as the chips: a tap
@@ -75,14 +100,11 @@
   .tools-box > summary::-webkit-details-marker { display: none; }
   .tools-box[open] > summary { border-color: #4a9eff; background: #17395d; color: #eaf4ff; }
   @media (max-width: 520px) {
-    /* Keep the sticky bar TWO tab-rows high: tabs tighten, and the Tools
-       pill anchors to the bar's top-right corner (absolute against the
-       sticky bar) instead of costing a third row; the tabs' padding-right
-       keeps their first row clear of it. The opened tools row is in-flow
-       again (flex-basis 100%), sliding in under the tabs. */
+    /* One-row bar: tighter tabs scroll beside the Tools pill. Opened, the
+       whole disclosure takes its own row (pill + tools inline) under the
+       tab row. */
     .tab-btn { padding: 6px 10px; }
-    .tabs { padding-right: 76px; }
-    .tools-box > summary { display: inline-flex; position: absolute; top: 8px; right: var(--page-pad); }
+    .tools-box > summary { display: inline-flex; }
     .tools-box { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .tools-box[open] { flex-basis: 100%; }
   }

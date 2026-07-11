@@ -838,6 +838,12 @@ const setActiveTab = (tabKey) => {
   for (const btn of buttons) {
     const key = /** @type {HTMLElement} */ (btn).dataset.tab;
     btn.classList.toggle('active', key === resolved);
+    // The tab row is a one-row sideways scroller on phones — pull the
+    // active tab into view so it can never sit hidden past the edge.
+    // (Guarded: happy-dom has no scrollIntoView.)
+    if (key === resolved && typeof btn.scrollIntoView === 'function') {
+      btn.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+    }
   }
   for (const section of sections) {
     // section ids end in `Section` — strip that to get the tab key.
