@@ -86,6 +86,30 @@
   }
   .tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .tools .label { color: #4a9eff; font-weight: bold; font-size: 14px; }
+  /* The tools were the last NATIVE-looking controls on the page — dress
+     them in the house vocabulary: the select as a dark field (the
+     settings-panel input look; color-scheme keeps the native arrow and
+     dropdown list dark), the buttons as chip pills. 36px min-height =
+     the tap-target floor. */
+  .tools select {
+    background: #0d1620; color: #cfe; border: 1px solid #2a4a5a;
+    border-radius: 6px; padding: 5px 8px; font-size: 13px;
+    font-family: inherit; min-height: 36px; max-width: 100%;
+    color-scheme: dark;
+  }
+  .tools select:focus {
+    outline: none; border-color: #4a9eff; box-shadow: 0 0 0 2px rgba(74,158,255,0.2);
+  }
+  .tools button {
+    background: #18222e; border: 1px solid #2b3a4d; color: #9fb4c4;
+    padding: 5px 14px; border-radius: 999px; font-size: 12px; cursor: pointer;
+    min-height: 36px; -webkit-tap-highlight-color: transparent;
+  }
+  @media (hover: hover) {
+    .tools button:hover { border-color: #4a9eff; color: #cfe4ff; }
+  }
+  .tools button:focus:not(:focus-visible) { outline: none; }
+  .tools button:focus-visible { outline: 1px solid #4a9eff; outline-offset: 2px; }
   /* Phone disclosure pill: carries the ACTIVE universe's codename
      (s163-pl) — it says which server the page is showing AND opens the
      tools row that changes it. Hidden on wide viewports (the tools sit
