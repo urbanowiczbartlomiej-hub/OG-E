@@ -18,6 +18,7 @@ import { scanStatus, rescanAtFor } from '../../domain/spyScan.js';
 import { motherPlanetOf } from '../../domain/lootRhythm.js';
 import { dangerColor } from '../../lib/dangerColor.js';
 import { effectiveScan, ringKeyFor } from '../../domain/scanMode.js';
+import { FRESH_LOOK_MS } from '../../domain/fleetLanding.js';
 import { bodyActivityReadout } from '../../domain/galaxyWatch.js';
 import { mergeActivityObs } from '../../domain/activityObs.js';
 import { compact } from './format.js';
@@ -969,10 +970,13 @@ function routineBlock(routine) {
 }
 
 /**
- * STRIKE banner — a fresh fleet-landing candidate (domain/fleetLanding). A moon
- * lit up while the player is otherwise quiet: likely a returning fleet-save
- * landed and the owner isn't there to move it. Honest framing ("possible",
- * "spy to confirm") + the coverage basis; never asserts the fleet is there.
+ * STRIKE banner — a moon-strike candidate (domain/fleetLanding). Activity
+ * concentrated on a moon while the player is (or has since gone) away:
+ * likely a returning fleet-save landed and the owner isn't there to move it.
+ * Copy follows the signal's TIER so the claim never outruns the evidence —
+ * 'lone'/'newest' say "player otherwise quiet/older"; 'any' says outright
+ * that the owner may be around. Honest framing ("possible", "spy to
+ * confirm") + the coverage basis; never asserts the fleet is there.
  * @param {import('../../domain/fleetLanding.js').FleetLandingSignal} landing
  * @param {string} [linkBase]
  * @returns {HTMLDivElement}
@@ -984,7 +988,9 @@ function landingBanner(landing, linkBase) {
   const strong = landing.confidence === 'strong';
   const head = document.createElement('div');
   head.style.cssText = 'font-weight:500;color:#f0a869;';
-  head.textContent = `🎯 Possible fresh fleet${strong ? '' : ' (partial coverage)'}`;
+  head.textContent = landing.tier === 'any'
+    ? '🎯 Moon lit (owner may be around)'
+    : `🎯 Possible ${landing.tier === 'newest' && landing.freshAgeMs > FRESH_LOOK_MS ? 'parked' : 'fresh'} fleet${strong ? '' : ' (partial coverage)'}`;
   wrap.appendChild(head);
 
   const body = document.createElement('div');
@@ -1002,11 +1008,16 @@ function landingBanner(landing, linkBase) {
     link.title = 'Open this system in the galaxy view';
     link.addEventListener('click', (ev) => ev.stopPropagation());
   }
-  body.append(
-    coordEl,
-    document.createTextNode(` active ${formatAge(landing.freshAgeMs)} ago, player`
-      + ` otherwise quiet (${landing.quiet}/${landing.total} bodies checked).`),
-  );
+  const detail = landing.tier === 'any'
+    ? ` active ${formatAge(landing.freshAgeMs)} ago — other bodies are lit too,`
+      + ` so this may just be the owner playing (${landing.quiet}/${landing.total} bodies quiet).`
+    : landing.tier === 'newest'
+      ? ` active ${formatAge(landing.freshAgeMs)} ago — the account's newest mark`
+        + `${landing.concurrent ? '; other bodies show only older activity' : ', only silence observed since'}`
+        + ` (${landing.quiet}/${landing.total} bodies corroborated).`
+      : ` active ${formatAge(landing.freshAgeMs)} ago, player`
+        + ` otherwise quiet (${landing.quiet}/${landing.total} bodies checked).`;
+  body.append(coordEl, document.createTextNode(detail));
   wrap.appendChild(body);
 
   const tail = document.createElement('div');

@@ -22,6 +22,7 @@
 //   hide       player id → { v: true }         / tombstone (unhidden on the map)
 //   scanBodies "_" → { v: 'planets'|'moons'|'both' }   — never tombstoned
 //   cadence    "_" → { v: { rescanHours, galaxyHours } } — never tombstoned
+//   moonStrike "_" → { v: 'off'|'lone'|'newest'|'any' }  — never tombstoned
 //
 // `probes` and `rescan` are deliberately NOT families: probes is per-device
 // FAB convenience, rescan is transient bookkeeping that self-clears against
@@ -60,6 +61,7 @@
  * @property {Family} hide
  * @property {Family} scanBodies
  * @property {Family} cadence
+ * @property {Family} moonStrike
  *
  * @typedef {Record<string, Record<string, number>>} WatchListLedger
  *   The local sidecar (`<uni>:oge_watchListTs`): per family, key → stamp.
@@ -69,10 +71,13 @@
 
 /** Family names, fixed — the slot/ledger contract. */
 export const WATCH_FAMILIES = /** @type {const} */ ([
-  'watched', 'rel', 'scan', 'gal', 'hide', 'scanBodies', 'cadence',
+  'watched', 'rel', 'scan', 'gal', 'hide', 'scanBodies', 'cadence', 'moonStrike',
 ]);
 
-/** Key used by the two single-value families (`scanBodies`, `cadence`). */
+/** The single-value families — one `"_"`-keyed record, never tombstoned. */
+const SINGLE_FAMILIES = new Set(['scanBodies', 'cadence', 'moonStrike']);
+
+/** Key used by the single-value families (see {@link SINGLE_FAMILIES}). */
 export const SINGLE_KEY = '_';
 
 /** Tombstones dead longer than this are GC'd (60 days — longer than any
@@ -118,11 +123,11 @@ export const normalizeWatchSlot = (raw) => {
 
 /**
  * Whether a slot is worth contributing to the gist. Keyed-family records
- * (live or tombstone) always count; the two single-value families count only
+ * (live or tombstone) always count; the single-value families count only
  * once STAMPED (`ts > 0`) — a virgin universe composes its materialised
- * `scanBodies`/`cadence` defaults with `ts: 0`, and contributing those would
- * write a slot for every universe the user merely visits (the same
- * no-op-PATCH guard as `galaxyConfigSlotHasData`).
+ * defaults with `ts: 0`, and contributing those would write a slot for
+ * every universe the user merely visits (the same no-op-PATCH guard as
+ * `galaxyConfigSlotHasData`).
  *
  * @param {WatchListSyncSlot} slot
  * @returns {boolean}
@@ -130,7 +135,7 @@ export const normalizeWatchSlot = (raw) => {
 export const watchSlotHasData = (slot) =>
   WATCH_FAMILIES.some((fam) =>
     Object.values(slot[fam] || {}).some(
-      (rec) => rec.ts > 0 || (fam !== 'scanBodies' && fam !== 'cadence'),
+      (rec) => rec.ts > 0 || !SINGLE_FAMILIES.has(fam),
     ));
 
 /**
@@ -159,6 +164,7 @@ const liveValuesOf = (cfg, fam) => {
     case 'hide': return { ...(c.mapHidden || {}) };
     case 'scanBodies': return c.scanBodies != null ? { [SINGLE_KEY]: c.scanBodies } : {};
     case 'cadence': return c.cadence != null ? { [SINGLE_KEY]: c.cadence } : {};
+    case 'moonStrike': return c.moonStrike != null ? { [SINGLE_KEY]: c.moonStrike } : {};
     default: return {};
   }
 };
@@ -225,6 +231,7 @@ export const decomposeWatchSlot = (slot) => {
   };
   if (SINGLE_KEY in live.scanBodies) cfg.scanBodies = live.scanBodies[SINGLE_KEY];
   if (SINGLE_KEY in live.cadence) cfg.cadence = live.cadence[SINGLE_KEY];
+  if (SINGLE_KEY in live.moonStrike) cfg.moonStrike = live.moonStrike[SINGLE_KEY];
   return { cfg, ledger };
 };
 
@@ -251,7 +258,7 @@ const sameValue = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? nu
  * @param {import('../state/watchList.js').WatchListConfig | Record<string, any>} cfg
  * @param {WatchListLedger} ledger
  * @param {number} now
- * @param {{ scanBodies?: unknown, cadence?: unknown }} [defaults]
+ * @param {{ scanBodies?: unknown, cadence?: unknown, moonStrike?: unknown }} [defaults]
  *   The materialised single-family defaults to compare against; a family with
  *   no supplied default seeds whenever unstamped.
  * @returns {{ ledger: WatchListLedger, changed: boolean }}
@@ -262,10 +269,10 @@ export const seedWatchListLedger = (cfg, ledger, now, defaults = {}) => {
   const out = {};
   for (const fam of WATCH_FAMILIES) {
     out[fam] = { ...(ledger?.[fam] || {}) };
-    const single = fam === 'scanBodies' || fam === 'cadence';
+    const single = SINGLE_FAMILIES.has(fam);
     for (const [k, v] of Object.entries(liveValuesOf(cfg, fam))) {
       if (Number.isFinite(Number(out[fam][k]))) continue;
-      if (single && fam in defaults && sameValue(v, defaults[/** @type {'scanBodies'|'cadence'} */ (fam)])) continue;
+      if (single && fam in defaults && sameValue(v, defaults[/** @type {'scanBodies'|'cadence'|'moonStrike'} */ (fam)])) continue;
       out[fam][k] = now;
       changed = true;
     }
@@ -296,7 +303,7 @@ export const stampWatchListDiff = (prevCfg, nextCfg, ledger, now) => {
     out[fam] = { ...(ledger?.[fam] || {}) };
     const prev = liveValuesOf(prevCfg, fam);
     const next = liveValuesOf(nextCfg, fam);
-    const single = fam === 'scanBodies' || fam === 'cadence';
+    const single = SINGLE_FAMILIES.has(fam);
     for (const [k, v] of Object.entries(next)) {
       const isNew = !(k in prev) || !sameValue(prev[k], v);
       // Singles stamp only on a REAL value change — their materialised

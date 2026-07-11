@@ -212,13 +212,15 @@ const captureEnv = () => {
     cadence: cfg.cadence,
     rings,
     // Fresh fleet-landing candidates (domain/fleetLanding) → force-boosted to the
-    // top of the probe plan so the FAB proposes spying that moon NOW.
+    // top of the probe plan so the FAB proposes spying that moon NOW. The
+    // configured moon-strike mode (off/lone/newest/any) gates how much
+    // corroboration the detector demands.
     strikeCoords: strikeKeysOf(detectAllLandings(
       cfg.players,
       getApiContext()?.universePlanets ?? [],
       rings,
       nowMs,
-      { sentMap: readSpySentMap() },
+      { sentMap: readSpySentMap(), mode: cfg.moonStrike },
     )),
     dangerByPlayer: dangerByPlayer(),
     activityByPlayer: activityByPlayer(nowMs),

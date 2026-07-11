@@ -79,7 +79,7 @@ import { allianceClassKeyFor } from '../../state/allianceClass.js';
 import { proximityReportsKeyFor } from '../../state/proximityReports.js';
 import { bodiesKeyFor } from '../../state/bodies.js';
 import { activityObsKeyFor } from '../../state/activityObs.js';
-import { watchListKeyFor, normalizeWatchList, writeWatchListConfig, DEFAULT_SPY_PROBES, DEFAULT_CADENCE, normalizeCadence } from '../../state/watchList.js';
+import { watchListKeyFor, normalizeWatchList, writeWatchListConfig, DEFAULT_SPY_PROBES, DEFAULT_CADENCE, DEFAULT_MOON_STRIKE, normalizeCadence } from '../../state/watchList.js';
 import { syncRequestKeyFor } from '../../sync/scheduler.js';
 import { formatBytes, parsePerUniverseKey } from './syncInventory.js';
 import { galaxyStaleMs } from '../../domain/galaxyWatch.js';
@@ -465,6 +465,7 @@ const pinnedTargetIds = new Set();
 /** @type {HTMLElement | null} */ let tgtWatchedOnly;
 /** @type {HTMLInputElement | null} */ let tgtProbes;
 /** @type {HTMLElement | null} */ let tgtScanBodies;
+/** @type {HTMLElement | null} */ let tgtMoonStrike;
 /** @type {HTMLInputElement | null} */ let cadRescanHours;
 /** @type {HTMLInputElement | null} */ let cadGalaxyHours;
 /** @type {HTMLElement | null} */ let tgtHideInactive;
@@ -769,6 +770,7 @@ const wireDom = () => {
   tgtWatchedOnly = document.getElementById('tgtWatchedOnly');
   tgtProbes = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtProbes'));
   tgtScanBodies = document.getElementById('tgtScanBodies');
+  tgtMoonStrike = document.getElementById('tgtMoonStrike');
   cadRescanHours = /** @type {HTMLInputElement | null} */ (document.getElementById('cadRescanHours'));
   cadGalaxyHours = /** @type {HTMLInputElement | null} */ (document.getElementById('cadGalaxyHours'));
   tgtHideInactive = document.getElementById('tgtHideInactive');
@@ -957,6 +959,7 @@ const loadWatched = async () => {
   // chrome.storage is authoritative for the probe count (the FAB reads it too).
   if (tgtProbes) tgtProbes.value = String(cfg.probes);
   if (tgtScanBodies) setChipValue(tgtScanBodies, cfg.scanBodies ?? 'planets');
+  if (tgtMoonStrike) setChipValue(tgtMoonStrike, cfg.moonStrike ?? DEFAULT_MOON_STRIKE);
   hydrateCadenceInputs();
 };
 
@@ -997,6 +1000,7 @@ const writeWatchConfig = () => {
     players: [...watchedPlayers],
     probes: Number(tgtProbes?.value) || DEFAULT_SPY_PROBES,
     scanBodies: chipValue(tgtScanBodies) || 'planets',
+    moonStrike: chipValue(tgtMoonStrike) || DEFAULT_MOON_STRIKE,
     rescan: rescanMap,
     relationships: watchRelationships,
     mapHidden: mapHiddenIds,
@@ -1482,6 +1486,7 @@ const repaintTargets = () => {
     apiCache.universe ? apiCache.universe.planets : [],
     activityObs,
     nowMs,
+    { mode: /** @type {import('../../domain/fleetLanding.js').MoonStrikeMode} */ (chipValue(tgtMoonStrike) || DEFAULT_MOON_STRIKE) },
   );
 
   // Watchlist cards — the landing strip (Etap H4). Same per-repaint data the
@@ -2642,6 +2647,9 @@ const wireListeners = () => {
   }
   // Planet/moon/both scan filter — same shared-config write as the probes.
   wireChips(tgtScanBodies, () => { writeWatchConfig(); repaintTargets(); });
+  // Moon-strike aggressiveness — same write; repaint recomputes the landing
+  // signals (the 🎯 markers + dossier banners follow the new mode live).
+  wireChips(tgtMoonStrike, () => { writeWatchConfig(); repaintTargets(); });
   wireChips(tgtLimitChips, onTargetFilterChange);
   tgtSearch?.addEventListener('input', () => {
     targetSearchQuery = tgtSearch ? tgtSearch.value : '';
@@ -2808,6 +2816,7 @@ export const _resetDashboardForTest = () => {
     tgtWatchedOnly =
     tgtProbes =
     tgtScanBodies =
+    tgtMoonStrike =
     tgtHideInactive =
     tgtConfigToggle =
     tgtConfigCard =

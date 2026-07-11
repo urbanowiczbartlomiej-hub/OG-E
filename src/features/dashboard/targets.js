@@ -349,9 +349,13 @@ function intelCell(worst, spied, total, oldestAgeMs, scan, landing) {
     const st = document.createElement('span');
     st.textContent = '🎯 ';
     st.style.cssText = 'font-size:12px;';
-    st.title = `Possible fresh fleet — moon ${landing.coord} active `
-      + `${formatAge(landing.freshAgeMs)} ago, player otherwise quiet `
-      + `(${landing.quiet}/${landing.total} bodies). Spy to confirm.`;
+    // Claim tracks the signal's tier: 'any' concedes the owner may be around.
+    st.title = landing.tier === 'any'
+      ? `Moon ${landing.coord} lit ${formatAge(landing.freshAgeMs)} ago — other `
+        + 'bodies active too (owner may be around). Spy to confirm.'
+      : `Possible ${landing.tier === 'newest' ? 'parked' : 'fresh'} fleet — moon ${landing.coord} active `
+        + `${formatAge(landing.freshAgeMs)} ago, player otherwise quiet/older `
+        + `(${landing.quiet}/${landing.total} bodies). Spy to confirm.`;
     td.appendChild(st);
   }
 

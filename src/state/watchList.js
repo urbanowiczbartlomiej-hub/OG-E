@@ -104,10 +104,33 @@ import {
  * @property {Cadence} [cadence]
  *   Re-scan cadences (see {@link Cadence}); materialised with
  *   {@link DEFAULT_CADENCE}.
+ * @property {MoonStrikeMode} [moonStrike]
+ *   Moon-strike aggressiveness (domain/fleetLanding ladder — off/lone/
+ *   newest/any): how much corroboration the scan plan demands before
+ *   flagging a moon as a parked-fleet candidate. Synced (a strategy knob,
+ *   like `cadence`); materialised with {@link DEFAULT_MOON_STRIKE}.
  */
+
+/** @typedef {import('../domain/fleetLanding.js').MoonStrikeMode} MoonStrikeMode */
 
 /** Default probe count when none has been chosen yet. */
 export const DEFAULT_SPY_PROBES = 20;
+
+/**
+ * Default moon-strike mode: 'newest' — flags a moon holding the account's
+ * newest interaction (including the afterglow case) while staying out of the
+ * owner-may-be-online territory ('any' is a deliberate opt-in).
+ * @type {MoonStrikeMode}
+ */
+export const DEFAULT_MOON_STRIKE = 'newest';
+
+/**
+ * Coerce a raw value into a valid {@link MoonStrikeMode} (else the default).
+ * @param {unknown} v
+ * @returns {MoonStrikeMode}
+ */
+const moonStrikeField = (v) =>
+  (v === 'off' || v === 'lone' || v === 'newest' || v === 'any' ? v : DEFAULT_MOON_STRIKE);
 
 /**
  * Default cadences: probe re-scan after 48 h (the old hot tier — the tightest
@@ -183,7 +206,7 @@ export const watchListKeyFor = (universeId) => `${universeId}:${WATCH_LIST_KEY_B
 export const normalizeWatchList = (raw) => {
   if (Array.isArray(raw)) {
     return {
-      players: raw.map(String), probes: DEFAULT_SPY_PROBES, scanBodies: 'planets', rescan: {}, relationships: {}, mapHidden: {}, scanMode: {}, galaxyMode: {}, cadence: { ...DEFAULT_CADENCE },
+      players: raw.map(String), probes: DEFAULT_SPY_PROBES, scanBodies: 'planets', rescan: {}, relationships: {}, mapHidden: {}, scanMode: {}, galaxyMode: {}, cadence: { ...DEFAULT_CADENCE }, moonStrike: DEFAULT_MOON_STRIKE,
     };
   }
   const o = raw && typeof raw === 'object' ? /** @type {any} */ (raw) : {};
@@ -242,8 +265,9 @@ export const normalizeWatchList = (raw) => {
     }
   }
   const cadence = normalizeCadence(o.cadence);
+  const moonStrike = moonStrikeField(o.moonStrike);
   return {
-    players, probes, scanBodies, rescan, relationships, mapHidden, scanMode, galaxyMode, cadence,
+    players, probes, scanBodies, rescan, relationships, mapHidden, scanMode, galaxyMode, cadence, moonStrike,
   };
 };
 
@@ -260,6 +284,7 @@ export const watchListStore = createStore(/** @type {WatchListConfig} */ ({
   scanMode: {},
   galaxyMode: {},
   cadence: { ...DEFAULT_CADENCE },
+  moonStrike: DEFAULT_MOON_STRIKE,
 }));
 
 /** @type {(() => void) | null} */
@@ -387,13 +412,14 @@ export const ensureWatchListLedgerSeeded = async (universeId, now = Date.now()) 
 
 /**
  * The materialised single-family defaults `seedWatchListLedger` compares
- * against — a default-valued `scanBodies`/`cadence` carries no user intent
- * and must NOT get a protective stamp (it would win LWW over another
- * device's earlier-seeded TUNED value). See the domain fn's doc.
+ * against — a default-valued `scanBodies`/`cadence`/`moonStrike` carries no
+ * user intent and must NOT get a protective stamp (it would win LWW over
+ * another device's earlier-seeded TUNED value). See the domain fn's doc.
  */
 const SEED_DEFAULTS = Object.freeze({
   scanBodies: 'planets',
   cadence: DEFAULT_CADENCE,
+  moonStrike: DEFAULT_MOON_STRIKE,
 });
 
 /**
