@@ -55,6 +55,8 @@
 import { honorClass } from './apiOccupancy.js';
 import { honorRank } from './players.js';
 import { isWarriorAlliance } from './allianceClass.js';
+import { estimateCombatShare } from './threatModel.js';
+import { pointsToResources } from './unitCosts.js';
 
 /**
  * @typedef {'apex'|'raider'|'declawed'|'fortress'|'turtle'|'fleeter'|'cargo'|'eco'|'friendly'|'unknown'} DangerLabel
@@ -102,8 +104,12 @@ import { isWarriorAlliance } from './allianceClass.js';
  * @property {boolean} friendly     Your alliance / buddy — never a threat.
  * @property {number} [ships]       Ship count echo (undefined = unknown).
  * @property {number} [destroyed]   Lifetime military-destroyed echo.
- * @property {number} [resPerShip]  militaryPts·1000/ships — composition tell (undefined = ships unknown/0).
+ * @property {number} [resPerShip]  Estimated REAL resources per ship of the mobile
+ *   fleet (mobileMil points inverted through the composition prior — civil ships
+ *   weigh ×0.5 in the score). Undefined = ships unknown/0.
  * @property {number} [combatQuality]  q(res/ship) in 0..1 — how combat-grade the hulls look.
+ * @property {number} [combatShare]  0.05..0.95 — assumed combat share BY VALUE of the
+ *   player's fleet (spied composition + aggression lean); the pts→res knob.
  * @property {number} [reach]       0..1 — tactical dispersion / striking reach.
  * @property {number} [apexSignals] 0..6 — how many apex tells fired (top ships,
  *   optimal res/ship, warrior alliance, reach, kills, FS spot). Denominator =
@@ -292,7 +298,7 @@ const computeReach = (planets) => {
  *   fallback when the honour feed is thin.
  * @property {Array<{coords:string, player?:number}>} [universePlanets]  Raw
  *   occupied-planet rows — per-player planet coords for the reach signal.
- * @property {Record<string, {defensePts:number, coverageComplete:boolean, spiedCount:number, planetCount?:number, allianceClass?:string}>} [spied]
+ * @property {Record<string, {defensePts:number, coverageComplete:boolean, spiedCount:number, planetCount?:number, allianceClass?:string, visibleCombatShare?:number}>} [spied]
  *   Per-player spy summary (from `estimateHiddenFleet`): the defence points we
  *   have seen and whether coverage is complete. Fully spied → fleet = military
  *   − defence EXACTLY (the precise refinement of the ships bound). Partial →
@@ -442,6 +448,7 @@ export const buildDangerProfiles = (input) => {
    * @property {number|undefined} rps
    * @property {number} q
    * @property {number} combatMil
+   * @property {number} combatShare  Assumed combat share BY VALUE (the pts→res knob).
    * @property {ReachInfo} reach
    * @property {{spiedCount:number, planetCount?:number}|undefined} spy
    * @property {boolean} warriorAlliance  The player's ALLIANCE is warrior-class
@@ -537,32 +544,50 @@ export const buildDangerProfiles = (input) => {
       }
     }
 
+    // Alliance class: prefer the comprehensive highscore harvest (covers every
+    // member, no spy needed), fall back to a spied report's own alliance class.
+    // A harvested 'none' is truthy, so it correctly wins over a stale spy report
+    // and is NOT mistaken for "unknown". undefined = never harvested (→ the
+    // dashboard's "alliance class unknown" hint). Resolved BEFORE the combat-
+    // quality block: the warrior tell feeds the composition prior below.
+    const allianceId = apiPlayers[idStr] ? apiPlayers[idStr].alliance : undefined;
+    const allianceClass = (allianceId ? allianceClasses[allianceId] : undefined)
+      || (spyRow ? spyRow.allianceClass : undefined);
+    const warriorAlliance = isWarriorAlliance(allianceClass);
+
     // ── Combat quality (res/ship) → the danger-only combat discount. ──
     // res/ship is measured on the FLEET estimate (mobileMil), NOT total military.
     // Defence inflates militaryPts without adding ships, so a naive total res/ship
     // makes a bunker farmer's cheap transporters read like warships (the pentagon
     // case: 28k total res/ship "looked" combat, but 38M of 54.6M was defence). Since
     // mobileMil already subtracts the defence we've SPIED, a scan collapses the fleet
-    // res/ship to its true, cheap value (~8k) and q — hence danger — drops with it.
-    const rps = typeof ships === 'number' && ships > 0 ? (mobileMil * 1000) / ships : undefined;
+    // res/ship to its true, cheap value and q — hence danger — drops with it.
+    //
+    // mobileMil is in MILITARY points (civil ships weigh ×0.5 there), so a naive
+    // ·1000/ships understates a cargo fleet's real res/ship by up to 2× (pentagon:
+    // 7.4k vs a real 12.4k). Convert through the composition prior first: spied
+    // composition when we have it, leaned toward warships by aggression tells
+    // (warrior alliance, wide server reach, top kill history, bandit rank) — an
+    // aggressive player's fleet skews combat, not transporters.
+    const combatShare = estimateCombatShare({
+      visibleCombatShare: spyRow ? spyRow.visibleCombatShare : undefined,
+      warriorAlliance,
+      wideReach: reach.reach >= APEX_REACH,
+      heavyKills: destroyedPct >= APEX_DESTROYED_PCT,
+      bandit: banditTier >= 2,
+    });
+    const rps = typeof ships === 'number' && ships > 0
+      ? pointsToResources(mobileMil, combatShare) / ships
+      : undefined;
     const q = typeof rps === 'number' ? combatQuality(rps) : 1;
     const combatMil = ships === 0 ? 0 : mobileMil * q;
     if (combatMil > 0) combatMilVals.push(combatMil);
 
-    // Alliance class: prefer the comprehensive highscore harvest (covers every
-    // member, no spy needed), fall back to a spied report's own alliance class.
-    // A harvested 'none' is truthy, so it correctly wins over a stale spy report
-    // and is NOT mistaken for "unknown". undefined = never harvested (→ the
-    // dashboard's "alliance class unknown" hint).
-    const allianceId = apiPlayers[idStr] ? apiPlayers[idStr].alliance : undefined;
-    const allianceClass = (allianceId ? allianceClasses[allianceId] : undefined)
-      || (spyRow ? spyRow.allianceClass : undefined);
-
     partials.push({
       id, militaryPts, ships, destroyedPts, banditTier, destroyedPct, shipsPct,
-      mobileLo, mobileHi, mobileMil, provenance, rps, q, combatMil, reach,
+      mobileLo, mobileHi, mobileMil, provenance, rps, q, combatMil, reach, combatShare,
       spy: spyRow ? { spiedCount: spyRow.spiedCount, planetCount: spyRow.planetCount } : undefined,
-      warriorAlliance: isWarriorAlliance(allianceClass),
+      warriorAlliance,
       allianceId, allianceClass,
     });
   }
@@ -706,6 +731,7 @@ export const buildDangerProfiles = (input) => {
     out.set(p.id, {
       id: p.id, danger, mobileMil: p.mobileMil, mobileLo: p.mobileLo, mobileHi: p.mobileHi,
       provenance: p.provenance, predator, banditTier: p.banditTier, friendly: false,
+      combatShare: p.combatShare,
       ...(typeof p.ships === 'number' ? { ships: p.ships } : {}),
       ...(p.destroyedPts > 0 ? { destroyed: p.destroyedPts } : {}),
       ...(typeof p.rps === 'number' ? { resPerShip: p.rps, combatQuality: p.q } : {}),

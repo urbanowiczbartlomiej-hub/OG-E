@@ -63,7 +63,7 @@ import { buildOccupancyIndex } from '../../domain/apiOccupancy.js';
 import { buildTargetCandidates, playerPlanets } from '../../domain/targets.js';
 import { joinDangerProfiles } from '../../domain/dangerJoin.js';
 import { buildCivilBaseline } from '../../domain/civilBaseline.js';
-import { estimateHiddenFleet } from '../../domain/threatModel.js';
+import { estimateHiddenFleet, estimateCombatShare } from '../../domain/threatModel.js';
 import { raidVerdict } from '../../domain/raidVerdict.js';
 import { normalizeReportTimestamps } from '../../domain/espionageReport.js';
 import { latestOf, historyOf } from '../../domain/targetReports.js';
@@ -83,7 +83,7 @@ import { watchListKeyFor, normalizeWatchList, writeWatchListConfig, DEFAULT_SPY_
 import { syncRequestKeyFor } from '../../sync/scheduler.js';
 import { formatBytes, parsePerUniverseKey } from './syncInventory.js';
 import { galaxyStaleMs } from '../../domain/galaxyWatch.js';
-import { pointsOf } from '../../domain/unitCosts.js';
+import { pointsOf, pointsToResources } from '../../domain/unitCosts.js';
 import {
   HISTORY_KEY_BASE,
   historyKeyFor,
@@ -1392,9 +1392,15 @@ const repaintTargets = () => {
     // which swings with whether the fleet was home when we probed). The API
     // anchor is trusted only when coverage is complete (`!provisional`) —
     // otherwise unseen DEFENSE inflates it and the gate would go blind.
+    // Visible is exact (spied fleet resources); hidden is MILITARY points
+    // (civil ships weigh ×0.5 there), inverted through the spied-composition
+    // prior — a flat ×1000 understated cargo-heavy fleets by up to 2×.
     const est = estimates[pid];
     const fleetScaleRes = est && !est.provisional
-      ? (est.visibleFleetPoints + est.hiddenFleetPoints) * 1000
+      ? est.visibleFleetRes + pointsToResources(
+        est.hiddenFleetPoints,
+        estimateCombatShare({ visibleCombatShare: est.visibleCombatShare }),
+      )
       : 0;
     const known = playerPlanets(universePlanets, pid);
     const arcs = bracketFsArcs(bucket, activityObs[pid], nowMs, {

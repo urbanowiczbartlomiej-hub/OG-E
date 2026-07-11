@@ -21,6 +21,8 @@ import { effectiveScan, ringKeyFor } from '../../domain/scanMode.js';
 import { bodyActivityReadout } from '../../domain/galaxyWatch.js';
 import { mergeActivityObs } from '../../domain/activityObs.js';
 import { compact } from './format.js';
+import { estimateCombatShare } from '../../domain/threatModel.js';
+import { pointsToResources } from '../../domain/unitCosts.js';
 
 /**
  * @typedef {import('../../domain/targets.js').PlanetPos} PlanetPos
@@ -171,9 +173,11 @@ function apexChip(label, col) {
  * split per body kind in the evidence column's coverage line — a third copy
  * was pure noise. `provisional` stays as a tail on the arithmetic itself.
  * @param {import('../../domain/threatModel.js').HiddenFleetEstimate} est
+ * @param {import('../../domain/dangerScore.js').DangerProfile} [profile]  Supplies the
+ *   composition prior (combatShare) for the points → resources conversion.
  * @returns {HTMLDivElement}
  */
-function hiddenFleetBlock(est) {
+function hiddenFleetBlock(est, profile) {
   const wrap = document.createElement('div');
   wrap.style.cssText = 'margin-bottom:10px;font-size:11px;color:#8b95a0;line-height:1.5;';
 
@@ -181,6 +185,11 @@ function hiddenFleetBlock(est) {
   // `visible` (parked fleet the scans actually SAW — hard evidence, blue) and
   // `hidden` (the computed remainder, amber — it SWINGS with scan timing: a
   // fleet caught home reads ~0 hidden, exactly when it sits catchable).
+  //
+  // The identity lives in MILITARY POINTS, where civil ships count half — so
+  // the amber remainder gets a RESOURCE conversion appended: the number the
+  // player can actually compare with a report's fleet value. (The pentagon
+  // lesson: "~14.5M hidden" was a real 23.6G-resource cargo fleet.)
   const arith = document.createElement('div');
   arith.appendChild(document.createTextNode(
     `military ${compact(est.militaryPoints)} − defence ${compact(est.defensePoints)} − `));
@@ -193,9 +202,23 @@ function hiddenFleetBlock(est) {
   hid.textContent = `~${compact(est.hiddenFleetPoints)} hidden`;
   hid.style.color = '#e0b020';
   arith.appendChild(hid);
+  const share = typeof profile?.combatShare === 'number'
+    ? profile.combatShare
+    : estimateCombatShare({ visibleCombatShare: est.visibleCombatShare });
+  const hiddenRes = pointsToResources(est.hiddenFleetPoints, share);
+  if (hiddenRes >= 1000) {
+    const res = document.createElement('span');
+    res.textContent = ` ≈ ${compact(hiddenRes)} res`;
+    res.style.color = '#e0b020';
+    res.title = 'Points → resources: the military score counts civil ships (transporters, '
+      + 'recyclers, probes) at 50%, so the resource value depends on composition — assumed '
+      + `${Math.round(share * 100)}% combat by value (spied composition + aggression tells).`;
+    arith.appendChild(res);
+  }
   if (est.provisional) arith.appendChild(document.createTextNode(' (provisional)'));
-  arith.title = 'Visible = parked fleet your scans saw (stable evidence). Hidden = the remainder; '
-    + 'it swings with scan timing — a fleet caught home reads ~0 hidden.';
+  arith.title = 'Visible = parked fleet your scans saw (stable evidence). Hidden = the remainder '
+    + 'in military points (civil ships count half there); it swings with scan timing — a fleet '
+    + 'caught home reads ~0 hidden.';
   wrap.appendChild(arith);
 
   return wrap;
@@ -1361,7 +1384,7 @@ export function buildDossier(a) {
   }
 
   // 5) Hidden-fleet arithmetic.
-  if (a.estimate) judgement.appendChild(hiddenFleetBlock(a.estimate));
+  if (a.estimate) judgement.appendChild(hiddenFleetBlock(a.estimate, a.profile));
 
   // 5b) Civil-fleet baseline (Etap C).
   if (a.civilProfile) judgement.appendChild(civilBlock(a.civilProfile, a.profile));

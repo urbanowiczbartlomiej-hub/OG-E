@@ -16,6 +16,8 @@ import { RELATIONSHIP_COLORS } from './mapPrimitives.js';
 import { sparkline } from './dossier.js';
 import { compact } from './format.js';
 import { dangerColor } from '../../lib/dangerColor.js';
+import { estimateCombatShare } from '../../domain/threatModel.js';
+import { pointsToResources } from '../../domain/unitCosts.js';
 
 // ── Local formatting helpers (compact magnitude → shared ./format.js) ─────────
 
@@ -216,9 +218,20 @@ export function renderWatchlistCards(a) {
       // computed remainder, which SWINGS with scan timing): hidden alone read
       // "~0" right after a fleet-home scan — exactly when the fleet sits
       // catchable and the card must not read as "safe".
-      head.textContent = `visible ${compact(est.visibleFleetPoints)} · hidden ~${compact(est.hiddenFleetPoints)}`;
-      head.title = 'Visible = parked fleet your scans saw. Hidden = military − defence − visible; '
-        + 'it swings with scan timing — a fleet caught home reads ~0 hidden.';
+      //
+      // Both halves in RESOURCES (the units a spy report shows), not military
+      // points — the score weighs civil ships at half, so points understate a
+      // cargo fleet by up to 2× (the pentagon lesson). Visible is exact (the
+      // spied fleet value); hidden converts through the composition prior.
+      const share = prof && typeof prof.combatShare === 'number'
+        ? prof.combatShare
+        : estimateCombatShare({ visibleCombatShare: est.visibleCombatShare });
+      const hiddenRes = pointsToResources(est.hiddenFleetPoints, share);
+      head.textContent = `visible ${compact(est.visibleFleetRes)} · hidden ~${compact(hiddenRes)} res`;
+      head.title = 'In resources (what a spy report shows). Visible = parked fleet your scans saw. '
+        + 'Hidden = military − defence − visible, converted from points assuming '
+        + `${Math.round(share * 100)}% combat by value; it swings with scan timing — a fleet `
+        + 'caught home reads ~0 hidden.';
     } else if (prof && !prof.friendly) {
       head.textContent = `fleet ≤ ${compact(prof.mobileHi)}`;
     } else {

@@ -18,8 +18,20 @@
 // # Points
 //
 // One OGame point = 1000 resources invested (metal+crystal+deuterium counted
-// equally). The highscore "military" score is therefore (fleet+defense
-// resources)/1000 — already in points. `pointsOf(resources)` does that divide.
+// equally) — `pointsOf(resources)` does that divide. BUT the highscore
+// "military" score weighs CIVIL ships at only 50% of their value:
+//
+//   military = defence + combat ships + civil ships / 2   (in points)
+//
+// Civil = Small/Large Cargo, Colony Ship, Recycler, Espionage Probe, Solar
+// Satellite, Crawler (`CIVIL_SHIP_IDS`); combat ships and ALL defence count
+// in full. Validated against a live case ("pentagon", s163-pl): one moon held
+// a spied fleet of exactly 23,596,076,000 res (4.118G combat + 19.478G civil)
+// while the player's military score was 54.7M with ~40M pts of spied defence
+// — at civil@100% that fleet alone (23.6M pts) breaks the identity
+// (40 + 23.6 > 54.7); at civil@50% (13.86M pts) it fits within ~1%.
+// `militaryPointsOf` computes that weighted value from a composition;
+// `pointsToResources` inverts points back to resources given a combat share.
 //
 // Costs are BASE build costs: lifeform / research bonuses change build TIME and
 // some production, not the resource cost that the point score is computed from.
@@ -72,6 +84,67 @@ export const UNIT_COSTS = {
   407: { m: 10000, c: 10000, d: 0 }, // Small Shield Dome (Mała Osłona)
   408: { m: 50000, c: 50000, d: 0 }, // Large Shield Dome (Duża Osłona)
 };
+
+/**
+ * Ship ids the military highscore counts at 50% (OGame's civil ships):
+ * Small Cargo, Large Cargo, Colony Ship, Recycler, Espionage Probe, Solar
+ * Satellite, Crawler. Everything else in `UNIT_COSTS` (combat ships 2xx and
+ * defence 4xx) counts in full. See the "# Points" header note.
+ *
+ * @type {Set<number>}
+ */
+export const CIVIL_SHIP_IDS = new Set([202, 203, 208, 209, 210, 212, 217]);
+
+/**
+ * Split a `{id: count}` composition's resource value into the military
+ * highscore's two weight classes.
+ *
+ * @param {Record<string|number, number>} [units]
+ * @returns {{ combat: number, civil: number }}  Resources (not points).
+ */
+export function splitResourceValue(units) {
+  let combat = 0;
+  let civil = 0;
+  if (units) {
+    for (const [id, count] of Object.entries(units)) {
+      const n = Number(count);
+      if (!Number.isFinite(n) || n <= 0) continue;
+      const idNum = Number(id);
+      const v = resourceValueOf(idNum) * n;
+      if (CIVIL_SHIP_IDS.has(idNum)) civil += v;
+      else combat += v;
+    }
+  }
+  return { combat, civil };
+}
+
+/**
+ * The military-highscore point value of a composition — combat units (and
+ * defence) in full, civil ships at 50%. This is the ONLY correct currency to
+ * subtract from a player's military score (see threatModel.js).
+ *
+ * @param {Record<string|number, number>} [units]
+ * @returns {number}  Points (float; callers round at display time).
+ */
+export function militaryPointsOf(units) {
+  const { combat, civil } = splitResourceValue(units);
+  return pointsOf(combat + civil / 2);
+}
+
+/**
+ * Invert military points back to a resource estimate, given the fleet's
+ * combat share BY VALUE (0 = all civil → ×2000, 1 = all combat → ×1000):
+ *
+ *   res = pts·1000 / (share + (1−share)/2) = pts·2000 / (1 + share)
+ *
+ * @param {number} points
+ * @param {number} combatShare  0..1 (clamped).
+ * @returns {number}  Resources.
+ */
+export function pointsToResources(points, combatShare) {
+  const s = combatShare < 0 ? 0 : combatShare > 1 ? 1 : combatShare;
+  return (points * 2000) / (1 + s);
+}
 
 /**
  * Total resource value of one unit (metal + crystal + deuterium).

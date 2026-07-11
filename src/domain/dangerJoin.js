@@ -72,7 +72,7 @@ export const joinDangerProfiles = ({ apiCache, livePlayers, targetReports, allia
   // NEWEST report's alliance class ('warrior' | 'trader' | 'researcher') — the
   // public XML API has no alliance class, so spy reports are its only source;
   // dangerScore reads 'warrior' as an apex tell.
-  /** @type {Record<string, {defensePts:number, coverageComplete:boolean, spiedCount:number, planetCount?:number, allianceClass?:string}>} */
+  /** @type {Record<string, {defensePts:number, coverageComplete:boolean, spiedCount:number, planetCount?:number, allianceClass?:string, visibleCombatShare?:number}>} */
   const spiedByPlayer = {};
   const reports = targetReports || {};
   for (const pid of Object.keys(reports)) {
@@ -104,6 +104,11 @@ export const joinDangerProfiles = ({ apiCache, livePlayers, targetReports, allia
       spiedCount: est.spiedCount,
       planetCount: est.planetCount,
       ...(allianceClass ? { allianceClass } : {}),
+      // Spied composition split — feeds the danger model's res/ship
+      // points→resources correction (civil ships weigh ×0.5 in the score).
+      ...(typeof est.visibleCombatShare === 'number'
+        ? { visibleCombatShare: est.visibleCombatShare }
+        : {}),
     };
   }
 
