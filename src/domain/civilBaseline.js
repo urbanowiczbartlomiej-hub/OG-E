@@ -33,11 +33,47 @@
 // bounds in domain/dangerScore.js). This file computes the number; the dossier
 // composes the caveat sentence.
 //
+// # Spy calibration (IDEAS #1) — the ceiling from fully-verified players
+//
+// The user's own spy reports can CALIBRATE the model. A player whose scans
+// close the military-points identity —
+//
+//   Σ militaryPointsOf(fleet) + militaryPointsOf(defense) over every body
+//     ≈ CURRENT military highscore (±IDENTITY_TOL)
+//
+// — is a player we have provably seen in full: every moon scanned, nothing in
+// flight, scans current. The check is SELF-GATING: an unscanned parking moon, a
+// fleet in flight or a stale report all break the identity and the sample
+// excludes itself (we compare against the CURRENT feed score, not the
+// report-time one). From those verified players we learn the server's civil
+// ships-per-economy-point CEILING (a high quantile — freshly-crashed players
+// hold LESS civil fleet than their economy implies, so low samples must not
+// drag the ceiling down; calibrating against economy NET of the spied
+// lifeformPoints kills the lifeform bias in the samples).
+//
+// The ceiling powers a second, OPPOSITE-direction reading:
+//
+//   combatFloor = max(0, ships − ratioCeil · economy)
+//
+// Ships beyond the maximal plausible civil fleet are unexplained — a
+// low-false-positive "at least this many look combat" tell, complementing the
+// median-curve combatShips upper bound. It stays a COUNT: a probe swarm can
+// still exceed the ceiling, so the res/ship cheap-swarm veto applies to it the
+// same way. And it stays OUT of the danger score D, like everything here.
+//
+// Verified players themselves need no heuristic at all — their profile carries
+// the SEEN composition (`civilSeen`/`combatSeen`, `verified: true`) and the
+// dossier states it directly.
+//
 // Pure: plain functions over plain data. No DOM/timers/storage/chrome.
 //
 // @see domain/dangerScore.js — the authoritative danger model (D); this baseline
 //   is a soft, separate signal and is deliberately NOT wired into it.
 // @see domain/apiOccupancy.js — highscore `ranks` shape (ships only on military).
+// @see domain/unitCosts.js — militaryPointsOf (civil @50%), validated live.
+
+import { CIVIL_SHIP_IDS, militaryPointsOf } from './unitCosts.js';
+import { latestOf } from './targetReports.js';
 
 /**
  * One player's civil-fleet baseline profile. `combatShips` is an UPPER BOUND on
@@ -58,6 +94,26 @@
  *   ratio bucket. `cheap-swarm` = a big COUNT surplus but ~logistics hulls
  *   (low res/ship) — the count model's blind spot, relabelled honestly.
  * @property {'high'|'medium'|'low'} confidence  How much to trust the band.
+ * @property {number} [combatFloor]  Ships beyond the CALIBRATED civil ceiling
+ *   (ratioCeil·economy) — "at least this many look combat". Present only when
+ *   the spy calibration is live (≥ MIN_CAL_SAMPLES verified players). Still a
+ *   count: the cheap-swarm veto applies (a probe swarm exceeds any ceiling).
+ * @property {number} [calibrationSamples]  Verified players behind the ceiling.
+ * @property {true} [verified]  This player's OWN scans close the military-points
+ *   identity — the seen composition below is authoritative, skip heuristics.
+ * @property {number} [civilSeen]   Verified only: civil ship count in the scans.
+ * @property {number} [combatSeen]  Verified only: combat ship count in the scans.
+ */
+
+/**
+ * The spy-derived calibration bundle (see the header note): a civil-per-eco
+ * ceiling learned from players whose scans close the military-points identity,
+ * plus the per-player seen compositions of those verified players.
+ *
+ * @typedef {object} CivilCalibration
+ * @property {number} samples    Verified players contributing to the ceiling.
+ * @property {number} ratioCeil  High-quantile civil ships per economy point.
+ * @property {Map<number, {civilSeen:number, combatSeen:number, shipsSeen:number}>} perPlayer
  */
 
 // ── Thresholds — all heuristic, tunable. ──────────────────────────────────────
@@ -71,6 +127,15 @@ const MIN_SAMPLES = 20;
 const DECILES = 10;
 /** Below this res/ship the surplus is cheap logistics hulls, not combat fleet. Heuristic, tunable. */
 const CHEAP_HULL_RPS = 12_000;
+/** Identity tolerance: |seen/military − 1| within this = fully verified. Heuristic, tunable. */
+const IDENTITY_TOL = 0.10;
+/** Fewer verified players than this and the ceiling is anecdote — calibration stays off. Heuristic, tunable. */
+const MIN_CAL_SAMPLES = 3;
+/** Ceiling quantile over the verified civil-per-eco ratios — high, because
+ * freshly-crashed samples sit LOW and must not drag the ceiling down. Heuristic, tunable. */
+const CEIL_QUANTILE = 0.9;
+/** combatFloor below this share of the fleet is noise — don't upgrade the band on it. Heuristic, tunable. */
+const FLOOR_MIN_RATIO = 0.05;
 
 /** Median of an ascending-sorted array; even length → mean of the two middles. @param {number[]} a */
 const medianSorted = (a) => {
@@ -78,6 +143,90 @@ const medianSorted = (a) => {
   if (!n) return 0;
   const mid = n >> 1;
   return n % 2 ? a[mid] : (a[mid - 1] + a[mid]) / 2;
+};
+
+/**
+ * Learn the {@link CivilCalibration} from the user's own spy reports (see the
+ * header note). A player qualifies as a SAMPLE only when the military-points
+ * identity closes against the CURRENT military feed — the self-gating proof
+ * that every body (moons included) was seen, recently, with nothing in flight.
+ * Returns `{ samples: 0, ratioCeil: 0, perPlayer }` when nothing qualifies —
+ * `buildCivilBaseline` then simply leaves the calibrated fields off.
+ *
+ * @param {object} input
+ * @param {Record<string, Record<string, import('./targetReports.js').BodyEntry | import('./espionageReport.js').SpyReport>>} [input.reports]
+ *   The target-reports store: playerId → bodyKey → newest report (+ history).
+ * @param {Record<string, {score?:number, ships?:number}>} [input.military]  CURRENT military ranks.
+ * @param {Record<string, {score?:number}>} [input.economy]  CURRENT economy ranks.
+ * @returns {CivilCalibration}
+ */
+export const collectCivilCalibration = ({ reports, military, economy } = {}) => {
+  /** @type {CivilCalibration} */
+  const out = { samples: 0, ratioCeil: 0, perPlayer: new Map() };
+  if (!reports || !military || !economy) return out;
+
+  /** @type {number[]} */
+  const ratios = [];
+  for (const pid of Object.keys(reports)) {
+    const bucket = reports[pid];
+    const mil = military[pid];
+    if (!bucket || !mil || !Number.isFinite(mil.score) || /** @type {number} */ (mil.score) <= 0) continue;
+
+    // Sum the spied composition over every body (planets AND moons — each
+    // bodyKey is its own entry). Bodies whose report never revealed a fleet /
+    // defense section contribute 0 points there, which BREAKS the identity
+    // unless the body genuinely holds nothing — exactly the self-gating we want.
+    let seenPts = 0;
+    let civilSeen = 0;
+    let combatSeen = 0;
+    let shipsSeen = 0;
+    /** Newest report-time lifeform points seen (de-biases the eco basis). */
+    let lifeformPts = 0;
+    let lifeformTs = -Infinity;
+    for (const key of Object.keys(bucket)) {
+      const r = latestOf(bucket[key]);
+      if (!r) continue;
+      seenPts += militaryPointsOf(r.fleet) + militaryPointsOf(r.defense);
+      if (r.fleet) {
+        for (const [id, count] of Object.entries(r.fleet)) {
+          const n = Number(count);
+          if (!Number.isFinite(n) || n <= 0) continue;
+          shipsSeen += n;
+          if (CIVIL_SHIP_IDS.has(Number(id))) civilSeen += n;
+          else combatSeen += n;
+        }
+      }
+      const ts = typeof r.timestamp === 'number' ? r.timestamp : 0;
+      if (typeof r.lifeformPoints === 'number' && ts > lifeformTs) {
+        lifeformTs = ts;
+        lifeformPts = r.lifeformPoints;
+      }
+    }
+    if (!(seenPts > 0)) continue;
+
+    // The identity check — seen vs the CURRENT feed score, so any change since
+    // the scans (rebuild, crash, fleet bought) disqualifies the sample.
+    const ratio = seenPts / /** @type {number} */ (mil.score);
+    if (Math.abs(ratio - 1) > IDENTITY_TOL) continue;
+
+    const numId = Number(pid);
+    if (Number.isFinite(numId)) out.perPlayer.set(numId, { civilSeen, combatSeen, shipsSeen });
+
+    // Ceiling sample: civil ships per economy point, economy NET of the spied
+    // lifeform score (lifeform inflates eco without adding a single cargo).
+    const eco = economy[pid];
+    if (!eco || !Number.isFinite(eco.score)) continue;
+    const ecoNet = /** @type {number} */ (eco.score) - lifeformPts;
+    if (!(ecoNet > 0) || !(civilSeen > 0)) continue;
+    ratios.push(civilSeen / ecoNet);
+  }
+
+  out.samples = ratios.length;
+  if (ratios.length >= MIN_CAL_SAMPLES) {
+    ratios.sort((a, b) => a - b);
+    out.ratioCeil = ratios[Math.min(ratios.length - 1, Math.max(0, Math.ceil(CEIL_QUANTILE * ratios.length) - 1))];
+  }
+  return out;
 };
 
 /**
@@ -92,9 +241,12 @@ const medianSorted = (a) => {
  * @param {Record<string, {score?:number}>} [input.economy]   Economy highscore ranks.
  * @param {Record<string, {score?:number, ships?:number}>} [input.military]  Military
  *   ranks; only this feed carries the per-player ship COUNT.
+ * @param {CivilCalibration} [input.calibration]  Spy-derived ceiling + verified
+ *   compositions (see {@link collectCivilCalibration}); absent/under-sampled →
+ *   the calibrated fields simply stay off every profile.
  * @returns {Map<number, CivilProfile>}
  */
-export const buildCivilBaseline = ({ economy, military } = {}) => {
+export const buildCivilBaseline = ({ economy, military, calibration } = {}) => {
   /** @type {Map<number, CivilProfile>} */
   const out = new Map();
   if (!economy || !military) return out;
@@ -180,6 +332,29 @@ export const buildCivilBaseline = ({ economy, military } = {}) => {
     else if (band === 'baseline') confidence = 'low';
     else confidence = 'medium';
 
+    // ── Spy calibration (see header): the OPPOSITE-direction reading. Ships
+    // beyond the verified civil CEILING are unexplained by any plausible civil
+    // fleet — "at least this many look combat". A non-trivial floor upgrades a
+    // baseline read to elevated (the median curve underestimated this player's
+    // room for civil, the ceiling says otherwise) and lifts confidence off the
+    // floor. The cheap-swarm res/ship veto below still applies — the floor is
+    // a COUNT and a probe swarm exceeds any ceiling. ──
+    /** @type {number | undefined} */
+    let combatFloor;
+    const calibrated = calibration && calibration.samples >= MIN_CAL_SAMPLES && calibration.ratioCeil > 0;
+    if (calibrated) {
+      combatFloor = Math.max(0, ships - /** @type {CivilCalibration} */ (calibration).ratioCeil * economyScore);
+      const floorRatio = ships > 0 ? combatFloor / ships : 0;
+      if (floorRatio >= FLOOR_MIN_RATIO) {
+        if (band === 'baseline') band = 'elevated';
+        if (confidence === 'low') confidence = 'medium';
+      }
+    }
+
+    // Verified overlay: this player's OWN scans close the identity — the seen
+    // composition is authoritative, no curve needed.
+    const seen = calibration ? calibration.perPlayer.get(numId) : undefined;
+
     // res/ship veto — the count model's blind spot. A huge COUNT surplus made of
     // cheap hulls (probes / small transporters, < ~12k/ship) is a logistics/probe
     // swarm, NOT a combat fleet (the Qbaba case: 20M ships at ~2k/ship read as
@@ -203,6 +378,10 @@ export const buildCivilBaseline = ({ economy, military } = {}) => {
       ...(typeof rps === 'number' ? { resPerShip: rps } : {}),
       band,
       confidence,
+      ...(typeof combatFloor === 'number'
+        ? { combatFloor, calibrationSamples: /** @type {CivilCalibration} */ (calibration).samples }
+        : {}),
+      ...(seen ? { verified: true, civilSeen: seen.civilSeen, combatSeen: seen.combatSeen } : {}),
     });
   }
 

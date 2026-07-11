@@ -62,7 +62,7 @@ import { ZONES } from '../../domain/zoneScore.js';
 import { buildOccupancyIndex } from '../../domain/apiOccupancy.js';
 import { buildTargetCandidates, playerPlanets } from '../../domain/targets.js';
 import { joinDangerProfiles } from '../../domain/dangerJoin.js';
-import { buildCivilBaseline } from '../../domain/civilBaseline.js';
+import { buildCivilBaseline, collectCivilCalibration } from '../../domain/civilBaseline.js';
 import { estimateHiddenFleet, estimateCombatShare } from '../../domain/threatModel.js';
 import { raidVerdict } from '../../domain/raidVerdict.js';
 import { normalizeReportTimestamps } from '../../domain/espionageReport.js';
@@ -1367,9 +1367,17 @@ const loadAll = async () => {
   dangerProfiles = joined.dangerProfiles;
   // Etap C: server civil-fleet baseline from the (previously unused) economy
   // feed — expected civil ships per player + the combat-ship surplus over it.
+  // The spy calibration (IDEAS #1) rides along: players whose scans close the
+  // military-points identity teach the model a civil-per-eco CEILING and get
+  // their own seen composition stated verbatim.
   civilProfiles = buildCivilBaseline({
     economy: apiCache.economy ? apiCache.economy.ranks : undefined,
     military: apiCache.military ? apiCache.military.ranks : undefined,
+    calibration: collectCivilCalibration({
+      reports: targetReports,
+      military: apiCache.military ? apiCache.military.ranks : undefined,
+      economy: apiCache.economy ? apiCache.economy.ranks : undefined,
+    }),
   });
   // Etap F: per-player routine from the spy-report history rings + the galaxy-
   // activity rings (F3; both accrue for watched players only — the rest

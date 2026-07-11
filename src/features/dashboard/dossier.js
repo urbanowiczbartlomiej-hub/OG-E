@@ -238,6 +238,26 @@ function civilBlock(civ, profile) {
   const wrap = document.createElement('div');
   wrap.style.cssText = 'margin-bottom:10px;font-size:11px;color:#8b95a0;line-height:1.5;';
 
+  // VERIFIED player (IDEAS #1): their own scans close the military-points
+  // identity, so the seen composition is authoritative — state it, skip every
+  // heuristic below (curve, bands, vetoes: all guesses about what we now know).
+  if (civ.verified) {
+    const line = document.createElement('div');
+    const label = document.createElement('span');
+    label.textContent = 'Civil baseline: ';
+    label.style.color = '#6b7782';
+    const val = document.createElement('span');
+    const combat = civ.combatSeen ?? 0;
+    val.textContent = `${compact(combat)} combat · ${compact(civ.civilSeen ?? 0)} civil ships — fully scanned`;
+    val.style.color = combat > 0 && civ.ships > 0 && combat / civ.ships >= 0.25 ? '#e2726a' : '#7fd6a8';
+    line.append(label, val);
+    line.title = 'Your scans account for this player’s whole military score '
+      + '(defence + fleet, civil ships at 50%), so this composition is what they actually own — '
+      + 'no baseline estimate needed. It ages as they rebuild; re-scan to refresh.';
+    wrap.appendChild(line);
+    return wrap;
+  }
+
   // The Danger model measures res/ship on the FLEET (defence excluded, tightened by
   // any scan); when THAT reads cheap hulls (low combat quality), it overrides this
   // count-only prior — a defensive farmer's TOTAL res/ship looks combat, but the
@@ -278,6 +298,22 @@ function civilBlock(civ, profile) {
     `Economy ${compact(civ.economyScore)} → expected ~${compact(civ.expectedCivil)} civil ships; `
     + `${civ.confidence} confidence. Upper bound — probe swarms dilute, lifeform economy inflates; spy to confirm.`;
   wrap.appendChild(line);
+
+  // Calibrated floor (IDEAS #1) — the opposite-direction read: ships beyond
+  // the civil CEILING learned from fully-scanned players are unexplained by
+  // any plausible civil fleet. Suppressed when the fleet-aware model already
+  // said "not combat" (demoted / cheap swarm) — the floor is a count and
+  // would contradict the composition verdict.
+  if (!demoted && civ.band !== 'cheap-swarm'
+    && typeof civ.combatFloor === 'number' && civ.combatFloor >= 1) {
+    const floor = document.createElement('div');
+    floor.textContent = `at least ~${compact(civ.combatFloor)} beyond any civil need`;
+    floor.style.cssText = 'color:#8b95a0;';
+    floor.title = `Even at the HIGHEST civil-fleet-per-economy ratio seen among the `
+      + `${civ.calibrationSamples} player${civ.calibrationSamples === 1 ? '' : 's'} your scans fully verify, `
+      + 'this economy does not explain these ships. Still a count — a probe swarm can exceed the ceiling too.';
+    wrap.appendChild(floor);
+  }
 
   return wrap;
 }
