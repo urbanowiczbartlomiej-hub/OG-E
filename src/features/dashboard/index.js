@@ -71,6 +71,8 @@ import { bodyLootStats } from '../../domain/lootRhythm.js';
 import { summarizeRoutine, routineBodies } from '../../domain/routine.js';
 import { summarizePresence } from '../../domain/presence.js';
 import { detectAllLandings } from '../../domain/fleetLanding.js';
+import { patrolSystemKeys, patrolOccupants, patrolPlayers } from '../../domain/patrol.js';
+import { renderPatrolCard } from './patrol.js';
 import { bracketFsArcs } from '../../domain/fsBracket.js';
 import { probeActivityObs } from '../../domain/activityObs.js';
 import { readApiCacheFor, apiCacheKeyFor } from '../../state/apiCache.js';
@@ -468,6 +470,9 @@ const pinnedTargetIds = new Set();
 /** @type {HTMLElement | null} */ let tgtMoonStrike;
 /** @type {HTMLInputElement | null} */ let cadRescanHours;
 /** @type {HTMLInputElement | null} */ let tgtPatrolSystems;
+/** @type {HTMLElement | null} */ let patrolCardEl;
+/** @type {HTMLElement | null} */ let patrolSummaryEl;
+/** @type {HTMLElement | null} */ let patrolStrikesEl;
 /** @type {HTMLInputElement | null} */ let cadGalaxyHours;
 /** @type {HTMLElement | null} */ let tgtHideInactive;
 /** @type {HTMLButtonElement | null} */ let tgtConfigToggle;
@@ -774,6 +779,9 @@ const wireDom = () => {
   tgtMoonStrike = document.getElementById('tgtMoonStrike');
   cadRescanHours = /** @type {HTMLInputElement | null} */ (document.getElementById('cadRescanHours'));
   tgtPatrolSystems = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtPatrolSystems'));
+  patrolCardEl = document.getElementById('patrolCard');
+  patrolSummaryEl = document.getElementById('patrolSummary');
+  patrolStrikesEl = document.getElementById('patrolStrikes');
   cadGalaxyHours = /** @type {HTMLInputElement | null} */ (document.getElementById('cadGalaxyHours'));
   tgtHideInactive = document.getElementById('tgtHideInactive');
   tgtConfigToggle = /** @type {HTMLButtonElement | null} */ (document.getElementById('tgtConfigToggle'));
@@ -1033,6 +1041,58 @@ const commitCadence = () => {
   hydrateCadenceInputs();
   writeWatchConfig();
   repaintTargets();
+};
+
+/**
+ * Recompute + repaint the Patrol card (territory mode, domain/patrol) from
+ * the per-universe loads already in scope: own bodies → territory; API
+ * occupancy → occupants/prey (filtered by API status, galaxy meta and
+ * relationship tags); activity rings → strikes, at the configured moon-strike
+ * mode. Hidden entirely while the radius input is 0 — no view is multiplied
+ * for users who don't hunt.
+ *
+ * @param {number} nowMs
+ * @returns {void}
+ */
+const repaintPatrol = (nowMs) => {
+  if (!patrolCardEl) return;
+  const radius = Number(tgtPatrolSystems?.value) || 0;
+  const planets = apiCache.universe ? apiCache.universe.planets : [];
+  if (radius <= 0 || !ownBodies.length || !planets.length) {
+    patrolCardEl.style.display = 'none';
+    return;
+  }
+  patrolCardEl.style.display = '';
+  const systems = patrolSystemKeys(ownBodies, radius, {
+    systems: apiBounds.systems,
+    donutSystem: apiBounds.donutSystem,
+  });
+  const occupants = patrolOccupants(planets, systems, ownProfile.id ?? null);
+  const apiPlayers = apiCache.players ? apiCache.players.players : {};
+  const prey = patrolPlayers(occupants, {
+    apiPlayers,
+    meta: players,
+    relationships: watchRelationships,
+  }).filter((pid) => !watchedPlayers.has(pid));
+  const strikes = detectAllLandings(prey, planets, activityObs, nowMs, {
+    mode: /** @type {import('../../domain/fleetLanding.js').MoonStrikeMode} */ (
+      chipValue(tgtMoonStrike) || DEFAULT_MOON_STRIKE),
+  });
+  renderPatrolCard({
+    summaryEl: patrolSummaryEl,
+    hostEl: patrolStrikesEl,
+    radius,
+    systems,
+    occupants,
+    strikes,
+    names: apiPlayers || {},
+    scans,
+    staleMs: (cadenceCfg.galaxyHours || 24) * 3600 * 1000,
+    nowMs,
+    linkBase: gameLinkBase() || undefined,
+    watchedIds: watchedPlayers,
+    onToggleWatch: toggleWatched,
+  });
 };
 
 /**
@@ -1492,6 +1552,11 @@ const repaintTargets = () => {
     nowMs,
     { mode: /** @type {import('../../domain/fleetLanding.js').MoonStrikeMode} */ (chipValue(tgtMoonStrike) || DEFAULT_MOON_STRIKE) },
   );
+
+  // Patrol card — the territory mode's dashboard face (same signals the
+  // in-game FAB flags for the grounds' prey; see features/dashboard/patrol.js).
+  // Hidden entirely while the radius is 0.
+  repaintPatrol(nowMs);
 
   // Watchlist cards — the landing strip (Etap H4). Same per-repaint data the
   // table + dossier read, so a card can never disagree with the row below it.
@@ -2825,6 +2890,9 @@ export const _resetDashboardForTest = () => {
     tgtScanBodies =
     tgtMoonStrike =
     tgtPatrolSystems =
+    patrolCardEl =
+    patrolSummaryEl =
+    patrolStrikesEl =
     tgtHideInactive =
     tgtConfigToggle =
     tgtConfigCard =

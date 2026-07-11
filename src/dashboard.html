@@ -945,6 +945,13 @@
       <div id="proximityStrip"></div>
     </div>
   </div>
+  <!-- Patrol (territory mode) — visible only while a patrol radius is set in
+       the scan prefs below. Strikes here are the SAME signals the in-game Spy
+       button flags; the summary shows the grounds' look coverage. -->
+  <div class="gv-card" id="patrolCard" style="display:none;">
+    <div class="gv-card-head"><span class="gv-card-title" title="Moon-strike candidates among your neighbours (±N systems around your colonies) and how well the grounds are patrolled. Same signals as the in-game Spy button.">Patrol</span><span id="patrolSummary" style="color:#77848f;"></span></div>
+    <div id="patrolStrikes"></div>
+  </div>
   <!-- Positions map ABOVE the control line (user pref): toggled by 🗺 in the
        controls below; the reach/You pills + watched-player chips share its own
        row under the canvas, all as .spy-pchip pills. -->
