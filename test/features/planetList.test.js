@@ -11,7 +11,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { findNextPlanetInList } from '../../src/features/shared/planetList.js';
-import { ACTIVE_PLANET_CLASS } from '../../src/lib/gameDom.js';
+import { ACTIVE_PLANET_CLASS, ACTIVE_MOON_CLASS } from '../../src/lib/gameDom.js';
 
 /**
  * Build a `#planetList` from `[cp, ok, isActive]` tuples. `ok` becomes a
@@ -140,5 +140,52 @@ describe('findNextPlanetInList', () => {
     });
     expect(seen).toContain('planet-10');
     expect(seen).toContain('planet-20');
+  });
+
+  it('a hightlightMoon row (moon page) counts as the active row — the walk advances from it', () => {
+    // On moon pages the game swaps hightlightPlanet for hightlightMoon on the
+    // row. `active: 'skip'` must skip THAT row and start from the next one.
+    document.body.innerHTML = `
+      <div id="planetList">
+        <div id="planet-10" class="smallplanet" data-ok="1"></div>
+        <div id="planet-20" class="smallplanet ${ACTIVE_MOON_CLASS}" data-ok="1"></div>
+        <div id="planet-30" class="smallplanet" data-ok="1"></div>
+      </div>`;
+    expect(findNextPlanetInList(isOk, { active: 'skip' })).toBe('30');
+  });
+
+  it('cpOf overrides what a matching row\'s cp IS (the moon walk reads the moonlink)', () => {
+    buildPlanetList([
+      ['10', false, true],
+      ['20', true],
+    ]);
+    document.getElementById('planet-20')?.insertAdjacentHTML(
+      'beforeend', '<a class="moonlink" href="?page=ingame&cp=999"></a>',
+    );
+    const cp = findNextPlanetInList(isOk, {
+      cpOf: (p) => {
+        const href = p.querySelector('a.moonlink')?.getAttribute('href') || '';
+        return new URL(href, 'https://s1.example.com/').searchParams.get('cp');
+      },
+    });
+    expect(cp).toBe('999');
+  });
+
+  it('a null cpOf result skips the row and the walk continues', () => {
+    buildPlanetList([
+      ['10', true, true],
+      ['20', true],
+    ]);
+    // Only planet-20 carries a moon — the moon-cp extractor passes over 10.
+    document.getElementById('planet-20')?.insertAdjacentHTML(
+      'beforeend', '<a class="moonlink" href="?cp=777"></a>',
+    );
+    const cp = findNextPlanetInList(isOk, {
+      cpOf: (p) => {
+        const href = p.querySelector('a.moonlink')?.getAttribute('href') || '';
+        return href ? new URL(href, 'https://s1.example.com/').searchParams.get('cp') : null;
+      },
+    });
+    expect(cp).toBe('777');
   });
 });

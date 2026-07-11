@@ -35,6 +35,7 @@ const cfg = (over = {}) => ({
   scanMode: {},
   galaxyMode: {},
   cadence: { rescanHours: 48, galaxyHours: 24 },
+  moonStrike: 'newest',
   ...over,
 });
 
@@ -89,19 +90,42 @@ describe('composeWatchSlot / decomposeWatchSlot', () => {
       scan: { '1:2:3:3': { v: 'off', ts: 4 } },
       cadence: { _: { v: { rescanHours: 12, galaxyHours: 6 }, ts: 5 } },
       scanBodies: { _: { v: 'both', ts: 6 } },
+      moonStrike: { _: { v: 'any', ts: 7 } },
     });
     const { cfg: out, ledger } = decomposeWatchSlot(slot);
     expect(out.players).toEqual(['2', '10']); // numeric order, tombstoned 7 absent
     expect(out.scanMode).toEqual({ '1:2:3:3': 'off' });
     expect(out.cadence).toEqual({ rescanHours: 12, galaxyHours: 6 });
     expect(out.scanBodies).toBe('both');
+    expect(out.moonStrike).toBe('any');
     expect(ledger.watched).toEqual({ 10: 1, 2: 2, 7: 3 }); // tombstone stamp survives
+  });
+
+  it('moonStrike rides the single-family rules: composes with its stamp, tuned value seeds, default does not', () => {
+    // Compose pairs the live value with its ledger stamp.
+    const ledger = { ...emptyLedger(), moonStrike: { _: NOW } };
+    const slot = composeWatchSlot(cfg({ moonStrike: 'lone' }), ledger);
+    expect(slot.moonStrike).toEqual({ _: { v: 'lone', ts: NOW } });
+    // Seeding protects a TUNED value but never the materialised default.
+    const defaults = {
+      scanBodies: 'planets',
+      cadence: { rescanHours: 48, galaxyHours: 24 },
+      moonStrike: 'newest',
+    };
+    expect(seedWatchListLedger(cfg(), emptyLedger(), NOW, defaults).ledger.moonStrike)
+      .toEqual({});
+    expect(seedWatchListLedger(cfg({ moonStrike: 'any' }), emptyLedger(), NOW, defaults).ledger.moonStrike)
+      .toEqual({ _: NOW });
   });
 });
 
 describe('seedWatchListLedger — first-sync safety', () => {
   /** The materialised defaults the state layer passes (state/watchList.js). */
-  const DEFAULTS = { scanBodies: 'planets', cadence: { rescanHours: 48, galaxyHours: 24 } };
+  const DEFAULTS = {
+    scanBodies: 'planets',
+    cadence: { rescanHours: 48, galaxyHours: 24 },
+    moonStrike: 'newest',
+  };
 
   it('stamps every live keyed entry at now, never creating a tombstone', () => {
     const c = cfg({ players: ['1', '2'], relationships: { 1: 'friend' }, scanMode: { 2: 'off' } });

@@ -233,6 +233,77 @@ describe('deriveSpy — galaxy-look branch', () => {
   });
 });
 
+describe('deriveSpy — look-first doctrine + reports', () => {
+  // Two watched bodies: one needs a PROBE (never scanned), one needs a LOOK
+  // (never sighted) — the doctrine says the look leads.
+  const bothPlansEnv = (over = {}) => env({
+    players: ['42'],
+    universePlanets: [{ coords: '1:2:3', player: 42 }],
+    spiedByPlayer: {}, // never scanned → probe candidate exists
+    galaxyMode: {},    // look plan live → never sighted → look candidate exists
+    ...over,
+  });
+
+  it('a pending look outranks an ordinary probe', () => {
+    const ctx = deriveSpy(bothPlansEnv());
+    expect(ctx.proposal).toBe('look');
+  });
+
+  it('a strike probe cuts the line past pending looks', () => {
+    const ctx = deriveSpy(bothPlansEnv({
+      universePlanets: [{ coords: '1:2:3', player: 42, hasMoon: true }],
+      strikes: new Map([['1:2:3:3', {
+        coord: '1:2:3', bodyType: /** @type {3} */ (3), overrideKey: '1:2:3:3',
+        freshAgeMs: 0, quiet: 1, total: 1,
+        confidence: /** @type {'strong'} */ ('strong'),
+        tier: /** @type {'newest'} */ ('newest'), concurrent: false, coMoons: 0,
+      }]]),
+    }));
+    expect(ctx.proposal).toBe('probe');
+    expect(ctx.strike).toBe(true);
+    expect(ctx.strikeTier).toBe('newest');
+  });
+
+  // Both plans satisfied; one probe sent this session, its report not
+  // ingested yet → the closing "Reports" nudge.
+  const doneEnv = (/** @type {Record<string, number>} */ sentAt) => env({
+    players: ['42'],
+    universePlanets: [{ coords: '1:2:3', player: 42 }],
+    spiedByPlayer: { 42: { '1:2:3': tsSecAgo(3_600_000) } },
+    sentCoords: new Set(Object.keys(sentAt)),
+    sentAt,
+    galaxyMode: {},
+    rings: { 42: { '1:2:3:1': [{ t: tsSecAgo(60_000), m: -1 }] } },
+  });
+
+  it('reports close the loop: both plans empty + un-ingested session send', () => {
+    const ctx = deriveSpy(doneEnv({ '1:2:3': NOW - 5 * 60_000 }));
+    expect(ctx.proposal).toBe('reports');
+    expect(ctx.pendingReports).toBe(1);
+  });
+
+  it('an ingested report NEWER than the send clears the nudge', () => {
+    const ctx = deriveSpy({
+      ...doneEnv({ '1:2:3': NOW - 5 * 60_000 }),
+      spiedByPlayer: { 42: { '1:2:3': tsSecAgo(60_000) } }, // 1 min ago > send
+    });
+    expect(ctx.proposal).toBeNull();
+  });
+
+  it('a send with no report for 30+ min stops counting (a destroyed probe must not wedge the button)', () => {
+    const ctx = deriveSpy(doneEnv({ '1:2:3': NOW - 31 * 60_000 }));
+    expect(ctx.proposal).toBeNull();
+  });
+
+  it('renderSpy paints the reports face (calm, count, tap hint)', () => {
+    const paint = renderSpy({
+      proposal: 'reports', candidate: null, look: null, remaining: 0,
+      hasWatched: true, pendingReports: 3,
+    });
+    expect(paint).toMatchObject({ text: 'Reports', subtext: '3 new', bg: BG_SPY_DONE });
+  });
+});
+
 describe('renderSpy', () => {
   it('hasWatched false → muted "no targets" idle paint', () => {
     const paint = renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasWatched: false });

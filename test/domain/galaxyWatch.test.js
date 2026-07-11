@@ -14,6 +14,7 @@ import {
   bodyActivityReadout,
   galaxySightStatus,
   buildGalaxyPlan,
+  RECHECK_BOOST,
 } from '../../src/domain/galaxyWatch.js';
 
 const NOW = 1_700_000_000_000;
@@ -131,5 +132,60 @@ describe('buildGalaxyPlan', () => {
     });
     expect(entries[0].label).toBe('7:7');
     expect(entries[0].priority).toBeGreaterThan(entries[1].priority);
+  });
+
+  it('an OPEN ambiguous-moon re-look window force-includes its fresh-covered system at RECHECK_BOOST', () => {
+    const fresh = [{ t: sec(NOW - 60e3), m: -1 }];
+    const { entries } = buildGalaxyPlan({
+      players: ['42'],
+      universePlanets,
+      // Every body freshly sighted — without the recheck the plan is EMPTY.
+      rings: {
+        42: {
+          '1:2:3:1': fresh, '1:2:3:3': fresh, '1:2:8:1': fresh, '5:5:5:1': fresh,
+        },
+      },
+      nowMs: NOW,
+      staleMs: STALE_MS,
+      rechecks: {
+        42: {
+          coord: '1:2:3', bodyType: 3,
+          readyAtMs: NOW - 60e3, expiresAtMs: NOW + 600e3,
+        },
+      },
+    });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      label: '1:2', priority: RECHECK_BOOST, recheck: true,
+    });
+    expect(entries[0].bodies).toEqual([
+      { playerId: '42', position: 3, bodyType: 3, status: 'rescan' },
+    ]);
+    expect(entries[0].why).toContain('moon');
+  });
+
+  it('a recheck window that is not yet ready (or already expired, or muted) adds nothing', () => {
+    const fresh = [{ t: sec(NOW - 60e3), m: -1 }];
+    const base = {
+      players: ['42'],
+      universePlanets,
+      rings: /** @type {any} */ ({
+        42: {
+          '1:2:3:1': fresh, '1:2:3:3': fresh, '1:2:8:1': fresh, '5:5:5:1': fresh,
+        },
+      }),
+      nowMs: NOW,
+      staleMs: STALE_MS,
+    };
+    const win = (/** @type {number} */ readyAtMs, /** @type {number} */ expiresAtMs) => ({
+      42: { coord: '1:2:3', bodyType: /** @type {3} */ (3), readyAtMs, expiresAtMs },
+    });
+    expect(buildGalaxyPlan({ ...base, rechecks: win(NOW + 60e3, NOW + 600e3) }).entries)
+      .toHaveLength(0); // not ready yet
+    expect(buildGalaxyPlan({ ...base, rechecks: win(NOW - 600e3, NOW - 60e3) }).entries)
+      .toHaveLength(0); // expired
+    expect(buildGalaxyPlan({
+      ...base, galaxyMode: { 42: 'off' }, rechecks: win(NOW - 60e3, NOW + 600e3),
+    }).entries).toHaveLength(0); // player muted
   });
 });

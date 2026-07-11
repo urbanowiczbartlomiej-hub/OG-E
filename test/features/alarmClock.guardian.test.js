@@ -226,6 +226,65 @@ describe('installGuardian — tap (ack + navigate)', () => {
   });
 });
 
+describe('installGuardian — active-body gate (on fleetdispatch)', () => {
+  /** Stamp the page's own-body meta tags (what `readCurrentBody` reads).
+   * @param {string} coords @param {'planet'|'moon'} type */
+  const setBodyMeta = (coords, type) => {
+    document.querySelectorAll('meta[name^="ogame-planet"]').forEach((m) => m.remove());
+    document.head.insertAdjacentHTML(
+      'beforeend',
+      `<meta name="ogame-planet-coordinates" content="${coords}">`
+      + `<meta name="ogame-planet-type" content="${type}">`,
+    );
+  };
+  afterEach(() => {
+    document.querySelectorAll('meta[name^="ogame-planet"]').forEach((m) => m.remove());
+  });
+
+  /** The texts of the most recent paint. @returns {string[]} */
+  const paintedTexts = () => lastBtn().paintLines.mock.calls
+    .at(-1)[1].map(/** @param {{ text: string }} l */ (l) => l.text);
+
+  it("promises 'Fleet save' only on a bare body's OWN fleetdispatch", () => {
+    location.search = '?page=ingame&component=fleetdispatch';
+    setBodyMeta('1:2:3', 'planet');
+    readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
+    installGuardian({ universeId: UID });
+    expect(paintedTexts()).toContain('Fleet save');
+  });
+
+  it("a DIFFERENT body's fleetdispatch reads as away: 'You here?', and the tap ACKS instead of saving", () => {
+    location.search = '?page=ingame&component=fleetdispatch';
+    setBodyMeta('2:2:2', 'planet'); // standing on planet B's fleet page
+    const ack = vi.fn();
+    paintPlanetList({
+      coords: '1:2:3',
+      planetHref: 'https://s1.ogame.gameforge.com/game/index.php?page=ingame&component=overview&cp=33',
+    });
+    readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
+    installGuardian({ ack, universeId: UID });
+    expect(paintedTexts()).toContain('You here?');
+
+    // First tap = ACK only — it must NOT drive a fleet-save from planet B.
+    zone().onTap();
+    expect(ack).toHaveBeenCalledWith('1:2:3:1');
+    expect(window.location.href).not.toContain('cp=33');
+
+    // Second tap navigates to the bare body's fleetdispatch.
+    zone().onTap();
+    expect(window.location.href).toContain('cp=33');
+    expect(window.location.href).toContain('component=fleetdispatch');
+  });
+
+  it('MOON A does not pass for bare PLANET A — same coords, different body', () => {
+    location.search = '?page=ingame&component=fleetdispatch';
+    setBodyMeta('1:2:3', 'moon'); // we're on the MOON at those coords
+    readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
+    installGuardian({ universeId: UID });
+    expect(paintedTexts()).toContain('You here?');
+  });
+});
+
 describe('installGuardian — long-press (dismiss)', () => {
   it('calls the injected dismiss with the primary body, then drops it from the set', () => {
     const dismiss = vi.fn();

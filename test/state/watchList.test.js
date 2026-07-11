@@ -52,6 +52,7 @@ const fullCfg = (over = {}) => ({
   scanMode: {},
   galaxyMode: {},
   cadence: { ...DEFAULT_CADENCE },
+  moonStrike: 'newest',
   ...over,
 });
 

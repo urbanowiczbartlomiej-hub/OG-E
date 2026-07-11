@@ -40,6 +40,7 @@ const SEND_FLEET_URL =
 beforeEach(() => {
   localStorage.clear();
   document.body.innerHTML = '';
+  document.querySelectorAll('meta[name="ogame-planet-type"]').forEach((m) => m.remove());
   _resetObserversForTest();
   _resetExpeditionRedirectForTest();
   // Pin location.href to a predictable base so buildRedirectUrl produces
@@ -60,7 +61,8 @@ afterEach(() => {
  * cap). `expeditions` sets the count explicitly; the legacy `hasExpedition`
  * boolean is shorthand for one (1) expedition.
  *
- * @param {Array<{ id: string, current?: boolean, hasExpedition?: boolean, expeditions?: number }>} entries
+ * @param {Array<{ id: string, current?: boolean, currentMoon?: boolean,
+ *   moonCp?: string, hasExpedition?: boolean, expeditions?: number }>} entries
  * @returns {void}
  */
 const setPlanetList = (entries) => {
@@ -70,7 +72,16 @@ const setPlanetList = (entries) => {
     const planet = document.createElement('div');
     planet.classList.add('smallplanet');
     if (entry.current) planet.classList.add('hightlightPlanet');
+    // Moon pages highlight the row with hightlightMoon INSTEAD (the game
+    // swaps the class) — see lib/gameDom.ACTIVE_MOON_CLASS.
+    if (entry.currentMoon) planet.classList.add('hightlightMoon');
     planet.id = 'planet-' + entry.id;
+    if (entry.moonCp) {
+      planet.insertAdjacentHTML(
+        'beforeend',
+        `<a class="moonlink" href="?page=ingame&component=overview&cp=${entry.moonCp}"></a>`,
+      );
+    }
     const count = entry.expeditions ?? (entry.hasExpedition ? 1 : 0);
     if (count > 0) {
       const dots = document.createElement('span');
@@ -81,6 +92,16 @@ const setPlanetList = (entries) => {
     list.appendChild(planet);
   }
   document.body.appendChild(list);
+};
+
+/** Stamp the page's `ogame-planet-type` meta — how the bridge learns whether
+ * the send left from a moon. Cleared in the shared beforeEach.
+ * @param {'planet'|'moon'} type */
+const setBodyTypeMeta = (type) => {
+  const meta = document.createElement('meta');
+  meta.setAttribute('name', 'ogame-planet-type');
+  meta.setAttribute('content', type);
+  document.head.appendChild(meta);
 };
 
 // ──────────────────────────────────────────────────────────────────
@@ -217,6 +238,59 @@ describe('findNextPlanetWithFreeSlot — default cap (1)', () => {
 
   it('returns null when #planetList is missing entirely', () => {
     expect(findNextPlanetWithFreeSlot()).toBeNull();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// findNextPlanetWithFreeSlot — moon-launched expeditions
+// ──────────────────────────────────────────────────────────────────
+
+describe('findNextPlanetWithFreeSlot — moon mode', () => {
+  it('recognises the hightlightMoon row as active (a moon send previously matched no row at all)', () => {
+    setBodyTypeMeta('moon');
+    setPlanetList([
+      { id: '111', currentMoon: true, moonCp: '911' },
+      { id: '222', moonCp: '922' },
+    ]);
+    expect(findNextPlanetWithFreeSlot()).toBe('922');
+  });
+
+  it('hops moon→moon: rows without a moon are skipped, the cp comes from the moonlink', () => {
+    setBodyTypeMeta('moon');
+    setPlanetList([
+      { id: '111', currentMoon: true, moonCp: '911' },
+      { id: '222' }, // no moon here — not a candidate
+      { id: '333', moonCp: '933' },
+    ]);
+    expect(findNextPlanetWithFreeSlot()).toBe('933');
+  });
+
+  it('the cap still gates in moon mode (dots on the row)', () => {
+    setBodyTypeMeta('moon');
+    setPlanetList([
+      { id: '111', currentMoon: true, moonCp: '911' },
+      { id: '222', moonCp: '922', hasExpedition: true },
+      { id: '333', moonCp: '933' },
+    ]);
+    expect(findNextPlanetWithFreeSlot()).toBe('933');
+  });
+
+  it('returns null when no other row has a moon', () => {
+    setBodyTypeMeta('moon');
+    setPlanetList([
+      { id: '111', currentMoon: true, moonCp: '911' },
+      { id: '222' },
+    ]);
+    expect(findNextPlanetWithFreeSlot()).toBeNull();
+  });
+
+  it('a planet-launched send ignores moonlinks entirely (row cp as before)', () => {
+    setBodyTypeMeta('planet');
+    setPlanetList([
+      { id: '111', current: true },
+      { id: '222', moonCp: '922' },
+    ]);
+    expect(findNextPlanetWithFreeSlot()).toBe('222');
   });
 });
 
