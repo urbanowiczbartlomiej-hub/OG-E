@@ -111,10 +111,26 @@ describe('composeWatchSlot / decomposeWatchSlot', () => {
       scanBodies: 'planets',
       cadence: { rescanHours: 48, galaxyHours: 24 },
       moonStrike: 'newest',
+      patrol: 0,
     };
     expect(seedWatchListLedger(cfg(), emptyLedger(), NOW, defaults).ledger.moonStrike)
       .toEqual({});
     expect(seedWatchListLedger(cfg({ moonStrike: 'any' }), emptyLedger(), NOW, defaults).ledger.moonStrike)
+      .toEqual({ _: NOW });
+  });
+
+  it('patrol (radius) rides the same rules: round-trips, tuned seeds, default 0 does not', () => {
+    const slot = normalizeWatchSlot({ patrol: { _: { v: 15, ts: 9 } } });
+    expect(decomposeWatchSlot(slot).cfg.patrolSystems).toBe(15);
+    const defaults = {
+      scanBodies: 'planets',
+      cadence: { rescanHours: 48, galaxyHours: 24 },
+      moonStrike: 'newest',
+      patrol: 0,
+    };
+    expect(seedWatchListLedger(cfg({ patrolSystems: 0 }), emptyLedger(), NOW, defaults).ledger.patrol)
+      .toEqual({});
+    expect(seedWatchListLedger(cfg({ patrolSystems: 12 }), emptyLedger(), NOW, defaults).ledger.patrol)
       .toEqual({ _: NOW });
   });
 });

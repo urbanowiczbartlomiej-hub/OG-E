@@ -164,6 +164,48 @@ describe('buildGalaxyPlan', () => {
     expect(entries[0].why).toContain('moon');
   });
 
+  it('an account SWEEP force-includes every uncovered system at RECHECK_BOOST', () => {
+    const fresh = [{ t: sec(NOW - 60e3), m: -1 }];
+    const { entries } = buildGalaxyPlan({
+      players: ['42'],
+      universePlanets,
+      // Every body freshly sighted by the ORDINARY cadence — only the sweep
+      // (60-min coverage for a live candidate) still wants looks.
+      rings: {
+        42: {
+          '1:2:3:1': fresh, '1:2:3:3': fresh, '1:2:8:1': fresh, '5:5:5:1': fresh,
+        },
+      },
+      nowMs: NOW,
+      staleMs: STALE_MS,
+      sweeps: {
+        42: { coord: '1:2:3', bodyType: 3, systems: ['5:5'], expiresAtMs: NOW + 600e3 },
+      },
+    });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      label: '5:5', priority: RECHECK_BOOST, sweep: true, worst: 'rescan',
+    });
+    expect(entries[0].why).toContain('sweep');
+  });
+
+  it('an expired or muted sweep adds nothing', () => {
+    const base = {
+      players: ['42'],
+      universePlanets,
+      rings: /** @type {any} */ ({ 42: { '1:2:3:1': [{ t: sec(NOW - 60e3), m: -1 }], '1:2:3:3': [{ t: sec(NOW - 60e3), m: -1 }], '1:2:8:1': [{ t: sec(NOW - 60e3), m: -1 }], '5:5:5:1': [{ t: sec(NOW - 60e3), m: -1 }] } }),
+      nowMs: NOW,
+      staleMs: STALE_MS,
+    };
+    const sweep = (/** @type {number} */ expiresAtMs) => ({
+      42: { coord: '1:2:3', bodyType: /** @type {3} */ (3), systems: ['5:5'], expiresAtMs },
+    });
+    expect(buildGalaxyPlan({ ...base, sweeps: sweep(NOW - 1) }).entries).toHaveLength(0);
+    expect(buildGalaxyPlan({
+      ...base, galaxyMode: { 42: 'off' }, sweeps: sweep(NOW + 600e3),
+    }).entries).toHaveLength(0);
+  });
+
   it('a recheck window that is not yet ready (or already expired, or muted) adds nothing', () => {
     const fresh = [{ t: sec(NOW - 60e3), m: -1 }];
     const base = {

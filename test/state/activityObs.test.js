@@ -19,6 +19,7 @@ import {
   disposeActivityObsStore,
 } from '../../src/state/activityObs.js';
 import { watchListStore } from '../../src/state/watchList.js';
+import { bodiesStore } from '../../src/state/bodies.js';
 import { markSpySent } from '../../src/lib/spySentSession.js';
 import { GALAXY_SCANNED_EVENT } from '../../src/lib/ogeEvents.js';
 
@@ -34,6 +35,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 beforeEach(() => {
   activityObsStore.set({});
   watch([]);
+  bodiesStore.set({ bodies: [], capturedAt: 0 });
   window.sessionStorage.clear();
 });
 
@@ -41,6 +43,7 @@ afterEach(() => {
   disposeActivityObsStore();
   activityObsStore.set({});
   watch([]);
+  bodiesStore.set({ bodies: [], capturedAt: 0 });
 });
 
 describe('recordGalaxyActivity — watched-only gate', () => {
@@ -63,6 +66,37 @@ describe('recordGalaxyActivity — watched-only gate', () => {
     });
     expect(rings()['42']).toBeDefined();
     expect(rings()['7']).toBeUndefined();
+  });
+});
+
+describe('recordGalaxyActivity — patrol territory gate', () => {
+  /** Watch config with a patrol radius and NO watched players. */
+  const patrolCfg = (/** @type {number} */ radius) => watchListStore.set(/** @type {any} */ ({
+    players: [], probes: 20, rescan: {}, relationships: {}, patrolSystems: radius,
+  }));
+  const ownBody = () => bodiesStore.set({
+    bodies: [{ cp: 1, name: 'P1', galaxy: 1, system: 3, position: 4, type: 1 }],
+    capturedAt: 1,
+  });
+
+  it('records ANY player inside the territory when a patrol radius is set', async () => {
+    patrolCfg(5);
+    ownBody(); // own body at 1:3 → territory covers systems 1:(3±5)
+    await recordGalaxyActivity({
+      galaxy: 1, system: 1, scannedAt: SCAN_MS,
+      positions: { 1: { status: 'occupied', player: { id: 7, name: 'B' }, activity: 15 } },
+    });
+    expect(rings()['7']['1:1:1:1']).toEqual([{ t: SCAN_S, m: 15 }]);
+  });
+
+  it('a system OUTSIDE the territory stays watched-only', async () => {
+    patrolCfg(5);
+    ownBody();
+    await recordGalaxyActivity({
+      galaxy: 2, system: 3, scannedAt: SCAN_MS, // wrong galaxy
+      positions: { 1: { status: 'occupied', player: { id: 7, name: 'B' }, activity: 15 } },
+    });
+    expect(rings()).toEqual({});
   });
 });
 

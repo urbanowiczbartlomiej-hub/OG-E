@@ -4,6 +4,19 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.46.0] — 2026-07-11
+
+### Changed
+
+- **Sweep the whole account before any verdict.** The strike ladder (lone /
+  newest / any alike) now speaks only once EVERY body of the player has
+  been looked at within the last hour. Partial knowledge never proposes a
+  probe — it proposes more looking: the Spy button queues the player's
+  unseen systems as "strike? · sweep account" looks, and only a completed
+  sweep yields the verdict. Looks are free and undetectable; a fresh planet
+  mark elsewhere now refutes a false candidate BEFORE a probe is spent and
+  your espionage shows in their log.
+
 ## [1.45.0] — 2026-07-11
 
 ### Added

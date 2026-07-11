@@ -276,6 +276,23 @@ describe('deriveSpy — look-first doctrine + reports', () => {
     rings: { 42: { '1:2:3:1': [{ t: tsSecAgo(60_000), m: -1 }] } },
   });
 
+  it('patrol looks join the plan; a system proposed by BOTH keeps the higher-priority entry', () => {
+    const ctx = deriveSpy(env({
+      players: ['42'],
+      universePlanets: [{ coords: '1:2:3', player: 42 }],
+      spiedByPlayer: { 42: { '1:2:3': tsSecAgo(60_000) } }, // probe plan satisfied
+      galaxyMode: {}, // watch look for never-sighted 1:2 exists (priority ~0.65)
+      patrolLooks: [
+        { galaxy: 1, system: 2, label: '1:2', bodies: [], worst: 'none', priority: 0.1, why: 'patrol · 1 slot' },
+        { galaxy: 7, system: 7, label: '7:7', bodies: [], worst: 'none', priority: 0.4, why: 'patrol · 2 slots' },
+      ],
+    }));
+    expect(ctx.proposal).toBe('look');
+    // The watch-driven 1:2 wins its own label; the patrol-only 7:7 remains.
+    expect(ctx.look).toMatchObject({ galaxy: 1, system: 2 });
+    expect(ctx.remaining).toBe(2);
+  });
+
   it('reports close the loop: both plans empty + un-ingested session send', () => {
     const ctx = deriveSpy(doneEnv({ '1:2:3': NOW - 5 * 60_000 }));
     expect(ctx.proposal).toBe('reports');
