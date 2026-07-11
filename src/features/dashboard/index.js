@@ -514,6 +514,7 @@ export const installDashboard = () => {
 const boot = async () => {
   wireDom();
   wireTabs();
+  wireTopTools();
   wireColonySubtabs();
 
   // AlarmClock tab filters by the active universe (same UX as the other
@@ -883,6 +884,26 @@ const wireTabs = () => {
       if (key === 'spyglass') repaintSpyglassMap();
     });
   }
+};
+
+/**
+ * Top-bar Tools disclosure. The Server/Export/Import cluster sits in a
+ * <details> so phones collapse it behind a "Tools" pill and the sticky bar
+ * stays tabs-high. CSS hides the summary on wide viewports, but a CLOSED
+ * <details> hides its content regardless of styling — so the open state
+ * follows the same 520px breakpoint from here: forced open on wide,
+ * collapsed by default (still user-togglable) on narrow. Re-applied on
+ * every breakpoint crossing (rotation, window resize).
+ *
+ * @returns {void}
+ */
+const wireTopTools = () => {
+  const box = /** @type {HTMLDetailsElement | null} */ (document.getElementById('topTools'));
+  if (!box || typeof window.matchMedia !== 'function') return;
+  const mq = window.matchMedia('(max-width: 520px)');
+  const apply = () => { box.open = !mq.matches; };
+  apply();
+  mq.addEventListener('change', apply);
 };
 
 /**

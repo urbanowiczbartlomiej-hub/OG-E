@@ -6,7 +6,12 @@
 <title>OG-E Dashboard</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #0d1117; color: #ccc; font-family: 'Segoe UI', Arial, sans-serif; padding: 20px; }
+  /* One page-gutter knob: the sticky top bar bleeds across it (negative
+     margins) so scrolled content can't peek around the bar's edges, and
+     phones reclaim 16px of width by shrinking it. */
+  :root { --page-pad: 20px; }
+  @media (max-width: 520px) { :root { --page-pad: 12px; } }
+  body { background: #0d1117; color: #ccc; font-family: 'Segoe UI', Arial, sans-serif; padding: var(--page-pad); }
   h1 { color: #4a9eff; margin-bottom: 16px; font-size: 22px; }
 
   .controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 20px; }
@@ -17,31 +22,63 @@
   }
   .controls button:hover { background: #2a4a6a; }
 
-  /* Single horizontal top bar: tabs on the left as primary navigation,
+  /* Sticky full-bleed top bar: tabs on the left as primary navigation,
      tools (server selector + Export/Import) on the right as technical
-     operations. Both clusters use their own internal flex; `justify-
-     content: space-between` on the bar keeps them anchored to their
-     edges, and `flex-wrap: wrap` falls back to two rows on viewports
-     too narrow to fit everything in one line. */
+     operations. Sticky because switching tabs from the bottom of a long
+     tab (the Spyglass table, an open dossier) used to cost a full scroll
+     back up — on phones that is every single tab switch. Full-bleed
+     (negative --page-pad margins) so content scrolling underneath never
+     peeks around the bar; the border-radius card look gave way to a
+     plain header strip with a bottom hairline.
+     z-index: one above .region-pop's 99999 — a pinned strip popover
+     scrolling past must slide UNDER the bar, not over it. */
   .top-bar {
+    position: sticky; top: 0; z-index: 100000;
     display: flex; align-items: center; justify-content: space-between;
-    gap: 16px; flex-wrap: wrap;
-    margin-bottom: 20px; padding: 6px 10px;
-    background: #111820; border: 1px solid #2a4a5a; border-radius: 8px;
+    gap: 8px 16px; flex-wrap: wrap;
+    margin: calc(-1 * var(--page-pad)) calc(-1 * var(--page-pad)) 20px;
+    padding: 6px var(--page-pad);
+    background: #111820; border-bottom: 1px solid #2a4a5a;
   }
-  .tabs { display: flex; gap: 4px; }
+  /* flex:1 + min-width:0 lets the tab row shrink and wrap INSIDE its own
+     box, leaving the right edge to the tools cluster — 5 tabs are ~480px
+     of intrinsic width, far past a phone. */
+  .tabs { display: flex; gap: 4px; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; }
   .tab-btn {
     background: transparent; border: 1px solid transparent;
     color: #888; padding: 6px 14px; font-size: 13px; cursor: pointer;
-    border-radius: 6px;
+    border-radius: 6px; min-height: 40px;
+    -webkit-tap-highlight-color: transparent;
   }
-  .tab-btn:hover { color: #ccc; background: #1a2a3a; }
+  /* Hover behind (hover:hover) — same touch discipline as the chips: a tap
+     "sticks" :hover, and a hovered-looking tab reads as the active one. */
+  @media (hover: hover) {
+    .tab-btn:hover { color: #ccc; background: #1a2a3a; }
+  }
   .tab-btn.active {
     color: #fff; background: #2a4a6a; border-color: #4a9eff;
     font-weight: bold;
   }
   .tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .tools .label { color: #4a9eff; font-weight: bold; font-size: 14px; }
+  /* Tools live in a <details>: always open (summary hidden) on wide
+     viewports, collapsed behind a "Tools" pill on phones so the sticky bar
+     stays tabs-high. index.js drives the open state off the same 520px
+     media query — CSS alone can't force a closed <details> open. */
+  .tools-box > summary {
+    display: none; cursor: pointer; user-select: none; list-style: none;
+    background: #18222e; border: 1px solid #2b3a4d; color: #9fb4c4;
+    padding: 3px 11px; border-radius: 999px; font-size: 12px;
+    min-height: 36px; align-items: center;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .tools-box > summary::-webkit-details-marker { display: none; }
+  .tools-box[open] > summary { border-color: #4a9eff; background: #17395d; color: #eaf4ff; }
+  @media (max-width: 520px) {
+    .tools-box > summary { display: inline-flex; }
+    .tools-box { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .tools-box[open] { flex-basis: 100%; }
+  }
   .tab-section { display: none; }
   .tab-section.active { display: block; }
 
@@ -741,14 +778,17 @@
     <button class="tab-btn" data-tab="routes" role="tab">Daily Run</button>
     <button class="tab-btn" data-tab="sync" role="tab">Sync</button>
   </div>
-  <div class="tools">
-    <span class="label">Server</span>
-    <select id="universeSelect" title="Pick which OGame universe to view. Switching reloads all data on this page."></select>
-    <button id="exportBtn">Export JSON</button>
-    <button id="importBtn">Import JSON</button>
-    <input type="file" id="importFile" accept=".json" style="display:none;">
-    <span id="importStatus" style="color:#888;font-size:12px;"></span>
-  </div>
+  <details class="tools-box" id="topTools" open>
+    <summary>Tools</summary>
+    <div class="tools">
+      <span class="label">Server</span>
+      <select id="universeSelect" title="Pick which OGame universe to view. Switching reloads all data on this page."></select>
+      <button id="exportBtn">Export JSON</button>
+      <button id="importBtn">Import JSON</button>
+      <input type="file" id="importFile" accept=".json" style="display:none;">
+      <span id="importStatus" style="color:#888;font-size:12px;"></span>
+    </div>
+  </details>
 </div>
 
 <section id="colonySection" class="tab-section">
