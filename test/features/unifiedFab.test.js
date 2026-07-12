@@ -24,6 +24,7 @@ import {
   orbDiameter,
   orbitRadius,
   aimAngle,
+  feasibleArcCenter,
 } from '../../src/features/shared/unifiedFabPure.js';
 import { settingsStore } from '../../src/state/settings.js';
 
@@ -164,6 +165,90 @@ describe('orbitLayout', () => {
     // FAB near the top, centre below → aim points straight down (+y).
     expect(items[0].x).toBeCloseTo(2000, 0);
     expect(items[0].y).toBeGreaterThan(100);
+  });
+
+  // ── Edge-aware arc rotation (feasibleArcCenter) ──────────────────────────
+  // From a corner of a tall phone screen the aim ray is nearly vertical and
+  // the raw arc used to run off the near edge; the per-orb XY clamp then slid
+  // those orbs along the edge into each other and under the FAB. The arc now
+  // rotates into the feasible window instead — verified by the invariant that
+  // NO orb needed clamping (each sits exactly `radius` from the FAB) and no
+  // two orbs overlap.
+  /** @param {{x:number,y:number}} a @param {{x:number,y:number}} b */
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+  it('bottom-right corner of a tall phone: whole fan rotates into free space, nothing clamps', () => {
+    const phone = { radius: 140, orbSize: 80, vw: 400, vh: 800 };
+    const cx = 360;
+    const cy = 760;
+    const items = orbitLayout({ ...phone, cx, cy, count: 3 });
+    const margin = phone.orbSize / 2 + 8;
+    for (const it_ of items) {
+      // Unclamped ⇒ still exactly on the orbit circle.
+      expect(dist(it_, { x: cx, y: cy })).toBeCloseTo(phone.radius, 6);
+      expect(it_.x).toBeGreaterThanOrEqual(margin);
+      expect(it_.x).toBeLessThanOrEqual(phone.vw - margin);
+      expect(it_.y).toBeGreaterThanOrEqual(margin);
+      expect(it_.y).toBeLessThanOrEqual(phone.vh - margin);
+    }
+    // No pile-ups: neighbours keep at least an orb diameter between centres.
+    for (let a = 0; a < items.length; a++) {
+      for (let b = a + 1; b < items.length; b++) {
+        expect(dist(items[a], items[b])).toBeGreaterThanOrEqual(phone.orbSize);
+      }
+    }
+  });
+
+  it('every corner keeps all orbs unclamped on the orbit circle', () => {
+    const phone = { radius: 140, orbSize: 80, vw: 400, vh: 800 };
+    const corners = [
+      { cx: 40, cy: 40 }, { cx: 360, cy: 40 },
+      { cx: 40, cy: 760 }, { cx: 360, cy: 760 },
+    ];
+    for (const c of corners) {
+      const items = orbitLayout({ ...phone, ...c, count: 3 });
+      for (const it_ of items) {
+        expect(dist(it_, { x: c.cx, y: c.cy })).toBeCloseTo(phone.radius, 6);
+      }
+    }
+  });
+
+  it('an over-tight corner (window < collision floor) degrades to a sub-px clamp, never a pile-up', () => {
+    // radius 120 + orb 80 in a 400px-wide corner: the collision-floor spread
+    // (~86°) is wider than the feasible window (~79°) — nothing can make all
+    // three orbs fit unclamped, so the arc centres on the window and accepts
+    // a tiny overhang. The orbs must stay within a hair of the circle and
+    // must NOT overlap (the old behaviour slid them into each other).
+    const phone = { radius: 120, orbSize: 80, vw: 400, vh: 800 };
+    const cx = 360;
+    const cy = 760;
+    const items = orbitLayout({ ...phone, cx, cy, count: 3 });
+    for (const it_ of items) {
+      expect(Math.abs(dist(it_, { x: cx, y: cy }) - phone.radius)).toBeLessThan(3);
+    }
+    for (let a = 0; a < items.length; a++) {
+      for (let b = a + 1; b < items.length; b++) {
+        expect(dist(items[a], items[b])).toBeGreaterThanOrEqual(phone.orbSize - 4);
+      }
+    }
+  });
+
+  it('keeps the centred layout untouched (fully feasible window returns the aim ray)', () => {
+    const r = feasibleArcCenter({
+      cx: 2000, cy: 2000, radius: 400, margin: 28, vw: 4000, vh: 4000,
+      base: Math.PI / 4, spread: 1.3,
+    });
+    expect(r.centre).toBeCloseTo(Math.PI / 4, 6);
+    expect(r.spread).toBeCloseTo(1.3, 6);
+  });
+
+  it('degenerate: radius larger than the viewport falls back to the aim angle', () => {
+    const r = feasibleArcCenter({
+      cx: 50, cy: 50, radius: 5000, margin: 28, vw: 100, vh: 100,
+      base: 1.0, spread: 1.0,
+    });
+    expect(r.centre).toBeCloseTo(1.0, 6);
+    expect(r.spread).toBeCloseTo(1.0, 6);
   });
 });
 
