@@ -6,12 +6,56 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseKoords,
+  nearestBodyDistance,
   sortBodies,
   dedupeBodies,
   isCompleteBody,
 } from '../../src/domain/bodies.js';
 
 /** @typedef {import('../../src/domain/bodies.js').Body} Body */
+
+describe('nearestBodyDistance — donut-aware proximity', () => {
+  /** Minimal body at coords — only galaxy/system matter here. @returns {Body} */
+  const at = (/** @type {number} */ g, /** @type {number} */ s) => (
+    { cp: 1, name: 'P', galaxy: g, system: s, position: 1, type: 1 }
+  );
+  const donut499 = { galaxies: 9, systems: 499, donutGalaxy: true, donutSystem: true };
+
+  it('4:20 → 4:450 on a 499 donut is 69 systems (the wrapped arc), not 430', () => {
+    // The user's real case: the naive |450−20| = 430 hid a seam-side aggressor
+    // the game reaches in 69 systems.
+    expect(nearestBodyDistance('4:450:8', [at(4, 20)], donut499))
+      .toEqual({ label: '69 sys', cls: '' });
+  });
+
+  it('the same seam pair on a NON-donut server stays the long way round', () => {
+    expect(nearestBodyDistance('4:450:8', [at(4, 20)], { ...donut499, donutSystem: false }))
+      .toEqual({ label: '430 sys', cls: '' });
+  });
+
+  it('galaxy axis wraps too — galaxy 9 to galaxy 1 on a 9-galaxy donut is 1 hop', () => {
+    expect(nearestBodyDistance('9:100:5', [at(1, 100)], donut499))
+      .toEqual({ label: '1 gal', cls: 'near' });
+  });
+
+  it('picks the nearest of several bodies AFTER wrapping', () => {
+    // 490 → 30 wraps to 39; the un-wrapped body at 300 is 190 away.
+    expect(nearestBodyDistance('4:490:8', [at(4, 300), at(4, 30)], donut499))
+      .toEqual({ label: '39 sys', cls: '' });
+  });
+
+  it('same system is hot; ≤15 systems is near; missing bounds default to the 9/499 donut', () => {
+    expect(nearestBodyDistance('4:20:8', [at(4, 20)], donut499)).toEqual({ label: '0 sys', cls: 'hot' });
+    expect(nearestBodyDistance('4:30:8', [at(4, 20)], donut499)).toEqual({ label: '10 sys', cls: 'near' });
+    // No bounds at all → assume the classic donut (wrap still applies).
+    expect(nearestBodyDistance('4:450:8', [at(4, 20)])).toEqual({ label: '69 sys', cls: '' });
+  });
+
+  it('returns null for unparseable coords or an empty inventory', () => {
+    expect(nearestBodyDistance(null, [at(4, 20)], donut499)).toBeNull();
+    expect(nearestBodyDistance('4:20:8', [], donut499)).toBeNull();
+  });
+});
 
 describe('parseKoords', () => {
   it('parses the bracketed game form "[g:s:p]"', () => {

@@ -50,6 +50,30 @@ export const flightDistance = (ag, dSys) =>
   ag > 0 ? GALAXY_STEP * ag : (dSys === 0 ? SAME_SYSTEM_D : SYSTEM_BASE + SYSTEM_STEP * dSys);
 
 /**
+ * OGame flight distance straight from two parsed coordinates + server bounds.
+ * Applies the donut wrap on both axes (per the server's flags) before the
+ * {@link flightDistance} reduction — the game ALWAYS flies the wrapped
+ * shortest path, so any "which of my planets is closest?" question must go
+ * through this, never through raw `Math.abs` deltas.
+ *
+ * Bounds default to the classic 9-galaxy / 499-system donut server when the
+ * apiContext snapshot isn't available yet — wrong for exotic servers but
+ * strictly better than no wrap at all.
+ *
+ * @param {{ galaxy: number, system: number }} a
+ * @param {{ galaxy: number, system: number }} b
+ * @param {{ galaxies?: number, systems?: number, donutGalaxy?: boolean, donutSystem?: boolean }} [bounds]
+ * @returns {number}
+ */
+export const flightDistanceBetween = (a, b, bounds = {}) => {
+  const gTot = Number(bounds.galaxies) > 0 ? Number(bounds.galaxies) : 9;
+  const sTot = Number(bounds.systems) > 0 ? Number(bounds.systems) : 499;
+  const ag = axisDelta(a.galaxy, b.galaxy, gTot, bounds.donutGalaxy !== false);
+  const dSys = axisDelta(a.system, b.system, sTot, bounds.donutSystem !== false);
+  return flightDistance(ag, dSys);
+};
+
+/**
  * Moon-destruction (NISZCZ / RIP) flight time in hours for an OGame
  * flight-distance `d`. Post-v12.9.0 that mission flies at a FIXED speed —
  * independent of drive tech and server speed — so its flight time is a pure

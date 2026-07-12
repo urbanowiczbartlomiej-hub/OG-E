@@ -4,6 +4,27 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.46.1] — 2026-07-12
+
+### Fixed
+
+- **Distances now respect the universe's donut geometry.** "Who's spying on
+  you" (in-game panel and the dashboard proximity strip) measured distance as
+  the naive coordinate difference, so a prober at 4:450 read as "430 sys" from
+  your 4:20 planet — while the game always flies the wrapped shortest path (69
+  systems on a 499-system donut). Distances now wrap on both axes per the
+  server's donut flags, so aggressors sitting across the seam show as the
+  close-range threat they really are.
+
+### Changed
+
+- **Spy probes launch from your NEAREST planet.** A galaxy look is free from
+  anywhere, but a probe flight costs real minutes both ways. When the Spy
+  button proposes a probe (ordinary scan or moon-strike check), it now first
+  switches you to the own planet closest to the target — donut-aware flight
+  distance, moons excluded — and only then arms the send from there. One tap
+  = one hop, as always; the extra tap buys a much faster report.
+
 ## [1.46.0] — 2026-07-11
 
 ### Changed

@@ -14,6 +14,7 @@ import {
   clamp01,
   axisDelta,
   flightDistance,
+  flightDistanceBetween,
   niszczHours,
   reachThreat,
 } from '../../src/domain/geometry.js';
@@ -63,6 +64,33 @@ describe('flightDistance', () => {
   it('a full galaxy hop in system-equivalent terms is close to GALAXY_IN_SYSTEMS systems', () => {
     // Sanity-checks the GALAXY_IN_SYSTEMS constant's own doc claim: 20000 ≈ 2700 + 95·183.
     expect(SYSTEM_BASE + SYSTEM_STEP * 183).toBeCloseTo(GALAXY_STEP, -3);
+  });
+});
+
+describe('flightDistanceBetween', () => {
+  const donut = { galaxies: 9, systems: 499, donutGalaxy: true, donutSystem: true };
+
+  it('applies the system-axis wrap before reducing — 20 → 450 flies 69 systems', () => {
+    expect(flightDistanceBetween({ galaxy: 4, system: 20 }, { galaxy: 4, system: 450 }, donut))
+      .toBe(SYSTEM_BASE + SYSTEM_STEP * 69);
+  });
+
+  it('honours a non-donut system axis — the same pair costs the full 430', () => {
+    expect(flightDistanceBetween(
+      { galaxy: 4, system: 20 }, { galaxy: 4, system: 450 }, { ...donut, donutSystem: false },
+    )).toBe(SYSTEM_BASE + SYSTEM_STEP * 430);
+  });
+
+  it('wraps the galaxy axis — 9 → 1 on a 9-galaxy donut is ONE galaxy hop', () => {
+    expect(flightDistanceBetween({ galaxy: 9, system: 5 }, { galaxy: 1, system: 5 }, donut))
+      .toBe(GALAXY_STEP);
+  });
+
+  it('defaults to the classic 9/499 donut when bounds are absent', () => {
+    expect(flightDistanceBetween({ galaxy: 4, system: 20 }, { galaxy: 4, system: 450 }))
+      .toBe(SYSTEM_BASE + SYSTEM_STEP * 69);
+    expect(flightDistanceBetween({ galaxy: 4, system: 20 }, { galaxy: 4, system: 20 }))
+      .toBe(SAME_SYSTEM_D);
   });
 });
 

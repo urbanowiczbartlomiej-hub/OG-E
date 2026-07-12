@@ -10,6 +10,7 @@ import { describe, it, expect } from 'vitest';
 import {
   deriveSpy,
   renderSpy,
+  nearestLaunchPlanet,
   SPY_STALE_MS,
   BG_SPY_IDLE,
   BG_SPY_DONE,
@@ -17,6 +18,41 @@ import {
 } from '../../../src/features/sendSpy/pure.js';
 
 const NOW = 1_700_000_000_000;
+
+describe('nearestLaunchPlanet — probe launch-site picker', () => {
+  /** @returns {import('../../../src/domain/bodies.js').Body} */
+  const body = (/** @type {number} */ cp, /** @type {number} */ g, /** @type {number} */ s, /** @type {number} */ p, type = 1) => (
+    { cp, name: `B${cp}`, galaxy: g, system: s, position: p, type }
+  );
+  const donut = { galaxies: 9, systems: 499, donutGalaxy: true, donutSystem: true };
+  const target = { galaxy: 4, system: 450, position: 8 };
+
+  it('picks the planet with the smallest WRAPPED flight distance', () => {
+    // 4:20 wraps to 69 systems from 4:450; 4:300 is 150 away un-wrapped.
+    const planets = [body(11, 4, 300, 5), body(22, 4, 20, 5)];
+    expect(nearestLaunchPlanet(target, planets, donut)?.cp).toBe(22);
+  });
+
+  it('without the wrap the other planet wins — bounds change the answer', () => {
+    const planets = [body(11, 4, 300, 5), body(22, 4, 20, 5)];
+    expect(nearestLaunchPlanet(target, planets, { ...donut, donutSystem: false })?.cp).toBe(11);
+  });
+
+  it('skips moons even when they are strictly nearer', () => {
+    const bodies = [body(33, 4, 450, 8, 3), body(11, 4, 300, 5)];
+    expect(nearestLaunchPlanet(target, bodies, donut)?.cp).toBe(11);
+  });
+
+  it('breaks a same-system tie toward the closer position', () => {
+    const planets = [body(11, 4, 450, 1), body(22, 4, 450, 7)];
+    expect(nearestLaunchPlanet(target, planets, donut)?.cp).toBe(22);
+  });
+
+  it('returns null when we own no planet at all', () => {
+    expect(nearestLaunchPlanet(target, [], donut)).toBeNull();
+    expect(nearestLaunchPlanet(target, [body(33, 4, 450, 8, 3)], donut)).toBeNull();
+  });
+});
 
 /** Epoch SECONDS for a report taken `ageMs` before NOW. @param {number} ageMs */
 const tsSecAgo = (ageMs) => Math.floor((NOW - ageMs) / 1000);

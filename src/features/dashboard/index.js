@@ -1892,7 +1892,7 @@ const renderProximityStrip = () => {
     // stacked line before) so a row is 2 lines, not 3 — more probers fit at
     // the same height. Distance colour carries the severity (0 sys = in-empire
     // strike range); the age stays muted.
-    const dist = nearestBodyDistance(e.fromCoords, ownBodies);
+    const dist = nearestBodyDistance(e.fromCoords, ownBodies, apiBounds);
     if (dist) {
       facts.appendChild(document.createTextNode(' · '));
       const d = document.createElement('span');

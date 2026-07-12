@@ -60,6 +60,7 @@ import { EYE_GLYPH } from './shared/buttonGlyphs.js';
 import { safeLS } from '../lib/storage.js';
 import { clock } from '../lib/clock.js';
 import { parseUniverseId } from '../lib/universeId.js';
+import { getApiContext } from './shared/apiContextStore.js';
 
 /**
  * AGR's spy-report overview on the messages page — the PREFERRED slot when
@@ -480,7 +481,8 @@ export const installWhosSpyingPanel = () => {
     const ctx = {
       showNames,
       nameFor: (coords, moon) => bodyNameFor(nameMap, coords, moon),
-      distFor: (fromCoords) => nearestBodyDistance(fromCoords, inv.bodies),
+      distFor: (fromCoords) =>
+        nearestBodyDistance(fromCoords, inv.bodies, getApiContext()?.server ?? {}),
     };
     const shown = digest.players.slice(0, MAX_ROWS);
     const sig = `${digest.playerCount}|${digest.totalReports}|${digest.sameSystemCount}`

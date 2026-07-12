@@ -22,6 +22,7 @@
 // @see ./dailyRunRoutes.js — `coordTypeKey` (the shared identity) + reconcile.
 
 import { TARGET_PLANET } from './rules.js';
+import { axisDelta } from './geometry.js';
 
 /**
  * One owned body (planet or moon) as captured from the planet bar.
@@ -104,22 +105,28 @@ export const bodyNameFor = (index, coords, moon) => {
 /**
  * Coarse distance from an origin coord to our NEAREST owned body, as a short
  * label + severity class (`'hot'` = same system, `'near'` = ≤1 galaxy / ≤15
- * systems, `''` = far). Absolute (non-donut) galaxy/system deltas — good enough
- * for a threat glance; the rare wrap-around edge over-states by the donut width,
- * which we accept rather than thread universe geometry through a passive view.
+ * systems, `''` = far). Donut-aware: the game always flies the WRAPPED
+ * shortest path, so 4:20 → 4:450 on a 499-system donut is 69 systems, not
+ * 430 — an aggressor at the seam is NEAR, and showing the naive delta hid
+ * exactly the most dangerous neighbours. Bounds come from the apiContext
+ * server snapshot; without one we assume the classic 9/499 donut (strictly
+ * better than no wrap).
  *
  * @param {string | null} fromCoords
  * @param {ReadonlyArray<Body>} bodies
+ * @param {{ galaxies?: number, systems?: number, donutGalaxy?: boolean, donutSystem?: boolean }} [bounds]
  * @returns {{ label: string, cls: string } | null}
  */
-export const nearestBodyDistance = (fromCoords, bodies) => {
+export const nearestBodyDistance = (fromCoords, bodies, bounds = {}) => {
   const from = parseKoords(fromCoords);
   if (!from || !bodies || !bodies.length) return null;
+  const gTot = Number(bounds.galaxies) > 0 ? Number(bounds.galaxies) : 9;
+  const sTot = Number(bounds.systems) > 0 ? Number(bounds.systems) : 499;
   let bg = Infinity;
   let bs = Infinity;
   for (const b of bodies) {
-    const dg = Math.abs(b.galaxy - from.galaxy);
-    const ds = Math.abs(b.system - from.system);
+    const dg = axisDelta(b.galaxy, from.galaxy, gTot, bounds.donutGalaxy !== false);
+    const ds = axisDelta(b.system, from.system, sTot, bounds.donutSystem !== false);
     if (dg < bg || (dg === bg && ds < bs)) { bg = dg; bs = ds; }
   }
   if (bg > 0) return { label: `${bg} gal`, cls: bg === 1 ? 'near' : '' };

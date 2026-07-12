@@ -24,6 +24,7 @@
 
 import { buildScanPlan } from '../../domain/scanPriority.js';
 import { buildGalaxyPlan, galaxyStaleMs } from '../../domain/galaxyWatch.js';
+import { flightDistanceBetween } from '../../domain/geometry.js';
 
 export { SPY_STALE_MS } from '../../domain/spyScan.js';
 
@@ -138,6 +139,36 @@ export const countPendingReports = (env) => {
     if (!(tsSec * 1000 > at)) n += 1;
   }
   return n;
+};
+
+/**
+ * The own PLANET a probe fleet should launch from — the smallest OGame flight
+ * distance (donut-aware) to `target`. A galaxy LOOK is free from anywhere, but
+ * a probe flight costs real minutes both ways: launching from whichever body
+ * happens to be active can turn a 2-minute scan into a cross-galaxy crawl, so
+ * the orchestrator switches to this planet before driving the courier. Moons
+ * are skipped — the switch-and-send flow activates a planet. Distance ties
+ * break toward the closer in-system position (the flight-distance model is
+ * flat inside a system), then first-captured wins. `null` when we own no
+ * planet (all-moons snapshot / empty capture).
+ *
+ * @param {{ galaxy: number, system: number, position: number }} target
+ * @param {ReadonlyArray<import('../../domain/bodies.js').Body>} bodies
+ * @param {{ galaxies?: number, systems?: number, donutGalaxy?: boolean, donutSystem?: boolean }} [bounds]
+ * @returns {import('../../domain/bodies.js').Body | null}
+ */
+export const nearestLaunchPlanet = (target, bodies, bounds = {}) => {
+  /** @type {import('../../domain/bodies.js').Body | null} */
+  let best = null;
+  let bestD = Infinity;
+  let bestP = Infinity;
+  for (const b of bodies || []) {
+    if (!b || b.type === 3) continue;
+    const d = flightDistanceBetween(b, target, bounds);
+    const dp = Math.abs(b.position - target.position);
+    if (d < bestD || (d === bestD && dp < bestP)) { best = b; bestD = d; bestP = dp; }
+  }
+  return best;
 };
 
 /**

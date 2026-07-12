@@ -68,9 +68,11 @@ import { OWNER_SPY } from '../../domain/fleetOwnership.js';
 import { ingameComponentUrl } from '../../domain/ogameUrl.js';
 import { clock } from '../../lib/clock.js';
 import { readSpySentMap, markSpySent } from '../../lib/spySentSession.js';
+import { readCurrentBody } from '../shared/currentBody.js';
 import {
   deriveSpy,
   renderSpy,
+  nearestLaunchPlanet,
   BG_SPY_IDLE,
   BG_SPY_READY,
   BG_SPY_ERROR,
@@ -494,8 +496,36 @@ const onSpyClick = async () => {
   }
   const target = ctx.candidate;
 
-  // Off fleetdispatch → bare nav; the next tap selects the fleet in-page.
-  if (s === 'off') { location.href = bareFleetdispatchUrl(); return; }
+  // A probe flight costs real minutes both ways (a look is free from anywhere,
+  // a probe is not) — so before driving the courier, make sure we are standing
+  // on the own planet NEAREST the target (donut flight distance). One tap =
+  // one hop: navigate to that planet's fleetdispatch and let the next tap
+  // select. The armed-send tap 2 above never reaches this gate — an already
+  // selected fleet dispatches from wherever it was armed.
+  const launch = nearestLaunchPlanet(
+    target, bodiesStore.get().bodies, getApiContext()?.server ?? {},
+  );
+  const here = readCurrentBody();
+  const onLaunch = !launch || (
+    !!here
+    && here.type === TARGET_PLANET
+    && here.galaxy === launch.galaxy
+    && here.system === launch.system
+    && here.position === launch.position
+  );
+
+  // Off fleetdispatch → bare nav (pinned to the launch planet when we're not
+  // already on it); the next tap selects the fleet in-page.
+  if (s === 'off') {
+    location.href = bareFleetdispatchUrl(launch && !onLaunch ? launch.cp : undefined);
+    return;
+  }
+
+  // On fleetdispatch but on the WRONG body → hop to the launch planet first.
+  if (!onLaunch && launch) {
+    location.href = bareFleetdispatchUrl(launch.cp);
+    return;
+  }
 
   // On a fleet2 with no live armed send → retarget in place to the candidate.
   if (s === 'fleet2') {
