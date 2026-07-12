@@ -40,6 +40,13 @@ non-owners can write to — a different trust boundary than anything we have.
   in the same gist.
 - Sync-on-click only: a "Share now / Pull alliance intel" button; no
   clock/debounce backstop.
+- **UI placement (decided 2026-07-12).** All configuration (alliance
+  token + gist-id, consent/scope) lives on the dashboard **Sync tab**
+  (`data-tab="sync"`, `features/dashboard/sync.js`) alongside the existing
+  personal-gist controls — NOT on the Spyglass tab. The Spyglass tab gets
+  only a small trigger button at title level, in the `<h1>` row next to
+  `#spyTitleEye` (`dashboard.html`) — the click that fires the share/pull,
+  nothing more.
 - Merge = union across members + last-writer-wins per (player, field), with
   tombstones for un-watch (reuse the watchlist LWW+tombstone model from
   1.40.0).
