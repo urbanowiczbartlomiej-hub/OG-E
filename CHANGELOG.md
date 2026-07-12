@@ -4,6 +4,31 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.47.0] — 2026-07-12
+
+### Added
+
+- **Alliance Spyglass share (opt-in co-op).** Pool your Spyglass coverage
+  with alliance-mates through a shared, alliance-owned private gist. The new
+  "Alliance" button at the top of the Spyglass tab runs ONE round per click —
+  share your block, pull everyone else's — and nothing ever syncs in the
+  background. What leaves your device: watched players' ids, names,
+  relationship tags, last-spy / last-seen times and a spied-bodies count — no
+  coordinates, no report contents. Each member writes only their own block,
+  so nobody can clobber anyone else's data. Configure it on the Sync tab
+  (alliance token + gist id + your share name); the pulled union renders as a
+  coverage panel under the Spyglass title and stays display-only — it never
+  feeds your danger scores or scan plans.
+
+### Fixed
+
+- **One consistent "loading" look across the floating command buttons.**
+  While the fleet page's event list is still loading, every FAB command
+  button now greys out the same way (dim fill, label and node, module-coloured
+  ring): Daily Run and Colonization no longer wear a gold ring during the
+  wait, and the Lifeform Discovery button no longer stays fully vivid with
+  only its node greyed.
+
 ## [1.46.1] — 2026-07-12
 
 ### Fixed
