@@ -85,7 +85,6 @@ export const installRoutes = ({ getUniverseId }) => {
   const list = document.getElementById('routesList');
   const invStatus = document.getElementById('routesInvStatus');
   const addBtn = document.getElementById('routesAddBtn');
-  const saveBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById('routesSaveBtn'));
   const status = document.getElementById('routesStatus');
   // Segmented chip groups (same .chip-group.seg pattern as the Spyglass Scan
   // chips) — `data-value` on the group is the value, `.on` marks the chip.
@@ -98,7 +97,8 @@ export const installRoutes = ({ getUniverseId }) => {
 
   /**
    * In-memory editing model for the selected universe. `routes` is mutated
-   * by the card controls and only persisted on Save. `bodyByKey` maps a
+   * by the card controls and persisted by the debounced autosave (complete
+   * routes only — see {@link save}). `bodyByKey` maps a
    * {@link coordTypeKey} to the captured {@link Body} for label/picker use.
    *
    * @type {{
@@ -113,7 +113,12 @@ export const installRoutes = ({ getUniverseId }) => {
    * }}
    */
   let model = { routes: [], collectTarget: null, collectMission: MISSION_DEPLOYMENT, collectShips: 'most', collectResources: 'most', bodies: [], bodyByKey: new Map(), hasInventory: false };
-  /** Snapshot for Revert — the last loaded/saved routes (deep-cloned). */
+  /**
+   * Snapshot of `model.routes` (the FULL editing model, incomplete cards
+   * included) as of the last load/save — the autosave dirty check, so a
+   * plain repaint (load, universe switch) never writes or stamps the sync
+   * clock for nothing.
+   */
   let baseline = '[]';
 
   /** @param {string} msg @param {string} [color] */
@@ -411,7 +416,7 @@ export const installRoutes = ({ getUniverseId }) => {
         shipSel.appendChild(opt);
       }
       shipSel.value = String(f.shipId);
-      shipSel.addEventListener('change', () => { f.shipId = parseInt(shipSel.value, 10); updateSaveState(); });
+      shipSel.addEventListener('change', () => { f.shipId = parseInt(shipSel.value, 10); scheduleAutosave(); });
       row.appendChild(shipSel);
 
       const countInput = /** @type {HTMLInputElement} */ (
@@ -423,7 +428,7 @@ export const installRoutes = ({ getUniverseId }) => {
       countInput.addEventListener('input', () => {
         const n = parseInt(countInput.value, 10);
         f.count = Number.isFinite(n) && n > 0 ? n : 0;
-        updateSaveState();
+        scheduleAutosave();
       });
       row.appendChild(countInput);
       row.appendChild(mk('span', 'color:#667;font-size:12px;', 'ships'));
@@ -467,7 +472,7 @@ export const installRoutes = ({ getUniverseId }) => {
       missionSel.appendChild(opt);
     }
     missionSel.value = String(curMission);
-    missionSel.addEventListener('change', () => { route.mission = parseInt(missionSel.value, 10); updateSaveState(); });
+    missionSel.addEventListener('change', () => { route.mission = parseInt(missionSel.value, 10); scheduleAutosave(); });
     missionWrap.appendChild(missionSel);
     card.appendChild(missionWrap);
 
@@ -521,36 +526,46 @@ export const installRoutes = ({ getUniverseId }) => {
       model.routes.forEach((r, i) => list.appendChild(buildCard(r, i)));
     }
 
-    updateSaveState();
+    scheduleAutosave();
   };
 
+  /** Debounce handle + the universe the pending autosave was scheduled for. */
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let saveTimer = null;
+  let saveUni = '';
+
   /**
-   * Reflect unsaved-changes state on the Save button: emphasised (accent +
-   * trailing dot) when the in-memory routes differ from what was last
-   * loaded/saved, muted + disabled when everything is already persisted.
-   * There's no Revert — discarding is just a page refresh — so this dirty
-   * cue is the one nudge not to forget to save.
+   * Autosave (replaces the old Save button): every edit lands here — either
+   * via {@link render} (structural edits repaint) or directly from the
+   * focus-preserving inputs (ship count, mission select). Debounced so a
+   * burst of clicks collapses to one write; a clean model (equal to
+   * {@link baseline}) never writes, so plain repaints don't stamp the sync
+   * clock. The scheduled universe is captured and re-checked at fire time —
+   * a universe switch inside the debounce window must not write the OLD
+   * universe's routes into the NEW universe's key.
    *
    * @returns {void}
    */
-  const updateSaveState = () => {
-    if (!saveBtn) return;
-    const dirty = JSON.stringify(model.routes) !== baseline;
-    saveBtn.disabled = !dirty;
-    saveBtn.textContent = dirty ? 'Save routes •' : 'Save routes';
-    saveBtn.style.opacity = dirty ? '1' : '0.55';
-    saveBtn.style.cursor = dirty ? 'pointer' : 'default';
-    // Empty string clears the inline override → falls back to the dashboard's
-    // base `.controls button` style when clean.
-    saveBtn.style.background = dirty ? '#2a5a2a' : '';
-    saveBtn.style.borderColor = dirty ? '#3a8a3a' : '';
-    saveBtn.style.color = dirty ? '#eaffea' : '';
-    saveBtn.style.fontWeight = dirty ? 'bold' : '';
+  const scheduleAutosave = () => {
+    if (JSON.stringify(model.routes) === baseline) return;
+    if (saveTimer) clearTimeout(saveTimer);
+    saveUni = getUniverseId();
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      if (getUniverseId() !== saveUni) return;
+      void save();
+    }, 600);
   };
 
   // ── load / save ──────────────────────────────────────────────────────
 
   const refresh = async () => {
+    // A pending autosave belongs to the previous view — drop it (the fire-time
+    // universe re-check would abort it anyway; this just avoids the wake-up).
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
     const uni = getUniverseId();
     if (!uni) {
       model = { routes: [], collectTarget: null, collectMission: MISSION_DEPLOYMENT, collectShips: 'most', collectResources: 'most', bodies: [], bodyByKey: new Map(), hasInventory: false };
@@ -579,14 +594,18 @@ export const installRoutes = ({ getUniverseId }) => {
   const save = async () => {
     const uni = getUniverseId();
     if (!uni) { setStatus('No universe selected.', '#e66'); return; }
-    // A route needs ≥1 source and ≥1 target to do anything in-game — drop
-    // incomplete ones on save and tell the user how many.
+    // A route needs ≥1 source and ≥1 target to do anything in-game — only
+    // complete routes are PERSISTED. The in-memory model keeps the incomplete
+    // ones untouched (they're mid-edit under autosave, not junk to prune),
+    // and the status line says how many are still unfinished. No render()
+    // here: autosave fires while the user works and a repaint would steal
+    // focus from the input they're typing in.
     const clean = model.routes.filter(
       (r) => r.sources.length > 0 && r.targets.length > 0 && r.fleet.some((f) => f.count > 0),
     );
-    const dropped = model.routes.length - clean.length;
+    const pending = model.routes.length - clean.length;
     // Preserve the in-game-set collect target and the (separately-saved)
-    // collect mission / ships / resources; we only own `routes` in this Save path.
+    // collect mission / ships / resources; we only own `routes` in this path.
     const stored = await chromeStore.get(dailyRunRoutesKeyFor(uni));
     const { collectTarget } = parseDailyRunRoutes(stored);
     await chromeStore.set(dailyRunRoutesKeyFor(uni), { routes: clean, collectTarget, collectMission: model.collectMission, collectShips: model.collectShips, collectResources: model.collectResources });
@@ -595,14 +614,12 @@ export const installRoutes = ({ getUniverseId }) => {
     // "Sync now" button uses). Harmless no-op when cloud sync is off.
     await chromeStore.set(dailyRunRoutesTsKeyFor(uni), Date.now());
     await chromeStore.set(syncRequestKeyFor(uni), Date.now());
-    model.routes = clean;
-    baseline = JSON.stringify(clean);
-    render();
+    baseline = JSON.stringify(model.routes);
     setStatus(
-      dropped > 0
-        ? `Saved ${clean.length} route(s). ${dropped} incomplete route(s) dropped.`
+      pending > 0
+        ? `Saved ${clean.length} route(s) · ${pending} incomplete (not saved)`
         : `Saved ${clean.length} route(s).`,
-      dropped > 0 ? '#e6a23c' : '#67c23a',
+      pending > 0 ? '#e6a23c' : '#67c23a',
     );
   };
 
@@ -610,7 +627,6 @@ export const installRoutes = ({ getUniverseId }) => {
     model.routes.push({ sources: [], targets: [], fleet: [{ shipId: SHIP_LARGE_CARGO, count: 15000 }] });
     render();
   });
-  saveBtn?.addEventListener('click', () => void save());
 
   // Send-All chips persist on the spot (no "Save routes" needed), mirroring
   // how the dashboard's shared-settings controls write on change.

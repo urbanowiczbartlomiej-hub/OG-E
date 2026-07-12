@@ -610,8 +610,8 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
 
   // Three sub-tabs (Expedition waves / Ad-hoc / Fleet-save) so each kind's
   // knobs + message editor live on their own pane instead of one long form.
-  // All widgets stay mounted (inactive panes are display:none) so a single
-  // Save below persists every tab at once.
+  // All widgets stay mounted (inactive panes are display:none) so the
+  // autosave below always collects every tab at once.
   const tabBar = mk('div');
   tabBar.className = 'subtabs';
   /** @type {{ btn: HTMLButtonElement, pane: HTMLElement }[]} */
@@ -667,13 +667,10 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
 
   const statusEl = mk('span', 'margin-left:12px;font-size:13px;');
   statusEl.id = 'remCfgStatus';
-  const saveBtn = /** @type {HTMLButtonElement} */ (mk('button', undefined, 'Save config'));
-  saveBtn.id = 'remCfgSave';
   const resetBtn = /** @type {HTMLButtonElement} */ (mk('button', undefined, 'Reset to defaults'));
   resetBtn.id = 'remCfgReset';
   const controls = mk('div', 'margin-top:10px;display:flex;align-items:center;gap:8px;');
   controls.className = 'controls';
-  controls.appendChild(saveBtn);
   controls.appendChild(resetBtn);
   controls.appendChild(statusEl);
   body.appendChild(controls);
@@ -715,6 +712,12 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
   };
 
   const refresh = async () => {
+    // Drop a pending autosave — it belongs to the previous view (the fire-time
+    // universe re-check would abort it anyway; this avoids the wake-up).
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
     const uni = getUniverseId();
     if (!uni) {
       fillAlarmClock(defaultAlarmClockConfig());
@@ -843,16 +846,45 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
     // One poke runs a full sync round-trip that pushes both per-universe slots.
     await chromeStore.set(syncRequestKeyFor(uni), Date.now());
 
-    fillAlarmClock(rc);
-    fillFs(cfg);
+    // No fill*() here: autosave fires while the user hops between fields, and
+    // repainting every widget would clobber one they've already started
+    // editing. (The one deliberate exception is collectFs's never-enters net,
+    // which updates the offsets editor itself.) Normalisation corrections
+    // surface on the next tab load.
     setStatus('Saved.', '#67c23a');
   };
 
-  saveBtn.addEventListener('click', () => { void save(); });
+  // Autosave (debounced, replaces the Save button): any `change` bubbling out
+  // of the editor body (inputs/textareas commit on blur/Enter) and any click
+  // on a button that ISN'T a sub-tab switch (toggle chips, offset add/remove,
+  // template icon/priority/wildcard chips, Reset) schedules a save. The
+  // scheduled universe is captured and re-checked at fire time so a universe
+  // switch inside the debounce window can't cross-write; invalid fields keep
+  // their error status and simply don't persist until fixed.
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let saveTimer = null;
+  let saveUni = '';
+  const scheduleSave = () => {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveUni = getUniverseId();
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      if (getUniverseId() !== saveUni) return;
+      void save();
+    }, 500);
+  };
+  body.addEventListener('change', scheduleSave);
+  body.addEventListener('click', (e) => {
+    const t = /** @type {HTMLElement} */ (e.target);
+    if (!(t instanceof HTMLElement)) return;
+    const btn = t.closest('button');
+    if (btn && !btn.classList.contains('subtab')) scheduleSave();
+  });
+
   resetBtn.addEventListener('click', () => {
     fillAlarmClock(defaultAlarmClockConfig());
     fillFs(defaultGalaxyScanConfig());
-    setStatus('Defaults loaded — click Save to apply.', '#e6a23c');
+    setStatus('Defaults restored.', '#e6a23c');
   });
 
   return { refresh: () => void refresh() };

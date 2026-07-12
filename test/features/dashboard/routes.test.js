@@ -3,12 +3,13 @@
 // Behavioural tests for the dashboard FS Routes clickable editor. We mock
 // chrome.storage with a Map-backed fake, inject the tab's markup, then drive
 // real clicks / select-changes and assert the observable output: rendered
-// cards, the inventory hint, the saved chrome.storage payload, and the
-// dirty-Save state.
+// cards, the inventory hint, and the AUTOSAVED chrome.storage payload (the
+// editor persists on a debounced autosave — there is no Save button; tests
+// advance fake timers past the debounce via settle()).
 //
 // @ts-check
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../../src/lib/storage.js', () => ({
   chromeStore: { get: vi.fn(), set: vi.fn(), remove: vi.fn(), onChanged: vi.fn() },
@@ -37,7 +38,6 @@ const MARKUP = `
   <p id="routesInvStatus"></p>
   <div id="routesList"></div>
   <button id="routesAddBtn"></button>
-  <button id="routesSaveBtn"></button>
   <span id="routesStatus"></span>
   <div class="chip-group seg" id="routesCollectMission" data-value="4">
     <button type="button" data-value="4">Deployment</button>
@@ -63,6 +63,8 @@ const seedBodies = (bodies) => store.set(BODIES_KEY, { bodies, capturedAt: 1 });
 const seedRoutes = (routes, collectTarget = null) => store.set(ROUTES_KEY, { routes, collectTarget });
 
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+/** Run the debounced autosave: advance past its 600 ms window, then flush. */
+const settle = async () => { vi.advanceTimersByTime(700); await flush(); };
 const install = () => installRoutes({ getUniverseId: () => UNI });
 
 const $ = (/** @type {string} */ sel) => /** @type {HTMLElement} */ (document.querySelector(sel));
@@ -84,6 +86,11 @@ beforeEach(() => {
     return Promise.resolve();
   });
   document.body.innerHTML = MARKUP;
+  vi.useFakeTimers();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('render from storage', () => {
@@ -134,8 +141,7 @@ describe('build a route by clicking', () => {
     $('#routesAddBtn').click();           // new empty route → card with pickers
     pick('add-source', '4:467:15:3');     // pick moon K1 as source
     pick('add-target', '5:172:8:1');      // pick planet P2 as target
-    $('#routesSaveBtn').click();
-    await flush();
+    await settle();
 
     expect(store.get(ROUTES_KEY)).toEqual({
       routes: [
@@ -159,7 +165,7 @@ describe('build a route by clicking', () => {
     expect(store.has(`${UNI}:oge_syncRequestAt`)).toBe(true);
   });
 
-  it('drops an incomplete route (no targets) on save and says so', async () => {
+  it('keeps an incomplete route (no targets) in the editor but does not persist it', async () => {
     seedBodies([{ cp: 101, name: 'K1', ...moon(4, 467, 15) }]);
     seedRoutes([]);
     install().refresh();
@@ -167,11 +173,13 @@ describe('build a route by clicking', () => {
 
     $('#routesAddBtn').click();
     pick('add-source', '4:467:15:3'); // source but no target → incomplete
-    $('#routesSaveBtn').click();
-    await flush();
+    await settle();
 
+    // Persisted: nothing (the route can't do anything in-game yet). The card
+    // itself stays in the editor mid-edit, and the status says so.
     expect(/** @type {any} */ (store.get(ROUTES_KEY)).routes).toEqual([]);
-    expect($('#routesStatus').textContent).toMatch(/dropped/);
+    expect($('#routesStatus').textContent).toMatch(/incomplete/);
+    expect(list().querySelectorAll('[data-role="add-target"]').length).toBe(1);
   });
 
   it('removes a target chip via its × button', async () => {
@@ -189,8 +197,7 @@ describe('build a route by clicking', () => {
       list().querySelector('button[aria-label="Remove 5:172:8"]')
     );
     removeBtn.click();
-    $('#routesSaveBtn').click();
-    await flush();
+    await settle();
 
     expect(/** @type {any} */ (store.get(ROUTES_KEY)).routes[0].targets).toEqual([planet(6, 100, 8)]);
   });
@@ -211,8 +218,7 @@ describe('new route options — multi-ship / mission / pause / custom target', (
     pick('add-target', '5:172:8:1');
     /** @type {HTMLButtonElement} */ (list().querySelector('[data-role="add-ship"]')).click();
     expect(list().querySelectorAll('[data-role="ship"]').length).toBe(2);
-    $('#routesSaveBtn').click();
-    await flush();
+    await settle();
 
     const saved = /** @type {any} */ (store.get(ROUTES_KEY)).routes[0];
     expect(saved.fleet).toHaveLength(2);
@@ -234,8 +240,7 @@ describe('new route options — multi-ship / mission / pause / custom target', (
     pick('add-source', '4:467:15:3');
     pick('add-target', '5:172:8:1');
     pick('mission', String(MISSION_TRANSPORT));
-    $('#routesSaveBtn').click();
-    await flush();
+    await settle();
 
     expect(/** @type {any} */ (store.get(ROUTES_KEY)).routes[0].mission).toBe(MISSION_TRANSPORT);
   });
@@ -254,8 +259,7 @@ describe('new route options — multi-ship / mission / pause / custom target', (
     const toggle = /** @type {HTMLButtonElement} */ (list().querySelector('[data-role="enabled"]'));
     expect(toggle.classList.contains('on')).toBe(true);
     toggle.click(); // on → off (pause)
-    $('#routesSaveBtn').click();
-    await flush();
+    await settle();
 
     expect(/** @type {any} */ (store.get(ROUTES_KEY)).routes[0].enabled).toBe(false);
   });
@@ -276,8 +280,7 @@ describe('new route options — multi-ship / mission / pause / custom target', (
     /** @type {HTMLInputElement} */ (nums[1]).value = '99';
     /** @type {HTMLInputElement} */ (nums[2]).value = '4';
     addCustom.click();
-    $('#routesSaveBtn').click();
-    await flush();
+    await settle();
 
     expect(/** @type {any} */ (store.get(ROUTES_KEY)).routes[0].targets).toEqual([
       { galaxy: 1, system: 99, position: 4, type: TARGET_PLANET, custom: true },
@@ -285,8 +288,62 @@ describe('new route options — multi-ship / mission / pause / custom target', (
   });
 });
 
-describe('dirty Save', () => {
-  it('marks Save dirty on an edit and clears it after saving', async () => {
+describe('autosave', () => {
+  it('a clean load never writes (no sync-clock churn from a plain repaint)', async () => {
+    seedBodies([
+      { cp: 101, name: 'K1', ...moon(4, 467, 15) },
+      { cp: 200, name: 'P2', ...planet(5, 172, 8) },
+    ]);
+    seedRoutes([
+      { sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8)], fleet: [{ shipId: SHIP_LARGE_CARGO, count: 15000 }] },
+    ]);
+    install().refresh();
+    await flush();
+    mockStore.set.mockClear();
+
+    await settle();
+    expect(mockStore.set).not.toHaveBeenCalled();
+  });
+
+  it('a ship-type change autosaves after the debounce', async () => {
+    seedBodies([
+      { cp: 101, name: 'K1', ...moon(4, 467, 15) },
+      { cp: 200, name: 'P2', ...planet(5, 172, 8) },
+    ]);
+    seedRoutes([
+      { sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8)], fleet: [{ shipId: SHIP_LARGE_CARGO, count: 15000 }] },
+    ]);
+    install().refresh();
+    await flush();
+
+    pick('ship', String(SHIP_SMALL_CARGO));
+    await settle();
+    expect(/** @type {any} */ (store.get(ROUTES_KEY)).routes[0].fleet[0].shipId).toBe(SHIP_SMALL_CARGO);
+  });
+
+  it('a ship-count edit autosaves WITHOUT stealing focus (no repaint on save)', async () => {
+    seedBodies([
+      { cp: 101, name: 'K1', ...moon(4, 467, 15) },
+      { cp: 200, name: 'P2', ...planet(5, 172, 8) },
+    ]);
+    seedRoutes([
+      { sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8)], fleet: [{ shipId: SHIP_LARGE_CARGO, count: 15000 }] },
+    ]);
+    install().refresh();
+    await flush();
+
+    const countInp = /** @type {HTMLInputElement} */ (list().querySelector('input[type="number"]'));
+    countInp.value = '999';
+    countInp.dispatchEvent(new Event('input'));
+    await settle();
+
+    expect(/** @type {any} */ (store.get(ROUTES_KEY)).routes[0].fleet[0].count).toBe(999);
+    // The exact input element survives the save — the card was not re-rendered
+    // under the user's caret.
+    expect(list().querySelector('input[type="number"]')).toBe(countInp);
+  });
+
+  it('a burst of edits collapses into ONE debounced write of the route slot', async () => {
     seedBodies([
       { cp: 101, name: 'K1', ...moon(4, 467, 15) },
       { cp: 200, name: 'P2', ...planet(5, 172, 8) },
@@ -294,67 +351,15 @@ describe('dirty Save', () => {
     seedRoutes([]);
     install().refresh();
     await flush();
+    mockStore.set.mockClear();
 
-    const save = () => /** @type {HTMLButtonElement} */ ($('#routesSaveBtn'));
-
-    // Clean on load → disabled, no dot.
-    expect(save().disabled).toBe(true);
-    expect(save().textContent).toBe('Save routes');
-
-    // Build a complete route → dirty marker appears.
     $('#routesAddBtn').click();
     pick('add-source', '4:467:15:3');
     pick('add-target', '5:172:8:1');
-    expect(save().disabled).toBe(false);
-    expect(save().textContent).toContain('•');
+    await settle();
 
-    // Save → back to clean.
-    save().click();
-    await flush();
-    expect(save().disabled).toBe(true);
-    expect(save().textContent).toBe('Save routes');
-  });
-
-  it('marks Save dirty when fleet ship type changes', async () => {
-    seedBodies([
-      { cp: 101, name: 'K1', ...moon(4, 467, 15) },
-      { cp: 200, name: 'P2', ...planet(5, 172, 8) },
-    ]);
-    seedRoutes([
-      { sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8)], fleet: [{ shipId: SHIP_LARGE_CARGO, count: 15000 }] },
-    ]);
-    install().refresh();
-    await flush();
-
-    const save = () => /** @type {HTMLButtonElement} */ ($('#routesSaveBtn'));
-    expect(save().disabled).toBe(true);
-
-    // Change ship type → must activate Save.
-    pick('ship', String(SHIP_SMALL_CARGO));
-    expect(save().disabled).toBe(false);
-    expect(save().textContent).toContain('•');
-  });
-
-  it('marks Save dirty when fleet ship count changes', async () => {
-    seedBodies([
-      { cp: 101, name: 'K1', ...moon(4, 467, 15) },
-      { cp: 200, name: 'P2', ...planet(5, 172, 8) },
-    ]);
-    seedRoutes([
-      { sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8)], fleet: [{ shipId: SHIP_LARGE_CARGO, count: 15000 }] },
-    ]);
-    install().refresh();
-    await flush();
-
-    const save = () => /** @type {HTMLButtonElement} */ ($('#routesSaveBtn'));
-    expect(save().disabled).toBe(true);
-
-    // Change ship count → must activate Save.
-    const countInp = /** @type {HTMLInputElement} */ (list().querySelector('input[type="number"]'));
-    countInp.value = '999';
-    countInp.dispatchEvent(new Event('input'));
-    expect(save().disabled).toBe(false);
-    expect(save().textContent).toContain('•');
+    const routeWrites = mockStore.set.mock.calls.filter((c) => c[0] === ROUTES_KEY);
+    expect(routeWrites).toHaveLength(1);
   });
 });
 

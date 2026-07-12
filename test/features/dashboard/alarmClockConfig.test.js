@@ -2,8 +2,9 @@
 //
 // Behavioural tests for the dashboard AlarmClock-tab config editor. Same harness
 // as scanConfig.test.js: a Map-backed chrome.storage fake, the tab container
-// injected, real input edits + a Save click, asserting the rendered values and
-// the chrome.storage writes. Everything is per-server now, split across two
+// injected, real input edits + the debounced AUTOSAVE (no Save button — a
+// bubbling change event schedules it; settle() advances fake timers past the
+// window), asserting the rendered values and the chrome.storage writes. Everything is per-server now, split across two
 // per-universe slots: the wave/ad-hoc config + message templates in
 // `oge_alarmClockConfig`, and the fleet-save knobs in `oge_galaxyScanConfig`
 // (shared with the scan-config editor — the crux test is that neither editor
@@ -11,7 +12,7 @@
 //
 // @ts-check
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../../src/lib/storage.js', () => ({
   chromeStore: { get: vi.fn(), set: vi.fn(), remove: vi.fn(), onChanged: vi.fn() },
@@ -44,6 +45,20 @@ const ALARM_CLOCK_TS_KEY = `${UNI}:oge_alarmClockConfigTs`;
 const store = new Map();
 
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+/** Trigger + run the alarmClock editor's autosave (bubbling change → 500 ms debounce). */
+const settle = async () => {
+  document.getElementById('alarmClockConfigBody')
+    ?.dispatchEvent(new Event('change', { bubbles: true }));
+  vi.advanceTimersByTime(600);
+  await flush();
+};
+/** Same, for the scan-config editor sharing this suite's harness. */
+const settleScan = async () => {
+  document.getElementById('colonizationConfigBody')
+    ?.dispatchEvent(new Event('change', { bubbles: true }));
+  vi.advanceTimersByTime(600);
+  await flush();
+};
 const install = () => installAlarmClockConfig({ getUniverseId: () => UNI });
 
 const $ = (/** @type {string} */ sel) => /** @type {HTMLInputElement} */ (document.querySelector(sel));
@@ -99,6 +114,11 @@ beforeEach(() => {
     return Promise.resolve();
   });
   document.body.innerHTML = '<div id="alarmClockConfigBody"></div><div id="colonizationConfigBody"></div>';
+  vi.useFakeTimers();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('AlarmClock fleet-save config editor', () => {
@@ -150,8 +170,7 @@ describe('AlarmClock fleet-save config editor', () => {
     // Guardian off so the offsets pass through verbatim (its "never-enters net"
     // would otherwise inject a post-landing chip — covered by its own tests).
     setChip('#remCfgGuardianEnabled', false);
-    $('#remCfgSave').dispatchEvent(new Event('click'));
-    await flush();
+    await settle();
 
     const saved = /** @type {any} */ (store.get(CFG_KEY));
     expect(saved.fsEnabled).toBe(true);
@@ -166,8 +185,7 @@ describe('AlarmClock fleet-save config editor', () => {
     install().refresh();
     await flush();
     $('#remCfgFsThreshold').value = 'lots';
-    $('#remCfgSave').dispatchEvent(new Event('click'));
-    await flush();
+    await settle();
     expect(store.has(CFG_KEY)).toBe(false);
     expect($('#remCfgStatus').textContent || '').toMatch(/threshold/i);
   });
@@ -176,8 +194,7 @@ describe('AlarmClock fleet-save config editor', () => {
     install().refresh();
     await flush();
     $('#remCfgFsMinFlight').value = 'soon';
-    $('#remCfgSave').dispatchEvent(new Event('click'));
-    await flush();
+    await settle();
     expect(store.has(CFG_KEY)).toBe(false);
     expect($('#remCfgStatus').textContent || '').toMatch(/flight/i);
   });
@@ -188,8 +205,7 @@ describe('AlarmClock fleet-save config editor', () => {
     clearEditor('remCfgFsOffsets');
     // Guardian off, else it injects a post-landing chip into the empty list.
     setChip('#remCfgGuardianEnabled', false);
-    $('#remCfgSave').dispatchEvent(new Event('click'));
-    await flush();
+    await settle();
     expect(/** @type {any} */ (store.get(CFG_KEY)).fsOffsets).toBe('');
   });
 
@@ -206,8 +222,7 @@ describe('AlarmClock fleet-save config editor', () => {
     setEditor('remCfgFsOffsets', ['-20m', '0m']);
     setChip('#remCfgGuardianEnabled', true);
     $('#remCfgGuardianInterval').value = '20';
-    $('#remCfgSave').dispatchEvent(new Event('click'));
-    await flush();
+    await settle();
 
     const saved = /** @type {any} */ (store.get(CFG_KEY));
     expect(saved.guardianEnabled).toBe(true);
@@ -224,8 +239,7 @@ describe('AlarmClock fleet-save config editor', () => {
     setEditor('remCfgFsOffsets', ['0m', '30m']);
     setChip('#remCfgGuardianEnabled', true);
     $('#remCfgGuardianInterval').value = '20';
-    $('#remCfgSave').dispatchEvent(new Event('click'));
-    await flush();
+    await settle();
 
     // 30m ≥ the 20m interval already guarantees a post-landing ping — no inject.
     expect(/** @type {any} */ (store.get(CFG_KEY)).fsOffsets).toBe('0m, 30m');
@@ -235,8 +249,7 @@ describe('AlarmClock fleet-save config editor', () => {
     install().refresh();
     await flush();
     setEditor('remCfgFsOffsets', ['-10m', 'soon']);
-    $('#remCfgSave').dispatchEvent(new Event('click'));
-    await flush();
+    await settle();
     expect(store.has(CFG_KEY)).toBe(false);
     expect($('#remCfgStatus').textContent || '').toMatch(/fleet-save times/i);
   });
@@ -249,8 +262,7 @@ describe('AlarmClock fleet-save config editor', () => {
     install().refresh();
     await flush();
     setChip('#remCfgFsEnabled', true);
-    $('#remCfgSave').dispatchEvent(new Event('click'));
-    await flush();
+    await settle();
     const saved = /** @type {any} */ (store.get(CFG_KEY));
     expect(saved.fsEnabled).toBe(true);
     // Scan-config fields survive untouched.
@@ -264,10 +276,7 @@ describe('AlarmClock fleet-save config editor', () => {
     installScanColonyConfig({ getUniverseId: () => UNI }).refresh();
     await flush();
     $('#scanCfgPositions').value = '9';
-    /** @type {HTMLElement} */ (
-      document.querySelector('#colonizationConfigBody .scanCfgSave')
-    ).dispatchEvent(new Event('click'));
-    await flush();
+    await settleScan();
     const saved = /** @type {any} */ (store.get(CFG_KEY));
     expect(saved.positions).toBe('9');
     // fs fields survive a scan-config save untouched.
@@ -276,17 +285,19 @@ describe('AlarmClock fleet-save config editor', () => {
     expect(saved.fsOffsets).toBe('-7m');
   });
 
-  it('reset loads defaults into the fields (without saving until clicked)', async () => {
+  it('reset restores defaults and autosaves them (a real click bubbles to the autosave)', async () => {
     store.set(CFG_KEY, { fsEnabled: true, fsThreshold: 50000 });
     install().refresh();
     await flush();
     expect($('#remCfgFsThreshold').value).toBe('50000');
 
-    $('#remCfgReset').dispatchEvent(new Event('click'));
+    $('#remCfgReset').dispatchEvent(new Event('click', { bubbles: true }));
     expect(chipOn('#remCfgFsEnabled')).toBe(defaultGalaxyScanConfig().fsEnabled);
     expect($('#remCfgFsThreshold').value).toBe(String(defaultGalaxyScanConfig().fsThreshold));
-    // Reset alone does not persist — the stored value is unchanged.
-    expect(/** @type {any} */ (store.get(CFG_KEY)).fsThreshold).toBe(50000);
+    vi.advanceTimersByTime(600);
+    await flush();
+    expect(/** @type {any} */ (store.get(CFG_KEY)).fsThreshold)
+      .toBe(defaultGalaxyScanConfig().fsThreshold);
   });
 });
 
@@ -326,8 +337,7 @@ describe('AlarmClock wave + ad-hoc config editor', () => {
     setChip('#remCfgWaveEnabled', true);
     setEditor('remCfgWaveEditor', ['0m', '20m']);
     setEditor('remCfgAdhocOffsets', ['-90s', '0m']);
-    $('#remCfgSave').dispatchEvent(new Event('click'));
-    await flush();
+    await settle();
 
     const saved = /** @type {any} */ (store.get(ALARM_CLOCK_KEY));
     expect(saved.alarmClockEnabled).toBe(true);
@@ -343,8 +353,7 @@ describe('AlarmClock wave + ad-hoc config editor', () => {
     await flush();
     setChip('#remCfgFsEnabled', true);
     setChip('#remCfgWaveEnabled', true);
-    $('#remCfgSave').dispatchEvent(new Event('click'));
-    await flush();
+    await settle();
     expect(/** @type {any} */ (store.get(CFG_KEY)).fsEnabled).toBe(true);
     expect(/** @type {any} */ (store.get(ALARM_CLOCK_KEY)).alarmClockEnabled).toBe(true);
   });
@@ -353,8 +362,7 @@ describe('AlarmClock wave + ad-hoc config editor', () => {
     install().refresh();
     await flush();
     setEditor('remCfgAdhocOffsets', ['whenever']);
-    $('#remCfgSave').dispatchEvent(new Event('click'));
-    await flush();
+    await settle();
     expect(store.has(ALARM_CLOCK_KEY)).toBe(false);
     expect(store.has(CFG_KEY)).toBe(false); // the whole save aborted
     expect($('#remCfgStatus').textContent || '').toMatch(/ad-hoc times/i);
@@ -364,8 +372,7 @@ describe('AlarmClock wave + ad-hoc config editor', () => {
     install().refresh();
     await flush();
     clearEditor('remCfgWaveEditor');
-    $('#remCfgSave').dispatchEvent(new Event('click'));
-    await flush();
+    await settle();
     expect(/** @type {any} */ (store.get(ALARM_CLOCK_KEY)).alarmClockSchedule).toBe('');
   });
 
@@ -373,8 +380,7 @@ describe('AlarmClock wave + ad-hoc config editor', () => {
     install().refresh();
     await flush();
     setEditor('remCfgWaveEditor', ['0m', 'later']);
-    $('#remCfgSave').dispatchEvent(new Event('click'));
-    await flush();
+    await settle();
     expect(store.has(ALARM_CLOCK_KEY)).toBe(false);
     expect($('#remCfgStatus').textContent || '').toMatch(/wave times/i);
   });
@@ -419,8 +425,7 @@ describe('AlarmClock message templates', () => {
       .dispatchEvent(new Event('click'));
     /** @type {HTMLElement} */ (document.querySelector('#remCfgTplWavePriority .oge-prio-seg[data-prio="4"]'))
       .dispatchEvent(new Event('click'));
-    $('#remCfgSave').dispatchEvent(new Event('click'));
-    await flush();
+    await settle();
     const saved = /** @type {any} */ (store.get(ALARM_CLOCK_KEY));
     expect(saved.templates.wave).toEqual({ body: 'Wave back at {returnTime}!', icon: 'urgent', priority: 4 });
   });
@@ -429,8 +434,7 @@ describe('AlarmClock message templates', () => {
     install().refresh();
     await flush();
     ta('#remCfgTplFsBody').value = 'FS: {label}';
-    $('#remCfgSave').dispatchEvent(new Event('click'));
-    await flush();
+    await settle();
     expect(/** @type {any} */ (store.get(ALARM_CLOCK_KEY)).templates.fleetSave.body).toBe('FS: {label}');
   });
 });

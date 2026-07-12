@@ -9,8 +9,10 @@
 // editor: galaxy occupancy is now re-derived from the OGame API and
 // colonization state lives in the decision log with its own built-in horizons.)
 //
-// Save is read-modify-write so the fields it does NOT own (the AlarmClock tab's
-// fleet-save `fs*` knobs, which share the same slot) are never clobbered.
+// AUTOSAVE: every control persists on change (debounced) — there is no Save
+// button. The write is read-modify-write so the fields this editor does NOT
+// own (the AlarmClock tab's fleet-save `fs*` knobs, which share the same
+// slot) are never clobbered.
 //
 // Saving writes three keys, mirroring `dashboard/routes.js`:
 //   1. `<uni>:oge_galaxyScanConfig`   — the config value
@@ -101,9 +103,12 @@ const groupHeading = (text) => {
 /**
  * Generic per-universe config editor over the shared `galaxyScanConfig` slot.
  * `build(body, setStatus)` populates `body` with the editor's widgets and
- * returns its {@link EditorFields}; this wrapper adds the Save / Reset /
- * status controls and the load+merge plumbing. Save is read-modify-write so
- * an editor only ever overwrites the fields it owns.
+ * returns its {@link EditorFields}; this wrapper adds the Reset + status
+ * controls, the load plumbing, and the AUTOSAVE: any `change` event bubbling
+ * out of the editor body (text/number inputs commit on blur/Enter) and any
+ * `.toggle-chip` click triggers a debounced read-modify-write, so an editor
+ * only ever overwrites the fields it owns and there is no Save button to
+ * forget.
  *
  * @param {object} opts
  * @param {() => string} opts.getUniverseId
@@ -126,18 +131,19 @@ const installConfigEditor = ({ getUniverseId, containerId, build }) => {
 
   const { fill, collect } = build(body, setStatus);
 
-  const saveBtn = /** @type {HTMLButtonElement} */ (mk('button', undefined, 'Save config'));
-  saveBtn.className = 'scanCfgSave';
   const resetBtn = /** @type {HTMLButtonElement} */ (mk('button', undefined, 'Reset to defaults'));
   resetBtn.className = 'scanCfgReset';
   const controls = mk('div', 'margin-top:10px;display:flex;align-items:center;gap:8px;');
   controls.className = 'controls';
-  controls.appendChild(saveBtn);
   controls.appendChild(resetBtn);
   controls.appendChild(statusEl);
   body.appendChild(controls);
 
   const refresh = async () => {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
     const uni = getUniverseId();
     if (!uni) {
       fill(defaultGalaxyScanConfig());
@@ -163,14 +169,41 @@ const installConfigEditor = ({ getUniverseId, containerId, build }) => {
     // push to the gist — same trio the routes editor writes on save.
     await chromeStore.set(galaxyScanConfigTsKeyFor(uni), Date.now());
     await chromeStore.set(syncRequestKeyFor(uni), Date.now());
-    fill(cfg);
+    // No fill(cfg) here: autosave fires while the user hops between fields,
+    // and repainting every input would clobber one they've already started
+    // typing into. Normalisation corrections surface on the next tab load.
     setStatus('Saved.', '#67c23a');
   };
 
-  saveBtn.addEventListener('click', () => { void save(); });
+  // Autosave (debounced): captured at schedule time and re-checked at fire
+  // time, so a universe switch inside the debounce window can't write the
+  // old universe's fields into the new universe's slot.
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let saveTimer = null;
+  let saveUni = '';
+  const scheduleSave = () => {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveUni = getUniverseId();
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      if (getUniverseId() !== saveUni) return;
+      void save();
+    }, 500);
+  };
+  // `change` bubbles from every input/select; toggle chips are buttons (no
+  // change event), so their clicks are caught separately. The chip's own
+  // wireToggleChip handler flips its state first (registered earlier), so
+  // collect() at save time reads the post-toggle state.
+  body.addEventListener('change', scheduleSave);
+  body.addEventListener('click', (e) => {
+    const t = /** @type {HTMLElement} */ (e.target);
+    if (t instanceof HTMLElement && t.closest('.toggle-chip')) scheduleSave();
+  });
+
   resetBtn.addEventListener('click', () => {
     fill(defaultGalaxyScanConfig());
-    setStatus('Defaults loaded — click Save to apply.', '#e6a23c');
+    setStatus('Defaults restored.', '#e6a23c');
+    scheduleSave();
   });
 
   return { refresh: () => void refresh() };

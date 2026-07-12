@@ -5,16 +5,18 @@
 // from the OGame API; colonization state from the decision log with its own
 // horizons), the editor is just the colonization & abandon group over ONE
 // shared per-universe slot, on the Colonizations tab. We mock chrome.storage
-// with a Map-backed fake, inject the tab's container, drive real input edits +
-// a Save click, and assert the observable output: rendered field values, the
-// three chrome.storage writes (config value, newest-wins timestamp, syncRequest
+// with a Map-backed fake, inject the tab's container, drive real input edits,
+// trigger the debounced AUTOSAVE (there is no Save button — a bubbling change
+// event schedules it; settle() advances fake timers past the window), and
+// assert the observable output: rendered field values, the three
+// chrome.storage writes (config value, newest-wins timestamp, syncRequest
 // poke), and — crucially — that a save never clobbers fields the editor does
 // NOT own (the AlarmClock tab's fleet-save `fs*` knobs, which share the same
 // slot — read-modify-write merge).
 //
 // @ts-check
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../../src/lib/storage.js', () => ({
   chromeStore: { get: vi.fn(), set: vi.fn(), remove: vi.fn(), onChanged: vi.fn() },
@@ -40,13 +42,19 @@ const SYNC_KEY = `${UNI}:oge_syncRequestAt`;
 const store = new Map();
 
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+/** Trigger the autosave (a bubbling change, as a real input edit fires) and
+ *  run it: advance past the 500 ms debounce, then flush the async save. */
+const settle = async () => {
+  document.getElementById('colonizationConfigBody')
+    ?.dispatchEvent(new Event('change', { bubbles: true }));
+  vi.advanceTimersByTime(600);
+  await flush();
+};
 
 const install = () => installScanColonyConfig({ getUniverseId: () => UNI });
 
 const $ = (/** @type {string} */ sel) => /** @type {HTMLInputElement} */ (document.querySelector(sel));
-// Save / Reset / status are class hooks (not ids); scope to the editor body.
-const save = () =>
-  document.querySelector('#colonizationConfigBody .scanCfgSave')?.dispatchEvent(new Event('click'));
+// Reset / status are class hooks (not ids); scope to the editor body.
 const reset = () =>
   document.querySelector('#colonizationConfigBody .scanCfgReset')?.dispatchEvent(new Event('click'));
 
@@ -60,6 +68,11 @@ beforeEach(() => {
     return Promise.resolve();
   });
   document.body.innerHTML = '<div id="colonizationConfigBody"></div>';
+  vi.useFakeTimers();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('Colonization config editor', () => {
@@ -98,8 +111,7 @@ describe('Colonization config editor', () => {
     $('#scanCfgColonyMinFields').value = '250';
     $('#scanCfgColonyPassword').value = 'hunter2';
 
-    save();
-    await flush();
+    await settle();
 
     const saved = /** @type {any} */ (store.get(CFG_KEY));
     expect(saved.positions).toBe('9,10');
@@ -112,7 +124,7 @@ describe('Colonization config editor', () => {
     expect(typeof store.get(SYNC_KEY)).toBe('number');
   });
 
-  it('reset loads defaults into the fields (without saving until clicked)', async () => {
+  it('reset restores defaults and autosaves them', async () => {
     store.set(CFG_KEY, { positions: '12-15', preferOtherGalaxies: false });
     install().refresh();
     await flush();
@@ -120,8 +132,21 @@ describe('Colonization config editor', () => {
 
     reset();
     expect($('#scanCfgPositions').value).toBe(defaultGalaxyScanConfig().positions);
-    // Reset alone does not persist — the stored value is unchanged.
-    expect(/** @type {any} */ (store.get(CFG_KEY)).positions).toBe('12-15');
+    vi.advanceTimersByTime(600);
+    await flush();
+    // Under autosave, restored defaults persist on their own.
+    expect(/** @type {any} */ (store.get(CFG_KEY)).positions)
+      .toBe(defaultGalaxyScanConfig().positions);
+  });
+
+  it('a plain toggle-chip click autosaves (no change event, the click path)', async () => {
+    install().refresh();
+    await flush();
+
+    $('#scanCfgPrefer').dispatchEvent(new Event('click', { bubbles: true })); // on → off
+    vi.advanceTimersByTime(600);
+    await flush();
+    expect(/** @type {any} */ (store.get(CFG_KEY)).preferOtherGalaxies).toBe(false);
   });
 
   it('saving preserves fields the editor does NOT own (fleet-save knobs in the shared slot)', async () => {
@@ -131,8 +156,7 @@ describe('Colonization config editor', () => {
     await flush();
 
     $('#scanCfgPositions').value = '9';
-    save();
-    await flush();
+    await settle();
 
     const saved = /** @type {any} */ (store.get(CFG_KEY));
     expect(saved.positions).toBe('9'); // our edit landed
