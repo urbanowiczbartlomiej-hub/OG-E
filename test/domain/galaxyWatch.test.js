@@ -206,6 +206,66 @@ describe('buildGalaxyPlan', () => {
     }).entries).toHaveLength(0);
   });
 
+  it('sysLookSec floors coverage — a browsed system clears even when the browse left NO ring entry', () => {
+    // The stuck-Look regression: the watched player's only body kept its ring
+    // empty across browses — every observation was discounted as our own
+    // probe's marker (activityObs.appendActivityObs → null), or the slot is
+    // empty/relocated per a stale universe.xml row. The scan record
+    // (state/scans `scannedAt`) still proves the browse happened; without
+    // that floor the plan re-proposed the same system on every rebuild,
+    // forever, and the FAB looped "Look [g:s]" on every tap.
+    const base = {
+      players: ['42'],
+      universePlanets: [{ coords: '4:465:7', player: 42 }],
+      rings: { 42: {} },
+      nowMs: NOW,
+      staleMs: STALE_MS,
+    };
+    // Ring never advances → proposed…
+    expect(buildGalaxyPlan(base).entries.map((e) => e.label)).toEqual(['4:465']);
+    // …but a browse on record clears it.
+    expect(buildGalaxyPlan({
+      ...base,
+      sysLookSec: { '4:465': sec(NOW - 3600e3) },
+    }).entries).toHaveLength(0);
+  });
+
+  it('an old browse (beyond cadence) does not satisfy — the system is still proposed as stale', () => {
+    const { entries } = buildGalaxyPlan({
+      players: ['42'],
+      universePlanets: [{ coords: '4:465:7', player: 42 }],
+      nowMs: NOW,
+      staleMs: STALE_MS,
+      sysLookSec: { '4:465': sec(NOW - STALE_MS - 3600e3) },
+    });
+    expect(entries.map((e) => `${e.label}:${e.worst}`)).toEqual(['4:465:stale']);
+  });
+
+  it('a ↻ rescan mark set AFTER the browse still forces the look', () => {
+    const { entries } = buildGalaxyPlan({
+      players: ['42'],
+      universePlanets: [{ coords: '4:465:7', player: 42 }],
+      nowMs: NOW,
+      staleMs: STALE_MS,
+      sysLookSec: { '4:465': sec(NOW - 3600e3) },
+      rescan: { 42: NOW - 60e3 },
+    });
+    expect(entries.map((e) => `${e.label}:${e.worst}`)).toEqual(['4:465:rescan']);
+  });
+
+  it('junk sysLookSec values are ignored (0 / NaN / negative)', () => {
+    const base = {
+      players: ['42'],
+      universePlanets: [{ coords: '4:465:7', player: 42 }],
+      nowMs: NOW,
+      staleMs: STALE_MS,
+    };
+    for (const v of [0, NaN, -5]) {
+      expect(buildGalaxyPlan({ ...base, sysLookSec: { '4:465': v } })
+        .entries.map((e) => e.worst)).toEqual(['none']);
+    }
+  });
+
   it('a recheck window that is not yet ready (or already expired, or muted) adds nothing', () => {
     const fresh = [{ t: sec(NOW - 60e3), m: -1 }];
     const base = {

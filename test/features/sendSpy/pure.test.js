@@ -240,6 +240,30 @@ describe('deriveSpy — galaxy-look branch', () => {
     expect(ctx.remaining).toBe(0);
   });
 
+  it('a fresh galaxy scan (sysLookSec) satisfies the look plan even with EMPTY rings — the stuck-Look regression', () => {
+    // A browse can leave no ring entry at all: its only observation was
+    // discounted as our own probe's marker, or the watched slot is
+    // empty/relocated. The per-system scan time must clear the proposal —
+    // without it the FAB re-proposed the same system on every tap.
+    const ctx = deriveSpy(
+      env({
+        players: ['42'],
+        universePlanets: [
+          { coords: '1:2:3', player: 42 },
+          { coords: '1:2:8', player: 42 },
+        ],
+        spiedByPlayer: {
+          42: { '1:2:3': tsSecAgo(60_000), '1:2:8': tsSecAgo(60_000) },
+        },
+        galaxyMode: {},
+        sysLookSec: { '1:2': tsSecAgo(3_600_000) },
+      }),
+    );
+    expect(ctx.proposal).toBeNull();
+    expect(ctx.look).toBeNull();
+    expect(ctx.remaining).toBe(0);
+  });
+
   it('a strike coord forces the moon to the top with the strike flag', () => {
     const ctx = deriveSpy(
       env({
