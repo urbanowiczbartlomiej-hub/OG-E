@@ -4,6 +4,29 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.47.1] — 2026-07-12
+
+### Changed
+
+- **Configs save themselves — the Save buttons are gone.** Daily Run routes,
+  the colonization config and the alarm-clock config now persist on change,
+  like every other dashboard control. Edits survive a universe switch and a
+  closing tab (a pending save is flushed, not dropped); saves never repaint
+  the form under your fingers; and a change that changes nothing writes
+  nothing — no more sync churn from idle clicks. Because "Reset to defaults"
+  now also saves (and syncs) what it restores, it asks for a second tap
+  before wiping anything.
+
+### Fixed
+
+- **Floating-button orbits respect screen edges.** Drag the button into a
+  corner of a tall phone screen and the satellite orbs used to pile onto the
+  near edge and slide under the button while the other side of the screen sat
+  empty. The fan now rotates just enough to fit on-screen, keeps its spacing,
+  sticks to its side of the screen while you drag (no mid-drag teleports),
+  and no longer flips away from free space when the button sits near a single
+  edge.
+
 ## [1.47.0] — 2026-07-12
 
 ### Added
