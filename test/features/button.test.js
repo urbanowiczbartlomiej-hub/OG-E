@@ -78,7 +78,10 @@ describe('single-zone button', () => {
     expect(surface.style.opacity).toBe('0.5');
     expect(btn.style.opacity).toBe('');
     ctl.setDim('main', false);
-    expect(surface.style.opacity).toBe('1');
+    // Un-dim REMOVES the inline value (never pins '1'): the readiness gate's
+    // grey is a CSS rule on the same element, and an inline '1' from a routine
+    // repaint would override it (the vivid-label-while-gated bug).
+    expect(surface.style.opacity).toBe('');
     ctl.setBg('main', '#38bdf8');
     expect(btn.style.getPropertyValue('--rim')).toBe('#38bdf8');
   });
