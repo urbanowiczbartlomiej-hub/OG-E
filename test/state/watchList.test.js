@@ -35,6 +35,7 @@ import {
   watchListStore,
   initWatchListStore,
   disposeWatchListStore,
+  whenWatchListHydrated,
 } from '../../src/state/watchList.js';
 
 const mockStore = /** @type {any} */ (chromeStore);
@@ -197,6 +198,34 @@ describe('watchList store — hydration + write-through', () => {
     const a = initWatchListStore();
     const b = initWatchListStore();
     expect(a).toBe(b);
+  });
+
+  it('whenWatchListHydrated stays pending until the storage read settles', async () => {
+    /** @type {(v: unknown) => void} */
+    let release = () => {};
+    mockStore.get.mockReturnValue(new Promise((res) => { release = res; }));
+    initWatchListStore();
+    let settled = false;
+    void whenWatchListHydrated().then(() => { settled = true; });
+    await flushMicrotasks();
+    expect(settled).toBe(false);
+    release(['5']);
+    await flushMicrotasks();
+    expect(settled).toBe(true);
+    expect(watchListStore.get().players).toEqual(['5']);
+  });
+
+  it('whenWatchListHydrated resolves even when nothing is stored (load → null)', async () => {
+    initWatchListStore();
+    await expect(whenWatchListHydrated()).resolves.toBeUndefined();
+    expect(watchListStore.get()).toEqual(initialValue());
+  });
+
+  it('whenWatchListHydrated is pre-resolved outside a wired init and after dispose', async () => {
+    await expect(whenWatchListHydrated()).resolves.toBeUndefined(); // before init
+    initWatchListStore();
+    disposeWatchListStore();
+    await expect(whenWatchListHydrated()).resolves.toBeUndefined(); // reset sentinel
   });
 });
 
