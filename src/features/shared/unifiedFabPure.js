@@ -105,13 +105,25 @@ const FEASIBLE_SCAN_N = 256;
  * so from a corner the whole fan rotates into the free space.
  *
  * Numeric scan over {@link FEASIBLE_SCAN_N} samples (robust against the
- * corner cases an analytic circle/edge-band intersection breeds). Returns the
- * arc's CENTRE angle plus the (possibly compressed) spread: a window narrower
- * than the requested spread squeezes the arc down to the window — but never
- * below `minSpread`, the collision floor under which neighbouring orbs would
- * touch (below it a sub-px overhang into the XY clamp beats overlapping
- * orbs). Nothing feasible at all (radius larger than the viewport) → plain
- * `base` with the spread unchanged.
+ * corner cases an analytic circle/edge-band intersection breeds); a cheap
+ * bounding-box short-circuit skips the scan entirely in the common
+ * fully-on-screen case, so a mid-screen drag pays four comparisons per
+ * frame, not 256 trig calls. Returns the arc's CENTRE angle plus the
+ * (possibly compressed) spread: a window narrower than the requested spread
+ * squeezes the arc down to the window — but never below `minSpread`, the
+ * collision floor under which neighbouring orbs would touch (below it a
+ * sub-px overhang into the XY clamp beats overlapping orbs; the floor is
+ * itself capped at the requested spread so a crowded menu can never EXPAND
+ * past what was asked for). Nothing feasible at all (radius larger than the
+ * viewport) → plain `base` with the spread unchanged.
+ *
+ * Window choice is sticky: when `prevCentre` (the centre chosen on the
+ * previous call) is given and still lies in a feasible window, that window
+ * wins unless another is decisively closer to the aim ray. Without this, a
+ * layout with TWO feasible windows (a large FAB mid-screen on a narrow
+ * viewport has an up-fan and a down-fan) flips winners frame-to-frame while
+ * a drag hovers near the equidistant line — teleporting every orb across
+ * the FAB under the user's finger.
  *
  * @param {object} o
  * @param {number} o.cx      FAB centre x (viewport px).
@@ -125,69 +137,99 @@ const FEASIBLE_SCAN_N = 256;
  * @param {number} o.spread  requested total arc width (radians).
  * @param {number} [o.minSpread]  collision floor for the compressed spread
  *   (defaults to 0 — no floor).
+ * @param {number | null} [o.prevCentre]  centre chosen on the previous call
+ *   (absolute radians) — enables the sticky-window tiebreak. Omit/null for a
+ *   stateless call.
  * @returns {{ centre: number, spread: number }}
  */
-export const feasibleArcCenter = ({ cx, cy, radius, margin, vw, vh, base, spread, minSpread = 0 }) => {
-  const stepA = (Math.PI * 2) / FEASIBLE_SCAN_N;
+export const feasibleArcCenter = ({
+  cx, cy, radius, margin, vw, vh, base, spread, minSpread = 0, prevCentre = null,
+}) => {
+  // Short-circuit: the whole orbit circle sits inside the padded viewport —
+  // every angle is feasible, keep the aim ray untouched (and skip the scan).
+  if (
+    cx - radius >= margin && cx + radius <= vw - margin
+    && cy - radius >= margin && cy + radius <= vh - margin
+  ) {
+    return { centre: base, spread };
+  }
+  const N = FEASIBLE_SCAN_N;
+  const stepA = (Math.PI * 2) / N;
   /** Sample i covers the relative angle (i − N/2) · stepA, i.e. index N/2 = `base`. */
-  const ok = new Array(FEASIBLE_SCAN_N);
-  for (let i = 0; i < FEASIBLE_SCAN_N; i++) {
-    const a = base + (i - FEASIBLE_SCAN_N / 2) * stepA;
+  const ok = new Array(N);
+  for (let i = 0; i < N; i++) {
+    const a = base + (i - N / 2) * stepA;
     const x = cx + Math.cos(a) * radius;
     const y = cy + Math.sin(a) * radius;
     ok[i] = x >= margin && x <= vw - margin && y >= margin && y <= vh - margin;
   }
-  /** @type {{ centre: number, spread: number }} */
-  const unmoved = { centre: base, spread };
-  // Collect contiguous feasible runs on the CIRCLE (the scan array wraps:
-  // index 0 and N−1 are angular neighbours, so a run crossing the seam is one
-  // window, not two).
+  // Find one infeasible sample and walk the circle FROM it: started inside a
+  // gap, no feasible run can ever straddle the iteration seam, so every run
+  // is contiguous in the "continuous coordinate" i0+j (which may exceed N) —
+  // no wrap-merge special case, and the base/prev comparisons below stay
+  // plain interval arithmetic. (An earlier merge-the-seam version broke when
+  // the wrapped window CONTAINED the aim angle: the aim's sample landed in
+  // the negative-shifted half and the containment test missed it, flipping
+  // the whole fan ~180° away from free space.)
+  let i0 = -1;
+  for (let i = 0; i < N; i++) {
+    if (!ok[i]) { i0 = i; break; }
+  }
+  if (i0 === -1) return { centre: base, spread }; // everything feasible
   /** @type {Array<{ from: number, len: number }>} */
   const runs = [];
-  let i = 0;
-  while (i < FEASIBLE_SCAN_N) {
-    if (!ok[i]) { i++; continue; }
-    const from = i;
-    while (i < FEASIBLE_SCAN_N && ok[i]) i++;
-    runs.push({ from, len: i - from });
+  let j = 0;
+  while (j < N) {
+    while (j < N && !ok[(i0 + j) % N]) j++;
+    if (j >= N) break;
+    const from = i0 + j;
+    while (j < N && ok[(i0 + j) % N]) j++;
+    runs.push({ from, len: i0 + j - from });
   }
-  if (runs.length === 0) return unmoved;
-  if (runs.length === 1 && runs[0].len === FEASIBLE_SCAN_N) {
-    return unmoved; // everything feasible — keep the aim ray untouched
+  if (runs.length === 0) return { centre: base, spread };
+  // Continuous coordinates of the aim ray and (when given) the previous
+  // centre, in the same [i0, i0+N) frame the runs live in.
+  const mid = N / 2;
+  const baseC = mid >= i0 ? mid : mid + N;
+  /** @type {number | null} */
+  let prevC = null;
+  if (prevCentre != null && Number.isFinite(prevCentre)) {
+    // Normalize prev−base into (−π, π], then express as a sample coordinate.
+    let d = (prevCentre - base) % (Math.PI * 2);
+    if (d > Math.PI) d -= Math.PI * 2;
+    if (d <= -Math.PI) d += Math.PI * 2;
+    const raw = mid + d / stepA;
+    prevC = raw >= i0 ? raw : raw + N;
   }
-  // Merge a run touching the seam (…N−1 + 0…) into one circular window.
-  const first = runs[0];
-  const last = runs[runs.length - 1];
-  if (runs.length > 1 && first.from === 0 && last.from + last.len === FEASIBLE_SCAN_N) {
-    runs.pop();
-    first.from = last.from - FEASIBLE_SCAN_N; // negative index = wrapped start
-    first.len += last.len;
-  }
-  // Pick the window whose angular span lies closest to `base` (relative 0):
-  // prefer one containing 0; else minimal distance from 0 to the span.
-  const mid = FEASIBLE_SCAN_N / 2;
+  // Pick the window nearest the aim ray — but sticky: the window holding the
+  // previous centre wins any near-tie (within STICKY samples), so tiny aim
+  // jitter can't flip the fan between two equidistant windows mid-drag.
+  const STICKY = Math.round(0.35 / stepA);
   let best = runs[0];
-  let bestDist = Infinity;
+  let bestScore = Infinity;
   for (const r of runs) {
-    const lo = r.from - mid;
-    const hi = r.from + r.len - 1 - mid;
+    const lo = r.from - baseC;
+    const hi = r.from + r.len - 1 - baseC;
     const dist = lo <= 0 && 0 <= hi ? 0 : Math.min(Math.abs(lo), Math.abs(hi));
-    if (dist < bestDist) { bestDist = dist; best = r; }
+    const holdsPrev = prevC != null && r.from <= prevC && prevC <= r.from + r.len - 1;
+    const score = holdsPrev ? Math.max(0, dist - STICKY) : dist;
+    if (score < bestScore) { bestScore = score; best = r; }
   }
   // Erode the window by one scan step per side: a boundary sample is feasible
   // only to within the scan resolution, and an arc endpoint placed exactly on
   // it can land a fraction of a px outside (then the XY clamp shaves it off
   // the orbit circle). One conservative step guarantees strict feasibility.
   // A window too narrow to erode collapses to its midpoint.
-  let winLo = (best.from - mid + 1) * stepA;
-  let winHi = (best.from + best.len - 2 - mid) * stepA;
+  let winLo = (best.from - baseC + 1) * stepA;
+  let winHi = (best.from + best.len - 2 - baseC) * stepA;
   if (winHi < winLo) winLo = winHi = (winLo + winHi) / 2;
   // Slide the arc centre minimally so [centre−spread/2, centre+spread/2]
   // fits in [winLo, winHi]. A narrower window compresses the spread down to
-  // it (never below the collision floor — see the doc above); whatever still
-  // overhangs, the XY clamp catches.
+  // it (never below the collision floor, itself capped at the request);
+  // whatever still overhangs, the XY clamp catches.
   const width = winHi - winLo;
-  const fitSpread = width >= spread ? spread : Math.max(minSpread, width);
+  const floor = Math.min(minSpread, spread);
+  const fitSpread = width >= spread ? spread : Math.max(floor, width);
   const half = fitSpread / 2;
   const centre = width >= fitSpread
     ? clamp(0, winLo + half, winHi - half)
@@ -219,12 +261,15 @@ export const feasibleArcCenter = ({ cx, cy, radius, margin, vw, vh, base, spread
  * @param {number} opts.orbSize  orb diameter — see {@link orbDiameter}.
  * @param {number} opts.vw       viewport width.
  * @param {number} opts.vh       viewport height.
- * @returns {OrbitItemPos[]}
+ * @param {number | null} [opts.prevCentre]  arc centre from the previous
+ *   frame (see {@link feasibleArcCenter}'s sticky-window tiebreak); the DOM
+ *   shell threads the returned `centre` back in on the next call.
+ * @returns {{ items: OrbitItemPos[], centre: number }}
  */
-export const orbitLayout = ({ cx, cy, count, radius, orbSize, vw, vh }) => {
+export const orbitPlan = ({ cx, cy, count, radius, orbSize, vw, vh, prevCentre = null }) => {
   /** @type {OrbitItemPos[]} */
   const items = [];
-  if (count <= 0) return items;
+  if (count <= 0) return { items, centre: aimAngle({ cx, cy, vw, vh }) };
   const base = aimAngle({ cx, cy, vw, vh });
   // Collision floor: the angular step whose chord equals one orb diameter
   // plus a small gap, so neighbouring orbs never touch even on a tiny FAB
@@ -235,7 +280,7 @@ export const orbitLayout = ({ cx, cy, count, radius, orbSize, vw, vh }) => {
   const orbMargin = orbSize / 2 + 8;
   const { centre, spread } = feasibleArcCenter({
     cx, cy, radius, margin: orbMargin, vw, vh, base,
-    spread: wantSpread, minSpread: collisionStep * (count - 1),
+    spread: wantSpread, minSpread: collisionStep * (count - 1), prevCentre,
   });
   const start = centre - spread / 2;
   for (let i = 0; i < count; i++) {
@@ -245,5 +290,14 @@ export const orbitLayout = ({ cx, cy, count, radius, orbSize, vw, vh }) => {
       y: clamp(cy + Math.sin(a) * radius, orbMargin, vh - orbMargin),
     });
   }
-  return items;
+  return { items, centre };
 };
+
+/**
+ * Positions-only convenience over {@link orbitPlan} (the historical API —
+ * callers that don't thread the sticky centre through use this).
+ *
+ * @param {Parameters<typeof orbitPlan>[0]} opts
+ * @returns {OrbitItemPos[]}
+ */
+export const orbitLayout = (opts) => orbitPlan(opts).items;

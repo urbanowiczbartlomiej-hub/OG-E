@@ -285,12 +285,18 @@ describe('AlarmClock fleet-save config editor', () => {
     expect(saved.fsOffsets).toBe('-7m');
   });
 
-  it('reset restores defaults and autosaves them (a real click bubbles to the autosave)', async () => {
+  it('reset is two-step: first tap only arms, second tap restores + autosaves defaults', async () => {
     store.set(CFG_KEY, { fsEnabled: true, fsThreshold: 50000 });
     install().refresh();
     await flush();
     expect($('#remCfgFsThreshold').value).toBe('50000');
 
+    // First tap arms only — a misclick must not wipe hand-written config.
+    $('#remCfgReset').dispatchEvent(new Event('click', { bubbles: true }));
+    expect($('#remCfgFsThreshold').value).toBe('50000');
+    expect(/** @type {any} */ (store.get(CFG_KEY)).fsThreshold).toBe(50000);
+
+    // Second tap applies + persists via autosave.
     $('#remCfgReset').dispatchEvent(new Event('click', { bubbles: true }));
     expect(chipOn('#remCfgFsEnabled')).toBe(defaultGalaxyScanConfig().fsEnabled);
     expect($('#remCfgFsThreshold').value).toBe(String(defaultGalaxyScanConfig().fsThreshold));
@@ -298,6 +304,19 @@ describe('AlarmClock fleet-save config editor', () => {
     await flush();
     expect(/** @type {any} */ (store.get(CFG_KEY)).fsThreshold)
       .toBe(defaultGalaxyScanConfig().fsThreshold);
+  });
+
+  it('a no-op interaction writes neither slot (no newest-wins stamp from a stale device)', async () => {
+    // guardianEnabled:false so collectFs's never-enters net has nothing to
+    // inject — the collected config must equal the stored one exactly.
+    store.set(CFG_KEY, { fsEnabled: true, fsThreshold: 50000, guardianEnabled: false });
+    store.set(ALARM_CLOCK_KEY, { alarmClockEnabled: true });
+    install().refresh();
+    await flush();
+    mockStore.set.mockClear();
+
+    await settle(); // change event with no actual edits
+    expect(mockStore.set).not.toHaveBeenCalled();
   });
 });
 

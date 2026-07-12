@@ -24,6 +24,7 @@
 // `domain/galaxyScanConfig.js`; this module is DOM glue only.
 
 import { chromeStore } from '../../lib/storage.js';
+import { createAutosave } from './autosave.js';
 import {
   galaxyScanConfigKeyFor,
   galaxyScanConfigTsKeyFor,
@@ -139,11 +140,46 @@ const installConfigEditor = ({ getUniverseId, containerId, build }) => {
   controls.appendChild(statusEl);
   body.appendChild(controls);
 
+  /**
+   * The autosave's save callback. `uni` is the universe CAPTURED when the
+   * edit was scheduled (see ./autosave.js); the widget values are collected
+   * synchronously at entry, so a flush racing a universe switch persists the
+   * OLD universe's fields into the OLD universe's slot. A payload identical
+   * to what's stored is skipped entirely — no write, no newest-wins stamp,
+   * no gist poke — so a spurious `change` (blurring an untouched field, a
+   * no-op chip click) can't bump the sync clock with stale data.
+   *
+   * @param {string} uni
+   * @returns {Promise<void>}
+   */
+  const save = async (uni) => {
+    if (!uni) return;
+    const owned = collect(); // synchronous widget snapshot
+    if (!owned) return;
+    // Read-modify-write so the fields owned by the OTHER editor (and the
+    // AlarmClock tab's fleet-save knobs) survive — all three share one slot.
+    const stored = normalizeGalaxyScanConfig(await chromeStore.get(galaxyScanConfigKeyFor(uni)));
+    const cfg = normalizeGalaxyScanConfig({ ...stored, ...owned });
+    if (JSON.stringify(cfg) === JSON.stringify(stored)) return; // no-op edit
+    await chromeStore.set(galaxyScanConfigKeyFor(uni), cfg);
+    // Stamp the whole-slot newest-wins clock and poke any open game tab to
+    // push to the gist — same trio the routes editor writes on save.
+    await chromeStore.set(galaxyScanConfigTsKeyFor(uni), Date.now());
+    await chromeStore.set(syncRequestKeyFor(uni), Date.now());
+    // Reflect the NORMALIZED persisted values back into the widgets — but
+    // only when the user isn't mid-edit in this editor and the view still
+    // shows this universe (a repaint must never clobber a focused field or
+    // a just-switched view).
+    if (!body.contains(document.activeElement) && getUniverseId() === uni) fill(cfg);
+    setStatus('Saved.', '#67c23a');
+  };
+
+  const autosave = createAutosave({ getUniverseId, save, delayMs: 500 });
+
   const refresh = async () => {
-    if (saveTimer) {
-      clearTimeout(saveTimer);
-      saveTimer = null;
-    }
+    // Persist any pending edit first — it belongs to the universe it was
+    // made in (save() gets the captured id and snapshots synchronously).
+    autosave.flush();
     const uni = getUniverseId();
     if (!uni) {
       fill(defaultGalaxyScanConfig());
@@ -155,55 +191,36 @@ const installConfigEditor = ({ getUniverseId, containerId, build }) => {
     setStatus('');
   };
 
-  const save = async () => {
-    const uni = getUniverseId();
-    if (!uni) { setStatus('No universe selected.', '#e66'); return; }
-    const owned = collect();
-    if (!owned) return;
-    // Read-modify-write so the fields owned by the OTHER editor (and the
-    // AlarmClock tab's fleet-save knobs) survive — all three share one slot.
-    const stored = normalizeGalaxyScanConfig(await chromeStore.get(galaxyScanConfigKeyFor(uni)));
-    const cfg = normalizeGalaxyScanConfig({ ...stored, ...owned });
-    await chromeStore.set(galaxyScanConfigKeyFor(uni), cfg);
-    // Stamp the whole-slot newest-wins clock and poke any open game tab to
-    // push to the gist — same trio the routes editor writes on save.
-    await chromeStore.set(galaxyScanConfigTsKeyFor(uni), Date.now());
-    await chromeStore.set(syncRequestKeyFor(uni), Date.now());
-    // No fill(cfg) here: autosave fires while the user hops between fields,
-    // and repainting every input would clobber one they've already started
-    // typing into. Normalisation corrections surface on the next tab load.
-    setStatus('Saved.', '#67c23a');
-  };
-
-  // Autosave (debounced): captured at schedule time and re-checked at fire
-  // time, so a universe switch inside the debounce window can't write the
-  // old universe's fields into the new universe's slot.
-  /** @type {ReturnType<typeof setTimeout> | null} */
-  let saveTimer = null;
-  let saveUni = '';
-  const scheduleSave = () => {
-    if (saveTimer) clearTimeout(saveTimer);
-    saveUni = getUniverseId();
-    saveTimer = setTimeout(() => {
-      saveTimer = null;
-      if (getUniverseId() !== saveUni) return;
-      void save();
-    }, 500);
-  };
   // `change` bubbles from every input/select; toggle chips are buttons (no
   // change event), so their clicks are caught separately. The chip's own
   // wireToggleChip handler flips its state first (registered earlier), so
   // collect() at save time reads the post-toggle state.
-  body.addEventListener('change', scheduleSave);
+  body.addEventListener('change', autosave.schedule);
   body.addEventListener('click', (e) => {
     const t = /** @type {HTMLElement} */ (e.target);
-    if (t instanceof HTMLElement && t.closest('.toggle-chip')) scheduleSave();
+    if (t instanceof HTMLElement && t.closest('.toggle-chip')) autosave.schedule();
   });
 
+  // Reset is DESTRUCTIVE under autosave (defaults persist and sync out), so
+  // it takes two taps: the first arms, the second (within 3 s) applies.
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let resetTimer = null;
+  const disarmReset = () => {
+    if (resetTimer) clearTimeout(resetTimer);
+    resetTimer = null;
+    resetBtn.textContent = 'Reset to defaults';
+  };
   resetBtn.addEventListener('click', () => {
+    if (!resetTimer) {
+      resetBtn.textContent = 'Sure? Tap again';
+      setStatus('Resets & saves defaults.', '#e6a23c');
+      resetTimer = setTimeout(() => { disarmReset(); setStatus(''); }, 3000);
+      return;
+    }
+    disarmReset();
     fill(defaultGalaxyScanConfig());
     setStatus('Defaults restored.', '#e6a23c');
-    scheduleSave();
+    autosave.schedule();
   });
 
   return { refresh: () => void refresh() };

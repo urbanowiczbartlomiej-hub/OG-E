@@ -124,19 +124,48 @@ describe('Colonization config editor', () => {
     expect(typeof store.get(SYNC_KEY)).toBe('number');
   });
 
-  it('reset restores defaults and autosaves them', async () => {
+  it('reset is two-step: first tap only arms, second tap restores + autosaves defaults', async () => {
     store.set(CFG_KEY, { positions: '12-15', preferOtherGalaxies: false });
     install().refresh();
     await flush();
     expect($('#scanCfgPositions').value).toBe('12-15');
 
+    // First tap arms (destructive under autosave — needs the confirm).
+    reset();
+    expect($('#scanCfgPositions').value).toBe('12-15');
+    expect(/** @type {any} */ (store.get(CFG_KEY)).positions).toBe('12-15');
+
+    // Second tap applies + persists.
     reset();
     expect($('#scanCfgPositions').value).toBe(defaultGalaxyScanConfig().positions);
     vi.advanceTimersByTime(600);
     await flush();
-    // Under autosave, restored defaults persist on their own.
     expect(/** @type {any} */ (store.get(CFG_KEY)).positions)
       .toBe(defaultGalaxyScanConfig().positions);
+  });
+
+  it('an armed reset disarms after 3 s (a later single tap must not wipe)', async () => {
+    store.set(CFG_KEY, { positions: '12-15' });
+    install().refresh();
+    await flush();
+
+    reset(); // arm…
+    vi.advanceTimersByTime(3100); // …let it expire
+    reset(); // a FIRST tap again — arms, does not apply
+    expect($('#scanCfgPositions').value).toBe('12-15');
+    vi.advanceTimersByTime(600);
+    await flush();
+    expect(/** @type {any} */ (store.get(CFG_KEY)).positions).toBe('12-15');
+  });
+
+  it('a no-op change (untouched fields) writes nothing and stamps no sync clock', async () => {
+    store.set(CFG_KEY, { positions: '12-15' });
+    install().refresh();
+    await flush();
+    mockStore.set.mockClear();
+
+    await settle(); // change event with no actual edits
+    expect(mockStore.set).not.toHaveBeenCalled();
   });
 
   it('a plain toggle-chip click autosaves (no change event, the click path)', async () => {

@@ -165,21 +165,84 @@ describe('build a route by clicking', () => {
     expect(store.has(`${UNI}:oge_syncRequestAt`)).toBe(true);
   });
 
-  it('keeps an incomplete route (no targets) in the editor but does not persist it', async () => {
+  it('persists a route with EMPTY targets (mid-swap) — matching the domain read rule', async () => {
     seedBodies([{ cp: 101, name: 'K1', ...moon(4, 467, 15) }]);
     seedRoutes([]);
     install().refresh();
     await flush();
 
     $('#routesAddBtn').click();
-    pick('add-source', '4:467:15:3'); // source but no target → incomplete
+    pick('add-source', '4:467:15:3'); // source + default fleet, no target yet
     await settle();
 
-    // Persisted: nothing (the route can't do anything in-game yet). The card
-    // itself stays in the editor mid-edit, and the status says so.
-    expect(/** @type {any} */ (store.get(ROUTES_KEY)).routes).toEqual([]);
-    expect($('#routesStatus').textContent).toMatch(/incomplete/);
-    expect(list().querySelectorAll('[data-role="add-target"]').length).toBe(1);
+    // Persisted WITH empty targets: normalizeRoute keeps such routes (they
+    // just do nothing in-game), and dropping them instead turned a target
+    // swap on a saved route into a cross-device deletion.
+    expect(/** @type {any} */ (store.get(ROUTES_KEY)).routes).toEqual([
+      { sources: [moon(4, 467, 15)], targets: [], fleet: [{ shipId: SHIP_LARGE_CARGO, count: 15000 }] },
+    ]);
+  });
+
+  it('a sourceless card stays editor-only and does not stamp the sync clock', async () => {
+    seedBodies([{ cp: 101, name: 'K1', ...moon(4, 467, 15) }]);
+    seedRoutes([]);
+    install().refresh();
+    await flush();
+    mockStore.set.mockClear();
+
+    $('#routesAddBtn').click(); // empty card: no source → not persistable
+    await settle();
+
+    // Projection unchanged vs the store → no write at all (a content-
+    // identical write would still bump the newest-wins clock and could win
+    // merges against a genuinely newer device).
+    expect(mockStore.set).not.toHaveBeenCalled();
+    expect(list().querySelectorAll('[data-role="add-source"]').length).toBe(1);
+  });
+
+  it('clearing a ship count mid-retype never persists the route away', async () => {
+    seedBodies([
+      { cp: 101, name: 'K1', ...moon(4, 467, 15) },
+      { cp: 200, name: 'P2', ...planet(5, 172, 8) },
+    ]);
+    seedRoutes([
+      { sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8)], fleet: [{ shipId: SHIP_LARGE_CARGO, count: 15000 }] },
+    ]);
+    install().refresh();
+    await flush();
+    mockStore.set.mockClear();
+
+    const countInp = /** @type {HTMLInputElement} */ (list().querySelector('input[type="number"]'));
+    countInp.value = ''; // cleared before typing the new number
+    countInp.dispatchEvent(new Event('input'));
+    await settle();
+
+    // An invalid count schedules nothing — the stored route survives intact.
+    expect(mockStore.set).not.toHaveBeenCalled();
+    expect(/** @type {any} */ (store.get(ROUTES_KEY)).routes).toHaveLength(1);
+  });
+
+  it('flushes a pending edit on universe switch instead of dropping it', async () => {
+    seedBodies([
+      { cp: 101, name: 'K1', ...moon(4, 467, 15) },
+      { cp: 200, name: 'P2', ...planet(5, 172, 8) },
+    ]);
+    seedRoutes([
+      { sources: [moon(4, 467, 15)], targets: [planet(5, 172, 8)], fleet: [{ shipId: SHIP_LARGE_CARGO, count: 15000 }] },
+    ]);
+    let uni = UNI;
+    const api = installRoutes({ getUniverseId: () => uni });
+    api.refresh();
+    await flush();
+
+    pick('ship', String(SHIP_SMALL_CARGO)); // schedule for UNI…
+    uni = 's999-xx';                        // …then switch universes
+    api.refresh();                          // flush persists for the OLD uni
+    await flush();
+
+    expect(/** @type {any} */ (store.get(ROUTES_KEY)).routes[0].fleet[0].shipId)
+      .toBe(SHIP_SMALL_CARGO);
+    expect(store.has('s999-xx:oge_dailyRunRoutes')).toBe(false);
   });
 
   it('removes a target chip via its × button', async () => {

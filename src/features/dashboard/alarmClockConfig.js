@@ -32,6 +32,7 @@
 // All parsing/formatting lives in `domain/duration.js`.
 
 import { chromeStore } from '../../lib/storage.js';
+import { createAutosave } from './autosave.js';
 import {
   galaxyScanConfigKeyFor,
   galaxyScanConfigTsKeyFor,
@@ -364,13 +365,16 @@ const makeTemplateEditor = ({ kind, idBase }) => {
     'background:#0d1620;color:#cfe;border:1px solid #244;border-radius:4px;padding:6px;box-sizing:border-box;'));
   body.id = idBase + 'Body';
 
-  // Wildcard chips — click to insert the token at the caret.
+  // Wildcard chips — click to insert the token at the caret. The class is
+  // the autosave click-whitelist hook (a token insert changes the textarea
+  // without firing `change` until blur, so the click itself must schedule).
   const chips = mk('div', 'display:flex;flex-wrap:wrap;gap:4px;');
   for (const f of fields) {
     const chip = /** @type {HTMLButtonElement} */ (mk('button',
       'font-size:11px;padding:1px 6px;background:#16252f;color:#9cf;border:1px solid #2a4a5a;border-radius:10px;cursor:pointer;',
       `{${f.token}}`));
     chip.type = 'button';
+    chip.className = 'oge-tpl-token';
     chip.title = f.label;
     chip.addEventListener('click', () => {
       const start = body.selectionStart ?? body.value.length;
@@ -712,12 +716,9 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
   };
 
   const refresh = async () => {
-    // Drop a pending autosave — it belongs to the previous view (the fire-time
-    // universe re-check would abort it anyway; this avoids the wake-up).
-    if (saveTimer) {
-      clearTimeout(saveTimer);
-      saveTimer = null;
-    }
+    // Persist any pending edit first — it belongs to the universe it was
+    // made in (save() gets the captured id and snapshots synchronously).
+    autosave.flush();
     const uni = getUniverseId();
     if (!uni) {
       fillAlarmClock(defaultAlarmClockConfig());
@@ -775,7 +776,14 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
       const parsed = parseDurationList(offsets, { signed: true });
       if (!parsed.some((o) => o >= need)) {
         fsOffsets = [...new Set([...parsed, need])].sort((a, b) => a - b).map(formatDuration).join(', ');
-        fsEditor.setFromString(fsOffsets);
+        // Reflect the injected chip in the editor — but NOT while the user is
+        // typing in it: under autosave this runs mid-edit, and setFromString
+        // rebuilds every row (destroying the focused one and its in-progress
+        // input). The PERSISTED value carries the injected offset either way;
+        // a skipped repaint surfaces on the next out-of-editor save or load.
+        if (!fsEditor.element.contains(document.activeElement)) {
+          fsEditor.setFromString(fsOffsets);
+        }
       }
     }
     return {
@@ -823,68 +831,101 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
     });
   };
 
-  const save = async () => {
+  /**
+   * The autosave's save callback. `uni` is the universe CAPTURED when the
+   * edit was scheduled (see ./autosave.js); both collect* calls read the
+   * widgets synchronously at entry, so a flush racing a universe switch
+   * persists the OLD universe's fields into the OLD universe's slots. Each
+   * slot is written ONLY when its payload actually differs from the store —
+   * a no-op interaction (re-clicking a selected chip, blurring an untouched
+   * field) writes nothing and stamps no newest-wins clock, so a device with
+   * a stale local copy can't claim "newest" without a real edit.
+   *
+   * @param {string} uni
+   * @returns {Promise<void>}
+   */
+  const save = async (uni) => {
+    if (!uni) return;
     const rc = collectAlarmClock();
     if (!rc) return;
     const ownedFs = collectFs();
     if (!ownedFs) return;
 
-    const uni = getUniverseId();
-    if (!uni) { setStatus('No universe selected — pick a server to save alarm-clock config.', '#e66'); return; }
-
     // AlarmClock config slot (per-universe): wave/ad-hoc + all three templates.
-    await chromeStore.set(alarmClockConfigKeyFor(uni), rc);
-    await chromeStore.set(alarmClockConfigTsKeyFor(uni), Date.now());
+    const storedRc = normalizeAlarmClockConfig(await chromeStore.get(alarmClockConfigKeyFor(uni)));
+    const writeRc = JSON.stringify(rc) !== JSON.stringify(storedRc);
+    if (writeRc) {
+      await chromeStore.set(alarmClockConfigKeyFor(uni), rc);
+      await chromeStore.set(alarmClockConfigTsKeyFor(uni), Date.now());
+    }
 
     // Galaxy-scan slot (per-universe, read-modify-write): the fleet-save knobs
     // only — the scan-config editor shares this slot, so overlay just ours.
     const stored = normalizeGalaxyScanConfig(await chromeStore.get(galaxyScanConfigKeyFor(uni)));
     const cfg = normalizeGalaxyScanConfig({ ...stored, ...ownedFs });
-    await chromeStore.set(galaxyScanConfigKeyFor(uni), cfg);
-    await chromeStore.set(galaxyScanConfigTsKeyFor(uni), Date.now());
+    const writeFs = JSON.stringify(cfg) !== JSON.stringify(stored);
+    if (writeFs) {
+      await chromeStore.set(galaxyScanConfigKeyFor(uni), cfg);
+      await chromeStore.set(galaxyScanConfigTsKeyFor(uni), Date.now());
+    }
+
+    if (!writeRc && !writeFs) return; // nothing changed — no stamp, no poke
 
     // One poke runs a full sync round-trip that pushes both per-universe slots.
     await chromeStore.set(syncRequestKeyFor(uni), Date.now());
 
-    // No fill*() here: autosave fires while the user hops between fields, and
-    // repainting every widget would clobber one they've already started
-    // editing. (The one deliberate exception is collectFs's never-enters net,
-    // which updates the offsets editor itself.) Normalisation corrections
-    // surface on the next tab load.
+    // Reflect the NORMALIZED persisted values back into the widgets — but
+    // only when the user isn't mid-edit in this editor and the view still
+    // shows this universe (a repaint must never clobber a focused field or
+    // a just-switched view). collectFs's never-enters net has its own,
+    // narrower version of the same guard.
+    if (!body.contains(document.activeElement) && getUniverseId() === uni) {
+      fillAlarmClock(rc);
+      fillFs(cfg);
+    }
     setStatus('Saved.', '#67c23a');
   };
 
-  // Autosave (debounced, replaces the Save button): any `change` bubbling out
-  // of the editor body (inputs/textareas commit on blur/Enter) and any click
-  // on a button that ISN'T a sub-tab switch (toggle chips, offset add/remove,
-  // template icon/priority/wildcard chips, Reset) schedules a save. The
-  // scheduled universe is captured and re-checked at fire time so a universe
-  // switch inside the debounce window can't cross-write; invalid fields keep
-  // their error status and simply don't persist until fixed.
-  /** @type {ReturnType<typeof setTimeout> | null} */
-  let saveTimer = null;
-  let saveUni = '';
-  const scheduleSave = () => {
-    if (saveTimer) clearTimeout(saveTimer);
-    saveUni = getUniverseId();
-    saveTimer = setTimeout(() => {
-      saveTimer = null;
-      if (getUniverseId() !== saveUni) return;
-      void save();
-    }, 500);
-  };
-  body.addEventListener('change', scheduleSave);
+  const autosave = createAutosave({ getUniverseId, save, delayMs: 500 });
+
+  // Autosave triggers (replaces the Save button): any `change` bubbling out
+  // of the editor body (inputs/textareas commit on blur/Enter), plus clicks
+  // on the WHITELISTED buttons that mutate state without firing `change` —
+  // toggle chips, offset add/remove, template icon swatches, priority
+  // segments, wildcard token chips. A whitelist, not "any non-subtab
+  // button": a future non-persisting button (preview, copy, collapse) must
+  // not silently become a save trigger. Invalid fields keep their error
+  // status and simply don't persist until fixed.
+  const SAVE_TRIGGER =
+    '.toggle-chip, .oge-offset-add, .oge-offset-remove, .oge-icon-swatch, .oge-prio-seg, .oge-tpl-token';
+  body.addEventListener('change', autosave.schedule);
   body.addEventListener('click', (e) => {
     const t = /** @type {HTMLElement} */ (e.target);
-    if (!(t instanceof HTMLElement)) return;
-    const btn = t.closest('button');
-    if (btn && !btn.classList.contains('subtab')) scheduleSave();
+    if (t instanceof HTMLElement && t.closest(SAVE_TRIGGER)) autosave.schedule();
   });
 
+  // Reset is DESTRUCTIVE under autosave (defaults persist and sync out,
+  // wiping hand-written schedules and templates), so it takes two taps: the
+  // first arms, the second (within 3 s) applies + saves.
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let resetTimer = null;
+  const disarmReset = () => {
+    if (resetTimer) clearTimeout(resetTimer);
+    resetTimer = null;
+    resetBtn.textContent = 'Reset to defaults';
+  };
   resetBtn.addEventListener('click', () => {
+    if (!resetTimer) {
+      resetBtn.textContent = 'Sure? Tap again';
+      setStatus('Resets & saves defaults.', '#e6a23c');
+      resetTimer = setTimeout(() => { disarmReset(); setStatus(''); }, 3000);
+      return;
+    }
+    disarmReset();
     fillAlarmClock(defaultAlarmClockConfig());
     fillFs(defaultGalaxyScanConfig());
     setStatus('Defaults restored.', '#e6a23c');
+    autosave.schedule();
   });
 
   return { refresh: () => void refresh() };

@@ -242,6 +242,57 @@ describe('orbitLayout', () => {
     expect(r.spread).toBeCloseTo(1.3, 6);
   });
 
+  it('a seam-wrapping window that CONTAINS the aim keeps the fan on the aim (regression)', () => {
+    // FAB near the top edge of a wide viewport: only the top clips the orbit,
+    // so the feasible window spans ~330° and wraps the scan seam while
+    // containing the aim ray. The old wrap-merge mapped the aim's sample into
+    // the negative-shifted half and missed the containment — flipping the fan
+    // ~180° away from the free space it should open into.
+    const cx = 200;
+    const cy = 145;
+    const vw = 1200;
+    const vh = 800;
+    const items = orbitLayout({ cx, cy, count: 3, radius: 120, orbSize: 56, vw, vh });
+    const base = aimAngle({ cx, cy, vw, vh }); // points down-right, into free space
+    for (const it_ of items) {
+      // Every orb stays within a quarter-turn + half the arc of the aim ray —
+      // the buggy layout put them ~180° away (top-left, x < cx).
+      let d = (angleOf(it_, cx, cy) - base) % (Math.PI * 2);
+      if (d > Math.PI) d -= Math.PI * 2;
+      if (d <= -Math.PI) d += Math.PI * 2;
+      expect(Math.abs(d)).toBeLessThan(Math.PI / 2);
+      expect(dist(it_, { x: cx, y: cy })).toBeCloseTo(120, 6);
+    }
+  });
+
+  it('the collision floor never EXPANDS the arc past the requested spread', () => {
+    // 8 modules on a tiny FAB: the collision floor (step × 7) exceeds the
+    // full-circle-capped request. In a narrow corner window the compressed
+    // spread must stay ≤ the request — the uncapped floor used to blow the
+    // arc wider than both the request and the window.
+    const request = (Math.PI * 2 * 7) / 8; // full-circle cap for 8 items
+    const r = feasibleArcCenter({
+      cx: 40, cy: 760, radius: 52, margin: 26, vw: 400, vh: 800,
+      base: -Math.PI / 4, spread: request, minSpread: 0.874 * 7,
+    });
+    expect(r.spread).toBeLessThanOrEqual(request + 1e-9);
+  });
+
+  it('window choice is sticky: prevCentre holds its window through an aim tie', () => {
+    // Large FAB mid-width on a tall narrow viewport: the orbit pokes past
+    // BOTH side edges, leaving an up-fan and a down-fan window. base = 0
+    // (due right) is equidistant from both — without stickiness the pick
+    // could flip frame-to-frame under drag jitter.
+    const geo = {
+      cx: 200, cy: 1000, radius: 250, margin: 48, vw: 400, vh: 2000,
+      base: 0, spread: 1.0,
+    };
+    const up = feasibleArcCenter({ ...geo, prevCentre: -Math.PI / 2 });
+    const down = feasibleArcCenter({ ...geo, prevCentre: Math.PI / 2 });
+    expect(up.centre).toBeLessThan(0);   // stays in the up-fan window
+    expect(down.centre).toBeGreaterThan(0); // stays in the down-fan window
+  });
+
   it('degenerate: radius larger than the viewport falls back to the aim angle', () => {
     const r = feasibleArcCenter({
       cx: 50, cy: 50, radius: 5000, margin: 28, vw: 100, vh: 100,

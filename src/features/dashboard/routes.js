@@ -24,6 +24,7 @@
 // @see ../../state/bodies.js / ../../state/dailyRunRoutes.js — per-universe keys.
 
 import { chromeStore } from '../../lib/storage.js';
+import { createAutosave } from './autosave.js';
 import { dailyRunRoutesKeyFor, dailyRunRoutesTsKeyFor } from '../../state/dailyRunRoutes.js';
 import { bodiesKeyFor } from '../../state/bodies.js';
 import { syncRequestKeyFor } from '../../sync/scheduler.js';
@@ -113,13 +114,6 @@ export const installRoutes = ({ getUniverseId }) => {
    * }}
    */
   let model = { routes: [], collectTarget: null, collectMission: MISSION_DEPLOYMENT, collectShips: 'most', collectResources: 'most', bodies: [], bodyByKey: new Map(), hasInventory: false };
-  /**
-   * Snapshot of `model.routes` (the FULL editing model, incomplete cards
-   * included) as of the last load/save — the autosave dirty check, so a
-   * plain repaint (load, universe switch) never writes or stamps the sync
-   * clock for nothing.
-   */
-  let baseline = '[]';
 
   /** @param {string} msg @param {string} [color] */
   const setStatus = (msg, color) => {
@@ -416,7 +410,7 @@ export const installRoutes = ({ getUniverseId }) => {
         shipSel.appendChild(opt);
       }
       shipSel.value = String(f.shipId);
-      shipSel.addEventListener('change', () => { f.shipId = parseInt(shipSel.value, 10); scheduleAutosave(); });
+      shipSel.addEventListener('change', () => { f.shipId = parseInt(shipSel.value, 10); autosave.schedule(); });
       row.appendChild(shipSel);
 
       const countInput = /** @type {HTMLInputElement} */ (
@@ -428,7 +422,12 @@ export const installRoutes = ({ getUniverseId }) => {
       countInput.addEventListener('input', () => {
         const n = parseInt(countInput.value, 10);
         f.count = Number.isFinite(n) && n > 0 ? n : 0;
-        scheduleAutosave();
+        // Schedule only on a VALID count: while the field sits empty/zero
+        // mid-retype the route is transiently unusable, and an autosave fired
+        // in that window would persist the set WITHOUT it — a deletion the
+        // user never asked for. The model keeps the 0 so the next valid
+        // keystroke (or any later edit) persists the true state.
+        if (f.count > 0) autosave.schedule();
       });
       row.appendChild(countInput);
       row.appendChild(mk('span', 'color:#667;font-size:12px;', 'ships'));
@@ -472,7 +471,7 @@ export const installRoutes = ({ getUniverseId }) => {
       missionSel.appendChild(opt);
     }
     missionSel.value = String(curMission);
-    missionSel.addEventListener('change', () => { route.mission = parseInt(missionSel.value, 10); scheduleAutosave(); });
+    missionSel.addEventListener('change', () => { route.mission = parseInt(missionSel.value, 10); autosave.schedule(); });
     missionWrap.appendChild(missionSel);
     card.appendChild(missionWrap);
 
@@ -526,50 +525,35 @@ export const installRoutes = ({ getUniverseId }) => {
       model.routes.forEach((r, i) => list.appendChild(buildCard(r, i)));
     }
 
-    scheduleAutosave();
+    autosave.schedule();
   };
-
-  /** Debounce handle + the universe the pending autosave was scheduled for. */
-  /** @type {ReturnType<typeof setTimeout> | null} */
-  let saveTimer = null;
-  let saveUni = '';
 
   /**
-   * Autosave (replaces the old Save button): every edit lands here — either
-   * via {@link render} (structural edits repaint) or directly from the
-   * focus-preserving inputs (ship count, mission select). Debounced so a
-   * burst of clicks collapses to one write; a clean model (equal to
-   * {@link baseline}) never writes, so plain repaints don't stamp the sync
-   * clock. The scheduled universe is captured and re-checked at fire time —
-   * a universe switch inside the debounce window must not write the OLD
-   * universe's routes into the NEW universe's key.
+   * PERSISTABLE projection of the editing model — exactly the routes the
+   * domain read (`normalizeRoute`) would keep anyway: ≥1 source and a usable
+   * fleet entry; `targets` MAY be empty. That alignment matters: a saved
+   * route whose only target the user just removed (mid-swap) must persist
+   * WITH empty targets rather than vanish from the slot — the old
+   * targets-required filter turned that transient edit into a cross-device
+   * deletion. Routes with no source / no fleet stay editor-only until
+   * completed (the domain would drop them at read time regardless).
    *
-   * @returns {void}
+   * @returns {Route[]}
    */
-  const scheduleAutosave = () => {
-    if (JSON.stringify(model.routes) === baseline) return;
-    if (saveTimer) clearTimeout(saveTimer);
-    saveUni = getUniverseId();
-    saveTimer = setTimeout(() => {
-      saveTimer = null;
-      if (getUniverseId() !== saveUni) return;
-      void save();
-    }, 600);
-  };
+  const persistableRoutes = () =>
+    model.routes.filter((r) => r.sources.length > 0 && r.fleet.some((f) => f.count > 0));
 
   // ── load / save ──────────────────────────────────────────────────────
 
   const refresh = async () => {
-    // A pending autosave belongs to the previous view — drop it (the fire-time
-    // universe re-check would abort it anyway; this just avoids the wake-up).
-    if (saveTimer) {
-      clearTimeout(saveTimer);
-      saveTimer = null;
-    }
+    // Persist any pending edit FIRST — it belongs to the universe it was made
+    // in (save() gets the captured id), so a switch inside the debounce
+    // window must not discard it. save() snapshots the model synchronously
+    // at entry, so the reload below can't bleed into the old payload.
+    autosave.flush();
     const uni = getUniverseId();
     if (!uni) {
       model = { routes: [], collectTarget: null, collectMission: MISSION_DEPLOYMENT, collectShips: 'most', collectResources: 'most', bodies: [], bodyByKey: new Map(), hasInventory: false };
-      baseline = '[]';
       syncCollectChips();
       render();
       setStatus('');
@@ -585,43 +569,78 @@ export const installRoutes = ({ getUniverseId }) => {
       : [];
     const bodyByKey = new Map(bodies.map((b) => [coordTypeKey(b), b]));
     model = { routes: clone(routes), collectTarget, collectMission, collectShips, collectResources, bodies, bodyByKey, hasInventory: bodies.length > 0 };
-    baseline = JSON.stringify(model.routes);
     syncCollectChips();
     render();
     setStatus('');
   };
 
-  const save = async () => {
-    const uni = getUniverseId();
-    if (!uni) { setStatus('No universe selected.', '#e66'); return; }
-    // A route needs ≥1 source and ≥1 target to do anything in-game — only
-    // complete routes are PERSISTED. The in-memory model keeps the incomplete
-    // ones untouched (they're mid-edit under autosave, not junk to prune),
-    // and the status line says how many are still unfinished. No render()
-    // here: autosave fires while the user works and a repaint would steal
-    // focus from the input they're typing in.
-    const clean = model.routes.filter(
-      (r) => r.sources.length > 0 && r.targets.length > 0 && r.fleet.some((f) => f.count > 0),
-    );
-    const pending = model.routes.length - clean.length;
-    // Preserve the in-game-set collect target and the (separately-saved)
-    // collect mission / ships / resources; we only own `routes` in this path.
+  /**
+   * The autosave's save callback. `uni` is the universe CAPTURED when the
+   * edit was scheduled (see ./autosave.js) — never re-read here, so a flush
+   * racing a universe switch writes the right slot. Everything persisted is
+   * snapshotted synchronously before the first await (a concurrent refresh
+   * replaces `model` for the next universe). The write is SKIPPED entirely —
+   * including the newest-wins ts stamp and the gist poke — when the
+   * persistable payload equals what's already stored: edits that touch only
+   * editor-side incomplete cards must not bump the sync clock (a content-
+   * identical write with a fresh stamp would win merges it didn't earn).
+   * No render() here either: autosave fires while the user works and a
+   * repaint would steal focus from the input they're typing in.
+   *
+   * @param {string} uni
+   * @returns {Promise<void>}
+   */
+  const save = async (uni) => {
+    if (!uni) return;
+    // Transiently INVALID mid-edit state (a sourced route whose fleet count
+    // sits empty/zero while the user retypes it) defers the save entirely: a
+    // timer armed by an EARLIER edit must not fire now and persist the set
+    // without that route. The next valid edit reschedules and persists the
+    // true state.
+    if (model.routes.some((r) => r.sources.length > 0 && !r.fleet.some((f) => f.count > 0))) {
+      return;
+    }
+    // ── synchronous snapshot ──
+    const persistable = clone(persistableRoutes());
+    const pending = model.routes.length - persistable.length;
+    const { collectMission, collectShips, collectResources } = model;
+
+    // Preserve the in-game-set collect target; we only own `routes` (the
+    // collect mission/ships/resources ride along from the same model that
+    // writeCollectConfig keeps in sync).
     const stored = await chromeStore.get(dailyRunRoutesKeyFor(uni));
-    const { collectTarget } = parseDailyRunRoutes(stored);
-    await chromeStore.set(dailyRunRoutesKeyFor(uni), { routes: clean, collectTarget, collectMission: model.collectMission, collectShips: model.collectShips, collectResources: model.collectResources });
+    const parsed = parseDailyRunRoutes(stored);
+    const next = {
+      routes: persistable,
+      collectTarget: parsed.collectTarget,
+      collectMission,
+      collectShips,
+      collectResources,
+    };
+    // Fire-time no-op check against the STORE (routes + the collect knobs
+    // this write would change) — identical payloads don't write, don't stamp.
+    const unchanged =
+      JSON.stringify(parsed.routes) === JSON.stringify(persistable)
+      && parsed.collectMission === collectMission
+      && parsed.collectShips === collectShips
+      && parsed.collectResources === collectResources;
+    if (unchanged) return;
+
+    await chromeStore.set(dailyRunRoutesKeyFor(uni), next);
     // Stamp the cross-device sync clock (whole-universe newest-wins) and poke
     // any open game tab to push the change to the gist (same tombstone the
     // "Sync now" button uses). Harmless no-op when cloud sync is off.
     await chromeStore.set(dailyRunRoutesTsKeyFor(uni), Date.now());
     await chromeStore.set(syncRequestKeyFor(uni), Date.now());
-    baseline = JSON.stringify(model.routes);
     setStatus(
       pending > 0
-        ? `Saved ${clean.length} route(s) · ${pending} incomplete (not saved)`
-        : `Saved ${clean.length} route(s).`,
+        ? `Saved ${persistable.length} route(s) · ${pending} incomplete (not saved)`
+        : `Saved ${persistable.length} route(s).`,
       pending > 0 ? '#e6a23c' : '#67c23a',
     );
   };
+
+  const autosave = createAutosave({ getUniverseId, save, delayMs: 600 });
 
   addBtn?.addEventListener('click', () => {
     model.routes.push({ sources: [], targets: [], fleet: [{ shipId: SHIP_LARGE_CARGO, count: 15000 }] });

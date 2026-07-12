@@ -39,7 +39,7 @@ import { installDrag, restorePosition } from './draggableButton.js';
 import { appendGlyph, installButtonChrome } from './buttonChrome.js';
 import {
   resolveActiveId,
-  orbitLayout,
+  orbitPlan,
   orbDiameter,
   orbitRadius,
 } from './unifiedFabPure.js';
@@ -112,6 +112,15 @@ let shell = null;
 let orbEls = [];
 
 /**
+ * Arc centre chosen on the previous {@link positionOrbs} pass — fed back into
+ * the layout so the feasible-window pick is STICKY across drag frames (two
+ * near-equidistant windows must not flip winners under a jittering finger;
+ * see unifiedFabPure.feasibleArcCenter). Reset with the shell.
+ * @type {number | null}
+ */
+let lastArcCentre = null;
+
+/**
  * Module ids currently flagged "needs an ACK" — they pulse on whichever
  * representation is live (active host or satellite orb). Kept in a Set (not on
  * the DOM) so the flag survives orb rebuilds: {@link buildOrbs} re-applies it.
@@ -176,7 +185,7 @@ const positionOrbs = () => {
   const cx = r.left + (r.width || size) / 2;
   const cy = r.top + (r.height || size) / 2;
   const orbSize = orbDiameter(size);
-  const items = orbitLayout({
+  const { items, centre } = orbitPlan({
     cx,
     cy,
     count: orbEls.length,
@@ -184,7 +193,9 @@ const positionOrbs = () => {
     orbSize,
     vw: window.innerWidth,
     vh: window.innerHeight,
+    prevCentre: lastArcCentre,
   });
+  lastArcCentre = centre;
   orbEls.forEach((orb, i) => {
     orb.style.width = `${orbSize}px`;
     orb.style.height = `${orbSize}px`;
@@ -197,6 +208,7 @@ const positionOrbs = () => {
 const clearOrbs = () => {
   for (const orb of orbEls) orb.remove();
   orbEls = [];
+  lastArcCentre = null;
 };
 
 /**
