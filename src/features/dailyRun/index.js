@@ -120,10 +120,10 @@ const BG_COLLECT = '#43cf72'; // green rim (collect zone, slightly brighter)
 // presence — and it is the SAME gate the shared button uses for its visual
 // disable. One source of truth means the label can never paint a confident
 // count while the button is (or has just become) enabled on a half-loaded
-// list: enable and compute open together. While not-ready the WHOLE button
-// sits amber "Wait…" (taps just flash) — a micro send off stale data could
-// duplicate an in-flight deployment, so blocking beats guessing.
-const BG_WAIT = '#fbbf24'; // amber — same wait colour as sendColony/sendExpedition
+// list: enable and compute open together. While not-ready the button sits
+// greyed with a "Wait…" label (the shared gate's disabled look; taps are
+// swallowed) — a micro send off stale data could duplicate an in-flight
+// deployment, so blocking beats guessing.
 // The XHR 'load' signal can precede the game's own success handler inserting
 // the rows — repaint once more after a settle delay.
 const EVENTBOX_SETTLE_MS = 150;
@@ -568,7 +568,10 @@ const onCollectClick = () => void handleZone('collect');
 /** Grey a zone out (or restore it) to show it's working / locked.
  * @param {HTMLElement | null} zone @param {boolean} on */
 const dimZone = (zone, on) => {
-  if (zone) zone.style.opacity = on ? '0.5' : '1';
+  // Un-dim removes the inline value (never pins '1') so the shared readiness
+  // gate's CSS grey (`[aria-disabled] .zone{opacity:.5}`) can't be overridden
+  // by a routine repaint — same contract as the shared Button's setDim.
+  if (zone) zone.style.opacity = on ? '0.5' : '';
 };
 
 /**
@@ -609,29 +612,23 @@ const lockBriefly = (zone) => {
 
 /**
  * Reflect the eventbox gate on the button: while the event list hasn't
- * loaded, BOTH zones (and the host glow) go amber with a "Wait…" label;
- * once it lands, the per-zone greens are restored. Rim is set directly on
- * the live elements (the controller is closure-scoped to the installer).
+ * loaded, hold an honest "Wait…" on both labels (a count computed off the
+ * empty list would be confidently wrong).
+ *
+ * The rim deliberately stays the module colour: the visual grey comes from
+ * the shared readiness gate (`gateUntilEventBox` → `aria-disabled` greys
+ * fill, label and oczko), the SAME look sendExpedition wears during load.
+ * The amber rim this used to paint made Daily Run the one button with a
+ * gold ring while greyed — the exact inconsistency it was told not to have.
  *
  * @param {HTMLElement | null} microZone
  * @param {HTMLElement | null} collectZone
  * @returns {void}
  */
 const paintEventBoxGate = (microZone, collectZone) => {
-  const wait = !eventBoxReady;
-  const host = document.getElementById(FS_UNIFIED_ID);
-  if (host) {
-    // No `data-flag='wait'` here: the other command buttons don't get a pulsing
-    // gold rim while busy, so the daily-run button shouldn't either — just tint
-    // the rim like a normal wait state, for one consistent look across the FAB.
-    host.style.setProperty('--rim', wait ? BG_WAIT : BG_MICRO);
-  }
-  if (microZone) microZone.style.setProperty('--rim', wait ? BG_WAIT : BG_MICRO);
-  if (collectZone) collectZone.style.setProperty('--rim', wait ? BG_WAIT : BG_COLLECT);
-  if (wait) {
-    setLabel(microZone, 'Wait…', undefined, '(event list)');
-    setLabel(collectZone, 'Wait…', undefined, '(event list)');
-  }
+  if (eventBoxReady) return;
+  setLabel(microZone, 'Wait…', undefined, '(event list)');
+  setLabel(collectZone, 'Wait…', undefined, '(event list)');
 };
 
 /**

@@ -347,9 +347,13 @@ const refresh = () => {
   // "Wait…" label instead of computing a candidate, so the label never flashes
   // a confident "No more candidates" on a half-loaded page. The shared Button's
   // visual gate (`gateUntilEventBox`) disables taps in parallel off the same
-  // signal; this keeps the LABEL honest. Mirrors dailyRun.
+  // signal; this keeps the LABEL honest. Mirrors dailyRun. Rim stays the IDLE
+  // module colour: during the LOAD gate every command button wears the same
+  // look — grey fill via the gate's disabled CSS, module-coloured ring, no
+  // gold. Amber (BG_SEND_WAIT) is reserved for the post-tap busy/min-gap
+  // states below.
   if (!eventBoxReady) {
-    paintZone('send', { text: 'Wait…', bg: BG_SEND_WAIT, dim: true });
+    paintZone('send', { text: 'Wait…', bg: BG_SEND_IDLE, dim: true });
     return;
   }
   // A failure paint is being held — re-paint it until its deadline so the 1 Hz

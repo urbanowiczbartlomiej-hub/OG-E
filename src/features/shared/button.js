@@ -496,8 +496,13 @@ export const createButton = (cfg) => {
       // Dim the FILL (split half / single surface), not the host — keeps the
       // rim and ring at full strength while the zone greys out. The brand node
       // follows the aggregate (see syncNodeDim): lit unless EVERY zone is dim.
+      // Un-dim REMOVES the inline value (never pins '1'): the disabled grey is
+      // a CSS rule on the same element (`[aria-disabled] .zone/.oge-surface`),
+      // and an inline '1' from a feature's routine repaint would override it —
+      // exactly the bug where a gated button's label/fill stayed vivid while
+      // only its oczko greyed.
       const el = fillEls.get(key);
-      if (el) el.style.opacity = dim ? '0.5' : '1';
+      if (el) el.style.opacity = dim ? '0.5' : '';
       if (dim) dimmedZones.add(key);
       else dimmedZones.delete(key);
       syncNodeDim();
