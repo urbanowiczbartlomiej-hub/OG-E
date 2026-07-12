@@ -126,6 +126,16 @@ export const galaxySightStatus = ({ lastSightSec: sec, nowMs, rescanAtMs = 0, st
  *   universe.xml occupancy rows (same shape scanPriority consumes).
  * @property {Record<string, Record<string, ActivityObs[]>>} [rings]
  *   playerId → ringKey ("g:s:p:type") → activity ring (state/activityObs).
+ * @property {Record<string, number>} [sysLookSec]  "g:s" → newest galaxy-scan
+ *   time (epoch s, from state/scans `scannedAt` — ANY browse counts). The
+ *   coverage floor for every body in that system, same contract as
+ *   fleetLanding's `opts.sysLookSec`: a browsed system is covered even when
+ *   the browse left NO ring entry — the watched slot is empty/relocated
+ *   (stale universe.xml), the activity encoding wasn't parseable, or the
+ *   observation was discounted as our own probe's marker
+ *   (activityObs.appendActivityObs returns null). Without this floor such a
+ *   body's ring never advances and the FAB re-proposes the same system on
+ *   every tap, forever — the "stuck Look loop".
  * @property {Record<string, number>} [rescan]   player id / override key → mark (ms).
  * @property {number} nowMs
  * @property {number} staleMs       Galaxy-look stale threshold (cadence.galaxyHours in ms).
@@ -244,9 +254,19 @@ export const buildGalaxyPlan = (env) => {
       const overrideKey = overrideKeyFor(coord, bodyType);
       const ring = ringsForPid ? ringsForPid[ringKeyFor(coord, bodyType)] : undefined;
       // Effective coverage = this body's own last sight OR the newest look at
-      // its whole system (one navigation covers the system — see sysLastSight),
-      // so a body the look couldn't record still clears once the system is seen.
-      const sec = Math.max(lastSightSec(ring), sysLastSight.get(`${p.galaxy}:${p.system}`) || 0);
+      // its whole system, so a body the look couldn't record still clears once
+      // the system is seen. TWO system-level sources, both needed: sysLastSight
+      // (the player's other rings — works even when scans lag) and
+      // env.sysLookSec (the scan record — works even when EVERY observation of
+      // this player here was dropped: empty/relocated slot, probe-discounted
+      // marker; see the GalaxyPlanEnv.sysLookSec doc).
+      const sysKeyOf = `${p.galaxy}:${p.system}`;
+      const scanSec = env.sysLookSec ? env.sysLookSec[sysKeyOf] : undefined;
+      const sec = Math.max(
+        lastSightSec(ring),
+        sysLastSight.get(sysKeyOf) || 0,
+        typeof scanSec === 'number' && Number.isFinite(scanSec) && scanSec > 0 ? scanSec : 0,
+      );
       const status = galaxySightStatus({
         lastSightSec: sec,
         nowMs: env.nowMs,

@@ -218,9 +218,11 @@ const captureEnv = () => {
   const ctx = getApiContext();
   const universePlanets = ctx?.universePlanets ?? [];
   const sentMap = readSpySentMap();
-  // Per-system newest scan time ("g:s" → epoch s) — the full-sweep gate's
-  // system-level coverage source (a rendered system covers a body whose
-  // activity block wasn't parseable into a ring entry).
+  // Per-system newest scan time ("g:s" → epoch s) — the system-level coverage
+  // source for BOTH the full-sweep gate (landingOpts) and the galaxy-look plan
+  // (env.sysLookSec): a rendered system covers a body whose activity block
+  // wasn't parseable into a ring entry OR whose observation was discounted as
+  // our own probe's marker.
   /** @type {Record<string, number>} */
   const sysLookSec = {};
   for (const [k, v] of Object.entries(scansStore.get())) {
@@ -282,6 +284,7 @@ const captureEnv = () => {
     galaxyMode: cfg.galaxyMode,
     cadence: cfg.cadence,
     rings,
+    sysLookSec,
     // Moon-strike candidates (domain/fleetLanding) → force-boosted to the
     // top of the probe plan so the FAB proposes spying that moon NOW. The
     // configured moon-strike mode (off/lone/newest/any) gates how much

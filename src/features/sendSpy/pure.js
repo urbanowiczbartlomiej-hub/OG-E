@@ -76,6 +76,7 @@ export const BG_SPY_STRIKE = '#d1571f';
  *       rechecks?: Record<string, import('../../domain/fleetLanding.js').LandingRecheck>,
  *       sweeps?: Record<string, import('../../domain/fleetLanding.js').LandingSweep>,
  *       sentAt?: Record<string, number>,
+ *       sysLookSec?: Record<string, number>,
  *       patrolLooks?: import('../../domain/galaxyWatch.js').GalaxyPlanEntry[] }} SpyEnv
  *   The planner env (see domain/scanPriority.js): watched players, universe
  *   planet rows, per-coord report freshness (planets AND moons), rescan flags,
@@ -219,6 +220,11 @@ export function deriveSpy(env) {
     players: env.players,
     universePlanets: env.universePlanets,
     rings: env.rings,
+    // Per-system browse times (state/scans) — the coverage floor that makes a
+    // browsed system self-clear even when its every observation was dropped
+    // (probe-discounted marker / empty relocated slot). Without it the FAB
+    // loops "Look [g:s]" on such a system forever.
+    sysLookSec: env.sysLookSec,
     rescan: env.rescan,
     nowMs: env.nowMs,
     staleMs: galaxyStaleMs(env.cadence),
