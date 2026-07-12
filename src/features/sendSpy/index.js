@@ -17,7 +17,11 @@
 //     state/watchList.js); mission = espionage; owner = OWNER_SPY.
 //   - Mounted ONLY when the watch-list is non-empty — so the
 //     button "appears only when there's something to scan" (the user's ask),
-//     reconciled on every watch-list change.
+//     reconciled on every watch-list change. Because that list hydrates
+//     ASYNC from chrome.storage, the last reconciled verdict is cached in
+//     localStorage (state/spyFabCache.js) and drives an OPTIMISTIC mount on
+//     page load — otherwise the button blinks in late on every navigation.
+//     The hydrate then confirms or removes the optimistic mount.
 //   - No min-gap wait, no decision log, no Scan half — espionage has none of
 //     colonize's constraints.
 //   - "All scanned" end state is a one-tap jump to the messages component (the
@@ -28,7 +32,8 @@
 // @see ../sendColony/index.js — the template orchestrator.
 
 import { settingsStore } from '../../state/settings.js';
-import { watchListStore } from '../../state/watchList.js';
+import { watchListStore, whenWatchListHydrated } from '../../state/watchList.js';
+import { readSpyFabShown, writeSpyFabShown } from '../../state/spyFabCache.js';
 import { targetReportsStore } from '../../state/targets.js';
 import { activityObsStore } from '../../state/activityObs.js';
 import { bodiesStore } from '../../state/bodies.js';
@@ -119,6 +124,13 @@ let sentLockTimer = null;
  * action; see {@link onSpyClick}.
  */
 let showingLoading = false;
+/**
+ * True once the watch-list's async chrome.storage hydrate has settled. Until
+ * then an empty `watchListStore` means "don't know yet", not "nothing
+ * watched" — the optimistic mount holds the dim "loading…" paint through
+ * that window instead of flashing a misleading derived state.
+ */
+let watchHydrated = false;
 
 // ─── sent-coords (survives the post-send reload via sessionStorage) ─────────
 // Shared module (lib/spySentSession.js): this feature marks sends with their
@@ -313,6 +325,16 @@ const apiContextReady = () => {
 };
 
 /**
+ * Is the watch-list value trustworthy yet? True once the async hydrate has
+ * settled — or earlier, the moment the store already holds players (a set
+ * with content is real data regardless of where it came from). While false
+ * the button exists only via the optimistic cache mount and must hold the
+ * same dim "loading…" state as a missing apiContext.
+ * @returns {boolean}
+ */
+const watchReady = () => watchHydrated || watchListStore.get().players.length > 0;
+
+/**
  * Probe availability on the CURRENT planet vs the armed order — `null` when no
  * fleetdispatch snapshot exists yet (off the page). Painting the shortage
  * BEFORE the tap replaces discovering it via a failed select().
@@ -362,9 +384,10 @@ const refresh = () => {
     paintZone({ text: 'Send!', subtext: coordsLabel(spyTarget), bg: BG_SPY_READY });
     return;
   }
-  // Hold a dim "loading…" state until the apiContext handoff lands — before
-  // then there are no candidates and the "all scanned" done state would flash.
-  if (!apiContextReady()) {
+  // Hold a dim "loading…" state until the apiContext handoff lands AND the
+  // watch-list hydrate settles — before then there are no candidates and the
+  // "all scanned" done state would flash.
+  if (!apiContextReady() || !watchReady()) {
     showingLoading = true;
     paintZone({ text: 'Spy', subtext: 'loading…', bg: BG_SPY_IDLE, dim: true });
     return;
@@ -460,7 +483,7 @@ const onSpyClick = async () => {
   // action off a "loading…" button: that stale tap used to navigate to
   // fleetdispatch and then fail with a generic courier error. Repaint to the
   // real state and let the next, deliberate tap act.
-  if (!apiContextReady() || showingLoading) {
+  if (!apiContextReady() || !watchReady() || showingLoading) {
     refresh();
     return;
   }
@@ -618,21 +641,30 @@ export const installSendSpy = () => {
   /** Live-resize the mounted button. @param {number} size @returns {void} */
   const updateButtonSize = (size) => controller?.resize(size);
 
-  /** Mount only when the watch-list is non-empty. @returns {void} */
+  /**
+   * Mount when the watch-list is non-empty — OR, while the async hydrate is
+   * still pending, when last load's reconciled verdict says the button was
+   * shown (the optimistic mount that kills the per-navigation blink; the
+   * hydrate-driven reconcile below confirms or removes it).
+   * @returns {void}
+   */
   const gatedMount = () => {
-    if (watchListStore.get().players.length > 0) mount();
+    if (watchListStore.get().players.length > 0
+      || (!watchHydrated && readSpyFabShown())) mount();
   };
 
   /**
    * Reconcile mount state against the watch-list: mount when work appears,
-   * remove when the last watched player is cleared.
+   * remove when the last watched player is cleared. Once the hydrate has
+   * settled, the verdict is also cached for the next load's optimistic mount.
    * @returns {void}
    */
   const reconcile = () => {
     const hasWatched = watchListStore.get().players.length > 0;
     const mounted = !!document.getElementById(BUTTON_ID);
     if (hasWatched && !mounted && document.body) mount();
-    else if (!hasWatched && mounted) removeButton();
+    else if (!hasWatched && mounted && watchHydrated) removeButton();
+    if (watchHydrated) writeSpyFabShown(hasWatched);
     refresh();
   };
 
@@ -650,6 +682,15 @@ export const installSendSpy = () => {
   });
   // The watch-list drives both visibility (mount/remove) and the candidate.
   const unsubWatch = watchListStore.subscribe(reconcile);
+  // The hydrate settling is the moment the optimistic mount gets judged: an
+  // empty hydrated list never fires the subscription above (persist keeps the
+  // store's initial value), so without this a stale cache flag would leave a
+  // ghost button in its "loading…" state forever.
+  void whenWatchListHydrated().then(() => {
+    if (!installed) return;
+    watchHydrated = true;
+    reconcile();
+  });
   // A landed spy report flips a planet from "needs scan" to spied — repaint.
   const unsubReports = targetReportsStore.subscribe(refresh);
   // A galaxy ingest (oge:galaxyScanned → rings) flips a looked-at system to
@@ -695,6 +736,7 @@ export const _resetSendSpyForTest = () => {
   spyReady = false;
   spyTarget = null;
   showingLoading = false;
+  watchHydrated = false;
   if (sentLockTimer) {
     clearTimeout(sentLockTimer);
     sentLockTimer = null;

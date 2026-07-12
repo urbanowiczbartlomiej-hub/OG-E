@@ -34,7 +34,8 @@ bridges → lib + domain (MAIN-world; must NOT import state/features/sync)
   plain `read*/write*` helpers with **no** `createStore`/`persist` and no
   reactive store — currently `state/dailyActions.js`,
   `state/lifeformArtifacts.js`, `state/fleetSaveSet.js`,
-  `state/manualLandedFs.js`, and `state/badgeCache.js` (over `safeLS`) plus
+  `state/manualLandedFs.js`, `state/badgeCache.js`, and `state/spyFabCache.js`
+  (over `safeLS`) plus
   `state/ownProfile.js` and `state/apiCache.js` (over `chrome.storage`).
   That's deliberate: nothing subscribes to them (they're read on demand at the
   one call site that needs them), so a reactive store would be pure overhead —

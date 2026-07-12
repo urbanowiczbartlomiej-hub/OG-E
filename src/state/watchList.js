@@ -313,6 +313,33 @@ export const watchListStore = createStore(/** @type {WatchListConfig} */ ({
 let disposeFn = null;
 
 /**
+ * Resolver for {@link hydratedPromise}, re-bound on every
+ * {@link initWatchListStore} call — same lifecycle as `state/bodies.js`.
+ *
+ * @type {() => void}
+ */
+let resolveHydrated = () => {};
+
+/**
+ * Pre-resolved until init swaps in a live Promise, so awaiters outside a
+ * wired init don't hang awaiting a hydrate that never arrives.
+ *
+ * @type {Promise<void>}
+ */
+let hydratedPromise = Promise.resolve();
+
+/**
+ * Resolves once the {@link watchListStore} hydrate phase has settled (the
+ * async chrome.storage read is back, value or not). The sendSpy FAB awaits
+ * this to reconcile its optimistic cache-driven mount against the real
+ * hydrated watch-list. Call as a function (not captured at import) because
+ * the binding identity changes across init/dispose.
+ *
+ * @returns {Promise<void>}
+ */
+export const whenWatchListHydrated = () => hydratedPromise;
+
+/**
  * Wire the store to chrome.storage.local: hydrate from
  * `<universeId>:oge_watchedPlayers`, write through on change (200 ms debounce).
  * Idempotent. Called in-game from content.js so the scan FAB sees the dashboard's
@@ -321,6 +348,7 @@ let disposeFn = null;
  */
 export const initWatchListStore = () => {
   if (disposeFn) return disposeFn;
+  hydratedPromise = new Promise((resolve) => { resolveHydrated = resolve; });
   disposeFn = persist({
     store: watchListStore,
     load: async () => {
@@ -335,12 +363,14 @@ export const initWatchListStore = () => {
     },
     save: (value) => chromeStore.set(currentKey(), value),
     debounceMs: 200,
+    onHydrate: () => { resolveHydrated(); },
   });
   return disposeFn;
 };
 
 /**
- * Tear down the persist wiring. Idempotent.
+ * Tear down the persist wiring. Idempotent. Also resets
+ * {@link whenWatchListHydrated} to the pre-resolved sentinel.
  * @returns {void}
  */
 export const disposeWatchListStore = () => {
@@ -348,6 +378,8 @@ export const disposeWatchListStore = () => {
     disposeFn();
     disposeFn = null;
   }
+  hydratedPromise = Promise.resolve();
+  resolveHydrated = () => {};
 };
 
 // ── Sync ts-ledger (per-key LWW stamps + tombstones) ────────────────────────
