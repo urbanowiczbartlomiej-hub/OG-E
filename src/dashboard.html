@@ -920,6 +920,23 @@
   }
   .sync-subhead { color: #4a9eff; font-size: 16px; margin: 0 0 12px; }
   .sync-controls-card { margin-bottom: 20px; }
+
+  /* ── Alliance Spyglass share — the union panel under the Spyglass title
+        (see #spyAlliancePanel) + small bits of the Sync-tab config card.
+        Mobile-first: the head wraps, the table scrolls in .table-scroll. ── */
+  .ally-panel { margin: 0 0 16px; padding: 10px 12px; }
+  .ally-head { display: flex; gap: 6px 14px; flex-wrap: wrap; color: #9fb4c4; font-size: 12px; margin-bottom: 8px; }
+  .ally-member { color: #6b7785; }
+  .ally-empty { color: #888; font-size: 13px; }
+  .ally-err { color: #ff8888; font-size: 13px; }
+  .ally-table { border-collapse: collapse; font-size: 13px; min-width: 100%; }
+  .ally-table th {
+    text-align: left; color: #6b7785; font-weight: 600; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.04em;
+    padding: 3px 12px 3px 0; border-bottom: 1px solid #2b3a4d;
+  }
+  .ally-table td { padding: 4px 12px 4px 0; border-bottom: 1px solid #1c2836; white-space: nowrap; }
+  .ally-table .ally-by { color: #9fb4c4; white-space: normal; min-width: 120px; }
   .sync-card {
     background: #0d1620; border: 1px solid #1a2a3a; border-radius: 6px;
     padding: 12px 14px;
@@ -1143,12 +1160,23 @@
 </section>
 
 <section id="spyglassSection" class="tab-section">
-  <!-- Header: title + the spy-eye identity mark + the manual API refresh. -->
+  <!-- Header: title + the spy-eye identity mark + the alliance share trigger
+       + the manual API refresh. The Alliance button is the ONLY thing that
+       ever syncs the alliance share (click-driven consent — IDEAS.md entry 2);
+       its config lives on the Sync tab. -->
   <h1 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">Spyglass<span id="spyTitleEye" class="spy-title-eye" aria-hidden="true" title="Hidden-fleet estimates depend on how much you've spied; treat them as a guide, not gospel."></span>
+    <button type="button" id="spyAllianceBtn"
+      title="Share your Spyglass coverage of watched players into the alliance gist and pull everyone else's — one round per click, nothing runs in the background. Configure on the Sync tab."
+      style="margin-left:auto;font-size:11px;color:#9fb4c4;background:#12202e;border:1px solid #2b3a4d;border-radius:999px;padding:3px 11px;cursor:pointer;white-space:nowrap;">Alliance</button>
     <button type="button" id="spyApiRefresh"
       title="Download fresh data from OGame's public API for this universe now (danger, mobile-fleet estimates, occupancy map). Normally OG-E refreshes this in-game; use this to force it from here."
-      style="margin-left:auto;font-size:11px;color:#9fb4c4;background:#12202e;border:1px solid #2b3a4d;border-radius:999px;padding:3px 11px;cursor:pointer;white-space:nowrap;">⟳ Refresh</button>
+      style="font-size:11px;color:#9fb4c4;background:#12202e;border:1px solid #2b3a4d;border-radius:999px;padding:3px 11px;cursor:pointer;white-space:nowrap;">⟳ Refresh</button>
   </h1>
+  <!-- Alliance intel panel — the union of every member's shared coverage.
+       Hidden until a pull has run for the selected universe; renders from the
+       chrome.storage cache between clicks. Display-only: nothing here feeds
+       the danger score or the scan plan. -->
+  <div id="spyAlliancePanel" class="gv-card ally-panel" hidden></div>
   <!-- Watchlist (the hero, left) beside "Who's spying on you" (defensive digest,
        right) — one glance block at the top of the tab. Each side is its own
        gv-card zone (same section-background language as the Galaxy Viewer).
@@ -1471,6 +1499,42 @@
         universes — set it once here. Per-device UI sizes stay on each device.
       </p>
     </div>
+  </div>
+
+  <!-- Alliance Spyglass share — a SECOND, separate token/gist pair (a shared
+       alliance secret, not the personal PAT above). Config only; the one
+       trigger is the Alliance button on the Spyglass tab. -->
+  <div class="rem-card sync-controls-card" id="allyShareCard">
+    <h2 class="sync-subhead" style="margin-bottom:8px">Alliance share (Spyglass)</h2>
+    <div class="rem-row" style="margin-top:12px">
+      <label>Alliance token (gist scope)</label>
+      <input id="allyGistToken" class="rem-mono" type="password" autocomplete="off" spellcheck="false" placeholder="ghp_…">
+      <button id="allyRevealToken" class="rem-eye" type="button"
+        title="Show token" aria-label="Show token" aria-pressed="false">👁</button>
+    </div>
+    <div class="rem-row" style="margin-top:6px">
+      <label>Alliance gist id</label>
+      <input id="allyGistId" class="rem-mono" autocomplete="off" spellcheck="false" placeholder="e.g. 0a1b2c3d4e5f…">
+    </div>
+    <div class="rem-row" style="margin-top:6px">
+      <label>Share as</label>
+      <input id="allyShareName" autocomplete="off" spellcheck="false" placeholder="your in-game name">
+    </div>
+    <div class="rem-row" style="margin-top:6px">
+      <label></label>
+      <span id="allyShareStatus" class="rem-status">—</span>
+    </div>
+    <p class="rem-hint">
+      Optional alliance co-op. The Alliance button (Spyglass tab) writes YOUR
+      coverage of watched players — ids, names, tags, last-spy / last-seen
+      times, no coordinates — into <code>oge-spyglass-alliance-&lt;universe&gt;.json</code>
+      in the alliance gist, then pulls everyone else's. Nothing runs in the
+      background: only that click syncs. The token is a shared secret — anyone
+      holding it can read and write ALL of the owner's gists, so use a dedicated
+      account's classic PAT with only the <code>gist</code> scope and rotate it
+      when someone leaves. Every member needs a unique "Share as" name (two
+      members sharing one name overwrite each other).
+    </p>
   </div>
 
   <h2 class="sync-subhead">Stored on this device</h2>

@@ -66,3 +66,29 @@ silent-wipe class applies here too, and its single-user LWW+tombstone model
 is the precursor to reuse. Decided 2026-07-09: backlog only, own design
 session before any code.
 
+**IMPLEMENTED 2026-07-12 (pending release — delete this entry when it ships
+to CHANGELOG).** What landed, and where the design deviated from the rough
+shape above:
+
+- One shared alliance-owned gist (second token + gist-id pair in
+  `state/allianceShare.js`, chromeStore-only — deliberately NOT in the
+  shared-settings dict so the alliance secret never bridges to game origins).
+- **Per-member-block model instead of per-(player,field) LWW+tombstones**:
+  the shared `oge-spyglass-alliance-<universeId>.json` is `memberKey →
+  block`; each member only ever rewrites their own block, so cross-member
+  conflicts and tombstones don't exist (un-watch = absent from your next
+  block). Same-name members clobber each other — surfaced in the UI hint.
+- Privacy floor: ids, names, tags, last-spy / last-seen epoch-seconds,
+  spied-bodies count. NO coords, NO report contents.
+- Sync-on-click only: the title-level "Alliance" button on the Spyglass tab
+  (`features/dashboard/allianceShare.js`) does fetch → replace own block →
+  PATCH → cache (`<uni>:oge_allianceIntel`) → render union panel. Config on
+  the Sync tab. Display-only — never feeds danger `D` (kept).
+- Pure core: `domain/allianceIntel.js`; gist IO: `sync/allianceShare.js`
+  (token-parameterized client, extension origin, no backoff — click-driven).
+- Version guard: an off-version file aborts the round (never overwrites a
+  newer format written by an updated alliance-mate).
+
+Still open (next session): token rotation UX, read-only membership tiers,
+own-block preview before first share. Tests to be reconciled at release.
+

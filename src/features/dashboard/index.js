@@ -111,6 +111,7 @@ import { installScanColonyConfig } from './scanConfig.js';
 import { installAlarmClockConfig } from './alarmClockConfig.js';
 import { installSync } from './sync.js';
 import { installSettingsControls } from './settingsControls.js';
+import { installAllianceShare } from './allianceShare.js';
 
 /**
  * @typedef {import('../../state/history.js').ColonyEntry} ColonyEntry
@@ -265,6 +266,14 @@ let scanColonyConfigApi = null;
  * @type {{ refresh: () => void } | null}
  */
 let alarmClockConfigApi = null;
+
+/**
+ * Handle to the alliance-share panel's refresh entrypoint, set by
+ * {@link boot}. Same universe-getter contract as the siblings above.
+ *
+ * @type {{ refresh: () => void } | null}
+ */
+let allianceShareApi = null;
 
 /** @type {ColonyEntry[]} */
 let history = [];
@@ -532,6 +541,9 @@ const boot = async () => {
   // The Multi-device-sync + alarmClock master/token controls (moved out of the
   // in-game panel) — they read/write the shared-settings chrome.storage dict.
   installSettingsControls();
+  // Alliance Spyglass share: config card on the Sync tab + the title-level
+  // Alliance button and intel panel on the Spyglass tab.
+  allianceShareApi = installAllianceShare({ getUniverseId: () => selectedUniverseId });
 
   const universes = await discoverUniverses();
   selectedUniverseId = resolveInitialUniverse(universes);
@@ -548,6 +560,7 @@ const boot = async () => {
   routesApi?.refresh();
   scanColonyConfigApi?.refresh();
   alarmClockConfigApi?.refresh();
+  allianceShareApi?.refresh();
   wireListeners();
 
   // Restore Galaxy Viewer preferences from previous session. The pre-zone
@@ -2893,6 +2906,7 @@ const wireListeners = () => {
     routesApi?.refresh();
     scanColonyConfigApi?.refresh();
     alarmClockConfigApi?.refresh();
+    allianceShareApi?.refresh();
   });
 
   // Re-render on window resize so the colony chart's adaptive binning
@@ -2920,6 +2934,7 @@ export const _resetDashboardForTest = () => {
   routesApi = null;
   scanColonyConfigApi = null;
   alarmClockConfigApi = null;
+  allianceShareApi = null;
   history = [];
   scans = {};
   proximityReports = [];
