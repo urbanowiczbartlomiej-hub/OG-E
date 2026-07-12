@@ -4,6 +4,17 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.47.2] — 2026-07-12
+
+### Fixed
+
+- **The Spyglass button no longer blinks on every page load.** Its
+  visibility is driven by the watch-list, which loads asynchronously — so on
+  every navigation the button vanished for a beat and then popped back in.
+  The last shown/hidden verdict is now remembered on the device and the
+  button mounts instantly (in its dim loading state) while the real list
+  loads; if the list turns out to be empty, it quietly removes itself.
+
 ## [1.47.1] — 2026-07-12
 
 ### Changed
