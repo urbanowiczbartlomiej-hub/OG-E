@@ -1024,8 +1024,28 @@ const loadWatched = async () => {
   if (tgtProbes) tgtProbes.value = String(cfg.probes);
   if (tgtScanBodies) setChipValue(tgtScanBodies, cfg.scanBodies ?? 'planets');
   if (tgtMoonStrike) setChipValue(tgtMoonStrike, cfg.moonStrike ?? DEFAULT_MOON_STRIKE);
+  updateMoonStrikeNote();
   if (tgtPatrolSystems) tgtPatrolSystems.value = String(cfg.patrolSystems ?? 0);
   hydrateCadenceInputs();
+};
+
+/**
+ * Per-mode one-liners for the Moon strike cell's visible note (the scan-prefs
+ * block) — what the SELECTED mode flags, in the cell itself, since a tooltip
+ * doesn't exist on touch. The long form (all modes) stays in the `title=`.
+ * @type {Record<string, string>}
+ */
+const MOON_STRIKE_NOTES = {
+  off: 'off — no parked-fleet flags on moons',
+  lone: 'flags a lit moon while every other body is quiet — likely parked fleet',
+  newest: 'flags the moon holding the account’s newest activity — likely parked fleet',
+  any: 'flags any lit moon, even beside active planets — owner may be around',
+};
+
+/** Reflect the selected moon-strike mode into its note line (fill + click). */
+const updateMoonStrikeNote = () => {
+  const note = document.getElementById('tgtMoonStrikeNote');
+  if (note) note.textContent = MOON_STRIKE_NOTES[chipValue(tgtMoonStrike) || DEFAULT_MOON_STRIKE] ?? '';
 };
 
 /**
@@ -1656,6 +1676,15 @@ const repaintTargets = () => {
     linkBase: gameLinkBase(),
     onOpen: (pid) => openSpyglassFor(Number(pid)),
     onToggleWatch: (pid) => toggleWatched(pid),
+    // Settings face (⚙ on the card) — the dossier header's own per-player
+    // controls, one tap closer: relationship, watch-via, re-scan.
+    scanMode: scanModeMap,
+    galaxyMode: galaxyModeMap,
+    rescan: rescanMap,
+    onSetRelationship: setRelationship,
+    onSetScanMode: setScanMode,
+    onSetGalaxyMode: setGalaxyMode,
+    onRescan: markRescan,
   });
 
   renderTargets({
@@ -2802,7 +2831,7 @@ const wireListeners = () => {
   wireChips(tgtScanBodies, () => { writeWatchConfig(); repaintTargets(); });
   // Moon-strike aggressiveness — same write; repaint recomputes the landing
   // signals (the 🎯 markers + dossier banners follow the new mode live).
-  wireChips(tgtMoonStrike, () => { writeWatchConfig(); repaintTargets(); });
+  wireChips(tgtMoonStrike, () => { updateMoonStrikeNote(); writeWatchConfig(); repaintTargets(); });
   wireChips(tgtLimitChips, onTargetFilterChange);
   tgtSearch?.addEventListener('input', () => {
     targetSearchQuery = tgtSearch ? tgtSearch.value : '';

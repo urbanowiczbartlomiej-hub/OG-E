@@ -3,8 +3,10 @@
 // Targets sub-tab renderer (dashboard, "Colonizations" section). Pure DOM
 // factory: filters the joined candidate list via the pure domain
 // `buildTargetList`, re-sorts by the active column via `sortTargetList`, and
-// paints a ranked table. Columns split the hidden-fleet estimate into its parts
-// (defense / visible fleet / hidden), plus coverage and scan-freshness readouts.
+// paints a ranked table. Columns carry the free whole-server verdicts (danger,
+// fleet ceiling, military, ships); coverage and scan-freshness reads live in
+// the dossier's per-body rows (the Intel glyph column is retired — only its
+// 🎯 fleet-landing marker survives, on the Player cell).
 // A "watch" chip drops a player onto the in-game scan FAB's watch-list; the ↻
 // whole-player re-scan flag lives in the dossier's "Watch via" row (next to
 // the probes toggle it belongs to — it only shows while probes are on).
@@ -14,8 +16,6 @@
 import {
   buildTargetList, sortTargetList, playerPlanets, targetExclusionReason,
 } from '../../domain/targets.js';
-import { scanStatus, rescanAtFor } from '../../domain/spyScan.js';
-import { aggregatePlayerScan } from '../../domain/scanMode.js';
 import { DANGER_LABELS } from '../../domain/dangerScore.js';
 import { dangerColor } from '../../lib/dangerColor.js';
 import { compact } from './format.js';
@@ -290,13 +290,13 @@ function dangerCell(prof) {
   val.style.color = col;
   val.style.fontWeight = '600';
   td.append(val);
-  // Archetype label rides alongside the number — but not for friendlies,
-  // whose value already reads "friendly" (else "friendly Friendly").
+  // Archetype label on its own dim second line (the Player cell's sub-line
+  // language) — but not for friendlies, whose value already reads "friendly"
+  // (else "friendly / Friendly").
   if (!prof.friendly) {
     const lab = document.createElement('span');
-    lab.textContent = ` ${DANGER_LABELS[prof.label]}`;
-    lab.style.color = '#8a97a3';
-    lab.style.fontSize = '11px';
+    lab.textContent = DANGER_LABELS[prof.label];
+    lab.style.cssText = 'display:block;font-size:11px;line-height:1.3;color:#8a97a3;font-weight:400;';
     td.append(lab);
   }
   td.title = `Danger ${d}/100 — ${[DANGER_LABELS[prof.label], ...prof.reasons].filter(Boolean).join(' · ')}`;
@@ -325,32 +325,24 @@ function fleetCell(prof) {
 }
 
 /**
- * Intel cell — one glyph merging scan-freshness with coverage into a single
- * "how much do we know?" read: grey ○ = never scanned, amber ⚠ = stale/re-scan
- * (data may be wrong), green ● = complete (every planet spied), blue ◐ =
- * partial. The tooltip carries the coverage fraction and the oldest report age.
- * @param {'none'|'fresh'|'stale'|'rescan'} worst
- * @param {number} spied
- * @param {number} total
- * @param {number} oldestAgeMs
- * @param {import('../../domain/scanMode.js').ScanMode | 'mixed' | null} [scan]
- *   Aggregate scan mode — a small leading glyph flags probing-off / mixed; 'on'
- *   and null draw nothing (galaxy activity is always on, so the quiet default is
- *   "scanning normally").
+ * Build the Player cell — the name plus, when fresh, the fleet-landing 🎯
+ * marker (survivor of the retired Intel column: the single most actionable
+ * signal — a catchable fleet may have just landed while the owner is away).
+ * Coverage/staleness reads moved to the dossier's per-body rows. Expanding
+ * the dossier is handled by a click anywhere on the row (no separate ▸
+ * toggle, no per-row map control).
+ * @param {TargetCandidate} c
  * @param {import('../../domain/fleetLanding.js').FleetLandingSignal} [landing]
- *   Fresh fleet-landing signal — a leading 🎯 (highest-priority marker).
  * @returns {HTMLTableCellElement}
  */
-function intelCell(worst, spied, total, oldestAgeMs, scan, landing) {
-  const td = cell('', { align: 'center' });
-  const age = formatAge(oldestAgeMs);
-  const agePart = age ? ` · ${age} old` : '';
-
-  // Fresh fleet-landing marker leads everything — the single most actionable
-  // signal (a catchable fleet just landed while the owner is away).
+function playerCell(c, landing) {
+  const td = cell('');
+  const label = document.createElement('span');
+  label.textContent = c.name || `#${c.id}`;
+  td.appendChild(label);
   if (landing) {
     const st = document.createElement('span');
-    st.textContent = '🎯 ';
+    st.textContent = ' 🎯';
     st.style.cssText = 'font-size:12px;';
     // Claim tracks the signal's tier: 'any' concedes the owner may be around.
     st.title = landing.tier === 'any'
@@ -361,57 +353,6 @@ function intelCell(worst, spied, total, oldestAgeMs, scan, landing) {
         + `(${landing.quiet}/${landing.total} bodies). Spy to confirm.`;
     td.appendChild(st);
   }
-
-  // Leading glyph flags where probing is OFF (galaxy-only, undetectable) so the
-  // column reads "who am I watching without revealing myself" at a glance. The
-  // 'on'-everywhere default draws nothing to stay quiet.
-  if (scan === 'off' || scan === 'mixed') {
-    const mg = document.createElement('span');
-    mg.style.cssText = 'font-size:11px;margin-right:5px;vertical-align:1px;';
-    mg.textContent = '🔭';
-    if (scan === 'off') {
-      mg.title = 'Probing off — galaxy activity only (undetectable by the target)';
-    } else {
-      mg.style.opacity = '0.6';
-      mg.title = 'Probing off on some of this player’s bodies (see dossier)';
-    }
-    td.appendChild(mg);
-  }
-
-  const glyph = document.createElement('span');
-  glyph.style.fontSize = '13px';
-  if (worst === 'none' || spied <= 0) {
-    glyph.textContent = '○';
-    glyph.style.color = '#666';
-    td.title = 'Never scanned';
-  } else if (worst === 'stale' || worst === 'rescan') {
-    glyph.textContent = '⚠';
-    glyph.style.color = '#e0b020';
-    td.title = `Stale · spied ${spied}/${total}${agePart}`;
-  } else if (total > 0 && spied >= total) {
-    glyph.textContent = '●';
-    glyph.style.color = '#7fd6a8';
-    td.title = `Complete · ${spied}/${total}${agePart}`;
-  } else {
-    glyph.textContent = '◐';
-    glyph.style.color = '#8bb0d0';
-    td.title = `Partial · ${spied}/${total}${agePart}`;
-  }
-  td.appendChild(glyph);
-  return td;
-}
-
-/**
- * Build the Player cell — just the name. Expanding the dossier is handled by a
- * click anywhere on the row (no separate ▸ toggle, no per-row map control).
- * @param {TargetCandidate} c
- * @returns {HTMLTableCellElement}
- */
-function playerCell(c) {
-  const td = cell('');
-  const label = document.createElement('span');
-  label.textContent = c.name || `#${c.id}`;
-  td.appendChild(label);
   // Overall (total) highscore rank on a dim second line — the "how big is this
   // player server-wide" anchor, beside the nick.
   if (typeof c.totalRank === 'number') {
@@ -655,11 +596,10 @@ export function renderTargets({
   hr.appendChild(headCell('Fleet', 'right', sortable('fleet')));
   hr.appendChild(headCell('Military', 'right', sortable('military')));
   hr.appendChild(headCell('Ships', 'right', sortable('ships')));
-  hr.appendChild(headCell('Intel', 'center'));
   thead.appendChild(hr);
   table.appendChild(thead);
 
-  const COLSPAN = 7;
+  const COLSPAN = 6;
   const tbody = document.createElement('tbody');
   for (const c of shown) {
     const est = estimates ? estimates[c.id] : undefined;
@@ -667,40 +607,6 @@ export function renderTargets({
     const reports = reportsByPlayer ? reportsByPlayer[c.id] : undefined;
     const moons = moonsByPlayer ? moonsByPlayer[c.id] : undefined;
 
-    // Per-row scan summary: worst status across the player's reports (rescan >
-    // stale > fresh; none = nothing spied) + the oldest report's age.
-    let worst = /** @type {'none'|'fresh'|'stale'|'rescan'} */ ('none');
-    let oldestTs = Infinity;
-    if (reports) {
-      for (const coord of Object.keys(reports)) {
-        const st = scanStatus({
-          reportTsSec: reports[coord].ts,
-          nowMs,
-          rescanAtMs: rescanAtFor(rescan, c.id, coord),
-        });
-        if (st === 'rescan') worst = 'rescan';
-        else if (st === 'stale' && worst !== 'rescan') worst = 'stale';
-        else if (st === 'fresh' && worst === 'none') worst = 'fresh';
-        const ts = reports[coord].ts;
-        if (ts && ts < oldestTs) oldestTs = ts;
-      }
-    }
-    const oldestAgeMs = Number.isFinite(oldestTs) ? nowMs - oldestTs * 1000 : NaN;
-    const total = est && typeof est.planetCount === 'number' ? est.planetCount : planets.length;
-    const spied = est ? est.spiedCount : 0;
-
-    // Aggregate watch mode over the in-scope bodies (respecting the scan-bodies
-    // filter, so the glyph matches what the plans actually consider).
-    const wantP = scanBodies !== 'moons';
-    const wantM = scanBodies !== 'planets';
-    /** @type {string[]} */
-    const modeKeys = [];
-    for (const p of planets) {
-      const coord = `${p.galaxy}:${p.system}:${p.position}`;
-      if (wantP) modeKeys.push(coord);
-      if (wantM && p.hasMoon) modeKeys.push(`${coord}:3`);
-    }
-    const aggScan = aggregatePlayerScan(scanMode, c.id, modeKeys);
     const landing = landingSignals ? landingSignals[c.id] : undefined;
 
     const open = !!(expandedIds && expandedIds.has(c.id));
@@ -753,7 +659,7 @@ export function renderTargets({
       if (onToggleExpand) onToggleExpand(c.id);
     });
     tr.appendChild(chipCell(c.id, !!(watchedIds && watchedIds.has(c.id)), onToggleWatch));
-    const pcell = playerCell(c);
+    const pcell = playerCell(c, landing);
     // Deep-link pin marker — says WHY this row sits after the capped list
     // instead of in rank order.
     if (pinnedShown.has(c.id)) {
@@ -770,7 +676,6 @@ export function renderTargets({
     tr.appendChild(fleetCell(prof));
     tr.appendChild(militaryCell(c));
     tr.appendChild(shipsCell(c, prof));
-    tr.appendChild(intelCell(worst, spied, total, oldestAgeMs, aggScan, landing));
     tbody.appendChild(tr);
     tbody.appendChild(detail);
   }

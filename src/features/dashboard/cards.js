@@ -13,11 +13,20 @@
 // never disagree with the dossier behind it.
 
 import { RELATIONSHIP_COLORS } from './mapPrimitives.js';
-import { sparkline } from './dossier.js';
+import { sparkline, relationshipSelector, watchViaSelector } from './dossier.js';
 import { compact } from './format.js';
 import { dangerColor } from '../../lib/dangerColor.js';
 import { estimateCombatShare } from '../../domain/threatModel.js';
 import { pointsToResources } from '../../domain/unitCosts.js';
+
+// Cards whose SETTINGS face is open (player ids) — ephemeral view-state that
+// must survive the full re-render every chip click triggers (repaint rebuilds
+// the strip from scratch). Pruned to the current watchlist on each render.
+/** @type {Set<string>} */
+const editOpen = new Set();
+
+/** Test hook — clears the settings-face view-state between cases. */
+export function _resetWatchCardsForTest() { editOpen.clear(); }
 
 // ── Local formatting helpers (compact magnitude → shared ./format.js) ─────────
 
@@ -73,6 +82,18 @@ const allyRankingUrl = (/** @type {string|undefined} */ base, /** @type {string|
  *   unknown-class nudge shows as plain text (no link).
  * @param {(pid: string) => void} a.onOpen
  * @param {(pid: string) => void} [a.onToggleWatch]  Stop watching this player.
+ * @param {Record<string, import('../../domain/scanMode.js').ScanMode>} [a.scanMode]
+ *   Per-player probe-scan defaults ('off' = galaxy-only) — the settings face's
+ *   probes chip state.
+ * @param {Record<string, import('../../domain/scanMode.js').ScanMode>} [a.galaxyMode]
+ *   Per-player galaxy-look toggles ('off' = look plan muted) — the settings
+ *   face's galaxy chip state.
+ * @param {Record<string, number>} [a.rescan]  Re-scan flags (player-id keys) —
+ *   the settings face's ↻ feedback line.
+ * @param {(pid: string, rel: import('../../state/watchList.js').Relationship) => void} [a.onSetRelationship]
+ * @param {(key: string, mode: import('../../domain/scanMode.js').ScanMode | null) => void} [a.onSetScanMode]
+ * @param {(pid: string, mode: import('../../domain/scanMode.js').ScanMode | null) => void} [a.onSetGalaxyMode]
+ * @param {(key: string) => void} [a.onRescan]
  * @returns {void}
  */
 export function renderWatchlistCards(a) {
@@ -80,6 +101,9 @@ export function renderWatchlistCards(a) {
   a.hostEl.textContent = '';
 
   const ids = [...a.watchedIds];
+  // Drop settings-face state for players no longer watched (or the Set grows
+  // stale ids forever across unwatch/re-watch cycles).
+  for (const pid of [...editOpen]) if (!a.watchedIds.has(pid)) editOpen.delete(pid);
   // gv-card-head/-title: the host sits inside a Spyglass gv-card zone now, so
   // the label speaks the same card-title language as the Galaxy Viewer's cards.
   const head = document.createElement('div');
@@ -152,9 +176,22 @@ export function renderWatchlistCards(a) {
     const routine = a.routines[pid];
     const rel = a.relationships[pid] || 'neutral';
 
+    // Settings face — the card FLIPS to per-player controls (⚙ in the top
+    // row) instead of growing: relationship + watch-via chips replace the
+    // verdict/fleet rows in the same footprint, and flip back on close. The
+    // chips are the dossier header's own selectors (imported), so both
+    // surfaces stay one control language.
+    const canEdit = !!(a.onSetRelationship || a.onSetScanMode);
+    const editing = canEdit && editOpen.has(pid);
+
     const card = document.createElement('div');
     card.className = 'watch-card';
-    card.addEventListener('click', () => a.onOpen(pid));
+    // While the settings face is up, a card tap CLOSES it (chips stop
+    // propagation) — never a surprise dossier-open under a mis-tap.
+    card.addEventListener('click', () => {
+      if (editOpen.has(pid)) { editOpen.delete(pid); renderWatchlistCards(a); return; }
+      a.onOpen(pid);
+    });
 
     // Row 1 — relationship dot · name · danger badge.
     const top = document.createElement('div');
@@ -178,6 +215,23 @@ export function renderWatchlistCards(a) {
     // would just duplicate it.
     const acts = document.createElement('span');
     acts.style.cssText = 'display:inline-flex;align-items:center;gap:6px;margin-left:6px;flex:0 0 auto;';
+    if (canEdit) {
+      // ⚙ flips the card to its settings face (same glyph language as the
+      // Players card's "⚙ Filters" — settings live behind the gear).
+      const gear = document.createElement('span');
+      gear.textContent = '⚙';
+      gear.className = 'hit-pad';
+      gear.title = editing
+        ? 'Close watch settings'
+        : 'Watch settings — Enemy/Friend/Neutral · watch via galaxy/probes · re-scan';
+      gear.style.cssText = `cursor:pointer;font-size:12px;font-weight:700;color:${editing ? '#8fb8e0' : '#66788a'};`;
+      gear.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        if (editing) editOpen.delete(pid); else editOpen.add(pid);
+        renderWatchlistCards(a);
+      });
+      acts.appendChild(gear);
+    }
     if (a.onToggleWatch) {
       // Red ✕, NOT a star: on the card this action DELETES the card (removes the
       // player from the watchlist and the tile vanishes) — a destructive, easy-to-
@@ -193,8 +247,29 @@ export function renderWatchlistCards(a) {
     top.append(dot, nm, badge, acts);
     card.appendChild(top);
 
+    // SETTINGS face (rows 2–4 swap out; the intel-age foot stays — "spied 3h
+    // ago" is exactly the context a ↻ re-scan decision needs).
+    if (editing) {
+      if (a.onSetRelationship) {
+        const relRow = document.createElement('div');
+        relRow.style.cssText = 'margin:2px 0 8px;';
+        relRow.appendChild(relationshipSelector(pid, rel, a.onSetRelationship));
+        card.appendChild(relRow);
+      }
+      if (a.onSetScanMode) {
+        const viaRow = document.createElement('div');
+        viaRow.style.cssText = 'margin:0 0 8px;';
+        const scanOn = !(a.scanMode && a.scanMode[pid] === 'off');
+        const galaxyOn = !(a.galaxyMode && a.galaxyMode[pid] === 'off');
+        viaRow.appendChild(watchViaSelector(
+          pid, scanOn, galaxyOn, a.onSetScanMode, a.onSetGalaxyMode, a.onRescan,
+        ));
+        card.appendChild(viaRow);
+      }
+    }
+
     // Row 2 — the verdict, in words (same palette as the dossier banner).
-    if (verdict) {
+    if (!editing && verdict) {
       const v = document.createElement('div');
       let text = verdict.label;
       if (typeof verdict.lootNow === 'number' && verdict.lootNow > 0) {
@@ -208,6 +283,7 @@ export function renderWatchlistCards(a) {
     }
 
     // Row 3 — the headline fleet number (same units as the table's Fleet col).
+    if (!editing) {
     const head = document.createElement('div');
     head.style.cssText = 'font-size:11.5px;color:#8b99a8;margin-bottom:6px;';
     if (c && c.ships === 0) {
@@ -238,10 +314,11 @@ export function renderWatchlistCards(a) {
       head.textContent = '—';
     }
     card.appendChild(head);
+    }
 
     // Row 4 — hour-of-day activity sparkline (only when actually sampled;
     // hollow bars would just look broken).
-    if (routine && routine.activity && routine.activity.samples > 0 && routine.activity.gate !== 'none') {
+    if (!editing && routine && routine.activity && routine.activity.samples > 0 && routine.activity.gate !== 'none') {
       const act = document.createElement('div');
       act.style.cssText = 'font-size:11px;color:#66788a;margin-bottom:6px;display:flex;gap:8px;align-items:baseline;';
       const spark = document.createElement('span');
@@ -257,7 +334,7 @@ export function renderWatchlistCards(a) {
     // this player's alliance in the ranking; one open captures its class and
     // lights the warrior tell — no spying. stopPropagation so the link doesn't
     // also trigger the card's click-to-open-dossier.
-    if (unknownClass(pid) && prof) {
+    if (!editing && unknownClass(pid) && prof) {
       const warn = document.createElement('div');
       warn.style.cssText = 'font-size:11px;color:#c79a3a;margin-bottom:6px;';
       const url = allyRankingUrl(a.linkBase, prof.allianceId);
@@ -289,6 +366,9 @@ export function renderWatchlistCards(a) {
     const parts = [];
     parts.push(newest > 0 ? `spied ${formatAge(a.nowMs - newest * 1000)} ago` : 'never scanned');
     if (a.inBand[pid]) parts.push('⚔ in band');
+    // ↻ feedback (settings face) — a player-level re-scan flag is otherwise
+    // invisible until the FAB acts on it.
+    if (a.rescan && a.rescan[pid]) parts.push('re-scan flagged');
     foot.textContent = parts.join(' · ');
     card.appendChild(foot);
 

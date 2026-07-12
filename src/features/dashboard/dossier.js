@@ -806,13 +806,14 @@ function planetsBlock({
  * Relationship tag selector (Etap F redesign) — enemy / friend / neutral, the tag
  * that drives the Spyglass map marker colour (enemy red, friend green, neutral
  * grey). Device-local; neutral = untagged. A click stops propagation so it never
- * collapses the dossier.
+ * collapses the dossier. Exported for the watchlist cards' settings face —
+ * same feature, same chips, same handler.
  * @param {string} playerId
  * @param {import('../../state/watchList.js').Relationship} current
  * @param {(pid: string, rel: import('../../state/watchList.js').Relationship) => void} onSet
  * @returns {HTMLDivElement}
  */
-function relationshipSelector(playerId, current, onSet) {
+export function relationshipSelector(playerId, current, onSet) {
   const wrap = document.createElement('div');
   // No "Relationship:" label — the three chips explain themselves. Sits inline
   // on the header line (pushed to the right).
@@ -846,6 +847,9 @@ function relationshipSelector(playerId, current, onSet) {
  * re-scan flag (it feeds the probe scan plan, so it lives with the toggle it
  * belongs to and hides when probes are off: a flag for a plan that never runs
  * would be a dead switch).
+ *
+ * Exported for the watchlist cards' settings face — same feature, same chips,
+ * same handlers.
  * @param {string} playerId
  * @param {boolean} scanOn     is the player's probe-scan default on?
  * @param {boolean} galaxyOn   is the player's galaxy-look plan on?
@@ -854,7 +858,7 @@ function relationshipSelector(playerId, current, onSet) {
  * @param {((key: string) => void) | undefined} onRescan
  * @returns {HTMLDivElement}
  */
-function watchViaSelector(playerId, scanOn, galaxyOn, onSetScan, onSetGalaxy, onRescan) {
+export function watchViaSelector(playerId, scanOn, galaxyOn, onSetScan, onSetGalaxy, onRescan) {
   const wrap = document.createElement('div');
   wrap.style.cssText = 'display:inline-flex;align-items:center;gap:6px;font-size:11px;';
   const lbl = document.createElement('span');

@@ -530,6 +530,12 @@
     letter-spacing: .02em; color: #a7b8cb;
   }
   .cmd-unit { font-size: 11px; color: #5f6c7b; }
+  /* One-line visible description inside a cell (wraps under the control) —
+     tooltips explain, but on touch they don't exist, so the essence lives
+     here. The channel tag wears the dossier's Watch-via chip hue. */
+  .cmd-note { flex: 1 0 100%; font-size: 11px; line-height: 1.4; color: #66788a; }
+  .cmd-note .via-probes { color: #8fb8e0; font-weight: 600; }
+  .cmd-note .via-galaxy { color: #7fb389; font-weight: 600; }
   /* Full-width footnote row (e.g. the zone hint) — always separated. */
   .cmd-wide { grid-column: 1 / -1; }
   .cmd-grid > .cmd-cell { border-top: 1px solid #1a2735; }
@@ -1187,11 +1193,17 @@
   <div class="spy-top">
     <div class="gv-card spy-watch-card">
       <div id="watchCards"></div>
+      <!-- Cells pair by theme (2-col grid): probes row (count · bodies),
+           cadence row (re-scan · re-look), hunt row (moon strike · patrol).
+           Each cell carries a one-line .cmd-note — the channel it belongs to
+           (watch via probes / galaxy, the dossier chips' hues) + what it does;
+           tooltips keep the long form. -->
       <div class="spy-scan-prefs cmd-grid">
         <label class="cmd-cell" title="How many espionage probes the in-game scan button pre-arms per body.">
           <span class="cmd-cap">Probes</span>
           <input id="tgtProbes" type="number" min="1" max="9999" value="20" size="4">
           <span class="cmd-unit">per scan</span>
+          <span class="cmd-note"><span class="via-probes">watch via probes</span> — armed on each proposed scan</span>
         </label>
         <div class="cmd-cell" title="Which bodies the in-game scan button proposes: planets, moons, or both.">
           <span class="cmd-cap">Scan</span>
@@ -1200,7 +1212,20 @@
             <button type="button" data-value="moons">🌙 moons</button>
             <button type="button" data-value="both">both</button>
           </span>
+          <span class="cmd-note"><span class="via-probes">watch via probes</span> — which bodies the plan proposes</span>
         </div>
+        <label class="cmd-cell" title="Probe re-scan: a report older than this re-enters the scan plan (every watched body).">
+          <span class="cmd-cap">Re-scan</span>
+          <input id="cadRescanHours" type="number" min="1" max="1440" step="1" value="48" size="4">
+          <span class="cmd-unit">h</span>
+          <span class="cmd-note"><span class="via-probes">watch via probes</span> — reports older than this re-enter the scan plan</span>
+        </label>
+        <label class="cmd-cell" title="Galaxy-sighting freshness for bodies watched via the galaxy (passive, undetectable).">
+          <span class="cmd-cap">Re-look</span>
+          <input id="cadGalaxyHours" type="number" min="1" max="336" step="1" value="24" size="3">
+          <span class="cmd-unit">h</span>
+          <span class="cmd-note"><span class="via-galaxy">watch via galaxy</span> — sightings older than this re-enter the look plan</span>
+        </label>
         <div class="cmd-cell" title="When a moon's activity pattern suggests a parked fleet, the scan plan flags it first (spy to confirm — it never sends by itself). lone = only the moon is lit and the rest is confirmed quiet · newest = the moon holds the account's newest activity, or the last trace before it went quiet · any = any lit moon, even beside active planets (owner may be around).">
           <span class="cmd-cap">Moon strike</span>
           <span class="chip-group seg" id="tgtMoonStrike" data-value="newest">
@@ -1209,22 +1234,16 @@
             <button type="button" data-value="newest">newest</button>
             <button type="button" data-value="any">any</button>
           </span>
+          <!-- Text tracks the selected mode (index.js updateMoonStrikeNote);
+               the static seed matches the data-value="newest" default. -->
+          <span class="cmd-note" id="tgtMoonStrikeNote">flags the moon holding the account’s newest activity — likely parked fleet</span>
         </div>
         <label class="cmd-cell" title="Patrol territory: ±N systems around every colony you own. The in-game Spy button walks these systems through its Look proposals and hunts moon-strikes on ANY neighbour there — friends, your alliance, noob-protected, vacation and banned players are skipped. 0 = off.">
           <span class="cmd-cap">Patrol</span>
           <span class="cmd-unit">±</span>
           <input id="tgtPatrolSystems" type="number" min="0" max="50" step="1" value="0" size="3">
           <span class="cmd-unit">sys</span>
-        </label>
-        <label class="cmd-cell" title="Probe re-scan: a report older than this re-enters the scan plan (every watched body).">
-          <span class="cmd-cap">Re-scan</span>
-          <input id="cadRescanHours" type="number" min="1" max="1440" step="1" value="48" size="4">
-          <span class="cmd-unit">h · probes</span>
-        </label>
-        <label class="cmd-cell" title="Galaxy-sighting freshness for bodies watched via the galaxy (passive, undetectable).">
-          <span class="cmd-cap">Re-look</span>
-          <input id="cadGalaxyHours" type="number" min="1" max="336" step="1" value="24" size="3">
-          <span class="cmd-unit">h · galaxy</span>
+          <span class="cmd-note">hunts moon strikes on every neighbour this many systems around your colonies · 0 = off</span>
         </label>
       </div>
     </div>
