@@ -4,6 +4,20 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.47.3] — 2026-07-12
+
+### Fixed
+
+- **The Spyglass "Look" no longer gets stuck re-loading the same system.**
+  After you probe a player, the galaxy view shows the activity marker your own
+  probe lit — and the Spyglass rightly refuses to count that marker as the
+  owner's activity. But refusing it also erased the proof that you LOOKED, so
+  the button kept proposing the very same system on every tap: for up to an
+  hour after a probe, or indefinitely for a colony that had moved away since
+  the last universe-data update. Browsing a system now counts as "seen" the
+  moment it renders, whatever its markers show — while the activity readouts
+  stay exactly as honest as before.
+
 ## [1.47.2] — 2026-07-12
 
 ### Fixed
