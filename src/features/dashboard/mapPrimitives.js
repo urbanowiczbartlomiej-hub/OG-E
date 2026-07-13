@@ -273,13 +273,27 @@ export const buildSystemCard = (g, s, scan, pinned, players, linkBase, danger) =
   return card;
 };
 
-/** Relationship → Spyglass map marker colour. Own planets render white. */
-export const RELATIONSHIP_COLORS = {
-  enemy: '#e2726a',
-  friend: '#7fd6a8',
-  neutral: '#9aa7b3',
-  you: '#ffffff',
-};
+/** Own planets' marker colour (white — never a picker option). */
+export const MAP_YOU_COLOR = '#ffffff';
+
+/** Marker colour for a watched player with no picked colour (neutral grey). */
+export const WATCH_DEFAULT_COLOR = '#9aa7b3';
+
+/**
+ * The map-colour swatches the player chips offer — purely visual labels a
+ * player assigns per tracked player (the retired enemy/friend/neutral tag
+ * migrated onto red/green; see state/watchList.js LEGACY_TAG_COLORS). Kept
+ * clear of {@link MAP_YOU_COLOR} (white) and {@link REACH_RING_COLOR}'s amber
+ * so a marker can never impersonate "you" or the reach ring.
+ */
+export const WATCH_COLOR_PALETTE = /** @type {const} */ ([
+  { hex: '#e2726a', name: 'red' },
+  { hex: '#e59a5b', name: 'orange' },
+  { hex: '#e6c054', name: 'gold' },
+  { hex: '#7fd6a8', name: 'green' },
+  { hex: '#7bb8ff', name: 'blue' },
+  { hex: '#b48ce0', name: 'violet' },
+]);
 
 /**
  * @typedef {object} MapBody   One planet to plot on the Spyglass positions map.
@@ -288,7 +302,9 @@ export const RELATIONSHIP_COLORS = {
  * @property {number} position
  * @property {string} playerId
  * @property {string} name
- * @property {'enemy'|'friend'|'neutral'|'you'} relationship
+ * @property {string} color    Marker colour (own bodies {@link MAP_YOU_COLOR},
+ *   watched players their picked colour or {@link WATCH_DEFAULT_COLOR}).
+ * @property {boolean} [isYou]  Own body — exempt from the reach overlay.
  * @property {number} danger   0..100 — scales the marker size.
  * @property {number} [reachH]  RIP-speed flight hours from THIS body to the
  *   viewer's nearest planet (the inverted reach kernel — "who can reach me").
@@ -296,13 +312,14 @@ export const RELATIONSHIP_COLORS = {
  * @property {boolean} [inReach]  reachH ≤ the caller's horizon → draw the ring.
  */
 
-/** The "in reach" ring colour (amber — distinct from every relationship hue). */
+/** The "in reach" ring colour (amber — kept OUT of the marker palette). */
 export const REACH_RING_COLOR = '#ffb454';
 
 /**
  * The Spyglass "positions" map — the attack-planning / player-tracking view. An
  * EMPTY galaxy×system grid with a marker only at each body you care about (your
- * planets + your watched players'), coloured by RELATIONSHIP and sized by danger.
+ * planets + your watched players'), coloured by the player's picked map colour
+ * and sized by danger.
  * Deliberately NOT the occupancy palette (threat/farm/empty/protected) — that is
  * the Galaxy Viewer's job; here you only want to see WHERE the players you track
  * are. Plain DOM markers (native hover/click), no canvas.
@@ -385,21 +402,21 @@ export const renderPositionsMap = ({ hostEl, galaxies, systems, bodies, onPlayer
   for (const b of bodies) {
     if (b.galaxy < 1 || b.galaxy > galaxies || b.system < 1 || b.system > systems) continue;
     const size = 4 + Math.round((Math.max(0, Math.min(100, b.danger)) / 100) * 6); // 4..10 by danger
-    const col = RELATIONSHIP_COLORS[b.relationship] || RELATIONSHIP_COLORS.neutral;
+    const col = b.color || WATCH_DEFAULT_COLOR;
     const x = gutter + (b.system - 0.5) * cellW;
     const y = topPad + (b.galaxy - 1) * stride + (b.position - 0.5) * posPx;
     const m = document.createElement(onPlayerClick ? 'button' : 'span');
     // "Who can reach me" overlay: an amber ring on a body close enough to hit
     // one of the viewer's planets inside the horizon (caller-computed).
-    const ring = b.inReach && b.relationship !== 'you'
+    const ring = b.inReach && !b.isYou
       ? `box-shadow:0 0 0 2px ${REACH_RING_COLOR}cc;`
       : '';
     m.style.cssText = `position:absolute;left:${x}px;top:${y}px;width:${size}px;height:${size}px;`
       + `margin:${-size / 2}px 0 0 ${-size / 2}px;border-radius:50%;background:${col};${ring}`
       + `border:1px solid #000a;padding:0;box-sizing:border-box;cursor:${onPlayerClick ? 'pointer' : 'default'};`;
     const desc = `${b.name} — ${b.galaxy}:${b.system}:${b.position}`
-      + (b.relationship === 'you' ? ' · you' : b.relationship !== 'neutral' ? ` · ${b.relationship}` : '')
-      + (typeof b.reachH === 'number' && b.relationship !== 'you'
+      + (b.isYou ? ' · you' : '')
+      + (typeof b.reachH === 'number' && !b.isYou
         ? ` · ~${b.reachH < 10 ? b.reachH.toFixed(1) : Math.round(b.reachH)} h to your nearest planet (RIP-speed)`
         : '');
     m.title = desc;

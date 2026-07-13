@@ -17,9 +17,9 @@
 //      grounds through the ordinary Look proposals (look-first doctrine).
 //   3. PREY       — {@link patrolPlayers}: who lives in the territory, minus
 //      the noise filters (self, vacation/banned/admin from the public API,
-//      buddy / own-alliance / noob-protected from the galaxy meta, and an
-//      explicit 'friend' relationship). The moon-strike detector then runs
-//      over these players exactly as it does over the watch-list.
+//      buddy / own-alliance / noob-protected from the galaxy meta). The
+//      moon-strike detector then runs over these players exactly as it does
+//      over the watch-list.
 //
 // Everything stays passive + propose-only: patrol looks are the user's own
 // galaxy browsing (undetectable), strikes still take one deliberate tap per
@@ -148,8 +148,11 @@ export const patrolOccupants = (universePlanets, systems, ownPlayerId) => {
  *     for the whole server, no look required;
  *   - galaxy-meta flags `buddy`, `allianceMember`, `newbie` (game-computed
  *     relative to YOU; available once the slot was browsed — exactly what a
- *     patrol does);
- *   - an explicit `'friend'` relationship tag.
+ *     patrol does).
+ *
+ * (The retired enemy/friend/neutral watch tag used to exempt 'friend'-tagged
+ * players here; map colours carry no semantics, so buddy/alliance flags are
+ * the only friend signals now — a deliberate 2026-07 simplification.)
  *
  * Inactive players are deliberately KEPT — a lit moon on an inactive is
  * still worth a probe (someone parked there, or they're briefly back).
@@ -162,20 +165,17 @@ export const patrolOccupants = (universePlanets, systems, ownPlayerId) => {
  * @param {Record<number, { flags?: { buddy?: true, allianceMember?: true, newbie?: true } }>} [opts.meta]
  *   Galaxy-scan player meta (`state/players`) — structurally narrowed to the
  *   three flags this filter reads.
- * @param {Record<string, string>} [opts.relationships]  Watch-list tags.
  * @returns {string[]}
  */
 export const patrolPlayers = (occupants, opts = {}) => {
   const apiPlayers = opts.apiPlayers || {};
   const meta = opts.meta || {};
-  const rel = opts.relationships || {};
   /** @type {Set<string>} */
   const out = new Set();
   for (const slots of Object.values(occupants || {})) {
     for (const s of slots) out.add(s.playerId);
   }
   return [...out].filter((pid) => {
-    if (rel[pid] === 'friend') return false;
     const status = apiPlayers[pid] ? String(apiPlayers[pid].status || '') : '';
     if (/[vba]/.test(status)) return false;
     const flags = (meta[Number(pid)] && meta[Number(pid)].flags) || {};

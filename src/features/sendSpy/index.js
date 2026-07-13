@@ -245,7 +245,6 @@ const captureEnv = () => {
     ? patrolPlayers(occupants, {
       apiPlayers: ctx?.players ?? {},
       meta: playersStore.get(),
-      relationships: cfg.relationships,
     }).filter((pid) => !cfg.players.includes(pid)) // watch-list runs its own pass
     : [];
 

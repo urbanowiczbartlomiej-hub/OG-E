@@ -28,12 +28,22 @@
 /* global fetch */
 
 import { API_BASE, conciseErrorBody } from './gist.js';
+import { emptyAllianceDoc } from '../domain/allianceIntel.js';
 
 /**
  * Filename prefix of the per-universe alliance-share files. Full name:
  * `${ALLIANCE_FILENAME_PREFIX}${universeId}.json`.
  */
 export const ALLIANCE_FILENAME_PREFIX = 'oge-spyglass-alliance-';
+
+/**
+ * Description that identifies THE alliance gist on the token account — the
+ * discovery key {@link ensureAllianceGist} matches on. Because every member
+ * authenticates with the SAME shared token (one account), discovery works
+ * for all of them: the token is the only secret that must be distributed,
+ * the gist id fills itself in.
+ */
+export const ALLIANCE_GIST_DESCRIPTION = 'OG-E alliance Spyglass share';
 
 /**
  * Build the gist filename for a universe.
@@ -68,6 +78,46 @@ const ghAlliance = async (token, path, options = {}) => {
     throw new Error(`HTTP ${res.status}: ${conciseErrorBody(text) || res.statusText}`);
   }
   return res.json();
+};
+
+/**
+ * Discover-or-create the alliance gist for a token. Lists the token
+ * account's gists and picks the OLDEST whose description matches
+ * {@link ALLIANCE_GIST_DESCRIPTION} (deterministic under accidental
+ * duplicates — the same convergence rule as gist.js `resolveGist`); when
+ * none exists, POSTs a fresh SECRET gist seeded with this universe's empty
+ * file (GitHub rejects file-less gists, and an empty doc is what a first
+ * fetch would have treated a missing file as anyway).
+ *
+ * Click-driven with the button disabled while running (single caller), so
+ * unlike the personal `ensureGist` there is no concurrent-create race to
+ * single-flight against.
+ *
+ * @param {string} token
+ * @param {string} universeId  Seeds the created gist's first file.
+ * @returns {Promise<{ id: string, created: boolean }>}
+ */
+export const ensureAllianceGist = async (token, universeId) => {
+  const gists = await ghAlliance(token, '/gists?per_page=100');
+  /** @type {Array<{ id: string, description?: string, created_at?: string }>} */
+  const list = Array.isArray(gists) ? gists : [];
+  const existing = list
+    .filter((g) => g.description === ALLIANCE_GIST_DESCRIPTION)
+    .sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')))[0];
+  if (existing) return { id: String(existing.id), created: false };
+  const created = await ghAlliance(token, '/gists', {
+    method: 'POST',
+    body: JSON.stringify({
+      description: ALLIANCE_GIST_DESCRIPTION,
+      public: false,
+      files: {
+        [allianceFilenameFor(universeId)]: {
+          content: JSON.stringify(emptyAllianceDoc(universeId), null, 2),
+        },
+      },
+    }),
+  });
+  return { id: String(created.id), created: true };
 };
 
 /**

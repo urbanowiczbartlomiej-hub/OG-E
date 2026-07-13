@@ -48,7 +48,7 @@ const fullCfg = (over = {}) => ({
   probes: DEFAULT_SPY_PROBES,
   scanBodies: 'planets',
   rescan: {},
-  relationships: {},
+  colors: {},
   mapHidden: {},
   scanMode: {},
   galaxyMode: {},
@@ -119,6 +119,25 @@ describe('normalizeWatchList', () => {
     expect(normalizeWatchList({ players: [], probes: NaN }).probes).toBe(DEFAULT_SPY_PROBES);
     expect(normalizeWatchList({ players: [], probes: Infinity }).probes).toBe(DEFAULT_SPY_PROBES);
     expect(normalizeWatchList({ players: [], probes: 'abc' }).probes).toBe(DEFAULT_SPY_PROBES);
+  });
+
+  it('migrates the retired relationship tags to the hues they painted; explicit colors win per key', () => {
+    expect(normalizeWatchList({
+      players: ['1', '2', '3', '4'],
+      relationships: { 1: 'enemy', 2: 'friend', 3: 'neutral', 4: 'enemy' },
+      colors: { 4: '#7bb8ff' }, // explicit colour beats the stale tag
+    })).toEqual(fullCfg({
+      players: ['1', '2', '3', '4'],
+      // neutral was "untagged" → stays absent (the default grey).
+      colors: { 1: '#e2726a', 2: '#7fd6a8', 4: '#7bb8ff' },
+    }));
+  });
+
+  it('keeps only #rrggbb (lowercased) or legacy-tag colour values', () => {
+    expect(normalizeWatchList({
+      players: [],
+      colors: { 1: '#AABBCC', 2: 'red', 3: '#12345', 4: 'friend', 5: 42 },
+    }).colors).toEqual({ 1: '#aabbcc', 4: '#7fd6a8' });
   });
 
   it('keeps only finite > 0 numeric rescan values, coercing numeric strings', () => {
@@ -309,7 +328,8 @@ describe('watchList — sync ts-ledger (per-key LWW stamps)', () => {
     }));
     const cfg = backing.get(CKEY);
     expect(cfg.players).toEqual(['2']);
-    expect(cfg.relationships).toEqual({ 2: 'friend' });
+    // The remote (old-device) 'friend' tag lands as the hue it used to paint.
+    expect(cfg.colors).toEqual({ 2: '#7fd6a8' });
     expect(cfg.scanBodies).toBe('both');
     expect(cfg.probes).toBe(7); // local-only fields survive the adoption
     expect(cfg.rescan).toEqual({ 1: 123 });

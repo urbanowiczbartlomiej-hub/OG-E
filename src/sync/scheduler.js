@@ -129,7 +129,7 @@ import {
 } from '../state/alarmClockConfig.js';
 import { parseDailyRunRoutes } from '../domain/dailyRunRoutes.js';
 import { MISSION_DEPLOYMENT } from '../domain/rules.js';
-import { normalizeGalaxyScanConfig } from '../domain/galaxyScanConfig.js';
+import { normalizeGalaxyScanConfig, sanitizeGalaxyScanConfigForWire } from '../domain/galaxyScanConfig.js';
 import { normalizeAlarmClockConfig } from '../domain/alarmClockConfig.js';
 import {
   mergeHistory,
@@ -468,7 +468,12 @@ const writeLocalRoutesSlot = async (slot) => {
  * @returns {Promise<import('./merge.js').GalaxyScanConfigSlot>}
  */
 const readLocalGalaxyConfigSlot = async () => {
-  const fallback = () => ({ config: galaxyScanConfigStore.get(), updatedAt: 0 });
+  // Everything this returns is WIRE-BOUND (merge input + upload payload), so
+  // the device-local `colonyPassword` is blanked here — see the domain
+  // sanitizer's policy note. The stored config keeps it; only the slot loses it.
+  const fallback = () => ({
+    config: sanitizeGalaxyScanConfigForWire(galaxyScanConfigStore.get()), updatedAt: 0,
+  });
   if (!routesUniverseId) return fallback();
   const [raw, ts] = await Promise.all([
     chromeStore.get(galaxyScanConfigKeyFor(routesUniverseId)),
@@ -477,7 +482,7 @@ const readLocalGalaxyConfigSlot = async () => {
   const config = raw === null || raw === undefined
     ? galaxyScanConfigStore.get()
     : normalizeGalaxyScanConfig(raw);
-  return { config, updatedAt: typeof ts === 'number' ? ts : 0 };
+  return { config: sanitizeGalaxyScanConfigForWire(config), updatedAt: typeof ts === 'number' ? ts : 0 };
 };
 
 /**
@@ -495,6 +500,13 @@ const writeLocalGalaxyConfigSlot = async (slot) => {
   bumpApplying('galaxyScanConfig');
   try {
     const config = normalizeGalaxyScanConfig(slot.config);
+    // colonyPassword is device-local: an adopted remote config (sanitized on
+    // modern devices, possibly still carrying a password from a pre-sanitizer
+    // one) must neither WIPE this device's password nor implant a remote one.
+    const cur = normalizeGalaxyScanConfig(
+      await chromeStore.get(galaxyScanConfigKeyFor(routesUniverseId)),
+    );
+    config.colonyPassword = cur.colonyPassword;
     await chromeStore.set(galaxyScanConfigKeyFor(routesUniverseId), config);
     await chromeStore.set(galaxyScanConfigTsKeyFor(routesUniverseId), slot.updatedAt);
     galaxyScanConfigStore.set(config);
@@ -744,7 +756,19 @@ const SYNC_SLOTS = [
     payloadKey: 'galaxyScanConfig',
     readLocal: readLocalGalaxyConfigSlot,
     writeLocal: writeLocalGalaxyConfigSlot,
-    merge: mergeGalaxyScanConfig,
+    // The merged slot is what gets UPLOADED, so sanitize it: when the remote
+    // side wins it may still carry a colonyPassword written by a pre-sanitizer
+    // version, and re-uploading it would keep the secret alive in the gist.
+    // Sanitizing here also makes the merged slot DIFFER from such a dirty
+    // remote, which schedules exactly one upload that scrubs the password out
+    // of the gist for good. (`writeLocal` keeps this device's own password.)
+    merge: (local, remote) => {
+      const r = mergeGalaxyScanConfig(local, /** @type {any} */ (remote));
+      return {
+        changed: r.changed,
+        merged: { ...r.merged, config: sanitizeGalaxyScanConfigForWire(r.merged.config) },
+      };
+    },
     hasData: galaxyConfigSlotHasData,
   },
   {

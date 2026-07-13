@@ -43,6 +43,12 @@ export const allianceIntelKeyFor = (universeId) => `${universeId}:${ALLIANCE_INT
 
 /**
  * @typedef {object} AllianceShareConfig
+ * @property {boolean} enabled  Section master switch (the Sync tab's
+ *   "Alliance share (Spyglass)" toggle-chip, mirroring the personal card's
+ *   "Sync across devices"): off collapses the config body and hides the
+ *   Alliance-sync button + summary on the Spyglass tab. Pre-toggle configs
+ *   read as enabled when a token was already set — an installed, working
+ *   share must not switch itself off on update.
  * @property {string} token     Shared alliance PAT (classic, `gist` scope).
  * @property {string} gistId    The alliance-owned gist's id.
  * @property {string} shareName How this member signs their block. Empty =
@@ -57,7 +63,7 @@ export const allianceIntelKeyFor = (universeId) => `${universeId}:${ALLIANCE_INT
  */
 
 /**
- * Read the config, normalised to the three known string fields.
+ * Read the config, normalised to the known fields.
  * @returns {Promise<AllianceShareConfig>}
  */
 export const readAllianceShareConfig = async () => {
@@ -65,8 +71,11 @@ export const readAllianceShareConfig = async () => {
   const o = raw && typeof raw === 'object' && !Array.isArray(raw)
     ? /** @type {Record<string, unknown>} */ (raw)
     : {};
+  const token = typeof o.token === 'string' ? o.token : '';
   return {
-    token: typeof o.token === 'string' ? o.token : '',
+    // Pre-toggle migration: a config with a token was set up to be USED.
+    enabled: typeof o.enabled === 'boolean' ? o.enabled : token.length > 0,
+    token,
     gistId: typeof o.gistId === 'string' ? o.gistId : '',
     shareName: typeof o.shareName === 'string' ? o.shareName : '',
   };

@@ -55,9 +55,9 @@ import { chipValue, setChipValue, wireChips, setChipsEnabled, toggleChipOn, setT
 import { digestProximityReports } from '../../domain/proximityDigest.js';
 import { bodyNameIndex, bodyNameFor, nearestBodyDistance } from '../../domain/bodies.js';
 import { renderWatchlistCards } from './cards.js';
-import { computeComposite, computeScoreField, renderPositionsMap, RELATIONSHIP_COLORS } from './mapPrimitives.js';
+import { computeComposite, computeScoreField, renderPositionsMap, MAP_YOU_COLOR, WATCH_DEFAULT_COLOR, WATCH_COLOR_PALETTE } from './mapPrimitives.js';
 import { axisDelta, flightDistance, niszczHours } from '../../domain/geometry.js';
-import { renderTargets, DEFAULT_TARGET_SORT } from './targets.js';
+import { renderTargets, DEFAULT_TARGET_SORT, TARGETS_NARROW_MQ } from './targets.js';
 import { ZONES } from '../../domain/zoneScore.js';
 import { buildOccupancyIndex } from '../../domain/apiOccupancy.js';
 import { buildTargetCandidates, playerPlanets } from '../../domain/targets.js';
@@ -158,11 +158,12 @@ const watchedPlayers = new Set();
 let rescanMap = {};
 
 /**
- * Player id → user-assigned relationship tag (enemy/friend/neutral) for the
- * selected universe — the Spyglass map marker colour. Loaded/written with the
- * watch-list. @type {Record<string, import('../../state/watchList.js').Relationship>}
+ * Player id → user-picked map marker colour (`#rrggbb`) for the selected
+ * universe — the Spyglass map's per-player hue, edited on the map's player
+ * chips. Absent = the default grey. Loaded/written with the watch-list.
+ * @type {Record<string, string>}
  */
-let watchRelationships = {};
+let watchColors = {};
 /**
  * Watched players muted on the positions map (id → true) — map-only, they stay
  * in the table scope + the FAB's scan walk. Mirrors `WatchListConfig.mapHidden`.
@@ -490,6 +491,7 @@ const pinnedTargetIds = new Set();
 /** @type {HTMLElement | null} */ let proximityStripEl;
 /** @type {HTMLElement | null} */ let proximityCountsEl;
 /** @type {HTMLElement | null} */ let proximityAlertEl;
+/** @type {HTMLElement | null} */ let proximityHeadToolsEl;
 /** @type {HTMLElement | null} */ let watchCardsEl;
 /** @type {HTMLButtonElement | null} */ let spyApiRefreshEl;
 
@@ -805,6 +807,7 @@ const wireDom = () => {
   proximityStripEl = document.getElementById('proximityStrip');
   proximityCountsEl = document.getElementById('proximityCounts');
   proximityAlertEl = document.getElementById('proximityAlert');
+  proximityHeadToolsEl = document.getElementById('proximityHeadTools');
   watchCardsEl = document.getElementById('watchCards');
   spyApiRefreshEl = /** @type {HTMLButtonElement | null} */ (document.getElementById('spyApiRefresh'));
   spyglassMapHost = document.getElementById('spyglassMapHost');
@@ -993,7 +996,7 @@ const wireColonySubtabs = () => {
  */
 const loadWatched = async () => {
   watchedPlayers.clear();
-  watchRelationships = {};
+  watchColors = {};
   mapHiddenIds = {};
   if (!selectedUniverseId) return;
   // Snapshot the universe: this async load can be interleaved with a universe
@@ -1015,7 +1018,7 @@ const loadWatched = async () => {
   if (uni !== selectedUniverseId) return;
   for (const id of cfg.players) watchedPlayers.add(id);
   rescanMap = cfg.rescan;
-  watchRelationships = cfg.relationships ?? {};
+  watchColors = cfg.colors ?? {};
   mapHiddenIds = cfg.mapHidden ?? {};
   scanModeMap = cfg.scanMode ?? {};
   galaxyModeMap = cfg.galaxyMode ?? {};
@@ -1088,7 +1091,7 @@ const writeWatchConfig = () => {
     moonStrike: chipValue(tgtMoonStrike) || DEFAULT_MOON_STRIKE,
     patrolSystems: Number(tgtPatrolSystems?.value) || 0,
     rescan: rescanMap,
-    relationships: watchRelationships,
+    colors: watchColors,
     mapHidden: mapHiddenIds,
     scanMode: scanModeMap,
     galaxyMode: galaxyModeMap,
@@ -1135,8 +1138,8 @@ const sysLookSecFromScans = () => {
 /**
  * Recompute + repaint the Patrol card (territory mode, domain/patrol) from
  * the per-universe loads already in scope: own bodies → territory; API
- * occupancy → occupants/prey (filtered by API status, galaxy meta and
- * relationship tags); activity rings → strikes, at the configured moon-strike
+ * occupancy → occupants/prey (filtered by API status and galaxy
+ * meta); activity rings → strikes, at the configured moon-strike
  * mode. Hidden entirely while the radius input is 0 — no view is multiplied
  * for users who don't hunt.
  *
@@ -1161,7 +1164,6 @@ const repaintPatrol = (nowMs) => {
   const prey = patrolPlayers(occupants, {
     apiPlayers,
     meta: players,
-    relationships: watchRelationships,
   }).filter((pid) => !watchedPlayers.has(pid));
   const strikes = detectAllLandings(prey, planets, activityObs, nowMs, {
     mode: /** @type {import('../../domain/fleetLanding.js').MoonStrikeMode} */ (
@@ -1221,15 +1223,16 @@ const setGalaxyMode = (pid, mode) => {
 };
 
 /**
- * Set (or clear → neutral) a watched player's relationship tag, persist it, and
- * repaint the Targets sub-tab + the map so the marker colour updates.
+ * Set (or clear → the default grey) a watched player's map marker colour,
+ * persist it, and repaint the Targets sub-tab + the map so the marker (and
+ * the cards' mirror dot) updates.
  * @param {string} pid
- * @param {import('../../state/watchList.js').Relationship} rel
+ * @param {string | null} hex  A `WATCH_COLOR_PALETTE` hue; null = default.
  * @returns {void}
  */
-const setRelationship = (pid, rel) => {
-  if (rel === 'neutral') delete watchRelationships[pid];
-  else watchRelationships[pid] = rel;
+const setWatchColor = (pid, hex) => {
+  if (!hex) delete watchColors[pid];
+  else watchColors[pid] = hex;
   writeWatchConfig();
   repaintTargets();
   repaintSpyglassMap();
@@ -1238,7 +1241,7 @@ const setRelationship = (pid, rel) => {
 /**
  * Mute/unmute a watched player on the positions map (map-only — they stay
  * watched, in the table scope and in the FAB's scan walk). Persists through
- * the same watch-config write as relationships.
+ * the same watch-config write as the map colours.
  * @param {string} pid
  * @returns {void}
  */
@@ -1277,9 +1280,9 @@ const toggleWatched = (id) => {
     watchedPlayers.delete(id);
   } else {
     watchedPlayers.add(id);
-    // New watches default to ENEMY (the map marker is red until you say
-    // otherwise) — untagged neutral was too easy to leave everything grey.
-    if (!watchRelationships[id]) watchRelationships[id] = 'enemy';
+    // New watches start RED (the palette's first hue) — an all-grey map hid
+    // fresh threats, and red is what "just watched" almost always means here.
+    if (!watchColors[id]) watchColors[id] = WATCH_COLOR_PALETTE[0].hex;
   }
   writeWatchConfig();
   repaintTargets();
@@ -1669,19 +1672,18 @@ const repaintTargets = () => {
     estimates,
     danger: dangerProfiles,
     routines,
-    relationships: watchRelationships,
+    colors: watchColors,
     reportsByPlayer,
     inBand: inBandById,
     nowMs,
     linkBase: gameLinkBase(),
     onOpen: (pid) => openSpyglassFor(Number(pid)),
     onToggleWatch: (pid) => toggleWatched(pid),
-    // Settings face (⚙ on the card) — the dossier header's own per-player
-    // controls, one tap closer: relationship, watch-via, re-scan.
+    // Command footer — the dossier header's own Watch-via chips + ↻, pinned
+    // to every card's bottom edge (no settings face to open any more).
     scanMode: scanModeMap,
     galaxyMode: galaxyModeMap,
     rescan: rescanMap,
-    onSetRelationship: setRelationship,
     onSetScanMode: setScanMode,
     onSetGalaxyMode: setGalaxyMode,
     onRescan: markRescan,
@@ -1734,8 +1736,6 @@ const repaintTargets = () => {
     // Per-player civil-fleet baseline for the dossier (Etap C).
     civil: civilProfiles,
     routines,
-    relationships: watchRelationships,
-    onSetRelationship: setRelationship,
     // Per-body / per-player scan mode (probe on/off) + the per-player galaxy
     // toggle + the activity-ring inputs for the Activity column.
     scanMode: scanModeMap,
@@ -1844,6 +1844,9 @@ const proximityNamedEl = (name, coords, moon) => {
 const renderProximityStrip = () => {
   if (!proximityStripEl) return;
   proximityStripEl.textContent = '';
+  // Head tool slot (Coords/Names) — cleared with the strip so an emptied
+  // digest never leaves a stale toggle riding the title line.
+  if (proximityHeadToolsEl) proximityHeadToolsEl.textContent = '';
   const nowMs = Date.now();
   // Ts-less alerts stay (they can't be aged); `ts` is epoch seconds.
   const cutoffSec = Math.floor(nowMs / 1000) - 30 * 86400;
@@ -1852,8 +1855,10 @@ const renderProximityStrip = () => {
   );
   const digest = digestProximityReports(recentReports);
   if (proximityCountsEl) {
+    // No leading dash — the card head's flex gap already separates this from
+    // the title.
     proximityCountsEl.textContent = digest.totalReports
-      ? ` — ${digest.playerCount} ${digest.playerCount === 1 ? 'prober' : 'probers'}`
+      ? `${digest.playerCount} ${digest.playerCount === 1 ? 'prober' : 'probers'}`
         + ` · ${digest.totalReports} ${digest.totalReports === 1 ? 'alert' : 'alerts'}`
         + (digest.lastTs != null ? ` · last ${proximityAge(digest.lastTs, nowMs)}` : '')
       : '';
@@ -1873,20 +1878,22 @@ const renderProximityStrip = () => {
 
   const nameIdx = bodyNameIndex(ownBodies);
   // Coords/names toggle (device-local): swap the "at <our bodies>" coords for
-  // our planet/moon names. Only when we actually have a body snapshot.
-  if (ownBodies.length) {
+  // our planet/moon names. Only when we actually have a body snapshot. Rides
+  // the card head's right-edge tool slot — a whole strip row for one pill was
+  // dead vertical space.
+  if (ownBodies.length && proximityHeadToolsEl) {
     const tgl = document.createElement('button');
     tgl.type = 'button';
     tgl.textContent = proximityShowNames ? 'Names' : 'Coords';
     tgl.title = 'Coords / names';
     tgl.style.cssText = 'font-size:11px;border:1px solid #2b3a4d;background:#18222e;color:#9fb4c4;'
-      + 'border-radius:999px;padding:1px 9px;cursor:pointer;margin-bottom:8px;';
+      + 'border-radius:999px;padding:1px 9px;cursor:pointer;';
     tgl.addEventListener('click', () => {
       proximityShowNames = !proximityShowNames;
       safeLS.set(PROX_NAMES_KEY, proximityShowNames ? '1' : '0');
       renderProximityStrip();
     });
-    proximityStripEl.appendChild(tgl);
+    proximityHeadToolsEl.appendChild(tgl);
   }
 
   /** @param {string} label */
@@ -2551,13 +2558,12 @@ let spyMapOpen = false;
 let spyMapHideYou = false;
 
 /**
- * A player's map relationship: own = 'you', else the user's tag (untagged =
- * 'neutral').
+ * A tracked player's map marker colour: the picked hue, else the default
+ * grey. (Own bodies use {@link MAP_YOU_COLOR} at the call site.)
  * @param {string} pid
- * @param {string|null} ownId
- * @returns {import('../../state/watchList.js').Relationship | 'you'}
+ * @returns {string}
  */
-const relationshipOf = (pid, ownId) => (pid === ownId ? 'you' : (watchRelationships[pid] || 'neutral'));
+const watchColorOf = (pid) => watchColors[pid] || WATCH_DEFAULT_COLOR;
 
 /**
  * Render the "You" marker chip into #spyMapYou (own-planet colour) inline with the
@@ -2570,8 +2576,8 @@ const renderSpyMapYou = (hasOwn) => {
   spyMapYouEl.replaceChildren();
   if (!hasOwn) { spyMapYouEl.style.display = 'none'; return; }
   const sw = document.createElement('span');
-  sw.className = 'dot'; // match the watched-player chips' relationship dot
-  sw.style.background = RELATIONSHIP_COLORS.you;
+  sw.className = 'dot'; // match the watched-player chips' colour dot
+  sw.style.background = MAP_YOU_COLOR;
   spyMapYouEl.append(sw, document.createTextNode('You'));
   spyMapYouEl.style.display = ''; // revert to the .spy-pchip pill's inline-flex
   spyMapYouEl.classList.toggle('map-hidden', spyMapHideYou);
@@ -2582,12 +2588,55 @@ const renderSpyMapYou = (hasOwn) => {
   spyMapYouEl.onclick = () => { spyMapHideYou = !spyMapHideYou; repaintSpyglassMap(); };
 };
 
+/** Close every open map-colour popover (at most one exists at a time). */
+const closeSpyColorPops = () => {
+  document.querySelectorAll('.spy-pop').forEach((p) => p.remove());
+};
+
+/** One-time outside-click closer for the colour popovers (armed lazily on the
+ * first open; idempotent across dashboard re-installs — closing is harmless
+ * when nothing is open, so the listener is never torn down). */
+let spyPopCloserArmed = false;
+const armSpyPopCloser = () => {
+  if (spyPopCloserArmed) return;
+  spyPopCloserArmed = true;
+  document.addEventListener('click', closeSpyColorPops);
+};
+
+/**
+ * The swatch popover a chip's colour dot opens — THE place a player's map
+ * colour is picked (the cards' dot and the map markers only mirror it).
+ * First swatch clears back to the default grey; the rest are the fixed
+ * palette. Picking persists via {@link setWatchColor}, whose repaint rebuilds
+ * the chips (and thereby closes the popover).
+ * @param {string} pid
+ * @returns {HTMLSpanElement}
+ */
+const buildColorPop = (pid) => {
+  const pop = document.createElement('span');
+  pop.className = 'spy-pop';
+  pop.addEventListener('click', (e) => e.stopPropagation());
+  const current = watchColorOf(pid);
+  const swatch = (/** @type {string} */ hex, /** @type {string} */ name, isDefault = false) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'spy-sw' + (hex === current ? ' on' : '');
+    b.style.background = hex;
+    b.title = isDefault ? 'default' : name;
+    b.addEventListener('click', () => setWatchColor(pid, isDefault ? null : hex));
+    return b;
+  };
+  pop.appendChild(swatch(WATCH_DEFAULT_COLOR, 'default', true));
+  for (const c of WATCH_COLOR_PALETTE) pop.appendChild(swatch(c.hex, c.name));
+  return pop;
+};
+
 /**
  * Render the watched-player chips under the positions map (Etap H5) — the
  * add/remove story made visible right where it matters: one pill per watched
- * player with a relationship dot (click cycles enemy → friend → neutral), the
- * name (opens the dossier), 👁 (map-only mute via {@link toggleMapHidden}) and
- * ✕ (stop watching). Empty watchlist → a ghost hint instead of a blank row.
+ * player with a colour dot (tap → the swatch popover, {@link buildColorPop}),
+ * the name (opens the dossier), 👁 (map-only mute via {@link toggleMapHidden})
+ * and ✕ (stop watching). Empty watchlist → a ghost hint instead of a blank row.
  * @returns {void}
  */
 const renderSpyMapPlayerChips = () => {
@@ -2597,19 +2646,27 @@ const renderSpyMapPlayerChips = () => {
   if (!ids.length) return;
   const nameOf = (/** @type {string} */ pid) => apiCache.players?.players?.[pid]?.name || `#${pid}`;
   ids.sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
-  /** @type {import('../../state/watchList.js').Relationship[]} */
-  const cycle = ['enemy', 'friend', 'neutral'];
   for (const pid of ids) {
-    const rel = /** @type {import('../../state/watchList.js').Relationship} */ (watchRelationships[pid] || 'neutral');
     const chip = document.createElement('span');
     chip.className = 'spy-pchip' + (mapHiddenIds[pid] ? ' map-hidden' : '');
 
-    const dot = document.createElement('span');
-    dot.className = 'dot';
-    dot.style.background = RELATIONSHIP_COLORS[rel];
-    dot.title = `Relationship: ${rel} — click to change (enemy → friend → neutral)`;
-    dot.addEventListener('click', () => {
-      setRelationship(pid, cycle[(cycle.indexOf(rel) + 1) % cycle.length]);
+    // Colour dot — a real button (the old 9-px cycle dot was its own touch
+    // trap; the popover both grows the target and previews the choices).
+    const dot = document.createElement('button');
+    dot.type = 'button';
+    dot.className = 'spy-pdot';
+    dot.title = 'Map colour — tap to pick';
+    const ink = document.createElement('span');
+    ink.className = 'dot';
+    ink.style.background = watchColorOf(pid);
+    dot.appendChild(ink);
+    dot.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const wasOpen = !!chip.querySelector('.spy-pop');
+      closeSpyColorPops();
+      if (wasOpen) return; // tapping the open chip's dot just closes it
+      armSpyPopCloser();
+      chip.appendChild(buildColorPop(pid));
     });
     chip.appendChild(dot);
 
@@ -2655,7 +2712,7 @@ const repaintSpyglassMap = () => {
   // owner), not the sparse galaxy-scan composite — otherwise your own planets
   // (and a watched player's) only appeared for systems you had happened to
   // browse. Own bodies always plot (white) + seed the reach kernel; watched +
-  // not map-muted plot in their relationship colour.
+  // not map-muted plot in their picked map colour.
   /** @type {import('./mapPrimitives.js').MapBody[]} */
   const bodies = [];
   /** @type {Array<{g: number, s: number}>} Your own planets — the reach targets. */
@@ -2682,7 +2739,8 @@ const repaintSpyglassMap = () => {
       position: p,
       playerId: pid,
       name: nameOf(pid),
-      relationship: relationshipOf(pid, ownId),
+      color: isOwn ? MAP_YOU_COLOR : watchColorOf(pid),
+      isYou: isOwn,
       danger: (dangerProfiles.get(Number(pid))?.danger ?? 0) * 100,
     });
   }
@@ -2697,7 +2755,7 @@ const repaintSpyglassMap = () => {
     const gTot = apiBounds.galaxies;
     const sTot = apiBounds.systems;
     for (const b of bodies) {
-      if (b.relationship === 'you') continue;
+      if (b.isYou) continue;
       let minD = Infinity;
       for (const oc of ownCoords) {
         const ag = axisDelta(b.galaxy, oc.g, gTot, !!apiBounds.donutGalaxy);
@@ -2751,6 +2809,13 @@ const setStatus = (msg) => {
  * @returns {void}
  */
 const wireListeners = () => {
+  // Players-table phone layout (targets.js TARGETS_NARROW_MQ) is decided at
+  // render time — repaint once whenever a resize/rotation crosses the
+  // breakpoint so the row packing follows the viewport.
+  if (typeof window.matchMedia === 'function') {
+    window.matchMedia(TARGETS_NARROW_MQ).addEventListener('change', () => repaintTargets());
+  }
+
   const exportBtn = document.getElementById('exportBtn');
   const importBtn = document.getElementById('importBtn');
   const importFile = /** @type {HTMLInputElement | null} */ (
@@ -3027,6 +3092,7 @@ export const _resetDashboardForTest = () => {
     proximityStripEl =
     proximityCountsEl =
     proximityAlertEl =
+    proximityHeadToolsEl =
     spyMapPlayersEl =
     watchCardsEl =
     spyApiRefreshEl =
@@ -3034,12 +3100,12 @@ export const _resetDashboardForTest = () => {
     freeCountInfoEl =
       /** @type {any} */ (undefined);
   // Session-only state that boot() does not re-establish: clear it so a
-  // re-install starts clean (watch-list Set, rescan flags, relationship +
+  // re-install starts clean (watch-list Set, rescan flags, map colours +
   // map-mute tags, expanded target rows, target sort, and the
   // pending-repaint flag).
   watchedPlayers.clear();
   rescanMap = {};
-  watchRelationships = {};
+  watchColors = {};
   mapHiddenIds = {};
   expandedTargets.clear();
   targetSort = { ...DEFAULT_TARGET_SORT };

@@ -307,7 +307,7 @@ const buildRow = (p, ctx) => {
   tr.appendChild(nearTd);
 
   // One action: jump to this prober's full dossier in the dashboard's Spyglass
-  // tab (which owns watch/relationship/scan tooling — no point duplicating a
+  // tab (which owns the watch/scan tooling — no point duplicating a
   // thinner copy of it here).
   const actTd = el('td');
   const acts = el('div', 'oge-sb-acts');

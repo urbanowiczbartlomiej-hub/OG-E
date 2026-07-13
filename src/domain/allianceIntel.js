@@ -16,9 +16,13 @@
 //
 // # What a block carries (privacy floor)
 //
-// Player ids, names, relationship tags, last-spy / last-seen times and a
-// spied-bodies count — NO coordinates, NO report contents. Times are epoch
-// SECONDS throughout (the SpyReport unit, same as targetReports/activityObs).
+// Player ids, names, last-spy / last-seen times and a spied-bodies count —
+// NO coordinates, NO report contents, and NO watch-list decisions (2026-07):
+// the block's scope is "players I hold OBSERVATIONS about" (≥1 spy report or
+// galaxy-activity marker), never "players I chose to watch", and nothing a
+// member configures (watch list, per-player toggles, map colours, Spyglass
+// knobs) leaves the device. Times are epoch SECONDS throughout (the
+// SpyReport unit, same as targetReports/activityObs).
 //
 // # Display-only, by invariant
 //
@@ -37,11 +41,12 @@ import { latestOf } from './targetReports.js';
 export const ALLIANCE_INTEL_VERSION = 1;
 
 /**
- * One watched player's shared coverage, as one member sees them.
+ * One player's shared coverage, as one member sees them. (Older clients also
+ * wrote a `tag` relationship field — retired 2026-07; unknown fields drop in
+ * {@link normalizeAllianceDoc}, so old blocks stay readable.)
  *
  * @typedef {object} SharedPlayerIntel
  * @property {string} [name]        Display name at share time.
- * @property {'enemy'|'friend'|'neutral'} [tag] Relationship tag, when set.
  * @property {number} [lastSpySec]  Newest spy report, epoch seconds.
  * @property {number} [lastSeenSec] Newest implied interaction from galaxy
  *   activity markers, epoch seconds.
@@ -66,15 +71,14 @@ export const ALLIANCE_INTEL_VERSION = 1;
  */
 
 /**
- * One row of the union view: a player with every member watching them.
+ * One row of the union view: a player with every member holding data on them.
  *
  * @typedef {object} AllianceIntelRow
  * @property {string} pid
  * @property {string} name
- * @property {'enemy'|'friend'|'neutral'|undefined} tag
  * @property {number} lastSpySec   Newest across members (0 = never).
  * @property {number} lastSeenSec  Newest across members (0 = never).
- * @property {string[]} watchers   Member names, alphabetical.
+ * @property {string[]} watchers   Contributing member names, alphabetical.
  */
 
 /**
@@ -98,12 +102,6 @@ const secField = (v) => {
 };
 
 /**
- * @param {unknown} v
- * @returns {'enemy'|'friend'|'neutral'|undefined}
- */
-const tagField = (v) => (v === 'enemy' || v === 'friend' || v === 'neutral' ? v : undefined);
-
-/**
  * Coerce one raw shared-player entry; null when it carries nothing usable.
  * @param {unknown} raw
  * @returns {SharedPlayerIntel | null}
@@ -114,8 +112,6 @@ const normalizePlayerIntel = (raw) => {
   /** @type {SharedPlayerIntel} */
   const out = {};
   if (typeof o.name === 'string' && o.name) out.name = o.name.slice(0, 60);
-  const tag = tagField(o.tag);
-  if (tag) out.tag = tag;
   const spy = secField(o.lastSpySec);
   if (spy) out.lastSpySec = spy;
   const seen = secField(o.lastSeenSec);
@@ -191,14 +187,18 @@ export const normalizeAllianceDoc = (raw, universeId) => {
  * Build OUR contribution block from local Spyglass state. Pure over plain
  * data — the caller (dashboard) reads the stores and hands in plain maps.
  *
+ * Scope = every player we hold at least one OBSERVATION about (a spy report
+ * in `reports` or an activity marker in `activity`) — deliberately NOT the
+ * watch list (2026-07): the share carries what we've seen, never what we've
+ * decided to track. An id with no usable observation contributes nothing
+ * (a bare name is a decision trace, not data).
+ *
  * `lastSeenSec` is the newest IMPLIED INTERACTION time across the player's
  * activity rings: a marker `m` minutes idle observed at `t` implies an
  * interaction at `t − m·60`; `m === -1` ("no marker") is negative evidence
  * and contributes nothing.
  *
  * @param {object} args
- * @param {string[]} args.watchedIds  Watched player ids (the block's scope).
- * @param {Record<string, 'enemy'|'friend'|'neutral'>} [args.relationships]
  * @param {Record<string, string>} [args.playerNames]  Player id → name.
  * @param {Record<string, Record<string, { latest?: unknown } | unknown>>} [args.reports]
  *   TargetReports-shaped map (`pid → bodyKey → entry`, read via `latestOf`).
@@ -208,18 +208,17 @@ export const normalizeAllianceDoc = (raw, universeId) => {
  * @returns {AllianceMemberBlock}
  */
 export const buildMemberBlock = ({
-  watchedIds, relationships = {}, playerNames = {}, reports = {}, activity = {}, nowSec,
+  playerNames = {}, reports = {}, activity = {}, nowSec,
 }) => {
   /** @type {Record<string, SharedPlayerIntel>} */
   const players = {};
-  for (const rawPid of watchedIds || []) {
+  const pids = new Set([...Object.keys(reports), ...Object.keys(activity)]);
+  for (const rawPid of pids) {
     const pid = String(rawPid);
     /** @type {SharedPlayerIntel} */
     const entry = {};
     const name = playerNames[pid];
     if (typeof name === 'string' && name) entry.name = name.slice(0, 60);
-    const tag = tagField(relationships[pid]);
-    if (tag) entry.tag = tag;
 
     const bucket = reports[pid];
     if (bucket && typeof bucket === 'object') {
@@ -253,7 +252,9 @@ export const buildMemberBlock = ({
       if (seen) entry.lastSeenSec = seen;
     }
 
-    players[pid] = entry;
+    // The observation gate (see the scope note above): no spy/seen signal →
+    // the id stays local, whatever else we know about it.
+    if (entry.lastSpySec || entry.bodiesSpied || entry.lastSeenSec) players[pid] = entry;
   }
   return { updatedAtSec: nowSec, players };
 };
@@ -280,7 +281,7 @@ export const mergeOwnBlock = (doc, memberKey, block) => ({
  * @returns {AllianceIntelRow[]}
  */
 export const summarizeAllianceIntel = (doc) => {
-  /** @type {Map<string, AllianceIntelRow & { _tagAtSec: number, _nameAtSec: number }>} */
+  /** @type {Map<string, AllianceIntelRow & { _nameAtSec: number }>} */
   const byPid = new Map();
   for (const member of Object.keys(doc.members).sort((a, b) => a.localeCompare(b))) {
     const block = doc.members[member];
@@ -288,29 +289,22 @@ export const summarizeAllianceIntel = (doc) => {
       const p = block.players[pid];
       let row = byPid.get(pid);
       if (!row) {
-        row = {
-          pid, name: '', tag: undefined, lastSpySec: 0, lastSeenSec: 0, watchers: [],
-          _tagAtSec: -1, _nameAtSec: -1,
-        };
+        row = { pid, name: '', lastSpySec: 0, lastSeenSec: 0, watchers: [], _nameAtSec: -1 };
         byPid.set(pid, row);
       }
       row.watchers.push(member);
-      // Name + tag follow the FRESHEST block that carries one, so a renamed
-      // or re-tagged player converges on the most recent observation.
+      // The name follows the FRESHEST block that carries one, so a renamed
+      // player converges on the most recent observation.
       if (p.name && block.updatedAtSec > row._nameAtSec) {
         row.name = p.name;
         row._nameAtSec = block.updatedAtSec;
-      }
-      if (p.tag && block.updatedAtSec > row._tagAtSec) {
-        row.tag = p.tag;
-        row._tagAtSec = block.updatedAtSec;
       }
       if ((p.lastSpySec ?? 0) > row.lastSpySec) row.lastSpySec = /** @type {number} */ (p.lastSpySec);
       if ((p.lastSeenSec ?? 0) > row.lastSeenSec) row.lastSeenSec = /** @type {number} */ (p.lastSeenSec);
     }
   }
   return [...byPid.values()]
-    .map(({ _tagAtSec, _nameAtSec, ...row }) => row)
+    .map(({ _nameAtSec, ...row }) => row)
     .sort((a, b) =>
       Math.max(b.lastSpySec, b.lastSeenSec) - Math.max(a.lastSpySec, a.lastSeenSec)
       || a.name.localeCompare(b.name));

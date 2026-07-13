@@ -90,14 +90,13 @@ describe('patrolPlayers — the prey filters', () => {
       { playerId: '3', position: 3 }, { playerId: '4', position: 4 },
       { playerId: '5', position: 5 }, { playerId: '6', position: 6 }],
   };
-  it('drops friend tag, API v/b/a statuses and buddy/alliance/newbie meta; keeps inactives', () => {
+  it('drops API v/b/a statuses and buddy/alliance/newbie meta; keeps inactives', () => {
     const prey = patrolPlayers(occ, {
-      relationships: { 1: 'friend' },
       apiPlayers: { 2: { status: 'v' }, 3: { status: 'b' }, 5: { status: 'i' } },
       meta: { 4: { flags: { allianceMember: true } } },
     });
-    // 1 friend, 2 vacation, 3 banned, 4 own alliance → out; 5 inactive stays.
-    expect(prey.sort()).toEqual(['5', '6']);
+    // 2 vacation, 3 banned, 4 own alliance → out; 5 inactive stays.
+    expect(prey.sort()).toEqual(['1', '5', '6']);
   });
   it('no filters → every occupant', () => {
     expect(patrolPlayers(occ).length).toBe(6);

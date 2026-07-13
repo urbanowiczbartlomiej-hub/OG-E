@@ -134,3 +134,21 @@ export const normalizeGalaxyScanConfig = (raw) => {
     guardianAckIntervalMin: coerceInt(r.guardianAckIntervalMin, d.guardianAckIntervalMin),
   };
 };
+
+/**
+ * Wire-sanitizer: the same config with `colonyPassword` BLANKED.
+ *
+ * The account password is DEVICE-LOCAL by policy (2026-07): it must never
+ * ride a gist payload or an export file. The concrete risk: a user reuses
+ * one GitHub account/token for the personal sync AND the alliance share —
+ * the alliance token can read ALL of that account's gists, so a password
+ * inside the personal payload would be one careless paste away from the
+ * whole alliance. Every egress path (gist slot compose + merge output, io
+ * v2 export) passes through here; ingress paths keep the device's own
+ * password instead of adopting a remote one. The field stays present
+ * ('' = unset) so any OG-E version normalises the sanitized shape cleanly.
+ *
+ * @param {GalaxyScanConfig} cfg
+ * @returns {GalaxyScanConfig}
+ */
+export const sanitizeGalaxyScanConfigForWire = (cfg) => ({ ...cfg, colonyPassword: '' });

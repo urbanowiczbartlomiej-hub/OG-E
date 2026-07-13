@@ -47,11 +47,6 @@ import {
 } from '../domain/watchListMerge.js';
 
 /**
- * @typedef {'enemy'|'friend'|'neutral'} Relationship
- *   How the user has tagged a watched player — drives the Spyglass map marker
- *   colour (enemy = red, friend = green, neutral = grey; own planets = white).
- *   Absent = neutral. Synced across devices (a workbench decision).
- *
  * @typedef {'planets'|'moons'|'both'} ScanBodies
  *   Which body types the scan FAB / plan proposes: planets only (default),
  *   moons only, or both. Shared with the in-game FAB like the rest of this
@@ -81,26 +76,30 @@ import {
  *   Re-scan flags: player id (whole player) or "g:s:p" coord (one planet) →
  *   epoch-ms "treat any report older than this as needing a re-scan". Clears
  *   itself once a newer report lands. See `domain/spyScan.rescanAtFor`.
- * @property {Record<string, Relationship>} [relationships]
- *   Player id → user-assigned relationship tag (Spyglass map colour). Optional
- *   in the type (pre-relationships configs omit it) but `normalizeWatchList` +
- *   the store default always materialise it, so readers get `{}` not undefined.
+ * @property {Record<string, string>} [colors]
+ *   Player id → user-picked Spyglass map marker colour (`#rrggbb`, from the
+ *   map chips' swatch picker). Absent = the default grey. Purely visual —
+ *   nothing reads a meaning into a hue (the old enemy/friend/neutral tag,
+ *   which DID carry semantics, migrates here in `normalizeWatchList`).
+ *   Optional in the type (pre-colors configs omit it) but `normalizeWatchList`
+ *   + the store default always materialise it, so readers get `{}` not
+ *   undefined. Synced across devices (rides the old tag's `rel` wire family).
  * @property {Record<string, true>} [mapHidden]
  *   Player id → hidden from the Spyglass positions map while STAYING watched
  *   (still in the table's scan scope + the FAB's scan walk) — the map-only
  *   mute the H5 player chips toggle with 👁. Same optional-but-materialised
- *   contract as `relationships`.
+ *   contract as `colors`.
  * @property {Record<string, ScanMode>} [scanMode]
  *   Scan-mode map: player id (whole-player default) or bodyKey "g:s:p" /
  *   "g:s:p:3" (per-body override) → 'on'|'off'. Absent key = 'on'. Resolution
  *   lives in domain/scanMode.effectiveScan (player-'off' dominates, else body
  *   override, else 'on'). Galaxy activity is NOT in this map. Same
- *   optional-but-materialised contract as `relationships`.
+ *   optional-but-materialised contract as `colors`.
  * @property {Record<string, ScanMode>} [galaxyMode]
  *   Per-player galaxy-watch toggle (player-id keys only): 'off' mutes the
  *   galaxy-LOOK plan for that player (the dossier's "Watch via → galaxy"
  *   button). Passive sighting RECORDING stays always-on. Absent key = 'on'.
- *   Same optional-but-materialised contract as `relationships`.
+ *   Same optional-but-materialised contract as `colors`.
  * @property {Cadence} [cadence]
  *   Re-scan cadences (see {@link Cadence}); materialised with
  *   {@link DEFAULT_CADENCE}.
@@ -218,6 +217,13 @@ export const WATCH_LIST_KEY_BASE = 'oge_watchedPlayers';
 export const watchListKeyFor = (universeId) => `${universeId}:${WATCH_LIST_KEY_BASE}`;
 
 /**
+ * The hues the retired enemy/friend relationship tags used to paint on the
+ * map — FROZEN migration constants (what an old device's tag value means),
+ * deliberately independent of whatever picker palette the UI ships today.
+ */
+const LEGACY_TAG_COLORS = Object.freeze({ enemy: '#e2726a', friend: '#7fd6a8' });
+
+/**
  * Coerce any stored/legacy value into a complete {@link WatchListConfig}.
  * Tolerates the pre-reshape bare `string[]` (M4) and partial objects.
  * @param {unknown} raw
@@ -226,7 +232,7 @@ export const watchListKeyFor = (universeId) => `${universeId}:${WATCH_LIST_KEY_B
 export const normalizeWatchList = (raw) => {
   if (Array.isArray(raw)) {
     return {
-      players: raw.map(String), probes: DEFAULT_SPY_PROBES, scanBodies: 'planets', rescan: {}, relationships: {}, mapHidden: {}, scanMode: {}, galaxyMode: {}, cadence: { ...DEFAULT_CADENCE }, moonStrike: DEFAULT_MOON_STRIKE, patrolSystems: DEFAULT_PATROL_SYSTEMS,
+      players: raw.map(String), probes: DEFAULT_SPY_PROBES, scanBodies: 'planets', rescan: {}, colors: {}, mapHidden: {}, scanMode: {}, galaxyMode: {}, cadence: { ...DEFAULT_CADENCE }, moonStrike: DEFAULT_MOON_STRIKE, patrolSystems: DEFAULT_PATROL_SYSTEMS,
     };
   }
   const o = raw && typeof raw === 'object' ? /** @type {any} */ (raw) : {};
@@ -242,12 +248,31 @@ export const normalizeWatchList = (raw) => {
       if (Number.isFinite(v) && v > 0) rescan[k] = v;
     }
   }
-  /** @type {Record<string, Relationship>} */
-  const relationships = {};
+  /** @type {Record<string, string>} */
+  const colors = {};
+  // A colour value tolerates two shapes: `#rrggbb` (the picker's output) and
+  // the legacy enemy/friend/neutral tag riding in from an old device via the
+  // synced `rel` family or an old export — mapped to the hue it used to paint.
+  const colorField = (/** @type {unknown} */ v) => {
+    if (typeof v !== 'string') return null;
+    if (/^#[0-9a-f]{6}$/i.test(v)) return v.toLowerCase();
+    if (v === 'enemy') return LEGACY_TAG_COLORS.enemy;
+    if (v === 'friend') return LEGACY_TAG_COLORS.friend;
+    return null; // 'neutral' was "untagged" — the default grey, stored as absent
+  };
+  if (o.colors && typeof o.colors === 'object') {
+    for (const k of Object.keys(o.colors)) {
+      const v = colorField(o.colors[k]);
+      if (v) colors[k] = v;
+    }
+  }
+  // One-time migration from the pre-colors relationship tag (same key space);
+  // an explicit colour always wins over a stale tag for the same player.
   if (o.relationships && typeof o.relationships === 'object') {
     for (const k of Object.keys(o.relationships)) {
-      const v = o.relationships[k];
-      if (v === 'enemy' || v === 'friend' || v === 'neutral') relationships[k] = v;
+      if (k in colors) continue;
+      const v = colorField(o.relationships[k]);
+      if (v) colors[k] = v;
     }
   }
   /** @type {Record<string, true>} */
@@ -288,7 +313,7 @@ export const normalizeWatchList = (raw) => {
   const moonStrike = moonStrikeField(o.moonStrike);
   const patrolSystems = patrolField(o.patrolSystems);
   return {
-    players, probes, scanBodies, rescan, relationships, mapHidden, scanMode, galaxyMode, cadence, moonStrike, patrolSystems,
+    players, probes, scanBodies, rescan, colors, mapHidden, scanMode, galaxyMode, cadence, moonStrike, patrolSystems,
   };
 };
 
@@ -300,7 +325,7 @@ export const watchListStore = createStore(/** @type {WatchListConfig} */ ({
   probes: DEFAULT_SPY_PROBES,
   scanBodies: 'planets',
   rescan: {},
-  relationships: {},
+  colors: {},
   mapHidden: {},
   scanMode: {},
   galaxyMode: {},

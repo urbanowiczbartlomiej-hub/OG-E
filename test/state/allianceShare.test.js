@@ -43,13 +43,13 @@ describe('allianceIntelKeyFor', () => {
 });
 
 describe('readAllianceShareConfig', () => {
-  it('normalises an absent / malformed dict to the three empty string fields', async () => {
+  it('normalises an absent / malformed dict to the disabled empty defaults', async () => {
     await expect(readAllianceShareConfig()).resolves.toEqual({
-      token: '', gistId: '', shareName: '',
+      enabled: false, token: '', gistId: '', shareName: '',
     });
     mock.get.mockResolvedValueOnce(['not', 'a', 'dict']);
     await expect(readAllianceShareConfig()).resolves.toEqual({
-      token: '', gistId: '', shareName: '',
+      enabled: false, token: '', gistId: '', shareName: '',
     });
     expect(mock.get).toHaveBeenCalledWith(ALLIANCE_SHARE_CONFIG_KEY);
   });
@@ -57,8 +57,17 @@ describe('readAllianceShareConfig', () => {
   it('passes through stored string fields and drops non-strings', async () => {
     mock.get.mockResolvedValueOnce({ token: 'ghp_x', gistId: 42, shareName: 'Me' });
     await expect(readAllianceShareConfig()).resolves.toEqual({
-      token: 'ghp_x', gistId: '', shareName: 'Me',
+      // Pre-toggle config with a token reads as ENABLED (the working-share
+      // migration) …
+      enabled: true, token: 'ghp_x', gistId: '', shareName: 'Me',
     });
+  });
+
+  it('an explicit enabled flag always wins over the token heuristic', async () => {
+    mock.get.mockResolvedValueOnce({ enabled: false, token: 'ghp_x' });
+    await expect(readAllianceShareConfig()).resolves.toMatchObject({ enabled: false });
+    mock.get.mockResolvedValueOnce({ enabled: true });
+    await expect(readAllianceShareConfig()).resolves.toMatchObject({ enabled: true });
   });
 });
 
@@ -67,7 +76,7 @@ describe('writeAllianceShareConfig', () => {
     mock.get.mockResolvedValueOnce({ token: 'old', gistId: 'g1', shareName: 'Me' });
     await writeAllianceShareConfig({ token: 'new' });
     expect(mock.set).toHaveBeenCalledWith(ALLIANCE_SHARE_CONFIG_KEY, {
-      token: 'new', gistId: 'g1', shareName: 'Me',
+      enabled: true, token: 'new', gistId: 'g1', shareName: 'Me',
     });
   });
 });

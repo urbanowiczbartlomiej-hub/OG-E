@@ -25,7 +25,12 @@ Sync tab:
   Payload is your colony history, colonization decisions, per-universe
   preferences and schedules, Daily Run routes, your manual fleet-save
   marks, and your Spyglass watch-list decisions (starred players,
-  relationship tags, scan preferences) — gzip-compressed.
+  map colours, scan preferences) — gzip-compressed.
+- Your OGame account password (the optional "Account password (for
+  abandon)" field) **never leaves the device**: it is excluded from the
+  sync payload and from Export files, and an incoming sync/import can
+  neither read nor overwrite it. Enter it once per device that uses the
+  abandon flow.
 - Requests go to `https://api.github.com` only, authenticated with
   your PAT. The PAT is stored in `chrome.storage.local` (extension-private,
   not reachable by any web page) so a single entry applies to all your

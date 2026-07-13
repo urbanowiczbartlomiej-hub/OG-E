@@ -124,16 +124,22 @@
     -webkit-tap-highlight-color: transparent;
   }
   .top-bar.tools-open button.tools-pill { border-color: #4a9eff; background: #17395d; color: #eaf4ff; }
-  @media (max-width: 520px) {
-    /* One-row bar: tighter tabs scroll beside the codename pill. Tapping
-       the pill drops the tools in as their OWN full-width second row —
-       the pill itself never moves. The "Server" caption is redundant
-       there (the pill IS the server name), so it hides. */
-    .tab-btn { padding: 6px 10px; }
+  /* The tools collapse EARLY (below 850px, not just on phones): between
+     ~520 and 850px the inline tools row and the ~480px tab scroller fought
+     over one row and the bar wrapped into a clumsy two-row block. The
+     codename pill takes over as soon as it gets tight; tapping it drops the
+     tools in as their OWN full-width second row — the pill itself never
+     moves. The "Server" caption is redundant while the pill IS the server
+     name, so it hides with the collapse. */
+  @media (max-width: 850px) {
     button.tools-pill { display: inline-flex; }
     .tools { display: none; flex-basis: 100%; }
     .top-bar.tools-open .tools { display: flex; }
     .tools .label { display: none; }
+  }
+  @media (max-width: 520px) {
+    /* Phone: tighter tabs scroll beside the codename pill. */
+    .tab-btn { padding: 6px 10px; }
   }
   .tab-section { display: none; }
   .tab-section.active { display: block; }
@@ -682,8 +688,32 @@
   .watch-card {
     background: #0b1118; border: 1px solid #223041; border-radius: 8px;
     padding: 10px 12px; cursor: pointer; min-width: 0;
+    /* Flex column so the command footer (.wc-cmd) pins to the BOTTOM edge —
+       grid-stretched siblings stay equal-height with the bar always flush. */
+    display: flex; flex-direction: column;
   }
   .watch-card:hover { border-color: #4a9eff; }
+  /* Command footer — auto top margin takes the slack, negative sides bleed to
+     the card's inner edges (same command-block language as .spy-scan-prefs). */
+  .watch-card .wc-cmd {
+    margin: auto -12px -10px; padding: 7px 10px;
+    border-top: 1px solid #223044; background: #0e151e;
+    border-radius: 0 0 8px 8px; cursor: default;
+    /* ONE row, always — the age span is the shrinkable part (nowrap +
+       ellipsis inline); chips never wrap under each other. */
+    display: flex; align-items: center; gap: 6px; flex-wrap: nowrap;
+  }
+  /* The lone remove ✕ — a real 30-px hit target with NOTHING beside it (the
+     retired ⚙ used to sit one graze away; that isolation is the whole
+     misclick guard — no confirm step). Negative margins keep the top row at
+     its text height. */
+  .watch-card .wc-x {
+    flex: 0 0 auto; width: 30px; height: 30px; margin: -7px -9px -7px 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: none; background: none; border-radius: 7px; cursor: pointer;
+    color: #e06c5f; font-size: 13px; font-weight: 700; font-family: inherit;
+  }
+  .watch-card .wc-x:hover { background: #241417; }
 
   /* Dossier layout — judgement (danger/why/hidden/civil) beside evidence
      (planets/routine) from 860px; one column below. Layout only, the blocks
@@ -692,13 +722,36 @@
   @media (min-width: 860px) { .dossier-grid { grid-template-columns: 1.1fr 1fr; } }
 
   /* Watched-player chips under the Spyglass map — one pill per watched player
-     (dot = relationship, 👁 = map-only mute, ✕ = unwatch). */
+     (dot = map colour → tap opens the swatch popover, 👁 = map-only mute,
+     ✕ = unwatch). position:relative anchors the popover. */
   .spy-pchip {
+    position: relative;
     display: inline-flex; align-items: center; gap: 6px;
     background: #18222e; border: 1px solid #2b3a4d; border-radius: 999px;
     padding: 3px 7px 3px 10px; font-size: 12px; color: #cfe4ff;
   }
-  .spy-pchip .dot { width: 9px; height: 9px; border-radius: 999px; border: 1px solid rgba(0,0,0,.5); cursor: pointer; }
+  .spy-pchip .dot { width: 9px; height: 9px; border-radius: 999px; border: 1px solid rgba(0,0,0,.5); }
+  /* Colour-dot BUTTON — the picker trigger (the bare 9-px cycle dot was a
+     touch trap; the button pads it to a 24-px target). */
+  .spy-pchip .spy-pdot {
+    flex: 0 0 auto; width: 24px; height: 24px; margin: -4px -3px -4px -7px; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: none; background: none; border-radius: 999px; cursor: pointer;
+  }
+  .spy-pchip .spy-pdot:hover { background: #22303f; }
+  /* The swatch popover (one open at a time; any outside click closes it). */
+  .spy-pop {
+    position: absolute; z-index: 40; top: calc(100% + 6px); left: 0;
+    display: inline-flex; gap: 6px; padding: 7px;
+    background: #121b26; border: 1px solid #2b3a4d; border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .5);
+  }
+  .spy-pop .spy-sw {
+    width: 22px; height: 22px; border-radius: 999px; cursor: pointer; padding: 0;
+    border: 1px solid rgba(0, 0, 0, .5);
+  }
+  .spy-pop .spy-sw.on { outline: 2px solid #cfe4ff; outline-offset: 1px; }
+  .spy-pop .spy-sw:hover { outline: 2px solid #4a9eff; outline-offset: 1px; }
   .spy-pchip .nm { cursor: pointer; }
   .spy-pchip .nm:hover { color: #4a9eff; }
   .spy-pchip .ico {
@@ -927,10 +980,29 @@
   .sync-subhead { color: #4a9eff; font-size: 16px; margin: 0 0 12px; }
   .sync-controls-card { margin-bottom: 20px; }
 
-  /* ── Alliance Spyglass share — the union panel under the Spyglass title
-        (see #spyAlliancePanel) + small bits of the Sync-tab config card.
-        Mobile-first: the head wraps, the table scrolls in .table-scroll. ── */
-  .ally-panel { margin: 0 0 16px; padding: 10px 12px; }
+  /* ── Alliance Spyglass share — one-line summary ON the Spyglass title line
+        (#spyAlliancePanel, .spy-ally-line) + the union TABLE on the Sync card
+        (#allySharePanel; it can run to hundreds of rows, so it scrolls in
+        BOTH axes inside its .table-scroll). Mobile-first: heads wrap. ── */
+  .spy-ally-line {
+    font-size: 12px; font-weight: 400; color: #8a97a3;
+    /* Basis 0, not auto: flex wraps items by their HYPOTHETICAL (full-text)
+       width, so with basis auto the line jumped to its own row instead of
+       shrinking (same trap as the top-bar .tabs scroller). Basis 0 + grow
+       lets it fill whatever the title row has left and ellipsize tail-first
+       ("full list → Sync tab" goes before the counts/age do); the full text
+       stays in the tooltip and on the Sync tab. */
+    flex: 1 1 0; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .spy-ally-line.err { color: #ff8888; }
+  #allySharePanel .table-scroll {
+    max-height: 420px; overflow-y: auto;
+    scrollbar-width: thin; scrollbar-color: #2b3a4d transparent;
+  }
+  #allySharePanel .table-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+  #allySharePanel .table-scroll::-webkit-scrollbar-track { background: transparent; }
+  #allySharePanel .table-scroll::-webkit-scrollbar-thumb { background: #2b3a4d; border-radius: 999px; }
   .ally-head { display: flex; gap: 6px 14px; flex-wrap: wrap; color: #9fb4c4; font-size: 12px; margin-bottom: 8px; }
   .ally-member { color: #6b7785; }
   .ally-empty { color: #888; font-size: 13px; }
@@ -1171,18 +1243,23 @@
        ever syncs the alliance share (click-driven consent — IDEAS.md entry 2);
        its config lives on the Sync tab. -->
   <h1 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">Spyglass<span id="spyTitleEye" class="spy-title-eye" aria-hidden="true" title="Hidden-fleet estimates depend on how much you've spied; treat them as a guide, not gospel."></span>
-    <button type="button" id="spyAllianceBtn"
-      title="Share your Spyglass coverage of watched players into the alliance gist and pull everyone else's — one round per click, nothing runs in the background. Configure on the Sync tab."
-      style="margin-left:auto;font-size:11px;color:#9fb4c4;background:#12202e;border:1px solid #2b3a4d;border-radius:999px;padding:3px 11px;cursor:pointer;white-space:nowrap;">Alliance</button>
-    <button type="button" id="spyApiRefresh"
-      title="Download fresh data from OGame's public API for this universe now (danger, mobile-fleet estimates, occupancy map). Normally OG-E refreshes this in-game; use this to force it from here."
-      style="font-size:11px;color:#9fb4c4;background:#12202e;border:1px solid #2b3a4d;border-radius:999px;padding:3px 11px;cursor:pointer;white-space:nowrap;">⟳ Refresh</button>
+    <!-- Alliance-share summary rides the TITLE LINE (one line, no panel of
+         its own — a whole gv-card for one sentence was dead vertical space).
+         Renders from the chrome.storage cache between clicks; the full union
+         table lives on the Sync tab (#allySharePanel). Display-only. -->
+    <span id="spyAlliancePanel" class="spy-ally-line" hidden></span>
+    <!-- Right tool group: the WRAPPER carries the margin-left:auto, so the
+         Refresh button stays right-aligned even while the Alliance-sync
+         button inside is hidden (alliance share toggled off). -->
+    <span style="margin-left:auto;display:inline-flex;align-items:center;gap:8px;">
+      <button type="button" id="spyAllianceBtn"
+        title="One share round: write your observations (spy reports + galaxy sightings) into the alliance gist and pull everyone else's — nothing runs in the background. Configure on the Sync tab."
+        style="font-size:11px;color:#9fb4c4;background:#12202e;border:1px solid #2b3a4d;border-radius:999px;padding:3px 11px;cursor:pointer;white-space:nowrap;">Alliance sync</button>
+      <button type="button" id="spyApiRefresh"
+        title="Download fresh data from OGame's public API for this universe now (danger, mobile-fleet estimates, occupancy map). Normally OG-E refreshes this in-game; use this to force it from here."
+        style="font-size:11px;color:#9fb4c4;background:#12202e;border:1px solid #2b3a4d;border-radius:999px;padding:3px 11px;cursor:pointer;white-space:nowrap;">⟳ Refresh</button>
+    </span>
   </h1>
-  <!-- Alliance intel panel — the union of every member's shared coverage.
-       Hidden until a pull has run for the selected universe; renders from the
-       chrome.storage cache between clicks. Display-only: nothing here feeds
-       the danger score or the scan plan. -->
-  <div id="spyAlliancePanel" class="gv-card ally-panel" hidden></div>
   <!-- Watchlist (the hero, left) beside "Who's spying on you" (defensive digest,
        right) — one glance block at the top of the tab. Each side is its own
        gv-card zone (same section-background language as the Galaxy Viewer).
@@ -1248,7 +1325,9 @@
       </div>
     </div>
     <div class="gv-card spy-back-card">
-      <div class="gv-card-head"><span class="gv-card-title" title="Probers from the alerts you opened, last 30 days.">Who's spying on you</span><span id="proximityCounts" style="color:#8a97a3;"></span><span id="proximityAlert" style="color:#e06c5f;font-weight:600;"></span></div>
+      <!-- The head's right edge is a tool slot (Coords/Names toggle) — riding the
+           title line instead of spending the strip's first row on it. -->
+      <div class="gv-card-head"><span class="gv-card-title" title="Probers from the alerts you opened, last 30 days.">Who's spying on you</span><span id="proximityCounts" style="color:#8a97a3;"></span><span id="proximityAlert" style="color:#e06c5f;font-weight:600;"></span><span id="proximityHeadTools" style="margin-left:auto;"></span></div>
       <div id="proximityStrip"></div>
     </div>
   </div>
@@ -1522,39 +1601,54 @@
   </div>
 
   <!-- Alliance Spyglass share — a SECOND, separate token/gist pair (a shared
-       alliance secret, not the personal PAT above). Config only; the one
-       trigger is the Alliance button on the Spyglass tab. -->
+       alliance secret, not the personal PAT above). The master toggle-chip
+       collapses the whole section AND hides the Spyglass-tab button/summary
+       (same grammar as "Sync across devices" above); triggers: the token
+       row's "Alliance sync" here + its twin on the Spyglass title. -->
   <div class="rem-card sync-controls-card" id="allyShareCard">
-    <h2 class="sync-subhead" style="margin-bottom:8px">Alliance share (Spyglass)</h2>
+    <div class="rem-master-row">
+      <button type="button" class="toggle-chip" id="allyShareToggle">Alliance share (Spyglass)</button>
+    </div>
+    <div id="allyShareBody">
     <div class="rem-row" style="margin-top:12px">
       <label>Alliance token (gist scope)</label>
       <input id="allyGistToken" class="rem-mono" type="password" autocomplete="off" spellcheck="false" placeholder="ghp_…">
       <button id="allyRevealToken" class="rem-eye" type="button"
         title="Show token" aria-label="Show token" aria-pressed="false">👁</button>
+      <button id="allySyncBtn" type="button"
+        title="One share round: write your observations into the alliance gist and pull everyone else's. Same action as the Alliance sync button on the Spyglass tab.">Alliance sync</button>
     </div>
     <div class="rem-row" style="margin-top:6px">
       <label>Alliance gist id</label>
-      <input id="allyGistId" class="rem-mono" autocomplete="off" spellcheck="false" placeholder="e.g. 0a1b2c3d4e5f…">
+      <input id="allyGistId" class="rem-mono" autocomplete="off" spellcheck="false" placeholder="empty = found or created on first sync">
     </div>
     <div class="rem-row" style="margin-top:6px">
       <label>Share as</label>
-      <input id="allyShareName" autocomplete="off" spellcheck="false" placeholder="your in-game name">
+      <input id="allyShareName" class="rem-mono" autocomplete="off" spellcheck="false" placeholder="your in-game name">
     </div>
     <div class="rem-row" style="margin-top:6px">
       <label></label>
       <span id="allyShareStatus" class="rem-status">—</span>
     </div>
+    <!-- The union TABLE lives here (scroll-capped) since the 2026-07-13
+         declutter — the Spyglass tab only shows a one-line summary. -->
+    <div id="allySharePanel" style="margin-top:12px" hidden></div>
     <p class="rem-hint">
       Optional alliance co-op. The Alliance button (Spyglass tab) writes YOUR
-      coverage of watched players — ids, names, tags, last-spy / last-seen
-      times, no coordinates — into <code>oge-spyglass-alliance-&lt;universe&gt;.json</code>
+      observations — player ids, names, last-spy / last-seen times, no
+      coordinates, no watch list, no settings — into
+      <code>oge-spyglass-alliance-&lt;universe&gt;.json</code>
       in the alliance gist, then pulls everyone else's. Nothing runs in the
-      background: only that click syncs. The token is a shared secret — anyone
-      holding it can read and write ALL of the owner's gists, so use a dedicated
-      account's classic PAT with only the <code>gist</code> scope and rotate it
-      when someone leaves. Every member needs a unique "Share as" name (two
-      members sharing one name overwrite each other).
+      background: only that click syncs. Leave the gist id empty — the first
+      sync finds the token account's alliance gist (or creates one) and fills
+      the id in; alliance-mates with the same token auto-find it too. The token
+      is a shared secret — anyone holding it can read and write ALL of the
+      owner's gists, so use a dedicated account's classic PAT with only the
+      <code>gist</code> scope and rotate it when someone leaves. Every member
+      needs a unique "Share as" name (two members sharing one name overwrite
+      each other).
     </p>
+    </div>
   </div>
 
   <h2 class="sync-subhead">Stored on this device</h2>

@@ -30,7 +30,7 @@ const cfg = (over = {}) => ({
   probes: 20,
   scanBodies: 'planets',
   rescan: {},
-  relationships: {},
+  colors: {},
   mapHidden: {},
   scanMode: {},
   galaxyMode: {},
@@ -77,9 +77,9 @@ describe('normalizeWatchSlot / watchSlotHasData', () => {
 describe('composeWatchSlot / decomposeWatchSlot', () => {
   it('pairs live values with ledger stamps and turns dead stamps into tombstones', () => {
     const ledger = { ...emptyLedger(), watched: { 1: NOW, 9: NOW - 5 }, rel: { 1: NOW } };
-    const slot = composeWatchSlot(cfg({ players: ['1'], relationships: { 1: 'enemy' } }), ledger);
+    const slot = composeWatchSlot(cfg({ players: ['1'], colors: { 1: '#e2726a' } }), ledger);
     expect(slot.watched).toEqual({ 1: { v: true, ts: NOW }, 9: { ts: NOW - 5 } });
-    expect(slot.rel).toEqual({ 1: { v: 'enemy', ts: NOW } });
+    expect(slot.rel).toEqual({ 1: { v: '#e2726a', ts: NOW } });
     // Unstamped singles compose deterministically at ts 0.
     expect(slot.scanBodies).toEqual({ _: { v: 'planets', ts: 0 } });
   });
@@ -144,7 +144,7 @@ describe('seedWatchListLedger — first-sync safety', () => {
   };
 
   it('stamps every live keyed entry at now, never creating a tombstone', () => {
-    const c = cfg({ players: ['1', '2'], relationships: { 1: 'friend' }, scanMode: { 2: 'off' } });
+    const c = cfg({ players: ['1', '2'], colors: { 1: '#7fd6a8' }, scanMode: { 2: 'off' } });
     const { ledger, changed } = seedWatchListLedger(c, emptyLedger(), NOW, DEFAULTS);
     expect(changed).toBe(true);
     expect(ledger.watched).toEqual({ 1: NOW, 2: NOW });
@@ -191,13 +191,13 @@ describe('seedWatchListLedger — first-sync safety', () => {
 
 describe('stampWatchListDiff — the only birthplace of tombstones', () => {
   it('stamps additions and value changes at now', () => {
-    const prev = cfg({ players: ['1'], relationships: { 1: 'neutral' } });
-    const next = cfg({ players: ['1', '2'], relationships: { 1: 'enemy' } });
+    const prev = cfg({ players: ['1'], colors: { 1: '#7bb8ff' } });
+    const next = cfg({ players: ['1', '2'], colors: { 1: '#e2726a' } });
     const seeded = seedWatchListLedger(prev, emptyLedger(), NOW - 100).ledger;
     const { ledger, changed } = stampWatchListDiff(prev, next, seeded, NOW);
     expect(changed).toBe(true);
     expect(ledger.watched).toEqual({ 1: NOW - 100, 2: NOW });
-    expect(ledger.rel).toEqual({ 1: NOW }); // re-tag re-stamps
+    expect(ledger.rel).toEqual({ 1: NOW }); // re-colour re-stamps
   });
 
   it('keeps a removed key\'s ledger entry re-stamped at now — the tombstone', () => {

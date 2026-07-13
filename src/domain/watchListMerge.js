@@ -16,7 +16,11 @@
 //
 // Families:
 //   watched    player id → { v: true }        (starred) / tombstone (un-starred)
-//   rel        player id → { v: Relationship } / tombstone (cleared to neutral)
+//   rel        player id → { v: '#rrggbb' map colour } / tombstone (cleared to
+//              the default grey). The family KEEPS its historical name — old
+//              devices still write enemy/friend/neutral tag values into it,
+//              and `normalizeWatchList` maps those to the hues they painted,
+//              so mixed-version fleets converge without a wire migration.
 //   scan       pid or bodyKey → { v: 'on'|'off' } / tombstone (cleared to inherited)
 //   gal        player id → { v: 'on'|'off' }   / tombstone (cleared to default)
 //   hide       player id → { v: true }         / tombstone (unhidden on the map)
@@ -160,7 +164,7 @@ const liveValuesOf = (cfg, fam) => {
       for (const id of Array.isArray(c.players) ? c.players : []) out[String(id)] = true;
       return out;
     }
-    case 'rel': return { ...(c.relationships || {}) };
+    case 'rel': return { ...(c.colors || {}) };
     case 'scan': return { ...(c.scanMode || {}) };
     case 'gal': return { ...(c.galaxyMode || {}) };
     case 'hide': return { ...(c.mapHidden || {}) };
@@ -227,7 +231,7 @@ export const decomposeWatchSlot = (slot) => {
   /** @type {Record<string, any>} */
   const cfg = {
     players,
-    relationships: live.rel,
+    colors: live.rel,
     scanMode: live.scan,
     galaxyMode: live.gal,
     mapHidden: live.hide,

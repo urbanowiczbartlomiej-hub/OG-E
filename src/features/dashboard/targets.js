@@ -32,6 +32,16 @@ import { buildDossier } from './dossier.js';
 export const DEFAULT_TARGET_SORT = { key: 'danger', dir: 'desc' };
 
 /**
+ * Phone breakpoint for the players table. Below it the row re-packs into the
+ * stacked 3-line layout: the watch pill leaves its own column and stacks
+ * ABOVE the nick in the Player cell, and the Ships composition band drops to
+ * its own line — six columns just don't fit 360–430 px. The dashboard
+ * re-renders on breakpoint crossings (index.js wires a matchMedia listener on
+ * this exact query), so the flag is simply read at render time.
+ */
+export const TARGETS_NARROW_MQ = '(max-width: 640px)';
+
+/**
  * @typedef {import('../../domain/targets.js').TargetCandidate} TargetCandidate
  * @typedef {import('../../domain/targets.js').TargetFilterOptions} TargetFilterOptions
  * @typedef {import('../../domain/targets.js').PlanetPos} PlanetPos
@@ -135,17 +145,18 @@ function headCell(text, align, opts = {}) {
 }
 
 /**
- * Build the "watch" chip cell (replaces the old ⭐). Outline `+ watch` = not on
+ * Build the "watch" pill (replaces the old ⭐). Outline `+ watch` = not on
  * the scan list; filled `✓ watch` = on the in-game scan FAB's watch-list. (The
  * ↻ whole-player re-scan moved to the dossier's Watch-via row, beside the
- * probes toggle it flags for.)
+ * probes toggle it flags for.) On wide screens it sits in its own column
+ * ({@link chipCell}); on narrow ones it stacks above the nick inside the
+ * Player cell — same element either way.
  * @param {string} id
  * @param {boolean} watched
  * @param {(id: string) => void} [onToggle]
- * @returns {HTMLTableCellElement}
+ * @returns {HTMLSpanElement}
  */
-function chipCell(id, watched, onToggle) {
-  const td = cell('');
+function watchChip(id, watched, onToggle) {
   const chip = document.createElement('span');
   chip.textContent = watched ? '✓ watch' : '+ watch';
   // .hit-pad: ≥36px touch hit-box (coarse pointers only) without growing
@@ -167,7 +178,19 @@ function chipCell(id, watched, onToggle) {
   }
   // Stop the click bubbling to the row (whose click toggles the dossier).
   if (onToggle) chip.addEventListener('click', (e) => { e.stopPropagation(); onToggle(id); });
-  td.appendChild(chip);
+  return chip;
+}
+
+/**
+ * The wide-screen watch COLUMN cell — just {@link watchChip} in a td.
+ * @param {string} id
+ * @param {boolean} watched
+ * @param {(id: string) => void} [onToggle]
+ * @returns {HTMLTableCellElement}
+ */
+function chipCell(id, watched, onToggle) {
+  const td = cell('');
+  td.appendChild(watchChip(id, watched, onToggle));
   return td;
 }
 
@@ -221,9 +244,11 @@ function militaryCell(c) {
  * bound in the tooltip.
  * @param {TargetCandidate} c
  * @param {import('../../domain/dangerScore.js').DangerProfile} [prof]
+ * @param {boolean} [narrow]  Phone layout: the composition band drops to its
+ *   own third line instead of riding beside the res/ship figure.
  * @returns {HTMLTableCellElement}
  */
-function shipsCell(c, prof) {
+function shipsCell(c, prof, narrow = false) {
   if (typeof c.ships !== 'number') return cell('—', { align: 'right', color: '#5f6b75' });
   const td = cell('', { align: 'right' });
   const count = document.createElement('span');
@@ -248,7 +273,7 @@ function shipsCell(c, prof) {
     const exact = fromProfile && prof.provenance === 'spied';
     td.title = `${fmt(c.ships)} ships (military highscore, hourly)`
       + (rps != null
-        ? ` · ≈ ${fmt(rps)} res/ship of the FLEET estimate (${
+        ? ` · ${fmt(rps)} res/ship of the FLEET estimate (${
           exact
             ? 'fully spied — defence subtracted exactly'
             : fromProfile
@@ -260,14 +285,25 @@ function shipsCell(c, prof) {
       // probes / LF); 20k–100k = the real COMBAT window (cruisers ~29k, battleships
       // ~60k land around here); > 100k = a capital/RIP core when the fleet is
       // pinned by scans, otherwise likely defence inflating the estimate.
-      const band = rps < 20_000 ? ' · civilian'
-        : rps > 100_000 ? (exact ? ' · capitals' : ' · defence?')
-        : ' · combat';
-      sub.textContent = `≈ ${compact(rps)} res/ship${band}`;
-      sub.style.color = rps > 100_000 ? '#c98f8f'
+      // (No ≈ prefix — the tooltip already says it's an estimate; the glyph
+      // only cost width on the phone's tightest column.)
+      const band = rps < 20_000 ? 'civilian'
+        : rps > 100_000 ? (exact ? 'capitals' : 'defence?')
+        : 'combat';
+      const color = rps > 100_000 ? '#c98f8f'
         : rps >= 20_000 ? '#e0b45f'
         : '#5f6b75';
+      sub.textContent = narrow ? `${compact(rps)} res/ship` : `${compact(rps)} res/ship · ${band}`;
+      sub.style.color = color;
       td.appendChild(sub);
+      if (narrow) {
+        // Line 3 (phone): the band gets its own line — beside the figure it
+        // forced the column wide enough to squash Player into a sliver.
+        const bandEl = document.createElement('span');
+        bandEl.style.cssText = `display:block;font-size:11px;line-height:1.3;color:${color};`;
+        bandEl.textContent = band;
+        td.appendChild(bandEl);
+      }
     }
   }
   return td;
@@ -400,10 +436,8 @@ function playerCell(c, landing) {
  * @param {Record<string, boolean|undefined>} [args.inBand]
  *   Per-player legal-attack-band flag for the dossier header.
  * @param {Map<number, import('../../domain/civilBaseline.js').CivilProfile>} [args.civil]
- * @param {Record<string, import('../../domain/routine.js').RoutineSummary>} [args.routines]
- * @param {Record<string, import('../../state/watchList.js').Relationship>} [args.relationships]
- * @param {(pid: string, rel: import('../../state/watchList.js').Relationship) => void} [args.onSetRelationship]
  *   Per-player civil-fleet baseline shown in the dossier (Etap C).
+ * @param {Record<string, import('../../domain/routine.js').RoutineSummary>} [args.routines]
  * @param {Record<string, import('../../domain/scanMode.js').ScanMode>} [args.scanMode]
  *   Scan-mode map threaded to the dossier (per-body/-player probe on/off).
  * @param {(key: string, mode: import('../../domain/scanMode.js').ScanMode | null) => void} [args.onSetScanMode]
@@ -463,8 +497,6 @@ export function renderTargets({
   inBand,
   civil,
   routines,
-  relationships,
-  onSetRelationship,
   scanMode,
   onSetScanMode,
   galaxyMode,
@@ -581,6 +613,11 @@ export function renderTargets({
     return;
   }
 
+  // Phone layout (see TARGETS_NARROW_MQ): the watch column folds into the
+  // Player cell, so the table is 5 columns instead of 6.
+  const narrow = typeof window.matchMedia === 'function'
+    && window.matchMedia(TARGETS_NARROW_MQ).matches;
+
   const table = document.createElement('table');
   table.style.width = '100%';
   table.style.borderCollapse = 'collapse';
@@ -590,7 +627,7 @@ export function renderTargets({
   const hr = document.createElement('tr');
   /** @param {TargetSortKey} key */
   const sortable = (key) => ({ sortKey: key, sort, onSort });
-  hr.appendChild(headCell('⭐'));
+  if (!narrow) hr.appendChild(headCell('⭐'));
   hr.appendChild(headCell('Player'));
   hr.appendChild(headCell('Danger', 'right', sortable('danger')));
   hr.appendChild(headCell('Fleet', 'right', sortable('fleet')));
@@ -599,7 +636,7 @@ export function renderTargets({
   thead.appendChild(hr);
   table.appendChild(thead);
 
-  const COLSPAN = 6;
+  const COLSPAN = narrow ? 5 : 6;
   const tbody = document.createElement('tbody');
   for (const c of shown) {
     const est = estimates ? estimates[c.id] : undefined;
@@ -620,8 +657,6 @@ export function renderTargets({
       inBand: inBand ? inBand[c.id] : undefined,
       civilProfile: civil ? civil.get(Number(c.id)) : undefined,
       routine: routines ? routines[c.id] : undefined,
-      relationship: relationships ? relationships[c.id] : undefined,
-      onSetRelationship,
       planets,
       reports,
       moons,
@@ -658,7 +693,8 @@ export function renderTargets({
       tr.classList.toggle('dossier-open', nowOpen);
       if (onToggleExpand) onToggleExpand(c.id);
     });
-    tr.appendChild(chipCell(c.id, !!(watchedIds && watchedIds.has(c.id)), onToggleWatch));
+    const watched = !!(watchedIds && watchedIds.has(c.id));
+    if (!narrow) tr.appendChild(chipCell(c.id, watched, onToggleWatch));
     const pcell = playerCell(c, landing);
     // Deep-link pin marker — says WHY this row sits after the capped list
     // instead of in rank order.
@@ -671,11 +707,19 @@ export function renderTargets({
       // Right after the name span (before the dim block #rank sub-line).
       pcell.insertBefore(note, pcell.firstChild ? pcell.firstChild.nextSibling : null);
     }
+    if (narrow) {
+      // Phone: the watch pill stacks ABOVE the nick (its column is gone) —
+      // prepended AFTER the pin note so the note keeps riding the name line.
+      const pillRow = document.createElement('span');
+      pillRow.style.cssText = 'display:block;margin-bottom:3px;';
+      pillRow.appendChild(watchChip(c.id, watched, onToggleWatch));
+      pcell.insertBefore(pillRow, pcell.firstChild);
+    }
     tr.appendChild(pcell);
     tr.appendChild(dangerCell(prof));
     tr.appendChild(fleetCell(prof));
     tr.appendChild(militaryCell(c));
-    tr.appendChild(shipsCell(c, prof));
+    tr.appendChild(shipsCell(c, prof, narrow));
     tbody.appendChild(tr);
     tbody.appendChild(detail);
   }

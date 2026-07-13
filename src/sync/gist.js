@@ -153,9 +153,10 @@ import { SYNC_STATUS_EVENT } from '../lib/ogeEvents.js';
  *   OPTIONAL, additive: game-logic settings keyed by universe id. Each slot
  *   uses the same `{ values, ts }` shape as `settings` but carries only the
  *   keys listed in `UNIVERSE_SCOPED_SETTINGS` (see `sync/settingsSync.js`).
- *   Per-universe because these parameters (fsThreshold, colonyPassword, …)
- *   depend on which OGame server the user is playing and must not leak across
- *   universes. The top-level `settings` field retains only global preferences.
+ *   Per-universe because these parameters (maxExpeditionsPerPlanet,
+ *   alarmClockNtfyToken) depend on which OGame server the user is playing and
+ *   must not leak across universes. The top-level `settings` field retains
+ *   only global preferences.
  * @property {Record<string, import('../state/dailyActions.js').DailyState>} [dailyStatePerUniverse]
  *   OPTIONAL, additive: daily-action completion state keyed by universe id.
  *   Each slot is a {@link import('../state/dailyActions.js').DailyState} object.
@@ -171,6 +172,9 @@ import { SYNC_STATUS_EVENT } from '../lib/ogeEvents.js';
  *   by universe id. Each slot is whole-universe newest-wins (see
  *   {@link import('./merge.js').mergeGalaxyScanConfig}). Per-universe because
  *   the scan strategy depends on which OGame server is being played.
+ *   `colonyPassword` NEVER rides in this slot — device-local by policy
+ *   (domain/galaxyScanConfig `sanitizeGalaxyScanConfigForWire`); the
+ *   scheduler blanks it on compose/merge and preserves the local one on apply.
  * @property {Record<string, import('./merge.js').AlarmClockConfigSlot>} [alarmClockConfigPerUniverse]
  *   OPTIONAL, additive: per-universe alarmClock config (wave enable + schedule,
  *   ad-hoc lead time, message templates) keyed by universe id. Each slot is
@@ -200,8 +204,8 @@ import { SYNC_STATUS_EVENT } from '../lib/ogeEvents.js';
  *   state that powers cross-device "continue only the remaining free positions".
  * @property {Record<string, import('../domain/watchListMerge.js').WatchListSyncSlot>} [watchListPerUniverse]
  *   OPTIONAL, additive (same two-way tolerance as `settings`): the Spyglass
- *   watch-list DECISIONS keyed by universe id — starred players, relationship
- *   tags, scan/galaxy-watch modes, map mutes, body filter and cadence, each a
+ *   watch-list DECISIONS keyed by universe id — starred players, map
+ *   colours, scan/galaxy-watch modes, map mutes, body filter and cadence, each a
  *   per-key `{ v?, ts }` family merged newest-`ts`-wins with removal
  *   tombstones (see {@link import('../domain/watchListMerge.js').mergeWatchList}).
  *   `probes` / `rescan` are deliberately absent (per-device). Per-universe

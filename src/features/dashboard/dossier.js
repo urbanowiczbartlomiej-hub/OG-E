@@ -323,7 +323,7 @@ function civilBlock(civ, profile) {
  * one count per body kind (planets / moons — a moon is a SEPARATE spiable
  * body, hidden fleet parks there), green when complete, amber while short,
  * with a plain-words tail saying exactly what's left. Rendered on the dossier
- * HEADER line (beside the relationship / Watch-via chips): stacked above the
+ * HEADER line (beside the Watch-via chips): stacked above the
  * table it used to push the evidence down a full line, leaving a dead band
  * under the header. `null` when the snapshot has no planets.
  * @param {PlanetPos[]} planets
@@ -803,39 +803,6 @@ function planetsBlock({
 }
 
 /**
- * Relationship tag selector (Etap F redesign) — enemy / friend / neutral, the tag
- * that drives the Spyglass map marker colour (enemy red, friend green, neutral
- * grey). Device-local; neutral = untagged. A click stops propagation so it never
- * collapses the dossier. Exported for the watchlist cards' settings face —
- * same feature, same chips, same handler.
- * @param {string} playerId
- * @param {import('../../state/watchList.js').Relationship} current
- * @param {(pid: string, rel: import('../../state/watchList.js').Relationship) => void} onSet
- * @returns {HTMLDivElement}
- */
-export function relationshipSelector(playerId, current, onSet) {
-  const wrap = document.createElement('div');
-  // No "Relationship:" label — the three chips explain themselves. Sits inline
-  // on the header line (pushed to the right).
-  wrap.style.cssText = 'display:inline-flex;align-items:center;gap:6px;font-size:11px;';
-  /** @type {Array<[import('../../state/watchList.js').Relationship, string, string]>} */
-  const opts = [['enemy', 'Enemy', '#e2726a'], ['friend', 'Friend', '#7fd6a8'], ['neutral', 'Neutral', '#9aa7b3']];
-  for (const [rel, text, color] of opts) {
-    const on = (current || 'neutral') === rel;
-    // Chip-pill look (Etap H6, matches .chip-group) with the relationship hue
-    // carried by the active chip's border + text — not a filled swatch.
-    const btn = document.createElement('button');
-    btn.textContent = text;
-    btn.style.cssText = 'padding:2px 10px;border-radius:999px;font-size:11px;cursor:pointer;'
-      + `border:1px solid ${on ? color : '#2b3a4d'};background:${on ? '#12253c' : '#18222e'};`
-      + `color:${on ? color : '#9fb4c4'};font-weight:${on ? '600' : '400'};`;
-    btn.addEventListener('click', (e) => { e.stopPropagation(); onSet(playerId, rel); });
-    wrap.appendChild(btn);
-  }
-  return wrap;
-}
-
-/**
  * Whole-player "Watch via" selector: a togglable galaxy chip (mutes the
  * galaxy-LOOK plan for this player — passive sighting RECORDING continues
  * regardless) plus a togglable probe-scan default. Both can be "on" at once —
@@ -848,23 +815,31 @@ export function relationshipSelector(playerId, current, onSet) {
  * belongs to and hides when probes are off: a flag for a plan that never runs
  * would be a dead switch).
  *
- * Exported for the watchlist cards' settings face — same feature, same chips,
- * same handlers.
+ * Exported for the watchlist cards' command footer — same feature, same
+ * chips, same handlers (the card passes `opts.label: false` — in its packed
+ * footer the two channel words explain themselves — and the current re-scan
+ * flag so the ↻ chip can show it).
  * @param {string} playerId
  * @param {boolean} scanOn     is the player's probe-scan default on?
  * @param {boolean} galaxyOn   is the player's galaxy-look plan on?
  * @param {(key: string, mode: import('../../domain/scanMode.js').ScanMode | null) => void} onSetScan
  * @param {((pid: string, mode: import('../../domain/scanMode.js').ScanMode | null) => void) | undefined} onSetGalaxy
  * @param {((key: string) => void) | undefined} onRescan
+ * @param {{ label?: boolean, rescanFlagged?: boolean }} [opts]
+ *   `label` (default true) — render the leading "Watch via" caption.
+ *   `rescanFlagged` — the player's re-scan flag is currently set; the ↻ chip
+ *   lights amber so the pending state is visible without a text note.
  * @returns {HTMLDivElement}
  */
-export function watchViaSelector(playerId, scanOn, galaxyOn, onSetScan, onSetGalaxy, onRescan) {
+export function watchViaSelector(playerId, scanOn, galaxyOn, onSetScan, onSetGalaxy, onRescan, opts = {}) {
   const wrap = document.createElement('div');
   wrap.style.cssText = 'display:inline-flex;align-items:center;gap:6px;font-size:11px;';
-  const lbl = document.createElement('span');
-  lbl.textContent = 'Watch via';
-  lbl.style.cssText = 'color:#6b7887;';
-  wrap.appendChild(lbl);
+  if (opts.label !== false) {
+    const lbl = document.createElement('span');
+    lbl.textContent = 'Watch via';
+    lbl.style.cssText = 'color:#6b7887;';
+    wrap.appendChild(lbl);
+  }
 
   /**
    * One togglable Watch-via chip (shared look; the hue names the channel).
@@ -881,7 +856,9 @@ export function watchViaSelector(playerId, scanOn, galaxyOn, onSetScan, onSetGal
     const btn = document.createElement('button');
     btn.textContent = text;
     btn.title = title;
-    btn.style.cssText = 'padding:2px 10px;border-radius:999px;font-size:11px;cursor:pointer;'
+    // 4px vertical padding → ~26px chip: these became the watch cards' primary
+    // footer controls (2026-07), so they get a finger-sized target everywhere.
+    btn.style.cssText = 'padding:4px 11px;border-radius:999px;font-size:11px;cursor:pointer;'
       + `border:1px solid ${on ? onBorder : '#2b3a4d'};background:${on ? onBg : '#18222e'};`
       + `color:${on ? onColor : '#7c8893'};font-weight:${on ? '600' : '400'};`;
     btn.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
@@ -904,16 +881,16 @@ export function watchViaSelector(playerId, scanOn, galaxyOn, onSetScan, onSetGal
       : 'Probe scanning OFF — galaxy-only. Click to resume proposing probes for this player.',
     () => onSetScan(playerId, scanOn ? 'off' : null)));
 
-  // ↻ whole-player re-scan flag — probes-on only (it only feeds the probe plan).
+  // ↻ whole-player re-scan flag — probes-on only (it only feeds the probe
+  // plan). Chip-shaped like its neighbours; lights amber while the flag is
+  // pending (`opts.rescanFlagged`) so the state needs no separate text note.
   if (scanOn && onRescan) {
-    const rescan = document.createElement('button');
-    rescan.textContent = '↻';
-    rescan.className = 'hit-pad';
-    rescan.title = 'Flag this player for re-scan (data may have changed) — every body re-enters the probe scan plan';
-    rescan.style.cssText = 'border:none;background:none;color:#6b97c4;cursor:pointer;'
-      + 'font-size:13px;line-height:1;padding:0 2px;';
-    rescan.addEventListener('click', (e) => { e.stopPropagation(); onRescan(playerId); });
-    wrap.appendChild(rescan);
+    const flagged = !!opts.rescanFlagged;
+    wrap.appendChild(chip('↻', flagged, '#6a5a2a', '#241d0e', '#d9b45a',
+      flagged
+        ? 'Re-scan flagged — every body re-enters the probe scan plan (clears when a newer report lands). Click to re-stamp.'
+        : 'Flag this player for re-scan (data may have changed) — every body re-enters the probe scan plan',
+      () => onRescan(playerId)));
   }
   return wrap;
 }
@@ -1336,8 +1313,6 @@ function fsArcsBlock(arcs, nowMs) {
  * @param {string} a.playerId
  * @param {string} a.name  Accepted for callers' convenience; NOT rendered —
  *   the clicked table row (dossier-open) is the panel's header, name included.
- * @param {import('../../state/watchList.js').Relationship} [a.relationship]  Current tag.
- * @param {(pid: string, rel: import('../../state/watchList.js').Relationship) => void} [a.onSetRelationship]
  * @param {import('../../domain/dangerScore.js').DangerProfile} [a.profile]
  * @param {import('../../domain/threatModel.js').HiddenFleetEstimate} [a.estimate]
  * @param {import('../../domain/raidVerdict.js').RaidVerdict} [a.verdict]
@@ -1396,18 +1371,17 @@ export function buildDossier(a) {
   td.style.boxShadow = 'inset 3px 0 0 #4a9eff';
   tr.appendChild(td);
 
-  // 1) Header: relationship chips · Watch-via toggles · (right) the scan
-  //    coverage line. The clicked TABLE ROW wears the panel's background
-  //    (targets.js `dossier-open`) and IS the header — repeating the name +
-  //    archetype here just duplicated the row one line above. Coverage sits up
-  //    here (not above the evidence table) so the table starts a line higher.
+  // 1) Header: Watch-via toggles · (right) the scan coverage line. The
+  //    clicked TABLE ROW wears the panel's background (targets.js
+  //    `dossier-open`) and IS the header — repeating the name + archetype here
+  //    just duplicated the row one line above. Coverage sits up here (not
+  //    above the evidence table) so the table starts a line higher. (The
+  //    relationship chips left with the E/F/N tag — map colours are picked on
+  //    the map's player chips, where the colour is visible.)
   const coverage = coverageLine(a.planets, a.reports, a.moons);
-  if (a.onSetRelationship || a.onSetScanMode || coverage) {
+  if (a.onSetScanMode || coverage) {
     const header = document.createElement('div');
     header.style.cssText = 'margin-bottom:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;';
-    if (a.onSetRelationship) {
-      header.appendChild(relationshipSelector(a.playerId, a.relationship || 'neutral', a.onSetRelationship));
-    }
     if (a.onSetScanMode) {
       // Whole-player watch: the galaxy-look plan and the probe-scan default,
       // each its own toggle. Per-body probe overrides live in the scan table
@@ -1416,6 +1390,7 @@ export function buildDossier(a) {
       const galaxyOn = !(a.galaxyMode && a.galaxyMode[a.playerId] === 'off');
       header.appendChild(watchViaSelector(
         a.playerId, scanOn, galaxyOn, a.onSetScanMode, a.onSetGalaxyMode, a.onRescan,
+        { rescanFlagged: !!(a.rescan && a.rescan[a.playerId]) },
       ));
     }
     if (coverage) {

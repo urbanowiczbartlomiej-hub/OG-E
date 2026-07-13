@@ -27,7 +27,7 @@ const SCAN_MS = 1_700_000_000_000;
 const SCAN_S = Math.floor(SCAN_MS / 1000);
 
 /** @param {string[]} players */
-const watch = (players) => watchListStore.set({ players, probes: 20, rescan: {}, relationships: {} });
+const watch = (players) => watchListStore.set({ players, probes: 20, rescan: {}, colors: {} });
 /** @returns {any} */
 const rings = () => /** @type {any} */ (activityObsStore.get());
 const flush = () => new Promise((r) => setTimeout(r, 0));

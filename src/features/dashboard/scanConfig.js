@@ -283,7 +283,9 @@ const buildColonizationFields = (body) => {
   colonyPasswordInput.id = 'scanCfgColonyPassword';
   colonyPasswordInput.size = 14;
   colonyPasswordInput.title =
-    'Account password, autofilled into the game’s give-up confirmation form during the abandon flow.';
+    'Account password, autofilled into the game’s give-up confirmation form during the abandon flow. '
+    + 'Stays on THIS device only — never gist-synced and never written into export files; '
+    + 'enter it once per device that runs the abandon flow.';
 
   // Packed into the same responsive grid (1 → 2 → 3 columns) the rescan
   // fields use, so both groups of the combined editor read as columns rather

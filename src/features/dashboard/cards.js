@@ -4,29 +4,30 @@
 // SPYGLASS-REDESIGN.md, the piece v3 shipped without). One card per watched
 // player, each answering the tab's one question in words — raid or skip, and
 // when — before any table is read: verdict + loot, the headline fleet number,
-// the hour-of-day activity sparkline (when sampled), intel age. Clicking a
-// card opens the player's dossier via the caller's deep-link (it never
-// mutates the watchlist — navigation must not change membership).
+// the hour-of-day activity sparkline (when sampled). Clicking a card opens
+// the player's dossier via the caller's deep-link (it never mutates the
+// watchlist — navigation must not change membership).
+//
+// 2026-07 redesign ("everything on the face"): the ⚙ settings FACE is gone —
+// its 12-px gear sat one graze away from the destructive ✕, and a hidden
+// toggle is a toggle nobody flips. Every card now ends in a command FOOTER
+// pinned to its bottom edge (.watch-card is a flex column): the Watch-via
+// channel chips + ↻ stay visible and one tap away, with the intel age beside
+// them. ✕ stands alone in the top corner with a real hit target and an
+// inline "sure?" step — removing a player is deliberate, never a graze. The
+// E/F/N relationship row left entirely: map colours are picked on the map's
+// player chips, and the card's dot just mirrors them.
 //
 // Renders from the SAME per-repaint data the table/dossier read (verdicts,
 // estimates, danger profiles, routines) — no data of its own, so a card can
 // never disagree with the dossier behind it.
 
-import { RELATIONSHIP_COLORS } from './mapPrimitives.js';
-import { sparkline, relationshipSelector, watchViaSelector } from './dossier.js';
+import { WATCH_DEFAULT_COLOR } from './mapPrimitives.js';
+import { sparkline, watchViaSelector } from './dossier.js';
 import { compact } from './format.js';
 import { dangerColor } from '../../lib/dangerColor.js';
 import { estimateCombatShare } from '../../domain/threatModel.js';
 import { pointsToResources } from '../../domain/unitCosts.js';
-
-// Cards whose SETTINGS face is open (player ids) — ephemeral view-state that
-// must survive the full re-render every chip click triggers (repaint rebuilds
-// the strip from scratch). Pruned to the current watchlist on each render.
-/** @type {Set<string>} */
-const editOpen = new Set();
-
-/** Test hook — clears the settings-face view-state between cases. */
-export function _resetWatchCardsForTest() { editOpen.clear(); }
 
 // ── Local formatting helpers (compact magnitude → shared ./format.js) ─────────
 
@@ -72,7 +73,9 @@ const allyRankingUrl = (/** @type {string|undefined} */ base, /** @type {string|
  * @param {Record<string, import('../../domain/threatModel.js').HiddenFleetEstimate>} a.estimates
  * @param {Map<number, import('../../domain/dangerScore.js').DangerProfile>} a.danger
  * @param {Record<string, import('../../domain/routine.js').RoutineSummary>} a.routines
- * @param {Record<string, import('../../state/watchList.js').Relationship>} a.relationships
+ * @param {Record<string, string>} a.colors  Player id → picked map marker
+ *   colour (`WatchListConfig.colors`) — the top-row dot's hue, mirroring the
+ *   map. Read-only here; the picker lives on the map's player chips.
  * @param {Record<string, Record<string, {ts: number}>>} a.reportsByPlayer
  * @param {Record<string, boolean|undefined>} a.inBand
  * @param {number} a.nowMs
@@ -83,14 +86,13 @@ const allyRankingUrl = (/** @type {string|undefined} */ base, /** @type {string|
  * @param {(pid: string) => void} a.onOpen
  * @param {(pid: string) => void} [a.onToggleWatch]  Stop watching this player.
  * @param {Record<string, import('../../domain/scanMode.js').ScanMode>} [a.scanMode]
- *   Per-player probe-scan defaults ('off' = galaxy-only) — the settings face's
+ *   Per-player probe-scan defaults ('off' = galaxy-only) — the footer's
  *   probes chip state.
  * @param {Record<string, import('../../domain/scanMode.js').ScanMode>} [a.galaxyMode]
- *   Per-player galaxy-look toggles ('off' = look plan muted) — the settings
- *   face's galaxy chip state.
+ *   Per-player galaxy-look toggles ('off' = look plan muted) — the footer's
+ *   galaxy chip state.
  * @param {Record<string, number>} [a.rescan]  Re-scan flags (player-id keys) —
- *   the settings face's ↻ feedback line.
- * @param {(pid: string, rel: import('../../state/watchList.js').Relationship) => void} [a.onSetRelationship]
+ *   lights the footer's ↻ chip amber while pending.
  * @param {(key: string, mode: import('../../domain/scanMode.js').ScanMode | null) => void} [a.onSetScanMode]
  * @param {(pid: string, mode: import('../../domain/scanMode.js').ScanMode | null) => void} [a.onSetGalaxyMode]
  * @param {(key: string) => void} [a.onRescan]
@@ -101,9 +103,6 @@ export function renderWatchlistCards(a) {
   a.hostEl.textContent = '';
 
   const ids = [...a.watchedIds];
-  // Drop settings-face state for players no longer watched (or the Set grows
-  // stale ids forever across unwatch/re-watch cycles).
-  for (const pid of [...editOpen]) if (!a.watchedIds.has(pid)) editOpen.delete(pid);
   // gv-card-head/-title: the host sits inside a Spyglass gv-card zone now, so
   // the label speaks the same card-title language as the Galaxy Viewer's cards.
   const head = document.createElement('div');
@@ -174,30 +173,18 @@ export function renderWatchlistCards(a) {
     const verdict = a.verdicts[pid];
     const est = a.estimates[pid];
     const routine = a.routines[pid];
-    const rel = a.relationships[pid] || 'neutral';
-
-    // Settings face — the card FLIPS to per-player controls (⚙ in the top
-    // row) instead of growing: relationship + watch-via chips replace the
-    // verdict/fleet rows in the same footprint, and flip back on close. The
-    // chips are the dossier header's own selectors (imported), so both
-    // surfaces stay one control language.
-    const canEdit = !!(a.onSetRelationship || a.onSetScanMode);
-    const editing = canEdit && editOpen.has(pid);
 
     const card = document.createElement('div');
     card.className = 'watch-card';
-    // While the settings face is up, a card tap CLOSES it (chips stop
-    // propagation) — never a surprise dossier-open under a mis-tap.
-    card.addEventListener('click', () => {
-      if (editOpen.has(pid)) { editOpen.delete(pid); renderWatchlistCards(a); return; }
-      a.onOpen(pid);
-    });
+    card.addEventListener('click', () => a.onOpen(pid));
 
-    // Row 1 — relationship dot · name · danger badge.
+    // Row 1 — map-colour dot · name · danger badge · ✕ (alone in the corner).
     const top = document.createElement('div');
     top.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px;';
     const dot = document.createElement('span');
-    dot.style.cssText = `width:8px;height:8px;border-radius:999px;flex:0 0 auto;background:${RELATIONSHIP_COLORS[rel]};`;
+    dot.title = 'Map colour — picked on the map’s player chips';
+    dot.style.cssText = 'width:8px;height:8px;border-radius:999px;flex:0 0 auto;'
+      + `background:${(a.colors && a.colors[pid]) || WATCH_DEFAULT_COLOR};`;
     const nm = document.createElement('span');
     nm.textContent = c?.name || `#${pid}`;
     nm.style.cssText = 'font-weight:600;font-size:13.5px;color:#cfd6dd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
@@ -210,66 +197,25 @@ export function renderWatchlistCards(a) {
       badge.textContent = '—';
       badge.style.cssText = 'margin-left:auto;color:#5f6b75;font-size:12px;';
     }
-    // Inline action: stop-watching ✕, right of the badge. No separate "open"
-    // affordance — the whole card is already click-to-open (line above), so a ▸
-    // would just duplicate it.
-    const acts = document.createElement('span');
-    acts.style.cssText = 'display:inline-flex;align-items:center;gap:6px;margin-left:6px;flex:0 0 auto;';
-    if (canEdit) {
-      // ⚙ flips the card to its settings face (same glyph language as the
-      // Players card's "⚙ Filters" — settings live behind the gear).
-      const gear = document.createElement('span');
-      gear.textContent = '⚙';
-      gear.className = 'hit-pad';
-      gear.title = editing
-        ? 'Close watch settings'
-        : 'Watch settings — Enemy/Friend/Neutral · watch via galaxy/probes · re-scan';
-      gear.style.cssText = `cursor:pointer;font-size:12px;font-weight:700;color:${editing ? '#8fb8e0' : '#66788a'};`;
-      gear.addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        if (editing) editOpen.delete(pid); else editOpen.add(pid);
-        renderWatchlistCards(a);
-      });
-      acts.appendChild(gear);
-    }
+    top.append(dot, nm, badge);
     if (a.onToggleWatch) {
-      // Red ✕, NOT a star: on the card this action DELETES the card (removes the
-      // player from the watchlist and the tile vanishes) — a destructive, easy-to-
-      // misfire click, so it must read "remove", unlike the reversible toggles
-      // elsewhere where the row stays put.
-      const watch = document.createElement('span');
-      watch.textContent = '✕';
-      watch.title = 'Remove from watchlist — deletes this card';
-      watch.style.cssText = 'cursor:pointer;font-size:12px;color:#e06c5f;font-weight:700;';
-      watch.addEventListener('click', (ev) => { ev.stopPropagation(); a.onToggleWatch?.(pid); });
-      acts.appendChild(watch);
+      // Red ✕: on the card this action DELETES the card (removes the player
+      // from the watchlist and the tile vanishes). No confirm step — with the
+      // control chips down in the footer, nothing sits beside the ✕ any more,
+      // so a graze can't reach it; the 30-px hit target alone is the guard.
+      const onToggle = a.onToggleWatch;
+      const x = document.createElement('button');
+      x.type = 'button';
+      x.className = 'wc-x';
+      x.textContent = '✕';
+      x.title = 'Remove from watchlist — deletes this card';
+      x.addEventListener('click', (ev) => { ev.stopPropagation(); onToggle(pid); });
+      top.appendChild(x);
     }
-    top.append(dot, nm, badge, acts);
     card.appendChild(top);
 
-    // SETTINGS face (rows 2–4 swap out; the intel-age foot stays — "spied 3h
-    // ago" is exactly the context a ↻ re-scan decision needs).
-    if (editing) {
-      if (a.onSetRelationship) {
-        const relRow = document.createElement('div');
-        relRow.style.cssText = 'margin:2px 0 8px;';
-        relRow.appendChild(relationshipSelector(pid, rel, a.onSetRelationship));
-        card.appendChild(relRow);
-      }
-      if (a.onSetScanMode) {
-        const viaRow = document.createElement('div');
-        viaRow.style.cssText = 'margin:0 0 8px;';
-        const scanOn = !(a.scanMode && a.scanMode[pid] === 'off');
-        const galaxyOn = !(a.galaxyMode && a.galaxyMode[pid] === 'off');
-        viaRow.appendChild(watchViaSelector(
-          pid, scanOn, galaxyOn, a.onSetScanMode, a.onSetGalaxyMode, a.onRescan,
-        ));
-        card.appendChild(viaRow);
-      }
-    }
-
     // Row 2 — the verdict, in words (same palette as the dossier banner).
-    if (!editing && verdict) {
+    if (verdict) {
       const v = document.createElement('div');
       let text = verdict.label;
       if (typeof verdict.lootNow === 'number' && verdict.lootNow > 0) {
@@ -283,7 +229,7 @@ export function renderWatchlistCards(a) {
     }
 
     // Row 3 — the headline fleet number (same units as the table's Fleet col).
-    if (!editing) {
+    {
     const head = document.createElement('div');
     head.style.cssText = 'font-size:11.5px;color:#8b99a8;margin-bottom:6px;';
     if (c && c.ships === 0) {
@@ -318,7 +264,7 @@ export function renderWatchlistCards(a) {
 
     // Row 4 — hour-of-day activity sparkline (only when actually sampled;
     // hollow bars would just look broken).
-    if (!editing && routine && routine.activity && routine.activity.samples > 0 && routine.activity.gate !== 'none') {
+    if (routine && routine.activity && routine.activity.samples > 0 && routine.activity.gate !== 'none') {
       const act = document.createElement('div');
       act.style.cssText = 'font-size:11px;color:#66788a;margin-bottom:6px;display:flex;gap:8px;align-items:baseline;';
       const spark = document.createElement('span');
@@ -334,7 +280,7 @@ export function renderWatchlistCards(a) {
     // this player's alliance in the ranking; one open captures its class and
     // lights the warrior tell — no spying. stopPropagation so the link doesn't
     // also trigger the card's click-to-open-dossier.
-    if (!editing && unknownClass(pid) && prof) {
+    if (unknownClass(pid) && prof) {
       const warn = document.createElement('div');
       warn.style.cssText = 'font-size:11px;color:#c79a3a;margin-bottom:6px;';
       const url = allyRankingUrl(a.linkBase, prof.allianceId);
@@ -354,23 +300,42 @@ export function renderWatchlistCards(a) {
       card.appendChild(warn);
     }
 
-    // Row 5 — intel age + band flag.
-    const foot = document.createElement('div');
-    foot.style.cssText = 'font-size:11px;color:#66788a;';
+    // Command footer — pinned to the card's BOTTOM edge (.watch-card is a
+    // flex column; the auto top margin takes the slack) and bled to the
+    // card's inner edges, the same command-block language as the scan-prefs
+    // bar under the grid. Left: the dossier's own Watch-via chips (label
+    // dropped — in this packed bar the two channel words explain themselves)
+    // + the ↻ chip, lit amber while a re-scan is pending. Right: intel age +
+    // band flag — exactly the context a ↻ decision needs.
+    const cmd = document.createElement('div');
+    cmd.className = 'wc-cmd';
+    cmd.addEventListener('click', (ev) => ev.stopPropagation()); // bar ≠ card
+    if (a.onSetScanMode) {
+      const scanOn = !(a.scanMode && a.scanMode[pid] === 'off');
+      const galaxyOn = !(a.galaxyMode && a.galaxyMode[pid] === 'off');
+      cmd.appendChild(watchViaSelector(
+        pid, scanOn, galaxyOn, a.onSetScanMode, a.onSetGalaxyMode, a.onRescan,
+        { label: false, rescanFlagged: !!(a.rescan && a.rescan[pid]) },
+      ));
+    }
+    const foot = document.createElement('span');
+    foot.style.cssText = 'margin-left:auto;font-size:11px;color:#66788a;'
+      + 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;';
     const reports = a.reportsByPlayer[pid];
     let newest = 0;
     if (reports) for (const coord of Object.keys(reports)) {
       const ts = reports[coord].ts;
       if (ts > newest) newest = ts;
     }
-    const parts = [];
-    parts.push(newest > 0 ? `spied ${formatAge(a.nowMs - newest * 1000)} ago` : 'never scanned');
-    if (a.inBand[pid]) parts.push('⚔ in band');
-    // ↻ feedback (settings face) — a player-level re-scan flag is otherwise
-    // invisible until the FAB acts on it.
-    if (a.rescan && a.rescan[pid]) parts.push('re-scan flagged');
-    foot.textContent = parts.join(' · ');
-    card.appendChild(foot);
+    // Compact on purpose ("⚔ 4d", not "spied 4d ago · ⚔ in band") — the footer
+    // must hold the chips AND the age in ONE row at the grid's minimum card
+    // width; the words ride in the tooltip.
+    const age = newest > 0 ? formatAge(a.nowMs - newest * 1000) : '';
+    foot.textContent = [a.inBand[pid] ? '⚔' : '', age || 'never'].filter(Boolean).join(' ');
+    foot.title = (age ? `spied ${age} ago` : 'never scanned')
+      + (a.inBand[pid] ? ' · in your legal attack band' : '');
+    cmd.appendChild(foot);
+    card.appendChild(cmd);
 
     grid.appendChild(card);
   }

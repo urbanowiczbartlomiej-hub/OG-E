@@ -12,6 +12,8 @@ import {
   allianceFilenameFor,
   fetchAllianceFile,
   writeAllianceFile,
+  ensureAllianceGist,
+  ALLIANCE_GIST_DESCRIPTION,
 } from '../../src/sync/allianceShare.js';
 
 /** Build a minimal ok-Response stub around a JSON body. @param {unknown} body */
@@ -103,5 +105,37 @@ describe('writeAllianceFile', () => {
     expect(Object.keys(body.files)).toEqual(['oge-spyglass-alliance-s163-pl.json']);
     expect(body.files['oge-spyglass-alliance-s163-pl.json'].content)
       .toBe(JSON.stringify(doc, null, 2));
+  });
+});
+
+describe('ensureAllianceGist — discover-or-create', () => {
+  it('picks the OLDEST description match from the token account\'s gists', async () => {
+    fetchMock.mockResolvedValueOnce(okJson([
+      { id: 'newer', description: ALLIANCE_GIST_DESCRIPTION, created_at: '2026-07-02T00:00:00Z' },
+      { id: 'other', description: 'something else', created_at: '2020-01-01T00:00:00Z' },
+      { id: 'older', description: ALLIANCE_GIST_DESCRIPTION, created_at: '2026-07-01T00:00:00Z' },
+    ]));
+    await expect(ensureAllianceGist('tok', 's163-pl'))
+      .resolves.toEqual({ id: 'older', created: false });
+    const [url, opts] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://api.github.com/gists?per_page=100');
+    expect(opts.headers.Authorization).toBe('Bearer tok');
+    expect(fetchMock).toHaveBeenCalledTimes(1); // no POST when one exists
+  });
+
+  it('POSTs a fresh SECRET gist seeded with the universe file when none matches', async () => {
+    fetchMock
+      .mockResolvedValueOnce(okJson([{ id: 'x', description: 'unrelated' }]))
+      .mockResolvedValueOnce(okJson({ id: 'fresh123' }));
+    await expect(ensureAllianceGist('tok', 's163-pl'))
+      .resolves.toEqual({ id: 'fresh123', created: true });
+    const [url, opts] = fetchMock.mock.calls[1];
+    expect(url).toBe('https://api.github.com/gists');
+    expect(opts.method).toBe('POST');
+    const body = JSON.parse(opts.body);
+    expect(body.description).toBe(ALLIANCE_GIST_DESCRIPTION);
+    expect(body.public).toBe(false);
+    const seeded = JSON.parse(body.files['oge-spyglass-alliance-s163-pl.json'].content);
+    expect(seeded).toEqual({ version: 1, universeId: 's163-pl', members: {} });
   });
 });

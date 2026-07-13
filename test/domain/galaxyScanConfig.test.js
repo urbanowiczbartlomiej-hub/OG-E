@@ -14,6 +14,7 @@ import { describe, it, expect } from 'vitest';
 import {
   defaultGalaxyScanConfig,
   normalizeGalaxyScanConfig,
+  sanitizeGalaxyScanConfigForWire,
 } from '../../src/domain/galaxyScanConfig.js';
 
 describe('defaultGalaxyScanConfig', () => {
@@ -143,5 +144,17 @@ describe('normalizeGalaxyScanConfig', () => {
     expect(out.guardianEnabled).toBe(false);
     expect(out.guardianIntervalMin).toBe(45);                       // coerced from string
     expect(out.guardianAckIntervalMin).toBe(d.guardianAckIntervalMin); // negative → default
+  });
+});
+
+describe('sanitizeGalaxyScanConfigForWire — colonyPassword is device-local', () => {
+  it('blanks the password, keeps every other knob, and never mutates the input', () => {
+    const cfg = normalizeGalaxyScanConfig({ colonyPassword: 'hunter2', fsThreshold: 9 });
+    const wire = sanitizeGalaxyScanConfigForWire(cfg);
+    expect(wire.colonyPassword).toBe('');
+    expect(wire.fsThreshold).toBe(9);
+    expect(cfg.colonyPassword).toBe('hunter2'); // input untouched
+    // The field stays PRESENT ('' = unset) so any version normalises cleanly.
+    expect(normalizeGalaxyScanConfig(wire).colonyPassword).toBe('');
   });
 });

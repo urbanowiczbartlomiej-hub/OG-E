@@ -65,6 +65,7 @@ import { bodiesKeyFor } from '../../state/bodies.js';
 import { colonizeDecisionsKeyFor } from '../../state/colonizeDecisions.js';
 import { dailyRunRoutesKeyFor, dailyRunRoutesTsKeyFor } from '../../state/dailyRunRoutes.js';
 import { galaxyScanConfigKeyFor, galaxyScanConfigTsKeyFor } from '../../state/galaxyScanConfig.js';
+import { normalizeGalaxyScanConfig, sanitizeGalaxyScanConfigForWire } from '../../domain/galaxyScanConfig.js';
 import { alarmClockConfigKeyFor, alarmClockConfigTsKeyFor } from '../../state/alarmClockConfig.js';
 import {
   watchListKeyFor,
@@ -348,7 +349,26 @@ const IO_SLOTS = [
     nonEmpty: (v) => Object.keys(v).length > 0,
   },
   lwwConfigSlot('dailyRunRoutes', 'Daily Run config', dailyRunRoutesKeyFor, dailyRunRoutesTsKeyFor),
-  lwwConfigSlot('galaxyScanConfig', 'scan config', galaxyScanConfigKeyFor, galaxyScanConfigTsKeyFor),
+  {
+    // Scan config = the generic LWW pair PLUS a secret scrub: colonyPassword
+    // is device-local by policy (domain/galaxyScanConfig sanitizer note) —
+    // the export file must not carry it, and importing a file (even an old
+    // one that still has it) must not overwrite THIS device's password.
+    ...lwwConfigSlot('galaxyScanConfig', 'scan config', galaxyScanConfigKeyFor, galaxyScanConfigTsKeyFor),
+    exportRead: async (/** @type {string} */ uni) => ({
+      value: sanitizeGalaxyScanConfigForWire(
+        normalizeGalaxyScanConfig(await chromeStore.get(galaxyScanConfigKeyFor(uni))),
+      ),
+      updatedAt: asTs(await chromeStore.get(galaxyScanConfigTsKeyFor(uni))),
+    }),
+    write: async (/** @type {string} */ uni, /** @type {any} */ merged) => {
+      const cur = normalizeGalaxyScanConfig(await chromeStore.get(galaxyScanConfigKeyFor(uni)));
+      const value = normalizeGalaxyScanConfig(merged.value);
+      value.colonyPassword = cur.colonyPassword;
+      await chromeStore.set(galaxyScanConfigKeyFor(uni), value);
+      await chromeStore.set(galaxyScanConfigTsKeyFor(uni), merged.updatedAt);
+    },
+  },
   lwwConfigSlot('alarmClockConfig', 'alarm config', alarmClockConfigKeyFor, alarmClockConfigTsKeyFor),
 ];
 

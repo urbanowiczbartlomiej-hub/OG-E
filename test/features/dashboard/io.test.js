@@ -221,7 +221,7 @@ describe('importAllData — v2 payloads', () => {
         data: {
           watchList: {
             watched: { 1: { ts: fileTs }, 2: { v: true, ts: fileTs } },
-            rel: { 2: { v: 'enemy', ts: fileTs } },
+            rel: { 2: { v: 'enemy', ts: fileTs } }, // legacy tag in an OLD file
           },
         },
       }),
@@ -230,7 +230,8 @@ describe('importAllData — v2 payloads', () => {
     expect(importCount(res, 'watch entries')).toBeGreaterThan(0);
     const cfg = store.get(watchListKeyFor(UNI));
     expect(cfg.players).toEqual(['2']); // 1 un-starred by the newer tombstone, 2 added
-    expect(cfg.relationships).toEqual({ 2: 'enemy' });
+    // The old file's 'enemy' tag lands as the hue it used to paint.
+    expect(cfg.colors).toEqual({ 2: '#e2726a' });
     expect(cfg.probes).toBe(7); // local-only fields preserved
     expect(cfg.rescan).toEqual({ 1: 123 });
     // The imported stamps land in the ledger verbatim (LWW continuity).
