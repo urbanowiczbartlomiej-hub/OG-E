@@ -4,6 +4,52 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.47.4] — 2026-07-13
+
+### Changed
+
+- **Watchlist cards put every control on the face.** The hidden ⚙ settings
+  face is gone — its tiny gear sat one graze away from the destructive ✕.
+  Each card now ends in a command bar pinned to its bottom edge: the
+  galaxy / probes watch toggles and the ↻ re-scan flag are always visible and
+  one tap away (↻ lights amber while a re-scan is pending), with the intel
+  age beside them. The remove ✕ stands alone in the top corner with a real
+  finger-sized target.
+- **Enemy/Friend/Neutral tags became map colours.** You now pick a plain
+  colour per tracked player (red, orange, gold, green, blue, violet) from a
+  swatch popover on the map's player chips — the tag rows on the card and in
+  the dossier are gone, and the card's dot just mirrors the map. Old tags
+  convert automatically (enemy → red, friend → green, neutral → default
+  grey). The patrol no longer exempts 'friend'-tagged neighbours — your
+  buddies and alliance members are still skipped via the game's own flags.
+- **Alliance share now shares observations only.** Your block carries
+  last-spy / last-seen times and names for players you actually hold data on
+  — never your watch list, tags or any settings. The shared table lost its
+  Tag column, moved off the Spyglass tab onto the Sync card (it scrolls
+  instead of flooding the page) and gained its own Alliance sync button
+  there; the Spyglass title keeps a one-line summary. The whole section has
+  a master switch like "Sync across devices".
+- **The alliance gist sets itself up.** Leave the gist id empty — the first
+  sync finds the token account's alliance gist (or creates a fresh secret
+  one) and fills the id in; alliance-mates with the same token auto-find it
+  too. A mistyped id now gets a clear message instead of a raw HTTP 404.
+- **Better phone layouts.** Below 640 px the players table re-packs: the
+  watch pill stacks above the nick, the ships composition note gets its own
+  line, and the ≈ signs are gone. The dashboard top-bar collapses into the
+  compact server pill already below 850 px, and the Coords/Names toggle
+  rides the "Who's spying on you" header instead of spending a row.
+
+### Security
+
+- **Your account password (for abandon) never leaves the device any more.**
+  It used to ride the encrypted-nowhere sync payload and Export files; it is
+  now excluded from both, an incoming sync or import can neither read nor
+  overwrite it, and the next sync round scrubs it out of your gist's current
+  contents. Enter it once per device that uses the abandon flow. If you ever
+  pointed the alliance share at the same GitHub account as your personal
+  sync, consider deleting that gist (sync recreates it) — gist edit history
+  keeps old revisions.
+
 ## [1.47.3] — 2026-07-12
 
 ### Fixed
