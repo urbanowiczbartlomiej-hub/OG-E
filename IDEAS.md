@@ -29,3 +29,54 @@ deferred from v1, each its own small design chunk:
 - **Own-block preview before first share.** A "what exactly leaves this
   device" dry-run view (render `buildMemberBlock` locally without a PATCH) —
   strengthens the consent story before the first click.
+
+---
+
+## 4. Documentation strategy — game-knowledge doc + structural enforcement
+
+The project is large and unusually well-documented AT THE CODE LEVEL (file
+headers carry the rationale, not just the "what"). The temptation on a big
+project is to add a parallel per-feature prose layer; that is the WRONG move
+here and this entry exists to say so and to name the RIGHT one instead.
+
+**Do NOT build prose that restates code behaviour.** It duplicates the
+headers, rots independently, and violates the DRY doc-hygiene rule in
+CLAUDE.md ("descriptions rot; invariants don't"). Prose freshness also
+can't be mechanically enforced — an assertion can pass/fail, a paragraph
+can't — so "enforce docs like tests" is literally unworkable for narrative.
+Enforce STRUCTURE instead, the same way layering is already ESLint-enforced.
+
+The three chunks, each independently shippable:
+
+- **Expand the reverse-engineered GAME-KNOWLEDGE doc.** This is the one
+  documentation investment with clearly positive ROI: the knowledge is
+  IRREPLACEABLE (not online, not in any LLM's training — it's plain to
+  players but undiscoverable to a fresh session/model), STABLE (game rules
+  change rarely, so it doesn't rot), and today it is scattered across code
+  headers (`domain/activityObs.js` activity-marker semantics, `presence.js`
+  online-vs-quiet asymmetry, `routine.js`, `espionageReport.js` field
+  meanings, alliance classes, lifeforms, galaxy-view mechanics). Consolidate
+  into `docs/ogame-fleet-mechanics.md` by WIDENING its charter (it already is
+  the canonical home for reverse-engineered rules — fleet/phalanx/fleet-save)
+  to a full "OGame rules OG-E relies on". Cross-link from the code headers to
+  the doc section instead of restating.
+- **Thin FEATURE INDEX.** Not prose — a spis-treści: one line per
+  `features/*/` → its `install*()` entry file + a ≤10-word purpose. Low-rot
+  (names + pointers), and checkable (see below). Lets a cold session navigate
+  without grepping.
+- **STRUCTURAL enforcement in the release gate (`scripts/release.mjs`), not
+  prose-truth checks.** Cheap, executable, matches the existing ESLint-zone
+  philosophy: (1) a doc-link checker — every `docs/*.md` link and every
+  `see foo.js`-style code pointer resolves to a real file (catches rot where
+  docs actually break: the pointers); (2) game-rule ↔ test binding — each
+  reverse-engineered constant/formula has a unit test the doc names, so rule
+  and test move together (THIS is the honest "enforce like tests"); (3)
+  feature-index completeness — a test asserts every `features/*/` dir appears
+  in the index. None of these assert a paragraph is "true"; they assert links
+  live, rules are tested, features are listed.
+
+Grounding note for whoever picks this up: this idea was itself a reaction to
+"a session's knowledge mostly evaporates and the next one re-derives it from
+code" — the fix is the game-knowledge doc (the irreplaceable part) + the
+already-present carriers (CLAUDE.md invariants, CHANGELOG, this file), NOT a
+new narrative layer.
