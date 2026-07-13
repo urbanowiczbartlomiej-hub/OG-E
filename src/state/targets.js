@@ -8,13 +8,19 @@
 // tracker. The `{latest, history}` shape is owned by `domain/targetReports.js` —
 // every reader goes through its `latestOf`/`historyOf` accessors (§10.1).
 //
-// LOCAL ONLY — never gist-synced: it's per-device intel, fully re-derivable by
-// re-spying, exactly like `state/scans.js` / `state/apiCache.js`. Reactive
-// `createStore` + `persist` (not a plain key-owner) because two parties touch
-// it across a burst: the in-game ingest consumer (`features/targetsIngest`)
-// WRITES via `recordReport`, and the dashboard READS the raw key. `recordReport`
-// gates its first write on hydration to avoid the late-hydrate clobber that bit
-// `colonyRecorder` (see `state/history.js` whenHistoryHydrated).
+// GIST-SYNCED since 1.48 (`targetReportsPerUniverse`, additive union via
+// sync/merge.mergeTargetReports — newer `latest` wins per body, history rings
+// union): re-spying could in principle re-derive a report, but the OBSERVATION
+// TIMELINE (when each look happened) cannot be re-derived, and per-device
+// divergence was the root cause of the "two devices, two different Spyglass
+// views" failure. The sync scheduler reads/writes the RAW chrome.storage key
+// (cross-origin truth) and refreshes this store after hydration settles.
+// Reactive `createStore` + `persist` (not a plain key-owner) because two
+// parties touch it across a burst: the in-game ingest consumer
+// (`features/targetsIngest`) WRITES via `recordReport`, and the dashboard
+// READS the raw key. `recordReport` gates its first write on hydration to
+// avoid the late-hydrate clobber that bit `colonyRecorder` (see
+// `state/history.js` whenHistoryHydrated).
 //
 // Per-universe key (`<universeId>:oge_targetReports`).
 

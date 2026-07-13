@@ -15,8 +15,9 @@
 //     a giant table it can't close; the full list lives on the Sync tab.
 //
 // One click = one round: build our block from local Spyglass state, fetch
-// the shared file, replace our block, PATCH it back, cache + render both
-// surfaces. Nothing ever syncs without that click.
+// the shared file, UNION it into our block (per-player field-wise max —
+// multi-device-safe, see domain/allianceIntel.mergeOwnBlock), PATCH it back,
+// cache + render both surfaces. Nothing ever syncs without that click.
 //
 // Pulled intel is DISPLAY-ONLY: it renders in the panel and feeds nothing —
 // not the danger score, not the scan plan (domain/allianceIntel.js header).

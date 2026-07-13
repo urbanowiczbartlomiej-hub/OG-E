@@ -578,12 +578,19 @@ export const mergeManualLandedFs = (local, remote) => {
   return { merged: local, changed: false };
 };
 
-// ── JSON-import reconcilers (dashboard Export/Import) ───────────────────────
+// ── Spyglass / dashboard-import reconcilers ─────────────────────────────────
 //
-// Everything below merges an INCOMING (imported-file) snapshot into the local
-// one. None of these datasets gist-sync (they are per-device intel — the JSON
-// export is their only backup path), but the discipline is identical:
-// pure `{ merged, changed }`, additive, local observations trusted first.
+// Everything below merges an INCOMING snapshot into the local one, serving
+// TWO callers with the same semantics: the dashboard Export/Import
+// (features/dashboard/io.js) for every dataset, and — since 1.48 — the gist
+// sync scheduler for the Spyglass observations (mergeTargetReports,
+// mergeActivityObs, mergePlayerCache via the `playersLitePerUniverse` slot),
+// which were promoted from per-device intel to synced state because a second
+// device can never re-derive an observation timeline. The rest (proximity
+// log, alliance classes, body inventory) remains import-only per-device data.
+// The discipline is uniform either way: pure `{ merged, changed }`, additive,
+// local observations trusted first — an import behaves exactly like a gist
+// download.
 
 /** @typedef {import('../state/targets.js').TargetReports} TargetReports */
 /** @typedef {import('../state/activityObs.js').ActivityObsMap} ActivityObsMap */

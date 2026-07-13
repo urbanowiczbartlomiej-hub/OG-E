@@ -9,10 +9,14 @@
 // The shared file is `memberKey → block`: each member is the SOLE writer of
 // their own block and never touches anyone else's. That kills the whole
 // cross-member conflict class the rough plan's per-(player,field) LWW would
-// have had to referee — a share round is fetch → replace own block → PATCH,
-// and the only way to lose data is two members choosing the same share name
-// (surfaced in the Sync-tab hint). Un-watch propagates for free: the player
-// simply isn't in your next block, so no tombstones are needed.
+// have had to referee — a share round is fetch → UNION own block → PATCH.
+// Since 2026-07 the own-block update is a per-player field-wise-max union
+// (see mergeOwnBlock), not a wholesale replace: every shared field is a
+// monotonic maximum, so the union is exact, and the replace model's one data
+// loss — two writers under the same member name (e.g. the same player's
+// desktop + mobile) clobbering each other — is gone. The flip side accepted
+// with it: a player never leaves a block by mere absence (observations don't
+// un-happen; row staleness is visible via the times themselves).
 //
 // # What a block carries (privacy floor)
 //
@@ -260,8 +264,57 @@ export const buildMemberBlock = ({
 };
 
 /**
- * Merge OUR block into the shared doc: replace `members[memberKey]`, keep
- * every other block verbatim. The input doc is not mutated.
+ * Union of the previous own block (as fetched from the gist) with the fresh
+ * locally-built one, per player, field-wise max — the multi-device-safe core
+ * of {@link mergeOwnBlock}. Every shared field is monotonic ("newest spy
+ * report ever", "newest implied interaction ever", "bodies covered"), so max
+ * is semantically exact, and two devices sharing under the SAME member name
+ * converge instead of the last click wiping the other device's contribution.
+ * The name follows the fresh block when it carries one (it reflects the
+ * newest local observation), else the previous one is kept.
+ *
+ * @param {AllianceMemberBlock | undefined} prev
+ * @param {AllianceMemberBlock} fresh
+ * @returns {AllianceMemberBlock}
+ */
+const unionMemberBlock = (prev, fresh) => {
+  if (!prev) return fresh;
+  /** @type {Record<string, SharedPlayerIntel>} */
+  const players = { ...prev.players };
+  for (const pid of Object.keys(fresh.players)) {
+    const f = fresh.players[pid];
+    const p = players[pid];
+    if (!p) {
+      players[pid] = f;
+      continue;
+    }
+    /** @type {SharedPlayerIntel} */
+    const out = {};
+    const name = f.name || p.name;
+    if (name) out.name = name;
+    const spy = Math.max(f.lastSpySec ?? 0, p.lastSpySec ?? 0);
+    if (spy) out.lastSpySec = spy;
+    const seen = Math.max(f.lastSeenSec ?? 0, p.lastSeenSec ?? 0);
+    if (seen) out.lastSeenSec = seen;
+    const bodies = Math.max(f.bodiesSpied ?? 0, p.bodiesSpied ?? 0);
+    if (bodies) out.bodiesSpied = bodies;
+    players[pid] = out;
+  }
+  return { updatedAtSec: Math.max(prev.updatedAtSec ?? 0, fresh.updatedAtSec ?? 0), players };
+};
+
+/**
+ * Merge OUR block into the shared doc: UNION the fresh local block with the
+ * previous `members[memberKey]` (per player, field-wise max — see
+ * {@link unionMemberBlock}), keep every other member's block verbatim. The
+ * input doc is not mutated.
+ *
+ * Union, NOT wholesale replace (changed 2026-07): a replace assumed one
+ * member = one device, so two devices sharing under the same name silently
+ * clobbered each other's coverage — whichever synced last owned the block.
+ * With the union a player never LEAVES a block by mere absence; that's the
+ * right call for observations (they don't un-happen), and staleness is
+ * visible per row via the times themselves.
  *
  * @param {AllianceIntelDoc} doc
  * @param {string} memberKey  Already canonical (see {@link memberKeyFor}).
@@ -270,7 +323,7 @@ export const buildMemberBlock = ({
  */
 export const mergeOwnBlock = (doc, memberKey, block) => ({
   ...doc,
-  members: { ...doc.members, [memberKey]: block },
+  members: { ...doc.members, [memberKey]: unionMemberBlock(doc.members[memberKey], block) },
 });
 
 /**

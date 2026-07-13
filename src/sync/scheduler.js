@@ -140,6 +140,9 @@ import {
   mergeGalaxyScanConfig,
   mergeAlarmClockConfig,
   mergeColonizeDecisions,
+  mergeTargetReports,
+  mergeActivityObs,
+  mergePlayerCache,
 } from './merge.js';
 import {
   fetchGistData,
@@ -165,9 +168,23 @@ import { readManualLandedFsSlot, writeManualLandedFsSlot } from '../state/manual
 import {
   watchListStore,
   normalizeWatchList,
+  watchListKeyFor,
   ensureWatchListLedgerSeeded,
   applyWatchListSyncSlot,
 } from '../state/watchList.js';
+import {
+  targetReportsStore,
+  targetReportsKeyFor,
+  whenTargetsHydrated,
+} from '../state/targets.js';
+import {
+  activityObsStore,
+  activityObsKeyFor,
+  whenActivityObsHydrated,
+} from '../state/activityObs.js';
+import { playersStore, playersKeyFor, whenPlayersHydrated } from '../state/players.js';
+import { normalizeReportTimestamps } from '../domain/espionageReport.js';
+import { sweepStaleActivityObs } from '../domain/activityObs.js';
 import {
   composeWatchSlot,
   mergeWatchList,
@@ -743,6 +760,126 @@ const writeLocalWatchListSlot = async (slot) => {
   }
 };
 
+// ── Spyglass observation slots (targetReports / activityObs / playersLite) ──
+//
+// Synced since 1.48. All three read the RAW chrome.storage key — not the
+// in-memory store — because the dashboard import (extension origin) writes
+// the same keys and the in-game store can't see those edits (same
+// cross-origin argument as readLocalRoutesSlot). All three write back key
+// FIRST (so a late hydrate loads the merged value), then refresh the
+// in-memory store AFTER its hydration settles (so the hydrate echo can't
+// clobber the refresh — the colonyRecorder race), via `store.update` with the
+// same entity merge (so an in-game report/look that landed mid-round survives
+// instead of being clobbered by `set`).
+
+/** @typedef {import('../state/targets.js').TargetReports} TargetReports */
+/** @typedef {import('../state/activityObs.js').ActivityObsMap} ActivityObsMap */
+/** @typedef {import('../state/players.js').PlayerCache} PlayerCache */
+
+/** @returns {Promise<TargetReports>} */
+const readLocalTargetReportsSlot = async () => {
+  if (!routesUniverseId) return {};
+  const raw = await chromeStore.get(targetReportsKeyFor(routesUniverseId));
+  // Same unit repair as the store's own hydrate: pre-fix reports stored ms
+  // timestamps — without it a malformed local `latest` would win every
+  // newer-timestamp merge against well-formed remote data.
+  return raw && typeof raw === 'object'
+    ? normalizeReportTimestamps(/** @type {TargetReports} */ (raw))
+    : {};
+};
+
+/** @param {TargetReports} merged @returns {Promise<void>} */
+const writeLocalTargetReportsSlot = async (merged) => {
+  if (!routesUniverseId) return;
+  bumpApplying('targetReportsPerUniverse');
+  try {
+    await chromeStore.set(targetReportsKeyFor(routesUniverseId), merged);
+    await whenTargetsHydrated();
+    targetReportsStore.update((cur) => mergeTargetReports(cur, merged).merged);
+  } finally {
+    dropApplying('targetReportsPerUniverse');
+  }
+};
+
+/** @returns {Promise<ActivityObsMap>} */
+const readLocalActivityObsSlot = async () => {
+  if (!routesUniverseId) return {};
+  const raw = await chromeStore.get(activityObsKeyFor(routesUniverseId));
+  return raw && typeof raw === 'object' ? /** @type {ActivityObsMap} */ (raw) : {};
+};
+
+/** @param {ActivityObsMap} merged @returns {Promise<void>} */
+const writeLocalActivityObsSlot = async (merged) => {
+  if (!routesUniverseId) return;
+  bumpApplying('activityObsPerUniverse');
+  try {
+    await chromeStore.set(activityObsKeyFor(routesUniverseId), merged);
+    await whenActivityObsHydrated();
+    activityObsStore.update((cur) => mergeActivityObs(cur, merged).merged);
+  } finally {
+    dropApplying('activityObsPerUniverse');
+  }
+};
+
+/**
+ * Read the "playersLite" slot: the full roster cache FILTERED to watched ∪
+ * observed ids (the dashboard export's filter — §4b keeps the unbounded full
+ * roster out of the gist). Observed = any id present in the targetReports /
+ * activityObs RAW keys, which — because this slot is registered AFTER those
+ * two in SYNC_SLOTS — already contain this round's merged union, so an id
+ * only the OTHER device observed still keeps its meta in the slot (no
+ * cross-device slim-and-readopt ping-pong).
+ *
+ * @returns {Promise<PlayerCache>}
+ */
+const readLocalPlayersLiteSlot = async () => {
+  if (!routesUniverseId) return {};
+  const [allRaw, wlRaw, reportsRaw, activityRaw] = await Promise.all([
+    chromeStore.get(playersKeyFor(routesUniverseId)),
+    chromeStore.get(watchListKeyFor(routesUniverseId)),
+    chromeStore.get(targetReportsKeyFor(routesUniverseId)),
+    chromeStore.get(activityObsKeyFor(routesUniverseId)),
+  ]);
+  const all = allRaw && typeof allRaw === 'object' ? /** @type {PlayerCache} */ (allRaw) : {};
+  const keep = new Set(
+    (wlRaw == null ? [] : normalizeWatchList(wlRaw).players).map(String),
+  );
+  for (const src of [reportsRaw, activityRaw]) {
+    if (src && typeof src === 'object') {
+      for (const pid of Object.keys(src)) keep.add(String(pid));
+    }
+  }
+  /** @type {PlayerCache} */
+  const lite = {};
+  for (const [id, meta] of Object.entries(all)) {
+    if (keep.has(String(id))) lite[/** @type {any} */ (id)] = meta;
+  }
+  return lite;
+};
+
+/**
+ * Overlay a merged playersLite slot into the FULL local roster cache (never
+ * replace it — the slot is a filtered subset; a `set` would wipe every
+ * unwatched/unobserved player this device has legitimately cached).
+ *
+ * @param {PlayerCache} merged
+ * @returns {Promise<void>}
+ */
+const writeLocalPlayersLiteSlot = async (merged) => {
+  if (!routesUniverseId) return;
+  bumpApplying('playersLitePerUniverse');
+  try {
+    const key = playersKeyFor(routesUniverseId);
+    const allRaw = await chromeStore.get(key);
+    const all = allRaw && typeof allRaw === 'object' ? /** @type {PlayerCache} */ (allRaw) : {};
+    await chromeStore.set(key, mergePlayerCache(all, merged).merged);
+    await whenPlayersHydrated();
+    playersStore.update((cur) => mergePlayerCache(cur, merged).merged);
+  } finally {
+    dropApplying('playersLitePerUniverse');
+  }
+};
+
 /** @type {SyncSlot[]} */
 const SYNC_SLOTS = [
   {
@@ -818,6 +955,39 @@ const SYNC_SLOTS = [
     merge: (local, remote) => mergeWatchList(local, remote, Date.now()),
     hasData: watchSlotHasData,
   },
+  {
+    payloadKey: 'targetReportsPerUniverse',
+    readLocal: readLocalTargetReportsSlot,
+    writeLocal: writeLocalTargetReportsSlot,
+    merge: mergeTargetReports,
+    hasData: (merged) => Object.keys(merged).length > 0,
+  },
+  {
+    payloadKey: 'activityObsPerUniverse',
+    readLocal: readLocalActivityObsSlot,
+    writeLocal: writeLocalActivityObsSlot,
+    // Sweep the MERGED result to the routine horizon: a ring one device
+    // already swept locally must not ping-pong back through the gist (the
+    // union would re-adopt it every round, the local hydrate sweep would drop
+    // it again, forever). Sweeping here both slims the contribution and, when
+    // `changed` fires on stale-only remote data, writes back the already-swept
+    // value — one PATCH later the gist has converged.
+    merge: (local, remote) => {
+      const r = mergeActivityObs(local, /** @type {ActivityObsMap} */ (remote) || {});
+      return { changed: r.changed, merged: sweepStaleActivityObs(r.merged, Date.now()) };
+    },
+    hasData: (merged) => Object.keys(merged).length > 0,
+  },
+  {
+    // MUST stay AFTER targetReports/activityObs: its readLocal filter derives
+    // "observed ids" from those slots' raw keys, which the loop above has
+    // already merged for this round (see readLocalPlayersLiteSlot).
+    payloadKey: 'playersLitePerUniverse',
+    readLocal: readLocalPlayersLiteSlot,
+    writeLocal: writeLocalPlayersLiteSlot,
+    merge: mergePlayerCache,
+    hasData: (merged) => Object.keys(merged).length > 0,
+  },
 ];
 
 /**
@@ -864,11 +1034,13 @@ const downloadAndMerge = async () => {
       return;
     }
 
-    // Galaxy scans, the player roster, and our own profile are NO LONGER
+    // Galaxy scans, the FULL player roster, and our own profile are NO LONGER
     // synced (§4b): occupancy + neighbour status/rank are re-derived from the
     // OGame public API per device, and our rank is re-scraped from the header
-    // each load. Only the colonization DECISION log (below) carries
-    // cross-device colonization state now — the rest stays local.
+    // each load. The colonization DECISION log carries cross-device
+    // colonization state, and since 1.48 the Spyglass OBSERVATIONS
+    // (targetReports / activityObs / the filtered playersLite roster subset)
+    // sync too — those can't be re-derived on a second device.
     // Global + per-universe settings merge (shared with upload()).
     const { setResult, uniResult } = mergeSyncSettings(remote, routesUniverseId);
 
@@ -1040,6 +1212,9 @@ const upload = async () => {
       colonizeDecisionsPerUniverse: slotPayloads.colonizeDecisionsPerUniverse,
       manualLandedFsPerUniverse: slotPayloads.manualLandedFsPerUniverse,
       watchListPerUniverse: slotPayloads.watchListPerUniverse,
+      targetReportsPerUniverse: slotPayloads.targetReportsPerUniverse,
+      activityObsPerUniverse: slotPayloads.activityObsPerUniverse,
+      playersLitePerUniverse: slotPayloads.playersLitePerUniverse,
     };
 
     // Skip the PATCH when the gist already matches the merged state — the common
@@ -1260,6 +1435,28 @@ export const installSync = () => {
   };
   const unsubWatchList = watchListStore.subscribe(onWatchListChange);
 
+  // Spyglass observations: an opened spy report (recordReport) or a galaxy
+  // look at a watched/patrolled body (recordGalaxyActivity) flips its store →
+  // schedule an upload; the 15-s debounce collapses a galaxy-scroll burst
+  // (the store's own 200 ms persist debounce sits inside that window).
+  // Sync-applied writes are skipped via the keyed anti-loop suppressors. The
+  // players roster is deliberately NOT subscribed: it churns on every galaxy
+  // scroll for ANY player, and name updates alone aren't worth a round —
+  // playersLite rides along whenever a report/activity change (or anything
+  // else) arms an upload.
+  const onTargetReportsChange = () => {
+    if (!shouldScheduleUpload({ cloudSync: settingsStore.get().cloudSync, applying: isApplyingFromSync('targetReportsPerUniverse') }))
+      return;
+    scheduleUpload();
+  };
+  const unsubTargetReports = targetReportsStore.subscribe(onTargetReportsChange);
+  const onActivityObsChange = () => {
+    if (!shouldScheduleUpload({ cloudSync: settingsStore.get().cloudSync, applying: isApplyingFromSync('activityObsPerUniverse') }))
+      return;
+    scheduleUpload();
+  };
+  const unsubActivityObs = activityObsStore.subscribe(onActivityObsChange);
+
   // Settings sync: stamp the keys that changed since the last tick with
   // `now`, then schedule an upload. The keyed suppressor (`'settings'`) skips
   // sync-origin writes (those carry remote timestamps we must keep), and
@@ -1417,6 +1614,8 @@ export const installSync = () => {
       unsubGalaxyConfig();
       unsubAlarmClockConfig();
       unsubWatchList();
+      unsubTargetReports();
+      unsubActivityObs();
       document.removeEventListener(SYNC_FORCE_EVENT, onForceSync);
       document.removeEventListener(DAILY_STATE_CHANGED_EVENT, onDailyStateChanged);
       unsubStorage();

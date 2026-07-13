@@ -202,6 +202,30 @@ import { SYNC_STATUS_EVENT } from '../lib/ogeEvents.js';
  *   {@link import('../domain/colonizeDecisions.js').mergeColonizeDecisions}).
  *   Per-universe because a coord is server-specific. This is the colonization
  *   state that powers cross-device "continue only the remaining free positions".
+ * @property {Record<string, import('../state/targets.js').TargetReports>} [targetReportsPerUniverse]
+ *   OPTIONAL, additive (same two-way tolerance as `settings`): the Spyglass
+ *   spy-report cache keyed by universe id. Merged per body — newer `latest`
+ *   (by the report's own `timestamp`) wins, history rings union by content and
+ *   re-cap (see {@link import('./merge.js').mergeTargetReports}, the same
+ *   reconciler the dashboard import uses). Synced since 1.48: per-device
+ *   reports were the root cause of "two devices, two different Spyglass
+ *   views" — the observation timeline cannot be re-derived by re-spying.
+ *   Per-universe because a coord/player id is server-specific.
+ * @property {Record<string, import('../state/activityObs.js').ActivityObsMap>} [activityObsPerUniverse]
+ *   OPTIONAL, additive: galaxy-activity observation rings keyed by universe
+ *   id. Merged per body — union by content, time-ordered, re-capped (see
+ *   {@link import('./merge.js').mergeActivityObs}); the merged result is swept
+ *   to the routine horizon (domain/activityObs sweepStaleActivityObs) so a
+ *   ring one device already swept locally can't ping-pong back through the
+ *   gist. Past looks are the one dataset a second device can NEVER re-derive.
+ * @property {Record<string, import('../state/players.js').PlayerCache>} [playersLitePerUniverse]
+ *   OPTIONAL, additive: a FILTERED player-metadata subset keyed by universe
+ *   id — watched ∪ observed ids only (the dashboard export's "playersLite"
+ *   filter), merged newer-`seenAt`-wins (see
+ *   {@link import('./merge.js').mergePlayerCache}). NOT the §4b
+ *   `playersPerUniverse` revival: that field carried the UNBOUNDED server-wide
+ *   roster and stays dead; this one exists solely so the names of synced
+ *   reports/activity render on the other device instead of `#pid`.
  * @property {Record<string, import('../domain/watchListMerge.js').WatchListSyncSlot>} [watchListPerUniverse]
  *   OPTIONAL, additive (same two-way tolerance as `settings`): the Spyglass
  *   watch-list DECISIONS keyed by universe id — starred players, map

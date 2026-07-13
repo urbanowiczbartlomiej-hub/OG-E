@@ -18,6 +18,12 @@
 // galaxy scroll fires a burst of per-system scans; 200 ms collapses them into
 // one trailing save.
 //
+// Sync: the FULL roster stays per-device (§4b dropped `playersPerUniverse` —
+// unbounded, re-derivable). Since 1.48 a FILTERED subset ("playersLite":
+// watched ∪ observed ids only, same filter as the dashboard export) rides the
+// personal gist as `playersLitePerUniverse`, so names render on a second
+// device for the players whose reports/activity sync carries over.
+//
 // Retention: hydrate runs `domain/players.sweepStalePlayers` over the loaded
 // map — records not refreshed for PLAYER_SWEEP_AFTER_MS (60 d) are dropped,
 // EXCEPT watched players (`state/watchList.js`), whose meta the Spyglass
@@ -84,6 +90,19 @@ export const playersStore = createStore(/** @type {PlayerCache} */ ({}));
 
 /** @type {(() => void) | null} */
 let disposeFn = null;
+/** @type {() => void} */
+let resolveHydrated = () => {};
+/** @type {Promise<void>} */
+let hydratedPromise = Promise.resolve();
+
+/**
+ * Resolves once the store's hydrate phase has settled (mirrors
+ * `whenTargetsHydrated` — see state/targets.js for the race story). The sync
+ * scheduler gates its store refresh on this so a merged remote roster written
+ * early can't be clobbered by a late hydrate load.
+ * @returns {Promise<void>}
+ */
+export const whenPlayersHydrated = () => hydratedPromise;
 
 /**
  * Wire the store to chrome.storage.local (hydrate + debounced write-through)
@@ -95,6 +114,9 @@ let disposeFn = null;
  */
 export const initPlayersStore = () => {
   if (disposeFn) return disposeFn;
+  hydratedPromise = new Promise((resolve) => {
+    resolveHydrated = resolve;
+  });
   disposeFn = persist({
     store: playersStore,
     load: async () => {
@@ -115,13 +137,17 @@ export const initPlayersStore = () => {
     },
     save: (value) => chromeStore.set(currentPlayersKey(), value),
     debounceMs: DEBOUNCE_MS,
+    onHydrate: () => {
+      resolveHydrated();
+    },
   });
   installPlayersListener();
   return disposeFn;
 };
 
 /**
- * Tear down the persist wiring + listener. Idempotent.
+ * Tear down the persist wiring + listener. Idempotent. Resets the hydration
+ * promise to the pre-resolved sentinel, matching the "no init has run" state.
  * @returns {void}
  */
 export const disposePlayersStore = () => {
@@ -130,6 +156,8 @@ export const disposePlayersStore = () => {
     disposeFn = null;
   }
   disposePlayersListener();
+  hydratedPromise = Promise.resolve();
+  resolveHydrated = () => {};
 };
 
 /** @type {(() => void) | null} */

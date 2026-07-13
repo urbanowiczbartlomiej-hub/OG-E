@@ -23,10 +23,15 @@
 // appends pause). Bodies of ever-watched players are additionally swept on
 // hydrate once their newest observation ages past the routine horizon.
 //
-// LOCAL ONLY — never gist-synced (per-device intel, like targetReports).
-// Reactive store because two parties read it live: the in-game scan FAB
-// (windowBonus needs it synchronously each repaint) and this module's own
-// event writer; the dashboard reads the raw key per selected universe.
+// GIST-SYNCED since 1.48 (`activityObsPerUniverse`, additive union via
+// sync/merge.mergeActivityObs): past looks are the one dataset a second
+// device can never re-derive — the moment is gone — so cross-device Spyglass
+// parity requires carrying them. The sync scheduler reads/writes the RAW
+// chrome.storage key (cross-origin truth) and refreshes this store after
+// hydration settles. Reactive store because two parties read it live: the
+// in-game scan FAB (windowBonus needs it synchronously each repaint) and
+// this module's own event writer; the dashboard reads the raw key per
+// selected universe.
 
 import { createStore } from '../lib/createStore.js';
 import { persist } from '../lib/persist.js';
@@ -38,7 +43,7 @@ import { watchListStore } from './watchList.js';
 import { bodiesStore } from './bodies.js';
 import { targetReportsStore } from './targets.js';
 import { latestOf, historyOf } from '../domain/targetReports.js';
-import { appendActivityObs } from '../domain/activityObs.js';
+import { appendActivityObs, sweepStaleActivityObs } from '../domain/activityObs.js';
 import { patrolSystemKeys } from '../domain/patrol.js';
 
 /** @typedef {import('../domain/activityObs.js').ActivityObs} ActivityObs */
@@ -63,13 +68,6 @@ export const activityObsKeyFor = (universeId) => `${universeId}:${ACTIVITY_OBS_K
 const currentActivityObsKey = () =>
   currentUniverseKey(ACTIVITY_OBS_KEY_BASE, activityObsKeyFor);
 
-/**
- * Observations whose newest entry is older than this are swept on hydrate —
- * they can no longer influence the 30-day routine window (domain/routine.js
- * RECENCY_MS) and only cost storage.
- */
-const SWEEP_AFTER_MS = 45 * 24 * 60 * 60 * 1000;
-
 /** @type {import('../lib/createStore.js').Store<ActivityObsMap>} */
 export const activityObsStore = createStore(/** @type {ActivityObsMap} */ ({}));
 
@@ -81,33 +79,6 @@ let disposeListenerFn = null;
 let resolveHydrated = () => {};
 /** @type {Promise<void>} */
 let hydratedPromise = Promise.resolve();
-
-/**
- * Drop rings whose newest observation predates the sweep horizon, and empty
- * player buckets. Pure over the map value.
- * @param {ActivityObsMap} map
- * @param {number} nowMs
- * @returns {ActivityObsMap}
- */
-const sweepStale = (map, nowMs) => {
-  const cutoffSec = (nowMs - SWEEP_AFTER_MS) / 1000;
-  /** @type {ActivityObsMap} */
-  const out = {};
-  for (const pid of Object.keys(map)) {
-    const bucket = map[pid];
-    if (!bucket || typeof bucket !== 'object') continue;
-    /** @type {Record<string, ActivityObs[]>} */
-    const kept = {};
-    for (const key of Object.keys(bucket)) {
-      const ring = bucket[key];
-      if (!Array.isArray(ring) || !ring.length) continue;
-      if ((ring[ring.length - 1].t ?? 0) < cutoffSec) continue;
-      kept[key] = ring;
-    }
-    if (Object.keys(kept).length) out[pid] = kept;
-  }
-  return out;
-};
 
 /**
  * A galaxy activity marker only reflects interaction in the last hour, so only
@@ -261,7 +232,7 @@ export const initActivityObsStore = () => {
     load: async () => {
       const raw = await chromeStore.get(currentActivityObsKey());
       return raw && typeof raw === 'object'
-        ? sweepStale(/** @type {ActivityObsMap} */ (raw), Date.now())
+        ? sweepStaleActivityObs(/** @type {ActivityObsMap} */ (raw), Date.now())
         : null;
     },
     save: (value) => chromeStore.set(currentActivityObsKey(), value),

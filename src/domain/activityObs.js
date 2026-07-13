@@ -207,3 +207,41 @@ export const appendActivityObs = (ring, obs, opts = {}) => {
 
   return [...cur, { t: obs.t, m: obs.m }].slice(-ACTIVITY_RING_CAP);
 };
+
+/**
+ * Rings whose newest observation is older than this can no longer influence
+ * the 30-day routine window (domain/routine.js RECENCY_MS) and only cost
+ * storage / sync payload. Shared horizon of the state store's hydrate sweep
+ * AND the sync scheduler's merge (the sweep must run on the merged result
+ * too, or a ring another device already swept locally would ping-pong back
+ * through the gist forever).
+ */
+export const ACTIVITY_SWEEP_AFTER_MS = 45 * 24 * 60 * 60 * 1000;
+
+/**
+ * Drop rings whose newest observation predates the sweep horizon, and empty
+ * player buckets. Pure over the map value (time arrives as an argument).
+ *
+ * @param {Record<string, Record<string, ActivityObs[]>>} map
+ * @param {number} nowMs
+ * @returns {Record<string, Record<string, ActivityObs[]>>}
+ */
+export const sweepStaleActivityObs = (map, nowMs) => {
+  const cutoffSec = (nowMs - ACTIVITY_SWEEP_AFTER_MS) / 1000;
+  /** @type {Record<string, Record<string, ActivityObs[]>>} */
+  const out = {};
+  for (const pid of Object.keys(map)) {
+    const bucket = map[pid];
+    if (!bucket || typeof bucket !== 'object') continue;
+    /** @type {Record<string, ActivityObs[]>} */
+    const kept = {};
+    for (const key of Object.keys(bucket)) {
+      const ring = bucket[key];
+      if (!Array.isArray(ring) || !ring.length) continue;
+      if ((ring[ring.length - 1].t ?? 0) < cutoffSec) continue;
+      kept[key] = ring;
+    }
+    if (Object.keys(kept).length) out[pid] = kept;
+  }
+  return out;
+};
