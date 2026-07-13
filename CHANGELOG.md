@@ -4,6 +4,42 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.48.0] — 2026-07-13
+
+### Added
+
+- **Your Spyglass intel now syncs across your own devices.** Spy reports,
+  galaxy-activity looks and watched-player names ride your private gist
+  automatically, so both devices show the same coverage — the observation
+  timeline can't be re-derived by re-spying, and per-device divergence was
+  the root cause of "two devices, two different views".
+- **Presence history — the long-horizon offline-pattern explorer.** A new
+  dossier section keeps months of day×hour "seen active / looked & quiet"
+  coverage (far past the 45-day activity rings) and lets you read it by
+  cycle: week×hour, daily rhythm, or day-of-month. Colour = how reliably
+  offline that phase is (the strike window), tap any cell for exact counts.
+- **Alliance pool feeds the presence explorer.** One alliance sync now also
+  shares your presence history and pools everyone's — months of looks from
+  the whole alliance in one heatmap, the intended way to find recurring
+  offline windows. Still inside the privacy floor: hour-grain bits, no
+  coordinates, no report contents.
+
+### Changed
+
+- **Alliance share is safe across your own devices.** Sharing under the same
+  name from two devices no longer overwrites — blocks now union (newest wins
+  per field, presence history OR-merged). The config collapsed to just the
+  token: the gist id and your share name derive themselves. A gentle "share
+  due" nudge appears after a day so the pool stays fresh (one click shares
+  yours and pulls everyone's — never automatic).
+- **The alliance file is compressed** (gzip), so a busy alliance's shared
+  file stays small; older plain-file shares still read.
+
+### Fixed
+
+- **Two devices no longer diverge, and alliance sync no longer wipes a
+  device's data** — the two issues that started this work.
+
 ## [1.47.4] — 2026-07-13
 
 ### Changed
