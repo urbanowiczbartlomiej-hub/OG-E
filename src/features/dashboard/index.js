@@ -81,6 +81,10 @@ import { allianceClassKeyFor } from '../../state/allianceClass.js';
 import { proximityReportsKeyFor } from '../../state/proximityReports.js';
 import { bodiesKeyFor } from '../../state/bodies.js';
 import { activityObsKeyFor } from '../../state/activityObs.js';
+import { presenceLedgerKeyFor } from '../../state/presenceLedger.js';
+import { mergePresenceLedgers } from '../../domain/presenceLedger.js';
+import { allianceIntelKeyFor } from '../../state/allianceShare.js';
+import { normalizeAllianceDoc, allianceLedgerForPid } from '../../domain/allianceIntel.js';
 import { watchListKeyFor, normalizeWatchList, writeWatchListConfig, DEFAULT_SPY_PROBES, DEFAULT_CADENCE, DEFAULT_MOON_STRIKE, normalizeCadence } from '../../state/watchList.js';
 import { syncRequestKeyFor } from '../../sync/scheduler.js';
 import { formatBytes, parsePerUniverseKey } from './syncInventory.js';
@@ -412,6 +416,17 @@ let presences = {};
  * @type {import('../../state/activityObs.js').ActivityObsMap}
  */
 let activityObs = {};
+
+/**
+ * Per-player pooled presence-HISTORY for the selected universe — the
+ * months-scale day×hour ledger (domain/presenceLedger.js), POOLED from this
+ * device's local ledger AND every alliance member's shared ledger (union by
+ * bitwise OR). This is the long-horizon fuel for the dossier's presence
+ * explorer; distinct from `presences` (the short-window statistical
+ * offline-window engine). Rebuilt on data load.
+ * @type {Record<string, { ledger: import('../../domain/presenceLedger.js').PresenceLedger, allianceMembers: string[] }>}
+ */
+let presenceHistories = {};
 
 // ── DOM refs (filled by wireDom) ───────────────────────────────────────
 
@@ -1317,13 +1332,14 @@ const loadAll = async () => {
     proximityReports = [];
     ownBodies = [];
     activityObs = {};
+    presenceHistories = {};
     planetCountByPlayer = {};
     dangerProfiles = new Map();
     civilProfiles = new Map();
     routines = {};
     return;
   }
-  const [h, s, p, op, api, tr, pr, ao, ac, bd] = await Promise.all([
+  const [h, s, p, op, api, tr, pr, ao, ac, bd, pl, ai] = await Promise.all([
     chromeStore.get(historyKeyFor(selectedUniverseId)),
     chromeStore.get(scansKeyFor(selectedUniverseId)),
     chromeStore.get(playersKeyFor(selectedUniverseId)),
@@ -1334,6 +1350,8 @@ const loadAll = async () => {
     chromeStore.get(activityObsKeyFor(selectedUniverseId)),
     chromeStore.get(allianceClassKeyFor(selectedUniverseId)),
     chromeStore.get(bodiesKeyFor(selectedUniverseId)),
+    chromeStore.get(presenceLedgerKeyFor(selectedUniverseId)),
+    chromeStore.get(allianceIntelKeyFor(selectedUniverseId)),
   ]);
   history = Array.isArray(h) ? /** @type {ColonyEntry[]} */ (h) : [];
   scans = s && typeof s === 'object' ? /** @type {GalaxyScans} */ (s) : {};
@@ -1450,6 +1468,35 @@ const loadAll = async () => {
   }
   routines = routinesAcc;
   presences = presencesAcc;
+
+  // Long-horizon presence HISTORY — pool this device's local ledger with the
+  // alliance-shared ledgers (union by day-mask OR). Its pid set is the UNION
+  // of the local ledger and every alliance member's coverage, so it holds
+  // players this device never watched (alliance-only intel — the whole point
+  // of the pool). Display-only, like the alliance doc it draws from.
+  const localLedgerMap = pl && typeof pl === 'object'
+    ? /** @type {Record<string, import('../../domain/presenceLedger.js').PresenceLedger>} */ (pl)
+    : {};
+  const allianceCache = ai && typeof ai === 'object' ? /** @type {any} */ (ai) : null;
+  const allianceDoc = allianceCache && allianceCache.doc != null
+    ? normalizeAllianceDoc(allianceCache.doc, selectedUniverseId)
+    : null;
+  const allianceMemberPids = new Set();
+  if (allianceDoc) {
+    for (const m of Object.values(allianceDoc.members)) {
+      for (const pid of Object.keys(m.players)) allianceMemberPids.add(pid);
+    }
+  }
+  /** @type {Record<string, { ledger: import('../../domain/presenceLedger.js').PresenceLedger, allianceMembers: string[] }>} */
+  const historiesAcc = {};
+  for (const pid of new Set([...Object.keys(localLedgerMap), ...allianceMemberPids])) {
+    const ally = allianceDoc ? allianceLedgerForPid(allianceDoc, pid) : { ledger: {}, members: [] };
+    const { merged } = mergePresenceLedgers(localLedgerMap[pid] || {}, ally.ledger);
+    if (Object.keys(merged).length) {
+      historiesAcc[pid] = { ledger: merged, allianceMembers: ally.members };
+    }
+  }
+  presenceHistories = historiesAcc;
 };
 
 /**
@@ -1745,6 +1792,7 @@ const repaintTargets = () => {
     activityRings: activityObs,
     galaxyLookMs: galaxyStaleMs(cadenceCfg),
     presences,
+    presenceHistories,
     fsArcs: fsArcsAcc,
     landingSignals,
     // Nickname search (Etap D): reveals name-matches incl. excluded players.

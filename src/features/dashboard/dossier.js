@@ -21,6 +21,7 @@ import { effectiveScan, ringKeyFor } from '../../domain/scanMode.js';
 import { FRESH_LOOK_MS } from '../../domain/fleetLanding.js';
 import { bodyActivityReadout } from '../../domain/galaxyWatch.js';
 import { mergeActivityObs } from '../../domain/activityObs.js';
+import { aggregateLedger } from '../../domain/presenceLedger.js';
 import { compact } from './format.js';
 import { estimateCombatShare } from '../../domain/threatModel.js';
 import { pointsToResources } from '../../domain/unitCosts.js';
@@ -1218,6 +1219,218 @@ function presenceBlock(presence) {
   return wrap;
 }
 
+/** Interactive state for the presence-history explorer, per open dossier. */
+const PRESENCE_RANGES = [
+  { key: 30, label: '30d' }, { key: 90, label: '90d' },
+  { key: 180, label: '6mo' }, { key: 0, label: 'All' },
+];
+/** @type {Array<{ key: import('../../domain/presenceLedger.js').LedgerPhase, label: string }>} */
+const PRESENCE_PHASES = [
+  { key: 'weekHour', label: 'Week × hour' },
+  { key: 'dayHour', label: 'Day rhythm' },
+  { key: 'monthDay', label: 'Month cycle' },
+];
+
+/**
+ * Offline-strength ramp for a history cell: how GOOD a strike window this
+ * phase is. Blue (reliably quiet across many looks) → grey (mixed / thin) →
+ * red (usually active). Distinct hue job from presenceRamp's P(online), but
+ * the same blue=safe/red=busy language. @param {number} q 0..1 quiet-fraction
+ * @param {number} conf 0..1 coverage @returns {string}
+ */
+function offlineRamp(q, conf) {
+  // Pull toward neutral grey when coverage is thin so a 1-look cell never
+  // screams "safe". q is the quiet fraction; blend to it by confidence.
+  const t = 0.5 + (q - 0.5) * conf; // 0.5 = unknown
+  return presenceRamp(1 - t); // 1-t: quiet(high q)→low P→blue, matches ramp
+}
+
+/** Local weekday labels reused from the offline-window heatmap (DOW_LABELS). */
+
+/**
+ * 8a-bis) PRESENCE HISTORY — the months-scale offline-pattern explorer. Pools
+ * THIS device's long-horizon ledger with every alliance member's shared one
+ * (domain/presenceLedger), then aggregates onto a chosen cycle (week×hour /
+ * day rhythm / month cycle) over a chosen range. Colour = how reliably OFFLINE
+ * that phase is (blue = quiet across many looks — the strike window), opacity =
+ * coverage. Tap any cell for its exact counts. This is the "one true use" of
+ * the pooled data: finding the recurring windows a single device's 45-day
+ * rings can't see.
+ * @param {{ ledger: import('../../domain/presenceLedger.js').PresenceLedger, allianceMembers: string[] }} hist
+ * @param {number} nowMs
+ * @returns {HTMLDivElement}
+ */
+function presenceHistoryBlock(hist, nowMs) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'margin-bottom:10px;font-size:11px;color:#8b95a0;line-height:1.5;';
+
+  const title = document.createElement('div');
+  title.textContent = 'PRESENCE HISTORY — long-horizon offline pattern';
+  title.style.cssText = 'font-size:11px;letter-spacing:0.5px;color:#6b7782;margin-bottom:3px;';
+  wrap.appendChild(title);
+
+  const nowSec = Math.floor(nowMs / 1000);
+  const totalDays = Object.keys(hist.ledger).length;
+  if (!totalDays) {
+    const empty = document.createElement('div');
+    empty.textContent = 'No long-horizon coverage yet — this fills as you (and alliance-mates,'
+      + ' if sharing) keep browsing this player’s systems over weeks.';
+    empty.style.color = '#5f6b76';
+    wrap.appendChild(empty);
+    return wrap;
+  }
+
+  // Controls: range chips + phase chips. Kept in closure state; re-render the
+  // grid in place on change (no full dossier rebuild).
+  let range = /** @type {number} */ (90);
+  let phase = /** @type {import('../../domain/presenceLedger.js').LedgerPhase} */ ('weekHour');
+
+  const controls = document.createElement('div');
+  controls.style.cssText = 'display:flex;gap:12px;flex-wrap:wrap;margin-bottom:6px;';
+  /**
+   * @param {string} label
+   * @param {Array<{key:any,label:string}>} opts
+   * @param {() => any} getVal
+   * @param {(v:any)=>void} setVal
+   */
+  const chipRow = (label, opts, getVal, setVal) => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:3px;align-items:center;';
+    const lbl = document.createElement('span');
+    lbl.textContent = label;
+    lbl.style.cssText = 'color:#5f6b76;margin-right:2px;';
+    row.appendChild(lbl);
+    /** @type {HTMLButtonElement[]} */ const btns = [];
+    for (const o of opts) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = o.label;
+      const paint = () => {
+        const on = getVal() === o.key;
+        b.style.cssText = 'font-size:11px;padding:2px 7px;border-radius:5px;cursor:pointer;'
+          + `border:1px solid ${on ? '#3a5b82' : '#2a3a4c'};`
+          + `background:${on ? '#20344c' : '#182635'};color:${on ? '#cfe0f2' : '#8b95a0'};`;
+      };
+      paint();
+      b.addEventListener('click', () => {
+        setVal(o.key);
+        for (const p of btns) p.dataset.repaint && p.dispatchEvent(new Event('oge-repaint'));
+        renderGrid();
+      });
+      b.addEventListener('oge-repaint', paint);
+      b.dataset.repaint = '1';
+      btns.push(b);
+      row.appendChild(b);
+    }
+    return row;
+  };
+  controls.appendChild(chipRow('Range', PRESENCE_RANGES, () => range, (v) => { range = v; }));
+  controls.appendChild(chipRow('Cycle', PRESENCE_PHASES, () => phase, (v) => { phase = v; }));
+  wrap.appendChild(controls);
+
+  const gridHost = document.createElement('div');
+  wrap.appendChild(gridHost);
+
+  const readout = document.createElement('div');
+  readout.style.cssText = 'margin-top:5px;font-size:11px;color:#7fb389;min-height:15px;';
+  wrap.appendChild(readout);
+
+  const basis = document.createElement('div');
+  basis.style.cssText = 'margin-top:3px;font-size:11px;color:#6b7782;';
+  wrap.appendChild(basis);
+
+  function renderGrid() {
+    const agg = aggregateLedger(hist.ledger, nowSec, { phase, rangeDays: range });
+    gridHost.textContent = '';
+    readout.textContent = '';
+
+    if (agg.observedDays === 0) {
+      const none = document.createElement('div');
+      none.textContent = 'No coverage in this range — widen it.';
+      none.style.color = '#8a7f5f';
+      gridHost.appendChild(none);
+    } else {
+      const cols = agg.cols;
+      const gutter = phase === 'weekHour' ? 34 : 42;
+      const table = document.createElement('div');
+      table.style.cssText = `display:grid;grid-template-columns:${gutter}px repeat(${cols}, 1fr);`
+        + 'gap:1px;background:#20303f;padding:1px;border-radius:6px;'
+        + `min-width:${cols * 12 + gutter}px;`;
+
+      // Column axis: hours (0..23) or month days (1..31).
+      const corner = document.createElement('div');
+      corner.style.background = 'transparent';
+      table.appendChild(corner);
+      for (let c = 0; c < cols; c++) {
+        const cx = document.createElement('div');
+        const showEvery = phase === 'monthDay' ? 5 : 6;
+        const num = phase === 'monthDay' ? c + 1 : c;
+        cx.textContent = (num % showEvery === 0 || (phase === 'monthDay' && c === 0)) ? String(num) : '';
+        cx.style.cssText = 'font-size:10px;color:#5f6b76;text-align:center;background:transparent;';
+        table.appendChild(cx);
+      }
+
+      for (let r = 0; r < agg.rows; r++) {
+        const lbl = document.createElement('div');
+        // aggregateLedger week rows are getDay() 0=Sun..6=Sat.
+        lbl.textContent = phase === 'weekHour'
+          ? DOW_LABELS[r]
+          : (phase === 'monthDay' ? 'day' : 'all');
+        lbl.style.cssText = 'font-size:11px;color:#8b95a0;display:flex;align-items:center;'
+          + 'justify-content:flex-end;padding-right:5px;background:transparent;white-space:nowrap;';
+        table.appendChild(lbl);
+        for (let c = 0; c < cols; c++) {
+          const cell = agg.cells[r][c];
+          const div = document.createElement('div');
+          const q = cell.observed ? cell.quiet / cell.observed : 0.5;
+          const conf = 1 - Math.exp(-cell.observed / 3);
+          const alpha = (0.06 + 0.94 * conf).toFixed(2);
+          div.style.cssText = `min-height:${phase === 'weekHour' ? 13 : 20}px;`
+            + `background:${cell.observed ? offlineRamp(q, conf) : '#2a3a4c'};opacity:${alpha};cursor:pointer;`;
+          const colLabel = phase === 'monthDay'
+            ? `day ${c + 1}`
+            : `${String(c).padStart(2, '0')}:00`;
+          const rowLabel = phase === 'weekHour' ? `${DOW_LABELS[r]} ` : '';
+          div.addEventListener('click', () => {
+            readout.textContent = cell.observed
+              ? `${rowLabel}${colLabel} · offline ${Math.round(q * 100)}% of ${cell.observed} `
+                + `observed day${cell.observed === 1 ? '' : 's'} `
+                + `(${cell.active} active · ${cell.quiet} quiet)`
+              : `${rowLabel}${colLabel} · never observed`;
+            readout.style.color = cell.observed ? (q >= 0.7 ? '#7fb389' : '#9fb0c0') : '#8a7f5f';
+          });
+          table.appendChild(div);
+        }
+      }
+      const scroller = document.createElement('div');
+      scroller.className = 'table-scroll';
+      scroller.appendChild(table);
+      gridHost.appendChild(scroller);
+
+      // Legend.
+      const legend = document.createElement('div');
+      legend.style.cssText = 'display:flex;gap:10px;align-items:center;margin-top:5px;font-size:11px;color:#6b7782;flex-wrap:wrap;';
+      const bar = document.createElement('span');
+      bar.style.cssText = 'display:inline-block;width:70px;height:9px;border-radius:5px;vertical-align:-1px;'
+        + 'background:linear-gradient(90deg,rgb(220,60,55),rgb(150,160,175),rgb(37,99,235));';
+      legend.append('active ', bar, ' offline · faint = few looks · tap a cell');
+      gridHost.appendChild(legend);
+    }
+
+    // Basis: coverage span + who contributed.
+    const spanDays = agg.firstDay && agg.lastDay ? agg.lastDay - agg.firstDay + 1 : 0;
+    const who = hist.allianceMembers.length
+      ? ` · pooled from ${hist.allianceMembers.length} member${hist.allianceMembers.length === 1 ? '' : 's'}: ${hist.allianceMembers.join(', ')}`
+      : ' · your device only';
+    basis.textContent = `${agg.observedDays} observed day${agg.observedDays === 1 ? '' : 's'}`
+      + (spanDays ? ` across ~${spanDays}d` : '')
+      + ` · ${agg.activeDays} with activity${who}`;
+  }
+
+  renderGrid();
+  return wrap;
+}
+
 /**
  * 8b) FS WINDOWS (IDEAS #1 — fleet-save window bracketing) — the bracketed
  * fleet departures/returns from domain/fsBracket.js. Every line is an honest
@@ -1321,6 +1534,9 @@ function fsArcsBlock(arcs, nowMs) {
  * @param {import('../../domain/routine.js').RoutineSummary} [a.routine]
  * @param {ReturnType<typeof import('../../domain/presence.js').summarizePresence>} [a.presence]
  *   Per-player presence summary — the offline-window heatmap under the routine.
+ * @param {{ ledger: import('../../domain/presenceLedger.js').PresenceLedger, allianceMembers: string[] }} [a.presenceHistory]
+ *   Pooled long-horizon presence ledger (local ∪ alliance) — the presence
+ *   HISTORY explorer under the offline-window heatmap (months of coverage).
  * @param {import('../../domain/fsBracket.js').FsArc[]} [a.fsArcs]
  *   Bracketed fleet departures/returns — the FS-windows block under presence.
  * @param {import('../../domain/fleetLanding.js').FleetLandingSignal} [a.landing]
@@ -1447,6 +1663,14 @@ export function buildDossier(a) {
   // 5d) Presence — the offline-window heatmap (the attack-timing readout).
   // Rendered whenever we have any presence data; hollow-states itself otherwise.
   if (a.presence) judgement.appendChild(presenceBlock(a.presence));
+
+  // 5d-bis) Presence HISTORY — the months-scale offline-pattern explorer over
+  // the pooled long-horizon ledger (local ∪ alliance). Rendered whenever a
+  // ledger exists (it may cover a player with no short-window presence, e.g.
+  // alliance-only coverage); hollow-states itself when empty.
+  if (a.presenceHistory) {
+    judgement.appendChild(presenceHistoryBlock(a.presenceHistory, a.nowMs));
+  }
 
   // 5e) FS windows — bracketed fleet departures/returns (skipped when none
   // were caught; an empty brackets block would explain nothing).

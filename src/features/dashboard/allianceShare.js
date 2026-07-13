@@ -34,6 +34,7 @@ import {
 } from '../../state/allianceShare.js';
 import { targetReportsKeyFor } from '../../state/targets.js';
 import { activityObsKeyFor } from '../../state/activityObs.js';
+import { presenceLedgerKeyFor } from '../../state/presenceLedger.js';
 import { playersKeyFor } from '../../state/players.js';
 import { ownProfileKeyFor } from '../../state/ownProfile.js';
 import { fetchAllianceFile, writeAllianceFile, ensureAllianceGist } from '../../sync/allianceShare.js';
@@ -354,12 +355,14 @@ export const installAllianceShare = ({ getUniverseId }) => {
       }
 
       // Observations only (2026-07): the block is built from spy reports +
-      // galaxy-activity rings — the watch list and every Spyglass setting
-      // stay on this device (domain/allianceIntel.js "privacy floor").
-      const [playersRaw, reportsRaw, activityRaw] = await Promise.all([
+      // galaxy-activity rings + the long-horizon presence ledger — the watch
+      // list and every Spyglass setting stay on this device
+      // (domain/allianceIntel.js "privacy floor").
+      const [playersRaw, reportsRaw, activityRaw, ledgersRaw] = await Promise.all([
         chromeStore.get(playersKeyFor(uni)),
         chromeStore.get(targetReportsKeyFor(uni)),
         chromeStore.get(activityObsKeyFor(uni)),
+        chromeStore.get(presenceLedgerKeyFor(uni)),
       ]);
       /** @type {Record<string, string>} */
       const playerNames = {};
@@ -368,11 +371,13 @@ export const installAllianceShare = ({ getUniverseId }) => {
           if (meta && typeof meta.name === 'string' && meta.name) playerNames[pid] = meta.name;
         }
       }
+      const nowSec = Math.floor(Date.now() / 1000);
       const block = buildMemberBlock({
         playerNames,
         reports: /** @type {any} */ (reportsRaw) || {},
         activity: /** @type {any} */ (activityRaw) || {},
-        nowSec: Math.floor(Date.now() / 1000),
+        ledgers: /** @type {any} */ (ledgersRaw) || {},
+        nowSec,
       });
 
       // Blank id → discover the token account's alliance gist, or create one
@@ -404,7 +409,7 @@ export const installAllianceShare = ({ getUniverseId }) => {
       if (!remote) {
         throw new Error('The alliance file uses a newer format — update OG-E first.');
       }
-      const merged = mergeOwnBlock(remote, name, block);
+      const merged = mergeOwnBlock(remote, name, block, nowSec);
       await writeAllianceFile(token, gistId, uni, merged);
       const pulledAt = Date.now();
       await writeAllianceIntel(uni, merged, pulledAt);

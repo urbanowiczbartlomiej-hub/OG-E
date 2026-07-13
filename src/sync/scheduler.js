@@ -183,8 +183,17 @@ import {
   whenActivityObsHydrated,
 } from '../state/activityObs.js';
 import { playersStore, playersKeyFor, whenPlayersHydrated } from '../state/players.js';
+import {
+  presenceLedgerStore,
+  presenceLedgerKeyFor,
+  adoptPresenceLedgerMap,
+} from '../state/presenceLedger.js';
 import { normalizeReportTimestamps } from '../domain/espionageReport.js';
 import { sweepStaleActivityObs } from '../domain/activityObs.js';
+import {
+  mergePresenceLedgerMaps,
+  sweepPresenceLedgerMap,
+} from '../domain/presenceLedger.js';
 import {
   composeWatchSlot,
   mergeWatchList,
@@ -880,6 +889,29 @@ const writeLocalPlayersLiteSlot = async (merged) => {
   }
 };
 
+/** @typedef {import('../state/presenceLedger.js').PresenceLedgerMap} PresenceLedgerMap */
+
+/** @returns {Promise<PresenceLedgerMap>} */
+const readLocalPresenceLedgerSlot = async () => {
+  if (!routesUniverseId) return {};
+  const raw = await chromeStore.get(presenceLedgerKeyFor(routesUniverseId));
+  return raw && typeof raw === 'object' ? /** @type {PresenceLedgerMap} */ (raw) : {};
+};
+
+/** @param {PresenceLedgerMap} merged @returns {Promise<void>} */
+const writeLocalPresenceLedgerSlot = async (merged) => {
+  if (!routesUniverseId) return;
+  bumpApplying('presenceLedgerPerUniverse');
+  try {
+    await chromeStore.set(presenceLedgerKeyFor(routesUniverseId), merged);
+    // OR-adopt into the live store (never replace — a fold landing mid-round
+    // must survive); gates itself on the store's hydration.
+    await adoptPresenceLedgerMap(merged);
+  } finally {
+    dropApplying('presenceLedgerPerUniverse');
+  }
+};
+
 /** @type {SyncSlot[]} */
 const SYNC_SLOTS = [
   {
@@ -986,6 +1018,23 @@ const SYNC_SLOTS = [
     readLocal: readLocalPlayersLiteSlot,
     writeLocal: writeLocalPlayersLiteSlot,
     merge: mergePlayerCache,
+    hasData: (merged) => Object.keys(merged).length > 0,
+  },
+  {
+    payloadKey: 'presenceLedgerPerUniverse',
+    readLocal: readLocalPresenceLedgerSlot,
+    writeLocal: writeLocalPresenceLedgerSlot,
+    // Sweep the merged result to the retention horizon — same rationale as
+    // the activityObs slot: a day one device already swept must not
+    // ping-pong back through the gist; sweeping the contribution slims the
+    // gist in one PATCH and converges.
+    merge: (local, remote) => {
+      const r = mergePresenceLedgerMaps(local, /** @type {PresenceLedgerMap} */ (remote) || {});
+      return {
+        changed: r.changed,
+        merged: sweepPresenceLedgerMap(r.merged, Math.floor(Date.now() / 1000)),
+      };
+    },
     hasData: (merged) => Object.keys(merged).length > 0,
   },
 ];
@@ -1215,6 +1264,7 @@ const upload = async () => {
       targetReportsPerUniverse: slotPayloads.targetReportsPerUniverse,
       activityObsPerUniverse: slotPayloads.activityObsPerUniverse,
       playersLitePerUniverse: slotPayloads.playersLitePerUniverse,
+      presenceLedgerPerUniverse: slotPayloads.presenceLedgerPerUniverse,
     };
 
     // Skip the PATCH when the gist already matches the merged state — the common
@@ -1456,6 +1506,15 @@ export const installSync = () => {
     scheduleUpload();
   };
   const unsubActivityObs = activityObsStore.subscribe(onActivityObsChange);
+  // Presence ledger: a debounced fold learned a new bit → schedule an upload
+  // (the ledger only changes when a probe genuinely contributed, so this is
+  // quieter than the ring subscriptions above).
+  const onPresenceLedgerChange = () => {
+    if (!shouldScheduleUpload({ cloudSync: settingsStore.get().cloudSync, applying: isApplyingFromSync('presenceLedgerPerUniverse') }))
+      return;
+    scheduleUpload();
+  };
+  const unsubPresenceLedger = presenceLedgerStore.subscribe(onPresenceLedgerChange);
 
   // Settings sync: stamp the keys that changed since the last tick with
   // `now`, then schedule an upload. The keyed suppressor (`'settings'`) skips
@@ -1616,6 +1675,7 @@ export const installSync = () => {
       unsubWatchList();
       unsubTargetReports();
       unsubActivityObs();
+      unsubPresenceLedger();
       document.removeEventListener(SYNC_FORCE_EVENT, onForceSync);
       document.removeEventListener(DAILY_STATE_CHANGED_EVENT, onDailyStateChanged);
       unsubStorage();

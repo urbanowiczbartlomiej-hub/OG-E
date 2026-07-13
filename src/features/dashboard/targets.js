@@ -452,6 +452,9 @@ function playerCell(c, landing) {
  * @param {number} [args.galaxyLookMs]  Galaxy look-coverage stale threshold (ms).
  * @param {Record<string, ReturnType<typeof import('../../domain/presence.js').summarizePresence>>} [args.presences]
  *   Per-player presence summary — the dossier's offline-window heatmap.
+ * @param {Record<string, { ledger: import('../../domain/presenceLedger.js').PresenceLedger, allianceMembers: string[] }>} [args.presenceHistories]
+ *   Per-player pooled long-horizon presence ledger (local ∪ alliance) — the
+ *   dossier's presence-history explorer (months of day×hour coverage).
  * @param {Record<string, import('../../domain/fsBracket.js').FsArc[]>} [args.fsArcs]
  *   Per-player bracketed fleet departures/returns — the dossier's FS-windows block.
  * @param {Record<string, import('../../domain/fleetLanding.js').FleetLandingSignal>} [args.landingSignals]
@@ -504,6 +507,7 @@ export function renderTargets({
   activityRings,
   galaxyLookMs,
   presences,
+  presenceHistories,
   fsArcs,
   landingSignals,
   searchQuery = '',
@@ -670,6 +674,7 @@ export function renderTargets({
       rings: activityRings ? activityRings[c.id] : undefined,
       galaxyLookMs,
       presence: presences ? presences[c.id] : undefined,
+      presenceHistory: presenceHistories ? presenceHistories[c.id] : undefined,
       fsArcs: fsArcs ? fsArcs[c.id] : undefined,
       landing,
       scanBodies,

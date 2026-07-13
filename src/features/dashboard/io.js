@@ -59,6 +59,8 @@ import { scansKeyFor } from '../../state/scans.js';
 import { targetReportsKeyFor } from '../../state/targets.js';
 import { proximityReportsKeyFor } from '../../state/proximityReports.js';
 import { activityObsKeyFor } from '../../state/activityObs.js';
+import { presenceLedgerKeyFor } from '../../state/presenceLedger.js';
+import { mergePresenceLedgerMaps } from '../../domain/presenceLedger.js';
 import { playersKeyFor } from '../../state/players.js';
 import { allianceClassKeyFor } from '../../state/allianceClass.js';
 import { bodiesKeyFor } from '../../state/bodies.js';
@@ -292,6 +294,15 @@ const IO_SLOTS = [
       };
       return Math.max(0, looks(merged) - looks(local));
     },
+    nonEmpty: (v) => Object.keys(v).length > 0,
+  },
+  {
+    field: 'presenceLedger',
+    label: 'presence days',
+    read: async (uni) => asObj(await chromeStore.get(presenceLedgerKeyFor(uni))),
+    write: (uni, merged) => chromeStore.set(presenceLedgerKeyFor(uni), merged),
+    merge: (local, incoming) => mergePresenceLedgerMaps(local, asObj(incoming)),
+    count: (local, merged) => changedLeafCount(local, merged),
     nonEmpty: (v) => Object.keys(v).length > 0,
   },
   {

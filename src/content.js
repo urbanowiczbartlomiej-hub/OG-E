@@ -71,6 +71,7 @@ import { initTargetReportsStore } from './state/targets.js';
 import { initProximityReportsStore } from './state/proximityReports.js';
 import { initWatchListStore } from './state/watchList.js';
 import { initActivityObsStore } from './state/activityObs.js';
+import { initPresenceLedgerStore } from './state/presenceLedger.js';
 
 import { installColonyRecorder } from './features/colonyRecorder.js';
 import { installPlanetBarCapture } from './features/planetBarCapture.js';
@@ -169,6 +170,12 @@ initWatchListStore();
 // players' per-body activity markers — the routine tracker's dense, probe-free
 // second source. Reads the watch list above for its watched-only write gate.
 initActivityObsStore();
+
+// Long-horizon presence ledger (months-scale day×hour memory of "seen active /
+// looked & quiet" — outlives the rings' 45-day sweep). Re-folds from the two
+// ring stores on a debounce; the rings' hydrate echo triggers the first fold
+// of each page load, so backfill needs no explicit call here.
+initPresenceLedgerStore();
 
 // The alarmClock master switch + ntfy token live in `settings.js` (regular
 // localStorage Settings, authored in the in-game OG-E settings panel) — wired

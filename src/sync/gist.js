@@ -218,6 +218,13 @@ import { SYNC_STATUS_EVENT } from '../lib/ogeEvents.js';
  *   to the routine horizon (domain/activityObs sweepStaleActivityObs) so a
  *   ring one device already swept locally can't ping-pong back through the
  *   gist. Past looks are the one dataset a second device can NEVER re-derive.
+ * @property {Record<string, import('../state/presenceLedger.js').PresenceLedgerMap>} [presenceLedgerPerUniverse]
+ *   OPTIONAL, additive: the long-horizon presence ledger keyed by universe id
+ *   (`pid → day → [activeMask, quietMask]`, see domain/presenceLedger.js).
+ *   Merged per day by bitwise OR (commutative + monotonic — devices converge
+ *   from any order), swept to the 400-day retention horizon on merge. This is
+ *   the months-scale offline-pattern memory that outlives the activity rings'
+ *   45-day sweep.
  * @property {Record<string, import('../state/players.js').PlayerCache>} [playersLitePerUniverse]
  *   OPTIONAL, additive: a FILTERED player-metadata subset keyed by universe
  *   id — watched ∪ observed ids only (the dashboard export's "playersLite"

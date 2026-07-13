@@ -35,14 +35,27 @@
 // baseline (IDEAS.md decision, 2026-07-09).
 
 import { latestOf } from './targetReports.js';
+import {
+  mergePresenceLedgers,
+  packPresenceLedger,
+  unpackPresenceLedger,
+  PACKED_LEDGER_MAX_CHARS,
+} from './presenceLedger.js';
 
 /**
- * Schema version of the shared alliance file. A doc with a different version
- * is REJECTED by {@link normalizeAllianceDoc} (returns null) — the caller must
- * surface "update OG-E" instead of overwriting a newer format and clobbering
- * the rest of the alliance's blocks.
+ * Schema version of the shared alliance file. A doc with an UNKNOWN (newer)
+ * version is REJECTED by {@link normalizeAllianceDoc} (returns null) — the
+ * caller must surface "update OG-E" instead of overwriting a newer format and
+ * clobbering the rest of the alliance's blocks. Version 2 (2026-07) added the
+ * per-player packed presence ledger; v1 files still READ (they simply carry
+ * no presence) and upgrade to v2 on the next write. Pre-v2 clients refuse to
+ * write a v2 file — by design, so an old client's normalize (which drops
+ * unknown fields) can never strip the alliance's pooled presence history.
  */
-export const ALLIANCE_INTEL_VERSION = 1;
+export const ALLIANCE_INTEL_VERSION = 2;
+
+/** Versions {@link normalizeAllianceDoc} accepts on READ. */
+const READABLE_VERSIONS = new Set([1, ALLIANCE_INTEL_VERSION]);
 
 /**
  * One player's shared coverage, as one member sees them. (Older clients also
@@ -55,6 +68,12 @@ export const ALLIANCE_INTEL_VERSION = 1;
  * @property {number} [lastSeenSec] Newest implied interaction from galaxy
  *   activity markers, epoch seconds.
  * @property {number} [bodiesSpied] Count of bodies with at least one report.
+ * @property {string} [presence]    Packed presence ledger (v2 — see
+ *   domain/presenceLedger.js packPresenceLedger): this member's day×hour
+ *   "seen active / looked & quiet" record, trimmed to the share horizon.
+ *   Still inside the privacy floor: hour-grain presence bits, no coordinates,
+ *   no report contents. Union-merged across members at read time — the pooled
+ *   months of looks are what the offline-pattern explorer runs on.
  */
 
 /**
@@ -122,6 +141,12 @@ const normalizePlayerIntel = (raw) => {
   if (seen) out.lastSeenSec = seen;
   const bodies = secField(o.bodiesSpied);
   if (bodies) out.bodiesSpied = bodies;
+  // Kept opaque here (bounded); unpackPresenceLedger is the tolerant parser
+  // and simply yields an empty ledger for junk content.
+  if (typeof o.presence === 'string' && o.presence
+    && o.presence.length <= PACKED_LEDGER_MAX_CHARS) {
+    out.presence = o.presence;
+  }
   return out;
 };
 
@@ -174,7 +199,9 @@ export const emptyAllianceDoc = (universeId) => ({
 export const normalizeAllianceDoc = (raw, universeId) => {
   if (raw == null) return emptyAllianceDoc(universeId);
   const o = typeof raw === 'object' && !Array.isArray(raw) ? /** @type {any} */ (raw) : null;
-  if (!o || o.version !== ALLIANCE_INTEL_VERSION) return null;
+  // Older readable versions upgrade in place: emptyAllianceDoc stamps the
+  // CURRENT version, so the next write publishes v2 (see the version note).
+  if (!o || !READABLE_VERSIONS.has(o.version)) return null;
   const doc = emptyAllianceDoc(universeId);
   if (o.members && typeof o.members === 'object' && !Array.isArray(o.members)) {
     for (const name of Object.keys(o.members)) {
@@ -208,15 +235,20 @@ export const normalizeAllianceDoc = (raw, universeId) => {
  *   TargetReports-shaped map (`pid → bodyKey → entry`, read via `latestOf`).
  * @param {Record<string, Record<string, Array<{ t?: number, m?: number }>>>} [args.activity]
  *   ActivityObsMap-shaped map (`pid → bodyKey → ring`).
+ * @param {Record<string, import('./presenceLedger.js').PresenceLedger>} [args.ledgers]
+ *   Long-horizon presence ledgers (`pid → ledger`); packed into each entry's
+ *   `presence` string, trimmed to the share horizon.
  * @param {number} args.nowSec
  * @returns {AllianceMemberBlock}
  */
 export const buildMemberBlock = ({
-  playerNames = {}, reports = {}, activity = {}, nowSec,
+  playerNames = {}, reports = {}, activity = {}, ledgers = {}, nowSec,
 }) => {
   /** @type {Record<string, SharedPlayerIntel>} */
   const players = {};
-  const pids = new Set([...Object.keys(reports), ...Object.keys(activity)]);
+  const pids = new Set([
+    ...Object.keys(reports), ...Object.keys(activity), ...Object.keys(ledgers),
+  ]);
   for (const rawPid of pids) {
     const pid = String(rawPid);
     /** @type {SharedPlayerIntel} */
@@ -256,9 +288,19 @@ export const buildMemberBlock = ({
       if (seen) entry.lastSeenSec = seen;
     }
 
-    // The observation gate (see the scope note above): no spy/seen signal →
-    // the id stays local, whatever else we know about it.
-    if (entry.lastSpySec || entry.bodiesSpied || entry.lastSeenSec) players[pid] = entry;
+    const ledger = ledgers[pid];
+    if (ledger && typeof ledger === 'object') {
+      const packed = packPresenceLedger(ledger, nowSec);
+      if (packed) entry.presence = packed;
+    }
+
+    // The observation gate (see the scope note above): no spy/seen/presence
+    // signal → the id stays local, whatever else we know about it. (A
+    // presence ledger IS an observation record — days of looks — so it
+    // qualifies on its own.)
+    if (entry.lastSpySec || entry.bodiesSpied || entry.lastSeenSec || entry.presence) {
+      players[pid] = entry;
+    }
   }
   return { updatedAtSec: nowSec, players };
 };
@@ -273,11 +315,17 @@ export const buildMemberBlock = ({
  * The name follows the fresh block when it carries one (it reflects the
  * newest local observation), else the previous one is kept.
  *
+ * The presence ledgers union the same way (per-day bitwise OR via
+ * mergePresenceLedgers), re-trimmed to the share horizon around `nowSec` —
+ * that trim is also the wire GC (old days age out of the file as members
+ * keep sharing).
+ *
  * @param {AllianceMemberBlock | undefined} prev
  * @param {AllianceMemberBlock} fresh
+ * @param {number} nowSec
  * @returns {AllianceMemberBlock}
  */
-const unionMemberBlock = (prev, fresh) => {
+const unionMemberBlock = (prev, fresh, nowSec) => {
   if (!prev) return fresh;
   /** @type {Record<string, SharedPlayerIntel>} */
   const players = { ...prev.players };
@@ -298,6 +346,14 @@ const unionMemberBlock = (prev, fresh) => {
     if (seen) out.lastSeenSec = seen;
     const bodies = Math.max(f.bodiesSpied ?? 0, p.bodiesSpied ?? 0);
     if (bodies) out.bodiesSpied = bodies;
+    if (f.presence || p.presence) {
+      const { merged } = mergePresenceLedgers(
+        unpackPresenceLedger(p.presence),
+        unpackPresenceLedger(f.presence),
+      );
+      const packed = packPresenceLedger(merged, nowSec);
+      if (packed) out.presence = packed;
+    }
     players[pid] = out;
   }
   return { updatedAtSec: Math.max(prev.updatedAtSec ?? 0, fresh.updatedAtSec ?? 0), players };
@@ -319,12 +375,41 @@ const unionMemberBlock = (prev, fresh) => {
  * @param {AllianceIntelDoc} doc
  * @param {string} memberKey  Already canonical (see {@link memberKeyFor}).
  * @param {AllianceMemberBlock} block
+ * @param {number} nowSec  Share horizon anchor for the presence-ledger trim.
  * @returns {AllianceIntelDoc}
  */
-export const mergeOwnBlock = (doc, memberKey, block) => ({
+export const mergeOwnBlock = (doc, memberKey, block, nowSec) => ({
   ...doc,
-  members: { ...doc.members, [memberKey]: unionMemberBlock(doc.members[memberKey], block) },
+  members: {
+    ...doc.members,
+    [memberKey]: unionMemberBlock(doc.members[memberKey], block, nowSec),
+  },
 });
+
+/**
+ * Pool one player's presence ledgers across EVERY member block (bitwise-OR
+ * union) — the alliance side of the dossier's presence-history explorer.
+ * Display-only, like everything derived from the shared doc.
+ *
+ * @param {AllianceIntelDoc} doc
+ * @param {string} pid
+ * @returns {{ ledger: import('./presenceLedger.js').PresenceLedger, members: string[] }}
+ *   The pooled ledger plus the contributing member names (alphabetical).
+ */
+export const allianceLedgerForPid = (doc, pid) => {
+  /** @type {import('./presenceLedger.js').PresenceLedger} */
+  let ledger = {};
+  /** @type {string[]} */
+  const members = [];
+  for (const member of Object.keys(doc.members).sort((a, b) => a.localeCompare(b))) {
+    const packed = doc.members[member].players[pid]?.presence;
+    if (!packed) continue;
+    const { merged, changed } = mergePresenceLedgers(ledger, unpackPresenceLedger(packed));
+    ledger = merged;
+    if (changed || Object.keys(ledger).length) members.push(member);
+  }
+  return { ledger, members };
+};
 
 /**
  * Union view of a doc for display: one row per player across all members,
