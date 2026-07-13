@@ -1571,8 +1571,11 @@
 <section id="syncSection" class="tab-section">
   <h1>Multi-device sync</h1>
   <p class="sync-intro">
-    Cross-device sync through a private GitHub gist, plus a per-universe breakdown
-    of what's stored on this device and when it last synced.
+    Two independent things live here. <strong>Sync across devices</strong> keeps
+    YOUR OWN devices in step automatically through your private GitHub gist.
+    <strong>Alliance share</strong> is a separate, opt-in co-op pool with your
+    alliance-mates — one click per round, never in the background. Below both:
+    a per-universe breakdown of what's stored on this device and when it last synced.
   </p>
 
   <div class="rem-card sync-controls-card">
@@ -1592,10 +1595,15 @@
         <span id="syncTokenStatus" class="rem-status">—</span>
       </div>
       <p class="rem-hint">
-        Synced per-universe: galaxy scans, colony history, player cache + ranks,
-        your own profile, settings, fleet routes &amp; configs. The token is kept in
-        this browser's private extension storage and shared across all your
-        universes — set it once here. Per-device UI sizes stay on each device.
+        Runs automatically in the background — set the token once and your
+        devices stay in step (the <strong>Sync now</strong> button just forces a
+        round-trip immediately). Synced per-universe: colony history, your
+        Spyglass intel (spy reports, galaxy-activity looks, long-horizon presence
+        history, watched-player names), watch-list decisions, fleet routes, and
+        settings &amp; configs. Galaxy scans and the full player roster are NOT
+        synced — they're re-derived per device from OGame's public API. The token
+        lives in this browser's private extension storage, shared across all your
+        universes; per-device UI sizes stay on each device.
       </p>
     </div>
   </div>
@@ -1626,18 +1634,24 @@
          declutter — the Spyglass tab only shows a one-line summary. -->
     <div id="allySharePanel" style="margin-top:12px" hidden></div>
     <p class="rem-hint">
-      Optional alliance co-op. The Alliance button (Spyglass tab) writes YOUR
-      observations — player ids, names, last-spy / last-seen times, no
+      Optional alliance co-op — pool everyone's Spyglass coverage to find a
+      target's offline windows faster. The Alliance button (here or on the
+      Spyglass tab) writes YOUR observations — player ids, names,
+      last-spy / last-seen times, and long-horizon presence history; no
       coordinates, no watch list, no settings — into
       <code>oge-spyglass-alliance-&lt;universe&gt;.json</code>
-      in the alliance gist, then pulls everyone else's. Nothing runs in the
-      background: only that click syncs. The token is all you set — the first
-      sync finds (or creates) the alliance gist on that account, and you're
-      signed by your in-game name automatically; alliance-mates with the same
-      token converge on the same gist. The token is a shared secret — anyone
-      holding it can read and write ALL of the owner's gists, so use a
-      dedicated account's classic PAT with only the <code>gist</code> scope and
-      rotate it when someone leaves.
+      in the alliance gist, then pulls everyone else's.
+    </p>
+    <p class="rem-hint">
+      It's ONE CLICK, not automatic like device sync above, on purpose: the
+      token is shared, so every member draws on one GitHub account's rate limit,
+      and the click is your explicit consent to share with other people. The
+      token is all you set — the first sync finds (or creates) the alliance gist
+      on that account, and you're signed by your in-game name automatically;
+      alliance-mates with the same token converge on the same gist. That token
+      is a shared secret — anyone holding it can read and write ALL of the
+      owner's gists, so use a dedicated account's classic PAT with only the
+      <code>gist</code> scope and rotate it when someone leaves.
     </p>
     </div>
   </div>
