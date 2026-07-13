@@ -1619,14 +1619,6 @@
         title="One share round: write your observations into the alliance gist and pull everyone else's. Same action as the Alliance sync button on the Spyglass tab.">Alliance sync</button>
     </div>
     <div class="rem-row" style="margin-top:6px">
-      <label>Alliance gist id</label>
-      <input id="allyGistId" class="rem-mono" autocomplete="off" spellcheck="false" placeholder="empty = found or created on first sync">
-    </div>
-    <div class="rem-row" style="margin-top:6px">
-      <label>Share as</label>
-      <input id="allyShareName" class="rem-mono" autocomplete="off" spellcheck="false" placeholder="your in-game name">
-    </div>
-    <div class="rem-row" style="margin-top:6px">
       <label></label>
       <span id="allyShareStatus" class="rem-status">—</span>
     </div>
@@ -1639,14 +1631,13 @@
       coordinates, no watch list, no settings — into
       <code>oge-spyglass-alliance-&lt;universe&gt;.json</code>
       in the alliance gist, then pulls everyone else's. Nothing runs in the
-      background: only that click syncs. Leave the gist id empty — the first
-      sync finds the token account's alliance gist (or creates one) and fills
-      the id in; alliance-mates with the same token auto-find it too. The token
-      is a shared secret — anyone holding it can read and write ALL of the
-      owner's gists, so use a dedicated account's classic PAT with only the
-      <code>gist</code> scope and rotate it when someone leaves. Every member
-      needs a unique "Share as" name (two members sharing one name overwrite
-      each other).
+      background: only that click syncs. The token is all you set — the first
+      sync finds (or creates) the alliance gist on that account, and you're
+      signed by your in-game name automatically; alliance-mates with the same
+      token converge on the same gist. The token is a shared secret — anyone
+      holding it can read and write ALL of the owner's gists, so use a
+      dedicated account's classic PAT with only the <code>gist</code> scope and
+      rotate it when someone leaves.
     </p>
     </div>
   </div>

@@ -116,34 +116,61 @@ export const installAllianceShare = ({ getUniverseId }) => {
   };
   const tokenInput = /** @type {HTMLInputElement | null} */ (document.getElementById('allyGistToken'));
   const tokenReveal = document.getElementById('allyRevealToken');
-  const gistIdInput = /** @type {HTMLInputElement | null} */ (document.getElementById('allyGistId'));
-  const nameInput = /** @type {HTMLInputElement | null} */ (document.getElementById('allyShareName'));
   const statusEl = document.getElementById('allyShareStatus');
 
   // ── Sync-tab config ────────────────────────────────────────────────
+  //
+  // The TOKEN is the only field the user sets. Both the gist id and the
+  // share name derive themselves (2026-07 simplification):
+  //   - gist id: discovered from the token account on the first sync
+  //     (sync/allianceShare.ensureAllianceGist) and cached in the config; a
+  //     mistyped id can't fork the alliance file because there's no id to type.
+  //   - share name: the universe's own profile name (the member key). It's
+  //     unique per alliance by construction, and the own-block merge is now a
+  //     union (domain/allianceIntel.mergeOwnBlock), so even the same player's
+  //     two devices converge instead of clobbering — the reason a manual,
+  //     collision-avoiding "Share as" existed is gone.
+  // The status line surfaces both RESOLVED values read-only, so the user can
+  // still see who they sign as and which gist they're on.
 
-  const paintStatus = (/** @type {{ token: string, gistId: string }} */ cfg) => {
+  /**
+   * Resolve the share name we'll sign with for a universe: an explicit legacy
+   * `shareName` (kept in the config schema for back-compat, no longer settable
+   * in the UI) else the universe's own profile name.
+   * @param {string} uni
+   * @param {{ shareName: string }} cfg
+   * @returns {Promise<string>}
+   */
+  const resolveShareName = async (uni, cfg) => {
+    const explicit = memberKeyFor(cfg.shareName);
+    if (explicit) return explicit;
+    if (!uni) return '';
+    const prof = /** @type {any} */ (await chromeStore.get(ownProfileKeyFor(uni)));
+    return memberKeyFor(prof?.name);
+  };
+
+  const paintStatus = async (/** @type {{ token: string, gistId: string, shareName: string }} */ cfg) => {
     if (!statusEl) return;
-    // The token is the only REQUIRED secret — with the id blank, the first
-    // Alliance click discovers the token account's alliance gist (or creates
-    // one) and fills the id in itself (sync/allianceShare.ensureAllianceGist).
     const hasToken = Boolean(cfg.token.trim());
-    const hasId = Boolean(cfg.gistId.trim());
-    statusEl.textContent = hasToken && hasId
-      ? 'Ready — sync runs from the Alliance button on the Spyglass tab.'
-      : hasToken
-        ? 'Ready — the first Alliance sync finds (or creates) the alliance gist and fills the id in.'
-        : 'Not configured.';
     statusEl.classList.toggle('ok', hasToken);
+    if (!hasToken) {
+      statusEl.textContent = 'Not configured — paste an alliance token to enable.';
+      return;
+    }
+    const name = await resolveShareName(getUniverseId(), cfg);
+    const gid = cfg.gistId.trim();
+    const parts = [
+      name ? `signed as ${name}` : 'no name yet — open the game once so OG-E learns it',
+      gid ? `gist …${gid.slice(-6)}` : 'gist found/created on first sync',
+    ];
+    statusEl.textContent = `Ready — ${parts.join(' · ')}. Sync from the Alliance button (Spyglass tab).`;
   };
 
   const populate = async () => {
     const cfg = await readAllianceShareConfig();
     const active = document.activeElement;
     if (tokenInput && tokenInput !== active) tokenInput.value = cfg.token;
-    if (gistIdInput && gistIdInput !== active) gistIdInput.value = cfg.gistId;
-    if (nameInput && nameInput !== active) nameInput.value = cfg.shareName;
-    paintStatus(cfg);
+    await paintStatus(cfg);
     setToggleChip(shareToggle, cfg.enabled);
     shareEnabled = cfg.enabled;
     applyEnabledVisibility();
@@ -160,16 +187,6 @@ export const installAllianceShare = ({ getUniverseId }) => {
     const t = sanitizeToken(tokenInput.value.trim());
     tokenInput.value = t;
     void writeAllianceShareConfig({ token: t }).then(populate);
-  });
-  gistIdInput?.addEventListener('change', () => {
-    const v = gistIdInput.value.trim();
-    gistIdInput.value = v;
-    void writeAllianceShareConfig({ gistId: v }).then(populate);
-  });
-  nameInput?.addEventListener('change', () => {
-    const v = memberKeyFor(nameInput.value);
-    nameInput.value = v;
-    void writeAllianceShareConfig({ shareName: v });
   });
 
   // Token reveal (password ↔ text), mirroring the personal-gist eye.
@@ -303,6 +320,9 @@ export const installAllianceShare = ({ getUniverseId }) => {
   /** Repaint from the cached pull for the active universe (no network). */
   const refresh = () => {
     const uni = getUniverseId();
+    // The resolved "signed as <name>" is per-universe (profile name), so a
+    // universe switch must re-derive the status line.
+    void readAllianceShareConfig().then(paintStatus);
     const hide = () => {
       if (panel) { panel.hidden = true; panel.textContent = ''; }
       if (syncPanel) { syncPanel.hidden = true; syncPanel.textContent = ''; }
@@ -350,8 +370,8 @@ export const installAllianceShare = ({ getUniverseId }) => {
         name = memberKeyFor(prof?.name);
       }
       if (!name) {
-        throw new Error('No share name — set "Share as" on the Sync tab '
-          + '(or open the game once so OG-E learns your player name).');
+        throw new Error('No share name yet — open the game once so OG-E learns '
+          + 'your player name (it signs your alliance block automatically).');
       }
 
       // Observations only (2026-07): the block is built from spy reports +
