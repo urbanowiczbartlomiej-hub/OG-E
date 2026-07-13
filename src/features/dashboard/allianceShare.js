@@ -84,6 +84,17 @@ const formatAge = (ms) => {
 const sanitizeToken = (raw) => String(raw || '').replace(/[^\x21-\x7e]/g, '');
 
 /**
+ * Age after which a configured-but-idle share earns the gentle "share due"
+ * nudge. ~20 h (just under a day) so a daily-ish habit forms and the pool is
+ * ready when the user next plays around the same time. The nudge is purely
+ * visual — nothing auto-syncs (the click stays the consent, see the alliance
+ * card copy). A share round is reciprocal: it writes YOUR block AND pulls
+ * everyone else's in one go, so "share daily" also means "get their latest
+ * daily" — that reciprocity is what the nudge copy leans on.
+ */
+const SHARE_NUDGE_MS = 20 * 60 * 60 * 1000;
+
+/**
  * Wire both surfaces. Call once at dashboard boot; repaint the panel for the
  * active universe via the returned `refresh` (boot + universe switch), same
  * contract as the sibling tabs.
@@ -157,11 +168,21 @@ export const installAllianceShare = ({ getUniverseId }) => {
       statusEl.textContent = 'Not configured — paste an alliance token to enable.';
       return;
     }
-    const name = await resolveShareName(getUniverseId(), cfg);
+    const uni = getUniverseId();
+    const name = await resolveShareName(uni, cfg);
     const gid = cfg.gistId.trim();
+    // Last-shared age for the active universe — reinforces the daily habit on
+    // the config page too, and flags when a share is overdue.
+    const cache = uni ? await readAllianceIntel(uni) : null;
+    const shared = cache && cache.pulledAt
+      ? (Date.now() - cache.pulledAt >= SHARE_NUDGE_MS
+        ? `shared ${formatAge(Date.now() - cache.pulledAt)} ago — due`
+        : `shared ${formatAge(Date.now() - cache.pulledAt)} ago`)
+      : 'not shared yet';
     const parts = [
       name ? `signed as ${name}` : 'no name yet — open the game once so OG-E learns it',
       gid ? `gist …${gid.slice(-6)}` : 'gist found/created on first sync',
+      shared,
     ];
     statusEl.textContent = `Ready — ${parts.join(' · ')}. Sync from the Alliance button (Spyglass tab).`;
   };
@@ -234,8 +255,21 @@ export const installAllianceShare = ({ getUniverseId }) => {
 
   /** @param {string} message */
   const renderNotice = (message, isError = false) => {
+    markDue(false); // a progress/error line supersedes the nudge
     paintSpyLine(message, isError);
     paintNotice(syncPanel, message, isError);
+  };
+
+  /**
+   * Toggle the "share due" nudge on the summary line and both Alliance-sync
+   * buttons — a warm tint + a short word, no glyph (see the .due CSS). Cleared
+   * the moment a fresh round lands (renderSummary re-evaluates staleness).
+   * @param {boolean} on
+   */
+  const markDue = (on) => {
+    if (panel) panel.classList.toggle('due', on);
+    if (btn) btn.classList.toggle('due', on);
+    if (syncBtn) syncBtn.classList.toggle('due', on);
   };
 
   /**
@@ -248,11 +282,18 @@ export const installAllianceShare = ({ getUniverseId }) => {
   const renderSummary = (doc, pulledAt) => {
     const rows = summarizeAllianceIntel(doc);
     const members = Object.keys(doc.members).length;
+    const due = Date.now() - pulledAt >= SHARE_NUDGE_MS;
+    // Stale tail leans on reciprocity — one click shares yours AND pulls
+    // theirs — to turn the reminder into an obvious win, not a chore.
+    const tail = due
+      ? 'share to refresh — you get everyone’s too'
+      : 'full list → Sync tab';
     paintSpyLine(
       `${members} member${members === 1 ? '' : 's'} · `
       + `${rows.length} player${rows.length === 1 ? '' : 's'} · `
-      + `synced ${formatAge(Date.now() - pulledAt)} · full list → Sync tab`,
+      + `synced ${formatAge(Date.now() - pulledAt)} · ${tail}`,
     );
+    markDue(due);
   };
 
   /**
@@ -324,6 +365,7 @@ export const installAllianceShare = ({ getUniverseId }) => {
     // universe switch must re-derive the status line.
     void readAllianceShareConfig().then(paintStatus);
     const hide = () => {
+      markDue(false);
       if (panel) { panel.hidden = true; panel.textContent = ''; }
       if (syncPanel) { syncPanel.hidden = true; syncPanel.textContent = ''; }
     };
@@ -331,14 +373,23 @@ export const installAllianceShare = ({ getUniverseId }) => {
       hide();
       return;
     }
-    void readAllianceIntel(uni).then((cache) => {
-      if (!cache) {
-        hide();
-        return;
+    void readAllianceIntel(uni).then(async (cache) => {
+      if (cache) {
+        const doc = normalizeAllianceDoc(cache.doc, uni);
+        if (doc) { renderDoc(doc, cache.pulledAt); return; }
       }
-      const doc = normalizeAllianceDoc(cache.doc, uni);
-      if (doc) renderDoc(doc, cache.pulledAt);
-      else hide();
+      // No cache (or unreadable) — never synced this universe. Nudge the user
+      // to run the first round IF configured; a first click both seeds the pool
+      // and pulls whatever the alliance already shared. Stay quiet when no token
+      // is set (nothing to act on — don't nag an unconfigured card).
+      const cfg = await readAllianceShareConfig();
+      if (cfg.token.trim()) {
+        if (syncPanel) { syncPanel.hidden = true; syncPanel.textContent = ''; }
+        paintSpyLine('Alliance sharing on — sync to pool your Spyglass intel (you get the alliance’s back)');
+        markDue(true);
+      } else {
+        hide();
+      }
     });
   };
 

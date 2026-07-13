@@ -996,6 +996,13 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .spy-ally-line.err { color: #ff8888; }
+  /* "share due" nudge — a warm spy-gold tint on the summary line and the two
+     Alliance-sync buttons once the pool has gone a day stale. A reminder, not
+     an alarm: colour + a short word, no glyph, nothing auto-syncs. */
+  .spy-ally-line.due { color: #e6c054; }
+  #spyAllianceBtn.due, #allySyncBtn.due {
+    border-color: #6b5a2a; background: #2a2410; color: #e6c054;
+  }
   #allySharePanel .table-scroll {
     max-height: 420px; overflow-y: auto;
     scrollbar-width: thin; scrollbar-color: #2b3a4d transparent;
@@ -1253,7 +1260,7 @@
          button inside is hidden (alliance share toggled off). -->
     <span style="margin-left:auto;display:inline-flex;align-items:center;gap:8px;">
       <button type="button" id="spyAllianceBtn"
-        title="One share round: write your observations (spy reports + galaxy sightings) into the alliance gist and pull everyone else's — nothing runs in the background. Configure on the Sync tab."
+        title="One share round, both ways: writes your observations (spy reports, galaxy sightings, presence history) into the alliance gist AND pulls everyone else's back — so a daily click keeps the whole pool fresh for you. Nothing runs in the background. Configure on the Sync tab."
         style="font-size:11px;color:#9fb4c4;background:#12202e;border:1px solid #2b3a4d;border-radius:999px;padding:3px 11px;cursor:pointer;white-space:nowrap;">Alliance sync</button>
       <button type="button" id="spyApiRefresh"
         title="Download fresh data from OGame's public API for this universe now (danger, mobile-fleet estimates, occupancy map). Normally OG-E refreshes this in-game; use this to force it from here."
@@ -1624,7 +1631,7 @@
       <button id="allyRevealToken" class="rem-eye" type="button"
         title="Show token" aria-label="Show token" aria-pressed="false">👁</button>
       <button id="allySyncBtn" type="button"
-        title="One share round: write your observations into the alliance gist and pull everyone else's. Same action as the Alliance sync button on the Spyglass tab.">Alliance sync</button>
+        title="One share round, both ways: writes your observations into the alliance gist AND pulls everyone else's back — a daily click keeps the pool fresh. Same action as the Alliance sync button on the Spyglass tab.">Alliance sync</button>
     </div>
     <div class="rem-row" style="margin-top:6px">
       <label></label>
