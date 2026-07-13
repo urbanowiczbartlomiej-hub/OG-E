@@ -18,16 +18,31 @@
 //
 // # The file
 //
-// One plain pretty-printed JSON file per universe in the alliance gist,
+// One file per universe in the alliance gist,
 // `oge-spyglass-alliance-<universeId>.json` — the alarmClock per-universe
-// files are the precedent for extra plain-JSON files coexisting with the
-// compressed personal bundle. Plain JSON on purpose: alliance-mates should be
-// able to eyeball exactly what everyone shares. GitHub's gist PATCH operates
-// per file, so writing it never touches the gist's other files.
+// files are the precedent for extra files coexisting with the compressed
+// personal bundle. GitHub's gist PATCH operates per file, so writing it never
+// touches the gist's other files.
+//
+// # Compression (gzip+base64, since the presence-ledger grew the payload)
+//
+// The doc was originally plain pretty-printed JSON (eyeball-friendly), but the
+// per-player packed presence ledgers (domain/presenceLedger.js) push a busy
+// alliance's file into the hundreds of KB, and every member re-PATCHes the
+// WHOLE file each share. So the WRITER now gzip+base64-compresses it, exactly
+// like the personal bundle (lib/gzip.js). The READER stays tolerant and
+// AUTO-DETECTS: a body that (after trim) starts with `{` is legacy plain JSON
+// (a pre-compression member, or a hand-edited file) and is parsed directly;
+// anything else is treated as gzip+base64. That detection is reliable — base64
+// of a gzip stream begins with the gzip magic (`H4sI…`), never `{` — so old
+// shared data is never lost and mixed-version writers still converge on the one
+// file. (A pre-compression READER can't inflate a compressed file — an accepted
+// one-way break as members update.)
 
 /* global fetch */
 
 import { API_BASE, conciseErrorBody } from './gist.js';
+import { gzipEncode, gzipDecode } from '../lib/gzip.js';
 import { emptyAllianceDoc } from '../domain/allianceIntel.js';
 
 /**
@@ -81,6 +96,29 @@ const ghAlliance = async (token, path, options = {}) => {
 };
 
 /**
+ * Encode a doc for the gist file: compact JSON → gzip+base64 (see file header).
+ * @param {unknown} doc
+ * @returns {Promise<string>}
+ */
+const encodeAllianceContent = (doc) => gzipEncode(JSON.stringify(doc));
+
+/**
+ * Decode a gist file body to raw parsed JSON, auto-detecting the legacy
+ * plain-JSON form from the compressed one (see file header). Throws on a
+ * malformed body so the caller surfaces "fix or delete it" rather than
+ * silently clobbering everyone's blocks.
+ * @param {string} text
+ * @returns {Promise<unknown>}
+ */
+const decodeAllianceContent = async (text) => {
+  const trimmed = text.trimStart();
+  if (trimmed.startsWith('{')) return JSON.parse(text); // legacy plain JSON
+  // gzip+base64 — decompress then parse. A decode failure throws, same as a
+  // bad JSON.parse, and dead-ends into the caller's "not valid" error.
+  return JSON.parse(await gzipDecode(trimmed));
+};
+
+/**
  * Discover-or-create the alliance gist for a token. Lists the token
  * account's gists and picks the OLDEST whose description matches
  * {@link ALLIANCE_GIST_DESCRIPTION} (deterministic under accidental
@@ -112,7 +150,7 @@ export const ensureAllianceGist = async (token, universeId) => {
       public: false,
       files: {
         [allianceFilenameFor(universeId)]: {
-          content: JSON.stringify(emptyAllianceDoc(universeId), null, 2),
+          content: await encodeAllianceContent(emptyAllianceDoc(universeId)),
         },
       },
     }),
@@ -150,15 +188,15 @@ export const fetchAllianceFile = async (token, gistId, universeId) => {
   }
   if (typeof text !== 'string' || !text) return null;
   try {
-    return JSON.parse(text);
+    return await decodeAllianceContent(text);
   } catch {
-    throw new Error('alliance file is not valid JSON — fix or delete it in the gist');
+    throw new Error('alliance file is unreadable (bad JSON or gzip) — fix or delete it in the gist');
   }
 };
 
 /**
- * PATCH one universe's alliance file into the gist (pretty-printed — see
- * file header). The caller supplies the already-merged doc.
+ * PATCH one universe's alliance file into the gist (gzip+base64 — see file
+ * header). The caller supplies the already-merged doc.
  *
  * @param {string} token
  * @param {string} gistId
@@ -167,11 +205,12 @@ export const fetchAllianceFile = async (token, gistId, universeId) => {
  * @returns {Promise<void>}
  */
 export const writeAllianceFile = async (token, gistId, universeId, doc) => {
+  const content = await encodeAllianceContent(doc);
   await ghAlliance(token, `/gists/${gistId}`, {
     method: 'PATCH',
     body: JSON.stringify({
       files: {
-        [allianceFilenameFor(universeId)]: { content: JSON.stringify(doc, null, 2) },
+        [allianceFilenameFor(universeId)]: { content },
       },
     }),
   });
