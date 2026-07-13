@@ -7,7 +7,13 @@
 //
 // @ts-check
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+// Node's `Blob` (with `.stream()`) — happy-dom's polyfill omits `.stream()`,
+// which the gzip pipeline needs (see the identical swap + rationale in
+// test/sync/gist.test.js). We keep happy-dom for its `fetch`/DOM but reach
+// into node:buffer for the streaming Blob.
+// @ts-ignore — node:buffer has no types in this project's tsconfig.
+import { Blob as NodeBlob } from 'node:buffer';
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import {
   allianceFilenameFor,
   fetchAllianceFile,
@@ -15,6 +21,11 @@ import {
   ensureAllianceGist,
   ALLIANCE_GIST_DESCRIPTION,
 } from '../../src/sync/allianceShare.js';
+import { gzipEncode, gzipDecode } from '../../src/lib/gzip.js';
+
+beforeAll(() => {
+  /** @type {any} */ (globalThis).Blob = NodeBlob;
+});
 
 /** Build a minimal ok-Response stub around a JSON body. @param {unknown} body */
 const okJson = (body) => ({
@@ -48,8 +59,8 @@ describe('fetchAllianceFile', () => {
     expect(opts.headers.Authorization).toBe('Bearer tok');
   });
 
-  it('parses the per-universe file content', async () => {
-    const doc = { version: 1, members: { Me: { updatedAtSec: 1, players: {} } } };
+  it('reads a LEGACY plain-JSON file (auto-detected by the leading brace)', async () => {
+    const doc = { version: 2, members: { Me: { updatedAtSec: 1, players: {} } } };
     fetchMock.mockResolvedValueOnce(okJson({
       files: {
         'oge-spyglass-alliance-s163-pl.json': { content: JSON.stringify(doc) },
@@ -59,12 +70,22 @@ describe('fetchAllianceFile', () => {
     await expect(fetchAllianceFile('tok', 'gid', 's163-pl')).resolves.toEqual(doc);
   });
 
-  it('THROWS on malformed JSON — treating it as empty would clobber every member on the next write', async () => {
+  it('reads a GZIP+BASE64 file (the current write format)', async () => {
+    const doc = { version: 2, members: { Me: { updatedAtSec: 1, players: {} } } };
+    fetchMock.mockResolvedValueOnce(okJson({
+      files: {
+        'oge-spyglass-alliance-s163-pl.json': { content: await gzipEncode(JSON.stringify(doc)) },
+      },
+    }));
+    await expect(fetchAllianceFile('tok', 'gid', 's163-pl')).resolves.toEqual(doc);
+  });
+
+  it('THROWS on an unreadable body — treating it as empty would clobber every member on the next write', async () => {
     fetchMock.mockResolvedValueOnce(okJson({
       files: { 'oge-spyglass-alliance-s163-pl.json': { content: '{oops' } },
     }));
     await expect(fetchAllianceFile('tok', 'gid', 's163-pl'))
-      .rejects.toThrow(/not valid JSON/);
+      .rejects.toThrow(/unreadable/);
   });
 
   it('throws a concise HTTP error on a non-ok response', async () => {
@@ -94,17 +115,19 @@ describe('fetchAllianceFile', () => {
 });
 
 describe('writeAllianceFile', () => {
-  it('PATCHes ONLY the per-universe file, pretty-printed', async () => {
+  it('PATCHes ONLY the per-universe file, gzip+base64-compressed', async () => {
     fetchMock.mockResolvedValueOnce(okJson({}));
-    const doc = { version: 1, universeId: 's163-pl', members: {} };
+    const doc = { version: 2, universeId: 's163-pl', members: {} };
     await writeAllianceFile('tok', 'gid', 's163-pl', doc);
     const [url, opts] = fetchMock.mock.calls[0];
     expect(url).toBe('https://api.github.com/gists/gid');
     expect(opts.method).toBe('PATCH');
     const body = JSON.parse(opts.body);
     expect(Object.keys(body.files)).toEqual(['oge-spyglass-alliance-s163-pl.json']);
-    expect(body.files['oge-spyglass-alliance-s163-pl.json'].content)
-      .toBe(JSON.stringify(doc, null, 2));
+    const written = body.files['oge-spyglass-alliance-s163-pl.json'].content;
+    // Compressed, not plain JSON — and it round-trips back to the doc.
+    expect(written.startsWith('{')).toBe(false);
+    expect(JSON.parse(await gzipDecode(written))).toEqual(doc);
   });
 });
 
@@ -135,7 +158,9 @@ describe('ensureAllianceGist — discover-or-create', () => {
     const body = JSON.parse(opts.body);
     expect(body.description).toBe(ALLIANCE_GIST_DESCRIPTION);
     expect(body.public).toBe(false);
-    const seeded = JSON.parse(body.files['oge-spyglass-alliance-s163-pl.json'].content);
-    expect(seeded).toEqual({ version: 1, universeId: 's163-pl', members: {} });
+    const seeded = JSON.parse(
+      await gzipDecode(body.files['oge-spyglass-alliance-s163-pl.json'].content),
+    );
+    expect(seeded).toEqual({ version: 2, universeId: 's163-pl', members: {} });
   });
 });

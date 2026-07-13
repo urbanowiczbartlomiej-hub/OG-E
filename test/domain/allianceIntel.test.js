@@ -13,8 +13,10 @@ import {
   normalizeAllianceDoc,
   buildMemberBlock,
   mergeOwnBlock,
+  allianceLedgerForPid,
   summarizeAllianceIntel,
 } from '../../src/domain/allianceIntel.js';
+import { unpackPresenceLedger } from '../../src/domain/presenceLedger.js';
 
 describe('memberKeyFor', () => {
   it('trims and collapses inner whitespace', () => {
@@ -119,14 +121,103 @@ describe('buildMemberBlock', () => {
 });
 
 describe('mergeOwnBlock', () => {
-  it('replaces only the own block, keeps every other member verbatim, and does not mutate', () => {
+  it('touches only the own block, keeps every other member verbatim, and does not mutate', () => {
     const doc = emptyAllianceDoc('s163-pl');
     doc.members.Alice = { updatedAtSec: 1, players: { 7: { name: 'Bob' } } };
     doc.members.Me = { updatedAtSec: 2, players: {} };
-    const next = mergeOwnBlock(doc, 'Me', { updatedAtSec: 9, players: { 8: {} } });
+    const next = mergeOwnBlock(doc, 'Me', { updatedAtSec: 9, players: { 8: {} } }, 9);
     expect(next.members.Alice).toBe(doc.members.Alice);
     expect(next.members.Me).toEqual({ updatedAtSec: 9, players: { 8: {} } });
     expect(doc.members.Me.updatedAtSec).toBe(2);
+  });
+
+  it('UNIONS the own block per player, field-wise max (multi-device safe)', () => {
+    const doc = emptyAllianceDoc('s163-pl');
+    // A previous block from THIS member (e.g. their other device / an earlier
+    // share) already in the doc.
+    doc.members.Me = {
+      updatedAtSec: 5,
+      players: { 7: { name: 'Bob', lastSpySec: 900, lastSeenSec: 100, bodiesSpied: 3 } },
+    };
+    // A fresh block that's newer on some fields, older on others.
+    const fresh = {
+      updatedAtSec: 8,
+      players: { 7: { name: 'Bob', lastSpySec: 400, lastSeenSec: 700, bodiesSpied: 2 } },
+    };
+    const merged = mergeOwnBlock(doc, 'Me', fresh, 8).members.Me;
+    // Every monotonic field takes the MAX — nothing the old block held is lost.
+    expect(merged.players['7']).toEqual({
+      name: 'Bob', lastSpySec: 900, lastSeenSec: 700, bodiesSpied: 3,
+    });
+    expect(merged.updatedAtSec).toBe(8);
+  });
+
+  it('unions the presence ledgers of the own block (OR of packed days)', () => {
+    const doc = emptyAllianceDoc('s163-pl');
+    const dayA = String(20000);
+    const dayB = String(20001);
+    // prev block covers day A; fresh covers day B — the union must hold BOTH.
+    doc.members.Me = {
+      updatedAtSec: 5,
+      players: { 7: { lastSpySec: 1, presence: `${(20000).toString(36)}.1.` } },
+    };
+    const fresh = {
+      updatedAtSec: 8,
+      players: { 7: { lastSpySec: 1, presence: `${(20001).toString(36)}.2.` } },
+    };
+    const merged = mergeOwnBlock(doc, 'Me', fresh, 20001 * 86400).members.Me;
+    const ledger = unpackPresenceLedger(merged.players['7'].presence);
+    expect(ledger[dayA]).toEqual([1, 0]);
+    expect(ledger[dayB]).toEqual([2, 0]);
+  });
+});
+
+describe('buildMemberBlock — presence ledgers (v2)', () => {
+  it('packs a player ledger into the block and gates share on any observation', () => {
+    const block = buildMemberBlock({
+      ledgers: { 7: { 20000: [1 << 14, 0] } },
+      nowSec: 20000 * 86400 + 3600,
+    });
+    // A ledger alone is an observation record → the id shares.
+    expect(typeof block.players['7'].presence).toBe('string');
+    expect(unpackPresenceLedger(block.players['7'].presence)['20000']).toEqual([1 << 14, 0]);
+  });
+});
+
+describe('allianceLedgerForPid — pooling', () => {
+  it('ORs one player ledger across every member block, listing contributors', () => {
+    const doc = emptyAllianceDoc('s163-pl');
+    doc.members.Alice = {
+      updatedAtSec: 1, players: { 7: { presence: `${(20000).toString(36)}.1.` } },
+    };
+    doc.members.Bob = {
+      updatedAtSec: 1, players: { 7: { presence: `${(20000).toString(36)}.2.4` } },
+    };
+    const { ledger, members } = allianceLedgerForPid(doc, '7');
+    // Alice's active bit0 | Bob's active bit1 = 3; Bob's quiet bit2 = 4.
+    expect(ledger['20000']).toEqual([3, 4]);
+    expect(members).toEqual(['Alice', 'Bob']);
+  });
+});
+
+describe('normalizeAllianceDoc — version tolerance', () => {
+  it('READS a legacy v1 doc and preserves an unknown-but-bounded presence field on v2', () => {
+    const v1 = normalizeAllianceDoc(
+      { version: 1, members: { Al: { updatedAtSec: 1, players: { 7: { name: 'X' } } } } },
+      's163-pl',
+    );
+    expect(v1).not.toBeNull();
+    expect(v1?.members.Al.players['7'].name).toBe('X');
+    const v2 = normalizeAllianceDoc(
+      { version: 2, members: { Al: { updatedAtSec: 1, players: { 7: { presence: 'ffk.1.' } } } } },
+      's163-pl',
+    );
+    expect(v2?.members.Al.players['7'].presence).toBe('ffk.1.');
+  });
+
+  it('emptyAllianceDoc stamps the CURRENT version (2)', () => {
+    expect(emptyAllianceDoc('s163-pl').version).toBe(ALLIANCE_INTEL_VERSION);
+    expect(ALLIANCE_INTEL_VERSION).toBe(2);
   });
 });
 
