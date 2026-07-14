@@ -42,6 +42,18 @@
 //     on the kind of body the send left from: planet runs hop planets,
 //     moon runs hop moons.
 //
+// # Label stability (the sendExpedition contract)
+//
+// Routine repaint drivers (the 1 Hz reconciler, store/eventbox events) go
+// through refresh(), which HOLDS while a tap is in flight (`busy`) or a
+// transient flash is on screen — so a label painted by the owning flow
+// ("Wait…", "Sent", an error flash) can never be overwritten mid-state by a
+// background repaint. setLabel() additionally memoizes the last painted
+// content per zone, so recomputing an unchanged label touches no DOM. The
+// net effect mirrors sendExpedition: labels change only when the underlying
+// state actually changes, and after a dispatch the whole button sits greyed
+// on "Sent" until the post-send redirect reloads the page.
+//
 // @see ./pure.js — URL builders, target picking, the routes DSL.
 // @see ./domHelpers.js — DOM readers + fleet-step drivers.
 // @see ../../bridges/deployRedirect.js — consumes `oge_dailyRunRedirect`.
@@ -286,6 +298,13 @@ const collectPlanetEmpty = () => {
  */
 const setLabel = (el, big, small, hint) => {
   if (!el) return;
+  // Skip identical repaints: renderLines rebuilds the label DOM from scratch,
+  // so repainting the SAME content (the 1 Hz reconciler recomputes it every
+  // second) would visibly re-render the text for nothing. The last-painted
+  // signature rides on the zone element, so it resets with every mount.
+  const sig = `${big}\u0000${small ?? ''}\u0000${hint ?? ''}`;
+  if (el.dataset.ogeLabelSig === sig) return;
+  el.dataset.ogeLabelSig = sig;
   // Paint into the shared Button's label span so the ring/ripple
   // decoration (on the wrap) survives; fall back to the element itself.
   const target = el.querySelector('.' + LABEL_CLASS) || el;
@@ -296,6 +315,16 @@ const setLabel = (el, big, small, hint) => {
 };
 
 /**
+ * Pending flash-restore timer. Non-null ⇒ a transient label is on screen and
+ * refresh() must hold (see the "Label stability" header note). Overlapping
+ * flashes coalesce onto one timer — the last always restores the real state —
+ * exactly like sendExpedition's capLabelTimer.
+ *
+ * @type {ReturnType<typeof setTimeout> | null}
+ */
+let flashTimer = null;
+
+/**
  * Flash a transient label on an element, then repaint via {@link refresh}.
  *
  * @param {HTMLElement | null} el
@@ -304,8 +333,12 @@ const setLabel = (el, big, small, hint) => {
  */
 const flash = (el, text) => {
   if (!el) return;
+  if (flashTimer !== null) clearTimeout(flashTimer);
   setLabel(el, text);
-  setTimeout(() => refresh(), FLASH_MS);
+  flashTimer = setTimeout(() => {
+    flashTimer = null;
+    refresh();
+  }, FLASH_MS);
 };
 
 // ─── redirect handoff ───────────────────────────────────────────────────
@@ -465,6 +498,12 @@ const handleZone = async (mode) => {
     flash(zone, 'Wait…');
     return;
   }
+  // A new tap supersedes any flash still on screen — drop its restore timer
+  // so the flow below owns the label (refresh() holds while it's pending).
+  if (flashTimer !== null) {
+    clearTimeout(flashTimer);
+    flashTimer = null;
+  }
   const s = courierStep();
 
   // Tap 2 — dispatch (only when the game says it's ready). The redirect is
@@ -481,13 +520,21 @@ const handleZone = async (mode) => {
       location.href = bareFleetdispatchUrl();
       return;
     }
-    if (!readyToDispatch()) return;
+    if (!readyToDispatch()) {
+      // Armed, but the game re-flagged the dispatch `.off` (async fleet2
+      // re-validation). Not a dead tap: say so; the next tap fires once the
+      // game clears the flag again.
+      flash(zone, 'Wait…');
+      return;
+    }
     if (mode === 'micro') stashMicroRedirect();
     else stashCollectRedirect(dailyRunRoutesStore.get().collectTarget);
     busy = true;
     setLabel(zone, 'Wait…');
-    dimZone(zone, true);
-    const r = await courierDispatch(OWNER_FS);
+    dimAll(true);
+    const r = await courierDispatch(OWNER_FS).catch(
+      () => /** @type {{ ok: boolean, errorCode?: number | null, reason?: string }} */ ({ ok: false }),
+    );
     if (!r.ok) {
       safeLS.remove(DAILY_RUN_REDIRECT_KEY);
       // Belt-and-braces: the gate above already vetted ownership, but keep
@@ -497,15 +544,18 @@ const handleZone = async (mode) => {
         return;
       }
       busy = false;
-      dimZone(zone, false);
+      dimAll(false);
       flash(zone, sendErrorLabel(r.errorCode));
       return;
     }
-    // Success → the game navigates via the stashed redirect; keep the zone
-    // locked (greyed) until that reload settles.
+    // Success → the game navigates via the stashed redirect; keep the WHOLE
+    // button locked + greyed on "Sent" until that reload lands (busy holds
+    // refresh() off, so no background repaint can overwrite it) — the same
+    // post-send stillness sendExpedition shows. lockBriefly's timeout is only
+    // the safety net for the rare no-reload failure.
     setLabel(zone, 'Sent');
     pending = null;
-    lockBriefly(zone);
+    lockBriefly();
     return;
   }
 
@@ -548,12 +598,17 @@ const handleZone = async (mode) => {
     location.href = bareFleetdispatchUrl(nextCp);
     return;
   }
+  // Starting a fresh tap 1 invalidates any previously armed order — the
+  // armed label must never survive into a new selection walk.
+  pending = null;
   busy = true;
   setLabel(zone, 'Wait…');
-  dimZone(zone, true);
-  const r = await courierSelect(built.order);
+  dimAll(true);
+  const r = await courierSelect(built.order).catch(
+    () => /** @type {import('../shared/fleetCourier.js').SelectResult} */ ({ ok: false }),
+  );
   busy = false;
-  dimZone(zone, false);
+  dimAll(false);
   if (!r.ok) {
     flash(zone, reasonLabel(r.reason));
     return;
@@ -572,6 +627,15 @@ const dimZone = (zone, on) => {
   // gate's CSS grey (`[aria-disabled] .zone{opacity:.5}`) can't be overridden
   // by a routine repaint — same contract as the shared Button's setDim.
   if (zone) zone.style.opacity = on ? '0.5' : '';
+};
+
+/** Grey BOTH zones (or restore them). `busy` swallows taps on both zones,
+ * so the grey must cover both too — the whole button reads busy, exactly
+ * like sendExpedition's single-zone lock.
+ * @param {boolean} on */
+const dimAll = (on) => {
+  dimZone(document.getElementById(FS_MICRO_ZONE_ID), on);
+  dimZone(document.getElementById(FS_COLLECT_ZONE_ID), on);
 };
 
 /**
@@ -596,14 +660,15 @@ const onSetTargetClick = () => {
   refresh();
 };
 
-/** Briefly lock (and grey) a zone while a dispatch + reload settles.
- * @param {HTMLElement | null} [zone] */
-const lockBriefly = (zone) => {
+/** Lock (and grey) the whole button while a dispatch + reload settles. In
+ * the happy path the stashed redirect reloads the page well within the
+ * window; the timeout only recovers the rare dispatch that never navigates. */
+const lockBriefly = () => {
   busy = true;
-  dimZone(zone ?? null, true);
+  dimAll(true);
   setTimeout(() => {
     busy = false;
-    dimZone(zone ?? null, false);
+    dimAll(false);
     refresh();
   }, SENT_LOCK_MS);
 };
@@ -637,19 +702,32 @@ const paintEventBoxGate = (microZone, collectZone) => {
  * @returns {void}
  */
 const refresh = () => {
+  // Repaint hold — the label-stability contract (see the header note): while
+  // a tap is in flight (busy: select walk, dispatch, post-send lock) or a
+  // transient flash is on screen, the routine repaint drivers (1 Hz
+  // reconciler, store/eventbox events) must NOT overwrite the label the
+  // owning flow painted. That flow repaints via refresh() when it ends.
+  if (busy || flashTimer !== null) return;
   const microZone = document.getElementById(FS_MICRO_ZONE_ID);
   const collectZone = document.getElementById(FS_COLLECT_ZONE_ID);
   paintEventBoxGate(microZone, collectZone);
   if (!eventBoxReady) return;
-  const onF2Ready = courierStep() === 'fleet2' && readyToDispatch();
+  // Armed = OUR tap 1 completed and the form still sits on fleet2.
+  // Deliberately NOT gated on readyToDispatch(): the game re-validates
+  // fleet2 asynchronously (checkTarget re-fires, resources recompute) and
+  // briefly re-adds `.off` — keying the LABEL on that made "(tap to send)"
+  // flap against the idle state. select() resolves ok only once dispatch was
+  // ready, and tap 2 re-checks readiness itself, so the armed label can
+  // never cause an unready send.
+  const armed = courierStep() === 'fleet2' ? pending : null;
 
   // DISPATCH (top / micro) label.
   if (microZone) {
     const route = findRouteForBody(dailyRunRoutesStore.get().routes, readCurrentBody());
     if (!route) {
       setLabel(microZone, 'Setup', undefined, '(no routes)');
-    } else if (onF2Ready && pending && pending.mode === 'micro') {
-      setLabel(microZone, 'Send', collectTargetLabel(pending.target), '(tap to send)');
+    } else if (armed && armed.mode === 'micro') {
+      setLabel(microZone, 'Send', collectTargetLabel(armed.target), '(tap to send)');
     } else {
       const inflight = microInFlightKeys(route.mission ?? MISSION_DEPLOYMENT);
       const next = findNextMicroTarget(route.targets, inflight);
@@ -674,7 +752,7 @@ const refresh = () => {
     const t = dailyRunRoutesStore.get().collectTarget;
     if (!t) {
       setLabel(collectZone, 'Send All', undefined, '(hold to set target)');
-    } else if (onF2Ready && pending && pending.mode === 'collect') {
+    } else if (armed && armed.mode === 'collect') {
       setLabel(collectZone, 'Send All', collectTargetLabel(t), '(tap to send)');
     } else if (collectPlanetEmpty()) {
       // Nothing to take here — propose the jump; the tap performs it
@@ -832,8 +910,11 @@ export const installDailyRun = () => {
 
   const unsubRoutes = dailyRunRoutesStore.subscribe(() => refresh());
 
-  // 1 Hz repaint ticker — keeps "N left" counter in sync even if OGame populates
-  // #eventContent after our initial refresh.
+  // 1 Hz reconciler — keeps "N left" honest when OGame populates #eventContent
+  // rows after the load event, and picks up manual form navigation (AGR's
+  // back-to-fleet1). Flicker-free by construction: refresh() holds while
+  // busy/flashing, and setLabel() skips identical repaints, so a tick with
+  // nothing changed touches no DOM.
   const unsubTicker = clock.subscribe(refresh, { everyMs: 1000 });
 
   installed = {
@@ -845,6 +926,11 @@ export const installDailyRun = () => {
       document.removeEventListener(EVENT_BOX_LOADED_EVENT, onEventBoxLoaded);
       stopGate();
       if (settleTimer) clearTimeout(settleTimer);
+      if (flashTimer !== null) {
+        clearTimeout(flashTimer);
+        flashTimer = null;
+      }
+      pending = null;
       installed = null;
     },
   };
@@ -863,5 +949,10 @@ export const _resetDailyRunForTest = () => {
     installed = null;
   }
   busy = false;
+  pending = null;
+  if (flashTimer !== null) {
+    clearTimeout(flashTimer);
+    flashTimer = null;
+  }
   eventBoxReady = true;
 };
