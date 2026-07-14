@@ -25,6 +25,7 @@
 import { buildScanPlan } from '../../domain/scanPriority.js';
 import { buildGalaxyPlan, galaxyStaleMs } from '../../domain/galaxyWatch.js';
 import { flightDistanceBetween } from '../../domain/geometry.js';
+import { TONE_ERROR } from '../shared/statusTones.js';
 
 export { SPY_STALE_MS } from '../../domain/spyScan.js';
 
@@ -50,8 +51,8 @@ export { SPY_STALE_MS } from '../../domain/spyScan.js';
 export const BG_SPY_IDLE = '#e6c054';
 /** Armed "Send!" — the same gold, lit (the colony idle→ready treatment). */
 export const BG_SPY_READY = '#f7dc66';
-/** The shared FAB error red (sendExpedition/sendColony/sendLifeform). */
-export const BG_SPY_ERROR = '#fb7185';
+/** The shared FAB error tone (see shared/statusTones.js). */
+export const BG_SPY_ERROR = TONE_ERROR;
 /** "All scanned → read reports" end state — the gold, muted. */
 export const BG_SPY_DONE = '#a68d4a';
 /** The galaxy-LOOK proposal — even paler champagne; the label carries the verb. */

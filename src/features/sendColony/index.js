@@ -31,19 +31,16 @@
 //   5. Timestamps + a single 1 Hz repaint ticker replace timers.
 //   6. TOS: 1 user click → at most 1 originated HTTP request.
 //
-// # Persistent state — five module `let`s
+// # Persistent state — flat module `let`s
 //
 // Kept as flat primitives rather than an accessor module because every
 // reader + writer lives in THIS file. A bag of helpers would just
-// indirection-tax the same five assignments.
-//
-//   - `lastNavToFleetdispatchAt`  — when we last navigated to
-//     fleetdispatch. After 15 s without a matching checkTargetResult
-//     the `derive()` phase flips to `timeout`.
-//   - `lastScanSubmitAt` — when we last fired an in-page galaxy submit.
-//     Used only for the 1 s anti-spam cooldown on the Scan half.
-//   - `waitStartAt` / `waitSeconds` — min-gap countdown start + total.
-//     Ticker reads these to derive the remaining `waitGap` phase.
+// indirection-tax the same assignments. Each let carries its own doc
+// below; the clusters are: the courier flow (`busy` / `colReady` /
+// `colTarget`), the min-gap countdown (`waitStartAt` / `waitTotalSecs`),
+// the two-input readiness gate (`eventBoxReady` / `apiCtxReady` +
+// `apiGateTimer`), and the paint holds (`transientPaint` / `transientUntil`
+// / `sentLockTimer`).
 //
 // # Tick policy
 //
@@ -129,7 +126,11 @@ import {
 import { whenEventBoxReady } from '../shared/eventBoxGate.js';
 import { installFabSettingsLifecycle } from '../shared/fabSettingsLifecycle.js';
 import { createFleetDispatcherCache } from '../shared/fleetDispatcherCache.js';
-import { getApiContext } from '../shared/apiContextStore.js';
+import {
+  getApiContext,
+  subscribeApiContext,
+  hasApiContextSettled,
+} from '../shared/apiContextStore.js';
 import { clock } from '../../lib/clock.js';
 
 // Re-export the pure pipeline so existing call-sites (e.g. the test
@@ -160,7 +161,7 @@ const SEND_HALF_ID = 'oge-col-send';
 // scan-cooldown timeouts, and `MISSION_COLONIZE` all moved to
 // `./pure.js` because they belong to the pure render / derive
 // surface. Imported above and used below only for the impure paint
-// fallbacks (e.g. "None available" flash) and the fleetdispatch URL
+// fallbacks (e.g. the 'No targets' flash) and the fleetdispatch URL
 // sniff.
 
 /** Repaint ticker period in ms. */
@@ -180,6 +181,17 @@ const SENT_LOCK_MS = 3000;
  * sendLifeform's transient-hold.
  */
 const TRANSIENT_MS = 1800;
+/**
+ * Safety backstop for the api-context half of the readiness gate: enable the
+ * button this long after install even if no `setApiContext` publish was
+ * observed. The cached rebuild settles well under a second and even the weekly
+ * multi-MB universe.xml refetch within a few; a hung fetch (or a producer that
+ * threw before publishing) must cost a bounded over-disable, never a stuck
+ * button — same philosophy as the eventbox gate's safety timeout. After it
+ * fires the button behaves exactly as pre-gate builds did from t=0: the picker
+ * falls back to live-scan-only until a late publish repaints it.
+ */
+const API_GATE_SAFETY_MS = 15000;
 
 // ─── Module-local state (§3) ───────────────────────────────────────────
 
@@ -212,17 +224,41 @@ let waitStartAt = 0;
 let waitTotalSecs = 0;
 /**
  * False while the game's async event-list XHR hasn't landed on this page view.
- * Gates `refresh()` (paints a "Wait…" hold instead of a candidate label) and
+ * One half of the two-input readiness gate (with {@link apiCtxReady}): both
+ * gate `refresh()` (paints a "Wait…" hold instead of a candidate label) and
  * `onSendClick` (a tap is a no-op) so the button never computes or acts on a
- * candidate while the page — and our stores — are still hydrating. THE SAME
- * gate that drives the shared Button's visual disable (`gateUntilEventBox`),
- * so the label is never a confident "No more candidates" on a half-loaded
- * page. The `true` default keeps standalone `refresh()` paints ungated.
- * Mirrors dailyRun's eventbox gate.
+ * candidate while the page — and our data — are still hydrating. The combined
+ * gate also drives the shared Button's visual disable via {@link syncGate}
+ * (this feature owns `setDisabled`; it does NOT pass `gateUntilEventBox`,
+ * which knows only the eventbox half), so a tap can never earn a confident
+ * 'No targets' verdict on a half-loaded page. The `true` default keeps
+ * standalone `refresh()` paints ungated. Mirrors dailyRun's eventbox gate.
  *
  * @type {boolean}
  */
 let eventBoxReady = true;
+/**
+ * False while the api-context breadth layer hasn't SETTLED on this page view
+ * (first `setApiContext` publish — data or declared failure). The other half
+ * of the readiness gate: right after load the candidate picker sees an EMPTY
+ * breadth layer (live-scan positions are ephemeral and rehydrate empty; the
+ * occupancy index publishes asynchronously — cache rebuild or the weekly
+ * multi-MB refetch), so a tap in that window used to compute a false
+ * no-candidates verdict that flipped to real candidates a second later.
+ * Opens on the first publish, or after {@link API_GATE_SAFETY_MS}, and starts
+ * open in sub-frames (the producer is top-frame-only — nothing would ever
+ * publish there). The `true` default keeps standalone paints ungated.
+ *
+ * @type {boolean}
+ */
+let apiCtxReady = true;
+/**
+ * Safety-backstop timer for the api-context gate (see
+ * {@link API_GATE_SAFETY_MS}). `null` when not armed.
+ *
+ * @type {ReturnType<typeof setTimeout> | null}
+ */
+let apiGateTimer = null;
 /**
  * Active post-send lock timer — releases the busy lock if the expected
  * post-dispatch page reload never comes. `null` when no send is settling.
@@ -279,6 +315,19 @@ const showTransient = (p) => {
   transientUntil = Date.now() + TRANSIENT_MS;
   paintZone('send', p);
 };
+
+/**
+ * Reflect the combined readiness gate — eventbox fresh AND api context
+ * settled — onto the shared Button's visual disable (grey fill + swallowed
+ * taps). This feature owns the whole `setDisabled` writer instead of passing
+ * `gateUntilEventBox` to the button: that internal gate knows only the
+ * eventbox half, and two independent writers would fight (enable on eventbox
+ * while the data half is still loading). Call whenever either flag flips and
+ * once at mount. No-op while unmounted.
+ *
+ * @returns {void}
+ */
+const syncGate = () => controller?.setDisabled(!(eventBoxReady && apiCtxReady));
 
 // ─── captureEnv + refresh ──────────────────────────────────────────────
 
@@ -343,16 +392,17 @@ const refresh = () => {
   // BEFORE the derive/render compute so a wasted whole-universe scan isn't run
   // then discarded.
   if (busy) return;
-  // Event list (and our stores) not hydrated on this page view yet — hold a
-  // "Wait…" label instead of computing a candidate, so the label never flashes
-  // a confident "No more candidates" on a half-loaded page. The shared Button's
-  // visual gate (`gateUntilEventBox`) disables taps in parallel off the same
-  // signal; this keeps the LABEL honest. Mirrors dailyRun. Rim stays the IDLE
-  // module colour: during the LOAD gate every command button wears the same
-  // look — grey fill via the gate's disabled CSS, module-coloured ring, no
-  // gold. Amber (BG_SEND_WAIT) is reserved for the post-tap busy/min-gap
-  // states below.
-  if (!eventBoxReady) {
+  // Readiness gate: event list not landed OR api-context breadth layer not
+  // settled on this page view yet — hold a "Wait…" label instead of computing
+  // a candidate, so the label never flashes a confident 'No targets' verdict
+  // on a half-hydrated candidate set (the picker is fed almost entirely by the
+  // async-published occupancy index right after load). `syncGate` disables
+  // taps in parallel off the same two flags; this keeps the LABEL honest.
+  // Mirrors dailyRun. Rim stays the IDLE module colour: during the LOAD gate
+  // every command button wears the same look — grey fill via the gate's
+  // disabled CSS, module-coloured ring, no gold. Amber (BG_SEND_WAIT) is
+  // reserved for the post-tap busy/min-gap states below.
+  if (!eventBoxReady || !apiCtxReady) {
     paintZone('send', { text: 'Wait…', bg: BG_SEND_IDLE, dim: true });
     return;
   }
@@ -453,10 +503,11 @@ const colErrorPaint = (reason, c) => {
  */
 const onSendClick = async () => {
   if (busy) return;
-  // Page/stores still hydrating — the visual gate already swallows the tap,
-  // but guard here too so a focus-driven or programmatic call can't act on a
-  // half-loaded candidate set (the false "No more candidates"). Mirrors dailyRun.
-  if (!eventBoxReady) return;
+  // Page/data still hydrating (eventbox or api context) — the visual gate
+  // already swallows the tap, but guard here too so a focus-driven or
+  // programmatic call can't act on a half-loaded candidate set (the false
+  // 'No targets' verdict). Mirrors dailyRun.
+  if (!eventBoxReady || !apiCtxReady) return;
   const s = courierStep();
 
   // Tap 2 — dispatch the armed colonize, gated by the min-gap.
@@ -520,7 +571,13 @@ const onSendClick = async () => {
       )
     : null;
   if (!candidate) {
-    paintZone('send', { text: 'No more candidates', bg: BG_SEND_IDLE });
+    // Nothing proposable in the composite. Keyword, not a sentence — the old
+    // 'No more candidates' was a single nowrap line ~2× the button's width.
+    // Amber = the shared "valid tap, nothing to act on right now" tone
+    // (expedition's 'All sent'), NOT the module colour: the flash must read
+    // as a verdict, and not the error rose — nothing failed. Transient so the
+    // 1 Hz ticker doesn't clobber it back to 'Colonize' within a second.
+    showTransient({ text: 'No targets', bg: BG_SEND_WAIT });
     return;
   }
 
@@ -877,18 +934,21 @@ let installed = null;
  * SAME dispose fn as the first.
  *
  * Lifecycle:
- *   1. Snapshot settings. If `showColonizeButton === false` we skip DOM
+ *   1. Arms the two-input readiness gate (eventbox fresh AND api context
+ *      settled) that holds the button visibly disabled — see
+ *      `eventBoxReady` / `apiCtxReady`.
+ *   2. Snapshot settings. If `showColonizeButton === false` we skip DOM
  *      work entirely but still subscribe to settings so a later flip to
  *      `true` creates the button live.
- *   2. Renders (if enabled): `<div id="oge-send-col">` + two halves,
+ *   3. Renders (if enabled): `<div id="oge-send-col">` + two halves,
  *      registered as the 'col' module of the unified FAB (which owns
  *      position + drag). Focus wired via `shared/draggableButton.js`.
- *   3. Paints the initial label via derive → render → paint.
- *   4. Starts a 1 Hz repaint ticker.
- *   5. Subscribes to settings / scans / registry stores + three
- *      bridge events for refresh triggers.
- *   6. Returns dispose: removes button, unsubs all, removes listeners,
- *      clears ticker.
+ *   4. Paints the initial label via derive → render → paint.
+ *   5. Starts a 1 Hz repaint ticker.
+ *   6. Subscribes to settings / scans / registry / decisions stores, the
+ *      api-context handoff, + three bridge events for refresh triggers.
+ *   7. Returns dispose: removes button, unsubs all, removes listeners,
+ *      clears ticker + timers.
  *
  * @returns {() => void} Dispose handle.
  */
@@ -899,17 +959,50 @@ export const installSendColony = () => {
   // courier's select() can resolve the fleet.
   installFleetCourier();
 
-  // Eventbox readiness — the SAME gate that drives the button's visual disable
-  // (`gateUntilEventBox` below). Starts not-ready on fleetdispatch and opens on
-  // the first of the eventList XHR, window load, or the safety net; off
-  // fleetdispatch it opens synchronously (nothing to wait for). At that one
-  // moment we flip the flag and repaint with a real candidate — so the label is
+  // Eventbox readiness — one half of the two-input gate that drives the
+  // button's visual disable (`syncGate`; this feature owns `setDisabled`, so
+  // the button is NOT given `gateUntilEventBox`). Starts not-ready on
+  // fleetdispatch and opens on the first of the eventList XHR, window load, or
+  // the safety net; off fleetdispatch it opens synchronously (nothing to wait
+  // for). At that one moment we flip the flag and repaint — so the label is
   // honest at-or-before the instant the button becomes enabled. Mirrors dailyRun.
   eventBoxReady = false;
   const stopGate = whenEventBoxReady(() => {
     eventBoxReady = true;
+    syncGate();
     refresh();
   });
+
+  // Api-context readiness — the other half of the gate. Right after load the
+  // candidate picker sees an EMPTY breadth layer (live-scan positions are
+  // ephemeral and rehydrate empty; the occupancy index is built and published
+  // asynchronously by `features/apiContext`), so an ungated early tap computed
+  // a false no-candidates verdict that flipped to real candidates a second
+  // later. Hold the button until the producer SETTLES: any publish opens the
+  // gate (a `null` publish = build failed → same scan-only fallback as before
+  // this gate existed). Starts open in sub-frames — the producer is top-frame
+  // only, so nothing would ever publish there — and the safety timer bounds a
+  // hung fetch / never-publishing producer. The subscription is permanent:
+  // later republishes (forced rebuilds) repaint the candidate + "N free" stat
+  // instantly instead of waiting on the 1 Hz tick (same pattern as sendSpy).
+  apiCtxReady = window.top !== window.self || hasApiContextSettled();
+  const unsubApiCtx = subscribeApiContext(() => {
+    apiCtxReady = true;
+    if (apiGateTimer) {
+      clearTimeout(apiGateTimer);
+      apiGateTimer = null;
+    }
+    syncGate();
+    refresh();
+  });
+  if (!apiCtxReady) {
+    apiGateTimer = setTimeout(() => {
+      apiGateTimer = null;
+      apiCtxReady = true;
+      syncGate();
+      refresh();
+    }, API_GATE_SAFETY_MS);
+  }
   // Permanent repaint on EVERY later eventbox refresh so a candidate first
   // computed when the gate opened via the fallback (before the first XHR
   // landed) is corrected without waiting on the 1 Hz ticker. (Unlike dailyRun
@@ -938,7 +1031,9 @@ export const installSendColony = () => {
       // the same size across the 1-zone command buttons (was 0.12 — too small).
       fontScale: 0.18,
       module: FAB_MODULES.col,
-      gateUntilEventBox: true,
+      // No `gateUntilEventBox`: this feature drives the visual disable itself
+      // (`syncGate`) because its readiness is two-input — eventbox AND api
+      // context — and the button-internal gate knows only the eventbox half.
       holdMs: HOLD_SKIP_MS,
       zones: [
         {
@@ -954,6 +1049,9 @@ export const installSendColony = () => {
     });
     if (!controller) return;
 
+    // Fresh mount starts with the gate's CURRENT verdict (a late mount — the
+    // settings toggle flipped mid-session — must not re-disable a ready page).
+    syncGate();
     // First paint driven by the full pipeline.
     refresh();
   };
@@ -1032,6 +1130,11 @@ export const installSendColony = () => {
       document.removeEventListener(COLONIZE_SENT_EVENT, onColonizeSent);
       document.removeEventListener(EVENT_BOX_LOADED_EVENT, onEventBoxLoaded);
       stopGate();
+      unsubApiCtx();
+      if (apiGateTimer) {
+        clearTimeout(apiGateTimer);
+        apiGateTimer = null;
+      }
       if (sentLockTimer) {
         clearTimeout(sentLockTimer);
         sentLockTimer = null;
@@ -1064,8 +1167,13 @@ export const _resetSendColonyForTest = () => {
   waitStartAt = 0;
   waitTotalSecs = 0;
   eventBoxReady = true;
+  apiCtxReady = true;
   transientPaint = null;
   transientUntil = 0;
+  if (apiGateTimer) {
+    clearTimeout(apiGateTimer);
+    apiGateTimer = null;
+  }
   if (sentLockTimer) {
     clearTimeout(sentLockTimer);
     sentLockTimer = null;

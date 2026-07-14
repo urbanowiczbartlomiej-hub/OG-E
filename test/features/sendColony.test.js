@@ -33,7 +33,7 @@
 //
 // @ts-check
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   installSendColony,
   _resetSendColonyForTest,
@@ -54,6 +54,10 @@ import {
   disposeColonizeDecisionsStore,
 } from '../../src/state/colonizeDecisions.js';
 import { blockingCoords, DEC_TAKEN } from '../../src/domain/colonizeDecisions.js';
+import {
+  setApiContext,
+  _resetApiContextStoreForTest,
+} from '../../src/features/shared/apiContextStore.js';
 
 // ── Location.href mocking ────────────────────────────────────────────
 
@@ -261,6 +265,13 @@ beforeEach(() => {
   scansStore.set({});
   registryStore.set([]);
   resetDecisions();
+  // SETTLE the api-context handoff (null = "build finished, no data") so the
+  // button's api half of the readiness gate starts open and the suite runs in
+  // the scan-only fallback — the pre-gate behaviour every scene here assumes.
+  // The gate itself is covered by the dedicated 'api-context readiness gate'
+  // describe below, which un-settles the store per test.
+  _resetApiContextStoreForTest();
+  setApiContext(null);
   delete (/** @type {any} */ (window)).fleetDispatcher;
   navTarget = null;
   mockLocationHref();
@@ -273,6 +284,7 @@ afterEach(() => {
   scansStore.set({});
   registryStore.set([]);
   resetDecisions();
+  _resetApiContextStoreForTest();
   delete (/** @type {any} */ (window)).fleetDispatcher;
   unmockLocationHref();
   navTarget = null;
@@ -516,14 +528,14 @@ describe('onSendClick — idle/galaxy branch', () => {
     expect(navTarget).not.toMatch(/mission=/);
   });
 
-  it('idle with no candidate → paints "No more candidates" (no nav)', () => {
+  it('idle with no candidate → flashes "No targets" (no nav)', () => {
     setupScene();
     settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     installSendColony();
     getSend()?.click();
     // The single-zone host's textContent also carries the lens glyph + title
     // chrome ("…COLONIZATIONOG-E"), so match on substring, not exact equality.
-    expect(getSend()?.textContent).toContain('No more candidates');
+    expect(getSend()?.textContent).toContain('No targets');
     expect(navTarget).toBeNull();
   });
 });
@@ -567,13 +579,13 @@ describe('onSendClick — fleetdispatch branch', () => {
     expect(seen).toEqual([]);
   });
 
-  it('stale with no candidates → shows "No more candidates", no nav', () => {
+  it('stale with no candidates → flashes "No targets", no nav', () => {
     // scansStore is empty (beforeEach), so findNextColonizeTarget returns
-    // null → handler shows the label and returns without navigating.
+    // null → handler flashes the label and returns without navigating.
     installFleet({ canColonize: false, hasColonizer: true });
     getSend()?.click();
     expect(navTarget).toBeNull();
-    expect(getSend()?.textContent).toContain('No more candidates');
+    expect(getSend()?.textContent).toContain('No targets');
   });
 
   it('two taps: select arms a ready send, then dispatch fires', async () => {
@@ -737,13 +749,13 @@ describe('eventbox readiness gate', () => {
       settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
       setFleetDispatcher(makeFleetDispatcher({ canColonize: false, hasColonizer: true }));
       // scansStore is empty, so an ungated tap would compute a candidate from
-      // half-loaded data and flash the false "No more candidates".
+      // half-loaded data and flash the false "No targets".
       installSendColony();
       // Deliberately do NOT dispatch oge:eventBoxLoaded — the gate stays closed.
       expect(getSend()?.textContent).toContain('Wait');
       getSend()?.click();
       expect(navTarget).toBeNull();
-      expect(getSend()?.textContent).not.toContain('No more candidates');
+      expect(getSend()?.textContent).not.toContain('No targets');
     } finally {
       // Restore the real (prototype) getter so later tests see 'complete'.
       delete (/** @type {any} */ (document)).readyState;
@@ -756,10 +768,66 @@ describe('eventbox readiness gate', () => {
     setFleetDispatcher(makeFleetDispatcher({ canColonize: false, hasColonizer: true }));
     installSendColony();
     document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
-    // Gate open + an empty DB → the honest "No more candidates" (not the
+    // Gate open + an empty DB → the honest "No targets" flash (not the
     // gated "Wait…"), and the tap is processed.
     getSend()?.click();
-    expect(getSend()?.textContent).toContain('No more candidates');
+    expect(getSend()?.textContent).toContain('No targets');
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// api-context readiness gate (the second gate input)
+// ──────────────────────────────────────────────────────────────────
+//
+// Off fleetdispatch the eventbox gate opens synchronously, so these tests
+// isolate the OTHER half: with the api-context handoff UNSETTLED the button
+// must hold "Wait…" and swallow taps (no false "No targets" while the
+// occupancy index is still loading); the first publish — data or the
+// failure `null` — opens the gate and repaints immediately.
+
+describe('api-context readiness gate', () => {
+  it('unsettled handoff → "Wait…" label, taps swallowed (no nav, no verdict)', () => {
+    setupScene();
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
+    _resetApiContextStoreForTest(); // undo the beforeEach settle
+    installSendColony();
+    expect(getSend()?.textContent).toContain('Wait');
+    expect(getSend()?.getAttribute('aria-disabled')).toBe('true');
+    getSend()?.click();
+    expect(navTarget).toBeNull();
+    expect(getSend()?.textContent).not.toContain('No targets');
+  });
+
+  it('the settle publish (even a failure null) opens the gate and repaints', () => {
+    setupScene();
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
+    _resetApiContextStoreForTest();
+    installSendColony();
+    expect(getSend()?.textContent).toContain('Wait');
+    // Producer finished with no data (offline path) — publish null.
+    setApiContext(null);
+    // Gate open: label recomputed away from the hold, taps act again.
+    expect(getSend()?.getAttribute('aria-disabled')).toBeNull();
+    expect(getSend()?.textContent).toContain('Colonize');
+    getSend()?.click();
+    // Scan-only fallback with an empty DB → the honest exhaustion flash.
+    expect(getSend()?.textContent).toContain('No targets');
+  });
+
+  it('safety backstop opens a never-settling gate after the timeout', () => {
+    vi.useFakeTimers();
+    try {
+      setupScene();
+      settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
+      _resetApiContextStoreForTest();
+      installSendColony();
+      expect(getSend()?.getAttribute('aria-disabled')).toBe('true');
+      vi.advanceTimersByTime(15_000);
+      expect(getSend()?.getAttribute('aria-disabled')).toBeNull();
+      expect(getSend()?.textContent).toContain('Colonize');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

@@ -9,6 +9,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   setApiContext,
   getApiContext,
+  hasApiContextSettled,
   _resetApiContextStoreForTest,
 } from '../../../src/features/shared/apiContextStore.js';
 
@@ -52,5 +53,32 @@ describe('apiContextStore', () => {
     setApiContext(handoff());
     _resetApiContextStoreForTest();
     expect(getApiContext()).toBeNull();
+  });
+});
+
+// The readiness gate's contract (see sendColony): "settled" flips on the
+// FIRST publish of a page view — data or the producer's failure `null` —
+// and is what distinguishes "no context YET" (hold the button) from
+// "no context AT ALL" (open into the scan-only fallback).
+describe('hasApiContextSettled', () => {
+  it('is false before any publish', () => {
+    expect(hasApiContextSettled()).toBe(false);
+  });
+
+  it('settles on a data publish', () => {
+    setApiContext(handoff());
+    expect(hasApiContextSettled()).toBe(true);
+  });
+
+  it('settles on a failure (null) publish, while the context stays null', () => {
+    setApiContext(null);
+    expect(hasApiContextSettled()).toBe(true);
+    expect(getApiContext()).toBeNull();
+  });
+
+  it('reset returns it to unsettled', () => {
+    setApiContext(handoff());
+    _resetApiContextStoreForTest();
+    expect(hasApiContextSettled()).toBe(false);
   });
 });

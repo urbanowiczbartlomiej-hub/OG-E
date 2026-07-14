@@ -131,7 +131,7 @@ const DEFAULTS = {
 export const renderLines = (span, lines) => {
   span.textContent = '';
   const col = document.createElement('div');
-  // Tight line-height so a primary that wraps to two lines (e.g. "All maxed")
+  // Tight line-height so a primary that wraps to two lines (e.g. "All sent")
   // stays clear of the node oczko parked just above it.
   col.style.cssText =
     'display:flex;flex-direction:column;align-items:center;' +

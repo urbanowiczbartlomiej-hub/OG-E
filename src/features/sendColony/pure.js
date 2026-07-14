@@ -53,6 +53,7 @@ import {
 } from '../../domain/rules.js';
 import { countFreeTargetSlots } from '../../domain/apiOccupancy.js';
 import { FAB_MODULES } from '../shared/fabModules.js';
+import { TONE_ERROR, TONE_WAIT } from '../shared/statusTones.js';
 
 /**
  * @typedef {import('../../state/scans.js').GalaxyScans} GalaxyScans
@@ -94,15 +95,16 @@ export const BG_SEND_IDLE = FAB_MODULES.col.color;
 /** Rim colour for active "Send!" / "Send Colony [g:s:p]" (bright cyan). */
 export const BG_SEND_READY = '#13d1de';
 
-// TODO: Lifeforms button (planned)
-// export const BG_LF_IDLE   = '#a78bfa'; // violet rim — idle  (hue ~255, glow:1.15)
-// export const BG_LF_ACTIVE = '#bb9dff'; // violet rim — active
-/** Rim colour for reserved / stale / timeout states — recoverable (amber). */
+/**
+ * Rim colour for reserved / stale / timeout states — "moving on" (deep
+ * amber). Deliberately LOCAL, not a shared tone: only colonize distinguishes
+ * a skipped-slot shade from the plain wait amber.
+ */
 export const BG_SEND_STALE = '#f59e0b';
-/** Rim colour for "No ship!" — unrecoverable until user builds a colonizer (rose). */
-export const BG_SEND_ERROR = '#fb7185';
-/** Rim colour for mid-countdown "Wait Xs" label (yellow). */
-export const BG_SEND_WAIT = '#fbbf24';
+/** Rim colour for hard failures ('No ship!', 'All fleets!', 'Failed') — the shared FAB error tone. */
+export const BG_SEND_ERROR = TONE_ERROR;
+/** Rim colour for "not now" states ('Wait Xs', 'No targets') — the shared FAB wait tone. */
+export const BG_SEND_WAIT = TONE_WAIT;
 
 // ─── Pure target selection ─────────────────────────────────────────────────
 

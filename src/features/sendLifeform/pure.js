@@ -36,6 +36,7 @@ import { buildGalaxyOrder } from '../../domain/positions.js';
 import { COL_MAX_SYSTEM, COL_MAX_GALAXY } from '../../domain/rules.js';
 import { ingameComponentUrl } from '../../domain/ogameUrl.js';
 import { FAB_MODULES } from '../shared/fabModules.js';
+import { TONE_ERROR } from '../shared/statusTones.js';
 
 /**
  * @typedef {import('../../state/scans.js').GalaxyScans} GalaxyScans
@@ -54,8 +55,8 @@ import { FAB_MODULES } from '../shared/fabModules.js';
 export const LF_RESCAN_MS = 7 * 24 * 3600 * 1000;
 
 // ─── Colours (violet / purple family) ─────────────────────────────────────
-// Seeded from the planted TODO in `sendColony/pure.js`. Distinct hue from the
-// cyan Send-Col / amber-wait palette so the three buttons read apart.
+// Distinct hue from the cyan Send-Col / amber-wait palette so the buttons
+// read apart; the shared status tones live in `shared/statusTones.js`.
 
 /**
  * Rim colour — idle / "Discover" (violet). Doubles as the module's signature
@@ -68,8 +69,8 @@ export const BG_LF_ACTIVE = '#bb9dff';
 export const BG_LF_WAIT = '#8b5cf6';
 /** Rim colour — "All discovered!" (muted violet). */
 export const BG_LF_DONE = '#7c6aa8';
-/** Rim colour — fleet-cap / cannot-send (rose, matches Send-Col error). */
-export const BG_LF_ERROR = '#fb7185';
+/** Rim colour — fleet-cap / cannot-send — the shared FAB error tone (rose). */
+export const BG_LF_ERROR = TONE_ERROR;
 
 // ─── Cooldown ─────────────────────────────────────────────────────────────
 

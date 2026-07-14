@@ -62,7 +62,7 @@ export const getActivePlanetCoords = () => {
  *
  * When the active planet's coords can't be read (`originCoords === null`)
  * we fall back to counting every expedition in `#eventContent` — safer
- * to over-report and show "All maxed!" than under-report and let the
+ * to over-report and show "All sent" than under-report and let the
  * user blow past their configured cap.
  *
  * @param {string | null} originCoords

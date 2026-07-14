@@ -39,6 +39,16 @@
 let ctx = null;
 
 /**
+ * True once the first build attempt of this page load has finished — flipped
+ * by ANY {@link setApiContext} publish, including the `null` the producer
+ * sends when the build fails (offline / API hiccup). Readiness gates (the
+ * colonize button) key off THIS rather than `ctx !== null` so a failed build
+ * un-gates them into the scan-only fallback instead of stranding them
+ * disabled. Never un-set in production (the context is rebuilt per page load).
+ */
+let settled = false;
+
+/**
  * Listeners fired on every {@link setApiContext} publish. Kept minimal (no
  * value payload — subscribers re-read {@link getApiContext}) because the point
  * is only to let a consumer react the instant the handoff lands, instead of
@@ -49,12 +59,16 @@ const listeners = new Set();
 
 /**
  * Publish the latest built context (called by `features/apiContext`) and notify
- * subscribers so they can repaint immediately.
+ * subscribers so they can repaint immediately. Publishing `null` means "the
+ * build finished with no data" (offline / API failure) — it clears the context
+ * AND settles the hydration phase (see {@link hasApiContextSettled}), so
+ * consumers fall back to live-scan-only instead of waiting forever.
  * @param {ApiContextHandoff | null} next
  * @returns {void}
  */
 export const setApiContext = (next) => {
   ctx = next;
+  settled = true;
   for (const fn of listeners) {
     try { fn(); } catch { /* one bad listener must not block the rest */ }
   }
@@ -66,6 +80,16 @@ export const setApiContext = (next) => {
  * @returns {ApiContextHandoff | null}
  */
 export const getApiContext = () => ctx;
+
+/**
+ * Has the first build attempt of this page load finished — with data OR a
+ * declared failure? `false` only in the window between page load and the
+ * first {@link setApiContext} call: exactly the window where a colonize
+ * candidate computed now would be spuriously empty (the breadth layer isn't
+ * in yet). The colonize button's readiness gate holds until this flips.
+ * @returns {boolean}
+ */
+export const hasApiContextSettled = () => settled;
 
 /**
  * Subscribe to context publishes — fires on EVERY {@link setApiContext} call
@@ -80,10 +104,11 @@ export const subscribeApiContext = (fn) => {
 };
 
 /**
- * Test-only: clear the held context and any subscribers.
+ * Test-only: clear the held context, the settled flag and any subscribers.
  * @returns {void}
  */
 export const _resetApiContextStoreForTest = () => {
   ctx = null;
+  settled = false;
   listeners.clear();
 };

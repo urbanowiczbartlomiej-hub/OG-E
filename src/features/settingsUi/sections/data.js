@@ -56,7 +56,6 @@ export const buildDashboardButton = () => {
   btn.type = 'button';
   btn.id = 'oge-open-dashboard';
   btn.className = 'oge-dash-launch';
-  btn.title = 'Colony stats + galaxy observations';
 
   // Lead with the OG-E gold node (cabochon + orbit mark) instead of an emoji.
   installButtonChrome();

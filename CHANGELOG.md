@@ -4,6 +4,32 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.48.2] — 2026-07-14
+
+### Fixed
+
+- **The Colonization button no longer lies right after a page load.** It used
+  to enable immediately, answer an early tap with a false "No more
+  candidates", and then find candidates a second later once the server
+  occupancy data finished loading. The button now stays greyed on "Wait…"
+  until the free positions are actually computed, then enables in the same
+  instant the "N free" counter appears — with its first tap already aimed at
+  a real candidate. If the data can't load at all (offline), the button
+  releases into the old scan-only behaviour instead of waiting forever.
+
+### Changed
+
+- **One status-colour language across all the send buttons.** A red flash
+  now always means "the tap failed" (no ship, no fuel, no route, every fleet
+  slot busy) and an amber flash always means "nothing to act on right now —
+  come back later" (cooldowns, everything already sent). Daily Run joins the
+  convention: its failure flashes recolour the button ring too, where they
+  used to change only the text.
+- **Shorter, calmer labels.** The overflowing "No more candidates" became a
+  "No targets" flash that fits the button, and the expedition's "All maxed!"
+  is now "All sent" — the same phrase the Daily Run button already uses when
+  the day's work is done.
+
 ## [1.48.1] — 2026-07-14
 
 ### Fixed

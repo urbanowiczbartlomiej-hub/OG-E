@@ -29,6 +29,7 @@
 
 import { ingameComponentUrl } from '../../domain/ogameUrl.js';
 import { FAB_MODULES } from '../shared/fabModules.js';
+import { TONE_ERROR, TONE_WAIT } from '../shared/statusTones.js';
 
 /**
  * @typedef {import('../../bridges/fleetDispatcherSnapshot.js').FleetDispatcherSnapshot} FleetDispatcherSnapshot
@@ -45,7 +46,7 @@ export const BUTTON_ID = 'oge-send-exp';
 // ─── Visual / interaction constants ──────────────────────────────────
 
 /**
- * How long the "All maxed!" warning label stays on the button when the
+ * How long the "All sent" warning label stays on the button when the
  * click handler bails due to the per-planet cap. 2 s is long enough to
  * read, short enough that a user retrying immediately after adding
  * a slot is not interrupted.
@@ -68,8 +69,12 @@ export const HOLD_SKIP_MS = 2000;
 /** Default button copy — what the user sees in the "idle" state. */
 export const BUTTON_TEXT = 'Explore';
 
-/** Transient copy when every planet has hit `maxExpeditionsPerPlanet`. */
-export const ALL_MAXED_LABEL = 'All maxed!';
+/**
+ * Transient copy when every planet has hit `maxExpeditionsPerPlanet`. The
+ * copy is the shared exhaustion phrase (same as dailyRun's micro zone), not
+ * the state's name — short enough to fit the button, no exclamation.
+ */
+export const ALL_MAXED_LABEL = 'All sent';
 
 /**
  * Transient copy when every GENERAL fleet slot is in use (T11) — distinct
@@ -87,11 +92,11 @@ export const ALL_FLEETS_LABEL = 'All fleets!';
  */
 export const BG_IDLE = FAB_MODULES.exp.color;
 
-/** Rim colour for the "All maxed!" state (amber). */
-export const BG_MAX = '#fbbf24';
+/** Rim colour for the "All sent" state — the shared FAB wait tone (amber). */
+export const BG_MAX = TONE_WAIT;
 
-/** Rim colour for an error state (rose) — same value sendColony uses. */
-export const BG_ERROR = '#fb7185';
+/** Rim colour for an error state — the shared FAB error tone (rose). */
+export const BG_ERROR = TONE_ERROR;
 
 // ─── Routine-off diagnosis ───────────────────────────────────────────
 

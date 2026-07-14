@@ -46,7 +46,12 @@ import {
   installApiContext,
   _resetApiContextForTest,
 } from '../../src/features/apiContext/index.js';
-import { getApiContext, _resetApiContextStoreForTest } from '../../src/features/shared/apiContextStore.js';
+import {
+  getApiContext,
+  hasApiContextSettled,
+  setApiContext,
+  _resetApiContextStoreForTest,
+} from '../../src/features/shared/apiContextStore.js';
 
 /** @type {import('vitest').Mock} */
 const fetchMock = /** @type {any} */ (fetchApiText);
@@ -231,12 +236,40 @@ describe('installApiContext — silent build path (no debug flag)', () => {
     expect(fetchMock.mock.calls.length).toBe(callsAfterFirst);
   });
 
-  it('does nothing observable when a fetch fails (picker falls back to live-scan-only)', async () => {
+  it('an all-feeds-offline load still publishes an (empty) context — the gate settles', async () => {
     fetchMock.mockReset();
     fetchMock.mockRejectedValue(new Error('offline'));
+    expect(hasApiContextSettled()).toBe(false);
     installApiContext();
-    // Give the rejected chain a chance to settle.
-    for (let i = 0; i < 5; i++) await Promise.resolve();
+    // apiRefresh swallows per-feed failures (degrade, don't abort), so the
+    // build COMPLETES on an empty cache and publishes an empty context — the
+    // colonize button's readiness gate opens on that publish like any other.
+    await vi.waitFor(() => expect(hasApiContextSettled()).toBe(true));
+    expect(getApiContext()?.index.occupied.size).toBe(0);
+  });
+
+  it('a build that THROWS settles the handoff with null (scan-only fallback)', async () => {
+    // Per-feed fetch failures are swallowed upstream, so force a real throw:
+    // the cache read itself rejecting (broken chrome.storage) fails getContext.
+    /** @type {import('vitest').Mock} */ (/** @type {any} */ (readApiCache))
+      .mockRejectedValueOnce(new Error('storage broken'));
+    expect(hasApiContextSettled()).toBe(false);
+    installApiContext();
+    await vi.waitFor(() => expect(hasApiContextSettled()).toBe(true));
+    // Settled — the readiness gate opens — but with no data to offer.
     expect(getApiContext()).toBeNull();
+  });
+
+  it('a failed rebuild never clobbers an earlier good context', async () => {
+    // A good context is already on the handoff (e.g. from the first build).
+    const prior = /** @type {any} */ ({ index: { occupied: new Map(), ownColonies: new Set(), occupiedByPosition: {} } });
+    setApiContext(prior);
+    /** @type {import('vitest').Mock} */ (/** @type {any} */ (readApiCache))
+      .mockRejectedValueOnce(new Error('storage broken'));
+    installApiContext();
+    // The rejection propagates through a short microtask chain — a real-timer
+    // hop drains it deterministically (no fetch is involved on this path).
+    await new Promise((r) => setTimeout(r, 20));
+    expect(getApiContext()).toBe(prior);
   });
 });

@@ -22,6 +22,7 @@ import {
   DAILY_RUN_REDIRECT_KEY,
 } from '../../src/state/dailyRunRoutes.js';
 import { TARGET_PLANET, TARGET_MOON, SHIP_LARGE_CARGO, MISSION_DEPLOYMENT } from '../../src/domain/rules.js';
+import { TONE_ERROR } from '../../src/features/shared/statusTones.js';
 
 /** The three "collect" config defaults every DailyRunRoutes value now carries
  * (deployment mission + "most" ships + "most" cargo). Spread into each
@@ -663,5 +664,61 @@ describe('collect order builder — ship/resource/mission selection from store c
     // resources === 'all' → #allresources clicked, not #mostresources.
     expect(p.allRes()).toBe(1);
     expect(p.mostRes()).toBe(0);
+  });
+});
+
+// ── status-tone flashes (shared statusTones convention) ─────────────────────
+//
+// A failure flash recolours the zone rim with the shared status tone for its
+// duration, then puts the zone's own base colour back. dailyRun is the one
+// button whose refresh() never repaints rims (they're set once at mount), so
+// the restore is the flash mechanism's own job — cover it end to end.
+
+describe('flash tones', () => {
+  it('a failure flash tones the rim red, then restores the base colour', async () => {
+    vi.useFakeTimers();
+    try {
+      enable();
+      installDailyRun();
+      // Overview scene + NO collectTarget configured → a Collect tap resolves
+      // buildOrder to the { 'No target', TONE_ERROR } failure flash before any
+      // courier work (same path 'No ships' takes on a shortfall).
+      const zone = /** @type {HTMLElement} */ (
+        document.getElementById('oge-fs-collect-zone')
+      );
+      // Base rim = the collect zone's own green (module family).
+      expect(zone.style.getPropertyValue('--rim')).toBe('#43cf72');
+      zone.click();
+      expect(zone.textContent).toContain('No target');
+      expect(zone.style.getPropertyValue('--rim')).toBe(TONE_ERROR);
+      // Past FLASH_MS the restore timer fires: base rim back, label repainted.
+      await vi.advanceTimersByTimeAsync(1600);
+      expect(zone.style.getPropertyValue('--rim')).toBe('#43cf72');
+      expect(zone.textContent).not.toContain('No target');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a new tap supersedes a toned flash and restores the rim immediately', () => {
+    vi.useFakeTimers();
+    try {
+      enable();
+      installDailyRun();
+      const zone = /** @type {HTMLElement} */ (
+        document.getElementById('oge-fs-collect-zone')
+      );
+      zone.click();
+      expect(zone.style.getPropertyValue('--rim')).toBe(TONE_ERROR);
+      // Second tap while the flash is live: the supersede path must first put
+      // the base rim back (then this tap re-flashes the same failure).
+      zone.click();
+      // Still the failure tone (re-applied by the new flash), but exactly one
+      // restore timer is pending — drain it and the base colour must return.
+      vi.advanceTimersByTime(1600);
+      expect(zone.style.getPropertyValue('--rim')).toBe('#43cf72');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

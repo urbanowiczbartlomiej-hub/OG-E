@@ -149,7 +149,7 @@ export const BUTTON_CHROME_CSS = [
   // Nudged down so the label clears the upper glass lens (see .oge-lens).
   // Now nested in .oge-surface (not a direct host child) — match on descendant.
   // Horizontal inset narrows the label's working width well inside the round
-  // rim, so a MULTI-word primary (e.g. "All maxed!") wraps at its space onto two
+  // rim, so a MULTI-word primary (e.g. "All sent") wraps at its space onto two
   // lines instead of being forced into one line that collides with the chrome —
   // the two-line case the tight line-height above already anticipates. Single
   // unbreakable words ("Discover" / "Prepare") have no break point, so they stay

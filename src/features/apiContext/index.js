@@ -42,7 +42,11 @@ import { targetReportsStore } from '../../state/targets.js';
 import { readAllianceClasses } from '../../state/allianceClass.js';
 import { joinDangerProfiles } from '../../domain/dangerJoin.js';
 import { refreshApiCache } from '../shared/apiRefresh.js';
-import { setApiContext } from '../shared/apiContextStore.js';
+import {
+  setApiContext,
+  getApiContext,
+  _resetApiContextStoreForTest,
+} from '../shared/apiContextStore.js';
 
 /** localStorage flag (string `'1'`) that opts into the on-load probe fetch. */
 const DEBUG_FLAG = 'oge_debugApi';
@@ -79,6 +83,17 @@ export const refreshCache = refreshApiCache;
 
 /** Idempotency guard. */
 let installed = false;
+
+/**
+ * Declare a failed build attempt SETTLED on the shared handoff — publish
+ * `null` so readiness gates (the colonize button) open into the scan-only
+ * fallback instead of hanging on their safety timeout. Guarded so a late
+ * failing rebuild never clobbers an earlier good context.
+ * @returns {void}
+ */
+const settleAsFailed = () => {
+  if (!getApiContext()) setApiContext(null);
+};
 
 /**
  * Best-effort read of our own player id from the per-universe own-profile
@@ -196,7 +211,10 @@ function probe() {
         );
       }
     })
-    .catch((err) => logger.warn('apiContext: getContext failed', err));
+    .catch((err) => {
+      logger.warn('apiContext: getContext failed', err);
+      settleAsFailed();
+    });
 }
 
 /**
@@ -219,18 +237,20 @@ export function installApiContext() {
     // Silent build — warm the cache AND publish the occupancy index to the
     // shared handoff so the in-game colonize picker can offer whole-server
     // candidates. Cache-gated, so the multi-MB universe.xml is fetched at most
-    // weekly; the rest is a cheap rebuild from cache.
-    getContext().catch(() => {
-      /* offline / API hiccup — picker falls back to live-scan-only */
-    });
+    // weekly; the rest is a cheap rebuild from cache. A failure still SETTLES
+    // the handoff (null publish) so the colonize button's readiness gate opens
+    // into its scan-only fallback instead of waiting out the safety timeout.
+    getContext().catch(() => settleAsFailed());
   }
 }
 
 /**
- * Test-only: reset the idempotency gate + session cache.
+ * Test-only: reset the idempotency gate + the shared handoff (context,
+ * settled flag AND subscribers — a plain `setApiContext(null)` would leave
+ * the store looking "settled", bleeding hydration state across tests).
  * @returns {void}
  */
 export function _resetApiContextForTest() {
   installed = false;
-  setApiContext(null);
+  _resetApiContextStoreForTest();
 }

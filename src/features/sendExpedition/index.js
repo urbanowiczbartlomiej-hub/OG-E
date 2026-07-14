@@ -38,13 +38,13 @@
 // `maxExpeditionsPerPlanet` WITHOUT sending — the manual counterpart to the
 // auto-redirect's round-robin hop (`bridges/expeditionRedirect.js`). It lets
 // the player deliberately pass over the planet they're on; the walk just
-// continues from the destination. Paints "All maxed!" when no OTHER planet
+// continues from the destination. Paints "All sent" when no OTHER planet
 // has a free slot. This is navigation only — still zero server actions.
 //
 // # Max-expedition guard
 //
 // If `#eventContent` already shows `maxExpeditionsPerPlanet` expedition fleets
-// we paint a transient "All maxed!" label on the button for 2 seconds
+// we paint a transient "All sent" label on the button for 2 seconds
 // and abort the dispatch. We do NOT auto-advance to a different
 // planet — that is what `bridges/expeditionRedirect.js` does on
 // successful sends, orthogonally.
@@ -247,7 +247,7 @@ export const installSendExpedition = () => {
   };
 
   /**
-   * Transient "All maxed!" painted when every planet has hit the
+   * Transient "All sent" painted when every planet has hit the
    * expedition cap.
    *
    * @param {HTMLButtonElement} btn
@@ -280,7 +280,7 @@ export const installSendExpedition = () => {
    * expeditions routine (`#ago_routine_7`) via the shared
    * {@link prepareViaRoutine}, then map its outcome to the expedition labels:
    *   - `'prepared'`   → flip to "Send!" so the next tap issues the real send.
-   *   - `'noShips'`    → hop to the next planet with a slot, else "All maxed!".
+   *   - `'noShips'`    → hop to the next planet with a slot, else "All sent".
    *   - `'routineOff'` → paint the "enable Expeditions in AGR" error.
    *   - `'timeout'`    → restore the idle label quietly; the user can retry.
    *
@@ -308,7 +308,7 @@ export const installSendExpedition = () => {
     }
 
     // 'noShips' — no expedition possible here. Hop to the next planet that
-    // still has a slot; if none, paint "All maxed!".
+    // still has a slot; if none, paint "All sent".
     setLabel(btn, 'No ships');
     const nextCp = findPlanetWithExpSlot(true);
     if (nextCp !== null) {
@@ -357,7 +357,7 @@ export const installSendExpedition = () => {
    * Flow:
    *   - Eventbox gate: on fleetdispatch the cap counts + routine state are
    *     stale until OGame's eventbox XHR lands; paint a brief cue and bail.
-   *   - Global-cap gate → "All maxed!".
+   *   - Global-cap gate → "All sent".
    *   - Off fleetdispatch → hop to the first planet with a free slot.
    *   - On fleetdispatch, current-planet cap full → jump to the next free
    *     planet (unless the next send would hit the global cap anyway).
@@ -468,7 +468,7 @@ export const installSendExpedition = () => {
    * next planet still under the per-planet cap WITHOUT sending, so the
    * round-robin walk continues from there. The manual counterpart to the
    * auto-redirect's hop — for deliberately passing over the planet you're on.
-   * Paints "All maxed!" when no OTHER planet has a free slot.
+   * Paints "All sent" when no OTHER planet has a free slot.
    *
    * Navigation only: it issues no server action, so unlike {@link handleClick}
    * it skips the fleet-cap / global-cap gates (those guard sends, not hops).

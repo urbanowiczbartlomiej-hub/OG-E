@@ -429,7 +429,7 @@ describe('installSendExpedition — click navigation', () => {
     expect(labelOf(btn)).toBe('Send!');
   });
 
-  it('Phase 2: routine reports no ships (check_1) and no other planet → "All maxed!", no nav', async () => {
+  it('Phase 2: routine reports no ships (check_1) and no other planet → "All sent", no nav', async () => {
     setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
     installSendExpedition();
     document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
@@ -438,7 +438,7 @@ describe('installSendExpedition — click navigation', () => {
     btn?.click();
     await settle();
     expect(navTarget).toBeNull();
-    expect(labelOf(btn)).toBe('All maxed!');
+    expect(labelOf(btn)).toBe('All sent');
   });
 });
 
@@ -447,10 +447,10 @@ describe('installSendExpedition — click navigation', () => {
 // ──────────────────────────────────────────────────────────────────
 
 describe('installSendExpedition — max expedition guard', () => {
-  it('paints "All maxed!" and does NOT navigate when every planet is at the limit', () => {
+  it('paints "All sent" and does NOT navigate when every planet is at the limit', () => {
     // Single-planet fixture: that planet is maxed, no other planets
     // to fall back to → `findPlanetWithExpSlot` returns null, we
-    // paint the transient "All maxed!" warning and stay put.
+    // paint the transient "All sent" warning and stay put.
     vi.useFakeTimers();
     setupScene({ maxExpeditionsPerPlanet: 1, activeExpeditions: 1 });
     installSendExpedition();
@@ -459,7 +459,7 @@ describe('installSendExpedition — max expedition guard', () => {
 
     btn?.click();
 
-    expect(labelOf(btn)).toBe('All maxed!');
+    expect(labelOf(btn)).toBe('All sent');
     expect(navTarget).toBeNull();
 
     // After 2s the label reverts.
@@ -574,7 +574,7 @@ describe('installSendExpedition — long-press skip', () => {
     expect(navTarget).toContain('cp=300');
   });
 
-  it('paints "All maxed!" and does not navigate when no OTHER planet has room', () => {
+  it('paints "All sent" and does not navigate when no OTHER planet has room', () => {
     vi.useFakeTimers();
     // Only the current planet exists → skipping it leaves nowhere to go.
     setupMultiPlanetScene({
@@ -587,7 +587,7 @@ describe('installSendExpedition — long-press skip', () => {
     _onSkipForTest();
 
     expect(navTarget).toBeNull();
-    expect(labelOf(btn)).toBe('All maxed!');
+    expect(labelOf(btn)).toBe('All sent');
 
     // After 2s the transient label reverts.
     vi.advanceTimersByTime(2000);
@@ -715,7 +715,7 @@ describe('installSendExpedition — idempotency + edges', () => {
 // ──────────────────────────────────────────────────────────────────
 
 describe('installSendExpedition — fleetDispatcher snapshot gates', () => {
-  it('snapshot at max (14/14) → "All maxed!" painted, no nav', () => {
+  it('snapshot at max (14/14) → "All sent" painted, no nav', () => {
     // Global expedition cap already reached per the game — we should
     // short-circuit the DOM walk entirely and paint the transient
     // warning instead of navigating anywhere. Scene is a non-fleet
@@ -728,7 +728,7 @@ describe('installSendExpedition — fleetDispatcher snapshot gates', () => {
     const btn = getBtn();
     btn?.click();
 
-    expect(labelOf(btn)).toBe('All maxed!');
+    expect(labelOf(btn)).toBe('All sent');
     expect(navTarget).toBeNull();
 
     vi.advanceTimersByTime(2000);
@@ -756,12 +756,12 @@ describe('installSendExpedition — fleetDispatcher snapshot gates', () => {
     expect(navTarget).toContain('cp=7');
   });
 
-  it('snapshot at 13/14 on fleetdispatch + current planet maxed → skip auto-redirect, paint All maxed!', () => {
+  it('snapshot at 13/14 on fleetdispatch + current planet maxed → skip auto-redirect, paint All sent', () => {
     // Post-send guard: the user is on fleetdispatch with the active
     // planet at its per-planet cap AND one send away from the global
     // 14/14 cap. Walking to another planet would waste a navigation
     // only for the next planet to also report full seconds later, so
-    // we paint "All maxed!" and stay put.
+    // we paint "All sent" and stay put.
     vi.useFakeTimers();
     setupScene({
       onFleetdispatch: true,
@@ -777,7 +777,7 @@ describe('installSendExpedition — fleetDispatcher snapshot gates', () => {
     const btn = getBtn();
     btn?.click();
 
-    expect(labelOf(btn)).toBe('All maxed!');
+    expect(labelOf(btn)).toBe('All sent');
     expect(navTarget).toBeNull();
 
     vi.advanceTimersByTime(2000);

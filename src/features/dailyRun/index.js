@@ -76,6 +76,7 @@ import {
 } from '../shared/button.js';
 import { PLANET_ARROW_GLYPH } from '../shared/buttonGlyphs.js';
 import { FAB_MODULES } from '../shared/fabModules.js';
+import { TONE_ERROR, TONE_WAIT } from '../shared/statusTones.js';
 import {
   select as courierSelect,
   dispatch as courierDispatch,
@@ -315,6 +316,17 @@ const setLabel = (el, big, small, hint) => {
 };
 
 /**
+ * The shared {@link makeButton} controller — owns geometry, placement,
+ * the engraved ring, drag, the collect-zone long-press + sweep, and
+ * focus persistence. `null` until mounted. Module-scope (not install-scope)
+ * because the flash tone helpers below need `setBg` — same pattern as
+ * sendColony / sendExpedition.
+ *
+ * @type {import('../shared/button.js').Button | null}
+ */
+let controller = null;
+
+/**
  * Pending flash-restore timer. Non-null ⇒ a transient label is on screen and
  * refresh() must hold (see the "Label stability" header note). Overlapping
  * flashes coalesce onto one timer — the last always restores the real state —
@@ -325,18 +337,61 @@ const setLabel = (el, big, small, hint) => {
 let flashTimer = null;
 
 /**
- * Flash a transient label on an element, then repaint via {@link refresh}.
+ * Which zone key the current flash TONED (rim recoloured), or `null`. Unlike
+ * the label, zone rims are painted once at mount and never touched by
+ * `refresh()` — so a toned flash must put the base colour back itself, both
+ * when the restore timer fires and when a new tap/flash supersedes it.
+ *
+ * @type {'micro' | 'collect' | null}
+ */
+let flashTonedZone = null;
+
+/**
+ * Zone key for a zone element (flash callers hold the element, `setBg` wants
+ * the key).
+ *
+ * @param {HTMLElement} el
+ * @returns {'micro' | 'collect'}
+ */
+const zoneKeyOf = (el) => (el.id === FS_MICRO_ZONE_ID ? 'micro' : 'collect');
+
+/**
+ * Restore the base rim of the zone the last flash toned. No-op when the last
+ * flash was toneless (or the button is gone).
+ *
+ * @returns {void}
+ */
+const restoreFlashTone = () => {
+  if (flashTonedZone === null) return;
+  controller?.setBg(flashTonedZone, flashTonedZone === 'micro' ? BG_MICRO : BG_COLLECT);
+  flashTonedZone = null;
+};
+
+/**
+ * Flash a transient label on an element — optionally recolouring the zone's
+ * rim with a shared status tone (see `shared/statusTones.js`: TONE_ERROR for
+ * failed taps, TONE_WAIT for "nothing to act on right now") — then restore
+ * the rim and repaint via {@link refresh}.
  *
  * @param {HTMLElement | null} el
  * @param {string} text
+ * @param {string} [tone]  status rim colour for the flash's duration.
  * @returns {void}
  */
-const flash = (el, text) => {
+const flash = (el, text, tone) => {
   if (!el) return;
   if (flashTimer !== null) clearTimeout(flashTimer);
+  // A back-to-back flash on the OTHER zone must not leave the first one toned.
+  restoreFlashTone();
   setLabel(el, text);
+  if (tone) {
+    const key = zoneKeyOf(el);
+    controller?.setBg(key, tone);
+    flashTonedZone = key;
+  }
   flashTimer = setTimeout(() => {
     flashTimer = null;
+    restoreFlashTone();
     refresh();
   }, FLASH_MS);
 };
@@ -410,19 +465,21 @@ let pending = null;
  * ships to the stored collect target.
  *
  * @param {'micro' | 'collect'} mode
- * @returns {{ order: import('../shared/fleetCourier.js').FleetOrder } | { flash: string, openDash?: boolean }}
+ * @returns {{ order: import('../shared/fleetCourier.js').FleetOrder } | { flash: string, tone?: string, openDash?: boolean }}
  */
 const buildOrder = (mode) => {
   if (mode === 'micro') {
     const route = findRouteForBody(dailyRunRoutesStore.get().routes, readCurrentBody());
-    if (!route) return { flash: 'No route', openDash: true };
+    if (!route) return { flash: 'No route', tone: TONE_ERROR, openDash: true };
     const mission = route.mission ?? MISSION_DEPLOYMENT;
     const next = findNextMicroTarget(route.targets, microInFlightKeys(mission));
-    if (!next) return { flash: 'All sent' };
+    // Exhaustion, not failure — the day's work here is done (amber, like
+    // expedition's 'All sent').
+    if (!next) return { flash: 'All sent', tone: TONE_WAIT };
     // Hard gate BEFORE any courier action: a micro-fleet that can't be
     // filled must never start the select→continue walk (the label already
     // says why — see refresh()).
-    if (microShortfall(route)) return { flash: 'No ships' };
+    if (microShortfall(route)) return { flash: 'No ships', tone: TONE_ERROR };
     return {
       order: {
         spec: {
@@ -439,7 +496,7 @@ const buildOrder = (mode) => {
   }
   const cfg = dailyRunRoutesStore.get();
   const target = cfg.collectTarget;
-  if (!target) return { flash: 'No target' };
+  if (!target) return { flash: 'No target', tone: TONE_ERROR };
   return {
     order: {
       spec: { kind: 'all' },
@@ -455,23 +512,25 @@ const buildOrder = (mode) => {
 };
 
 /**
- * Map a courier failure reason to a short, standardised zone flash.
+ * Map a courier failure reason to a short, standardised zone flash + its
+ * status tone. Everything here is a failed attempt (TONE_ERROR) except
+ * 'notReady' — a valid tap the game just isn't ready for yet (TONE_WAIT).
  *
  * @param {string | undefined} reason
- * @returns {string}
+ * @returns {{ text: string, tone: string }}
  */
 const reasonLabel = (reason) => {
   switch (reason) {
-    case 'allFleets': return 'All fleets!';
-    case 'noShips': return 'No ships';
-    case 'empty': return 'No ships';
-    case 'noShip': return 'No ship';
-    case 'noMoon': return 'No moon';
-    case 'reserved': return 'Reserved';
-    case 'mission': return 'Bad target';
-    case 'timeout': return 'Timeout';
-    case 'notReady': return 'Wait…';
-    default: return 'Error';
+    case 'allFleets': return { text: 'All fleets!', tone: TONE_ERROR };
+    case 'noShips': return { text: 'No ships', tone: TONE_ERROR };
+    case 'empty': return { text: 'No ships', tone: TONE_ERROR };
+    case 'noShip': return { text: 'No ship', tone: TONE_ERROR };
+    case 'noMoon': return { text: 'No moon', tone: TONE_ERROR };
+    case 'reserved': return { text: 'Reserved', tone: TONE_ERROR };
+    case 'mission': return { text: 'Bad target', tone: TONE_ERROR };
+    case 'timeout': return { text: 'Timeout', tone: TONE_ERROR };
+    case 'notReady': return { text: 'Wait…', tone: TONE_WAIT };
+    default: return { text: 'Error', tone: TONE_ERROR };
   }
 };
 
@@ -494,16 +553,21 @@ const handleZone = async (mode) => {
   const zone = document.getElementById(zoneId);
   // Event list not loaded yet — any target/in-flight derivation would run
   // on stale data; the label already says Wait…, the tap just re-flashes it.
+  // Deliberately TONELESS: during the load gate every command button wears
+  // the module ring + grey fill (see sendColony's gate paint); amber is for
+  // post-tap "not now" verdicts on a loaded page.
   if (!eventBoxReady) {
     flash(zone, 'Wait…');
     return;
   }
   // A new tap supersedes any flash still on screen — drop its restore timer
-  // so the flow below owns the label (refresh() holds while it's pending).
+  // so the flow below owns the label (refresh() holds while it's pending),
+  // and put back the rim the flash may have toned.
   if (flashTimer !== null) {
     clearTimeout(flashTimer);
     flashTimer = null;
   }
+  restoreFlashTone();
   const s = courierStep();
 
   // Tap 2 — dispatch (only when the game says it's ready). The redirect is
@@ -524,7 +588,7 @@ const handleZone = async (mode) => {
       // Armed, but the game re-flagged the dispatch `.off` (async fleet2
       // re-validation). Not a dead tap: say so; the next tap fires once the
       // game clears the flag again.
-      flash(zone, 'Wait…');
+      flash(zone, 'Wait…', TONE_WAIT);
       return;
     }
     if (mode === 'micro') stashMicroRedirect();
@@ -545,7 +609,7 @@ const handleZone = async (mode) => {
       }
       busy = false;
       dimAll(false);
-      flash(zone, sendErrorLabel(r.errorCode));
+      flash(zone, sendErrorLabel(r.errorCode), TONE_ERROR);
       return;
     }
     // Success → the game navigates via the stashed redirect; keep the WHOLE
@@ -564,7 +628,7 @@ const handleZone = async (mode) => {
     const built = buildOrder(mode);
     if ('flash' in built) {
       if (built.openDash && openDashboardRoutes()) return;
-      flash(zone, built.flash);
+      flash(zone, built.flash, built.tone);
       return;
     }
     location.href = bareFleetdispatchUrl();
@@ -575,7 +639,7 @@ const handleZone = async (mode) => {
   const built = buildOrder(mode);
   if ('flash' in built) {
     if (built.openDash && openDashboardRoutes()) return;
-    flash(zone, built.flash);
+    flash(zone, built.flash, built.tone);
     return;
   }
   // Send All on an EMPTY planet: nothing to take here, so instead of a dead
@@ -592,7 +656,8 @@ const handleZone = async (mode) => {
         )
       : null;
     if (!nextCp) {
-      flash(zone, 'All done');
+      // Exhaustion, not failure — everything is collected (amber).
+      flash(zone, 'All done', TONE_WAIT);
       return;
     }
     location.href = bareFleetdispatchUrl(nextCp);
@@ -610,7 +675,8 @@ const handleZone = async (mode) => {
   busy = false;
   dimAll(false);
   if (!r.ok) {
-    flash(zone, reasonLabel(r.reason));
+    const fail = reasonLabel(r.reason);
+    flash(zone, fail.text, fail.tone);
     return;
   }
   pending = { mode, target: built.order.target };
@@ -648,7 +714,8 @@ const onSetTargetClick = () => {
   const collectZone = document.getElementById(FS_COLLECT_ZONE_ID);
   const body = readCurrentBody();
   if (!body) {
-    flash(collectZone, '?');
+    // Couldn't read the current body off the page — a failed gesture (rose).
+    flash(collectZone, '?', TONE_ERROR);
     return;
   }
   dailyRunRoutesStore.update((prev) => ({ ...prev, collectTarget: body }));
@@ -811,15 +878,6 @@ export const installDailyRun = () => {
   const onEventBoxLoaded = () => refresh();
   document.addEventListener(EVENT_BOX_LOADED_EVENT, onEventBoxLoaded);
 
-  /**
-   * The shared {@link makeButton} controller — owns geometry, placement,
-   * the engraved ring, drag, the collect-zone long-press + sweep, and
-   * focus persistence. `null` until mounted.
-   *
-   * @type {import('../shared/button.js').Button | null}
-   */
-  let controller = null;
-
   const mount = () => {
     // Already mounted → keep the live controller (makeButton returns null).
     if (document.getElementById(FS_UNIFIED_ID)) return;
@@ -930,6 +988,8 @@ export const installDailyRun = () => {
         clearTimeout(flashTimer);
         flashTimer = null;
       }
+      // The button is gone — just drop the flag (nothing left to repaint).
+      flashTonedZone = null;
       pending = null;
       installed = null;
     },
@@ -954,5 +1014,6 @@ export const _resetDailyRunForTest = () => {
     clearTimeout(flashTimer);
     flashTimer = null;
   }
+  flashTonedZone = null;
   eventBoxReady = true;
 };
