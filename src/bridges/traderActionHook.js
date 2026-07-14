@@ -16,14 +16,31 @@
 // The reliable, locale-independent signal is the action's own XHR. Both
 // buttons happen to share the CSS class `pay` ("Zapłać" / "Oddano ofertę",
 // and those labels are translated per-language anyway), so the button text
-// can't discriminate them — but the request URL can:
+// can't discriminate them — but the request can. WHERE the discriminator
+// lives changed at the 1.13 bump:
 //
-//   - Auctioneer bid  → component=traderauctioneer … action=submitBid
-//   - Import trade    → component=traderimportexport … action=trade
+//   ≤1.12 — per-page components, action in the URL query:
+//     - Auctioneer bid  → component=traderauctioneer  … action=submitBid
+//     - Import trade    → component=traderimportexport … action=trade
 //
-// We anchor on BOTH the component and the action: `action=trade` alone is
-// ambiguous (the resource market uses trade-shaped actions too), and we
-// must not clear the import glow on an unrelated trade.
+//   1.13+ — the trader UNIFIED into one `component=trader`; the page-view GET
+//   selects a sub-page by `action=auctioneer` / `action=importexport`, but the
+//   ACTION submit is a POST to a bare `…&component=trader&asJson=1` (NO action
+//   in the URL) that carries the action in the POST BODY, renamed:
+//     - Auctioneer bid  → body `action=auctioneerSubmitBid&bid[planets]…`
+//     - Import trade    → body `action=importexportTrade…` (assumed by symmetry
+//       with the bid rename; the ≤1.12 name was `trade`)
+//
+// So we (a) gate on the URL's component — `component=trader` optionally
+// followed by the legacy suffix, pinned to a word boundary
+// (`component=trader(?:auctioneer|importexport)?(?=&|$)`) so the unified
+// `trader` AND the old per-page names match while the resource market
+// `traderresources` does NOT — then (b) discriminate bid vs trade by scanning a
+// combined URL+body haystack for the action token (`…submitBid` vs `…trade`,
+// case-insensitive with a `[a-z]*` prefix so both the bare ≤1.12 and the
+// page-prefixed 1.13 spellings match). The action token is what tells the two
+// glows apart now that they share one URL; the resource market can't reach the
+// discriminator because the component gate already excluded it.
 //
 // # Behaviour
 //
@@ -47,6 +64,23 @@ import { TRADER_BID_PLACED_EVENT, TRADER_IMPORT_TRADED_EVENT } from '../lib/ogeE
 /** Idempotency sentinel — a second install returns the same teardown. */
 /** @type {(() => void) | null} */
 let installed = null;
+
+/**
+ * URL gate: the unified 1.13 `component=trader` and the legacy per-page
+ * `traderauctioneer` / `traderimportexport`, but NOT the resource market
+ * `traderresources` (the `(?=&|$)` word-boundary after the optional suffix
+ * rejects it). See the header for the full rationale.
+ */
+const TRADER_URL_RE = /component=trader(?:auctioneer|importexport)?(?=&|$)/;
+
+/**
+ * Action discriminators, tested against a combined URL+body haystack (the
+ * action is in the URL ≤1.12, in the POST body 1.13+). The `[a-z]*` prefix +
+ * `i` flag match both the bare (`submitBid` / `trade`) and page-prefixed
+ * (`auctioneerSubmitBid` / `importexportTrade`) spellings.
+ */
+const BID_ACTION_RE = /action=[a-z]*submitbid/i;
+const TRADE_ACTION_RE = /action=[a-z]*trade/i;
 
 /**
  * Did the trader action succeed? Accepts a 200 response's body and looks
@@ -80,27 +114,27 @@ const succeeded = (response) => {
 export const installTraderActionHook = () => {
   if (installed) return installed;
 
-  const unsubBid = observeXHR({
-    urlPattern: /component=traderauctioneer.*action=submitBid/,
+  // One observer gated on the trader component (the URL no longer discriminates
+  // bid from trade in 1.13). Success is decided the same way for both; the
+  // action token — read from the URL ≤1.12 or the POST body 1.13+ — routes the
+  // clear to the matching glow. Bid and trade are mutually exclusive, so the
+  // else-if never double-fires.
+  const unsub = observeXHR({
+    urlPattern: TRADER_URL_RE,
     on: 'load',
-    handler: ({ xhr, response }) => {
+    handler: ({ xhr, url, body, response }) => {
       if (xhr.status !== 200 || !succeeded(response)) return;
-      document.dispatchEvent(new CustomEvent(TRADER_BID_PLACED_EVENT));
-    },
-  });
-
-  const unsubTrade = observeXHR({
-    urlPattern: /component=traderimportexport.*action=trade/,
-    on: 'load',
-    handler: ({ xhr, response }) => {
-      if (xhr.status !== 200 || !succeeded(response)) return;
-      document.dispatchEvent(new CustomEvent(TRADER_IMPORT_TRADED_EVENT));
+      const hay = `${url}&${typeof body === 'string' ? body : ''}`;
+      if (BID_ACTION_RE.test(hay)) {
+        document.dispatchEvent(new CustomEvent(TRADER_BID_PLACED_EVENT));
+      } else if (TRADE_ACTION_RE.test(hay)) {
+        document.dispatchEvent(new CustomEvent(TRADER_IMPORT_TRADED_EVENT));
+      }
     },
   });
 
   installed = () => {
-    unsubBid();
-    unsubTrade();
+    unsub();
     installed = null;
   };
   return installed;

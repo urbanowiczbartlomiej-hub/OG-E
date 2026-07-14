@@ -393,10 +393,14 @@ describe('installTraderMenuHighlight — sub-page scanning', () => {
     vi.useRealTimers();
   });
 
-  /** @param {string} display Inline display for the done overlay. */
-  const buildImportPage = (display) => {
+  /**
+   * @param {string} display Inline display for the done overlay.
+   * @param {string} [id] Panel id — `div_traderImportExport` (≤1.12, default)
+   *   or `div_importexport` (1.13+, the `trader` prefix dropped).
+   */
+  const buildImportPage = (display, id = 'div_traderImportExport') => {
     const div = document.createElement('div');
-    div.id = 'div_traderImportExport';
+    div.id = id;
     const overlay = document.createElement('div');
     overlay.className = 'bargain_overlay';
     overlay.style.display = display;
@@ -433,6 +437,13 @@ describe('installTraderMenuHighlight — sub-page scanning', () => {
     installTraderMenuHighlight();
     expect(localStorage.getItem(IMPORT_TRADED_KEY)).toBeNull();
     expect(importTile().classList.contains(RED_CLASS)).toBe(true);
+  });
+
+  it('the 1.13 panel id (div_importexport) is scanned the same way', () => {
+    buildImportPage('block', 'div_importexport');
+    installTraderMenuHighlight();
+    expect(localStorage.getItem(IMPORT_TRADED_KEY)).toBe(localDayKey(new Date()));
+    expect(importTile().classList.contains(RED_CLASS)).toBe(false);
   });
 
   // ── 6× auto-switch detection + slot re-arm parsing ───────────────────

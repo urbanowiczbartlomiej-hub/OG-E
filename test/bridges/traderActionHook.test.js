@@ -155,6 +155,65 @@ describe('installTraderActionHook — discrimination', () => {
   });
 });
 
+describe('installTraderActionHook — 1.13 unified component=trader', () => {
+  // 1.13 folded both trader pages into one `component=trader`; the action moved
+  // from the URL query into the POST body under a page-prefixed name
+  // (`auctioneerSubmitBid` / `importexportTrade`). Real URL/body shapes from a
+  // live 1.13 test server.
+  const UNIFIED_URL = '/game/index.php?page=ingame&component=trader&asJson=1';
+
+  it('fires oge:traderBidPlaced for a body-borne auctioneerSubmitBid', async () => {
+    installTraderActionHook();
+    const bid = track(capture('oge:traderBidPlaced'));
+    const trade = track(capture('oge:traderImportTraded'));
+    await fakeXhrRoundTrip(UNIFIED_URL, {
+      method: 'POST',
+      body: 'action=auctioneerSubmitBid&bid%5Bplanets%5D%5B33677534%5D%5Bmetal%5D=1000&bid%5Bhonor%5D=0&token=x',
+      responseText: JSON.stringify({ success: true, message: 'ok' }),
+    });
+    expect(bid.count()).toBe(1);
+    expect(trade.count()).toBe(0);
+  });
+
+  it('fires oge:traderImportTraded for a body-borne importexportTrade', async () => {
+    installTraderActionHook();
+    const bid = track(capture('oge:traderBidPlaced'));
+    const trade = track(capture('oge:traderImportTraded'));
+    await fakeXhrRoundTrip(UNIFIED_URL, {
+      method: 'POST',
+      body: 'action=importexportTrade&token=x',
+      responseText: JSON.stringify({ success: true }),
+    });
+    expect(bid.count()).toBe(0);
+    expect(trade.count()).toBe(1);
+  });
+
+  it('ignores the trader page-view GETs (action=auctioneer / importexport in the URL)', async () => {
+    installTraderActionHook();
+    const bid = track(capture('oge:traderBidPlaced'));
+    const trade = track(capture('oge:traderImportTraded'));
+    await fakeXhrRoundTrip('/game/index.php?page=ingame&component=trader&action=auctioneer', {
+      responseText: JSON.stringify({ ok: 1 }),
+    });
+    await fakeXhrRoundTrip('/game/index.php?page=ingame&component=trader&action=importexport', {
+      responseText: JSON.stringify({ ok: 1 }),
+    });
+    expect(bid.count()).toBe(0);
+    expect(trade.count()).toBe(0);
+  });
+
+  it('still rejects a success:false unified bid', async () => {
+    installTraderActionHook();
+    const bid = track(capture('oge:traderBidPlaced'));
+    await fakeXhrRoundTrip(UNIFIED_URL, {
+      method: 'POST',
+      body: 'action=auctioneerSubmitBid&token=x',
+      responseText: JSON.stringify({ success: false }),
+    });
+    expect(bid.count()).toBe(0);
+  });
+});
+
 describe('installTraderActionHook — idempotency', () => {
   it('repeated install does not double-fire', async () => {
     installTraderActionHook();

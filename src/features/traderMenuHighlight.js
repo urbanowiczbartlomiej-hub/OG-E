@@ -139,8 +139,14 @@ const CHIP_ON_CLASS = 'oge-chip-on';
 const CHIP_LABEL_CLASS = 'oge-chip-label';
 const CHIP_MODE_ATTR = 'data-oge-mode';
 
-/** The Import/Export panel we prepend the chips to (game DOM — fragile, local). */
-const IMPORT_PANEL_SEL = '#div_traderImportExport';
+/**
+ * The Import/Export panel we prepend the chips to (game DOM — fragile, local).
+ * OGame renamed this id at the 1.13 bump: `div_traderImportExport` (≤1.12) →
+ * `div_importexport` (1.13+, the `trader` prefix was dropped across the panel's
+ * ids). Match BOTH so the chips AND the passive "offer gone" overlay scan keep
+ * working across the version bump.
+ */
+const IMPORT_PANEL_SEL = '#div_traderImportExport, #div_importexport';
 
 /**
  * `data-ipi-hint` values — OGame's locale-independent element identifiers.
@@ -192,7 +198,8 @@ export const MODE_6X = /** @type {'6x'} */ ('6x');
  *     `.noAuctionOverlay` only between auctions; both together mean "no
  *     auction live right now", which is when we may push the quiet window.
  */
-const IMPORT_DONE_OVERLAY_SEL = '#div_traderImportExport .bargain_overlay';
+const IMPORT_DONE_OVERLAY_SEL =
+  '#div_traderImportExport .bargain_overlay, #div_importexport .bargain_overlay';
 const AUCTION_NEXT_COUNTDOWN_SEL = '#nextAuction';
 const AUCTION_NO_AUCTION_OVERLAY_SEL = '.noAuctionOverlay';
 

@@ -111,6 +111,21 @@ describe('installGalaxyHook — URL matching', () => {
     expect(events).toHaveLength(1);
   });
 
+  it('fires handler for the 1.13 action name (fetchSolarSystemData)', async () => {
+    installGalaxyHook();
+    const { events } = trackCleanup(captureGalaxyEvents());
+
+    const payload = JSON.stringify({
+      system: { galaxy: 1, system: 56, galaxyContent: [] },
+    });
+    await fakeXHR(
+      '/game/index.php?page=ingame&component=galaxy&action=fetchSolarSystemData&asJson=1',
+      payload,
+    );
+
+    expect(events).toHaveLength(1);
+  });
+
   it('does NOT fire for unrelated URLs', async () => {
     installGalaxyHook();
     const { events } = trackCleanup(captureGalaxyEvents());

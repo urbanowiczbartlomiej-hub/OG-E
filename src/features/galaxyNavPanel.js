@@ -67,14 +67,14 @@
 // unmounting (toggle off / dispose) restores the native bar in the same
 // stroke.
 //
-// The stylesheet also PINS ROW 16's height (the expedition-debris slot):
-// AGR's stacked debris readout made that row ~50px taller on systems with
-// expo debris, so the whole table — and this panel under it — jumped between
-// taps while stepping through systems. See the CSS block for the layout
-// rebuild (one-line debris strip + constant min-height). The strip's labels
-// are additionally compacted in JS ("Metal: 1.388.400" → "M 1.388.400" —
-// see compactDebrisReadout), because CSS cannot shorten text and AGR's full
-// locale labels are what overflowed the column in the first place.
+// ROW 16 (the expedition-debris slot) gets a different treatment. Instead of
+// restyling AGR's live box in place (a CSS specificity war that broke on the
+// 1.13 layout change), we HIDE the native box and render our OWN compact box
+// right after it (see renderExpoProxy). Every control on it PROXIES the native
+// one — a click / change is replayed on the hidden original — so all game +
+// AGR logic runs untouched while the presentation is entirely ours. AGR's full
+// locale debris labels are compacted to the M/K/D/PF shorthand on the way in
+// (shortenDebrisLabel).
 //
 // Row pins alone can't cover every source of per-system height variance
 // (galaxy rows are min-height only — long player/alliance names wrap, debris
@@ -97,6 +97,7 @@ import { injectStyle } from '../lib/dom.js';
 import { createVisibilityObserver } from '../lib/visibilityObserver.js';
 import { debounce } from '../lib/debounce.js';
 import { settingsStore } from '../state/settings.js';
+import { safeLS } from '../lib/storage.js';
 import { GAME } from '../lib/gameDom.js';
 import { navigateGalaxyInPage } from './shared/galaxyNav.js';
 
@@ -104,6 +105,28 @@ import { navigateGalaxyInPage } from './shared/galaxyNav.js';
 export const GNAV_PANEL_ID = 'oge-gnav';
 /** Id of the singleton <style> element this module injects. */
 const STYLE_ID = 'oge-gnav-style';
+
+/** OG-E compact proxy that stands in for the native row-16 expo-debris box. */
+const EXPO_PROXY_ID = 'oge-gnav-expo';
+/** Marker class added to the NATIVE box so our stylesheet hides it. */
+const EXPO_HIDDEN_CLASS = 'oge-expo-hidden';
+/** The native expedition-debris slot box (position 16), scoped to the galaxy table. */
+const EXPO_BOX_SEL = '#galaxyContent .expeditionDebrisSlotBox';
+
+/**
+ * Panel-placement preference (per device). Three states cycled by the panel's
+ * small position toggle, remembered in localStorage:
+ *   - 'bottom' — our panel below the table, native header hidden (default).
+ *   - 'top'    — our panel in the header's own place (above the table), native hidden.
+ *   - 'both'   — our panel below the table AND the native header shown too.
+ * The native header is hidden via {@link HIDE_NATIVE_CLASS} on `<body>`, so it's
+ * a one-class toggle (off only in 'both').
+ */
+const GNAV_POS_KEY = 'oge-gnav-pos';
+const GNAV_POS_STATES = /** @type {ReadonlyArray<'bottom' | 'top' | 'both'>} */ (['bottom', 'top', 'both']);
+const HIDE_NATIVE_CLASS = 'oge-gnav-hide-native';
+/** Compact toggle labels, one per {@link GNAV_POS_STATES} value. */
+const GNAV_POS_LABEL = { bottom: 'BTM', top: 'TOP', both: 'BOTH' };
 
 // Game selectors read by THIS feature only — kept local per the gameDom.js
 // rule (only 2+-feature selectors are centralized). `#galaxy_input` /
@@ -245,209 +268,201 @@ const CSS = `/* OG-E: galaxy touch nav (bottom mirror of the header controls) */
   padding: 0 6px;
   white-space: nowrap;
 }
-/* The panel replaces the native header form outright — hide it while the
-   panel is up. The hidden controls keep WORKING (our buttons proxy-click
-   them; hidden elements still handle click events and hold the input values
-   the game reads/writes). This stylesheet is removed on unmount, which
-   brings the native bar back. */
-#galaxyHeader { display: none !important; }
+/* The panel replaces the native header form — hide it while the panel is up,
+   UNLESS the player picked the 'both' position (then the class is off <body>
+   and the native bar shows too). The hidden controls keep WORKING (our buttons
+   proxy-click them; hidden elements still handle click events and hold the input
+   values the game reads/writes). Removed on unmount → native bar back. */
+body.${HIDE_NATIVE_CLASS} #galaxyHeader { display: none !important; }
+/* Position toggle — the actions row's LAST, deliberately quiet member: same
+   height as its neighbours (one clean row), but narrow, muted and dashed so it
+   reads as panel plumbing rather than a fourth game action. */
+#${GNAV_PANEL_ID} .oge-gnav-pos {
+  flex: 0 0 auto;
+  height: 50px;
+  min-width: 54px;
+  padding: 0 8px;
+  font-size: 11px;
+  color: #7e93a8;
+  letter-spacing: 0.8px;
+  border-style: dashed;
+}
 
-/* ===== Row 16 (expedition debris slot): pin the height + OG-E restyle =====
-   The game lays the slot box out as [title 38%][debris 9%, column][actions
-   53%] with min-height 41px; AGR stacks the expo-debris readout (Metal /
-   Kryształ / Pioniery / Zredukuj) as a 4-line column inside that narrow 9%
-   cell, so the row grows ~50px on systems that HAVE expedition debris — and
-   this panel below the table jumps under the finger while stepping through
-   systems. Rebuild the slot into two fixed bands: title + expedition
-   controls on band one, the debris readout as a full-width ONE-LINE strip
-   on band two (nothing hidden — every figure stays inline), and a constant
-   box min-height so the row measures the same with or without debris.
-   While at it, dress the slot in the panel's own chrome: caps-label title,
-   the panel's button look on Ekspedycja / Wyślij / Zredukuj (proper touch
-   targets), muted readout typography. AGR's inline background tint (its
-   red/green expo-slot state signal) is deliberately NOT overridden.
-   Selectors mirror the game's own id+class chains so the overrides outrank
-   them. */
-#galaxyContent .expeditionDebrisSlotBox {
-  flex-wrap: wrap !important;
-  min-height: 84px !important;
-  align-items: center !important;
-  border-radius: 6px !important;
-  font-family: Roboto, Arial, sans-serif !important;
-}
-/* Title wrapper + heading: drop the fixed 38%/205px widths (they forced the
-   template button's label to wrap mid-word) and render the heading as the
-   panel's caps label instead of the glowing game-blue h3. */
-#galaxyContent .expeditionDebrisSlotBox > div:first-child {
-  width: auto !important;
-  flex: 0 0 auto !important;
-}
-#galaxyContent .expeditionDebrisSlotBox .title {
-  width: auto !important;
-  margin: 0 !important;
-  padding: 0 4px !important;
-  color: #8fa3b8 !important;
-  font: 700 11px/1.3 Roboto, Arial, sans-serif !important;
-  text-transform: uppercase !important;
-  letter-spacing: 0.8px !important;
-  text-shadow: none !important;
-}
-/* Expedition controls: right-aligned band, no mid-word wraps. */
-#galaxyContent .expeditionDebrisSlotBox > div#expeditionDebrisSlotActions {
-  width: auto !important;
-  flex: 1 1 auto !important;
-  justify-content: flex-end !important;
-  align-items: center !important;
-  gap: 8px !important;
-}
-#galaxyContent #galaxyExpeditionFleetTemplateContainer,
-#galaxyContent #expeditionFleetTemplateBtn {
-  white-space: nowrap;
-}
-#galaxyContent #expeditionbutton,
-#galaxyContent #sendExpeditionFleetTemplateFleet {
-  box-sizing: border-box !important;
-  /* NO !important on display: the game swaps Ekspedycja <-> Wyślij via an
-     inline display:none (template select change), and forcing display here
-     would show BOTH buttons at once. jQuery's .show() clears the inline
-     value, so the visible one still picks up this flex display from the
-     stylesheet. */
-  display: inline-flex;
-  align-items: center !important;
-  justify-content: center !important;
-  /* Fixed width: the game swaps Ekspedycja <-> Wyślij in place, and letting
-     each size to its label made the whole actions band shift on every
-     template-select change. Sized to the longer PL label with headroom.
-     Hard-pinned (!important, border-box) to stay pixel-identical with the
-     Zredukuj chip docked right below. */
-  width: 132px !important;
-  height: 34px;
+/* ===== Row 16 (expedition-debris slot): OG-E compact PROXY =====
+   We HIDE the native box (class added in JS) and render our OWN compact box
+   right after it. Every control on our box proxies the native one, so this is
+   pure presentation on our own class names — no fight with AGR/game rules. */
+/* Hide the native box but keep it RENDERED (not display:none): its controls
+   still open the game's overlays, which a display:none trigger can't. Pulled
+   out of flow + clipped so it takes no space and can't be seen/clicked. */
+#galaxyContent .expeditionDebrisSlotBox.${EXPO_HIDDEN_CLASS} {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
   padding: 0 !important;
-  /* Same slate chrome as the Zredukuj chip below — one quiet button family
-     for the whole slot instead of a teal accent competing with the panel's
-     Start. */
-  border: 1px solid #38414f !important;
-  border-radius: 5px !important;
-  background: linear-gradient(180deg, #222a36, #141922) !important;
-  color: #9fb3c8 !important;
-  font: 700 13px/1 Roboto, Arial, sans-serif !important;
-  text-transform: uppercase !important;
-  letter-spacing: 0.8px !important;
-  touch-action: manipulation;
+  border: 0 !important;
+  overflow: hidden !important;
+  clip-path: inset(50%) !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
-/* Both buttons carry a sprite icon as an absolutely-positioned ::before
-   (a cursor glyph / ship icon); inside the restyled fixed-width button it
-   floats over the centered label. Decorative glyphs are against the OG-E
-   wording rules anyway — drop them, the labels carry the meaning. */
-#galaxyContent #expeditionbutton::before,
-#galaxyContent #sendExpeditionFleetTemplateFleet::before {
-  content: none !important;
-}
-/* Debris strip: full-width one-liner under the controls. */
-#galaxyContent .expeditionDebrisSlotBox > div#expeditionDebrisSlotDebrisContainer {
-  flex-direction: row !important;
-  width: 100% !important;
-  order: 3;
-  justify-content: flex-start !important;
-  align-items: center !important;
-  min-height: 34px;
-}
-#galaxyContent .expeditionDebrisSlotBox #expeditionDebris {
-  display: flex !important;
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-  float: none !important;
-  flex: 1 1 auto;
-  min-width: 0;
-  max-width: 100%;
-}
-/* The readout fits the column OUTRIGHT — no scroll container here (an
-   earlier overflow-x attempt clipped vertically and painted a scrollbar
-   across the chip) and no wrap in practice: compactDebrisReadout() shortens
-   AGR's locale labels in JS (Metal → M …), which is what actually makes
-   14px text fit with room to spare. flex-wrap stays as a pathological
-   fallback only — if some exotic system still overflowed, it wraps cleanly
-   (the chip's li is in normal flow) and the height ratchet absorbs it. */
-#galaxyContent .expeditionDebrisSlotBox .ago_expo_df {
-  display: flex !important;
+
+#${EXPO_PROXY_ID} {
+  box-sizing: border-box;
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 2px 12px;
-  margin: 0 !important;
-  padding: 0 !important;
-  list-style: none;
-  /* Kill any AGR grid sizing (fixed ul/li column widths) — items take
-     their natural width. */
-  width: auto !important;
-  max-width: none !important;
-  flex: 1 1 auto;
-  min-width: 0;
-  font-size: 14px;
+  gap: 2px 8px;
+  width: 100%;
+  margin: 1px 0;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(15, 20, 26, 0.55);
+  font-family: Roboto, Arial, sans-serif;
   color: #cfd8e3;
+}
+#${EXPO_PROXY_ID} * { box-sizing: border-box; }
+#${EXPO_PROXY_ID} .oge-expo-title {
+  flex: 0 0 auto;
+  color: #8fa3b8;
+  font: 700 11px/1.2 Roboto, Arial, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+#${EXPO_PROXY_ID} .oge-expo-readout {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  /* Tight leading so three stacked lines stay compact WITHOUT shrinking the
+     (already small) 12px text. */
+  font: 700 12px/1.08 Roboto, Arial, sans-serif;
   font-variant-numeric: tabular-nums;
+  color: #cfd8e3;
 }
-#galaxyContent .expeditionDebrisSlotBox .ago_expo_df li {
-  margin: 0 !important;
-  padding: 0 !important;
-  white-space: nowrap;
-  width: auto !important;
-  /* Sizing must sit ON the li: AGR styles the items directly, and a direct
-     rule beats anything inherited from our ul-level font bump. */
-  font-size: 14px !important;
-  line-height: 1.3 !important;
-  color: #cfd8e3 !important;
-  font-variant-numeric: tabular-nums;
-}
-/* Steady columns: reserve a constant slot per readout item so value-length
-   differences between systems don't shuffle the strip horizontally. The
-   action li (last) is exempt — it docks right. */
-#galaxyContent .expeditionDebrisSlotBox .ago_expo_df > li:not(:last-child) {
-  min-width: 104px;
-}
-/* The action chip docks at the RIGHT edge of the strip, directly under the
-   Ekspedycja button above it. AGR appends its li last, so a margin-left:auto
-   flexbox push does the job without touching AGR's DOM. The li is itself a
-   flex box: as an inline-level box on the li's text baseline the 28px chip
-   painted a few px BELOW the line box (and so past the slot's bottom edge) —
-   flex layout takes the anchor out of the baseline game entirely. */
-#galaxyContent .expeditionDebrisSlotBox .ago_expo_df li:last-child {
-  margin-left: auto !important;
-  display: inline-flex;
+#${EXPO_PROXY_ID} .miss { color: #ff5d5d; margin-left: 4px; }
+#${EXPO_PROXY_ID} .oge-expo-actions {
+  display: flex;
   align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  margin-left: auto;
 }
-/* "Zredukuj" is a real fleet action — give it the panel's slate button
-   chrome and a tappable box instead of an 11px text link. */
-#galaxyContent .expeditionDebrisSlotBox .ago_expo_df li a {
-  display: inline-flex;
-  align-items: center;
-  /* AGR floats/positions this link — that collapsed its li's line height and
-     let wrapped text render THROUGH the chip. Back into normal flow. */
-  float: none !important;
-  position: static !important;
-  vertical-align: middle;
-  height: 28px;
-  /* Same fixed width as Ekspedycja/Wyślij right above — the two right-docked
-     buttons read as one aligned column. Hard-pinned like its sibling so no
-     AGR width/box-model rule can stretch it wider. */
-  width: 132px !important;
-  justify-content: center;
-  padding: 0 !important;
-  box-sizing: border-box !important;
+#${EXPO_PROXY_ID} select.oge-expo-tpl {
+  height: 30px;
+  max-width: 120px;
+  border: 1px solid #38414f;
+  border-radius: 5px;
+  background: #0a0e13;
+  color: #cfd8e3;
+  font: 700 12px/1 Roboto, Arial, sans-serif;
+  touch-action: manipulation;
+}
+#${EXPO_PROXY_ID} button.oge-expo-btn {
+  appearance: none;
+  height: 30px;
+  min-width: 84px;
+  padding: 0 8px;
   border: 1px solid #38414f;
   border-radius: 5px;
   background: linear-gradient(180deg, #222a36, #141922);
-  color: #9fb3c8 !important;
+  color: #9fb3c8;
   font: 700 12px/1 Roboto, Arial, sans-serif;
   text-transform: uppercase;
   letter-spacing: 0.6px;
-  text-decoration: none !important;
+  cursor: pointer;
   touch-action: manipulation;
+}
+#${EXPO_PROXY_ID} button.oge-expo-btn:active { filter: brightness(1.45); }
+#${EXPO_PROXY_ID} button.oge-expo-btn:disabled { opacity: 0.4; cursor: default; }
+/* Adopted native template-editor anchor (#expeditionFleetTemplateBtn) — the
+   REAL game control moved into our slot (trusted clicks = the overlay opens
+   natively), faced as a TINY square gear button beside the select (explicit
+   user choice — a config affordance, so the gear glyph is functional, not
+   decorative; the native wording stays reachable via the mirrored title).
+   Two-id selector outranks the game's own #-rules. */
+#${EXPO_PROXY_ID} .oge-expo-tplslot { display: inline-flex; }
+#${EXPO_PROXY_ID} #expeditionFleetTemplateBtn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  float: none;
+  border: 1px solid #38414f;
+  border-radius: 5px;
+  background: linear-gradient(180deg, #222a36, #141922);
+  text-decoration: none !important;
+  overflow: visible;
+  /* href-less anchor defaults to the text cursor — force the hand. */
+  cursor: pointer;
+}
+/* Icon-only face: hide the game's sprite + long label; the gear ::after (an
+   inline data-URI SVG — self-contained, no network) is the whole face. */
+#${EXPO_PROXY_ID} #expeditionFleetTemplateBtn .icon_combatunits,
+#${EXPO_PROXY_ID} #expeditionFleetTemplateBtn .expedtionFleetTemplateBtnTitle { display: none; }
+#${EXPO_PROXY_ID} #expeditionFleetTemplateBtn::after {
+  content: "";
+  width: 16px;
+  height: 16px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239fb3c8'%3E%3Cpath d='M19.4 13a7.6 7.6 0 0 0 .1-1 7.6 7.6 0 0 0-.1-1l2.1-1.6a.5.5 0 0 0 .1-.6l-2-3.5a.5.5 0 0 0-.6-.2l-2.5 1a7.7 7.7 0 0 0-1.7-1l-.4-2.6a.5.5 0 0 0-.5-.4h-4a.5.5 0 0 0-.5.4l-.4 2.6a7.7 7.7 0 0 0-1.7 1l-2.5-1a.5.5 0 0 0-.6.2l-2 3.5a.5.5 0 0 0 .1.6L4.5 11a7.6 7.6 0 0 0-.1 1 7.6 7.6 0 0 0 .1 1l-2.1 1.6a.5.5 0 0 0-.1.6l2 3.5c.1.2.4.3.6.2l2.5-1a7.7 7.7 0 0 0 1.7 1l.4 2.6c0 .2.3.4.5.4h4c.3 0 .5-.2.5-.4l.4-2.6a7.7 7.7 0 0 0 1.7-1l2.5 1c.2.1.5 0 .6-.2l2-3.5a.5.5 0 0 0-.1-.6L19.4 13zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+/* The game's under-attack warning triangle keeps working — pinned to the
+   button's corner so it doesn't fight the gear for the 30px face. */
+#${EXPO_PROXY_ID} #expeditionFleetTemplateBtn .icon_warning_triangle_red {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+}
+#${EXPO_PROXY_ID} .oge-expo-tpl[hidden],
+#${EXPO_PROXY_ID} button.oge-expo-btn[hidden] { display: none; }
+/* Recycle is a two-line button: native label on top, pathfinders below. */
+#${EXPO_PROXY_ID} button.oge-expo-recycle {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0;
+  line-height: 1.05;
+  padding: 1px 8px;
+}
+#${EXPO_PROXY_ID} .oge-expo-recycle .oge-expo-l2 {
+  font-size: 10px;
+  font-weight: 700;
+  color: #8fa3b8;
+  text-transform: none;
+  letter-spacing: 0;
 }
 `;
 
 /** @returns {boolean} True on the galaxy component (checked once — the component can't change without a full page load). */
 const isGalaxyPage = () => location.search.includes('component=galaxy');
+
+/** @returns {'bottom' | 'top' | 'both'} The stored panel position, defaulting to 'bottom'. */
+const readGnavPos = () => {
+  const v = safeLS.get(GNAV_POS_KEY);
+  return GNAV_POS_STATES.includes(/** @type {any} */ (v))
+    ? /** @type {'bottom' | 'top' | 'both'} */ (v)
+    : 'bottom';
+};
+
+/** @param {'bottom' | 'top' | 'both'} pos @returns {void} */
+const writeGnavPos = (pos) => safeLS.set(GNAV_POS_KEY, pos);
+
+/**
+ * Place the panel per the stored preference: above the table ('top') or below
+ * it ('bottom'/'both'), and hide the native header unless in 'both'.
+ *
+ * @param {HTMLElement} panel
+ * @param {'bottom' | 'top' | 'both'} pos
+ * @param {Element} content The `#galaxyContent` table container.
+ * @returns {void}
+ */
+const applyGnavPos = (panel, pos, content) => {
+  content.insertAdjacentElement(pos === 'top' ? 'beforebegin' : 'afterend', panel);
+  document.body.classList.toggle(HIDE_NATIVE_CLASS, pos !== 'both');
+};
 
 /**
  * @param {string} raw
@@ -560,35 +575,336 @@ export const shortenDebrisLabel = (text, short) => {
 };
 
 /**
- * Rewrite every readout item of the row-16 expo-debris strip to its compact
- * form, resolving each item's short label from its AGR class. Only the li's
- * FIRST text node is touched: AGR's red "(-N)" pathfinder-delta span (a
- * later child) survives verbatim, and the action li (the one holding the
- * Zredukuj link) is skipped entirely. Guarded writes — safe on every sync
- * pass.
+ * The live native control inside the (hidden) row-16 box, resolved fresh each
+ * call — the game rebuilds the box on every navigation, so a captured node goes
+ * stale. `sel` is matched WITHIN the current box (the same ids also exist on the
+ * fleetdispatch page, so global lookups would be ambiguous).
  *
+ * @param {string} sel
+ * @returns {HTMLElement | null}
+ */
+const inExpoBox = (sel) => {
+  const box = document.querySelector(EXPO_BOX_SEL);
+  const el = box ? box.querySelector(sel) : null;
+  return el instanceof HTMLElement ? el : null;
+};
+
+/** @param {Element | null} el @returns {boolean} the element's own computed display ≠ none. */
+const expoVisible = (el) => el instanceof HTMLElement && getComputedStyle(el).display !== 'none';
+
+/**
+ * Click a native row-16 control if present and enabled. No propagation guard —
+ * for callers not driven by a trusted click (e.g. the select-change route).
+ *
+ * @param {HTMLElement | null} native
  * @returns {void}
  */
-const compactDebrisReadout = () => {
-  const items = document.querySelectorAll(
-    '#galaxyContent .expeditionDebrisSlotBox .ago_expo_df > li',
-  );
-  for (const li of items) {
-    if (li.querySelector('a')) continue; // the Zredukuj action li
+const clickNative = (native) => {
+  if (native && !native.hasAttribute('disabled')) native.click();
+};
+
+/**
+ * Proxy a trusted click onto a native row-16 control: stop OUR click from
+ * bubbling to the game's overlay-closer (see mkButton), then replay it on the
+ * native element so its (and AGR's) handlers run untouched.
+ *
+ * @param {Event} e
+ * @param {HTMLElement | null} native
+ * @returns {void}
+ */
+const proxyExpoClick = (e, native) => {
+  e.stopPropagation();
+  clickNative(native);
+};
+
+/**
+ * Last recycle-action label seen (locale-constant, e.g. "Mine" / "Zredukuj").
+ * The game OMITS the recycle link on systems where you lack the pathfinders to
+ * mine, so we cache it to keep our always-rendered (then greyed) button reading
+ * right. Seeds to English; overwritten by the first real link on any system.
+ */
+let lastRecycleLabel = 'Mine';
+
+/**
+ * @typedef {{ main: string, miss: string }} ExpoRow
+ *   `main` = compact "M 398.400", `miss` = AGR's red "(-41)" delta (PF only).
+ */
+
+/**
+ * Read AGR's expo-debris readout (`ul.ago_expo_df`) into compact rows, split
+ * into the RESOURCE lines (metal / crystal / deuterium) and the PATHFINDER
+ * line (kept apart so it can ride on the recycle button). The action li (the
+ * recycle link) is skipped — it is mirrored as a button, not a readout figure.
+ * Labels are shortened via {@link shortenDebrisLabel}, values kept verbatim.
+ *
+ * @param {Element} box
+ * @returns {{ resources: ExpoRow[], pf: ExpoRow | null }}
+ */
+const readExpoReadout = (box) => {
+  /** @type {ExpoRow[]} */
+  const resources = [];
+  /** @type {ExpoRow | null} */
+  let pf = null;
+  for (const li of box.querySelectorAll('.ago_expo_df > li')) {
+    if (li.querySelector('a')) continue;
     const first = li.firstChild;
-    if (!first || first.nodeType !== Node.TEXT_NODE) continue;
-    const raw = first.textContent ?? '';
+    const raw = first && first.nodeType === Node.TEXT_NODE ? (first.textContent ?? '') : '';
+    if (!raw.includes(':')) continue;
     /** @type {string | undefined} */
     let short;
     for (const cls of li.classList) {
-      if (DEBRIS_SHORT_BY_CLASS[cls]) {
-        short = DEBRIS_SHORT_BY_CLASS[cls];
-        break;
-      }
+      if (DEBRIS_SHORT_BY_CLASS[cls]) { short = DEBRIS_SHORT_BY_CLASS[cls]; break; }
     }
-    const next = shortenDebrisLabel(raw, short);
-    if (next !== raw) first.textContent = next;
+    const miss = li.querySelector('.ago_missing_pf')?.textContent?.trim() ?? '';
+    const row = { main: shortenDebrisLabel(raw, short), miss };
+    if (li.classList.contains('pfcount')) pf = row;
+    else resources.push(row);
   }
+  return { resources, pf };
+};
+
+/**
+ * A proxy button whose CLICK is forwarded to a native control (`sel`, matched
+ * within the hidden box). Text is set later by {@link updateExpoProxy} from the
+ * native control, so our labels always match the game's own wording + locale.
+ *
+ * @param {string} cls @param {string} sel @returns {HTMLButtonElement}
+ */
+const mkProxyBtn = (cls, sel) => {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = `oge-expo-btn ${cls}`;
+  b.addEventListener('click', (e) => proxyExpoClick(e, inExpoBox(sel)));
+  return b;
+};
+
+/**
+ * Build our compact proxy box. Layout: title + a stacked resource readout on
+ * the left, then the action cluster docked right in the player's chosen order —
+ * Recycle · Templates · quick-select · Expedition/Send. Every label is mirrored
+ * live from the native control (no hard-coded locale strings). Static skeleton;
+ * {@link updateExpoProxy} fills the text + state each sync.
+ *
+ * @returns {HTMLElement}
+ */
+const buildExpoProxy = () => {
+  const box = document.createElement('div');
+  box.id = EXPO_PROXY_ID;
+
+  const title = document.createElement('span');
+  title.className = 'oge-expo-title';
+  box.appendChild(title);
+
+  const readout = document.createElement('div');
+  readout.className = 'oge-expo-readout';
+  box.appendChild(readout);
+
+  const actions = document.createElement('div');
+  actions.className = 'oge-expo-actions';
+
+  // 1) Recycle — a two-line button: native label on top, pathfinders below.
+  const recycle = mkProxyBtn('oge-expo-recycle', '.ago_expo_df li a');
+  const l1 = document.createElement('span');
+  l1.className = 'oge-expo-l1';
+  const l2 = document.createElement('span');
+  l2.className = 'oge-expo-l2';
+  recycle.append(l1, l2);
+  actions.appendChild(recycle);
+
+  // 2) Template editor — the NATIVE #expeditionFleetTemplateBtn anchor, ADOPTED
+  //    into this slot by updateExpoProxy and restyled by our CSS. We adopt the
+  //    real element instead of proxy-clicking a hidden one: a synthetic click
+  //    proved unreliable for the game's jQuery overlay, while a trusted click on
+  //    the genuine anchor runs the native handler chain unmodified.
+  const tplSlot = document.createElement('span');
+  tplSlot.className = 'oge-expo-tplslot';
+  actions.appendChild(tplSlot);
+
+  // 3) Template quick-select — proxied to the native select.
+  const tpl = document.createElement('select');
+  tpl.className = 'oge-expo-tpl';
+  tpl.setAttribute('aria-label', 'Expedition fleet template');
+  tpl.addEventListener('change', () => {
+    const nativeSel = inExpoBox('#expeditionFleetTemplateSelect');
+    if (!(nativeSel instanceof HTMLSelectElement)) return;
+    nativeSel.value = tpl.value;
+    nativeSel.dispatchEvent(new Event('change', { bubbles: true }));
+    // The game swaps Expedition→Send via an inline display flip — an ATTRIBUTE
+    // mutation our childList observer never sees — so refresh the proxy now.
+    renderExpoProxy();
+  });
+  actions.appendChild(tpl);
+
+  // 4) Expedition / Send (mutually exclusive; the game shows exactly one).
+  actions.appendChild(mkProxyBtn('oge-expo-exp', '#expeditionbutton'));
+  actions.appendChild(mkProxyBtn('oge-expo-send', '#sendExpeditionFleetTemplateFleet'));
+
+  box.appendChild(actions);
+  return box;
+};
+
+/**
+ * Fill our proxy from the native box. Guarded by a signature stamped on the
+ * proxy: an unchanged native slot makes the pass a no-op, which is also what
+ * stops our own DOM writes (inside the observed #galaxyContent) from looping
+ * the MutationObserver.
+ *
+ * @param {HTMLElement} proxy
+ * @param {HTMLElement} box
+ * @returns {void}
+ */
+const updateExpoProxy = (proxy, box) => {
+  const title = box.querySelector('.title')?.textContent?.trim() ?? '';
+  const { resources, pf } = readExpoReadout(box);
+
+  const nativeSel = box.querySelector('#expeditionFleetTemplateSelect');
+  const optPairs = nativeSel instanceof HTMLSelectElement
+    ? Array.from(nativeSel.options).map((o) => ({ value: o.value, text: o.textContent?.trim() ?? '' }))
+    : [];
+  const tplValue = nativeSel instanceof HTMLSelectElement ? nativeSel.value : '';
+
+  // Native controls — labels mirrored so our buttons read exactly like the
+  // game's (right wording, right locale), state mirrored so ours track theirs.
+  const expNative = box.querySelector('#expeditionbutton');
+  const sendNative = box.querySelector('#sendExpeditionFleetTemplateFleet');
+  const recycleNative = box.querySelector('.ago_expo_df li a');
+  const expLabel = expNative?.textContent?.trim() ?? '';
+  const sendLabel = sendNative?.textContent?.trim() ?? '';
+  const recycleLabel = recycleNative?.textContent?.trim() ?? '';
+  if (recycleLabel) lastRecycleLabel = recycleLabel;
+  const recycleText = recycleLabel || lastRecycleLabel;
+  const expVis = expoVisible(expNative);
+  const sendVis = expoVisible(sendNative);
+  const hasRecycle = !!recycleNative;
+
+  // Adopt the native template-editor anchor into our slot. Runs BEFORE the
+  // signature gate: a game re-render mints a FRESH anchor while the readout
+  // signature may be unchanged. appendChild MOVES the live node (handlers
+  // survive); a stale anchor left from a replaced box is dropped first. Once
+  // adopted, the box query returns null on later passes — the held anchor
+  // stays put.
+  const tplSlot = proxy.querySelector('.oge-expo-tplslot');
+  if (tplSlot) {
+    const freshTplBtn = box.querySelector('#expeditionFleetTemplateBtn');
+    if (freshTplBtn && tplSlot.firstElementChild !== freshTplBtn) {
+      // Icon-only face (see CSS) — mirror the native label into a title so
+      // the game's own wording stays reachable on hover / long-press.
+      const lbl = freshTplBtn
+        .querySelector('.expedtionFleetTemplateBtnTitle')?.textContent?.trim();
+      if (lbl) /** @type {HTMLElement} */ (freshTplBtn).title = lbl;
+      tplSlot.textContent = '';
+      tplSlot.appendChild(freshTplBtn);
+    }
+  }
+  // AGR tints the whole slot via an inline background-color (its config-state
+  // signal, e.g. rgba(212,54,53,.66) for a big/urgent debris field). We hid the
+  // native box, so carry that tint onto ours; '' falls back to our card colour.
+  const agrBg = box.style.backgroundColor || '';
+
+  // Signature form only (a '|' collision merely forces a harmless extra rebuild).
+  const opts = optPairs.map((o) => o.value + '|' + o.text);
+  const sig = JSON.stringify([
+    title, resources, pf, opts, tplValue,
+    expLabel, sendLabel, recycleText,
+    expVis, sendVis, hasRecycle, agrBg,
+  ]);
+  if (proxy.dataset.sig === sig) return;
+  proxy.dataset.sig = sig;
+  proxy.style.backgroundColor = agrBg;
+
+  /** @param {string} sel @param {string} text */
+  const setText = (sel, text) => {
+    const el = proxy.querySelector(sel);
+    if (el) el.textContent = text;
+  };
+  setText('.oge-expo-title', title);
+  setText('.oge-expo-exp', expLabel);
+  setText('.oge-expo-send', sendLabel);
+
+  /** @param {Element} host @param {ExpoRow} row @returns {void} — value line + red delta. */
+  const paintRow = (host, row) => {
+    host.textContent = row.main;
+    if (row.miss) {
+      const m = document.createElement('span');
+      m.className = 'miss';
+      m.textContent = row.miss;
+      host.appendChild(m);
+    }
+  };
+
+  // Readout — resource lines stacked (the pathfinder line rides on the recycle
+  // button below, so it's never duplicated here).
+  const readout = proxy.querySelector('.oge-expo-readout');
+  if (readout) {
+    readout.textContent = '';
+    for (const r of resources) {
+      const line = document.createElement('span');
+      paintRow(line, r);
+      readout.appendChild(line);
+    }
+  }
+
+  // Recycle button — line 1 = label, line 2 = pathfinders. Always rendered while
+  // there's debris (so it doesn't vanish on systems where the game omits the
+  // link for want of pathfinders); DISABLED (greyed) when the native link is
+  // absent, so "you can't mine this" still reads at a glance.
+  const recycleBtn = proxy.querySelector('.oge-expo-recycle');
+  if (recycleBtn instanceof HTMLButtonElement) recycleBtn.disabled = !hasRecycle;
+  const l1 = proxy.querySelector('.oge-expo-recycle .oge-expo-l1');
+  if (l1) l1.textContent = recycleText;
+  const l2 = proxy.querySelector('.oge-expo-recycle .oge-expo-l2');
+  if (l2) {
+    l2.textContent = '';
+    if (pf) paintRow(l2, pf);
+  }
+
+  const tpl = proxy.querySelector('select.oge-expo-tpl');
+  if (tpl instanceof HTMLSelectElement) {
+    tpl.textContent = '';
+    for (const o of optPairs) {
+      const opt = document.createElement('option');
+      opt.value = o.value;
+      opt.textContent = o.text;
+      tpl.appendChild(opt);
+    }
+    tpl.value = tplValue;
+  }
+
+  /** @param {string} cls @param {boolean} show */
+  const toggle = (cls, show) => {
+    const b = proxy.querySelector(`.${cls}`);
+    if (b instanceof HTMLElement) b.hidden = !show;
+  };
+  toggle('oge-expo-exp', expVis);
+  toggle('oge-expo-send', sendVis);
+  // Show the recycle button whenever there IS debris (link present, or just a
+  // pathfinder line) — greying handles the "can't mine" case.
+  toggle('oge-expo-recycle', hasRecycle || pf !== null);
+};
+
+/**
+ * Hide the native row-16 box and stand our compact proxy in its place, then
+ * sync it. The game rebuilds the box on every navigation, so we re-hide +
+ * re-proxy on each sync. No-op (and removes a stale proxy) when the box is
+ * absent — vacation-mode galaxy, or a system with no expedition slot.
+ *
+ * @returns {void}
+ */
+const renderExpoProxy = () => {
+  const box = /** @type {HTMLElement | null} */ (document.querySelector(EXPO_BOX_SEL));
+  const existing = document.getElementById(EXPO_PROXY_ID);
+  if (!box) {
+    existing?.remove();
+    return;
+  }
+  box.classList.add(EXPO_HIDDEN_CLASS);
+  let proxy = existing;
+  if (!(proxy instanceof HTMLElement) || proxy.previousElementSibling !== box) {
+    proxy?.remove();
+    proxy = buildExpoProxy();
+    box.insertAdjacentElement('afterend', proxy);
+  }
+  updateExpoProxy(proxy, box);
 };
 
 /**
@@ -639,6 +955,10 @@ const mkButton = (label, extraClass) => {
   b.type = 'button';
   b.className = extraClass ? `oge-gnav-btn ${extraClass}` : 'oge-gnav-btn';
   b.textContent = label;
+  // Keep the panel's buttons OUT of the tab order so Tab moves straight between
+  // the Galaxy and System inputs (one tab, as on the native bar). They stay
+  // fully usable by pointer/touch, and the inputs' Enter still submits.
+  b.tabIndex = -1;
   // The game closes EVERY open jQuery-UI overlay on any click that bubbles to
   // <html> with a target outside a dialog (initHideElements' delegated
   // `click.hideElem`). The native controls survive their own clicks only
@@ -752,7 +1072,7 @@ const syncFromGame = () => {
   if (!mounted) return;
   const content = document.getElementById(GALAXY_CONTENT_ID);
   if (!mounted.panel.isConnected && content) {
-    content.insertAdjacentElement('afterend', mounted.panel);
+    applyGnavPos(mounted.panel, readGnavPos(), content);
   }
   // Height ratchet (see header): pin the content box to the tallest layout
   // seen so far, so leftover per-system variance can't move the panel below.
@@ -781,7 +1101,7 @@ const syncFromGame = () => {
     const native = action.resolve();
     btn.disabled = !native || native.hasAttribute('disabled');
   });
-  compactDebrisReadout();
+  renderExpoProxy();
 };
 
 /**
@@ -870,22 +1190,37 @@ const mount = () => {
   navRow.appendChild(mkGroup('System', sysInput, 's'));
   panel.appendChild(navRow);
 
-  content.insertAdjacentElement('afterend', panel);
+  // Position toggle — last slot of the actions row (quiet chrome; see CSS).
+  // Cycles bottom → top → both, remembered per device; placement + native-
+  // header visibility are applied by applyGnavPos.
+  const posBtn = mkButton(GNAV_POS_LABEL[readGnavPos()], 'oge-gnav-pos');
+  posBtn.title = 'Panel position — tap to cycle: bottom / top / both';
+  posBtn.addEventListener('click', () => {
+    const next =
+      GNAV_POS_STATES[(GNAV_POS_STATES.indexOf(readGnavPos()) + 1) % GNAV_POS_STATES.length];
+    writeGnavPos(next);
+    posBtn.textContent = GNAV_POS_LABEL[next];
+    const c = document.getElementById(GALAXY_CONTENT_ID);
+    if (c && mounted) applyGnavPos(mounted.panel, next, c);
+  });
+  actionRow.appendChild(posBtn);
+
+  applyGnavPos(panel, readGnavPos(), content);
 
   // Re-sync after every AJAX re-render of the system table (the game and AGR
   // both rewrite #galaxyContent's children on navigation), plus live while
   // the user types in the native header inputs. The panel sits OUTSIDE the
   // observed subtree, so our own writes never feed back into the observer.
   const scheduleSync = debounce(syncFromGame, SYNC_DEBOUNCE_MS);
-  // Debris-label compaction runs SYNCHRONOUSLY in the observer callback:
-  // MutationObserver callbacks are microtasks that fire before the next
-  // paint, so AGR's freshly rendered full-length labels never reach the
-  // screen. (Compacting only from the debounced sync left them visible for
-  // ~100ms — the readout visibly "jumped" long→short on every system hop.)
-  // The rewrite is idempotent, so the echo of our own text mutation settles
-  // in one extra no-op pass. Everything else stays debounced.
+  // The row-16 proxy renders SYNCHRONOUSLY in the observer callback:
+  // MutationObserver callbacks are microtasks that fire before the next paint,
+  // so AGR's freshly rendered native box is hidden and our compact box swapped
+  // in before either reaches the screen. (Doing it only from the debounced sync
+  // left the native box visible for ~100ms — a flash on every system hop.) The
+  // signature guard makes the echo of our own DOM writes settle in one extra
+  // no-op pass. Everything else stays debounced.
   const observer = createVisibilityObserver(() => {
-    compactDebrisReadout();
+    renderExpoProxy();
     scheduleSync();
   });
   observer.observe(content, { childList: true, subtree: true });
@@ -933,6 +1268,15 @@ const unmount = () => {
   mounted.offNativeInputs();
   mounted.offResize();
   mounted.panel.remove();
+  // Return the adopted template-editor anchor to its native container, then
+  // drop our row-16 proxy and un-hide the native expo-debris box.
+  const adopted = document.querySelector(`#${EXPO_PROXY_ID} #expeditionFleetTemplateBtn`);
+  const tplCont = document.getElementById('galaxyExpeditionFleetTemplateContainer');
+  if (adopted && tplCont) tplCont.insertBefore(adopted, tplCont.firstChild);
+  document.getElementById(EXPO_PROXY_ID)?.remove();
+  document.querySelector(EXPO_BOX_SEL)?.classList.remove(EXPO_HIDDEN_CLASS);
+  // Restore the native header (drop the hide-gate class).
+  document.body.classList.remove(HIDE_NATIVE_CLASS);
   mounted = null;
   document.getElementById(STYLE_ID)?.remove();
   // Drop the height reserve — without the panel the native variable-height

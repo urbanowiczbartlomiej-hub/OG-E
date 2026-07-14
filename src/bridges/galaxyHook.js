@@ -1,6 +1,8 @@
-// Galaxy-scan bridge: passive observer over the game's `fetchGalaxyContent`
-// XHR. Every time the user navigates the galaxy view the game fires this
-// request and renders the 15-slot table from the response; we latch onto
+// Galaxy-scan bridge: passive observer over the game's galaxy-fetch XHR
+// (`fetchGalaxyContent` ≤1.12, `fetchSolarSystemData` 1.13+ — see the
+// urlPattern in installGalaxyHook). Every time the user navigates the galaxy
+// view the game fires this request and renders the 15-slot table from the
+// response; we latch onto
 // the same response, classify each slot through `domain/scans.js`, and
 // broadcast a single `oge:galaxyScanned` CustomEvent carrying the whole
 // system snapshot.
@@ -210,7 +212,11 @@ export const installGalaxyHook = () => {
   if (unsubscribeFn) return unsubscribeFn;
 
   const raw = observeXHR({
-    urlPattern: /action=fetchGalaxyContent/,
+    // OGame renamed the galaxy-fetch action at the 1.13 bump:
+    // `fetchGalaxyContent` (≤1.12) → `fetchSolarSystemData` (1.13+). The
+    // RESPONSE shape is unchanged (`data.system.galaxyContent` — see
+    // analyzeResponse), so matching either action name is the whole fix.
+    urlPattern: /action=(?:fetchGalaxyContent|fetchSolarSystemData)/,
     on: 'load',
     handler: ({ response }) => {
       if (!response) return;

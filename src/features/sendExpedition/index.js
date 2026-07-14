@@ -100,6 +100,7 @@ import {
   buildFleetdispatchUrl,
   isGlobalExpeditionCapReached,
   isGlobalExpeditionCapReachedAfterNextSend,
+  isPlanetShipless,
   computeInitialLabel,
 } from './pure.js';
 import {
@@ -297,6 +298,20 @@ export const installSendExpedition = () => {
       return;
     }
     if (state === 'routineOff') {
+      // A shipless planet ALSO yields routine 7 absent (AGR omits it with no
+      // fleet), which is indistinguishable from a genuinely disabled routine at
+      // the DOM level. If the snapshot confirms there are no ships here, hop like
+      // a maxed planet instead of crying "AGR off"; only a ship-bearing planet
+      // with the routine truly disabled reaches the error paint. (The click-time
+      // fast path usually catches this first; this covers a snapshot that only
+      // populated after the tap.)
+      if (isPlanetShipless(fdCache.get())) {
+        setLabel(btn, 'No ships');
+        if (hopToNextExpPlanet()) return;
+        paintAllMaxed(btn);
+        unlock(btn);
+        return;
+      }
       paintRoutineOff(btn);
       unlock(btn);
       return;
@@ -310,11 +325,7 @@ export const installSendExpedition = () => {
     // 'noShips' — no expedition possible here. Hop to the next planet that
     // still has a slot; if none, paint "All sent".
     setLabel(btn, 'No ships');
-    const nextCp = findPlanetWithExpSlot(true);
-    if (nextCp !== null) {
-      location.href = buildFleetdispatchUrl(nextCp);
-      return;
-    }
+    if (hopToNextExpPlanet()) return;
     paintAllMaxed(btn);
     unlock(btn);
   };
@@ -349,6 +360,22 @@ export const installSendExpedition = () => {
     // 'timeout' — never became sendable; restore idle and release for a retry.
     setLabel(btn, BUTTON_TEXT);
     unlock(btn);
+  };
+
+  /**
+   * Hop to the next planet that still has a free expedition slot (skipping the
+   * active one). The shared "walk to another planet" move — used by the
+   * current-planet-cap gate, the no-ships gate, the routine-off fallback, and
+   * the AGR `'noShips'` outcome. Caller paints "All sent" when it returns false.
+   *
+   * @returns {boolean} `true` when a navigation was issued (caller must return);
+   *   `false` when no other planet has room.
+   */
+  const hopToNextExpPlanet = () => {
+    const nextCp = findPlanetWithExpSlot(true);
+    if (nextCp === null) return false;
+    location.href = buildFleetdispatchUrl(nextCp);
+    return true;
   };
 
   /**
@@ -410,11 +437,18 @@ export const installSendExpedition = () => {
         paintAllMaxed(btn);
         return;
       }
-      const nextCp = findPlanetWithExpSlot(true);
-      if (nextCp !== null) {
-        location.href = buildFleetdispatchUrl(nextCp);
-        return;
-      }
+      if (hopToNextExpPlanet()) return;
+      paintAllMaxed(btn);
+      return;
+    }
+
+    // No ships on this planet ⇒ nothing to prepare here (in 1.13 AGR omits its
+    // Expeditions routine entirely when there's no fleet, so Phase 2 would wait
+    // out its timeout and paint a spurious "AGR exp off"). Treat it like a maxed
+    // planet: hop onward. This restores the pre-1.13 "empty planet → next
+    // planet" behaviour without the stall.
+    if (isPlanetShipless(fdCache.get())) {
+      if (hopToNextExpPlanet()) return;
       paintAllMaxed(btn);
       return;
     }
@@ -477,11 +511,7 @@ export const installSendExpedition = () => {
    */
   const handleSkip = () => {
     if (busy) return;
-    const nextCp = findPlanetWithExpSlot(true);
-    if (nextCp !== null) {
-      location.href = buildFleetdispatchUrl(nextCp);
-      return;
-    }
+    if (hopToNextExpPlanet()) return;
     paintAllMaxed(/** @type {HTMLButtonElement} */ (controller?.el));
   };
 

@@ -176,6 +176,29 @@ export const isGlobalExpeditionCapReachedAfterNextSend = (snapshot) => {
 };
 
 /**
+ * Pure: does the snapshot show the active planet holds NO ships at all? An
+ * empty `shipsOnPlanet` on a populated snapshot is the game's own "no ships on
+ * this planet" state — the same data the game renders the fleet1 ship list from,
+ * so it is locale- AND AGR-independent.
+ *
+ * Why this matters (the 1.13 regression it fixes): with no fleet on the planet,
+ * AGR no longer emits its Expeditions routine (`#ago_routine_7` lives in a
+ * section the game omits when there's nothing to send). The routine-driver then
+ * waits out its full timeout and reports `'routineOff'`, so the button painted a
+ * spurious "AGR exp off" error and stalled instead of hopping to the next
+ * planet. Detecting shiplessness up front lets the click handler treat an empty
+ * planet exactly like a maxed one — hop onward — as it did pre-1.13.
+ *
+ * `null` snapshot returns `false` (unknown ⇒ don't short-circuit; fall through
+ * to the normal AGR-routine path).
+ *
+ * @param {FleetDispatcherSnapshot | null} snapshot
+ * @returns {boolean}
+ */
+export const isPlanetShipless = (snapshot) =>
+  !!snapshot && snapshot.shipsOnPlanet.length === 0;
+
+/**
  * Inputs to {@link computeInitialLabel}. The orchestrator's mount path
  * reads the live page; tests pass the booleans explicitly.
  *

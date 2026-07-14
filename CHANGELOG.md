@@ -4,6 +4,41 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.50.0] — 2026-07-14
+
+### Added
+
+- **OGame 1.13 compatibility** (verified against the public test server; 1.12
+  keeps working unchanged):
+  - **Galaxy scanning works again.** 1.13 renamed the galaxy-fetch request, so
+    passive system scanning — and everything riding on it, including the
+    Spyglass walk — had stopped. Both the old and new names are recognised now.
+  - **Trader highlights clear again.** The daily-chores glow (yellow =
+    Auctioneer bid, red = Import/Export container) reacts to the reshaped 1.13
+    trader: the renamed Import/Export panel is scanned again, and the bid /
+    trade requests — whose action moved into the request body — clear the
+    matching glow immediately after the action, on either game version.
+  - **The Expedition button hops over shipless planets again.** With no fleet
+    on a planet, 1.13's AGR renders no Expeditions routine at all; the button
+    used to wait, then wrongly report "AGR exp off" and stall. A planet with no
+    ships now reads as "nothing to send here" and the button moves on to the
+    next planet with a free slot, as before.
+
+- **The expedition slot (position 16) rebuilt as a compact OG-E row.** Instead
+  of restyling the game's own box in place, the row is now OG-E's own: debris
+  resources stacked in tight lines, the Pathfinder count riding on the
+  Mine/Reduce button (shown greyed when you lack the ships to mine, instead of
+  vanishing), the template quick-select next to a small gear button that opens
+  the template editor, and Expedition/Send mirroring the game's swap. Every
+  control drives the game's own underneath — labels and AGR's red/green slot
+  tint included — so nothing about the game's behaviour changes, it just fits.
+
+- **The galaxy navigation bar can move.** A small toggle at the end of its
+  action row cycles the bar's position: below the table (default), at the top
+  in place of the original header, or below-with-the-original-shown. The choice
+  sticks per device. Keyboard nicety: Tab now moves straight between the
+  Galaxy and System fields.
+
 ## [1.49.0] — 2026-07-14
 
 ### Added

@@ -20,9 +20,11 @@
 //     9. A stepper proxies the game's own prev/next arrow.
 //    10. An action button proxies its native control, and mirrors its
 //        `disabled` state.
-//    11. The row-16 debris readout is compacted on mount (class-keyed short
-//        labels; the action li and a nested delta span survive).
-//    12. Settings off → unmount; dispose → panel + stylesheet gone.
+//    11. The row-16 slot is PROXIED: native box hidden, compact OG-E box in
+//        its place (stacked resource lines, PF on the recycle button, adopted
+//        template-editor anchor, mirrored select, AGR tint carried over).
+//    12. The position toggle cycles bottom/top/both and gates the native header.
+//    13. Settings off → unmount; dispose → panel + stylesheet gone.
 //
 // @ts-check
 
@@ -294,7 +296,7 @@ describe('galaxyNavPanel — proxying the native controls', () => {
   });
 });
 
-describe('galaxyNavPanel — row 16 debris readout', () => {
+describe('galaxyNavPanel — row 16 expedition-debris proxy', () => {
   beforeEach(() => {
     _resetGalaxyNavPanelForTest();
     clearDom();
@@ -309,48 +311,216 @@ describe('galaxyNavPanel — row 16 debris readout', () => {
     location.search = '';
   });
 
-  it('compacts the labels on mount, keeping the action li and delta span intact', () => {
-    const { content } = buildGalaxyDom();
-
+  /**
+   * Build the native 1.13 row-16 slot box (title, AGR readout, template
+   * select + editor anchor, Expedition/Send buttons) inside `content`.
+   *
+   * @param {HTMLElement} content
+   * @param {{ withRecycleLink?: boolean }} [opts]
+   */
+  const buildExpoBox = (content, { withRecycleLink = true } = {}) => {
     const box = document.createElement('div');
-    box.className = 'expeditionDebrisSlotBox';
+    box.className = 'expeditionDebrisSlotBox ago_expo_box';
+    box.id = 'galaxyRow16';
+
+    const titleWrap = document.createElement('div');
+    const h3 = document.createElement('h3');
+    h3.className = 'title';
+    h3.textContent = 'Bezgraniczna dal:';
+    titleWrap.appendChild(h3);
+    box.appendChild(titleWrap);
+
     const ul = document.createElement('ul');
     ul.className = 'ago_expo_df';
-
     const metal = document.createElement('li');
     metal.className = 'metal';
     metal.textContent = 'Metal: 1.388.400';
-
     const crystal = document.createElement('li');
     crystal.className = 'crystal';
     crystal.textContent = 'Kryształ: 957.400';
-
     const pf = document.createElement('li');
     pf.className = 'pfcount';
     pf.append(document.createTextNode('Potrzebne Pioniery: 17'));
     const delta = document.createElement('span');
-    delta.textContent = ' (-16)';
+    delta.className = 'overmark ago_missing_pf';
+    delta.textContent = '(-16)';
     pf.appendChild(delta);
-
-    const action = document.createElement('li');
-    const a = document.createElement('a');
-    a.textContent = 'Zredukuj';
-    action.appendChild(a);
-
-    ul.append(metal, crystal, pf, action);
+    ul.append(metal, crystal, pf);
+    /** @type {HTMLAnchorElement | null} */
+    let recycleA = null;
+    if (withRecycleLink) {
+      const action = document.createElement('li');
+      recycleA = document.createElement('a');
+      recycleA.textContent = 'Zredukuj';
+      action.appendChild(recycleA);
+      ul.appendChild(action);
+    }
     box.appendChild(ul);
-    content.appendChild(box);
 
+    const actionsDiv = document.createElement('div');
+    actionsDiv.id = 'expeditionDebrisSlotActions';
+    const cont = document.createElement('div');
+    cont.id = 'galaxyExpeditionFleetTemplateContainer';
+    const anchor = document.createElement('a');
+    anchor.id = 'expeditionFleetTemplateBtn';
+    const anchorTitle = document.createElement('span');
+    anchorTitle.className = 'expedtionFleetTemplateBtnTitle';
+    anchorTitle.textContent = 'Flota ekspedycyjna';
+    anchor.appendChild(anchorTitle);
+    const select = document.createElement('select');
+    select.id = 'expeditionFleetTemplateSelect';
+    const o0 = document.createElement('option');
+    o0.value = '0';
+    o0.textContent = '-';
+    const o1 = document.createElement('option');
+    o1.value = '526';
+    o1.textContent = 'TPL';
+    select.append(o0, o1);
+    cont.append(anchor, select);
+    const expBtn = document.createElement('div');
+    expBtn.id = 'expeditionbutton';
+    expBtn.textContent = 'Ekspedycja';
+    const sendBtn = document.createElement('div');
+    sendBtn.id = 'sendExpeditionFleetTemplateFleet';
+    sendBtn.textContent = 'Wyślij';
+    sendBtn.style.display = 'none';
+    actionsDiv.append(cont, expBtn, sendBtn);
+    box.appendChild(actionsDiv);
+
+    content.appendChild(box);
+    return { box, metal, select, anchor, expBtn, sendBtn, recycleA };
+  };
+
+  /** @returns {HTMLElement} */
+  const proxyEl = () =>
+    /** @type {HTMLElement} */ (document.getElementById('oge-gnav-expo'));
+
+  it('hides the native box and stands the compact proxy right after it', () => {
+    const { content } = buildGalaxyDom();
+    const { box } = buildExpoBox(content);
     installGalaxyNavPanel();
 
-    // Class-keyed short labels; values verbatim.
-    expect(metal.textContent).toBe('M 1.388.400');
-    expect(crystal.textContent).toBe('K 957.400');
-    // The pathfinder li: first text node compacted, delta span preserved.
-    expect(pf.firstChild?.textContent).toBe('PF 17');
-    expect(pf.querySelector('span')?.textContent).toBe(' (-16)');
-    // The action li is left alone.
-    expect(a.textContent).toBe('Zredukuj');
+    expect(box.classList.contains('oge-expo-hidden')).toBe(true);
+    expect(box.nextElementSibling).toBe(proxyEl());
+    expect(proxyEl().querySelector('.oge-expo-title')?.textContent).toBe(
+      'Bezgraniczna dal:',
+    );
+  });
+
+  it('compacts the resources into stacked lines; PF rides the recycle button; native text untouched', () => {
+    const { content } = buildGalaxyDom();
+    const { metal } = buildExpoBox(content);
+    installGalaxyNavPanel();
+
+    const lines = proxyEl().querySelectorAll('.oge-expo-readout > span');
+    expect(Array.from(lines).map((l) => l.textContent)).toEqual([
+      'M 1.388.400',
+      'K 957.400',
+    ]);
+    // PF is the recycle button's second line, red delta preserved.
+    const l2 = proxyEl().querySelector('.oge-expo-recycle .oge-expo-l2');
+    expect(l2?.firstChild?.textContent).toBe('PF 17');
+    expect(l2?.querySelector('.miss')?.textContent).toBe('(-16)');
+    const btn = /** @type {HTMLButtonElement} */ (
+      proxyEl().querySelector('.oge-expo-recycle')
+    );
+    expect(btn.disabled).toBe(false);
+    // We READ the native readout, never rewrite it.
+    expect(metal.textContent).toBe('Metal: 1.388.400');
+  });
+
+  it('renders the recycle button greyed when the game omits the mine link', () => {
+    const { content } = buildGalaxyDom();
+    buildExpoBox(content, { withRecycleLink: false });
+    installGalaxyNavPanel();
+
+    const btn = /** @type {HTMLButtonElement} */ (
+      proxyEl().querySelector('.oge-expo-recycle')
+    );
+    expect(btn.hidden).toBe(false); // debris present (PF line) → button shown
+    expect(btn.disabled).toBe(true); // …but not actionable
+  });
+
+  it('ADOPTS the native template-editor anchor and mirrors the select', () => {
+    const { content } = buildGalaxyDom();
+    const { anchor, select, expBtn, sendBtn } = buildExpoBox(content);
+    installGalaxyNavPanel();
+
+    // The real anchor moved into our slot (trusted clicks = native overlay).
+    const slot = proxyEl().querySelector('.oge-expo-tplslot');
+    expect(slot?.firstElementChild).toBe(anchor);
+    expect(anchor.title).toBe('Flota ekspedycyjna');
+
+    // Select mirrored; a pick drives the native select and re-renders the
+    // Expedition/Send pair from the game's inline display flip.
+    const tpl = /** @type {HTMLSelectElement} */ (
+      proxyEl().querySelector('select.oge-expo-tpl')
+    );
+    expect(Array.from(tpl.options).map((o) => o.value)).toEqual(['0', '526']);
+    select.addEventListener('change', () => {
+      expBtn.style.display = 'none';
+      sendBtn.style.display = 'block';
+    });
+    tpl.value = '526';
+    tpl.dispatchEvent(new Event('change'));
+    expect(select.value).toBe('526');
+    expect(
+      /** @type {HTMLElement} */ (proxyEl().querySelector('.oge-expo-exp')).hidden,
+    ).toBe(true);
+    expect(
+      /** @type {HTMLElement} */ (proxyEl().querySelector('.oge-expo-send')).hidden,
+    ).toBe(false);
+  });
+
+  it("mirrors AGR's background tint onto the proxy", () => {
+    const { content } = buildGalaxyDom();
+    const { box } = buildExpoBox(content);
+    box.style.backgroundColor = 'rgba(212, 54, 53, 0.33)';
+    installGalaxyNavPanel();
+
+    expect(proxyEl().style.backgroundColor).toBe('rgba(212, 54, 53, 0.33)');
+  });
+});
+
+describe('galaxyNavPanel — position toggle', () => {
+  beforeEach(() => {
+    _resetGalaxyNavPanelForTest();
+    clearDom();
+    settingsStore.update((s) => ({ ...s, readabilityBoost: true }));
+    location.search = '?page=ingame&component=galaxy';
+  });
+
+  afterEach(() => {
+    _resetGalaxyNavPanelForTest();
+    clearDom();
+    settingsStore.update((s) => ({ ...s, readabilityBoost: true }));
+    location.search = '';
+    localStorage.removeItem('oge-gnav-pos');
+  });
+
+  it('cycles bottom → top → both, moving the panel and gating the native header', () => {
+    const { content } = buildGalaxyDom();
+    installGalaxyNavPanel();
+    const panel = /** @type {HTMLElement} */ (document.getElementById(GNAV_PANEL_ID));
+    const pos = /** @type {HTMLElement} */ (panel.querySelector('.oge-gnav-pos'));
+
+    // Default: bottom — after the table, native header hidden.
+    expect(content.nextElementSibling).toBe(panel);
+    expect(document.body.classList.contains('oge-gnav-hide-native')).toBe(true);
+
+    pos.click(); // → top
+    expect(content.previousElementSibling).toBe(panel);
+    expect(document.body.classList.contains('oge-gnav-hide-native')).toBe(true);
+    expect(localStorage.getItem('oge-gnav-pos')).toBe('top');
+
+    pos.click(); // → both
+    expect(content.nextElementSibling).toBe(panel);
+    expect(document.body.classList.contains('oge-gnav-hide-native')).toBe(false);
+    expect(localStorage.getItem('oge-gnav-pos')).toBe('both');
+
+    pos.click(); // → back to bottom
+    expect(localStorage.getItem('oge-gnav-pos')).toBe('bottom');
+    expect(document.body.classList.contains('oge-gnav-hide-native')).toBe(true);
   });
 });
 
