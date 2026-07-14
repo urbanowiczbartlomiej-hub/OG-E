@@ -4,6 +4,32 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.49.0] — 2026-07-14
+
+### Added
+
+- **A touch-sized galaxy navigation bar under the system list.** On the Galaxy
+  page the header's inputs, arrows and buttons sit at the very top and render
+  tiny on a phone — so stepping through systems meant scrolling up to the
+  header, tapping, and scrolling back down to the rows you were watching.
+  There's now a full-size mirror of those controls directly below the table:
+  large −/+ steppers with coordinate fields, a Start button, and Phalanx /
+  Spy / Discovery. It drives the game's own controls underneath, so every
+  rule (system wrap-around, galaxy-switch costs, "phalanx unavailable here")
+  behaves exactly as it does up top. It rides the existing **Readability**
+  toggle in Display settings; with the bar on, the cramped original header is
+  hidden so there's only one set of controls.
+
+### Changed
+
+- **The expedition slot at the bottom of the system list no longer makes the
+  table jump.** That row grows taller on systems that have expedition debris,
+  which used to nudge everything below it — now including the new navigation
+  bar — up and down as you stepped between systems. Its readout is now a
+  fixed-height single line (Metal / Crystal / Pathfinders and the Reduce
+  action on one row, in the bar's own styling), so the table height stays put
+  and the buttons stop moving under your finger.
+
 ## [1.48.2] — 2026-07-14
 
 ### Fixed
