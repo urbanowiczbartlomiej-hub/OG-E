@@ -66,7 +66,7 @@ export const preferencesSection = {
             {
               key: 'readabilityBoost',
               caption: 'Readability',
-              hint: 'Readability boost (event box + fleet movement link)',
+              hint: 'Readability boost (event box, fleet movement link, galaxy touch nav)',
               glyph: READABILITY_GLYPH,
             },
             {

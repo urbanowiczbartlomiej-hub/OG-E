@@ -79,7 +79,8 @@ export const SETTINGS_PREFIX = 'oge_';
  *    policy moved OUT of Settings into the per-universe Galaxy-Scan config —
  *    edited in the dashboard, see `state/galaxyScanConfig.js`.)
  *   gistToken               ''    — GitHub personal access token
- *   readabilityBoost        true  — inject CSS fix for event box + movement link
+ *   readabilityBoost        true  — event box + movement link CSS fix, plus the
+ *                                   touch-sized galaxy nav panel under the system table
  *   eventMenuHighlight      true  — animate ephemeral event entries in the left toolbar
  *   traderMenuHighlight     true  — time-aware pulse on the Trader (Handlarz) entry
  *   threatHighlight             false — loud full-screen alert while under attack (opt-in)

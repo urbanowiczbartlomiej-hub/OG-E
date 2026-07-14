@@ -18,7 +18,7 @@
 //      (extension origin) and read in-game by the Scan button.
 //
 //   3. Feature installs — colonyRecorder, badges, sendExpedition, sendColony,
-//      colonyFab, settingsUi, agrLogo, readabilityBoost.
+//      colonyFab, settingsUi, agrLogo, readabilityBoost, galaxyNavPanel.
 //      Each is a standalone `install*` function that hooks into the DOM
 //      / events it needs. Order is not load-bearing today — none of
 //      these features depend on each other's DOM — but we follow the
@@ -90,6 +90,7 @@ import { installFleetdispatchShortcut } from './features/fleetdispatchShortcut.j
 import { installManualFsMark } from './features/manualFsMark/index.js';
 import { installEventMenuHighlight } from './features/eventMenuHighlight.js';
 import { installTraderMenuHighlight } from './features/traderMenuHighlight.js';
+import { installGalaxyNavPanel } from './features/galaxyNavPanel.js';
 import { installThreatHighlight } from './features/threatHighlight/index.js';
 import { installRewardingWatcher } from './features/rewardingWatcher.js';
 import { installWhosSpyingPanel } from './features/whosSpyingPanel.js';
@@ -252,6 +253,10 @@ const installDomFeatures = () => {
   safeInstall('badges', installBadges);
   safeInstall('eventMenuHighlight', installEventMenuHighlight);
   safeInstall('traderMenuHighlight', installTraderMenuHighlight);
+  // Galaxy touch nav — a big-button mirror of the galaxy header's controls
+  // below the system table, for mobile. Shares the readabilityBoost toggle;
+  // self-gates to `component=galaxy` pages (no-op install elsewhere).
+  safeInstall('galaxyNavPanel', installGalaxyNavPanel);
   // Loud under-attack alert (opt-in via Display settings). Top-frame only:
   // the `#attack_alert` flag + event box live there, and a single overlay
   // must not be multiplied across OGame's embedded iframes.
