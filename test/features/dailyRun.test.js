@@ -422,6 +422,102 @@ describe('collect send — navigation + dispatch (bottom zone)', () => {
     await until(() => zone.textContent?.includes('No fuel'));
     expect(localStorage.getItem(DAILY_RUN_REDIRECT_KEY)).toBeNull();
   });
+
+  // ── label stability (the sendExpedition contract) ──────────────────────
+  // refresh() holds while a tap is in flight / a flash is on screen, the
+  // armed "(tap to send)" label survives the game's transient `.off`
+  // re-flag on #dispatchFleet, and identical repaints touch no DOM. The
+  // routine repaint driver is exercised via the eventbox-loaded signal
+  // (same listener the 1 Hz reconciler shares).
+
+  it('post-send: "Sent" + both zones greyed survive a routine repaint (busy hold)', async () => {
+    enable();
+    installDailyRun();
+    openEventBoxGate();
+    dailyRunRoutesStore.set({
+      routes: [],
+      collectTarget: { galaxy: 4, system: 472, position: 15, type: TARGET_MOON },
+      ...COLLECT_DEFAULTS,
+    });
+    const spy = buildTwoStep(true);
+    const zone = /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-zone'));
+    zone.click(); // tap 1 — arm
+    await until(() => zone.textContent?.includes('(tap to send)'));
+    zone.click(); // tap 2 — dispatch
+    await until(() => spy.clicks() === 1);
+    await until(() => zone.textContent?.includes('Sent'));
+    // The WHOLE button is locked until the post-send reload lands.
+    const micro = /** @type {HTMLElement} */ (document.getElementById('oge-fs-micro-zone'));
+    expect(zone.style.opacity).toBe('0.5');
+    expect(micro.style.opacity).toBe('0.5');
+    // A routine repaint must NOT overwrite "Sent" or un-grey the zones.
+    openEventBoxGate();
+    expect(zone.textContent).toContain('Sent');
+    expect(zone.style.opacity).toBe('0.5');
+  });
+
+  it('armed "(tap to send)" survives the game transiently re-flagging dispatch `.off`', async () => {
+    enable();
+    installDailyRun();
+    openEventBoxGate();
+    dailyRunRoutesStore.set({
+      routes: [],
+      collectTarget: { galaxy: 4, system: 472, position: 15, type: TARGET_MOON },
+      ...COLLECT_DEFAULTS,
+    });
+    const spy = buildTwoStep(true);
+    const zone = /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-zone'));
+    zone.click(); // tap 1 — arm
+    await until(() => zone.textContent?.includes('(tap to send)'));
+    // Async fleet2 re-validation: the game re-adds `.off` for a moment.
+    const dispatch = /** @type {HTMLElement} */ (document.getElementById('dispatchFleet'));
+    dispatch.classList.add('off');
+    openEventBoxGate(); // routine repaint — the armed label must not flap away
+    expect(zone.textContent).toContain('(tap to send)');
+    // Tap 2 while not ready: no dispatch click, an honest "Wait…" flash.
+    zone.click();
+    expect(spy.clicks()).toBe(0);
+    await until(() => zone.textContent?.includes('Wait'));
+    // The game clears the flag → the next tap fires exactly one dispatch.
+    dispatch.classList.remove('off');
+    zone.click();
+    await until(() => spy.clicks() === 1);
+  });
+
+  it('an error flash is not cut short by a routine repaint (flash hold)', async () => {
+    enable();
+    installDailyRun();
+    openEventBoxGate();
+    dailyRunRoutesStore.set({
+      routes: [],
+      collectTarget: { galaxy: 4, system: 472, position: 15, type: TARGET_MOON },
+      ...COLLECT_DEFAULTS,
+    });
+    buildTwoStep(false, 140026);
+    const zone = /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-zone'));
+    zone.click(); // tap 1 — arm
+    await until(() => zone.textContent?.includes('(tap to send)'));
+    zone.click(); // tap 2 — rejected send
+    await until(() => zone.textContent?.includes('No fuel'));
+    openEventBoxGate(); // routine repaint mid-flash
+    expect(zone.textContent).toContain('No fuel');
+  });
+
+  it('a repaint with unchanged content leaves the label DOM untouched (memoized)', () => {
+    enable();
+    installDailyRun();
+    openEventBoxGate();
+    dailyRunRoutesStore.set({
+      routes: [],
+      collectTarget: { galaxy: 4, system: 472, position: 15, type: TARGET_MOON },
+      ...COLLECT_DEFAULTS,
+    });
+    const zone = /** @type {HTMLElement} */ (document.getElementById('oge-fs-collect-zone'));
+    const before = zone.querySelector('.oge-btn-label')?.firstChild;
+    expect(before).not.toBeNull();
+    openEventBoxGate(); // routine repaint, nothing changed
+    expect(zone.querySelector('.oge-btn-label')?.firstChild).toBe(before);
+  });
 });
 
 // The collect "Send All" order builder maps the store's collect config onto the
