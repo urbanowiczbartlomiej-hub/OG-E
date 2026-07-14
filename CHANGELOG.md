@@ -4,6 +4,21 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.48.1] — 2026-07-14
+
+### Fixed
+
+- **The Daily Run button no longer flickers between states.** Labels used to
+  flash wrong states for a fraction of a second — mid-selection, right after
+  a send, or over an error message — because background repaints could
+  overwrite what the button was actually doing. It now follows the same
+  stability contract as the expedition button: labels change only when the
+  underlying state really changes, the armed "(tap to send)" state no longer
+  flaps while the game re-validates the form, and after a send the whole
+  button stays greyed on "Sent" until the page reloads. A second tap while
+  the game isn't ready yet now answers with a brief "Wait…" instead of doing
+  nothing.
+
 ## [1.48.0] — 2026-07-13
 
 ### Added
