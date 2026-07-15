@@ -562,3 +562,198 @@ describe('galaxyNavPanel — teardown', () => {
     expect(document.getElementById(STYLE_ID)).toBeNull();
   });
 });
+
+describe('galaxyNavPanel — actions collapse toggle', () => {
+  beforeEach(() => {
+    _resetGalaxyNavPanelForTest();
+    clearDom();
+    localStorage.clear();
+    settingsStore.update((s) => ({ ...s, readabilityBoost: true }));
+    location.search = '?page=ingame&component=galaxy';
+  });
+  afterEach(() => {
+    _resetGalaxyNavPanelForTest();
+    clearDom();
+    localStorage.clear();
+    location.search = '';
+  });
+
+  /** @returns {HTMLElement} */
+  const actionsRow = () => {
+    const panel = /** @type {HTMLElement} */ (document.getElementById(GNAV_PANEL_ID));
+    return /** @type {HTMLElement} */ (panel.querySelector('.oge-gnav-row:not(.oge-gnav-nav)'));
+  };
+  /** @returns {HTMLElement} */
+  const collapseBtn = () => {
+    const panel = /** @type {HTMLElement} */ (document.getElementById(GNAV_PANEL_ID));
+    return /** @type {HTMLElement} */ (panel.querySelector('.oge-gnav-collapse'));
+  };
+
+  it('folds the actions row away and back, remembering the choice', () => {
+    buildGalaxyDom();
+    installGalaxyNavPanel();
+
+    // Default: shown, arrow points up (fold up).
+    expect(actionsRow().style.display).toBe('');
+    expect(collapseBtn().textContent).toBe('▴');
+
+    collapseBtn().click();
+    expect(actionsRow().style.display).toBe('none');
+    expect(collapseBtn().textContent).toBe('▾');
+    expect(localStorage.getItem('oge-gnav-actions')).toBe('1');
+
+    collapseBtn().click();
+    expect(actionsRow().style.display).toBe('');
+    expect(localStorage.getItem('oge-gnav-actions')).toBe('0');
+  });
+
+  it('comes up collapsed when the stored preference says so', () => {
+    localStorage.setItem('oge-gnav-actions', '1');
+    buildGalaxyDom();
+    installGalaxyNavPanel();
+
+    expect(actionsRow().style.display).toBe('none');
+    expect(collapseBtn().textContent).toBe('▾');
+  });
+});
+
+describe('galaxyNavPanel — footer fold', () => {
+  beforeEach(() => {
+    _resetGalaxyNavPanelForTest();
+    clearDom();
+    settingsStore.update((s) => ({ ...s, readabilityBoost: true }));
+    location.search = '?page=ingame&component=galaxy';
+  });
+  afterEach(() => {
+    _resetGalaxyNavPanelForTest();
+    clearDom();
+    location.search = '';
+  });
+
+  /** Add the native stats cell + footer (colonised count + legend) into content. */
+  const addFooter = (/** @type {HTMLElement} */ content) => {
+    const stats = document.createElement('div');
+    stats.className = 'galaxyCell span11';
+    stats.innerHTML = '<div id="probes">SS: 1</div>';
+    const footer = document.createElement('div');
+    footer.className = 'galaxyRow ctGalaxyFooter';
+    footer.innerHTML =
+      '<div id="colonized"><span id="amountColonized">12</span></div>' +
+      '<div id="legend" class="filterCell"><a class="tooltipRel"></a></div>';
+    content.append(stats, footer);
+    return { stats, footer };
+  };
+
+  it('adopts the legend into the stats cell and hides the footer', () => {
+    const { content } = buildGalaxyDom();
+    const { footer } = addFooter(content);
+    installGalaxyNavPanel();
+
+    const moved = document.querySelector('#galaxyContent .galaxyCell.span11 > #legend');
+    expect(moved).not.toBeNull();
+    expect(moved?.classList.contains('oge-gnav-legend')).toBe(true);
+    expect(footer.classList.contains('oge-gnav-footer-hidden')).toBe(true);
+  });
+
+  it('restores the native footer on dispose', () => {
+    const { content } = buildGalaxyDom();
+    const { footer } = addFooter(content);
+    const dispose = installGalaxyNavPanel();
+
+    dispose();
+    // Legend back inside the footer, marker classes gone.
+    expect(footer.querySelector('#legend')).not.toBeNull();
+    expect(footer.classList.contains('oge-gnav-footer-hidden')).toBe(false);
+    expect(document.querySelector('.galaxyCell.span11 > #legend')).toBeNull();
+  });
+
+  it('leaves the footer intact when there is no stats cell to hold the legend', () => {
+    const { content } = buildGalaxyDom();
+    const footer = document.createElement('div');
+    footer.className = 'galaxyRow ctGalaxyFooter';
+    footer.innerHTML = '<div id="legend"></div>';
+    content.appendChild(footer);
+    installGalaxyNavPanel();
+
+    // No span11 → never strand the legend behind a hidden row.
+    expect(footer.querySelector('#legend')).not.toBeNull();
+    expect(footer.classList.contains('oge-gnav-footer-hidden')).toBe(false);
+  });
+});
+
+describe('galaxyNavPanel — arrow-key nav rescue', () => {
+  beforeEach(() => {
+    _resetGalaxyNavPanelForTest();
+    clearDom();
+    settingsStore.update((s) => ({ ...s, readabilityBoost: true }));
+    location.search = '?page=ingame&component=galaxy';
+  });
+  afterEach(() => {
+    _resetGalaxyNavPanelForTest();
+    clearDom();
+    location.search = '';
+  });
+
+  /** Stage a focused jQuery-UI dialog; return its close button + focused node. */
+  const stageDialog = () => {
+    const dialog = document.createElement('div');
+    dialog.className = 'ui-dialog';
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'ui-dialog-titlebar-close';
+    const focusable = document.createElement('div');
+    focusable.tabIndex = -1;
+    dialog.append(closeBtn, focusable);
+    document.body.appendChild(dialog);
+    focusable.focus();
+    return { closeBtn, focusable };
+  };
+
+  const pressArrow = (/** @type {string} */ key) =>
+    document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+
+  it('closes the dialog and hops once when an arrow is pressed with a dialog focused', () => {
+    const { sysInput } = buildGalaxyDom();
+    installGalaxyNavPanel();
+    const { closeBtn } = stageDialog();
+
+    const sysNext = /** @type {HTMLElement} */ (sysInput.nextElementSibling);
+    let arrowClicks = 0;
+    let closes = 0;
+    sysNext.addEventListener('click', () => { arrowClicks++; });
+    closeBtn.addEventListener('click', () => { closes++; });
+
+    pressArrow('ArrowRight'); // system +1
+    expect(closes).toBe(1);
+    expect(arrowClicks).toBe(1);
+
+    // A second arrow within the cooldown is swallowed — no double hop.
+    pressArrow('ArrowRight');
+    expect(arrowClicks).toBe(1);
+  });
+
+  it('stays out of the way when no dialog holds focus (native nav untouched)', () => {
+    const { sysInput } = buildGalaxyDom();
+    installGalaxyNavPanel();
+    // Nothing focused inside a dialog.
+    /** @type {HTMLElement | null} */ (document.activeElement)?.blur?.();
+
+    const sysNext = /** @type {HTMLElement} */ (sysInput.nextElementSibling);
+    let arrowClicks = 0;
+    sysNext.addEventListener('click', () => { arrowClicks++; });
+
+    pressArrow('ArrowRight');
+    expect(arrowClicks).toBe(0);
+  });
+
+  it('maps ↑ to galaxy +1 (clicks the galaxy next arrow)', () => {
+    const { galNext } = buildGalaxyDom();
+    installGalaxyNavPanel();
+    stageDialog();
+
+    let galClicks = 0;
+    galNext.addEventListener('click', () => { galClicks++; });
+
+    pressArrow('ArrowUp');
+    expect(galClicks).toBe(1);
+  });
+});

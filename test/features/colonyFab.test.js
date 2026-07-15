@@ -54,12 +54,25 @@ const stageFreshElsewhere = (max = 163) => {
 
 const labelText = () => document.getElementById(BUTTON_ID)?.textContent ?? '';
 
+/** Stage an event list with one outbound colonization arriving `inSecs` from now. */
+const stageColoLanding = (inSecs = 30) => {
+  const arrival = Math.floor(Date.now() / 1000) + inSecs;
+  const box = document.createElement('div');
+  box.id = 'eventContent';
+  box.innerHTML = `<table><tbody>
+    <tr class="eventFleet" id="eventRow-0" data-mission-type="7"
+        data-return-flight="false" data-arrival-time="${arrival}"></tr>
+  </tbody></table>`;
+  document.body.appendChild(box);
+};
+
 beforeEach(() => {
   _resetColonyFabForTest();
   _resetAbandonForTest();
   _resetUnifiedFabForTest();
   galaxyScanConfigStore.set(defaultGalaxyScanConfig());
   document.body.innerHTML = '';
+  localStorage.clear(); // drop any coloArrival cache written by a prior case
   location.search = '';
   setSettings();
 });
@@ -101,6 +114,25 @@ describe('colony FAB — state selection', () => {
     document.body.innerHTML = '<div id="planetList"></div>';
     installColonyFab();
     expect(document.getElementById(BUTTON_ID)).toBeNull();
+  });
+
+  it('mounts a landing countdown when a colonization is arriving within the window', () => {
+    location.search = '?page=ingame&component=galaxy';
+    document.body.innerHTML = '<div id="planetList"></div>';
+    stageColoLanding(30);
+    installColonyFab();
+    expect(document.getElementById(BUTTON_ID)).not.toBeNull();
+    expect(labelText()).toMatch(/colo landing/);
+  });
+
+  it('prioritises abandoning a small fresh colony over a pending landing', () => {
+    // Both a give-up candidate AND a colonization landing soon are present:
+    // the existing abandon/navigate logic must win; the countdown never shows.
+    stageFreshElsewhere(163);
+    stageColoLanding(30);
+    installColonyFab();
+    expect(labelText()).toMatch(/Abandon/);
+    expect(labelText()).not.toMatch(/colo landing/);
   });
 });
 

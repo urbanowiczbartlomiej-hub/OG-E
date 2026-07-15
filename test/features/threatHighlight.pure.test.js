@@ -47,6 +47,17 @@ describe('threatHighlight/pure — isUnderAttack', () => {
     // A class that merely CONTAINS the substring must not read as all-clear.
     expect(isUnderAttack('noAttackPending')).toBe(true);
   });
+
+  it('treats the wreckField aftermath state as NOT under attack', () => {
+    // After a fleet is destroyed OGame reuses #attack_alert as the wreck-field
+    // indicator — no noAttack token, but a battle that is already over.
+    expect(isUnderAttack('tooltip overlay wreckField')).toBe(false);
+    expect(isUnderAttack('wreckField')).toBe(false);
+  });
+
+  it('matches wreckField as a whole token, not a substring', () => {
+    expect(isUnderAttack('wreckFieldPending')).toBe(true);
+  });
 });
 
 describe('threatHighlight/pure — summarizeAttacks', () => {

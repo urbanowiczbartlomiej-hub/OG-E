@@ -1,20 +1,27 @@
 // @ts-check
 
 // Unified FAB colony module — folds the old fresh-planet banner AND the old
-// red abandon overlay into ONE button on the unified FAB. It has two states,
-// decided per page load (and on store / DOM changes):
-//
-//   • NAVIGATE — a fresh colony (`used === 0`) exists somewhere in the planet
-//     list and we are NOT on its overview. The module registers + auto-activates
-//     (amber), labelled with the colony's coords. A tap navigates to that
-//     colony's overview (a full page load → re-evaluates into ABANDON there).
+// red abandon overlay into ONE button on the unified FAB. Its state is
+// decided per page load (and on store / DOM changes / a 1 Hz landing tick):
 //
 //   • ABANDON — we ARE on the overview of a fresh small colony
 //     (`checkAbandonState()` truthy). The module registers + auto-activates
 //     (rose). Successive taps drive the 3-step abandon flow
 //     (`createAbandonFlow()` in `./index.js`): open → submit → confirm.
 //
-//   • none — neither holds → the module is not registered (the FAB shows the
+//   • NAVIGATE — a fresh colony (`used === 0`) exists somewhere in the planet
+//     list and we are NOT on its overview. The module registers + auto-activates
+//     (amber), labelled with the colony's coords. A tap navigates to that
+//     colony's overview (a full page load → re-evaluates into ABANDON there).
+//
+//   • LANDING / REFRESH — a colonization lands within ≤60 s (dimmed live
+//     countdown), then HAS landed while this page was open (actionable
+//     "Refresh" → overview reload, which refreshes `#planetList` so the
+//     states above take over). Derivation is pure (`./pure.js`); the nearest
+//     upcoming arrival is cached in localStorage (`state/coloArrival.js`) so
+//     the countdown arms on page load without waiting for the event-list XHR.
+//
+//   • none — nothing holds → the module is not registered (the FAB shows the
 //     user's previous module).
 //
 // # Why all taps live on the FAB (and the close guard)
@@ -48,7 +55,12 @@ import { setActiveFabModule, FAB_WRAP_ID } from '../shared/unifiedFab.js';
 import { ABANDON_GLYPH } from '../shared/buttonGlyphs.js';
 import { parseUniverseId } from '../../lib/universeId.js';
 import { debounce } from '../../lib/debounce.js';
-import { findFirstFreshPlanet, getOverviewCp, buildOverviewUrl } from './detect.js';
+import { EVENT_BOX_LOADED_EVENT } from '../../lib/ogeEvents.js';
+import { readColoArrival, writeColoArrival } from '../../state/coloArrival.js';
+import {
+  findFirstFreshPlanet, getOverviewCp, buildOverviewUrl, overviewUrl, readColoArrivals,
+} from './detect.js';
+import { deriveLanding, nextLandingTickMs, formatLandingCountdown, landingProgress } from './pure.js';
 import { checkAbandonState, createAbandonFlow } from './index.js';
 
 /** OG-E's own ids/colours for this module (not a game-DOM contract). */
@@ -63,7 +75,7 @@ const RING_ID = 'oge-ring-colony';
  */
 const ABANDON_COLOR = '#fb7185';
 
-/** @typedef {'none' | 'navigate' | 'abandon'} ColonyState */
+/** @typedef {'none' | 'navigate' | 'abandon' | 'landing' | 'refresh'} ColonyState */
 
 /**
  * URL of the OG-E Dashboard extension page, resolved once via
@@ -174,6 +186,49 @@ export const installColonyFab = () => {
   /** @type {(() => void) | null} */
   let removeGuard = null;
 
+  /** Page-birth time — an arrival older than this never arms landing/refresh. */
+  const pageBornMs = Date.now();
+  /** Arrival latched as "landed while this page was open" (epoch s; 0 = none). */
+  let landedAt = 0;
+  /** Last landing derivation — the countdown repaint reads its `arrivalAt`. */
+  /** @type {import('./pure.js').LandingResult} */
+  let lastLanding = { phase: 'idle', arrivalAt: 0, cacheWrite: null, latch: 0 };
+  /** Self-scheduled landing tick (1 Hz in-window, window-boundary wake outside). */
+  /** @type {number | null} */
+  let tickTimer = null;
+
+  /** (Re)arm the landing tick; `delayMs <= 0` just cancels. @param {number} delayMs */
+  const scheduleLandingTick = (delayMs) => {
+    if (tickTimer !== null) { clearTimeout(tickTimer); tickTimer = null; }
+    if (delayMs <= 0) return;
+    tickTimer = window.setTimeout(() => {
+      tickTimer = null;
+      if (installed && !flowRunning) refresh();
+    }, delayMs);
+  };
+
+  /**
+   * One landing step: live event list (cache fallback) → pure derivation →
+   * write-through the upcoming-arrival cache → schedule the next tick.
+   *
+   * @returns {import('./pure.js').LandingResult}
+   */
+  const evalLanding = () => {
+    const nowMs = Date.now();
+    const derived = deriveLanding({
+      domArrivals: readColoArrivals(),
+      cachedArrival: readColoArrival(),
+      latchedArrival: landedAt,
+      pageBornMs,
+      nowMs,
+    });
+    landedAt = derived.latch;
+    if (derived.cacheWrite !== null) writeColoArrival(derived.cacheWrite);
+    lastLanding = derived;
+    scheduleLandingTick(nextLandingTickMs(derived.phase, derived.arrivalAt, nowMs));
+    return derived;
+  };
+
   /** @returns {{ state: ColonyState, cp: number }} the state the page warrants right now (cp = navigate target's colony-planet id, else 0). */
   const desiredState = () => {
     if (checkAbandonState()) return { state: 'abandon', cp: 0 };
@@ -183,6 +238,11 @@ export const installColonyFab = () => {
     const min = galaxyScanConfigStore.get().colonyMinFields;
     const fresh = findFirstFreshPlanet({ belowFields: min });
     if (fresh && getOverviewCp() !== fresh.cp) return { state: 'navigate', cp: fresh.cp };
+    // Pre-arrival states only when nothing actionable is on the board — a
+    // fresh colony awaiting a decision outranks the next one's countdown
+    // (handling it ends in a reload, which re-arms the countdown anyway).
+    const landing = evalLanding();
+    if (landing.phase !== 'idle') return { state: landing.phase, cp: 0 };
     return { state: 'none', cp: 0 };
   };
 
@@ -194,17 +254,35 @@ export const installColonyFab = () => {
     currentCp = 0;
   };
 
+  /**
+   * paintLines + the dim flag in one call. `dim` greys the fill — every
+   * transient "a tap does nothing right now" label wears it (the shared
+   * status language of the send buttons). `shrink` drops the primary to
+   * 0.9em: the long flow words (Working…, Deleting…, ⚠ DELETE ⚠) overflow
+   * the orb at 1em.
+   *
+   * @param {{ main: string, sub?: string, hint?: string, dim?: boolean, shrink?: boolean }} p
+   * @returns {void}
+   */
+  const paintGo = ({ main, sub, hint, dim = false, shrink = false }) => {
+    if (!controller) return;
+    const lines = labelLines({ main, sub, hint });
+    if (shrink) lines[0].em = '0.9em';
+    controller.paintLines('go', lines);
+    controller.setDim('go', dim);
+  };
+
   /** @param {import('./index.js').AdvanceResult['phase']} phase @param {{max:number}|null} [info] */
   const paint = (phase, info) => {
     if (!controller) return;
     if (phase === 'opened') {
-      controller.paintLines('go', labelLines({ main: 'Submit', sub: 'password' }));
+      paintGo({ main: 'Submit', sub: 'password' });
     } else if (phase === 'submitted') {
-      controller.paintLines('go', labelLines({ main: '⚠ DELETE ⚠', hint: 'tap to confirm' }));
+      paintGo({ main: '⚠ DELETE ⚠', hint: 'tap to confirm', shrink: true });
     } else if (phase === 'done') {
-      controller.paintLines('go', labelLines({ main: 'Deleting…' }));
+      paintGo({ main: 'Deleting…', dim: true, shrink: true });
     } else if (phase === 'aborted') {
-      controller.paintLines('go', labelLines({ main: 'Abandon', sub: info ? `${info.max} fields` : undefined, hint: 'tap to retry' }));
+      paintGo({ main: 'Abandon', sub: info ? `${info.max} fields` : undefined, hint: 'tap to retry' });
     }
   };
 
@@ -235,7 +313,7 @@ export const installColonyFab = () => {
         // (its ⚙ Settings hold the password) so the user can set it; fall back
         // to an in-place hint when the runtime URL isn't available.
         const opened = openDashboardColony();
-        controller.paintLines('go', labelLines({ main: 'Set password', sub: opened ? 'opening dashboard…' : 'in dashboard', hint: '' }));
+        paintGo({ main: 'Set password', sub: opened ? 'opening dashboard…' : 'in dashboard', shrink: true });
         return;
       }
       flow = createAbandonFlow();
@@ -243,7 +321,7 @@ export const installColonyFab = () => {
       flowRunning = true;
       removeGuard = installPopupCloseGuard();
     }
-    controller.paintLines('go', labelLines({ main: 'Working…' }));
+    paintGo({ main: 'Working…', dim: true, shrink: true });
     const res = await flow.advance();
     refocusDialog();
     if (res.phase === 'done') {
@@ -306,6 +384,55 @@ export const installColonyFab = () => {
       controller.paintLines('go', labelLines({ main: 'Abandon', sub: `${info.max} fields`, hint: 'too small' }));
       currentState = 'abandon';
       setActiveFabModule(MODULE_ID);
+    } else if (state === 'landing' || state === 'refresh') {
+      // Same module identity as the decision states — this IS the abandon
+      // button showing up early: countdown (dimmed — a tap does nothing yet),
+      // then an actionable full reload to overview, where the planet list is
+      // fresh and the navigate/abandon states above take over.
+      controller = makeButton({
+        id: BUTTON_ID, title: 'Colonization landing', ringId: RING_ID, size, fontScale: 0.18,
+        module: { id: MODULE_ID, name: 'Abandon', color: ABANDON_COLOR, glyph: ABANDON_GLYPH },
+        zones: [{
+          key: 'go',
+          id: `${BUTTON_ID}-go`,
+          ariaLabel: 'Colonization landing — reload overview',
+          bg: ABANDON_COLOR,
+          glyph: ABANDON_GLYPH,
+          // Read the LIVE state, not the mount-time one: the landing →
+          // refresh flip repaints this same button in place (see refresh()),
+          // so one handler serves both — a no-op while the dimmed countdown
+          // runs, the overview reload once the landing is processed.
+          onTap: () => { if (currentState === 'refresh') location.href = overviewUrl(); },
+        }],
+      });
+      if (!controller) return;
+      paintLanding(state);
+      currentState = state;
+      setActiveFabModule(MODULE_ID);
+    }
+  };
+
+  /**
+   * Label + dim for the pre-arrival states. Landing repaints at 1 Hz (the
+   * tick calls refresh(), which lands in the same-state branch below).
+   *
+   * @param {ColonyState} state
+   * @returns {void}
+   */
+  const paintLanding = (state) => {
+    if (state === 'refresh') {
+      // Landed — the ring is full (mirrors the countdown reaching arrival).
+      paintGo({ main: 'Refresh', sub: 'colo landed' });
+      controller?.setProgress(1);
+    } else {
+      // Progress arc fills as the landing nears (same feel as sendColony's
+      // min-gap wait), repainted each 1 Hz tick alongside the countdown text.
+      paintGo({
+        main: formatLandingCountdown(lastLanding.arrivalAt, Date.now()),
+        sub: 'colo landing',
+        dim: true,
+      });
+      controller?.setProgress(landingProgress(lastLanding.arrivalAt, Date.now()));
     }
   };
 
@@ -319,10 +446,26 @@ export const installColonyFab = () => {
   const refresh = () => {
     if (flowRunning) return;
     const { state: want, cp: wantCp } = desiredState();
+    if (want === currentState && wantCp === currentCp) {
+      // Same state — but a running countdown still needs its 1 Hz repaint.
+      if (want === 'landing') paintLanding('landing');
+      return;
+    }
+    // The landing → refresh flip repaints the SAME mounted button in place —
+    // remounting would churn the DOM at the exact moment the user reaches for
+    // the tap (and could eat it).
+    if (
+      controller &&
+      (want === 'landing' || want === 'refresh') &&
+      (currentState === 'landing' || currentState === 'refresh')
+    ) {
+      currentState = want;
+      paintLanding(want);
+      return;
+    }
     // Remount when the state changes OR when we're staying in 'navigate' but the
     // chosen first-fresh colony changed (the mounted button's onTap closes over
     // a now-stale cp).
-    if (want === currentState && wantCp === currentCp) return;
     unmount();
     if (want !== 'none') mountFor(want);
   };
@@ -355,10 +498,18 @@ export const installColonyFab = () => {
   const observer = new MutationObserver(scheduleRefresh);
   if (document.body) observer.observe(document.body, { childList: true, subtree: true });
 
+  // A fresh eventbox payload is the moment new in-flight legs (a just-sent
+  // colonization) become readable — re-evaluate right away instead of waiting
+  // for incidental DOM churn to trip the observer.
+  const onEventBoxLoaded = () => scheduleRefresh();
+  document.addEventListener(EVENT_BOX_LOADED_EVENT, onEventBoxLoaded);
+
   installed = {
     dispose: () => {
       endFlow();
       unmount();
+      scheduleLandingTick(0);
+      document.removeEventListener(EVENT_BOX_LOADED_EVENT, onEventBoxLoaded);
       unsubSettings();
       unsubConfig();
       observer.disconnect();

@@ -9,6 +9,8 @@ import {
   findFirstFreshPlanet,
   getOverviewCp,
   buildOverviewUrl,
+  overviewUrl,
+  readColoArrivals,
 } from '../../src/features/abandon/detect.js';
 
 /**
@@ -93,5 +95,59 @@ describe('getOverviewCp', () => {
 describe('buildOverviewUrl', () => {
   it('builds an overview URL for a cp, dropping any stale query tail', () => {
     expect(buildOverviewUrl(1002)).toMatch(/\?page=ingame&component=overview&cp=1002$/);
+  });
+});
+
+describe('overviewUrl', () => {
+  it('builds a plain overview URL with no cp', () => {
+    expect(overviewUrl()).toMatch(/\?page=ingame&component=overview$/);
+  });
+});
+
+/**
+ * Append `#eventContent` with the given fleet rows.
+ *
+ * @param {Array<{ mission: string, ret: string, arrival: string }>} rows
+ * @returns {void}
+ */
+const stageEventList = (rows) => {
+  const box = document.createElement('div');
+  box.id = 'eventContent';
+  box.innerHTML = `<table><tbody>${rows.map((r, i) => `
+    <tr class="eventFleet" id="eventRow-${i}"
+        data-mission-type="${r.mission}"
+        data-return-flight="${r.ret}"
+        data-arrival-time="${r.arrival}"></tr>
+  `).join('')}</tbody></table>`;
+  document.body.appendChild(box);
+};
+
+describe('readColoArrivals', () => {
+  it('returns null when the event box is absent (unknown → use the cache)', () => {
+    expect(readColoArrivals()).toBeNull();
+  });
+
+  it('returns an empty array when the box is present but has no colonization', () => {
+    stageEventList([{ mission: '3', ret: 'false', arrival: '1784000100' }]); // transport
+    expect(readColoArrivals()).toEqual([]);
+  });
+
+  it('collects arrival times of OUTBOUND colonization (mission 7) legs only', () => {
+    stageEventList([
+      { mission: '7', ret: 'false', arrival: '1784000100' }, // colonize outbound ✓
+      { mission: '7', ret: 'true', arrival: '1784000200' }, // colonize RETURN ✗
+      { mission: '1', ret: 'false', arrival: '1784000300' }, // attack ✗
+      { mission: '7', ret: 'false', arrival: '1784000400' }, // colonize outbound ✓
+    ]);
+    expect(readColoArrivals()).toEqual([1784000100, 1784000400]);
+  });
+
+  it('skips rows with a non-finite / non-positive arrival time', () => {
+    stageEventList([
+      { mission: '7', ret: 'false', arrival: '' },
+      { mission: '7', ret: 'false', arrival: '0' },
+      { mission: '7', ret: 'false', arrival: '1784000500' },
+    ]);
+    expect(readColoArrivals()).toEqual([1784000500]);
   });
 });

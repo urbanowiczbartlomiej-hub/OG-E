@@ -567,7 +567,9 @@ const onSendClick = async () => {
     // states" before reload). The safety timeout releases the lock if the
     // expected reload never comes. Mirrors sendExpedition's lock + timeout.
     colTarget = null;
-    paintZone('send', { text: 'Sent!', bg: BG_SEND_READY });
+    // Dimmed like every other "a tap does nothing right now" label — the busy
+    // lock below swallows taps until the post-send reload anyway.
+    paintZone('send', { text: 'Sent!', bg: BG_SEND_READY, dim: true });
     if (sentLockTimer) clearTimeout(sentLockTimer);
     sentLockTimer = setTimeout(() => {
       sentLockTimer = null;

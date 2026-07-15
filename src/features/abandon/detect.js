@@ -126,3 +126,37 @@ export const getOverviewCp = () => {
  */
 export const buildOverviewUrl = (cp) =>
   ingameComponentUrl(location.href, 'overview', { cp });
+
+/**
+ * Plain overview URL (no `cp`) — the colony FAB's "Refresh" tap: a full page
+ * load is what refreshes `#planetList` after a colonization lands, so the
+ * fresh-colony detection above can take over.
+ *
+ * @returns {string}
+ */
+export const overviewUrl = () => ingameComponentUrl(location.href, 'overview', {});
+
+/**
+ * Outbound colonization arrivals in the live event list, epoch SECONDS.
+ *
+ * `null` when the event table is absent (unknown — the caller falls back to
+ * its cache); `[]` when the table is present but no outbound colonization is
+ * in flight. Entries may sit slightly in the past: a landed leg's row lingers
+ * until OGame's next eventbox refresh, and that lingering is exactly what
+ * lets an open page detect "landed while you were here" (see
+ * `./pure.js deriveLanding`).
+ *
+ * @returns {number[] | null}
+ */
+export const readColoArrivals = () => {
+  if (!document.querySelector(GAME.EVENT_CONTENT)) return null;
+  /** @type {number[]} */
+  const out = [];
+  for (const row of document.querySelectorAll(GAME.EVENT_FLEET_ROWS)) {
+    if (row.getAttribute('data-mission-type') !== '7') continue;
+    if (row.getAttribute('data-return-flight') !== 'false') continue;
+    const at = parseInt(row.getAttribute('data-arrival-time') || '', 10);
+    if (Number.isFinite(at) && at > 0) out.push(at);
+  }
+  return out;
+};

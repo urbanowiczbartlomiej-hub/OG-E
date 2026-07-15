@@ -4,6 +4,46 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.51.0] — 2026-07-15
+
+### Added
+
+- **A colonization "landing" button.** When a colony ship is under a minute
+  from landing, the Abandon button shows a live countdown with a filling ring;
+  the moment it lands it becomes a one-tap **Refresh** that reloads the
+  overview so the new colony is picked up right away — no more watching the
+  clock to catch a fresh, too-small colony. Dealing with a colony you already
+  have always takes priority over the countdown.
+- **Arrow keys keep steering the galaxy while a popup is open.** Opening the
+  Phalanx, Espionage or Discovery dialog used to freeze the ←/→ (system) and
+  ↑/↓ (galaxy) keys. Now an arrow closes the popup and makes the move in a
+  single press.
+- **Fold away the galaxy action row.** A small toggle above Start hides or
+  shows the Phalanx / Espionage / Discovery (and position) row, so on a phone
+  the panel can sit as just the coordinate steppers. Your choice is remembered
+  on the device.
+
+### Changed
+
+- **Tidier galaxy nav panel.** The Galaxy / System captions now sit on top of
+  their input fields, and Start is a touch shorter to make room for the new
+  fold toggle above it.
+- **The galaxy footer is folded into the stats line.** The icon legend moves
+  up next to the SS / REC / IPM / slots / discoveries readout, and the
+  redundant "N planets colonised" line is dropped — reclaiming the empty strip
+  that sat above the panel.
+- **The galaxy table no longer leaves an empty gap.** It sizes to what a
+  system actually shows, instead of reserving the height of the tallest system
+  you had visited (which left dead space after leaving a busy or event-planet
+  system).
+
+### Fixed
+
+- **No more false "under attack" alarm from a wreck field.** After your fleet
+  is destroyed, OGame reuses the top-bar attack flag to show the leftover
+  wreck field. The full-screen alert used to read that as a fresh attack; it
+  now recognises the wreck-field aftermath and stays quiet.
+
 ## [1.50.1] — 2026-07-15
 
 ### Fixed

@@ -19,13 +19,32 @@
 export const ATTACK_MISSION_TYPES = new Set(['1', '2', '9']);
 
 /**
- * Whether the top-bar attack flag says we're under attack. OGame ships the
- * flag as `<div id="attack_alert" class="tooltip noAttack">` and REMOVES the
- * `noAttack` token the instant a hostile attack is inbound — so "under attack"
- * is exactly "the element exists and no longer carries `noAttack`". We test
- * for the token's ABSENCE rather than a positive class because the game adds
- * different markers (`soon`, etc.) in different attack states; only `noAttack`
- * is the stable all-clear signal.
+ * "All-clear" tokens on the `#attack_alert` element — their presence means we
+ * are NOT under an active attack. Two of them, both reverse-engineered game
+ * knowledge:
+ *
+ *   • `noAttack` — the plain all-clear. OGame ships the flag as
+ *     `<div id="attack_alert" class="tooltip noAttack">` and REMOVES this token
+ *     the instant a hostile attack is inbound.
+ *   • `wreckField` — the AFTERMATH state. After your fleet is destroyed OGame
+ *     reuses this very element to show the wreck-field / repair-layer indicator
+ *     (`class="tooltip overlay wreckField"`, a repairlayer link + a
+ *     `#wreckFieldCountDown` child, tooltip "Wreckages: …"). That state also
+ *     lacks `noAttack`, so the naive "no noAttack ⇒ attack" test fired a FALSE
+ *     alarm for a battle that was already over. The wreck field is a distinct
+ *     repurposing of the element, never OGame's live-attack state, so its
+ *     presence is treated as "not under attack".
+ *
+ * @type {ReadonlySet<string>}
+ */
+const CLEAR_TOKENS = new Set(['noAttack', 'wreckField']);
+
+/**
+ * Whether the top-bar attack flag says we're under an active attack. "Under
+ * attack" is "the element exists and carries none of the {@link CLEAR_TOKENS}".
+ * We test for a clear token's ABSENCE rather than a positive attack class
+ * because the game adds different markers (`soon`, etc.) in different attack
+ * states, whereas the clear states are the stable, enumerable ones.
  *
  * @param {string | null | undefined} className The element's `className`, or
  *   null/undefined when the element isn't on the page (treated as "not under
@@ -34,7 +53,7 @@ export const ATTACK_MISSION_TYPES = new Set(['1', '2', '9']);
  */
 export const isUnderAttack = (className) => {
   if (className == null) return false;
-  return !className.split(/\s+/).includes('noAttack');
+  return !className.split(/\s+/).some((t) => CLEAR_TOKENS.has(t));
 };
 
 /**
