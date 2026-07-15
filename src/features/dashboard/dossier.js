@@ -1091,37 +1091,32 @@ function presenceRamp(p) {
 }
 
 /**
- * 8) PRESENCE (SPYGLASS-PASSIVE-PLAN §4) — the offline-window heatmap. Colour =
- * P(online | phase), opacity = coverage (blank = "not observed", NOT "offline").
- * A framed block marks the best attack window (well-covered + quiet); the basis
- * line names the look count so the tool never claims certainty it lacks.
- * "Activity" is an interaction with a body, never asserted as the owner "online".
+ * 8) PRESENCE verdict lines (SPYGLASS-PASSIVE-PLAN §4) — the short-window
+ * engine's ACTIONABLE outputs: the "Last active (any body)" headline and the
+ * statistically-guarded best offline window (or the honest "too thin" note),
+ * with their look-count basis so the tool never claims certainty it lacks.
+ *
+ * The engine's own P(online) HEATMAP is deliberately NOT rendered any more:
+ * it sat directly above the presence-history explorer, whose default
+ * week×hour view draws the same picture from the same probes (both feed off
+ * buildPresenceProbes; 60 d engine window vs the explorer's 90 d default),
+ * and the two stacked grids read as a duplicate. The engine still runs in
+ * full — Beta shrinkage, correlation collapse, coverage gates — because its
+ * window VERDICT is what these lines surface; only the redundant picture is
+ * gone. "Activity" is an interaction with a body, never asserted as the
+ * owner "online".
+ *
  * @param {ReturnType<typeof import('../../domain/presence.js').summarizePresence>} presence
- * @returns {HTMLDivElement}
+ * @returns {DocumentFragment}
  */
-function presenceBlock(presence) {
-  const wrap = document.createElement('div');
-  wrap.style.cssText = 'margin-bottom:10px;font-size:11px;color:#8b95a0;line-height:1.5;';
-
-  const title = document.createElement('div');
-  title.textContent = 'PRESENCE — offline windows';
-  title.style.cssText = 'font-size:11px;letter-spacing:0.5px;color:#6b7782;margin-bottom:3px;';
-  wrap.appendChild(title);
-
-  if (!presence || presence.samples === 0) {
-    const empty = document.createElement('div');
-    empty.textContent = 'No coverage yet — browse this player’s galaxy systems and this'
-      + ' fills with when they’re reliably offline (activity is tracked passively).';
-    empty.style.color = '#5f6b76';
-    wrap.appendChild(empty);
-    return wrap;
-  }
+function presenceVerdictLines(presence) {
+  const frag = document.createDocumentFragment();
 
   // Player-level "last active anywhere" — the honest headline (max over all
   // bodies), so the reader sees at a glance how long the WHOLE player has been
   // quiet, not just one planet.
   const la = document.createElement('div');
-  la.style.cssText = 'margin-bottom:4px;';
+  la.style.cssText = 'margin-bottom:2px;';
   if (presence.lastActiveSec) {
     const laAge = formatAge(ageMs(presence.lastActiveSec, Date.now()));
     la.textContent = `Last active (any body): ${laAge} ago`;
@@ -1130,93 +1125,30 @@ function presenceBlock(presence) {
     la.textContent = `Last active (any body): none caught in ${presence.samples} looks`;
     la.style.color = '#8a7f5f';
   }
-  wrap.appendChild(la);
+  frag.appendChild(la);
 
+  const verdict = document.createElement('div');
+  verdict.style.cssText = 'margin-bottom:4px;font-size:11px;';
   if (presence.scale === 'occasional' || !presence.grid) {
-    const note = document.createElement('div');
-    note.textContent = `Too few / scattered samples for a routine (${presence.online} online`
+    verdict.style.color = '#8a7f5f';
+    verdict.textContent = `Too few / scattered samples for a routine (${presence.online} online`
       + ` of ${presence.samples} looks). No reliable window yet — keep sighting.`;
-    note.style.color = '#8a7f5f';
-    wrap.appendChild(note);
-    return wrap;
-  }
-
-  const grid = presence.grid;
-  const win = presence.window;
-
-  // Heatmap: one row per weekday (week) or a single hour strip (day). Left gutter
-  // labels the row; a sparse hour axis sits above.
-  const table = document.createElement('div');
-  const gutter = grid.scale === 'week' ? 30 : 42;
-  // min-width floors the 24 hour-columns at ~12px each; below that the
-  // .table-scroll wrapper (appended below) scrolls instead of letting the
-  // cells crush into unreadable slivers on a phone.
-  table.style.cssText = `display:grid;grid-template-columns:${gutter}px repeat(24, 1fr);`
-    + 'gap:1px;background:#20303f;padding:1px;border-radius:6px;max-width:420px;min-width:340px;';
-
-  // Hour axis.
-  const corner = document.createElement('div');
-  corner.style.background = 'transparent';
-  table.appendChild(corner);
-  for (let h = 0; h < 24; h++) {
-    const hx = document.createElement('div');
-    hx.textContent = h % 6 === 0 ? String(h) : '';
-    hx.style.cssText = 'font-size:10px;color:#5f6b76;text-align:center;background:transparent;';
-    table.appendChild(hx);
-  }
-
-  for (let r = 0; r < grid.rows; r++) {
-    const lbl = document.createElement('div');
-    lbl.textContent = grid.scale === 'week' ? DOW_LABELS[r] : 'all days';
-    lbl.style.cssText = 'font-size:11px;color:#8b95a0;display:flex;align-items:center;'
-      + 'justify-content:flex-end;padding-right:5px;background:transparent;white-space:nowrap;';
-    table.appendChild(lbl);
-    for (let h = 0; h < 24; h++) {
-      const c = grid.cells[r][h];
-      const cell = document.createElement('div');
-      const inWin = !!win && win.row === r && h >= win.startH && h <= win.endH;
-      const alpha = (0.06 + 0.94 * c.conf).toFixed(2);
-      cell.style.cssText = `min-height:${grid.scale === 'week' ? 13 : 22}px;`
-        + `background:${presenceRamp(c.p)};opacity:${alpha};`
-        + (inWin ? 'box-shadow:inset 0 0 0 2px #eaeff4;' : '');
-      const pct = Math.round(c.p * 100);
-      cell.title = `${grid.scale === 'week' ? DOW_LABELS[r] + ' ' : ''}`
-        + `${String(h).padStart(2, '0')}:00 · ${c.looks} look${c.looks === 1 ? '' : 's'}`
-        + ` · ${c.hits} with activity · P(online)=${pct}%`;
-      table.appendChild(cell);
-    }
-  }
-  const heatScroller = document.createElement('div');
-  heatScroller.className = 'table-scroll';
-  heatScroller.appendChild(table);
-  wrap.appendChild(heatScroller);
-
-  // Legend + basis.
-  const legend = document.createElement('div');
-  legend.style.cssText = 'display:flex;gap:12px;align-items:center;margin-top:5px;font-size:11px;color:#6b7782;flex-wrap:wrap;';
-  const bar = document.createElement('span');
-  bar.style.cssText = 'display:inline-block;width:70px;height:9px;border-radius:5px;vertical-align:-1px;'
-    + 'background:linear-gradient(90deg,rgb(37,99,235),rgb(150,160,175),rgb(220,60,55));';
-  legend.append('offline ', bar, ' online · faint = little data');
-  wrap.appendChild(legend);
-
-  const basis = document.createElement('div');
-  basis.style.cssText = 'margin-top:4px;font-size:11px;';
-  if (win) {
-    const dayPart = grid.scale === 'week' ? `${DOW_LABELS[win.row]} ` : '';
-    basis.style.color = '#7fb389';
-    basis.textContent = `⌖ best window: ${dayPart}`
+  } else if (presence.window) {
+    const win = presence.window;
+    const dayPart = presence.grid.scale === 'week' ? `${DOW_LABELS[win.row]} ` : '';
+    verdict.style.color = '#7fb389';
+    verdict.textContent = `⌖ best window (recent weeks): ${dayPart}`
       + `${String(win.startH).padStart(2, '0')}:00–${String((win.endH + 1) % 24).padStart(2, '0')}:00`
       + ` — ${win.looks} look${win.looks === 1 ? '' : 's'}, no activity seen`
       + (win.exceptions > 0 ? ` · ${win.exceptions} one-off blip noted` : '');
   } else {
-    basis.style.color = '#8a7f5f';
-    basis.textContent = `${presence.online} online of ${presence.samples} looks · no window`
+    verdict.style.color = '#8a7f5f';
+    verdict.textContent = `${presence.online} online of ${presence.samples} looks · no window`
       + ' clears the coverage bar yet — sight more to be sure.';
   }
-  wrap.appendChild(basis);
+  frag.appendChild(verdict);
 
-  return wrap;
+  return frag;
 }
 
 /** Interactive state for the presence-history explorer, per open dossier. */
@@ -1248,26 +1180,35 @@ function offlineRamp(q, conf) {
 /** Local weekday labels reused from the offline-window heatmap (DOW_LABELS). */
 
 /**
- * 8a-bis) PRESENCE HISTORY — the months-scale offline-pattern explorer. Pools
- * THIS device's long-horizon ledger with every alliance member's shared one
- * (domain/presenceLedger), then aggregates onto a chosen cycle (week×hour /
+ * 8a) PRESENCE — the ONE presence section: the short-window engine's verdict
+ * lines ({@link presenceVerdictLines} — last-active headline + best offline
+ * window) on top of the months-scale offline-pattern explorer. The explorer
+ * pools THIS device's long-horizon ledger with every alliance member's shared
+ * one (domain/presenceLedger), then aggregates onto a chosen cycle (week×hour /
  * day rhythm / month cycle) over a chosen range. Colour = how reliably OFFLINE
  * that phase is (blue = quiet across many looks — the strike window), opacity =
  * coverage. Tap any cell for its exact counts. This is the "one true use" of
  * the pooled data: finding the recurring windows a single device's 45-day
- * rings can't see.
+ * rings can't see. (Until 1.51 the verdict engine also drew its own P(online)
+ * heatmap right above this block — two stacked week×hour grids from the same
+ * probes; see presenceVerdictLines for why only the verdict survived.)
  * @param {{ ledger: import('../../domain/presenceLedger.js').PresenceLedger, allianceMembers: string[] }} hist
  * @param {number} nowMs
+ * @param {ReturnType<typeof import('../../domain/presence.js').summarizePresence>} [presence]
+ *   Short-window engine summary; when present (any samples) its verdict lines
+ *   render under the title.
  * @returns {HTMLDivElement}
  */
-function presenceHistoryBlock(hist, nowMs) {
+function presenceHistoryBlock(hist, nowMs, presence) {
   const wrap = document.createElement('div');
   wrap.style.cssText = 'margin-bottom:10px;font-size:11px;color:#8b95a0;line-height:1.5;';
 
   const title = document.createElement('div');
-  title.textContent = 'PRESENCE HISTORY — long-horizon offline pattern';
+  title.textContent = 'PRESENCE — offline pattern';
   title.style.cssText = 'font-size:11px;letter-spacing:0.5px;color:#6b7782;margin-bottom:3px;';
   wrap.appendChild(title);
+
+  if (presence && presence.samples > 0) wrap.appendChild(presenceVerdictLines(presence));
 
   const nowSec = Math.floor(nowMs / 1000);
   const totalDays = Object.keys(hist.ledger).length;
@@ -1533,7 +1474,9 @@ function fsArcsBlock(arcs, nowMs) {
  * @param {import('../../domain/civilBaseline.js').CivilProfile} [a.civilProfile]
  * @param {import('../../domain/routine.js').RoutineSummary} [a.routine]
  * @param {ReturnType<typeof import('../../domain/presence.js').summarizePresence>} [a.presence]
- *   Per-player presence summary — the offline-window heatmap under the routine.
+ *   Per-player presence summary — the last-active + best-window verdict lines
+ *   at the top of the PRESENCE section (its heatmap is no longer drawn; see
+ *   presenceVerdictLines).
  * @param {{ ledger: import('../../domain/presenceLedger.js').PresenceLedger, allianceMembers: string[] }} [a.presenceHistory]
  *   Pooled long-horizon presence ledger (local ∪ alliance) — the presence
  *   HISTORY explorer under the offline-window heatmap (months of coverage).
@@ -1660,16 +1603,24 @@ export function buildDossier(a) {
   // pref), so the evidence column is the per-body table alone.
   if (a.routine) judgement.appendChild(routineBlock(a.routine));
 
-  // 5d) Presence — the offline-window heatmap (the attack-timing readout).
-  // Rendered whenever we have any presence data; hollow-states itself otherwise.
-  if (a.presence) judgement.appendChild(presenceBlock(a.presence));
-
-  // 5d-bis) Presence HISTORY — the months-scale offline-pattern explorer over
-  // the pooled long-horizon ledger (local ∪ alliance). Rendered whenever a
-  // ledger exists (it may cover a player with no short-window presence, e.g.
-  // alliance-only coverage); hollow-states itself when empty.
+  // 5d) Presence — ONE section (the attack-timing readout): the short-window
+  // engine's verdict lines on top of the pooled long-horizon explorer.
+  // Rendered whenever a ledger exists (it may cover a player with no
+  // short-window presence, e.g. alliance-only coverage); hollow-states itself
+  // when empty. When only the short-window summary exists (a ledger fold
+  // hasn't landed yet), render the verdict lines alone under the same title
+  // so the readout never vanishes in that gap.
   if (a.presenceHistory) {
-    judgement.appendChild(presenceHistoryBlock(a.presenceHistory, a.nowMs));
+    judgement.appendChild(presenceHistoryBlock(a.presenceHistory, a.nowMs, a.presence));
+  } else if (a.presence && a.presence.samples > 0) {
+    const solo = document.createElement('div');
+    solo.style.cssText = 'margin-bottom:10px;font-size:11px;color:#8b95a0;line-height:1.5;';
+    const soloTitle = document.createElement('div');
+    soloTitle.textContent = 'PRESENCE — offline pattern';
+    soloTitle.style.cssText = 'font-size:11px;letter-spacing:0.5px;color:#6b7782;margin-bottom:3px;';
+    solo.appendChild(soloTitle);
+    solo.appendChild(presenceVerdictLines(a.presence));
+    judgement.appendChild(solo);
   }
 
   // 5e) FS windows — bracketed fleet departures/returns (skipped when none
