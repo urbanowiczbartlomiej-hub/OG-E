@@ -274,9 +274,9 @@ const CSS = `/* OG-E: galaxy touch nav (bottom mirror of the header controls) */
    proxy-click them; hidden elements still handle click events and hold the input
    values the game reads/writes). Removed on unmount → native bar back. */
 body.${HIDE_NATIVE_CLASS} #galaxyHeader { display: none !important; }
-/* Position toggle — the actions row's LAST, deliberately quiet member: same
-   height as its neighbours (one clean row), but narrow, muted and dashed so it
-   reads as panel plumbing rather than a fourth game action. */
+/* Position toggle — the actions row's FIRST (leftmost), deliberately quiet
+   member: same height as its neighbours (one clean row), but narrow, muted and
+   dashed so it reads as panel plumbing rather than a fourth game action. */
 #${GNAV_PANEL_ID} .oge-gnav-pos {
   flex: 0 0 auto;
   height: 50px;
@@ -1190,7 +1190,8 @@ const mount = () => {
   navRow.appendChild(mkGroup('System', sysInput, 's'));
   panel.appendChild(navRow);
 
-  // Position toggle — last slot of the actions row (quiet chrome; see CSS).
+  // Position toggle — FIRST slot of the actions row (quiet chrome; see CSS),
+  // on the left so the game-action buttons keep their right-hand grouping.
   // Cycles bottom → top → both, remembered per device; placement + native-
   // header visibility are applied by applyGnavPos.
   const posBtn = mkButton(GNAV_POS_LABEL[readGnavPos()], 'oge-gnav-pos');
@@ -1203,7 +1204,7 @@ const mount = () => {
     const c = document.getElementById(GALAXY_CONTENT_ID);
     if (c && mounted) applyGnavPos(mounted.panel, next, c);
   });
-  actionRow.appendChild(posBtn);
+  actionRow.insertBefore(posBtn, actionRow.firstChild);
 
   applyGnavPos(panel, readGnavPos(), content);
 
