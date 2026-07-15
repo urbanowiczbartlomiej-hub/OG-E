@@ -277,7 +277,7 @@ describe('installSendExpedition — visibility via showExpeditionButton', () => 
     installSendExpedition();
     const btn = getBtn();
     expect(btn).not.toBeNull();
-    expect(labelOf(btn)).toBe('Explore');
+    expect(labelOf(btn)).toBe('Exped');
     expect(btn?.getAttribute('aria-label')).toBe('Send expedition');
     expect(btn?.tabIndex).toBe(-1);
   });
@@ -464,7 +464,7 @@ describe('installSendExpedition — max expedition guard', () => {
 
     // After 2s the label reverts.
     vi.advanceTimersByTime(2000);
-    expect(labelOf(btn)).toBe('Explore');
+    expect(labelOf(btn)).toBe('Exped');
 
     vi.useRealTimers();
   });
@@ -591,7 +591,7 @@ describe('installSendExpedition — long-press skip', () => {
 
     // After 2s the transient label reverts.
     vi.advanceTimersByTime(2000);
-    expect(labelOf(btn)).toBe('Explore');
+    expect(labelOf(btn)).toBe('Exped');
     vi.useRealTimers();
   });
 });
@@ -732,7 +732,7 @@ describe('installSendExpedition — fleetDispatcher snapshot gates', () => {
     expect(navTarget).toBeNull();
 
     vi.advanceTimersByTime(2000);
-    expect(labelOf(btn)).toBe('Explore');
+    expect(labelOf(btn)).toBe('Exped');
     vi.useRealTimers();
   });
 
@@ -781,7 +781,7 @@ describe('installSendExpedition — fleetDispatcher snapshot gates', () => {
     expect(navTarget).toBeNull();
 
     vi.advanceTimersByTime(2000);
-    expect(labelOf(btn)).toBe('Explore');
+    expect(labelOf(btn)).toBe('Exped');
     vi.useRealTimers();
   });
 
@@ -798,7 +798,7 @@ describe('installSendExpedition — fleetDispatcher snapshot gates', () => {
     expect(navTarget).toBeNull();
 
     vi.advanceTimersByTime(2000);
-    expect(labelOf(btn)).toBe('Explore');
+    expect(labelOf(btn)).toBe('Exped');
     vi.useRealTimers();
   });
 

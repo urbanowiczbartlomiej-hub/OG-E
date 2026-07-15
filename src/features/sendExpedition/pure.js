@@ -67,7 +67,7 @@ export const HOLD_SKIP_MS = 2000;
 // ─── Button copy ─────────────────────────────────────────────────────
 
 /** Default button copy — what the user sees in the "idle" state. */
-export const BUTTON_TEXT = 'Explore';
+export const BUTTON_TEXT = 'Exped';
 
 /**
  * Transient copy when every planet has hit `maxExpeditionsPerPlanet`. The

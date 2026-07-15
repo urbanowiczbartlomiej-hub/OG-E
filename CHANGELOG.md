@@ -4,6 +4,12 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.51.1] — 2026-07-15
+
+### Changed
+
+- Shortened the expedition send button's label from "Explore" to "Exped".
+
 ## [1.51.0] — 2026-07-15
 
 ### Added
