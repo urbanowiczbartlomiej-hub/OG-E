@@ -1189,7 +1189,7 @@ function offlineRamp(q, conf) {
  * that phase is (blue = quiet across many looks — the strike window), opacity =
  * coverage. Tap any cell for its exact counts. This is the "one true use" of
  * the pooled data: finding the recurring windows a single device's 45-day
- * rings can't see. (Until 1.51 the verdict engine also drew its own P(online)
+ * rings can't see. (Until 1.50.1 the verdict engine also drew its own P(online)
  * heatmap right above this block — two stacked week×hour grids from the same
  * probes; see presenceVerdictLines for why only the verdict survived.)
  * @param {{ ledger: import('../../domain/presenceLedger.js').PresenceLedger, allianceMembers: string[] }} hist
