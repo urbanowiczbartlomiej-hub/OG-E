@@ -76,11 +76,13 @@ import { registryStore } from '../../state/registry.js';
 import {
   galaxyScanConfigStore,
   whenGalaxyScanConfigHydrated,
+  isGalaxyScanConfigHydrated,
 } from '../../state/galaxyScanConfig.js';
 import {
   colonizeDecisionsStore,
   flushColonizeDecisionsStore,
   whenColonizeDecisionsHydrated,
+  isColonizeDecisionsHydrated,
 } from '../../state/colonizeDecisions.js';
 import {
   blockingCoords,
@@ -1030,17 +1032,23 @@ export const installSendColony = () => {
   // coords) at tap time; both hydrate async from chrome.storage and both
   // promises ALWAYS settle (a failed read degrades to "nothing stored"), so
   // unlike the api-context half no safety timer is needed. Top-frame and
-  // sub-frame alike: the stores are inited in every frame by content.js.
-  storesReady = false;
-  void Promise.all([
-    whenGalaxyScanConfigHydrated(),
-    whenColonizeDecisionsHydrated(),
-  ]).then(() => {
-    if (!installed) return; // disposed while hydrating
-    storesReady = true;
-    syncGate();
-    refresh();
-  });
+  // sub-frame alike: the stores are inited in every frame by content.js. The
+  // INITIAL value is the stores' SYNCHRONOUS hydration state (true when they
+  // already settled — or were never inited, as in unit tests — so the gate
+  // doesn't spuriously hold "Wait…" for one microtask on an already-ready
+  // page); the promise below flips it once a genuinely-pending load lands.
+  storesReady = isGalaxyScanConfigHydrated() && isColonizeDecisionsHydrated();
+  if (!storesReady) {
+    void Promise.all([
+      whenGalaxyScanConfigHydrated(),
+      whenColonizeDecisionsHydrated(),
+    ]).then(() => {
+      if (!installed) return; // disposed while hydrating
+      storesReady = true;
+      syncGate();
+      refresh();
+    });
+  }
   // Permanent repaint on EVERY later eventbox refresh so a candidate first
   // computed when the gate opened via the fallback (before the first XHR
   // landed) is corrected without waiting on the 1 Hz ticker. (Unlike dailyRun

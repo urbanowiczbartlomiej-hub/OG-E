@@ -17,6 +17,19 @@ vi.mock('../../src/lib/storage.js', () => ({
     remove: vi.fn(),
     onChanged: vi.fn(),
   },
+  // The store now keeps a game-origin localStorage backup of colonyPassword
+  // (survives an extension reinstall), so it reads/writes safeLS during
+  // hydrate + write-through. A no-backup stub keeps these hydration tests
+  // focused on the chrome.storage path.
+  safeLS: {
+    json: vi.fn(() => null),
+    setJSON: vi.fn(),
+    get: vi.fn(() => null),
+    set: vi.fn(),
+    remove: vi.fn(),
+    int: vi.fn((_k, d = 0) => d),
+    bool: vi.fn((_k, d = false) => d),
+  },
 }));
 
 import { chromeStore } from '../../src/lib/storage.js';

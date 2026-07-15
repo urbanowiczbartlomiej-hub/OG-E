@@ -105,7 +105,7 @@ describe('colony FAB — state selection', () => {
 });
 
 describe('colony FAB — abandon entry gate', () => {
-  it('prompts to set a password when none is configured', () => {
+  it('prompts to set a password when none is configured', async () => {
     stageOverview();
     // default config has an empty colonyPassword
     installColonyFab();
@@ -114,6 +114,12 @@ describe('colony FAB — abandon entry gate', () => {
     const btn = document.getElementById(BUTTON_ID);
     expect(btn).not.toBeNull();
     btn?.dispatchEvent(new Event('click', { bubbles: true }));
+    // onAbandonTap now awaits whenGalaxyScanConfigHydrated() before reading the
+    // password (the slow-device race fix). The store was set directly here, not
+    // via init*, so the gate is the pre-resolved sentinel — one microtask flush
+    // lets the handler proceed to the password check.
+    await Promise.resolve();
+    await Promise.resolve();
     expect(labelText()).toMatch(/Set password/);
   });
 });

@@ -180,6 +180,14 @@ let disposeFn = null;
 let resolveHydrated = () => {};
 /** @type {Promise<void>} */
 let hydratedPromise = Promise.resolve();
+/**
+ * Synchronous mirror of {@link whenGalaxyScanConfigHydrated}'s resolved state.
+ * `true` in the pre-init sentinel state (nothing pending) and after hydrate
+ * settles; `false` only while a real init's chrome.storage load is in flight.
+ * Lets a consumer set its initial gate synchronously — see
+ * `features/sendColony`'s `storesReady`.
+ */
+let hydrated = true;
 
 /**
  * Resolves once the store's hydrate phase has settled. Consumers that ACT on
@@ -195,6 +203,13 @@ let hydratedPromise = Promise.resolve();
 export const whenGalaxyScanConfigHydrated = () => hydratedPromise;
 
 /**
+ * Synchronous "has hydration settled?" — see {@link hydrated}. True before any
+ * init (nothing pending) and once the load resolves.
+ * @returns {boolean}
+ */
+export const isGalaxyScanConfigHydrated = () => hydrated;
+
+/**
  * Wire the store to chrome.storage.local: hydrate from
  * `<universeId>:oge_galaxyScanConfig` (normalised, so a partial/legacy blob
  * is filled to a complete config) and write every change back (debounced).
@@ -204,6 +219,7 @@ export const whenGalaxyScanConfigHydrated = () => hydratedPromise;
  */
 export const initGalaxyScanConfigStore = () => {
   if (disposeFn) return disposeFn;
+  hydrated = false;
   hydratedPromise = new Promise((resolve) => {
     resolveHydrated = resolve;
   });
@@ -229,6 +245,7 @@ export const initGalaxyScanConfigStore = () => {
     },
     debounceMs: DEBOUNCE_MS,
     onHydrate: () => {
+      hydrated = true;
       resolveHydrated();
     },
   });
@@ -248,5 +265,6 @@ export const disposeGalaxyScanConfigStore = () => {
     disposeFn = null;
     resolveHydrated();
     hydratedPromise = Promise.resolve();
+    hydrated = true;
   }
 };

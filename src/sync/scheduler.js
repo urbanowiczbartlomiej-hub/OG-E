@@ -1649,45 +1649,31 @@ export const installSync = () => {
   //     via gistIsCurrent, so a stranded flag with already-synced data is cheap.
   // We stamp LAST_ACTIVE_KEY with now AFTER reading the old value for the gap.
   //
-  // DEFERRED to main-thread idle: the round's local half — gzip decode, a
-  // JSON.parse of the full multi-slot payload, the per-slot merges, and the
-  // chrome.storage write-backs — is real main-thread work that used to land in
-  // the middle of the game's own startup burst (eventlist XHR, the fleet token
-  // flow) on slow devices. Nothing about the boot round is urgent: the download
-  // covers "another device played while I was away" (minutes-scale staleness)
-  // and the catch-up upload flushes a flag the next round would flush anyway.
-  // The idle timeout bounds the postponement so both still run promptly on a
-  // page the user leaves alone. Listeners (force-sync, tombstones, the beacon)
-  // are live from install, so an explicit "Sync now" is never delayed by this.
-  const bootIdle = /** @type {(fn: () => void) => void} */ ((fn) => {
-    const g = /** @type {any} */ (/** @type {unknown} */ (globalThis));
-    if (typeof g.requestIdleCallback === 'function') {
-      g.requestIdleCallback(() => fn(), { timeout: 5000 });
-    } else {
-      setTimeout(fn, 250);
+  // Fire-and-forget, and already OFF the synchronous boot path by construction:
+  // the very first statement here is an `await` (chrome.storage), and the round's
+  // heavy work — gzip decode, the payload JSON.parse, the per-slot merges — runs
+  // only in the continuation AFTER `fetchGistData()`'s network round-trip
+  // resolves, hundreds of ms later, never during the game's startup burst. (The
+  // apiContext build, which DOES do MB-scale synchronous work at install, is the
+  // one that's idle-deferred — see features/apiContext.)
+  void (async () => {
+    const beaconRev = /** @type {string} */ ((await chromeStore.get(gistRevKey)) || '');
+    const now = Date.now();
+    const lastActiveAt = safeLS.int(LAST_ACTIVE_KEY, 0);
+    safeLS.set(LAST_ACTIVE_KEY, String(now));
+    if (
+      shouldDownloadOnLoad({
+        appliedRev: readAppliedRev(),
+        beaconRev,
+        lastActiveAt,
+        now,
+        sessionGapMs: SESSION_GAP_MS,
+      })
+    ) {
+      await downloadAndMerge();
     }
-  });
-  bootIdle(() => {
-    if (!installed) return; // disposed while waiting for idle
-    void (async () => {
-      const beaconRev = /** @type {string} */ ((await chromeStore.get(gistRevKey)) || '');
-      const now = Date.now();
-      const lastActiveAt = safeLS.int(LAST_ACTIVE_KEY, 0);
-      safeLS.set(LAST_ACTIVE_KEY, String(now));
-      if (
-        shouldDownloadOnLoad({
-          appliedRev: readAppliedRev(),
-          beaconRev,
-          lastActiveAt,
-          now,
-          sessionGapMs: SESSION_GAP_MS,
-        })
-      ) {
-        await downloadAndMerge();
-      }
-      if (safeLS.get(UPLOAD_PENDING_KEY)) await upload();
-    })();
-  });
+    if (safeLS.get(UPLOAD_PENDING_KEY)) await upload();
+  })();
 
   installed = {
     dispose: () => {

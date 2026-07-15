@@ -58,6 +58,15 @@ let disposeFn = null;
 let resolveHydrated = () => {};
 /** @type {Promise<void>} */
 let hydratedPromise = Promise.resolve();
+/**
+ * Synchronous mirror of {@link whenColonizeDecisionsHydrated}'s resolved state.
+ * `true` in the pre-init sentinel state (no async load pending — e.g. unit tests
+ * that set the store directly) and after hydrate settles; `false` only while a
+ * real init's chrome.storage load is in flight. Lets a consumer decide its
+ * initial gate synchronously (no forced first-microtask flip) — see
+ * `features/sendColony`'s `storesReady`.
+ */
+let hydrated = true;
 
 /**
  * Resolves once the store's hydrate phase has settled. Gating a fresh-colony
@@ -69,6 +78,13 @@ let hydratedPromise = Promise.resolve();
 export const whenColonizeDecisionsHydrated = () => hydratedPromise;
 
 /**
+ * Synchronous "has hydration settled?" — see {@link hydrated}. True before any
+ * init (nothing pending) and once the load resolves.
+ * @returns {boolean}
+ */
+export const isColonizeDecisionsHydrated = () => hydrated;
+
+/**
  * Wire the store to chrome.storage.local (hydrate + debounced write-through),
  * compacting once after hydrate. Idempotent. Call once from the content-script
  * bootstrap.
@@ -77,6 +93,7 @@ export const whenColonizeDecisionsHydrated = () => hydratedPromise;
  */
 export const initColonizeDecisionsStore = () => {
   if (disposeFn) return disposeFn;
+  hydrated = false;
   hydratedPromise = new Promise((resolve) => {
     resolveHydrated = resolve;
   });
@@ -91,6 +108,7 @@ export const initColonizeDecisionsStore = () => {
     onHydrate: () => {
       const { map, changed } = compactDecisions(colonizeDecisionsStore.get(), Date.now());
       if (changed) colonizeDecisionsStore.set(map);
+      hydrated = true;
       resolveHydrated();
     },
   });
@@ -110,6 +128,7 @@ export const disposeColonizeDecisionsStore = () => {
   }
   hydratedPromise = Promise.resolve();
   resolveHydrated = () => {};
+  hydrated = true;
 };
 
 /**
