@@ -44,8 +44,12 @@ import { currentUniverseKey } from './universeKey.js';
  * @property {{ data: ServerData, fetchedAt: number }} [server]
  */
 
-/** Suffix of the per-universe chrome.storage.local key. */
-const API_CACHE_KEY_BASE = 'oge_apiCache';
+/**
+ * Suffix of the per-universe chrome.storage.local key. Exported for the
+ * dashboard's universe discovery — a warmed cache is evidence the universe
+ * was played on this device even when no scans/history exist yet.
+ */
+export const API_CACHE_KEY_BASE = 'oge_apiCache';
 
 /**
  * Compose the full key for a universe id.

@@ -153,7 +153,13 @@ const installConfigEditor = ({ getUniverseId, containerId, build }) => {
    * @returns {Promise<void>}
    */
   const save = async (uni) => {
-    if (!uni) return;
+    if (!uni) {
+      // Same failure mode as the alarmClock editor: with an empty universe
+      // selector (fresh device / post-reinstall) autosave has nowhere to
+      // write — surface it instead of silently dropping the edit.
+      setStatus('Not saved — open the game once so this server appears, then pick it above.', '#e66');
+      return;
+    }
     const owned = collect(); // synchronous widget snapshot
     if (!owned) return;
     // Read-modify-write so the fields owned by the OTHER editor (and the

@@ -34,7 +34,10 @@ import { currentUniverseKey } from './universeKey.js';
  */
 
 /** Suffix of the per-universe chrome.storage.local key. */
-const OWN_PROFILE_KEY_BASE = 'oge_ownProfile';
+// Exported: the dashboard's universe discovery counts this base as evidence a
+// universe was played on this device (it is (re)written on every page load, so
+// it exists even right after a storage wipe once the game is visited once).
+export const OWN_PROFILE_KEY_BASE = 'oge_ownProfile';
 
 /**
  * Compose the full key for a universe id. Used by the dashboard (which knows

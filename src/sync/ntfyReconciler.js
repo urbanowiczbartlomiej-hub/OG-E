@@ -338,8 +338,13 @@ export const cancelWaveAlarmClock = async ({ ids, topic, token }) => {
   let ok = 0;
   for (const id of ids) {
     try {
+      // `keepalive` lets the DELETE outlive a page unload: OGame reloads on
+      // nearly every click, and a cancellation issued moments before a
+      // navigation must still reach ntfy — otherwise the queued push fires on
+      // schedule while the UI already shows it cancelled.
       const res = await fetch(`https://ntfy.sh/${topic}/${id}?${ntfyAuthParam(token)}`, {
         method: 'DELETE',
+        keepalive: true,
       });
       if (res.ok) ok++;
     } catch {
@@ -380,10 +385,15 @@ const postMessage = async ({ topic, token, fireAt, now, title, body, priority, i
   };
   if (delay >= NTFY_MIN_DELAY_SEC) headers['X-Delay'] = String(fireAt);
 
+  // `keepalive` lets the publish outlive a page unload (OGame reloads on
+  // nearly every click; an arm issued right before a navigation must still
+  // schedule). Bodies are short message texts — far under the 64 KB
+  // keepalive budget.
   const res = await fetch(`https://ntfy.sh/${topic}?${ntfyAuthParam(token)}`, {
     method: 'POST',
     headers,
     body,
+    keepalive: true,
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => '');

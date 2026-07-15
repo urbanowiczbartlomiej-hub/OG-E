@@ -845,7 +845,13 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
    * @returns {Promise<void>}
    */
   const save = async (uni) => {
-    if (!uni) return;
+    if (!uni) {
+      // No universe to write under (fresh device / just-reinstalled extension
+      // with an empty selector). A silent return here read as "the toggle just
+      // doesn't work" — say what's missing and how to fix it instead.
+      setStatus('Not saved — open the game once so this server appears, then pick it above.', '#e66');
+      return;
+    }
     const rc = collectAlarmClock();
     if (!rc) return;
     const ownedFs = collectFs();

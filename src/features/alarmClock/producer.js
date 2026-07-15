@@ -70,6 +70,7 @@ import { debounce } from '../../lib/debounce.js';
 import { safeLS, chromeStore } from '../../lib/storage.js';
 import { GAME } from '../../lib/gameDom.js';
 import { EVENT_BOX_LOADED_EVENT, MANUAL_FS_CHANGED_EVENT } from '../../lib/ogeEvents.js';
+import { isFleetdispatchPage } from '../shared/eventBoxGate.js';
 import {
   readPending, writePending, pushPending, applyAdhocCmds, applyWaveCmds,
 } from './pending.js';
@@ -274,6 +275,20 @@ export const installAlarmClockProducer = (opts = {}) => {
   // return. `document.hidden` covers tab-switch, minimise, and — crucial on
   // mobile — app-switch / screen-lock.
   let pendingVisible = false;
+  // Event-list authoritativeness gate. On fleetdispatch OGame fetches the
+  // event list via a LATE XHR (the whole reason bridges/eventBoxObserver.js
+  // exists) — a run before it lands reads an EMPTY `#eventContent`, and the
+  // ad-hoc / fleet-save / wave reconciles all treat "absent" as "gone":
+  // `reconcileAdhoc(prev, [])` permanently drops every armed entry (the exact
+  // misuse domain/adhoc.js's header forbids). That was the "armed ad-hoc
+  // vanishes after the next reload" loss: the arm reached the gist fine, and
+  // the FOLLOWING load's initial run swept it against a not-yet-loaded box.
+  // Off fleetdispatch the event list is server-rendered inline, so it is
+  // authoritative from the start. No time-based fallback here on purpose —
+  // a wrong "ready" wouldn't just disable a button, it would destroy state;
+  // if the XHR never lands, the run simply waits for the next page view
+  // (the pending journal keeps user intents durable meanwhile).
+  let eventListLoaded = !isFleetdispatchPage();
 
   const doRun = async () => {
     const forceSettings = pendingForce;
@@ -325,6 +340,16 @@ export const installAlarmClockProducer = (opts = {}) => {
     // the master switch alone makes the section active.
     const anyActive = config.masterEnabled;
     if (!anyActive && !force) return;
+
+    // Event-list authoritativeness (see the gate's declaration): never
+    // reconcile against a `#eventContent` that hasn't been populated yet — an
+    // empty read here is "unknown", not "no fleets", and acting on it destroys
+    // armed state. The DOM probe covers a late install that missed the XHR
+    // event. Preserve the force intent for the run the loaded event triggers.
+    if (!eventListLoaded && !document.querySelector(GAME.EVENT_CONTENT)) {
+      if (forceSettings) pendingForce = true;
+      return;
+    }
 
     const now = Math.floor(Date.now() / 1000);
     const candidates = clusterWaves(extractReturnEntries(), { gapSeconds: DEFAULT_CLUSTER_GAP_SECONDS });
@@ -452,18 +477,30 @@ export const installAlarmClockProducer = (opts = {}) => {
 
   const force = () => { pendingForce = true; scheduleRun(); };
 
+  // User-command variant of `force`: runs IMMEDIATELY instead of arming the
+  // 1.5 s debounce. The debounce exists to coalesce event-box refresh bursts;
+  // a tap is a single deliberate act, and on OGame — which reloads on nearly
+  // every click — those 1.5 s were routinely fatal: the navigation tore the
+  // JS down before the sync started, deferring the ntfy publish/DELETE to the
+  // next load's reconcile (and, for a cancel minutes before its fire time,
+  // often past the point of no return — "gone from the UI, still fired on
+  // ntfy"). The journal/durable records still cover a mid-sync kill; this
+  // just stops the wait from being the thing that kills it. `run()` itself
+  // serializes overlapping calls, so a double-tap coalesces safely.
+  const forceNow = () => { pendingForce = true; void run(); };
+
   /** @param {AdhocAlarmClock} entry */
-  const armAdhoc = (entry) => { pushPending(universeId, { kind: 'arm', entry }); force(); };
+  const armAdhoc = (entry) => { pushPending(universeId, { kind: 'arm', entry }); forceNow(); };
   /** @param {string} id */
-  const disarmAdhoc = (id) => { pushPending(universeId, { kind: 'disarm', id }); force(); };
+  const disarmAdhoc = (id) => { pushPending(universeId, { kind: 'disarm', id }); forceNow(); };
   /** @param {string} waveId */
-  const cancelWave = (waveId) => { pushPending(universeId, { kind: 'cancelWave', waveId }); force(); };
+  const cancelWave = (waveId) => { pushPending(universeId, { kind: 'cancelWave', waveId }); forceNow(); };
   /** @param {string} waveId */
-  const resendWave = (waveId) => { pushPending(universeId, { kind: 'resendWave', waveId }); force(); };
+  const resendWave = (waveId) => { pushPending(universeId, { kind: 'resendWave', waveId }); forceNow(); };
   /** @param {string} id @param {number[]} offsets @param {number} expiresAt */
   const cancelFsSlot = (id, offsets, expiresAt) => {
     addFleetSaveCancel(universeId, id, offsets, expiresAt, Math.floor(Date.now() / 1000));
-    force();
+    forceNow();
   };
   /** @param {string} bodyKey @param {number} landedAt */
   const guardianDismiss = (bodyKey, landedAt) => {
@@ -473,23 +510,29 @@ export const installAlarmClockProducer = (opts = {}) => {
     // landedAt + TTL would be already-expired and prune() would drop the record
     // before the sync ever saw it.
     addGuardianDismiss(universeId, bodyKey, landedAt, now + GUARDIAN_SUPPRESS_TTL_SEC, now);
-    force();
+    forceNow();
   };
   /** @param {string} bodyKey */
   const guardianAck = (bodyKey) => {
     const now = Math.floor(Date.now() / 1000);
     addGuardianAck(universeId, bodyKey, now, now + GUARDIAN_SUPPRESS_TTL_SEC, now);
-    force();
+    forceNow();
   };
 
-  const onEventBox = () => scheduleRun();
+  const onEventBox = () => {
+    // The eventlist XHR landed — from here on `#eventContent` is authoritative
+    // for this page view (see the eventListLoaded gate).
+    eventListLoaded = true;
+    scheduleRun();
+  };
   document.addEventListener(EVENT_BOX_LOADED_EVENT, onEventBox);
 
   // A manual FS mark toggled on the fleetdispatch page must reach ntfy at once
   // — schedule its guardian push, or sweep it on un-mark. Force a run past the
   // signature short-circuit: manual marks aren't part of the scan signature, so
-  // an ordinary debounced run could no-op them away.
-  const onManualFs = () => force();
+  // an ordinary debounced run could no-op them away. A user tap, so it takes
+  // the immediate path (see forceNow) — a post-tap navigation must not kill it.
+  const onManualFs = () => forceNow();
   document.addEventListener(MANUAL_FS_CHANGED_EVENT, onManualFs);
 
   // Reconcile once when the player returns to the tab — drains the run that

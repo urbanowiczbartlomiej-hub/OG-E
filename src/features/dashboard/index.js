@@ -99,7 +99,9 @@ import {
   scansKeyFor,
 } from '../../state/scans.js';
 import { playersKeyFor } from '../../state/players.js';
-import { readOwnProfile, ownProfileKeyFor } from '../../state/ownProfile.js';
+import { readOwnProfile, ownProfileKeyFor, OWN_PROFILE_KEY_BASE } from '../../state/ownProfile.js';
+import { API_CACHE_KEY_BASE } from '../../state/apiCache.js';
+import { BODIES_KEY_BASE } from '../../state/bodies.js';
 import {
   GALAXY_SCAN_CONFIG_KEY_BASE,
   galaxyScanConfigKeyFor,
@@ -669,13 +671,19 @@ const boot = async () => {
  * the namespaced base suffixes — typically `oge_colonyHistory` or
  * `oge_galaxyScans`. The Galaxy-Scan config (`oge_galaxyScanConfig`) is
  * also recognised so a fresh universe that has only the config written
- * (no scans / no colonies yet) still shows up.
+ * (no scans / no colonies yet) still shows up — and so are the
+ * every-page-load bases (`oge_ownProfile`, `oge_bodies`, `oge_apiCache`):
+ * after an extension reinstall wipes chrome.storage, those are the FIRST
+ * keys a game visit recreates, and without them the selector stayed empty,
+ * which silently no-op'd every config editor (the "reminders can't be set
+ * after reinstall" trap — the editors need a universe id to write under).
  *
  * Built on the shared {@link parsePerUniverseKey} (the one parser for
  * `<id>:oge_*` keys), then narrowed by an EXPLICIT base whitelist: the
- * selector deliberately surfaces only universes carrying real data, not
- * any lone `oge_*` bookkeeping key. That narrower policy is the intent
- * here (unlike `requestSyncAll`, which pokes every `oge_*` universe).
+ * selector deliberately surfaces only universes with evidence of real play
+ * on this device, not any lone `oge_*` bookkeeping key. That narrower
+ * policy is the intent here (unlike `requestSyncAll`, which pokes every
+ * `oge_*` universe).
  *
  * @returns {Promise<string[]>}
  */
@@ -683,7 +691,14 @@ const discoverUniverses = async () => {
   const all = await chromeStore.getAll();
   /** @type {Set<string>} */
   const ids = new Set();
-  const bases = new Set([HISTORY_KEY_BASE, SCANS_KEY_BASE, GALAXY_SCAN_CONFIG_KEY_BASE]);
+  const bases = new Set([
+    HISTORY_KEY_BASE,
+    SCANS_KEY_BASE,
+    GALAXY_SCAN_CONFIG_KEY_BASE,
+    OWN_PROFILE_KEY_BASE,
+    BODIES_KEY_BASE,
+    API_CACHE_KEY_BASE,
+  ]);
   for (const key of Object.keys(all)) {
     const parsed = parsePerUniverseKey(key);
     if (parsed && bases.has(parsed.base)) ids.add(parsed.universeId);
