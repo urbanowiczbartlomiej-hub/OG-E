@@ -37,6 +37,58 @@ const CATEGORY_LABELS = {
   oge_apiCache: 'API cache',
   oge_colonizeDecisions: 'Colonization decisions',
   oge_watchedPlayers: 'Watch list',
+  oge_targetReports: 'Spy reports',
+  oge_activityObs: 'Activity observations',
+  oge_presenceLedger: 'Presence ledger',
+  oge_proximityReports: 'Proximity alerts',
+  oge_allianceClass: 'Alliance classes',
+  oge_allianceIntel: 'Alliance intel',
+};
+
+/**
+ * Bases whose data actually LEAVES the device — the slots the sync engine
+ * PATCHes into the personal gist (`sync/gist.js` GistPayload; the SYNC_SLOTS
+ * registry in `sync/scheduler.js` is the writer), plus the alliance-share doc.
+ * Everything NOT listed here (most prominently the multi-MB `oge_apiCache`,
+ * which is fully re-fetchable from the OGame public API, and the §4b-retired
+ * `oge_galaxyScans` / `oge_ownProfile`) is a device-local cache that never
+ * enters any gist. This view previously offered no such distinction, so the
+ * per-universe Total read as "this much is synced" — the source of the
+ * "sync is 2.3 MB, mostly API cache" misread.
+ *
+ * @type {Set<string>}
+ */
+const GIST_SYNCED_BASES = new Set([
+  'oge_colonyHistory',
+  'oge_galaxyScanConfig',
+  'oge_dailyRunRoutes',
+  'oge_alarmClockConfig',
+  'oge_colonizeDecisions',
+  'oge_watchedPlayers',
+  'oge_targetReports',
+  'oge_activityObs',
+  'oge_presenceLedger',
+  'oge_allianceIntel',
+]);
+
+/**
+ * Bases only PARTIALLY synced: `oge_players` ships as the filtered
+ * watched ∪ observed "playersLite" subset — the full server roster stays local.
+ *
+ * @type {Set<string>}
+ */
+const PARTIAL_SYNCED_BASES = new Set(['oge_players']);
+
+/**
+ * Classify how a base relates to cross-device sync.
+ *
+ * @param {string} base
+ * @returns {'synced' | 'partial' | 'local'}
+ */
+export const classifyBaseSync = (base) => {
+  if (GIST_SYNCED_BASES.has(base)) return 'synced';
+  if (PARTIAL_SYNCED_BASES.has(base)) return 'partial';
+  return 'local';
 };
 
 /**
@@ -53,6 +105,8 @@ const CATEGORY_LABELS = {
  * @property {string} label   Friendly label (or the raw base for unknowns).
  * @property {number} bytes   Approx serialized size of the stored value.
  * @property {number | null} count Item count (array length / object key count), null for scalars.
+ * @property {'synced' | 'partial' | 'local'} sync
+ *   Whether this data rides the gist (see {@link classifyBaseSync}).
  */
 
 /**
@@ -61,6 +115,9 @@ const CATEGORY_LABELS = {
  * @property {SyncStatusSnapshot | null} status
  * @property {CategoryEntry[]} categories  Sorted by label; the status key is excluded.
  * @property {number} totalBytes
+ * @property {number} syncedBytes  Sum over synced + partial categories — what
+ *   can actually travel cross-device (upper bound: partial slots ship a subset).
+ * @property {number} localBytes   Sum over device-local categories (never synced).
  */
 
 /**
@@ -140,7 +197,14 @@ export const buildSyncInventory = (all) => {
   const slot = (id) => {
     let u = byUniverse.get(id);
     if (!u) {
-      u = { universeId: id, status: null, categories: [], totalBytes: 0 };
+      u = {
+        universeId: id,
+        status: null,
+        categories: [],
+        totalBytes: 0,
+        syncedBytes: 0,
+        localBytes: 0,
+      };
       byUniverse.set(id, u);
     }
     return u;
@@ -159,13 +223,17 @@ export const buildSyncInventory = (all) => {
     }
     if (isPlumbingBase(parsed.base)) continue;
     const bytes = sizeOf(value);
+    const sync = classifyBaseSync(parsed.base);
     u.categories.push({
       base: parsed.base,
       label: CATEGORY_LABELS[parsed.base] ?? parsed.base,
       bytes,
       count: countOf(value),
+      sync,
     });
     u.totalBytes += bytes;
+    if (sync === 'local') u.localBytes += bytes;
+    else u.syncedBytes += bytes;
   }
 
   const list = [...byUniverse.values()];

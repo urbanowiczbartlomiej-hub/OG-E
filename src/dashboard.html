@@ -1044,6 +1044,15 @@
   .sync-table th { color: #888; font-weight: 600; font-size: 12px; }
   .sync-table td.num, .sync-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .sync-table tfoot td { color: #ccc; font-weight: 600; border-bottom: none; border-top: 1px solid #2a4a5a; }
+  /* Only the second+ footer rows draw the separator — 'Synced'/'Local only'/'Total'
+     read as one block under a single rule. */
+  .sync-table tfoot tr + tr td { border-top: none; }
+  .sync-tag {
+    margin-left: 8px; font-size: 11px; font-weight: 600; line-height: 1;
+    padding: 2px 6px; border-radius: 8px; white-space: nowrap; vertical-align: middle;
+  }
+  .sync-tag-local   { background: #26262e; color: #9fb4c4; }
+  .sync-tag-partial { background: #2f2a14; color: #d9c24a; }
 
   /* ── Moved settings controls (Sync + AlarmClock tabs) ───────────────── */
   .rem-master-row { display: inline-flex; align-items: center; gap: 8px; margin-top: 2px; }

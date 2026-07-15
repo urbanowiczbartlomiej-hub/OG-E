@@ -95,14 +95,34 @@ const renderUniverseCard = (u, now) => {
     const tbody = el('tbody');
     for (const c of u.categories) {
       const tr = el('tr');
-      tr.appendChild(el('td', null, c.label));
+      const labelTd = el('td', null, c.label);
+      // Keyword tag, not a sentence: 'local' = never leaves this device (a
+      // re-fetchable cache or per-device data); 'partial' = only a subset
+      // rides the gist. Fully-synced rows carry no tag — synced is the
+      // expected state on a tab named "Sync", so only the exceptions speak.
+      if (c.sync !== 'synced') {
+        labelTd.appendChild(el('span', `sync-tag sync-tag-${c.sync}`, c.sync));
+      }
+      tr.appendChild(labelTd);
       tr.appendChild(el('td', 'num', c.count == null ? '—' : String(c.count)));
       tr.appendChild(el('td', 'num', formatBytes(c.bytes)));
       tbody.appendChild(tr);
     }
     table.appendChild(tbody);
 
+    // Split totals: the gist payload is built ONLY from the synced rows, so a
+    // multi-MB local cache (API cache) must not read as "this much is synced".
     const tfoot = el('tfoot');
+    const syncedTr = el('tr');
+    syncedTr.appendChild(el('td', null, 'Synced'));
+    syncedTr.appendChild(el('td', 'num', ''));
+    syncedTr.appendChild(el('td', 'num', formatBytes(u.syncedBytes)));
+    tfoot.appendChild(syncedTr);
+    const localTr = el('tr');
+    localTr.appendChild(el('td', null, 'Local only'));
+    localTr.appendChild(el('td', 'num', ''));
+    localTr.appendChild(el('td', 'num', formatBytes(u.localBytes)));
+    tfoot.appendChild(localTr);
     const ftr = el('tr');
     ftr.appendChild(el('td', null, 'Total'));
     ftr.appendChild(el('td', 'num', ''));
