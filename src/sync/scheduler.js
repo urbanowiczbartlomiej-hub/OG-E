@@ -529,10 +529,13 @@ const writeLocalGalaxyConfigSlot = async (slot) => {
     // colonyPassword is device-local: an adopted remote config (sanitized on
     // modern devices, possibly still carrying a password from a pre-sanitizer
     // one) must neither WIPE this device's password nor implant a remote one.
+    // The edit clock travels with it — dropping it would zero the stamp and
+    // let a stale localStorage backup win the next hydrate reconcile.
     const cur = normalizeGalaxyScanConfig(
       await chromeStore.get(galaxyScanConfigKeyFor(routesUniverseId)),
     );
     config.colonyPassword = cur.colonyPassword;
+    config.colonyPasswordTs = cur.colonyPasswordTs;
     await chromeStore.set(galaxyScanConfigKeyFor(routesUniverseId), config);
     await chromeStore.set(galaxyScanConfigTsKeyFor(routesUniverseId), slot.updatedAt);
     galaxyScanConfigStore.set(config);

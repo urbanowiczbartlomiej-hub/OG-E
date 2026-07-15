@@ -37,6 +37,14 @@
  *   colony under this many fields is offered for abandon.
  * @property {string} colonyPassword  Account password the abandon flow
  *   autofills into the game's give-up confirmation form.
+ * @property {number} colonyPasswordTs  Epoch-ms of the last password EDIT
+ *   (0 = never edited). NOT a sync clock — the password never rides the wire
+ *   (see {@link sanitizeGalaxyScanConfigForWire}). It arbitrates between the
+ *   chrome.storage copy and the game-origin localStorage backup
+ *   (`state/galaxyScanConfig.js`): chrome.storage is wiped by an extension
+ *   reinstall while localStorage survives, and without a clock a deliberate
+ *   password CLEAR would be indistinguishable from a wiped store — the backup
+ *   would resurrect a password the user removed. Newest edit wins.
  * @property {boolean} fsEnabled  Fleet-save auto-detection on/off (per-server:
  *   the "big fleet" cutoff is speed-dependent, so it lives here, not global).
  * @property {number} fsThreshold  Minimum total ships for a leg to count as a
@@ -70,6 +78,7 @@ export const defaultGalaxyScanConfig = () => ({
   colonyMinGap: 15,
   colonyMinFields: 320,
   colonyPassword: '',
+  colonyPasswordTs: 0,
   fsEnabled: false,
   fsThreshold: 100000,
   fsMinFlightSec: 600,
@@ -122,6 +131,7 @@ export const normalizeGalaxyScanConfig = (raw) => {
     colonyMinFields: coerceInt(r.colonyMinFields, d.colonyMinFields),
     colonyPassword:
       typeof r.colonyPassword === 'string' ? r.colonyPassword : d.colonyPassword,
+    colonyPasswordTs: coerceInt(r.colonyPasswordTs, d.colonyPasswordTs),
     // fs* are the fleet-save alarmClock knobs. Threshold / min-flight are
     // non-negative ints; offsets is a free-form duration-list string.
     fsEnabled: typeof r.fsEnabled === 'boolean' ? r.fsEnabled : d.fsEnabled,
@@ -151,4 +161,10 @@ export const normalizeGalaxyScanConfig = (raw) => {
  * @param {GalaxyScanConfig} cfg
  * @returns {GalaxyScanConfig}
  */
-export const sanitizeGalaxyScanConfigForWire = (cfg) => ({ ...cfg, colonyPassword: '' });
+export const sanitizeGalaxyScanConfigForWire = (cfg) => ({
+  ...cfg,
+  colonyPassword: '',
+  // The edit clock travels with the secret: leaking it would let a remote
+  // slot's stale zero/echo overwrite a device's newer local stamp on adopt.
+  colonyPasswordTs: 0,
+});

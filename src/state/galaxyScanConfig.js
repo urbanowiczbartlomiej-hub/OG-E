@@ -20,7 +20,7 @@
 
 import { createStore } from '../lib/createStore.js';
 import { persist } from '../lib/persist.js';
-import { chromeStore } from '../lib/storage.js';
+import { chromeStore, safeLS } from '../lib/storage.js';
 import {
   defaultGalaxyScanConfig,
   normalizeGalaxyScanConfig,
@@ -80,6 +80,86 @@ const currentKey = () =>
 /** Write-through debounce window (config edits are infrequent bursts). */
 const DEBOUNCE_MS = 200;
 
+// ── colonyPassword localStorage backup ──────────────────────────────────
+//
+// The abandon password is DEVICE-LOCAL by policy (never gist-synced, never
+// exported — domain/galaxyScanConfig sanitizer). Its authoritative copy rides
+// this store's chrome.storage slot so the dashboard (extension origin) can
+// edit it — but chrome.storage is WIPED by an extension remove+reinstall,
+// which used to silently drop the password (while localStorage-backed
+// settings like the gist/ntfy tokens survived). The user explicitly chose
+// localStorage durability over page-readability isolation, so the game tab
+// keeps a `{ pw, ts }` backup in game-origin localStorage (per-origin ⇒
+// per-universe for free) and reconciles by NEWEST EDIT on every hydrate:
+//
+//   - backup newer (post-reinstall: chrome.storage slot rebuilt without a
+//     password) → adopt the backup into the config; the persist echo writes
+//     it back to chrome.storage, so the dashboard shows it again.
+//   - config newer (dashboard edit — including a deliberate CLEAR, which
+//     stamps `colonyPasswordTs` too) → refresh the backup, empty pw included:
+//     the stamped clear is the tombstone that stops a stale backup from
+//     resurrecting a removed password.
+//
+// Game-origin only in effect: the dashboard never inits this store, and on
+// any origin without a stored backup the read degrades to null.
+
+/** localStorage key of the `{ pw: string, ts: number }` password backup. */
+const COLONY_PASSWORD_BACKUP_KEY = 'oge_colonyPasswordBackup';
+
+/** @returns {{ pw: string, ts: number } | null} */
+const readColonyPasswordBackup = () => {
+  const raw = safeLS.json(COLONY_PASSWORD_BACKUP_KEY);
+  if (!raw || typeof raw !== 'object') return null;
+  const r = /** @type {{ pw?: unknown, ts?: unknown }} */ (raw);
+  if (typeof r.pw !== 'string' || typeof r.ts !== 'number' || !(r.ts > 0)) return null;
+  return { pw: r.pw, ts: r.ts };
+};
+
+/**
+ * Bring the backup up to date with a (normalised) config carrying a newer
+ * password stamp. No-op for configs whose stamp doesn't beat the stored one,
+ * and for never-stamped configs (ts 0 — nothing to arbitrate with later).
+ *
+ * @param {GalaxyScanConfig} config
+ * @returns {void}
+ */
+const writeColonyPasswordBackupFrom = (config) => {
+  const ts = config.colonyPasswordTs || 0;
+  if (ts <= 0) return;
+  const cur = readColonyPasswordBackup();
+  if (cur && cur.ts >= ts && cur.pw === config.colonyPassword) return;
+  if (cur && cur.ts > ts) return;
+  safeLS.setJSON(COLONY_PASSWORD_BACKUP_KEY, { pw: config.colonyPassword, ts });
+};
+
+/**
+ * Reconcile a hydrated config (or `null` when chrome.storage holds nothing)
+ * with the localStorage backup — newest `colonyPasswordTs` wins. Also the
+ * one-time migration point: a pre-stamp config carrying a password gets
+ * stamped `now` so the backup machinery has a clock to work with.
+ *
+ * @param {GalaxyScanConfig | null} config
+ * @returns {GalaxyScanConfig | null}
+ */
+const reconcileColonyPasswordBackup = (config) => {
+  if (config && config.colonyPassword && !config.colonyPasswordTs) {
+    // Migration: password predates the edit clock. Stamp it now so it can
+    // both win against an absent backup and lose to a genuinely newer one.
+    config = { ...config, colonyPasswordTs: Date.now() };
+  }
+  const backup = readColonyPasswordBackup();
+  const cfgTs = config?.colonyPasswordTs || 0;
+  if (backup && backup.ts > cfgTs) {
+    return {
+      ...(config ?? defaultGalaxyScanConfig()),
+      colonyPassword: backup.pw,
+      colonyPasswordTs: backup.ts,
+    };
+  }
+  if (config) writeColonyPasswordBackupFrom(config);
+  return config;
+};
+
 /**
  * The Galaxy-Scan config store. Initial value is the built-in "free
  * positions" preset (so the Scan button has sane behaviour before the async
@@ -131,11 +211,22 @@ export const initGalaxyScanConfigStore = () => {
     store: galaxyScanConfigStore,
     load: async () => {
       const raw = await chromeStore.get(currentKey());
-      if (raw !== null && raw !== undefined) return normalizeGalaxyScanConfig(raw);
-      // Nothing in chrome.storage yet → keep the default preset, no write.
-      return null;
+      const config =
+        raw !== null && raw !== undefined ? normalizeGalaxyScanConfig(raw) : null;
+      // Newest-edit reconcile with the localStorage password backup — this is
+      // what restores the password after an extension reinstall (chrome.storage
+      // wiped, localStorage survived). A null config with a live backup returns
+      // a default config carrying the backup password; the persist echo then
+      // seeds chrome.storage with it, so the dashboard sees it again too.
+      return reconcileColonyPasswordBackup(config);
     },
-    save: (value) => chromeStore.set(currentKey(), value),
+    save: (value) => {
+      // Keep the backup current on every write-through (sync adoptions and
+      // dashboard-driven store refreshes flow through here) — a stamped CLEAR
+      // updates the backup too, which is exactly the tombstone we want.
+      writeColonyPasswordBackupFrom(value);
+      return chromeStore.set(currentKey(), value);
+    },
     debounceMs: DEBOUNCE_MS,
     onHydrate: () => {
       resolveHydrated();

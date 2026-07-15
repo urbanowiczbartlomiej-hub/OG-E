@@ -375,7 +375,11 @@ const IO_SLOTS = [
     write: async (/** @type {string} */ uni, /** @type {any} */ merged) => {
       const cur = normalizeGalaxyScanConfig(await chromeStore.get(galaxyScanConfigKeyFor(uni)));
       const value = normalizeGalaxyScanConfig(merged.value);
+      // Keep the pair together: password AND its edit clock (see the sync
+      // scheduler's writeLocalGalaxyConfigSlot for the backup-arbitration
+      // reason).
       value.colonyPassword = cur.colonyPassword;
+      value.colonyPasswordTs = cur.colonyPasswordTs;
       await chromeStore.set(galaxyScanConfigKeyFor(uni), value);
       await chromeStore.set(galaxyScanConfigTsKeyFor(uni), merged.updatedAt);
     },

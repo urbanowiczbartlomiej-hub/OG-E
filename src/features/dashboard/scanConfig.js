@@ -160,6 +160,11 @@ const installConfigEditor = ({ getUniverseId, containerId, build }) => {
     // AlarmClock tab's fleet-save knobs) survive — all three share one slot.
     const stored = normalizeGalaxyScanConfig(await chromeStore.get(galaxyScanConfigKeyFor(uni)));
     const cfg = normalizeGalaxyScanConfig({ ...stored, ...owned });
+    // Password edits (a SET and a deliberate CLEAR alike) stamp the
+    // device-local edit clock that arbitrates against the game-origin
+    // localStorage backup (state/galaxyScanConfig.js). Only real changes
+    // stamp — an untouched field must not let a stale backup lose.
+    if (cfg.colonyPassword !== stored.colonyPassword) cfg.colonyPasswordTs = Date.now();
     if (JSON.stringify(cfg) === JSON.stringify(stored)) return; // no-op edit
     await chromeStore.set(galaxyScanConfigKeyFor(uni), cfg);
     // Stamp the whole-slot newest-wins clock and poke any open game tab to
@@ -285,7 +290,8 @@ const buildColonizationFields = (body) => {
   colonyPasswordInput.title =
     'Account password, autofilled into the game’s give-up confirmation form during the abandon flow. '
     + 'Stays on THIS device only — never gist-synced and never written into export files; '
-    + 'enter it once per device that runs the abandon flow.';
+    + 'enter it once per device that runs the abandon flow. The game tab keeps a local backup '
+    + 'that survives an extension reinstall.';
 
   // Packed into the same responsive grid (1 → 2 → 3 columns) the rescan
   // fields use, so both groups of the combined editor read as columns rather
