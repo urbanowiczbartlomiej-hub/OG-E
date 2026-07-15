@@ -218,12 +218,48 @@ function probe() {
 }
 
 /**
+ * Longest we let the browser postpone the deferred silent build. Bounded so
+ * the colonize button's readiness gate (15 s safety) always sees a publish
+ * with plenty of headroom, even when the main thread never goes idle.
+ */
+const IDLE_BUILD_TIMEOUT_MS = 3000;
+
+/**
+ * Run `fn` when the main thread is idle (bounded by
+ * {@link IDLE_BUILD_TIMEOUT_MS}), falling back to a macrotask where
+ * `requestIdleCallback` is unavailable. The context build is heavy —
+ * a ~MB-scale chrome.storage read, `buildOccupancyIndex` over every planet on
+ * the server, `joinDangerProfiles`, and (on TTL expiry) a synchronous regex
+ * parse of the multi-MB `universe.xml` — none of which the PAGE needs: it
+ * feeds OG-E's colonize picker / Scout, not OGame. Running it inline at
+ * DOMContentLoaded made it compete with the game's own boot XHRs (eventlist,
+ * the fleet1→fleet2 token flow) for main-thread time on slow devices — the
+ * "UI stays locked after load" report. Idle scheduling moves the whole block
+ * behind the game's startup burst at the cost of the occupancy index
+ * publishing a moment later (the colonize gate already waits for it).
+ *
+ * @param {() => void} fn
+ * @returns {void}
+ */
+const whenIdle = (fn) => {
+  const g = /** @type {any} */ (/** @type {unknown} */ (globalThis));
+  if (typeof g.requestIdleCallback === 'function') {
+    g.requestIdleCallback(() => fn(), { timeout: IDLE_BUILD_TIMEOUT_MS });
+  } else {
+    setTimeout(fn, 250);
+  }
+};
+
+/**
  * Install the API-context feature. Idempotent. On every in-game load it warms
  * the local cache (cache-gated — the multi-MB universe.xml is fetched at most
  * weekly) so the dashboard Scout (which can't fetch cross-origin) and the
- * colonize picker have data. With the `oge_debugApi` flag it instead builds the
- * full index and logs a console summary. Top-frame gating is the caller's
- * responsibility (see content.js).
+ * colonize picker have data. The silent build is DEFERRED to main-thread idle
+ * (see {@link whenIdle}) so its storage/parse/index work never competes with
+ * the game's own boot requests. With the `oge_debugApi` flag it instead builds
+ * the full index immediately and logs a console summary (a debug probe wants
+ * the untouched timing). Top-frame gating is the caller's responsibility (see
+ * content.js).
  *
  * @returns {void}
  */
@@ -237,10 +273,14 @@ export function installApiContext() {
     // Silent build — warm the cache AND publish the occupancy index to the
     // shared handoff so the in-game colonize picker can offer whole-server
     // candidates. Cache-gated, so the multi-MB universe.xml is fetched at most
-    // weekly; the rest is a cheap rebuild from cache. A failure still SETTLES
-    // the handoff (null publish) so the colonize button's readiness gate opens
-    // into its scan-only fallback instead of waiting out the safety timeout.
-    getContext().catch(() => settleAsFailed());
+    // weekly; the rest is a rebuild from cache — still heavy enough to defer
+    // to idle (see whenIdle). A failure still SETTLES the handoff (null
+    // publish) so the colonize button's readiness gate opens into its
+    // scan-only fallback instead of waiting out the safety timeout.
+    whenIdle(() => {
+      if (!installed) return; // reset while waiting for idle (tests)
+      getContext().catch(() => settleAsFailed());
+    });
   }
 }
 
