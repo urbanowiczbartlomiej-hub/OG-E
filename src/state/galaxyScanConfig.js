@@ -96,6 +96,23 @@ export const galaxyScanConfigStore = createStore(defaultGalaxyScanConfig());
  * @type {(() => void) | null}
  */
 let disposeFn = null;
+/** @type {() => void} */
+let resolveHydrated = () => {};
+/** @type {Promise<void>} */
+let hydratedPromise = Promise.resolve();
+
+/**
+ * Resolves once the store's hydrate phase has settled. Consumers that ACT on
+ * `colonyPassword` / `colonyMinGap` at interaction time (the abandon FAB, the
+ * colonize send gate) MUST await this before trusting the store: before the
+ * async chrome.storage load lands, `galaxyScanConfigStore.get()` returns the
+ * built-in default — empty password, 15 s min-gap — and a tap on a slow device
+ * lands exactly in that window (the "Set password despite a set password" /
+ * premature-wave race).
+ *
+ * @returns {Promise<void>}
+ */
+export const whenGalaxyScanConfigHydrated = () => hydratedPromise;
 
 /**
  * Wire the store to chrome.storage.local: hydrate from
@@ -107,6 +124,9 @@ let disposeFn = null;
  */
 export const initGalaxyScanConfigStore = () => {
   if (disposeFn) return disposeFn;
+  hydratedPromise = new Promise((resolve) => {
+    resolveHydrated = resolve;
+  });
   disposeFn = persist({
     store: galaxyScanConfigStore,
     load: async () => {
@@ -117,12 +137,17 @@ export const initGalaxyScanConfigStore = () => {
     },
     save: (value) => chromeStore.set(currentKey(), value),
     debounceMs: DEBOUNCE_MS,
+    onHydrate: () => {
+      resolveHydrated();
+    },
   });
   return disposeFn;
 };
 
 /**
- * Tear down the persist wiring. Idempotent.
+ * Tear down the persist wiring. Idempotent. Resets
+ * {@link whenGalaxyScanConfigHydrated} to the pre-resolved sentinel, matching
+ * the "no init has run" state (same convention as `state/targets.js`).
  *
  * @returns {void}
  */
@@ -130,5 +155,7 @@ export const disposeGalaxyScanConfigStore = () => {
   if (disposeFn) {
     disposeFn();
     disposeFn = null;
+    resolveHydrated();
+    hydratedPromise = Promise.resolve();
   }
 };

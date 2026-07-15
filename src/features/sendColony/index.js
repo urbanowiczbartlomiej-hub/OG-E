@@ -73,10 +73,14 @@
 import { settingsStore } from '../../state/settings.js';
 import { scansStore, flushScansStore } from '../../state/scans.js';
 import { registryStore } from '../../state/registry.js';
-import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
+import {
+  galaxyScanConfigStore,
+  whenGalaxyScanConfigHydrated,
+} from '../../state/galaxyScanConfig.js';
 import {
   colonizeDecisionsStore,
   flushColonizeDecisionsStore,
+  whenColonizeDecisionsHydrated,
 } from '../../state/colonizeDecisions.js';
 import {
   blockingCoords,
@@ -253,6 +257,21 @@ let eventBoxReady = true;
  */
 let apiCtxReady = true;
 /**
+ * False while the two chrome.storage stores the send path TRUSTS at tap time —
+ * galaxyScanConfig (`colonyMinGap`, positions) and the colonization decision
+ * log (`blockingCoords`) — haven't finished their async hydrate on this page
+ * view. Third input of the readiness gate: before hydration the store snapshot
+ * is the built-in default (15 s min-gap, empty decision map), so an early tap
+ * could dispatch a wave closer than the configured gap and toward a slot an
+ * in-flight/abandoned decision already blocks — the "returned colony ship"
+ * loss. Opens when both hydration promises settle (chrome.storage reads —
+ * milliseconds; they always settle, so no safety timer is needed). The `true`
+ * default keeps standalone paints ungated, mirroring the other two flags.
+ *
+ * @type {boolean}
+ */
+let storesReady = true;
+/**
  * Safety-backstop timer for the api-context gate (see
  * {@link API_GATE_SAFETY_MS}). `null` when not armed.
  *
@@ -327,7 +346,8 @@ const showTransient = (p) => {
  *
  * @returns {void}
  */
-const syncGate = () => controller?.setDisabled(!(eventBoxReady && apiCtxReady));
+const syncGate = () =>
+  controller?.setDisabled(!(eventBoxReady && apiCtxReady && storesReady));
 
 // ─── captureEnv + refresh ──────────────────────────────────────────────
 
@@ -402,7 +422,7 @@ const refresh = () => {
   // every command button wears the same look — grey fill via the gate's
   // disabled CSS, module-coloured ring, no gold. Amber (BG_SEND_WAIT) is
   // reserved for the post-tap busy/min-gap states below.
-  if (!eventBoxReady || !apiCtxReady) {
+  if (!eventBoxReady || !apiCtxReady || !storesReady) {
     paintZone('send', { text: 'Wait…', bg: BG_SEND_IDLE, dim: true });
     return;
   }
@@ -503,11 +523,12 @@ const colErrorPaint = (reason, c) => {
  */
 const onSendClick = async () => {
   if (busy) return;
-  // Page/data still hydrating (eventbox or api context) — the visual gate
-  // already swallows the tap, but guard here too so a focus-driven or
-  // programmatic call can't act on a half-loaded candidate set (the false
-  // 'No targets' verdict). Mirrors dailyRun.
-  if (!eventBoxReady || !apiCtxReady) return;
+  // Page/data still hydrating (eventbox, api context, or the config/decision
+  // stores) — the visual gate already swallows the tap, but guard here too so
+  // a focus-driven or programmatic call can't act on a half-loaded candidate
+  // set (the false 'No targets' verdict) or on an unhydrated min-gap /
+  // decision log (the premature-wave dispatch). Mirrors dailyRun.
+  if (!eventBoxReady || !apiCtxReady || !storesReady) return;
   const s = courierStep();
 
   // Tap 2 — dispatch the armed colonize, gated by the min-gap.
@@ -1003,6 +1024,23 @@ export const installSendColony = () => {
       refresh();
     }, API_GATE_SAFETY_MS);
   }
+
+  // Store readiness — the third input of the gate. The send path trusts
+  // galaxyScanConfig (min-gap, positions) and the decision log (blocking
+  // coords) at tap time; both hydrate async from chrome.storage and both
+  // promises ALWAYS settle (a failed read degrades to "nothing stored"), so
+  // unlike the api-context half no safety timer is needed. Top-frame and
+  // sub-frame alike: the stores are inited in every frame by content.js.
+  storesReady = false;
+  void Promise.all([
+    whenGalaxyScanConfigHydrated(),
+    whenColonizeDecisionsHydrated(),
+  ]).then(() => {
+    if (!installed) return; // disposed while hydrating
+    storesReady = true;
+    syncGate();
+    refresh();
+  });
   // Permanent repaint on EVERY later eventbox refresh so a candidate first
   // computed when the gate opened via the fallback (before the first XHR
   // landed) is corrected without waiting on the 1 Hz ticker. (Unlike dailyRun
@@ -1168,6 +1206,7 @@ export const _resetSendColonyForTest = () => {
   waitTotalSecs = 0;
   eventBoxReady = true;
   apiCtxReady = true;
+  storesReady = true;
   transientPaint = null;
   transientUntil = 0;
   if (apiGateTimer) {

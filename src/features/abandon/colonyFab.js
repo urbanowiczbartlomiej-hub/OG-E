@@ -39,7 +39,10 @@
 // @ts-check
 
 import { settingsStore } from '../../state/settings.js';
-import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
+import {
+  galaxyScanConfigStore,
+  whenGalaxyScanConfigHydrated,
+} from '../../state/galaxyScanConfig.js';
 import { createButton as makeButton, labelLines } from '../shared/button.js';
 import { setActiveFabModule, FAB_WRAP_ID } from '../shared/unifiedFab.js';
 import { ABANDON_GLYPH } from '../shared/buttonGlyphs.js';
@@ -219,6 +222,14 @@ export const installColonyFab = () => {
   const onAbandonTap = async () => {
     if (!controller) return;
     if (!flow) {
+      // The password lives in async-hydrating chrome.storage; on a slow device
+      // a tap can land BEFORE the load resolves, when the store still holds the
+      // default (empty password) — which used to mis-route the user to "Set
+      // password" despite one being configured. Await the hydrate (milliseconds
+      // in the worst case, already-resolved on every later tap) so the check
+      // below reads the real config.
+      await whenGalaxyScanConfigHydrated();
+      if (!controller || flow) return; // disposed / re-entered while waiting
       if (!galaxyScanConfigStore.get().colonyPassword) {
         // No abandon password yet — open the dashboard's Colonizations tab
         // (its ⚙ Settings hold the password) so the user can set it; fall back
