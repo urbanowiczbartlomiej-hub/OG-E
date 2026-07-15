@@ -4,6 +4,59 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.50.1] — 2026-07-15
+
+### Fixed
+
+- **The Abandon button no longer asks you to set a password you already
+  set.** On a slower phone a tap right after the page loaded could read the
+  colonization settings before they finished loading and wrongly send you to
+  "Set password". The button now waits for the real settings, so a configured
+  password is always used.
+- **Colonization waves respect your minimum gap from the first tap.** Right
+  after a reload the Colonization button could send before your saved minimum
+  arrival gap and in-flight/abandon markers had loaded, letting a wave fire
+  too early toward a slot that should have been skipped — occasionally
+  bouncing a colony ship off the colony limit. The button now holds on
+  "Wait…" until that data is ready.
+- **Reminders survive a page reload.** An ad-hoc, wave, or fleet-save reminder
+  armed just before OGame reloaded the page (which it does on almost every
+  click) could vanish on the next load. Arming, cancelling, and re-sending now
+  take effect immediately and are no longer dropped by the reload.
+- **Cancelling a reminder actually cancels the notification.** Cancelling a
+  fleet-save reminder shortly before it was due removed it from the interface
+  but the push could still arrive. The cancellation now reaches the
+  notification service even when you navigate away right after.
+- **Reminders can be set again after reinstalling the add-on.** With a
+  freshly reinstalled add-on the dashboard's server list could be empty, which
+  silently swallowed every reminder/colonization setting you tried to save.
+  Opening the game once now makes the server selectable again, and the config
+  editors tell you what to do instead of failing quietly.
+- **Your abandon password survives reinstalling the add-on.** It is kept in a
+  local backup on the game tab, so a reinstall no longer wipes it (it still
+  never leaves your device or syncs anywhere).
+
+### Changed
+
+- **Smoother page after a reload on mobile.** The heavy occupancy-index build
+  that warms colonization data now runs once the page is idle instead of
+  competing with the game's own start-up, so the interface unblocks sooner on
+  slower devices.
+- **One presence section in the Spyglass dossier.** The player detail used to
+  stack two nearly-identical week-by-hour heatmaps ("Presence" over "Presence
+  history"); they are merged into a single "Presence — offline pattern"
+  section that keeps the last-active headline and the best-offline-window
+  recommendation above the long-horizon explorer.
+- **The Sync tab tells synced data from local.** Each row is marked local or
+  partial where relevant, and the per-server total is split into Synced /
+  Local only / Total — so the device-only API cache is no longer mistaken for
+  sync payload.
+- **Galaxy nav panel: the position toggle moved to the left,** so the game
+  action buttons keep their grouping on the right.
+- **Clearer Colonizations tab wording** — the Big Colony Hunting blurb now
+  explains what the view and the in-game Colonization / Abandon buttons do,
+  and the redundant settings description was removed.
+
 ## [1.50.0] — 2026-07-14
 
 ### Added
