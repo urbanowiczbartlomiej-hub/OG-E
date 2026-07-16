@@ -4,6 +4,14 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.51.4] — 2026-07-16
+
+### Changed
+
+- **Extension name is now "OG-E (OGame-Expeditions)"** in the browser and the
+  store listings, so the short "OG-E" is spelled out for anyone who hasn't seen
+  it before. No functional change.
+
 ## [1.51.3] — 2026-07-16
 
 ### Added
