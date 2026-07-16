@@ -77,7 +77,7 @@ import {
   reconcileAdhoc, pruneAdhocNotify, parseAdhocOffsets, adhocFireTimes,
 } from '../domain/adhoc.js';
 import {
-  reconcileFleetSaves, reconcileLandedFleetSaves, pruneFsNotify, parseFsOffsets,
+  reconcileFleetSaves, detectFsLandings, pruneFsNotify, parseFsOffsets,
   GUARDIAN_INTERVAL_SEC,
 } from '../domain/fleetSave.js';
 import {
@@ -185,11 +185,17 @@ export const ALARM_CLOCK_FILENAME_RE = /^oge-alarmClock-([^/]+)\.json$/;
  *     (landed), kept until re-saved/departed/dismissed so the planet markers
  *     flag the still-exposed fleet. Migration from v3/v4/v5 is ADDITIVE —
  *     defaults to empty.
+ *   - v7: DROPS `landedFleetSave` again. The durable "fleet sitting exposed"
+ *     state moved to the unified fleet-reminder store
+ *     (`state/fleetReminders.js`, synced via the `fleetRemindersPerUniverse`
+ *     data-gist slot); this file now only carries the in-flight FS set that
+ *     landings are DETECTED from (see `domain/fleetSave.detectFsLandings`).
+ *     v6's field is simply ignored on read — no migration.
  */
-export const ALARM_CLOCK_SCHEMA_VERSION = 6;
+export const ALARM_CLOCK_SCHEMA_VERSION = 7;
 
 /** Schema versions we can read (and normalise forward). */
-const READABLE_SCHEMA_VERSIONS = new Set([3, 4, 5, 6]);
+const READABLE_SCHEMA_VERSIONS = new Set([3, 4, 5, 6, 7]);
 
 /**
  * Derive the ntfy.sh topic deterministically from the ntfy access
@@ -306,9 +312,6 @@ export const ALARM_CLOCK_NTFY_TOKEN_KEY = 'oge_alarmClockNtfyTokenMirror';
  * @property {FleetSaveAlarmClock[]} fleetSave  Auto-detected fleet-save alarmClock.
  * @property {Record<string, NotifyEntry>} fleetSaveNotify  Per-FS bookkeeping
  *   (scheduled ntfy.sh message ids), keyed by event-row id.
- * @property {LandedFleetSave[]} [landedFleetSave]  Fleet-saves that have landed
- *   (row gone), kept until re-saved/departed/dismissed so the planet markers
- *   flag the exposed fleet.
  */
 
 /**
@@ -356,7 +359,6 @@ const readAlarmClockState = async (universeId) => {
       adhocNotify: parsed.adhocNotify ?? {},
       fleetSave: parsed.fleetSave ?? [],
       fleetSaveNotify: parsed.fleetSaveNotify ?? {},
-      landedFleetSave: parsed.landedFleetSave ?? [],
     };
   } catch {
     return null;
@@ -399,7 +401,6 @@ const sameState = (a, b) => {
     waves: s.waves, notifyState: s.notifyState,
     adhoc: s.adhoc, adhocNotify: s.adhocNotify,
     fleetSave: s.fleetSave, fleetSaveNotify: s.fleetSaveNotify,
-    landedFleetSave: s.landedFleetSave ?? [],
   });
   return pick(a) === pick(b);
 };
@@ -545,33 +546,34 @@ const resolveNtfyToken = async (configToken) => {
  * @param {Record<string, number[]>} [dom.fsCancelById]  Per-fleet-save offsets
  *   the player cancelled (see `domain/fleetSave.fsOffsetsToCancel`); dropped
  *   from that save's series so the queue reconcile sweeps just those slots.
- * @param {Set<string>} [dom.departingKeys]  Body keys (`g:s:p:type`) the player's
- *   fleets are leaving this scan — feeds the landed-FS early-clear.
- * @param {Record<string, number>} [dom.guardianDismissed]  Dismissed guardian
- *   landings as `bodyKey → landedAt`; suppresses that body's guardian push.
+ * @param {FleetSaveAlarmClock[]} [dom.localFleetSave]  The producer's LOCAL
+ *   pre-pass FS set (classified with no gist dependency). Unioned into the
+ *   gist's `prevFs` by id (gist wins a clash) so a lock made offline survives
+ *   into the shared set — and so a landing whose leg only this device ever
+ *   classified is still detected here.
  * @param {Record<string, number>} [dom.guardianAcked]  Acked guardian landings as
  *   `bodyKey → ackedAt`; bumps the push to `max(landedAt, ackedAt) + interval`.
- * @param {Array<{ bodyKey: string, markedAt: number }>} [dom.manualLanded]  The
- *   user's MANUAL "watch this fleet" marks (`state/manualLandedFs.js`). Unioned
- *   into the guardian push set exactly as the in-game button unions them — an
- *   explicit override that arms the offline push for the gaps auto-detection
- *   can't see (a fleet that never flew; a watch the user wants back). `markedAt`
- *   plays the `landedAt` role for the fire time.
+ * @param {Array<{ bodyKey: string, landedAt: number }>} [dom.fleetReminders]
+ *   The currently-ARMED fleet reminders (`state/fleetReminders.js` — the
+ *   unified auto+manual store). These drive the guardian escalation push;
+ *   landings detected THIS run are unioned in so their push schedules in the
+ *   same round (the producer persists them to the store right after).
  * @param {number} now             Epoch SECONDS, injected by the caller.
  * @param {string} universeId      OGame server id; ntfy push title prefix.
- * @returns {Promise<{ ok: boolean, reason?: string, changed?: boolean, scheduled?: number, cancelled?: number, fleetSave?: FleetSaveAlarmClock[], landedFleetSave?: LandedFleetSave[] }>}
- *   `fleetSave` is the reconciled (locked) FS set for this scan and
- *   `landedFleetSave` the just-landed-and-exposed set — both surfaced so the
- *   caller can republish them for passive consumers (the planet markers, which
- *   never import alarmClock). Absent on early `{ ok: false }` returns.
+ * @returns {Promise<{ ok: boolean, reason?: string, changed?: boolean, scheduled?: number, cancelled?: number, fleetSave?: FleetSaveAlarmClock[], landings?: LandedFleetSave[] }>}
+ *   `fleetSave` is the reconciled (locked) FS set for this scan — surfaced so
+ *   the caller can republish it for passive consumers (the planet markers,
+ *   which never import alarmClock). `landings` are the fleet-saves detected as
+ *   just-landed this run — the caller arms the fleet-reminder store with them.
+ *   Absent on early `{ ok: false }` returns.
  */
 export const syncAlarmClock = async (config, dom, now, universeId) => {
   if (!getToken()) return { ok: false, reason: 'no-token' };
 
   const {
     waveCandidates, present, adhocMutate, waveMutate,
-    fleetSaveCandidates = [], fsCancelById = {}, departingKeys = new Set(),
-    guardianDismissed = {}, guardianAcked = {}, manualLanded = [],
+    fleetSaveCandidates = [], fsCancelById = {}, localFleetSave = [],
+    guardianAcked = {}, fleetReminders = [],
   } = dom;
 
   // Token resolution: prefer per-origin localStorage value; fall back
@@ -585,9 +587,15 @@ export const syncAlarmClock = async (config, dom, now, universeId) => {
   const prevNotify = existing?.notifyState ?? {};
   const prevAdhoc = existing?.adhoc ?? [];
   const prevAdhocNotify = existing?.adhocNotify ?? {};
-  const prevFs = existing?.fleetSave ?? [];
+  // Union the gist's FS set with the producer's local pre-pass (by id, gist
+  // entry winning a clash — both derive from the same row + config, but the
+  // gist copy is the shared lineage). This is what carries an offline-made
+  // lock into the shared set, and what lets a landing be detected here even
+  // when only the LOCAL pass ever classified the leg.
+  const gistPrevFs = existing?.fleetSave ?? [];
+  const gistIds = new Set(gistPrevFs.map((e) => e.id));
+  const prevFs = [...gistPrevFs, ...localFleetSave.filter((e) => !gistIds.has(e.id))];
   const prevFsNotify = existing?.fleetSaveNotify ?? {};
-  const prevLanded = existing?.landedFleetSave ?? [];
 
   const prevWavesMutated = waveMutate ? waveMutate(prevWaves) : prevWaves;
   const { waves } = reconcileWaves(prevWavesMutated, waveCandidates, now);
@@ -633,22 +641,16 @@ export const syncAlarmClock = async (config, dom, now, universeId) => {
   const adhocActive = master;
   const fsActive = master && Boolean(config.fsEnabled);
 
-  // Landed fleet-saves: which of the just-vanished FS rows touched down and are
-  // now sitting exposed. NO timer — an entry persists until the fleet visibly
-  // moves (re-save / departure) or the user dismisses it. A dismiss is fed in as
-  // `dismissedKeys` so the landing is dropped at the SOURCE (here), not just
-  // hidden downstream — otherwise it would re-arm once the local dismiss record
-  // is pruned. Purely derived — never scheduled — so it lives outside the ntfy
-  // block. Cleared when FS is off.
-  const dismissedKeys = new Set(
-    prevLanded.filter((e) => guardianDismissed[e.bodyKey] === e.landedAt).map((e) => e.bodyKey),
-  );
-  const landedFleetSave = fsActive
-    ? reconcileLandedFleetSaves(prevLanded, prevFs, fleetSaveCandidates, {
-        now,
-        departingKeys,
-        dismissedKeys,
-      })
+  // Fleet-save LANDINGS this run: a known FS whose row vanished past its
+  // arrival. Detection only — the durable "sitting exposed" state is the
+  // fleet-reminder store (`state/fleetReminders.js`), which the PRODUCER arms
+  // with these after we return. Each landing is detected effectively once
+  // (the landed leg drops out of `fleetSave` in this very write), and the
+  // store's event-time LWW makes a repeat arm a no-op — so a user's dismiss
+  // can never be resurrected by re-detection. Gated on fsActive: detection
+  // rides the FS classifier.
+  const landings = fsActive
+    ? detectFsLandings(prevFs, fleetSaveCandidates, now)
     : [];
 
   if (ntfyToken && topic) {
@@ -730,37 +732,33 @@ export const syncAlarmClock = async (config, dom, now, universeId) => {
     }
 
     // ── Bare-fleet guardian ────────────────────────────────────────────
-    // ONE escalation push per landed (exposed) fleet-save, fired
-    // GUARDIAN_INTERVAL_SEC after touchdown. Driven by the just-computed
-    // landedFleetSave (minus dismissed landings); auto-swept the instant a body
-    // leaves landedFleetSave (re-saved / departed / dismissed), since it's then no
-    // longer a live entry. Reconciled under its own title, so it never sweeps
-    // the other kinds. State-free in the gist: the queue itself is the source of
-    // truth — only the local dismiss store persists.
-    const guardianIntervalSec = config.guardianIntervalSec ?? GUARDIAN_INTERVAL_SEC;
-    // Bodies to watch = auto-detected landed FS (dismiss-filtered) ∪ the user's
-    // MANUAL marks. Mirrors the in-game button's union (features/alarmClock/
-    // guardian.js) so the loud surface and the offline push track the SAME set:
-    // manual first, then auto OVERRIDES on a clash (it carries the real landing
-    // identity). Manual marks get no dismiss filter — a dismiss removes the
-    // mark itself — but an ack still snoozes them by the interval, like auto.
+    // ONE escalation push per armed fleet reminder, fired
+    // GUARDIAN_INTERVAL_SEC after touchdown. Driven by the unified FR store
+    // (auto landings + manual marks — `state/fleetReminders.js`), with the
+    // landings detected THIS run unioned in so their push schedules in the
+    // same round (the producer persists them to the store right after we
+    // return). Auto-swept the instant a body's reminder clears (guardian
+    // dismiss / guardian save / chip un-toggle), since it's then no longer a
+    // live entry. Reconciled under its own title, so it never sweeps the
+    // other kinds. State-free in the gist: the queue itself is the source of
+    // truth; the durable watch is the (data-gist-synced) FR store.
     //
     // Gated by the guardian switch alone (master + guardianEnabled), NOT by
     // fsEnabled: a manual mark exists precisely to cover what auto-detection
-    // (which needs fsEnabled) can't, so it must arm even with FS detection off.
-    // Auto entries are still implicitly FS-gated — `landedFleetSave` is empty
-    // unless `fsActive` — so this widens the gate for manual marks only.
+    // (which needs fsEnabled) can't, so it must arm even with FS detection
+    // off. Auto entries are still implicitly FS-gated — `landings` is empty
+    // unless `fsActive`.
+    const guardianIntervalSec = config.guardianIntervalSec ?? GUARDIAN_INTERVAL_SEC;
     const guardianOn = master && Boolean(config.guardianEnabled);
     /** @type {Map<string, { bodyKey: string, landedAt: number }>} */
     const guardianByKey = new Map();
     if (guardianOn) {
-      for (const m of manualLanded) {
-        guardianByKey.set(m.bodyKey, { bodyKey: m.bodyKey, landedAt: m.markedAt });
+      for (const m of fleetReminders) {
+        guardianByKey.set(m.bodyKey, { bodyKey: m.bodyKey, landedAt: m.landedAt });
       }
-      for (const l of landedFleetSave) {
-        if (guardianDismissed[l.bodyKey] !== l.landedAt) {
-          guardianByKey.set(l.bodyKey, { bodyKey: l.bodyKey, landedAt: l.landedAt });
-        }
+      // Fresh landings override — they carry the real landing identity.
+      for (const l of landings) {
+        guardianByKey.set(l.bodyKey, { bodyKey: l.bodyKey, landedAt: l.landedAt });
       }
     }
     const liveGuardian = [...guardianByKey.values()].map((e) => ({
@@ -790,11 +788,10 @@ export const syncAlarmClock = async (config, dom, now, universeId) => {
     adhocNotify,
     fleetSave,
     fleetSaveNotify: fsNotify,
-    landedFleetSave,
   };
 
   const changed = !sameState(existing, next);
   if (changed) await writeAlarmClockState(universeId, next);
   await mirrorForPreview(universeId, next, ntfyToken);
-  return { ok: true, changed, scheduled, cancelled, fleetSave, landedFleetSave };
+  return { ok: true, changed, scheduled, cancelled, fleetSave, landings };
 };

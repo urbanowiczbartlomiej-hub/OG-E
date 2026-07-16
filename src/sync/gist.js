@@ -163,7 +163,7 @@ import { SYNC_STATUS_EVENT } from '../lib/ogeEvents.js';
  *   Merge strategy: per-field max-wins (a later day string / higher timestamp
  *   always beats an earlier one). Per-universe because tasks are server-specific
  *   and must not leak across universes.
- * @property {Record<string, import('../state/manualLandedFs.js').ManualLandedFsSlot>} [manualLandedFsPerUniverse]
+ * @property {Record<string, import('../state/fleetReminders.js').FleetReminderSlot>} [fleetRemindersPerUniverse]
  *   OPTIONAL, additive: the user's manual fleet-save marks per universe. Merge
  *   strategy: last-writer-wins on the whole set (keyed by `updatedAt`) so an
  *   unmark / re-save propagates instead of being resurrected by another device.
@@ -211,6 +211,12 @@ import { SYNC_STATUS_EVENT } from '../lib/ogeEvents.js';
  *   reports were the root cause of "two devices, two different Spyglass
  *   views" — the observation timeline cannot be re-derived by re-spying.
  *   Per-universe because a coord/player id is server-specific.
+ * @property {Record<string, import('../domain/espionageReport.js').ProximityReport[]>} [proximityReportsPerUniverse]
+ *   OPTIONAL, additive: the "who's spying on you" alert log keyed by universe
+ *   id. Merged by union-dedup on the `byPlayerId|atCoords|ts` identity triple,
+ *   newest-first, re-capped (see {@link import('./merge.js').mergeProximityReports},
+ *   the same reconciler the dashboard import uses). Synced since 1.50: a probe
+ *   flown at you is a one-shot observation a second device can never re-derive.
  * @property {Record<string, import('../state/activityObs.js').ActivityObsMap>} [activityObsPerUniverse]
  *   OPTIONAL, additive: galaxy-activity observation rings keyed by universe
  *   id. Merged per body — union by content, time-ordered, re-capped (see

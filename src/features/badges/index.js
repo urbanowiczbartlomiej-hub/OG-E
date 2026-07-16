@@ -44,8 +44,8 @@
 import { settingsStore } from '../../state/settings.js';
 import { createVisibilityObserver } from '../../lib/visibilityObserver.js';
 import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
-import { readFleetSaveIds, readLandedFs } from '../../state/fleetSaveSet.js';
-import { readManualLandedFs } from '../../state/manualLandedFs.js';
+import { readFleetSaveIds } from '../../state/fleetSaveSet.js';
+import { readFleetReminders } from '../../state/fleetReminders.js';
 import { readBadgeCache, writeBadgeCache, clearBadgeCache } from '../../state/badgeCache.js';
 import { injectStyle, waitFor } from '../../lib/dom.js';
 import { debounce } from '../../lib/debounce.js';
@@ -536,21 +536,17 @@ const fsIdSet = () => {
 };
 
 /**
- * Body keys with a LANDED (exposed) fleet-save: the producer's auto set (already
- * dismiss-pruned at the source, gated like {@link fsIdSet}) in UNION with the
- * user's MANUAL marks. Neither carries a timer — an exposed flag clears only on
- * re-save, departure, or an explicit dismiss. Manual marks are also NOT gated by
- * the auto-FS toggles (the user asked for this body specifically). See
- * `state/manualLandedFs.js`.
+ * Body keys with an armed FLEET REMINDER — the unified store both the
+ * producer's auto landing-detection and the user's fleet1 chip write
+ * (`state/fleetReminders.js`). No timer — a reminder clears only via the
+ * user's explicit acts. Deliberately NOT gated by the auto-FS toggles: an
+ * armed reminder is explicit user-facing state (auto-ARMING is already
+ * fsEnabled-gated at the producer), so it must stay visible like the manual
+ * marks always were.
  *
  * @returns {Set<string>}
  */
-const landedFsKeySet = () => {
-  const on = settingsStore.get().alarmClockMasterEnabled && galaxyScanConfigStore.get().fsEnabled;
-  const keys = on ? readLandedFs().map((e) => e.bodyKey) : [];
-  for (const e of readManualLandedFs()) keys.push(e.bodyKey);
-  return new Set(keys);
-};
+const landedFsKeySet = () => new Set(readFleetReminders().map((e) => e.bodyKey));
 
 /**
  * Paint one body's marker column. Shared by the live render and the optimistic

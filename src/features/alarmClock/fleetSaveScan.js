@@ -163,22 +163,3 @@ export const extractFleetSaveCandidates = (root = document) => {
   return out;
 };
 
-/**
- * Body keys (`g:s:p:type`) the player's fleets are LEAVING this scan — the
- * origin of every own OUTBOUND leg. Feeds the landed-FS early-clear: a fleet
- * that visibly departs a body can no longer be "sitting landed" there.
- *
- * @param {ParentNode} [root=document]
- * @returns {Set<string>}
- */
-export const extractDepartingBodyKeys = (root = document) => {
-  /** @type {Set<string>} */
-  const keys = new Set();
-  for (const row of root.querySelectorAll(GAME.EVENT_FLEET_ROWS)) {
-    if (!isOwnFleet(row)) continue;
-    if (row.getAttribute('data-return-flight') === 'true') continue; // outbound only = a departure
-    const coords = denseCoords(row.querySelector(GAME.COORDS_ORIGIN)?.textContent);
-    if (coords) keys.add(bodyKey(coords, figureType(row.querySelector(GAME.ORIGIN_FLEET))));
-  }
-  return keys;
-};

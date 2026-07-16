@@ -25,6 +25,7 @@
 import { installGalaxyHook } from './bridges/galaxyHook.js';
 import { installCheckTargetObserver } from './bridges/checkTargetObserver.js';
 import { installSendFleetHook } from './bridges/sendFleetHook.js';
+import { installFleetSaveSendHint } from './bridges/fleetSaveSendHint.js';
 import { installExpeditionRedirect } from './bridges/expeditionRedirect.js';
 import { installDeployRedirect } from './bridges/deployRedirect.js';
 import { installFleetDispatcherSnapshot } from './bridges/fleetDispatcherSnapshot.js';
@@ -37,6 +38,10 @@ import { installSystemDiscoveryObserver } from './bridges/systemDiscoveryObserve
 installGalaxyHook();
 installCheckTargetObserver();
 installSendFleetHook();
+// Record a fleet-save send hint (true flight duration + expected landing) on
+// every own sendFleet, so the FS classifier's flight-time gate can judge a leg
+// it first observes late by its TRUE duration instead of the time remaining.
+installFleetSaveSendHint();
 installExpeditionRedirect();
 // Rewrite the post-send redirect for fleet-save deployment sends. Unlike
 // expeditionRedirect it computes nothing — the isolated-world dailyRun

@@ -2,37 +2,38 @@
 
 // Fleet GUARDIAN feature — the in-game half of the post-landing watch.
 //
-// Detection lives in the PRODUCER: it classifies a landed-but-unsaved
-// fleet-save (row gone, fleet sitting exposed, not yet departed) and publishes
-// it via `state/fleetSaveSet.readLandedFs()` as `{ bodyKey: 'g:s:p:type',
-// landedAt }` — the same channel the planet badges consume. This
+// The watch itself is the unified FLEET-REMINDER store
+// (`state/fleetReminders.js`): the producer arms a body there when a detected
+// fleet-save LANDS, and the fleet1 chip (`features/manualFsMark`) arms it by
+// hand — one synced, per-body set, the same one the planet badges read. This
 // feature is purely the loud SURFACE on top: ONE floating warning button while
-// any tracked fleet sits bare —
+// any reminder is armed —
 //
 //   - TAP        → off the bare body: navigate to it (moon vs planet picked
 //                  from the bodyKey `type`). On the bare body's fleetdispatch:
 //                  a two-tap AGR fleet-save (routine 6) mirroring the expedition
 //                  button — first tap prepares, second dispatches — then the
-//                  watch is dropped (the fleet is back in motion).
-//   - LONG-PRESS → dismiss this landing (the "fleet is gone / I've got it"
+//                  reminder is cleared (the fleet is back in motion).
+//   - LONG-PRESS → clear this reminder (the "fleet is gone / I've got it"
 //                  back-door); the shared button's charge-sweep makes the hold a
 //                  conscious act, not a reflex.
 //
-// This feature is the loud SURFACE only — it never talks to ntfy directly. The
-// matching OFFLINE push (one escalation per bare body, at landing + interval) is
-// driven by the producer (`producer.js` → `sync/alarmClock` →
-// `ntfyReconciler.reconcileGuardianQueue`); the ack + dismiss taps delegate to
-// the producer's commands, which snooze or cancel it. Dismiss + ack are DURABLE,
-// self-expiring, single-device stores (`./guardianDismiss.js`); the bare set
-// has no timer — it clears only on re-save, departure, or dismiss. A manual "Set FR"
-// (Set Fleet reminder; `features/manualFsMark`) feeds the SAME union, arming
-// both this button and the push.
+// Those two, plus un-toggling the fleet1 chip, are the ONLY ways a reminder
+// clears — deliberately no automatic clearing on fleet activity (a small
+// "technical" send used to kill the watch while the real fleet still sat).
+//
+// This feature never talks to ntfy directly. The matching OFFLINE push (one
+// escalation per armed body, at landing + interval) is driven by the producer
+// (`producer.js` → `sync/alarmClock` → `ntfyReconciler.reconcileGuardianQueue`);
+// the ack + dismiss taps delegate to the producer's commands, which snooze or
+// clear it. The ack is a DURABLE, self-expiring, single-device store
+// (`./guardianDismiss.js`); the dismiss is the synced FR tombstone itself.
 //
 // Lives INSIDE the alarmClock feature (installed by `./index.js`).
 //
-// @see ../../state/fleetSaveSet.js — readLandedFs() (the producer's output).
+// @see ../../state/fleetReminders.js — the unified watch set.
 
-import { EVENT_BOX_LOADED_EVENT, MANUAL_FS_CHANGED_EVENT } from '../../lib/ogeEvents.js';
+import { EVENT_BOX_LOADED_EVENT, FLEET_REMINDER_CHANGED_EVENT } from '../../lib/ogeEvents.js';
 import { GAME } from '../../lib/gameDom.js';
 import { denseCoords, bodyKey as toBodyKey } from '../../domain/bodies.js';
 import { readCurrentBody } from '../shared/currentBody.js';
@@ -45,9 +46,7 @@ import { prepareViaRoutine, dispatchPrepared } from '../shared/agrRoutine.js';
 import { OWNER_FS } from '../../domain/fleetOwnership.js';
 import { settingsStore } from '../../state/settings.js';
 import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
-import { readLandedFs } from '../../state/fleetSaveSet.js';
-import { readManualLandedFs, removeManualLandedFs } from '../../state/manualLandedFs.js';
-import { guardianDismissedLandings } from './guardianDismiss.js';
+import { readFleetReminders } from '../../state/fleetReminders.js';
 
 /** OG-E's own button id (not a game contract). */
 const BTN_ID = 'oge-guardian-btn';
@@ -71,12 +70,10 @@ const FS_ROUTINE_ID = 6;
 let btn = null;
 /** @type {BareFleet[]} The current bare set; the button's handlers read it live. */
 let bare = [];
-/** Producer command: cancel a body's ntfy push + persist the dismissal. */
-let dismissFn = /** @type {(bodyKey: string, landedAt: number) => void} */ (() => {});
+/** Producer command: clear a body's fleet reminder + sweep its ntfy push. */
+let dismissFn = /** @type {(bodyKey: string) => void} */ (() => {});
 /** Producer command: snooze a body's push by the interval (the "I'm on it" ack). */
 let ackFn = /** @type {(bodyKey: string) => void} */ (() => {});
-/** This universe's id, for reading the persisted dismiss store. */
-let universeId = '';
 /** Current FAB diameter (settings-driven), shared with the command modules. */
 let fabSize = 56;
 /** Guard against re-entrant taps while a fleet-save send is in flight. */
@@ -203,8 +200,8 @@ const ackPresence = (t) => {
 };
 
 /**
- * Dismiss the primary bare fleet's landing (the long-press back-door): cancel
- * its ntfy push + persist the suppression (via the producer), then repaint.
+ * Clear the primary bare fleet's reminder (the long-press back-door): the
+ * producer command writes the synced FR tombstone and sweeps the ntfy push.
  */
 const dismissPrimary = () => {
   const t = bare[0];
@@ -214,8 +211,7 @@ const dismissPrimary = () => {
     clearTimeout(navTimer);
     navTimer = null;
   }
-  dismissFn(t.bodyKey, t.landedAt);
-  removeManualLandedFs(t.bodyKey, Math.floor(Date.now() / 1000)); // hold = "it's gone"
+  dismissFn(t.bodyKey); // hold = "it's gone"
   refresh();
 };
 
@@ -300,8 +296,7 @@ const handleGuardianTap = async () => {
       const r = dispatchPrepared({ owner: OWNER_FS });
       if (r === 'sent') {
         paintSent(target);
-        dismissFn(target.bodyKey, target.landedAt); // saved → drop the watch
-        removeManualLandedFs(target.bodyKey, Math.floor(Date.now() / 1000)); // clear its mark
+        dismissFn(target.bodyKey); // saved → clear the reminder
       }
       return; // 'foreign' / 'notReady' → leave the form be; the player can retry
     }
@@ -370,30 +365,14 @@ const render = () => {
 };
 
 /**
- * Re-read the producer's landed-FS set (TTL-filtered, minus dismissed) and
- * refresh the button. Cheap; called on every event-box refresh — the producer
- * republishes the set on its own sync, so a slightly-stale read self-corrects
- * on the next event.
+ * Re-read the fleet-reminder store (the ONE armed set — auto landings and
+ * manual marks alike) and refresh the button. Cheap; called on every
+ * event-box refresh and on every reminder change.
  *
  * @returns {void}
  */
 const refresh = () => {
-  const now = Math.floor(Date.now() / 1000);
-  const dismissed = universeId ? guardianDismissedLandings(universeId, now) : {};
-  // Producer's auto set (dismiss-filtered, no timer) ∪ the user's MANUAL marks
-  // (no dismiss filter — an explicit override). Auto wins on a clash: it carries
-  // the real landing `landedAt` identity.
-  /** @type {Map<string, { bodyKey: string, landedAt: number }>} */
-  const byKey = new Map();
-  for (const e of readManualLandedFs()) {
-    byKey.set(e.bodyKey, { bodyKey: e.bodyKey, landedAt: e.markedAt });
-  }
-  for (const e of readLandedFs()) {
-    if (dismissed[e.bodyKey] !== e.landedAt) {
-      byKey.set(e.bodyKey, { bodyKey: e.bodyKey, landedAt: e.landedAt });
-    }
-  }
-  bare = [...byKey.values()].map((e) => {
+  bare = readFleetReminders().map((e) => {
     const parts = String(e.bodyKey).split(':');
     return {
       bodyKey: e.bodyKey,
@@ -412,18 +391,16 @@ let installed = null;
  * Install the fleet guardian. Idempotent.
  *
  * @param {object} [opts]
- * @param {(bodyKey: string, landedAt: number) => void} [opts.dismiss]  Producer
- *   command that cancels a body's ntfy push + persists the dismissal.
+ * @param {(bodyKey: string) => void} [opts.dismiss]  Producer command that
+ *   clears a body's fleet reminder (synced tombstone) + sweeps its ntfy push.
  * @param {(bodyKey: string) => void} [opts.ack]  Producer command that snoozes a
  *   body's push by the interval (the tap = "I'm on it" ack).
- * @param {string} [opts.universeId]  This universe's id (persisted dismiss/ack store).
  * @returns {() => void} dispose
  */
-export const installGuardian = ({ dismiss, ack, universeId: uid } = {}) => {
+export const installGuardian = ({ dismiss, ack } = {}) => {
   if (installed) return installed;
   dismissFn = typeof dismiss === 'function' ? dismiss : () => {};
   ackFn = typeof ack === 'function' ? ack : () => {};
-  universeId = uid || '';
   activeAt = Math.floor(Date.now() / 1000); // this page's load = fresh presence
 
   // Ride the unified FAB: mirror the cluster's fabBtnSize live-resize. No
@@ -439,13 +416,14 @@ export const installGuardian = ({ dismiss, ack, universeId: uid } = {}) => {
   });
 
   document.addEventListener(EVENT_BOX_LOADED_EVENT, refresh);
-  // A manual mark toggled on fleet1 should arm/disarm the guardian at once,
-  // not wait for the next event-box load (both ride the same fleetdispatch page).
-  document.addEventListener(MANUAL_FS_CHANGED_EVENT, refresh);
+  // A reminder toggled elsewhere (the fleet1 chip, a producer landing arm)
+  // should arm/disarm the guardian at once, not wait for the next event-box
+  // load (the chip rides the same fleetdispatch page).
+  document.addEventListener(FLEET_REMINDER_CHANGED_EVENT, refresh);
   refresh();
   installed = () => {
     document.removeEventListener(EVENT_BOX_LOADED_EVENT, refresh);
-    document.removeEventListener(MANUAL_FS_CHANGED_EVENT, refresh);
+    document.removeEventListener(FLEET_REMINDER_CHANGED_EVENT, refresh);
     unsubSettings();
     if (unsubClock) {
       unsubClock();
@@ -464,7 +442,6 @@ export const installGuardian = ({ dismiss, ack, universeId: uid } = {}) => {
     bare = [];
     dismissFn = () => {};
     ackFn = () => {};
-    universeId = '';
     installed = null;
   };
   return installed;

@@ -48,8 +48,11 @@ export const SYNC_FORCE_EVENT = 'oge:syncForce';
 export const THREAT_HIGHLIGHT_TEST_EVENT = 'oge:threatHighlightTest';
 /** Daily-action state changed (rewards / merchant claimed). */
 export const DAILY_STATE_CHANGED_EVENT = 'oge:dailyStateChanged';
-/** A manual landed-FS mark was toggled on the fleet1 screen. */
-export const MANUAL_FS_CHANGED_EVENT = 'oge:manualFsChanged';
+/** A fleet reminder (FR) was armed/cleared — fired by every mutation site
+ *  (the fleet1 chip, the guardian's dismiss/save, the producer's landing
+ *  detection) so same-page surfaces repaint at once and the sync scheduler
+ *  arms an upload of the `fleetRemindersPerUniverse` slot. */
+export const FLEET_REMINDER_CHANGED_EVENT = 'oge:fleetReminderChanged';
 
 // ── Fleet-courier protocol (defined in fleetProtocol.js; re-exported here so
 //    callers have one import surface for every event name) ──────────────────

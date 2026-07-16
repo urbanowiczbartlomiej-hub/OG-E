@@ -1,15 +1,17 @@
 // @ts-check
 
-// Proximity-alert feed — per-universe, device-local store of the "foreign fleet
-// spotted near your planet" alerts the player has OPENED. A bounded, newest-first
-// ARRAY of {@link ProximityReport} (unlike state/targets.js's nested map, this is
-// a flat log — "who's been probing me lately"). Feeds the dashboard Spyglass
+// Proximity-alert feed — per-universe store of the "foreign fleet spotted near
+// your planet" alerts the player has OPENED. A bounded, newest-first ARRAY of
+// {@link ProximityReport} (unlike state/targets.js's nested map, this is a flat
+// log — "who's been probing me lately"). Feeds the dashboard Spyglass
 // "Who's spying on you" strip.
 //
-// LOCAL ONLY — never gist-synced: it's per-device intel, fully re-derivable by
-// re-opening the alerts, exactly like state/targets.js / state/scans.js. GREEN
-// per docs/fair-play.md §"🟢/🟡 Spyglass intelligence workbench (v3)" — a passive
-// read of the player's OWN opened reports (no extra requests, no automation).
+// GIST-SYNCED since 1.50 (`proximityReportsPerUniverse`, union-dedup via
+// sync/merge.mergeProximityReports): an alert is a ONE-SHOT observation — once
+// dismissed in-game a second device can never re-derive it, which left each
+// device with a different "who's spying" view. GREEN per docs/fair-play.md
+// §"🟢/🟡 Spyglass intelligence workbench (v3)" — a passive read of the
+// player's OWN opened reports (no extra requests, no automation).
 //
 // Reactive `createStore` + `persist` (not a plain key-owner) because two parties
 // touch it across a burst: the in-game ingest consumer (`features/targetsIngest`)

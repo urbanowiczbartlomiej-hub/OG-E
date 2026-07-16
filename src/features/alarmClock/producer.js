@@ -55,29 +55,31 @@ import { clusterWaves, DEFAULT_CLUSTER_GAP_SECONDS } from '../../domain/waves.js
 /** @typedef {import('../../domain/waves.js').WaveCandidate} WaveCandidate */
 /** @typedef {import('../../domain/waves.js').Wave} Wave */
 /** @typedef {import('../../domain/adhoc.js').AdhocAlarmClock} AdhocAlarmClock */
-import { extractFleetSaveCandidates, extractDepartingBodyKeys } from './fleetSaveScan.js';
-import { parseFsOffsets, GUARDIAN_SUPPRESS_TTL_SEC } from '../../domain/fleetSave.js';
+import { extractFleetSaveCandidates } from './fleetSaveScan.js';
+import {
+  parseFsOffsets, reconcileFleetSaves, detectFsLandings, fsHintOkIds,
+  GUARDIAN_SUPPRESS_TTL_SEC,
+} from '../../domain/fleetSave.js';
 import { denseCoords } from '../../domain/bodies.js';
 import { NTFY_MAX_DELAY_SEC } from '../../sync/ntfyReconciler.js';
 import { settingsStore } from '../../state/settings.js';
 import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
 import { alarmClockConfigStore } from '../../state/alarmClockConfig.js';
-import { writeFleetSaveIds, writeLandedFs } from '../../state/fleetSaveSet.js';
-import { readManualLandedFs } from '../../state/manualLandedFs.js';
+import { readFleetSaveEntries, writeFleetSaveEntries } from '../../state/fleetSaveSet.js';
+import { readFleetReminders, armFleetReminder, removeFleetReminder } from '../../state/fleetReminders.js';
+import { readFsSendHints } from '../../state/fsSendHints.js';
 import { syncAlarmClock, ALARM_CLOCK_NTFY_TOKEN_KEY, isValidNtfyToken } from '../../sync/alarmClock.js';
 import { parseUniverseId } from '../../lib/universeId.js';
 import { debounce } from '../../lib/debounce.js';
 import { safeLS, chromeStore } from '../../lib/storage.js';
 import { GAME } from '../../lib/gameDom.js';
-import { EVENT_BOX_LOADED_EVENT, MANUAL_FS_CHANGED_EVENT } from '../../lib/ogeEvents.js';
+import { EVENT_BOX_LOADED_EVENT, FLEET_REMINDER_CHANGED_EVENT } from '../../lib/ogeEvents.js';
 import { isFleetdispatchPage } from '../shared/eventBoxGate.js';
 import {
   readPending, writePending, pushPending, applyAdhocCmds, applyWaveCmds,
 } from './pending.js';
 import { addFleetSaveCancel, fleetSaveCancelOffsets } from './fleetSaveCancel.js';
-import {
-  addGuardianDismiss, guardianDismissedLandings, addGuardianAck, guardianAckedLandings,
-} from './guardianDismiss.js';
+import { addGuardianAck, guardianAckedLandings } from './guardianDismiss.js';
 
 /**
  * Selector for expedition return-flight rows. Identical predicate to the
@@ -209,6 +211,29 @@ export const fsCapReadyIds = (fsCandidates, offsetsSec, now) => {
 const sigKeyFor = (/** @type {string} */ universeId) => `oge_alarmClockSig_${universeId}`;
 
 /**
+ * Arm the fleet-reminder store for each detected landing (event-time LWW —
+ * a repeat arm of the same landing is a no-op, and a landing older than the
+ * user's dismiss loses; see `state/fleetReminders.js`). When anything actually
+ * changed, announce it: same-page surfaces (guardian button, fleet1 chip)
+ * repaint at once and the sync scheduler arms an upload of the FR slot.
+ * `fromProducer` lets our own listener skip the echo (see the listener note).
+ *
+ * @param {import('../../domain/fleetSave.js').LandedFleetSave[]} landings
+ * @returns {void}
+ */
+const armLandings = (landings) => {
+  let changed = false;
+  for (const l of landings) {
+    if (armFleetReminder(l.bodyKey, l.landedAt)) changed = true;
+  }
+  if (changed) {
+    document.dispatchEvent(
+      new CustomEvent(FLEET_REMINDER_CHANGED_EVENT, { detail: { fromProducer: true } }),
+    );
+  }
+};
+
+/**
  * The producer's public handle: a dispose fn plus the event-list actions.
  * Each action persists its intent to localStorage (reload-safe, see
  * `./pending.js`) and forces the next sync.
@@ -221,8 +246,8 @@ const sigKeyFor = (/** @type {string} */ universeId) => `oge_alarmClockSig_${uni
  * @property {(waveId: string) => void} resendWave        Re-schedule a tombstoned wave's series.
  * @property {(id: string, offsets: number[], expiresAt: number) => void} cancelFsSlot
  *   Suppress the given fleet-save offsets for `id` until `expiresAt` (epoch s).
- * @property {(bodyKey: string, landedAt: number) => void} guardianDismiss
- *   Cancel a landed body's guardian push + persist the dismissal.
+ * @property {(bodyKey: string) => void} guardianDismiss
+ *   Clear a body's fleet reminder (synced tombstone) + sweep its guardian push.
  * @property {(bodyKey: string) => void} guardianAck  Snooze a body's guardian push
  *   by the interval (the player tapped "I'm on it").
  * @property {string} universeId  This producer's universe id (for consumers).
@@ -356,8 +381,9 @@ export const installAlarmClockProducer = (opts = {}) => {
     const present = extractPresentFleets();
 
     // Fleet-save CANDIDATES: every own leg with its ship count. The ship +
-    // flight-time gates and the lock live in `reconcileFleetSaves` (inside
-    // syncAlarmClock, which holds the persisted save set). We extract them
+    // flight-time gates and the lock live in `reconcileFleetSaves` (run twice:
+    // the token-free LOCAL pre-pass below, then again inside syncAlarmClock
+    // against the gist's set). We extract them
     // AHEAD of the signature gate only so the signature can carry each
     // save's 3-day-cap readiness (`fsCapReadyIds`): a brand-new save first
     // seen beyond the cap has all its slots filtered, and nothing else about
@@ -365,9 +391,6 @@ export const installAlarmClockProducer = (opts = {}) => {
     // badge-only forever. A threshold/offset/min-flight edit still forces a
     // run via the settings subscriber.
     const fleetSaveCandidates = extractFleetSaveCandidates();
-    // Bodies the player's fleets are LEAVING this scan — feeds the landed-FS
-    // early-clear (a fleet that departs a body can't be "sitting landed" there).
-    const departingKeys = extractDepartingBodyKeys();
     const fsOn = config.masterEnabled !== false && Boolean(config.fsEnabled);
     const capReadyIds = fsOn
       ? fsCapReadyIds(fleetSaveCandidates, parseFsOffsets(config.fsOffsets ?? ''), now)
@@ -388,11 +411,35 @@ export const installAlarmClockProducer = (opts = {}) => {
     // Durable per-slot FS cancellations (self-expiring; survives re-detection
     // of the still-in-flight fleet, unlike the once-drained pending queue).
     const fsCancelById = fleetSaveCancelOffsets(universeId, now);
-    const guardianDismissed = guardianDismissedLandings(universeId, now);
     const guardianAcked = guardianAckedLandings(universeId, now);
-    // The user's manual "watch this" marks — unioned into the guardian push
-    // inside syncAlarmClock so the offline push matches the in-game button.
-    const manualLanded = readManualLandedFs();
+
+    // ── LOCAL pre-pass (no gist, no token) ─────────────────────────────
+    // Classify + publish the FS set and detect landings from purely local
+    // state, BEFORE the cloud round-trip — so the badges, the event-list FS
+    // badge and the fleet reminder all work with no gist token, and stay
+    // correct through a failed sync. The send hints rescue a leg first
+    // observed late (its remaining time under-reads its true duration).
+    // A successful sync below then overwrites the entries with the
+    // gist-reconciled set (which can carry locks made on another device).
+    const minFlightOkIds = fsHintOkIds(
+      fleetSaveCandidates, readFsSendHints(now), config.fsMinFlightSec ?? 0,
+    );
+    /** @type {import('../../domain/fleetSave.js').FleetSaveAlarmClock[]} */
+    let localFs = [];
+    if (fsOn) {
+      const localPrev = readFleetSaveEntries();
+      localFs = reconcileFleetSaves(localPrev, fleetSaveCandidates, {
+        threshold: config.fsThreshold ?? 0,
+        offsetsSec: parseFsOffsets(config.fsOffsets ?? ''),
+        minFlightSec: config.fsMinFlightSec ?? 0,
+        now,
+        cancelledById: fsCancelById,
+        minFlightOkIds,
+      });
+      armLandings(detectFsLandings(localPrev, fleetSaveCandidates, now));
+    }
+    // `fsOn` gates the published set so a disabled FS leaves no stale markers.
+    writeFleetSaveEntries(localFs);
 
     // Bail if a dispose landed after the debounce already fired but before we
     // reach the network round-trip. Guards against a stale run PATCHing the
@@ -402,37 +449,31 @@ export const installAlarmClockProducer = (opts = {}) => {
     try {
       const res = await syncAlarmClock(
         config,
-        { waveCandidates: candidates, present, adhocMutate, waveMutate, fleetSaveCandidates, fsCancelById, departingKeys, guardianDismissed, guardianAcked, manualLanded },
+        {
+          waveCandidates: candidates, present, adhocMutate, waveMutate,
+          fleetSaveCandidates, fsCancelById, localFleetSave: localFs,
+          guardianAcked, fleetReminders: readFleetReminders(),
+        },
         now, universeId,
       );
       // A dispose can land WHILE syncAlarmClock's read→poll-ntfy→PATCH-gist
       // round-trip is in flight. Abort the post-teardown continuation before it
-      // persists lastSig / rewrites the fleet-save + landed sets, so a stale
-      // run leaves no trace after dispose (and can't clobber a re-installed
-      // producer's state).
+      // persists lastSig / rewrites the fleet-save set, so a stale run leaves
+      // no trace after dispose (and can't clobber a re-installed producer's
+      // state).
       if (!installed) return;
       if (res.ok) {
         lastSig = sig;
         safeLS.set(sigKeyFor(universeId), sig);
-        // Republish the detected FS ids + the landed (exposed) set for the
-        // planet markers (which mark FS fleets without importing alarmClock).
-        // `fsOn` gates both so a disabled FS leaves no stale markers; the values
-        // persist for the next reload.
-        //
-        // The landed set is DISMISS-PRUNED before publishing so `readLandedFs()`
-        // is the single dismiss-aware channel both passive surfaces share. The
-        // badge can't read the local guardian-dismiss store directly (it lives in
-        // THIS feature, and a feature may not import another), so without this a
-        // hold-to-dismiss would clear the button + push yet leave the orange "FS"
-        // badge lit (there is no longer any TTL to clear it). The reconciler also
-        // drops dismissed landings at the source; this prunes the PUBLISHED copy
-        // belt-and-suspenders for the same-sync window before that lands, keeping
-        // dismiss a LOCAL, un-synced act in step with `guardianDismiss.js`.
-        writeFleetSaveIds(fsOn ? (res.fleetSave ?? []).map((e) => e.id) : []);
-        const liveLanded = (res.landedFleetSave ?? []).filter(
-          (l) => guardianDismissed[l.bodyKey] !== l.landedAt,
-        );
-        writeLandedFs(fsOn ? liveLanded : []);
+        // Adopt the gist-reconciled FS set (a superset of the local pre-pass
+        // when another device contributed locks) and arm any landing only the
+        // gist's lineage knew about — e.g. an FS sent and locked on another
+        // device that landed while this one was closed. Both are idempotent
+        // against what the pre-pass already did.
+        if (fsOn) {
+          writeFleetSaveEntries(res.fleetSave ?? []);
+          armLandings(res.landings ?? []);
+        }
         // Drop the commands we applied; keep any the user queued meanwhile.
         writePending(universeId, readPending(universeId).slice(pending.length));
       } else {
@@ -502,14 +543,18 @@ export const installAlarmClockProducer = (opts = {}) => {
     addFleetSaveCancel(universeId, id, offsets, expiresAt, Math.floor(Date.now() / 1000));
     forceNow();
   };
-  /** @param {string} bodyKey @param {number} landedAt */
-  const guardianDismiss = (bodyKey, landedAt) => {
-    const now = Math.floor(Date.now() / 1000);
-    // The TTL must start at the TAP, not at the landing: the landed-FS set is
-    // durable (no expiry), so a landing can be arbitrarily old when dismissed —
-    // landedAt + TTL would be already-expired and prune() would drop the record
-    // before the sync ever saw it.
-    addGuardianDismiss(universeId, bodyKey, landedAt, now + GUARDIAN_SUPPRESS_TTL_SEC, now);
+  /** @param {string} bodyKey */
+  const guardianDismiss = (bodyKey) => {
+    // Clearing the reminder IS the dismissal: the tombstone lives in the
+    // synced FR store, so it propagates to other devices instead of hiding in
+    // a local suppression record. The forced sync then sweeps the body's
+    // escalation push — it is no longer a live guardian entry. A user tap, so
+    // it takes the immediate path (see forceNow) — a post-tap navigation must
+    // not kill it.
+    removeFleetReminder(bodyKey, Math.floor(Date.now() / 1000));
+    document.dispatchEvent(
+      new CustomEvent(FLEET_REMINDER_CHANGED_EVENT, { detail: { fromProducer: true } }),
+    );
     forceNow();
   };
   /** @param {string} bodyKey */
@@ -527,13 +572,20 @@ export const installAlarmClockProducer = (opts = {}) => {
   };
   document.addEventListener(EVENT_BOX_LOADED_EVENT, onEventBox);
 
-  // A manual FS mark toggled on the fleetdispatch page must reach ntfy at once
-  // — schedule its guardian push, or sweep it on un-mark. Force a run past the
-  // signature short-circuit: manual marks aren't part of the scan signature, so
-  // an ordinary debounced run could no-op them away. A user tap, so it takes
-  // the immediate path (see forceNow) — a post-tap navigation must not kill it.
-  const onManualFs = () => forceNow();
-  document.addEventListener(MANUAL_FS_CHANGED_EVENT, onManualFs);
+  // A fleet reminder toggled elsewhere (the fleet1 chip) must reach ntfy at
+  // once — schedule its guardian push, or sweep it on un-toggle. Force a run
+  // past the signature short-circuit: reminders aren't part of the scan
+  // signature, so an ordinary debounced run could no-op them away. A user
+  // tap, so it takes the immediate path (see forceNow) — a post-tap
+  // navigation must not kill it. SKIP the events this producer dispatched
+  // itself (landing arms, the dismiss command) — those runs already carried
+  // the change to ntfy, and reacting again would add a pointless gist+ntfy
+  // round-trip per landing.
+  const onFleetReminderChanged = (/** @type {Event} */ e) => {
+    if (/** @type {CustomEvent} */ (e).detail?.fromProducer) return;
+    forceNow();
+  };
+  document.addEventListener(FLEET_REMINDER_CHANGED_EVENT, onFleetReminderChanged);
 
   // Reconcile once when the player returns to the tab — drains the run that
   // bailed while hidden (see `run`). While hidden, nothing here touches the game.
@@ -597,7 +649,7 @@ export const installAlarmClockProducer = (opts = {}) => {
   installed = {
     dispose: () => {
       document.removeEventListener(EVENT_BOX_LOADED_EVENT, onEventBox);
-      document.removeEventListener(MANUAL_FS_CHANGED_EVENT, onManualFs);
+      document.removeEventListener(FLEET_REMINDER_CHANGED_EVENT, onFleetReminderChanged);
       document.removeEventListener('visibilitychange', onVisibility);
       unsubConfig();
       unsubScanConfig();

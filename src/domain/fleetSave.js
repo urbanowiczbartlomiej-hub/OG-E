@@ -39,9 +39,12 @@
 //
 // We don't have the departure time in the event list, so flight time is
 // approximated by the time remaining at FIRST sight (`arrivalAt - now`): a
-// short hop reads as short however early we observe it, and a long flight
-// first observed late is the benign case (no prior alarmClock to keep, almost
-// no time left to act).
+// short hop reads as short however early we observe it. A long flight first
+// observed LATE (hidden tab, a debounce killed by OGame's post-click reload)
+// would mis-read as a hop and be rejected forever — that's what the SEND
+// HINTS fix: a leg matched to a dispatch-time hint (see {@link fsHintOkIds},
+// fed by `bridges/fleetSaveSendHint.js`) is judged by its TRUE duration and
+// waved through the time gate.
 //
 // # The decision is LOCKED once made — never cancel a scheduled FS
 //
@@ -174,6 +177,57 @@ export const isFleetSaveLeg = (missionType, isReturn) =>
 export const parseFsOffsets = (str) => parseDurationList(str, { signed: true });
 
 /**
+ * How far a candidate's `arrivalAt` may sit from a send hint's expected
+ * landing and still count as the same leg. Covers the server's send-
+ * processing latency and our `sentAt`-clock drift; well under any realistic
+ * gap between two distinct sends landing on the same body.
+ */
+export const FS_HINT_TOLERANCE_SEC = 30;
+
+/**
+ * One landing LEG derived from an own fleet send, captured at dispatch time
+ * by `bridges/fleetSaveSendHint.js` and read back via `state/fsSendHints.js`
+ * (the typedef lives HERE so both stay downstream of the domain). A one-way
+ * mission yields the outbound landing at the target; a round-trip mission
+ * yields the RETURN landing back at the origin.
+ *
+ * @typedef {object} FsSendHint
+ * @property {string} landingKey  Where the leg lands, `g:s:p:type`.
+ * @property {number} arrivalAt   Epoch SECONDS the leg is expected to land.
+ * @property {number} flightSec   TRUE one-way flight duration in seconds.
+ */
+
+/**
+ * Candidate ids whose TRUE flight time — proven by a dispatch-time send hint
+ * (`bridges/fleetSaveSendHint.js` → `state/fsSendHints.js`) — passes the
+ * minimum-flight-time gate. A hint matches a candidate when both land on the
+ * same body within {@link FS_HINT_TOLERANCE_SEC} of the expected time. Fed
+ * into {@link reconcileFleetSaves} as `minFlightOkIds`, where it is additive
+ * only (rescues a late-observed save; never vetoes). Pure.
+ *
+ * @param {FleetSaveCandidate[]} candidates
+ * @param {FsSendHint[]} hints
+ * @param {number} minFlightSec
+ * @returns {Set<string>}
+ */
+export const fsHintOkIds = (candidates, hints, minFlightSec) => {
+  /** @type {Set<string>} */
+  const ok = new Set();
+  if (!hints.length) return ok;
+  for (const c of candidates) {
+    if (!c.landingKey || !Number.isFinite(c.arrivalAt)) continue;
+    const hit = hints.some(
+      (h) =>
+        h.landingKey === c.landingKey &&
+        Math.abs(h.arrivalAt - c.arrivalAt) <= FS_HINT_TOLERANCE_SEC &&
+        h.flightSec >= minFlightSec,
+    );
+    if (hit) ok.add(c.id);
+  }
+  return ok;
+};
+
+/**
  * Reconcile the fleet-save set: carry forward already-classified saves,
  * newly classify qualifying candidates, and drop those whose row vanished.
  * Pure — returns fresh objects, never mutates the inputs, no `Date.now()`
@@ -190,7 +244,10 @@ export const parseFsOffsets = (str) => parseDurationList(str, { signed: true });
  *     lets the UI safely release such a row back to the ad-hoc toggle.)
  *   - **present, not yet FS** → classified now: kept only if
  *     `shipCount >= threshold` AND flight time `(arrivalAt - now) >=
- *     minFlightSec`. `minFlightSec <= 0` disables the flight-time gate.
+ *     minFlightSec`. `minFlightSec <= 0` disables the flight-time gate. A leg
+ *     in `minFlightOkIds` (its TRUE duration is known from a send hint and
+ *     passes the gate) skips the remaining-time approximation — additive
+ *     only: a hint can rescue a late-observed save, never veto a fresh one.
  *   - **absent** (`prev` id not among candidates) → dropped (landed /
  *     recalled), so its queue is swept.
  *
@@ -207,12 +264,14 @@ export const parseFsOffsets = (str) => parseDurationList(str, { signed: true });
  *   messages while the rest of the series stays queued. Re-applied every scan
  *   (the suppression store outlives one sync), so a still-present fleet can't
  *   re-grow a cancelled slot.
+ * @param {Set<string>} [opts.minFlightOkIds]  Candidate ids whose true flight
+ *   time is hint-verified ≥ `minFlightSec` (see {@link fsHintOkIds}).
  * @returns {FleetSaveAlarmClock[]}
  */
 export const reconcileFleetSaves = (
   prev,
   candidates,
-  { threshold, offsetsSec, minFlightSec, now, cancelledById = {} },
+  { threshold, offsetsSec, minFlightSec, now, cancelledById = {}, minFlightOkIds = new Set() },
 ) => {
   const known = new Map(prev.map((e) => [e.id, e]));
   /** @type {FleetSaveAlarmClock[]} */
@@ -223,7 +282,9 @@ export const reconcileFleetSaves = (
     if (!locked) {
       // Classify a brand-new leg — BOTH gates apply, exactly once.
       if (c.shipCount < threshold) continue;
-      if (minFlightSec > 0 && c.arrivalAt - now < minFlightSec) continue;
+      if (minFlightSec > 0 && c.arrivalAt - now < minFlightSec && !minFlightOkIds.has(c.id)) {
+        continue;
+      }
     }
     const cancelled = cancelledById[c.id];
     const eff = cancelled && cancelled.length
@@ -335,13 +396,11 @@ export const pruneFsNotify = (notify, entries) => {
 };
 
 /**
- * How long a guardian DISMISS / ACK suppression record is retained after the
- * landing it silences. The exposed flag ITSELF has no timer — it clears only on
- * re-save, departure, or an explicit dismiss (see
- * {@link reconcileLandedFleetSaves}). This window merely bounds the local
- * dismiss/ack stores: it must outlive the gap between the user's tap and the
- * sync that drops the landing at the source, and (for ack) it snoozes the
- * one-shot escalation push. A couple of hours is ample.
+ * How long a guardian ACK ("I'm on it") suppression record is retained. The
+ * exposed flag ITSELF has no timer — it lives in `state/fleetReminders.js`
+ * and clears only via the user's explicit acts. This window merely bounds the
+ * local ack store, which snoozes the one-shot escalation push by the
+ * configured interval. A couple of hours is ample.
  */
 export const GUARDIAN_SUPPRESS_TTL_SEC = 120 * 60;
 
@@ -353,9 +412,8 @@ export const GUARDIAN_SUPPRESS_TTL_SEC = 120 * 60;
 export const GUARDIAN_INTERVAL_SEC = 20 * 60;
 
 /**
- * A fleet-save that has LANDED — its event row is gone but we keep flagging the
- * body it sits on, exposed, until the fleet visibly moves or the user dismisses
- * it. There is deliberately NO expiry: the flag is durable, like a manual mark.
+ * A fleet-save LANDING — a previously-known FS whose event row is gone past
+ * its arrival, i.e. the fleet just touched down and is sitting exposed.
  *
  * @typedef {object} LandedFleetSave
  * @property {string} bodyKey   Landing body identity (`g:s:p:type`).
@@ -363,54 +421,28 @@ export const GUARDIAN_INTERVAL_SEC = 20 * 60;
  */
 
 /**
- * Track fleet-saves that have just LANDED, so a passive consumer (the planet
- * markers) can flag "your fleet is sitting here, exposed" for a while AFTER the
- * row vanishes from the event list — the most dangerous moment, and the one we
- * otherwise lose all sight of. Pure; the caller injects `now`.
+ * Detect fleet-saves that just LANDED this scan: a previously-known FS
+ * ({@link FleetSaveAlarmClock}) that is ABSENT from the current candidates and
+ * whose `arrivalAt <= now`. Keyed by body — one (latest) landing per body.
+ * Pure; the caller injects `now`.
  *
- *   - A previously-known FS ({@link FleetSaveAlarmClock}) that is ABSENT from the
- *     current candidates and whose `arrivalAt <= now` just landed → recorded at
- *     its `landingKey`.
- *   - Existing landed entries are carried forward indefinitely — there is NO
- *     timer. An exposed flag is durable; it clears only on the explicit events
- *     below, mirroring a manual mark.
- *   - A body that now has a LIVE candidate landing there is in motion again →
- *     dropped (the live/"saving" state wins).
- *   - CLEAR: a body in `departingKeys` (an own outbound leg left it this scan)
- *     OR in `dismissedKeys` (the user dismissed/acked this landing away) is
- *     dropped at once. Dismissal drops it at the SOURCE so it never re-arms once
- *     the local dismiss record is pruned.
+ * This is a DETECTOR only. The durable "fleet sitting exposed" state these
+ * landings arm lives in `state/fleetReminders.js` (per-body, gist-synced,
+ * cleared ONLY by the user's three explicit acts — never by fleet activity).
+ * Each detection fires effectively once: the landed leg drops out of the
+ * persisted FS set on the same reconcile, so the next scan's `prevFs` no
+ * longer carries it — and the reminder store's event-time LWW makes a repeat
+ * arm of the same landing a no-op anyway.
  *
- * Keyed by body — one (latest) landed entry per body.
- *
- * @param {LandedFleetSave[]} prevLanded   Previously-persisted landed set.
- * @param {FleetSaveAlarmClock[]} prevFs      Previous live FS set (disappearance source).
+ * @param {FleetSaveAlarmClock[]} prevFs      Previous FS set (disappearance source).
  * @param {FleetSaveCandidate[]} candidates FS candidates present this scan.
- * @param {object} opts
- * @param {number} opts.now         Epoch SECONDS.
- * @param {Set<string>} [opts.departingKeys] Body keys with an own outbound leg now.
- * @param {Set<string>} [opts.dismissedKeys] Body keys the user dismissed this scan.
+ * @param {number} now  Epoch SECONDS.
  * @returns {LandedFleetSave[]}
  */
-export const reconcileLandedFleetSaves = (
-  prevLanded,
-  prevFs,
-  candidates,
-  { now, departingKeys = new Set(), dismissedKeys = new Set() },
-) => {
+export const detectFsLandings = (prevFs, candidates, now) => {
   const liveIds = new Set(candidates.map((c) => c.id));
-  const liveLandingKeys = new Set(
-    candidates.map((c) => c.landingKey).filter((k) => typeof k === 'string' && k !== ''),
-  );
   /** @type {Map<string, LandedFleetSave>} */
   const byBody = new Map();
-
-  // Carry every previously-landed body forward — no timer. The drop pass below
-  // is the ONLY way out.
-  for (const e of prevLanded) byBody.set(e.bodyKey, { bodyKey: e.bodyKey, landedAt: e.landedAt });
-
-  // Newly-landed: a known FS gone from candidates whose arrival is past. Keep
-  // the latest landing per body.
   for (const fs of prevFs) {
     if (!fs.landingKey || liveIds.has(fs.id)) continue;
     if (!Number.isFinite(fs.arrivalAt) || fs.arrivalAt > now) continue;
@@ -419,14 +451,5 @@ export const reconcileLandedFleetSaves = (
       byBody.set(fs.landingKey, { bodyKey: fs.landingKey, landedAt: fs.arrivalAt });
     }
   }
-
-  // A body live again (an FS landing there now), one the fleet visibly departed
-  // from, or one the user dismissed is no longer a "landed, sitting" body.
-  for (const key of [...byBody.keys()]) {
-    if (liveLandingKeys.has(key) || departingKeys.has(key) || dismissedKeys.has(key)) {
-      byBody.delete(key);
-    }
-  }
-
   return [...byBody.values()];
 };

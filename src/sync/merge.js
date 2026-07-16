@@ -69,6 +69,7 @@ export { mergeColonizeDecisions } from '../domain/colonizeDecisions.js';
 import { latestOf, historyOf, HISTORY_CAP } from '../domain/targetReports.js';
 import { ACTIVITY_RING_CAP } from '../domain/activityObs.js';
 import { PROXIMITY_CAP } from '../state/proximityReports.js';
+import { FR_TOMBSTONE_TTL_SEC } from '../state/fleetReminders.js';
 
 /**
  * Whether two lifeform-position maps (slot → discovery epoch-ms) carry the
@@ -548,34 +549,48 @@ export const mergeDailyState = (local, remote) => {
 };
 
 /**
- * @typedef {import('../state/manualLandedFs.js').ManualLandedFsSlot} ManualLandedFsSlot
+ * @typedef {import('../state/fleetReminders.js').FleetReminderSlot} FleetReminderSlot
+ * @typedef {import('../state/fleetReminders.js').FleetReminderEntry} FleetReminderEntry
  */
 
 /**
- * Cross-device merge for the user's manual fleet-save marks: LAST-WRITER-WINS on
- * the WHOLE per-universe set, keyed by `updatedAt`. Whole-set (not a union) so a
- * REMOVAL on one device propagates instead of being resurrected by another that
- * still holds the mark; an empty set with a non-zero `updatedAt` is the tombstone
- * that carries the removal (kept by the slot's `hasData: updatedAt > 0`).
+ * Cross-device merge for the fleet reminders (FR): per-BODY last-writer-wins
+ * on each entry's `ts`, ties keeping local (both sides stamping the same
+ * landing produce identical entries anyway). `on: false` entries are the
+ * tombstones that carry a dismiss across devices; tombstones older than
+ * {@link FR_TOMBSTONE_TTL_SEC} (against `now`) are GC'd from the merged
+ * result so the slot can't accumulate dead bodies forever.
  *
- * `changed` is `true` only when the remote set is strictly newer and we adopt it.
+ * `changed` is `true` when any remote entry was adopted or a tombstone was
+ * GC'd — i.e. whenever the merged slot differs from `local`.
  *
- * @param {ManualLandedFsSlot} local
- * @param {Partial<ManualLandedFsSlot> | undefined | null} remote
- * @returns {{ merged: ManualLandedFsSlot, changed: boolean }}
+ * @param {FleetReminderSlot} local
+ * @param {Partial<FleetReminderSlot> | undefined | null} remote
+ * @param {number} nowSec  Epoch SECONDS (injected — keeps the merge pure).
+ * @returns {{ merged: FleetReminderSlot, changed: boolean }}
  */
-export const mergeManualLandedFs = (local, remote) => {
-  const remoteAt = (remote && typeof remote === 'object' && Number(remote.updatedAt)) || 0;
-  if (remoteAt > (local.updatedAt || 0)) {
-    return {
-      merged: {
-        marks: Array.isArray(remote?.marks) ? remote.marks : [],
-        updatedAt: remoteAt,
-      },
-      changed: true,
-    };
+export const mergeFleetReminders = (local, remote, nowSec) => {
+  const localMarks = local?.marks ?? {};
+  const remoteMarks = (remote && typeof remote === 'object' && remote.marks && typeof remote.marks === 'object')
+    ? remote.marks
+    : {};
+  let changed = false;
+  /** @type {Record<string, FleetReminderEntry>} */
+  const marks = {};
+  const keys = new Set([...Object.keys(localMarks), ...Object.keys(remoteMarks)]);
+  for (const k of keys) {
+    const l = localMarks[k];
+    const r = remoteMarks[k];
+    const win = r && Number.isFinite(Number(r.ts)) && (!l || Number(r.ts) > l.ts) ? r : l;
+    if (!win) continue;
+    if (!win.on && Number(win.ts) < nowSec - FR_TOMBSTONE_TTL_SEC) {
+      if (l) changed = true; // a local tombstone got GC'd
+      continue;
+    }
+    if (win !== l) changed = true;
+    marks[k] = /** @type {FleetReminderEntry} */ (win);
   }
-  return { merged: local, changed: false };
+  return { merged: { marks }, changed };
 };
 
 // ── Spyglass / dashboard-import reconcilers ─────────────────────────────────
@@ -584,10 +599,11 @@ export const mergeManualLandedFs = (local, remote) => {
 // TWO callers with the same semantics: the dashboard Export/Import
 // (features/dashboard/io.js) for every dataset, and — since 1.48 — the gist
 // sync scheduler for the Spyglass observations (mergeTargetReports,
-// mergeActivityObs, mergePlayerCache via the `playersLitePerUniverse` slot),
-// which were promoted from per-device intel to synced state because a second
-// device can never re-derive an observation timeline. The rest (proximity
-// log, alliance classes, body inventory) remains import-only per-device data.
+// mergeActivityObs, mergeProximityReports, mergePlayerCache via the
+// `playersLitePerUniverse` slot), which were promoted from per-device intel to
+// synced state because a second device can never re-derive an observation
+// timeline. The rest (alliance classes, body inventory) remains import-only
+// per-device data.
 // The discipline is uniform either way: pure `{ merged, changed }`, additive,
 // local observations trusted first — an import behaves exactly like a gist
 // download.

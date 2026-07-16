@@ -1,12 +1,13 @@
 // @ts-check
 //
-// Manual landed-FS mark — an inline toggle on the fleet1 dispatch screen that
-// lets the player flag "the fleet sitting on THIS body is a fleet-save, watch
-// it". It writes `state/manualLandedFs.js`; the badges feature and the bare-fleet
-// guardian read that store in UNION with the producer's auto set, so a mark
-// lights up the exposed-FS badge AND arms the guardian — covering the two gaps
-// auto-detection can't see (a freshly-bought fleet that never flew, and a watch
-// the user dismissed and wants back). See `state/manualLandedFs.js`.
+// Manual fleet-reminder (FR) chip — an inline toggle on the fleet1 dispatch
+// screen that lets the player flag "the fleet sitting on THIS body needs a
+// reminder, watch it". It arms/clears the UNIFIED fleet-reminder store
+// (`state/fleetReminders.js`) — the same per-body, gist-synced set the
+// producer's auto landing-detection arms — so a mark lights up the FR badge
+// AND arms the guardian, covering the gaps auto-detection can't see (a
+// freshly-bought fleet that never flew, a watch the user dismissed and wants
+// back). Un-toggling here is one of the three sanctioned ways an FR clears.
 //
 // Inline, not on the FAB: the mark is contextual to the body you're dispatching
 // from, so it belongs at the fleet1 form, where your eyes already are when
@@ -29,8 +30,8 @@ import { GAME } from '../../lib/gameDom.js';
 import { denseCoords, bodyKey as toBodyKey } from '../../domain/bodies.js';
 import { injectStyle } from '../../lib/dom.js';
 import { debounce } from '../../lib/debounce.js';
-import { MANUAL_FS_CHANGED_EVENT } from '../../lib/ogeEvents.js';
-import { hasManualLandedFs, toggleManualLandedFs } from '../../state/manualLandedFs.js';
+import { FLEET_REMINDER_CHANGED_EVENT } from '../../lib/ogeEvents.js';
+import { hasFleetReminder, toggleFleetReminder } from '../../state/fleetReminders.js';
 import { LIGHTHOUSE_GLYPH } from '../shared/buttonGlyphs.js';
 import { appendGlyph, installButtonChrome } from '../shared/buttonChrome.js';
 
@@ -157,7 +158,7 @@ const currentBody = () => {
  * @param {string} bodyKey
  */
 const paintChip = (chip, bodyKey) => {
-  const on = hasManualLandedFs(bodyKey);
+  const on = hasFleetReminder(bodyKey);
   chip.classList.toggle('on', on);
   chip.title = on
     ? 'Fleet reminder is set for this body — tap to clear'
@@ -179,10 +180,11 @@ const buildChip = () => {
     e.stopPropagation();
     const b = currentBody();
     if (!b) return;
-    toggleManualLandedFs(b.bodyKey, Math.floor(Date.now() / 1000));
+    toggleFleetReminder(b.bodyKey, Math.floor(Date.now() / 1000));
     paintChip(chip, b.bodyKey);
-    // Arm/disarm the guardian (same fleetdispatch page) at once.
-    document.dispatchEvent(new CustomEvent(MANUAL_FS_CHANGED_EVENT));
+    // Arm/disarm the guardian (same fleetdispatch page) at once, and let the
+    // sync scheduler upload the FR slot.
+    document.dispatchEvent(new CustomEvent(FLEET_REMINDER_CHANGED_EVENT));
   });
   return chip;
 };

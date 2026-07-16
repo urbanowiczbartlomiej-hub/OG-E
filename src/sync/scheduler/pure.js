@@ -202,10 +202,14 @@ export const sameJSON = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b
  * @param {unknown} [merged.playersPerUniverse]
  * @param {unknown} [merged.ownProfilePerUniverse]
  * @param {unknown} [merged.colonizeDecisionsPerUniverse]
- * @param {unknown} [merged.manualLandedFsPerUniverse]
+ * @param {unknown} [merged.fleetRemindersPerUniverse]
+ * @param {unknown} [merged.manualLandedFsPerUniverse]  Dead since 1.50 (the FR
+ *   unification) — left `undefined` so a gist still carrying the old slot
+ *   reads "not current" and gets slimmed by the next PATCH.
  * @param {unknown} [merged.watchListPerUniverse]
  * @param {unknown} [merged.targetReportsPerUniverse]
  * @param {unknown} [merged.activityObsPerUniverse]
+ * @param {unknown} [merged.proximityReportsPerUniverse]
  * @param {unknown} [merged.playersLitePerUniverse]
  * @param {unknown} [merged.presenceLedgerPerUniverse]
  * @returns {boolean}
@@ -222,9 +226,11 @@ export const gistIsCurrent = (remote, merged) =>
   sameJSON(remote?.playersPerUniverse, merged.playersPerUniverse) &&
   sameJSON(remote?.ownProfilePerUniverse, merged.ownProfilePerUniverse) &&
   sameJSON(remote?.colonizeDecisionsPerUniverse, merged.colonizeDecisionsPerUniverse) &&
+  sameJSON(remote?.fleetRemindersPerUniverse, merged.fleetRemindersPerUniverse) &&
   sameJSON(remote?.manualLandedFsPerUniverse, merged.manualLandedFsPerUniverse) &&
   sameJSON(remote?.watchListPerUniverse, merged.watchListPerUniverse) &&
   sameJSON(remote?.targetReportsPerUniverse, merged.targetReportsPerUniverse) &&
   sameJSON(remote?.activityObsPerUniverse, merged.activityObsPerUniverse) &&
+  sameJSON(remote?.proximityReportsPerUniverse, merged.proximityReportsPerUniverse) &&
   sameJSON(remote?.playersLitePerUniverse, merged.playersLitePerUniverse) &&
   sameJSON(remote?.presenceLedgerPerUniverse, merged.presenceLedgerPerUniverse);

@@ -37,14 +37,14 @@ export const installAlarmClock = () => {
     cancelFsSlot: producer.cancelFsSlot,
   });
   uiRefresh = ui.refresh;
-  // The post-landing guardian. Reads the producer's published landed-FS set
-  // (state/fleetSaveSet.readLandedFs) for its warning button; the producer
+  // The post-landing guardian. Reads the unified fleet-reminder store
+  // (state/fleetReminders.js) for its warning button; the producer
   // schedules/cancels the guardian's ntfy push, and the button's long-press
-  // dismiss routes back through producer.guardianDismiss.
+  // dismiss routes back through producer.guardianDismiss (the synced FR
+  // tombstone).
   const guardian = installGuardian({
     dismiss: producer.guardianDismiss,
     ack: producer.guardianAck,
-    universeId: producer.universeId,
   });
   installed = () => {
     ui.dispose();

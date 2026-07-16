@@ -49,6 +49,7 @@
 import { observeXHR } from './xhrObserver.js';
 import { safeLS } from '../lib/storage.js';
 import { pruneRegistry, dedupeEntry } from '../domain/registry.js';
+import { parseClockDuration } from '../domain/duration.js';
 import { MISSION_COLONIZE } from '../domain/rules.js';
 import { REGISTRY_KEY } from '../lib/storageKeys.js';
 import { COLONIZE_SENT_EVENT } from '../lib/ogeEvents.js';
@@ -87,28 +88,15 @@ import { COLONIZE_SENT_EVENT } from '../lib/ogeEvents.js';
 const contextByXhr = new WeakMap();
 
 /**
- * Parse `#durationOneWay`'s textContent into seconds.
- *
- * The game renders this element as `H:MM:SS` (3 parts) for sub-day
- * flights or `D:H:MM:SS` (4 parts) for longer ones — e.g. `01:50:48`
- * = 6648s. Any other shape, empty text, or NaN in any chunk returns
- * `0`. Caller treats `0` as "duration unknown" and skips the registry
- * write. Must be called AT TIME OF SEND — the game may overwrite the
- * DOM after receiving the sendFleet response.
+ * Parse `#durationOneWay`'s textContent into seconds via the shared
+ * `domain/duration.parseClockDuration` grammar. `0` = "duration unknown"
+ * (caller skips the registry write). Must be called AT TIME OF SEND — the
+ * game may overwrite the DOM after receiving the sendFleet response.
  *
  * @param {Element | null} el The `#durationOneWay` element, or null.
  * @returns {number} Duration in seconds, or `0` if unparseable.
  */
-const parseDurationSeconds = (el) => {
-  if (!el) return 0;
-  const text = el.textContent ? el.textContent.trim() : '';
-  if (!text) return 0;
-  const parts = text.split(':').map((p) => parseInt(p, 10));
-  if (parts.some((n) => Number.isNaN(n))) return 0;
-  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
-  if (parts.length === 4) return parts[0] * 86400 + parts[1] * 3600 + parts[2] * 60 + parts[3];
-  return 0;
-};
+const parseDurationSeconds = (el) => parseClockDuration(el?.textContent);
 
 /**
  * Pull the `mission` field out of a URL-encoded request body.

@@ -136,12 +136,13 @@ import {
   mergeSettings,
   mergeDailyRunRoutes,
   mergeDailyState,
-  mergeManualLandedFs,
+  mergeFleetReminders,
   mergeGalaxyScanConfig,
   mergeAlarmClockConfig,
   mergeColonizeDecisions,
   mergeTargetReports,
   mergeActivityObs,
+  mergeProximityReports,
   mergePlayerCache,
 } from './merge.js';
 import {
@@ -164,7 +165,7 @@ import { debounce } from '../lib/debounce.js';
 import { chromeStore, safeLS } from '../lib/storage.js';
 import { parseUniverseId } from '../lib/universeId.js';
 import { readDailyState, writeDailyState } from '../state/dailyActions.js';
-import { readManualLandedFsSlot, writeManualLandedFsSlot } from '../state/manualLandedFs.js';
+import { readFleetReminderSlot, writeFleetReminderSlot } from '../state/fleetReminders.js';
 import {
   watchListStore,
   normalizeWatchList,
@@ -182,6 +183,11 @@ import {
   activityObsKeyFor,
   whenActivityObsHydrated,
 } from '../state/activityObs.js';
+import {
+  proximityReportsStore,
+  proximityReportsKeyFor,
+  whenProximityHydrated,
+} from '../state/proximityReports.js';
 import { playersStore, playersKeyFor, whenPlayersHydrated } from '../state/players.js';
 import {
   presenceLedgerStore,
@@ -199,7 +205,7 @@ import {
   mergeWatchList,
   watchSlotHasData,
 } from '../domain/watchListMerge.js';
-import { SYNC_FORCE_EVENT, DAILY_STATE_CHANGED_EVENT } from '../lib/ogeEvents.js';
+import { SYNC_FORCE_EVENT, DAILY_STATE_CHANGED_EVENT, FLEET_REMINDER_CHANGED_EVENT } from '../lib/ogeEvents.js';
 import {
   canStartSync,
   shouldScheduleUpload,
@@ -813,6 +819,28 @@ const writeLocalTargetReportsSlot = async (merged) => {
   }
 };
 
+/** @typedef {import('../domain/espionageReport.js').ProximityReport} ProximityReport */
+
+/** @returns {Promise<ProximityReport[]>} */
+const readLocalProximityReportsSlot = async () => {
+  if (!routesUniverseId) return [];
+  const raw = await chromeStore.get(proximityReportsKeyFor(routesUniverseId));
+  return Array.isArray(raw) ? /** @type {ProximityReport[]} */ (raw) : [];
+};
+
+/** @param {ProximityReport[]} merged @returns {Promise<void>} */
+const writeLocalProximityReportsSlot = async (merged) => {
+  if (!routesUniverseId) return;
+  bumpApplying('proximityReportsPerUniverse');
+  try {
+    await chromeStore.set(proximityReportsKeyFor(routesUniverseId), merged);
+    await whenProximityHydrated();
+    proximityReportsStore.update((cur) => mergeProximityReports(cur, merged).merged);
+  } finally {
+    dropApplying('proximityReportsPerUniverse');
+  }
+};
+
 /** @returns {Promise<ActivityObsMap>} */
 const readLocalActivityObsSlot = async () => {
   if (!routesUniverseId) return {};
@@ -973,13 +1001,15 @@ const SYNC_SLOTS = [
     remoteDefault: {},
   },
   {
-    payloadKey: 'manualLandedFsPerUniverse',
-    readLocal: readManualLandedFsSlot,
-    writeLocal: writeManualLandedFsSlot,
-    merge: mergeManualLandedFs,
-    // Keep an empty set with a non-zero updatedAt — it's the removal tombstone
-    // that lets an unmark / re-save propagate cross-device (last-writer-wins).
-    hasData: (merged) => (merged.updatedAt || 0) > 0,
+    // The unified fleet reminders (auto landings + manual marks). Per-body
+    // LWW with `on:false` tombstones — `now` injected so the merge (and its
+    // tombstone GC horizon) stays pure and test-clockable. Tombstones ARE
+    // data (they carry a dismiss cross-device), hence the hasData on any key.
+    payloadKey: 'fleetRemindersPerUniverse',
+    readLocal: readFleetReminderSlot,
+    writeLocal: writeFleetReminderSlot,
+    merge: (local, remote) => mergeFleetReminders(local, remote, Math.floor(Date.now() / 1000)),
+    hasData: (merged) => Object.keys(merged.marks).length > 0,
   },
   {
     payloadKey: 'watchListPerUniverse',
@@ -1012,6 +1042,17 @@ const SYNC_SLOTS = [
       return { changed: r.changed, merged: sweepStaleActivityObs(r.merged, Date.now()) };
     },
     hasData: (merged) => Object.keys(merged).length > 0,
+  },
+  {
+    // "Who's spying on you" alert log. A probe another player flew at us is an
+    // observation a second device can never re-derive (the alert is one-shot),
+    // so it syncs like the other Spyglass observations. Union-dedup merge,
+    // newest-first, capped — see mergeProximityReports.
+    payloadKey: 'proximityReportsPerUniverse',
+    readLocal: readLocalProximityReportsSlot,
+    writeLocal: writeLocalProximityReportsSlot,
+    merge: mergeProximityReports,
+    hasData: (merged) => merged.length > 0,
   },
   {
     // MUST stay AFTER targetReports/activityObs: its readLocal filter derives
@@ -1262,10 +1303,11 @@ const upload = async () => {
       galaxyScanConfig: slotPayloads.galaxyScanConfig,
       alarmClockConfigPerUniverse: slotPayloads.alarmClockConfigPerUniverse,
       colonizeDecisionsPerUniverse: slotPayloads.colonizeDecisionsPerUniverse,
-      manualLandedFsPerUniverse: slotPayloads.manualLandedFsPerUniverse,
+      fleetRemindersPerUniverse: slotPayloads.fleetRemindersPerUniverse,
       watchListPerUniverse: slotPayloads.watchListPerUniverse,
       targetReportsPerUniverse: slotPayloads.targetReportsPerUniverse,
       activityObsPerUniverse: slotPayloads.activityObsPerUniverse,
+      proximityReportsPerUniverse: slotPayloads.proximityReportsPerUniverse,
       playersLitePerUniverse: slotPayloads.playersLitePerUniverse,
       presenceLedgerPerUniverse: slotPayloads.presenceLedgerPerUniverse,
     };
@@ -1509,6 +1551,14 @@ export const installSync = () => {
     scheduleUpload();
   };
   const unsubActivityObs = activityObsStore.subscribe(onActivityObsChange);
+  // Proximity alerts ("who's spying on you"): an opened alert flips the store →
+  // schedule an upload. Sync-applied writes are skipped via the keyed suppressor.
+  const onProximityChange = () => {
+    if (!shouldScheduleUpload({ cloudSync: settingsStore.get().cloudSync, applying: isApplyingFromSync('proximityReportsPerUniverse') }))
+      return;
+    scheduleUpload();
+  };
+  const unsubProximity = proximityReportsStore.subscribe(onProximityChange);
   // Presence ledger: a debounced fold learned a new bit → schedule an upload
   // (the ledger only changes when a probe genuinely contributed, so this is
   // quieter than the ring subscriptions above).
@@ -1602,6 +1652,17 @@ export const installSync = () => {
   };
   document.addEventListener(DAILY_STATE_CHANGED_EVENT, onDailyStateChanged);
 
+  // Fleet-reminder changes (a landing armed by the producer, the fleet1 chip,
+  // a guardian dismiss) — the FR store is a plain key-owner (no reactive
+  // store), so its mutation sites announce via this DOM event; schedule an
+  // upload so the change reaches the gist quickly. No anti-loop flag needed:
+  // the slot's writeLocal is a plain slot write that dispatches nothing.
+  const onFleetReminderChanged = () => {
+    if (!shouldScheduleUpload({ cloudSync: settingsStore.get().cloudSync })) return;
+    scheduleUpload();
+  };
+  document.addEventListener(FLEET_REMINDER_CHANGED_EVENT, onFleetReminderChanged);
+
   const syncKey = universeId
     ? syncRequestKeyFor(universeId)
     : SYNC_REQUEST_KEY_BASE;
@@ -1686,9 +1747,11 @@ export const installSync = () => {
       unsubWatchList();
       unsubTargetReports();
       unsubActivityObs();
+      unsubProximity();
       unsubPresenceLedger();
       document.removeEventListener(SYNC_FORCE_EVENT, onForceSync);
       document.removeEventListener(DAILY_STATE_CHANGED_EVENT, onDailyStateChanged);
+      document.removeEventListener(FLEET_REMINDER_CHANGED_EVENT, onFleetReminderChanged);
       unsubStorage();
       installed = null;
     },

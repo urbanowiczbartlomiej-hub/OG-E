@@ -27,8 +27,9 @@
 //     released back to the ad-hoc toggle below, which is safe because the
 //     persisted entry survives as an empty-series lock and can never be
 //     re-auto-classified (see `domain/fleetSave.reconcileFleetSaves`).
-//     Driven by the mirror's `fleetSave` set (not a local DOM guess) so it
-//     matches what's actually scheduled — short planet⇄moon hops never get
+//     Driven by the producer's republished set (`state/fleetSaveSet.js` —
+//     the reconciled classification, not a local DOM guess) so it matches
+//     the ship + flight-time gates — short planet⇄moon hops never get
 //     flagged. Takes precedence over the ad-hoc toggle on the same row
 //     (wave > fleet-save > ad-hoc).
 //   - **Ad-hoc.** Every other leg (outbound, non-expedition, or a return
@@ -73,6 +74,7 @@ import {
 import { injectStyle } from '../../lib/dom.js';
 import { debounce } from '../../lib/debounce.js';
 import { readPending, lastAdhocIntent, lastWaveIntent } from './pending.js';
+import { readFleetSaveEntries } from '../../state/fleetSaveSet.js';
 import { readFleetSaveCancel, pruneFleetSaveCancel } from './fleetSaveCancel.js';
 import { fleetRowMeta, fleetSaveLabelFor } from './fleetSaveScan.js';
 import { GAME } from '../../lib/gameDom.js';
@@ -316,8 +318,12 @@ const render = () => {
   const sectionOn = s.alarmClockMasterEnabled && isValidNtfyToken(s.alarmClockNtfyToken);
   const adhocOn = sectionOn; // ad-hoc alarmClock are always on when the section is
   const waveOn = sectionOn && r.alarmClockEnabled;
-  // Fleet-save enable is per-universe (B3b) — read from the galaxyScanConfig store.
-  const fsOn = sectionOn && galaxyScanConfigStore.get().fsEnabled;
+  // Fleet-save enable is per-universe (B3b) — read from the galaxyScanConfig
+  // store. Deliberately NOT ntfy-token-gated (unlike the wave/ad-hoc badges):
+  // since 1.50 the FS set is classified locally and the badge is the "this leg
+  // IS a fleet-save" marker first — the alarm series it also fronts degrades
+  // gracefully without a token (fireAts exist; nothing is queued).
+  const fsOn = s.alarmClockMasterEnabled && galaxyScanConfigStore.get().fsEnabled;
   const now = Math.floor(Date.now() / 1000);
   const universeId = parseUniverseId(location.host);
   const pending = readPending(universeId);
@@ -354,7 +360,10 @@ const render = () => {
   let nextFsFlipAt = Infinity;
 
   const armedSet = new Set((snapshot?.adhoc || []).map((e) => e.id));
-  const fsById = new Map((snapshot?.fleetSave || []).map((e) => [e.id, e]));
+  // FS entries come from the producer's LOCAL republish (state/fleetSaveSet),
+  // not the gist mirror — so the badge works with no gist token and stays
+  // correct through a failed sync (the mirror still drives waves + ad-hoc).
+  const fsById = new Map(readFleetSaveEntries().map((e) => [e.id, e]));
   // Local, not-yet-synced FS slot cancellations (read-only here; the producer
   // owns the writes). Keyed by alarmClock id → suppressed offsets.
   const fsCancel = pruneFleetSaveCancel(readFleetSaveCancel(universeId), now);
@@ -513,7 +522,7 @@ export const installEventListAlarmClock = ({
       // may have moved since render, and the slot must still be cancellable.
       const universeId = parseUniverseId(location.host);
       const now = Math.floor(Date.now() / 1000);
-      const rawFs = (snapshot?.fleetSave || []).find((e) => e.id === id);
+      const rawFs = readFleetSaveEntries().find((e) => e.id === id);
       if (rawFs) {
         const fs = effectiveFs(rawFs, pruneFleetSaveCancel(readFleetSaveCancel(universeId), now)[id]?.offsets);
         const slot = nearestCancellableSlot(fs, now);

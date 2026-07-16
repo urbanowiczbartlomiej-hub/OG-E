@@ -27,3 +27,15 @@ export const REGISTRY_KEY = 'oge_colonizationRegistry';
  * Owned (and re-exported) by `state/dailyRunRoutes.js`.
  */
 export const DAILY_RUN_REDIRECT_KEY = 'oge_dailyRunRedirect';
+
+/**
+ * localStorage key for fleet-save send hints — one small record per own
+ * fleet SEND, captured at dispatch time by `bridges/fleetSaveSendHint.js`
+ * (MAIN world, written by hand via `safeLS`) and read by the alarmClock
+ * producer (isolated world, via `state/fsSendHints.js`). A hint carries the
+ * TRUE flight duration the event list can never tell us, so the FS
+ * classifier's minimum-flight-time gate doesn't mis-read a long fleet-save
+ * first observed late (hidden tab, killed debounce, reload near arrival) as
+ * a short hop. Self-pruning: entries expire shortly after their leg lands.
+ */
+export const FS_SEND_HINTS_KEY = 'oge_fsSendHints';

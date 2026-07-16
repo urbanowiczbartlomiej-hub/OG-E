@@ -75,6 +75,28 @@ export const parseDurationList = (str, { signed = false } = {}) => {
 };
 
 /**
+ * Parse a game-rendered CLOCK duration (`H:MM:SS`, or `D:H:MM:SS` for
+ * flights over a day — e.g. `#durationOneWay`'s text, `01:50:48` = 6648 s)
+ * into whole seconds. Any other shape, empty text, or a NaN chunk returns
+ * `0`; callers treat `0` as "duration unknown". Shared by the MAIN-world
+ * send observers (`bridges/sendFleetHook.js`, `bridges/fleetSaveSendHint.js`)
+ * — a different grammar from {@link parseDuration}'s minutes-first Settings
+ * tokens, which is why it is a separate function.
+ *
+ * @param {string | null | undefined} text
+ * @returns {number} Duration in seconds, or `0` if unparseable.
+ */
+export const parseClockDuration = (text) => {
+  const t = (text || '').trim();
+  if (!t) return 0;
+  const parts = t.split(':').map((p) => parseInt(p, 10));
+  if (parts.some((n) => Number.isNaN(n))) return 0;
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 4) return parts[0] * 86400 + parts[1] * 3600 + parts[2] * 60 + parts[3];
+  return 0;
+};
+
+/**
  * Format whole seconds back into a canonical minutes-first token for
  * display: a whole number of minutes renders as `Nm` (so `3600 ⇒ "60m"`,
  * matching the input grammar's preference for minutes), anything else as
