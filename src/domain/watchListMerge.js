@@ -28,6 +28,7 @@
 //   cadence    "_" → { v: { rescanHours, galaxyHours } } — never tombstoned
 //   moonStrike "_" → { v: 'off'|'lone'|'newest'|'any' }  — never tombstoned
 //   patrol     "_" → { v: number (± systems, 0 = off) }   — never tombstoned
+//   probeSrc   "_" → { v: 'nearest'|'active' }            — never tombstoned
 //
 // `probes` and `rescan` are deliberately NOT families: probes is per-device
 // FAB convenience, rescan is transient bookkeeping that self-clears against
@@ -68,6 +69,7 @@
  * @property {Family} cadence
  * @property {Family} moonStrike
  * @property {Family} patrol
+ * @property {Family} probeSrc
  *
  * @typedef {Record<string, Record<string, number>>} WatchListLedger
  *   The local sidecar (`<uni>:oge_watchListTs`): per family, key → stamp.
@@ -77,11 +79,11 @@
 
 /** Family names, fixed — the slot/ledger contract. */
 export const WATCH_FAMILIES = /** @type {const} */ ([
-  'watched', 'rel', 'scan', 'gal', 'hide', 'scanBodies', 'cadence', 'moonStrike', 'patrol',
+  'watched', 'rel', 'scan', 'gal', 'hide', 'scanBodies', 'cadence', 'moonStrike', 'patrol', 'probeSrc',
 ]);
 
 /** The single-value families — one `"_"`-keyed record, never tombstoned. */
-const SINGLE_FAMILIES = new Set(['scanBodies', 'cadence', 'moonStrike', 'patrol']);
+const SINGLE_FAMILIES = new Set(['scanBodies', 'cadence', 'moonStrike', 'patrol', 'probeSrc']);
 
 /** Key used by the single-value families (see {@link SINGLE_FAMILIES}). */
 export const SINGLE_KEY = '_';
@@ -172,6 +174,7 @@ const liveValuesOf = (cfg, fam) => {
     case 'cadence': return c.cadence != null ? { [SINGLE_KEY]: c.cadence } : {};
     case 'moonStrike': return c.moonStrike != null ? { [SINGLE_KEY]: c.moonStrike } : {};
     case 'patrol': return c.patrolSystems != null ? { [SINGLE_KEY]: c.patrolSystems } : {};
+    case 'probeSrc': return c.probeSource != null ? { [SINGLE_KEY]: c.probeSource } : {};
     default: return {};
   }
 };
@@ -240,6 +243,7 @@ export const decomposeWatchSlot = (slot) => {
   if (SINGLE_KEY in live.cadence) cfg.cadence = live.cadence[SINGLE_KEY];
   if (SINGLE_KEY in live.moonStrike) cfg.moonStrike = live.moonStrike[SINGLE_KEY];
   if (SINGLE_KEY in live.patrol) cfg.patrolSystems = live.patrol[SINGLE_KEY];
+  if (SINGLE_KEY in live.probeSrc) cfg.probeSource = live.probeSrc[SINGLE_KEY];
   return { cfg, ledger };
 };
 
@@ -266,7 +270,7 @@ const sameValue = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? nu
  * @param {import('../state/watchList.js').WatchListConfig | Record<string, any>} cfg
  * @param {WatchListLedger} ledger
  * @param {number} now
- * @param {{ scanBodies?: unknown, cadence?: unknown, moonStrike?: unknown, patrol?: unknown }} [defaults]
+ * @param {{ scanBodies?: unknown, cadence?: unknown, moonStrike?: unknown, patrol?: unknown, probeSrc?: unknown }} [defaults]
  *   The materialised single-family defaults to compare against; a family with
  *   no supplied default seeds whenever unstamped.
  * @returns {{ ledger: WatchListLedger, changed: boolean }}
@@ -280,7 +284,7 @@ export const seedWatchListLedger = (cfg, ledger, now, defaults = {}) => {
     const single = SINGLE_FAMILIES.has(fam);
     for (const [k, v] of Object.entries(liveValuesOf(cfg, fam))) {
       if (Number.isFinite(Number(out[fam][k]))) continue;
-      if (single && fam in defaults && sameValue(v, defaults[/** @type {'scanBodies'|'cadence'|'moonStrike'|'patrol'} */ (fam)])) continue;
+      if (single && fam in defaults && sameValue(v, defaults[/** @type {'scanBodies'|'cadence'|'moonStrike'|'patrol'|'probeSrc'} */ (fam)])) continue;
       out[fam][k] = now;
       changed = true;
     }

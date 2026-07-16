@@ -475,6 +475,6 @@ const renderPhase = (ctx) => {
         dim: ctx.cooldown,
       };
     case 'allDone':
-      return { text: 'All discovered!', bg: BG_LF_DONE };
+      return { text: 'All discovered', bg: BG_LF_DONE };
   }
 };

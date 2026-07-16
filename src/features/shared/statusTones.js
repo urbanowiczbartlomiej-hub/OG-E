@@ -7,8 +7,8 @@
 // Colonization, Lifeforms, Daily Run, Spy):
 //
 //   • {@link TONE_ERROR} (rose) — the tap FAILED or cannot act at all:
-//     nothing to send ('No ship!'), every general fleet slot busy
-//     ('All fleets!', 'Max fleets'), dispatch refused ('Failed', 'No fuel'),
+//     nothing to send ('No ship'), every general fleet slot busy
+//     ('Max fleets'), dispatch refused ('Failed', 'No fuel'),
 //     a required AGR routine disabled.
 //   • {@link TONE_WAIT} (amber) — the tap is VALID but there is nothing to
 //     act on right now; come back later: busy / min-gap countdowns

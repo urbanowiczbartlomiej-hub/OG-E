@@ -81,7 +81,7 @@ export const ALL_MAXED_LABEL = 'All sent';
  * from {@link ALL_MAXED_LABEL} so the user can tell "my expedition budget
  * is spent" apart from "no fleet of any kind can launch right now".
  */
-export const ALL_FLEETS_LABEL = 'All fleets!';
+export const ALL_FLEETS_LABEL = 'Max fleets';
 
 // ─── Background colors ───────────────────────────────────────────────
 
@@ -226,7 +226,7 @@ export const isPlanetShipless = (snapshot) =>
  */
 export const computeInitialLabel = (env) => {
   if (!env.search.includes('component=fleetdispatch')) return BUTTON_TEXT;
-  if (env.hasDispatchFleet) return 'Send!';
+  if (env.hasDispatchFleet) return 'Send';
   if (env.hasAgoRoutine7) return 'Prepare';
   return BUTTON_TEXT;
 };

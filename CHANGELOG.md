@@ -4,6 +4,42 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.51.3] — 2026-07-16
+
+### Added
+
+- **Spyglass → "Probe from" setting (nearest / active).** The in-game Spy
+  button used to always hop to the own planet closest to the target before
+  sending probes. You can now choose to launch from whatever body you're
+  currently on instead. Default stays "nearest" (shortest probe flight); it's
+  a strategy knob, so it syncs across your devices like the other Spyglass
+  settings.
+
+### Changed
+
+- **Alliance share now auto-syncs instead of nagging.** When a shared pool
+  went a day stale, OG-E used to show a "share due" reminder and wait for a
+  click. While Alliance share is on, it now just runs the round automatically
+  (about once a day, when you open the dashboard) — enabling the share is your
+  consent to pool. Don't want it? Turn Alliance share off. The Alliance-sync
+  button stays as an on-demand "sync now".
+- **Clearer command-button wording.** "All fleets!" is now "Max fleets", and
+  exclamation marks are gone from every button label (Send, Sent, No ship,
+  No probes, …). The Expeditions button's full-fleet state now shows in the
+  same red as the other buttons (was gold), and the Colonization button's
+  min-gap "Wait" countdown now wears its own turquoise instead of gold.
+- **Daily Run no longer offers the Harvest mission** in a route's mission
+  picker (it left Deployment, Transport, Attack, Espionage).
+- **Shorter, plainer help text** on the Alarm clock (intro + fair-play note +
+  ntfy token steps) and the Daily Run panel.
+
+### Fixed
+
+- **Colonization histogram labels are readable on mobile again.** On narrow
+  screens the binned size ranges ("318-320") wrapped into a smeared two-line
+  vertical label; the axis now gives them room to sit on a single line without
+  shrinking the bars.
+
 ## [1.51.2] — 2026-07-16
 
 ### Fixed

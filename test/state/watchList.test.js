@@ -55,6 +55,7 @@ const fullCfg = (over = {}) => ({
   cadence: { ...DEFAULT_CADENCE },
   moonStrike: 'newest',
   patrolSystems: 0,
+  probeSource: 'nearest',
   ...over,
 });
 
@@ -177,6 +178,13 @@ describe('normalizeWatchList', () => {
     expect(out.mapHidden).toEqual({ '7': true, '9': true });
     expect(normalizeWatchList({ players: [], mapHidden: 'nope' }).mapHidden).toEqual({});
     expect(normalizeWatchList({ players: [] }).mapHidden).toEqual({});
+  });
+
+  it('coerces probeSource: keeps "active", everything else falls back to "nearest"', () => {
+    expect(normalizeWatchList({ players: [], probeSource: 'active' }).probeSource).toBe('active');
+    expect(normalizeWatchList({ players: [], probeSource: 'nearest' }).probeSource).toBe('nearest');
+    expect(normalizeWatchList({ players: [], probeSource: 'garbage' }).probeSource).toBe('nearest');
+    expect(normalizeWatchList({ players: [] }).probeSource).toBe('nearest');
   });
 });
 

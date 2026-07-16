@@ -362,7 +362,7 @@ export function renderSpy(ctx, preflight) {
   if (preflight && preflight.have < preflight.need) {
     // Not enough probes on THIS planet for the armed order — say so up front.
     if (preflight.have <= 0) {
-      return { text: 'No probes!', subtext: who, bg: BG_SPY_ERROR };
+      return { text: 'No probes', subtext: who, bg: BG_SPY_ERROR };
     }
     return {
       text: ctx.strike ? 'Strike' : 'Spy',

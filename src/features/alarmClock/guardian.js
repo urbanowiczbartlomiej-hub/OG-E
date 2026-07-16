@@ -223,7 +223,7 @@ const paintReady = (t) =>
   btn?.paintLines('g', labelLines({ main: 'Send FS', sub: t.coords, hint: '' }));
 /** Dispatched. @param {{ coords: string }} t */
 const paintSent = (t) =>
-  btn?.paintLines('g', labelLines({ main: 'Saved!', sub: t.coords, hint: '' }));
+  btn?.paintLines('g', labelLines({ main: 'Saved', sub: t.coords, hint: '' }));
 /** AGR's fleet-save routine is disabled — tell the user where to enable it. */
 const paintFsOff = () =>
   btn?.paintLines('g', labelLines({ main: 'FS off', sub: 'enable Fleet', hint: 'Save in AGR' }));

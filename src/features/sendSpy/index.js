@@ -383,7 +383,7 @@ const refresh = () => {
   if (!controller || busy) return;
   if (spyReady && spyTarget && courierStep() === 'fleet2') {
     showingLoading = false;
-    paintZone({ text: 'Send!', subtext: coordsLabel(spyTarget), bg: BG_SPY_READY });
+    paintZone({ text: 'Send', subtext: coordsLabel(spyTarget), bg: BG_SPY_READY });
     return;
   }
   // Hold a dim "loading…" state until the apiContext handoff lands AND the
@@ -408,14 +408,14 @@ const refresh = () => {
  */
 const spyErrorPaint = (reason, t) => {
   const coords = `[${t.galaxy}:${t.system}:${t.position}]`;
-  if (reason === 'allFleets') return { text: 'All fleets!', bg: BG_SPY_ERROR };
+  if (reason === 'allFleets') return { text: 'Max fleets', bg: BG_SPY_ERROR };
   // Two distinct courier failures, one user-facing meaning for a probe order:
   // 'noShips' (plural) = select() couldn't fill the order from the planet's
   // hangar; 'noShip' (singular) = the target-validation path's missing-ship
   // case. The old compare matched only the singular, so the common empty-
   // hangar case fell through to the raw code label.
   if (reason === 'noShip' || reason === 'noShips') {
-    return { text: 'No probes!', subtext: coords, bg: BG_SPY_ERROR };
+    return { text: 'No probes', subtext: coords, bg: BG_SPY_ERROR };
   }
   return { text: reason || 'Failed', subtext: coords, bg: BG_SPY_ERROR };
 };
@@ -469,7 +469,7 @@ const onSpyClick = async () => {
     // navigation window so no reactor/ticker repaints the button into a stale
     // unlocked state before the reload. The safety timeout releases the lock
     // if the expected reload never comes. Mirrors sendColony's lock + timeout.
-    paintZone({ text: 'Sent!', bg: BG_SPY_READY, dim: true });
+    paintZone({ text: 'Sent', bg: BG_SPY_READY, dim: true });
     if (sentLockTimer) clearTimeout(sentLockTimer);
     sentLockTimer = setTimeout(() => {
       sentLockTimer = null;
@@ -527,9 +527,14 @@ const onSpyClick = async () => {
   // one hop: navigate to that planet's fleetdispatch and let the next tap
   // select. The armed-send tap 2 above never reaches this gate — an already
   // selected fleet dispatches from wherever it was armed.
-  const launch = nearestLaunchPlanet(
-    target, bodiesStore.get().bodies, getApiContext()?.server ?? {},
-  );
+  //
+  // 'active' probe source (dashboard config) opts OUT of the hop: `launch` stays
+  // null, so `onLaunch` is true and the send fires from whatever body is active.
+  const launch = watchListStore.get().probeSource === 'active'
+    ? null
+    : nearestLaunchPlanet(
+      target, bodiesStore.get().bodies, getApiContext()?.server ?? {},
+    );
   const here = readCurrentBody();
   const onLaunch = !launch || (
     !!here
@@ -566,7 +571,7 @@ const onSpyClick = async () => {
     }
     spyReady = true;
     spyTarget = target;
-    paintZone({ text: 'Send!', subtext: coordsLabel(target), bg: BG_SPY_READY });
+    paintZone({ text: 'Send', subtext: coordsLabel(target), bg: BG_SPY_READY });
     return;
   }
 
@@ -583,7 +588,7 @@ const onSpyClick = async () => {
   }
   spyReady = true;
   spyTarget = target;
-  paintZone({ text: 'Send!', subtext: coordsLabel(target), bg: BG_SPY_READY });
+  paintZone({ text: 'Send', subtext: coordsLabel(target), bg: BG_SPY_READY });
 };
 
 // ─── lifecycle ────────────────────────────────────────────────────────────

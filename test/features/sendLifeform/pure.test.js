@@ -199,9 +199,9 @@ describe('render', () => {
     const p = render({ kind: 'offGalaxy', scansRemaining: 10, cap: null });
     expect(p).toMatchObject({ text: 'Discover', bg: BG_LF_IDLE });
   });
-  it('allDone → "All discovered!"', () => {
+  it('allDone → "All discovered"', () => {
     const p = render({ kind: 'allDone', cooldown: false, scansRemaining: 0, cap: null });
-    expect(p).toMatchObject({ text: 'All discovered!', bg: BG_LF_DONE });
+    expect(p).toMatchObject({ text: 'All discovered', bg: BG_LF_DONE });
   });
   it('blocked → "Max fleets" in error red, dimmed, with NO subtext', () => {
     // The fleet cap is account-global, so the viewed system's coords are

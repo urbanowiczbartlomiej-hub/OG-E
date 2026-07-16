@@ -113,6 +113,17 @@ import {
  *   body whose neighbourhood the Look plan walks and the moon-strike
  *   detector hunts. 0 = patrol off (the default). Synced (a strategy knob);
  *   clamped to 0..{@link import('../domain/patrol.js').PATROL_SYSTEMS_MAX}.
+ * @property {ProbeSource} [probeSource]
+ *   Which own body a probe fleet launches from: 'nearest' (the own planet at
+ *   the smallest flight distance to the target — the default, minimises probe
+ *   travel time) or 'active' (send from whatever body is currently active, no
+ *   hop). Synced (a strategy knob, like `moonStrike`); materialised with
+ *   {@link DEFAULT_PROBE_SOURCE}.
+ */
+
+/**
+ * @typedef {'nearest'|'active'} ProbeSource
+ *   Probe launch-source policy — see {@link WatchListConfig.probeSource}.
  */
 
 /** @typedef {import('../domain/fleetLanding.js').MoonStrikeMode} MoonStrikeMode */
@@ -138,6 +149,20 @@ const moonStrikeField = (v) =>
 
 /** Default patrol radius: 0 — the territory mode is a deliberate opt-in. */
 export const DEFAULT_PATROL_SYSTEMS = 0;
+
+/**
+ * Default probe launch source: 'nearest' — the historical behaviour (hop to
+ * the own planet closest to the target so a probe flight stays short).
+ * @type {ProbeSource}
+ */
+export const DEFAULT_PROBE_SOURCE = 'nearest';
+
+/**
+ * Coerce a raw value into a valid {@link ProbeSource} (else the default).
+ * @param {unknown} v
+ * @returns {ProbeSource}
+ */
+const probeSourceField = (v) => (v === 'active' ? 'active' : DEFAULT_PROBE_SOURCE);
 
 /**
  * Coerce a raw value into a valid patrol radius (integer, clamped; else the
@@ -232,7 +257,7 @@ const LEGACY_TAG_COLORS = Object.freeze({ enemy: '#e2726a', friend: '#7fd6a8' })
 export const normalizeWatchList = (raw) => {
   if (Array.isArray(raw)) {
     return {
-      players: raw.map(String), probes: DEFAULT_SPY_PROBES, scanBodies: 'planets', rescan: {}, colors: {}, mapHidden: {}, scanMode: {}, galaxyMode: {}, cadence: { ...DEFAULT_CADENCE }, moonStrike: DEFAULT_MOON_STRIKE, patrolSystems: DEFAULT_PATROL_SYSTEMS,
+      players: raw.map(String), probes: DEFAULT_SPY_PROBES, scanBodies: 'planets', rescan: {}, colors: {}, mapHidden: {}, scanMode: {}, galaxyMode: {}, cadence: { ...DEFAULT_CADENCE }, moonStrike: DEFAULT_MOON_STRIKE, patrolSystems: DEFAULT_PATROL_SYSTEMS, probeSource: DEFAULT_PROBE_SOURCE,
     };
   }
   const o = raw && typeof raw === 'object' ? /** @type {any} */ (raw) : {};
@@ -312,8 +337,9 @@ export const normalizeWatchList = (raw) => {
   const cadence = normalizeCadence(o.cadence);
   const moonStrike = moonStrikeField(o.moonStrike);
   const patrolSystems = patrolField(o.patrolSystems);
+  const probeSource = probeSourceField(o.probeSource);
   return {
-    players, probes, scanBodies, rescan, colors, mapHidden, scanMode, galaxyMode, cadence, moonStrike, patrolSystems,
+    players, probes, scanBodies, rescan, colors, mapHidden, scanMode, galaxyMode, cadence, moonStrike, patrolSystems, probeSource,
   };
 };
 
@@ -332,6 +358,7 @@ export const watchListStore = createStore(/** @type {WatchListConfig} */ ({
   cadence: { ...DEFAULT_CADENCE },
   moonStrike: DEFAULT_MOON_STRIKE,
   patrolSystems: DEFAULT_PATROL_SYSTEMS,
+  probeSource: DEFAULT_PROBE_SOURCE,
 }));
 
 /** @type {(() => void) | null} */
@@ -500,6 +527,7 @@ const SEED_DEFAULTS = Object.freeze({
   cadence: DEFAULT_CADENCE,
   moonStrike: DEFAULT_MOON_STRIKE,
   patrol: DEFAULT_PATROL_SYSTEMS,
+  probeSrc: DEFAULT_PROBE_SOURCE,
 });
 
 /**

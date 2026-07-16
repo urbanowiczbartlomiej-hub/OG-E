@@ -133,6 +133,22 @@ describe('composeWatchSlot / decomposeWatchSlot', () => {
     expect(seedWatchListLedger(cfg({ patrolSystems: 12 }), emptyLedger(), NOW, defaults).ledger.patrol)
       .toEqual({ _: NOW });
   });
+
+  it('probeSrc rides the same rules: round-trips, tuned seeds, default nearest does not', () => {
+    const slot = normalizeWatchSlot({ probeSrc: { _: { v: 'active', ts: 9 } } });
+    expect(decomposeWatchSlot(slot).cfg.probeSource).toBe('active');
+    const defaults = {
+      scanBodies: 'planets',
+      cadence: { rescanHours: 48, galaxyHours: 24 },
+      moonStrike: 'newest',
+      patrol: 0,
+      probeSrc: 'nearest',
+    };
+    expect(seedWatchListLedger(cfg({ probeSource: 'nearest' }), emptyLedger(), NOW, defaults).ledger.probeSrc)
+      .toEqual({});
+    expect(seedWatchListLedger(cfg({ probeSource: 'active' }), emptyLedger(), NOW, defaults).ledger.probeSrc)
+      .toEqual({ _: NOW });
+  });
 });
 
 describe('seedWatchListLedger — first-sync safety', () => {

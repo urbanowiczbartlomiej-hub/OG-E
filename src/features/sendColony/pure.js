@@ -101,10 +101,20 @@ export const BG_SEND_READY = '#13d1de';
  * a skipped-slot shade from the plain wait amber.
  */
 export const BG_SEND_STALE = '#f59e0b';
-/** Rim colour for hard failures ('No ship!', 'All fleets!', 'Failed') — the shared FAB error tone. */
+/** Rim colour for hard failures ('No ship', 'Max fleets', 'Failed') — the shared FAB error tone. */
 export const BG_SEND_ERROR = TONE_ERROR;
-/** Rim colour for "not now" states ('Wait Xs', 'No targets') — the shared FAB wait tone. */
+/** Rim colour for the "no candidates" verdict ('No targets') — the shared FAB wait tone (amber). */
 export const BG_SEND_WAIT = TONE_WAIT;
+/**
+ * Rim colour for colonize's OWN busy waits — the live min-gap countdown
+ * ('Wait Ns') and the transient dispatch/select holds ('Wait…'). Deliberately
+ * the module's turquoise, NOT the shared amber: colonize hits the min-gap on
+ * nearly every send, so painting that frequent, expected pause gold read as an
+ * alarm. It stays on-brand (the button's dominant colour) and reserves amber
+ * for the genuine "nothing to do" verdict ('No targets'). A per-module call,
+ * not a change to the shared tone language.
+ */
+export const BG_SEND_BUSY = BG_SEND_READY;
 
 // ─── Pure target selection ─────────────────────────────────────────────────
 

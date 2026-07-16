@@ -115,6 +115,7 @@ import {
   BG_SEND_ERROR,
   BG_SEND_STALE,
   BG_SEND_WAIT,
+  BG_SEND_BUSY,
 } from './pure.js';
 import {
   getColonizeWaitTime,
@@ -181,7 +182,7 @@ const HOLD_SKIP_MS = 2000;
  */
 const SENT_LOCK_MS = 3000;
 /**
- * How long a failure paint ('Stale'/'Timeout'/'No ship!'/'No fuel'/'Failed')
+ * How long a failure paint ('Stale'/'Timeout'/'No ship'/'No fuel'/'Failed')
  * lingers before the 1 Hz ticker's derive-driven label is allowed to clobber
  * it. Without this hold the error flashes for ~0.5 s and is gone. Mirrors
  * sendLifeform's transient-hold.
@@ -422,8 +423,9 @@ const refresh = () => {
   // taps in parallel off the same two flags; this keeps the LABEL honest.
   // Mirrors dailyRun. Rim stays the IDLE module colour: during the LOAD gate
   // every command button wears the same look — grey fill via the gate's
-  // disabled CSS, module-coloured ring, no gold. Amber (BG_SEND_WAIT) is
-  // reserved for the post-tap busy/min-gap states below.
+  // disabled CSS, module-coloured ring, no gold. The post-tap busy/min-gap
+  // states below use the module turquoise (BG_SEND_BUSY); amber (BG_SEND_WAIT)
+  // is reserved for the genuine 'No targets' verdict.
   if (!eventBoxReady || !apiCtxReady || !storesReady) {
     paintZone('send', { text: 'Wait…', bg: BG_SEND_IDLE, dim: true });
     return;
@@ -448,7 +450,7 @@ const refresh = () => {
       // Progress arc: fills proportionally as the wait elapses (0 → 1).
       const elapsed = (Date.now() - waitStartAt) / 1000;
       controller?.setProgress(Math.min(elapsed / waitTotalSecs, 1));
-      paintZone('send', { text: `Wait ${wait}s`, bg: BG_SEND_WAIT, dim: true });
+      paintZone('send', { text: `Wait ${wait}s`, bg: BG_SEND_BUSY, dim: true });
     } else {
       // Wait cleared — reset arc and show ready state.
       if (waitStartAt !== 0) {
@@ -457,7 +459,7 @@ const refresh = () => {
         controller?.setProgress(0);
       }
       paintZone('send', {
-        text: 'Send!',
+        text: 'Send',
         subtext: `[${colTarget.galaxy}:${colTarget.system}:${colTarget.position}]`,
         bg: BG_SEND_READY,
       });
@@ -492,9 +494,9 @@ const colErrorPaint = (reason, c) => {
     case 'allFleets':
       // Every general fleet slot in use (T11) — nothing can launch until a
       // fleet returns. Not an error with the target, so no coords subtext.
-      return { text: 'All fleets!', bg: BG_SEND_ERROR };
+      return { text: 'Max fleets', bg: BG_SEND_ERROR };
     case 'noShip':
-      return { text: 'No ship!', subtext: coords, bg: BG_SEND_ERROR };
+      return { text: 'No ship', subtext: coords, bg: BG_SEND_ERROR };
     case 'noMoon':
       return { text: 'No moon', subtext: coords, bg: BG_SEND_ERROR };
     case 'reserved':
@@ -540,11 +542,11 @@ const onSendClick = async () => {
     if (wait > 0) {
       // Min-gap: too close to an existing colony arrival. Show it and let
       // the user re-tap once the gap passes (no live countdown — low value).
-      paintZone('send', { text: `Wait ${wait}s`, bg: BG_SEND_WAIT, dim: true });
+      paintZone('send', { text: `Wait ${wait}s`, bg: BG_SEND_BUSY, dim: true });
       return;
     }
     busy = true;
-    paintZone('send', { text: 'Wait…', bg: BG_SEND_WAIT, dim: true });
+    paintZone('send', { text: 'Wait…', bg: BG_SEND_BUSY, dim: true });
     const r = await courierDispatch(OWNER_COL);
     colReady = false;
     if (!r.ok) {
@@ -569,7 +571,7 @@ const onSendClick = async () => {
     colTarget = null;
     // Dimmed like every other "a tap does nothing right now" label — the busy
     // lock below swallows taps until the post-send reload anyway.
-    paintZone('send', { text: 'Sent!', bg: BG_SEND_READY, dim: true });
+    paintZone('send', { text: 'Sent', bg: BG_SEND_READY, dim: true });
     if (sentLockTimer) clearTimeout(sentLockTimer);
     sentLockTimer = setTimeout(() => {
       sentLockTimer = null;
@@ -615,7 +617,7 @@ const onSendClick = async () => {
   if (s === 'fleet2') {
     busy = true;
     colReady = false;
-    paintZone('send', { text: 'Wait…', bg: BG_SEND_WAIT, dim: true });
+    paintZone('send', { text: 'Wait…', bg: BG_SEND_BUSY, dim: true });
     const r = await courierRetarget({
       spec: { kind: 'list', ships: [{ id: SHIP_COLONY, qty: 1, frac: 1 }] },
       target: {
@@ -642,7 +644,7 @@ const onSendClick = async () => {
     colReady = true;
     colTarget = candidate;
     paintZone('send', {
-      text: 'Send!',
+      text: 'Send',
       subtext: `[${candidate.galaxy}:${candidate.system}:${candidate.position}]`,
       bg: BG_SEND_READY,
     });
@@ -658,7 +660,7 @@ const onSendClick = async () => {
   // Tap 1 — select the colony ship + target, walk to a ready step 2.
   busy = true;
   colReady = false;
-  paintZone('send', { text: 'Wait…', bg: BG_SEND_WAIT, dim: true });
+  paintZone('send', { text: 'Wait…', bg: BG_SEND_BUSY, dim: true });
   const r = await courierSelect({
     spec: { kind: 'list', ships: [{ id: SHIP_COLONY, qty: 1, frac: 1 }] },
     target: {
@@ -685,7 +687,7 @@ const onSendClick = async () => {
   colReady = true;
   colTarget = candidate;
   paintZone('send', {
-    text: 'Send!',
+    text: 'Send',
     subtext: `[${candidate.galaxy}:${candidate.system}:${candidate.position}]`,
     bg: BG_SEND_READY,
   });

@@ -359,7 +359,7 @@ describe('installSendExpedition — click navigation', () => {
     expect(labelOf(btn)).toBe('Wait...');
   });
 
-  it('Phase 1: fleet panel + #dispatchFleet present → clicks dispatch, paints "Sent!"', () => {
+  it('Phase 1: fleet panel + #dispatchFleet present → clicks dispatch, paints "Sent"', () => {
     setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
     installSendExpedition();
     document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
@@ -382,11 +382,11 @@ describe('installSendExpedition — click navigation', () => {
     getBtn()?.click();
 
     expect(navTarget).toBeNull();
-    expect(labelOf(getBtn())).toBe('Sent!');
+    expect(labelOf(getBtn())).toBe('Sent');
     expect(clicks).toBe(1);
   });
 
-  it('Phase 1: #dispatchFleet present but still .off → "Wait...", sends once .off clears → "Sent!"', async () => {
+  it('Phase 1: #dispatchFleet present but still .off → "Wait...", sends once .off clears → "Sent"', async () => {
     setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
     installSendExpedition();
     document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
@@ -414,10 +414,10 @@ describe('installSendExpedition — click navigation', () => {
     await settle();
     expect(navTarget).toBeNull();
     expect(clicks).toBe(1);
-    expect(labelOf(getBtn())).toBe('Sent!');
+    expect(labelOf(getBtn())).toBe('Sent');
   });
 
-  it('Phase 2: routine ready (check_3) → clicks it, panel hydrates, label flips to "Send!"', async () => {
+  it('Phase 2: routine ready (check_3) → clicks it, panel hydrates, label flips to "Send"', async () => {
     setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
     installSendExpedition();
     document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
@@ -426,7 +426,7 @@ describe('installSendExpedition — click navigation', () => {
     btn?.click();
     await settle();
     expect(navTarget).toBeNull();
-    expect(labelOf(btn)).toBe('Send!');
+    expect(labelOf(btn)).toBe('Send');
   });
 
   it('Phase 2: routine reports no ships (check_1) and no other planet → "All sent", no nav', async () => {
@@ -785,7 +785,7 @@ describe('installSendExpedition — fleetDispatcher snapshot gates', () => {
     vi.useRealTimers();
   });
 
-  it('snapshot at general fleet cap (18/18) → "All fleets!" painted, no nav', () => {
+  it('snapshot at general fleet cap (18/18) → "Max fleets" painted, no nav', () => {
     vi.useFakeTimers();
     setupScene({ onFleetdispatch: false, activeCp: 42, activeExpeditions: 0 });
     installSendExpedition();
@@ -794,7 +794,7 @@ describe('installSendExpedition — fleetDispatcher snapshot gates', () => {
     const btn = getBtn();
     btn?.click();
 
-    expect(labelOf(btn)).toBe('All fleets!');
+    expect(labelOf(btn)).toBe('Max fleets');
     expect(navTarget).toBeNull();
 
     vi.advanceTimersByTime(2000);

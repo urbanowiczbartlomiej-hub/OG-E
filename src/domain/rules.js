@@ -71,7 +71,6 @@ export const ROUTE_MISSION_CATALOG = [
   { id: MISSION_TRANSPORT, name: 'Transport' },
   { id: MISSION_ATTACK, name: 'Attack' },
   { id: MISSION_ESPIONAGE, name: 'Espionage' },
-  { id: MISSION_HARVEST, name: 'Harvest' },
 ];
 
 /**

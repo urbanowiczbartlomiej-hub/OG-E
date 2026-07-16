@@ -600,7 +600,7 @@ describe('onSendClick — fleetdispatch branch', () => {
     // Tap 1 — select; walks to a ready step 2.
     getSend()?.click();
     await settle();
-    expect(getSend()?.textContent).toContain('Send!');
+    expect(getSend()?.textContent).toContain('Send');
     // Tap 2 — dispatch.
     let clicks = 0;
     document.getElementById('dispatchFleet')?.addEventListener('click', () => {
@@ -723,10 +723,10 @@ describe('onSendClick — fleetdispatch branch', () => {
     // The retarget armed a ready send on 4:30:8. Tap 1's 'Stale' transient-hold
     // (REVIEW.md 7.10, ~1.8 s) is still re-painting when the retarget lands, so
     // wait it out and pump one refresh() — the derive-driven armed-fleet2 label
-    // ('Send!' on the freshly-aimed slot) then resumes.
+    // ('Send' on the freshly-aimed slot) then resumes.
     await new Promise((r) => setTimeout(r, 1900));
     document.dispatchEvent(new CustomEvent('oge:galaxyScanned'));
-    expect(getSend()?.textContent).toContain('Send!');
+    expect(getSend()?.textContent).toContain('Send');
     expect(getSend()?.textContent).toContain('4:30:8');
     expect(scansStore.get()['4:30']?.positions?.[8]?.status).toBe('empty');
 
@@ -832,7 +832,7 @@ describe('api-context readiness gate', () => {
 });
 
 describe('post-send lock', () => {
-  it('a successful dispatch holds the button on "Sent!" through later refreshes', async () => {
+  it('a successful dispatch holds the button on "Sent" through later refreshes', async () => {
     setupScene({ onFleetdispatch: true });
     settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
     scansStore.set({
@@ -844,7 +844,7 @@ describe('post-send lock', () => {
     // Tap 1 — arm a ready send.
     getSend()?.click();
     await settle();
-    expect(getSend()?.textContent).toContain('Send!');
+    expect(getSend()?.textContent).toContain('Send');
     // Tap 2 — dispatch; the fake form reports success.
     document.getElementById('dispatchFleet')?.addEventListener('click', () => {
       document.dispatchEvent(new CustomEvent('oge:sendFleetResult', {
@@ -853,11 +853,11 @@ describe('post-send lock', () => {
     });
     getSend()?.click();
     await settle();
-    expect(getSend()?.textContent).toContain('Sent!');
+    expect(getSend()?.textContent).toContain('Sent');
     // A store change fires the refresh subscription — but the busy lock held
     // through the post-send nav window must NOT let it repaint a stale state.
     scansStore.set({ ...scansStore.get() });
-    expect(getSend()?.textContent).toContain('Sent!');
+    expect(getSend()?.textContent).toContain('Sent');
     unhook();
   });
 });
@@ -1079,7 +1079,7 @@ describe('onSendHold — manual skip', () => {
     const unhook = armCourier({ errorCode: null, missionOk: true });
     getSend()?.click(); // tap 1 — arms [4:30:9]
     await settle();
-    expect(getSend()?.textContent).toContain('Send!');
+    expect(getSend()?.textContent).toContain('Send');
     let clicks = 0;
     document.getElementById('dispatchFleet')?.addEventListener('click', () => (clicks += 1));
     _onSendHoldForTest();

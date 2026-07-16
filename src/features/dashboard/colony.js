@@ -36,6 +36,12 @@ import {
 // 220px of usable bar area. `MIN_BAR_PX` guarantees that a bucket
 // with a single entry still renders visibly when another bucket
 // dominates the scale.
+//
+// On narrow screens (≤640px) binning produces longer range labels
+// ("318-320"); the dashboard.html media query grows BOTH the fields-label
+// strip (72px) AND the chart container (336px) in lockstep, so this 220px
+// bar area is unchanged — the extra height is absorbed by the label strip,
+// not stolen from the bars.
 const BAR_AREA_PX = 220;
 const MIN_BAR_PX = 3;
 

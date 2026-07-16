@@ -347,7 +347,7 @@ export const select = async (order) => {
   // kind can launch, so walking the form (or even navigating to it from
   // another page) would only end in the game's error 612. Checked BEFORE
   // the off-page gate: the cap is account-global, and features map the
-  // reason to an "All fleets!" label instead of pointlessly navigating.
+  // reason to a "Max fleets" label instead of pointlessly navigating.
   if (isFleetCapReached(snapshot)) return { ok: false, reason: 'allFleets' };
 
   if (step() === 'off') return { ok: false, reason: 'offPage' };

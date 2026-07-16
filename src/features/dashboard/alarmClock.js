@@ -139,7 +139,7 @@ export const installAlarmClock = (opts = {}) => {
     // Feedback lives on the BUTTON, leaving the topic slot untouched. A single
     // shared timer means rapid clicks just reset the countdown, never corrupt
     // the label.
-    btn.textContent = ok ? 'Copied!' : 'Copy failed';
+    btn.textContent = ok ? 'Copied' : 'Copy failed';
     if (!ok) {
       // Clipboard blocked (denied / insecure context) — reveal so the user can
       // select the value and copy by hand.

@@ -206,8 +206,17 @@
      multi-digit counts ("23", "150") stack vertically instead of overflowing the bar
      width. max-height caps the count column at ~4 digits to keep the chart area
      reservation predictable (see BAR_AREA_PX in features/dashboard/colony.js). */
-  .bar-label { font-size: 11px; color: #888; margin-top: 4px; writing-mode: vertical-rl; text-orientation: mixed; height: 40px; flex-shrink: 0; overflow: hidden; }
+  .bar-label { font-size: 11px; color: #888; margin-top: 4px; writing-mode: vertical-rl; text-orientation: mixed; white-space: nowrap; height: 40px; flex-shrink: 0; overflow: hidden; }
   .bar-count { font-size: 11px; color: #fff; margin-bottom: 2px; writing-mode: vertical-rl; text-orientation: mixed; max-height: 36px; flex-shrink: 0; overflow: hidden; }
+  /* Narrow screens bin the sizes into ranges ("318-320", 7 chars). At 40px the
+     rotated label wrapped into a second vertical column and turned to mush, so
+     give it a taller single column (fits ~8 chars with room to spare) and grow
+     the chart to match — the bars keep their full BAR_AREA_PX height (the extra
+     height lands in the label strip, not the bars). See features/dashboard/colony.js. */
+  @media (max-width: 640px) {
+    .chart { height: 336px; }
+    .bar-label { height: 72px; }
+  }
 
   .empty { text-align: center; color: #666; padding: 60px; font-size: 16px; }
 
@@ -996,9 +1005,10 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .spy-ally-line.err { color: #ff8888; }
-  /* "share due" nudge — a warm spy-gold tint on the summary line and the two
-     Alliance-sync buttons once the pool has gone a day stale. A reminder, not
-     an alarm: colour + a short word, no glyph, nothing auto-syncs. */
+  /* Overdue tint — a warm spy-gold flash on the summary line and the two
+     Alliance-sync buttons the moment the pool is a day stale, shown only until
+     the auto-sync round lands (it fires immediately; see maybeAutoSync). Also
+     the resting state for a configured-but-never-synced universe. */
   .spy-ally-line.due { color: #e6c054; }
   #spyAllianceBtn.due, #allySyncBtn.due {
     border-color: #6b5a2a; background: #2a2410; color: #e6c054;
@@ -1265,7 +1275,7 @@
          button inside is hidden (alliance share toggled off). -->
     <span style="margin-left:auto;display:inline-flex;align-items:center;gap:8px;">
       <button type="button" id="spyAllianceBtn"
-        title="One share round, both ways: writes your observations (spy reports, galaxy sightings, presence history) into the alliance gist AND pulls everyone else's back — so a daily click keeps the whole pool fresh for you. Nothing runs in the background. Configure on the Sync tab."
+        title="Force one share round now, both ways: writes your observations (spy reports, galaxy sightings, presence history) into the alliance gist AND pulls everyone else's back. While Alliance share is on, this also runs automatically about once a day — this button just does it on demand. Configure on the Sync tab."
         style="font-size:11px;color:#9fb4c4;background:#12202e;border:1px solid #2b3a4d;border-radius:999px;padding:3px 11px;cursor:pointer;white-space:nowrap;">Alliance sync</button>
       <button type="button" id="spyApiRefresh"
         title="Download fresh data from OGame's public API for this universe now (danger, mobile-fleet estimates, occupancy map). Normally OG-E refreshes this in-game; use this to force it from here."
@@ -1334,6 +1344,14 @@
           <span class="cmd-unit">sys</span>
           <span class="cmd-note">hunts moon strikes on every neighbour this many systems around your colonies · 0 = off</span>
         </label>
+        <div class="cmd-cell cmd-wide" title="Which of your own bodies a probe fleet launches from. Nearest hops to the planet closest to the target so the probe flight stays short (default). Active sends from whatever body you're on — no hop.">
+          <span class="cmd-cap">Probe from</span>
+          <span class="chip-group seg" id="tgtProbeSource" data-value="nearest">
+            <button type="button" data-value="nearest">nearest</button>
+            <button type="button" data-value="active">active</button>
+          </span>
+          <span class="cmd-note"><span class="via-probes">watch via probes</span> — nearest = shortest probe flight · active = send from the current body</span>
+        </div>
       </div>
     </div>
     <div class="gv-card spy-back-card">
@@ -1410,30 +1428,29 @@
 <section id="alarmClockSection" class="tab-section">
   <h1>Alarm clock</h1>
   <p class="rem-intro">
-    Wake-up reminders for fleets you sent yourself — auto expedition waves,
-    ad-hoc fleet reminders, and fleet-save landings. You set each reminder for a
-    time you already know from your own action — the return time the game showed
-    you when you sent the fleet, just like a phone reminder — and it rings at
-    that time; OG-E never watches the game for events you couldn't predict. Flip
-    it on and paste your ntfy token below (it applies to all your universes);
-    the reminder times are in ⚙ Settings further down. The preview shows the
-    reminders you've set.
+    Set a reminder for a time you choose. It never monitors in-game events —
+    set the clock, close the game, and the alarm rings on your phone.
   </p>
 
   <div class="rem-fairplay" role="note" style="margin-top:12px;padding:10px 13px;border-radius:6px;background:#2c1a0e;border:1px solid #6d4a1c;color:#e6b25a;font-size:12.5px;line-height:1.55;">
-    <strong>⚠ Borderline fair-play — use at your own risk.</strong>
-    A fleet-return alarm clock has <strong>no official public ruling from Gameforge yet</strong>,
-    so <strong>do not use this on public servers until it is publicly confirmed.</strong>
-    Its status is under pre-submission consult here:
+    <strong>⚠ Borderline fair-play.</strong>
+    In our view this doesn't break the rules — it never tracks the game and never
+    warns you about attacks. Still, it's a borderline feature: by keeping you from
+    forgetting your fleet-saves it gives a real edge. Discussed
     <a href="https://forum.origin.ogame.gameforge.com/forum/thread/516-pre-submission-consult-is-a-fleet-return-alarm-clock-feature-within-fair-play/"
-       target="_blank" rel="noopener" style="color:#f2c877;text-decoration:underline;">OGame Origin forum — thread #516</a>.
-    OG-E only rings times you already knew from your own action; it never watches the game while you're away.
+       target="_blank" rel="noopener" style="color:#f2c877;text-decoration:underline;">here</a>.
   </div>
 
   <div class="rem-card" style="margin-top:14px">
     <div class="rem-master-row">
       <button type="button" class="toggle-chip" id="remMasterToggle">Enable alarm clock</button>
     </div>
+    <p class="rem-hint" style="margin-top:8px">
+      Log in to <a href="https://ntfy.sh/" target="_blank" rel="noopener"
+        style="color:#f2c877;text-decoration:underline;">ntfy.sh</a> → Account →
+      Access tokens → Create access token (Token never expires) → copy the token
+      (like <code>tk_…</code>) and paste it below.
+    </p>
     <div id="remBody">
     <div class="rem-row" style="margin-top:12px">
       <label>ntfy.sh access token</label>
@@ -1457,10 +1474,6 @@
       <label></label>
       <span class="rem-substatus">Subscribe to this on your phone.</span>
     </div>
-    <p class="rem-hint">
-      In the ntfy.sh app — signed in to the account whose token you pasted above —
-      tap + and subscribe to this exact topic to receive the pushes.
-    </p>
     <details class="rem-privacy">
       <summary>Is this private? How your topic is protected</summary>
       <p class="rem-hint">
@@ -1521,8 +1534,8 @@
     Each route sends a fixed micro-fleet from one or more <strong>source</strong> bodies
     (planets and/or moons) to an ordered list of <strong>targets</strong>. Standing on any
     source, the <strong>Send</strong> zone of the Daily Run button scatters the
-    fleet to the targets in order. Pick everything from your own planets and moons — nothing
-    to type. The collect target is set in-game by <strong>holding the Send All zone</strong>
+    fleet to the targets in order. Pick everything from your own planets and moons.
+    The collect target is set in-game by <strong>holding the Send All zone</strong>
     of the button, not here.
   </p>
   <p id="routesInvStatus" style="color:#888;font-size:12px;margin-bottom:12px;"></p>
@@ -1586,8 +1599,9 @@
     Two independent things live here. <strong>Sync across devices</strong> keeps
     YOUR OWN devices in step automatically through your private GitHub gist.
     <strong>Alliance share</strong> is a separate, opt-in co-op pool with your
-    alliance-mates — one click per round, never in the background. Below both:
-    a per-universe breakdown of what's stored on this device and when it last synced.
+    alliance-mates — while it's on, the pool auto-syncs about once a day (turn it
+    off to stop). Below both: a per-universe breakdown of what's stored on this
+    device and when it last synced.
   </p>
 
   <div class="rem-card sync-controls-card">
@@ -1636,7 +1650,7 @@
       <button id="allyRevealToken" class="rem-eye" type="button"
         title="Show token" aria-label="Show token" aria-pressed="false">👁</button>
       <button id="allySyncBtn" type="button"
-        title="One share round, both ways: writes your observations into the alliance gist AND pulls everyone else's back — a daily click keeps the pool fresh. Same action as the Alliance sync button on the Spyglass tab.">Alliance sync</button>
+        title="Force one share round now, both ways: writes your observations into the alliance gist AND pulls everyone else's back. While Alliance share is on it also runs automatically about once a day; this button just does it on demand. Same action as the Alliance sync button on the Spyglass tab.">Alliance sync</button>
     </div>
     <div class="rem-row" style="margin-top:6px">
       <label></label>
@@ -1655,9 +1669,11 @@
       in the alliance gist, then pulls everyone else's.
     </p>
     <p class="rem-hint">
-      It's ONE CLICK, not automatic like device sync above, on purpose: the
-      token is shared, so every member draws on one GitHub account's rate limit,
-      and the click is your explicit consent to share with other people. The
+      While this is on it auto-syncs about once a day (turn the toggle above off
+      to stop) — enabling the share IS your consent to pool with other people,
+      so there's no per-round click to remember; the button just forces a round
+      on demand. The cadence is deliberately gentle (~daily): the token is
+      shared, so every member draws on one GitHub account's rate limit. The
       token is all you set — the first sync finds (or creates) the alliance gist
       on that account, and you're signed by your in-game name automatically;
       alliance-mates with the same token converge on the same gist. That token

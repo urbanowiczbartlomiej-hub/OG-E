@@ -85,7 +85,7 @@ import { presenceLedgerKeyFor } from '../../state/presenceLedger.js';
 import { mergePresenceLedgers } from '../../domain/presenceLedger.js';
 import { allianceIntelKeyFor } from '../../state/allianceShare.js';
 import { normalizeAllianceDoc, allianceLedgerForPid } from '../../domain/allianceIntel.js';
-import { watchListKeyFor, normalizeWatchList, writeWatchListConfig, DEFAULT_SPY_PROBES, DEFAULT_CADENCE, DEFAULT_MOON_STRIKE, normalizeCadence } from '../../state/watchList.js';
+import { watchListKeyFor, normalizeWatchList, writeWatchListConfig, DEFAULT_SPY_PROBES, DEFAULT_CADENCE, DEFAULT_MOON_STRIKE, DEFAULT_PROBE_SOURCE, normalizeCadence } from '../../state/watchList.js';
 import { syncRequestKeyFor } from '../../sync/scheduler.js';
 import { formatBytes, parsePerUniverseKey } from './syncInventory.js';
 import { galaxyStaleMs } from '../../domain/galaxyWatch.js';
@@ -495,6 +495,7 @@ const pinnedTargetIds = new Set();
 /** @type {HTMLInputElement | null} */ let tgtProbes;
 /** @type {HTMLElement | null} */ let tgtScanBodies;
 /** @type {HTMLElement | null} */ let tgtMoonStrike;
+/** @type {HTMLElement | null} */ let tgtProbeSource;
 /** @type {HTMLInputElement | null} */ let cadRescanHours;
 /** @type {HTMLInputElement | null} */ let tgtPatrolSystems;
 /** @type {HTMLElement | null} */ let patrolCardEl;
@@ -824,6 +825,7 @@ const wireDom = () => {
   tgtProbes = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtProbes'));
   tgtScanBodies = document.getElementById('tgtScanBodies');
   tgtMoonStrike = document.getElementById('tgtMoonStrike');
+  tgtProbeSource = document.getElementById('tgtProbeSource');
   cadRescanHours = /** @type {HTMLInputElement | null} */ (document.getElementById('cadRescanHours'));
   tgtPatrolSystems = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtPatrolSystems'));
   patrolCardEl = document.getElementById('patrolCard');
@@ -1057,6 +1059,7 @@ const loadWatched = async () => {
   if (tgtProbes) tgtProbes.value = String(cfg.probes);
   if (tgtScanBodies) setChipValue(tgtScanBodies, cfg.scanBodies ?? 'planets');
   if (tgtMoonStrike) setChipValue(tgtMoonStrike, cfg.moonStrike ?? DEFAULT_MOON_STRIKE);
+  if (tgtProbeSource) setChipValue(tgtProbeSource, cfg.probeSource ?? DEFAULT_PROBE_SOURCE);
   updateMoonStrikeNote();
   if (tgtPatrolSystems) tgtPatrolSystems.value = String(cfg.patrolSystems ?? 0);
   hydrateCadenceInputs();
@@ -1119,6 +1122,7 @@ const writeWatchConfig = () => {
     probes: Number(tgtProbes?.value) || DEFAULT_SPY_PROBES,
     scanBodies: chipValue(tgtScanBodies) || 'planets',
     moonStrike: chipValue(tgtMoonStrike) || DEFAULT_MOON_STRIKE,
+    probeSource: chipValue(tgtProbeSource) || DEFAULT_PROBE_SOURCE,
     patrolSystems: Number(tgtPatrolSystems?.value) || 0,
     rescan: rescanMap,
     colors: watchColors,
@@ -2960,6 +2964,9 @@ const wireListeners = () => {
   // Moon-strike aggressiveness — same write; repaint recomputes the landing
   // signals (the 🎯 markers + dossier banners follow the new mode live).
   wireChips(tgtMoonStrike, () => { updateMoonStrikeNote(); writeWatchConfig(); repaintTargets(); });
+  // Probe launch source — persist only; the FAB reads it live from the store
+  // (no dashboard repaint depends on it).
+  wireChips(tgtProbeSource, () => { writeWatchConfig(); });
   wireChips(tgtLimitChips, onTargetFilterChange);
   tgtSearch?.addEventListener('input', () => {
     targetSearchQuery = tgtSearch ? tgtSearch.value : '';
@@ -3144,6 +3151,7 @@ export const _resetDashboardForTest = () => {
     tgtProbes =
     tgtScanBodies =
     tgtMoonStrike =
+    tgtProbeSource =
     tgtPatrolSystems =
     patrolCardEl =
     patrolSummaryEl =

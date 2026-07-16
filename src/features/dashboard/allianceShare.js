@@ -84,13 +84,14 @@ const formatAge = (ms) => {
 const sanitizeToken = (raw) => String(raw || '').replace(/[^\x21-\x7e]/g, '');
 
 /**
- * Age after which a configured-but-idle share earns the gentle "share due"
- * nudge. ~20 h (just under a day) so a daily-ish habit forms and the pool is
- * ready when the user next plays around the same time. The nudge is purely
- * visual — nothing auto-syncs (the click stays the consent, see the alliance
- * card copy). A share round is reciprocal: it writes YOUR block AND pulls
- * everyone else's in one go, so "share daily" also means "get their latest
- * daily" — that reciprocity is what the nudge copy leans on.
+ * Age after which a configured share is treated as OVERDUE and auto-synced
+ * (see {@link installAllianceShare} maybeAutoSync). ~20 h (just under a day) so
+ * the pool refreshes about once daily when the user opens the dashboard —
+ * matching the old daily-click habit, so the shared token's rate limit sees no
+ * more traffic than before. Enabling the share is the consent; nothing auto-
+ * syncs while the master toggle is off. A round is reciprocal — it writes YOUR
+ * block AND pulls everyone else's in one go — so a daily auto-round also keeps
+ * their latest daily flowing to you.
  */
 const SHARE_NUDGE_MS = 20 * 60 * 60 * 1000;
 
@@ -376,24 +377,49 @@ export const installAllianceShare = ({ getUniverseId }) => {
     void readAllianceIntel(uni).then(async (cache) => {
       if (cache) {
         const doc = normalizeAllianceDoc(cache.doc, uni);
-        if (doc) { renderDoc(doc, cache.pulledAt); return; }
+        if (doc) {
+          renderDoc(doc, cache.pulledAt);
+          // Overdue → self-heal instead of nagging (see maybeAutoSync). The
+          // 'due' tint renderSummary just painted is a brief pre-sync flash;
+          // the round clears it when the fresh pull lands.
+          if (Date.now() - cache.pulledAt >= SHARE_NUDGE_MS) maybeAutoSync(uni);
+          return;
+        }
       }
-      // No cache (or unreadable) — never synced this universe. Nudge the user
-      // to run the first round IF configured; a first click both seeds the pool
-      // and pulls whatever the alliance already shared. Stay quiet when no token
-      // is set (nothing to act on — don't nag an unconfigured card).
+      // No cache (or unreadable) — never synced this universe. Run the first
+      // round automatically IF configured (it seeds the pool AND pulls whatever
+      // the alliance already shared). Stay quiet when no token is set (nothing
+      // to act on — don't touch an unconfigured card).
       const cfg = await readAllianceShareConfig();
       if (cfg.token.trim()) {
         if (syncPanel) { syncPanel.hidden = true; syncPanel.textContent = ''; }
-        paintSpyLine('Alliance sharing on — sync to pool your Spyglass intel (you get the alliance’s back)');
+        paintSpyLine('Alliance sharing on — syncing your Spyglass intel (you get the alliance’s back)…');
         markDue(true);
+        maybeAutoSync(uni);
       } else {
         hide();
       }
     });
   };
 
-  // ── The one trigger: share our block, pull everyone's ─────────────
+  // ── The one round: share our block, pull everyone's ───────────────
+  //
+  // Runs from a manual click OR automatically when {@link maybeAutoSync}
+  // detects the pool is overdue — enabling the share is the consent, so an
+  // overdue pool self-heals instead of nagging (turn the master toggle off to
+  // stop). `running` serialises the two paths so an auto-round and a click
+  // can't overlap on the shared token.
+
+  /** True while a round is in flight — the auto/manual re-entrancy guard. */
+  let running = false;
+
+  /**
+   * Universes auto-synced this dashboard session — one auto-round per universe
+   * per session, so a universe flip-flop (or a failed round) never hammers the
+   * shared token's rate limit. A manual click always bypasses this.
+   * @type {Set<string>}
+   */
+  const autoSyncedUnis = new Set();
 
   /** Disable/enable both triggers while a round runs. */
   const setBusy = (/** @type {boolean} */ busy) => {
@@ -401,11 +427,26 @@ export const installAllianceShare = ({ getUniverseId }) => {
     if (syncBtn) syncBtn.disabled = busy;
   };
 
+  /**
+   * Auto-run one round for `uni` when the pool is overdue — the replacement for
+   * the old "share due" nag. Gated: share still enabled, that universe still
+   * active, no round already running, and not already auto-synced this session.
+   * @param {string} uni
+   */
+  const maybeAutoSync = (uni) => {
+    if (!shareEnabled || running) return;
+    if (getUniverseId() !== uni) return; // a fast universe switch raced us
+    if (autoSyncedUnis.has(uni)) return;
+    autoSyncedUnis.add(uni);
+    void run();
+  };
+
   const run = async () => {
     const uni = getUniverseId();
     // Disabled section → both triggers are hidden; the guard just covers a
     // stale click racing the collapse.
-    if (!uni || !shareEnabled) return;
+    if (!uni || !shareEnabled || running) return;
+    running = true;
     setBusy(true);
     renderNotice('Syncing…');
     try {
@@ -488,6 +529,7 @@ export const installAllianceShare = ({ getUniverseId }) => {
     } catch (err) {
       renderNotice(err instanceof Error ? err.message : String(err), true);
     } finally {
+      running = false;
       setBusy(false);
     }
   };

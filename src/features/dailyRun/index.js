@@ -521,7 +521,7 @@ const buildOrder = (mode) => {
  */
 const reasonLabel = (reason) => {
   switch (reason) {
-    case 'allFleets': return { text: 'All fleets!', tone: TONE_ERROR };
+    case 'allFleets': return { text: 'Max fleets', tone: TONE_ERROR };
     case 'noShips': return { text: 'No ships', tone: TONE_ERROR };
     case 'empty': return { text: 'No ships', tone: TONE_ERROR };
     case 'noShip': return { text: 'No ship', tone: TONE_ERROR };

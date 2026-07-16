@@ -151,7 +151,7 @@ describe('alarmClock topic — mask / reveal / copy', () => {
     // feedback lands on the button — never on the secret slot. Wait on the
     // button text (it settles a microtask after writeText resolves).
     copyBtn.click();
-    await waitFor(() => copyBtn.textContent === 'Copied!', "copy button shows 'Copied!'");
+    await waitFor(() => copyBtn.textContent === 'Copied', "copy button shows 'Copied'");
     expect(writeText).toHaveBeenLastCalledWith(topic);
     expect(slot.textContent).toContain('•'); // slot untouched (this was the bug)
 

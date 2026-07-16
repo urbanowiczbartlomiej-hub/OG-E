@@ -437,9 +437,9 @@ describe('renderSpy — probe pre-flight (Etap G)', () => {
     expect(paint.subtext).toContain('1:2:3');
   });
 
-  it('zero probes on hand → error "No probes!" paint before the tap', () => {
+  it('zero probes on hand → error "No probes" paint before the tap', () => {
     const paint = renderSpy(ctx, { have: 0, need: 20 });
-    expect(paint.text).toBe('No probes!');
+    expect(paint.text).toBe('No probes');
     expect(paint.bg).toBe(BG_SPY_ERROR);
     expect(paint.subtext).toContain('1:2:3');
   });

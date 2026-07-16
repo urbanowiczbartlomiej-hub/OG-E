@@ -22,7 +22,7 @@
 //   2. On fleetdispatch, fleet panel NOT yet hydrated → we click AGR's
 //      expedition routine `#ago_routine_7` (once it reports ready). AGR
 //      assigns the mission + fleet and renders the native dispatch button;
-//      the label flips to "Send!" so the user's NEXT tap sends.
+//      the label flips to "Send" so the user's NEXT tap sends.
 //   3. On fleetdispatch, fleet panel hydrated (`#dispatchFleet` present)
 //      → we click the native dispatch button. Exactly one send.
 //
@@ -235,11 +235,14 @@ export const installSendExpedition = () => {
    *
    * @param {HTMLButtonElement} btn
    * @param {string} label
+   * @param {string} [bg]  rim colour; defaults to the amber wait tone. The
+   *   general fleet-cap ("Max fleets") passes the error tone so it matches
+   *   every other send button's fleet-cap paint.
    */
-  const paintCapLabel = (btn, label) => {
+  const paintCapLabel = (btn, label, bg = BG_MAX) => {
     if (capLabelTimer !== null) clearTimeout(capLabelTimer);
     setLabel(btn, label);
-    controller?.setBg('main', BG_MAX);
+    controller?.setBg('main', bg);
     capLabelTimer = setTimeout(() => {
       capLabelTimer = null;
       setLabel(btn, BUTTON_TEXT);
@@ -280,7 +283,7 @@ export const installSendExpedition = () => {
    * Phase 2 (fleetdispatch, fleet panel NOT yet loaded): drive AGR's
    * expeditions routine (`#ago_routine_7`) via the shared
    * {@link prepareViaRoutine}, then map its outcome to the expedition labels:
-   *   - `'prepared'`   → flip to "Send!" so the next tap issues the real send.
+   *   - `'prepared'`   → flip to "Send" so the next tap issues the real send.
    *   - `'noShips'`    → hop to the next planet with a slot, else "All sent".
    *   - `'routineOff'` → paint the "enable Expeditions in AGR" error.
    *   - `'timeout'`    → restore the idle label quietly; the user can retry.
@@ -293,7 +296,7 @@ export const installSendExpedition = () => {
     const state = await prepareViaRoutine({ routineId: 7, owner: OWNER_EXP });
 
     if (state === 'prepared') {
-      setLabel(btn, 'Send!');
+      setLabel(btn, 'Send');
       unlock(btn);
       return;
     }
@@ -351,7 +354,7 @@ export const installSendExpedition = () => {
       return;
     }
     if (r === 'sent') {
-      setLabel(btn, 'Sent!');
+      setLabel(btn, 'Sent');
       // Lock held; release after the post-send nav window in case the page
       // doesn't reload (rare dispatch failure) — mirrors the fast path.
       setTimeout(() => unlock(btn), 3000);
@@ -406,7 +409,7 @@ export const installSendExpedition = () => {
     // of any kind can launch. Broader than the expedition cap below, so it
     // is checked first and gets its own label.
     if (isFleetCapReached(fdCache.get())) {
-      paintCapLabel(btn, ALL_FLEETS_LABEL);
+      paintCapLabel(btn, ALL_FLEETS_LABEL, BG_ERROR);
       return;
     }
 
@@ -484,7 +487,7 @@ export const installSendExpedition = () => {
         return;
       }
       if (r === 'sent') {
-        setLabel(btn, 'Sent!');
+        setLabel(btn, 'Sent');
         // Lock while the game processes the dispatch + its post-send nav. In
         // the happy path OGame reloads within ~1 s; the safety timeout covers
         // the rare case where the dispatch fails and the page stays put.
@@ -561,7 +564,7 @@ export const installSendExpedition = () => {
     if (!controller) return;
     controller.el.style.setProperty('--glow', '1.3');
 
-    // Initial label reflects the page state at mount: "Send!" when the
+    // Initial label reflects the page state at mount: "Send" when the
     // native dispatch button is already up, "Prepare" when only AGR's
     // routine is present, else the idle default.
     setLabel(
