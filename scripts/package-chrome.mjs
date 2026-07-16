@@ -1,13 +1,15 @@
-// Manual Chrome Web Store packaging step.
+// Manual Chrome Web Store packaging step — the local/break-glass twin of the
+// automated CWS upload in scripts/release.mjs (which CI runs on every release).
 //
-// The shipped manifest.json is already cross-browser: Chrome silently
-// ignores `browser_specific_settings.gecko` (Firefox-only), so the SAME
-// dist/ that AMO gets is a valid Chrome upload. The only difference here
-// is cosmetic — we name the artifact `og-e-chrome-<version>.zip` so the
-// hand-off file is unambiguous (vs. AMO's generic `dist.zip`).
+// Builds a Chrome-flavoured zip via {@link buildChromeZip}: the same dist/ that
+// AMO gets, but with the Firefox-only `browser_specific_settings` stripped from
+// the manifest (the CWS upload API can reject that unknown key). The artifact is
+// named `og-e-chrome-<version>.zip` so the hand-off file is unambiguous (vs.
+// AMO's generic `dist.zip`).
 //
-// This is a deliberately MANUAL step (no CI wiring yet): run it, then
-// upload the resulting zip by hand in the Chrome Web Store dashboard.
+// Use this when you want the zip in hand (e.g. to upload by hand, or without
+// CWS creds). The normal path is the automated CWS upload during `npm run
+// release` / the CI release job.
 //
 // Usage:
 //   npm run package:chrome
@@ -15,7 +17,7 @@
 
 import { existsSync, rmSync, readdirSync, readFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { zipDir } from './zip.mjs';
+import { buildChromeZip } from './chromeZip.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const DIST = resolve(ROOT, 'dist');
@@ -37,7 +39,7 @@ if (existsSync(ZIP)) {
 
 try {
   mkdirSync(RELEASE, { recursive: true });
-  zipDir(DIST, ZIP);
+  buildChromeZip(DIST, ZIP);
 } catch (err) {
   console.error('package:chrome: archive command failed');
   console.error(err instanceof Error ? err.message : err);

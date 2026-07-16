@@ -123,15 +123,22 @@ The procedure:
 On that push, `release.yml` sees the new, documented version, mints + pushes the
 `vX.Y.Z` tag, checks it out (detached HEAD) and runs `scripts/release.mjs` —
 which validates the CHANGELOG, runs the test + typecheck gate, packages
-`dist.zip` + `source.zip` (hard-asserting both), and uploads to AMO. The script
-auto-detects this CI situation (tag present + detached HEAD) and skips its own
-commit/tag/push, so it only uploads.
+`dist.zip` + `source.zip` (hard-asserting both), uploads to AMO, and — when the
+Chrome Web Store secrets are present — also builds a Chrome zip (same `dist/`,
+Firefox-only manifest keys stripped) and uploads + submits it to the CWS. The
+script auto-detects this CI situation (tag present + detached HEAD) and skips its
+own commit/tag/push, so it only uploads.
 
 `AMO_JWT_ISSUER` / `AMO_JWT_SECRET` are GitHub repo secrets the Action injects;
 the workflow also needs **Settings → Actions → Workflow permissions = "Read and
-write"** to push the tag. (`scripts/release.mjs` still accepts `.env` creds and
-can be run locally as a break-glass fallback — it bumps, commits, tags, uploads,
-and pushes — but the push-to-`main` path above is the only one we use.)
+write"** to push the tag. Chrome Web Store publishing is optional and
+independent — add `CWS_CLIENT_ID` / `CWS_CLIENT_SECRET` / `CWS_REFRESH_TOKEN` /
+`CWS_EXTENSION_ID` (see `.env.example`) and the same run publishes to both
+stores; omit them and the CWS step is a clean no-op while AMO still ships. The
+CWS item must already exist (the API updates a listing, it can't create one).
+(`scripts/release.mjs` still accepts `.env` creds and can be run locally as a
+break-glass fallback — it bumps, commits, tags, uploads, and pushes — but the
+push-to-`main` path above is the only one we use.)
 
 ## AMO note fields (sent automatically by the script)
 

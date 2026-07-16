@@ -1,4 +1,4 @@
-name: Release to AMO
+name: Release to AMO + Chrome Web Store
 
 # The ONE release path: bump the version in package.json (+ manifest.json), add
 # a dated "## [X.Y.Z] — YYYY-MM-DD" section to CHANGELOG.md, and push that
@@ -24,6 +24,12 @@ name: Release to AMO
 #
 # Requires AMO_JWT_ISSUER / AMO_JWT_SECRET in repo → Settings → Secrets, and
 # Settings → Actions → Workflow permissions = "Read and write" (to push the tag).
+#
+# Chrome Web Store upload is OPTIONAL and independent: add CWS_CLIENT_ID /
+# CWS_CLIENT_SECRET / CWS_REFRESH_TOKEN / CWS_EXTENSION_ID as secrets and the
+# same run also uploads + submits to the Chrome Web Store. Absent secrets → the
+# CWS step is a clean no-op (AMO still publishes). scripts/release.mjs owns both
+# uploads; this workflow just injects the creds.
 
 on:
   push:
@@ -92,9 +98,13 @@ jobs:
         if: steps.guard.outputs.release == 'true'
         run: npm ci
 
-      - name: Release to AMO from the freshly-minted tag
+      - name: Release to AMO + Chrome Web Store from the freshly-minted tag
         if: steps.guard.outputs.release == 'true'
         env:
           AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
         run: node scripts/release.mjs "${{ steps.guard.outputs.version }}"

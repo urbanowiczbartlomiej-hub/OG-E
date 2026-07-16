@@ -33,6 +33,9 @@
 //   5. git commit (CHANGELOG + package + manifest) + tag vX.Y.Z, LOCAL
 //      (skipped if the tag already exists)
 //   6. upload to AMO (skipped if no creds, or the version is already there)
+//   6b. upload to the Chrome Web Store (skipped if no creds, or already up) —
+//      the SAME dist/, Firefox-only manifest keys stripped; runs AFTER AMO so a
+//      CWS-side failure never blocks the primary store
 //   7. git push branch + tag (skipped when HEAD is detached / tag on remote)
 //
 // Why git stays local until AMO accepts (5 before 6, push in 7): if AMO
@@ -40,17 +43,24 @@
 // that does not exist. Everything is reversible locally until the upload in 6.
 //
 // Secrets (never in the repo — see .gitignore / .env.example):
-//   AMO_JWT_ISSUER  — "JWT issuer" from the AMO API-key page
-//   AMO_JWT_SECRET  — "JWT secret" from the same page
+//   AMO_JWT_ISSUER      — "JWT issuer" from the AMO API-key page
+//   AMO_JWT_SECRET      — "JWT secret" from the same page
+//   CWS_CLIENT_ID       — Google OAuth client id (Chrome Web Store API enabled)
+//   CWS_CLIENT_SECRET   — that client's secret
+//   CWS_REFRESH_TOKEN   — a refresh token minted once against that client
+//   CWS_EXTENSION_ID    — the existing Chrome Web Store item id
 // `npm run release` loads a local .env automatically (--env-file-if-exists);
-// the GitHub Action injects them from repo secrets. With neither present the
-// upload is skipped (the bump/commit/tag/push still run) — so a credential-less
-// machine can still cut the tag and let CI publish it.
+// the GitHub Action injects them from repo secrets. Each store's upload is
+// skipped independently when its creds are absent (the bump/commit/tag/push
+// still run) — so a credential-less machine can still cut the tag and let CI
+// publish it.
 
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { execSync } from 'node:child_process';
 import { uploadToAmo } from './amo.mjs';
+import { uploadToCws } from './cws.mjs';
+import { buildChromeZip } from './chromeZip.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const ADDON_GUID = 'og-e@ogame-extensions'; // manifest browser_specific_settings.gecko.id
@@ -171,6 +181,12 @@ const JWT_ISSUER = process.env.AMO_JWT_ISSUER;
 const JWT_SECRET = process.env.AMO_JWT_SECRET;
 const haveCreds = !!(JWT_ISSUER && JWT_SECRET);
 
+const CWS_CLIENT_ID = process.env.CWS_CLIENT_ID;
+const CWS_CLIENT_SECRET = process.env.CWS_CLIENT_SECRET;
+const CWS_REFRESH_TOKEN = process.env.CWS_REFRESH_TOKEN;
+const CWS_EXTENSION_ID = process.env.CWS_EXTENSION_ID;
+const haveCwsCreds = !!(CWS_CLIENT_ID && CWS_CLIENT_SECRET && CWS_REFRESH_TOKEN && CWS_EXTENSION_ID);
+
 console.log(`release: ${TAG}  (CHANGELOG dated ${changelogDate})`);
 
 // ---------------------------------------------------------------------------
@@ -239,6 +255,40 @@ if (haveCreds) {
 }
 
 // ---------------------------------------------------------------------------
+// phase 6b — Chrome Web Store upload (skipped without creds, or if already up).
+// Built from the SAME dist/ as AMO — buildChromeZip strips the Firefox-only
+// manifest keys — so both stores ship the identical extension. Runs AFTER the
+// AMO upload so a CWS-side failure never blocks the primary store, and (like
+// AMO) turns a thrown failure into a clean abort BEFORE the push in phase 7.
+// The chrome zip is rebuilt here because a CI checkout doesn't persist it.
+// ---------------------------------------------------------------------------
+
+if (haveCwsCreds) {
+  const chromeZip = resolve(ROOT, 'release', `og-e-chrome-${VERSION}.zip`);
+  if (existsSync(chromeZip)) rmSync(chromeZip);
+  try {
+    buildChromeZip(resolve(ROOT, 'dist'), chromeZip);
+    await uploadToCws({
+      itemId: CWS_EXTENSION_ID,
+      clientId: CWS_CLIENT_ID,
+      clientSecret: CWS_CLIENT_SECRET,
+      refreshToken: CWS_REFRESH_TOKEN,
+      version: VERSION,
+      zip: chromeZip,
+      log: (m) => console.log(`release: ${m}`),
+    });
+  } catch (e) {
+    die(e instanceof Error ? e.message : String(e));
+  }
+} else {
+  console.log('release: no Chrome Web Store creds in the env — skipping CWS upload.');
+}
+
+// A human-readable summary of which stores this run actually published to.
+const stores = [haveCreds && 'AMO', haveCwsCreds && 'Chrome Web Store'].filter(Boolean);
+const uploadedTail = stores.length ? ` — uploaded to ${stores.join(' + ')}.` : '.';
+
+// ---------------------------------------------------------------------------
 // phase 7 — publish branch + tag (skipped when HEAD is detached, e.g. in CI)
 // ---------------------------------------------------------------------------
 
@@ -248,7 +298,7 @@ if (haveCreds) {
 const branch = capture('git rev-parse --abbrev-ref HEAD');
 if (branch === 'HEAD') {
   console.log(`release: detached HEAD — skipping push (${TAG} is already on the remote).`);
-  console.log(`\nrelease: ${TAG} done${haveCreds ? ' — uploaded to AMO.' : '.'}`);
+  console.log(`\nrelease: ${TAG} done${uploadedTail}`);
   process.exit(0);
 }
 
@@ -274,4 +324,4 @@ if (capture(`git ls-remote --tags ${remote} ${TAG}`).trim() !== '') {
   run(`git push ${remote} ${TAG}`);
 }
 
-console.log(`\nrelease: ${TAG} done — ${haveCreds ? 'uploaded to AMO and ' : ''}pushed (CI publishes the tag).`);
+console.log(`\nrelease: ${TAG} done${uploadedTail.replace(/\.$/, '')}${stores.length ? ' and ' : ''}pushed (CI publishes the tag).`);
