@@ -44,6 +44,18 @@ function isAlreadyUp(data) {
   return blob.includes('already exists') || blob.includes('same as the version');
 }
 
+// CWS refuses an upload while the item already has a submission in flight
+// (error_code ITEM_NOT_UPDATABLE — "pending review, ready to publish, or
+// deleted status"). That is a TRANSIENT collision, not a release failure: two
+// versions can't queue at once, so this version's Chrome upload is simply
+// skipped and a later release carries it once review clears. Treat it like
+// "already up" — warn and move on rather than failing the whole release (which
+// would red a run that already published to AMO).
+function isNotUpdatable(data) {
+  const blob = JSON.stringify(data).toLowerCase();
+  return blob.includes('item_not_updatable') || blob.includes('pending review') || blob.includes('ready to publish');
+}
+
 /**
  * Upload a built Chrome zip to an existing Chrome Web Store item and (by
  * default) submit it for publication. No-op when the version is already up.
@@ -57,7 +69,8 @@ function isAlreadyUp(data) {
  * @param {string} opts.zip           Absolute path to the Chrome zip.
  * @param {boolean} [opts.publish]    Submit for publication after upload (default true).
  * @param {(msg: string) => void} [opts.log]  Progress sink (default console.log).
- * @returns {Promise<void>}
+ * @returns {Promise<'published' | 'draft' | 'skipped'>} What actually happened,
+ *   so callers report the truth (a busy/already-up item resolves to 'skipped').
  */
 export async function uploadToCws({
   itemId,
@@ -79,7 +92,14 @@ export async function uploadToCws({
   if (upData.uploadState === 'FAILURE') {
     if (isAlreadyUp(upData)) {
       log(`version ${version} already on the Chrome Web Store — skipping.`);
-      return;
+      return 'skipped';
+    }
+    if (isNotUpdatable(upData)) {
+      log(
+        `Chrome Web Store item is busy (a prior version is pending review / ready to ` +
+          `publish) — skipping ${version}'s Chrome upload; a later release carries it.`,
+      );
+      return 'skipped';
     }
     throw new Error(`CWS upload failed:\n${JSON.stringify(upData, null, 2)}`);
   }
@@ -87,7 +107,7 @@ export async function uploadToCws({
 
   if (!publish) {
     log('CWS: uploaded as a draft (publish skipped).');
-    return;
+    return 'draft';
   }
 
   // Submit the draft for publication (Google's review queue; it goes live on
@@ -104,4 +124,5 @@ export async function uploadToCws({
   const ok = status.length > 0 && status.every((s) => s === 'OK' || s === 'ITEM_PENDING_REVIEW');
   if (!ok) throw new Error(`CWS publish returned a non-success status:\n${JSON.stringify(pubData, null, 2)}`);
   log(`CWS publish status: ${status.join(', ')}.`);
+  return 'published';
 }

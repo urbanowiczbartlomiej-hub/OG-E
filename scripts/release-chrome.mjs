@@ -48,10 +48,11 @@ const zip = resolve(RELEASE, `og-e-chrome-${version}.zip`);
 
 if (existsSync(zip)) rmSync(zip);
 
+let result;
 try {
   mkdirSync(RELEASE, { recursive: true });
   buildChromeZip(DIST, zip);
-  await uploadToCws({
+  result = await uploadToCws({
     itemId,
     clientId,
     clientSecret,
@@ -65,7 +66,9 @@ try {
   die(e instanceof Error ? e.message : String(e));
 }
 
-console.log(
-  `release:chrome: ${version} done` +
-    (publish ? ' — uploaded + submitted to the Chrome Web Store.' : ' — uploaded as a draft (not published).'),
-);
+const tail = {
+  published: 'uploaded + submitted to the Chrome Web Store',
+  draft: 'uploaded as a draft (not published)',
+  skipped: 'skipped (item busy or already up)',
+}[result] ?? 'done';
+console.log(`release:chrome: ${version} — ${tail}.`);

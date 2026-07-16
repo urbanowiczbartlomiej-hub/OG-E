@@ -263,12 +263,13 @@ if (haveCreds) {
 // The chrome zip is rebuilt here because a CI checkout doesn't persist it.
 // ---------------------------------------------------------------------------
 
+let cwsResult = null;
 if (haveCwsCreds) {
   const chromeZip = resolve(ROOT, 'release', `og-e-chrome-${VERSION}.zip`);
   if (existsSync(chromeZip)) rmSync(chromeZip);
   try {
     buildChromeZip(resolve(ROOT, 'dist'), chromeZip);
-    await uploadToCws({
+    cwsResult = await uploadToCws({
       itemId: CWS_EXTENSION_ID,
       clientId: CWS_CLIENT_ID,
       clientSecret: CWS_CLIENT_SECRET,
@@ -284,8 +285,11 @@ if (haveCwsCreds) {
   console.log('release: no Chrome Web Store creds in the env — skipping CWS upload.');
 }
 
-// A human-readable summary of which stores this run actually published to.
-const stores = [haveCreds && 'AMO', haveCwsCreds && 'Chrome Web Store'].filter(Boolean);
+// A human-readable summary of which stores this run actually shipped to. CWS
+// only counts when it truly uploaded — a 'skipped' (item busy / already up) is
+// not a shipment, so the summary doesn't over-claim.
+const cwsShipped = cwsResult === 'published' || cwsResult === 'draft';
+const stores = [haveCreds && 'AMO', cwsShipped && 'Chrome Web Store'].filter(Boolean);
 const uploadedTail = stores.length ? ` — uploaded to ${stores.join(' + ')}.` : '.';
 
 // ---------------------------------------------------------------------------
