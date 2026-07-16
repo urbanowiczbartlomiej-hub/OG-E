@@ -4,6 +4,13 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.51.5] — 2026-07-16
+
+### Changed
+
+- Maintenance release — no user-facing changes. Verifies the dual-store
+  publishing pipeline (AMO + Chrome Web Store).
+
 ## [1.51.4] — 2026-07-16
 
 ### Changed
