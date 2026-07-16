@@ -4,6 +4,41 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.51.2] — 2026-07-16
+
+### Fixed
+
+- **Big fleet-saves stop showing up as plain green transport dots.** Two root
+  causes fixed. Detection now runs locally on every event-list scan — it no
+  longer needs the cloud-sync token or a healthy sync round, so the FS badge
+  on the event list and the FS marker on the planet list light up even when
+  the gist is unreachable. And every fleet send now records its TRUE flight
+  time at the moment of dispatch, so a long fleet-save that OG-E first
+  notices late (hidden tab, a reload right after sending) is judged by its
+  real duration instead of the minutes left — previously it was written off
+  as a short hop forever.
+- **Fleet reminders stop switching themselves off.** Sending any fleet from a
+  planet with an armed Fleet reminder used to clear the reminder — even a
+  small "technical" send (a few transporters crossing the FS thresholds)
+  while 95% of the fleet still sat exposed. A reminder now clears ONLY by
+  your explicit act: holding the Fleet-reminder button, a successful "Save
+  now" through it, or un-toggling the chip on the fleet screen.
+
+### Changed
+
+- **Fleet reminders are now one synced set.** The auto-detected "fleet landed
+  and sits exposed" state and the manual fleet-screen mark used to live in
+  two separate stores (one of them device-local) — which is why a reminder
+  could show on one device and not the other, or resurrect after being
+  dismissed. Both now write the same per-planet, cloud-synced set: a landing
+  detected on one device arms the reminder everywhere after the next sync
+  round, and a dismiss travels the same way instead of coming back. Existing
+  manual marks from before this version need to be set once again.
+- **"Who's spying on you" syncs between devices.** The proximity-alert log
+  (who probed your planets) was device-local; each device showed a different
+  history. It now rides the same cloud sync as the other Spyglass
+  observations.
+
 ## [1.51.1] — 2026-07-15
 
 ### Changed
