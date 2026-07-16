@@ -20,7 +20,8 @@
     "coverage": "vitest run --coverage",
     "package": "npm run build:prod && node scripts/package.mjs && node scripts/package-source.mjs",
     "package:chrome": "npm run build:prod && node scripts/package-chrome.mjs",
-    "release": "node --env-file-if-exists=.env scripts/release.mjs"
+    "release": "node --env-file-if-exists=.env scripts/release.mjs",
+    "release:chrome": "npm run build:prod && node --env-file-if-exists=.env scripts/release-chrome.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
