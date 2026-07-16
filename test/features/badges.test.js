@@ -27,8 +27,20 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { installBadges, _resetBadgesForTest } from '../../src/features/badges/index.js';
 import { settingsStore, SETTINGS_SCHEMA } from '../../src/state/settings.js';
 import { galaxyScanConfigStore } from '../../src/state/galaxyScanConfig.js';
-import { writeFleetSaveIds } from '../../src/state/fleetSaveSet.js';
+import { writeFleetSaveEntries } from '../../src/state/fleetSaveSet.js';
 import { EVENT_BOX_LOADED_EVENT } from '../../src/lib/ogeEvents.js';
+
+/**
+ * Publish a detected-FS set from bare row ids (the tests only key on the id;
+ * the rest of the entry is a minimal well-formed stub).
+ *
+ * @param {string[]} ids
+ */
+const writeFsIds = (ids) => {
+  writeFleetSaveEntries(ids.map((id) => ({
+    id, arrivalAt: 1000, shipCount: 500, label: 'FS', offsetsSec: [0], fireAts: [1000],
+  })));
+};
 
 /**
  * One event-list fleet leg fixture.
@@ -333,7 +345,7 @@ describe('installBadges — fleet-save category', () => {
   it('marks a published FS row-id as fs when both gates are on', () => {
     settingsStore.update((s) => ({ ...s, alarmClockMasterEnabled: true }));
     galaxyScanConfigStore.update((c) => ({ ...c, fsEnabled: true }));
-    writeFleetSaveIds(['eventRow-1']);
+    writeFsIds(['eventRow-1']);
 
     // My logistics fleet flying home — would normally be 'logistics', but the
     // FS flag promotes it to 'fs'.
@@ -349,7 +361,7 @@ describe('installBadges — fleet-save category', () => {
   it('does not mark fs when the per-universe gate is off', () => {
     settingsStore.update((s) => ({ ...s, alarmClockMasterEnabled: true }));
     galaxyScanConfigStore.update((c) => ({ ...c, fsEnabled: false }));
-    writeFleetSaveIds(['eventRow-1']);
+    writeFsIds(['eventRow-1']);
 
     setupGameDOM({
       legs: [{ id: 1, mission: '3', returning: true, origin: '1:2:3', dest: '9:9:9' }],

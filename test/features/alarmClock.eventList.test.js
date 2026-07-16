@@ -15,6 +15,7 @@ import { alarmClockConfigStore } from '../../src/state/alarmClockConfig.js';
 import { defaultAlarmClockConfig } from '../../src/domain/alarmClockConfig.js';
 import { parseUniverseId } from '../../src/lib/universeId.js';
 import { writePending } from '../../src/features/alarmClock/pending.js';
+import { writeFleetSaveEntries } from '../../src/state/fleetSaveSet.js';
 import { ALARM_CLOCK_MIRROR_KEY } from '../../src/sync/alarmClock.js';
 import {
   installEventListAlarmClock, _resetEventListAlarmClockForTest,
@@ -24,8 +25,9 @@ const VALID_TOKEN = 'tk_tbqdljrkz4ivlgagxwewjz17k26gw';
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 // In-memory chrome.storage.local stub — the event-list badge reads the
-// alarmClock mirror from it (fleet-save badges are mirror-driven). Empty by
-// default ⇒ snapshot is null ⇒ behaves exactly as "no extension API".
+// alarmClock mirror from it (waves + ad-hoc; fleet-save badges read the LOCAL
+// republish instead — see seedFsEntries). Empty by default ⇒ snapshot is null
+// ⇒ behaves exactly as "no extension API".
 /** @type {Record<string, unknown>} */
 let chromeStoreData = {};
 const installChromeStub = () => {
@@ -42,15 +44,14 @@ const installChromeStub = () => {
   };
 };
 
-/** Seed this universe's mirror slice with a fleet-save set. @param {object[]} fleetSave */
-const seedMirror = (fleetSave) => {
-  chromeStoreData[ALARM_CLOCK_MIRROR_KEY] = {
-    [parseUniverseId(location.host)]: {
-      version: 5, waves: [], notifyState: {}, adhoc: [], adhocNotify: {},
-      fleetSave, fleetSaveNotify: {},
-    },
-  };
-};
+/**
+ * Publish a detected fleet-save set the way the producer does since 1.51.2 —
+ * the LOCAL republish (`state/fleetSaveSet`, localStorage), which is what the
+ * event-list FS badge reads (token-free); the mirror only drives waves+ad-hoc.
+ *
+ * @param {import('../../src/domain/fleetSave.js').FleetSaveAlarmClock[]} fleetSave
+ */
+const seedFsEntries = (fleetSave) => writeFleetSaveEntries(fleetSave);
 
 /** @param {Partial<import('../../src/state/settings.js').Settings>} [over] */
 const setSettings = (over = {}) => {
@@ -188,7 +189,7 @@ describe('event-list badges', () => {
     });
     setFsEnabled(true);
     const base = Math.floor(Date.now() / 1000) + 3600;
-    seedMirror([{
+    seedFsEntries([{
       id: 'eventRow-42', arrivalAt: base, shipCount: 8256872, label: 'Deployment → [4:478:14]',
       offsetsSec: [-600, 0, 600], fireAts: [base - 600, base, base + 600],
     }]);
@@ -222,7 +223,7 @@ describe('event-list badges', () => {
     });
     setFsEnabled(true);
     const far = Math.floor(Date.now() / 1000) + 5 * 24 * 3600; // 5 days out
-    seedMirror([{
+    seedFsEntries([{
       id: 'eventRow-42', arrivalAt: far, shipCount: 8256872, label: 'Deployment → [4:478:14]',
       offsetsSec: [-600, 0, 600], fireAts: [far - 600, far, far + 600],
     }]);
@@ -265,7 +266,7 @@ describe('event-list badges', () => {
       alarmClockMasterEnabled: true, alarmClockNtfyToken: VALID_TOKEN,
     });
     setFsEnabled(true);
-    seedMirror([]); // producer classified nothing as a save (e.g. a short hop)
+    seedFsEntries([]); // producer classified nothing as a save (e.g. a short hop)
     const cell = paintRow(Math.floor(Date.now() / 1000) + 3600);
     installEventListAlarmClock(stubApi());
     await tick();
@@ -312,7 +313,7 @@ describe('event-list badges', () => {
     // Nearest upcoming slot fires in 20 s (inside the 3-min window) and is NOT
     // the last pre-landing one (−60 still follows), so only it is cancelled.
     const arrivalAt = now + 200;
-    seedMirror([{
+    seedFsEntries([{
       id: 'eventRow-42', arrivalAt, shipCount: 8256872, label: 'Deployment → [4:478:14]',
       offsetsSec: [-180, -60, 0], fireAts: [arrivalAt - 180, arrivalAt - 60, arrivalAt],
     }]);
@@ -343,7 +344,7 @@ describe('event-list badges', () => {
     // Nearest upcoming (−60, fires in 20 s) IS the last pre-landing slot, so
     // the click also drops the at-landing (0) and after (+600) alarmClock.
     const arrivalAt = now + 80;
-    seedMirror([{
+    seedFsEntries([{
       id: 'eventRow-42', arrivalAt, shipCount: 8256872, label: 'Deployment → [4:478:14]',
       offsetsSec: [-60, 0, 600], fireAts: [arrivalAt - 60, arrivalAt, arrivalAt + 600],
     }]);
@@ -364,7 +365,7 @@ describe('event-list badges', () => {
     enableFs();
     const now = Math.floor(Date.now() / 1000);
     const arrivalAt = now + 3600; // nearest slot ~50 min out → not yet cancellable
-    seedMirror([{
+    seedFsEntries([{
       id: 'eventRow-42', arrivalAt, shipCount: 8256872, label: 'Deployment → [4:478:14]',
       offsetsSec: [-600, 0, 600], fireAts: [arrivalAt - 600, arrivalAt, arrivalAt + 600],
     }]);

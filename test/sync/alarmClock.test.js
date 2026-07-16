@@ -45,14 +45,15 @@ describe('alarmClock file constants', () => {
     expect(ALARM_CLOCK_FILENAME_RE.exec('README.md')).toBeNull();
   });
 
-  it('is at schema version 6', () => {
+  it('is at schema version 7', () => {
     // v1.5.0 bumped to v3 (per-universe files). v1.8.0 bumped to v4,
     // adding the ad-hoc alarmClock blocks. v1.9.0 bumped to v5, adding the
     // fleet-save blocks. v1.29.0 bumped to v6, adding the `landedFleetSave`
-    // block (landed fleet-saves kept until re-saved/departed/dismissed so
-    // planet markers flag the still-exposed fleet); v3/v4/v5 are read forward
-    // (additive migration), older versions treated as absent.
-    expect(ALARM_CLOCK_SCHEMA_VERSION).toBe(6);
+    // block. v1.51.2 bumped to v7, DROPPING it again — the durable exposed
+    // state moved to the synced fleet-reminder store (state/fleetReminders);
+    // v3–v6 are read forward (v6's field simply ignored), older versions
+    // treated as absent.
+    expect(ALARM_CLOCK_SCHEMA_VERSION).toBe(7);
   });
 
   it('exposes distinct chrome.storage mirror keys for the dashboard preview', () => {

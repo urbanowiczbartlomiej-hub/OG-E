@@ -68,6 +68,7 @@ const GIST_SYNCED_BASES = new Set([
   'oge_targetReports',
   'oge_activityObs',
   'oge_presenceLedger',
+  'oge_proximityReports',
   'oge_allianceIntel',
 ]);
 

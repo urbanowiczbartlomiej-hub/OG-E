@@ -17,8 +17,9 @@ import {
   mergeGalaxyScanConfig,
   mergeAlarmClockConfig,
   mergeDailyState,
-  mergeManualLandedFs,
+  mergeFleetReminders,
 } from '../../src/sync/merge.js';
+import { FR_TOMBSTONE_TTL_SEC } from '../../src/state/fleetReminders.js';
 
 /**
  * @typedef {import('../../src/state/scans.js').GalaxyScans} GalaxyScans
@@ -583,22 +584,64 @@ describe('mergeDailyState', () => {
   });
 });
 
-describe('mergeManualLandedFs (last-writer-wins, removal-propagating)', () => {
-  const local = { marks: [{ bodyKey: 'a:1:1:1', markedAt: 1 }], updatedAt: 100 };
+describe('mergeFleetReminders (per-body LWW, tombstone-propagating)', () => {
+  const NOW = 10_000;
 
-  it('keeps local when remote is older or absent', () => {
-    expect(mergeManualLandedFs(local, undefined)).toEqual({ merged: local, changed: false });
-    expect(mergeManualLandedFs(local, { marks: [], updatedAt: 50 }))
+  it('keeps local when remote is absent or carries nothing newer', () => {
+    const local = { marks: { 'a:1:1:1': { on: true, ts: 100, landedAt: 100 } } };
+    expect(mergeFleetReminders(local, undefined, NOW))
+      .toEqual({ merged: local, changed: false });
+    expect(mergeFleetReminders(local, { marks: { 'a:1:1:1': { on: false, ts: 50 } } }, NOW))
       .toEqual({ merged: local, changed: false });
   });
 
-  it('adopts a strictly-newer remote set', () => {
-    const remote = { marks: [{ bodyKey: 'b:2:2:3', markedAt: 9 }], updatedAt: 200 };
-    expect(mergeManualLandedFs(local, remote)).toEqual({ merged: remote, changed: true });
+  it('merges per BODY — each key resolves independently by ts', () => {
+    const local = {
+      marks: {
+        'a:1:1:1': { on: true, ts: 100, landedAt: 100 },
+        'b:2:2:3': { on: true, ts: 300, landedAt: 300 },
+      },
+    };
+    const remote = {
+      marks: {
+        'a:1:1:1': { on: false, ts: 200 }, // newer dismiss → wins
+        'b:2:2:3': { on: false, ts: 250 }, // older than local arm → loses
+        'c:3:3:1': { on: true, ts: 400, landedAt: 400 }, // new body → adopted
+      },
+    };
+    const { merged, changed } = mergeFleetReminders(local, remote, NOW);
+    expect(changed).toBe(true);
+    expect(merged.marks).toEqual({
+      'a:1:1:1': { on: false, ts: 200 },
+      'b:2:2:3': { on: true, ts: 300, landedAt: 300 },
+      'c:3:3:1': { on: true, ts: 400, landedAt: 400 },
+    });
   });
 
-  it('propagates a removal via an empty newer set (tombstone)', () => {
-    expect(mergeManualLandedFs(local, { marks: [], updatedAt: 300 }))
-      .toEqual({ merged: { marks: [], updatedAt: 300 }, changed: true });
+  it('a tie keeps local (identical cross-device stamps of the same landing)', () => {
+    const local = { marks: { 'a:1:1:1': { on: true, ts: 100, landedAt: 100 } } };
+    const remote = { marks: { 'a:1:1:1': { on: false, ts: 100 } } };
+    expect(mergeFleetReminders(local, remote, NOW))
+      .toEqual({ merged: local, changed: false });
+  });
+
+  it('GCs an expired tombstone from the merged result (changed=true)', () => {
+    const now = FR_TOMBSTONE_TTL_SEC + 1000;
+    const local = {
+      marks: {
+        'dead:1:1:1': { on: false, ts: 500 }, // now - ts > TTL → GC'd
+        'live:2:2:2': { on: true, ts: 600, landedAt: 600 },
+      },
+    };
+    const { merged, changed } = mergeFleetReminders(local, undefined, now);
+    expect(changed).toBe(true);
+    expect(merged.marks).toEqual({ 'live:2:2:2': { on: true, ts: 600, landedAt: 600 } });
+  });
+
+  it('ignores a malformed remote entry (non-finite ts)', () => {
+    const local = { marks: { 'a:1:1:1': { on: true, ts: 100, landedAt: 100 } } };
+    const remote = { marks: { 'a:1:1:1': { on: false, ts: 'soon' } } };
+    expect(mergeFleetReminders(local, /** @type {any} */ (remote), NOW))
+      .toEqual({ merged: local, changed: false });
   });
 });

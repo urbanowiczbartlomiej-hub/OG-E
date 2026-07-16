@@ -4,6 +4,7 @@ import { describe, it, expect } from 'vitest';
 import {
   parseFsOffsets, reconcileFleetSaves, pruneFsNotify, isFleetSaveLeg,
   nearestCancellableSlot, fsOffsetsToCancel, FS_CANCEL_WINDOW_SEC,
+  fsHintOkIds, detectFsLandings, FS_HINT_TOLERANCE_SEC,
 } from '../../src/domain/fleetSave.js';
 
 /**
@@ -218,5 +219,109 @@ describe('fsOffsetsToCancel', () => {
   it('cancels only itself for an at/after-landing slot (no negatives present)', () => {
     expect(fsOffsetsToCancel([0, 600], 0)).toEqual([0]);
     expect(fsOffsetsToCancel([0, 600], 600)).toEqual([600]);
+  });
+});
+
+describe('reconcileFleetSaves — minFlightOkIds (send-hint rescue)', () => {
+  it('rescues a leg failing the remaining-time gate when its id is hint-verified', () => {
+    // now=99_700 → only 300 s remain before arrival (< minFlightSec 600).
+    const out = reconcileFleetSaves(
+      [],
+      [cand({ id: 'late' }), cand({ id: 'also-late' })],
+      opts({ now: 99_700, minFlightOkIds: new Set(['late']) }),
+    );
+    expect(out.map((e) => e.id)).toEqual(['late']);
+  });
+
+  it('is additive only — a hint never vetoes a leg that passes on remaining time', () => {
+    const out = reconcileFleetSaves(
+      [],
+      [cand({ id: 'fresh' })],
+      opts({ now: 0, minFlightOkIds: new Set() }),
+    );
+    expect(out.map((e) => e.id)).toEqual(['fresh']);
+  });
+
+  it('does not bypass the ship-count gate', () => {
+    const out = reconcileFleetSaves(
+      [],
+      [cand({ id: 'small', shipCount: 1 })],
+      opts({ now: 99_700, minFlightOkIds: new Set(['small']) }),
+    );
+    expect(out).toEqual([]);
+  });
+});
+
+describe('fsHintOkIds', () => {
+  /** @type {import('../../src/domain/fleetSave.js').FsSendHint} */
+  const hint = { landingKey: '1:2:3:1', arrivalAt: 100000, flightSec: 7200 };
+
+  it('matches a candidate landing on the same body within the tolerance', () => {
+    const ok = fsHintOkIds(
+      [cand({ id: 'a', landingKey: '1:2:3:1', arrivalAt: 100000 + FS_HINT_TOLERANCE_SEC })],
+      [hint],
+      600,
+    );
+    expect(ok).toEqual(new Set(['a']));
+  });
+
+  it('rejects a mismatch: wrong body, drifted arrival, or too-short true flight', () => {
+    expect(fsHintOkIds(
+      [cand({ id: 'wrong-body', landingKey: '9:9:9:1', arrivalAt: 100000 })], [hint], 600,
+    )).toEqual(new Set());
+    expect(fsHintOkIds(
+      [cand({ id: 'drifted', landingKey: '1:2:3:1', arrivalAt: 100000 + FS_HINT_TOLERANCE_SEC + 1 })],
+      [hint], 600,
+    )).toEqual(new Set());
+    expect(fsHintOkIds(
+      [cand({ id: 'short', landingKey: '1:2:3:1', arrivalAt: 100000 })],
+      [{ ...hint, flightSec: 300 }], 600, // true flight below the gate
+    )).toEqual(new Set());
+  });
+
+  it('ignores candidates without a landingKey and returns empty for no hints', () => {
+    expect(fsHintOkIds([cand({ id: 'a' })], [hint], 600)).toEqual(new Set());
+    expect(fsHintOkIds([cand({ id: 'a', landingKey: '1:2:3:1' })], [], 600)).toEqual(new Set());
+  });
+});
+
+describe('detectFsLandings', () => {
+  /** A previously-locked FS entry. @param {string} id @param {object} [o] */
+  const prev = (id, o = {}) => ({
+    id, arrivalAt: 1000, shipCount: 5, label: 'x', offsetsSec: [], fireAts: [],
+    landingKey: '1:2:3:1', ...o,
+  });
+
+  it('reports a known FS gone from candidates past its arrival', () => {
+    expect(detectFsLandings([prev('a')], [], 2000)).toEqual([
+      { bodyKey: '1:2:3:1', landedAt: 1000 },
+    ]);
+  });
+
+  it('does NOT report a leg still present, one not yet arrived, or one without a landingKey', () => {
+    expect(detectFsLandings([prev('present')], [cand({ id: 'present' })], 2000)).toEqual([]);
+    expect(detectFsLandings([prev('early', { arrivalAt: 5000 })], [], 2000)).toEqual([]);
+    expect(detectFsLandings([prev('nokey', { landingKey: '' })], [], 2000)).toEqual([]);
+  });
+
+  it('keeps only the LATEST landing per body', () => {
+    const out = detectFsLandings(
+      [prev('old', { arrivalAt: 900 }), prev('new', { arrivalAt: 1500 })],
+      [],
+      2000,
+    );
+    expect(out).toEqual([{ bodyKey: '1:2:3:1', landedAt: 1500 }]);
+  });
+
+  it('reports one landing per distinct body', () => {
+    const out = detectFsLandings(
+      [prev('a'), prev('b', { landingKey: '4:5:6:3', arrivalAt: 1200 })],
+      [],
+      2000,
+    );
+    expect(out).toEqual([
+      { bodyKey: '1:2:3:1', landedAt: 1000 },
+      { bodyKey: '4:5:6:3', landedAt: 1200 },
+    ]);
   });
 });

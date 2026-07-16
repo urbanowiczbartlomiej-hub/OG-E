@@ -164,9 +164,18 @@ import { SYNC_STATUS_EVENT } from '../lib/ogeEvents.js';
  *   always beats an earlier one). Per-universe because tasks are server-specific
  *   and must not leak across universes.
  * @property {Record<string, import('../state/fleetReminders.js').FleetReminderSlot>} [fleetRemindersPerUniverse]
- *   OPTIONAL, additive: the user's manual fleet-save marks per universe. Merge
- *   strategy: last-writer-wins on the whole set (keyed by `updatedAt`) so an
- *   unmark / re-save propagates instead of being resurrected by another device.
+ *   OPTIONAL, additive: the unified fleet reminders (auto landing arms + the
+ *   fleet1 chip's manual marks) per universe. Merge strategy: per-BODY
+ *   last-writer-wins on each entry's `ts`, with `on: false` tombstones so a
+ *   dismiss propagates instead of being resurrected by another device (see
+ *   {@link import('./merge.js').mergeFleetReminders}).
+ * @property {Record<string, { marks: unknown[], updatedAt: number }>} [manualLandedFsPerUniverse]
+ *   LEGACY, no longer written: the pre-1.51.2 whole-set-LWW manual-mark slot,
+ *   replaced by `fleetRemindersPerUniverse` (no migration — sole-user waiver).
+ *   Retained in this typedef only so
+ *   {@link import('./scheduler/pure.js').gistIsCurrent} still compares it: a
+ *   gist that still carries the old slot reads "not current" against our
+ *   `undefined` and gets slimmed by the next PATCH.
  * @property {Record<string, import('./merge.js').GalaxyScanConfigSlot>} [galaxyScanConfig]
  *   OPTIONAL, additive: Galaxy-Scan config (positions + rescan policy) keyed
  *   by universe id. Each slot is whole-universe newest-wins (see

@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
 //
-// Behavioral tests for the manual landed-FS mark chip
+// Behavioral tests for the manual fleet-reminder chip
 // (src/features/manualFsMark/index.js). The feature is DOM-bound: it injects an
 // inline chip on the fleetdispatch screen, resolves the dispatching body to
-// `g:s:p:type`, and on click toggles state/manualLandedFs AND dispatches the
-// `oge:manualFsChanged` CustomEvent on `document`.
+// `g:s:p:type`, and on click toggles state/fleetReminders AND dispatches the
+// `oge:fleetReminderChanged` CustomEvent on `document`.
 //
 // We drive a real happy-dom page and assert the OBSERVABLE output — the stored
 // mark and the dispatched event — never internals. Body resolution has two
@@ -22,11 +22,11 @@ import {
   _resetManualFsMarkForTest,
 } from '../../src/features/manualFsMark/index.js';
 import {
-  MANUAL_LANDED_FS_KEY,
-  readManualLandedFs,
-  hasManualLandedFs,
-} from '../../src/state/manualLandedFs.js';
-import { MANUAL_FS_CHANGED_EVENT } from '../../src/lib/ogeEvents.js';
+  FLEET_REMINDERS_KEY,
+  readFleetReminders,
+  hasFleetReminder,
+} from '../../src/state/fleetReminders.js';
+import { FLEET_REMINDER_CHANGED_EVENT } from '../../src/lib/ogeEvents.js';
 
 const CHIP_ID = 'oge-mfs-chip';
 
@@ -130,9 +130,9 @@ describe('installManualFsMark — toggle writes state + fires the event', () => 
     setForm();
   });
 
-  it('clicking marks the planet body (g:s:p:1), stores it, and dispatches oge:manualFsChanged', () => {
+  it('clicking marks the planet body (g:s:p:1), stores it, and dispatches oge:fleetReminderChanged', () => {
     let events = 0;
-    document.addEventListener(MANUAL_FS_CHANGED_EVENT, () => {
+    document.addEventListener(FLEET_REMINDER_CHANGED_EVENT, () => {
       events += 1;
     });
     installManualFsMark();
@@ -140,11 +140,11 @@ describe('installManualFsMark — toggle writes state + fires the event', () => 
     chip()?.click();
 
     expect(events).toBe(1);
-    expect(hasManualLandedFs('1:2:3:1')).toBe(true);
-    const stored = readManualLandedFs();
+    expect(hasFleetReminder('1:2:3:1')).toBe(true);
+    const stored = readFleetReminders();
     expect(stored).toHaveLength(1);
     expect(stored[0].bodyKey).toBe('1:2:3:1');
-    expect(typeof stored[0].markedAt).toBe('number');
+    expect(typeof stored[0].landedAt).toBe('number');
     // Chip reflects the marked state via the lit dome + swapped title.
     expect(chip()?.classList.contains('on')).toBe(true);
     expect(chip()?.title).toMatch(/tap to clear/);
@@ -152,7 +152,7 @@ describe('installManualFsMark — toggle writes state + fires the event', () => 
 
   it('clicking again unmarks: clears storage, fires a second event, reverts the chip', () => {
     let events = 0;
-    document.addEventListener(MANUAL_FS_CHANGED_EVENT, () => {
+    document.addEventListener(FLEET_REMINDER_CHANGED_EVENT, () => {
       events += 1;
     });
     installManualFsMark();
@@ -161,15 +161,15 @@ describe('installManualFsMark — toggle writes state + fires the event', () => 
     chip()?.click(); // unmark
 
     expect(events).toBe(2);
-    expect(readManualLandedFs()).toEqual([]);
+    expect(readFleetReminders()).toEqual([]);
     expect(chip()?.classList.contains('on')).toBe(false);
     expect(chip()?.title).toMatch(/Set a Fleet reminder/);
   });
 
   it('reflects a pre-existing mark from storage on install (chip starts "on")', () => {
     localStorage.setItem(
-      MANUAL_LANDED_FS_KEY,
-      JSON.stringify([{ bodyKey: '1:2:3:1', markedAt: 123 }]),
+      FLEET_REMINDERS_KEY,
+      JSON.stringify({ marks: { '1:2:3:1': { on: true, ts: 123, landedAt: 123 } } }),
     );
     installManualFsMark();
     expect(chip()?.classList.contains('on')).toBe(true);
@@ -201,8 +201,8 @@ describe('installManualFsMark — moon body via meta type', () => {
 
     chip()?.click();
 
-    expect(hasManualLandedFs('4:5:6:3')).toBe(true);
-    expect(hasManualLandedFs('4:5:6:1')).toBe(false);
+    expect(hasFleetReminder('4:5:6:3')).toBe(true);
+    expect(hasFleetReminder('4:5:6:1')).toBe(false);
   });
 });
 
@@ -216,8 +216,8 @@ describe('installManualFsMark — cp fallback (no meta tags)', () => {
 
     chip()?.click();
 
-    expect(hasManualLandedFs('1:2:3:3')).toBe(true); // moon (type 3)
-    expect(hasManualLandedFs('1:2:3:1')).toBe(false);
+    expect(hasFleetReminder('1:2:3:3')).toBe(true); // moon (type 3)
+    expect(hasFleetReminder('1:2:3:1')).toBe(false);
   });
 
   it('resolves the planet body from the cp param mapped onto the planetlink', () => {
@@ -227,7 +227,7 @@ describe('installManualFsMark — cp fallback (no meta tags)', () => {
 
     chip()?.click();
 
-    expect(hasManualLandedFs('7:8:9:1')).toBe(true); // planet (type 1)
+    expect(hasFleetReminder('7:8:9:1')).toBe(true); // planet (type 1)
   });
 });
 

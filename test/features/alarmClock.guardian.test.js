@@ -3,21 +3,21 @@
 // Behavioral tests for the fleet GUARDIAN surface
 // (`src/features/alarmClock/guardian.js`).
 //
-// The guardian is the loud half of the post-landing watch: while the producer
-// reports any landed-but-unsaved fleet via `state/fleetSaveSet.readLandedFs()`,
-// the guardian floats ONE warning button on the unified FAB —
+// The guardian is the loud half of the post-landing watch: while the unified
+// fleet-reminder store (`state/fleetReminders.js`) holds the armed set, the
+// guardian floats ONE warning button on the unified FAB —
 //   • tap        → off a fleetdispatch screen this is two-step: the 1st tap
 //                  ACKs ("I'm here" — silences the pulse, stays put) and the
 //                  2nd navigates to the body to re-save;
-//   • long-press → dismiss this landing.
+//   • long-press → clear this reminder (via the producer's dismiss command).
 // It also rides the FAB's `fabBtnSize` setting live (no visibility gate —
 // the guardian is a safety prompt).
 //
 // We mock the heavy *view* (`shared/button.js` + `shared/buttonChrome.js`) so we
 // can capture the button config and drive its `onTap`/`onHold` directly, and we
-// mock the producer's output (`readLandedFs`). The real `settingsStore` (defaults
-// to fabBtnSize:320) and the real `safeLS`-backed guardian dismiss
-// store are used — happy-dom gives us a working `localStorage`.
+// mock the reminder store's read (`readFleetReminders`). The real
+// `settingsStore` (defaults to fabBtnSize:320) is used — happy-dom gives us a
+// working `localStorage`.
 //
 // @ts-check
 
@@ -63,30 +63,22 @@ vi.mock('../../src/features/shared/button.js', () => ({
 const installButtonChrome = vi.hoisted(() => vi.fn());
 vi.mock('../../src/features/shared/buttonChrome.js', () => ({ installButtonChrome }));
 
-// ── Mock the producer's landed-FS output ───────────────────────────────────
-/** @typedef {{ bodyKey: string, landedAt: number }} Landed */
-const readLandedFs = vi.hoisted(() =>
-  vi.fn(/** @returns {Landed[]} */ () => []),
+// ── Mock the fleet-reminder store's read ───────────────────────────────────
+/** @typedef {{ bodyKey: string, landedAt: number }} Reminder */
+const readFleetReminders = vi.hoisted(() =>
+  vi.fn(/** @returns {Reminder[]} */ () => []),
 );
-vi.mock('../../src/state/fleetSaveSet.js', () => ({ readLandedFs }));
+vi.mock('../../src/state/fleetReminders.js', () => ({ readFleetReminders }));
 
 import { installGuardian, _resetGuardianForTest } from '../../src/features/alarmClock/guardian.js';
-import { EVENT_BOX_LOADED_EVENT } from '../../src/lib/ogeEvents.js';
+import { EVENT_BOX_LOADED_EVENT, FLEET_REMINDER_CHANGED_EVENT } from '../../src/lib/ogeEvents.js';
 import { settingsStore } from '../../src/state/settings.js';
-import { addGuardianDismiss } from '../../src/features/alarmClock/guardianDismiss.js';
-
-const UID = 'uni-77';
-
-/** A far-future timestamp (seconds), used for dismiss-record expiries. */
-const FUTURE = Math.floor(Date.now() / 1000) + 3600;
 
 /**
- * One landed-FS entry as the producer publishes it. There is no `expiresAt` any
- * more — the exposed flag is durable (clears only on re-save / departure /
- * dismiss), so an entry carries just its body and landing time.
+ * One armed reminder as the store surfaces it — just its body and landing time.
  *
  * @param {{ bodyKey: string, landedAt?: number }} o
- * @returns {{ bodyKey: string, landedAt: number }}
+ * @returns {Reminder}
  */
 const landed = ({ bodyKey, landedAt = 1000 }) => ({ bodyKey, landedAt });
 
@@ -124,7 +116,7 @@ beforeEach(() => {
   // later cases onto the guardian's on-dispatch branch. (happy-dom 14 honours a
   // direct `location.search =` write — the same workaround the recorder test uses.)
   location.search = '';
-  readLandedFs.mockReturnValue([]);
+  readFleetReminders.mockReturnValue([]);
   installButtonChrome.mockClear();
   buttonMock.created.length = 0;
   buttonMock.last.value = null;
@@ -137,15 +129,15 @@ afterEach(() => {
 });
 
 describe('installGuardian — mounting', () => {
-  it('mounts no button when the bare set is empty', () => {
-    installGuardian({ universeId: UID });
+  it('mounts no button when the reminder set is empty', () => {
+    installGuardian({});
     expect(lastBtn()).toBeNull();
     expect(installButtonChrome).not.toHaveBeenCalled();
   });
 
-  it('mounts one warning button when a fleet is bare and the FAB is on', () => {
-    readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
-    installGuardian({ universeId: UID });
+  it('mounts one warning button when a reminder is armed and the FAB is on', () => {
+    readFleetReminders.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
+    installGuardian({});
     expect(lastBtn()).not.toBeNull();
     expect(installButtonChrome).toHaveBeenCalledTimes(1);
     // Built on the unified FAB at the settings-driven size.
@@ -154,9 +146,9 @@ describe('installGuardian — mounting', () => {
   });
 
   it('is idempotent — a second install does not build a second button', () => {
-    readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
-    const dispose1 = installGuardian({ universeId: UID });
-    const dispose2 = installGuardian({ universeId: UID });
+    readFleetReminders.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
+    const dispose1 = installGuardian({});
+    const dispose2 = installGuardian({});
     expect(dispose2).toBe(dispose1);
     expect(buttonMock.created).toHaveLength(1);
   });
@@ -164,8 +156,8 @@ describe('installGuardian — mounting', () => {
 
 describe('installGuardian — label', () => {
   it('paints the single coords as the subtitle for one bare fleet', () => {
-    readLandedFs.mockReturnValue([landed({ bodyKey: '4:115:8:1' })]);
-    installGuardian({ universeId: UID });
+    readFleetReminders.mockReturnValue([landed({ bodyKey: '4:115:8:1' })]);
+    installGuardian({});
     const lines = lastBtn().paintLines.mock.calls.at(-1)[1];
     const texts = lines.map(/** @param {{ text: string }} l */ (l) => l.text);
     expect(texts).toContain('You here?');
@@ -174,12 +166,12 @@ describe('installGuardian — label', () => {
   });
 
   it('summarises the overflow as "coords +N" for multiple bare fleets', () => {
-    readLandedFs.mockReturnValue([
+    readFleetReminders.mockReturnValue([
       landed({ bodyKey: '1:2:3:1' }),
       landed({ bodyKey: '4:5:6:3' }),
       landed({ bodyKey: '7:8:9:1' }),
     ]);
-    installGuardian({ universeId: UID });
+    installGuardian({});
     const texts = lastBtn().paintLines.mock.calls
       .at(-1)[1].map(/** @param {{ text: string }} l */ (l) => l.text);
     expect(texts).toContain('1:2:3 +2');
@@ -193,8 +185,8 @@ describe('installGuardian — tap (ack + navigate)', () => {
       coords: '1:2:3',
       planetHref: 'https://s1.ogame.gameforge.com/game/index.php?page=ingame&component=overview&cp=33',
     });
-    readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
-    installGuardian({ ack, universeId: UID });
+    readFleetReminders.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
+    installGuardian({ ack });
 
     // First tap ACKs only — silences the pulse, snoozes the push, stays put.
     zone().onTap();
@@ -214,8 +206,8 @@ describe('installGuardian — tap (ack + navigate)', () => {
       planetHref: 'https://s1.ogame.gameforge.com/game/index.php?page=ingame&cp=33',
       moonHref: 'https://s1.ogame.gameforge.com/game/index.php?page=ingame&cp=44',
     });
-    readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:3' })]);
-    installGuardian({ ack, universeId: UID });
+    readFleetReminders.mockReturnValue([landed({ bodyKey: '1:2:3:3' })]);
+    installGuardian({ ack });
 
     // First tap ACKs; the second navigates — to the MOON link for a type-3 body.
     zone().onTap();
@@ -248,8 +240,8 @@ describe('installGuardian — active-body gate (on fleetdispatch)', () => {
   it("promises 'Fleet save' only on a bare body's OWN fleetdispatch", () => {
     location.search = '?page=ingame&component=fleetdispatch';
     setBodyMeta('1:2:3', 'planet');
-    readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
-    installGuardian({ universeId: UID });
+    readFleetReminders.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
+    installGuardian({});
     expect(paintedTexts()).toContain('Fleet save');
   });
 
@@ -261,8 +253,8 @@ describe('installGuardian — active-body gate (on fleetdispatch)', () => {
       coords: '1:2:3',
       planetHref: 'https://s1.ogame.gameforge.com/game/index.php?page=ingame&component=overview&cp=33',
     });
-    readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
-    installGuardian({ ack, universeId: UID });
+    readFleetReminders.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
+    installGuardian({ ack });
     expect(paintedTexts()).toContain('You here?');
 
     // First tap = ACK only — it must NOT drive a fleet-save from planet B.
@@ -279,8 +271,8 @@ describe('installGuardian — active-body gate (on fleetdispatch)', () => {
   it('MOON A does not pass for bare PLANET A — same coords, different body', () => {
     location.search = '?page=ingame&component=fleetdispatch';
     setBodyMeta('1:2:3', 'moon'); // we're on the MOON at those coords
-    readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
-    installGuardian({ universeId: UID });
+    readFleetReminders.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
+    installGuardian({});
     expect(paintedTexts()).toContain('You here?');
   });
 });
@@ -288,58 +280,49 @@ describe('installGuardian — active-body gate (on fleetdispatch)', () => {
 describe('installGuardian — long-press (dismiss)', () => {
   it('calls the injected dismiss with the primary body, then drops it from the set', () => {
     const dismiss = vi.fn();
-    readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:1', landedAt: 555 })]);
-    installGuardian({ dismiss, universeId: UID });
+    readFleetReminders.mockReturnValue([landed({ bodyKey: '1:2:3:1', landedAt: 555 })]);
+    installGuardian({ dismiss });
 
-    // After the producer command lands, the entry is gone on the next read.
-    dismiss.mockImplementation(() => readLandedFs.mockReturnValue([]));
+    // After the producer command lands (FR tombstone written), the entry is
+    // gone on the next read.
+    dismiss.mockImplementation(() => readFleetReminders.mockReturnValue([]));
     zone().onHold();
 
-    expect(dismiss).toHaveBeenCalledWith('1:2:3:1', 555);
+    expect(dismiss).toHaveBeenCalledWith('1:2:3:1');
     // Re-read empties the set → button torn down.
     expect(lastBtn().dispose).toHaveBeenCalled();
   });
 
   it('wires the deliberate hold duration onto the button', () => {
-    readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
-    installGuardian({ universeId: UID });
+    readFleetReminders.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
+    installGuardian({});
     expect(lastBtn().cfg.holdMs).toBe(1500);
   });
 });
 
-describe('installGuardian — filtering', () => {
-  it('suppresses a landing the user already dismissed (same landedAt)', () => {
-    const now = Math.floor(Date.now() / 1000);
-    addGuardianDismiss(UID, '1:2:3:1', 4242, FUTURE, now);
-    readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:1', landedAt: 4242 })]);
-    installGuardian({ universeId: UID });
-    expect(lastBtn()).toBeNull();
-  });
-
-  it('re-arms when the SAME body lands again with a new landedAt', () => {
-    const now = Math.floor(Date.now() / 1000);
-    addGuardianDismiss(UID, '1:2:3:1', 4242, FUTURE, now);
-    // A fresh landing → different landedAt → not suppressed.
-    readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:1', landedAt: 9999 })]);
-    installGuardian({ universeId: UID });
-    expect(lastBtn()).not.toBeNull();
-  });
-});
-
 describe('installGuardian — reactivity', () => {
-  it('re-reads the bare set on every eventbox refresh', () => {
-    installGuardian({ universeId: UID });
+  it('re-reads the reminder set on every eventbox refresh', () => {
+    installGuardian({});
     expect(lastBtn()).toBeNull();
 
     // A fleet lands; the next eventbox load surfaces the button.
-    readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
+    readFleetReminders.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
     document.dispatchEvent(new CustomEvent(EVENT_BOX_LOADED_EVENT));
     expect(lastBtn()).not.toBeNull();
   });
 
+  it('re-reads the reminder set on a reminder-changed event (chip / producer arm)', () => {
+    installGuardian({});
+    expect(lastBtn()).toBeNull();
+
+    readFleetReminders.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
+    document.dispatchEvent(new CustomEvent(FLEET_REMINDER_CHANGED_EVENT));
+    expect(lastBtn()).not.toBeNull();
+  });
+
   it('live-resizes the mounted button when fabBtnSize changes', () => {
-    readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
-    installGuardian({ universeId: UID });
+    readFleetReminders.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
+    installGuardian({});
     settingsStore.set({ ...settingsStore.get(), fabBtnSize: 96 });
     expect(lastBtn().resize).toHaveBeenCalledWith(96);
   });
@@ -347,8 +330,8 @@ describe('installGuardian — reactivity', () => {
 
 describe('installGuardian — progress arc', () => {
   it('setProgress is called on mount with elapsed/interval fraction', () => {
-    readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
-    installGuardian({ universeId: UID });
+    readFleetReminders.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
+    installGuardian({});
     // pulseTick fires immediately on render(); setProgress must have been called.
     expect(lastBtn().setProgress).toHaveBeenCalled();
     const [pct] = lastBtn().setProgress.mock.calls.at(-1);
@@ -359,8 +342,8 @@ describe('installGuardian — progress arc', () => {
   it('resets progress to 0 when the player acks (taps off-fleetdispatch)', () => {
     const ack = vi.fn();
     paintPlanetList({ coords: '1:2:3', planetHref: 'https://s1.ogame.gameforge.com/?cp=1' });
-    readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
-    installGuardian({ ack, universeId: UID });
+    readFleetReminders.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
+    installGuardian({ ack });
 
     lastBtn().setProgress.mockClear();
     zone().onTap(); // first tap = ackPresence
@@ -369,17 +352,18 @@ describe('installGuardian — progress arc', () => {
 });
 
 describe('installGuardian — teardown', () => {
-  it('dispose() tears down the button, the eventbox listener and the settings sub', () => {
-    readLandedFs.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
-    const dispose = installGuardian({ universeId: UID });
+  it('dispose() tears down the button, the listeners and the settings sub', () => {
+    readFleetReminders.mockReturnValue([landed({ bodyKey: '1:2:3:1' })]);
+    const dispose = installGuardian({});
     const btn = lastBtn();
     dispose();
 
     expect(btn.dispose).toHaveBeenCalled();
 
-    // Listener gone: a later eventbox event must not rebuild a button.
+    // Listeners gone: later events must not rebuild a button.
     buttonMock.last.value = null;
     document.dispatchEvent(new CustomEvent(EVENT_BOX_LOADED_EVENT));
+    document.dispatchEvent(new CustomEvent(FLEET_REMINDER_CHANGED_EVENT));
     expect(lastBtn()).toBeNull();
 
     // Settings sub gone: a size poke must not rebuild a button either.
