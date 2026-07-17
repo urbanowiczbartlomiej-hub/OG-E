@@ -433,6 +433,17 @@ export function detectLandingSweep(bodies, rings, nowMs, opts = {}) {
   const ageMs = nowMs - moonTop.hi * 1000;
   if (!(ageMs >= 0 && ageMs <= AFTERGLOW_HORIZON_MS)) return null;
   if (planetHi > moonTop.hi + SAME_TAU_SLACK_S) return null; // owner moved later — claim dead
+  // Mode 'lone' short-circuit: a lone verdict needs EXACTLY ONE lit body (the
+  // moon). The instant a SECOND non-self body is already lit, no amount of
+  // further coverage can bring `fresh` back to 1 — the verdict is unreachable,
+  // so sweeping the rest of the account would spend looks (a real galaxy-view
+  // footprint) that can never settle anything. Stop proposing it. 'newest'/'any'
+  // still sweep — they can resolve WITH other lit bodies, so their sweep isn't
+  // wasted.
+  if (mode === 'lone'
+    && states.some((s) => s !== moonTop.s && s.cls === 'fresh' && !s.selfLit)) {
+    return null;
+  }
   return {
     coord: moonTop.s.coord,
     bodyType: 3,
