@@ -61,6 +61,7 @@ import {
   findFirstFreshPlanet, getOverviewCp, buildOverviewUrl, overviewUrl, readColoArrivals,
 } from './detect.js';
 import { deriveLanding, nextLandingTickMs, formatLandingCountdown, landingProgress } from './pure.js';
+import { serverNow } from '../../lib/serverClock.js';
 import { checkAbandonState, createAbandonFlow } from './index.js';
 
 /** OG-E's own ids/colours for this module (not a game-DOM contract). */
@@ -186,8 +187,10 @@ export const installColonyFab = () => {
   /** @type {(() => void) | null} */
   let removeGuard = null;
 
-  /** Page-birth time — an arrival older than this never arms landing/refresh. */
-  const pageBornMs = Date.now();
+  /** Page-birth time (SERVER clock) — an arrival older than this never arms
+   *  landing/refresh. Server-based so it shares the clock of the event rows'
+   *  `data-arrival-time` even when the OS clock is wrong. */
+  const pageBornMs = serverNow();
   /** Arrival latched as "landed while this page was open" (epoch s; 0 = none). */
   let landedAt = 0;
   /** Last landing derivation — the countdown repaint reads its `arrivalAt`. */
@@ -214,7 +217,10 @@ export const installColonyFab = () => {
    * @returns {import('./pure.js').LandingResult}
    */
   const evalLanding = () => {
-    const nowMs = Date.now();
+    // SERVER clock — the arrivals come from OGame's `data-arrival-time` (server
+    // epoch), so the whole derivation must live on the same clock or a wrong OS
+    // clock skews the countdown away from the game's own timer.
+    const nowMs = serverNow();
     const derived = deriveLanding({
       domArrivals: readColoArrivals(),
       cachedArrival: readColoArrival(),
@@ -428,11 +434,11 @@ export const installColonyFab = () => {
       // Progress arc fills as the landing nears (same feel as sendColony's
       // min-gap wait), repainted each 1 Hz tick alongside the countdown text.
       paintGo({
-        main: formatLandingCountdown(lastLanding.arrivalAt, Date.now()),
+        main: formatLandingCountdown(lastLanding.arrivalAt, serverNow()),
         sub: 'colo landing',
         dim: true,
       });
-      controller?.setProgress(landingProgress(lastLanding.arrivalAt, Date.now()));
+      controller?.setProgress(landingProgress(lastLanding.arrivalAt, serverNow()));
     }
   };
 

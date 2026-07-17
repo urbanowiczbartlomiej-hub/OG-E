@@ -94,6 +94,13 @@ export const GAME = {
    */
   META_PLANET_COORDS: 'meta[name="ogame-planet-coordinates"]',
   META_PLANET_TYPE: 'meta[name="ogame-planet-type"]',
+  /**
+   * Server clock at page generation (epoch SECONDS). OGame's in-game countdowns
+   * tick off the SERVER clock, not the browser's — so a wrong OS clock never
+   * skews the game's own timers. `lib/serverClock.js` reads this once to correct
+   * our own countdowns (colony-landing etc.) the same way.
+   */
+  META_TIMESTAMP: 'meta[name="ogame-timestamp"]',
 
   // ── Event list (`#eventContent`) ───────────────────────────────────
   EVENT_CONTENT: '#eventContent',
