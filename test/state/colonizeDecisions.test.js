@@ -30,7 +30,7 @@ import {
   disposeColonizeDecisionsStore,
   flushColonizeDecisionsStore,
 } from '../../src/state/colonizeDecisions.js';
-import { DEC_SENT, DEC_MINE, SENT_GRACE_MS } from '../../src/domain/colonizeDecisions.js';
+import { DEC_SENT, DEC_MINE, DEC_RESERVED, SENT_GRACE_MS } from '../../src/domain/colonizeDecisions.js';
 
 /** @type {{ get: import('vitest').Mock, set: import('vitest').Mock }} */
 const mock = /** @type {any} */ (chromeStore);
@@ -97,16 +97,22 @@ describe('colonizeDecisions store — hydration + compaction', () => {
     expect(colonizeDecisionsStore.get()).toEqual(stored);
   });
 
-  it('compacts expired entries once on hydrate (no-show sent dropped, mine kept)', async () => {
+  it('compacts expired reserved on hydrate, keeping mine + sent (freed override)', async () => {
     const now = Date.now();
     const stored = {
       keep: { s: DEC_MINE, ts: 1, f: 50 },
-      drop: { s: DEC_SENT, ts: 1, aa: now - SENT_GRACE_MS - 1000 },
+      // A no-show sent is NOT pruned any more — freedCoords surfaces it as a
+      // "free again" override, so it must survive hydrate compaction.
+      sent: { s: DEC_SENT, ts: 1, aa: now - SENT_GRACE_MS - 1000 },
+      drop: { s: DEC_RESERVED, ts: 1, aa: now - 1000 }, // expired hold → pruned
     };
     mock.get.mockResolvedValueOnce(stored);
     initColonizeDecisionsStore();
     await flushMicrotasks();
-    expect(colonizeDecisionsStore.get()).toEqual({ keep: { s: DEC_MINE, ts: 1, f: 50 } });
+    expect(colonizeDecisionsStore.get()).toEqual({
+      keep: { s: DEC_MINE, ts: 1, f: 50 },
+      sent: { s: DEC_SENT, ts: 1, aa: now - SENT_GRACE_MS - 1000 },
+    });
   });
 
   it('leaves the store at {} when nothing is stored', async () => {

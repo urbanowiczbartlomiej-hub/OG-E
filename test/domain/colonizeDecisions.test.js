@@ -13,6 +13,9 @@ import {
   DEC_TAKEN,
   DEC_RESERVED,
   SENT_GRACE_MS,
+  SENT_UNCONFIRMED_TTL_MS,
+  ABANDON_MIN_HOLD_MS,
+  ABANDON_CLEANUP_HOUR,
   RESERVE_HOLD_MS,
   TAKEN_TTL_MS,
   mergeDecision,
@@ -20,7 +23,14 @@ import {
   mergeColonizeDecisions,
   compactDecisions,
   blockingCoords,
+  freedCoords,
+  clearFreedAbandoned,
+  abandonRecolonizableAt,
+  sentExpiresAt,
 } from '../../src/domain/colonizeDecisions.js';
+
+/** Epoch-ms of a recent, still-blocking moment relative to a `now`. */
+const HOUR = 60 * 60 * 1000;
 
 /**
  * @param {1|2|3|4|5} s
@@ -37,6 +47,9 @@ describe('state constants', () => {
 
   it('uses the documented time windows', () => {
     expect(SENT_GRACE_MS).toBe(60 * 60 * 1000);
+    expect(SENT_UNCONFIRMED_TTL_MS).toBe(4 * 60 * 60 * 1000);
+    expect(ABANDON_MIN_HOLD_MS).toBe(24 * 60 * 60 * 1000);
+    expect(ABANDON_CLEANUP_HOUR).toBe(3);
     expect(RESERVE_HOLD_MS).toBe(36 * 60 * 60 * 1000);
     expect(TAKEN_TTL_MS).toBe(90 * 24 * 60 * 60 * 1000);
   });
@@ -143,11 +156,14 @@ describe('mergeColonizeDecisions', () => {
 describe('compactDecisions', () => {
   const NOW = 10_000_000_000;
 
-  it('drops a sent past arrival + grace (no-show)', () => {
-    const map = { '1:1:1': dec(DEC_SENT, 1, { aa: NOW - SENT_GRACE_MS - 1 }) };
-    const { map: out, changed } = compactDecisions(map, NOW);
-    expect(changed).toBe(true);
-    expect(out).toEqual({});
+  it('keeps a past-expiry sent (freed override, not pruned)', () => {
+    // Compaction no longer drops a no-show sent — freedCoords surfaces it as a
+    // "free again" override of the sticky empty_sent scan remnant, so pruning
+    // it would silently re-hide the freed slot.
+    const gone = dec(DEC_SENT, 1, { aa: NOW - SENT_GRACE_MS - 1 });
+    const { map: out, changed } = compactDecisions({ '1:1:1': gone }, NOW);
+    expect(changed).toBe(false);
+    expect(out['1:1:1']).toBe(gone);
   });
 
   it('keeps a sent still within arrival + grace', () => {
@@ -196,25 +212,33 @@ describe('compactDecisions', () => {
 describe('blockingCoords', () => {
   const NOW = 10_000_000_000;
 
-  it('always blocks mine / abandoned / taken', () => {
-    const map = {
-      a: dec(DEC_MINE, 1),
-      b: dec(DEC_ABANDONED, 1),
-      c: dec(DEC_TAKEN, 1),
-    };
-    expect(blockingCoords(map, NOW)).toEqual(new Set(['a', 'b', 'c']));
+  it('always blocks mine / taken', () => {
+    const map = { a: dec(DEC_MINE, 1), c: dec(DEC_TAKEN, 1) };
+    expect(blockingCoords(map, NOW)).toEqual(new Set(['a', 'c']));
   });
 
-  it('blocks a sent within arrival + grace, not one past it', () => {
+  it('blocks an abandoned only within its re-colonization window', () => {
     const map = {
-      live: dec(DEC_SENT, 1, { aa: NOW - 1 }), // arrival just passed, grace open
-      gone: dec(DEC_SENT, 1, { aa: NOW - SENT_GRACE_MS - 1 }), // grace closed
+      held: dec(DEC_ABANDONED, NOW), // just given up → still held
+      freed: dec(DEC_ABANDONED, 1), // ancient → game has long since freed it
+    };
+    expect(blockingCoords(map, NOW)).toEqual(new Set(['held']));
+  });
+
+  it('blocks a sent within arrival + grace, not one past both windows', () => {
+    const map = {
+      live: dec(DEC_SENT, NOW, { aa: NOW - 1 }), // arrival passed, grace + 4h floor open
+      gone: dec(DEC_SENT, 1, { aa: NOW - SENT_GRACE_MS - 1 }), // grace + 4h floor closed
     };
     expect(blockingCoords(map, NOW)).toEqual(new Set(['live']));
   });
 
-  it('blocks a sent with no arrival stamp (cannot prove it is done)', () => {
-    expect(blockingCoords({ x: dec(DEC_SENT, 1) }, NOW)).toEqual(new Set(['x']));
+  it('blocks a no-arrival-stamp sent within the dispatch floor, not past it', () => {
+    const map = {
+      recent: dec(DEC_SENT, NOW - HOUR), // dispatched 1h ago, < 4h floor → still blocks
+      stale: dec(DEC_SENT, NOW - SENT_UNCONFIRMED_TTL_MS - 1), // past 4h floor → freed
+    };
+    expect(blockingCoords(map, NOW)).toEqual(new Set(['recent']));
   });
 
   it('blocks a reserved still within its hold, not an expired one', () => {
@@ -231,5 +255,80 @@ describe('blockingCoords', () => {
 
   it('returns an empty set for an empty map', () => {
     expect(blockingCoords({}, NOW)).toEqual(new Set());
+  });
+});
+
+describe('abandonRecolonizableAt', () => {
+  it('is at least 24h after give-up and lands on the 03:00 cleanup', () => {
+    // Local-clock based (like the game's day boundary): assert the invariants
+    // that hold in ANY timezone — ≥ ts + 24h, and a 03:00 local wall time.
+    const ts = new Date(2026, 5, 10, 13, 0, 0).getTime(); // 13:00 local
+    const at = abandonRecolonizableAt(ts);
+    expect(at).toBeGreaterThanOrEqual(ts + ABANDON_MIN_HOLD_MS);
+    expect(new Date(at).getHours()).toBe(ABANDON_CLEANUP_HOUR);
+    expect(new Date(at).getMinutes()).toBe(0);
+    // Never more than 24h + a full day past give-up (the next-day roll cap).
+    expect(at).toBeLessThan(ts + ABANDON_MIN_HOLD_MS + 24 * HOUR);
+  });
+
+  it('rolls to the next day when +24h lands after 03:00', () => {
+    const early = new Date(2026, 5, 10, 1, 0, 0).getTime(); // 01:00 → +24h = 01:00, 03:00 same day
+    const late = new Date(2026, 5, 10, 5, 0, 0).getTime(); // 05:00 → +24h = 05:00, 03:00 rolls a day
+    expect(abandonRecolonizableAt(late) - abandonRecolonizableAt(early)).toBe(24 * HOUR);
+  });
+});
+
+describe('sentExpiresAt', () => {
+  it('takes the LATER of arrival+grace and dispatch+floor', () => {
+    // Near target: dispatch floor dominates.
+    const near = dec(DEC_SENT, 1000, { aa: 1000 + 10 * 60 * 1000 }); // arrival 10 min out
+    expect(sentExpiresAt(near)).toBe(1000 + SENT_UNCONFIRMED_TTL_MS);
+    // Distant target: arrival+grace dominates (never free a still-inbound fleet).
+    const far = dec(DEC_SENT, 1000, { aa: 1000 + 6 * HOUR });
+    expect(sentExpiresAt(far)).toBe(1000 + 6 * HOUR + SENT_GRACE_MS);
+  });
+
+  it('falls back to the dispatch floor when arrival is unknown', () => {
+    expect(sentExpiresAt(dec(DEC_SENT, 5000))).toBe(5000 + SENT_UNCONFIRMED_TTL_MS);
+  });
+});
+
+describe('freedCoords', () => {
+  const NOW = 10_000_000_000;
+
+  it('surfaces past-window abandons and past-expiry sends, nothing else', () => {
+    const map = {
+      abFreed: dec(DEC_ABANDONED, 1), // ancient → freed
+      abHeld: dec(DEC_ABANDONED, NOW), // just given up → still held
+      sentFreed: dec(DEC_SENT, 1, { aa: 2 }), // long past both windows
+      sentLive: dec(DEC_SENT, NOW, { aa: NOW + HOUR }), // inbound
+      mine: dec(DEC_MINE, 1),
+      taken: dec(DEC_TAKEN, 1),
+    };
+    expect(freedCoords(map, NOW)).toEqual(new Set(['abFreed', 'sentFreed']));
+  });
+
+  it('is empty for an empty map', () => {
+    expect(freedCoords({}, NOW)).toEqual(new Set());
+  });
+});
+
+describe('clearFreedAbandoned', () => {
+  const NOW = 10_000_000_000;
+
+  it('drops a past-window abandoned entry so a fresh send can land', () => {
+    const map = { '1:1:1': dec(DEC_ABANDONED, 1, { f: 40 }) };
+    expect(clearFreedAbandoned(map, '1:1:1', NOW)).toEqual({});
+  });
+
+  it('is a no-op (same ref) for a still-held abandoned', () => {
+    const map = { '1:1:1': dec(DEC_ABANDONED, NOW) };
+    expect(clearFreedAbandoned(map, '1:1:1', NOW)).toBe(map);
+  });
+
+  it('is a no-op for a non-abandoned decision or a missing coord', () => {
+    const map = { '1:1:1': dec(DEC_MINE, 1) };
+    expect(clearFreedAbandoned(map, '1:1:1', NOW)).toBe(map);
+    expect(clearFreedAbandoned(map, '9:9:9', NOW)).toBe(map);
   });
 });

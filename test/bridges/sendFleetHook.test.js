@@ -21,6 +21,7 @@ import {
 } from '../../src/bridges/sendFleetHook.js';
 import { _resetObserversForTest } from '../../src/bridges/xhrObserver.js';
 import { REGISTRY_KEY } from '../../src/state/registry.js';
+import { readSpySentMap } from '../../src/lib/spySentSession.js';
 import { fakeXHR as fakeXhrRoundTrip } from '../helpers/fakeXhr.js';
 
 const SEND_FLEET_URL =
@@ -626,6 +627,59 @@ describe('installSendFleetHook — idempotency', () => {
     // Still one event from before — no new send-phase write, no new
     // load-phase dispatch.
     expect(events).toHaveLength(1);
+    expect(localStorage.getItem(REGISTRY_KEY)).toBeNull();
+  });
+});
+
+describe('installSendFleetHook — espionage sent-tracking', () => {
+  beforeEach(() => window.sessionStorage.clear());
+  afterEach(() => window.sessionStorage.clear());
+
+  /**
+   * Fire an espionage (mission=6) sendFleet whose target lives in the urlencoded
+   * body — that's where the bridge reads the coords/type for the sent-key.
+   * @param {{ galaxy?: number, system?: number, position?: number, type?: number, success?: boolean }} [o]
+   */
+  const spySend = ({ galaxy = 4, system = 30, position = 8, type = 1, success = true } = {}) => {
+    const body = `mission=6&galaxy=${galaxy}&system=${system}&position=${position}&type=${type}&am210=5`;
+    return fakeXhrRoundTrip(SEND_FLEET_URL, {
+      method: 'POST',
+      body,
+      responseText: JSON.stringify({ success }),
+    });
+  };
+
+  it('marks a native probe send in the session map (planet key)', async () => {
+    installSendFleetHook();
+    await spySend({ galaxy: 3, system: 44, position: 6, type: 1 });
+    expect(Object.keys(readSpySentMap())).toEqual(['3:44:6']);
+  });
+
+  it('uses the moon key shape for a moon target (type 3)', async () => {
+    installSendFleetHook();
+    await spySend({ galaxy: 3, system: 44, position: 6, type: 3 });
+    expect(Object.keys(readSpySentMap())).toEqual(['3:44:6:3']);
+  });
+
+  it('rolls the optimistic mark back on an explicit success:false', async () => {
+    installSendFleetHook();
+    await spySend({ galaxy: 3, system: 44, position: 6, success: false });
+    expect(readSpySentMap()).toEqual({});
+  });
+
+  it('keeps the mark on an ambiguous (unparseable) response', async () => {
+    installSendFleetHook();
+    await fakeXhrRoundTrip(SEND_FLEET_URL, {
+      method: 'POST',
+      body: 'mission=6&galaxy=3&system=44&position=6&type=1&am210=5',
+      responseText: 'not json',
+    });
+    expect(Object.keys(readSpySentMap())).toEqual(['3:44:6']);
+  });
+
+  it('does not touch the colonize registry for an espionage send', async () => {
+    installSendFleetHook();
+    await spySend();
     expect(localStorage.getItem(REGISTRY_KEY)).toBeNull();
   });
 });

@@ -28,6 +28,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   findNextColonizeTarget,
   pickCandidateInView,
+  countFreedBlockedByApi,
 } from '../../src/features/sendColony/pure.js';
 import {
   getColonizeWaitTime,
@@ -702,3 +703,75 @@ describe('parseCurrentGalaxyView', () => {
 // the courier migration + §2d Scan-half removal — colonize now uses bare-URL
 // entry + in-page selection (see fleetCourier) and there is no manual galaxy
 // scan to navigate to.)
+
+// ─────────────────────────────────────────────────────────────────────────
+// freed-abandoned / freed-sent override (recycled slots re-enter the pool)
+// ─────────────────────────────────────────────────────────────────────────
+describe('findNextColonizeTarget — freed override', () => {
+  const home = { galaxy: 4, system: 30 };
+  const now = 1_000_000_000;
+  /** @param {string} status */
+  const scanWith = (status) => ({
+    '4:30': { scannedAt: now, positions: { 8: { status } } },
+  });
+
+  it('re-offers our own past-window abandoned remnant when freed', () => {
+    const scans = /** @type {any} */ (scanWith('abandoned'));
+    // Without freed → blocked (not 'empty'); with freed → picked again.
+    expect(findNextColonizeTarget(scans, [], home, [8], false, now)).toBeNull();
+    const freed = new Set(['4:30:8']);
+    expect(findNextColonizeTarget(scans, [], home, [8], false, now, true, null, null, freed))
+      .toEqual({ galaxy: 4, system: 30, position: 8 });
+  });
+
+  it('re-offers a never-landed empty_sent remnant when freed', () => {
+    const scans = /** @type {any} */ (scanWith('empty_sent'));
+    const freed = new Set(['4:30:8']);
+    expect(findNextColonizeTarget(scans, [], home, [8], false, now, true, null, null, freed))
+      .toEqual({ galaxy: 4, system: 30, position: 8 });
+  });
+
+  it('does NOT override a live scan showing a real foreign owner', () => {
+    const scans = /** @type {any} */ (scanWith('occupied'));
+    const freed = new Set(['4:30:8']);
+    expect(findNextColonizeTarget(scans, [], home, [8], false, now, true, null, null, freed))
+      .toBeNull();
+  });
+
+  it('overrides a stale API "occupied-by-us" (no live scan) when freed', () => {
+    // Scoped to one view system so the whole-grid picker doesn't just find a
+    // different free slot: API lists 4:30:8 occupied, no live scan.
+    const index = /** @type {any} */ ({ occupied: new Map([['4:30:8', { player: 123 }]]) });
+    const view = { galaxy: 4, system: 30 };
+    expect(pickCandidateInView({}, [], [8], view, now, index, null)).toBeNull();
+    const freed = new Set(['4:30:8']);
+    expect(pickCandidateInView({}, [], [8], view, now, index, null, freed))
+      .toEqual({ galaxy: 4, system: 30, position: 8 });
+  });
+});
+
+describe('countFreedBlockedByApi', () => {
+  const index = /** @type {any} */ ({
+    occupied: new Map([['4:30:8', { player: 1 }], ['5:1:8', { player: 2 }]]),
+  });
+
+  it('counts freed target coords the API snapshot still lists as occupied', () => {
+    const freed = new Set(['4:30:8', '5:1:8']);
+    expect(countFreedBlockedByApi(index, [8], freed)).toBe(2);
+  });
+
+  it('ignores freed coords the API already shows free (no double-add)', () => {
+    const freed = new Set(['4:30:9']); // not in occupied
+    expect(countFreedBlockedByApi(index, [8, 9], freed)).toBe(0);
+  });
+
+  it('ignores freed coords whose position is not a target', () => {
+    const freed = new Set(['4:30:8']);
+    expect(countFreedBlockedByApi(index, [7], freed)).toBe(0);
+  });
+
+  it('returns 0 with no index / no freed set', () => {
+    expect(countFreedBlockedByApi(null, [8], new Set(['4:30:8']))).toBe(0);
+    expect(countFreedBlockedByApi(index, [8], null)).toBe(0);
+  });
+});

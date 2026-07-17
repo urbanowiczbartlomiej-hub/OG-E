@@ -6,6 +6,7 @@ import {
   SPY_SENT_KEY,
   readSpySentMap,
   markSpySent,
+  unmarkSpySent,
 } from '../../src/lib/spySentSession.js';
 
 beforeEach(() => window.sessionStorage.clear());
@@ -49,5 +50,18 @@ describe('spySentSession', () => {
   it('returns {} on corrupt JSON without throwing', () => {
     window.sessionStorage.setItem(SPY_SENT_KEY, '{not json');
     expect(readSpySentMap()).toEqual({});
+  });
+
+  it('unmarkSpySent removes one coord, leaving the rest (rollback path)', () => {
+    markSpySent('1:2:3', 1700000000000);
+    markSpySent('4:5:6:3', 1700000000001);
+    unmarkSpySent('1:2:3');
+    expect(readSpySentMap()).toEqual({ '4:5:6:3': 1700000000001 });
+  });
+
+  it('unmarkSpySent is a no-op for a coord that was never marked', () => {
+    markSpySent('1:2:3', 1700000000000);
+    unmarkSpySent('9:9:9');
+    expect(readSpySentMap()).toEqual({ '1:2:3': 1700000000000 });
   });
 });
