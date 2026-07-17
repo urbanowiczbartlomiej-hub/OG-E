@@ -70,3 +70,22 @@ export const markSpySent = (coord, sentAtMs) => {
     /* degrade silently — see above */
   }
 };
+
+/**
+ * Forget a probe send. Used to roll back an OPTIMISTIC mark when the sendFleet
+ * response turns out to report failure (the bridge marks on the reload-safe
+ * `send` phase, then unmarks here if the server rejected the fleet). Best-effort;
+ * a missing key is a no-op.
+ * @param {string} coord  "g:s:p" | "g:s:p:3"
+ * @returns {void}
+ */
+export const unmarkSpySent = (coord) => {
+  const map = readSpySentMap();
+  if (!(coord in map)) return;
+  delete map[coord];
+  try {
+    window.sessionStorage.setItem(SPY_SENT_KEY, JSON.stringify(map));
+  } catch {
+    /* degrade silently — see above */
+  }
+};

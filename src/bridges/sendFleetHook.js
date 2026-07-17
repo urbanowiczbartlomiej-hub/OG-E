@@ -2,6 +2,14 @@
 // catch colonization dispatches (mission=7) and republish them on the
 // ISOLATED-world boundary as `oge:colonizeSent` CustomEvents.
 //
+// It ALSO records ESPIONAGE dispatches (mission=6) into the shared spy
+// sent-session map, so a probe sent with the GAME's own fleet2 button — not
+// OG-E's Spyglass button — still suppresses re-proposing that same body next
+// time (sendSpy's own `markSent` only fires for OUR dispatch). The mark is
+// optimistic in the `send` phase (synchronous sessionStorage write, so it
+// survives the post-send reload the same way the colony registry write does),
+// then rolled back in `load` if the server rejected the fleet.
+//
 // Why two phases (send + load):
 //   `send` fires synchronously, before the game's native XHR send. That
 //   is where we pre-register the colonization in localStorage — this
@@ -50,9 +58,10 @@ import { observeXHR } from './xhrObserver.js';
 import { safeLS } from '../lib/storage.js';
 import { pruneRegistry, dedupeEntry } from '../domain/registry.js';
 import { parseClockDuration } from '../domain/duration.js';
-import { MISSION_COLONIZE } from '../domain/rules.js';
+import { MISSION_COLONIZE, MISSION_ESPIONAGE } from '../domain/rules.js';
 import { REGISTRY_KEY } from '../lib/storageKeys.js';
 import { COLONIZE_SENT_EVENT } from '../lib/ogeEvents.js';
+import { markSpySent, unmarkSpySent } from '../lib/spySentSession.js';
 
 /**
  * @typedef {import('../domain/registry.js').RegistryEntry} RegistryEntry
@@ -86,6 +95,62 @@ import { COLONIZE_SENT_EVENT } from '../lib/ogeEvents.js';
  * }>}
  */
 const contextByXhr = new WeakMap();
+
+/**
+ * Per-XHR carry-over of an espionage send's sent-key (see {@link espionageSentKey})
+ * from the `send` phase (where it's optimistically marked) to the `load` phase
+ * (where it's rolled back on a rejected send). Keyed on the XHR so GC drops it.
+ *
+ * @type {WeakMap<XMLHttpRequest, string>}
+ */
+const spyKeyByXhr = new WeakMap();
+
+/**
+ * Build the spy sent-key for an espionage `sendFleet` body — `g:s:p` for a
+ * planet, `g:s:p:3` for a moon (target `type` 3) — matching sendSpy's own
+ * `sentKey`, so a native probe send suppresses re-proposing the SAME body (and
+ * not its sibling). Read straight from the urlencoded body: that's the
+ * authoritative target at send time (the game may rewrite the form/URL after the
+ * response). Returns `null` when the body isn't a parseable urlencoded string or
+ * galaxy/system/position are missing.
+ *
+ * @param {Document | XMLHttpRequestBodyInit | null | undefined} body
+ * @returns {string | null}
+ */
+const espionageSentKey = (body) => {
+  if (typeof body !== 'string') return null;
+  let params;
+  try {
+    params = new URLSearchParams(body);
+  } catch {
+    return null;
+  }
+  const g = parseInt(params.get('galaxy') || '', 10);
+  const s = parseInt(params.get('system') || '', 10);
+  const p = parseInt(params.get('position') || '', 10);
+  if (!Number.isFinite(g) || !Number.isFinite(s) || !Number.isFinite(p)) return null;
+  const type = parseInt(params.get('type') || '', 10);
+  return type === 3 ? `${g}:${s}:${p}:3` : `${g}:${s}:${p}`;
+};
+
+/**
+ * Did an espionage `sendFleet` response report an OUTRIGHT failure? Only a
+ * cleanly-parsed `success === false` counts — an absent / unparseable response
+ * leaves the optimistic mark in place (never manufacture a false re-propose out
+ * of ambiguity; a genuinely-failed send is the rare case).
+ *
+ * @param {string | undefined} response
+ * @returns {boolean}
+ */
+const espionageRejected = (response) => {
+  if (!response) return false;
+  try {
+    const parsed = JSON.parse(response);
+    return !!parsed && parsed.success === false;
+  } catch {
+    return false;
+  }
+};
 
 /**
  * Parse `#durationOneWay`'s textContent into seconds via the shared
@@ -199,6 +264,19 @@ export const installSendFleetHook = () => {
     on: 'send',
     handler: ({ xhr, body }) => {
       const mission = getMissionFromBody(body);
+
+      // Espionage — record the probe target so a native fleet2 send (not OG-E's
+      // button) still suppresses re-proposing it. Optimistic + synchronous here
+      // so it survives the post-send reload; rolled back in `load` if rejected.
+      if (mission === MISSION_ESPIONAGE) {
+        const key = espionageSentKey(body);
+        if (key) {
+          markSpySent(key, Date.now());
+          spyKeyByXhr.set(xhr, key);
+        }
+        return;
+      }
+
       if (mission !== MISSION_COLONIZE) return;
 
       // Capture timing + form state AT TIME OF SEND. The game can
@@ -240,6 +318,16 @@ export const installSendFleetHook = () => {
     urlPattern: /action=sendFleet/,
     on: 'load',
     handler: ({ xhr, response }) => {
+      // Espionage — roll back the optimistic `send`-phase mark only when the
+      // server explicitly rejected the fleet (success:false); an ambiguous /
+      // missing response keeps the mark (a successful send that raced the reload
+      // must stay marked — that's the whole point).
+      const spyKey = spyKeyByXhr.get(xhr);
+      if (spyKey !== undefined) {
+        if (espionageRejected(response)) unmarkSpySent(spyKey);
+        return;
+      }
+
       // No context means either (a) this wasn't a colonize send, or
       // (b) it was but getTargetCoords returned no galaxy/system.
       // Either way there's nothing to dispatch.
