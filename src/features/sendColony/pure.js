@@ -162,6 +162,8 @@ export const BG_SEND_BUSY = BG_SEND_READY;
  *   API occupancy index (whole-server breadth). Omit/`null` → scan-only.
  * @param {Set<string> | null} [rejected]  `"g:s:p"` coords to skip (session
  *   rejections from checkTarget for slots not in the scan map).
+ * @param {Set<string> | null} [freed]  past-window abandoned coords the game has
+ *   freed — overrides stale scan/API occupancy so they re-enter the pool.
  * @returns {{ galaxy: number, system: number, position: number } | null}
  */
 export const findNextColonizeTarget = (
@@ -174,6 +176,7 @@ export const findNextColonizeTarget = (
   farthestFirst = true,
   index = null,
   rejected = null,
+  freed = null,
 ) => {
   if (targets.length === 0) return null;
 
@@ -206,7 +209,7 @@ export const findNextColonizeTarget = (
           /** @type {`${number}:${number}:${number}`} */ (`${g}:${s}:${pos}`);
         if (inFlight.has(coordKey)) continue;
         if (rejected && rejected.has(coordKey)) continue;
-        if (!isFreeTarget(scan, index, coordKey, pos)) continue;
+        if (!isFreeTarget(scan, index, coordKey, pos, freed)) continue;
         return { galaxy: g, system: s, position: pos };
       }
     }
@@ -218,16 +221,32 @@ export const findNextColonizeTarget = (
  * Composite free-slot test (§2c). Live scan wins; otherwise the API index
  * answers for never-scanned systems. Pure.
  *
+ * `freed` (past-window abandoned coords, from
+ * `domain/colonizeDecisions.freedAbandonedCoords`) is a positive override the
+ * two stale layers can't express: a slot we abandoned and the game has since
+ * freed reads free again even when our own `abandoned` remnant sits in the scan
+ * map, or when the weekly API snapshot predates the give-up and still lists it
+ * as ours. A LIVE scan that saw a REAL foreign owner still blocks — the override
+ * only clears our own stale `abandoned` remnant and a stale API occupancy.
+ *
  * @param {import('../../state/scans.js').SystemScan | undefined} scan
  *   Live scan for the slot's system, if any.
  * @param {import('../../domain/apiOccupancy.js').OccupancyIndex | null} index
  * @param {string} coordKey  `"g:s:p"`.
  * @param {number} pos
+ * @param {Set<string> | null} [freed]  past-window abandoned coords.
  * @returns {boolean}
  */
-const isFreeTarget = (scan, index, coordKey, pos) => {
+const isFreeTarget = (scan, index, coordKey, pos, freed = null) => {
   const p = scan && scan.positions ? scan.positions[pos] : undefined;
-  if (p) return p.status === 'empty';
+  if (p) {
+    if (p.status === 'empty') return true;
+    // Our own abandoned remnant, past the game window → free again.
+    return !!(freed && freed.has(coordKey) && p.status === 'abandoned');
+  }
+  // No live scan: a freed slot overrides a stale API "occupied-by-us"; else the
+  // API snapshot answers.
+  if (freed && freed.has(coordKey)) return true;
   return !!(index && index.occupied && !index.occupied.has(coordKey));
 };
 
@@ -262,9 +281,11 @@ const isFreeTarget = (scan, index, coordKey, pos) => {
  *   API occupancy index, so a free slot in view is found even before a live
  *   scan lands (the live scan, once observed, overrides it).
  * @param {Set<string> | null} [rejected]  session checkTarget rejections.
+ * @param {Set<string> | null} [freed]  past-window abandoned coords the game has
+ *   freed — overrides stale scan/API occupancy so they re-enter the pool.
  * @returns {{ galaxy: number, system: number, position: number } | null}
  */
-export const pickCandidateInView = (scans, registry, targets, view, now, index = null, rejected = null) => {
+export const pickCandidateInView = (scans, registry, targets, view, now, index = null, rejected = null, freed = null) => {
   if (targets.length === 0) return null;
   const key = /** @type {`${number}:${number}`} */ (
     `${view.galaxy}:${view.system}`
@@ -282,7 +303,7 @@ export const pickCandidateInView = (scans, registry, targets, view, now, index =
       );
     if (inFlight.has(coordKey)) continue;
     if (rejected && rejected.has(coordKey)) continue;
-    if (!isFreeTarget(scan, index, coordKey, pos)) continue;
+    if (!isFreeTarget(scan, index, coordKey, pos, freed)) continue;
     return { galaxy: view.galaxy, system: view.system, position: pos };
   }
   return null;
@@ -404,6 +425,33 @@ export const countLocalBlocksFreeInApi = (index, targets, scans, registry, now, 
   return blocked.size;
 };
 
+/**
+ * The mirror of {@link countLocalBlocksFreeInApi} for the freed direction: how
+ * many past-window abandoned target coords the weekly API snapshot STILL counts
+ * as occupied (it predates the give-up and lists the slot as ours). These are
+ * free again per the game, so the amount is ADDED BACK to
+ * {@link countFreeTargetSlots}'s total — the counterpart to subtracting the
+ * local blocks. Only coords the API currently excludes from "free" are added
+ * (`index.occupied.has` — else they're already in the total). Pure.
+ *
+ * @param {import('../../domain/apiOccupancy.js').OccupancyIndex | null} index
+ * @param {number[]} targets
+ * @param {Set<string> | null} freed  past-window abandoned coords.
+ * @returns {number}
+ */
+export const countFreedBlockedByApi = (index, targets, freed) => {
+  if (!index || !index.occupied || !freed) return 0;
+  if (!targets || targets.length === 0) return 0;
+  const targetSet = new Set(targets);
+  let n = 0;
+  for (const coord of freed) {
+    const pos = posFromCoord(coord);
+    if (pos == null || !targetSet.has(pos)) continue;
+    if (index.occupied.has(coord)) n += 1;
+  }
+  return n;
+};
+
 // ─── Discriminated unions ────────────────────────────────────────────────
 
 /**
@@ -486,6 +534,10 @@ export const countLocalBlocksFreeInApi = (index, targets, scans, registry, now, 
  * @property {Set<string> | null} [rejected]
  *   `"g:s:p"` coords the game's checkTarget refused this session (for slots not
  *   in the scan map), so the picker stops re-proposing them.
+ * @property {Set<string> | null} [freed]
+ *   `"g:s:p"` coords whose `abandoned` hold has passed (from
+ *   `domain/colonizeDecisions.freedAbandonedCoords`) — re-offered as candidates
+ *   and added back to the "N free" count, overriding stale scan/API occupancy.
  */
 
 // ─── Pure derive ──────────────────────────────────────────────────────────
@@ -507,11 +559,13 @@ export const derive = (env) => {
   const farthestFirst = env.farthestFirst ?? true;
   const index = env.index ?? null;
   const rejected = env.rejected ?? null;
+  const freed = env.freed ?? null;
 
   // Whole-universe free target-slot count from the API breadth snapshot, then
   // adjusted DOWN by the local blocks the weekly feed can't see yet (colonies we
-  // just sent, slots we skipped, checkTarget-refused / in-flight coords) so the
-  // stat ticks down as we act. Page-independent (same on overview / galaxy /
+  // just sent, slots we skipped, checkTarget-refused / in-flight coords) and UP
+  // by freed abandoned slots the stale feed still lists as ours, so the stat
+  // tracks reality as we act. Page-independent (same on overview / galaxy /
   // fleetdispatch), so it's computed once and returned by every branch.
   let freeUniverse = countFreeTargetSlots(index, env.serverDims ?? null, env.targets);
   if (freeUniverse != null) {
@@ -523,7 +577,8 @@ export const derive = (env) => {
       env.now,
       rejected,
     );
-    freeUniverse = Math.max(0, freeUniverse - blocks);
+    const freedBack = countFreedBlockedByApi(index, env.targets, freed);
+    freeUniverse = Math.max(0, freeUniverse - blocks + freedBack);
   }
 
   // Galaxy branch — the in-view candidate is PREVIEW/PAINT-ONLY: it tints the
@@ -542,6 +597,7 @@ export const derive = (env) => {
         env.now,
         index,
         rejected,
+        freed,
       );
     }
     if (!candidate && home) {
@@ -555,6 +611,7 @@ export const derive = (env) => {
         farthestFirst,
         index,
         rejected,
+        freed,
       );
       if (global) {
         candidate = {
@@ -581,6 +638,7 @@ export const derive = (env) => {
       farthestFirst,
       index,
       rejected,
+      freed,
     );
     if (global) {
       candidate = {

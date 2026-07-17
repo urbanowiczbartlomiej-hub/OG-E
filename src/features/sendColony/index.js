@@ -86,6 +86,8 @@ import {
 } from '../../state/colonizeDecisions.js';
 import {
   blockingCoords,
+  freedAbandonedCoords,
+  clearFreedAbandoned,
   withDecision,
   DEC_SENT,
   DEC_TAKEN,
@@ -396,6 +398,10 @@ const captureEnv = () => {
       ? { galaxies: apiCtx.server.galaxies, systems: apiCtx.server.systems }
       : null,
     rejected: blockingCoords(colonizeDecisionsStore.get(), Date.now()),
+    // Positions we abandoned that the game's daily cleanup has since freed —
+    // re-offered as candidates, overriding our own stale 'abandoned' scan
+    // remnant and a weekly-API snapshot that still lists them as ours.
+    freed: freedAbandonedCoords(colonizeDecisionsStore.get(), Date.now()),
   };
 };
 
@@ -595,6 +601,7 @@ const onSendClick = async () => {
         cfg.preferFarthestSystems,
         getApiContext()?.index ?? null,
         blockingCoords(colonizeDecisionsStore.get(), Date.now()),
+        freedAbandonedCoords(colonizeDecisionsStore.get(), Date.now()),
       )
     : null;
   if (!candidate) {
@@ -727,7 +734,12 @@ const extractErrorCode = (detail) => {
  */
 const recordDecision = (galaxy, system, position, decision) => {
   const key = /** @type {`${number}:${number}:${number}`} */ (`${galaxy}:${system}:${position}`);
-  colonizeDecisionsStore.update((prev) => withDecision(prev, key, decision));
+  // A freed (past-window) 'abandoned' entry is TERMINAL and would hold off the
+  // incoming (often non-terminal `sent`) via mergeDecision — clear it first so a
+  // re-colonization of the re-rolled slot records cleanly.
+  colonizeDecisionsStore.update((prev) =>
+    withDecision(clearFreedAbandoned(prev, key, Date.now()), key, decision),
+  );
   void flushColonizeDecisionsStore();
 };
 
