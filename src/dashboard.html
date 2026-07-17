@@ -1298,12 +1298,12 @@
   <div class="spy-top">
     <div class="gv-card spy-watch-card">
       <div id="watchCards"></div>
-      <!-- Cells pair by theme (2-col grid): probes row (count · bodies), then a
-           full-width "probe from" (the third probe-targeting setting, so it sits
-           right under Scan), cadence row (re-scan · re-look), hunt row (moon
-           strike · patrol). Each cell carries a one-line .cmd-note — the channel
-           it belongs to (watch via probes / galaxy, the dossier chips' hues) +
-           what it does; tooltips keep the long form. -->
+      <!-- 2-col grid: probes row (count · bodies), then probe-from · re-scan,
+           then a full-width "re-look" (the galaxy-cadence setting stands on its
+           own row as the two-col filler), hunt row (moon strike · patrol). Each
+           cell carries a one-line .cmd-note — the channel it belongs to (watch
+           via probes / galaxy, the dossier chips' hues) + what it does; tooltips
+           keep the long form. -->
       <div class="spy-scan-prefs cmd-grid">
         <label class="cmd-cell" title="How many espionage probes the in-game scan button pre-arms per body.">
           <span class="cmd-cap">Probes</span>
@@ -1320,7 +1320,7 @@
           </span>
           <span class="cmd-note"><span class="via-probes">watch via probes</span> — which bodies the plan proposes</span>
         </div>
-        <div class="cmd-cell cmd-wide" title="Which of your own bodies a probe fleet launches from. Nearest hops to the planet closest to the target so the probe flight stays short (default). Active sends from whatever body you're on — no hop.">
+        <div class="cmd-cell" title="Which of your own bodies a probe fleet launches from. Nearest hops to the planet closest to the target so the probe flight stays short (default). Active sends from whatever body you're on — no hop.">
           <span class="cmd-cap">Probe from</span>
           <span class="chip-group seg" id="tgtProbeSource" data-value="nearest">
             <button type="button" data-value="nearest">nearest</button>
@@ -1334,7 +1334,7 @@
           <span class="cmd-unit">h</span>
           <span class="cmd-note"><span class="via-probes">watch via probes</span> — reports older than this re-enter the scan plan</span>
         </label>
-        <label class="cmd-cell" title="Galaxy-sighting freshness for bodies watched via the galaxy (passive, undetectable).">
+        <label class="cmd-cell cmd-wide" title="Galaxy-sighting freshness for bodies watched via the galaxy (passive, undetectable).">
           <span class="cmd-cap">Re-look</span>
           <input id="cadGalaxyHours" type="number" min="1" max="336" step="1" value="24" size="3">
           <span class="cmd-unit">h</span>
