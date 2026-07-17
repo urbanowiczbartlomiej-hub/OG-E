@@ -163,3 +163,32 @@ scan-bodies filter and the freshness gate) so the FAB proposes spying it first,
 and flags it on the dashboard (🎯 row marker + dossier banner). It **respects
 scan-'off'** (an explicit "don't probe this player" wins; the flag still shows)
 and never auto-sends — the confirming probe is one deliberate tap.
+
+## Colonization — position size re-roll & slot release
+
+Colonizing an empty position generates a planet whose size (field count) is
+**randomly drawn** from that position's range. The draw is **per-colonization,
+not per-slot**: the *same* `g:s:p` gives a *different* size every time it is
+colonized. So the standard strategy is to **abandon a small roll and
+re-colonize the exact same slot** to roll for a bigger planet — the retained
+old field count carries no information about the next roll. (OG-E has no
+planet-size data from the public API — the API never exposes fields — so this
+size knowledge only ever comes from visiting the planet.)
+
+**A slot is not released the instant you give it up.** OGame frees an abandoned
+position on its **daily cleanup sweep at 03:00** (server time), and only for
+planets abandoned **at least 24h earlier**. Until that sweep a colony ship sent
+there is refused; after it the position is colonizable again (a fresh re-roll).
+OG-E's model: the slot re-enters the candidate pool at the **first 03:00 that is
+≥ 24h after give-up** (see `domain/colonizeDecisions.abandonRecolonizableAt`).
+The weekly `universe.xml` lags this by up to 7 days and may still list a freed
+slot as ours, so the picker overrides that stale occupancy with the local
+"freed" fact.
+
+**A dispatched colonizer does not always become a colony.** The fleet may be
+recalled, the account may be at its colony cap, or some other event may stop the
+colony forming — in which case no size is ever recorded and the position was
+never actually taken. OG-E therefore treats a colonize send as a **hold, not a
+commitment**: if no colony is recorded within ~4h of dispatch (and after the
+fleet would have arrived), the slot returns to the candidate pool
+(`domain/colonizeDecisions.sentExpiresAt`).

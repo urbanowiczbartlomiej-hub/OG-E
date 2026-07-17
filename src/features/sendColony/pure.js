@@ -162,8 +162,9 @@ export const BG_SEND_BUSY = BG_SEND_READY;
  *   API occupancy index (whole-server breadth). Omit/`null` → scan-only.
  * @param {Set<string> | null} [rejected]  `"g:s:p"` coords to skip (session
  *   rejections from checkTarget for slots not in the scan map).
- * @param {Set<string> | null} [freed]  past-window abandoned coords the game has
- *   freed — overrides stale scan/API occupancy so they re-enter the pool.
+ * @param {Set<string> | null} [freed]  recyclable coords (freedCoords): a
+ *   past-window abandoned re-roll or a never-landed send — override stale
+ *   scan/API occupancy so they re-enter the pool.
  * @returns {{ galaxy: number, system: number, position: number } | null}
  */
 export const findNextColonizeTarget = (
@@ -221,28 +222,29 @@ export const findNextColonizeTarget = (
  * Composite free-slot test (§2c). Live scan wins; otherwise the API index
  * answers for never-scanned systems. Pure.
  *
- * `freed` (past-window abandoned coords, from
- * `domain/colonizeDecisions.freedAbandonedCoords`) is a positive override the
- * two stale layers can't express: a slot we abandoned and the game has since
- * freed reads free again even when our own `abandoned` remnant sits in the scan
- * map, or when the weekly API snapshot predates the give-up and still lists it
- * as ours. A LIVE scan that saw a REAL foreign owner still blocks — the override
- * only clears our own stale `abandoned` remnant and a stale API occupancy.
+ * `freed` (recyclable coords from `domain/colonizeDecisions.freedCoords`: a
+ * past-window `abandoned` re-roll, or a `sent` that never became a colony) is a
+ * positive override the two stale layers can't express: such a slot reads free
+ * again even when our OWN remnant (`abandoned` / `empty_sent`) sits in the scan
+ * map, or when the weekly API snapshot predates the local action and still lists
+ * it as ours. A LIVE scan that saw a REAL foreign owner still blocks — the
+ * override only clears our own stale remnant and a stale API occupancy.
  *
  * @param {import('../../state/scans.js').SystemScan | undefined} scan
  *   Live scan for the slot's system, if any.
  * @param {import('../../domain/apiOccupancy.js').OccupancyIndex | null} index
  * @param {string} coordKey  `"g:s:p"`.
  * @param {number} pos
- * @param {Set<string> | null} [freed]  past-window abandoned coords.
+ * @param {Set<string> | null} [freed]  recyclable coords (freedCoords).
  * @returns {boolean}
  */
 const isFreeTarget = (scan, index, coordKey, pos, freed = null) => {
   const p = scan && scan.positions ? scan.positions[pos] : undefined;
   if (p) {
     if (p.status === 'empty') return true;
-    // Our own abandoned remnant, past the game window → free again.
-    return !!(freed && freed.has(coordKey) && p.status === 'abandoned');
+    // Our own stale remnant (an abandoned re-roll, or a send that never landed),
+    // past its window → free again.
+    return !!(freed && freed.has(coordKey) && (p.status === 'abandoned' || p.status === 'empty_sent'));
   }
   // No live scan: a freed slot overrides a stale API "occupied-by-us"; else the
   // API snapshot answers.
@@ -281,8 +283,9 @@ const isFreeTarget = (scan, index, coordKey, pos, freed = null) => {
  *   API occupancy index, so a free slot in view is found even before a live
  *   scan lands (the live scan, once observed, overrides it).
  * @param {Set<string> | null} [rejected]  session checkTarget rejections.
- * @param {Set<string> | null} [freed]  past-window abandoned coords the game has
- *   freed — overrides stale scan/API occupancy so they re-enter the pool.
+ * @param {Set<string> | null} [freed]  recyclable coords (freedCoords): a
+ *   past-window abandoned re-roll or a never-landed send — override stale
+ *   scan/API occupancy so they re-enter the pool.
  * @returns {{ galaxy: number, system: number, position: number } | null}
  */
 export const pickCandidateInView = (scans, registry, targets, view, now, index = null, rejected = null, freed = null) => {
@@ -436,7 +439,7 @@ export const countLocalBlocksFreeInApi = (index, targets, scans, registry, now, 
  *
  * @param {import('../../domain/apiOccupancy.js').OccupancyIndex | null} index
  * @param {number[]} targets
- * @param {Set<string> | null} freed  past-window abandoned coords.
+ * @param {Set<string> | null} freed  recyclable coords (freedCoords).
  * @returns {number}
  */
 export const countFreedBlockedByApi = (index, targets, freed) => {
@@ -536,7 +539,7 @@ export const countFreedBlockedByApi = (index, targets, freed) => {
  *   in the scan map), so the picker stops re-proposing them.
  * @property {Set<string> | null} [freed]
  *   `"g:s:p"` coords whose `abandoned` hold has passed (from
- *   `domain/colonizeDecisions.freedAbandonedCoords`) — re-offered as candidates
+ *   `domain/colonizeDecisions.freedCoords`) — re-offered as candidates
  *   and added back to the "N free" count, overriding stale scan/API occupancy.
  */
 

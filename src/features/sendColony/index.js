@@ -86,7 +86,7 @@ import {
 } from '../../state/colonizeDecisions.js';
 import {
   blockingCoords,
-  freedAbandonedCoords,
+  freedCoords,
   clearFreedAbandoned,
   withDecision,
   DEC_SENT,
@@ -398,10 +398,12 @@ const captureEnv = () => {
       ? { galaxies: apiCtx.server.galaxies, systems: apiCtx.server.systems }
       : null,
     rejected: blockingCoords(colonizeDecisionsStore.get(), Date.now()),
-    // Positions we abandoned that the game's daily cleanup has since freed —
-    // re-offered as candidates, overriding our own stale 'abandoned' scan
-    // remnant and a weekly-API snapshot that still lists them as ours.
-    freed: freedAbandonedCoords(colonizeDecisionsStore.get(), Date.now()),
+    // Positions our local knowledge says are free again — an abandoned slot the
+    // game's daily cleanup has freed (re-roll), or a colonizer that never landed
+    // (recall / colony-cap / fail). Re-offered as candidates, overriding our own
+    // stale 'abandoned'/'empty_sent' scan remnant and a weekly-API snapshot that
+    // still lists them as ours.
+    freed: freedCoords(colonizeDecisionsStore.get(), Date.now()),
   };
 };
 
@@ -601,7 +603,7 @@ const onSendClick = async () => {
         cfg.preferFarthestSystems,
         getApiContext()?.index ?? null,
         blockingCoords(colonizeDecisionsStore.get(), Date.now()),
-        freedAbandonedCoords(colonizeDecisionsStore.get(), Date.now()),
+        freedCoords(colonizeDecisionsStore.get(), Date.now()),
       )
     : null;
   if (!candidate) {
