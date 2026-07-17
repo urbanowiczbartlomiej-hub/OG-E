@@ -686,22 +686,25 @@ const handleZone = async (mode) => {
 const onMicroClick = () => void handleZone('micro');
 const onCollectClick = () => void handleZone('collect');
 
-/** Grey a zone out (or restore it) to show it's working / locked.
- * @param {HTMLElement | null} zone @param {boolean} on */
-const dimZone = (zone, on) => {
-  // Un-dim removes the inline value (never pins '1') so the shared readiness
-  // gate's CSS grey (`[aria-disabled] .zone{opacity:.5}`) can't be overridden
-  // by a routine repaint — same contract as the shared Button's setDim.
-  if (zone) zone.style.opacity = on ? '0.5' : '';
+/** Grey a zone out (or restore it) to show it's working / locked. Routed
+ * through the shared controller's `setDim` — NOT a direct `zone.style.opacity`
+ * write — so the greying matches every other FAB (fill+label to .5, rim kept)
+ * AND the central logo greys once BOTH zones are dim, exactly like
+ * sendExpedition's single-zone lock (via the shared `syncNodeDim`). The old
+ * inline-opacity path skipped that logo step, leaving the node lit while both
+ * halves were busy.
+ * @param {'micro' | 'collect'} key @param {boolean} on */
+const dimZone = (key, on) => {
+  controller?.setDim(key, on);
 };
 
 /** Grey BOTH zones (or restore them). `busy` swallows taps on both zones,
- * so the grey must cover both too — the whole button reads busy, exactly
- * like sendExpedition's single-zone lock.
+ * so the grey must cover both too — the whole button reads busy (logo
+ * included), exactly like sendExpedition's single-zone lock.
  * @param {boolean} on */
 const dimAll = (on) => {
-  dimZone(document.getElementById(FS_MICRO_ZONE_ID), on);
-  dimZone(document.getElementById(FS_COLLECT_ZONE_ID), on);
+  dimZone('micro', on);
+  dimZone('collect', on);
 };
 
 /**

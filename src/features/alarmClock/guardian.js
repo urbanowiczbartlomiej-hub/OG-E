@@ -304,6 +304,12 @@ const handleGuardianTap = async () => {
     // Fleet save has no expedition-style "no ships" check states, so don't
     // require `ago_routine_check_3` — clicking routine 6 when present is enough.
     paintBusy();
+    // Grey the working state like every other FAB (fill + label + logo to .5,
+    // rim kept) instead of leaving "Wait…" at full strength — routed through the
+    // shared setDim so it matches sendExpedition's lock. Cleared on every exit in
+    // finally; the post-await paints below run before the browser repaints, so
+    // 'prepared'/'off'/idle never flash dimmed.
+    btn?.setDim('g', true);
     const state = await prepareViaRoutine({
       routineId: FS_ROUTINE_ID,
       owner: OWNER_FS,
@@ -314,6 +320,7 @@ const handleGuardianTap = async () => {
     else paint(); // 'timeout' → idle face
   } finally {
     busy = false;
+    btn?.setDim('g', false);
   }
 };
 
