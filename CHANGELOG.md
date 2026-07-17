@@ -4,6 +4,25 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.51.7] — 2026-07-18
+
+### Fixed
+
+- **The scan plan no longer proposes galaxy looks that can't confirm a lone
+  moon-strike.** In the "lone" mode a strike verdict needs exactly one lit body,
+  so the instant a second body is already lit the verdict is out of reach — yet
+  OG-E kept walking the rest of the account's systems with looks that could never
+  settle anything. It now abandons that sweep as soon as a second body is lit,
+  keeping your galaxy browsing to only the looks that can actually change a
+  verdict. ("newest"/"any" are unaffected — they can still resolve with several
+  lit bodies, so their sweeps aren't wasted.)
+
+### Changed
+
+- **Spyglass scan-prefs layout.** "Probe from" is now a normal half-width cell
+  (paired with "Re-scan") instead of a full-width row, and "Re-look" takes the
+  full-width row in its place.
+
 ## [1.51.6] — 2026-07-17
 
 ### Fixed
