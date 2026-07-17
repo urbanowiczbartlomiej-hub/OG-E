@@ -175,7 +175,7 @@ export default [
 
   // ---- Build/release tooling (Node, ESM) ----
   {
-    files: ['scripts/**/*.{js,mjs}', '*.config.{js,mjs}', 'eslint.config.mjs'],
+    files: ['scripts/**/*.{js,mjs}', 'site/**/*.mjs', '*.config.{js,mjs}', 'eslint.config.mjs'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
