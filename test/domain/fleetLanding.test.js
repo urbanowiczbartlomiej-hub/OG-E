@@ -253,6 +253,23 @@ describe('detectLandingSweep', () => {
     }, NOW)).toBeNull();
   });
 
+  it("mode 'lone' abandons the sweep once a SECOND body is already lit (verdict unreachable)", () => {
+    // Moon lit (the candidate) + a planet ALSO lit but OLDER than the moon, so
+    // the "planet newer → dead claim" kill does NOT fire. 1:2:8 stays uncovered,
+    // so a sweep is otherwise on the table.
+    const rings = {
+      '1:2:3:3': freshRing(), // moon lit (newest)
+      '1:2:3:1': [{ t: sec(NOW - 8 * 60_000), m: 0 }], // planet ALSO lit, older
+      // 1:2:8 unseen → uncovered
+    };
+    // 'newest' can resolve WITH other lit bodies, so its sweep is not wasted.
+    expect(detectLandingSweep(bodies, rings, NOW, { mode: 'newest' }))
+      .toMatchObject({ coord: '1:2:3', systems: ['1:2'] });
+    // 'lone' needs EXACTLY ONE lit body — the second makes the verdict
+    // unreachable, so no more looks are proposed for this account.
+    expect(detectLandingSweep(bodies, rings, NOW, { mode: 'lone' })).toBeNull();
+  });
+
   it('detectAllSweeps maps per player and honours mode off', () => {
     const universePlanets = [
       { coords: '1:2:3', player: 42, hasMoon: true },
