@@ -4,6 +4,36 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.51.6] — 2026-07-17
+
+### Fixed
+
+- **Abandoned positions come back as colonize candidates.** OGame re-rolls a
+  planet's size every time a position is colonized, so the usual play is to
+  abandon a small roll and re-colonize the SAME slot for a bigger one. OG-E was
+  treating an abandoned slot as gone for good, so after a batch of give-ups the
+  candidate list ran dry. It now frees an abandoned position exactly as the game
+  does — on the daily 03:00 cleanup, at least 24 h after give-up — and re-offers
+  it, even when the weekly public API still lists the old colony as yours.
+- **A colonizer that never becomes a colony frees its slot too.** If a
+  colonize send is recalled, hits the colony cap, or otherwise never lands, the
+  position returns to the pool after about 4 h instead of staying blocked.
+- **Colony-landing countdown matches the game even with a wrong PC clock.** The
+  "colo landing" timer is now driven by the OGame server clock, so a mis-set
+  Windows time no longer makes it disagree with the in-game countdown.
+- **Spy targets sent with the game's own button are no longer re-proposed.**
+  Firing an espionage probe from the native fleet screen (not OG-E's Spy button)
+  is now recorded, so the next suggestion moves on to a different target instead
+  of repeating the same coordinates.
+- **Consistent button dimming.** The Daily-run and fleet-save (guardian)
+  buttons now grey their working state the same way every other floating button
+  does — dimmed fill and logo, coloured rim kept.
+
+### Changed
+
+- **Spyglass "Probe from" sits under Scan.** The setting moved up next to the
+  other probe controls instead of sitting alone at the bottom of the panel.
+
 ## [1.51.5] — 2026-07-16
 
 ### Changed
