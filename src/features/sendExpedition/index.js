@@ -243,10 +243,12 @@ export const installSendExpedition = () => {
     if (capLabelTimer !== null) clearTimeout(capLabelTimer);
     setLabel(btn, label);
     controller?.setBg('main', bg);
+    controller?.setError(bg === BG_ERROR);
     capLabelTimer = setTimeout(() => {
       capLabelTimer = null;
       setLabel(btn, BUTTON_TEXT);
       controller?.setBg('main', BG_IDLE);
+      controller?.setError(false);
     }, MAX_LABEL_MS);
   };
 
@@ -272,10 +274,12 @@ export const installSendExpedition = () => {
     setLabel(btn, EXP_ROUTINE_OFF_LABEL);
     btn.title = EXP_ROUTINE_OFF_HINT;
     controller?.setBg('main', BG_ERROR);
+    controller?.setError(true);
     setTimeout(() => {
       setLabel(btn, BUTTON_TEXT);
       btn.title = prevTitle;
       controller?.setBg('main', BG_IDLE);
+      controller?.setError(false);
     }, ROUTINE_OFF_LABEL_MS);
   };
 

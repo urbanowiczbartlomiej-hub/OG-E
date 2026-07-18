@@ -140,17 +140,25 @@ export const formatLandingCountdown = (arrivalAt, nowMs) => {
 };
 
 /**
- * Progress-arc fill (0..1) for the landing countdown — 0 at the window edge
- * ({@link LANDING_WINDOW_S} out), 1 at arrival, so the ring fills AS the
- * landing approaches (mirrors sendColony's min-gap wait arc). Clamped both
- * ends: a page that armed mid-window starts partway, and a past arrival reads
- * full.
+ * Progress-arc fill (0..1) for the landing countdown — 0 when the countdown
+ * was first armed, 1 at arrival, so the ring fills AS the landing approaches
+ * (mirrors sendColony's min-gap wait arc). The span it fills across is
+ * `windowStartS` — the remaining seconds AT THE MOMENT the countdown armed —
+ * not the full {@link LANDING_WINDOW_S}: a page that only picks up the
+ * arrival with e.g. 10s left (a late tick, or a countdown that armed mid-
+ * window) fills its arc across those 10s, instead of reading as "50s already
+ * elapsed" against a fixed 60s span. Callers pass back the span they recorded
+ * when the phase first went 'landing' for this arrival; defaults to
+ * {@link LANDING_WINDOW_S} for a caller that never tracked one. Clamped both
+ * ends: a past arrival reads full, a not-yet-armed one reads empty.
  *
  * @param {number} arrivalAt epoch s.
  * @param {number} nowMs
+ * @param {number} [windowStartS] remaining seconds when the countdown armed.
  * @returns {number}
  */
-export const landingProgress = (arrivalAt, nowMs) => {
+export const landingProgress = (arrivalAt, nowMs, windowStartS = LANDING_WINDOW_S) => {
   const remaining = (arrivalAt * 1000 - nowMs) / 1000;
-  return Math.max(0, Math.min(1, (LANDING_WINDOW_S - remaining) / LANDING_WINDOW_S));
+  const span = windowStartS > 0 ? windowStartS : LANDING_WINDOW_S;
+  return Math.max(0, Math.min(1, (span - remaining) / span));
 };

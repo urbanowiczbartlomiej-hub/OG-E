@@ -458,7 +458,12 @@ const refresh = () => {
       // Progress arc: fills proportionally as the wait elapses (0 → 1).
       const elapsed = (Date.now() - waitStartAt) / 1000;
       controller?.setProgress(Math.min(elapsed / waitTotalSecs, 1));
-      paintZone('send', { text: `Wait ${wait}s`, bg: BG_SEND_BUSY, dim: true });
+      paintZone('send', {
+        text: `Wait ${wait}s`,
+        subtext: `[${colTarget.galaxy}:${colTarget.system}:${colTarget.position}]`,
+        bg: BG_SEND_BUSY,
+        dim: true,
+      });
     } else {
       // Wait cleared — reset arc and show ready state.
       if (waitStartAt !== 0) {
@@ -544,17 +549,26 @@ const onSendClick = async () => {
   const s = courierStep();
 
   // Tap 2 — dispatch the armed colonize, gated by the min-gap.
-  if (colReady && s === 'fleet2') {
+  if (colReady && colTarget && s === 'fleet2') {
     if (!readyToDispatch()) return;
     const wait = getColonizeWaitTime();
     if (wait > 0) {
       // Min-gap: too close to an existing colony arrival. Show it and let
       // the user re-tap once the gap passes (no live countdown — low value).
-      paintZone('send', { text: `Wait ${wait}s`, bg: BG_SEND_BUSY, dim: true });
+      paintZone('send', {
+        text: `Wait ${wait}s`,
+        subtext: `[${colTarget.galaxy}:${colTarget.system}:${colTarget.position}]`,
+        bg: BG_SEND_BUSY,
+        dim: true,
+      });
       return;
     }
     busy = true;
-    paintZone('send', { text: 'Wait…', bg: BG_SEND_BUSY, dim: true });
+    // Deliberately no intermediate "Wait…" repaint here — the button already
+    // reads "Send" with the target coords, and the dispatch is typically fast
+    // enough that a flash to "Wait…" right before "Sent" reads as a glitch
+    // rather than progress. Keep "Send" up through the await; jump straight
+    // to "Sent" on success.
     const r = await courierDispatch(OWNER_COL);
     colReady = false;
     if (!r.ok) {
@@ -626,7 +640,12 @@ const onSendClick = async () => {
   if (s === 'fleet2') {
     busy = true;
     colReady = false;
-    paintZone('send', { text: 'Wait…', bg: BG_SEND_BUSY, dim: true });
+    paintZone('send', {
+      text: 'Wait…',
+      subtext: `[${candidate.galaxy}:${candidate.system}:${candidate.position}]`,
+      bg: BG_SEND_BUSY,
+      dim: true,
+    });
     const r = await courierRetarget({
       spec: { kind: 'list', ships: [{ id: SHIP_COLONY, qty: 1, frac: 1 }] },
       target: {
@@ -669,7 +688,12 @@ const onSendClick = async () => {
   // Tap 1 — select the colony ship + target, walk to a ready step 2.
   busy = true;
   colReady = false;
-  paintZone('send', { text: 'Wait…', bg: BG_SEND_BUSY, dim: true });
+  paintZone('send', {
+    text: 'Wait…',
+    subtext: `[${candidate.galaxy}:${candidate.system}:${candidate.position}]`,
+    bg: BG_SEND_BUSY,
+    dim: true,
+  });
   const r = await courierSelect({
     spec: { kind: 'list', ships: [{ id: SHIP_COLONY, qty: 1, frac: 1 }] },
     target: {

@@ -154,4 +154,12 @@ describe('abandon/pure — landingProgress', () => {
     expect(landingProgress(at(90), NOW)).toBe(0); // 90 s out — before the window
     expect(landingProgress(at(-10), NOW)).toBe(1); // already landed
   });
+
+  it('scales against a custom windowStartS instead of the full LANDING_WINDOW_S', () => {
+    // Armed with only 10 s left (a late tick, or mid-window arm) — the arc
+    // should fill across those 10 s, not read as "50/60 already elapsed".
+    expect(landingProgress(at(10), NOW, 10)).toBe(0);
+    expect(landingProgress(at(5), NOW, 10)).toBeCloseTo(0.5, 5);
+    expect(landingProgress(at(0), NOW, 10)).toBe(1);
+  });
 });

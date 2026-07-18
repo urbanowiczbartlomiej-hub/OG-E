@@ -51,7 +51,7 @@ import {
   whenGalaxyScanConfigHydrated,
 } from '../../state/galaxyScanConfig.js';
 import { createButton as makeButton, labelLines } from '../shared/button.js';
-import { setActiveFabModule, FAB_WRAP_ID } from '../shared/unifiedFab.js';
+import { setActiveFabModule, setFabModuleAlert, FAB_WRAP_ID } from '../shared/unifiedFab.js';
 import { ABANDON_GLYPH } from '../shared/buttonGlyphs.js';
 import { parseUniverseId } from '../../lib/universeId.js';
 import { debounce } from '../../lib/debounce.js';
@@ -196,6 +196,12 @@ export const installColonyFab = () => {
   /** Last landing derivation — the countdown repaint reads its `arrivalAt`. */
   /** @type {import('./pure.js').LandingResult} */
   let lastLanding = { phase: 'idle', arrivalAt: 0, cacheWrite: null, latch: 0 };
+  /** The arrival the progress arc's span (`landingWindowStartS`) was recorded
+   *  for — reset whenever a NEW arrival enters 'landing', so the arc always
+   *  fills across the seconds actually remaining when THIS countdown armed,
+   *  not a fixed {@link LANDING_WINDOW_S}. See {@link landingProgress}. */
+  let landingWindowArrival = 0;
+  let landingWindowStartS = 0;
   /** Self-scheduled landing tick (1 Hz in-window, window-boundary wake outside). */
   /** @type {number | null} */
   let tickTimer = null;
@@ -230,6 +236,10 @@ export const installColonyFab = () => {
     });
     landedAt = derived.latch;
     if (derived.cacheWrite !== null) writeColoArrival(derived.cacheWrite);
+    if (derived.phase === 'landing' && derived.arrivalAt !== landingWindowArrival) {
+      landingWindowArrival = derived.arrivalAt;
+      landingWindowStartS = Math.max(1, (derived.arrivalAt * 1000 - nowMs) / 1000);
+    }
     lastLanding = derived;
     scheduleLandingTick(nextLandingTickMs(derived.phase, derived.arrivalAt, nowMs));
     return derived;
@@ -438,7 +448,9 @@ export const installColonyFab = () => {
         sub: 'colo landing',
         dim: true,
       });
-      controller?.setProgress(landingProgress(lastLanding.arrivalAt, serverNow()));
+      controller?.setProgress(
+        landingProgress(lastLanding.arrivalAt, serverNow(), landingWindowStartS),
+      );
     }
   };
 
@@ -452,6 +464,11 @@ export const installColonyFab = () => {
   const refresh = () => {
     if (flowRunning) return;
     const { state: want, cp: wantCp } = desiredState();
+    // Colo landing pulses the FAB for as long as ANYTHING is queued (a
+    // countdown running, or a landed arrival awaiting the reload) — matches
+    // Spyglass's "pulse while anything is queued" rule, not just a subset of
+    // its states.
+    setFabModuleAlert(MODULE_ID, want === 'landing' || want === 'refresh');
     if (want === currentState && wantCp === currentCp) {
       // Same state — but a running countdown still needs its 1 Hz repaint.
       if (want === 'landing') paintLanding('landing');

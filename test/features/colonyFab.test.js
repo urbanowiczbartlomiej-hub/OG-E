@@ -134,6 +134,21 @@ describe('colony FAB — state selection', () => {
     expect(labelText()).toMatch(/Abandon/);
     expect(labelText()).not.toMatch(/colo landing/);
   });
+
+  it('pulses the FAB while a landing countdown is running — matches Spyglass\'s "anything queued" rule', () => {
+    location.search = '?page=ingame&component=galaxy';
+    document.body.innerHTML = '<div id="planetList"></div>';
+    stageColoLanding(30);
+    installColonyFab();
+    expect(document.getElementById(BUTTON_ID)?.classList.contains('oge-fab-alert')).toBe(true);
+  });
+
+  it('does not pulse when there is nothing queued (no fresh colony, no landing)', () => {
+    location.search = '?page=ingame&component=galaxy';
+    document.body.innerHTML = '<div id="planetList"></div>';
+    installColonyFab();
+    expect(document.getElementById(BUTTON_ID)).toBeNull();
+  });
 });
 
 describe('colony FAB — abandon entry gate', () => {

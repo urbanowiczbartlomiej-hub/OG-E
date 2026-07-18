@@ -86,6 +86,16 @@ describe('single-zone button', () => {
     expect(btn.style.getPropertyValue('--rim')).toBe('#38bdf8');
   });
 
+  it('setError toggles the is-error class on the host', () => {
+    const ctl = make();
+    const btn = /** @type {HTMLElement} */ (document.getElementById('oge-test-single'));
+    expect(btn.classList.contains('is-error')).toBe(false);
+    ctl.setError(true);
+    expect(btn.classList.contains('is-error')).toBe(true);
+    ctl.setError(false);
+    expect(btn.classList.contains('is-error')).toBe(false);
+  });
+
   it('keeps the label and glyph lens inside/above the fill so the dim greys the label too', () => {
     const ctl = make();
     const btn = /** @type {HTMLElement} */ (document.getElementById('oge-test-single'));

@@ -52,6 +52,11 @@ describe('shared button chrome stylesheet', () => {
     expect(BUTTON_CHROME_CSS).toContain('.oge-lens');
     expect(BUTTON_CHROME_CSS).toContain('.oge-lens-orbit');
   });
+
+  it('tints the oczko/glyph (not just the rim) when the host carries .is-error', () => {
+    expect(BUTTON_CHROME_CSS).toContain('.oge-host.is-error .oge-node');
+    expect(BUTTON_CHROME_CSS).toContain('.oge-host.is-error .oge-node .oge-art{color:var(--rim);}');
+  });
 });
 
 describe('appendLens', () => {

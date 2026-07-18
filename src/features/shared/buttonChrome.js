@@ -250,6 +250,21 @@ export const BUTTON_CHROME_CSS = [
   // Light glyph (overrides .oge-art's --rim tint) so it reads on the dome.
   '.oge-node .oge-art{color:inherit;}',
 
+  // ── Error state: tint the oczko/glyph itself, not just the rim + label ──
+  // `.is-error` is toggled by Button#setError alongside a setBg(key, BG_ERROR)
+  // call, so the node dome + its glyph flip to the error rim colour instead
+  // of the static module colour — the button's icon reads "error" at a
+  // glance, not just its thin edge thread.
+  '.oge-host.is-error .oge-node{',
+  'background:radial-gradient(circle at 35% 28%,',
+  'color-mix(in oklab,var(--rim) 55%,#0b1220) 0%,#0b1220 76%);',
+  'box-shadow:',
+  'inset 0 1px 1px rgba(255,255,255,.18),',
+  '0 0 0 1.5px var(--rim),',
+  '0 0 16px color-mix(in oklab,var(--rim) 55%,transparent),',
+  '0 4px 12px rgba(0,0,0,.55);}',
+  '.oge-host.is-error .oge-node .oge-art{color:var(--rim);}',
+
   // ── Tap ripple (rim-coloured wave from the touch point) ─────────────────
   '.oge-deco-layer{position:absolute;inset:0;border-radius:50%;',
   'overflow:hidden;pointer-events:none;z-index:1;}',

@@ -452,9 +452,10 @@ describe('renderSpy — probe pre-flight (Etap G)', () => {
   });
 });
 
-// The FAB's needs-attention glow: `pulse` rides EXACTLY the probe-proposal
-// paints ("there is something to scan"), so the orchestrator can relay it
-// blindly (paintZone → setFabModuleAlert) and every other state clears it.
+// The FAB's needs-attention glow: `pulse` rides every state where something is
+// queued as spy OR look ("there is something to scan/browse"), so the
+// orchestrator can relay it blindly (paintZone → setFabModuleAlert) and only
+// the done/idle/error states clear it.
 describe('renderSpy — pulse contract', () => {
   /** @type {import('../../../src/features/sendSpy/pure.js').SpyContext} */
   const probeCtx = {
@@ -471,18 +472,21 @@ describe('renderSpy — pulse contract', () => {
     expect(renderSpy(probeCtx, { have: 5, need: 20 }).pulse).toBe(true);
   });
 
-  it('non-proposal states never pulse (no targets, done, look, no-probes error)', () => {
-    expect(renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasWatched: false }).pulse)
-      .toBeUndefined();
-    expect(renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasWatched: true }).pulse)
-      .toBeUndefined();
+  it('look proposal also pulses — a queued look is as actionable as a queued scan', () => {
     expect(renderSpy({
       proposal: 'look',
       candidate: null,
       look: { galaxy: 2, system: 40, bodies: 3 },
       remaining: 3,
       hasWatched: true,
-    }).pulse).toBeUndefined();
+    }).pulse).toBe(true);
+  });
+
+  it('non-proposal states never pulse (no targets, done, no-probes error)', () => {
+    expect(renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasWatched: false }).pulse)
+      .toBeUndefined();
+    expect(renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasWatched: true }).pulse)
+      .toBeUndefined();
     expect(renderSpy(probeCtx, { have: 0, need: 20 }).pulse).toBeUndefined();
   });
 });

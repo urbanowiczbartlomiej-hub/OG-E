@@ -348,6 +348,9 @@ export function renderSpy(ctx, preflight) {
           ? 'strike? · sweep account'
           : `${ctx.remaining} left`,
       bg: BG_SPY_LOOK,
+      // A queued galaxy-look is exactly as actionable as a queued probe scan —
+      // the FAB should nudge for it too, not just for 'spy' proposals.
+      pulse: true,
     };
   }
   if (!ctx.candidate) {

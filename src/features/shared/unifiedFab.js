@@ -355,6 +355,10 @@ export const registerFabModule = ({ meta, host }) => {
   registry.set(meta.id, { meta, host });
   s.wrap.appendChild(host);
   applyActive();
+  // Re-apply any alert flagged BEFORE this module's node existed (e.g. a
+  // caller sets the alert and mounts the button in the same refresh pass) —
+  // applyAlert no-ops harmlessly when the module isn't alerting.
+  applyAlert(meta.id);
   return {
     drag: s.drag,
     dispose: () => {

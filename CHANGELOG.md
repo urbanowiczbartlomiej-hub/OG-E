@@ -4,6 +4,32 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.51.9] — 2026-07-18
+
+### Changed
+
+- **Error states now tint the button's icon, not just its rim.** "Max fleets"
+  and similar error paints on the send buttons used to change only the thin
+  edge thread and the label text — the oczko/glyph itself stayed the module's
+  static colour. It now flips to the same error tone, so the button reads
+  "error" at a glance.
+- **The Colonize button's "Wait…" states now show the target coordinates**,
+  matching the "Send" state — previously only "Send" carried the sublabel.
+  The final dispatch tap also no longer flashes an intermediate "Wait…"
+  between "Send" and "Sent"; the button holds "Send" straight through.
+- **The colo-landing progress arc now fills across the seconds actually
+  remaining when the countdown armed**, instead of always assuming a fixed
+  60 s span. A countdown picked up with only 10 s left now fills 0→10 s, not
+  "50 s already elapsed" against a 60 s ring.
+- **The FAB now pulses for any queued Spyglass work — including a queued
+  galaxy Look, not just a queued probe scan — and for a colo-landing
+  countdown/refresh**, matching the "something needs a look" pulse the other
+  modules already use.
+- **Best Colony Spots' Zone / Find / Ignore worst / Tolerance controls are
+  now rectangular segmented chips**, matching every other single-select
+  (radio) control in the dashboard — the round pill shape is reserved for
+  independently toggleable checkboxes.
+
 ## [1.51.8] — 2026-07-18
 
 ### Fixed

@@ -104,6 +104,10 @@ export const LABEL_CLASS = 'oge-btn-label';
  * @property {(key: string, text: string) => void} setText  single-line shortcut.
  * @property {(key: string, bg: string) => void} setBg
  * @property {(key: string, dim: boolean) => void} setDim
+ * @property {(on: boolean) => void} setError  toggles the error-tinted
+ *   node/glyph (see `.oge-host.is-error` in buttonChrome.js) — pairs with a
+ *   `setBg(key, BG_ERROR)` call so the oczko/glyph reads error too, not just
+ *   the rim + label.
  * @property {(disabled: boolean) => void} setDisabled  greys the fill +
  *   swallows taps (the readiness gate drives this; also callable directly).
  * @property {(pct: number) => void} setProgress  0 = empty, 1 = full circle on the progress arc.
@@ -512,6 +516,9 @@ export const createButton = (cfg) => {
       if (d) outer.setAttribute('aria-disabled', 'true');
       else outer.removeAttribute('aria-disabled');
       syncNodeDim();
+    },
+    setError: (on) => {
+      outer.classList.toggle('is-error', on);
     },
     setProgress: (pct) => {
       const clamped = Math.max(0, Math.min(1, pct));

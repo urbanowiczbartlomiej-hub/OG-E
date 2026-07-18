@@ -852,6 +852,11 @@ describe('post-send lock', () => {
       }));
     });
     getSend()?.click();
+    // No intermediate "Wait…" flash between the tap and the dispatch settling
+    // — the button holds "Send" straight through instead of jumping
+    // Send → Wait… → Sent.
+    expect(getSend()?.textContent).toContain('Send');
+    expect(getSend()?.textContent).not.toContain('Wait');
     await settle();
     expect(getSend()?.textContent).toContain('Sent');
     // A store change fires the refresh subscription — but the busy lock held
