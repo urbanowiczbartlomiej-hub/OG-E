@@ -127,22 +127,32 @@ const currentScansKey = () => currentUniverseKey(SCANS_KEY_BASE, scansKeyFor);
 const DEBOUNCE_MS = 200;
 
 /**
- * Reduce a scans map to ONLY its lifeform-discovery markers, dropping the heavy
- * colonization scan (`scannedAt` + the 15-slot `positions`). §5: galaxy
- * occupancy is now re-derived from the OGame public API per device and
- * colonization state lives in the decision log, so the per-slot positions no
- * longer PERSIST — they're an ephemeral in-session overlay. Only the small,
- * 7-day lifeform markers (owned by `features/sendLifeform`) survive a reload.
- * This is what shrinks the local blob from ~2.6 MB to a few hundred bytes.
+ * Reduce a scans map to only its DURABLE markers, dropping the heavy 15-slot
+ * `positions`. Two things survive a reload:
  *
- * The kept entry keeps a valid {@link SystemScan} shape (empty `positions`), so
- * the dashboard composite must overlay only positions-BEARING live scans (an
- * empty-positions lf entry must not clobber the API occupancy for that system).
+ *   1. The lifeform-discovery markers (`lfScannedAt` / `lfPositions`, owned by
+ *      `features/sendLifeform`) — the 7-day discovery retention.
+ *   2. The bare `scannedAt` epoch — "when did I last LOOK at this system". §5
+ *      re-derives galaxy OCCUPANCY from the public API and moves colonization
+ *      state to the decision log, so the fat per-slot `positions` are dropped
+ *      (that is the 2.6 MB → a few hundred bytes shrink, and it stays gone). But
+ *      the look-TIME itself is a coverage signal with no other home: the Patrol
+ *      re-look window (domain/patrol `buildPatrolPlan`) and the galaxy-look
+ *      coverage floor (`sysLookSec`) both key off it, and Patrol has no other
+ *      persisted anchor. Dropping it made Patrol re-propose the entire look
+ *      series after every page reload — the window never applied across a
+ *      refresh. Persisting one int per browsed system fixes that at negligible
+ *      cost; occupancy is still re-derived, never restored from here.
+ *
+ * The kept entry keeps a valid {@link SystemScan} shape with EMPTY `positions`,
+ * so the dashboard composite must overlay only positions-BEARING live scans (an
+ * empty-positions entry must not clobber the API occupancy for that system) —
+ * see `features/dashboard/mapPrimitives.js`.
  *
  * @param {GalaxyScans | null | undefined} scans
  * @returns {GalaxyScans}
  */
-const stripToLfMarkers = (scans) => {
+const stripToDurableMarkers = (scans) => {
   /** @type {GalaxyScans} */
   const out = {};
   if (!scans || typeof scans !== 'object') return out;
@@ -152,9 +162,11 @@ const stripToLfMarkers = (scans) => {
     const hasLf =
       s.lfScannedAt != null ||
       (s.lfPositions && Object.keys(s.lfPositions).length > 0);
-    if (!hasLf) continue;
+    const seenAt = Number(s.scannedAt);
+    const hasSeen = Number.isFinite(seenAt) && seenAt > 0;
+    if (!hasLf && !hasSeen) continue;
     out[key] = /** @type {SystemScan} */ ({
-      scannedAt: 0,
+      scannedAt: hasSeen ? seenAt : 0,
       positions: {},
       ...(s.lfScannedAt != null ? { lfScannedAt: s.lfScannedAt } : {}),
       ...(s.lfPositions ? { lfPositions: s.lfPositions } : {}),
@@ -213,16 +225,17 @@ export const initScansStore = () => {
   // every load.
   disposeFn = persist({
     store: scansStore,
-    // Hydrate ONLY the lifeform markers — positions are ephemeral now (§5).
-    // Stripping on load means the very first write-through (the hydrate echo)
-    // rewrites the key as the slim lf-only blob, reclaiming the old fat ~2.6 MB
-    // immediately, and the in-memory store starts free of stale positions.
+    // Hydrate the durable markers (lf discovery + look times) — the fat
+    // positions are ephemeral now (§5). Stripping on load means the very first
+    // write-through (the hydrate echo) rewrites the key as the slim blob,
+    // reclaiming the old fat ~2.6 MB immediately, and the in-memory store starts
+    // free of stale positions while keeping each system's last-look timestamp.
     load: async () => {
       const raw = await chromeStore.get(currentScansKey());
-      return stripToLfMarkers(/** @type {GalaxyScans | null | undefined} */ (raw));
+      return stripToDurableMarkers(/** @type {GalaxyScans | null | undefined} */ (raw));
     },
-    // Persist ONLY the lf markers; the heavy positions never hit disk again.
-    save: (value) => chromeStore.set(currentScansKey(), stripToLfMarkers(value)),
+    // Persist the durable markers only; the heavy positions never hit disk again.
+    save: (value) => chromeStore.set(currentScansKey(), stripToDurableMarkers(value)),
     debounceMs: DEBOUNCE_MS,
   });
 
@@ -248,7 +261,7 @@ export const initScansStore = () => {
  * @returns {Promise<void>}
  */
 export const flushScansStore = () =>
-  chromeStore.set(currentScansKey(), stripToLfMarkers(scansStore.get()));
+  chromeStore.set(currentScansKey(), stripToDurableMarkers(scansStore.get()));
 
 /**
  * Tear down the persist wiring installed by {@link initScansStore}.

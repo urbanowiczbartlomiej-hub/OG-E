@@ -4,6 +4,20 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.51.8] — 2026-07-18
+
+### Fixed
+
+- **Spyglass Patrol re-proposed its entire look series after every page
+  reload, ignoring the Re-look cadence.** The territory mode judged whether a
+  system needed a fresh look purely from the in-session galaxy-scan timestamp
+  — but that timestamp was deliberately dropped on persist (to shrink the
+  saved blob), so a reload reset every system to "never looked" and the FAB
+  walked the whole patrol grounds again regardless of the configured cadence.
+  The lightweight last-look timestamp (not the heavy per-slot data) now
+  survives a reload, so Patrol correctly waits out its Re-look window across
+  page refreshes.
+
 ## [1.51.7] — 2026-07-18
 
 ### Fixed

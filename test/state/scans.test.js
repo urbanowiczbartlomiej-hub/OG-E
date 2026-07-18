@@ -126,22 +126,26 @@ describe('scansStore — hydration via initScansStore', () => {
     expect(mockStore.get).toHaveBeenCalledWith('oge_galaxyScans');
   });
 
-  it('hydrates ONLY the lifeform markers, stripping the heavy positions (§5)', async () => {
+  it('hydrates the durable markers (last-look time + lf), stripping the heavy positions (§5)', async () => {
     // What's on disk: full colonization scans (scannedAt + positions) PLUS
-    // lifeform-discovery markers on `1:5`. Hydration must keep only the slim
-    // lf markers — positions are ephemeral now and never come back from disk.
+    // lifeform-discovery markers on `1:5`, PLUS a system with neither lf nor a
+    // valid look time. Hydration must keep the bare `scannedAt` for every
+    // system that was actually looked at (the Patrol re-look window's only
+    // persisted anchor — dropping it made Patrol re-propose its whole look
+    // series after every reload) while positions never come back from disk.
     /** @type {any} */
     const stored = {
-      // No lf markers → dropped entirely on hydrate.
+      // No lf markers, but a real scannedAt → survives as a bare look-time marker.
       '4:30': { scannedAt: 1700000000, positions: { 3: { status: 'empty' } } },
-      // Carries lf markers → survives, but only the lf fields (scannedAt reset
-      // to 0, positions emptied).
+      // Carries lf markers too → both the look time and the lf fields survive.
       '1:5': {
         scannedAt: 1700000500,
         positions: { 7: { status: 'empty' } },
         lfScannedAt: 1700000600,
         lfPositions: { 7: 1700000600 },
       },
+      // Neither a valid scannedAt nor lf markers → dropped entirely.
+      '2:2': { scannedAt: 0, positions: { 1: { status: 'empty' } } },
     };
     mockStore.get.mockResolvedValueOnce(stored);
 
@@ -157,8 +161,9 @@ describe('scansStore — hydration via initScansStore', () => {
     for (let i = 0; i < 5; i++) await Promise.resolve();
 
     expect(scansStore.get()).toEqual({
+      '4:30': { scannedAt: 1700000000, positions: {} },
       '1:5': {
-        scannedAt: 0,
+        scannedAt: 1700000500,
         positions: {},
         lfScannedAt: 1700000600,
         lfPositions: { 7: 1700000600 },
@@ -209,9 +214,10 @@ describe('scansStore — write-through (debounced 200ms)', () => {
     vi.advanceTimersByTime(200);
 
     expect(mockStore.set).toHaveBeenCalledTimes(1);
-    // Only the latest value (c), slimmed to its lf marker, is persisted.
+    // Only the latest value (c) is persisted, slimmed to its durable markers —
+    // both the look time (scannedAt) and the lf marker survive.
     expect(mockStore.set).toHaveBeenCalledWith('oge_galaxyScans', {
-      '4:30': { scannedAt: 0, positions: {}, lfScannedAt: 13 },
+      '4:30': { scannedAt: 3, positions: {}, lfScannedAt: 13 },
     });
   });
 
