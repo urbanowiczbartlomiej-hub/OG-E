@@ -1,6 +1,6 @@
-/* Dokumentacja OG-E — mobile-first, ciemny motyw spójny z rozszerzeniem.
-   Weryfikacja projektowa najpierw przy 360–430 px; desktop to enhancement.
-   Strona nigdy nie scrolluje się w poziomie. */
+/* Dokumentacja OG-E — jedna długa, wycentrowana strona z pływającym menu.
+   Mobile-first: weryfikacja najpierw przy 360–430 px. Strona nigdy nie
+   scrolluje się w poziomie. Stylistyka spójna z OG-E (ciemny, akcent złoty). */
 
 :root {
   --bg: #0b1219;
@@ -13,13 +13,12 @@
   --dim: #5f6b76;
   --accent: #e6c054;
   --link: #7fb2e0;
-  --fp-green: #5fb86a;
   --fp-yellow: #e0b45f;
-  --fp-red: #e2726a;
+  --col: 780px;   /* szerokość kolumny treści */
+  --toc: 232px;   /* szerokość menu */
 }
 
 * { box-sizing: border-box; }
-
 html, body { margin: 0; padding: 0; }
 
 body {
@@ -44,7 +43,7 @@ code {
   word-break: break-word;
 }
 
-/* Header / footer */
+/* ---- Header / footer ---- */
 .site-hdr {
   display: flex;
   flex-wrap: wrap;
@@ -55,44 +54,67 @@ code {
   border-bottom: 1px solid var(--line);
 }
 .brand { font-weight: 700; color: #d8e6f4; letter-spacing: 0.02em; }
-.brand:hover { text-decoration: none; color: var(--accent); }
 .brand-sub { font-size: 12px; color: var(--dim); }
 
 .site-foot {
-  margin-top: 40px;
+  margin: 48px auto 0;
+  max-width: calc(var(--toc) + var(--col) + 40px);
   padding: 16px;
   border-top: 1px solid var(--line);
   font-size: 12px;
   color: var(--dim);
 }
 
-main { max-width: 860px; margin: 0 auto; padding: 20px 16px; }
+/* ---- Układ: menu + treść, wycentrowane ---- */
+.layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 28px;
+  max-width: var(--col);
+  margin: 0 auto;
+  padding: 20px 16px;
+}
+main { min-width: 0; }
 
+/* ---- Nagłówki / typografia ---- */
 h1 { font-size: 24px; color: #eaf2fb; margin: 0 0 8px; line-height: 1.25; }
-h2 { font-size: 16px; color: #d8e6f4; margin: 26px 0 8px; letter-spacing: 0.02em; }
+h2 {
+  font-size: 19px;
+  color: var(--accent);
+  margin: 8px 0 4px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line-2);
+  letter-spacing: 0.02em;
+}
+h3.feature-name { font-size: 17px; color: #eaf2fb; margin: 22px 0 4px; scroll-margin-top: 16px; }
+h4 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+  margin: 18px 0 4px;
+}
 .lead { font-size: 16px; color: var(--text); margin: 0 0 12px; }
 .meta { color: var(--muted); font-size: 13px; }
+p { margin: 8px 0; }
+ul { margin: 8px 0; padding-left: 20px; }
+li { margin: 4px 0; }
 
-/* Hero + kategorie (strona główna) */
-.hero { margin-bottom: 28px; }
-.cat { margin: 28px 0; }
-.cat-blurb { color: var(--muted); font-size: 14px; margin: 0 0 14px; }
+.hero { margin-bottom: 8px; }
+.cat-block { scroll-margin-top: 16px; margin-top: 30px; }
+.cat-blurb { color: var(--muted); font-size: 14px; margin: 0 0 8px; }
 
-.cards { display: grid; grid-template-columns: 1fr; gap: 10px; }
-.card {
-  display: block;
-  padding: 12px 14px;
+/* ---- Blok funkcji ---- */
+.feature {
   background: var(--panel);
   border: 1px solid var(--line-2);
   border-left: 3px solid var(--line-2);
-  border-radius: 6px;
+  border-radius: 8px;
+  padding: 4px 16px 18px;
+  margin: 16px 0;
 }
-.card:hover { text-decoration: none; border-left-color: var(--accent); background: var(--panel-2); }
-.card.is-flagship { border-left-color: var(--accent); }
-.card-name { display: block; font-weight: 700; color: #d8e6f4; }
-.card-one { display: block; font-size: 13px; color: var(--muted); margin-top: 2px; }
+.feature .lead { font-size: 15px; color: var(--muted); }
 
-/* Znacznik funkcji flagowej */
 .flag-tag {
   display: inline-block;
   vertical-align: middle;
@@ -101,45 +123,41 @@ h2 { font-size: 16px; color: #d8e6f4; margin: 26px 0 8px; letter-spacing: 0.02em
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--accent);
-  background: rgba(230,192,84,0.12);
-  border: 1px solid rgba(230,192,84,0.4);
+  background: rgba(230, 192, 84, 0.12);
+  border: 1px solid rgba(230, 192, 84, 0.4);
   border-radius: 999px;
   padding: 1px 7px;
   margin-left: 6px;
 }
 
-/* Uczciwy komentarz graniczny (tylko budzik) */
-.fairplay.is-borderline { border-color: rgba(224,180,95,0.5) !important; }
+/* ---- Fair-play ---- */
+.fairplay {
+  background: var(--panel-2);
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  padding: 2px 14px 12px;
+  margin-top: 18px;
+}
+.fairplay.is-borderline { border-color: rgba(224, 180, 95, 0.5); }
 .fp-note {
-  background: rgba(224,180,95,0.1);
-  border: 1px solid rgba(224,180,95,0.35);
+  background: rgba(224, 180, 95, 0.1);
+  border: 1px solid rgba(224, 180, 95, 0.35);
   border-radius: 6px;
   padding: 8px 12px;
   color: var(--fp-yellow);
   font-size: 13px;
 }
 
-/* Strona feature'a */
-.crumbs { font-size: 12px; color: var(--dim); margin-bottom: 10px; }
-.feature section { border-top: 1px solid var(--line); padding-top: 4px; }
-.feature section:first-of-type { border-top: 0; }
-.feature p { margin: 8px 0; }
-.feature ul { margin: 8px 0; padding-left: 20px; }
-.feature li { margin: 4px 0; }
-
-.fairplay {
-  background: var(--panel);
-  border: 1px solid var(--line-2) !important;
-  border-radius: 6px;
-  padding: 4px 14px 12px;
-  margin-top: 26px;
-}
-.fp-ref { font-size: 12px; color: var(--dim); }
-
-/* Zrzuty ekranu */
-.shots { }
+/* ---- Zrzuty / makiety ---- */
+.shots { margin: 10px 0 4px; }
 .shot { margin: 12px 0; }
-.shot img { max-width: 100%; height: auto; display: block; border: 1px solid var(--line-2); border-radius: 6px; }
+.shot img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+}
 .shot figcaption { font-size: 12px; color: var(--muted); margin-top: 6px; }
 .shot-ph {
   display: flex;
@@ -159,9 +177,101 @@ h2 { font-size: 16px; color: #d8e6f4; margin: 26px 0 8px; letter-spacing: 0.02em
   padding: 4px 8px;
 }
 
-/* Desktop enhancement */
-@media (min-width: 720px) {
-  main { padding: 28px 24px; }
+/* ---- Menu-kotwica ---- */
+.toc-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+  margin: 0 0 8px;
+}
+.toc-list { list-style: none; margin: 0; padding: 0; }
+.toc-cat { margin-top: 12px; }
+.toc-cat:first-child { margin-top: 0; }
+.toc-cat > a {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+.toc-item > a {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  padding: 3px 0 3px 10px;
+  border-left: 2px solid transparent;
+}
+.toc-item > a:hover { color: var(--text); text-decoration: none; }
+.toc a.active {
+  color: #eaf2fb;
+  border-left-color: var(--accent);
+  text-decoration: none;
+}
+
+/* Mobilny przełącznik menu (w duchu FAB-a OG-E) + przyciemnienie tła */
+.toc-fab {
+  position: fixed;
+  z-index: 40;
+  right: 16px;
+  bottom: 16px;
+  font: 700 13px Verdana, sans-serif;
+  color: #1a1206;
+  background: var(--accent);
+  border: 0;
+  border-radius: 999px;
+  padding: 11px 18px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+}
+.toc-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+/* Mobile (domyślnie): menu jako wysuwany panel, ukryte do czasu tapnięcia */
+.toc {
+  position: fixed;
+  z-index: 35;
+  top: 0;
+  left: 0;
+  width: min(82vw, 320px);
+  height: 100%;
+  background: var(--panel);
+  border-right: 1px solid var(--line-2);
+  padding: 16px 14px;
+  overflow-y: auto;
+  transform: translateX(-102%);
+  transition: transform 0.18s ease;
+}
+body.toc-open .toc { transform: translateX(0); }
+body.toc-open .toc-scrim { opacity: 1; pointer-events: auto; }
+
+/* ---- Desktop: menu przyklejone obok wycentrowanej treści ---- */
+@media (min-width: 1040px) {
+  .toc-fab, .toc-scrim { display: none; }
+  .layout {
+    grid-template-columns: var(--toc) minmax(0, var(--col));
+    max-width: calc(var(--toc) + var(--col) + 40px);
+    gap: 40px;
+    padding: 28px 24px;
+  }
+  .toc {
+    position: sticky;
+    top: 16px;
+    left: auto;
+    width: auto;
+    height: max-content;
+    max-height: calc(100vh - 32px);
+    transform: none;
+    background: transparent;
+    border-right: 0;
+    padding: 0;
+  }
   h1 { font-size: 28px; }
-  .cards { grid-template-columns: 1fr 1fr; }
 }

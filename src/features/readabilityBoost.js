@@ -198,9 +198,6 @@ const CSS = `/* OG-E: readability boost — event box + fleet movement link */
    border only — left/right borders dropped so it reads edge-to-edge). */
 #eventboxFilled {
   position: relative !important;
-  /* Near-zero padding: hug the edges, with a small bottom pad so the
-     left-column rows clear the box's bottom edge. */
-  padding: 0px 1px 9px 1px !important;
   /* Pull the card up and widen it past its container on both sides so it
      spans edge-to-edge (left/right borders dropped below). */
   margin-top: -5px !important;
@@ -289,7 +286,7 @@ const CSS = `/* OG-E: readability boost — event box + fleet movement link */
 #eventboxFilled .next_event .countdown {
   position: absolute !important;
   right: 1px !important;
-  top: 36% !important;
+  top: 44% !important;
   transform: translateY(-50%) !important;
   font-size: 60px !important;
   font-weight: 900 !important;

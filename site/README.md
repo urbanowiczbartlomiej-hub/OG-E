@@ -9,9 +9,12 @@ rozszerzenia.
 
 **Treść = dane, nie ręczny HTML.** Każda funkcja to jeden plik
 `content/<slug>.mjs` eksportujący obiekt zgodny z kontraktem w
-`content/_schema.mjs`. Generator (`build.mjs`) waliduje i renderuje statyczny
-HTML. Dzięki temu wszystkie strony mają ten sam zestaw sekcji, a tłumaczenie
-sprowadza się do podmiany stringów, nie layoutu.
+`content/_schema.mjs`. Generator (`build.mjs`) waliduje i renderuje **jedną
+długą, wycentrowaną stronę** `dist/index.html` — wszystkie funkcje jedna pod
+drugą (pogrupowane w kategorie), z pływającym menu-kotwicą (scroll-spy,
+przyklejone na desktopie, chowane pod przyciskiem na mobile). Dzięki modelowi
+danych każdy blok ma ten sam zestaw sekcji, a tłumaczenie sprowadza się do
+podmiany stringów, nie layoutu.
 
 ```
 site/
