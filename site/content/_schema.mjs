@@ -15,15 +15,21 @@
 // akapitów (string[]). W tekście wolno używać lekkiego formatowania:
 //   **pogrubienie**  oraz  `kod`
 // — generator zamienia je na <strong>/<code>, całą resztę escapuje.
-
-/**
- * @typedef {'green'|'yellow'|'red'} FairPlayClass
- *   Klasyfikacja z kanonicznego `docs/fair-play.md`. NIE wymyślamy jej tutaj —
- *   przepisujemy werdykt z tamtego dokumentu (DRY: fair-play ma jeden dom).
- *   green  = jednoznacznie dozwolone (display/obliczenia/1-klik-1-akcja),
- *   yellow = zgodne, ale wymaga ujawnienia / drobnej zmiany / konsultacji,
- *   red    = literalne naruszenie reguły — decyzja/konsultacja przed publikacją.
- */
+//
+// # Fair-play — polityka strony
+//
+// Strona NIE stosuje klasyfikacji zielony/żółty/czerwony (to zostaje wewnętrzne,
+// w `docs/fair-play.md`). Publicznie zawsze dajemy **interpretację pozytywną** —
+// argumenty ZA tym, że funkcja jest fair. Jedyny wyjątek, gdzie uczciwie
+// przyznajemy graniczność, to budzik (alarm clock): tam `fairplay.borderline`
+// = true i generator dokłada szczery komentarz.
+//
+// # Warstwa infrastruktury
+//
+// Zaplecze danych (apiContext, ownProfile, colonyRecorder, allianceClassIngest)
+// NIE ma własnych stron. Skąd biorą się dane opisujemy WEWNĄTRZ funkcji, które
+// je konsumują (pole `how`/`fairplay.summary`) — np. "z raportów, które sam
+// otworzyłeś" albo "z publicznego API czytanego przy otwartej karcie gry".
 
 /**
  * @typedef {object} Shot
@@ -33,12 +39,12 @@
 
 /**
  * @typedef {object} FairPlay
- * @property {FairPlayClass} classification  Werdykt z docs/fair-play.md.
- * @property {string[]} summary   User-facing wyjaśnienie: jaka jest przewaga
- *   i CZYM jest mitygowana (albo dlaczego jest po bezpiecznej stronie linii).
- *   Piszemy pod czytelnika publicznego — NIE kopiujemy wewnętrznej strategii
- *   compliance (taktyk konsultacji, "to najsłabsze do obrony" itp.).
- * @property {string} [ref]  Kotwica w docs/fair-play.md, np. '§Spyglass'.
+ * @property {string[]} summary   Argumenty ZA tym, że funkcja jest fair —
+ *   pisane pod czytelnika publicznego (pozytywna interpretacja). Tu wplatamy też
+ *   pochodzenie danych, jeśli funkcja czyta zaplecze (apiContext itd.).
+ * @property {boolean} [borderline]  Ustaw TYLKO dla budzika (alarm clock) —
+ *   jedynej funkcji, przy której szczerze przyznajemy graniczność. Generator
+ *   dokłada wtedy uczciwy komentarz.
  */
 
 /**
@@ -55,18 +61,18 @@
  * @property {'pl'} locale        Język treści (na razie tylko 'pl').
  * @property {string} name        Nazwa jaką widzi użytkownik.
  * @property {string} oneLiner    Jedno zdanie "co to robi".
+ * @property {boolean} [flagship] True = funkcja flagowa (wyróżniana na stronie).
  * @property {string[]} where     Gdzie w OGame się pojawia / jak uruchomić.
  * @property {string[]} how       Dokładny opis działania (mechanika, triggery).
  * @property {string[]} purpose   Po co to jest, jaki problem gracza rozwiązuje.
  * @property {string[]} advantage Budowana przewaga — konkretnie co daje.
- * @property {FairPlay} fairplay  Klasyfikacja + mitygacja (z docs/fair-play.md).
+ * @property {FairPlay} fairplay  Pozytywne argumenty za fair-play (+ borderline dla budzika).
  * @property {string[]} [settings] Powiązane opcje w panelu ustawień OG-E.
  * @property {Shot[]} screenshots  Lista zrzutów (min. 1; placeholder do czasu realnego).
  * @property {string[]} codeRefs   Pliki src/... (dla nas, do utrzymania).
  * @property {DocStatus} status    Stan dokumentacji tego feature'a.
  */
 
-const CLASSES = new Set(['green', 'yellow', 'red']);
 const STATUSES = new Set(['todo', 'drafted', 'verified']);
 
 /**
@@ -91,6 +97,7 @@ export const validateFeature = (f, slug, categoryIds) => {
   need(f.locale === 'pl', 'pole "locale" musi być "pl" (baza)');
   need(typeof f.name === 'string' && f.name.trim(), 'brak "name"');
   need(typeof f.oneLiner === 'string' && f.oneLiner.trim(), 'brak "oneLiner"');
+  need(f.flagship === undefined || typeof f.flagship === 'boolean', '"flagship" musi być boolean');
   need(strArr(f.where), '"where" musi być niepustą tablicą stringów');
   need(strArr(f.how), '"how" musi być niepustą tablicą stringów');
   need(strArr(f.purpose), '"purpose" musi być niepustą tablicą stringów');
@@ -98,9 +105,9 @@ export const validateFeature = (f, slug, categoryIds) => {
 
   need(f.fairplay && typeof f.fairplay === 'object', 'brak obiektu "fairplay"');
   if (f.fairplay && typeof f.fairplay === 'object') {
-    need(CLASSES.has(f.fairplay.classification),
-      `"fairplay.classification" musi być green|yellow|red (jest: ${f.fairplay.classification})`);
     need(strArr(f.fairplay.summary), '"fairplay.summary" musi być niepustą tablicą stringów');
+    need(f.fairplay.borderline === undefined || typeof f.fairplay.borderline === 'boolean',
+      '"fairplay.borderline" musi być boolean (ustawiane tylko dla budzika)');
   }
 
   if (f.settings !== undefined) {
@@ -119,11 +126,4 @@ export const validateFeature = (f, slug, categoryIds) => {
   need(STATUSES.has(f.status), `"status" musi być todo|drafted|verified (jest: ${f.status})`);
 
   return errs;
-};
-
-/** Etykiety PL dla klasyfikacji fair-play (używane w szablonie). */
-export const FAIRPLAY_LABEL = {
-  green: 'Zielony — dozwolone',
-  yellow: 'Żółty — wymaga ujawnienia / konsultacji',
-  red: 'Czerwony — narusza regułę, decyzja wymagana',
 };

@@ -41,17 +41,20 @@ treści — to nasz test spójności. Podgląd lokalny: dowolny statyczny serwer
 
 1. Skopiuj `content/who-is-spying.mjs` na `content/<slug>.mjs`.
 2. Wypełnij pola (discovery z kodu — patrz nagłówek wzorca).
-3. `fairplay.classification` przepisz z `docs/fair-play.md` (nie ustalaj tu).
+3. `fairplay.summary` pisz jako **argumenty ZA** (interpretacja pozytywna).
+   `fairplay.borderline = true` ustaw **tylko** dla budzika.
 4. Zdefiniuj listę zrzutów; realne pliki wrzuć do `assets/shots/` później —
    do tego czasu generator pokazuje placeholder.
 5. Zaktualizuj `CATALOG.md` (status `drafted`), zbuduj, oddaj do weryfikacji.
 
-## Fair-play — źródło prawdy
+## Fair-play — polityka strony
 
-Sekcja fair-play czerpie z kanonicznego `docs/fair-play.md`. Pole
-`fairplay.summary` jest pisane **pod czytelnika publicznego** — nie kopiujemy
-wewnętrznej strategii compliance (taktyk konsultacji z ToolDevami, ocen typu
-„najsłabsze do obrony"). Werdykt (🟢/🟡/🔴) musi być zgodny z tamtym dokumentem.
+Strona **nie stosuje** klasyfikacji zielony/żółty/czerwony (to zostaje
+wewnętrzne, w `docs/fair-play.md`). Publicznie zawsze dajemy **interpretację
+pozytywną** — argumenty za tym, że funkcja jest fair, w tym pochodzenie danych
+(„z raportów, które sam otworzyłeś" itp.). Jedyny wyjątek, gdzie uczciwie
+przyznajemy graniczność, to **budzik** (`borderline: true`) — generator dokłada
+tam szczery komentarz.
 
 ## Tłumaczenia (później)
 

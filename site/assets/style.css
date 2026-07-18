@@ -80,10 +80,7 @@ h2 { font-size: 16px; color: #d8e6f4; margin: 26px 0 8px; letter-spacing: 0.02em
 
 .cards { display: grid; grid-template-columns: 1fr; gap: 10px; }
 .card {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  grid-template-areas: "dot name" "dot one";
-  column-gap: 10px;
+  display: block;
   padding: 12px 14px;
   background: var(--panel);
   border: 1px solid var(--line-2);
@@ -91,28 +88,36 @@ h2 { font-size: 16px; color: #d8e6f4; margin: 26px 0 8px; letter-spacing: 0.02em
   border-radius: 6px;
 }
 .card:hover { text-decoration: none; border-left-color: var(--accent); background: var(--panel-2); }
-.card-name { grid-area: name; font-weight: 700; color: #d8e6f4; }
-.card-one { grid-area: one; font-size: 13px; color: var(--muted); }
-.card-fp { grid-area: dot; align-self: center; }
+.card.is-flagship { border-left-color: var(--accent); }
+.card-name { display: block; font-weight: 700; color: #d8e6f4; }
+.card-one { display: block; font-size: 13px; color: var(--muted); margin-top: 2px; }
 
-/* Fair-play badge + kropka */
-.fp-badge {
+/* Znacznik funkcji flagowej */
+.flag-tag {
   display: inline-block;
-  font-size: 11px;
+  vertical-align: middle;
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.03em;
-  padding: 3px 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: rgba(230,192,84,0.12);
+  border: 1px solid rgba(230,192,84,0.4);
   border-radius: 999px;
-  margin: 4px 0 8px;
+  padding: 1px 7px;
+  margin-left: 6px;
 }
-.fp-green  { background: rgba(95,184,106,0.12); color: var(--fp-green);  border: 1px solid rgba(95,184,106,0.4); }
-.fp-yellow { background: rgba(224,180,95,0.12); color: var(--fp-yellow); border: 1px solid rgba(224,180,95,0.4); }
-.fp-red    { background: rgba(226,114,106,0.12); color: var(--fp-red);   border: 1px solid rgba(226,114,106,0.4); }
 
-.fp-dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
-.fp-dot.fp-green  { background: var(--fp-green);  border: 0; }
-.fp-dot.fp-yellow { background: var(--fp-yellow); border: 0; }
-.fp-dot.fp-red    { background: var(--fp-red);    border: 0; }
+/* Uczciwy komentarz graniczny (tylko budzik) */
+.fairplay.is-borderline { border-color: rgba(224,180,95,0.5) !important; }
+.fp-note {
+  background: rgba(224,180,95,0.1);
+  border: 1px solid rgba(224,180,95,0.35);
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: var(--fp-yellow);
+  font-size: 13px;
+}
 
 /* Strona feature'a */
 .crumbs { font-size: 12px; color: var(--dim); margin-bottom: 10px; }

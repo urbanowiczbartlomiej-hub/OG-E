@@ -1,8 +1,9 @@
 // @ts-check
 
-// Taksonomia user-facing. NIE kopiuje struktury katalogów kodu (`src/features/`)
-// — użytkownik nie myśli w `features/`, myśli w kategoriach zadań w grze.
-// Kolejność w tablicy = kolejność sekcji na stronie głównej.
+// Taksonomia user-facing, uporządkowana WEDŁUG WAGI PRODUKTOWEJ (nie wg
+// katalogów kodu). Flagowiec to Przycisk OG-E (FAB) — hub, z którego odpalasz
+// wszystkie akcje floty. Kolejne grupy to pozostali flagowcy, a UI/ustawienia
+// są świadomie na końcu jako "dodatki". Kolejność tablicy = kolejność sekcji.
 
 /**
  * @typedef {object} Category
@@ -14,34 +15,34 @@
 /** @type {Category[]} */
 export const CATEGORIES = [
   {
-    id: 'fleet',
-    name: 'Automatyzacja floty',
-    blurb: 'Szybkie wysyłki floty jednym tapnięciem — wyprawy, kolonizacja, szpiegowanie, discovery, daily run. Zawsze 1 tap = 1 akcja.',
+    id: 'fab',
+    name: 'Przycisk OG-E',
+    blurb: 'Flagowy hub OG-E: jeden pływający przycisk, z którego odpalasz wszystkie akcje floty jednym tapnięciem — wyprawy, polowanie na kolonie, discovery, codzienne trasy, przypomnienia. Zawsze 1 tap = 1 akcja.',
   },
   {
-    id: 'intel',
-    name: 'Wywiad i zagrożenia',
-    blurb: 'Wiedza o przeciwnikach i o tym, kto interesuje się Tobą — raporty szpiegowskie, model zagrożenia, panele defensywne.',
+    id: 'spyglass',
+    name: 'Spyglass — wywiad',
+    blurb: 'Duży moduł wywiadu: podejrzyj i szpieguj, dossier przeciwnika, model zagrożenia, analiza rutyny wroga i okna offline oraz panel „kto Cię szpieguje". Wszystko z danych, które zebrałeś normalną grą.',
+  },
+  {
+    id: 'alarms',
+    name: 'Budzik i fleet-save',
+    blurb: 'Budzik na powrót floty, który sam ustawiasz. Jedyna świadomie graniczna funkcja — mówimy o tym wprost w sekcji fair-play.',
   },
   {
     id: 'dashboard',
     name: 'Dashboard i analityka',
-    blurb: 'Osobny panel OG-E: patrol, trasy, statystyki i podgląd danych zebranych podczas normalnej gry.',
+    blurb: 'Osobny panel OG-E: najlepsze miejsca na kolonie, patrol, trasy, statystyki i podgląd danych zebranych podczas normalnej gry.',
   },
   {
-    id: 'galaxy',
-    name: 'Nawigacja i galaktyka',
-    blurb: 'Poruszanie się po galaktyce i mapie imperium oraz wyróżnianie tego, co ważne — bez auto-przeglądania.',
-  },
-  {
-    id: 'alarms',
-    name: 'Fleet-save i przypomnienia',
-    blurb: 'Budzik na powrót floty ustawiany przez gracza. Sekcja świadomie graniczna wobec reguł — patrz sekcja fair-play.',
+    id: 'sync',
+    name: 'Synchronizacja i społeczność',
+    blurb: 'Twoje dane na wielu urządzeniach oraz dzielenie się i dołączanie do wspólnej aktywności — bez śledzenia gry w tle.',
   },
   {
     id: 'qol',
-    name: 'Jakość życia i UI',
-    blurb: 'Czytelność, spójność i drobne usprawnienia interfejsu — nic, co dotyka reklam, menu premium czy stopki gry.',
+    name: 'Usprawnienia UI (dodatki)',
+    blurb: 'Czytelność, spójność i drobne ułatwienia interfejsu — dodatki do flagowych funkcji. Nic, co dotyka reklam, menu premium czy stopki gry.',
   },
 ];
 

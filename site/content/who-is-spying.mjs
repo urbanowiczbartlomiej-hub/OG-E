@@ -8,7 +8,7 @@
 /** @type {import('./_schema.mjs').Feature} */
 export default {
   id: 'who-is-spying',
-  category: 'intel',
+  category: 'spyglass',
   locale: 'pl',
 
   name: 'Kto Cię szpieguje',
@@ -39,12 +39,10 @@ export default {
   ],
 
   fairplay: {
-    classification: 'green',
     summary: [
       'Panel jest **czysto prezentacyjny**: agreguje i wyświetla alerty, które gracz sam otworzył podczas normalnej gry. Nie przechwytuje żadnych nowych danych, nie wysyła żadnego zapytania do gry, nie ma timera ani powiadomienia poza kartą.',
-      'Mieści się w gwarancji pochodzenia danych całego workbenchu Spyglass (dane wyłącznie z raportów otwartych przez gracza + publiczne API czytane tylko przy otwartej karcie gry). Dlatego w `docs/fair-play.md` jest sklasyfikowany jako **zielony** — dozwolony bez zastrzeżeń.',
+      'Cała informacja pochodzi z tego, co OGame już Ci pokazał — panel jedynie **zbiera rozproszone wiadomości w jedną czytelną tabelę**. To ta sama wiedza, którą i tak masz, tylko podana od razu w całości, zamiast klikania po pojedynczych raportach.',
     ],
-    ref: '§Spyglass intelligence workbench (v3)',
   },
 
   settings: [

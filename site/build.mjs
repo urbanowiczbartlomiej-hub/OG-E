@@ -19,7 +19,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 
 import { CATEGORIES, CATEGORY_IDS } from './content/_categories.mjs';
-import { validateFeature, FAIRPLAY_LABEL } from './content/_schema.mjs';
+import { validateFeature } from './content/_schema.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const CONTENT_DIR = join(ROOT, 'content');
@@ -68,9 +68,6 @@ const shotFigure = (slug, shot, prefix) => {
   return `<figure class="shot${real ? '' : ' is-ph'}">${media}<figcaption>${inline(shot.caption)}</figcaption></figure>`;
 };
 
-/** Badge klasyfikacji fair-play. */
-const fpBadge = (cls) => `<span class="fp-badge fp-${cls}">${esc(FAIRPLAY_LABEL[cls])}</span>`;
-
 /**
  * Wspólny szkielet strony.
  * @param {{title: string, prefix: string, body: string}} o
@@ -109,9 +106,8 @@ const featurePage = (f) => {
   const body = `
 <article class="feature">
   <nav class="crumbs"><a href="${prefix}index.html">Start</a> › <span>${esc(cat?.name ?? f.category)}</span></nav>
-  <h1>${esc(f.name)}</h1>
+  <h1>${esc(f.name)}${f.flagship ? ' <span class="flag-tag">flagowa</span>' : ''}</h1>
   <p class="lead">${inline(f.oneLiner)}</p>
-  ${fpBadge(f.fairplay.classification)}
 
   <section><h2>Gdzie to znajdziesz</h2>${paras(f.where)}</section>
 
@@ -124,11 +120,10 @@ const featurePage = (f) => {
   <section><h2>Cel</h2>${paras(f.purpose)}</section>
   <section><h2>Budowana przewaga</h2>${paras(f.advantage)}</section>
 
-  <section class="fairplay">
+  <section class="fairplay${f.fairplay.borderline ? ' is-borderline' : ''}">
     <h2>Fair-play</h2>
-    ${fpBadge(f.fairplay.classification)}
+    ${f.fairplay.borderline ? '<p class="fp-note"><strong>Uczciwie: to funkcja graniczna.</strong> Traktujemy ją ostrożnie i mówimy o tym wprost — poniżej, dlaczego mimo to uznajemy ją za obronną.</p>' : ''}
     ${paras(f.fairplay.summary)}
-    ${f.fairplay.ref ? `<p class="fp-ref">Klasyfikacja: <code>docs/fair-play.md</code> ${esc(f.fairplay.ref)}</p>` : ''}
   </section>
 
   ${f.settings ? `<section><h2>Powiązane ustawienia</h2>${list(f.settings)}</section>` : ''}
@@ -147,9 +142,8 @@ const indexPage = (features) => {
     if (items.length === 0) return '';
     const cards = items
       .map(
-        (f) => `<a class="card" href="features/${esc(f.id)}.html">
-        <span class="card-fp fp-dot fp-${f.fairplay.classification}" title="${esc(FAIRPLAY_LABEL[f.fairplay.classification])}"></span>
-        <span class="card-name">${esc(f.name)}</span>
+        (f) => `<a class="card${f.flagship ? ' is-flagship' : ''}" href="features/${esc(f.id)}.html">
+        <span class="card-name">${esc(f.name)}${f.flagship ? ' <span class="flag-tag">flagowa</span>' : ''}</span>
         <span class="card-one">${inline(f.oneLiner)}</span>
       </a>`,
       )
