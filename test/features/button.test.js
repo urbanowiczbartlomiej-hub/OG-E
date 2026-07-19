@@ -11,7 +11,7 @@
 // @ts-check
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createButton, LABEL_CLASS } from '../../src/features/shared/button.js';
+import { createButton, labelLines, LABEL_CLASS } from '../../src/features/shared/button.js';
 
 beforeEach(() => {
   document.head.innerHTML = '';
@@ -84,6 +84,19 @@ describe('single-zone button', () => {
     expect(surface.style.opacity).toBe('');
     ctl.setBg('main', '#38bdf8');
     expect(btn.style.getPropertyValue('--rim')).toBe('#38bdf8');
+  });
+
+  it('labelLines shrinks the shared "Max fleets" verdict to 0.9em (all other primaries stay 1em)', () => {
+    expect(labelLines({ main: 'Max fleets' })[0].em).toBe('0.9em');
+    expect(labelLines({ main: 'All sent' })[0].em).toBe('1em');
+    // setText routes through labelLines, so the shrink applies to
+    // single-line paints (the path every feature's 'Max fleets' takes).
+    const ctl = make();
+    ctl.setText('main', 'Max fleets');
+    const btn = /** @type {HTMLElement} */ (document.getElementById('oge-test-single'));
+    // renderLines nests: label span → flex column div → one div per line.
+    const line = btn.querySelector('.' + LABEL_CLASS + ' div div');
+    expect(/** @type {HTMLElement} */ (line)?.style.fontSize).toBe('0.9em');
   });
 
   it('setError toggles the is-error class on the host', () => {

@@ -461,6 +461,9 @@ describe('installSendExpedition — max expedition guard', () => {
 
     expect(labelOf(btn)).toBe('All sent');
     expect(navTarget).toBeNull();
+    // The amber "nothing to send" verdict rings the oczko too, same as the
+    // hard "Max fleets" error — not just a rim-colour change.
+    expect(btn?.classList.contains('is-error')).toBe(true);
 
     // After 2s the label reverts.
     vi.advanceTimersByTime(2000);

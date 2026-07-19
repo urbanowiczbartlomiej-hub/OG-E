@@ -113,6 +113,10 @@ const paint = (p) => {
   }
   controller.setBg('main', p.bg);
   controller.setDim('main', p.dim === true);
+  // Attention ring on the oczko for hard failures (Max fleets, Failed) —
+  // NOT BG_LF_WAIT, which is deliberately the module's own violet so the
+  // frequent, expected discovery cooldown never reads as an alarm.
+  controller.setError(p.bg === BG_LF_ERROR);
 };
 
 /**

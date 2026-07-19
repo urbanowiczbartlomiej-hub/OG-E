@@ -166,7 +166,12 @@ export const renderLines = (span, lines) => {
  */
 export const labelLines = ({ main, sub, hint }) => {
   /** @type {LabelLine[]} */
-  const lines = [{ text: main, em: '1em' }];
+  // 'Max fleets' — the shared fleet-cap verdict every send button can paint
+  // (see shared/statusTones.js for the status language) — wears a slightly
+  // smaller primary: two words at full size crowd the round rim. Handled
+  // HERE (the single source of truth for label sizes) so all five features
+  // shrink it identically without each paint site knowing about it.
+  const lines = [{ text: main, em: main === 'Max fleets' ? '0.9em' : '1em' }];
   if (sub != null && sub !== '') {
     lines.push({ text: sub, em: '0.5em', opacity: 0.85, marginTop: 2, letterSpacing: 0.5 });
   }
@@ -488,7 +493,10 @@ export const createButton = (cfg) => {
     },
     setText: (key, text) => {
       const span = labelEls.get(key);
-      if (span) renderLines(span, [{ text }]);
+      // Routed through labelLines (not a bare [{ text }]) so the canonical
+      // spec — including the 'Max fleets' shrink — applies to single-line
+      // paints too; for every other text this renders identically.
+      if (span) renderLines(span, labelLines({ main: text }));
     },
     setBg: (key, rim) => {
       const el = zoneEls.get(key);

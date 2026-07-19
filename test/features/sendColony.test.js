@@ -579,13 +579,16 @@ describe('onSendClick — fleetdispatch branch', () => {
     expect(seen).toEqual([]);
   });
 
-  it('stale with no candidates → flashes "No targets", no nav', () => {
+  it('stale with no candidates → flashes "No targets", no nav, rings the oczko', () => {
     // scansStore is empty (beforeEach), so findNextColonizeTarget returns
     // null → handler flashes the label and returns without navigating.
     installFleet({ canColonize: false, hasColonizer: true });
     getSend()?.click();
     expect(navTarget).toBeNull();
     expect(getSend()?.textContent).toContain('No targets');
+    // BG_SEND_WAIT (the "nothing to do" verdict) rings the button's oczko —
+    // same attention cue as a hard failure, not just a rim-colour change.
+    expect(getSend()?.classList.contains('is-error')).toBe(true);
   });
 
   it('two taps: select arms a ready send, then dispatch fires', async () => {

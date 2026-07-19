@@ -250,20 +250,18 @@ export const BUTTON_CHROME_CSS = [
   // Light glyph (overrides .oge-art's --rim tint) so it reads on the dome.
   '.oge-node .oge-art{color:inherit;}',
 
-  // ── Error state: tint the oczko/glyph itself, not just the rim + label ──
-  // `.is-error` is toggled by Button#setError alongside a setBg(key, BG_ERROR)
-  // call, so the node dome + its glyph flip to the error rim colour instead
-  // of the static module colour — the button's icon reads "error" at a
-  // glance, not just its thin edge thread.
-  '.oge-host.is-error .oge-node{',
-  'background:radial-gradient(circle at 35% 28%,',
-  'color-mix(in oklab,var(--rim) 55%,#0b1220) 0%,#0b1220 76%);',
-  'box-shadow:',
-  'inset 0 1px 1px rgba(255,255,255,.18),',
-  '0 0 0 1.5px var(--rim),',
-  '0 0 16px color-mix(in oklab,var(--rim) 55%,transparent),',
-  '0 4px 12px rgba(0,0,0,.55);}',
-  '.oge-host.is-error .oge-node .oge-art{color:var(--rim);}',
+  // ── Attention state: the oczko DARKENS — it never changes colour ────────
+  // `.is-error` is toggled by Button#setError alongside a setBg(key, ...)
+  // call to a status tone (TONE_ERROR/TONE_WAIT). Design lesson (two
+  // iterations): recolouring the node — fully or just its ring/glow — always
+  // read as either "the icon caught fire" or a glitchy double outline. The
+  // language that already works is the WAIT dim: the oczko keeps its module
+  // colour and simply goes dark, while the status COLOUR rides the button's
+  // rim + label. So error states reuse exactly that: darken the node (dome,
+  // ring, glow and glyph together). filter — not opacity — because
+  // syncNodeDim (button.js) drives an inline opacity on the same element
+  // for the dim/disabled aggregate, and an inline value would always win.
+  '.oge-host.is-error .oge-node{filter:brightness(.55) saturate(.7);}',
 
   // ── Tap ripple (rim-coloured wave from the touch point) ─────────────────
   '.oge-deco-layer{position:absolute;inset:0;border-radius:50%;',

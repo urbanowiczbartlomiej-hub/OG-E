@@ -364,6 +364,7 @@ const zoneKeyOf = (el) => (el.id === FS_MICRO_ZONE_ID ? 'micro' : 'collect');
 const restoreFlashTone = () => {
   if (flashTonedZone === null) return;
   controller?.setBg(flashTonedZone, flashTonedZone === 'micro' ? BG_MICRO : BG_COLLECT);
+  controller?.setError(false);
   flashTonedZone = null;
 };
 
@@ -388,6 +389,10 @@ const flash = (el, text, tone) => {
     const key = zoneKeyOf(el);
     controller?.setBg(key, tone);
     flashTonedZone = key;
+    // Every toned flash is either TONE_ERROR or TONE_WAIT (see the doc above)
+    // — both ring the oczko; a toneless flash (the plain busy/progress text)
+    // never does.
+    controller?.setError(true);
   }
   flashTimer = setTimeout(() => {
     flashTimer = null;

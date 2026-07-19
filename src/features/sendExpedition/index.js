@@ -243,7 +243,10 @@ export const installSendExpedition = () => {
     if (capLabelTimer !== null) clearTimeout(capLabelTimer);
     setLabel(btn, label);
     controller?.setBg('main', bg);
-    controller?.setError(bg === BG_ERROR);
+    // Both the hard error (BG_ERROR — 'Max fleets') and the amber "nothing to
+    // send" verdict (BG_MAX — 'All sent') ring the oczko; only true idle
+    // clears it.
+    controller?.setError(bg === BG_ERROR || bg === BG_MAX);
     capLabelTimer = setTimeout(() => {
       capLabelTimer = null;
       setLabel(btn, BUTTON_TEXT);

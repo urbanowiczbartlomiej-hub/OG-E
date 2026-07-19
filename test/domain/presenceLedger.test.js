@@ -187,4 +187,28 @@ describe('aggregateLedger', () => {
     const agg = aggregateLedger(ledger, at(20000, 12), { phase: 'dayHour', rangeDays: 30 });
     expect(agg.observedDays).toBe(1);
   });
+
+  it('opts.weekdays keeps only cells landing on an allowed LOCAL weekday', () => {
+    // Every hour of every day, unfiltered vs. Mon–Fri-only: with the filter,
+    // the weekend rows (Sun=0, Sat=6) must carry zero placed hours while the
+    // total placed cells drop (weekdays is a per-hour, not per-day, gate —
+    // `observedDays` stays a day-level count and is unaffected by it).
+    const ledger = led(Object.fromEntries(
+      Array.from({ length: 14 }, (_, i) => [String(20000 + i), [0xffffff, 0]]),
+    ));
+    const nowSec = at(20020, 0);
+    const all = aggregateLedger(ledger, nowSec, { phase: 'weekHour' });
+    const mf = aggregateLedger(ledger, nowSec, { phase: 'weekHour', weekdays: new Set([1, 2, 3, 4, 5]) });
+    const cellSum = (/** @type {typeof all} */ agg) =>
+      agg.cells.reduce((s, row) => s + row.reduce((s2, c) => s2 + c.observed, 0), 0);
+    expect(cellSum(mf)).toBeLessThan(cellSum(all));
+    for (const row of [0, 6]) {
+      const rowObserved = mf.cells[row].reduce((s, c) => s + c.observed, 0);
+      expect(rowObserved).toBe(0);
+    }
+    for (const row of [1, 2, 3, 4, 5]) {
+      const rowObserved = mf.cells[row].reduce((s, c) => s + c.observed, 0);
+      expect(rowObserved).toBeGreaterThan(0);
+    }
+  });
 });

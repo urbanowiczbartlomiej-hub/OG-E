@@ -4,6 +4,35 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.52.0] — 2026-07-19
+
+### Added
+
+- **Spyglass can now detect shift-work rotations.** The dossier's presence-
+  history explorer has a new "Weeks" cycle — one row per week instead of one
+  pooled week×hour grid — so a player rotating through morning/afternoon/night
+  shifts stays legible instead of averaging into grey noise. Above the grid, a
+  shift-rhythm verdict reads the roster back in plain terms: how many distinct
+  shifts, on what rotation period, this week's offline window, and a
+  prediction for next week. A separate Saturday read spots "always" / "never"
+  / "every other week" weekend patterns and predicts the coming Saturday.
+- **A new Days filter (All / Mon–Fri)** on the presence-history explorer
+  strips the weekend out of the weekly rhythm read — weekends are usually a
+  different regime, so mixing them in blurs the offline-window pattern. The
+  shift-rotation verdict always reads Mon–Fri, regardless of the chip, so a
+  Saturday shift never smears the weekday roster.
+
+### Changed
+
+- **Error/attention states on the send buttons now darken the oczko instead of
+  recolouring it.** Two iterations in, tinting the icon to the error/rim
+  colour read as either "the icon caught fire" or a glitchy double outline;
+  it now reuses the "Wait…" dim language instead — module colour kept, just
+  darker — for every hard-failure, stale-skip and nothing-to-send state across
+  Colonize, Expedition, Lifeform, Spy and the daily-run FAB.
+- The shared "Max fleets" label now renders at a slightly smaller size across
+  every send button — two words at full size crowded the round rim.
+
 ## [1.51.9] — 2026-07-18
 
 ### Changed

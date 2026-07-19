@@ -277,9 +277,12 @@ const emptyCells = (rows, cols) =>
  * counts as `active` in a cell if it had ≥1 active bit landing there, `quiet`
  * if it had a quiet look there but no active bit.
  *
+ * `opts.weekdays` (a Set of getDay() values 0=Sun..6=Sat) keeps only hours that
+ * fall on those LOCAL weekdays — e.g. Mon–Fri to strip the weekend regime.
+ *
  * @param {PresenceLedger} ledger
  * @param {number} nowSec
- * @param {{ phase: LedgerPhase, rangeDays?: number }} opts
+ * @param {{ phase: LedgerPhase, rangeDays?: number, weekdays?: Set<number> }} opts
  * @returns {LedgerAggregate}
  */
 export const aggregateLedger = (ledger, nowSec, opts) => {
@@ -319,6 +322,7 @@ export const aggregateLedger = (ledger, nowSec, opts) => {
       if (!isActive && !isQuiet) continue;
       // Local placement of this UTC hour.
       const d = new Date((day * DAY_S + h * HOUR_S) * 1000);
+      if (opts.weekdays && !opts.weekdays.has(d.getDay())) continue;
       const lh = d.getHours();
       let row = 0;
       let col = lh;

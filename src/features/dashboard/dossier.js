@@ -22,6 +22,9 @@ import { FRESH_LOOK_MS } from '../../domain/fleetLanding.js';
 import { bodyActivityReadout } from '../../domain/galaxyWatch.js';
 import { mergeActivityObs } from '../../domain/activityObs.js';
 import { aggregateLedger } from '../../domain/presenceLedger.js';
+import {
+  collectLocalDays, weeklyProfiles, detectRotation, weekendPattern, circDistHour, WEEKDAYS_MON_FRI,
+} from '../../domain/shiftPattern.js';
 import { compact } from './format.js';
 import { estimateCombatShare } from '../../domain/threatModel.js';
 import { pointsToResources } from '../../domain/unitCosts.js';
@@ -975,24 +978,6 @@ function routineBlock(routine) {
     }
   }
 
-  if (routine.collection) {
-    const c = routine.collection;
-    const line = document.createElement('div');
-    line.textContent = `gathers onto ${c.coord} (richest of ${c.ofBodies}, median ~${compact(c.medianRes)}, n=${c.samples})`;
-    wrap.appendChild(line);
-  }
-
-  if (routine.timeline.length) {
-    const tl = document.createElement('div');
-    tl.style.cssText = 'margin-top:3px;color:#7c8893;font-size:11px;';
-    tl.textContent = 'recent: ' + routine.timeline.slice(0, 5).map((t) => {
-      const parts = [t.coord];
-      if (typeof t.defenseValue === 'number') parts.push(`def ${compact(t.defenseValue)}`);
-      if (typeof t.fleetValue === 'number') parts.push(`f ${compact(t.fleetValue)}`);
-      return parts.join(' ');
-    }).join(' · ');
-    wrap.appendChild(tl);
-  }
 
   return wrap;
 }
@@ -1156,12 +1141,27 @@ const PRESENCE_RANGES = [
   { key: 30, label: '30d' }, { key: 90, label: '90d' },
   { key: 180, label: '6mo' }, { key: 0, label: 'All' },
 ];
-/** @type {Array<{ key: import('../../domain/presenceLedger.js').LedgerPhase, label: string }>} */
+/**
+ * Explorer cycles. `weeks` is OG-E's own axis (one row per ISO-week, newest on
+ * top) — the only view that keeps rotating shifts from cancelling out; the
+ * other three are {@link import('../../domain/presenceLedger.js').LedgerPhase}.
+ * @type {Array<{ key: import('../../domain/presenceLedger.js').LedgerPhase | 'weeks', label: string }>}
+ */
 const PRESENCE_PHASES = [
+  { key: 'weeks', label: 'Weeks' },
   { key: 'weekHour', label: 'Week × hour' },
   { key: 'dayHour', label: 'Day rhythm' },
   { key: 'monthDay', label: 'Month cycle' },
 ];
+
+/** Weekday filter for the explorer + shift detector. `mf` strips the weekend regime. */
+const PRESENCE_WEEKDAYS = [
+  { key: 'all', label: 'All days' },
+  { key: 'mf', label: 'Mon–Fri' },
+];
+
+/** Most week rows the `weeks` grid draws before it caps (keeps the block compact). */
+const MAX_WEEK_ROWS = 26;
 
 /**
  * Offline-strength ramp for a history cell: how GOOD a strike window this
@@ -1221,10 +1221,16 @@ function presenceHistoryBlock(hist, nowMs, presence) {
     return wrap;
   }
 
-  // Controls: range chips + phase chips. Kept in closure state; re-render the
-  // grid in place on change (no full dossier rebuild).
+  // Controls: range / cycle / weekday chips. Kept in closure state; re-render
+  // in place on change (no full dossier rebuild).
   let range = /** @type {number} */ (90);
-  let phase = /** @type {import('../../domain/presenceLedger.js').LedgerPhase} */ ('weekHour');
+  let phase = /** @type {import('../../domain/presenceLedger.js').LedgerPhase | 'weeks'} */ ('weeks');
+  let weekdaySel = /** @type {'all'|'mf'} */ ('all');
+  const weekdaySet = () => (weekdaySel === 'mf' ? WEEKDAYS_MON_FRI : undefined);
+
+  // Per-refresh scratch: the range-scoped local days + the Mon–Fri shift read.
+  /** @type {import('../../domain/shiftPattern.js').DayRec[]} */ let days = [];
+  /** @type {ReturnType<typeof detectRotation>|null} */ let rotation = null;
 
   const controls = document.createElement('div');
   controls.style.cssText = 'display:flex;gap:12px;flex-wrap:wrap;margin-bottom:6px;';
@@ -1256,7 +1262,7 @@ function presenceHistoryBlock(hist, nowMs, presence) {
       b.addEventListener('click', () => {
         setVal(o.key);
         for (const p of btns) p.dataset.repaint && p.dispatchEvent(new Event('oge-repaint'));
-        renderGrid();
+        refresh();
       });
       b.addEventListener('oge-repaint', paint);
       b.dataset.repaint = '1';
@@ -1267,7 +1273,14 @@ function presenceHistoryBlock(hist, nowMs, presence) {
   };
   controls.appendChild(chipRow('Range', PRESENCE_RANGES, () => range, (v) => { range = v; }));
   controls.appendChild(chipRow('Cycle', PRESENCE_PHASES, () => phase, (v) => { phase = v; }));
+  controls.appendChild(chipRow('Days', PRESENCE_WEEKDAYS, () => weekdaySel, (v) => { weekdaySel = v; }));
   wrap.appendChild(controls);
+
+  // Shift-rhythm verdict (rotation + weekend) — the headline the whole "weeks"
+  // axis exists to surface. Recomputed with the range chip; always Mon–Fri.
+  const shiftHost = document.createElement('div');
+  shiftHost.style.cssText = 'margin-bottom:7px;';
+  wrap.appendChild(shiftHost);
 
   const gridHost = document.createElement('div');
   wrap.appendChild(gridHost);
@@ -1281,9 +1294,11 @@ function presenceHistoryBlock(hist, nowMs, presence) {
   wrap.appendChild(basis);
 
   function renderGrid() {
-    const agg = aggregateLedger(hist.ledger, nowSec, { phase, rangeDays: range });
     gridHost.textContent = '';
     readout.textContent = '';
+    if (phase === 'weeks') { renderWeeks(); return; }
+
+    const agg = aggregateLedger(hist.ledger, nowSec, { phase, rangeDays: range, weekdays: weekdaySet() });
 
     if (agg.observedDays === 0) {
       const none = document.createElement('div');
@@ -1348,14 +1363,7 @@ function presenceHistoryBlock(hist, nowMs, presence) {
       scroller.appendChild(table);
       gridHost.appendChild(scroller);
 
-      // Legend.
-      const legend = document.createElement('div');
-      legend.style.cssText = 'display:flex;gap:10px;align-items:center;margin-top:5px;font-size:11px;color:#6b7782;flex-wrap:wrap;';
-      const bar = document.createElement('span');
-      bar.style.cssText = 'display:inline-block;width:70px;height:9px;border-radius:5px;vertical-align:-1px;'
-        + 'background:linear-gradient(90deg,rgb(220,60,55),rgb(150,160,175),rgb(37,99,235));';
-      legend.append('active ', bar, ' offline · faint = few looks · tap a cell');
-      gridHost.appendChild(legend);
+      gridHost.appendChild(rampLegend());
     }
 
     // Basis: coverage span + who contributed.
@@ -1368,7 +1376,211 @@ function presenceHistoryBlock(hist, nowMs, presence) {
       + ` · ${agg.activeDays} with activity${who}`;
   }
 
-  renderGrid();
+  // Shared colour-ramp legend (identical across every cycle — one source).
+  // `extra` appends only what a given cycle adds on top of the ramp.
+  const rampLegend = (/** @type {string} */ extra = '') => {
+    const legend = document.createElement('div');
+    legend.style.cssText = 'display:flex;gap:10px;align-items:center;margin-top:5px;'
+      + 'font-size:11px;color:#6b7782;flex-wrap:wrap;';
+    const bar = document.createElement('span');
+    bar.style.cssText = 'display:inline-block;width:70px;height:9px;border-radius:5px;vertical-align:-1px;'
+      + 'background:linear-gradient(90deg,rgb(220,60,55),rgb(150,160,175),rgb(37,99,235));';
+    legend.append('active ', bar, ` offline · faint = few looks · tap a cell${extra}`);
+    return legend;
+  };
+
+  // ── "Weeks" cycle: one row per ISO-week, newest on top. The only view where
+  // a rotating roster stays legible (weekHour would average the shifts away).
+  const pad2 = (/** @type {number} */ n) => String(n).padStart(2, '0');
+  const fmtWin = (/** @type {import('../../domain/shiftPattern.js').OfflineWindow|null} */ w) =>
+    (w ? `${pad2(w.startH)}:00–${pad2((w.endH + 1) % 24)}:00` : '—');
+  const clusterLetter = (/** @type {number} */ id) => String.fromCharCode(65 + id);
+  /** Subtle per-cluster tints (A/B/C), distinct hue from the offline ramp. */
+  const CLUSTER_TINTS = ['#2f4a6b', '#4a3a6b', '#5c4a2f'];
+  /**
+   * Nearest cluster to a week's phase hour (for the row tag).
+   * @param {number|null} phaseHour
+   * @returns {import('../../domain/shiftPattern.js').ShiftCluster|null}
+   */
+  const nearestCluster = (phaseHour) => {
+    if (phaseHour == null || !rotation || rotation.clusters.length < 2) return null;
+    let best = null;
+    let bestD = Infinity;
+    for (const c of rotation.clusters) {
+      const d = circDistHour(phaseHour, c.centreHour);
+      if (d < bestD) { bestD = d; best = c; }
+    }
+    return best;
+  };
+
+  function renderWeeks() {
+    const weeks = weeklyProfiles(days, { weekdays: weekdaySet() });
+    if (!weeks.length) {
+      const none = document.createElement('div');
+      none.textContent = 'No coverage in this range — widen it.';
+      none.style.color = '#8a7f5f';
+      gridHost.appendChild(none);
+      basis.textContent = '';
+      return;
+    }
+    const rows = weeks.slice().reverse(); // newest first
+    const shown = rows.slice(0, MAX_WEEK_ROWS);
+
+    const table = document.createElement('div');
+    table.style.cssText = 'display:grid;grid-template-columns:46px repeat(24, 1fr) 30px;'
+      + 'gap:1px;background:#20303f;padding:1px;border-radius:6px;min-width:400px;';
+
+    // Header: blank gutter, hour ticks, blank tag column.
+    const corner = document.createElement('div');
+    corner.style.background = 'transparent';
+    table.appendChild(corner);
+    for (let c = 0; c < 24; c++) {
+      const cx = document.createElement('div');
+      cx.textContent = c % 6 === 0 ? String(c) : '';
+      cx.style.cssText = 'font-size:10px;color:#5f6b76;text-align:center;background:transparent;';
+      table.appendChild(cx);
+    }
+    const tagHead = document.createElement('div');
+    tagHead.style.background = 'transparent';
+    table.appendChild(tagHead);
+
+    for (const wk of shown) {
+      const d = new Date(wk.weekStartMs);
+      const lbl = document.createElement('div');
+      lbl.textContent = `${d.getDate()}.${pad2(d.getMonth() + 1)}`;
+      lbl.style.cssText = 'font-size:10px;color:#8b95a0;display:flex;align-items:center;'
+        + 'justify-content:flex-end;padding-right:4px;background:transparent;white-space:nowrap;'
+        + 'font-variant-numeric:tabular-nums;';
+      table.appendChild(lbl);
+      for (let h = 0; h < 24; h++) {
+        const cell = wk.cells[h];
+        const div = document.createElement('div');
+        const q = cell.observed ? cell.quiet / cell.observed : 0.5;
+        const conf = 1 - Math.exp(-cell.observed / 2);
+        const alpha = (0.1 + 0.9 * conf).toFixed(2);
+        div.style.cssText = `min-height:13px;opacity:${alpha};cursor:pointer;`
+          + `background:${cell.observed ? offlineRamp(q, conf) : '#2a3a4c'};`;
+        div.addEventListener('click', () => {
+          readout.textContent = cell.observed
+            ? `wk ${d.getDate()}.${pad2(d.getMonth() + 1)} · ${pad2(h)}:00 · `
+              + `offline ${Math.round(q * 100)}% of ${cell.observed} day${cell.observed === 1 ? '' : 's'} `
+              + `(${cell.active} active · ${cell.quiet} quiet)`
+            : `wk ${d.getDate()}.${pad2(d.getMonth() + 1)} · ${pad2(h)}:00 · never observed`;
+          readout.style.color = cell.observed ? (q >= 0.7 ? '#7fb389' : '#9fb0c0') : '#8a7f5f';
+        });
+        table.appendChild(div);
+      }
+      // Row tag: which rhythm this week matched (only when a roster was found).
+      const tag = document.createElement('div');
+      const cl = nearestCluster(wk.phaseHour);
+      tag.style.cssText = 'font-size:10px;display:flex;align-items:center;justify-content:center;'
+        + 'border-radius:3px;background:transparent;color:#5f6b76;';
+      if (cl) {
+        tag.textContent = clusterLetter(cl.id);
+        tag.style.background = CLUSTER_TINTS[cl.id % CLUSTER_TINTS.length];
+        tag.style.color = '#cfe0f2';
+        tag.title = `${cl.label} · offline ${fmtWin(cl.offline)}`;
+      }
+      table.appendChild(tag);
+    }
+
+    const scroller = document.createElement('div');
+    scroller.className = 'table-scroll';
+    scroller.appendChild(table);
+    gridHost.appendChild(scroller);
+
+    const hasTags = rotation != null && rotation.clusters.length >= 2;
+    gridHost.appendChild(rampLegend(
+      ` · row = week (newest top)${hasTags ? ' · letter = matched shift' : ''}`));
+
+    const who = hist.allianceMembers.length
+      ? ` · pooled from ${hist.allianceMembers.length} member${hist.allianceMembers.length === 1 ? '' : 's'}`
+      : ' · your device only';
+    basis.textContent = `${shown.length}${rows.length > shown.length ? `/${rows.length}` : ''} week`
+      + `${rows.length === 1 ? '' : 's'}${weekdaySel === 'mf' ? ' (Mon–Fri)' : ''}${who}`;
+  }
+
+  // ── Shift-rhythm verdict (rotation + weekend). Always computed Mon–Fri so the
+  // weekday roster is not smeared by the weekend regime.
+  function renderShift() {
+    shiftHost.textContent = '';
+    const weekend = weekendPattern(days, nowSec, 6);
+
+    const line = (/** @type {string} */ text, /** @type {string} */ color) => {
+      const el = document.createElement('div');
+      el.textContent = text;
+      el.style.cssText = `font-size:11px;color:${color};line-height:1.45;`;
+      shiftHost.appendChild(el);
+      return el;
+    };
+
+    // Rotation.
+    const rot = rotation;
+    if (!rot || rot.gate === 'none') {
+      if (rot && rot.phasedWeeks > 0) {
+        line(`Shift rhythm: too thin (${rot.phasedWeeks} wk with a phase; need ≥5 in range).`, '#8a7f5f');
+      }
+    } else if (rot.clusters.length === 1) {
+      const c = rot.clusters[0];
+      line(`Rhythm: steady — active ~${pad2(Math.round(c.centreHour))}:00, `
+        + `offline ${fmtWin(c.offline)}. No shift rotation.`, '#9fb0c0');
+    } else if (rot.period != null) {
+      const pct = Math.round(rot.agreement * 100);
+      line(`Shift rotation: ${rot.clusters.length}-shift, every ${rot.period} wk `
+        + `(${pct}% consistent).`, '#7fb389');
+      line(rot.thisWeek
+        ? `This week: ${rot.thisWeek.label} — offline ${fmtWin(rot.thisWeek.offline)}.`
+        : 'This week: no coverage yet.', '#cfe0f2');
+      if (rot.nextWeek) {
+        line(`Next week (predicted): ${rot.nextWeek.label} — offline ${fmtWin(rot.nextWeek.offline)}.`, '#c8b273');
+      }
+    } else {
+      const pct = Math.round(rot.agreement * 100);
+      line(`${rot.clusters.length} distinct rhythms, no fixed rotation `
+        + `(${pct}% consistent) — offline windows vary week to week.`, '#9fb0c0');
+    }
+
+    // Weekend (Saturdays).
+    if (weekend.gate !== 'none') {
+      let text = '';
+      let color = '#9fb0c0';
+      if (weekend.pattern === 'always') { text = 'Saturdays: usually active.'; color = '#c0846a'; }
+      else if (weekend.pattern === 'never') { text = 'Saturdays: usually quiet — likely away/working.'; color = '#7fb389'; }
+      else if (weekend.pattern === 'alternating') {
+        text = `Saturdays: every other week · next Sat likely ${weekend.nextSaturday === 'active' ? 'active' : 'quiet'}.`;
+      } else { text = 'Saturdays: irregular.'; }
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:7px;margin-top:3px;flex-wrap:wrap;';
+      const txt = document.createElement('span');
+      txt.textContent = text;
+      txt.style.cssText = `font-size:11px;color:${color};`;
+      row.appendChild(txt);
+      // Strip of the last 12 Saturdays (newest → right), coloured by state.
+      const strip = document.createElement('span');
+      strip.style.cssText = 'display:inline-flex;gap:2px;';
+      const last = weekend.saturdays.slice(0, 12).reverse();
+      for (const s of last) {
+        const box = document.createElement('span');
+        const bg = s.state === 'active' ? '#c0504a' : s.state === 'quiet' ? '#3a6ea5' : '#2a3a4c';
+        box.style.cssText = `width:11px;height:11px;border-radius:2px;background:${bg};`;
+        box.title = `${s.state}`;
+        strip.appendChild(box);
+      }
+      if (last.length) row.appendChild(strip);
+      shiftHost.appendChild(row);
+    }
+  }
+
+  // Recompute the range-scoped data, then repaint shift verdict + grid.
+  function refresh() {
+    days = collectLocalDays(hist.ledger, nowSec, range);
+    const mfWeeks = weeklyProfiles(days, { weekdays: WEEKDAYS_MON_FRI });
+    rotation = detectRotation(mfWeeks, nowSec, true);
+    renderShift();
+    renderGrid();
+  }
+
+  refresh();
   return wrap;
 }
 

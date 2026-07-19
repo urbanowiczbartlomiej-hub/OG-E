@@ -371,6 +371,10 @@ const paintZone = (p) => {
   // sets `pulse` on exactly those paints); any other paint clears it, so the
   // pulse dies the moment the plan empties or a send takes over the zone.
   setFabModuleAlert('spy', p.pulse === true);
+  // Attention ring on the oczko for hard failures (Max fleets, No probes,
+  // Failed, No fuel) — the shared error tone. One central call site so any
+  // future BG_SPY_ERROR paint gets it automatically.
+  controller.setError(p.bg === BG_SPY_ERROR);
 };
 
 /**

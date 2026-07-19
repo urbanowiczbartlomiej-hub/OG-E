@@ -53,9 +53,11 @@ describe('shared button chrome stylesheet', () => {
     expect(BUTTON_CHROME_CSS).toContain('.oge-lens-orbit');
   });
 
-  it('tints the oczko/glyph (not just the rim) when the host carries .is-error', () => {
-    expect(BUTTON_CHROME_CSS).toContain('.oge-host.is-error .oge-node');
-    expect(BUTTON_CHROME_CSS).toContain('.oge-host.is-error .oge-node .oge-art{color:var(--rim);}');
+  it('darkens the oczko (module colour kept, no recolour) when the host carries .is-error', () => {
+    // The wait-dim language: the node goes dark via filter (not opacity —
+    // syncNodeDim owns an inline opacity on the same element and would win).
+    expect(BUTTON_CHROME_CSS).toContain('.oge-host.is-error .oge-node{filter:brightness(.55) saturate(.7);}');
+    expect(BUTTON_CHROME_CSS).not.toContain('.oge-host.is-error .oge-node .oge-art');
   });
 });
 

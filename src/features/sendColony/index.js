@@ -323,6 +323,13 @@ const paintZone = (key, p) => {
   controller.setBg(key, p.bg);
   // `dim: true` greys the zone so the user sees a click would be ignored.
   controller.setDim(key, p.dim === true);
+  // Attention ring: hard failures (BG_SEND_ERROR), the skipped-slot amber
+  // (BG_SEND_STALE) and the "nothing to do" verdict (BG_SEND_WAIT) — NOT
+  // BG_SEND_BUSY, which is deliberately the module's own turquoise so the
+  // frequent, expected min-gap wait never reads as an alarm (see its doc
+  // comment in pure.js). One central call site so every current AND future
+  // error/stale/wait paint gets it automatically, instead of hunting each one.
+  controller.setError(p.bg === BG_SEND_ERROR || p.bg === BG_SEND_STALE || p.bg === BG_SEND_WAIT);
 };
 
 /**
