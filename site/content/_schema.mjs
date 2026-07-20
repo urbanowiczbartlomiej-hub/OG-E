@@ -87,7 +87,6 @@
  * @property {string[]} [details] "Dodatkowe informacje" — opcjonalne PUNKTY z
  *   konkretniejszymi detalami. Dodawaj oszczędnie i tylko gdy wnoszą wartość
  *   (są bardziej podatne na dezaktualizację niż idea).
- * @property {string[]} [settings] Powiązane opcje w panelu ustawień OG-E (punkty).
  * @property {Shot[]} screenshots  Lista zrzutów (min. 1; placeholder do czasu realnego).
  * @property {string[]} codeRefs   Pliki src/... (dla nas, do utrzymania).
  * @property {DocStatus} status    Stan dokumentacji tego feature'a.
@@ -134,10 +133,6 @@ export const validateFeature = (f, slug, categoryIds, locale = 'pl') => {
   if (f.details !== undefined) {
     need(strArr(f.details), '"details" (jeśli podane) musi być niepustą tablicą stringów');
   }
-  if (f.settings !== undefined) {
-    need(strArr(f.settings), '"settings" (jeśli podane) musi być niepustą tablicą stringów');
-  }
-
   need(Array.isArray(f.screenshots) && f.screenshots.length > 0, '"screenshots" musi mieć min. 1 pozycję');
   if (Array.isArray(f.screenshots)) {
     f.screenshots.forEach((s, i) => {

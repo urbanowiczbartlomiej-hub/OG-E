@@ -9,36 +9,36 @@ export default {
   category: 'fab',
   locale: 'pl',
 
-  name: 'Wyślij wyprawę',
+  name: 'Wyślij Ekspedycję',
   oneLiner:
-    'Codzienne wyprawy z wielu planet jako seria tapnięć w jeden duży przycisk, z automatycznym przeskokiem na następną planetę.',
+    'Codzienne wysyłasz setki ekspedycji z wielu planet? Teraz zrobisz to jednym dużym i wygodnym przyciskiem FAB, z automatycznym przeskokiem na następną planetę.',
   flagship: true,
   order: 2,
 
   idea: [
-    'Moduł **Wyprawy** zamienia codzienne rozsyłanie wypraw w serię tapnięć w jeden duży przycisk. Sam skład floty, cel i typ misji ustala rutyna **AGR**, którą i tak uruchamiasz — OG-E jedynie naciska we właściwej chwili właściwy natywny przycisk gry.',
-    'Gdy z jednej planety wysłałeś już tyle wypraw, ile chcesz, przycisk **sam przechodzi do następnej** planety z wolnym slotem — aż do wyczerpania limitów.',
+    'Przycisk **Ekspedycje** rozpozna, czy jesteś na stronie z flotą — jeśli nie, przekieruje Cię na nią. Kolejne kliknięcie wymaga konfiguracji ekspedycji w **AGR**. Sam skład floty, cel i typ misji ustala rutyna AGR — OG-E jedynie naciska we właściwej chwili właściwy natywny przycisk gry. Jeśli rutyna ekspedycji AGR nie pozwala wysłać ekspedycji, przycisk odpowiednio na to reaguje.',
+    'Przycisk **sam przechodzi do następnej** planety z wolnym slotem, aż do wyczerpania limitów. Pomija te, z których już wysłał ekspedycję, i przeskakuje do następnej, jeśli flota nie jest wystarczająca.',
+    'Przycisk można **przytrzymać**, żeby jawnie pominąć aktywną planetę i przeskoczyć do następnej.',
   ],
 
   value: [
-    'Bez tego wysyłka wypraw z kilkunastu planet to dziesiątki precyzyjnych kliknięć w malutki natywny przycisk. Tu cały obchód robisz kciukiem, nie pamiętając nawet, z których planet już poszło.',
+    'Bez tego wysyłka ekspedycji z kilkunastu planet to dziesiątki precyzyjnych kliknięć w malutki natywny przycisk. Tu cały obchód robisz kciukiem, nie pamiętając nawet, z których planet już poszło.',
   ],
 
   fairplay: {
     summary: [
-      'OG-E **nie wysyła żądań do gry**: klika rutynę AGR i natywny przycisk „wyślij" — te same elementy, które nacisnąłbyś sam. Wysyłkę wykonuje gra, po Twoim tapnięciu. Skład i cel wyprawy ustala AGR, nie OG-E.',
-      'Automatyczny przeskok na kolejną planetę tylko podpowiada grze, którą stronę pokazać po wysyłce — nie generuje własnego ruchu do serwera. Cudzej ani ręcznie uzbrojonej floty przycisk nie rusza.',
+      'OG-E **nie wysyła żądań do gry**: klika rutynę AGR i natywny przycisk „wyślij" — te same elementy, które nacisnąłbyś sam. Wysyłkę wykonuje gra, po Twoim tapnięciu. Skład i cel ekspedycji ustala AGR, nie OG-E.',
+      'Automatyczny przeskok na kolejną planetę tylko podpowiada grze, którą stronę pokazać po wysyłce — nie generuje własnego ruchu do serwera.',
     ],
   },
 
-  settings: [
-    'Auto next planet — automatyczne otwarcie następnej planety po wysyłce (opcja opt-out).',
-    'Max/planet — limit równoczesnych wypraw na planetę (1 lub 2).',
+  details: [
+    'Auto next planet — automatyczne otwarcie następnej planety po wysyłce (możesz wyłączyć w ustawieniach).',
+    'Max/planet — limit równoczesnych ekspedycji na planetę (1 lub 2).',
   ],
 
   screenshots: [
-    { id: 'button', caption: 'Moduł „Wyprawy" — etykieta zależna od strony (Exped / Send).' },
-    { id: 'auto-next', caption: 'Automatyczny przeskok na następną planetę z wolnym slotem po wysyłce.' },
+    { id: 'button', caption: 'Moduł „Ekspedycje" — etykieta zależna od strony (Exped / Send).' },
   ],
 
   codeRefs: [

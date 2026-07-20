@@ -11,13 +11,13 @@ export default {
 
   name: 'Przycisk OG-E (FAB)',
   oneLiner:
-    'Jeden pływający przycisk pod kciukiem, z którego odpalasz wszystkie akcje floty — pomyślany przede wszystkim pod telefon.',
+    'Inteligentny pływający przycisk, który z łatwością tapniesz kciukiem, obsługując rutynowe akcje floty.',
   flagship: true,
   order: 1,
 
   idea: [
-    'FAB to **jeden pływający przycisk**, który hostuje moduły akcji floty — wyprawy, kolonizację, discovery, codzienne trasy, przypomnienia. Zawsze widzisz jeden aktywny moduł w środku i kilka mniejszych „orbów" dookoła; tapnięcie orba **przełącza** aktywny moduł, a tapnięcie środka wykonuje jego akcję na bieżącej stronie.',
-    'Przycisk **przeciągasz** w dowolne miejsce (pozycja jest zapamiętywana), a każdy moduł sam wie, na której stronie gry ma sens.',
+    'FAB (z ang. Floating Action Button) to jeden pływający przycisk, który ułatwia akcję floty takie jak Ekspedycje, Kolonizację, Odkrywanie Form Życia, Codzienne trasy, Zabezpieczenie Floty, Obserwacja Aktywności i Szpiegowanie. Każdy przycisk zostanie opisany w osobnej sekcji. Zawsze widzisz jeden aktywny przycisk w środku i kilka mniejszych „orbów" dookoła; tapnięcie orba przełącza aktywny przycisk, a tapnięcie środka wykonuje jego akcję na bieżącej stronie.',
+    'Przycisk przeciągasz w dowolne miejsce (pozycja i wybór jest zapamiętywany), a każdy z nich sam wie na jakiej stronie jesteś i jakie masz możliwości.',
   ],
 
   value: [
@@ -25,27 +25,22 @@ export default {
   ],
 
   details: [
-    'Moduły włączasz i wyłączasz kafelkami w ustawieniach; rozmiar przycisku regulujesz suwakiem (zmiana na żywo).',
-    'Pozycja i wybrany moduł są zapamiętywane per urządzenie; po przeładowaniu przycisk wraca w to samo miejsce (przycięty do widocznego ekranu).',
-    'Long-press ma osobne znaczenie zależne od modułu (np. „pomiń tę planetę").',
+    'Pasek przycisków — włącz/wyłącz, jeśli nie korzystasz z funkcji i nie chcesz jej widzieć na orbitach FAB.',
+    'Rozmiar przycisku regulujesz suwakiem (zmiana na żywo).',
+    'Pozycja i wybrany przycisk są zapamiętywane per urządzenie; po przeładowaniu FAB wraca w to samo miejsce (przycięty do widocznego ekranu).',
+    'Long-press ma osobne znaczenie zależne od aktywnego przycisku (np. „pomiń tę planetę").',
   ],
 
   fairplay: {
     summary: [
-      'FAB **nie wysyła do gry żadnych żądań**. Klika za Ciebie ten sam natywny element interfejsu, który nacisnąłbyś sam — jeśli gra w reakcji łączy się z serwerem, robi to sama, po Twoim tapnięciu, dokładnie jak przy ręcznym kliknięciu.',
+      'FAB **nie wysyła do gry żadnych żądań**. Przekazuje Twoje kliknięcie do tego samego natywnego elementu interfejsu, który nacisnąłbyś sam — jeśli gra w reakcji łączy się z serwerem, robi to sama, po Twoim tapnięciu, dokładnie jak przy ręcznym kliknięciu.',
       'Działa tylko na tym, co i tak masz otwarte: odczytuje to, co gra już wyświetla, i nic nie robi w tle — nie odświeża strony, nie skanuje, nie śledzi gry.',
     ],
   },
 
-  settings: [
-    'Pasek modułów — włącz/wyłącz poszczególne komendy (brak master-switcha; wszystkie wyłączone = brak przycisku).',
-    'Suwak rozmiaru przycisku (na żywo).',
-  ],
-
   screenshots: [
-    { id: 'orbits', caption: 'Pływający przycisk: jeden aktywny moduł w środku, pozostałe jako orby dookoła.' },
-    { id: 'dragging', caption: 'Przeciąganie przycisku pod kciuk — pozycja zapamiętywana per urządzenie.' },
-    { id: 'module-bar', caption: 'Pasek modułów w ustawieniach — kafelki włączają/wyłączają komendy.' },
+    { id: 'orbits', caption: 'Pływający przycisk: jeden aktywny przycisk w środku, pozostałe jako orby dookoła.' },
+    { id: 'module-bar', caption: 'Pasek przycisków w ustawieniach — kafelki włączają/wyłączają poszczególne przyciski.' },
   ],
 
   codeRefs: [

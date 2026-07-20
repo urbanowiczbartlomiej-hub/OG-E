@@ -24,7 +24,7 @@ export const CATEGORIES = [
       en: 'The OG-E Button',
     },
     blurb: {
-      pl: 'Flagowy hub OG-E: jeden pływający przycisk, z którego odpalasz wszystkie akcje floty jednym tapnięciem — wyprawy, polowanie na kolonie, discovery, codzienne trasy, przypomnienia.',
+      pl: 'Flagowy hub OG-E: jeden pływający przycisk, z którego odpalasz wszystkie akcje floty jednym tapnięciem — ekspedycje, polowanie na kolonie, discovery, codzienne trasy, przypomnienia.',
       en: "OG-E's flagship hub: one floating button that fires every fleet action with a single tap — expeditions, colony hunting, discoveries, daily routes, reminders.",
     },
   },

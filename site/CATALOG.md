@@ -25,7 +25,7 @@ potem Spyglass, budzik, Best Colony Spots, sync/społeczność; UI na końcu.
 | Funkcja | slug | flagowa | status | źródło (src/) |
 |---|---|:--:|---|---|
 | Przycisk OG-E (FAB) | `og-e-button` | ★ | **drafted** | features/shared/unifiedFab, draggableButton |
-| Wyślij wyprawę | `send-expedition` | ★ | **drafted** | features/sendExpedition |
+| Wyślij Ekspedycję | `send-expedition` | ★ | **drafted** | features/sendExpedition |
 | Polowanie na kolonie (+ porzucanie małych) | `big-colony-hunting` | ★ | **drafted** | features/sendColony, abandon |
 | Discovery lifeform | `discover-lifeforms` | ★ | **drafted** | features/sendLifeform |
 | Daily run (codzienne trasy) | `daily-run` | ★ | **drafted** | features/dailyRun |

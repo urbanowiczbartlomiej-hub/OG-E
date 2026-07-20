@@ -3,7 +3,7 @@
 // Discovery: src/features/dailyRun/*, src/state/dailyRunRoutes.js,
 //   src/bridges/deployRedirect.js.
 // UWAGA: to funkcja fleet-save / mikro-flot (routes + collect), NIE zbieracz
-// wypraw/kolonii/discovery.
+// ekspedycji/kolonii/discovery.
 
 /** @type {import('./_schema.mjs').Feature} */
 export default {
@@ -33,7 +33,7 @@ export default {
     ],
   },
 
-  settings: [
+  details: [
     'Trasy, cel zbiorczy, misja zbiórki i ile surowców zabierać — konfiguracja per-universe w Dashboardzie.',
   ],
 

@@ -90,7 +90,7 @@ const shotFigure = (slug, shot) => {
   const file = `${slug}--${shot.id}.png`;
   const real = existsSync(join(SHOTS_DIR, file));
   const media = real
-    ? `<img src="${BASE}assets/shots/${esc(file)}" alt="${esc(shot.caption)}" loading="lazy">`
+    ? `<button class="shot-zoom" type="button" data-full="${BASE}assets/shots/${esc(file)}" data-caption="${esc(shot.caption)}"><img src="${BASE}assets/shots/${esc(file)}" alt="${esc(shot.caption)}" loading="lazy"></button>`
     : `<div class="shot-ph"><span class="shot-ph-tag">${esc(L.shotPlaceholder(shot.id))}</span></div>`;
   return `<figure class="shot${real ? '' : ' is-ph'}">${media}<figcaption>${inline(shot.caption)}</figcaption></figure>`;
 };
@@ -132,7 +132,6 @@ const featureBlock = (f) => {
   ${sec('fsec-value', L.sections.value, paras(f.value))}
   ${details}
   ${sec(`fsec-fair${f.fairplay.borderline ? ' is-borderline' : ''}`, L.sections.fairplay, fpNote + paras(f.fairplay.summary))}
-  ${f.settings ? sec('fsec-settings', L.sections.settings, list(f.settings)) : ''}
 </article>`;
 };
 
@@ -243,6 +242,29 @@ const SCRIPT = `
     entries.forEach(function (en) { if (en.isIntersecting) setActive(en.target.id); });
   }, { rootMargin: '-45% 0px -50% 0px', threshold: 0 });
   document.querySelectorAll('.feature[id], .cat-block[id]').forEach(function (el) { obs.observe(el); });
+
+  // Lightbox: podgląd zrzutu w pełnym rozmiarze (zrzuty bywają różnych proporcji).
+  var lightbox = document.getElementById('lightbox');
+  var lightboxImg = document.getElementById('lightboxImg');
+  var lightboxCaption = document.getElementById('lightboxCaption');
+  var openLightbox = function (btn) {
+    lightboxImg.src = btn.getAttribute('data-full');
+    lightboxImg.alt = btn.getAttribute('data-caption') || '';
+    lightboxCaption.textContent = btn.getAttribute('data-caption') || '';
+    lightbox.hidden = false;
+    document.body.classList.add('lightbox-open');
+  };
+  var closeLightbox = function () {
+    lightbox.hidden = true;
+    document.body.classList.remove('lightbox-open');
+    lightboxImg.src = '';
+  };
+  document.querySelectorAll('.shot-zoom').forEach(function (btn) {
+    btn.addEventListener('click', function () { openLightbox(btn); });
+  });
+  document.getElementById('lightboxClose').addEventListener('click', closeLightbox);
+  lightbox.addEventListener('click', function (e) { if (e.target === lightbox) closeLightbox(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !lightbox.hidden) closeLightbox(); });
 })();
 `;
 
@@ -285,6 +307,7 @@ const buildPage = (features) => {
 <meta name="description" content="${esc(L.metaDescription)}">
 <meta name="color-scheme" content="dark light">
 <title>${esc(L.title)}</title>
+<link rel="icon" href="${BASE}assets/favicon.png">
 <script>${THEME_BOOT}</script>
 <link rel="stylesheet" href="${BASE}assets/style.css">
 </head>
@@ -325,6 +348,11 @@ const buildPage = (features) => {
 <footer class="site-foot">
   <p>${inline(L.footer)}</p>
 </footer>
+<div class="lightbox" id="lightbox" hidden>
+  <button class="lightbox-close" id="lightboxClose" type="button" aria-label="${esc(L.lightboxClose)}">&times;</button>
+  <img class="lightbox-img" id="lightboxImg" src="" alt="">
+  <p class="lightbox-caption" id="lightboxCaption"></p>
+</div>
 <script>${SCRIPT}</script>
 </body>
 </html>`;

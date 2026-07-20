@@ -490,9 +490,19 @@ h1 {
   margin: 16px 0 2px;
 }
 .shot { margin: 0; }
-.shot img {
-  max-width: 100%;
-  height: auto;
+.shot-zoom {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: zoom-in;
+  font: inherit;
+}
+.shot-zoom img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
   display: block;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
@@ -519,6 +529,48 @@ h1 {
 @media (min-width: 640px) {
   .shots { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
 }
+
+/* ============================== Lightbox (podgląd zrzutu) ============================== */
+
+body.lightbox-open { overflow: hidden; }
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.82);
+}
+.lightbox[hidden] { display: none; }
+.lightbox-img {
+  max-width: min(94vw, 1100px);
+  max-height: 82vh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: var(--r-md);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.lightbox-caption { color: #e8e8ec; font-size: 13px; text-align: center; max-width: 700px; }
+.lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+.lightbox-close:hover { background: rgba(255, 255, 255, 0.18); }
 
 /* ============================== Spis treści ============================== */
 

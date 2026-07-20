@@ -42,10 +42,17 @@ export const STRINGS = {
       subtitle: 'OGame Expeditions',
       lead:
         'OG-E to **wyłącznie nakładka na interfejs** — nie automatyzuje gry, nie jest botem, nie monitoruje Twojej floty i nie powiadomi Cię, kiedy jesteś atakowany.',
-      chips: ['Nakładka na UI, nie bot', 'Zero własnych żądań', 'Open source', 'Mobile-first'],
+      chips: [
+        'Nakładka na UI',
+        'Nie bot',
+        'Zero własnych żądań',
+        'Open source',
+        'Wymaga AntiGameReborn',
+        'Nie ma zadań w tle',
+      ],
       statements: [
         'Nie wysyła też żadnych żądań do serwera gry. Każde kliknięcie pozostaje **świadomym kliknięciem gracza**, a OG-E jest jedynie pośrednikiem: naciska natywny element interfejsu gry — nawet jeśli sam go ukrył i zastąpił własnym, czytelniejszym. OG-E nie tworzy ani nie modyfikuje żądań gry; jedynie **zapisuje i analizuje odpowiedzi**, które gra zwraca, oraz odczytuje to, co i tak jest wyświetlone na stronie.',
-        'Projekt jest **w pełni open source** i w całości wygenerowany przez AI.',
+        'Projekt jest **w pełni open source** i w całości wygenerowany przez AI. Do prawidłowego działania wymagane jest rozszerzenie **AntiGameReborn** dostarczone od RiV-.',
       ],
       meta: (n) =>
         `Poniżej każda funkcja opisana jedna pod drugą: co robi, jak działa, jaką buduje przewagę i dlaczego jest fair. Opisanych: **${plFeatures(n)}**. Praca w toku — kolejne dochodzą.`,
@@ -56,7 +63,6 @@ export const STRINGS = {
       value: 'Po co to',
       details: 'Dodatkowe informacje',
       fairplay: 'Fair-play',
-      settings: 'Powiązane ustawienia',
     },
 
     flagship: 'Flagowa',
@@ -67,6 +73,7 @@ export const STRINGS = {
 
     shotPlaceholder: (id) => `makieta / screen: ${id}`,
     anchorLabel: (name) => `Bezpośredni link: ${name}`,
+    lightboxClose: 'Zamknij podgląd',
 
     footer:
       'Dokumentacja OG-E. Wewnętrzna analiza fair-play mieszka w repozytorium (`docs/fair-play.md`); tu prezentujemy argumenty za każdą funkcją.',
@@ -110,7 +117,6 @@ export const STRINGS = {
       value: 'Why it exists',
       details: 'More details',
       fairplay: 'Fair play',
-      settings: 'Related settings',
     },
 
     flagship: 'Flagship',
@@ -121,6 +127,7 @@ export const STRINGS = {
 
     shotPlaceholder: (id) => `mockup / screenshot: ${id}`,
     anchorLabel: (name) => `Direct link: ${name}`,
+    lightboxClose: 'Close preview',
 
     footer:
       'OG-E documentation. The internal fair-play analysis lives in the repository (`docs/fair-play.md`); here we present the case for each feature.',
