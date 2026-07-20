@@ -17,7 +17,7 @@ export const CATEGORIES = [
   {
     id: 'fab',
     name: 'Przycisk OG-E',
-    blurb: 'Flagowy hub OG-E: jeden pływający przycisk, z którego odpalasz wszystkie akcje floty jednym tapnięciem — wyprawy, polowanie na kolonie, discovery, codzienne trasy, przypomnienia. Zawsze 1 tap = 1 akcja.',
+    blurb: 'Flagowy hub OG-E: jeden pływający przycisk, z którego odpalasz wszystkie akcje floty jednym tapnięciem — wyprawy, polowanie na kolonie, discovery, codzienne trasy, przypomnienia.',
   },
   {
     id: 'spyglass',

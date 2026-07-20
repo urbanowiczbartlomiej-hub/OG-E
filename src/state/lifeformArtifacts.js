@@ -3,9 +3,10 @@
 // universe lives on its own subdomain, so plain localStorage scoping is the
 // universe namespace — same reasoning as `state/dailyActions.js`).
 //
-// Written by `features/sendLifeform` (live DOM read on lfresearch visits +
-// an hourly background refetch); read back by the same feature to gate the
-// Discovery button once the cap is reached. Kept in state/ so the key has a
+// Written by `features/sendLifeform` (passive live DOM read on natural
+// lfresearch visits only — no background requests, per OGame's ToS); read
+// back by the same feature to gate the Discovery button once the cap is
+// reached. Kept in state/ so the key has a
 // single owner and any future consumer (dashboard, sync) doesn't have to
 // import from features/.
 //

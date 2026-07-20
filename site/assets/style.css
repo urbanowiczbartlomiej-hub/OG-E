@@ -101,6 +101,17 @@ ul { margin: 8px 0; padding-left: 20px; }
 li { margin: 4px 0; }
 
 .hero { margin-bottom: 8px; }
+.statement {
+  font-size: 14px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin: 12px 0;
+}
+.statement strong { color: var(--accent); }
 .cat-block { scroll-margin-top: 16px; margin-top: 30px; }
 .cat-blurb { color: var(--muted); font-size: 14px; margin: 0 0 8px; }
 
@@ -130,15 +141,27 @@ li { margin: 4px 0; }
   margin-left: 6px;
 }
 
-/* ---- Fair-play ---- */
-.fairplay {
+/* ---- Sekcje funkcji: każda w kartcie z własną etykietą ---- */
+.fsec {
   background: var(--panel-2);
-  border: 1px solid var(--line-2);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
   padding: 2px 14px 12px;
-  margin-top: 18px;
+  margin: 12px 0;
 }
-.fairplay.is-borderline { border-color: rgba(224, 180, 95, 0.5); }
+.fsec-label { color: var(--accent); margin: 10px 0 6px; }
+/* Justujemy prozę (z dzieleniem wyrazów, PL); punkty zostają do lewej. */
+.fsec p { text-align: justify; hyphens: auto; -webkit-hyphens: auto; }
+.fsec ul { text-align: left; }
+
+/* Fair-play — mocniejsza identyfikacja (akcent). */
+.fsec-fair { border-left: 3px solid var(--accent); }
+.fsec-fair.is-borderline { border-left-color: var(--fp-yellow); border-color: rgba(224, 180, 95, 0.5); }
+
+/* Dodatkowe informacje — świadomie lżejsze (opcjonalne, bardziej zmienne). */
+.fsec-details { border-style: dashed; }
+.fsec-details .fsec-label { color: var(--muted); }
+
 .fp-note {
   background: rgba(224, 180, 95, 0.1);
   border: 1px solid rgba(224, 180, 95, 0.35);

@@ -11,8 +11,17 @@
 // zestaw sekcji, (2) tłumaczenie = podmiana `locale` + stringów, bez dotykania
 // szablonu. Bazowy język to PL.
 //
-// Pola prozą (`how`, `purpose`, `advantage`, `fairplay.summary`) to TABLICE
-// akapitów (string[]). W tekście wolno używać lekkiego formatowania:
+// # Idea, nie implementacja (ZASADA NACZELNA)
+//
+// Opisujemy IDEĘ działania — krótko, tak by dało się to przeczytać w kilka
+// sekund. NIE opisujemy każdego stanu przycisku ani najdrobniejszej mechaniki:
+// szczegóły zmieniają się z każdym commitem i dezaktualizują dokument, a idea
+// zostaje. Dwie sekcje prozą (`idea`, `value`) mają być KRÓTKIE (1–2 zwięzłe
+// akapity każda). Konkretne, zmienne detale — TYLKO jeśli naprawdę pomagają —
+// idą do opcjonalnego `details` (punkty), świadomie oszczędnie.
+//
+// Pola prozą (`idea`, `value`, `fairplay.summary`) to TABLICE akapitów
+// (string[]). W tekście wolno używać lekkiego formatowania:
 //   **pogrubienie**  oraz  `kod`
 // — generator zamienia je na <strong>/<code>, całą resztę escapuje.
 //
@@ -24,11 +33,17 @@
 // przyznajemy graniczność, to budzik (alarm clock): tam `fairplay.borderline`
 // = true i generator dokłada szczery komentarz.
 //
+// UWAGA na sformułowania: OG-E NIE „wysyła żądań" (nawet ograniczonych do
+// jednego na tap). Poprawny model: OG-E inicjuje kliknięcie natywnego elementu
+// interfejsu gry — a to sama GRA (jeśli w ogóle) kontaktuje się z serwerem,
+// dokładnie tak, jak przy ręcznym kliknięciu gracza. Nie pisz „1 tap = 1
+// żądanie"; pisz o inicjowaniu natywnego kliknięcia.
+//
 // # Warstwa infrastruktury
 //
 // Zaplecze danych (apiContext, ownProfile, colonyRecorder, allianceClassIngest)
 // NIE ma własnych stron. Skąd biorą się dane opisujemy WEWNĄTRZ funkcji, które
-// je konsumują (pole `how`/`fairplay.summary`) — np. "z raportów, które sam
+// je konsumują (pole `idea`/`fairplay.summary`) — np. "z raportów, które sam
 // otworzyłeś" albo "z publicznego API czytanego przy otwartej karcie gry".
 
 /**
@@ -62,12 +77,17 @@
  * @property {string} name        Nazwa jaką widzi użytkownik.
  * @property {string} oneLiner    Jedno zdanie "co to robi".
  * @property {boolean} [flagship] True = funkcja flagowa (wyróżniana na stronie).
- * @property {string[]} where     Gdzie w OGame się pojawia / jak uruchomić.
- * @property {string[]} how       Dokładny opis działania (mechanika, triggery).
- * @property {string[]} purpose   Po co to jest, jaki problem gracza rozwiązuje.
- * @property {string[]} advantage Budowana przewaga — konkretnie co daje.
+ * @property {number} [order]     Kolejność w obrębie kategorii (rosnąco; brak =
+ *   na koniec, potem alfabetycznie). Hero danej kategorii dostaje najniższy.
+ * @property {string[]} idea      "Jak to działa" — IDEA działania, krótko
+ *   (1–2 zwięzłe akapity). Nie mechanika krok-po-kroku, nie stany przycisku.
+ * @property {string[]} value     "Po co to" — jaki problem gracza rozwiązuje i
+ *   co zyskuje. Krótko (zwykle 1 akapit).
  * @property {FairPlay} fairplay  Pozytywne argumenty za fair-play (+ borderline dla budzika).
- * @property {string[]} [settings] Powiązane opcje w panelu ustawień OG-E.
+ * @property {string[]} [details] "Dodatkowe informacje" — opcjonalne PUNKTY z
+ *   konkretniejszymi detalami. Dodawaj oszczędnie i tylko gdy wnoszą wartość
+ *   (są bardziej podatne na dezaktualizację niż idea).
+ * @property {string[]} [settings] Powiązane opcje w panelu ustawień OG-E (punkty).
  * @property {Shot[]} screenshots  Lista zrzutów (min. 1; placeholder do czasu realnego).
  * @property {string[]} codeRefs   Pliki src/... (dla nas, do utrzymania).
  * @property {DocStatus} status    Stan dokumentacji tego feature'a.
@@ -98,10 +118,10 @@ export const validateFeature = (f, slug, categoryIds) => {
   need(typeof f.name === 'string' && f.name.trim(), 'brak "name"');
   need(typeof f.oneLiner === 'string' && f.oneLiner.trim(), 'brak "oneLiner"');
   need(f.flagship === undefined || typeof f.flagship === 'boolean', '"flagship" musi być boolean');
-  need(strArr(f.where), '"where" musi być niepustą tablicą stringów');
-  need(strArr(f.how), '"how" musi być niepustą tablicą stringów');
-  need(strArr(f.purpose), '"purpose" musi być niepustą tablicą stringów');
-  need(strArr(f.advantage), '"advantage" musi być niepustą tablicą stringów');
+  need(f.order === undefined || (typeof f.order === 'number' && Number.isFinite(f.order)),
+    '"order" (jeśli podane) musi być liczbą');
+  need(strArr(f.idea), '"idea" musi być niepustą tablicą stringów');
+  need(strArr(f.value), '"value" musi być niepustą tablicą stringów');
 
   need(f.fairplay && typeof f.fairplay === 'object', 'brak obiektu "fairplay"');
   if (f.fairplay && typeof f.fairplay === 'object') {
@@ -110,6 +130,9 @@ export const validateFeature = (f, slug, categoryIds) => {
       '"fairplay.borderline" musi być boolean (ustawiane tylko dla budzika)');
   }
 
+  if (f.details !== undefined) {
+    need(strArr(f.details), '"details" (jeśli podane) musi być niepustą tablicą stringów');
+  }
   if (f.settings !== undefined) {
     need(strArr(f.settings), '"settings" (jeśli podane) musi być niepustą tablicą stringów');
   }

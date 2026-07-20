@@ -11,7 +11,7 @@
 // On mobile, OGame scales the page to roughly half size, so the game's
 // own "Send fleet" button becomes a 40×40 px target that users miss
 // constantly. Our button is settings-driven in pixel diameter (default
-// 560) and draggable to the user's preferred spot on the screen, so it
+// 320) and draggable to the user's preferred spot on the screen, so it
 // is always comfortably reachable with the thumb.
 //
 // # What one click does (each tap = exactly ONE game action)

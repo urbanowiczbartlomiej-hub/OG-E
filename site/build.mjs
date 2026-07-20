@@ -72,8 +72,14 @@ const shotFigure = (slug, shot) => {
  * @param {import('./content/_schema.mjs').Feature} f
  * @returns {string}
  */
+const sec = (cls, label, body) =>
+  `<section class="fsec ${cls}"><h4 class="fsec-label">${esc(label)}</h4>${body}</section>`;
+
 const featureBlock = (f) => {
   const flag = f.flagship ? ' <span class="flag-tag">flagowa</span>' : '';
+  const fpNote = f.fairplay.borderline
+    ? '<p class="fp-note"><strong>Uczciwie: to funkcja graniczna.</strong> Traktujemy ją ostrożnie i mówimy o tym wprost — poniżej, dlaczego mimo to uznajemy ją za obronną.</p>'
+    : '';
   return `
 <article class="feature" id="${esc(f.id)}">
   <h3 class="feature-name">${esc(f.name)}${flag}</h3>
@@ -83,18 +89,11 @@ const featureBlock = (f) => {
     ${f.screenshots.map((s) => shotFigure(f.id, s)).join('\n')}
   </div>
 
-  <h4>Gdzie to znajdziesz</h4>${paras(f.where)}
-  <h4>Jak działa</h4>${paras(f.how)}
-  <h4>Cel</h4>${paras(f.purpose)}
-  <h4>Budowana przewaga</h4>${paras(f.advantage)}
-
-  <div class="fairplay${f.fairplay.borderline ? ' is-borderline' : ''}">
-    <h4>Fair-play</h4>
-    ${f.fairplay.borderline ? '<p class="fp-note"><strong>Uczciwie: to funkcja graniczna.</strong> Traktujemy ją ostrożnie i mówimy o tym wprost — poniżej, dlaczego mimo to uznajemy ją za obronną.</p>' : ''}
-    ${paras(f.fairplay.summary)}
-  </div>
-
-  ${f.settings ? `<h4>Powiązane ustawienia</h4>${list(f.settings)}` : ''}
+  ${sec('fsec-idea', 'Jak to działa', paras(f.idea))}
+  ${sec('fsec-value', 'Po co to', paras(f.value))}
+  ${f.details ? sec('fsec-details', 'Dodatkowe informacje', list(f.details)) : ''}
+  ${sec(`fsec-fair${f.fairplay.borderline ? ' is-borderline' : ''}`, 'Fair-play', fpNote + paras(f.fairplay.summary))}
+  ${f.settings ? sec('fsec-settings', 'Powiązane ustawienia', list(f.settings)) : ''}
 </article>`;
 };
 
@@ -157,9 +156,12 @@ const SCRIPT = `
  * @returns {string}
  */
 const buildPage = (features) => {
+  // Kolejność w kategorii: po `order` rosnąco (brak = na koniec), potem po nazwie.
+  const byOrder = (a, b) =>
+    (a.order ?? Infinity) - (b.order ?? Infinity) || a.name.localeCompare(b.name, 'pl');
   const groups = CATEGORIES.map((cat) => ({
     cat,
-    items: features.filter((f) => f.category === cat.id),
+    items: features.filter((f) => f.category === cat.id).sort(byOrder),
   })).filter((g) => g.items.length > 0);
 
   const sections = groups
@@ -194,9 +196,11 @@ const buildPage = (features) => {
   ${tocNav(groups)}
   <main>
     <section class="hero">
-      <h1>Jak działa OG-E</h1>
-      <p class="lead">Każda funkcja rozszerzenia opisana jedna pod drugą: co robi, jak działa, jaką buduje przewagę i dlaczego jest fair. Menu z boku prowadzi do wybranej funkcji.</p>
-      <p class="meta">Opisanych funkcji: <strong>${total}</strong>. Praca w toku — kolejne dochodzą.</p>
+      <h1>OG-E (OGame Expeditions)</h1>
+      <p class="lead">OG-E to <strong>wyłącznie nakładka na interfejs</strong> — nie automatyzuje gry, nie jest botem, nie monitoruje Twojej floty i nie powiadomi Cię, kiedy jesteś atakowany.</p>
+      <p class="statement">Nie wysyła też żadnych żądań do serwera gry. Każde kliknięcie pozostaje <strong>świadomym kliknięciem gracza</strong>, a OG-E jest jedynie pośrednikiem: naciska natywny element interfejsu gry — nawet jeśli sam go ukrył i zastąpił własnym, czytelniejszym. OG-E nie tworzy ani nie modyfikuje żądań gry; jedynie <strong>zapisuje i analizuje odpowiedzi</strong>, które gra zwraca, oraz odczytuje to, co i tak jest wyświetlone na stronie.</p>
+      <p class="statement">Projekt jest <strong>w pełni open source</strong> i w całości wygenerowany przez AI.</p>
+      <p class="meta">Poniżej każda funkcja opisana jedna pod drugą: co robi, jak działa, jaką buduje przewagę i dlaczego jest fair. Opisanych funkcji: <strong>${total}</strong>. Praca w toku — kolejne dochodzą.</p>
     </section>
     ${sections}
   </main>

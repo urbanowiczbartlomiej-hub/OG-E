@@ -24,12 +24,12 @@ potem Spyglass, budzik, Best Colony Spots, sync/społeczność; UI na końcu.
 
 | Funkcja | slug | flagowa | status | źródło (src/) |
 |---|---|:--:|---|---|
-| Przycisk OG-E (FAB) | `og-e-button` | ★ | todo | features/shared/unifiedFab, draggableButton |
-| Wyślij wyprawę | `send-expedition` | ★ | todo | features/sendExpedition |
-| Polowanie na kolonie (+ porzucanie małych) | `big-colony-hunting` | ★ | todo | features/sendColony, abandon |
-| Discovery lifeform | `discover-lifeforms` | ★ | todo | features/sendLifeform |
-| Daily run (codzienne trasy) | `daily-run` | ★ | todo | features/dailyRun |
-| Przypomnienie o flocie | `fleet-reminder` | | todo | features/alarmClock (część in-tab) |
+| Przycisk OG-E (FAB) | `og-e-button` | ★ | **drafted** | features/shared/unifiedFab, draggableButton |
+| Wyślij wyprawę | `send-expedition` | ★ | **drafted** | features/sendExpedition |
+| Polowanie na kolonie (+ porzucanie małych) | `big-colony-hunting` | ★ | **drafted** | features/sendColony, abandon |
+| Discovery lifeform | `discover-lifeforms` | ★ | **drafted** | features/sendLifeform |
+| Daily run (codzienne trasy) | `daily-run` | ★ | **drafted** | features/dailyRun |
+| Przypomnienie o flocie | `fleet-reminder` | | **drafted** | features/alarmClock (część in-tab) |
 
 ## Spyglass — wywiad (`spyglass`)
 
