@@ -11,10 +11,14 @@ rozszerzenia.
 `content/<slug>.mjs` eksportujący obiekt zgodny z kontraktem w
 `content/_schema.mjs`. Generator (`build.mjs`) waliduje i renderuje **jedną
 długą, wycentrowaną stronę** `dist/index.html` — wszystkie funkcje jedna pod
-drugą (pogrupowane w kategorie), z pływającym menu-kotwicą (scroll-spy,
-przyklejone na desktopie, chowane pod przyciskiem na mobile). Dzięki modelowi
-danych każdy blok ma ten sam zestaw sekcji, a tłumaczenie sprowadza się do
-podmiany stringów, nie layoutu.
+drugą (pogrupowane w kategorie), z bocznym spisem treści (scroll-spy,
+przyklejony na desktopie, chowany pod przyciskiem na mobile). Strona ma
+**dwa motywy** (ciemny domyślny + jasny; tokeny na `html[data-theme]`,
+przełącznik w nagłówku, wybór zapamiętywany, start wg preferencji systemu).
+Dzięki modelowi danych każdy blok ma ten sam zestaw sekcji, a tłumaczenie
+sprowadza się do podmiany stringów, nie layoutu — stringi CHROME szablonu
+(nagłówki sekcji, hero, przyciski, stopka) żyją w `content/_strings.mjs`
+per język.
 
 **Idea, nie implementacja.** Opisujemy IDEĘ działania — krótko (dwie zwięzłe
 sekcje prozą: `idea` = „Jak to działa", `value` = „Po co to"), tak by dało się
@@ -31,11 +35,16 @@ site/
   content/
     _schema.mjs          kontrakt pól + walidacja (== test spójności)
     _categories.mjs      taksonomia user-facing (6 grup)
-    <slug>.mjs           jedna funkcja = jeden plik (wzorzec: who-is-spying.mjs)
+    _strings.mjs         stringi szablonu per język (warstwa i18n chrome'u)
+    _categories.mjs      → nazwy/blurby kategorii są per język (pl/en)
+    <slug>.mjs           treść PL (baza) — wzorzec: who-is-spying.mjs
+    en/<slug>.mjs        treść EN (lustro 1:1 — build wymusza komplet slugów)
   assets/
-    style.css            arkusz (mobile-first, ciemny motyw)
-    shots/               zrzuty ekranu: <slug>--<shotId>.png (opcjonalne)
+    style.css            arkusz (mobile-first, motyw ciemny + jasny na tokenach)
+    shots/               zrzuty ekranu: <slug>--<shotId>.png (WSPÓLNE dla języków)
   dist/                  wygenerowany output (gitignore)
+    index.html           PL (baza, w korzeniu)
+    en/index.html        EN
 ```
 
 ## Build
@@ -60,7 +69,9 @@ treści — to nasz test spójności. Podgląd lokalny: dowolny statyczny serwer
    kliknięciu). Patrz reguła w `_schema.mjs`.
 4. Zdefiniuj listę zrzutów; realne pliki wrzuć do `assets/shots/` później —
    do tego czasu generator pokazuje placeholder.
-5. Zaktualizuj `CATALOG.md` (status `drafted`), zbuduj, oddaj do weryfikacji.
+5. **Dorób lustro EN**: `content/en/<slug>.mjs` z `locale: 'en'` i tym samym
+   `id` (build wymaga kompletu slugów w każdym języku, inaczej `exit 1`).
+6. Zaktualizuj `CATALOG.md` (status `drafted`), zbuduj, oddaj do weryfikacji.
 
 ## Fair-play — polityka strony
 
@@ -71,8 +82,23 @@ pozytywną** — argumenty za tym, że funkcja jest fair, w tym pochodzenie dany
 przyznajemy graniczność, to **budzik** (`borderline: true`) — generator dokłada
 tam szczery komentarz.
 
-## Tłumaczenia (później)
+## Tłumaczenia (EN/PL — działają)
 
-Baza to PL (`locale: 'pl'`). Ścieżka i18n: docelowo `content/<lang>/<slug>.mjs`
-i parametr języka w `build.mjs`; szablon i taksonomia bez zmian. Na razie nie
-budujemy tej warstwy — dopiero gdy treść PL się ustabilizuje.
+Strona jest **dwujęzyczna**: PL to baza (`dist/index.html`), EN to lustro
+(`dist/en/index.html`). Przełącznik PL/EN siedzi w nagłówku i przenosi na tę
+**samą sekcję** drugiej wersji — kotwice-slugi są wspólne, skrypt dokleja
+bieżący `#hash`.
+
+Trzy warstwy języka:
+
+1. **Stringi szablonu** (nagłówki sekcji, hero, przyciski, stopka, liczebniki)
+   — `content/_strings.mjs`, klucz per język (`pl`, `en`).
+2. **Kategorie** — `content/_categories.mjs`: `name`/`blurb` to obiekty
+   `{ pl, en }`; `id` jest wspólne (część kotwicy `#cat-<id>`).
+3. **Treść funkcji** — PL w `content/<slug>.mjs`, EN w `content/en/<slug>.mjs`
+   (`locale: 'en'`). Zrzuty są wspólne; tłumaczą się tylko podpisy.
+
+Build **wymusza komplet**: zbiór slugów EN musi być 1:1 z PL, inaczej `exit 1`
+(brakujące ↔ osierocone tłumaczenie). Dodanie języka = nowy klucz w
+`_strings.mjs`, klucze w `_categories.mjs`, katalog `content/<lang>/` i wpis
+w stałej `LOCALES` w `build.mjs`. Nowa funkcja = plik PL **i** jego lustro EN.

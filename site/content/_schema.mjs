@@ -73,7 +73,7 @@
  * @typedef {object} Feature
  * @property {string} id          Slug = nazwa pliku bez rozszerzenia.
  * @property {string} category    Id kategorii z `_categories.mjs`.
- * @property {'pl'} locale        Język treści (na razie tylko 'pl').
+ * @property {'pl'|'en'} locale   Język treści (PL = baza; EN = lustro w content/en/).
  * @property {string} name        Nazwa jaką widzi użytkownik.
  * @property {string} oneLiner    Jedno zdanie "co to robi".
  * @property {boolean} [flagship] True = funkcja flagowa (wyróżniana na stronie).
@@ -100,9 +100,10 @@ const STATUSES = new Set(['todo', 'drafted', 'verified']);
  * @param {any} f          Wyeksportowany obiekt.
  * @param {string} slug    Slug wyprowadzony z nazwy pliku.
  * @param {Set<string>} categoryIds  Dozwolone id kategorii.
+ * @param {'pl'|'en'} [locale]  Oczekiwany język pliku (wg katalogu, z którego czytamy).
  * @returns {string[]}
  */
-export const validateFeature = (f, slug, categoryIds) => {
+export const validateFeature = (f, slug, categoryIds, locale = 'pl') => {
   /** @type {string[]} */
   const errs = [];
   const need = (cond, msg) => { if (!cond) errs.push(msg); };
@@ -114,7 +115,7 @@ export const validateFeature = (f, slug, categoryIds) => {
   need(f.id === slug, `pole "id" (${f.id}) musi równać się nazwie pliku (${slug})`);
   need(typeof f.category === 'string' && categoryIds.has(f.category),
     `pole "category" (${f.category}) nie pasuje do żadnej kategorii z _categories.mjs`);
-  need(f.locale === 'pl', 'pole "locale" musi być "pl" (baza)');
+  need(f.locale === locale, `pole "locale" (${f.locale}) musi być "${locale}" (katalog, z którego czytany jest plik)`);
   need(typeof f.name === 'string' && f.name.trim(), 'brak "name"');
   need(typeof f.oneLiner === 'string' && f.oneLiner.trim(), 'brak "oneLiner"');
   need(f.flagship === undefined || typeof f.flagship === 'boolean', '"flagship" musi być boolean');
