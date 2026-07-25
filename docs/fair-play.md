@@ -8,6 +8,39 @@
 > against the cited code). Delete/relocate this only if OG-E's compliance
 > posture is folded elsewhere.
 
+## Cross-check against the Origin team's `AGENTS.md` guardrail (2026-07-25)
+
+The OGame Origin ToolDev team published an **[`AGENTS.md`](../AGENTS.md)**
+guardrail (`github.com/Rivenscryr/origin-tooldev-agents`) that distils the same
+*Forbidden features* thread this doc is built on. It is now vendored at the repo
+root. OG-E was re-audited against **every** rule in it; the mapping is clean —
+nothing new to change beyond the YELLOW items already open below:
+
+| `AGENTS.md` rule | OG-E status |
+|---|---|
+| §1.1 Automation / macros (1 click = 1 action) | ✅ Structural invariant; no multi-target/"spy-all" button exists. |
+| §1.2 Scheduling / delayed **game** actions | ✅ No timer fires a game action. (ntfy `X-Delay` is a phone *reminder*, not a game action — §1.4 category, below.) |
+| §1.3 Auto-refresh / polling the game | ✅ No timer reloads the game or polls the game server. The one `location.reload` (`features/abandon/index.js:270`) is a one-shot settle after the player's own 3-tap abandon, not a background loop — disclose, don't remove. |
+| §1.4 Auto-registered alarms / webhooks | ⚠️ The known RED: ntfy `X-Delay` push. **ToolDev-consulted & conditionally APPROVED (2026-06-23)**; condition (never track the game while away) implemented via presence-gating. Grep-verified zero `Notification`/`chrome.notifications`/`document.title`/favicon/audio. |
+| §1.5 Alt UI / shortcuts / lobby bypass | ✅ None. Redirect bridges rewrite only the game's own **response** navigation target (YELLOW-A). |
+| §1.5.1 Direct probing (`miniFleet`/`sendFleet`) | ✅ **Zero `miniFleet`; OG-E never originates a `sendFleet`.** `sendSpy` = 1 tap → pre-fill + one native dispatch for **one** planet. The dashboard scan plan has **no send control** and must never grow one — data display is deliberately separated from the probe action, exactly the AGENTS.md model. |
+| §1.6 Dark Matter imitation | ✅ No Commander-queue imitation. |
+| §1.7 Blocking / altering monetization | ✅ No hide/opacity/off-screen of any ad/banner/Merchant/Officers/Shop/footer; menu highlights are *additive*. |
+| §1.8 Paywalls / fees / injected ads | ✅ Free, open-source, no injected ads. |
+| §1.9 Silent scraping | ✅ Only opt-in, token-configured egress (GitHub gist, ntfy); documented in `PRIVACY.md`. No covert exfiltration. |
+| §4 Background calls fire only on page load | ✅ `apiContext` hydrates on load with a TTL cache, then reads the DOM as the player navigates — the exact "hydrate once, read the DOM" pattern §4 *recommends*. |
+| §4.1 `accountInfo` polling | ✅ **Zero uses of `accountInfo` anywhere.** |
+| §4.2 `cp` in background calls | ✅ `cp` is only ever **read** from the current URL for navigation; never injected into a background fetch. |
+| §5 Toleration needed? | ✅ Correctly self-assessed as needing toleration; submission tracked in `toleration-plan.md`. |
+| §6 API / community proxy | ✅ Only the public `/api/*.xml` files (which §6 permits **directly** per-universe), `credentials:'omit'`, TTL-cached — never polled. No non-public/report endpoint is touched, so the `ogapi.faw-kes.de` proxy is not required. |
+
+**Bottom line:** the guardrail confirms the day-one design. Every technical
+red-flag vector it names — `accountInfo` polling, `cp`-in-background, `miniFleet`
+direct probing, off-tab attack alarms, ad hiding, Dark-Matter imitation,
+auto-refresh, multi-action clicks — is **already absent in current code**, and
+the single borderline feature (ntfy push) was already formally cleared. The open
+items are the pre-existing YELLOWs in "Open items before submission" below.
+
 ## The rules we are judged against (verbatim)
 
 From the OGame Origin/PTS **[Forbidden features](https://forum.origin.ogame.gameforge.com/forum/thread/29-forbidden-features/)** thread:

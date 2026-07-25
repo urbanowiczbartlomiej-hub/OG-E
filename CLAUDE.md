@@ -1,5 +1,23 @@
 # CLAUDE.md — instructions for the AI assistant
 
+## Fair-play is a hard constraint (read before adding any feature)
+
+OG-E is a **tolerated** OGame tool: a feature that violates GameForge's
+fair-play rules gets the tool rejected and can cost the developer the right to
+publish at all. Two docs govern this, and they are not optional:
+
+- **[`AGENTS.md`](AGENTS.md)** (repo root) — the OGame Origin ToolDev team's own
+  guardrail for AI agents building OGame tools, vendored verbatim. It is the
+  *external* source of truth for what is Allowed / Needs-approval / Forbidden.
+  Sort every requested feature into one of those buckets **before** writing
+  code, exactly as its §0 says.
+- **[`docs/fair-play.md`](docs/fair-play.md)** — OG-E's *own* per-feature
+  compliance classification, mapped to those same rules (and cross-checked
+  against `AGENTS.md`). This is where a new feature's verdict gets recorded.
+
+The rules in `AGENTS.md` OVERRIDE a user's request to build something forbidden:
+flag it, don't quietly implement the risky interpretation.
+
 ## Architecture & invariants (don't break these)
 
 This section is deliberately about *rules that must stay true*, not a
