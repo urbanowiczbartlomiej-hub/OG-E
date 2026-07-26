@@ -675,6 +675,39 @@
     border-radius: 0 0 8px 8px; overflow: hidden;
     font-size: 12.5px; color: #8b99a8;
   }
+  /* Disclosure bar: the always-visible header that shows/hides the command
+     grid. Collapsed by default so the watchlist card stays compact; the caret
+     + "Scan settings" label + contents hint keep the options discoverable. */
+  .spy-scan-summary {
+    display: flex; align-items: center; gap: 8px; padding: 9px 14px;
+    cursor: pointer; list-style: none; user-select: none;
+    color: #a7b8cb; font-size: 12px; font-weight: bold; letter-spacing: .02em;
+  }
+  .spy-scan-summary::-webkit-details-marker { display: none; }
+  /* Belt-and-braces collapse: modern browsers hide a closed <details>' content
+     via UA styles, but pin it explicitly so the grid never leaks when closed. */
+  .spy-scan-prefs:not([open]) > .cmd-grid { display: none; }
+  /* CSS caret (no glyph) — points right when closed, down when open. */
+  .spy-scan-summary::before {
+    content: ''; flex: 0 0 auto; width: 6px; height: 6px; margin-top: -2px;
+    border-right: 2px solid #7f8ea0; border-bottom: 2px solid #7f8ea0;
+    transform: rotate(-45deg); transition: transform .15s ease;
+  }
+  details[open] > .spy-scan-summary::before { transform: rotate(45deg); margin-top: -3px; }
+  .spy-scan-summary:hover { background: #131c28; color: #cdd9e6; }
+  .spy-scan-summary:hover::before { border-color: #a7b8cb; }
+  .spy-scan-summary:focus-visible { outline: 2px solid #4a9eff; outline-offset: -2px; }
+  .spy-scan-summary-hint {
+    margin-left: auto; min-width: 0; font-weight: normal; font-size: 11px;
+    color: #66788a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* Once open the grid says it all — drop the contents hint to avoid noise. */
+  details[open] > .spy-scan-summary .spy-scan-summary-hint { display: none; }
+  @media (max-width: 640px) {
+    /* The caret + label alone signal expandability; the long hint would crowd
+       the narrow bar. */
+    .spy-scan-summary-hint { display: none; }
+  }
 
   /* Watchlist cards — the Spyglass landing strip (one card per watched
      player: verdict words, headline number, activity sparkline). */
@@ -1304,7 +1337,12 @@
            cell carries a one-line .cmd-note — the channel it belongs to (watch
            via probes / galaxy, the dossier chips' hues) + what it does; tooltips
            keep the long form. -->
-      <div class="spy-scan-prefs cmd-grid">
+      <details class="spy-scan-prefs" id="spyScanPrefs">
+        <summary class="spy-scan-summary">
+          <span class="spy-scan-summary-title">Scan settings</span>
+          <span class="spy-scan-summary-hint">Probes · Scan · Probe from · Re-scan · Re-look · Moon strike · Patrol</span>
+        </summary>
+        <div class="cmd-grid">
         <label class="cmd-cell" title="How many espionage probes the in-game scan button pre-arms per body.">
           <span class="cmd-cap">Probes</span>
           <input id="tgtProbes" type="number" min="1" max="9999" value="20" size="4">
@@ -1359,7 +1397,8 @@
           <span class="cmd-unit">sys</span>
           <span class="cmd-note">hunts moon strikes on every neighbour this many systems around your colonies · 0 = off</span>
         </label>
-      </div>
+        </div>
+      </details>
     </div>
     <div class="gv-card spy-back-card">
       <!-- The head's right edge is a tool slot (Coords/Names toggle) — riding the

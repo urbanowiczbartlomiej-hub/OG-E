@@ -369,6 +369,8 @@ const PROX_RANGES = [
   ['3m', '3m', 7776000],
 ];
 const PROX_RANGE_KEY = 'oge_proxRange';
+/** Device-local: remember whether the Spyglass scan-settings block is open. */
+const SPY_SCAN_PREFS_OPEN_KEY = 'oge_spyScanPrefsOpen';
 let proximityRange = PROX_RANGES.some(([v]) => v === safeLS.get(PROX_RANGE_KEY))
   ? /** @type {string} */ (safeLS.get(PROX_RANGE_KEY))
   : '1m';
@@ -3081,6 +3083,17 @@ const wireListeners = () => {
     repaintTargets();
   });
   wireToggleChip(tgtWatchedOnly, () => repaintTargets());
+  // Scan-settings command block (Probes/Scan/Probe from/…) — a native <details>
+  // that collapses to a compact bar so the watchlist card isn't dominated by
+  // the knobs; the open/closed choice is remembered per device.
+  const spyScanPrefs = /** @type {HTMLDetailsElement | null} */ (
+    document.getElementById('spyScanPrefs'));
+  if (spyScanPrefs) {
+    if (safeLS.get(SPY_SCAN_PREFS_OPEN_KEY) === '1') spyScanPrefs.open = true;
+    spyScanPrefs.addEventListener('toggle', () => {
+      safeLS.set(SPY_SCAN_PREFS_OPEN_KEY, spyScanPrefs.open ? '1' : '0');
+    });
+  }
   // ⚙ show/hide for the rarely-touched numeric filters (military range, probes).
   tgtConfigToggle?.addEventListener('click', () => {
     const opening = tgtConfigCard ? tgtConfigCard.style.display === 'none' : false;
