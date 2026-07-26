@@ -97,6 +97,7 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
         'showLifeformButton',
         'showDailyRunButton',
         'showWhosSpying',
+        'spyRange',
         'alarmClockMasterEnabled',
         'alarmClockNtfyToken',
         'traderMenuHighlight',

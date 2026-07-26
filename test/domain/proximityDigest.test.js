@@ -36,10 +36,12 @@ describe('digestProximityReports', () => {
     expect(e.count).toBe(3);
     expect(e.name).toBe('Mqres');
     expect(e.lastTs).toBe(300);
-    // Distinct bodies, newest first; the duplicate 1:1:1 is not repeated.
+    // Distinct bodies ordered by newest scan first; the duplicate 1:1:1 is not
+    // repeated but keeps BOTH its scan timestamps (newest first) — that per-body
+    // scan history is what the panels surface on hover.
     expect(e.atBodies).toEqual([
-      { coords: '1:1:1', moon: false },
-      { coords: '1:2:3', moon: false },
+      { coords: '1:1:1', moon: false, scans: [300, 100] },
+      { coords: '1:2:3', moon: false, scans: [200] },
     ]);
   });
 
