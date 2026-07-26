@@ -110,8 +110,12 @@ export const SETTINGS_PREFIX = 'oge_';
  * @property {boolean} traderMenuHighlight
  * @property {boolean} threatHighlight
  * @property {boolean} showWhosSpying
+ * @property {string}  spyRange
  * @property {boolean} alarmClockMasterEnabled
  * @property {string}  alarmClockNtfyToken
+ *
+ *   spyRange                '1m'  — Who's-spying date window (1d/7d/1m/3m),
+ *                                   shared by the in-game panel + dashboard strip
  */
 
 /**
@@ -167,6 +171,7 @@ export const SETTINGS_SCHEMA = {
   traderMenuHighlight:    { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'traderMenuHighlight' },
   threatHighlight:            { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'threatHighlight' },
   showWhosSpying:             { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'showWhosSpying' },
+  spyRange:                   { type: 'string', default: '1m',  key: SETTINGS_PREFIX + 'spyRange' },
   alarmClockMasterEnabled: { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'alarmClockMasterEnabled' },
   alarmClockNtfyToken:      { type: 'string', default: '',    key: SETTINGS_PREFIX + 'alarmClockNtfyToken' },
 };

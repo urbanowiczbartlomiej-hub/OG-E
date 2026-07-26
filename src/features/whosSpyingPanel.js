@@ -119,7 +119,9 @@ let showNames = safeLS.get(NAMES_KEY) === '1';
  * Date-range filter for the prober list — a radio chip beside the names toggle.
  * Each value is a look-back window in SECONDS; only alerts newer than
  * `now − window` (plus any ts-less alert, which can't be aged) reach the digest.
- * `'1m'` is the default — it matches the dashboard strip's prior 30-day cutoff.
+ * The chosen value lives in `settingsStore.spyRange` (default `'1m'`) so it is
+ * SHARED with the dashboard strip and syncs across devices — unlike the
+ * device-local Names toggle. `'1m'` matches the strip's prior 30-day cutoff.
  * @type {Array<[value: string, label: string, seconds: number]>}
  */
 const RANGES = [
@@ -128,12 +130,11 @@ const RANGES = [
   ['1m', '1m', 2592000],
   ['3m', '3m', 7776000],
 ];
-/** Device-local persisted range choice. */
-const RANGE_KEY = 'oge_spybackRange';
-/** Current range value; falls back to '1m' for an unset/legacy key. */
-let range = RANGES.some(([v]) => v === safeLS.get(RANGE_KEY))
-  ? /** @type {string} */ (safeLS.get(RANGE_KEY))
-  : '1m';
+/** Current range from settings, guarded to a known value (legacy/blank → '1m'). */
+const currentRange = () => {
+  const r = settingsStore.get().spyRange;
+  return RANGES.some(([v]) => v === r) ? r : '1m';
+};
 
 const CSS = [
   // --sp-accent = the Spyglass gold (sendSpy's BG_SPY_IDLE) — one spy identity
@@ -342,6 +343,7 @@ const bodyEl = (b) => {
 /**
  * @typedef {object} RenderCtx
  * @property {boolean} showNames
+ * @property {string} range  Active date-range chip value.
  * @property {(coords: string, moon: boolean) => string | null} nameFor
  * @property {(fromCoords: string | null) => { label: string, cls: string } | null} distFor
  */
@@ -493,7 +495,7 @@ const renderInto = (panel, digest, ctx) => {
   const nb = panel.querySelector('.oge-sb-namebtn');
   if (nb) nb.textContent = ctx.showNames ? 'Names' : 'Coords';
   for (const b of panel.querySelectorAll('.oge-sb-range button')) {
-    b.classList.toggle('on', /** @type {HTMLElement} */ (b).dataset.range === range);
+    b.classList.toggle('on', /** @type {HTMLElement} */ (b).dataset.range === ctx.range);
   }
   const sum = panel.querySelector('.oge-sb-sum');
   if (sum) {
@@ -582,6 +584,7 @@ export const installWhosSpyingPanel = () => {
     // Date-range filter: keep alerts within the selected window (ts-less alerts
     // can't be aged, so they stay). Applied before the digest so the counts,
     // sort and scan-history hover all reflect the chosen window.
+    const range = currentRange();
     const nowSec = Math.floor(Date.now() / 1000);
     const windowSec = RANGES.find(([v]) => v === range)?.[2] ?? 0;
     const filtered = windowSec
@@ -605,6 +608,7 @@ export const installWhosSpyingPanel = () => {
     /** @type {RenderCtx} */
     const ctx = {
       showNames,
+      range,
       nameFor: (coords, moon) => bodyNameFor(nameMap, coords, moon),
       distFor: (fromCoords) =>
         nearestBodyDistance(fromCoords, inv.bodies, getApiContext()?.server ?? {}),
@@ -631,17 +635,16 @@ export const installWhosSpyingPanel = () => {
   };
 
   /**
-   * Date-range chip: narrow the prober list to alerts within `value`'s window,
-   * persist the choice per device, and force a repaint. Re-selecting the active
-   * chip is a no-op.
+   * Date-range chip: narrow the prober list to alerts within `value`'s window.
+   * Writes `settingsStore.spyRange` — shared with the dashboard strip and synced
+   * across devices; the settings subscription below repaints. Re-selecting the
+   * active chip is a no-op.
    * @param {string} value
    * @returns {void}
    */
   const onRange = (value) => {
-    if (value === range || !RANGES.some(([v]) => v === value)) return;
-    range = value;
-    safeLS.set(RANGE_KEY, value);
-    refresh({ force: true });
+    if (value === currentRange() || !RANGES.some(([v]) => v === value)) return;
+    settingsStore.set({ ...settingsStore.get(), spyRange: value });
   };
 
   refresh();
