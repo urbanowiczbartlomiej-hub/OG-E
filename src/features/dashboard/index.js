@@ -356,6 +356,24 @@ const PROX_NAMES_KEY = 'oge_proxNames';
 let proximityShowNames = safeLS.get(PROX_NAMES_KEY) === '1';
 
 /**
+ * Date-range filter for the proximity strip — a radio chip beside the
+ * coords/names toggle. Value → look-back window in SECONDS (ts-less alerts,
+ * which can't be aged, always pass). '1m' is the default (the strip's prior
+ * hard-coded 30-day cutoff); matches the in-game panel's chip.
+ * @type {Array<[value: string, label: string, seconds: number]>}
+ */
+const PROX_RANGES = [
+  ['1d', '1d', 86400],
+  ['7d', '7d', 604800],
+  ['1m', '1m', 2592000],
+  ['3m', '3m', 7776000],
+];
+const PROX_RANGE_KEY = 'oge_proxRange';
+let proximityRange = PROX_RANGES.some(([v]) => v === safeLS.get(PROX_RANGE_KEY))
+  ? /** @type {string} */ (safeLS.get(PROX_RANGE_KEY))
+  : '1m';
+
+/**
  * Planet count per player from the universe.xml snapshot — the coverage
  * denominator ("spied X / Y planets") for the hidden-fleet estimate.
  * @type {Record<string, number>}
@@ -1860,35 +1878,91 @@ const proximityAge = (tsSeconds, nowMs) => {
 };
 
 /**
- * One coord span for the proximity strip. A MOON body renders in the lunar
- * tint with a tooltip saying so — a planet and its moon share `"g:s:p"`, so
- * the colour is the only thing telling you which body the alert was about.
- * Same hex as the in-game Who's-spying panel's `.coord.moon`.
+ * Format an epoch-SECONDS scan time as a compact local `YYYY-MM-DD HH:MM`
+ * (mirrors the in-game Who's-spying panel's `fmtScanTime`).
+ * @param {number} tsSec
+ * @returns {string}
+ */
+const fmtScanTime = (tsSec) => {
+  const d = new Date(tsSec * 1000);
+  /** @param {number} n */
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} `
+    + `${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+/**
+ * Hover for one of OUR scanned bodies: its scan history as newest-first
+ * datetimes (one per line). Replaces the old "Moon" label — the lunar tint
+ * already marks a moon, so the tooltip carries the timeline instead. Falls
+ * back to the raw coords when no timestamped scan is on record.
+ * @param {number[] | undefined} scans
+ * @param {string} coords
+ * @returns {string}
+ */
+const scanHistoryTitle = (scans, coords) =>
+  scans && scans.length ? scans.map(fmtScanTime).join('\n') : coords;
+
+/**
+ * One coord span for one of OUR scanned bodies. The lunar tint marks a moon;
+ * the hover carries the scan history (newest first), for moons and planets
+ * alike. Same hex as the in-game Who's-spying panel's `.coord.moon`.
  * @param {string} coords
  * @param {boolean} moon
+ * @param {number[]} [scans]  Scan timestamps (epoch seconds), newest first.
  * @returns {HTMLSpanElement}
  */
-const proximityBodyEl = (coords, moon) => {
+const proximityBodyEl = (coords, moon, scans) => {
   const s = document.createElement('span');
   s.textContent = coords;
-  if (moon) {
-    s.style.cssText = 'color:#c9a9e8;cursor:help;';
-    s.title = 'Moon';
-  }
+  s.style.cssText = `cursor:help;${moon ? 'color:#c9a9e8;' : ''}`;
+  s.title = scanHistoryTitle(scans, coords);
   return s;
 };
 
 /**
- * A "Near you" body rendered as our OWN body name (moon keeps the lunar tint;
- * the raw coords go in the tooltip so nothing is lost).
+ * A "Near you" body rendered as our OWN body name (moon keeps the lunar tint);
+ * the hover carries the scan history, newest first.
  * @param {string} name @param {string} coords @param {boolean} moon
+ * @param {number[]} [scans]  Scan timestamps (epoch seconds), newest first.
  * @returns {HTMLElement}
  */
-const proximityNamedEl = (name, coords, moon) => {
+const proximityNamedEl = (name, coords, moon, scans) => {
   const s = document.createElement('span');
   s.textContent = name;
   s.style.cssText = `color:${moon ? '#c9a9e8' : '#a9c4de'};cursor:help;`;
-  s.title = moon ? `${coords} moon` : coords;
+  s.title = scanHistoryTitle(scans, coords);
+  return s;
+};
+
+/**
+ * The scanner's ORIGIN coords as a click-through to its system in the in-game
+ * galaxy view — the same deep-link the dossier offers on a body's coords. A
+ * plain span (no link) when the game origin is unknown or the coords malformed.
+ * @param {string} coords
+ * @param {boolean} moon
+ * @param {string} [linkBase]  Game origin (e.g. https://s1-en.ogame.gameforge.com).
+ * @returns {HTMLElement}
+ */
+const proximityFromEl = (coords, moon, linkBase) => {
+  const parts = coords.split(':');
+  const href = linkBase && parts.length === 3
+    ? `${linkBase}/game/index.php?page=ingame&component=galaxy`
+      + `&galaxy=${parts[0]}&system=${parts[1]}&position=${parts[2]}`
+    : null;
+  const s = document.createElement(href ? 'a' : 'span');
+  s.textContent = coords;
+  s.style.cssText = (moon ? 'color:#c9a9e8;' : 'color:#8fb8e0;')
+    + (href ? 'cursor:pointer;text-decoration:underline dotted;' : '');
+  if (href) {
+    const a = /** @type {HTMLAnchorElement} */ (s);
+    a.href = href;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.title = 'Open this system in the in-game galaxy view';
+  } else if (moon) {
+    s.title = 'Moon';
+  }
   return s;
 };
 
@@ -1915,12 +1989,16 @@ const renderProximityStrip = () => {
   // digest never leaves a stale toggle riding the title line.
   if (proximityHeadToolsEl) proximityHeadToolsEl.textContent = '';
   const nowMs = Date.now();
-  // Ts-less alerts stay (they can't be aged); `ts` is epoch seconds.
-  const cutoffSec = Math.floor(nowMs / 1000) - 30 * 86400;
+  // Ts-less alerts stay (they can't be aged); `ts` is epoch seconds. The window
+  // comes from the date-range chip (default '1m' = the prior 30-day cutoff).
+  const windowSec = PROX_RANGES.find(([v]) => v === proximityRange)?.[2] ?? 30 * 86400;
+  const cutoffSec = Math.floor(nowMs / 1000) - windowSec;
   const recentReports = proximityReports.filter(
     (r) => !(typeof r.ts === 'number' && r.ts > 0) || r.ts >= cutoffSec,
   );
   const digest = digestProximityReports(recentReports);
+  // Game origin for the "from" click-through to the in-game galaxy view.
+  const linkBase = gameLinkBase();
   if (proximityCountsEl) {
     // No leading dash — the card head's flex gap already separates this from
     // the title.
@@ -1935,33 +2013,60 @@ const renderProximityStrip = () => {
       ? ` · ⚠ ${digest.sameSystemCount} from your system`
       : '';
   }
+  // Head tools ride the card head's right-edge slot. Built whenever ANY alert
+  // exists in the raw log (not just the filtered window) so the date-range chip
+  // stays reachable to widen back after a narrow window empties the strip.
+  if (proximityReports.length && proximityHeadToolsEl) {
+    // Date-range radio (1d/7d/1m/3m) — the shared segmented-chip look.
+    const rangeGroup = document.createElement('div');
+    rangeGroup.className = 'chip-group seg';
+    rangeGroup.title = 'Show probers seen within this window';
+    for (const [value, lbl] of PROX_RANGES) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = lbl;
+      if (value === proximityRange) b.className = 'on';
+      b.addEventListener('click', () => {
+        if (value === proximityRange) return;
+        proximityRange = value;
+        safeLS.set(PROX_RANGE_KEY, value);
+        renderProximityStrip();
+      });
+      rangeGroup.appendChild(b);
+    }
+    proximityHeadToolsEl.appendChild(rangeGroup);
+
+    // Coords/names toggle (device-local): swap the "at <our bodies>" coords for
+    // our planet/moon names. Only when we actually have a body snapshot.
+    if (ownBodies.length) {
+      const tgl = document.createElement('button');
+      tgl.type = 'button';
+      tgl.textContent = proximityShowNames ? 'Names' : 'Coords';
+      tgl.title = 'Coords / names';
+      tgl.style.cssText = 'font-size:11px;border:1px solid #2b3a4d;background:#18222e;color:#9fb4c4;'
+        + 'border-radius:999px;padding:1px 9px;cursor:pointer;';
+      tgl.addEventListener('click', () => {
+        proximityShowNames = !proximityShowNames;
+        safeLS.set(PROX_NAMES_KEY, proximityShowNames ? '1' : '0');
+        renderProximityStrip();
+      });
+      proximityHeadToolsEl.appendChild(tgl);
+    }
+  }
+
   if (!digest.totalReports) {
     const note = document.createElement('div');
     note.style.cssText = 'color:#667;font-size:12px;';
-    note.textContent = 'No scans on you yet.';
+    // Distinguish "no data at all" from "nothing in this window" — the latter is
+    // fixable by widening the range chip above.
+    note.textContent = proximityReports.length
+      ? 'No scans in this window.'
+      : 'No scans on you yet.';
     proximityStripEl.appendChild(note);
     return;
   }
 
   const nameIdx = bodyNameIndex(ownBodies);
-  // Coords/names toggle (device-local): swap the "at <our bodies>" coords for
-  // our planet/moon names. Only when we actually have a body snapshot. Rides
-  // the card head's right-edge tool slot — a whole strip row for one pill was
-  // dead vertical space.
-  if (ownBodies.length && proximityHeadToolsEl) {
-    const tgl = document.createElement('button');
-    tgl.type = 'button';
-    tgl.textContent = proximityShowNames ? 'Names' : 'Coords';
-    tgl.title = 'Coords / names';
-    tgl.style.cssText = 'font-size:11px;border:1px solid #2b3a4d;background:#18222e;color:#9fb4c4;'
-      + 'border-radius:999px;padding:1px 9px;cursor:pointer;';
-    tgl.addEventListener('click', () => {
-      proximityShowNames = !proximityShowNames;
-      safeLS.set(PROX_NAMES_KEY, proximityShowNames ? '1' : '0');
-      renderProximityStrip();
-    });
-    proximityHeadToolsEl.appendChild(tgl);
-  }
 
   /** @param {string} label */
   const seedSearch = (label) => {
@@ -2034,16 +2139,19 @@ const renderProximityStrip = () => {
     sub.style.cssText = 'font-size:11px;color:#6b7782;line-height:1.5;';
     if (e.fromCoords) {
       sub.appendChild(document.createTextNode('from '));
-      sub.appendChild(proximityBodyEl(e.fromCoords, e.fromMoon));
+      sub.appendChild(proximityFromEl(e.fromCoords, e.fromMoon, linkBase));
       if (e.atBodies.length) sub.appendChild(document.createTextNode(' · '));
     }
     if (e.atBodies.length) {
       sub.appendChild(document.createTextNode('at '));
-      // Moon bodies carry the lunar tint (a planet and its moon share coords).
+      // Moon bodies carry the lunar tint (a planet and its moon share coords);
+      // the hover lists every scan of that body, newest first.
       e.atBodies.forEach((b, i) => {
         if (i) sub.appendChild(document.createTextNode(', '));
         const nm = proximityShowNames ? bodyNameFor(nameIdx, b.coords, b.moon) : null;
-        sub.appendChild(nm ? proximityNamedEl(nm, b.coords, b.moon) : proximityBodyEl(b.coords, b.moon));
+        sub.appendChild(nm
+          ? proximityNamedEl(nm, b.coords, b.moon, b.scans)
+          : proximityBodyEl(b.coords, b.moon, b.scans));
       });
     }
     facts.appendChild(sub);

@@ -57,6 +57,8 @@ import { bodiesStore } from '../state/bodies.js';
 import { bodyNameIndex, bodyNameFor, nearestBodyDistance } from '../domain/bodies.js';
 import { injectStyle, parseSvg } from '../lib/dom.js';
 import { EYE_GLYPH } from './shared/buttonGlyphs.js';
+import { navigateGalaxyInPage } from './shared/galaxyNav.js';
+import { ingameComponentUrl } from '../domain/ogameUrl.js';
 import { safeLS } from '../lib/storage.js';
 import { clock } from '../lib/clock.js';
 import { parseUniverseId } from '../lib/universeId.js';
@@ -113,6 +115,26 @@ const NAMES_KEY = 'oge_spybackNames';
 /** True ⇒ render the "Near you" column as our body names, not coordinates. */
 let showNames = safeLS.get(NAMES_KEY) === '1';
 
+/**
+ * Date-range filter for the prober list — a radio chip beside the names toggle.
+ * Each value is a look-back window in SECONDS; only alerts newer than
+ * `now − window` (plus any ts-less alert, which can't be aged) reach the digest.
+ * `'1m'` is the default — it matches the dashboard strip's prior 30-day cutoff.
+ * @type {Array<[value: string, label: string, seconds: number]>}
+ */
+const RANGES = [
+  ['1d', '1d', 86400],
+  ['7d', '7d', 604800],
+  ['1m', '1m', 2592000],
+  ['3m', '3m', 7776000],
+];
+/** Device-local persisted range choice. */
+const RANGE_KEY = 'oge_spybackRange';
+/** Current range value; falls back to '1m' for an unset/legacy key. */
+let range = RANGES.some(([v]) => v === safeLS.get(RANGE_KEY))
+  ? /** @type {string} */ (safeLS.get(RANGE_KEY))
+  : '1m';
+
 const CSS = [
   // --sp-accent = the Spyglass gold (sendSpy's BG_SPY_IDLE) — one spy identity
   // across the FAB, this panel and the dashboard tab it deep-links to.
@@ -158,6 +180,19 @@ const CSS = [
   `#${PANEL_ID} .oge-sb-namebtn{margin-left:8px;font:10px Verdana,sans-serif;color:#93a3b3;`,
   'cursor:pointer;background:#16212c;border:1px solid #26323f;border-radius:5px;padding:2px 8px;white-space:nowrap;}',
   `#${PANEL_ID} .oge-sb-namebtn:hover{border-color:var(--sp-accent);color:#d8e6f4;}`,
+  // Date-range radio (1d/7d/1m/3m) — a segmented rectangular chip group beside
+  // the names toggle. Selected pill wears the gold accent (matches the
+  // dashboard's `.chip-group.seg button.on`).
+  `#${PANEL_ID} .oge-sb-range{display:inline-flex;margin-left:8px;`,
+  'border:1px solid #26323f;border-radius:5px;overflow:hidden;}',
+  `#${PANEL_ID} .oge-sb-range button{font:10px Verdana,sans-serif;color:#93a3b3;cursor:pointer;`,
+  'background:#16212c;border:0;border-left:1px solid #26323f;padding:2px 7px;white-space:nowrap;}',
+  `#${PANEL_ID} .oge-sb-range button:first-child{border-left:0;}`,
+  `#${PANEL_ID} .oge-sb-range button:hover{color:#d8e6f4;background:#1a2534;}`,
+  `#${PANEL_ID} .oge-sb-range button.on{background:var(--sp-accent);color:#141d27;font-weight:700;}`,
+  // Clickable "From" coords — jump to the scanner's system in the galaxy view.
+  `#${PANEL_ID} .oge-sb-jump{cursor:pointer;text-decoration:underline dotted transparent;}`,
+  `#${PANEL_ID} .oge-sb-jump:hover{color:#d8e6f4;text-decoration-color:var(--sp-accent);}`,
   `#${PANEL_ID} .oge-sb-dist{display:block;margin-top:2px;font:11px/1 monospace;color:#6b7987;}`,
   `#${PANEL_ID} .oge-sb-dist.near{color:#e0b45f;}`,
   `#${PANEL_ID} .oge-sb-dist.hot{color:var(--sp-danger);}`,
@@ -226,16 +261,81 @@ const openSpyglass = (pid) => {
 };
 
 /**
- * One coord span. A MOON body renders in the lunar tint (`.coord.moon`) with a
- * tooltip saying so — a planet and its moon share `"g:s:p"`, so the colour is
- * the only thing telling you which body the alert was actually about.
+ * Parse a `"g:s:p"` coordinate string into its parts, or null when malformed.
+ * @param {string | null | undefined} coords
+ * @returns {{ galaxy: number, system: number, position: number } | null}
+ */
+const parseCoords = (coords) => {
+  const m = /^\s*(\d+):(\d+):(\d+)\s*$/.exec(coords ?? '');
+  return m ? { galaxy: +m[1], system: +m[2], position: +m[3] } : null;
+};
+
+/**
+ * Format an epoch-SECONDS scan time as a compact local `YYYY-MM-DD HH:MM`.
+ * @param {number} tsSec
+ * @returns {string}
+ */
+const fmtScanTime = (tsSec) => {
+  const d = new Date(tsSec * 1000);
+  /** @param {number} n */
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} `
+    + `${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+/**
+ * Tooltip for one of OUR scanned bodies: its scan history as newest-first
+ * datetimes (one per line). Replaces the old "Moon" label — the lunar tint
+ * already marks a moon, so the hover is free to carry the timeline instead.
+ * Falls back to the raw coords when no timestamped scan is on record.
+ * @param {{ coords: string, scans: number[] }} b
+ * @returns {string}
+ */
+const scanHistoryTitle = (b) =>
+  b.scans.length ? b.scans.map(fmtScanTime).join('\n') : b.coords;
+
+/**
+ * Jump to `coords`' system in the in-game galaxy view: fast in-page nav when
+ * the galaxy form is present, else a full navigation to the galaxy URL. No-op
+ * for a malformed coord.
+ * @param {string} coords
+ * @returns {void}
+ */
+const jumpToGalaxy = (coords) => {
+  const c = parseCoords(coords);
+  if (!c) return;
+  if (!navigateGalaxyInPage(c.galaxy, c.system)) {
+    location.href = ingameComponentUrl(location.href, 'galaxy', {
+      galaxy: c.galaxy,
+      system: c.system,
+      position: c.position,
+    });
+  }
+};
+
+/**
+ * The scanner's origin coords as a clickable jump to its system in the galaxy
+ * view (same gesture the dashboard dossier offers on a body's coords).
  * @param {string} coords
  * @param {boolean} moon
  * @returns {HTMLElement}
  */
-const bodyEl = (coords, moon) => {
-  const s = el('span', moon ? 'coord moon' : 'coord', coords);
-  if (moon) s.title = 'Moon';
+const fromBodyEl = (coords, moon) => {
+  const s = el('span', `coord oge-sb-jump${moon ? ' moon' : ''}`, coords);
+  s.title = 'Open this system in the galaxy view';
+  s.addEventListener('click', () => jumpToGalaxy(coords));
+  return s;
+};
+
+/**
+ * One coord span for our scanned body. Its hover carries the scan history
+ * (newest first); the lunar tint alone marks a moon.
+ * @param {{ coords: string, moon: boolean, scans: number[] }} b
+ * @returns {HTMLElement}
+ */
+const bodyEl = (b) => {
+  const s = el('span', b.moon ? 'coord moon' : 'coord', b.coords);
+  s.title = scanHistoryTitle(b);
   return s;
 };
 
@@ -248,9 +348,9 @@ const bodyEl = (coords, moon) => {
 
 /**
  * Render one "Near you" body. When the header toggle is on and we own a
- * matching body, show its NAME (raw coords kept in the tooltip so nothing is
- * lost); otherwise fall back to the coordinate span. Lunar tint either way.
- * @param {{ coords: string, moon: boolean }} b
+ * matching body, show its NAME; otherwise fall back to the coordinate span.
+ * Lunar tint either way, and the scan-history hover in both cases.
+ * @param {{ coords: string, moon: boolean, scans: number[] }} b
  * @param {RenderCtx} ctx
  * @returns {HTMLElement}
  */
@@ -259,11 +359,11 @@ const nearBodyEl = (b, ctx) => {
     const name = ctx.nameFor(b.coords, b.moon);
     if (name) {
       const s = el('span', b.moon ? 'coord moon' : 'coord', name);
-      s.title = b.moon ? `${b.coords} moon` : b.coords;
+      s.title = scanHistoryTitle(b);
       return s;
     }
   }
-  return bodyEl(b.coords, b.moon);
+  return bodyEl(b);
 };
 
 /**
@@ -292,7 +392,8 @@ const buildRow = (p, ctx) => {
   tr.appendChild(el('td', 'num', String(p.count)));
 
   const fromTd = el('td');
-  fromTd.appendChild(p.fromCoords ? bodyEl(p.fromCoords, p.fromMoon) : el('span', 'muted', '—'));
+  fromTd.appendChild(
+    p.fromCoords ? fromBodyEl(p.fromCoords, p.fromMoon) : el('span', 'muted', '—'));
   tr.appendChild(fromTd);
 
   const nearTd = el('td');
@@ -325,9 +426,10 @@ const buildRow = (p, ctx) => {
  * Build the empty panel shell (header strip + table skeleton + footnote slot).
  * `renderInto` fills it.
  * @param {() => void} onToggleNames  Header coords↔names toggle handler.
+ * @param {(value: string) => void} onRange  Date-range chip handler.
  * @returns {HTMLElement}
  */
-const buildShell = (onToggleNames) => {
+const buildShell = (onToggleNames, onRange) => {
   const panel = el('div');
   panel.id = PANEL_ID;
 
@@ -343,6 +445,18 @@ const buildShell = (onToggleNames) => {
   nameBtn.title = 'Coords / names';
   nameBtn.addEventListener('click', onToggleNames);
   hdr.appendChild(nameBtn);
+  // Date-range radio chips (1d/7d/1m/3m) — filter probers by how recently they
+  // last scanned you. `renderInto` marks the active one.
+  const rangeGroup = el('div', 'oge-sb-range');
+  rangeGroup.title = 'Show probers seen within this window';
+  for (const [value, label] of RANGES) {
+    const b = el('button', undefined, label);
+    b.setAttribute('type', 'button');
+    b.dataset.range = value;
+    b.addEventListener('click', () => onRange(value));
+    rangeGroup.appendChild(b);
+  }
+  hdr.appendChild(rangeGroup);
   hdr.appendChild(el('span', 'oge-sb-sum'));
   panel.appendChild(hdr);
 
@@ -378,6 +492,9 @@ const buildShell = (onToggleNames) => {
 const renderInto = (panel, digest, ctx) => {
   const nb = panel.querySelector('.oge-sb-namebtn');
   if (nb) nb.textContent = ctx.showNames ? 'Names' : 'Coords';
+  for (const b of panel.querySelectorAll('.oge-sb-range button')) {
+    b.classList.toggle('on', /** @type {HTMLElement} */ (b).dataset.range === range);
+  }
   const sum = panel.querySelector('.oge-sb-sum');
   if (sum) {
     sum.textContent = '';
@@ -462,9 +579,17 @@ export const installWhosSpyingPanel = () => {
       lastSig = '';
       return;
     }
-    const digest = digestProximityReports(reports);
+    // Date-range filter: keep alerts within the selected window (ts-less alerts
+    // can't be aged, so they stay). Applied before the digest so the counts,
+    // sort and scan-history hover all reflect the chosen window.
+    const nowSec = Math.floor(Date.now() / 1000);
+    const windowSec = RANGES.find(([v]) => v === range)?.[2] ?? 0;
+    const filtered = windowSec
+      ? reports.filter((r) => !r.ts || r.ts >= nowSec - windowSec)
+      : reports;
+    const digest = digestProximityReports(filtered);
     if (!panel) {
-      panel = buildShell(onToggleNames);
+      panel = buildShell(onToggleNames, onRange);
       lastSig = '';
     }
     // Keep it glued in the slot — AGR may have re-injected its overview, and a
@@ -486,7 +611,7 @@ export const installWhosSpyingPanel = () => {
     };
     const shown = digest.players.slice(0, MAX_ROWS);
     const sig = `${digest.playerCount}|${digest.totalReports}|${digest.sameSystemCount}`
-      + `|${showNames ? 'n' : 'c'}|${inv.capturedAt}|`
+      + `|${showNames ? 'n' : 'c'}|${range}|${inv.capturedAt}|`
       + shown.map((p) => `${p.byPlayerId}:${p.count}:${p.lastTs}`).join(',');
     if (force || sig !== lastSig) {
       renderInto(panel, digest, ctx);
@@ -502,6 +627,20 @@ export const installWhosSpyingPanel = () => {
   const onToggleNames = () => {
     showNames = !showNames;
     safeLS.set(NAMES_KEY, showNames ? '1' : '0');
+    refresh({ force: true });
+  };
+
+  /**
+   * Date-range chip: narrow the prober list to alerts within `value`'s window,
+   * persist the choice per device, and force a repaint. Re-selecting the active
+   * chip is a no-op.
+   * @param {string} value
+   * @returns {void}
+   */
+  const onRange = (value) => {
+    if (value === range || !RANGES.some(([v]) => v === value)) return;
+    range = value;
+    safeLS.set(RANGE_KEY, value);
     refresh({ force: true });
   };
 

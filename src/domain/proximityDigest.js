@@ -21,10 +21,12 @@
  * @property {string|null} name       Latest known nickname (alerts may omit it).
  * @property {number} count           Alerts this prober triggered (in the log window).
  * @property {number|null} lastTs     Newest alert, epoch SECONDS; null = none carried a ts.
- * @property {Array<{coords: string, moon: boolean}>} atBodies
- *   Distinct bodies of OURS approached, newest first. A planet and its moon
- *   share coords but are separate spiable bodies, so they list separately —
- *   `moon` says which one the scout actually probed.
+ * @property {Array<{coords: string, moon: boolean, scans: number[]}>} atBodies
+ *   Distinct bodies of OURS approached, ordered by their newest scan first. A
+ *   planet and its moon share coords but are separate spiable bodies, so they
+ *   list separately — `moon` says which one the scout actually probed. `scans`
+ *   is every alert timestamp for that body (epoch SECONDS), newest first — the
+ *   per-body scan history the panels surface on hover.
  * @property {string|null} fromCoords Newest known origin body.
  * @property {boolean} fromMoon       That origin is a moon (launched from a moon).
  * @property {boolean} sameSystem     Some alert's origin g:s equals the approached body's g:s.
@@ -101,16 +103,30 @@ export const digestProximityReports = (reports) => {
     }
     if (r.atCoords) {
       const moon = r.atPlanetType === 3;
-      if (!e.atBodies.some((b) => b.coords === r.atCoords && b.moon === moon)) {
-        if (newest) e.atBodies.unshift({ coords: r.atCoords, moon });
-        else e.atBodies.push({ coords: r.atCoords, moon });
+      // Accumulate every scan's ts per body; ordering is done once after the
+      // loop (below) so the log's own order can't skew it. This materialises
+      // the per-body scan history — the raw log carries one ts per alert, the
+      // digest is the only place it's collated.
+      let body = e.atBodies.find((b) => b.coords === r.atCoords && b.moon === moon);
+      if (!body) {
+        body = { coords: r.atCoords, moon, scans: /** @type {number[]} */ ([]) };
+        e.atBodies.push(body);
       }
+      if (ts != null) body.scans.push(ts);
     }
     const from = systemOf(r.fromCoords);
     if (from != null && from === systemOf(r.atCoords)) {
       if (!e.sameSystem || newest) e.sameSystemFrom = r.fromCoords ?? null;
       e.sameSystem = true;
     }
+  }
+
+  // Order each prober's bodies by their newest scan, and each body's scan
+  // history newest-first — both panels render "my scanned positions" and the
+  // hover list straight from this.
+  for (const e of byId.values()) {
+    for (const b of e.atBodies) b.scans.sort((x, y) => y - x);
+    e.atBodies.sort((a, b) => (b.scans[0] ?? -1) - (a.scans[0] ?? -1));
   }
 
   const players = [...byId.values()].sort((a, b) => {
