@@ -99,7 +99,6 @@ import {
   ROUTINE_OFF_LABEL_MS,
   buildFleetdispatchUrl,
   isGlobalExpeditionCapReached,
-  isGlobalExpeditionCapReachedAfterNextSend,
   isPlanetShipless,
   computeInitialLabel,
 } from './pure.js';
@@ -192,6 +191,13 @@ export const installSendExpedition = () => {
   // BUTTON_TEXT) instead of leaving a stale label behind.
   /** @type {ReturnType<typeof setTimeout> | null} */
   let capLabelTimer = null;
+
+  // Sticky-error latch. Set when a fleet1→fleet2 transition failed (the new
+  // game version occasionally throws mid-routine): the button shows "Error" and
+  // stays that way — no auto-fade — so the failure is not missed. The NEXT tap
+  // is intercepted (see handleClick) to reload a clean fleetdispatch (restart
+  // from fleet1); a retry almost always then completes. Cleared by that reload.
+  let errorMode = false;
 
   // The eventbox-readiness gate (hold the button visibly disabled on
   // fleetdispatch until OGame's post-load eventbox XHR lands) now lives in
@@ -287,6 +293,24 @@ export const installSendExpedition = () => {
   };
 
   /**
+   * Sticky "Error" — a fleet1→fleet2 transition never resolved (the game threw
+   * mid-routine / AGR stalled). Unlike {@link paintRoutineOff} this does NOT
+   * auto-restore: it latches {@link errorMode} so the label persists until the
+   * user taps, and that tap reloads a clean fleetdispatch (see handleClick).
+   * The button is left un-dimmed and tappable.
+   *
+   * @param {HTMLButtonElement} btn
+   */
+  const paintError = (btn) => {
+    errorMode = true;
+    setLabel(btn, 'Error');
+    btn.title = 'Fleet setup failed (fleet1 → fleet2). Tap to reload and retry from the start.';
+    controller?.setBg('main', BG_ERROR);
+    controller?.setError(true);
+    unlock(btn);
+  };
+
+  /**
    * Phase 2 (fleetdispatch, fleet panel NOT yet loaded): drive AGR's
    * expeditions routine (`#ago_routine_7`) via the shared
    * {@link prepareViaRoutine}, then map its outcome to the expedition labels:
@@ -327,8 +351,9 @@ export const installSendExpedition = () => {
       return;
     }
     if (state === 'timeout') {
-      setLabel(btn, BUTTON_TEXT);
-      unlock(btn);
+      // fleet1 → fleet2 never advanced — surface a sticky Error the user can
+      // tap to reload+retry, instead of silently reverting to idle.
+      paintError(btn);
       return;
     }
 
@@ -367,9 +392,9 @@ export const installSendExpedition = () => {
       setTimeout(() => unlock(btn), 3000);
       return;
     }
-    // 'timeout' — never became sendable; restore idle and release for a retry.
-    setLabel(btn, BUTTON_TEXT);
-    unlock(btn);
+    // 'timeout' — fleet2 up but the dispatch never became sendable; surface a
+    // sticky Error the user can tap to reload+retry.
+    paintError(btn);
   };
 
   /**
@@ -405,6 +430,13 @@ export const installSendExpedition = () => {
    * @returns {void}
    */
   const handleClick = (btn) => {
+    // Sticky-error retry: a tap while "Error" is showing reloads a clean
+    // fleetdispatch (restart from fleet1) — the reload itself clears errorMode.
+    if (errorMode) {
+      errorMode = false;
+      location.href = bareFleetdispatchUrl();
+      return;
+    }
     if (busy) return;
 
     // The eventbox-readiness gate is enforced upstream by the shared Button
@@ -443,10 +475,13 @@ export const installSendExpedition = () => {
     // planet (unless the next send would hit the global cap anyway).
     const max = settingsStore.get().maxExpeditionsPerPlanet;
     if (countActiveExpeditions(getActivePlanetCoords()) >= max) {
-      if (isGlobalExpeditionCapReachedAfterNextSend(fdCache.get())) {
-        paintAllMaxed(btn);
-        return;
-      }
+      // Current planet already has its expedition → hop to a planet that still
+      // has a free per-planet slot. The account-wide cap (15/15) was already
+      // ruled out at the `isGlobalExpeditionCapReached` gate above, so a free
+      // account slot exists; "All sent" is correct ONLY when no planet has a
+      // free slot — i.e. `hopToNextExpPlanet()` fails. (The old
+      // `…AfterNextSend` pre-hop gate fired at 14/15 and painted "All sent"
+      // even while a free planet existed — the premature-"All sent" bug.)
       if (hopToNextExpPlanet()) return;
       paintAllMaxed(btn);
       return;

@@ -165,13 +165,16 @@ export const renderLines = (span, lines) => {
  * @returns {LabelLine[]}
  */
 export const labelLines = ({ main, sub, hint }) => {
+  // Two-word verdicts crowd the round rim at full size, so a few shared
+  // labels wear a slightly smaller primary. Handled HERE (the single source
+  // of truth for label sizes) so every feature shrinks them identically
+  // without each paint site knowing about it:
+  //   • 'Max fleets' — the shared fleet-cap verdict (see shared/statusTones.js)
+  //   • "Can't send" — the lifeform blocked/failed verdict
+  /** @type {Record<string, string>} */
+  const SHRUNK_PRIMARY = { 'Max fleets': '0.9em', "Can't send": '0.85em' };
   /** @type {LabelLine[]} */
-  // 'Max fleets' — the shared fleet-cap verdict every send button can paint
-  // (see shared/statusTones.js for the status language) — wears a slightly
-  // smaller primary: two words at full size crowd the round rim. Handled
-  // HERE (the single source of truth for label sizes) so all five features
-  // shrink it identically without each paint site knowing about it.
-  const lines = [{ text: main, em: main === 'Max fleets' ? '0.9em' : '1em' }];
+  const lines = [{ text: main, em: SHRUNK_PRIMARY[main] || '1em' }];
   if (sub != null && sub !== '') {
     lines.push({ text: sub, em: '0.5em', opacity: 0.85, marginTop: 2, letterSpacing: 0.5 });
   }

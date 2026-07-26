@@ -198,6 +198,12 @@ const endCooldown = () => {
  */
 const onClick = () => {
   if (busy) return;
+  // A tap is a fresh interaction: drop any lingering post-send transient
+  // ("Sent N!" / "Can't send" / …) so the click derives from live state
+  // instead of the 1 Hz ticker re-painting the stale label (which made the
+  // button look stuck on the old "Sent!" until TRANSIENT_MS elapsed).
+  transientPaint = null;
+  transientUntil = 0;
   const ctx = derive(captureEnv());
 
   switch (ctx.kind) {
@@ -341,7 +347,9 @@ const onDiscoveryResult = (e) => {
   // Failure. Fleet cap (or the game flat-out reports it can't send more) →
   // surface it and mark NOTHING (the system still needs discovering).
   if ((detail.message && MAX_FLEET_RE.test(detail.message)) || detail.canSendDiscovery === false) {
-    showTransient({ text: 'Max fleets', bg: BG_LF_ERROR });
+    // Generic wording: the block is not always the fleet cap (other game-side
+    // blockers reject the send too), so "Can't send" reads true in every case.
+    showTransient({ text: "Can't send", bg: BG_LF_ERROR });
     return;
   }
   showTransient({ text: 'Failed', bg: BG_LF_ERROR });

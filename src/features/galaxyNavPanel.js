@@ -133,6 +133,16 @@ const EXPO_PROXY_ID = 'oge-gnav-expo';
 const EXPO_HIDDEN_CLASS = 'oge-expo-hidden';
 /** The native expedition-debris slot box (position 16), scoped to the galaxy table. */
 const EXPO_BOX_SEL = '#galaxyContent .expeditionDebrisSlotBox';
+/** The game's OWN hidden debris tooltip inside the box — the native fallback
+ * source for the debris figures + reduce link once AGR's `.ago_expo_df` rewrite
+ * broke on the new galaxy version. */
+const NATIVE_DEBRIS_SEL = '#debris16';
+/** AGR's reduce/reap link (preferred while AGR works). */
+const AGR_RECYCLE_SEL = '.ago_expo_df li a';
+/** The game's native reduce link ("Mine"/"Zredukuj") inside the debris tooltip;
+ * an `<a>` when actionable, a `span.inactiveLink` (no `<a>`) when you lack the
+ * pathfinders — so `querySelector('a')` naturally yields the enabled link only. */
+const NATIVE_RECYCLE_SEL = '#debris16 .ListLinks li a';
 
 // ── Footer fold (legend adoption + footer hide) ──────────────────────────
 /** Native galaxy footer row (colonised count + legend), last block of the table. */
@@ -755,6 +765,44 @@ const readExpoReadout = (box) => {
 };
 
 /**
+ * NATIVE fallback for {@link readExpoReadout}. The new game version changed the
+ * galaxy selectors, which broke AGR's `ul.ago_expo_df` rewrite — so when that
+ * list is empty we read the debris figures straight from the game's OWN hidden
+ * `#debris16` tooltip instead (the resource/pathfinder lines the game always
+ * renders there), keeping the same compact `{ resources, pf }` shape. Resource
+ * shorthand is by position (Metal/Crystal/Deuterium → M/K/D — the OGame-wide
+ * trade shorthand, locale-proof), and a zero-value line (deuterium is always 0
+ * on expedition debris) is dropped to keep the strip tight. No `miss` delta —
+ * that is an AGR-only annotation with no native source.
+ *
+ * @param {Element} box
+ * @returns {{ resources: ExpoRow[], pf: ExpoRow | null }}
+ */
+const readExpoReadoutNative = (box) => {
+  /** @type {ExpoRow[]} */
+  const resources = [];
+  /** @type {ExpoRow | null} */
+  let pf = null;
+  const tip = box.querySelector(NATIVE_DEBRIS_SEL);
+  if (!tip) return { resources, pf };
+  const RES_SHORT = ['M', 'K', 'D'];
+  let i = 0;
+  for (const li of tip.querySelectorAll('.debris-content')) {
+    const raw = li.textContent?.trim() ?? '';
+    const short = RES_SHORT[i] ?? undefined;
+    i += 1;
+    if (!raw.includes(':')) continue;
+    // Skip a zero line (expedition debris always has Deuterium: 0) — noise.
+    if (/^0+$/.test(raw.replace(/^[^:]*:/, '').replace(/\D/g, ''))) continue;
+    resources.push({ main: shortenDebrisLabel(raw, short), miss: '' });
+  }
+  const pfLi = tip.querySelector('.debris-recyclers');
+  const pfRaw = pfLi?.textContent?.trim() ?? '';
+  if (pfRaw.includes(':')) pf = { main: shortenDebrisLabel(pfRaw, 'PF'), miss: '' };
+  return { resources, pf };
+};
+
+/**
  * A proxy button whose CLICK is forwarded to a native control (`sel`, matched
  * within the hidden box). Text is set later by {@link updateExpoProxy} from the
  * native control, so our labels always match the game's own wording + locale.
@@ -794,7 +842,13 @@ const buildExpoProxy = () => {
   actions.className = 'oge-expo-actions';
 
   // 1) Recycle — a two-line button: native label on top, pathfinders below.
-  const recycle = mkProxyBtn('oge-expo-recycle', '.ago_expo_df li a');
+  //    Click resolves AGR's link first, else the game's own reduce link (the
+  //    native fallback for the broken-AGR / new-galaxy-version case).
+  const recycle = document.createElement('button');
+  recycle.type = 'button';
+  recycle.className = 'oge-expo-btn oge-expo-recycle';
+  recycle.addEventListener('click', (e) =>
+    proxyExpoClick(e, inExpoBox(AGR_RECYCLE_SEL) || inExpoBox(NATIVE_RECYCLE_SEL)));
   const l1 = document.createElement('span');
   l1.className = 'oge-expo-l1';
   const l2 = document.createElement('span');
@@ -846,7 +900,11 @@ const buildExpoProxy = () => {
  */
 const updateExpoProxy = (proxy, box) => {
   const title = box.querySelector('.title')?.textContent?.trim() ?? '';
-  const { resources, pf } = readExpoReadout(box);
+  // AGR readout first; when its `.ago_expo_df` list is empty (broken on the new
+  // galaxy version), fall back to the game's own `#debris16` tooltip so the
+  // debris figures + reduce button still render.
+  let { resources, pf } = readExpoReadout(box);
+  if (resources.length === 0 && pf === null) ({ resources, pf } = readExpoReadoutNative(box));
 
   const nativeSel = box.querySelector('#expeditionFleetTemplateSelect');
   const optPairs = nativeSel instanceof HTMLSelectElement
@@ -858,7 +916,7 @@ const updateExpoProxy = (proxy, box) => {
   // game's (right wording, right locale), state mirrored so ours track theirs.
   const expNative = box.querySelector('#expeditionbutton');
   const sendNative = box.querySelector('#sendExpeditionFleetTemplateFleet');
-  const recycleNative = box.querySelector('.ago_expo_df li a');
+  const recycleNative = box.querySelector(AGR_RECYCLE_SEL) || box.querySelector(NATIVE_RECYCLE_SEL);
   const expLabel = expNative?.textContent?.trim() ?? '';
   const sendLabel = sendNative?.textContent?.trim() ?? '';
   const recycleLabel = recycleNative?.textContent?.trim() ?? '';

@@ -114,6 +114,11 @@ const cleanupAbandonedPlanet = (galaxy, system, position) => {
 export const checkAbandonState = (config) => {
   const s = config ?? galaxyScanConfigStore.get();
   if (!location.search.includes('component=overview')) return null;
+  // Moons are never abandonable — the game has no "abandon" for them, and a
+  // fresh moon reads used===0 with a small field max, so without this guard the
+  // FAB wrongly offered "Abandon · N fields · too small" on a moon. The body
+  // type comes from OGame's own authoritative `ogame-planet-type` meta.
+  if (document.querySelector(GAME.META_PLANET_TYPE)?.getAttribute('content') === 'moon') return null;
   const diameterEl = document.querySelector(GAME.DIAMETER_FIELD);
   if (!diameterEl) return null;
   const m = diameterEl.textContent?.match(/\((\d+)\/(\d+)\)/);

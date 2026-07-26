@@ -515,13 +515,25 @@ const buildMarker = (m) => {
 let eventBoxReady = false;
 
 /**
- * Whether the event list is loaded, so an empty render is authoritative. The
- * presence of any event row is a sufficient signal on its own; the flag
- * additionally covers the loaded-but-idle (zero fleets) case.
+ * Whether the event list is loaded, so an empty render is authoritative. Any of
+ * three signals suffices:
+ *   - `eventBoxReady` — the `oge:eventBoxLoaded` XHR bridge fired this page.
+ *   - a fleet row is present — obviously loaded and non-idle.
+ *   - `#eventContent` is in the DOM — OGame keeps this container current with its
+ *     own scripts, so once it exists, an EMPTY one means "genuinely no activity",
+ *     not "data not here yet". This third signal is the fix for markers that stuck
+ *     around after every fleet landed: the XHR `eventBoxReady` flip is easy to miss
+ *     (install race, or the game changing the refresh transport), which left an
+ *     empty-but-loaded list looking ambiguous forever. The real pre-XHR window on
+ *     `component=fleetdispatch` — where `#eventContent` is ABSENT until the AJAX
+ *     insert — still reads false here, so the optimistic cache stays protected.
  *
  * @returns {boolean}
  */
-const eventBoxLoaded = () => eventBoxReady || document.querySelector(GAME.EVENT_FLEET_ROWS) != null;
+const eventBoxLoaded = () =>
+  eventBoxReady ||
+  document.querySelector(GAME.EVENT_FLEET_ROWS) != null ||
+  document.querySelector(GAME.EVENT_CONTENT) != null;
 
 /**
  * The detected fleet-save row-ids to mark — but only while alarmClock' master

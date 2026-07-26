@@ -194,9 +194,9 @@ const classifyLeg = (leg, myKeys, fsIds) => {
  * @param {Set<string>} myKeys Set of {@link bodyKey} for the player's bodies.
  * @param {Set<string>} [fsIds] Row-ids the alarmClock producer flagged as a
  *   detected fleet-save; such a leg becomes the `fs` category.
- * @param {Set<string>} [landedFsKeys] Body keys with a LANDED fleet-save (no
- *   live leg) — each gets an injected `fs` marker (rendered as the landed
- *   variant) unless that body already shows a live FS.
+ * @param {Set<string>} [landedFsKeys] Body keys with a LANDED fleet-save — each
+ *   gets a landed-variant `fs` marker (rendered "FR"), shown ALONGSIDE any live
+ *   in-motion FS on the same body (the two states no longer suppress each other).
  * @returns {Map<string, Marker[]>}
  */
 export const groupMarkers = (
@@ -229,28 +229,39 @@ export const groupMarkers = (
     });
   }
 
-  // Inject a landed-FS marker (empty fleets ⇒ the landed/orange variant) on each
-  // flagged body that isn't already showing a LIVE fleet-save.
+  // Bodies with a LANDED fleet-save (an armed reminder — a fleet already
+  // sitting on the body, exposed). This is a DISTINCT state from a live
+  // in-motion FS: a body can carry BOTH a fleet to guard (FR) AND another
+  // fleet inbound to it (FS), and the player must see both at once. So we track
+  // the landed bodies separately and emit the FR marker ALONGSIDE any live FS —
+  // neither suppresses the other any more (they used to share one `fs` slot).
+  const landedBodies = new Set();
   for (const key of landedFsKeys) {
     if (!myKeys.has(key)) continue;
-    let cats = byBody.get(key);
-    if (!cats) {
-      cats = new Map();
-      byBody.set(key, cats);
-    }
-    if (!cats.has('fs')) cats.set('fs', []);
+    landedBodies.add(key);
+    // A landed-only body (no live leg) must still surface its FR marker.
+    if (!byBody.has(key)) byBody.set(key, new Map());
   }
 
   /** @type {Map<string, Marker[]>} */
   const out = new Map();
   for (const [key, cats] of byBody) {
-    const markers = MARKER_ORDER.filter((cat) => cats.has(cat))
-      .slice(0, MAX_MARKERS)
-      .map((cat) => {
+    /** @type {Marker[]} */
+    const markers = [];
+    for (const cat of MARKER_ORDER) {
+      if (cats.has(cat)) {
         const fleets = /** @type {TileFleet[]} */ (cats.get(cat));
-        return { category: cat, landed: cat === 'fs' && fleets.length === 0, fleets };
-      });
-    out.set(key, markers);
+        // Live legs are always in-motion (non-empty) ⇒ never the landed variant.
+        markers.push({ category: cat, landed: false, fleets });
+      }
+      // Emit the landed-FR twin immediately after the FS slot, so FS (in-motion,
+      // yellow) and FR (landed, orange) render as an adjacent pair and both sit
+      // above lower-priority categories under the MAX_MARKERS cap.
+      if (cat === 'fs' && landedBodies.has(key)) {
+        markers.push({ category: 'fs', landed: true, fleets: [] });
+      }
+    }
+    out.set(key, markers.slice(0, MAX_MARKERS));
   }
   return out;
 };

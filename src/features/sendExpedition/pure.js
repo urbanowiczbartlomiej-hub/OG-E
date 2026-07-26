@@ -157,25 +157,6 @@ export const isGlobalExpeditionCapReached = (snapshot) => {
 };
 
 /**
- * Pure: snapshot reports we're one send away from the cap
- * (`expeditionCount >= maxExpeditionCount - 1`, e.g. 13/14)? Used after
- * a successful Phase 1 send to skip the post-send auto-redirect: if
- * this send makes us 14/14, there's no point walking to another
- * planet — every planet will then report full once the send lands and
- * the game refreshes its counts.
- *
- * @param {FleetDispatcherSnapshot | null} snapshot
- * @returns {boolean}
- */
-export const isGlobalExpeditionCapReachedAfterNextSend = (snapshot) => {
-  if (!snapshot) return false;
-  return (
-    snapshot.maxExpeditionCount > 0 &&
-    snapshot.expeditionCount >= snapshot.maxExpeditionCount - 1
-  );
-};
-
-/**
  * Pure: does the snapshot show the active planet holds NO ships at all? An
  * empty `shipsOnPlanet` on a populated snapshot is the game's own "no ships on
  * this planet" state — the same data the game renders the fleet1 ship list from,

@@ -58,7 +58,7 @@ import { observeXHR } from './xhrObserver.js';
 import { safeLS } from '../lib/storage.js';
 import { pruneRegistry, dedupeEntry } from '../domain/registry.js';
 import { parseClockDuration } from '../domain/duration.js';
-import { MISSION_COLONIZE, MISSION_ESPIONAGE } from '../domain/rules.js';
+import { MISSION_COLONIZE, MISSION_ESPIONAGE, SHIP_ESPIONAGE_PROBE } from '../domain/rules.js';
 import { REGISTRY_KEY } from '../lib/storageKeys.js';
 import { COLONIZE_SENT_EVENT } from '../lib/ogeEvents.js';
 import { markSpySent, unmarkSpySent } from '../lib/spySentSession.js';
@@ -131,6 +131,39 @@ const espionageSentKey = (body) => {
   if (!Number.isFinite(g) || !Number.isFinite(s) || !Number.isFinite(p)) return null;
   const type = parseInt(params.get('type') || '', 10);
   return type === 3 ? `${g}:${s}:${p}:3` : `${g}:${s}:${p}`;
+};
+
+/**
+ * True when an espionage `sendFleet` body carries ONLY espionage probes
+ * (ship {@link SHIP_ESPIONAGE_PROBE}). A body that ALSO carries other ships is
+ * a fleet-save flown on an espionage mission, not a scan — it produces no spy
+ * report to wait for, so it must never be recorded as a pending probe (doing so
+ * lit the Spyglass "N new" badge when such an FS returned to its home planet).
+ * Composition rides in the body as `am<shipId>=<count>` pairs (same encoding
+ * checkTargetObserver parses). Unparseable / compositionless bodies fall back
+ * to `true` (treat as a probe) so a native probe send still suppresses
+ * re-proposing its target — the historical behaviour, unchanged.
+ *
+ * @param {Document | XMLHttpRequestBodyInit | null | undefined} body
+ * @returns {boolean}
+ */
+const isProbeOnlyEspionage = (body) => {
+  if (typeof body !== 'string') return true;
+  let params;
+  try {
+    params = new URLSearchParams(body);
+  } catch {
+    return true;
+  }
+  for (const [k, v] of params) {
+    const m = /^am(\d+)$/.exec(k);
+    if (!m) continue;
+    const count = parseInt(v, 10);
+    if (Number.isFinite(count) && count > 0 && parseInt(m[1], 10) !== SHIP_ESPIONAGE_PROBE) {
+      return false; // a non-probe ship rides along → fleet-save, not a scan
+    }
+  }
+  return true;
 };
 
 /**
@@ -269,6 +302,10 @@ export const installSendFleetHook = () => {
       // button) still suppresses re-proposing it. Optimistic + synchronous here
       // so it survives the post-send reload; rolled back in `load` if rejected.
       if (mission === MISSION_ESPIONAGE) {
+        // Only a probe-only fleet yields a spy report worth tracking. A mixed
+        // fleet (real ships + espionage mission) is a fleet-save, not a scan —
+        // skip it so the Spyglass "N new" badge doesn't fire when it lands back.
+        if (!isProbeOnlyEspionage(body)) return;
         const key = espionageSentKey(body);
         if (key) {
           markSpySent(key, Date.now());

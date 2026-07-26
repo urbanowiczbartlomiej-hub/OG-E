@@ -78,13 +78,6 @@ const row = (labelText, control, hint) => {
   return r;
 };
 
-/** A blue sub-group heading inside an editor body. @param {string} text @returns {HTMLElement} */
-const groupHeading = (text) => {
-  const el = mk('div', undefined, text);
-  el.className = 'cfg-group';
-  return el;
-};
-
 /**
  * @typedef {import('../../domain/galaxyScanConfig.js').GalaxyScanConfig} GalaxyScanConfig
  */
@@ -342,7 +335,8 @@ const buildColonizationFields = (body) => {
  * @returns {EditorFields}
  */
 const buildScanColonyFields = (body) => {
-  body.appendChild(groupHeading('Colonization & abandon'));
+  // Subtitle intentionally dropped — the panel's <summary> now reads
+  // "Colonization & abandon settings", so a repeated group heading is noise.
   return buildColonizationFields(body);
 };
 

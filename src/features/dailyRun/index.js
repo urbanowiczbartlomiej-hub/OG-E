@@ -401,6 +401,27 @@ const flash = (el, text, tone) => {
   }, FLASH_MS);
 };
 
+/**
+ * Sticky "Error" on a zone — a fleet1→fleet2 selection never resolved. Unlike
+ * {@link flash} this does NOT auto-restore: it latches {@link errorMode} (so
+ * `refresh()` holds and the 1 Hz ticker can't repaint it away), and the next
+ * tap reloads a clean fleetdispatch (see {@link handleZone}).
+ *
+ * @param {HTMLElement | null} el
+ * @param {string} text
+ * @returns {void}
+ */
+const paintZoneError = (el, text) => {
+  if (!el) return;
+  if (flashTimer !== null) { clearTimeout(flashTimer); flashTimer = null; }
+  restoreFlashTone();
+  errorMode = true;
+  el.title = 'Fleet setup failed (fleet1 → fleet2). Tap to reload and retry from the start.';
+  setLabel(el, text);
+  controller?.setBg(zoneKeyOf(el), TONE_ERROR);
+  controller?.setError(true);
+};
+
 // ─── redirect handoff ───────────────────────────────────────────────────
 
 /**
@@ -464,6 +485,19 @@ let eventBoxReady = true;
 let pending = null;
 
 /**
+ * Sticky-error latch. Set when a fleet1→fleet2 selection failed with the
+ * generic "Error" verdict (the new game version occasionally throws mid-walk):
+ * the errored zone shows "Error" and, unlike a normal flash, does NOT fade —
+ * `refresh()` holds while this is set. The NEXT tap on either zone reloads a
+ * clean fleetdispatch (restart from fleet1); the reload clears the latch. A
+ * retry almost always then completes. Enumerated verdicts (No ships, Max
+ * fleets, …) stay transient — only the generic Error latches.
+ *
+ * @type {boolean}
+ */
+let errorMode = false;
+
+/**
  * Build the {@link import('../shared/fleetCourier.js').FleetOrder} for a
  * zone, or a `{ flash }` describing why we can't. Micro → the route's
  * single-ship fleet (frac 1) to the next un-sent target; Collect → all
@@ -521,8 +555,12 @@ const buildOrder = (mode) => {
  * status tone. Everything here is a failed attempt (TONE_ERROR) except
  * 'notReady' — a valid tap the game just isn't ready for yet (TONE_WAIT).
  *
+ * The `retry` flag marks the generic fleet1→fleet2 failure (the game threw /
+ * the courier couldn't reach fleet2): those latch a sticky, tap-to-reload
+ * Error (see {@link paintZoneError}); every enumerated verdict stays transient.
+ *
  * @param {string | undefined} reason
- * @returns {{ text: string, tone: string }}
+ * @returns {{ text: string, tone: string, retry?: boolean }}
  */
 const reasonLabel = (reason) => {
   switch (reason) {
@@ -533,9 +571,10 @@ const reasonLabel = (reason) => {
     case 'noMoon': return { text: 'No moon', tone: TONE_ERROR };
     case 'reserved': return { text: 'Reserved', tone: TONE_ERROR };
     case 'mission': return { text: 'Bad target', tone: TONE_ERROR };
-    case 'timeout': return { text: 'Timeout', tone: TONE_ERROR };
     case 'notReady': return { text: 'Wait…', tone: TONE_WAIT };
-    default: return { text: 'Error', tone: TONE_ERROR };
+    case 'noFleet2': return { text: 'Error', tone: TONE_ERROR, retry: true };
+    case 'timeout': return { text: 'Error', tone: TONE_ERROR, retry: true };
+    default: return { text: 'Error', tone: TONE_ERROR, retry: true };
   }
 };
 
@@ -553,6 +592,14 @@ const reasonLabel = (reason) => {
  * @returns {Promise<void>}
  */
 const handleZone = async (mode) => {
+  // Sticky-error retry: a tap while an "Error" is latched reloads a clean
+  // fleetdispatch (restart from fleet1) — the reload itself clears errorMode.
+  // Any zone reloads: the error means the shared fleet1→fleet2 flow is stuck.
+  if (errorMode) {
+    errorMode = false;
+    location.href = bareFleetdispatchUrl();
+    return;
+  }
   if (busy) return;
   const zoneId = mode === 'micro' ? FS_MICRO_ZONE_ID : FS_COLLECT_ZONE_ID;
   const zone = document.getElementById(zoneId);
@@ -681,7 +728,9 @@ const handleZone = async (mode) => {
   dimAll(false);
   if (!r.ok) {
     const fail = reasonLabel(r.reason);
-    flash(zone, fail.text, fail.tone);
+    // fleet1 → fleet2 failure → sticky, tap-to-reload Error; other verdicts fade.
+    if (fail.retry) paintZoneError(zone, fail.text);
+    else flash(zone, fail.text, fail.tone);
     return;
   }
   pending = { mode, target: built.order.target };
@@ -782,7 +831,7 @@ const refresh = () => {
   // transient flash is on screen, the routine repaint drivers (1 Hz
   // reconciler, store/eventbox events) must NOT overwrite the label the
   // owning flow painted. That flow repaints via refresh() when it ends.
-  if (busy || flashTimer !== null) return;
+  if (busy || flashTimer !== null || errorMode) return;
   const microZone = document.getElementById(FS_MICRO_ZONE_ID);
   const collectZone = document.getElementById(FS_COLLECT_ZONE_ID);
   paintEventBoxGate(microZone, collectZone);
