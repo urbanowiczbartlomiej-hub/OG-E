@@ -13,29 +13,26 @@ export default {
 
   name: 'Daily run (codzienne trasy)',
   oneLiner:
-    'Codzienny fleet-save z jednego przycisku: rozsyła stałe mikro-floty po trasie i ściąga wszystko z powrotem na jedno ciało.',
+    'Codzienna wysyłka tych samych statków na tych samych trasach z jednego przycisku: wysyła stałe statki do tych samych celów i ściąga wszystko z powrotem na jedno wybrane ciało.',
   flagship: true,
   order: 5,
 
   idea: [
-    'Moduł **Daily Run** prowadzi Twój codzienny fleet-save. Definiujesz raz **trasę** (skąd, dokąd, jaką mikro-flotą), a potem przycisk prowadzi Cię od ciała do ciała: górna strefa **rozsyła** stałe mikro-floty po celach trasy, dolna **ściąga** wszystko z powrotem na wybrane ciało zbiorcze.',
-    'Cele, do których flota już leci, są pomijane — więc nie wyślesz przez pomyłkę dwa razy w to samo miejsce.',
+    'Przycisk **Daily Run** prowadzi Twoje codzienne ruchy flotą. Definiujesz raz **trasę** (skąd, dokąd, jaką flotą i z jaką misją), a potem przycisk prowadzi Cię przez wysyłanie zdefiniowanych tras. Górna strefa rozsyła zdefiniowane misje po wszystkich celach zdefiniowanych dla aktywnej planety będącej miejscem startu — możesz wybrać wiele celów z jednej planety, różne misje, wiele statków i wiele tras.',
+    'Dolna strefa wysyła wszystko na wybraną planetę i przechodzi do kolejnej (**Collect**); jeśli ją przytrzymasz, zmienisz cel na aktywną planetę. Wysyła statki i surowce zgodnie z opcjami wybranymi w Dashboardzie.',
+    'Cele, do których flota już leci, są pomijane, więc nie wyślesz przez pomyłkę dwa razy w to samo miejsce. Umożliwia to też farmienie nieaktywnych graczy.',
   ],
 
   value: [
-    'Codzienny fleet-save z wieloma planetami to żmudny rytuał: rozstaw, potem pozbieraj, przechodząc ręcznie po wszystkich ciałach i pilnując, co już zrobione. Daily Run prowadzi przez cały ten obchód krok po kroku.',
+    'Codzienna rutyna to żmudny rytuał: wybieranie statków, misji, celów i zbieranie codziennego zarobku, przechodząc po wszystkich ciałach i pilnując, co już zrobione. Daily Run prowadzi przez cały ten obchód krok po kroku, a Ty klikasz tylko jeden przycisk. Doskonałe na telefonie.',
   ],
 
   fairplay: {
     summary: [
       'To **prowadzenie gracza, nie bot**: OG-E nie wysyła floty samo — naciska natywny przycisk wysyłki, a wysyłkę wykonuje gra, po Twoim tapnięciu.',
-      'Co jest „już zrobione", przycisk poznaje z **listy lotów, którą gra i tak wyświetla** — a nie z jakiegokolwiek śledzenia w tle.',
+      'Przycisk odczytuje z **listy lotów, które sam wysłałeś** — a nie z jakiegokolwiek śledzenia w tle.',
     ],
   },
-
-  details: [
-    'Trasy, cel zbiorczy, misja zbiórki i ile surowców zabierać — konfiguracja per-universe w Dashboardzie.',
-  ],
 
   screenshots: [
     { id: 'two-zones', caption: 'Przycisk Daily Run z dwoma strefami: góra „rozsyłka", dół „zbiórka".' },

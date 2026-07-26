@@ -13,16 +13,17 @@ export default {
 
   name: 'Przypomnienie o flocie',
   oneLiner:
-    'Głośny przycisk w karcie, który przypomina, że Twój fleet-save wrócił i stoi odsłonięty — żebyś wysłał go od razu ponownie.',
+    'Przycisk w karcie, który przypomina, że Twój fleet-save wrócił i stoi odsłonięty, żebyś wysłał go od razu ponownie.',
   order: 6,
 
   idea: [
-    'Gdy Twój fleet-save wróci i stanie odsłonięty na ciele, pojawia się **wyraźny, „głośniejszy" przycisk** widoczny na każdej stronie gry. Tapnięcie prowadzi Cię do właściwego ciała i pozwala od razu wysłać flotę ponownie; przy dłuższej bezczynności przycisk zaczyna pulsować, żeby zwrócić uwagę.',
-    'Przypomnienie znika dopiero, gdy sprawę domkniesz (ponowna wysyłka albo ręczne zamknięcie) — nie kasuje się „samo z siebie".',
+    'Gdy Twój fleet-save wróci i będzie dostępny na planecie, pojawia się wyraźny, nowy przycisk przypominający o flocie. Włączysz go ręcznie w panelu Fleet1, albo włączy się sam, gdy FS wyląduje.',
+    'Wyłączysz go, wysyłając ponownie flotę tym przyciskiem — użyje wtedy konfiguracji AGR dla fleet-save — albo ręcznie: w panelu Fleet1 lub długim przytrzymaniem przycisku. Tapnięcie prowadzi Cię do właściwej planety i pozwala od razu wysłać flotę ponownie; przy dłuższej bezczynności przycisk zaczyna pulsować, żeby zwrócić uwagę.',
+    'Działa tylko na karcie, na której jesteś — jeśli jesteś na innej karcie, nie zostaniesz o tym poinformowany. Nie odtwarza żadnych dźwięków.',
   ],
 
   value: [
-    'Wrócona flota stojąca na postoju to łatwy łup. O ponownym fleet-save najłatwiej zapomnieć akurat wtedy, gdy wracasz do gry po przerwie — ten przycisk jest po to, żeby nie umknęło.',
+    'Wrócona flota stojąca na postoju to łatwy łup, a o jej ponownej wysyłce łatwo zapomnieć, nawet gdy jesteś aktywny online, ale zajęty czym innym. Ten przycisk pilnuje, żebyś wysłał FS zanim pójdziesz offline — żeby nic Ci nie umknęło.',
   ],
 
   fairplay: {
@@ -33,8 +34,8 @@ export default {
   },
 
   screenshots: [
-    { id: 'button', caption: 'Przycisk „Fleet reminder" — flota wróciła i stoi odsłonięta.' },
-    { id: 'pulse', caption: 'Pulsowanie po dłuższej bezczynności — sygnał „odśwież i ogarnij flotę".' },
+    { id: 'button', caption: 'Przycisk „Fleet Reminder" w panelu Fleet1 — flota czeka na ponowną wysyłkę.' },
+    { id: 'pulse', caption: 'Podświetlony orb „Fleet Reminder" obok aktywnego przycisku innej funkcji — sygnał, że flota wciąż czeka.' },
   ],
 
   codeRefs: [

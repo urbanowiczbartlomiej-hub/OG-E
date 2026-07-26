@@ -10,16 +10,17 @@ export default {
 
   name: 'Fleet reminder',
   oneLiner:
-    'A loud in-tab button reminding you that your fleet-save is back and sitting exposed — so you send it out again right away.',
+    'An in-tab button reminding you that your fleet-save is back and sitting exposed, so you send it out again right away.',
   order: 6,
 
   idea: [
-    'When your fleet-save returns and sits exposed on a body, a **prominent, "louder" button** appears on every game page. Tapping it takes you to the right body and lets you send the fleet out again immediately; after a longer idle spell the button starts pulsing to catch your eye.',
-    'The reminder disappears only once you close the matter (re-dispatch or dismiss it manually) — it does not clear "on its own".',
+    'When your fleet-save returns and is available on the planet, a prominent, new button appears reminding you about your fleet. You can turn it on manually from the Fleet1 panel, or it turns itself on when the FS lands.',
+    'You turn it off by re-sending the fleet with this button — it then uses your AGR fleet-save configuration — or manually: from the Fleet1 panel, or by long-pressing the button. Tapping it takes you to the right planet and lets you send the fleet out again immediately; after a longer idle spell the button starts pulsing to catch your eye.',
+    'It only works on the tab you are on — if you are on another tab, you will not be notified there. It plays no sounds.',
   ],
 
   value: [
-    'A returned fleet sitting idle is easy prey. Re-doing a fleet-save is easiest to forget exactly when you come back to the game after a break — this button exists so it does not slip by.',
+    'A returned fleet sitting idle is easy prey, and it is easy to forget even while you are online, just busy doing something else. This button makes sure you send the FS before you go offline — so it does not slip by.',
   ],
 
   fairplay: {
@@ -30,8 +31,8 @@ export default {
   },
 
   screenshots: [
-    { id: 'button', caption: 'The "Fleet reminder" button — the fleet is back and sitting exposed.' },
-    { id: 'pulse', caption: 'Pulsing after a longer idle spell — a "refresh and handle your fleet" signal.' },
+    { id: 'button', caption: 'The "Fleet Reminder" button in the Fleet1 panel — the fleet is waiting to be re-dispatched.' },
+    { id: 'pulse', caption: 'The "Fleet Reminder" orb lit up next to another active button — a signal that the fleet is still waiting.' },
   ],
 
   codeRefs: [
