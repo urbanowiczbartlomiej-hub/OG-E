@@ -4,6 +4,65 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.53.0] — 2026-07-26
+
+### Added
+
+- **Spyglass "Who's spying on you" gained a date-range filter.** A new
+  1d / 7d / 1m / 3m chip beside the Coords/Names toggle (in-game panel *and*
+  the dashboard strip) narrows the prober list to how recently each scanned
+  you. The in-game panel's choice is remembered across sessions and syncs
+  across your devices; the dashboard keeps its own per-device choice.
+- **Your scanned positions now carry their scan history on hover.** Hovering
+  one of your probed bodies lists every scan of it as date-times, newest
+  first — for moons and planets alike — instead of just saying "Moon". The
+  bodies themselves are ordered by their most recent scan.
+- **A prober's origin coordinates are now click-through.** Clicking the
+  "from" coordinates jumps to that system in the galaxy view (in-page in the
+  game; a galaxy deep-link on the dashboard, matching the dossier's links).
+- **Galaxy expedition panel falls back to OGame's own debris tooltip** when
+  AGR's readout is empty, so expedition-debris figures and the recycle button
+  keep working on the new galaxy version.
+- **Fleet-save badges can show a landed "FR" and an in-motion "FS" marker at
+  once** on the same body, instead of one hiding the other.
+- **Sticky, tap-to-retry "Error" on the daily-run fleet-save and the
+  expedition-send button** when a two-step (fleet1→fleet2) setup fails
+  mid-way — the failure is surfaced instead of silently swallowed, and the
+  next tap retries from a clean fleet dispatch.
+
+### Changed
+
+- **The Spyglass scan knobs now fold under a "Settings" bar.** Probes, Scan,
+  Probe from, Re-scan, Re-look, Moon strike and Patrol collapse into a compact
+  disclosure at the foot of the watchlist card (their contents are listed on
+  the bar so they stay discoverable); it's collapsed by default and remembers
+  your choice per device.
+- **New default cadences:** probe **Re-scan** now defaults to 72 h and galaxy
+  **Re-look** to 1 h. Only fresh configs are affected — a cadence you've
+  already set keeps its value.
+- **The lifeform send button's blocked/failed verdict now reads "Can't
+  send"** (accurate: non-cap game blockers trip it too) and renders ~15%
+  smaller to sit cleanly on the round button. Tapping it now acts on live
+  state immediately instead of appearing stuck on a stale "Sent!"/"Can't
+  send" label until the transient expires.
+- **Dashboard settings section tidied:** the colonization/abandon block's
+  header is clearer and its redundant inner sub-heading was dropped; the
+  alarm-clock section's "Borderline fair-play" note was removed.
+
+### Fixed
+
+- **Fleet-save badge markers no longer linger after fleets land** — an
+  empty-but-present event box now reads as "no activity" rather than "not
+  loaded yet".
+- **The "abandon" button no longer appears on moons** (which can't be
+  abandoned); it's suppressed via OGame's own body-type metadata.
+- **The Spyglass "N new" scan badge no longer fires when an espionage
+  fleet-save returns home** — only probe-only espionage sends count as
+  pending scans.
+- **The expedition-send button no longer says "All sent" prematurely** while a
+  free expedition slot remains on another planet; it hops to a free planet
+  first and reports "All sent" only when none remain.
+
 ## [1.52.0] — 2026-07-19
 
 ### Added
