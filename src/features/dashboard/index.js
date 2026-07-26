@@ -1233,7 +1233,7 @@ const repaintPatrol = (nowMs) => {
     strikes,
     names: apiPlayers || {},
     scans,
-    staleMs: (cadenceCfg.galaxyHours || 24) * 3600 * 1000,
+    staleMs: (cadenceCfg.galaxyHours || 1) * 3600 * 1000,
     nowMs,
     linkBase: gameLinkBase() || undefined,
     watchedIds: watchedPlayers,

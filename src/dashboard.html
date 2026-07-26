@@ -1339,7 +1339,7 @@
            keep the long form. -->
       <details class="spy-scan-prefs" id="spyScanPrefs">
         <summary class="spy-scan-summary">
-          <span class="spy-scan-summary-title">Scan settings</span>
+          <span class="spy-scan-summary-title">Settings</span>
           <span class="spy-scan-summary-hint">Probes · Scan · Probe from · Re-scan · Re-look · Moon strike · Patrol</span>
         </summary>
         <div class="cmd-grid">
@@ -1368,13 +1368,13 @@
         </div>
         <label class="cmd-cell" title="Probe re-scan: a report older than this re-enters the scan plan (every watched body).">
           <span class="cmd-cap">Re-scan</span>
-          <input id="cadRescanHours" type="number" min="1" max="1440" step="1" value="48" size="4">
+          <input id="cadRescanHours" type="number" min="1" max="1440" step="1" value="72" size="4">
           <span class="cmd-unit">h</span>
           <span class="cmd-note"><span class="via-probes">watch via probes</span> — reports older than this re-enter the scan plan</span>
         </label>
         <label class="cmd-cell cmd-wide" title="Galaxy-sighting freshness for bodies watched via the galaxy (passive, undetectable).">
           <span class="cmd-cap">Re-look</span>
-          <input id="cadGalaxyHours" type="number" min="1" max="336" step="1" value="24" size="3">
+          <input id="cadGalaxyHours" type="number" min="1" max="336" step="1" value="1" size="3">
           <span class="cmd-unit">h</span>
           <span class="cmd-note"><span class="via-galaxy">watch via galaxy</span> — sightings older than this re-enter the look plan</span>
         </label>

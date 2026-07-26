@@ -177,12 +177,13 @@ const patrolField = (v) => {
 };
 
 /**
- * Default cadences: probe re-scan after 48 h (the old hot tier — the tightest
- * of the retired hot/warm/cold trio) + a daily galaxy look.
+ * Default cadences: probe re-scan after 72 h (a report older than this re-enters
+ * the scan plan) + an hourly galaxy look (passive sightings refresh cheaply, so
+ * the look plan stays tight).
  * @type {Cadence}
  */
 export const DEFAULT_CADENCE = Object.freeze({
-  rescanHours: 48, galaxyHours: 24,
+  rescanHours: 72, galaxyHours: 1,
 });
 
 /** Probe re-scan clamps (hours): 1 h .. 60 days (the old day-field ceiling). */
