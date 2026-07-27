@@ -13,6 +13,7 @@ import {
   ERR_NO_MOON,
   ERR_NO_COLONIZER,
   ERR_RESERVED,
+  ERR_TOKEN_SPENT,
 } from '../../src/domain/fleetPlan.js';
 
 /** @typedef {import('../../src/domain/fleetPlan.js').SelectionSpec} SelectionSpec */
@@ -138,6 +139,16 @@ describe('classifyTargetError', () => {
     expect(classifyTargetError(ERR_NO_MOON)).toBe('noMoon');
     expect(classifyTargetError(ERR_NO_COLONIZER)).toBe('noShip');
     expect(classifyTargetError(ERR_RESERVED)).toBe('reserved');
+  });
+
+  it('maps a spent ajax token (OGame 13.0) to retry, NOT to a target verdict', () => {
+    // Error 100 = LOCA_ERROR_INQUIRY_NOT_WORKED_TRYAGAIN. Since 13.0 every
+    // checkTarget spends the session token, so a replayed one is refused —
+    // which says nothing about the target. It must stay separable from the
+    // target-shaped tags, because those drive re-scan / blacklist decisions.
+    expect(ERR_TOKEN_SPENT).toBe(100);
+    expect(classifyTargetError(ERR_TOKEN_SPENT)).toBe('retry');
+    expect(classifyTargetError(ERR_TOKEN_SPENT)).not.toBe('generic');
   });
 
   it('treats null/0 as ok and unknown non-zero as generic', () => {

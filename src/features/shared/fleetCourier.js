@@ -33,7 +33,9 @@ import {
   classifyTargetError,
   isMissionAllowed,
   isFleetCapReached,
+  ERR_TOKEN_SPENT,
 } from '../../domain/fleetPlan.js';
+import { logger } from '../../lib/logger.js';
 import {
   FD_CMD_EVENT,
   FD_RES_EVENT,
@@ -64,6 +66,23 @@ const CHECK_TARGET_TIMEOUT_MS = 8000;
 const CHECK_TARGET_REENTRY_MS = 500;
 /** How long to wait for step 2 to render after "continue". */
 const STEP2_TIMEOUT_MS = 8000;
+/**
+ * Extra fleet1→fleet2 attempts allowed after a spent-token refusal
+ * ({@link ERR_TOKEN_SPENT}) — a HARD cap, not a retry-until-success budget.
+ *
+ * 1 is the honest number: the refusing response itself rotates the token, so
+ * a single repeat is all a genuine token collision can need. Anything past
+ * that means the page's cached token is broken for a reason we cannot fix by
+ * re-clicking, and the only safe behaviour is to fail the tap.
+ *
+ * Why the cap is the whole point: this retry re-fires only the target CHECK,
+ * never a send (`dispatch()` is untouched, so no retry can ever launch a
+ * fleet), and nothing schedules or queues an attempt across calls. The worst
+ * case a permanently stale token can produce is therefore 2 checkTarget
+ * requests per user tap instead of 1 — bounded per gesture, which is less
+ * traffic than typing a coordinate by hand (the game fires one per keystroke).
+ */
+const TOKEN_RETRY_MAX = 1;
 /** How long to wait for the dispatch control to become ready. */
 const READY_TIMEOUT_MS = 8000;
 /** How long to retry arming the mission icon after checkTarget confirms it. */
@@ -106,7 +125,7 @@ const POLL_MS = 100;
  * @property {boolean} ok
  * @property {'offPage'|'allFleets'|'noShips'|'empty'|'selectFailed'|'noFleet2'
  *   |'timeout'|'noMoon'|'noShip'|'reserved'|'generic'|'mission'|'notReady'
- *   |'foreign'} [reason]
+ *   |'foreign'|'tokenStale'} [reason]
  * @property {number} [errorCode]
  * @property {Array<{ id: number, want: number, have: number }>} [shortfalls]
  */
@@ -288,6 +307,19 @@ const awaitCheckTarget = (target) =>
     document.addEventListener(CHECK_TARGET_RESULT_EVENT, onCt);
   });
 
+/**
+ * Map a non-ok checkTarget verdict onto a {@link SelectResult} reason.
+ *
+ * Only `'retry'` needs translating: by the time a caller sees it the bounded
+ * retry above has already been spent, and it must stay distinguishable from
+ * the target-shaped tags. Features turn `noMoon` / `reserved` into re-scan or
+ * blacklist decisions ABOUT THE SLOT — a token hiccup must never trigger one.
+ *
+ * @param {Exclude<ReturnType<typeof classifyTargetError>, 'ok'>} tag
+ * @returns {'noMoon'|'noShip'|'reserved'|'generic'|'tokenStale'}
+ */
+const reasonForTag = (tag) => (tag === 'retry' ? 'tokenStale' : tag);
+
 // ─── native step clicks (work from isolated) ───────────────────────────────
 
 const clickContinue = () => safeClick(document.querySelector(GAME.FD_CONTINUE));
@@ -406,25 +438,66 @@ export const select = async (order) => {
     });
     if (!cont) return { ok: false, reason: 'notReady' };
 
-    // Re-arm the planet/moon type AFTER AGR finishes processing the coords.
-    // AGR's ago_keys_arrows handler can reset the type to planet asynchronously
-    // after our initial setTarget — re-clicking here, once continueReady()
-    // signals AGR is done, ensures the type is correct before we continue.
-    if (order.target.type != null) {
-      await rpc('setTargetType', { type: order.target.type });
-    }
+    // The transition itself, attempted at most TOKEN_RETRY_MAX + 1 times: a
+    // spent ajax token (ERR_TOKEN_SPENT) refuses it for a reason that has
+    // nothing to do with this order, and the refusing response rotates the
+    // token, so the repeat runs with a fresh one. Note we cannot HAND anyone a
+    // token — OG-E originates no request; we re-drive the page's own check and
+    // it picks up whatever the rotation left behind.
+    let onF2 = false;
+    for (let attempt = 0; attempt <= TOKEN_RETRY_MAX; attempt++) {
+      // Re-arm the planet/moon type AFTER AGR finishes processing the coords.
+      // AGR's ago_keys_arrows handler can reset the type to planet asynchronously
+      // after our initial setTarget — re-clicking here, once continueReady()
+      // signals AGR is done, ensures the type is correct before we continue.
+      if (order.target.type != null) {
+        await rpc('setTargetType', { type: order.target.type });
+      }
 
-    // Arm checkTarget listener here — just before clickContinue — so it
-    // catches the fleet1→fleet2 transition XHR. Arming earlier (before
-    // setTarget) would cause it to resolve from primeAgrMoon's K1 XHR or
-    // fireInput's fleet1 XHR, which carry different orders than the
-    // authoritative fleet2 transition response.
-    ctPromise = awaitCheckTarget(order.target);
-    clickContinue();
-    const onF2 = await waitFor(() => (step() === 'fleet2' ? true : null), {
-      timeoutMs: STEP2_TIMEOUT_MS,
-      intervalMs: POLL_MS,
-    });
+      // Arm checkTarget listener here — just before clickContinue — so it
+      // catches the fleet1→fleet2 transition XHR. Arming earlier (before
+      // setTarget) would cause it to resolve from primeAgrMoon's K1 XHR or
+      // fireInput's fleet1 XHR, which carry different orders than the
+      // authoritative fleet2 transition response.
+      ctPromise = awaitCheckTarget(order.target);
+      clickContinue();
+
+      // Watch the transition's own checkTarget verdict alongside the fleet2
+      // DOM. A refusal is knowable one RTT after the click (~130 ms observed),
+      // so folding it into the SAME poll means a token collision costs a
+      // re-click instead of sitting out the full STEP2_TIMEOUT_MS first —
+      // while a healthy transition still settles purely on the DOM, since the
+      // page only paints fleet2 after that XHR returns. Re-declared per
+      // attempt, so a late write from a superseded attempt cannot bleed in.
+      /** @type {ReturnType<typeof classifyTargetError> | null} */
+      let ctVerdict = null;
+      void ctPromise.then((ct) => {
+        ctVerdict = classifyTargetError(ct?.errorCode ?? null);
+      });
+
+      const outcome = await waitFor(
+        () =>
+          step() === 'fleet2' ? 'fleet2' : ctVerdict === 'retry' ? 'tokenStale' : null,
+        { timeoutMs: STEP2_TIMEOUT_MS, intervalMs: POLL_MS },
+      );
+
+      if (outcome === 'tokenStale') {
+        logger.warn(
+          '[fleetCourier] fleet1→fleet2 refused: ajax token already spent',
+          { attempt, retriesLeft: TOKEN_RETRY_MAX - attempt, target: order.target },
+        );
+        // The cap lives here, next to the only place that consumes it: out of
+        // attempts ⇒ fail the tap under its own reason. Deliberately NOT a
+        // loop-until-success.
+        if (attempt >= TOKEN_RETRY_MAX) {
+          return { ok: false, reason: 'tokenStale', errorCode: ERR_TOKEN_SPENT };
+        }
+        continue;
+      }
+
+      onF2 = outcome === 'fleet2';
+      break;
+    }
     if (!onF2) return { ok: false, reason: 'noFleet2' };
     // We just performed the fleet1→fleet2 transition — claim it, so foreign
     // buttons are locked out and our own re-entry (retry) stays permitted.
@@ -450,7 +523,11 @@ export const select = async (order) => {
     if (ct) {
       const tag = classifyTargetError(ct.errorCode);
       if (tag !== 'ok') {
-        return { ok: false, reason: tag, ...(ct.errorCode != null ? { errorCode: ct.errorCode } : {}) };
+        return {
+          ok: false,
+          reason: reasonForTag(tag),
+          ...(ct.errorCode != null ? { errorCode: ct.errorCode } : {}),
+        };
       }
       if (ct.orders && !isMissionAllowed(ct.orders, order.mission)) {
         return { ok: false, reason: 'mission' };
@@ -552,7 +629,16 @@ export const retarget = async (order) => {
 
   const tag = classifyTargetError(ct.errorCode);
   if (tag !== 'ok') {
-    return { ok: false, reason: tag, ...(ct.errorCode != null ? { errorCode: ct.errorCode } : {}) };
+    // No spent-token retry here, unlike select()'s transition: re-driving the
+    // SAME coords is exactly what the game deduplicates (see the coords note
+    // above), so a repeat would fire no XHR and just time out. A retarget
+    // refused over a token reports `tokenStale` and the caller's next tap —
+    // a fresh gesture with a rotated token — is the recovery path.
+    return {
+      ok: false,
+      reason: reasonForTag(tag),
+      ...(ct.errorCode != null ? { errorCode: ct.errorCode } : {}),
+    };
   }
   if (ct.orders && !isMissionAllowed(ct.orders, order.mission)) {
     return { ok: false, reason: 'mission' };

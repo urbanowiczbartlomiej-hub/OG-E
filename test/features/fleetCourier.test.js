@@ -22,6 +22,7 @@ import {
   _resetFleetOwnershipForTest,
 } from '../../src/features/shared/fleetOwnership.js';
 import { OWNER_COL, OWNER_FS } from '../../src/domain/fleetOwnership.js';
+import { ERR_TOKEN_SPENT } from '../../src/domain/fleetPlan.js';
 
 /** @param {string} tag @param {string} id */
 const el = (tag, id) => {
@@ -273,6 +274,107 @@ describe('select — failures', () => {
 });
 
 
+describe('select — spent ajax token (OGame 13.0 error 100)', () => {
+  /**
+   * Mount a step-1 DOM whose first `refusals` continue clicks are REFUSED over
+   * a spent ajax token: checkTarget reports error 100 and the page stays on
+   * fleet1 (what the game does when the token check fails). Any later click
+   * advances normally, as it would once the token has rotated.
+   *
+   * The returned counter is the transition-attempt count — the assertion that
+   * matters here is that it stays bounded.
+   *
+   * @param {number} refusals
+   * @returns {{ n: number }}
+   */
+  const buildFleet1SpentToken = (refusals) => {
+    const clicks = { n: 0 };
+    document.body.innerHTML = '';
+    document.body.appendChild(el('div', 'fleet1'));
+    const cont = el('a', 'continueToFleet2');
+    cont.className = 'off';
+    cont.addEventListener('click', () => {
+      clicks.n += 1;
+      const refused = clicks.n <= refusals;
+      if (!refused) {
+        document.getElementById('fleet1')?.remove();
+        const disp = el('a', 'dispatchFleet');
+        disp.className = 'off';
+        document.body.appendChild(disp);
+      }
+      const t = lastTarget || {};
+      document.dispatchEvent(
+        new CustomEvent('oge:checkTargetResult', {
+          detail: {
+            galaxy: t.galaxy,
+            system: t.system,
+            position: t.position,
+            errorCode: refused ? ERR_TOKEN_SPENT : null,
+            orders: { 4: true },
+          },
+        }),
+      );
+    });
+    document.body.appendChild(cont);
+    return clicks;
+  };
+
+  it('retries the fleet1→fleet2 transition once and gets through', async () => {
+    const clicks = buildFleet1SpentToken(1);
+    unhook = fakeExecutor({ missionOk: true });
+    snapshot([{ id: 203, number: 100 }], { 4: true });
+
+    const r = await select({ spec: { kind: 'all' }, target: TARGET, mission: 4 });
+    expect(r.ok).toBe(true);
+    expect(step()).toBe('fleet2');
+    expect(clicks.n).toBe(2); // refused once, then straight through
+  });
+
+  it('stops after ONE retry instead of looping', async () => {
+    // Refuse every attempt: the guard against a retry storm. Two attempts per
+    // user tap is the hard ceiling — if this number ever grows, the courier is
+    // hammering the server on a condition it cannot fix by re-clicking.
+    const clicks = buildFleet1SpentToken(Number.POSITIVE_INFINITY);
+    unhook = fakeExecutor({ missionOk: true });
+    snapshot([{ id: 203, number: 100 }], { 4: true });
+
+    const r = await select({ spec: { kind: 'all' }, target: TARGET, mission: 4 });
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('tokenStale');
+    expect(r.errorCode).toBe(ERR_TOKEN_SPENT);
+    expect(clicks.n).toBe(2);
+  });
+
+  it('does NOT retry a target-shaped rejection (reserved slot)', async () => {
+    // Only a spent token earns a repeat: a real target verdict must fail on the
+    // first attempt, or features would re-scan slots off a doubled request.
+    buildFleet1({ errorCode: 140016 });
+    let clicks = 0;
+    document
+      .getElementById('continueToFleet2')
+      ?.addEventListener('click', () => { clicks += 1; });
+    unhook = fakeExecutor({ missionOk: true });
+    snapshot([{ id: 203, number: 100 }], { 4: true });
+
+    const r = await select({ spec: { kind: 'all' }, target: TARGET, mission: 4 });
+    expect(r.reason).toBe('reserved');
+    expect(clicks).toBe(1);
+  });
+
+  it('reports a spent token seen ON fleet2 as tokenStale, not generic', async () => {
+    // The transition advanced but its checkTarget still carried error 100 —
+    // the retry budget is gone by then, so it surfaces under its own reason
+    // rather than being lumped in with unknown target errors.
+    buildFleet1({ errorCode: ERR_TOKEN_SPENT });
+    unhook = fakeExecutor({ missionOk: true });
+    snapshot([{ id: 203, number: 100 }], { 4: true });
+
+    const r = await select({ spec: { kind: 'all' }, target: TARGET, mission: 4 });
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('tokenStale');
+  });
+});
+
 describe('retarget — in-place fleet2 retarget', () => {
   /**
    * Stand up a settled fleet2 (dispatch present, not ready) + an executor that,
@@ -349,6 +451,20 @@ describe('retarget — in-place fleet2 retarget', () => {
     expect(r.ok).toBe(false);
     expect(r.reason).toBe('reserved');
     expect(r.errorCode).toBe(140016);
+  });
+
+  it('names a spent-token refusal tokenStale (no retry here — the game dedups)', async () => {
+    // retarget deliberately has no auto-retry: re-driving the SAME coords is
+    // what the game deduplicates, so a repeat would fire no XHR at all. It
+    // just has to report the cause honestly; the next tap is the recovery.
+    unhook = buildFleet2({ errorCode: ERR_TOKEN_SPENT });
+    claimFleet2(OWNER_COL);
+    const r = await retarget({
+      spec: { kind: 'all' }, target: NEW_TARGET, mission: 7, owner: OWNER_COL,
+    });
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('tokenStale');
+    expect(r.errorCode).toBe(ERR_TOKEN_SPENT);
   });
 
   it('surfaces a generic target-side error (e.g. 140008 player on vacation)', async () => {

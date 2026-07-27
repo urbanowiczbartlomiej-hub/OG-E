@@ -32,6 +32,23 @@ export const ERR_NO_MOON = 140000;
 export const ERR_NO_COLONIZER = 140035;
 /** checkTarget error: the slot is already reserved (colonize in flight). */
 export const ERR_RESERVED = 140016;
+/**
+ * checkTarget error: the ajax token that came with the request was already
+ * spent. Surfaced in-game as `LOCA_ERROR_INQUIRY_NOT_WORKED_TRYAGAIN`.
+ *
+ * Since OGame 13.0 EVERY checkTarget consumes the session's single ajax token
+ * and hands back a fresh `newAjaxToken`; whoever replays a spent one is
+ * refused with this code. Observed cause on a live fleet1→fleet2 transition:
+ * the game's own `fetchTargetPlayerData` fires first and rotates the token,
+ * and the script that then drives the transition (AGR) still holds the value
+ * it cached before that rotation.
+ *
+ * It says NOTHING about the target — the identical request repeated with the
+ * rotated token succeeds — so it classifies as `'retry'` rather than a
+ * target-shaped failure. That distinction matters: `noMoon`/`reserved` make
+ * callers mark a slot for re-scan, and a token hiccup must never do that.
+ */
+export const ERR_TOKEN_SPENT = 100;
 
 /**
  * One ship requirement in an explicit selection list.
@@ -164,8 +181,13 @@ export const isFleetCapReached = (counts) => {
  * Turn a checkTarget error code into a stable tag. `null`/`0`/absent ⇒
  * `'ok'` (no error). Unknown non-zero codes ⇒ `'generic'`.
  *
+ * `'retry'` is the one tag that is NOT a verdict on the target: it means the
+ * request was refused over a spent ajax token ({@link ERR_TOKEN_SPENT}) and
+ * repeating it can succeed. Callers must treat it separately from the
+ * target-shaped tags — never as a reason to blacklist or re-scan a slot.
+ *
  * @param {number | null | undefined} code
- * @returns {'ok' | 'noMoon' | 'noShip' | 'reserved' | 'generic'}
+ * @returns {'ok' | 'noMoon' | 'noShip' | 'reserved' | 'retry' | 'generic'}
  */
 export const classifyTargetError = (code) => {
   if (code == null || code === 0) return 'ok';
@@ -176,6 +198,8 @@ export const classifyTargetError = (code) => {
       return 'noShip';
     case ERR_RESERVED:
       return 'reserved';
+    case ERR_TOKEN_SPENT:
+      return 'retry';
     default:
       return 'generic';
   }

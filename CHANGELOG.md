@@ -4,6 +4,22 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.53.1] — 2026-07-27
+
+### Fixed
+
+- **Fleet sends no longer die with "LOCA_ERROR_INQUIRY_NOT_WORKED_TRYAGAIN"
+  on the step 1 → step 2 transition.** OGame 13.0 changed how the game's
+  one-shot request token works: every target check now spends it and issues a
+  fresh one, so the script driving the transition can be left holding a token
+  the game has already retired — and the step is refused for a reason that has
+  nothing to do with your target or your fleet. OG-E now recognises that exact
+  refusal and re-drives the transition once, picking up the new token, so the
+  send continues instead of stalling on step 2. The repeat is capped at one
+  attempt per tap and only ever re-runs the *target check* — never a dispatch,
+  so it can never send a fleet twice. If it still fails, the button now names
+  the cause instead of showing a generic error.
+
 ## [1.53.0] — 2026-07-26
 
 ### Added
