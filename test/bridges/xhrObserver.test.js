@@ -97,6 +97,57 @@ describe('observeXHR — send phase', () => {
   });
 });
 
+describe('observeXHR — send phase body rewriting (opt-in)', () => {
+  it('a rewritesBody observer replaces the body later observers and the load phase see', async () => {
+    const later = vi.fn();
+    const onLoad = vi.fn();
+    observeXHR({
+      urlPattern: /\/api\/foo/,
+      on: 'send',
+      rewritesBody: true,
+      handler: () => 'repaired',
+    });
+    observeXHR({ urlPattern: /\/api\/foo/, on: 'send', handler: later });
+    observeXHR({ urlPattern: /\/api\/foo/, on: 'load', handler: onLoad });
+
+    await fakeXHR('/api/foo', { method: 'POST', body: 'original', responseText: 'x' });
+
+    expect(later.mock.calls[0][0].body).toBe('repaired');
+    expect(onLoad.mock.calls[0][0].body).toBe('repaired');
+  });
+
+  it('ignores a returned string from an observer that did NOT opt in', async () => {
+    const later = vi.fn();
+    observeXHR({
+      urlPattern: /\/api\/foo/,
+      on: 'send',
+      // No `rewritesBody` — an arrow that happens to return a value must never
+      // alter game traffic.
+      handler: () => 'sneaky',
+    });
+    observeXHR({ urlPattern: /\/api\/foo/, on: 'send', handler: later });
+
+    await fakeXHR('/api/foo', { method: 'POST', body: 'original' });
+
+    expect(later.mock.calls[0][0].body).toBe('original');
+  });
+
+  it('ignores a non-string return even from an opted-in observer', async () => {
+    const later = vi.fn();
+    observeXHR({
+      urlPattern: /\/api\/foo/,
+      on: 'send',
+      rewritesBody: true,
+      handler: () => /** @type {any} */ ({ body: 'object-form-not-supported' }),
+    });
+    observeXHR({ urlPattern: /\/api\/foo/, on: 'send', handler: later });
+
+    await fakeXHR('/api/foo', { method: 'POST', body: 'original' });
+
+    expect(later.mock.calls[0][0].body).toBe('original');
+  });
+});
+
 describe('observeXHR — load phase', () => {
   it('fires handler after the response arrives, with responseText', async () => {
     const handler = vi.fn();

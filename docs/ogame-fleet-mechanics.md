@@ -7,6 +7,54 @@ planet status markers) depend on. This is the **single home for the game
 marker classification, the authoritative source is the code:
 [`src/features/badges/pure.js`](../src/features/badges/pure.js).
 
+## The ajax token — one rotating value per session (13.0+)
+
+Diagnosed 2026-07-27 from a HAR of a **13.0.0-r5** universe, re-checked against
+the shipped bundle.
+
+- The session holds **one** ajax token. Since 13.0 `action=checkTarget`
+  **spends** the token it was sent and returns a fresh one as `newAjaxToken`.
+  Replaying a spent value is refused with
+  `{"error":100,"message":"LOCA_ERROR_INQUIRY_NOT_WORKED_TRYAGAIN"}` — the red
+  "please try again" box on the fleet1→fleet2 step. The refusal says **nothing
+  about the target**; the identical request with the rotated token succeeds, and
+  the refusing response itself carries a usable fresh token.
+- `eventlist/fetchEventBox` + `catchEvents` only **echo** the current token —
+  they do not rotate it.
+- The value lives in a **global `token`**: `FleetDispatcher.updateToken()`
+  writes it, `appendTokenParams()` reads it. The constructor's
+  `this.token = cfg.token` is the page-load copy and is **never refreshed**, so
+  `fleetDispatcher.token` is permanently stale by design.
+- `updateToken(data.newAjaxToken)` sits at the **END** of
+  `FleetDispatcher.fetchTargetPlayerData`'s callback, after ~10 DOM-refresh
+  calls (`refreshDataAfterAjax`, `refreshStatusBarFleet`, `validateMissions`,
+  `refreshFleet2`, …). An exception in any of them **strands the rotation**: the
+  page then keeps sending a retired token on every later request until a full
+  reload. This is why a per-click retry cannot fix it — the repeat re-reads the
+  same stranded value.
+- Ordering fingerprint that identifies who sent a `checkTarget`: the game
+  serialises `am*, galaxy, system, position, type, token, union` (token BEFORE
+  union). A body with the token appended **last** is neither the game's nor
+  OG-E's.
+- **The refusal happens during page INITIALISATION**, which is what makes it so
+  easy to miss. One measured load of a 13.0 universe (HAR, 2026-07-28), offsets
+  from page start:
+
+  | +ms | request | token |
+  | --- | --- | --- |
+  | 190 | `eventlist/fetchEventBox` | echoes `8d88fe` |
+  | 244 | `fleetdispatch/checkTarget` (the game's own field order) | sends `8d88fe`, **rotates to `bcccc0`** |
+  | 644 | `fleetdispatch/checkTarget` (token appended LAST — third party) | replays `8d88fe` → **error 100** |
+  | 811 | `DOMContentLoaded` | — |
+
+  Anything installed at `document_idle` arrives ~170 ms after the damage is
+  done — hence OG-E's MAIN-world entry runs at `document_start`.
+
+OG-E's answer is [`src/bridges/ajaxTokenKeeper.js`](../src/bridges/ajaxTokenKeeper.js)
+— it learns each rotation from responses the page already made and keeps the
+page's token holders in step (see that file's header, and
+[`fair-play.md`](fair-play.md) for the classification).
+
 ## Event list — how OGame generates fleet rows
 
 Every fleet movement shows as one or more rows in the event list

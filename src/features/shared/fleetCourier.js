@@ -83,6 +83,18 @@ const STEP2_TIMEOUT_MS = 8000;
  * traffic than typing a coordinate by hand (the game fires one per keystroke).
  */
 const TOKEN_RETRY_MAX = 1;
+/**
+ * Step-2 wait for a RETRY attempt (the first attempt keeps the full
+ * {@link STEP2_TIMEOUT_MS}).
+ *
+ * Short on purpose: the retry's job is to re-drive a transition whose token
+ * bridges/ajaxTokenKeeper.js has meanwhile repaired, and that verdict is one
+ * RTT away (~130 ms observed). If the game instead DEDUPLICATES the repeated
+ * check (it skips the XHR when the coords have not changed), nothing will ever
+ * arrive — and the honest failure is a quick one, not eight seconds of a dead
+ * button. Whatever the outcome, the page is left exactly as the game left it.
+ */
+const STEP2_RETRY_TIMEOUT_MS = 2500;
 /** How long to wait for the dispatch control to become ready. */
 const READY_TIMEOUT_MS = 8000;
 /** How long to retry arming the mission icon after checkTarget confirms it. */
@@ -441,9 +453,15 @@ export const select = async (order) => {
     // The transition itself, attempted at most TOKEN_RETRY_MAX + 1 times: a
     // spent ajax token (ERR_TOKEN_SPENT) refuses it for a reason that has
     // nothing to do with this order, and the refusing response rotates the
-    // token, so the repeat runs with a fresh one. Note we cannot HAND anyone a
-    // token — OG-E originates no request; we re-drive the page's own check and
-    // it picks up whatever the rotation left behind.
+    // token, so the repeat runs with a fresh one.
+    //
+    // This retry is the SECOND line of defence, not the fix. The fix is global
+    // and lives in the MAIN world: bridges/ajaxTokenKeeper.js learns every
+    // rotation and repairs the page's own token holders, so by the time this
+    // loop notices a refusal the page is already carrying the fresh value —
+    // which is exactly what makes re-driving the page's own check worth a shot.
+    // (A per-tap retry alone could not work: on its own it re-reads the same
+    // stranded token. That is why 1.53.1's retry changed nothing in practice.)
     let onF2 = false;
     for (let attempt = 0; attempt <= TOKEN_RETRY_MAX; attempt++) {
       // Re-arm the planet/moon type AFTER AGR finishes processing the coords.
@@ -478,7 +496,10 @@ export const select = async (order) => {
       const outcome = await waitFor(
         () =>
           step() === 'fleet2' ? 'fleet2' : ctVerdict === 'retry' ? 'tokenStale' : null,
-        { timeoutMs: STEP2_TIMEOUT_MS, intervalMs: POLL_MS },
+        {
+          timeoutMs: attempt === 0 ? STEP2_TIMEOUT_MS : STEP2_RETRY_TIMEOUT_MS,
+          intervalMs: POLL_MS,
+        },
       );
 
       if (outcome === 'tokenStale') {

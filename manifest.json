@@ -42,7 +42,7 @@
     {
       "matches": ["*://*.ogame.gameforge.com/game/index.php*"],
       "js": ["page.js"],
-      "run_at": "document_idle",
+      "run_at": "document_start",
       "world": "MAIN"
     }
   ]

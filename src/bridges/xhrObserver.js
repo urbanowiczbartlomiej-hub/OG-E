@@ -25,16 +25,29 @@
 //                   the URL. It must NOT block long; a throw is caught
 //                   and forwarded to the logger so one observer's bug
 //                   never derails the game's own request.
+//                   An observer that declares `rewritesBody: true` may
+//                   additionally RETURN a replacement body string; the
+//                   native send (and every later observer in the chain)
+//                   then sees that string instead. Opt-in by design — a
+//                   plain observer's return value is ignored, so an
+//                   arrow function that happens to return something can
+//                   never accidentally alter game traffic. The only user
+//                   is ajaxTokenKeeper's spent-`token` substitution, which
+//                   ships DISABLED (`NORMALISE_OUTGOING`) — so in the
+//                   shipped extension nothing rewrites a body at all.
 //   - `on: 'load'`  handler runs AFTER the response arrives. Registered
 //                   via `addEventListener('load', ..., { once: true })`,
 //                   so the same XHR never fires the same handler twice
 //                   even if game code listens to the load event itself.
 //
 // What this module does NOT do:
-//   - Throws on ANY network traffic initiated by us. We are a strict
-//     observer — the `observeXHR` callback can read the request, read
-//     the response, mutate the responseText via defineProperty elsewhere,
-//     but we never call `.open`/`.send` of our own.
+//   - Throws on ANY network traffic initiated by us. We never call
+//     `.open`/`.send` of our own: every request that passes through here
+//     was originated by the game (or by another script in the page). An
+//     observer may read the request, read the response, override the
+//     responseText via defineProperty (expeditionRedirect), or repair a
+//     field of the outgoing body (`rewritesBody`) — but the request count
+//     is always exactly the one the page decided to make.
 //   - Mocks / fakes for tests. Tests under test/ use the happy-dom
 //     XMLHttpRequest shim directly; this file is production code.
 
@@ -72,8 +85,13 @@ import { logger } from '../lib/logger.js';
  *   Matching is positional (`.test(url)`), not `full-match`, so a partial
  *   pattern like `/action=sendFleet/` suffices.
  * @property {ObservePhase} on When to invoke `handler`.
- * @property {(ev: XHRObserverEvent) => void} handler The observer body.
- *   Throws are caught and logged — never re-thrown — so a broken
+ * @property {boolean} [rewritesBody] `'send'` phase only: opt in to
+ *   REPLACING the outgoing body. When set, a string returned by `handler`
+ *   becomes the body the native `send` receives (and what later observers
+ *   in the same chain see). Any other return value — and every return
+ *   value of an observer that did not opt in — is ignored.
+ * @property {(ev: XHRObserverEvent) => void | string} handler The observer
+ *   body. Throws are caught and logged — never re-thrown — so a broken
  *   observer can never sabotage the game's own XHR pipeline.
  */
 
@@ -128,6 +146,12 @@ const installPatch = () => {
     const url = typeof self._oge_url === 'string' ? self._oge_url : '';
     const method = self._oge_method;
 
+    // The body actually sent. Starts as the caller's own and is only ever
+    // replaced by a `rewritesBody` observer (ajaxTokenKeeper) — see the
+    // header. Later observers see the replacement, so what they inspect is
+    // always what goes on the wire.
+    let outBody = body;
+
     // Iterate over a snapshot so an observer that registers / unregisters
     // another observer during its own handler can't mutate this loop.
     const snapshot = observers.slice();
@@ -136,7 +160,10 @@ const installPatch = () => {
 
       if (observer.on === 'send') {
         try {
-          observer.handler({ xhr: this, url, method, body });
+          const out = observer.handler({ xhr: this, url, method, body: outBody });
+          // Only an explicit opt-in can alter traffic, and only with a
+          // string. Everything else falls through untouched.
+          if (observer.rewritesBody && typeof out === 'string') outBody = out;
         } catch (err) {
           // Swallow-and-log: a broken observer must never derail game traffic.
           logger.error('[xhrObserver] send-phase handler threw', err, { url });
@@ -152,7 +179,10 @@ const installPatch = () => {
                 xhr: this,
                 url,
                 method,
-                body,
+                // `outBody` is captured by reference, so by the time a
+                // response lands it holds the body that actually went out —
+                // load-phase observers never see a pre-repair body.
+                body: outBody,
                 response: this.responseText,
               });
             } catch (err) {
@@ -164,7 +194,7 @@ const installPatch = () => {
       }
     }
 
-    return nativeSend.call(this, /** @type {XMLHttpRequestBodyInit | null | undefined} */ (body));
+    return nativeSend.call(this, /** @type {XMLHttpRequestBodyInit | null | undefined} */ (outBody));
   };
 };
 

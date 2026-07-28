@@ -150,7 +150,7 @@ how its output maps to the uploaded extension are documented in
 ```
 src/
 ├── content.js     isolated-world entry  (document_start)
-├── page.js        MAIN-world entry      (XHR hooks)
+├── page.js        MAIN-world entry      (XHR hooks, document_start)
 ├── dashboard.js   extension page entry  (the OG-E Dashboard)
 │
 ├── lib/           pure helpers: store, storage, dom, gzip, debounce...
