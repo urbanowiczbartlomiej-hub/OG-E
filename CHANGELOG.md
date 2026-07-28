@@ -4,6 +4,34 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.54.0] — 2026-07-28
+
+### Fixed
+
+- **"LOCA_ERROR_INQUIRY_NOT_WORKED_TRYAGAIN" on the step 1 → step 2 transition
+  is now actually gone.** 1.53.1 tried to recover from it by re-driving the
+  step; that could not work, and here is why. OGame 13.0 keeps one single
+  request token per session: every target check spends it and the answer carries
+  a fresh one. The game applies that fresh token at the very END of a long chain
+  of screen refreshes — so if anything in that chain hiccups, the page keeps
+  sending a token the server has already retired, and *every* further target
+  check is refused until you reload. Retrying the click just re-sent the same
+  retired token. OG-E now keeps that token in step for the whole page: it reads
+  the fresh one out of the game's own answers and writes it where the game
+  itself reads it from. Nothing extra is requested from the server — the page
+  simply stops presenting an expired ticket.
+- **OG-E was blind to everything the game did while the page was still
+  loading.** Its game-side observer started at "page idle", which on a 13.0
+  universe is roughly 800 ms in — well after the game has already fetched your
+  event list, checked your fleet target, and (on the galaxy page) pulled the
+  first system. That is also exactly the window the token error happened in. The
+  observer now starts with the page, so:
+  - the token fix above can do its job at all;
+  - opening the galaxy view directly records that first system in Spyglass
+    instead of dropping it;
+  - the expedition button recognises a step 2 that a fleet manager prepared
+    during page load, instead of refusing it as "someone else's".
+
 ## [1.53.1] — 2026-07-27
 
 ### Fixed
