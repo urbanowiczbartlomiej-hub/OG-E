@@ -4,6 +4,40 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.54.1] — 2026-07-29
+
+### Fixed
+
+- **"LOCA_ERROR_INQUIRY_NOT_WORKED_TRYAGAIN" — the last way it could still
+  happen.** 1.54.0 stopped the page from *forgetting* the fresh request token,
+  and that fixed the common case. It could not fix a second one: another script
+  in the page keeping its own private copy of the token and re-using it after
+  the game had already spent it. A capture from a live universe shows exactly
+  that — the game spends the token, and three seconds later something else
+  presents the very same, now-expired one and is refused. No amount of keeping
+  the page's own variables correct reaches a copy held somewhere else. So when
+  OG-E can prove a target check is leaving with a token the server has already
+  retired, it now corrects that one field to the token the server issued
+  moments earlier — the same result you would get by reloading the page, which
+  is what the error otherwise forces you to do.
+
+  It stays deliberately narrow: only target checks, never a fleet send; only a
+  value the server itself issued to this tab; only ever forward to a newer
+  token, never back to an older one; and if a corrected check is refused anyway
+  three times, the correction switches itself off for the rest of the page's
+  life. Nothing extra is ever requested from the server.
+- **A stale token could no longer creep back in.** Some of the game's own
+  requests only *echo* the current token instead of rotating it, and a slow echo
+  arriving after a rotation could quietly drag OG-E's idea of "newest" backwards
+  — turning the fix into a source of the very error it prevents. Late echoes are
+  now recognised and ignored.
+
+### Changed
+
+- The support snapshot (`__ogeToken()` in the page console) now also lists the
+  keeper's recent decisions, with tokens masked, so a report says *why* it acted
+  rather than only how often.
+
 ## [1.54.0] — 2026-07-28
 
 ### Fixed
