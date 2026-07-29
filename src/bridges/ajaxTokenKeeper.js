@@ -49,12 +49,14 @@
 //       form inputs) still holds a value we know to be spent, we write the
 //       fresh one in. That un-strands case 1 for the GAME's own requests, and
 //       for every other script that reads the page's token instead of caching.
-//     • DETECT (and, only behind a default-OFF switch, substitute) a spent
-//       `token` on the way out of a `checkTarget`. Case 2 is the one thing
-//       repairing shared state cannot reach — but the verification run showed
-//       it does not actually occur here (`repairs: 5`, `rewrites: 0`, error
-//       gone), so what ships is the counter, not the edit. See
-//       {@link NORMALISE_OUTGOING}.
+//     • SUBSTITUTE a spent `token` on the way out of a `checkTarget`. Case 2 is
+//       the one thing repairing shared state cannot reach: a sender reading its
+//       own cached copy never consults the variables we fixed. The first
+//       verification run suggested it did not occur here and this half shipped
+//       as a bare counter; the 2026-07-29 capture proved otherwise (a spent
+//       token replayed THREE SECONDS after the game spent it), so it is now
+//       live. It only ever moves a token FORWARD along the sequence the server
+//       issued, and never touches `sendFleet`. See {@link NORMALISE_OUTGOING}.
 //
 //   Net effect: the error stops happening for everyone in the page — the game,
 //   OG-E's own buttons, and any other tool — instead of each script having to
@@ -67,12 +69,20 @@
 //
 // FAIR PLAY / TRAFFIC
 //   This adds ZERO requests. It originates nothing, schedules nothing, polls
-//   nothing, and reveals nothing the page did not already have. As shipped it
-//   does not modify a request either: it writes the fresh token into the page's
-//   OWN variables (which is what the game's `updateToken` was supposed to do)
-//   and the game then builds its requests as usual. There is no gameplay
+//   nothing, and reveals nothing the page did not already have. Its main path
+//   writes the fresh token into the page's OWN variables (which is what the
+//   game's `updateToken` was supposed to do) and the game then builds its
+//   requests as usual.
+//
+//   It does now correct ONE field of one outgoing request — the `token` of a
+//   `checkTarget` whose sender is replaying a spent value. That is the only
+//   place OG-E edits a request rather than reading it, so it is written down
+//   plainly here and classified in `docs/fair-play.md` rather than buried: the
+//   field is a session credential, not a game input; the corrected value is one
+//   the server itself issued to this tab seconds earlier; the request count,
+//   target, mission, and fleet are untouched; and there is no gameplay
 //   advantage in it — a player who reloads the page gets the same repair by
-//   hand.
+//   hand, which is precisely what the refusal forces them to do today.
 //
 // SAFETY — the one thing that could go wrong
 //   If some rotation reached the page through a channel we do NOT observe
@@ -111,22 +121,40 @@ const ERROR_100_RE = /"error"\s*:\s*100\b/;
 
 /**
  * Switch for the OUTGOING half — substituting a spent `token` inside a
- * `checkTarget` body. **Ships OFF**, and the measurement is why.
+ * `checkTarget` body. **Ships ON since 2026-07-29**, and the measurement is
+ * why.
  *
- * On the verification run (2026-07-28, s163-pl, the same universe whose HAR
- * produced the bug) LEARN + REPAIR alone made the refusal disappear:
- * `repairs: 5`, `rewrites: 0`. So the third party was not caching the token
- * privately after all — it READS the page's token, which was stale because the
- * game's own update had been stranded. Repairing the page's variables therefore
- * fixes the sender too, and substitution is dead weight.
+ * History, because the flip matters (it is the one place OG-E edits a field of
+ * a request rather than only reading it — see `docs/fair-play.md`):
  *
- * That matters beyond tidiness: with this off, OG-E keeps its original
- * invariant — it never modifies a game request, only observes one (see
- * `docs/fair-play.md`). The detection stays live either way (`staleOutgoing`),
- * so if a genuinely private cache ever shows up we will see it in
- * `__ogeToken()` and this one word turns the repair on.
+ *   • 2026-07-28, first verification run: LEARN + REPAIR alone made the refusal
+ *     disappear (`repairs: 5`, `rewrites: 0`), so we concluded the third party
+ *     READS the page's token rather than caching it, and shipped the outgoing
+ *     half disabled with only its detector live.
+ *   • 2026-07-29, same universe, 1.54.0 (document_start already in effect):
+ *     the refusal came back, and this time the detector named the cause —
+ *     `staleOutgoing: 1`, `unknown: 0`, `repairs: 1`. The HAR shows why:
+ *
+ *       +185 ms  checkTarget  body `galaxy,system,position,type,token,union`
+ *                             (the GAME's serialiser) sends 948c4f…, server
+ *                             answers 258fcc… — 948c4f… is now spent.
+ *       +3257 ms checkTarget  body `am203,…,union,token` — token appended
+ *                             LAST, neither the game's field order nor ours —
+ *                             replays 948c4f… ⇒ error 100.
+ *
+ *     Three seconds apart, so this is not a race: the sender held its own copy
+ *     of a value the game had already spent, exactly the PRIVATE CACHE case
+ *     (2) in the header. No amount of repairing shared page state reaches it —
+ *     the only place left to correct it is the request itself.
+ *
+ * The substitution stays narrow by construction: `checkTarget` only (never
+ * `sendFleet`, so no repair can ever be part of a fleet leaving), only ever
+ * writes a value the server issued in this tab, refuses a token whose
+ * provenance we cannot vouch for, refuses to move the token BACKWARDS (see
+ * {@link generationOf}), and disarms itself permanently after
+ * {@link FAILED_REWRITE_LIMIT} repaired-yet-refused requests.
  */
-const NORMALISE_OUTGOING = false;
+const NORMALISE_OUTGOING = true;
 
 /**
  * How many repaired-but-still-refused requests it takes to conclude that our
@@ -194,6 +222,43 @@ const stats = {
   failedRewrites: 0,
   /** Values left alone because we could not vouch for their provenance. */
   unknown: 0,
+  /** Rotations refused because applying them would have moved us BACKWARDS. */
+  downgrades: 0,
+  /** Rotations refused by the send-order guard (a response that arrived late). */
+  outOfOrder: 0,
+};
+
+/**
+ * How many decisions the diagnostic ring keeps.
+ *
+ * Why a ring at all: the counters say WHAT happened but never WHY, and on the
+ * 2026-07-29 capture that gap cost a full round of guesswork — five game
+ * requests carrying four distinct tokens produced `rotations: 2`, and nothing
+ * in the snapshot said which two learns were dropped or on which guard. The
+ * ring makes the next reproduction self-explanatory instead of inferred.
+ */
+const DECISIONS_MAX = 20;
+
+/**
+ * Masked, ordered trail of what the keeper decided, newest last. Tokens are
+ * truncated to the same 4 characters `__ogeToken()` already exposes, so the
+ * trail stays safe to paste into a bug report.
+ *
+ * @type {string[]}
+ */
+const decisions = [];
+
+/**
+ * Append one decision to {@link decisions}.
+ *
+ * @param {string} what  Short verb — `rot`, `skip:same`, `rewrite`, …
+ * @param {string | null | undefined} token  Token the decision was about.
+ * @param {string} [note]  Optional detail (a counter, a holder label).
+ * @returns {void}
+ */
+const trace = (what, token, note) => {
+  decisions.push(`${what} ${token ? token.slice(0, 4) : '—'}${note ? ` ${note}` : ''}`);
+  if (decisions.length > DECISIONS_MAX) decisions.shift();
 };
 
 /** @type {(() => void) | null} */
@@ -232,6 +297,32 @@ const overwritable = (current) => {
   stats.unknown += 1;
   return false;
 };
+
+/**
+ * Position of a token in {@link seenOrder} — its GENERATION, i.e. how far along
+ * the observed issue sequence it sits. `-1` for a value we never saw.
+ *
+ * This exists because "provenance is known" is a weaker statement than "this is
+ * older than what I hold". `seen` answers the first; only order answers the
+ * second, and the second is what makes writing safe: every token we act on
+ * moves the page FORWARD along a sequence the server itself dictated, never
+ * back. That guard is what keeps a keeper whose {@link latest} has fallen
+ * behind (a rotation that reached the page through a channel we do not observe,
+ * or one our own ordering guard discarded) from turning a request that would
+ * have worked into one that cannot.
+ *
+ * Note the ordering is ARRIVAL order of first observation, which is exactly
+ * right here: `note()` pushes a token the moment we first see it, so a value
+ * that is new to us always lands at the end (highest generation), and a
+ * response merely ECHOING a token we already knew keeps its original, lower
+ * one. Comparing generations therefore distinguishes "the server issued
+ * something newer" from "an old value came round again" — which the raw
+ * response text cannot.
+ *
+ * @param {string} token
+ * @returns {number}
+ */
+const generationOf = (token) => seenOrder.indexOf(token);
 
 // ─── the page's token holders ──────────────────────────────────────────────
 
@@ -370,6 +461,7 @@ const repairHolders = () => {
 
   if (repaired > 0) {
     stats.repairs += repaired;
+    trace('repair', latest, `holders=${repaired}`);
     logger.warn('[ajaxTokenKeeper] page was holding a spent ajax token — repaired', {
       holders: repaired,
       totalRepairs: stats.repairs,
@@ -405,6 +497,7 @@ export const installAjaxTokenKeeper = () => {
       const repairedWith = /** @type {any} */ (xhr)[REPAIRED_FLAG];
       if (typeof repairedWith === 'string' && ERROR_100_RE.test(response)) {
         stats.failedRewrites += 1;
+        trace('refused', repairedWith, `n=${stats.failedRewrites}`);
         if (!rewriteDisarmed && stats.failedRewrites >= FAILED_REWRITE_LIMIT) {
           rewriteDisarmed = true;
           logger.error(
@@ -420,17 +513,39 @@ export const installAjaxTokenKeeper = () => {
       note(fresh);
       if (fresh === latest) return;
 
+      // Downgrade guard. Not every response that carries `newAjaxToken` is
+      // reporting a ROTATION — `fetchEventBox` / `catchEvents` merely echo the
+      // session's current value. So a slow echo can land after a `checkTarget`
+      // has already rotated past it and would otherwise be "learned",
+      // downgrading us to a token the server retired: this module becoming the
+      // very bug it exists to fix. A value we have already seen and that sits
+      // EARLIER in the issue sequence than what we hold can only be such an
+      // echo. (A genuinely new token was just pushed to the end by `note`, so
+      // it always compares as newer and passes.) This is deliberately
+      // independent of the send-order stamp below — it holds even for a request
+      // we never stamped.
+      if (latest !== null && generationOf(fresh) < generationOf(latest)) {
+        stats.downgrades += 1;
+        trace('skip:older', fresh, `have=${latest.slice(0, 4)}`);
+        return;
+      }
+
       // Out-of-order guard: learn only from a request sent no earlier than the
       // one we last learned from. Requests that predate the install carry no
       // stamp and count as the beginning of time.
       const stamp = /** @type {any} */ (xhr)[SEQ_FLAG];
       const at = typeof stamp === 'number' ? stamp : 0;
-      if (at < acceptedSeq) return;
+      if (at < acceptedSeq) {
+        stats.outOfOrder += 1;
+        trace('skip:order', fresh, `seq=${at}<${acceptedSeq}`);
+        return;
+      }
       acceptedSeq = at;
 
       if (latest === null) seedProvenance();
       latest = fresh;
       stats.rotations += 1;
+      trace('rot', fresh, `seq=${at}`);
 
       // The game's own callback for this very response has already run by now
       // (its handler was registered before send; ours inside it), so if the
@@ -464,22 +579,41 @@ export const installAjaxTokenKeeper = () => {
       // that was about to succeed.
       if (!seen.has(sent)) {
         stats.unknown += 1;
+        trace('out:unknown', sent);
         return;
       }
 
-      // DETECTION — runs whether or not we are allowed to act on it. A non-zero
-      // count here is the evidence that some sender keeps a private token copy
-      // that repairing the page's own variables cannot reach; it is exactly the
-      // signal for turning NORMALISE_OUTGOING on.
+      // DETECTION — a sender is replaying a value the server retired. Since
+      // 2026-07-29 this is also the signal we ACT on; the counter stays because
+      // it is the only way to tell "the fix is working" from "the fix never had
+      // to fire".
       stats.staleOutgoing += 1;
       logger.warn('[ajaxTokenKeeper] outgoing checkTarget carries a spent token', {
         staleOutgoing: stats.staleOutgoing,
         willSubstitute: NORMALISE_OUTGOING && !rewriteDisarmed,
       });
-      if (!NORMALISE_OUTGOING || rewriteDisarmed) return;
+      if (!NORMALISE_OUTGOING || rewriteDisarmed) {
+        trace('out:stale', sent, rewriteDisarmed ? 'disarmed' : 'detect-only');
+        return;
+      }
+
+      // DIRECTION. Substitute only when our value is provably LATER in the
+      // issue sequence than the one being sent. `seen.has(sent)` above says we
+      // know where the outgoing token came from; it does NOT say ours is newer.
+      // If our `latest` has fallen behind — a rotation delivered through a
+      // channel we cannot observe, or one the guards above discarded — then
+      // writing it in would replace a token that might still be live with one
+      // that certainly is not, breaking a request that was about to succeed.
+      // Refusing is always safe: the worst case is the refusal the player would
+      // have seen anyway.
+      if (generationOf(latest) <= generationOf(sent)) {
+        trace('out:noforward', sent, `have=${latest.slice(0, 4)}`);
+        return;
+      }
 
       /** @type {any} */ (xhr)[REPAIRED_FLAG] = latest;
       stats.rewrites += 1;
+      trace('rewrite', sent, `→${latest.slice(0, 4)}`);
       const prefixEnd = m.index + m[1].length;
       return `${body.slice(0, prefixEnd)}token=${latest}${body.slice(m.index + m[0].length)}`;
     },
@@ -494,6 +628,10 @@ export const installAjaxTokenKeeper = () => {
   // `document_start` is not in effect and every counter below is measuring a
   // page whose initialisation traffic we never saw (that was the whole 1.53.1
   // failure — see page.js's RUN_AT note).
+  //
+  // `log` is the second thing to read: the counters cannot say WHY a decision
+  // went the way it did, and on a page where several scripts touch the token
+  // that is exactly the question. See {@link DECISIONS_MAX}.
   const installedAt = document.readyState;
   try {
     const w = /** @type {any} */ (window);
@@ -503,6 +641,7 @@ export const installAjaxTokenKeeper = () => {
         ...stats,
         disarmed: rewriteDisarmed,
         latest: latest ? `${latest.slice(0, 4)}…(${latest.length})` : null,
+        log: decisions.slice(),
       });
     }
   } catch {
@@ -538,4 +677,7 @@ export const _resetAjaxTokenKeeperForTest = () => {
   stats.rewrites = 0;
   stats.failedRewrites = 0;
   stats.unknown = 0;
+  stats.downgrades = 0;
+  stats.outOfOrder = 0;
+  decisions.length = 0;
 };

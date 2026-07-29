@@ -32,9 +32,10 @@
 //                   plain observer's return value is ignored, so an
 //                   arrow function that happens to return something can
 //                   never accidentally alter game traffic. The only user
-//                   is ajaxTokenKeeper's spent-`token` substitution, which
-//                   ships DISABLED (`NORMALISE_OUTGOING`) — so in the
-//                   shipped extension nothing rewrites a body at all.
+//                   is ajaxTokenKeeper's spent-`token` substitution — one
+//                   session credential inside a `checkTarget`, never a
+//                   game input and never on `sendFleet`. Nothing else in
+//                   the extension rewrites a body.
 //   - `on: 'load'`  handler runs AFTER the response arrives. Registered
 //                   via `addEventListener('load', ..., { once: true })`,
 //                   so the same XHR never fires the same handler twice

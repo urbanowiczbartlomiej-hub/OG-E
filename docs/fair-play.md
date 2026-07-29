@@ -20,7 +20,7 @@ OG-E was audited against **every** rule in `AGENTS.md`; the mapping is clean.
 | §1.2 Scheduling / delayed **game** actions | No timer fires a game action. |
 | §1.3 Auto-refresh / polling the game | No timer reloads the game or polls the game server. The one `location.reload` (`features/abandon`) is a one-shot settle after the player's own 3-tap abandon, not a loop. |
 | §1.4 Auto-registered alarms / webhooks | No auto-registered alarm on in-game events. The alarm-clock push is a **player-set, per-instance reminder** (§1.4's allowed case) whose fire time is derived from the player's own action; it is **presence-gated** so OG-E never tracks the game while the player is away. Grep-verified zero `Notification` / `chrome.notifications` / `document.title` / favicon / audio. |
-| §1.5 Alt UI / shortcuts / lobby bypass | None. Two redirect bridges rewrite only the game's own **response** navigation target (a URL the player could type). The ajax-token keeper repairs a variable the game itself failed to update — a broken credential corrected, not a shortcut, and not a request. |
+| §1.5 Alt UI / shortcuts / lobby bypass | None. Two redirect bridges rewrite only the game's own **response** navigation target (a URL the player could type). The ajax-token keeper repairs a variable the game itself failed to update, and corrects the same spent credential in an outgoing `checkTarget` when a sender replays one — a broken credential fixed, not a shortcut; a page reload achieves the same by hand. |
 | §1.5.1 Direct probing (`miniFleet` / `sendFleet`) | **Zero `miniFleet`; OG-E never originates a `sendFleet`.** The Spyglass `sendSpy` button is 1 tap → pre-fill + one native dispatch for **one** planet. The dashboard scan surfaces are **display only** and carry **no send control** — data display is deliberately separated from the probe action, exactly the `AGENTS.md` model. |
 | §1.6 Dark Matter imitation | No Commander-queue imitation, no premium-feature rebuild. |
 | §1.7 Blocking / altering monetization | No hide / opacity / off-screen / image-swap of any ad, banner, Merchant, Officers, Shop, or footer; OG-E's menu highlights are purely *additive*. |
@@ -34,15 +34,17 @@ OG-E was audited against **every** rule in `AGENTS.md`; the mapping is clean.
 
 ## OG-E's three structural invariants (each verified in the audit)
 
-- **Never originates or modifies a game *request*.** The MAIN-world bridges only
-  **observe** the game's own XHRs and re-emit them as internal `oge:*` DOM
-  events; the one `.send()` in the bridge tree is the native call forwarded
-  verbatim (`bridges/xhrObserver.js`). The request count leaving the browser is
-  always exactly what the page decided on. *(Two nuances, both narrow and
-  documented: two redirect bridges rewrite the game's own **response**
-  `redirectUrl` — a navigation target, not a request; and
+- **Never originates a game *request*, and modifies exactly one FIELD of one.**
+  The MAIN-world bridges only **observe** the game's own XHRs and re-emit them as
+  internal `oge:*` DOM events; the one `.send()` in the bridge tree is the native
+  call forwarded verbatim (`bridges/xhrObserver.js`). The request count leaving
+  the browser is always exactly what the page decided on. *(Three nuances, all
+  narrow and documented: two redirect bridges rewrite the game's own **response**
+  `redirectUrl` — a navigation target, not a request;
   `bridges/ajaxTokenKeeper.js` writes the server's freshest ajax token into the
-  page's **own variables** — see below. Neither touches an outgoing request.)*
+  page's **own variables**; and that same keeper corrects the spent `token` field
+  of an outgoing `checkTarget` when some sender replays one — a session
+  credential, never a game input, never on `sendFleet`. See below.)*
 - **One user click → at most one game request.** Every fleet/action button is
   strictly 1:1; multi-step flows are multi-**tap**, never one-tap-many-sends.
 - **No background watching of the game.** No timer reloads the game page, no code
@@ -89,34 +91,55 @@ Verdict per `AGENTS.md`: **Allowed.** Nothing in §1 or §4 is engaged —
 | §1.5 shortcut / advantage | None. A page reload produces the same fresh token by hand; the keeper only spares the player the reload. |
 | §6 / §4 background calls | Not a network client — it never opens a connection of its own. |
 
-**What ships touches no request.** The keeper writes the fresh token into the
+**The main path touches no request.** The keeper writes the fresh token into the
 page's own variables — `window.token` (what the game's `appendTokenParams()`
 reads), the stale-by-design `fleetDispatcher.token`, the hidden `token` inputs —
 i.e. it finishes the job the game's own `updateToken()` was interrupted doing.
-The game then builds its requests exactly as it always did, and OG-E's
-"never originates **or modifies** a game request" invariant stands unchanged.
+The game then builds its requests exactly as it always did.
 
-There **is** a dormant second half, and it is written down rather than hidden: a
-`checkTarget`-only substitution of a provably spent `token` inside an outgoing
-body, for the case where some sender keeps a PRIVATE copy that no amount of
-repairing shared state can reach. It ships **disabled** (`NORMALISE_OUTGOING =
-false`) because the verification run settled the question — repairing the page's
-variables alone made the refusal disappear (`repairs: 5`, `rewrites: 0`), which
-means the third party reads the page's token rather than caching it. The
-detection counter (`staleOutgoing`) stays live, so the day a private cache does
-appear it shows up in `__ogeToken()` instead of being guessed at. If it is ever
-enabled it stays scoped to the one endpoint that spends the token (never
-`sendFleet`, so no repair can be part of a fleet leaving), only ever writes a
-value the server itself issued this session, refuses tokens whose provenance it
-cannot vouch for, and disarms itself permanently if a request it repaired is
-refused anyway — and enabling it is the point at which a ToolDev sign-off is
-worth asking for, since it would be the first time OG-E edits a request field.
+**The carve-out: one request FIELD, since 2026-07-29.** There is a second half
+that substitutes a provably spent `token` inside an outgoing `checkTarget` body,
+for the case where a sender keeps a PRIVATE copy that no amount of repairing
+shared state can reach. It shipped **disabled** while the evidence said that case
+did not occur here; the 2026-07-29 capture on s163-pl proved it does — the game's
+own `checkTarget` spent `948c4f…` at +185 ms, and a third-party serialiser
+(`am203,…,union,token`, token appended last — not the game's field order, not
+ours) replayed the same value at +3257 ms and was refused. Three seconds is not a
+race: nothing but the request itself was left to correct. So
+`NORMALISE_OUTGOING` is now `true`, and **this is the one place OG-E edits a
+field of a game request** rather than only reading it.
+
+Why it stays inside `AGENTS.md`'s Allowed bucket:
+
+- **It is a credential, not a game input.** `galaxy` / `system` / `position` /
+  `type` / `union` / the ships — everything that expresses player INTENT — is
+  passed through untouched. The one field corrected is the session's rotating
+  anti-replay token, and it is corrected to the value **the server itself issued
+  to this tab seconds earlier**.
+- **No advantage, no automation.** The request count is unchanged (§1.3), no
+  action is taken for the player (§1.1), nothing is scheduled (§1.2). The
+  player's alternative today is to reload the page — which produces the same
+  fresh token by hand. The keeper only spares them the reload (§1.5).
+- **Scoped to the endpoint that spends the token.** `checkTarget` only — never
+  `sendFleet`, so no repair can ever be part of a fleet leaving. Worst case is a
+  re-validated target.
+- **It can only move the token FORWARD.** It refuses a token whose provenance it
+  cannot vouch for, and refuses to write a value that is not provably LATER in
+  the observed issue sequence than the one being sent, so a keeper that has
+  fallen behind declines instead of guessing.
+- **It gives up rather than persist.** Three repaired-yet-refused requests and
+  the substitution disarms itself for the rest of the page's life; `__ogeToken()`
+  reports the counters and a masked decision trail for exactly this audit.
+
+This is the point flagged earlier as **worth a ToolDev sign-off**, and that flag
+stands: the classification above is OG-E's own reading, not an approval.
 
 ## What OG-E never does (all grep-verified)
 
-- No origination or modification of a game **request** (only the response
-  *navigation-target* rewrite in two bridges; the ajax-token keeper writes the
-  page's own variables, and its request-side half ships disabled — above).
+- No origination of a game **request**, and no modification of one beyond the
+  response *navigation-target* rewrite in two bridges plus the ajax-token
+  keeper's single `checkTarget` **credential** field — above. No game input
+  (target, mission, ships, resources) is ever rewritten anywhere.
 - No automatic page refresh / meta-refresh / reload-on-timer.
 - No audio (`new Audio` / `.play()` / `AudioContext` — zero occurrences).
 - No `document.title` / favicon mutation.
