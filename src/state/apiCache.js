@@ -23,6 +23,7 @@ import { currentUniverseKey } from './universeKey.js';
 
 /** @typedef {import('../domain/apiOccupancy.js').ApiPlanet} ApiPlanet */
 /** @typedef {import('../domain/apiOccupancy.js').ApiPlayerMeta} ApiPlayerMeta */
+/** @typedef {import('../domain/apiOccupancy.js').ApiAlliance} ApiAlliance */
 /** @typedef {import('../domain/apiOccupancy.js').ApiRank} ApiRank */
 /** @typedef {import('../domain/apiOccupancy.js').ServerData} ServerData */
 
@@ -32,6 +33,8 @@ import { currentUniverseKey } from './universeKey.js';
  *   `regenProbeTs` — self-timestamp observed by a fruitless regen-due probe;
  *   disarms the early-refetch trigger until OGame actually rolls the file.
  * @property {{ players: Record<string, ApiPlayerMeta>, timestamp?: number, fetchedAt: number }} [players]
+ * @property {{ alliances: Record<string, ApiAlliance>, timestamp?: number, fetchedAt: number }} [alliances]
+ *   alliances.xml — id → {name, tag}; the Players table's alliance finder.
  * @property {{ ranks: Record<string, ApiRank>, timestamp?: number, fetchedAt: number }} [total]
  * @property {{ ranks: Record<string, ApiRank>, timestamp?: number, fetchedAt: number }} [military]
  * @property {{ ranks: Record<string, ApiRank>, timestamp?: number, fetchedAt: number }} [honor]

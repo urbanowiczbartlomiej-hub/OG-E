@@ -60,7 +60,7 @@ import { axisDelta, flightDistance, niszczHours } from '../../domain/geometry.js
 import { renderTargets, DEFAULT_TARGET_SORT, TARGETS_NARROW_MQ } from './targets.js';
 import { ZONES } from '../../domain/zoneScore.js';
 import { buildOccupancyIndex } from '../../domain/apiOccupancy.js';
-import { buildTargetCandidates, playerPlanets } from '../../domain/targets.js';
+import { buildTargetCandidates, playerPlanets, matchAllianceMembers } from '../../domain/targets.js';
 import { joinDangerProfiles } from '../../domain/dangerJoin.js';
 import { buildCivilBaseline, collectCivilCalibration } from '../../domain/civilBaseline.js';
 import { estimateHiddenFleet, estimateCombatShare } from '../../domain/threatModel.js';
@@ -371,6 +371,8 @@ const PROX_RANGES = [
 const PROX_RANGE_KEY = 'oge_proxRange';
 /** Device-local: remember whether the Spyglass scan-settings block is open. */
 const SPY_SCAN_PREFS_OPEN_KEY = 'oge_spyScanPrefsOpen';
+/** Device-local: remember whether the Spyglass positions-map card is open. */
+const SPY_MAP_OPEN_KEY = 'oge_spyMapOpen';
 let proximityRange = PROX_RANGES.some(([v]) => v === safeLS.get(PROX_RANGE_KEY))
   ? /** @type {string} */ (safeLS.get(PROX_RANGE_KEY))
   : '1m';
@@ -485,8 +487,7 @@ let presenceHistories = {};
 /** @type {HTMLElement | null} */ let freeCountInfoEl;
 /** @type {HTMLElement} */ let targetsContainer;
 /** @type {HTMLElement | null} */ let spyglassMapHost;
-/** @type {HTMLButtonElement | null} */ let spyMapToggle;
-/** @type {HTMLElement | null} */ let spyMapBlock;
+/** @type {HTMLDetailsElement | null} */ let spyMapBlock;
 /** @type {HTMLElement | null} */ let spyMapYouEl;
 /** Reach overlay toggle — a chip pill (`.on` is its state), not a checkbox. */
 /** @type {HTMLElement | null} */ let spyMapReach;
@@ -498,6 +499,13 @@ let presenceHistories = {};
 /** @type {HTMLInputElement | null} */ let tgtSearch;
 /** Current Spyglass nickname search (Etap D); '' = no search. */
 let targetSearchQuery = '';
+/** @type {HTMLInputElement | null} */ let tgtAllySearch;
+/** @type {HTMLButtonElement | null} */ let tgtWatchAll;
+/** Current alliance search (name OR tag); '' = no alliance search. */
+let targetAllyQuery = '';
+/** Player ids currently listed under an alliance search — the "watch all"
+ *  button's payload, filled by the last {@link repaintTargets}. */
+let allySearchIds = /** @type {string[]} */ ([]);
 /** Player ids force-included past the filters via search "show anyway". */
 const forceIncludeIds = new Set();
 /**
@@ -841,6 +849,8 @@ const wireDom = () => {
   tgtMaxMilitary = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtMaxMilitary'));
   tgtLimitChips = document.getElementById('tgtLimitChips');
   tgtSearch = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtSearch'));
+  tgtAllySearch = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtAllySearch'));
+  tgtWatchAll = /** @type {HTMLButtonElement | null} */ (document.getElementById('tgtWatchAll'));
   tgtWatchedOnly = document.getElementById('tgtWatchedOnly');
   tgtProbes = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtProbes'));
   tgtScanBodies = document.getElementById('tgtScanBodies');
@@ -863,8 +873,7 @@ const wireDom = () => {
   watchCardsEl = document.getElementById('watchCards');
   spyApiRefreshEl = /** @type {HTMLButtonElement | null} */ (document.getElementById('spyApiRefresh'));
   spyglassMapHost = document.getElementById('spyglassMapHost');
-  spyMapToggle = /** @type {HTMLButtonElement | null} */ (document.getElementById('spyMapToggle'));
-  spyMapBlock = document.getElementById('spyMapBlock');
+  spyMapBlock = /** @type {HTMLDetailsElement | null} */ (document.getElementById('spyMapBlock'));
   spyMapYouEl = document.getElementById('spyMapYou');
   spyMapReach = document.getElementById('spyMapReach');
   spyMapPlayersEl = document.getElementById('spyMapPlayers');
@@ -1775,6 +1784,18 @@ const repaintTargets = () => {
     onRescan: markRescan,
   });
 
+  // Alliance finder: resolve "name or tag" → the member ids, once per repaint.
+  // The result also feeds the "+ watch all" button (its count and its payload),
+  // so the button can never disagree with the rows on screen.
+  const allianceRows = apiCache.alliances ? apiCache.alliances.alliances : {};
+  const allyMatch = matchAllianceMembers(targetCandidates, allianceRows, targetAllyQuery);
+  allySearchIds = [...allyMatch.ids];
+  if (tgtWatchAll) {
+    const unwatched = allySearchIds.filter((pid) => !watchedPlayers.has(pid)).length;
+    tgtWatchAll.style.display = targetAllyQuery.trim() && unwatched ? '' : 'none';
+    tgtWatchAll.textContent = `+ watch all ${unwatched}`;
+  }
+
   renderTargets({
     containerEl: targetsContainer,
     candidates: targetCandidates,
@@ -1836,6 +1857,9 @@ const repaintTargets = () => {
     landingSignals,
     // Nickname search (Etap D): reveals name-matches incl. excluded players.
     searchQuery: targetSearchQuery,
+    // Alliance search: the same reveal, scoped to one alliance's members.
+    allianceSearch: { ids: allyMatch.ids, labels: allyMatch.labels, query: targetAllyQuery },
+    alliances: allianceRows,
     onShowAnyway: (/** @type {string} */ id) => { forceIncludeIds.add(id); repaintTargets(); },
     pinIds: pinnedTargetIds,
     linkBase: gameLinkBase(),
@@ -2957,15 +2981,16 @@ const repaintSpyglassMap = () => {
   });
 };
 
-/** Toggle the Spyglass map section open/closed. The toggle is a chip pill now,
- *  so `.on` marks the open state (the label stays "🗺 map"). */
-const toggleSpyMap = () => {
-  spyMapOpen = !spyMapOpen;
-  if (spyMapBlock) spyMapBlock.style.display = spyMapOpen ? '' : 'none';
-  if (spyMapToggle) {
-    spyMapToggle.classList.toggle('on', spyMapOpen);
-    spyMapToggle.setAttribute('aria-expanded', String(spyMapOpen));
-  }
+/**
+ * Follow the map card's own disclosure state. The card IS a `<details>` now
+ * (its header bar is always on screen), so the browser owns open/closed and we
+ * only mirror it into `spyMapOpen` — the flag `repaintSpyglassMap` gates on —
+ * and paint on the opening edge (the host has no width while closed).
+ *
+ * @returns {void}
+ */
+const syncSpyMapOpen = () => {
+  spyMapOpen = !!spyMapBlock?.open;
   if (spyMapOpen) repaintSpyglassMap();
 };
 
@@ -3080,7 +3105,42 @@ const wireListeners = () => {
   wireChips(tgtLimitChips, onTargetFilterChange);
   tgtSearch?.addEventListener('input', () => {
     targetSearchQuery = tgtSearch ? tgtSearch.value : '';
+    if (targetSearchQuery.trim() && tgtAllySearch && tgtAllySearch.value) {
+      tgtAllySearch.value = '';
+      targetAllyQuery = '';
+    }
     repaintTargets();
+  });
+  // Alliance finder — the second scope of the same control. The two searches
+  // are exclusive on purpose: "this name inside that alliance" is a filter
+  // nobody asked for, and one active finder keeps the result set explainable.
+  tgtAllySearch?.addEventListener('input', () => {
+    targetAllyQuery = tgtAllySearch ? tgtAllySearch.value : '';
+    if (targetAllyQuery.trim() && tgtSearch && tgtSearch.value) {
+      tgtSearch.value = '';
+      targetSearchQuery = '';
+    }
+    repaintTargets();
+  });
+  // "+ watch all N" — the whole point of searching by alliance: walk every
+  // member onto the watch list (and so onto the positions map) in one go. Only
+  // ever offered for the players the current alliance search actually lists.
+  tgtWatchAll?.addEventListener('click', () => {
+    // Batch: mutate the set for the whole alliance, then persist + repaint ONCE.
+    // Routing each id through `toggleWatched` would run a config write and three
+    // repaints per member — seconds of churn on a 60-player alliance.
+    let added = 0;
+    for (const pid of allySearchIds) {
+      if (watchedPlayers.has(pid)) continue;
+      watchedPlayers.add(pid);
+      if (!watchColors[pid]) watchColors[pid] = WATCH_COLOR_PALETTE[0].hex;
+      added++;
+    }
+    if (!added) return;
+    writeWatchConfig();
+    repaintTargets();
+    repaintSpyglassMap();
+    renderProximityStrip();
   });
   wireToggleChip(tgtWatchedOnly, () => repaintTargets());
   // Scan-settings command block (Probes/Scan/Probe from/…) — a native <details>
@@ -3100,7 +3160,16 @@ const wireListeners = () => {
     if (tgtConfigCard) tgtConfigCard.style.display = opening ? '' : 'none';
     tgtConfigToggle?.setAttribute('aria-expanded', String(opening));
   });
-  spyMapToggle?.addEventListener('click', toggleSpyMap);
+  // Positions map — the same native-<details> deal as the scan settings above:
+  // an always-visible bar, its open/closed choice remembered per device.
+  if (spyMapBlock) {
+    if (safeLS.get(SPY_MAP_OPEN_KEY) === '1') spyMapBlock.open = true;
+    spyMapBlock.addEventListener('toggle', () => {
+      safeLS.set(SPY_MAP_OPEN_KEY, spyMapBlock?.open ? '1' : '0');
+      syncSpyMapOpen();
+    });
+    syncSpyMapOpen();
+  }
   wireToggleChip(spyMapReach, () => repaintSpyglassMap());
   spyApiRefreshEl?.addEventListener('click', () => { void refreshApiData(); });
 
@@ -3233,6 +3302,9 @@ export const _resetDashboardForTest = () => {
   civilProfiles = new Map();
   routines = {};
   focusedTargetId = null;
+  targetSearchQuery = '';
+  targetAllyQuery = '';
+  allySearchIds = [];
   spyMapOpen = false;
   // DOM refs filled by wireDom(); wireDom re-resolves them on the next
   // install, but null them now so nothing reads a detached node in between.
@@ -3268,6 +3340,8 @@ export const _resetDashboardForTest = () => {
     tgtMaxMilitary =
     tgtLimitChips =
     tgtSearch =
+    tgtAllySearch =
+    tgtWatchAll =
     tgtWatchedOnly =
     tgtProbes =
     tgtScanBodies =

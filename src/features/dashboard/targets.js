@@ -369,13 +369,23 @@ function fleetCell(prof) {
  * toggle, no per-row map control).
  * @param {TargetCandidate} c
  * @param {import('../../domain/fleetLanding.js').FleetLandingSignal} [landing]
+ * @param {{ name?: string, tag?: string }} [ally]  The player's alliance
+ *   (alliances.xml row), when the feed knows it — rendered as a dim `[TAG]`
+ *   after the nick so an alliance sweep is checkable row by row.
  * @returns {HTMLTableCellElement}
  */
-function playerCell(c, landing) {
+function playerCell(c, landing, ally) {
   const td = cell('');
   const label = document.createElement('span');
   label.textContent = c.name || `#${c.id}`;
   td.appendChild(label);
+  if (ally && (ally.tag || ally.name)) {
+    const tagEl = document.createElement('span');
+    tagEl.textContent = ` [${ally.tag || ally.name}]`;
+    tagEl.style.cssText = 'color:#6b7782;font-size:11px;';
+    tagEl.title = ally.name || '';
+    td.appendChild(tagEl);
+  }
   if (landing) {
     const st = document.createElement('span');
     st.textContent = ' 🎯';
@@ -461,6 +471,14 @@ function playerCell(c, landing) {
  *   Per-player fresh fleet-landing signal — the 🎯 row marker + dossier banner.
  * @param {string} [args.searchQuery]  Nickname search (Etap D); when set, the
  *   table shows every name-match INCLUDING excluded players (with the reason).
+ * @param {{ ids: Set<string>, labels: string[], query: string }} [args.allianceSearch]
+ *   Alliance search — the resolved member ids (see `domain/targets.matchAllianceMembers`),
+ *   the matched alliances' `TAG · Name` labels for the caption, and the raw
+ *   query for the empty-state text. Behaves like the nickname search: hidden
+ *   members surface too, with the reason + "show anyway".
+ * @param {Record<string, { name?: string, tag?: string }>} [args.alliances]
+ *   alliances.xml (id → {name, tag}) — the source of the `[TAG]` chip next to
+ *   a player's name, so an alliance sweep is verifiable row by row.
  * @param {(id: string) => void} [args.onShowAnyway]  "Show anyway" override for
  *   an excluded search hit (force-include the player).
  * @param {Set<string>} [args.pinIds]  Players PINNED into the view by a
@@ -511,6 +529,8 @@ export function renderTargets({
   fsArcs,
   landingSignals,
   searchQuery = '',
+  allianceSearch,
+  alliances,
   onShowAnyway,
   pinIds,
   linkBase,
@@ -555,15 +575,26 @@ export function renderTargets({
   // reason it's hidden + a "show anyway" override. Empty query = the normal
   // filter / watched-scope / limit flow.
   const query = searchQuery.trim().toLowerCase();
+  // Alliance search — the SAME "reveal everything that matches" mode as the
+  // nickname search, only the predicate differs (membership, resolved upstream
+  // by domain/targets.matchAllianceMembers). Never both at once: the control
+  // line clears one when the other is typed into.
+  const allyQuery = (allianceSearch?.query || '').trim();
+  const allyIds = allianceSearch?.ids;
+  const inSearch = !!query || !!allyQuery;
   /** @type {Array<{ c: TargetCandidate, reason: string }>} */
   const excludedMatches = [];
   /** @type {TargetCandidate[]} */
   let list;
-  if (query) {
+  if (inSearch) {
+    /** @type {(c: TargetCandidate) => boolean} */
+    const matches = query
+      ? (c) => (c.name || '').toLowerCase().includes(query) || String(c.id) === query
+      : (c) => !!allyIds && allyIds.has(String(c.id));
     /** @type {TargetCandidate[]} */
     const kept = [];
     for (const c of candidates) {
-      if (!(c.name || '').toLowerCase().includes(query) && String(c.id) !== query) continue;
+      if (!matches(c)) continue;
       const reason = targetExclusionReason(c, opts); // opts carries forceInclude
       if (reason === null) kept.push(c);
       else excludedMatches.push({ c, reason });
@@ -576,7 +607,7 @@ export function renderTargets({
       : filtered;
     list = sortTargetList(scoped, sort.key, sort.dir, hiddenById, dangerById);
   }
-  const shown = !query && limit > 0 ? list.slice(0, limit) : list;
+  const shown = !inSearch && limit > 0 ? list.slice(0, limit) : list;
 
   // Deep-link pins: append any pinned player the row cap (or the watched-only
   // scope) dropped, so a "show me this player" click always lands on a row.
@@ -584,7 +615,7 @@ export function renderTargets({
   // rows get a "beyond the cap" note via `pinnedShown`.
   /** @type {Set<string>} */
   const pinnedShown = new Set();
-  if (!query && pinIds && pinIds.size) {
+  if (!inSearch && pinIds && pinIds.size) {
     const have = new Set(shown.map((c) => c.id));
     for (const pid of pinIds) {
       if (have.has(pid)) continue;
@@ -596,17 +627,28 @@ export function renderTargets({
     }
   }
 
-  if (query && shown.length === 0 && excludedMatches.length === 0) {
+  if (inSearch && shown.length === 0 && excludedMatches.length === 0) {
     const p = document.createElement('p');
     p.style.color = '#888';
     p.style.fontSize = '13px';
-    p.textContent = `No player matches “${searchQuery.trim()}”.`;
+    // An alliance query that matched no ALLIANCE reads differently from one
+    // whose alliance exists but is empty in this universe's feeds — say which.
+    const noAllianceFeed = !alliances || Object.keys(alliances).length === 0;
+    p.textContent = query
+      ? `No player matches “${searchQuery.trim()}”.`
+      : (noAllianceFeed
+        // The feed is fetched on the same daily cadence as players.xml, so a
+        // cache warmed before this feature existed simply has no alliances yet.
+        ? 'No alliance list cached for this universe yet — hit ⟳ Refresh above, then search again.'
+        : (allianceSearch && allianceSearch.labels.length
+          ? `No players found in ${allianceSearch.labels.join(', ')}.`
+          : `No alliance matches “${allyQuery}” — search by its tag or full name.`));
     containerEl.appendChild(p);
     if (countInfoEl) countInfoEl.textContent = '';
     return;
   }
 
-  if (!query && watchedOnly && list.length === 0) {
+  if (!inSearch && watchedOnly && list.length === 0) {
     const p = document.createElement('p');
     p.style.color = '#888';
     p.style.fontSize = '13px';
@@ -700,7 +742,7 @@ export function renderTargets({
     });
     const watched = !!(watchedIds && watchedIds.has(c.id));
     if (!narrow) tr.appendChild(chipCell(c.id, watched, onToggleWatch));
-    const pcell = playerCell(c, landing);
+    const pcell = playerCell(c, landing, c.alliance ? alliances?.[String(c.alliance)] : undefined);
     // Deep-link pin marker — says WHY this row sits after the capped list
     // instead of in rank order.
     if (pinnedShown.has(c.id)) {
@@ -762,9 +804,14 @@ export function renderTargets({
   containerEl.appendChild(scroller);
 
   if (countInfoEl) {
-    if (query) {
+    if (inSearch) {
       const hid = excludedMatches.length;
-      countInfoEl.textContent = `${shown.length} match${shown.length === 1 ? '' : 'es'}`
+      // Under an alliance search, name the alliances that matched — the count
+      // alone can't tell "one alliance" from "three that share a substring".
+      const scope = !query && allianceSearch && allianceSearch.labels.length
+        ? `${allianceSearch.labels.join(', ')} — `
+        : '';
+      countInfoEl.textContent = `${scope}${shown.length} match${shown.length === 1 ? '' : 'es'}`
         + (hid ? ` · ${hid} hidden` : '');
     } else {
       const noun = watchedOnly ? 'on scan list' : 'targets in range';

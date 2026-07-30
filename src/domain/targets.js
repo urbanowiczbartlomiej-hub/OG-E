@@ -251,6 +251,56 @@ export function playerPlanets(universePlanets, playerId) {
 }
 
 /**
+ * Minimal shape of an alliances.xml row (what a human searches by).
+ * @typedef {object} AllianceLite
+ * @property {string} [name]
+ * @property {string} [tag]
+ */
+
+/**
+ * Resolve an alliance search — a name OR tag fragment — to the set of player
+ * ids in every matching alliance.
+ *
+ * Two-step because a candidate only carries its alliance ID: match the query
+ * against the alliances feed first (substring, case-insensitive, on BOTH name
+ * and tag — a player types "FMZ" or "Formoza" and means the same alliance),
+ * then sweep the candidates for members of any alliance that matched. An exact
+ * tag hit is not treated specially: tags are short, so substring already finds
+ * it, and "which alliance did I mean" is answered by the result list, not by a
+ * ranking rule nobody can see.
+ *
+ * Pure — the caller hands in the plain maps it already holds.
+ *
+ * @param {TargetCandidate[]} candidates
+ * @param {Record<string, AllianceLite>} alliances  id → {name, tag} (alliances.xml).
+ * @param {string} query                            Raw user input; '' = no search.
+ * @returns {{ ids: Set<string>, allianceIds: Set<string>, labels: string[] }}
+ *   `ids` — matching players; `allianceIds` — the alliances they belong to;
+ *   `labels` — `TAG · Name` per matched alliance, for the result caption.
+ */
+export function matchAllianceMembers(candidates, alliances, query) {
+  const q = (query || '').trim().toLowerCase();
+  /** @type {Set<string>} */ const ids = new Set();
+  /** @type {Set<string>} */ const allianceIds = new Set();
+  /** @type {string[]} */ const labels = [];
+  if (!q) return { ids, allianceIds, labels };
+  for (const aid of Object.keys(alliances || {})) {
+    const a = alliances[aid] || {};
+    const name = (a.name || '').toLowerCase();
+    const tag = (a.tag || '').toLowerCase();
+    if (!name.includes(q) && !tag.includes(q)) continue;
+    allianceIds.add(aid);
+    labels.push([a.tag, a.name].filter(Boolean).join(' · ') || `alliance ${aid}`);
+  }
+  if (!allianceIds.size) return { ids, allianceIds, labels };
+  for (const c of candidates || []) {
+    if (c.alliance && allianceIds.has(String(c.alliance))) ids.add(String(c.id));
+  }
+  labels.sort();
+  return { ids, allianceIds, labels };
+}
+
+/**
  * Minimal shape of a players.xml row (name + status + alliance).
  * @typedef {object} ApiPlayerLite
  * @property {string} [name]

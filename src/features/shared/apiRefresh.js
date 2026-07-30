@@ -24,6 +24,7 @@ import { fetchApiText } from '../../lib/ogameApi.js';
 import {
   parseUniverse,
   parsePlayers,
+  parseAlliances,
   parseHighscore,
   parseServerData,
 } from '../../domain/apiOccupancy.js';
@@ -156,6 +157,16 @@ export async function refreshApiCache(opts = {}) {
       // with an empty map + fresh fetchedAt (see the universe feed for the rule).
       if (p.timestamp == null) throw new Error('degenerate players parse (no timestamp)');
       cache.players = { players: p.players, timestamp: p.timestamp, fetchedAt: now };
+    });
+  }
+  // alliances.xml — id → {name, tag}, so the Players table can be searched by
+  // alliance. Regenerated on the same daily cadence as players.xml, and small
+  // (a few thousand rows), so it rides the players TTL.
+  if (force || !isFresh(cache.alliances, TTL.players, now)) {
+    await feed('alliances', async () => {
+      const a = parseAlliances(await fetchApiText('alliances', undefined, origin));
+      if (a.timestamp == null) throw new Error('degenerate alliances parse (no timestamp)');
+      cache.alliances = { alliances: a.alliances, timestamp: a.timestamp, fetchedAt: now };
     });
   }
   if (force || !isFresh(cache.total, TTL.highscore, now)) {

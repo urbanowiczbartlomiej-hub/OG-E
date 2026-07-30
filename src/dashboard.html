@@ -860,7 +860,52 @@
   .gv-threat-ignored-tag { font-size: 11px; color: #c98a4b; border: 1px solid #5a4415; border-radius: 8px; padding: 0 6px; }
 
   /* Colony Scout → server map: binned temperature field (whole server). */
+  /* The two Players finders (by player name, by alliance name/tag) — same
+     control, two scopes, so they sit side by side and look identical. They
+     shrink together on a phone instead of pushing the row into a scroll. */
+  .tgt-find {
+    flex: 1 1 190px; min-width: 0; max-width: 240px; padding: 5px 9px;
+    background: #0e141b; border: 1px solid #2a3542; border-radius: 4px;
+    color: #cfd6dd; font-size: 13px;
+  }
+  .tgt-find:focus { outline: none; border-color: #4a9eff; }
   .server-map-panel { margin: 10px 0; }
+  /* Spyglass positions map — a disclosure CARD, not a chip-toggled block. The
+     header bar is always on screen (that is the whole point: the old 🗺 chip in
+     the Players control line was small and nobody found the map behind it), and
+     it borrows the watchlist Settings bar's caret + hint language so both
+     collapsibles on this tab read the same. Card padding moves to the parts so
+     the summary bar spans the full card width and stays a comfortable tap
+     target. */
+  .spy-map-panel { padding: 0; }
+  .spy-map-summary {
+    display: flex; align-items: center; gap: 10px; padding: 11px 14px;
+    cursor: pointer; list-style: none; user-select: none;
+  }
+  .spy-map-summary::-webkit-details-marker { display: none; }
+  /* CSS caret (no glyph) — right when closed, down when open. */
+  .spy-map-summary::before {
+    content: ''; flex: 0 0 auto; width: 6px; height: 6px; margin-top: -2px;
+    border-right: 2px solid #7f8ea0; border-bottom: 2px solid #7f8ea0;
+    transform: rotate(-45deg); transition: transform .15s ease;
+  }
+  details[open] > .spy-map-summary::before { transform: rotate(45deg); margin-top: -3px; }
+  .spy-map-summary:hover { background: #16202c; }
+  .spy-map-summary:hover::before { border-color: #a7b8cb; }
+  .spy-map-summary:focus-visible { outline: 2px solid #4a9eff; outline-offset: -2px; }
+  .spy-map-summary-title { color: #c9d4de; font-size: 14px; font-weight: bold; }
+  .spy-map-summary-hint {
+    margin-left: auto; min-width: 0; font-size: 11px; color: #66788a;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* Open, the map speaks for itself — the hint would just be noise. */
+  details[open] > .spy-map-summary .spy-map-summary-hint { display: none; }
+  .spy-map-body { padding: 0 14px 12px; }
+  .spy-map-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
+  @media (max-width: 640px) {
+    /* The caret + title carry the affordance; the hint would crowd the bar. */
+    .spy-map-summary-hint { display: none; }
+  }
   /* Candidate pins overlaid on the field map: one ring per top-listed spot,
      generous ≥12px hit target (the underlying bins are ~4px), absolutely
      positioned inside the row's cells area. Click selects the table row. */
@@ -1414,34 +1459,41 @@
     <div class="gv-card-head"><span class="gv-card-title" title="Moon-strike candidates among your neighbours (±N systems around your colonies) and how well the grounds are patrolled. Same signals as the in-game Spy button.">Patrol</span><span id="patrolSummary" style="color:#8a97a3;"></span></div>
     <div id="patrolStrikes"></div>
   </div>
-  <!-- Positions map ABOVE the control line (user pref): toggled by 🗺 in the
-       controls below; the reach/You pills + watched-player chips share its own
-       row under the canvas, all as .spy-pchip pills. -->
-  <div class="gv-card server-map-panel" id="spyMapBlock" style="display:none;">
-    <div class="gv-card-head"><span class="gv-card-title">Positions map</span></div>
-    <div id="spyglassMapHost"></div>
-    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;align-items:center;">
-      <button type="button" id="spyMapReach" class="spy-pchip"
-        title="Rings every tracked body close enough to hit one of your planets within 8 hours at RIP (Deathstar) speed — the slowest attack ship, so anything faster reaches you sooner. Positions from the public API.">🎯 who can reach you (≤8 h)</button>
-      <span id="spyMapYou" class="spy-pchip" style="display:none;"></span>
-      <span id="spyMapPlayers" style="display:contents;"></span>
+  <!-- Positions map — same place as ever (ABOVE the Players control line), but
+       its own disclosure card instead of a chip in the controls below: the bar
+       is always visible, so the map is findable. Collapsed by default; the
+       reach/You pills + watched-player chips share a row under the canvas, all
+       as .spy-pchip pills. -->
+  <details class="gv-card server-map-panel spy-map-panel" id="spyMapBlock">
+    <summary class="spy-map-summary">
+      <span class="spy-map-summary-title">Positions map</span>
+      <span class="spy-map-summary-hint">Your planets + every watched player · who can reach you</span>
+    </summary>
+    <div class="spy-map-body">
+      <div id="spyglassMapHost"></div>
+      <div class="spy-map-chips">
+        <button type="button" id="spyMapReach" class="spy-pchip"
+          title="Rings every tracked body close enough to hit one of your planets within 8 hours at RIP (Deathstar) speed — the slowest attack ship, so anything faster reaches you sooner. Positions from the public API.">🎯 who can reach you (≤8 h)</button>
+        <span id="spyMapYou" class="spy-pchip" style="display:none;"></span>
+        <span id="spyMapPlayers" style="display:contents;"></span>
+      </div>
     </div>
-  </div>
+  </details>
   <!-- Players card — the control line, the toggleable filters panel and the
        ranked table live in ONE gv-card zone (mirrors the Galaxy Viewer's
-       Results card). Control line: search · map (left) · ⚙ Filters · row cap
-       (right); the map button toggles the map card ABOVE, ⚙ its panel BELOW.
+       Results card). Control line: the two finders (player · alliance) on the
+       left, ⚙ Filters · row cap on the right; ⚙ opens its panel BELOW. The
+       map is no longer a chip here — it is the disclosure card ABOVE.
        (Scan settings live in the watchlist card's footer, not here.) -->
   <div class="gv-card">
   <div class="controls" style="align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
     <span class="gv-card-title">Players</span>
-    <input id="tgtSearch" type="search" placeholder="🔍 search player by name…"
-      style="width:220px;max-width:100%;padding:5px 9px;background:#0e141b;border:1px solid #2a3542;border-radius:4px;color:#cfd6dd;font-size:13px;"
+    <input id="tgtSearch" type="search" class="tgt-find" placeholder="🔍 player name…"
       title="Find any player by nickname — including ones the filters hide (with the reason why).">
-    <div class="chip-group">
-      <button type="button" id="spyMapToggle" aria-expanded="false" aria-controls="spyMapBlock"
-        title="Show the positions map — your planets plus every watched player's.">🗺 map</button>
-    </div>
+    <input id="tgtAllySearch" type="search" class="tgt-find" placeholder="🔍 alliance name / tag…"
+      title="Find every player of one alliance by its name or tag — the fast way to walk a whole alliance onto the watch list (and onto the map).">
+    <button type="button" id="tgtWatchAll" class="spy-toolbtn" style="display:none;"
+      title="Put every player currently listed on the watch list."></button>
     <button type="button" id="tgtConfigToggle" class="spy-toolbtn" aria-expanded="false" aria-controls="tgtConfigCard"
       title="Filters: hide inactive · watch list only · military range"
       style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;">⚙ Filters</button>

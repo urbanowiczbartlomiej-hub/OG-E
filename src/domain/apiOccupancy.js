@@ -29,6 +29,7 @@
 // one-line fix here):
 //   universe.xml : <universe timestamp serverId> <planet id name coords player>[<moon id name size>]
 //   players.xml  : <players timestamp serverId>  <player id name alliance status>   (status '' = active)
+//   alliances.xml: <alliances timestamp serverId> <alliance id name tag>[<player id/>…]
 //   highscore.xml: <highscore timestamp category type> <player position id score>
 //   serverData.xml: <serverData timestamp> with child ELEMENTS galaxies/systems/donut*/domain/...
 //   All roots carry timestamp = Unix epoch SECONDS. positions 1..15 (16 = expedition, not colonizable).
@@ -65,6 +66,24 @@
  * @typedef {object} PlayersData
  * @property {number} [timestamp]
  * @property {Record<string, ApiPlayerMeta>} players   Keyed by player id (string).
+ */
+
+/**
+ * One alliance row from alliances.xml — just the two things a human searches
+ * by. Members are NOT kept: players.xml already carries each player's
+ * `alliance` id, so the membership join is free and storing it twice would
+ * double a multi-thousand-row feed in the device cache.
+ *
+ * @typedef {object} ApiAlliance
+ * @property {string} name            Full alliance name.
+ * @property {string} tag             Short tag as shown in the galaxy view.
+ */
+
+/**
+ * Parsed alliances.xml.
+ * @typedef {object} AlliancesData
+ * @property {number} [timestamp]
+ * @property {Record<string, ApiAlliance>} alliances   Keyed by alliance id (string).
  */
 
 /**
@@ -135,9 +154,12 @@ export const ALL_POSITIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
 
 const PLANET_TAG_RE = /<planet\b([^>]*)>/g;
 const PLAYER_TAG_RE = /<player\b([^>]*)>/g;
+/** `<alliance …>` opening tags only — its `<player …>` children are skipped. */
+const ALLIANCE_TAG_RE = /<alliance\b([^>]*)>/g;
 
 const A_ID = /\bid="([^"]*)"/;
 const A_NAME = /\bname="([^"]*)"/;
+const A_TAG = /\btag="([^"]*)"/;
 const A_COORDS = /\bcoords="([^"]*)"/;
 const A_PLAYER = /\bplayer="([^"]*)"/;
 const A_STATUS = /\bstatus="([^"]*)"/;
@@ -264,6 +286,37 @@ export function parsePlayers(xml) {
     };
   }
   return { timestamp: rootTimestampMs(xml), players };
+}
+
+/**
+ * Parse alliances.xml into an id → {name, tag} map.
+ *
+ * The feed nests `<player …/>` members inside each `<alliance …>`, so we match
+ * the alliance opening tags ONLY — the member rows are the players.xml join we
+ * already have. An alliance with no tag keeps `''` (the game allows it), which
+ * simply never matches a tag search.
+ *
+ * @param {string} xml
+ * @returns {AlliancesData}
+ */
+export function parseAlliances(xml) {
+  /** @type {Record<string, ApiAlliance>} */
+  const alliances = {};
+  if (typeof xml !== 'string' || xml === '') return { timestamp: undefined, alliances };
+  ALLIANCE_TAG_RE.lastIndex = 0;
+  let m;
+  while ((m = ALLIANCE_TAG_RE.exec(xml)) !== null) {
+    const attrs = m[1];
+    const idm = attrs.match(A_ID);
+    if (!idm) continue;
+    const nm = attrs.match(A_NAME);
+    const tm = attrs.match(A_TAG);
+    alliances[idm[1]] = {
+      name: nm ? decodeXml(nm[1]) : '',
+      tag: tm ? decodeXml(tm[1]) : '',
+    };
+  }
+  return { timestamp: rootTimestampMs(xml), alliances };
 }
 
 /**
