@@ -20,6 +20,7 @@ import {
   dailyRunRoutesStore,
   disposeDailyRunRoutesStore,
   DAILY_RUN_REDIRECT_KEY,
+  DAILY_RUN_LANDING_KEY,
 } from '../../src/state/dailyRunRoutes.js';
 import { TARGET_PLANET, TARGET_MOON, SHIP_LARGE_CARGO, MISSION_DEPLOYMENT } from '../../src/domain/rules.js';
 import { TONE_ERROR } from '../../src/features/shared/statusTones.js';
@@ -121,6 +122,74 @@ describe('mount / unmount', () => {
     installDailyRun();
     settingsStore.set({ ...settingsStore.get(), showDailyRunButton: false });
     expect(document.getElementById('oge-fs-unified')).toBeNull();
+  });
+});
+
+// The post-send landing check: our redirect only sticks if nothing else
+// navigates after the send (AGR's fleet-save jumps to the next planet), so the
+// run stashes where it MEANT to land and corrects itself on the next load.
+describe('post-send landing check', () => {
+  /** @type {import('vitest').Mock} */
+  let replaceSpy;
+  /** @param {{ cp: string, ageMs?: number }} o */
+  const stashLanding = ({ cp, ageMs = 0 }) => {
+    localStorage.setItem(DAILY_RUN_LANDING_KEY, JSON.stringify({
+      url: `https://s163-pl.ogame.gameforge.com/game/index.php?page=ingame&component=fleetdispatch&cp=${cp}`,
+      at: Date.now() - ageMs,
+    }));
+  };
+
+  beforeEach(() => {
+    replaceSpy = vi.fn();
+    Object.defineProperty(window.location, 'replace', {
+      configurable: true, writable: true, value: replaceSpy,
+    });
+    enable();
+  });
+  afterEach(() => { delete (/** @type {any} */ (window.location)).replace; });
+
+  it('goes back to the intended body when something jumped the page, and mounts nothing', () => {
+    location.search = '?page=ingame&component=fleetdispatch&cp=999';
+    stashLanding({ cp: '200' });
+    installDailyRun();
+    expect(replaceSpy).toHaveBeenCalledTimes(1);
+    expect(String(replaceSpy.mock.calls[0][0])).toContain('cp=200');
+    // The page is about to be replaced — nothing is built on the doomed one.
+    expect(document.getElementById('oge-fs-unified')).toBeNull();
+  });
+
+  it('consumes the stash, so a second miss gives up instead of looping', () => {
+    location.search = '?page=ingame&component=fleetdispatch&cp=999';
+    stashLanding({ cp: '200' });
+    installDailyRun();
+    expect(localStorage.getItem(DAILY_RUN_LANDING_KEY)).toBeNull();
+    _resetDailyRunForTest();
+    replaceSpy.mockClear();
+    installDailyRun();
+    expect(replaceSpy).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when we DID land on the intended body', () => {
+    location.search = '?page=ingame&component=fleetdispatch&cp=200';
+    stashLanding({ cp: '200' });
+    installDailyRun();
+    expect(replaceSpy).not.toHaveBeenCalled();
+    expect(document.getElementById('oge-fs-unified')).not.toBeNull();
+  });
+
+  it('ignores a stale stash — a later move is the player\'s own, not ours to undo', () => {
+    location.search = '?page=ingame&component=fleetdispatch&cp=999';
+    stashLanding({ cp: '200', ageMs: 60_000 });
+    installDailyRun();
+    expect(replaceSpy).not.toHaveBeenCalled();
+    expect(localStorage.getItem(DAILY_RUN_LANDING_KEY)).toBeNull();
+  });
+
+  it('ignores a corrupt stash', () => {
+    location.search = '?page=ingame&component=fleetdispatch&cp=999';
+    localStorage.setItem(DAILY_RUN_LANDING_KEY, 'not json');
+    installDailyRun();
+    expect(replaceSpy).not.toHaveBeenCalled();
   });
 });
 

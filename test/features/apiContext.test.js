@@ -67,6 +67,10 @@ const PLAYERS_XML =
   '<player id="103" name="Me" status=""/>' +
   '<player id="207" name="Foe" status="i"/>' +
   '</players>';
+const ALLIANCES_XML =
+  '<alliances timestamp="1700000000" serverId="163">' +
+  '<alliance id="500" name="Formoza" tag="FMZ"><player id="207"/></alliance>' +
+  '</alliances>';
 const TOTAL_XML = '<highscore timestamp="1700000000" category="1" type="0"><player id="103" position="11" score="123456"/></highscore>';
 const MILITARY_XML = '<highscore timestamp="1700000000" category="1" type="3"><player id="103" position="22" score="7890"/></highscore>';
 const SERVER_XML = '<serverData timestamp="1700000000"><galaxies>9</galaxies><systems>499</systems></serverData>';
@@ -79,6 +83,8 @@ const routeFetch = () => {
         return Promise.resolve(UNIVERSE_XML);
       case 'players':
         return Promise.resolve(PLAYERS_XML);
+      case 'alliances':
+        return Promise.resolve(ALLIANCES_XML);
       case 'highscore':
         return Promise.resolve(params && params.type === '3' ? MILITARY_XML : TOTAL_XML);
       case 'serverData':
@@ -110,7 +116,7 @@ afterEach(() => {
 describe('refreshCache — cold (empty cache)', () => {
   it('fetches every feed and reports them', async () => {
     const { fetched } = await refreshCache();
-    expect(fetched).toEqual(['universe', 'players', 'total', 'military', 'honor', 'economy', 'destroyed', 'lost', 'server']);
+    expect(fetched).toEqual(['universe', 'players', 'alliances', 'total', 'military', 'honor', 'economy', 'destroyed', 'lost', 'server']);
   });
 
   it('writes the parsed feeds back to the cache once', async () => {
@@ -122,6 +128,9 @@ describe('refreshCache — cold (empty cache)', () => {
       { coords: '1:1:8', player: 207 },
     ]);
     expect(written.players.players['207'].status).toBe('i');
+    // alliances.xml — the alliance OPENING tags only; its <player> children are
+    // the players.xml join, not rows of their own.
+    expect(written.alliances.alliances).toEqual({ 500: { name: 'Formoza', tag: 'FMZ' } });
     expect(written.total.ranks['103'].position).toBe(11);
     expect(written.military.ranks['103'].position).toBe(22);
     expect(written.server.data).toEqual({
@@ -144,6 +153,7 @@ describe('refreshCache — TTL gating', () => {
     memCache = {
       universe: { planets: [], fetchedAt: now },
       players: { players: {}, fetchedAt: now },
+      alliances: { alliances: {}, fetchedAt: now },
       total: { ranks: {}, fetchedAt: now },
       military: { ranks: {}, fetchedAt: now },
       honor: { ranks: {}, fetchedAt: now },
@@ -165,6 +175,7 @@ describe('refreshCache — TTL gating', () => {
     memCache = {
       universe: { planets: [], fetchedAt: now }, // weekly — fresh
       players: { players: {}, fetchedAt: now }, // daily — fresh
+      alliances: { alliances: {}, fetchedAt: now }, // daily — fresh
       total: { ranks: {}, fetchedAt: now - 2 * HOUR }, // hourly — STALE
       military: { ranks: {}, fetchedAt: now - 2 * HOUR }, // hourly — STALE
       honor: { ranks: {}, fetchedAt: now - 2 * HOUR }, // hourly — STALE
@@ -188,7 +199,7 @@ describe('refreshCache — TTL gating', () => {
       server: { data: {}, fetchedAt: now },
     };
     const { fetched } = await refreshCache({ force: true });
-    expect(fetched).toEqual(['universe', 'players', 'total', 'military', 'honor', 'economy', 'destroyed', 'lost', 'server']);
+    expect(fetched).toEqual(['universe', 'players', 'alliances', 'total', 'military', 'honor', 'economy', 'destroyed', 'lost', 'server']);
   });
 });
 

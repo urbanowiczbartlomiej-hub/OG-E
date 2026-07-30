@@ -10,6 +10,7 @@ import {
   ALL_POSITIONS,
   parseUniverse,
   parsePlayers,
+  parseAlliances,
   parseHighscore,
   parseServerData,
   buildOccupancyIndex,
@@ -96,6 +97,40 @@ describe('parsePlayers', () => {
 
   it('returns empty map + undefined timestamp for empty input', () => {
     expect(parsePlayers('')).toEqual({ timestamp: undefined, players: {} });
+  });
+});
+
+describe('parseAlliances', () => {
+  it('maps id → { name, tag } and decodes XML entities', () => {
+    const xml =
+      '<alliances timestamp="1700000000" serverId="163">' +
+      '<alliance id="1" name="A&amp;B" tag="AB"/>' +
+      '<alliance id="2" name="Formoza" tag="FMZ"/>' +
+      '</alliances>';
+    expect(parseAlliances(xml)).toEqual({
+      timestamp: 1700000000 * 1000,
+      alliances: { 1: { name: 'A&B', tag: 'AB' }, 2: { name: 'Formoza', tag: 'FMZ' } },
+    });
+  });
+
+  it('ignores the nested <player> member rows (they are the players.xml join)', () => {
+    const xml =
+      '<alliances timestamp="1700000000">' +
+      '<alliance id="7" name="Solo" tag="SOL">' +
+      '<player id="103"/><player id="207"/>' +
+      '</alliance>' +
+      '</alliances>';
+    expect(Object.keys(parseAlliances(xml).alliances)).toEqual(['7']);
+  });
+
+  it('keeps a tagless alliance with an empty tag, and skips rows with no id', () => {
+    const a = parseAlliances('<alliances><alliance name="noid"/><alliance id="9" name="Z"/></alliances>');
+    expect(Object.keys(a.alliances)).toEqual(['9']);
+    expect(a.alliances['9']).toEqual({ name: 'Z', tag: '' });
+  });
+
+  it('returns empty map + undefined timestamp for empty input', () => {
+    expect(parseAlliances('')).toEqual({ timestamp: undefined, alliances: {} });
   });
 });
 

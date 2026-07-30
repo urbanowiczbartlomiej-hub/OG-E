@@ -9,6 +9,7 @@ import {
   playerPlanets,
   targetExclusionReason,
   buildTargetCandidates,
+  matchAllianceMembers,
 } from '../../src/domain/targets.js';
 
 describe('sortTargetList', () => {
@@ -187,6 +188,51 @@ describe('buildTargetCandidates', () => {
       military: { '1': { position: 1, score: 100 }, '2': { position: 2, score: 50 } },
     });
     expect(out.find((c) => c.id === '1')?.ships).toBeUndefined();
+  });
+});
+
+describe('matchAllianceMembers', () => {
+  const ALLIANCES = {
+    500: { name: 'Formoza', tag: 'FMZ' },
+    501: { name: 'Formozianie', tag: 'FMZ2' },
+    502: { name: 'Wilki', tag: 'WLK' },
+  };
+  const CANDIDATES = [
+    { id: '1', alliance: '500' },
+    { id: '2', alliance: '501' },
+    { id: '3', alliance: '502' },
+    { id: '4' }, // no alliance
+  ];
+
+  it('matches on the TAG, case-insensitively', () => {
+    const r = matchAllianceMembers(CANDIDATES, ALLIANCES, 'wlk');
+    expect([...r.ids]).toEqual(['3']);
+    expect([...r.allianceIds]).toEqual(['502']);
+    expect(r.labels).toEqual(['WLK · Wilki']);
+  });
+
+  it('matches on the NAME as a substring, so several alliances can answer', () => {
+    const r = matchAllianceMembers(CANDIDATES, ALLIANCES, 'formoz');
+    expect([...r.ids].sort()).toEqual(['1', '2']);
+    expect(r.labels).toEqual(['FMZ · Formoza', 'FMZ2 · Formozianie']);
+  });
+
+  it('is empty for a blank query — no search, not "everything"', () => {
+    const r = matchAllianceMembers(CANDIDATES, ALLIANCES, '   ');
+    expect(r.ids.size).toBe(0);
+    expect(r.allianceIds.size).toBe(0);
+    expect(r.labels).toEqual([]);
+  });
+
+  it('reports the matched alliance even when it has no members in the candidate set', () => {
+    const r = matchAllianceMembers([{ id: '4' }], ALLIANCES, 'FMZ');
+    expect(r.ids.size).toBe(0);
+    expect(r.labels.length).toBe(2);
+  });
+
+  it('yields nothing when no alliance matches, or when the feed is missing', () => {
+    expect(matchAllianceMembers(CANDIDATES, ALLIANCES, 'zzz').ids.size).toBe(0);
+    expect(matchAllianceMembers(CANDIDATES, {}, 'FMZ').labels).toEqual([]);
   });
 });
 
