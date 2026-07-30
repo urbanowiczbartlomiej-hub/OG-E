@@ -294,10 +294,14 @@ const HIDE_CSS = `.${COL_CLASS},.oge-mb-help,.oge-mb-legend{display:none!importa
  * @type {{ category: string, landed?: boolean, label: string }[]}
  */
 const LEGEND_ROWS = [
-  { category: 'threat', label: 'Incoming attack (foreign fleet at you)' },
+  // Attack, ACS attack, espionage and MOON DESTRUCTION all share one marker on
+  // purpose — they are the same question ("a hostile fleet is coming here"),
+  // and splitting the RIP run off would cost a slot under the 3-marker cap for
+  // a distinction the countdown popover already makes.
+  { category: 'threat', label: 'Incoming attack — incl. ACS and moon destruction' },
   { category: 'fs', label: 'Fleet-save — in motion (safe)' },
   { category: 'fs', landed: true, label: 'Fleet reminder — landed fleet' },
-  { category: 'aggro', label: 'Your attack / spy on a player' },
+  { category: 'aggro', label: 'Your attack, spy or moon destruction' },
   { category: 'explore', label: 'Your expedition' },
   { category: 'logistics', label: 'Logistics (transport / deploy / defend)' },
   { category: 'economy', label: 'Recycle' },
