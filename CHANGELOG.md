@@ -4,6 +4,45 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.55.0] — 2026-07-30
+
+### Added
+
+- **Find players by alliance.** Next to the player search on the Spyglass tab
+  there is now a second box that takes an alliance **name or tag**. It lists
+  every member of the matching alliance — including the ones your filters
+  normally hide, with the reason why — so you can walk a whole alliance onto
+  the watch list and see on the positions map how spread out it really is. A
+  **"+ watch all"** button does the whole list in one go, and every row now
+  carries its alliance tag after the nickname so you can check the sweep at a
+  glance.
+
+  The alliance list comes from the same public statistics API OG-E already
+  reads, refreshed on the same daily cadence as the player list. The first
+  search after updating may say there is nothing cached yet — press
+  **⟳ Refresh** on that tab once and it is there.
+
+### Changed
+
+- **The positions map is no longer hidden.** It used to open from a small
+  "map" chip in the Players control line, which almost nobody found. The map
+  stays exactly where it was on the page, but it is now its own panel with a
+  header bar that is always visible — click it to unfold, like the watchlist's
+  Settings bar. Whether you leave it open or closed is remembered.
+- **The planet-marker legend names moon destruction.** An incoming *Zniszcz*
+  run has always raised the same red attack marker as any other hostile fleet;
+  the legend only said "attack", so there was no way to know. It says so now.
+
+### Fixed
+
+- **A Daily Run micro send no longer strands you on the wrong planet.** With
+  AntiGameReborn's fleet-save option ticked, AGR jumps to the next planet the
+  moment a fleet leaves — landing on top of the planet OG-E had just sent you
+  back to, so the run continued from somewhere you never chose. OG-E now
+  remembers where the send was headed and, if the page ended up elsewhere,
+  quietly goes back once. It only ever corrects the few seconds right after a
+  send, so a planet YOU switch to afterwards is left alone.
+
 ## [1.54.1] — 2026-07-29
 
 ### Fixed
