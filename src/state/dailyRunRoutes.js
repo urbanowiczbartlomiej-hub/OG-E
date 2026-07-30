@@ -91,6 +91,25 @@ export const DAILY_RUN_ROUTES_KEY_BASE = 'oge_dailyRunRoutes';
 export { DAILY_RUN_REDIRECT_KEY };
 
 /**
+ * localStorage key for the post-send LANDING CHECK — the same URL we handed
+ * the bridge, kept a few seconds longer so the next page load can verify we
+ * actually got there.
+ *
+ * Why it exists: our redirect only wins if nothing else navigates the page
+ * after the send. AGR's "fleet save" option does exactly that — it jumps to
+ * the NEXT planet the moment a fleet leaves — so with that box ticked a Daily
+ * Run micro send landed the player on a foreign planet instead of back on the
+ * body they were working. Rather than reach into another extension's state, we
+ * re-assert our own: the orchestrator writes `{url, at}` here beside the bridge
+ * handoff, and on the next page load reads it ONCE (removing it first, so the
+ * worst case is a single extra navigation, never a loop) and goes back if the
+ * landing body isn't the one it asked for.
+ *
+ * Transient one-shot like {@link DAILY_RUN_REDIRECT_KEY} — no universe prefix.
+ */
+export const DAILY_RUN_LANDING_KEY = 'oge_dailyRunLanding';
+
+/**
  * Compose the full chrome.storage.local key for a given universe id.
  *
  * @param {string} universeId  e.g. `'s163-pl'` from {@link parseUniverseId}.

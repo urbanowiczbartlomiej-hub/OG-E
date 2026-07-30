@@ -67,6 +67,7 @@ import {
   flushDailyRunRoutesStore,
   stampDailyRunRoutesChanged,
   DAILY_RUN_REDIRECT_KEY,
+  DAILY_RUN_LANDING_KEY,
 } from '../../state/dailyRunRoutes.js';
 import {
   createButton as makeButton,
@@ -425,6 +426,26 @@ const paintZoneError = (el, text) => {
 // ─── redirect handoff ───────────────────────────────────────────────────
 
 /**
+ * How long the landing check stays armed. A post-send navigation lands within
+ * a couple of seconds; past this the stash is stale (the player walked off on
+ * their own) and healing would yank them somewhere they didn't ask for.
+ */
+const LANDING_CHECK_MS = 30_000;
+
+/**
+ * Write BOTH post-send stashes: the bridge handoff (consumed at send time to
+ * rewrite the game's `redirectUrl`) and the landing check
+ * ({@link DAILY_RUN_LANDING_KEY}) the next page load verifies against.
+ *
+ * @param {string} url  Absolute URL this send should land on.
+ * @returns {void}
+ */
+const stashRedirect = (url) => {
+  safeLS.set(DAILY_RUN_REDIRECT_KEY, url);
+  safeLS.set(DAILY_RUN_LANDING_KEY, JSON.stringify({ url, at: Date.now() }));
+};
+
+/**
  * Stash the post-send redirect for a MICRO send: bare fleetdispatch on the
  * same body (so the next tap re-derives the next target from a refreshed
  * event ticker). Written synchronously, just before the dispatch click.
@@ -432,7 +453,7 @@ const paintZoneError = (el, text) => {
  * @returns {void}
  */
 const stashMicroRedirect = () => {
-  safeLS.set(DAILY_RUN_REDIRECT_KEY, bareFleetdispatchUrl(urlParam('cp')));
+  stashRedirect(bareFleetdispatchUrl(urlParam('cp')));
 };
 
 /**
@@ -456,7 +477,47 @@ const stashCollectRedirect = (target) => {
   // Bare fleetdispatch on the next body still needing collection; the
   // courier re-selects + re-targets there on the next tap (the collect
   // target comes from the store, not the URL).
-  safeLS.set(DAILY_RUN_REDIRECT_KEY, bareFleetdispatchUrl(nextCp));
+  stashRedirect(bareFleetdispatchUrl(nextCp));
+};
+
+/**
+ * Post-send landing check — run once per page load, before anything else.
+ *
+ * Reads (and immediately clears) the stash written beside the bridge handoff.
+ * If it is fresh and we did NOT land on the body it named, something navigated
+ * over our redirect — in practice AGR's "fleet save" jumping to the next planet
+ * — so go back where the run was headed. The stash is removed BEFORE the
+ * navigation, so a second miss simply gives up rather than looping.
+ *
+ * Compares the `cp` (body) param only: the game may add its own params to the
+ * URL it finally settles on, and the body is the thing the run cares about.
+ *
+ * @returns {boolean} True when a corrective navigation was fired.
+ */
+const healPostSendLanding = () => {
+  const raw = safeLS.get(DAILY_RUN_LANDING_KEY);
+  if (!raw) return false;
+  safeLS.remove(DAILY_RUN_LANDING_KEY);
+  /** @type {{ url?: unknown, at?: unknown }} */
+  let stash;
+  try {
+    stash = JSON.parse(raw);
+  } catch {
+    return false;
+  }
+  const url = typeof stash.url === 'string' ? stash.url : '';
+  const at = typeof stash.at === 'number' ? stash.at : 0;
+  if (!url || Date.now() - at > LANDING_CHECK_MS) return false;
+  /** @type {string} */
+  let wantCp;
+  try {
+    wantCp = new URL(url, location.href).searchParams.get('cp') || '';
+  } catch {
+    return false;
+  }
+  if (!wantCp || wantCp === (urlParam('cp') || '')) return false;
+  location.replace(url);
+  return true;
 };
 
 /** Short label for a rejected sendFleet, by error code.
@@ -653,6 +714,9 @@ const handleZone = async (mode) => {
     );
     if (!r.ok) {
       safeLS.remove(DAILY_RUN_REDIRECT_KEY);
+      // No send, no navigation to verify — drop the landing check too, or the
+      // next page load would "correct" a move the player made themselves.
+      safeLS.remove(DAILY_RUN_LANDING_KEY);
       // Belt-and-braces: the gate above already vetted ownership, but keep
       // the courier's own refusal mapped to the same recovery as sendColony.
       if (r.reason === 'foreign') {
@@ -907,6 +971,11 @@ let installed = null;
  */
 export const installDailyRun = () => {
   if (installed) return installed.dispose;
+
+  // A send from the previous page may have been redirected away from under us
+  // (AGR's fleet-save jump). Correct it before mounting anything — the page is
+  // about to be replaced, so there is nothing worth building on it.
+  if (healPostSendLanding()) return () => {};
 
   // Ensure the shared courier is caching the fleetDispatcher snapshot (ship
   // availability) so select() can resolve the fleet.
