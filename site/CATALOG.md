@@ -33,9 +33,19 @@ potem Spyglass, budzik, Best Colony Spots, sync/społeczność; UI na końcu.
 
 ## Spyglass — wywiad (`spyglass`)
 
+Rozdział rozbity na **sześć pytań + obrona**, w tej kolejności (jedna strona =
+jedno pytanie gracza). Strona `spyglass` jest wstępem: model myślowy (dwa kanały
++ lista obserwowanych) i spis pytań — szczegóły algorytmów tylko na stronach
+szczegółowych, żeby żadna nie przytłaczała.
+
 | Funkcja | slug | flagowa | status | źródło (src/) |
 |---|---|:--:|---|---|
-| Spyglass (podejrzyj, szpieguj, dossier, rutyna, danger, okna offline) | `spyglass` | ★ | todo | features/dashboard, features/sendSpy, domain/spyScan, dangerScore, threatModel, presence |
+| Spyglass — wywiad (wstęp rozdziału) | `spyglass` | ★ | **drafted** | features/dashboard, features/sendSpy, domain/spyScan, state/watchList |
+| Ranking zagrożenia (Danger) | `spyglass-danger` | ★ | **drafted** | domain/dangerScore, dangerJoin, players; features/dashboard/targets |
+| Skan: Look, Spy, Strike | `spyglass-scan` | | **drafted** | features/sendSpy; domain/scanPriority, galaxyWatch, fleetLanding |
+| Dossier gracza | `spyglass-dossier` | | **drafted** | features/dashboard/dossier; domain/raidVerdict, threatModel, civilBaseline, lootRhythm |
+| Rutyna i okna offline | `spyglass-routine` | ★ | **drafted** | domain/routine, presence, presenceLedger, shiftPattern; state/activityObs |
+| Mapa pozycji i zasięg | `spyglass-map` | | **drafted** | features/dashboard/mapPrimitives; domain/geometry |
 | Kto Cię szpieguje | `who-is-spying` | | **drafted** | features/whosSpyingPanel |
 
 ## Budzik i fleet-save (`alarms`)
@@ -91,10 +101,15 @@ stron.
 
 ### Do rozstrzygnięcia w Fazie 1
 
-- **Spyglass** — potwierdzić, że opisujemy jako JEDNĄ dużą stronę (dossier /
-  plan skanów / mapa / rutyna / danger / okna offline w środku), a `who-is-spying`
-  zostaje osobno jako panel na stronie wiadomości.
-- **„Okna offline"** — analiza okien offline wroga siedzi w Spyglass; „dzielenie i
-  dołączanie aktywności" to sync/społeczność. Potwierdzić rozdział.
+- ~~**Spyglass** — jedna duża strona?~~ **Rozstrzygnięte:** NIE jedna strona.
+  Sześć krótkich stron (pytanie → odpowiedź) + `who-is-spying`; patrz tabela
+  wyżej. Jedna strona-monstrum przytłaczała ogromem i nie dawała się nawigować
+  z bocznego spisu treści.
+- **`patrol`** — karta żyje na zakładce Spyglass, ale strona siedzi w kategorii
+  `dashboard` (order 20). Do decyzji: przenieść do `spyglass` (spójność
+  rozdziału, wymaga korekty blurba kategorii `dashboard`) czy zostawić.
+- **„Okna offline"** — analiza rytmu wroga siedzi w `spyglass-routine`;
+  dzielenie zapisu obecności z sojusznikami (opt-in) opisuje sync/społeczność.
+  Strony Spyglass tylko *wspominają* pulę sojuszu i nie powtarzają jej opisu.
 - **Best Colony Spots vs Big Colony Hunting** — osobna strona analityczna
   (dashboard) czy sekcja w polowaniu na kolonie? Wstępnie osobno.
