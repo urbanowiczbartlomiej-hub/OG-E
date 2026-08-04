@@ -683,6 +683,23 @@ function planetsBlock({
       bank.title = 'hoard / mother planet — loot peak towers over the empire (collection point)';
       body.appendChild(bank);
     }
+    // HOMEWORLD tag — a keyword, not a glyph (see CLAUDE.md's iconography rule).
+    // It is worth a tag of its own because of what activity ON it means: the
+    // game activates the homeworld on EVERY login, so a lit main planet is the
+    // one marker that reads "the owner is at the keyboard". Activity on another
+    // body with a QUIET main is fleet movement instead (theirs or someone
+    // else's) — or a session older than the 1 h marker window.
+    if (p.main) {
+      const main = document.createElement('span');
+      main.textContent = 'main';
+      main.style.cssText = 'margin-left:5px;font-size:9px;letter-spacing:.04em;'
+        + 'color:#7fb2e0;border:1px solid rgba(127,178,224,.35);border-radius:3px;padding:0 3px;';
+      main.title = 'Homeworld (lowest planet id — the planet this account registered with).\n'
+        + 'Logging in ALWAYS activates it: activity here means the owner was in the game. '
+        + 'Activity elsewhere while this one stays quiet is fleet movement, or a session '
+        + 'older than an hour.';
+      body.appendChild(main);
+    }
     row.appendChild(body);
 
     // Scan (probe freshness + toggle) then Activity (galaxy looks + probe looks).

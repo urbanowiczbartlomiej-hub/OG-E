@@ -39,6 +39,11 @@
  * @typedef {object} ApiPlanet
  * @property {string} coords          `"g:s:p"` (position 1..15).
  * @property {number} [player]        Owner player id (join key to players/highscore).
+ * @property {number} [id]            The game's planet id. Ids are handed out in
+ *   CREATION order server-wide, which is the only thing universe.xml lets us
+ *   infer the homeworld from — a player's lowest planet id is the planet they
+ *   registered with (`targets.playerPlanets` marks it `main`). Occupancy itself
+ *   never reads this.
  * @property {boolean} [hasMoon]      Planet carries a `<moon>` child — a SECOND
  *   spiable body of the same owner, so it counts toward the hidden-fleet coverage
  *   denominator (SPYGLASS-REDESIGN.md §9bis). Occupancy consumers ignore it
@@ -150,6 +155,19 @@
 /** Colonizable positions in a system (16 is the expedition slot — excluded). */
 export const ALL_POSITIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
+/**
+ * The one free-slot cell every empty position in the synthesised scan map points
+ * at, and the whole-system record every fully-empty system shares. Frozen
+ * because they ARE shared: a consumer that wrote through one of these would
+ * edit every empty slot on the server at once. Nothing writes to a scan cell
+ * today (the map is rebuilt from the API blob on every change), and the freeze
+ * is what keeps that true.
+ */
+const EMPTY_CELL = Object.freeze({ status: 'empty' });
+const ALL_EMPTY_POSITIONS = Object.freeze(
+  Object.fromEntries(ALL_POSITIONS.map((p) => [p, EMPTY_CELL])),
+);
+
 // --- low-level attribute/element extractors (precompiled, reused) ----------
 
 const PLANET_TAG_RE = /<planet\b([^>]*)>/g;
@@ -255,6 +273,13 @@ export function parseUniverse(xml) {
     const boundary = nextPlanet === -1 ? xml.length : nextPlanet;
     /** @type {ApiPlanet} */
     const planet = { coords: cm[1], player: pm ? Number(pm[1]) : undefined };
+    // Planet id — kept for ONE reason: ids are minted in creation order, so the
+    // lowest id a player owns is their homeworld (see targets.playerPlanets).
+    const im = attrs.match(A_ID);
+    if (im) {
+      const id = Number(im[1]);
+      if (Number.isFinite(id)) planet.id = id;
+    }
     if (xml.slice(contentStart, boundary).includes('<moon')) planet.hasMoon = true;
     planets.push(planet);
   }
@@ -569,9 +594,18 @@ export function honorClass(row, total) {
  * EXISTING pure region finder/scorer (`domain/regions.js`) can reason over
  * WHOLE-SERVER data with no rewrite. Every grid system gets an entry: occupied
  * slots carry their joined owner (status + name + rank + alliance id), our own
- * colonies are marked `mine`, and the requested target slots are filled `empty`
- * where not occupied — so a fully-free system is a region match, exactly as a
- * live scan of it would be.
+ * colonies are marked `mine`, and EVERY other colonizable slot is filled
+ * `empty` — so a fully-free system is a region match, exactly as a live scan of
+ * it would be.
+ *
+ * Why every slot and not just the analyzer's target list (as this did until
+ * 1.56): the map is the whole-server OCCUPANCY TRUTH, and truth must not depend
+ * on what the user typed into the Slots box. While only the requested slots
+ * carried an `empty` cell, a free slot 14 was literally invisible whenever the
+ * box said "15" — which silently moved the free-room channel of EVERY spot
+ * candidate (and the strip colours) when the box changed, and reshuffled a list
+ * of areas that had not changed at all. Which slots you can settle is now a
+ * question the FINDER asks of this map, not a question baked into it.
  *
  * Fidelity caveat: bandit/honoured `rankClass` is now SYNTHESISED from the
  * honour highscore (category 1, type 7) via {@link honorClass} — so
@@ -585,14 +619,13 @@ export function honorClass(row, total) {
  * @param {object} opts
  * @param {number} opts.galaxies   Grid galaxy bound (serverData.galaxies).
  * @param {number} opts.systems    Grid system bound (serverData.systems).
- * @param {number[]} opts.targets  Positions to surface as `empty` when free.
  * @returns {Record<string, { scannedAt: number, positions: Record<number, { status: string, player?: { id: number, name?: string, rank?: number, score?: number, militaryScore?: number, ally?: string, rankClass?: string } }> }>}
  */
 export function buildScanMapFromIndex(index, opts) {
   /** @type {Record<string, { scannedAt: number, positions: Record<number, any> }>} */
   const map = {};
   if (!index || !index.occupied) return map;
-  const { galaxies, systems, targets } = opts;
+  const { galaxies, systems } = opts;
   const ts = index.timestamp ?? 0;
 
   // Group occupied coords by their "g:s" system.
@@ -636,22 +669,21 @@ export function buildScanMapFromIndex(index, opts) {
         positions[pos] = { status: 'occupied' };
       }
     }
-    for (const t of targets) {
-      if (positions[t] === undefined) positions[t] = { status: 'empty' };
+    for (const t of ALL_POSITIONS) {
+      if (positions[t] === undefined) positions[t] = EMPTY_CELL;
     }
     map[sysKey] = { scannedAt: ts, positions };
   }
 
-  // Fully-empty systems across the grid → target slots empty (so a contiguous
+  // Fully-empty systems across the grid → every slot empty (so a contiguous
   // free stretch is found, not just systems that happen to have a neighbour).
+  // They all share ONE frozen record: a ~4.5k-system grid would otherwise mint
+  // ~67k identical cells for nothing.
   for (let g = 1; g <= galaxies; g++) {
     for (let s = 1; s <= systems; s++) {
       const sysKey = `${g}:${s}`;
       if (map[sysKey]) continue;
-      /** @type {Record<number, any>} */
-      const positions = {};
-      for (const t of targets) positions[t] = { status: 'empty' };
-      map[sysKey] = { scannedAt: ts, positions };
+      map[sysKey] = { scannedAt: ts, positions: ALL_EMPTY_POSITIONS };
     }
   }
 

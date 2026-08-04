@@ -16,7 +16,7 @@
 import {
   buildTargetList, sortTargetList, playerPlanets, targetExclusionReason,
 } from '../../domain/targets.js';
-import { DANGER_LABELS } from '../../domain/dangerScore.js';
+import { DANGER_LABELS, isMinerProfile } from '../../domain/dangerScore.js';
 import { dangerColor } from '../../lib/dangerColor.js';
 import { compact } from './format.js';
 import { buildDossier } from './dossier.js';
@@ -427,6 +427,9 @@ function playerCell(c, landing, ally) {
  *   re-scan — rendered by the dossier's Watch-via row (probes-on only).
  * @param {Record<string, number>} [args.rescan]
  * @param {boolean} [args.watchedOnly]
+ * @param {boolean} [args.minersOnly]  Keep only huddled "miner" empires
+ *   ({@link isMinerProfile}). Skipped in search mode — a name/alliance query
+ *   always reveals its match, same rule as every other filter here.
  * @param {Array<{coords: string, player?: number}>} [args.universePlanets]
  * @param {Record<string, Record<string, PlanetReport>>} [args.reportsByPlayer]
  * @param {Record<string, Record<string, PlanetReport>>} [args.moonsByPlayer]
@@ -505,6 +508,7 @@ export function renderTargets({
   onRescan,
   rescan,
   watchedOnly = false,
+  minersOnly = false,
   universePlanets = [],
   reportsByPlayer,
   moonsByPlayer,
@@ -602,9 +606,12 @@ export function renderTargets({
     list = sortTargetList(kept, sort.key, sort.dir, hiddenById, dangerById);
   } else {
     const filtered = buildTargetList(candidates, opts);
-    const scoped = watchedOnly && watchedIds
+    let scoped = watchedOnly && watchedIds
       ? filtered.filter((c) => watchedIds.has(c.id))
       : filtered;
+    // Huddled-empire scope: the geometry lives on the danger profile, so this is
+    // a VIEW filter (like watched-only), not part of targetExclusionReason.
+    if (minersOnly) scoped = scoped.filter((c) => isMinerProfile(danger?.get(Number(c.id))));
     list = sortTargetList(scoped, sort.key, sort.dir, hiddenById, dangerById);
   }
   const shown = !inSearch && limit > 0 ? list.slice(0, limit) : list;
@@ -815,7 +822,10 @@ export function renderTargets({
         + (hid ? ` · ${hid} hidden` : '');
     } else {
       const noun = watchedOnly ? 'on scan list' : 'targets in range';
-      countInfoEl.textContent = `${list.length} ${noun} · showing ${shown.length}`;
+      // Name the huddled scope in the count — a filter whose only trace is an
+      // "on" pill inside a collapsed panel reads as missing data.
+      const scope = minersOnly ? 'huddled ' : '';
+      countInfoEl.textContent = `${list.length} ${scope}${noun} · showing ${shown.length}`;
     }
   }
 }

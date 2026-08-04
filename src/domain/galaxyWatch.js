@@ -187,6 +187,9 @@ export const RECHECK_BOOST = 50;
  *   this system (see env.rechecks) — the FAB words the look accordingly.
  * @property {boolean} [sweep]  This system is part of an account sweep that
  *   must complete before a strike verdict may fire (see env.sweeps).
+ * @property {boolean} [home]  A HOME-watch look: one of our own systems
+ *   (domain/homeWatch) — the FAB words it as defence, not as a hunt. Such an
+ *   entry may legitimately carry an EMPTY `bodies` list.
  */
 
 /**

@@ -101,6 +101,8 @@ export const BG_SPY_STRIKE = '#d1571f';
  *   (fleetLanding) — the Look face words the nudge instead of the "N left" count.
  * @property {boolean} [sweep]  This look completes an account sweep gating a
  *   strike verdict (fleetLanding full-sweep rule).
+ * @property {boolean} [home]  A home-watch look — one of OUR systems
+ *   (domain/homeWatch), so `bodies` may legitimately be 0.
  */
 
 /**
@@ -292,6 +294,7 @@ export function deriveSpy(env) {
         ...(lookTop.why ? { why: lookTop.why } : {}),
         ...(lookTop.recheck ? { recheck: true } : {}),
         ...(lookTop.sweep ? { sweep: true } : {}),
+        ...(lookTop.home ? { home: true } : {}),
       }
       : null,
     remaining: entries.length + looks.length,
@@ -346,7 +349,12 @@ export function renderSpy(ctx, preflight) {
         ? 'moon order? · look now'
         : l.sweep
           ? 'strike? · sweep account'
-          : `${ctx.remaining} left`,
+          // Home watch: the defensive look. A system carrying an unacknowledged
+          // arrival was boosted to the front of the plan, so say what is waiting
+          // instead of a generic remaining count.
+          : l.home
+            ? 'your system · who moved in?'
+            : `${ctx.remaining} left`,
       bg: BG_SPY_LOOK,
       // A queued galaxy-look is exactly as actionable as a queued probe scan —
       // the FAB should nudge for it too, not just for 'spy' proposals.

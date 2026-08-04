@@ -20,7 +20,7 @@ import {
 } from '../../src/sync/merge.js';
 import { HISTORY_CAP } from '../../src/domain/targetReports.js';
 import { ACTIVITY_RING_CAP } from '../../src/domain/activityObs.js';
-import { PROXIMITY_CAP } from '../../src/state/proximityReports.js';
+import { PROXIMITY_CAP, PROXIMITY_MAX_AGE_S } from '../../src/state/proximityReports.js';
 
 describe('mergeTargetReports', () => {
   /** @param {number} ts @param {Record<string, unknown>} [over] */
@@ -96,27 +96,44 @@ describe('mergeActivityObs', () => {
 });
 
 describe('mergeProximityReports', () => {
-  /** @param {number} byPlayerId @param {number} ts */
-  const rep = (byPlayerId, ts) => ({ byPlayerId, atCoords: '1:2:3', ts });
+  // Timestamps are epoch SECONDS and the log's retention is an AGE window
+  // (trimProximityLog), so fixtures must be anchored to now — a literal `ts: 300`
+  // is a 1970 alert and is legitimately pruned.
+  const NOW_S = Math.floor(Date.now() / 1000);
+  /** @param {number} byPlayerId @param {number} agoS  Seconds before now. */
+  const rep = (byPlayerId, agoS) => ({ byPlayerId, atCoords: '1:2:3', ts: NOW_S - agoS });
 
   it('unions with the writer\'s identity triple, newest-first, capped', () => {
-    const local = [rep(1, 300), rep(2, 100)];
-    const incoming = [rep(1, 300), rep(3, 200)]; // first is a duplicate
+    const local = [rep(1, 100), rep(2, 300)];
+    const incoming = [rep(1, 100), rep(3, 200)]; // first is a duplicate
     const { merged, changed } = mergeProximityReports(local, incoming);
-    expect(merged.map((r) => r.ts)).toEqual([300, 200, 100]);
+    expect(merged.map((r) => NOW_S - (r.ts ?? 0))).toEqual([100, 200, 300]);
     expect(changed).toBe(true);
   });
 
   it('caps at the window size, keeping the newest', () => {
     const local = Array.from({ length: PROXIMITY_CAP }, (_, i) => rep(i, 1000 + i));
-    const { merged } = mergeProximityReports(local, [rep(999, 5000)]);
+    const { merged } = mergeProximityReports(local, [rep(999, 1)]);
     expect(merged).toHaveLength(PROXIMITY_CAP);
-    expect(merged[0].ts).toBe(5000);
+    expect(merged[0].ts).toBe(NOW_S - 1);
+  });
+
+  it('drops alerts older than the retention window (why 1m/3m used to look empty)', () => {
+    const fresh = rep(1, 3600);
+    const ancient = rep(2, PROXIMITY_MAX_AGE_S + 86400);
+    const { merged } = mergeProximityReports([fresh, ancient], []);
+    expect(merged).toEqual([fresh]);
+  });
+
+  it('keeps a ts-less alert (it cannot be aged)', () => {
+    const undated = /** @type {any} */ ({ byPlayerId: 5, atCoords: '4:4:4' });
+    const { merged } = mergeProximityReports([rep(1, 60), undated], []);
+    expect(merged).toHaveLength(2);
   });
 
   it('nothing new → changed false and local order preserved', () => {
-    const local = [rep(1, 300), rep(2, 100)];
-    const { merged, changed } = mergeProximityReports(local, [rep(2, 100)]);
+    const local = [rep(1, 100), rep(2, 300)];
+    const { merged, changed } = mergeProximityReports(local, [rep(2, 300)]);
     expect(changed).toBe(false);
     expect(merged).toEqual(local);
   });

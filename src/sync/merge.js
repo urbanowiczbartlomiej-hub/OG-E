@@ -68,7 +68,7 @@ export { mergeColonizeDecisions } from '../domain/colonizeDecisions.js';
 // keeps that promise honest.
 import { latestOf, historyOf, HISTORY_CAP } from '../domain/targetReports.js';
 import { ACTIVITY_RING_CAP } from '../domain/activityObs.js';
-import { PROXIMITY_CAP } from '../state/proximityReports.js';
+import { trimProximityLog } from '../state/proximityReports.js';
 import { FR_TOMBSTONE_TTL_SEC } from '../state/fleetReminders.js';
 
 /**
@@ -726,8 +726,9 @@ export const mergeActivityObs = (local, incoming) => {
 /**
  * Merge proximity logs ("who's been near you"): union deduped by the same
  * identity triple the store's writer uses (`byPlayerId|atCoords|ts`), local
- * first (local wins a duplicate), newest-first, re-capped to
- * {@link PROXIMITY_CAP}.
+ * first (local wins a duplicate), newest-first, re-trimmed by the store's own
+ * retention policy ({@link trimProximityLog}: the age window, then
+ * {@link PROXIMITY_CAP}).
  *
  * @param {ProximityReport[]} local
  * @param {ProximityReport[]} incoming
@@ -747,7 +748,7 @@ export const mergeProximityReports = (local, incoming) => {
     }
   }
   union.sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0));
-  const merged = union.slice(0, PROXIMITY_CAP);
+  const merged = trimProximityLog(union, Math.floor(Date.now() / 1000));
   const localLen = (local || []).length;
   const changed =
     merged.length !== localLen || merged.some((rep, i) => rep !== (local || [])[i]);

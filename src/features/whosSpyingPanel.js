@@ -80,14 +80,23 @@ const SPY_OVERVIEW_SEL = '#agoSpyReportOverview';
 const SPY_SUBTAB_ACTIVE_SEL = '.innerTabItem.active[data-subtab-id="20"]';
 /** The game's message-list container (direct parent of every `.msg`). */
 const MESSAGES_HOLDER_SEL = '.messagesHolder';
+/**
+ * The game's sortable column-header strip ("Data/godzina · Ranking · Nazwa
+ * gracza · …") that sits directly ABOVE `.messagesHolder`. We mount above IT,
+ * not at the top of the holder: injected between the headers and the first
+ * `.msg` row, our table pushed the rows ~200 px down and the column labels no
+ * longer lined up with anything the user was reading.
+ */
+const MESSAGES_HEADERS_SEL = '#filteredHeadersRow';
 
 /**
  * Resolve where the panel mounts: insert into `parent` before `before`
  * (`before: null` = append — an empty holder). `null` when the spy tab isn't
  * open (as far as we can tell). Tier 1: right above AGR's overview. Tier 2:
- * the top of the game's own message list while the espionage sub-tab is
- * active. `before` never resolves to the panel itself, so the caller's
- * "already glued" check stays a cheap identity comparison.
+ * above the game's own column-header strip while the espionage sub-tab is
+ * active. Tier 3 (no header strip in this build): the top of the message list.
+ * `before` never resolves to the panel itself, so the caller's "already glued"
+ * check stays a cheap identity comparison.
  * @returns {{ parent: Element, before: Element | null } | null}
  */
 const resolveSlot = () => {
@@ -95,6 +104,8 @@ const resolveSlot = () => {
   if (agr && agr.parentElement) return { parent: agr.parentElement, before: agr };
 
   if (!document.querySelector(SPY_SUBTAB_ACTIVE_SEL)) return null;
+  const headers = document.querySelector(MESSAGES_HEADERS_SEL);
+  if (headers && headers.parentElement) return { parent: headers.parentElement, before: headers };
   const holder = document.querySelector(MESSAGES_HOLDER_SEL);
   if (!holder) return null;
   let first = holder.firstElementChild;
@@ -105,7 +116,8 @@ const resolveSlot = () => {
 const PANEL_ID = 'oge-spyback';
 /** Singleton style element id. */
 const STYLE_ID = 'oge-spyback-style';
-/** Max prober rows rendered (the log is capped at 60 alerts upstream). */
+/** Max prober rows rendered (the log itself keeps ~3 months of alerts — see
+ *  state/proximityReports.trimProximityLog — so the list needs its own bound). */
 const MAX_ROWS = 8;
 /** Age-refresh cadence for the relative timestamps. */
 const POLL_MS = 60000;

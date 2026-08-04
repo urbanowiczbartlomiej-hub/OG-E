@@ -888,13 +888,13 @@ const fitCell = (r) => {
   return {
     text: String(Math.round(r.fit * 100)),
     tip: `safety ${Math.round(c.safety * 100)} · farm ${Math.round(c.farm * 100)}`
-      + ` · streak ${Math.round(c.streak * 100)} · targets ${Math.round(c.target * 100)} (each /100)`
+      + ` · room ${Math.round(c.room * 100)} · targets ${Math.round(c.target * 100)} (each /100)`
       + `\nscan coverage ${Math.round(c.coverage * 100)}%`,
   };
 };
 
 /** Shared header tooltip for the Fit column. */
-const FIT_TIP = 'Zone fit 0–100 — weighted safety / farm / streak / targets, blended by scan coverage';
+const FIT_TIP = 'Zone fit 0–100 — weighted safety / farm / room / targets, blended by scan coverage';
 
 /**
  * Build a `<table class="streak-table">` with one row per region up to

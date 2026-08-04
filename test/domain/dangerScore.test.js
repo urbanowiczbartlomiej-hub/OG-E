@@ -7,7 +7,9 @@
 // than hand-computed danger floats, so the tests pin behaviour, not arithmetic.
 
 import { describe, it, expect } from 'vitest';
-import { buildDangerProfiles, DANGER_LABELS, combatQuality } from '../../src/domain/dangerScore.js';
+import {
+  buildDangerProfiles, DANGER_LABELS, combatQuality, isMinerProfile,
+} from '../../src/domain/dangerScore.js';
 
 /**
  * Non-null get helper — the profile is always present for a fed id.
@@ -182,6 +184,60 @@ describe('buildDangerProfiles — bandit / predator / dispersion signals', () =>
       ],
     }), 30);
     expect(scattered.mobileMil).toBeGreaterThan(clustered.mobileMil);
+  });
+});
+
+describe('isMinerProfile — the huddled counter-signature', () => {
+  const military = { '30': { score: 2_000_000, ships: 4000 } };
+
+  it('flags an empire packed into one galaxy, and exposes the geometry it read', () => {
+    const p = prof(buildDangerProfiles({
+      military,
+      ownMilitary: 1_000_000,
+      universePlanets: [
+        { coords: '1:100:4', player: 30 },
+        { coords: '1:105:6', player: 30 },
+        { coords: '1:110:8', player: 30 },
+        { coords: '1:112:9', player: 30 },
+      ],
+    }), 30);
+    expect(p.spread).toBe(0);
+    expect(p.galaxies).toBe(1);
+    expect(p.planetCount).toBe(4);
+    expect(isMinerProfile(p)).toBe(true);
+    expect(p.reasons.some((r) => r.includes('huddled empire'))).toBe(true);
+  });
+
+  it('does NOT flag the server-wide aggressor it is the mirror of', () => {
+    const p = prof(buildDangerProfiles({
+      military,
+      ownMilitary: 1_000_000,
+      universePlanets: [
+        { coords: '1:1:1', player: 30 }, { coords: '2:200:1', player: 30 },
+        { coords: '3:300:1', player: 30 }, { coords: '4:400:1', player: 30 },
+      ],
+    }), 30);
+    expect(p.spread).toBe(1);
+    expect(isMinerProfile(p)).toBe(false);
+  });
+
+  it('needs at least 3 planets — a two-planet start is not a "miner"', () => {
+    const p = prof(buildDangerProfiles({
+      military,
+      ownMilitary: 1_000_000,
+      universePlanets: [{ coords: '1:100:4', player: 30 }, { coords: '1:101:5', player: 30 }],
+    }), 30);
+    expect(p.planetCount).toBe(2);
+    expect(isMinerProfile(p)).toBe(false);
+  });
+
+  it('rejects a dense pocket inside a wide footprint (more than 2 galaxies)', () => {
+    expect(isMinerProfile({ spread: 0, galaxies: 3, planetCount: 9 })).toBe(false);
+  });
+
+  it('says false rather than guessing when the geometry is unknown', () => {
+    expect(isMinerProfile(undefined)).toBe(false);
+    expect(isMinerProfile({ galaxies: 1, planetCount: 9 })).toBe(false);
   });
 });
 

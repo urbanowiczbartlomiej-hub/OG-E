@@ -70,16 +70,15 @@ export const liveOverlay = (s, bounds) => {
  * When there's no cached API data the composite is just the live scans. PURE:
  * the caller owns the identity cache (see `freeStreak`/`index.js` wrappers).
  *
- * @param {{ apiIndex: import('../../domain/apiOccupancy.js').OccupancyIndex | null, apiBounds: ApiBounds, scans: GalaxyScans, positions: number[] }} input
+ * @param {{ apiIndex: import('../../domain/apiOccupancy.js').OccupancyIndex | null, apiBounds: ApiBounds, scans: GalaxyScans }} input
  * @returns {GalaxyScans}
  */
-export const computeComposite = ({ apiIndex, apiBounds, scans, positions }) => {
+export const computeComposite = ({ apiIndex, apiBounds, scans }) => {
   if (!(apiIndex && apiBounds.galaxies && apiBounds.systems)) return scans;
   return /** @type {GalaxyScans} */ ({
     ...buildScanMapFromIndex(apiIndex, {
       galaxies: apiBounds.galaxies,
       systems: apiBounds.systems,
-      targets: positions,
     }),
     // Bounds-clamped: stale out-of-grid keys in the persisted blob must not
     // resurrect nonexistent galaxies in the analysis (see liveOverlay).

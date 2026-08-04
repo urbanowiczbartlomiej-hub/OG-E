@@ -134,6 +134,33 @@ Why it stays inside `AGENTS.md`'s Allowed bucket:
 This is the point flagged earlier as **worth a ToolDev sign-off**, and that flag
 stands: the classification above is OG-E's own reading, not an approval.
 
+## Home watch, the huddled filter, the homeworld tag — classification (all GREEN)
+
+Three 1.56 additions, sorted into `AGENTS.md`'s buckets before any code was
+written:
+
+- **Home watch** (`domain/homeWatch.js`, `features/homeWatch/`) — **Allowed**
+  (§1.5.1 galaxy-view intel, §1.2 display). It proposes the player's OWN systems
+  as ordinary Look targets and, when the player browses one, diffs the occupants
+  against what the previous browse recorded. Every part of that is already in the
+  Allowed set: the observation IS the player's own galaxy view (no request is
+  originated — the count leaving the browser is unchanged), the diff is arithmetic
+  over `state/scans`, and the output is display.
+  The rule it must not trip is the third structural invariant, **no background
+  watching of the game** — so, deliberately: no timer looks anything up, nothing
+  reloads a page, the alert is a card on the dashboard plus the wording on the Spy
+  FAB's own Look face, and there is no desktop notification, no push, no sound,
+  and no off-tab hostile-fleet read. A player who never opens the game is never
+  told anything. The feature is defensive-only and never proposes an attack.
+- **Huddled ("miners") filter** (`domain/dangerScore.isMinerProfile`) — **Allowed**
+  (§1.2). It is one boolean over geometry OG-E already computes from the public
+  API's own `universe.xml`, used to filter a list the player is looking at. No new
+  data source, no request, no automation.
+- **Homeworld tag** (`domain/targets.playerPlanets`) — **Allowed** (§1.2). Reads
+  the `id` attribute already present on each `<planet>` row of the public
+  `universe.xml` and marks the lowest one. An inference over a published feed,
+  rendered as a label; nothing is collected that the feed does not publish.
+
 ## What OG-E never does (all grep-verified)
 
 - No origination of a game **request**, and no modification of one beyond the

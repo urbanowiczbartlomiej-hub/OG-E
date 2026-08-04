@@ -283,6 +283,35 @@ describe('playerPlanets', () => {
     expect(playerPlanets(/** @type {any} */ (null), '5')).toEqual([]);
     expect(playerPlanets(/** @type {any} */ (undefined), '5')).toEqual([]);
   });
+
+  describe('homeworld (main) inference', () => {
+    it('marks the LOWEST planet id — the planet the account registered with', () => {
+      // Ids are minted in creation order server-wide, so the smallest one a
+      // player holds is their homeworld; colonies always come later. Display
+      // order (g→s→p) is unrelated to it — here the main planet sorts LAST.
+      const universe = [
+        { coords: '1:200:2', player: 42, id: 900 },
+        { coords: '3:100:5', player: 42, id: 12 },
+        { coords: '1:200:1', player: 42, id: 450 },
+      ];
+      const out = playerPlanets(universe, '42');
+      expect(out.map((p) => p.main)).toEqual([undefined, undefined, true]);
+      expect(out[2]).toMatchObject({ galaxy: 3, system: 100, position: 5, main: true });
+    });
+
+    it('never guesses: a snapshot with no ids marks nothing', () => {
+      const universe = [{ coords: '1:1:1', player: 42 }, { coords: '1:2:1', player: 42 }];
+      expect(playerPlanets(universe, '42').some((p) => p.main)).toBe(false);
+    });
+
+    it('ignores a lower id belonging to another owner', () => {
+      const universe = [
+        { coords: '1:1:1', player: 99, id: 1 },
+        { coords: '1:2:1', player: 42, id: 77 },
+      ];
+      expect(playerPlanets(universe, '42')[0].main).toBe(true);
+    });
+  });
 });
 
 describe('targetExclusionReason — maxMilitary', () => {

@@ -28,10 +28,32 @@ import { currentUniverseKey } from './universeKey.js';
 
 /** @typedef {import('../domain/espionageReport.js').ProximityReport} ProximityReport */
 
-/** Newest-first cap — a rolling window of recent probes, older ones fall off.
+/** Newest-first hard cap — a runaway backstop, NOT the retention rule (that is
+ * {@link PROXIMITY_MAX_AGE_S}). It used to be 60, which on a probed account is
+ * roughly a WEEK: the "Who's spying on you" 1m/3m filters then had nothing
+ * older than 7d to show, whatever the window said. 1200 rows ≈ 200 KB of
+ * chrome.storage.local per universe — cheap next to a filter that lies.
  * Exported for the JSON-import reconciler (sync/merge.js), which re-caps the
  * merged log to the same window. */
-export const PROXIMITY_CAP = 60;
+export const PROXIMITY_CAP = 1200;
+
+/** Retention window in SECONDS — the widest range the UI filters offer (3m),
+ * so every offered window has real data behind it. Older alerts fall off. */
+export const PROXIMITY_MAX_AGE_S = 92 * 86400;
+
+/**
+ * Apply the log's retention policy to a newest-first list: drop alerts older
+ * than {@link PROXIMITY_MAX_AGE_S} (a ts-less alert can't be aged, so it
+ * stays), then trim to {@link PROXIMITY_CAP}. Pure — `nowSec` is injected.
+ *
+ * @param {ProximityReport[]} list  Newest-first.
+ * @param {number} nowSec
+ * @returns {ProximityReport[]}
+ */
+export const trimProximityLog = (list, nowSec) => {
+  const cutoff = nowSec - PROXIMITY_MAX_AGE_S;
+  return list.filter((r) => !r.ts || r.ts >= cutoff).slice(0, PROXIMITY_CAP);
+};
 
 /** Suffix of the per-universe chrome.storage.local key. */
 export const PROXIMITY_REPORTS_KEY_BASE = 'oge_proximityReports';
@@ -76,7 +98,7 @@ const proximityKey = (r) => `${r.byPlayerId}|${r.atCoords}|${r.ts ?? 0}`;
 
 /**
  * Record one normalised proximity alert. Prepends (newest-first), de-dupes by
- * `${byPlayerId}|${atCoords}|${ts}`, and trims to {@link PROXIMITY_CAP}. Async +
+ * `${byPlayerId}|${atCoords}|${ts}`, and applies {@link trimProximityLog}. Async +
  * hydration-gated; best-effort (a report with no scout id is ignored).
  * @param {ProximityReport | null | undefined} report
  * @returns {Promise<void>}
@@ -89,7 +111,7 @@ export const recordProximityReport = async (report) => {
     // Already logged this exact alert → no-op, so we skip the subscriber
     // fan-out and the debounced persist (and dashboard re-render churn).
     if (cur.some((r) => proximityKey(r) === id)) return cur;
-    return [report, ...cur].slice(0, PROXIMITY_CAP);
+    return trimProximityLog([report, ...cur], Math.floor(Date.now() / 1000));
   });
 };
 

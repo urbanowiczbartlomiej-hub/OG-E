@@ -39,11 +39,20 @@ describe('parseUniverse', () => {
       timestamp: 1700000000 * 1000,
       planets: [
         // The first planet carries a <moon> child → hasMoon (a second spiable
-        // body, counted in the hidden-fleet coverage denominator).
-        { coords: '1:1:2', player: 103, hasMoon: true },
-        { coords: '1:1:8', player: 207 },
+        // body, counted in the hidden-fleet coverage denominator). `id` rides
+        // along because the LOWEST id a player owns is their homeworld
+        // (targets.playerPlanets marks it) — nothing else reads it.
+        { coords: '1:1:2', player: 103, id: 1, hasMoon: true },
+        { coords: '1:1:8', player: 207, id: 3 },
       ],
     });
+  });
+
+  it('omits id when the attribute is absent or not a number', () => {
+    const u = parseUniverse('<universe><planet coords="1:2:3" player="5"/>'
+      + '<planet id="x" coords="1:2:4" player="5"/></universe>');
+    expect(u.planets[0].id).toBeUndefined();
+    expect(u.planets[1].id).toBeUndefined();
   });
 
   it('leaves player undefined when the attribute is absent', () => {
@@ -484,13 +493,13 @@ describe('buildScanMapFromIndex', () => {
   });
 
   it('marks our own colony as status "mine"', () => {
-    const map = buildScanMapFromIndex(index, { galaxies: 1, systems: 1, targets: [4] });
+    const map = buildScanMapFromIndex(index, { galaxies: 1, systems: 1 });
     expect(map['1:1'].positions[2]).toEqual({ status: 'mine' });
     expect(map['1:1'].scannedAt).toBe(7777);
   });
 
   it('maps a foreign occupant to its status + joined player payload', () => {
-    const map = buildScanMapFromIndex(index, { galaxies: 1, systems: 1, targets: [4] });
+    const map = buildScanMapFromIndex(index, { galaxies: 1, systems: 1 });
     expect(map['1:1'].positions[8]).toEqual({
       status: 'inactive',
       player: { id: 207, name: 'Foe', rank: 50, ally: '7', rankClass: undefined },
@@ -503,7 +512,7 @@ describe('buildScanMapFromIndex', () => {
       players: { players: { 207: { name: 'Foe', status: '' } } },
       honor: { ranks: { 207: { position: 1, score: -3000 } } },
     });
-    const map = buildScanMapFromIndex(idx, { galaxies: 1, systems: 1, targets: [4] });
+    const map = buildScanMapFromIndex(idx, { galaxies: 1, systems: 1 });
     expect(map['1:1'].positions[8].player?.rankClass).toBe('rank_bandit2');
   });
 
@@ -514,36 +523,53 @@ describe('buildScanMapFromIndex', () => {
       highscore: { ranks: { 207: { position: 50, score: 200000 } } },
       military: { ranks: { 207: { position: 60, score: 66000 } } },
     });
-    const map = buildScanMapFromIndex(idx, { galaxies: 1, systems: 1, targets: [] });
+    const map = buildScanMapFromIndex(idx, { galaxies: 1, systems: 1 });
     expect(map['1:1'].positions[8].player).toMatchObject({ score: 200000, militaryScore: 66000 });
   });
 
   it('maps an occupant with no player id to plain "occupied"', () => {
-    const map = buildScanMapFromIndex(index, { galaxies: 1, systems: 1, targets: [4] });
+    const map = buildScanMapFromIndex(index, { galaxies: 1, systems: 1 });
     expect(map['1:1'].positions[5]).toEqual({ status: 'occupied' });
   });
 
-  it('fills requested target slots as "empty" where not occupied', () => {
-    const map = buildScanMapFromIndex(index, { galaxies: 1, systems: 1, targets: [4, 8] });
-    // 4 is free → empty; 8 is occupied → stays occupied (not overwritten).
+  it('fills EVERY free colonizable slot as "empty", occupied ones untouched', () => {
+    const map = buildScanMapFromIndex(index, { galaxies: 1, systems: 1 });
+    // Since 1.56 the map no longer takes a target list: occupancy truth must not
+    // depend on what the user typed into the analyzer's Slots box (a free 14 was
+    // invisible while the box said 15, which moved every candidate's room score).
     expect(map['1:1'].positions[4]).toEqual({ status: 'empty' });
+    expect(map['1:1'].positions[14]).toEqual({ status: 'empty' });
+    expect(map['1:1'].positions[15]).toEqual({ status: 'empty' });
     expect(map['1:1'].positions[8].status).toBe('inactive');
+    // 15 colonizable slots, no 16 (the expedition slot is not a place to live).
+    expect(Object.keys(map['1:1'].positions).length).toBe(15);
+    expect(map['1:1'].positions[16]).toBeUndefined();
   });
 
   it('emits a fully-empty system entry for every untouched grid cell', () => {
-    const map = buildScanMapFromIndex(index, { galaxies: 1, systems: 2, targets: [4] });
-    // System 1:2 has no occupants → all-empty target slots.
-    expect(map['1:2']).toEqual({ scannedAt: 7777, positions: { 4: { status: 'empty' } } });
+    const map = buildScanMapFromIndex(index, { galaxies: 1, systems: 2 });
+    expect(map['1:2'].scannedAt).toBe(7777);
+    expect(Object.keys(map['1:2'].positions).length).toBe(15);
+    for (const p of ALL_POSITIONS) expect(map['1:2'].positions[p].status).toBe('empty');
+  });
+
+  it('shares one FROZEN cell across empty slots (a write must not leak server-wide)', () => {
+    const map = buildScanMapFromIndex(index, { galaxies: 1, systems: 2 });
+    // Same object by design — 4.5k systems × 15 slots would otherwise mint ~67k
+    // identical cells. The freeze is what makes the sharing safe.
+    expect(map['1:2'].positions[1]).toBe(map['1:2'].positions[2]);
+    expect(Object.isFrozen(map['1:2'].positions[1])).toBe(true);
+    expect(Object.isFrozen(map['1:2'].positions)).toBe(true);
   });
 
   it('uses scannedAt 0 when the index has no timestamp', () => {
     const idx = buildOccupancyIndex({ universe: { planets: [{ coords: '1:1:1', player: 5 }] } });
-    const map = buildScanMapFromIndex(idx, { galaxies: 1, systems: 1, targets: [] });
+    const map = buildScanMapFromIndex(idx, { galaxies: 1, systems: 1 });
     expect(map['1:1'].scannedAt).toBe(0);
   });
 
   it('returns {} for a null/garbage index', () => {
-    expect(buildScanMapFromIndex(/** @type {any} */ (null), { galaxies: 1, systems: 1, targets: [] })).toEqual({});
+    expect(buildScanMapFromIndex(/** @type {any} */ (null), { galaxies: 1, systems: 1 })).toEqual({});
   });
 
   describe('apiStatusToPosition ladder (via the scan map)', () => {
@@ -557,7 +583,7 @@ describe('buildScanMapFromIndex', () => {
           universe: { planets: [{ coords: '5:5:5', player: 1 }] },
           players: { players: { 1: { name: 'X', status } } },
         }),
-        { galaxies: 0, systems: 0, targets: [] },
+        { galaxies: 0, systems: 0 },
       )['5:5'].positions[5].status;
 
     it('admin > banned > vacation > long_inactive > inactive > occupied', () => {

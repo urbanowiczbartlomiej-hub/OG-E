@@ -56,6 +56,9 @@ const fullCfg = (over = {}) => ({
   moonStrike: 'newest',
   patrolSystems: 0,
   probeSource: 'nearest',
+  // Home watch defaults ON (defensive, own systems only) — unlike the patrol,
+  // which is an offensive opt-in.
+  homeWatch: true,
   ...over,
 });
 
@@ -185,6 +188,14 @@ describe('normalizeWatchList', () => {
     expect(normalizeWatchList({ players: [], probeSource: 'nearest' }).probeSource).toBe('nearest');
     expect(normalizeWatchList({ players: [], probeSource: 'garbage' }).probeSource).toBe('nearest');
     expect(normalizeWatchList({ players: [] }).probeSource).toBe('nearest');
+  });
+
+  it('defaults homeWatch ON and only an explicit false turns it off', () => {
+    expect(normalizeWatchList({ players: [] }).homeWatch).toBe(true);
+    expect(normalizeWatchList({ players: [], homeWatch: false }).homeWatch).toBe(false);
+    // Anything else present-but-not-false reads as on (a stored 1 / 'on' from a
+    // hand-edited blob must not silently disable a defensive watch).
+    expect(normalizeWatchList({ players: [], homeWatch: 1 }).homeWatch).toBe(true);
   });
 });
 

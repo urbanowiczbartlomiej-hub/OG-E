@@ -124,8 +124,10 @@ describe('refreshCache — cold (empty cache)', () => {
     expect(writeApiCache).toHaveBeenCalledTimes(1);
     const written = /** @type {any} */ (/** @type {any} */ (writeApiCache).mock.calls[0][0]);
     expect(written.universe.planets).toEqual([
-      { coords: '1:1:2', player: 103 },
-      { coords: '1:1:8', player: 207 },
+      // `id` is kept from 1.56 on — the lowest id a player owns is their
+      // homeworld (domain/targets.playerPlanets).
+      { coords: '1:1:2', player: 103, id: 1 },
+      { coords: '1:1:8', player: 207, id: 2 },
     ]);
     expect(written.players.players['207'].status).toBe('i');
     // alliances.xml — the alliance OPENING tags only; its <player> children are

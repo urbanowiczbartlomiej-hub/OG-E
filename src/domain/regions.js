@@ -159,10 +159,9 @@ import { occupantStrength } from './players.js';
  * @property {number} [fit] Zone fit 0..1, stamped by
  *   `zoneScore.annotateAndSortByZone` — the analyzer's one ranking number.
  * @property {import('./zoneScore.js').ZoneChannels} [channels] The bounded
- *   channel breakdown behind `fit` (safety/farm/streak/target + coverage).
- * @property {number} [freeRun] Memoised ANY-free contiguous run through the
- *   candidate's centre (zoneScore.contiguousFreeRun) — computed once per
- *   region lifetime.
+ *   channel breakdown behind `fit` (safety/farm/room/target + coverage).
+ * @property {number} [room] Memoised free-slot share of the candidate's window
+ *   (zoneScore.freeRoomShare) — computed once per region lifetime.
  * @property {{ field: unknown, value: number | null }} [threatAdjMemo]
  *   Memoised exclusion-adjusted threat sample (zoneScore), keyed by the
  *   field build it was computed against.

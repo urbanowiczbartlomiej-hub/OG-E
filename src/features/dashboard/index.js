@@ -72,7 +72,10 @@ import { summarizeRoutine, routineBodies } from '../../domain/routine.js';
 import { summarizePresence } from '../../domain/presence.js';
 import { detectAllLandings } from '../../domain/fleetLanding.js';
 import { patrolSystemKeys, patrolOccupants, patrolPlayers } from '../../domain/patrol.js';
+import { homeSystemKeys, systemOccupants } from '../../domain/homeWatch.js';
+import { readHomeWatch, openHomeArrivals, dismissHomeArrivals, emptyHomeWatch } from '../../state/homeWatch.js';
 import { renderPatrolCard } from './patrol.js';
+import { renderHomeWatchCard } from './homeWatch.js';
 import { bracketFsArcs } from '../../domain/fsBracket.js';
 import { probeActivityObs } from '../../domain/activityObs.js';
 import { readApiCacheFor, apiCacheKeyFor } from '../../state/apiCache.js';
@@ -351,6 +354,14 @@ let proximityReports = [];
  *  proximity strip's coords/names toggle + distance lines.
  *  @type {import('../../domain/bodies.js').Body[]} */
 let ownBodies = [];
+
+/**
+ * Home-watch state for the selected universe (per-device baseline + arrival log,
+ * written in-game by features/homeWatch). Reloaded by loadAll; the Home watch
+ * card and its "seen it" button are its only readers.
+ * @type {import('../../state/homeWatch.js').HomeWatchState}
+ */
+let homeWatchState = emptyHomeWatch();
 /** Device-local coords↔names toggle for the proximity strip (localStorage). */
 const PROX_NAMES_KEY = 'oge_proxNames';
 let proximityShowNames = safeLS.get(PROX_NAMES_KEY) === '1';
@@ -520,12 +531,17 @@ const pinnedTargetIds = new Set();
 // The three everyday filters are toggle PILLS (Etap H1) — `.on` is the state,
 // read via toggleChipOn where `.checked` used to be.
 /** @type {HTMLElement | null} */ let tgtWatchedOnly;
+/** @type {HTMLElement | null} */ let tgtMinersOnly;
+/** @type {HTMLElement | null} */ let tgtHomeWatch;
 /** @type {HTMLInputElement | null} */ let tgtProbes;
 /** @type {HTMLElement | null} */ let tgtScanBodies;
 /** @type {HTMLElement | null} */ let tgtMoonStrike;
 /** @type {HTMLElement | null} */ let tgtProbeSource;
 /** @type {HTMLInputElement | null} */ let cadRescanHours;
 /** @type {HTMLInputElement | null} */ let tgtPatrolSystems;
+/** @type {HTMLElement | null} */ let homeWatchCardEl;
+/** @type {HTMLElement | null} */ let homeWatchSummaryEl;
+/** @type {HTMLElement | null} */ let homeWatchBodyEl;
 /** @type {HTMLElement | null} */ let patrolCardEl;
 /** @type {HTMLElement | null} */ let patrolSummaryEl;
 /** @type {HTMLElement | null} */ let patrolStrikesEl;
@@ -852,12 +868,17 @@ const wireDom = () => {
   tgtAllySearch = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtAllySearch'));
   tgtWatchAll = /** @type {HTMLButtonElement | null} */ (document.getElementById('tgtWatchAll'));
   tgtWatchedOnly = document.getElementById('tgtWatchedOnly');
+  tgtMinersOnly = document.getElementById('tgtMinersOnly');
+  tgtHomeWatch = document.getElementById('tgtHomeWatch');
   tgtProbes = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtProbes'));
   tgtScanBodies = document.getElementById('tgtScanBodies');
   tgtMoonStrike = document.getElementById('tgtMoonStrike');
   tgtProbeSource = document.getElementById('tgtProbeSource');
   cadRescanHours = /** @type {HTMLInputElement | null} */ (document.getElementById('cadRescanHours'));
   tgtPatrolSystems = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtPatrolSystems'));
+  homeWatchCardEl = document.getElementById('homeWatchCard');
+  homeWatchSummaryEl = document.getElementById('homeWatchSummary');
+  homeWatchBodyEl = document.getElementById('homeWatchBody');
   patrolCardEl = document.getElementById('patrolCard');
   patrolSummaryEl = document.getElementById('patrolSummary');
   patrolStrikesEl = document.getElementById('patrolStrikes');
@@ -1091,6 +1112,7 @@ const loadWatched = async () => {
   if (tgtProbeSource) setChipValue(tgtProbeSource, cfg.probeSource ?? DEFAULT_PROBE_SOURCE);
   updateMoonStrikeNote();
   if (tgtPatrolSystems) tgtPatrolSystems.value = String(cfg.patrolSystems ?? 0);
+  if (tgtHomeWatch) setChipValue(tgtHomeWatch, cfg.homeWatch === false ? 'off' : 'on');
   hydrateCadenceInputs();
 };
 
@@ -1153,6 +1175,7 @@ const writeWatchConfig = () => {
     moonStrike: chipValue(tgtMoonStrike) || DEFAULT_MOON_STRIKE,
     probeSource: chipValue(tgtProbeSource) || DEFAULT_PROBE_SOURCE,
     patrolSystems: Number(tgtPatrolSystems?.value) || 0,
+    homeWatch: chipValue(tgtHomeWatch) !== 'off',
     rescan: rescanMap,
     colors: watchColors,
     mapHidden: mapHiddenIds,
@@ -1206,6 +1229,70 @@ const sysLookSecFromScans = () => {
  * mode. Hidden entirely while the radius input is 0 — no view is multiplied
  * for users who don't hunt.
  *
+ * @param {number} nowMs
+ * @returns {void}
+ */
+/**
+ * Repaint the Home watch card — our own systems, who shares them, and the
+ * strangers who arrived since the last look (domain/homeWatch's diff, recorded
+ * in-game). Hidden while the mode is off or we know no own body: an empty card
+ * would claim "nobody around" when the truth is "nothing read yet".
+ *
+ * The occupant picture prefers a LIVE scan of the system and falls back to the
+ * universe-snapshot join (`patrolOccupants`, the patrol card's source) where we
+ * have never browsed. That order matters here specifically: universe.xml
+ * regenerates weekly, so the very neighbour the arrival alert is about would be
+ * missing from a snapshot-only list for up to seven days — the card would report
+ * "NEW: pentagon" above a system it claimed was empty.
+ *
+ * @param {number} nowMs
+ * @returns {void}
+ */
+const repaintHomeWatch = (nowMs) => {
+  if (!homeWatchCardEl) return;
+  const on = chipValue(tgtHomeWatch) !== 'off';
+  if (!on || !ownBodies.length) {
+    homeWatchCardEl.style.display = 'none';
+    return;
+  }
+  homeWatchCardEl.style.display = '';
+  const systems = homeSystemKeys(ownBodies);
+  const planets = apiCache.universe ? apiCache.universe.planets : [];
+  const apiPlayers = apiCache.players ? apiCache.players.players : {};
+  const snapshotOcc = patrolOccupants(planets, systems, ownProfile.id ?? null);
+  /** @type {Record<string, Array<{playerId: string, position: number}>>} */
+  const occupants = {};
+  for (const key of systems) {
+    const sc = scans[/** @type {keyof typeof scans} */ (key)];
+    const live = sc?.positions ? systemOccupants(sc.positions, ownProfile.id ?? null) : null;
+    occupants[key] = live
+      ? live.map((o) => ({ playerId: String(o.id), position: o.position }))
+      : (snapshotOcc[key] || []);
+  }
+  renderHomeWatchCard({
+    summaryEl: homeWatchSummaryEl,
+    hostEl: homeWatchBodyEl,
+    systems,
+    occupants,
+    arrivals: openHomeArrivals(homeWatchState),
+    names: apiPlayers || {},
+    danger: dangerProfiles,
+    scans,
+    staleMs: (cadenceCfg.galaxyHours || 1) * 3600 * 1000,
+    nowMs,
+    linkBase: gameLinkBase() || undefined,
+    onDismiss: () => {
+      if (!selectedUniverseId) return;
+      const at = Date.now();
+      homeWatchState = { ...homeWatchState, dismissedAt: at };
+      void dismissHomeArrivals(selectedUniverseId, at);
+      repaintHomeWatch(Date.now());
+    },
+    onOpenPlayer: (pid) => openSpyglassFor(Number(pid)),
+  });
+};
+
+/**
  * @param {number} nowMs
  * @returns {void}
  */
@@ -1379,6 +1466,7 @@ const loadAll = async () => {
     allianceClasses = {};
     proximityReports = [];
     ownBodies = [];
+    homeWatchState = emptyHomeWatch();
     activityObs = {};
     presenceHistories = {};
     planetCountByPlayer = {};
@@ -1387,7 +1475,7 @@ const loadAll = async () => {
     routines = {};
     return;
   }
-  const [h, s, p, op, api, tr, pr, ao, ac, bd, pl, ai] = await Promise.all([
+  const [h, s, p, op, api, tr, pr, ao, ac, bd, pl, ai, hw] = await Promise.all([
     chromeStore.get(historyKeyFor(selectedUniverseId)),
     chromeStore.get(scansKeyFor(selectedUniverseId)),
     chromeStore.get(playersKeyFor(selectedUniverseId)),
@@ -1400,6 +1488,7 @@ const loadAll = async () => {
     chromeStore.get(bodiesKeyFor(selectedUniverseId)),
     chromeStore.get(presenceLedgerKeyFor(selectedUniverseId)),
     chromeStore.get(allianceIntelKeyFor(selectedUniverseId)),
+    readHomeWatch(selectedUniverseId),
   ]);
   history = Array.isArray(h) ? /** @type {ColonyEntry[]} */ (h) : [];
   scans = s && typeof s === 'object' ? /** @type {GalaxyScans} */ (s) : {};
@@ -1407,6 +1496,7 @@ const loadAll = async () => {
     ? /** @type {import('../../state/players.js').PlayerCache} */ (p)
     : {};
   ownProfile = op;
+  homeWatchState = hw;
 
   // Build the API occupancy index (breadth layer) for the Colony Scout. Empty
   // when the in-game side hasn't populated the cache yet → Scout uses live
@@ -1755,6 +1845,7 @@ const repaintTargets = () => {
   // Patrol card — the territory mode's dashboard face (same signals the
   // in-game FAB flags for the grounds' prey; see features/dashboard/patrol.js).
   // Hidden entirely while the radius is 0.
+  repaintHomeWatch(nowMs);
   repaintPatrol(nowMs);
 
   // Watchlist cards — the landing strip (Etap H4). Same per-repaint data the
@@ -1821,6 +1912,7 @@ const repaintTargets = () => {
     onRescan: markRescan,
     rescan: rescanMap,
     watchedOnly: toggleChipOn(tgtWatchedOnly),
+    minersOnly: toggleChipOn(tgtMinersOnly),
     universePlanets: apiCache.universe ? apiCache.universe.planets : [],
     reportsByPlayer,
     moonsByPlayer,
@@ -2365,6 +2457,7 @@ const saveTargetPrefs = () => {
     minMilitary: tgtMinMilitary?.value,
     maxMilitary: tgtMaxMilitary?.value,
     hideInactive: tgtHideInactive ? toggleChipOn(tgtHideInactive) : true,
+    minersOnly: toggleChipOn(tgtMinersOnly),
     showLimit: chipValue(tgtLimitChips),
   });
 };
@@ -2384,6 +2477,7 @@ const loadTargetPrefs = () => {
   if (p.minMilitary != null && tgtMinMilitary) tgtMinMilitary.value = String(p.minMilitary);
   if (p.maxMilitary != null && tgtMaxMilitary) tgtMaxMilitary.value = String(p.maxMilitary);
   setToggleChip(tgtHideInactive, p.hideInactive !== false); // default ON
+  setToggleChip(tgtMinersOnly, p.minersOnly === true); // default OFF
   // setChipValue refuses values no chip carries — the phantom-option guard the
   // old `<select>` restore had via querySelector('[value=…]').
   if (p.showLimit != null) setChipValue(tgtLimitChips, String(p.showLimit));
@@ -2460,10 +2554,10 @@ const updateModeControls = () => {
  * Composite cache: `buildScanMapFromIndex` allocates ~galaxies×systems (≈4.5k)
  * system entries per call, but most repaints (sliders, strategy switches)
  * don't change its inputs. Keyed by the identity of `apiIndex`/`scans` (both
- * reassigned wholesale by loadAll) + the positions the synthetic map marks
- * empty.
+ * reassigned wholesale by loadAll) — the analyzer's Slots box is NOT an input
+ * any more (the map marks every free slot empty, whatever the user is hunting).
  *
- * @type {{apiIndex: unknown, scans: unknown, posKey: string, value: GalaxyScans} | null}
+ * @type {{apiIndex: unknown, scans: unknown, value: GalaxyScans} | null}
  */
 let compositeCache = null;
 
@@ -2473,20 +2567,17 @@ let compositeCache = null;
  * empty_sent). When there's no cached API data the composite is just the
  * live scans.
  *
- * @param {number[]} positions
  * @returns {GalaxyScans}
  */
-const buildComposite = (positions) => {
+const buildComposite = () => {
   if (!(apiIndex && apiBounds.galaxies && apiBounds.systems)) return scans;
-  const posKey = positions.join(',');
   if (compositeCache
     && compositeCache.apiIndex === apiIndex
-    && compositeCache.scans === scans
-    && compositeCache.posKey === posKey) {
+    && compositeCache.scans === scans) {
     return compositeCache.value;
   }
-  const value = computeComposite({ apiIndex, apiBounds, scans, positions });
-  compositeCache = { apiIndex, scans, posKey, value };
+  const value = computeComposite({ apiIndex, apiBounds, scans });
+  compositeCache = { apiIndex, scans, value };
   return value;
 };
 
@@ -2574,7 +2665,7 @@ const gameLinkBase = () => {
 /** Repaint ONLY the analyzer block from current controls. */
 const repaintFreeRegions = () => {
   const positions = freeRegionPositions();
-  const composite = buildComposite(positions);
+  const composite = buildComposite();
   const field = buildScoreField(composite);
   // Pane-level data contract as header CHIPS (Spyglass parity — the old prose
   // stamp was three lines of text): snapshot age (universe.xml regenerates
@@ -3099,6 +3190,7 @@ const wireListeners = () => {
   // Moon-strike aggressiveness — same write; repaint recomputes the landing
   // signals (the 🎯 markers + dossier banners follow the new mode live).
   wireChips(tgtMoonStrike, () => { updateMoonStrikeNote(); writeWatchConfig(); repaintTargets(); });
+  wireChips(tgtHomeWatch, () => { writeWatchConfig(); repaintHomeWatch(Date.now()); });
   // Probe launch source — persist only; the FAB reads it live from the store
   // (no dashboard repaint depends on it).
   wireChips(tgtProbeSource, () => { writeWatchConfig(); });
@@ -3143,6 +3235,7 @@ const wireListeners = () => {
     renderProximityStrip();
   });
   wireToggleChip(tgtWatchedOnly, () => repaintTargets());
+  wireToggleChip(tgtMinersOnly, onTargetFilterChange);
   // Scan-settings command block (Probes/Scan/Probe from/…) — a native <details>
   // that collapses to a compact bar so the watchlist card isn't dominated by
   // the knobs; the open/closed choice is remembered per device.
@@ -3293,6 +3386,7 @@ export const _resetDashboardForTest = () => {
   scans = {};
   proximityReports = [];
   ownBodies = [];
+  homeWatchState = emptyHomeWatch();
   activityObs = {};
   compositeCache = null;
   scoreFieldCache = null;
@@ -3343,6 +3437,8 @@ export const _resetDashboardForTest = () => {
     tgtAllySearch =
     tgtWatchAll =
     tgtWatchedOnly =
+    tgtMinersOnly =
+    tgtHomeWatch =
     tgtProbes =
     tgtScanBodies =
     tgtMoonStrike =

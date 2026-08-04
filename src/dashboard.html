@@ -1335,7 +1335,7 @@
         <span class="gv-card-title">Results</span>
         <span id="freeCountInfo"></span>
         <span class="gv-fit-caption"
-          title="Fit 0–100 — weighted safety / farm / streak / targets, blended by scan coverage">Fit = zone-weighted safety · farm · streak · targets × coverage</span>
+          title="Fit 0–100 — weighted safety / farm / room / targets, blended by scan coverage">Fit = zone-weighted safety · farm · room · targets × coverage</span>
       </div>
       <div id="freeContainer"></div>
     </div>
@@ -1423,6 +1423,14 @@
           <span class="cmd-unit">h</span>
           <span class="cmd-note"><span class="via-galaxy">watch via galaxy</span> — sightings older than this re-enter the look plan</span>
         </label>
+        <div class="cmd-cell cmd-wide" title="Home watch: your OWN systems join the Look plan, and every look compares who lives there against the last one. A stranger who colonises next to your planet or moon is reported — they see your bodies from now on, they are one system away, and if their Danger is high the fleet-save you fly to that moon needs rethinking.">
+          <span class="cmd-cap">Home</span>
+          <span class="chip-group seg" id="tgtHomeWatch" data-value="on">
+            <button type="button" data-value="on">on</button>
+            <button type="button" data-value="off">off</button>
+          </span>
+          <span class="cmd-note"><span class="via-galaxy">watch via galaxy</span> — walks your own systems and reports new neighbours</span>
+        </div>
         <div class="cmd-cell" title="When a moon's activity pattern suggests a parked fleet, the scan plan flags it first (spy to confirm — it never sends by itself). lone = only the moon is lit and the rest is confirmed quiet · newest = the moon holds the account's newest activity, or the last trace before it went quiet · any = any lit moon, even beside active planets (owner may be around).">
           <span class="cmd-cap">Moon strike</span>
           <span class="chip-group seg" id="tgtMoonStrike" data-value="newest">
@@ -1451,6 +1459,13 @@
       <div class="gv-card-head"><span class="gv-card-title" title="Probers from the alerts you opened, within the selected date window.">Who's spying on you</span><span id="proximityCounts" style="color:#8a97a3;"></span><span id="proximityAlert" style="color:#e06c5f;font-weight:600;"></span><span id="proximityHeadTools" style="margin-left:auto;display:inline-flex;gap:6px;align-items:center;"></span></div>
       <div id="proximityStrip"></div>
     </div>
+  </div>
+  <!-- Home watch (defensive mode) — our OWN systems and who else lives in them.
+       Visible while Home watch is on in the scan prefs above and we know at
+       least one own body. New arrivals lead; the standing picture follows. -->
+  <div class="gv-card" id="homeWatchCard" style="display:none;">
+    <div class="gv-card-head"><span class="gv-card-title" title="Who shares the systems you live in — and who has just moved in. A stranger next to your planet or moon sees your bodies from now on and reaches them in minutes; if their Danger is high, the fleet-save you fly to that moon needs rethinking.">Home watch</span><span id="homeWatchSummary" style="color:#8a97a3;"></span></div>
+    <div id="homeWatchBody"></div>
   </div>
   <!-- Patrol (territory mode) — visible only while a patrol radius is set in
        the scan prefs below. Strikes here are the SAME signals the in-game Spy
@@ -1510,6 +1525,8 @@
         title="Hide inactive / long-inactive accounts.">😴 hide inactive</button>
       <button type="button" id="tgtWatchedOnly"
         title="Show only the players on your watch list.">⭐ watch list</button>
+      <button type="button" id="tgtMinersOnly"
+        title="Show only huddled empires — 3+ planets packed within 25 systems, at most 2 galaxies. The mirror image of the spread-out aggressor: miners optimise for short hauls, so one colony next door watches their whole account (and puts their moons in reach).">huddled (miners)</button>
     </div>
     <label style="margin-right:14px;">Military:
       <input id="tgtMinMilitary" type="number" min="0" value="0" size="8"

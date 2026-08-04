@@ -50,6 +50,8 @@ import {
   patrolPlayers,
   buildPatrolPlan,
 } from '../../domain/patrol.js';
+import { homeSystemKeys, buildHomeLookPlan } from '../../domain/homeWatch.js';
+import { readHomeWatch, openHomeArrivals, emptyHomeWatch } from '../../state/homeWatch.js';
 import { galaxyStaleMs } from '../../domain/galaxyWatch.js';
 import { createButton as makeButton, labelLines } from '../shared/button.js';
 import { EYE_GLYPH } from '../shared/buttonGlyphs.js';
@@ -207,6 +209,26 @@ const activityByPlayer = (nowMs) => {
 };
 
 /**
+ * Cached home-watch state. The key is async (chrome.storage) but
+ * {@link captureEnv} is synchronous, so we keep the last read and refresh it
+ * fire-and-forget on each derive. Worst case a freshly-logged arrival boosts its
+ * system one repaint later than it could have — the look plan is not a race.
+ * @type {import('../../state/homeWatch.js').HomeWatchState}
+ */
+let homeSnapshot = emptyHomeWatch();
+
+/** Kick a background re-read of the home-watch key. @returns {void} */
+const refreshHomeSnapshot = () => {
+  void readHomeWatch().then((s) => { homeSnapshot = s; }).catch(() => {});
+};
+
+/**
+ * Systems holding an unacknowledged arrival — the look plan's boost set.
+ * @returns {Set<string>}
+ */
+const homeAlertSystems = () => new Set(openHomeArrivals(homeSnapshot).map((a) => a.system));
+
+/**
  * Snapshot every input of {@link deriveSpy}.
  * @returns {import('./pure.js').SpyEnv}
  */
@@ -230,6 +252,10 @@ const captureEnv = () => {
     if (Number.isFinite(t) && t > 0) sysLookSec[k] = Math.floor(t / 1000);
   }
   const landingOpts = { sentMap, mode: cfg.moonStrike, sysLookSec };
+  // Home watch's own-system looks want the arrival log, which lives behind an
+  // async chrome.storage key while captureEnv is synchronous — hence the cached
+  // snapshot refreshed beside each derive (see homeAlertSystems).
+  refreshHomeSnapshot();
 
   // ── Patrol territory (domain/patrol) — the hunting-grounds mode ──────────
   // With a radius configured: the systems around every own body form the
@@ -297,16 +323,30 @@ const captureEnv = () => {
     // Account sweeps → the looks that must complete before a verdict may fire.
     sweeps,
     // Patrol looks: territory systems whose last galaxy scan outgrew the
-    // look cadence — merged into the LOOK plan by deriveSpy.
-    patrolLooks: patrolSet && patrolSet.size
-      ? buildPatrolPlan({
-        systems: patrolSet,
-        scans: scansStore.get(),
-        occupants,
-        nowMs,
-        staleMs: galaxyStaleMs(cfg.cadence),
-      }).entries
-      : [],
+    // look cadence — merged into the LOOK plan by deriveSpy. Home-watch looks
+    // (our OWN systems, domain/homeWatch) ride the same channel: same entry
+    // shape, and deriveSpy's merge already keeps the higher priority when a
+    // system is claimed twice.
+    patrolLooks: [
+      ...(patrolSet && patrolSet.size
+        ? buildPatrolPlan({
+          systems: patrolSet,
+          scans: scansStore.get(),
+          occupants,
+          nowMs,
+          staleMs: galaxyStaleMs(cfg.cadence),
+        }).entries
+        : []),
+      ...(cfg.homeWatch !== false
+        ? buildHomeLookPlan({
+          systems: homeSystemKeys(bodiesStore.get().bodies),
+          scans: scansStore.get(),
+          nowMs,
+          staleMs: galaxyStaleMs(cfg.cadence),
+          alertSystems: homeAlertSystems(),
+        }).entries
+        : []),
+    ],
     dangerByPlayer: dangerByPlayer(),
     activityByPlayer: activityByPlayer(nowMs),
     playerNames: ctx?.players ?? {},

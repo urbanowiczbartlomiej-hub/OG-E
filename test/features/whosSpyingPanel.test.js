@@ -36,9 +36,11 @@ const report = () => ({
 
 /**
  * Build the messages-page skeleton. Returns the message holder.
- * @param {{ activeSubtab?: string, messages?: number, withAgr?: boolean }} [o]
+ * @param {{ activeSubtab?: string, messages?: number, withAgr?: boolean, withHeaders?: boolean }} [o]
  */
-const buildMessagesDom = ({ activeSubtab = '20', messages = 2, withAgr = false } = {}) => {
+const buildMessagesDom = ({
+  activeSubtab = '20', messages = 2, withAgr = false, withHeaders = false,
+} = {}) => {
   document.body.innerHTML = '';
   const wrapper = document.createElement('div');
   wrapper.id = 'messagewrapper';
@@ -55,6 +57,17 @@ const buildMessagesDom = ({ activeSubtab = '20', messages = 2, withAgr = false }
     const agr = document.createElement('div');
     agr.id = 'agoSpyReportOverview';
     wrapper.appendChild(agr);
+  }
+  if (withHeaders) {
+    const headers = document.createElement('div');
+    headers.id = 'filteredHeadersRow';
+    for (const label of ['Data/godzina', 'Ranking', 'Nazwa gracza']) {
+      const cell = document.createElement('div');
+      cell.className = 'filteredHeaderCell';
+      cell.textContent = label;
+      headers.appendChild(cell);
+    }
+    wrapper.appendChild(headers);
   }
   const holder = document.createElement('div');
   holder.className = 'messagesHolder';
@@ -144,6 +157,31 @@ describe('installWhosSpyingPanel — game-owned slot (AGR overview absent)', () 
 
     poke();
     expect(holder.firstElementChild).toBe(panel());
+  });
+});
+
+describe('installWhosSpyingPanel — above the column headers (tier 2)', () => {
+  it('mounts ABOVE #filteredHeadersRow, not between the headers and the rows', () => {
+    // The 1.56 fix: injected at the top of the holder, our ~200px table pushed
+    // the message rows away from the column labels that name them.
+    const holder = buildMessagesDom({ withHeaders: true });
+    proximityReportsStore.set([report()]);
+    installWhosSpyingPanel();
+
+    const p = panel();
+    const headers = document.getElementById('filteredHeadersRow');
+    expect(p).not.toBeNull();
+    expect(p?.nextElementSibling).toBe(headers);
+    expect(headers?.nextElementSibling).toBe(holder);
+    // Nothing of ours sits inside the list itself any more.
+    expect(holder.querySelector(`#${PANEL_ID}`)).toBeNull();
+  });
+
+  it('falls back to the top of the holder when the build has no header strip', () => {
+    const holder = buildMessagesDom({ withHeaders: false });
+    proximityReportsStore.set([report()]);
+    installWhosSpyingPanel();
+    expect(panel()?.parentElement).toBe(holder);
   });
 });
 

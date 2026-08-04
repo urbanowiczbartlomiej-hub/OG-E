@@ -4,6 +4,60 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.56.0] — 2026-08-04
+
+### Added
+
+- **Home watch — you are told when a stranger moves in next to you.** Your own
+  systems now join the Spy button's Look proposals, and every look compares who
+  lives there against the previous one. A player who colonises a system where
+  you keep a planet or a moon shows up as **NEW** on a Home watch card on the
+  Spyglass tab, worst Danger first, and if their Danger is high the card says
+  plainly what it means for the overnight fleet-save you fly to that moon. Under
+  the card is the standing picture: every system you live in, who shares it, and
+  how fresh your last look was.
+
+  The system holding an unread arrival jumps to the front of the Look plan, and
+  the Spy button words it *"your system · who moved in?"*. Switch it off under
+  **Settings → Home** on the Spyglass tab. Nothing watches the game while you
+  are away — the check happens when you browse the galaxy yourself, exactly like
+  every other galaxy sighting OG-E records.
+- **A "huddled (miners)" filter.** OG-E already scores the aggressor pattern —
+  planets spread so half the server is in striking range. The new filter (under
+  **⚙ Filters** on the Spyglass tab) finds the opposite: accounts packed into a
+  few nearby systems, at most two galaxies. Those are usually miners, and they
+  are the accounts one colony next door watches in full. The dossier now also
+  says *"huddled empire — N planets packed together"* among the Danger reasons.
+- **The homeworld is marked.** In a player's dossier the planet they registered
+  with now carries a **main** tag. Logging in always activates the homeworld, so
+  activity there means the owner was in the game — while activity on another body
+  with a quiet homeworld is fleet movement, or a session older than an hour. The
+  tag appears once the public statistics snapshot has been refreshed after this
+  update.
+
+### Fixed
+
+- **The Slots box no longer reshuffles Best spots.** Typing 14 instead of 15
+  produced a completely different list of areas even where both slots were free.
+  Two causes: the whole-server occupancy map only marked the slots you had typed
+  as free (a free 14 was invisible while the box said 15), and the ranking's
+  free-room channel measured a run of systems with *that* slot free — so
+  retyping re-scored every candidate. The map now knows every free slot, and
+  room is the free-slot share of the area, independent of what you are hunting.
+  The Slots box decides where you can settle; it no longer decides how good the
+  neighbourhood is. (The Fit breakdown calls that channel **room** now, not
+  "streak".)
+- **"Who's spying on you" really shows 1m and 3m.** The alert log kept only the
+  newest 60 entries — on a probed account roughly a week — so the 1m and 3m
+  filters had nothing older to show whatever you picked. It now keeps three
+  months. Alerts already lost to the old limit cannot be recovered; the longer
+  windows fill up from here.
+- **The panel no longer separates the column headers from the rows.** On the
+  spy-report tab OG-E's table was injected between the game's column labels
+  (Date, Ranking, Player…) and the messages they name, pushing the rows far
+  enough down to lose track of which column was which. It now sits above the
+  header row.
+
 ## [1.55.0] — 2026-07-30
 
 ### Added

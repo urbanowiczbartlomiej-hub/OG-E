@@ -113,6 +113,12 @@ import {
  *   body whose neighbourhood the Look plan walks and the moon-strike
  *   detector hunts. 0 = patrol off (the default). Synced (a strategy knob);
  *   clamped to 0..{@link import('../domain/patrol.js').PATROL_SYSTEMS_MAX}.
+ * @property {boolean} [homeWatch]
+ *   Home watch (domain/homeWatch): walk our OWN systems in the Look plan and
+ *   diff their occupants, so a stranger colonising next to us is reported.
+ *   Defaults to {@link DEFAULT_HOME_WATCH}. LOCAL-ONLY (not in the sync ledger,
+ *   like /): the baseline it drives is a per-device memory of
+ *   what this device last browsed, so the switch belongs to the device too.
  * @property {ProbeSource} [probeSource]
  *   Which own body a probe fleet launches from: 'nearest' (the own planet at
  *   the smallest flight distance to the target — the default, minimises probe
@@ -149,6 +155,14 @@ const moonStrikeField = (v) =>
 
 /** Default patrol radius: 0 — the territory mode is a deliberate opt-in. */
 export const DEFAULT_PATROL_SYSTEMS = 0;
+
+/**
+ * Home watch defaults ON. Unlike the patrol (an offensive opt-in that widens
+ * what the FAB proposes), this only ever looks at systems we already live in —
+ * the cheapest possible defensive read, and the one a player would be sorry to
+ * have had switched off when a hunter moved in next door.
+ */
+export const DEFAULT_HOME_WATCH = true;
 
 /**
  * Default probe launch source: 'nearest' — the historical behaviour (hop to
@@ -258,7 +272,7 @@ const LEGACY_TAG_COLORS = Object.freeze({ enemy: '#e2726a', friend: '#7fd6a8' })
 export const normalizeWatchList = (raw) => {
   if (Array.isArray(raw)) {
     return {
-      players: raw.map(String), probes: DEFAULT_SPY_PROBES, scanBodies: 'planets', rescan: {}, colors: {}, mapHidden: {}, scanMode: {}, galaxyMode: {}, cadence: { ...DEFAULT_CADENCE }, moonStrike: DEFAULT_MOON_STRIKE, patrolSystems: DEFAULT_PATROL_SYSTEMS, probeSource: DEFAULT_PROBE_SOURCE,
+      players: raw.map(String), probes: DEFAULT_SPY_PROBES, scanBodies: 'planets', rescan: {}, colors: {}, mapHidden: {}, scanMode: {}, galaxyMode: {}, cadence: { ...DEFAULT_CADENCE }, moonStrike: DEFAULT_MOON_STRIKE, patrolSystems: DEFAULT_PATROL_SYSTEMS, probeSource: DEFAULT_PROBE_SOURCE, homeWatch: DEFAULT_HOME_WATCH,
     };
   }
   const o = raw && typeof raw === 'object' ? /** @type {any} */ (raw) : {};
@@ -339,8 +353,9 @@ export const normalizeWatchList = (raw) => {
   const moonStrike = moonStrikeField(o.moonStrike);
   const patrolSystems = patrolField(o.patrolSystems);
   const probeSource = probeSourceField(o.probeSource);
+  const homeWatch = o.homeWatch === undefined ? DEFAULT_HOME_WATCH : o.homeWatch !== false;
   return {
-    players, probes, scanBodies, rescan, colors, mapHidden, scanMode, galaxyMode, cadence, moonStrike, patrolSystems, probeSource,
+    players, probes, scanBodies, rescan, colors, mapHidden, scanMode, galaxyMode, cadence, moonStrike, patrolSystems, probeSource, homeWatch,
   };
 };
 
@@ -360,6 +375,7 @@ export const watchListStore = createStore(/** @type {WatchListConfig} */ ({
   moonStrike: DEFAULT_MOON_STRIKE,
   patrolSystems: DEFAULT_PATROL_SYSTEMS,
   probeSource: DEFAULT_PROBE_SOURCE,
+  homeWatch: DEFAULT_HOME_WATCH,
 }));
 
 /** @type {(() => void) | null} */

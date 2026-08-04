@@ -10,9 +10,11 @@
 //               pressure at the candidate, relative to this server's p95).
 //   • farm    = farm sampled from the field (points-weighted inactive loot
 //               within farm reach, relative p95).
-//   • streak  = contiguous free-system run at the candidate — open, quiet
-//               space (room for future relocations); saturates around 15
-//               systems but keeps growing, so longer is always better.
+//   • room    = open settling space at the candidate: the free-slot share of
+//               its window (Best spots), or the measured length of the free run
+//               (Longest streaks, saturating around 15 systems but never
+//               capped). Independent of WHICH slot you asked for — see
+//               freeRoomShare for why that matters.
 //   • target  = PvP opportunity: active-player density + honour-tier rate
 //               from the window census (the one intent the two field
 //               channels cannot express).
@@ -44,7 +46,8 @@ import { axisDelta, clamp01, flightDistance, reachThreat } from './geometry.js';
  * @typedef {object} ZoneChannels
  * @property {number} safety   0..1 — 1 = no threat pressure in reach.
  * @property {number} farm     0..1 — relative farm value in reach.
- * @property {number} streak   0..1 — contiguous free run, `1 − e^(−run/15)`.
+ * @property {number} room     0..1 — open settling space (freeRoomShare, or
+ *   `1 − e^(−run/15)` for a measured streak).
  * @property {number} target   0..1 — PvP target density in the window.
  * @property {number} coverage 0..1 — scanned/systemCount of the window.
  */
@@ -53,23 +56,23 @@ import { axisDelta, clamp01, flightDistance, reachThreat } from './geometry.js';
  * The three analyzer zones. `label`/`hint` are rendered by the UI (the hint
  * under the control), `weights` sum to 1 over the {@link ZoneChannels}.
  *
- * @type {Record<string, { label: string, hint: string, weights: { safety: number, farm: number, streak: number, target: number } }>}
+ * @type {Record<string, { label: string, hint: string, weights: { safety: number, farm: number, room: number, target: number } }>}
  */
 export const ZONES = {
   safe: {
     label: 'Safe zone',
     hint: 'Quiet space — low threat pressure within your offline window; farms and open room welcome. Good relocation targets.',
-    weights: { safety: 0.6, farm: 0.15, streak: 0.25, target: 0 },
+    weights: { safety: 0.6, farm: 0.15, room: 0.25, target: 0 },
   },
   farm: {
     label: 'Farm hub',
     hint: 'Farm-rich space — maximise inactive loot within your farm reach; threat still discounted.',
-    weights: { safety: 0.25, farm: 0.6, streak: 0.15, target: 0 },
+    weights: { safety: 0.25, farm: 0.6, room: 0.15, target: 0 },
   },
   pvp: {
     label: 'PvP zone',
     hint: 'Target-rich space — active players and honour targets nearby; safety matters least.',
-    weights: { safety: 0.1, farm: 0.15, streak: 0.1, target: 0.65 },
+    weights: { safety: 0.1, farm: 0.15, room: 0.1, target: 0.65 },
   },
 };
 
@@ -93,7 +96,7 @@ export const HARM_WEIGHTS = { bandit: -1, strong: -1, occupied: -0.5, honored: -
 const UNKNOWN_PRIOR = 0.25;
 
 /**
- * E-folding scale of the `streak` channel: `1 − e^(−run/15)`. Saturating but
+ * E-folding scale of the `room` channel under 'Longest streaks': `1 − e^(−run/15)`. Saturating but
  * never capped, so a longer run ALWAYS scores strictly higher (a hard
  * `clamp(run/15)` made every run ≥ 15 identical — under "Longest streaks"
  * that visibly shuffled the Length column and read as a broken sort).
@@ -104,39 +107,67 @@ const STREAK_SCALE = 15;
 /** Map any integer to 1..galaxyMax (circular). @param {number} s @param {number} galaxyMax */
 const wrapSystem = (s, galaxyMax) => ((((s - 1) % galaxyMax) + galaxyMax) % galaxyMax) + 1;
 
+/** Colonizable slots per system (16 is the expedition slot). */
+const SLOTS_PER_SYSTEM = 15;
+
 /**
- * Length of the contiguous run of systems around `centre` where at least one
- * of the requested `positions` is confirmed `status` — the same ANY-free rule
- * that qualified the centre as a candidate. Bounded by `galaxyMax` (a fully
- * free galaxy is one full circle). Pure.
+ * Statuses that mean the slot holds NO body. `empty_sent` counts as free room:
+ * a colonizer of ours is inbound, the space itself is still open. `abandoned`
+ * does NOT — the remnant blocks the slot until OGame releases it.
+ * @type {Set<string>}
+ */
+const FREE_STATUSES = new Set(['empty', 'empty_sent']);
+
+/**
+ * Free colonizable slots in one system, counted as `15 − bodies` so it works on
+ * BOTH scan layers: the API composite lists every slot explicitly, while a
+ * galaxy build that only reports occupied entries still yields the same count.
+ * `null` when the system has no record at all (never seen).
+ *
+ * @param {Record<string | number, { status?: string }> | undefined} posMap
+ * @returns {number | null}
+ */
+const freeSlotsInSystem = (posMap) => {
+  if (!posMap) return null;
+  let taken = 0;
+  for (const cell of Object.values(posMap)) {
+    if (cell && !FREE_STATUSES.has(String(cell.status))) taken++;
+  }
+  return Math.max(0, SLOTS_PER_SYSTEM - taken);
+};
+
+/**
+ * How much open settling room a window holds, 0..1 — the mean free-slot share
+ * across its systems, rescaled so a half-full neighbourhood reads 0 and virgin
+ * space reads 1 (the raw share lives in a narrow 0.5–1 band, which would make
+ * the channel almost constant and quietly hand the whole ranking to safety).
+ *
+ * Deliberately independent of the analyzer's Slots box. Which slot you settle
+ * is a question about ONE cell; "is there room around here" is a property of
+ * the area, and until 1.56 this channel measured a contiguous run of systems
+ * with the REQUESTED slot free — so retyping 15 → 14 re-scored every candidate
+ * and reshuffled a list of areas that had not changed at all (the user-visible
+ * bug this replaced). Pure.
  *
  * @param {GalaxyScans} scans
- * @param {number} galaxy
- * @param {number} centre
- * @param {number[]} positions
- * @param {import('./scans.js').PositionStatus} status
+ * @param {Pick<Region, 'galaxy'|'start'|'end'>} region
  * @param {number} galaxyMax
  * @returns {number}
  */
-export const contiguousFreeRun = (scans, galaxy, centre, positions, status, galaxyMax) => {
-  /** @param {number} sys @returns {boolean} */
-  const isFree = (sys) => {
-    const posMap = scans[`${galaxy}:${sys}`]?.positions;
-    if (!posMap) return false;
-    return positions.some((p) => posMap[/** @type {any} */ (String(p))]?.status === status);
-  };
-  if (!isFree(centre)) return 0;
-  let run = 1;
-  for (let d = 1; d < galaxyMax; d++) {
-    if (!isFree(wrapSystem(centre + d, galaxyMax))) break;
-    run++;
+export const freeRoomShare = (scans, region, galaxyMax) => {
+  const { start, end } = region;
+  const span = end >= start ? end - start + 1 : galaxyMax - start + 1 + end;
+  let sum = 0;
+  let n = 0;
+  for (let i = 0; i < span; i++) {
+    const sys = wrapSystem(start + i, galaxyMax);
+    const free = freeSlotsInSystem(scans[`${region.galaxy}:${sys}`]?.positions);
+    if (free == null) continue; // unseen — the coverage channel prices that in
+    sum += free / SLOTS_PER_SYSTEM;
+    n++;
   }
-  for (let d = 1; run < galaxyMax; d++) {
-    const sys = wrapSystem(centre - d, galaxyMax);
-    if (!isFree(sys)) break;
-    run++;
-  }
-  return Math.min(run, galaxyMax);
+  if (!n) return 0;
+  return clamp01((sum / n - 0.5) * 2);
 };
 
 /**
@@ -173,7 +204,7 @@ const sampleRegion = (field, region, galaxyMax) => {
  *   the SAME composite scan map the candidates came from, at per-system
  *   resolution (`cols: systems`). `null`/omitted (no API data) degrades
  *   gracefully: safety reads a neutral 0.5, farm 0 — ranking then rests on
- *   streak + target + coverage.
+ *   room + target + coverage.
  * @property {GalaxyScans} scans
  * @property {number[]} positions  The analyzer's slot list (ANY-free rule).
  * @property {import('./scans.js').PositionStatus} [status]  Default `'empty'`.
@@ -286,7 +317,6 @@ const adjustedThreatMean = (region, ctx, field) => {
  */
 export const computeZoneChannels = (region, ctx) => {
   const galaxyMax = ctx.galaxyMax ?? 499;
-  const status = ctx.status ?? 'empty';
   const s = region.score;
   let { threat, farm } = sampleRegion(ctx.field, region, galaxyMax);
   // "Ignore worst" reaches the safety channel: re-sample the window's threat
@@ -300,14 +330,14 @@ export const computeZoneChannels = (region, ctx) => {
     if (region.threatAdjMemo.value != null) threat = region.threatAdjMemo.value;
   }
 
-  // Streak: a real streak region carries its own matched count; an area
-  // candidate measures the ANY-free run through its centre — memoised on the
-  // region (its scans/positions are fixed for its lifetime; re-annotation on
-  // a field-knob drag must not re-walk the galaxy per candidate).
-  const run = typeof region.center === 'number'
-    ? (region.freeRun ??= contiguousFreeRun(ctx.scans, region.galaxy, region.center, ctx.positions, status, galaxyMax))
-    : region.matched;
-  const streak = 1 - Math.exp(-run / STREAK_SCALE);
+  // Room: a streak region IS a measured run of free systems, so its own matched
+  // length is the honest reading; an area candidate instead scores the free-slot
+  // share of its window ({@link freeRoomShare}) — memoised on the region (its
+  // scans are fixed for its lifetime; a field-knob drag must not re-walk every
+  // candidate's window).
+  const room = typeof region.center === 'number'
+    ? (region.room ??= freeRoomShare(ctx.scans, region, galaxyMax))
+    : 1 - Math.exp(-region.matched / STREAK_SCALE);
 
   // Target: active-player density + honour-tier rate over scanned systems.
   // `honorable` (live-cache fair-fight flag) sweetens when present; it is 0
@@ -324,7 +354,7 @@ export const computeZoneChannels = (region, ctx) => {
     coverage = clamp01(s.scanned / Math.max(1, s.systemCount));
   }
 
-  return { safety: clamp01(1 - threat), farm, streak, target, coverage };
+  return { safety: clamp01(1 - threat), farm, room, target, coverage };
 };
 
 /**
@@ -340,7 +370,7 @@ export const zoneFit = (ch, zoneKey) => {
   const raw =
     w.safety * ch.safety
     + w.farm * ch.farm
-    + w.streak * ch.streak
+    + w.room * ch.room
     + w.target * ch.target;
   return clamp01(ch.coverage * raw + (1 - ch.coverage) * UNKNOWN_PRIOR);
 };

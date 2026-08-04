@@ -218,6 +218,9 @@ export function sortTargetList(list, key, dir = 'desc', hiddenById = {}, dangerB
  * @property {boolean} [hasMoon]  The slot also carries a `<moon>` — a SECOND
  *   spiable body of the same owner (parsed by `apiOccupancy`). Lets the scan
  *   planner offer the moon as its own candidate when moon scanning is enabled.
+ * @property {boolean} [main]  This is the player's HOMEWORLD (their lowest
+ *   planet id — see {@link playerPlanets}). Absent when the snapshot carries no
+ *   planet ids (a pre-1.56 cached blob) or on every other body.
  */
 
 /**
@@ -227,13 +230,22 @@ export function sortTargetList(list, key, dir = 'desc', hiddenById = {}, dangerB
  * ordered galaxy→system→position for a stable display. Carries each row's
  * `hasMoon` flag through so a caller can also enumerate the moons.
  *
- * @param {Array<{coords: string, player?: number, hasMoon?: boolean}>} universePlanets
+ * The HOMEWORLD gets `main: true`. OGame publishes no "is main" flag, but planet
+ * ids are minted in creation order server-wide, so the lowest id a player holds
+ * is the planet they registered with — the one the game ALWAYS activates on
+ * login. (Colonies get higher ids; the homeworld can never be abandoned, and a
+ * relocation moves its coords without re-minting the id.) Absent when the cached
+ * snapshot predates id parsing — then nothing is marked, rather than guessing.
+ *
+ * @param {Array<{coords: string, player?: number, hasMoon?: boolean, id?: number}>} universePlanets
  * @param {string} playerId
  * @returns {PlanetPos[]}
  */
 export function playerPlanets(universePlanets, playerId) {
   /** @type {PlanetPos[]} */
   const out = [];
+  /** @type {{ id: number, body: PlanetPos } | null} */
+  let lowest = null;
   for (const pl of universePlanets || []) {
     if (!pl || pl.player == null || String(pl.player) !== playerId) continue;
     const parts = String(pl.coords).split(':');
@@ -244,8 +256,14 @@ export function playerPlanets(universePlanets, playerId) {
     if (!Number.isFinite(galaxy) || !Number.isFinite(system) || !Number.isFinite(position)) {
       continue;
     }
-    out.push({ galaxy, system, position, ...(pl.hasMoon ? { hasMoon: true } : {}) });
+    /** @type {PlanetPos} */
+    const body = { galaxy, system, position, ...(pl.hasMoon ? { hasMoon: true } : {}) };
+    if (typeof pl.id === 'number' && Number.isFinite(pl.id) && (!lowest || pl.id < lowest.id)) {
+      lowest = { id: pl.id, body };
+    }
+    out.push(body);
   }
+  if (lowest) lowest.body.main = true;
   out.sort((a, b) => a.galaxy - b.galaxy || a.system - b.system || a.position - b.position);
   return out;
 }

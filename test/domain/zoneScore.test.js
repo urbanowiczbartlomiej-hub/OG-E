@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 import {
   ZONES,
   HARM_WEIGHTS,
-  contiguousFreeRun,
+  freeRoomShare,
   computeZoneChannels,
   zoneFit,
   annotateAndSortByZone,
@@ -102,7 +102,7 @@ describe('ZONES / HARM_WEIGHTS', () => {
   it('each zone weight vector sums to 1', () => {
     for (const key of Object.keys(ZONES)) {
       const w = ZONES[key].weights;
-      const sum = w.safety + w.farm + w.streak + w.target;
+      const sum = w.safety + w.farm + w.room + w.target;
       expect(sum).toBeCloseTo(1, 10);
     }
   });
@@ -112,40 +112,72 @@ describe('ZONES / HARM_WEIGHTS', () => {
   });
 });
 
-describe('contiguousFreeRun', () => {
-  it('returns 0 when the centre itself is not free', () => {
-    const scans = scansOf({ '4:5': { 8: occ(1) } });
-    expect(contiguousFreeRun(scans, 4, 5, [8], 'empty', G10)).toBe(0);
+describe('freeRoomShare', () => {
+  /** A system with `n` slots taken (the rest free). @param {number} n */
+  const crowd = (n) => {
+    /** @type {Record<number, any>} */
+    const out = {};
+    for (let p = 1; p <= n; p++) out[p] = occ(100 + p);
+    return out;
+  };
+
+  it('reads 1 for virgin space and drops as the window fills up', () => {
+    /** @type {Record<string, Record<number, any>>} */
+    const virgin = {};
+    for (let sys = 1; sys <= 5; sys++) virgin['4:' + sys] = { 8: empty };
+    expect(freeRoomShare(scansOf(virgin), { galaxy: 4, start: 1, end: 5 }, G10)).toBe(1);
+
+    /** @type {Record<string, Record<number, any>>} */
+    const busy = {};
+    for (let sys = 1; sys <= 5; sys++) busy['4:' + sys] = crowd(6);
+    // 9/15 free per system → (0.6 − 0.5) × 2 = 0.2.
+    expect(freeRoomShare(scansOf(busy), { galaxy: 4, start: 1, end: 5 }, G10)).toBeCloseTo(0.2, 6);
   });
 
-  it('counts a run correctly in both directions from the centre', () => {
-    // Free at 3,4,5,6,7 (centre 5); occupied elsewhere.
+  it('bottoms out at 0 once the window is half full or worse', () => {
     /** @type {Record<string, Record<number, any>>} */
-    const spec = {};
-    for (const s of [3, 4, 5, 6, 7]) spec[`4:${s}`] = { 8: empty };
-    spec['4:2'] = { 8: occ(1) };
-    spec['4:8'] = { 8: occ(1) };
-    const run = contiguousFreeRun(scansOf(spec), 4, 5, [8], 'empty', G10);
-    expect(run).toBe(5);
+    const packed = {};
+    for (let sys = 1; sys <= 3; sys++) packed['4:' + sys] = crowd(12);
+    expect(freeRoomShare(scansOf(packed), { galaxy: 4, start: 1, end: 3 }, G10)).toBe(0);
   });
 
-  it('wraps around the galaxyMax boundary', () => {
-    // Free at 9,10,1,2,3 (centre 10) in a galaxyMax=10 galaxy.
-    /** @type {Record<string, Record<number, any>>} */
-    const spec = {};
-    for (const s of [9, 10, 1, 2, 3]) spec[`4:${s}`] = { 8: empty };
-    spec['4:4'] = { 8: occ(1) };
-    spec['4:8'] = { 8: occ(1) };
-    const run = contiguousFreeRun(scansOf(spec), 4, 10, [8], 'empty', G10);
-    expect(run).toBe(5);
+  it('skips never-seen systems instead of counting them as full', () => {
+    // Only 4:1 is known (and empty); the rest of the window is unscanned. The
+    // coverage channel prices blind spots — this one must not.
+    const scans = scansOf({ '4:1': { 8: empty } });
+    expect(freeRoomShare(scans, { galaxy: 4, start: 1, end: 5 }, G10)).toBe(1);
   });
 
-  it('is bounded at galaxyMax for a fully-free galaxy', () => {
+  it('returns 0 when the window holds no data at all', () => {
+    expect(freeRoomShare(scansOf({}), { galaxy: 4, start: 1, end: 5 }, G10)).toBe(0);
+  });
+
+  it('wraps a window across the galaxy boundary', () => {
     /** @type {Record<string, Record<number, any>>} */
     const spec = {};
-    for (let s = 1; s <= G10; s++) spec[`4:${s}`] = { 8: empty };
-    const run = contiguousFreeRun(scansOf(spec), 4, 5, [8], 'empty', G10);
-    expect(run).toBe(G10);
+    for (const sys of [9, 10, 1, 2]) spec['4:' + sys] = { 8: empty };
+    spec['4:5'] = crowd(15);
+    // start 9 → end 2 wraps; the packed 4:5 sits OUTSIDE the window.
+    expect(freeRoomShare(scansOf(spec), { galaxy: 4, start: 9, end: 2 }, G10)).toBe(1);
+  });
+
+  it('is independent of which target slot the analyzer asked for (the 1.56 fix)', () => {
+    // Slot 14 taken in one system, slot 15 in another. Whichever slot the user
+    // types, the room in this area is the same — the bug was that this channel
+    // moved with the Slots box and reshuffled unchanged areas.
+    /** @type {any} */
+    const scans = scansOf({
+      '4:1': { 14: occ(1) },
+      '4:2': { 15: occ(2) },
+      '4:3': { 8: empty },
+    });
+    /** @type {any} */
+    const region = { galaxy: 4, start: 1, end: 3, center: 2, matched: 1 };
+    const forFifteen = computeZoneChannels({ ...region }, { scans, positions: [15], galaxyMax: G10 });
+    const forFourteen = computeZoneChannels({ ...region }, { scans, positions: [14], galaxyMax: G10 });
+    const forBoth = computeZoneChannels({ ...region }, { scans, positions: [14, 15], galaxyMax: G10 });
+    expect(forFourteen.room).toBe(forFifteen.room);
+    expect(forBoth.room).toBe(forFifteen.room);
   });
 });
 
@@ -198,32 +230,43 @@ describe('computeZoneChannels — with a real field', () => {
   });
 });
 
-describe('computeZoneChannels — streak channel', () => {
-  it('for a region with a center, streak derives from contiguousFreeRun (saturating curve)', () => {
-    // Two centre regions with different run lengths — longer run must score
-    // strictly higher, and always < 1.
+describe('computeZoneChannels — room channel', () => {
+  it('for a region with a center, room is the window free-slot share', () => {
+    // A crowded window must score strictly below an empty one of the same size.
     /** @type {Record<string, Record<number, any>>} */
-    const shortSpec = {};
-    for (const s of [4, 5, 6]) shortSpec[`4:${s}`] = { 8: empty };
-    shortSpec['4:3'] = { 8: occ(1) };
-    shortSpec['4:7'] = { 8: occ(1) };
+    const busySpec = {};
+    for (const s of [4, 5, 6]) {
+      busySpec[`4:${s}`] = { 1: occ(1), 2: occ(2), 3: occ(3), 4: occ(4), 5: occ(5) };
+    }
     /** @type {any} */
-    const shortRegion = { galaxy: 4, start: 3, end: 7, center: 5, matched: 1 };
-    const shortCh = computeZoneChannels(shortRegion, { scans: scansOf(shortSpec), positions: [8], galaxyMax: G10 });
+    const busyRegion = { galaxy: 4, start: 4, end: 6, center: 5, matched: 1 };
+    const busyCh = computeZoneChannels(busyRegion, { scans: scansOf(busySpec), positions: [8], galaxyMax: G10 });
 
     /** @type {Record<string, Record<number, any>>} */
-    const longSpec = {};
-    for (let s = 1; s <= G10; s++) longSpec[`4:${s}`] = { 8: empty };
+    const openSpec = {};
+    for (const s of [4, 5, 6]) openSpec[`4:${s}`] = { 8: empty };
     /** @type {any} */
-    const longRegion = { galaxy: 4, start: 1, end: G10, center: 5, matched: 1 };
-    const longCh = computeZoneChannels(longRegion, { scans: scansOf(longSpec), positions: [8], galaxyMax: G10 });
+    const openRegion = { galaxy: 4, start: 4, end: 6, center: 5, matched: 1 };
+    const openCh = computeZoneChannels(openRegion, { scans: scansOf(openSpec), positions: [8], galaxyMax: G10 });
 
-    expect(longCh.streak).toBeGreaterThan(shortCh.streak);
-    expect(longCh.streak).toBeLessThan(1);
-    expect(shortCh.streak).toBeGreaterThan(0);
+    expect(openCh.room).toBe(1);
+    // 10/15 free → (0.667 − 0.5) × 2 ≈ 0.333.
+    expect(busyCh.room).toBeCloseTo(1 / 3, 6);
+    expect(openCh.room).toBeGreaterThan(busyCh.room);
   });
 
-  it('for a streak region (no center), streak uses region.matched directly', () => {
+  it('memoises the window share on the region (one walk per lifetime)', () => {
+    const scans = scansOf({ '4:5': { 8: empty } });
+    /** @type {any} */
+    const region = { galaxy: 4, start: 5, end: 5, center: 5, matched: 1 };
+    computeZoneChannels(region, { scans, positions: [8], galaxyMax: G10 });
+    expect(region.room).toBe(1);
+    // A later annotate reads the memo, not the (now emptied) scan map.
+    const ch = computeZoneChannels(region, { scans: scansOf({}), positions: [8], galaxyMax: G10 });
+    expect(ch.room).toBe(1);
+  });
+
+  it('for a streak region (no center), room uses region.matched directly', () => {
     const scans = scansOf({ '4:1': { 8: empty } });
     /** @type {any} */
     const shortRegion = { galaxy: 4, start: 1, end: 3, matched: 3 };
@@ -232,10 +275,10 @@ describe('computeZoneChannels — streak channel', () => {
     const shortCh = computeZoneChannels(shortRegion, { scans, positions: [8], galaxyMax: 499 });
     const longCh = computeZoneChannels(longRegion, { scans, positions: [8], galaxyMax: 499 });
 
-    expect(shortCh.streak).toBeCloseTo(1 - Math.exp(-3 / 15), 10);
-    expect(longCh.streak).toBeCloseTo(1 - Math.exp(-30 / 15), 10);
-    expect(longCh.streak).toBeGreaterThan(shortCh.streak);
-    expect(longCh.streak).toBeLessThan(1);
+    expect(shortCh.room).toBeCloseTo(1 - Math.exp(-3 / 15), 10);
+    expect(longCh.room).toBeCloseTo(1 - Math.exp(-30 / 15), 10);
+    expect(longCh.room).toBeGreaterThan(shortCh.room);
+    expect(longCh.room).toBeLessThan(1);
   });
 });
 
@@ -444,28 +487,28 @@ describe('adjustedThreatMean — E7 per-player (not per-planet) subtraction', ()
 
 describe('zoneFit', () => {
   it('a high-safety/low-target channel set scores higher under "safe" than "pvp"', () => {
-    const ch = { safety: 0.9, farm: 0.1, streak: 0.5, target: 0.1, coverage: 1 };
+    const ch = { safety: 0.9, farm: 0.1, room: 0.5, target: 0.1, coverage: 1 };
     const safeFit = zoneFit(ch, 'safe');
     const pvpFit = zoneFit(ch, 'pvp');
     expect(safeFit).toBeGreaterThan(pvpFit);
   });
 
   it('a high-target/low-safety channel set scores higher under "pvp" than "safe"', () => {
-    const ch = { safety: 0.1, farm: 0.1, streak: 0.1, target: 0.9, coverage: 1 };
+    const ch = { safety: 0.1, farm: 0.1, room: 0.1, target: 0.9, coverage: 1 };
     const safeFit = zoneFit(ch, 'safe');
     const pvpFit = zoneFit(ch, 'pvp');
     expect(pvpFit).toBeGreaterThan(safeFit);
   });
 
   it('coverage=0 returns the UNKNOWN_PRIOR (0.25) regardless of channel values', () => {
-    const highCh = { safety: 1, farm: 1, streak: 1, target: 1, coverage: 0 };
-    const lowCh = { safety: 0, farm: 0, streak: 0, target: 0, coverage: 0 };
+    const highCh = { safety: 1, farm: 1, room: 1, target: 1, coverage: 0 };
+    const lowCh = { safety: 0, farm: 0, room: 0, target: 0, coverage: 0 };
     expect(zoneFit(highCh, 'safe')).toBeCloseTo(0.25, 10);
     expect(zoneFit(lowCh, 'pvp')).toBeCloseTo(0.25, 10);
   });
 
   it('an unknown zoneKey falls back to ZONES.safe weights', () => {
-    const ch = { safety: 0.7, farm: 0.2, streak: 0.4, target: 0.1, coverage: 1 };
+    const ch = { safety: 0.7, farm: 0.2, room: 0.4, target: 0.1, coverage: 1 };
     expect(zoneFit(ch, 'not-a-real-zone')).toBeCloseTo(zoneFit(ch, 'safe'), 10);
   });
 });

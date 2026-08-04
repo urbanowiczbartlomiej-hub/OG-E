@@ -94,6 +94,7 @@ import { installGalaxyNavPanel } from './features/galaxyNavPanel.js';
 import { installThreatHighlight } from './features/threatHighlight/index.js';
 import { installRewardingWatcher } from './features/rewardingWatcher.js';
 import { installWhosSpyingPanel } from './features/whosSpyingPanel.js';
+import { installHomeWatch } from './features/homeWatch/index.js';
 import { installArtifactShopWatcher } from './features/artifactShopWatcher.js';
 import { installAlarmClock } from './features/alarmClock/index.js';
 import { installApiContext } from './features/apiContext/index.js';
@@ -266,6 +267,11 @@ const installDomFeatures = () => {
   // overview), the defensive mirror of AGR's offensive scan list. Top-frame
   // only: the messages UI is the top-level page (one MutationObserver is plenty).
   if (window.top === window.self) safeInstall('whosSpyingPanel', installWhosSpyingPanel);
+  // Home watch — diff our OWN systems' occupants on every fresh galaxy sighting
+  // and log strangers who moved in next to us (state/homeWatch; the dashboard
+  // Spyglass paints them). Top-frame only: one diff pass per page is plenty and
+  // the scans store is shared across frames anyway.
+  if (window.top === window.self) safeInstall('homeWatch', installHomeWatch);
   safeInstall('rewardingWatcher', installRewardingWatcher);
   safeInstall('artifactShopWatcher', installArtifactShopWatcher);
   // Espionage-report ingestion — a MutationObserver reads each report's

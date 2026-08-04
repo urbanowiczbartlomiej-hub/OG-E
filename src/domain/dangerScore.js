@@ -111,6 +111,10 @@ import { pointsToResources } from './unitCosts.js';
  * @property {number} [combatShare]  0.05..0.95 — assumed combat share BY VALUE of the
  *   player's fleet (spied composition + aggression lean); the pts→res knob.
  * @property {number} [reach]       0..1 — tactical dispersion / striking reach.
+ * @property {number} [spread]      0..1 — fraction of planets NOT in a huddle (the
+ *   raw geometry behind reach; {@link isMinerProfile} reads it).
+ * @property {number} [galaxies]    Distinct galaxies the empire occupies.
+ * @property {number} [planetCount] Planets in the universe snapshot.
  * @property {number} [apexSignals] 0..6 — how many apex tells fired (top ships,
  *   optimal res/ship, warrior alliance, reach, kills, FS spot). Denominator =
  *   APEX_TELLS_TOTAL.
@@ -208,6 +212,7 @@ export const combatQuality = (rps) => {
  * @property {number} reach     0..1 — tactical striking reach (spread-dominant).
  * @property {number} galaxies  Distinct galaxies occupied.
  * @property {number} spread    0..1 — fraction of planets NOT in a defensive huddle.
+ * @property {number} planets   Planet count the metrics were computed from.
  * @property {boolean} fsPair   A same/adjacent-system own-planet pair exists.
  * @property {boolean} fsSpot   The AGGRESSOR overnight-FS tell: an FS pair amid an
  *   otherwise-spread empire (spread high). A clustered empire that merely happens
@@ -246,7 +251,7 @@ const sysDist = (a, b) => {
 const computeReach = (planets) => {
   const galaxies = planets ? new Set(planets.map((p) => p.g)).size : 0;
   if (!planets || planets.length < 2) {
-    return { reach: 0, galaxies, spread: 0, fsPair: false, fsSpot: false };
+    return { reach: 0, galaxies, spread: 0, planets: planets ? planets.length : 0, fsPair: false, fsSpot: false };
   }
   /** @type {Map<number, number[]>} */
   const byGalaxy = new Map();
@@ -276,7 +281,7 @@ const computeReach = (planets) => {
   // footprint only amplifies an already-spread empire.
   const reach = clamp01(spread * (0.7 + 0.3 * galaxyFootprint));
   const fsSpot = spread >= 0.5 && fsPair;
-  return { reach, galaxies, spread, fsPair, fsSpot };
+  return { reach, galaxies, spread, planets: total, fsPair, fsSpot };
 };
 
 /**
@@ -495,7 +500,7 @@ export const buildDangerProfiles = (input) => {
 
     const destroyedPct = destroyedPts > 0 ? pctRank(destroyedVals, destroyedPts) : 0;
     const shipsPct = typeof ships === 'number' && ships > 0 ? pctRank(shipsVals, ships) : (ships === 0 ? 0 : 0.4);
-    const reach = reachByPlayer.get(id) ?? { reach: 0, galaxies: 0, spread: 0, fsPair: false, fsSpot: false };
+    const reach = reachByPlayer.get(id) ?? { reach: 0, galaxies: 0, spread: 0, planets: 0, fsPair: false, fsSpot: false };
     const dispersion = clamp01((reach.galaxies - 1) / 3);
 
     // ── Mobile (attack-capable) military — bounded, never fake-precise. ──
@@ -717,6 +722,12 @@ export const buildDangerProfiles = (input) => {
     }
     if (p.reach.galaxies >= 2) reasons.push(`planets across ${p.reach.galaxies} galaxies`);
     if (p.reach.spread >= 0.5) reasons.push(`tactically spread (reach ${Math.round(reachVal * 100)}%)`);
+    // The counter-signature, stated as plainly as the spread one: a packed
+    // empire is a miner/economy account — and a Spyglass opportunity, since one
+    // colony next door covers all of it.
+    if (isMinerProfile({ spread: p.reach.spread, galaxies: p.reach.galaxies, planetCount: p.reach.planets })) {
+      reasons.push(`huddled empire — ${p.reach.planets} planets packed together (miner profile)`);
+    }
     if (p.warriorAlliance) reasons.push('warrior-class alliance (combat bonuses)');
     if (p.reach.fsSpot) reasons.push('FS spot amid spread');
     if (apex > 0) reasons.push(`apex signals ${apexSignals}/${APEX_TELLS_TOTAL}`);
@@ -735,7 +746,8 @@ export const buildDangerProfiles = (input) => {
       ...(typeof p.ships === 'number' ? { ships: p.ships } : {}),
       ...(p.destroyedPts > 0 ? { destroyed: p.destroyedPts } : {}),
       ...(typeof p.rps === 'number' ? { resPerShip: p.rps, combatQuality: p.q } : {}),
-      reach: reachVal, apexSignals,
+      reach: reachVal, spread: p.reach.spread, galaxies: p.reach.galaxies,
+      planetCount: p.reach.planets, apexSignals,
       ...(apexBreakdown ? { apex: apexBreakdown } : {}),
       ...(p.allianceId ? { allianceId: p.allianceId } : {}),
       ...(p.allianceClass ? { allianceClass: p.allianceClass } : {}),
@@ -744,6 +756,38 @@ export const buildDangerProfiles = (input) => {
   }
 
   return out;
+};
+
+/**
+ * Miner (huddled-empire) thresholds — the mirror image of the aggressor reach
+ * this module already scores. An aggressor spreads planets so many victims sit
+ * within striking range; a MINER does the opposite and packs everything into a
+ * few nearby systems, because short hops are what makes hauling mined resources
+ * cheap. Same geometry, read the other way round.
+ *
+ * `spread ≤ 0.34` = at least two thirds of the empire sits in a huddle (a
+ * same-galaxy neighbour within 25 systems), `galaxies ≤ 2` keeps out empires
+ * that merely have one dense pocket inside a server-wide footprint, and
+ * `planets ≥ 3` is the floor where "clustered" means anything at all.
+ */
+export const MINER_SPREAD_MAX = 0.34;
+export const MINER_MAX_GALAXIES = 2;
+export const MINER_MIN_PLANETS = 3;
+
+/**
+ * Is this a huddled "miner" empire — everything within easy hauling distance?
+ * Why it matters for Spyglass: their bodies are all in one pocket, so ONE colony
+ * of ours next door watches the whole account, and a moon there is in reach.
+ * `false` when the geometry is unknown (no snapshot ⇒ no verdict). Pure.
+ *
+ * @param {Pick<DangerProfile, 'spread' | 'galaxies' | 'planetCount'>} [profile]
+ * @returns {boolean}
+ */
+export const isMinerProfile = (profile) => {
+  if (!profile || typeof profile.spread !== 'number') return false;
+  return (profile.planetCount ?? 0) >= MINER_MIN_PLANETS
+    && (profile.galaxies ?? 99) <= MINER_MAX_GALAXIES
+    && profile.spread <= MINER_SPREAD_MAX;
 };
 
 /** Human-facing label text for a {@link DangerLabel}. */
