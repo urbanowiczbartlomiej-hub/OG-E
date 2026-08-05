@@ -39,11 +39,6 @@ export default {
     '**Who is sniffing around me?** — the "who is spying on you" panel.',
   ],
 
-  demo: {
-    id: 'watchlist-cards',
-    caption: 'The real watch-list card strip over an invented cast — **the verdicts are computed by the same code the extension runs**. Four cards, four different answers: Pipit is a farm ready to take, Boro is loaded but could bounce the raid, Kestrel has nothing worth taking right now, and nothing is known about Ilex because nobody has looked yet.',
-  },
-
   screenshots: [
     { id: 'tab', caption: 'The Spyglass tab: watch list, scan settings, the "who is spying on you" panel and the player ranking.' },
   ],

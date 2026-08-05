@@ -499,44 +499,25 @@ h1 {
   cursor: zoom-in;
   font: inherit;
 }
-/* Zrzut w SWOICH proporcjach, nigdy nie powiększany. Wcześniej miniatura
-   siedziała w sztywnej ramce 16:9 z `object-fit: cover`, przez co wąski albo
-   kwadratowy kadr (wycinek jednego przycisku) był rozdmuchiwany na całą
-   szerokość kolumny i przycinany — jeden FAB potrafił urosnąć na pół ekranu.
-   Kadr szerszy od kolumny skaluje się w dół, węższy zostaje w swoim rozmiarze,
-   wyśrodkowany. Rząd bywa przez to nierówny — i dobrze: to dokumentacja, nie
-   galeria kafelków. */
 .shot-zoom img {
-  max-width: 100%;
-  height: auto;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
   display: block;
-  margin: 0 auto;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
 }
 .shot figcaption { font-size: 12.5px; color: var(--text-3); margin-top: 6px; line-height: 1.45; }
-/* Żywy komponent (site/demos/*) — prawdziwy kod OG-E wklejony w stronę,
-   ostylowany arkuszem wyciągniętym z src/ (assets/dashboard.css). Tu tylko
-   scena: ciemne tło dashboardu, żeby element czytał się tak jak w produkcie,
-   i poziomy scroll wewnątrz ramki na wąskim ekranie (strona nigdy nie
-   przewija się w bok).
-
-   Demo ZAWSZE bierze całą szerokość rzędu, nawet gdy zrzuty obok stoją w
-   dwóch kolumnach: to nie miniatura do porównania, tylko prawdziwy interfejs
-   w swoich naturalnych proporcjach — ściśnięty do połowy rzędu wchodzi w
-   mobilny wariant komponentu i zaczyna zawijać własne wiersze. */
-.shot.is-demo { grid-column: 1 / -1; }
+/* Żywy komponent (site/demos/*) — prawdziwy kod OG-E wklejony w stronę. Nosi
+   własne style inline, więc tu tylko scena: ciemne tło dashboardu, żeby element
+   czytał się tak jak w produkcie, i poziomy scroll wewnątrz ramki na wąskim
+   ekranie (strona nigdy nie przewija się w bok). */
 .shot-demo {
   padding: 14px;
   background: #0b0f14;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   overflow-x: auto;
-  /* Scena jest kontenerem zapytań: build zamienia szerokościowe @media
-     dashboardu na @container (patrz site/dashboardCss.mjs), więc komponent
-     układa się według szerokości TEJ ramki, nie okna. Bez tego dossier w
-     690-pikselowej scenie upychał dwie kolumny, bo widział desktopowe okno. */
-  container-type: inline-size;
 }
 .shot-demo > * { margin: 0 auto; }
 .shot-ph {

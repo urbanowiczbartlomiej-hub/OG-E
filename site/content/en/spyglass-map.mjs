@@ -36,12 +36,8 @@ export default {
     'On touch, the first tap describes the body, the second opens the owner\'s dossier.',
   ],
 
-  demo: {
-    id: 'positions-map',
-    caption: 'The real positions map over an invented universe. A row is a galaxy, a dot is a body, size grows with danger, your planets are white. The amber ring means "can reach you" — Kestrel sits three bodies deep inside your reach, while Boro grows fat safely far away.',
-  },
-
   screenshots: [
+    { id: 'positions', caption: 'The position map: galaxy rows, a dot per body, size growing with danger, your planets in white.' },
     { id: 'chips', caption: 'Player chips under the map and the "who can reach you in ≤8 h" toggle — colour, hiding, entry to the dossier.' },
   ],
 

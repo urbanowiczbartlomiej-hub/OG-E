@@ -27,11 +27,10 @@
 // .github/workflows/pages.yml (patrz site/README.md § Publikacja).
 
 import { readdir, mkdir, writeFile, readFile, copyFile, rm } from 'node:fs/promises';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 
-import { buildScopedDashboardCss, scopeCss } from './dashboardCss.mjs';
 import { CATEGORIES, CATEGORY_IDS } from './content/_categories.mjs';
 import { validateFeature } from './content/_schema.mjs';
 import { STRINGS } from './content/_strings.mjs';
@@ -83,29 +82,6 @@ const paras = (arr) => arr.map((p) => `<p>${inline(p)}</p>`).join('\n');
 const list = (arr) => `<ul>${arr.map((x) => `<li>${inline(x)}</li>`).join('')}</ul>`;
 
 /**
- * Wymiary PNG-a prosto z nagłówka (IHDR: szerokość i wysokość jako big-endian
- * uint32 na bajtach 16..24). Osiem linijek zamiast dekodera obrazów — zero
- * zależności, więc działa też na CI Pages.
- *
- * Po co: zrzuty ładują się leniwie i renderują w swoich proporcjach, więc bez
- * podanych z góry wymiarów przeglądarka rezerwuje 0 px i strona skacze przy
- * każdym doczytanym obrazku.
- * @param {string} path
- * @returns {{w: number, h: number} | null}
- */
-const pngSize = (path) => {
-  try {
-    const b = readFileSync(path);
-    if (b.length < 24 || b.readUInt32BE(0) !== 0x89504e47) return null;
-    const w = b.readUInt32BE(16);
-    const h = b.readUInt32BE(20);
-    return w > 0 && h > 0 ? { w, h } : null;
-  } catch {
-    return null;
-  }
-};
-
-/**
  * Zrzut/makieta: realny <img> jeśli plik istnieje, inaczej ramka-placeholder
  * (makieta do podmiany). Konwencja pliku: assets/shots/<slug>--<shotId>.png
  * — zrzuty są WSPÓLNE dla języków (podpisy są per język w treści).
@@ -116,10 +92,8 @@ const pngSize = (path) => {
 const shotFigure = (slug, shot) => {
   const file = `${slug}--${shot.id}.png`;
   const real = existsSync(join(SHOTS_DIR, file));
-  const size = real ? pngSize(join(SHOTS_DIR, file)) : null;
-  const dims = size ? ` width="${size.w}" height="${size.h}"` : '';
   const media = real
-    ? `<button class="shot-zoom" type="button" data-full="${BASE}assets/shots/${esc(file)}" data-caption="${esc(shot.caption)}"><img src="${BASE}assets/shots/${esc(file)}" alt="${esc(shot.caption)}"${dims} loading="lazy"></button>`
+    ? `<button class="shot-zoom" type="button" data-full="${BASE}assets/shots/${esc(file)}" data-caption="${esc(shot.caption)}"><img src="${BASE}assets/shots/${esc(file)}" alt="${esc(shot.caption)}" loading="lazy"></button>`
     : `<div class="shot-ph"><span class="shot-ph-tag">${esc(L.shotPlaceholder(shot.id))}</span></div>`;
   return `<figure class="shot${real ? '' : ' is-ph'}">${media}<figcaption>${inline(shot.caption)}</figcaption></figure>`;
 };
@@ -130,13 +104,6 @@ const shotFigure = (slug, shot) => {
  * @type {Map<string, string>}
  */
 const DEMO_HTML = new Map();
-
-/**
- * Arkusz dashboardu zawężony do `.shot-demo` — puste, gdy strona nie ma ani
- * jednego demo (albo gdy źródła nie da się przeczytać).
- * @type {string}
- */
-let DASHBOARD_CSS = '';
 
 /**
  * Renderuje wszystkie demo z `site/demos/` użyte w treści — a gdy się nie da,
@@ -228,7 +195,7 @@ const featureBlock = (f) => {
 
   <div class="shots">
     ${demoFigure(f.demo)}
-    ${(f.screenshots ?? []).map((s) => shotFigure(f.id, s)).join('\n')}
+    ${f.screenshots.map((s) => shotFigure(f.id, s)).join('\n')}
   </div>
 
   ${sec('fsec-idea', L.sections.idea, paras(f.idea))}
@@ -413,7 +380,6 @@ const buildPage = (features) => {
 <link rel="icon" href="${BASE}assets/favicon.png">
 <script>${THEME_BOOT}</script>
 <link rel="stylesheet" href="${BASE}assets/style.css">
-${DASHBOARD_CSS ? `<link rel="stylesheet" href="${BASE}assets/dashboard.css">` : ''}
 </head>
 <body>
 <a class="skip-link" href="#main">${esc(L.skipLink)}</a>
@@ -547,24 +513,6 @@ const main = async () => {
   const demoIds = [...byLocale.values()].flat().map((f) => f.demo?.id).filter(Boolean);
   for (const w of await renderDemos(/** @type {string[]} */ (demoIds))) console.warn(w);
 
-  // 2c. Arkusz dashboardu zawężony do scen demo (patrz site/dashboardCss.mjs).
-  // Pusty = brak/niepoprawny plik źródłowy: strona po prostu nie linkuje
-  // arkusza, demo zostaje gołym markupem — build się nie wywala.
-  if (DEMO_HTML.size) {
-    DASHBOARD_CSS = await buildScopedDashboardCss(join(ROOT, '..', 'src', 'dashboard.html'), '.shot-demo');
-    if (!DASHBOARD_CSS) console.warn('⚠ nie udało się wyciągnąć arkusza z src/dashboard.html — demo bez stylów');
-    // Styl FAB-a nie mieszka w dashboardzie (wstrzykuje się na stronę gry),
-    // więc dochodzi z modułu — tym samym mechanizmem i do tego samego pliku.
-    try {
-      const { BUTTON_CHROME_CSS } = await import(
-        pathToFileURL(join(ROOT, '..', 'src', 'features', 'shared', 'buttonChrome.js')).href
-      );
-      DASHBOARD_CSS += `\n\n${scopeCss(String(BUTTON_CHROME_CSS || ''), '.shot-demo')}`;
-    } catch {
-      console.warn('⚠ nie udało się wczytać stylu FAB-a — demo przycisku bez stylów');
-    }
-  }
-
   // 3. Wyczyść i odbuduj dist (wszystkie języki + wspólne assets).
   await rm(DIST, { recursive: true, force: true });
   await mkdir(DIST, { recursive: true });
@@ -577,7 +525,6 @@ const main = async () => {
     await writeFile(join(outDir, 'index.html'), buildPage(byLocale.get(locale) ?? []), 'utf8');
   }
   await copyDir(ASSETS_DIR, join(DIST, 'assets'));
-  if (DASHBOARD_CSS) await writeFile(join(DIST, 'assets', 'dashboard.css'), DASHBOARD_CSS, 'utf8');
 
   // GitHub Pages: bez tego pliku hosting przepuszcza output przez Jekylla,
   // który POMIJA ścieżki zaczynające się od `_`. Nic takiego dziś nie

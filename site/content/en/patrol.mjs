@@ -34,10 +34,10 @@ export default {
     'Noise filters strip out self, vacation/banned/admin, buddies, your own alliance, and noob-protected players.',
   ],
 
-  demo: {
-    id: 'patrol',
-    caption: 'The real Patrol card over invented data. The head line is the coverage of your rounds (how many systems have a fresh, a stale and no look); below it the strike list, strongest claim first, each with the age of the trace and how many neighbours in that system are quiet. "⭐ watch" promotes a neighbour onto the watch-list — Ilex is already on it.',
-  },
+  screenshots: [
+    { id: 'card', caption: 'The Patrol card on the Spy tab with the strike list and coverage summary.' },
+    { id: 'watch', caption: 'Promoting a neighbour onto the watch-list with a single "star" tap.' },
+  ],
 
   codeRefs: [
     'src/features/dashboard/patrol.js',

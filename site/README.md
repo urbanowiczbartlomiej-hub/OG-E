@@ -64,41 +64,10 @@ minimalny serwer z `serve.mjs`.
 
 ## Żywe demo (`demos/`)
 
-Zamiast zrzutu funkcja może pokazać **prawdziwy komponent OG-E** — nie makietę
-jego wyglądu. `site/demos/<id>.mjs` (wskazane przez `demo: {id, caption}` w
-treści) montuje prawdziwy szkielet karty z `src/dashboard.html` w headless DOM,
-woła prawdziwy renderer z `src/features/...` i oddaje wynikowy markup. Styl
-dochodzi z tego samego źródła: build wycina `<style>` dashboardu (oraz styl
-FAB-a z `features/shared/buttonChrome.js`), zawęża każdy selektor do `.shot-demo`
-i publikuje jako `assets/dashboard.css`. **W dokumentacji nie ma ani jednej
-linijki wyglądu przepisanej ręcznie** — zmiana w rozszerzeniu przechodzi na
-stronę sama.
-
-Elementy układanki:
-
-| plik | rola |
-| --- | --- |
-| `demos/_kit.mjs` | maszyneria: `withStage()` (headless DOM + szkielet + globalne), `out()` (sprzątanie markupu), `card()` |
-| `demos/_world.mjs` | JEDEN zmyślony wszechświat na wszystkie demo (obsada, sojusze, planety) |
-| `dashboardCss.mjs` | wycięcie i zawężenie arkuszy do sceny `.shot-demo` |
-| `demos/<id>.mjs` | scenariusz jednego demo |
-
-Zasady, których demo musi trzymać:
-
-- **Tylko zmyślone dane.** Nicki, tagi i koordynaty nie należą do nikogo —
-  dokumentacja nie publikuje pozycji realnego gracza, autora też nie. Stąd
-  wspólna, ptasia obsada w `_world.mjs`.
-- **Liczby się LICZY, nie wpisuje.** Werdykty, oceny zagrożenia i szacunki floty
-  przechodzą przez prawdziwy kod domenowy (`buildDangerProfiles`, `raidVerdict`,
-  `estimateHiddenFleet`), więc demo nie może pokazać wyniku, którego OG-E by nie
-  wystawił.
-- **Fail-soft.** Każdy problem = puste demo, nigdy przerwany build.
-- **Motyw.** Strona ma przełącznik jasny/ciemny, komponenty są tylko ciemne —
-  demo siedzi więc we własnej ciemnej scenie i tam zostaje. Nie forkujemy palety
-  komponentów pod dokumentację.
-
-Przy pisaniu nowego demo: `DEMO_DEBUG=1 node site/build.mjs` wypisuje prawdziwy
-błąd zamiast po cichu wracać do fail-softu.
+Zamiast zrzutu funkcja może pokazać **prawdziwy komponent OG-E** wyrenderowany
+z `src/` w headless DOM (`site/demos/<id>.mjs`, wskazane przez `demo: {id,
+caption}` w treści). Dane są zawsze ZMYŚLONE — dokumentacja nie publikuje
+pozycji żadnego realnego gracza.
 
 Renderowanie potrzebuje `happy-dom`, czyli **devDependency**, a CI Pages
 celowo nie robi `npm ci` (generator jest zero-dependency). Dlatego markup jest
@@ -109,9 +78,6 @@ celowo nie robi `npm ci` (generator jest zero-dependency). Dlatego markup jest
 - CI (bez `happy-dom`) render pomija i **wkleja ten zacommitowany plik** — to on
   ląduje na opublikowanej stronie;
 - gdy nie ma ani jednego, ani drugiego, figura po prostu nie powstaje (fail-soft).
-
-Dotyczy to WYŁĄCZNIE markupu. Arkusz demo powstaje z `src/` przy każdym buildzie
-(czysty string, zero zależności), więc na CI nigdy się nie starzeje.
 
 Praktyczny wniosek: **po zmianie komponentu zbuduj stronę i zacommituj to, co
 zmieni się w `_generated/`** — inaczej opublikowane demo zostanie na starej
@@ -145,10 +111,8 @@ Konsekwencje, o których warto pamiętać:
    1 żądanie" — OG-E nie wysyła żądań, tylko **inicjuje kliknięcie natywnego
    elementu gry** (to gra ewentualnie łączy się z serwerem, jak przy ręcznym
    kliknięciu). Patrz reguła w `_schema.mjs`.
-4. Daj funkcji ilustrację: **żywe demo** (patrz sekcja wyżej — nie starzeje się,
-   więc jest domyślnym wyborem, gdy komponent da się wyrenderować) albo listę
-   zrzutów; realne pliki wrzuć do `assets/shots/` później — do tego czasu
-   generator pokazuje placeholder. Build wymaga przynajmniej jednego z dwojga.
+4. Zdefiniuj listę zrzutów; realne pliki wrzuć do `assets/shots/` później —
+   do tego czasu generator pokazuje placeholder.
 5. **Dorób lustro EN**: `content/en/<slug>.mjs` z `locale: 'en'` i tym samym
    `id` (build wymaga kompletu slugów w każdym języku, inaczej `exit 1`).
 6. Zaktualizuj `CATALOG.md` (status `drafted`), zbuduj, oddaj do weryfikacji.

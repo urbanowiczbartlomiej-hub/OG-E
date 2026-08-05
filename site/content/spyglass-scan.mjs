@@ -43,12 +43,9 @@ export default {
     'Ustawiony promień patrolu dokłada do planu zerknięć sąsiedztwo Twoich kolonii (patrz „Patrol").',
   ],
 
-  demo: {
-    id: 'spy-fab-faces',
-    caption: 'Cztery prawdziwe twarze przycisku Spy — napisy pochodzą z tego samego kodu, który maluje go w grze. Przycisk zawsze mówi, co zrobi NASTĘPNE tapnięcie, i nigdy nie twierdzi więcej, niż widać w sygnałach: „fresh landing?" to pytanie, nie werdykt. Uzbrojony `Spy` pokazuje, do kogo poleci sonda, zanim ją wyślesz.',
-  },
-
   screenshots: [
+    { id: 'look', caption: 'Twarz „Look": darmowe zerknięcie do układu [galaktyka:układ], jedna wizyta odświeża dwa obserwowane ciała.' },
+    { id: 'spy', caption: 'Twarz „Spy" po uzbrojeniu: widzisz, do kogo lecisz — drugie tapnięcie wysyła sondę.' },
     { id: 'settings', caption: 'Ustawienia skanów: liczba sond, planety/księżyce, punkt startu, terminy odświeżania, tryb polowania na księżyce.' },
   ],
 
