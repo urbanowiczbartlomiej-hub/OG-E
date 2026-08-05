@@ -1,0 +1,62 @@
+# Publikacja dokumentacji funkcji (site/) na GitHub Pages.
+#
+# Output buduje CI, nie człowiek — `site/dist/` zostaje gitignorowane, a na
+# Pages leci artefakt z tego builda. Dzięki temu opublikowana strona jest
+# ZAWSZE dokładnie tym, co generator robi z treści na `main`; nie da się
+# wypchnąć nieświeżego HTML-a ani wygrać konfliktu na wygenerowanym pliku.
+#
+# Uwaga: to jest niezależne od release.yml (wydania rozszerzenia na AMO/CWS).
+# Strona jedzie własnym torem — zmiana treści nie wymaga podbicia wersji.
+
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    # Tylko realne wejścia strony — commit w src/ nie musi redeployować.
+    paths:
+      - 'site/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch: # ręczne "opublikuj teraz"
+
+permissions:
+  contents: read
+  pages: write # deploy-pages
+  id-token: write # OIDC, wymagane przez deploy-pages
+
+# Jedno wdrożenie naraz; nie przerywamy trwającego (kończy się publikacją).
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      # Generator jest zero-dependency (czysty Node) — żadnego `npm ci`.
+      # Build przerywa (exit 1) przy niekompletnej/niepoprawnej treści,
+      # więc walidacja schematu jest tu bramką publikacji.
+      - name: Build site
+        run: node site/build.mjs
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

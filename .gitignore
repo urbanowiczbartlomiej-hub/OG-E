@@ -1,7 +1,12 @@
 # Build artefacts
-dist/
-release/
+/dist/
+/release/
 *.zip
+
+# Wygenerowana strona dokumentacji. NIE commitujemy jej: na GitHub Pages
+# publikuje ją .github/workflows/pages.yml (build z treści + artefakt), więc
+# opublikowany HTML jest zawsze świeży, a w repo nie ma pliku do skonfliktowania.
+site/dist/
 
 # Test coverage report (npm run coverage)
 coverage/

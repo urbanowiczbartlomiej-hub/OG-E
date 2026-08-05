@@ -10,6 +10,10 @@ clicks — OG-E never talks to the game server on your behalf.
 > you already use easier to read and faster to tap. See
 > [`CONTRIBUTING.md`](CONTRIBUTING.md) §Compliance.
 
+📖 **Feature documentation (PL/EN):**
+<https://urbanowiczbartlomiej-hub.github.io/OG-E/> — every feature, what it
+does, why it helps and how it stays inside OGame's fair-play rules.
+
 ---
 
 ## One button, your daily routine
@@ -142,6 +146,30 @@ how its output maps to the uploaded extension are documented in
 - `localStorage.oge_debugLoggerEnabled = 'true'` — turn on the diagnostic
   logger: echoes `[OG-E]` events to the console and keeps the last ~500
   in an in-memory ring buffer (`logger.getEntries()` to grab them).
+
+---
+
+## Feature documentation site
+
+The public docs at
+<https://urbanowiczbartlomiej-hub.github.io/OG-E/> are generated from data
+files in [`site/`](site/) (one `.mjs` per feature, PL base + EN mirror) by a
+zero-dependency Node generator:
+
+```bash
+npm run site:preview
+```
+
+That builds `site/dist/` and serves it on <http://localhost:4173/>
+(`npm run site:build` builds only). The build **fails** on missing or invalid
+content, so it doubles as the consistency test.
+
+The output is **not committed** — [`.github/workflows/pages.yml`](.github/workflows/pages.yml)
+rebuilds it on every push to `main` that touches `site/**` and deploys the
+artifact to GitHub Pages, so the published page always matches the content in
+the repo. Publishing the site is independent of the extension release
+(no version bump needed). Content model, the i18n layers and how to add a
+feature page live in [`site/README.md`](site/README.md).
 
 ---
 

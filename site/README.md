@@ -31,6 +31,7 @@ mocniejszą, akcentową identyfikację. Pełny kontrakt pól — w `_schema.mjs`
 ```
 site/
   build.mjs              generator (czysty Node ≥22, zero zależności)
+  serve.mjs              podgląd lokalny dist/ (statyczny serwer, zero zależności)
   CATALOG.md             tracker postępu (wszystkie funkcje + status)
   content/
     _schema.mjs          kontrakt pól + walidacja (== test spójności)
@@ -42,20 +43,42 @@ site/
   assets/
     style.css            arkusz (mobile-first, motyw ciemny + jasny na tokenach)
     shots/               zrzuty ekranu: <slug>--<shotId>.png (WSPÓLNE dla języków)
-  dist/                  wygenerowany output (gitignore)
+  dist/                  wygenerowany output (gitignore — buduje go CI)
     index.html           PL (baza, w korzeniu)
     en/index.html        EN
+    .nojekyll            wyłącza Jekylla na GitHub Pages
 ```
 
-## Build
+## Build i podgląd
 
 ```
-node site/build.mjs      # → site/dist/
+npm run site:build       # → site/dist/
+npm run site:preview     # build + http://localhost:4173/  (EN: /en/)
 ```
 
 Build **przerywa (exit 1)** przy brakującym/niepoprawnym polu w dowolnym pliku
-treści — to nasz test spójności. Podgląd lokalny: dowolny statyczny serwer nad
-`site/dist/` (przeglądarka nie ładuje `file://` z tego layoutu).
+treści (oraz przy niekompletnym lustrze EN) — to nasz test spójności, a na CI
+jednocześnie bramka publikacji. Podgląd wymaga serwera statycznego —
+przeglądarka nie ładuje tego layoutu z `file://`; `site:preview` odpala
+minimalny serwer z `serve.mjs`.
+
+## Publikacja (GitHub Pages)
+
+Strona jest hostowana na GitHub Pages pod
+<https://urbanowiczbartlomiej-hub.github.io/OG-E/> i **budowana przez CI, nie
+commitowana**: `.github/workflows/pages.yml` na każdy push do `main`, który
+dotknie `site/**`, uruchamia `node site/build.mjs` i wdraża `site/dist/` jako
+artefakt Pages (`workflow_dispatch` = „opublikuj teraz" ręcznie).
+
+Konsekwencje, o których warto pamiętać:
+
+- **`site/dist/` zostaje w `.gitignore`.** Opublikowany HTML jest zawsze tym,
+  co generator robi z treści na `main` — nie da się wypchnąć nieświeżego
+  outputu ani konfliktować na pliku generowanym.
+- **Ścieżki są względne**, więc strona działa pod podkatalogiem (`/OG-E/`) bez
+  żadnej konfiguracji `base`. Nie wprowadzaj linków od korzenia (`/assets/…`).
+- **Publikacja strony jest niezależna od wydania rozszerzenia** (`release.yml`)
+  — poprawka treści nie wymaga podbicia wersji ani wysyłki na AMO/CWS.
 
 ## Dodanie nowej funkcji
 

@@ -23,7 +23,8 @@
 // Treść jest walidowana kontraktem z content/_schema.mjs. Build PRZERYWA
 // (exit 1) przy błędzie walidacji ORAZ gdy zbiór slugów EN nie pokrywa się
 // z PL — to nasz test spójności. ZERO zależności (czysty Node ≥22).
-// `dist/` jest gitignorowane.
+// `dist/` jest gitignorowane: output buduje i wdraża na GitHub Pages
+// .github/workflows/pages.yml (patrz site/README.md § Publikacja).
 
 import { readdir, mkdir, writeFile, copyFile, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -451,6 +452,11 @@ const main = async () => {
     await writeFile(join(outDir, 'index.html'), buildPage(byLocale.get(locale) ?? []), 'utf8');
   }
   await copyDir(ASSETS_DIR, join(DIST, 'assets'));
+
+  // GitHub Pages: bez tego pliku hosting przepuszcza output przez Jekylla,
+  // który POMIJA ścieżki zaczynające się od `_`. Nic takiego dziś nie
+  // publikujemy, ale plik jest darmowy i zdejmuje całą klasę niespodzianek.
+  await writeFile(join(DIST, '.nojekyll'), '', 'utf8');
 
   const pl = byLocale.get('pl') ?? [];
   const drafted = pl.filter((f) => f.status === 'drafted').length;

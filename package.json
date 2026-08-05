@@ -18,6 +18,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
+    "site:build": "node site/build.mjs",
+    "site:preview": "npm run site:build && node site/serve.mjs",
     "package": "npm run build:prod && node scripts/package.mjs && node scripts/package-source.mjs",
     "package:chrome": "npm run build:prod && node scripts/package-chrome.mjs",
     "release": "node --env-file-if-exists=.env scripts/release.mjs",

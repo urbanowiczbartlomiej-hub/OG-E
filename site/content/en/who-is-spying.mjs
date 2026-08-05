@@ -11,6 +11,7 @@ export default {
   name: 'Who is spying on you',
   oneLiner:
     'A table on the messages page showing who has recently probed your planets — the freshest and closest at the top.',
+  order: 7,
 
   idea: [
     'On the messages page OG-E gathers "hostile fleet near your planet" alerts into **one table**: one row per spy, with who, how long ago, how often and from where they poke you. The freshest and closest threats are at the top, and a spy with a fleet **in your own system** is flagged separately (they reach you the fastest).',
