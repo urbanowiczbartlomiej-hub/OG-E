@@ -43,6 +43,11 @@ export default {
     '**Kto mnie obwąchuje?** — panel „kto Cię szpieguje".',
   ],
 
+  demo: {
+    id: 'watchlist-cards',
+    caption: 'Prawdziwy pasek kart obserwowanych na zmyślonej obsadzie — **werdykty liczy ten sam kod, co w rozszerzeniu**. Cztery karty, cztery różne odpowiedzi: Pipit jest gotową farmą, Boro jest pełny, ale mógłby odbić atak, u Kestrela nie ma teraz czego brać, a o Ilexie nie wiadomo nic, bo nikt go jeszcze nie obejrzał.',
+  },
+
   screenshots: [
     { id: 'tab', caption: 'Zakładka Spyglass: lista obserwowanych, ustawienia skanów, panel „kto Cię szpieguje" i ranking graczy.' },
   ],

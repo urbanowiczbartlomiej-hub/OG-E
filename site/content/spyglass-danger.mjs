@@ -43,8 +43,12 @@ export default {
     '**Jedna wyszukiwarka** obsługuje nick, nazwę sojuszu i tag: znajduje też graczy odfiltrowanych (z powodem, dlaczego byli ukryci), a `+ watch all` dopisuje całą znalezioną listę do obserwowanych za jednym kliknięciem.',
   ],
 
+  demo: {
+    id: 'targets-table',
+    caption: 'Prawdziwa tabela graczy na zmyślonej obsadzie — **kolumna Danger jest policzona tym samym modelem, co w grze**, nie wpisana do demo. Kestrel ma 76 i najwyższy sufit floty; Boro, mimo wyższego miejsca w rankingu ogólnym, ma 18: punkty ma w kopalniach, nie w okrętach.',
+  },
+
   screenshots: [
-    { id: 'players', caption: 'Ranking graczy posortowany po kolumnie Danger — dalej sufit floty, punkty wojskowe i klasa kadłubów.' },
     { id: 'breakdown', caption: 'Rozbicie oceny w dossier: z czego wzięła się liczba i które sygnały ją podniosły.' },
   ],
 

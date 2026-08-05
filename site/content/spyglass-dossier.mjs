@@ -43,8 +43,12 @@ export default {
     'Przełącznik `Watch via galaxy | probes` oraz przełącznik pojedynczego ciała pozwalają wyciąć z planu skanów to, czego nie chcesz dotykać sondami.',
   ],
 
+  demo: {
+    id: 'dossier',
+    caption: 'Prawdziwe dossier rozwinięte pod wierszem gracza, na zmyślonych danych. Linia pokrycia mówi, ile z jego ciał w ogóle widziałeś (3/5 — więc flota jest GÓRNĄ granicą, nie pomiarem), rozbicie zagrożenia wylicza każdy sygnał z osobna, a tabela ciał trzyma wiek skanu, obronę, widoczną flotę i łup.',
+  },
+
   screenshots: [
-    { id: 'report', caption: 'Pełne dossier: po lewej werdykt, rozbicie zagrożenia i rytm gracza, po prawej tabela wszystkich jego ciał.' },
     { id: 'bodies', caption: 'Tabela ciał: wiek skanu, ostatnia interakcja, obrona, widoczna flota oraz średni i szczytowy łup — z księżycami pod planetami.' },
   ],
 

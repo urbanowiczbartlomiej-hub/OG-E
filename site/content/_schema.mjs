@@ -100,9 +100,13 @@
  * @property {string[]} [details] "Dodatkowe informacje" — opcjonalne PUNKTY z
  *   konkretniejszymi detalami. Dodawaj oszczędnie i tylko gdy wnoszą wartość
  *   (są bardziej podatne na dezaktualizację niż idea).
- * @property {Shot[]} screenshots  Lista zrzutów (min. 1; placeholder do czasu realnego).
- * @property {Demo} [demo]         Opcjonalny ŻYWY komponent (zamiast/obok zrzutu)
- *   generowany z prawdziwego kodu — patrz {@link Demo}.
+ * @property {Shot[]} [screenshots] Lista zrzutów (placeholder do czasu realnego).
+ * @property {Demo} [demo]         ŻYWY komponent (zamiast/obok zrzutu)
+ *   generowany z prawdziwego kodu — patrz {@link Demo}. Funkcja musi mieć
+ *   PRZYNAJMNIEJ JEDNO z dwojga: zrzut albo demo. Strona bez żadnej ilustracji
+ *   jest ścianą tekstu, a demo w pełni zastępuje zrzut (nie starzeje się), więc
+ *   przy demo lista zrzutów może być pusta — i wtedy jej nie podawaj zamiast
+ *   deklarować zrzut, który nigdy nie powstanie.
  * @property {string[]} codeRefs   Pliki src/... (dla nas, do utrzymania).
  * @property {DocStatus} status    Stan dokumentacji tego feature'a.
  */
@@ -156,7 +160,14 @@ export const validateFeature = (f, slug, categoryIds, locale = 'pl') => {
       need(typeof f.demo.caption === 'string' && f.demo.caption.trim(), 'brak "demo.caption"');
     }
   }
-  need(Array.isArray(f.screenshots) && f.screenshots.length > 0, '"screenshots" musi mieć min. 1 pozycję');
+  // Ilustracja jest obowiązkowa, ale JEJ RODZAJ nie: żywe demo w pełni
+  // zastępuje zrzut (i nie starzeje się), więc strona z demo nie musi
+  // deklarować zrzutu, którego nikt nigdy nie zrobi.
+  if (f.screenshots !== undefined) {
+    need(Array.isArray(f.screenshots), '"screenshots" (jeśli podane) musi być tablicą');
+  }
+  need((Array.isArray(f.screenshots) && f.screenshots.length > 0) || f.demo !== undefined,
+    'funkcja musi mieć ilustrację: min. 1 "screenshots" ALBO "demo"');
   if (Array.isArray(f.screenshots)) {
     f.screenshots.forEach((s, i) => {
       need(s && typeof s.id === 'string' && s.id.trim(), `screenshots[${i}].id brak/pusty`);

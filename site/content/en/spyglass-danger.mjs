@@ -38,8 +38,12 @@ export default {
     'Filters: hide inactive, watch list only, a military-points range, `top 50 / 100 / 200 / all`. Searching by name also finds filtered-out players and shows why they were hidden.',
   ],
 
+  demo: {
+    id: 'targets-table',
+    caption: 'The real Players table over an invented cast — **the Danger column is computed by the same model the extension runs**, not typed into the demo. Kestrel scores 76 and carries the highest fleet ceiling; Boro, ranked higher overall, scores 18: those points sit in mines, not in hulls.',
+  },
+
   screenshots: [
-    { id: 'players', caption: 'The player ranking sorted by the Danger column — the archetype next to the number, then the fleet ceiling, military points and hull class.' },
     { id: 'breakdown', caption: 'The score breakdown inside the dossier: where the number came from and which signals raised it.' },
   ],
 

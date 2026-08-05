@@ -34,10 +34,10 @@ export default {
     'Filtry szumu odsiewają siebie, urlop/ban/admina, buddy, własny sojusz i graczy pod ochroną nowicjusza.',
   ],
 
-  screenshots: [
-    { id: 'card', caption: 'Karta Patrol na zakładce Szpieguj z listą uderzeń i podsumowaniem pokrycia.' },
-    { id: 'watch', caption: 'Awans sąsiada na listę obserwowanych jednym tapnięciem „gwiazdka".' },
-  ],
+  demo: {
+    id: 'patrol',
+    caption: 'Prawdziwa karta Patrol na zmyślonych danych. Nagłówek to pokrycie obchodu (ile systemów ma świeży, stary i żaden podgląd), niżej lista uderzeń: najmocniejsze roszczenie na górze, przy każdym wiek śladu i ilu sąsiadów w systemie milczy. „⭐ watch" awansuje sąsiada na listę obserwowanych — Ilex jest już na niej.',
+  },
 
   codeRefs: [
     'src/features/dashboard/patrol.js',

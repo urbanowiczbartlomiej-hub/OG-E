@@ -37,8 +37,12 @@ export default {
     'The `Watch via galaxy | probes` toggle and the per-body toggle let you cut out of the scan plan whatever you do not want to touch with probes.',
   ],
 
+  demo: {
+    id: 'dossier',
+    caption: 'The real dossier, expanded under a player\'s row, over invented data. The coverage line says how many of their bodies you have actually seen (3/5 — so the fleet figure is an UPPER BOUND, not a measurement), the danger breakdown spells out every signal, and the body table carries scan age, defence, visible fleet and loot.',
+  },
+
   screenshots: [
-    { id: 'report', caption: 'The full dossier: verdict, danger breakdown and the player\'s rhythm on the left, the table of all his bodies on the right.' },
     { id: 'bodies', caption: 'The body table: scan age, last interaction, defence, visible fleet and average plus peak loot — moons under their planets.' },
   ],
 

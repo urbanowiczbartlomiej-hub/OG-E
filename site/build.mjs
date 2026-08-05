@@ -31,6 +31,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 
+import { buildScopedDashboardCss, scopeCss } from './dashboardCss.mjs';
 import { CATEGORIES, CATEGORY_IDS } from './content/_categories.mjs';
 import { validateFeature } from './content/_schema.mjs';
 import { STRINGS } from './content/_strings.mjs';
@@ -104,6 +105,13 @@ const shotFigure = (slug, shot) => {
  * @type {Map<string, string>}
  */
 const DEMO_HTML = new Map();
+
+/**
+ * Arkusz dashboardu zawężony do `.shot-demo` — puste, gdy strona nie ma ani
+ * jednego demo (albo gdy źródła nie da się przeczytać).
+ * @type {string}
+ */
+let DASHBOARD_CSS = '';
 
 /**
  * Renderuje wszystkie demo z `site/demos/` użyte w treści — a gdy się nie da,
@@ -195,7 +203,7 @@ const featureBlock = (f) => {
 
   <div class="shots">
     ${demoFigure(f.demo)}
-    ${f.screenshots.map((s) => shotFigure(f.id, s)).join('\n')}
+    ${(f.screenshots ?? []).map((s) => shotFigure(f.id, s)).join('\n')}
   </div>
 
   ${sec('fsec-idea', L.sections.idea, paras(f.idea))}
@@ -380,6 +388,7 @@ const buildPage = (features) => {
 <link rel="icon" href="${BASE}assets/favicon.png">
 <script>${THEME_BOOT}</script>
 <link rel="stylesheet" href="${BASE}assets/style.css">
+${DASHBOARD_CSS ? `<link rel="stylesheet" href="${BASE}assets/dashboard.css">` : ''}
 </head>
 <body>
 <a class="skip-link" href="#main">${esc(L.skipLink)}</a>
@@ -513,6 +522,24 @@ const main = async () => {
   const demoIds = [...byLocale.values()].flat().map((f) => f.demo?.id).filter(Boolean);
   for (const w of await renderDemos(/** @type {string[]} */ (demoIds))) console.warn(w);
 
+  // 2c. Arkusz dashboardu zawężony do scen demo (patrz site/dashboardCss.mjs).
+  // Pusty = brak/niepoprawny plik źródłowy: strona po prostu nie linkuje
+  // arkusza, demo zostaje gołym markupem — build się nie wywala.
+  if (DEMO_HTML.size) {
+    DASHBOARD_CSS = await buildScopedDashboardCss(join(ROOT, '..', 'src', 'dashboard.html'), '.shot-demo');
+    if (!DASHBOARD_CSS) console.warn('⚠ nie udało się wyciągnąć arkusza z src/dashboard.html — demo bez stylów');
+    // Styl FAB-a nie mieszka w dashboardzie (wstrzykuje się na stronę gry),
+    // więc dochodzi z modułu — tym samym mechanizmem i do tego samego pliku.
+    try {
+      const { BUTTON_CHROME_CSS } = await import(
+        pathToFileURL(join(ROOT, '..', 'src', 'features', 'shared', 'buttonChrome.js')).href
+      );
+      DASHBOARD_CSS += `\n\n${scopeCss(String(BUTTON_CHROME_CSS || ''), '.shot-demo')}`;
+    } catch {
+      console.warn('⚠ nie udało się wczytać stylu FAB-a — demo przycisku bez stylów');
+    }
+  }
+
   // 3. Wyczyść i odbuduj dist (wszystkie języki + wspólne assets).
   await rm(DIST, { recursive: true, force: true });
   await mkdir(DIST, { recursive: true });
@@ -525,6 +552,7 @@ const main = async () => {
     await writeFile(join(outDir, 'index.html'), buildPage(byLocale.get(locale) ?? []), 'utf8');
   }
   await copyDir(ASSETS_DIR, join(DIST, 'assets'));
+  if (DASHBOARD_CSS) await writeFile(join(DIST, 'assets', 'dashboard.css'), DASHBOARD_CSS, 'utf8');
 
   // GitHub Pages: bez tego pliku hosting przepuszcza output przez Jekylla,
   // który POMIJA ścieżki zaczynające się od `_`. Nic takiego dziś nie

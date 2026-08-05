@@ -39,8 +39,12 @@ export default {
     'Na dotyku pierwsze tapnięcie opisuje ciało, drugie otwiera dossier właściciela.',
   ],
 
+  demo: {
+    id: 'positions-map',
+    caption: 'Prawdziwa mapa pozycji na zmyślonym wszechświecie. Wiersz = galaktyka, kropka = ciało, rozmiar rośnie z zagrożeniem, Twoje planety są białe. Bursztynowy pierścień to „dosięgnie Cię" — Kestrel siedzi trzema ciałami w Twoim zasięgu, Boro tuczy się bezpiecznie daleko.',
+  },
+
   screenshots: [
-    { id: 'positions', caption: 'Mapa pozycji: wiersze galaktyk, kropka na każde ciało, rozmiar rośnie z zagrożeniem, Twoje planety na biało.' },
     { id: 'chips', caption: 'Chipy graczy pod mapą i przełącznik „kto Cię dosięgnie w ≤8 h" — kolor, ukrywanie, wejście do dossier.' },
   ],
 
